@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>탁구동호회 단식리그전 생성기</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      padding: 20px;
+      margin: 0;
+      background-color: #f9f9f9;
+    }
+    h2 {
+      text-align: center;
+      color: #1a237e;
+    }
+    .player-list {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .player {
+      display: inline-block;
+      margin: 6px;
+      padding: 6px 10px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #ccc;
+      cursor: pointer;
+    }
+    .player.selected {
+      border: 2px solid #1976d2;
+      background-color: #fffde7 !important;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+      background-color: white;
+    }
+    td, th {
+      border: 1px solid #888;
+      padding: 8px 12px;
+      text-align: center;
+      font-size: 16px;
+    }
+    tr:nth-child(odd) td, tr:nth-child(odd) th {
+      background-color: #e3f2fd;
+    }
+    tr:nth-child(even) td, tr:nth-child(even) th {
+      background-color: #ffffff;
+    }
+    table tr:first-child th,
+    table tr:first-child td,
+    table td:first-child,
+    table th:first-child {
+      background-color: #ffe0b2 !important;
+    }
+    #popup {
+      display: none;
+      position: fixed;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border: 2px solid #333;
+      padding: 20px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #popup button {
+      margin: 5px;
+      padding: 8px 12px;
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #popupText {
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    #resetBtn {
+      display: block;
+      margin: 10px auto;
+      padding: 8px 16px;
+      font-size: 16px;
+      background-color: #d32f2f;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .scroll-table {
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>탁구동호회 단식리그전 생성기</h2>
+  <!-- 이름 부수 추가 여기부터 -->
+  <div class="input-wrap" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+  <input type="text" id="newName" placeholder="이름" style="padding: 6px; font-size: 14px;" />
+  <input type="number" id="newLevel" placeholder="부수" min="1" max="20" style="padding: 6px; font-size: 14px;" />
+  <button onclick="addPlayer()" style="padding: 6px 12px; font-size: 14px;">선수 추가</button>
+</div>
+  <!-- 이름 부수 추가 여기까지 -->
+  <div class="player-list" id="playerList"></div>
+  <button id="resetBtn" onclick="resetAll()">전체 초기화</button>
+  <h2>리그전 대진표</h2>
+  <!-- ✅ 여기 버튼 코드 추가 -->
+<button onclick="saveTableAsImage()" style="display:block; margin:10px auto; padding:10px 20px; font-size:16px; background-color:#1976d2; color:white; border:none; border-radius:4px; cursor:pointer;">
+  대진표 JPEG 저장
+</button>
+
+<!-- 리그표가 그려지는 곳 -->
+  <div id="schedule" class="scroll-table"></div>
+
+  <div id="popup">
+    <p id="popupText"></p>
+    <div id="scoreButtons"></div>
+    <button onclick="closePopup()">닫기</button>
+  </div>
+
+  <script>
+    const allPlayers = [
+      { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
+      { name: "이영진", level: 6 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 },
+      { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
+      { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "임춘근", level: 9 },
+      { name: "전성무", level: 9 }, { name: "박인찬", level: 8 }, { name: "송창근", level: 9 },
+      { name: "강호선", level: 10 }, { name: "조보미", level: 12 }, { name: "홍지원", level: 13 },
+      { name: "송은아", level: 13 }, { name: "이낭주", level: 13 }, { name: "이승철", level: 13 },
+      { name: "박나령", level: 14 }, { name: "고은선", level: 14 }
+    ];
+
+    let selected = [];
+    let results = {};
+
+    function getColor(level) {
+      if (level <= 5) return "#1e88e5";
+      if (level <= 7) return "#43a047";
+      if (level <= 9) return "#ff8f00";
+      if (level <= 11) return "#8e24aa";
+      return "#c62828";
+    }
+
+    function renderPlayerList() {
+      const container = document.getElementById("playerList");
+      container.innerHTML = "";
+      allPlayers.forEach((p, i) => {
+        const el = document.createElement("span");
+        el.className = "player";
+        el.textContent = `${p.name}(${p.level}부)`;
+        el.style.color = getColor(p.level);
+        el.onclick = () => togglePlayer(i, el);
+        container.appendChild(el);
+      });
+    }
+
+    function togglePlayer(i, el) {
+      const idx = selected.indexOf(i);
+      if (idx > -1) {
+        selected.splice(idx, 1);
+        el.classList.remove("selected");
+      } else {
+        selected.push(i);
+        el.classList.add("selected");
+      }
+      createSchedule();
+    }
+
+    function createSchedule() {
+      const target = document.getElementById("schedule");
+      if (selected.length < 2) {
+        target.innerHTML = "<p>2명 이상 선택해주세요.</p>";
+        return;
+      }
+      const players = selected.map(i => allPlayers[i]);
+      let html = "<table><tr><th>구분</th>";
+      players.forEach(p => html += `<th>${p.name}(${p.level}부)</th>`);
+      html += "<th>승</th><th>세트</th><th>순위</th></tr>";
+
+      players.forEach((p1, i) => {
+        html += `<tr>`;
+        html += `<th style='background-color: #ffe0b2;'>${p1.name}(${p1.level}부)</th>`;
+        players.forEach((p2, j) => {
+          const isSelf = i === j;
+          const key = `${i}-${j}`;
+          const val = isSelf ? "X" : (results[key] || "");
+          const bgColor = (i % 2 === 0) ? '#ffffff' : '#e3f2fd';
+          html += `<td style='background-color: ${bgColor};' onclick='${isSelf ? '' : `openPopup(${i},${j})`}'>${val}</td>`;
+        });
+        html += `<td id='wins-${i}' style='background-color: ${(i % 2 === 0 ? '#ffffff' : '#e3f2fd')}'>0</td>`;
+        html += `<td id='sets-${i}' style='background-color: ${(i % 2 === 0 ? '#ffffff' : '#e3f2fd')}'>0</td>`;
+        html += `<td id='rank-${i}' style='background-color: ${(i % 2 === 0 ? '#ffffff' : '#e3f2fd')}'>-</td>`;
+        html += `</tr>`;
+      });
+
+      html += "</table>";
+      target.innerHTML = html;
+      updateScores();
+    }
+
+    function openPopup(i, j) {
+      const popup = document.getElementById("popup");
+      const scoreButtons = document.getElementById("scoreButtons");
+      const popupText = document.getElementById("popupText");
+      const players = selected.map(i => allPlayers[i]);
+      popupText.textContent = `${players[i].name} 선수는 ${players[j].name} 선수와의 경기에서 몇 대 몇으로 이겼나요?`;
+
+      const scores = ["3-0", "3-1", "3-2", "2-0", "2-1"];
+      scoreButtons.innerHTML = "";
+      scores.forEach(score => {
+        const btn = document.createElement("button");
+        btn.textContent = score;
+        btn.onclick = () => {
+          results[`${i}-${j}`] = score;
+          const [a, b] = score.split("-").map(Number);
+          results[`${j}-${i}`] = `${b}-${a}`;
+          popup.style.display = "none";
+          createSchedule();
+        };
+        scoreButtons.appendChild(btn);
+      });
+
+      popup.style.display = "block";
+    }
+
+    function closePopup() {
+      document.getElementById("popup").style.display = "none";
+    }
+
+    function resetAll() {
+      selected = [];
+      results = {};
+      renderPlayerList();
+      createSchedule();
+    }
+
+    function updateScores() {
+  const players = selected.map(i => allPlayers[i]);
+  const wins = new Array(players.length).fill(0);
+  const sets = new Array(players.length).fill(0);
+
+  // 승수 및 세트 계산
+  for (let i = 0; i < players.length; i++) {
+    for (let j = 0; j < players.length; j++) {
+      if (i === j) continue;
+      const score = results[`${i}-${j}`];
+      if (!score) continue;
+      const [my, opp] = score.split("-").map(Number);
+      sets[i] += my;
+      if (my > opp) wins[i]++;
+    }
+  }
+
+  // 정렬 기준: 승수 > 세트 > 승자승
+  const order = wins.map((w, i) => ({ i, w, s: sets[i] }));
+
+  order.sort((a, b) => {
+    if (b.w !== a.w) return b.w - a.w;       // 승수
+    if (b.s !== a.s) return b.s - a.s;       // 세트수
+
+    // 승자승 비교
+    const aWin = results[`${a.i}-${b.i}`];
+    const bWin = results[`${b.i}-${a.i}`];
+    if (aWin && bWin) {
+      const [aScore, bScore] = [aWin.split("-").map(Number), bWin.split("-").map(Number)];
+      if (aScore[0] > aScore[1]) return -1;
+      if (aScore[0] < aScore[1]) return 1;
+    }
+    return 0;
+  });
+
+  const rank = [];
+  let current = 1;
+  order.forEach((o, idx) => {
+    if (
+      idx > 0 &&
+      (o.w < order[idx - 1].w ||
+        o.s < order[idx - 1].s ||
+        (results[`${o.i}-${order[idx - 1].i}`]?.split("-")[0] < results[`${o.i}-${order[idx - 1].i}`]?.split("-")[1]))
+    ) {
+      current = idx + 1;
+    }
+    rank[o.i] = current;
+  });
+
+  players.forEach((_, i) => {
+    document.getElementById(`wins-${i}`).innerText = wins[i];
+    document.getElementById(`sets-${i}`).innerText = sets[i];
+    document.getElementById(`rank-${i}`).innerText = rank[i];
+  });
+}
+
+
+    renderPlayerList();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+  function saveTableAsImage() {
+    const schedule = document.getElementById("schedule");
+
+    html2canvas(schedule, {
+      useCORS: true,
+      scale: 2 // 고화질 이미지로 만들기 위해 확대
+    }).then(canvas => {
+      const link = document.createElement("a");
+      link.download = "리그전_대진표.jpg";
+      link.href = canvas.toDataURL("image/jpeg");
+      link.click();
+    });
+  }
+// 선수추가 여기부터
+  function addPlayer() {
+  const nameInput = document.getElementById("newName");
+  const levelInput = document.getElementById("newLevel");
+  const name = nameInput.value.trim();
+  const level = parseInt(levelInput.value);
+
+  if (!name || isNaN(level) || level < 1 || level > 20) {
+    alert("이름과 부수를 올바르게 입력해주세요. (부수는 1~20)");
+    return;
+  }
+
+  allPlayers.push({ name, level });
+  nameInput.value = "";
+  levelInput.value = "";
+  renderPlayerList();
+  createSchedule(); // 선수 추가 후 자동 반영
+}
+// 선수추가 여기까지
+</script>
+
+</body>
+</html>
