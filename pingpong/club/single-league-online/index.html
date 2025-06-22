@@ -17,9 +17,6 @@
       border-radius: 6px;
       display: inline-block;
     }
-    .selected {
-      background-color: #bbdefb;
-    }
     table {
       border-collapse: collapse;
       width: 100%;
@@ -66,6 +63,8 @@
     <button onclick="closePopup()">닫기</button>
   </div>
 
+  <div id="rankingTable" style="margin-top: 40px;"></div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -110,7 +109,7 @@
         row.insertCell().innerText = rowPlayer;
         players.forEach((colPlayer, j) => {
           const cell = row.insertCell();
-          if (rowPlayer === colPlayer) {
+          if (i === j) {
             cell.innerText = "-";
           } else {
             const key = `${i}-${j}`;
@@ -123,6 +122,7 @@
       const leagueTable = document.getElementById("leagueTable");
       leagueTable.innerHTML = "<h2>리그전 표</h2>";
       leagueTable.appendChild(table);
+      renderRanking();
     }
 
     function openPopup(i, j, players) {
@@ -149,6 +149,38 @@
 
     function closePopup() {
       document.getElementById("popup").style.display = "none";
+    }
+
+    function renderRanking() {
+      if (currentPlayers.length === 0) return;
+      const scores = currentPlayers.map((_, i) => ({ win: 0, pointDiff: 0 }));
+      for (const key in results) {
+        const [i, j] = key.split("-").map(Number);
+        const [a, b] = results[key].split("-").map(Number);
+        if (a > b) scores[i].win++;
+        scores[i].pointDiff += a - b;
+      }
+      const rankingData = currentPlayers.map((p, i) => ({
+        name: p,
+        win: scores[i].win,
+        diff: scores[i].pointDiff
+      }));
+      rankingData.sort((a, b) => b.win - a.win || b.diff - a.diff);
+
+      const table = document.createElement("table");
+      const header = table.insertRow();
+      ["순위", "이름", "승수", "득실차"].forEach(h => header.insertCell().innerText = h);
+      rankingData.forEach((r, i) => {
+        const row = table.insertRow();
+        row.insertCell().innerText = i + 1;
+        row.insertCell().innerText = r.name;
+        row.insertCell().innerText = r.win;
+        row.insertCell().innerText = r.diff;
+      });
+
+      const rankingDiv = document.getElementById("rankingTable");
+      rankingDiv.innerHTML = "<h2>순위표</h2>";
+      rankingDiv.appendChild(table);
     }
 
     document.getElementById("addPlayerBtn").addEventListener("click", () => {
@@ -178,10 +210,8 @@
 
     onValue(resultsRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        results = data;
-        if (currentPlayers.length > 1) generateLeague(currentPlayers);
-      }
+      results = data || {};
+      if (currentPlayers.length > 1) generateLeague(currentPlayers);
     });
 
     document.getElementById("generateLeagueBtn").addEventListener("click", () => {
@@ -192,7 +222,6 @@
     document.getElementById("resetScoresBtn").addEventListener("click", () => {
       results = {};
       set(resultsRef, results);
-      if (currentPlayers.length > 1) generateLeague(currentPlayers);
     });
 
     document.getElementById("deletePlayersBtn").addEventListener("click", () => {
