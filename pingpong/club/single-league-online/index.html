@@ -72,7 +72,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, onValue, set, remove, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDKe0-6H2z6Ed-wgN_eX_ROuNcfTusYBKg",
@@ -88,6 +88,7 @@
     const db = getDatabase(app);
     const playersRef = ref(db, "players");
     const resultsRef = ref(db, "results");
+    const selectionRef = ref(db, "selection");
 
     let currentPlayers = [];
     let results = {};
@@ -107,8 +108,7 @@
           } else {
             selectedIndices.add(i);
           }
-          renderPlayerList(players);
-          generateLeague(Array.from(selectedIndices).map(idx => currentPlayers[idx]));
+          set(selectionRef, Array.from(selectedIndices));
         });
         container.appendChild(el);
       });
@@ -225,6 +225,15 @@
       }
     });
 
+    onValue(selectionRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && Array.isArray(data)) {
+        selectedIndices = new Set(data);
+        renderPlayerList(currentPlayers);
+        generateLeague(Array.from(selectedIndices).map(idx => currentPlayers[idx]));
+      }
+    });
+
     onValue(resultsRef, (snapshot) => {
       const data = snapshot.val();
       results = data || {};
@@ -248,6 +257,7 @@
     document.getElementById("deletePlayersBtn").addEventListener("click", () => {
       remove(playersRef);
       remove(resultsRef);
+      remove(selectionRef);
       location.reload();
     });
   </script>
