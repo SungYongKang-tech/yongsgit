@@ -94,23 +94,26 @@
     let selectedIndices = new Set();
 
     function renderPlayerList(players) {
-      const container = document.getElementById("playerList");
-      container.innerHTML = "";
-      players.forEach((player, i) => {
-        const el = document.createElement("div");
-        el.className = "player";
-        if (selectedIndices.has(i)) el.classList.add("selected");
-        el.innerText = player;
-        el.addEventListener("click", () => {
-          if (selectedIndices.has(i)) {
-            selectedIndices.delete(i);
-          } else {             selectedIndices.add(i);
-          }
-          set(selectionRef, Array.from(selectedIndices));
-        });
-        container.appendChild(el);
-      });
-    }
+  const container = document.getElementById("playerList");
+  container.innerHTML = "";
+  players.forEach((player, i) => {
+    const el = document.createElement("div");
+    el.className = "player";
+    if (selectedIndices.has(i)) el.classList.add("selected");
+    el.innerText = player;
+    el.addEventListener("click", () => {
+      if (selectedIndices.has(i)) {
+        selectedIndices.delete(i);
+      } else {
+        selectedIndices.add(i);
+      }
+      // Firebase에 선택사항 저장 → 자동 리그표 생성은 onValue(selectionRef)에서 처리
+      set(selectionRef, Array.from(selectedIndices));
+    });
+    container.appendChild(el);
+  });
+}
+
 
     function generateLeague(players) {
   const leagueTable = document.getElementById("leagueTable");
@@ -233,25 +236,22 @@
     });
 
      onValue(selectionRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data && Array.isArray(data)) {
-        selectedIndices = new Set(data);
-        renderPlayerList(currentPlayers);
-        generateLeague(Array.from(selectedIndices).map(idx => currentPlayers[idx]));
-      }
-      // Firebase에서 데이터가 없을 때 null로 올 수 있으므로, 기본값으로 빈 배열을 설정합니다.
-      const selectionData = snapshot.val() || [];
-      selectedIndices = new Set(selectionData);
+  const selectionData = snapshot.val();
+  selectedIndices = new Set(selectionData || []);
 
-      // 전체 선수 목록을 다시 그리는 대신, 'selected' 클래스만 업데이트하여 효율성을 높입니다.
-      document.querySelectorAll('#playerList .player').forEach((el, index) => {
-        el.classList.toggle('selected', selectedIndices.has(index));
-      });
+  // selected 클래스만 업데이트
+  document.querySelectorAll('#playerList .player').forEach((el, index) => {
+    el.classList.toggle('selected', selectedIndices.has(index));
+  });
 
-      // 선택된 선수 배열을 만들고, 아직 선수 목록이 로드되지 않은 경우(undefined)를 대비해 필터링합니다.
-      const selectedPlayers = Array.from(selectedIndices).map(idx => currentPlayers[idx]).filter(Boolean);
-      generateLeague(selectedPlayers);
-    });
+  // 선수 목록이 모두 로딩된 후 실행
+  const selectedPlayers = Array.from(selectedIndices)
+    .map(idx => currentPlayers[idx])
+    .filter(Boolean);
+
+  generateLeague(selectedPlayers);
+});
+
 
     onValue(resultsRef, (snapshot) => {
       const data = snapshot.val();
