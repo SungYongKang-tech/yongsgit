@@ -10,40 +10,59 @@
       padding: 20px;
     }
     .player {
-      display: inline-block;
-      margin: 5px;
+      margin: 4px;
       padding: 6px 10px;
-      border-radius: 6px;
-      background-color: #e3f2fd;
+      background: #e3f2fd;
       border: 1px solid #2196f3;
-      cursor: pointer;
+      border-radius: 6px;
+      display: inline-block;
     }
-    .player.selected {
-      background-color: #90caf9;
-      font-weight: bold;
+    .selected {
+      background-color: #bbdefb;
     }
     table {
       border-collapse: collapse;
+      width: 100%;
       margin-top: 20px;
     }
     th, td {
-      border: 1px solid #999;
+      border: 1px solid #ccc;
       padding: 6px;
       text-align: center;
+    }
+    #popup {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 1px solid #000;
+      padding: 20px;
+      z-index: 1000;
+    }
+    #popup button {
+      margin: 5px;
     }
   </style>
 </head>
 <body>
   <h1>KOEN 단식 리그전</h1>
+  <p>실시간 Firebase 연동 버전</p>
   <input type="text" id="playerName" placeholder="선수 이름">
   <input type="text" id="playerLevel" placeholder="부수 (예: 5)">
   <button id="addPlayerBtn">선수 추가</button>
+  <button id="generateLeagueBtn">리그전 생성</button>
 
-  <h2>선수 목록 (클릭하여 리그 참가자 선택)</h2>
+  <h2>선수 목록</h2>
   <div id="playerList"></div>
+  <div id="leagueTable" style="margin-top: 30px;"></div>
 
-  <h2>리그전 대진표</h2>
-  <div id="leagueTable"></div>
+  <div id="popup">
+    <p id="popupText"></p>
+    <div id="scoreButtons"></div>
+    <button onclick="closePopup()">닫기</button>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -63,66 +82,82 @@
     const db = getDatabase(app);
     const playersRef = ref(db, "players");
 
-    let allPlayers = [];
-    let selected = [];
+    let currentPlayers = [];
+    let results = {};
 
-    function renderPlayerList() {
+    function renderPlayerList(players) {
       const container = document.getElementById("playerList");
       container.innerHTML = "";
-      allPlayers.forEach((player, idx) => {
-        const btn = document.createElement("div");
-        btn.className = "player" + (selected.includes(idx) ? " selected" : "");
-        btn.textContent = player;
-        btn.addEventListener("click", () => {
-          if (selected.includes(idx)) {
-            selected = selected.filter(i => i !== idx);
-          } else {
-            selected.push(idx);
+      players.forEach((player, i) => {
+        const el = document.createElement("div");
+        el.className = "player";
+        el.innerText = player;
+        el.addEventListener("click", () => {
+          if (!document.getElementById("leagueTable").innerHTML) {
+            generateLeague(players);
           }
-          renderPlayerList();
-          createSchedule();
         });
-        container.appendChild(btn);
+        container.appendChild(el);
       });
     }
 
-    function createSchedule() {
-      const tableDiv = document.getElementById("leagueTable");
-      tableDiv.innerHTML = "";
-      const participants = selected.map(i => allPlayers[i]);
-      if (participants.length < 2) return;
-
+    function generateLeague(players) {
       const table = document.createElement("table");
-      const header = document.createElement("tr");
-      header.innerHTML = "<th>선수</th>" + participants.map(p => `<th>${p}</th>`).join("");
-      table.appendChild(header);
+      table.border = "1";
+      const header = table.insertRow();
+      header.insertCell().innerText = "선수";
+      players.forEach(p => header.insertCell().innerText = p);
 
-      participants.forEach(rowName => {
-        const row = document.createElement("tr");
-        row.innerHTML = `<th>${rowName}</th>` + participants.map(colName => {
-          if (rowName === colName) return "<td>-</td>";
-          return "<td><input type='text' style='width: 30px;'></td>";
-        }).join("");
-        table.appendChild(row);
+      players.forEach((rowPlayer, i) => {
+        const row = table.insertRow();
+        row.insertCell().innerText = rowPlayer;
+        players.forEach((colPlayer, j) => {
+          const cell = row.insertCell();
+          if (rowPlayer === colPlayer) {
+            cell.innerText = "-";
+          } else {
+            const key = `${i}-${j}`;
+            cell.innerText = results[key] || "";
+            cell.style.cursor = "pointer";
+            cell.addEventListener("click", () => openPopup(i, j, players));
+          }
+        });
       });
-
-      tableDiv.appendChild(table);
+      const leagueTable = document.getElementById("leagueTable");
+      leagueTable.innerHTML = "<h2>리그전 표</h2>";
+      leagueTable.appendChild(table);
     }
 
-    onValue(playersRef, (snapshot) => {
-      const val = snapshot.val();
-      if (val) {
-        allPlayers = val;
-        selected = [];
-        renderPlayerList();
-        createSchedule();
-      }
-    });
+    function openPopup(i, j, players) {
+      const popup = document.getElementById("popup");
+      const scoreButtons = document.getElementById("scoreButtons");
+      const popupText = document.getElementById("popupText");
+      popupText.innerText = `${players[i]} 선수가 ${players[j]} 선수에게 몇 대 몇으로 이겼나요?`;
+      scoreButtons.innerHTML = "";
+      ["3-0", "3-1", "3-2", "2-0", "2-1"].forEach(score => {
+        const btn = document.createElement("button");
+        btn.textContent = score;
+        btn.onclick = () => {
+          results[`${i}-${j}`] = score;
+          const [a, b] = score.split("-").map(Number);
+          results[`${j}-${i}`] = `${b}-${a}`;
+          popup.style.display = "none";
+          generateLeague(currentPlayers);
+        };
+        scoreButtons.appendChild(btn);
+      });
+      popup.style.display = "block";
+    }
+
+    function closePopup() {
+      document.getElementById("popup").style.display = "none";
+    }
 
     document.getElementById("addPlayerBtn").addEventListener("click", () => {
-      const name = document.getElementById("playerName").value.trim();
-      const level = document.getElementById("playerLevel").value.trim();
-      if (!name || !level) return alert("이름과 부수를 모두 입력하세요.");
+      const name = document.getElementById("playerName").value;
+      const level = document.getElementById("playerLevel").value;
+      if (!name || !level) return alert("이름과 부수를 입력하세요");
+
       const newPlayer = `${name}(${level}부)`;
 
       onValue(playersRef, (snapshot) => {
@@ -132,6 +167,19 @@
           set(playersRef, current);
         }
       }, { onlyOnce: true });
+    });
+
+    onValue(playersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && Array.isArray(data)) {
+        currentPlayers = data;
+        renderPlayerList(data);
+      }
+    });
+
+    document.getElementById("generateLeagueBtn").addEventListener("click", () => {
+      if (currentPlayers.length < 2) return alert("2명 이상 필요합니다");
+      generateLeague(currentPlayers);
     });
   </script>
 </body>
