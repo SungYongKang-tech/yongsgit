@@ -100,232 +100,231 @@ table tr:nth-child(n+2):nth-child(even) td {
 
   <div id="rankingTable" style="margin-top: 40px;"></div>
 
-  <script type="module">
+ <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  // Firebase 설정
+  const firebaseConfig = {
+    apiKey: "AIzaSyDKe0-6H2z6Ed-wgN_eX_ROuNcfTusYBKg",
+    authDomain: "koen-singleague.firebaseapp.com",
+    databaseURL: "https://koen-singleague-default-rtdb.firebaseio.com",
+    projectId: "koen-singleague",
+    storageBucket: "koen-singleague.appspot.com",
+    messagingSenderId: "793588437102",
+    appId: "1:793588437102:web:846b6a1d9f88e480ec567f"
+  };
 
-    const allPlayers = [
-  { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
-  { name: "이영진", level: 6 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 },
-  { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
-  { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "임춘근", level: 9 },
-  { name: "전성무", level: 9 }, { name: "박인찬", level: 8 }, { name: "송창근", level: 9 },
-  { name: "강호선", level: 10 }, { name: "조보미", level: 12 }, { name: "홍지원", level: 13 },
-  { name: "송은아", level: 13 }, { name: "이낭주", level: 13 }, { name: "이승철", level: 13 },
-  { name: "박나령", level: 14 }, { name: "고은선", level: 14 }
-];
+  // Firebase 초기화
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const playersRef = ref(db, "players");
+  const resultsRef = ref(db, "results");
+  const selectionRef = ref(db, "selection");
 
-// 🔵 Firebase에 초기 등록 (단 한 번만 등록됨)
-onValue(playersRef, (snapshot) => {
-  if (!snapshot.exists()) {
-    const initialList = allPlayers.map(p => `${p.name}(${p.level}부)`);
-    set(playersRef, initialList);
-  }
-}, { onlyOnce: true });
+  // 초기 등록용 선수 목록
+  const allPlayers = [
+    { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
+    { name: "이영진", level: 6 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 },
+    { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
+    { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "임춘근", level: 9 },
+    { name: "전성무", level: 9 }, { name: "박인찬", level: 8 }, { name: "송창근", level: 9 },
+    { name: "강호선", level: 10 }, { name: "조보미", level: 12 }, { name: "홍지원", level: 13 },
+    { name: "송은아", level: 13 }, { name: "이낭주", level: 13 }, { name: "이승철", level: 13 },
+    { name: "박나령", level: 14 }, { name: "고은선", level: 14 }
+  ];
 
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyDKe0-6H2z6Ed-wgN_eX_ROuNcfTusYBKg",
-      authDomain: "koen-singleague.firebaseapp.com",
-      databaseURL: "https://koen-singleague-default-rtdb.firebaseio.com",
-      projectId: "koen-singleague",
-      storageBucket: "koen-singleague.appspot.com",
-      messagingSenderId: "793588437102",
-      appId: "1:793588437102:web:846b6a1d9f88e480ec567f"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const playersRef = ref(db, "players");
-    const resultsRef = ref(db, "results");
-    const selectionRef = ref(db, "selection");
-
-    let currentPlayers = [];
-    let results = {};
-    let selectedIndices = new Set();
-
-    function renderPlayerList(players) {
-      const container = document.getElementById("playerList");
-      container.innerHTML = "";
-      players.forEach((player, i) => {
-        const el = document.createElement("div");
-        el.className = "player";
-        if (selectedIndices.has(i)) el.classList.add("selected");
-        el.innerText = player;
-        el.addEventListener("click", () => {
-          if (selectedIndices.has(i)) {
-            selectedIndices.delete(i);
-          } else {
-            selectedIndices.add(i);
-          }
-          set(selectionRef, Array.from(selectedIndices));
-        });
-        container.appendChild(el);
-      });
+  // Firebase에 초기 선수 등록 (단 1회만)
+  onValue(playersRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      const initialList = allPlayers.map(p => `${p.name}(${p.level}부)`);
+      set(playersRef, initialList);
     }
+  }, { onlyOnce: true });
 
-    function generateLeague(players) {
-      const leagueTable = document.getElementById("leagueTable");
-      const rankingTable = document.getElementById("rankingTable");
+  let currentPlayers = [];
+  let results = {};
+  let selectedIndices = new Set();
 
-      if (!players || players.length < 2) {
-        leagueTable.innerHTML = "";
-        rankingTable.innerHTML = "";
-        return;
-      }
-
-      const table = document.createElement("table");
-      const header = table.insertRow();
-      header.insertCell().innerText = "선 수";
-      players.forEach(p => header.insertCell().innerText = p);
-
-      players.forEach((rowPlayer, i) => {
-        const row = table.insertRow();
-        row.insertCell().innerText = rowPlayer;
-        players.forEach((colPlayer, j) => {
-          const cell = row.insertCell();
-          if (i === j) {
-            cell.innerText = "-";
-          } else {
-            const key = `${rowPlayer}-${colPlayer}`;
-            cell.innerText = results[key] || "";
-            cell.style.cursor = "pointer";
-            cell.addEventListener("click", () => openPopup(rowPlayer, colPlayer));
-          }
-        });
-      });
-
-      leagueTable.innerHTML = "<h2>리그전 표</h2>";
-      leagueTable.appendChild(table);
-      renderRanking(players);
-    }
-
-   function renderRanking(players) {
-  if (!players || players.length === 0) return;
-
-  const scores = players.map(_ => ({ win: 0, pointDiff: 0 }));
-
-  players.forEach((p1, i) => {
-    players.forEach((p2, j) => {
-      if (i === j) return;
-      const result = results[`${p1}-${p2}`];
-      if (result) {
-        const [a, b] = result.split("-").map(Number);
-        if (a > b) scores[i].win++;
-        scores[i].pointDiff += a - b;
-      }
-    });
-  });
-
-  const rankingData = players.map((p, i) => ({
-    name: p,
-    win: scores[i].win,
-    diff: scores[i].pointDiff
-  })).sort((a, b) => b.win - a.win || b.diff - a.diff);
-
-  const table = document.createElement("table");
-  const header = table.insertRow();
-  ["이 름", "승 수", "득실차", "순 위"].forEach(h => header.insertCell().innerText = h);
-
-  rankingData.forEach((r, i) => {
-    const row = table.insertRow();
-    row.insertCell().innerText = r.name;
-    row.insertCell().innerText = r.win;
-    row.insertCell().innerText = r.diff;
-    row.insertCell().innerText = i + 1;  // 순위는 맨 우측
-  });
-
-  const rankingDiv = document.getElementById("rankingTable");
-  rankingDiv.innerHTML = "<h2>순위표</h2>";
-  rankingDiv.appendChild(table);
-}
-
-
-    function openPopup(p1, p2) {
-      const popup = document.getElementById("popup");
-      const scoreButtons = document.getElementById("scoreButtons");
-      const popupText = document.getElementById("popupText");
-      popupText.innerText = `${p1} 선수가 ${p2} 선수에게 몇 대 몇으로 이겼나요?`;
-      scoreButtons.innerHTML = "";
-      ["3-0", "3-1", "3-2", "2-0", "2-1"].forEach(score => {
-        const btn = document.createElement("button");
-        btn.textContent = score;
-        btn.onclick = () => {
-          results[`${p1}-${p2}`] = score;
-          const [a, b] = score.split("-").map(Number);
-          results[`${p2}-${p1}`] = `${b}-${a}`;
-          set(resultsRef, results);
-          popup.style.display = "none";
-        };
-        scoreButtons.appendChild(btn);
-      });
-      popup.style.display = "block";
-    }
-
-    function closePopup() {
-      document.getElementById("popup").style.display = "none";
-    }
-
-    document.getElementById("addPlayerBtn").addEventListener("click", () => {
-      const name = document.getElementById("playerName").value;
-      const level = document.getElementById("playerLevel").value;
-      if (!name || !level) return alert("이름과 부수를 입력하세요");
-      const newPlayer = `${name}(${level}부)`;
-      onValue(playersRef, (snapshot) => {
-        let current = snapshot.val() || [];
-        if (!current.includes(newPlayer)) {
-          current.push(newPlayer);
-          set(playersRef, current);
+  function renderPlayerList(players) {
+    const container = document.getElementById("playerList");
+    container.innerHTML = "";
+    players.forEach((player, i) => {
+      const el = document.createElement("div");
+      el.className = "player";
+      if (selectedIndices.has(i)) el.classList.add("selected");
+      el.innerText = player;
+      el.addEventListener("click", () => {
+        if (selectedIndices.has(i)) {
+          selectedIndices.delete(i);
+        } else {
+          selectedIndices.add(i);
         }
-      }, { onlyOnce: true });
+        set(selectionRef, Array.from(selectedIndices));
+      });
+      container.appendChild(el);
+    });
+  }
+
+  function generateLeague(players) {
+    const leagueTable = document.getElementById("leagueTable");
+    const rankingTable = document.getElementById("rankingTable");
+
+    if (!players || players.length < 2) {
+      leagueTable.innerHTML = "";
+      rankingTable.innerHTML = "";
+      return;
+    }
+
+    const table = document.createElement("table");
+    const header = table.insertRow();
+    header.insertCell().innerText = "선 수";
+    players.forEach(p => header.insertCell().innerText = p);
+
+    players.forEach((rowPlayer, i) => {
+      const row = table.insertRow();
+      row.insertCell().innerText = rowPlayer;
+      players.forEach((colPlayer, j) => {
+        const cell = row.insertCell();
+        if (i === j) {
+          cell.innerText = "-";
+        } else {
+          const key = `${rowPlayer}-${colPlayer}`;
+          cell.innerText = results[key] || "";
+          cell.style.cursor = "pointer";
+          cell.addEventListener("click", () => openPopup(rowPlayer, colPlayer));
+        }
+      });
     });
 
-    document.getElementById("resetScoresBtn").addEventListener("click", () => {
-      results = {};
-      set(resultsRef, results);
+    leagueTable.innerHTML = "<h2>리그전 표</h2>";
+    leagueTable.appendChild(table);
+    renderRanking(players);
+  }
+
+  function renderRanking(players) {
+    if (!players || players.length === 0) return;
+
+    const scores = players.map(_ => ({ win: 0, pointDiff: 0 }));
+
+    players.forEach((p1, i) => {
+      players.forEach((p2, j) => {
+        if (i === j) return;
+        const result = results[`${p1}-${p2}`];
+        if (result) {
+          const [a, b] = result.split("-").map(Number);
+          if (a > b) scores[i].win++;
+          scores[i].pointDiff += a - b;
+        }
+      });
     });
 
-    document.getElementById("deletePlayersBtn").addEventListener("click", () => {
-      remove(playersRef);
-      remove(resultsRef);
-      remove(selectionRef);
-      location.reload();
+    const rankingData = players.map((p, i) => ({
+      name: p,
+      win: scores[i].win,
+      diff: scores[i].pointDiff
+    })).sort((a, b) => b.win - a.win || b.diff - a.diff);
+
+    const table = document.createElement("table");
+    const header = table.insertRow();
+    ["이 름", "승 수", "득실차", "순 위"].forEach(h => header.insertCell().innerText = h);
+
+    rankingData.forEach((r, i) => {
+      const row = table.insertRow();
+      row.insertCell().innerText = r.name;
+      row.insertCell().innerText = r.win;
+      row.insertCell().innerText = r.diff;
+      row.insertCell().innerText = i + 1;
     });
 
+    const rankingDiv = document.getElementById("rankingTable");
+    rankingDiv.innerHTML = "<h2>순위표</h2>";
+    rankingDiv.appendChild(table);
+  }
+
+  function openPopup(p1, p2) {
+    const popup = document.getElementById("popup");
+    const scoreButtons = document.getElementById("scoreButtons");
+    const popupText = document.getElementById("popupText");
+    popupText.innerText = `${p1} 선수가 ${p2} 선수에게 몇 대 몇으로 이겼나요?`;
+    scoreButtons.innerHTML = "";
+    ["3-0", "3-1", "3-2", "2-0", "2-1"].forEach(score => {
+      const btn = document.createElement("button");
+      btn.textContent = score;
+      btn.onclick = () => {
+        results[`${p1}-${p2}`] = score;
+        const [a, b] = score.split("-").map(Number);
+        results[`${p2}-${p1}`] = `${b}-${a}`;
+        set(resultsRef, results);
+        popup.style.display = "none";
+      };
+      scoreButtons.appendChild(btn);
+    });
+    popup.style.display = "block";
+  }
+
+  function closePopup() {
+    document.getElementById("popup").style.display = "none";
+  }
+
+  document.getElementById("addPlayerBtn").addEventListener("click", () => {
+    const name = document.getElementById("playerName").value;
+    const level = document.getElementById("playerLevel").value;
+    if (!name || !level) return alert("이름과 부수를 입력하세요");
+    const newPlayer = `${name}(${level}부)`;
     onValue(playersRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data && Array.isArray(data)) {
-        currentPlayers = data;
-        renderPlayerList(currentPlayers);
-        const selectedPlayers = Array.from(selectedIndices)
-          .map(idx => currentPlayers[idx])
-          .filter(Boolean);
-        generateLeague(selectedPlayers);
+      let current = snapshot.val() || [];
+      if (!current.includes(newPlayer)) {
+        current.push(newPlayer);
+        set(playersRef, current);
       }
-    });
+    }, { onlyOnce: true });
+  });
 
-    onValue(resultsRef, (snapshot) => {
-      results = snapshot.val() || {};
-      if (selectedIndices.size > 1) {
-        const selectedPlayers = Array.from(selectedIndices)
-          .map(idx => currentPlayers[idx])
-          .filter(Boolean);
-        generateLeague(selectedPlayers);
-      }
-    });
+  document.getElementById("resetScoresBtn").addEventListener("click", () => {
+    results = {};
+    set(resultsRef, results);
+  });
 
-    onValue(selectionRef, (snapshot) => {
-      const data = snapshot.val() || [];
-      selectedIndices = new Set(data);
+  document.getElementById("deletePlayersBtn").addEventListener("click", () => {
+    remove(playersRef);
+    remove(resultsRef);
+    remove(selectionRef);
+    location.reload();
+  });
+
+  onValue(playersRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data && Array.isArray(data)) {
+      currentPlayers = data;
       renderPlayerList(currentPlayers);
       const selectedPlayers = Array.from(selectedIndices)
         .map(idx => currentPlayers[idx])
         .filter(Boolean);
       generateLeague(selectedPlayers);
-    });
-  </script>
+    }
+  });
+
+  onValue(resultsRef, (snapshot) => {
+    results = snapshot.val() || {};
+    if (selectedIndices.size > 1) {
+      const selectedPlayers = Array.from(selectedIndices)
+        .map(idx => currentPlayers[idx])
+        .filter(Boolean);
+      generateLeague(selectedPlayers);
+    }
+  });
+
+  onValue(selectionRef, (snapshot) => {
+    const data = snapshot.val() || [];
+    selectedIndices = new Set(data);
+    renderPlayerList(currentPlayers);
+    const selectedPlayers = Array.from(selectedIndices)
+      .map(idx => currentPlayers[idx])
+      .filter(Boolean);
+    generateLeague(selectedPlayers);
+  });
+</script>
+
 </body>
 </html>
