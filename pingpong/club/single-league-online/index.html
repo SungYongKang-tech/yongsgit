@@ -104,8 +104,7 @@
         el.addEventListener("click", () => {
           if (selectedIndices.has(i)) {
             selectedIndices.delete(i);
-          } else {
-            selectedIndices.add(i);
+          } else {             selectedIndices.add(i);
           }
           set(selectionRef, Array.from(selectedIndices));
         });
@@ -113,8 +112,18 @@
       });
     }
 
-    function generateLeague(players) {
+       function generateLeague(players) {
       if (!players || players.length < 2) return;
+      const leagueTable = document.getElementById("leagueTable");
+      const rankingTable = document.getElementById("rankingTable");
+
+      // 선수가 2명 미만이면 대진표와 순위표를 비웁니다.
+      if (!players || players.length < 2) {
+        leagueTable.innerHTML = "";
+        rankingTable.innerHTML = "";
+        return;
+      }
+
       const table = document.createElement("table");
       const header = table.insertRow();
       header.insertCell().innerText = "선수";
@@ -136,6 +145,21 @@
         });
       });
       const leagueTable = document.getElementById("leagueTable");
+      players.forEach((rowPlayer, i) => {
+        const row = table.insertRow();
+        row.insertCell().innerText = rowPlayer;
+        players.forEach((colPlayer, j) => {
+          const cell = row.insertCell();
+          if (i === j) {
+            cell.innerText = "-";
+          } else {
+            const key = `${rowPlayer}-${colPlayer}`;
+            cell.innerText = results[key] || "";
+            cell.style.cursor = "pointer";
+            cell.addEventListener("click", () => openPopup(rowPlayer, colPlayer));
+          }
+        });
+      });
       leagueTable.innerHTML = "<h2>리그전 표</h2>";
       leagueTable.appendChild(table);
       renderRanking(players);
@@ -224,13 +248,25 @@
       }
     });
 
-    onValue(selectionRef, (snapshot) => {
+     onValue(selectionRef, (snapshot) => {
       const data = snapshot.val();
       if (data && Array.isArray(data)) {
         selectedIndices = new Set(data);
         renderPlayerList(currentPlayers);
         generateLeague(Array.from(selectedIndices).map(idx => currentPlayers[idx]));
       }
+      // Firebase에서 데이터가 없을 때 null로 올 수 있으므로, 기본값으로 빈 배열을 설정합니다.
+      const selectionData = snapshot.val() || [];
+      selectedIndices = new Set(selectionData);
+
+      // 전체 선수 목록을 다시 그리는 대신, 'selected' 클래스만 업데이트하여 효율성을 높입니다.
+      document.querySelectorAll('#playerList .player').forEach((el, index) => {
+        el.classList.toggle('selected', selectedIndices.has(index));
+      });
+
+      // 선택된 선수 배열을 만들고, 아직 선수 목록이 로드되지 않은 경우(undefined)를 대비해 필터링합니다.
+      const selectedPlayers = Array.from(selectedIndices).map(idx => currentPlayers[idx]).filter(Boolean);
+      generateLeague(selectedPlayers);
     });
 
     onValue(resultsRef, (snapshot) => {
