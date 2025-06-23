@@ -465,49 +465,65 @@ function openTeamPopup(i, j) {
   const popupText = document.getElementById("popupText");
   const scoreButtons = document.getElementById("scoreButtons");
 
-  popupText.textContent = `${teamNames[i]}이 ${teamNames[j]}을(를) 몇 대 몇으로 이겼나요?`;
+  let scoreA = 0;
+  let scoreB = 0;
 
-  // 중복 제거 및 정상 순서
-  const scores = ["4-0", "4-1", "4-2", "4-3", "3-0", "3-1", "3-2", "2-0", "2-1"];
-  scoreButtons.innerHTML = "";
+  function updateDisplay() {
+    popupText.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div style="text-align:center; flex:1;">
+          <strong>${teamNames[i]}</strong><br/>
+          <button onclick="changeScore('A', 1)">＋</button>
+          <span style="margin:0 10px;" id="scoreA">${scoreA}</span>
+          <button onclick="changeScore('A', -1)">－</button>
+        </div>
+        <div style="text-align:center; flex:1;">
+          <strong>${teamNames[j]}</strong><br/>
+          <button onclick="changeScore('B', 1)">＋</button>
+          <span style="margin:0 10px;" id="scoreB">${scoreB}</span>
+          <button onclick="changeScore('B', -1)">－</button>
+        </div>
+      </div>
+    `;
+  }
 
-  scores.forEach(score => {
-    const btn = document.createElement("button");
-    btn.textContent = score;
-
-    // 스타일 설정
-    btn.style.color = "white";
-    btn.style.margin = "4px";
-    btn.style.padding = "8px 12px";
-    btn.style.border = "none";
-    btn.style.borderRadius = "4px";
-    btn.style.cursor = "pointer";
-    btn.style.fontWeight = "bold";
-
-    // 점수별 색상 적용
-    if (score.startsWith("4-")) {
-      btn.style.backgroundColor = "#ef5350"; // 빨강
-    } else if (score.startsWith("3-")) {
-      btn.style.backgroundColor = "#42a5f5"; // 파랑
-    } else if (score.startsWith("2-")) {
-      btn.style.backgroundColor = "#66bb6a"; // 초록
+  // 점수 조작 함수 (전역 등록)
+  window.changeScore = (team, delta) => {
+    if (team === "A") {
+      scoreA = Math.max(0, scoreA + delta);
+      document.getElementById("scoreA").textContent = scoreA;
+    } else {
+      scoreB = Math.max(0, scoreB + delta);
+      document.getElementById("scoreB").textContent = scoreB;
     }
+  };
 
-    btn.onclick = () => {
-      matchResults[`${i}-${j}`] = score;
-      const [a, b] = score.split("-").map(Number);
-      matchResults[`${j}-${i}`] = `${b}-${a}`;
-      popup.style.display = "none";
-      generateLeague(); // 갱신
-    };
+  // 저장 버튼 만들기
+  scoreButtons.innerHTML = "";
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "저장";
+  saveBtn.style.padding = "8px 16px";
+  saveBtn.style.backgroundColor = "#1976d2";
+  saveBtn.style.color = "white";
+  saveBtn.style.border = "none";
+  saveBtn.style.borderRadius = "4px";
+  saveBtn.style.cursor = "pointer";
 
-    scoreButtons.appendChild(btn);
-  });
+  saveBtn.onclick = () => {
+    if (scoreA === scoreB) {
+      alert("무승부는 허용되지 않습니다.");
+      return;
+    }
+    matchResults[`${i}-${j}`] = `${scoreA}-${scoreB}`;
+    matchResults[`${j}-${i}`] = `${scoreB}-${scoreA}`;
+    popup.style.display = "none";
+    generateLeague();
+  };
 
+  scoreButtons.appendChild(saveBtn);
+  updateDisplay();
   popup.style.display = "block";
 }
-
-
 
 function updateTeamScores(teamNames) {
   const n = teamNames.length;
