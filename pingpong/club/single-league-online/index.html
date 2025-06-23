@@ -294,44 +294,62 @@ table td, table th {
   }
 
   function renderRanking(players) {
-    if (!players || players.length === 0) return;
+  if (!players || players.length === 0) return;
 
-    const scores = players.map(_ => ({ win: 0, pointDiff: 0 }));
+  const scores = players.map(() => ({ win: 0, totalSets: 0 }));
 
-    players.forEach((p1, i) => {
-      players.forEach((p2, j) => {
-        if (i === j) return;
-        const result = results[`${p1}-${p2}`];
-        if (result) {
-          const [a, b] = result.split("-").map(Number);
-          if (a > b) scores[i].win++;
-          scores[i].pointDiff += a - b;
-        }
-      });
+  players.forEach((p1, i) => {
+    players.forEach((p2, j) => {
+      if (i === j) return;
+      const result = results[`${p1}-${p2}`];
+      if (result) {
+        const [a, b] = result.split("-").map(Number);
+        scores[i].totalSets += a;
+        if (a > b) scores[i].win++;
+      }
     });
+  });
 
-    const rankingData = players.map((p, i) => ({
-      name: p,
-      win: scores[i].win,
-      diff: scores[i].pointDiff
-    })).sort((a, b) => b.win - a.win || b.diff - a.diff);
+  // 순위 배열 구성
+  const rankingData = players.map((name, i) => ({
+    name,
+    win: scores[i].win,
+    sets: scores[i].totalSets,
+    index: i // 원래 인덱스 저장
+  }));
 
-    const table = document.createElement("table");
-    const header = table.insertRow();
-    ["이 름", "승 수", "득실차", "순 위"].forEach(h => header.insertCell().innerText = h);
+  // 정렬: 1. 승수 ↓, 2. 획득 세트 수 ↓, 3. 승자승 판별
+  rankingData.sort((a, b) => {
+    if (b.win !== a.win) return b.win - a.win;
+    if (b.sets !== a.sets) return b.sets - a.sets;
 
-    rankingData.forEach((r, i) => {
-      const row = table.insertRow();
-      row.insertCell().innerText = r.name;
-      row.insertCell().innerText = r.win;
-      row.insertCell().innerText = r.diff;
-      row.insertCell().innerText = i + 1;
-    });
+    // 동률일 경우 승자승 판별
+    const result = results[`${a.name}-${b.name}`];
+    if (result) {
+      const [aScore, bScore] = result.split("-").map(Number);
+      return bScore - aScore; // a가 이겼으면 음수 → a 우선
+    }
+    return 0; // 아무 것도 없으면 그대로
+  });
 
-    const rankingDiv = document.getElementById("rankingTable");
-    rankingDiv.innerHTML = "<h2>순위표</h2>";
-    rankingDiv.appendChild(table);
-  }
+  // 출력
+  const table = document.createElement("table");
+  const header = table.insertRow();
+  ["이 름", "승 수", "획득셋트", "순 위"].forEach(h => header.insertCell().innerText = h);
+
+  rankingData.forEach((r, i) => {
+    const row = table.insertRow();
+    row.insertCell().innerText = r.name;
+    row.insertCell().innerText = r.win;
+    row.insertCell().innerText = r.sets;
+    row.insertCell().innerText = i + 1;
+  });
+
+  const rankingDiv = document.getElementById("rankingTable");
+  rankingDiv.innerHTML = "<h2>순위표</h2>";
+  rankingDiv.appendChild(table);
+}
+
 
   function openPopup(p1, p2) {
   const popup = document.getElementById("popup");
