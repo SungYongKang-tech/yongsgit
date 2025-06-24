@@ -123,6 +123,7 @@
     const db = getDatabase(app);
     const playersRef = ref(db, "players");
     const resultsRef = ref(db, "results");
+    const selectedRef = ref(db, "selected");
 
     const defaultPlayers = [
       "김희영(4)", "강성용(5)", "김범일(5)", "이영진(6)", "박주민(6)", "강다훈(6)",
@@ -151,6 +152,7 @@
         const div = document.createElement("div");
         div.className = "player";
         div.textContent = player;
+        if (selected.includes(i)) div.classList.add("selected");
         div.onclick = () => togglePlayer(i);
         playerList.appendChild(div);
       });
@@ -160,7 +162,7 @@
       const idx = selected.indexOf(index);
       if (idx > -1) selected.splice(idx, 1);
       else selected.push(index);
-      renderSchedule();
+      set(selectedRef, selected);
     }
 
     function renderSchedule() {
@@ -220,6 +222,12 @@
       renderSchedule();
     });
 
+    onValue(selectedRef, (snapshot) => {
+      selected = snapshot.val() || [];
+      renderPlayers(currentPlayers);
+      renderSchedule();
+    });
+
     document.getElementById("resetBtn").onclick = () => {
       results = {};
       set(resultsRef, {});
@@ -229,6 +237,7 @@
     document.getElementById("clearBtn").onclick = () => {
       remove(playersRef);
       remove(resultsRef);
+      remove(selectedRef);
       location.reload();
     };
 
