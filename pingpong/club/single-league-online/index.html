@@ -45,31 +45,6 @@
     table td:first-child {
       background-color: #ffe0b2 !important;
     }
-    #popup {
-      display: none;
-      position: fixed;
-      top: 30%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: #fff;
-      border: 2px solid #333;
-      padding: 20px;
-      z-index: 1000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }
-    #popup button {
-      margin: 5px;
-      padding: 8px 12px;
-      background-color: #1976d2;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    #popupText {
-      margin-bottom: 10px;
-      font-weight: bold;
-    }
     #resetBtn, #clearBtn {
       display: inline-block;
       margin: 10px 5px;
@@ -99,11 +74,6 @@
     <button id="clearBtn">선수 목록 삭제</button>
   </div>
   <div id="schedule" class="scroll-table"></div>
-  <div id="popup">
-    <p id="popupText"></p>
-    <div id="scoreButtons"></div>
-    <button onclick="closePopup()">닫기</button>
-  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -124,7 +94,7 @@
     const playersRef = ref(db, "players");
     const resultsRef = ref(db, "results");
 
-    const allPlayers = [
+    const defaultPlayers = [
       "김희영(4)", "강성용(5)", "김범일(5)", "이영진(6)", "박주민(6)", "강다훈(6)",
       "박진우(7)", "배성국(7)", "이상준(7)", "황경진(8)", "양충현(8)", "임춘근(9)",
       "전성무(9)", "박인찬(8)", "송창근(9)", "강호선(10)", "조보미(12)", "홍지원(13)",
@@ -133,17 +103,14 @@
 
     onValue(playersRef, (snapshot) => {
       if (!snapshot.exists()) {
-        set(playersRef, allPlayers);
+        set(playersRef, defaultPlayers);
       }
     }, { onlyOnce: true });
 
     const playerList = document.getElementById("playerList");
-    const popup = document.getElementById("popup");
-    const popupText = document.getElementById("popupText");
-    const scoreButtons = document.getElementById("scoreButtons");
+    const schedule = document.getElementById("schedule");
 
     let currentPlayers = [];
-    let results = {};
 
     function renderPlayers(players) {
       playerList.innerHTML = "";
@@ -151,49 +118,66 @@
         const div = document.createElement("div");
         div.className = "player";
         div.textContent = player;
-        div.onclick = () => openPopup(player);
+        div.onclick = () => togglePlayer(i);
         playerList.appendChild(div);
       });
     }
 
-    function openPopup(player1) {
-      popupText.textContent = `${player1}의 경기 결과:`;
-      scoreButtons.innerHTML = "";
-      ["3-0", "3-1", "3-2", "2-0", "2-1", "삭제"].forEach(score => {
-        const btn = document.createElement("button");
-        btn.textContent = score;
-        btn.onclick = () => {
-          if (score === "삭제") {
-            delete results[player1];
-          } else {
-            results[player1] = score;
-          }
-          set(resultsRef, results);
-          popup.style.display = "none";
-        };
-        scoreButtons.appendChild(btn);
-      });
-      popup.style.display = "block";
+    let selected = [];
+    let results = {};
+
+    function togglePlayer(index) {
+      const idx = selected.indexOf(index);
+      if (idx > -1) selected.splice(idx, 1);
+      else selected.push(index);
+      renderSchedule();
     }
 
-    window.closePopup = () => popup.style.display = "none";
+    function renderSchedule() {
+      if (selected.length < 2) {
+        schedule.innerHTML = "<p>2명 이상 선택해주세요.</p>";
+        return;
+      }
+      const players = selected.map(i => currentPlayers[i]);
+      let html = "<table><tr><th>구분</th>";
+      players.forEach(p => html += `<th>${p}</th>`);
+      html += "<th>승</th><th>세트</th><th>순위</th></tr>";
+
+      players.forEach((p1, i) => {
+        html += `<tr><th>${p1}</th>`;
+        players.forEach((p2, j) => {
+          const key = `${i}-${j}`;
+          const val = i === j ? "X" : (results[key] || "");
+          html += `<td onclick='${i !== j ? `editScore(${i},${j})` : ""}'>${val}</td>`;
+        });
+        html += `<td id='wins-${i}'>0</td><td id='sets-${i}'>0</td><td id='rank-${i}'>-</td></tr>`;
+      });
+
+      html += "</table>";
+      schedule.innerHTML = html;
+    }
+
+    window.editScore = (i, j) => {
+      const score = prompt(`점수 입력 (${currentPlayers[selected[i]]} vs ${currentPlayers[selected[j]]}) 예: 3-1`);
+      if (!score) return;
+      results[`${i}-${j}`] = score;
+      const [a, b] = score.split("-").map(Number);
+      results[`${j}-${i}`] = `${b}-${a}`;
+      renderSchedule();
+    };
 
     onValue(playersRef, (snapshot) => {
       currentPlayers = snapshot.val() || [];
       renderPlayers(currentPlayers);
     });
 
-    onValue(resultsRef, (snapshot) => {
-      results = snapshot.val() || {};
-    });
-
     document.getElementById("resetBtn").onclick = () => {
-      set(resultsRef, {});
+      results = {};
+      renderSchedule();
     };
 
     document.getElementById("clearBtn").onclick = () => {
       remove(playersRef);
-      remove(resultsRef);
       location.reload();
     };
 
