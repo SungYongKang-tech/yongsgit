@@ -173,7 +173,7 @@
       const players = selected.map(i => currentPlayers[i]);
       let html = "<table><tr><th>구분</th>";
       players.forEach(p => html += `<th>${p}</th>`);
-      html += "<th>승</th><th>세트</th><th>순위</th></tr>";
+      html += "</tr>";
 
       players.forEach((p1, i) => {
         html += `<tr><th>${p1}</th>`;
@@ -182,10 +182,37 @@
           const val = i === j ? "X" : (results[key] || "");
           html += `<td onclick='openPopup(${i},${j})'>${val}</td>`;
         });
-        html += `<td id='wins-${i}'>0</td><td id='sets-${i}'>0</td><td id='rank-${i}'>-</td></tr>`;
+        html += "</tr>";
       });
-
       html += "</table>";
+
+      // 통계 계산 및 하단 표
+      const winCount = Array(players.length).fill(0);
+      const setCount = Array(players.length).fill(0);
+
+      for (let i = 0; i < players.length; i++) {
+        for (let j = 0; j < players.length; j++) {
+          if (i === j) continue;
+          const result = results[`${i}-${j}`];
+          if (result) {
+            const [a, b] = result.split("-").map(Number);
+            if (a > b) winCount[i]++;
+            setCount[i] += a;
+          }
+        }
+      }
+
+      const rankIndex = winCount.map((_, i) => i)
+        .sort((a, b) => winCount[b] - winCount[a] || setCount[b] - setCount[a]);
+      const ranks = Array(players.length);
+      rankIndex.forEach((idx, r) => { ranks[idx] = r + 1 });
+
+      html += "<h3>순위 요약</h3><table><tr><th>선수</th><th>승</th><th>세트 득점</th><th>순위</th></tr>";
+      players.forEach((p, i) => {
+        html += `<tr><td>${p}</td><td>${winCount[i]}</td><td>${setCount[i]}</td><td>${ranks[i]}</td></tr>`;
+      });
+      html += "</table>";
+
       schedule.innerHTML = html;
     }
 
