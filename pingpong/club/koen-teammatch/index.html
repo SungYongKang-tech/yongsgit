@@ -2,39 +2,88 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>탁구 단체전 출전명단</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>탁구 단체전 대진표</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 20px; }
-    button { margin: 5px; padding: 6px 12px; font-size: 15px; cursor: pointer; }
-    .team-card {
-      border: 1px solid #ccc; padding: 16px; margin-top: 16px;
-      border-radius: 8px; background: #f9f9f9;
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; background: #f9f9f9; }
+    h2 { text-align: center; margin-bottom: 20px; font-size: 1.5em; }
+    .controls { text-align: center; margin-bottom: 20px; }
+    .controls button {
+      padding: 10px 16px;
+      margin: 6px;
+      border: none;
+      border-radius: 8px;
+      background-color: #546e7a;
+      color: #fff;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
     }
-    .team-header { display: flex; justify-content: space-between; align-items: center; }
-    .lineup-row { margin: 8px 0; }
-    .summary-table { margin-top: 30px; border-collapse: collapse; width: 100%; }
-    .summary-table th, .summary-table td {
-      border: 1px solid #888; padding: 8px; text-align: center;
+    .controls button:hover { background-color: #37474f; }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+      font-size: 1rem;
+      background-color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
-    .hidden-lineup { color: #ccc; font-style: italic; }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 12px 8px;
+      text-align: center;
+      word-break: break-word;
+    }
+    th {
+      background-color: #e0e0e0;
+    }
+
+    @media screen and (max-width: 768px) {
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+      thead tr {
+        display: none;
+      }
+      tr {
+        margin-bottom: 16px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        background: #fff;
+        overflow: hidden;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      }
+      td {
+        border: none;
+        border-bottom: 1px solid #eee;
+        position: relative;
+        padding-left: 50%;
+        text-align: left;
+        font-size: 0.95rem;
+      }
+      td::before {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        width: 45%;
+        padding-right: 10px;
+        white-space: nowrap;
+        font-weight: bold;
+        content: attr(data-label);
+        color: #555;
+      }
+    }
   </style>
 </head>
 <body>
-  <h2>🏓 단체전 팀 구성 및 출전 명단</h2>
-
-  <div id="matchOrderDisplay">경기 순서 불러오는 중...</div>
-
-  <div style="margin-top:20px;">
-    <input type="text" id="teamNameInput" placeholder="팀 이름" />
-    <button onclick="createTeam()">팀 생성</button>
+  <h2>🏓 탁구 단체전 대진표</h2>
+  <div class="controls">
+    <button onclick="resetTable()">초기화</button>
   </div>
-
-  <div id="teamsContainer"></div>
-
-  <h3 style="margin-top:40px;">🔍 전체 팀 명단 요약</h3>
-  <div id="summaryTableContainer"></div>
+  <div id="matchTableArea">불러오는 중...</div>
 
 <script>
 const firebaseConfig = {
@@ -50,109 +99,59 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+let teams = {};
 let matchOrder = [];
 
-firebase.database().ref("matchOrder").on("value", snap => {
-  matchOrder = snap.val() || [];
-  document.getElementById("matchOrderDisplay").innerHTML =
-    "경기 순서: " + matchOrder.join(" → ");
-  loadTeams();
+Promise.all([
+  db.ref("teams").once("value"),
+  db.ref("matchOrder").once("value")
+]).then(([teamSnap, matchSnap]) => {
+  teams = teamSnap.val() || {};
+  matchOrder = matchSnap.val() || [];
+  renderTable();
 });
 
-function createTeam() {
-  const name = document.getElementById("teamNameInput").value.trim();
-  if (!name) return alert("팀 이름을 입력하세요");
-  const newRef = db.ref("teams").push();
-  newRef.set({ name, open: false, lineup: {} });
-  document.getElementById("teamNameInput").value = "";
-}
+function renderTable() {
+  const teamKeys = Object.keys(teams).filter(id => teams[id].open);
+  if (teamKeys.length === 0) {
+    document.getElementById("matchTableArea").innerText = "공개된 팀 명단이 없습니다.";
+    return;
+  }
 
-function loadTeams() {
-  db.ref("teams").on("value", snap => {
-    const data = snap.val() || {};
-    renderTeams(data);
-    renderSummary(data);
+  let html = '<table><thead><tr><th>순번</th><th>경기</th>';
+  teamKeys.forEach(id => {
+    html += `<th>${teams[id].name}</th>`;
   });
+  html += '</tr></thead><tbody>';
+if (!matchOrder.length) {
+  document.getElementById("matchTableArea").innerHTML = `
+    <p style="text-align:center; font-size:1.1rem; color:#d32f2f;">
+      ⚠️ 아직 경기 순서가 설정되지 않았습니다.<br/>
+      <a href="match-order.html" style="color:#1976d2; text-decoration:underline;">
+        👉 경기 순서를 먼저 설정하러 가기
+      </a>
+    </p>
+  `;
+  return;
 }
 
-function renderTeams(teams) {
-  const container = document.getElementById("teamsContainer");
-  container.innerHTML = "";
-  Object.entries(teams).forEach(([id, team]) => {
-    const div = document.createElement("div");
-    div.className = "team-card";
-    div.innerHTML = `
-      <div class="team-header">
-        <strong>${team.name}</strong>
-        <button onclick="toggleOpen('${id}', ${!team.open})">
-          ${team.open ? '🙈 비공개' : '👁 공개'}</button>
-      </div>
-      <div id="lineup-${id}"></div>
-      <button onclick="saveLineup('${id}')">저장/업데이트</button>
-    `;
-    container.appendChild(div);
-    renderLineupInputs(id, team);
-  });
-}
-
-function renderLineupInputs(id, team) {
-  const area = document.getElementById(`lineup-${id}`);
-  area.innerHTML = "";
   matchOrder.forEach((type, idx) => {
-    const row = document.createElement("div");
-    row.className = "lineup-row";
-    row.innerHTML = `<strong>${idx + 1}. ${type}:</strong> `;
-    const count = type.includes("복식") ? 2 : 1;
-    for (let i = 0; i < count; i++) {
-      const input = document.createElement("input");
-      input.type = "text";
-      input.placeholder = `${i + 1}번 선수`;
-      input.value = team.lineup?.[idx]?.[i] || "";
-      row.appendChild(input);
-    }
-    area.appendChild(row);
-  });
-}
-
-function saveLineup(id) {
-  const area = document.getElementById(`lineup-${id}`);
-  const rows = area.querySelectorAll(".lineup-row");
-  const result = {};
-  rows.forEach((row, idx) => {
-    const inputs = row.querySelectorAll("input");
-    result[idx] = [...inputs].map(i => i.value.trim());
-  });
-  db.ref(`teams/${id}/lineup`).set(result);
-}
-
-function toggleOpen(id, openState) {
-  db.ref(`teams/${id}/open`).set(openState);
-}
-
-function renderSummary(teams) {
-  const container = document.getElementById("summaryTableContainer");
-  if (!matchOrder.length) return;
-
-  let html = `<table class='summary-table'><tr><th>팀 이름</th>`;
-  matchOrder.forEach((type, idx) => {
-    html += `<th>${idx + 1} (${type})</th>`;
-  });
-  html += `</tr>`;
-
-  Object.values(teams).forEach(team => {
-    html += `<tr><td><strong>${team.name}</strong></td>`;
-    matchOrder.forEach((_, idx) => {
-      if (!team.open) {
-        html += `<td class='hidden-lineup'>❓ 비공개</td>`;
-      } else {
-        const names = team.lineup?.[idx] || [];
-        html += `<td>${names.join(", ")}</td>`;
-      }
+    html += `<tr>`;
+    html += `<td data-label="순번">${idx + 1}</td>`;
+    html += `<td data-label="경기">${type}</td>`;
+    teamKeys.forEach(id => {
+      const lineup = teams[id].lineup?.[idx] || [];
+      html += `<td data-label="${teams[id].name}">${lineup.join(", ") || "-"}</td>`;
     });
-    html += `</tr>`;
+    html += '</tr>';
   });
-  html += `</table>`;
-  container.innerHTML = html;
+
+  html += '</tbody></table>';
+  document.getElementById("matchTableArea").innerHTML = html;
+}
+
+function resetTable() {
+  document.getElementById("matchTableArea").innerText = "초기화되었습니다. Firebase에서 새로운 데이터를 불러오세요.";
 }
 </script>
 </body>
