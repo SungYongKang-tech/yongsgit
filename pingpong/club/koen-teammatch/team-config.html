@@ -67,10 +67,14 @@ function fetchMatchOrder() {
 
 function fetchAllPlayers() {
   allPlayers = [
-    "김희영", "강성용", "김범일", "이영진", "박주민", "강다훈", "조낭연",
-    "박진우", "배성국", "이상준", "황경진", "양충현", "임춘근",
-    "전성무", "박인찬", "송창근", "강호선", "조보미", "홍지원",
-    "송은아", "이낭주", "이승철", "박나령", "고은선"
+    { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
+    { name: "이영진", level: 6 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 }, { name: "조낭연", level: 6 },
+    { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
+    { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "임춘근", level: 9 },
+    { name: "전성무", level: 9 }, { name: "박인찬", level: 8 }, { name: "송창근", level: 9 },
+    { name: "강호선", level: 10 }, { name: "조보미", level: 12 }, { name: "홍지원", level: 13 },
+    { name: "송은아", level: 13 }, { name: "이낭주", level: 13 }, { name: "이승철", level: 13 },
+    { name: "박나령", level: 14 }, { name: "고은선", level: 14 }
   ];
   renderPlayerList();
 }
@@ -88,10 +92,11 @@ function fetchTeam() {
 function renderPlayerList() {
   const listEl = document.getElementById("playerList");
   listEl.innerHTML = "";
-  allPlayers.forEach(name => {
+  allPlayers.forEach(player => {
+    const name = player.name;
     const div = document.createElement("div");
     div.className = "player";
-    div.textContent = name;
+    div.textContent = name + ` (${player.level})`;
     div.dataset.name = name;
     if (teamData.members?.includes(name)) div.classList.add("selected");
     if (teamData.confirmed && !teamData.members?.includes(name)) div.classList.add("hidden");
@@ -105,4 +110,59 @@ function renderPlayerList() {
 
 function confirmTeamMembers() {
   const selected = [...document.querySelectorAll(".player.selected")].map(div => div.dataset.name);
-  db.ref(`teams/${teamId}`).update({ members: selected
+  db.ref(`teams/${teamId}`).update({ members: selected, confirmed: true });
+  teamData.members = selected;
+  teamData.confirmed = true;
+  renderPlayerList();
+}
+
+function renderLineupInputs() {
+  const area = document.getElementById("lineupArea");
+  if (!matchOrder.length || !teamData.members) return;
+  area.innerHTML = "";
+  matchOrder.forEach((type, idx) => {
+    const row = document.createElement("div");
+    row.className = "lineup-row";
+    row.innerHTML = `<strong>${idx + 1}. ${type}</strong> `;
+    const count = type.includes("복식") ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "선수 이름";
+      input.value = teamData.lineup?.[idx]?.[i] || "";
+      row.appendChild(input);
+    }
+    area.appendChild(row);
+  });
+}
+
+function saveLineup() {
+  const area = document.getElementById("lineupArea");
+  const rows = area.querySelectorAll(".lineup-row");
+  const result = {};
+  rows.forEach((row, idx) => {
+    const inputs = row.querySelectorAll("input");
+    result[idx] = [...inputs].map(i => i.value.trim());
+  });
+  db.ref(`teams/${teamId}/lineup`).set(result);
+  alert("출전 명단이 저장되었습니다.");
+}
+
+function toggleOpen() {
+  const newState = !teamData.open;
+  db.ref(`teams/${teamId}/open`).set(newState);
+  teamData.open = newState;
+  updateOpenButton();
+}
+
+function updateOpenButton() {
+  const btn = document.getElementById("openBtn");
+  btn.textContent = teamData.open ? "🙈 비공개" : "👁 공개";
+}
+
+fetchMatchOrder();
+fetchAllPlayers();
+fetchTeam();
+</script>
+</body>
+</html>
