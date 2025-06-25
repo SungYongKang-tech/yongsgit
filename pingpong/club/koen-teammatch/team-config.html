@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>팀 출전명단 구성</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; }
+    .player-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+    .player {
+      padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px;
+      background: #fff; cursor: pointer;
+    }
+    .selected { background-color: #c8e6c9; font-weight: bold; }
+    .hidden { display: none; }
+    .lineup-section { margin-top: 30px; }
+    .lineup-row { margin-bottom: 10px; }
+    button { margin: 5px; padding: 6px 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2 id="teamTitle">팀 출전명단 구성</h2>
+
+  <div id="matchOrderDisplay"></div>
+
+  <h3>① 팀원 선택</h3>
+  <div class="player-list" id="playerList"></div>
+  <button onclick="confirmTeamMembers()">팀원 확정</button>
+
+  <div class="lineup-section">
+    <h3>② 경기별 출전 명단</h3>
+    <div id="lineupArea"></div>
+    <button onclick="saveLineup()">명단 저장</button>
+    <button onclick="toggleOpen()" id="openBtn">공개</button>
+  </div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDcJO_DClEdSo1HiPsL1KYbSWOVzMgSgEs",
+  authDomain: "koen-teammatch.firebaseapp.com",
+  databaseURL: "https://koen-teammatch-default-rtdb.firebaseio.com",
+  projectId: "koen-teammatch",
+  storageBucket: "koen-teammatch.appspot.com",
+  messagingSenderId: "302792900934",
+  appId: "1:302792900934:web:8e727af88df3de536f2547"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const urlParams = new URLSearchParams(window.location.search);
+const teamId = urlParams.get('team');
+if (!teamId) alert("URL에 ?team=0 과 같이 팀 ID를 지정해주세요.");
+
+let matchOrder = [];
+let teamData = {};
+let allPlayers = [];
+
+function fetchMatchOrder() {
+  db.ref("matchOrder").once("value").then(snap => {
+    matchOrder = snap.val() || [];
+    document.getElementById("matchOrderDisplay").innerText = "경기 순서: " + matchOrder.join(" → ");
+    renderLineupInputs();
+  });
+}
+
+function fetchAllPlayers() {
+  allPlayers = [
+    "김희영", "강성용", "김범일", "이영진", "박주민", "강다훈", "조낭연",
+    "박진우", "배성국", "이상준", "황경진", "양충현", "임춘근",
+    "전성무", "박인찬", "송창근", "강호선", "조보미", "홍지원",
+    "송은아", "이낭주", "이승철", "박나령", "고은선"
+  ];
+  renderPlayerList();
+}
+
+function fetchTeam() {
+  db.ref("teams/" + teamId).once("value").then(snap => {
+    teamData = snap.val() || {};
+    document.getElementById("teamTitle").innerText = teamData.name + " 출전명단 구성";
+    renderPlayerList();
+    renderLineupInputs();
+    updateOpenButton();
+  });
+}
+
+function renderPlayerList() {
+  const listEl = document.getElementById("playerList");
+  listEl.innerHTML = "";
+  allPlayers.forEach(name => {
+    const div = document.createElement("div");
+    div.className = "player";
+    div.textContent = name;
+    div.dataset.name = name;
+    if (teamData.members?.includes(name)) div.classList.add("selected");
+    if (teamData.confirmed && !teamData.members?.includes(name)) div.classList.add("hidden");
+    div.onclick = () => {
+      if (teamData.confirmed) return;
+      div.classList.toggle("selected");
+    };
+    listEl.appendChild(div);
+  });
+}
+
+function confirmTeamMembers() {
+  const selected = [...document.querySelectorAll(".player.selected")].map(div => div.dataset.name);
+  db.ref(`teams/${teamId}`).update({ members: selected
