@@ -1,91 +1,159 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>경기 순서 설정</title>
+  <meta charset="UTF-8">
+  <title>탁구 단체전 출전명단</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 20px; }
-    button { margin: 5px; padding: 10px 14px; font-size: 16px; cursor: pointer; }
-    .order-display { margin-top: 20px; font-size: 18px; }
-    .highlight { font-weight: bold; color: #1976d2; }
+    button { margin: 5px; padding: 6px 12px; font-size: 15px; cursor: pointer; }
+    .team-card {
+      border: 1px solid #ccc; padding: 16px; margin-top: 16px;
+      border-radius: 8px; background: #f9f9f9;
+    }
+    .team-header { display: flex; justify-content: space-between; align-items: center; }
+    .lineup-row { margin: 8px 0; }
+    .summary-table { margin-top: 30px; border-collapse: collapse; width: 100%; }
+    .summary-table th, .summary-table td {
+      border: 1px solid #888; padding: 8px; text-align: center;
+    }
+    .hidden-lineup { color: #ccc; font-style: italic; }
   </style>
 </head>
 <body>
-  <h2>🏓 경기 순서 구성하기</h2>
-  <div>
-    <button onclick="addMatch('단식')">단식 추가</button>
-    <button onclick="addMatch('복식')">복식 추가</button>
-    <button onclick="addMatch('혼합복식')">혼합복식 추가</button>
-    <button onclick="removeLast()">← 마지막 삭제</button>
-    <button onclick="resetOrder()">초기화</button>
+  <h2>🏓 단체전 팀 구성 및 출전 명단</h2>
+
+  <div id="matchOrderDisplay">경기 순서 불러오는 중...</div>
+
+  <div style="margin-top:20px;">
+    <input type="text" id="teamNameInput" placeholder="팀 이름" />
+    <button onclick="createTeam()">팀 생성</button>
   </div>
 
-  <div class="order-display" id="matchOrderView">
-    현재 순서: (없음)
-  </div>
+  <div id="teamsContainer"></div>
 
-  <div style="margin-top: 20px;">
-    <button style="background:#388e3c; color:white;" onclick="saveMatchOrder()">✅ 경기순서 확정(Firebase 저장)</button>
-  </div>
-
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-
-  <!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <h3 style="margin-top:40px;">🔍 전체 팀 명단 요약</h3>
+  <div id="summaryTableContainer"></div>
 
 <script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyDcJO_DClEdSo1HiPsL1KYbSWOVzMgSgEs",
-    authDomain: "koen-teammatch.firebaseapp.com",
-    databaseURL: "https://koen-teammatch-default-rtdb.firebaseio.com",
-    projectId: "koen-teammatch",
-    storageBucket: "koen-teammatch.appspot.com",
-    messagingSenderId: "302792900934",
-    appId: "1:302792900934:web:8e727af88df3de536f2547"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyDcJO_DClEdSo1HiPsL1KYbSWOVzMgSgEs",
+  authDomain: "koen-teammatch.firebaseapp.com",
+  databaseURL: "https://koen-teammatch-default-rtdb.firebaseio.com",
+  projectId: "koen-teammatch",
+  storageBucket: "koen-teammatch.appspot.com",
+  messagingSenderId: "302792900934",
+  appId: "1:302792900934:web:8e727af88df3de536f2547"
+};
 
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.database();
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-  let matchOrder = [];
+let matchOrder = [];
 
-  function addMatch(type) {
-    matchOrder.push(type);
-    renderOrder();
-  }
+firebase.database().ref("matchOrder").on("value", snap => {
+  matchOrder = snap.val() || [];
+  document.getElementById("matchOrderDisplay").innerHTML =
+    "경기 순서: " + matchOrder.join(" → ");
+  loadTeams();
+});
 
-  function removeLast() {
-    matchOrder.pop();
-    renderOrder();
-  }
+function createTeam() {
+  const name = document.getElementById("teamNameInput").value.trim();
+  if (!name) return alert("팀 이름을 입력하세요");
+  const newRef = db.ref("teams").push();
+  newRef.set({ name, open: false, lineup: {} });
+  document.getElementById("teamNameInput").value = "";
+}
 
-  function resetOrder() {
-    matchOrder = [];
-    renderOrder();
-  }
+function loadTeams() {
+  db.ref("teams").on("value", snap => {
+    const data = snap.val() || {};
+    renderTeams(data);
+    renderSummary(data);
+  });
+}
 
-  function renderOrder() {
-    const view = document.getElementById("matchOrderView");
-    if (matchOrder.length === 0) {
-      view.innerHTML = "현재 순서: (없음)";
-    } else {
-      view.innerHTML = "현재 순서: <span class='highlight'>" + matchOrder.join(" → ") + "</span>";
+function renderTeams(teams) {
+  const container = document.getElementById("teamsContainer");
+  container.innerHTML = "";
+  Object.entries(teams).forEach(([id, team]) => {
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.innerHTML = `
+      <div class="team-header">
+        <strong>${team.name}</strong>
+        <button onclick="toggleOpen('${id}', ${!team.open})">
+          ${team.open ? '🙈 비공개' : '👁 공개'}</button>
+      </div>
+      <div id="lineup-${id}"></div>
+      <button onclick="saveLineup('${id}')">저장/업데이트</button>
+    `;
+    container.appendChild(div);
+    renderLineupInputs(id, team);
+  });
+}
+
+function renderLineupInputs(id, team) {
+  const area = document.getElementById(`lineup-${id}`);
+  area.innerHTML = "";
+  matchOrder.forEach((type, idx) => {
+    const row = document.createElement("div");
+    row.className = "lineup-row";
+    row.innerHTML = `<strong>${idx + 1}. ${type}:</strong> `;
+    const count = type.includes("복식") ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = `${i + 1}번 선수`;
+      input.value = team.lineup?.[idx]?.[i] || "";
+      row.appendChild(input);
     }
-  }
+    area.appendChild(row);
+  });
+}
 
-  function saveMatchOrder() {
-    if (matchOrder.length === 0) {
-      alert("경기 순서를 최소 1개 이상 설정해주세요.");
-      return;
-    }
-    db.ref("matchOrder").set(matchOrder)
-      .then(() => alert("✅ 경기 순서가 저장되었습니다!"))
-      .catch(err => alert("❌ 저장 실패: " + err));
-  }
+function saveLineup(id) {
+  const area = document.getElementById(`lineup-${id}`);
+  const rows = area.querySelectorAll(".lineup-row");
+  const result = {};
+  rows.forEach((row, idx) => {
+    const inputs = row.querySelectorAll("input");
+    result[idx] = [...inputs].map(i => i.value.trim());
+  });
+  db.ref(`teams/${id}/lineup`).set(result);
+}
+
+function toggleOpen(id, openState) {
+  db.ref(`teams/${id}/open`).set(openState);
+}
+
+function renderSummary(teams) {
+  const container = document.getElementById("summaryTableContainer");
+  if (!matchOrder.length) return;
+
+  let html = `<table class='summary-table'><tr><th>팀 이름</th>`;
+  matchOrder.forEach((type, idx) => {
+    html += `<th>${idx + 1} (${type})</th>`;
+  });
+  html += `</tr>`;
+
+  Object.values(teams).forEach(team => {
+    html += `<tr><td><strong>${team.name}</strong></td>`;
+    matchOrder.forEach((_, idx) => {
+      if (!team.open) {
+        html += `<td class='hidden-lineup'>❓ 비공개</td>`;
+      } else {
+        const names = team.lineup?.[idx] || [];
+        html += `<td>${names.join(", ")}</td>`;
+      }
+    });
+    html += `</tr>`;
+  });
+  html += `</table>`;
+  container.innerHTML = html;
+}
 </script>
-
 </body>
 </html>
