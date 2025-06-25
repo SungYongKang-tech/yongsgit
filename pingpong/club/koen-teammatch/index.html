@@ -1,161 +1,263 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>탁구 단체전 대진표</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <title>탁구 단체전 명단</title>
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; background: #f9f9f9; }
-    h2 { text-align: center; margin-bottom: 20px; font-size: 1.5em; }
-    .controls { text-align: center; margin-bottom: 20px; }
-    .controls button {
-      padding: 10px 16px;
-      margin: 6px;
-      border: none;
-      border-radius: 8px;
-      background-color: #546e7a;
-      color: #fff;
-      font-weight: bold;
-      font-size: 1rem;
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 20px;
+      background-color: #f0f2f5;
+    }
+    h2 {
+      text-align: center;
+      color: #1a237e;
+      margin-bottom: 20px;
+    }
+    .player-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .player {
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
       cursor: pointer;
     }
-    .controls button:hover { background-color: #37474f; }
+    .selected {
+      border: 2px solid #333;
+      font-weight: bold;
+    }
+    .lv-4-6 { background-color: #e8f5e9; }
+    .lv-7-9 { background-color: #e3f2fd; }
+    .lv-10-12 { background-color: #fff3e0; }
+    .lv-13-14 { background-color: #ffebee; }
+    .hidden {
+      display: none !important;
+    }
 
     table {
-      border-collapse: collapse;
       width: 100%;
-      margin-top: 20px;
-      font-size: 1rem;
-      background-color: #fff;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      border-collapse: collapse;
+      background-color: white;
     }
     th, td {
-      border: 1px solid #ccc;
-      padding: 12px 8px;
+      border: 1px solid #999;
+      padding: 8px;
       text-align: center;
-      word-break: break-word;
-    }
-    th {
-      background-color: #e0e0e0;
     }
 
-    @media screen and (max-width: 768px) {
-      table, thead, tbody, th, td, tr {
-        display: block;
-      }
-      thead tr {
-        display: none;
-      }
-      tr {
-        margin-bottom: 16px;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        background: #fff;
-        overflow: hidden;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-      }
-      td {
-        border: none;
-        border-bottom: 1px solid #eee;
-        position: relative;
-        padding-left: 50%;
-        text-align: left;
-        font-size: 0.95rem;
-      }
-      td::before {
-        position: absolute;
-        top: 12px;
-        left: 12px;
-        width: 45%;
-        padding-right: 10px;
-        white-space: nowrap;
-        font-weight: bold;
-        content: attr(data-label);
-        color: #555;
-      }
+    .controls {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .btn-confirm {
+      padding: 6px 12px;
+      margin: 4px;
+      background-color: #ce93d8;
+      color: #4a148c;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .mode-btn {
+      padding: 6px 12px;
+      margin: 4px;
+      background-color: #bbdefb;
+      color: #0d47a1;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .mode-btn.active {
+      background-color: #1a237e;
+      color: white;
+    }
+
+    .btn-reset {
+      padding: 6px 12px;
+      margin: 4px;
+      background-color: #cfd8dc;
+      color: #263238;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: 0.9;
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
 </head>
 <body>
-  <h2>🏓 탁구 단체전 대진표</h2>
- <div class="controls">
-  <button onclick="resetTable()">초기화</button>
-  <a href="match-order.html">
-    <button style="background-color:#1976d2;">경기순서 수정</button>
-  </a>
-</div>
-  <div id="matchTableArea">불러오는 중...</div>
+  
 
-<script>
-const firebaseConfig = {
-  apiKey: "AIzaSyDcJO_DClEdSo1HiPsL1KYbSWOVzMgSgEs",
-  authDomain: "koen-teammatch.firebaseapp.com",
-  databaseURL: "https://koen-teammatch-default-rtdb.firebaseio.com",
-  projectId: "koen-teammatch",
-  storageBucket: "koen-teammatch.appspot.com",
-  messagingSenderId: "302792900934",
-  appId: "1:302792900934:web:8e727af88df3de536f2547"
-};
+  <h2>탁구 단체전 명단</h2>
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+  <div class="controls">
+    <button class="btn-confirm" onclick="confirmPlayers()">선수명단 확정</button>
+    <button id="btnSingle" class="mode-btn active" onclick="setGameMode('단식')">단식</button>
+    <button id="btnDouble" class="mode-btn" onclick="setGameMode('복식')">복식</button>
+    <button class="btn-reset" onclick="resetSelection()">초기화</button>
+    <button class="btn-confirm" onclick="saveTableAsImage()">표 이미지 저장</button>
+  </div>
 
-let teams = {};
-let matchOrder = [];
+  <div class="player-list" id="playerList"></div>
 
-Promise.all([
-  db.ref("teams").once("value"),
-  db.ref("matchOrder").once("value")
-]).then(([teamSnap, matchSnap]) => {
-  teams = teamSnap.val() || {};
-  matchOrder = matchSnap.val() || [];
-  renderTable();
-});
+  <table>
+    <thead>
+      <tr>
+        <th>순번</th>
+        <th>경기</th>
+        <th>이름</th>
+        <th>부수</th>
+        <th>삭제</th>
+      </tr>
+    </thead>
+    <tbody id="selectionTable"></tbody>
+  </table>
 
-function renderTable() {
-  const teamKeys = Object.keys(teams).filter(id => teams[id].open);
-  if (teamKeys.length === 0) {
-    document.getElementById("matchTableArea").innerText = "공개된 팀 명단이 없습니다.";
-    return;
-  }
+  <script>
+    const allPlayers = [
+     { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
+      { name: "이영진", level: 6 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 }, { name: "조낭연", level: 6 },
+      { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
+      { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "임춘근", level: 9 },
+      { name: "전성무", level: 9 }, { name: "박인찬", level: 8 }, { name: "송창근", level: 9 },
+      { name: "강호선", level: 10 }, { name: "조보미", level: 12 }, { name: "홍지원", level: 13 },
+      { name: "송은아", level: 13 }, { name: "이낭주", level: 13 }, { name: "이승철", level: 13 },
+      { name: "박나령", level: 14 }, { name: "고은선", level: 14 }
+    ];
 
-  let html = '<table><thead><tr><th>순번</th><th>경기</th>';
-  teamKeys.forEach(id => {
-    html += `<th>${teams[id].name}</th>`;
+    let currentGameMode = "단식";
+    let confirmedMode = false;
+    const confirmedPlayers = new Set();
+    let matchList = [];
+    let tempPair = [];
+
+    const playerListEl = document.getElementById("playerList");
+    const selectionTableEl = document.getElementById("selectionTable");
+
+    function renderPlayers() {
+      playerListEl.innerHTML = "";
+      allPlayers.forEach(player => {
+        const div = document.createElement("div");
+        div.className = "player " + getLevelClass(player.level);
+        div.textContent = `${player.name} (${player.level}부)`;
+        div.dataset.name = player.name;
+        div.onclick = () => handleClick(player, div);
+        playerListEl.appendChild(div);
+      });
+    }
+
+    function getLevelClass(level) {
+      if (level <= 6) return 'lv-4-6';
+      if (level <= 9) return 'lv-7-9';
+      if (level <= 12) return 'lv-10-12';
+      return 'lv-13-14';
+    }
+
+    function setGameMode(mode) {
+      currentGameMode = mode;
+      document.getElementById("btnSingle").classList.remove("active");
+      document.getElementById("btnDouble").classList.remove("active");
+      if (mode === "단식") {
+        document.getElementById("btnSingle").classList.add("active");
+      } else {
+        document.getElementById("btnDouble").classList.add("active");
+      }
+    }
+
+    function handleClick(player, element) {
+      if (!confirmedMode) {
+        confirmedPlayers.add(player.name);
+        element.classList.add("selected");
+      } else {
+        element.classList.add("selected");
+
+        if (currentGameMode === "단식") {
+          matchList.push({ type: "단식", names: [player.name], levels: [player.level] });
+          updateTable();
+        } else {
+          tempPair.push({ name: player.name, level: player.level });
+          if (tempPair.length === 2) {
+            matchList.push({
+              type: "복식",
+              names: [tempPair[0].name, tempPair[1].name],
+              levels: [tempPair[0].level, tempPair[1].level]
+            });
+            updateTable();
+            tempPair = [];
+          }
+        }
+      }
+    }
+
+    function updateTable() {
+      selectionTableEl.innerHTML = "";
+      matchList.forEach((entry, index) => {
+        const names = entry.names.join(" / ");
+        const levels = entry.levels.join(" / ");
+        const row = `<tr>
+          <td>${index + 1}</td>
+          <td>${entry.type}</td>
+          <td>${names}</td>
+          <td>${levels}부</td>
+          <td><button onclick="removeEntry(${index})">삭제</button></td>
+        </tr>`;
+        selectionTableEl.insertAdjacentHTML("beforeend", row);
+      });
+    }
+
+    function removeEntry(index) {
+      matchList.splice(index, 1);
+      updateTable();
+    }
+
+    function confirmPlayers() {
+      confirmedMode = true;
+      document.querySelectorAll(".player").forEach(div => {
+        if (!confirmedPlayers.has(div.dataset.name)) {
+          div.classList.add("hidden");
+        }
+      });
+    }
+
+    function resetSelection() {
+      currentGameMode = "단식";
+      setGameMode(currentGameMode);
+      confirmedMode = false;
+      confirmedPlayers.clear();
+      matchList = [];
+      tempPair = [];
+      renderPlayers();
+      updateTable();
+    }
+function saveTableAsImage() {
+  const tableElement = document.querySelector("table");
+  html2canvas(tableElement).then(canvas => {
+    const link = document.createElement("a");
+    link.download = "table-image.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
   });
-  html += '</tr></thead><tbody>';
-if (!matchOrder.length) {
-  document.getElementById("matchTableArea").innerHTML = `
-    <p style="text-align:center; font-size:1.1rem; color:#d32f2f;">
-      ⚠️ 아직 경기 순서가 설정되지 않았습니다.<br/>
-      <a href="match-order.html" style="color:#1976d2; text-decoration:underline;">
-        👉 경기 순서를 먼저 설정하러 가기
-      </a>
-    </p>
-  `;
-  return;
 }
 
-  matchOrder.forEach((type, idx) => {
-    html += `<tr>`;
-    html += `<td data-label="순번">${idx + 1}</td>`;
-    html += `<td data-label="경기">${type}</td>`;
-    teamKeys.forEach(id => {
-      const lineup = teams[id].lineup?.[idx] || [];
-      html += `<td data-label="${teams[id].name}">${lineup.join(", ") || "-"}</td>`;
-    });
-    html += '</tr>';
-  });
 
-  html += '</tbody></table>';
-  document.getElementById("matchTableArea").innerHTML = html;
-}
-
-function resetTable() {
-  document.getElementById("matchTableArea").innerText = "초기화되었습니다. Firebase에서 새로운 데이터를 불러오세요.";
-}
-</script>
+    renderPlayers();
+  </script>
+  
 </body>
 </html>
