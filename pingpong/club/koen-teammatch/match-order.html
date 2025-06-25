@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>경기 순서 설정</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -15,56 +15,41 @@
     }
     h2 {
       text-align: center;
-      color: #1976d2;
+      margin-bottom: 16px;
+      font-size: 1.6em;
     }
     .button-group {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
       gap: 10px;
-      margin: 20px 0;
+      margin-bottom: 20px;
     }
-    .button-group button {
-      padding: 12px 16px;
-      font-size: 1rem;
-      border: none;
-      border-radius: 8px;
-      background-color: #42a5f5;
-      color: white;
-      cursor: pointer;
-    }
-    .button-group button:hover {
-      background-color: #1e88e5;
-    }
-    #orderDisplay {
-      text-align: center;
-      font-size: 1.1rem;
-      margin: 20px 0;
-    }
-    .actions {
-      text-align: center;
-      margin-top: 20px;
-    }
-    .actions button {
+    button {
       padding: 10px 16px;
       font-size: 1rem;
       border: none;
-      border-radius: 8px;
-      background-color: #388e3c;
-      color: white;
-      margin: 0 10px;
+      border-radius: 6px;
+      cursor: pointer;
     }
-    .actions button.reset {
-      background-color: #d32f2f;
+    .match-btn { background: #1976d2; color: white; }
+    .delete-btn { background: #d32f2f; color: white; }
+    .save-btn { background: #388e3c; color: white; margin-top: 10px; }
+    .return-btn { background: #616161; color: white; margin-top: 20px; }
+    .order-display {
+      text-align: center;
+      font-size: 1.2rem;
+      margin: 20px 0;
+      color: #333;
     }
 
-    @media (max-width: 600px) {
-      .button-group button, .actions button {
-        font-size: 0.95rem;
-        padding: 10px 12px;
+    @media screen and (max-width: 600px) {
+      .button-group {
+        flex-direction: column;
+        align-items: center;
       }
-      #orderDisplay {
-        font-size: 1rem;
+      button {
+        width: 80%;
       }
     }
   </style>
@@ -73,21 +58,24 @@
   <h2>🏓 경기 순서 설정</h2>
 
   <div class="button-group">
-    <button onclick="addMatch('단식')">단식</button>
-    <button onclick="addMatch('복식')">복식</button>
-    <button onclick="addMatch('혼합복식')">혼합복식</button>
-    <button onclick="removeLast()" style="background:#757575;">되돌리기</button>
+    <button class="match-btn" onclick="addMatch('단식')">단식</button>
+    <button class="match-btn" onclick="addMatch('복식')">복식</button>
+    <button class="match-btn" onclick="addMatch('혼합복식')">혼합복식</button>
+    <button class="delete-btn" onclick="removeLast()">⬅ 마지막 삭제</button>
+    <button class="delete-btn" onclick="resetOrder()">🗑 초기화</button>
   </div>
 
-  <div id="orderDisplay">현재 순서: (없음)</div>
+  <div class="order-display" id="orderDisplay">현재 순서: (없음)</div>
 
-  <div class="actions">
-    <button onclick="saveOrder()">✅ 저장</button>
-    <button class="reset" onclick="resetOrder()">초기화</button>
+  <div style="text-align: center;">
+    <button class="save-btn" onclick="saveOrder()">✅ 경기순서 저장</button>
+  </div>
+
+  <div style="text-align: center;">
+    <button class="return-btn" onclick="location.href='index.html'">🏓 대진표로 이동</button>
   </div>
 
   <script>
-  document.addEventListener("DOMContentLoaded", () => {
     const firebaseConfig = {
       apiKey: "AIzaSyDcJO_DClEdSo1HiPsL1KYbSWOVzMgSgEs",
       authDomain: "koen-teammatch.firebaseapp.com",
@@ -103,41 +91,39 @@
 
     let matchOrder = [];
 
-    window.addMatch = function(type) {
+    function addMatch(type) {
       matchOrder.push(type);
-      updateDisplay();
+      updateOrderDisplay();
     }
 
-    window.removeLast = function() {
+    function removeLast() {
       matchOrder.pop();
-      updateDisplay();
+      updateOrderDisplay();
     }
 
-    window.resetOrder = function() {
+    function resetOrder() {
       matchOrder = [];
-      updateDisplay();
+      updateOrderDisplay();
     }
 
-    window.saveOrder = function() {
+    function updateOrderDisplay() {
+      const view = document.getElementById("orderDisplay");
       if (matchOrder.length === 0) {
-        alert("경기 순서를 1개 이상 추가해주세요.");
+        view.innerHTML = "현재 순서: (없음)";
+      } else {
+        view.innerHTML = "현재 순서: " + matchOrder.join(" → ");
+      }
+    }
+
+    function saveOrder() {
+      if (matchOrder.length === 0) {
+        alert("경기 순서를 최소 1개 이상 추가해주세요.");
         return;
       }
       db.ref("matchOrder").set(matchOrder)
-        .then(() => alert("✅ 경기 순서가 저장되었습니다!"))
+        .then(() => alert("✅ 경기 순서가 저장되었습니다."))
         .catch(err => alert("❌ 저장 실패: " + err));
     }
-
-    function updateDisplay() {
-      const div = document.getElementById("orderDisplay");
-      if (matchOrder.length === 0) {
-        div.innerText = "현재 순서: (없음)";
-      } else {
-        div.innerHTML = `현재 순서: <strong>${matchOrder.join(" → ")}</strong>`;
-      }
-    }
-  });
-</script>
-
+  </script>
 </body>
 </html>
