@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>경기 순서 설정</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; }
+    button { margin: 5px; padding: 10px 14px; font-size: 16px; cursor: pointer; }
+    .order-display { margin-top: 20px; font-size: 18px; }
+    .highlight { font-weight: bold; color: #1976d2; }
+  </style>
+</head>
+<body>
+  <h2>🏓 경기 순서 구성하기</h2>
+  <p style="margin-top:-10px; font-size:16px; color:#555;">경기 순서대로 눌러주세요</p>
+  <div>
+    <button onclick="addMatch('단식')">단식</button>
+    <button onclick="addMatch('복식')">복식</button>
+    <button onclick="addMatch('혼합복식')">혼합복식</button>
+    <button onclick="removeLast()">삭제</button>
+    <button onclick="resetOrder()">초기화</button>
+  </div>
+
+  <div class="order-display" id="matchOrderView">
+    현재 순서: (없음)
+  </div>
+
+  <div style="margin-top: 20px;">
+    <button style="background:#388e3c; color:white;" onclick="saveMatchOrder()">
+      ✅ 경기순서 확정(Firebase 저장)</button>
+  </div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyDcJO_DClEdSo1HiPsL1KYbSWOVzMgSgEs",
+    authDomain: "koen-teammatch.firebaseapp.com",
+    databaseURL: "https://koen-teammatch-default-rtdb.firebaseio.com",
+    projectId: "koen-teammatch",
+    storageBucket: "koen-teammatch.appspot.com",
+    messagingSenderId: "302792900934",
+    appId: "1:302792900934:web:8e727af88df3de536f2547"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  let matchOrder = [];
+
+  function addMatch(type) {
+    matchOrder.push(type);
+    renderOrder();
+  }
+
+  function removeLast() {
+    matchOrder.pop();
+    renderOrder();
+  }
+
+  function resetOrder() {
+    matchOrder = [];
+    renderOrder();
+  }
+
+  function renderOrder() {
+    const view = document.getElementById("matchOrderView");
+    if (matchOrder.length === 0) {
+      view.innerHTML = "현재 순서: (없음)";
+    } else {
+      view.innerHTML = "현재 순서: <span class='highlight'>" + matchOrder.join(" → ") + "</span>";
+    }
+  }
+
+  function saveMatchOrder() {
+    if (matchOrder.length === 0) {
+      alert("경기 순서를 최소 1개 이상 설정해주세요.");
+      return;
+    }
+    db.ref("matchOrder").set(matchOrder)
+      .then(() => alert("✅ 경기 순서가 저장되었습니다!"))
+      .catch(err => alert("❌ 저장 실패: " + err));
+  }
+</script>
+</body>
+</html>
