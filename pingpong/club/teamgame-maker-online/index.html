@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>남동발전 단체전 리그전</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; background: #f9f9f9; }
+    h1, h2 { text-align: center; color: #0d47a1; }
+    .teams, .match, .summary { margin-bottom: 30px; }
+    .match-table, .summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .match-table th, .match-table td, .summary-table th, .summary-table td {
+      border: 1px solid #ccc; padding: 8px; text-align: center;
+    }
+    input[type="text"] { width: 80px; text-align: center; }
+    .button { background: #1976d2; color: white; border: none; padding: 6px 12px; margin: 10px auto; display: block; border-radius: 5px; cursor: pointer; }
+    .subtext { font-size: 12px; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>남동발전 탁구동호회 단체전</h1>
+
+  <div class="teams">
+    <h2>팀 구성</h2>
+    <ul>
+      <li><strong>에이스:</strong> 김철수, 박영희, 이민우, 조성진</li>
+      <li><strong>스매쉬:</strong> 정호, 유진, 민수, 재석</li>
+      <li><strong>승리:</strong> 성민, 강호, 주현, 동우</li>
+    </ul>
+  </div>
+
+  <div class="match">
+    <h2>경기 결과 입력</h2>
+    <div id="matches"></div>
+  </div>
+
+  <div class="summary">
+    <h2>최종 결과</h2>
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>팀</th>
+          <th>승수</th>
+          <th>셋트득실</th>
+          <th>순위</th>
+        </tr>
+      </thead>
+      <tbody id="summary-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const teams = ['에이스', '스매쉬', '승리'];
+    const matches = [
+      { a: '에이스', b: '스매쉬' },
+      { a: '스매쉬', b: '승리' },
+      { a: '승리', b: '에이스' },
+    ];
+
+    const results = {};
+    const scores = { 에이스: { win: 0, set: 0 }, 스매쉬: { win: 0, set: 0 }, 승리: { win: 0, set: 0 } };
+
+    const container = document.getElementById('matches');
+
+    matches.forEach((m, idx) => {
+      const key = `${m.a}-${m.b}`;
+      results[key] = Array(6).fill([0, 0]);
+      const div = document.createElement('div');
+      let rows = '';
+      for (let i = 0; i < 6; i++) {
+        rows += `
+          <tr>
+            <td>${i < 4 ? '단식' : '복식'} ${i + 1}</td>
+            <td><input type="text" id="${key}-playerA${i}" placeholder="${m.a} 선수" /><br><input type="text" id="${key}-a${i}" placeholder="세트" oninput="autoCalculateMatch('${m.a}', '${m.b}', '${key}')" /></td>
+            <td><input type="text" id="${key}-playerB${i}" placeholder="${m.b} 선수" /><br><input type="text" id="${key}-b${i}" placeholder="세트" oninput="autoCalculateMatch('${m.a}', '${m.b}', '${key}')" /></td>
+          </tr>`;
+      }
+
+      div.innerHTML = `
+        <h3>${m.a} vs ${m.b}</h3>
+        <table class="match-table">
+          <thead>
+            <tr><th>경기</th><th>${m.a}</th><th>${m.b}</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+      container.appendChild(div);
+    });
+
+    function resetScores() {
+      for (const team in scores) {
+        scores[team].win = 0;
+        scores[team].set = 0;
+      }
+    }
+
+    function autoCalculateMatch(teamA, teamB, key) {
+      resetScores();
+      matches.forEach((m) => {
+        let setA = 0, setB = 0;
+        const matchKey = `${m.a}-${m.b}`;
+        for (let i = 0; i < 6; i++) {
+          const a = parseInt(document.getElementById(`${matchKey}-a${i}`)?.value || '0');
+          const b = parseInt(document.getElementById(`${matchKey}-b${i}`)?.value || '0');
+          setA += a;
+          setB += b;
+        }
+        if (setA > setB) scores[m.a].win++;
+        else if (setB > setA) scores[m.b].win++;
+        scores[m.a].set += setA;
+        scores[m.b].set += setB;
+      });
+      updateSummary();
+    }
+
+    function updateSummary() {
+      const body = document.getElementById('summary-body');
+      const sorted = Object.entries(scores).sort((a, b) => {
+        if (b[1].win !== a[1].win) return b[1].win - a[1].win;
+        return b[1].set - a[1].set;
+      });
+      body.innerHTML = '';
+      sorted.forEach(([team, data], idx) => {
+        body.innerHTML += `
+          <tr>
+            <td>${team}</td>
+            <td>${data.win}</td>
+            <td>${data.set}</td>
+            <td>${idx + 1}</td>
+          </tr>
+        `;
+      });
+    }
+  </script>
+</body>
+</html>
