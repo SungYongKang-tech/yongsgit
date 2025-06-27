@@ -691,22 +691,42 @@ function renderTeams() {
     `;
     teamBox.appendChild(div);
   });
+  <button 
+  style="font-size:12px; padding:2px 6px; background:white; color:#1976d2; border:1px solid #1976d2; border-radius:4px; cursor:pointer;"
+  onclick="movePlayerUI('${m.name}', ${idx})"
+>이동</button>
 }
 
 function movePlayerUI(playerName, fromTeamIndex) {
-  const target = prompt(`'${playerName}' 선수를 어느 팀으로 이동하시겠습니까?\n(팀 번호 입력: 0부터 시작)`);
+  // 선택 가능한 팀 이름 목록
+  const options = teams.map((team, idx) => {
+    if (idx === fromTeamIndex) return ''; // 본인 팀 제외
+    return `<option value="${idx}">${team.leader.name} 팀</option>`;
+  }).filter(Boolean).join('');
 
-  const toIndex = parseInt(target, 10);
+  // 커스텀 팝업 생성
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = `
+    <div style="position:fixed; top:30%; left:50%; transform:translate(-50%, -50%); background:#fff; border:2px solid #1976d2; padding:20px; z-index:1000; border-radius:8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+      <p style="margin-bottom:10px;"><strong>${playerName}</strong> 선수를 이동할 팀을 선택하세요:</p>
+      <select id="teamSelect" style="font-size:14px; padding:5px; margin-bottom:10px;">
+        ${options}
+      </select><br/>
+      <button onclick="confirmTeamMove('${playerName}', ${fromTeamIndex})" style="padding:6px 12px; background:#1976d2; color:white; border:none; border-radius:4px;">이동</button>
+      <button onclick="this.parentElement.remove()" style="padding:6px 12px; margin-left:6px; background:#ccc; color:black; border:none; border-radius:4px;">취소</button>
+    </div>
+  `;
+  document.body.appendChild(wrapper);
+}
+function confirmTeamMove(playerName, fromTeamIndex) {
+  const select = document.getElementById("teamSelect");
+  const toIndex = parseInt(select.value, 10);
 
-  if (
-    !isNaN(toIndex) &&
-    toIndex >= 0 &&
-    toIndex < teams.length &&
-    toIndex !== fromTeamIndex
-  ) {
+  if (!isNaN(toIndex) && toIndex !== fromTeamIndex) {
     movePlayerToTeam(playerName, toIndex);
+    select.parentElement.remove(); // 팝업 제거
   } else {
-    alert("잘못된 입력입니다. 이동할 팀 번호를 정확히 입력해주세요.");
+    alert("이동할 팀을 정확히 선택해주세요.");
   }
 }
 
