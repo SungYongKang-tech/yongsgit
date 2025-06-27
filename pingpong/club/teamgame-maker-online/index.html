@@ -1,93 +1,102 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>간소화 단체전 경기표</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>팀별 명단 보기</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
+      background-color: #f0f2f5;
       padding: 20px;
-      background: #f4f4f4;
     }
-    h1 {
+    h2 {
       text-align: center;
-      color: #0d47a1;
+      color: #1a237e;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 30px;
-      background-color: white;
+    .teams {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 20px;
     }
-    th, td {
+    .team-card {
+      background: white;
       border: 1px solid #ccc;
-      padding: 10px;
-      text-align: center;
+      border-radius: 8px;
+      padding: 10px 16px;
+      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+      min-width: 200px;
     }
-    td[contenteditable="true"] {
-      background-color: #e3f2fd;
-      outline: none;
+    .team-card h3 {
+      margin-top: 0;
+      color: #d32f2f;
+      font-size: 18px;
+    }
+    .team-card ul {
+      list-style: none;
+      padding: 0;
+    }
+    .team-card li {
+      margin: 4px 0;
     }
   </style>
 </head>
 <body>
-  <h1>탁구 단체전 경기표</h1>
 
-  <table>
-    <thead>
-      <tr>
-        <th>경기</th>
-        <th>팀 A 선수</th>
-        <th>팀 A 점수</th>
-        <th>팀 B 점수</th>
-        <th>팀 B 선수</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>단식 1</td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-      </tr>
-      <tr>
-        <td>단식 2</td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-      </tr>
-      <tr>
-        <td>단식 3</td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-      </tr>
-      <tr>
-        <td>단식 4</td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-      </tr>
-      <tr>
-        <td>복식 1</td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-      </tr>
-      <tr>
-        <td>복식 2</td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-        <td contenteditable="true"></td>
-      </tr>
-    </tbody>
-  </table>
+  <h2>Firebase에서 가져온 팀별 선수명단</h2>
+  <div class="teams" id="teamList"></div>
+
+  <script>
+    // ✅ Firebase 구성 정보
+    const firebaseConfig = {
+      apiKey: "AIzaSyDizDF0QLAi7TNvGv7UyvD3SKCgCYVYkao",
+      authDomain: "teammatch-start.firebaseapp.com",
+      projectId: "teammatch-start",
+      storageBucket: "teammatch-start.appspot.com",
+      messagingSenderId: "501700065255",
+      appId: "1:501700065255:web:5b62002331a9206708af42",
+      databaseURL: "https://teammatch-start-default-rtdb.firebaseio.com"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const teamList = document.getElementById("teamList");
+
+    // ✅ 팀 정보 불러오기
+    db.ref("teams").once("value").then(snapshot => {
+      const teams = snapshot.val();
+
+      if (!teams) {
+        teamList.innerHTML = "<p>팀 데이터가 없습니다.</p>";
+        return;
+      }
+
+      Object.keys(teams).forEach(teamId => {
+        const team = teams[teamId];
+        const div = document.createElement("div");
+        div.className = "team-card";
+
+        const membersHTML = team.members?.map(
+          m => `<li>${m.name} (${m.level}부)</li>`
+        ).join("") || "<li>팀원이 없습니다</li>";
+
+        div.innerHTML = `
+          <h3>${team.leader.name} 팀</h3>
+          <ul>
+            <li><strong>${team.leader.name} (${team.leader.level}부)</strong> - 팀장</li>
+            ${membersHTML}
+          </ul>
+        `;
+
+        teamList.appendChild(div);
+      });
+    });
+  </script>
+
 </body>
 </html>
