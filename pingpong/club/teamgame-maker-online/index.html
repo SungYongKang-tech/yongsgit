@@ -15,6 +15,33 @@
     input[type="text"] { width: 80px; text-align: center; }
     .button { background: #1976d2; color: white; border: none; padding: 6px 12px; margin: 10px auto; display: block; border-radius: 5px; cursor: pointer; }
     .subtext { font-size: 12px; color: #555; }
+    .player-popup {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 2px solid #1976d2;
+      border-radius: 10px;
+      padding: 20px;
+      display: none;
+      z-index: 1000;
+    }
+    .player-popup button {
+      margin: 5px;
+      padding: 8px 12px;
+      border: none;
+      background: #1976d2;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.3);
+      display: none;
+      z-index: 999;
+    }
   </style>
 </head>
 <body>
@@ -49,8 +76,20 @@
     </table>
   </div>
 
+  <div class="overlay" id="overlay"></div>
+  <div class="player-popup" id="popup">
+    <div id="popup-title" style="margin-bottom:10px; font-weight:bold;"></div>
+    <div id="popup-buttons"></div>
+  </div>
+
   <script>
-    const teams = ['에이스', '스매쉬', '승리'];
+    const teamMembers = {
+      '에이스': ['김철수', '박영희', '이민우', '조성진'],
+      '스매쉬': ['정호', '유진', '민수', '재석'],
+      '승리': ['성민', '강호', '주현', '동우']
+    };
+
+    const teams = Object.keys(teamMembers);
     const matches = [
       { a: '에이스', b: '스매쉬' },
       { a: '스매쉬', b: '승리' },
@@ -71,8 +110,8 @@
         rows += `
           <tr>
             <td>${i < 4 ? '단식' : '복식'} ${i + 1}</td>
-            <td><input type="text" id="${key}-playerA${i}" placeholder="${m.a} 선수" /><br><input type="text" id="${key}-a${i}" placeholder="세트" oninput="autoCalculateMatch('${m.a}', '${m.b}', '${key}')" /></td>
-            <td><input type="text" id="${key}-playerB${i}" placeholder="${m.b} 선수" /><br><input type="text" id="${key}-b${i}" placeholder="세트" oninput="autoCalculateMatch('${m.a}', '${m.b}', '${key}')" /></td>
+            <td><input type="text" id="${key}-playerA${i}" placeholder="${m.a} 선수" onclick="selectPlayer('${m.a}', '${key}-playerA${i}')" readonly /><br><input type="text" id="${key}-a${i}" placeholder="세트" oninput="autoCalculateMatch()" /></td>
+            <td><input type="text" id="${key}-playerB${i}" placeholder="${m.b} 선수" onclick="selectPlayer('${m.b}', '${key}-playerB${i}')" readonly /><br><input type="text" id="${key}-b${i}" placeholder="세트" oninput="autoCalculateMatch()" /></td>
           </tr>`;
       }
 
@@ -95,7 +134,7 @@
       }
     }
 
-    function autoCalculateMatch(teamA, teamB, key) {
+    function autoCalculateMatch() {
       resetScores();
       matches.forEach((m) => {
         let setA = 0, setB = 0;
@@ -131,6 +170,27 @@
           </tr>
         `;
       });
+    }
+
+    function selectPlayer(team, inputId) {
+      const popup = document.getElementById('popup');
+      const overlay = document.getElementById('overlay');
+      const buttonsDiv = document.getElementById('popup-buttons');
+      const title = document.getElementById('popup-title');
+      title.textContent = `${team} 팀 선수 선택`;
+      buttonsDiv.innerHTML = '';
+      teamMembers[team].forEach(name => {
+        const btn = document.createElement('button');
+        btn.textContent = name;
+        btn.onclick = () => {
+          document.getElementById(inputId).value = name;
+          popup.style.display = 'none';
+          overlay.style.display = 'none';
+        };
+        buttonsDiv.appendChild(btn);
+      });
+      popup.style.display = 'block';
+      overlay.style.display = 'block';
     }
   </script>
 </body>
