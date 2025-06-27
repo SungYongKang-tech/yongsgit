@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -12,7 +13,7 @@
     .match-table th, .match-table td, .summary-table th, .summary-table td {
       border: 1px solid #ccc; padding: 8px; text-align: center;
     }
-    input[type="text"] { width: 80px; text-align: center; }
+    input[type="text"] { width: 80px; text-align: center; margin: 2px; }
     .button { background: #1976d2; color: white; border: none; padding: 6px 12px; margin: 10px auto; display: block; border-radius: 5px; cursor: pointer; }
     .subtext { font-size: 12px; color: #555; }
     .player-popup {
@@ -25,6 +26,7 @@
       padding: 20px;
       display: none;
       z-index: 1000;
+      min-width: 200px;
     }
     .player-popup button {
       margin: 5px;
@@ -76,151 +78,153 @@
     </table>
   </div>
 
-  <div class="overlay" id="overlay"></div>
+  <div class="overlay" id="overlay" onclick="closePopup()"></div>
   <div class="player-popup" id="popup">
     <div id="popup-title" style="margin-bottom:10px; font-weight:bold;"></div>
     <div id="popup-buttons"></div>
+    <button onclick="closePopup()">닫기</button>
   </div>
 
-  <script>
-  const teamMembers = {
-    '에이스': ['김철수', '박영희', '이민우', '조성진'],
-    '스매쉬': ['정호', '유진', '민수', '재석'],
-    '승리': ['성민', '강호', '주현', '동우']
-  };
+<script>
+const teamMembers = {
+  '에이스': ['김철수', '박영희', '이민우', '조성진'],
+  '스매쉬': ['정호', '유진', '민수', '재석'],
+  '승리': ['성민', '강호', '주현', '동우']
+};
 
-  const teams = Object.keys(teamMembers);
-  const matches = [
-    { a: '에이스', b: '스매쉬' },
-    { a: '스매쉬', b: '승리' },
-    { a: '승리', b: '에이스' },
-  ];
+const matches = [
+  { a: '에이스', b: '스매쉬' },
+  { a: '스매쉬', b: '승리' },
+  { a: '승리', b: '에이스' },
+];
 
-  const scores = { 에이스: { win: 0, set: 0 }, 스매쉬: { win: 0, set: 0 }, 승리: { win: 0, set: 0 } };
-  const container = document.getElementById('matches');
+const scores = { 에이스: { win: 0, set: 0 }, 스매쉬: { win: 0, set: 0 }, 승리: { win: 0, set: 0 } };
+const container = document.getElementById('matches');
 
-  function resetScores() {
-    for (const team in scores) {
-      scores[team].win = 0;
-      scores[team].set = 0;
+matches.forEach((m) => {
+  const key = `${m.a}-${m.b}`;
+  const div = document.createElement('div');
+  let rows = '';
+  for (let i = 0; i < 6; i++) {
+    rows += `
+      <tr>
+        <td>${i < 4 ? '단식' : '복식'} ${i < 4 ? i + 1 : i - 3}</td>
+        <td>
+          ${[0,1].map(j => `<input type="text" id="${key}-playerA${i}-${j}" placeholder="${m.a} 선수" onclick="selectPlayer('${m.a}', '${key}-playerA${i}-${j}')" readonly />`).join('')}<br>
+          <input type="text" id="${key}-a${i}" placeholder="세트" oninput="validateInput(this); autoCalculateMatch()" />
+        </td>
+        <td>
+          ${[0,1].map(j => `<input type="text" id="${key}-playerB${i}-${j}" placeholder="${m.b} 선수" onclick="selectPlayer('${m.b}', '${key}-playerB${i}-${j}')" readonly />`).join('')}<br>
+          <input type="text" id="${key}-b${i}" placeholder="세트" oninput="validateInput(this); autoCalculateMatch()" />
+        </td>
+      </tr>`;
+  }
+
+  div.innerHTML = `
+    <h3>${m.a} vs ${m.b}</h3>
+    <table class="match-table">
+      <thead><tr><th>경기</th><th>${m.a}</th><th>${m.b}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  container.appendChild(div);
+});
+
+function validateInput(input) {
+  const val = input.value;
+  if (!/^[0-3]$/.test(val)) input.value = '';
+}
+
+function autoCalculateMatch() {
+  for (const team in scores) {
+    scores[team].win = 0;
+    scores[team].set = 0;
+  }
+
+  matches.forEach((m) => {
+    const key = `${m.a}-${m.b}`;
+    let setA = 0, setB = 0;
+    for (let i = 0; i < 6; i++) {
+      const a = parseInt(document.getElementById(`${key}-a${i}`)?.value || '0');
+      const b = parseInt(document.getElementById(`${key}-b${i}`)?.value || '0');
+      setA += a;
+      setB += b;
+      const cellA = document.getElementById(`${key}-a${i}`);
+      const cellB = document.getElementById(`${key}-b${i}`);
+      cellA.style.backgroundColor = b > a ? '' : (a > b ? '#fff59d' : '');
+      cellB.style.backgroundColor = a > b ? '' : (b > a ? '#fff59d' : '');
     }
-  }
+    if (setA > setB) scores[m.a].win++;
+    else if (setB > setA) scores[m.b].win++;
+    scores[m.a].set += setA;
+    scores[m.b].set += setB;
+  });
 
-  function validateInput(input) {
-    const val = input.value;
-    if (!/^[0-3]$/.test(val)) input.value = '';
-  }
+  updateSummary();
+  checkDuplicatePlayers();
+}
 
-  function highlightWinner(cellA, cellB) {
-    const a = parseInt(cellA.value || '0');
-    const b = parseInt(cellB.value || '0');
-    cellA.style.backgroundColor = '';
-    cellB.style.backgroundColor = '';
-    if (a > b) cellA.style.backgroundColor = '#fff59d';
-    else if (b > a) cellB.style.backgroundColor = '#fff59d';
-  }
+function updateSummary() {
+  const body = document.getElementById('summary-body');
+  const sorted = Object.entries(scores).sort((a, b) => b[1].win - a[1].win || b[1].set - a[1].set);
+  body.innerHTML = '';
+  sorted.forEach(([team, data], idx) => {
+    body.innerHTML += `<tr><td>${team}</td><td>${data.win}</td><td>${data.set}</td><td>${idx + 1}</td></tr>`;
+  });
+}
 
-  function checkDuplicatePlayers() {
-    matches.forEach((m) => {
-      const key = `${m.a}-${m.b}`;
-      const used = new Set();
-      for (let i = 0; i < 6; i++) {
-        for (let j = 0; j <= 1; j++) {
-          const a = document.getElementById(`${key}-playerA${i}-${j}`);
-          const b = document.getElementById(`${key}-playerB${i}-${j}`);
-          [a, b].forEach(el => {
-            if (el && el.value) {
-              const val = el.value;
-              if (used.has(val)) el.style.backgroundColor = '#f8d7da';
-              else {
-                el.style.backgroundColor = '';
-                used.add(val);
-              }
+function selectPlayer(team, inputId) {
+  const popup = document.getElementById('popup');
+  const overlay = document.getElementById('overlay');
+  const buttonsDiv = document.getElementById('popup-buttons');
+  const title = document.getElementById('popup-title');
+  title.textContent = `${team} 팀 선수 선택`;
+  buttonsDiv.innerHTML = '';
+  teamMembers[team].forEach(name => {
+    const btn = document.createElement('button');
+    btn.textContent = name;
+    btn.onclick = () => {
+      const input = document.getElementById(inputId);
+      input.value = name;
+      const match = inputId.match(/player([AB])(\d+)-1/);
+      if (match) {
+        const pairId = inputId.replace(/1"$/, '0"').slice(0, -1);
+        const pairVal = document.getElementById(pairId)?.value;
+        if (pairVal) input.value = pairVal + '/' + name;
+      }
+      closePopup();
+      autoCalculateMatch();
+    };
+    buttonsDiv.appendChild(btn);
+  });
+  popup.style.display = 'block';
+  overlay.style.display = 'block';
+}
+
+function closePopup() {
+  document.getElementById('popup').style.display = 'none';
+  document.getElementById('overlay').style.display = 'none';
+}
+
+function checkDuplicatePlayers() {
+  matches.forEach((m) => {
+    const key = `${m.a}-${m.b}`;
+    const used = new Set();
+    for (let i = 0; i < 6; i++) {
+      for (let j = 0; j <= 1; j++) {
+        ['A', 'B'].forEach(side => {
+          const el = document.getElementById(`${key}-player${side}${i}-${j}`);
+          if (el?.value) {
+            if (used.has(el.value)) el.style.backgroundColor = '#f8d7da';
+            else {
+              el.style.backgroundColor = '';
+              used.add(el.value);
             }
-          });
-        }
+          }
+        });
       }
-    });
-  }
-
-  function autoCalculateMatch() {
-    resetScores();
-    matches.forEach((m) => {
-      let setA = 0, setB = 0;
-      const key = `${m.a}-${m.b}`;
-      for (let i = 0; i < 6; i++) {
-        const inputA = document.getElementById(`${key}-a${i}`);
-        const inputB = document.getElementById(`${key}-b${i}`);
-        const a = parseInt(inputA?.value || '0');
-        const b = parseInt(inputB?.value || '0');
-        setA += a;
-        setB += b;
-        highlightWinner(inputA, inputB);
-      }
-      if (setA > setB) scores[m.a].win++;
-      else if (setB > setA) scores[m.b].win++;
-      scores[m.a].set += setA;
-      scores[m.b].set += setB;
-    });
-    updateSummary();
-    checkDuplicatePlayers();
-  }
-
-  function updateSummary() {
-    const body = document.getElementById('summary-body');
-    const sorted = Object.entries(scores).sort((a, b) => {
-      if (b[1].win !== a[1].win) return b[1].win - a[1].win;
-      return b[1].set - a[1].set;
-    });
-    body.innerHTML = '';
-    sorted.forEach(([team, data], idx) => {
-      body.innerHTML += `
-        <tr>
-          <td>${team}</td>
-          <td>${data.win}</td>
-          <td>${data.set}</td>
-          <td>${idx + 1}</td>
-        </tr>
-      `;
-    });
-  }
-
-  function selectPlayer(team, inputId) {
-    const popup = document.getElementById('popup');
-    const overlay = document.getElementById('overlay');
-    const buttonsDiv = document.getElementById('popup-buttons');
-    const title = document.getElementById('popup-title');
-    title.textContent = `${team} 팀 선수 선택`;
-    buttonsDiv.innerHTML = '';
-    teamMembers[team].forEach(name => {
-      const btn = document.createElement('button');
-      btn.textContent = name;
-      btn.onclick = () => {
-        const input = document.getElementById(inputId);
-        input.value = name;
-
-        // 복식 자동 "/" 붙이기 (시각적 효과만)
-        const parts = inputId.split("-");
-        const index = parts[2]?.match(/player[A|B](\d+)-(\d+)/);
-        if (index && index[2] === '1') {
-          const pairedId = inputId.replace(/1"$/, '0"').slice(0, -1);
-          const first = document.getElementById(pairedId)?.value || '';
-          if (first) input.value = first + '/' + name;
-        }
-
-        closePopup();
-        autoCalculateMatch();
-      };
-      buttonsDiv.appendChild(btn);
-    });
-    popup.style.display = 'block';
-    overlay.style.display = 'block';
-  }
-
-  function closePopup() {
-    document.getElementById('popup').style.display = 'none';
-    document.getElementById('overlay').style.display = 'none';
-  }
+    }
+  });
+}
 </script>
 
 </body>
