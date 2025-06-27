@@ -121,11 +121,11 @@
         }
     
         .scroll-table {
-        overflow-x: auto;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        margin-top: 20px;
-        }
+  overflow-x: auto;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-top: 20px;
+}
 
 .scroll-table table {
   border-collapse: collapse;
@@ -172,26 +172,6 @@
   border: none;
   border-radius: 4px;
   cursor: pointer;
-}
-.move-btn {
-  font-size: 12px;
-  padding: 2px 6px;
-  background-color: white;
-  color: #1976d2;
-  border: 1px solid #1976d2;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-left: 5px;
-}
-.move-btn {
-  font-size: 12px;
-  padding: 2px 6px;
-  background-color: white;
-  color: #1976d2;
-  border: 1px solid #1976d2;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-left: 5px;
 }
 
 
@@ -283,14 +263,12 @@
 let popupTeamNames = [];
 let popupI = 0;
 let popupJ = 0;
-let teams = []; // 팀 구성 정보 전역 저장
-
 
 
   let allPlayers = [
     { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
       { name: "이영진", level: 6 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 }, { name: "조낭연", level: 6 },
-      { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 }, { name: "아픈희영", level: 7 },
+      { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
       { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "임춘근", level: 9 },
       { name: "전성무", level: 9 }, { name: "박인찬", level: 8 }, { name: "송창근", level: 9 },
       { name: "강호선", level: 10 }, { name: "조보미", level: 12 }, { name: "홍지원", level: 13 },
@@ -358,18 +336,14 @@ let teams = []; // 팀 구성 정보 전역 저장
   }
 
 function assignTeams() {
-  teams = finalizedLeaders.map(i => ({
-  leader: allPlayers[i],
-  members: [],
-  sum: allPlayers[i].level,
-  }));
-  if (finalizedLeaders.length < 1) {
-  alert("'팀장 선정 완료' 버튼을 먼저 눌러주세요.");
-  return;
+  const teamCount = finalizedLeaders.length;
+  if (teamCount < 1) {
+    alert("'팀장 선정 완료' 버튼을 먼저 눌러주세요.");
+    return;
   }
 
   const used = new Set(finalizedLeaders);
-  teams = finalizedLeaders.map(i => ({
+  const teams = finalizedLeaders.map(i => ({
     leader: allPlayers[i],
     members: [],
     sum: allPlayers[i].level,
@@ -416,20 +390,11 @@ teams.forEach((team, idx) => {
     <h3>${team.leader.name} 팀</h3>
     <ul>
       <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
-      ${sortedMembers.map(m => `
-    <li>
-      ${m.name} (${m.level}부)
-      <button class="move-btn" onclick="movePlayerUI('${m.name}')">이동</button>
-    </li>
-  `).join('')}
+      ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
     </ul>
     <p><small>부수합: ${team.sum}</small></p>`;
     
   teamBox.appendChild(div);
-// assignTeams 마지막에 추가
-renderTeams();  // 팀 카드 및 이동 버튼 생성
-
-
 });
 }
 
@@ -652,107 +617,6 @@ function addPlayer() {
   nameInput.value = "";
   levelInput.value = "";
   renderPlayers();
-}
-
-function resetLeagueIfExists() {
-  // 리그전 데이터가 있으면 초기화
-  if (Object.keys(matchResults).length > 0) {
-    matchResults = {};
-    const container = document.getElementById("matchSchedule");
-    container.innerHTML = "";
-    console.log("리그전 자동 초기화됨 (선수 이동 감지)");
-    alert("선수 변경으로 인해 리그전이 초기화되었습니다.");
-  }
-}
-
-function movePlayerToTeam(playerName, targetTeamIndex) {
-  // 선수 검색 및 이동 처리
-  const player = findPlayerByName(playerName); // 사용자 정의 함수
-  const currentTeam = findCurrentTeamOfPlayer(player); // 사용자 정의 함수
-
-  if (!player || !currentTeam) return;
-
-  // 기존 팀에서 제거
-  currentTeam.members = currentTeam.members.filter(p => p.name !== player.name);
-  currentTeam.sum -= player.level;
-
-  // 대상 팀에 추가
-  teams[targetTeamIndex].members.push(player);
-  teams[targetTeamIndex].sum += player.level;
-
-  // 리그전 초기화
-  resetLeagueIfExists();
-
-  // 팀 정보 다시 렌더링
-  renderTeams();
-}
-function findPlayerByName(name) {
-  return allPlayers.find(p => p.name === name);
-}
-function findCurrentTeamOfPlayer(player) {
-  return teams.find(team => team.members.some(m => m.name === player.name));
-}
-
-function renderTeams() {
-  const teamBox = document.getElementById("teams");
-  teamBox.innerHTML = "";
-
-  teams.forEach((team, idx) => {
-    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
-    const div = document.createElement("div");
-    div.className = "team-card";
-    div.innerHTML = `
-      <h3>${team.leader.name} 팀</h3>
-      <ul>
-        <li><strong>${team.leader.name} (${team.leader.level}부)</strong> - 팀장</li>
-        ${sortedMembers.map(m => `
-          <li>
-            ${m.name} (${m.level}부)
-            <button onclick="movePlayerUI('${m.name}', ${idx})">이동</button>
-          </li>
-        `).join("")}
-      </ul>
-      <p><small>부수합: ${team.sum}</small></p>
-    `;
-    teamBox.appendChild(div);
-  });
-  <button 
-  style="font-size:12px; padding:2px 6px; background:white; color:#1976d2; border:1px solid #1976d2; border-radius:4px; cursor:pointer;"
-  onclick="movePlayerUI('${m.name}', ${idx})"
->이동</button>
-}
-
-function movePlayerUI(playerName, fromTeamIndex) {
-  // 선택 가능한 팀 이름 목록
-  const options = teams.map((team, idx) => {
-    if (idx === fromTeamIndex) return ''; // 본인 팀 제외
-    return `<option value="${idx}">${team.leader.name} 팀</option>`;
-  }).filter(Boolean).join('');
-
-  // 커스텀 팝업 생성
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = `
-    <div style="position:fixed; top:30%; left:50%; transform:translate(-50%, -50%); background:#fff; border:2px solid #1976d2; padding:20px; z-index:1000; border-radius:8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
-      <p style="margin-bottom:10px;"><strong>${playerName}</strong> 선수를 이동할 팀을 선택하세요:</p>
-      <select id="teamSelect" style="font-size:14px; padding:5px; margin-bottom:10px;">
-        ${options}
-      </select><br/>
-      <button onclick="confirmTeamMove('${playerName}', ${fromTeamIndex})" style="padding:6px 12px; background:#1976d2; color:white; border:none; border-radius:4px;">이동</button>
-      <button onclick="this.parentElement.remove()" style="padding:6px 12px; margin-left:6px; background:#ccc; color:black; border:none; border-radius:4px;">취소</button>
-    </div>
-  `;
-  document.body.appendChild(wrapper);
-}
-function confirmTeamMove(playerName, fromTeamIndex) {
-  const select = document.getElementById("teamSelect");
-  const toIndex = parseInt(select.value, 10);
-
-  if (!isNaN(toIndex) && toIndex !== fromTeamIndex) {
-    movePlayerToTeam(playerName, toIndex);
-    select.parentElement.remove(); // 팝업 제거
-  } else {
-    alert("이동할 팀을 정확히 선택해주세요.");
-  }
 }
 
 
