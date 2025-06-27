@@ -1,231 +1,93 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>남동발전 단체전 리그전</title>
+  <title>간소화 단체전 경기표</title>
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; background: #f9f9f9; }
-    h1, h2 { text-align: center; color: #0d47a1; }
-    .teams, .match, .summary { margin-bottom: 30px; }
-    .match-table, .summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .match-table th, .match-table td, .summary-table th, .summary-table td {
-      border: 1px solid #ccc; padding: 8px; text-align: center;
-    }
-    input[type="text"] { width: 80px; text-align: center; margin: 2px; }
-    .button { background: #1976d2; color: white; border: none; padding: 6px 12px; margin: 10px auto; display: block; border-radius: 5px; cursor: pointer; }
-    .subtext { font-size: 12px; color: #555; }
-    .player-popup {
-      position: fixed;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      border: 2px solid #1976d2;
-      border-radius: 10px;
+    body {
+      font-family: 'Segoe UI', sans-serif;
       padding: 20px;
-      display: none;
-      z-index: 1000;
-      min-width: 200px;
+      background: #f4f4f4;
     }
-    .player-popup button {
-      margin: 5px;
-      padding: 8px 12px;
-      border: none;
-      background: #1976d2;
-      color: white;
-      border-radius: 5px;
-      cursor: pointer;
+    h1 {
+      text-align: center;
+      color: #0d47a1;
     }
-    .overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.3);
-      display: none;
-      z-index: 999;
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+      background-color: white;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: center;
+    }
+    td[contenteditable="true"] {
+      background-color: #e3f2fd;
+      outline: none;
     }
   </style>
 </head>
 <body>
-  <h1>남동발전 탁구동호회 단체전</h1>
+  <h1>탁구 단체전 경기표</h1>
 
-  <div class="teams">
-    <h2>팀 구성</h2>
-    <ul>
-      <li><strong>에이스:</strong> 김철수, 박영희, 이민우, 조성진</li>
-      <li><strong>스매쉬:</strong> 정호, 유진, 민수, 재석</li>
-      <li><strong>승리:</strong> 성민, 강호, 주현, 동우</li>
-    </ul>
-  </div>
-
-  <div class="match">
-    <h2>경기 결과 입력</h2>
-    <div id="matches"></div>
-  </div>
-
-  <div class="summary">
-    <h2>최종 결과</h2>
-    <table class="summary-table">
-      <thead>
-        <tr>
-          <th>팀</th>
-          <th>승수</th>
-          <th>셋트득실</th>
-          <th>순위</th>
-        </tr>
-      </thead>
-      <tbody id="summary-body"></tbody>
-    </table>
-  </div>
-
-  <div class="overlay" id="overlay" onclick="closePopup()"></div>
-  <div class="player-popup" id="popup">
-    <div id="popup-title" style="margin-bottom:10px; font-weight:bold;"></div>
-    <div id="popup-buttons"></div>
-    <button onclick="closePopup()">닫기</button>
-  </div>
-
-<script>
-const teamMembers = {
-  '에이스': ['김철수', '박영희', '이민우', '조성진'],
-  '스매쉬': ['정호', '유진', '민수', '재석'],
-  '승리': ['성민', '강호', '주현', '동우']
-};
-
-const matches = [
-  { a: '에이스', b: '스매쉬' },
-  { a: '스매쉬', b: '승리' },
-  { a: '승리', b: '에이스' },
-];
-
-const scores = { 에이스: { win: 0, set: 0 }, 스매쉬: { win: 0, set: 0 }, 승리: { win: 0, set: 0 } };
-const container = document.getElementById('matches');
-
-matches.forEach((m) => {
-  const key = `${m.a}-${m.b}`;
-  const div = document.createElement('div');
-  let rows = '';
-  for (let i = 0; i < 6; i++) {
-    rows += `
+  <table>
+    <thead>
       <tr>
-        <td>${i < 4 ? '단식' : '복식'} ${i < 4 ? i + 1 : i - 3}</td>
-        <td>
-          ${[0,1].map(j => `<input type="text" id="${key}-playerA${i}-${j}" placeholder="${m.a} 선수" onclick="selectPlayer('${m.a}', '${key}-playerA${i}-${j}')" readonly />`).join('')}<br>
-          <input type="text" id="${key}-a${i}" placeholder="세트" oninput="validateInput(this); autoCalculateMatch()" />
-        </td>
-        <td>
-          ${[0,1].map(j => `<input type="text" id="${key}-playerB${i}-${j}" placeholder="${m.b} 선수" onclick="selectPlayer('${m.b}', '${key}-playerB${i}-${j}')" readonly />`).join('')}<br>
-          <input type="text" id="${key}-b${i}" placeholder="세트" oninput="validateInput(this); autoCalculateMatch()" />
-        </td>
-      </tr>`;
-  }
-
-  div.innerHTML = `
-    <h3>${m.a} vs ${m.b}</h3>
-    <table class="match-table">
-      <thead><tr><th>경기</th><th>${m.a}</th><th>${m.b}</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  container.appendChild(div);
-});
-
-function validateInput(input) {
-  const val = input.value;
-  if (!/^[0-3]$/.test(val)) input.value = '';
-}
-
-function autoCalculateMatch() {
-  for (const team in scores) {
-    scores[team].win = 0;
-    scores[team].set = 0;
-  }
-
-  matches.forEach((m) => {
-    const key = `${m.a}-${m.b}`;
-    let setA = 0, setB = 0;
-    for (let i = 0; i < 6; i++) {
-      const a = parseInt(document.getElementById(`${key}-a${i}`)?.value || '0');
-      const b = parseInt(document.getElementById(`${key}-b${i}`)?.value || '0');
-      setA += a;
-      setB += b;
-      const cellA = document.getElementById(`${key}-a${i}`);
-      const cellB = document.getElementById(`${key}-b${i}`);
-      cellA.style.backgroundColor = b > a ? '' : (a > b ? '#fff59d' : '');
-      cellB.style.backgroundColor = a > b ? '' : (b > a ? '#fff59d' : '');
-    }
-    if (setA > setB) scores[m.a].win++;
-    else if (setB > setA) scores[m.b].win++;
-    scores[m.a].set += setA;
-    scores[m.b].set += setB;
-  });
-
-  updateSummary();
-  checkDuplicatePlayers();
-}
-
-function updateSummary() {
-  const body = document.getElementById('summary-body');
-  const sorted = Object.entries(scores).sort((a, b) => b[1].win - a[1].win || b[1].set - a[1].set);
-  body.innerHTML = '';
-  sorted.forEach(([team, data], idx) => {
-    body.innerHTML += `<tr><td>${team}</td><td>${data.win}</td><td>${data.set}</td><td>${idx + 1}</td></tr>`;
-  });
-}
-
-function selectPlayer(team, inputId) {
-  const popup = document.getElementById('popup');
-  const overlay = document.getElementById('overlay');
-  const buttonsDiv = document.getElementById('popup-buttons');
-  const title = document.getElementById('popup-title');
-  title.textContent = `${team} 팀 선수 선택`;
-  buttonsDiv.innerHTML = '';
-  teamMembers[team].forEach(name => {
-    const btn = document.createElement('button');
-    btn.textContent = name;
-    btn.onclick = () => {
-      const input = document.getElementById(inputId);
-      input.value = name;
-      const match = inputId.match(/player([AB])(\d+)-1/);
-      if (match) {
-        const pairId = inputId.replace(/1"$/, '0"').slice(0, -1);
-        const pairVal = document.getElementById(pairId)?.value;
-        if (pairVal) input.value = pairVal + '/' + name;
-      }
-      closePopup();
-      autoCalculateMatch();
-    };
-    buttonsDiv.appendChild(btn);
-  });
-  popup.style.display = 'block';
-  overlay.style.display = 'block';
-}
-
-function closePopup() {
-  document.getElementById('popup').style.display = 'none';
-  document.getElementById('overlay').style.display = 'none';
-}
-
-function checkDuplicatePlayers() {
-  matches.forEach((m) => {
-    const key = `${m.a}-${m.b}`;
-    const used = new Set();
-    for (let i = 0; i < 6; i++) {
-      for (let j = 0; j <= 1; j++) {
-        ['A', 'B'].forEach(side => {
-          const el = document.getElementById(`${key}-player${side}${i}-${j}`);
-          if (el?.value) {
-            if (used.has(el.value)) el.style.backgroundColor = '#f8d7da';
-            else {
-              el.style.backgroundColor = '';
-              used.add(el.value);
-            }
-          }
-        });
-      }
-    }
-  });
-}
-</script>
-
+        <th>경기</th>
+        <th>팀 A 선수</th>
+        <th>팀 A 점수</th>
+        <th>팀 B 점수</th>
+        <th>팀 B 선수</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>단식 1</td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+      </tr>
+      <tr>
+        <td>단식 2</td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+      </tr>
+      <tr>
+        <td>단식 3</td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+      </tr>
+      <tr>
+        <td>단식 4</td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+      </tr>
+      <tr>
+        <td>복식 1</td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+      </tr>
+      <tr>
+        <td>복식 2</td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+        <td contenteditable="true"></td>
+      </tr>
+    </tbody>
+  </table>
 </body>
 </html>
