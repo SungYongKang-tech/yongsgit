@@ -240,6 +240,7 @@
     <button onclick="saveMatchSelection()">저장</button>
     <button onclick="closeMatchPopup()">닫기</button>
   </div>
+  <div id="matchDetailArea" style="margin-top: 20px;"></div>
 </div>
 
 
@@ -548,33 +549,127 @@ function openMatchPopup(i, j) {
   buttonArea.innerHTML = "";
 
   gameTypes.forEach(type => {
-    const btn = document.createElement("button");
-    btn.textContent = type;
-    btn.style.padding = "8px 12px";
-    btn.style.border = "1px solid #ccc";
-    btn.style.borderRadius = "6px";
-    btn.style.cursor = "pointer";
-    btn.style.backgroundColor = "#e0e0e0";
+  const btn = document.createElement("button");
+  btn.textContent = type;
+  btn.style.padding = "8px 12px";
+  btn.style.border = "1px solid #ccc";
+  btn.style.borderRadius = "6px";
+  btn.style.cursor = "pointer";
+  btn.style.backgroundColor = "#e0e0e0";
 
-    btn.onclick = () => {
-      const idx = selectedGames.indexOf(type);
-      if (idx === -1) {
-        if (selectedGames.length >= 7) {
-          alert("최대 7경기까지만 선택할 수 있습니다.");
-          return;
-        }
-        selectedGames.push(type);
-        btn.style.backgroundColor = "#64b5f6"; // 선택됨 표시
-      } else {
-        selectedGames.splice(idx, 1);
-        btn.style.backgroundColor = "#e0e0e0"; // 선택 해제
+  // ✅ 버튼 클릭 이벤트
+  btn.onclick = () => {
+    const idx = selectedGames.indexOf(type);
+
+    if (idx === -1) {
+      // 아직 선택 안 된 경우
+      if (selectedGames.length >= 7) {
+        alert("최대 7경기까지만 선택할 수 있습니다.");
+        return;
       }
-    };
+      selectedGames.push(type);
+      btn.style.backgroundColor = "#64b5f6";
 
-    buttonArea.appendChild(btn);
-  });
+      // ✅ ✅ ✅ 이 위치에서 상세 입력 영역 표시 함수 호출
+      renderGameDetail(type);
+
+    } else {
+      // 이미 선택된 경우 → 해제
+      selectedGames.splice(idx, 1);
+      btn.style.backgroundColor = "#e0e0e0";
+
+      // 상세 정보도 삭제
+      delete selectedGamesDetail[type];
+      document.getElementById("matchDetailArea").innerHTML = "";
+    }
+  };
+
+  buttonArea.appendChild(btn);
+});
+
+
 
   popup.style.display = "block";
+
+  let selectedGamesDetail = {}; // 경기별 상세 정보 저장
+
+function renderGameDetail(type) {
+  const container = document.getElementById("matchDetailArea");
+  const teamA = finalizedLeaders[currentMatch.teamA];
+  const teamB = finalizedLeaders[currentMatch.teamB];
+  const teamAPlayers = [allPlayers[teamA].name, ...getTeamMembers(teamA)];
+  const teamBPlayers = [allPlayers[teamB].name, ...getTeamMembers(teamB)];
+
+  // 초기화
+  selectedGamesDetail[type] = {
+    type,
+    playersA: [],
+    playersB: [],
+    scoreA: 0,
+    scoreB: 0
+  };
+
+  container.innerHTML = `
+    <h4 style="text-align:center;">${type} 경기 구성</h4>
+    <div style="display:flex; justify-content:space-around; margin-bottom: 10px;">
+      <div>
+        <strong>팀 A</strong><br/>
+        ${teamAPlayers.map(name =>
+          `<span class="player" onclick="selectPlayer('${type}', 'A', '${name}')">${name}</span>`
+        ).join('')}
+      </div>
+      <div>
+        <strong>팀 B</strong><br/>
+        ${teamBPlayers.map(name =>
+          `<span class="player" onclick="selectPlayer('${type}', 'B', '${name}')">${name}</span>`
+        ).join('')}
+      </div>
+    </div>
+    <div style="text-align:center;">
+      <label>세트 스코어: </label>
+      <select onchange="setScore('${type}', 'A', this.value)">
+        ${[0,1,2,3].map(i => `<option value="${i}">${i}</option>`).join('')}
+      </select>
+      :
+      <select onchange="setScore('${type}', 'B', this.value)">
+        ${[0,1,2,3].map(i => `<option value="${i}">${i}</option>`).join('')}
+      </select>
+    </div>
+  `;
+}
+
+// 팀 멤버 가져오기
+function getTeamMembers(teamIndex) {
+  const leaderId = finalizedLeaders[teamIndex];
+  const leader = allPlayers[leaderId];
+  const teamBox = document.querySelectorAll(".team-card")[teamIndex];
+  const names = Array.from(teamBox.querySelectorAll("li"))
+    .map(li => li.textContent.split("(")[0].replace(" - 팀장", "").trim());
+  return names.filter(name => name !== leader.name);
+}
+
+// 선수 선택
+function selectPlayer(type, team, name) {
+  const list = selectedGamesDetail[type][`players${team}`];
+  const isDoubles = type.includes("복");
+  const max = isDoubles ? 2 : 1;
+
+  if (list.includes(name)) {
+    selectedGamesDetail[type][`players${team}`] = list.filter(n => n !== name);
+  } else {
+    if (list.length >= max) return;
+    selectedGamesDetail[type][`players${team}`].push(name);
+  }
+
+  renderGameDetail(type); // 다시 렌더링 (선택 상태 갱신)
+}
+
+// 점수 입력
+function setScore(type, team, value) {
+  selectedGamesDetail[type][`score${team}`] = parseInt(value);
+}
+
+
 }
 
 // 닫기
