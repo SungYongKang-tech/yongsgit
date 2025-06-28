@@ -245,6 +245,8 @@
     const div = document.createElement("div");
     div.className = "player";
     div.textContent = player;
+    if (tempSelected.includes(i)) div.classList.add("selected");
+
 
     const match = player.match(/\((\d+)\)/);
     if (match) {
@@ -324,10 +326,10 @@
 
     window.closePopup = () => popup.style.display = "none";
 
-    onValue(playersRef, (snapshot) => {
-  currentPlayers = snapshot.val() || [];
-  renderPlayerList();
-});
+//    onValue(playersRef, (snapshot) => {
+//  currentPlayers = snapshot.val() || [];
+//  renderPlayerList();
+//   });
 
    onValue(resultsRef, (snapshot) => {
   const val = snapshot.val();
@@ -439,7 +441,6 @@ function reverseScore(score) {
 }
 
 
-
 function togglePlayer(index) {
   const selectedEls = document.querySelectorAll(".player");
   const target = selectedEls[index];
@@ -447,34 +448,39 @@ function togglePlayer(index) {
 
   if (tempSelected.includes(index)) {
     tempSelected = tempSelected.filter(i => i !== index);
-    target.classList.remove("selected");  // 선택 해제 시 색 제거
+    target.classList.remove("selected");
   } else {
     tempSelected.push(index);
-    target.classList.add("selected");     // ✅ 선택 시 색 부여
+    target.classList.add("selected");
   }
 
-  // 이하 팀 구성 로직 생략
-}
-
-
   if (tempSelected.length === 2) {
-    const players = tempSelected.map(i => ({
-      name: selectedEls[i].textContent.split("(")[0].trim(),
-      level: parseInt(selectedEls[i].textContent.match(/\d+/)[0])
-    }));
+    const players = tempSelected.map(i => {
+      const txt = selectedEls[i].textContent;
+      return {
+        name: txt.split("(")[0].trim(),
+        level: parseInt(txt.match(/\d+/)[0])
+      };
+    });
+
     const newTeam = {
       names: players.map(p => p.name),
       level: players[0].level + players[1].level
     };
+
     teamList.push(newTeam);
     set(teamListRef, teamList);
     tempSelected.forEach(i => selectedEls[i].classList.remove("selected"));
     tempSelected = [];
-    renderPlayerList();  // 이 함수가 없거나 정의 안 됐을 수 있음
+    renderPlayerList();
     createSchedule();
   }
-  set(selectedRef, tempSelected);
+
+  set(selectedRef, tempSelected); // ✅ 반드시 함수 안에서!
 }
+
+  
+
 
   function createSchedule() {
   const container = document.getElementById("schedule");
