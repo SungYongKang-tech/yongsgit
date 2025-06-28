@@ -195,6 +195,16 @@
     <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
     <button id="addPlayerBtn">선수 추가</button>
   </div>
+  
+  <div id="groupControl" style="margin-bottom: 15px; text-align: center;">
+  <select id="groupSelect"></select>
+  <input type="text" id="newGroupName" placeholder="새 그룹명 입력" />
+  <button id="addGroupBtn">그룹추가</button>
+  <button id="deleteGroupBtn">그룹삭제</button>
+  <button id="toggleGroupViewBtn">그룹숨기기</button>
+  </div>
+
+
   <div id="playerList" class="player-list"></div>
  <div class="button-group">
   <button id="resetBtn">점수 초기화</button>
@@ -224,9 +234,12 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
-    const playersRef = ref(db, "players");
-    const resultsRef = ref(db, "results");
-    const selectedRef = ref(db, "selected");
+    let currentGroup = "KOEN탁구"; // 기본 그룹 지정
+    const groupBaseRef = (group) => ref(db, `players/${group}`);
+    const playersRef = () => ref(db, `players/${currentGroup}/list`);
+    const resultsRef = () => ref(db, `players/${currentGroup}/results`);
+    const selectedRef = () => ref(db, `players/${currentGroup}/selected`);
+
 
     const defaultPlayers = [
       "김희영(4)", "강성용(5)", "김범일(5)", "이영진(6)", "박주민(6)", "강다훈(6)",
@@ -235,15 +248,36 @@
       "송은아(13)", "이낭주(13)", "이승철(13)", "박나령(14)", "고은선(14)"
     ];
 
-    onValue(playersRef, (snapshot) => {
-      if (!snapshot.exists()) set(playersRef, defaultPlayers);
-    }, { onlyOnce: true });
+    // onValue(playersRef(), (snapshot) => {
+    //  if (!snapshot.exists()) set(playersRef, defaultPlayers);
+    //}, { onlyOnce: true });
+
+    document.getElementById("addGroupBtn").onclick = () => {
+  const newGroup = document.getElementById("newGroupName").value.trim();
+  if (!newGroup) return alert("그룹명을 입력하세요.");
+
+  const newGroupRef = ref(db, `players/${newGroup}/list`);
+  set(newGroupRef, defaultPlayers)  // ✅ 여기서만 defaultPlayers 사용
+    .then(() => {
+      alert(`${newGroup} 그룹이 추가되었습니다.`);
+      // 선택 목록과 결과 초기화
+      set(ref(db, `players/${newGroup}/results`), {});
+      set(ref(db, `players/${newGroup}/selected`), []);
+      location.reload(); // 새로고침해서 그룹 목록 갱신
+    });
+};
+
 
     const playerList = document.getElementById("playerList");
     const schedule = document.getElementById("schedule");
     const popup = document.getElementById("popup");
     const popupText = document.getElementById("popupText");
     const scoreButtons = document.getElementById("scoreButtons");
+
+    document.getElementById("groupSelect").onchange = (e) => {
+    currentGroup = e.target.value;
+    loadGroupData();
+    };
 
     let currentPlayers = [];
     let selected = [];
@@ -282,7 +316,7 @@
       const idx = selected.indexOf(index);
       if (idx > -1) selected.splice(idx, 1);
       else selected.push(index);
-      set(selectedRef, selected);
+      set(selectedRef(), selected);
     }
 
     function renderSchedule() {
@@ -347,7 +381,7 @@
           results[`${i}-${j}`] = score;
           const [a, b] = score.split("-").map(Number);
           results[`${j}-${i}`] = `${b}-${a}`;
-          set(resultsRef, results);
+          set(resultsRef(), results);
           popup.style.display = "none";
           renderSchedule();
         };
@@ -358,25 +392,26 @@
 
     window.closePopup = () => popup.style.display = "none";
 
-    onValue(playersRef, (snapshot) => {
-      currentPlayers = snapshot.val() || [];
-      renderPlayers(currentPlayers);
-    });
+   // onValue(playersRef, (snapshot) => {
+   //   currentPlayers = snapshot.val() || [];
+   //   renderPlayers(currentPlayers);
+   // });
 
-    onValue(resultsRef, (snapshot) => {
-      results = snapshot.val() || {};
-      renderSchedule();
-    });
+    onValue(resultsRef(), (snapshot) => {
+  results = snapshot.val() || {};
+  renderSchedule();
+});
 
-    onValue(selectedRef, (snapshot) => {
-      selected = snapshot.val() || [];
-      renderPlayers(currentPlayers);
-      renderSchedule();
-    });
+onValue(selectedRef(), (snapshot) => {
+  selected = snapshot.val() || [];
+  renderPlayers(currentPlayers);
+  renderSchedule();
+});
+
 
     document.getElementById("resetBtn").onclick = () => {
       results = {};
-      set(resultsRef, {});
+      set(resultsRef(), {});
       renderSchedule();
     };
 
@@ -394,7 +429,7 @@
       const newEntry = `${name}(${level})`;
       if (!currentPlayers.includes(newEntry)) {
         currentPlayers.push(newEntry);
-        set(playersRef, currentPlayers);
+        set(playersRef(), currentPlayers);
       }
     };
 
@@ -417,6 +452,48 @@
         link.click();
       });
     };
+
+    document.getElementById("deleteGroupBtn").onclick = () => {
+  const inputPassword = prompt("그룹을 삭제하려면 비밀번호를 입력하세요:");
+  if (inputPassword !== "771225") {
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+
+  const confirmDelete = confirm(`정말로 그룹 "${currentGroup}"을 삭제하시겠습니까?`);
+  if (!confirmDelete) return;
+
+  // 그룹 관련 전체 데이터 삭제
+  remove(ref(db, `players/${currentGroup}`))
+    .then(() => {
+      alert(`그룹 "${currentGroup}"이 삭제되었습니다.`);
+      location.reload();
+    })
+    .catch((err) => {
+      console.error("삭제 실패:", err);
+      alert("삭제 중 오류가 발생했습니다.");
+    });
+};
+
+
+function loadGroupData() {
+  onValue(playersRef(), (snapshot) => {
+    currentPlayers = snapshot.val() || [];
+    renderPlayers(currentPlayers);
+  });
+
+  onValue(resultsRef(), (snapshot) => {
+    results = snapshot.val() || {};
+    renderSchedule();
+  });
+
+  onValue(selectedRef(), (snapshot) => {
+    selected = snapshot.val() || [];
+    renderPlayers(currentPlayers);
+    renderSchedule();
+  });
+}
+
 
   </script>
 </body>
