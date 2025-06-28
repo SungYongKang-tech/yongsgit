@@ -229,6 +229,20 @@
    
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+<!-- 경기 구성 팝업 -->
+<div id="matchPopup" style="display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; border:2px solid #333; padding:20px; border-radius:10px; z-index:1000; width:90%; max-width:500px;">
+  <h3 style="text-align:center;">경기 구성 선택</h3>
+  <p style="text-align:center;">최대 7경기까지 선택하세요</p>
+  <div id="gameTypeButtons" style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:20px;">
+    <!-- 버튼은 JS에서 생성 -->
+  </div>
+  <div style="text-align:center;">
+    <button onclick="saveMatchSelection()">저장</button>
+    <button onclick="closeMatchPopup()">닫기</button>
+  </div>
+</div>
+
+
 </body>
 </html>
 <!--  여기까지 javascript  -->
@@ -423,7 +437,8 @@ function generateLeague() {
       } else {
         const key = `${i}-${j}`;
         const val = matchResults[key] || "";
-      html += `<td style='cursor:default;'>${val || "-"}</td>`;  
+      html += `<td style='cursor:pointer;' onclick='openMatchPopup(${i}, ${j})'>${val || "-"}</td>`;
+  
         
       }
     }
@@ -514,6 +529,64 @@ function addPlayer() {
   nameInput.value = "";
   levelInput.value = "";
   renderPlayers();
+}
+
+let currentMatch = { teamA: null, teamB: null }; // 셀 클릭된 팀 정보
+let selectedGames = []; // 선택된 경기들
+
+// 경기 종류 버튼 정의
+const gameTypes = ["1단", "2단", "3단", "4단", "1복", "2복", "3복"];
+
+// 리그전 셀 클릭 시 호출
+function openMatchPopup(i, j) {
+  currentMatch.teamA = i;
+  currentMatch.teamB = j;
+  selectedGames = [];
+
+  const popup = document.getElementById("matchPopup");
+  const buttonArea = document.getElementById("gameTypeButtons");
+  buttonArea.innerHTML = "";
+
+  gameTypes.forEach(type => {
+    const btn = document.createElement("button");
+    btn.textContent = type;
+    btn.style.padding = "8px 12px";
+    btn.style.border = "1px solid #ccc";
+    btn.style.borderRadius = "6px";
+    btn.style.cursor = "pointer";
+    btn.style.backgroundColor = "#e0e0e0";
+
+    btn.onclick = () => {
+      const idx = selectedGames.indexOf(type);
+      if (idx === -1) {
+        if (selectedGames.length >= 7) {
+          alert("최대 7경기까지만 선택할 수 있습니다.");
+          return;
+        }
+        selectedGames.push(type);
+        btn.style.backgroundColor = "#64b5f6"; // 선택됨 표시
+      } else {
+        selectedGames.splice(idx, 1);
+        btn.style.backgroundColor = "#e0e0e0"; // 선택 해제
+      }
+    };
+
+    buttonArea.appendChild(btn);
+  });
+
+  popup.style.display = "block";
+}
+
+// 닫기
+function closeMatchPopup() {
+  document.getElementById("matchPopup").style.display = "none";
+}
+
+// 저장 (1단계에선 콘솔 출력만)
+function saveMatchSelection() {
+  console.log("팀 A:", currentMatch.teamA, "팀 B:", currentMatch.teamB);
+  console.log("선택된 경기:", selectedGames);
+  closeMatchPopup();
 }
 
 
