@@ -198,6 +198,12 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
+    onValue(playersRef, (snapshot) => {
+  currentPlayers = snapshot.val() || [];
+  renderPlayerList();  // renderPlayers 말고 실제 사용 중인 함수
+});
+
+    
     const firebaseConfig = {
       apiKey: "AIzaSyATMVEO74BnjBV-Oy7kByzkIKWD6eeOKPE",
       authDomain: "koen-doubleleague.firebaseapp.com",
@@ -232,38 +238,21 @@
 
     let currentPlayers = [];
     let selected = [];
-    let results = {};
+    
 
 
 
-   function renderPlayers(players) {
-    playerList.innerHTML = "";
-    players.forEach((player, i) => {
-    const isDefault = defaultPlayers.includes(player);
-
-    if (hideDefault && isDefault) return; // 숨김 조건
-
+   function renderPlayerList() {
+  playerList.innerHTML = "";
+  currentPlayers.forEach((player, i) => {
     const div = document.createElement("div");
     div.className = "player";
-
-    // 부수 추출 및 스타일 지정
-    const match = player.match(/\((\d+)\)$/);
-    if (match) {
-      const level = Number(match[1]);
-      if (level <= 6) div.classList.add("lv4to6");
-      else if (level <= 9) div.classList.add("lv7to9");
-      else if (level <= 12) div.classList.add("lv10to12");
-      else div.classList.add("lv13to14");
-    }
-
-    if (!isDefault) div.classList.add("new-player");
-    if (selected.includes(i)) div.classList.add("selected");
-
     div.textContent = player;
     div.onclick = () => togglePlayer(i);
     playerList.appendChild(div);
-    });
-   }
+  });
+}
+
 
 
     function togglePlayer(index) {
@@ -404,7 +393,7 @@ function togglePlayer(index) {
   if (tempSelected.length === 2) {
     const players = tempSelected.map(i => ({
       name: selectedEls[i].textContent.split("(")[0].trim(),
-      level: parseInt(selectedEls[i].textContent.match(/\\d+/)[0])
+      level: parseInt(selectedEls[i].textContent.match(/\d+/)[0])
     }));
     const newTeam = {
       names: players.map(p => p.name),
@@ -413,10 +402,11 @@ function togglePlayer(index) {
     teamList.push(newTeam);
     tempSelected.forEach(i => selectedEls[i].classList.remove("selected"));
     tempSelected = [];
-    renderPlayerList();  // 새로고침
+    renderPlayerList();  // 이 함수가 없거나 정의 안 됐을 수 있음
     createSchedule();
   }
 }
+
   function createSchedule() {
   const container = document.getElementById("schedule");
   if (teamList.length < 2) {
