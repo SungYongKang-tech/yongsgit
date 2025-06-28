@@ -245,22 +245,27 @@
    function renderPlayerList() {
   playerList.innerHTML = "";
   currentPlayers.forEach((player, i) => {
+    if (hideDefault && defaultPlayers.includes(player)) return;
+
     const div = document.createElement("div");
     div.className = "player";
     div.textContent = player;
+
+    const match = player.match(/\((\d+)\)/);
+    if (match) {
+      const level = Number(match[1]);
+      if (level <= 6) div.classList.add("lv4to6");
+      else if (level <= 9) div.classList.add("lv7to9");
+      else if (level <= 12) div.classList.add("lv10to12");
+      else div.classList.add("lv13to14");
+    }
+
     div.onclick = () => togglePlayer(i);
     playerList.appendChild(div);
   });
 }
 
 
-
-    function togglePlayer(index) {
-      const idx = selected.indexOf(index);
-      if (idx > -1) selected.splice(idx, 1);
-      else selected.push(index);
-      set(selectedRef, selected);
-    }
 
     function renderSchedule() {
   const players = selected.map(i => currentPlayers[i]);
@@ -309,20 +314,15 @@
     window.closePopup = () => popup.style.display = "none";
 
     onValue(playersRef, (snapshot) => {
-      currentPlayers = snapshot.val() || [];
-      renderPlayers(currentPlayers);
-    });
+  currentPlayers = snapshot.val() || [];
+  renderPlayerList();
+});
 
     onValue(resultsRef, (snapshot) => {
       results = snapshot.val() || {};
       renderSchedule();
     });
 
-    onValue(selectedRef, (snapshot) => {
-      selected = snapshot.val() || [];
-      renderPlayers(currentPlayers);
-      renderSchedule();
-    });
 
     document.getElementById("resetBtn").onclick = () => {
       results = {};
