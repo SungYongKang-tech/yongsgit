@@ -261,9 +261,10 @@
   const newGroup = document.getElementById("newGroupName").value.trim();
   if (!newGroup) return alert("그룹명을 입력하세요.");
 
-  const listRef = ref(db, `players/${newGroup}/list`);
-  const resultsRef = ref(db, `players/${newGroup}/results`);
-  const selectedRef = ref(db, `players/${newGroup}/selected`);
+  const groupPath = `players/${newGroup}`;
+  const listRef = ref(db, `${groupPath}/list`);
+  const resultsRef = ref(db, `${groupPath}/results`);
+  const selectedRef = ref(db, `${groupPath}/selected`);
 
   Promise.all([
     set(listRef, []),
@@ -274,11 +275,9 @@
       alert(`${newGroup} 그룹이 빈 상태로 추가되었습니다.`);
       currentGroup = newGroup;
       document.getElementById("groupSelect").value = newGroup;
-
-      // 새로 고침 없이 목록 반영
-      loadGroupList();
-      loadGroupButtons();
-      loadGroupData();
+      loadGroupList();     // 새 목록 반영
+      loadGroupButtons();  // 버튼도 다시
+      loadGroupData();     // 데이터 로드
     })
     .catch((error) => {
       console.error("그룹 추가 실패:", error);
@@ -289,11 +288,12 @@
 
 
 
+
 function loadGroupList() {
   const groupSelect = document.getElementById("groupSelect");
-  get(child(ref(db), "players")).then(snapshot => {
+  get(ref(db, "players")).then(snapshot => {
     if (snapshot.exists()) {
-      groupSelect.innerHTML = ""; // 기존 항목 초기화
+      groupSelect.innerHTML = "";
       const groups = Object.keys(snapshot.val());
       groups.forEach(group => {
         const option = document.createElement("option");
@@ -301,14 +301,13 @@ function loadGroupList() {
         option.textContent = group;
         groupSelect.appendChild(option);
       });
-      // 현재 선택된 그룹 값 반영
       groupSelect.value = currentGroup;
-      loadGroupData(); // 최초 그룹 로드
     } else {
       groupSelect.innerHTML = "<option disabled>그룹 없음</option>";
     }
   });
 }
+
 
 function loadGroupButtons() {
   const groupListDiv = document.getElementById("groupList");
