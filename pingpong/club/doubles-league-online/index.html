@@ -384,6 +384,71 @@
   renderPlayers(currentPlayers);
 };
 
+  let tempSelected = [];
+let teamList = [];
+let results = {};
+
+function togglePlayer(index) {
+  const selectedEls = document.querySelectorAll(".player");
+  const target = selectedEls[index];
+  if (!target) return;
+
+  if (tempSelected.includes(index)) {
+    tempSelected = tempSelected.filter(i => i !== index);
+    target.classList.remove("selected");
+  } else {
+    tempSelected.push(index);
+    target.classList.add("selected");
+  }
+
+  if (tempSelected.length === 2) {
+    const players = tempSelected.map(i => ({
+      name: selectedEls[i].textContent.split("(")[0].trim(),
+      level: parseInt(selectedEls[i].textContent.match(/\\d+/)[0])
+    }));
+    const newTeam = {
+      names: players.map(p => p.name),
+      level: players[0].level + players[1].level
+    };
+    teamList.push(newTeam);
+    tempSelected.forEach(i => selectedEls[i].classList.remove("selected"));
+    tempSelected = [];
+    renderPlayerList();  // 새로고침
+    createSchedule();
+  }
+}
+  function createSchedule() {
+  const container = document.getElementById("schedule");
+  if (teamList.length < 2) {
+    container.innerHTML = "<p>2팀 이상 등록해주세요.</p>";
+    return;
+  }
+
+  let html = "<table><tr><th>팀</th>";
+  teamList.forEach(t => {
+    html += `<th>${t.names.join("/")}</th>`;
+  });
+  html += "<th>승</th><th>세트</th><th>순위</th></tr>";
+
+  teamList.forEach((t1, i) => {
+    html += `<tr><th>${t1.names.join("/")}</th>`;
+    teamList.forEach((t2, j) => {
+      if (i === j) {
+        html += "<td>X</td>";
+      } else {
+        const key = `${i}-${j}`;
+        const result = results[key] || "";
+        html += `<td onclick="openPopup(${i}, ${j})">${result}</td>`;
+      }
+    });
+    html += `<td id="wins-${i}">0</td><td id="sets-${i}">0</td><td id="rank-${i}">-</td></tr>`;
+  });
+
+  html += "</table>";
+  container.innerHTML = html;
+}
+
+
   </script>
 </body>
 </html>
