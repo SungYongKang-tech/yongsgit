@@ -155,26 +155,35 @@
       set(selectedRef, selected);
     }
 
-    function loadPlayers() {
-      onValue(playersRef, (snapshot) => {
-        const data = snapshot.val();
-        if (!data) return;
-        currentPlayers = data;
-        renderPlayers(currentPlayers);
-        renderSchedule();
-      });
+    function loadFirebaseData() {
+  const listPromise = new Promise((resolve) => {
+    onValue(playersRef, (snapshot) => {
+      const data = snapshot.val();
+      currentPlayers = data || [];
+      resolve();
+    });
+  });
 
-      onValue(selectedRef, (snapshot) => {
-        selected = snapshot.val() || [];
-        renderPlayers(currentPlayers);
-        renderSchedule();
-      });
+  const selectedPromise = new Promise((resolve) => {
+    onValue(selectedRef, (snapshot) => {
+      selected = snapshot.val() || [];
+      resolve();
+    });
+  });
 
-      onValue(resultsRef, (snapshot) => {
-        results = snapshot.val() || {};
-        renderSchedule();
-      });
-    }
+  const resultsPromise = new Promise((resolve) => {
+    onValue(resultsRef, (snapshot) => {
+      results = snapshot.val() || {};
+      resolve();
+    });
+  });
+
+  Promise.all([listPromise, selectedPromise, resultsPromise]).then(() => {
+    renderPlayers(currentPlayers);
+    renderSchedule();
+  });
+}
+
 
     function renderSchedule() {
       const schedule = document.getElementById("schedule");
@@ -228,7 +237,7 @@
     function closePopup() {
       document.getElementById("popup").style.display = "none";
     }
-    
+
 onValue(playersRef, (snapshot) => {
   const data = snapshot.val();
   console.log("list 로딩됨:", data);  // 추가
