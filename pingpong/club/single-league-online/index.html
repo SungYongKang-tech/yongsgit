@@ -594,25 +594,34 @@ function loadGroupData() {
   if (resultsListener) resultsListener();
   if (selectedListener) selectedListener();
 
-  // 선수 먼저 가져오고, 그 다음에 리스너 등록
+  // 1. 선수 불러오기
   playersListener = onValue(playersRef(), (snapshot) => {
-  currentPlayers = snapshot.val() || [];
-  renderPlayers(currentPlayers);
+    currentPlayers = snapshot.val() || [];
 
-  // ✅ 이 부분 주석 해제하세요
-  selectedListener = onValue(selectedRef(), (snapshot) => {
-    selected = snapshot.val() || [];
+    if (currentPlayers.length === 0) {
+      playerList.innerHTML = "<p>선수가 없습니다. 선수를 추가해주세요.</p>";
+      schedule.innerHTML = "";
+      return;
+    }
+
+    // 선수 렌더링 먼저
     renderPlayers(currentPlayers);
-    renderSchedule();
-  });
 
-  resultsListener = onValue(resultsRef(), (snapshot) => {
-    results = snapshot.val() || {};
-    renderSchedule();
-  });
-});
+    // 2. 선택된 선수 불러오기 → 선수 목록 로딩 후 실행
+    selectedListener = onValue(selectedRef(), (snapshot) => {
+      selected = snapshot.val() || [];
+      renderPlayers(currentPlayers);  // 다시 렌더링 (선택된 선수 포함)
+      renderSchedule();               // 경기표 그리기
+    });
 
+    // 3. 경기 결과 불러오기
+    resultsListener = onValue(resultsRef(), (snapshot) => {
+      results = snapshot.val() || {};
+      renderSchedule();
+    });
+  });
 }
+
 
 
 
