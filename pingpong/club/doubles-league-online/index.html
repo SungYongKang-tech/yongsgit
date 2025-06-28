@@ -200,6 +200,7 @@
 
   <script type="module">
     let hideDefault = false;
+    let results = {}; // 점수를 저장할 전역 객체
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -353,6 +354,23 @@ document.getElementById("customScore").value = "";  // 입력창 초기화
   createSchedule();
 };
 
+window.submitCustomScore = async () => {
+  const input = document.getElementById("customScore");
+  const score = input.value.trim();
+
+  if (!/^[0-9]-[0-9]$/.test(score)) {
+    alert("점수 형식은 예: 3-1 과 같이 입력해주세요.");
+    return;
+  }
+
+  const key = popup.dataset.key;
+  results[key] = score;
+  results[reverseKey(key)] = reverseScore(score);
+
+  await set(resultsRef, results);
+  popup.style.display = "none";
+  createSchedule();
+};
 
 
 
@@ -370,15 +388,14 @@ document.getElementById("customScore").value = "";  // 입력창 초기화
 //   });
 
    onValue(resultsRef, (snapshot) => {
-  const val = snapshot.val();
-  window.results = val || {};
+  results = snapshot.val() || {};
 
-  // 👉 teamList가 아직 비어있으면 대기
+  // 팀 목록이 없으면 아직 그릴 수 없음
   if (!teamList || teamList.length < 2) return;
 
-  // ✅ 무조건 리그전 갱신
-  createSchedule();
+  createSchedule(); // 점수 갱신 시 항상 표 다시 그림
 });
+
 
 onValue(selectedRef, (snapshot) => {
   tempSelected = snapshot.val() || [];
@@ -522,7 +539,16 @@ function togglePlayer(index) {
   set(selectedRef, tempSelected); // ✅ 반드시 함수 안에서!
 }
 
-  
+  function reverseKey(key) {
+  const [a, b] = key.split("-");
+  return `${b}-${a}`;
+}
+
+function reverseScore(score) {
+  const [a, b] = score.split("-").map(Number);
+  return `${b}-${a}`;
+}
+
 
 
   function createSchedule() {
