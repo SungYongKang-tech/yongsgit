@@ -6,6 +6,12 @@
   <title>KOEN 단식 리그전(실시간)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
+    .lv4to6 { background-color: #e8f5e9; }
+    .lv7to9 { background-color: #e3f2fd; }
+    .lv10to12 { background-color: #fff3e0; }
+    .lv13to14 { background-color: #ffebee; }
+    .new-player { font-weight: bold; }
+
     body {
       font-family: 'Segoe UI', sans-serif;
       padding: 20px;
@@ -17,6 +23,7 @@
     .player {
       margin: 4px;
       padding: 6px 10px;
+     /* background: #e3f2fd;  */
       border: 1px solid #2196f3;
       border-radius: 6px;
       display: inline-block;
@@ -26,12 +33,6 @@
     .player.selected {
       background: #1976d2;
       color: white;
-    }
-    .player-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      justify-content: center;
     }
     table {
       border-collapse: collapse;
@@ -45,30 +46,65 @@
       padding: 6px 10px;
       text-align: center;
     }
-    tr:nth-child(odd) { background-color: #e3f2fd; }
-    tr:nth-child(even) { background-color: #ffffff; }
+    tr:nth-child(odd) {
+      background-color: #e3f2fd;
+    }
+    tr:nth-child(even) {
+      background-color: #ffffff;
+    }
     table tr:first-child th,
     table td:first-child {
       background-color: #ffe0b2 !important;
     }
-    .button-group {
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin: 20px 0;
-    }
-    .button-group button {
-      padding: 10px 20px;
+    #resetBtn, #clearBtn, #saveImageBtn {
+      display: inline-block;
+      margin: 10px 5px;
+      padding: 10px 16px;
       font-size: 16px;
-      background-color: #1976d2;
+      background-color: #d32f2f;
       color: white;
       border: none;
-      border-radius: 6px;
+      border-radius: 4px;
       cursor: pointer;
     }
-    .button-group button:hover {
-      background-color: #1565c0;
+.button-group {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.button-group button {
+  padding: 10px 20px;
+  font-size: 16px;
+  background-color: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.button-group button:hover {
+  background-color: #1565c0;
+}
+
+@media (max-width: 600px) {
+  .button-group {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .button-group button {
+    width: 100%;
+    max-width: 300px;
+    font-size: 14px;
+  }
+}
+
+
+    .scroll-table {
+      overflow-x: auto;
     }
     #popup {
       display: none;
@@ -94,25 +130,100 @@
       cursor: pointer;
       width: 100%;
     }
-    #popupText { margin-bottom: 10px; font-weight: bold; }
+    #popupText {
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    h3 + table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+      background-color: white;
+    }
+    h3 + table tr:nth-child(odd) {
+      background-color: #e3f2fd;
+    }
+    h3 + table tr:nth-child(even) {
+      background-color: #ffffff;
+    }
+    h3 + table tr:first-child th,
+    h3 + table td:first-child {
+      background-color: #ffe0b2 !important;
+    }
+    #controlPanel input[type="text"] {
+      padding: 10px;
+      font-size: 16px;
+      margin: 5px;
+      width: 200px;
+      max-width: 90%;
+    }
+    #controlPanel button {
+      padding: 10px 16px;
+      font-size: 16px;
+      margin: 5px;
+    }
+    @media (max-width: 600px) {
+      body {
+        padding: 10px;
+      }
+      table, .scroll-table, #popup {
+        font-size: 13px;
+        width: 100%;
+        overflow-x: auto;
+      }
+      .player {
+        font-size: 13px;
+        padding: 5px 8px;
+      }
+      #resetBtn, #clearBtn, #saveImageBtn, #controlPanel button {
+        font-size: 14px;
+        padding: 8px 10px;
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      #controlPanel input[type="text"] {
+        width: 100%;
+        font-size: 14px;
+      }
+    }
   </style>
 </head>
 <body>
   <h1>KOEN 단식 리그전(실시간)</h1>
-  <div id="playerList" class="player-list"></div>
-  <div class="button-group">
-    <button id="resetBtn">점수 초기화</button>
-    <button id="saveImageBtn">리그전 이미지 저장</button>
+  <div id="controlPanel">
+    <input type="text" id="playerName" placeholder="선수 이름" />
+    <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
+    <button id="addPlayerBtn">선수 추가</button>
   </div>
-  <div id="schedule"></div>
+  
+  <div id="groupControl" style="margin-bottom: 15px; text-align: center;">
+  <select id="groupSelect"></select>
+  <input type="text" id="newGroupName" placeholder="새 그룹명 입력" />
+  <button id="addGroupBtn">그룹추가</button>
+  <button id="deleteGroupBtn">그룹삭제</button>
+  <button id="toggleGroupViewBtn">그룹숨기기</button>
+  </div>
+
+  <div id="groupList" style="margin: 10px 0; text-align: center;">
+  <!-- 그룹 버튼 목록이 여기에 동적으로 생성됩니다 -->
+</div>
+
+  <div id="playerList" class="player-list"></div>
+ <div class="button-group">
+  <button id="resetBtn">점수 초기화</button>
+  <button id="clearBtn">선수 선택 초기화</button>
+  <button id="saveImageBtn">리그전 이미지 저장</button>
+</div>
+  <div id="schedule" class="scroll-table"></div>
   <div id="popup">
     <p id="popupText"></p>
     <div id="scoreButtons"></div>
     <button onclick="closePopup()">닫기</button>
   </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDKe0-6H2z6Ed-wgN_eX_ROuNcfTusYBKg",
@@ -126,127 +237,339 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
-    const group = 'KOEN탁구';
-    const playersRef = ref(db, `${group}/list`);
-    const selectedRef = ref(db, `${group}/selected`);
-    const resultsRef = ref(db, `${group}/results`);
+    let currentGroup = "KOEN탁구"; // 기본 그룹 지정
+    const groupBaseRef = (group) => ref(db, `players/${group}`);
+    const playersRef = () => ref(db, `players/${currentGroup}/list`);
+    const resultsRef = () => ref(db, `players/${currentGroup}/results`);
+    const selectedRef = () => ref(db, `players/${currentGroup}/selected`);
+
+
+    const defaultPlayers = [
+      "김희영(4)", "강성용(5)", "김범일(5)", "이영진(6)", "박주민(6)", "강다훈(6)",
+      "박진우(7)", "배성국(7)", "이상준(7)", "황경진(8)", "양충현(8)", "임춘근(9)",
+      "전성무(9)", "박인찬(8)", "송창근(9)", "강호선(10)", "조보미(12)", "홍지원(13)",
+      "송은아(13)", "이낭주(13)", "이승철(13)", "박나령(14)", "고은선(14)"
+    ];
+
+
+
+
+
+
+
+   document.getElementById("addGroupBtn").onclick = () => {
+  const newGroup = document.getElementById("newGroupName").value.trim();
+  if (!newGroup) return alert("그룹명을 입력하세요.");
+
+  // ✅ 빈 그룹으로 초기화
+  set(ref(db, `players/${newGroup}/list`), [])
+    .then(() => {
+      alert(`${newGroup} 그룹이 빈 상태로 추가되었습니다.`);
+      set(ref(db, `players/${newGroup}/results`), {});
+      set(ref(db, `players/${newGroup}/selected`), []);
+      location.reload();
+    });
+};
+
+
+import { get, child } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+function loadGroupList() {
+  const groupSelect = document.getElementById("groupSelect");
+  get(child(ref(db), "players")).then(snapshot => {
+    if (snapshot.exists()) {
+      groupSelect.innerHTML = ""; // 기존 항목 초기화
+      const groups = Object.keys(snapshot.val());
+      groups.forEach(group => {
+        const option = document.createElement("option");
+        option.value = group;
+        option.textContent = group;
+        groupSelect.appendChild(option);
+      });
+      // 현재 선택된 그룹 값 반영
+      groupSelect.value = currentGroup;
+      loadGroupData(); // 최초 그룹 로드
+    } else {
+      groupSelect.innerHTML = "<option disabled>그룹 없음</option>";
+    }
+  });
+}
+
+function loadGroupButtons() {
+  const groupListDiv = document.getElementById("groupList");
+  get(child(ref(db), "players")).then(snapshot => {
+    if (snapshot.exists()) {
+      groupListDiv.innerHTML = ""; // 초기화
+      const groups = Object.keys(snapshot.val());
+
+      groups.forEach(group => {
+        const btn = document.createElement("button");
+        btn.textContent = group;
+        btn.style.margin = "4px";
+        btn.style.padding = "8px 16px";
+        btn.style.backgroundColor = "#42a5f5";
+        btn.style.border = "none";
+        btn.style.borderRadius = "6px";
+        btn.style.color = "white";
+        btn.style.cursor = "pointer";
+
+        btn.onclick = () => {
+          currentGroup = group;
+          document.getElementById("groupSelect").value = group;
+          loadGroupData();
+        };
+
+        groupListDiv.appendChild(btn);
+      });
+    } else {
+      groupListDiv.innerHTML = "<p>등록된 그룹이 없습니다.</p>";
+    }
+  });
+}
+
+
+
+
+    const playerList = document.getElementById("playerList");
+    const schedule = document.getElementById("schedule");
+    const popup = document.getElementById("popup");
+    const popupText = document.getElementById("popupText");
+    const scoreButtons = document.getElementById("scoreButtons");
+
+    document.getElementById("groupSelect").onchange = (e) => {
+    currentGroup = e.target.value;
+    loadGroupData();
+    };
 
     let currentPlayers = [];
     let selected = [];
     let results = {};
 
-    function renderPlayers(players) {
-      const playerList = document.getElementById("playerList");
-      playerList.innerHTML = "";
-      players.forEach((player, i) => {
-        const div = document.createElement("div");
-        div.className = "player";
-        div.textContent = player;
-        if (selected.includes(i)) div.classList.add("selected");
-        div.onclick = () => togglePlayer(i);
-        playerList.appendChild(div);
-      });
+   function renderPlayers(players) {
+  playerList.innerHTML = "";
+  players.forEach((player, i) => {
+    const div = document.createElement("div");
+    div.className = "player";
+
+    // 부수 추출
+    const match = player.match(/\((\d+)\)$/);
+    if (match) {
+      const level = Number(match[1]);
+      if (level <= 6) div.classList.add("lv4to6");
+      else if (level <= 9) div.classList.add("lv7to9");
+      else if (level <= 12) div.classList.add("lv10to12");
+      else div.classList.add("lv13to14");
     }
+
+    // 새로 추가된 선수는 bold
+    if (i >= defaultPlayers.length) {
+      div.classList.add("new-player");
+    }
+
+    div.textContent = player;
+    if (selected.includes(i)) div.classList.add("selected");
+    div.onclick = () => togglePlayer(i);
+    playerList.appendChild(div);
+  });
+}
+
 
     function togglePlayer(index) {
-      const i = selected.indexOf(index);
-      if (i >= 0) selected.splice(i, 1);
+      const idx = selected.indexOf(index);
+      if (idx > -1) selected.splice(idx, 1);
       else selected.push(index);
-      set(selectedRef, selected);
+      set(selectedRef(), selected);
     }
 
-    function loadFirebaseData() {
-  const listPromise = new Promise((resolve) => {
-    onValue(playersRef, (snapshot) => {
-      const data = snapshot.val();
-      currentPlayers = data || [];
-      resolve();
+    function renderSchedule() {
+      if (selected.length < 2) {
+        schedule.innerHTML = "<p>2명 이상 선택해주세요.</p>";
+        return;
+      }
+      const players = selected.map(i => currentPlayers[i]);
+      let html = "<div id='scheduleTable'><table><tr><th>구분</th>";
+      players.forEach(p => html += `<th>${p}</th>`);
+      html += "</tr>";
+
+      players.forEach((p1, i) => {
+        html += `<tr><th>${p1}</th>`;
+        players.forEach((p2, j) => {
+          const key = `${i}-${j}`;
+          const val = i === j ? "X" : (results[key] || "");
+          html += `<td onclick='openPopup(${i},${j})'>${val}</td>`;
+        });
+        html += "</tr>";
+      });
+      html += "</table>";
+
+      const winCount = Array(players.length).fill(0);
+      const setCount = Array(players.length).fill(0);
+
+      for (let i = 0; i < players.length; i++) {
+        for (let j = 0; j < players.length; j++) {
+          if (i === j) continue;
+          const result = results[`${i}-${j}`];
+          if (result) {
+            const [a, b] = result.split("-").map(Number);
+            if (a > b) winCount[i]++;
+            setCount[i] += a;
+          }
+        }
+      }
+
+      const rankIndex = winCount.map((_, i) => i)
+        .sort((a, b) => winCount[b] - winCount[a] || setCount[b] - setCount[a]);
+      const ranks = Array(players.length);
+      rankIndex.forEach((idx, r) => { ranks[idx] = r + 1 });
+
+      html += "<h3>순위 요약</h3><table><tr><th>선수</th><th>승</th><th>세트 득점</th><th>순위</th></tr>";
+      players.forEach((p, i) => {
+        html += `<tr><td>${p}</td><td>${winCount[i]}</td><td>${setCount[i]}</td><td>${ranks[i]}</td></tr>`;
+      });
+      html += "</table></div>";
+
+      schedule.innerHTML = html;
+    }
+
+    window.openPopup = (i, j) => {
+      const players = selected.map(i => currentPlayers[i]);
+      popupText.textContent = `${players[i]} 선수는 ${players[j]} 선수와의 경기에서 몇 대 몇으로 이겼나요?`;
+      const scores = ["3-0", "3-1", "3-2", "2-0", "2-1"];
+      scoreButtons.innerHTML = "";
+      scores.forEach(score => {
+        const btn = document.createElement("button");
+        btn.textContent = score;
+        btn.onclick = () => {
+          results[`${i}-${j}`] = score;
+          const [a, b] = score.split("-").map(Number);
+          results[`${j}-${i}`] = `${b}-${a}`;
+          set(resultsRef(), results);
+          popup.style.display = "none";
+          renderSchedule();
+        };
+        scoreButtons.appendChild(btn);
+      });
+      popup.style.display = "block";
+    };
+
+    window.closePopup = () => popup.style.display = "none";
+
+   // onValue(playersRef, (snapshot) => {
+   //   currentPlayers = snapshot.val() || [];
+   //   renderPlayers(currentPlayers);
+   // });
+
+    onValue(resultsRef(), (snapshot) => {
+  results = snapshot.val() || {};
+  renderSchedule();
+});
+
+onValue(selectedRef(), (snapshot) => {
+  selected = snapshot.val() || [];
+  renderPlayers(currentPlayers);
+  renderSchedule();
+});
+
+loadGroupList();
+loadGroupButtons();  // 그룹 버튼도 함께 로드
+
+    document.getElementById("resetBtn").onclick = () => {
+      results = {};
+      set(resultsRef(), {});
+      renderSchedule();
+    };
+
+  document.getElementById("clearBtn").onclick = () => {
+  if (!confirm("선택한 선수 목록을 초기화하시겠습니까?")) return;
+
+  selected = [];
+  set(selectedRef(), [])
+    .then(() => {
+      alert("선택된 선수가 초기화되었습니다.");
+      renderPlayers(currentPlayers);
+      renderSchedule();
+    })
+    .catch((err) => {
+      console.error("초기화 실패:", err);
+      alert("선택 초기화 중 오류가 발생했습니다.");
     });
+};
+
+
+
+    document.getElementById("addPlayerBtn").onclick = () => {
+      const name = document.getElementById("playerName").value.trim();
+      const level = document.getElementById("playerLevel").value.trim();
+      if (!name || !level) return alert("이름과 부수를 입력하세요");
+      const newEntry = `${name}(${level})`;
+      if (!currentPlayers.includes(newEntry)) {
+        currentPlayers.push(newEntry);
+        set(playersRef(), currentPlayers);
+      }
+    };
+
+    document.getElementById("saveImageBtn").onclick = () => {
+      const scheduleDiv = document.getElementById("scheduleTable");
+      const now = new Date();
+      const pad = (n) => n.toString().padStart(2, '0');
+      const year = now.getFullYear();
+      const month = pad(now.getMonth() + 1);
+      const date = pad(now.getDate());
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+      const weekday = dayNames[now.getDay()];
+      const hour = pad(now.getHours());
+      const minute = pad(now.getMinutes());
+      const filename = `koen_league_result_${year}-${month}-${date}(${weekday})_${hour}-${minute}.jpg`;
+      html2canvas(scheduleDiv).then(canvas => {
+        const link = document.createElement("a");
+        link.download = filename;
+        link.href = canvas.toDataURL("image/jpeg");
+        link.click();
+      });
+    };
+
+    document.getElementById("deleteGroupBtn").onclick = () => {
+  const inputPassword = prompt("그룹을 삭제하려면 비밀번호를 입력하세요:");
+  if (inputPassword !== "771225") {
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+
+  const confirmDelete = confirm(`정말로 그룹 "${currentGroup}"을 삭제하시겠습니까?`);
+  if (!confirmDelete) return;
+
+  // 그룹 관련 전체 데이터 삭제
+  remove(ref(db, `players/${currentGroup}`))
+    .then(() => {
+      alert(`그룹 "${currentGroup}"이 삭제되었습니다.`);
+      location.reload();
+    })
+    .catch((err) => {
+      console.error("삭제 실패:", err);
+      alert("삭제 중 오류가 발생했습니다.");
+    });
+};
+
+
+function loadGroupData() {
+  onValue(playersRef(), (snapshot) => {
+    currentPlayers = snapshot.val() || [];
+    renderPlayers(currentPlayers);
   });
 
-  const selectedPromise = new Promise((resolve) => {
-    onValue(selectedRef, (snapshot) => {
-      selected = snapshot.val() || [];
-      resolve();
-    });
+  onValue(resultsRef(), (snapshot) => {
+    results = snapshot.val() || {};
+    renderSchedule();
   });
 
-  const resultsPromise = new Promise((resolve) => {
-    onValue(resultsRef, (snapshot) => {
-      results = snapshot.val() || {};
-      resolve();
-    });
-  });
-
-  Promise.all([listPromise, selectedPromise, resultsPromise]).then(() => {
+  onValue(selectedRef(), (snapshot) => {
+    selected = snapshot.val() || [];
     renderPlayers(currentPlayers);
     renderSchedule();
   });
 }
 
 
-    function renderSchedule() {
-      const schedule = document.getElementById("schedule");
-      schedule.innerHTML = "<h3>리그전 대진표</h3>";
-      if (selected.length < 2) return;
-      const table = document.createElement("table");
-      const header = document.createElement("tr");
-      header.innerHTML = "<th>구분</th>" + selected.map(i => `<th>${currentPlayers[i]}</th>`).join("");
-      table.appendChild(header);
-      selected.forEach((i) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `<th>${currentPlayers[i]}</th>`;
-        selected.forEach((j) => {
-          const cell = document.createElement("td");
-          if (i === j) {
-            cell.textContent = "-";
-          } else {
-            const key = `${i}-${j}`;
-            const score = results[key] || "";
-            cell.textContent = score;
-            cell.onclick = () => openPopup(i, j);
-            cell.style.cursor = "pointer";
-          }
-          row.appendChild(cell);
-        });
-        table.appendChild(row);
-      });
-      schedule.appendChild(table);
-    }
-
-    function openPopup(i, j) {
-      document.getElementById("popupText").textContent = `${currentPlayers[i]} vs ${currentPlayers[j]} 점수를 입력하세요.`;
-      const scoreButtons = document.getElementById("scoreButtons");
-      scoreButtons.innerHTML = "";
-      ["3-0", "3-1", "3-2", "2-0", "2-1"].forEach(score => {
-        const btn = document.createElement("button");
-        btn.textContent = score;
-        btn.onclick = () => {
-          const key = `${i}-${j}`;
-          set(ref(db, `${group}/results/${key}`), score);
-          const reverseKey = `${j}-${i}`;
-          const [a, b] = score.split("-").map(Number);
-          set(ref(db, `${group}/results/${reverseKey}`), `${b}-${a}`);
-          closePopup();
-        };
-        scoreButtons.appendChild(btn);
-      });
-      document.getElementById("popup").style.display = "block";
-    }
-
-    function closePopup() {
-      document.getElementById("popup").style.display = "none";
-    }
-
-onValue(playersRef, (snapshot) => {
-  const data = snapshot.val();
-  console.log("list 로딩됨:", data);  // 추가
-  if (!data) return;
-  currentPlayers = data;
-  renderPlayers(currentPlayers);
-  renderSchedule();
-});
-    loadPlayers();
   </script>
 </body>
 </html>
