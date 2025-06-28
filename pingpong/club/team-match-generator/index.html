@@ -174,8 +174,38 @@
   cursor: pointer;
 }
 
+/* 🔽 여기에 추가하세요 */
+  select {
+    font-size: 16px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+  }
+
+.popup-player {
+  display: inline-block;
+  padding: 6px 10px;
+  margin: 4px;
+  font-size: 16px;
+  border: 1px solid #1976d2;
+  border-radius: 8px;
+  cursor: pointer;
+  background-color: white;
+  min-width: 70px; /* 이름이 짧아도 넓이 확보 */
+  text-align: center;
+  white-space: nowrap; /* 이름 줄바꿈 방지 */
+}
+.popup-player.selected {
+  background-color: #1976d2;
+  color: white;
+  font-weight: bold;
+}
+
 
     </style>
+ 
+
+
     </head>
     <body>
     
@@ -591,49 +621,76 @@ function openMatchPopup(i, j) {
   let selectedGamesDetail = {}; // 경기별 상세 정보 저장
 
 function renderGameDetail(type) {
-  const container = document.getElementById("matchDetailArea");
-  const teamA = finalizedLeaders[currentMatch.teamA];
-  const teamB = finalizedLeaders[currentMatch.teamB];
-  const teamAPlayers = [allPlayers[teamA].name, ...getTeamMembers(teamA)];
-  const teamBPlayers = [allPlayers[teamB].name, ...getTeamMembers(teamB)];
+  const container = document.getElementById("matchDetailContainer");
+  container.innerHTML = `
+    <h3>${type} 경기 구성</h3>
+    <div>
+      <strong>A팀:</strong>
+      <div id="playersA" class="player-buttons"></div>
+    </div>
+    <div>
+      <strong>B팀:</strong>
+      <div id="playersB" class="player-buttons"></div>
+    </div>
+    <div class="set-score">
+      <button onclick="setScore(3,2)">3:2</button>
+      <button onclick="setScore(3,1)">3:1</button>
+      <button onclick="setScore(2,3)">2:3</button>
+      <button onclick="setScore(0,3)">0:3</button>
+    </div>
+    <div style="text-align:center; margin-top:10px;">
+      <button onclick="saveMatchSelection()">확인</button>
+    </div>
+  `;
 
-  // 초기화
+  const playersA = getPlayers(currentMatch.teamA); // 예: ["김성용", "홍길동"]
+  const playersB = getPlayers(currentMatch.teamB);
+
   selectedGamesDetail[type] = {
-    type,
     playersA: [],
     playersB: [],
     scoreA: 0,
-    scoreB: 0
+    scoreB: 0,
   };
 
-  container.innerHTML = `
-    <h4 style="text-align:center;">${type} 경기 구성</h4>
-    <div style="display:flex; justify-content:space-around; margin-bottom: 10px;">
-      <div>
-        <strong>팀 A</strong><br/>
-        ${teamAPlayers.map(name =>
-          `<span class="player" onclick="selectPlayer('${type}', 'A', '${name}')">${name}</span>`
-        ).join('')}
-      </div>
-      <div>
-        <strong>팀 B</strong><br/>
-        ${teamBPlayers.map(name =>
-          `<span class="player" onclick="selectPlayer('${type}', 'B', '${name}')">${name}</span>`
-        ).join('')}
-      </div>
-    </div>
-    <div style="text-align:center;">
-      <label>세트 스코어: </label>
-      <select onchange="setScore('${type}', 'A', this.value)">
-        ${[0,1,2,3].map(i => `<option value="${i}">${i}</option>`).join('')}
-      </select>
-      :
-      <select onchange="setScore('${type}', 'B', this.value)">
-        ${[0,1,2,3].map(i => `<option value="${i}">${i}</option>`).join('')}
-      </select>
-    </div>
-  `;
+  const areaA = document.getElementById("playersA");
+  const areaB = document.getElementById("playersB");
+
+  playersA.forEach(name => {
+    const btn = document.createElement("button");
+    btn.textContent = name;
+    btn.classList.add("popup-player");
+    btn.onclick = () => {
+      const list = selectedGamesDetail[type].playersA;
+      if (list.includes(name)) {
+        list.splice(list.indexOf(name), 1);
+        btn.classList.remove("selected");
+      } else {
+        list.push(name);
+        btn.classList.add("selected");
+      }
+    };
+    areaA.appendChild(btn);
+  });
+
+  playersB.forEach(name => {
+    const btn = document.createElement("button");
+    btn.textContent = name;
+    +btn.classList.add("popup-player");
+    btn.onclick = () => {
+      const list = selectedGamesDetail[type].playersB;
+      if (list.includes(name)) {
+        list.splice(list.indexOf(name), 1);
+        btn.classList.remove("selected");
+      } else {
+        list.push(name);
+        btn.classList.add("selected");
+      }
+    };
+    areaB.appendChild(btn);
+  });
 }
+
 
 // 팀 멤버 가져오기
 function getTeamMembers(teamIndex) {
@@ -645,26 +702,35 @@ function getTeamMembers(teamIndex) {
   return names.filter(name => name !== leader.name);
 }
 
-// 선수 선택
+// 선수 클릭 시 실행되는 함수
 function selectPlayer(type, team, name) {
-  const list = selectedGamesDetail[type][`players${team}`];
-  const isDoubles = type.includes("복");
-  const max = isDoubles ? 2 : 1;
+  const detail = selectedGamesDetail[type]; // 현재 경기 상세 정보
+  const list = team === 'A' ? detail.playersA : detail.playersB;
 
-  if (list.includes(name)) {
-    selectedGamesDetail[type][`players${team}`] = list.filter(n => n !== name);
+  const isDoubles = type.includes("복"); // 복식 여부
+  const max = isDoubles ? 2 : 1;         // 복식은 2명, 단식은 1명 제한
+
+  if (!list.includes(name)) {
+    if (list.length >= max) return; // 최대 인원 초과 시 무시
+    list.push(name);                // 선택 추가
   } else {
-    if (list.length >= max) return;
-    selectedGamesDetail[type][`players${team}`].push(name);
+    list.splice(list.indexOf(name), 1); // 선택 해제
   }
 
-  renderGameDetail(type); // 다시 렌더링 (선택 상태 갱신)
+  // 버튼 스타일 업데이트
+  const allButtons = document.querySelectorAll(`.popup-player`);
+  allButtons.forEach(btn => {
+    if (btn.textContent === name) {
+      btn.classList.toggle('selected');
+    }
+  });
 }
 
-// 점수 입력
+// 세트 스코어 설정 함수
 function setScore(type, team, value) {
   selectedGamesDetail[type][`score${team}`] = parseInt(value);
 }
+
 
 
 }
