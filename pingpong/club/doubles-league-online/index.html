@@ -213,7 +213,203 @@
     const resultsRef = ref(db, "players/koen_takgu/results");
     const selectedRef = ref(db, "players/koen_takgu/selected");
 
-    // 이하 기존 코드 동일
+   const defaultPlayers = [
+      "김희영(4)", "강성용(5)", "김범일(5)", "이영진(6)", "박주민(6)", "강다훈(6)",
+      "박진우(7)", "배성국(7)", "이상준(7)", "황경진(8)", "양충현(8)", "임춘근(9)",
+      "전성무(9)", "박인찬(8)", "송창근(9)", "강호선(10)", "조보미(12)", "홍지원(13)",
+      "송은아(13)", "이낭주(13)", "이승철(13)", "박나령(14)", "고은선(14)"
+    ];
+
+    onValue(playersRef, (snapshot) => {
+      if (!snapshot.exists()) set(playersRef, defaultPlayers);
+    }, { onlyOnce: true });
+
+    const playerList = document.getElementById("playerList");
+    const schedule = document.getElementById("schedule");
+    const popup = document.getElementById("popup");
+    const popupText = document.getElementById("popupText");
+    const scoreButtons = document.getElementById("scoreButtons");
+
+    let currentPlayers = [];
+    let selected = [];
+    let results = {};
+
+
+
+   function renderPlayers(players) {
+    playerList.innerHTML = "";
+    players.forEach((player, i) => {
+    const isDefault = defaultPlayers.includes(player);
+
+    if (hideDefault && isDefault) return; // 숨김 조건
+
+    const div = document.createElement("div");
+    div.className = "player";
+
+    // 부수 추출 및 스타일 지정
+    const match = player.match(/\((\d+)\)$/);
+    if (match) {
+      const level = Number(match[1]);
+      if (level <= 6) div.classList.add("lv4to6");
+      else if (level <= 9) div.classList.add("lv7to9");
+      else if (level <= 12) div.classList.add("lv10to12");
+      else div.classList.add("lv13to14");
+    }
+
+    if (!isDefault) div.classList.add("new-player");
+    if (selected.includes(i)) div.classList.add("selected");
+
+    div.textContent = player;
+    div.onclick = () => togglePlayer(i);
+    playerList.appendChild(div);
+    });
+   }
+
+
+    function togglePlayer(index) {
+      const idx = selected.indexOf(index);
+      if (idx > -1) selected.splice(idx, 1);
+      else selected.push(index);
+      set(selectedRef, selected);
+    }
+
+    function renderSchedule() {
+      if (selected.length < 2) {
+        schedule.innerHTML = "<p>2명 이상 선택해주세요.</p>";
+        return;
+      }
+      const players = selected.map(i => currentPlayers[i]);
+      let html = "<div id='scheduleTable'><table><tr><th>구분</th>";
+      players.forEach(p => html += `<th>${p}</th>`);
+      html += "</tr>";
+
+      players.forEach((p1, i) => {
+        html += `<tr><th>${p1}</th>`;
+        players.forEach((p2, j) => {
+          const key = `${i}-${j}`;
+          const val = i === j ? "X" : (results[key] || "");
+          html += `<td onclick='openPopup(${i},${j})'>${val}</td>`;
+        });
+        html += "</tr>";
+      });
+      html += "</table>";
+
+      const winCount = Array(players.length).fill(0);
+      const setCount = Array(players.length).fill(0);
+
+      for (let i = 0; i < players.length; i++) {
+        for (let j = 0; j < players.length; j++) {
+          if (i === j) continue;
+          const result = results[`${i}-${j}`];
+          if (result) {
+            const [a, b] = result.split("-").map(Number);
+            if (a > b) winCount[i]++;
+            setCount[i] += a;
+          }
+        }
+      }
+
+      const rankIndex = winCount.map((_, i) => i)
+        .sort((a, b) => winCount[b] - winCount[a] || setCount[b] - setCount[a]);
+      const ranks = Array(players.length);
+      rankIndex.forEach((idx, r) => { ranks[idx] = r + 1 });
+
+      html += "<h3>순위 요약</h3><table><tr><th>선수</th><th>승</th><th>세트 득점</th><th>순위</th></tr>";
+      players.forEach((p, i) => {
+        html += `<tr><td>${p}</td><td>${winCount[i]}</td><td>${setCount[i]}</td><td>${ranks[i]}</td></tr>`;
+      });
+      html += "</table></div>";
+
+      schedule.innerHTML = html;
+    }
+
+    window.openPopup = (i, j) => {
+      const players = selected.map(i => currentPlayers[i]);
+      popupText.textContent = `${players[i]} 선수는 ${players[j]} 선수와의 경기에서 몇 대 몇으로 이겼나요?`;
+      const scores = ["3-0", "3-1", "3-2", "2-0", "2-1"];
+      scoreButtons.innerHTML = "";
+      scores.forEach(score => {
+        const btn = document.createElement("button");
+        btn.textContent = score;
+        btn.onclick = () => {
+          results[`${i}-${j}`] = score;
+          const [a, b] = score.split("-").map(Number);
+          results[`${j}-${i}`] = `${b}-${a}`;
+          set(resultsRef, results);
+          popup.style.display = "none";
+          renderSchedule();
+        };
+        scoreButtons.appendChild(btn);
+      });
+      popup.style.display = "block";
+    };
+
+    window.closePopup = () => popup.style.display = "none";
+
+    onValue(playersRef, (snapshot) => {
+      currentPlayers = snapshot.val() || [];
+      renderPlayers(currentPlayers);
+    });
+
+    onValue(resultsRef, (snapshot) => {
+      results = snapshot.val() || {};
+      renderSchedule();
+    });
+
+    onValue(selectedRef, (snapshot) => {
+      selected = snapshot.val() || [];
+      renderPlayers(currentPlayers);
+      renderSchedule();
+    });
+
+    document.getElementById("resetBtn").onclick = () => {
+      results = {};
+      set(resultsRef, {});
+      renderSchedule();
+    };
+
+    document.getElementById("clearBtn").onclick = () => {
+      remove(playersRef);
+      remove(resultsRef);
+      remove(selectedRef);
+      location.reload();
+    };
+
+    document.getElementById("addPlayerBtn").onclick = () => {
+      const name = document.getElementById("playerName").value.trim();
+      const level = document.getElementById("playerLevel").value.trim();
+      if (!name || !level) return alert("이름과 부수를 입력하세요");
+      const newEntry = `${name}(${level})`;
+      if (!currentPlayers.includes(newEntry)) {
+        currentPlayers.push(newEntry);
+        set(playersRef, currentPlayers);
+      }
+    };
+
+    document.getElementById("saveImageBtn").onclick = () => {
+      const scheduleDiv = document.getElementById("scheduleTable");
+      const now = new Date();
+      const pad = (n) => n.toString().padStart(2, '0');
+      const year = now.getFullYear();
+      const month = pad(now.getMonth() + 1);
+      const date = pad(now.getDate());
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+      const weekday = dayNames[now.getDay()];
+      const hour = pad(now.getHours());
+      const minute = pad(now.getMinutes());
+      const filename = `koen_league_result_${year}-${month}-${date}(${weekday})_${hour}-${minute}.jpg`;
+      html2canvas(scheduleDiv).then(canvas => {
+        const link = document.createElement("a");
+        link.download = filename;
+        link.href = canvas.toDataURL("image/jpeg");
+        link.click();
+      });
+    };
+
+    document.getElementById("toggleDefaultBtn").onclick = () => {
+  hideDefault = !hideDefault;
+  renderPlayers(currentPlayers);
+};
 
   </script>
 </body>
