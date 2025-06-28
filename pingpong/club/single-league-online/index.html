@@ -256,8 +256,7 @@
 
 
 
-
- document.getElementById("addGroupBtn").onclick = () => {
+document.getElementById("addGroupBtn").onclick = () => {
   const newGroup = document.getElementById("newGroupName").value.trim();
   if (!newGroup) return alert("그룹명을 입력하세요.");
 
@@ -274,10 +273,10 @@
     .then(() => {
       alert(`${newGroup} 그룹이 빈 상태로 추가되었습니다.`);
       currentGroup = newGroup;
-      document.getElementById("groupSelect").value = newGroup;
-      loadGroupList();     // 새 목록 반영
-      loadGroupButtons();  // 버튼도 다시
-      loadGroupData();     // 데이터 로드
+      // 여기서부터 ↓↓↓ 실행
+      loadGroupList();
+      loadGroupButtons();
+      loadGroupData();
     })
     .catch((error) => {
       console.error("그룹 추가 실패:", error);
@@ -285,6 +284,7 @@
     });
 };
 
+document.getElementById("newGroupName").value = "";
 
 
 
@@ -510,17 +510,30 @@ loadGroupButtons();  // 그룹 버튼도 함께 로드
 };
 
 
+document.getElementById("addPlayerBtn").onclick = async () => {
+  const name = document.getElementById("playerName").value.trim();
+  const level = document.getElementById("playerLevel").value.trim();
+  if (!name || !level) return alert("이름과 부수를 입력하세요");
 
-    document.getElementById("addPlayerBtn").onclick = () => {
-      const name = document.getElementById("playerName").value.trim();
-      const level = document.getElementById("playerLevel").value.trim();
-      if (!name || !level) return alert("이름과 부수를 입력하세요");
-      const newEntry = `${name}(${level})`;
-      if (!currentPlayers.includes(newEntry)) {
-        currentPlayers.push(newEntry);
-        set(playersRef(), currentPlayers);
-      }
-    };
+  const newEntry = `${name}(${level})`;
+
+  try {
+    const snapshot = await get(playersRef());
+    currentPlayers = snapshot.val() || [];
+
+    if (!currentPlayers.includes(newEntry)) {
+      currentPlayers.push(newEntry);
+      await set(playersRef(), currentPlayers);
+      alert(`${newEntry} 선수가 추가되었습니다.`);
+    } else {
+      alert("이미 존재하는 선수입니다.");
+    }
+  } catch (err) {
+    console.error("선수 추가 오류:", err);
+    alert("선수 추가 중 문제가 발생했습니다.");
+  }
+};
+
 
     document.getElementById("saveImageBtn").onclick = () => {
       const scheduleDiv = document.getElementById("scheduleTable");
@@ -564,24 +577,43 @@ loadGroupButtons();  // 그룹 버튼도 함께 로드
     });
 };
 
+let playersListener, resultsListener, selectedListener;
 
 function loadGroupData() {
-  onValue(playersRef(), (snapshot) => {
+  const dbRef = getDatabase();
+
+  if (playersListener) playersListener();  // 기존 리스너 해제
+  if (resultsListener) resultsListener();
+  if (selectedListener) selectedListener();
+
+  playersListener = onValue(playersRef(), (snapshot) => {
     currentPlayers = snapshot.val() || [];
     renderPlayers(currentPlayers);
   });
 
-  onValue(resultsRef(), (snapshot) => {
+  resultsListener = onValue(resultsRef(), (snapshot) => {
     results = snapshot.val() || {};
     renderSchedule();
   });
 
-  onValue(selectedRef(), (snapshot) => {
+  selectedListener = onValue(selectedRef(), (snapshot) => {
     selected = snapshot.val() || [];
     renderPlayers(currentPlayers);
     renderSchedule();
   });
 }
+
+document.getElementById("toggleGroupViewBtn").onclick = () => {
+  const select = document.getElementById("groupSelect");
+  const groupList = document.getElementById("groupList");
+  const button = document.getElementById("toggleGroupViewBtn");
+
+  const currentlyHidden = select.style.display === "none";
+
+  select.style.display = currentlyHidden ? "inline-block" : "none";
+  groupList.style.display = currentlyHidden ? "block" : "none";
+  button.textContent = currentlyHidden ? "그룹숨기기" : "그룹보이기";
+};
 
 
   </script>
