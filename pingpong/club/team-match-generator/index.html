@@ -557,12 +557,10 @@ function openMatchPopup(i, j) {
   btn.style.cursor = "pointer";
   btn.style.backgroundColor = "#e0e0e0";
 
-  // ✅ 버튼 클릭 이벤트
   btn.onclick = () => {
     const idx = selectedGames.indexOf(type);
 
     if (idx === -1) {
-      // 아직 선택 안 된 경우
       if (selectedGames.length >= 7) {
         alert("최대 7경기까지만 선택할 수 있습니다.");
         return;
@@ -570,15 +568,13 @@ function openMatchPopup(i, j) {
       selectedGames.push(type);
       btn.style.backgroundColor = "#64b5f6";
 
-      // ✅ ✅ ✅ 이 위치에서 상세 입력 영역 표시 함수 호출
+      // ✅ 여기에 넣으세요!
       renderGameDetail(type);
 
     } else {
-      // 이미 선택된 경우 → 해제
       selectedGames.splice(idx, 1);
       btn.style.backgroundColor = "#e0e0e0";
 
-      // 상세 정보도 삭제
       delete selectedGamesDetail[type];
       document.getElementById("matchDetailArea").innerHTML = "";
     }
@@ -586,6 +582,7 @@ function openMatchPopup(i, j) {
 
   buttonArea.appendChild(btn);
 });
+
 
 
 
@@ -677,12 +674,43 @@ function closeMatchPopup() {
   document.getElementById("matchPopup").style.display = "none";
 }
 
-// 저장 (1단계에선 콘솔 출력만)
 function saveMatchSelection() {
-  console.log("팀 A:", currentMatch.teamA, "팀 B:", currentMatch.teamB);
-  console.log("선택된 경기:", selectedGames);
+  const { teamA, teamB } = currentMatch;
+  const keyAB = `${teamA}-${teamB}`;
+  const keyBA = `${teamB}-${teamA}`;
+  const summaryLines = [];
+
+  selectedGames.forEach(type => {
+    const detail = selectedGamesDetail[type];
+    if (!detail || detail.playersA.length === 0 || detail.playersB.length === 0) return;
+
+    // ✅ 성 빼기
+    const nameA = detail.playersA.map(n => n.slice(1)).join(',');
+    const nameB = detail.playersB.map(n => n.slice(1)).join(',');
+    const scoreA = detail.scoreA;
+    const scoreB = detail.scoreB;
+
+    const text = `${type} ${nameA}vs${nameB} ${scoreA}:${scoreB}`;
+    summaryLines.push(text);
+  });
+
+  const summaryText = summaryLines.join('<br/>');
+  matchResults[keyAB] = summaryText;
+
+  // ✅ B vs A 자동 반영
+  const reverseText = summaryLines.map(line => {
+    const parts = line.match(/(.+?) (.+?)vs(.+?) (\d):(\d)/);
+    if (!parts) return line;
+    const [_, type, nameA, nameB, a, b] = parts;
+    return `${type} ${nameB}vs${nameA} ${b}:${a}`;
+  }).join('<br/>');
+
+  matchResults[keyBA] = reverseText;
+
   closeMatchPopup();
+  generateLeague(); // 다시 테이블 렌더링
 }
+
 
 
 </script>
