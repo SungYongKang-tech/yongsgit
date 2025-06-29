@@ -269,24 +269,11 @@
 
     <div class="action-buttons">  
         
- <!-- 토너먼트 생성 , 리그전 생성 버튼 입력 -->
-    
-    <button onclick="generateLeague()">리그전 생성</button>
-    <button onclick="resetMatchSchedule()">초기화</button>
-    </div>
+ 
+ 
     <div id="matchSchedule"></div>
 
-<!--  리그전 관련 추가  -->
 
-<div id="popup" style="display:none; position:fixed; top:30%; left:50%; transform:translate(-50%, -50%); background:#fff; border:2px solid #333; padding:20px; z-index:1000; border-radius:8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); max-width:300px; text-align:center;">
-
-    <p id="popupText"></p>
-  <div id="scoreButtons"></div>
-  <button onclick="document.getElementById('popup').style.display='none'">닫기</button>
-</div>
-<!--  리그전 관련 추가 여기까지 -->
-
- 
    
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
@@ -295,11 +282,6 @@
 <!--  여기까지 javascript  -->
 
 <script>
-
-let popupTeamNames = [];
-let popupI = 0;
-let popupJ = 0;
-
 
   let allPlayers = [
     { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
@@ -453,186 +435,13 @@ teams.forEach((team, idx) => {
     selected = [];
     leaders = [];
     finalizedLeaders = [];
-// 리그전 추가 관련 추가
-    matchResults = {};
-// 리그전 추가 관련 추가 여기까지
+
     document.getElementById("teams").innerHTML = "";
     document.getElementById("matchSchedule").innerHTML = "";
     renderPlayers();
   }
 
-  function resetMatchSchedule() {
-    const container = document.getElementById("matchSchedule");
-    container.innerHTML = "";
-    console.log("대진표 초기화 완료");
-  }
-
-  // 리그전 실행 
-
-function generateLeague() {
-  const teamNames = finalizedLeaders.map(i => `${allPlayers[i].name} 팀`);
-  const container = document.getElementById("matchSchedule");
-  container.innerHTML = "";
-
-  if (teamNames.length < 2) {
-    container.innerHTML = "<p style='text-align:center;'>2개 이상의 팀이 필요합니다.</p>";
-    return;
-  }
-
-  // 테이블 생성
-  let html = "<h3 style='text-align:center;'>🏓 팀 리그전 대진표</h3>";
-  html += "<div class='scroll-table'><table><tr><th>팀</th>";
-
-
-  teamNames.forEach(name => html += `<th>${name}</th>`);
-  html += "<th>승</th><th>세트</th><th>순위</th></tr>";
-
-  // 초기 점수 구조
-  const scores = Array(teamNames.length).fill(null).map(() => ({
-    wins: 0,
-    sets: 0,
-    rank: 0
-  }));
-
-  for (let i = 0; i < teamNames.length; i++) {
-    html += `<tr><th style='background:#ffe0b2;'>${teamNames[i]}</th>`;
-    for (let j = 0; j < teamNames.length; j++) {
-      if (i === j) {
-        html += `<td style='background:#eeeeee;'>X</td>`;
-      } else {
-        const key = `${i}-${j}`;
-        const val = matchResults[key] || "";
-        html += `<td style='cursor:pointer;' onclick='openTeamPopup(${i},${j})'>${val}</td>`;
-      }
-    }
-    html += `<td id='wins-${i}'>0</td><td id='sets-${i}'>0</td><td id='rank-${i}'>-</td></tr>`;
-  }
-
-  html += "</table></div>";
-  container.innerHTML = html;
-  updateTeamScores(teamNames);
-}
-
-let matchResults = {};
-
-function openTeamPopup(i, j) {
-  popupTeamNames = finalizedLeaders.map(k => `${allPlayers[k].name} 팀`);
-  popupI = i;
-  popupJ = j;
-  const popup = document.getElementById("popup");
-  const popupText = document.getElementById("popupText");
-  const scoreButtons = document.getElementById("scoreButtons");
-
-  let scoreA = 0;
-  let scoreB = 0;
-
-  function updateDisplay() {
-  popupText.innerHTML = `
-    <p style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:10px;">
-      <strong style="color:#1976d2;">${popupTeamNames[popupI]}</strong> 팀이 
-      <strong style="color:#d32f2f;">${popupTeamNames[popupJ]}</strong> 팀을 몇 대 몇으로 이겼나요?
-    </p>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap: 20px;">
-      <div style="flex:1; text-align:center; border: 2px solid #1976d2; padding: 10px; border-radius: 10px;">
-        <strong style="color:#1976d2;">${popupTeamNames[popupI]}</strong><br/>
-        <button onclick="changeScore('A', 1)" style="background:#42a5f5; color:white; font-size:16px; font-weight:bold; padding:6px 12px; margin:4px; border:none; border-radius:6px;">＋</button>
-        <span style="margin:0 10px; font-size:18px;" id="scoreA">${scoreA}</span>
-        <button onclick="changeScore('A', -1)" style="background:#90caf9; color:black; font-size:16px; font-weight:bold; padding:6px 12px; margin:4px; border:none; border-radius:6px;">－</button>
-      </div>
-      <div style="flex:1; text-align:center; border: 2px solid #d32f2f; padding: 10px; border-radius: 10px;">
-        <strong style="color:#d32f2f;">${popupTeamNames[popupJ]}</strong><br/>
-        <button onclick="changeScore('B', 1)" style="background:#ef5350; color:white; font-size:16px; font-weight:bold; padding:6px 12px; margin:4px; border:none; border-radius:6px;">＋</button>
-        <span style="margin:0 10px; font-size:18px;" id="scoreB">${scoreB}</span>
-        <button onclick="changeScore('B', -1)" style="background:#ef9a9a; color:black; font-size:16px; font-weight:bold; padding:6px 12px; margin:4px; border:none; border-radius:6px;">－</button>
-      </div>
-    </div>
-  `;
-}
-
-
-  window.changeScore = (team, delta) => {
-    if (team === "A") {
-      scoreA = Math.max(0, scoreA + delta);
-      document.getElementById("scoreA").textContent = scoreA;
-    } else {
-      scoreB = Math.max(0, scoreB + delta);
-      document.getElementById("scoreB").textContent = scoreB;
-    }
-  };
-
-  scoreButtons.innerHTML = "";
-
-  const saveBtn = document.createElement("button");
-  saveBtn.textContent = "저장";
-  saveBtn.style.padding = "10px 20px";
-  saveBtn.style.marginTop = "10px";
-  saveBtn.style.backgroundColor = "#43a047";  // 초록색
-  saveBtn.style.color = "white";
-  saveBtn.style.fontSize = "16px";
-  saveBtn.style.border = "none";
-  saveBtn.style.borderRadius = "6px";
-  saveBtn.style.cursor = "pointer";
-
-  saveBtn.onclick = () => {
-    if (scoreA === scoreB) {
-      alert("무승부는 허용되지 않습니다.");
-      return;
-    }
-    matchResults[`${i}-${j}`] = `${scoreA}-${scoreB}`;
-    matchResults[`${j}-${i}`] = `${scoreB}-${scoreA}`;
-    popup.style.display = "none";
-    generateLeague();
-  };
-
-  scoreButtons.appendChild(saveBtn);
-  updateDisplay();
-  popup.style.display = "block";
-}
-
-
-function updateTeamScores(teamNames) {
-  const n = teamNames.length;
-  const wins = Array(n).fill(0);
-  const sets = Array(n).fill(0);
-
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
-      const score = matchResults[`${i}-${j}`];
-      if (!score) continue;
-      const [a, b] = score.split("-").map(Number);
-      sets[i] += a;
-      if (a > b) wins[i]++;
-    }
-  }
-
-  const ranks = wins.map((w, i) => ({ i, wins: w, sets: sets[i] }));
-  ranks.sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    return b.sets - a.sets;
-  });
-
-  const rankValues = Array(n);
-  let currentRank = 1;
-  ranks.forEach((r, idx) => {
-    if (
-      idx > 0 &&
-      (r.wins < ranks[idx - 1].wins ||
-        r.sets < ranks[idx - 1].sets)
-    ) {
-      currentRank = idx + 1;
-    }
-    rankValues[r.i] = currentRank;
-  });
-
-  for (let i = 0; i < n; i++) {
-    document.getElementById(`wins-${i}`).textContent = wins[i];
-    document.getElementById(`sets-${i}`).textContent = sets[i];
-    document.getElementById(`rank-${i}`).textContent = rankValues[i];
-  }
-}
-
-
+ 
 
   renderPlayers();
   document.getElementById("startPopup").style.display = "block";  // 첫 팝업 자동 표시
