@@ -282,6 +282,7 @@
         <button onclick="assignTeams()">팀 자동 배정</button>
         <button onclick="resetAll()">전체 초기화</button>
         <button id="saveTeamImageButton" onclick="saveTeamsAsImage()">팀 이미지 저장</button>
+        <button onclick="uploadTeamsToFirebase()" style="background-color:#f57f17;">팀 구성 업로드</button>
 
     </div>
 
@@ -317,6 +318,7 @@
   let selected = [];
   let leaders = [];
   let finalizedLeaders = [];
+  let latestTeams = []; // ✅ 업로드용 전역 저장소
 
   function renderPlayers() {
   const playerList = document.getElementById("playerList");
@@ -449,6 +451,8 @@ teams.forEach((team, idx) => {
   teamBox.appendChild(div);
 });
 
+latestTeams = teams;
+
 // Firebase에 저장할 데이터 구조 만들기
 const firebaseData = {};
 teams.forEach((team, idx) => {
@@ -472,6 +476,7 @@ db.ref("teams").set(firebaseData)
     selected = [];
     leaders = [];
     finalizedLeaders = [];
+    
 
     document.getElementById("teams").innerHTML = "";
     document.getElementById("matchSchedule").innerHTML = "";
@@ -515,6 +520,28 @@ function addPlayer() {
   renderPlayers();
 }
 
+function uploadTeamsToFirebase() {
+  if (!latestTeams || latestTeams.length === 0) {
+    alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
+    return;
+  }
+
+  const firebaseData = {};
+  latestTeams.forEach((team, idx) => {
+    firebaseData[`team${idx + 1}`] = {
+      teamName: `${team.leader.name} 팀`,
+      teamLeader: team.leader.name,
+      players: [team.leader, ...team.members]
+    };
+  });
+
+  db.ref("teams").set(firebaseData)
+    .then(() => alert("✅ 팀 구성이 Firebase에 업로드되었습니다!"))
+    .catch((err) => {
+      console.error("❌ 업로드 실패:", err);
+      alert("❌ Firebase 업로드에 실패했습니다.");
+    });
+}
 
 
 </script>
