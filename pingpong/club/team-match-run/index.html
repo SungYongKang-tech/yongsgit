@@ -68,7 +68,10 @@ let teamData  = {};                 // 원본 객체 그대로 보관
 db.ref("teams").once("value").then(snap=>{
   if(!snap.exists()){ alert("⚠️ 저장된 팀이 없습니다!"); return;}
   teamData = snap.val();
-  teamNames = Object.values(teamData).map(t => t.teamName).sort();
+  teamNames = Object.entries(teamData)
+  .map(([id, t]) => ({ id, name: t.teamName }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
   renderTeamList(); 
   alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
 }).catch(err=>console.error(err));
@@ -111,17 +114,18 @@ function drawSummary() {
 function openMatch(i, j) {
   const teamA = teamNames[i];
   const teamB = teamNames[j];
-  currentMatch = { i, j, teamA, teamB };  // 전역 저장
+  currentMatch = { i, j, teamA: teamA.name, teamB: teamB.name };  // 팀 이름만 저장
 
-  document.getElementById('modalTitle').innerText = `${teamA} vs ${teamB} 경기 세팅`;
+  document.getElementById('modalTitle').innerText = `${teamA.name} vs ${teamB.name} 경기 세팅`;
 
   // 선수 선택 렌더링
-  renderPlayerSelect("teamASelect", teamData[teamA].players, "A");
-  renderPlayerSelect("teamBSelect", teamData[teamB].players, "B");
+  renderPlayerSelect("teamASelect", teamData[teamA.id].players, "A");
+  renderPlayerSelect("teamBSelect", teamData[teamB.id].players, "B");
 
   document.getElementById('scoreInput').value = '';
   document.getElementById('matchModal').style.display = "flex";
 }
+
 
 function renderPlayerSelect(containerId, players, teamKey) {
   let html = `<div><strong>${teamKey === "A" ? "팀A" : "팀B"} 선수 선택:</strong><br>`;
