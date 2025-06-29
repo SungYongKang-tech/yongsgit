@@ -26,7 +26,7 @@
 
   <div id="teamListArea" style="margin-bottom:30px;"></div>
 
-  
+
   <h2>단체전 진행</h2>
 
   <!-- 2단계: 경기 방식 설정 UI -->
@@ -68,7 +68,7 @@ let teamData  = {};                 // 원본 객체 그대로 보관
 db.ref("teams").once("value").then(snap=>{
   if(!snap.exists()){ alert("⚠️ 저장된 팀이 없습니다!"); return;}
   teamData = snap.val();
-  teamNames = Object.values(teamData).map(t => t.teamName);
+  teamNames = Object.values(teamData).map(t => t.teamName).sort();
   renderTeamList(); 
   alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
 }).catch(err=>console.error(err));
@@ -89,38 +89,62 @@ function renderTeamList() {
   document.getElementById('teamListArea').innerHTML = html;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 /* ---------- 3단계: 대진표 요약표 그리기 ---------- */
-function drawSummary(){
-  if(teamNames.length < 2){ alert("팀 데이터가 없습니다."); return; }
 
+function drawSummary() {
+  const teamCount = teamNames.length;
+
+  if (teamCount < 2) {
+    alert("⚠️ 팀이 2개 이상 있어야 합니다.");
+    return;
+  } else if (teamCount === 2) {
+    renderSingleMatchCard();
+  } else if (teamCount === 3) {
+    renderThreeTeamList();
+  } else if (teamCount >= 4 && teamCount <= 6) {
+    renderMatchTable();
+  } else {
+    alert("⚠️ 6팀까지만 지원합니다.");
+  }
+}
+
+function renderSingleMatchCard() {
+  const [teamA, teamB] = teamNames;
+  const html = `
+    <div style="text-align:center;">
+      <h3>🏀 ${teamA} vs ${teamB}</h3>
+      <button onclick="openMatch(0,1)" style="padding:10px 20px;font-size:16px;">경기 세팅하기</button>
+    </div>
+  `;
+  document.getElementById("summaryArea").innerHTML = html;
+}
+
+function renderThreeTeamList() {
+  let html = '<h3 style="text-align:center;">🔍 3팀 리그전 (총 3경기)</h3><ul style="list-style:none;padding:0;text-align:center;">';
+  for (let i = 0; i < 2; i++) {
+    for (let j = i + 1; j < 3; j++) {
+      html += `<li style="margin:10px 0;"><button onclick="openMatch(${i},${j})">🏀 ${teamNames[i]} vs ${teamNames[j]}</button></li>`;
+    }
+  }
+  html += '</ul>';
+  document.getElementById("summaryArea").innerHTML = html;
+}
+
+function renderMatchTable() {
   const singles = parseInt(document.getElementById("singlesCnt").value,10);
   const doubles = parseInt(document.getElementById("doublesCnt").value,10);
   const totalGames = singles + doubles;
 
-  // 표 머리글
   let html = '<table><tr><th></th>';
   teamNames.forEach(n => html += `<th>${n}</th>`);
   html += '</tr>';
 
-  // 행
   teamNames.forEach((rowName,i)=>{
     html += `<tr><th>${rowName}</th>`;
     teamNames.forEach((colName,j)=>{
       if(i===j){
         html += '<td class="self">-</td>';
-      }else if(i<j){   // 중복 방지: 절반만 vs 표시
+      }else if(i<j){
         html += `<td class="vs" onclick="openMatch(${i},${j})">vs</td>`;
       }else{
         html += '<td></td>';
@@ -130,22 +154,14 @@ function drawSummary(){
   });
   html += '</table>';
 
-  // 총 경기 수 정보 표시
   html += `<p style="text-align:center;margin-top:10px;">
-            ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
-            (${totalGames%2===0 ? "짝수: 세트합 우선" : "홀수: 승수 우선"})
+              ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
+              (${totalGames%2===0 ? "짝수: 세트합 우선" : "홍수: 승수 우선"})
            </p>`;
 
   document.getElementById("summaryArea").innerHTML = html;
 }
-
-/* ---------- 이후 단계(4~7단계) 연결용: 빈 함수 ---------- */
-function openMatch(i,j){
-  const teamA = teamNames[i];
-  const teamB = teamNames[j];
-  // 4단계에서 상세 경기 세팅 UI로 이동 / 팝업 등 구현 예정
-  alert(`${teamA} vs ${teamB} 경기 세팅으로 이동합니다.`);
-}
 </script>
+
 </body>
 </html>
