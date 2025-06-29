@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>단체전 진행</title>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <style>
+    body{font-family:'Segoe UI',sans-serif;padding:20px;background:#f5f7fa}
+    h2{text-align:center;color:#0d47a1;margin:10px 0 30px}
+    .config{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+    select,button{padding:6px 14px;font-size:15px}
+    table{border-collapse:collapse;width:100%;max-width:600px;margin:0 auto}
+    th,td{border:1px solid #888;padding:8px 12px;text-align:center}
+    th{background:#e3f2fd}
+    td.self{background:#eeeeee}
+    td.vs{cursor:pointer;color:#1565c0}
+    td.vs:hover{background:#e1f5fe}
+  </style>
+</head>
+<body>
+
+  <h2>단체전 진행</h2>
+
+  <!-- 2단계: 경기 방식 설정 UI -->
+  <div class="config">
+    단식&nbsp;
+    <select id="singlesCnt">
+      <option value="1">1경기</option><option value="2">2경기</option>
+      <option value="3" selected>3경기</option><option value="4">4경기</option>
+    </select>
+    &nbsp;복식&nbsp;
+    <select id="doublesCnt">
+      <option value="0">0경기</option><option value="1">1경기</option>
+      <option value="2" selected>2경기</option><option value="3">3경기</option>
+    </select>
+    &nbsp;<button onclick="drawSummary()">대진표 요약표 생성</button>
+  </div>
+
+  <!-- 3단계: 대진표 요약표 표시 영역 -->
+  <div id="summaryArea"></div>
+
+<script>
+/* ---------- Firebase 초기화 ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
+  authDomain: "koen-teamleague.firebaseapp.com",
+  projectId: "koen-teamleague",
+  storageBucket: "koen-teamleague.firebasestorage.app",
+  messagingSenderId: "487164547059",
+  appId: "1:487164547059:web:658a10c8bfe7272ca78c86",
+  databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ---------- 1단계: 팀 데이터 불러오기 ---------- */
+let teamNames = [];                 // ["팀A", "팀B", ...]
+let teamData  = {};                 // 원본 객체 그대로 보관
+
+db.ref("teams").once("value").then(snap=>{
+  if(!snap.exists()){ alert("⚠️ 저장된 팀이 없습니다!"); return;}
+  teamData = snap.val();
+  teamNames = Object.values(teamData).map(t => t.teamName);
+  alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
+}).catch(err=>console.error(err));
+
+/* ---------- 3단계: 대진표 요약표 그리기 ---------- */
+function drawSummary(){
+  if(teamNames.length < 2){ alert("팀 데이터가 없습니다."); return; }
+
+  const singles = parseInt(document.getElementById("singlesCnt").value,10);
+  const doubles = parseInt(document.getElementById("doublesCnt").value,10);
+  const totalGames = singles + doubles;
+
+  // 표 머리글
+  let html = '<table><tr><th></th>';
+  teamNames.forEach(n => html += `<th>${n}</th>`);
+  html += '</tr>';
+
+  // 행
+  teamNames.forEach((rowName,i)=>{
+    html += `<tr><th>${rowName}</th>`;
+    teamNames.forEach((colName,j)=>{
+      if(i===j){
+        html += '<td class="self">-</td>';
+      }else if(i<j){   // 중복 방지: 절반만 vs 표시
+        html += `<td class="vs" onclick="openMatch(${i},${j})">vs</td>`;
+      }else{
+        html += '<td></td>';
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</table>';
+
+  // 총 경기 수 정보 표시
+  html += `<p style="text-align:center;margin-top:10px;">
+            ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
+            (${totalGames%2===0 ? "짝수: 세트합 우선" : "홀수: 승수 우선"})
+           </p>`;
+
+  document.getElementById("summaryArea").innerHTML = html;
+}
+
+/* ---------- 이후 단계(4~7단계) 연결용: 빈 함수 ---------- */
+function openMatch(i,j){
+  const teamA = teamNames[i];
+  const teamB = teamNames[j];
+  // 4단계에서 상세 경기 세팅 UI로 이동 / 팝업 등 구현 예정
+  alert(`${teamA} vs ${teamB} 경기 세팅으로 이동합니다.`);
+}
+</script>
+</body>
+</html>
