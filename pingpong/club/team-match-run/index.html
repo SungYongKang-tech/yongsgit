@@ -274,7 +274,6 @@ function renderMatchTable() {
   document.getElementById("summaryArea").innerHTML = html;
 }
 
-
 function renderMatchSummaryText(i, j, matchType, matchInfo) {
   const table = document.querySelector("#summaryArea table");
   if (!table) return;
@@ -284,29 +283,33 @@ function renderMatchSummaryText(i, j, matchType, matchInfo) {
 
   const cell = rows[i + 1].children[j + 1];
 
+  // 기존 텍스트 가져오기
   let currentText = cell.innerHTML || "";
 
-  const regex = new RegExp(`${matchType}.*?(→\\s*\\d+:\\d+)?<br>?`, 'g');
-  currentText = currentText.replace(regex, '');
+  // VS 제거 및 동일 matchType 내용 제거
+  currentText = currentText
+    .replace(/^VS<br>/, '') // 맨 앞 VS 제거
+    .replace(new RegExp(`${matchType}.*?(→\\s*\\d+:\\d+)?<br>?`, 'g'), '');
 
-  // ✅ 이름만 추출 함수 (공백 있으면 성 제외)
+  // 이름에서 성 제외 함수
   const getShortName = name => {
     const parts = name.trim().split(" ");
     return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
   };
 
-  let text = `${matchType} `;
+  // 새 줄 생성
+  let newLine = `${matchType} `;
   if (matchInfo.teamAPlayers && matchInfo.teamBPlayers) {
     const aNames = matchInfo.teamAPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
     const bNames = matchInfo.teamBPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
-    text += `${aNames}:${bNames}`;
+    newLine += `${aNames}:${bNames}`;
   }
-
   if (matchInfo.score) {
-    text += ` → ${matchInfo.score}`;
+    newLine += ` → ${matchInfo.score}`;
   }
 
-  cell.innerHTML = `VS<br>${text}<br>${currentText}`;
+  // VS + 새 줄 + 기존 내용
+  cell.innerHTML = `VS<br>${newLine}<br>${currentText}`;
 }
 
 
