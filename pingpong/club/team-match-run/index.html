@@ -45,6 +45,7 @@
   <button onclick="saveGameSettings()">설정 저장</button>
   <button onclick="loadGameSettings()">설정 불러오기</button>
   <button onclick="drawSummary()">대진표 요약표 생성</button>
+  <button onclick="resetMatches()">초기화</button>
 </div>
 
 
@@ -164,6 +165,22 @@ function drawSummary() {
 
   } else if (teamCount >= 3 && teamCount <= 6) {
     renderMatchTable();
+
+     // ✅ 여기서부터 추가하세요!
+    db.ref("matches").once("value").then(matchSnap => {
+      const allMatches = matchSnap.val() || {};
+      Object.entries(allMatches).forEach(([matchKey, matchTypes]) => {
+        const [teamA, , teamB] = matchKey.split("_vs_");
+        const i = teamNames.findIndex(t => t.name === teamA);
+        const j = teamNames.findIndex(t => t.name === teamB);
+        if (i >= 0 && j >= 0) {
+          Object.entries(matchTypes).forEach(([matchType, info]) => {
+            renderMatchSummaryText(i, j, matchType, info);
+          });
+        }
+      });
+    });
+    // ✅ 여기까지
   } else {
     alert("⚠️ 6팀까지만 지원합니다.");
   }
@@ -269,12 +286,28 @@ function saveMatchResult() {
 
   const path = `matches/${currentMatch.teamA}_vs_${currentMatch.teamB}/${matchType}`;
 
+  // ✅ 요약 텍스트 먼저 정의
+  const getShortName = name => {
+    const parts = name.trim().split(" ");
+    return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
+  };
+
+  const summaryText = (() => {
+    let line = `${matchType} `;
+    const aNames = teamAPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
+    const bNames = teamBPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
+    line += `${aNames}:${bNames}`;
+    line += ` → ${score}`;
+    return line;
+  })();
+
   db.ref(path).once("value").then(snap => {
     const oldData = snap.val() || {};
     const newData = {
       teamAPlayers: teamAPlayers.length > 0 ? teamAPlayers : oldData.teamAPlayers || [],
       teamBPlayers: teamBPlayers.length > 0 ? teamBPlayers : oldData.teamBPlayers || [],
-      score: score || oldData.score || "0:0",  // ✅ 여기도 기본값 보완
+      score: score || oldData.score || "0:0",
+      summaryText, // ✅ 지금은 정의되어 있으므로 정상 작동
       timestamp: new Date().toISOString()
     };
 
@@ -284,6 +317,32 @@ function saveMatchResult() {
       renderMatchSummaryText(currentMatch.i, currentMatch.j, matchType, newData);
     });
   });
+}
+
+
+    db.ref(path).set(newData).then(() => {
+      console.log("🟢 저장 완료, 렌더링 시작");
+      closeMatchModal();
+      renderMatchSummaryText(currentMatch.i, currentMatch.j, matchType, newData);
+    });
+  });
+  
+  const getShortName = name => {
+  const parts = name.trim().split(" ");
+  return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
+};
+
+const summaryText = (() => {
+  let line = `${matchType} `;
+  const aNames = teamAPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
+  const bNames = teamBPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
+  line += `${aNames}:${bNames}`;
+  line += ` → ${score}`;
+  return line;
+})();
+
+
+
 }
 
 
@@ -386,6 +445,17 @@ function renderMatchSummaryText(i, j, matchType, matchInfo) {
   cell.innerHTML = sortedLines.join("<br>");
 }
 
+function resetMatches() {
+  if (!confirm("⚠️ 모든 경기 결과가 삭제됩니다. 계속하시겠습니까?")) return;
+
+  // 1. matches 데이터 삭제
+  db.ref("matches").remove().then(() => {
+    alert("🗑️ 경기 결과가 초기화되었습니다.");
+    drawSummary();  // 초기화 후 요약표 다시 그림
+  }).catch(err => {
+    console.error("❌ 초기화 실패:", err);
+  });
+}
 
 
 
