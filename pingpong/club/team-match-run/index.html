@@ -161,39 +161,40 @@ function drawSummary() {
     alert("⚠️ 팀이 2개 이상 있어야 합니다.");
     return;
   } else if (teamCount === 2) {
-    renderSingleMatchCard();
-
+    renderSingleMatchCard();  // 단일 경기용 (사용 중 아니면 생략 가능)
   } else if (teamCount >= 3 && teamCount <= 6) {
     renderMatchTable();
 
-     // ✅ 여기서부터 추가하세요!
+    // ✅ 여기서부터 수정된 안전한 매치 데이터 렌더링
     db.ref("matches").once("value").then(matchSnap => {
-  const allMatches = matchSnap.val() || {};
+      const allMatches = matchSnap.val() || {};
 
-  Object.entries(allMatches).forEach(([matchKey, matchTypes]) => {
-    const [teamA, , teamB] = matchKey.split("_vs_");
+      Object.entries(allMatches).forEach(([matchKey, matchTypes]) => {
+        const [teamA, , teamB] = matchKey.split("_vs_");
 
-    // 팀 이름 매칭 (공백 제거 포함)
-    const i = teamNames.findIndex(t => t.name.replace(/\s/g, "") === teamA.replace(/\s/g, ""));
-    const j = teamNames.findIndex(t => t.name.replace(/\s/g, "") === teamB.replace(/\s/g, ""));
+        // 문자열이 아닐 경우 대비 → replace 대신 안전 함수 사용
+        const safeStr = str => (typeof str === "string" ? str.replace(/\s/g, "") : "");
 
-    console.log(`🟨 매치 키: ${matchKey} → teamA: '${teamA}', teamB: '${teamB}', index: ${i}, ${j}`);
+        const i = teamNames.findIndex(t => safeStr(t.name) === safeStr(teamA));
+        const j = teamNames.findIndex(t => safeStr(t.name) === safeStr(teamB));
 
-    if (i >= 0 && j >= 0) {
-      Object.entries(matchTypes).forEach(([matchType, info]) => {
-        renderMatchSummaryText(i, j, matchType, info);
+        console.log(`🟨 매치 키: ${matchKey} → teamA: '${teamA}', teamB: '${teamB}', index: ${i}, ${j}`);
+
+        if (i >= 0 && j >= 0) {
+          Object.entries(matchTypes).forEach(([matchType, info]) => {
+            renderMatchSummaryText(i, j, matchType, info);
+          });
+        } else {
+          console.warn(`⚠️ 팀 이름 매칭 실패 또는 누락: '${teamA}' vs '${teamB}'`);
+        }
       });
-    } else {
-      console.warn(`⚠️ 팀 이름 불일치 또는 인덱스 찾기 실패: ${teamA}, ${teamB}`);
-    }
-  });
-});
+    });
 
-    // ✅ 여기까지
   } else {
     alert("⚠️ 6팀까지만 지원합니다.");
   }
 }
+
 let currentMatch = {};
 
 function renderScoreButtons() {
