@@ -323,11 +323,20 @@ function saveMatchResult() {
   const matchType = document.getElementById("matchType").value;
   const teamAPlayers = Array.from(document.querySelectorAll("input[name='player_A']:checked")).map(i => i.value);
   const teamBPlayers = Array.from(document.querySelectorAll("input[name='player_B']:checked")).map(i => i.value);
-  const score = selectedScore || "0:0";
 
+  if (teamAPlayers.length === 0 || teamBPlayers.length === 0) {
+    alert("⚠️ 양 팀 선수 1명 이상을 선택하세요.");
+    return;
+  }
+
+  if (!selectedScore) {
+    alert("⚠️ 점수를 선택하세요.");
+    return;
+  }
+
+  const score = selectedScore;
   const path = `matches/${currentMatch.teamA}_vs_${currentMatch.teamB}/${matchType}`;
 
-  // 요약 텍스트 생성
   const getShortName = name => {
     const parts = name.trim().split(" ");
     return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
@@ -341,7 +350,6 @@ function saveMatchResult() {
     return line;
   })();
 
-  // 👉 db.ref().once() 안에서 정의 X ❌ (스코프 문제 발생)
   const newData = {
     teamAPlayers,
     teamBPlayers,
@@ -350,17 +358,19 @@ function saveMatchResult() {
     timestamp: new Date().toISOString()
   };
 
-  // 저장
   db.ref(path).set(newData).then(() => {
     alert("✅ 저장되었습니다.");
     closeMatchModal();
-    drawSummary();  // 요약표 다시 그림
+
+    // ✅ 요약 셀에 직접 반영
+    const i = currentMatch.i;
+    const j = currentMatch.j;
+    renderMatchSummaryText(i, j, matchType, newData);
+
   }).catch(err => {
     console.error("❌ 저장 실패:", err);
   });
 }
-
-
 
 
 
