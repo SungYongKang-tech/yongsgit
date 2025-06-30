@@ -168,20 +168,27 @@ function drawSummary() {
 
      // ✅ 여기서부터 추가하세요!
     db.ref("matches").once("value").then(matchSnap => {
-      const allMatches = matchSnap.val() || {};
-      Object.entries(allMatches).forEach(([matchKey, matchTypes]) => {
-        const [teamA, , teamB] = matchKey.split("_vs_");
-        const i = teamNames.findIndex(t => t.name.trim() === teamA.trim());
-        const j = teamNames.findIndex(t => t.name.trim() === teamB.trim());
+  const allMatches = matchSnap.val() || {};
 
-        console.log("🔍 팀 매칭:", teamA, teamB, "=> index", i, j);
-        if (i >= 0 && j >= 0) {
-          Object.entries(matchTypes).forEach(([matchType, info]) => {
-            renderMatchSummaryText(i, j, matchType, info);
-          });
-        }
+  Object.entries(allMatches).forEach(([matchKey, matchTypes]) => {
+    const [teamA, , teamB] = matchKey.split("_vs_");
+
+    // 팀 이름 매칭 (공백 제거 포함)
+    const i = teamNames.findIndex(t => t.name.replace(/\s/g, "") === teamA.replace(/\s/g, ""));
+    const j = teamNames.findIndex(t => t.name.replace(/\s/g, "") === teamB.replace(/\s/g, ""));
+
+    console.log(`🟨 매치 키: ${matchKey} → teamA: '${teamA}', teamB: '${teamB}', index: ${i}, ${j}`);
+
+    if (i >= 0 && j >= 0) {
+      Object.entries(matchTypes).forEach(([matchType, info]) => {
+        renderMatchSummaryText(i, j, matchType, info);
       });
-    });
+    } else {
+      console.warn(`⚠️ 팀 이름 불일치 또는 인덱스 찾기 실패: ${teamA}, ${teamB}`);
+    }
+  });
+});
+
     // ✅ 여기까지
   } else {
     alert("⚠️ 6팀까지만 지원합니다.");
@@ -360,7 +367,7 @@ function renderMatchTable() {
   html += '</table>';
   html += `<p style="text-align:center;margin-top:10px;">
               ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
-              (${totalGames % 2 === 0 ? "짝수: 세트합 우선" : "홍수: 승수 우선"})
+              (${totalGames % 2 === 0 ? "짝수: 세트합 우선" : "홀수: 승수 우선"})
            </p>`;
 
   document.getElementById("summaryArea").innerHTML = html;
