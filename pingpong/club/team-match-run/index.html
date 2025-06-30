@@ -285,16 +285,19 @@ function renderMatchSummaryText(i, j, matchType, matchInfo) {
   if (!rows[i + 1] || !rows[i + 1].children[j + 1]) return;
 
   const cell = rows[i + 1].children[j + 1];
-
-  // 기존 텍스트 가져오기
   let currentText = cell.innerHTML || "";
 
-  // VS 제거 및 동일 matchType 내용 제거
-  currentText = currentText
-    .replace(/^VS<br>/, '') // 맨 앞 VS 제거
-    .replace(new RegExp(`${matchType}.*?(→\\s*\\d+:\\d+)?<br>?`, 'g'), '');
+  // 모든 <br> 기준으로 줄 단위 분리
+  let lines = currentText.split("<br>").filter(line => line && !/vs/i.test(line));
 
-  // 이름에서 성 제외 함수
+  // 줄들을 matchType: 내용 형태로 객체화
+  const lineMap = {};
+  lines.forEach(line => {
+    const key = line.split(" ")[0];
+    lineMap[key] = line;
+  });
+
+  // 이름만 추출
   const getShortName = name => {
     const parts = name.trim().split(" ");
     return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
@@ -311,9 +314,17 @@ function renderMatchSummaryText(i, j, matchType, matchInfo) {
     newLine += ` → ${matchInfo.score}`;
   }
 
-  // VS + 새 줄 + 기존 내용
- cell.innerHTML = newLine + (currentText ? `<br>${currentText}` : '');
+  // 새 경기 내용 추가 또는 갱신
+  lineMap[matchType] = newLine;
 
+  // ✅ 단식 먼저, 복식 나중 정렬
+  const matchOrder = ["1단", "2단", "3단", "4단", "1복", "2복", "3복"];
+  const sortedLines = matchOrder
+    .filter(k => lineMap[k])
+    .map(k => lineMap[k]);
+
+  // 셀에 반영
+  cell.innerHTML = sortedLines.join("<br>");
 }
 
 
