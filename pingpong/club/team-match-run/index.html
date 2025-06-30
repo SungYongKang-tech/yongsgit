@@ -202,8 +202,6 @@ function renderSingleMatchCard() {
 }
 
 function saveMatchResult() {
-
-  
   console.log("✅ saveMatchResult 호출됨");
 
   const matchType = document.getElementById("matchType").value;
@@ -223,16 +221,12 @@ function saveMatchResult() {
     };
 
     db.ref(path).set(newData).then(() => {
+      console.log("🟢 저장 완료, 렌더링 시작");
       closeMatchModal();
-      renderMatchSummaryText(currentMatch.i, currentMatch.j, matchType, newData);
+      renderMatchSummaryText(currentMatch.i, currentMatch.j, matchType, newData);  // ✅ 정상 작동
     });
   });
-  console.log("🟢 저장 완료, 렌더링 시작");
-renderMatchSummaryText(currentMatch.i, currentMatch.j, matchType, newData);
-
-
 }
-
 
 
 
@@ -290,15 +284,16 @@ function renderMatchSummaryText(i, j, matchType, matchInfo) {
 
   const cell = rows[i + 1].children[j + 1];
 
-  // 기존 텍스트 읽기
-  let currentText = cell.innerHTML;
+  let currentText = cell.innerHTML || "";
 
-  // 기존 같은 타입 제거
   const regex = new RegExp(`${matchType}.*?(→\\s*\\d+:\\d+)?<br>?`, 'g');
   currentText = currentText.replace(regex, '');
 
-  // ✅ 이름만 추출 함수
-  const getShortName = name => name.slice(-2);
+  // ✅ 이름만 추출 함수 (공백 있으면 성 제외)
+  const getShortName = name => {
+    const parts = name.trim().split(" ");
+    return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
+  };
 
   let text = `${matchType} `;
   if (matchInfo.teamAPlayers && matchInfo.teamBPlayers) {
@@ -311,8 +306,7 @@ function renderMatchSummaryText(i, j, matchType, matchInfo) {
     text += ` → ${matchInfo.score}`;
   }
 
-  // 최종 출력
-  cell.innerHTML = `VS<br>${text}<br>` + currentText;
+  cell.innerHTML = `VS<br>${text}<br>${currentText}`;
 }
 
 
