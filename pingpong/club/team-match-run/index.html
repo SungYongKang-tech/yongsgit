@@ -30,19 +30,23 @@
   <h2>단체전 진행</h2>
 
   <!-- 2단계: 경기 방식 설정 UI -->
-  <div class="config">
-    단식&nbsp;
-    <select id="singlesCnt">
-      <option value="1">1경기</option><option value="2">2경기</option>
-      <option value="3" selected>3경기</option><option value="4">4경기</option>
-    </select>
-    &nbsp;복식&nbsp;
-    <select id="doublesCnt">
-      <option value="0">0경기</option><option value="1">1경기</option>
-      <option value="2" selected>2경기</option><option value="3">3경기</option>
-    </select>
-    &nbsp;<button onclick="drawSummary()">대진표 요약표 생성</button>
-  </div>
+<div class="config">
+  단식&nbsp;
+  <select id="singlesCnt">
+    <option value="1">1경기</option><option value="2">2경기</option>
+    <option value="3" selected>3경기</option><option value="4">4경기</option>
+  </select>
+  &nbsp;복식&nbsp;
+  <select id="doublesCnt">
+    <option value="0">0경기</option><option value="1">1경기</option>
+    <option value="2" selected>2경기</option><option value="3">3경기</option>
+  </select>
+  &nbsp;
+  <button onclick="saveGameSettings()">설정 저장</button>
+  <button onclick="loadGameSettings()">설정 불러오기</button>
+  <button onclick="drawSummary()">대진표 요약표 생성</button>
+</div>
+
 
   <!-- 3단계: 대진표 요약표 표시 영역 -->
   <div id="summaryArea"></div>
@@ -91,6 +95,41 @@ function renderTeamList() {
   html += '</table>';
   document.getElementById('teamListArea').innerHTML = html;
 }
+
+function saveGameSettings() {
+  const singles = parseInt(document.getElementById("singlesCnt").value, 10);
+  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
+
+  db.ref("settings").set({ singles, doubles }).then(() => {
+    alert("✅ 설정이 저장되었습니다.");
+  }).catch(err => {
+    console.error("❌ 설정 저장 실패:", err);
+  });
+}
+
+function loadGameSettings() {
+  db.ref("settings").once("value").then(snap => {
+    if (!snap.exists()) {
+      alert("⚠️ 저장된 설정이 없습니다.");
+      return;
+    }
+    const { singles, doubles } = snap.val();
+    document.getElementById("singlesCnt").value = singles;
+    document.getElementById("doublesCnt").value = doubles;
+    alert("✅ 설정을 불러왔습니다.");
+  }).catch(err => {
+    console.error("❌ 설정 불러오기 실패:", err);
+  });
+}
+
+// 팀 불러오기 후 설정도 불러오자
+db.ref("teams").once("value").then(snap => {
+  ...
+  renderTeamList(); 
+  alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
+  loadGameSettings();  // ← 이 줄 추가
+})
+
 
 /* ---------- 3단계: 대진표 요약표 그리기 ---------- */
 
