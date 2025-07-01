@@ -5,246 +5,125 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>단체전 진행</title>
 
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-
   <style>
-    body{font-family:'Segoe UI',sans-serif;padding:20px;background:#f5f7fa}
-    h2{text-align:center;color:#0d47a1;margin:10px 0 30px}
-    .config{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
-    select,button{padding:6px 14px;font-size:15px}
-    table{border-collapse:collapse;width:100%;max-width:600px;margin:0 auto}
-    th,td{border:1px solid #888;padding:8px 12px;text-align:center}
-    th{background:#e3f2fd}
-    td.self{background:#eeeeee}
-    td.vs{cursor:pointer;color:#1565c0}
-    td.vs:hover{background:#e1f5fe}
-    
-    .match-card {
-  border: 3px solid #0d47a1;
-  padding: 20px;
-  margin: 30px auto;
-  max-width: 720px;
-  background: #ffffff;
-  border-radius: 14px;
-  box-shadow: 2px 2px 10px rgba(0,0,0,0.12);
-}
-
-.match-card h3 {
-  text-align: center;
-  margin-bottom: 20px;
-  font-size: 20px;
-  color: #0d47a1;
-}
-
-.match-card table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.match-card th, .match-card td {
-  border: 1px solid #aaa;
-  padding: 10px;
-  text-align: center;
-}
-
-.match-card th {
-  background-color: #e3f2fd;
-}
-  </style>  
-
+    body { font-family:'Segoe UI', sans-serif; padding:20px; background:#f5f7fa }
+    h2 { text-align:center; color:#0d47a1; margin:10px 0 30px }
+    .config { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:20px }
+    select, button { padding:6px 14px; font-size:15px }
+    table { border-collapse:collapse; width:100%; max-width:600px; margin:0 auto }
+    th, td { border:1px solid #888; padding:8px 12px; text-align:center }
+    th { background:#e3f2fd }
+    .match-card { border:3px solid #0d47a1; padding:20px; margin:30px auto; max-width:720px; background:#fff; border-radius:14px; box-shadow:2px 2px 10px rgba(0,0,0,0.12) }
+    .match-card h3 { text-align:center; margin-bottom:20px; font-size:20px; color:#0d47a1 }
+    .match-card table { width:100%; border-collapse:collapse }
+    .match-card th, .match-card td { border:1px solid #aaa; padding:10px; text-align:center }
+    .match-card th { background-color:#e3f2fd }
+    .draggable { cursor:move; }
+  </style>
 </head>
 <body>
-
   <div id="teamListArea" style="margin-bottom:30px;"></div>
-
-  
   <h2>단체전 진행</h2>
-
-  <!-- 2단계: 경기 방식 설정 UI -->
   <div class="config">
-    단식&nbsp;
-    <select id="singlesCnt">
+    단식 <select id="singlesCnt">
       <option value="1">1경기</option><option value="2">2경기</option>
       <option value="3" selected>3경기</option><option value="4">4경기</option>
     </select>
-    &nbsp;복식&nbsp;
-    <select id="doublesCnt">
+    복식 <select id="doublesCnt">
       <option value="0">0경기</option><option value="1">1경기</option>
       <option value="2" selected>2경기</option><option value="3">3경기</option>
     </select>
-   <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>
-
+    <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>
   </div>
 
-  <!-- 3단계: 대진표 표시 영역 -->
-  
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
+      authDomain: "koen-teamleague.firebaseapp.com",
+      projectId: "koen-teamleague",
+      storageBucket: "koen-teamleague.firebasestorage.app",
+      messagingSenderId: "487164547059",
+      appId: "1:487164547059:web:658a10c8bfe7272ca78c86",
+      databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
+    let teamNames = [], teamData = {};
+    db.ref("teams").once("value").then(snap => {
+      if (!snap.exists()) { alert("⚠️ 저장된 팀이 없습니다!"); return; }
+      const raw = snap.val();
+      teamData = {}; teamNames = [];
+      Object.values(raw).forEach(team => {
+        teamData[team.teamName] = team;
+        teamNames.push(team.teamName);
+      });
+      renderTeamList(); 
+      alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
+    });
 
+    function renderTeamList() {
+      let html = '<h3 style="text-align:center; color:#333;">📋 팀 구성 현황</h3>';
+      html += '<table><tr><th>팀명</th><th>팀원 목록</th></tr>';
+      Object.values(teamData).forEach(team => {
+        const playerNames = team.players.map(p => `${p.name}(${p.level})`).join(', ');
+        html += `<tr><td><strong>${team.teamName}</strong></td><td>${playerNames}</td></tr>`;
+      });
+      html += '</table>';
+      document.getElementById('teamListArea').innerHTML = html;
+    }
 
-
-
-
-<script>
-/* ---------- Firebase 초기화 ---------- */
-const firebaseConfig = {
-  apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
-  authDomain: "koen-teamleague.firebaseapp.com",
-  projectId: "koen-teamleague",
-  storageBucket: "koen-teamleague.firebasestorage.app",
-  messagingSenderId: "487164547059",
-  appId: "1:487164547059:web:658a10c8bfe7272ca78c86",
-  databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-/* ---------- 1단계: 팀 데이터 불러오기 ---------- */
-let teamNames = [];                 // ["팀A", "팀B", ...]
-let teamData  = {};                 // 원본 객체 그대로 보관
-
-db.ref("teams").once("value").then(snap=>{
-  if(!snap.exists()){ alert("⚠️ 저장된 팀이 없습니다!"); return;}
-
-  const raw = snap.val();
-  teamData = {};  // 재구성된 teamName 기준 데이터
-  teamNames = [];
-
-  Object.values(raw).forEach(team => {
-    teamData[team.teamName] = team;
-    teamNames.push(team.teamName);
-  });
-
-  renderTeamList(); 
-  alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
-}).catch(err=>console.error(err));
-
-/* ---------- 2.5단계: 불러온 팀과 선수 보여주기 ---------- */
-function renderTeamList() {
-  let html = '<h3 style="text-align:center; color:#333;">📋 팀 구성 현황</h3>';
-  html += '<table><tr><th>팀명</th><th>팀원 목록</th></tr>';
-
-  Object.values(teamData).forEach(team => {
-    const playerNames = team.players.map(p => `${p.name}(${p.level})`).join(', ');
-    html += `<tr><td><strong>${team.teamName}</strong></td><td>${playerNames}</td></tr>`;
-  });
-
-  html += '</table>';
-  document.getElementById('teamListArea').innerHTML = html;
-}
-
-/* ---------- 3단계: 대진표 그리기 ---------- */
-function renderAllMatchesFromFirebase() {
-  if (!teamNames || teamNames.length < 2) {
-    alert("⚠️ 팀 데이터가 부족합니다."); 
-    return;
-  }
-
-  console.log("📦 teamNames:", teamNames);
-  console.log("📦 teamData keys:", Object.keys(teamData));
-
-  const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
-  const totalMatches = [];
-
-  // 팀 조합 만들기 (중복 없이)
-  for (let i = 0; i < teamNames.length; i++) {
-    for (let j = i + 1; j < teamNames.length; j++) {
-      const teamA = teamNames[i];
-      const teamB = teamNames[j];
-
-      if (!teamData[teamA] || !teamData[teamB]) {
-        console.warn(`⚠️ 대진표 생성 실패: '${teamA}' 또는 '${teamB}' 팀 정보 없음`);
-        continue;
+    function renderAllMatchesFromFirebase() {
+      if (!teamNames || teamNames.length < 2) { alert("⚠️ 팀 데이터가 부족합니다."); return; }
+      const singles = parseInt(document.getElementById("singlesCnt").value);
+      const doubles = parseInt(document.getElementById("doublesCnt").value);
+      const totalMatches = [];
+      for (let i = 0; i < teamNames.length; i++) {
+        for (let j = i + 1; j < teamNames.length; j++) {
+          const teamA = teamNames[i], teamB = teamNames[j];
+          if (!teamData[teamA] || !teamData[teamB]) continue;
+          totalMatches.push({ teamA, teamB });
+        }
       }
-
-      totalMatches.push({ teamA, teamB });
-    }
-  }
-
-  const container = document.getElementById("summaryArea");
-  container.innerHTML = ""; // 기존 카드 초기화
-
-  totalMatches.forEach(match => {
-    const matchList = [];
-
-    // 단식 경기 생성
-    for (let i = 1; i <= singles; i++) {
-      const playerA = getPlayerName(teamData[match.teamA], i - 1);
-      const playerB = getPlayerName(teamData[match.teamB], i - 1);
-      matchList.push({
-        label: `${i}단`,
-        players: `${playerA} vs ${playerB}`,
-        result: "미입력"
+      const container = document.getElementById("summaryArea");
+      container.innerHTML = "";
+      totalMatches.forEach(match => {
+        const matchList = [];
+        for (let i = 1; i <= singles; i++) {
+          const playerA = getPlayerTag(teamData[match.teamA], i - 1);
+          const playerB = getPlayerTag(teamData[match.teamB], i - 1);
+          matchList.push({ label: `${i}단`, players: `${playerA} vs ${playerB}`, result: "미입력" });
+        }
+        for (let i = 1; i <= doubles; i++) {
+          const idx = singles + (i - 1) * 2;
+          const pairA = `${getPlayerTag(teamData[match.teamA], idx)}/${getPlayerTag(teamData[match.teamA], idx + 1)}`;
+          const pairB = `${getPlayerTag(teamData[match.teamB], idx)}/${getPlayerTag(teamData[match.teamB], idx + 1)}`;
+          matchList.push({ label: `${i}복`, players: `${pairA} vs ${pairB}`, result: "미입력" });
+        }
+        renderMatchCard(match.teamA, match.teamB, matchList);
       });
     }
 
-    // 복식 경기 생성
-    for (let i = 1; i <= doubles; i++) {
-      const idx = singles + (i - 1) * 2;
-      const pairA = `${getPlayerName(teamData[match.teamA], idx)}/${getPlayerName(teamData[match.teamA], idx + 1)}`;
-      const pairB = `${getPlayerName(teamData[match.teamB], idx)}/${getPlayerName(teamData[match.teamB], idx + 1)}`;
-      matchList.push({
-        label: `${i}복`,
-        players: `${pairA} vs ${pairB}`,
-        result: "미입력"
-      });
+    function getPlayerTag(team, index) {
+      if (!team || !team.players || !team.players[index]) return "미정";
+      const p = team.players[index];
+      return `<span class='draggable' draggable='true'>${p.name}(${p.level})</span>`;
     }
 
-    renderMatchCard(match.teamA, match.teamB, matchList);
-  });
-}
+    function renderMatchCard(teamA, teamB, matchList) {
+      const container = document.getElementById("summaryArea");
+      let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
+      html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
+      matchList.forEach(match => {
+        html += `<tr><td>${match.label}</td><td contenteditable='true'>${match.players}</td><td>${match.result}</td></tr>`;
+      });
+      html += `</tbody></table></div>`;
+      container.innerHTML += html;
+    }
+  </script>
 
-function getPlayerName(team, index) {
-  if (!team) {
-    console.warn("⚠️ 팀 정보가 없습니다:", team);
-    return "미정";
-  }
-  if (!Array.isArray(team.players)) {
-    console.warn("⚠️ 팀에 players 배열이 없습니다:", team);
-    return "미정";
-  }
-  if (!team.players[index]) {
-    console.warn("⚠️ 해당 인덱스에 선수가 없습니다:", index, team.players);
-    return "미정";
-  }
-  return team.players[index].name;
-}
-
-//  로그
-console.log("teamData 키 목록:", Object.keys(teamData));
-console.log("teamNames 배열:", teamNames);
-//  로그
-
-function renderMatchCard(teamA, teamB, matchList) {
-  const container = document.getElementById("summaryArea");
-  let html = `<div class="match-card"><h3>${teamA} VS ${teamB}</h3><table>`;
-  html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
-
-  matchList.forEach(match => {
-    html += `<tr>
-               <td>${match.label}</td>
-               <td>${match.players}</td>
-               <td>${match.result}</td>
-             </tr>`;
-  });
-
-  html += `</tbody></table></div>`;
-  container.innerHTML += html;
-}
-
-
-
-/* ---------- 이후 단계(4~7단계) 연결용: 빈 함수 ---------- */
-function openMatch(i,j){
-  const teamA = teamNames[i];
-  const teamB = teamNames[j];
-  // 4단계에서 상세 경기 세팅 UI로 이동 / 팝업 등 구현 예정
-  alert(`${teamA} vs ${teamB} 경기 세팅으로 이동합니다.`);
-}
-</script>
-<div id="summaryArea"></div>
-
+  <div id="summaryArea"></div>
 </body>
 </html>
