@@ -237,6 +237,8 @@
     const resultsRef = ref(db, "players/koen_takgu/results");
     const selectedRef = ref(db, "players/koen_takgu/selected");
     const teamListRef = ref(db, "players/koen_takgu/teamList");
+    const extraPlayersRef = ref(db, "players/koen_takgu/extra"); // ✅ 추가된 부분 (임시 선수용)
+
 
    const defaultPlayers = [
       "김희영(4)", "강성용(5)", "김범일(5)", "이영진(6)", "박주민(6)", "강다훈(6)",
@@ -245,18 +247,14 @@
        "홍지원(13)", "송은아(13)", "이낭주(13)", "이승철(13)", "박나령(14)", "고은선(14)"
     ];
 
-   onValue(playersRef, (snapshot) => {
-  const val = snapshot.val();
-  if (!val || !Array.isArray(val) || val.length === 0) {
-    set(playersRef, defaultPlayers).then(() => {
-      currentPlayers = defaultPlayers;
-      renderPlayerList();
-    });
-  } else {
-    currentPlayers = val;
-    renderPlayerList();
-  }
+let extraPlayers = []; // ✅ 추가 선수 저장 변수
+
+onValue(extraPlayersRef, (snapshot) => {
+  extraPlayers = snapshot.val() || [];
+  currentPlayers = [...defaultPlayers, ...extraPlayers]; // ✅ 기본 + 추가 선수 합치기
+  renderPlayerList();
 });
+
 
 
 
@@ -421,19 +419,26 @@ renderPlayerList();
 
 };
 
+document.getElementById("addPlayerBtn").onclick = () => {
+  const name = document.getElementById("playerName").value.trim();
+  const level = document.getElementById("playerLevel").value.trim();
+  if (!name || !level) return alert("이름과 부수를 입력하세요");
+
+  const newEntry = `${name}(${level})`;
+
+  // ✅ 중복 방지
+  if ([...defaultPlayers, ...extraPlayers].includes(newEntry)) {
+    alert("이미 등록된 선수입니다.");
+    return;
+  }
+
+  extraPlayers.push(newEntry); // ✅ extra에만 저장
+  set(extraPlayersRef, extraPlayers); // ✅ Firebase에 저장 (실시간 공유)
+};
 
 
 
-    document.getElementById("addPlayerBtn").onclick = () => {
-      const name = document.getElementById("playerName").value.trim();
-      const level = document.getElementById("playerLevel").value.trim();
-      if (!name || !level) return alert("이름과 부수를 입력하세요");
-      const newEntry = `${name}(${level})`;
-      if (!currentPlayers.includes(newEntry)) {
-        currentPlayers.push(newEntry);
-        set(playersRef, currentPlayers);
-      }
-    };
+    
 
     document.getElementById("saveImageBtn").onclick = () => {
       const scheduleDiv = document.getElementById("scheduleTable");
@@ -596,14 +601,12 @@ document.getElementById("summary").innerHTML = summaryHtml;
 ;
 
 document.getElementById("removeAddedBtn").onclick = () => {
-  if (!confirm("추가된 선수를 모두 삭제하시겠습니까?")) return;
+  if (!confirm("추가된 선수만 삭제됩니다. 계속하시겠습니까?")) return;
 
-  // 기본 선수만 남기고 필터링
-  currentPlayers = currentPlayers.filter(p => defaultPlayers.includes(p));
-
-  // Firebase 업데이트
-  set(playersRef, currentPlayers);
+  extraPlayers = []; // ✅ extra 초기화
+  set(extraPlayersRef, []); // ✅ Firebase에서도 초기화
 };
+
 
  
 
