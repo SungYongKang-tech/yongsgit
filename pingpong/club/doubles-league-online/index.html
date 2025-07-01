@@ -213,6 +213,7 @@
     let tempSelected = [];
     let teamList = [];
     let results = [];
+    let selected = []; // 이제 "강성용(5)" 같은 이름 문자열로 저장
     
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -489,38 +490,43 @@ function togglePlayer(index) {
   const target = selectedEls[index];
   if (!target) return;
 
+  // 🔄 토글: 이미 선택된 상태라면 해제
   if (tempSelected.includes(index)) {
     tempSelected = tempSelected.filter(i => i !== index);
     target.classList.remove("selected");
   } else {
     tempSelected.push(index);
     target.classList.add("selected");
-  }
 
-  if (tempSelected.length === 2) {
-    const players = tempSelected.map(i => {
-      const txt = selectedEls[i].textContent;
-      return {
-        name: txt.split("(")[0].trim(),
-        level: parseInt(txt.match(/\d+/)[0])
+    // ✅ 선택된 사람이 2명이 되었을 때만 팀 구성
+    if (tempSelected.length === 2) {
+      const players = tempSelected.map(i => {
+        const txt = selectedEls[i].textContent;
+        return {
+          name: txt.split("(")[0].trim(),
+          level: parseInt(txt.match(/\d+/)[0])
+        };
+      });
+
+      const newTeam = {
+        names: players.map(p => p.name),
+        level: players[0].level + players[1].level
       };
-    });
 
-    const newTeam = {
-      names: players.map(p => p.name),
-      level: players[0].level + players[1].level
-    };
+      teamList.push(newTeam);
+      set(teamListRef, teamList);
 
-    teamList.push(newTeam);
-    set(teamListRef, teamList);
-    tempSelected.forEach(i => selectedEls[i].classList.remove("selected"));
-    tempSelected = [];
-    renderPlayerList();
-    createSchedule();
+      // ✅ 선택 초기화
+      tempSelected.forEach(i => selectedEls[i].classList.remove("selected"));
+      tempSelected = [];
+      renderPlayerList();
+      createSchedule();
+    }
   }
 
-  set(selectedRef, tempSelected); // ✅ 반드시 함수 안에서!
+  set(selectedRef, tempSelected);
 }
+
 
   
 
