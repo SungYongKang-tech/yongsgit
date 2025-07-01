@@ -20,7 +20,39 @@
     td.self{background:#eeeeee}
     td.vs{cursor:pointer;color:#1565c0}
     td.vs:hover{background:#e1f5fe}
-  </style>
+    
+    .match-card {
+  border: 3px solid #0d47a1;
+  padding: 20px;
+  margin: 30px auto;
+  max-width: 720px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 2px 2px 10px rgba(0,0,0,0.12);
+}
+
+.match-card h3 {
+  text-align: center;
+  margin-bottom: 20px;
+  font-size: 20px;
+  color: #0d47a1;
+}
+
+.match-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.match-card th, .match-card td {
+  border: 1px solid #aaa;
+  padding: 10px;
+  text-align: center;
+}
+
+.match-card th {
+  background-color: #e3f2fd;
+}
+    
 </head>
 <body>
 
@@ -41,11 +73,17 @@
       <option value="0">0경기</option><option value="1">1경기</option>
       <option value="2" selected>2경기</option><option value="3">3경기</option>
     </select>
-    &nbsp;<button onclick="drawSummary()">대진표 요약표 생성</button>
+   <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>
+
   </div>
 
-  <!-- 3단계: 대진표 요약표 표시 영역 -->
-  <div id="summaryArea"></div>
+  <!-- 3단계: 대진표 표시 영역 -->
+  
+
+
+
+
+
 
 <script>
 /* ---------- Firebase 초기화 ---------- */
@@ -74,8 +112,6 @@ db.ref("teams").once("value").then(snap=>{
 }).catch(err=>console.error(err));
 
 /* ---------- 2.5단계: 불러온 팀과 선수 보여주기 ---------- */
-
-
 function renderTeamList() {
   let html = '<h3 style="text-align:center; color:#333;">📋 팀 구성 현황</h3>';
   html += '<table><tr><th>팀명</th><th>팀원 목록</th></tr>';
@@ -89,55 +125,76 @@ function renderTeamList() {
   document.getElementById('teamListArea').innerHTML = html;
 }
 
+/* ---------- 3단계: 대진표 그리기 ---------- */
+function renderAllMatchesFromFirebase() {
+  const singles = parseInt(document.getElementById("singlesCnt").value, 10);
+  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
+  const totalMatches = [];
 
+  // 모든 팀 조합 만들기 (중복 제외)
+  for (let i = 0; i < teamNames.length; i++) {
+    for (let j = i + 1; j < teamNames.length; j++) {
+      const teamA = teamNames[i];
+      const teamB = teamNames[j];
+      totalMatches.push({ teamA, teamB });
+    }
+  }
 
+  const container = document.getElementById("summaryArea");
+  container.innerHTML = ""; // 초기화
 
+  totalMatches.forEach(match => {
+    const matchList = [];
 
+    // 단식 구성: 1단 ~ n단
+    for (let i = 1; i <= singles; i++) {
+      const playerA = getPlayerName(teamData[match.teamA], i - 1);
+      const playerB = getPlayerName(teamData[match.teamB], i - 1);
+      matchList.push({
+        label: `${i}단`,
+        players: `${playerA} vs ${playerB}`,
+        result: "미입력"
+      });
+    }
 
+    // 복식 구성: 1복 ~ n복
+    for (let i = 1; i <= doubles; i++) {
+      const idx = (singles + (i - 1) * 2); // 복식은 2명씩 사용
+      const pairA = `${getPlayerName(teamData[match.teamA], idx)}/${getPlayerName(teamData[match.teamA], idx + 1)}`;
+      const pairB = `${getPlayerName(teamData[match.teamB], idx)}/${getPlayerName(teamData[match.teamB], idx + 1)}`;
+      matchList.push({
+        label: `${i}복`,
+        players: `${pairA} vs ${pairB}`,
+        result: "미입력"
+      });
+    }
 
-
-
-
-
-
-
-/* ---------- 3단계: 대진표 요약표 그리기 ---------- */
-function drawSummary(){
-  if(teamNames.length < 2){ alert("팀 데이터가 없습니다."); return; }
-
-  const singles = parseInt(document.getElementById("singlesCnt").value,10);
-  const doubles = parseInt(document.getElementById("doublesCnt").value,10);
-  const totalGames = singles + doubles;
-
-  // 표 머리글
-  let html = '<table><tr><th></th>';
-  teamNames.forEach(n => html += `<th>${n}</th>`);
-  html += '</tr>';
-
-  // 행
-  teamNames.forEach((rowName,i)=>{
-    html += `<tr><th>${rowName}</th>`;
-    teamNames.forEach((colName,j)=>{
-      if(i===j){
-        html += '<td class="self">-</td>';
-      }else if(i<j){   // 중복 방지: 절반만 vs 표시
-        html += `<td class="vs" onclick="openMatch(${i},${j})">vs</td>`;
-      }else{
-        html += '<td></td>';
-      }
-    });
-    html += '</tr>';
+    renderMatchCard(match.teamA, match.teamB, matchList);
   });
-  html += '</table>';
-
-  // 총 경기 수 정보 표시
-  html += `<p style="text-align:center;margin-top:10px;">
-            ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
-            (${totalGames%2===0 ? "짝수: 세트합 우선" : "홀수: 승수 우선"})
-           </p>`;
-
-  document.getElementById("summaryArea").innerHTML = html;
 }
+
+function getPlayerName(team, index) {
+  return (team.players[index]) ? team.players[index].name : "미정";
+}
+
+function renderMatchCard(teamA, teamB, matchList) {
+  const container = document.getElementById("summaryArea");
+  let html = `<div class="match-card"><h3>${teamA} VS ${teamB}</h3><table>`;
+  html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
+
+  matchList.forEach(match => {
+    html += `<tr>
+               <td>${match.label}</td>
+               <td>${match.players}</td>
+               <td>${match.result}</td>
+             </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  container.innerHTML += html;
+}
+
+
 
 /* ---------- 이후 단계(4~7단계) 연결용: 빈 함수 ---------- */
 function openMatch(i,j){
