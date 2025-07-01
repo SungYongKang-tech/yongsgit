@@ -60,6 +60,8 @@ function loadTeams() {
       teamNames.push(team.teamName);
     });
     renderTeamList();
+    renderAllMatchesFromFirebase(); // ✅ 팀 불러온 직후 대진표 자동 생성
+
   });
 }
 
@@ -188,7 +190,69 @@ function closePopup() {
   document.getElementById("popup").style.display = 'none';
 }
 
-loadTeams();
+loadTeams() ;
+
+document.getElementById("singlesCnt").addEventListener("change", () => {
+  renderAllMatchesFromFirebase();
+  saveMatchesToFirebase(); // ✅ 변경사항 Firebase에 저장
+});
+
+document.getElementById("doublesCnt").addEventListener("change", () => {
+  renderAllMatchesFromFirebase();
+  saveMatchesToFirebase(); // ✅ 변경사항 Firebase에 저장
+});
+
+function saveMatchesToFirebase() {
+  const matches = [];
+  document.querySelectorAll('.match-card').forEach(card => {
+    const teamNames = card.querySelector('h3').innerText.split(' VS ');
+    const rows = card.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+      matches.push({
+        teamA: teamNames[0],
+        teamB: teamNames[1],
+        label: row.children[0].innerText,
+        players: row.children[1].innerText,
+        result: row.children[2].innerText
+      });
+    });
+  });
+  db.ref("matches").set(matches);
+}
+
+function renderMatchesFromData(matchList) {
+  const grouped = {};
+  matchList.forEach(m => {
+    const key = `${m.teamA}_${m.teamB}`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(m);
+  });
+
+  const container = document.getElementById("summaryArea");
+  container.innerHTML = "";
+  Object.entries(grouped).forEach(([key, list]) => {
+    const [teamA, teamB] = key.split('_');
+    let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
+    html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
+    list.forEach(match => {
+      html += `<tr><td>${match.label}</td><td contenteditable='false' onclick="openPlayerPopup('${teamA}', '${teamB}', this)">${match.players}</td><td>${match.result}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+    container.innerHTML += html;
+  });
+}
+
+function listenForMatches() {
+  db.ref("matches").on("value", snap => {
+    const matchList = snap.val();
+    if (matchList) renderMatchesFromData(matchList);
+  });
+}
+
+loadTeams().then(() => {
+  listenForMatches(); // ✅ 실시간 경기 대진표 반영
+});
+
 </script>
 </body>
 </html>
