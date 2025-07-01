@@ -26,28 +26,23 @@
 
   <div id="teamListArea" style="margin-bottom:30px;"></div>
 
-
+  
   <h2>단체전 진행</h2>
 
   <!-- 2단계: 경기 방식 설정 UI -->
-<div class="config">
-  단식&nbsp;
-  <select id="singlesCnt">
-    <option value="1">1경기</option><option value="2">2경기</option>
-    <option value="3" selected>3경기</option><option value="4">4경기</option>
-  </select>
-  &nbsp;복식&nbsp;
-  <select id="doublesCnt">
-    <option value="0">0경기</option><option value="1">1경기</option>
-    <option value="2" selected>2경기</option><option value="3">3경기</option>
-  </select>
-  &nbsp;
-  <button onclick="saveGameSettings()">설정 저장</button>
-  <button onclick="loadGameSettings()">설정 불러오기</button>
-  <button onclick="drawSummary()">대진표 요약표 생성</button>
-  <button onclick="resetMatches()">초기화</button>
-</div>
-
+  <div class="config">
+    단식&nbsp;
+    <select id="singlesCnt">
+      <option value="1">1경기</option><option value="2">2경기</option>
+      <option value="3" selected>3경기</option><option value="4">4경기</option>
+    </select>
+    &nbsp;복식&nbsp;
+    <select id="doublesCnt">
+      <option value="0">0경기</option><option value="1">1경기</option>
+      <option value="2" selected>2경기</option><option value="3">3경기</option>
+    </select>
+    &nbsp;<button onclick="drawSummary()">대진표 요약표 생성</button>
+  </div>
 
   <!-- 3단계: 대진표 요약표 표시 영역 -->
   <div id="summaryArea"></div>
@@ -70,38 +65,13 @@ const db = firebase.database();
 let teamNames = [];                 // ["팀A", "팀B", ...]
 let teamData  = {};                 // 원본 객체 그대로 보관
 
-db.ref("teams").once("value").then(snap => {
-  if (!snap.exists()) {
-    alert("⚠️ 저장된 팀이 없습니다!");
-    return;
-  }
+db.ref("teams").once("value").then(snap=>{
+  if(!snap.exists()){ alert("⚠️ 저장된 팀이 없습니다!"); return;}
   teamData = snap.val();
-  teamNames = Object.entries(teamData)
-    .map(([id, t]) => ({ id, name: t.teamName }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  renderTeamList();
-
-  // 👉 matches 데이터 있는지 확인
-  db.ref("matches").once("value").then(matchSnap => {
-    if (matchSnap.exists()) {
-      // ✅ 기존 경기 있음 → 설정 불러오고 요약표 생성
-      loadGameSettings(() => {
-        drawSummary();
-      });
-    } else {
-      // ❌ 기존 경기 없음 → 설정 저장 후 안내
-      const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-      const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
-
-      db.ref("settings").set({ singles, doubles }).then(() => {
-        alert("⚙️ 대진 설정이 저장되었습니다. 이제 '대진표 요약표 생성' 버튼을 눌러주세요.");
-      });
-    }
-  });
-
-}).catch(err => console.error(err));
-
+  teamNames = Object.values(teamData).map(t => t.teamName);
+  renderTeamList(); 
+  alert(`✅ ${teamNames.length}개 팀을 불러왔습니다.`);
+}).catch(err=>console.error(err));
 
 /* ---------- 2.5단계: 불러온 팀과 선수 보여주기 ---------- */
 
@@ -119,370 +89,63 @@ function renderTeamList() {
   document.getElementById('teamListArea').innerHTML = html;
 }
 
-function saveGameSettings() {
-  const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
 
-  db.ref("settings").set({ singles, doubles }).then(() => {
-    alert("✅ 설정이 저장되었습니다.");
-  }).catch(err => {
-    console.error("❌ 설정 저장 실패:", err);
-  });
-}
 
-function loadGameSettings(callback) {
-  db.ref("settings").once("value").then(snap => {
-    if (!snap.exists()) {
-      alert("⚠️ 저장된 설정이 없습니다.");
-      callback?.();  // 그래도 콜백 호출
-      return;
-    }
-    const { singles, doubles } = snap.val();
-    document.getElementById("singlesCnt").value = singles;
-    document.getElementById("doublesCnt").value = doubles;
-    console.log("✅ 설정 불러오기 완료");
-    callback?.();  // 콜백이 있으면 실행
-  }).catch(err => {
-    console.error("❌ 설정 불러오기 실패:", err);
-    callback?.();
-  });
-}
 
-// 팀 불러오기 후 설정도 불러오자
-loadGameSettings();  // ✅ 여기 추가하면 됩니다!
+
+
+
+
+
+
+
 
 
 /* ---------- 3단계: 대진표 요약표 그리기 ---------- */
+function drawSummary(){
+  if(teamNames.length < 2){ alert("팀 데이터가 없습니다."); return; }
 
-function drawSummary() {
-  const teamCount = teamNames.length;
-
-  if (teamCount < 2) {
-    alert("⚠️ 팀이 2개 이상 있어야 합니다.");
-    return;
-  } else if (teamCount === 2) {
-    renderSingleMatchCard();  // 단일 경기용
-  } else if (teamCount >= 3 && teamCount <= 6) {
-    renderMatchTable();
-
-    db.ref("matches").once("value").then(matchSnap => {
-      const allMatches = matchSnap.val() || {};
-
-      Object.entries(allMatches).forEach(([matchKey, matchTypes]) => {
-        if (!matchKey.includes("_vs_")) {
-          console.warn("❌ matchKey 형식 오류:", matchKey);
-          return;
-        }
-
-        const [teamA, teamB] = matchKey.split("_vs_");
-
-        if (!teamA || !teamB) {
-          console.warn("❌ teamA 또는 teamB 파싱 실패:", matchKey);
-          return;
-        }
-
-        const safeStr = str => (typeof str === "string" ? str.replace(/\s/g, "") : "");
-
-        const i = teamNames.findIndex(t => safeStr(t.name) === safeStr(teamA));
-        const j = teamNames.findIndex(t => safeStr(t.name) === safeStr(teamB));
-
-        if (i >= 0 && j >= 0) {
-          Object.entries(matchTypes).forEach(([matchType, info]) => {
-            renderMatchSummaryText(i, j, matchType, info);
-          });
-        } else {
-          console.warn(`⚠️ 팀 이름 불일치 또는 누락: '${teamA}' vs '${teamB}'`);
-        }
-      });
-    });
-
-  } else {
-    alert("⚠️ 6팀까지만 지원합니다.");
-  }
-}
-
-let currentMatch = {};
-
-function renderScoreButtons() {
-  const container = document.getElementById("scoreButtons");
-  container.innerHTML = ""; // 초기화
-
-  scoreOptions.forEach(score => {
-    const btn = document.createElement("button");
-    btn.innerText = score;
-    btn.style.padding = "6px 10px";
-    btn.style.border = "1px solid #ccc";
-    btn.style.borderRadius = "6px";
-    btn.style.cursor = "pointer";
-    btn.style.background = "#f1f1f1";
-
-    btn.onclick = () => {
-      selectedScore = score;
-      // 선택된 버튼 스타일 강조
-      [...container.children].forEach(b => b.style.background = "#f1f1f1");
-      btn.style.background = "#90caf9";
-    };
-
-    container.appendChild(btn);
-  });
-}
-
-
-
-function openMatch(i, j) {
-  const teamA = teamNames[i];
-  const teamB = teamNames[j];
-  currentMatch = { i, j, teamA: teamA.name, teamB: teamB.name };
-
-  document.getElementById('modalTitle').innerText = `${teamA.name} vs ${teamB.name} 경기 세팅`;
-
-  // ✅ 경기 수 기반 옵션 필터링
-  const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
-  const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
-
-  const matchTypeSelect = document.getElementById("matchType");
-  matchTypeSelect.innerHTML = ""; // 기존 옵션 초기화
-
-  for (let i = 1; i <= singlesCnt; i++) {
-    matchTypeSelect.innerHTML += `<option value="${i}단">${i}단</option>`;
-  }
-  for (let i = 1; i <= doublesCnt; i++) {
-    matchTypeSelect.innerHTML += `<option value="${i}복">${i}복</option>`;
-  }
-
-  // ✅ 선수 목록 표시
-  renderPlayerSelect("teamASelect", teamData[teamA.id].players, "A");
-  renderPlayerSelect("teamBSelect", teamData[teamB.id].players, "B");
-
- // document.getElementById('scoreInput').value = '';
-
-  selectedScore = "";         // ✅ 선택 점수 초기화
-  renderScoreButtons();       // ✅ 점수 버튼 다시 그리기
-  document.getElementById('matchModal').style.display = "flex";
-}
-
-const scoreOptions = ["3:2", "3:1", "3:0", "0:3", "1:3", "2:3", "2:0", "2:1", "0:2", "1:2"];
-let selectedScore = "";
-
-
-
-function renderPlayerSelect(containerId, players, teamKey, preSelected=[]) {
-  let html = `<div><strong>${teamKey === "A" ? "팀A" : "팀B"} 선수 선택:</strong><br>`;
-  players.forEach(p => {
-    const checked = preSelected.includes(p.name) ? 'checked' : '';
-    html += `<label><input type="checkbox" name="player_${teamKey}" value="${p.name}" ${checked}> ${p.name}</label><br>`;
-  });
-  html += `</div>`;
-  document.getElementById(containerId).innerHTML = html;
-}
-
-
-function closeMatchModal() {
-  document.getElementById('matchModal').style.display = "none";
-}
-
-function saveMatchResult() {
-  console.log("✅ saveMatchResult 호출됨");
-
-  const matchType = document.getElementById("matchType").value;
-  const teamAPlayers = Array.from(document.querySelectorAll("input[name='player_A']:checked")).map(i => i.value);
-  const teamBPlayers = Array.from(document.querySelectorAll("input[name='player_B']:checked")).map(i => i.value);
-
-  // 👉 [중요] 선수 선택 및 점수 선택 여부 확인
-  if (teamAPlayers.length === 0 || teamBPlayers.length === 0) {
-    alert("⚠️ 양 팀 선수 1명 이상을 선택하세요.");
-    return;
-  }
-
-  if (!selectedScore) {
-    alert("⚠️ 점수를 선택하세요.");
-    return;
-  }
-
-  const score = selectedScore;
-
-  const path = `matches/${currentMatch.teamA}_vs_${currentMatch.teamB}/${matchType}`;
-
-  const getShortName = name => {
-    const parts = name.trim().split(" ");
-    return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
-  };
-
-  const summaryText = (() => {
-    let line = `${matchType} `;
-    const aNames = teamAPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
-    const bNames = teamBPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
-    line += `${aNames}:${bNames} → ${score}`;
-    return line;
-  })();
-
-  const newData = {
-    teamAPlayers,
-    teamBPlayers,
-    score,
-    summaryText,
-    timestamp: new Date().toISOString()
-  };
-
-  db.ref(path).set(newData).then(() => {
-    alert("✅ 저장되었습니다.");
-    closeMatchModal();
-    drawSummary();
-  }).catch(err => {
-    console.error("❌ 저장 실패:", err);
-  });
-}
-
-
-
-
-function renderThreeTeamList() {
-  let html = '<h3 style="text-align:center;">🔍 3팀 리그전 (총 3경기)</h3><ul style="list-style:none;padding:0;text-align:center;">';
-  for (let i = 0; i < 2; i++) {
-    for (let j = i + 1; j < 3; j++) {
-      html += `<li style="margin:10px 0;"><button onclick="openMatch(${i},${j})">🏀 ${teamNames[i].name} vs ${teamNames[j].name}</button></li>`;
-      // 여기서 .name 누락되어 있었음
-    }
-  }
-  html += '</ul>';
-  document.getElementById("summaryArea").innerHTML = html;
-}
-
-function renderMatchTable() {
-  const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
+  const singles = parseInt(document.getElementById("singlesCnt").value,10);
+  const doubles = parseInt(document.getElementById("doublesCnt").value,10);
   const totalGames = singles + doubles;
 
-  let html = '<table><tr><th></th>';  // 맨 왼쪽 상단은 빈칸
-  teamNames.forEach(n => html += `<th>${n.name}</th>`);
+  // 표 머리글
+  let html = '<table><tr><th></th>';
+  teamNames.forEach(n => html += `<th>${n}</th>`);
   html += '</tr>';
 
-  for (let i = 0; i < teamNames.length; i++) {
-    html += `<tr><th>${teamNames[i].name}</th>`;
-    for (let j = 0; j < teamNames.length; j++) {
-      if (i === j) {
+  // 행
+  teamNames.forEach((rowName,i)=>{
+    html += `<tr><th>${rowName}</th>`;
+    teamNames.forEach((colName,j)=>{
+      if(i===j){
         html += '<td class="self">-</td>';
-      } else if (i < j) {
+      }else if(i<j){   // 중복 방지: 절반만 vs 표시
         html += `<td class="vs" onclick="openMatch(${i},${j})">vs</td>`;
-      } else {
-        html += '<td></td>';  // 하삼각은 비움
+      }else{
+        html += '<td></td>';
       }
-    }
-    html += '</tr>';  // ✅ for(i) 안쪽에 위치해야 함!
-  }
-
+    });
+    html += '</tr>';
+  });
   html += '</table>';
+
+  // 총 경기 수 정보 표시
   html += `<p style="text-align:center;margin-top:10px;">
-              ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
-              (${totalGames % 2 === 0 ? "짝수: 세트합 우선" : "홀수: 승수 우선"})
+            ⚙️ 단식 ${singles}경기 + 복식 ${doubles}경기 → <strong>${totalGames}경기</strong>
+            (${totalGames%2===0 ? "짝수: 세트합 우선" : "홀수: 승수 우선"})
            </p>`;
 
   document.getElementById("summaryArea").innerHTML = html;
 }
 
-
-function renderMatchSummaryText(i, j, matchType, matchInfo) {
-  const table = document.querySelector("#summaryArea table");
-  if (!table) return;
-
-  const rows = table.querySelectorAll("tr");
-  if (!rows[i + 1] || !rows[i + 1].children[j + 1]) return;
-
-  const cell = rows[i + 1].children[j + 1];
-  let currentText = cell.innerHTML || "";
-
-  // 모든 <br> 기준으로 줄 단위 분리
-  let lines = currentText.split("<br>").filter(line => line && !/vs/i.test(line));
-
-  // 줄들을 matchType: 내용 형태로 객체화
-  const lineMap = {};
-  lines.forEach(line => {
-    const key = line.split(" ")[0];
-    lineMap[key] = line;
-  });
-
-  // 이름만 추출
-  const getShortName = name => {
-    const parts = name.trim().split(" ");
-    return parts.length > 1 ? parts.slice(1).join(" ") : name.slice(-2);
-  };
-
-  // 새 줄 생성
-  let newLine = `${matchType} `;
-  if (matchInfo.teamAPlayers && matchInfo.teamBPlayers) {
-    const aNames = matchInfo.teamAPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
-    const bNames = matchInfo.teamBPlayers.map(getShortName).join(matchType.includes("복") ? '/' : '');
-    newLine += `${aNames}:${bNames}`;
-  }
-  if (matchInfo.score) {
-    newLine += ` → ${matchInfo.score}`;
-  }
-
-  // 새 경기 내용 추가 또는 갱신
-  lineMap[matchType] = newLine;
-
-  // ✅ 단식 먼저, 복식 나중 정렬
-  const matchOrder = ["1단", "2단", "3단", "4단", "1복", "2복", "3복"];
-  const sortedLines = matchOrder
-    .filter(k => lineMap[k])
-    .map(k => lineMap[k]);
-
-  // 셀에 반영
-  cell.innerHTML = sortedLines.join("<br>");
+/* ---------- 이후 단계(4~7단계) 연결용: 빈 함수 ---------- */
+function openMatch(i,j){
+  const teamA = teamNames[i];
+  const teamB = teamNames[j];
+  // 4단계에서 상세 경기 세팅 UI로 이동 / 팝업 등 구현 예정
+  alert(`${teamA} vs ${teamB} 경기 세팅으로 이동합니다.`);
 }
-
-function resetMatches() {
-  if (!confirm("⚠️ 모든 경기 결과가 삭제됩니다. 계속하시겠습니까?")) return;
-
-  // 1. matches 데이터 삭제
-  db.ref("matches").remove().then(() => {
-    alert("🗑️ 경기 결과가 초기화되었습니다.");
-    drawSummary();  // 초기화 후 요약표 다시 그림
-  }).catch(err => {
-    console.error("❌ 초기화 실패:", err);
-  });
-}
-
-
-
 </script>
-
-<!-- 모달 팝업: 경기 세부정보 입력 -->
-<div id="matchModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; 
-    background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:1000;">
-  <div style="background:white; padding:20px; border-radius:10px; max-width:400px; width:90%;">
-    <h3 id="modalTitle">경기 정보 입력</h3>
-    <div>
-      <label>경기 종류:</label>
-      <select id="matchType">
-        <option value="1단">1단</option>
-        <option value="2단">2단</option>
-        <option value="3단">3단</option>
-        <option value="4단">4단</option>
-        <option value="1복">1복</option>
-        <option value="2복">2복</option>
-        <option value="3복">3복</option>
-      </select>
-    </div>
-    <div id="teamASelect" style="margin-top:10px;"></div>
-    <div id="teamBSelect" style="margin-top:10px;"></div>
-
-    <div style="margin-top:10px;">
-      <label>점수 선택:</label><br>
-      <div id="scoreButtons" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
-      <!-- 버튼은 자바스크립트에서 생성 -->
-       </div>
-    </div>
-
-  <div style="margin-top:15px; text-align:right;">
-      <button onclick="saveMatchResult()">저장</button>
-      <button onclick="closeMatchModal()">닫기</button>
-    </div>
-  </div>
-</div>
-
-
-
-
 </body>
 </html>
