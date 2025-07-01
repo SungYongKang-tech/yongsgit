@@ -134,37 +134,42 @@ function renderTeamList() {
   document.getElementById('teamListArea').innerHTML = html;
 }
 
-
-  
-
 /* ---------- 3단계: 대진표 그리기 ---------- */
 function renderAllMatchesFromFirebase() {
-
-  if (teamNames.length < 2) {
-    alert("⚠️ 팀 데이터가 부족합니다."); return;
+  if (!teamNames || teamNames.length < 2) {
+    alert("⚠️ 팀 데이터가 부족합니다."); 
+    return;
   }
-  console.log("팀 목록:", teamNames); // 디버깅용 로그
+
+  console.log("📦 teamNames:", teamNames);
+  console.log("📦 teamData keys:", Object.keys(teamData));
 
   const singles = parseInt(document.getElementById("singlesCnt").value, 10);
   const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
   const totalMatches = [];
 
-  // 모든 팀 조합 만들기 (중복 제외)
+  // 팀 조합 만들기 (중복 없이)
   for (let i = 0; i < teamNames.length; i++) {
     for (let j = i + 1; j < teamNames.length; j++) {
       const teamA = teamNames[i];
       const teamB = teamNames[j];
+
+      if (!teamData[teamA] || !teamData[teamB]) {
+        console.warn(`⚠️ 대진표 생성 실패: '${teamA}' 또는 '${teamB}' 팀 정보 없음`);
+        continue;
+      }
+
       totalMatches.push({ teamA, teamB });
     }
   }
 
   const container = document.getElementById("summaryArea");
-  container.innerHTML = ""; // 초기화
+  container.innerHTML = ""; // 기존 카드 초기화
 
   totalMatches.forEach(match => {
     const matchList = [];
 
-    // 단식 구성: 1단 ~ n단
+    // 단식 경기 생성
     for (let i = 1; i <= singles; i++) {
       const playerA = getPlayerName(teamData[match.teamA], i - 1);
       const playerB = getPlayerName(teamData[match.teamB], i - 1);
@@ -175,9 +180,9 @@ function renderAllMatchesFromFirebase() {
       });
     }
 
-    // 복식 구성: 1복 ~ n복
+    // 복식 경기 생성
     for (let i = 1; i <= doubles; i++) {
-      const idx = (singles + (i - 1) * 2); // 복식은 2명씩 사용
+      const idx = singles + (i - 1) * 2;
       const pairA = `${getPlayerName(teamData[match.teamA], idx)}/${getPlayerName(teamData[match.teamA], idx + 1)}`;
       const pairB = `${getPlayerName(teamData[match.teamB], idx)}/${getPlayerName(teamData[match.teamB], idx + 1)}`;
       matchList.push({
@@ -192,10 +197,25 @@ function renderAllMatchesFromFirebase() {
 }
 
 function getPlayerName(team, index) {
-  return (team && team.players && team.players[index])
-    ? team.players[index].name
-    : "미정";
+  if (!team) {
+    console.warn("⚠️ 팀 정보가 없습니다:", team);
+    return "미정";
+  }
+  if (!Array.isArray(team.players)) {
+    console.warn("⚠️ 팀에 players 배열이 없습니다:", team);
+    return "미정";
+  }
+  if (!team.players[index]) {
+    console.warn("⚠️ 해당 인덱스에 선수가 없습니다:", index, team.players);
+    return "미정";
+  }
+  return team.players[index].name;
 }
+
+//  로그
+console.log("teamData 키 목록:", Object.keys(teamData));
+console.log("teamNames 배열:", teamNames);
+//  로그
 
 function renderMatchCard(teamA, teamB, matchList) {
   const container = document.getElementById("summaryArea");
