@@ -123,22 +123,43 @@ function loadTeams() {
     renderTeamList();
   });
   // 대진표 실시간 동기화
+// 대진표 실시간 동기화
+// 대진표 실시간 동기화
 db.ref("matches").on("value", snapshot => {
   const matches = snapshot.val();
   if (!matches) return;
 
-  // ✅ 팝업이 떠 있는 경우 전체 렌더링 생략
   const popup = document.getElementById("popup");
   if (popup.style.display === 'block') return;
 
   document.getElementById("summaryArea").innerHTML = "";
 
   for (const key in matches) {
-  const { teamA, teamB, matchList } = matches[key];
-  renderMatchCard(teamA, teamB, matchList || []);  // 💡 방어 코드
-}
+    let teamA, teamB, matchList;
 
+    if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
+      // ✅ 새 형식
+      ({ teamA, teamB, matchList } = matches[key]);
+    } else {
+      // ✅ 예전 형식 처리: 키에서 팀 이름 파싱
+      [teamA, teamB] = key.split("_vs_");
+      matchList = [];
+
+      for (const label in matches[key]) {
+        const data = matches[key][label];
+        matchList.push({
+          label,
+          players: data?.summaryText?.split("→")[0]?.trim() || "미정 vs 미정",
+          result: data?.score || "-"
+        });
+      }
+    }
+
+    renderMatchCard(teamA, teamB, matchList);
+  }
 });
+
+
 
 }
 
