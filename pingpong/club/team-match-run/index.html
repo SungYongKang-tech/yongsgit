@@ -146,36 +146,39 @@ function renderTeamList() {
 }
 
 function renderAllMatchesFromFirebase() {
-  // ✅ matches 전체 삭제 후 새로 생성
-db.ref("matches").remove().then(() => {
-  const singles = +document.getElementById("singlesCnt").value;
-  const doubles = +document.getElementById("doublesCnt").value;
-  const totalMatches = [];
+  // ✅ 기존 matches 지우고 새로 생성
+  db.ref("matches").remove().then(() => {
+    const singles = +document.getElementById("singlesCnt").value;
+    const doubles = +document.getElementById("doublesCnt").value;
+    const totalMatches = [];
 
-  for (let i = 0; i < teamNames.length; i++) {
-    for (let j = i + 1; j < teamNames.length; j++) {
-      totalMatches.push({ teamA: teamNames[i], teamB: teamNames[j] });
+    for (let i = 0; i < teamNames.length; i++) {
+      for (let j = i + 1; j < teamNames.length; j++) {
+        totalMatches.push({ teamA: teamNames[i], teamB: teamNames[j] });
+      }
     }
-  }
-  const updates = {};
-  totalMatches.forEach(match => {
-    const matchList = [];
-    for (let i = 0; i < singles; i++) matchList.push({ label: `${i + 1}단`, players: `미정 vs 미정`, result: "-" });
-    for (let i = 0; i < doubles; i++) matchList.push({ label: `${i + 1}복`, players: `미정/미정 vs 미정/미정`, result: "-" });
 
-    const key = `${match.teamA}_vs_${match.teamB}`;
-    updates[`matches/${key}`] = {
-      teamA: match.teamA,
-      teamB: match.teamB,
-      matchList
-    };
+    const updates = {};
+    totalMatches.forEach(match => {
+      const matchList = [];
+      for (let i = 0; i < singles; i++)
+        matchList.push({ label: `${i + 1}단`, players: `미정 vs 미정`, result: "-" });
+      for (let i = 0; i < doubles; i++)
+        matchList.push({ label: `${i + 1}복`, players: `미정/미정 vs 미정/미정`, result: "-" });
 
-    renderMatchCard(match.teamA, match.teamB, matchList);
+      const key = `${match.teamA}_vs_${match.teamB}`;
+      updates[`matches/${key}`] = {
+        teamA: match.teamA,
+        teamB: match.teamB,
+        matchList
+      };
+
+      // 화면에도 바로 반영
+      renderMatchCard(match.teamA, match.teamB, matchList);
+    });
+
+    db.ref().update(updates);
   });
-
-  db.ref().update(updates); // Firebase에 저장
-});
-
 }
 
 
