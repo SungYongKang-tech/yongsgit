@@ -454,7 +454,10 @@ function calculateTeamResults() {
 
 
 
-loadTeams();
+loadTeams().then(() => {
+  listenToMatchUpdates();  // ✅ 실시간 리스너 시작
+});
+
 
 function convertMatchListToArray() {
   const matchesRef = db.ref("matches");
@@ -489,6 +492,42 @@ function convertMatchListToArray() {
     db.ref().update(updates)
       .then(() => alert("✅ matchList를 배열로 변환 완료"))
       .catch(err => alert("❌ 변환 중 오류: " + err.message));
+  });
+}
+
+function listenToMatchUpdates() {
+  db.ref("matches").on("value", snapshot => {
+    const matches = snapshot.val();
+    if (!matches) return;
+
+    document.getElementById("summaryArea").innerHTML = "";
+
+    for (const key in matches) {
+      let teamA, teamB, matchList;
+
+      if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
+        ({ teamA, teamB, matchList } = matches[key]);
+        matchList = Array.isArray(matchList)
+          ? matchList
+          : Object.values(matchList || {});
+      } else {
+        [teamA, teamB] = key.split("_vs_");
+        matchList = [];
+
+        for (const label in matches[key]) {
+          const data = matches[key][label];
+          matchList.push({
+            label,
+            players: data?.summaryText?.split("→")[0]?.trim() || "미정 vs 미정",
+            result: data?.score || "-"
+          });
+        }
+      }
+
+      renderMatchCard(teamA, teamB, matchList);
+    }
+
+    calculateTeamResults(); // ✅ 순위표도 함께 갱신
   });
 }
 
