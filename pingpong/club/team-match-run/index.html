@@ -481,6 +481,45 @@ function calculateTeamResults() {
 
 
 loadTeams();
+
+function convertMatchListToArray() {
+  const matchesRef = db.ref("matches");
+
+  matchesRef.once("value").then(snapshot => {
+    const matches = snapshot.val();
+    if (!matches) return;
+
+    const updates = {};
+
+    for (const key in matches) {
+      const match = matches[key];
+      const originalList = match.matchList;
+
+      // 이미 배열이면 패스
+      if (Array.isArray(originalList)) continue;
+
+      // 객체라면 배열로 변환
+      const newList = [];
+      for (const label in originalList) {
+        const item = originalList[label];
+        newList.push({
+          label: label,
+          players: item.players || "미정 vs 미정",
+          result: item.result || "-"
+        });
+      }
+
+      updates[`matches/${key}/matchList`] = newList;
+    }
+
+    db.ref().update(updates)
+      .then(() => alert("✅ matchList를 배열로 변환 완료"))
+      .catch(err => alert("❌ 변환 중 오류: " + err.message));
+  });
+}
+
+<button onclick="convertMatchListToArray()">matchList 배열로 변환</button>
+
 </script>
 
 <div id="rankingArea" style="margin-top: 40px;"></div>
