@@ -285,15 +285,16 @@ function setDoubles(teamA, teamB) {
   const teamAText = selectedA.map(el => el.value).join("/");
   const teamBText = selectedB.map(el => el.value).join("/");
   cell.innerText = `${teamAText} vs ${teamBText}`;
-  closePopup();
-  const card = cell.closest(".match-card");
-const teams = card.querySelector("h3").innerText.split(" VS ");
-const teamKey = `${teams[0]}_vs_${teams[1]}`;
-const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
-db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${teamAText} vs ${teamBText}`);
-renderMatchCard(teamA, teamB, matchList); // → 해당 팀 경기만 다시 그림
 
+  const card = cell.closest(".match-card");
+  const teams = card.querySelector("h3").innerText.split(" VS ");
+  const teamKey = `${teams[0]}_vs_${teams[1]}`;
+  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+
+  db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${teamAText} vs ${teamBText}`);
+  popup.style.display = 'none'; // ✅ 이 한 줄만!
 }
+
 
 function setSingles(teamA, teamB) {
   const popup = document.getElementById("popup");
@@ -311,7 +312,8 @@ function setSingles(teamA, teamB) {
   const playerB = selectedB.value;
 
   cell.innerText = `${playerA} vs ${playerB}`;
-  closePopup();
+ // closePopup();
+ popup.style.display = 'none';
 
   const card = cell.closest(".match-card");
   const teams = card.querySelector("h3").innerText.split(" VS ");
@@ -408,18 +410,19 @@ function setMatchResult(score) {
   const teamKey = `${teams[0]}_vs_${teams[1]}`;
   const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-  // Firebase에 저장
+  // ✅ Firebase에 저장
   db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score)
     .then(() => {
-      // 저장 후 셀에 직접 반영
+      // ✅ 셀 직접 반영 (UI만 갱신, summaryArea 전체는 다시 그리지 않음)
       cell.innerText = score;
-      closePopup();
-      calculateTeamResults(); // 순위 다시 계산
+      popup.style.display = "none";
+      calculateTeamResults();
     })
     .catch(err => {
-      alert("결과 저장 중 오류: " + err.message);
+      alert("❌ 저장 실패: " + err.message);
     });
 }
+
 
 
 
