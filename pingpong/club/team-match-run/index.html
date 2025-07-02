@@ -421,25 +421,29 @@ function setMatchResult(score) {
 
 function calculateTeamResults() {
   const summaryCards = document.querySelectorAll(".match-card");
-  const teamStats = {}; // 팀별 통계: {팀명: {win, lose, setDiff}}
+  const teamStats = {}; // 팀별 통계
 
-  // 모든 팀 초기화
-  teamNames.forEach(name => {
+  const allTeamsInMatches = new Set();
+  summaryCards.forEach(card => {
+    const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
+    allTeamsInMatches.add(teamA);
+    allTeamsInMatches.add(teamB);
+  });
+
+  allTeamsInMatches.forEach(name => {
     teamStats[name] = { win: 0, lose: 0, setDiff: 0 };
   });
 
   summaryCards.forEach(card => {
-    const teamText = card.querySelector("h3").innerText;
-    const [teamA, teamB] = teamText.split(" VS ");
+    const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
     const rows = card.querySelectorAll("tbody tr");
 
     let teamAWin = 0, teamBWin = 0;
     let teamASet = 0, teamBSet = 0;
 
     rows.forEach(row => {
-      const result = row.children[2].innerText.trim(); // 예: 3:2
+      const result = row.children[2].innerText.trim();
       if (!result.includes(":")) return;
-
       const [a, b] = result.split(":").map(Number);
       if (isNaN(a) || isNaN(b)) return;
 
@@ -451,7 +455,6 @@ function calculateTeamResults() {
     });
 
     if (teamAWin + teamBWin > 0) {
-      // 승/패 계산
       if (teamAWin > teamBWin) {
         teamStats[teamA].win++;
         teamStats[teamB].lose++;
@@ -465,13 +468,11 @@ function calculateTeamResults() {
     }
   });
 
-  // 순위 정렬
   const sorted = Object.entries(teamStats).sort((a, b) => {
     if (b[1].win !== a[1].win) return b[1].win - a[1].win;
     return b[1].setDiff - a[1].setDiff;
   });
 
-  // 표 HTML 만들기
   let html = '<h3 style="text-align:center; margin-top:40px;">📊 팀별 경기결과 및 순위표</h3>';
   html += '<div class="scroll-table"><table><thead><tr><th>팀명</th><th>승</th><th>패</th><th>세트득실</th><th>순위</th></tr></thead><tbody>';
 
