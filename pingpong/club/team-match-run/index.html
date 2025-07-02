@@ -91,8 +91,8 @@
   <option value="2" selected>2경기</option>
   <option value="3">3경기</option>
 </select>
-
-    <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>
+    <button onclick="handleGenerateMatches()">대진표 생성</button>
+<!--  <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>  -->
   </div>
   <div id="summaryArea"></div>
   <div id="popup" class="popup" style="display:none;"></div>
@@ -113,69 +113,29 @@ let teamNames = [], teamData = {};
 
 // Firebase에서 팀 불러오기
 function loadTeams() {
-  db.ref("teams").once("value").then(snap => {
+  return db.ref("teams").once("value").then(snap => {
     const raw = snap.val();
-    teamData = {}; teamNames = [];
+    teamData = {};
+    teamNames = [];
+
+    if (!raw) {
+      alert("❌ 팀 정보가 없습니다. 먼저 팀을 구성해 주세요.");
+      return;
+    }
+
     Object.values(raw).forEach(team => {
       teamData[team.teamName] = team;
       teamNames.push(team.teamName);
     });
     renderTeamList();
   });
-  // 대진표 실시간 동기화
-// 대진표 실시간 동기화
-// 대진표 실시간 동기화
-db.ref("matches").on("value", snapshot => {
-  const matches = snapshot.val();
-  if (!matches) return;
-
-  const popup = document.getElementById("popup");
-  if (popup.style.display === 'block') return;
-
-  document.getElementById("summaryArea").innerHTML = "";
-
-  for (const key in matches) {
-  let teamA, teamB, matchList;
-
-  if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
-    ({ teamA, teamB, matchList } = matches[key]);
-
-    matchList = Array.isArray(matchList)
-      ? matchList
-      : Object.values(matchList || {}).sort((a, b) => {
-          const order = { '단': 0, '복': 100 };
-          const aKey = a.label || '';
-          const bKey = b.label || '';
-          const aPrefix = aKey[1] === '단' ? '단' : '복';
-          const bPrefix = bKey[1] === '단' ? '단' : '복';
-          const aNum = parseInt(aKey) || 0;
-          const bNum = parseInt(bKey) || 0;
-          return (order[aPrefix] + aNum) - (order[bPrefix] + bNum);
-        });
-  } else {
-    [teamA, teamB] = key.split("_vs_");
-    matchList = [];
-
-    for (const label in matches[key]) {
-      const data = matches[key][label];
-      matchList.push({
-        label,
-        players: data?.summaryText?.split("→")[0]?.trim() || "미정 vs 미정",
-        result: data?.score || "-"
-      });
-    }
-  }
-
-  // ✅ matchList가 배열인지 다시 보장
-  if (!Array.isArray(matchList)) matchList = [];
-
-  //renderMatchCard(teamA, teamB, matchList);
 }
 
-});
-
-
-
+// 버튼 클릭 시
+function handleGenerateMatches() {
+  loadTeams().then(() => {
+    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
+  });
 }
 
 function renderTeamList() {
