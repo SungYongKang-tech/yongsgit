@@ -122,6 +122,18 @@ function loadTeams() {
     });
     renderTeamList();
   });
+  // 대진표 실시간 동기화
+db.ref("matches").on("value", snapshot => {
+  const matches = snapshot.val();
+  if (!matches) return;
+  document.getElementById("summaryArea").innerHTML = "";
+
+  for (const key in matches) {
+    const { teamA, teamB, matchList } = matches[key];
+    renderMatchCard(teamA, teamB, matchList);
+  }
+});
+
 }
 
 function renderTeamList() {
@@ -151,6 +163,37 @@ function renderAllMatchesFromFirebase() {
     for (let i = 0; i < doubles; i++) matchList.push({ label: `${i+1}복`, players: `미정/미정 vs 미정/미정`, result: "-" });
     renderMatchCard(match.teamA, match.teamB, matchList);
   });
+  function renderAllMatchesFromFirebase() {
+  const singles = +document.getElementById("singlesCnt").value;
+  const doubles = +document.getElementById("doublesCnt").value;
+  const totalMatches = [];
+
+  for (let i = 0; i < teamNames.length; i++) {
+    for (let j = i + 1; j < teamNames.length; j++) {
+      totalMatches.push({ teamA: teamNames[i], teamB: teamNames[j] });
+    }
+  }
+
+  const updates = {};
+
+  totalMatches.forEach(match => {
+    const matchList = [];
+    for (let i = 0; i < singles; i++) matchList.push({ label: `${i+1}단`, players: `미정 vs 미정`, result: "-" });
+    for (let i = 0; i < doubles; i++) matchList.push({ label: `${i+1}복`, players: `미정/미정 vs 미정/미정`, result: "-" });
+
+    const key = `${match.teamA}_vs_${match.teamB}`;
+    updates[`matches/${key}`] = {
+      teamA: match.teamA,
+      teamB: match.teamB,
+      matchList
+    };
+
+    renderMatchCard(match.teamA, match.teamB, matchList);
+  });
+
+  db.ref().update(updates);  // ✅ Firebase에 저장
+}
+
 }
 
 function renderMatchCard(teamA, teamB, matchList) {
@@ -215,6 +258,12 @@ function setDoubles(teamA, teamB) {
   const teamBText = selectedB.map(el => el.value).join("/");
   cell.innerText = `${teamAText} vs ${teamBText}`;
   closePopup();
+  const card = cell.closest(".match-card");
+const teams = card.querySelector("h3").innerText.split(" VS ");
+const teamKey = `${teams[0]}_vs_${teams[1]}`;
+const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${teamAText} vs ${teamBText}`);
+
 }
 
 function setSingles(teamA, teamB) {
@@ -234,6 +283,13 @@ function setSingles(teamA, teamB) {
 
   cell.innerText = `${playerA} vs ${playerB}`;
   closePopup();
+  // 저장
+const card = cell.closest(".match-card");
+const teams = card.querySelector("h3").innerText.split(" VS ");
+const teamKey = `${teams[0]}_vs_${teams[1]}`;
+const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${playerA} vs ${playerB}`);
+
 }
 
 
@@ -281,8 +337,18 @@ function setMatchResult(score) {
   const cell = popup.targetCell;
   cell.innerText = score;
   closePopup();
-   calculateTeamResults();  // ← 이 줄 추가!
+
+  // 📌 Firebase에 저장
+  const card = cell.closest(".match-card");
+  const teams = card.querySelector("h3").innerText.split(" VS ");
+  const teamKey = `${teams[0]}_vs_${teams[1]}`;
+  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+
+  db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score);
+
+  calculateTeamResults();
 }
+
 
 function calculateTeamResults() {
   const summaryCards = document.querySelectorAll(".match-card");
