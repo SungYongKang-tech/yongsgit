@@ -23,6 +23,42 @@
     .draggable { cursor:move; }
     .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
     .popup button { margin:5px; }
+
+.scroll-table {
+  overflow-x: auto;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.scroll-table table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 600px;
+  background-color: white;
+}
+
+.scroll-table th, .scroll-table td {
+  border: 1px solid #888;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.scroll-table tr:nth-child(odd) td,
+.scroll-table tr:nth-child(odd) th {
+  background-color: #f1f8ff;
+}
+
+.scroll-table tr:nth-child(even) td,
+.scroll-table tr:nth-child(even) th {
+  background-color: #ffffff;
+}
+
+
+
+
   </style>
 </head>
 <body>
@@ -235,9 +271,81 @@ function setMatchResult(score) {
   const cell = popup.targetCell;
   cell.innerText = score;
   closePopup();
+   calculateTeamResults();  // ← 이 줄 추가!
 }
+
+function calculateTeamResults() {
+  const summaryCards = document.querySelectorAll(".match-card");
+  const teamStats = {}; // 팀별 통계: {팀명: {win, lose, setDiff}}
+
+  // 모든 팀 초기화
+  teamNames.forEach(name => {
+    teamStats[name] = { win: 0, lose: 0, setDiff: 0 };
+  });
+
+  summaryCards.forEach(card => {
+    const teamText = card.querySelector("h3").innerText;
+    const [teamA, teamB] = teamText.split(" VS ");
+    const rows = card.querySelectorAll("tbody tr");
+
+    let teamAWin = 0, teamBWin = 0;
+    let teamASet = 0, teamBSet = 0;
+
+    rows.forEach(row => {
+      const result = row.children[2].innerText.trim(); // 예: 3:2
+      if (!result.includes(":")) return;
+
+      const [a, b] = result.split(":").map(Number);
+      if (isNaN(a) || isNaN(b)) return;
+
+      if (a > b) teamAWin++;
+      else teamBWin++;
+
+      teamASet += a;
+      teamBSet += b;
+    });
+
+    if (teamAWin + teamBWin > 0) {
+      // 승/패 계산
+      if (teamAWin > teamBWin) {
+        teamStats[teamA].win++;
+        teamStats[teamB].lose++;
+      } else {
+        teamStats[teamB].win++;
+        teamStats[teamA].lose++;
+      }
+
+      teamStats[teamA].setDiff += (teamASet - teamBSet);
+      teamStats[teamB].setDiff += (teamBSet - teamASet);
+    }
+  });
+
+  // 순위 정렬
+  const sorted = Object.entries(teamStats).sort((a, b) => {
+    if (b[1].win !== a[1].win) return b[1].win - a[1].win;
+    return b[1].setDiff - a[1].setDiff;
+  });
+
+  // 표 HTML 만들기
+  let html = '<h3 style="text-align:center; margin-top:40px;">📊 팀별 경기결과 및 순위표</h3>';
+  html += '<div class="scroll-table"><table><thead><tr><th>팀명</th><th>승</th><th>패</th><th>세트득실</th><th>순위</th></tr></thead><tbody>';
+
+  sorted.forEach(([team, stat], idx) => {
+    html += `<tr><td>${team}</td><td>${stat.win}</td><td>${stat.lose}</td><td>${stat.setDiff}</td><td>${idx + 1}</td></tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById("rankingArea").innerHTML = html;
+}
+
+
+
 
 loadTeams();
 </script>
+
+<div id="rankingArea" style="margin-top: 40px;"></div>
+
+
 </body>
 </html>
