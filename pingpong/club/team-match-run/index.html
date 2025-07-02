@@ -140,20 +140,18 @@ db.ref("matches").on("value", snapshot => {
   if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
     ({ teamA, teamB, matchList } = matches[key]);
 
-    // ✅ 요 부분을 꼭 추가!
-   matchList = Array.isArray(matchList)
-  ? matchList
-  : Object.values(matchList || {}).sort((a, b) => {
-      const order = { '단': 0, '복': 100 }; // 단식 우선
-      const aKey = a.label || '';
-      const bKey = b.label || '';
-      const aPrefix = aKey[1] === '단' ? '단' : '복';
-      const bPrefix = bKey[1] === '단' ? '단' : '복';
-      const aNum = parseInt(aKey) || 0;
-      const bNum = parseInt(bKey) || 0;
-      return (order[aPrefix] + aNum) - (order[bPrefix] + bNum);
-    });
-
+    matchList = Array.isArray(matchList)
+      ? matchList
+      : Object.values(matchList || {}).sort((a, b) => {
+          const order = { '단': 0, '복': 100 };
+          const aKey = a.label || '';
+          const bKey = b.label || '';
+          const aPrefix = aKey[1] === '단' ? '단' : '복';
+          const bPrefix = bKey[1] === '단' ? '단' : '복';
+          const aNum = parseInt(aKey) || 0;
+          const bNum = parseInt(bKey) || 0;
+          return (order[aPrefix] + aNum) - (order[bPrefix] + bNum);
+        });
   } else {
     [teamA, teamB] = key.split("_vs_");
     matchList = [];
@@ -168,7 +166,9 @@ db.ref("matches").on("value", snapshot => {
     }
   }
 
-  // 🚨 이 부분이 배열로 변환된 이후 호출돼야 함!
+  // ✅ matchList가 배열인지 다시 보장
+  if (!Array.isArray(matchList)) matchList = [];
+
   renderMatchCard(teamA, teamB, matchList);
 }
 
