@@ -351,7 +351,27 @@ function closePopup() {
     document.getElementById("summaryArea").innerHTML = "";
 
     for (const key in matches) {
-      const { teamA, teamB, matchList } = matches[key];
+      let teamA, teamB, matchList;
+
+      if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
+        ({ teamA, teamB, matchList } = matches[key]);
+        matchList = Array.isArray(matchList)
+          ? matchList
+          : Object.values(matchList || {});  // ✅ 여기 중요!!
+      } else {
+        [teamA, teamB] = key.split("_vs_");
+        matchList = [];
+
+        for (const label in matches[key]) {
+          const data = matches[key][label];
+          matchList.push({
+            label,
+            players: data?.summaryText?.split("→")[0]?.trim() || "미정 vs 미정",
+            result: data?.score || "-"
+          });
+        }
+      }
+
       renderMatchCard(teamA, teamB, matchList);
     }
 
