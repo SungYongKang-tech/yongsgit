@@ -127,8 +127,9 @@ db.ref("matches").on("value", snapshot => {
   const matches = snapshot.val();
   if (!matches) return;
 
-  // 🔒 팝업이 열려있으면 다시 렌더링하지 않음
-  if (document.getElementById("popup").style.display === 'block') return;
+  // ✅ 팝업이 떠 있는 경우 전체 렌더링 생략
+  const popup = document.getElementById("popup");
+  if (popup.style.display === 'block') return;
 
   document.getElementById("summaryArea").innerHTML = "";
 
@@ -313,7 +314,23 @@ function setPlayer(btn, teamA, teamB, side) {
 
 function closePopup() {
   document.getElementById("popup").style.display = 'none';
+
+  // ✅ 팝업 닫힌 후 수동으로 Firebase 다시 불러오기
+  db.ref("matches").once("value").then(snapshot => {
+    const matches = snapshot.val();
+    if (!matches) return;
+
+    document.getElementById("summaryArea").innerHTML = "";
+
+    for (const key in matches) {
+      const { teamA, teamB, matchList } = matches[key];
+      renderMatchCard(teamA, teamB, matchList);
+    }
+
+    calculateTeamResults(); // 순위 다시 계산
+  });
 }
+
 
 function openResultPopup(cell) {
   const popup = document.getElementById("popup");
