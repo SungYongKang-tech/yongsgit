@@ -29,6 +29,22 @@
     const amountInput = document.getElementById("amount");
     const logsTable = document.getElementById("logTable");
 
+    const currentMonth = new Date().toISOString().substring(0, 7);
+    const logRef = ref(db, `chargingLogs/${currentMonth}`);
+
+    let totalDiscountUsed = 0;
+
+    onValue(logRef, (snapshot) => {
+      const data = snapshot.val();
+      totalDiscountUsed = 0;
+      if (data) {
+        Object.values(data).forEach(log => {
+          totalDiscountUsed += log.discount;
+        });
+      }
+      renderLogs(data);
+    });
+
     amountInput.addEventListener("change", () => {
       const amount = parseFloat(amountInput.value);
       if (!amount) return;
@@ -37,10 +53,8 @@
       const isoDate = now.toISOString();
       const monthKey = isoDate.substring(0, 7);
 
-      let discount = amount * DISCOUNT_RATE;
-      if (discount > MAX_DISCOUNT) discount = MAX_DISCOUNT;
-
-      const remaining = MAX_DISCOUNT - discount;
+      const discount = Math.min(amount * DISCOUNT_RATE, MAX_DISCOUNT - totalDiscountUsed);
+      const remaining = MAX_DISCOUNT - (totalDiscountUsed + discount);
       const moreCharge = remaining / DISCOUNT_RATE;
       const moreKwh = moreCharge / PRICE_PER_KWH;
       const batteryPercent = (moreKwh / BATTERY_CAPACITY * 100);
@@ -89,15 +103,8 @@
     }
 
     window.deleteEntry = function(key) {
-      const currentMonth = new Date().toISOString().substring(0, 7);
       remove(ref(db, `chargingLogs/${currentMonth}/${key}`));
     };
-
-    const currentMonth = new Date().toISOString().substring(0, 7);
-    const logRef = ref(db, `chargingLogs/${currentMonth}`);
-    onValue(logRef, (snapshot) => {
-      renderLogs(snapshot.val());
-    });
   </script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f5f7fa; }
