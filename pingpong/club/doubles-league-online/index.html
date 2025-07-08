@@ -279,11 +279,13 @@ onValue(extraPlayersRef, (snapshot) => {
   });
 
   sortedPlayers.forEach((player, i) => {
+    // ✅ 기본 선수 숨기기 조건
+    if (hideDefault && defaultPlayers.includes(player)) return;
+
     const div = document.createElement("div");
     div.className = "player";
     div.textContent = player;
 
-    // 🔹 부수별 색상
     const match = player.match(/\((\d+)\)/);
     if (match) {
       const level = Number(match[1]);
@@ -293,29 +295,19 @@ onValue(extraPlayersRef, (snapshot) => {
       else div.classList.add("lv13to14");
     }
 
-    // ✅ 추가된 선수에게 강조 클래스 부여
     if (!defaultPlayers.includes(player)) {
       div.classList.add("new-player");
     }
 
-   // 🔹 이미 팀에 포함된 선수인지 확인
-const isInTeam = teamList.some(team => team.names.includes(player.split("(")[0].trim()));
-
-// 🔹 선택 상태 강조
-if (tempSelected.includes(i) || isInTeam) {
-  div.classList.add("selected");
-}
-
+    const isInTeam = teamList.some(team => team.names.includes(player.split("(")[0].trim()));
+    if (tempSelected.includes(i) || isInTeam) {
+      div.classList.add("selected");
+    }
 
     div.onclick = () => togglePlayer(i);
     playerList.appendChild(div);
   });
 }
-
-
-
-
-
 
     function renderSchedule() {
   const players = tempSelected.map(i => currentPlayers[i]);
@@ -451,9 +443,7 @@ document.getElementById("addPlayerBtn").onclick = () => {
   set(extraPlayersRef, extraPlayers); // ✅ Firebase에 저장 (실시간 공유)
 };
 
-
-
-    
+   
 
     document.getElementById("saveImageBtn").onclick = () => {
       const scheduleDiv = document.getElementById("scheduleTable");
@@ -533,10 +523,6 @@ function togglePlayer(index) {
 
   set(selectedRef, tempSelected);
 }
-
-
-  
-
 
   function createSchedule() {
   const container = document.getElementById("schedule");
@@ -620,20 +606,16 @@ document.getElementById("summary").innerHTML = summaryHtml;
 }
 ;
 
-document.getElementById("removeAddedBtn").onclick = () => {
-  if (!confirm("추가된 선수만 삭제됩니다. 계속하시겠습니까?")) return;
-
-  extraPlayers = []; // ✅ extra 초기화
-  set(extraPlayersRef, []); // ✅ Firebase에서도 초기화
-};
-
- document.getElementById("toggleDefaultBtn").onclick = () => {
+document.getElementById("toggleDefaultBtn").onclick = () => {
   hideDefault = !hideDefault;
-  renderPlayers(currentPlayers);
+
+  // 🔧 기존 잘못된 함수명 renderPlayers → renderPlayerList로 수정
+  renderPlayerList();
 
   const toggleBtn = document.getElementById("toggleDefaultBtn");
   toggleBtn.innerText = hideDefault ? "기존선수 보이기" : "기존선수 숨김";
 };
+
 document.getElementById("toggleDefaultBtn").innerText = "기존선수 숨김";
  
 
