@@ -259,44 +259,48 @@ onValue(winnerRef, (snap) => {
     }
 
     async function submitGuess() {
-      const val = document.getElementById("guess-input").value;
-      if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
-        alert("서로 다른 숫자 3자리로 입력하세요.");
-        return;
-      }
+  const val = document.getElementById("guess-input").value;
+  if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
+    alert("서로 다른 숫자 3자리로 입력하세요.");
+    return;
+  }
 
-      const opponent = playerRole === "A" ? "B" : "A";
-      const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
-      if (!secretSnap.exists()) {
-        alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
-        return;
-      }
+  const opponent = playerRole === "A" ? "B" : "A";
+  const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
+  if (!secretSnap.exists()) {
+    alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
+    return;
+  }
 
-      const secret = secretSnap.val();
-      let strike = 0, ball = 0;
-      for (let i = 0; i < 3; i++) {
-        if (val[i] === secret[i]) strike++;
-        else if (secret.includes(val[i])) ball++;
-      }
+  const secret = secretSnap.val();
+  let strike = 0, ball = 0;
+  for (let i = 0; i < 3; i++) {
+    if (val[i] === secret[i]) strike++;
+    else if (secret.includes(val[i])) ball++;
+  }
 
-      guessCount++;
-      const result = `${strike} Strike / ${ball} Ball`;
-      const log = document.getElementById("log");
-      const div = document.createElement("div");
-      div.className = "log-entry";
-      div.innerHTML = `
-        ${guessCount}번 힌트&nbsp;&nbsp;
-        <span style="color:blue; font-weight:bold;">${val.split('').join(' ')}</span>
-        &nbsp;&nbsp;
-        <span style="color:red; font-weight:bold;">${result}</span>
-      `;
-      log.prepend(div);
+  guessCount++;
+  const result = `${strike} Strike / ${ball} Ball`;
+  const log = document.getElementById("log");
+  const div = document.createElement("div");
+  div.className = "log-entry";
+  div.innerHTML = `
+    ${guessCount}번 힌트&nbsp;&nbsp;
+    <span style="color:blue; font-weight:bold;">${val.split('').join(' ')}</span>
+    &nbsp;&nbsp;
+    <span style="color:red; font-weight:bold;">${result}</span>
+  `;
+  log.prepend(div);
 
-      if (strike === 3) {
-        update(ref(db, `rooms/${roomCode}`), { winner: playerName });
-        alert("🎉 정답입니다! 승리하셨습니다.");
-      }
-    }
+  // 입력값 초기화
+  document.getElementById("guess-input").value = "";
+
+  if (strike === 3) {
+    update(ref(db, `rooms/${roomCode}`), { winner: playerName });
+    alert("🎉 정답입니다! 승리하셨습니다.");
+  }
+}
+
 
     window.createRoom = createRoom;
     window.joinRoom = joinRoom;
