@@ -37,7 +37,7 @@
   <h2>⚾ 숫자야구 대전 (2인용)</h2>
 
   <div id="setup-area">
-    <input type="text" id="username" placeholder="이름을 입력하세요" />
+    <input type="text" id="room-code-input" placeholder="방 번호를 입력하세요 (예: room1234)" />
     <br />
     <button id="create-btn">방 만들기</button>
     <button id="join-btn">방 참여하기</button>
@@ -90,10 +90,12 @@
     let guessCount = 0;
 
     async function createRoom() {
-      playerName = document.getElementById("username").value.trim();
-      if (!playerName) return alert("이름을 입력해주세요.");
+      roomCode = document.getElementById("room-code-input").value.trim();
+      if (!roomCode) return alert("방 번호를 입력해주세요.");
 
-      roomCode = 'room' + Math.floor(Math.random() * 10000);
+      playerName = prompt("사용자 이름을 입력하세요 (예: 홍길동)");
+      if (!playerName) return alert("이름을 입력해야 합니다.");
+
       const roomRef = ref(db, 'rooms/' + roomCode);
       await set(roomRef, {
         players: {
@@ -108,28 +110,27 @@
     }
 
     async function joinRoom() {
-      playerName = document.getElementById("username").value.trim();
-      if (!playerName) return alert("이름을 입력해주세요.");
+      roomCode = document.getElementById("room-code-input").value.trim();
+      if (!roomCode) return alert("방 번호를 입력해주세요.");
 
-      const roomsRef = ref(db, 'rooms');
-      const snapshot = await get(roomsRef);
-      let joined = false;
+      playerName = prompt("사용자 이름을 입력하세요 (예: 김철수)");
+      if (!playerName) return alert("이름을 입력해야 합니다.");
 
-      snapshot.forEach(child => {
-        const val = child.val();
-        if (!val.players.B && !joined) {
-          roomCode = child.key;
-          playerRole = "B";
-          set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName });
-          joined = true;
-        }
-      });
-
-      if (!joined) {
-        alert("참여 가능한 방이 없습니다. 방을 먼저 만들어주세요.");
+      const roomRef = ref(db, `rooms/${roomCode}`);
+      const snapshot = await get(roomRef);
+      if (!snapshot.exists()) {
+        alert("해당 방이 존재하지 않습니다.");
         return;
       }
 
+      const roomData = snapshot.val();
+      if (roomData.players.B) {
+        alert("이미 두 명이 참여한 방입니다.");
+        return;
+      }
+
+      await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName });
+      playerRole = "B";
       enterGame();
     }
 
@@ -138,6 +139,16 @@
       document.getElementById("game-area").style.display = "block";
       document.getElementById("role-label").innerText = `당신은 ${playerRole} 역할입니다`;
       document.getElementById("room-info").innerText = `Room: ${roomCode}`;
+
+      const opponent = playerRole === "A" ? "B" : "A";
+      const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
+
+      onValue(opponentSecretRef, (snapshot) => {
+        if (snapshot.exists()) {
+          console.log(`상대(${opponent})가 비밀 숫자를 입력했습니다.`);
+          alert(`상대(${opponent})가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!`);
+        }
+      });
     }
 
     function submitSecret() {
@@ -198,17 +209,6 @@
       document.getElementById("secret-btn").addEventListener("click", submitSecret);
       document.getElementById("guess-btn").addEventListener("click", submitGuess);
     });
-    
-    // 상대가 비밀숫자 입력했는지 실시간 확인
-const opponent = playerRole === "A" ? "B" : "A";
-const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
-
-onValue(opponentSecretRef, (snapshot) => {
-  if (snapshot.exists()) {
-    console.log(`상대(${opponent})가 비밀 숫자를 입력했습니다.`);
-    alert(`상대(${opponent})가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!`);
-  }
-});
   </script>
 </body>
 </html>
