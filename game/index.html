@@ -44,7 +44,6 @@
 <body>
   <h2 id="page-title">⚾ 숫자야구 대전</h2>
 
-
   <div id="setup-area">
     <input type="text" id="room-code-input" placeholder="방 번호를 입력하세요 (예: room1234)" />
     <br />
@@ -55,16 +54,16 @@
 
   <div id="game-area">
     <h3 id="role-label"></h3>
+
     <div id="secret-section">
       <input type="password" id="secret-input" maxlength="3" placeholder="비밀숫자(3자리)" />
       <button id="secret-btn">비밀 숫자 등록</button>
     </div>
 
     <div id="guess-section" style="display:none; display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap;">
-  <input type="text" id="guess-input" maxlength="3" placeholder="추측 숫자" style="flex: 1; max-width: 150px;" />
-  <button id="guess-btn" style="flex-shrink: 0;">추측하기</button>
-</div>
-<div id="result-text" style="margin-top: 10px; font-weight: bold;"></div>
+      <input type="text" id="guess-input" maxlength="3" placeholder="추측 숫자" style="flex: 1; max-width: 150px;" />
+      <button id="guess-btn" style="flex-shrink: 0;">추측하기</button>
+    </div>
 
     <div id="log"></div>
   </div>
@@ -79,8 +78,6 @@
       update,
       onValue
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-    
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -146,27 +143,37 @@
     }
 
     function enterGame() {
-      document.getElementById("page-title").innerText = `⚾ 숫자야구 대전 (방번호: ${roomCode})`;
+      document.getElementById("page-title").innerText = `⚾ 숫자야구 대전 - 방번호: ${roomCode}`;
       document.getElementById("setup-area").style.display = "none";
       document.getElementById("game-area").style.display = "block";
       document.getElementById("room-info").innerText = `방 번호: ${roomCode}`;
 
       const opponent = playerRole === "A" ? "B" : "A";
-
       const myRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
-      get(myRef).then((snap) => {
-        const myName = snap.exists() ? snap.val() : "나";
-        const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
-        onValue(oppRef, (oppSnap) => {
-          const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
+      const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
+
+      let myName = "나";
+      let oppName = "(상대 대기 중)";
+
+      onValue(myRef, (snap) => {
+        if (snap.exists()) {
+          myName = snap.val();
           document.getElementById("role-label").innerText = `${myName} 님 vs ${oppName} 님 - 야구 대전 시작!`;
-        });
+        }
+      });
+
+      onValue(oppRef, (oppSnap) => {
+        if (oppSnap.exists()) {
+          oppName = oppSnap.val();
+          document.getElementById("role-label").innerText = `${myName} 님 vs ${oppName} 님 - 야구 대전 시작!`;
+        }
       });
 
       const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
       onValue(opponentSecretRef, (snapshot) => {
         if (snapshot.exists()) {
           alert("상대가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!");
+          document.getElementById("guess-section").style.display = "flex";
         }
       });
     }
@@ -179,7 +186,13 @@
       }
       set(ref(db, `rooms/${roomCode}/players/${playerRole}/secret`), val);
       document.getElementById("secret-section").style.display = "none";
-      document.getElementById("guess-section").style.display = "block";
+
+      const opponent = playerRole === "A" ? "B" : "A";
+      get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`)).then(snap => {
+        if (snap.exists()) {
+          document.getElementById("guess-section").style.display = "flex";
+        }
+      });
     }
 
     async function submitGuess() {
@@ -205,7 +218,6 @@
 
       guessCount++;
       const result = `${strike} Strike / ${ball} Ball`;
-      document.getElementById("result-text").innerText = `결과: ${result}`;
       const log = document.getElementById("log");
       const div = document.createElement("div");
       div.className = "log-entry";
