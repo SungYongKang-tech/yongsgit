@@ -49,6 +49,8 @@
     <br />
     <button id="create-btn">방 만들기</button>
     <button id="join-btn">방 참여하기</button>
+    <button id="solo-btn">혼자하기</button>
+
     <p id="room-info"></p>
   </div>
 
@@ -259,23 +261,30 @@ onValue(winnerRef, (snap) => {
       });
     }
 
-    async function submitGuess() {
+  
+ async function submitGuess() {
   const guessInput = document.getElementById("guess-input");
   const val = guessInput.value;
-  
+
   if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
     alert("서로 다른 숫자 3자리로 입력하세요.");
     return;
   }
 
-  const opponent = playerRole === "A" ? "B" : "A";
-  const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
-  if (!secretSnap.exists()) {
-    alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
-    return;
+  let secret = "";
+
+  if (soloMode) {
+    secret = soloSecret;
+  } else {
+    const opponent = playerRole === "A" ? "B" : "A";
+    const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
+    if (!secretSnap.exists()) {
+      alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
+      return;
+    }
+    secret = secretSnap.val();
   }
 
-  const secret = secretSnap.val();
   let strike = 0, ball = 0;
   for (let i = 0; i < 3; i++) {
     if (val[i] === secret[i]) strike++;
@@ -295,24 +304,28 @@ onValue(winnerRef, (snap) => {
   `;
   log.prepend(div);
 
- if (strike === 3) {
-  const winSound = document.getElementById("win-sound");
-  if (winSound) {
-    winSound.currentTime = 0; // 처음부터 재생
-    winSound.play().catch((err) => {
-      console.warn("사운드 재생 실패:", err);
-    });
+  if (strike === 3) {
+    const winSound = document.getElementById("win-sound");
+    if (winSound) {
+      winSound.currentTime = 0;
+      winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
+    }
+    alert("🎉 정답입니다! 승리하셨습니다.");
+
+    if (soloMode) {
+      document.getElementById("guess-section").style.display = "none";
+    } else {
+      update(ref(db, `rooms/${roomCode}`), { winner: playerName });
+    }
   }
 
-  update(ref(db, `rooms/${roomCode}`), { winner: playerName });
-  alert("🎉 정답입니다! 승리하셨습니다.");
-}
-
-
-  // 💡 입력 초기화 및 포커스
   guessInput.value = "";
   guessInput.focus();
 }
+
+
+
+
 
 
 
@@ -327,6 +340,34 @@ onValue(winnerRef, (snap) => {
       document.getElementById("secret-btn").addEventListener("click", submitSecret);
       document.getElementById("guess-btn").addEventListener("click", submitGuess);
     });
+    //혼자하기
+    let soloMode = false;
+let soloSecret = '';
+
+function startSoloGame() {
+  playerName = "혼자하기";
+  roomCode = "solo";
+  playerRole = "Solo";
+  soloMode = true;
+
+  // 랜덤한 3자리 숫자 생성
+  const digits = [];
+  while (digits.length < 3) {
+    const rand = Math.floor(Math.random() * 10);
+    if (!digits.includes(rand)) digits.push(rand);
+  }
+  soloSecret = digits.join('');
+
+  // 화면 전환 및 UI 세팅
+  document.getElementById("page-title").innerText = `⚾ 숫자야구 (혼자 도전!)`;
+  document.getElementById("setup-area").style.display = "none";
+  document.getElementById("game-area").style.display = "block";
+  document.getElementById("role-label").innerText = `혼자 도전 모드 - 비밀번호를 맞춰보세요!`;
+  document.getElementById("secret-section").style.display = "none";
+  document.getElementById("guess-section").style.display = "flex";
+  document.getElementById("room-info").innerText = "혼자하기 모드입니다.";
+}
+
   </script>
  
 </body>
