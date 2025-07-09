@@ -182,6 +182,10 @@
       justify-content: center;
       }
 
+    .player.new-player.selected {
+     color: black !important;
+      }
+
   </style>
 </head>
 <body>
@@ -190,7 +194,7 @@
     <input type="text" id="playerName" placeholder="선수 이름" />
     <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
     <button id="addPlayerBtn">선수 추가</button>
-   
+    <button id="toggleDefaultBtn">기존 선수 숨김</button>
     <button id="removeAddedBtn">추가 선수 삭제</button>
   </div>
   <div id="playerList" class="player-list"></div>
@@ -271,51 +275,48 @@ onValue(extraPlayersRef, (snapshot) => {
   function renderPlayerList() {
   playerList.innerHTML = "";
 
-  // ✅ 부수 오름차순 정렬
-  const sortedPlayers = [...currentPlayers].sort((a, b) => {
-    const aLevel = parseInt(a.match(/\((\d+)\)/)?.[1] || 0);
-    const bLevel = parseInt(b.match(/\((\d+)\)/)?.[1] || 0);
-    return aLevel - bLevel;
-  });
+  // ✅ 기본 선수만 정렬
+  const sortedPlayers = [
+    ...[...currentPlayers]
+      .filter(p => defaultPlayers.includes(p))
+      .sort((a, b) => parseInt(a.match(/\((\d+)\)/)[1]) - parseInt(b.match(/\((\d+)\)/)[1])),
+    ...extraPlayers // ✅ 추가 선수는 정렬하지 않고 뒤에 추가
+  ];
 
-  sortedPlayers.forEach((player, i) => {
-    const div = document.createElement("div");
-    div.className = "player";
-    div.textContent = player;
+  sortedPlayers.forEach((player) => {
+  const i = currentPlayers.findIndex(p => p === player);
+  if (i === -1) return; // 못 찾은 경우 건너뜀
 
-    // 🔹 부수별 색상
-    const match = player.match(/\((\d+)\)/);
-    if (match) {
-      const level = Number(match[1]);
-      if (level <= 6) div.classList.add("lv4to6");
-      else if (level <= 9) div.classList.add("lv7to9");
-      else if (level <= 12) div.classList.add("lv10to12");
-      else div.classList.add("lv13to14");
-    }
+  if (hideDefault && defaultPlayers.includes(player)) return;
 
-    // ✅ 추가된 선수에게 강조 클래스 부여
-    if (!defaultPlayers.includes(player)) {
-      div.classList.add("new-player");
-    }
+  const div = document.createElement("div");
+  div.className = "player";
+  div.textContent = player;
 
-   // 🔹 이미 팀에 포함된 선수인지 확인
-const isInTeam = teamList.some(team => team.names.includes(player.split("(")[0].trim()));
+  // 스타일 지정
+  const match = player.match(/\((\d+)\)/);
+  if (match) {
+    const level = Number(match[1]);
+    if (level <= 6) div.classList.add("lv4to6");
+    else if (level <= 9) div.classList.add("lv7to9");
+    else if (level <= 12) div.classList.add("lv10to12");
+    else div.classList.add("lv13to14");
+  }
 
-// 🔹 선택 상태 강조
-if (tempSelected.includes(i) || isInTeam) {
-  div.classList.add("selected");
+  if (!defaultPlayers.includes(player)) {
+    div.classList.add("new-player");
+  }
+
+  const isInTeam = teamList.some(team => team.names.includes(player.split("(")[0].trim()));
+  if (tempSelected.includes(i) || isInTeam) {
+    div.classList.add("selected");
+  }
+
+  div.onclick = () => togglePlayer(i);
+  playerList.appendChild(div);
+});
+
 }
-
-
-    div.onclick = () => togglePlayer(i);
-    playerList.appendChild(div);
-  });
-}
-
-
-
-
-
 
     function renderSchedule() {
   const players = tempSelected.map(i => currentPlayers[i]);
@@ -434,6 +435,13 @@ renderPlayerList();
 
 };
 
+document.getElementById("removeAddedBtn").onclick = () => {
+  if (!confirm("추가한 선수를 모두 삭제하시겠습니까?")) return;
+
+  extraPlayers = [];
+  set(extraPlayersRef, extraPlayers);
+};
+
 document.getElementById("addPlayerBtn").onclick = () => {
   const name = document.getElementById("playerName").value.trim();
   const level = document.getElementById("playerLevel").value.trim();
@@ -451,9 +459,7 @@ document.getElementById("addPlayerBtn").onclick = () => {
   set(extraPlayersRef, extraPlayers); // ✅ Firebase에 저장 (실시간 공유)
 };
 
-
-
-    
+   
 
     document.getElementById("saveImageBtn").onclick = () => {
       const scheduleDiv = document.getElementById("scheduleTable");
@@ -533,10 +539,6 @@ function togglePlayer(index) {
 
   set(selectedRef, tempSelected);
 }
-
-
-  
-
 
   function createSchedule() {
   const container = document.getElementById("schedule");
@@ -620,14 +622,17 @@ document.getElementById("summary").innerHTML = summaryHtml;
 }
 ;
 
-document.getElementById("removeAddedBtn").onclick = () => {
-  if (!confirm("추가된 선수만 삭제됩니다. 계속하시겠습니까?")) return;
+document.getElementById("toggleDefaultBtn").onclick = () => {
+  hideDefault = !hideDefault;
 
-  extraPlayers = []; // ✅ extra 초기화
-  set(extraPlayersRef, []); // ✅ Firebase에서도 초기화
+  // 🔧 기존 잘못된 함수명 renderPlayers → renderPlayerList로 수정
+  renderPlayerList();
+
+  const toggleBtn = document.getElementById("toggleDefaultBtn");
+  toggleBtn.innerText = hideDefault ? "기존선수 보이기" : "기존선수 숨김";
 };
 
-
+document.getElementById("toggleDefaultBtn").innerText = "기존선수 숨김";
  
 
 
