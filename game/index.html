@@ -134,31 +134,35 @@
       enterGame();
     }
 
-   async function enterGame() {
+  function enterGame() {
   document.getElementById("setup-area").style.display = "none";
   document.getElementById("game-area").style.display = "block";
   document.getElementById("room-info").innerText = `방 번호: ${roomCode}`;
 
   const opponent = playerRole === "A" ? "B" : "A";
-  const playerRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
-  const opponentRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
 
-  const playerSnap = await get(playerRef);
-  const opponentSnap = await get(opponentRef);
+  // 내 이름 표시
+  const myRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
+  get(myRef).then((snap) => {
+    const myName = snap.exists() ? snap.val() : "나";
 
-  const myName = playerSnap.exists() ? playerSnap.val() : "당신";
-  const oppName = opponentSnap.exists() ? opponentSnap.val() : "(상대 대기 중)";
+    // 상대 이름이 실시간으로 들어올 때까지 감시
+    const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
+    onValue(oppRef, (oppSnap) => {
+      const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
+      document.getElementById("role-label").innerText = `${myName}님 vs ${oppName}님 - 야구 대전 시작!`;
+    });
+  });
 
-  document.getElementById("role-label").innerText = `${myName}님 vs ${oppName}님 - 야구 대전 시작!`;
-
-  // 상대가 비밀숫자 등록했는지 확인
+  // 상대가 비밀숫자 입력했는지 확인
   const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
   onValue(opponentSecretRef, (snapshot) => {
     if (snapshot.exists()) {
-      alert(`상대(${oppName})가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!`);
+      alert(`상대가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!`);
     }
   });
 }
+
 
 
 
