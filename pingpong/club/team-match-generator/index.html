@@ -409,28 +409,58 @@
   }
 
 function assignTeams() {
-  const teamCount = finalizedLeaders.length;
+  let teamCount = finalizedLeaders.length;
+
   if (teamCount < 1) {
-    alert("'팀장 선정 완료' 버튼을 먼저 눌러주세요.");
-    return;
+    // 팀장 없을 경우 → 사용자에게 몇 팀으로 구성할지 입력받기
+    const input = prompt("팀장을 선정하지 않으셨습니다.\n몇 팀으로 구성하시겠습니까?");
+    if (!input) return;
+    teamCount = parseInt(input);
+    if (isNaN(teamCount) || teamCount < 1) {
+      alert("올바른 숫자를 입력해주세요.");
+      return;
+    }
   }
 
-  const used = new Set(finalizedLeaders);
-  const teams = finalizedLeaders.map(i => ({
-    leader: allPlayers[i],
-    members: [],
-    sum: allPlayers[i].level,
-  }));
+  // 팀장 있는 경우: finalizedLeaders를 기준으로 팀 리더 설정
+  // 팀장 없는 경우: 팀장을 random으로 할당
+  const teams = [];
+  const used = new Set();
 
-  // 팀원 후보: 팀장이 아닌 사람 중에서 선택된 사람들
-  const teamMembers = selected
-    .filter(i => !used.has(i))
-    .concat(leaders.filter(i => !finalizedLeaders.includes(i) && !used.has(i)));
+  if (finalizedLeaders.length >= teamCount) {
+    for (let i = 0; i < teamCount; i++) {
+      const idx = finalizedLeaders[i];
+      teams.push({
+        leader: allPlayers[idx],
+        members: [],
+        sum: allPlayers[idx].level,
+      });
+      used.add(idx);
+    }
+  } else {
+    const selectedPool = [...selected];
+    if (selectedPool.length < teamCount) {
+      alert(`참석자가 ${teamCount}명보다 적습니다.`);
+      return;
+    }
 
-  // 중복 제거 후 실제 객체로
+    const shuffled = shuffle(selectedPool);
+    for (let i = 0; i < teamCount; i++) {
+      const idx = shuffled[i];
+      teams.push({
+        leader: allPlayers[idx],
+        members: [],
+        sum: allPlayers[idx].level,
+      });
+      used.add(idx);
+    }
+  }
+
+  // 팀원 후보 추출
+  const teamMembers = selected.filter(i => !used.has(i));
   const uniqueMembers = [...new Set(teamMembers)].map(i => allPlayers[i]);
 
-  // 부수 기준 정렬 + 같은 부수끼리 랜덤 섞기
+  // 부수 기준 정렬 후 같은 부수는 랜덤 섞기
   const grouped = {};
   uniqueMembers.forEach(p => {
     if (!grouped[p.level]) grouped[p.level] = [];
@@ -443,36 +473,34 @@ function assignTeams() {
     sorted = sorted.concat(shuffledSameLevel);
   });
 
-  // 정렬된 인원들을 현재 부수합이 가장 적은 팀에 차례로 할당
+  // 팀에 부수 합 기준으로 분배
   sorted.forEach(player => {
-    teams.sort((a, b) => a.sum - b.sum); // 항상 sum이 가장 작은 팀이 먼저
+    teams.sort((a, b) => a.sum - b.sum);
     teams[0].members.push(player);
     teams[0].sum += player.level;
   });
 
   // 출력
- const teamBox = document.getElementById("teams");
-teamBox.innerHTML = "";
+  const teamBox = document.getElementById("teams");
+  teamBox.innerHTML = "";
 
-teams.forEach((team, idx) => {
-  const sortedMembers = [...team.members].sort((a, b) => a.level - b.level); // 부수순 정렬
+  teams.forEach((team, idx) => {
+    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.innerHTML = `
+      <h3>${team.leader.name} 팀</h3>
+      <ul>
+        <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
+        ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
+      </ul>
+      <p><small>부수합: ${team.sum}</small></p>`;
+    teamBox.appendChild(div);
+  });
 
-  const div = document.createElement("div");
-  div.className = "team-card";
-  div.innerHTML = `
-    <h3>${team.leader.name} 팀</h3>
-    <ul>
-      <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
-      ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
-    </ul>
-    <p><small>부수합: ${team.sum}</small></p>`;
-    
-  teamBox.appendChild(div);
-});
-
-latestTeams = teams;
-
+  latestTeams = teams;
 }
+
 
 
   function resetAll() {
