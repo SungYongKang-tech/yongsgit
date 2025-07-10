@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>오목 대전</title>
+  <title>숫자야구 대전</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -11,49 +11,81 @@
       background: #f5f5f5;
       padding: 10px;
     }
-    #board {
-      display: grid;
-      grid-template-columns: repeat(15, 24px);
-      grid-gap: 2px;
-      margin: 20px auto;
-      width: fit-content;
-    }
-    .cell {
-      width: 24px;
-      height: 24px;
-      border: 1px solid #999;
-      background: #fff;
-      line-height: 24px;
-      font-size: 18px;
-      cursor: pointer;
-    }
-    #room-info { margin-top: 10px; font-size: 14px; color: #333; }
-    #room-name-input {
-      padding: 8px;
+    input, button {
       font-size: 16px;
-      width: 200px;
-      margin-bottom: 8px;
+      padding: 10px;
+      margin: 6px 0;
+      width: 90%;
+      max-width: 300px;
+      box-sizing: border-box;
+    }
+    #game-area { display: none; margin-top: 20px; }
+    #log {
+      margin-top: 20px;
+      max-width: 95%;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: left;
+      word-break: break-word;
+    }
+    .log-entry {
+      background: #ffffff;
+      border: 1px solid #ccc;
+      padding: 8px;
+      margin-bottom: 6px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    h2, h3 {
+      margin-bottom: 10px;
     }
   </style>
 </head>
 <body>
-  <h2 id="title">⚫ 오목 대전</h2>
-  <div id="setup">
-    <input id="room-name-input" type="text" placeholder="방 이름 입력" /> <br>
-    <button onclick="createRoomWithName()">방 이름으로 생성</button>
-    <button onclick="createRoom()">자동 방 생성</button>
-    <button onclick="joinRoom()">방 참여하기</button>
+  <h2 id="page-title">⚾ 숫자야구 대전</h2>
+
+  <div id="setup-area">
+    <input type="text" id="room-code-input" placeholder="방 번호를 입력하세요 (예: room1234)" />
+    <br />
+    <button id="create-btn">방 만들기</button>
+    <button id="join-btn">방 참여하기</button>
+    <button id="solo-btn">혼자하기</button>
+
     <p id="room-info"></p>
   </div>
-  <div id="game" style="display:none">
-    <div id="turn"></div>
-    <div id="board"></div>
+
+  <div id="game-area">
+    <h3 id="role-label"></h3>
+
+    <div id="secret-section">
+      <input type="password" id="secret-input" maxlength="3" placeholder="비밀숫자(3자리)" />
+      <button id="secret-btn">비밀 숫자 등록</button>
+    </div>
+
+    <!-- 변경된 guess-section 부분 -->
+<div id="guess-section" style="display:none;">
+  <div style="display: flex; justify-content: center; align-items: center; gap: 8px; max-width: 600px; margin: auto;">
+    <input type="text" id="guess-input" maxlength="3" placeholder="추측 숫자"
+      style="width: 50%; padding: 10px; font-size: 16px;" />
+    <button id="guess-btn"
+      style="width: 50%; padding: 10px; font-size: 16px;">추측하기</button>
+  </div>
+</div>
+
+
+
+    <div id="log"></div>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, get, update, onValue
+      getDatabase,
+      ref,
+      set,
+      get,
+      update,
+      onValue
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -61,9 +93,9 @@
       authDomain: "number-baseball-aee52.firebaseapp.com",
       databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
       projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.firebasestorage.app",
+      storageBucket: "number-baseball-aee52.appspot.com",
       messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:8cc90ab5a17c364b91a561"
+      appId: "1:998537150772:web:50c5a06d1d2eedfe91a561"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -72,143 +104,274 @@
     let roomCode = '';
     let playerRole = '';
     let playerName = '';
+    let guessCount = 0;
 
     async function createRoom() {
-      const latestRef = ref(db, 'latestRoom');
-      const latestSnap = await get(latestRef);
-      const now = Date.now();
+  // 현재 시각 기반 방번호 생성
+  const now = new Date();
+  const pad = (n) => n.toString().padStart(2, '0');
+  roomCode = `${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
 
-      if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) {
-        alert("3분 내에 생성된 방이 이미 존재합니다. '방 참여하기'를 이용해주세요.");
-        return;
-      }
+  playerName = prompt("사용자 이름을 입력하세요");
+  if (!playerName) return alert("이름을 입력해야 합니다.");
 
-      const nowDate = new Date();
-      const pad = n => n.toString().padStart(2, '0');
-      roomCode = `${pad(nowDate.getMonth()+1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
+  const roomRef = ref(db, 'rooms/' + roomCode);
+  await set(roomRef, {
+    players: {
+      A: { name: playerName }
+    },
+    turn: "A",
+    winner: "",
+    createdAt: Date.now()
+  });
 
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
+  // 최근 방 기록 (참여자가 이걸 기준으로 입장함)
+  await set(ref(db, 'latestRoom'), {
+    roomCode,
+    createdAt: Date.now()
+  });
 
-      await set(ref(db, 'rooms/' + roomCode), {
-        players: { A: { name: playerName } },
-        turn: 'A',
-        board: Array.from({length:15}, () => Array(15).fill("")),
-        winner: "",
-        createdAt: now
-      });
+  playerRole = "A";
+  enterGame();
+}
 
-      await set(latestRef, {
-        roomCode,
-        createdAt: now
-      });
-
-      playerRole = 'A';
-      startGame();
-    }
-
-    async function createRoomWithName() {
-      const nameInput = document.getElementById("room-name-input").value.trim();
-      if (!nameInput) return alert("방 이름을 입력하세요.");
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
-      roomCode = nameInput;
-      await set(ref(db, 'rooms/' + roomCode), {
-        players: { A: { name: playerName } },
-        turn: 'A',
-        board: Array.from({length:15}, () => Array(15).fill("")),
-        winner: "",
-        createdAt: Date.now()
-      });
-      playerRole = 'A';
-      startGame();
-    }
 
     async function joinRoom() {
-      const latestRef = ref(db, 'latestRoom');
-      const latestSnap = await get(latestRef);
-      if (!latestSnap.exists()) return alert("참여 가능한 방이 없습니다.");
+  const latestRef = ref(db, 'latestRoom');
+  const latestSnap = await get(latestRef);
 
-      const { roomCode: latestRoom, createdAt } = latestSnap.val();
-      const now = Date.now();
-      if (now - createdAt > 180000) return alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
+  if (!latestSnap.exists()) {
+    alert("참여 가능한 방이 없습니다.");
+    return;
+  }
 
-      const roomRef = ref(db, `rooms/${latestRoom}`);
-      const roomSnap = await get(roomRef);
-      if (!roomSnap.exists()) return alert("해당 방이 존재하지 않습니다.");
-      const roomData = roomSnap.val();
-      if (roomData.players.B) return alert("이미 두 명이 참여한 방입니다.");
+  const latestData = latestSnap.val();
+  const now = Date.now();
+  const diffMs = now - latestData.createdAt;
 
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
+  if (diffMs > 3 * 60 * 1000) { // 3분 초과
+    alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
+    return;
+  }
 
-      await set(ref(db, `rooms/${latestRoom}/players/B`), { name: playerName });
-      roomCode = latestRoom;
-      playerRole = 'B';
-      startGame();
-    }
+  roomCode = latestData.roomCode;
 
-    function startGame() {
-      document.getElementById("setup").style.display = "none";
-      document.getElementById("game").style.display = "block";
-      document.getElementById("room-info").innerText = `방번호: ${roomCode}`;
-      renderBoard();
-      listenBoard();
-    }
+  playerName = prompt("사용자 이름을 입력하세요");
+  if (!playerName) return alert("이름을 입력해야 합니다.");
 
-    function renderBoard() {
-      const boardDiv = document.getElementById("board");
-      boardDiv.innerHTML = "";
-      for (let r = 0; r < 15; r++) {
-        for (let c = 0; c < 15; c++) {
-          const cell = document.createElement("div");
-          cell.className = "cell";
-          cell.dataset.row = r;
-          cell.dataset.col = c;
-          cell.addEventListener("click", () => handleMove(r, c));
-          boardDiv.appendChild(cell);
-        }
-      }
-    }
+  const roomRef = ref(db, `rooms/${roomCode}`);
+  const snapshot = await get(roomRef);
+  if (!snapshot.exists()) {
+    alert("해당 방이 존재하지 않습니다.");
+    return;
+  }
 
-    async function handleMove(r, c) {
-      const turnSnap = await get(ref(db, `rooms/${roomCode}/turn`));
-      if ((playerRole === 'A' && turnSnap.val() !== 'A') || (playerRole === 'B' && turnSnap.val() !== 'B')) {
-        alert("상대 차례입니다"); return;
-      }
+  const roomData = snapshot.val();
+  if (roomData.players.B) {
+    alert("이미 두 명이 참여한 방입니다.");
+    return;
+  }
 
-      const boardSnap = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
-      if (boardSnap.exists() && boardSnap.val() !== "") return;
-      const stone = playerRole === 'A' ? '●' : '○';
-      await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
-      await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
-    }
+  await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName });
+  playerRole = "B";
+  enterGame();
+}
 
-    function listenBoard() {
-      const boardRef = ref(db, `rooms/${roomCode}/board`);
-      onValue(boardRef, (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.val();
-        for (let r = 0; r < 15; r++) {
-          for (let c = 0; c < 15; c++) {
-            const idx = r * 15 + c;
-            const cell = document.getElementById("board").children[idx];
-            cell.innerText = data[r]?.[c] || "";
-            cell.style.pointerEvents = data[r]?.[c] ? "none" : "auto";
-          }
+
+    function enterGame() {
+      document.getElementById("page-title").innerText = `⚾ 숫자야구 대전 - 방번호: ${roomCode}`;
+      document.getElementById("setup-area").style.display = "none";
+      document.getElementById("game-area").style.display = "block";
+      document.getElementById("room-info").innerText = `방 번호: ${roomCode}`;
+
+      const opponent = playerRole === "A" ? "B" : "A";
+      const myRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
+      const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
+
+      let myName = "나";
+      let oppName = "(상대 대기 중)";
+
+      onValue(myRef, (snap) => {
+        if (snap.exists()) {
+          myName = snap.val();
+          document.getElementById("role-label").innerText = `${myName} 님 vs ${oppName} 님 - 야구 대전 시작!`;
         }
       });
 
-      onValue(ref(db, `rooms/${roomCode}/turn`), (snap) => {
-        const who = snap.val();
-        document.getElementById("turn").innerText = who === playerRole ? "내 차례" : "상대 차례";
+      onValue(oppRef, (oppSnap) => {
+        if (oppSnap.exists()) {
+          oppName = oppSnap.val();
+          document.getElementById("role-label").innerText = `${myName} 님 vs ${oppName} 님 - 야구 대전 시작!`;
+        }
+      });
+
+      const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
+      onValue(opponentSecretRef, (snapshot) => {
+        if (snapshot.exists()) {
+          alert("상대가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!");
+          document.getElementById("guess-section").style.display = "flex";
+        }
+      });
+
+      // 승자 감지 로직 추가
+const winnerRef = ref(db, `rooms/${roomCode}/winner`);
+onValue(winnerRef, (snap) => {
+  if (snap.exists() && snap.val() !== "") {
+    const winner = snap.val();
+    if (winner !== playerName) {
+      alert(`❗ ${winner} 님이 먼저 정답을 맞췄습니다. 경기가 종료됩니다.`);
+    } else {
+      alert(`🎉 축하합니다! ${winner} 님이 승리하셨습니다.`);
+    }
+
+    // 비밀 입력, 추측 입력 모두 비활성화
+    document.getElementById("secret-section").style.display = "none";
+    document.getElementById("guess-section").style.display = "none";
+
+    // 승리 메시지 표시
+    const log = document.getElementById("log");
+    const msg = document.createElement("div");
+    msg.className = "log-entry";
+    msg.style.background = "#ffeb3b";
+    msg.style.fontSize = "18px";
+    msg.style.textAlign = "center";
+    msg.style.fontWeight = "bold";
+    msg.innerText = `${winner} 님이 승리하셨습니다!`;
+    log.prepend(msg);
+    
+  }
+});
+
+    }
+
+    function submitSecret() {
+      const val = document.getElementById("secret-input").value;
+      if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
+        alert("서로 다른 숫자 3자리로 입력하세요.");
+        return;
+      }
+      set(ref(db, `rooms/${roomCode}/players/${playerRole}/secret`), val);
+      document.getElementById("secret-section").style.display = "none";
+
+      const opponent = playerRole === "A" ? "B" : "A";
+      get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`)).then(snap => {
+        if (snap.exists()) {
+          document.getElementById("guess-section").style.display = "flex";
+        }
       });
     }
 
-    // 전역에 함수 바인딩
+  
+ async function submitGuess() {
+  const guessInput = document.getElementById("guess-input");
+  const val = guessInput.value;
+
+  if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
+    alert("서로 다른 숫자 3자리로 입력하세요.");
+    return;
+  }
+
+  let secret = "";
+
+  if (soloMode) {
+    secret = soloSecret;
+  } else {
+    const opponent = playerRole === "A" ? "B" : "A";
+    const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
+    if (!secretSnap.exists()) {
+      alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
+      return;
+    }
+    secret = secretSnap.val();
+  }
+
+  let strike = 0, ball = 0;
+  for (let i = 0; i < 3; i++) {
+    if (val[i] === secret[i]) strike++;
+    else if (secret.includes(val[i])) ball++;
+  }
+
+  guessCount++;
+  const result = `${strike} Strike / ${ball} Ball`;
+  const log = document.getElementById("log");
+  const div = document.createElement("div");
+  div.className = "log-entry";
+  div.innerHTML = `
+    ${guessCount}번 힌트&nbsp;&nbsp;
+    <span style="color:blue; font-weight:bold;">${val.split('').join(' ')}</span>
+    &nbsp;&nbsp;
+    <span style="color:red; font-weight:bold;">${result}</span>
+  `;
+  log.prepend(div);
+
+  if (strike === 3) {
+    const winSound = document.getElementById("win-sound");
+    if (winSound) {
+      winSound.currentTime = 0;
+      winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
+    }
+    alert("🎉 정답입니다! 승리하셨습니다.");
+
+    if (soloMode) {
+      document.getElementById("guess-section").style.display = "none";
+    } else {
+      update(ref(db, `rooms/${roomCode}`), { winner: playerName });
+    }
+  }
+
+  guessInput.value = "";
+  guessInput.focus();
+}
+
+
+
+
+
+
+
     window.createRoom = createRoom;
-    window.createRoomWithName = createRoomWithName;
     window.joinRoom = joinRoom;
+    window.submitSecret = submitSecret;
+    window.submitGuess = submitGuess;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("create-btn").addEventListener("click", createRoom);
+      document.getElementById("join-btn").addEventListener("click", joinRoom);
+      document.getElementById("secret-btn").addEventListener("click", submitSecret);
+      document.getElementById("guess-btn").addEventListener("click", submitGuess);
+    });
+    //혼자하기
+    let soloMode = false;
+let soloSecret = '';
+
+function startSoloGame() {
+  playerName = "혼자하기";
+  roomCode = "solo";
+  playerRole = "Solo";
+  soloMode = true;
+
+  // 랜덤한 3자리 숫자 생성
+  const digits = [];
+  while (digits.length < 3) {
+    const rand = Math.floor(Math.random() * 10);
+    if (!digits.includes(rand)) digits.push(rand);
+  }
+  soloSecret = digits.join('');
+
+  // 화면 전환 및 UI 세팅
+  document.getElementById("page-title").innerText = `⚾ 숫자야구 (혼자 도전!)`;
+  document.getElementById("setup-area").style.display = "none";
+  document.getElementById("game-area").style.display = "block";
+  document.getElementById("role-label").innerText = `혼자 도전 모드 - 비밀번호를 맞춰보세요!`;
+  document.getElementById("secret-section").style.display = "none";
+  document.getElementById("guess-section").style.display = "flex";
+  document.getElementById("room-info").innerText = "혼자하기 모드입니다.";
+}
+window.startSoloGame = startSoloGame;
+document.getElementById("solo-btn").addEventListener("click", startSoloGame);
   </script>
+ 
 </body>
+<audio id="win-sound" src="win.mp3" preload="auto"></audio>
+
 </html>
