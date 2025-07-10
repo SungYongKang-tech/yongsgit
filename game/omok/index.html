@@ -74,29 +74,36 @@
     let playerName = '';
 
     async function createRoom() {
-      const now = new Date();
-      const pad = n => n.toString().padStart(2, '0');
-      roomCode = 'autoRoom';
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
+      const latestRef = ref(db, 'latestRoom');
+      const latestSnap = await get(latestRef);
+      const now = Date.now();
 
-      const roomRef = ref(db, 'rooms/' + roomCode);
-      const roomSnap = await get(roomRef);
-
-      if (!roomSnap.exists()) {
-        await set(roomRef, {
-          players: { A: { name: playerName } },
-          turn: 'A',
-          board: Array.from({length:15}, () => Array(15).fill("")),
-          winner: "",
-          createdAt: Date.now()
-        });
-        playerRole = 'A';
-      } else {
-        alert("이미 방이 존재합니다. 방 참여를 이용해주세요.");
+      if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) {
+        alert("3분 내에 생성된 방이 이미 존재합니다. '방 참여하기'를 이용해주세요.");
         return;
       }
 
+      const nowDate = new Date();
+      const pad = n => n.toString().padStart(2, '0');
+      roomCode = `${pad(nowDate.getMonth()+1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
+
+      playerName = prompt("이름 입력:");
+      if (!playerName) return;
+
+      await set(ref(db, 'rooms/' + roomCode), {
+        players: { A: { name: playerName } },
+        turn: 'A',
+        board: Array.from({length:15}, () => Array(15).fill("")),
+        winner: "",
+        createdAt: now
+      });
+
+      await set(latestRef, {
+        roomCode,
+        createdAt: now
+      });
+
+      playerRole = 'A';
       startGame();
     }
 
@@ -118,18 +125,25 @@
     }
 
     async function joinRoom() {
-      const autoRoomRef = ref(db, 'rooms/autoRoom');
-      const roomSnap = await get(autoRoomRef);
-      if (!roomSnap.exists()) return alert("입장할 수 있는 방이 없습니다.");
-      const roomData = roomSnap.val();
+      const latestRef = ref(db, 'latestRoom');
+      const latestSnap = await get(latestRef);
+      if (!latestSnap.exists()) return alert("참여 가능한 방이 없습니다.");
+
+      const { roomCode: latestRoom, createdAt } = latestSnap.val();
       const now = Date.now();
+      if (now - createdAt > 180000) return alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
+
+      const roomRef = ref(db, `rooms/${latestRoom}`);
+      const roomSnap = await get(roomRef);
+      if (!roomSnap.exists()) return alert("해당 방이 존재하지 않습니다.");
+      const roomData = roomSnap.val();
       if (roomData.players.B) return alert("이미 두 명이 참여한 방입니다.");
-      if (now - roomData.createdAt > 180000) return alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
 
       playerName = prompt("이름 입력:");
       if (!playerName) return;
-      roomCode = 'autoRoom';
-      await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName });
+
+      await set(ref(db, `rooms/${latestRoom}/players/B`), { name: playerName });
+      roomCode = latestRoom;
       playerRole = 'B';
       startGame();
     }
@@ -190,6 +204,11 @@
         document.getElementById("turn").innerText = who === playerRole ? "내 차례" : "상대 차례";
       });
     }
+
+    // 전역에 함수 바인딩
+    window.createRoom = createRoom;
+    window.createRoomWithName = createRoomWithName;
+    window.joinRoom = joinRoom;
   </script>
 </body>
 </html>
