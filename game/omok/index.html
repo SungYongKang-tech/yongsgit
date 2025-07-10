@@ -28,12 +28,20 @@
       cursor: pointer;
     }
     #room-info { margin-top: 10px; font-size: 14px; color: #333; }
+    #room-name-input {
+      padding: 8px;
+      font-size: 16px;
+      width: 200px;
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
   <h2 id="title">⚫ 오목 대전</h2>
   <div id="setup">
-    <button onclick="createRoom()">방 만들기</button>
+    <input id="room-name-input" type="text" placeholder="방 이름 입력" /> <br>
+    <button onclick="createRoomWithName()">방 이름으로 생성</button>
+    <button onclick="createRoom()">자동 방 생성</button>
     <button onclick="joinRoom()">방 참여하기</button>
     <p id="room-info"></p>
   </div>
@@ -43,13 +51,11 @@
   </div>
 
   <script type="module">
-    // Import Firebase SDK
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
       getDatabase, ref, set, get, update, onValue
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Your Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -60,7 +66,6 @@
       appId: "1:998537150772:web:8cc90ab5a17c364b91a561"
     };
 
-    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
@@ -71,29 +76,59 @@
     async function createRoom() {
       const now = new Date();
       const pad = n => n.toString().padStart(2, '0');
-      roomCode = `${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
+      roomCode = 'autoRoom';
       playerName = prompt("이름 입력:");
       if (!playerName) return;
+
+      const roomRef = ref(db, 'rooms/' + roomCode);
+      const roomSnap = await get(roomRef);
+
+      if (!roomSnap.exists()) {
+        await set(roomRef, {
+          players: { A: { name: playerName } },
+          turn: 'A',
+          board: Array.from({length:15}, () => Array(15).fill("")),
+          winner: "",
+          createdAt: Date.now()
+        });
+        playerRole = 'A';
+      } else {
+        alert("이미 방이 존재합니다. 방 참여를 이용해주세요.");
+        return;
+      }
+
+      startGame();
+    }
+
+    async function createRoomWithName() {
+      const nameInput = document.getElementById("room-name-input").value.trim();
+      if (!nameInput) return alert("방 이름을 입력하세요.");
+      playerName = prompt("이름 입력:");
+      if (!playerName) return;
+      roomCode = nameInput;
       await set(ref(db, 'rooms/' + roomCode), {
         players: { A: { name: playerName } },
         turn: 'A',
         board: Array.from({length:15}, () => Array(15).fill("")),
-        winner: ""
+        winner: "",
+        createdAt: Date.now()
       });
       playerRole = 'A';
       startGame();
     }
 
     async function joinRoom() {
-      const latestRef = ref(db, 'rooms');
-      const roomsSnap = await get(latestRef);
-      if (!roomsSnap.exists()) return alert("방 없음");
-      const entries = Object.entries(roomsSnap.val());
-      roomCode = entries[entries.length - 1][0];
-      const roomData = entries[entries.length - 1][1];
-      if (roomData.players.B) return alert("이미 두 명 참여");
+      const autoRoomRef = ref(db, 'rooms/autoRoom');
+      const roomSnap = await get(autoRoomRef);
+      if (!roomSnap.exists()) return alert("입장할 수 있는 방이 없습니다.");
+      const roomData = roomSnap.val();
+      const now = Date.now();
+      if (roomData.players.B) return alert("이미 두 명이 참여한 방입니다.");
+      if (now - roomData.createdAt > 180000) return alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
+
       playerName = prompt("이름 입력:");
       if (!playerName) return;
+      roomCode = 'autoRoom';
       await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName });
       playerRole = 'B';
       startGame();
