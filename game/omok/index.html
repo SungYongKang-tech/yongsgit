@@ -60,12 +60,13 @@
   <div id="game" style="display:none">
     <div id="turn"></div>
     <div id="board"></div>
+    <button onclick="endGame()">게임 종료</button>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, get, update, onValue
+      getDatabase, ref, set, get, update, onValue, remove
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -109,7 +110,7 @@
       await set(ref(db, 'rooms/' + roomCode), {
         players: { A: { name: playerName } },
         turn: 'A',
-        board: Array.from({length:15}, () => Array(15).fill("")),
+        board: Array.from({length:15}, () => Array(15).fill("")), 
         winner: "",
         createdAt: now
       });
@@ -205,8 +206,26 @@
       });
     }
 
+    async function deleteRoom(roomCode) {
+      try {
+        await remove(ref(db, `rooms/${roomCode}`));
+        await remove(ref(db, `latestRoom`));
+        alert("방이 삭제되었습니다.");
+      } catch (error) {
+        console.error("방 삭제 실패:", error);
+      }
+    }
+
+    function endGame() {
+      if (confirm("게임을 종료하고 방을 삭제할까요?")) {
+        deleteRoom(roomCode);
+        location.reload();
+      }
+    }
+
     window.createRoom = createRoom;
     window.joinRoom = joinRoom;
+    window.endGame = endGame;
   </script>
 </body>
 </html>
