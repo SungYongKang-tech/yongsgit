@@ -109,10 +109,13 @@
         winner: "",
         createdAt: now
       });
-      await set(latestRef, { roomCode, createdAt: now });
-      playerRole = 'A';
-      startGame();
-    }
+      await set(ref(db, 'rooms/' + roomCode), {
+  players: { A: { name: playerName } },
+  turn: 'A',
+  board: Array.from({ length: 15 }, () => Array(15).fill("")),
+  winner: null,  // 👈 명시적으로 null
+  createdAt: now
+});
 
     async function joinRoom() {
       const latestSnap = await get(ref(db, 'latestRoom'));
@@ -228,21 +231,25 @@
     }
 
     function listenWinner() {
-      onValue(ref(db, `rooms/${roomCode}/winner`), async snap => {
-        if (!snap.exists()) return;
-        const winner = snap.val();
-        if (winner.name !== playerName) alert(`${winner.name}님이 승리했습니다!`);
-        else alert("승리하셨습니다!");
-        winner.positions.forEach(([r, c]) => {
-          const idx = r * 15 + c;
-          const cell = document.getElementById("board").children[idx];
-          const stone = cell.querySelector('.stone');
-          if (stone) stone.classList.add("blink");
-        });
-        await new Promise(r => setTimeout(r, 3000));
-        endGame();
-      });
-    }
+  onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
+    const data = snap.val();
+    if (!data || !data.name || !Array.isArray(data.positions)) return;
+
+    alert(`${data.name}님이 승리했습니다!`);
+    data.positions.forEach(([r, c]) => {
+      const idx = r * 15 + c;
+      const cell = document.getElementById("board").children[idx];
+      const stone = cell.querySelector('.stone');
+      if (stone) stone.classList.add("blink");
+    });
+
+    setTimeout(() => {
+      deleteRoom(roomCode);
+      location.reload();
+    }, 3000);
+  });
+}
+
 
     async function endGame() {
       await remove(ref(db, `rooms/${roomCode}`));
