@@ -176,71 +176,68 @@
 }
 
 
-    function enterGame() {
-      document.getElementById("page-title").innerText = `⚾ 숫자야구 대전 - 방번호: ${roomCode}`;
-      document.getElementById("setup-area").style.display = "none";
-      document.getElementById("game-area").style.display = "block";
-      document.getElementById("room-info").innerText = `방 번호: ${roomCode}`;
+function enterGame() {
+  document.getElementById("page-title").innerText = `⚾ 숫자야구 대전 - 방번호: ${roomCode}`;
+  document.getElementById("setup-area").style.display = "none";
+  document.getElementById("game-area").style.display = "block";
+  document.getElementById("room-info").innerText = `방 번호: ${roomCode}`;
 
-      const opponent = playerRole === "A" ? "B" : "A";
-      const myRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
-      const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
+  const opponent = playerRole === "A" ? "B" : "A";
+  const myRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
+  const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
 
-      let myName = "나";
-      let oppName = "(상대 대기 중)";
+  let myName = playerName;
 
-      onValue(myRef, (snap) => {
-        if (snap.exists()) {
-          myName = snap.val();
-          document.getElementById("role-label").innerText = `${myName} 님 vs ${oppName} 님 - 야구 대전 시작!`;
-        }
-      });
-
-      onValue(oppRef, (oppSnap) => {
-        if (oppSnap.exists()) {
-          oppName = oppSnap.val();
-          document.getElementById("role-label").innerText = `${myName} 님 vs ${oppName} 님 - 야구 대전 시작!`;
-        }
-      });
-
-      const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
-      onValue(opponentSecretRef, (snapshot) => {
-        if (snapshot.exists()) {
-          alert("상대가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!");
-          document.getElementById("guess-section").style.display = "flex";
-        }
-      });
-
-      // 승자 감지 로직 추가
-const winnerRef = ref(db, `rooms/${roomCode}/winner`);
-onValue(winnerRef, (snap) => {
-  if (snap.exists() && snap.val() !== "") {
-    const winner = snap.val();
-    if (winner !== playerName) {
-      alert(`❗ ${winner} 님이 먼저 정답을 맞췄습니다. 경기가 종료됩니다.`);
-    } else {
-      alert(`🎉 축하합니다! ${winner} 님이 승리하셨습니다.`);
-    }
-
-    // 비밀 입력, 추측 입력 모두 비활성화
-    document.getElementById("secret-section").style.display = "none";
-    document.getElementById("guess-section").style.display = "none";
-
-    // 승리 메시지 표시
-    const log = document.getElementById("log");
-    const msg = document.createElement("div");
-    msg.className = "log-entry";
-    msg.style.background = "#ffeb3b";
-    msg.style.fontSize = "18px";
-    msg.style.textAlign = "center";
-    msg.style.fontWeight = "bold";
-    msg.innerText = `${winner} 님이 승리하셨습니다!`;
-    log.prepend(msg);
-    
-  }
+  // 상대 이름 업데이트 감지
+ onValue(oppRef, (oppSnap) => {
+  const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
+  const label = `${playerName} (나) vs ${oppName} - 야구 대전 시작!`;
+  document.getElementById("role-label").innerText = label;
 });
 
+  // 상대 비밀 숫자 입력 감지
+  const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
+  onValue(opponentSecretRef, (snapshot) => {
+    if (snapshot.exists()) {
+      alert("상대가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!");
+      document.getElementById("guess-section").style.display = "flex";
     }
+  });
+
+  // 승자 감지
+  const winnerRef = ref(db, `rooms/${roomCode}/winner`);
+  onValue(winnerRef, (snap) => {
+    if (snap.exists() && snap.val() !== "") {
+      const winner = snap.val();
+      if (winner !== myName) {
+        alert(`❗ ${winner} 님이 먼저 정답을 맞췄습니다. 경기가 종료됩니다.`);
+      } else {
+        alert(`🎉 축하합니다! ${winner} 님이 승리하셨습니다.`);
+      }
+
+      document.getElementById("secret-section").style.display = "none";
+      document.getElementById("guess-section").style.display = "none";
+
+      const log = document.getElementById("log");
+      const msg = document.createElement("div");
+      msg.className = "log-entry";
+      msg.style.background = "#ffeb3b";
+      msg.style.fontSize = "18px";
+      msg.style.textAlign = "center";
+      msg.style.fontWeight = "bold";
+      msg.innerText = `${winner} 님이 승리하셨습니다!`;
+      log.prepend(msg);
+
+      // 사운드
+      const winSound = document.getElementById("win-sound");
+      if (winSound) {
+        winSound.currentTime = 0;
+        winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
+      }
+    }
+  });
+}
+
 
     function submitSecret() {
       const val = document.getElementById("secret-input").value;
