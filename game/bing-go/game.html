@@ -30,13 +30,18 @@
       color: white;
       font-weight: bold;
     }
+     #nickname-area button {
+      height: 40px;
+      font-size: 16px;
+      padding: 5px 12px;
+    }
   </style>
 </head>
 <body>
   <h2 id="room-title">빙고 게임</h2>
 
   <div id="nickname-area">
-    <input type="text" id="nickname" placeholder="닉네임 입력" />
+    <input type="text" id="nickname" placeholder="닉네임 입력" style="height: 40px;" />
     <button onclick="registerPlayer()">입장</button>
   </div>
 
@@ -148,7 +153,9 @@
       });
     }
 
-  function updateBingoCount() {
+  let previousBingoCount = 0; // 전역에 추가 (전 빙고 수)
+
+function updateBingoCount() {
   const cells = [...document.querySelectorAll('.cell')];
   const matrix = [];
   while (cells.length) matrix.push(cells.splice(0, 5));
@@ -162,15 +169,18 @@
   if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
 
   document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
- 
-  if (bingo > 0) {
-  document.getElementById('bingo-sound').play();
+
+  // 🔊 줄 수가 늘어났을 때만 소리 재생
+  if (bingo > previousBingoCount) {
+    document.getElementById('bingo-sound').play();
   }
+
+  previousBingoCount = bingo; // 줄 수 갱신
 
   // 점수 저장
   set(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
 
-  // 🟡 여기에서 직접 우승 판단
+  // 우승 조건 판단
   if (bingo >= 5) {
     const winnerRef = ref(db, `rooms/${roomCode}/winner`);
     get(winnerRef).then(snapshot => {
@@ -180,6 +190,7 @@
     });
   }
 }
+
 
     function setupRealtime() {
   const roomRef = ref(db, `rooms/${roomCode}`);
