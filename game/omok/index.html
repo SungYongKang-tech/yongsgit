@@ -9,16 +9,15 @@
       font-family: 'Segoe UI', sans-serif;
       text-align: center;
       background: #f5f5f5;
-      padding: 10px;
+      margin: 0;
     }
     #board {
       display: grid;
       grid-template-columns: repeat(15, 1fr);
       border: 2px solid #555;
-      margin: 20px auto;
+      margin: 1rem auto;
       width: 95vmin;
       height: 95vmin;
-      box-shadow: 0 0 5px #aaa;
       background-color: #d9a75f;
     }
     .cell {
@@ -35,13 +34,8 @@
       left: 50%;
       transform: translate(-50%, -50%);
     }
-    .stone.black {
-      background-color: black;
-    }
-    .stone.white {
-      background-color: white;
-      border: 1px solid #333;
-    }
+    .stone.black { background: black; }
+    .stone.white { background: white; border: 1px solid #333; }
     .stone.blink {
       animation: blink 1s infinite;
     }
@@ -49,9 +43,16 @@
       0%, 100% { box-shadow: 0 0 5px 5px rgba(255, 0, 0, 0.6); }
       50% { box-shadow: 0 0 5px 5px rgba(255, 255, 255, 0); }
     }
-    #room-info, #players {
+    #players, #turn, #room-info {
       font-weight: bold;
-      margin: 5px;
+      margin: 0.5rem;
+    }
+    button {
+      width: 90%;
+      max-width: 240px;
+      padding: 10px;
+      font-size: 16px;
+      margin: 0.5rem auto;
     }
   </style>
 </head>
@@ -96,15 +97,11 @@
       const latestRef = ref(db, 'latestRoom');
       const latestSnap = await get(latestRef);
       const now = Date.now();
-
-      if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) {
-        alert("3분 내 생성된 방이 있어요"); return;
-      }
+      if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) return alert("3분 내 생성된 방이 있어요");
       const nowDate = new Date();
       const pad = n => n.toString().padStart(2, '0');
       roomCode = `${pad(nowDate.getMonth()+1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
       playerName = randomName();
-
       await set(ref(db, 'rooms/' + roomCode), {
         players: { A: { name: playerName } },
         turn: 'A',
@@ -165,7 +162,7 @@
 
     async function handleMove(r, c) {
       const turn = (await get(ref(db, `rooms/${roomCode}/turn`))).val();
-      if ((playerRole === 'A' && turn !== 'A') || (playerRole === 'B' && turn !== 'B')) return alert("상대 차례입니다");
+      if (turn !== playerRole) return alert("상대 차례입니다");
       const cell = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
       if (cell.exists() && cell.val() !== "") return;
       const stone = playerRole === 'A' ? '●' : '○';
@@ -184,19 +181,18 @@
     function checkWin(r, c, stone, board) {
       const directions = [[0,1],[1,0],[1,1],[1,-1]];
       for (const [dr,dc] of directions) {
-        let count = 1;
-        const positions = [[r,c]];
+        let count = 1, pos = [[r,c]];
         for (let i=1;i<5;i++) {
           const nr=r-dr*i,nc=c-dc*i;
           if(nr<0||nr>=15||nc<0||nc>=15||board[nr][nc]!==stone) break;
-          count++; positions.unshift([nr,nc]);
+          count++; pos.unshift([nr,nc]);
         }
         for (let i=1;i<5;i++) {
           const nr=r+dr*i,nc=c+dc*i;
           if(nr<0||nr>=15||nc<0||nc>=15||board[nr][nc]!==stone) break;
-          count++; positions.push([nr,nc]);
+          count++; pos.push([nr,nc]);
         }
-        if(count>=5) return positions;
+        if(count>=5) return pos;
       }
       return null;
     }
@@ -220,31 +216,33 @@
           }
         }
       });
+
       onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
         document.getElementById("turn").innerText = snap.val() === playerRole ? "내 차례" : "상대 차례";
       });
     }
 
     function listenWinner() {
-      onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
+      onValue(ref(db, `rooms/${roomCode}/winner`), async snap => {
         if (!snap.exists()) return;
         const winner = snap.val();
-        alert(`${winner.name}님이 승리했습니다!`);
+        if (winner.name !== playerName) alert(`${winner.name}님이 승리했습니다!`);
+        else alert("승리하셨습니다!");
         winner.positions.forEach(([r, c]) => {
           const idx = r * 15 + c;
           const cell = document.getElementById("board").children[idx];
           const stone = cell.querySelector('.stone');
           if (stone) stone.classList.add("blink");
         });
+        await new Promise(r => setTimeout(r, 3000));
+        endGame();
       });
     }
 
     async function endGame() {
-      if (confirm("게임 종료 및 방 삭제?")) {
-        await remove(ref(db, `rooms/${roomCode}`));
-        await remove(ref(db, `latestRoom`));
-        location.reload();
-      }
+      await remove(ref(db, `rooms/${roomCode}`));
+      await remove(ref(db, `latestRoom`));
+      location.reload();
     }
 
     window.createRoom = createRoom;
