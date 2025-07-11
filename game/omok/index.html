@@ -48,12 +48,21 @@
       margin: 0.5rem;
     }
     button {
-      width: 90%;
-      max-width: 240px;
-      padding: 10px;
-      font-size: 16px;
-      margin: 0.5rem auto;
-    }
+  width: 90%;
+  max-width: 240px;
+  padding: 14px;
+  font-size: 18px;
+  margin: 1rem auto;
+  display: block;
+  border: none;
+  border-radius: 6px;
+  background-color: #333;
+  color: white;
+}
+button:hover {
+  background-color: #555;
+}
+
   </style>
 </head>
 <body>
@@ -94,28 +103,37 @@
     }
 
     async function createRoom() {
-      const latestRef = ref(db, 'latestRoom');
-      const latestSnap = await get(latestRef);
-      const now = Date.now();
-      if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) return alert("3분 내 생성된 방이 있어요");
-      const nowDate = new Date();
-      const pad = n => n.toString().padStart(2, '0');
-      roomCode = `${pad(nowDate.getMonth()+1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
-      playerName = randomName();
-      await set(ref(db, 'rooms/' + roomCode), {
-        players: { A: { name: playerName } },
-        turn: 'A',
-        board: Array.from({ length: 15 }, () => Array(15).fill("")),
-        winner: "",
-        createdAt: now
-      });
-      await set(ref(db, 'rooms/' + roomCode), {
-  players: { A: { name: playerName } },
-  turn: 'A',
-  board: Array.from({ length: 15 }, () => Array(15).fill("")),
-  winner: null,  // 👈 명시적으로 null
-  createdAt: now
-});
+  const latestRef = ref(db, 'latestRoom');
+  const latestSnap = await get(latestRef);
+  const now = Date.now();
+
+  if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) {
+    alert("3분 내 생성된 방이 있어요");
+    return;
+  }
+
+  const nowDate = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  roomCode = `${pad(nowDate.getMonth() + 1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
+  playerName = randomName();
+
+  await set(ref(db, 'rooms/' + roomCode), {
+    players: { A: { name: playerName } },
+    turn: 'A',
+    board: Array.from({ length: 15 }, () => Array(15).fill("")),
+    winner: null,  // ✅ 명시적으로 null 설정
+    createdAt: now
+  });
+
+  await set(latestRef, {
+    roomCode,
+    createdAt: now
+  });
+
+  playerRole = 'A';
+  startGame();
+}
+
 
     async function joinRoom() {
       const latestSnap = await get(ref(db, 'latestRoom'));
@@ -141,7 +159,9 @@
   document.getElementById("myName").innerText = playerName;
 
   // ✅ 이전 winner 기록 삭제 (새 게임 시작 시)
-  await set(ref(db, `rooms/${roomCode}/winner`), "");
+  // startGame() 내부에서 winner 필드 삭제로 변경
+await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
+
 
   const opponentRef = ref(db, `rooms/${roomCode}/players/${playerRole === 'A' ? 'B' : 'A'}/name`);
   onValue(opponentRef, snap => {
@@ -260,6 +280,12 @@
     window.createRoom = createRoom;
     window.joinRoom = joinRoom;
     window.endGame = endGame;
+
+    async function deleteRoom(roomCode) {
+  await remove(ref(db, `rooms/${roomCode}`));
+  await remove(ref(db, `latestRoom`));
+}
+
   </script>
 </body>
 </html>
