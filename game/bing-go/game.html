@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>빙고 게임</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      text-align: center;
+      padding: 10px;
+    }
+    #bingo-board {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      max-width: 400px;
+      margin: 20px auto;
+    }
+    .cell {
+      border: 1px solid #ccc;
+      padding: 15px;
+      background-color: #f2f2f2;
+      font-size: 20px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    .cell.marked {
+      background-color: #4CAF50;
+      color: white;
+      font-weight: bold;
+    }
+    #call-btn {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h2 id="room-title">빙고 게임</h2>
+  <div id="nickname-area">
+    <input type="text" id="nickname" placeholder="닉네임 입력" />
+    <button onclick="registerPlayer()">입장</button>
+  </div>
+
+  <div id="game-area" style="display:none;">
+    <h3 id="turn-info">차례 정보를 불러오는 중...</h3>
+    <div id="bingo-board"></div>
+    <button id="call-btn" onclick="callNumber()" disabled>숫자 부르기</button>
+    <div id="called-list"></div>
+    <h4 id="bingo-count">빙고: 0줄</h4>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getDatabase, ref, set, get, update,
+      onValue, push, child
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.appspot.com",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:1f7246a5fa2d02c291a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const urlParams = new URLSearchParams(location.search);
+    const roomCode = urlParams.get('room');
+    document.getElementById('room-title').innerText = `방 코드: ${roomCode}`;
+
+    let nickname = "";
+    let myTurn = -1;
+    let calledNumbers = [];
+    let board = [];
+
+    function registerPlayer() {
+      nickname = document.getElementById('nickname').value.trim();
+      if (!nickname) return alert("닉네임을 입력해주세요.");
+
+      const playersRef = ref(db, `rooms/${roomCode}/players`);
+      get(playersRef).then(snapshot => {
+        const playerCount = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
+        const turn = playerCount;
+
+        set(child(playersRef, nickname), { turn: turn });
+        set(ref(db, `rooms/${roomCode}/playersOrder/${turn}`), nickname);
+        set(ref(db, `rooms/${roomCode}/ready/${nickname}`), true);
+
+        myTurn = turn;
+        document.getElementById('nickname-area').style.display = 'none';
+        document.getElementById('game-area').style.display = 'block';
+        generateBoard();
+        setupRealtime();
+      });
+    }
+
+    function generateBoard() {
+      const boardEl = document.getElementById('bingo-board');
+      const nums = Array.from({length: 75}, (_, i) => i + 1).sort(() => Math.random() - 0.5);
+      board = nums.slice(0, 25);
+      boardEl.innerHTML = '';
+
+      board.forEach(num => {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.innerText = num;
+        cell.onclick = () => {
+          if (calledNumbers.includes(num)) {
+            cell.classList.add('marked');
+            updateBingoCount();
+          }
+        };
+        boardEl.appendChild(cell);
+      });
+    }
+
+    function updateBingoCount() {
+      const cells = [...document.querySelectorAll('.cell')];
+      const matrix = [];
+      while (cells.length) matrix.push(cells.splice(0, 5));
+
+      let bingo = 0;
+      for (let i = 0; i < 5; i++) {
+        if (matrix[i].every(c => c.classList.contains('marked'))) bingo++;
+        if (matrix.map(r => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+      }
+      if (matrix.map((r, i) => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+      if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
+
+      document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
+    }
+
+    function callNumber() {
+      const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !calledNumbers.includes(n));
+      const pick = remaining[Math.floor(Math.random() * remaining.length)];
+      calledNumbers.push(pick);
+      update(ref(db, `rooms/${roomCode}`), {
+        currentTurn: (myTurn + 1),
+        lastNumber: pick
+      });
+    }
+
+    function setupRealtime() {
+      const roomRef = ref(db, `rooms/${roomCode}`);
+      onValue(roomRef, snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+
+        calledNumbers = data.calledNumbers || [];
+        const last = data.lastNumber;
+        const turn = data.currentTurn || 0;
+
+        document.getElementById('turn-info').innerText = `현재 차례: ${data.playersOrder?.[turn] || "..."}`;
+        document.getElementById('call-btn').disabled = (myTurn !== turn);
+
+        if (last) {
+          document.getElementById('called-list').innerText = `부른 숫자: ${calledNumbers.join(", ")}`;
+          const cells = document.querySelectorAll('.cell');
+          cells.forEach(cell => {
+            if (Number(cell.innerText) === last) {
+              cell.classList.add('marked');
+              updateBingoCount();
+            }
+          });
+        }
+      });
+    }
+  </script>
+</body>
+</html>
