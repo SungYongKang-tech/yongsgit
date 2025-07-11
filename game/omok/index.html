@@ -73,7 +73,7 @@ button:hover {
     <p id="room-info"></p>
   </div>
   <div id="game" style="display:none">
-    <div id="players">내 이름: <span id="myName"></span> / 상대: <span id="opponentName"></span></div>
+    <div id="players">내 이름: <span id="myName"></span></div>
     <div id="turn"></div>
     <div id="board"></div>
     <button onclick="endGame()">게임 종료</button>
@@ -92,6 +92,10 @@ button:hover {
       appId: "1:998537150772:web:8cc90ab5a17c364b91a561"
     };
 
+function randomRoomName() {
+  const animals = ['호랑이', '펭귄', '고양이', '사자', '부엉이', '치타'];
+  return animals[Math.floor(Math.random() * animals.length)] + Math.floor(Math.random() * 100) + '방';
+}
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
@@ -102,7 +106,7 @@ button:hover {
       return names[Math.floor(Math.random() * names.length)] + Math.floor(Math.random() * 100);
     }
 
-    async function createRoom() {
+  async function createRoom() {
   const latestRef = ref(db, 'latestRoom');
   const latestSnap = await get(latestRef);
   const now = Date.now();
@@ -112,16 +116,14 @@ button:hover {
     return;
   }
 
-  const nowDate = new Date();
-  const pad = n => n.toString().padStart(2, '0');
-  roomCode = `${pad(nowDate.getMonth() + 1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
+  roomCode = randomRoomName();  // ✅ 랜덤 방 제목 함수로 대체!
   playerName = randomName();
 
   await set(ref(db, 'rooms/' + roomCode), {
     players: { A: { name: playerName } },
     turn: 'A',
     board: Array.from({ length: 15 }, () => Array(15).fill("")),
-    winner: null,  // ✅ 명시적으로 null 설정
+    winner: null,
     createdAt: now
   });
 
@@ -135,22 +137,39 @@ button:hover {
 }
 
 
+
     async function joinRoom() {
-      const latestSnap = await get(ref(db, 'latestRoom'));
-      if (!latestSnap.exists()) return alert("참여 가능한 방이 없습니다.");
-      const { roomCode: code, createdAt } = latestSnap.val();
-      const now = Date.now();
-      if (now - createdAt > 180000) return alert("참여 시간 초과");
-      const roomRef = ref(db, `rooms/${code}`);
-      const roomSnap = await get(roomRef);
-      if (!roomSnap.exists()) return;
-      if (roomSnap.val().players.B) return alert("이미 두 명 참여 중");
-      playerName = randomName();
-      await set(ref(db, `rooms/${code}/players/B`), { name: playerName });
-      roomCode = code;
-      playerRole = 'B';
-      startGame();
-    }
+  const latestSnap = await get(ref(db, 'latestRoom'));
+  if (!latestSnap.exists()) {
+    alert("참여 가능한 방이 없습니다.");
+    return;
+  }
+
+  const { roomCode: code, createdAt } = latestSnap.val();
+  const now = Date.now();
+  if (now - createdAt > 180000) {
+    alert("참여 시간이 초과되었습니다.");
+    return;
+  }
+
+  const roomSnap = await get(ref(db, `rooms/${code}`));
+  if (!roomSnap.exists()) {
+    alert("방이 존재하지 않습니다.");
+    return;
+  }
+
+  if (roomSnap.val().players.B) {
+    alert("이미 두 명이 참여 중입니다.");
+    return;
+  }
+
+  playerName = randomName();
+  await set(ref(db, `rooms/${code}/players/B`), { name: playerName });
+  roomCode = code;
+  playerRole = 'B';
+  startGame();
+}
+
 
    async function startGame() {
   document.getElementById("setup").style.display = "none";
@@ -163,11 +182,7 @@ button:hover {
 await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
 
 
-  const opponentRef = ref(db, `rooms/${roomCode}/players/${playerRole === 'A' ? 'B' : 'A'}/name`);
-  onValue(opponentRef, snap => {
-    if (snap.exists()) document.getElementById("opponentName").innerText = snap.val();
-  });
-
+ 
   renderBoard();
   listenBoard();
   listenWinner();
