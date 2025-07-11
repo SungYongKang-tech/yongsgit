@@ -110,6 +110,7 @@
         cell.className = 'cell';
         cell.innerText = num;
         cell.onclick = () => {
+          if (myTurn !== currentTurn) return; // 내 차례가 아니면 무시
           const number = num;
 
           if (calledNumbers.includes(number)) {
@@ -122,12 +123,15 @@
             get(ref(db, `rooms/${roomCode}/playersOrder`)).then(snapshot => {
               const order = snapshot.val();
               const nextTurn = (currentTurn + 1) % order.length;
-              calledNumbers.push(number);
-              update(ref(db, `rooms/${roomCode}`), {
-                currentTurn: nextTurn,
-                lastNumber: number,
-                calledNumbers: calledNumbers
-              });
+              if (!calledNumbers.includes(number)) {
+               calledNumbers.push(number);
+               update(ref(db, `rooms/${roomCode}`), {
+               currentTurn: nextTurn,
+               lastNumber: number,
+               calledNumbers: calledNumbers
+                });
+          }
+
             });
           }
         };
@@ -165,60 +169,77 @@
 }
 
     function setupRealtime() {
-      const roomRef = ref(db, `rooms/${roomCode}`);
-      onValue(roomRef, snapshot => {
-        const data = snapshot.val();
-        if (!data) return;
+  const roomRef = ref(db, `rooms/${roomCode}`);
+  onValue(roomRef, snapshot => {
+    const data = snapshot.val();
+    if (!data) return;
 
-        calledNumbers = data.calledNumbers || [];
-        const last = data.lastNumber;
-        currentTurn = data.currentTurn || 0;
+    
+    const last = data.lastNumber;
+    currentTurn = data.currentTurn || 0;
 
-        if (data.winner) {
-          document.getElementById('turn-info').innerText = `🎉 우승자: ${data.winner}`;
+    // 🟡 우승자 메시지 및 방 삭제
+    if (data.winner) {
+      document.getElementById('turn-info').innerText =
+        `🎉 우승자: ${data.winner} 님이 빙고 5줄로 승리하셨습니다!`;
 
-          setTimeout(() => {
-            remove(ref(db, `rooms/${roomCode}`)).then(() => {
-              alert("게임이 종료되어 방이 삭제되었습니다.");
-              window.location.href = "index.html";
-            });
-          }, 3000);
-        } else {
-          document.getElementById('turn-info').innerText = `현재 차례: ${data.playersOrder?.[currentTurn] || "..."}`;
-        }
+      const cells = document.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        cell.style.pointerEvents = 'none';
+      });
 
-        if (last) {
-        document.getElementById('called-list').innerText = `부른 숫자: ${calledNumbers.join(", ")}`;
-        const cells = document.querySelectorAll('.cell');
-        cells.forEach(cell => {
-        if (Number(cell.innerText) === last) {
-        cell.classList.add('marked');
-        }
+      setTimeout(() => {
+        alert("게임이 종료되어 방이 삭제되었습니다.");
+        remove(ref(db, `rooms/${roomCode}`)).then(() => {
+          window.location.href = "index.html";
         });
-        // 🟡 여기서 빙고 다시 계산
-        updateBingoCount();
-        }
+      }, 5000);
+    } else {
+      // 🟢 정상 게임 진행 시 차례 표시
+      document.getElementById('turn-info').innerText =
+        `현재 차례: ${data.playersOrder?.[currentTurn] || "..."}`;
+    }
 
-        if (data.scores) {
-          const scores = data.scores;
-          let html = '<h4>참가자 현황</h4>';
-          for (let player in scores) {
-            html += `${player}: ${scores[player]}줄<br/>`;
-          }
-          document.getElementById('score-board').innerHTML = html;
+    // 🟡 숫자 업데이트 및 마킹
+    if (last) {
+      document.getElementById('called-list').innerText =
+        `부른 숫자: ${calledNumbers.join(", ")}`;
+
+      const cells = document.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        if (Number(cell.innerText) === last) {
+          cell.classList.add('marked');
         }
       });
-    // 모든 사람에게 공통 적용: 우승 조건 점수 확인
-        if (!data.winner && data.scores) {
-          for (let player in data.scores) {
+
+      updateBingoCount();
+    }
+
+    // 🟢 점수표 갱신
+    if (data.scores) {
+      const scores = data.scores;
+      let html = '<h4>참가자 현황</h4>';
+      for (let player in scores) {
+        html += `${player}: ${scores[player]}줄<br/>`;
+      }
+      document.getElementById('score-board').innerHTML = html;
+    }
+
+    // 🟡 우승 조건 체크 (다른 참가자도 5줄일 수 있으므로 모든 사용자에게 적용)
+    if (!data.winner && data.scores) {
+      for (let player in data.scores) {
         if (data.scores[player] >= 5) {
           set(ref(db, `rooms/${roomCode}/winner`), player);
           break;
-          }
-         }
         }
-      
+      }
     }
+    calledNumbers = data.calledNumbers || [];
+  });
+}
+
+      
+    
 
   </script>
 </body>
