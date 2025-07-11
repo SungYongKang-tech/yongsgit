@@ -118,13 +118,16 @@
             return;
           }
 
-          // 내 차례일 때 숫자 부르기
           if (myTurn === currentTurn && !calledNumbers.includes(number)) {
-            calledNumbers.push(number);
-            update(ref(db, `rooms/${roomCode}`), {
-              currentTurn: (myTurn + 1),
-              lastNumber: number,
-              calledNumbers: calledNumbers
+            get(ref(db, `rooms/${roomCode}/playersOrder`)).then(snapshot => {
+              const order = snapshot.val();
+              const nextTurn = (currentTurn + 1) % order.length;
+              calledNumbers.push(number);
+              update(ref(db, `rooms/${roomCode}`), {
+                currentTurn: nextTurn,
+                lastNumber: number,
+                calledNumbers: calledNumbers
+              });
             });
           }
         };
@@ -164,7 +167,6 @@
         const last = data.lastNumber;
         currentTurn = data.currentTurn || 0;
 
-        // 우승자 처리 및 방 삭제
         if (data.winner) {
           document.getElementById('turn-info').innerText = `🎉 우승자: ${data.winner}`;
 
