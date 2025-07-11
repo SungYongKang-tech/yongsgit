@@ -39,6 +39,7 @@
 </head>
 <body>
   <h2 id="room-title">빙고 게임</h2>
+
   <div id="nickname-area">
     <input type="text" id="nickname" placeholder="닉네임 입력" />
     <button onclick="registerPlayer()">입장</button>
@@ -50,13 +51,14 @@
     <button id="call-btn" onclick="callNumber()" disabled>숫자 부르기</button>
     <div id="called-list"></div>
     <h4 id="bingo-count">빙고: 0줄</h4>
+    <div id="score-board"></div>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import {
       getDatabase, ref, set, get, update,
-      onValue, push, child
+      onValue, child
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
@@ -136,12 +138,15 @@
       if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
 
       document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
-      if (bingo >= 5) {
-      update(ref(db, `rooms/${roomCode}/winner`), nickname);
-      document.getElementById('call-btn').disabled = true;
-      }
-      update(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
 
+      // 우승자 등록
+      if (bingo >= 5) {
+        update(ref(db, `rooms/${roomCode}/winner`), nickname);
+        document.getElementById('call-btn').disabled = true;
+      }
+
+      // 점수 저장
+      update(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
     }
 
     function callNumber() {
@@ -150,7 +155,8 @@
       calledNumbers.push(pick);
       update(ref(db, `rooms/${roomCode}`), {
         currentTurn: (myTurn + 1),
-        lastNumber: pick
+        lastNumber: pick,
+        calledNumbers: calledNumbers // 중요: 숫자 공유
       });
     }
 
@@ -164,9 +170,14 @@
         const last = data.lastNumber;
         const turn = data.currentTurn || 0;
 
-        document.getElementById('turn-info').innerText = `현재 차례: ${data.playersOrder?.[turn] || "..."}`;
-        document.getElementById('call-btn').disabled = (myTurn !== turn);
+        // 차례 안내
+        document.getElementById('turn-info').innerText = data.winner
+          ? `🎉 우승자: ${data.winner}`
+          : `현재 차례: ${data.playersOrder?.[turn] || "..."}`;
 
+        document.getElementById('call-btn').disabled = (myTurn !== turn || !!data.winner);
+
+        // 숫자 표시 및 마킹
         if (last) {
           document.getElementById('called-list').innerText = `부른 숫자: ${calledNumbers.join(", ")}`;
           const cells = document.querySelectorAll('.cell');
@@ -177,23 +188,18 @@
             }
           });
         }
-      });
-         if (data.winner) {
-         document.getElementById('turn-info').innerText = `🎉 우승자: ${data.winner}`;
-         document.getElementById('call-btn').disabled = true;
-        }
-        
+
+        // 점수판 표시
         if (data.scores) {
           const scores = data.scores;
           let html = '<h4>참가자 현황</h4>';
           for (let player in scores) {
-          html += `${player}: ${scores[player]}줄<br/>`;
+            html += `${player}: ${scores[player]}줄<br/>`;
           }
           document.getElementById('score-board').innerHTML = html;
         }
-
+      });
     }
   </script>
-  <div id="score-board"></div>
 </body>
 </html>
