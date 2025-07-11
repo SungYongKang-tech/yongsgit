@@ -58,7 +58,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import {
       getDatabase, ref, set, get, update,
-      onValue, child
+      onValue, child, remove
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
@@ -83,7 +83,7 @@
     let calledNumbers = [];
     let board = [];
 
-    window.registerPlayer = function() {
+    window.registerPlayer = function () {
       nickname = document.getElementById('nickname').value.trim();
       if (!nickname) return alert("닉네임을 입력해주세요.");
 
@@ -102,7 +102,7 @@
         generateBoard();
         setupRealtime();
       });
-    }
+    };
 
     function generateBoard() {
       const boardEl = document.getElementById('bingo-board');
@@ -139,7 +139,7 @@
 
       document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
 
-      // 우승자 등록
+      // 우승자 처리
       if (bingo >= 5) {
         update(ref(db, `rooms/${roomCode}/winner`), nickname);
         document.getElementById('call-btn').disabled = true;
@@ -149,16 +149,16 @@
       update(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
     }
 
-    window.callNumber function() {
+    window.callNumber = function () {
       const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !calledNumbers.includes(n));
       const pick = remaining[Math.floor(Math.random() * remaining.length)];
       calledNumbers.push(pick);
       update(ref(db, `rooms/${roomCode}`), {
         currentTurn: (myTurn + 1),
         lastNumber: pick,
-        calledNumbers: calledNumbers // 중요: 숫자 공유
+        calledNumbers: calledNumbers
       });
-    }
+    };
 
     function setupRealtime() {
       const roomRef = ref(db, `rooms/${roomCode}`);
@@ -170,14 +170,22 @@
         const last = data.lastNumber;
         const turn = data.currentTurn || 0;
 
-        // 차례 안내
-        document.getElementById('turn-info').innerText = data.winner
-          ? `🎉 우승자: ${data.winner}`
-          : `현재 차례: ${data.playersOrder?.[turn] || "..."}`;
+        // 우승자 처리 및 방 삭제
+        if (data.winner) {
+          document.getElementById('turn-info').innerText = `🎉 우승자: ${data.winner}`;
+          document.getElementById('call-btn').disabled = true;
 
-        document.getElementById('call-btn').disabled = (myTurn !== turn || !!data.winner);
+          setTimeout(() => {
+            remove(ref(db, `rooms/${roomCode}`)).then(() => {
+              alert("게임이 종료되어 방이 삭제되었습니다.");
+              window.location.href = "index.html";
+            });
+          }, 3000);
+        } else {
+          document.getElementById('turn-info').innerText = `현재 차례: ${data.playersOrder?.[turn] || "..."}`;
+          document.getElementById('call-btn').disabled = (myTurn !== turn);
+        }
 
-        // 숫자 표시 및 마킹
         if (last) {
           document.getElementById('called-list').innerText = `부른 숫자: ${calledNumbers.join(", ")}`;
           const cells = document.querySelectorAll('.cell');
@@ -189,7 +197,6 @@
           });
         }
 
-        // 점수판 표시
         if (data.scores) {
           const scores = data.scores;
           let html = '<h4>참가자 현황</h4>';
