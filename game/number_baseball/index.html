@@ -83,9 +83,10 @@
       set,
       get,
       update,
-      onValue
+      onValue,
+      remove  // ← 이 줄 추가
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
+  
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -300,19 +301,31 @@ function enterGame() {
   log.prepend(div);
 
   if (strike === 3) {
-    const winSound = document.getElementById("win-sound");
-    if (winSound) {
-      winSound.currentTime = 0;
-      winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
-    }
-    alert("🎉 정답입니다! 승리하셨습니다.");
-
-    if (soloMode) {
-      document.getElementById("guess-section").style.display = "none";
-    } else {
-      update(ref(db, `rooms/${roomCode}`), { winner: playerName });
-    }
+  const winSound = document.getElementById("win-sound");
+  if (winSound) {
+    winSound.currentTime = 0;
+    winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
   }
+
+  alert("🎉 정답입니다! 승리하셨습니다.");
+
+  if (soloMode) {
+    document.getElementById("guess-section").style.display = "none";
+  } else {
+    await update(ref(db, `rooms/${roomCode}`), { winner: playerName });
+    
+    // ✅ 방 삭제
+    setTimeout(() => {
+      const roomRef = ref(db, `rooms/${roomCode}`);
+      remove(roomRef).then(() => {
+        console.log("방 삭제 완료");
+      }).catch(err => {
+        console.warn("방 삭제 실패:", err);
+      });
+    }, 5000); // 5초 후 삭제 (사운드 재생과 메시지 이후 삭제되도록 약간 지연)
+  }
+}
+
 
   guessInput.value = "";
   guessInput.focus();
