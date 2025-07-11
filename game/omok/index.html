@@ -179,32 +179,40 @@
     }
 
     async function handleMove(r, c) {
-      const turnSnap = await get(ref(db, `rooms/${roomCode}/turn`));
-      if ((playerRole === 'A' && turnSnap.val() !== 'A') || (playerRole === 'B' && turnSnap.val() !== 'B')) {
-        alert("상대 차례입니다"); return;
-      }
+  const turnSnap = await get(ref(db, `rooms/${roomCode}/turn`));
+  if ((playerRole === 'A' && turnSnap.val() !== 'A') || (playerRole === 'B' && turnSnap.val() !== 'B')) {
+    alert("상대 차례입니다");
+    return;
+  }
 
-      const cellSnap = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
-      if (cellSnap.exists() && cellSnap.val() !== "") return;
-      const stone = playerRole === 'A' ? '●' : '○';
-      await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
+  const cellSnap = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
+  if (cellSnap.exists() && cellSnap.val() !== "") return;
 
-// 현재 보드 상태 가져오기
-const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
-const board = boardSnap.val();
+  const stone = playerRole === 'A' ? '●' : '○';
 
-// 승리 조건 체크
-if (checkWinCondition(r, c, stone, board)) {
-  alert(`${playerName}님이 승리했습니다!`);
-  await deleteRoom(roomCode); // 방 삭제
-  location.reload();
-  return;
+  // 현재 보드 상태 가져오기
+  const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
+  const board = boardSnap.val();
+
+  // 로컬 보드에 현재 돌 위치 직접 반영 (Firebase 반영되기 전이므로)
+  board[r][c] = stone;
+
+  // 승리 조건 체크
+  if (checkWinCondition(r, c, stone, board)) {
+    await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone); // 돌 저장
+    alert(`${playerName}님이 승리했습니다!`);
+    await deleteRoom(roomCode);
+    location.reload();
+    return;
+  }
+
+  // 돌 저장
+  await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
+
+  // 다음 턴으로 전환
+  await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
 }
 
-// 다음 턴으로 넘기기
-await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
-
-    }
 
     function listenBoard() {
       const boardRef = ref(db, `rooms/${roomCode}/board`);
