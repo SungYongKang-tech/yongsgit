@@ -42,18 +42,16 @@
       background-color: white;
       border: 1px solid #333;
     }
-    #room-info {
-      margin-top: 10px;
-      font-size: 16px;
-      color: #333;
-      font-weight: bold;
+    .stone.blink {
+      animation: blink 1s infinite;
     }
-    button {
-      width: 90%;
-      max-width: 240px;
-      padding: 10px;
-      font-size: 16px;
-      margin: 6px auto;
+    @keyframes blink {
+      0%, 100% { box-shadow: 0 0 5px 5px rgba(255, 0, 0, 0.6); }
+      50% { box-shadow: 0 0 5px 5px rgba(255, 255, 255, 0); }
+    }
+    #room-info, #players {
+      font-weight: bold;
+      margin: 5px;
     }
   </style>
 </head>
@@ -65,23 +63,21 @@
     <p id="room-info"></p>
   </div>
   <div id="game" style="display:none">
+    <div id="players">내 이름: <span id="myName"></span> / 상대: <span id="opponentName"></span></div>
     <div id="turn"></div>
     <div id="board"></div>
     <button onclick="endGame()">게임 종료</button>
   </div>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import {
-      getDatabase, ref, set, get, update, onValue, remove
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, get, update, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
       databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
       projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.firebasestorage.app",
+      storageBucket: "number-baseball-aee52.appspot.com",
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:8cc90ab5a17c364b91a561"
     };
@@ -89,12 +85,10 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    let roomCode = '';
-    let playerRole = '';
-    let playerName = '';
+    let roomCode = '', playerRole = '', playerName = '';
 
     function randomName() {
-      const names = ['호랑이', '코끼리', '다람쥐', '펭귄', '고양이', '늑대', '여우', '까마귀', '사자', '부엉이', '치타', '너구리'];
+      const names = ['호랑이','펭귄','고양이','사자','부엉이','치타'];
       return names[Math.floor(Math.random() * names.length)] + Math.floor(Math.random() * 100);
     }
 
@@ -104,52 +98,38 @@
       const now = Date.now();
 
       if (latestSnap.exists() && now - latestSnap.val().createdAt < 180000) {
-        alert("3분 내에 생성된 방이 이미 존재합니다. '방 참여하기'를 이용해주세요.");
-        return;
+        alert("3분 내 생성된 방이 있어요"); return;
       }
-
       const nowDate = new Date();
       const pad = n => n.toString().padStart(2, '0');
       roomCode = `${pad(nowDate.getMonth()+1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
-
       playerName = randomName();
 
       await set(ref(db, 'rooms/' + roomCode), {
         players: { A: { name: playerName } },
         turn: 'A',
-        board: Array.from({length:15}, () => Array(15).fill("")), 
+        board: Array.from({ length: 15 }, () => Array(15).fill("")),
         winner: "",
         createdAt: now
       });
-
-      await set(latestRef, {
-        roomCode,
-        createdAt: now
-      });
-
+      await set(latestRef, { roomCode, createdAt: now });
       playerRole = 'A';
       startGame();
     }
 
     async function joinRoom() {
-      const latestRef = ref(db, 'latestRoom');
-      const latestSnap = await get(latestRef);
+      const latestSnap = await get(ref(db, 'latestRoom'));
       if (!latestSnap.exists()) return alert("참여 가능한 방이 없습니다.");
-
-      const { roomCode: latestRoom, createdAt } = latestSnap.val();
+      const { roomCode: code, createdAt } = latestSnap.val();
       const now = Date.now();
-      if (now - createdAt > 180000) return alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
-
-      const roomRef = ref(db, `rooms/${latestRoom}`);
+      if (now - createdAt > 180000) return alert("참여 시간 초과");
+      const roomRef = ref(db, `rooms/${code}`);
       const roomSnap = await get(roomRef);
-      if (!roomSnap.exists()) return alert("해당 방이 존재하지 않습니다.");
-      const roomData = roomSnap.val();
-      if (roomData.players.B) return alert("이미 두 명이 참여한 방입니다.");
-
+      if (!roomSnap.exists()) return;
+      if (roomSnap.val().players.B) return alert("이미 두 명 참여 중");
       playerName = randomName();
-
-      await set(ref(db, `rooms/${latestRoom}/players/B`), { name: playerName });
-      roomCode = latestRoom;
+      await set(ref(db, `rooms/${code}/players/B`), { name: playerName });
+      roomCode = code;
       playerRole = 'B';
       startGame();
     }
@@ -158,9 +138,14 @@
       document.getElementById("setup").style.display = "none";
       document.getElementById("game").style.display = "block";
       document.getElementById("title").innerText = `⚫ 오목 대전 - 방번호: ${roomCode}`;
-      document.getElementById("room-info").innerText = `내 이름: ${playerName}`;
+      document.getElementById("myName").innerText = playerName;
+      const opponentRef = ref(db, `rooms/${roomCode}/players/${playerRole === 'A' ? 'B' : 'A'}/name`);
+      onValue(opponentRef, snap => {
+        if (snap.exists()) document.getElementById("opponentName").innerText = snap.val();
+      });
       renderBoard();
       listenBoard();
+      listenWinner();
     }
 
     function renderBoard() {
@@ -179,44 +164,45 @@
     }
 
     async function handleMove(r, c) {
-  const turnSnap = await get(ref(db, `rooms/${roomCode}/turn`));
-  if ((playerRole === 'A' && turnSnap.val() !== 'A') || (playerRole === 'B' && turnSnap.val() !== 'B')) {
-    alert("상대 차례입니다");
-    return;
-  }
+      const turn = (await get(ref(db, `rooms/${roomCode}/turn`))).val();
+      if ((playerRole === 'A' && turn !== 'A') || (playerRole === 'B' && turn !== 'B')) return alert("상대 차례입니다");
+      const cell = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
+      if (cell.exists() && cell.val() !== "") return;
+      const stone = playerRole === 'A' ? '●' : '○';
+      const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
+      const board = boardSnap.val();
+      board[r][c] = stone;
+      const winPos = checkWin(r, c, stone, board);
+      await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
+      if (winPos) {
+        await set(ref(db, `rooms/${roomCode}/winner`), { name: playerName, positions: winPos });
+        return;
+      }
+      await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
+    }
 
-  const cellSnap = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
-  if (cellSnap.exists() && cellSnap.val() !== "") return;
-
-  const stone = playerRole === 'A' ? '●' : '○';
-
-  // 현재 보드 상태 가져오기
-  const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
-  const board = boardSnap.val();
-
-  // 로컬 보드에 현재 돌 위치 직접 반영 (Firebase 반영되기 전이므로)
-  board[r][c] = stone;
-
-  // 승리 조건 체크
-  if (checkWinCondition(r, c, stone, board)) {
-    await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone); // 돌 저장
-    alert(`${playerName}님이 승리했습니다!`);
-    await deleteRoom(roomCode);
-    location.reload();
-    return;
-  }
-
-  // 돌 저장
-  await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
-
-  // 다음 턴으로 전환
-  await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
-}
-
+    function checkWin(r, c, stone, board) {
+      const directions = [[0,1],[1,0],[1,1],[1,-1]];
+      for (const [dr,dc] of directions) {
+        let count = 1;
+        const positions = [[r,c]];
+        for (let i=1;i<5;i++) {
+          const nr=r-dr*i,nc=c-dc*i;
+          if(nr<0||nr>=15||nc<0||nc>=15||board[nr][nc]!==stone) break;
+          count++; positions.unshift([nr,nc]);
+        }
+        for (let i=1;i<5;i++) {
+          const nr=r+dr*i,nc=c+dc*i;
+          if(nr<0||nr>=15||nc<0||nc>=15||board[nr][nc]!==stone) break;
+          count++; positions.push([nr,nc]);
+        }
+        if(count>=5) return positions;
+      }
+      return null;
+    }
 
     function listenBoard() {
-      const boardRef = ref(db, `rooms/${roomCode}/board`);
-      onValue(boardRef, (snap) => {
+      onValue(ref(db, `rooms/${roomCode}/board`), snap => {
         if (!snap.exists()) return;
         const data = snap.val();
         for (let r = 0; r < 15; r++) {
@@ -224,40 +210,39 @@
             const idx = r * 15 + c;
             const cell = document.getElementById("board").children[idx];
             const value = data[r]?.[c] || "";
-
-            // 돌 초기화 및 새로 그리기
             cell.innerHTML = "";
             if (value === "●" || value === "○") {
-              const stoneDiv = document.createElement("div");
-              stoneDiv.classList.add("stone", value === "●" ? "black" : "white");
-              cell.appendChild(stoneDiv);
+              const div = document.createElement("div");
+              div.classList.add("stone", value === "●" ? "black" : "white");
+              cell.appendChild(div);
               cell.style.pointerEvents = "none";
-            } else {
-              cell.style.pointerEvents = "auto";
-            }
+            } else cell.style.pointerEvents = "auto";
           }
         }
       });
-
-      onValue(ref(db, `rooms/${roomCode}/turn`), (snap) => {
-        const who = snap.val();
-        document.getElementById("turn").innerText = who === playerRole ? "내 차례" : "상대 차례";
+      onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
+        document.getElementById("turn").innerText = snap.val() === playerRole ? "내 차례" : "상대 차례";
       });
     }
 
-    async function deleteRoom(roomCode) {
-      try {
-        await remove(ref(db, `rooms/${roomCode}`));
-        await remove(ref(db, `latestRoom`));
-        alert("방이 삭제되었습니다.");
-      } catch (error) {
-        console.error("방 삭제 실패:", error);
-      }
+    function listenWinner() {
+      onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
+        if (!snap.exists()) return;
+        const winner = snap.val();
+        alert(`${winner.name}님이 승리했습니다!`);
+        winner.positions.forEach(([r, c]) => {
+          const idx = r * 15 + c;
+          const cell = document.getElementById("board").children[idx];
+          const stone = cell.querySelector('.stone');
+          if (stone) stone.classList.add("blink");
+        });
+      });
     }
 
-    function endGame() {
-      if (confirm("게임을 종료하고 방을 삭제할까요?")) {
-        deleteRoom(roomCode);
+    async function endGame() {
+      if (confirm("게임 종료 및 방 삭제?")) {
+        await remove(ref(db, `rooms/${roomCode}`));
+        await remove(ref(db, `latestRoom`));
         location.reload();
       }
     }
@@ -265,42 +250,6 @@
     window.createRoom = createRoom;
     window.joinRoom = joinRoom;
     window.endGame = endGame;
-
-    function checkWinCondition(r, c, stone, board) {
-  const directions = [
-    [0, 1],  // 가로
-    [1, 0],  // 세로
-    [1, 1],  // ↘ 대각선
-    [1, -1]  // ↙ 대각선
-  ];
-
-  for (const [dr, dc] of directions) {
-    let count = 1;
-
-    // 반대 방향
-    for (let i = 1; i < 5; i++) {
-      const nr = r - dr * i;
-      const nc = c - dc * i;
-      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) break;
-      if (board[nr][nc] === stone) count++;
-      else break;
-    }
-
-    // 정방향
-    for (let i = 1; i < 5; i++) {
-      const nr = r + dr * i;
-      const nc = c + dc * i;
-      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) break;
-      if (board[nr][nc] === stone) count++;
-      else break;
-    }
-
-    if (count >= 5) return true;
-  }
-
-  return false;
-}
-
   </script>
 </body>
 </html>
