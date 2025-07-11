@@ -43,13 +43,6 @@
       font-size: 14px;
       color: #333;
     }
-    #room-name-input {
-      padding: 8px;
-      font-size: 16px;
-      width: 90%;
-      max-width: 240px;
-      margin-bottom: 8px;
-    }
     button {
       width: 90%;
       max-width: 240px;
@@ -62,9 +55,7 @@
 <body>
   <h2 id="title">⚫ 오목 대전</h2>
   <div id="setup">
-    <input id="room-name-input" type="text" placeholder="방 이름 입력" /> <br>
-    <button onclick="createRoomWithName()">방 이름으로 생성</button>
-    <button onclick="createRoom()">자동 방 생성</button>
+    <button onclick="createRoom()">방 생성하기</button>
     <button onclick="joinRoom()">방 참여하기</button>
     <p id="room-info"></p>
   </div>
@@ -96,6 +87,11 @@
     let playerRole = '';
     let playerName = '';
 
+    function randomName() {
+      const names = ['호랑이', '코끼리', '다람쥐', '펭귄', '고양이', '늑대', '여우', '까마귀', '사자', '부엉이', '치타', '너구리'];
+      return names[Math.floor(Math.random() * names.length)] + Math.floor(Math.random() * 100);
+    }
+
     async function createRoom() {
       const latestRef = ref(db, 'latestRoom');
       const latestSnap = await get(latestRef);
@@ -110,8 +106,7 @@
       const pad = n => n.toString().padStart(2, '0');
       roomCode = `${pad(nowDate.getMonth()+1)}${pad(nowDate.getDate())}${pad(nowDate.getHours())}${pad(nowDate.getMinutes())}`;
 
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
+      playerName = randomName();
 
       await set(ref(db, 'rooms/' + roomCode), {
         players: { A: { name: playerName } },
@@ -126,23 +121,6 @@
         createdAt: now
       });
 
-      playerRole = 'A';
-      startGame();
-    }
-
-    async function createRoomWithName() {
-      const nameInput = document.getElementById("room-name-input").value.trim();
-      if (!nameInput) return alert("방 이름을 입력하세요.");
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
-      roomCode = nameInput;
-      await set(ref(db, 'rooms/' + roomCode), {
-        players: { A: { name: playerName } },
-        turn: 'A',
-        board: Array.from({length:15}, () => Array(15).fill("")),
-        winner: "",
-        createdAt: Date.now()
-      });
       playerRole = 'A';
       startGame();
     }
@@ -162,8 +140,7 @@
       const roomData = roomSnap.val();
       if (roomData.players.B) return alert("이미 두 명이 참여한 방입니다.");
 
-      playerName = prompt("이름 입력:");
-      if (!playerName) return;
+      playerName = randomName();
 
       await set(ref(db, `rooms/${latestRoom}/players/B`), { name: playerName });
       roomCode = latestRoom;
@@ -174,7 +151,7 @@
     function startGame() {
       document.getElementById("setup").style.display = "none";
       document.getElementById("game").style.display = "block";
-      document.getElementById("room-info").innerText = `방번호: ${roomCode}`;
+      document.getElementById("room-info").innerText = `방번호: ${roomCode} / 이름: ${playerName}`;
       renderBoard();
       listenBoard();
     }
@@ -230,7 +207,6 @@
     }
 
     window.createRoom = createRoom;
-    window.createRoomWithName = createRoomWithName;
     window.joinRoom = joinRoom;
   </script>
 </body>
