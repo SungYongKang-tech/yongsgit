@@ -40,6 +40,11 @@
     <button onclick="registerPlayer()">입장</button>
   </div>
 
+   <audio id="btn-sound" src="button.mp3" preload="auto"></audio>
+   <audio id="win-sound" src="win.mp3" preload="auto"></audio>
+   <audio id="bingo-sound" src="binggo.mp3" preload="auto"></audio>
+
+
 <div id="game-area" style="display:none;">
   <h3 id="turn-info">차례 정보를 불러오는 중...</h3>
   <div id="bingo-board"></div>
@@ -82,6 +87,7 @@
     window.registerPlayer = function () {
       nickname = document.getElementById('nickname').value.trim();
       if (!nickname) return alert("닉네임을 입력해주세요.");
+      document.getElementById('btn-sound').play();
 
       const playersRef = ref(db, `rooms/${roomCode}/players`);
       get(playersRef).then(snapshot => {
@@ -126,6 +132,7 @@
               const nextTurn = (currentTurn + 1) % order.length;
               if (!calledNumbers.includes(number)) {
                calledNumbers.push(number);
+
                update(ref(db, `rooms/${roomCode}`), {
                currentTurn: nextTurn,
                lastNumber: number,
@@ -154,6 +161,10 @@
   if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
 
   document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
+ 
+  if (bingo > 0) {
+  document.getElementById('bingo-sound').play();
+  }
 
   // 점수 저장
   set(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
@@ -181,6 +192,7 @@
 
     // 🟡 우승자 메시지 및 방 삭제
     if (data.winner) {
+      document.getElementById('win-sound').play(); // 🔊 효과음 재생
       document.getElementById('turn-info').innerText =
         `🎉 우승자: ${data.winner} 님이 빙고 5줄로 승리하셨습니다!`;
 
@@ -217,14 +229,11 @@
     }
 
     // 🟢 점수표 갱신
-    if (data.scores) {
-      const scores = data.scores;
-      let html = '<h4>참가자 현황</h4>';
-      for (let player in scores) {
-        html += `${player}: ${scores[player]}줄<br/>`;
-      }
-      document.getElementById('score-board').innerHTML = html;
-    }
+    
+      // 점수표 제거
+document.getElementById('score-board').innerHTML = '';
+
+    
 
     // 🟡 우승 조건 체크 (다른 참가자도 5줄일 수 있으므로 모든 사용자에게 적용)
     if (!data.winner && data.scores) {
@@ -259,23 +268,6 @@ window.leaveRoom = function () {
   });
 };
 
-window.leaveRoom = function () {
-  if (!nickname || !roomCode) return;
-
-  const playerRef = ref(db, `rooms/${roomCode}/players/${nickname}`);
-  const orderRef = ref(db, `rooms/${roomCode}/playersOrder`);
-
-  remove(playerRef).then(() => {
-    get(orderRef).then(snapshot => {
-      const order = snapshot.val() || [];
-      const newOrder = order.filter(name => name !== nickname);
-      set(orderRef, newOrder).then(() => {
-        alert("방에서 나갑니다.");
-        window.location.href = "index.html";
-      });
-    });
-  });
-};
 
       
     
