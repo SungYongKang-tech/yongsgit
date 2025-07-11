@@ -73,7 +73,6 @@ button:hover {
     <p id="room-info"></p>
   </div>
   <div id="game" style="display:none">
-    <div id="players">내 이름: <span id="myName"></span></div>
     <div id="turn"></div>
     <div id="board"></div>
     <button onclick="endGame()">게임 종료</button>
@@ -175,7 +174,7 @@ function randomRoomName() {
   document.getElementById("setup").style.display = "none";
   document.getElementById("game").style.display = "block";
   document.getElementById("title").innerText = `⚫ 오목 대전 - 방번호: ${roomCode}`;
-  document.getElementById("myName").innerText = playerName;
+  
 
   // ✅ 이전 winner 기록 삭제 (새 게임 시작 시)
   // startGame() 내부에서 winner 필드 삭제로 변경
@@ -293,12 +292,14 @@ await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
       });
     }
 
-    function listenWinner() {
+  function listenWinner() {
   onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
     const data = snap.val();
     if (!data || !data.name || !Array.isArray(data.positions)) return;
 
-    alert(`${data.name}님이 승리했습니다!`);
+    const isWinner = data.name === playerName;
+    alert(isWinner ? "🎉 당신이 이겼습니다!" : "😢 당신이 패배하였습니다.");
+
     data.positions.forEach(([r, c]) => {
       const idx = r * 15 + c;
       const cell = document.getElementById("board").children[idx];
@@ -312,6 +313,7 @@ await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
     }, 3000);
   });
 }
+
 
 
     async function endGame() {
