@@ -136,26 +136,33 @@
     }
 
     function updateBingoCount() {
-      const cells = [...document.querySelectorAll('.cell')];
-      const matrix = [];
-      while (cells.length) matrix.push(cells.splice(0, 5));
+  const cells = [...document.querySelectorAll('.cell')];
+  const matrix = [];
+  while (cells.length) matrix.push(cells.splice(0, 5));
 
-      let bingo = 0;
-      for (let i = 0; i < 5; i++) {
-        if (matrix[i].every(c => c.classList.contains('marked'))) bingo++;
-        if (matrix.map(r => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+  let bingo = 0;
+  for (let i = 0; i < 5; i++) {
+    if (matrix[i].every(c => c.classList.contains('marked'))) bingo++;
+    if (matrix.map(r => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+  }
+  if (matrix.map((r, i) => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+  if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
+
+  document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
+
+  // 점수 저장
+  update(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
+
+  // 🟡 우승 조건 처리: 기존 우승자 없을 때만 우승 처리
+  if (bingo >= 5) {
+    const winnerRef = ref(db, `rooms/${roomCode}/winner`);
+    get(winnerRef).then(snapshot => {
+      if (!snapshot.exists()) {
+        set(winnerRef, nickname);
       }
-      if (matrix.map((r, i) => r[i]).every(c => c.classList.contains('marked'))) bingo++;
-      if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
-
-      document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
-
-      if (bingo >= 5) {
-        update(ref(db, `rooms/${roomCode}/winner`), nickname);
-      }
-
-      update(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
-    }
+    });
+  }
+}
 
     function setupRealtime() {
       const roomRef = ref(db, `rooms/${roomCode}`);
