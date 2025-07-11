@@ -207,23 +207,51 @@ await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
     }
 
     function checkWin(r, c, stone, board) {
-      const directions = [[0,1],[1,0],[1,1],[1,-1]];
-      for (const [dr,dc] of directions) {
-        let count = 1, pos = [[r,c]];
-        for (let i=1;i<5;i++) {
-          const nr=r-dr*i,nc=c-dc*i;
-          if(nr<0||nr>=15||nc<0||nc>=15||board[nr][nc]!==stone) break;
-          count++; pos.unshift([nr,nc]);
-        }
-        for (let i=1;i<5;i++) {
-          const nr=r+dr*i,nc=c+dc*i;
-          if(nr<0||nr>=15||nc<0||nc>=15||board[nr][nc]!==stone) break;
-          count++; pos.push([nr,nc]);
-        }
-        if(count>=5) return pos;
+  const directions = [[0,1],[1,0],[1,1],[1,-1]];
+  for (const [dr, dc] of directions) {
+    let count = 1, pos = [[r,c]];
+    let blockedStart = false, blockedEnd = false;
+
+    // 반대 방향
+    for (let i = 1; i < 5; i++) {
+      const nr = r - dr * i, nc = c - dc * i;
+      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) {
+        blockedStart = true;
+        break;
       }
-      return null;
+      if (board[nr][nc] === stone) {
+        count++;
+        pos.unshift([nr, nc]);
+      } else if (board[nr][nc] !== "") {
+        blockedStart = true;
+        break;
+      } else break;
     }
+
+    // 정방향
+    for (let i = 1; i < 5; i++) {
+      const nr = r + dr * i, nc = c + dc * i;
+      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) {
+        blockedEnd = true;
+        break;
+      }
+      if (board[nr][nc] === stone) {
+        count++;
+        pos.push([nr, nc]);
+      } else if (board[nr][nc] !== "") {
+        blockedEnd = true;
+        break;
+      } else break;
+    }
+
+    if (count >= 5) return pos;
+
+    // 4개지만 막히지 않은 경우도 승리로 인정
+    if (count === 4 && !(blockedStart && blockedEnd)) return pos;
+  }
+  return null;
+}
+
 
     function listenBoard() {
       onValue(ref(db, `rooms/${roomCode}/board`), snap => {
