@@ -78,46 +78,59 @@
 };
 
     // 자동 입장 함수 (1분 이내 방 탐색)
-    window.autoJoin = function() {
-      const dbRef = ref(db, 'rooms');
-      get(dbRef).then(snapshot => {
-        if (!snapshot.exists()) {
-          alert("입장 가능한 방이 없습니다.");
-          return;
-        }
+   window.autoJoin = function () {
+  const dbRef = ref(db, 'rooms');
+  get(dbRef).then(snapshot => {
+    console.log("자동입장: 전체 방 목록 가져옴");
 
-        const now = Date.now();
-        let found = false;
-
-        snapshot.forEach(child => {
-          const data = child.val();
-          if (now - data.createdAt <= 60_000) { // 1분 이내
-            found = true;
-            window.location.href = `game.html?room=${child.key}`;
-            return true; // 중단
-          }
-        });
-
-        if (!found) alert("1분 이내 생성된 방이 없습니다.");
-      });
+    if (!snapshot.exists()) {
+      alert("입장 가능한 방이 없습니다.");
+      return;
     }
+
+    const now = Date.now();
+    let found = false;
+
+    snapshot.forEach(child => {
+      const data = child.val();
+      console.log(`방 ${child.key} 생성 시간: ${data.createdAt}, 현재 시간: ${now}`);
+      if (now - data.createdAt <= 60_000) {
+        found = true;
+        console.log(`자동 입장: ${child.key}`);
+        window.location.href = `game.html?room=${child.key}`;
+        return true;
+      }
+    });
+
+    if (!found) alert("1분 이내 생성된 방이 없습니다.");
+  }).catch(error => {
+    console.error("자동 입장 오류:", error);
+  });
+};
+
 
     // 수동 코드 입장
-    window.manualJoin = function() {
-      const code = document.getElementById('roomCodeInput').value;
-      if (!code || code.length !== 4) {
-        alert("4자리 숫자 코드를 입력해주세요.");
-        return;
-      }
+    window.manualJoin = function () {
+  const code = document.getElementById('roomCodeInput').value;
+  if (!code || code.length !== 4) {
+    alert("4자리 숫자 코드를 입력해주세요.");
+    return;
+  }
 
-      get(ref(db, `rooms/${code}`)).then(snapshot => {
-        if (!snapshot.exists()) {
-          alert("해당 방이 존재하지 않습니다.");
-          return;
-        }
-        window.location.href = `game.html?room=${code}`;
-      });
+  console.log("수동입장 코드 확인:", code);
+
+  get(ref(db, `rooms/${code}`)).then(snapshot => {
+    if (!snapshot.exists()) {
+      alert("해당 방이 존재하지 않습니다.");
+      return;
     }
+    console.log("수동입장 성공, 이동 중...");
+    window.location.href = `game.html?room=${code}`;
+  }).catch(error => {
+    console.error("수동 입장 오류:", error);
+  });
+};
+
   </script>
 </body>
 </html>
