@@ -184,11 +184,26 @@
         alert("상대 차례입니다"); return;
       }
 
-      const boardSnap = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
-      if (boardSnap.exists() && boardSnap.val() !== "") return;
+      const cellSnap = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
+      if (cellSnap.exists() && cellSnap.val() !== "") return;
       const stone = playerRole === 'A' ? '●' : '○';
       await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
-      await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
+
+// 현재 보드 상태 가져오기
+const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
+const board = boardSnap.val();
+
+// 승리 조건 체크
+if (checkWinCondition(r, c, stone, board)) {
+  alert(`${playerName}님이 승리했습니다!`);
+  await deleteRoom(roomCode); // 방 삭제
+  location.reload();
+  return;
+}
+
+// 다음 턴으로 넘기기
+await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
+
     }
 
     function listenBoard() {
@@ -242,6 +257,42 @@
     window.createRoom = createRoom;
     window.joinRoom = joinRoom;
     window.endGame = endGame;
+
+    function checkWinCondition(r, c, stone, board) {
+  const directions = [
+    [0, 1],  // 가로
+    [1, 0],  // 세로
+    [1, 1],  // ↘ 대각선
+    [1, -1]  // ↙ 대각선
+  ];
+
+  for (const [dr, dc] of directions) {
+    let count = 1;
+
+    // 반대 방향
+    for (let i = 1; i < 5; i++) {
+      const nr = r - dr * i;
+      const nc = c - dc * i;
+      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) break;
+      if (board[nr][nc] === stone) count++;
+      else break;
+    }
+
+    // 정방향
+    for (let i = 1; i < 5; i++) {
+      const nr = r + dr * i;
+      const nc = c + dc * i;
+      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) break;
+      if (board[nr][nc] === stone) count++;
+      else break;
+    }
+
+    if (count >= 5) return true;
+  }
+
+  return false;
+}
+
   </script>
 </body>
 </html>
