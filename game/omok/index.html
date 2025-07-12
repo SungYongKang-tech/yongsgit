@@ -252,6 +252,13 @@ if (stoneDiv) {
       await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
     }
 
+   await set(ref(db, `rooms/${roomCode}/lastMove`), {
+  row: r,
+  col: c,
+  role: playerRole
+});
+
+
   function checkWin(r, c, stone, board) {
   const directions = [[0,1],[1,0],[1,1],[1,-1]];
   for (const [dr, dc] of directions) {
@@ -316,6 +323,25 @@ if (stoneDiv) {
               cell.style.pointerEvents = "none";
             } else cell.style.pointerEvents = "auto";
           }
+          // 마지막 둔 돌 강조 (파란색/빨간색)
+onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
+  const move = snap.val();
+  if (!move) return;
+
+  // 기존 강조 제거
+  document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
+    el.classList.remove("last-move-me", "last-move-opponent");
+  });
+
+  const idx = move.row * 15 + move.col;
+  const cell = document.getElementById("board").children[idx];
+  const stoneDiv = cell.querySelector('.stone');
+  if (stoneDiv) {
+    const isMe = move.role === playerRole;
+    stoneDiv.classList.add(isMe ? "last-move-me" : "last-move-opponent");
+  }
+});
+
         }
       });
 
