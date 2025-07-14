@@ -435,11 +435,10 @@ savedAddedPlayers.forEach(p => allPlayers.push({ ...p, new: true }));
     return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
   }
 
-function assignTeams() {
+  function assignTeams() {
   let teamCount = finalizedLeaders.length;
 
   if (teamCount < 1) {
-    // 팀장 없을 경우 → 사용자에게 몇 팀으로 구성할지 입력받기
     const input = prompt("팀장을 선정하지 않으셨습니다.\n몇 팀으로 구성하시겠습니까?");
     if (!input) return;
     teamCount = parseInt(input);
@@ -447,40 +446,23 @@ function assignTeams() {
       alert("올바른 숫자를 입력해주세요.");
       return;
     }
+
+    // 👉 팀장 수동 선정이 없을 경우 → 부수 높은 순으로 자동 선정
+    const sortedSelected = [...selected].sort((a, b) => allPlayers[a].level - allPlayers[b].level);
+    finalizedLeaders = sortedSelected.slice(0, teamCount);
   }
 
-  // 팀장 있는 경우: finalizedLeaders를 기준으로 팀 리더 설정
-  // 팀장 없는 경우: 팀장을 random으로 할당
   const teams = [];
   const used = new Set();
 
-  if (finalizedLeaders.length >= teamCount) {
-    for (let i = 0; i < teamCount; i++) {
-      const idx = finalizedLeaders[i];
-      teams.push({
-        leader: allPlayers[idx],
-        members: [],
-        sum: allPlayers[idx].level,
-      });
-      used.add(idx);
-    }
-  } else {
-    const selectedPool = [...selected];
-    if (selectedPool.length < teamCount) {
-      alert(`참석자가 ${teamCount}명보다 적습니다.`);
-      return;
-    }
-
-    const shuffled = shuffle(selectedPool);
-    for (let i = 0; i < teamCount; i++) {
-      const idx = shuffled[i];
-      teams.push({
-        leader: allPlayers[idx],
-        members: [],
-        sum: allPlayers[idx].level,
-      });
-      used.add(idx);
-    }
+  for (let i = 0; i < teamCount; i++) {
+    const idx = finalizedLeaders[i];
+    teams.push({
+      leader: allPlayers[idx],
+      members: [],
+      sum: allPlayers[idx].level,
+    });
+    used.add(idx);
   }
 
   // 팀원 후보 추출
@@ -527,8 +509,6 @@ function assignTeams() {
 
   latestTeams = teams;
 }
-
-
 
   function resetAll() {
     selected = [];
