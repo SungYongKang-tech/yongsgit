@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <title>8방향 이동</title>
+  <meta charset="UTF-8" />
+  <title>스네이크 기본</title>
   <style>
     html, body {
       margin: 0;
@@ -13,7 +13,6 @@
     canvas {
       display: block;
       background-color: #f0f0f0;
-      touch-action: none;
     }
   </style>
 </head>
@@ -24,92 +23,119 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
+    let gridSize = 20;
+    let cols, rows;
+
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      canvas.width = Math.floor(window.innerWidth / gridSize) * gridSize;
+      canvas.height = Math.floor(window.innerHeight / gridSize) * gridSize;
+      cols = canvas.width / gridSize;
+      rows = canvas.height / gridSize;
     }
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
-    let x = 100, y = 100;
-    const size = 30;
-    const speed = 3;
-    let dx = 1, dy = 0; // 기본 오른쪽 이동
+    let snake = [{ x: 5, y: 5 }];
+    let dx = 1, dy = 0;
+    let food = spawnFood();
+    let isDead = false;
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "blue";
-      ctx.fillRect(x, y, size, size);
+    function spawnFood() {
+      return {
+        x: Math.floor(Math.random() * cols),
+        y: Math.floor(Math.random() * rows)
+      };
     }
 
-    function move() {
-      x += dx * speed;
-      y += dy * speed;
-
-      if (x > canvas.width) x = -size;
-      if (x < -size) x = canvas.width;
-      if (y > canvas.height) y = -size;
-      if (y < -size) y = canvas.height;
+    function drawBlock(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * gridSize, y * gridSize, gridSize - 1, gridSize - 1);
     }
 
     function gameLoop() {
-      move();
-      draw();
-      requestAnimationFrame(gameLoop);
-    }
-    gameLoop();
+      if (isDead) {
+        ctx.fillStyle = "red";
+        ctx.font = "bold 48px sans-serif";
+        ctx.fillText("YOU DIE", canvas.width / 2 - 100, canvas.height / 2);
+        return;
+      }
 
-    // 모바일 스와이프 감지
-    let startX = null;
-    let startY = null;
+      update();
+      draw();
+      setTimeout(gameLoop, 100);
+    }
+
+    function update() {
+      const head = {
+        x: snake[0].x + dx,
+        y: snake[0].y + dy
+      };
+
+      // 벽 충돌 확인
+      if (head.x < 0 || head.y < 0 || head.x >= cols || head.y >= rows) {
+        isDead = true;
+        return;
+      }
+
+      // 꼬리와 충돌 확인
+      if (snake.some((s, i) => i !== 0 && s.x === head.x && s.y === head.y)) {
+        isDead = true;
+        return;
+      }
+
+      snake.unshift(head); // 머리 추가
+
+      if (head.x === food.x && head.y === food.y) {
+        food = spawnFood(); // 먹으면 길어지고, 먹이 새로 생성
+      } else {
+        snake.pop(); // 이동만 하면 꼬리 줄이기
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 먹이
+      drawBlock(food.x, food.y, "red");
+
+      // 스네이크
+      snake.forEach((part, index) => {
+        drawBlock(part.x, part.y, index === 0 ? "blue" : "skyblue");
+      });
+    }
+
+    // 키보드 방향
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp" && dy !== 1) [dx, dy] = [0, -1];
+      else if (e.key === "ArrowDown" && dy !== -1) [dx, dy] = [0, 1];
+      else if (e.key === "ArrowLeft" && dx !== 1) [dx, dy] = [-1, 0];
+      else if (e.key === "ArrowRight" && dx !== -1) [dx, dy] = [1, 0];
+    });
+
+    // 모바일 스와이프 방향 감지
+    let startX, startY;
 
     canvas.addEventListener("touchstart", (e) => {
-      const touch = e.touches[0];
-      startX = touch.clientX;
-      startY = touch.clientY;
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
     });
 
     canvas.addEventListener("touchend", (e) => {
-      const touch = e.changedTouches[0];
-      const dxTouch = touch.clientX - startX;
-      const dyTouch = touch.clientY - startY;
+      const t = e.changedTouches[0];
+      const dxTouch = t.clientX - startX;
+      const dyTouch = t.clientY - startY;
 
-      const length = Math.sqrt(dxTouch**2 + dyTouch**2);
-      if (length < 20) return; // 너무 짧은 터치 무시
-
-      // 방향 벡터 정규화
-      dx = dxTouch / length;
-      dy = dyTouch / length;
-    });
-
-    // 키보드 (방향키 여러 개 동시에 눌러 대각선 이동 가능)
-    let keys = {};
-
-    document.addEventListener("keydown", (e) => {
-      keys[e.key] = true;
-      updateDirection();
-    });
-
-    document.addEventListener("keyup", (e) => {
-      keys[e.key] = false;
-      updateDirection();
-    });
-
-    function updateDirection() {
-      dx = 0;
-      dy = 0;
-      if (keys["ArrowUp"]) dy = -1;
-      if (keys["ArrowDown"]) dy = 1;
-      if (keys["ArrowLeft"]) dx = -1;
-      if (keys["ArrowRight"]) dx = 1;
-
-      // 대각선 정규화
-      const length = Math.sqrt(dx**2 + dy**2);
-      if (length > 0) {
-        dx /= length;
-        dy /= length;
+      if (Math.abs(dxTouch) > Math.abs(dyTouch)) {
+        if (dxTouch > 20 && dx !== -1) [dx, dy] = [1, 0];
+        else if (dxTouch < -20 && dx !== 1) [dx, dy] = [-1, 0];
+      } else {
+        if (dyTouch > 20 && dy !== -1) [dx, dy] = [0, 1];
+        else if (dyTouch < -20 && dy !== 1) [dx, dy] = [0, -1];
       }
-    }
+    });
+
+    gameLoop();
   </script>
 </body>
 </html>
