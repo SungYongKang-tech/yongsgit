@@ -2,29 +2,75 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>스네이크 기본</title>
+  <title>스네이크 게임</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
       overflow: hidden;
       touch-action: none;
+      background-color: #f0f0f0;
     }
     canvas {
       display: block;
       background-color: #f0f0f0;
+    }
+    #buttons {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: none;
+      text-align: center;
+    }
+    #buttons button {
+      font-size: 24px;
+      padding: 12px 24px;
+      margin: 10px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    #restartBtn {
+      background-color: #4CAF50;
+      color: white;
+    }
+    #exitBtn {
+      background-color: #f44336;
+      color: white;
     }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
 
+  <div id="buttons">
+    <div style="font-size: 40px; color: red; font-weight: bold;">you died</div>
+    <button id="restartBtn">다시 시작</button>
+    <button id="exitBtn">나가기</button>
+  </div>
+
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
+    const buttons = document.getElementById("buttons");
+    const restartBtn = document.getElementById("restartBtn");
+    const exitBtn = document.getElementById("exitBtn");
 
     let gridSize = 60;
     let cols, rows;
+    let snake, dx, dy, food, isDead;
+
+    function initGame() {
+      resizeCanvas();
+      snake = [{ x: 5, y: 5 }];
+      dx = 1;
+      dy = 0;
+      food = spawnFood();
+      isDead = false;
+      buttons.style.display = "none";
+      gameLoop();
+    }
 
     function resizeCanvas() {
       canvas.width = Math.floor(window.innerWidth / gridSize) * gridSize;
@@ -32,13 +78,7 @@
       cols = canvas.width / gridSize;
       rows = canvas.height / gridSize;
     }
-    resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
-
-    let snake = [{ x: 5, y: 5 }];
-    let dx = 1, dy = 0;
-    let food = spawnFood();
-    let isDead = false;
 
     function spawnFood() {
       return {
@@ -54,9 +94,7 @@
 
     function gameLoop() {
       if (isDead) {
-        ctx.fillStyle = "red";
-        ctx.font = "bold 48px sans-serif";
-        ctx.fillText("YOU DIE", canvas.width / 2 - 100, canvas.height / 2);
+        showGameOver();
         return;
       }
 
@@ -71,40 +109,39 @@
         y: snake[0].y + dy
       };
 
-      // 벽 충돌 확인
       if (head.x < 0 || head.y < 0 || head.x >= cols || head.y >= rows) {
         isDead = true;
         return;
       }
 
-      // 꼬리와 충돌 확인
       if (snake.some((s, i) => i !== 0 && s.x === head.x && s.y === head.y)) {
         isDead = true;
         return;
       }
 
-      snake.unshift(head); // 머리 추가
+      snake.unshift(head);
 
       if (head.x === food.x && head.y === food.y) {
-        food = spawnFood(); // 먹으면 길어지고, 먹이 새로 생성
+        food = spawnFood();
       } else {
-        snake.pop(); // 이동만 하면 꼬리 줄이기
+        snake.pop();
       }
     }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // 먹이
       drawBlock(food.x, food.y, "red");
 
-      // 스네이크
       snake.forEach((part, index) => {
         drawBlock(part.x, part.y, index === 0 ? "blue" : "skyblue");
       });
     }
 
-    // 키보드 방향
+    function showGameOver() {
+      buttons.style.display = "block";
+    }
+
+    // 키보드
     document.addEventListener("keydown", (e) => {
       if (e.key === "ArrowUp" && dy !== 1) [dx, dy] = [0, -1];
       else if (e.key === "ArrowDown" && dy !== -1) [dx, dy] = [0, 1];
@@ -112,15 +149,13 @@
       else if (e.key === "ArrowRight" && dx !== -1) [dx, dy] = [1, 0];
     });
 
-    // 모바일 스와이프 방향 감지
+    // 터치 스와이프
     let startX, startY;
-
     canvas.addEventListener("touchstart", (e) => {
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
     });
-
     canvas.addEventListener("touchend", (e) => {
       const t = e.changedTouches[0];
       const dxTouch = t.clientX - startX;
@@ -135,7 +170,17 @@
       }
     });
 
-    gameLoop();
+    // 버튼 이벤트
+    restartBtn.addEventListener("click", () => {
+      initGame();
+    });
+
+    exitBtn.addEventListener("click", () => {
+      window.close(); // 브라우저가 막으면 아래 fallback
+      window.location.href = "https://www.google.com"; // 또는 다른 페이지
+    });
+
+    initGame(); // 게임 시작
   </script>
 </body>
 </html>
