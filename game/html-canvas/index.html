@@ -2,51 +2,32 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>캔버스 기본 예제</title>
+  <title>자동 전진 + 스와이프 방향 전환</title>
   <style>
     body {
-      text-align: center;
-      font-family: sans-serif;
-      margin-top: 20px;
+      margin: 0;
+      overflow: hidden;
     }
     canvas {
-      border: 2px solid black;
+      display: block;
       background-color: #f0f0f0;
-      touch-action: none;
-    }
-    .controls {
-      margin-top: 20px;
-    }
-    .controls button {
-      font-size: 20px;
-      padding: 10px 20px;
-      margin: 5px;
     }
   </style>
 </head>
 <body>
-  <h2>🎮 방향키 또는 버튼으로 네모를 움직여보세요!</h2>
   <canvas id="gameCanvas" width="400" height="400"></canvas>
-
-  <div class="controls">
-    <div>
-      <button onclick="move('up')">⬆️</button>
-    </div>
-    <div>
-      <button onclick="move('left')">⬅️</button>
-      <button onclick="move('down')">⬇️</button>
-      <button onclick="move('right')">➡️</button>
-    </div>
-  </div>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    let x = 200;
+    let x = 50;
     let y = 200;
     const size = 30;
-    const speed = 5;
+    const speed = 2;
+
+    // 방향: "right", "up", "down"
+    let direction = "right";
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -54,28 +35,48 @@
       ctx.fillRect(x, y, size, size);
     }
 
-    function update() {
-      draw();
-      requestAnimationFrame(update);
+    function move() {
+      if (direction === "right") x += speed;
+      if (direction === "up") y -= speed;
+      if (direction === "down") y += speed;
+
+      // 화면 밖으로 나가면 반대편에서 등장 (선택사항)
+      if (x > canvas.width) x = -size;
+      if (y < -size) y = canvas.height;
+      if (y > canvas.height) y = -size;
     }
 
-    // 키보드 조작
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowUp") y -= speed;
-      if (e.key === "ArrowDown") y += speed;
-      if (e.key === "ArrowLeft") x -= speed;
-      if (e.key === "ArrowRight") x += speed;
+    function gameLoop() {
+      move();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop(); // 시작
+
+    // 모바일 스와이프 처리
+    let startY = null;
+
+    canvas.addEventListener("touchstart", (e) => {
+      startY = e.touches[0].clientY;
     });
 
-    // 터치 버튼 조작
-    function move(dir) {
-      if (dir === "up") y -= speed;
-      if (dir === "down") y += speed;
-      if (dir === "left") x -= speed;
-      if (dir === "right") x += speed;
-    }
+    canvas.addEventListener("touchend", (e) => {
+      const endY = e.changedTouches[0].clientY;
+      const deltaY = endY - startY;
 
-    update();
+      if (Math.abs(deltaY) > 30) {
+        if (deltaY < 0) direction = "up";
+        else direction = "down";
+      }
+    });
+
+    // PC에서 방향키도 지원
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp") direction = "up";
+      if (e.key === "ArrowDown") direction = "down";
+      if (e.key === "ArrowRight") direction = "right";
+    });
   </script>
 </body>
 </html>
