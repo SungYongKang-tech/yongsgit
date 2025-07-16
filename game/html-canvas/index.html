@@ -2,13 +2,13 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>모바일 팩맨 스타일</title>
+  <title>8방향 이동</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
       overflow: hidden;
-      touch-action: none; /* 스크롤 방지 */
+      touch-action: none;
     }
     canvas {
       display: block;
@@ -24,7 +24,6 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // 화면 크기 설정 (모바일 대응)
     function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -32,11 +31,10 @@
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
-    let x = 50;
-    let y = 50;
+    let x = 100, y = 100;
     const size = 30;
     const speed = 3;
-    let direction = "right"; // 기본 이동 방향
+    let dx = 1, dy = 0; // 기본 오른쪽 이동
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -45,12 +43,9 @@
     }
 
     function move() {
-      if (direction === "right") x += speed;
-      if (direction === "left") x -= speed;
-      if (direction === "up") y -= speed;
-      if (direction === "down") y += speed;
+      x += dx * speed;
+      y += dy * speed;
 
-      // 화면을 벗어나면 반대쪽으로 이동
       if (x > canvas.width) x = -size;
       if (x < -size) x = canvas.width;
       if (y > canvas.height) y = -size;
@@ -64,7 +59,7 @@
     }
     gameLoop();
 
-    // 스와이프 방향 감지
+    // 모바일 스와이프 감지
     let startX = null;
     let startY = null;
 
@@ -76,25 +71,45 @@
 
     canvas.addEventListener("touchend", (e) => {
       const touch = e.changedTouches[0];
-      const dx = touch.clientX - startX;
-      const dy = touch.clientY - startY;
+      const dxTouch = touch.clientX - startX;
+      const dyTouch = touch.clientY - startY;
 
-      if (Math.abs(dx) > Math.abs(dy)) {
-        if (dx > 20) direction = "right";
-        else if (dx < -20) direction = "left";
-      } else {
-        if (dy > 20) direction = "down";
-        else if (dy < -20) direction = "up";
-      }
+      const length = Math.sqrt(dxTouch**2 + dyTouch**2);
+      if (length < 20) return; // 너무 짧은 터치 무시
+
+      // 방향 벡터 정규화
+      dx = dxTouch / length;
+      dy = dyTouch / length;
     });
 
-    // 키보드도 지원 (PC)
+    // 키보드 (방향키 여러 개 동시에 눌러 대각선 이동 가능)
+    let keys = {};
+
     document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowUp") direction = "up";
-      if (e.key === "ArrowDown") direction = "down";
-      if (e.key === "ArrowLeft") direction = "left";
-      if (e.key === "ArrowRight") direction = "right";
+      keys[e.key] = true;
+      updateDirection();
     });
+
+    document.addEventListener("keyup", (e) => {
+      keys[e.key] = false;
+      updateDirection();
+    });
+
+    function updateDirection() {
+      dx = 0;
+      dy = 0;
+      if (keys["ArrowUp"]) dy = -1;
+      if (keys["ArrowDown"]) dy = 1;
+      if (keys["ArrowLeft"]) dx = -1;
+      if (keys["ArrowRight"]) dx = 1;
+
+      // 대각선 정규화
+      const length = Math.sqrt(dx**2 + dy**2);
+      if (length > 0) {
+        dx /= length;
+        dy /= length;
+      }
+    }
   </script>
 </body>
 </html>
