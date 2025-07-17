@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FastTap - 방 생성</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FastTap - 홈</title>
   <style>
     body {
       font-family: sans-serif;
@@ -24,7 +24,15 @@
       width: 80%;
       max-width: 400px;
     }
-    #roomCode {
+    input {
+      font-size: 6vw;
+      padding: 10px;
+      width: 80%;
+      max-width: 400px;
+      margin-top: 10px;
+      text-align: center;
+    }
+    #roomCodeDisplay {
       font-size: 6vw;
       margin-top: 30px;
       color: blue;
@@ -33,13 +41,19 @@
 </head>
 <body>
   <h1>FastTap</h1>
+  
+  <!-- 방 생성 -->
   <button onclick="createRoom()">방 생성</button>
-  <div id="roomCode"></div>
+  <div id="roomCodeDisplay"></div>
+
+  <!-- 방 입장 -->
+  <input type="text" id="joinRoomCode" placeholder="방 코드 입력" maxlength="5" />
+  <button onclick="joinRoom()">방 입장</button>
 
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+    import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -63,26 +77,39 @@
       return code;
     }
 
-    window.createRoom = async function() {
+    window.createRoom = async function () {
       const roomCode = generateRoomCode();
       const roomRef = ref(db, `fasttap/rooms/${roomCode}`);
       const now = Date.now();
 
-      // Create room with expiration time
       await set(roomRef, {
         createdAt: now,
-        expiresAt: now + 60 * 1000, // 1분 제한
+        expiresAt: now + 60 * 1000,
         started: false,
         host: true
       });
 
-      // Save roomCode in session and move to game page
+      document.getElementById("roomCodeDisplay").innerText = `방 코드: ${roomCode}`;
       sessionStorage.setItem("roomCode", roomCode);
-      document.getElementById("roomCode").innerText = `방 코드: ${roomCode}`;
 
       setTimeout(() => {
         window.location.href = `room.html?room=${roomCode}`;
       }, 1500);
+    }
+
+    window.joinRoom = async function () {
+      const code = document.getElementById("joinRoomCode").value.trim().toUpperCase();
+      if (!code) return alert("방 코드를 입력하세요.");
+      
+      const roomRef = ref(db, `fasttap/rooms/${code}`);
+      const snap = await get(roomRef);
+      if (!snap.exists()) {
+        alert("존재하지 않는 방 코드입니다.");
+        return;
+      }
+
+      sessionStorage.setItem("roomCode", code);
+      window.location.href = `room.html?room=${code}`;
     }
   </script>
 </body>
