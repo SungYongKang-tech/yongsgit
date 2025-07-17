@@ -10,50 +10,41 @@
       text-align: center;
       margin: 0;
       padding: 40px 20px;
-      box-sizing: border-box;
+      background-color: #f9f9f9;
     }
     h1 {
       font-size: 8vw;
-      margin-bottom: 30px;
+      margin-bottom: 40px;
     }
     button {
       font-size: 6vw;
-      padding: 15px 30px;
+      padding: 16px;
       margin: 20px auto;
-      display: block;
       width: 80%;
       max-width: 400px;
-    }
-    input {
-      font-size: 6vw;
-      padding: 10px;
-      width: 80%;
-      max-width: 400px;
-      margin-top: 10px;
-      text-align: center;
+      border-radius: 10px;
+      border: none;
+      background-color: #4CAF50;
+      color: white;
+      font-weight: bold;
     }
     #roomCodeDisplay {
       font-size: 6vw;
       margin-top: 30px;
-      color: blue;
+      color: #1e88e5;
     }
   </style>
 </head>
 <body>
   <h1>FastTap</h1>
-  
-  <!-- 방 생성 -->
   <button onclick="createRoom()">방 생성</button>
   <div id="roomCodeDisplay"></div>
-
-  <!-- 방 입장 -->
-  <input type="text" id="joinRoomCode" placeholder="방 코드 입력" maxlength="5" />
-  <button onclick="joinRoom()">방 입장</button>
+  <button onclick="joinRecentRoom()">방 입장</button>
 
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-    import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+    import { getDatabase, ref, set, get, child, onValue } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -97,19 +88,34 @@
       }, 1500);
     }
 
-    window.joinRoom = async function () {
-      const code = document.getElementById("joinRoomCode").value.trim().toUpperCase();
-      if (!code) return alert("방 코드를 입력하세요.");
-      
-      const roomRef = ref(db, `fasttap/rooms/${code}`);
-      const snap = await get(roomRef);
+    window.joinRecentRoom = async function () {
+      const roomsRef = ref(db, "fasttap/rooms");
+      const snap = await get(roomsRef);
       if (!snap.exists()) {
-        alert("존재하지 않는 방 코드입니다.");
+        alert("입장 가능한 방이 없습니다.");
         return;
       }
 
-      sessionStorage.setItem("roomCode", code);
-      window.location.href = `room.html?room=${code}`;
+      const rooms = snap.val();
+      const now = Date.now();
+      let latestRoom = null;
+      let latestTime = 0;
+
+      for (const [code, data] of Object.entries(rooms)) {
+        if (data.createdAt && now - data.createdAt < 60 * 1000) {
+          if (data.createdAt > latestTime) {
+            latestTime = data.createdAt;
+            latestRoom = code;
+          }
+        }
+      }
+
+      if (latestRoom) {
+        sessionStorage.setItem("roomCode", latestRoom);
+        window.location.href = `room.html?room=${latestRoom}`;
+      } else {
+        alert("1분 이내 생성된 입장 가능한 방이 없습니다.");
+      }
     }
   </script>
 </body>
