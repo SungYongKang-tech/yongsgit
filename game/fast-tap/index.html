@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>FastTap - 방 생성</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+    button { font-size: 20px; padding: 10px 20px; margin: 10px; }
+    #roomCode { font-size: 24px; margin-top: 20px; color: blue; }
+  </style>
+</head>
+<body>
+  <h1>FastTap</h1>
+  <button onclick="createRoom()">방 생성</button>
+  <div id="roomCode"></div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.appspot.com",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:f34819be7b701e4b91a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    function generateRoomCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 5; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return code;
+    }
+
+    window.createRoom = async function() {
+      const roomCode = generateRoomCode();
+      const roomRef = ref(db, `fasttap/rooms/${roomCode}`);
+      const now = Date.now();
+
+      // Create room with expiration time
+      await set(roomRef, {
+        createdAt: now,
+        expiresAt: now + 60 * 1000, // 1분 제한
+        started: false,
+        host: true
+      });
+
+      // Save roomCode in session and move to game page
+      sessionStorage.setItem("roomCode", roomCode);
+      document.getElementById("roomCode").innerText = `방 코드: ${roomCode}`;
+
+      setTimeout(() => {
+        window.location.href = `room.html?room=${roomCode}`;
+      }, 1500);
+    }
+  </script>
+</body>
+</html>
