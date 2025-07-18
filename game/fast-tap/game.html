@@ -5,154 +5,243 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FastTap - 게임</title>
   <style>
-    html, body {
-      margin: 0;
-      padding: 20px;
+    body {
       font-family: sans-serif;
       text-align: center;
-      background: #f0f0f0;
-      overflow: hidden; /* 화면 고정 */
-      height: 100%;
+      margin: 0;
+      padding: 20px;
+      background-color: #f9f9f9;
     }
-    h2 {
-      font-size: 6vw;
-      margin-bottom: 20px;
+    h1 {
+      font-size: 8vw;
+      margin-bottom: 10px;
+    }
+    #timer {
+      font-size: 10vw;
+      margin: 10px 0;
+      color: #1e88e5;
     }
     #grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: 8px;
-      width: 100%;
-      max-width: 100vw;
-      margin: 0 auto;
-      box-sizing: border-box;
+      max-width: 500px;
+      margin: 20px auto;
     }
     .num-btn {
       font-size: 5vw;
-      padding: 12px 0;
+      padding: 14px 0;
       background: #fff;
       border: 2px solid #333;
       border-radius: 8px;
       cursor: pointer;
-      width: 100%;
-      box-sizing: border-box;
     }
-    #result {
+    button.control {
+      font-size: 4vw;
+      padding: 10px 0;
+      width: 28vw;
+      max-width: 120px;
+    }
+    #ranking {
       margin-top: 30px;
-      font-size: 8vw;
-      font-weight: bold;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #ranking h2 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #ranking ol {
+      font-size: 5vw;
+      padding-left: 20px;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
     }
   </style>
 </head>
 <body>
-  <h2>빠르게 숫자를 눌러보세요!</h2>
-  <div id="grid"></div>
-  <div id="result"></div>
+<h1>FastTap</h1>
+<div id="timer">0:00</div>
 
-  <!-- 승리 효과음 -->
-  <audio id="winSound" src="win.mp3" preload="auto"></audio>
+<div class="controls">
+  <button class="control" onclick="startTimer()">시작</button>
+  <button class="control" onclick="pauseTimer()">일시정지</button>
+  <button class="control" onclick="resetTimer()">재시작</button>
+</div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-    import {
-      getDatabase,
-      ref,
-      set,
-      onValue
-    } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+<div id="grid"></div>
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
-      authDomain: "number-baseball-aee52.firebaseapp.com",
-      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
-      projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
-      messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:f34819be7b701e4b91a561"
-    };
+<div id="ranking">
+  <h2>🏆 상위 10위</h2>
+  <ol id="rankingList"></ol>
+</div>
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+<audio id="winSound" src="win.mp3" preload="auto"></audio>
 
-    const urlParams = new URLSearchParams(location.search);
-    const room = urlParams.get("room");
-    const player = urlParams.get("player");
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    push,
+    onValue,
+    query,
+    orderByChild,
+    limitToFirst
+  } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
-    const grid = document.getElementById("grid");
-    const result = document.getElementById("result");
-    const winSound = document.getElementById("winSound");
+  const firebaseConfig = {
+    apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+    authDomain: "number-baseball-aee52.firebaseapp.com",
+    databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+    projectId: "number-baseball-aee52",
+    storageBucket: "number-baseball-aee52.appspot.com",
+    messagingSenderId: "998537150772",
+    appId: "1:998537150772:web:f34819be7b701e4b91a561"
+  };
 
-    let numbers = Array.from({ length: 25 }, (_, i) => i + 1);
-    let current = 1;
-    let finished = false;
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const rankRef = ref(db, "fasttap/leaderboard");
 
-    // 🔹 숫자별 사운드 미리 로딩
-    const audioMap = {};
-    for (let i = 1; i <= 25; i++) {
-      const numStr = i.toString().padStart(2, '0'); // "01" ~ "25"
-      const audio = new Audio(`${numStr}.mp3`);
-      audio.preload = 'auto';
-      audioMap[i] = audio;
-    }
+  const urlParams = new URLSearchParams(location.search);
+  const player = urlParams.get("player");
+  const room = urlParams.get("room");
 
-    // 🔹 셔플 함수
-    function shuffle(array) {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-      }
-      return array;
-    }
+  let timerInterval;
+  let startTime;
+  let pausedTime = 0;
+  let running = false;
+  let current = 1;
+  let gameFinished = false;
 
-    // 🔹 숫자판 렌더링
-    function renderGrid() {
-      shuffle(numbers);
-      grid.innerHTML = "";
-      numbers.forEach((num) => {
-        const btn = document.createElement("button");
-        btn.textContent = num;
-        btn.className = "num-btn";
-        btn.onclick = () => handleClick(num, btn);
-        grid.appendChild(btn);
-      });
-    }
+  const audioMap = {};
+  const winSound = document.getElementById("winSound");
 
-    // 🔹 클릭 처리
-    function handleClick(num, btn) {
-      if (finished) return;
+  for (let i = 1; i <= 25; i++) {
+    const numStr = i.toString().padStart(2, '0');
+    const audio = new Audio(`${numStr}.mp3`);
+    audio.preload = 'auto';
+    audioMap[i] = audio;
+  }
 
-      if (num === current) {
-        // 해당 번호 음향 재생
-        const audio = audioMap[num];
-        if (audio) {
-          audio.currentTime = 0;
-          audio.play();
-        }
-
-        btn.disabled = true;
-        btn.style.backgroundColor = "#ccc";
-        current++;
-
-        if (current > 25) {
-          finished = true;
-          set(ref(db, `fasttap/rooms/${room}/winner`), player);
-          winSound.play();
-          result.innerText = "🎉 승리!";
-        }
-      }
-    }
-
-    // 🔹 다른 사용자가 이긴 경우
-    const winnerRef = ref(db, `fasttap/rooms/${room}/winner`);
-    onValue(winnerRef, (snapshot) => {
-      const winnerId = snapshot.val();
-      if (winnerId && winnerId !== player && !finished) {
-        finished = true;
-        result.innerText = "😢 패배...";
-      }
+  window.addEventListener("touchstart", () => {
+    Object.values(audioMap).forEach(audio => {
+      audio.play().catch(() => {});
+      audio.pause();
+      audio.currentTime = 0;
     });
+  }, { once: true });
 
+  function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  }
+
+  function updateDisplay(ms) {
+    document.getElementById("timer").innerText = formatTime(ms);
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById("grid");
+    let numbers = Array.from({ length: 25 }, (_, i) => i + 1);
+    for (let i = numbers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+    }
+
+    grid.innerHTML = "";
+    numbers.forEach((num) => {
+      const btn = document.createElement("button");
+      btn.textContent = num;
+      btn.className = "num-btn";
+      btn.onclick = () => handleClick(num, btn);
+      grid.appendChild(btn);
+    });
+  }
+
+  function handleClick(num, btn) {
+    if (gameFinished || !running) return;
+    if (num === current) {
+      const audio = audioMap[num];
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(err => console.warn(`❌ ${num}.mp3 재생 실패`, err));
+      }
+
+      btn.disabled = true;
+      btn.style.backgroundColor = "#ccc";
+      current++;
+      if (current > 25) {
+        gameFinished = true;
+        pauseTimer();
+        winSound.play();
+      }
+    }
+  }
+
+  window.startTimer = function () {
+    if (running) return;
+    running = true;
+    gameFinished = false;
+    current = 1;
+    pausedTime = 0;
     renderGrid();
-  </script>
+    startTime = Date.now();
+    timerInterval = setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - startTime;
+      updateDisplay(elapsed);
+    }, 100);
+  }
+
+  window.pauseTimer = function () {
+    if (!running) return;
+    running = false;
+    clearInterval(timerInterval);
+    pausedTime = Date.now() - startTime;
+
+    if (pausedTime <= 40000) {
+      const name = prompt("🎉 40초 이내! 이름을 입력하세요:");
+      if (name) {
+        push(rankRef, { name, time: pausedTime });
+      }
+    }
+  }
+
+  window.resetTimer = function () {
+    clearInterval(timerInterval);
+    running = false;
+    pausedTime = 0;
+    current = 1;
+    gameFinished = false;
+    updateDisplay(0);
+    document.getElementById("grid").innerHTML = "";
+  }
+
+  function loadRanking() {
+    const q = query(rankRef, orderByChild("time"), limitToFirst(10));
+    onValue(q, snapshot => {
+      const list = document.getElementById("rankingList");
+      list.innerHTML = "";
+      snapshot.forEach(child => {
+        const { name, time } = child.val();
+        const li = document.createElement("li");
+        li.innerText = `${name} - ${formatTime(time)}`;
+        list.appendChild(li);
+      });
+    });
+  }
+
+  loadRanking();
+</script>
 </body>
 </html>
