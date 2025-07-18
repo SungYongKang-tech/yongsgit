@@ -1,4 +1,3 @@
-// Firebase SDK 모듈
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import {
   getDatabase, ref, set, get, child
@@ -14,17 +13,16 @@ const firebaseConfig = {
   messagingSenderId: "998537150772",
   appId: "1:998537150772:web:905808137b15084d91a561"
 };
-
-// Firebase 초기화
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// 퍼즐 데이터
+// 변수 정의
 let tiles = [...Array(15).keys()].map(i => i + 1).concat('');
+let startTime, timerInterval, completed = false;
+
 const board = document.getElementById('board');
 const timerEl = document.getElementById('timer');
 const statusEl = document.getElementById('status');
-let startTime, timerInterval, completed = false;
 
 // 시간 포맷
 function formatTime(sec) {
@@ -33,13 +31,22 @@ function formatTime(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// 퍼즐 셔플
+// 셔플
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [array[i], array[j]] = [array[j], array[i]];
   }
   return array;
+}
+
+// 타이머 시작
+function startTimer() {
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    timerEl.textContent = `⏱️ ${formatTime(elapsed)}`;
+  }, 1000);
 }
 
 // 보드 렌더링
@@ -68,7 +75,7 @@ function moveTile(index) {
   }
 }
 
-// 승리 조건 확인
+// 승리 확인
 function checkWin() {
   const solved = [...Array(15).keys()].map(i => i + 1).concat('');
   if (JSON.stringify(tiles) === JSON.stringify(solved)) {
@@ -80,21 +87,12 @@ function checkWin() {
   }
 }
 
-// 타이머 시작
-function startTimer() {
-  startTime = Date.now();
-  timerInterval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    timerEl.textContent = `⏱️ ${formatTime(elapsed)}`;
-  }, 1000);
-}
-
 // 순위 저장
 function saveRanking(name, timeSec) {
   return set(ref(db, 'puzzleRankings/' + name), timeSec);
 }
 
-// 순위 불러오기
+// 순위 출력
 function loadTopRankings() {
   const dbRef = ref(db);
   get(child(dbRef, 'puzzleRankings')).then(snapshot => {
@@ -115,7 +113,7 @@ function loadTopRankings() {
   });
 }
 
-// 상위 10위 여부 확인 후 등록
+// 상위 10위 안인지 판별
 function checkAndSaveRanking(newTime) {
   const dbRef = ref(db);
   get(child(dbRef, 'puzzleRankings')).then(snapshot => {
@@ -125,7 +123,7 @@ function checkAndSaveRanking(newTime) {
       .sort((a, b) => a.time - b.time);
 
     if (sorted.length < 10 || newTime < sorted[9].time) {
-      const name = prompt("🎉 10등 안에 들었습니다! 이름을 입력해주세요:");
+      const name = prompt("🎉 10등 안에 들었습니다! 이름을 입력하세요:");
       if (name) {
         saveRanking(name, newTime).then(loadTopRankings);
       }
@@ -136,7 +134,7 @@ function checkAndSaveRanking(newTime) {
   });
 }
 
-// 초기 실행
+// 실행
 shuffle(tiles);
 render();
 startTimer();
