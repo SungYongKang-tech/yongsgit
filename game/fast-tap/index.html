@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FastTap - 홈</title>
+  <title>FastTap - 랭킹 타이머</title>
   <style>
     body {
       font-family: sans-serif;
@@ -14,37 +14,56 @@
     }
     h1 {
       font-size: 8vw;
-      margin-bottom: 40px;
+      margin-bottom: 20px;
+    }
+    #timer {
+      font-size: 10vw;
+      margin-bottom: 30px;
+      color: #1e88e5;
     }
     button {
       font-size: 6vw;
-      padding: 16px;
-      margin: 20px auto;
-      width: 80%;
-      max-width: 400px;
+      padding: 14px;
+      margin: 10px;
+      width: 70%;
+      max-width: 300px;
       border-radius: 10px;
       border: none;
       background-color: #4CAF50;
       color: white;
       font-weight: bold;
     }
-    #roomCodeDisplay {
-      font-size: 6vw;
-      margin-top: 30px;
-      color: #1e88e5;
+    #ranking {
+      margin-top: 40px;
+      text-align: left;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #ranking h2 {
+      text-align: center;
+    }
+    #ranking ol {
+      font-size: 5vw;
+      padding-left: 20px;
     }
   </style>
 </head>
 <body>
   <h1>FastTap</h1>
-  <button onclick="createRoom()">방 생성</button>
-  <div id="roomCodeDisplay"></div>
-  <button onclick="joinRecentRoom()">방 입장</button>
+  <div id="timer">0:00</div>
+  <button onclick="startTimer()">시작</button>
+  <button onclick="pauseTimer()">일시정지</button>
+  <button onclick="resetTimer()">재시작</button>
 
-  <!-- Firebase SDK -->
+  <div id="ranking">
+    <h2>🏆 상위 10위</h2>
+    <ol id="rankingList"></ol>
+  </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-    import { getDatabase, ref, set, get, child, onValue } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+    import { getDatabase, ref, push, onValue, query, orderByChild, limitToFirst } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -58,65 +77,73 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const rankRef = ref(db, "fasttap/leaderboard");
 
-    function generateRoomCode() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let code = '';
-      for (let i = 0; i < 5; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      return code;
+    let timerInterval;
+    let startTime;
+    let pausedTime = 0;
+    let running = false;
+
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
     }
 
-    window.createRoom = async function () {
-      const roomCode = generateRoomCode();
-      const roomRef = ref(db, `fasttap/rooms/${roomCode}`);
-      const now = Date.now();
+    function updateDisplay(ms) {
+      document.getElementById("timer").innerText = formatTime(ms);
+    }
 
-      await set(roomRef, {
-        createdAt: now,
-        expiresAt: now + 60 * 1000,
-        started: false,
-        host: true
+    window.startTimer = function () {
+      if (running) return;
+      running = true;
+      startTime = Date.now() - pausedTime;
+
+      timerInterval = setInterval(() => {
+        const now = Date.now();
+        const elapsed = now - startTime;
+        updateDisplay(elapsed);
+      }, 100);
+    }
+
+    window.pauseTimer = function () {
+      if (!running) return;
+      running = false;
+      clearInterval(timerInterval);
+      pausedTime = Date.now() - startTime;
+
+      const name = prompt("이름을 입력하세요 (10초 이내일 경우 기록됨)");
+      if (name && pausedTime <= 10000) {
+        push(rankRef, {
+          name,
+          time: pausedTime
+        });
+      }
+    }
+
+    window.resetTimer = function () {
+      clearInterval(timerInterval);
+      running = false;
+      pausedTime = 0;
+      updateDisplay(0);
+    }
+
+    function loadRanking() {
+      const q = query(rankRef, orderByChild("time"), limitToFirst(10));
+      onValue(q, snapshot => {
+        const list = document.getElementById("rankingList");
+        list.innerHTML = "";
+        snapshot.forEach(child => {
+          const { name, time } = child.val();
+          const li = document.createElement("li");
+          li.innerText = `${name} - ${formatTime(time)}`;
+          list.appendChild(li);
+        });
       });
-
-      document.getElementById("roomCodeDisplay").innerText = `방 코드: ${roomCode}`;
-      sessionStorage.setItem("roomCode", roomCode);
-
-      setTimeout(() => {
-        window.location.href = `room.html?room=${roomCode}`;
-      }, 1500);
     }
 
-    window.joinRecentRoom = async function () {
-      const roomsRef = ref(db, "fasttap/rooms");
-      const snap = await get(roomsRef);
-      if (!snap.exists()) {
-        alert("입장 가능한 방이 없습니다.");
-        return;
-      }
-
-      const rooms = snap.val();
-      const now = Date.now();
-      let latestRoom = null;
-      let latestTime = 0;
-
-      for (const [code, data] of Object.entries(rooms)) {
-        if (data.createdAt && now - data.createdAt < 60 * 1000) {
-          if (data.createdAt > latestTime) {
-            latestTime = data.createdAt;
-            latestRoom = code;
-          }
-        }
-      }
-
-      if (latestRoom) {
-        sessionStorage.setItem("roomCode", latestRoom);
-        window.location.href = `room.html?room=${latestRoom}`;
-      } else {
-        alert("1분 이내 생성된 입장 가능한 방이 없습니다.");
-      }
-    }
+    loadRanking();
   </script>
 </body>
 </html>
