@@ -36,12 +36,12 @@
       border-radius: 8px;
       cursor: pointer;
     }
-button.control {
-  font-size: 4vw;         /* 더 작게 */
-  padding: 10px 0;
-  width: 28vw;            /* 3개 버튼 합쳐도 84vw로 여유 있음 */
-  max-width: 120px;       /* PC에서도 너무 커지지 않도록 제한 */
-}
+    button.control {
+      font-size: 4vw;
+      padding: 10px 0;
+      width: 28vw;
+      max-width: 120px;
+    }
     #ranking {
       margin-top: 30px;
       max-width: 500px;
@@ -56,14 +56,13 @@ button.control {
       font-size: 5vw;
       padding-left: 20px;
     }
-.controls {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
+    .controls {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
@@ -75,153 +74,172 @@ button.control {
   <button class="control" onclick="pauseTimer()">일시정지</button>
   <button class="control" onclick="resetTimer()">재시작</button>
 </div>
-<audio id="testSound" src="01.mp3" preload="auto"></audio>
-<button onclick="document.getElementById('testSound').play()">🔊 01.mp3 재생 테스트</button>
 
+<div id="grid"></div>
 
+<div id="ranking">
+  <h2>🏆 상위 10위</h2>
+  <ol id="rankingList"></ol>
+</div>
 
+<audio id="winSound" src="win.mp3" preload="auto"></audio>
 
-  <div id="grid"></div>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    push,
+    onValue,
+    query,
+    orderByChild,
+    limitToFirst
+  } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
-  <div id="ranking">
-    <h2>🏆 상위 10위</h2>
-    <ol id="rankingList"></ol>
-  </div>
+  const firebaseConfig = {
+    apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+    authDomain: "number-baseball-aee52.firebaseapp.com",
+    databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+    projectId: "number-baseball-aee52",
+    storageBucket: "number-baseball-aee52.appspot.com",
+    messagingSenderId: "998537150772",
+    appId: "1:998537150772:web:f34819be7b701e4b91a561"
+  };
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-    import {
-      getDatabase,
-      ref,
-      push,
-      onValue,
-      query,
-      orderByChild,
-      limitToFirst
-    } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const rankRef = ref(db, "fasttap/leaderboard");
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
-      authDomain: "number-baseball-aee52.firebaseapp.com",
-      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
-      projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
-      messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:f34819be7b701e4b91a561"
-    };
+  let timerInterval;
+  let startTime;
+  let pausedTime = 0;
+  let running = false;
+  let current = 1;
+  let gameFinished = false;
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const rankRef = ref(db, "fasttap/leaderboard");
+  const audioMap = {};
+  const winSound = document.getElementById("winSound");
 
-    let timerInterval;
-    let startTime;
-    let pausedTime = 0;
-    let running = false;
-    let current = 1;
-    let gameFinished = false;
+  // 🔊 숫자별 mp3 사전 로드
+  for (let i = 1; i <= 25; i++) {
+    const numStr = i.toString().padStart(2, '0');
+    const audio = new Audio(`${numStr}.mp3`);
+    audio.preload = 'auto';
+    audioMap[i] = audio;
+  }
 
-    function formatTime(ms) {
-      const totalSeconds = Math.floor(ms / 1000);
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-      return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  // 🔓 모바일 오디오 활성화 우회
+  window.addEventListener("touchstart", () => {
+    Object.values(audioMap).forEach(audio => {
+      audio.play().catch(() => {});
+      audio.pause();
+      audio.currentTime = 0;
+    });
+  }, { once: true });
+
+  function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  }
+
+  function updateDisplay(ms) {
+    document.getElementById("timer").innerText = formatTime(ms);
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById("grid");
+    let numbers = Array.from({ length: 25 }, (_, i) => i + 1);
+    for (let i = numbers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
     }
 
-    function updateDisplay(ms) {
-      document.getElementById("timer").innerText = formatTime(ms);
-    }
+    grid.innerHTML = "";
+    numbers.forEach((num) => {
+      const btn = document.createElement("button");
+      btn.textContent = num;
+      btn.className = "num-btn";
+      btn.onclick = () => handleClick(num, btn);
+      grid.appendChild(btn);
+    });
+  }
 
-    function renderGrid() {
-      const grid = document.getElementById("grid");
-      let numbers = Array.from({ length: 25 }, (_, i) => i + 1);
-      for (let i = numbers.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+  function handleClick(num, btn) {
+    if (gameFinished || !running) return;
+    if (num === current) {
+      const audio = audioMap[num];
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(err => console.warn(`❌ ${num}.mp3 재생 실패`, err));
       }
 
-      grid.innerHTML = "";
-      numbers.forEach((num) => {
-        const btn = document.createElement("button");
-        btn.textContent = num;
-        btn.className = "num-btn";
-        btn.onclick = () => handleClick(num, btn);
-        grid.appendChild(btn);
+      btn.disabled = true;
+      btn.style.backgroundColor = "#ccc";
+      current++;
+      if (current > 25) {
+        gameFinished = true;
+        pauseTimer();
+        winSound.play();
+      }
+    }
+  }
+
+  window.startTimer = function () {
+    if (running) return;
+    running = true;
+    gameFinished = false;
+    current = 1;
+    pausedTime = 0;
+    renderGrid();
+    startTime = Date.now();
+    timerInterval = setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - startTime;
+      updateDisplay(elapsed);
+    }, 100);
+  }
+
+  window.pauseTimer = function () {
+    if (!running) return;
+    running = false;
+    clearInterval(timerInterval);
+    pausedTime = Date.now() - startTime;
+
+    if (pausedTime <= 40000) {
+      const name = prompt("🎉 40초 이내! 이름을 입력하세요:");
+      if (name) {
+        push(rankRef, { name, time: pausedTime });
+      }
+    }
+  }
+
+  window.resetTimer = function () {
+    clearInterval(timerInterval);
+    running = false;
+    pausedTime = 0;
+    current = 1;
+    gameFinished = false;
+    updateDisplay(0);
+    document.getElementById("grid").innerHTML = "";
+  }
+
+  function loadRanking() {
+    const q = query(rankRef, orderByChild("time"), limitToFirst(10));
+    onValue(q, snapshot => {
+      const list = document.getElementById("rankingList");
+      list.innerHTML = "";
+      snapshot.forEach(child => {
+        const { name, time } = child.val();
+        const li = document.createElement("li");
+        li.innerText = `${name} - ${formatTime(time)}`;
+        list.appendChild(li);
       });
-    }
+    });
+  }
 
-    function handleClick(num, btn) {
-      if (gameFinished || !running) return;
-      if (num === current) {
-        btn.disabled = true;
-        btn.style.backgroundColor = "#ccc";
-        current++;
-        if (current > 25) {
-          gameFinished = true;
-          pauseTimer();
-        }
-      }
-    }
-
-    window.startTimer = function () {
-      if (running) return;
-      running = true;
-      gameFinished = false;
-      current = 1;
-      pausedTime = 0;
-      renderGrid();
-      startTime = Date.now();
-      timerInterval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = now - startTime;
-        updateDisplay(elapsed);
-      }, 100);
-    }
-
-    window.pauseTimer = function () {
-      if (!running) return;
-      running = false;
-      clearInterval(timerInterval);
-      pausedTime = Date.now() - startTime;
-
-      if (pausedTime <= 40000) {
-        const name = prompt("🎉 40초 이내! 이름을 입력하세요:");
-        if (name) {
-          push(rankRef, { name, time: pausedTime });
-        }
-      }
-    }
-
-    window.resetTimer = function () {
-      clearInterval(timerInterval);
-      running = false;
-      pausedTime = 0;
-      current = 1;
-      gameFinished = false;
-      updateDisplay(0);
-      document.getElementById("grid").innerHTML = "";
-    }
-
-    function loadRanking() {
-      const q = query(rankRef, orderByChild("time"), limitToFirst(10));
-      onValue(q, snapshot => {
-        const list = document.getElementById("rankingList");
-        list.innerHTML = "";
-        snapshot.forEach(child => {
-          const { name, time } = child.val();
-          const li = document.createElement("li");
-          li.innerText = `${name} - ${formatTime(time)}`;
-          list.appendChild(li);
-        });
-      });
-    }
-
-    loadRanking();
-
-    window.addEventListener("touchstart", () => {
-  audioMap[1].play().catch(() => {}); // 강제 활성화
-}, { once: true });
-
-  </script>
+  loadRanking();
+</script>
 </body>
 </html>
