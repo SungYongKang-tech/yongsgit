@@ -5,38 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FastTap - 게임</title>
   <style>
-    body {
+    html, body {
       margin: 0;
       padding: 20px;
       font-family: sans-serif;
       text-align: center;
       background: #f0f0f0;
+      overflow: hidden; /* 화면 고정 */
+      height: 100%;
     }
     h2 {
       font-size: 6vw;
       margin-bottom: 20px;
     }
     #grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  width: 100%;
-  max-width: 100vw;
-  margin: 0 auto;
-  box-sizing: border-box;
-}
-
-.num-btn {
-  font-size: 5vw; /* 기존 6vw보다 작게 */
-  padding: 12px 0;
-  background: #fff;
-  border: 2px solid #333;
-  border-radius: 8px;
-  cursor: pointer;
-  width: 100%;  /* 버튼이 셀을 꽉 채우도록 */
-  box-sizing: border-box;
-}
-
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      width: 100%;
+      max-width: 100vw;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+    .num-btn {
+      font-size: 5vw;
+      padding: 12px 0;
+      background: #fff;
+      border: 2px solid #333;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      box-sizing: border-box;
+    }
     #result {
       margin-top: 30px;
       font-size: 8vw;
@@ -49,8 +49,7 @@
   <div id="grid"></div>
   <div id="result"></div>
 
-  <!-- 효과음 -->
-  <audio id="clickSound" src="button-29.mp3" preload="auto"></audio>
+  <!-- 승리 효과음 -->
   <audio id="winSound" src="win.mp3" preload="auto"></audio>
 
   <script type="module">
@@ -79,16 +78,24 @@
     const room = urlParams.get("room");
     const player = urlParams.get("player");
 
-    const clickSound = document.getElementById("clickSound");
-    const winSound = document.getElementById("winSound");
     const grid = document.getElementById("grid");
     const result = document.getElementById("result");
+    const winSound = document.getElementById("winSound");
 
     let numbers = Array.from({ length: 25 }, (_, i) => i + 1);
     let current = 1;
     let finished = false;
 
-    // 🔹 배열 셔플
+    // 🔹 숫자별 사운드 미리 로딩
+    const audioMap = {};
+    for (let i = 1; i <= 25; i++) {
+      const numStr = i.toString().padStart(2, '0'); // "01" ~ "25"
+      const audio = new Audio(`${numStr}.mp3`);
+      audio.preload = 'auto';
+      audioMap[i] = audio;
+    }
+
+    // 🔹 셔플 함수
     function shuffle(array) {
       for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -97,7 +104,7 @@
       return array;
     }
 
-    // 🔹 숫자 버튼 렌더링
+    // 🔹 숫자판 렌더링
     function renderGrid() {
       shuffle(numbers);
       grid.innerHTML = "";
@@ -115,10 +122,17 @@
       if (finished) return;
 
       if (num === current) {
-        clickSound.play();
+        // 해당 번호 음향 재생
+        const audio = audioMap[num];
+        if (audio) {
+          audio.currentTime = 0;
+          audio.play();
+        }
+
         btn.disabled = true;
         btn.style.backgroundColor = "#ccc";
         current++;
+
         if (current > 25) {
           finished = true;
           set(ref(db, `fasttap/rooms/${room}/winner`), player);
@@ -128,7 +142,7 @@
       }
     }
 
-    // 🔹 다른 사람이 이긴 경우 → 나는 패배 처리
+    // 🔹 다른 사용자가 이긴 경우
     const winnerRef = ref(db, `fasttap/rooms/${room}/winner`);
     onValue(winnerRef, (snapshot) => {
       const winnerId = snapshot.val();
@@ -138,7 +152,6 @@
       }
     });
 
-    // 시작 시 숫자판 표시
     renderGrid();
   </script>
 </body>
