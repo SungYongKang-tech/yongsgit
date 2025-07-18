@@ -89,14 +89,16 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
     import {
-      getDatabase,
-      ref,
-      push,
-      query,
-      orderByChild,
-      limitToFirst,
-      get
-    } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+  getDatabase,
+  ref,
+  push,
+  query,
+  orderByChild,
+  limitToFirst,
+  get,
+  remove,
+  set
+} from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -131,6 +133,35 @@ function format(ms) {
   return `${(ms / 1000).toFixed(2)}초`;
 }
 
+const resetRef = ref(db, "fasttap/resetTimestamp");
+
+function getThisFridayNoon() {
+  const now = new Date();
+  const day = now.getDay(); // 0 (일) ~ 6 (토)
+  const diff = (5 - day + 7) % 7;
+  const friday = new Date(now);
+  friday.setDate(now.getDate() + diff);
+  friday.setHours(12, 0, 0, 0);
+  return friday.getTime();
+}
+
+function checkAndResetWeeklyRanking() {
+  get(resetRef).then(snapshot => {
+    const lastReset = snapshot.exists() ? snapshot.val() : 0;
+    const now = Date.now();
+    const fridayNoon = getThisFridayNoon();
+
+   if (now >= fridayNoon && lastReset < fridayNoon) {
+  remove(rankRef).then(() => {
+    console.log("🎯 순위 리셋 완료");
+    set(resetRef, now).then(() => {
+      getTopRanks(); // 한 번만 호출
+    });
+  });
+}
+
+
+
     function startGame() {
       resetGame();
       current = 1;
@@ -153,20 +184,24 @@ function format(ms) {
       }, 100);
     }
 
-    function handleClick(num, btn) {
+ function handleClick(num, btn) {
   if (finished || num !== current) return;
+
+  // 클릭 사운드 재생
+  const clickSound = document.getElementById("clickSound");
+  clickSound.currentTime = 0;
+  clickSound.play().catch(() => {});
 
   btn.disabled = true;
   btn.style.backgroundColor = "#ccc";
   current++;
 
- if (current > 25) {
-  finished = true;
-  clearInterval(timerInterval);
-  winSound.play();
-  setTimeout(() => checkRanking(Date.now() - startTime), 100);
-}
-
+  if (current > 25) {
+    finished = true;
+    clearInterval(timerInterval);
+    winSound.play();
+    setTimeout(() => checkRanking(Date.now() - startTime), 100);
+  }
 }
 
     function resetGame() {
