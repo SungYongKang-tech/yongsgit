@@ -5,8 +5,91 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FastTap - 숫자 게임</title>
   <style>
-    /* 스타일 생략 (기존 그대로 유지) */
-  </style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(145deg, #e0f7fa, #fce4ec);
+  }
+  h1 {
+    font-size: 8vw;
+    margin-bottom: 10px;
+    color: #2c3e50;
+    text-shadow: 2px 2px 5px #b2bec3;
+  }
+  #timer {
+    font-size: 10vw;
+    color: #1e88e5;
+    margin: 10px 0 20px;
+  }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .control {
+    font-size: 4vw;
+    padding: 12px 20px;
+    width: 28vw;
+    max-width: 120px;
+    background: linear-gradient(to bottom right, #42a5f5, #1e88e5);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-weight: bold;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    transition: transform 0.1s ease, box-shadow 0.2s;
+    cursor: pointer;
+  }
+  .control:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+  }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    max-width: 500px;
+    margin: 0 auto 30px;
+  }
+  .num-btn {
+    font-size: 5vw;
+    padding: 14px 0;
+    background: linear-gradient(to bottom right, #ffffff, #f1f1f1);
+    border: 2px solid #ccc;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+    transition: background 0.2s, transform 0.1s ease;
+  }
+  .num-btn:active {
+    background: #d3d3d3;
+    transform: scale(0.96);
+  }
+
+  #ranking {
+    max-width: 500px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  #ranking h2 {
+    margin-bottom: 10px;
+    font-size: 6vw;
+    color: #2c3e50;
+  }
+  #ranking ol {
+    list-style: none;
+    padding: 0;
+    font-size: 5vw;
+    color: #37474f;
+  }
+</style>
+
 </head>
 <body>
   <h1>FastTap</h1>
@@ -27,19 +110,20 @@
   <audio id="winSound" src="win.mp3" preload="auto"></audio>
   <audio id="clickSound" src="bbok.mp3" preload="auto"></audio>
 
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
     import {
-      getDatabase,
-      ref,
-      push,
-      query,
-      orderByChild,
-      limitToFirst,
-      get,
-      remove,
-      set
-    } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+  getDatabase,
+  ref,
+  push,
+  query,
+  orderByChild,
+  limitToFirst,
+  get,
+  remove,
+  set
+} from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -54,27 +138,63 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const rankRef = ref(db, "fasttap/leaderboard");
-    const resetRef = ref(db, "fasttap/resetTimestamp");
 
     const winSound = document.getElementById("winSound");
-    const clickSound = document.getElementById("clickSound");
     const timerEl = document.getElementById("timer");
     const grid = document.getElementById("grid");
     const rankingList = document.getElementById("rankingList");
 
     let timerInterval, startTime, current = 1, finished = false;
 
-    function format(ms) {
-      return `${(ms / 1000).toFixed(2)}초`;
-    }
+   window.addEventListener("touchstart", () => {
+  const clickSound = document.getElementById("clickSound");
+  clickSound.play().catch(() => {});
+  clickSound.pause();
+  clickSound.currentTime = 0;
+}, { once: true });
 
-    function resetGame() {
-      clearInterval(timerInterval);
-      timerEl.textContent = "0:00";
-      grid.innerHTML = "";
-      current = 1;
-      finished = false;
+    // 기존 formatTime 대신 format() 함수 사용
+function format(ms) {
+  return `${(ms / 1000).toFixed(2)}초`;
+}
+
+const resetRef = ref(db, "fasttap/resetTimestamp");
+
+function getThisFridayNoon() {
+  const now = new Date();
+  const day = now.getDay(); // 0 (일) ~ 6 (토)
+  const diff = (5 - day + 7) % 7;
+  const friday = new Date(now);
+  friday.setDate(now.getDate() + diff);
+  friday.setHours(12, 0, 0, 0);
+  return friday.getTime();
+}
+
+function checkAndResetWeeklyRanking() {
+  get(resetRef).then(snapshot => {
+    const lastReset = snapshot.exists() ? snapshot.val() : 0;
+    const now = Date.now();
+    const fridayNoon = getThisFridayNoon();
+
+    if (now >= fridayNoon && lastReset < fridayNoon) {
+      remove(rankRef).then(() => {
+        console.log("🎯 순위 리셋 완료");
+        set(resetRef, now).then(() => {
+          getTopRanks(); // 한 번만 호출
+        });
+      });
     }
+  });
+}
+
+window.startGame = startGame;
+window.resetGame = resetGame;
+getTopRanks(); // 초기 순위 표시
+checkAndResetWeeklyRanking(); // 주간 리셋 확인
+</script>
+
+
+
 
     function startGame() {
       resetGame();
@@ -82,7 +202,8 @@
       finished = false;
       startTime = Date.now();
 
-      const nums = [...Array(25)].map((_, i) => i + 1).sort(() => Math.random() - 0.5);
+      const nums = [...Array(25)].map((_, i) => i + 1)
+        .sort(() => Math.random() - 0.5);
       nums.forEach(n => {
         const btn = document.createElement("button");
         btn.textContent = n;
@@ -97,95 +218,84 @@
       }, 100);
     }
 
-    function handleClick(num, btn) {
-      if (finished || num !== current) return;
+ function handleClick(num, btn) {
+  if (finished || num !== current) return;
 
-      clickSound.currentTime = 0;
-      clickSound.play().catch(() => {});
+  // 클릭 사운드 재생
+  const clickSound = document.getElementById("clickSound");
+  clickSound.currentTime = 0;
+  clickSound.play().catch(() => {});
 
-      btn.disabled = true;
-      btn.style.backgroundColor = "#ccc";
-      current++;
+  btn.disabled = true;
+  btn.style.backgroundColor = "#ccc";
+  current++;
 
-      if (current > 25) {
-        finished = true;
-        clearInterval(timerInterval);
-        winSound.play();
-        setTimeout(() => checkRanking(Date.now() - startTime), 100);
-      }
+  if (current > 25) {
+    finished = true;
+    clearInterval(timerInterval);
+    winSound.play();
+    setTimeout(() => checkRanking(Date.now() - startTime), 100);
+  }
+}
+
+    function resetGame() {
+      clearInterval(timerInterval);
+      timerEl.textContent = "0:00";
+      grid.innerHTML = "";
+      current = 1;
+      finished = false;
     }
 
     function checkRanking(timeTaken) {
-      getTopRanks().then(ranks => {
-        const isTop10 = ranks.length < 10 || timeTaken < ranks[ranks.length - 1].time;
-        if (isTop10) {
-          const name = prompt("🎉 축하합니다! 10위 안에 들었습니다!\n이름을 입력하세요:");
-          if (name && name.trim() !== "") {
-            push(rankRef, { name: name.trim(), time: timeTaken }).then(() => getTopRanks());
-          }
-        } else {
-          alert("🙂 수고하셨습니다! 다음 기회에 도전하세요!");
+  getTopRanks().then(ranks => {
+    const isTop10 = ranks.length < 10 || timeTaken < ranks[ranks.length - 1].time;
+    if (isTop10) {
+      const name = prompt("🎉 축하합니다! 10위 안에 들었습니다!\n이름을 입력하세요:");
+      if (name && name.trim() !== "") {
+        push(rankRef, { name: name.trim(), time: timeTaken })
+          .then(() => getTopRanks()); // 🔹 저장 후 다시 순위 불러오기
+      }
+    } else {
+      alert("🙂 수고하셨습니다! 다음 기회에 도전하세요!");
+    }
+  });
+}
+
+
+function getTopRanks() {
+  return new Promise(resolve => {
+    const q = query(rankRef, orderByChild("time"), limitToFirst(10));
+    get(q).then(snapshot => {
+      const result = [];
+      snapshot.forEach(child => {
+        const val = child.val();
+        if (val && val.name && val.time != null) {
+          result.push({ name: val.name, time: val.time });
         }
       });
-    }
+      resolve(result);
+      showRanking(result);
+    });
+  });
+}
 
-    function getTopRanks() {
-      return new Promise(resolve => {
-        const q = query(rankRef, orderByChild("time"), limitToFirst(10));
-        get(q).then(snapshot => {
-          const result = [];
-          snapshot.forEach(child => {
-            const val = child.val();
-            if (val && val.name && val.time != null) {
-              result.push({ name: val.name, time: val.time });
-            }
-          });
-          resolve(result);
-          showRanking(result);
-        });
-      });
-    }
 
     function showRanking(ranks) {
-      rankingList.innerHTML = "";
-      ranks.forEach((entry, index) => {
-        const li = document.createElement("li");
-        li.textContent = `${index + 1}위. ${format(entry.time)} - ${entry.name}`;
-        rankingList.appendChild(li);
-      });
-    }
+  rankingList.innerHTML = "";
+  ranks.forEach((entry, index) => {
+    const li = document.createElement("li");
+    li.textContent = `${index + 1}위. ${format(entry.time)} - ${entry.name}`;
+    rankingList.appendChild(li);
+  });
+  console.log("전체 랭킹 목록:", ranks);
+}
 
-    function getThisFridayNoon() {
-      const now = new Date();
-      const day = now.getDay();
-      const diff = (5 - day + 7) % 7;
-      const friday = new Date(now);
-      friday.setDate(now.getDate() + diff);
-      friday.setHours(12, 0, 0, 0);
-      return friday.getTime();
-    }
+window.startGame = startGame;
+window.resetGame = resetGame;
+    getTopRanks(); // 초기 순위 표시
 
-    function checkAndResetWeeklyRanking() {
-      get(resetRef).then(snapshot => {
-        const lastReset = snapshot.exists() ? snapshot.val() : 0;
-        const now = Date.now();
-        const fridayNoon = getThisFridayNoon();
-
-        if (now >= fridayNoon && lastReset < fridayNoon) {
-          remove(rankRef).then(() => {
-            set(resetRef, now).then(() => {
-              getTopRanks();
-            });
-          });
-        }
-      });
-    }
-
-    window.startGame = startGame;
-    window.resetGame = resetGame;
-
-    getTopRanks();
-    checkAndResetWeeklyRanking();
+}}
   </script>
 </body>
 </html>
+ 
