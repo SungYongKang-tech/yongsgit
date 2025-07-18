@@ -24,6 +24,8 @@
     const db = getDatabase(app);
 
     let tiles, startTime, timerInterval, completed = false, paused = false;
+    let tiles, startTime, timerInterval, completed = false, paused = false;
+    let timerStarted = false;
 
     const board = document.getElementById('board');
     const timerEl = document.getElementById('timer');
@@ -58,16 +60,23 @@
     }
 
     function moveTile(index) {
-      if (completed || paused) return;
-      const emptyIndex = tiles.indexOf('');
-      const diff = Math.abs(index - emptyIndex);
-      const sameRow = Math.floor(index / 4) === Math.floor(emptyIndex / 4);
-      if ((diff === 1 && sameRow) || diff === 4) {
-        [tiles[index], tiles[emptyIndex]] = [tiles[emptyIndex], tiles[index]];
-        render();
-        checkWin();
-      }
-    }
+  if (completed || paused) return;
+
+  if (!timerStarted) {
+    startTimer();
+    timerStarted = true;
+  }
+
+  const emptyIndex = tiles.indexOf('');
+  const diff = Math.abs(index - emptyIndex);
+  const sameRow = Math.floor(index / 4) === Math.floor(emptyIndex / 4);
+  if ((diff === 1 && sameRow) || diff === 4) {
+    [tiles[index], tiles[emptyIndex]] = [tiles[emptyIndex], tiles[index]];
+    render();
+    checkWin();
+  }
+}
+
 
     function checkWin() {
       const solved = [...Array(15).keys()].map(i => i + 1).concat('');
@@ -135,14 +144,15 @@
     }
 
     function restartGame() {
-      tiles = shuffle([...Array(15).keys()].map(i => i + 1).concat(''));
-      completed = false;
-      paused = false;
-      clearInterval(timerInterval);
-      startTimer();
-      render();
-      statusEl.textContent = "";
-    }
+  tiles = shuffle([...Array(15).keys()].map(i => i + 1).concat(''));
+  completed = false;
+  paused = false;
+  timerStarted = false; // ← 슬라이딩 시작 전 상태로 초기화
+  clearInterval(timerInterval);
+  render();
+  timerEl.textContent = '⏱️ 0:00';
+  statusEl.textContent = "";
+}
 
     pauseBtn.onclick = () => {
       paused = !paused;
