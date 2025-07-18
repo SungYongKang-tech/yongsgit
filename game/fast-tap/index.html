@@ -3,54 +3,226 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FastTap - 시작</title>
+  <title>FastTap - 숫자 게임</title>
   <style>
     body {
       font-family: sans-serif;
       text-align: center;
-      padding: 30px;
+      padding: 20px;
       background: #f0f0f0;
     }
     h1 {
       font-size: 8vw;
-      margin-bottom: 30px;
+      margin-bottom: 10px;
     }
-    input {
-      font-size: 5vw;
-      padding: 10px;
-      width: 80%;
-      max-width: 300px;
+    #timer {
+      font-size: 10vw;
+      color: #1e88e5;
+      margin: 10px 0 20px;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
       margin-bottom: 20px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
     }
-    button {
+    .control {
+      font-size: 4vw;
+      padding: 10px;
+      width: 28vw;
+      max-width: 120px;
+    }
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      max-width: 500px;
+      margin: 0 auto 30px;
+    }
+    .num-btn {
       font-size: 5vw;
-      padding: 12px 24px;
-      border: none;
-      background-color: #1976d2;
-      color: white;
+      padding: 14px 0;
+      background: #fff;
+      border: 2px solid #333;
       border-radius: 8px;
       cursor: pointer;
+    }
+    #ranking {
+      max-width: 500px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    #ranking h2 {
+      margin-bottom: 10px;
+      font-size: 6vw;
+    }
+    #ranking ol {
+      list-style: none;
+      padding: 0;
+      font-size: 5vw;
     }
   </style>
 </head>
 <body>
   <h1>FastTap</h1>
-  <input id="player" placeholder="플레이어 이름 입력" /><br />
-  <input id="room" placeholder="방 코드 입력" /><br />
-  <button onclick="startGame()">게임 시작</button>
+  <div id="timer">0:00</div>
 
-  <script>
-    function startGame() {
-      const player = document.getElementById("player").value.trim();
-      const room = document.getElementById("room").value.trim();
-      if (!player || !room) {
-        alert("이름과 방 코드를 모두 입력하세요!");
-        return;
-      }
-      window.location.href = `game.html?player=${encodeURIComponent(player)}&room=${encodeURIComponent(room)}`;
+  <div class="controls">
+    <button class="control" onclick="startGame()">시작</button>
+    <button class="control" onclick="resetGame()">초기화</button>
+  </div>
+
+  <div id="grid"></div>
+
+  <div id="ranking">
+    <h2>🏆 상위 10위</h2>
+    <ol id="rankingList"></ol>
+  </div>
+
+  <audio id="winSound" src="win.mp3" preload="auto"></audio>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+    import {
+      getDatabase,
+      ref,
+      push,
+      query,
+      orderByChild,
+      limitToFirst,
+      onValue
+    } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.appspot.com",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:f34819be7b701e4b91a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const rankRef = ref(db, "fasttap/leaderboard");
+
+    const winSound = document.getElementById("winSound");
+    const timerEl = document.getElementById("timer");
+    const grid = document.getElementById("grid");
+    const rankingList = document.getElementById("rankingList");
+
+    let timerInterval, startTime, current = 1, finished = false;
+
+    const audioMap = {};
+    for (let i = 1; i <= 25; i++) {
+      const n = i.toString().padStart(2, '0');
+      const a = new Audio(`${n}.mp3`);
+      a.preload = 'auto';
+      audioMap[i] = a;
     }
+
+    window.addEventListener("touchstart", () => {
+      Object.values(audioMap).forEach(a => {
+        a.play().catch(() => {});
+        a.pause();
+        a.currentTime = 0;
+      });
+    }, { once: true });
+
+    function format(ms) {
+      const s = Math.floor(ms / 1000);
+      return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+    }
+
+    function startGame() {
+      resetGame();
+      current = 1;
+      finished = false;
+      startTime = Date.now();
+
+      const nums = [...Array(25)].map((_, i) => i + 1)
+        .sort(() => Math.random() - 0.5);
+      nums.forEach(n => {
+        const btn = document.createElement("button");
+        btn.textContent = n;
+        btn.className = "num-btn";
+        btn.onclick = () => handleClick(n, btn);
+        grid.appendChild(btn);
+      });
+
+      timerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        timerEl.textContent = format(elapsed);
+      }, 100);
+    }
+
+    function handleClick(num, btn) {
+      if (finished || num !== current) return;
+      const sound = audioMap[num];
+      if (sound) {
+        sound.currentTime = 0;
+        sound.play().catch(() => {});
+      }
+      btn.disabled = true;
+      btn.style.backgroundColor = "#ccc";
+      current++;
+      if (current > 25) {
+        finished = true;
+        clearInterval(timerInterval);
+        winSound.play();
+        const timeTaken = Date.now() - startTime;
+        checkRanking(timeTaken);
+      }
+    }
+
+    function resetGame() {
+      clearInterval(timerInterval);
+      timerEl.textContent = "0:00";
+      grid.innerHTML = "";
+      current = 1;
+      finished = false;
+    }
+
+    function checkRanking(timeTaken) {
+      getTopRanks().then(ranks => {
+        const isTop10 = ranks.length < 10 || timeTaken < ranks[ranks.length - 1].time;
+        if (isTop10) {
+          const name = prompt("🎉 축하합니다! 10위 안에 들었습니다!\n이름을 입력하세요:");
+          if (name) {
+            push(rankRef, { name, time: timeTaken });
+          }
+        } else {
+          alert("🙂 수고하셨습니다! 다음 기회에 도전하세요!");
+        }
+      });
+    }
+
+    function getTopRanks() {
+      return new Promise(resolve => {
+        const q = query(rankRef, orderByChild("time"), limitToFirst(10));
+        onValue(q, snapshot => {
+          const result = [];
+          snapshot.forEach(child => result.push(child.val()));
+          resolve(result);
+          showRanking(result);
+        }, { onlyOnce: true });
+      });
+    }
+
+    function showRanking(ranks) {
+      rankingList.innerHTML = "";
+      ranks.forEach(entry => {
+        const li = document.createElement("li");
+        li.textContent = `${entry.name} - ${format(entry.time)}`;
+        rankingList.appendChild(li);
+      });
+    }
+
+    getTopRanks(); // 초기 순위 표시
   </script>
 </body>
 </html>
