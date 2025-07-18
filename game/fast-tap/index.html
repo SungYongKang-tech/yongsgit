@@ -83,6 +83,8 @@
   </div>
 
   <audio id="winSound" src="win.mp3" preload="auto"></audio>
+  <audio id="clickSound" src="bbok.mp3" preload="auto"></audio>
+
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
@@ -93,7 +95,7 @@
       query,
       orderByChild,
       limitToFirst,
-      onValue
+      get
     } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
 
     const firebaseConfig = {
@@ -117,26 +119,16 @@
 
     let timerInterval, startTime, current = 1, finished = false;
 
-    const audioMap = {};
-    for (let i = 1; i <= 25; i++) {
-      const n = i.toString().padStart(2, '0');
-      const a = new Audio(`${n}.mp3`);
-      a.preload = 'auto';
-      audioMap[i] = a;
-    }
-
-    window.addEventListener("touchstart", () => {
-      Object.values(audioMap).forEach(a => {
-        a.play().catch(() => {});
-        a.pause();
-        a.currentTime = 0;
-      });
-    }, { once: true });
+   window.addEventListener("touchstart", () => {
+  const clickSound = document.getElementById("clickSound");
+  clickSound.play().catch(() => {});
+  clickSound.pause();
+  clickSound.currentTime = 0;
+}, { once: true });
 
     // 기존 formatTime 대신 format() 함수 사용
 function format(ms) {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  return `${(ms / 1000).toFixed(2)}초`;
 }
 
     function startGame() {
@@ -163,11 +155,9 @@ function format(ms) {
 
     function handleClick(num, btn) {
       if (finished || num !== current) return;
-      const sound = audioMap[num];
-      if (sound) {
-        sound.currentTime = 0;
-        sound.play().catch(() => {});
-      }
+    const clickSound = document.getElementById("clickSound");
+    clickSound.currentTime = 0;
+    clickSound.play().catch(() => {});
       btn.disabled = true;
       btn.style.backgroundColor = "#ccc";
       current++;
@@ -204,10 +194,10 @@ function format(ms) {
 }
 
 
-    function getTopRanks() {
+function getTopRanks() {
   return new Promise(resolve => {
     const q = query(rankRef, orderByChild("time"), limitToFirst(10));
-    onValue(q, snapshot => {
+    get(q).then(snapshot => {
       const result = [];
       snapshot.forEach(child => {
         const val = child.val();
@@ -216,8 +206,8 @@ function format(ms) {
         }
       });
       resolve(result);
-      showRanking(result); // ← 여기서 명확히 리스트 전달
-    }, { onlyOnce: true });
+      showRanking(result);
+    });
   });
 }
 
