@@ -3,123 +3,77 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>No Way Out - Lobby</title>
+  <title>SUNGYONG'S GAME</title>
   <style>
     body {
-      font-family: sans-serif;
+      margin: 0;
+      padding: 40px 20px;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #e0f7fa, #fce4ec);
       text-align: center;
-      margin-top: 50px;
-      background: linear-gradient(135deg, #f0f8ff, #e0f7fa);
     }
+
     h1 {
-      font-size: 2.5rem;
-      margin-bottom: 30px;
+      font-size: 9vw;
+      margin-bottom: 40px;
+      color: #2d3436;
+      text-shadow: 1px 1px 5px #b2bec3;
     }
-    button {
-      padding: 12px 20px;
-      font-size: 18px;
-      margin: 10px;
+
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .link-button {
+      width: 90%;
+      max-width: 400px;
+      padding: 18px 20px;
+      font-size: 6vw;
+      font-weight: bold;
       border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      background-color: #2196f3;
+      border-radius: 12px;
+      text-decoration: none;
       color: white;
-      transition: background 0.3s;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    button:hover {
-      background-color: #1976d2;
+
+    .link-button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 12px 20px rgba(0,0,0,0.25);
     }
-    #status {
-      margin-top: 20px;
-      font-size: 1.2rem;
-      color: #333;
+
+    .btn-purple { background: linear-gradient(45deg, #9b59b6, #8e44ad); }
+    .btn-pink { background: linear-gradient(45deg, #ff6b81, #ff4757); }
+    .btn-cyan { background: linear-gradient(45deg, #1abc9c, #16a085); }
+    .btn-teal { background: linear-gradient(45deg, #00cec9, #0984e3); }
+    .btn-lime { background: linear-gradient(45deg, #a3e635, #84cc16); }
+    .btn-orange { background: linear-gradient(45deg, #ffb347, #ff7f50); }
+    .btn-indigo { background: linear-gradient(45deg, #6c5ce7, #341f97); }
+
+    @media (min-width: 600px) {
+      h1 {
+        font-size: 48px;
+      }
+      .link-button {
+        font-size: 24px;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>No Way Out</h1>
-  <button id="createBtn">🟢 방 만들기</button>
-  <button id="joinBtn">🔵 방 참여하기</button>
-  <p id="status"></p>
-
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import {
-      getDatabase, ref, set, update, get
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-    // ✅ Firebase 구성
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
-      authDomain: "number-baseball-aee52.firebaseapp.com",
-      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
-      projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
-      messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:f8e3fcb77f6ddef091a561"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // 🔑 방 ID 생성 (랜덤)
-    function randomCode() {
-      return Math.random().toString(36).substring(2, 8).toUpperCase();
-    }
-
-    // ✅ 방 만들기
-    async function createRoom() {
-      const roomId = randomCode();
-      const now = Date.now();
-      await set(ref(db, "noWayOut/rooms/" + roomId), {
-        createdAt: now,
-        players: {
-          1: true
-        }
-      });
-      localStorage.setItem("roomId", roomId);
-      localStorage.setItem("player", "1");
-      document.getElementById("status").textContent = `방 생성됨: ${roomId}`;
-      setTimeout(() => {
-        window.location.href = `game.html?room=${roomId}&player=1`;
-      }, 1000);
-    }
-
-    // ✅ 방 참여하기
-    async function joinRoom() {
-      const snapshot = await get(ref(db, "noWayOut/rooms"));
-      const rooms = snapshot.val();
-      if (!rooms) return alert("참여 가능한 방이 없습니다. 먼저 방을 만들어주세요.");
-
-      const now = Date.now();
-      let joined = false;
-
-      for (const [roomId, info] of Object.entries(rooms)) {
-        const age = now - info.createdAt;
-        const hasPlayer1 = info.players && info.players[1];
-        const hasPlayer2 = info.players && info.players[2];
-
-        if (age <= 60_000 && hasPlayer1 && !hasPlayer2) {
-          await update(ref(db, "noWayOut/rooms/" + roomId + "/players"), { 2: true });
-          localStorage.setItem("roomId", roomId);
-          localStorage.setItem("player", "2");
-          document.getElementById("status").textContent = `방 참가됨: ${roomId}`;
-          setTimeout(() => {
-            window.location.href = `game.html?room=${roomId}&player=2`;
-          }, 1000);
-          joined = true;
-          break;
-        }
-      }
-
-      if (!joined) {
-        alert("참여 가능한 방이 없습니다. 새로고침 후 다시 시도해주세요.");
-      }
-    }
-
-    // 🎯 버튼 이벤트 연결
-    document.getElementById("createBtn").addEventListener("click", createRoom);
-    document.getElementById("joinBtn").addEventListener("click", joinRoom);
-  </script>
+  <h1>SUNGYONG'S GAME</h1>
+  <div class="button-container">
+    <a class="link-button btn-purple" href="/game/number_baseball/index.html" target="_blank">숫자야구게임</a>
+    <a class="link-button btn-pink" href="/game/omok/index.html" target="_blank">오목게임</a>
+    <a class="link-button btn-cyan" href="/game/bing-go/index.html" target="_blank">빙고게임</a>
+    <a class="link-button btn-teal" href="/game/html-canvas/index.html" target="_blank">스네이크</a>
+    <a class="link-button btn-lime" href="/game/fast-tap/index.html" target="_blank">25까지 빨리누르기</a>
+    <a class="link-button btn-orange" href="/game/slide-number/index.html" target="_blank">슬라이드 넘버 게임</a>
+    <a class="link-button btn-indigo" href="/game/no-way-out/index.html" target="_blank">No Way Out</a>
+  </div>
 </body>
 </html>
