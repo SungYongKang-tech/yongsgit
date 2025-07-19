@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>No Way Out - Game</title>
+  <title>No Way Out - SVG</title>
   <style>
     body {
       font-family: sans-serif;
@@ -20,174 +20,141 @@
       color: #333;
       margin-bottom: 15px;
     }
-    .board {
-      position: relative;
-      width: 300px;
-      height: 300px;
+    .board-container {
+      width: 90vw;
+      max-width: 400px;
       margin: 0 auto;
-      background: #fff;
-      border: 2px solid #555;
-      border-radius: 50%;
-    }
-    .point {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      border: 2px solid #333;
-      position: absolute;
-      top: 0;
-      left: 0;
-      transform: translate(-50%, -50%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      background-color: #f0f0f0;
-      cursor: pointer;
-      z-index: 2;
-    }
-    .point.selected {
-      background-color: #c8e6c9;
-    }
-    .point.available {
-      background-color: #fff59d;
     }
     svg {
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 1;
       width: 100%;
-      height: 100%;
+      height: auto;
+    }
+    .point {
+      cursor: pointer;
+    }
+    .point text {
+      font-size: 16px;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
   <h1>No Way Out</h1>
   <div id="turnInfo">게임 로딩 중...</div>
-  <div class="board" id="board">
-    <svg id="lines"></svg>
+  <div class="board-container">
+    <svg id="gameBoard" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="150" cy="150" r="140" stroke="#555" stroke-width="2" fill="#fff" />
+      <!-- Lines and points will be injected dynamically -->
+    </svg>
   </div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import {
-      getDatabase, ref, set, onValue, get
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
-      authDomain: "number-baseball-aee52.firebaseapp.com",
-      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
-      projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
-      messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:f8e3fcb77f6ddef091a561"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    const roomId = localStorage.getItem("roomId");
-    const playerNum = localStorage.getItem("player");
-    const symbol = playerNum === "1" ? "⬛" : "⚪";
-    const boardEl = document.getElementById("board");
-    const linesEl = document.getElementById("lines");
-    const turnInfo = document.getElementById("turnInfo");
-
- const positions = [
-  { top: 20, left: 60 },   // 0
-  { top: 20, left: 150 },  // 1
-  { top: 20, left: 240 },  // 2
-  { top: 70, left: 150 },  // 3 (unused)
-  { top: 100, left: 150 }, // 4
-  { top: 130, left: 60 },  // 5
-  { top: 130, left: 150 }, // 6
-  { top: 130, left: 240 }, // 7
-  { top: 160, left: 150 }, // 8
-  { top: 200, left: 60 },  // 9
-  { top: 200, left: 150 }, // 10
-  { top: 200, left: 240 }  // 11
-];
-
-const adjacency = {
-  0: [1],
-  1: [0, 2, 4],
-  2: [1],
-  4: [1, 6],
-  5: [6],
-  6: [5, 4, 7, 8],
-  7: [6],
-  8: [6, 10],
-  9: [10],
-  10: [9, 11, 8],
-  11: [10]
-};
-
-const state = [
-  "⬛", "⬛", "⬛", "", "", "", "", "", "",  // 0~8
-  "⚪", "⚪", "⚪"                          // 9~11
-];
-
+  <script>
+    const svg = document.getElementById("gameBoard");
+    const symbol = "⬛"; // 기본 심볼 (나중에 localStorage 등으로 바꾸세요)
     let selected = null;
 
-   function drawLines() {
-      linesEl.innerHTML = "";
+    const positions = [
+      { x: 50, y: 30 },   // 0
+      { x: 150, y: 30 },  // 1
+      { x: 250, y: 30 },  // 2
+      { x: 150, y: 80 },  // 3 (unused)
+      { x: 150, y: 110 }, // 4
+      { x: 50, y: 140 },  // 5
+      { x: 150, y: 140 }, // 6
+      { x: 250, y: 140 }, // 7
+      { x: 150, y: 170 }, // 8
+      { x: 50, y: 210 },  // 9
+      { x: 150, y: 210 }, // 10
+      { x: 250, y: 210 }  // 11
+    ];
+
+    const adjacency = {
+      0: [1],
+      1: [0, 2, 4],
+      2: [1],
+      4: [1, 6],
+      5: [6],
+      6: [5, 4, 7, 8],
+      7: [6],
+      8: [6, 10],
+      9: [10],
+      10: [9, 11, 8],
+      11: [10]
+    };
+
+    const state = [
+      "⬛", "⬛", "⬛", "", "", "", "", "", "",  // 0~8
+      "⚪", "⚪", "⚪"                          // 9~11
+    ];
+
+    function drawBoard() {
+      svg.innerHTML = '<circle cx="150" cy="150" r="140" stroke="#555" stroke-width="2" fill="#fff" />';
+      drawLines();
+      drawPoints();
+    }
+
+    function drawLines() {
       const drawn = new Set();
       for (const [from, toList] of Object.entries(adjacency)) {
         const p1 = positions[from];
-        for (const to of toList) {
+        toList.forEach(to => {
           const key = [Math.min(from, to), Math.max(from, to)].join("-");
-          if (drawn.has(key)) continue;
+          if (drawn.has(key)) return;
           drawn.add(key);
 
           const p2 = positions[to];
           const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute("x1", p1.left + 15);
-          line.setAttribute("y1", p1.top + 15);
-          line.setAttribute("x2", p2.left + 15);
-          line.setAttribute("y2", p2.top + 15);
-          line.setAttribute("stroke", "#444");
+          line.setAttribute("x1", p1.x);
+          line.setAttribute("y1", p1.y);
+          line.setAttribute("x2", p2.x);
+          line.setAttribute("y2", p2.y);
+          line.setAttribute("stroke", "#888");
           line.setAttribute("stroke-width", "2");
-          linesEl.appendChild(line);
-        }
+          svg.appendChild(line);
+        });
       }
     }
 
-    function renderBoard() {
-      boardEl.querySelectorAll(".point").forEach(p => p.remove());
-      positions.forEach((pos, idx) => {
-        const div = document.createElement("div");
-        div.className = "point";
-        div.style.top = pos.top + "px";
-        div.style.left = pos.left + "px";
-        div.textContent = state[idx];
+    function drawPoints() {
+      positions.forEach((pos, i) => {
+        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        group.setAttribute("class", "point");
+        group.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
 
-        if (idx === selected) div.classList.add("selected");
-        if (selected !== null && state[selected] === symbol && state[idx] === "" && adjacency[selected]?.includes(idx)) {
-          div.classList.add("available");
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("r", 12);
+        circle.setAttribute("fill", selected === i ? "#c8e6c9" : state[i] ? "#fff" : "#f0f0f0");
+        circle.setAttribute("stroke", "#333");
+        circle.setAttribute("stroke-width", "2");
+        group.appendChild(circle);
+
+        if (state[i]) {
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("text-anchor", "middle");
+          text.setAttribute("dy", "5");
+          text.textContent = state[i];
+          group.appendChild(text);
         }
 
-        div.onclick = () => handleClick(idx);
-        boardEl.appendChild(div);
+        group.addEventListener("click", () => handleClick(i));
+        svg.appendChild(group);
       });
     }
 
-    function handleClick(idx) {
-      if (selected === null && state[idx] === symbol) {
-        selected = idx;
-      } else if (selected !== null && state[idx] === "" && adjacency[selected]?.includes(idx)) {
-        state[idx] = symbol;
+    function handleClick(i) {
+      if (selected === null && state[i] === symbol) {
+        selected = i;
+      } else if (selected !== null && state[i] === "" && adjacency[selected]?.includes(i)) {
+        state[i] = symbol;
         state[selected] = "";
         selected = null;
       } else {
         selected = null;
       }
-      renderBoard();
+      drawBoard();
     }
 
-    drawLines();
-    renderBoard();
+    drawBoard();
   </script>
 </body>
 </html>
