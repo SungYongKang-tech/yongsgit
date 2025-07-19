@@ -2,19 +2,12 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>No Way Out - game.html</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>No Way Out - Game</title>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: sans-serif;
-      background: #f7f9fa;
-      text-align: center;
-    }
-    h1 {
-      margin: 20px 0;
-    }
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; padding: 20px; }
+    h1 { font-size: 2rem; margin-bottom: 10px; }
+    #turnInfo { font-weight: bold; color: #333; margin-bottom: 15px; }
     .board {
       position: relative;
       width: 300px;
@@ -43,75 +36,114 @@
 </head>
 <body>
   <h1>No Way Out</h1>
+  <div id="turnInfo">게임 로딩 중...</div>
   <div class="board" id="board"></div>
 
-  <script>
-    const board = document.getElementById("board");
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import {
+      getDatabase, ref, set, onValue, get
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.appspot.com",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:f8e3fcb77f6ddef091a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const roomId = localStorage.getItem("roomId");
+    const playerNum = localStorage.getItem("player");
+    const symbol = playerNum === "1" ? "⬛" : "⚪";
+    const boardEl = document.getElementById("board");
+    const turnInfo = document.getElementById("turnInfo");
+
     const positions = [
-      { top: 20, left: 20 },   // 0
-      { top: 20, left: 135 },  // 1
-      { top: 20, left: 250 },  // 2
-      { top: 100, left: 80 },  // 3
-      { top: 100, left: 135 }, // 4
-      { top: 100, left: 190 }, // 5
-      { top: 200, left: 20 },  // 6
-      { top: 200, left: 135 }, // 7
-      { top: 200, left: 250 }, // 8
-      { top: 300, left: 50 },  // 9
-      { top: 300, left: 220 }  // 10
+      { top: 20, left: 20 }, { top: 20, left: 135 }, { top: 20, left: 250 },
+      { top: 100, left: 80 }, { top: 100, left: 135 }, { top: 100, left: 190 },
+      { top: 200, left: 20 }, { top: 200, left: 135 }, { top: 200, left: 250 },
+      { top: 300, left: 50 }, { top: 300, left: 220 }
     ];
 
     const adjacency = {
-      0: [1],
-      1: [0, 2, 4],
-      2: [1],
-      3: [4],
-      4: [1, 3, 5, 7],
-      5: [4],
-      6: [7],
-      7: [4, 6, 8],
-      8: [7],
-      9: [6],
-      10: [8]
+      0: [1], 1: [0, 2, 4], 2: [1], 3: [4],
+      4: [1, 3, 5, 7], 5: [4], 6: [7],
+      7: [4, 6, 8], 8: [7], 9: [6], 10: [8]
     };
 
-    let state = Array(11).fill("");
-    state[0] = state[1] = state[2] = "⚪";
-    state[6] = state[7] = state[8] = "⬛";
-    let currentPlayer = "⬛";
-    let selectedIdx = null;
+    let selected = null;
+    let currentBoard = [];
 
-    function render() {
-      board.innerHTML = "";
-      positions.forEach((pos, idx) => {
-        const div = document.createElement("div");
-        div.className = "point";
-        if (idx === selectedIdx) div.classList.add("selected");
-        div.style.top = pos.top + "px";
-        div.style.left = pos.left + "px";
-        div.textContent = state[idx];
-        div.onclick = () => handleClick(idx);
-        board.appendChild(div);
-      });
-    }
-
-    function handleClick(idx) {
-      if (state[idx] === currentPlayer) {
-        selectedIdx = idx;
-        render();
-      } else if (state[idx] === "" && selectedIdx !== null && adjacency[selectedIdx].includes(idx)) {
-        state[idx] = currentPlayer;
-        state[selectedIdx] = "";
-        selectedIdx = null;
-        currentPlayer = currentPlayer === "⬛" ? "⚪" : "⬛";
-        render();
-      } else {
-        selectedIdx = null;
-        render();
+    async function initBoard() {
+      const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
+      const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
+      const snapshot = await get(boardRef);
+      if (!snapshot.exists()) {
+        const defaultBoard = ["⚪", "⚪", "⚪", "", "", "", "⬛", "⬛", "⬛", "", ""];
+        await set(boardRef, defaultBoard);
+        await set(turnRef, "1");
       }
     }
 
-    render();
+    function renderBoard(board, turn) {
+      boardEl.innerHTML = "";
+      turnInfo.textContent = `Player ${turn}의 차례`;
+
+      positions.forEach((pos, idx) => {
+        const div = document.createElement("div");
+        div.className = "point";
+        if (idx === selected) div.classList.add("selected");
+        div.style.top = pos.top + "px";
+        div.style.left = pos.left + "px";
+        div.textContent = board[idx];
+        div.onclick = () => handleClick(idx, board[idx], turn);
+        boardEl.appendChild(div);
+      });
+
+      currentBoard = board;
+    }
+
+    async function handleClick(idx, val, turn) {
+      if (turn !== playerNum) return;
+      const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
+      const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
+
+      if (selected === null && val === symbol) {
+        selected = idx;
+        renderBoard(currentBoard, turn);
+      } else if (selected !== null && val === "" && adjacency[selected]?.includes(idx)) {
+        const newBoard = [...currentBoard];
+        newBoard[idx] = symbol;
+        newBoard[selected] = "";
+        selected = null;
+
+        await set(boardRef, newBoard);
+        await set(turnRef, playerNum === "1" ? "2" : "1");
+      } else {
+        selected = null;
+        renderBoard(currentBoard, turn);
+      }
+    }
+
+    onValue(ref(db, `noWayOut/rooms/${roomId}/board`), snapshot => {
+      if (snapshot.exists()) {
+        currentBoard = snapshot.val();
+      }
+    });
+
+    onValue(ref(db, `noWayOut/rooms/${roomId}/turn`), snapshot => {
+      if (snapshot.exists()) {
+        renderBoard(currentBoard, snapshot.val());
+      }
+    });
+
+    initBoard();
   </script>
 </body>
 </html>
