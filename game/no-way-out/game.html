@@ -2,8 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>No Way Out - SVG</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>No Way Out</title>
   <style>
     body {
       font-family: sans-serif;
@@ -17,144 +17,151 @@
     }
     #turnInfo {
       font-weight: bold;
-      color: #333;
       margin-bottom: 15px;
     }
-    .board-container {
-      width: 90vw;
-      max-width: 400px;
+    .board {
+      position: relative;
+      width: 90vmin;
+      height: 90vmin;
       margin: 0 auto;
-    }
-    svg {
-      width: 100%;
-      height: auto;
+      background: #fff;
+      border: 4px solid #555;
+      border-radius: 50%;
     }
     .point {
+      r: 3.2vmin;
+      stroke: #333;
+      stroke-width: 1.2;
+      fill: white;
       cursor: pointer;
     }
-    .point text {
-      font-size: 16px;
-      pointer-events: none;
+    .point.black {
+      fill: #333;
+    }
+    .point.white {
+      fill: #e0d0f0;
+    }
+    .point.highlight {
+      stroke: #00bcd4;
+      stroke-width: 4;
     }
   </style>
 </head>
 <body>
   <h1>No Way Out</h1>
   <div id="turnInfo">게임 로딩 중...</div>
-  <div class="board-container">
-    <svg id="gameBoard" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="150" cy="150" r="140" stroke="#555" stroke-width="2" fill="#fff" />
-      <!-- Lines and points will be injected dynamically -->
-    </svg>
-  </div>
+  <svg class="board" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="48" stroke="#333" stroke-width="2" fill="white" />
+    <g id="lines"></g>
+    <g id="pieces"></g>
+  </svg>
 
   <script>
-    const svg = document.getElementById("gameBoard");
-    const symbol = "⬛"; // 기본 심볼 (나중에 localStorage 등으로 바꾸세요)
-    let selected = null;
+    const board = document.querySelector(".board");
+    const lines = document.getElementById("lines");
+    const pieces = document.getElementById("pieces");
+    const turnInfo = document.getElementById("turnInfo");
 
     const positions = [
-      { x: 50, y: 30 },   // 0
-      { x: 150, y: 30 },  // 1
-      { x: 250, y: 30 },  // 2
-      { x: 150, y: 80 },  // 3 (unused)
-      { x: 150, y: 110 }, // 4
-      { x: 50, y: 140 },  // 5
-      { x: 150, y: 140 }, // 6
-      { x: 250, y: 140 }, // 7
-      { x: 150, y: 170 }, // 8
-      { x: 50, y: 210 },  // 9
-      { x: 150, y: 210 }, // 10
-      { x: 250, y: 210 }  // 11
+      { x: 20, y: 10 }, // 0
+      { x: 50, y: 10 }, // 1
+      { x: 80, y: 10 }, // 2
+      { x: 50, y: 25 }, // 3
+      { x: 50, y: 40 }, // 4
+      { x: 20, y: 50 }, // 5
+      { x: 50, y: 50 }, // 6
+      { x: 80, y: 50 }, // 7
+      { x: 50, y: 60 }, // 8
+      { x: 20, y: 90 }, // 9
+      { x: 50, y: 90 }, // 10
+      { x: 80, y: 90 }  // 11
     ];
 
     const adjacency = {
-      0: [1],
-      1: [0, 2, 4],
-      2: [1],
+      0: [1], 1: [0, 2, 4], 2: [1],
       4: [1, 6],
-      5: [6],
-      6: [5, 4, 7, 8],
-      7: [6],
+      5: [6], 6: [5, 4, 7, 8], 7: [6],
       8: [6, 10],
-      9: [10],
-      10: [9, 11, 8],
-      11: [10]
+      9: [10], 10: [9, 11, 8], 11: [10],
+      // Diagonal connections:
+      0: [...(0 in adjacency ? adjacency[0] : []), 6],
+      2: [...(2 in adjacency ? adjacency[2] : []), 6],
+      5: [...(5 in adjacency ? adjacency[5] : []), 10],
+      7: [...(7 in adjacency ? adjacency[7] : []), 10],
     };
 
-    const state = [
-      "⬛", "⬛", "⬛", "", "", "", "", "", "",  // 0~8
-      "⚪", "⚪", "⚪"                          // 9~11
-    ];
-
-    function drawBoard() {
-      svg.innerHTML = '<circle cx="150" cy="150" r="140" stroke="#555" stroke-width="2" fill="#fff" />';
-      drawLines();
-      drawPoints();
-    }
+    let state = ["⬛", "⬛", "⬛", "", "", "", "", "", "", "⚪", "⚪", "⚪"];
+    let selected = null;
+    const symbol = "⬛"; // 예시용, 실제 게임에서는 턴에 따라 바뀜
 
     function drawLines() {
+      lines.innerHTML = "";
       const drawn = new Set();
-      for (const [from, toList] of Object.entries(adjacency)) {
-        const p1 = positions[from];
-        toList.forEach(to => {
+      for (const [from, tos] of Object.entries(adjacency)) {
+        tos.forEach(to => {
           const key = [Math.min(from, to), Math.max(from, to)].join("-");
           if (drawn.has(key)) return;
           drawn.add(key);
-
+          const p1 = positions[from];
           const p2 = positions[to];
           const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
           line.setAttribute("x1", p1.x);
           line.setAttribute("y1", p1.y);
           line.setAttribute("x2", p2.x);
           line.setAttribute("y2", p2.y);
-          line.setAttribute("stroke", "#888");
-          line.setAttribute("stroke-width", "2");
-          svg.appendChild(line);
+          line.setAttribute("stroke", "#999");
+          line.setAttribute("stroke-width", "1.5");
+          lines.appendChild(line);
         });
       }
     }
 
-    function drawPoints() {
-      positions.forEach((pos, i) => {
-        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        group.setAttribute("class", "point");
-        group.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+    function drawPieces() {
+      pieces.innerHTML = "";
+      positions.forEach((pos, idx) => {
+        const piece = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        piece.setAttribute("cx", pos.x);
+        piece.setAttribute("cy", pos.y);
+        piece.setAttribute("class", "point");
+        piece.setAttribute("data-idx", idx);
 
-        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("r", 12);
-        circle.setAttribute("fill", selected === i ? "#c8e6c9" : state[i] ? "#fff" : "#f0f0f0");
-        circle.setAttribute("stroke", "#333");
-        circle.setAttribute("stroke-width", "2");
-        group.appendChild(circle);
+        if (state[idx] === "⬛") piece.classList.add("black");
+        else if (state[idx] === "⚪") piece.classList.add("white");
 
-        if (state[i]) {
-          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          text.setAttribute("text-anchor", "middle");
-          text.setAttribute("dy", "5");
-          text.textContent = state[i];
-          group.appendChild(text);
-        }
+        if (selected === idx) piece.classList.add("highlight");
+        else if (
+          selected !== null &&
+          state[selected] === symbol &&
+          state[idx] === "" &&
+          adjacency[selected]?.includes(idx)
+        ) piece.classList.add("highlight");
 
-        group.addEventListener("click", () => handleClick(i));
-        svg.appendChild(group);
+        piece.addEventListener("click", () => handleClick(idx));
+        pieces.appendChild(piece);
       });
     }
 
-    function handleClick(i) {
-      if (selected === null && state[i] === symbol) {
-        selected = i;
-      } else if (selected !== null && state[i] === "" && adjacency[selected]?.includes(i)) {
-        state[i] = symbol;
+    function handleClick(idx) {
+      if (selected === null && state[idx] === symbol) {
+        selected = idx;
+      } else if (
+        selected !== null &&
+        state[selected] === symbol &&
+        state[idx] === "" &&
+        adjacency[selected]?.includes(idx)
+      ) {
+        state[idx] = symbol;
         state[selected] = "";
         selected = null;
       } else {
         selected = null;
       }
-      drawBoard();
+      drawPieces();
     }
 
-    drawBoard();
+    drawLines();
+    drawPieces();
+    turnInfo.textContent = "게임 시작됨...";
   </script>
 </body>
 </html>
