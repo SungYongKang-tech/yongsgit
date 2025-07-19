@@ -95,47 +95,41 @@
     const linesEl = document.getElementById("lines");
     const turnInfo = document.getElementById("turnInfo");
 
-const positions = [
-  { top: 50, left: 75 },   // 0: ⚪ 왼쪽
-  { top: 30, left: 150 },  // 1: ⚪ 가운데
-  { top: 50, left: 225 },  // 2: ⚪ 오른쪽
-  { top: 250, left: 75 },  // 3: ⬛ 왼쪽
-  { top: 270, left: 150 }, // 4: ⬛ 가운데
-  { top: 250, left: 225 }, // 5: ⬛ 오른쪽
-  { top: 150, left: 150 }  // 6: 중심 원 중심
-];
-
+    const positions = [
+      { top: 20, left: 60 },   // 0
+      { top: 20, left: 150 },  // 1
+      { top: 20, left: 240 },  // 2
+      { top: 80, left: 150 },  // 3 (사용하지 않음)
+      { top: 110, left: 150 }, // 4
+      { top: 140, left: 60 },  // 5
+      { top: 140, left: 150 }, // 6
+      { top: 140, left: 240 }, // 7
+      { top: 170, left: 150 }, // 8
+      { top: 220, left: 60 },  // 9
+      { top: 220, left: 150 }, // 10
+      { top: 220, left: 240 }  // 11
+    ];
 
     const adjacency = {
-  0: [1, 6],
-  1: [0, 2, 6],
-  2: [1, 6],
-  3: [4, 6],
-  4: [3, 5, 6],
-  5: [4, 6],
-  6: [0, 1, 2, 3, 4, 5]  // 중심점은 모든 바깥점과 연결
-};
+      0: [1],
+      1: [0, 2, 4],
+      2: [1],
+      4: [1, 6, 5, 7],
+      5: [4, 6],
+      6: [5, 4, 8, 7],
+      7: [6, 4, 8],
+      8: [6, 7, 10],
+      9: [10],
+      10: [9, 11, 8],
+      11: [10]
+    };
 
-
-
+    const state = ["⚪", "⚪", "⚪", "", "⬛", "⬛", "⬛", "", "", "", "", ""];
     let selected = null;
-    let currentBoard = [];
 
-    async function initBoard() {
-      const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
-      const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
-      const snapshot = await get(boardRef);
-      if (!snapshot.exists()) {
-        const defaultBoard = ["⚪", "⚪", "⚪", "", "⬛", "⬛", "⬛"];
-        await set(boardRef, defaultBoard);
-        await set(turnRef, "1");
-      }
-    }
-
-    function drawLines() {
+   function drawLines() {
       linesEl.innerHTML = "";
       const drawn = new Set();
-
       for (const [from, toList] of Object.entries(adjacency)) {
         const p1 = positions[from];
         for (const to of toList) {
@@ -149,75 +143,47 @@ const positions = [
           line.setAttribute("y1", p1.top + 15);
           line.setAttribute("x2", p2.left + 15);
           line.setAttribute("y2", p2.top + 15);
-          line.setAttribute("stroke", "#666");        // 더 진한 회색
-          line.setAttribute("stroke-width", "3");     // 굵기 증가
-
+          line.setAttribute("stroke", "#444");
+          line.setAttribute("stroke-width", "2");
           linesEl.appendChild(line);
         }
       }
     }
 
-    function renderBoard(board, turn) {
+    function renderBoard() {
       boardEl.querySelectorAll(".point").forEach(p => p.remove());
-      turnInfo.textContent = `Player ${turn}의 차례`;
-
       positions.forEach((pos, idx) => {
         const div = document.createElement("div");
         div.className = "point";
         div.style.top = pos.top + "px";
         div.style.left = pos.left + "px";
-        div.textContent = board[idx];
+        div.textContent = state[idx];
 
         if (idx === selected) div.classList.add("selected");
-
-        if (selected !== null && board[selected] === symbol && board[idx] === "" && adjacency[selected]?.includes(idx)) {
+        if (selected !== null && state[selected] === symbol && state[idx] === "" && adjacency[selected]?.includes(idx)) {
           div.classList.add("available");
         }
 
-        div.onclick = () => handleClick(idx, board[idx], turn);
+        div.onclick = () => handleClick(idx);
         boardEl.appendChild(div);
       });
-
-      currentBoard = board;
     }
 
-    async function handleClick(idx, val, turn) {
-      if (turn !== playerNum) return;
-
-      const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
-      const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
-
-      if (selected === null && val === symbol) {
+    function handleClick(idx) {
+      if (selected === null && state[idx] === symbol) {
         selected = idx;
-        renderBoard(currentBoard, turn);
-      } else if (selected !== null && val === "" && adjacency[selected]?.includes(idx)) {
-        const newBoard = [...currentBoard];
-        newBoard[idx] = symbol;
-        newBoard[selected] = "";
+      } else if (selected !== null && state[idx] === "" && adjacency[selected]?.includes(idx)) {
+        state[idx] = symbol;
+        state[selected] = "";
         selected = null;
-
-        await set(boardRef, newBoard);
-        await set(turnRef, playerNum === "1" ? "2" : "1");
       } else {
         selected = null;
-        renderBoard(currentBoard, turn);
       }
+      renderBoard();
     }
 
-    onValue(ref(db, `noWayOut/rooms/${roomId}/board`), snapshot => {
-      if (snapshot.exists()) {
-        currentBoard = snapshot.val();
-      }
-    });
-
-    onValue(ref(db, `noWayOut/rooms/${roomId}/turn`), snapshot => {
-      if (snapshot.exists()) {
-        renderBoard(currentBoard, snapshot.val());
-      }
-    });
-
-    initBoard();
     drawLines();
+    renderBoard();
   </script>
 </body>
 </html>
