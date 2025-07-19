@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>No Way Out - Game</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; padding: 20px; }
+    h1 { font-size: 2rem; margin-bottom: 10px; }
+    #turnInfo { font-weight: bold; color: #333; margin-bottom: 15px; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 80px);
+      gap: 10px;
+      justify-content: center;
+      margin: 0 auto;
+    }
+    .cell {
+      width: 80px;
+      height: 80px;
+      font-size: 40px;
+      background: white;
+      border: 2px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>No Way Out</h1>
+  <div id="turnInfo">게임 로딩 중...</div>
+  <div class="board" id="board"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import {
+      getDatabase, ref, set, onValue, update, get
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.appspot.com",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:f8e3fcb77f6ddef091a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const roomId = localStorage.getItem("roomId");
+    const playerNum = localStorage.getItem("player");
+    const symbol = playerNum === "1" ? "⬛" : "⚪";
+    const opponent = playerNum === "1" ? "⚪" : "⬛";
+
+    const boardEl = document.getElementById("board");
+    const turnInfo = document.getElementById("turnInfo");
+
+    const cellAdjacency = {
+      0: [1, 3],
+      1: [0, 2, 4],
+      2: [1, 5],
+      3: [0, 4, 6],
+      4: [1, 3, 5, 7],
+      5: [2, 4, 8],
+      6: [3, 7],
+      7: [4, 6, 8],
+      8: [5, 7]
+    };
+
+    let selected = null;
+    let currentBoard = [];
+
+    async function initBoard() {
+      const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
+      const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
+      const snapshot = await get(boardRef);
+      if (!snapshot.exists()) {
+        const defaultBoard = ["⬛", "⬛", "⬛", "", "", "", "⚪", "⚪", "⚪"];
+        await set(boardRef, defaultBoard);
+        await set(turnRef, "1");
+      }
+    }
+
+    function renderBoard(board, turn) {
+      boardEl.innerHTML = "";
+      turnInfo.textContent = `Player ${turn}의 차례`;
+      currentBoard = board;
+
+      board.forEach((val, idx) => {
+        const div = document.createElement("div");
+        div.className = "cell";
+        div.textContent = val;
+
+        div.onclick = () => handleClick(idx, val, turn);
+        boardEl.appendChild(div);
+      });
+    }
+
+    async function handleClick(idx, val, turn) {
+      if (turn !== playerNum) return;
+      const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
+      const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
+
+      if (selected === null) {
+        if (val === symbol) {
+          selected = idx;
+          boardEl.children[idx].style.backgroundColor = "#c8e6c9";
+        }
+      } else {
+        if (val === "" && cellAdjacency[selected].includes(idx)) {
+          // move
+          const newBoard = [...currentBoard];
+          newBoard[idx] = symbol;
+          newBoard[selected] = "";
+          selected = null;
+
+          await update(boardRef, newBoard);
+          await set(boardRef, newBoard);
+          await set(turnRef, playerNum === "1" ? "2" : "1");
+        } else {
+          selected = null;
+          renderBoard(currentBoard, turn);
+        }
+      }
+    }
+
+    onValue(ref(db, `noWayOut/rooms/${roomId}/board`), (snapshot) => {
+      if (snapshot.exists()) {
+        currentBoard = snapshot.val();
+      }
+    });
+
+    onValue(ref(db, `noWayOut/rooms/${roomId}/turn`), (snapshot) => {
+      if (snapshot.exists()) {
+        const turn = snapshot.val();
+        renderBoard(currentBoard, turn);
+      }
+    });
+
+    initBoard();
+  </script>
+</body>
+</html>
