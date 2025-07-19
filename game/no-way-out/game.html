@@ -28,16 +28,26 @@
       font-size: 20px;
       background-color: #f0f0f0;
       cursor: pointer;
+      z-index: 2;
     }
-    .point.selected {
-      background-color: #d0f0d0;
+    .point.selected { background-color: #c8e6c9; }
+    .point.available { background-color: #fff59d; }
+    svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
     }
   </style>
 </head>
 <body>
   <h1>No Way Out</h1>
   <div id="turnInfo">게임 로딩 중...</div>
-  <div class="board" id="board"></div>
+  <div class="board" id="board">
+    <svg id="lines"></svg>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -62,6 +72,7 @@
     const playerNum = localStorage.getItem("player");
     const symbol = playerNum === "1" ? "⬛" : "⚪";
     const boardEl = document.getElementById("board");
+    const linesEl = document.getElementById("lines");
     const turnInfo = document.getElementById("turnInfo");
 
     const positions = [
@@ -73,8 +84,8 @@
 
     const adjacency = {
       0: [1], 1: [0, 2, 4], 2: [1], 3: [4],
-      4: [1, 3, 5, 7], 5: [4], 6: [7],
-      7: [4, 6, 8], 8: [7], 9: [6], 10: [8]
+      4: [1, 3, 5, 7], 5: [4], 6: [7], 7: [4, 6, 8],
+      8: [7], 9: [6], 10: [8]
     };
 
     let selected = null;
@@ -91,17 +102,41 @@
       }
     }
 
+    function drawLines() {
+      linesEl.innerHTML = "";
+      for (const [from, toList] of Object.entries(adjacency)) {
+        const p1 = positions[from];
+        for (const to of toList) {
+          const p2 = positions[to];
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", p1.left + 15);
+          line.setAttribute("y1", p1.top + 15);
+          line.setAttribute("x2", p2.left + 15);
+          line.setAttribute("y2", p2.top + 15);
+          line.setAttribute("stroke", "#aaa");
+          line.setAttribute("stroke-width", "2");
+          linesEl.appendChild(line);
+        }
+      }
+    }
+
     function renderBoard(board, turn) {
-      boardEl.innerHTML = "";
+      boardEl.querySelectorAll(".point").forEach(p => p.remove());
       turnInfo.textContent = `Player ${turn}의 차례`;
 
       positions.forEach((pos, idx) => {
         const div = document.createElement("div");
         div.className = "point";
-        if (idx === selected) div.classList.add("selected");
         div.style.top = pos.top + "px";
         div.style.left = pos.left + "px";
         div.textContent = board[idx];
+
+        if (idx === selected) div.classList.add("selected");
+
+        if (selected !== null && board[selected] === symbol && board[idx] === "" && adjacency[selected]?.includes(idx)) {
+          div.classList.add("available");
+        }
+
         div.onclick = () => handleClick(idx, board[idx], turn);
         boardEl.appendChild(div);
       });
@@ -111,6 +146,7 @@
 
     async function handleClick(idx, val, turn) {
       if (turn !== playerNum) return;
+
       const boardRef = ref(db, `noWayOut/rooms/${roomId}/board`);
       const turnRef = ref(db, `noWayOut/rooms/${roomId}/turn`);
 
@@ -144,6 +180,7 @@
     });
 
     initBoard();
+    drawLines();
   </script>
 </body>
 </html>
