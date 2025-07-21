@@ -39,6 +39,7 @@
 </head>
 <body>
   <div id="turn">게임 로딩 중...</div>
+  <button id="resetBtn">🔄 게임 초기화</button>
   <svg viewBox="0 0 100 100" id="board">
     <!-- 보드선 -->
     <line x1="30" y1="10" x2="70" y2="10" />
@@ -49,7 +50,7 @@
     <line x1="30" y1="50" x2="70" y2="50" />
   </svg>
 
-  <script type="module">
+   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
       getDatabase, ref, onValue, set, update
@@ -68,76 +69,62 @@
     const db = getDatabase(app);
     const gameRef = ref(db, 'games/no-way-out');
 
+    const svg = document.getElementById("board");
+    const turnInfo = document.getElementById("turn");
+    const resetBtn = document.getElementById("resetBtn");
+
     const positions = [
-      { x: 30, y: 10 }, // 0
-      { x: 50, y: 10 }, // 1
-      { x: 70, y: 10 }, // 2
-      { x: 50, y: 30 }, // 3
-      { x: 30, y: 50 }, // 4
-      { x: 50, y: 50 }, // 5 (중앙)
-      { x: 70, y: 50 }, // 6
-      { x: 50, y: 70 }, // 7
-      { x: 30, y: 90 }, // 8
-      { x: 50, y: 90 }, // 9
-      { x: 70, y: 90 }, // 10
+      { x: 30, y: 10 }, { x: 50, y: 10 }, { x: 70, y: 10 },
+      { x: 50, y: 30 }, { x: 30, y: 50 }, { x: 50, y: 50 },
+      { x: 70, y: 50 }, { x: 50, y: 70 },
+      { x: 30, y: 90 }, { x: 50, y: 90 }, { x: 70, y: 90 },
     ];
 
     const adjacency = {
-  0: [1],
-  1: [0, 2, 3],
-  2: [1],
-  3: [1, 5, 6],     // B2 → 중앙(C2), 원 하단(D2)
-  4: [5, 6],        // 좌(C1) ↔ 중앙(C2) ↔ 우(C3)
-  5: [3, 4, 6, 7],  // 중심점
-  6: [4, 5, 3],     // 우(C3) ↔ 중앙(C2) ↔ 상단(B2)
-  7: [5, 9, 4],     // 하단(D2) ↔ 중앙(C2) ↔ 좌(C1)
-  8: [9],
-  9: [7, 8, 10],
-  10: [9],
-};
-
-
-    const svg = document.getElementById("board");
-    const turnInfo = document.getElementById("turn");
+      0: [1],
+      1: [0, 2, 3],
+      2: [1],
+      3: [1, 5, 6],
+      4: [5, 6],
+      5: [3, 4, 6, 7],
+      6: [4, 5, 3],
+      7: [5, 9, 4],
+      8: [9],
+      9: [7, 8, 10],
+      10: [9],
+    };
 
     let selected = null;
 
-   function draw(state, turn, winner) {
-  svg.querySelectorAll(".piece").forEach(e => e.remove());
+    function draw(state, turn, winner) {
+      svg.querySelectorAll(".piece").forEach(e => e.remove());
+      positions.forEach((pos, idx) => {
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", pos.x);
+        c.setAttribute("cy", pos.y);
+        c.setAttribute("r", 3);
+        c.setAttribute("class", "point piece");
+        c.dataset.idx = idx;
 
-  positions.forEach((pos, idx) => {
-    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    c.setAttribute("cx", pos.x);
-    c.setAttribute("cy", pos.y);
-    c.setAttribute("r", 3);
-    c.setAttribute("class", "point piece");
-    c.dataset.idx = idx;
+        if (state[idx] === "⬛") c.classList.add("black");
+        else if (state[idx] === "⚪") c.classList.add("white");
 
-    if (state[idx] === "⬛") c.classList.add("black");
-    else if (state[idx] === "⚪") c.classList.add("white");
+        if (selected === idx) c.classList.add("highlight");
+        else if (
+          selected !== null &&
+          state[selected] === turn &&
+          state[idx] === "" &&
+          adjacency[selected]?.includes(idx)
+        ) c.classList.add("highlight");
 
-    if (selected === idx) c.classList.add("highlight");
-    else if (
-      selected !== null &&
-      state[selected] === turn &&
-      state[idx] === "" &&
-      adjacency[selected]?.includes(idx)
-    ) {
-      c.classList.add("highlight");
+        c.addEventListener("click", () => handleClick(idx, state, turn, winner));
+        svg.appendChild(c);
+      });
+
+      turnInfo.textContent = winner
+        ? `게임 종료! 승자: ${winner}`
+        : `현재 턴: ${turn}`;
     }
-
-    // 반드시 클릭 리스너 추가
-    c.addEventListener("click", () => handleClick(idx, state, turn, winner));
-
-    // SVG 제일 위에 추가 (선보다 위)
-    svg.appendChild(c);
-  });
-
-  turnInfo.textContent = winner
-    ? `게임 종료! 승자: ${winner}`
-    : `현재 턴: ${turn}`;
-}
-
 
     function handleClick(idx, state, turn, winner) {
       if (winner) return;
@@ -154,8 +141,7 @@
         newState[selected] = "";
         const nextTurn = turn === "⬛" ? "⚪" : "⬛";
         const blocked = !newState.some((val, i) =>
-          val === nextTurn &&
-          adjacency[i]?.some(j => newState[j] === "")
+          val === nextTurn && adjacency[i]?.some(j => newState[j] === "")
         );
         update(gameRef, {
           positions: newState,
@@ -168,18 +154,26 @@
       }
     }
 
-    // Firebase 초기값 세팅
     onValue(gameRef, (snap) => {
       const data = snap.val();
       if (data) {
         draw(data.positions, data.turn, data.winner);
       } else {
-        set(gameRef, {
-          positions: ["⬛", "⬛", "⬛", "", "", "", "", "", "⚪", "⚪", "⚪"],
-          turn: "⬛",
-          winner: ""
-        });
+        resetGame();
       }
+    });
+
+    function resetGame() {
+      set(gameRef, {
+        positions: ["⬛", "⬛", "⬛", "", "", "", "", "", "⚪", "⚪", "⚪"],
+        turn: "⬛",
+        winner: ""
+      });
+      selected = null;
+    }
+
+    resetBtn.addEventListener("click", () => {
+      if (confirm("게임을 초기화할까요?")) resetGame();
     });
   </script>
 </body>
