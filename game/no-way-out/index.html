@@ -3,49 +3,56 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>No Way Out - Lobby</title>
+  <title>No Way Out (Firebase)</title>
   <style>
     body {
+      margin: 0;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 10px;
       font-family: sans-serif;
-      text-align: center;
-      margin-top: 50px;
-      background: linear-gradient(135deg, #f0f8ff, #e0f7fa);
     }
-    h1 {
-      font-size: 2.5rem;
-      margin-bottom: 30px;
+    #turn {
+      font-weight: bold;
+      margin-bottom: 10px;
     }
-    button {
-      padding: 12px 20px;
-      font-size: 18px;
-      margin: 10px;
-      border: none;
-      border-radius: 8px;
+    svg {
+      width: 90vmin;
+      height: 90vmin;
+      background: white;
+      border: 2px solid #333;
+    }
+    line, circle {
+      stroke: black;
+      stroke-width: 2;
+    }
+    .piece {
+      fill: white;
       cursor: pointer;
-      background-color: #2196f3;
-      color: white;
-      transition: background 0.3s;
     }
-    button:hover {
-      background-color: #1976d2;
-    }
-    #status {
-      margin-top: 20px;
-      font-size: 1.2rem;
-      color: #333;
-    }
+    .black { fill: #333; }
+    .white { fill: #e0d0f0; }
+    .highlight { stroke: #00bcd4; stroke-width: 3; }
   </style>
 </head>
 <body>
-  <h1>No Way Out</h1>
-  <button id="createBtn">🟢 방 만들기</button>
-  <button id="joinBtn">🔵 방 참여하기</button>
-  <p id="status"></p>
+  <div id="turn">로딩 중...</div>
+  <svg viewBox="0 0 100 100" id="board">
+    <!-- 보드선 -->
+    <line x1="30" y1="10" x2="70" y2="10" />
+    <line x1="30" y1="90" x2="70" y2="90" />
+    <line x1="50" y1="10" x2="50" y2="90" />
+    <circle cx="50" cy="50" r="25" fill="none" />
+    <line x1="50" y1="25" x2="50" y2="75" />
+    <line x1="25" y1="50" x2="75" y2="50" />
+  </svg>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, update, get
+      getDatabase, ref, set, onValue, update
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -53,58 +60,120 @@
       authDomain: "number-baseball-aee52.firebaseapp.com",
       databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
       projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
+      storageBucket: "number-baseball-aee52.firebasestorage.app",
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:f8e3fcb77f6ddef091a561"
     };
-
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    function randomCode() {
-      return Math.random().toString(36).substring(2, 8).toUpperCase();
-    }
+    const gameRef = ref(db, 'games/simple');
+    const turnEl = document.getElementById("turn");
+    const boardEl = document.getElementById("board");
 
-    async function createRoom() {
-      const roomId = randomCode();
-      const now = Date.now();
-      await set(ref(db, "noWayOut/rooms/" + roomId), {
-        createdAt: now,
-        players: { 1: true }
-      });
-      localStorage.setItem("roomId", roomId);
-      localStorage.setItem("player", "1");
-      document.getElementById("status").textContent = `방 생성됨: ${roomId}`;
-      setTimeout(() => {
-        window.location.href = `game.html?room=${roomId}&player=1`;
-      }, 1000);
-    }
+    const positions = [
+      { x: 30, y: 10 }, { x: 50, y: 10 }, { x: 70, y: 10 },
+      { x: 25, y: 50 }, { x: 35, y: 50 }, { x: 50, y: 50 },
+      { x: 65, y: 50 }, { x: 75, y: 50 },
+      { x: 30, y: 90 }, { x: 50, y: 90 }, { x: 70, y: 90 },
+      { x: 50, y: 30 }, { x: 50, y: 70 }
+    ];
 
-    async function joinRoom() {
-      const snapshot = await get(ref(db, "noWayOut/rooms"));
-      const rooms = snapshot.val();
-      if (!rooms) return alert("참여 가능한 방이 없습니다.");
+    const adjacency = {
+      0: [1], 1: [0,2,11], 2: [1],
+      3: [4], 4: [3,5],
+      5: [4,6,11,12],
+      6: [5,7], 7: [6],
+      8: [9], 9: [8,10,12], 10: [9],
+      11: [1,5], 12: [5,9]
+    };
 
-      const now = Date.now();
-      for (const [roomId, info] of Object.entries(rooms)) {
-        const age = now - info.createdAt;
-        if (age <= 60000 && info.players?.[1] && !info.players?.[2]) {
-          await update(ref(db, "noWayOut/rooms/" + roomId + "/players"), { 2: true });
-          localStorage.setItem("roomId", roomId);
-          localStorage.setItem("player", "2");
-          document.getElementById("status").textContent = `방 참가됨: ${roomId}`;
-          setTimeout(() => {
-            window.location.href = `game.html?room=${roomId}&player=2`;
-          }, 1000);
-          return;
+    let selected = null;
+
+    function drawBoard(state, turn, winner) {
+      boardEl.querySelectorAll(".piece").forEach(el => el.remove());
+      positions.forEach((p, i) => {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", p.x);
+        circle.setAttribute("cy", p.y);
+        circle.setAttribute("r", 3.5);
+        circle.setAttribute("class", "piece");
+        circle.dataset.idx = i;
+
+        if (state[i] === "⬛") circle.classList.add("black");
+        else if (state[i] === "⚪") circle.classList.add("white");
+
+        // 하이라이트 표시
+        if (selected === i) circle.classList.add("highlight");
+        else if (
+          selected !== null &&
+          state[selected] === turn &&
+          state[i] === "" &&
+          adjacency[selected]?.includes(i)
+        ) {
+          circle.classList.add("highlight");
         }
-      }
 
-      alert("참여 가능한 방이 없습니다.");
+        circle.addEventListener("click", () => handleClick(i, state, turn, winner));
+        boardEl.appendChild(circle);
+      });
+
+      turnEl.textContent = winner
+        ? `게임 종료! 승자: ${winner}`
+        : `현재 턴: ${turn}`;
     }
 
-    document.getElementById("createBtn").addEventListener("click", createRoom);
-    document.getElementById("joinBtn").addEventListener("click", joinRoom);
+    function handleClick(idx, state, turn, winner) {
+      if (winner) return;
+
+      if (selected === null && state[idx] === turn) {
+        selected = idx;
+      } else if (
+        selected !== null &&
+        state[selected] === turn &&
+        state[idx] === "" &&
+        adjacency[selected]?.includes(idx)
+      ) {
+        const newState = [...state];
+        newState[idx] = turn;
+        newState[selected] = "";
+        const nextTurn = turn === "⬛" ? "⚪" : "⬛";
+
+        const blocked = isBlocked(newState, nextTurn);
+        const winner = blocked ? turn : "";
+
+        update(gameRef, {
+          positions: newState,
+          turn: nextTurn,
+          winner
+        });
+        selected = null;
+      } else {
+        selected = null;
+      }
+      drawBoard(state, turn, winner);
+    }
+
+    function isBlocked(state, player) {
+      return !state.some((val, idx) =>
+        val === player &&
+        adjacency[idx]?.some(to => state[to] === "")
+      );
+    }
+
+    // 초기화
+    onValue(gameRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        drawBoard(data.positions, data.turn, data.winner);
+      } else {
+        set(gameRef, {
+          positions: ["⬛", "⬛", "⬛", "", "", "", "", "", "", "⚪", "⚪", "", "⚪"],
+          turn: "⬛",
+          winner: ""
+        });
+      }
+    });
   </script>
 </body>
 </html>
