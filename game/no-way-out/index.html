@@ -7,30 +7,30 @@
   <style>
     body {
       margin: 0;
-      background: #f5f5f5;
+      font-family: sans-serif;
+      background: #f0f0f0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding-top: 10px;
-      font-family: sans-serif;
+      padding-top: 1rem;
     }
     #turn {
+      margin-bottom: 0.5rem;
       font-weight: bold;
-      margin-bottom: 10px;
     }
     svg {
       width: 90vmin;
       height: 90vmin;
       background: white;
-      border: 2px solid #333;
     }
     line, circle {
       stroke: black;
       stroke-width: 2;
     }
-    .piece {
+    .point {
       fill: white;
-      cursor: pointer;
+      stroke: black;
+      stroke-width: 2;
     }
     .black { fill: #333; }
     .white { fill: #e0d0f0; }
@@ -38,21 +38,21 @@
   </style>
 </head>
 <body>
-  <div id="turn">로딩 중...</div>
+  <div id="turn">게임 로딩 중...</div>
   <svg viewBox="0 0 100 100" id="board">
     <!-- 보드선 -->
     <line x1="30" y1="10" x2="70" y2="10" />
     <line x1="30" y1="90" x2="70" y2="90" />
     <line x1="50" y1="10" x2="50" y2="90" />
     <circle cx="50" cy="50" r="25" fill="none" />
-    <line x1="50" y1="25" x2="50" y2="75" />
-    <line x1="25" y1="50" x2="75" y2="50" />
+    <line x1="50" y1="30" x2="50" y2="70" />
+    <line x1="30" y1="50" x2="70" y2="50" />
   </svg>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, onValue, update
+      getDatabase, ref, onValue, set, update
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -66,66 +66,75 @@
     };
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
-
-    const gameRef = ref(db, 'games/simple');
-    const turnEl = document.getElementById("turn");
-    const boardEl = document.getElementById("board");
+    const gameRef = ref(db, 'games/no-way-out');
 
     const positions = [
-      { x: 30, y: 10 }, { x: 50, y: 10 }, { x: 70, y: 10 },
-      { x: 25, y: 50 }, { x: 35, y: 50 }, { x: 50, y: 50 },
-      { x: 65, y: 50 }, { x: 75, y: 50 },
-      { x: 30, y: 90 }, { x: 50, y: 90 }, { x: 70, y: 90 },
-      { x: 50, y: 30 }, { x: 50, y: 70 }
+      { x: 30, y: 10 }, // 0
+      { x: 50, y: 10 }, // 1
+      { x: 70, y: 10 }, // 2
+      { x: 50, y: 30 }, // 3
+      { x: 30, y: 50 }, // 4
+      { x: 50, y: 50 }, // 5 (중앙)
+      { x: 70, y: 50 }, // 6
+      { x: 50, y: 70 }, // 7
+      { x: 30, y: 90 }, // 8
+      { x: 50, y: 90 }, // 9
+      { x: 70, y: 90 }, // 10
     ];
 
     const adjacency = {
-      0: [1], 1: [0,2,11], 2: [1],
-      3: [4], 4: [3,5],
-      5: [4,6,11,12],
-      6: [5,7], 7: [6],
-      8: [9], 9: [8,10,12], 10: [9],
-      11: [1,5], 12: [5,9]
+      0: [1],
+      1: [0, 2, 3],
+      2: [1],
+      3: [1, 5],
+      4: [5],
+      5: [3, 4, 6, 7],
+      6: [5],
+      7: [5, 9],
+      8: [9],
+      9: [7, 8, 10],
+      10: [9],
     };
+
+    const svg = document.getElementById("board");
+    const turnInfo = document.getElementById("turn");
 
     let selected = null;
 
-    function drawBoard(state, turn, winner) {
-      boardEl.querySelectorAll(".piece").forEach(el => el.remove());
-      positions.forEach((p, i) => {
-        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("cx", p.x);
-        circle.setAttribute("cy", p.y);
-        circle.setAttribute("r", 3.5);
-        circle.setAttribute("class", "piece");
-        circle.dataset.idx = i;
+    function draw(state, turn, winner) {
+      svg.querySelectorAll(".piece").forEach(e => e.remove());
+      positions.forEach((pos, idx) => {
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", pos.x);
+        c.setAttribute("cy", pos.y);
+        c.setAttribute("r", 3);
+        c.setAttribute("class", "point piece");
+        c.dataset.idx = idx;
 
-        if (state[i] === "⬛") circle.classList.add("black");
-        else if (state[i] === "⚪") circle.classList.add("white");
+        if (state[idx] === "⬛") c.classList.add("black");
+        else if (state[idx] === "⚪") c.classList.add("white");
 
-        // 하이라이트 표시
-        if (selected === i) circle.classList.add("highlight");
+        if (selected === idx) c.classList.add("highlight");
         else if (
           selected !== null &&
           state[selected] === turn &&
-          state[i] === "" &&
-          adjacency[selected]?.includes(i)
+          state[idx] === "" &&
+          adjacency[selected]?.includes(idx)
         ) {
-          circle.classList.add("highlight");
+          c.classList.add("highlight");
         }
 
-        circle.addEventListener("click", () => handleClick(i, state, turn, winner));
-        boardEl.appendChild(circle);
+        c.addEventListener("click", () => handleClick(idx, state, turn, winner));
+        svg.appendChild(c);
       });
 
-      turnEl.textContent = winner
+      turnInfo.textContent = winner
         ? `게임 종료! 승자: ${winner}`
         : `현재 턴: ${turn}`;
     }
 
     function handleClick(idx, state, turn, winner) {
       if (winner) return;
-
       if (selected === null && state[idx] === turn) {
         selected = idx;
       } else if (
@@ -138,37 +147,29 @@
         newState[idx] = turn;
         newState[selected] = "";
         const nextTurn = turn === "⬛" ? "⚪" : "⬛";
-
-        const blocked = isBlocked(newState, nextTurn);
-        const winner = blocked ? turn : "";
-
+        const blocked = !newState.some((val, i) =>
+          val === nextTurn &&
+          adjacency[i]?.some(j => newState[j] === "")
+        );
         update(gameRef, {
           positions: newState,
           turn: nextTurn,
-          winner
+          winner: blocked ? turn : ""
         });
         selected = null;
       } else {
         selected = null;
       }
-      drawBoard(state, turn, winner);
     }
 
-    function isBlocked(state, player) {
-      return !state.some((val, idx) =>
-        val === player &&
-        adjacency[idx]?.some(to => state[to] === "")
-      );
-    }
-
-    // 초기화
-    onValue(gameRef, (snapshot) => {
-      const data = snapshot.val();
+    // Firebase 초기값 세팅
+    onValue(gameRef, (snap) => {
+      const data = snap.val();
       if (data) {
-        drawBoard(data.positions, data.turn, data.winner);
+        draw(data.positions, data.turn, data.winner);
       } else {
         set(gameRef, {
-          positions: ["⬛", "⬛", "⬛", "", "", "", "", "", "", "⚪", "⚪", "", "⚪"],
+          positions: ["⬛", "⬛", "⬛", "", "", "", "", "", "⚪", "⚪", "⚪"],
           turn: "⬛",
           winner: ""
         });
