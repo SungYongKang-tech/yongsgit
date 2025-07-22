@@ -75,6 +75,15 @@
     #resetBtn:hover {
       background: #1976d2;
     }
+
+.rotated {
+  transform: rotate(180deg);
+}
+.rotated .point {
+  transform: rotate(180deg);
+}
+
+
   </style>
 </head>
 <body>
@@ -202,6 +211,7 @@
       } else {
         selected = null;
       }
+      if (turn !== myColor) return;
     }
 
     onValue(gameRef, (snap) => {
@@ -227,6 +237,42 @@
     resetBtn.addEventListener("click", () => {
       if (confirm("게임을 초기화할까요?")) resetGame();
     });
+
+let myColor;
+
+const storedColor = localStorage.getItem("noWayOutColor");
+
+if (storedColor) {
+  myColor = storedColor;
+} else {
+  // Firebase에서 현재 플레이어 수 확인
+  onValue(gameRef, (snap) => {
+    const data = snap.val();
+    if (!data || !data.joinCount) {
+      // 첫 번째 접속자
+      set(gameRef, {
+        positions: ["⚫", "⚫", "⚫", "", "", "", "", "", "🔴", "🔴", "🔴"],
+        turn: "⚫",
+        winner: "",
+        joinCount: 1
+      });
+      myColor = "⚫";
+      localStorage.setItem("noWayOutColor", myColor);
+    } else if (data.joinCount === 1) {
+      update(gameRef, { joinCount: 2 });
+      myColor = "🔴";
+      localStorage.setItem("noWayOutColor", myColor);
+    } else {
+      alert("두 명까지만 입장할 수 있습니다.");
+    }
+  }, { onlyOnce: true });
+}
+
+if (myColor === "🔴") {
+  svg.classList.add("rotated");
+}
+
+
   </script>
 </body>
 </html>
