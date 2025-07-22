@@ -6,63 +6,39 @@
   <title>No Way Out (Firebase)</title>
   <style>
     html, body {
-  margin: 0;
-  padding: 0;
-  height: 100vh;            /* 뷰포트 높이만큼 고정 */
-  overflow: hidden;         /* 스크롤 막기 */
-  touch-action: none;       /* 당겨서 새로고침 방지 (모바일 대응) */
-  font-family: sans-serif;
-  background: #f0f0f0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: start;
-}
-
+      margin: 0; padding: 0; height: 100vh;
+      overflow: hidden; touch-action: none;
+      font-family: sans-serif;
+      background: #f0f0f0;
+      display: flex; flex-direction: column; align-items: center;
+    }
 
     #turn {
-      margin-bottom: 1rem;
+      margin: 1rem 0;
       font-weight: bold;
       font-size: 1.4rem;
     }
 
     svg {
-  width: 90vw;
-  min-width: 480px;
-  max-width: 700px;
-  height: auto;
-  background: white;
-  touch-action: manipulation;
-}
+      width: 90vw; min-width: 480px; max-width: 700px; height: auto;
+      background: white;
+    }
 
     line, circle {
-      stroke: black;
-      stroke-width: 12;
+      stroke: black; stroke-width: 12;
     }
 
     .point {
-      fill: white;
-      stroke: black;
-      stroke-width: 8;
+      fill: white; stroke: black; stroke-width: 8;
     }
 
     .black { fill: black; }
     .red   { fill: red; }
-
- .highlight {
-  stroke: #4caf50 !important;
-  stroke-width: 20;
-  stroke-opacity: 0.8;
-}
-
-
-    .selected {
-      stroke: gold;
-      stroke-width: 14;
-    }
+    .highlight { stroke: #4caf50 !important; stroke-width: 20; stroke-opacity: 0.8; }
+    .selected { stroke: gold; stroke-width: 14; }
 
     #resetBtn {
-      margin: 0.5rem 0 1rem;
+      margin: 0.5rem;
       padding: 0.6rem 1rem;
       font-size: 1rem;
       border: none;
@@ -71,19 +47,9 @@
       border-radius: 6px;
       cursor: pointer;
     }
+    #resetBtn:hover { background: #1976d2; }
 
-    #resetBtn:hover {
-      background: #1976d2;
-    }
-
-.rotated {
-  transform: rotate(180deg);
-}
-.rotated .point {
-  transform: rotate(180deg);
-}
-
-
+    .rotated { transform: rotate(180deg); }
   </style>
 </head>
 <body>
@@ -115,44 +81,30 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
-    const gameRef = ref(db, 'games/no-way-out');
+    const gameRef = ref(db, "games/no-way-out");
 
     const svg = document.getElementById("board");
     const turnInfo = document.getElementById("turn");
     const resetBtn = document.getElementById("resetBtn");
 
- const positions = [
-  { x: 480, y: 160 },    // 0
-  { x: 800, y: 160 },    // 1
-  { x: 1120, y: 160 },   // 2
-  { x: 800, y: 400 },    // 3 - 위
-  { x: 400, y: 800 },    // 4 - 왼쪽 (원 위)
-  { x: 800, y: 800 },    // 5 - 중심
-  { x: 1200, y: 800 },   // 6 - 오른쪽 (원 위)
-  { x: 800, y: 1200 },   // 7 - 아래
-  { x: 480, y: 1440 },   // 8
-  { x: 800, y: 1440 },   // 9
-  { x: 1120, y: 1440 }   // 10
-];
-
-
-
+    const positions = [
+      { x: 480, y: 160 }, { x: 800, y: 160 }, { x: 1120, y: 160 },
+      { x: 800, y: 400 }, { x: 400, y: 800 }, { x: 800, y: 800 },
+      { x: 1200, y: 800 }, { x: 800, y: 1200 }, { x: 480, y: 1440 },
+      { x: 800, y: 1440 }, { x: 1120, y: 1440 }
+    ];
 
     const adjacency = {
-      0: [1],
-      1: [3],
-      2: [1],
-      3: [4, 5, 6],
-      4: [3, 5, 7],
-      5: [3, 4, 6, 7],
-      6: [3, 5, 7],
-      7: [4, 5, 6, 9],
-      8: [9],
-      9: [7],
-      10: [9],
+      0: [1], 1: [3], 2: [1],
+      3: [4, 5, 6], 4: [3, 5, 7], 5: [3, 4, 6, 7],
+      6: [3, 5, 7], 7: [4, 5, 6, 9],
+      8: [9], 9: [7], 10: [9],
     };
 
     let selected = null;
+    let myColor = null;
+
+    const stored = localStorage.getItem("noWayOutColor");
 
     function draw(state, turn, winner) {
       svg.querySelectorAll(".piece").forEach(e => e.remove());
@@ -167,26 +119,23 @@
         if (state[idx] === "⚫") c.classList.add("black");
         else if (state[idx] === "🔴") c.classList.add("red");
 
-        if (selected === idx) {
-  c.classList.add("highlight");
-} else if (
-          selected !== null &&
-          state[selected] === turn &&
-          state[idx] === "" &&
-          adjacency[selected]?.includes(idx)
-        ) c.classList.add("highlight");
+        if (selected === idx) c.classList.add("highlight");
+        else if (selected !== null && state[selected] === turn && state[idx] === "" && adjacency[selected]?.includes(idx)) {
+          c.classList.add("highlight");
+        }
 
         c.addEventListener("click", () => handleClick(idx, state, turn, winner));
         svg.appendChild(c);
       });
 
-  turnInfo.textContent = winner
-  ? `게임 종료! 승자: ${winner === "⚫" ? "검정색 돌" : "빨간색 돌"}`
-  : `현재 차례: ${turn === "⚫" ? "검정색 돌" : "빨간색 돌"}`;
+      turnInfo.textContent = winner
+        ? `게임 종료! 승자: ${winner === "⚫" ? "검정" : "빨강"} 돌`
+        : `현재 차례: ${turn === "⚫" ? "검정" : "빨강"} 돌`;
     }
 
     function handleClick(idx, state, turn, winner) {
-      if (winner) return;
+      if (!myColor || winner || turn !== myColor) return;
+
       if (selected === null && state[idx] === turn) {
         selected = idx;
       } else if (
@@ -199,9 +148,7 @@
         newState[idx] = turn;
         newState[selected] = "";
         const nextTurn = turn === "⚫" ? "🔴" : "⚫";
-        const blocked = !newState.some((val, i) =>
-          val === nextTurn && adjacency[i]?.some(j => newState[j] === "")
-        );
+        const blocked = !newState.some((val, i) => val === nextTurn && adjacency[i]?.some(j => newState[j] === ""));
         update(gameRef, {
           positions: newState,
           turn: nextTurn,
@@ -211,68 +158,57 @@
       } else {
         selected = null;
       }
-      if (turn !== myColor) return;
     }
 
-    onValue(gameRef, (snap) => {
-      const data = snap.val();
-      if (data) {
-        draw(data.positions, data.turn, data.winner);
-      } else {
-        resetGame();
-      }
-    });
-   
-    resetGame();
-    
     function resetGame() {
-      set(gameRef, {
-        positions: ["⚫", "⚫", "⚫", "", "", "", "", "", "🔴", "🔴", "🔴"],
-        turn: "⚫",
-        winner: ""
-      });
-      selected = null;
-    }
-
-    resetBtn.addEventListener("click", () => {
-      if (confirm("게임을 초기화할까요?")) resetGame();
-    });
-
-let myColor;
-
-const storedColor = localStorage.getItem("noWayOutColor");
-
-if (storedColor) {
-  myColor = storedColor;
-} else {
-  // Firebase에서 현재 플레이어 수 확인
-  onValue(gameRef, (snap) => {
-    const data = snap.val();
-    if (!data || !data.joinCount) {
-      // 첫 번째 접속자
       set(gameRef, {
         positions: ["⚫", "⚫", "⚫", "", "", "", "", "", "🔴", "🔴", "🔴"],
         turn: "⚫",
         winner: "",
         joinCount: 1
       });
-      myColor = "⚫";
-      localStorage.setItem("noWayOutColor", myColor);
-    } else if (data.joinCount === 1) {
-      update(gameRef, { joinCount: 2 });
-      myColor = "🔴";
-      localStorage.setItem("noWayOutColor", myColor);
-    } else {
-      alert("두 명까지만 입장할 수 있습니다.");
+      localStorage.removeItem("noWayOutColor");
+      selected = null;
     }
-  }, { onlyOnce: true });
-}
 
-if (myColor === "🔴") {
-  svg.classList.add("rotated");
-}
+    resetBtn.addEventListener("click", () => {
+      if (confirm("정말로 초기화하시겠습니까?")) resetGame();
+    });
 
+    function startGameListener() {
+      onValue(gameRef, (snap) => {
+        const data = snap.val();
+        if (data) draw(data.positions, data.turn, data.winner);
+      });
+    }
 
+    if (stored) {
+      myColor = stored;
+      if (myColor === "🔴") svg.classList.add("rotated");
+      startGameListener();
+    } else {
+      onValue(gameRef, (snap) => {
+        const data = snap.val();
+        if (!data || !data.joinCount) {
+          set(gameRef, {
+            positions: ["⚫", "⚫", "⚫", "", "", "", "", "", "🔴", "🔴", "🔴"],
+            turn: "⚫",
+            winner: "",
+            joinCount: 1
+          });
+          myColor = "⚫";
+        } else if (data.joinCount === 1) {
+          update(gameRef, { joinCount: 2 });
+          myColor = "🔴";
+          svg.classList.add("rotated");
+        } else {
+          alert("두 명까지만 입장할 수 있습니다.");
+          return;
+        }
+        localStorage.setItem("noWayOutColor", myColor);
+        startGameListener();
+      }, { onlyOnce: true });
+    }
   </script>
 </body>
 </html>
