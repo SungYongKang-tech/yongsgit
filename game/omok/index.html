@@ -251,6 +251,8 @@ await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
   renderBoard();
   listenBoard();
   listenWinner();
+  listenUndoRequest();  // ✅ 여기서 항상 호출되도록!
+  
   onValue(ref(db, `rooms/${roomCode}/undoRequest`), async (snap) => {
   const data = snap.val();
   if (!data || data.from === playerRole) return; // 내가 요청한 건 무시
@@ -507,6 +509,19 @@ onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
   window.onload = function () {
     document.getElementById('howToModal').style.display = 'block';
   }
+  function listenUndoRequest() {
+  onValue(ref(db, `rooms/${roomCode}/undoRequest`), async (snap) => {
+    const data = snap.val();
+    if (!data || data.from === playerRole) return;
+
+    const accept = confirm("상대방이 무르기를 요청했습니다. 수락하시겠습니까?");
+    if (accept) {
+      await undoLastTwoMoves();
+    }
+    await remove(ref(db, `rooms/${roomCode}/undoRequest`));
+  });
+}
+
 </script>
 
 
