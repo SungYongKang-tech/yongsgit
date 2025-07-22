@@ -4,77 +4,77 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>No Way Out (Firebase)</title>
- <style>
-  body {
-    margin: 0;
-    font-family: sans-serif;
-    background: #f0f0f0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1rem;
-  }
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem;
+    }
 
-  #turn {
-    margin-bottom: 1rem;
-    font-weight: bold;
-    font-size: 1.2rem;
-  }
+    #turn {
+      margin-bottom: 1rem;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
 
-  svg {
-    width: 100vmin;
-    max-width: 100%;
-    height: auto;
-    background: white;
-    touch-action: manipulation;
-  }
+    svg {
+      width: 100vmin;
+      max-width: 100%;
+      height: auto;
+      background: white;
+      touch-action: manipulation;
+    }
 
-  line, circle {
-    stroke: black;
-    stroke-width: 2;
-  }
+    line, circle {
+      stroke: black;
+      stroke-width: 2;
+    }
 
-  .point {
-    fill: white;
-    stroke: black;
-    stroke-width: 2;
-  }
+    .point {
+      fill: white;
+      stroke: black;
+      stroke-width: 2;
+    }
 
-  .black { fill: #000; }
-  .white { fill: red; }
+    .black { fill: #000; }
+    .red   { fill: red; }
 
-  .highlight {
-    stroke: #00bcd4;
-    stroke-width: 3;
-  }
+    .highlight {
+      stroke: #00bcd4;
+      stroke-width: 3;
+    }
 
-  .selected {
-    stroke: gold;
-    stroke-width: 4;
-  }
+    .selected {
+      stroke: gold;
+      stroke-width: 4;
+    }
 
-  #resetBtn {
-    margin: 0.5rem 0 1rem;
-    padding: 0.6rem 1rem;
-    font-size: 1rem;
-    border: none;
-    background: #2196f3;
-    color: white;
-    border-radius: 6px;
-    cursor: pointer;
-  }
+    #resetBtn {
+      margin: 0.5rem 0 1rem;
+      padding: 0.6rem 1rem;
+      font-size: 1rem;
+      border: none;
+      background: #2196f3;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
 
-  #resetBtn:hover {
-    background: #1976d2;
-  }
-</style>
-
-
+    #resetBtn:hover {
+      background: #1976d2;
+    }
+  </style>
 </head>
 <body>
   <div id="turn">게임 로딩 중...</div>
   <button id="resetBtn">🔄 게임 초기화</button>
-  <svg viewBox="0 0 100 100" id="board">
+
+  <!-- 높이를 140으로 확대 -->
+  <svg viewBox="0 0 100 140" id="board">
     <!-- 보드선 -->
     <line x1="30" y1="10" x2="70" y2="10" />
     <line x1="30" y1="90" x2="70" y2="90" />
@@ -84,7 +84,7 @@
     <line x1="30" y1="50" x2="70" y2="50" />
   </svg>
 
-   <script type="module">
+  <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
       getDatabase, ref, onValue, set, update
@@ -114,21 +114,19 @@
       { x: 30, y: 90 }, { x: 50, y: 90 }, { x: 70, y: 90 },
     ];
 
-const adjacency = {
-  0: [1],
-  1: [3],                  // ❌ 0,2으로 못 감
-  2: [1],
-  3: [4, 5, 6],            // ❌ 1으로 못 감
-  4: [3, 5, 7],
-  5: [3, 4, 6, 7],
-  6: [3, 5, 7],
-  7: [4, 5, 6, 10],        // ❌ 9으로 못 감
-  8: [],                   // 9도 못 감
-  9: [7],                  // ❌ 8,10 못 감
-  10: [9],
-};
-
-
+    const adjacency = {
+      0: [1],
+      1: [3],
+      2: [1],
+      3: [4, 5, 6],
+      4: [3, 5, 7],
+      5: [3, 4, 6, 7],
+      6: [3, 5, 7],
+      7: [4, 5, 6, 10],
+      8: [],
+      9: [7],
+      10: [9],
+    };
 
     let selected = null;
 
@@ -142,14 +140,13 @@ const adjacency = {
         c.setAttribute("class", "point piece");
         c.dataset.idx = idx;
 
+        // 말 색상 반영
         if (state[idx] === "⚫") c.classList.add("black");
         else if (state[idx] === "🔴") c.classList.add("red");
 
-
         if (selected === idx) {
-         c.classList.add("highlight", "selected");
+          c.classList.add("highlight", "selected");
         }
-
         else if (
           selected !== null &&
           state[selected] === turn &&
@@ -162,9 +159,8 @@ const adjacency = {
       });
 
       turnInfo.textContent = winner
-  ? `게임 종료! 승자: ${winner === "⚫" ? "검정색 돌" : "빨간색 돌"}`
-  : `현재 턴: ${turn === "⚫" ? "검정색 돌" : "빨간색 돌"}`;
-
+        ? `게임 종료! 승자: ${winner === "⚫" ? "검정색 돌" : "빨간색 돌"}`
+        : `현재 턴: ${turn === "⚫" ? "검정색 돌" : "빨간색 돌"}`;
     }
 
     function handleClick(idx, state, turn, winner) {
@@ -206,8 +202,7 @@ const adjacency = {
 
     function resetGame() {
       set(gameRef, {
-        positions: ["⚫", "⚫", "⚫", "", "", "", "", "", "🔴", "🔴", "🔴"]
-,
+        positions: ["⚫", "⚫", "⚫", "", "", "", "", "", "🔴", "🔴", "🔴"],
         turn: "⚫",
         winner: ""
       });
