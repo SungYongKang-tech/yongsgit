@@ -47,29 +47,82 @@
       color: white;
     }
     #scoreDisplay {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  font-size: 28px;
-  font-weight: bold;
-  color: #333;
-  background: rgba(255, 255, 255, 0.8);
-  padding: 6px 14px;
-  border-radius: 10px;
-  z-index: 1000; /* ← 반드시 필요 */
-}
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 28px;
+      font-weight: bold;
+      color: #333;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 6px 14px;
+      border-radius: 10px;
+      z-index: 1000;
+    }
 
+    /* 모달 스타일 */
+    #modal {
+      position: fixed;
+      z-index: 9999;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      text-align: center;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    }
+    .modal-content h2 {
+      margin-top: 0;
+      font-size: 28px;
+    }
+    .modal-content p {
+      font-size: 16px;
+      text-align: left;
+      line-height: 1.6;
+    }
+    .modal-content button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 18px;
+      background-color: #1e88e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
-
   <div id="scoreDisplay">점수: 0</div>
 
+  <!-- 게임 종료 버튼 -->
   <div id="buttons">
     <div class="message">you died</div>
     <button id="restartBtn">다시 시작</button>
     <button id="exitBtn">나가기</button>
+  </div>
+
+  <!-- 게임 설명 모달 -->
+  <div id="modal">
+    <div class="modal-content">
+      <h2>스네이크 게임 설명</h2>
+      <p>
+        - 파란색 블록(뱀의 머리)을 방향키 또는 화면 스와이프로 이동하세요.<br>
+        - 빨간색 음식에 닿으면 점수가 올라갑니다.<br>
+        - 벽에 부딪히거나 몸에 닿으면 게임이 종료됩니다.<br>
+        - 점수는 좌측 상단에 표시됩니다.
+      </p>
+      <button onclick="startGame()">게임 시작</button>
+    </div>
   </div>
 
   <script>
@@ -79,24 +132,30 @@
     const restartBtn = document.getElementById("restartBtn");
     const exitBtn = document.getElementById("exitBtn");
     const scoreDisplay = document.getElementById("scoreDisplay");
+    const modal = document.getElementById("modal");
 
     let gridSize = 60;
     let cols, rows;
     let snake, dx, dy, food, isDead, score;
 
+    function startGame() {
+      modal.style.display = "none";
+      initGame();
+    }
+
     function initGame() {
-  resizeCanvas();
-  snake = [{ x: 5, y: 5 }];
-  dx = 1;
-  dy = 0;
-  food = spawnFood();
-  isDead = false;
-  score = 0;
-  updateScore();
-  buttons.style.display = "none";
-  scoreDisplay.style.display = "block"; // ← 이 줄 추가
-  gameLoop();
-}
+      resizeCanvas();
+      snake = [{ x: 5, y: 5 }];
+      dx = 1;
+      dy = 0;
+      food = spawnFood();
+      isDead = false;
+      score = 0;
+      updateScore();
+      buttons.style.display = "none";
+      scoreDisplay.style.display = "block";
+      gameLoop();
+    }
 
     function resizeCanvas() {
       canvas.width = Math.floor(window.innerWidth / gridSize) * gridSize;
@@ -104,6 +163,7 @@
       cols = canvas.width / gridSize;
       rows = canvas.height / gridSize;
     }
+
     window.addEventListener("resize", resizeCanvas);
 
     function spawnFood() {
@@ -135,12 +195,7 @@
         y: snake[0].y + dy
       };
 
-      if (head.x < 0 || head.y < 0 || head.x >= cols || head.y >= rows) {
-        isDead = true;
-        return;
-      }
-
-      if (snake.some((s, i) => i !== 0 && s.x === head.x && s.y === head.y)) {
+      if (head.x < 0 || head.y < 0 || head.x >= cols || head.y >= rows || snake.some((s, i) => i !== 0 && s.x === head.x && s.y === head.y)) {
         isDead = true;
         return;
       }
@@ -159,7 +214,6 @@
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawBlock(food.x, food.y, "red");
-
       snake.forEach((part, index) => {
         drawBlock(part.x, part.y, index === 0 ? "blue" : "skyblue");
       });
@@ -173,7 +227,6 @@
       scoreDisplay.innerText = `점수: ${score}`;
     }
 
-    // 키보드
     document.addEventListener("keydown", (e) => {
       if (e.key === "ArrowUp" && dy !== 1) [dx, dy] = [0, -1];
       else if (e.key === "ArrowDown" && dy !== -1) [dx, dy] = [0, 1];
@@ -181,7 +234,6 @@
       else if (e.key === "ArrowRight" && dx !== -1) [dx, dy] = [1, 0];
     });
 
-    // 터치
     let startX, startY;
     canvas.addEventListener("touchstart", (e) => {
       const t = e.touches[0];
@@ -211,8 +263,6 @@
       window.close();
       window.location.href = "https://www.google.com";
     });
-
-    initGame();
   </script>
 </body>
 </html>
