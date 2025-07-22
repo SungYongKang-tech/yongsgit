@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>No Way Out - 방 입장</title>
+  <title>No Way Out - 자동 매칭</title>
   <style>
     body {
       margin: 0;
@@ -42,39 +42,53 @@
     .link-button:hover {
       background-color: #1565c0;
     }
-
-    input {
-      padding: 14px;
-      font-size: 1.2rem;
-      width: 70%;
-      max-width: 300px;
-      border: 2px solid #bbb;
-      border-radius: 8px;
-    }
   </style>
 </head>
 <body>
   <h1>No Way Out</h1>
   <div class="button-container">
     <button class="link-button" onclick="createRoom()">🆕 방 만들기</button>
-    <div>
-      <input id="roomInput" placeholder="방 코드 입력" />
-      <button class="link-button" onclick="joinRoom()">🚪 방 입장하기</button>
-    </div>
+    <button class="link-button" onclick="autoJoin()">🚪 방 입장하기</button>
   </div>
 
-  <script>
-    function createRoom() {
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, get, child, serverTimestamp, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.appspot.com",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:f8e3fcb77f6ddef091a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    async function createRoom() {
       const code = Math.random().toString(36).substring(2, 7);
+      const now = Date.now();
+
+      await set(ref(db, 'noWayOut/latestRoom'), {
+        code,
+        createdAt: now
+      });
+
       window.location.href = `game.html?room=${code}`;
     }
 
-    function joinRoom() {
-      const code = document.getElementById("roomInput").value.trim();
-      if (code) {
-        window.location.href = `game.html?room=${code}`;
+    async function autoJoin() {
+      const snapshot = await get(child(ref(db), 'noWayOut/latestRoom'));
+      const data = snapshot.val();
+
+      if (data && Date.now() - data.createdAt < 60000) {
+        // 생성된 지 1분 이내면 해당 방 입장
+        window.location.href = `game.html?room=${data.code}`;
       } else {
-        alert("방 코드를 입력해주세요.");
+        alert("참여 가능한 방이 없습니다. 방을 먼저 만들어주세요.");
       }
     }
   </script>
