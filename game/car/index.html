@@ -89,184 +89,190 @@
     </div>
   </div>
 
- const game = document.getElementById('game');
-const player = document.getElementById('player');
-const overlay = document.getElementById('overlay');
+   <!-- ... 기존 HTML 코드 생략 ... -->
 
-// 플레이어 위치 및 속도
-let playerX = window.innerWidth / 2 - 25;
-let playerY = window.innerHeight - 120;
-let moveVX = 0;
-let moveVY = 0;
+  </div> <!-- #game 닫힘 -->
 
-// 상태 변수
-let lives = 3;
-let isInvincible = false;
-let isDragging = false;
-let activeTouchId = null;
-let startTouchX = 0;
-let startTouchY = 0;
+  <script>
+    // ⬇ JavaScript 코드 전체를 이 안에 넣습니다
 
-// 장애물 관련
-let gameRunning = true;
-let obstacleSpeed = 2;
-let originalObstacleSpeed = 2;
-let obstacleInterval = setInterval(createObstacle, 1000);
+    const game = document.getElementById('game');
+    const player = document.getElementById('player');
+    const overlay = document.getElementById('overlay');
 
-// 장애물 속도 증가
-setInterval(() => {
-  obstacleSpeed *= 1.1;
-}, 10000);
+    // 플레이어 위치 및 속도
+    let playerX = window.innerWidth / 2 - 25;
+    let playerY = window.innerHeight - 120;
+    let moveVX = 0;
+    let moveVY = 0;
 
-// 플레이어 위치 업데이트
-function updatePlayerPosition() {
-  playerX += moveVX;
-  playerY += moveVY;
+    // 상태 변수
+    let lives = 3;
+    let isInvincible = false;
+    let isDragging = false;
+    let activeTouchId = null;
+    let startTouchX = 0;
+    let startTouchY = 0;
 
-  playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
-  playerY = Math.max(0, Math.min(playerY, window.innerHeight - 80));
+    // 장애물 관련
+    let gameRunning = true;
+    let obstacleSpeed = 2;
+    let originalObstacleSpeed = 2;
 
-  player.style.left = `${playerX}px`;
-  player.style.top = `${playerY}px`;
+    // 초기 위치 설정
+    player.style.left = `${playerX}px`;
+    player.style.top = `${playerY}px`;
 
-  requestAnimationFrame(updatePlayerPosition);
-}
-updatePlayerPosition(); // 최초 호출
+    // 플레이어 이동
+    function updatePlayerPosition() {
+      playerX += moveVX;
+      playerY += moveVY;
 
-// 터치 시작
-game.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 1) {
-    const touch = e.touches[0];
-    startTouchX = touch.clientX;
-    startTouchY = touch.clientY;
-    activeTouchId = touch.identifier;
-    isDragging = true;
-  }
-});
+      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+      playerY = Math.max(0, Math.min(playerY, window.innerHeight - 80));
 
-// 터치 이동
-game.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  if (!isDragging) return;
+      player.style.left = `${playerX}px`;
+      player.style.top = `${playerY}px`;
 
-  for (const touch of e.touches) {
-    if (touch.identifier === activeTouchId) {
-      const dx = touch.clientX - startTouchX;
-      const dy = touch.clientY - startTouchY;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len > 5) {
-        moveVX = dx / len * 4;
-        moveVY = dy / len * 4;
+      requestAnimationFrame(updatePlayerPosition);
+    }
+    requestAnimationFrame(updatePlayerPosition);
+
+    // 터치 이벤트 처리
+    game.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        startTouchX = touch.clientX;
+        startTouchY = touch.clientY;
+        activeTouchId = touch.identifier;
+        isDragging = true;
       }
+    });
+
+    game.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!isDragging) return;
+      for (const touch of e.touches) {
+        if (touch.identifier === activeTouchId) {
+          const dx = touch.clientX - startTouchX;
+          const dy = touch.clientY - startTouchY;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len > 5) {
+            moveVX = dx / len * 4;
+            moveVY = dy / len * 4;
+          }
+        }
+      }
+    }, { passive: false });
+
+    game.addEventListener('touchend', (e) => {
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === activeTouchId) {
+          isDragging = false;
+          moveVX = 0;
+          moveVY = 0;
+        }
+      }
+    });
+
+    // 장애물 생성
+    function createObstacle() {
+      if (!gameRunning) return;
+
+      const obs = document.createElement('div');
+      obs.className = 'obstacle';
+      obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
+      obs.style.top = '-100px';
+      game.appendChild(obs);
+
+      let y = -100;
+      const interval = setInterval(() => {
+        if (!gameRunning) {
+          obs.remove();
+          clearInterval(interval);
+          return;
+        }
+
+        y += obstacleSpeed;
+        obs.style.top = `${y}px`;
+
+        const obsRect = obs.getBoundingClientRect();
+        const playerRect = player.getBoundingClientRect();
+
+        const overlapWidth = Math.min(obsRect.right, playerRect.right) - Math.max(obsRect.left, playerRect.left);
+        const overlapHeight = Math.min(obsRect.bottom, playerRect.bottom) - Math.max(obsRect.top, playerRect.top);
+        const requiredOverlapWidth = playerRect.width * 0.6;
+        const requiredOverlapHeight = playerRect.height * 0.6;
+
+        if (
+          !isInvincible &&
+          overlapWidth > requiredOverlapWidth &&
+          overlapHeight > requiredOverlapHeight
+        ) {
+          handleHit();
+          clearInterval(interval);
+          obs.remove();
+          return;
+        }
+
+        if (y > window.innerHeight) {
+          obs.remove();
+          clearInterval(interval);
+        }
+      }, 20);
     }
-  }
-}, { passive: false });
 
-// 터치 종료
-game.addEventListener('touchend', (e) => {
-  for (const touch of e.changedTouches) {
-    if (touch.identifier === activeTouchId) {
-      isDragging = false;
-      moveVX = 0;
-      moveVY = 0;
-    }
-  }
-});
+    // 장애물 주기 생성
+    let obstacleInterval = setInterval(createObstacle, 1000);
 
-// 장애물 생성
-function createObstacle() {
-  if (!gameRunning) return;
+    // 장애물 속도 증가
+    setInterval(() => {
+      obstacleSpeed *= 1.1;
+    }, 10000);
 
-  const obs = document.createElement('div');
-  obs.className = 'obstacle';
-  obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
-  obs.style.top = '-100px';
-  game.appendChild(obs);
+    // 충돌 처리
+    function handleHit() {
+      lives -= 1;
 
-  let y = -100;
-  const interval = setInterval(() => {
-    if (!gameRunning) {
-      obs.remove();
-      clearInterval(interval);
-      return;
-    }
+      originalObstacleSpeed = obstacleSpeed;
+      obstacleSpeed = 1;
+      setTimeout(() => {
+        obstacleSpeed = originalObstacleSpeed;
+      }, 2000);
 
-    y += obstacleSpeed;
-    obs.style.top = `${y}px`;
+      if (lives <= 0) {
+        showGameOver();
+        return;
+      }
 
-    const obsRect = obs.getBoundingClientRect();
-    const playerRect = player.getBoundingClientRect();
-
-    const overlapWidth = Math.min(obsRect.right, playerRect.right) - Math.max(obsRect.left, playerRect.left);
-    const overlapHeight = Math.min(obsRect.bottom, playerRect.bottom) - Math.max(obsRect.top, playerRect.top);
-    const requiredOverlapWidth = playerRect.width * 0.6;
-    const requiredOverlapHeight = playerRect.height * 0.6;
-
-    if (
-      !isInvincible &&
-      overlapWidth > requiredOverlapWidth &&
-      overlapHeight > requiredOverlapHeight
-    ) {
-      handleHit();
-      clearInterval(interval);
-      obs.remove();
-      return;
+      isInvincible = true;
+      let blink = 0;
+      const blinkInterval = setInterval(() => {
+        player.classList.toggle("hidden");
+        blink++;
+        if (blink >= 6) {
+          clearInterval(blinkInterval);
+          player.classList.remove("hidden");
+          isInvincible = false;
+        }
+      }, 200);
     }
 
-    if (y > window.innerHeight) {
-      obs.remove();
-      clearInterval(interval);
+    function showGameOver() {
+      overlay.style.display = 'flex';
     }
-  }, 20);
-}
 
-// 충돌 처리
-function handleHit() {
-  lives -= 1;
-
-  // 속도 일시 감소
-  originalObstacleSpeed = obstacleSpeed;
-  obstacleSpeed = 1;
-  setTimeout(() => {
-    obstacleSpeed = originalObstacleSpeed;
-  }, 2000);
-
-  if (lives <= 0) {
-    showGameOver();
-    return;
-  }
-
-  isInvincible = true;
-  let blink = 0;
-  const blinkInterval = setInterval(() => {
-    player.classList.toggle("hidden");
-    blink++;
-    if (blink >= 6) {
-      clearInterval(blinkInterval);
-      player.classList.remove("hidden");
-      isInvincible = false;
+    function restartGame() {
+      location.reload();
     }
-  }, 200);
-}
 
-// 게임 오버 처리
-function showGameOver() {
-  overlay.style.display = 'flex';
-}
+    function endGame() {
+      clearInterval(obstacleInterval);
+      gameRunning = false;
+      document.querySelectorAll('.obstacle').forEach(el => el.remove());
+      overlay.innerHTML = "<div>👋 감사합니다!</div>";
+    }
 
-// 재시작
-function restartGame() {
-  location.reload();
-}
-
-// 종료
-function endGame() {
-  clearInterval(obstacleInterval);
-  gameRunning = false;
-  document.querySelectorAll('.obstacle').forEach(el => el.remove());
-  overlay.innerHTML = "<div>👋 감사합니다!</div>";
-}
-
-
+  </script>
 </body>
 </html>
