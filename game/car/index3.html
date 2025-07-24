@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>자동차 피하기 게임</title>
+  <style>
+    body {
+      margin: 0;
+      background: #222;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #game {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #333;
+      overflow: hidden;
+    }
+
+    #player {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50px;
+  height: 80px;
+  background-image: url('car1.png'); /* 현재 폴더 기준 */
+  background-size: cover;
+  background-position: center;
+}
+
+
+    .obstacle {
+      position: absolute;
+      width: 50px;
+      height: 80px;
+      background: yellow;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <div id="player"></div>
+  </div>
+<img src="car1.png" width="50" style="position:absolute;top:0;left:0;z-index:999;">
+
+  <script>
+    const game = document.getElementById('game');
+    const player = document.getElementById('player');
+    let playerX = window.innerWidth / 2 - 25;
+
+    function updatePlayerPosition() {
+      player.style.left = playerX + 'px';
+    }
+
+    updatePlayerPosition();
+
+    let isDragging = false;
+
+    game.addEventListener('touchstart', () => {
+      isDragging = true;
+    });
+
+    game.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      playerX = touch.clientX - 25;
+      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+      updatePlayerPosition();
+    });
+
+    game.addEventListener('touchend', () => {
+      isDragging = false;
+    });
+
+    // PC 테스트용 마우스 대응
+    game.addEventListener('mousedown', () => isDragging = true);
+    game.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      playerX = e.clientX - 25;
+      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+      updatePlayerPosition();
+    });
+    game.addEventListener('mouseup', () => isDragging = false);
+
+    function createObstacle() {
+      const obs = document.createElement('div');
+      obs.className = 'obstacle';
+      obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
+      obs.style.top = '-100px';
+      game.appendChild(obs);
+
+      let y = -100;
+      const interval = setInterval(() => {
+        y += 5;
+        obs.style.top = y + 'px';
+
+        const obsX = parseInt(obs.style.left);
+        const playerY = window.innerHeight - 100;
+
+        if (
+          y > playerY - 80 &&
+          y < playerY + 80 &&
+          obsX > playerX - 50 &&
+          obsX < playerX + 50
+        ) {
+          alert("게임 오버!");
+          location.reload();
+          clearInterval(interval);
+        }
+
+        if (y > window.innerHeight) {
+          obs.remove();
+          clearInterval(interval);
+        }
+      }, 20);
+    }
+
+    setInterval(createObstacle, 1000);
+  </script>
+</body>
+</html>
