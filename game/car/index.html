@@ -181,14 +181,14 @@
    function createObstacle() {
   if (!gameRunning) return;
 
-  const type = Math.random() < 0.8 ? 'wall' : 'random'; // 장애물 타입 랜덤 (wall: 60%)
+  const type = Math.random() < 0.9 ? 'wall' : 'random'; // 장애물 타입 랜덤 (wall: 60%)
 
   const totalCols = 6;
   const colWidth = window.innerWidth / totalCols;
 
   if (type === 'wall') {
     // 전체 가로줄 장애물에서 1~2칸 비우기
-    const holeCount = 2 + Math.floor(Math.random() * 2);
+    const holeCount = 3 + Math.floor(Math.random() * 2);
     const holes = [];
     while (holes.length < holeCount) {
       const idx = Math.floor(Math.random() * totalCols);
@@ -226,7 +226,7 @@
   }
 
   // 다음 장애물 생성 예약 (1.4초~2초 랜덤 간격)
-  const nextDelay = 1400 + Math.random() * 1000;
+  const nextDelay = 3000 + Math.random() * 1000;
   setTimeout(createObstacle, nextDelay);
 }
 
@@ -316,6 +316,45 @@
   }
 
   requestAnimationFrame(fall);
+}
+
+function checkCollision(obstacle) {
+  if (isInvincible || !gameRunning) return;
+
+  const playerRect = player.getBoundingClientRect();
+  const obsRect = obstacle.getBoundingClientRect();
+
+  const buffer = 10; // 충돌 여유 거리
+
+  const isCollide =
+    playerRect.left + buffer < obsRect.right &&
+    playerRect.right - buffer > obsRect.left &&
+    playerRect.top + buffer < obsRect.bottom &&
+    playerRect.bottom - buffer > obsRect.top;
+
+  if (isCollide) {
+    handleHit();
+    obstacle.remove(); // 충돌된 장애물 제거
+  }
+}
+function animateObstacle(obstacle) {
+  let y = parseFloat(obstacle.style.top);
+  const interval = setInterval(() => {
+    if (!gameRunning) {
+      clearInterval(interval);
+      return;
+    }
+
+    y += obstacleSpeed;
+    obstacle.style.top = `${y}px`;
+
+    if (y > window.innerHeight) {
+      obstacle.remove();
+      clearInterval(interval);
+    }
+
+    checkCollision(obstacle);
+  }, 20);
 }
 
   </script>
