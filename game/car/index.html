@@ -24,12 +24,12 @@
 
     #player {
       position: absolute;
-      bottom: 100px;
+      bottom: 60px; /* ← 차 위치 위로 조정 */
       left: 50%;
       transform: translateX(-50%);
       width: 50px;
       height: 80px;
-      background-image: url('car1.png'); /* 같은 폴더에 car1.png 있어야 함 */
+      background-image: url('car1.png');
       background-size: cover;
       background-position: center;
       z-index: 10;
@@ -60,34 +60,56 @@
 
     updatePlayerPosition();
 
-    // 💡 터치 이동
+    // ✅ 손가락을 떼었다가 다시 눌러도 차가 순간이동하지 않도록 설정
+    let isDragging = false;
+    let activeTouchId = null;
+
     game.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
-        moveWithTouch(e.touches[0].clientX);
+        isDragging = true;
+        activeTouchId = e.touches[0].identifier;
       }
     });
 
     game.addEventListener('touchmove', (e) => {
-      e.preventDefault(); // ✅ 스크롤 방지
-      if (e.touches.length === 1) {
-        moveWithTouch(e.touches[0].clientX);
+      e.preventDefault(); // 스크롤 방지
+      if (!isDragging) return;
+
+      for (const touch of e.touches) {
+        if (touch.identifier === activeTouchId) {
+          const clientX = touch.clientX;
+          playerX = clientX - 25;
+          playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+          updatePlayerPosition();
+        }
       }
     }, { passive: false });
 
-    // 💡 마우스 이동
-    let isDragging = false;
-
-    game.addEventListener('mousedown', () => isDragging = true);
-    game.addEventListener('mousemove', (e) => {
-      if (isDragging) moveWithTouch(e.clientX);
+    game.addEventListener('touchend', (e) => {
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === activeTouchId) {
+          isDragging = false;
+          activeTouchId = null;
+        }
+      }
     });
-    game.addEventListener('mouseup', () => isDragging = false);
 
-    function moveWithTouch(clientX) {
-      playerX = clientX - 25;
+    // ✅ 마우스 드래그 대응 (PC용)
+    game.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      playerX = e.clientX - 25;
       playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
       updatePlayerPosition();
-    }
+    });
+
+    game.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      playerX = e.clientX - 25;
+      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+      updatePlayerPosition();
+    });
+
+    game.addEventListener('mouseup', () => isDragging = false);
 
     function createObstacle() {
       const obs = document.createElement('div');
