@@ -9,6 +9,7 @@
       margin: 0;
       background: #222;
       overflow: hidden;
+      touch-action: none; /* 모바일에서 드래그 처리용 */
     }
 
     #game {
@@ -16,6 +17,7 @@
       width: 100vw;
       height: 100vh;
       background: #333;
+      overflow: hidden;
     }
 
     #player {
@@ -25,7 +27,9 @@
       transform: translateX(-50%);
       width: 50px;
       height: 80px;
-      background: red;
+      background-image: url('car1.png');
+      background-size: cover;
+      background-position: center;
       border-radius: 8px;
     }
 
@@ -36,35 +40,11 @@
       background: yellow;
       border-radius: 8px;
     }
-
-    #controls {
-      position: absolute;
-      bottom: 10px;
-      width: 100%;
-      text-align: center;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 80px;
-      height: 80px;
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
-      font-size: 2rem;
-      line-height: 80px;
-      margin: 0 20px;
-      border-radius: 50%;
-      user-select: none;
-    }
   </style>
 </head>
 <body>
   <div id="game">
     <div id="player"></div>
-    <div id="controls">
-      <div class="btn" onclick="moveLeft()">←</div>
-      <div class="btn" onclick="moveRight()">→</div>
-    </div>
   </div>
 
   <script>
@@ -72,18 +52,45 @@
     const player = document.getElementById('player');
     let playerX = window.innerWidth / 2 - 25;
 
-    function moveLeft() {
-      playerX -= 50;
-      if (playerX < 0) playerX = 0;
+    // 처음 위치
+    function updatePlayerPosition() {
       player.style.left = playerX + 'px';
     }
 
-    function moveRight() {
-      playerX += 50;
+    updatePlayerPosition();
+
+    // 터치 기반 이동
+    let isDragging = false;
+
+    game.addEventListener('touchstart', (e) => {
+      isDragging = true;
+    });
+
+    game.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      playerX = touch.clientX - 25;
+      if (playerX < 0) playerX = 0;
       const maxX = window.innerWidth - 50;
       if (playerX > maxX) playerX = maxX;
-      player.style.left = playerX + 'px';
-    }
+      updatePlayerPosition();
+    });
+
+    game.addEventListener('touchend', () => {
+      isDragging = false;
+    });
+
+    // 마우스 드래그 대응 (PC 테스트용)
+    game.addEventListener('mousedown', () => isDragging = true);
+    game.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      playerX = e.clientX - 25;
+      if (playerX < 0) playerX = 0;
+      const maxX = window.innerWidth - 50;
+      if (playerX > maxX) playerX = maxX;
+      updatePlayerPosition();
+    });
+    game.addEventListener('mouseup', () => isDragging = false);
 
     function createObstacle() {
       const obs = document.createElement('div');
@@ -100,8 +107,12 @@
         // 충돌 감지
         const obsX = parseInt(obs.style.left);
         const playerY = window.innerHeight - 100;
-        if (y > playerY - 80 && y < playerY + 80 &&
-            obsX > playerX - 50 && obsX < playerX + 50) {
+        if (
+          y > playerY - 80 &&
+          y < playerY + 80 &&
+          obsX > playerX - 50 &&
+          obsX < playerX + 50
+        ) {
           alert("게임 오버!");
           location.reload();
           clearInterval(interval);
