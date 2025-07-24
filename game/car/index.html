@@ -76,11 +76,23 @@
     .hidden {
       visibility: hidden;
     }
+    #score {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  color: gold;
+  font-size: 1.5rem;
+  font-weight: bold;
+  z-index: 20;
+}
+
   </style>
 </head>
 <body>
   <div id="game">
     <div id="player"></div>
+    <div id="score">점수: 0</div>
+
     <div id="overlay">
       <div style="margin-bottom: 20px;">💥 게임 오버 💥</div>
       <button class="btn" onclick="restartGame()">🔄 재시작</button>
@@ -98,6 +110,25 @@
     const game = document.getElementById('game');
     const player = document.getElementById('player');
     const overlay = document.getElementById('overlay');
+
+    // 점수 추가
+    let score = 0;
+    const scoreDisplay = document.getElementById('score');
+    setInterval(() => {
+    if (!gameRunning) return;
+     score++;
+     scoreDisplay.textContent = `점수: ${score}`;
+     }, 1000);
+     if (isCollide) {
+  if (obstacle.dataset.gold === 'true') {
+    score += 5;
+  }
+  handleHit();
+  obstacle.remove();
+  scoreDisplay.textContent = `점수: ${score}`;
+}
+
+
 
     // 플레이어 위치 및 속도
     let playerX = window.innerWidth / 2 - 25;
@@ -205,25 +236,29 @@ function createObstacle() {
     if (holeIndices.includes(i)) continue;
 
     if (Math.random() < 0.6) {
-      const obs = document.createElement('div');
-      obs.className = 'obstacle';
+  const obs = document.createElement('div');
+  obs.className = 'obstacle';
 
-      // 장애물 폭 50%~100% 랜덤
-      const widthRatio = 0.5 + Math.random() * 0.5;
-      const obsWidth = colWidth * widthRatio;
+  // 골드일 확률 10%
+  const isGold = Math.random() < 0.1;
+  if (isGold) {
+    obs.style.background = 'gold';
+    obs.dataset.gold = 'true';  // 골드 여부 표시
+  }
 
-      // 왼쪽 위치도 랜덤 오프셋
-      const leftOffset = i * colWidth + Math.random() * (colWidth - obsWidth);
+  const widthRatio = 0.5 + Math.random() * 0.5;
+  const obsWidth = colWidth * widthRatio;
+  const leftOffset = i * colWidth + Math.random() * (colWidth - obsWidth);
 
-      obs.style.width = `${obsWidth}px`;
-      obs.style.left = `${leftOffset}px`;
+  obs.style.width = `${obsWidth}px`;
+  obs.style.left = `${leftOffset}px`;
+  obs.style.top = `-100px`;
+  obs.style.height = `${60 + Math.random() * 40}px`;
 
-      obs.style.top = `-100px`;
-      obs.style.height = `${60 + Math.random() * 40}px`;
+  game.appendChild(obs);
+  animateObstacle(obs);
+}
 
-      game.appendChild(obs);
-      animateObstacle(obs);
-    }
   }
 
   const nextDelay = 1500 + Math.random() * 500;
