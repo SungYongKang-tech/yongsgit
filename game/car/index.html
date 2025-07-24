@@ -183,65 +183,34 @@
 function createObstacle() {
   if (!gameRunning) return;
 
-  // 이전 타입과 다르면 50% 확률로 동일한 타입 유지
-  let type;
-  if (lastObstacleType === null) {
-    type = Math.random() < 0.7 ? 'wall' : 'random';
-  } else {
-    const sameType = Math.random() < 0.6;
-    type = sameType ? lastObstacleType : (lastObstacleType === 'wall' ? 'random' : 'wall');
-  }
-
-  lastObstacleType = type;
-
   const totalCols = 6;
   const colWidth = window.innerWidth / totalCols;
+  const blockCount = 1 + Math.floor(Math.random() * 2); // 1~2개만 생성
+  const used = [];
 
-  if (type === 'wall') {
-    const holeCount = 3 + Math.floor(Math.random() * 2); // 최소 3~4칸 비움
-    const holes = [];
-    while (holes.length < holeCount) {
-      const idx = Math.floor(Math.random() * totalCols);
-      if (!holes.includes(idx)) holes.push(idx);
-    }
-
-    for (let i = 0; i < totalCols; i++) {
-      if (holes.includes(i)) continue;
-
+  while (used.length < blockCount) {
+    const i = Math.floor(Math.random() * totalCols);
+    if (!used.includes(i)) {
       const obs = document.createElement('div');
       obs.className = 'obstacle';
-      obs.style.left = `${i * colWidth}px`;
+      obs.style.left = `${i * colWidth + colWidth / 4}px`;
       obs.style.top = `-100px`;
-      obs.style.width = `${colWidth}px`;
+      obs.style.width = `${colWidth / 2}px`;
       game.appendChild(obs);
       animateObstacle(obs);
-    }
-  } else if (type === 'random') {
-    const blockCount = 1 + Math.floor(Math.random() * 2); // 1~2개만 생성
-    const used = [];
-    while (used.length < blockCount) {
-      const i = Math.floor(Math.random() * totalCols);
-      if (!used.includes(i)) {
-        const obs = document.createElement('div');
-        obs.className = 'obstacle';
-        obs.style.left = `${i * colWidth + colWidth / 4}px`;
-        obs.style.top = `-100px`;
-        obs.style.width = `${colWidth / 2}px`;
-        game.appendChild(obs);
-        animateObstacle(obs);
-        used.push(i);
-      }
+      used.push(i);
     }
   }
 
-  const nextDelay = 3000 + Math.random() * 1000;
+  const nextDelay = 2500 + Math.random() * 1000;
+  setTimeout(createObstacle, nextDelay); // 🔹 딱 1번만 실행
+}
+
+  const nextDelay = 2500 + Math.random() * 1000; // 2.5~3.5초 간격
   setTimeout(createObstacle, nextDelay);
 }
 
-  // 다음 장애물 생성 예약 (1.4초~2초 랜덤 간격)
-  const nextDelay = 3000 + Math.random() * 1000;
-  setTimeout(createObstacle, nextDelay);
-}
+
 
     // 장애물 주기 생성
     let obstacleInterval = setInterval(createObstacle, 1000);
@@ -294,42 +263,7 @@ function createObstacle() {
       overlay.innerHTML = "<div>👋 감사합니다!</div>";
     }
 
-    function animateObstacle(obs) {
-  function fall() {
-    const top = parseFloat(obs.style.top);
-    if (top > window.innerHeight) {
-      obs.remove();
-      return;
-    }
-
-    // 충돌 감지
-    if (!isInvincible) {
-      const px = playerX + 25;
-      const py = playerY + 40;
-      const ox = parseFloat(obs.style.left);
-      const oy = parseFloat(obs.style.top);
-      const ow = parseFloat(obs.style.width);
-      const oh = parseFloat(obs.style.height);
-
-      const buffer = 10; // 충돌 여유 공간
-      if (
-        px + buffer > ox &&
-        px - buffer < ox + ow &&
-        py + buffer > oy &&
-        py - buffer < oy + oh
-      ) {
-        obs.remove();
-        handleHit();
-        return;
-      }
-    }
-
-    obs.style.top = `${top + obstacleSpeed}px`;
-    requestAnimationFrame(fall);
-  }
-
-  requestAnimationFrame(fall);
-}
+   
 
 function checkCollision(obstacle) {
   if (isInvincible || !gameRunning) return;
