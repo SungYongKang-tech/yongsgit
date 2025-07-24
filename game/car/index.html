@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>자동차 피하기 게임</title>
   <style>
@@ -13,6 +13,7 @@
       touch-action: none;
       height: 100%;
     }
+
     #game {
       position: relative;
       width: 100vw;
@@ -20,6 +21,7 @@
       background: #333;
       overflow: hidden;
     }
+
     #player {
       position: absolute;
       top: 0;
@@ -31,11 +33,21 @@
       background-position: center;
       z-index: 10;
     }
+
     .obstacle {
       position: absolute;
-      background: yellow;
+      background: lightgreen;
       border-radius: 8px;
     }
+
+    .gold-coin {
+      position: absolute;
+      background: gold;
+      border-radius: 50%;
+      box-shadow: 0 0 10px yellow;
+      z-index: 5;
+    }
+
     #overlay {
       position: absolute;
       top: 0;
@@ -51,6 +63,7 @@
       color: white;
       font-size: 2rem;
     }
+
     .btn {
       margin: 10px;
       padding: 10px 20px;
@@ -61,20 +74,22 @@
       border: none;
       border-radius: 6px;
     }
+
     .btn:hover {
       background: #777;
     }
+
     .hidden {
       visibility: hidden;
     }
+
     #score {
       position: absolute;
       top: 10px;
       left: 10px;
-      color: gold;
-      font-size: 1.5rem;
-      font-weight: bold;
-      z-index: 20;
+      color: white;
+      font-size: 1.2rem;
+      z-index: 1000;
     }
   </style>
 </head>
@@ -95,30 +110,19 @@
     const overlay = document.getElementById('overlay');
     const scoreDisplay = document.getElementById('score');
 
-    // 상태 변수
-    let gameRunning = true;
-    let lives = 3;
-    let isInvincible = false;
-    let moveVX = 0;
-    let moveVY = 0;
-    let score = 0;
-    let obstacleSpeed = 2;
-    let originalObstacleSpeed = 2;
-
-    // 플레이어 초기 위치
     let playerX = window.innerWidth / 2 - 25;
     let playerY = window.innerHeight - 120;
+    let moveVX = 0, moveVY = 0;
+    let lives = 3, isInvincible = false, isDragging = false, activeTouchId = null;
+    let startTouchX = 0, startTouchY = 0;
+    let gameRunning = true;
+    let obstacleSpeed = 2;
+    let obstacleInterval = 1500;
+    let score = 0;
+
     player.style.left = `${playerX}px`;
     player.style.top = `${playerY}px`;
 
-    // 점수 1초마다 증가
-    setInterval(() => {
-      if (!gameRunning) return;
-      score++;
-      scoreDisplay.textContent = `점수: ${score}`;
-    }, 1000);
-
-    // 플레이어 이동 처리
     function updatePlayerPosition() {
       playerX += moveVX;
       playerY += moveVY;
@@ -129,12 +133,6 @@
       requestAnimationFrame(updatePlayerPosition);
     }
     requestAnimationFrame(updatePlayerPosition);
-
-    // 터치 이동 처리
-    let isDragging = false;
-    let activeTouchId = null;
-    let startTouchX = 0;
-    let startTouchY = 0;
 
     game.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
@@ -156,8 +154,8 @@
           const len = Math.sqrt(dx * dx + dy * dy);
           if (len > 5) {
             const scale = Math.min(len / 30, 1);
-            moveVX = dx / len * scale * 5;  // ← 속도 줄임 (이전 8 → 5)
-            moveVY = dy / len * scale * 3;  // ← 속도 줄임 (이전 5 → 3)
+            moveVX = dx / len * scale * 8;
+            moveVY = dy / len * scale * 5;
           }
         }
       }
@@ -173,48 +171,97 @@
       }
     });
 
-    // 충돌 감지
-    function checkCollision(obstacle) {
-      if (isInvincible || !gameRunning) return;
-      const playerRect = player.getBoundingClientRect();
-      const obsRect = obstacle.getBoundingClientRect();
-      const buffer = 10;
+    function createObstacle() {
+      if (!gameRunning) return;
+      const obs = document.createElement('div');
+      obs.className = 'obstacle';
+      const obsWidth = 40 + Math.random() * 60;
+      const obsHeight = 40 + Math.random() * 60;
+      const left = Math.random() * (window.innerWidth - obsWidth);
+      obs.style.width = `${obsWidth}px`;
+      obs.style.height = `${obsHeight}px`;
+      obs.style.left = `${left}px`;
+      obs.style.top = `-100px`;
+      game.appendChild(obs);
+      animateObstacle(obs);
+    }
 
-      const isCollide =
-        playerRect.left + buffer < obsRect.right &&
-        playerRect.right - buffer > obsRect.left &&
-        playerRect.top + buffer < obsRect.bottom &&
-        playerRect.bottom - buffer > obsRect.top;
+    function createGoldCoin() {
+      const coin = document.createElement('div');
+      coin.className = 'gold-coin';
+      const size = 30;
+      const left = Math.random() * (window.innerWidth - size);
+      coin.style.width = `${size}px`;
+      coin.style.height = `${size}px`;
+      coin.style.left = `${left}px`;
+      coin.style.top = `-60px`;
+      game.appendChild(coin);
+      animateGoldCoin(coin);
+    }
 
-      if (isCollide) {
-        if (obstacle.dataset.gold === 'true') {
-          score += 5;
+    function animateObstacle(obs) {
+      let y = parseFloat(obs.style.top);
+      const interval = setInterval(() => {
+        if (!gameRunning) return clearInterval(interval);
+        y += obstacleSpeed;
+        obs.style.top = `${y}px`;
+        if (y > window.innerHeight) {
+          obs.remove();
+          clearInterval(interval);
         }
+        checkCollision(obs);
+      }, 20);
+    }
+
+    function animateGoldCoin(coin) {
+      let y = parseFloat(coin.style.top);
+      const interval = setInterval(() => {
+        if (!gameRunning) return clearInterval(interval);
+        y += obstacleSpeed;
+        coin.style.top = `${y}px`;
+        if (y > window.innerHeight) {
+          coin.remove();
+          clearInterval(interval);
+        }
+        const pRect = player.getBoundingClientRect();
+        const cRect = coin.getBoundingClientRect();
+        const collected = pRect.left < cRect.right && pRect.right > cRect.left && pRect.top < cRect.bottom && pRect.bottom > cRect.top;
+        if (collected) {
+          score += 5;
+          scoreDisplay.textContent = `점수: ${score}`;
+          coin.remove();
+          clearInterval(interval);
+        }
+      }, 20);
+    }
+
+    function checkCollision(obs) {
+      if (isInvincible || !gameRunning) return;
+      const p = player.getBoundingClientRect();
+      const o = obs.getBoundingClientRect();
+      const buffer = 10;
+      const collide = p.left + buffer < o.right && p.right - buffer > o.left && p.top + buffer < o.bottom && p.bottom - buffer > o.top;
+      if (collide) {
         handleHit();
-        obstacle.remove();
-        scoreDisplay.textContent = `점수: ${score}`;
+        obs.remove();
       }
     }
 
-    // 충돌 후 처리
     function handleHit() {
-      lives -= 1;
-      originalObstacleSpeed = obstacleSpeed;
+      lives--;
+      const originalSpeed = obstacleSpeed;
       obstacleSpeed = 1;
-      setTimeout(() => obstacleSpeed = originalObstacleSpeed, 2000);
-
+      setTimeout(() => { obstacleSpeed = originalSpeed; }, 2000);
       if (lives <= 0) {
         showGameOver();
         return;
       }
-
       isInvincible = true;
       let blink = 0;
-      const blinkInterval = setInterval(() => {
+      const interval = setInterval(() => {
         player.classList.toggle("hidden");
-        blink++;
-        if (blink >= 6) {
-          clearInterval(blinkInterval);
+        if (++blink >= 6) {
+          clearInterval(interval);
           player.classList.remove("hidden");
           isInvincible = false;
         }
@@ -222,6 +269,7 @@
     }
 
     function showGameOver() {
+      gameRunning = false;
       overlay.style.display = 'flex';
     }
 
@@ -231,74 +279,33 @@
 
     function endGame() {
       gameRunning = false;
-      document.querySelectorAll('.obstacle').forEach(el => el.remove());
+      document.querySelectorAll('.obstacle, .gold-coin').forEach(el => el.remove());
       overlay.innerHTML = "<div>👋 감사합니다!</div>";
     }
 
-    // 장애물 애니메이션
-    function animateObstacle(obstacle) {
-      let y = parseFloat(obstacle.style.top);
-      const interval = setInterval(() => {
-        if (!gameRunning) {
-          clearInterval(interval);
-          return;
-        }
-        y += obstacleSpeed;
-        obstacle.style.top = `${y}px`;
-        if (y > window.innerHeight) {
-          obstacle.remove();
-          clearInterval(interval);
-        }
-        checkCollision(obstacle);
-      }, 20);
-    }
-
-    // 장애물 생성
-    function createObstacle() {
-      if (!gameRunning) return;
-      const totalCols = 6;
-      const colWidth = window.innerWidth / totalCols;
-      const holeCount = 1 + Math.floor(Math.random() * 2);
-      const holeIndices = [];
-
-      while (holeIndices.length < holeCount) {
-        const idx = Math.floor(Math.random() * totalCols);
-        if (!holeIndices.includes(idx)) holeIndices.push(idx);
-      }
-
-      for (let i = 0; i < totalCols; i++) {
-        if (holeIndices.includes(i)) continue;
-        if (Math.random() < 0.6) {
-          const obs = document.createElement('div');
-          obs.className = 'obstacle';
-          const isGold = Math.random() < 0.1;
-          if (isGold) {
-            obs.style.background = 'gold';
-            obs.dataset.gold = 'true';
-          }
-          const widthRatio = 0.5 + Math.random() * 0.5;
-          const obsWidth = colWidth * widthRatio;
-          const leftOffset = i * colWidth + Math.random() * (colWidth - obsWidth);
-          obs.style.width = `${obsWidth}px`;
-          obs.style.left = `${leftOffset}px`;
-          obs.style.top = `-100px`;
-          obs.style.height = `${60 + Math.random() * 40}px`;
-          game.appendChild(obs);
-          animateObstacle(obs);
-        }
-      }
-
-      const nextDelay = 1500 + Math.random() * 500;
-      setTimeout(createObstacle, nextDelay);
-    }
-
-    // 장애물 속도 점점 증가
+    // 점수 자동 증가
     setInterval(() => {
-      obstacleSpeed *= 1.1;
+      if (gameRunning) {
+        score++;
+        scoreDisplay.textContent = `점수: ${score}`;
+      }
+    }, 1000);
+
+    // 장애물 및 골드 생성 루프
+    function spawnLoop() {
+      if (!gameRunning) return;
+      createObstacle();
+      if (Math.random() < 0.3) createGoldCoin();
+      setTimeout(spawnLoop, obstacleInterval);
+    }
+    spawnLoop();
+
+    // 점점 빨라지는 설정
+    setInterval(() => {
+      obstacleSpeed *= 1.05;
+      if (obstacleInterval > 500) obstacleInterval *= 0.95;
     }, 10000);
 
-    // 시작
-    createObstacle();
   </script>
 </body>
 </html>
