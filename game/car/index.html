@@ -89,152 +89,156 @@
     </div>
   </div>
 
-  <script>
-    const game = document.getElementById('game');
-    const player = document.getElementById('player');
-    const overlay = document.getElementById('overlay');
-    let playerX = window.innerWidth / 2 - 25;
+ <script>
+  const game = document.getElementById('game');
+  const player = document.getElementById('player');
+  const overlay = document.getElementById('overlay');
+  let playerX = window.innerWidth / 2 - 25;
 
-    let lives = 3;
-    let isInvincible = false;
+  let lives = 3;
+  let isInvincible = false;
 
-    function updatePlayerPosition() {
-      player.style.left = `${playerX}px`;
-    }
+  let obstacleInterval;
+  let gameRunning = true;
 
-    updatePlayerPosition();
+  function updatePlayerPosition() {
+    player.style.left = `${playerX}px`;
+  }
 
-    // 터치/마우스 이동 처리
-    let isDragging = false;
-    let activeTouchId = null;
-    let touchOffsetX = 0;
+  updatePlayerPosition();
 
-    game.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        const playerLeft = player.getBoundingClientRect().left;
-        touchOffsetX = touch.clientX - playerLeft;
-        isDragging = true;
-        activeTouchId = touch.identifier;
-      }
-    });
+  // 터치/마우스 이동 처리
+  let isDragging = false;
+  let activeTouchId = null;
+  let touchOffsetX = 0;
 
-    game.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      if (!isDragging) return;
-      for (const touch of e.touches) {
-        if (touch.identifier === activeTouchId) {
-          const newX = touch.clientX - touchOffsetX;
-          playerX = Math.max(0, Math.min(newX, window.innerWidth - 50));
-          updatePlayerPosition();
-        }
-      }
-    }, { passive: false });
-
-    game.addEventListener('touchend', (e) => {
-      for (const touch of e.changedTouches) {
-        if (touch.identifier === activeTouchId) {
-          isDragging = false;
-          activeTouchId = null;
-        }
-      }
-    });
-
-    game.addEventListener('mousedown', (e) => {
+  game.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const playerLeft = player.getBoundingClientRect().left;
+      touchOffsetX = touch.clientX - playerLeft;
       isDragging = true;
-      playerX = e.clientX - 25;
-      updatePlayerPosition();
-    });
+      activeTouchId = touch.identifier;
+    }
+  });
 
-    game.addEventListener('mousemove', (e) => {
-      if (isDragging) {
-        playerX = e.clientX - 25;
+  game.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!isDragging) return;
+    for (const touch of e.touches) {
+      if (touch.identifier === activeTouchId) {
+        const newX = touch.clientX - touchOffsetX;
+        playerX = Math.max(0, Math.min(newX, window.innerWidth - 50));
         updatePlayerPosition();
       }
-    });
-
-    game.addEventListener('mouseup', () => isDragging = false);
-
-    function createObstacle() {
-      const obs = document.createElement('div');
-      obs.className = 'obstacle';
-      obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
-      obs.style.top = '-100px';
-      game.appendChild(obs);
-
-      let y = -100;
-      const interval = setInterval(() => {
-        y += 5;
-        obs.style.top = `${y}px`;
-
-        const interval = setInterval(() => {
-  y += 5;
-  obs.style.top = `${y}px`;
-
-  const obsRect = obs.getBoundingClientRect();
-  const playerRect = player.getBoundingClientRect();
-
-  if (
-    !isInvincible &&
-    obsRect.bottom > playerRect.top &&
-    obsRect.top < playerRect.bottom &&
-    obsRect.right > playerRect.left &&
-    obsRect.left < playerRect.right
-  ) {
-    handleHit();
-    clearInterval(interval);
-    obs.remove();
-    return;
-  }
-
-  if (y > window.innerHeight) {
-    obs.remove();
-    clearInterval(interval);
-  }
-}, 20);
-
-
-        if (y > window.innerHeight) {
-          obs.remove();
-          clearInterval(interval);
-        }
-      }, 20);
     }
+  }, { passive: false });
 
-    function handleHit() {
-      lives -= 1;
-      if (lives <= 0) {
-        showGameOver();
+  game.addEventListener('touchend', (e) => {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === activeTouchId) {
+        isDragging = false;
+        activeTouchId = null;
+      }
+    }
+  });
+
+  game.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    playerX = e.clientX - 25;
+    updatePlayerPosition();
+  });
+
+  game.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      playerX = e.clientX - 25;
+      updatePlayerPosition();
+    }
+  });
+
+  game.addEventListener('mouseup', () => isDragging = false);
+
+  function createObstacle() {
+    if (!gameRunning) return;
+
+    const obs = document.createElement('div');
+    obs.className = 'obstacle';
+    obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
+    obs.style.top = '-100px';
+    game.appendChild(obs);
+
+    let y = -100;
+    const interval = setInterval(() => {
+      if (!gameRunning) {
+        obs.remove();
+        clearInterval(interval);
         return;
       }
 
-      // 무적 상태
-      isInvincible = true;
-      let blink = 0;
-      const blinkInterval = setInterval(() => {
-        player.classList.toggle("hidden");
-        blink++;
-        if (blink >= 6) {
-          clearInterval(blinkInterval);
-          player.classList.remove("hidden");
-          isInvincible = false;
-        }
-      }, 200);
+      y += 2; // 장애물 속도
+      obs.style.top = `${y}px`;
+
+      const obsRect = obs.getBoundingClientRect();
+      const playerRect = player.getBoundingClientRect();
+
+      if (
+        !isInvincible &&
+        obsRect.bottom > playerRect.top &&
+        obsRect.top < playerRect.bottom &&
+        obsRect.right > playerRect.left &&
+        obsRect.left < playerRect.right
+      ) {
+        handleHit();
+        clearInterval(interval);
+        obs.remove();
+        return;
+      }
+
+      if (y > window.innerHeight) {
+        obs.remove();
+        clearInterval(interval);
+      }
+    }, 20);
+  }
+
+  function handleHit() {
+    lives -= 1;
+    if (lives <= 0) {
+      showGameOver();
+      return;
     }
 
-    function showGameOver() {
-      overlay.style.display = 'flex';
-    }
+    isInvincible = true;
+    let blink = 0;
+    const blinkInterval = setInterval(() => {
+      player.classList.toggle("hidden");
+      blink++;
+      if (blink >= 6) {
+        clearInterval(blinkInterval);
+        player.classList.remove("hidden");
+        isInvincible = false;
+      }
+    }, 200);
+  }
 
-    function restartGame() {
-      location.reload();
-    }
+  function showGameOver() {
+    overlay.style.display = 'flex';
+  }
 
-    function endGame() {
-      overlay.innerHTML = "<div>👋 감사합니다!</div>";
-    }
+  function restartGame() {
+    location.reload();
+  }
 
-    setInterval(createObstacle, 1000);
-  </script>
+  function endGame() {
+    clearInterval(obstacleInterval);
+    gameRunning = false;
+    document.querySelectorAll('.obstacle').forEach(el => el.remove());
+    overlay.innerHTML = "<div>👋 감사합니다!</div>";
+  }
+
+  // 장애물 생성 주기 설정
+  obstacleInterval = setInterval(createObstacle, 1000);
+</script>
+
 </body>
 </html>
