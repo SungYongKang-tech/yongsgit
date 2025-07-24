@@ -178,66 +178,56 @@
     });
 
     // 장애물 생성
-    function createObstacle() {
+   function createObstacle() {
   if (!gameRunning) return;
 
-  const totalCols = 6;                     // 총 칸 수
+  const type = Math.random() < 0.6 ? 'wall' : 'random'; // 장애물 타입 랜덤 (wall: 60%)
+
+  const totalCols = 6;
   const colWidth = window.innerWidth / totalCols;
-  const holeCount = 1 + Math.floor(Math.random() * 2); // 1~2칸 비우기
-  const holes = [];
 
-  // 랜덤하게 비울 칸 index 고르기
-  while (holes.length < holeCount) {
-    const idx = Math.floor(Math.random() * totalCols);
-    if (!holes.includes(idx)) holes.push(idx);
+  if (type === 'wall') {
+    // 전체 가로줄 장애물에서 1~2칸 비우기
+    const holeCount = 1 + Math.floor(Math.random() * 2);
+    const holes = [];
+    while (holes.length < holeCount) {
+      const idx = Math.floor(Math.random() * totalCols);
+      if (!holes.includes(idx)) holes.push(idx);
+    }
+
+    for (let i = 0; i < totalCols; i++) {
+      if (holes.includes(i)) continue;
+
+      const obs = document.createElement('div');
+      obs.className = 'obstacle';
+      obs.style.left = `${i * colWidth}px`;
+      obs.style.top = `-100px`;
+      obs.style.width = `${colWidth}px`;
+      game.appendChild(obs);
+      animateObstacle(obs);
+    }
+  } else {
+    // 랜덤 위치에 1~3개 작은 장애물 떨어뜨리기
+    const blockCount = 1 + Math.floor(Math.random() * 3); // 1~3개
+    const used = [];
+    while (used.length < blockCount) {
+      const i = Math.floor(Math.random() * totalCols);
+      if (!used.includes(i)) {
+        const obs = document.createElement('div');
+        obs.className = 'obstacle';
+        obs.style.left = `${i * colWidth + colWidth / 4}px`;
+        obs.style.top = `-100px`;
+        obs.style.width = `${colWidth / 2}px`;
+        game.appendChild(obs);
+        animateObstacle(obs);
+        used.push(i);
+      }
+    }
   }
 
-  for (let i = 0; i < totalCols; i++) {
-    if (holes.includes(i)) continue; // 이 칸은 비움
-
-    const obs = document.createElement('div');
-    obs.className = 'obstacle';
-    obs.style.left = `${i * colWidth}px`;
-    obs.style.top = `-100px`;
-    obs.style.width = `${colWidth}px`; // 장애물 너비를 칸에 맞춤
-    game.appendChild(obs);
-
-    let y = -100;
-    const interval = setInterval(() => {
-      if (!gameRunning) {
-        obs.remove();
-        clearInterval(interval);
-        return;
-      }
-
-      y += obstacleSpeed;
-      obs.style.top = `${y}px`;
-
-      const obsRect = obs.getBoundingClientRect();
-      const playerRect = player.getBoundingClientRect();
-
-      const overlapWidth = Math.min(obsRect.right, playerRect.right) - Math.max(obsRect.left, playerRect.left);
-      const overlapHeight = Math.min(obsRect.bottom, playerRect.bottom) - Math.max(obsRect.top, playerRect.top);
-      const requiredOverlapWidth = playerRect.width * 0.4;
-      const requiredOverlapHeight = playerRect.height * 0.4;
-
-      if (
-        !isInvincible &&
-        overlapWidth > requiredOverlapWidth &&
-        overlapHeight > requiredOverlapHeight
-      ) {
-        handleHit();
-        clearInterval(interval);
-        obs.remove();
-        return;
-      }
-
-      if (y > window.innerHeight) {
-        obs.remove();
-        clearInterval(interval);
-      }
-    }, 20);
-  }
+  // 다음 장애물 생성 예약 (1.4초~2초 랜덤 간격)
+  const nextDelay = 1400 + Math.random() * 600;
+  setTimeout(createObstacle, nextDelay);
 }
 
     // 장애물 주기 생성
