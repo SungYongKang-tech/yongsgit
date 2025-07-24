@@ -5,11 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>자동차 피하기 게임</title>
   <style>
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
       background: #222;
       overflow: hidden;
       touch-action: none;
+      height: 100%;
     }
 
     #game {
@@ -20,21 +22,18 @@
       overflow: hidden;
     }
 
-   #player {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 50px;
-  height: 80px;
-  background-image: url('car1.png');
-  background-size: cover;
-  background-position: center;
-  z-index: 10;
-}
-
-
-
+    #player {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 50px;
+      height: 80px;
+      background-image: url('car1.png'); /* 같은 폴더에 car1.png 있어야 함 */
+      background-size: cover;
+      background-position: center;
+      z-index: 10;
+    }
 
     .obstacle {
       position: absolute;
@@ -56,38 +55,39 @@
     let playerX = window.innerWidth / 2 - 25;
 
     function updatePlayerPosition() {
-      player.style.left = playerX + 'px';
+      player.style.left = `${playerX}px`;
     }
 
     updatePlayerPosition();
 
-    let isDragging = false;
-
-    game.addEventListener('touchstart', () => {
-      isDragging = true;
+    // 💡 터치 이동
+    game.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        moveWithTouch(e.touches[0].clientX);
+      }
     });
 
     game.addEventListener('touchmove', (e) => {
-      if (!isDragging) return;
-      const touch = e.touches[0];
-      playerX = touch.clientX - 25;
-      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
-      updatePlayerPosition();
-    });
+      e.preventDefault(); // ✅ 스크롤 방지
+      if (e.touches.length === 1) {
+        moveWithTouch(e.touches[0].clientX);
+      }
+    }, { passive: false });
 
-    game.addEventListener('touchend', () => {
-      isDragging = false;
-    });
+    // 💡 마우스 이동
+    let isDragging = false;
 
-    // PC 테스트용 마우스 대응
     game.addEventListener('mousedown', () => isDragging = true);
     game.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      playerX = e.clientX - 25;
-      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
-      updatePlayerPosition();
+      if (isDragging) moveWithTouch(e.clientX);
     });
     game.addEventListener('mouseup', () => isDragging = false);
+
+    function moveWithTouch(clientX) {
+      playerX = clientX - 25;
+      playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+      updatePlayerPosition();
+    }
 
     function createObstacle() {
       const obs = document.createElement('div');
@@ -99,7 +99,7 @@
       let y = -100;
       const interval = setInterval(() => {
         y += 5;
-        obs.style.top = y + 'px';
+        obs.style.top = `${y}px`;
 
         const obsX = parseInt(obs.style.left);
         const playerY = window.innerHeight - 100;
