@@ -24,7 +24,7 @@
 
     #player {
       position: absolute;
-      bottom: 60px; /* ← 차 위치 위로 조정 */
+      bottom: 90px; /* ← 차 위치 위로 조정 */
       left: 50%;
       transform: translateX(-50%);
       width: 50px;
@@ -61,38 +61,42 @@
     updatePlayerPosition();
 
     // ✅ 손가락을 떼었다가 다시 눌러도 차가 순간이동하지 않도록 설정
-    let isDragging = false;
-    let activeTouchId = null;
+   let isDragging = false;
+let activeTouchId = null;
+let touchOffsetX = 0;
 
-    game.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        isDragging = true;
-        activeTouchId = e.touches[0].identifier;
-      }
-    });
+game.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    const touch = e.touches[0];
+    const playerLeft = player.getBoundingClientRect().left;
+    touchOffsetX = touch.clientX - playerLeft;
+    isDragging = true;
+    activeTouchId = touch.identifier;
+  }
+});
 
-    game.addEventListener('touchmove', (e) => {
-      e.preventDefault(); // 스크롤 방지
-      if (!isDragging) return;
+game.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!isDragging) return;
 
-      for (const touch of e.touches) {
-        if (touch.identifier === activeTouchId) {
-          const clientX = touch.clientX;
-          playerX = clientX - 25;
-          playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
-          updatePlayerPosition();
-        }
-      }
-    }, { passive: false });
+  for (const touch of e.touches) {
+    if (touch.identifier === activeTouchId) {
+      const newX = touch.clientX - touchOffsetX;
+      playerX = Math.max(0, Math.min(newX, window.innerWidth - 50));
+      updatePlayerPosition();
+    }
+  }
+}, { passive: false });
 
-    game.addEventListener('touchend', (e) => {
-      for (const touch of e.changedTouches) {
-        if (touch.identifier === activeTouchId) {
-          isDragging = false;
-          activeTouchId = null;
-        }
-      }
-    });
+game.addEventListener('touchend', (e) => {
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === activeTouchId) {
+      isDragging = false;
+      activeTouchId = null;
+    }
+  }
+});
+
 
     // ✅ 마우스 드래그 대응 (PC용)
     game.addEventListener('mousedown', (e) => {
