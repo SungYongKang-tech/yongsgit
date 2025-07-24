@@ -22,18 +22,18 @@
       overflow: hidden;
     }
 
-    #player {
-      position: absolute;
-      bottom: 100px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 50px;
-      height: 80px;
-      background-image: url('car1.png');
-      background-size: cover;
-      background-position: center;
-      z-index: 10;
-    }
+   #player {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50px;
+  height: 80px;
+  background-image: url('car1.png');
+  background-size: cover;
+  background-position: center;
+  z-index: 10;
+}
+
 
     .obstacle {
       position: absolute;
@@ -89,83 +89,92 @@
     </div>
   </div>
 
- <script>
-  const game = document.getElementById('game');
-  const player = document.getElementById('player');
-  const overlay = document.getElementById('overlay');
-  let playerX = window.innerWidth / 2 - 25;
+ const game = document.getElementById('game');
+const player = document.getElementById('player');
+const overlay = document.getElementById('overlay');
 
-  let lives = 3;
-  let isInvincible = false;
+// 플레이어 위치 및 속도
+let playerX = window.innerWidth / 2 - 25;
+let playerY = window.innerHeight - 120;
+let moveVX = 0;
+let moveVY = 0;
 
-  let obstacleInterval;
-  let gameRunning = true;
-  let obstacleSpeed = 2; // 초기 속도
+// 상태 변수
+let lives = 3;
+let isInvincible = false;
+let isDragging = false;
+let activeTouchId = null;
+let startTouchX = 0;
+let startTouchY = 0;
 
+// 장애물 관련
+let gameRunning = true;
+let obstacleSpeed = 2;
+let originalObstacleSpeed = 2;
+let obstacleInterval = setInterval(createObstacle, 1000);
+
+// 장애물 속도 증가
 setInterval(() => {
-  obstacleSpeed *= 1.1; // 10초마다 10% 증가
-}, 10000); // 10초 간격
+  obstacleSpeed *= 1.1;
+}, 10000);
 
+// 플레이어 위치 업데이트
+function updatePlayerPosition() {
+  playerX += moveVX;
+  playerY += moveVY;
 
-  function updatePlayerPosition() {
-    player.style.left = `${playerX}px`;
-  }
+  playerX = Math.max(0, Math.min(playerX, window.innerWidth - 50));
+  playerY = Math.max(0, Math.min(playerY, window.innerHeight - 80));
 
-  updatePlayerPosition();
+  player.style.left = `${playerX}px`;
+  player.style.top = `${playerY}px`;
 
-  // 터치/마우스 이동 처리
-  let isDragging = false;
-  let activeTouchId = null;
-  let touchOffsetX = 0;
+  requestAnimationFrame(updatePlayerPosition);
+}
+updatePlayerPosition(); // 최초 호출
 
-   game.addEventListener('touchstart', (e) => {
+// 터치 시작
+game.addEventListener('touchstart', (e) => {
   if (e.touches.length === 1) {
     const touch = e.touches[0];
-    isDragging = true;
+    startTouchX = touch.clientX;
+    startTouchY = touch.clientY;
     activeTouchId = touch.identifier;
-    touchOffsetX = 25; // 고정 오프셋: 중심 기준
+    isDragging = true;
   }
 });
 
+// 터치 이동
+game.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!isDragging) return;
 
-  game.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    if (!isDragging) return;
-    for (const touch of e.touches) {
-      if (touch.identifier === activeTouchId) {
-        const newX = touch.clientX - touchOffsetX;
-        playerX = Math.max(0, Math.min(newX, window.innerWidth - 50));
-        updatePlayerPosition();
+  for (const touch of e.touches) {
+    if (touch.identifier === activeTouchId) {
+      const dx = touch.clientX - startTouchX;
+      const dy = touch.clientY - startTouchY;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 5) {
+        moveVX = dx / len * 4;
+        moveVY = dy / len * 4;
       }
     }
-  }, { passive: false });
+  }
+}, { passive: false });
 
-  game.addEventListener('touchend', (e) => {
-    for (const touch of e.changedTouches) {
-      if (touch.identifier === activeTouchId) {
-        isDragging = false;
-        activeTouchId = null;
-      }
+// 터치 종료
+game.addEventListener('touchend', (e) => {
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === activeTouchId) {
+      isDragging = false;
+      moveVX = 0;
+      moveVY = 0;
     }
-  });
+  }
+});
 
-  game.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    playerX = e.clientX - 25;
-    updatePlayerPosition();
-  });
-
-  game.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      playerX = e.clientX - 25;
-      updatePlayerPosition();
-    }
-  });
-
-  game.addEventListener('mouseup', () => isDragging = false);
-
-   // (2) 충돌 판정 수정 - 오직 getBoundingClientRect 기반
-  function createObstacle() {
+// 장애물 생성
+function createObstacle() {
   if (!gameRunning) return;
 
   const obs = document.createElement('div');
@@ -182,13 +191,12 @@ setInterval(() => {
       return;
     }
 
-    y += obstacleSpeed;  // 속도 적용
+    y += obstacleSpeed;
     obs.style.top = `${y}px`;
 
     const obsRect = obs.getBoundingClientRect();
     const playerRect = player.getBoundingClientRect();
 
-    // 충돌 범위 완화 (20% 더 겹쳐야 충돌)
     const overlapWidth = Math.min(obsRect.right, playerRect.right) - Math.max(obsRect.left, playerRect.left);
     const overlapHeight = Math.min(obsRect.bottom, playerRect.bottom) - Math.max(obsRect.top, playerRect.top);
     const requiredOverlapWidth = playerRect.width * 0.6;
@@ -212,45 +220,53 @@ setInterval(() => {
   }, 20);
 }
 
+// 충돌 처리
+function handleHit() {
+  lives -= 1;
 
-  function handleHit() {
-    lives -= 1;
-    if (lives <= 0) {
-      showGameOver();
-      return;
+  // 속도 일시 감소
+  originalObstacleSpeed = obstacleSpeed;
+  obstacleSpeed = 1;
+  setTimeout(() => {
+    obstacleSpeed = originalObstacleSpeed;
+  }, 2000);
+
+  if (lives <= 0) {
+    showGameOver();
+    return;
+  }
+
+  isInvincible = true;
+  let blink = 0;
+  const blinkInterval = setInterval(() => {
+    player.classList.toggle("hidden");
+    blink++;
+    if (blink >= 6) {
+      clearInterval(blinkInterval);
+      player.classList.remove("hidden");
+      isInvincible = false;
     }
+  }, 200);
+}
 
-    isInvincible = true;
-    let blink = 0;
-    const blinkInterval = setInterval(() => {
-      player.classList.toggle("hidden");
-      blink++;
-      if (blink >= 6) {
-        clearInterval(blinkInterval);
-        player.classList.remove("hidden");
-        isInvincible = false;
-      }
-    }, 200);
-  }
+// 게임 오버 처리
+function showGameOver() {
+  overlay.style.display = 'flex';
+}
 
-  function showGameOver() {
-    overlay.style.display = 'flex';
-  }
+// 재시작
+function restartGame() {
+  location.reload();
+}
 
-  function restartGame() {
-    location.reload();
-  }
+// 종료
+function endGame() {
+  clearInterval(obstacleInterval);
+  gameRunning = false;
+  document.querySelectorAll('.obstacle').forEach(el => el.remove());
+  overlay.innerHTML = "<div>👋 감사합니다!</div>";
+}
 
-  function endGame() {
-    clearInterval(obstacleInterval);
-    gameRunning = false;
-    document.querySelectorAll('.obstacle').forEach(el => el.remove());
-    overlay.innerHTML = "<div>👋 감사합니다!</div>";
-  }
-
-  // 장애물 생성 주기 설정
-  obstacleInterval = setInterval(createObstacle, 1000);
-</script>
 
 </body>
 </html>
