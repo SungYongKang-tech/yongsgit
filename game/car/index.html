@@ -100,6 +100,12 @@
 
   let obstacleInterval;
   let gameRunning = true;
+  let obstacleSpeed = 2; // 초기 속도
+
+setInterval(() => {
+  obstacleSpeed *= 1.1; // 10초마다 10% 증가
+}, 10000); // 10초 간격
+
 
   function updatePlayerPosition() {
     player.style.left = `${playerX}px`;
@@ -113,14 +119,14 @@
   let touchOffsetX = 0;
 
    game.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 1) {
-      const touch = e.touches[0];
-      const playerRect = player.getBoundingClientRect();
-      touchOffsetX = touch.clientX - playerRect.left;
-      isDragging = true;
-      activeTouchId = touch.identifier;
-    }
-  });
+  if (e.touches.length === 1) {
+    const touch = e.touches[0];
+    isDragging = true;
+    activeTouchId = touch.identifier;
+    touchOffsetX = 25; // 고정 오프셋: 중심 기준
+  }
+});
+
 
   game.addEventListener('touchmove', (e) => {
     e.preventDefault();
@@ -160,47 +166,52 @@
 
    // (2) 충돌 판정 수정 - 오직 getBoundingClientRect 기반
   function createObstacle() {
-    if (!gameRunning) return;
+  if (!gameRunning) return;
 
-    const obs = document.createElement('div');
-    obs.className = 'obstacle';
-    obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
-    obs.style.top = '-100px';
-    game.appendChild(obs);
+  const obs = document.createElement('div');
+  obs.className = 'obstacle';
+  obs.style.left = Math.floor(Math.random() * (window.innerWidth - 50)) + 'px';
+  obs.style.top = '-100px';
+  game.appendChild(obs);
 
-    let y = -100;
-    const interval = setInterval(() => {
-      if (!gameRunning) {
-        obs.remove();
-        clearInterval(interval);
-        return;
-      }
+  let y = -100;
+  const interval = setInterval(() => {
+    if (!gameRunning) {
+      obs.remove();
+      clearInterval(interval);
+      return;
+    }
 
-      y += 2;
-      obs.style.top = `${y}px`;
+    y += obstacleSpeed;  // 속도 적용
+    obs.style.top = `${y}px`;
 
-      const obsRect = obs.getBoundingClientRect();
-      const playerRect = player.getBoundingClientRect();
+    const obsRect = obs.getBoundingClientRect();
+    const playerRect = player.getBoundingClientRect();
 
-      if (
-        !isInvincible &&
-        obsRect.bottom > playerRect.top &&
-        obsRect.top < playerRect.bottom &&
-        obsRect.right > playerRect.left &&
-        obsRect.left < playerRect.right
-      ) {
-        handleHit(); // 깜빡이는 효과는 전역에 영향을 주지만, 장애물 개별적으로 유지
-        clearInterval(interval);
-        obs.remove();
-        return;
-      }
+    // 충돌 범위 완화 (20% 더 겹쳐야 충돌)
+    const overlapWidth = Math.min(obsRect.right, playerRect.right) - Math.max(obsRect.left, playerRect.left);
+    const overlapHeight = Math.min(obsRect.bottom, playerRect.bottom) - Math.max(obsRect.top, playerRect.top);
+    const requiredOverlapWidth = playerRect.width * 0.6;
+    const requiredOverlapHeight = playerRect.height * 0.6;
 
-      if (y > window.innerHeight) {
-        obs.remove();
-        clearInterval(interval);
-      }
-    }, 20);
-  }
+    if (
+      !isInvincible &&
+      overlapWidth > requiredOverlapWidth &&
+      overlapHeight > requiredOverlapHeight
+    ) {
+      handleHit();
+      clearInterval(interval);
+      obs.remove();
+      return;
+    }
+
+    if (y > window.innerHeight) {
+      obs.remove();
+      clearInterval(interval);
+    }
+  }, 20);
+}
+
 
   function handleHit() {
     lives -= 1;
