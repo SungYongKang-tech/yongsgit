@@ -178,17 +178,27 @@
     });
 
     // 장애물 생성
-   function createObstacle() {
+  let lastObstacleType = null;
+
+function createObstacle() {
   if (!gameRunning) return;
 
-  const type = Math.random() < 0.9 ? 'wall' : 'random'; // 장애물 타입 랜덤 (wall: 60%)
+  // 이전 타입과 다르면 50% 확률로 동일한 타입 유지
+  let type;
+  if (lastObstacleType === null) {
+    type = Math.random() < 0.7 ? 'wall' : 'random';
+  } else {
+    const sameType = Math.random() < 0.6;
+    type = sameType ? lastObstacleType : (lastObstacleType === 'wall' ? 'random' : 'wall');
+  }
+
+  lastObstacleType = type;
 
   const totalCols = 6;
   const colWidth = window.innerWidth / totalCols;
 
   if (type === 'wall') {
-    // 전체 가로줄 장애물에서 1~2칸 비우기
-    const holeCount = 3 + Math.floor(Math.random() * 2);
+    const holeCount = 3 + Math.floor(Math.random() * 2); // 최소 3~4칸 비움
     const holes = [];
     while (holes.length < holeCount) {
       const idx = Math.floor(Math.random() * totalCols);
@@ -206,9 +216,8 @@
       game.appendChild(obs);
       animateObstacle(obs);
     }
-  } else {
-    // 랜덤 위치에 1~3개 작은 장애물 떨어뜨리기
-    const blockCount = 1 + Math.floor(Math.random() * 3); // 1~3개
+  } else if (type === 'random') {
+    const blockCount = 1 + Math.floor(Math.random() * 2); // 1~2개만 생성
     const used = [];
     while (used.length < blockCount) {
       const i = Math.floor(Math.random() * totalCols);
@@ -224,6 +233,10 @@
       }
     }
   }
+
+  const nextDelay = 3000 + Math.random() * 1000;
+  setTimeout(createObstacle, nextDelay);
+}
 
   // 다음 장애물 생성 예약 (1.4초~2초 랜덤 간격)
   const nextDelay = 3000 + Math.random() * 1000;
