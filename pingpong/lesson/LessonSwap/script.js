@@ -64,3 +64,9 @@ onValue(scheduleRef, (snapshot) => {
   const data = snapshot.val() || {};
   renderSchedule(data);
 });
+
+onValue(scheduleRef, (snapshot) => {
+  const data = snapshot.val() || {};
+  console.log("🔥 불러온 시간표 데이터:", data); // ← 이 줄 추가
+  renderSchedule(data);
+});
