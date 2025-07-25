@@ -327,86 +327,48 @@
 
   <div class="teams" id="teams"></div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
+    authDomain: "koen-pingpong.firebaseapp.com",
+    databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
+    projectId: "koen-pingpong",
+    storageBucket: "koen-pingpong.appspot.com",
+    messagingSenderId: "597358811982",
+    appId: "1:597358811982:web:2ee0d02e6b68cb0a321c1f"
+  };
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
-      authDomain: "koen-pingpong.firebaseapp.com",
-      databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
-      projectId: "koen-pingpong",
-      storageBucket: "koen-pingpong.appspot.com",
-      messagingSenderId: "597358811982",
-      appId: "1:597358811982:web:2ee0d02e6b68cb0a321c1f"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // 예시 팀 데이터
-    const latestTeams = [
-      {
-        leader: { name: "김희영", level: 5 },
-        members: [
-          { name: "강성용", level: 6 },
-          { name: "박진우", level: 8 }
-        ]
-      },
-      {
-        leader: { name: "이영진", level: 4 },
-        members: [
-          { name: "박주민", level: 9 },
-          { name: "이상준", level: 7 }
-        ]
-      }
-    ];
-
-    // HTML에 표시
-    const teamBox = document.getElementById("teams");
-    latestTeams.forEach((team) => {
-      const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
-      const div = document.createElement("div");
-      div.className = "team-card";
-      div.innerHTML = `
-        <h3>${team.leader.name} 팀</h3>
-        <ul>
-          <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
-          ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
-        </ul>
-        <p><small>부수합: ${team.leader.level + sortedMembers.reduce((s, p) => s + p.level, 0)}</small></p>`;
-      teamBox.appendChild(div);
-    });
-
-    // Firebase 업로드 함수
-    window.uploadTeamsToFirebase = function () {
-      if (!latestTeams || latestTeams.length === 0) {
-        alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
-        return;
-      }
-
-      const firebaseData = {};
-      latestTeams.forEach((team, idx) => {
-        firebaseData[`team${idx + 1}`] = {
-          teamName: `${team.leader.name} 팀`,
-          teamLeader: team.leader.name,
-          players: [team.leader, ...team.members]
-        };
-      });
-
-      set(ref(db, "teams"), firebaseData)
-        .then(() => {
-          alert("✅ 팀 구성이 Firebase에 업로드되었습니다!");
-          setTimeout(() => {
-            window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/";
-          }, 500);
-        })
-        .catch((err) => {
-          console.error("❌ 업로드 실패:", err);
-          alert("❌ Firebase 업로드에 실패했습니다.");
-        });
-    };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 </script>
+
+function uploadTeamsToFirebase() {
+  if (!latestTeams || latestTeams.length === 0) {
+    alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
+    return;
+  }
+
+  const firebaseData = {};
+  latestTeams.forEach((team, idx) => {
+    firebaseData[`team${idx + 1}`] = {
+      teamName: `${team.leader.name} 팀`,
+      teamLeader: team.leader.name,
+      players: [team.leader, ...team.members]
+    };
+  });
+
+  db.ref("teams").set(firebaseData)
+    .then(() => {
+      setTimeout(() => {
+        window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/";
+      }, 500);
+    })
+    .catch((err) => {
+      console.error("❌ 업로드 실패:", err);
+      alert("❌ Firebase 업로드에 실패했습니다.");
+    });
+}
+
 
       <h2>탁구 단체전 생성기</h2>
 
