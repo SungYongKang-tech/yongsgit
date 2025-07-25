@@ -197,7 +197,8 @@
   <option value="2" selected>2경기</option>
   <option value="3">3경기</option>
 </select>
-    <button onclick="handleGenerateMatches()">대진표 생성</button>
+    <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>
+
 
     <button onclick="saveAsImage()">대진결과 저장</button>
 
@@ -263,24 +264,6 @@ function loadTeams() {
   });
 }
 
-
-// 버튼 클릭 시
-function handleGenerateMatches() {
-  loadTeams().then(() => {
-    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
-  });
-}
-
-function renderTeamList() {
-  let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
-  teamNames.forEach(team => {
-    const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
-    html += `<tr><td>${team}</td><td>${players}</td></tr>`;
-  });
-  html += '</table>';
-  document.getElementById('teamListArea').innerHTML = html;
-}
-
 function renderAllMatchesFromFirebase() {
   const db = window.db;
   const ref = window.ref;
@@ -321,40 +304,57 @@ function renderAllMatchesFromFirebase() {
     // ✅ update 실행 (root 기준으로)
     update(ref(db), updates);
   });
+  document.getElementById("matchArea").innerHTML = ""; // 이 줄 추가
+}
+
+
+// 버튼 클릭 시
+function handleGenerateMatches() {
+  loadTeams().then(() => {
+    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
+  });
+}
+
+function renderTeamList() {
+  let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
+  teamNames.forEach(team => {
+    const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
+    html += `<tr><td>${team}</td><td>${players}</td></tr>`;
+  });
+  html += '</table>';
+  document.getElementById('teamListArea').innerHTML = html;
 }
 
 
 
 function renderMatchCard(teamA, teamB, matchList) {
-  const container = document.getElementById("summaryArea");
-  let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
-  html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
- matchList.forEach((match, idx) => {
-  let playerHTML = match.players;
-  const [a, b] = (match.result || "").split(":").map(Number);
-
-  if (!isNaN(a) && !isNaN(b) && match.players.includes(" vs ")) {
-    let [aNames, bNames] = match.players.split(" vs ");
-    aNames = aNames.trim();
-    bNames = bNames.trim();
-
-    if (a > b) {
-      playerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
-    } else if (b > a) {
-      playerHTML = `${aNames} vs <strong>${bNames}</strong>`;
-    }
+  const container = document.getElementById("matchArea");
+  if (!container) {
+    console.error("❌ matchArea 요소가 없습니다.");
+    return;
   }
 
-  html += `<tr>
-    <td>${match.label}</td>
-    <td contenteditable='false' onclick="openPlayerPopup('${teamA}', '${teamB}', this)">${playerHTML}</td>
-    <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
-  </tr>`;
-});
+  const card = document.createElement("div");
+  card.className = "match-card";
+  card.style.border = "2px solid #aaa";
+  card.style.padding = "10px";
+  card.style.marginBottom = "15px";
+  card.style.background = "#fff";
 
-  html += `</tbody></table></div>`;
-  container.innerHTML += html;
+  const title = document.createElement("h3");
+  title.textContent = `${teamA} vs ${teamB}`;
+  card.appendChild(title);
+
+  matchList.forEach(match => {
+    const p = document.createElement("p");
+    p.textContent = `${match.label}: ${match.players} (${match.result})`;
+    card.appendChild(p);
+  });
+
+  container.appendChild(card);
 }
+
+
 
 function openPlayerPopup(teamA, teamB, cell) {
   const popup = document.getElementById("popup");
@@ -755,6 +755,7 @@ document.getElementById("closeUsageModal").addEventListener("click", () => {
 
 </script>
 
-
+  <div id="matchArea"></div>
 </body>
+
 </html>
