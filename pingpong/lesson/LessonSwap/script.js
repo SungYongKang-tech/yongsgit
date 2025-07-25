@@ -90,24 +90,40 @@ function renderSchedule(data) {
 }
 
 function highlightSelected(key) {
-  document.querySelectorAll("td").forEach(td => td.style.backgroundColor = "");
-  const cell = [...document.querySelectorAll("td")].find(td => td.textContent.includes(userName));
+  document.querySelectorAll("td").forEach(td => {
+    td.style.backgroundColor = "";
+  });
 
-  if (cell) cell.style.fontWeight = "bold";
-  const selected = [...document.querySelectorAll("td")].find(td => td.onclick && td.onclick.toString().includes(key));
-  if (selected) selected.style.backgroundColor = "#b3e5fc";
+  const index = keyToCellIndex(key);
+  if (index) {
+    const { rowIdx, colIdx } = index;
+    const table = document.querySelector("#scheduleContainer table");
+    const cell = table.rows[rowIdx + 1].cells[colIdx + 1];
+    cell.style.backgroundColor = "#b3e5fc";
+  }
 }
+
+// key 문자열을 row/col index로 변환하는 유틸 함수
+function keyToCellIndex(key) {
+  const [day, pIdx] = key.split("_");
+  const colIdx = { mon: 0, tue: 1, wed: 2, thu: 3 }[day];
+  const rowIdx = parseInt(pIdx);
+  return colIdx != null && !isNaN(rowIdx) ? { rowIdx, colIdx } : null;
+}
+
 
 window.markAbsent = function () {
   if (!selectedKey) return alert("셀을 선택하세요.");
+  if (!confirm("이 자리를 비우시겠습니까?")) return;
 
-  // 조건 제거: 누구든지 선택된 셀을 불참 처리 가능
+  // 이름 확인 없이 누구든지 해당 셀을 공란으로 처리
   set(ref(db, `schedule/${selectedKey}`), { name: "" })
     .then(() => {
       alert("불참 처리되었습니다.");
       selectedKey = null;
     });
 };
+
 
 
 window.requestSwap = function () {
