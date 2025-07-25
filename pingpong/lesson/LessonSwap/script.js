@@ -1,4 +1,3 @@
-// script.js
 import { db } from './firebase.js';
 import { ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
@@ -17,6 +16,33 @@ window.changeName = function () {
   location.reload();
 };
 
+window.importSchedule = async function () {
+  const confirmUpload = confirm("정말 Firebase에 시간표를 업로드하시겠습니까?");
+  if (!confirmUpload) return;
+
+  const schedule = {};
+  const names = [
+    ["김승일", "정승목", "김승일", "정승목"],
+    ["이상준", "박나령", "이상준", "박나령"],
+    ["이낭주", "양충현", "이낭주", "양충현"],
+    ["조보미", "송은아", "조보미", "송은아"],
+    ["고은선", "임춘근", "고은선", "임춘근"]
+  ];
+  const days = ["mon", "tue", "wed", "thu"];
+  for (let i = 0; i < 5; i++) {
+    for (let j = 0; j < 4; j++) {
+      schedule[`${days[j]}_${i}`] = { name: names[i][j] };
+    }
+  }
+
+  try {
+    await set(ref(db, 'schedule'), schedule);
+    alert("✅ 시간표 업로드 성공!");
+  } catch (e) {
+    alert("❌ 오류 발생: " + e.message);
+  }
+};
+
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
   container.innerHTML = "";
@@ -33,16 +59,16 @@ function renderSchedule(data) {
     days.forEach(day => {
       const key = `${day}_${pIdx}`;
       const cell = document.createElement("td");
-      const value = data[key]?.name || "";
+      const value = data[key]?.name ?? "";
       if (value) {
         cell.textContent = value;
         if (value === userName) {
           cell.style.fontWeight = "bold";
         }
-        cell.innerHTML += `<br><button onclick="markAbsent('${key}')">불참</button>`;
+        cell.innerHTML += `<br><button class="btn" onclick="markAbsent('${key}')">불참</button>`;
       } else {
         cell.classList.add("empty");
-        cell.innerHTML = `<button onclick="joinLesson('${key}')">참가하기</button>`;
+        cell.innerHTML = `<button class="btn" onclick="joinLesson('${key}')">참가하기</button>`;
       }
       row.appendChild(cell);
     });
@@ -62,11 +88,6 @@ window.joinLesson = function (key) {
 
 onValue(scheduleRef, (snapshot) => {
   const data = snapshot.val() || {};
-  renderSchedule(data);
-});
-
-onValue(scheduleRef, (snapshot) => {
-  const data = snapshot.val() || {};
-  console.log("🔥 불러온 시간표 데이터:", data); // ← 이 줄 추가
+  console.log("🔥 불러온 시간표 데이터:", data);
   renderSchedule(data);
 });
