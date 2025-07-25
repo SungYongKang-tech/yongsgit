@@ -1,4 +1,3 @@
-
 // script.js
 import { db } from './firebase.js';
 import { ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
@@ -6,6 +5,7 @@ import { ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.2/fir
 const scheduleRef = ref(db, 'schedule');
 const userNameKey = "lessonSwapUserName";
 
+// 사용자 이름 설정 및 저장
 let userName = localStorage.getItem(userNameKey);
 if (!userName) {
   userName = prompt("이름을 입력하세요:");
@@ -13,7 +13,7 @@ if (!userName) {
 }
 document.getElementById("userNameDisplay").textContent = `안녕하세요, ${userName}님`;
 
-window.changeName = function() {
+window.changeName = function () {
   localStorage.removeItem(userNameKey);
   location.reload();
 };
@@ -32,7 +32,7 @@ function renderSchedule(data) {
     const row = document.createElement("tr");
     row.innerHTML = `<td>${period}</td>`;
     days.forEach(day => {
-      const key = \`\${day}_\${pIdx}\`;
+      const key = `${day}_${pIdx}`;
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
       if (value) {
@@ -53,14 +53,15 @@ function renderSchedule(data) {
   container.appendChild(table);
 }
 
-window.markAbsent = function(key) {
-  set(ref(db, \`schedule/\${key}\`), { name: "" });
+window.markAbsent = function (key) {
+  set(ref(db, `schedule/${key}`), { name: "" });
 };
 
-window.joinLesson = function(key) {
-  set(ref(db, \`schedule/\${key}\`), { name: userName });
+window.joinLesson = function (key) {
+  set(ref(db, `schedule/${key}`), { name: userName });
 };
 
+// 실시간 감지
 onValue(scheduleRef, (snapshot) => {
   const data = snapshot.val() || {};
   renderSchedule(data);
