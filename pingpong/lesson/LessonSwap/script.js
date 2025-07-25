@@ -1,18 +1,10 @@
+// script.js
 import { db } from './firebase.js';
-import {
-  ref,
-  onValue,
-  set,
-  get,
-  update
-} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { ref, onValue, set, get, update, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const scheduleRef = ref(db, 'schedule');
-const swapRef = ref(db, 'swapRequest');
+const requestRef = ref(db, 'swapRequest');
 const userNameKey = "lessonSwapUserName";
-let selectedKey = null;
-let selectedName = null;
-
 let userName = localStorage.getItem(userNameKey);
 if (!userName) {
   userName = prompt("이름을 입력하세요:");
@@ -25,34 +17,8 @@ window.changeName = function () {
   location.reload();
 };
 
-window.importSchedule = async function () {
-  const names = [
-    ["김승일", "정승목", "김승일", "정승목"],
-    ["이상준", "박나령", "이상준", "박나령"],
-    ["이낭주", "양충현", "이낭주", "양충현"],
-    ["조보미", "송은아", "조보미", "송은아"],
-    ["고은선", "임춘근", "고은선", "임춘근"]
-  ];
-  const days = ["mon", "tue", "wed", "thu"];
-  const schedule = {};
-  for (let i = 0; i < 5; i++) {
-    for (let j = 0; j < 4; j++) {
-      schedule[`${days[j]}_${i}`] = { name: names[i][j] };
-    }
-  }
-  await set(scheduleRef, schedule);
-  alert("✅ 시간표 업로드 완료");
-};
+let selectedKey = null;
 
-// 셀 클릭 → 선택 토글
-function selectCell(key, name, element) {
-  document.querySelectorAll("td").forEach(td => td.classList.remove("selected"));
-  element.classList.add("selected");
-  selectedKey = key;
-  selectedName = name;
-}
-
-// 시간표 렌더링
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
   container.innerHTML = "";
@@ -69,20 +35,22 @@ function renderSchedule(data) {
     days.forEach(day => {
       const key = `${day}_${pIdx}`;
       const cell = document.createElement("td");
-      const name = data[key]?.name ?? "";
+      const value = data[key]?.name || "";
 
-      if (name) {
-        cell.innerHTML = `<div>${name}</div>`;
-        if (name === userName) {
+      if (value) {
+        cell.textContent = value;
+        if (value === userName) {
           cell.style.fontWeight = "bold";
         }
       } else {
         cell.classList.add("empty");
-        cell.innerHTML = `<div style="color:gray">비어 있음</div>`;
       }
 
-      // 클릭 시 선택
-      cell.onclick = () => selectCell(key, name, cell);
+      cell.onclick = () => {
+        selectedKey = key;
+        highlightSelected(key);
+      };
+
       row.appendChild(cell);
     });
     table.appendChild(row);
@@ -91,52 +59,54 @@ function renderSchedule(data) {
   container.appendChild(table);
 }
 
-window.handleAbsent = function () {
-  if (!selectedKey) return alert("셀을 먼저 선택하세요.");
+function highlightSelected(key) {
+  document.querySelectorAll("td").forEach(td => td.style.backgroundColor = "");
+  const cell = document.querySelectorAll("td")[...document.querySelectorAll("td")].find(td => td.textContent.includes(userName));
+  if (cell) cell.style.fontWeight = "bold";
+  const selected = [...document.querySelectorAll("td")].find(td => td.onclick && td.onclick.toString().includes(key));
+  if (selected) selected.style.backgroundColor = "#b3e5fc";
+}
+
+window.markAbsent = function () {
+  if (!selectedKey) return alert("셀을 선택하세요.");
   set(ref(db, `schedule/${selectedKey}`), { name: "" });
   selectedKey = null;
 };
 
 window.requestSwap = function () {
-  if (!selectedKey || !selectedName) return alert("다른 사람의 셀을 선택하세요.");
-  if (selectedName === userName) return alert("자기 자신에게는 요청할 수 없습니다.");
-  const request = {
-    from: { key: null, name: userName },
-    to: { key: selectedKey, name: selectedName },
-    status: "pending"
-  };
-  // 내 이름이 있는 셀 찾아서 저장
-  get(scheduleRef).then(snap => {
-    const schedule = snap.val();
-    for (let key in schedule) {
-      if (schedule[key].name === userName) {
-        request.from.key = key;
-        break;
-      }
+  if (!selectedKey) return alert("본인의 셀을 먼저 선택하세요.");
+  get(ref(db, `schedule/${selectedKey}`)).then(snap => {
+    if (snap.exists() && snap.val().name === userName) {
+      set(requestRef, {
+        from: { key: selectedKey, name: userName },
+        status: "pending"
+      });
+      alert("교체 요청이 등록되었습니다. 상대방에게 셀 클릭 후 승인 요청하세요.");
+    } else {
+      alert("본인의 셀만 선택할 수 있습니다.");
     }
-    if (!request.from.key) return alert("현재 본인의 시간표를 찾을 수 없습니다.");
-    set(swapRef, request).then(() => alert("🔁 변경 요청이 등록되었습니다."));
   });
 };
 
 window.approveSwap = function () {
-  if (!selectedKey || selectedName !== userName) {
-    return alert("자신의 셀을 선택하고 승인하세요.");
-  }
-  get(swapRef).then(snap => {
-    if (!snap.exists()) return alert("요청이 없습니다.");
-    const request = snap.val();
-    if (request.status !== "pending") return alert("이미 처리된 요청입니다.");
-    // 교체
-    const updates = {};
-    updates[`schedule/${request.from.key}`] = { name: request.to.name };
-    updates[`schedule/${request.to.key}`] = { name: request.from.name };
-    updates[`swapRequest/status`] = "approved";
-
-    update(ref(db), updates).then(() => {
-      alert("✅ 교체가 완료되었습니다!");
-      selectedKey = null;
-    });
+  if (!selectedKey) return alert("셀을 선택하세요.");
+  get(requestRef).then(snap => {
+    if (snap.exists()) {
+      const request = snap.val();
+      if (request.status === "pending") {
+        const fromKey = request.from.key;
+        const fromName = request.from.name;
+        get(ref(db, `schedule/${selectedKey}`)).then(toSnap => {
+          const toName = toSnap.val()?.name;
+          set(ref(db, `schedule/${selectedKey}`), { name: fromName });
+          set(ref(db, `schedule/${fromKey}`), { name: toName || "" });
+          remove(requestRef);
+          alert("교체가 완료되었습니다.");
+        });
+      }
+    } else {
+      alert("진행 중인 요청이 없습니다.");
+    }
   });
 };
 
