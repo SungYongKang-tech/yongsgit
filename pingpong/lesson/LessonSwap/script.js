@@ -101,19 +101,12 @@ function highlightSelected(key) {
 window.markAbsent = function () {
   if (!selectedKey) return alert("셀을 선택하세요.");
 
-  get(ref(db, `schedule/${selectedKey}`)).then(snap => {
-    const currentName = snap.val()?.name;
-    
-    if (userName !== "강성용" && currentName !== userName) {
-      return alert("본인의 셀만 불참 처리할 수 있습니다.");
-    }
-
-    set(ref(db, `schedule/${selectedKey}`), { name: "" })
-      .then(() => {
-        alert("불참 처리되었습니다.");
-        selectedKey = null;
-      });
-  });
+  // 조건 제거: 누구든지 선택된 셀을 불참 처리 가능
+  set(ref(db, `schedule/${selectedKey}`), { name: "" })
+    .then(() => {
+      alert("불참 처리되었습니다.");
+      selectedKey = null;
+    });
 };
 
 
