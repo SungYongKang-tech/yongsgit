@@ -134,38 +134,45 @@
     appId: "1:597358811982:web:2ee0d02e6b68cb0a321c1f"
   };
 
-  const app = initializeApp(firebaseConfig);
+ const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  // 전역에 등록
-  window.db = db;
-  window.ref = ref;
-  window.set = set;
-  window.get = get;
-  window.onValue = onValue;
-  window.update = update;
-  window.remove = remove;
+  function renderTeamList() {
+    let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
+    teamNames.forEach(team => {
+      const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
+      html += `<tr><td>${team}</td><td>${players}</td></tr>`;
+    });
+    html += '</table>';
+    document.getElementById('teamListArea').innerHTML = html;
+  }
 
-  // 여기서 loadTeams 정의 및 호출
-  window.loadTeams = function () {
-    return get(ref(db, "teams")).then(snap => {
-      const raw = snap.val();
-      window.teamData = {};
-      window.teamNames = [];
+  let teamNames = [], teamData = {};
 
-      if (!raw) {
-        alert("❌ 팀 정보가 없습니다. 먼저 팀을 구성해 주세요.");
-        return;
-      }
+  async function loadTeams() {
+    const snapshot = await get(ref(db, "teams"));
+    const raw = snapshot.val();
+    if (!raw) {
+      alert("❌ 팀 정보가 없습니다. 먼저 팀을 구성해 주세요.");
+      return;
+    }
+    teamData = {};
+    teamNames = [];
+    Object.values(raw).forEach(team => {
+      teamData[team.teamName] = team;
+      teamNames.push(team.teamName);
+    });
+    renderTeamList();
+  }
 
-      Object.values(raw).forEach(team => {
-        window.teamData[team.teamName] = team;
-        window.teamNames.push(team.teamName);
-      });
-      renderTeamList();
+  window.handleGenerateMatches = () => {
+    loadTeams().then(() => {
+      renderAllMatchesFromFirebase(); // 밖에서 선언된 함수는 window에 있어야 함
     });
   };
 
+  window.db = db;
+  window.ref = ref;
 </script>
 
 
@@ -191,6 +198,7 @@
   <option value="3">3경기</option>
 </select>
     <button onclick="handleGenerateMatches()">대진표 생성</button>
+
     <button onclick="saveAsImage()">대진결과 저장</button>
 
 <!--  <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>  -->
@@ -231,7 +239,11 @@ let teamNames = [], teamData = {};
 
 // Firebase에서 팀 불러오기
 function loadTeams() {
-  return window.get(window.ref(window.db, "teams")).then(snap => {
+  const db = window.db;
+  const ref = window.ref;
+  const get = window.get;
+
+  return get(ref(db, "teams")).then(snap => {
     const raw = snap.val();
     teamData = {};
     teamNames = [];
@@ -716,8 +728,16 @@ function saveAsImage() {
 }
 // 페이지 로드시 사용법 팝업 자동 표시
 window.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("usageModal").style.display = "block";
+  if (typeof window.ref !== "function") {
+    alert("Firebase 초기화가 아직 완료되지 않았습니다.");
+    return;
+  }
+
+  loadTeams().then(() => {
+    listenToMatchUpdates();
+  });
 });
+
 
 // 닫기 버튼 동작
 document.getElementById("closeUsageModal").addEventListener("click", () => {
