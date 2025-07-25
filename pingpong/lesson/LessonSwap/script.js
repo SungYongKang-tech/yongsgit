@@ -61,7 +61,8 @@ function renderSchedule(data) {
 
 function highlightSelected(key) {
   document.querySelectorAll("td").forEach(td => td.style.backgroundColor = "");
-  const cell = document.querySelectorAll("td")[...document.querySelectorAll("td")].find(td => td.textContent.includes(userName));
+  const cell = [...document.querySelectorAll("td")].find(td => td.textContent.includes(userName));
+
   if (cell) cell.style.fontWeight = "bold";
   const selected = [...document.querySelectorAll("td")].find(td => td.onclick && td.onclick.toString().includes(key));
   if (selected) selected.style.backgroundColor = "#b3e5fc";
