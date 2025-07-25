@@ -27,15 +27,7 @@ window.importSchedule = function () {
 
 const scheduleRef = ref(db, 'schedule');
 const requestRef = ref(db, 'swapRequest');
-const userNameKey = "lessonSwapUserName";
-let userName = localStorage.getItem(userNameKey);
-if (!userName) {
-  userName = prompt("이름을 입력하세요:");
-  localStorage.setItem(userNameKey, userName);
-}
-document.getElementById("userNameDisplay").textContent = `안녕하세요, ${userName}님`;
 
-// ✅ 이 아래에 추가
 onValue(scheduleRef, (snapshot) => {
   const data = snapshot.val() || {};
   renderSchedule(data);
