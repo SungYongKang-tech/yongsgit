@@ -57,19 +57,21 @@ function renderSchedule(data) {
   wrapper.style.maxWidth = "100%";
 
   const table = document.createElement("table");
-  table.style.width = "100%";
-  table.style.minWidth = "600px";
-  table.style.borderCollapse = "collapse";
-  table.style.fontSize = "14px";
+   table.style.width = "100%";
+   table.style.borderCollapse = "collapse";
+   table.style.fontSize = "3.8vw"; // 화면 크기에 맞게 반응형 폰트
+   table.style.tableLayout = "fixed"; // 셀 고정 너비로
 
   const header = document.createElement("tr");
   const headerTitles = ["교시", "월", "화", "수", "목"];
   headerTitles.forEach(title => {
     const th = document.createElement("th");
-    th.textContent = title;
-    th.style.backgroundColor = "#ffe8d6";
-    th.style.padding = "10px";
-    th.style.border = "1px solid #ccc";
+  th.textContent = title;
+  th.style.backgroundColor = "#ffe8d6";
+  th.style.padding = "6px";
+  th.style.fontSize = "3.5vw";
+  th.style.border = "1px solid #ccc";
+
     header.appendChild(th);
   });
   table.appendChild(header);
@@ -99,9 +101,11 @@ function renderSchedule(data) {
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
 
-      cell.style.border = "1px solid #ccc";
-      cell.style.padding = "8px";
-      cell.style.textAlign = "center";
+     cell.style.border = "1px solid #ccc";
+     cell.style.padding = "6px";
+     cell.style.fontSize = "3.5vw";
+     cell.style.wordBreak = "break-word"; // 이름 줄바꿈
+     cell.style.textAlign = "center";
 
       if (value) {
         cell.textContent = value;
