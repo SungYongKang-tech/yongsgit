@@ -18,6 +18,7 @@ window.changeName = function () {
   location.reload();
 };
 
+
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
   container.innerHTML = "";
@@ -32,7 +33,8 @@ function renderSchedule(data) {
     const row = document.createElement("tr");
     row.innerHTML = `<td>${period}</td>`;
     days.forEach(day => {
-      const key = `${day}_${pIdx}`;
+      const key = `${day}_${pIdx}`; // ← 올바른 JavaScript 템플릿 리터럴
+
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
       if (value) {
