@@ -51,20 +51,57 @@ let selectedKey = null;
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
   container.innerHTML = "";
-  const table = document.createElement("table");
-  const header = "<tr><th>교시</th><th>월</th><th>화</th><th>수</th><th>목</th></tr>";
-  table.innerHTML = header;
 
-  const periods = ["0교시", "1교시", "2교시", "3교시", "4교시"];
+  const wrapper = document.createElement("div");
+  wrapper.style.overflowX = "auto"; // 모바일 반응형
+  wrapper.style.maxWidth = "100%";
+
+  const table = document.createElement("table");
+  table.style.width = "100%";
+  table.style.minWidth = "600px";
+  table.style.borderCollapse = "collapse";
+  table.style.fontSize = "14px";
+
+  const header = document.createElement("tr");
+  const headerTitles = ["교시", "월", "화", "수", "목"];
+  headerTitles.forEach(title => {
+    const th = document.createElement("th");
+    th.textContent = title;
+    th.style.backgroundColor = "#ffe8d6";
+    th.style.padding = "10px";
+    th.style.border = "1px solid #ccc";
+    header.appendChild(th);
+  });
+  table.appendChild(header);
+
+  const periods = [
+    { label: "0교시", time: "11:25~11:40" },
+    { label: "1교시", time: "11:40~11:55" },
+    { label: "2교시", time: "11:55~12:10" },
+    { label: "3교시", time: "12:10~12:25" },
+    { label: "4교시", time: "12:25~12:40" }
+  ];
+
   const days = ["mon", "tue", "wed", "thu"];
 
-  periods.forEach((period, pIdx) => {
+  periods.forEach((periodObj, pIdx) => {
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${period}</td>`;
+
+    const timeCell = document.createElement("td");
+    timeCell.innerHTML = `<div>${periodObj.label}</div><div style="font-size: 12px; color: #888;">${periodObj.time}</div>`;
+    timeCell.style.border = "1px solid #ccc";
+    timeCell.style.padding = "8px";
+    timeCell.style.textAlign = "center";
+    row.appendChild(timeCell);
+
     days.forEach(day => {
       const key = `${day}_${pIdx}`;
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
+
+      cell.style.border = "1px solid #ccc";
+      cell.style.padding = "8px";
+      cell.style.textAlign = "center";
 
       if (value) {
         cell.textContent = value;
@@ -73,6 +110,7 @@ function renderSchedule(data) {
         }
       } else {
         cell.classList.add("empty");
+        cell.style.backgroundColor = "#f5f5f5";
       }
 
       cell.onclick = () => {
@@ -82,11 +120,14 @@ function renderSchedule(data) {
 
       row.appendChild(cell);
     });
+
     table.appendChild(row);
   });
 
-  container.appendChild(table);
+  wrapper.appendChild(table);
+  container.appendChild(wrapper);
 }
+
 
 function highlightSelected(key) {
   document.querySelectorAll("td").forEach(td => {
