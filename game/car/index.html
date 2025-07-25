@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>자동차 피하기 게임</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #222;
+      overflow: hidden;
+      touch-action: none;
+      height: 100%;
+    }
+    #game {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #333;
+      overflow: hidden;
+    }
+    #player {
+      position: absolute;
+      width: 60px;
+      height: 90px;
+      background-image: url('car1.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      z-index: 10;
+    }
+    .obstacle {
+      position: absolute;
+      background: lightgreen;
+      border-radius: 8px;
+      z-index: 2;
+    }
+    .gold-coin {
+      position: absolute;
+      background: gold;
+      border-radius: 50%;
+      box-shadow: 0 0 10px yellow;
+      z-index: 3;
+    }
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      z-index: 999;
+      color: white;
+      font-size: 2rem;
+    }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 1.2rem;
+      z-index: 1000;
+    }
+    #lives {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      color: white;
+      font-size: 1.4rem;
+      z-index: 1000;
+    }
+    .btn {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 1.2rem;
+      background: #555;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn:hover { background: #777; }
+    .hidden { visibility: hidden; }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <div id="player"></div>
+    <div id="score">점수: 0</div>
+    <div id="lives">❤️ x 3</div>
+    <div id="overlay"></div>
+    <audio id="startSound" src="start.mp3"></audio>
+    <audio id="avoidSound1" src="car1.mp3"></audio>
+    <audio id="avoidSound2" src="car2.mp3"></audio>
+    <audio id="crashSound" src="car-accident.mp3"></audio>
+  </div>
+
+<script>
+const game = document.getElementById('game');
+const player = document.getElementById('player');
+const scoreDisplay = document.getElementById('score');
+const livesDisplay = document.getElementById('lives');
+const overlay = document.getElementById('overlay');
+const startSound = document.getElementById('startSound');
+const avoidSound1 = document.getElementById('avoidSound1');
+const avoidSound2 = document.getElementById('avoidSound2');
+const crashSound = document.getElementById('crashSound');
+
+let lives = 3;
+let score = 0;
+let gameRunning = true;
+let isInvincible = false;
+let obstacleSpeed = 2;
+let obstacleInterval = 1500;
+let playerX = window.innerWidth / 2 - 30;
+let playerY = window.innerHeight - 120;
+let moveVX = 0, moveVY = 0;
+let goldCombo = 0;
+let goldComboTimer = null;
+const obstacles = [];
+
+player.style.left = `${playerX}px`;
+player.style.top = `${playerY}px`;
+
+function updatePlayerPosition() {
+  playerX += moveVX;
+  playerY += moveVY;
+  playerX = Math.max(0, Math.min(playerX, window.innerWidth - 60));
+  playerY = Math.max(0, Math.min(playerY, window.innerHeight - 90));
+  player.style.left = `${playerX}px`;
+  player.style.top = `${playerY}px`;
+  requestAnimationFrame(updatePlayerPosition);
+}
+requestAnimationFrame(updatePlayerPosition);
+
+game.addEventListener("touchstart", (e) => {
+  const touch = e.touches[0];
+  activeTouchId = touch.identifier;
+  startTouchX = touch.clientX;
+  startTouchY = touch.clientY;
+  isDragging = true;
+});
+
+game.addEventListener("touchmove", (e) => {
+  if (!isDragging) return;
+  for (const touch of e.touches) {
+    if (touch.identifier === activeTouchId) {
+      const dx = touch.clientX - startTouchX;
+      const dy = touch.clientY - startTouchY;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const scale = Math.min(len / 40, 1);
+      moveVX = dx / len * scale * 4;
+      moveVY = dy / len * scale * 2;
+    }
+  }
+}, { passive: false });
+
+game.addEventListener("touchend", (e) => {
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === activeTouchId) {
+      isDragging = false;
+      moveVX = 0;
+      moveVY = 0;
+    }
+  }
+});
+
+function createObstacle() {
+  const obs = document.createElement('div');
+  obs.className = 'obstacle';
+  const w = 40 + Math.random() * 60;
+  const h = 40 + Math.random() * 60;
+  obs.style.width = `${w}px`;
+  obs.style.height = `${h}px`;
+  obs.style.left = `${Math.random() * (window.innerWidth - w)}px`;
+  obs.style.top = `-100px`;
+  game.appendChild(obs);
+  obstacles.push(obs);
+  animateObstacle(obs);
+}
+
+function createGoldCoin() {
+  let valid = false;
+  let left, top;
+  const size = 30;
+  let attempts = 0;
+  while (!valid && attempts < 30) {
+    left = Math.random() * (window.innerWidth - size);
+    top = -60;
+    const coinBox = { left, right: left + size, top, bottom: top + size };
+    valid = obstacles.every(obs => {
+      const rect = obs.getBoundingClientRect();
+      return (
+        coinBox.right < rect.left ||
+        coinBox.left > rect.right ||
+        coinBox.bottom < rect.top ||
+        coinBox.top > rect.bottom
+      );
+    });
+    attempts++;
+  }
+  if (!valid) return;
+  const coin = document.createElement('div');
+  coin.className = 'gold-coin';
+  coin.style.width = `${size}px`;
+  coin.style.height = `${size}px`;
+  coin.style.left = `${left}px`;
+  coin.style.top = `${top}px`;
+  game.appendChild(coin);
+  animateGoldCoin(coin);
+}
+
+function animateObstacle(obs) {
+  let y = parseFloat(obs.style.top);
+  const interval = setInterval(() => {
+    if (!gameRunning) return clearInterval(interval);
+    y += obstacleSpeed;
+    obs.style.top = `${y}px`;
+    if (y > window.innerHeight) {
+      obs.remove();
+      const idx = obstacles.indexOf(obs);
+      if (idx > -1) obstacles.splice(idx, 1);
+      clearInterval(interval);
+      if (Math.random() < 0.3) {
+        (Math.random() < 0.5 ? avoidSound1 : avoidSound2).play();
+      }
+    }
+    checkCollision(obs);
+  }, 20);
+}
+
+function animateGoldCoin(coin) {
+  let y = parseFloat(coin.style.top);
+  const interval = setInterval(() => {
+    if (!gameRunning) return clearInterval(interval);
+    y += obstacleSpeed;
+    coin.style.top = `${y}px`;
+    if (y > window.innerHeight) {
+      coin.remove();
+      clearInterval(interval);
+    }
+    const p = player.getBoundingClientRect();
+    const c = coin.getBoundingClientRect();
+    const collected = p.left < c.right && p.right > c.left && p.top < c.bottom && p.bottom > c.top;
+    if (collected) {
+      score += 5;
+      scoreDisplay.textContent = `점수: ${score}`;
+      coin.remove();
+      clearInterval(interval);
+      goldCombo++;
+      if (goldComboTimer) clearTimeout(goldComboTimer);
+      goldComboTimer = setTimeout(() => {
+        goldCombo = 0;
+      }, 5000);
+      if (goldCombo === 20 && lives < 5) {
+        lives++;
+        livesDisplay.textContent = `❤️ x ${lives}`;
+        goldCombo = 0;
+      }
+    }
+  }, 20);
+}
+
+function checkCollision(obs) {
+  if (!gameRunning || isInvincible) return;
+  const p = player.getBoundingClientRect();
+  const o = obs.getBoundingClientRect();
+  const buffer = 40;
+  const collide = p.left + buffer < o.right && p.right - buffer > o.left && p.top + buffer < o.bottom && p.bottom - buffer > o.top;
+  if (collide) {
+    handleHit();
+    obs.remove();
+  }
+}
+
+function handleHit() {
+  crashSound.play();
+  lives--;
+  livesDisplay.textContent = `❤️ x ${lives}`;
+  if (lives <= 0) {
+    gameRunning = false;
+    return showGameOver();
+  }
+  isInvincible = true;
+  let blink = 0;
+  const blinkInterval = setInterval(() => {
+    player.classList.toggle("hidden");
+    blink++;
+    if (blink >= 6) {
+      clearInterval(blinkInterval);
+      player.classList.remove("hidden");
+      isInvincible = false;
+    }
+  }, 200);
+}
+
+function showGameOver() {
+  overlay.innerHTML = `
+    <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
+    <div style="margin-bottom: 10px;">당신의 점수는 <strong>${score}</strong>점입니다!</div>
+    <button class="btn" onclick="location.reload()">🔄 재시작</button>
+    <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>`;
+  overlay.style.display = 'flex';
+}
+
+setInterval(() => {
+  if (gameRunning) {
+    score++;
+    scoreDisplay.textContent = `점수: ${score}`;
+  }
+}, 1000);
+
+function spawnLoop() {
+  if (!gameRunning) return;
+  createObstacle();
+  if (Math.random() < 0.4) createGoldCoin();
+  setTimeout(spawnLoop, obstacleInterval);
+}
+
+setInterval(() => {
+  if (gameRunning) {
+    obstacleSpeed *= 1.05;
+    if (obstacleInterval > 500) obstacleInterval *= 0.95;
+  }
+}, 10000);
+
+window.onload = () => {
+  startSound.play();
+  livesDisplay.textContent = `❤️ x ${lives}`;
+  spawnLoop();
+};
+</script>
+</body>
+</html>
