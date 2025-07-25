@@ -7,12 +7,13 @@ window.importSchedule = function () {
   if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
 
   const initialData = {
-    mon_0: { name: "김승일" }, tue_0: { name: "이영희" }, wed_0: { name: "박민준" }, thu_0: { name: "최서연" },
-    mon_1: { name: "김승일" }, tue_1: { name: "이영희" }, wed_1: { name: "박민준" }, thu_1: { name: "최서연" },
-    mon_2: { name: "김승일" }, tue_2: { name: "이영희" }, wed_2: { name: "박민준" }, thu_2: { name: "최서연" },
-    mon_3: { name: "김승일" }, tue_3: { name: "이영희" }, wed_3: { name: "박민준" }, thu_3: { name: "최서연" },
-    mon_4: { name: "김승일" }, tue_4: { name: "이영희" }, wed_4: { name: "박민준" }, thu_4: { name: "최서연" }
-  };
+  mon_0: { name: "김승일" }, tue_0: { name: "정승묵" }, wed_0: { name: "김승일" }, thu_0: { name: "정승묵" },
+  mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
+  mon_2: { name: "이양주" }, tue_2: { name: "양충현" }, wed_2: { name: "이양주" }, thu_2: { name: "양충현" },
+  mon_3: { name: "조보미" }, tue_3: { name: "송은아" }, wed_3: { name: "조보미" }, thu_3: { name: "송은아" },
+  mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
+};
+
 
   set(scheduleRef, initialData)
     .then(() => {
