@@ -2,6 +2,28 @@
 import { db } from './firebase.js';
 import { ref, onValue, set, get, update, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+// 🔽 스크립트 하단에 추가
+window.importSchedule = function () {
+  if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
+
+  const initialData = {
+    mon_0: { name: "김승일" }, tue_0: { name: "이영희" }, wed_0: { name: "박민준" }, thu_0: { name: "최서연" },
+    mon_1: { name: "김승일" }, tue_1: { name: "이영희" }, wed_1: { name: "박민준" }, thu_1: { name: "최서연" },
+    mon_2: { name: "김승일" }, tue_2: { name: "이영희" }, wed_2: { name: "박민준" }, thu_2: { name: "최서연" },
+    mon_3: { name: "김승일" }, tue_3: { name: "이영희" }, wed_3: { name: "박민준" }, thu_3: { name: "최서연" },
+    mon_4: { name: "김승일" }, tue_4: { name: "이영희" }, wed_4: { name: "박민준" }, thu_4: { name: "최서연" }
+  };
+
+  set(scheduleRef, initialData)
+    .then(() => {
+      alert("시간표가 업로드되었습니다.");
+    })
+    .catch((error) => {
+      alert("업로드 중 오류 발생: " + error.message);
+    });
+};
+
+
 const scheduleRef = ref(db, 'schedule');
 const requestRef = ref(db, 'swapRequest');
 const userNameKey = "lessonSwapUserName";
