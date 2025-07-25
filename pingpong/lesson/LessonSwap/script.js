@@ -2,6 +2,13 @@
 import { db } from './firebase.js';
 import { ref, onValue, set, get, update, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+// 🔽 사용자 이름 입력 (인사말 없음, 이름변경 버튼 없음)
+const userNameKey = "lessonSwapUserName";
+let userName = localStorage.getItem(userNameKey);
+if (!userName) {
+  userName = prompt("이름을 입력하세요:");
+  localStorage.setItem(userNameKey, userName);
+}
 // 🔽 스크립트 하단에 추가
 window.importSchedule = function () {
   if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
