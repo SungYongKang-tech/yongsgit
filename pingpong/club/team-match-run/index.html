@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>단체전 진행</title>
 
-
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <style>
@@ -66,120 +67,8 @@
     min-width: 100%;
   }
 }
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 3000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.4);
-}
-
-.modal-content {
-  background-color: #fff;
-  margin: 10% auto;
-  padding: 20px;
-  border-radius: 10px;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-  animation: fadeIn 0.3s ease;
-}
-
-.modal-content h3 {
-  text-align: center;
-  color: #1976d2;
-  margin-bottom: 12px;
-}
-
-.modal-content ul {
-  padding-left: 20px;
-  font-size: 14px;
-}
-
-.modal-content li {
-  margin-bottom: 8px;
-}
-
-#closeUsageModal {
-  padding: 8px 16px;
-  font-size: 15px;
-  background-color: #1976d2;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-  .match-card {
-    border: 1px solid #ccc;
-    padding: 12px;
-    margin: 12px auto;
-    background: #fff;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-    max-width: 500px;
-  }
 
   </style>
-
- <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, onValue, update, remove, set, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
-    authDomain: "koen-pingpong.firebaseapp.com",
-    databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
-    projectId: "koen-pingpong",
-    storageBucket: "koen-pingpong.firebasestorage.app",
-    messagingSenderId: "597358811982",
-    appId: "1:597358811982:web:2ee0d02e6b68cb0a321c1f"
-  };
-
- const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
-
-  function renderTeamList() {
-    let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
-    teamNames.forEach(team => {
-      const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
-      html += `<tr><td>${team}</td><td>${players}</td></tr>`;
-    });
-    html += '</table>';
-    document.getElementById('teamListArea').innerHTML = html;
-  }
-
-  let teamNames = [], teamData = {};
-
-  async function loadTeams() {
-    const snapshot = await get(ref(db, "teams"));
-    const raw = snapshot.val();
-    if (!raw) {
-      alert("❌ 팀 정보가 없습니다. 먼저 팀을 구성해 주세요.");
-      return;
-    }
-    teamData = {};
-    teamNames = [];
-    Object.values(raw).forEach(team => {
-      teamData[team.teamName] = team;
-      teamNames.push(team.teamName);
-    });
-    renderTeamList();
-  }
-
-
-  window.db = db;
-  window.ref = ref;
-</script>
-
-
 </head>
 <body>
   <div id="teamListArea" style="margin-bottom:30px;"></div>
@@ -201,9 +90,7 @@
   <option value="2" selected>2경기</option>
   <option value="3">3경기</option>
 </select>
-    <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>
-
-
+    <button onclick="handleGenerateMatches()">대진표 생성</button>
     <button onclick="saveAsImage()">대진결과 저장</button>
 
 <!--  <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>  -->
@@ -217,68 +104,60 @@
   </div>
   
 
-
-
-<!-- 사용법 안내 팝업 -->
-<div id="usageModal" class="modal">
-  <div class="modal-content">
-    <h3>📘 단체전 진행 사용법</h3>
-    <ul>
-      <li><strong>1. 팀 구성:</strong> 팀 구성기를 통해 팀을 만들고 업로드하세요.</li>
-      <li><strong>2. 대진표 생성:</strong> 단식/복식 수 선택 후 '대진표 생성' 버튼 클릭</li>
-      <li><strong>3. 선수 지정:</strong> 각 경기 셀 클릭 → 출전 선수 선택</li>
-      <li><strong>4. 점수 입력:</strong> 점수 셀 클릭 → 3:2, 2:1 등 형식 선택</li>
-      <li><strong>5. 실시간 반영:</strong> 서버와 연동되어 모든 사용자에게 실시간 동기화</li>
-      <li><strong>6. 이미지 저장:</strong> '대진결과 저장' 버튼 클릭 시 이미지로 저장</li>
-    </ul>
-    <div style="text-align:center; margin-top:15px;">
-      <button id="closeUsageModal">닫기</button>
-    </div>
-  </div>
-</div>
-
-
 <script>
-
+const firebaseConfig = {
+      apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
+      authDomain: "koen-teamleague.firebaseapp.com",
+      projectId: "koen-teamleague",
+      storageBucket: "koen-teamleague.firebasestorage.app",
+      messagingSenderId: "487164547059",
+      appId: "1:487164547059:web:658a10c8bfe7272ca78c86",
+      databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com"
+    };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 let teamNames = [], teamData = {};
 
 // Firebase에서 팀 불러오기
 function loadTeams() {
-  const db = window.db;
-  const ref = window.ref;
-  const get = window.get;
+  return db.ref("teams").once("value").then(snap => {
+    const raw = snap.val();
+    teamData = {};
+    teamNames = [];
 
-return get(ref(db, "teams")).then(snap => {
-  const raw = snap.val();
-  teamData = {};
-  teamNames = [];
+    if (!raw) {
+      alert("❌ 팀 정보가 없습니다. 먼저 팀을 구성해 주세요.");
+      return;
+    }
 
-  if (!raw) {
-    alert("❌ 팀 정보가 없습니다. 먼저 팀을 구성해 주세요.");
-    return;
-  }
-
-  Object.entries(raw).forEach(([key, team]) => {
-    const teamName = team.teamName || key;
-    teamData[teamName] = team;
-    teamNames.push(teamName);
+    Object.values(raw).forEach(team => {
+      teamData[team.teamName] = team;
+      teamNames.push(team.teamName);
+    });
+    renderTeamList();
   });
+}
 
-  // ✅ 여기에 넣으세요!
-  renderAllMatchesFromFirebase();
-});
+// 버튼 클릭 시
+function handleGenerateMatches() {
+  loadTeams().then(() => {
+    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
+  });
+}
 
-
+function renderTeamList() {
+  let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
+  teamNames.forEach(team => {
+    const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
+    html += `<tr><td>${team}</td><td>${players}</td></tr>`;
+  });
+  html += '</table>';
+  document.getElementById('teamListArea').innerHTML = html;
 }
 
 function renderAllMatchesFromFirebase() {
-  const db = window.db;
-  const ref = window.ref;
-  const remove = window.remove;
-  const update = window.update;
-
-  // ✅ 기존 matches 지우기
-  remove(ref(db, "matches")).then(() => {
+  // ✅ 기존 matches 지우고 새로 생성
+  db.ref("matches").remove().then(() => {
     const singles = +document.getElementById("singlesCnt").value;
     const doubles = +document.getElementById("doublesCnt").value;
     const totalMatches = [];
@@ -308,60 +187,41 @@ function renderAllMatchesFromFirebase() {
       renderMatchCard(match.teamA, match.teamB, matchList);
     });
 
-    // ✅ update 실행 (root 기준으로)
-    update(ref(db), updates);
-  });
-  document.getElementById("matchArea").innerHTML = ""; // 이 줄 추가
-}
-
-
-// 버튼 클릭 시
-function handleGenerateMatches() {
-  loadTeams().then(() => {
-    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
+    db.ref().update(updates);
   });
 }
-
-function renderTeamList() {
-  let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
-  teamNames.forEach(team => {
-    const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
-    html += `<tr><td>${team}</td><td>${players}</td></tr>`;
-  });
-  html += '</table>';
-  document.getElementById('teamListArea').innerHTML = html;
-}
-
 
 
 function renderMatchCard(teamA, teamB, matchList) {
-  const container = document.getElementById("matchArea");
-  if (!container) {
-    console.error("❌ matchArea 요소가 없습니다.");
-    return;
+  const container = document.getElementById("summaryArea");
+  let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
+  html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
+ matchList.forEach((match, idx) => {
+  let playerHTML = match.players;
+  const [a, b] = (match.result || "").split(":").map(Number);
+
+  if (!isNaN(a) && !isNaN(b) && match.players.includes(" vs ")) {
+    let [aNames, bNames] = match.players.split(" vs ");
+    aNames = aNames.trim();
+    bNames = bNames.trim();
+
+    if (a > b) {
+      playerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
+    } else if (b > a) {
+      playerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+    }
   }
 
-  const card = document.createElement("div");
-  card.className = "match-card";
-  card.style.border = "2px solid #aaa";
-  card.style.padding = "10px";
-  card.style.marginBottom = "15px";
-  card.style.background = "#fff";
+  html += `<tr>
+    <td>${match.label}</td>
+    <td contenteditable='false' onclick="openPlayerPopup('${teamA}', '${teamB}', this)">${playerHTML}</td>
+    <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
+  </tr>`;
+});
 
-  const title = document.createElement("h3");
-  title.textContent = `${teamA} vs ${teamB}`;
-  card.appendChild(title);
-
-  matchList.forEach(match => {
-    const p = document.createElement("p");
-    p.textContent = `${match.label}: ${match.players} (${match.result})`;
-    card.appendChild(p);
-  });
-
-  container.appendChild(card);
+  html += `</tbody></table></div>`;
+  container.innerHTML += html;
 }
-
-
 
 function openPlayerPopup(teamA, teamB, cell) {
   const popup = document.getElementById("popup");
@@ -742,28 +602,12 @@ function saveAsImage() {
     link.click();
   });
 }
-// 페이지 로드시 사용법 팝업 자동 표시
-window.addEventListener("DOMContentLoaded", () => {
-  if (typeof window.ref !== "function") {
-    alert("Firebase 초기화가 아직 완료되지 않았습니다.");
-    return;
-  }
-
-  loadTeams().then(() => {
-    listenToMatchUpdates();
-  });
-});
-
-
-// 닫기 버튼 동작
-document.getElementById("closeUsageModal").addEventListener("click", () => {
-  document.getElementById("usageModal").style.display = "none";
-});
-
 </script>
 
-  <div id="matchArea"></div>
-  <div id="matchArea" style="margin-top: 30px;"></div>
-</body>
 
+
+
+
+
+</body>
 </html>
