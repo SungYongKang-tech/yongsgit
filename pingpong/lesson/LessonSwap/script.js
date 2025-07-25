@@ -12,6 +12,13 @@ if (!userName) {
 }
 document.getElementById("userNameDisplay").textContent = `안녕하세요, ${userName}님`;
 
+// ✅ 이 아래에 추가
+onValue(scheduleRef, (snapshot) => {
+  const data = snapshot.val() || {};
+  renderSchedule(data);
+});
+
+
 window.changeName = function () {
   localStorage.removeItem(userNameKey);
   location.reload();
