@@ -5,7 +5,6 @@ import { ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.2/fir
 const scheduleRef = ref(db, 'schedule');
 const userNameKey = "lessonSwapUserName";
 
-// 사용자 이름 설정 및 저장
 let userName = localStorage.getItem(userNameKey);
 if (!userName) {
   userName = prompt("이름을 입력하세요:");
@@ -17,7 +16,6 @@ window.changeName = function () {
   localStorage.removeItem(userNameKey);
   location.reload();
 };
-
 
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
@@ -33,8 +31,7 @@ function renderSchedule(data) {
     const row = document.createElement("tr");
     row.innerHTML = `<td>${period}</td>`;
     days.forEach(day => {
-      const key = `${day}_${pIdx}`; // ← 올바른 JavaScript 템플릿 리터럴
-
+      const key = `${day}_${pIdx}`;
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
       if (value) {
@@ -42,10 +39,10 @@ function renderSchedule(data) {
         if (value === userName) {
           cell.style.fontWeight = "bold";
         }
-        cell.innerHTML += `<br><button class="btn" onclick="markAbsent('${key}')">불참</button>`;
+        cell.innerHTML += `<br><button onclick="markAbsent('${key}')">불참</button>`;
       } else {
         cell.classList.add("empty");
-        cell.innerHTML = `<button class="btn" onclick="joinLesson('${key}')">참가하기</button>`;
+        cell.innerHTML = `<button onclick="joinLesson('${key}')">참가하기</button>`;
       }
       row.appendChild(cell);
     });
@@ -63,7 +60,6 @@ window.joinLesson = function (key) {
   set(ref(db, `schedule/${key}`), { name: userName });
 };
 
-// 실시간 감지
 onValue(scheduleRef, (snapshot) => {
   const data = snapshot.val() || {};
   renderSchedule(data);
