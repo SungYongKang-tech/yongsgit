@@ -100,21 +100,34 @@ function highlightSelected(key) {
 
 window.markAbsent = function () {
   if (!selectedKey) return alert("셀을 선택하세요.");
-  set(ref(db, `schedule/${selectedKey}`), { name: "" });
-  selectedKey = null;
+
+  get(ref(db, `schedule/${selectedKey}`)).then(snap => {
+    const currentName = snap.val()?.name;
+    
+    if (userName !== "강성용" && currentName !== userName) {
+      return alert("본인의 셀만 불참 처리할 수 있습니다.");
+    }
+
+    set(ref(db, `schedule/${selectedKey}`), { name: "" })
+      .then(() => {
+        alert("불참 처리되었습니다.");
+        selectedKey = null;
+      });
+  });
 };
+
 
 window.requestSwap = function () {
   if (!selectedKey) return alert("먼저 본인의 셀을 선택하세요.");
   
   get(ref(db, `schedule/${selectedKey}`)).then(snap => {
     const currentName = snap.val()?.name;
-    if (currentName !== userName) {
+    if (userName !== "강성용" && currentName !== userName) {
       return alert("본인의 셀만 선택할 수 있습니다.");
     }
 
     set(requestRef, {
-      from: { key: selectedKey, name: userName },
+      from: { key: selectedKey, name: currentName },
       status: "pending"
     });
 
@@ -122,6 +135,7 @@ window.requestSwap = function () {
     selectedKey = null;
   });
 };
+
 
 window.approveSwap = function () {
   if (!selectedKey) return alert("먼저 자신의 셀을 선택하세요.");
@@ -135,15 +149,13 @@ window.approveSwap = function () {
     const fromKey = request.from.key;
     const fromName = request.from.name;
 
-    if (fromName === userName) return alert("자기 자신과는 교체할 수 없습니다.");
-
     get(ref(db, `schedule/${selectedKey}`)).then(toSnap => {
       const toName = toSnap.val()?.name;
-      if (toName !== userName) {
+
+      if (userName !== "강성용" && toName !== userName) {
         return alert("본인의 셀만 선택할 수 있습니다.");
       }
 
-      // 실제 교체 진행
       const updates = {};
       updates[`schedule/${fromKey}`] = { name: toName };
       updates[`schedule/${selectedKey}`] = { name: fromName };
