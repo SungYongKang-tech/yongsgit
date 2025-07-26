@@ -46,7 +46,7 @@ function renderSchedule(data) {
   const table = document.createElement("table");
   table.style.width = "100%";
   table.style.borderCollapse = "collapse";
-  table.style.fontSize = "3.8vw";
+  table.style.fontSize = "4.5vw";
   table.style.tableLayout = "fixed";
 
   const header = document.createElement("tr");
@@ -56,7 +56,7 @@ function renderSchedule(data) {
     th.textContent = title;
     th.style.backgroundColor = "#ffe8d6";
     th.style.padding = "6px";
-    th.style.fontSize = "3.5vw";
+    th.style.fontSize = "4.2vw";
     th.style.border = "1px solid #ccc";
     header.appendChild(th);
   });
@@ -89,7 +89,7 @@ function renderSchedule(data) {
       cell.dataset.key = key;
       cell.style.border = "1px solid #ccc";
       cell.style.padding = "6px";
-      cell.style.fontSize = "3.5vw";
+      cell.style.fontSize = "4.2vw";
       cell.style.wordBreak = "break-word";
       cell.style.textAlign = "center";
 
