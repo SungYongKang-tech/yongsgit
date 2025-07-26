@@ -183,6 +183,10 @@ window.markAbsent = function () {
       cell.classList.add("empty");
       cell.style.backgroundColor = "#f5f5f5";
 
+      // 🔽 추가: 선택 해제 처리
+      cell.classList.remove("selected");
+      selectedCells = [];
+
       document.getElementById("swapBtn").disabled = true;
     });
 };
