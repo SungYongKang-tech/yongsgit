@@ -227,10 +227,11 @@ let selectedEmptyKey = null;
 let selectedNameKey = null;
 
 function handleCellClick(key, value) {
+  selectedKey = key; // ✅ 이 줄 추가
+
   if (!value) {
     // 빈 자리 클릭
     if (selectedNameKey) {
-      // 이름 있는 셀을 먼저 선택한 경우 → 빈 자리에 그 사람 배정
       assignNameToEmptyCell(selectedNameKey, key);
       selectedNameKey = null;
     } else {
@@ -240,7 +241,6 @@ function handleCellClick(key, value) {
   } else {
     // 이름 있는 자리 클릭
     if (selectedEmptyKey) {
-      // 빈 자리를 먼저 선택한 경우 → 빈 자리에 이 사람 배정
       assignNameToEmptyCell(key, selectedEmptyKey);
       selectedEmptyKey = null;
     } else {
@@ -249,6 +249,7 @@ function handleCellClick(key, value) {
     }
   }
 }
+
 function assignNameToEmptyCell(fromKey, toKey) {
   get(ref(db, `schedule/${fromKey}`)).then(snap => {
     const name = snap.val()?.name;
