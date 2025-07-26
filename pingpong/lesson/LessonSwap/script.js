@@ -111,22 +111,20 @@ function renderSchedule(data) {
 }
 
 function handleCellClick(cell, key) {
-  if (selectedCells.includes(cell)) {
-    cell.classList.remove("selected");
-    selectedCells = selectedCells.filter(c => c !== cell);
-  } else {
-    if (selectedCells.length < 2) {
-      cell.classList.add("selected");
-      selectedCells.push(cell);
-    }
-  }
+  if (selectedCells.includes(cell)) return; // 이미 선택된 셀은 무시
 
   if (selectedCells.length === 2) {
-    document.getElementById("swapBtn").disabled = false;
-  } else {
-    document.getElementById("swapBtn").disabled = true;
+    // 기존 선택 해제
+    selectedCells.forEach(c => c.classList.remove("selected"));
+    selectedCells = [];
   }
+
+  cell.classList.add("selected");
+  selectedCells.push(cell);
+
+  document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
+
 
 window.handleSwap = function () {
   if (selectedCells.length !== 2) return;
