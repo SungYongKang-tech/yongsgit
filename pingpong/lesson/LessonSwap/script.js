@@ -118,8 +118,9 @@ function renderSchedule(data) {
       }
 
       cell.onclick = () => {
-        selectedKey = key;
-        highlightSelected(key);
+        //selectedKey = key;
+        //highlightSelected(key);
+        handleCellClick(key, value);
       };
 
       row.appendChild(cell);
