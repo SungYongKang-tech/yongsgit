@@ -77,11 +77,11 @@ function renderSchedule(data) {
   table.appendChild(header);
 
   const periods = [
-    { label: "0교시", time: "11:25~11:40" },
-    { label: "1교시", time: "11:40~11:55" },
-    { label: "2교시", time: "11:55~12:10" },
-    { label: "3교시", time: "12:10~12:25" },
-    { label: "4교시", time: "12:25~12:40" }
+    { label: "0교시", time: "11:25~" },
+    { label: "1교시", time: "11:40~" },
+    { label: "2교시", time: "11:55~" },
+    { label: "3교시", time: "12:10~" },
+    { label: "4교시", time: "12:25~" }
   ];
 
   const days = ["mon", "tue", "wed", "thu"];
