@@ -19,13 +19,13 @@ onValue(scheduleRef, (snapshot) => {
   };
 
 window.importSchedule = function () {
-  if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
+ // if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
 
 
 
-  set(scheduleRef, initialData)
-    .then(() => alert("시간표가 초기화되었습니다."))
-    .catch((error) => alert("초기화 중 오류 발생: " + error.message));
+//  set(scheduleRef, initialData)
+//    .then(() => alert("시간표가 초기화되었습니다."))
+//    .catch((error) => alert("초기화 중 오류 발생: " + error.message));
 };
 
 window.changeName = function () {
@@ -184,7 +184,7 @@ window.markAbsent = function () {
 
   set(ref(db, `schedule/${key}`), { name: "" })
     .then(() => {
-      alert("불참 처리되었습니다.");
+     // alert("불참 처리되었습니다.");
       cell.textContent = "";
       cell.classList.add("empty");
       cell.style.backgroundColor = "#f5f5f5";
