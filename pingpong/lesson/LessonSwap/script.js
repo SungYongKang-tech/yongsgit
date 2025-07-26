@@ -145,7 +145,7 @@ function handleCellClick(cell, key) {
 
   // 서로변경 버튼 상태 설정
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
-}
+
 
 
 
