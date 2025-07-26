@@ -177,18 +177,17 @@ window.handleSwap = function () {
 
 window.markAbsent = function () {
   if (selectedCells.length !== 1) return alert("하나의 셀만 선택해야 합니다.");
-  const key = selectedCells[0].dataset.key;
+  
+  const { cell, key } = selectedCells[0];
 
- set(ref(db, `schedule/${key}`), { name: "" })
-  .then(() => {
-    alert("불참 처리되었습니다.");
-    selectedCells[0].textContent = "";
-    selectedCells[0].classList.add("empty");
-    selectedCells[0].style.backgroundColor = "#f5f5f5";
-    
-    // 선택 상태 유지 (선택 해제하지 않음)
-    // 필요시 swap 버튼은 계속 비활성화 유지
-    document.getElementById("swapBtn").disabled = true;
-  });
+  set(ref(db, `schedule/${key}`), { name: "" })
+    .then(() => {
+      alert("불참 처리되었습니다.");
+      cell.textContent = "";
+      cell.classList.add("empty");
+      cell.style.backgroundColor = "#f5f5f5";
 
+      document.getElementById("swapBtn").disabled = true;
+    });
 };
+
