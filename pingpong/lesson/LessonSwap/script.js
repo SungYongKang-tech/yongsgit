@@ -111,21 +111,42 @@ function renderSchedule(data) {
 }
 
 function handleCellClick(cell, key) {
-  // 이미 선택된 셀이면 선택 해제
-  if (selectedCells.includes(cell)) {
-    cell.classList.remove("selected");
-    selectedCells = selectedCells.filter(c => c !== cell);
-  } else {
-    // 기존 선택이 있다면 모두 해제하고 새로 선택
-    selectedCells.forEach(c => c.classList.remove("selected"));
-    selectedCells = [];
+  const name = cell.textContent.trim();
 
+  // 1. 아무것도 선택 안 된 상태 → 첫 셀 선택
+  if (selectedCells.length === 0 && name) {
+    selectedCells.push({ cell, key });
     cell.classList.add("selected");
-    selectedCells.push(cell);
+
+  // 2. 첫 셀 선택 이후 빈 셀 클릭 → 복사
+  } else if (selectedCells.length === 1 && !name) {
+    const from = selectedCells[0];
+
+    const nameToCopy = from.cell.textContent.trim();
+    cell.textContent = nameToCopy;
+    cell.classList.remove("empty");
+    cell.style.backgroundColor = "";
+    set(ref(db, `schedule/${key}`), { name: nameToCopy });
+
+    // 선택 초기화
+    from.cell.classList.remove("selected");
+    selectedCells = [];
+  
+  } else {
+    // 선택 초기화
+    selectedCells.forEach(({ cell }) => cell.classList.remove("selected"));
+    selectedCells = [];
   }
 
+  // 버튼 비활성화 유지
+  document.getElementById("swapBtn").disabled = true;
+}
+
+
+  // 서로변경 버튼 상태 설정
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
+
 
 
 
