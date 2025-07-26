@@ -139,6 +139,8 @@ window.displayTopScores = displayTopScores;
     <div id="lives">❤️ x 3</div>
     <div id="overlay"></div>
     <audio id="bgm" src="car01.mp3"></audio>
+    <audio id="coinSound" src="coin.mp3"></audio>
+
 
 
   </div>
@@ -170,6 +172,7 @@ const player = document.getElementById('player');
 const scoreDisplay = document.getElementById('score');
 const livesDisplay = document.getElementById('lives');
 const overlay = document.getElementById('overlay');
+const coinSound = document.getElementById('coinSound');
 
 
 let lives = 3;
@@ -311,21 +314,26 @@ function animateGoldCoin(coin) {
     const c = coin.getBoundingClientRect();
     const collected = p.left < c.right && p.right > c.left && p.top < c.bottom && p.bottom > c.top;
     if (collected) {
-      score += 5;
-      scoreDisplay.textContent = `점수: ${score}`;
-      coin.remove();
-      clearInterval(interval);
-      goldCombo++;
-      if (goldComboTimer) clearTimeout(goldComboTimer);
-      goldComboTimer = setTimeout(() => {
-        goldCombo = 0;
-      }, 5000);
-      if (goldCombo === 20 && lives < 5) {
-        lives++;
-        livesDisplay.textContent = `❤️ x ${lives}`;
-        goldCombo = 0;
-      }
-    }
+  score += 5;
+  scoreDisplay.textContent = `점수: ${score}`;
+  coin.remove();
+  clearInterval(interval);
+  coinSound.currentTime = 0;  // 빠르게 연속 재생 대비
+  coinSound.play();
+
+  goldCombo++;
+  if (goldComboTimer) clearTimeout(goldComboTimer);
+  goldComboTimer = setTimeout(() => {
+    goldCombo = 0;
+  }, 5000);
+
+  if (goldCombo === 20 && lives < 5) {
+    lives++;
+    livesDisplay.textContent = `❤️ x ${lives}`;
+    goldCombo = 0;
+  }
+}
+
   }, 20);
 }
 
@@ -433,14 +441,19 @@ document.getElementById('pause-btn').addEventListener('click', () => {
   const btn = document.getElementById('pause-btn');
   btn.textContent = paused ? '▶️ 계속하기' : '⏸️ 일시정지';
 
-  // 음악도 같이 일시정지/재생
   if (paused) {
     bgm.pause();
   } else {
     bgm.play().catch(() => {});
-    spawnLoop(); // ✅ 재시작 시 장애물 생성 루프 다시 시작
+    spawnLoop();
+
+    // ✅ 모든 장애물과 코인 제거
+    document.querySelectorAll('.obstacle, .gold-coin').forEach(el => el.remove());
+    obstacles.length = 0;
   }
 });
+
+
 
 
 
