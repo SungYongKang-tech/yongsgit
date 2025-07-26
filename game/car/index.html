@@ -161,6 +161,7 @@ player.style.left = `${playerX}px`;
 player.style.top = `${playerY}px`;
 
 function updatePlayerPosition() {
+  if (!gameRunning) return; // ✅ 게임 종료되면 멈춤
   playerX += moveVX;
   playerY += moveVY;
   playerX = Math.max(0, Math.min(playerX, window.innerWidth - 60));
@@ -169,6 +170,7 @@ function updatePlayerPosition() {
   player.style.top = `${playerY}px`;
   requestAnimationFrame(updatePlayerPosition);
 }
+
 requestAnimationFrame(updatePlayerPosition);
 
 game.addEventListener("touchstart", (e) => {
@@ -337,26 +339,54 @@ function handleHit() {
   }, 200);
 }
 
-function showGameOver() {
+async function showGameOver() {
+  gameRunning = false;  // ✅ 게임 정지
+  moveVX = 0;
+  moveVY = 0;
+
+  // 자동차 멈춤
+  player.style.left = `${playerX}px`;
+  player.style.top = `${playerY}px`;
+
+  // 음악 멈춤
+  bgm.pause();
+  bgm.currentTime = 0;
+
+  // 이름 입력받기
   const nameInput = prompt("이름을 입력하세요 (10자 이내):", "플레이어") || "플레이어";
   const trimmedName = nameInput.slice(0, 10);
   saveScore(trimmedName, score);
 
-  generateTopScoresHTML((scoreHtml) => {
-    overlay.innerHTML = `
-      <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
-      <div style="margin-bottom: 10px;">당신의 점수는 <strong>${score}</strong>점입니다!</div>
-      <h3 style="margin-top:10px; color:yellow;">🏆 상위 10위 점수</h3>
-      <div style="text-align: left; font-size: 1rem; line-height: 1.6;">${scoreHtml}</div>
-      <button class="btn" onclick="location.reload()"> 🔄 재시작 </button>
-      <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
-    `;
-    overlay.style.display = 'flex';
-    bgm.pause();
-  });
+  // 순위표 HTML 받아오기
+  const scoreHtml = await generateTopScoresHTML();
+
+  // 오버레이 표시
+  overlay.innerHTML = `
+    <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
+    <div style="margin-bottom: 10px;">당신의 점수는 <strong>${score}</strong>점입니다!</div>
+    <h3 style="margin-top:10px; color:yellow;">🏆 상위 10위 점수</h3>
+    <div style="text-align: left; font-size: 1rem; line-height: 1.6;">${scoreHtml}</div>
+    <button class="btn" onclick="location.reload()"> 🔄 재시작 </button>
+    <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
+  `;
+  overlay.style.display = 'flex';
 }
 
 
+function generateTopScoresHTML() {
+  return new Promise((resolve) => {
+    const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
+    onValue(scoresRef, (snapshot) => {
+      const list = [];
+      snapshot.forEach(child => list.push(child.val()));
+      list.sort((a, b) => b.score - a.score);
+      const html = list.map((item, i) =>
+        `<div>${i + 1}위: ${item.name} - ${item.score}점</div>`
+      ).join('');
+      resolve(html);
+    }, { onlyOnce: true });
+  });
+}
 
 setInterval(() => {
   if (gameRunning) {
