@@ -112,19 +112,40 @@ function renderSchedule(data) {
 
 function handleCellClick(cell, key) {
   const name = cell.textContent.trim();
+  const isEmpty = !name;
 
-  // 이미 선택된 경우 선택 해제
+  // 이미 선택된 셀이면 해제
   const alreadyIndex = selectedCells.findIndex(item => item.cell === cell);
   if (alreadyIndex > -1) {
     selectedCells.splice(alreadyIndex, 1);
     cell.classList.remove("selected");
-  } 
-  else if (selectedCells.length < 2 && name) {
+    document.getElementById("swapBtn").disabled = true;
+    return;
+  }
+
+  // 1개 선택 후 빈 셀 클릭 → 복사
+  if (selectedCells.length === 1 && isEmpty) {
+    const from = selectedCells[0];
+    const copiedName = from.cell.textContent.trim();
+
+    cell.textContent = copiedName;
+    cell.classList.remove("empty");
+    cell.style.backgroundColor = "";
+    set(ref(db, `schedule/${key}`), { name: copiedName });
+
+    from.cell.classList.remove("selected");
+    selectedCells = [];
+    document.getElementById("swapBtn").disabled = true;
+    return;
+  }
+
+  // 이름 있는 셀 1~2개 선택
+  if (!isEmpty && selectedCells.length < 2) {
     selectedCells.push({ cell, key });
     cell.classList.add("selected");
   }
 
-  // 서로 변경 버튼 상태 업데이트
+  // 서로 변경 버튼 활성화 조건
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
 
