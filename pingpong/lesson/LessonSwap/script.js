@@ -3,12 +3,12 @@ import { db } from './firebase.js';
 import { ref, onValue, set, get, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 // 사용자 이름 입력
-const userNameKey = "lessonSwapUserName";
-let userName = localStorage.getItem(userNameKey);
-if (!userName) {
-  userName = prompt("이름을 입력하세요:");
-  localStorage.setItem(userNameKey, userName);
-}
+//const userNameKey = "lessonSwapUserName";
+//let userName = localStorage.getItem(userNameKey);
+//if (!userName) {
+//  userName = prompt("이름을 입력하세요:");
+//  localStorage.setItem(userNameKey, userName);
+//}
 
 const scheduleRef = ref(db, 'schedule');
 
