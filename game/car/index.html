@@ -116,17 +116,18 @@
   }
 
     function displayTopScores() {
-    const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
-    onValue(scoresRef, (snapshot) => {
-      const list = [];
-      snapshot.forEach(child => list.push(child.val()));
-      list.sort((a, b) => b.score - a.score); // 내림차순 정렬
-      const scoreHtml = list.map((item, i) =>
-        `<div>${i + 1}위: ${item.name} - ${item.score}점</div>`
-      ).join('');
-      document.getElementById('top-scores').innerHTML = scoreHtml;
-    });
-  }
+  const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
+  onValue(scoresRef, (snapshot) => {
+    const list = [];
+    snapshot.forEach(child => list.push(child.val()));
+    list.sort((a, b) => b.score - a.score); // 높은 점수부터 정렬
+    const scoreHtml = list.map((item, i) =>
+      `<div>${i + 1}위: ${item.name} - ${item.score}점</div>`
+    ).join('');
+    document.getElementById('top-scores').innerHTML = scoreHtml;
+  });
+}
+
 window.saveScore = saveScore;
 window.displayTopScores = displayTopScores;
   </script>
@@ -144,14 +145,19 @@ window.displayTopScores = displayTopScores;
 
 
   </div>
-  <div id="top-scores" style="
+ <div id="top-scores" style="
   position: absolute;
   bottom: 10px;
-  left: 10px;
+  right: 10px;
   color: white;
   font-size: 1rem;
-  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px 12px;
+  border-radius: 8px;
+  z-index: 999;
+  max-width: 200px;
 "></div>
+
 <div id="game-controls" style="
   position: absolute;
   bottom: 10px;
@@ -161,8 +167,8 @@ window.displayTopScores = displayTopScores;
   gap: 8px;
   z-index: 1000;
 ">
-  <button id="pause-btn" class="btn">⏸️ 일시정지</button>
-  <button id="end-btn" class="btn">🛑 종료</button>
+  <button id="pause-btn" class="btn"> ⏸️ </button>
+  <button id="end-btn" class="btn"> 🛑 </button>
 </div>
 
 
@@ -378,7 +384,7 @@ function showGameOver() {
   overlay.innerHTML = `
     <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
     <div style="margin-bottom: 10px;">당신의 점수는 <strong>${score}</strong>점입니다!</div>
-    <button class="btn" onclick="location.reload()">🔄 재시작</button>
+    <button class="btn" onclick="location.reload()"> 🔄 </button>
     <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>`;
   overlay.style.display = 'flex';
   bgm.pause();
@@ -469,6 +475,22 @@ game.addEventListener('touchstart', () => {
   }
 }, { once: true });
 
+function saveScore(name, score) {
+  const scoresRef = ref(db, 'carGameScores');
+  push(scoresRef, { name, score });
+}
+
+endBtn.addEventListener('click', () => {
+  bgm.pause();
+  bgm.currentTime = 0;
+  clearInterval(gameInterval);
+  isPaused = true;
+  alert('게임 종료!');
+  displayTopScores();  // <- 종료 후에도 다시 호출해서 보여줌
+});
+
+saveScore(name, score);   // 게임 끝나고 점수 저장
+displayTopScores();       // 저장 후 곧바로 랭킹 표시
 
 </script>
 </body>
