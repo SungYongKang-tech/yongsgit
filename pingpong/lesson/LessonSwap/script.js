@@ -16,7 +16,7 @@ window.importSchedule = function () {
   const initialData = {
   mon_0: { name: "김승일" }, tue_0: { name: "정승묵" }, wed_0: { name: "김승일" }, thu_0: { name: "정승묵" },
   mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
-  mon_2: { name: "이양주" }, tue_2: { name: "양충현" }, wed_2: { name: "이양주" }, thu_2: { name: "양충현" },
+  mon_2: { name: "이낭주" }, tue_2: { name: "양충현" }, wed_2: { name: "이낭주" }, thu_2: { name: "양충현" },
   mon_3: { name: "조보미" }, tue_3: { name: "송은아" }, wed_3: { name: "조보미" }, thu_3: { name: "송은아" },
   mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
 };
@@ -221,3 +221,29 @@ window.approveSwap = function () {
     });
   });
 };
+
+let selectedEmptyKey = null;
+
+function handleCellClick(key, value) {
+  // 빈 셀 클릭 → 저장
+  if (!value) {
+    selectedEmptyKey = key;
+    highlightSelected(key);
+    return;
+  }
+
+  // 이름이 있는 셀 클릭 → 빈자리에 배정
+  if (selectedEmptyKey && value !== "") {
+    set(ref(db, `schedule/${selectedEmptyKey}`), { name: value })
+      .then(() => {
+        alert(`${value}님이 해당 시간에 배정되었습니다.`);
+        selectedEmptyKey = null;
+        selectedKey = null;
+      });
+    return;
+  }
+
+  // 일반 셀 클릭 → 그냥 선택
+  selectedKey = key;
+  highlightSelected(key);
+}
