@@ -113,64 +113,39 @@ function renderSchedule(data) {
 function handleCellClick(cell, key) {
   const name = cell.textContent.trim();
 
-  // 1. 아무것도 선택 안 된 상태 → 첫 셀 선택
-  if (selectedCells.length === 0 && name) {
+  // 이미 선택된 경우 선택 해제
+  const alreadyIndex = selectedCells.findIndex(item => item.cell === cell);
+  if (alreadyIndex > -1) {
+    selectedCells.splice(alreadyIndex, 1);
+    cell.classList.remove("selected");
+  } 
+  else if (selectedCells.length < 2 && name) {
     selectedCells.push({ cell, key });
     cell.classList.add("selected");
-
-  // 2. 첫 셀 선택 이후 빈 셀 클릭 → 복사
-  } else if (selectedCells.length === 1 && !name) {
-    const from = selectedCells[0];
-
-    const nameToCopy = from.cell.textContent.trim();
-    cell.textContent = nameToCopy;
-    cell.classList.remove("empty");
-    cell.style.backgroundColor = "";
-    set(ref(db, `schedule/${key}`), { name: nameToCopy });
-
-    // 선택 초기화
-    from.cell.classList.remove("selected");
-    selectedCells = [];
-  
-  } else {
-    // 선택 초기화
-    selectedCells.forEach(({ cell }) => cell.classList.remove("selected"));
-    selectedCells = [];
   }
 
-  // 버튼 비활성화 유지
-  document.getElementById("swapBtn").disabled = true;
-}
-
-
-  // 서로변경 버튼 상태 설정
+  // 서로 변경 버튼 상태 업데이트
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
-
-
-
+}
 
 
 window.handleSwap = function () {
   if (selectedCells.length !== 2) return;
 
-  const [cellA, cellB] = selectedCells;
-  const keyA = cellA.dataset.key;
-  const keyB = cellB.dataset.key;
+  const [{ cell: cellA, key: keyA }, { cell: cellB, key: keyB }] = selectedCells;
   const nameA = cellA.textContent;
   const nameB = cellB.textContent;
 
-  // Swap in UI
+  // Swap UI
   cellA.textContent = nameB;
   cellB.textContent = nameA;
 
   // Firebase 반영
-  const refA = ref(db, `schedule/${keyA}`);
-  const refB = ref(db, `schedule/${keyB}`);
-  set(refA, { name: nameB });
-  set(refB, { name: nameA });
+  set(ref(db, `schedule/${keyA}`), { name: nameB });
+  set(ref(db, `schedule/${keyB}`), { name: nameA });
 
-  // UI 정리
-  selectedCells.forEach(cell => cell.classList.remove("selected"));
+  // 스타일 초기화
+  selectedCells.forEach(({ cell }) => cell.classList.remove("selected"));
   selectedCells = [];
   document.getElementById("swapBtn").disabled = true;
 };
