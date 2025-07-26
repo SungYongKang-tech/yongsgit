@@ -467,21 +467,19 @@ document.getElementById('pause-btn').addEventListener('click', () => {
 
 document.getElementById('end-btn').addEventListener('click', () => {
   gameRunning = false;
-  showGameOver();
 
-  // 배경음악 멈추기
-  bgm.pause();
-  bgm.currentTime = 0;
-
-  // 게임 관련 인터벌, 애니메이션 등도 종료 필요
- // clearInterval(gameInterval);  // 만약 있다면
-
-  // 게임 UI 숨기기, 시작 화면 보이기
-//  document.getElementById('game').style.display = 'none';
-//  document.getElementById('start-screen').style.display = 'block'; // 예: 초기화면 id
-
-  // 점수 리셋 등 초기 상태로 복귀할 내용이 있으면 여기에 추가
+  const name = prompt("이름을 입력하세요:");
+  if (name && name.trim()) {
+    saveScoreToFirebase(name, coinCount).then(() => {
+      showGameOver(); // 화면 전환
+      fetchTopScores(); // 랭킹 불러오기
+    });
+  } else {
+    alert("이름이 입력되지 않아 점수가 저장되지 않았습니다.");
+    showGameOver();
+  }
 });
+
 
 
 
@@ -508,9 +506,55 @@ endBtn.addEventListener('click', () => {
 saveScore(name, score);   // 게임 끝나고 점수 저장
 displayTopScores();       // 저장 후 곧바로 랭킹 표시
 
+import { getDatabase, ref, push, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+const db = getDatabase();
+
+function saveScoreToFirebase(name, score) {
+  const scoresRef = ref(db, "scores");
+  return push(scoresRef, { name, score }); // return 추가!
+}
+
+
+function fetchTopScores() {
+  const scoresRef = ref(db, "scores");
+
+  get(scoresRef).then((snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const scoreArray = Object.values(data);
+
+      const topScores = scoreArray
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+
+      displayTopScores(topScores);
+    }
+  });
+}
+
+function displayTopScores(topScores) {
+  const list = document.getElementById("score-list");
+  list.innerHTML = "";
+
+  topScores.forEach((entry, index) => {
+    const li = document.createElement("li");
+    li.textContent = `${index + 1}. ${entry.name} - ${entry.score}점`;
+    list.appendChild(li);
+  });
+
+  document.getElementById("scoreboard").style.display = "block";
+}
 
 
 </script>
+
+<!-- 게임 종료 후 랭킹 보여주는 영역 -->
+<div id="scoreboard" style="display: none; text-align: center; margin-top: 30px;">
+  <h2>🏆 상위 10위 점수</h2>
+  <ol id="score-list"></ol>
+</div>
+
+
 </body>
 </html>
