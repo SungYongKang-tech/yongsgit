@@ -100,7 +100,7 @@ function renderSchedule(data) {
 
       if (value) {
         cell.textContent = value;
-        if (value === userName) cell.style.fontWeight = "bold";
+      //  if (value === userName) cell.style.fontWeight = "bold";
       } else {
         cell.classList.add("empty");
         cell.style.backgroundColor = "#f5f5f5";
