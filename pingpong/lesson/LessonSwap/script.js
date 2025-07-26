@@ -2,13 +2,6 @@
 import { db } from './firebase.js';
 import { ref, onValue, set, get, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// 사용자 이름 입력
-//const userNameKey = "lessonSwapUserName";
-//let userName = localStorage.getItem(userNameKey);
-//if (!userName) {
-//  userName = prompt("이름을 입력하세요:");
-//  localStorage.setItem(userNameKey, userName);
-//}
 
 const scheduleRef = ref(db, 'schedule');
 
@@ -91,7 +84,7 @@ function renderSchedule(data) {
       const key = `${day}_${pIdx}`;
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
-
+      cell.dataset.key = key;
       cell.style.border = "1px solid #ccc";
       cell.style.padding = "6px";
       cell.style.fontSize = "3.5vw";
@@ -100,7 +93,7 @@ function renderSchedule(data) {
 
       if (value) {
         cell.textContent = value;
-      //  if (value === userName) cell.style.fontWeight = "bold";
+     
       } else {
         cell.classList.add("empty");
         cell.style.backgroundColor = "#f5f5f5";
