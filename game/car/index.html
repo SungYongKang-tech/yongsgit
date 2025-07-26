@@ -338,62 +338,54 @@ function handleHit() {
     }
   }, 200);
 }
-
 async function showGameOver(score) {
-  const name = prompt("이름을 입력하세요 (10자 이내):", "") || "";
-  const trimmedName = name.slice(0, 10);
-  await saveScore(trimmedName, score);
+  // 현재 상위 점수들 가져오기
+  const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
+  const snapshot = await get(scoresRef);
+
+  const scoreList = [];
+  snapshot.forEach(child => {
+    const val = child.val();
+    if (typeof val.score === 'number') scoreList.push(val);
+  });
+
+  scoreList.sort((a, b) => b.score - a.score);  // 높은 점수 순
+
+  const isInTop10 = scoreList.length < 10 || score > scoreList[scoreList.length - 1].score;
+
+  if (isInTop10) {
+    const name = prompt("축하합니다! 10위 안에 들었습니다.\n이름을 입력하세요 (10자 이내):", "") || "";
+    const trimmedName = name.slice(0, 10);
+    await saveScore(trimmedName, score);
+  }
+
   const scoreHtml = await generateTopScoresHTML();
 
-  const overlay = document.getElementById('overlay');
- overlay.innerHTML = `
-<div style="
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-y: auto;
-  padding: 40px 20px 60px;
-  box-sizing: border-box;
-  z-index: 999;
-  color: white;
-  font-size: 2rem;
-">
-  <div style="margin-bottom: 20px; font-size: 2rem; text-align: center;">💥 GAME OVER 💥</div>
-  <h3 style="margin-top:10px; color:gold; text-align: center;">🏆 상위 10위 점수</h3>
+  overlay.innerHTML = `
+  <div style="display: flex; flex-direction: column; align-items: center; overflow-y: auto; padding: 40px 20px 60px; box-sizing: border-box; z-index: 999; color: white; font-size: 2rem;">
+    <div style="margin-bottom: 20px; font-size: 2rem; text-align: center;">💥 GAME OVER 💥</div>
+    <h3 style="margin-top:10px; color:gold; text-align: center;">🏆 상위 10위 점수</h3>
 
-  <div style="display: flex; justify-content: center; width: 100%;">
-    <div style="
-      font-size: 1rem;
-      line-height: 1.8;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 15px 25px;
-      border-radius: 10px;
-      max-height: 300px;
-      overflow-y: auto;
-      width: 90%;
-      max-width: 400px;
-      text-align: center;
-    ">
-      ${scoreHtml}
+    <div style="display: flex; justify-content: center; width: 100%;">
+      <div style="font-size: 1rem; line-height: 1.8; background: rgba(255, 255, 255, 0.1); padding: 15px 25px; border-radius: 10px; max-height: 300px; overflow-y: auto; width: 90%; max-width: 400px; text-align: center;">
+        ${scoreHtml}
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; text-align: center;">
+      <button class="btn" onclick="location.reload()">🔄 재시작</button>
+      <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
     </div>
   </div>
+  `;
 
-  <div style="margin-top: 20px; text-align: center;">
-    <button class="btn" onclick="location.reload()">🔄 재시작</button>
-    <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
-  </div>
-
-`;
   overlay.style.display = 'flex';
-
-  // 정지 처리
   bgm.pause();
   bgm.currentTime = 0;
   gameRunning = false;
   moveVX = 0;
   moveVY = 0;
 }
-
 
 
 
