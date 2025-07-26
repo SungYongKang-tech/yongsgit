@@ -85,6 +85,51 @@
     .btn:hover { background: #777; }
     .hidden { visibility: hidden; }
   </style>
+
+  <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import {
+    getDatabase, ref, push, set, query, orderByChild, limitToLast, onValue
+  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+    authDomain: "number-baseball-aee52.firebaseapp.com",
+    databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+    projectId: "number-baseball-aee52",
+    storageBucket: "number-baseball-aee52.firebasestorage.app",
+    messagingSenderId: "998537150772",
+    appId: "1:998537150772:web:c937403c219103d491a561"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+    function saveScore(name, score) {
+    const scoresRef = ref(db, 'carGameScores');
+    const newScoreRef = push(scoresRef);
+    set(newScoreRef, {
+      name: name,
+      score: score,
+      timestamp: Date.now()
+    });
+  }
+
+    function displayTopScores() {
+    const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
+    onValue(scoresRef, (snapshot) => {
+      const list = [];
+      snapshot.forEach(child => list.push(child.val()));
+      list.sort((a, b) => b.score - a.score); // 내림차순 정렬
+      const scoreHtml = list.map((item, i) =>
+        `<div>${i + 1}위: ${item.name} - ${item.score}점</div>`
+      ).join('');
+      document.getElementById('top-scores').innerHTML = scoreHtml;
+    });
+  }
+
+  </script>
+
 </head>
 <body>
   <div id="game">
@@ -96,6 +141,15 @@
 
 
   </div>
+  <div id="top-scores" style="
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  color: white;
+  font-size: 1rem;
+  z-index: 1000;
+"></div>
+
 
 <script>
 const game = document.getElementById('game');
@@ -266,7 +320,7 @@ function checkCollision(obs) {
   if (!gameRunning || isInvincible) return;
   const p = player.getBoundingClientRect();
   const o = obs.getBoundingClientRect();
-  const buffer = 40;
+  const buffer = 20;
   const collide = p.left + buffer < o.right && p.right - buffer > o.left && p.top + buffer < o.bottom && p.bottom - buffer > o.top;
   if (collide) {
     handleHit();
@@ -296,6 +350,10 @@ function handleHit() {
 }
 
 function showGameOver() {
+  const nameInput = prompt("이름을 입력하세요 (10자 이내):", "플레이어") || "플레이어";
+  const trimmedName = nameInput.slice(0, 10);
+  saveScore(trimmedName, score); // 점수 저장
+
   overlay.innerHTML = `
     <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
     <div style="margin-bottom: 10px;">당신의 점수는 <strong>${score}</strong>점입니다!</div>
@@ -303,6 +361,7 @@ function showGameOver() {
     <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>`;
   overlay.style.display = 'flex';
 }
+
 
 setInterval(() => {
   if (gameRunning) {
@@ -347,6 +406,8 @@ window.onload = () => {
 
   livesDisplay.textContent = `❤️ x ${lives}`;
   spawnLoop();
+  displayTopScores();
+
 };
 
 game.addEventListener('touchstart', () => {
