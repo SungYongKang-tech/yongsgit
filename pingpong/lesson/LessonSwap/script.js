@@ -10,9 +10,6 @@ onValue(scheduleRef, (snapshot) => {
   renderSchedule(data);
 });
 
-window.importSchedule = function () {
-  if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
-
   const initialData = {
     mon_0: { name: "김승일" }, tue_0: { name: "정승묵" }, wed_0: { name: "김승일" }, thu_0: { name: "정승묵" },
     mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
@@ -20,6 +17,11 @@ window.importSchedule = function () {
     mon_3: { name: "조보미" }, tue_3: { name: "송은아" }, wed_3: { name: "조보미" }, thu_3: { name: "송은아" },
     mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
   };
+
+window.importSchedule = function () {
+  if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
+
+
 
   set(scheduleRef, initialData)
     .then(() => alert("시간표가 초기화되었습니다."))
@@ -93,6 +95,10 @@ function renderSchedule(data) {
 
       if (value) {
         cell.textContent = value;
+       
+        if (initialData[key]?.name !== value) {
+         cell.classList.add("modified");
+      }
      
       } else {
         cell.classList.add("empty");
