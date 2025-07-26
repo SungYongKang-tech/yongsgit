@@ -111,19 +111,22 @@ function renderSchedule(data) {
 }
 
 function handleCellClick(cell, key) {
-  if (selectedCells.includes(cell)) return; // 이미 선택된 셀은 무시
-
-  if (selectedCells.length === 2) {
-    // 기존 선택 해제
+  // 이미 선택된 셀이면 선택 해제
+  if (selectedCells.includes(cell)) {
+    cell.classList.remove("selected");
+    selectedCells = selectedCells.filter(c => c !== cell);
+  } else {
+    // 기존 선택이 있다면 모두 해제하고 새로 선택
     selectedCells.forEach(c => c.classList.remove("selected"));
     selectedCells = [];
-  }
 
-  cell.classList.add("selected");
-  selectedCells.push(cell);
+    cell.classList.add("selected");
+    selectedCells.push(cell);
+  }
 
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
+
 
 
 window.handleSwap = function () {
