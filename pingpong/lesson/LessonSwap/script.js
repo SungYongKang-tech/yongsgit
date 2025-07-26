@@ -23,7 +23,7 @@ window.importSchedule = function () {
 
 
 
-//  set(scheduleRef, initialData)
+  set(scheduleRef, initialData)
 //    .then(() => alert("시간표가 초기화되었습니다."))
 //    .catch((error) => alert("초기화 중 오류 발생: " + error.message));
 };
