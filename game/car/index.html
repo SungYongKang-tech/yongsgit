@@ -369,15 +369,29 @@ function generateTopScoresHTML() {
     const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
     onValue(scoresRef, (snapshot) => {
       const list = [];
-      snapshot.forEach(child => list.push(child.val()));
-      list.sort((a, b) => b.score - a.score);
-      const html = list.map((item, i) =>
-        `<div>${i + 1}위: ${item.name} - ${item.score}점</div>`
-      ).join('');
+      snapshot.forEach(child => {
+        const val = child.val();
+        if (typeof val.score === 'number') {
+          list.push(val);
+        }
+      });
+      list.sort((a, b) => b.score - a.score); // 내림차순 정렬
+
+      // 10위 → 1위 순으로 표시 (즉, index=0이 10위, index=9가 1위)
+      const html = list
+        .map((item, i, arr) => {
+          const rank = arr.length - i; // 10, 9, ..., 1
+          return `<div><strong>${rank}위</strong> : ${item.name} - ${item.score}점</div>`;
+        })
+        .reverse() // 맨 아래에서 위로 올라오게
+        .join('');
+
       resolve(html);
     }, { onlyOnce: true });
   });
 }
+
+
 
 setInterval(() => {
   if (gameRunning) {
