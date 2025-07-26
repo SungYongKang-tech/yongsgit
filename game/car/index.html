@@ -92,10 +92,9 @@
     <div id="score">점수: 0</div>
     <div id="lives">❤️ x 3</div>
     <div id="overlay"></div>
-    <audio id="startSound" src="start.mp3"></audio>
-    <audio id="avoidSound1" src="car1.mp3"></audio>
-    <audio id="avoidSound2" src="car2.mp3"></audio>
-    <audio id="crashSound" src="car-accident.mp3"></audio>
+    <audio id="bgm" src="car01.mp3"></audio>
+
+
   </div>
 
 <script>
@@ -104,10 +103,7 @@ const player = document.getElementById('player');
 const scoreDisplay = document.getElementById('score');
 const livesDisplay = document.getElementById('lives');
 const overlay = document.getElementById('overlay');
-const startSound = document.getElementById('startSound');
-const avoidSound1 = document.getElementById('avoidSound1');
-const avoidSound2 = document.getElementById('avoidSound2');
-const crashSound = document.getElementById('crashSound');
+
 
 let lives = 3;
 let score = 0;
@@ -120,6 +116,8 @@ let playerY = window.innerHeight - 120;
 let moveVX = 0, moveVY = 0;
 let goldCombo = 0;
 let goldComboTimer = null;
+let activeTouchId, startTouchX, startTouchY, isDragging = false;
+
 const obstacles = [];
 
 player.style.left = `${playerX}px`;
@@ -225,7 +223,7 @@ function animateObstacle(obs) {
       if (idx > -1) obstacles.splice(idx, 1);
       clearInterval(interval);
       if (Math.random() < 0.3) {
-        (Math.random() < 0.5 ? avoidSound1 : avoidSound2).play();
+        
       }
     }
     checkCollision(obs);
@@ -277,7 +275,7 @@ function checkCollision(obs) {
 }
 
 function handleHit() {
-  crashSound.play();
+ 
   lives--;
   livesDisplay.textContent = `❤️ x ${lives}`;
   if (lives <= 0) {
@@ -327,11 +325,37 @@ setInterval(() => {
   }
 }, 10000);
 
+
+const bgm = document.getElementById('bgm');
+const bgmTracks = ['car01.mp3', 'car02.mp3', 'car03.mp3'];
+let currentBgmIndex = 0;
+
+// 순차 재생 함수
+function playNextBgm() {
+  bgm.src = bgmTracks[currentBgmIndex];
+  bgm.play();
+  currentBgmIndex = (currentBgmIndex + 1) % bgmTracks.length;
+}
+
+// 다음 곡 재생 트리거
+bgm.addEventListener('ended', playNextBgm);
+
+
 window.onload = () => {
-  startSound.play();
+  // 배경음악 재생 시작
+  playNextBgm();
+
   livesDisplay.textContent = `❤️ x ${lives}`;
   spawnLoop();
 };
+
+game.addEventListener('touchstart', () => {
+  if (bgm.paused) {
+    bgm.play().catch(() => {}); // 자동 재생 차단 방지
+  }
+}, { once: true });
+
+
 </script>
 </body>
 </html>
