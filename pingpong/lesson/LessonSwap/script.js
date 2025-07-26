@@ -224,27 +224,42 @@ window.approveSwap = function () {
 };
 
 let selectedEmptyKey = null;
+let selectedNameKey = null;
 
 function handleCellClick(key, value) {
-  // 빈 셀 클릭 → 저장
   if (!value) {
-    selectedEmptyKey = key;
-    highlightSelected(key);
-    return;
+    // 빈 자리 클릭
+    if (selectedNameKey) {
+      // 이름 있는 셀을 먼저 선택한 경우 → 빈 자리에 그 사람 배정
+      assignNameToEmptyCell(selectedNameKey, key);
+      selectedNameKey = null;
+    } else {
+      selectedEmptyKey = key;
+      highlightSelected(key);
+    }
+  } else {
+    // 이름 있는 자리 클릭
+    if (selectedEmptyKey) {
+      // 빈 자리를 먼저 선택한 경우 → 빈 자리에 이 사람 배정
+      assignNameToEmptyCell(key, selectedEmptyKey);
+      selectedEmptyKey = null;
+    } else {
+      selectedNameKey = key;
+      highlightSelected(key);
+    }
   }
+}
+function assignNameToEmptyCell(fromKey, toKey) {
+  get(ref(db, `schedule/${fromKey}`)).then(snap => {
+    const name = snap.val()?.name;
+    if (!name) return alert("배정할 이름이 없습니다.");
 
-  // 이름이 있는 셀 클릭 → 빈자리에 배정
-  if (selectedEmptyKey && value !== "") {
-    set(ref(db, `schedule/${selectedEmptyKey}`), { name: value })
+    set(ref(db, `schedule/${toKey}`), { name })
       .then(() => {
-        alert(`${value}님이 해당 시간에 배정되었습니다.`);
+        alert(`${name}님이 빈자리에 배정되었습니다.`);
         selectedEmptyKey = null;
+        selectedNameKey = null;
         selectedKey = null;
       });
-    return;
-  }
-
-  // 일반 셀 클릭 → 그냥 선택
-  selectedKey = key;
-  highlightSelected(key);
+  });
 }
