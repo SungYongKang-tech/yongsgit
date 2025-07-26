@@ -394,18 +394,21 @@ function generateTopScoresHTML() {
         if (typeof val.score === 'number') list.push(val);
       });
 
-      // ✅ 높은 점수 → 낮은 점수 순으로 정렬
+      // ✅ 높은 점수 순 정렬
       list.sort((a, b) => b.score - a.score);
 
-      // ✅ 1위부터 출력
-      const html = list
-        .map((item, i) => `<div><strong>${i + 1}위</strong>: ${item.name} - ${item.score}점</div>`)
-        .join('');
+      // ✅ HTML 생성
+      const html = list.map((item, i) => `
+        <div style="padding: 4px 0;">
+          <strong>${i + 1}위</strong>: ${item.name} - ${item.score}점
+        </div>
+      `).join('');
 
       resolve(html);
     }, { onlyOnce: true });
   });
 }
+
 
 
 
@@ -628,43 +631,47 @@ function displayTopScores(topScores) {
   }
 
   async function showGameOver(score) {
-    const name = prompt("이름을 입력하세요 (10자 이내):", "플레이어") || "플레이어";
-    const trimmedName = name.slice(0, 10);
-    await saveScore(trimmedName, score);
-    const scoreHtml = await generateTopScoresHTML();
+  const name = prompt("이름을 입력하세요 (10자 이내):", "플레이어") || "플레이어";
+  const trimmedName = name.slice(0, 10);
+  await saveScore(trimmedName, score);
+  const scoreHtml = await generateTopScoresHTML();
 
-    const overlay = document.getElementById('overlay');
-    overlay.innerHTML = `
-      <div style="margin-bottom: 20px; font-size: 2rem;">💥 GAME OVER 💥</div>
-      <h3 style="margin-top:10px; color:gold;">🏆 상위 10위 점수</h3>
+  const overlay = document.getElementById('overlay');
+  overlay.innerHTML = `
+    <div style="margin-bottom: 20px; font-size: 2rem; text-align: center;">💥 GAME OVER 💥</div>
+    <h3 style="margin-top:10px; color:gold; text-align: center;">🏆 상위 10위 점수</h3>
+
+    <!-- ✅ 가운데 정렬되는 wrapper -->
+    <div style="display: flex; justify-content: center; width: 100%;">
       <div style="
-  text-align: left;
-  font-size: 1rem;
-  line-height: 1.8;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 15px;
-  border-radius: 10px;
-  max-height: 300px;
-  overflow-y: auto;
-  margin: 10px auto;           /* ✅ 위 아래 10px, 좌우 자동으로 가운데 정렬 */
-  width: 70%;                  /* ✅ 가로폭을 전체의 70%로 설정 */
-  max-width: 360px;            /* ✅ 너무 넓지 않게 최대 360px 제한 (원하는 크기로 조절 가능) */
-">
+        font-size: 1rem;
+        line-height: 1.8;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px 25px;
+        border-radius: 10px;
+        max-height: 300px;
+        overflow-y: auto;
+        width: 70%;
+        max-width: 400px;
+        text-align: center;
+      ">
         ${scoreHtml}
       </div>
-  
-    `;
-    overlay.style.display = 'flex';
+    </div>
 
-    // 정지 처리
-    if (window.bgm) {
-      bgm.pause();
-      bgm.currentTime = 0;
-    }
-    window.gameRunning = false;
-    window.moveVX = 0;
-    window.moveVY = 0;
-  }
+    <div style="margin-top: 20px; text-align: center;">
+      <button class="btn" onclick="location.reload()">🔄 재시작</button>
+      <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
+    </div>
+  `;
+
+  // 게임 정지 처리
+  bgm.pause();
+  bgm.currentTime = 0;
+  gameRunning = false;
+  moveVX = 0;
+  moveVY = 0;
+}
 
   // ✅ 전역 등록
   window.saveScore = saveScore;
