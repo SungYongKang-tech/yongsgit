@@ -324,7 +324,7 @@ function handleHit() {
   livesDisplay.textContent = `❤️ x ${lives}`;
   if (lives <= 0) {
     gameRunning = false;
-    return showGameOver();
+    showGameOver(score);  // 점수 전달!
   }
   isInvincible = true;
   let blink = 0;
@@ -339,28 +339,13 @@ function handleHit() {
   }, 200);
 }
 
-async function showGameOver() {
-  gameRunning = false;  // ✅ 게임 정지
-  moveVX = 0;
-  moveVY = 0;
-
-  // 자동차 멈춤
-  player.style.left = `${playerX}px`;
-  player.style.top = `${playerY}px`;
-
-  // 음악 멈춤
-  bgm.pause();
-  bgm.currentTime = 0;
-
-  // 이름 입력받기
-  const nameInput = prompt("이름을 입력하세요 (10자 이내):", "플레이어") || "플레이어";
-  const trimmedName = nameInput.slice(0, 10);
-  saveScore(trimmedName, score);
-
-  // 순위표 HTML 받아오기
+async function showGameOver(score) {
+  const name = prompt("이름을 입력하세요 (10자 이내):", "플레이어") || "플레이어";
+  const trimmedName = name.slice(0, 10);
+  await saveScore(trimmedName, score);
   const scoreHtml = await generateTopScoresHTML();
 
-  // 오버레이 표시
+  const overlay = document.getElementById('overlay');
   overlay.innerHTML = `
     <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
     <div style="margin-bottom: 10px;">당신의 점수는 <strong>${score}</strong>점입니다!</div>
@@ -370,6 +355,13 @@ async function showGameOver() {
     <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
   `;
   overlay.style.display = 'flex';
+
+  // 정지 처리
+  bgm.pause();
+  bgm.currentTime = 0;
+  gameRunning = false;
+  moveVX = 0;
+  moveVY = 0;
 }
 
 
@@ -484,7 +476,8 @@ game.addEventListener('touchstart', () => {
 
 function saveScore(name, score) {
   const scoresRef = ref(db, 'carGameScores');
-  push(scoresRef, { name, score });
+  const newScoreRef = push(scoresRef);
+  return set(newScoreRef, { name, score, timestamp: Date.now() });
 }
 
 endBtn.addEventListener('click', () => {
@@ -599,6 +592,7 @@ function displayTopScores(topScores) {
     document.addEventListener("DOMContentLoaded", () => {
       displayTopScores();
     });
+    window.showGameOver = showGameOver;
   </script>
 
 </body>
