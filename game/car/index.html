@@ -586,11 +586,18 @@ function displayTopScores(topScores) {
       const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
       onValue(scoresRef, (snapshot) => {
         const list = [];
-        snapshot.forEach(child => list.push(child.val()));
-        list.sort((a, b) => b.score - a.score);
-        const html = list.map((item, i) =>
-          `<div>${i + 1}위: ${item.name} - ${item.score}점</div>`
-        ).join('');
+        snapshot.forEach(child => {
+          const val = child.val();
+          if (typeof val.score === 'number') list.push(val);
+        });
+        list.sort((a, b) => b.score - a.score); // 내림차순 정렬
+        const html = list
+          .map((item, i, arr) => {
+            const rank = arr.length - i; // 역순 랭크: 10, 9, ..., 1
+            return `<div><strong>${rank}위</strong>: ${item.name} - ${item.score}점</div>`;
+          })
+          .reverse() // 가장 높은 점수를 맨 아래에
+          .join('');
         resolve(html);
       }, { onlyOnce: true });
     });
@@ -604,24 +611,50 @@ function displayTopScores(topScores) {
 
     const overlay = document.getElementById('overlay');
     overlay.innerHTML = `
-      <div style="margin-bottom: 20px;">💥 GAME OVER 💥</div>
-      <h3 style="margin-top:10px; color:yellow;">🏆 상위 10위 점수</h3>
-      <div style="text-align: left; font-size: 1rem; line-height: 1.6;">${scoreHtml}</div>
-    
+      <div style="margin-bottom: 20px; font-size: 2rem;">💥 GAME OVER 💥</div>
+      <h3 style="margin-top:10px; color:gold;">🏆 상위 10위 점수</h3>
+      <div style="
+        text-align: left;
+        font-size: 1rem;
+        line-height: 1.8;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        max-height: 300px;
+        overflow-y: auto;
+        margin-top: 10px;
+        width: 90%;
+        max-width: 400px;
+      ">
+        ${scoreHtml}
+      </div>
+      <div style="margin-top: 20px;">
+        <button class="btn" onclick="location.reload()">🔄 재시작</button>
+        <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
+      </div>
     `;
     overlay.style.display = 'flex';
 
-    // 게임 완전 정지
-    bgm.pause();
-    bgm.currentTime = 0;
-    gameRunning = false;
-    moveVX = 0;
-    moveVY = 0;
+    // 정지 처리
+    if (window.bgm) {
+      bgm.pause();
+      bgm.currentTime = 0;
+    }
+    window.gameRunning = false;
+    window.moveVX = 0;
+    window.moveVY = 0;
   }
 
-  // 전역 등록
+  // ✅ 전역 등록
+  window.saveScore = saveScore;
+  window.generateTopScoresHTML = generateTopScoresHTML;
   window.showGameOver = showGameOver;
+  window.db = db;
+  window.ref = ref;
+  window.push = push;
+  window.set = set;
 </script>
+
 
 
 </body>
