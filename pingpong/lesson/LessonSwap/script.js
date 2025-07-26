@@ -197,3 +197,33 @@ window.markAbsent = function () {
     });
 };
 
+
+function shouldResetSchedule() {
+  const now = new Date();
+  const day = now.getDay(); // 일: 0, 월: 1, ..., 금: 5
+  const hour = now.getHours();
+
+  // 금요일 17시(5시) 이후인지 체크
+  return (day === 5 && hour >= 17);
+}
+
+function resetOncePerWeek() {
+  const resetKey = 'scheduleResetWeek';
+  const currentWeek = getWeekKey();
+
+  if (shouldResetSchedule() && localStorage.getItem(resetKey) !== currentWeek) {
+    importSchedule();  // 초기화 함수 실행
+    localStorage.setItem(resetKey, currentWeek);
+  }
+}
+
+// 해당 주차를 구분하기 위한 키 생성
+function getWeekKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const week = Math.ceil(((now - new Date(year, 0, 1)) / 86400000 + new Date(year, 0, 1).getDay() + 1) / 7);
+  return `${year}-W${week}`;
+}
+
+// 초기화 실행
+resetOncePerWeek();
