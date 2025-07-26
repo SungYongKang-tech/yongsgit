@@ -128,7 +128,7 @@
 ">
   <div id="game-controls" style="position: absolute; bottom: 5px; left: 5px; display: flex; gap: 3px; z-index: 999;">
   <button id="pause-btn" class="btn">⏸️</button>
- <!-- <button id="end-btn" class="btn">🛑</button>   -->
+
 </div>
 </div>
 
@@ -384,32 +384,6 @@ async function showGameOver(score) {
   moveVY = 0;
 }
 
-function generateTopScoresHTML() {
-  return new Promise((resolve) => {
-    const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
-    onValue(scoresRef, (snapshot) => {
-      const list = [];
-
-      // 스냅샷에서 데이터 수집
-      snapshot.forEach(child => {
-        list.push(child.val());
-      });
-
-      // 점수 높은 순으로 수동 정렬 (내림차순)
-      list.sort((a, b) => b.score - a.score);
-
-      // HTML로 변환
-      const html = list.map((item, i) => `
-        <div style="text-align: center; font-size: 1.1rem; padding: 4px 0;">
-          <strong>${i + 1}위</strong>: ${item.name} - ${item.score}점
-        </div>
-      `).join('');
-
-      resolve(html);
-    }, { onlyOnce: true });
-  });
-}
-
 
 
 
@@ -435,31 +409,29 @@ setInterval(() => {
   }
 }, 10000);
 
+ let bgm;
 
-const bgm = document.getElementById('bgm');
-const bgmTracks = ['car01.mp3', 'car02.mp3', 'car03.mp3'];
-let currentBgmIndex = 0;
+  // 2. BGM 후보 리스트 정의 후 하나 선택
+  const bgmList = [
+    new Audio('bgm1.mp3'),
+    new Audio('bgm2.mp3'),
+    new Audio('bgm3.mp3')
+  ];
 
-// 순차 재생 함수
-function playNextBgm() {
-  bgm.src = bgmTracks[currentBgmIndex];
-  bgm.play();
-  currentBgmIndex = (currentBgmIndex + 1) % bgmTracks.length;
-}
+  bgm = bgmList[Math.floor(Math.random() * bgmList.length)];
+  bgm.loop = true;
+  bgm.volume = 0.6;
 
-// 다음 곡 재생 트리거
-bgm.addEventListener('ended', playNextBgm);
-
-
-window.onload = () => {
-  // 배경음악 재생 시작
-  playNextBgm();
+  // 3. 사용자 클릭 후 BGM 재생 (브라우저 정책 대응)
+  document.addEventListener('click', () => {
+    if (bgm.paused) bgm.play();
+  }, { once: true });
 
   livesDisplay.textContent = `❤️ x ${lives}`;
   spawnLoop();
  // displayTopScores();
 
-};
+
 
 let paused = false;
 
@@ -516,18 +488,6 @@ function saveScore(name, score) {
 // const endBtn = document.getElementById('end-btn'); // ✅ 이 줄이 빠졌음!
 
 
-endBtn.addEventListener('click', () => {
-  bgm.pause();
-  bgm.currentTime = 0;
-  clearInterval(gameInterval);
-  isPaused = true;
-  alert('게임 종료!');
-  displayTopScores();  // <- 종료 후에도 다시 호출해서 보여줌
-});
-
-//saveScore(name, score);   // 게임 끝나고 점수 저장
-//displayTopScores();       // 저장 후 곧바로 랭킹 표시
-
 
 
 function saveScoreToFirebase(name, score) {
@@ -582,7 +542,7 @@ const bgmList = [
   new Audio('bgm3.mp3')
 ];
 
-let bgm = bgmList[Math.floor(Math.random() * bgmList.length)];
+bgm = bgmList[Math.floor(Math.random() * bgmList.length)];
 bgm.loop = true;
 bgm.volume = 0.6;
 bgm.play();
