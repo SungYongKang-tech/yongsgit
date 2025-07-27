@@ -139,8 +139,7 @@ const scoreDisplay = document.getElementById('score');
 const livesDisplay = document.getElementById('lives');
 const overlay = document.getElementById('overlay');
 const coinSound = document.getElementById('coinSound');
-//coinSound.volume = 0.2;
-const audioCtx = new AudioContext();
+coinSound.volume = 0.3;
 
 let lives = 3;
 let score = 0;
@@ -155,19 +154,6 @@ let goldCombo = 0;
 let goldComboTimer = null;
 let activeTouchId, startTouchX, startTouchY, isDragging = false;
 
-function playCoinSound() {
-  fetch('coin.mp3')
-    .then(res => res.arrayBuffer())
-    .then(buffer => audioCtx.decodeAudioData(buffer))
-    .then(decoded => {
-      const source = audioCtx.createBufferSource();
-      const gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0.2;  // 여기서 볼륨 조절
-      source.buffer = decoded;
-      source.connect(gainNode).connect(audioCtx.destination);
-      source.start(0);
-    });
-}
 
 const obstacles = [];
 
@@ -196,7 +182,6 @@ game.addEventListener("touchstart", (e) => {
 });
 
 game.addEventListener("touchmove", (e) => {
-  e.preventDefault(); // ✅ 멀티터치 문제 방지용 추가
   if (!isDragging) return;
   for (const touch of e.touches) {
     if (touch.identifier === activeTouchId) {
@@ -208,8 +193,7 @@ game.addEventListener("touchmove", (e) => {
       moveVY = dy / len * scale * 3;
     }
   }
-}, { passive: false }); // <- 이 부분도 중요!
-
+}, { passive: false });
 
 game.addEventListener("touchend", (e) => {
   for (const touch of e.changedTouches) {
@@ -481,34 +465,12 @@ game.addEventListener('touchstart', () => {
 function saveScore(name, score) {
   const scoresRef = ref(db, 'carGameScores');
   const newScoreRef = push(scoresRef);
-  return set(newScoreRef, { name, score, timestamp: Date.now() }).then(() => {
-    cleanupExtraScores();
-  });
+  return set(newScoreRef, { name, score, timestamp: Date.now() });
 }
+// const endBtn = document.getElementById('end-btn'); // ✅ 이 줄이 빠졌음!
 
 
-function cleanupExtraScores() {
-  const scoresRef = ref(db, 'carGameScores');
-  get(scoresRef).then(snapshot => {
-    if (snapshot.exists()) {
-      const entries = [];
-      snapshot.forEach(child => {
-        const val = child.val();
-        entries.push({ key: child.key, ...val });
-      });
 
-      // 점수 높은 순으로 정렬
-      entries.sort((a, b) => b.score - a.score);
-
-      // 10위 이후 항목 삭제
-      const extraEntries = entries.slice(10);
-      extraEntries.forEach(entry => {
-        const delRef = ref(db, `carGameScores/${entry.key}`);
-        set(delRef, null);
-      });
-    }
-  });
-}
 
 function saveScoreToFirebase(name, score) {
   const scoresRef = ref(db, "scores");
