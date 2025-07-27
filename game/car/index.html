@@ -339,60 +339,6 @@ function handleHit() {
   }, 200);
 }
 
-async function showGameOver(score) {
-  const name = prompt("이름을 입력하세요 (10자 이내):", "") || "";
-  const trimmedName = name.slice(0, 10);
-  await saveScore(trimmedName, score);
-  const scoreHtml = await generateTopScoresHTML();
-
-  const overlay = document.getElementById('overlay');
- overlay.innerHTML = `
-<div style="
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-y: auto;
-  padding: 40px 20px 60px;
-  box-sizing: border-box;
-  z-index: 999;
-  color: white;
-  font-size: 2rem;
-">
-  <div style="margin-bottom: 20px; font-size: 2rem; text-align: center;">💥 GAME OVER 💥</div>
-  <h3 style="margin-top:10px; color:gold; text-align: center;">🏆 상위 10위 점수</h3>
-
-  <div style="display: flex; justify-content: center; width: 100%;">
-    <div style="
-      font-size: 1rem;
-      line-height: 1.8;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 15px 25px;
-      border-radius: 10px;
-      max-height: 300px;
-      overflow-y: auto;
-      width: 90%;
-      max-width: 400px;
-      text-align: center;
-    ">
-      ${scoreHtml}
-    </div>
-  </div>
-
-  <div style="margin-top: 20px; text-align: center;">
-    <button class="btn" onclick="location.reload()">🔄 재시작</button>
-    <button class="btn" onclick="overlay.innerHTML='게임 종료되었습니다.'">❌ 종료</button>
-  </div>
-
-`;
-  overlay.style.display = 'flex';
-
-  // 정지 처리
-  bgm.pause();
-  bgm.currentTime = 0;
-  gameRunning = false;
-  moveVX = 0;
-  moveVY = 0;
-}
 
 
 
@@ -461,51 +407,6 @@ game.addEventListener('touchstart', () => {
     bgm.play().catch(err => console.warn('Autoplay failed:', err));
   }
 }, { once: true });
-
-function saveScore(name, score) {
-  const scoresRef = ref(db, 'carGameScores');
-  const newScoreRef = push(scoresRef);
-  return set(newScoreRef, { name, score, timestamp: Date.now() }).then(() => {
-    cleanupExtraScores();
-  });
-}
-function cleanupExtraScores() {
-  const scoresRef = ref(db, 'carGameScores');
-  get(scoresRef).then(snapshot => {
-    if (snapshot.exists()) {
-      const entries = [];
-
-      snapshot.forEach(child => {
-        const val = child.val();
-        if (val && typeof val.score === "number") {
-          entries.push({
-            key: child.key,
-            score: val.score,
-          });
-        }
-      });
-
-      // 점수 내림차순 정렬
-      entries.sort((a, b) => b.score - a.score);
-
-      // 상위 10개를 제외한 항목 제거
-      const extraEntries = entries.slice(10);
-      extraEntries.forEach(entry => {
-        if (entry.key) {
-          const delRef = ref(db, `carGameScores/${entry.key}`);
-          remove(delRef).catch(err => console.warn("삭제 실패", err));
-        }
-      });
-    }
-  }).catch(err => console.error("점수 불러오기 실패:", err));
-}
-
-
-
-function saveScoreToFirebase(name, score) {
-  const scoresRef = ref(db, "scores");
-  return push(scoresRef, { name, score }); // return 추가!
-}
 
 
 function fetchTopScores() {
@@ -577,9 +478,11 @@ document.addEventListener('touchstart', tryPlayBGM, { once: true });
 
  <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, get, remove, set, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import {
+    getDatabase, ref, get, remove, set, push,
+    query, orderByChild, limitToLast, onValue
+  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  // ✅ Firebase 설정
   const firebaseConfig = {
     apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
     authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -590,86 +493,116 @@ document.addEventListener('touchstart', tryPlayBGM, { once: true });
     appId: "1:998537150772:web:c937403c219103d491a561"
   };
 
-   const app = initializeApp(firebaseConfig);
+  const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  // ✅ 점수 저장 함수
   function saveScore(name, score) {
     const scoresRef = ref(db, 'carGameScores');
     const newScoreRef = push(scoresRef);
-    return set(newScoreRef, {
-      name,
-      score,
-      timestamp: Date.now()
-    }).then(() => {
-      cleanupExtraScores(); // 저장 후 상위 10개만 유지
+    return set(newScoreRef, { name, score, timestamp: Date.now() }).then(() => {
+      cleanupExtraScores();
     });
   }
 
-  // ✅ 상위 10개만 남기고 삭제
   function cleanupExtraScores() {
     const scoresRef = ref(db, 'carGameScores');
     get(scoresRef).then(snapshot => {
-      if (snapshot.exists()) {
-        const entries = [];
-
-        snapshot.forEach(child => {
-          const val = child.val();
-          if (val && typeof val.score === "number") {
-            entries.push({
-              key: child.key,
-              score: val.score
-            });
-          }
-        });
-
-        entries.sort((a, b) => b.score - a.score); // 점수 내림차순
-        const extraEntries = entries.slice(10); // 상위 10개 제외 나머지 삭제
-
-        extraEntries.forEach(entry => {
-          if (entry.key) {
-            const delRef = ref(db, `carGameScores/${entry.key}`);
-            remove(delRef).catch(err => console.warn("삭제 실패", err));
-          }
-        });
-      }
-    }).catch(err => console.error("점수 불러오기 실패:", err));
+      const entries = [];
+      snapshot.forEach(child => {
+        const val = child.val();
+        if (val && typeof val.score === "number") {
+          entries.push({ key: child.key, score: val.score });
+        }
+      });
+      entries.sort((a, b) => b.score - a.score);
+      const extra = entries.slice(10);
+      extra.forEach(entry => {
+        const delRef = ref(db, `carGameScores/${entry.key}`);
+        remove(delRef).catch(console.warn);
+      });
+    }).catch(console.error);
   }
 
   function generateTopScoresHTML() {
-  return new Promise((resolve) => {
-    const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
-    onValue(scoresRef, (snapshot) => {
-      const list = [];
-      snapshot.forEach(child => {
-        const val = child.val();
-        if (typeof val.score === 'number') list.push(val);
-      });
+    return new Promise((resolve) => {
+      const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
+      onValue(scoresRef, (snapshot) => {
+        const list = [];
+        snapshot.forEach(child => {
+          const val = child.val();
+          if (typeof val.score === 'number') list.push(val);
+        });
+        list.sort((a, b) => b.score - a.score);
+        const html = list.map((item, i) =>
+          `<div><strong>${i + 1}위</strong>: ${item.name} - ${item.score}점</div>`).join('');
+        resolve(html);
+      }, { onlyOnce: true });
+    });
+  }
 
-      list.sort((a, b) => b.score - a.score); // 점수 높은 순
-
-      const html = list
-        .map((item, i) => {
-          const rank = i + 1; // 1위부터
-          return `<div><strong>${rank}위</strong>: ${item.name} - ${item.score}점</div>`;
-        })
-        .join('');
-      resolve(html);
-    }, { onlyOnce: true });
-  });
-}
-
-
-  
-
-  // ✅ 전역 등록
+  // ✅ 전역으로 등록
   window.saveScore = saveScore;
   window.generateTopScoresHTML = generateTopScoresHTML;
-  window.showGameOver = showGameOver;
   window.db = db;
-  window.ref = ref;
-  window.push = push;
-  window.set = set;
+
+
+
+  async function showGameOver(score) {
+  let name = prompt("이름을 입력하세요 (10자 이내):", "") || "익명";
+  name = name.trim().slice(0, 10);
+ await saveScore(trimmedName, score);
+  const scoreHtml = await generateTopScoresHTML();
+
+  const overlay = document.getElementById('overlay');
+ overlay.innerHTML = `
+<div style="
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  padding: 40px 20px 60px;
+  box-sizing: border-box;
+  z-index: 999;
+  color: white;
+  font-size: 2rem;
+">
+  <div style="margin-bottom: 20px; font-size: 2rem; text-align: center;">💥 GAME OVER 💥</div>
+  <h3 style="margin-top:10px; color:gold; text-align: center;">🏆 상위 10위 점수</h3>
+
+  <div style="display: flex; justify-content: center; width: 100%;">
+    <div style="
+      font-size: 1rem;
+      line-height: 1.8;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px 25px;
+      border-radius: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+    ">
+      ${scoreHtml}
+    </div>
+  </div>
+
+  <div style="margin-top: 20px; text-align: center;">
+    <button class="btn" onclick="location.reload()">🔄 재시작</button>
+    <button class="btn" onclick="overlay.innerHTML='<div style=\'color:white;text-align:center;font-size:2rem;\'>👋 게임이 종료되었습니다.<br>새로고침해 주세요.</div>'">❌ 종료</button>
+
+  </div>
+
+`;
+  overlay.style.display = 'flex';
+
+  // 정지 처리
+  bgm.pause();
+  bgm.currentTime = 0;
+  gameRunning = false;
+  moveVX = 0;
+  moveVY = 0;
+}
+window.showGameOver = showGameOver;
 </script>
 
 
