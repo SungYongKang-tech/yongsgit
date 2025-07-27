@@ -577,11 +577,9 @@ document.addEventListener('touchstart', tryPlayBGM, { once: true });
 
  <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import {
-    getDatabase, ref, push, set, query, orderByChild, limitToLast, onValue
-  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-import { getDatabase, ref, get, remove, push, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { getDatabase, ref, get, remove, set, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+  // ✅ Firebase 설정
   const firebaseConfig = {
     apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
     authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -592,13 +590,50 @@ import { getDatabase, ref, get, remove, push, set } from "https://www.gstatic.co
     appId: "1:998537150772:web:c937403c219103d491a561"
   };
 
-  const app = initializeApp(firebaseConfig);
+   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
+  // ✅ 점수 저장 함수
   function saveScore(name, score) {
     const scoresRef = ref(db, 'carGameScores');
     const newScoreRef = push(scoresRef);
-    return set(newScoreRef, { name, score, timestamp: Date.now() });
+    return set(newScoreRef, {
+      name,
+      score,
+      timestamp: Date.now()
+    }).then(() => {
+      cleanupExtraScores(); // 저장 후 상위 10개만 유지
+    });
+  }
+
+  // ✅ 상위 10개만 남기고 삭제
+  function cleanupExtraScores() {
+    const scoresRef = ref(db, 'carGameScores');
+    get(scoresRef).then(snapshot => {
+      if (snapshot.exists()) {
+        const entries = [];
+
+        snapshot.forEach(child => {
+          const val = child.val();
+          if (val && typeof val.score === "number") {
+            entries.push({
+              key: child.key,
+              score: val.score
+            });
+          }
+        });
+
+        entries.sort((a, b) => b.score - a.score); // 점수 내림차순
+        const extraEntries = entries.slice(10); // 상위 10개 제외 나머지 삭제
+
+        extraEntries.forEach(entry => {
+          if (entry.key) {
+            const delRef = ref(db, `carGameScores/${entry.key}`);
+            remove(delRef).catch(err => console.warn("삭제 실패", err));
+          }
+        });
+      }
+    }).catch(err => console.error("점수 불러오기 실패:", err));
   }
 
   function generateTopScoresHTML() {
