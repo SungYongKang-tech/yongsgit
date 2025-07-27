@@ -168,13 +168,29 @@ function randomRoomName() {
   roomCode = randomRoomName();  // ✅ 랜덤 방 제목 함수로 대체!
   playerName = randomName();
 
-  await set(ref(db, 'rooms/' + roomCode), {
-    players: { A: { name: playerName } },
-    turn: 'A',
-    board: Array.from({ length: 15 }, () => Array(15).fill("")),
-    winner: null,
-    createdAt: now
-  });
+await set(ref(db, 'rooms/' + roomCode), {
+  players: { A: { name: playerName } },
+  turn: 'A',
+  board: Array.from({ length: 15 }, () => Array(15).fill("")),
+  winner: null,
+  createdAt: now
+});
+
+// ✅ 최근 10개만 남기고 나머지 삭제
+const roomsRef = ref(db, 'rooms');
+const snapshot = await get(roomsRef);
+if (snapshot.exists()) {
+  const allRooms = snapshot.val();
+  const roomsArray = Object.entries(allRooms)
+    .map(([key, value]) => ({ key, createdAt: value.createdAt || 0 }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  const roomsToDelete = roomsArray.slice(10);
+  for (const room of roomsToDelete) {
+    await remove(ref(db, `rooms/${room.key}`));
+  }
+}
+
 
   await set(latestRef, {
     roomCode,
