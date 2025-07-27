@@ -140,6 +140,7 @@ const livesDisplay = document.getElementById('lives');
 const overlay = document.getElementById('overlay');
 const coinSound = document.getElementById('coinSound');
 //coinSound.volume = 0.2;
+const audioCtx = new AudioContext();
 
 let lives = 3;
 let score = 0;
@@ -154,12 +155,18 @@ let goldCombo = 0;
 let goldComboTimer = null;
 let activeTouchId, startTouchX, startTouchY, isDragging = false;
 
-playCoinSound();
-
 function playCoinSound() {
-  const sound = new Audio('coin.mp3');
-  sound.volume = 2;
-  sound.play().catch(err => console.warn("🔇 코인 사운드 실패:", err));
+  fetch('coin.mp3')
+    .then(res => res.arrayBuffer())
+    .then(buffer => audioCtx.decodeAudioData(buffer))
+    .then(decoded => {
+      const source = audioCtx.createBufferSource();
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0.2;  // 여기서 볼륨 조절
+      source.buffer = decoded;
+      source.connect(gainNode).connect(audioCtx.destination);
+      source.start(0);
+    });
 }
 
 const obstacles = [];
