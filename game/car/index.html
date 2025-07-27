@@ -466,11 +466,31 @@ function saveScore(name, score) {
   const scoresRef = ref(db, 'carGameScores');
   const newScoreRef = push(scoresRef);
   return set(newScoreRef, { name, score, timestamp: Date.now() });
+   cleanupExtraScores();
 }
-// const endBtn = document.getElementById('end-btn'); // ✅ 이 줄이 빠졌음!
 
+function cleanupExtraScores() {
+  const scoresRef = ref(db, 'carGameScores');
+  get(scoresRef).then(snapshot => {
+    if (snapshot.exists()) {
+      const entries = [];
+      snapshot.forEach(child => {
+        const val = child.val();
+        entries.push({ key: child.key, ...val });
+      });
 
+      // 점수 높은 순으로 정렬
+      entries.sort((a, b) => b.score - a.score);
 
+      // 10위 이후 항목 삭제
+      const extraEntries = entries.slice(10);
+      extraEntries.forEach(entry => {
+        const delRef = ref(db, `carGameScores/${entry.key}`);
+        set(delRef, null);
+      });
+    }
+  });
+}
 
 function saveScoreToFirebase(name, score) {
   const scoresRef = ref(db, "scores");
