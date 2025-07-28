@@ -5,29 +5,65 @@
   <title>기사의 여행</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: sans-serif; text-align: center; margin: 0; padding: 0; background: #f2f2f2; }
-    h1 { margin-top: 20px; }
-    .level-buttons { margin: 20px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: sans-serif;
+      background-color: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    .level-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
     .level-buttons button {
-      margin: 5px;
-      padding: 10px 20px;
-      font-size: 18px;
+      font-size: 16px;
+      padding: 10px 15px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
     }
-    .board {
-      display: grid;
-      margin: 20px auto;
-      gap: 2px;
-      touch-action: manipulation;
+    .level-buttons button:hover {
+      background-color: #0056b3;
     }
-    .cell {
-      width: 50px;
-      height: 50px;
-      background: white;
-      border: 1px solid #ccc;
-      font-size: 20px;
+
+    #board-container {
       display: flex;
       justify-content: center;
       align-items: center;
+      width: 100%;
+      max-width: 90vmin;
+      aspect-ratio: 1 / 1;
+    }
+
+    .board {
+      display: grid;
+      width: 100%;
+      height: 100%;
+      gap: 2px;
+      touch-action: manipulation;
+    }
+
+    .cell {
+      background: white;
+      border: 1px solid #ccc;
+      font-size: 1.5vmin;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      user-select: none;
     }
     .valid-move {
       background: #d1eaff;
@@ -35,103 +71,109 @@
     .visited {
       background: #aeeaa4;
     }
+
     #message {
-      font-size: 20px;
-      margin-top: 15px;
+      margin-top: 20px;
+      font-size: 18px;
+      color: #333;
     }
   </style>
 </head>
 <body>
 
-<h1>🧩 기사의 여행</h1>
+  <h1>🧩 기사의 여행</h1>
 
-<div class="level-buttons">
-  <button onclick="startGame(4)">4x4</button>
-  <button onclick="startGame(5)">5x5</button>
-  <button onclick="startGame(6)">6x6</button>
-  <button onclick="startGame(7)">7x7</button>
-</div>
+  <div class="level-buttons">
+    <button onclick="startGame(4)">4x4</button>
+    <button onclick="startGame(5)">5x5</button>
+    <button onclick="startGame(6)">6x6</button>
+    <button onclick="startGame(7)">7x7</button>
+  </div>
 
-<div id="board" class="board"></div>
-<div id="message"></div>
+  <div id="board-container">
+    <div id="board" class="board"></div>
+  </div>
 
-<script>
-  let boardSize = 0;
-  let board = [];
-  let moveCount = 1;
-  let knightPos = null;
+  <div id="message"></div>
 
-  const knightMoves = [
-    [-2, -1], [-2, 1],
-    [-1, -2], [-1, 2],
-    [1, -2], [1, 2],
-    [2, -1], [2, 1]
-  ];
+  <script>
+    let boardSize = 0;
+    let board = [];
+    let moveCount = 1;
+    let knightPos = null;
 
-  function startGame(size) {
-    boardSize = size;
-    board = Array.from({ length: size }, () => Array(size).fill(0));
-    moveCount = 1;
-    knightPos = null;
-    document.getElementById('message').textContent = '';
-    renderBoard();
-  }
+    const knightMoves = [
+      [-2, -1], [-2, 1],
+      [-1, -2], [-1, 2],
+      [1, -2], [1, 2],
+      [2, -1], [2, 1]
+    ];
 
-  function renderBoard() {
-    const boardDiv = document.getElementById('board');
-    boardDiv.innerHTML = '';
-    boardDiv.style.gridTemplateColumns = `repeat(${boardSize}, 50px)`;
-
-    for (let y = 0; y < boardSize; y++) {
-      for (let x = 0; x < boardSize; x++) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        const value = board[y][x];
-        if (value > 0) {
-          cell.classList.add('visited');
-          cell.textContent = value;
-        } else if (knightPos && isValidMove(knightPos.x, knightPos.y, x, y)) {
-          cell.classList.add('valid-move');
-        }
-
-        cell.addEventListener('click', () => onCellClick(x, y));
-        boardDiv.appendChild(cell);
-      }
-    }
-  }
-
-  function onCellClick(x, y) {
-    if (board[y][x] > 0) return; // 이미 방문
-
-    if (moveCount === 1 || isValidMove(knightPos.x, knightPos.y, x, y)) {
-      board[y][x] = moveCount++;
-      knightPos = { x, y };
+    function startGame(size) {
+      boardSize = size;
+      board = Array.from({ length: size }, () => Array(size).fill(0));
+      moveCount = 1;
+      knightPos = null;
+      document.getElementById('message').textContent = '';
       renderBoard();
+    }
 
-      if (isBoardFull()) {
-        const level = getLevel(boardSize);
-        document.getElementById('message').textContent = `🎉 축하합니다! ${level} 레벨을 클리어했어요!`;
+    function renderBoard() {
+      const boardDiv = document.getElementById('board');
+      boardDiv.innerHTML = '';
+      boardDiv.style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
+      boardDiv.style.gridTemplateRows = `repeat(${boardSize}, 1fr)`;
+
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const value = board[y][x];
+          if (value > 0) {
+            cell.classList.add('visited');
+            cell.textContent = value;
+          } else if (knightPos && isValidMove(knightPos.x, knightPos.y, x, y)) {
+            cell.classList.add('valid-move');
+          }
+
+          cell.addEventListener('click', () => onCellClick(x, y));
+          boardDiv.appendChild(cell);
+        }
       }
     }
-  }
 
-  function isValidMove(cx, cy, nx, ny) {
-    return knightMoves.some(([dx, dy]) => cx + dx === nx && cy + dy === ny);
-  }
+    function onCellClick(x, y) {
+      if (board[y][x] > 0) return;
 
-  function isBoardFull() {
-    return board.every(row => row.every(cell => cell > 0));
-  }
+      if (moveCount === 1 || isValidMove(knightPos.x, knightPos.y, x, y)) {
+        board[y][x] = moveCount++;
+        knightPos = { x, y };
+        renderBoard();
 
-  function getLevel(size) {
-    switch(size) {
-      case 4: return '하수';
-      case 5: return '중수';
-      case 6: return '고수';
-      case 7: return '최고수';
+        if (isBoardFull()) {
+          const level = getLevel(boardSize);
+          document.getElementById('message').textContent = `🎉 축하합니다! ${level} 레벨 클리어!`;
+        }
+      }
     }
-  }
-</script>
+
+    function isValidMove(cx, cy, nx, ny) {
+      return knightMoves.some(([dx, dy]) => cx + dx === nx && cy + dy === ny);
+    }
+
+    function isBoardFull() {
+      return board.every(row => row.every(cell => cell > 0));
+    }
+
+    function getLevel(size) {
+      switch(size) {
+        case 4: return '하수';
+        case 5: return '중수';
+        case 6: return '고수';
+        case 7: return '최고수';
+      }
+    }
+  </script>
 
 </body>
 </html>
