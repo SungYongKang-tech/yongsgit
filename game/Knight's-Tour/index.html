@@ -24,7 +24,7 @@
       flex-wrap: wrap;
       justify-content: center;
       gap: 10px;
-      margin-bottom: 20px;
+      margin-bottom: 10px;
     }
     .level-buttons button {
       font-size: 16px;
@@ -37,6 +37,21 @@
     }
     .level-buttons button:hover {
       background-color: #0056b3;
+    }
+
+    #undo-button {
+      margin-bottom: 20px;
+      padding: 8px 14px;
+      font-size: 15px;
+      border: none;
+      background-color: #28a745;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    #undo-button:hover {
+      background-color: #1e7e34;
     }
 
     #board-container {
@@ -84,11 +99,12 @@
   <h1>🧩 기사의 여행</h1>
 
   <div class="level-buttons">
-    <button onclick="startGame(4)">4x4</button>
     <button onclick="startGame(5)">5x5</button>
     <button onclick="startGame(6)">6x6</button>
     <button onclick="startGame(7)">7x7</button>
   </div>
+
+  <button id="undo-button" onclick="undoMove()">⏪ 되돌리기</button>
 
   <div id="board-container">
     <div id="board" class="board"></div>
@@ -101,6 +117,7 @@
     let board = [];
     let moveCount = 1;
     let knightPos = null;
+    let moveHistory = [];
 
     const knightMoves = [
       [-2, -1], [-2, 1],
@@ -114,6 +131,7 @@
       board = Array.from({ length: size }, () => Array(size).fill(0));
       moveCount = 1;
       knightPos = null;
+      moveHistory = [];
       document.getElementById('message').textContent = '';
       renderBoard();
     }
@@ -124,7 +142,6 @@
       boardDiv.style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
       boardDiv.style.gridTemplateRows = `repeat(${boardSize}, 1fr)`;
 
-      // 칸 수에 따라 자동 조절되는 폰트 크기 계산 (vmin 단위)
       const fontSize = (40 / boardSize).toFixed(2) + 'vmin';
 
       for (let y = 0; y < boardSize; y++) {
@@ -152,6 +169,7 @@
 
       if (moveCount === 1 || isValidMove(knightPos.x, knightPos.y, x, y)) {
         board[y][x] = moveCount++;
+        moveHistory.push({ x, y });
         knightPos = { x, y };
         renderBoard();
 
@@ -160,6 +178,16 @@
           document.getElementById('message').textContent = `🎉 축하합니다! ${level} 레벨 클리어!`;
         }
       }
+    }
+
+    function undoMove() {
+      if (moveHistory.length === 0) return;
+      const last = moveHistory.pop();
+      board[last.y][last.x] = 0;
+      moveCount--;
+      knightPos = moveHistory.length > 0 ? moveHistory[moveHistory.length - 1] : null;
+      renderBoard();
+      document.getElementById('message').textContent = '';
     }
 
     function isValidMove(cx, cy, nx, ny) {
@@ -172,20 +200,20 @@
 
     function getLevel(size) {
       switch(size) {
-        case 4: return '하수';
-        case 5: return '중수';
-        case 6: return '고수';
-        case 7: return '최고수';
+        case 5: return '하수';
+        case 6: return '중수';
+        case 7: return '고수';
         default: return '';
       }
     }
   </script>
+
   <footer style="margin-top: 30px; padding: 15px; max-width: 90%; font-size: 14px; color: #555; text-align: center; line-height: 1.5;">
     <strong>게임 설명:</strong><br>
     체스의 기사(Knight)처럼 L자 형태로 움직이며 모든 칸을 단 한 번씩 방문해 보세요.<br>
     처음 위치를 선택하고, 다음 가능한 칸은 파란색으로 표시됩니다.<br>
     모든 칸을 숫자로 채우면 레벨을 클리어하게 됩니다!<br>
-    <em>(4x4: 하수 / 5x5: 중수 / 6x6: 고수 / 7x7: 최고수)</em>
+    <em>(5x5: 하수 / 6x6: 중수 / 7x7: 고수)</em>
   </footer>
 
 </body>
