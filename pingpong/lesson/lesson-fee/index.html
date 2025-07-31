@@ -1,54 +1,107 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>남동발전 탁구 레슨 안내</title>
+  <title>탁구 레슨비 입금확인</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
-      text-align: center;
-      background-color: #f2f2f2;
       margin: 0;
       padding: 20px;
+      background-color: #f2f2f2;
     }
-    img {
-      width: 200px;
-      margin-top: 20px;
-    }
-    h1 {
+    h2 {
+      text-align: center;
       color: #0d47a1;
-      font-size: 24px;
-      margin-top: 20px;
+      margin-bottom: 20px;
     }
-    .btn {
-      display: block;
-      width: 90%;
-      max-width: 300px;
-      margin: 15px auto;
-      padding: 15px;
-      background-color: #1976d2;
-      color: white;
-      font-size: 18px;
-      font-weight: bold;
-      border: none;
+    .member {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: white;
+      padding: 12px 16px;
       border-radius: 8px;
-      text-decoration: none;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
-    .btn:hover {
-      background-color: #0d47a1;
+    .member span {
+      font-size: 16px;
+      font-weight: 500;
+    }
+    .member button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      color: white;
+      background-color: gray;
+      transition: 0.2s;
+    }
+    .member button.paid {
+      background-color: green;
+    }
+    @media (max-width: 480px) {
+      .member span {
+        font-size: 14px;
+      }
+      .member button {
+        padding: 6px 12px;
+        font-size: 13px;
+      }
     }
   </style>
-  
 </head>
 <body>
-  <img src="koen.png" alt="KOEN 로고">
-  <h1>남동발전 탁구 레슨 안내</h1>
-  <a class="btn" href="/pingpong/lesson/lesson-info/index.html" target="_blank">신규회원 탁구레슨 안내문</a>
- <!-- <a class="btn" href="/pingpong/lesson/lesson-timetable/index.html" target="_blank">탁구 레슨 시간표</a>   -->
-  <a class="btn" href="/pingpong/lesson/LessonSwap/index.html" target="_blank">탁구 레슨 시간표</a>
-  <a class="btn" href="/pingpong/lesson/Lesson-fee/index.html" target="_blank">탁구 레슨비 입금확인</a>
-   <a class="btn" href="/pingpong/lesson/pingpong-skills/index.html" target="_blank">남동발전 기술 학습 자료</a>
+  <h2>🏓 탁구 레슨비 입금확인</h2>
+  <div id="playerList"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
+      authDomain: "lessonswap-26e9b.firebaseapp.com",
+      databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
+      projectId: "lessonswap-26e9b",
+      storageBucket: "lessonswap-26e9b.appspot.com",
+      messagingSenderId: "1068278553187",
+      appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "양충현", "조보미", "송은아", "고은선", "임춘근"];
+    const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1);
+    const yearMonth = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+
+    const paymentRef = ref(db, `payments/${yearMonth}`);
+    const playerList = document.getElementById("playerList");
+
+    onValue(paymentRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      playerList.innerHTML = "";
+      names.forEach(name => {
+        const isPaid = data[name] === "paid";
+        const div = document.createElement("div");
+        div.className = "member";
+        div.innerHTML = `
+          <span>${name}</span>
+          <button id="btn-${name}" class="${isPaid ? 'paid' : ''}">
+            ${isPaid ? '입금 완료' : '입금 예정'}
+          </button>
+        `;
+        playerList.appendChild(div);
+
+        document.getElementById(`btn-${name}`).onclick = async () => {
+          await set(ref(db, `payments/${yearMonth}/${name}`), "paid");
+        };
+      });
+    });
+  </script>
 </body>
 </html>
