@@ -59,52 +59,70 @@
   <div id="playerList"></div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
-      authDomain: "lessonswap-26e9b.firebaseapp.com",
-      databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
-      projectId: "lessonswap-26e9b",
-      storageBucket: "lessonswap-26e9b.appspot.com",
-      messagingSenderId: "1068278553187",
-      appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
+    authDomain: "lessonswap-26e9b.firebaseapp.com",
+    databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
+    projectId: "lessonswap-26e9b",
+    storageBucket: "lessonswap-26e9b.appspot.com",
+    messagingSenderId: "1068278553187",
+    appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
-    const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "양충현", "조보미", "송은아", "고은선", "임춘근"];
-    const nextMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() + 1);
-    const yearMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
-    const displayMonth = `${nextMonthDate.getMonth() + 1}`;
+  const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "양충현", "조보미", "송은아", "고은선", "임춘근"];
+  const nextMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() + 1);
+  const yearMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  const displayMonth = `${nextMonthDate.getMonth() + 1}`;
+  document.getElementById("pageTitle").innerText = `🏓 ${displayMonth}월 레슨비 입금확인`;
 
-    document.getElementById("pageTitle").innerText = `🏓 ${displayMonth}월 레슨비 입금확인`;
+  const paymentRef = ref(db, `payments/${yearMonth}`);
+  const playerList = document.getElementById("playerList");
 
-    const paymentRef = ref(db, `payments/${yearMonth}`);
-    const playerList = document.getElementById("playerList");
+  onValue(paymentRef, (snapshot) => {
+    const data = snapshot.val() || {};
+    playerList.innerHTML = "";
 
-    onValue(paymentRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      playerList.innerHTML = "";
-      names.forEach(name => {
-        const isPaid = data[name] === "paid";
-        const div = document.createElement("div");
-        div.className = "member";
-        div.innerHTML = `
-          <span>${name}</span>
+    names.forEach(name => {
+      const entry = data[name] || {};
+      const isPaid = entry.status === "paid";
+      const timestamp = entry.timestamp;
+
+      const div = document.createElement("div");
+      div.className = "member";
+      const timeInfo = isPaid && timestamp ? `<div style="font-size:12px; color:gray; margin-top:4px;">(${timestamp})</div>` : "";
+
+      div.innerHTML = `
+        <span>${name}</span>
+        <div>
           <button id="btn-${name}" class="${isPaid ? 'paid' : ''}">
-            ${isPaid ? '입금 완료' : '입금 예정'}
+            ${isPaid ? '입금 완료' : '입금 대기'}
           </button>
-        `;
-        playerList.appendChild(div);
+          ${timeInfo}
+        </div>
+      `;
+      playerList.appendChild(div);
 
-        document.getElementById(`btn-${name}`).onclick = async () => {
-          await set(ref(db, `payments/${yearMonth}/${name}`), "paid");
-        };
-      });
+      document.getElementById(`btn-${name}`).onclick = async () => {
+        if (isPaid) {
+          await set(ref(db, `payments/${yearMonth}/${name}`), { status: "pending" });
+        } else {
+          const now = new Date();
+          const timestamp = now.toLocaleString("ko-KR", { hour12: false });
+          await set(ref(db, `payments/${yearMonth}/${name}`), {
+            status: "paid",
+            timestamp: timestamp
+          });
+        }
+      };
     });
-  </script>
+  });
+</script>
+
 </body>
 </html>
