@@ -29,6 +29,13 @@
     .member span {
       font-size: 16px;
       font-weight: 500;
+      flex: 1;
+      text-align: left;
+    }
+    .member .actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
     }
     .member button {
       padding: 8px 16px;
@@ -39,9 +46,14 @@
       color: white;
       background-color: gray;
       transition: 0.2s;
+      margin-bottom: 4px;
     }
     .member button.paid {
       background-color: green;
+    }
+    .timestamp {
+      font-size: 12px;
+      color: gray;
     }
     @media (max-width: 480px) {
       .member span {
@@ -95,15 +107,19 @@
 
       const div = document.createElement("div");
       div.className = "member";
-      const timeInfo = isPaid && timestamp ? `<div style="font-size:12px; color:gray; margin-top:4px;">(${timestamp})</div>` : "";
+
+      const displayDate = timestamp ? (() => {
+        const d = new Date(timestamp);
+        return `(${d.getMonth() + 1}/${d.getDate()})`;
+      })() : "";
 
       div.innerHTML = `
         <span>${name}</span>
-        <div>
+        <div class="actions">
           <button id="btn-${name}" class="${isPaid ? 'paid' : ''}">
             ${isPaid ? '입금 완료' : '입금 대기'}
           </button>
-          ${timeInfo}
+          <div class="timestamp">${isPaid && displayDate ? displayDate : ""}</div>
         </div>
       `;
       playerList.appendChild(div);
@@ -113,16 +129,15 @@
           await set(ref(db, `payments/${yearMonth}/${name}`), { status: "pending" });
         } else {
           const now = new Date();
-          const timestamp = now.toLocaleString("ko-KR", { hour12: false });
+          const dateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
           await set(ref(db, `payments/${yearMonth}/${name}`), {
             status: "paid",
-            timestamp: timestamp
+            timestamp: dateOnly.toISOString()
           });
         }
       };
     });
   });
 </script>
-
 </body>
 </html>
