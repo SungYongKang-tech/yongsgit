@@ -189,8 +189,10 @@ game.addEventListener("touchmove", (e) => {
       const dy = touch.clientY - startTouchY;
       const len = Math.sqrt(dx * dx + dy * dy);
       const scale = Math.min(len / 40, 1);
-      moveVX = dx / len * scale * 3;
-      moveVY = dy / len * scale * 3;
+      const playerSpeed = obstacleSpeed * 1.5;  // 속도 계수 조절 가능
+      moveVX = dx / len * scale * playerSpeed;
+      moveVY = dy / len * scale * playerSpeed;
+
     }
   }
 }, { passive: false });
@@ -602,6 +604,38 @@ document.addEventListener('touchstart', tryPlayBGM, { once: true });
   moveVY = 0;
 }
 window.showGameOver = showGameOver;
+
+function resetRankingIfFridayNoon() {
+  const now = new Date();
+  const isFriday = now.getDay() === 5;
+  const hour = now.getHours();
+  const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const resetKey = "carRankingReset_" + today;
+
+  if (isFriday && hour >= 12) {
+    if (!localStorage.getItem(resetKey)) {
+      remove(ref(db, 'carGameScores'))
+        .then(() => {
+          console.log("✅ 금요일 12시 이후: 자동차 게임 랭킹 초기화됨");
+          localStorage.setItem(resetKey, "done");
+          generateTopScoresHTML().then(html => {
+            document.getElementById("top-scores").innerHTML = html;
+          });
+        })
+        .catch(err => {
+          console.error("자동차 게임 랭킹 초기화 실패:", err);
+        });
+    }
+  }
+}
+
+window.saveScore = saveScore;
+window.generateTopScoresHTML = generateTopScoresHTML;
+window.db = db;
+
+resetRankingIfFridayNoon(); // ✅ 금요일 정오 랭킹 초기화 실행
+
+
 </script>
 
 
