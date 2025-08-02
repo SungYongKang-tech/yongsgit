@@ -115,14 +115,15 @@
   if (!playerName) return alert("이름을 입력해야 합니다.");
 
   const roomRef = ref(db, 'rooms/' + roomCode);
-  await set(roomRef, {
-    players: {
-      A: { name: playerName }
-    },
-    turn: "A",
-    winner: "",
-    createdAt: Date.now()
-  });
+await set(roomRef, {
+  players: {
+    A: { name: playerName }
+  },
+  turn: "WAIT",  // ✅ 먼저 WAIT으로 설정
+  winner: "",
+  createdAt: Date.now()
+});
+
 
   // 최근 방 기록 (참여자가 이걸 기준으로 입장함)
   await set(ref(db, 'latestRoom'), {
@@ -194,6 +195,22 @@ function enterGame() {
   const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
   const label = `${playerName} (나) vs ${oppName} - 야구 대전 시작!`;
   document.getElementById("role-label").innerText = label;
+
+  const turnRef = ref(db, `rooms/${roomCode}/turn`);
+onValue(turnRef, (snapshot) => {
+  const currentTurn = snapshot.val();
+  const guessBtn = document.getElementById("guess-btn");
+
+  if (currentTurn === playerRole) {
+    guessBtn.disabled = false;
+    guessBtn.innerText = "추측하기 (내 턴)";
+  } else {
+    guessBtn.disabled = true;
+    guessBtn.innerText = currentTurn === "WAIT" ? "상대 비밀번호 입력 대기중..." : "상대 턴 대기중...";
+  }
+});
+
+
 });
 
   // 상대 비밀 숫자 입력 감지
@@ -240,7 +257,7 @@ function enterGame() {
 }
 
 
-    function submitSecret() {
+   async function submitSecret() {
       const val = document.getElementById("secret-input").value;
       if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
         alert("서로 다른 숫자 3자리로 입력하세요.");
@@ -252,9 +269,18 @@ function enterGame() {
       const opponent = playerRole === "A" ? "B" : "A";
       get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`)).then(snap => {
         if (snap.exists()) {
-          document.getElementById("guess-section").style.display = "flex";
+     //     document.getElementById("guess-section").style.display = "flex";
         }
       });
+      // 둘 다 입력했는지 확인 후 턴 시작
+const mySecretRef = ref(db, `rooms/${roomCode}/players/${playerRole}/secret`);
+const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
+
+const [mySnap, oppSnap] = await Promise.all([get(mySecretRef), get(opponentSecretRef)]);
+if (mySnap.exists() && oppSnap.exists()) {
+  await update(ref(db, `rooms/${roomCode}`), { turn: "A" }); // A부터 시작
+}
+
     }
 
   
@@ -329,6 +355,13 @@ function enterGame() {
 
   guessInput.value = "";
   guessInput.focus();
+
+  // 정답이 아닐 경우 턴을 변경
+if (strike !== 3 && !soloMode) {
+  const nextTurn = playerRole === "A" ? "B" : "A";
+  await update(ref(db, `rooms/${roomCode}`), { turn: nextTurn });
+}
+
 }
 
 
