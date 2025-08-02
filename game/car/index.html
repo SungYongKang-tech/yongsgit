@@ -84,6 +84,19 @@
     }
     .btn:hover { background: #777; }
     .hidden { visibility: hidden; }
+
+.heart {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  background-image: url('heart.png'); /* 하트 이미지 준비해두세요 */
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  z-index: 4;
+}
+
+
   </style>
 
  
@@ -468,6 +481,60 @@ function tryPlayBGM() {
 }
 document.addEventListener('click', tryPlayBGM, { once: true });
 document.addEventListener('touchstart', tryPlayBGM, { once: true });
+
+function createHeartItem() {
+  const heart = document.createElement('div');
+  heart.className = 'heart';
+  const size = 30;
+  const left = Math.random() * (window.innerWidth - size);
+  heart.style.left = `${left}px`;
+  heart.style.top = `-50px`;
+  heart.style.width = `${size}px`;
+  heart.style.height = `${size}px`;
+  game.appendChild(heart);
+
+  let y = -50;
+  const interval = setInterval(() => {
+    if (!gameRunning) return clearInterval(interval);
+    y += obstacleSpeed;
+    heart.style.top = `${y}px`;
+
+    const p = player.getBoundingClientRect();
+    const h = heart.getBoundingClientRect();
+
+    const collected = p.left < h.right && p.right > h.left &&
+                      p.top < h.bottom && p.bottom > h.top;
+
+    if (collected) {
+      if (lives < 5) {
+        lives++;
+        livesDisplay.textContent = `❤️ x ${lives}`;
+      }
+      heart.remove();
+      clearInterval(interval);
+    }
+
+    if (y > window.innerHeight) {
+      heart.remove();
+      clearInterval(interval);
+    }
+  }, 20);
+}
+
+let lastHeartScore = 0;  // 점수 기준 기록
+
+setInterval(() => {
+  if (gameRunning) {
+    score++;
+    scoreDisplay.textContent = `점수: ${score}`;
+
+    // ❤️ 하트 생성 조건 (150점 단위로 1회)
+    if (score - lastHeartScore >= 150) {
+      createHeartItem();
+      lastHeartScore = score;
+    }
+  }
+}, 1000);
 
 
 </script>
