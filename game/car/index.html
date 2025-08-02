@@ -335,13 +335,19 @@ function checkCollision(obs) {
 }
 
 function handleHit() {
- 
+  if (hasShield) {
+    hasShield = false;
+    updateShieldIndicator();
+    return;
+  }
+
   lives--;
   livesDisplay.textContent = `❤️ x ${lives}`;
   if (lives <= 0) {
     gameRunning = false;
-    showGameOver(score);  // 점수 전달!
+    showGameOver(score);
   }
+
   isInvincible = true;
   let blink = 0;
   const blinkInterval = setInterval(() => {
@@ -354,6 +360,7 @@ function handleHit() {
     }
   }, 200);
 }
+
 
 
 
@@ -531,12 +538,79 @@ setInterval(() => {
     scoreDisplay.textContent = `점수: ${score}`;
 
     // ❤️ 하트 생성 조건 (150점 단위로 1회)
-    if (score - lastHeartScore >= 50) {
+    if (score - lastHeartScore >= 250) {
       createHeartItem();
       lastHeartScore = score;
     }
   }
 }, 1000);
+
+// 방어막아이템 생성 
+let hasShield = false;
+function createShieldItem() {
+  const shield = document.createElement('div');
+  shield.className = 'shield';
+  shield.textContent = '🛡️';
+  const size = 32;
+  const left = Math.random() * (window.innerWidth - size);
+  shield.style.left = `${left}px`;
+  shield.style.top = `-50px`;
+  shield.style.width = `${size}px`;
+  shield.style.height = `${size}px`;
+  shield.style.position = 'absolute';
+  shield.style.fontSize = '28px';
+  shield.style.textAlign = 'center';
+  shield.style.zIndex = 5;
+  game.appendChild(shield);
+
+  let y = -50;
+  const interval = setInterval(() => {
+    if (!gameRunning) return clearInterval(interval);
+    y += obstacleSpeed;
+    shield.style.top = `${y}px`;
+
+    const p = player.getBoundingClientRect();
+    const s = shield.getBoundingClientRect();
+
+    const collected = p.left < s.right && p.right > s.left &&
+                      p.top < s.bottom && p.bottom > s.top;
+
+    if (collected) {
+      hasShield = true;
+      updateShieldIndicator(); // 🛡️ 표시 갱신
+      shield.remove();
+      clearInterval(interval);
+    }
+
+    if (y > window.innerHeight) {
+      shield.remove();
+      clearInterval(interval);
+    }
+  }, 20);
+}
+function updateShieldIndicator() {
+  if (hasShield) {
+    player.style.boxShadow = '0 0 20px 5px lightblue';
+  } else {
+    player.style.boxShadow = 'none';
+  }
+}
+
+setInterval(() => {
+  if (gameRunning && Math.random() < 0.05) { // 5% 확률
+    createShieldItem();
+  }
+}, 4000); // 4초마다 검사
+
+
+
+
+
+
+
+
+
+
 
 
 </script>
