@@ -109,6 +109,22 @@ button:hover {
 .close:hover {
   color: black;
 }
+#control-area {
+  margin-top: 10px;
+}
+#confirm-move {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-size: 16px;
+  cursor: pointer;
+}
+#confirm-move:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
 
 
   </style>
@@ -127,9 +143,17 @@ button:hover {
   </div>
   <audio id="place-sound" src="button-29.mp3" preload="auto"></audio>
 
+  <!-- game 영역 내에 추가 -->
+<div id="control-area">
+  <button id="confirm-move" disabled>착수</button>
+</div>
+
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, set, get, update, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    
+    let pendingMove = null; // 임시 둔 돌 위치 저장
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -268,47 +292,65 @@ await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
       }
     }
 
-    async function handleMove(r, c) {
-      const turn = (await get(ref(db, `rooms/${roomCode}/turn`))).val();
-      if (turn !== playerRole) return alert("상대 차례입니다");
-      const cell = await get(ref(db, `rooms/${roomCode}/board/${r}/${c}`));
-      if (cell.exists() && cell.val() !== "") return;
-      const stone = playerRole === 'A' ? '●' : '○';
-      const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
-      const board = boardSnap.val();
-      board[r][c] = stone;
-      const winPos = checkWin(r, c, stone, board);
-      await set(ref(db, `rooms/${roomCode}/board/${r}/${c}`), stone);
-      
-      // 모든 이전 강조 제거
-document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
-  el.classList.remove("last-move-me", "last-move-opponent");
+function handleMove(r, c) {
+  if (pendingMove) {
+    const prevIdx = pendingMove.row * 15 + pendingMove.col;
+    const prevCell = document.getElementById("board").children[prevIdx];
+    prevCell.innerHTML = ""; // 이전 임시 제거
+  }
+
+  pendingMove = { row: r, col: c };
+
+  const idx = r * 15 + c;
+  const cell = document.getElementById("board").children[idx];
+  cell.innerHTML = "";
+
+  const div = document.createElement("div");
+  div.className = "stone " + (playerRole === 'A' ? "black" : "white");
+  div.style.opacity = "0.5"; // 임시 돌은 투명하게
+  cell.appendChild(div);
+
+  document.getElementById("confirm-move").disabled = false;
+if (pendingMove) {
+  const prevIdx = pendingMove.row * 15 + pendingMove.col;
+  const prevCell = document.getElementById("board").children[prevIdx];
+  prevCell.innerHTML = "";
+}
+}
+
+document.getElementById("confirm-move").addEventListener("click", async () => {
+  if (!pendingMove) return;
+
+  const { row, col } = pendingMove;
+  const turn = (await get(ref(db, `rooms/${roomCode}/turn`))).val();
+  if (turn !== playerRole) return alert("상대 차례입니다");
+
+  const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
+  const board = boardSnap.val();
+
+  if (board[row][col] !== "") return alert("이미 착수된 자리입니다.");
+
+  const stone = playerRole === 'A' ? '●' : '○';
+  board[row][col] = stone;
+  const winPos = checkWin(row, col, stone, board);
+
+  await set(ref(db, `rooms/${roomCode}/board/${row}/${col}`), stone);
+
+  // 🔊 돌 놓는 소리
+  document.getElementById("place-sound").play().catch(e => console.warn("사운드 오류:", e));
+
+  if (winPos) {
+    await set(ref(db, `rooms/${roomCode}/winner`), { name: playerName, positions: winPos });
+  } else {
+    await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
+  }
+
+  await set(ref(db, `rooms/${roomCode}/lastMove`), { row, col, role: playerRole });
+
+  pendingMove = null;
+  document.getElementById("confirm-move").disabled = true;
 });
 
-// 새로 둔 돌에 강조 (역할에 따라 색상 구분)
-const idx = r * 15 + c;
-const cellEl = document.getElementById("board").children[idx];
-const stoneDiv = cellEl.querySelector('.stone');
-if (stoneDiv) {
-  stoneDiv.classList.add(playerRole === 'A' ? "last-move-me" : "last-move-opponent");
-}
-
-
-      // 🔊 돌 놓는 소리 재생
-      document.getElementById("place-sound").play().catch(e => console.warn("사운드 오류:", e));
-
-      if (winPos) {
-        await set(ref(db, `rooms/${roomCode}/winner`), { name: playerName, positions: winPos });
-        return;
-      }
-      await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
-      await set(ref(db, `rooms/${roomCode}/lastMove`), {
-  row: r,
-  col: c,
-  role: playerRole
-}); // 세미콜론만 닫고 중괄호는 열지 않음
-
-}
 
   function checkWin(r, c, stone, board) {
   const directions = [[0,1],[1,0],[1,1],[1,-1]];
