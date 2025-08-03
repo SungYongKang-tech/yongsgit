@@ -3,36 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>다빈치 코드 게임</title>
+  <title>다빈치 코드 - 게임화면</title>
   <style>
     body {
       font-family: sans-serif;
-      background: #eee;
+      background: #f5f5f5;
       margin: 0;
       padding: 20px;
       text-align: center;
     }
-
-    #gameBoard {
-      display: flex;
-      flex-direction: column;
-      gap: 30px;
-      align-items: center;
-    }
-
     .player-area {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      margin-bottom: 30px;
     }
-
     .tile-row {
       display: flex;
+      justify-content: center;
       gap: 8px;
       flex-wrap: wrap;
-      justify-content: center;
     }
-
     .tile {
       width: 50px;
       height: 70px;
@@ -44,48 +32,27 @@
       border: 2px solid #555;
       border-radius: 6px;
       position: relative;
-      user-select: none;
+      cursor: pointer;
     }
-
-    .white-tile {
-      background-color: #fefefe;
-      color: #000;
-    }
-
-    .black-tile {
-      background-color: #111;
-      color: #fff;
-    }
-
+    .white-tile { background-color: #fff; color: #000; }
+    .black-tile { background-color: #000; color: #fff; }
     .hidden::after {
       content: "❓";
       position: absolute;
       font-size: 28px;
       color: red;
     }
-
-    h2 {
-      margin: 10px 0 0;
-    }
   </style>
 </head>
 <body>
-  <h1>다빈치 코드 보드게임</h1>
-  <button onclick="startGame()">🎲 게임 시작</button>
-  <div id="gameBoard">
-    <div class="player-area" id="myArea">
-      <h2>내 타일</h2>
-      <div class="tile-row" id="myTiles"></div>
-    </div>
-    <div class="player-area" id="opponentArea">
-      <h2>상대 타일</h2>
-      <div id="opponentTiles"></div>
-    </div>
-  </div>
+  <h1>다빈치 코드 게임</h1>
+  <div id="gameBoard"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, update, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import {
+      getDatabase, ref, get, update
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -101,132 +68,63 @@
     const db = getDatabase(app);
 
     const url = new URL(location.href);
-    const roomCodeParam = url.searchParams.get("room");
+    const roomCode = url.searchParams.get("room");
     const playerName = url.searchParams.get("name");
 
-    let latestRoomCode = null;
+    const gameBoard = document.getElementById("gameBoard");
 
-    const allTiles = [];
-    ["black", "white"].forEach(color => {
-      for (let i = 0; i <= 11; i++) {
-        allTiles.push({ value: i, color });
-      }
-      allTiles.push({ value: "-", color });
-    });
-
-    function shuffle(array) {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-      }
-      return array;
-    }
-
-    async function assignTiles(roomCode) {
-      const dbRef = ref(db);
-      const snapshot = await get(child(dbRef, `rooms/${roomCode}/players`));
-      if (!snapshot.exists()) return;
-
-      const playerList = Object.keys(snapshot.val());
-      let availableTiles = shuffle([...allTiles]);
-
-      for (let name of playerList) {
-        const playerTiles = availableTiles.splice(0, 4);
-        playerTiles.sort((a, b) => {
-          const va = a.value === "-" ? -1 : a.value;
-          const vb = b.value === "-" ? -1 : b.value;
-          return va - vb;
-        });
-
-        await set(ref(db, `rooms/${roomCode}/players/${name}/tiles`), playerTiles);
-      }
-
-      await update(ref(db, `rooms/${roomCode}`), { status: 'playing' });
-    }
-
-    async function startGame() {
-      let roomCode = roomCodeParam;
-      if (!roomCode || !playerName) return alert("방 정보가 없습니다.");
-      await assignTiles(roomCode);
-      alert("타일이 배정되었습니다!");
-      loadMyTiles();
-      loadOpponentTiles();
-    }
-
-    async function loadMyTiles() {
-      const roomCode = roomCodeParam;
-      const snapshot = await get(ref(db, `rooms/${roomCode}/players/${playerName}/tiles`));
-      if (!snapshot.exists()) return;
-      const tiles = snapshot.val();
-      renderTiles("myTiles", tiles, false);
-    }
-
-    async function loadOpponentTiles() {
-      const roomCode = roomCodeParam;
+    async function renderGame() {
       const snapshot = await get(ref(db, `rooms/${roomCode}/players`));
-      if (!snapshot.exists()) return;
+      if (!snapshot.exists()) return alert("플레이어 정보가 없습니다");
 
-      const container = document.getElementById("opponentTiles");
-      container.innerHTML = "";
+      const players = snapshot.val();
 
-      snapshot.forEach(child => {
-        const name = child.key;
-        if (name === playerName) return;
-        const playerDiv = document.createElement("div");
-        playerDiv.className = "tile-row";
+      for (const [name, data] of Object.entries(players)) {
+        const area = document.createElement("div");
+        area.className = "player-area";
 
-        const label = document.createElement("h3");
-        label.textContent = `${name}`;
-        container.appendChild(label);
+        const label = document.createElement("h2");
+        label.textContent = name === playerName ? "내 타일" : `${name}의 타일`;
+        area.appendChild(label);
 
-        const tiles = child.val().tiles || [];
-        tiles.forEach(tile => {
+        const row = document.createElement("div");
+        row.className = "tile-row";
+
+        (data.tiles || []).forEach((tile, i) => {
           const div = document.createElement("div");
-          div.className = `tile ${tile.color === 'black' ? 'black-tile' : 'white-tile'} hidden`;
-          playerDiv.appendChild(div);
-        });
-        container.appendChild(playerDiv);
-      });
-    }
+          div.className = `tile ${tile.color}-tile`;
 
-    function renderTiles(containerId, tiles, isHidden) {
-      const container = document.getElementById(containerId);
-      container.innerHTML = '';
-      tiles.forEach(tile => {
-        const div = document.createElement('div');
-        div.className = `tile ${tile.color === 'black' ? 'black-tile' : 'white-tile'}`;
-        if (isHidden) {
-          div.classList.add('hidden');
-        } else {
-          div.textContent = tile.value;
-        }
-        container.appendChild(div);
-      });
-    }
+          const isMine = name === playerName;
+          const isRevealed = tile.revealed;
 
-    if (!roomCodeParam && playerName) {
-      const dbRef = ref(db);
-      get(child(dbRef, `rooms`)).then(snapshot => {
-        if (!snapshot.exists()) return;
-        const now = Date.now();
-        snapshot.forEach(roomSnap => {
-          const room = roomSnap.val();
-          if (room.status === 'waiting' && now - room.createdAt <= 60000) {
-            latestRoomCode = roomSnap.key;
+          if (isMine || isRevealed) {
+            div.textContent = tile.value;
+          } else {
+            div.classList.add("hidden");
+            div.addEventListener("click", async () => {
+              const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
+              if (guess === null) return;
+
+              if (guess == tile.value) {
+                alert("정답입니다!");
+                tile.revealed = true;
+                await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
+                location.reload();
+              } else {
+                alert("틀렸습니다!");
+              }
+            });
           }
+
+          row.appendChild(div);
         });
 
-        if (latestRoomCode) {
-          update(ref(db, `rooms/${latestRoomCode}/players/${playerName}`), {
-            name: playerName,
-            tiles: [],
-            joinedAt: Date.now()
-          }).then(() => {
-            window.location.href = `game.html?room=${latestRoomCode}&name=${encodeURIComponent(playerName)}`;
-          });
-        }
-      });
+        area.appendChild(row);
+        gameBoard.appendChild(area);
+      }
     }
+
+    renderGame();
   </script>
 </body>
 </html>
