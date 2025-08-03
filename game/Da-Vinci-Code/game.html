@@ -69,40 +69,91 @@
 </head>
 <body>
   <h1>다빈치 코드 보드게임</h1>
+  <button onclick="startGame()">🎲 게임 시작</button>
   <div id="gameBoard">
     <div class="player-area" id="myArea">
       <h2>내 타일</h2>
-      <div class="tile-row" id="myTiles">
-        <!-- 내 타일 표시 -->
-      </div>
-    </div>
-    <div class="player-area" id="opponentArea">
-      <h2>상대 타일</h2>
-      <div class="tile-row" id="opponentTiles">
-        <!-- 상대 타일 표시 (숫자 숨김) -->
-      </div>
+      <div class="tile-row" id="myTiles"></div>
     </div>
   </div>
 
-  <script>
-    const myTiles = [
-      { value: 3, color: 'black' },
-      { value: 5, color: 'white' },
-      { value: '-', color: 'black' },
-      { value: 9, color: 'white' },
-    ];
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, update, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    const opponentTiles = [
-      { value: 1, color: 'black' },
-      { value: '-', color: 'white' },
-      { value: 4, color: 'black' },
-      { value: 11, color: 'white' },
-    ];
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.firebasestorage.app",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:4f9332f868707efa91a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const url = new URL(location.href);
+    const roomCode = url.searchParams.get("room");
+    const playerName = url.searchParams.get("name");
+
+    const allTiles = [];
+    ["black", "white"].forEach(color => {
+      for (let i = 0; i <= 11; i++) {
+        allTiles.push({ value: i, color });
+      }
+      allTiles.push({ value: "-", color });
+    });
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    async function assignTiles(roomCode) {
+      const dbRef = ref(db);
+      const snapshot = await get(child(dbRef, `rooms/${roomCode}/players`));
+      if (!snapshot.exists()) return;
+
+      const playerList = Object.keys(snapshot.val());
+      let availableTiles = shuffle([...allTiles]);
+
+      for (let name of playerList) {
+        const playerTiles = availableTiles.splice(0, 4);
+        playerTiles.sort((a, b) => {
+          const va = a.value === "-" ? -1 : a.value;
+          const vb = b.value === "-" ? -1 : b.value;
+          return va - vb;
+        });
+
+        await set(ref(db, `rooms/${roomCode}/players/${name}/tiles`), playerTiles);
+      }
+
+      await update(ref(db, `rooms/${roomCode}`), { status: 'playing' });
+    }
+
+    async function startGame() {
+      if (!roomCode || !playerName) return alert("방 정보가 없습니다.");
+      await assignTiles(roomCode);
+      alert("타일이 배정되었습니다!");
+      loadMyTiles();
+    }
+
+    async function loadMyTiles() {
+      const snapshot = await get(ref(db, `rooms/${roomCode}/players/${playerName}/tiles`));
+      if (!snapshot.exists()) return;
+      const tiles = snapshot.val();
+      renderTiles("myTiles", tiles, false);
+    }
 
     function renderTiles(containerId, tiles, isHidden) {
       const container = document.getElementById(containerId);
       container.innerHTML = '';
-      tiles.forEach((tile, index) => {
+      tiles.forEach(tile => {
         const div = document.createElement('div');
         div.className = `tile ${tile.color === 'black' ? 'black-tile' : 'white-tile'}`;
         if (isHidden) {
@@ -113,9 +164,6 @@
         container.appendChild(div);
       });
     }
-
-    renderTiles("myTiles", myTiles, false);
-    renderTiles("opponentTiles", opponentTiles, true);
   </script>
 </body>
 </html>
