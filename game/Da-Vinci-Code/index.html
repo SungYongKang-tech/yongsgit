@@ -3,42 +3,83 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>다빈치 코드 - 로비</title>
+  <title>다빈치 코드 게임</title>
   <style>
     body {
       font-family: sans-serif;
+      background: #eee;
+      margin: 0;
+      padding: 20px;
       text-align: center;
-      background: #fafafa;
-      padding: 40px;
     }
 
-    input, button {
-      font-size: 16px;
-      padding: 10px;
-      margin: 8px;
-      width: 80%;
-      max-width: 300px;
+    #gameBoard {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      align-items: center;
     }
 
-    h1 { margin-bottom: 30px; }
+    .player-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .tile-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .tile {
+      width: 50px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      border: 2px solid #555;
+      border-radius: 6px;
+      position: relative;
+      user-select: none;
+    }
+
+    .white-tile {
+      background-color: #fefefe;
+      color: #000;
+    }
+
+    .black-tile {
+      background-color: #111;
+      color: #fff;
+    }
+
+    .hidden::after {
+      content: "❓";
+      position: absolute;
+      font-size: 28px;
+      color: red;
+    }
+
+    h2 {
+      margin: 10px 0 0;
+    }
   </style>
 </head>
 <body>
   <h1>다빈치 코드 보드게임</h1>
-
-  <input type="text" id="playerName" placeholder="이름을 입력하세요" />
-  <br />
-  <button onclick="createRoom()">방 만들기</button>
-  <br />
-  <input type="text" id="roomCodeInput" placeholder="방 코드 입력" />
-  <br />
-  <button onclick="joinRoom()">방 입장</button>
+  <button onclick="startGame()">🎲 게임 시작</button>
+  <div id="gameBoard">
+    <div class="player-area" id="myArea">
+      <h2>내 타일</h2>
+      <div class="tile-row" id="myTiles"></div>
+    </div>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import {
-      getDatabase, ref, set, update, get, child
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, update, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -53,50 +94,104 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    function generateRoomCode() {
-      return Math.random().toString(36).substring(2, 6).toUpperCase();
+    const url = new URL(location.href);
+    const roomCodeParam = url.searchParams.get("room");
+    const playerName = url.searchParams.get("name");
+
+    let latestRoomCode = null; // 최근 생성된 방 코드 저장용
+
+    const allTiles = [];
+    ["black", "white"].forEach(color => {
+      for (let i = 0; i <= 11; i++) {
+        allTiles.push({ value: i, color });
+      }
+      allTiles.push({ value: "-", color });
+    });
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
     }
 
-    async function createRoom() {
-      const name = document.getElementById("playerName").value.trim();
-      if (!name) return alert("이름을 입력해주세요.");
+    async function assignTiles(roomCode) {
+      const dbRef = ref(db);
+      const snapshot = await get(child(dbRef, `rooms/${roomCode}/players`));
+      if (!snapshot.exists()) return;
 
-      const code = generateRoomCode();
+      const playerList = Object.keys(snapshot.val());
+      let availableTiles = shuffle([...allTiles]);
 
-      await set(ref(db, `rooms/${code}`), {
-        status: 'waiting',
-        players: {
-          [name]: {
-            name,
+      for (let name of playerList) {
+        const playerTiles = availableTiles.splice(0, 4);
+        playerTiles.sort((a, b) => {
+          const va = a.value === "-" ? -1 : a.value;
+          const vb = b.value === "-" ? -1 : b.value;
+          return va - vb;
+        });
+
+        await set(ref(db, `rooms/${roomCode}/players/${name}/tiles`), playerTiles);
+      }
+
+      await update(ref(db, `rooms/${roomCode}`), { status: 'playing' });
+    }
+
+    async function startGame() {
+      let roomCode = roomCodeParam;
+      if (!roomCode || !playerName) return alert("방 정보가 없습니다.");
+      await assignTiles(roomCode);
+      alert("타일이 배정되었습니다!");
+      loadMyTiles();
+    }
+
+    async function loadMyTiles() {
+      const roomCode = roomCodeParam;
+      const snapshot = await get(ref(db, `rooms/${roomCode}/players/${playerName}/tiles`));
+      if (!snapshot.exists()) return;
+      const tiles = snapshot.val();
+      renderTiles("myTiles", tiles, false);
+    }
+
+    function renderTiles(containerId, tiles, isHidden) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      tiles.forEach(tile => {
+        const div = document.createElement('div');
+        div.className = `tile ${tile.color === 'black' ? 'black-tile' : 'white-tile'}`;
+        if (isHidden) {
+          div.classList.add('hidden');
+        } else {
+          div.textContent = tile.value;
+        }
+        container.appendChild(div);
+      });
+    }
+
+    // 최근 방 코드 자동 입장용 - URL에 room이 없을 경우 자동 입장 시도
+    if (!roomCodeParam && playerName) {
+      const dbRef = ref(db);
+      get(child(dbRef, `rooms`)).then(snapshot => {
+        if (!snapshot.exists()) return;
+        const now = Date.now();
+        snapshot.forEach(roomSnap => {
+          const room = roomSnap.val();
+          if (room.status === 'waiting' && now - room.createdAt <= 60000) {
+            latestRoomCode = roomSnap.key;
+          }
+        });
+
+        if (latestRoomCode) {
+          update(ref(db, `rooms/${latestRoomCode}/players/${playerName}`), {
+            name: playerName,
             tiles: [],
             joinedAt: Date.now()
-          }
-        },
-        createdAt: Date.now(),
-        turn: name
+          }).then(() => {
+            window.location.href = `game.html?room=${latestRoomCode}&name=${encodeURIComponent(playerName)}`;
+          });
+        }
       });
-
-      location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
-    }
-
-    async function joinRoom() {
-      const name = document.getElementById("playerName").value.trim();
-      const code = document.getElementById("roomCodeInput").value.trim().toUpperCase();
-      if (!name || !code) return alert("이름과 방 코드를 모두 입력해주세요.");
-
-      const snapshot = await get(ref(db, `rooms/${code}`));
-      if (!snapshot.exists()) return alert("해당 방이 존재하지 않습니다.");
-      const room = snapshot.val();
-
-      if (room.status !== 'waiting') return alert("이미 시작된 방입니다.");
-
-      await update(ref(db, `rooms/${code}/players/${name}`), {
-        name,
-        tiles: [],
-        joinedAt: Date.now()
-      });
-
-      location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
     }
   </script>
 </body>
