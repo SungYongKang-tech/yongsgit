@@ -422,49 +422,66 @@ document.getElementById("confirm-move").addEventListener("click", async () => {
 }
 
 
-    function listenBoard() {
-      onValue(ref(db, `rooms/${roomCode}/board`), snap => {
-        if (!snap.exists()) return;
-        const data = snap.val();
-        for (let r = 0; r < 15; r++) {
-          for (let c = 0; c < 15; c++) {
-            const idx = r * 15 + c;
-            const cell = document.getElementById("board").children[idx];
-            const value = data[r]?.[c] || "";
-            cell.innerHTML = "";
-if (value === "●" || value === "○") {
-  const div = document.createElement("div");
-  div.classList.add("stone", value === "●" ? "black" : "white");
-  cell.appendChild(div);
-  cell.style.pointerEvents = "none";
-} else cell.style.pointerEvents = "auto";
-          }
-          // 마지막 둔 돌 강조 (파란색/빨간색)
-onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
-  const move = snap.val();
-  if (!move) return;
+  function listenBoard() {
+  onValue(ref(db, `rooms/${roomCode}/board`), snap => {
+    if (!snap.exists()) return;
+    const data = snap.val();
 
-  // 기존 강조 제거
-  document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
-    el.classList.remove("last-move-me", "last-move-opponent");
+   for (let r = 0; r < 15; r++) {
+  for (let c = 0; c < 15; c++) {
+    const idx = r * 15 + c;
+    const cell = document.getElementById("board").children[idx];
+    const value = data[r]?.[c] || "";
+    const currentStone = cell.querySelector('.stone');
+
+    // 이미 올바른 돌이 있는 경우 → 다시 렌더링하지 않음
+    if (
+      currentStone &&
+      ((value === "●" && currentStone.classList.contains("black")) ||
+      (value === "○" && currentStone.classList.contains("white")))
+    ) {
+      cell.style.pointerEvents = "none";
+      continue;
+    }
+
+    // 그 외는 새로 그림
+    cell.innerHTML = "";
+
+    if (value === "●" || value === "○") {
+      const div = document.createElement("div");
+      div.classList.add("stone", value === "●" ? "black" : "white");
+      cell.appendChild(div);
+      cell.style.pointerEvents = "none";
+    } else {
+      cell.style.pointerEvents = "auto";
+    }
+  }
+}
+
   });
 
-  const idx = move.row * 15 + move.col;
-  const cell = document.getElementById("board").children[idx];
-  const stoneDiv = cell.querySelector('.stone');
-  if (stoneDiv) {
-    const isMe = move.role === playerRole;
-    stoneDiv.classList.add(isMe ? "last-move-me" : "last-move-opponent");
-  }
-});
+  // ✅ 루프 밖으로 빼기
+  onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
+    const move = snap.val();
+    if (!move) return;
 
-        }
-      });
+    document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
+      el.classList.remove("last-move-me", "last-move-opponent");
+    });
 
-      onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
-        document.getElementById("turn").innerText = snap.val() === playerRole ? "내 차례" : "상대 차례";
-      });
+    const idx = move.row * 15 + move.col;
+    const cell = document.getElementById("board").children[idx];
+    const stoneDiv = cell.querySelector('.stone');
+    if (stoneDiv) {
+      const isMe = move.role === playerRole;
+      stoneDiv.classList.add(isMe ? "last-move-me" : "last-move-opponent");
     }
+  });
+
+  onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
+    document.getElementById("turn").innerText = snap.val() === playerRole ? "내 차례" : "상대 차례";
+  });
+}
 
   function listenWinner() {
   onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
