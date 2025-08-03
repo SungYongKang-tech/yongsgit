@@ -42,11 +42,17 @@
       font-size: 28px;
       color: red;
     }
+    #winner {
+      font-size: 24px;
+      margin-top: 20px;
+      color: green;
+    }
   </style>
 </head>
 <body>
   <h1>다빈치 코드 게임</h1>
   <div id="gameBoard"></div>
+  <div id="winner"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -72,12 +78,18 @@
     const playerName = url.searchParams.get("name");
 
     const gameBoard = document.getElementById("gameBoard");
+    const winnerDisplay = document.getElementById("winner");
 
     async function renderGame() {
+      gameBoard.innerHTML = "";
+      winnerDisplay.textContent = "";
+
       const snapshot = await get(ref(db, `rooms/${roomCode}/players`));
       if (!snapshot.exists()) return alert("플레이어 정보가 없습니다");
 
       const players = snapshot.val();
+
+      let totalHiddenTiles = 0;
 
       for (const [name, data] of Object.entries(players)) {
         const area = document.createElement("div");
@@ -100,6 +112,7 @@
           if (isMine || isRevealed) {
             div.textContent = tile.value;
           } else {
+            totalHiddenTiles++;
             div.classList.add("hidden");
             div.addEventListener("click", async () => {
               const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
@@ -109,7 +122,7 @@
                 alert("정답입니다!");
                 tile.revealed = true;
                 await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
-                location.reload();
+                renderGame();
               } else {
                 alert("틀렸습니다!");
               }
@@ -121,6 +134,10 @@
 
         area.appendChild(row);
         gameBoard.appendChild(area);
+      }
+
+      if (totalHiddenTiles === 0) {
+        winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
       }
     }
 
