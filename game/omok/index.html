@@ -428,42 +428,50 @@ function listenBoard() {
     if (!snap.exists()) return;
     const data = snap.val();
 
-   for (let r = 0; r < 15; r++) {
+   // listenBoard 내부에서 각 셀을 그리는 부분에서
+for (let r = 0; r < 15; r++) {
   for (let c = 0; c < 15; c++) {
     const idx = r * 15 + c;
     const cell = document.getElementById("board").children[idx];
     const value = data[r]?.[c] || "";
 
     const prevStone = cell.querySelector('.stone');
-const isNewStone = 
-  (value === "●" && (!prevStone || !prevStone.classList.contains("black"))) ||
-  (value === "○" && (!prevStone || !prevStone.classList.contains("white")));
-
+    const isNewStone =
+      (value === "●" && (!prevStone || !prevStone.classList.contains("black"))) ||
+      (value === "○" && (!prevStone || !prevStone.classList.contains("white")));
 
     if (
       prevStone &&
       ((value === "●" && prevStone.classList.contains("black")) ||
-       (value === "○" && prevStone.classList.contains("white")))
+      (value === "○" && prevStone.classList.contains("white")))
     ) {
       cell.style.pointerEvents = "none";
       continue;
     }
 
-        // 새로 그림
-        cell.innerHTML = "";
-
-        if (value === "●" || value === "○") {
-          const div = document.createElement("div");
-          div.classList.add("stone", value === "●" ? "black" : "white");
-          cell.appendChild(div);
-          cell.style.pointerEvents = "none";
-        } else {
-          cell.style.pointerEvents = "auto";
-        }
-
-        // 새 돌이 생겼고, 내 차례가 아니라면 → 상대가 둔 것 → 사운드 재생
-       
+    // 새로 그림
+    cell.innerHTML = "";
+    if (value === "●" || value === "○") {
+      const div = document.createElement("div");
+      div.classList.add("stone", value === "●" ? "black" : "white");
+      cell.appendChild(div);
+      cell.style.pointerEvents = "none";
+    } else {
+      cell.style.pointerEvents = "auto";
     }
+
+    // ✅ 여기가 빠져 있었음
+    if (isNewStone) {
+      const opponentTurn = playerRole === 'A' ? 'B' : 'A';
+      get(ref(db, `rooms/${roomCode}/turn`)).then(snap => {
+        if (snap.exists() && snap.val() === playerRole) {
+          document.getElementById("place-sound").play().catch(() => {});
+        }
+      });
+    }
+  }
+}
+
   });
 
   // 마지막 착수 위치 강조
