@@ -29,6 +29,8 @@
     .tile-row {
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
     .tile {
@@ -75,6 +77,10 @@
       <h2>내 타일</h2>
       <div class="tile-row" id="myTiles"></div>
     </div>
+    <div class="player-area" id="opponentArea">
+      <h2>상대 타일</h2>
+      <div id="opponentTiles"></div>
+    </div>
   </div>
 
   <script type="module">
@@ -95,8 +101,10 @@
     const db = getDatabase(app);
 
     const url = new URL(location.href);
-    const roomCode = url.searchParams.get("room");
+    const roomCodeParam = url.searchParams.get("room");
     const playerName = url.searchParams.get("name");
+
+    let latestRoomCode = null;
 
     const allTiles = [];
     ["black", "white"].forEach(color => {
@@ -137,17 +145,48 @@
     }
 
     async function startGame() {
+      let roomCode = roomCodeParam;
       if (!roomCode || !playerName) return alert("방 정보가 없습니다.");
       await assignTiles(roomCode);
       alert("타일이 배정되었습니다!");
       loadMyTiles();
+      loadOpponentTiles();
     }
 
     async function loadMyTiles() {
+      const roomCode = roomCodeParam;
       const snapshot = await get(ref(db, `rooms/${roomCode}/players/${playerName}/tiles`));
       if (!snapshot.exists()) return;
       const tiles = snapshot.val();
       renderTiles("myTiles", tiles, false);
+    }
+
+    async function loadOpponentTiles() {
+      const roomCode = roomCodeParam;
+      const snapshot = await get(ref(db, `rooms/${roomCode}/players`));
+      if (!snapshot.exists()) return;
+
+      const container = document.getElementById("opponentTiles");
+      container.innerHTML = "";
+
+      snapshot.forEach(child => {
+        const name = child.key;
+        if (name === playerName) return;
+        const playerDiv = document.createElement("div");
+        playerDiv.className = "tile-row";
+
+        const label = document.createElement("h3");
+        label.textContent = `${name}`;
+        container.appendChild(label);
+
+        const tiles = child.val().tiles || [];
+        tiles.forEach(tile => {
+          const div = document.createElement("div");
+          div.className = `tile ${tile.color === 'black' ? 'black-tile' : 'white-tile'} hidden`;
+          playerDiv.appendChild(div);
+        });
+        container.appendChild(playerDiv);
+      });
     }
 
     function renderTiles(containerId, tiles, isHidden) {
@@ -162,6 +201,30 @@
           div.textContent = tile.value;
         }
         container.appendChild(div);
+      });
+    }
+
+    if (!roomCodeParam && playerName) {
+      const dbRef = ref(db);
+      get(child(dbRef, `rooms`)).then(snapshot => {
+        if (!snapshot.exists()) return;
+        const now = Date.now();
+        snapshot.forEach(roomSnap => {
+          const room = roomSnap.val();
+          if (room.status === 'waiting' && now - room.createdAt <= 60000) {
+            latestRoomCode = roomSnap.key;
+          }
+        });
+
+        if (latestRoomCode) {
+          update(ref(db, `rooms/${latestRoomCode}/players/${playerName}`), {
+            name: playerName,
+            tiles: [],
+            joinedAt: Date.now()
+          }).then(() => {
+            window.location.href = `game.html?room=${latestRoomCode}&name=${encodeURIComponent(playerName)}`;
+          });
+        }
       });
     }
   </script>
