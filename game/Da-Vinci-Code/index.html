@@ -79,30 +79,35 @@
     };
 
     const joinRecentRoom = async () => {
-      let nameInput = document.getElementById("playerName").value;
-      let name = nameInput && nameInput.trim() !== "" ? nameInput.trim() : generateRandomName();
+  let nameInput = document.getElementById("playerName").value;
+  let name = nameInput && nameInput.trim() !== "" ? nameInput.trim() : generateRandomName();
 
-      const lastCode = sessionStorage.getItem("lastRoomCode");
-      if (!lastCode) return alert("입장 가능한 방 정보가 없습니다. 먼저 방을 만들어 주세요.");
+  const now = Date.now();
+  const snapshot = await get(ref(db, "rooms"));
+  if (!snapshot.exists()) return alert("생성된 방이 없습니다.");
 
-      const roomRef = ref(db, `rooms/${lastCode}`);
-      const snapshot = await get(roomRef);
-      if (!snapshot.exists()) return alert("최근 생성된 방이 존재하지 않습니다.");
+  let joined = false;
 
-      const room = snapshot.val();
-      const now = Date.now();
+  snapshot.forEach(roomSnap => {
+    const room = roomSnap.val();
+    const code = roomSnap.key;
+    if (!joined && room.status === "waiting" && now - room.createdAt <= 60000) {
+      update(ref(db, `rooms/${code}/players/${name}`), {
+        name,
+        tiles: [],
+        joinedAt: now
+      }).then(() => {
+        location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
+      });
+      joined = true;
+    }
+  });
 
-      if (room.status === "waiting" && now - room.createdAt <= 60000) {
-        await update(ref(db, `rooms/${lastCode}/players/${name}`), {
-          name,
-          tiles: [],
-          joinedAt: now
-        });
-        location.href = `game.html?room=${lastCode}&name=${encodeURIComponent(name)}`;
-      } else {
-        alert("1분 이내의 유효한 방이 없습니다. 새로 방을 만들어 주세요.");
-      }
-    };
+  if (!joined) {
+    alert("1분 이내 생성된 방이 없습니다. 먼저 방을 만들어 주세요.");
+  }
+};
+
 
     document.getElementById("createBtn").addEventListener("click", createRoom);
     document.getElementById("joinBtn").addEventListener("click", joinRecentRoom);
