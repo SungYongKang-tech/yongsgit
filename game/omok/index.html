@@ -421,63 +421,57 @@ document.getElementById("confirm-move").addEventListener("click", async () => {
   return null;
 }
 
-
-  function listenBoard() {
+function listenBoard() {
   onValue(ref(db, `rooms/${roomCode}/board`), snap => {
     if (!snap.exists()) return;
     const data = snap.val();
 
-   for (let r = 0; r < 15; r++) {
-  for (let c = 0; c < 15; c++) {
-    const idx = r * 15 + c;
-    const cell = document.getElementById("board").children[idx];
-    const value = data[r]?.[c] || "";
-    const currentStone = cell.querySelector('.stone');
+    for (let r = 0; r < 15; r++) {
+      for (let c = 0; c < 15; c++) {
+        const idx = r * 15 + c;
+        const cell = document.getElementById("board").children[idx];
+        const value = data[r]?.[c] || "";
 
-    // 이미 올바른 돌이 있는 경우 → 다시 렌더링하지 않음
-    if (
-      currentStone &&
-      ((value === "●" && currentStone.classList.contains("black")) ||
-      (value === "○" && currentStone.classList.contains("white")))
-    ) {
-      cell.style.pointerEvents = "none";
-      continue;
-    }
+        const prevStone = cell.querySelector('.stone');
+        const isNewStone = !prevStone && (value === "●" || value === "○");
 
-    // 그 외는 새로 그림
-    cell.innerHTML = "";
+        // 기존 돌과 동일하면 다시 그리지 않음
+        if (
+          prevStone &&
+          ((value === "●" && prevStone.classList.contains("black")) ||
+           (value === "○" && prevStone.classList.contains("white")))
+        ) {
+          cell.style.pointerEvents = "none";
+          continue;
+        }
 
-    if (value === "●" || value === "○") {
-      const div = document.createElement("div");
-      div.classList.add("stone", value === "●" ? "black" : "white");
-      cell.appendChild(div);
-      cell.style.pointerEvents = "none";
-    } else {
-      cell.style.pointerEvents = "auto";
-    }
-  }
-// 기존 돌이 없는데 새로운 돌이 생겼다면 → 착수 소리
-if (!currentStone && (value === "●" || value === "○")) {
-  // 내 차례가 아니라면 상대방 착수 소리
-  const currentTurn = playerRole === 'A' ? 'B' : 'A';
-  get(ref(db, `rooms/${roomCode}/turn`)).then(snap => {
-    if (snap.exists() && snap.val() === playerRole) {
-      // 방금 턴이 넘어온 경우, 즉 상대가 방금 둠
-      document.getElementById("place-sound").play().catch(e => {});
+        // 새로 그림
+        cell.innerHTML = "";
+
+        if (value === "●" || value === "○") {
+          const div = document.createElement("div");
+          div.classList.add("stone", value === "●" ? "black" : "white");
+          cell.appendChild(div);
+          cell.style.pointerEvents = "none";
+        } else {
+          cell.style.pointerEvents = "auto";
+        }
+
+        // 새 돌이 생겼고, 내 차례가 아니라면 → 상대가 둔 것 → 사운드 재생
+        if (isNewStone) {
+          const opponentTurn = playerRole === 'A' ? 'B' : 'A';
+          get(ref(db, `rooms/${roomCode}/turn`)).then(snap => {
+            if (snap.exists() && snap.val() === playerRole) {
+              // 턴이 내게 넘어왔다는 건 상대가 방금 둠
+              document.getElementById("place-sound").play().catch(() => {});
+            }
+          });
+        }
+      }
     }
   });
-}
 
-
-
-
-
-
-}
-
-  });
-
-  // ✅ 루프 밖으로 빼기
+  // 마지막 착수 위치 강조
   onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
     const move = snap.val();
     if (!move) return;
@@ -495,10 +489,21 @@ if (!currentStone && (value === "●" || value === "○")) {
     }
   });
 
+  // 턴 표시
   onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
     document.getElementById("turn").innerText = snap.val() === playerRole ? "내 차례" : "상대 차례";
   });
+
+  // ✅ 상대방 입장 알림
+  const otherPlayer = playerRole === 'A' ? 'B' : 'A';
+  onValue(ref(db, `rooms/${roomCode}/players/${otherPlayer}`), snap => {
+    if (snap.exists()) {
+      alert(`🎮 상대방(${snap.val().name})이 입장했습니다!`);
+    }
+  });
 }
+
+
 
   function listenWinner() {
   onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
