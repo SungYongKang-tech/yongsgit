@@ -178,7 +178,7 @@ button:hover {
 
 
   <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-  
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, set, get, update, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
@@ -435,7 +435,10 @@ function listenBoard() {
     const value = data[r]?.[c] || "";
 
     const prevStone = cell.querySelector('.stone');
-    const isNewStone = !prevStone && (value === "●" || value === "○"); // ✅ 이 줄 중요!
+const isNewStone = 
+  (value === "●" && (!prevStone || !prevStone.classList.contains("black"))) ||
+  (value === "○" && (!prevStone || !prevStone.classList.contains("white")));
+
 
     if (
       prevStone &&
@@ -459,36 +462,34 @@ function listenBoard() {
         }
 
         // 새 돌이 생겼고, 내 차례가 아니라면 → 상대가 둔 것 → 사운드 재생
-        if (isNewStone) {
-          const opponentTurn = playerRole === 'A' ? 'B' : 'A';
-          get(ref(db, `rooms/${roomCode}/turn`)).then(snap => {
-            if (snap.exists() && snap.val() === playerRole) {
-              // 턴이 내게 넘어왔다는 건 상대가 방금 둠
-              document.getElementById("place-sound").play().catch(() => {});
-            }
-          });
-        }
-      }
+       
     }
   });
 
   // 마지막 착수 위치 강조
-  onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
-    const move = snap.val();
-    if (!move) return;
+ onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
+  const move = snap.val();
+  if (!move) return;
 
-    document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
-      el.classList.remove("last-move-me", "last-move-opponent");
-    });
+  // 사운드 재생: 상대가 방금 둔 경우만
+  if (move.role !== playerRole) {
+    document.getElementById("place-sound").play().catch(() => {});
+  }
 
-    const idx = move.row * 15 + move.col;
-    const cell = document.getElementById("board").children[idx];
-    const stoneDiv = cell.querySelector('.stone');
-    if (stoneDiv) {
-      const isMe = move.role === playerRole;
-      stoneDiv.classList.add(isMe ? "last-move-me" : "last-move-opponent");
-    }
+  // 마지막 착수 테두리 강조
+  document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
+    el.classList.remove("last-move-me", "last-move-opponent");
   });
+
+  const idx = move.row * 15 + move.col;
+  const cell = document.getElementById("board").children[idx];
+  const stoneDiv = cell.querySelector('.stone');
+  if (stoneDiv) {
+    const isMe = move.role === playerRole;
+    stoneDiv.classList.add(isMe ? "last-move-me" : "last-move-opponent");
+  }
+});
+
 
   // 턴 표시
   onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
