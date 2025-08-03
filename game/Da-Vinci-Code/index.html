@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>다빈치 코드 - 로비</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background: #fafafa;
+      padding: 40px;
+    }
+
+    input, button {
+      font-size: 16px;
+      padding: 10px;
+      margin: 8px;
+      width: 80%;
+      max-width: 300px;
+    }
+
+    h1 { margin-bottom: 30px; }
+  </style>
+</head>
+<body>
+  <h1>다빈치 코드 보드게임</h1>
+
+  <input type="text" id="playerName" placeholder="이름을 입력하세요" />
+  <br />
+  <button onclick="createRoom()">방 만들기</button>
+  <br />
+  <input type="text" id="roomCodeInput" placeholder="방 코드 입력" />
+  <br />
+  <button onclick="joinRoom()">방 입장</button>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import {
+      getDatabase, ref, set, update, get, child
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.firebasestorage.app",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:4f9332f868707efa91a561"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    function generateRoomCode() {
+      return Math.random().toString(36).substring(2, 6).toUpperCase();
+    }
+
+    async function createRoom() {
+      const name = document.getElementById("playerName").value.trim();
+      if (!name) return alert("이름을 입력해주세요.");
+
+      const code = generateRoomCode();
+
+      await set(ref(db, `rooms/${code}`), {
+        status: 'waiting',
+        players: {
+          [name]: {
+            name,
+            tiles: [],
+            joinedAt: Date.now()
+          }
+        },
+        createdAt: Date.now(),
+        turn: name
+      });
+
+      location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
+    }
+
+    async function joinRoom() {
+      const name = document.getElementById("playerName").value.trim();
+      const code = document.getElementById("roomCodeInput").value.trim().toUpperCase();
+      if (!name || !code) return alert("이름과 방 코드를 모두 입력해주세요.");
+
+      const snapshot = await get(ref(db, `rooms/${code}`));
+      if (!snapshot.exists()) return alert("해당 방이 존재하지 않습니다.");
+      const room = snapshot.val();
+
+      if (room.status !== 'waiting') return alert("이미 시작된 방입니다.");
+
+      await update(ref(db, `rooms/${code}/players/${name}`), {
+        name,
+        tiles: [],
+        joinedAt: Date.now()
+      });
+
+      location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
+    }
+  </script>
+</body>
+</html>
