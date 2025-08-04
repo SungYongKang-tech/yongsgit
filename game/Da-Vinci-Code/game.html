@@ -55,7 +55,7 @@
   </style>
 </head>
 <body>
-  <h1>다빈치 코드 게임</h1>
+  <h1 id="mainTitle">다빈치 코드 게임</h1>
   <div id="turnInfo"></div>
   <div id="gameBoard"></div>
   <div id="winner"></div>
@@ -93,20 +93,30 @@
       return names[(index + 1) % names.length];
     }
 
-    async function cleanupOldRooms() {
+    async function cleanupOldRoomsExcept(currentRoomCode) {
       const snapshot = await get(ref(db, "rooms"));
       if (!snapshot.exists()) return;
-      const rooms = Object.entries(snapshot.val());
-      rooms.sort((a, b) => a[1].createdAt - b[1].createdAt);
+
+      const now = Date.now();
+      const rooms = Object.entries(snapshot.val())
+        .filter(([code, room]) => room.createdAt)
+        .sort((a, b) => a[1].createdAt - b[1].createdAt);
+
       const MAX_ROOMS = 5;
       const excess = rooms.length - MAX_ROOMS;
-      for (let i = 0; i < excess; i++) {
-        await remove(ref(db, `rooms/${rooms[i][0]}`));
+      let skipped = 0;
+
+      for (let i = 0; i < rooms.length && skipped < excess; i++) {
+        const [code, room] = rooms[i];
+        if (code === currentRoomCode) continue;
+        if (now - room.createdAt < 2000) continue;
+        await remove(ref(db, `rooms/${code}`));
+        skipped++;
       }
     }
 
     async function renderGame() {
-      await cleanupOldRooms();
+      await cleanupOldRoomsExcept(roomCode);
       gameBoard.innerHTML = "";
       winnerDisplay.textContent = "";
 
@@ -185,6 +195,9 @@
         winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
       }
     }
+
+    document.getElementById("mainTitle").textContent =
+      sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
 
     onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
