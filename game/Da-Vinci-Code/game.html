@@ -47,17 +47,23 @@
       margin-top: 20px;
       color: green;
     }
+    #turnInfo {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
   <h1>다빈치 코드 게임</h1>
+  <div id="turnInfo"></div>
   <div id="gameBoard"></div>
   <div id="winner"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, get, update
+      getDatabase, ref, get, update, onValue
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -79,15 +85,23 @@
 
     const gameBoard = document.getElementById("gameBoard");
     const winnerDisplay = document.getElementById("winner");
+    const turnInfo = document.getElementById("turnInfo");
+
+    function nextTurn(players, currentTurn) {
+      const names = Object.keys(players);
+      const index = names.indexOf(currentTurn);
+      return names[(index + 1) % names.length];
+    }
 
     async function renderGame() {
       gameBoard.innerHTML = "";
       winnerDisplay.textContent = "";
 
-      const snapshot = await get(ref(db, `rooms/${roomCode}/players`));
-      if (!snapshot.exists()) return alert("플레이어 정보가 없습니다");
+      const roomSnap = await get(ref(db, `rooms/${roomCode}`));
+      const players = roomSnap.val().players;
+      const currentTurn = roomSnap.val().turn;
 
-      const players = snapshot.val();
+      turnInfo.textContent = currentTurn === playerName ? "🟢 내 차례입니다" : `⏳ ${currentTurn}님의 차례입니다`;
 
       let totalHiddenTiles = 0;
       let totalTiles = 0;
@@ -122,19 +136,23 @@
           } else {
             totalHiddenTiles++;
             div.classList.add("hidden");
-            div.addEventListener("click", async () => {
-              const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
-              if (guess === null) return;
+            if (currentTurn === playerName) {
+              div.addEventListener("click", async () => {
+                const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
+                if (guess === null) return;
 
-              if (guess == tile.value) {
-                alert("정답입니다!");
-                tile.revealed = true;
-                await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
-                renderGame();
-              } else {
-                alert("틀렸습니다!");
-              }
-            });
+                if (guess == tile.value) {
+                  alert("정답입니다!");
+                  tile.revealed = true;
+                  await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
+                  renderGame();
+                } else {
+                  alert("틀렸습니다! 턴이 넘어갑니다");
+                  const next = nextTurn(players, currentTurn);
+                  await update(ref(db, `rooms/${roomCode}`), { turn: next });
+                }
+              });
+            }
           }
 
           row.appendChild(div);
@@ -153,6 +171,7 @@
       }
     }
 
+    onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
   </script>
 </body>
