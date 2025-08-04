@@ -191,27 +191,32 @@
 document.getElementById("mainTitle").textContent =
   sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
 
-  
+
     onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
 
-    async function cleanupOldRoomsExcept(currentRoomCode) {
+  async function cleanupOldRoomsExcept(currentRoomCode) {
   const snapshot = await get(ref(db, "rooms"));
   if (!snapshot.exists()) return;
 
-  const rooms = Object.entries(snapshot.val());
-  rooms.sort((a, b) => a[1].createdAt - b[1].createdAt);
+  const now = Date.now();
+  const rooms = Object.entries(snapshot.val())
+    .filter(([code, room]) => room.createdAt) // createdAt 있는 방만
+    .sort((a, b) => a[1].createdAt - b[1].createdAt);
+
   const MAX_ROOMS = 5;
   const excess = rooms.length - MAX_ROOMS;
-
   let skipped = 0;
+
   for (let i = 0; i < rooms.length && skipped < excess; i++) {
-    const [code] = rooms[i];
-    if (code === currentRoomCode) continue; // 현재 방은 건너뛰기
+    const [code, room] = rooms[i];
+    if (code === currentRoomCode) continue; // 현재 방은 건너뜀
+    if (now - room.createdAt < 2000) continue; // 2초 이내 생성된 방 유지
     await remove(ref(db, `rooms/${code}`));
     skipped++;
   }
 }
+
 
   </script>
 </body>
