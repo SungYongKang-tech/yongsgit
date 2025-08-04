@@ -106,7 +106,7 @@
     }
 
     async function renderGame() {
-      await cleanupOldRooms();
+      await cleanupOldRoomsExcept(roomCode);
       gameBoard.innerHTML = "";
       winnerDisplay.textContent = "";
 
@@ -164,8 +164,7 @@
                   alert("정답입니다!");
                   tile.revealed = true;
                   await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
-                  document.getElementById("mainTitle").textContent = sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
-    renderGame();
+                  renderGame();
                 } else {
                   alert("틀렸습니다! 턴이 넘어갑니다");
                   const next = nextTurn(players, currentTurn);
@@ -185,10 +184,35 @@
       if (totalTiles > 0 && totalHiddenTiles === 0) {
         winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
       }
+      
     }
 
+    // 가장 아래에 추가 (renderGame() 아래)
+document.getElementById("mainTitle").textContent =
+  sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
+
+  
     onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
+
+    async function cleanupOldRoomsExcept(currentRoomCode) {
+  const snapshot = await get(ref(db, "rooms"));
+  if (!snapshot.exists()) return;
+
+  const rooms = Object.entries(snapshot.val());
+  rooms.sort((a, b) => a[1].createdAt - b[1].createdAt);
+  const MAX_ROOMS = 5;
+  const excess = rooms.length - MAX_ROOMS;
+
+  let skipped = 0;
+  for (let i = 0; i < rooms.length && skipped < excess; i++) {
+    const [code] = rooms[i];
+    if (code === currentRoomCode) continue; // 현재 방은 건너뛰기
+    await remove(ref(db, `rooms/${code}`));
+    skipped++;
+  }
+}
+
   </script>
 </body>
 </html>
