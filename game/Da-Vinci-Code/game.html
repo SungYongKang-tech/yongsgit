@@ -55,6 +55,18 @@
     #controls {
       margin-bottom: 20px;
     }
+    #log {
+      font-size: 14px;
+      color: #555;
+      margin-top: 20px;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: left;
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px;
+    }
     button {
       font-size: 16px;
       padding: 10px 20px;
@@ -68,11 +80,12 @@
   <div id="turnInfo"></div>
   <div id="gameBoard"></div>
   <div id="winner"></div>
+  <div id="log"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, get, set, update, onValue
+      getDatabase, ref, get, set, update, onValue, push
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -96,6 +109,7 @@
     const winnerDisplay = document.getElementById("winner");
     const turnInfo = document.getElementById("turnInfo");
     const controls = document.getElementById("controls");
+    const logBox = document.getElementById("log");
 
     function shuffle(array) {
       for (let i = array.length - 1; i > 0; i--) {
@@ -129,6 +143,7 @@
       updates["status"] = "playing";
       updates["turn"] = names[0];
       await update(roomRef, updates);
+      await set(ref(db, `rooms/${roomCode}/log`), []);
     }
 
     function nextTurn(players, currentTurn) {
@@ -192,11 +207,12 @@
                   alert("정답입니다!");
                   tile.revealed = true;
                   await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
-                  renderGame();
+                  await push(ref(db, `rooms/${roomCode}/log`), `${playerName}님이 ${name}의 타일 ${i + 1}번째를 맞췄습니다.`);
                 } else {
                   alert("틀렸습니다! 턴이 넘어갑니다");
                   const next = nextTurn(players, currentTurn);
                   await update(ref(db, `rooms/${roomCode}`), { turn: next });
+                  await push(ref(db, `rooms/${roomCode}/log`), `${playerName}님이 ${name}의 타일 ${i + 1}번째를 틀렸습니다.`);
                 }
               });
             }
@@ -212,6 +228,10 @@
       if (totalTiles > 0 && totalHiddenTiles === 0) {
         winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
       }
+
+      const logSnap = await get(ref(db, `rooms/${roomCode}/log`));
+      const logs = logSnap.exists() ? Object.values(logSnap.val()) : [];
+      logBox.innerHTML = logs.map(log => `<div>📌 ${log}</div>`).join("");
     }
 
     onValue(ref(db, `rooms/${roomCode}`), () => renderGame());
