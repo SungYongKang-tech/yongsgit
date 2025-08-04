@@ -93,15 +93,25 @@
       return names[(index + 1) % names.length];
     }
 
-    async function cleanupOldRooms() {
+    async function cleanupOldRoomsExcept(currentRoomCode) {
       const snapshot = await get(ref(db, "rooms"));
       if (!snapshot.exists()) return;
-      const rooms = Object.entries(snapshot.val());
-      rooms.sort((a, b) => a[1].createdAt - b[1].createdAt);
+
+      const now = Date.now();
+      const rooms = Object.entries(snapshot.val())
+        .filter(([code, room]) => room.createdAt) // createdAt 있는 방만
+        .sort((a, b) => a[1].createdAt - b[1].createdAt);
+
       const MAX_ROOMS = 5;
       const excess = rooms.length - MAX_ROOMS;
-      for (let i = 0; i < excess; i++) {
-        await remove(ref(db, `rooms/${rooms[i][0]}`));
+      let skipped = 0;
+
+      for (let i = 0; i < rooms.length && skipped < excess; i++) {
+        const [code, room] = rooms[i];
+        if (code === currentRoomCode) continue; // 현재 방은 건너뜀
+        if (now - room.createdAt < 2000) continue; // 2초 이내 생성된 방 유지
+        await remove(ref(db, `rooms/${code}`));
+        skipped++;
       }
     }
 
@@ -184,40 +194,13 @@
       if (totalTiles > 0 && totalHiddenTiles === 0) {
         winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
       }
-      
     }
 
-    // 가장 아래에 추가 (renderGame() 아래)
-document.getElementById("mainTitle").textContent =
-  sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
-
+    document.getElementById("mainTitle").textContent =
+      sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
 
     onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
-
-  async function cleanupOldRoomsExcept(currentRoomCode) {
-  const snapshot = await get(ref(db, "rooms"));
-  if (!snapshot.exists()) return;
-
-  const now = Date.now();
-  const rooms = Object.entries(snapshot.val())
-    .filter(([code, room]) => room.createdAt) // createdAt 있는 방만
-    .sort((a, b) => a[1].createdAt - b[1].createdAt);
-
-  const MAX_ROOMS = 5;
-  const excess = rooms.length - MAX_ROOMS;
-  let skipped = 0;
-
-  for (let i = 0; i < rooms.length && skipped < excess; i++) {
-    const [code, room] = rooms[i];
-    if (code === currentRoomCode) continue; // 현재 방은 건너뜀
-    if (now - room.createdAt < 2000) continue; // 2초 이내 생성된 방 유지
-    await remove(ref(db, `rooms/${code}`));
-    skipped++;
-  }
-}
-
-
   </script>
 </body>
 </html>
