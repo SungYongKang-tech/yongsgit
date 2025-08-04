@@ -3,41 +3,67 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>다빈치 코드 - 로비</title>
+  <title>다빈치 코드 - 게임화면</title>
   <style>
     body {
       font-family: sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 20px;
       text-align: center;
-      background: #f4f4f4;
-      padding: 40px;
     }
-    input, button {
-      font-size: 16px;
-      padding: 12px;
-      margin: 10px;
-      width: 80%;
-      max-width: 300px;
-    }
-    h1 {
+    .player-area {
       margin-bottom: 30px;
+    }
+    .tile-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tile {
+      width: 50px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      border: 2px solid #555;
+      border-radius: 6px;
+      position: relative;
+      cursor: pointer;
+    }
+    .white-tile { background-color: #fff; color: #000; }
+    .black-tile { background-color: #000; color: #fff; }
+    .hidden::after {
+      content: "❓";
+      position: absolute;
+      font-size: 28px;
+      color: red;
+    }
+    #winner {
+      font-size: 24px;
+      margin-top: 20px;
+      color: green;
+    }
+    #turnInfo {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 20px;
     }
   </style>
 </head>
 <body>
-  <h1>다빈치 코드 보드게임</h1>
-
-  <input type="text" id="playerName" placeholder="이름 입력 (선택)" />
-  <br />
-  <button id="createBtn">방 만들기</button>
-  <br />
-  <button id="joinBtn">방 입장하기</button>
-
-  <div id="playerCountInfo"></div>
+  <h1>다빈치 코드 게임</h1>
+  <div id="turnInfo"></div>
+  <div id="gameBoard"></div>
+  <div id="winner"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, update, get
+      getDatabase, ref, get, update, onValue, remove
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -53,67 +79,103 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    const generateRoomCode = () => Math.random().toString(36).substring(2, 6).toUpperCase();
-    const generateRandomName = () => '플레이어' + Math.floor(Math.random() * 10000);
+    const url = new URL(location.href);
+    const roomCode = url.searchParams.get("room");
+    const playerName = url.searchParams.get("name");
 
-    const createRoom = async () => {
-      let nameInput = document.getElementById("playerName").value;
-      let name = nameInput && nameInput.trim() !== "" ? nameInput.trim() : generateRandomName();
+    const gameBoard = document.getElementById("gameBoard");
+    const winnerDisplay = document.getElementById("winner");
+    const turnInfo = document.getElementById("turnInfo");
 
-      const code = generateRoomCode();
-      const now = Date.now();
+    function nextTurn(players, currentTurn) {
+      const names = Object.keys(players);
+      const index = names.indexOf(currentTurn);
+      return names[(index + 1) % names.length];
+    }
 
-      await set(ref(db, `rooms/${code}`), {
-        status: "waiting",
-        createdAt: now,
-        turn: name,
-        players: {
-          [name]: {
-            name,
-            tiles: [],
-            joinedAt: now
-          }
-        }
-      });
-
-      sessionStorage.setItem("lastRoomCode", code);
-      location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
-    };
-
-    const joinRecentRoom = async () => {
-      let nameInput = document.getElementById("playerName").value;
-      let name = nameInput && nameInput.trim() !== "" ? nameInput.trim() : generateRandomName();
-
-      const now = Date.now();
+    async function cleanupOldRooms() {
       const snapshot = await get(ref(db, "rooms"));
-      if (!snapshot.exists()) return alert("생성된 방이 없습니다.");
-
-      let joined = false;
-
-      snapshot.forEach(roomSnap => {
-        const room = roomSnap.val();
-        const code = roomSnap.key;
-        const playerCount = room.players ? Object.keys(room.players).length : 0;
-
-        if (!joined && room.status === "waiting" && now - room.createdAt <= 60000 && playerCount < 4) {
-          update(ref(db, `rooms/${code}/players/${name}`), {
-            name,
-            tiles: [],
-            joinedAt: now
-          }).then(() => {
-            location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
-          });
-          joined = true;
-        }
-      });
-
-      if (!joined) {
-        alert("1분 이내 생성된 방이 없거나 최대 인원(4명)에 도달했습니다. 새로 방을 만들어 주세요.");
+      if (!snapshot.exists()) return;
+      const rooms = Object.entries(snapshot.val());
+      rooms.sort((a, b) => a[1].createdAt - b[1].createdAt);
+      const MAX_ROOMS = 5;
+      const excess = rooms.length - MAX_ROOMS;
+      for (let i = 0; i < excess; i++) {
+        await remove(ref(db, `rooms/${rooms[i][0]}`));
       }
-    };
+    }
 
-    document.getElementById("createBtn").addEventListener("click", createRoom);
-    document.getElementById("joinBtn").addEventListener("click", joinRecentRoom);
+    async function renderGame() {
+      await cleanupOldRooms();
+      gameBoard.innerHTML = "";
+      winnerDisplay.textContent = "";
+
+      const roomSnap = await get(ref(db, `rooms/${roomCode}`));
+      const players = roomSnap.val().players;
+      const currentTurn = roomSnap.val().turn;
+
+      turnInfo.textContent = currentTurn === playerName ? "🟢 내 차례입니다" : `⏳ ${currentTurn}님의 차례입니다`;
+
+      let totalHiddenTiles = 0;
+      let totalTiles = 0;
+
+      for (const [name, data] of Object.entries(players)) {
+        const area = document.createElement("div");
+        area.className = "player-area";
+
+        const label = document.createElement("h2");
+        label.textContent = name === playerName ? "내 타일" : `${name}의 타일`;
+        area.appendChild(label);
+
+        const row = document.createElement("div");
+        row.className = "tile-row";
+
+        (data.tiles || []).forEach((tile, i) => {
+          totalTiles++;
+          const div = document.createElement("div");
+          div.className = `tile ${tile.color}-tile`;
+
+          const isMine = name === playerName;
+          const isRevealed = tile.revealed;
+
+          if (isMine || isRevealed) {
+            div.textContent = tile.value;
+          } else {
+            totalHiddenTiles++;
+            div.classList.add("hidden");
+            if (currentTurn === playerName) {
+              div.addEventListener("click", async () => {
+                const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
+                if (guess === null) return;
+
+                if (guess == tile.value) {
+                  alert("정답입니다!");
+                  tile.revealed = true;
+                  await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
+                  renderGame();
+                } else {
+                  alert("틀렸습니다! 턴이 넘어갑니다");
+                  const next = nextTurn(players, currentTurn);
+                  await update(ref(db, `rooms/${roomCode}`), { turn: next });
+                }
+              });
+            }
+          }
+
+          row.appendChild(div);
+        });
+
+        area.appendChild(row);
+        gameBoard.appendChild(area);
+      }
+
+      if (totalTiles > 0 && totalHiddenTiles === 0) {
+        winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
+      }
+    }
+
+    onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
+    renderGame();
   </script>
 </body>
 </html>
