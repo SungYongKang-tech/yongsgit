@@ -109,97 +109,91 @@
       for (let i = 0; i < rooms.length && skipped < excess; i++) {
         const [code, room] = rooms[i];
         if (code === currentRoomCode) continue;
-        if (now - room.createdAt < 2000) continue;
         await remove(ref(db, `rooms/${code}`));
         skipped++;
       }
     }
 
     async function renderGame() {
-  gameBoard.innerHTML = "";
-  winnerDisplay.textContent = "";
+      gameBoard.innerHTML = "";
+      winnerDisplay.textContent = "";
 
-  const roomSnap = await get(ref(db, `rooms/${roomCode}`));
-  const room = roomSnap.val();
+      const roomSnap = await get(ref(db, `rooms/${roomCode}`));
+      const room = roomSnap.val();
 
-  if (!room || !room.players) {
-    turnInfo.textContent = "";
-    gameBoard.innerHTML = "<h2>❗ 방이 존재하지 않거나 만료되었습니다.</h2>";
-    return;
-  }
-
-  const players = room.players;
-  const currentTurn = room.turn;
-
-  turnInfo.textContent = currentTurn === playerName
-    ? "🟢 내 차례입니다"
-    : `⏳ ${currentTurn}님의 차례입니다`;
-
-  let totalHiddenTiles = 0;
-  let totalTiles = 0;
-
-  const rendered = new Set();
-
-for (const [name, data] of Object.entries(players)) {
-  if (rendered.has(name)) continue; // 중복 방지
-  rendered.add(name);
-
-    const area = document.createElement("div");
-    area.className = "player-area";
-
-    const label = document.createElement("h2");
-    label.textContent = isMine ? "내 타일" : `${name}의 타일`;
-    area.appendChild(label);
-
-    const row = document.createElement("div");
-    row.className = "tile-row";
-
-    (data.tiles || []).forEach((tile, i) => {
-      totalTiles++;
-      const div = document.createElement("div");
-      div.className = `tile ${tile.color}-tile`;
-
-      const isRevealed = tile.revealed;
-      if (isMine || isRevealed) {
-        div.textContent = tile.value;
-      } else {
-        totalHiddenTiles++;
-        div.classList.add("hidden");
-
-        if (currentTurn === playerName) {
-          div.addEventListener("click", async () => {
-            const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
-            if (guess === null) return;
-
-            if (guess == tile.value) {
-              alert("정답입니다!");
-              tile.revealed = true;
-              await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
-              renderGame();
-            } else {
-              alert("틀렸습니다! 턴이 넘어갑니다");
-              const next = nextTurn(players, currentTurn);
-              await update(ref(db, `rooms/${roomCode}`), { turn: next });
-            }
-          });
-        }
+      if (!room || !room.players) {
+        turnInfo.textContent = "";
+        gameBoard.innerHTML = "<h2>❗ 방이 존재하지 않거나 만료되었습니다.</h2>";
+        return;
       }
 
-      row.appendChild(div);
-    });
+      const players = room.players;
+      const currentTurn = room.turn;
 
-    area.appendChild(row);
-    gameBoard.appendChild(area);
-  }
+      turnInfo.textContent = currentTurn === playerName
+        ? "🟢 내 차례입니다"
+        : `⏳ ${currentTurn}님의 차례입니다`;
 
-  if (totalTiles > 0 && totalHiddenTiles === 0) {
-    winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
-  }
-}
+      let totalHiddenTiles = 0;
+      let totalTiles = 0;
 
+      for (const [name, data] of Object.entries(players)) {
+        const isMine = name === playerName;
+        const area = document.createElement("div");
+        area.className = "player-area";
+
+        const label = document.createElement("h2");
+        label.textContent = isMine ? "내 타일" : `${name}의 타일`;
+        area.appendChild(label);
+
+        const row = document.createElement("div");
+        row.className = "tile-row";
+
+        (data.tiles || []).forEach((tile, i) => {
+          totalTiles++;
+          const div = document.createElement("div");
+          div.className = `tile ${tile.color}-tile`;
+
+          const isRevealed = tile.revealed;
+          if (isMine || isRevealed) {
+            div.textContent = tile.value;
+          } else {
+            totalHiddenTiles++;
+            div.classList.add("hidden");
+
+            if (currentTurn === playerName) {
+              div.addEventListener("click", async () => {
+                const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
+                if (guess === null) return;
+
+                if (guess == tile.value) {
+                  alert("정답입니다!");
+                  tile.revealed = true;
+                  await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
+                  renderGame();
+                } else {
+                  alert("틀렸습니다! 턴이 넘어갑니다");
+                  const next = nextTurn(players, currentTurn);
+                  await update(ref(db, `rooms/${roomCode}`), { turn: next });
+                }
+              });
+            }
+          }
+
+          row.appendChild(div);
+        });
+
+        area.appendChild(row);
+        gameBoard.appendChild(area);
+      }
+
+      if (totalTiles > 0 && totalHiddenTiles === 0) {
+        winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
+      }
+    }
 
     document.getElementById("mainTitle").textContent =
-  sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
+      sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
 
     onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
