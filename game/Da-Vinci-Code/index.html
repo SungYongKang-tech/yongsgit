@@ -101,29 +101,26 @@
       const snapshot = await get(ref(db, "rooms"));
       if (!snapshot.exists()) return alert("생성된 방이 없습니다.");
 
-      let joined = false;
+      const rooms = Object.entries(snapshot.val())
+        .filter(([_, room]) => room.status === "waiting" && room.createdAt)
+        .sort((a, b) => b[1].createdAt - a[1].createdAt);
 
-      snapshot.forEach(roomSnap => {
-        const room = roomSnap.val();
-        const code = roomSnap.key;
+      for (const [code, room] of rooms) {
         const playerCount = room.players ? Object.keys(room.players).length : 0;
+        if (playerCount >= 4) continue;
 
-        if (!joined && room.status === "waiting" && now - room.createdAt <= 60000 && playerCount < 4) {
-          update(ref(db, `rooms/${code}/players/${name}`), {
-            name,
-            tiles: [],
-            joinedAt: now
-          }).then(() => {
-            sessionStorage.setItem("roomTitle", `방 코드: ${code} / ${name}`);
-            location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
-          });
-          joined = true;
-        }
-      });
+        await update(ref(db, `rooms/${code}/players/${name}`), {
+          name,
+          tiles: [],
+          joinedAt: now
+        });
 
-      if (!joined) {
-        alert("1분 이내 생성된 방이 없거나 최대 인원(4명)에 도달했습니다. 새로 방을 만들어 주세요.");
+        sessionStorage.setItem("roomTitle", `방 코드: ${code} / ${name}`);
+        location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
+        return;
       }
+
+      alert("입장 가능한 방이 없거나 인원이 가득 찼습니다.");
     };
 
     document.getElementById("createBtn").addEventListener("click", createRoom);
