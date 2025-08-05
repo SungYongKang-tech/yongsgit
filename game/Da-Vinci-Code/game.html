@@ -52,24 +52,24 @@
       color: #333;
       margin-bottom: 20px;
     }
-    #startBtn {
-      font-size: 16px;
+    #controls button {
       padding: 10px 20px;
       margin-bottom: 20px;
+      font-size: 16px;
     }
   </style>
 </head>
 <body>
   <h1 id="mainTitle">다빈치 코드 게임</h1>
   <div id="turnInfo"></div>
-  <button id="startBtn" style="display:none">🎲 게임 시작</button>
+  <div id="controls"></div>
   <div id="gameBoard"></div>
   <div id="winner"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, get, set, update, onValue, remove
+      getDatabase, ref, get, set, update, onValue, push
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -92,12 +92,20 @@
     const gameBoard = document.getElementById("gameBoard");
     const winnerDisplay = document.getElementById("winner");
     const turnInfo = document.getElementById("turnInfo");
-    const startBtn = document.getElementById("startBtn");
+    const controls = document.getElementById("controls");
 
     function nextTurn(players, currentTurn) {
       const names = Object.keys(players);
       const index = names.indexOf(currentTurn);
       return names[(index + 1) % names.length];
+    }
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
     }
 
     async function startGame() {
@@ -107,40 +115,32 @@
       const players = room.players;
       const names = Object.keys(players);
 
-      // 타일 생성
-      let tiles = [];
-      for (let i = 0; i <= 11; i++) {
-        tiles.push({ value: i, color: 'black' });
-        tiles.push({ value: i, color: 'white' });
-      }
-      tiles.push({ value: '?', color: 'black' });
-      tiles.push({ value: '?', color: 'white' });
+      const tiles = [];
+      ["black", "white"].forEach(color => {
+        for (let i = 0; i <= 11; i++) tiles.push({ value: i, color });
+        tiles.push({ value: "?", color });
+      });
+      shuffle(tiles);
 
-      // 셔플
-      tiles = tiles.sort(() => Math.random() - 0.5);
-
-      // 인원수 따라 분배
-      const perPlayer = names.length === 2 ? 6 : names.length === 3 ? 4 : 3;
+      const tilesPerPerson = names.length === 2 ? 5 : names.length === 3 ? 4 : 3;
       const updates = {};
-      let idx = 0;
-      for (const name of names) {
-        const playerTiles = tiles.slice(idx, idx + perPlayer);
-        // 정렬: 숫자 오름차순, 색은 black 우선
-        playerTiles.sort((a, b) => {
-          if (a.value === b.value) return a.color === 'black' ? -1 : 1;
-          return a.value === '?' ? 1 : b.value === '?' ? -1 : a.value - b.value;
-        });
-        updates[`players/${name}/tiles`] = playerTiles;
-        idx += perPlayer;
+      for (let i = 0; i < names.length; i++) {
+        const name = names[i];
+        const hand = tiles.splice(0, tilesPerPerson).sort((a, b) => a.value - b.value);
+        updates[`players/${name}/tiles`] = hand;
       }
-      updates.status = "playing";
+
       updates.turn = names[0];
+      updates.center = tiles;
+      updates.status = "playing";
+
       await update(roomRef, updates);
     }
 
     async function renderGame() {
       const roomSnap = await get(ref(db, `rooms/${roomCode}`));
       const room = roomSnap.val();
+
       if (!room || !room.players) {
         turnInfo.textContent = "";
         gameBoard.innerHTML = "<h2>❗ 방이 존재하지 않거나 만료되었습니다.</h2>";
@@ -149,49 +149,91 @@
 
       const players = room.players;
       const currentTurn = room.turn;
+      const center = room.center || [];
       const isHost = Object.keys(players)[0] === playerName;
 
-      // 시작 버튼
+      controls.innerHTML = "";
       if (room.status !== "playing" && isHost) {
-        startBtn.style.display = "inline-block";
-        startBtn.onclick = startGame;
-      } else {
-        startBtn.style.display = "none";
+        const btn = document.createElement("button");
+        btn.textContent = "🎲 게임 시작";
+        btn.onclick = startGame;
+        controls.appendChild(btn);
       }
 
       turnInfo.textContent = currentTurn === playerName ? "🟢 내 차례입니다" : `⏳ ${currentTurn}님의 차례입니다`;
 
       gameBoard.innerHTML = "";
-      winnerDisplay.textContent = "";
+      const rendered = new Set();
+      let totalHidden = 0, total = 0;
 
       for (const [name, data] of Object.entries(players)) {
+        if (rendered.has(name)) continue;
+        rendered.add(name);
+
         const area = document.createElement("div");
         area.className = "player-area";
-
         const label = document.createElement("h2");
-        label.textContent = name === playerName ? "내 타일" : `${name}의 타일`;
+        const isMine = name === playerName;
+        label.textContent = isMine ? "내 타일" : `${name}의 타일`;
         area.appendChild(label);
 
         const row = document.createElement("div");
         row.className = "tile-row";
 
         (data.tiles || []).forEach((tile, i) => {
+          total++;
           const div = document.createElement("div");
           div.className = `tile ${tile.color}-tile`;
-          if (name === playerName || tile.revealed) {
+
+          if (isMine || tile.revealed) {
             div.textContent = tile.value;
           } else {
             div.classList.add("hidden");
+            totalHidden++;
           }
+
           row.appendChild(div);
         });
 
         area.appendChild(row);
         gameBoard.appendChild(area);
       }
+
+      // 중앙 덱 표시
+      if (center.length > 0) {
+        const centerArea = document.createElement("div");
+        centerArea.className = "player-area";
+        const label = document.createElement("h2");
+        label.textContent = "중앙 덱 (남은 타일: " + center.length + ")";
+        centerArea.appendChild(label);
+
+        const row = document.createElement("div");
+        row.className = "tile-row";
+
+        const btn = document.createElement("button");
+        btn.textContent = "중앙에서 타일 가져오기";
+        btn.disabled = currentTurn !== playerName;
+        btn.onclick = async () => {
+          const drawn = center.shift();
+          const playerTiles = players[playerName].tiles || [];
+          playerTiles.push(drawn);
+          playerTiles.sort((a, b) => a.value - b.value);
+          await update(ref(db, `rooms/${roomCode}`), {
+            [`players/${playerName}/tiles`]: playerTiles,
+            center,
+          });
+        };
+        row.appendChild(btn);
+        centerArea.appendChild(row);
+        gameBoard.appendChild(centerArea);
+      }
+
+      if (total > 0 && totalHidden === 0) {
+        winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
+      }
     }
 
-    onValue(ref(db, `rooms/${roomCode}`), () => renderGame());
+    onValue(ref(db, `rooms/${roomCode}`), renderGame);
     renderGame();
   </script>
 </body>
