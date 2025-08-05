@@ -52,14 +52,19 @@
       color: #333;
       margin-bottom: 20px;
     }
+    #startBtn {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
   <h1 id="mainTitle">다빈치 코드 게임</h1>
   <div id="turnInfo"></div>
+  <button id="startBtn" style="display: none">🎲 게임 시작</button>
   <div id="gameBoard"></div>
   <div id="winner"></div>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
@@ -86,6 +91,7 @@
     const gameBoard = document.getElementById("gameBoard");
     const winnerDisplay = document.getElementById("winner");
     const turnInfo = document.getElementById("turnInfo");
+    const startBtn = document.getElementById("startBtn");
 
     function nextTurn(players, currentTurn) {
       const names = Object.keys(players);
@@ -93,33 +99,43 @@
       return names[(index + 1) % names.length];
     }
 
-    async function cleanupOldRoomsExcept(currentRoomCode) {
-      const snapshot = await get(ref(db, "rooms"));
-      if (!snapshot.exists()) return;
-
-      const now = Date.now();
-      const rooms = Object.entries(snapshot.val())
-        .filter(([code, room]) => room.createdAt)
-        .sort((a, b) => a[1].createdAt - b[1].createdAt);
-
-      const MAX_ROOMS = 5;
-      const excess = rooms.length - MAX_ROOMS;
-      let skipped = 0;
-
-      for (let i = 0; i < rooms.length && skipped < excess; i++) {
-        const [code, room] = rooms[i];
-        if (code === currentRoomCode) continue;
-        await remove(ref(db, `rooms/${code}`));
-        skipped++;
+    function generateDeck() {
+      const tiles = [];
+      for (let i = 0; i <= 11; i++) {
+        tiles.push({ value: i, color: "white" });
+        tiles.push({ value: i, color: "black" });
       }
+      tiles.push({ value: "?", color: "white" });
+      tiles.push({ value: "?", color: "black" });
+      return tiles.sort(() => Math.random() - 0.5);
+    }
+
+    function sortTiles(tiles) {
+      return tiles.sort((a, b) => {
+        if (a.value === b.value) return a.color === "black" ? -1 : 1;
+        return a.value === "?" ? 1 : b.value === "?" ? -1 : a.value - b.value;
+      });
+    }
+
+    async function startGame(room, roomRef) {
+      const players = room.players;
+      const names = Object.keys(players);
+      const deck = generateDeck();
+      const count = names.length === 2 ? 6 : names.length === 3 ? 4 : 3;
+
+      const updates = { status: "playing", turn: names[0] };
+      names.forEach(name => {
+        const hand = deck.splice(0, count);
+        updates[`players/${name}/tiles`] = sortTiles(hand);
+      });
+
+      await update(roomRef, updates);
     }
 
     async function renderGame() {
-      gameBoard.innerHTML = "";
-      winnerDisplay.textContent = "";
-
-      const roomSnap = await get(ref(db, `rooms/${roomCode}`));
-      const room = roomSnap.val();
+      const roomRef = ref(db, `rooms/${roomCode}`);
+      const snap = await get(roomRef);
+      const room = snap.val();
 
       if (!room || !room.players) {
         turnInfo.textContent = "";
@@ -129,21 +145,20 @@
 
       const players = room.players;
       const currentTurn = room.turn;
+      const isHost = Object.keys(players)[0] === playerName;
 
-      turnInfo.textContent = currentTurn === playerName
-        ? "🟢 내 차례입니다"
-        : `⏳ ${currentTurn}님의 차례입니다`;
+      startBtn.style.display = room.status !== "playing" && isHost ? "inline-block" : "none";
+      turnInfo.textContent = currentTurn === playerName ? "🟢 내 차례입니다" : `⏳ ${currentTurn}님의 차례입니다`;
 
       let totalHiddenTiles = 0;
       let totalTiles = 0;
-
+      gameBoard.innerHTML = "";
       for (const [name, data] of Object.entries(players)) {
-        const isMine = name === playerName;
         const area = document.createElement("div");
         area.className = "player-area";
 
         const label = document.createElement("h2");
-        label.textContent = isMine ? "내 타일" : `${name}의 타일`;
+        label.textContent = name === playerName ? "내 타일" : `${name}의 타일`;
         area.appendChild(label);
 
         const row = document.createElement("div");
@@ -154,30 +169,14 @@
           const div = document.createElement("div");
           div.className = `tile ${tile.color}-tile`;
 
+          const isMine = name === playerName;
           const isRevealed = tile.revealed;
+
           if (isMine || isRevealed) {
             div.textContent = tile.value;
           } else {
             totalHiddenTiles++;
             div.classList.add("hidden");
-
-            if (currentTurn === playerName) {
-              div.addEventListener("click", async () => {
-                const guess = prompt(`${name}의 ${i + 1}번째 타일 숫자를 추리하세요`);
-                if (guess === null) return;
-
-                if (guess == tile.value) {
-                  alert("정답입니다!");
-                  tile.revealed = true;
-                  await update(ref(db, `rooms/${roomCode}/players/${name}/tiles/${i}`), tile);
-                  renderGame();
-                } else {
-                  alert("틀렸습니다! 턴이 넘어갑니다");
-                  const next = nextTurn(players, currentTurn);
-                  await update(ref(db, `rooms/${roomCode}`), { turn: next });
-                }
-              });
-            }
           }
 
           row.appendChild(div);
@@ -190,12 +189,11 @@
       if (totalTiles > 0 && totalHiddenTiles === 0) {
         winnerDisplay.textContent = `🎉 ${playerName}님이 승리하셨습니다!`;
       }
+
+      startBtn.onclick = () => startGame(room, roomRef);
     }
 
-    document.getElementById("mainTitle").textContent =
-      sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
-
-    onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
+    onValue(ref(db, `rooms/${roomCode}`), () => renderGame());
     renderGame();
   </script>
 </body>
