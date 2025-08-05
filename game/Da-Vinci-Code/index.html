@@ -55,7 +55,7 @@
   </style>
 </head>
 <body>
-  <h1 id="mainTitle">다빈치 코드 게임</h1>
+  <h1>다빈치 코드 게임</h1>
   <div id="turnInfo"></div>
   <div id="gameBoard"></div>
   <div id="winner"></div>
@@ -63,7 +63,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, get, update, onValue, remove
+      getDatabase, ref, get, update, onValue, remove, set
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -93,30 +93,7 @@
       return names[(index + 1) % names.length];
     }
 
-    async function cleanupOldRoomsExcept(currentRoomCode) {
-  const snapshot = await get(ref(db, "rooms"));
-  if (!snapshot.exists()) return;
-
-  const now = Date.now();
-  const rooms = Object.entries(snapshot.val())
-    .filter(([code, room]) => room.createdAt) // createdAt이 있는 방만 유지
-    .sort((a, b) => a[1].createdAt - b[1].createdAt);
-
-  const MAX_ROOMS = 5;
-  const excess = rooms.length - MAX_ROOMS;
-  let skipped = 0;
-
-  for (let i = 0; i < rooms.length && skipped < excess; i++) {
-    const [code, room] = rooms[i];
-    if (code === currentRoomCode) continue; // 현재 방 유지
-    await remove(ref(db, `rooms/${code}`));
-    skipped++;
-  }
-}
-
-
     async function renderGame() {
-      await cleanupOldRoomsExcept(roomCode);
       gameBoard.innerHTML = "";
       winnerDisplay.textContent = "";
 
@@ -142,6 +119,7 @@
         const isMine = name === playerName;
         if (isMine && myTileDrawn) continue;
         if (isMine) myTileDrawn = true;
+
         const area = document.createElement("div");
         area.className = "player-area";
 
@@ -157,7 +135,6 @@
           const div = document.createElement("div");
           div.className = `tile ${tile.color}-tile`;
 
-          const isMine = name === playerName;
           const isRevealed = tile.revealed;
 
           if (isMine || isRevealed) {
@@ -196,37 +173,8 @@
       }
     }
 
-    document.getElementById("mainTitle").textContent =
-      sessionStorage.getItem("roomTitle") || "다빈치 코드 게임";
-
     onValue(ref(db, `rooms/${roomCode}/turn`), () => renderGame());
     renderGame();
-
-    const createRoom = async () => {
-  await cleanupOldRooms();
-
-  let nameInput = document.getElementById("playerName").value;
-  let name = nameInput && nameInput.trim() !== "" ? nameInput.trim() : generateRandomName();
-
-  const code = generateRoomCode();
-  const now = Date.now(); // ⬅️ 현재 시각 기록
-
-  await set(ref(db, `rooms/${code}`), {
-    status: "waiting",
-    createdAt: now, // ✅ 필수: 방 생성 시간 기록
-    turn: name,
-    players: {
-      [name]: {
-        name,
-        tiles: [],
-        joinedAt: now
-      }
-    }
-  });
-
-  location.href = `game.html?room=${code}&name=${encodeURIComponent(name)}`;
-};
-
   </script>
 </body>
 </html>
