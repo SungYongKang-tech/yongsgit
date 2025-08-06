@@ -12,22 +12,23 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       min-height: 100vh;
     }
     h1 {
       margin: 10px;
     }
+    #controls {
+      margin-bottom: 10px;
+    }
     #turn {
       font-weight: bold;
-      margin-bottom: 10px;
+      margin: 10px;
     }
     #board {
       display: grid;
       background: #fff;
       border: 2px solid #333;
-      grid-template-columns: repeat(13, auto);
-      grid-template-rows: repeat(13, auto);
     }
 
     .cell {
@@ -52,19 +53,18 @@
       pointer-events: none;
     }
 
-    .h-wall, .v-wall {
-      background-color: white;
-      cursor: pointer;
-    }
-
     .h-wall {
       width: 40px;
       height: 15px;
+      background-color: white;
+      cursor: pointer;
     }
 
     .v-wall {
       width: 15px;
       height: 40px;
+      background-color: white;
+      cursor: pointer;
     }
 
     .blank {
@@ -80,69 +80,109 @@
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-  <div id="turn">현재 턴: <span id="turnColor"></span></div>
+  <div id="controls">
+    <label>보드 크기:
+      <select id="boardSizeSelect">
+        <option value="9">9x9</option>
+        <option value="11">11x11</option>
+      </select>
+    </label>
+    <button onclick="startGame()">게임 시작</button>
+  </div>
+  <div id="turn" style="display:none;">현재 턴: <span id="turnColor"></span></div>
   <div id="board"></div>
 
   <script>
     const board = document.getElementById("board");
-    const turnDisplay = document.getElementById("turnColor");
-    const pointSize = 7;
-    const gridSize = pointSize * 2 - 1;
+    const turnDisplay = document.getElementById("turn");
+    const turnColorText = document.getElementById("turnColor");
     const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#8e44ad'];
     const playerCount = 4;
 
-    let currentPlayer = 0;
-    let selectedPiece = null;
-    let moved = false;
-    let boardMap = Array.from(Array(gridSize), () => Array(gridSize).fill(null));
+    let gridSize, boardMap, currentPlayer = 0, selectedPiece = null;
 
-    function updateTurnDisplay() {
-      turnDisplay.textContent = `Player ${currentPlayer + 1}`;
-      turnDisplay.style.color = playerColors[currentPlayer];
+    function startGame() {
+      const pointSize = parseInt(document.getElementById("boardSizeSelect").value);
+      gridSize = pointSize * 2 - 1;
+      board.innerHTML = "";
+      board.style.gridTemplateColumns = `repeat(${gridSize}, auto)`;
+      board.style.gridTemplateRows = `repeat(${gridSize}, auto)`;
+      turnDisplay.style.display = 'block';
+      updateTurnDisplay();
+
+      boardMap = Array.from(Array(gridSize), () => Array(gridSize).fill(null));
+      createBoard(pointSize);
+      placeInitialPieces(pointSize);
     }
 
-    updateTurnDisplay();
+    function updateTurnDisplay() {
+      turnColorText.textContent = `Player ${currentPlayer + 1}`;
+      turnColorText.style.color = playerColors[currentPlayer];
+    }
 
-    function createCell(r, c) {
-      const cell = document.createElement("div");
-      cell.classList.add("cell");
+    function nextTurn() {
+      currentPlayer = (currentPlayer + 1) % playerCount;
+      updateTurnDisplay();
+    }
 
-      if (r % 2 === 0 && c % 2 === 0) {
-        cell.classList.add("point");
-        cell.dataset.r = r;
-        cell.dataset.c = c;
+    function createBoard(pointSize) {
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const cell = document.createElement("div");
+          cell.classList.add("cell");
 
-        cell.addEventListener('click', () => {
-          const existing = cell.querySelector('.piece');
+          if (r % 2 === 0 && c % 2 === 0) {
+            cell.classList.add("point");
+            cell.dataset.r = r;
+            cell.dataset.c = c;
 
-          if (!selectedPiece && existing && existing.dataset.player == currentPlayer) {
-            // 말 선택
-            selectedPiece = { element: existing, r, c };
-            showMovableSpots(r, c);
-          } else if (selectedPiece && cell.classList.contains("movable")) {
-            // 말 이동
-            movePieceTo(cell, r, c);
-            clearMovable();
-            allowWallPlacing(r, c);
+            cell.addEventListener('click', () => {
+              const existing = cell.querySelector('.piece');
+
+              if (!selectedPiece && existing && existing.dataset.player == currentPlayer) {
+                selectedPiece = { element: existing, r, c };
+                showMovableSpots(r, c);
+              } else if (selectedPiece && cell.classList.contains("movable")) {
+                movePieceTo(cell, r, c);
+                clearMovable();
+                allowWallPlacing(r, c);
+              }
+            });
+
+          } else if (r % 2 === 1 && c % 2 === 0) {
+            cell.classList.add("h-wall");
+
+          } else if (r % 2 === 0 && c % 2 === 1) {
+            cell.classList.add("v-wall");
+
+          } else {
+            cell.classList.add("blank");
           }
-        });
 
-      } else if (r % 2 === 1 && c % 2 === 0) {
-        cell.classList.add("h-wall");
-        cell.dataset.r = r;
-        cell.dataset.c = c;
-
-      } else if (r % 2 === 0 && c % 2 === 1) {
-        cell.classList.add("v-wall");
-        cell.dataset.r = r;
-        cell.dataset.c = c;
-
-      } else {
-        cell.classList.add("blank");
+          board.appendChild(cell);
+          boardMap[r][c] = cell;
+        }
       }
+    }
 
-      board.appendChild(cell);
-      boardMap[r][c] = cell;
+    function placeInitialPieces(pointSize) {
+      const margin = 2;
+      const center = Math.floor(gridSize / 2);
+      const starts = [
+        [margin, margin],
+        [margin, gridSize - 1 - margin],
+        [gridSize - 1 - margin, margin],
+        [gridSize - 1 - margin, gridSize - 1 - margin]
+      ];
+      for (let i = 0; i < playerCount; i++) {
+        const [r, c] = starts[i];
+        const cell = boardMap[r][c];
+        const piece = document.createElement("div");
+        piece.classList.add("piece");
+        piece.style.backgroundColor = playerColors[i];
+        piece.dataset.player = i;
+        cell.appendChild(piece);
+      }
     }
 
     function showMovableSpots(r, c) {
@@ -180,7 +220,6 @@
       cell.appendChild(selectedPiece.element);
       selectedPiece.r = r;
       selectedPiece.c = c;
-      moved = true;
     }
 
     function allowWallPlacing(r, c) {
@@ -205,36 +244,6 @@
           }
         });
       });
-    }
-
-    function nextTurn() {
-      currentPlayer = (currentPlayer + 1) % playerCount;
-      updateTurnDisplay();
-    }
-
-    // 보드 생성
-    for (let r = 0; r < gridSize; r++) {
-      for (let c = 0; c < gridSize; c++) {
-        createCell(r, c);
-      }
-    }
-
-    // 초기 말 배치 (4명 기준 좌상, 우상, 좌하, 우하)
-    const starts = [
-      [2, 2],
-      [2, gridSize - 3],
-      [gridSize - 3, 2],
-      [gridSize - 3, gridSize - 3]
-    ];
-
-    for (let i = 0; i < playerCount; i++) {
-      const [r, c] = starts[i];
-      const cell = boardMap[r][c];
-      const piece = document.createElement("div");
-      piece.classList.add("piece");
-      piece.style.backgroundColor = playerColors[i];
-      piece.dataset.player = i;
-      cell.appendChild(piece);
     }
   </script>
 </body>
