@@ -2,590 +2,115 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>오목 대전</title>
+  <title>Wall-baduk</title>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
+      font-family: sans-serif;
       text-align: center;
       background: #f5f5f5;
-      margin: 0;
-
-       color-scheme: light only; /* ✅ 이 줄을 추가하세요 */
+    }
+    h1 {
+      margin: 20px 0;
     }
     #board {
       display: grid;
-      grid-template-columns: repeat(15, 1fr);
-      border: 2px solid #555;
-      margin: 1rem auto;
-      width: 95vmin;
-      height: 95vmin;
-      background-color: #d9a75f;
+      grid-template-columns: repeat(7, 60px);
+      grid-template-rows: repeat(7, 60px);
+      gap: 2px;
+      margin: 20px auto;
+      width: max-content;
+      background-color: black;
     }
     .cell {
-      border: 1px solid #555;
+      background-color: white;
+      width: 60px;
+      height: 60px;
       position: relative;
-      background-color: transparent;
+      border: 1px solid #ccc;
     }
-    .stone {
-      width: 70%;
-      height: 70%;
+    .piece {
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      top: 10px;
+      left: 10px;
+      z-index: 2;
     }
-    .stone.black { background: black !important; }
-    .stone.white { background: white; border: 1px solid #333; }
-    .stone.blink {
-      animation: blink 1s infinite;
+    .red { background-color: red; }
+    .blue { background-color: blue; }
+    .yellow { background-color: gold; }
+    .brown { background-color: saddlebrown; }
+
+    .wall {
+      position: absolute;
+      background-color: gray;
+      z-index: 1;
     }
-    @keyframes blink {
-      0%, 100% { box-shadow: 0 0 5px 5px rgba(255, 0, 0, 0.6); }
-      50% { box-shadow: 0 0 5px 5px rgba(255, 255, 255, 0); }
+    .wall.top {
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 6px;
     }
-    #players, #turn, #room-info {
-      font-weight: bold;
-      margin: 0.5rem;
+    .wall.bottom {
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 6px;
     }
-    button {
-  width: 90%;
-  max-width: 240px;
-  padding: 14px;
-  font-size: 18px;
-  margin: 1rem auto;
-  display: block;
-  border: none;
-  border-radius: 6px;
-  background-color: #333;
-  color: white;
-}
-button:hover {
-  background-color: #555;
-}
-.last-move-me {
-  outline: 2px solid rgba(0, 123, 255, 0.9); /* 파란색 */
-  outline-offset: 0px;
-  z-index: 10;
-}
-
-.last-move-opponent {
-  outline: 2px solid rgba(255, 0, 0, 0.8); /* 빨간색 */
-  outline-offset: 0px;
-  z-index: 10;
-}
-/* ✅ 2. 모달창 CSS (기존 style 태그 내부에 추가) */
-.modal {
-  display: block; /* 페이지 로드시 자동 표시 */
-  position: fixed;
-  z-index: 1000;
-  padding-top: 120px;
-  left: 0; top: 0;
-  width: 100%; height: 100%;
-  overflow: auto;
-  background-color: rgba(0,0,0,0.5);
-}
-
-.modal-content {
-  background-color: #fff;
-  margin: auto;
-  padding: 30px;
-  border: 1px solid #888;
-  width: 90%;
-  max-width: 400px;
-  border-radius: 12px;
-  text-align: center;
-  box-shadow: 0 0 20px rgba(0,0,0,0.2);
-}
-
-.close {
-  color: #aaa;
-  float: right;
-  font-size: 28px;
-  font-weight: bold;
-  cursor: pointer;
-}
-.close:hover {
-  color: black;
-}
-#control-area {
-  margin-top: 10px;
-}
-#game-buttons {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 20px auto;
-  width: 95vmin;
-  max-width: 600px;
-  gap: 8px;
-}
-}
-
-#game-buttons button {
-  flex: 0 0 auto;
-  width: 44%;
-  font-size: 16px;
-  padding: 14px;
-  border-radius: 8px;
-  border: none;
-  color: white;
-}
-
-#end-button {
-  background-color: #d32f2f;
-}
-
-#end-button:hover {
-  background-color: #a72828;
-}
-
-#confirm-move {
-  background-color: #007bff;
-  color: white;
-}
-
-#confirm-move:disabled {
-  background-color: #999;
-  cursor: not-allowed;
-}
-
-.stone.gray {
-  background: gray;
-  opacity: 0.5;
-}
-
-
+    .wall.left {
+      top: 0;
+      left: 0;
+      width: 6px;
+      height: 100%;
+    }
+    .wall.right {
+      top: 0;
+      right: 0;
+      width: 6px;
+      height: 100%;
+    }
   </style>
 </head>
 <body>
-  <h2 id="title">⚫ 오목 대전</h2>
-  <div id="setup">
-    <button onclick="createRoom()">방 생성하기</button>
-    <button onclick="joinRoom()">방 참여하기</button>
-    <p id="room-info"></p>
-  </div>
-  <div id="game" style="display:none">
-  <div id="turn"></div>
+  <h1>Wall-baduk (벽바둑)</h1>
   <div id="board"></div>
-  <div id="game-buttons">
-    <button id="end-button" onclick="endGame()">게임 종료</button>
-    <button id="confirm-move" disabled>착수</button>
-  </div>
-</div>
-  <audio id="place-sound" src="button-29.mp3" preload="auto"></audio>
 
+  <script>
+    const board = document.getElementById('board');
+    const SIZE = 7;
 
- 
+    // 셀 생성
+    for (let row = 0; row < SIZE; row++) {
+      for (let col = 0; col < SIZE; col++) {
+        const cell = document.createElement('div');
+        cell.classList.add('cell');
+        cell.dataset.row = row;
+        cell.dataset.col = col;
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, get, update, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    
-    let pendingMove = null; // 임시 둔 돌 위치 저장
+        // 클릭 시 돌 놓기 예시 (플레이어 색 번갈아가며)
+        cell.addEventListener('click', () => {
+          if (!cell.querySelector('.piece')) {
+            const piece = document.createElement('div');
+            piece.classList.add('piece', currentColor);
+            cell.appendChild(piece);
+            togglePlayer();
+          }
+        });
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
-      authDomain: "number-baseball-aee52.firebaseapp.com",
-      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
-      projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
-      messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:8cc90ab5a17c364b91a561"
-    };
-
-function randomRoomName() {
-  const animals = ['호랑이', '펭귄', '고양이', '사자', '부엉이', '치타'];
-  return animals[Math.floor(Math.random() * animals.length)] + Math.floor(Math.random() * 100) + '방';
-}
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    let roomCode = '', playerRole = '', playerName = '';
-
-    function randomName() {
-      const names = ['호랑이','펭귄','고양이','사자','부엉이','치타'];
-      return names[Math.floor(Math.random() * names.length)] + Math.floor(Math.random() * 100);
-    }
-
-  async function createRoom() {
-  const latestRef = ref(db, 'latestRoom');
-  const latestSnap = await get(latestRef);
-  const now = Date.now();
-
-  if (latestSnap.exists() && now - latestSnap.val().createdAt < 60000) {
-    alert("3분 내 생성된 방이 있어요");
-    return;
-  }
-
-  roomCode = randomRoomName();  // ✅ 랜덤 방 제목 함수로 대체!
-  playerName = randomName();
-
-await set(ref(db, 'rooms/' + roomCode), {
-  players: { A: { name: playerName } },
-  turn: 'A',
-  board: Array.from({ length: 15 }, () => Array(15).fill("")),
-  winner: null,
-  createdAt: now
-});
-
-// ✅ 최근 10개만 남기고 나머지 삭제
-const roomsRef = ref(db, 'rooms');
-const snapshot = await get(roomsRef);
-if (snapshot.exists()) {
-  const allRooms = snapshot.val();
-  const roomsArray = Object.entries(allRooms)
-    .map(([key, value]) => ({ key, createdAt: value.createdAt || 0 }))
-    .sort((a, b) => b.createdAt - a.createdAt);
-
-  const roomsToDelete = roomsArray.slice(10);
-  for (const room of roomsToDelete) {
-    await remove(ref(db, `rooms/${room.key}`));
-  }
-}
-
-
-  await set(latestRef, {
-    roomCode,
-    createdAt: now
-  });
-
-  playerRole = 'A';
-  startGame();
-}
-
-
-
-    async function joinRoom() {
-  const latestSnap = await get(ref(db, 'latestRoom'));
-  if (!latestSnap.exists()) {
-    alert("참여 가능한 방이 없습니다.");
-    return;
-  }
-
-  const { roomCode: code, createdAt } = latestSnap.val();
-  const now = Date.now();
-  if (now - createdAt > 60000) {
-    alert("참여 시간이 초과되었습니다.");
-    return;
-  }
-
-  const roomSnap = await get(ref(db, `rooms/${code}`));
-  if (!roomSnap.exists()) {
-    alert("방이 존재하지 않습니다.");
-    return;
-  }
-
-  if (roomSnap.val().players.B) {
-    alert("이미 두 명이 참여 중입니다.");
-    return;
-  }
-
-  playerName = randomName();
-  await set(ref(db, `rooms/${code}/players/B`), { name: playerName });
-  roomCode = code;
-  playerRole = 'B';
-  startGame();
-}
-
-
-   async function startGame() {
-  document.getElementById("setup").style.display = "none";
-  document.getElementById("game").style.display = "block";
-  document.getElementById("title").innerText = `⚫ 오목 대전 - 방번호: ${roomCode}`;
-  
-
-  // ✅ 이전 winner 기록 삭제 (새 게임 시작 시)
-  // startGame() 내부에서 winner 필드 삭제로 변경
-await remove(ref(db, `rooms/${roomCode}/winner`));  // <-- 이걸로 교체
-
-
- 
-  renderBoard();
-  listenBoard();
-  listenWinner();
-}
-
-    function renderBoard() {
-      const boardDiv = document.getElementById("board");
-      boardDiv.innerHTML = "";
-      for (let r = 0; r < 15; r++) {
-        for (let c = 0; c < 15; c++) {
-          const cell = document.createElement("div");
-          cell.className = "cell";
-          cell.dataset.row = r;
-          cell.dataset.col = c;
-          cell.addEventListener("click", () => handleMove(r, c));
-          boardDiv.appendChild(cell);
-        }
+        board.appendChild(cell);
       }
     }
 
-function handleMove(r, c) {
-  if (pendingMove) {
-    const prevIdx = pendingMove.row * 15 + pendingMove.col;
-    const prevCell = document.getElementById("board").children[prevIdx];
-    prevCell.innerHTML = ""; // 이전 임시 제거
-  }
-
-  pendingMove = { row: r, col: c };
-
-  const idx = r * 15 + c;
-  const cell = document.getElementById("board").children[idx];
-  cell.innerHTML = "";
-
-  const div = document.createElement("div");
-  div.className = "stone gray"; // ✅ 회색 돌
-  cell.appendChild(div);
-
-  document.getElementById("confirm-move").disabled = false;
-}
-
-
-document.getElementById("confirm-move").addEventListener("click", async () => {
-  if (!pendingMove) return;
-
-  const { row, col } = pendingMove;
-  const turn = (await get(ref(db, `rooms/${roomCode}/turn`))).val();
-  if (turn !== playerRole) return alert("상대 차례입니다");
-
-  const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
-  const board = boardSnap.val();
-
-  if (board[row][col] !== "") return alert("이미 착수된 자리입니다.");
-
-  const stone = playerRole === 'A' ? '●' : '○';
-  board[row][col] = stone;
-  const winPos = checkWin(row, col, stone, board);
-
-  await set(ref(db, `rooms/${roomCode}/board/${row}/${col}`), stone);
-
-  // 🔊 돌 놓는 소리
-  document.getElementById("place-sound").play().catch(e => console.warn("사운드 오류:", e));
-
-  if (winPos) {
-    await set(ref(db, `rooms/${roomCode}/winner`), { name: playerName, positions: winPos });
-  } else {
-    await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
-  }
-
-  await set(ref(db, `rooms/${roomCode}/lastMove`), { row, col, role: playerRole });
-
-  pendingMove = null;
-  document.getElementById("confirm-move").disabled = true;
-});
-
-
-  function checkWin(r, c, stone, board) {
-  const directions = [[0,1],[1,0],[1,1],[1,-1]];
-  for (const [dr, dc] of directions) {
-    let count = 1, pos = [[r, c]];
-    let blockedStart = false, blockedEnd = false;
-
-    // 반대 방향
-    for (let i = 1; i < 5; i++) {
-      const nr = r - dr * i, nc = c - dc * i;
-      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) {
-        blockedStart = true;
-        break;
-      }
-      if (board[nr][nc] === stone) {
-        count++;
-        pos.unshift([nr, nc]);
-      } else if (board[nr][nc] !== "") {
-        blockedStart = true;
-        break;
-      } else break;
+    // 플레이어 색 교대
+    const colors = ['red', 'blue', 'yellow', 'brown'];
+    let currentPlayer = 0;
+    function togglePlayer() {
+      currentPlayer = (currentPlayer + 1) % colors.length;
+      currentColor = colors[currentPlayer];
     }
-
-    // 정방향
-    for (let i = 1; i < 5; i++) {
-      const nr = r + dr * i, nc = c + dc * i;
-      if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) {
-        blockedEnd = true;
-        break;
-      }
-      if (board[nr][nc] === stone) {
-        count++;
-        pos.push([nr, nc]);
-      } else if (board[nr][nc] !== "") {
-        blockedEnd = true;
-        break;
-      } else break;
-    }
-
-    if (count >= 5) return pos;
-
-    // 4개지만 양쪽이 모두 열린 경우만 승리 인정
-    if (count === 4 && !blockedStart && !blockedEnd) return pos;
-  }
-  return null;
-}
-
-function listenBoard() {
-  onValue(ref(db, `rooms/${roomCode}/board`), snap => {
-    if (!snap.exists()) return;
-    const data = snap.val();
-
-   // listenBoard 내부에서 각 셀을 그리는 부분에서
-for (let r = 0; r < 15; r++) {
-  for (let c = 0; c < 15; c++) {
-    const idx = r * 15 + c;
-    const cell = document.getElementById("board").children[idx];
-    const value = data[r]?.[c] || "";
-
-    const prevStone = cell.querySelector('.stone');
-    const isNewStone =
-      (value === "●" && (!prevStone || !prevStone.classList.contains("black"))) ||
-      (value === "○" && (!prevStone || !prevStone.classList.contains("white")));
-
-    if (
-      prevStone &&
-      ((value === "●" && prevStone.classList.contains("black")) ||
-      (value === "○" && prevStone.classList.contains("white")))
-    ) {
-      cell.style.pointerEvents = "none";
-      continue;
-    }
-
-    // 새로 그림
-    cell.innerHTML = "";
-    if (value === "●" || value === "○") {
-      const div = document.createElement("div");
-      div.classList.add("stone", value === "●" ? "black" : "white");
-      cell.appendChild(div);
-      cell.style.pointerEvents = "none";
-    } else {
-      cell.style.pointerEvents = "auto";
-    }
-
-    // ✅ 여기가 빠져 있었음
-    if (isNewStone) {
-      const opponentTurn = playerRole === 'A' ? 'B' : 'A';
-      get(ref(db, `rooms/${roomCode}/turn`)).then(snap => {
-        if (snap.exists() && snap.val() === playerRole) {
-          document.getElementById("place-sound").play().catch(() => {});
-        }
-      });
-    }
-  }
-}
-
-  });
-
-  // 마지막 착수 위치 강조
- onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
-  const move = snap.val();
-  if (!move) return;
-
-  // 사운드 재생: 상대가 방금 둔 경우만
-  if (move.role !== playerRole) {
-    document.getElementById("place-sound").play().catch(() => {});
-  }
-
-  // 마지막 착수 테두리 강조
-  document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => {
-    el.classList.remove("last-move-me", "last-move-opponent");
-  });
-
-  const idx = move.row * 15 + move.col;
-  const cell = document.getElementById("board").children[idx];
-  const stoneDiv = cell.querySelector('.stone');
-  if (stoneDiv) {
-    const isMe = move.role === playerRole;
-    stoneDiv.classList.add(isMe ? "last-move-me" : "last-move-opponent");
-  }
-});
-
-
-  // 턴 표시
-  onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
-    document.getElementById("turn").innerText = snap.val() === playerRole ? "내 차례" : "상대 차례";
-  });
-
-  // ✅ 상대방 입장 알림
-  const otherPlayer = playerRole === 'A' ? 'B' : 'A';
-  onValue(ref(db, `rooms/${roomCode}/players/${otherPlayer}`), snap => {
-    if (snap.exists()) {
-      alert(`🎮 상대방(${snap.val().name})이 입장했습니다!`);
-    }
-  });
-}
-
-
-
-  function listenWinner() {
-  onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
-    const data = snap.val();
-    if (!data || !data.name || !Array.isArray(data.positions)) return;
-
-    const isWinner = data.name === playerName;
-    alert(isWinner ? "🎉 당신이 이겼습니다!" : "😢 당신이 패배하였습니다.");
-
-    data.positions.forEach(([r, c]) => {
-      const idx = r * 15 + c;
-      const cell = document.getElementById("board").children[idx];
-      const stone = cell.querySelector('.stone');
-      if (stone) stone.classList.add("blink");
-    });
-
-    setTimeout(() => {
-      deleteRoom(roomCode);
-      location.reload();
-    }, 3000);
-  });
-}
-
-
-
-    async function endGame() {
-      await remove(ref(db, `rooms/${roomCode}`));
-      await remove(ref(db, `latestRoom`));
-      location.reload();
-    }
-
-    window.createRoom = createRoom;
-    window.joinRoom = joinRoom;
-    window.endGame = endGame;
-
-    async function deleteRoom(roomCode) {
-  await remove(ref(db, `rooms/${roomCode}`));
-  await remove(ref(db, `latestRoom`));
-}
-
-
-
+    let currentColor = colors[currentPlayer];
   </script>
-
-<!-- ✅ 3. 자바스크립트 (기존 <script type="module"> 바깥에 새로 추가) -->
-<script>
-  function closeModal() {
-    document.getElementById('howToModal').style.display = 'none';
-  }
-
-  window.onload = function () {
-    document.getElementById('howToModal').style.display = 'block';
-  }
-
-  
-</script>
-
-
-  <!-- ✅ 1. 모달창 HTML (</body> 위에 추가) -->
-<div id="howToModal" class="modal">
-  <div class="modal-content">
-    <span class="close" onclick="closeModal()">&times;</span>
-    <h2>🕹️ 오목 대전 게임 방법</h2>
-    <ul style="text-align:left; font-size: 16px;">
-      <li>1. "방 생성하기"를 누르면 대기방이 생성됩니다.</li>
-      <li>2. 다른 사용자가 1분 이내 "방 참여하기"를 눌러야 게임이 시작됩니다.</li>
-      <li>3. 흑(⚫)과 백(⚪)이 번갈아 가며 바둑판 위에 돌을 둡니다.</li>
-      <li>4. 가로, 세로, 대각선으로 같은 색 돌 5개를 먼저 연결하면 승리합니다.</li>
-      <li>5. 마지막 둔 돌은 테두리 색으로 표시되며, 승리한 돌은 반짝입니다.</li>
-    </ul>
-  </div>
-</div>
-
 </body>
 </html>
