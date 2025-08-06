@@ -20,49 +20,45 @@
     }
     #board {
       display: grid;
-      /* JavaScript에서 동적으로 grid-template-columns와 rows를 설정하도록 변경할 수 있습니다. */
-      /* 아래와 같이 직접 설정하는 것이 더 명확합니다. */
-      grid-template-columns: repeat(13, auto);
-      grid-template-rows: repeat(13, auto);
+      /* 각 셀에 테두리가 없으므로 gap도 필요 없습니다. */
       gap: 0;
-      border: 2px solid #333; /* 보드 전체 테두리 추가 */
     }
-    .cell { /* 모든 셀에 공통 스타일 적용 */
-        box-sizing: border-box;
-        border: 1px solid #000;
-    }
+    /*
+      모든 셀에 개별적으로 있던 테두리를 제거했습니다.
+      이제 각 div의 배경색이 바로 옆 div와 만나 경계를 이룹니다.
+    */
     .point {
       background-color: white;
       width: 50px;
       height: 50px;
       position: relative;
     }
-    /* 바둑돌을 놓는 예시 스타일 */
+    .h-wall {
+      background-color: yellow;
+      width: 50px;
+      height: 15px;
+    }
+    .v-wall {
+      background-color: yellow;
+      width: 15px;
+      height: 50px;
+    }
+    .blank {
+      background-color: navy;
+      width: 15px;
+      height: 15px;
+    }
+    /* 바둑돌을 놓는 예시 스타일 (참고용) */
     .point .piece {
       width: 80%;
       height: 80%;
       border-radius: 50%;
-      background-color: black; /* 예시로 검은 돌 */
+      background-color: black;
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       cursor: pointer;
-    }
-    .h-wall {
-      background-color: yellow;
-      width: 50px; /* point의 너비와 일치 */
-      height: 15px; /* 벽의 두께 */
-    }
-    .v-wall {
-      background-color: yellow;
-      width: 15px; /* 벽의 두께 */
-      height: 50px; /* point의 높이와 일치 */
-    }
-    .blank {
-      background-color: navy;
-      width: 15px;  /* v-wall의 너비와 일치 */
-      height: 15px; /* h-wall의 높이와 일치 */
     }
   </style>
 </head>
@@ -73,50 +69,38 @@
   <script>
     const board = document.getElementById("board");
     const pointSize = 7; // 돌을 놓을 수 있는 칸의 가로/세로 개수
-    const gridSize = pointSize * 2 - 1; // 전체 그리드 크기 (7 * 2 - 1 = 13)
+    const gridSize = pointSize * 2 - 1;
 
-    // CSS Grid 레이아웃을 JavaScript에서 동적으로 설정
-    const pointDim = '50px'; // 돌 놓는 칸의 크기
-    const wallDim = '15px';  // 벽의 두께
+    const pointDim = '50px';
+    const wallDim = '15px';
+
+    // grid-template-columns와 rows를 동적으로 생성
     let gridTemplate = '';
-    for (let i = 0; i < pointSize; i++) {
-        gridTemplate += `${pointDim} ${wallDim} `;
+    for (let i = 0; i < gridSize; i++) {
+        // 짝수 인덱스는 point, 홀수 인덱스는 wall
+        gridTemplate += (i % 2 === 0) ? `${pointDim} ` : `${wallDim} `;
     }
-    // 마지막에 추가된 벽 크기 제거
-    gridTemplate = gridTemplate.trim().slice(0, -wallDim.length); 
 
-    board.style.gridTemplateColumns = gridTemplate;
-    board.style.gridTemplateRows = gridTemplate;
-
+    board.style.gridTemplateColumns = gridTemplate.trim();
+    board.style.gridTemplateRows = gridTemplate.trim();
 
     for (let r = 0; r < gridSize; r++) {
       for (let c = 0; c < gridSize; c++) {
         const cell = document.createElement("div");
-        cell.classList.add('cell'); // 공통 'cell' 클래스 추가
 
         // (행, 열) 인덱스가 (짝수, 짝수)일 때 돌 놓는 곳
         if (r % 2 === 0 && c % 2 === 0) {
-          cell.classList.add("point");
-          // 예시로 첫 번째 칸에 돌 놓기
-          // if (r === 0 && c === 0) {
-          //   const piece = document.createElement("div");
-          //   piece.className = "piece";
-          //   cell.appendChild(piece);
-          // }
-
+          cell.className = "point";
         // (행, 열) 인덱스가 (짝수, 홀수)일 때 가로 벽
         } else if (r % 2 === 0 && c % 2 !== 0) {
-          cell.classList.add("h-wall");
-
+          cell.className = "h-wall";
         // (행, 열) 인덱스가 (홀수, 짝수)일 때 세로 벽
         } else if (r % 2 !== 0 && c % 2 === 0) {
-          cell.classList.add("v-wall");
-
+          cell.className = "v-wall";
         // (행, 열) 인덱스가 (홀수, 홀수)일 때 벽의 교차점
         } else {
-          cell.classList.add("blank");
+          cell.className = "blank";
         }
-
         board.appendChild(cell);
       }
     }
