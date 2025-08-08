@@ -136,31 +136,49 @@
       }
     }
 
-    function handlePointClick(cell, r, c) {
-      const piece = cell.querySelector('.piece');
-      if (!piece && placingCount < playerCount * maxPiecesPerPlayer) {
-        const newPiece = document.createElement("div");
-        const player = placingCount % playerCount;
-        newPiece.classList.add("piece");
-        newPiece.style.backgroundColor = playerColors[player];
-        newPiece.dataset.player = player;
-        cell.appendChild(newPiece);
-        placingCount++;
-        if (placingCount === playerCount * maxPiecesPerPlayer) {
-          alert("모든 말이 배치되었습니다. 게임을 시작합니다.");
-        }
-        return;
-      }
+   function handlePointClick(cell, r, c) {
+  const piece = cell.querySelector('.piece');
 
-      if (selectedPiece && cell.classList.contains("movable")) {
-        movePieceTo(cell, r, c);
-        clearMovable();
-        allowWallPlacing(r, c);
-      } else if (!selectedPiece && piece && parseInt(piece.dataset.player) === currentPlayer) {
-        selectedPiece = { element: piece, r, c };
-        showMovableSpots(r, c);
-      }
+  // 말 배치 중인 경우
+  if (!piece && placingCount < playerCount * maxPiecesPerPlayer) {
+    const newPiece = document.createElement("div");
+    const player = placingCount % playerCount;
+    newPiece.classList.add("piece");
+    newPiece.style.backgroundColor = playerColors[player];
+    newPiece.dataset.player = player;
+    cell.appendChild(newPiece);
+    placingCount++;
+    if (placingCount === playerCount * maxPiecesPerPlayer) {
+      alert("모든 말이 배치되었습니다. 게임을 시작합니다.");
     }
+    return;
+  }
+
+  // 이동 후 클릭 시
+  if (selectedPiece && cell.classList.contains("movable")) {
+    movePieceTo(cell, r, c);
+    clearMovable();
+    allowWallPlacing(r, c);
+  }
+
+  // ✅ 자기 자리 다시 클릭한 경우 - 이동하지 않아도 벽 설치 허용
+  else if (
+    selectedPiece &&
+    selectedPiece.r === r &&
+    selectedPiece.c === c
+  ) {
+    clearMovable();
+    allowWallPlacing(r, c);
+    selectedPiece = null; // 다시 선택하지 않도록 해제
+  }
+
+  // 말 선택
+  else if (!selectedPiece && piece && parseInt(piece.dataset.player) === currentPlayer) {
+    selectedPiece = { element: piece, r, c };
+    showMovableSpots(r, c);
+  }
+}
+
 
     function placePiece(r, c, playerIdx) {
       const cell = boardMap[r][c];
