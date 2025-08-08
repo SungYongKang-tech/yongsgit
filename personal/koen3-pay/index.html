@@ -18,6 +18,8 @@
     .summary { margin-top: 2em; background: #eef; padding: 1em; }
     .paid { color: green; font-weight: bold; }
     .unpaid { color: red; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
   </style>
 </head>
 <body>
@@ -47,8 +49,10 @@
   </div>
 
   <button onclick="calculateSummary()">정산표 생성</button>
+  <button onclick="saveAsImage()">이미지로 저장</button>
   <div id="summary" class="summary"></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
     const defaultAttendees = ["성용", "범준", "기현", "승호", "재환", "창현", "계민", "인찬", "정선", "현정", "정록", "영화", "재화", "원용", "윤숙", "인수"];
     let allAttendees = [...defaultAttendees];
@@ -94,30 +98,46 @@
       reader.readAsDataURL(event.target.files[0]);
     }
 
+    function formatNumber(num) {
+      return num.toLocaleString('ko-KR');
+    }
+
     function calculateSummary() {
       const summary = {};
+      const perRoundDetails = [];
       const sections = document.querySelectorAll('.section');
 
-      sections.forEach(section => {
+      sections.forEach((section, idx) => {
         const amount = parseInt(section.querySelector('.amount').value);
         const checked = [...section.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value);
         const perPerson = amount / checked.length;
+        perRoundDetails.push({ round: idx + 1, amount, perPerson, people: checked });
         checked.forEach(name => {
           if (!summary[name]) summary[name] = 0;
           summary[name] += perPerson;
         });
       });
 
-      let html = '<h2>정산 결과</h2><table><tr><th>이름</th><th>총액</th><th>입금 확인</th></tr>';
+      let html = '<h2>정산 결과</h2>';
+
+      html += '<table><tr><th>차수</th><th>총금액</th></tr>';
+      perRoundDetails.forEach(r => {
+        html += `<tr><td>${r.round}차</td><td>${formatNumber(r.amount)}원</td></tr>`;
+      });
+      const total = perRoundDetails.reduce((sum, r) => sum + r.amount, 0);
+      html += `<tr><th>총 합계</th><th>${formatNumber(total)}원</th></tr>`;
+      html += '</table>';
+
+      html += '<h2>입금 확인</h2><table><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr>';
       const names = Object.keys(summary);
       names.forEach(name => {
         if (!(name in paidStatus)) paidStatus[name] = false;
         const paidClass = paidStatus[name] ? 'paid' : 'unpaid';
-        html += `<tr><td>${name}</td><td>${summary[name].toFixed(0)}원</td><td><button onclick="togglePaid('${name}')" class='${paidClass}'>${paidStatus[name] ? '확인됨' : '미입금'}</button></td></tr>`;
+        html += `<tr><td>${name}</td><td>${formatNumber(summary[name])}원</td><td><button onclick="togglePaid('${name}')" class='${paidClass}'>${paidStatus[name] ? '확인됨' : '미입금'}</button></td></tr>`;
       });
       html += '</table>';
-      document.getElementById('summary').innerHTML = html;
 
+      document.getElementById('summary').innerHTML = html;
       checkAllPaid(names);
     }
 
@@ -140,6 +160,15 @@
         localStorage.setItem(`회식정산_${date}`, JSON.stringify(data));
         alert('✅ 모든 입금이 완료되어 자동 저장되었습니다!');
       }
+    }
+
+    function saveAsImage() {
+      html2canvas(document.querySelector("#summary")).then(canvas => {
+        const link = document.createElement('a');
+        link.download = '정산표.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
     }
   </script>
 </body>
