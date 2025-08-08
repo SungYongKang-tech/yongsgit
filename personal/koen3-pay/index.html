@@ -49,7 +49,7 @@
 
   <div id="rounds"></div>
   <div class="row">
-    <label>회식 사진 업로드: <input type="file" accept="image/*" id="groupPhoto" onchange="previewGroupPhoto(event)"></label>
+    <label>회식 사진 업로드: <input type="file" accept="image/*" id="groupPhoto" multiple onchange="previewGroupPhoto(event)"></label>
     <div id="photoPreview"></div>
   </div>
 
@@ -74,10 +74,12 @@
     }
 
     function updateAllAttendeeLists() {
-      document.querySelectorAll('.attendee-list').forEach(div => {
-        div.innerHTML = allAttendees.map(name =>
-          `<label><input type='checkbox' value='${name}'> ${name}</label>`
-        ).join('');
+      document.querySelectorAll('.attendee-list').forEach((div, index) => {
+        const checkboxes = allAttendees.map(name => {
+          const checked = div.querySelector(`input[value='${name}']`)?.checked ? 'checked' : '';
+          return `<label><input type='checkbox' value='${name}' ${checked}> ${name}</label>`;
+        }).join('');
+        div.innerHTML = checkboxes;
       });
     }
 
@@ -96,11 +98,17 @@
     }
 
     function previewGroupPhoto(event) {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        document.getElementById('photoPreview').innerHTML = `<img src='${e.target.result}'>`;
-      };
-      reader.readAsDataURL(event.target.files[0]);
+      const preview = document.getElementById('photoPreview');
+      preview.innerHTML = '';
+      [...event.target.files].forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          preview.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
     function formatNumber(num) {
@@ -159,7 +167,7 @@
     function saveAsImage() {
       const target = document.getElementById("summary");
       target.style.background = "white";
-      html2canvas(target, { scale: 2 }).then(canvas => {
+      html2canvas(target, { scale: 2, useCORS: true, windowWidth: document.body.scrollWidth }).then(canvas => {
         const link = document.createElement('a');
         link.download = '정산표.png';
         link.href = canvas.toDataURL();
