@@ -189,39 +189,79 @@
       cell.appendChild(piece);
     }
 
-   function showMovableSpots(r, c) {
-  const dirs = [
-       [0, 2], [0, -2], [2, 0], [-2, 0],          // 직선 2칸
-       [0, 4], [0, -4], [4, 0], [-4, 0],          // 직선 4칸
-       [2, 2], [2, -2], [-2, 2], [-2, -2],        // 대각선 2칸
-  
-   ];
-    dirs.forEach(([dr, dc]) => {
-    const nr = r + dr, nc = c + dc;
-    const midR = r + dr / 2, midC = c + dc / 2;
-    if (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
-      const dest = boardMap[nr][nc];
-      const wall = boardMap[midR][midC];
-      const midPoint = boardMap[midR][midC];
+ function showMovableSpots(r, c) {
+  clearMovable();
 
-      const isWall = wall &&
-        ['h-wall', 'v-wall'].some(cls => wall.classList.contains(cls)) &&
-        wall.style.backgroundColor === 'yellow';
+  const directions = [
+    [0, 2], [0, -2], [2, 0], [-2, 0], // 직선 2칸
+    [2, 2], [2, -2], [-2, 2], [-2, -2] // 대각선 2칸 (직선+직선 조합으로 처리)
+  ];
 
-      const isMidPiece = midPoint && midPoint.querySelector('.piece');  // 중간에 말이 있는가?
-      const isDestPiece = dest && dest.querySelector('.piece');
+  directions.forEach(([dr, dc]) => {
+    const nr = r + dr;
+    const nc = c + dc;
+
+    if (nr < 0 || nr >= gridSize || nc < 0 || nc >= gridSize) return;
+    const dest = boardMap[nr][nc];
+    if (!dest || !dest.classList.contains("point")) return;
+
+    const isDestPiece = dest.querySelector('.piece');
+    if (isDestPiece) return;
+
+    let passable = true;
+
+    if (Math.abs(dr) === 2 && Math.abs(dc) === 0) {
+      // 상하 직선 이동
+      const midR = r + dr / 2;
+      const midC = c;
+      const wall = boardMap[midR]?.[midC];
+      const midPoint = boardMap[midR]?.[midC];
 
       if (
-        dest.classList.contains("point") &&
-        !isDestPiece &&
-        !isWall &&
-        !isMidPiece // 중간에 말이 없을 때만 이동 가능
-      ) {
-        dest.classList.add("movable");
+        wall &&
+        ['h-wall', 'v-wall'].some(cls => wall.classList.contains(cls)) &&
+        wall.style.backgroundColor !== 'white'
+      ) passable = false;
+
+      if (midPoint && midPoint.querySelector('.piece')) passable = false;
+    } else if (Math.abs(dc) === 2 && Math.abs(dr) === 0) {
+      // 좌우 직선 이동
+      const midR = r;
+      const midC = c + dc / 2;
+      const wall = boardMap[midR]?.[midC];
+      const midPoint = boardMap[midR]?.[midC];
+
+      if (
+        wall &&
+        ['h-wall', 'v-wall'].some(cls => wall.classList.contains(cls)) &&
+        wall.style.backgroundColor !== 'white'
+      ) passable = false;
+
+      if (midPoint && midPoint.querySelector('.piece')) passable = false;
+    } else if (Math.abs(dr) === 2 && Math.abs(dc) === 2) {
+      // 대각선 = 직선+직선으로 판단
+      const step1 = [r + (dr / 2), c];       // 첫 번째 직선
+      const step2 = [r + (dr / 2), c + (dc / 2)]; // 두 번째 직선
+
+      const midSteps = [step1, step2];
+
+      for (const [mr, mc] of midSteps) {
+        const wall = boardMap[mr]?.[mc];
+        const midPoint = boardMap[mr]?.[mc];
+        if (
+          wall &&
+          ['h-wall', 'v-wall'].some(cls => wall.classList.contains(cls)) &&
+          wall.style.backgroundColor !== 'white'
+        ) passable = false;
+
+        if (midPoint && midPoint.querySelector('.piece')) passable = false;
       }
     }
+
+    if (passable) dest.classList.add("movable");
   });
 }
+
 
        
     function clearMovable() {
