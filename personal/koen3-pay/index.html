@@ -18,8 +18,13 @@
     .summary { margin-top: 2em; background: #eef; padding: 1em; overflow-x: auto; }
     .paid { color: green; font-weight: bold; }
     .unpaid { color: red; font-weight: bold; }
-    table { border-collapse: collapse; margin-top: 1em; min-width: 600px; }
-    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; white-space: nowrap; }
+    table { border-collapse: collapse; margin-top: 1em; min-width: 800px; }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.75em 1em;
+      text-align: center;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -135,11 +140,26 @@
       });
       html += '</table>';
 
+      html += '<h2>입금 확인</h2><table><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr>';
+      Object.entries(memberMap).forEach(([name, data]) => {
+        if (!(name in paidStatus)) paidStatus[name] = false;
+        const paidClass = paidStatus[name] ? 'paid' : 'unpaid';
+        html += `<tr><td>${name}</td><td>${formatNumber(data.total)}원</td><td><button onclick="togglePaid('${name}')" class='${paidClass}'>${paidStatus[name] ? '확인됨' : '미입금'}</button></td></tr>`;
+      });
+      html += '</table>';
+
       document.getElementById('summary').innerHTML = html;
     }
 
+    function togglePaid(name) {
+      paidStatus[name] = !paidStatus[name];
+      calculateSummary();
+    }
+
     function saveAsImage() {
-      html2canvas(document.querySelector("#summary")).then(canvas => {
+      const target = document.getElementById("summary");
+      target.style.background = "white";
+      html2canvas(target, { scale: 2 }).then(canvas => {
         const link = document.createElement('a');
         link.download = '정산표.png';
         link.href = canvas.toDataURL();
