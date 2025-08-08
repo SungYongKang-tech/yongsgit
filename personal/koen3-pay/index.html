@@ -15,11 +15,11 @@
     .section { border: 1px solid #ccc; padding: 1em; background: #fff; margin-bottom: 1em; }
     button { padding: 0.5em 1em; margin-top: 1em; }
     img { max-width: 100%; height: auto; margin-top: 0.5em; }
-    .summary { margin-top: 2em; background: #eef; padding: 1em; }
+    .summary { margin-top: 2em; background: #eef; padding: 1em; overflow-x: auto; }
     .paid { color: green; font-weight: bold; }
     .unpaid { color: red; font-weight: bold; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
+    table { border-collapse: collapse; margin-top: 1em; min-width: 600px; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -99,67 +99,43 @@
     }
 
     function formatNumber(num) {
-      return num.toLocaleString('ko-KR');
+      return Math.round(num).toLocaleString('ko-KR');
     }
 
     function calculateSummary() {
-      const summary = {};
-      const perRoundDetails = [];
+      const memberMap = {};
+      const roundTitles = [];
       const sections = document.querySelectorAll('.section');
 
       sections.forEach((section, idx) => {
+        const roundLabel = `${idx + 1}차`;
+        roundTitles.push(roundLabel);
         const amount = parseInt(section.querySelector('.amount').value);
         const checked = [...section.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value);
         const perPerson = amount / checked.length;
-        perRoundDetails.push({ round: idx + 1, amount, perPerson, people: checked });
+
         checked.forEach(name => {
-          if (!summary[name]) summary[name] = 0;
-          summary[name] += perPerson;
+          if (!memberMap[name]) memberMap[name] = { total: 0, rounds: [] };
+          memberMap[name].rounds[idx] = perPerson;
+          memberMap[name].total += perPerson;
         });
       });
 
-      let html = '<h2>정산 결과</h2>';
+      let html = '<h2>정산 결과</h2><table><tr><th>이름</th>';
+      roundTitles.forEach(r => html += `<th>${r}</th>`);
+      html += '<th>총액</th></tr>';
 
-      html += '<table><tr><th>차수</th><th>총금액</th></tr>';
-      perRoundDetails.forEach(r => {
-        html += `<tr><td>${r.round}차</td><td>${formatNumber(r.amount)}원</td></tr>`;
-      });
-      const total = perRoundDetails.reduce((sum, r) => sum + r.amount, 0);
-      html += `<tr><th>총 합계</th><th>${formatNumber(total)}원</th></tr>`;
-      html += '</table>';
-
-      html += '<h2>입금 확인</h2><table><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr>';
-      const names = Object.keys(summary);
-      names.forEach(name => {
-        if (!(name in paidStatus)) paidStatus[name] = false;
-        const paidClass = paidStatus[name] ? 'paid' : 'unpaid';
-        html += `<tr><td>${name}</td><td>${formatNumber(summary[name])}원</td><td><button onclick="togglePaid('${name}')" class='${paidClass}'>${paidStatus[name] ? '확인됨' : '미입금'}</button></td></tr>`;
+      Object.entries(memberMap).forEach(([name, data]) => {
+        html += `<tr><td>${name}</td>`;
+        roundTitles.forEach((_, idx) => {
+          const val = data.rounds[idx] ? formatNumber(data.rounds[idx]) + '원' : '-';
+          html += `<td>${val}</td>`;
+        });
+        html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
       });
       html += '</table>';
 
       document.getElementById('summary').innerHTML = html;
-      checkAllPaid(names);
-    }
-
-    function togglePaid(name) {
-      paidStatus[name] = !paidStatus[name];
-      calculateSummary();
-    }
-
-    function checkAllPaid(names) {
-      const allPaid = names.every(name => paidStatus[name]);
-      if (allPaid) {
-        const date = document.getElementById('meetingDate').value;
-        const title = document.getElementById('meetingTitle').value;
-        const data = {
-          date,
-          title,
-          summary: paidStatus,
-          timestamp: new Date().toISOString()
-        };
-        localStorage.setItem(`회식정산_${date}`, JSON.stringify(data));
-        alert('✅ 모든 입금이 완료되어 자동 저장되었습니다!');
-      }
     }
 
     function saveAsImage() {
