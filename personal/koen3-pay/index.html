@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>회식 정산기</title>
+  <style>
+    body { font-family: sans-serif; padding: 1em; background: #f9f9f9; }
+    h1, h2 { text-align: center; }
+    .row { margin-bottom: 1em; }
+    input[type="text"], input[type="number"], input[type="date"] {
+      padding: 0.5em; width: 100%; max-width: 300px; margin-top: 0.5em;
+    }
+    .attendee-list label { display: inline-block; margin-right: 1em; margin-bottom: 0.5em; }
+    .section { border: 1px solid #ccc; padding: 1em; background: #fff; margin-bottom: 1em; }
+    button { padding: 0.5em 1em; margin-top: 1em; }
+    img { max-width: 100%; height: auto; margin-top: 0.5em; }
+    .summary { margin-top: 2em; background: #eef; padding: 1em; }
+    .paid { color: green; font-weight: bold; }
+    .unpaid { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>회식 정산기</h1>
+
+  <div class="row">
+    <label>회식 날짜: <input type="date" id="meetingDate"></label>
+  </div>
+  <div class="row">
+    <label>제목: <input type="text" id="meetingTitle" placeholder="예: 3월 회식"></label>
+  </div>
+
+  <div class="row">
+    <label>참석자 추가: <input type="text" id="newAttendee" placeholder="이름 입력">
+      <button onclick="addAttendee()">추가</button>
+    </label>
+  </div>
+
+  <div class="row">
+    <button onclick="addRound()">차수 추가</button>
+  </div>
+
+  <div id="rounds"></div>
+  <div class="row">
+    <label>회식 사진 업로드: <input type="file" accept="image/*" id="groupPhoto" onchange="previewGroupPhoto(event)"></label>
+    <div id="photoPreview"></div>
+  </div>
+
+  <button onclick="calculateSummary()">정산표 생성</button>
+  <div id="summary" class="summary"></div>
+
+  <script>
+    const defaultAttendees = ["성용", "범준", "기현", "승호", "재환", "창현", "계민", "인찬", "정선", "현정", "정록", "영화", "재화", "원용", "윤숙", "인수"];
+    let allAttendees = [...defaultAttendees];
+    let roundCount = 0;
+    let paidStatus = {};
+
+    function addAttendee() {
+      const name = document.getElementById('newAttendee').value.trim();
+      if (name && !allAttendees.includes(name)) {
+        allAttendees.push(name);
+        updateAllAttendeeLists();
+        document.getElementById('newAttendee').value = '';
+      }
+    }
+
+    function updateAllAttendeeLists() {
+      document.querySelectorAll('.attendee-list').forEach(div => {
+        div.innerHTML = allAttendees.map(name =>
+          `<label><input type='checkbox' value='${name}'> ${name}</label>`
+        ).join('');
+      });
+    }
+
+    function addRound() {
+      roundCount++;
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.innerHTML = `
+        <h2>${roundCount}차</h2>
+        <label>금액: <input type="number" class="amount"></label><br>
+        <label>영수증 업로드: <input type="file" accept="image/*"></label><br>
+        <div class="attendee-list"></div>
+      `;
+      document.getElementById('rounds').appendChild(div);
+      updateAllAttendeeLists();
+    }
+
+    function previewGroupPhoto(event) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('photoPreview').innerHTML = `<img src='${e.target.result}'>`;
+      };
+      reader.readAsDataURL(event.target.files[0]);
+    }
+
+    function calculateSummary() {
+      const summary = {};
+      const sections = document.querySelectorAll('.section');
+
+      sections.forEach(section => {
+        const amount = parseInt(section.querySelector('.amount').value);
+        const checked = [...section.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value);
+        const perPerson = amount / checked.length;
+        checked.forEach(name => {
+          if (!summary[name]) summary[name] = 0;
+          summary[name] += perPerson;
+        });
+      });
+
+      let html = '<h2>정산 결과</h2><table><tr><th>이름</th><th>총액</th><th>입금 확인</th></tr>';
+      const names = Object.keys(summary);
+      names.forEach(name => {
+        if (!(name in paidStatus)) paidStatus[name] = false;
+        const paidClass = paidStatus[name] ? 'paid' : 'unpaid';
+        html += `<tr><td>${name}</td><td>${summary[name].toFixed(0)}원</td><td><button onclick="togglePaid('${name}')" class='${paidClass}'>${paidStatus[name] ? '확인됨' : '미입금'}</button></td></tr>`;
+      });
+      html += '</table>';
+      document.getElementById('summary').innerHTML = html;
+
+      checkAllPaid(names);
+    }
+
+    function togglePaid(name) {
+      paidStatus[name] = !paidStatus[name];
+      calculateSummary();
+    }
+
+    function checkAllPaid(names) {
+      const allPaid = names.every(name => paidStatus[name]);
+      if (allPaid) {
+        const date = document.getElementById('meetingDate').value;
+        const title = document.getElementById('meetingTitle').value;
+        const data = {
+          date,
+          title,
+          summary: paidStatus,
+          timestamp: new Date().toISOString()
+        };
+        localStorage.setItem(`회식정산_${date}`, JSON.stringify(data));
+        alert('✅ 모든 입금이 완료되어 자동 저장되었습니다!');
+      }
+    }
+  </script>
+</body>
+</html>
