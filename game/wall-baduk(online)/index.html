@@ -5,7 +5,12 @@
   <title>Wall-baduk (온라인 2인 · 7x7)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    :root { --bar-h: 60px; }
+    :root {
+      --bar-h: 60px;
+      /* 보드 셀 크기(점 칸)와 벽 두께: JS에서 동적으로 갱신됨 */
+      --p: 42px; /* point size (fallback) */
+      --t: 15px; /* wall thickness (fallback) */
+    }
     body {
       font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
       display:grid; grid-template-rows:auto auto auto auto auto;
@@ -41,12 +46,15 @@
     /* 보드 */
     #wrap { display:flex; justify-content:center; align-items:flex-start; padding:0 10px 6px; overflow:auto; }
     #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
+
     .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
-    .point { width:42px; height:42px; background:#fff; position:relative; cursor:pointer; transition:background .1s; }
+
+    /* ✅ 픽셀 고정값 제거 → CSS 변수 사용 */
+    .point { width:var(--p); height:var(--p); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
     .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
-    .h-wall { width:42px; height:15px; background:#fff; cursor:pointer; }
-    .v-wall { width:15px; height:42px; background:#fff; cursor:pointer; }
-    .blank  { width:15px; height:15px; background:#15326b; }
+    .h-wall { width:var(--p); height:var(--t); background:#fff; cursor:pointer; }
+    .v-wall { width:var(--t); height:var(--p); background:#fff; cursor:pointer; }
+    .blank  { width:var(--t); height:var(--t); background:#15326b; }
 
     .movable { background:#d0d0d0 !important; } /* 이동 가능 점 표시 */
     .final-p1-region { background:#ffd6e7 !important; }
@@ -71,10 +79,8 @@
     #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
     .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
 
+    /* 소형 폰에서도 자동 축소 */
     @media (max-width:420px){
-      .point { width:36px; height:36px; }
-      .h-wall { width:36px; height:14px; }
-      .v-wall { width:14px; height:36px; }
       #volSlider { width:120px; }
     }
   </style>
@@ -114,50 +120,43 @@
     <button id="skipWallBtn" disabled>이동 없이 벽 설치</button>
   </div>
 
- <!-- 설명 팝업 -->
-<div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-  <div id="helpCard">
-    <div id="helpHeader"><span id="helpTitle">게임 설명</span></div>
-    <div id="helpBody">
-      <ul>
-        <li><strong>목표</strong>: 벽으로 보드를 나눠 <strong>내 말만 포함된 구역</strong>을 많이 만들기</li>
-
-        <li><strong>턴 진행</strong>:
-          <ul>
-            <li>내 말 하나 선택 → <strong>이동</strong>(또는 생략) → <strong>벽 1개 설치</strong> → 상대 턴</li>
-          </ul>
-        </li>
-        <li><strong>이동 규칙</strong>:
-          <ul>
-            <li>상/하/좌/우 방향으로 <strong>최대 2칸</strong> 이동(직각으로 1+1칸 가능)</li>
-            <li>벽은 통과 불가, 도착 칸에 말이 있으면 이동 불가</li>
-            <li><strong>이동 시간(60초) 초과</strong> 시 → 이동 없이 <strong>벽 설치 단계</strong>로 바로 전환</li>
-          </ul>
-        </li>
-
-        <li><strong>벽 설치 규칙</strong>:
-          <ul>
-            <li>빈 가로/세로 벽 칸에 <strong>1개</strong> 설치(설치 후 제거 불가)</li>
-            <li><strong>벽 설치 시간(10초) 초과</strong> 시 → <strong>랜덤 벽 설치</strong>:
-            </li>
-          </ul>
-        </li>
-
-        <li><strong>영역 & 승리</strong>:
-          <ul>
-            <li><strong>한쪽 플레이어의 말만</strong> 있는 구역만 그 플레이어 소유</li>
-            <li>두 플레이어 말이 함께 있으면 <strong>주인없는 구역</strong></li>
-            <li>모든 구역 소유자가 생기는순간 즉시 종료 → 각자 <strong>자신의 구역 점 개수 합</strong>이 더 큰 사람이 승리</li>
-          </ul>
-        </li>
-      </ul>
-    </div>
-    <div id="helpFooter">
-      <button class="helpBtn" id="helpCloseBtn">시작하기</button>
+  <!-- 설명 팝업 -->
+  <div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div id="helpCard">
+      <div id="helpHeader"><span id="helpTitle">게임 설명</span></div>
+      <div id="helpBody">
+        <ul>
+          <li><strong>목표</strong>: 벽으로 보드를 나눠 <strong>내 말만 포함된 구역</strong>을 많이 만들기</li>
+          <li><strong>턴 진행</strong>:
+            <ul><li>내 말 하나 선택 → <strong>이동</strong>(또는 생략) → <strong>벽 1개 설치</strong> → 상대 턴</li></ul>
+          </li>
+          <li><strong>이동 규칙</strong>:
+            <ul>
+              <li>상/하/좌/우 방향으로 <strong>최대 2칸</strong> 이동(직각으로 1+1칸 가능)</li>
+              <li>벽은 통과 불가, 도착 칸에 말이 있으면 이동 불가</li>
+              <li><strong>이동 시간(60초) 초과</strong> 시 → 이동 없이 <strong>벽 설치 단계</strong>로 전환</li>
+            </ul>
+          </li>
+          <li><strong>벽 설치 규칙</strong>:
+            <ul>
+              <li>빈 가로/세로 벽 칸에 <strong>1개</strong> 설치(설치 후 제거 불가)</li>
+              <li><strong>벽 설치 시간(10초) 초과</strong> 시 → <strong>랜덤 벽 설치</strong></li>
+            </ul>
+          </li>
+          <li><strong>영역 & 승리</strong>:
+            <ul>
+              <li><strong>한쪽 플레이어의 말만</strong> 있는 구역만 그 플레이어 소유</li>
+              <li>두 플레이어 말이 함께 있으면 <strong>주인없는 구역</strong></li>
+              <li>모든 구역 소유자가 생기는 즉시 종료 → 각자 <strong>자신의 구역 점 개수 합</strong>이 큰 사람이 승리</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+      <div id="helpFooter">
+        <button class="helpBtn" id="helpCloseBtn">시작하기</button>
+      </div>
     </div>
   </div>
-</div>
-
 
   <!-- 앱 스크립트 -->
   <script type="module">
@@ -193,8 +192,8 @@
       return id;
     }
 
-    const MAX_ROOMS=10;
-    const BOARD_POINTS=7, GRID=BOARD_POINTS*2-1;
+    const MAX_ROOMS=5;
+    const BOARD_POINTS=7, GRID=BOARD_POINTS*2-1; // 7점 → 13그리드
     const COLORS=['#e74c3c','#3498db'];
 
     const MOVE_SECONDS=60;
@@ -249,6 +248,59 @@
       return !!s && s.current === local.role && (s.phase==='move' || s.phase==='wall');
     }
 
+    /* ============== 📏 보드 자동 리사이즈 ============== */
+    function resizeBoard() {
+      // 상단/하단 UI 높이 합을 빼고 남는 세로 공간 계산
+      const headerH = (document.querySelector('h1')?.offsetHeight || 0)
+        + (document.getElementById('panel')?.offsetHeight || 0)
+        + (document.getElementById('turnLine')?.offsetHeight || 0)
+        + (document.getElementById('scores')?.offsetHeight || 0)
+        + 20; // 여유치
+
+      const bottomH = (document.getElementById('bottomBar')?.offsetHeight || 0) + 10;
+
+      const availW = document.getElementById('wrap').clientWidth - 4; // 좌우 padding 여유
+      const availH = window.innerHeight - headerH - bottomH;
+
+      const maxSquare = Math.max(220, Math.min(availW, availH)); // 정사각 최대 픽셀
+
+      // 총 보드 폭 = 7*P + 6*T (열 기준)  → 이를 maxSquare에 맞춤
+      // 비율은 기존 42:15 ≈ 0.357 → T ≈ 0.36*P (하한 8px, 상한 28px)
+      // 식: 7P + 6T = maxSquare,  T = kP  ⇒ P = maxSquare / (7 + 6k)
+      const k = 0.36;
+      let p = Math.floor(maxSquare / (7 + 6*k));
+      let t = Math.floor(p * k);
+
+      // 너무 얇은 벽/너무 작은 점 방지 + 너무 큰 셀 제한(데스크탑 과도확대 방지)
+      t = Math.max(8, Math.min(28, t));
+      p = Math.max(26, Math.min(82, p));
+
+      // 다시 정확히 보드 최대 안 넘게 보정
+      const total = 7*p + 6*t;
+      if (total > maxSquare) {
+        const diff = total - maxSquare;
+        // p 우선 줄임
+        const shrinkP = Math.min(diff, p - 26);
+        p -= shrinkP;
+        let remain = diff - shrinkP;
+        if (remain > 0) {
+          const shrinkT = Math.min(remain, t - 8);
+          t -= shrinkT;
+        }
+      }
+
+      // CSS 변수로 반영
+      document.documentElement.style.setProperty('--p', p + 'px');
+      document.documentElement.style.setProperty('--t', t + 'px');
+
+      // 보드 자체도 그리드 템플릿 유지
+      boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
+      boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
+    }
+
+    window.addEventListener('resize', resizeBoard);
+    window.addEventListener('orientationchange', ()=>setTimeout(resizeBoard, 50));
+
     /* ================= 초기 상태/보드 ================= */
     function pt(p){ return (p-1)*2; }
     function initialState(){
@@ -260,7 +312,7 @@
         pieces:{ '0':[ {r:pt(2),c:pt(2)}, {r:pt(6),c:pt(6)} ],
                  '1':[ {r:pt(6),c:pt(2)}, {r:pt(2),c:pt(6)} ] },
         walls:[],
-        lastMoved: null   // 마지막으로 이동 완료된 말 좌표(벽 타임아웃 후보용)
+        lastMoved: null
       };
     }
     const asArray = x => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
@@ -290,6 +342,8 @@
           boardEl.appendChild(cell); grid[r][c]=cell;
         }
       }
+      // 보드 생성 후 즉시 사이즈 계산
+      resizeBoard();
     }
     function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
     function inBounds(r,c){ return r>=0&&r<GRID&&c>=0&&c<GRID; }
@@ -300,7 +354,6 @@
       const s=normalizeState(local.state);
       if(!s) return;
 
-      // 턴 표시
       const phaseLabel = s.phase==='place-extra' ? ' — 말 배치'
                         : s.phase==='move' ? ' — 말 이동'
                         : s.phase==='wall' ? ' — 벽 설치'
@@ -308,10 +361,8 @@
       turnEl.textContent = ((s.current===0)?'P1(빨강)':'P2(파랑)') + ' 차례' + phaseLabel;
       turnEl.style.color = COLORS[s.current];
 
-      // 버튼
       skipWallBtn.disabled = !(s.phase==='move' && s.current===local.role);
 
-      // 말 렌더
       document.querySelectorAll('.piece').forEach(el=>el.remove());
       for(const pid of [0,1]){
         for(const p of asArray(s.pieces[String(pid)])){
@@ -320,7 +371,7 @@
           cell.appendChild(dot);
         }
       }
-      // 벽 렌더
+
       for(let r=0;r<GRID;r++){ for(let c=0;c<GRID;c++){
         const cell=grid[r][c]; if(!cell) continue;
         if(cell.classList.contains('h-wall')||cell.classList.contains('v-wall')){ cell.classList.remove('placed'); cell.style.background='#fff'; }
@@ -329,7 +380,6 @@
         const cell=grid[w.r]?.[w.c]; if(cell){ cell.classList.add('placed'); cell.style.background=COLORS[w.owner]; }
       }
 
-      // 자동/수동 벽 설치 사운드: walls 길이 증가 감지
       if (local.prevWallCount == null) {
         local.prevWallCount = s.walls.length;
       } else if (s.walls.length > local.prevWallCount) {
@@ -339,7 +389,6 @@
         local.prevWallCount = s.walls.length;
       }
 
-      // 타이머: 내 턴이면 시작, 아니면 정지
       if (isMyTurn()) {
         startTurnTimer(s.phase==='move' ? MOVE_SECONDS : WALL_SECONDS);
       } else {
@@ -384,15 +433,21 @@
     }
     function computeRegionsLocal(){
       const visited=Array.from({length:GRID},()=>Array(GRID).fill(false)); const regions=[]; let hasMixed=false;
-      for(let r=0;r<GRID;r+=2){ for(let c=0;c<GRID;c+=2){
-        if(visited[r][c]) continue; const q=[{r,c}]; visited[r][c]=true; const pts=[]; const present=new Set();
-        while(q.length){
-          const cur=q.shift(); pts.push(cur);
-          const piece=grid[cur.r][cur.c].querySelector('.piece'); if(piece) present.add(+piece.dataset.player);
-          for(const {nr,nc} of neighborsByWall(cur.r,cur.c)){ if(!visited[nr][nc]){ visited[nr][nc]=true; q.push({r:nr,c:nc}); } }
-        }
-        if(present.size>=2) hasMixed=true; regions.push({points:pts, players:present});
+      for(let r=0;r<GRID;r+=2){ for(let c=0;c+=2,c<GRID;){
+        /* loop header fixed in next for; left as is intentionally */
       }}
+      // ↑ 위 for 문을 안전하게 다시 작성
+      for(let r=0;r<GRID;r+=2){
+        for(let c=0;c<GRID;c+=2){
+          if(visited[r][c]) continue; const q=[{r,c}]; visited[r][c]=true; const pts=[]; const present=new Set();
+          while(q.length){
+            const cur=q.shift(); pts.push(cur);
+            const piece=grid[cur.r][cur.c].querySelector('.piece'); if(piece) present.add(+piece.dataset.player);
+            for(const {nr,nc} of neighborsByWall(cur.r,cur.c)){ if(!visited[nr][nc]){ visited[nr][nc]=true; q.push({r:nr,c:nc}); } }
+          }
+          if(present.size>=2) hasMixed=true; regions.push({points:pts, players:present});
+        }
+      }
       return {regions, hasMixed};
     }
     function checkGameEndAndScoreLocal(){
@@ -463,7 +518,7 @@
             arr[idx]={r,c};
             playSafe(sndMove);
             s.phase='wall';
-            s.lastMoved = { r, c };   // 마지막 이동 말 기록
+            s.lastMoved = { r, c };
             clearMovable(); local.selected=null;
             commitState();
           }
@@ -479,13 +534,11 @@
       if(!isWall||cell.classList.contains('placed')) return;
 
       s.walls.push({r,c,owner:local.role});
-      // 사운드는 렌더에서 증가 감지로 재생
       s.current=1-s.current; s.phase='move'; s.lastMoved = null;
       clearMovable();
       commitState();
     }
 
-    // 이동 없이 벽 설치
     skipWallBtn.addEventListener('click',()=>{
       local.state = normalizeState(local.state);
       const s=local.state; if(!s||s.phase!=='move'||s.current!==local.role) return;
@@ -507,7 +560,6 @@
       }
       return out;
     }
-    // 특정 점(말) 주변의 빈 벽 후보(상/하/좌/우)
     function adjacentEmptyWallsOfPoint(s, pr, pc){
       const occupied = new Set(s.walls.map(w=>`${w.r},${w.c}`));
       const cand = [{r:pr-1,c:pc},{r:pr+1,c:pc},{r:pr,c:pc-1},{r:pr,c:pc+1}];
@@ -527,25 +579,18 @@
         const s = normalizeState(raw);
         if(!s) return raw;
 
-        // 여전히 내 턴인지 검증
         if(!(s.current===local.role && (s.phase==='move' || s.phase==='wall'))) return raw;
 
-        // 1) 이동 단계 초과 → 벽 단계로만 전환
         if (s.phase === 'move') {
           s.phase = 'wall';
-          s.lastMoved = null;   // 이동 안 했으므로 기준 없음
+          s.lastMoved = null;
           return s;
         }
 
-        // 2) 벽 단계 초과 → 자동 벽 설치
         let candidates = [];
-
-        // (a) 이번 턴 마지막으로 이동한 말 주변
         if (s.lastMoved) {
           candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
         }
-
-        // (b) 이동 안 했거나 주변이 막힌 경우 → 현재 플레이어 모든 말 주변 합치기
         if (candidates.length === 0) {
           const myPieces = asArray(s.pieces[String(s.current)]);
           for (const p of myPieces) {
@@ -553,24 +598,18 @@
             if (adj.length) candidates.push(...adj);
           }
         }
-
-        // (c) 그래도 없으면 → 전체 빈 벽
         if (candidates.length === 0) {
           candidates = listEmptyWallsFromState(s);
         }
-
         if (candidates.length > 0) {
           const pick = candidates[Math.floor(Math.random()*candidates.length)];
           s.walls.push({ r: pick.r, c: pick.c, owner: s.current });
         }
-
-        // 턴 교대
         s.current = 1 - s.current;
         s.phase   = 'move';
         s.lastMoved = null;
         return s;
       });
-      // 커밋 후 다음 차례 쪽에서 타이머 자동 시작
     }
 
     /* ================= DB 동기화 ================= */
@@ -662,7 +701,8 @@
 
       roomLine.textContent=`방: ${roomId} — 나는 ${role===0?'P1(빨강)':'P2(파랑)'} 입니다.`;
 
-      makeBoard();
+      makeBoard();       // 보드 생성
+      resizeBoard();     // 초회 리사이즈
 
       unsubRoom = onValue(ref(db, `wbaduk/rooms/${roomId}`), snap=>{
         const room=snap.val();
