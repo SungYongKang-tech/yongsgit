@@ -518,6 +518,46 @@
 
       openHelp(); // 처음에 도움말
     }
+     // ---- 입장 가능한 방 선택 (latestRoom 우선, 없으면 전체 스캔) ----
+async function pickJoinableRoom() {
+  const now = serverNow();
+  const candidates = [];
+
+  // 1) latestRoom 우선 시도
+  const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
+  if (latestSnap.exists()) {
+    const { roomCode, createdAt } = latestSnap.val();
+    if (now - (createdAt || 0) <= 60_000) {
+      const rs = await get(ref(db, `wbaduk/rooms/${roomCode}`));
+      if (rs.exists()) candidates.push({ id: roomCode, data: rs.val() });
+    }
+  }
+
+  // 2) 1분 내 생성 + waiting + 인원<2 모든 방 스캔 (백업 경로)
+  const roomsSnap = await get(ref(db, 'wbaduk/rooms'));
+  if (roomsSnap.exists()) {
+    roomsSnap.forEach(cs => {
+      const r = cs.val() || {};
+      const created = r.createdAt || 0;
+      const playersCount = Math.min(2, new Set(Object.keys(r.players || {})).size);
+      const count = r.playerCount || playersCount;
+      if (r.status === 'waiting' && count < 2 && now - created <= 60_000) {
+        candidates.push({ id: cs.key, data: r });
+      }
+    });
+  }
+
+  // 중복 제거 후 첫 후보 반환
+  const seen = new Set();
+  const ordered = candidates.filter(c => {
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
+
+  return ordered[0] || null;
+}
+
   </script>
 </body>
 </html>
