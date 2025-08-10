@@ -400,67 +400,71 @@
     };
 
     btnJoin.onclick = async () => {
-      const roomId = requireRoomName();
-      if (!roomId) return;
+  const roomId = requireRoomName();
+  if (!roomId) return;
 
-      const path = `wbaduk/rooms/${roomId}`;
-      const roomRef = ref(db, path);
+  const roomRef    = ref(db, `wbaduk/rooms/${roomId}`);
+  const playersRef = ref(db, `wbaduk/rooms/${roomId}/players`);
+  const stateRef   = ref(db, `wbaduk/rooms/${roomId}/state`);
 
-      // 1) 존재/인원 사전 확인
-      const snap = await get(roomRef);
-      if (!snap.exists()) { alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.'); return; }
-      const room0 = snap.val() || {};
-      const cnt0  = playerCountOf(room0);
-      if (!room0.players) room0.players = {};
+  // 1) 방 존재 확인
+  const roomSnap = await get(roomRef);
+  if (!roomSnap.exists()) {
+    alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.');
+    return;
+  }
 
-      // 2) 트랜잭션으로 안전 입장 (재입장 허용)
-      let myRole = 1;
-      const res = await runTransaction(roomRef, room => {
-        if (!room) return; // 방이 방금 삭제됨 → abort
-        if (!room.players) room.players = {};
+  // 2) players만 트랜잭션(재입장 허용, 2명 제한)
+  let myRole = 1;
+  const txn = await runTransaction(playersRef, (players) => {
+    players = players || {};
+    const ids = Object.keys(players);
+    const hasMe = !!players[uid];
 
-        // 이미 이 uid가 있으면 재입장 허용
-        if (room.players[uid]) {
-          myRole = room.players[uid].role ?? 1;
-          const cnt = Math.min(2, playerCountOf(room));
-          room.playerCount = cnt;
-          room.status = (cnt === 2) ? 'playing' : 'waiting';
-          if (!room.state) room.state = initialState();
-          return room;
-        }
+    // 가득 찼고, 내가 아직 안 들어간 경우 → 중단
+    if (!hasMe && ids.length >= 2) return;
 
-        // 새로 들어가는데 꽉 찼으면 abort
-        const cntNow = playerCountOf(room);
-        if (cntNow >= 2) return;
+    if (hasMe) {
+      // 재입장
+      myRole = players[uid].role ?? 1;
+      return players;
+    }
 
-        const rolesTaken = Object.values(room.players).map(p=>p.role);
-        myRole = rolesTaken.includes(0)?1:0;
-        room.players[uid] = { role: myRole, joinedAt: Date.now() };
+    // 새로 들어감 → 역할 배정
+    const rolesTaken = Object.values(players).map(p => p.role);
+    myRole = rolesTaken.includes(0) ? 1 : 0;
+    players[uid] = { role: myRole, joinedAt: Date.now() };
+    return players;
+  });
 
-        const cntAfter = Math.min(2, playerCountOf(room));
-        room.playerCount = cntAfter;
-        room.status = (cntAfter === 2) ? 'playing' : 'waiting';
-        if (!room.state) room.state = initialState();
-        return room;
-      });
+  if (!txn.committed) {
+    // 실제 상태를 한 번 더 보고 정확히 안내
+    const after = await get(playersRef);
+    const cnt = after.exists() ? Object.keys(after.val()).length : 0;
+    if (cnt >= 2 && !(after.val() && after.val()[uid])) {
+      alert('이미 2명이 입장했습니다. 다른 방을 이용해 주세요.');
+    } else {
+      alert('입장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    return;
+  }
 
-      // 3) 결과 처리(정확한 원인별 메시지)
-      if (!res.committed) {
-        const snap2 = await get(roomRef);
-        if (!snap2.exists()) { alert('방이 삭제되었습니다. 새로 생성해 주세요.'); return; }
-        const r2 = snap2.val() || {};
-        const cnt2 = playerCountOf(r2);
-        if (cnt2 >= 2 && !(r2.players && r2.players[uid])) {
-          alert('이미 2명이 입장했습니다. 다른 방을 이용해 주세요.');
-          return;
-        }
-        alert('입장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-        return;
-      }
+  // 3) 파생값 갱신 + state 보정
+  const playersNow = txn.snapshot.val() || {};
+  const cntNow = Math.min(2, Object.keys(playersNow).length);
+  await update(roomRef, {
+    playerCount: cntNow,
+    status: cntNow >= 2 ? 'playing' : 'waiting'
+  });
+  const st = await get(stateRef);
+  if (!st.exists()) {
+    await set(stateRef, initialState());
+  }
 
-      onDisconnect(ref(db, `${path}/players/${uid}`)).remove();
-      enterRoom(roomId, myRole);
-    };
+  // 4) 연결 끊길 때 자동 제거(베스트 에포트) + 입장
+  onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
+  enterRoom(roomId, myRole);
+};
 
     function enterRoom(roomId, role){
       local.roomId = roomId; local.role = role;
