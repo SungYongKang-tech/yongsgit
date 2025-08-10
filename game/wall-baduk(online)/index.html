@@ -53,7 +53,7 @@
       .h-wall { width:36px; height:14px; }
       .v-wall { width:14px; height:36px; }
     }
-    
+
     #helpOverlay { z-index: 10000; }
 
   </style>
@@ -75,6 +75,7 @@
   <div id="panel" style="display:none">
     <button id="resetBtn">새로 시작</button>
     <button id="helpBtn" onclick="openHelp()">도움말</button>
+    <button id="endBtn">게임 종료</button>
   </div>
   <div id="turnLine" style="display:none">현재 턴: <span id="turnColor"></span></div>
   <div id="scores"   style="display:none">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
@@ -163,6 +164,7 @@
     const roomLine= document.getElementById('roomLine');
     const resetBtn= document.getElementById('resetBtn');
     const helpBtn = document.getElementById('helpBtn');
+    const endBtn  = document.getElementById('endBtn');
     const helpOverlay = document.getElementById('helpOverlay');
     const helpCloseBtn = document.getElementById('helpCloseBtn');
     const skipWallBtn = document.getElementById('skipWallBtn');
@@ -483,17 +485,21 @@
 
       makeBoard();
 
-      // 방 전체 상태 → 렌더
-      onValue(ref(db, `wbaduk/rooms/${roomId}`), snap=>{
-        const room=snap.val(); if(!room) return;
-        if(room.state) applyRemote(room.state);
-        const cnt = playerCountOf(room);
-        if ((room.status === 'waiting') || cnt < 2) {
-          const t = document.getElementById('turnColor');
-          t.textContent = '상대 대기 중…';
-          t.style.color = '#777';
-        }
-      });
+     onValue(ref(db, `wbaduk/rooms/${roomId}`), snap => {
+  const room = snap.val();
+  if (!room) {
+    alert('방이 삭제되었습니다. 로비로 돌아갑니다.');
+    location.reload();
+    return;
+  }
+  if (room.state) applyRemote(room.state);
+  if (room.status === 'waiting') {
+    const t = document.getElementById('turnColor');
+    t.textContent = '상대 대기 중…';
+    t.style.color = '#777';
+  }
+});
+
 
       // 플레이어 수 변동 시 파생값 자동 정리
       onValue(ref(db, `wbaduk/rooms/${roomId}/players`), snap => {
@@ -547,6 +553,30 @@ if (helpCloseBtnEl) helpCloseBtnEl.addEventListener('click', closeHelp);
 if (helpOverlayEl) {
   helpOverlayEl.addEventListener('click', (e)=>{ if (e.target === helpOverlayEl) closeHelp(); });
 }
+endBtn.onclick = async () => {
+  if (!local.roomId) return;
+  const roomId = local.roomId;
+
+  const ok = confirm('정말 게임을 종료하고 방을 삭제할까요?');
+  if (!ok) return;
+
+  try {
+    // 방 삭제
+    await remove(ref(db, `wbaduk/rooms/${roomId}`));
+
+    // latestRoom이 이 방을 가리키면 정리
+    const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
+    if (latestSnap.exists() && latestSnap.val()?.roomCode === roomId) {
+      await remove(ref(db, 'wbaduk/latestRoom'));
+    }
+  } catch (e) {
+    alert('방 삭제 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+    console.error(e);
+  } finally {
+    // 깔끔하게 로비로 복귀 (리스너/상태 초기화)
+    location.reload();
+  }
+};
 
   </script>
 </body>
