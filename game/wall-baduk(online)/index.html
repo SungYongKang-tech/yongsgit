@@ -13,7 +13,7 @@
       margin: 0;
       min-height: 100vh;
       display: grid;
-      grid-template-rows: auto auto auto auto auto;
+      grid-template-rows: auto auto auto auto auto; /* 모두 auto로 간격 최소화 */
     }
     h1 { margin: 8px 0 4px; }
     #panel { margin: 4px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
@@ -30,7 +30,7 @@
       display: grid; background: #fff; border: 2px solid #333; user-select: none; touch-action: manipulation;
     }
     .cell { box-sizing: border-box; border: 1px solid #000; display:flex; align-items:center; justify-content:center; }
-    .point { width: 42px; height: 42px; background:#fff; position:relative; cursor:pointer; }
+    .point { width: 42px; height: 42px; background:#fff; position:relative; cursor:pointer; transition: background .1s; }
     .piece { width: 80%; height: 80%; border-radius: 50%; pointer-events:none; }
     .h-wall { width: 42px; height: 15px; background:#fff; cursor:pointer; }
     .v-wall { width: 15px; height: 42px; background:#fff; cursor:pointer; }
@@ -52,7 +52,7 @@
       background:#ffd6e7; border:1px solid #e7a3bd;
     }
 
-    /* 도움말 모달 (간단 버전) */
+    /* 도움말 모달 */
     #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; padding:16px; }
     #helpCard { width:100%; max-width:560px; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.2); text-align:left; overflow:hidden; }
     #helpHeader { padding:14px 18px; background:#222; color:#fff; font-weight:800; }
@@ -119,8 +119,7 @@
     /* ================= Firebase ================= */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getDatabase, ref, get, set, update, onValue, runTransaction,
-      query, orderByChild, startAt, serverTimestamp, onDisconnect
+      getDatabase, ref, get, set, onValue, runTransaction, onDisconnect
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -135,68 +134,73 @@
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
-    // 간단한 클라이언트 ID
+    // 탭마다 고유 uid (같은 브라우저 2탭 테스트 가능)
     const uid = (() => {
-      const key = 'wb_uid_v1';
-      let v = localStorage.getItem(key);
-      if (!v) { v = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(key, v); }
+      const key = 'wb_uid_tab';
+      let v = sessionStorage.getItem(key);
+      if (!v) {
+        v = (crypto.randomUUID?.() || ('u_' + Math.random().toString(36).slice(2)));
+        sessionStorage.setItem(key, v);
+      }
       return v;
     })();
 
-   async function serverNowMs() {
-   return Date.now();
-   }
-
-
-
-
+    /* ====== 자동 방 매칭: 1분 내 waiting 방 찾기 → 없으면 생성 ====== */
     async function autoRoom() {
-      const now = await serverNowMs();
-      // 최근 1분 이내 waiting 방 탐색
-      const oneMinAgo = now - 60_000;
-      const q = query(ref(db, "rooms"), orderByChild("createdAt"), startAt(oneMinAgo));
-      const snap = await get(q);
+      const now = Date.now();
 
+      // 1) 전체 rooms 읽고 조건에 맞는 첫 방 고르기 (인덱스/쿼리 불필요)
+      const snap = await get(ref(db, "rooms"));
       let targetId = null;
 
       snap.forEach(cs => {
-        const r = cs.val();
-        if (!targetId && r.status === "waiting" && (r.playerCount || 0) < 2) {
+        const r = cs.val() || {};
+        const created = typeof r.createdAt === 'number' ? r.createdAt : 0;
+        const cnt = r.playerCount || 0;
+        if (!targetId && r.status === "waiting" && cnt < 2 && (now - created) <= 60_000) {
           targetId = cs.key;
         }
       });
 
+      // 2) 없으면 새 방 생성
       if (!targetId) {
-        // 새 방 생성
-        const roomId = crypto.randomUUID ? crypto.randomUUID() : ('r_' + Math.random().toString(36).slice(2));
+        const roomId = crypto.randomUUID?.() || ('r_' + Math.random().toString(36).slice(2));
+        const nowMs = Date.now();
         await set(ref(db, `rooms/${roomId}`), {
           status: "waiting",
-          createdAt: serverTimestamp(),
+          createdAt: nowMs,      // serverTimestamp() 미사용 (환경 의존 제거)
           playerCount: 1,
-          players: { [uid]: { role: 0, joinedAt: serverTimestamp() } }
+          players: { [uid]: { role: 0, joinedAt: nowMs } }
         });
         onDisconnect(ref(db, `rooms/${roomId}/players/${uid}`)).remove();
         return { roomId, role: 0 };
       }
 
-      // 기존 방에 조인(트랜잭션으로 2명 제한)
+      // 3) 있으면 트랜잭션으로 합류 (2명 제한)
       let myRole = 1;
       await runTransaction(ref(db, `rooms/${targetId}`), room => {
-        if (!room) return; // 취소
+        if (!room) return;
         const cnt = room.playerCount || 0;
-        if (cnt >= 2) return; // 꽉 참 → 취소
-        // 역할 배정
+        if (cnt >= 2) return; // 꽉 찼으면 취소
+
         if (!room.players) room.players = {};
         const rolesTaken = Object.values(room.players).map(p => p.role);
         myRole = rolesTaken.includes(0) ? 1 : 0;
-        room.players[uid] = { role: myRole, joinedAt: serverTimestamp() };
-        room.playerCount = cnt + 1;
+
+        const nowMs = Date.now();
+        room.players[uid] = { role: myRole, joinedAt: nowMs };
+
+        // 실제 인원 다시 산정(같은 uid 중복 방지)
+        const uniqueCount = new Set(Object.keys(room.players)).size;
+        room.playerCount = Math.min(2, uniqueCount);
+
         if (room.playerCount === 2) {
           room.status = "playing";
-          if (!room.state) room.state = initialState(); // 초기 상태
+          if (!room.state) room.state = initialState();
         }
         return room;
       });
+
       onDisconnect(ref(db, `rooms/${targetId}/players/${uid}`)).remove();
       return { roomId: targetId, role: myRole };
     }
@@ -269,13 +273,26 @@
       }
     }
 
+    function clearFinalPaint(){
+      document.querySelectorAll('.final-p1-region, .final-p2-region').forEach(el=>{
+        el.classList.remove('final-p1-region','final-p2-region');
+        if (el.classList.contains('point')) el.style.background = '#fff';
+      });
+    }
+    function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
+
     function renderFromState(){
       const state = local.state;
       if (!state) return;
-      // 텍스트/버튼
+
+      // 상단 안내/버튼
       turnEl.textContent = `Player ${state.current+1}`;
       turnEl.style.color = COLORS[state.current];
       skipWallBtn.disabled = (state.phase !== 'move') || (state.current !== local.role);
+
+      // 기존 표시 초기화
+      clearMovable();
+      if (state.phase !== 'ended') clearFinalPaint();
 
       // 말 초기화
       document.querySelectorAll('.piece').forEach(el => el.remove());
@@ -307,8 +324,10 @@
           cell.style.background = COLORS[w.owner];
         }
       }
-      // 점수 로컬 계산
+
+      // 점수/종료 반영
       updateScoresLocal();
+      if (state.phase === 'ended') fillFinalRegionsLocal(); // 재접속 시 색 유지
     }
 
     function isMyTurn(){ return local.state && local.state.current === local.role; }
@@ -324,12 +343,10 @@
         const cell = grid[r][c];
         if (cell.querySelector('.piece')) return;
 
-        // 배치 반영
         state.pieces[String(state.current)].push({r,c});
         state.extraIdx++;
         if (state.extraIdx >= state.extraOrder.length){
-          state.phase = 'move';
-          // current는 그대로(0부터 시작)
+          state.phase = 'move'; // current는 그대로(0부터 시작)
         } else {
           state.current = state.extraOrder[state.extraIdx];
         }
@@ -343,7 +360,6 @@
         const cell = grid[r][c];
         const piece = cell.querySelector('.piece');
         if (local.selected && local.selected.r===r && local.selected.c===c){
-          // 선택 해제
           local.selected = null; clearMovable(); return;
         }
         if (!local.selected && piece && +piece.dataset.player === local.role){
@@ -353,7 +369,6 @@
           return;
         }
         if (local.selected && cell.classList.contains('movable')){
-          // 이동 반영
           const arr = state.pieces[String(local.role)];
           const idx = arr.findIndex(p => p.r===local.selected.r && p.c===local.selected.c);
           if (idx>=0){
@@ -391,7 +406,6 @@
       commitState();
     }
 
-    // 이동 없이 벽 설치
     document.getElementById('skipWallBtn').addEventListener('click', ()=>{
       const state = local.state;
       if (!state) return;
@@ -402,11 +416,9 @@
       commitState();
     });
 
-    // ===== 표시/이동 유틸 =====
+    // ===== 이동/표시 유틸 =====
     function inBounds(r,c){ return r>=0 && r<GRID && c>=0 && c<GRID; }
     function isPoint(r,c){ return (r%2===0) && (c%2===0); }
-
-    function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
 
     function neighborsReachable(r,c){
       const dirs = [{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}];
@@ -526,8 +538,6 @@
     function applyRemote(state){
       local.applyingRemote = true;
       local.state = state;
-      // 벽 표시를 위해 먼저 모든 벽 삭제 후 state.walls 기준으로 플래그만 적용
-      // renderFromState가 실제 DOM 반영
       renderFromState();
       local.applyingRemote = false;
     }
@@ -545,11 +555,11 @@
       local.roomId = roomId; local.role = role;
 
       roomLine.textContent = `방: ${roomId} — 나는 ${role===0?'P1(빨강)':'P2(파랑)'} 입니다.`;
+
       // 방 상태 구독
       onValue(ref(db, `rooms/${roomId}`), snap=>{
         const room = snap.val();
         if (!room) return;
-        // 방 상태 안내
         if (room.status==='waiting'){
           turnEl.textContent = `상대 대기 중…`; turnEl.style.color = '#888';
         }
