@@ -38,7 +38,7 @@
     button:disabled { opacity:.5; cursor:not-allowed; }
 
     /* 도움말 모달 */
-    #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; padding:16px; }
+    #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:10000; padding:16px; }
     #helpCard { width:100%; max-width:560px; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.2); text-align:left; overflow:hidden; }
     #helpHeader { padding:14px 18px; background:#222; color:#fff; font-weight:800; }
     #helpBody { padding:14px 18px; color:#222; line-height:1.5; font-size:15px; }
@@ -53,9 +53,6 @@
       .h-wall { width:36px; height:14px; }
       .v-wall { width:14px; height:36px; }
     }
-
-    #helpOverlay { z-index: 10000; }
-
   </style>
 </head>
 <body>
@@ -174,6 +171,10 @@
 
     let grid = [];
     let local = { roomId:null, role:0, state:null, selected:null };
+
+    // 🔔 구독 핸들(삭제 시 재생성 방지용)
+    let unsubRoom = null;
+    let unsubPlayers = null;
 
     /* ---------- 유틸 ---------- */
     const asArray = (x) => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
@@ -325,7 +326,12 @@
       fillFinalRegionsLocal();
       const p1=+s1El.textContent, p2=+s2El.textContent;
       alert(`게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n`+(p1>p2?'승자: P1(빨강)':p2>p1?'승자: P2(파랑)':'무승부'));
-      if(local.state){ local.state.phase='ended'; commitState(); }
+      if(local.state){
+        local.state.phase='ended';
+        commitState();
+        // 종료 상태 커밋 후 방 자동 삭제 예약
+        cleanupRoomAfterEnd(local.roomId, 2500);
+      }
     }
     function isMyTurn(){ return local.state && normalizeState(local.state).current===local.role; }
 
@@ -370,7 +376,10 @@
     });
 
     /* ---------- DB 동기화 ---------- */
-    async function commitState(){ if(!local.roomId||!local.state) return; await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state); }
+    async function commitState(){
+      if(!local.roomId||!local.state) return;
+      await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state);
+    }
     function applyRemote(state){ local.state = normalizeState(state); renderFromState(); }
 
     /* ---------- 방 생성/참여 ---------- */
@@ -405,74 +414,78 @@
     };
 
     btnJoin.onclick = async () => {
-  const roomId = requireRoomName();
-  if (!roomId) return;
+      const roomId = requireRoomName();
+      if (!roomId) return;
 
-  const roomRef    = ref(db, `wbaduk/rooms/${roomId}`);
-  const playersRef = ref(db, `wbaduk/rooms/${roomId}/players`);
-  const stateRef   = ref(db, `wbaduk/rooms/${roomId}/state`);
+      const roomRef    = ref(db, `wbaduk/rooms/${roomId}`);
+      const playersRef = ref(db, `wbaduk/rooms/${roomId}/players`);
+      const stateRef   = ref(db, `wbaduk/rooms/${roomId}/state`);
 
-  // 1) 방 존재 확인
-  const roomSnap = await get(roomRef);
-  if (!roomSnap.exists()) {
-    alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.');
-    return;
-  }
+      // 1) 방 존재 확인
+      const roomSnap = await get(roomRef);
+      if (!roomSnap.exists()) {
+        alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.');
+        return;
+      }
 
-  // 2) players만 트랜잭션(재입장 허용, 2명 제한)
-  let myRole = 1;
-  const txn = await runTransaction(playersRef, (players) => {
-    players = players || {};
-    const ids = Object.keys(players);
-    const hasMe = !!players[uid];
+      // 2) players만 트랜잭션(재입장 허용, 2명 제한)
+      let myRole = 1;
+      const txn = await runTransaction(playersRef, (players) => {
+        players = players || {};
+        const ids = Object.keys(players);
+        const hasMe = !!players[uid];
 
-    // 가득 찼고, 내가 아직 안 들어간 경우 → 중단
-    if (!hasMe && ids.length >= 2) return;
+        // 가득 찼고, 내가 아직 안 들어간 경우 → 중단
+        if (!hasMe && ids.length >= 2) return;
 
-    if (hasMe) {
-      // 재입장
-      myRole = players[uid].role ?? 1;
-      return players;
-    }
+        if (hasMe) {
+          // 재입장
+          myRole = players[uid].role ?? 1;
+          return players;
+        }
 
-    // 새로 들어감 → 역할 배정
-    const rolesTaken = Object.values(players).map(p => p.role);
-    myRole = rolesTaken.includes(0) ? 1 : 0;
-    players[uid] = { role: myRole, joinedAt: Date.now() };
-    return players;
-  });
+        // 새로 들어감 → 역할 배정
+        const rolesTaken = Object.values(players).map(p => p.role);
+        myRole = rolesTaken.includes(0) ? 1 : 0;
+        players[uid] = { role: myRole, joinedAt: Date.now() };
+        return players;
+      });
 
-  if (!txn.committed) {
-    // 실제 상태를 한 번 더 보고 정확히 안내
-    const after = await get(playersRef);
-    const cnt = after.exists() ? Object.keys(after.val()).length : 0;
-    if (cnt >= 2 && !(after.val() && after.val()[uid])) {
-      alert('이미 2명이 입장했습니다. 다른 방을 이용해 주세요.');
-    } else {
-      alert('입장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-    }
-    return;
-  }
+      if (!txn.committed) {
+        // 실제 상태를 한 번 더 보고 정확히 안내
+        const after = await get(playersRef);
+        const cnt = after.exists() ? Object.keys(after.val()).length : 0;
+        if (cnt >= 2 && !(after.val() && after.val()[uid])) {
+          alert('이미 2명이 입장했습니다. 다른 방을 이용해 주세요.');
+        } else {
+          alert('입장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        }
+        return;
+      }
 
-  // 3) 파생값 갱신 + state 보정
-  const playersNow = txn.snapshot.val() || {};
-  const cntNow = Math.min(2, Object.keys(playersNow).length);
-  await update(roomRef, {
-    playerCount: cntNow,
-    status: cntNow >= 2 ? 'playing' : 'waiting'
-  });
-  const st = await get(stateRef);
-  if (!st.exists()) {
-    await set(stateRef, initialState());
-  }
+      // 3) 파생값 갱신 + state 보정
+      const playersNow = txn.snapshot.val() || {};
+      const cntNow = Math.min(2, Object.keys(playersNow).length);
+      await update(roomRef, {
+        playerCount: cntNow,
+        status: cntNow >= 2 ? 'playing' : 'waiting'
+      });
+      const st = await get(stateRef);
+      if (!st.exists()) {
+        await set(stateRef, initialState());
+      }
 
-  // 4) 연결 끊길 때 자동 제거(베스트 에포트) + 입장
-  onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
-  enterRoom(roomId, myRole);
-};
+      // 4) 연결 끊길 때 자동 제거(베스트 에포트) + 입장
+      onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
+      enterRoom(roomId, myRole);
+    };
 
     function enterRoom(roomId, role){
       local.roomId = roomId; local.role = role;
+
+      // 기존 구독 해제(재생성 방지)
+      if (unsubRoom)   { unsubRoom();   unsubRoom = null; }
+      if (unsubPlayers){ unsubPlayers();unsubPlayers = null; }
 
       // UI 전환
       document.getElementById('setup').style.display='none';
@@ -485,24 +498,31 @@
 
       makeBoard();
 
-     onValue(ref(db, `wbaduk/rooms/${roomId}`), snap => {
-  const room = snap.val();
-  if (!room) {
-    alert('방이 삭제되었습니다. 로비로 돌아갑니다.');
-    location.reload();
-    return;
-  }
-  if (room.state) applyRemote(room.state);
-  if (room.status === 'waiting') {
-    const t = document.getElementById('turnColor');
-    t.textContent = '상대 대기 중…';
-    t.style.color = '#777';
-  }
-});
+      // 방 전체 구독
+      unsubRoom = onValue(ref(db, `wbaduk/rooms/${roomId}`), snap => {
+        const room = snap.val();
+        if (!room) {
+          alert('방이 삭제되었습니다. 로비로 돌아갑니다.');
+          location.reload();
+          return;
+        }
+        if (room.state) applyRemote(room.state);
 
+        // 상대가 종료시켜서 ended 내려오면 자동 삭제 예약
+        if (room.state?.phase === 'ended') {
+          cleanupRoomAfterEnd(roomId, 1500);
+        }
 
-      // 플레이어 수 변동 시 파생값 자동 정리
-      onValue(ref(db, `wbaduk/rooms/${roomId}/players`), snap => {
+        if (room.status === 'waiting') {
+          const t = document.getElementById('turnColor');
+          t.textContent = '상대 대기 중…';
+          t.style.color = '#777';
+        }
+      });
+
+      // 플레이어 수 변동 시 파생값 자동 정리 (삭제 예약 중에는 쓰지 않음)
+      unsubPlayers = onValue(ref(db, `wbaduk/rooms/${roomId}/players`), snap => {
+        if (cleanupScheduled) return;
         const cnt = snap.exists() ? Object.keys(snap.val()).length : 0;
         update(ref(db, `wbaduk/rooms/${roomId}`), {
           playerCount: Math.min(2, cnt),
@@ -530,54 +550,94 @@
       if (local.roomId) remove(ref(db, `wbaduk/rooms/${local.roomId}/players/${uid}`));
     });
 
-    function openHelp(){ 
-  const ov = document.getElementById('helpOverlay');
-  if (ov) ov.style.display = 'flex';
-}
-function closeHelp(){ 
-  const ov = document.getElementById('helpOverlay');
-  if (ov) ov.style.display = 'none';
-}
-
-/* ✅ 전역에서 호출 가능하게 */
-window.openHelp = openHelp;
-window.closeHelp = closeHelp;
-
-/* ✅ 리스너 보강 (중복 무해) */
-const helpBtnEl = document.getElementById('helpBtn');
-const helpCloseBtnEl = document.getElementById('helpCloseBtn');
-const helpOverlayEl = document.getElementById('helpOverlay');
-
-if (helpBtnEl) helpBtnEl.addEventListener('click', openHelp);
-if (helpCloseBtnEl) helpCloseBtnEl.addEventListener('click', closeHelp);
-if (helpOverlayEl) {
-  helpOverlayEl.addEventListener('click', (e)=>{ if (e.target === helpOverlayEl) closeHelp(); });
-}
-endBtn.onclick = async () => {
-  if (!local.roomId) return;
-  const roomId = local.roomId;
-
-  const ok = confirm('정말 게임을 종료하고 방을 삭제할까요?');
-  if (!ok) return;
-
-  try {
-    // 방 삭제
-    await remove(ref(db, `wbaduk/rooms/${roomId}`));
-
-    // latestRoom이 이 방을 가리키면 정리
-    const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
-    if (latestSnap.exists() && latestSnap.val()?.roomCode === roomId) {
-      await remove(ref(db, 'wbaduk/latestRoom'));
+    // 도움말 open/close (전역)
+    function openHelp(){
+      const ov = document.getElementById('helpOverlay');
+      if (ov) ov.style.display = 'flex';
     }
-  } catch (e) {
-    alert('방 삭제 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
-    console.error(e);
-  } finally {
-    // 깔끔하게 로비로 복귀 (리스너/상태 초기화)
-    location.reload();
-  }
-};
+    function closeHelp(){
+      const ov = document.getElementById('helpOverlay');
+      if (ov) ov.style.display = 'none';
+    }
+    // 전역 노출
+    window.openHelp = openHelp;
+    window.closeHelp = closeHelp;
 
+    // 버튼 리스너(중복 무해)
+    const helpBtnEl = document.getElementById('helpBtn');
+    const helpCloseBtnEl = document.getElementById('helpCloseBtn');
+    const helpOverlayEl = document.getElementById('helpOverlay');
+    if (helpBtnEl) helpBtnEl.addEventListener('click', openHelp);
+    if (helpCloseBtnEl) helpCloseBtnEl.addEventListener('click', closeHelp);
+    if (helpOverlayEl) {
+      helpOverlayEl.addEventListener('click', (e)=>{ if (e.target === helpOverlayEl) closeHelp(); });
+    }
+
+    // 수동 종료 버튼
+    endBtn.onclick = async () => {
+      if (!local.roomId) return;
+      const roomId = local.roomId;
+
+      const ok = confirm('정말 게임을 종료하고 방을 삭제할까요?');
+      if (!ok) return;
+
+      try {
+        // 구독 해제(재생성 방지)
+        if (unsubRoom)   { unsubRoom();   unsubRoom = null; }
+        if (unsubPlayers){ unsubPlayers();unsubPlayers = null; }
+
+        // 방 삭제
+        await remove(ref(db, `wbaduk/rooms/${roomId}`));
+
+        // latestRoom가 이 방이면 정리(옵션)
+        const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
+        if (latestSnap.exists() && latestSnap.val()?.roomCode === roomId) {
+          await remove(ref(db, 'wbaduk/latestRoom'));
+        }
+      } catch (e) {
+        alert('방 삭제 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+        console.error(e);
+      } finally {
+        location.reload();
+      }
+    };
+
+    // 🔒 중복 방 삭제 방지용 플래그
+    let cleanupScheduled = false;
+
+    // ✅ 종료 후 방 자동 삭제(+레이스 방지)
+    async function cleanupRoomAfterEnd(roomId, delay = 2500) {
+      if (!roomId || cleanupScheduled) return;
+      cleanupScheduled = true;
+
+      setTimeout(async () => {
+        try {
+          // 구독 해제(재생성 방지)
+          if (unsubRoom)   { unsubRoom();   unsubRoom = null; }
+          if (unsubPlayers){ unsubPlayers();unsubPlayers = null; }
+
+          // 한 클라이언트만 정리하도록 잠금
+          const lockRef = ref(db, `wbaduk/rooms/${roomId}/__cleanupLock`);
+          const res = await runTransaction(lockRef, v => v || uid);
+          if (!res.committed || res.snapshot.val() !== uid) {
+            return; // 다른 쪽이 정리함
+          }
+
+          // 방 삭제
+          await remove(ref(db, `wbaduk/rooms/${roomId}`));
+
+          // (옵션) latestRoom가 가리키면 정리
+          const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
+          if (latestSnap.exists() && latestSnap.val()?.roomCode === roomId) {
+            await remove(ref(db, 'wbaduk/latestRoom'));
+          }
+        } catch (e) {
+          console.error('방 자동 삭제 중 오류:', e);
+        } finally {
+          location.reload();
+        }
+      }, delay);
+    }
   </script>
 </body>
 </html>
