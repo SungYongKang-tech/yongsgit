@@ -16,22 +16,15 @@
       grid-template-rows: auto auto auto 1fr var(--bar-h);
     }
     h1 { margin: 8px 0; }
-    #panel { margin: 6px 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items:center; }
+    #info { margin: 6px 0 10px; font-weight: 600; min-height: 20px; }
+    #panel { margin: 6px 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
     button {
       padding: 10px 14px; border: 1px solid #999; border-radius: 10px;
       background: #fff; cursor: pointer; font-size: 15px;
     }
     button:disabled { opacity:.5; cursor:not-allowed; }
-    #turnLine { margin: 4px 0; font-size: 16px; display:flex; gap:8px; justify-content:center; align-items:center; }
-    #turnColor { font-weight:700; }
-    #timer { font-variant-numeric: tabular-nums; padding:2px 6px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+    #turnLine { margin: 4px 0; font-size: 16px; }
     #scores { margin: 4px 0 6px; font-size: 14px; }
-
-    /* 오디오 컨트롤 */
-    .audio-wrap {
-      display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff;
-    }
-    #volSlider { width: 160px; }
 
     /* 보드 */
     #wrap {
@@ -58,8 +51,11 @@
     .v-wall { width: 15px; height: 42px; background: #fff; cursor: pointer; }
     .blank  { width: 15px; height: 15px; background: #15326b; }
 
-    /* 이동 가능 칸 */
+    /* 이동 가능 칸: 더 짙은 회색 */
     .movable { background: #d0d0d0 !important; }
+
+    /* 설치된 벽 표시 */
+    .placed  { }
 
     /* 최종 구역 채색(게임 종료 후) */
     .final-p1-region { background: #ffd6e7 !important; } /* 분홍 */
@@ -96,7 +92,10 @@
     }
     #helpBody ul {margin: 6px 0 0 8px; padding-left: 12px;}
     #helpBody ul ul {margin-left: 6px; padding-left: 10px;}
-    #helpBody li { margin: 4px 0; }
+#helpBody li {
+  margin: 4px 0;
+}
+
     #helpFooter {
       display:flex; gap:10px; justify-content:flex-end; padding: 12px 16px; background: #fafafa;
     }
@@ -104,44 +103,44 @@
       padding: 10px 14px; border: 1px solid #ccc; border-radius: 10px; background: #fff; cursor: pointer;
     }
 
-    @media (max-width: 520px){
+    @media (max-width: 420px){
       .point { width: 36px; height: 36px; }
       .h-wall { width: 36px; height: 14px; }
       .v-wall { width: 14px; height: 36px; }
-      #volSlider { width: 120px; }
     }
+/* 레이아웃 타이트하게 + 바닥 버튼 짧게 */
+body { 
+  /* 섹션을 전부 auto로: 보드가 점수 바로 아래로 붙게 */
+  grid-template-rows: auto auto auto auto auto auto auto !important;
+}
 
-    /* 레이아웃 타이트 + 바닥 버튼 짧게 */
-    body { grid-template-rows: auto auto auto auto auto auto auto !important; }
-    #turnLine { margin: 2px 0 !important; }
-    #scores   { margin: 0 0 2px !important; }
-    #wrap     { padding: 0 10px 6px !important; }
-    #bottomBar { height: auto !important; padding: 6px 12px !important; }
-    #skipWallBtn {
-      flex: 0 0 auto !important;
-      width: min(340px, 92vw) !important;
-      height: 40px !important;
-    }
+/* 제목~버튼 쪽은 이미 줄였으니, 점수~보드 사이 더 붙이기 */
+#turnLine { margin: 2px 0 !important; }
+#scores   { margin: 0 0 2px !important; }
+#wrap     { padding: 0 10px 6px !important; }  /* 상단 패딩 0~2px로 좁힘 */
+
+/* 바닥바 높이/버튼 길이 줄이기 */
+#bottomBar {
+  height: auto !important;           /* 고정 높이 제거 */
+  padding: 6px 12px !important;      /* 얇게 */
+}
+#skipWallBtn {
+  flex: 0 0 auto !important;         /* 꽉 채우지 않게 */
+  width: min(340px, 92vw) !important;/* 너무 길어지지 않게 */
+  height: 40px !important;           /* 버튼 키 낮춤 */
+}
+
+
   </style>
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-
+ <!-- <div id="info"></div>  -->
   <div id="panel">
     <button id="resetBtn">새로 시작</button>
     <button id="helpBtn">도움말</button>
-
-    <div class="audio-wrap" title="효과음 볼륨">
-      <button id="muteBtn" aria-pressed="false">🔊</button>
-      <input id="volSlider" type="range" min="0" max="1" step="0.05" />
-      <span id="volVal" style="min-width:36px; display:inline-block; text-align:right;">100%</span>
-    </div>
   </div>
-
-  <div id="turnLine">
-    현재 턴: <span id="turnColor"></span>
-    <span id="timer" aria-live="polite"></span>
-  </div>
+  <div id="turnLine">현재 턴: <span id="turnColor"></span></div>
   <div id="scores">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
 
   <div id="wrap"><div id="board"></div></div>
@@ -186,34 +185,24 @@
   <script>
     // ===== 보드 / 상태 =====
     const BOARD_POINTS = 7;                    // 7x7 점
-    const GRID = BOARD_POINTS * 2 - 1;         // 13x13 내부 그리드
+    const GRID = BOARD_POINTS * 2 - 1;         // 내부 그리드 13x13
     const boardEl = document.getElementById('board');
+    const infoEl  = document.getElementById('info');
     const turnEl  = document.getElementById('turnColor');
-    const timerEl = document.getElementById('timer');
     const s1El    = document.getElementById('s1');
     const s2El    = document.getElementById('s2');
     const resetBtn= document.getElementById('resetBtn');
+    
     const skipWallBtn = document.getElementById('skipWallBtn');
     const helpBtn = document.getElementById('helpBtn');
     const helpOverlay = document.getElementById('helpOverlay');
     const helpCloseBtn = document.getElementById('helpCloseBtn');
 
-    // 오디오 컨트롤
-    const volSlider = document.getElementById('volSlider');
-    const volVal = document.getElementById('volVal');
-    const muteBtn = document.getElementById('muteBtn');
-
     const COLORS = ['#e74c3c', '#3498db'];     // P1 빨강, P2 파랑
-
-    // 사운드
-    const sndMove = new Audio('mal.mp3'); // 말 이동
-    const sndWall = new Audio('wall.mp3'); // 벽 설치
-    const sndWin  = new Audio('win.mp3');  // 승패
-    const allSounds = [sndMove, sndWall, sndWin];
 
     let grid = [];                // DOM 셀 2D
     let current = 0;              // 0 or 1
-    let phase   = 'place-extra';  // 'place-extra' | 'move' | 'wall'
+    let phase   = 'place-extra';  // 시작부터 '추가 배치' 단계
     let pieces  = [[], []];       // 각 플레이어 말 위치 배열 [{r,c}, ...]
     let selected = null;          // 선택된 말 위치 {r,c}
 
@@ -221,21 +210,8 @@
     const extraOrder = [0,1,1,0];
     let extraIdx = 0;
 
-    // 타이머: 이동 60초, 벽 10초
-    const MOVE_SECONDS = 60;
-    const WALL_SECONDS = 10;
-    let turnTimerId = null;
-    let turnDeadline = 0; // epoch ms
-
-    function playSafe(audio){
-      try { audio.currentTime = 0; audio.play().catch(()=>{}); } catch(e){}
-    }
-
     // ===== 초기화 =====
     function init() {
-      clearTurnTimer();
-      timerEl.textContent = '';
-
       boardEl.innerHTML = '';
       boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
       boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
@@ -266,11 +242,10 @@
 
       clearFinalPaint();
 
-      // 1-based 점 좌표 → 내부 그리드 좌표
+      // 1-based 점 좌표 → 내부 그리드 좌표: p → (p-1)*2
       const pt = p => (p - 1) * 2;
 
       // === 초기 고정 배치 ===
-      pieces = [[],[]];
       placePiece(0, pt(2), pt(2)); // P1
       placePiece(0, pt(6), pt(6)); // P1
       placePiece(1, pt(6), pt(2)); // P2
@@ -282,15 +257,13 @@
       current   = extraOrder[0];
       selected  = null;
 
+     // infoEl.textContent = '말을 배치하세요';
       updateTurnText('말을 배치하세요');
       clearMovable();
       updateScores();
       refreshSkipWallButton();
 
-      // 오디오 설정 복원
-      restoreAudioPrefs();
-
-      openHelp(); // 설명 팝업
+      openHelp(); // 초기 진입 시 설명 팝업 표시
     }
 
     // ===== 공용 유틸 =====
@@ -339,8 +312,8 @@
         extraIdx++;
 
         if (extraIdx >= extraOrder.length){
-          // 본 게임 시작: 이동 60초
-          startMovePhase(true);
+          // 본 게임 시작
+          startMovePhase();
         } else {
           current = extraOrder[extraIdx];
           updateTurnText('말을 배치하세요');
@@ -367,7 +340,7 @@
             selected = null;
             clearMovable();
             if (!anyMovableForPlayer(current)) {
-              updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 누르세요');
+              updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 눌러 벽을 세우세요');
             } else {
               updateTurnText('이동 불가: 다른 말을 선택하세요');
             }
@@ -378,9 +351,11 @@
         // 이동 목적지
         if (selected && cell.classList.contains('movable')){
           moveSelectedTo(r,c);
-          playSafe(sndMove);
-          // 벽 단계로 전환 + 10초 타이머
-          startWallPhase();
+          phase = 'wall';
+          clearMovable();
+          selected = null;
+          updateTurnText('빈 벽을 하나 세우세요');
+          refreshSkipWallButton();
           return;
         }
       }
@@ -395,20 +370,16 @@
       if (cell.classList.contains('placed')) return;
 
       // 벽 설치
-      placeWall(cell);
+      cell.classList.add('placed');
+      cell.style.background = COLORS[current];
 
       // 벽 설치 후 구역 계산 & 종료 체크
       const end = checkGameEndAndScore();
-      if (end){
-        clearTurnTimer();
-        playSafe(sndWin);
-        setTimeout(showWinnerWithPaint, 50);
-        return;
-      }
+      if (end){ showWinnerWithPaint(); return; }
 
-      // 턴 교대 → 이동 단계(60초)
+      // 턴 교대 → 이동 단계
       current = 1 - current;
-      startMovePhase(true);
+      startMovePhase();
     }
 
     // ===== 하단 버튼: 이동 없이 벽 설치 =====
@@ -416,12 +387,13 @@
       if (phase !== 'move') return;
       selected = null;
       clearMovable();
-      // 바로 벽 단계 + 10초 타이머
-      startWallPhase(true);
+      phase = 'wall';
+      updateTurnText('이동 없이: 빈 벽을 하나 세우세요');
+      refreshSkipWallButton();
     });
 
-    // ===== 단계 전환 =====
-    function startMovePhase(startTimer=false){
+    // ===== 단계 전환 보조 =====
+    function startMovePhase(){
       phase = 'move';
       selected = null;
       clearMovable();
@@ -431,16 +403,6 @@
       } else {
         updateTurnText('말을 이동하세요');
       }
-      if (startTimer) startTurnTimer(MOVE_SECONDS);
-    }
-
-    function startWallPhase(fromSkip=false){
-      phase = 'wall';
-      selected = null;
-      clearMovable();
-      updateTurnText(fromSkip ? '이동 없이: 빈 벽을 하나 세우세요' : '빈 벽을 하나 세우세요');
-      refreshSkipWallButton(); // 벽 단계에서는 비활성
-      startTurnTimer(WALL_SECONDS); // 벽만 별도 10초
     }
 
     function anyMovableForPlayer(player){
@@ -475,31 +437,9 @@
       pieces[current][idx] = { r:nr, c:nc };
     }
 
-    // ===== 벽 설치 공통 함수 =====
-    function placeWall(cell){
-      cell.classList.add('placed');
-      cell.style.background = COLORS[current];
-      playSafe(sndWall);
-    }
+  
 
-    // 빈 벽 랜덤 자동 설치
-    function autoPlaceRandomWall(){
-      const candidates = [];
-      for (let r=0; r<GRID; r++){
-        for (let c=0; c<GRID; c++){
-          const cell = grid[r][c];
-          if (!cell) continue;
-          const isWall = cell.classList.contains('h-wall') || cell.classList.contains('v-wall');
-          if (isWall && !cell.classList.contains('placed')) candidates.push(cell);
-        }
-      }
-      if (candidates.length === 0) return false;
-      const pick = candidates[Math.floor(Math.random()*candidates.length)];
-      placeWall(pick);
-      return true;
-    }
-
-    // 인접 점으로 갈 수 있는 곳(1칸)
+    // 인접 점으로 갈 수 있는 곳(1칸): 벽/점 검증
     function neighborsReachable(r,c){
       const dirs = [
         {dr:-2, dc:0}, {dr:2, dc:0}, {dr:0, dc:-2}, {dr:0, dc:2}
@@ -570,14 +510,10 @@
 
     function updateScores(){
       const end = checkGameEndAndScore();
-      if (end && phase!=='place-extra'){
-        clearTurnTimer();
-        playSafe(sndWin);
-        setTimeout(showWinnerWithPaint, 50);
-      }
+      if (end && phase!=='place-extra'){ showWinnerWithPaint(); }
     }
 
-    // 최종 칠하기 + 승자 알림
+    // 최종 칠하기 + 승자 알림 (기능은 유지, 설명 팝업에는 미노출)
     function showWinnerWithPaint(){
       fillFinalRegions();
       const p1 = parseInt(s1El.textContent,10);
@@ -589,7 +525,7 @@
       alert(msg);
     }
 
-    // 연결 컴포넌트(구역) 계산
+    // 연결 컴포넌트(구역) 계산: 점들만 대상으로, 벽이 없는 간선만 연결
     function computeRegions(){
       const visited = Array.from({length:GRID},()=>Array(GRID).fill(false));
       const regions = [];
@@ -622,6 +558,7 @@
       return { regions, hasMixed };
     }
 
+    // 벽 유무로 연결 판단(점 기준 상하좌우 1칸만)
     function neighborsByWall(r,c){
       const dirs = [{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}];
       const out=[];
@@ -638,6 +575,7 @@
       return out;
     }
 
+    // 최종 구역 채색
     function fillFinalRegions(){
       clearFinalPaint();
       const { regions } = computeRegions();
@@ -654,83 +592,9 @@
       }
     }
 
-    // ===== 턴 타이머 =====
-    function startTurnTimer(seconds){
-      clearTurnTimer();
-      turnDeadline = Date.now() + seconds * 1000;
-      tickTimer(); // 즉시 1회 표시
-      turnTimerId = setInterval(tickTimer, 200);
-    }
-
-    function clearTurnTimer(){
-      if (turnTimerId){
-        clearInterval(turnTimerId);
-        turnTimerId = null;
-      }
-      timerEl.textContent = '';
-    }
-
-    function tickTimer(){
-      const remainMs = Math.max(0, turnDeadline - Date.now());
-      const sec = Math.ceil(remainMs / 1000);
-      const mm = String(Math.floor(sec/60)).padStart(2,'0');
-      const ss = String(sec%60).padStart(2,'0');
-      timerEl.textContent = `${mm}:${ss}`;
-
-      if (remainMs <= 0){
-        clearTurnTimer();
-        handleTurnTimeout();
-      }
-    }
-
-    function handleTurnTimeout(){
-      // 시간 초과 시: 현재 단계가 무엇이든 랜덤 빈 벽 자동 설치
-      autoPlaceRandomWall();
-
-      // 점수/종료 체크
-      const end = checkGameEndAndScore();
-      if (end){
-        playSafe(sndWin);
-        setTimeout(showWinnerWithPaint, 50);
-        return;
-      }
-
-      // 다음 플레이어로 턴 넘김 (다음 턴 이동 60초)
-      current = 1 - current;
-      startMovePhase(true);
-    }
-
-    // ===== 오디오 UI =====
-    function applyVolumeUI(volume, muted){
-      allSounds.forEach(a => { a.volume = volume; a.muted = muted; });
-      volSlider.value = String(volume);
-      volVal.textContent = `${Math.round(volume*100)}%`;
-      muteBtn.textContent = muted ? '🔇' : '🔊';
-      muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
-    }
-
-    function restoreAudioPrefs(){
-      const savedVol = parseFloat(localStorage.getItem('wb_vol') ?? '1');
-      const savedMute = localStorage.getItem('wb_mute') === '1';
-      applyVolumeUI(isNaN(savedVol)?1:savedVol, savedMute);
-    }
-
-    volSlider.addEventListener('input', (e)=>{
-      const v = parseFloat(e.target.value);
-      applyVolumeUI(v, muteBtn.getAttribute('aria-pressed')==='true');
-      localStorage.setItem('wb_vol', String(v));
-    });
-
-    muteBtn.addEventListener('click', ()=>{
-      const nowMuted = !(muteBtn.getAttribute('aria-pressed')==='true');
-      applyVolumeUI(parseFloat(volSlider.value||'1'), nowMuted);
-      localStorage.setItem('wb_mute', nowMuted ? '1' : '0');
-    });
-
     // ===== 이벤트 =====
     resetBtn.addEventListener('click', init);
-
-    // 초기 시작
+    
     init();
   </script>
 </body>
