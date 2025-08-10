@@ -3,73 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <title>Wall-baduk (온라인 2인 · 7x7)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    :root{
-      --bar-h: 56px;
-      /* 점(포인트) 한 칸의 변 길이 */
-      --pt: clamp(28px, 7.2vw, 46px);
-      /* 벽/교차칸 두께(비율 유지) */
-      --gap: calc(var(--pt) * 0.357);
-    }
-    @media (orientation: landscape){
-      :root{ --pt: clamp(22px, 4.6vh, 44px); }
-    }
+    :root { --bar-h: 60px; }
+    body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
+      display:grid; grid-template-rows:auto auto auto auto auto; }
+    h1 { margin: 8px 0 4px; }
+    #setup { margin:10px 0 4px; }
+    #setup button { width: 160px; padding: 12px 14px; margin: 4px; border-radius:10px; border:1px solid #999; background:#fff; cursor:pointer; }
+    #roomLine { font-size:13px; color:#555; margin: 2px 0 4px; }
+    #turnLine { margin:2px 0; font-size:16px; }
+    #scores   { margin:0 0 4px; font-size:14px; }
 
-    body{
-      font-family:sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
-      display:grid; grid-template-rows:auto auto auto auto auto;
-    }
-    h1{ margin:6px 0 2px; font-size:clamp(20px,5.6vw,34px); }
+    #wrap { display:flex; justify-content:center; align-items:flex-start; padding: 0 10px 6px; overflow:auto; }
+    #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
+    .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
+    .point { width:42px; height:42px; background:#fff; position:relative; cursor:pointer; transition:background .1s; }
+    .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
+    .h-wall { width:42px; height:15px; background:#fff; cursor:pointer; }
+    .v-wall { width:15px; height:42px; background:#fff; cursor:pointer; }
+    .blank  { width:15px; height:15px; background:#15326b; }
+    .movable { background:#d0d0d0 !important; }
+    .final-p1-region { background:#ffd6e7 !important; }
+    .final-p2-region { background:#d6ecff !important; }
 
-    /* 매칭 섹션 */
-    #setup{ margin:6px 0 2px; }
-    #setup button{
-      width:min(46vw,180px);
-      padding:12px 14px; margin:4px; border-radius:10px; border:1px solid #999; background:#fff; cursor:pointer;
-    }
-    #roomLine{ font-size:13px; color:#555; margin:2px 0 2px; }
+    #bottomBar { position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
+      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px; }
+    #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
 
-    /* 상단 정보 */
-    #turnLine{ margin:2px 0; font-size:clamp(14px,3.6vw,16px); }
-    #scores  { margin:0 0 2px; font-size:clamp(13px,3.2vw,15px); }
-
-    /* 보드 래퍼 */
-    #wrap{ display:flex; justify-content:center; align-items:flex-start; padding:2px 8px 6px; overflow:auto; }
-    #board{
-      display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation;
-      max-width:100vw;
-    }
-
-    /* 셀 */
-    .cell{ box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
-    .point{ width:var(--pt); height:var(--pt); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
-    .piece{ width:80%; height:80%; border-radius:50%; pointer-events:none; }
-    .h-wall{ width:var(--pt);  height:var(--gap); background:#fff; cursor:pointer; }
-    .v-wall{ width:var(--gap); height:var(--pt);  background:#fff; cursor:pointer; }
-    .blank { width:var(--gap); height:var(--gap); background:#15326b; }
-
-    .movable{ background:#d0d0d0 !important; }
-    .final-p1-region{ background:#ffd6e7 !important; }
-    .final-p2-region{ background:#d6ecff !important; }
-
-    /* 게임 패널 */
-    #panel{ margin:4px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-    #panel button{ padding:10px 14px; border:1px solid #999; border-radius:10px; background:#fff; cursor:pointer; }
-    button:disabled{ opacity:.5; cursor:not-allowed; }
-
-    /* 하단 고정 바 (노치 안전영역 고려) */
-    #bottomBar{
-      position:sticky; bottom:0; left:0; right:0;
-      background:#ffffffcc; backdrop-filter:blur(6px);
-      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center;
-      padding:6px 12px calc(6px + env(safe-area-inset-bottom));
-    }
-    #skipWallBtn{
-      width:min(360px, 94vw); height:44px; border-radius:12px; font-weight:700;
-      background:#ffd6e7; border:1px solid #e7a3bd;
-    }
+    #panel { margin:4px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    #panel button { padding:10px 14px; border:1px solid #999; border-radius:10px; background:#fff; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
 
     /* 도움말 모달 */
     #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; padding:16px; }
@@ -81,6 +45,12 @@
     #helpBody li { margin:4px 0; }
     #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
     .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
+
+    @media (max-width:420px){
+      .point { width:36px; height:36px; }
+      .h-wall { width:36px; height:14px; }
+      .v-wall { width:14px; height:36px; }
+    }
   </style>
 </head>
 <body>
@@ -107,7 +77,7 @@
     <button id="skipWallBtn" disabled>이동 없이 벽 설치</button>
   </div>
 
-  <!-- 설명 팝업 -->
+  <!-- 도움말 -->
   <div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div id="helpCard">
       <div id="helpHeader"><span id="helpTitle">게임 설명</span></div>
@@ -115,23 +85,8 @@
         <ul>
           <li><strong>목표</strong>: 벽으로 보드를 나눠 <strong>한쪽만 포함된 구역</strong>을 많이 만들기.</li>
           <li><strong>턴 진행</strong>: 내 말 하나 선택 → <strong>이동</strong>(또는 생략) → <strong>벽 1개 설치</strong> → 상대 턴.</li>
-          <li><strong>이동 규칙</strong>:
-            <ul>
-              <li>상하좌우 <strong>1칸</strong> 또는 <strong>1칸+1칸</strong>(직각 가능).</li>
-              <li><strong>벽 통과 불가</strong>, 도착 칸에 말 있으면 불가.</li>
-              <li>이동 가능 칸은 <strong>짙은 회색</strong>으로 표시.</li>
-              <li>갈 곳이 없으면 <strong>이동 없이 바로 벽 설치</strong>.</li>
-            </ul>
-          </li>
-          <li><strong>벽 설치</strong>: 빈 가로/세로 벽 칸에 <strong>1개</strong> 설치, <strong>제거 불가</strong>.</li>
-          <li><strong>구역 판단</strong>:
-            <ul>
-              <li>벽 없이 이어진 점들의 집합 = <strong>구역</strong>.</li>
-              <li><strong>한 플레이어의 말만</strong> 있는 구역만 그 플레이어 소유.</li>
-              <li>두 플레이어 말이 함께 있으면 <strong>무주지</strong>.</li>
-            </ul>
-          </li>
-          <li><strong>종료 & 승리</strong>: 모든 구역에서 <strong>혼재 구역이 사라지면</strong> 즉시 종료 → 각자 <strong>소유 구역의 점 개수 합</strong> 비교로 승리 결정.</li>
+          <li><strong>이동</strong>: 상하좌우 1칸 또는 1칸+1칸(직각 가능), 벽 통과 불가, 도착 칸 점유 불가.</li>
+          <li><strong>구역/승리</strong>: 혼재 구역이 사라지면 종료, 소유 구역 점 합이 큰 쪽 승리.</li>
         </ul>
       </div>
       <div id="helpFooter">
@@ -157,14 +112,7 @@
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
-    /* ---- 서버 시간(offset) 동기화 ---- */
-    let serverOffset = 0;
-    onValue(ref(db, '.info/serverTimeOffset'), s => {
-      serverOffset = s.val() || 0;
-    });
-    const serverNow = () => Date.now() + serverOffset;
-
-    /* ---- 방 이름/유저 ID ---- */
+    /* ---------- 방 이름/유저 ID ---------- */
     const uid = (() => {
       const key='wb_uid_tab'; let v=sessionStorage.getItem(key);
       if(!v){ v=(crypto.randomUUID?.()||('u_'+Math.random().toString(36).slice(2))); sessionStorage.setItem(key,v); }
@@ -176,7 +124,7 @@
       return animals[Math.floor(Math.random()*animals.length)] + num; // 예: 부엉이1929
     }
 
-    /* ---- 보드/상태 ---- */
+    /* ---------- 보드/상태 ---------- */
     const BOARD_POINTS = 7;
     const GRID = BOARD_POINTS*2-1;
     const COLORS = ['#e74c3c','#3498db'];
@@ -195,10 +143,11 @@
     let grid = [];
     let local = { roomId:null, role:0, state:null, selected:null };
 
-    /* ---- RTDB 배열 정규화 ---- */
+    /* ---------- RTDB 배열 정규화(핵심 수정) ---------- */
     const asArray = (x) => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
     function normalizeState(s){
       if(!s) return s;
+      // 깊은 복사 없이도 OK(로컬만 사용) — 필요한 필드만 정규화
       s.walls = asArray(s.walls);
       if(!s.pieces) s.pieces = {"0":[], "1":[]};
       s.pieces["0"] = asArray(s.pieces["0"]);
@@ -207,7 +156,7 @@
       return s;
     }
 
-    /* ---- 보드 생성 ---- */
+    /* ---------- 보드 생성 ---------- */
     function makeBoard(){
       boardEl.innerHTML='';
       boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
@@ -238,8 +187,7 @@
       const s = normalizeState(local.state);
       if(!s) return;
 
-      turnEl.textContent = `Player ${s.current+1}`;
-      turnEl.style.color = COLORS[s.current];
+      turnEl.textContent = `Player ${s.current+1}`; turnEl.style.color = COLORS[s.current];
       skipWallBtn.disabled = (s.phase!=='move') || (s.current!==local.role);
 
       // 말 다시 그림
@@ -252,12 +200,10 @@
           cell.appendChild(dot);
         }
       }
-      // 벽 초기화 후 칠하기
+      // 벽 초기화
       for(let r=0;r<GRID;r++){ for(let c=0;c<GRID;c++){
         const cell=grid[r][c]; if(!cell) continue;
-        if(cell.classList.contains('h-wall')||cell.classList.contains('v-wall')){
-          cell.classList.remove('placed'); cell.style.background='#fff';
-        }
+        if(cell.classList.contains('h-wall')||cell.classList.contains('v-wall')){ cell.classList.remove('placed'); cell.style.background='#fff'; }
       }}      
       for(const w of asArray(s.walls)){
         const cell=grid[w.r]?.[w.c]; if(cell){ cell.classList.add('placed'); cell.style.background=COLORS[w.owner]; }
@@ -265,14 +211,12 @@
       updateScoresLocal();
     }
 
-    /* ---- 도움말 ---- */
     function openHelp(){ helpOverlay.style.display='flex'; }
     function closeHelp(){ helpOverlay.style.display='none'; }
-    helpBtn.addEventListener('click', openHelp);
-    helpCloseBtn.addEventListener('click', closeHelp);
+    helpBtn.addEventListener('click', openHelp); helpCloseBtn.addEventListener('click', closeHelp);
     helpOverlay.addEventListener('click', e=>{ if(e.target===helpOverlay) closeHelp(); });
 
-    /* ---- 이동/점수 유틸 ---- */
+    /* ---------- 이동/점수 유틸 ---------- */
     function inBounds(r,c){ return r>=0&&r<GRID&&c>=0&&c<GRID; }
     function isPoint(r,c){ return (r%2===0)&&(c%2===0); }
     function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
@@ -335,7 +279,7 @@
     }
     function isMyTurn(){ return local.state && normalizeState(local.state).current===local.role; }
 
-    /* ---- 입력 처리 ---- */
+    /* ---------- 입력 처리 ---------- */
     function onPointClick(r,c){
       local.state = normalizeState(local.state);
       const s=local.state; if(!s) return;
@@ -375,24 +319,18 @@
       const s=local.state; if(!s||s.phase!=='move'||!isMyTurn()) return; clearMovable(); local.selected=null; s.phase='wall'; commitState();
     });
 
-    /* ---- DB 동기화 ---- */
-    async function commitState(){
-      if(!local.roomId||!local.state) return;
-      await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state);
-    }
-    function applyRemote(state){
-      local.state = normalizeState(state);
-      renderFromState();
-    }
+    /* ---------- DB 동기화 ---------- */
+    async function commitState(){ if(!local.roomId||!local.state) return; await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state); }
+    function applyRemote(state){ local.state = normalizeState(state); renderFromState(); }
 
-    /* ---- 방 생성/참여 ---- */
+    /* ---------- 방 생성/참여 ---------- */
     const btnCreate=document.getElementById('btnCreate');
     const btnJoin  =document.getElementById('btnJoin');
 
     btnCreate.onclick = async ()=>{
       const latestRef = ref(db, 'wbaduk/latestRoom');
       const latestSnap= await get(latestRef);
-      const now = serverNow(); // 서버 기준
+      const now = Date.now();
 
       if(latestSnap.exists() && now - (latestSnap.val().createdAt||0) < 60_000){
         alert('1분 내 생성된 대기방이 있어요. [방 참여하기]로 들어가세요.');
@@ -415,68 +353,31 @@
       enterRoom(roomId, 0);
     };
 
-   btnJoin.onclick = async () => {
-  // 0) 들어갈 수 있는 방 고르기 (latestRoom → 전체 대기방 스캔)
-  const pick = await pickJoinableRoom();
-  if (!pick) {
-    alert('지금 들어갈 수 있는 대기방이 없습니다. 방을 새로 만들어 주세요.');
-    return;
-  }
-  const roomId = pick.id;
-  const roomRef = ref(db, `wbaduk/rooms/${roomId}`);
+    btnJoin.onclick = async ()=>{
+      const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
+      if(!latestSnap.exists()){ alert('참여 가능한 방이 없습니다.'); return; }
+      const { roomCode, createdAt } = latestSnap.val();
+      if(Date.now() - (createdAt||0) > 60_000){ alert('참여 시간이 초과되었습니다.'); return; }
 
-  // 1) 트랜잭션으로 입장 (동시경쟁 대비 3회 재시도)
-  let tries = 0;
-  let myRole = 1;
-
-  while (tries < 3) {
-    const tx = await runTransaction(roomRef, room => {
-      if (!room) return; // 방이 삭제됨 → abort
-
-      const now = serverNow();
-      const players = room.players || {};
-
-      // 내가 이미 들어간 방이면 역할 유지하고 그대로 통과
-      if (players[uid]) {
-        myRole = players[uid].role ?? 0;
-        room.playerCount = Math.min(2, new Set(Object.keys(players)).size);
-        room.status = room.playerCount === 2 ? 'playing' : 'waiting';
-        if (!room.state) room.state = initialState();
+      // 트랜잭션으로 합류(2명 제한)
+      let myRole = 1;
+      await runTransaction(ref(db, `wbaduk/rooms/${roomCode}`), room=>{
+        if(!room) return;
+        const cnt = room.playerCount||0;
+        if(cnt>=2) return;
+        if(!room.players) room.players={};
+        const rolesTaken = Object.values(room.players).map(p=>p.role);
+        myRole = rolesTaken.includes(0)?1:0;
+        room.players[uid] = { role: myRole, joinedAt: Date.now() };
+        const uniqueCount = new Set(Object.keys(room.players)).size;
+        room.playerCount = Math.min(2, uniqueCount);
+        if(room.playerCount===2) room.status='playing';
+        if(!room.state) room.state = initialState();
         return room;
-      }
-
-      // 현재 실제 인원 수
-      const currentCount = Math.min(2, new Set(Object.keys(players)).size);
-      if (currentCount >= 2) return; // 가득 참 → abort (committed=false)
-
-      // 빈 역할 배정
-      const rolesTaken = Object.values(players).map(p => p.role);
-      myRole = rolesTaken.includes(0) ? 1 : 0;
-
-      players[uid] = { role: myRole, joinedAt: now };
-      room.players = players;
-      room.playerCount = Math.min(2, new Set(Object.keys(players)).size);
-      if (room.playerCount === 2) room.status = 'playing';
-      if (!room.state) room.state = initialState();
-
-      return room;
-    });
-
-    if (tx.committed) {
-      // 참여 성공
-      onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
-      enterRoom(roomId, myRole);
-      return;
-    }
-
-    // 2) 충돌 → 잠시 대기 후 재시도
-    tries++;
-    await new Promise(r => setTimeout(r, 150 + Math.random() * 200));
-  }
-
-  alert('입장 경쟁에 밀렸어요. [방 참여하기]를 다시 눌러보세요.');
-};
-
+      });
+      onDisconnect(ref(db, `wbaduk/rooms/${roomCode}/players/${uid}`)).remove();
+      enterRoom(roomCode, myRole);
+    };
 
     function enterRoom(roomId, role){
       local.roomId = roomId; local.role = role;
@@ -491,22 +392,13 @@
       roomLine.textContent = `방: ${roomId} — 나는 ${role===0?'P1(빨강)':'P2(파랑)'} 입니다.`;
 
       makeBoard();
-
       onValue(ref(db, `wbaduk/rooms/${roomId}`), snap=>{
         const room=snap.val(); if(!room) return;
-
-        if (room.status === 'waiting') {
-          // 대기 안내를 친절하게
-          turnEl.textContent = '⏳ 매칭 대기 중 — 상대가 입장하면 자동 시작됩니다';
-          turnEl.style.color = '#666';
-          skipWallBtn.disabled = true;
-          return;
-        }
-
         if(room.state) applyRemote(room.state);
+        if(room.status==='waiting'){ document.getElementById('turnColor').textContent='상대 대기 중…'; }
       });
 
-      // 리셋: 같은 방에서 새 게임 시작
+      // 리셋 버튼: 같은 방에서 새 게임
       resetBtn.onclick = async ()=>{
         await runTransaction(ref(db, `wbaduk/rooms/${roomId}`), room=>{
           if(!room) return room;
@@ -516,47 +408,8 @@
         });
       };
 
-      openHelp(); // 처음에 도움말
+      openHelp();
     }
-     // ---- 입장 가능한 방 선택 (latestRoom 우선, 없으면 전체 스캔) ----
-async function pickJoinableRoom() {
-  const now = serverNow();
-  const candidates = [];
-
-  // 1) latestRoom 우선 시도
-  const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
-  if (latestSnap.exists()) {
-    const { roomCode, createdAt } = latestSnap.val();
-    if (now - (createdAt || 0) <= 60_000) {
-      const rs = await get(ref(db, `wbaduk/rooms/${roomCode}`));
-      if (rs.exists()) candidates.push({ id: roomCode, data: rs.val() });
-    }
-  }
-
-  // 2) 1분 내 생성 + waiting + 인원<2 모든 방 스캔 (백업 경로)
-  const roomsSnap = await get(ref(db, 'wbaduk/rooms'));
-  if (roomsSnap.exists()) {
-    roomsSnap.forEach(cs => {
-      const r = cs.val() || {};
-      const created = r.createdAt || 0;
-      const playersCount = Math.min(2, new Set(Object.keys(r.players || {})).size);
-      const count = r.playerCount || playersCount;
-      if (r.status === 'waiting' && count < 2 && now - created <= 60_000) {
-        candidates.push({ id: cs.key, data: r });
-      }
-    });
-  }
-
-  // 중복 제거 후 첫 후보 반환
-  const seen = new Set();
-  const ordered = candidates.filter(c => {
-    if (seen.has(c.id)) return false;
-    seen.add(c.id);
-    return true;
-  });
-
-  return ordered[0] || null;
-}
 
   </script>
 </body>
