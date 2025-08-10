@@ -415,46 +415,68 @@
       enterRoom(roomId, 0);
     };
 
-    btnJoin.onclick = async ()=>{
-      const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
-      if(!latestSnap.exists()){ alert('참여 가능한 방이 없습니다.'); return; }
+   btnJoin.onclick = async () => {
+  // 0) 들어갈 수 있는 방 고르기 (latestRoom → 전체 대기방 스캔)
+  const pick = await pickJoinableRoom();
+  if (!pick) {
+    alert('지금 들어갈 수 있는 대기방이 없습니다. 방을 새로 만들어 주세요.');
+    return;
+  }
+  const roomId = pick.id;
+  const roomRef = ref(db, `wbaduk/rooms/${roomId}`);
 
-      const { roomCode, createdAt } = latestSnap.val();
-      if(serverNow() - (createdAt||0) > 60_000){
-        alert('대기 시간이 초과되었습니다. 방을 새로 만들어 주세요.');
-        return;
-      }
+  // 1) 트랜잭션으로 입장 (동시경쟁 대비 3회 재시도)
+  let tries = 0;
+  let myRole = 1;
 
-      const roomRef = ref(db, `wbaduk/rooms/${roomCode}`);
-      const roomSnap = await get(roomRef);
-      if(!roomSnap.exists()){ alert('방이 삭제되었습니다. 새로 만들어 주세요.'); return; }
+  while (tries < 3) {
+    const tx = await runTransaction(roomRef, room => {
+      if (!room) return; // 방이 삭제됨 → abort
 
-      // 트랜잭션으로 합류(2명 제한)
-      const tx = await runTransaction(roomRef, room=>{
-        if(!room) return;
-        const cnt = room.playerCount||0;
-        if(cnt>=2) return; // 가득 참 → 취소(커밋 안됨)
+      const now = serverNow();
+      const players = room.players || {};
 
-        if(!room.players) room.players = {};
-        const rolesTaken = Object.values(room.players).map(p=>p.role);
-        const role = rolesTaken.includes(0)?1:0;
-
-        room.players[uid] = { role, joinedAt: serverNow() };
-        room.playerCount = Math.min(2, new Set(Object.keys(room.players)).size);
-        if(room.playerCount===2) room.status='playing';
-        if(!room.state) room.state = initialState();
+      // 내가 이미 들어간 방이면 역할 유지하고 그대로 통과
+      if (players[uid]) {
+        myRole = players[uid].role ?? 0;
+        room.playerCount = Math.min(2, new Set(Object.keys(players)).size);
+        room.status = room.playerCount === 2 ? 'playing' : 'waiting';
+        if (!room.state) room.state = initialState();
         return room;
-      });
-
-      if (!tx.committed) {
-        alert('입장에 실패했습니다. 이미 가득 찼을 수 있어요.');
-        return;
       }
 
-      const myRole = tx.snapshot.val()?.players?.[uid]?.role ?? 1;
-      onDisconnect(ref(db, `wbaduk/rooms/${roomCode}/players/${uid}`)).remove();
-      enterRoom(roomCode, myRole);
-    };
+      // 현재 실제 인원 수
+      const currentCount = Math.min(2, new Set(Object.keys(players)).size);
+      if (currentCount >= 2) return; // 가득 참 → abort (committed=false)
+
+      // 빈 역할 배정
+      const rolesTaken = Object.values(players).map(p => p.role);
+      myRole = rolesTaken.includes(0) ? 1 : 0;
+
+      players[uid] = { role: myRole, joinedAt: now };
+      room.players = players;
+      room.playerCount = Math.min(2, new Set(Object.keys(players)).size);
+      if (room.playerCount === 2) room.status = 'playing';
+      if (!room.state) room.state = initialState();
+
+      return room;
+    });
+
+    if (tx.committed) {
+      // 참여 성공
+      onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
+      enterRoom(roomId, myRole);
+      return;
+    }
+
+    // 2) 충돌 → 잠시 대기 후 재시도
+    tries++;
+    await new Promise(r => setTimeout(r, 150 + Math.random() * 200));
+  }
+
+  alert('입장 경쟁에 밀렸어요. [방 참여하기]를 다시 눌러보세요.');
+};
+
 
     function enterRoom(roomId, role){
       local.roomId = roomId; local.role = role;
