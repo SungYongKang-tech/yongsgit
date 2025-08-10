@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <title>Wall-baduk (벽바둑)</title>
+  <meta charset="UTF-8" />
+  <title>Wall-baduk (9x9 · 2인용)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
     body {
       font-family: sans-serif;
@@ -14,14 +15,16 @@
       align-items: center;
       justify-content: flex-start;
       min-height: 100vh;
+      padding: 10px;
     }
-    h1 { margin: 10px; }
-    #controls { margin-bottom: 10px; }
-    #turn { font-weight: bold; margin: 10px; }
+    h1 { margin: 8px 0; }
+    #info { margin: 6px 0 10px; font-weight: 600; }
     #board {
       display: grid;
       background: #fff;
       border: 2px solid #333;
+      user-select: none;
+      touch-action: manipulation;
     }
     .cell {
       box-sizing: border-box;
@@ -30,195 +33,245 @@
       align-items: center;
       justify-content: center;
     }
-    .point { width: 40px; height: 40px; background-color: white; position: relative; }
+    .point { width: 40px; height: 40px; background: #fff; position: relative; cursor: pointer; }
     .piece { width: 80%; height: 80%; border-radius: 50%; pointer-events: none; }
-    .h-wall { width: 40px; height: 15px; background-color: white; cursor: pointer; }
-    .v-wall { width: 15px; height: 40px; background-color: white; cursor: pointer; }
-    .blank { width: 15px; height: 15px; background-color: navy; }
+    .h-wall { width: 40px; height: 15px; background: #fff; cursor: pointer; }
+    .v-wall { width: 15px; height: 40px; background: #fff; cursor: pointer; }
+    .blank  { width: 15px; height: 15px; background: #15326b; }
+
     .movable { outline: 3px dashed gray; }
+    .placed  { }
+    #panel { margin: 8px 0 14px; display: flex; gap: 8px; }
+    button { padding: 8px 12px; border: 1px solid #999; border-radius: 8px; background: #fafafa; cursor: pointer; }
+    #turnLine { margin: 6px 0; font-size: 16px; }
   </style>
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-  <div id="controls">
-    <label>난이도:
-      <select id="levelSelect">
-        <option value="7">초급 (7x7)</option>
-        <option value="9">중급 (9x9)</option>
-        <option value="11">고급 (11x11)</option>
-      </select>
-    </label>
-    <label>인원:
-      <select id="playerCountSelect">
-        <option value="2">2명</option>
-        <option value="3">3명</option>
-        <option value="4">4명</option>
-      </select>
-    </label>
-    <button onclick="startGame()">게임 시작</button>
+  <div id="info">배치 단계: 각자 말 1개씩 빈 점에 놓으세요.</div>
+  <div id="panel">
+    <button id="resetBtn">새로 시작</button>
   </div>
-  <div id="turn" style="display:none;">현재 턴: <span id="turnColor"></span></div>
+  <div id="turnLine">현재 턴: <span id="turnColor"></span></div>
   <div id="board"></div>
 
   <script>
-    const board = document.getElementById("board");
-    const turnDisplay = document.getElementById("turn");
-    const turnColorText = document.getElementById("turnColor");
-    const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#8e44ad'];
-    let playerCount = 2;
-    let gridSize = 13;
-    let boardMap = [];
+    const BOARD_SIZE_POINTS = 9;
+    const GRID_SIZE = BOARD_SIZE_POINTS * 2 - 1; // 17
+
+    const boardEl = document.getElementById('board');
+    const infoEl  = document.getElementById('info');
+    const turnEl  = document.getElementById('turnColor');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const playerColors = ['#e74c3c', '#3498db'];
+    const PLAYER_COUNT = 2;
+
+    let grid = [];
     let currentPlayer = 0;
-    let selectedPiece = null;
-    let placingCount = 0;
-    let maxPiecesPerPlayer = 1;
+    let phase = 'place';           // 'place' | 'move' | 'wall'
+    let placedPieces = [false, false];
+    let pieces = [null, null];     // {r,c}
+    let selected = null;           // {r,c}
 
-    function startGame() {
-  const level = parseInt(document.getElementById("levelSelect").value);
-  playerCount = parseInt(document.getElementById("playerCountSelect").value);
-  gridSize = level * 2 - 1;
+    function init() {
+      boardEl.innerHTML = '';
+      boardEl.style.gridTemplateColumns = `repeat(${GRID_SIZE}, auto)`;
+      boardEl.style.gridTemplateRows    = `repeat(${GRID_SIZE}, auto)`;
+      grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(null));
 
-  board.innerHTML = "";
-  board.style.gridTemplateColumns = `repeat(${gridSize}, auto)`;
-  board.style.gridTemplateRows = `repeat(${gridSize}, auto)`;
-  boardMap = Array.from(Array(gridSize), () => Array(gridSize).fill(null));
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const cell = document.createElement('div');
+          cell.classList.add('cell');
 
-  turnDisplay.style.display = 'block';
-  updateTurnDisplay();
-  createBoard();
-  setupInitialPieces();
-}
-
-
-    function updateTurnDisplay() {
-  turnColorText.textContent = `Player ${currentPlayer + 1}`;
-  turnColorText.style.color = playerColors[currentPlayer];
-}
-
-
-    function createBoard() {
-      for (let r = 0; r < gridSize; r++) {
-        for (let c = 0; c < gridSize; c++) {
-          const cell = document.createElement("div");
-          cell.classList.add("cell");
           if (r % 2 === 0 && c % 2 === 0) {
-            cell.classList.add("point");
-            cell.addEventListener("click", () => handlePointClick(cell, r, c));
+            cell.classList.add('point');
+            cell.addEventListener('click', () => onPointClick(r, c));
           } else if (r % 2 === 1 && c % 2 === 0) {
-            cell.classList.add("h-wall");
+            cell.classList.add('h-wall');
+            cell.addEventListener('click', () => onWallClick(r, c));
           } else if (r % 2 === 0 && c % 2 === 1) {
-            cell.classList.add("v-wall");
+            cell.classList.add('v-wall');
+            cell.addEventListener('click', () => onWallClick(r, c));
           } else {
-            cell.classList.add("blank");
+            cell.classList.add('blank');
           }
-          board.appendChild(cell);
-          boardMap[r][c] = cell;
+
+          boardEl.appendChild(cell);
+          grid[r][c] = cell;
         }
       }
+
+      currentPlayer = 0;
+      phase = 'place';
+      placedPieces = [false, false];
+      pieces = [null, null];
+      selected = null;
+      updateTurnText();
+      infoEl.textContent = '배치 단계: 각자 말 1개씩 빈 점에 놓으세요.';
+      clearMovable();
     }
 
-    function setupInitialPieces() {
-      const margin = 2;
-      const mid = Math.floor(gridSize / 2);
-
-      if (playerCount === 2) {
-        placePiece(margin, margin, 0);
-        placePiece(gridSize - 1 - margin, gridSize - 1 - margin, 1);
-        placingCount = 0;
-        maxPiecesPerPlayer = 2;
-        alert("추가로 각 플레이어는 2개의 말을 배치해야 합니다.");
-      } else if (playerCount === 3) {
-        placingCount = 0;
-        maxPiecesPerPlayer = 2;
-        alert("3인용: 각 플레이어는 2개의 말을 순서대로 배치하세요.");
-      } else if (playerCount === 4) {
-        placingCount = 0;
-        maxPiecesPerPlayer = 1;
-        alert("4인용: 각자 말 1개씩 배치하세요.");
-      }
+    function updateTurnText(extra = '') {
+      turnEl.textContent = `Player ${currentPlayer + 1}`;
+      turnEl.style.color = playerColors[currentPlayer];
+      if (extra) turnEl.textContent += ` — ${extra}`;
     }
 
-    function handlePointClick(cell, r, c) {
-      const piece = cell.querySelector('.piece');
-      if (!piece && placingCount < playerCount * maxPiecesPerPlayer) {
-        const newPiece = document.createElement("div");
-        const player = placingCount % playerCount;
-        newPiece.classList.add("piece");
-        newPiece.style.backgroundColor = playerColors[player];
-        newPiece.dataset.player = player;
-        cell.appendChild(newPiece);
-        placingCount++;
-        if (placingCount === playerCount * maxPiecesPerPlayer) {
-          alert("모든 말이 배치되었습니다. 게임을 시작합니다.");
+    function onPointClick(r, c) {
+      const cell = grid[r][c];
+      if (!cell.classList.contains('point')) return;
+
+      if (phase === 'place') {
+        if (cell.querySelector('.piece')) return;
+        placePieceAt(currentPlayer, r, c);
+        placedPieces[currentPlayer] = true;
+
+        if (placedPieces.every(Boolean)) {
+          phase = 'move';
+          currentPlayer = 0; // 시작 플레이어
+          infoEl.textContent = '게임 단계: 내 말을 클릭해 1칸 또는 2칸(연속 1칸+1칸) 이동하고, 이어서 빈 벽을 하나 세우세요.';
+          updateTurnText('말을 이동하세요');
+        } else {
+          nextPlayer();
+          updateTurnText('말을 배치하세요');
         }
         return;
       }
 
-      if (selectedPiece) {
-  const destHasPiece = cell.querySelector('.piece');
-  if (!destHasPiece) {
-    movePieceTo(cell, r, c);
-    allowWallPlacing(r, c);
-    selectedPiece = null;
-  }
-  return;
-}
- else if (!selectedPiece && piece && parseInt(piece.dataset.player) === currentPlayer) {
-        selectedPiece = { element: piece, r, c };
-        showMovableSpots(r, c);
+      if (phase === 'move') {
+        const piece = cell.querySelector('.piece');
+        // 내 말 선택
+        if (!selected && piece && +piece.dataset.player === currentPlayer) {
+          selected = { r, c };
+          showMovableFrom(r, c);
+          return;
+        }
+        // 이동 목적지
+        if (selected && cell.classList.contains('movable')) {
+          moveSelectedTo(r, c);
+          phase = 'wall';
+          clearMovable();
+          selected = null;
+          updateTurnText('빈 벽을 하나 세우세요');
+        }
       }
     }
 
-    function placePiece(r, c, playerIdx) {
-      const cell = boardMap[r][c];
-      const piece = document.createElement("div");
-      piece.classList.add("piece");
-      piece.style.backgroundColor = playerColors[playerIdx];
-      piece.dataset.player = playerIdx;
-      cell.appendChild(piece);
+    function onWallClick(r, c) {
+      if (phase !== 'wall') return;
+      const cell = grid[r][c];
+      if (!(cell.classList.contains('h-wall') || cell.classList.contains('v-wall'))) return;
+      if (cell.classList.contains('placed')) return;
+
+      cell.classList.add('placed');
+      cell.style.background = playerColors[currentPlayer];
+
+      nextPlayer();
+      phase = 'move';
+      updateTurnText('말을 이동하세요');
     }
 
-    function showMovableSpots(r, c) {
-  
-}
-       
-    function clearMovable() {
-      document.querySelectorAll(".movable").forEach(el => el.classList.remove("movable"));
+    function placePieceAt(playerIdx, r, c) {
+      const cell = grid[r][c];
+      const p = document.createElement('div');
+      p.classList.add('piece');
+      p.style.background = playerColors[playerIdx];
+      p.dataset.player = String(playerIdx);
+      cell.appendChild(p);
+      pieces[playerIdx] = { r, c };
     }
 
-    function movePieceTo(cell, r, c) {
-      boardMap[selectedPiece.r][selectedPiece.c].removeChild(selectedPiece.element);
-      cell.appendChild(selectedPiece.element);
-      selectedPiece.r = r;
-      selectedPiece.c = c;
+    function moveSelectedTo(nr, nc) {
+      const { r, c } = pieces[currentPlayer];
+      const fromCell = grid[r][c];
+      const toCell   = grid[nr][nc];
+      const pieceEl = fromCell.querySelector('.piece');
+      if (!pieceEl) return;
+
+      fromCell.removeChild(pieceEl);
+      toCell.appendChild(pieceEl);
+      pieces[currentPlayer] = { r: nr, c: nc };
     }
 
-    function allowWallPlacing(r, c) {
-      const walls = [
-        [r - 1, c], [r + 1, c],
-        [r, c - 1], [r, c + 1]
-      ];
-      let wallPlaced = false;
+    // ----- 이동 가능성 계산 (1칸 또는 연속 1칸+1칸) -----
+    function showMovableFrom(sr, sc) {
+      clearMovable();
 
-      walls.forEach(([wr, wc]) => {
-        const wall = boardMap[wr]?.[wc];
-        if (!wall || !['h-wall', 'v-wall'].some(cls => wall.classList.contains(cls))) return;
-        wall.addEventListener('click', function handler() {
-          if (!wallPlaced) {
-            wall.style.backgroundColor = playerColors[currentPlayer];
-            wall.removeEventListener('click', handler);
-            selectedPiece = null;
-            wallPlaced = true;
-            nextTurn();
+      // 깊이 2 제한 BFS (직교 이웃만, 벽/점 점검, 중간 점 비어있어야 통과 가능)
+      const visited = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
+      const q = [];
+      // 시작점
+      visited[sr][sc] = true;
+      q.push({ r: sr, c: sc, d: 0 });
+
+      while (q.length) {
+        const { r, c, d } = q.shift();
+
+        // 도착 후보(시작 제외)
+        if (d > 0 && d <= 2 && isPoint(r, c) && !grid[r][c].querySelector('.piece')) {
+          grid[r][c].classList.add('movable');
+        }
+        if (d === 2) continue; // 2 스텝까지만
+
+        // 현재 점에서 갈 수 있는 인접 점(1칸)들을 구해 enqueue
+        for (const { nr, nc } of getReachableNeighbors(r, c)) {
+          if (!visited[nr][nc]) {
+            visited[nr][nc] = true;
+            q.push({ r: nr, c: nc, d: d + 1 });
           }
-        });
-      });
+        }
+      }
     }
 
-    function nextTurn() {
-      currentPlayer = (currentPlayer + 1) % playerCount;
-      updateTurnDisplay();
+    // 현재 (r,c)가 점일 때, 벽에 막히지 않고 도착 점에 말이 없는 상하좌우 1칸 이웃 점 목록
+    function getReachableNeighbors(r, c) {
+      const dirs = [
+        { dr: -2, dc: 0 }, // 위
+        { dr:  2, dc: 0 }, // 아래
+        { dr:  0, dc:-2 }, // 왼
+        { dr:  0, dc: 2 }, // 오
+      ];
+      const neighbors = [];
+      for (const {dr, dc} of dirs) {
+        const nr = r + dr, nc = c + dc;
+        if (!inBounds(nr, nc) || !isPoint(nr, nc)) continue;
+
+        // 중간 벽 체크
+        const wr = r + dr/2, wc = c + dc/2;
+        if (!inBounds(wr, wc)) continue;
+        const wallCell = grid[wr][wc];
+        const isWallPos = wallCell.classList.contains('h-wall') || wallCell.classList.contains('v-wall');
+        if (!isWallPos) continue;
+        if (wallCell.classList.contains('placed')) continue; // 벽이 있으면 못 감
+
+        // 도착 지점에 말 없어야 함
+        if (grid[nr][nc].querySelector('.piece')) continue;
+
+        neighbors.push({ nr, nc });
+      }
+      return neighbors;
     }
+    // ---------------------------------------------
+
+    function clearMovable() {
+      document.querySelectorAll('.movable').forEach(el => el.classList.remove('movable'));
+    }
+
+    function nextPlayer() {
+      currentPlayer = (currentPlayer + 1) % PLAYER_COUNT;
+    }
+
+    function inBounds(r, c) {
+      return r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE;
+    }
+    function isPoint(r, c) {
+      return (r % 2 === 0) && (c % 2 === 0);
+    }
+
+    resetBtn.addEventListener('click', init);
+    init();
   </script>
 </body>
 </html>
