@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Wall-baduk (9x9 · 2인용)</title>
+  <title>Wall-baduk (7x7 · 2인용 · 구역 점유)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
     body {
@@ -13,7 +13,6 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
       min-height: 100vh;
       padding: 10px;
     }
@@ -33,55 +32,70 @@
       align-items: center;
       justify-content: center;
     }
-    .point { width: 40px; height: 40px; background: #fff; position: relative; cursor: pointer; }
+    .point { width: 42px; height: 42px; background: #fff; position: relative; cursor: pointer; }
     .piece { width: 80%; height: 80%; border-radius: 50%; pointer-events: none; }
-    .h-wall { width: 40px; height: 15px; background: #fff; cursor: pointer; }
-    .v-wall { width: 15px; height: 40px; background: #fff; cursor: pointer; }
+    .h-wall { width: 42px; height: 15px; background: #fff; cursor: pointer; }
+    .v-wall { width: 15px; height: 42px; background: #fff; cursor: pointer; }
     .blank  { width: 15px; height: 15px; background: #15326b; }
 
-    .movable { outline: 3px dashed gray; }
-    .placed  { }
-    #panel { margin: 8px 0 14px; display: flex; gap: 8px; }
+    /* 이동 가능 칸: 분홍색 */
+    .movable { background: pink !important; }
+    .placed  { } /* 설치된 벽 표시용 */
+    #panel { margin: 8px 0 14px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
     button { padding: 8px 12px; border: 1px solid #999; border-radius: 8px; background: #fafafa; cursor: pointer; }
     #turnLine { margin: 6px 0; font-size: 16px; }
+    #scores { margin: 6px 0; font-size: 14px; }
   </style>
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-  <div id="info">배치 단계: 각자 말 1개씩 빈 점에 놓으세요.</div>
+  <div id="info">초기 배치: P1, P2, P1, P2 순서로 각 2개씩 배치합니다.</div>
   <div id="panel">
     <button id="resetBtn">새로 시작</button>
+    <button id="scoreBtn">현재 구역 계산</button>
   </div>
   <div id="turnLine">현재 턴: <span id="turnColor"></span></div>
+  <div id="scores">P1: <span id="s1">0</span> / P2: <span id="s2">0</span></div>
   <div id="board"></div>
 
   <script>
-    const BOARD_SIZE_POINTS = 9;
-    const GRID_SIZE = BOARD_SIZE_POINTS * 2 - 1; // 17
-
+    // ===== 보드 / 상태 =====
+    const BOARD_POINTS = 7;                    // 7x7 점
+    const GRID = BOARD_POINTS * 2 - 1;         // 내부 그리드 13x13
     const boardEl = document.getElementById('board');
     const infoEl  = document.getElementById('info');
     const turnEl  = document.getElementById('turnColor');
-    const resetBtn = document.getElementById('resetBtn');
+    const s1El    = document.getElementById('s1');
+    const s2El    = document.getElementById('s2');
+    const resetBtn= document.getElementById('resetBtn');
+    const scoreBtn= document.getElementById('scoreBtn');
 
-    const playerColors = ['#e74c3c', '#3498db'];
-    const PLAYER_COUNT = 2;
+    const COLORS = ['#e74c3c', '#3498db'];     // P1 빨강, P2 파랑
+    const PCOUNT = 2;
 
-    let grid = [];
-    let currentPlayer = 0;
-    let phase = 'place';           // 'place' | 'move' | 'wall'
-    let placedPieces = [false, false];
-    let pieces = [null, null];     // {r,c}
-    let selected = null;           // {r,c}
+    let grid = [];                // DOM 셀 2D
+    let current = 0;              // 0 or 1
+    let phase   = 'place-initial';// 'place-initial' | 'place-extra' | 'move' | 'wall'
+    let pieces  = [[], []];       // 각 플레이어 말 위치 배열 [{r,c}, ...]
+    let selected = null;          // 선택된 말 위치 {r,c}
 
+    // 배치 단계 제어
+    // 초기: P1,P2,P1,P2 → 각 2개씩
+    const initialOrder = [0,1,0,1];
+    let initialIdx = 0;
+    // 추가: P1,P2,P2,P1 → 각 +1개 → 최종 각 4개
+    const extraOrder = [0,1,1,0];
+    let extraIdx = 0;
+
+    // ===== 초기화 =====
     function init() {
       boardEl.innerHTML = '';
-      boardEl.style.gridTemplateColumns = `repeat(${GRID_SIZE}, auto)`;
-      boardEl.style.gridTemplateRows    = `repeat(${GRID_SIZE}, auto)`;
-      grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(null));
+      boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
+      boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
+      grid = Array.from({length: GRID}, () => Array(GRID).fill(null));
 
-      for (let r = 0; r < GRID_SIZE; r++) {
-        for (let c = 0; c < GRID_SIZE; c++) {
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
           const cell = document.createElement('div');
           cell.classList.add('cell');
 
@@ -103,174 +117,297 @@
         }
       }
 
-      currentPlayer = 0;
-      phase = 'place';
-      placedPieces = [false, false];
-      pieces = [null, null];
-      selected = null;
-      updateTurnText();
-      infoEl.textContent = '배치 단계: 각자 말 1개씩 빈 점에 놓으세요.';
+      current   = initialOrder[0];
+      phase     = 'place-initial';
+      pieces    = [[], []];
+      selected  = null;
+      initialIdx= 0;
+      extraIdx  = 0;
+
+      updateTurnText('말을 배치하세요');
+      infoEl.textContent = '초기 배치: P1, P2, P1, P2 순서로 각 2개씩 배치합니다.';
       clearMovable();
+      updateScores(); // 0,0
     }
 
-    function updateTurnText(extra = '') {
-      turnEl.textContent = `Player ${currentPlayer + 1}`;
-      turnEl.style.color = playerColors[currentPlayer];
+    // ===== 공용 유틸 =====
+    function inBounds(r,c){ return r>=0 && r<GRID && c>=0 && c<GRID; }
+    function isPoint(r,c){ return (r%2===0) && (c%2===0); }
+
+    function updateTurnText(extra=''){
+      turnEl.textContent = `Player ${current+1}`;
+      turnEl.style.color = COLORS[current];
       if (extra) turnEl.textContent += ` — ${extra}`;
     }
 
-    function onPointClick(r, c) {
+    function clearMovable(){
+      document.querySelectorAll('.movable').forEach(el => el.classList.remove('movable'));
+    }
+
+    // ===== 클릭 처리 =====
+    function onPointClick(r,c){
       const cell = grid[r][c];
       if (!cell.classList.contains('point')) return;
 
-      if (phase === 'place') {
+      if (phase === 'place-initial'){
         if (cell.querySelector('.piece')) return;
-        placePieceAt(currentPlayer, r, c);
-        placedPieces[currentPlayer] = true;
+        const who = initialOrder[initialIdx];
+        placePiece(who, r, c);
+        initialIdx++;
 
-        if (placedPieces.every(Boolean)) {
-          phase = 'move';
-          currentPlayer = 0; // 시작 플레이어
-          infoEl.textContent = '게임 단계: 내 말을 클릭해 1칸 또는 2칸(연속 1칸+1칸) 이동하고, 이어서 빈 벽을 하나 세우세요.';
-          updateTurnText('말을 이동하세요');
+        if (initialIdx >= initialOrder.length){
+          // 추가 배치 단계로
+          phase = 'place-extra';
+          current = extraOrder[0];
+          infoEl.textContent = '추가 배치: P1, P2, P2, P1 순서로 각 1개씩 더 배치합니다.';
+          updateTurnText('말을 배치하세요');
         } else {
-          nextPlayer();
+          current = initialOrder[initialIdx];
           updateTurnText('말을 배치하세요');
         }
         return;
       }
 
-      if (phase === 'move') {
+      if (phase === 'place-extra'){
+        if (cell.querySelector('.piece')) return;
+        const who = extraOrder[extraIdx];
+        placePiece(who, r, c);
+        extraIdx++;
+
+        if (extraIdx >= extraOrder.length){
+          // 본 게임 시작
+          phase = 'move';
+          current = 0; // P1부터
+          infoEl.textContent = '진행: 원하는 내 말 선택 → 1칸 또는 1+1칸 이동 → 빈 벽 1개 설치.';
+          updateTurnText('말을 이동하세요');
+        } else {
+          current = extraOrder[extraIdx];
+          updateTurnText('말을 배치하세요');
+        }
+        return;
+      }
+
+      if (phase === 'move'){
         const piece = cell.querySelector('.piece');
         // 내 말 선택
-        if (!selected && piece && +piece.dataset.player === currentPlayer) {
+        if (!selected && piece && +piece.dataset.player === current){
           selected = { r, c };
-          showMovableFrom(r, c);
+          showMovableFrom(r,c); // 1칸 또는 연속 1칸+1칸
           return;
         }
         // 이동 목적지
-        if (selected && cell.classList.contains('movable')) {
-          moveSelectedTo(r, c);
+        if (selected && cell.classList.contains('movable')){
+          moveSelectedTo(r,c);
           phase = 'wall';
           clearMovable();
           selected = null;
           updateTurnText('빈 벽을 하나 세우세요');
+          return;
         }
       }
+
+      // phase === 'wall'일 때 점 클릭은 무시
     }
 
-    function onWallClick(r, c) {
+    function onWallClick(r,c){
       if (phase !== 'wall') return;
       const cell = grid[r][c];
-      if (!(cell.classList.contains('h-wall') || cell.classList.contains('v-wall'))) return;
+      const isWall = cell.classList.contains('h-wall') || cell.classList.contains('v-wall');
+      if (!isWall) return;
       if (cell.classList.contains('placed')) return;
 
+      // 벽 설치
       cell.classList.add('placed');
-      cell.style.background = playerColors[currentPlayer];
+      cell.style.background = COLORS[current];
 
-      nextPlayer();
+      // 벽 설치 후 구역 계산 & 종료 체크
+      const end = checkGameEndAndScore();
+      if (end){
+        showWinner();
+        return;
+      }
+
+      // 턴 교대 → 이동 단계
+      current = 1 - current;
       phase = 'move';
       updateTurnText('말을 이동하세요');
     }
 
-    function placePieceAt(playerIdx, r, c) {
+    // ===== 말 배치/이동 =====
+    function placePiece(player, r, c){
       const cell = grid[r][c];
       const p = document.createElement('div');
       p.classList.add('piece');
-      p.style.background = playerColors[playerIdx];
-      p.dataset.player = String(playerIdx);
+      p.style.background = COLORS[player];
+      p.dataset.player = String(player);
       cell.appendChild(p);
-      pieces[playerIdx] = { r, c };
+      pieces[player].push({r,c});
     }
 
-    function moveSelectedTo(nr, nc) {
-      const { r, c } = pieces[currentPlayer];
-      const fromCell = grid[r][c];
+    function moveSelectedTo(nr,nc){
+      // selected는 방금 선택한 내 말의 기존 위치
+      const idx = pieces[current].findIndex(p => p.r===selected.r && p.c===selected.c);
+      if (idx < 0) return;
+
+      const fromCell = grid[selected.r][selected.c];
       const toCell   = grid[nr][nc];
-      const pieceEl = fromCell.querySelector('.piece');
+      const pieceEl  = fromCell.querySelector('.piece');
       if (!pieceEl) return;
 
       fromCell.removeChild(pieceEl);
       toCell.appendChild(pieceEl);
-      pieces[currentPlayer] = { r: nr, c: nc };
+      pieces[current][idx] = { r:nr, c:nc };
     }
 
-    // ----- 이동 가능성 계산 (1칸 또는 연속 1칸+1칸) -----
-    function showMovableFrom(sr, sc) {
+    // 인접 점으로 갈 수 있는 곳(1칸): 벽/점 검증
+    function neighborsReachable(r,c){
+      const dirs = [
+        {dr:-2, dc:0}, {dr:2, dc:0}, {dr:0, dc:-2}, {dr:0, dc:2}
+      ];
+      const out = [];
+      for (const {dr,dc} of dirs){
+        const nr = r+dr, nc=c+dc;
+        if (!inBounds(nr,nc) || !isPoint(nr,nc)) continue;
+        // 중간 벽 위치
+        const wr = r + dr/2, wc = c + dc/2;
+        if (!inBounds(wr,wc)) continue;
+        const wall = grid[wr][wc];
+        const isWallPos = wall.classList.contains('h-wall') || wall.classList.contains('v-wall');
+        if (!isWallPos) continue;
+        if (wall.classList.contains('placed')) continue; // 벽 있으면 막힘
+        if (grid[nr][nc].querySelector('.piece')) continue; // 말 있으면 불가
+        out.push({nr,nc});
+      }
+      return out;
+    }
+
+    // 1칸 또는 1칸+1칸 (직각 가능, 경로 중간도 비어있어야 함)
+    function showMovableFrom(sr,sc){
       clearMovable();
 
-      // 깊이 2 제한 BFS (직교 이웃만, 벽/점 점검, 중간 점 비어있어야 통과 가능)
-      const visited = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
+      // 깊이 2 BFS
+      const visited = Array.from({length:GRID},()=>Array(GRID).fill(false));
       const q = [];
-      // 시작점
       visited[sr][sc] = true;
-      q.push({ r: sr, c: sc, d: 0 });
+      q.push({r:sr,c:sc,d:0});
 
-      while (q.length) {
-        const { r, c, d } = q.shift();
+      while(q.length){
+        const {r,c,d} = q.shift();
 
-        // 도착 후보(시작 제외)
-        if (d > 0 && d <= 2 && isPoint(r, c) && !grid[r][c].querySelector('.piece')) {
-          grid[r][c].classList.add('movable');
+        if (d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
+          grid[r][c].classList.add('movable'); // 분홍색 표시
         }
-        if (d === 2) continue; // 2 스텝까지만
+        if (d===2) continue;
 
-        // 현재 점에서 갈 수 있는 인접 점(1칸)들을 구해 enqueue
-        for (const { nr, nc } of getReachableNeighbors(r, c)) {
-          if (!visited[nr][nc]) {
+        for (const {nr,nc} of neighborsReachable(r,c)){
+          if (!visited[nr][nc]){
             visited[nr][nc] = true;
-            q.push({ r: nr, c: nc, d: d + 1 });
+            q.push({r:nr,c:nc,d:d+1});
           }
         }
       }
     }
 
-    // 현재 (r,c)가 점일 때, 벽에 막히지 않고 도착 점에 말이 없는 상하좌우 1칸 이웃 점 목록
-    function getReachableNeighbors(r, c) {
-      const dirs = [
-        { dr: -2, dc: 0 }, // 위
-        { dr:  2, dc: 0 }, // 아래
-        { dr:  0, dc:-2 }, // 왼
-        { dr:  0, dc: 2 }, // 오
-      ];
-      const neighbors = [];
-      for (const {dr, dc} of dirs) {
-        const nr = r + dr, nc = c + dc;
-        if (!inBounds(nr, nc) || !isPoint(nr, nc)) continue;
+    // ===== 구역 계산 & 종료 =====
+    function checkGameEndAndScore(){
+      const { regions, hasMixed } = computeRegions();
+      const scores = [0,0];
 
-        // 중간 벽 체크
-        const wr = r + dr/2, wc = c + dc/2;
-        if (!inBounds(wr, wc)) continue;
-        const wallCell = grid[wr][wc];
-        const isWallPos = wallCell.classList.contains('h-wall') || wallCell.classList.contains('v-wall');
-        if (!isWallPos) continue;
-        if (wallCell.classList.contains('placed')) continue; // 벽이 있으면 못 감
-
-        // 도착 지점에 말 없어야 함
-        if (grid[nr][nc].querySelector('.piece')) continue;
-
-        neighbors.push({ nr, nc });
+      for (const reg of regions){
+        // reg.points: [{r,c}, ...], reg.players: Set of players present
+        if (reg.players.size === 1){
+          const owner = [...reg.players][0];
+          scores[owner] += reg.points.length; // 구역의 점 개수 합산
+        }
       }
-      return neighbors;
-    }
-    // ---------------------------------------------
+      s1El.textContent = scores[0];
+      s2El.textContent = scores[1];
 
-    function clearMovable() {
-      document.querySelectorAll('.movable').forEach(el => el.classList.remove('movable'));
-    }
-
-    function nextPlayer() {
-      currentPlayer = (currentPlayer + 1) % PLAYER_COUNT;
+      // 혼재 구역(두 플레이어가 같은 구역에 공존)이 하나도 없으면 종료
+      return !hasMixed;
     }
 
-    function inBounds(r, c) {
-      return r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE;
-    }
-    function isPoint(r, c) {
-      return (r % 2 === 0) && (c % 2 === 0);
+    function updateScores(){
+      const end = checkGameEndAndScore();
+      if (end && phase!=='place-initial' && phase!=='place-extra'){
+        showWinner();
+      }
     }
 
+    function showWinner(){
+      const p1 = parseInt(s1El.textContent,10);
+      const p2 = parseInt(s2El.textContent,10);
+      let msg = `게임 종료!\nP1: ${p1} / P2: ${p2}\n`;
+      if (p1>p2) msg += '승자: Player 1';
+      else if (p2>p1) msg += '승자: Player 2';
+      else msg += '무승부';
+      alert(msg);
+      // 이후 계속 둘 수 있게 하려면 리턴. 자동 리셋 원하면 init() 호출.
+    }
+
+    // 연결 컴포넌트(구역) 계산: 점들만 대상으로, 벽이 없는 간선만 연결
+    function computeRegions(){
+      const visited = Array.from({length:GRID},()=>Array(GRID).fill(false));
+      const regions = [];
+      let hasMixed = false;
+
+      for (let r=0;r<GRID;r+=2){
+        for (let c=0;c<GRID;c+=2){
+          if (visited[r][c]) continue;
+
+          // BFS로 컴포넌트 수집
+          const queue = [{r,c}];
+          visited[r][c] = true;
+          const pts = [];
+          const presentPlayers = new Set();
+
+          while(queue.length){
+            const cur = queue.shift();
+            pts.push(cur);
+
+            const piece = grid[cur.r][cur.c].querySelector('.piece');
+            if (piece){
+              presentPlayers.add(+piece.dataset.player);
+            }
+
+            for (const {nr,nc} of neighborsByWall(cur.r,cur.c)){
+              if (!visited[nr][nc]){
+                visited[nr][nc] = true;
+                queue.push({r:nr,c:nc});
+              }
+            }
+          }
+
+          if (presentPlayers.size >= 2) hasMixed = true;
+          regions.push({ points: pts, players: presentPlayers });
+        }
+      }
+      return { regions, hasMixed };
+    }
+
+    // 벽 유무로 연결 판단(점 기준 상하좌우 1칸만)
+    function neighborsByWall(r,c){
+      const dirs = [
+        {dr:-2, dc:0}, {dr:2, dc:0}, {dr:0, dc:-2}, {dr:0, dc:2}
+      ];
+      const out=[];
+      for (const {dr,dc} of dirs){
+        const nr=r+dr, nc=c+dc;
+        if (!inBounds(nr,nc) || !isPoint(nr,nc)) continue;
+        const wr = r+dr/2, wc=c+dc/2;
+        const wall = grid[wr][wc];
+        const isWallPos = wall.classList.contains('h-wall') || wall.classList.contains('v-wall');
+        if (!isWallPos) continue;
+        if (wall.classList.contains('placed')) continue; // 벽 있으면 연결 안 됨
+        out.push({nr,nc});
+      }
+      return out;
+    }
+
+    // ===== 이벤트 =====
     resetBtn.addEventListener('click', init);
+    scoreBtn.addEventListener('click', updateScores);
+
     init();
   </script>
 </body>
