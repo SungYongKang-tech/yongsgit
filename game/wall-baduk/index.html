@@ -5,19 +5,32 @@
   <title>Wall-baduk (7x7 · 2인용 · 구역 점유)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
+    :root { --bar-h: 64px; }
     body {
       font-family: sans-serif;
       background: #f5f5f5;
       text-align: center;
       margin: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
       min-height: 100vh;
-      padding: 10px;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr var(--bar-h);
     }
     h1 { margin: 8px 0; }
     #info { margin: 6px 0 10px; font-weight: 600; }
+    #panel { margin: 6px 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    button {
+      padding: 10px 14px; border: 1px solid #999; border-radius: 10px;
+      background: #fff; cursor: pointer; font-size: 15px;
+    }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #turnLine { margin: 4px 0; font-size: 16px; }
+    #scores { margin: 4px 0 6px; font-size: 14px; }
+
+    /* 보드 */
+    #wrap {
+      display:flex; justify-content:center; align-items:flex-start; padding:10px;
+      overflow:auto;
+    }
     #board {
       display: grid;
       background: #fff;
@@ -41,10 +54,25 @@
     /* 이동 가능 칸: 분홍색 */
     .movable { background: pink !important; }
     .placed  { }
-    #panel { margin: 8px 0 14px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-    button { padding: 8px 12px; border: 1px solid #999; border-radius: 8px; background: #fafafa; cursor: pointer; }
-    #turnLine { margin: 6px 0; font-size: 16px; }
-    #scores { margin: 6px 0; font-size: 14px; }
+
+    /* 하단 고정 바(모바일 친화) */
+    #bottomBar {
+      position: sticky; bottom: 0; left: 0; right: 0; height: var(--bar-h);
+      background: #ffffffcc; backdrop-filter: blur(6px);
+      border-top: 1px solid #ddd;
+      display:flex; gap:10px; align-items:center; justify-content:center; padding: 8px 12px;
+    }
+    #skipWallBtn {
+      flex:1; max-width: 520px;
+      height: 44px; border-radius: 12px; font-weight: 700;
+      background: #ffd6e7; border: 1px solid #e7a3bd;
+    }
+
+    @media (max-width: 420px){
+      .point { width: 36px; height: 36px; }
+      .h-wall { width: 36px; height: 14px; }
+      .v-wall { width: 14px; height: 36px; }
+    }
   </style>
 </head>
 <body>
@@ -56,7 +84,12 @@
   </div>
   <div id="turnLine">현재 턴: <span id="turnColor"></span></div>
   <div id="scores">P1: <span id="s1">0</span> / P2: <span id="s2">0</span></div>
-  <div id="board"></div>
+
+  <div id="wrap"><div id="board"></div></div>
+
+  <div id="bottomBar">
+    <button id="skipWallBtn" disabled>이동 없이 벽 설치</button>
+  </div>
 
   <script>
     // ===== 보드 / 상태 =====
@@ -69,6 +102,7 @@
     const s2El    = document.getElementById('s2');
     const resetBtn= document.getElementById('resetBtn');
     const scoreBtn= document.getElementById('scoreBtn');
+    const skipWallBtn = document.getElementById('skipWallBtn');
 
     const COLORS = ['#e74c3c', '#3498db'];     // P1 빨강, P2 파랑
     const PCOUNT = 2;
@@ -126,6 +160,7 @@
       infoEl.textContent = '초기 배치: P1, P2, P1, P2 순서로 각 2개씩 배치합니다.';
       clearMovable();
       updateScores(); // 0,0
+      refreshSkipWallButton();
     }
 
     // ===== 공용 유틸 =====
@@ -140,6 +175,11 @@
 
     function clearMovable(){
       document.querySelectorAll('.movable').forEach(el => el.classList.remove('movable'));
+    }
+
+    function refreshSkipWallButton() {
+      // 이동 단계일 때만 사용 가능
+      skipWallBtn.disabled = (phase !== 'move');
     }
 
     // ===== 클릭 처리 =====
@@ -173,8 +213,7 @@
         extraIdx++;
 
         if (extraIdx >= extraOrder.length){
-          // 본 게임 시작
-          startMovePhase(); // <-- 변경: 이동 가능성 체크 포함
+          startMovePhase(); // 본 게임 시작
         } else {
           current = extraOrder[extraIdx];
           updateTurnText('말을 배치하세요');
@@ -185,7 +224,7 @@
       if (phase === 'move'){
         const piece = cell.querySelector('.piece');
 
-        // 선택 해제: 이미 선택된 같은 말 다시 클릭
+        // 선택 해제: 같은 말 재클릭
         if (selected && selected.r === r && selected.c === c) {
           selected = null;
           clearMovable();
@@ -196,17 +235,15 @@
         // 내 말 선택
         if (!selected && piece && +piece.dataset.player === current){
           selected = { r, c };
-          const cnt = showMovableFrom(r,c); // 가능 칸 수 리턴
+          const cnt = showMovableFrom(r,c); // 가능 칸 수
           if (cnt === 0){
-            // 이 말은 이동 불가 → 전체 말 중 이동 가능 여부 확인
+            // 이 말은 이동 불가 → 내 모든 말 확인
             selected = null;
             clearMovable();
             if (!anyMovableForPlayer(current)) {
-              // 이동 가능한 말이 하나도 없으면 즉시 벽 놓기 단계로
-              phase = 'wall';
-              updateTurnText('이동 불가: 빈 벽을 하나 세우세요');
+              // 이동 가능한 말이 하나도 없으면 버튼으로 바로 벽 설치 유도
+              updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 눌러 벽을 세우세요');
             } else {
-              // 다른 말을 선택하도록 유도
               updateTurnText('이동 불가: 다른 말을 선택하세요');
             }
           }
@@ -220,17 +257,15 @@
           clearMovable();
           selected = null;
           updateTurnText('빈 벽을 하나 세우세요');
+          refreshSkipWallButton();
           return;
         }
       }
-
       // phase === 'wall'일 때 점 클릭은 무시
     }
 
     function onWallClick(r,c){
-      // 벽은 'wall' 단계에서만 설치
       if (phase !== 'wall') return;
-
       const cell = grid[r][c];
       const isWall = cell.classList.contains('h-wall') || cell.classList.contains('v-wall');
       if (!isWall) return;
@@ -242,32 +277,39 @@
 
       // 벽 설치 후 구역 계산 & 종료 체크
       const end = checkGameEndAndScore();
-      if (end){
-        showWinner();
-        return;
-      }
+      if (end){ showWinner(); return; }
 
-      // 턴 교대 → 이동 단계 시작 (이동 불가면 자동으로 벽 단계로 전환)
+      // 턴 교대 → 이동 단계
       current = 1 - current;
       startMovePhase();
     }
+
+    // ===== 하단 버튼: 이동 없이 벽 설치 =====
+    skipWallBtn.addEventListener('click', () => {
+      if (phase !== 'move') return;
+      // 선택/표시 정리 후 곧바로 벽 설치 단계
+      selected = null;
+      clearMovable();
+      phase = 'wall';
+      updateTurnText('이동 없이: 빈 벽을 하나 세우세요');
+      refreshSkipWallButton();
+    });
 
     // ===== 단계 전환 보조 =====
     function startMovePhase(){
       phase = 'move';
       selected = null;
       clearMovable();
+      refreshSkipWallButton();
       if (!anyMovableForPlayer(current)){
-        // 이동할 수 있는 말이 하나도 없으면 즉시 벽 설치로
-        phase = 'wall';
-        updateTurnText('이동 불가: 빈 벽을 하나 세우세요');
+        // 이동 불가면 버튼으로 유도
+        updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 누르세요');
       } else {
         updateTurnText('말을 이동하세요');
       }
     }
 
     function anyMovableForPlayer(player){
-      // 플레이어의 모든 말에 대해 이동 가능 칸이 하나라도 있으면 true
       for (const p of pieces[player]){
         if (countMovableFrom(p.r, p.c) > 0) return true;
       }
@@ -326,13 +368,11 @@
       clearMovable();
       return markMovable(sr,sc);
     }
-
     function countMovableFrom(sr,sc){
-      return markMovable(sr,sc, /*mark*/ false);
+      return markMovable(sr,sc,false);
     }
-
-    // BFS 깊이2, mark=true면 .movable 표시, false면 개수만 카운트
-    function markMovable(sr,sc, mark=true){
+    // BFS 깊이2, mark=true면 .movable 표시, false면 개수만
+    function markMovable(sr,sc,mark=true){
       const visited = Array.from({length:GRID},()=>Array(GRID).fill(false));
       const q = [];
       visited[sr][sc] = true;
@@ -341,13 +381,11 @@
 
       while(q.length){
         const {r,c,d} = q.shift();
-
         if (d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
           if (mark) grid[r][c].classList.add('movable');
           cnt++;
         }
         if (d===2) continue;
-
         for (const {nr,nc} of neighborsReachable(r,c)){
           if (!visited[nr][nc]){
             visited[nr][nc] = true;
@@ -362,7 +400,6 @@
     function checkGameEndAndScore(){
       const { regions, hasMixed } = computeRegions();
       const scores = [0,0];
-
       for (const reg of regions){
         if (reg.players.size === 1){
           const owner = [...reg.players][0];
@@ -371,18 +408,12 @@
       }
       s1El.textContent = scores[0];
       s2El.textContent = scores[1];
-
-      // 혼재 구역(두 플레이어가 같은 구역에 공존)이 하나도 없으면 종료
-      return !hasMixed;
+      return !hasMixed; // 혼재 구역이 하나도 없으면 종료
     }
-
     function updateScores(){
       const end = checkGameEndAndScore();
-      if (end && phase!=='place-initial' && phase!=='place-extra'){
-        showWinner();
-      }
+      if (end && phase!=='place-initial' && phase!=='place-extra'){ showWinner(); }
     }
-
     function showWinner(){
       const p1 = parseInt(s1El.textContent,10);
       const p2 = parseInt(s2El.textContent,10);
@@ -391,7 +422,7 @@
       else if (p2>p1) msg += '승자: Player 2';
       else msg += '무승부';
       alert(msg);
-      // init(); // 자동 재시작을 원하면 주석 해제
+      // init(); // 자동 재시작 원하면 사용
     }
 
     // 연결 컴포넌트(구역) 계산: 점들만 대상으로, 벽이 없는 간선만 연결
@@ -403,8 +434,6 @@
       for (let r=0;r<GRID;r+=2){
         for (let c=0;c<GRID;c+=2){
           if (visited[r][c]) continue;
-
-          // BFS로 컴포넌트 수집
           const queue = [{r,c}];
           visited[r][c] = true;
           const pts = [];
@@ -413,12 +442,8 @@
           while(queue.length){
             const cur = queue.shift();
             pts.push(cur);
-
             const piece = grid[cur.r][cur.c].querySelector('.piece');
-            if (piece){
-              presentPlayers.add(+piece.dataset.player);
-            }
-
+            if (piece){ presentPlayers.add(+piece.dataset.player); }
             for (const {nr,nc} of neighborsByWall(cur.r,cur.c)){
               if (!visited[nr][nc]){
                 visited[nr][nc] = true;
@@ -426,19 +451,15 @@
               }
             }
           }
-
           if (presentPlayers.size >= 2) hasMixed = true;
           regions.push({ points: pts, players: presentPlayers });
         }
       }
       return { regions, hasMixed };
     }
-
     // 벽 유무로 연결 판단(점 기준 상하좌우 1칸만)
     function neighborsByWall(r,c){
-      const dirs = [
-        {dr:-2, dc:0}, {dr:2, dc:0}, {dr:0, dc:-2}, {dr:0, dc:2}
-      ];
+      const dirs = [{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}];
       const out=[];
       for (const {dr,dc} of dirs){
         const nr=r+dr, nc=c+dc;
@@ -447,7 +468,7 @@
         const wall = grid[wr][wc];
         const isWallPos = wall.classList.contains('h-wall') || wall.classList.contains('v-wall');
         if (!isWallPos) continue;
-        if (wall.classList.contains('placed')) continue; // 벽 있으면 연결 안 됨
+        if (wall.classList.contains('placed')) continue; // 벽 있으면 연결 막힘
         out.push({nr,nc});
       }
       return out;
