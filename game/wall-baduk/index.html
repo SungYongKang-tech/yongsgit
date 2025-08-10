@@ -16,7 +16,7 @@
       grid-template-rows: auto auto auto 1fr var(--bar-h);
     }
     h1 { margin: 8px 0; }
-    #info { margin: 6px 0 10px; font-weight: 600; }
+    #info { margin: 6px 0 10px; font-weight: 600; min-height: 20px; }
     #panel { margin: 6px 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
     button {
       padding: 10px 14px; border: 1px solid #999; border-radius: 10px;
@@ -51,8 +51,8 @@
     .v-wall { width: 15px; height: 42px; background: #fff; cursor: pointer; }
     .blank  { width: 15px; height: 15px; background: #15326b; }
 
-    /* 이동 가능 칸: 옅은 회색 */
-    .movable { background: #eee !important; }
+    /* 이동 가능 칸: 더 짙은 회색 */
+    .movable { background: #d0d0d0 !important; }
 
     /* 설치된 벽 표시 */
     .placed  { }
@@ -74,6 +74,30 @@
       background: #ffd6e7; border: 1px solid #e7a3bd;
     }
 
+    /* 도움말 모달 */
+    #helpOverlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: none; align-items: center; justify-content: center; z-index: 9999;
+      padding: 16px;
+    }
+    #helpCard {
+      width: 100%; max-width: 560px; background: #fff; border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.2); text-align: left; overflow: hidden;
+    }
+    #helpHeader {
+      padding: 14px 18px; background: #222; color: #fff; font-weight: 800;
+    }
+    #helpBody {
+      padding: 14px 18px; color: #222; line-height: 1.5; font-size: 15px;
+    }
+    #helpBody ul { margin: 8px 0 0 18px; }
+    #helpFooter {
+      display:flex; gap:10px; justify-content:flex-end; padding: 12px 16px; background: #fafafa;
+    }
+    .helpBtn {
+      padding: 10px 14px; border: 1px solid #ccc; border-radius: 10px; background: #fff; cursor: pointer;
+    }
+
     @media (max-width: 420px){
       .point { width: 36px; height: 36px; }
       .h-wall { width: 36px; height: 14px; }
@@ -83,10 +107,11 @@
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-  <div id="info">추가 배치: P1, P2, P2, P1 순서로 각 1개씩 더 배치한 뒤 게임이 시작됩니다.</div>
+  <div id="info"></div>
   <div id="panel">
     <button id="resetBtn">새로 시작</button>
     <button id="scoreBtn">현재 구역 계산</button>
+    <button id="helpBtn">도움말</button>
   </div>
   <div id="turnLine">현재 턴: <span id="turnColor"></span></div>
   <div id="scores">P1: <span id="s1">0</span> / P2: <span id="s2">0</span></div>
@@ -95,6 +120,36 @@
 
   <div id="bottomBar">
     <button id="skipWallBtn" disabled>이동 없이 벽 설치</button>
+  </div>
+
+  <!-- 설명 팝업 -->
+  <div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div id="helpCard">
+      <div id="helpHeader" id="helpTitle">게임 설명</div>
+      <div id="helpBody">
+        <p><strong>초기 고정 배치</strong> (1부터 7까지 좌표):</p>
+        <ul>
+          <li>P1(빨강): (2,2), (6,6)</li>
+          <li>P2(파랑): (6,2), (2,6)</li>
+        </ul>
+        <p><strong>추가 배치 :</strong> P1, P2, P2, P1 (각자 1개씩 더 배치 → 최종 각 4개)</p>
+        <p><strong>턴 진행</strong></p>
+        <ul>
+          <li>자기 말 중 하나 선택 → <em>상하좌우 1칸</em> 또는 <em>연속 1칸+1칸</em>(직각 가능) 이동</li>
+          <li>벽이 막으면 못 지나가며, 이동 가능 칸은 <strong>회색</strong>으로 표시</li>
+          <li>이동을 건너뛰고 하단의 <em>이동 없이 벽 설치</em> 버튼으로 바로 벽 설치 가능</li>
+        </ul>
+        <p><strong>승리 조건</strong></p>
+        <ul>
+          <li>벽으로 나뉜 구역(연결된 점들의 집합) 중, 한 구역에 한 플레이어 말만 있으면 그 플레이어의 구역</li>
+          <li>두 플레이어 말이 함께 있는 구역은 무주지</li>
+          <li>모든 구역이 한쪽만 포함하게 되면 게임 종료 → P1 구역은 <span style="background:#ffd6e7;padding:0 6px;border-radius:6px;">분홍</span>, P2 구역은 <span style="background:#d6ecff;padding:0 6px;border-radius:6px;">하늘</span>로 칠하고, 점 개수 합으로 승자(P1/P2) 발표</li>
+        </ul>
+      </div>
+      <div id="helpFooter">
+        <button class="helpBtn" id="helpCloseBtn">시작하기</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -109,9 +164,11 @@
     const resetBtn= document.getElementById('resetBtn');
     const scoreBtn= document.getElementById('scoreBtn');
     const skipWallBtn = document.getElementById('skipWallBtn');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpOverlay = document.getElementById('helpOverlay');
+    const helpCloseBtn = document.getElementById('helpCloseBtn');
 
     const COLORS = ['#e74c3c', '#3498db'];     // P1 빨강, P2 파랑
-    const PCOUNT = 2;
 
     let grid = [];                // DOM 셀 2D
     let current = 0;              // 0 or 1
@@ -155,28 +212,28 @@
 
       clearFinalPaint();
 
-      // 1-based 점 좌표를 내부 그리드 좌표로 변환: (p -> (p-1)*2)
+      // 1-based 점 좌표 → 내부 그리드 좌표: p → (p-1)*2
       const pt = p => (p - 1) * 2;
 
       // === 초기 고정 배치 ===
-      // P1: (2,2), (6,6)
-      placePiece(0, pt(2), pt(2));
-      placePiece(0, pt(6), pt(6));
-      // P2: (6,2), (2,6)
-      placePiece(1, pt(6), pt(2));
-      placePiece(1, pt(2), pt(6));
+      placePiece(0, pt(2), pt(2)); // P1
+      placePiece(0, pt(6), pt(6)); // P1
+      placePiece(1, pt(6), pt(2)); // P2
+      placePiece(1, pt(2), pt(6)); // P2
 
-      // 추가 배치 단계로 안내
+      // 추가 배치 단계로
       extraIdx  = 0;
       phase     = 'place-extra';
       current   = extraOrder[0];
       selected  = null;
 
-      infoEl.textContent = '추가 배치: P1, P2, P2, P1 순서로 각 1개씩 더 배치합니다.';
+      infoEl.textContent = '말을 배치하세요';
       updateTurnText('말을 배치하세요');
       clearMovable();
       updateScores();
       refreshSkipWallButton();
+
+      openHelp(); // 초기 진입 시 설명 팝업 표시
     }
 
     // ===== 공용 유틸 =====
@@ -194,18 +251,24 @@
     }
 
     function clearFinalPaint(){
-      // 게임 재시작/초기화 시 최종 채색 제거
       document.querySelectorAll('.final-p1-region, .final-p2-region').forEach(el=>{
         el.classList.remove('final-p1-region','final-p2-region');
-        // 점 기본 배경으로 복귀
         if (el.classList.contains('point')) el.style.background = '#fff';
       });
     }
 
     function refreshSkipWallButton() {
-      // 이동 단계에서만 사용 가능
       skipWallBtn.disabled = (phase !== 'move');
     }
+
+    // ===== 도움말 모달 =====
+    function openHelp(){ helpOverlay.style.display = 'flex'; }
+    function closeHelp(){ helpOverlay.style.display = 'none'; }
+    helpBtn.addEventListener('click', openHelp);
+    helpCloseBtn.addEventListener('click', closeHelp);
+    helpOverlay.addEventListener('click', (e) => {
+      if (e.target === helpOverlay) closeHelp();
+    });
 
     // ===== 클릭 처리 =====
     function onPointClick(r,c){
@@ -244,7 +307,6 @@
           selected = { r, c };
           const cnt = showMovableFrom(r,c); // 가능 칸 수
           if (cnt === 0){
-            // 이 말 이동 불가 → 내 모든 말 확인
             selected = null;
             clearMovable();
             if (!anyMovableForPlayer(current)) {
@@ -354,7 +416,6 @@
       for (const {dr,dc} of dirs){
         const nr = r+dr, nc=c+dc;
         if (!inBounds(nr,nc) || !isPoint(nr,nc)) continue;
-        // 중간 벽 위치
         const wr = r + dr/2, wc = c + dc/2;
         if (!inBounds(wr,wc)) continue;
         const wall = grid[wr][wc];
@@ -367,7 +428,7 @@
       return out;
     }
 
-    // 1칸 또는 1칸+1칸 (직각 가능, 경로 중간도 비어있어야 함)
+    // 1칸 또는 1칸+1칸 (직각 가능, 경유점도 비어있어야 함)
     function showMovableFrom(sr,sc){
       clearMovable();
       return markMovable(sr,sc);
@@ -420,9 +481,9 @@
       if (end && phase!=='place-extra'){ showWinnerWithPaint(); }
     }
 
-    // 최종 칠하기 + 승자 알림 (요청 사양)
+    // 최종 칠하기 + 승자 알림
     function showWinnerWithPaint(){
-      fillFinalRegions(); // 분홍/하늘색 채색
+      fillFinalRegions();
       const p1 = parseInt(s1El.textContent,10);
       const p2 = parseInt(s2El.textContent,10);
       let msg = `게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n`;
@@ -484,9 +545,7 @@
 
     // 최종 구역 채색
     function fillFinalRegions(){
-      // 기존 채색 제거(혹시 모를 중복 방지)
       clearFinalPaint();
-
       const { regions } = computeRegions();
       for (const reg of regions){
         if (reg.players.size !== 1) continue; // 혼재/무주지는 칠하지 않음
@@ -494,7 +553,7 @@
         for (const {r,c} of reg.points){
           const cell = grid[r][c];
           if (!cell) continue;
-          cell.classList.remove('movable'); // 표시 제거
+          cell.classList.remove('movable');
           if (owner === 0) cell.classList.add('final-p1-region'); // 분홍
           if (owner === 1) cell.classList.add('final-p2-region'); // 하늘색
         }
