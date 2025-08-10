@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Wall-baduk (7x7 · 2인용 · 구역 점유)</title>
+  <title>Wall-baduk (7x7 · 2인용 · 고정 초기배치)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
     :root { --bar-h: 64px; }
@@ -77,7 +77,7 @@
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-  <div id="info">초기 배치: P1, P2, P1, P2 순서로 각 2개씩 배치합니다.</div>
+  <div id="info">추가 배치: P1, P2, P2, P1 순서로 각 1개씩 더 배치한 뒤 게임이 시작됩니다.</div>
   <div id="panel">
     <button id="resetBtn">새로 시작</button>
     <button id="scoreBtn">현재 구역 계산</button>
@@ -109,14 +109,12 @@
 
     let grid = [];                // DOM 셀 2D
     let current = 0;              // 0 or 1
-    let phase   = 'place-initial';// 'place-initial' | 'place-extra' | 'move' | 'wall'
+    let phase   = 'place-extra';  // 시작부터 '추가 배치' 단계
     let pieces  = [[], []];       // 각 플레이어 말 위치 배열 [{r,c}, ...]
     let selected = null;          // 선택된 말 위치 {r,c}
 
-    // 배치 단계 제어
-    const initialOrder = [0,1,0,1]; // 각 2개
-    let initialIdx = 0;
-    const extraOrder   = [0,1,1,0]; // 각 +1개 → 최종 4개씩
+    // 추가 배치 순서: P1, P2, P2, P1  (각자 2개씩 더 → 최종 4개씩)
+    const extraOrder = [0,1,1,0];
     let extraIdx = 0;
 
     // ===== 초기화 =====
@@ -149,17 +147,27 @@
         }
       }
 
-      current   = initialOrder[0];
-      phase     = 'place-initial';
-      pieces    = [[], []];
-      selected  = null;
-      initialIdx= 0;
-      extraIdx  = 0;
+      // 1-based 점 좌표를 내부 그리드 좌표로 변환: (p -> (p-1)*2)
+      const pt = p => (p - 1) * 2;
 
+      // === 초기 고정 배치 ===
+      // P1: (2,2), (6,6)
+      placePiece(0, pt(2), pt(2));
+      placePiece(0, pt(6), pt(6));
+      // P2: (6,2), (2,6)
+      placePiece(1, pt(6), pt(2));
+      placePiece(1, pt(2), pt(6));
+
+      // 추가 배치 단계로 안내
+      extraIdx  = 0;
+      phase     = 'place-extra';
+      current   = extraOrder[0];
+      selected  = null;
+
+      infoEl.textContent = '추가 배치: P1, P2, P2, P1 순서로 각 1개씩 더 배치합니다.';
       updateTurnText('말을 배치하세요');
-      infoEl.textContent = '초기 배치: P1, P2, P1, P2 순서로 각 2개씩 배치합니다.';
       clearMovable();
-      updateScores(); // 0,0
+      updateScores();
       refreshSkipWallButton();
     }
 
@@ -178,7 +186,7 @@
     }
 
     function refreshSkipWallButton() {
-      // 이동 단계일 때만 사용 가능
+      // 이동 단계에서만 사용 가능
       skipWallBtn.disabled = (phase !== 'move');
     }
 
@@ -187,25 +195,6 @@
       const cell = grid[r][c];
       if (!cell.classList.contains('point')) return;
 
-      if (phase === 'place-initial'){
-        if (cell.querySelector('.piece')) return;
-        const who = initialOrder[initialIdx];
-        placePiece(who, r, c);
-        initialIdx++;
-
-        if (initialIdx >= initialOrder.length){
-          // 추가 배치 단계로
-          phase = 'place-extra';
-          current = extraOrder[0];
-          infoEl.textContent = '추가 배치: P1, P2, P2, P1 순서로 각 1개씩 더 배치합니다.';
-          updateTurnText('말을 배치하세요');
-        } else {
-          current = initialOrder[initialIdx];
-          updateTurnText('말을 배치하세요');
-        }
-        return;
-      }
-
       if (phase === 'place-extra'){
         if (cell.querySelector('.piece')) return;
         const who = extraOrder[extraIdx];
@@ -213,7 +202,8 @@
         extraIdx++;
 
         if (extraIdx >= extraOrder.length){
-          startMovePhase(); // 본 게임 시작
+          // 본 게임 시작
+          startMovePhase();
         } else {
           current = extraOrder[extraIdx];
           updateTurnText('말을 배치하세요');
@@ -237,11 +227,10 @@
           selected = { r, c };
           const cnt = showMovableFrom(r,c); // 가능 칸 수
           if (cnt === 0){
-            // 이 말은 이동 불가 → 내 모든 말 확인
+            // 이 말 이동 불가 → 내 모든 말 확인
             selected = null;
             clearMovable();
             if (!anyMovableForPlayer(current)) {
-              // 이동 가능한 말이 하나도 없으면 버튼으로 바로 벽 설치 유도
               updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 눌러 벽을 세우세요');
             } else {
               updateTurnText('이동 불가: 다른 말을 선택하세요');
@@ -287,7 +276,6 @@
     // ===== 하단 버튼: 이동 없이 벽 설치 =====
     skipWallBtn.addEventListener('click', () => {
       if (phase !== 'move') return;
-      // 선택/표시 정리 후 곧바로 벽 설치 단계
       selected = null;
       clearMovable();
       phase = 'wall';
@@ -302,7 +290,6 @@
       clearMovable();
       refreshSkipWallButton();
       if (!anyMovableForPlayer(current)){
-        // 이동 불가면 버튼으로 유도
         updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 누르세요');
       } else {
         updateTurnText('말을 이동하세요');
@@ -412,7 +399,7 @@
     }
     function updateScores(){
       const end = checkGameEndAndScore();
-      if (end && phase!=='place-initial' && phase!=='place-extra'){ showWinner(); }
+      if (end && phase!=='place-extra'){ showWinner(); }
     }
     function showWinner(){
       const p1 = parseInt(s1El.textContent,10);
@@ -422,7 +409,6 @@
       else if (p2>p1) msg += '승자: Player 2';
       else msg += '무승부';
       alert(msg);
-      // init(); // 자동 재시작 원하면 사용
     }
 
     // 연결 컴포넌트(구역) 계산: 점들만 대상으로, 벽이 없는 간선만 연결
