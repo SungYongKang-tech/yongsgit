@@ -98,7 +98,9 @@
   <!-- 앱 스크립트 -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, onValue, runTransaction, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    
+    import { getDatabase, ref, get, set, onValue, runTransaction, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+ 
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -123,6 +125,41 @@
       const num = Math.floor(1000 + Math.random()*9000);
       return animals[Math.floor(Math.random()*animals.length)] + num; // 예: 부엉이1929
     }
+// 최대 방 개수 유지: 10개를 넘으면 가장 오래된 방부터 삭제
+const MAX_ROOMS = 10;
+
+async function pruneRoomsToMax(max = MAX_ROOMS) {
+  const roomsRef = ref(db, 'wbaduk/rooms');
+  const snap = await get(roomsRef);
+  if (!snap.exists()) return;
+
+  // 전체 방 목록 (createdAt 없으면 0)
+  let rooms = Object.entries(snap.val() || {}).map(([id, r]) => ({
+    id,
+    createdAt: r?.createdAt || 0
+  }));
+
+  // 이미 max 이하이면 종료
+  if (rooms.length < max) return;
+
+  // 오래된 순으로 정렬
+  rooms.sort((a, b) => a.createdAt - b.createdAt);
+
+  // max 미만이 될 때까지 가장 오래된 방 삭제
+  while (rooms.length >= max) {
+    const victim = rooms.shift();
+    await remove(ref(db, `wbaduk/rooms/${victim.id}`));
+  }
+
+  // latestRoom이 삭제됐을 수 있으니 최신 방으로 갱신
+  if (rooms.length > 0) {
+    const latest = [...rooms].sort((a, b) => b.createdAt - a.createdAt)[0];
+    await set(ref(db, 'wbaduk/latestRoom'), { roomCode: latest.id, createdAt: latest.createdAt });
+  } else {
+    // 방이 하나도 없으면 latestRoom 제거
+    await remove(ref(db, 'wbaduk/latestRoom'));
+  }
+}
 
     /* ---------- 보드/상태 ---------- */
     const BOARD_POINTS = 7;
@@ -328,6 +365,7 @@
     const btnJoin  =document.getElementById('btnJoin');
 
     btnCreate.onclick = async ()=>{
+      await pruneRoomsToMax(10); // 10개 초과면 가장 오래된 방부터 삭제
       const latestRef = ref(db, 'wbaduk/latestRoom');
       const latestSnap= await get(latestRef);
       const now = Date.now();
