@@ -97,9 +97,8 @@
 
   <!-- 앱 스크립트 -->
   <script type="module">
-    /* ============ Firebase ============ */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, onValue, runTransaction, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, get, set, onValue, runTransaction, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -113,21 +112,19 @@
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
-    /* ============ 방 이름/유저 ID ============ */
+    /* ---------- 방 이름/유저 ID ---------- */
     const uid = (() => {
       const key='wb_uid_tab'; let v=sessionStorage.getItem(key);
       if(!v){ v=(crypto.randomUUID?.()||('u_'+Math.random().toString(36).slice(2))); sessionStorage.setItem(key,v); }
       return v;
     })();
-
     function randomRoomName(){
       const animals=['부엉이','호랑이','고래','곰','여우','사자','토끼','수달','펭귄','판다'];
       const num = Math.floor(1000 + Math.random()*9000);
       return animals[Math.floor(Math.random()*animals.length)] + num; // 예: 부엉이1929
     }
 
-    /* ============ DOM 핸들 ============
-       (기존 로직과 동일) */
+    /* ---------- 보드/상태 ---------- */
     const BOARD_POINTS = 7;
     const GRID = BOARD_POINTS*2-1;
     const COLORS = ['#e74c3c','#3498db'];
@@ -146,7 +143,20 @@
     let grid = [];
     let local = { roomId:null, role:0, state:null, selected:null };
 
-    /* ============ 보드 만들기 ============ */
+    /* ---------- RTDB 배열 정규화(핵심 수정) ---------- */
+    const asArray = (x) => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
+    function normalizeState(s){
+      if(!s) return s;
+      // 깊은 복사 없이도 OK(로컬만 사용) — 필요한 필드만 정규화
+      s.walls = asArray(s.walls);
+      if(!s.pieces) s.pieces = {"0":[], "1":[]};
+      s.pieces["0"] = asArray(s.pieces["0"]);
+      s.pieces["1"] = asArray(s.pieces["1"]);
+      s.extraOrder  = asArray(s.extraOrder || [0,1,1,0]);
+      return s;
+    }
+
+    /* ---------- 보드 생성 ---------- */
     function makeBoard(){
       boardEl.innerHTML='';
       boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
@@ -174,24 +184,30 @@
     }
 
     function renderFromState(){
-      const s=local.state; if(!s) return;
+      const s = normalizeState(local.state);
+      if(!s) return;
+
       turnEl.textContent = `Player ${s.current+1}`; turnEl.style.color = COLORS[s.current];
       skipWallBtn.disabled = (s.phase!=='move') || (s.current!==local.role);
 
-      // 말/벽 초기화
+      // 말 다시 그림
       document.querySelectorAll('.piece').forEach(el=>el.remove());
       for(const pid of [0,1]){
-        for(const p of s.pieces[String(pid)]){
-          const cell=grid[p.r][p.c]; const dot=document.createElement('div');
+        for(const p of asArray(s.pieces[String(pid)])){
+          const cell=grid[p.r][p.c]; if(!cell) continue;
+          const dot=document.createElement('div');
           dot.classList.add('piece'); dot.style.background=COLORS[pid]; dot.dataset.player=String(pid);
           cell.appendChild(dot);
         }
       }
+      // 벽 초기화
       for(let r=0;r<GRID;r++){ for(let c=0;c<GRID;c++){
         const cell=grid[r][c]; if(!cell) continue;
         if(cell.classList.contains('h-wall')||cell.classList.contains('v-wall')){ cell.classList.remove('placed'); cell.style.background='#fff'; }
       }}      
-      for(const w of s.walls){ const cell=grid[w.r]?.[w.c]; if(cell){ cell.classList.add('placed'); cell.style.background=COLORS[w.owner]; } }
+      for(const w of asArray(s.walls)){
+        const cell=grid[w.r]?.[w.c]; if(cell){ cell.classList.add('placed'); cell.style.background=COLORS[w.owner]; }
+      }
       updateScoresLocal();
     }
 
@@ -200,7 +216,7 @@
     helpBtn.addEventListener('click', openHelp); helpCloseBtn.addEventListener('click', closeHelp);
     helpOverlay.addEventListener('click', e=>{ if(e.target===helpOverlay) closeHelp(); });
 
-    /* ============ 움직임/점수 유틸 ============ */
+    /* ---------- 이동/점수 유틸 ---------- */
     function inBounds(r,c){ return r>=0&&r<GRID&&c>=0&&c<GRID; }
     function isPoint(r,c){ return (r%2===0)&&(c%2===0); }
     function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
@@ -261,10 +277,11 @@
       alert(`게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n`+(p1>p2?'승자: P1(빨강)':p2>p1?'승자: P2(파랑)':'무승부'));
       if(local.state){ local.state.phase='ended'; commitState(); }
     }
-    function isMyTurn(){ return local.state && local.state.current===local.role; }
+    function isMyTurn(){ return local.state && normalizeState(local.state).current===local.role; }
 
-    /* ============ 입력 처리 ============ */
+    /* ---------- 입력 처리 ---------- */
     function onPointClick(r,c){
+      local.state = normalizeState(local.state);
       const s=local.state; if(!s) return;
 
       if(s.phase==='place-extra'){
@@ -289,6 +306,7 @@
       }
     }
     function onWallClick(r,c){
+      local.state = normalizeState(local.state);
       const s=local.state; if(!s||s.phase!=='wall'||!isMyTurn()) return;
       const cell=grid[r][c]; const isWall=cell.classList.contains('h-wall')||cell.classList.contains('v-wall');
       if(!isWall||cell.classList.contains('placed')) return;
@@ -296,13 +314,16 @@
       const end=checkGameEndAndScoreLocal(); if(end){ s.phase='ended'; commitState(); showWinnerWithPaintLocal(); return; }
       s.current=1-s.current; s.phase='move'; commitState();
     }
-    skipWallBtn.addEventListener('click',()=>{ const s=local.state; if(!s||s.phase!=='move'||!isMyTurn()) return; clearMovable(); local.selected=null; s.phase='wall'; commitState(); });
+    skipWallBtn.addEventListener('click',()=>{
+      local.state = normalizeState(local.state);
+      const s=local.state; if(!s||s.phase!=='move'||!isMyTurn()) return; clearMovable(); local.selected=null; s.phase='wall'; commitState();
+    });
 
-    /* ============ DB 동기화 ============ */
+    /* ---------- DB 동기화 ---------- */
     async function commitState(){ if(!local.roomId||!local.state) return; await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state); }
-    function applyRemote(state){ local.state=state; renderFromState(); }
+    function applyRemote(state){ local.state = normalizeState(state); renderFromState(); }
 
-    /* ============ 방 생성/참여 ============ */
+    /* ---------- 방 생성/참여 ---------- */
     const btnCreate=document.getElementById('btnCreate');
     const btnJoin  =document.getElementById('btnJoin');
 
@@ -387,7 +408,6 @@
         });
       };
 
-      // 도움말은 처음 자동으로 띄울지 선택
       openHelp();
     }
 
