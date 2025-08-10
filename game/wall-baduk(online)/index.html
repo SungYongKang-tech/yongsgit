@@ -213,7 +213,7 @@
 
     // 로컬 상태
     let grid=[], unsubRoom=null, unsubPlayers=null, cleanupScheduled=false;
-    let local = { roomId:null, role:0, state:null, selected:null };
+    let local = { roomId:null, role:0, state:null, selected:null, prevWallCount:null };
 
     // 타이머
     let turnTimerId=null, turnDeadline=0;
@@ -246,7 +246,8 @@
         extraIdx:0,
         pieces:{ '0':[ {r:pt(2),c:pt(2)}, {r:pt(6),c:pt(6)} ],
                  '1':[ {r:pt(6),c:pt(2)}, {r:pt(2),c:pt(6)} ] },
-        walls:[]
+        walls:[],
+        lastMoved: null   // 마지막으로 이동 완료된 말 좌표(벽 타임아웃 후보용)
       };
     }
     const asArray = x => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
@@ -257,6 +258,7 @@
       s.pieces['0']=asArray(s.pieces['0']);
       s.pieces['1']=asArray(s.pieces['1']);
       s.extraOrder=asArray(s.extraOrder||[0,1,1,0]);
+      if (s.lastMoved && (typeof s.lastMoved.r!=='number' || typeof s.lastMoved.c!=='number')) s.lastMoved=null;
       return s;
     }
 
@@ -296,7 +298,7 @@
       // 버튼
       skipWallBtn.disabled = !(s.phase==='move' && s.current===local.role);
 
-      // 말
+      // 말 렌더
       document.querySelectorAll('.piece').forEach(el=>el.remove());
       for(const pid of [0,1]){
         for(const p of asArray(s.pieces[String(pid)])){
@@ -305,13 +307,23 @@
           cell.appendChild(dot);
         }
       }
-      // 벽
+      // 벽 렌더
       for(let r=0;r<GRID;r++){ for(let c=0;c<GRID;c++){
         const cell=grid[r][c]; if(!cell) continue;
         if(cell.classList.contains('h-wall')||cell.classList.contains('v-wall')){ cell.classList.remove('placed'); cell.style.background='#fff'; }
       }}      
       for(const w of asArray(s.walls)){
         const cell=grid[w.r]?.[w.c]; if(cell){ cell.classList.add('placed'); cell.style.background=COLORS[w.owner]; }
+      }
+
+      // 자동/수동 벽 설치 사운드: walls 길이 증가 감지
+      if (local.prevWallCount == null) {
+        local.prevWallCount = s.walls.length;
+      } else if (s.walls.length > local.prevWallCount) {
+        playSafe(sndWall);
+        local.prevWallCount = s.walls.length;
+      } else {
+        local.prevWallCount = s.walls.length;
       }
 
       // 타이머: 내 턴이면 시작, 아니면 정지
@@ -405,13 +417,13 @@
       const s=local.state; if(!s) return;
 
       if(s.phase==='place-extra'){
-        // 배치는 턴 소유자만
         if(s.current!==local.role) return;
         const cell=grid[r][c]; if(cell.querySelector('.piece')) return;
         s.pieces[String(s.current)].push({r,c});
         s.extraIdx++;
         if(s.extraIdx>=s.extraOrder.length){ s.phase='move'; }
         else { s.current=s.extraOrder[s.extraIdx]; }
+        s.lastMoved = null;
         commitState();
         return;
       }
@@ -432,19 +444,18 @@
         }
 
         if(local.selected && cell.classList.contains('movable')){
-          // 이동 실행
           const arr=s.pieces[String(local.role)];
           const idx=arr.findIndex(p=>p.r===local.selected.r&&p.c===local.selected.c);
           if(idx>=0){
             arr[idx]={r,c};
             playSafe(sndMove);
             s.phase='wall';
+            s.lastMoved = { r, c };   // 마지막 이동 말 기록
             clearMovable(); local.selected=null;
             commitState();
           }
         }
       }
-      // wall 단계에서 점 클릭은 무시
     }
 
     function onWallClick(r,c){
@@ -454,12 +465,9 @@
       const isWall=cell.classList.contains('h-wall')||cell.classList.contains('v-wall');
       if(!isWall||cell.classList.contains('placed')) return;
 
-      // 벽 설치
       s.walls.push({r,c,owner:local.role});
-      playSafe(sndWall);
-
-      // 종료 체크는 렌더 시 수행, 상태 전환만
-      s.current=1-s.current; s.phase='move';
+      // 사운드는 렌더에서 증가 감지로 재생
+      s.current=1-s.current; s.phase='move'; s.lastMoved = null;
       clearMovable();
       commitState();
     }
@@ -468,7 +476,8 @@
     skipWallBtn.addEventListener('click',()=>{
       local.state = normalizeState(local.state);
       const s=local.state; if(!s||s.phase!=='move'||s.current!==local.role) return;
-      clearMovable(); local.selected=null; s.phase='wall'; commitState();
+      clearMovable(); local.selected=null; s.phase='wall'; s.lastMoved = null;
+      commitState();
     });
 
     /* ================= 타임아웃 처리 ================= */
@@ -485,30 +494,70 @@
       }
       return out;
     }
+    // 특정 점(말) 주변의 빈 벽 후보(상/하/좌/우)
+    function adjacentEmptyWallsOfPoint(s, pr, pc){
+      const occupied = new Set(s.walls.map(w=>`${w.r},${w.c}`));
+      const cand = [{r:pr-1,c:pc},{r:pr+1,c:pc},{r:pr,c:pc-1},{r:pr,c:pc+1}];
+      return cand.filter(({r,c})=>{
+        const inBoard = r>=0 && r<GRID && c>=0 && c<GRID;
+        const isWallPos = (r%2===1 && c%2===0) || (r%2===0 && c%2===1);
+        const free = !occupied.has(`${r},${c}`);
+        return inBoard && isWallPos && free;
+      });
+    }
 
     async function handleTurnTimeout(){
-      // 내 턴이 아닐 수도 있으니, 트랜잭션으로 검증
       if(!local.roomId) return;
       const stateRef = ref(db, `wbaduk/rooms/${local.roomId}/state`);
-      await runTransaction(stateRef, (sRaw)=>{
-        const s = normalizeState(sRaw);
-        if(!s) return sRaw;
 
-        // 여전히 내 턴 & 진행 중인지 확인
-        if(!(s.current===local.role && (s.phase==='move' || s.phase==='wall'))) return sRaw;
+      await runTransaction(stateRef, (raw)=>{
+        const s = normalizeState(raw);
+        if(!s) return raw;
 
-        // 타임아웃: 랜덤 빈 벽 자동 설치 (벽이 남아있다면)
-        const empties = listEmptyWallsFromState(s);
-        if(empties.length>0){
-          const pick = empties[Math.floor(Math.random()*empties.length)];
+        // 여전히 내 턴인지 검증
+        if(!(s.current===local.role && (s.phase==='move' || s.phase==='wall'))) return raw;
+
+        // 1) 이동 단계 초과 → 벽 단계로만 전환
+        if (s.phase === 'move') {
+          s.phase = 'wall';
+          s.lastMoved = null;   // 이동 안 했으므로 기준 없음
+          return s;
+        }
+
+        // 2) 벽 단계 초과 → 자동 벽 설치
+        let candidates = [];
+
+        // (a) 이번 턴 마지막으로 이동한 말 주변
+        if (s.lastMoved) {
+          candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
+        }
+
+        // (b) 이동 안 했거나 주변이 막힌 경우 → 현재 플레이어 모든 말 주변 합치기
+        if (candidates.length === 0) {
+          const myPieces = asArray(s.pieces[String(s.current)]);
+          for (const p of myPieces) {
+            const adj = adjacentEmptyWallsOfPoint(s, p.r, p.c);
+            if (adj.length) candidates.push(...adj);
+          }
+        }
+
+        // (c) 그래도 없으면 → 전체 빈 벽
+        if (candidates.length === 0) {
+          candidates = listEmptyWallsFromState(s);
+        }
+
+        if (candidates.length > 0) {
+          const pick = candidates[Math.floor(Math.random()*candidates.length)];
           s.walls.push({ r: pick.r, c: pick.c, owner: s.current });
         }
-        // 다음 턴으로
+
+        // 턴 교대
         s.current = 1 - s.current;
-        s.phase = 'move';
+        s.phase   = 'move';
+        s.lastMoved = null;
         return s;
       });
-      // 커밋 완료 후 타이머는 상대 클라이언트에서 시작됨
+      // 커밋 후 다음 차례 쪽에서 타이머 자동 시작
     }
 
     /* ================= DB 동기화 ================= */
@@ -625,7 +674,6 @@
         });
       };
 
-      // 도움말
       helpOverlay.style.display='flex';
       helpCloseBtn.onclick = ()=> helpOverlay.style.display='none';
     }
