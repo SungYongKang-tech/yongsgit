@@ -170,7 +170,10 @@ let difficultyAcc = 0;
 // 스폰 주기/확률/속도 배율
 let obstacleSpawnMs = 1100;      // 기본 장애물 스폰 간격(ms)
 let coinSpawnMs = 900;           // 코인 스폰 체크 간격(ms)
-let heartSpawnMs = 6000;         // 하트 스폰 체크 간격(ms)
+let heartSpawnMs = 12000; // 하트 기본 체크 간격(기본 12초)
+const HEART_MIN_LIVES = 2; // 이 이하일 때만 등장
+const HEART_COOLDOWN_MS = 30000; // 최소 간격 30초
+let heartCooldownAcc = HEART_COOLDOWN_MS; // 초기엔 바로 가능하지만 조건 충족 필요         // 하트 스폰 체크 간격(ms)
 let shieldSpawnMs = 5000;        // 방어막 스폰 체크 간격(ms)
 let speedMul = 1;                // 전체 낙하속도 배율
 
@@ -373,6 +376,7 @@ function loop(ts){
     shieldSpawnAcc += dt;
     scoreAcc += dt;
     difficultyAcc += dt;
+    heartCooldownAcc += dt;
 
     // 스폰 로직
     if (obstacleSpawnAcc >= obstacleSpawnMs){
@@ -385,7 +389,10 @@ function loop(ts){
     }
     if (heartSpawnAcc >= heartSpawnMs){
       heartSpawnAcc -= heartSpawnMs;
-      if (Math.random() < 0.35) spawnHeart();
+      if (lives <= HEART_MIN_LIVES && heartCooldownAcc >= HEART_COOLDOWN_MS && Math.random() < 0.12) {
+        spawnHeart();
+        heartCooldownAcc = 0;
+      }
     }
     if (shieldSpawnAcc >= shieldSpawnMs){
       shieldSpawnAcc -= shieldSpawnMs;
