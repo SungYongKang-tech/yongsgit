@@ -412,31 +412,76 @@ turnEl.style.color = COLORS[s.current];
       enterRoom(roomId, 0);
     };
 
-    btnJoin.onclick = async ()=>{
-      const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
-      if(!latestSnap.exists()){ alert('참여 가능한 방이 없습니다.'); return; }
-      const { roomCode, createdAt } = latestSnap.val();
-      if(Date.now() - (createdAt||0) > 60_000){ alert('참여 시간이 초과되었습니다.'); return; }
+    btnJoin.onclick = async () => {
+  try {
+    // 우선 latestRoom 시도
+    const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
+    let targetId = null;
 
-      // 트랜잭션으로 합류(2명 제한)
+    if (latestSnap.exists()) {
+      const { roomCode, createdAt } = latestSnap.val();
+      if (Date.now() - (createdAt || 0) <= 60_000) {
+        targetId = roomCode;
+      }
+    }
+
+    // latestRoom이 없거나 시간 초과면 스캔해서 다른 방 찾기
+    if (!targetId) {
+      targetId = await findJoinableRoom();
+      if (!targetId) {
+        alert('참여 가능한 방이 없습니다. 새로 생성해 주세요.');
+        return;
+      }
+    }
+
+    // 트랜잭션으로 합류 (실패 시 다른 방 한 번 더 시도)
+    async function joinWithTxn(roomId) {
       let myRole = 1;
-      await runTransaction(ref(db, `wbaduk/rooms/${roomCode}`), room=>{
-        if(!room) return;
-        const cnt = room.playerCount||0;
-        if(cnt>=2) return;
-        if(!room.players) room.players={};
-        const rolesTaken = Object.values(room.players).map(p=>p.role);
-        myRole = rolesTaken.includes(0)?1:0;
+      const res = await runTransaction(ref(db, `wbaduk/rooms/${roomId}`), room => {
+        if (!room) return;               // 방이 사라짐 → 실패
+        const cnt = room.playerCount || 0;
+        if (cnt >= 2) return;            // 가득 찼음 → 실패
+        if (!room.players) room.players = {};
+        const rolesTaken = Object.values(room.players).map(p => p.role);
+        myRole = rolesTaken.includes(0) ? 1 : 0;
+
         room.players[uid] = { role: myRole, joinedAt: Date.now() };
         const uniqueCount = new Set(Object.keys(room.players)).size;
-        room.playerCount = Math.min(2, uniqueCount);
-        if(room.playerCount===2) room.status='playing';
-        if(!room.state) room.state = initialState();
+        room.playerCount  = Math.min(2, uniqueCount);
+        if (room.playerCount === 2) room.status = 'playing';
+        if (!room.state) room.state = initialState();
         return room;
       });
-      onDisconnect(ref(db, `wbaduk/rooms/${roomCode}/players/${uid}`)).remove();
-      enterRoom(roomCode, myRole);
-    };
+
+      if (!res.committed) return null;   // 실패
+      return { roomId, role: myRole };
+    }
+
+    // 1차 시도
+    let joined = await joinWithTxn(targetId);
+
+    // 실패(동시 진입 등)면 다른 방 찾아 한 번 더
+    if (!joined) {
+      const alt = await findJoinableRoom();
+      if (alt && alt !== targetId) {
+        joined = await joinWithTxn(alt);
+      }
+    }
+
+    if (!joined) {
+      alert('방이 가득 찼습니다. 잠시 후 다시 시도하거나 새로 만들어 주세요.');
+      return;
+    }
+
+    onDisconnect(ref(db, `wbaduk/rooms/${joined.roomId}/players/${uid}`)).remove();
+    enterRoom(joined.roomId, joined.role);
+
+  } catch (e) {
+    console.error(e);
+    alert('참여하기 중 오류가 발생했어요. 콘솔을 확인해 주세요.');
+  }
+};
+
 
     function enterRoom(roomId, role){
       local.roomId = roomId; local.role = role;
@@ -454,11 +499,14 @@ turnEl.style.color = COLORS[s.current];
       onValue(ref(db, `wbaduk/rooms/${roomId}`), snap=>{
         const room=snap.val(); if(!room) return;
         if(room.state) applyRemote(room.state);
-        if (room.status === 'waiting') {
+       if (room.status === 'waiting') {
   const t = document.getElementById('turnColor');
   t.textContent = '상대 대기 중…';
   t.style.color = '#777';
+} else if (room.state) {
+  applyRemote(room.state);  // playing 상태일 때는 정상 렌더
 }
+
 
       });
 
@@ -474,6 +522,25 @@ turnEl.style.color = COLORS[s.current];
 
       openHelp();
     }
+
+// 1분 이내에 만들어졌고, 인원 2명 미만인 방 중에서 가장 최근 것을 고름
+async function findJoinableRoom() {
+  const snap = await get(ref(db, 'wbaduk/rooms'));
+  if (!snap.exists()) return null;
+  const now = Date.now();
+
+  let pick = null;
+  for (const [id, r] of Object.entries(snap.val() || {})) {
+    const created = r?.createdAt || 0;
+    const cnt     = r?.playerCount || 0;
+    const waiting = (r?.status === 'waiting') || cnt < 2;
+    if (waiting && (now - created) <= 60_000) {
+      if (!pick || created > pick.createdAt) pick = { id, createdAt: created };
+    }
+  }
+  return pick?.id || null;
+}
+
 
   </script>
 </body>
