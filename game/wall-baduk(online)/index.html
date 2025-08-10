@@ -13,7 +13,7 @@
       margin: 0;
       min-height: 100vh;
       display: grid;
-      grid-template-rows: auto auto auto auto auto; /* 모두 auto로 간격 최소화 */
+      grid-template-rows: auto auto auto auto auto; /* 간격 최소화 */
     }
     h1 { margin: 8px 0 4px; }
     #panel { margin: 4px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
@@ -134,7 +134,7 @@
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
-    // 탭마다 고유 uid (같은 브라우저 2탭 테스트 가능)
+    /* ===== 탭마다 고유 uid (같은 브라우저 2탭 테스트 OK) ===== */
     const uid = (() => {
       const key = 'wb_uid_tab';
       let v = sessionStorage.getItem(key);
@@ -145,30 +145,56 @@
       return v;
     })();
 
-    /* ====== 자동 방 매칭: 1분 내 waiting 방 찾기 → 없으면 생성 ====== */
+    /* ===== 방 이름 생성: [한글동물]+[4자리 숫자] ===== */
+    function randomRoomName() {
+      const animals = [
+        '부엉이','호랑이','고래','곰','독수리','여우','사자','토끼','거북이','수달',
+        '펭귄','판다','까치','매','참새','코끼리','치타','늑대','물개','사슴',
+        '문어','해달','고양이','강아지','수리부엉이','재규어','바다거북','홍학','카멜레온'
+      ];
+      const word = animals[Math.floor(Math.random()*animals.length)];
+      const num  = Math.floor(1000 + Math.random()*9000); // 1000~9999
+      return `${word}${num}`;
+    }
+    async function createUniqueRoomName(tries=8){
+      for (let i=0;i<tries;i++){
+        const name = randomRoomName();
+        const exists = (await get(ref(db, `rooms/${name}`))).exists();
+        if (!exists) return name;
+      }
+      // 최후 대안(중복 회피)
+      return `방${Date.now()}`;
+    }
+
+    /* ===== 자동 방 매칭: 최근 1분 내 최신 waiting 방 → 없으면 새 방 생성 ===== */
     async function autoRoom() {
       const now = Date.now();
 
-      // 1) 전체 rooms 읽고 조건에 맞는 첫 방 고르기 (인덱스/쿼리 불필요)
+      // 1) 전체 rooms 읽고 "최근 1분 내" + waiting + 인원<2 중 "가장 최근" 방 고르기
       const snap = await get(ref(db, "rooms"));
       let targetId = null;
+      let bestCreated = -1;
 
       snap.forEach(cs => {
         const r = cs.val() || {};
         const created = typeof r.createdAt === 'number' ? r.createdAt : 0;
         const cnt = r.playerCount || 0;
-        if (!targetId && r.status === "waiting" && cnt < 2 && (now - created) <= 60_000) {
-          targetId = cs.key;
+        if (r.status === "waiting" && cnt < 2 && (now - created) <= 60_000) {
+          if (created > bestCreated) {
+            bestCreated = created;
+            targetId = cs.key; // 이 키가 "부엉이1234" 같은 방 이름
+          }
         }
       });
 
-      // 2) 없으면 새 방 생성
+      // 2) 없으면 한글 이름으로 새 방 생성
       if (!targetId) {
-        const roomId = crypto.randomUUID?.() || ('r_' + Math.random().toString(36).slice(2));
+        const roomId = await createUniqueRoomName();
         const nowMs = Date.now();
         await set(ref(db, `rooms/${roomId}`), {
+          name: roomId,              // 표시용(동일)
           status: "waiting",
-          createdAt: nowMs,      // serverTimestamp() 미사용 (환경 의존 제거)
+          createdAt: nowMs,          // 로컬 시간(인덱스/서버타임 의존 없음)
           playerCount: 1,
           players: { [uid]: { role: 0, joinedAt: nowMs } }
         });
@@ -181,7 +207,7 @@
       await runTransaction(ref(db, `rooms/${targetId}`), room => {
         if (!room) return;
         const cnt = room.playerCount || 0;
-        if (cnt >= 2) return; // 꽉 찼으면 취소
+        if (cnt >= 2) return; // 꽉 찼음 → 취소
 
         if (!room.players) room.players = {};
         const rolesTaken = Object.values(room.players).map(p => p.role);
@@ -554,6 +580,7 @@
       const { roomId, role } = await autoRoom();
       local.roomId = roomId; local.role = role;
 
+      // 화면에 한글 방 이름 표시
       roomLine.textContent = `방: ${roomId} — 나는 ${role===0?'P1(빨강)':'P2(파랑)'} 입니다.`;
 
       // 방 상태 구독
