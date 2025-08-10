@@ -12,6 +12,7 @@
       overflow: hidden;
       touch-action: none;
       height: 100%;
+      -webkit-user-select: none; user-select: none;
     }
     #game {
       position: relative;
@@ -29,13 +30,23 @@
       background-repeat: no-repeat;
       background-position: center;
       z-index: 10;
+      transition: box-shadow 120ms ease;
     }
+
+    /* 공통 장애물 스타일 */
     .obstacle {
       position: absolute;
-      background: lightgreen;
       border-radius: 8px;
       z-index: 2;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
     }
+    /* 타입별 시각 효과 */
+    .ob-basic { background: #8bc34a; }
+    .ob-zigzag { background: #ff7043; }
+    .ob-drift { background: #42a5f5; }
+    .ob-swing { background: linear-gradient(135deg,#9575cd,#ce93d8); }
+    .ob-truck { background: #bdbdbd; border-radius: 6px; }
+
     .gold-coin {
       position: absolute;
       background: gold;
@@ -43,6 +54,17 @@
       box-shadow: 0 0 10px yellow;
       z-index: 3;
     }
+    .heart, .shield {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      font-size: 24px;
+      text-align: center;
+      line-height: 32px;
+      z-index: 4;
+      user-select: none;
+    }
+
     #overlay {
       position: absolute;
       top: 0; left: 0;
@@ -54,604 +76,427 @@
       flex-direction: column;
       z-index: 999;
       color: white;
-      font-size: 2rem;
     }
-    #score {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      color: white;
-      font-size: 1.2rem;
-      z-index: 1000;
-    }
-    #lives {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      color: white;
-      font-size: 1.4rem;
-      z-index: 1000;
-    }
+
+    #score { position: absolute; top: 10px; left: 10px; color: #fff; font-size: 1.2rem; z-index: 1000; }
+    #lives { position: fixed; top: 10px; right: 10px; color: #fff; font-size: 1.4rem; z-index: 1000; }
+
     .btn {
       margin: 10px;
-      padding: 10px 20px;
-      font-size: 1.2rem;
+      padding: 10px 16px;
+      font-size: 1.1rem;
       background: #555;
       color: white;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
     }
     .btn:hover { background: #777; }
     .hidden { visibility: hidden; }
 
-.heart {
-  position: absolute;
-  width: 32px;
-  height: 32px;
-  font-size: 24px;
-  text-align: center;
-  line-height: 32px;
-  z-index: 4;
-  user-select: none;
-}
+    /* 좌하단 컨트롤 */
+    #controls {
+      position: absolute;
+      bottom: 8px; left: 8px;
+      display: flex; gap: 6px;
+      z-index: 1000;
+    }
 
-
-
+    /* 우하단 상위 점수 보드(상시) */
+    #top-scores {
+      position: absolute;
+      bottom: 8px; right: 8px;
+      color: #fff;
+      font-size: 0.95rem;
+      background: rgba(0,0,0,0.5);
+      padding: 6px 10px;
+      border-radius: 8px;
+      z-index: 999;
+      max-width: 220px;
+    }
   </style>
-
- 
-<link rel="icon" href="car1.png" />
-
+  <link rel="icon" href="car1.png" />
 </head>
 <body>
-
-
   <div id="game">
     <div id="player"></div>
     <div id="score">점수: 0</div>
     <div id="lives">❤️ x 3</div>
     <div id="overlay"></div>
     <audio id="coinSound" src="coin.mp3"></audio>
-
-
-
+    <div id="controls"><button id="pause-btn" class="btn">⏸️</button></div>
+    <div id="top-scores"></div>
   </div>
- <div id="top-scores" style="
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  color: white;
-  font-size: 1rem;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 6px 12px;
-  border-radius: 8px;
-  z-index: 999;
-  max-width: 200px;
-"></div>
 
-<div id="game-controls" style="
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 1000;
-">
-  <div id="game-controls" style="position: absolute; bottom: 5px; left: 5px; display: flex; gap: 3px; z-index: 999;">
-  <button id="pause-btn" class="btn">⏸️</button>
-
-</div>
-</div>
-
+  <!-- 게임 종료 후 랭킹 표시 (오버레이 안에서도 그리지만, 독립 구성 유지) -->
+  <div id="scoreboard" style="display:none; text-align:center; margin-top:30px;">
+    <h2>🏆 상위 10위 점수</h2>
+    <ol id="score-list"></ol>
+  </div>
 
 <script>
+// ========= 기본 참조 =========
 const game = document.getElementById('game');
-const player = document.getElementById('player');
-const scoreDisplay = document.getElementById('score');
-const livesDisplay = document.getElementById('lives');
+const playerEl = document.getElementById('player');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
 const overlay = document.getElementById('overlay');
 const coinSound = document.getElementById('coinSound');
-coinSound.volume = 0.3;
+coinSound.volume = 0.35;
 
+// ========= 게임 상태 =========
+let gameRunning = true;
+let paused = false;
 let lives = 3;
 let score = 0;
-let gameRunning = true;
-let isInvincible = false;
-let obstacleSpeed = 2;
-let obstacleInterval = 1500;
+let isInvincible = false; // 피격 무적시간
+let hasShield = false;    // 방어막 보유
+let shieldTimeout = null; // 방어막 타이머 핸들
+
+// 플레이어 위치/속도
 let playerX = window.innerWidth / 2 - 30;
 let playerY = window.innerHeight - 120;
-let moveVX = 0, moveVY = 0;
+const PLAYER_W = 60, PLAYER_H = 90;
+let moveVX = 0, moveVY = 0; // 입력에 따른 속도
+
+// 스폰 & 난이도 타이머(accumulator)
+let obstacleSpawnAcc = 0;
+let coinSpawnAcc = 0;
+let heartSpawnAcc = 0;
+let shieldSpawnAcc = 0;
+let scoreAcc = 0;
+let difficultyAcc = 0;
+
+// 스폰 주기/확률/속도 배율
+let obstacleSpawnMs = 1100;      // 기본 장애물 스폰 간격(ms)
+let coinSpawnMs = 900;           // 코인 스폰 체크 간격(ms)
+let heartSpawnMs = 6000;         // 하트 스폰 체크 간격(ms)
+let shieldSpawnMs = 5000;        // 방어막 스폰 체크 간격(ms)
+let speedMul = 1;                // 전체 낙하속도 배율
+
+// 골드 콤보로 생명 보너스
 let goldCombo = 0;
 let goldComboTimer = null;
-let activeTouchId, startTouchX, startTouchY, isDragging = false;
 
+// 엔티티 컨테이너
+const obstacles = []; // {el,x,y,w,h,vx,vy,type,angle,omega}
+const items = [];     // {el,x,y,w,h,vx,vy,kind}
 
-const obstacles = [];
-
-player.style.left = `${playerX}px`;
-player.style.top = `${playerY}px`;
-
-function updatePlayerPosition() {
-  if (!gameRunning) return; // ✅ 게임 종료되면 멈춤
-  playerX += moveVX;
-  playerY += moveVY;
-  playerX = Math.max(0, Math.min(playerX, window.innerWidth - 60));
-  playerY = Math.max(0, Math.min(playerY, window.innerHeight - 90));
-  player.style.left = `${playerX}px`;
-  player.style.top = `${playerY}px`;
-  requestAnimationFrame(updatePlayerPosition);
+// 플레이어 초기 배치
+function syncPlayer() {
+  playerEl.style.left = playerX + 'px';
+  playerEl.style.top  = playerY + 'px';
 }
+syncPlayer();
 
-requestAnimationFrame(updatePlayerPosition);
+// ========= 입력(터치 드래그) =========
+let activeTouchId = null, startTouchX = 0, startTouchY = 0, isDragging = false;
+const MAX_PLAYER_SPEED = 5.0; // 상한
 
-game.addEventListener("touchstart", (e) => {
-  const touch = e.touches[0];
-  activeTouchId = touch.identifier;
-  startTouchX = touch.clientX;
-  startTouchY = touch.clientY;
+function startBGMOnce() { tryPlayBGM(); }
+['click','touchstart'].forEach(ev=>document.addEventListener(ev,startBGMOnce,{once:true,passive:true}));
+
+game.addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  if (!t) return;
+  activeTouchId = t.identifier;
+  startTouchX = t.clientX; startTouchY = t.clientY;
   isDragging = true;
-});
+}, { passive: true });
 
-game.addEventListener("touchmove", (e) => {
+game.addEventListener('touchmove', (e) => {
   if (!isDragging) return;
-  for (const touch of e.touches) {
-    if (touch.identifier === activeTouchId) {
-      const dx = touch.clientX - startTouchX;
-const dy = touch.clientY - startTouchY;
-const len = Math.sqrt(dx * dx + dy * dy);
-if (len === 0) return; // <- 예외 처리
-
-const scale = Math.min(len / 40, 1);
-
-// ✅ 최대 속도 제한 추가
-const rawSpeed = obstacleSpeed * 1.2;
-const maxPlayerSpeed = 5.0;
-const playerSpeed = Math.min(rawSpeed, maxPlayerSpeed);
-
-moveVX = dx / len * scale * playerSpeed;
-moveVY = dy / len * scale * playerSpeed;
-
-
+  for (const t of e.touches) {
+    if (t.identifier === activeTouchId) {
+      const dx = t.clientX - startTouchX;
+      const dy = t.clientY - startTouchY;
+      const len = Math.hypot(dx, dy) || 1;
+      const scale = Math.min(len / 40, 1);
+      const rawSpeed = (2.0 * speedMul) * 1.2;
+      const playerSpeed = Math.min(rawSpeed, MAX_PLAYER_SPEED);
+      moveVX = (dx / len) * scale * playerSpeed;
+      moveVY = (dy / len) * scale * playerSpeed;
+      break;
     }
   }
-}, { passive: false });
+}, { passive: true });
 
-game.addEventListener("touchend", (e) => {
-  for (const touch of e.changedTouches) {
-    if (touch.identifier === activeTouchId) {
+game.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === activeTouchId) {
       isDragging = false;
-      moveVX = 0;
-      moveVY = 0;
+      moveVX = 0; moveVY = 0;
+      break;
     }
   }
-});
+}, { passive: true });
 
-function createObstacle() {
-  const obs = document.createElement('div');
-  obs.className = 'obstacle';
-  const w = 40 + Math.random() * 60;
-  const h = 40 + Math.random() * 60;
-  obs.style.width = `${w}px`;
-  obs.style.height = `${h}px`;
-  obs.style.left = `${Math.random() * (window.innerWidth - w)}px`;
-  obs.style.top = `-100px`;
-  game.appendChild(obs);
-  obstacles.push(obs);
-  animateObstacle(obs);
+// ========= 장애물 생성 =========
+function rand(min, max){ return Math.random()*(max-min)+min; }
+
+function spawnObstacle(){
+  const typeRand = Math.random();
+  let type = 'basic';
+  if (typeRand < 0.15) type = 'truck';
+  else if (typeRand < 0.40) type = 'zigzag';
+  else if (typeRand < 0.65) type = 'drift';
+  else if (typeRand < 0.85) type = 'swing';
+  // else basic
+
+  let w,h,vx=0,vy=rand(2.2,3.6)*speedMul, angle=0, omega=0;
+  if (type==='truck'){ w=rand(90,130); h=rand(80,120); vy*=0.85; }
+  else if (type==='zigzag'){ w=rand(40,70); h=rand(40,70); vx=rand(-1.8,1.8); }
+  else if (type==='drift'){ w=rand(50,80); h=rand(50,80); vx=rand(-1.2,1.2); vy=rand(2.0,3.2)*speedMul; }
+  else if (type==='swing'){ w=rand(50,80); h=rand(50,80); omega=rand(-120,120); }
+  else { w=rand(40,70); h=rand(40,70); }
+
+  const x = Math.max(0, Math.min(window.innerWidth - w, rand(0, window.innerWidth - w)));
+  const y = -h - 4;
+
+  const el = document.createElement('div');
+  el.className = 'obstacle ob-' + (type==='basic'?'basic':type);
+  el.style.width = w+'px';
+  el.style.height= h+'px';
+  el.style.left  = x+'px';
+  el.style.top   = y+'px';
+  game.appendChild(el);
+
+  obstacles.push({ el, x, y, w, h, vx, vy, type, angle, omega });
 }
 
-function createGoldCoin() {
-  let valid = false;
-  let left, top;
+// ========= 아이템 생성 =========
+function spawnCoin(){
   const size = 30;
-  let attempts = 0;
-  while (!valid && attempts < 30) {
-    left = Math.random() * (window.innerWidth - size);
-    top = -60;
-    const coinBox = { left, right: left + size, top, bottom: top + size };
-    valid = obstacles.every(obs => {
-      const rect = obs.getBoundingClientRect();
-      return (
-        coinBox.right < rect.left ||
-        coinBox.left > rect.right ||
-        coinBox.bottom < rect.top ||
-        coinBox.top > rect.bottom
-      );
-    });
-    attempts++;
-  }
-  if (!valid) return;
-  const coin = document.createElement('div');
-  coin.className = 'gold-coin';
-  coin.style.width = `${size}px`;
-  coin.style.height = `${size}px`;
-  coin.style.left = `${left}px`;
-  coin.style.top = `${top}px`;
-  game.appendChild(coin);
-  animateGoldCoin(coin);
+  const x = rand(0, window.innerWidth - size);
+  const y = -size - 4;
+  const el = document.createElement('div');
+  el.className = 'gold-coin';
+  el.style.width = el.style.height = size + 'px';
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  game.appendChild(el);
+  const vy = rand(2.0, 3.2)*speedMul; // 코인 낙하 속도
+  items.push({ el, x, y, w:size, h:size, vx:0, vy, kind:'coin' });
 }
 
-function animateObstacle(obs) {
-  let y = parseFloat(obs.style.top);
-  const interval = setInterval(() => {
-    if (!gameRunning) return clearInterval(interval);
-    y += obstacleSpeed;
-    obs.style.top = `${y}px`;
-    if (y > window.innerHeight) {
-      obs.remove();
-      const idx = obstacles.indexOf(obs);
-      if (idx > -1) obstacles.splice(idx, 1);
-      clearInterval(interval);
-      if (Math.random() < 0.3) {
-        
-      }
-    }
-    checkCollision(obs);
-  }, 20);
+function spawnHeart(){
+  const size = 30;
+  const x = rand(0, window.innerWidth - size);
+  const y = -size - 4;
+  const el = document.createElement('div');
+  el.className = 'heart';
+  el.textContent = '❤️';
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  game.appendChild(el);
+  const vy = rand(2.0, 3.0)*speedMul;
+  items.push({ el, x, y, w:size, h:size, vx:0, vy, kind:'heart' });
 }
 
-function animateGoldCoin(coin) {
-  let y = parseFloat(coin.style.top);
-  const interval = setInterval(() => {
-    if (!gameRunning) return clearInterval(interval);
-    y += obstacleSpeed;
-    coin.style.top = `${y}px`;
-    if (y > window.innerHeight) {
-      coin.remove();
-      clearInterval(interval);
-    }
-    const p = player.getBoundingClientRect();
-    const c = coin.getBoundingClientRect();
-    const collected = p.left < c.right && p.right > c.left && p.top < c.bottom && p.bottom > c.top;
-    if (collected) {
-  score += 5;
-  scoreDisplay.textContent = `점수: ${score}`;
-  coin.remove();
-  clearInterval(interval);
-  coinSound.currentTime = 0;  // 빠르게 연속 재생 대비
-  coinSound.play();
-
-  goldCombo++;
-  if (goldComboTimer) clearTimeout(goldComboTimer);
-  goldComboTimer = setTimeout(() => {
-    goldCombo = 0;
-  }, 5000);
-
-  if (goldCombo === 20 && lives < 5) {
-    lives++;
-    livesDisplay.textContent = `❤️ x ${lives}`;
-    goldCombo = 0;
-  }
+function spawnShield(){
+  const size = 32;
+  const x = rand(0, window.innerWidth - size);
+  const y = -size - 4;
+  const el = document.createElement('div');
+  el.className = 'shield';
+  el.textContent = '🛡️';
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  el.style.boxShadow = '0 0 12px lightblue';
+  el.style.background = 'rgba(173,216,230, 0.08)';
+  el.style.borderRadius = '50%';
+  game.appendChild(el);
+  const vy = rand(2.0, 3.0)*speedMul;
+  items.push({ el, x, y, w:size, h:size, vx:0, vy, kind:'shield' });
 }
 
-  }, 20);
+// ========= 충돌/처리 =========
+function aabb(ax,ay,aw,ah, bx,by,bw,bh, buffer=0){
+  return (ax+buffer < bx+bw && ax+aw-buffer > bx && ay+buffer < by+bh && ay+ah-buffer > by);
 }
 
-function checkCollision(obs) {
-  if (!gameRunning || isInvincible) return;
-  const p = player.getBoundingClientRect();
-  const o = obs.getBoundingClientRect();
-  const buffer = 20;
-  const collide = p.left + buffer < o.right && p.right - buffer > o.left && p.top + buffer < o.bottom && p.bottom - buffer > o.top;
-  if (collide) {
-    handleHit();
-    obs.remove();
-  }
-}
-
-function handleHit() {
+function onHit(){
   if (hasShield) {
-    hasShield = false;
-    updateShieldIndicator();
+    hasShield = false; updateShieldIndicator();
     return;
   }
-
-  lives--;
-  livesDisplay.textContent = `❤️ x ${lives}`;
-  if (lives <= 0) {
-    gameRunning = false;
-    showGameOver(score);
+  lives--; livesEl.textContent = `❤️ x ${lives}`;
+  if (lives <= 0){
+    gameRunning = false; paused = true; moveVX=0; moveVY=0;
+    if (window.showGameOver) window.showGameOver(score); else showSimpleGameOver();
+    return;
   }
-
+  // 짧은 무적 & 점멸
   isInvincible = true;
-  let blink = 0;
-  const blinkInterval = setInterval(() => {
-    player.classList.toggle("hidden");
-    blink++;
-    if (blink >= 6) {
-      clearInterval(blinkInterval);
-      player.classList.remove("hidden");
-      isInvincible = false;
-    }
+  let blink = 0; const blinkId = setInterval(()=>{
+    playerEl.classList.toggle('hidden'); blink++;
+    if (blink>=6){ clearInterval(blinkId); playerEl.classList.remove('hidden'); isInvincible=false; }
   }, 200);
 }
 
-
-
-
-
-
-
-setInterval(() => {
-  if (gameRunning) {
-    score++;
-    scoreDisplay.textContent = `점수: ${score}`;
-  }
-}, 1000);
-
-function spawnLoop() {
-  if (!gameRunning) return;
-  createObstacle();
-  if (Math.random() < 0.4) createGoldCoin();
-  setTimeout(spawnLoop, obstacleInterval);
+function showSimpleGameOver(){
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `\
+    <div style="display:flex;flex-direction:column;align-items:center;padding:24px;color:white;">\
+      <div style="font-size:2rem;margin-bottom:12px;">💥 GAME OVER 💥</div>\
+      <div style="margin:10px 0 18px;">점수: <strong>${score}</strong></div>\
+      <div>새로고침(F5) 또는 아래 버튼으로 재시작하세요.</div>\
+      <div style="margin-top:16px;">\
+        <button class="btn" onclick="location.reload()">🔄 재시작</button>\
+      </div>\
+    </div>`;
 }
 
-setInterval(() => {
-  if (gameRunning) {
-    obstacleSpeed *= 1.05;
-    if (obstacleInterval > 500) obstacleInterval *= 0.95;
-  }
-}, 10000);
+function updateShieldIndicator(){
+  playerEl.style.boxShadow = hasShield ? '0 0 20px 5px lightblue' : 'none';
+}
 
+// ========= 메인 루프 =========
+let lastTs = null;
+function loop(ts){
+  if (lastTs === null) lastTs = ts;
+  const dtMs = ts - lastTs;
+  lastTs = ts;
 
-  // 3. 사용자 클릭 후 BGM 재생 (브라우저 정책 대응)
- document.addEventListener('click', () => {
-  if (bgm && bgm.paused) {
-    bgm.play().catch(err => console.warn('Autoplay failed:', err));
-  }
-}, { once: true });
+  if (!paused && gameRunning){
+    const dt = Math.min(dtMs, 40); // 안전 캡(ms)
+    // 플레이어 이동
+    playerX += moveVX; playerY += moveVY;
+    playerX = Math.max(0, Math.min(playerX, window.innerWidth - PLAYER_W));
+    playerY = Math.max(0, Math.min(playerY, window.innerHeight - PLAYER_H));
+    syncPlayer();
 
+    // 타이머 누적
+    obstacleSpawnAcc += dt;
+    coinSpawnAcc += dt;
+    heartSpawnAcc += dt;
+    shieldSpawnAcc += dt;
+    scoreAcc += dt;
+    difficultyAcc += dt;
 
-  livesDisplay.textContent = `❤️ x ${lives}`;
-  spawnLoop();
- // displayTopScores();
-
-
-
-let paused = false;
-
-document.getElementById('pause-btn').addEventListener('click', () => {
-  paused = !paused;
-  gameRunning = !paused;
-
-  const btn = document.getElementById('pause-btn');
-  btn.textContent = paused ? '▶️' : '⏸️';
-
-  if (paused) {
-    bgm.pause();
-  } else {
-    bgm.play().catch(() => {});
-    spawnLoop();
-    requestAnimationFrame(updatePlayerPosition);  // ✅ 추가
-    document.querySelectorAll('.obstacle, .gold-coin').forEach(el => el.remove());
-    obstacles.length = 0;
-  }
-});
-
-
-
-game.addEventListener('touchstart', () => {
-  if (bgm && bgm.paused) {
-    bgm.play().catch(err => console.warn('Autoplay failed:', err));
-  }
-}, { once: true });
-
-
-function fetchTopScores() {
-  const scoresRef = ref(db, "scores");
-
-  get(scoresRef).then((snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const scoreArray = Object.values(data);  // ✅ 배열 생성
-
-      const topScores = scoreArray
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10); // 상위 10개만
-
-      displayTopScores(topScores);  // ✅ 여기서만 호출해야 안전함
+    // 스폰 로직
+    if (obstacleSpawnAcc >= obstacleSpawnMs){
+      obstacleSpawnAcc -= obstacleSpawnMs;
+      spawnObstacle();
     }
-  });
-}
-
-
-function displayTopScores(topScores) {
-  const list = document.getElementById("score-list");
-  list.innerHTML = "";
-
-  topScores.forEach((entry, index) => {
-    const li = document.createElement("li");
-    li.textContent = `${index + 1}. ${entry.name} - ${entry.score}점`;
-    list.appendChild(li);
-  });
-
-  document.getElementById("scoreboard").style.display = "block";
-}
-
-// 사용자 첫 입력 시만 BGM 실행 (PC + 모바일 대응)
-['click', 'touchstart'].forEach(eventName => {
-  window.addEventListener(eventName, () => {
-    if (bgm.paused) {
-      bgm.play().catch(() => {});
+    if (coinSpawnAcc >= coinSpawnMs){
+      coinSpawnAcc -= coinSpawnMs;
+      if (Math.random() < 0.4) spawnCoin();
     }
-  }, { once: true });
-});
-// 1. BGM 설정
-const bgmList = [
-  new Audio('car01.mp3'),
-  new Audio('car02.mp3'),
-  new Audio('car03.mp3')
-];
-let bgm = bgmList[Math.floor(Math.random() * bgmList.length)];
-bgm.loop = true;
-bgm.volume = 0.6;
+    if (heartSpawnAcc >= heartSpawnMs){
+      heartSpawnAcc -= heartSpawnMs;
+      if (Math.random() < 0.35) spawnHeart();
+    }
+    if (shieldSpawnAcc >= shieldSpawnMs){
+      shieldSpawnAcc -= shieldSpawnMs;
+      if (Math.random() < 0.25) spawnShield();
+    }
 
-// 2. 사용자 터치/클릭 시 최초 1회 재생 시도
-function tryPlayBGM() {
-  bgm.play().catch(err => {
-    console.warn('🎵 BGM 재생 실패:', err);
-  });
-}
-document.addEventListener('click', tryPlayBGM, { once: true });
-document.addEventListener('touchstart', tryPlayBGM, { once: true });
+    // 난이도 상승(10초마다)
+    if (difficultyAcc >= 10000){
+      difficultyAcc -= 10000;
+      speedMul = Math.min(2.2, speedMul * 1.06);
+      obstacleSpawnMs = Math.max(520, obstacleSpawnMs * 0.95);
+    }
 
-function createHeartItem() {
-  const heart = document.createElement('div');
-  heart.className = 'heart';
-  heart.textContent = '❤️'; // ✅ 이모지 추가
-  const size = 30;
-  const left = Math.random() * (window.innerWidth - size);
-  heart.style.left = `${left}px`;
-  heart.style.top = `-50px`;
-  heart.style.width = `${size}px`;
-  heart.style.height = `${size}px`;
-  game.appendChild(heart);
+    // 점수(초당 1점)
+    if (scoreAcc >= 1000){
+      const add = Math.floor(scoreAcc/1000);
+      score += add; scoreAcc -= add*1000;
+      scoreEl.textContent = `점수: ${score}`;
+    }
 
-  let y = -50;
-  const interval = setInterval(() => {
-    if (!gameRunning) return clearInterval(interval);
-    y += obstacleSpeed;
-    heart.style.top = `${y}px`;
-
-    const p = player.getBoundingClientRect();
-    const h = heart.getBoundingClientRect();
-
-    const collected = p.left < h.right && p.right > h.left &&
-                      p.top < h.bottom && p.bottom > h.top;
-
-    if (collected) {
-      if (lives < 5) {
-        lives++;
-        livesDisplay.textContent = `❤️ x ${lives}`;
+    // 장애물 업데이트 & 충돌
+    for (let i=obstacles.length-1; i>=0; i--){
+      const o = obstacles[i];
+      // 타입별 행동
+      if (o.type==='zigzag'){
+        // 좌우 왕복: 벽 닿으면 반전
+        if (o.x <= 0 || o.x + o.w >= window.innerWidth) o.vx *= -1;
+      } else if (o.type==='swing'){
+        o.angle += (o.omega * dt/1000);
+        o.el.style.transform = `rotate(${o.angle}deg)`;
       }
-      heart.remove();
-      clearInterval(interval);
+      o.y += o.vy; o.x += o.vx;
+      o.el.style.top = o.y + 'px';
+      o.el.style.left= o.x + 'px';
+
+      if (o.y > window.innerHeight + 40){
+        o.el.remove(); obstacles.splice(i,1); continue;
+      }
+
+      if (!isInvincible){
+        if (aabb(playerX,playerY,PLAYER_W,PLAYER_H, o.x,o.y,o.w,o.h, 18)){
+          // 피격
+          o.el.remove(); obstacles.splice(i,1);
+          onHit();
+        }
+      }
     }
 
-    if (y > window.innerHeight) {
-      heart.remove();
-      clearInterval(interval);
-    }
-  }, 20);
-}
+    // 아이템 업데이트 & 획득
+    for (let i=items.length-1; i>=0; i--){
+      const it = items[i];
+      it.y += it.vy; it.x += it.vx;
+      it.el.style.top = it.y + 'px';
+      it.el.style.left= it.x + 'px';
 
-let lastHeartScore = 0;  // 점수 기준 기록
+      if (it.y > window.innerHeight + 40){ it.el.remove(); items.splice(i,1); continue; }
 
-setInterval(() => {
-  if (gameRunning) {
-    score++;
-    scoreDisplay.textContent = `점수: ${score}`;
-
-    // ❤️ 하트 생성 조건 (150점 단위로 1회)
-    if (score - lastHeartScore >= 250) {
-      createHeartItem();
-      lastHeartScore = score;
+      if (aabb(playerX,playerY,PLAYER_W,PLAYER_H, it.x,it.y,it.w,it.h, 0)){
+        if (it.kind==='coin'){
+          score += 5; scoreEl.textContent = `점수: ${score}`;
+          coinSound.currentTime = 0; coinSound.play().catch(()=>{});
+          goldCombo++;
+          if (goldComboTimer) clearTimeout(goldComboTimer);
+          goldComboTimer = setTimeout(()=>{ goldCombo = 0; }, 5000);
+          if (goldCombo === 20 && lives < 5){ lives++; livesEl.textContent = `❤️ x ${lives}`; goldCombo = 0; }
+        } else if (it.kind==='heart'){
+          if (lives < 5){ lives++; livesEl.textContent = `❤️ x ${lives}`; }
+        } else if (it.kind==='shield'){
+          hasShield = true; updateShieldIndicator();
+          if (shieldTimeout) clearTimeout(shieldTimeout);
+          shieldTimeout = setTimeout(()=>{ hasShield=false; updateShieldIndicator(); shieldTimeout=null; }, 10000);
+        }
+        it.el.remove(); items.splice(i,1);
+      }
     }
   }
-}, 1000);
 
-// 방어막아이템 생성 
-let hasShield = false;
-function createShieldItem() {
-  const shield = document.createElement('div');
-  shield.className = 'shield';
-  shield.textContent = '🛡️'; // ✅ 이모지 표시
-  shield.style.position = 'absolute';
-  shield.style.width = '32px';
-  shield.style.height = '32px';
-  shield.style.left = `${Math.random() * (window.innerWidth - 32)}px`;
-  shield.style.top = '-50px';
-  shield.style.fontSize = '28px';
-  shield.style.textAlign = 'center';
-  shield.style.lineHeight = '32px';
-  shield.style.borderRadius = '50%';
-  shield.style.boxShadow = '0 0 12px lightblue';
-  shield.style.background = 'rgba(173,216,230, 0.05)';
-  shield.style.zIndex = 5;
-  shield.style.userSelect = 'none';
-  game.appendChild(shield);
-
-  let y = -50;
-  const interval = setInterval(() => {
-    if (!gameRunning) return clearInterval(interval);
-    y += obstacleSpeed;
-    shield.style.top = `${y}px`;
-
-    const p = player.getBoundingClientRect();
-    const s = shield.getBoundingClientRect();
-
-    const collected = p.left < s.right && p.right > s.left &&
-                      p.top < s.bottom && p.bottom > s.top;
-
-let shieldTimeout = null;  // 전역에 추가
-
-if (collected) {
-  hasShield = true;
-  updateShieldIndicator(); 
-  shield.remove();
-  clearInterval(interval);
-
-  // 기존 타이머가 있다면 제거
-  if (shieldTimeout) clearTimeout(shieldTimeout);
-
-  // 새로 10초 타이머 실행
-  shieldTimeout = setTimeout(() => {
-    hasShield = false;
-    updateShieldIndicator();
-    shieldTimeout = null;
-  }, 10000);
+  requestAnimationFrame(loop);
 }
+requestAnimationFrame(loop);
 
-    if (y > window.innerHeight) {
-      shield.remove();
-      clearInterval(interval);
-    }
-  }, 20);
-}
+// 일시정지
+const pauseBtn = document.getElementById('pause-btn');
+pauseBtn.addEventListener('click', ()=>{
+  paused = !paused; gameRunning = !paused;
+  pauseBtn.textContent = paused ? '▶️' : '⏸️';
+  if (paused) bgm.pause(); else bgm.play().catch(()=>{});
+});
 
+// 창 리사이즈 시 플레이어 위치 클램프
+window.addEventListener('resize', ()=>{
+  playerX = Math.max(0, Math.min(playerX, window.innerWidth - PLAYER_W));
+  playerY = Math.max(0, Math.min(playerY, window.innerHeight - PLAYER_H));
+  syncPlayer();
+});
 
-function updateShieldIndicator() {
-  if (hasShield) {
-    player.style.boxShadow = '0 0 20px 5px lightblue';
-  } else {
-    player.style.boxShadow = 'none';
-  }
-}
+// ========= BGM =========
+const bgmList = [ new Audio('car01.mp3'), new Audio('car02.mp3'), new Audio('car03.mp3') ];
+let bgm = bgmList[Math.floor(Math.random()*bgmList.length)];
+bgm.loop = true; bgm.volume = 0.6;
+function tryPlayBGM(){ bgm.play().catch(()=>{}); }
 
-setInterval(() => {
-  if (gameRunning && Math.random() < 0.2) { // 5% 확률
-    createShieldItem();
-  }
-}, 4000); // 4초마다 검사
-
-
-
-
-
-
-
-
-
-
-
-
+// 초기 라이프/스코어 UI
+livesEl.textContent = `❤️ x ${lives}`;
+scoreEl.textContent = `점수: ${score}`;
 </script>
 
-<!-- 게임 종료 후 랭킹 보여주는 영역 -->
-<div id="scoreboard" style="display: none; text-align: center; margin-top: 30px;">
-  <h2>🏆 상위 10위 점수</h2>
-  <ol id="score-list"></ol>
-</div>
-
- <script type="module">
+<!-- ===================== Firebase 순위 & 게임오버 오버레이 ===================== -->
+<script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import {
-    getDatabase, ref, get, remove, set, push,
-    query, orderByChild, limitToLast, onValue
-  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { getDatabase, ref, get, remove, set, push, query, orderByChild, limitToLast, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -680,17 +525,12 @@ setInterval(() => {
       const entries = [];
       snapshot.forEach(child => {
         const val = child.val();
-        if (val && typeof val.score === "number") {
-          entries.push({ key: child.key, score: val.score });
-        }
+        if (val && typeof val.score === "number") entries.push({ key: child.key, score: val.score });
       });
-      entries.sort((a, b) => b.score - a.score);
+      entries.sort((a,b)=>b.score-a.score);
       const extra = entries.slice(10);
-      extra.forEach(entry => {
-        const delRef = ref(db, `carGameScores/${entry.key}`);
-        remove(delRef).catch(console.warn);
-      });
-    }).catch(console.error);
+      extra.forEach(entry => remove(ref(db, `carGameScores/${entry.key}`)).catch(()=>{}));
+    }).catch(()=>{});
   }
 
   function generateTopScoresHTML() {
@@ -698,115 +538,68 @@ setInterval(() => {
       const scoresRef = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
       onValue(scoresRef, (snapshot) => {
         const list = [];
-        snapshot.forEach(child => {
-          const val = child.val();
-          if (typeof val.score === 'number') list.push(val);
-        });
-        list.sort((a, b) => b.score - a.score);
-        const html = list.map((item, i) =>
-          `<div><strong>${i + 1}위</strong>: ${item.name} - ${item.score}점</div>`).join('');
+        snapshot.forEach(child => { const val = child.val(); if (typeof val.score === 'number') list.push(val); });
+        list.sort((a,b)=>b.score-a.score);
+        const html = list.map((item,i)=>`<div><strong>${i+1}위</strong>: ${item.name} - ${item.score}점</div>`).join('');
         resolve(html);
       }, { onlyOnce: true });
     });
   }
 
-  // ✅ 전역으로 등록
+  // 우하단 상시 보드 업데이트 3초마다(가볍게)
+  function refreshFloatingTop(){
+    generateTopScoresHTML().then(html=>{
+      const box = document.getElementById('top-scores');
+      if (box) box.innerHTML = html || '';
+    });
+  }
+  refreshFloatingTop();
+  setInterval(refreshFloatingTop, 3000);
+
+  // 금요일 12시 이후 주간 랭킹 초기화
+  function resetRankingIfFridayNoon() {
+    const now = new Date();
+    const isFriday = now.getDay() === 5; // 0=Sun
+    const hour = now.getHours();
+    const today = now.toISOString().slice(0, 10);
+    const resetKey = "carRankingReset_" + today;
+    if (isFriday && hour >= 12 && !localStorage.getItem(resetKey)) {
+      remove(ref(db, 'carGameScores')).then(()=>{
+        localStorage.setItem(resetKey, 'done');
+        refreshFloatingTop();
+      }).catch(()=>{});
+    }
+  }
+  resetRankingIfFridayNoon();
+
+  // 전역 노출
   window.saveScore = saveScore;
   window.generateTopScoresHTML = generateTopScoresHTML;
   window.db = db;
 
+  // 게임오버 오버레이
+  window.showGameOver = async function(score){
+    const name = (prompt("이름을 입력하세요 (10자 이내):", "") || "익명").trim().slice(0,10);
+    try { await saveScore(name, score); } catch(e){}
+    const scoreHtml = await generateTopScoresHTML();
 
-
- async function showGameOver(score) {
-  const name = prompt("이름을 입력하세요 (10자 이내):", "") || "익명";
-  const trimmedName = name.trim().slice(0, 10);  // ✅ 여기 빠지면 오류남
-  await saveScore(trimmedName, score);
-  const scoreHtml = await generateTopScoresHTML();
-
-  const overlay = document.getElementById('overlay');
- overlay.innerHTML = `
-<div style="
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-y: auto;
-  padding: 40px 20px 60px;
-  box-sizing: border-box;
-  z-index: 999;
-  color: white;
-  font-size: 2rem;
-">
-  <div style="margin-bottom: 20px; font-size: 2rem; text-align: center;">💥 GAME OVER 💥</div>
-  <h3 style="margin-top:10px; color:gold; text-align: center;">🏆 상위 10위 점수</h3>
-
-  <div style="display: flex; justify-content: center; width: 100%;">
-    <div style="
-      font-size: 1rem;
-      line-height: 1.8;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 15px 25px;
-      border-radius: 10px;
-      max-height: 300px;
-      overflow-y: auto;
-      width: 90%;
-      max-width: 400px;
-      text-align: center;
-    ">
-      ${scoreHtml}
-    </div>
-  </div>
-
-  <div style="margin-top: 20px; text-align: center;">
-    <button class="btn" onclick="location.reload()">🔄 재시작</button>
-    <button class="btn" onclick="overlay.innerHTML='<div style=\'color:white;text-align:center;font-size:2rem;\'>👋 게임이 종료되었습니다.<br>새로고침해 주세요.</div>'">❌ 종료</button>
-
-  </div>
-
-`;
-   overlay.style.display = 'flex';
-
-  bgm.pause();
-  bgm.currentTime = 0;
-  gameRunning = false;
-  moveVX = 0;
-  moveVY = 0;
-}
-window.showGameOver = showGameOver;
-
-function resetRankingIfFridayNoon() {
-  const now = new Date();
-  const isFriday = now.getDay() === 5;
-  const hour = now.getHours();
-  const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  const resetKey = "carRankingReset_" + today;
-
-  if (isFriday && hour >= 12) {
-    if (!localStorage.getItem(resetKey)) {
-      remove(ref(db, 'carGameScores'))
-        .then(() => {
-          console.log("✅ 금요일 12시 이후: 자동차 게임 랭킹 초기화됨");
-          localStorage.setItem(resetKey, "done");
-          generateTopScoresHTML().then(html => {
-            document.getElementById("top-scores").innerHTML = html;
-          });
-        })
-        .catch(err => {
-          console.error("자동차 게임 랭킹 초기화 실패:", err);
-        });
-    }
+    const overlay = document.getElementById('overlay');
+    overlay.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;overflow-y:auto;padding:40px 20px 60px;box-sizing:border-box;z-index:999;color:white;">
+        <div style="margin-bottom: 20px; font-size: 2rem; text-align:center;">💥 GAME OVER 💥</div>
+        <h3 style="margin-top:10px; color:gold; text-align:center;">🏆 상위 10위 점수</h3>
+        <div style="display:flex; justify-content:center; width:100%;">
+          <div style="font-size:1rem; line-height:1.8; background:rgba(255,255,255,0.1); padding:15px 25px; border-radius:10px; max-height:300px; overflow-y:auto; width:90%; max-width:400px; text-align:center;">${scoreHtml}</div>
+        </div>
+        <div style="margin-top: 20px; text-align:center;">
+          <button class="btn" onclick="location.reload()">🔄 재시작</button>
+          <button class="btn" onclick="document.getElementById('overlay').innerHTML='\
+            <div style=\'color:white;text-align:center;font-size:2rem;\'>👋 게임이 종료되었습니다.<br>새로고침해 주세요.</div>'">❌ 종료</button>
+        </div>
+      </div>`;
+    overlay.style.display = 'flex';
+    if (window.bgm){ try { window.bgm.pause(); window.bgm.currentTime = 0; } catch(e){} }
   }
-}
-
-window.saveScore = saveScore;
-window.generateTopScoresHTML = generateTopScoresHTML;
-window.db = db;
-
-resetRankingIfFridayNoon(); // ✅ 금요일 정오 랭킹 초기화 실행
-
-
 </script>
-
-
-
 </body>
 </html>
