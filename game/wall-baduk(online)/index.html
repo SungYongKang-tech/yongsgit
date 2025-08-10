@@ -2,112 +2,179 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Wall-baduk (온라인 2인 · 7x7)</title>
+  <title>Wall-baduk (7x7 · 2인용 · 고정 초기배치)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    :root { --bar-h: 60px; }
-    body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
-      display:grid; grid-template-rows:auto auto auto auto auto; }
-    h1 { margin: 8px 0 4px; }
-    #setup { margin:10px 0 4px; }
-    #setup .row { display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
-    #roomInput { width:min(260px, 70vw); padding: 10px 12px; border:1px solid #bbb; border-radius:8px; font-size:16px; }
-    #setup button { padding: 12px 14px; border-radius:10px; border:1px solid #999; background:#fff; cursor:pointer; }
-    #roomLine { font-size:13px; color:#555; margin: 6px 0 6px; }
-    #turnLine { margin:2px 0; font-size:16px; }
-    #scores   { margin:0 0 4px; font-size:14px; }
-
-    #wrap { display:flex; justify-content:center; align-items:flex-start; padding: 0 10px 6px; overflow:auto; }
-    #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
-    .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
-    .point { width:42px; height:42px; background:#fff; position:relative; cursor:pointer; transition:background .1s; }
-    .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
-    .h-wall { width:42px; height:15px; background:#fff; cursor:pointer; }
-    .v-wall { width:15px; height:42px; background:#fff; cursor:pointer; }
-    .blank  { width:15px; height:15px; background:#15326b; }
-    .movable { background:#d0d0d0 !important; } /* 허용 벽/이동 칸 표시 */
-    .final-p1-region { background:#ffd6e7 !important; }
-    .final-p2-region { background:#d6ecff !important; }
-
-    #bottomBar { position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
-      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px; }
-    #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
-
-    #panel { margin:4px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-    #panel button { padding:10px 14px; border:1px solid #999; border-radius:10px; background:#fff; cursor:pointer; }
+    :root { --bar-h: 64px; }
+    body {
+      font-family: sans-serif;
+      background: #f5f5f5;
+      text-align: center;
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr var(--bar-h);
+    }
+    h1 { margin: 8px 0; }
+    #panel { margin: 6px 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items:center; }
+    button {
+      padding: 10px 14px; border: 1px solid #999; border-radius: 10px;
+      background: #fff; cursor: pointer; font-size: 15px;
+    }
     button:disabled { opacity:.5; cursor:not-allowed; }
+    #turnLine { margin: 4px 0; font-size: 16px; display:flex; gap:8px; justify-content:center; align-items:center; }
+    #turnColor { font-weight:700; }
+    #timer { font-variant-numeric: tabular-nums; padding:2px 6px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+    #scores { margin: 4px 0 6px; font-size: 14px; }
+
+    /* 오디오 컨트롤 */
+    .audio-wrap {
+      display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff;
+    }
+    #volSlider { width: 160px; }
+
+    /* 보드 */
+    #wrap {
+      display:flex; justify-content:center; align-items:flex-start; padding:10px;
+      overflow:auto;
+    }
+    #board {
+      display: grid;
+      background: #fff;
+      border: 2px solid #333;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .cell {
+      box-sizing: border-box;
+      border: 1px solid #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .point { width: 42px; height: 42px; background: #fff; position: relative; cursor: pointer; }
+    .piece { width: 80%; height: 80%; border-radius: 50%; pointer-events: none; }
+    .h-wall { width: 42px; height: 15px; background: #fff; cursor: pointer; }
+    .v-wall { width: 15px; height: 42px; background: #fff; cursor: pointer; }
+    .blank  { width: 15px; height: 15px; background: #15326b; }
+
+    /* 이동 가능 칸 */
+    .movable { background: #d0d0d0 !important; }
+
+    /* 최종 구역 채색(게임 종료 후) */
+    .final-p1-region { background: #ffd6e7 !important; } /* 분홍 */
+    .final-p2-region { background: #d6ecff !important; } /* 하늘색 */
+
+    /* 하단 고정 바(모바일 친화) */
+    #bottomBar {
+      position: sticky; bottom: 0; left: 0; right: 0; height: var(--bar-h);
+      background: #ffffffcc; backdrop-filter: blur(6px);
+      border-top: 1px solid #ddd;
+      display:flex; gap:10px; align-items:center; justify-content:center; padding: 8px 12px;
+    }
+    #skipWallBtn {
+      flex:1; max-width: 520px;
+      height: 44px; border-radius: 12px; font-weight: 700;
+      background: #ffd6e7; border: 1px solid #e7a3bd;
+    }
 
     /* 도움말 모달 */
-    #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:10000; padding:16px; }
-    #helpCard { width:100%; max-width:560px; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.2); text-align:left; overflow:hidden; }
-    #helpHeader { padding:14px 18px; background:#222; color:#fff; font-weight:800; }
-    #helpBody { padding:14px 18px; color:#222; line-height:1.5; font-size:15px; }
-    #helpBody ul { margin:6px 0 0 8px; padding-left:12px; }
-    #helpBody ul ul { margin-left:6px; padding-left:10px; }
-    #helpBody li { margin:4px 0; }
-    #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
-    .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
+    #helpOverlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: none; align-items: center; justify-content: center; z-index: 9999;
+      padding: 16px;
+    }
+    #helpCard {
+      width: 100%; max-width: 560px; background: #fff; border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.2); text-align: left; overflow: hidden;
+    }
+    #helpHeader {
+      padding: 14px 18px; background: #222; color: #fff; font-weight: 800;
+    }
+    #helpBody {
+      padding: 14px 18px; color: #222; line-height: 1.5; font-size: 15px;
+    }
+    #helpBody ul {margin: 6px 0 0 8px; padding-left: 12px;}
+    #helpBody ul ul {margin-left: 6px; padding-left: 10px;}
+    #helpBody li { margin: 4px 0; }
+    #helpFooter {
+      display:flex; gap:10px; justify-content:flex-end; padding: 12px 16px; background: #fafafa;
+    }
+    .helpBtn {
+      padding: 10px 14px; border: 1px solid #ccc; border-radius: 10px; background: #fff; cursor: pointer;
+    }
 
-    @media (max-width:420px){
-      .point { width:36px; height:36px; }
-      .h-wall { width:36px; height:14px; }
-      .v-wall { width:14px; height:36px; }
+    @media (max-width: 520px){
+      .point { width: 36px; height: 36px; }
+      .h-wall { width: 36px; height: 14px; }
+      .v-wall { width: 14px; height: 36px; }
+      #volSlider { width: 120px; }
+    }
+
+    /* 레이아웃 타이트 + 바닥 버튼 짧게 */
+    body { grid-template-rows: auto auto auto auto auto auto auto !important; }
+    #turnLine { margin: 2px 0 !important; }
+    #scores   { margin: 0 0 2px !important; }
+    #wrap     { padding: 0 10px 6px !important; }
+    #bottomBar { height: auto !important; padding: 6px 12px !important; }
+    #skipWallBtn {
+      flex: 0 0 auto !important;
+      width: min(340px, 92vw) !important;
+      height: 40px !important;
     }
   </style>
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
 
-  <!-- 방 생성/참여 -->
-  <div id="setup">
-    <div class="row">
-      <input id="roomInput" type="text" placeholder="방 이름을 적어주세요 (예: 부엉이1929)" />
-      <button id="btnCreate">방 생성하기</button>
-      <button id="btnJoin">방 참여하기</button>
+  <div id="panel">
+    <button id="resetBtn">새로 시작</button>
+    <button id="helpBtn">도움말</button>
+
+    <div class="audio-wrap" title="효과음 볼륨">
+      <button id="muteBtn" aria-pressed="false">🔊</button>
+      <input id="volSlider" type="range" min="0" max="1" step="0.05" />
+      <span id="volVal" style="min-width:36px; display:inline-block; text-align:right;">100%</span>
     </div>
-    <div id="roomLine">대기 중…</div>
   </div>
 
-  <!-- 게임 패널 -->
-  <div id="panel" style="display:none">
-    <button id="resetBtn">새로 시작</button>
-    <button id="helpBtn" onclick="openHelp()">도움말</button>
-    <button id="endBtn">게임 종료</button>
+  <div id="turnLine">
+    현재 턴: <span id="turnColor"></span>
+    <span id="timer" aria-live="polite"></span>
   </div>
-  <div id="turnLine" style="display:none">현재 턴: <span id="turnColor"></span></div>
-  <div id="scores"   style="display:none">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
+  <div id="scores">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
 
   <div id="wrap"><div id="board"></div></div>
 
-  <div id="bottomBar" style="display:none">
+  <div id="bottomBar">
     <button id="skipWallBtn" disabled>이동 없이 벽 설치</button>
   </div>
 
-  <!-- 설명 팝업 (생략: 기존과 동일) -->
+  <!-- 설명 팝업 -->
   <div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div id="helpCard">
       <div id="helpHeader"><span id="helpTitle">게임 설명</span></div>
       <div id="helpBody">
         <ul>
-          <li><strong>목표</strong>: 벽으로 칸들을 막아 <strong>내 말만 들어 있는 영역</strong>을 많이 만들기.</li>
-          <li><strong>턴 진행</strong>: 내 말 하나 선택 → <strong>이동</strong>(건너뛰기 가능) → <strong>벽 1개 설치</strong> → 상대 턴.</li>
+          <li><strong>목표</strong>: 벽으로 보드를 나눠 <strong>한쪽만 포함된 구역</strong>을 많이 만들기.</li>
+          <li><strong>턴 진행</strong>: 내 말 하나 선택 → <strong>이동</strong>(또는 생략) → <strong>벽 1개 설치</strong> → 상대 턴.</li>
           <li><strong>이동 규칙</strong>:
             <ul>
-              <li>상하좌우로 <strong>1칸</strong> 또는 <strong>1칸+1칸</strong>(직각 이동 가능).</li>
-              <li><strong>벽은 지나갈 수 없음</strong>, 다른 말이 있는 칸으로는 이동 불가.</li>
-              <li>이동 가능한 칸은 <strong>짙은 회색</strong>으로 표시.</li>
-              <li>이동할 곳이 없으면 <strong>바로 벽 설치</strong>로 진행.</li>
+              <li>상하좌우 <strong>1칸</strong> 또는 <strong>1칸+1칸</strong>(직각 가능).</li>
+              <li><strong>벽 통과 불가</strong>, 도착 칸에 말 있으면 불가.</li>
+              <li>이동 가능 칸은 <strong>짙은 회색</strong>으로 표시.</li>
+              <li>갈 곳이 없으면 <strong>이동 없이 바로 벽 설치</strong>.</li>
             </ul>
           </li>
-          <li><strong>벽 설치</strong>: 빈 가로/세로 벽 칸에만 설치 가능, <strong>한 번 놓으면 되돌릴 수 없음</strong>.</li>
-          <li><strong>영역 & 승리</strong>:
+          <li><strong>벽 설치</strong>: 빈 가로/세로 벽 칸에 <strong>1개</strong> 설치, <strong>제거 불가</strong>.</li>
+          <li><strong>구역 판단</strong>:
             <ul>
-              <li>벽으로 서로 이어진 빈 칸들의 묶음을 <strong>영역</strong>이라고 함.</li>
-              <li><strong>한쪽 플레이어의 말만</strong> 들어 있는 영역만 그 플레이어가 가짐.</li>
-              <li>두 플레이어의 말이 함께 있으면 그 영역은 <strong>아무도 가지지 않음</strong>.</li>
-              <li>섞여 있는 영역이 모두 사라지는 순간 게임 종료 → <strong>자신의 영역에 포함된 칸 수</strong>가 더 많은 사람이 승리.</li>
+              <li>벽 없이 이어진 점들의 집합 = <strong>구역</strong>.</li>
+              <li><strong>한 플레이어의 말만</strong> 있는 구역만 그 플레이어 소유.</li>
+              <li>두 플레이어 말이 함께 있으면 <strong>무주지</strong>.</li>
             </ul>
           </li>
+          <li><strong>종료 & 승리</strong>: 모든 구역에서 <strong>혼재 구역이 사라지면</strong> 즉시 종료 → 각자 <strong>소유 구역의 점 개수 합</strong> 비교로 승리 결정.</li>
         </ul>
       </div>
       <div id="helpFooter">
@@ -116,551 +183,555 @@
     </div>
   </div>
 
-  <!-- 앱 스크립트 -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, onValue, runTransaction, onDisconnect, remove, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
-      authDomain: "number-baseball-aee52.firebaseapp.com",
-      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
-      projectId: "number-baseball-aee52",
-      storageBucket: "number-baseball-aee52.appspot.com",
-      messagingSenderId: "998537150772",
-      appId: "1:998537150772:web:8cc90ab5a17c364b91a561"
-    };
-    const app = initializeApp(firebaseConfig);
-    const db  = getDatabase(app);
-
-    /* ---------- 방 이름/유저 ID ---------- */
-    const uid = (() => {
-      const key='wb_uid_tab'; let v=sessionStorage.getItem(key);
-      if(!v){ v=(crypto.randomUUID?.()||('u_'+Math.random().toString(36).slice(2))); sessionStorage.setItem(key,v); }
-      return v;
-    })();
-
-    function sanitizeRoomName(raw){
-      return raw.trim().replace(/[.#$/\[\]\/]/g,'-').slice(0, 32);
-    }
-    function requireRoomName() {
-      const raw = document.getElementById('roomInput').value;
-      const id = sanitizeRoomName(raw||'');
-      if (!id) { alert('방 이름을 적어주세요. (예: 부엉이1929)'); return null; }
-      return id;
-    }
-
-    /* ---------- 상수/DOM ---------- */
-    const MAX_ROOMS = 10;
-    const BOARD_POINTS = 7;
-    const GRID = BOARD_POINTS*2-1;
-    const COLORS = ['#e74c3c','#3498db'];
-
+  <script>
+    // ===== 보드 / 상태 =====
+    const BOARD_POINTS = 7;                    // 7x7 점
+    const GRID = BOARD_POINTS * 2 - 1;         // 13x13 내부 그리드
     const boardEl = document.getElementById('board');
-    const roomLine= document.getElementById('roomLine');
-    const resetBtn= document.getElementById('resetBtn');
-    const helpBtn = document.getElementById('helpBtn');
-    const endBtn  = document.getElementById('endBtn');
-    const helpOverlay = document.getElementById('helpOverlay');
-    const helpCloseBtn = document.getElementById('helpCloseBtn');
-    const skipWallBtn = document.getElementById('skipWallBtn');
     const turnEl  = document.getElementById('turnColor');
+    const timerEl = document.getElementById('timer');
     const s1El    = document.getElementById('s1');
     const s2El    = document.getElementById('s2');
+    const resetBtn= document.getElementById('resetBtn');
+    const skipWallBtn = document.getElementById('skipWallBtn');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpOverlay = document.getElementById('helpOverlay');
+    const helpCloseBtn = document.getElementById('helpCloseBtn');
 
-    let grid = [];
-    let local = { roomId:null, role:0, state:null, selected:null };
+    // 오디오 컨트롤
+    const volSlider = document.getElementById('volSlider');
+    const volVal = document.getElementById('volVal');
+    const muteBtn = document.getElementById('muteBtn');
 
-    let unsubRoom = null;
-    let unsubPlayers = null;
+    const COLORS = ['#e74c3c', '#3498db'];     // P1 빨강, P2 파랑
 
-    const asArray = (x) => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
-    const playerCountOf = (room) => Object.keys(room?.players || {}).length;
+    // 사운드
+    const sndMove = new Audio('mal.mp3'); // 말 이동
+    const sndWall = new Audio('wall.mp3'); // 벽 설치
+    const sndWin  = new Audio('win.mp3');  // 승패
+    const allSounds = [sndMove, sndWall, sndWin];
 
-    async function pruneRoomsToMax(max = MAX_ROOMS) {
-      const roomsRef = ref(db, 'wbaduk/rooms');
-      const snap = await get(roomsRef);
-      if (!snap.exists()) return;
+    let grid = [];                // DOM 셀 2D
+    let current = 0;              // 0 or 1
+    let phase   = 'place-extra';  // 'place-extra' | 'move' | 'wall'
+    let pieces  = [[], []];       // 각 플레이어 말 위치 배열 [{r,c}, ...]
+    let selected = null;          // 선택된 말 위치 {r,c}
 
-      let rooms = Object.entries(snap.val() || {}).map(([id, r]) => ({
-        id, createdAt: r?.createdAt || 0
-      }));
+    // 추가 배치 순서: P1, P2, P2, P1
+    const extraOrder = [0,1,1,0];
+    let extraIdx = 0;
 
-      if (rooms.length <= max) return;
+    // 타이머: 이동 60초, 벽 10초
+    const MOVE_SECONDS = 60;
+    const WALL_SECONDS = 10;
+    let turnTimerId = null;
+    let turnDeadline = 0; // epoch ms
 
-      rooms.sort((a, b) => a.createdAt - b.createdAt);
-      while (rooms.length > max) {
-        const victim = rooms.shift();
-        await remove(ref(db, `wbaduk/rooms/${victim.id}`));
-      }
+    function playSafe(audio){
+      try { audio.currentTime = 0; audio.play().catch(()=>{}); } catch(e){}
     }
 
-    function pt(p){ return (p-1)*2; }
+    // ===== 초기화 =====
+    function init() {
+      clearTurnTimer();
+      timerEl.textContent = '';
 
-    // ▼▼▼ 변경: lastMoved 추가 ▼▼▼
-    function initialState(){
-      return {
-        phase:'place-extra', current:0, extraOrder:[0,1,1,0], extraIdx:0,
-        pieces:{ "0":[{r:pt(2),c:pt(2)},{r:pt(6),c:pt(6)}], "1":[{r:pt(6),c:pt(2)},{r:pt(2),c:pt(6)}] },
-        walls:[],
-        lastMoved: null  // 마지막으로 이동한 말의 위치(벽 허용 범위 판단용)
-      };
-    }
-    function normalizeState(s){
-      if(!s) return s;
-      s.walls = asArray(s.walls);
-      if(!s.pieces) s.pieces = {"0":[], "1":[]};
-      s.pieces["0"] = asArray(s.pieces["0"]);
-      s.pieces["1"] = asArray(s.pieces["1"]);
-      s.extraOrder  = asArray(s.extraOrder || [0,1,1,0]);
-      if (s.lastMoved && (typeof s.lastMoved.r!=='number' || typeof s.lastMoved.c!=='number')) {
-        s.lastMoved = null;
-      }
-      return s;
-    }
-    // ▲▲▲ 변경 끝 ▲▲▲
-
-    /* ---------- 보드 생성/렌더 ---------- */
-    function makeBoard(){
-      boardEl.innerHTML='';
+      boardEl.innerHTML = '';
       boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
       boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
-      grid = Array.from({length:GRID},()=>Array(GRID).fill(null));
-      for(let r=0;r<GRID;r++){
-        for(let c=0;c<GRID;c++){
-          const cell=document.createElement('div'); cell.classList.add('cell');
-          if(r%2===0&&c%2===0){ cell.classList.add('point'); cell.addEventListener('click',()=>onPointClick(r,c)); }
-          else if(r%2===1&&c%2===0){ cell.classList.add('h-wall'); cell.addEventListener('click',()=>onWallClick(r,c)); }
-          else if(r%2===0&&c%2===1){ cell.classList.add('v-wall'); cell.addEventListener('click',()=>onWallClick(r,c)); }
-          else { cell.classList.add('blank'); }
-          boardEl.appendChild(cell); grid[r][c]=cell;
-        }
-      }
-    }
+      grid = Array.from({length: GRID}, () => Array(GRID).fill(null));
 
-    // 허용 벽 표시/검사용 유틸
-    function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
-    function inBounds(r,c){ return r>=0&&r<GRID&&c>=0&&c<GRID; }
-    function isPoint(r,c){ return (r%2===0)&&(c%2===0); }
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
+          const cell = document.createElement('div');
+          cell.classList.add('cell');
 
-    // ▼▼▼ 변경: 이동 말 인접 벽 목록/표시 ▼▼▼
-    function adjacentWallsOfPoint(r,c){
-      const list = [
-        {r:r-1, c:c},   // 위(가로 벽)
-        {r:r+1, c:c},   // 아래(가로 벽)
-        {r:r,   c:c-1}, // 좌(세로 벽)
-        {r:r,   c:c+1}  // 우(세로 벽)
-      ].filter(p => inBounds(p.r,p.c) && (grid[p.r][p.c].classList.contains('h-wall') || grid[p.r][p.c].classList.contains('v-wall')));
-      return list;
-    }
-    function markAllowedWallsForLastMove(){
-      const s = normalizeState(local.state);
-      clearMovable();
-      if (!s || s.phase!=='wall' || !s.lastMoved) return;
-      const {r,c} = s.lastMoved;
-      for (const w of adjacentWallsOfPoint(r,c)) {
-        const cell = grid[w.r][w.c];
-        if (!cell.classList.contains('placed')) cell.classList.add('movable');
-      }
-    }
-    // ▲▲▲ 변경 끝 ▲▲▲
-
-    function renderFromState(){
-      const s = normalizeState(local.state);
-      if(!s) return;
-
-      const phaseLabel =
-        s.phase === 'place-extra' ? ' — 말 배치' :
-        s.phase === 'move'        ? ' — 말 이동' :
-        s.phase === 'wall'        ? ' — 벽 설치' : '';
-      turnEl.textContent = ((s.current===0)?'P1(빨강)':'P2(파랑)') + ' 차례' + phaseLabel;
-      turnEl.style.color = COLORS[s.current];
-
-      skipWallBtn.disabled = (s.phase!=='move') || (s.current!==local.role);
-
-      document.querySelectorAll('.piece').forEach(el=>el.remove());
-      for(const pid of [0,1]){
-        for(const p of asArray(s.pieces[String(pid)])){
-          const cell=grid[p.r]?.[p.c]; if(!cell) continue;
-          const dot=document.createElement('div');
-          dot.classList.add('piece'); dot.style.background=COLORS[pid]; dot.dataset.player=String(pid);
-          cell.appendChild(dot);
-        }
-      }
-      for(let r=0;r<GRID;r++){ for(let c=0;c<GRID;c++){
-        const cell=grid[r][c]; if(!cell) continue;
-        if(cell.classList.contains('h-wall')||cell.classList.contains('v-wall')){ cell.classList.remove('placed'); cell.style.background='#fff'; }
-      }}      
-      for(const w of asArray(s.walls)){
-        const cell=grid[w.r]?.[w.c]; if(cell){ cell.classList.add('placed'); cell.style.background=COLORS[w.owner]; }
-      }
-
-      // ▼▼▼ 변경: 벽 설치 단계에서 허용 벽 표시 ▼▼▼
-      markAllowedWallsForLastMove();
-      // ▲▲▲
-
-      updateScoresLocal();
-    }
-
-    /* ---------- 점수/영역 계산 (기존 동일) ---------- */
-    function neighborsReachable(r,c){
-      const dirs=[{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}], out=[];
-      for(const {dr,dc} of dirs){
-        const nr=r+dr, nc=c+dc; if(!inBounds(nr,nc)||!isPoint(nr,nc)) continue;
-        const wr=r+dr/2, wc=c+dc/2; const wall=grid[wr]?.[wc];
-        const isWallPos = wall && (wall.classList.contains('h-wall')||wall.classList.contains('v-wall'));
-        if(!isWallPos) continue; if(wall.classList.contains('placed')) continue;
-        if(grid[nr][nc].querySelector('.piece')) continue; out.push({nr,nc});
-      } return out;
-    }
-    function markMovable(sr,sc,mark=true){
-      const v=Array.from({length:GRID},()=>Array(GRID).fill(false)); const q=[]; v[sr][sc]=true; q.push({r:sr,c:sc,d:0}); let cnt=0;
-      while(q.length){ const {r,c,d}=q.shift();
-        if(d>0&&d<=2&&isPoint(r,c)&&!grid[r][c].querySelector('.piece')){ if(mark) grid[r][c].classList.add('movable'); cnt++; }
-        if(d===2) continue; for(const {nr,nc} of neighborsReachable(r,c)){ if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:d+1}); } }
-      } return cnt;
-    }
-    function showMovableFrom(sr,sc){ clearMovable(); return markMovable(sr,sc,true); }
-
-    function neighborsByWall(r,c){
-      const dirs=[{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}], out=[];
-      for(const {dr,dc} of dirs){
-        const nr=r+dr, nc=c+dc; if(!inBounds(nr,nc)||!isPoint(nr,nc)) continue;
-        const wr=r+dr/2, wc=c+dc/2; const wall=grid[wr]?.[wc];
-        const isWallPos = wall && (wall.classList.contains('h-wall')||wall.classList.contains('v-wall'));
-        if(!isWallPos) continue; if(wall.classList.contains('placed')) continue; out.push({nr,nc});
-      } return out;
-    }
-    function computeRegionsLocal(){
-      const visited=Array.from({length:GRID},()=>Array(GRID).fill(false)); const regions=[]; let hasMixed=false;
-      for(let r=0;r<GRID;r+=2){ for(let c=0;c<GRID;c+=2){
-        if(visited[r][c]) continue; const q=[{r,c}]; visited[r][c]=true; const pts=[]; const present=new Set();
-        while(q.length){ const cur=q.shift(); pts.push(cur);
-          const piece=grid[cur.r][cur.c].querySelector('.piece'); if(piece) present.add(+piece.dataset.player);
-          for(const {nr,nc} of neighborsByWall(cur.r,cur.c)){ if(!visited[nr][nc]){ visited[nr][nc]=true; q.push({r:nr,c:nc}); } }
-        }
-        if(present.size>=2) hasMixed=true; regions.push({points:pts, players:present});
-      }} return {regions, hasMixed};
-    }
-    function checkGameEndAndScoreLocal(){
-      const {regions,hasMixed}=computeRegionsLocal(); const sc=[0,0];
-      for(const reg of regions){ if(reg.players.size===1){ const owner=[...reg.players][0]; sc[owner]+=reg.points.length; } }
-      s1El.textContent=sc[0]; s2El.textContent=sc[1]; return !hasMixed;
-    }
-    function updateScoresLocal(){ const end=checkGameEndAndScoreLocal(); if(end && local.state?.phase!=='ended'){ showWinnerWithPaintLocal(); } }
-    function fillFinalRegionsLocal(){
-      const {regions}=computeRegionsLocal();
-      for(const reg of regions){ if(reg.players.size!==1) continue; const owner=[...reg.players][0];
-        for(const {r,c} of reg.points){ grid[r][c].classList.remove('movable'); (owner===0?grid[r][c].classList.add('final-p1-region'):grid[r][c].classList.add('final-p2-region')); }
-      }
-    }
-    function showWinnerWithPaintLocal(){
-      fillFinalRegionsLocal();
-      const p1=+s1El.textContent, p2=+s2El.textContent;
-      alert(`게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n`+(p1>p2?'승자: P1(빨강)':p2>p1?'승자: P2(파랑)':'무승부'));
-      if(local.state){
-        local.state.phase='ended';
-        commitState();
-        cleanupRoomAfterEnd(local.roomId, 2500);
-      }
-    }
-    function isMyTurn(){ return local.state && normalizeState(local.state).current===local.role; }
-
-    /* ---------- 입력 처리 ---------- */
-    function onPointClick(r,c){
-      local.state = normalizeState(local.state);
-      const s=local.state; if(!s) return;
-
-      if(s.phase==='place-extra'){
-        if(!isMyTurn()) return;
-        const cell=grid[r][c]; if(cell.querySelector('.piece')) return;
-        s.pieces[String(s.current)].push({r,c}); s.extraIdx++;
-        if(s.extraIdx>=s.extraOrder.length){ s.phase='move'; } else { s.current=s.extraOrder[s.extraIdx]; }
-        s.lastMoved = null; // 배치 단계에서는 없음
-        commitState(); return;
-      }
-
-      if(s.phase==='move'){
-        if(!isMyTurn()) return;
-        const cell=grid[r][c]; const piece=cell.querySelector('.piece');
-        if(local.selected && local.selected.r===r && local.selected.c===c){ local.selected=null; clearMovable(); return; }
-        if(!local.selected && piece && +piece.dataset.player===local.role){
-          local.selected={r,c}; const cnt=showMovableFrom(r,c); if(cnt===0){ local.selected=null; clearMovable(); } return;
-        }
-        if(local.selected && cell.classList.contains('movable')){
-          const arr=s.pieces[String(local.role)]; const idx=arr.findIndex(p=>p.r===local.selected.r&&p.c===local.selected.c);
-          if(idx>=0){
-            arr[idx]={r,c};
-            s.phase='wall';
-            s.lastMoved = { r, c }; // ▼▼▼ 변경: 이동한 말 좌표 기록 ▼▼▼
-            clearMovable(); local.selected=null;
-            commitState();
+          if (r % 2 === 0 && c % 2 === 0) {
+            cell.classList.add('point');
+            cell.addEventListener('click', () => onPointClick(r, c));
+          } else if (r % 2 === 1 && c % 2 === 0) {
+            cell.classList.add('h-wall');
+            cell.addEventListener('click', () => onWallClick(r, c));
+          } else if (r % 2 === 0 && c % 2 === 1) {
+            cell.classList.add('v-wall');
+            cell.addEventListener('click', () => onWallClick(r, c));
+          } else {
+            cell.classList.add('blank');
           }
+
+          boardEl.appendChild(cell);
+          grid[r][c] = cell;
         }
       }
-    }
 
-    // ▼▼▼ 변경: 인접 벽만 허용하는 검사 ▼▼▼
-    function isAdjacentWallToLastMove(r,c){
-      const s = normalizeState(local.state);
-      if (!s || !s.lastMoved) return true; // 이동 없이 벽 설치인 경우에는 제한 없음
-      const { r:pr, c:pc } = s.lastMoved;
-      return (r===pr-1 && c===pc) || (r===pr+1 && c===pc) || (r===pr && c===pc-1) || (r===pr && c===pc+1);
-    }
-    // ▲▲▲
+      clearFinalPaint();
 
-    function onWallClick(r,c){
-      local.state = normalizeState(local.state);
-      const s=local.state; if(!s||s.phase!=='wall'||!isMyTurn()) return;
-      const cell=grid[r][c]; const isWall=cell.classList.contains('h-wall')||cell.classList.contains('v-wall');
-      if(!isWall||cell.classList.contains('placed')) return;
+      // 1-based 점 좌표 → 내부 그리드 좌표
+      const pt = p => (p - 1) * 2;
 
-      // ▼▼▼ 변경: 이동 후에는 인접 벽만 허용 ▼▼▼
-      if (!isAdjacentWallToLastMove(r,c)) return;
-      // ▲▲▲
+      // === 초기 고정 배치 ===
+      pieces = [[],[]];
+      placePiece(0, pt(2), pt(2)); // P1
+      placePiece(0, pt(6), pt(6)); // P1
+      placePiece(1, pt(6), pt(2)); // P2
+      placePiece(1, pt(2), pt(6)); // P2
 
-      s.walls.push({r,c,owner:local.role});
-      const end=checkGameEndAndScoreLocal(); if(end){ s.phase='ended'; commitState(); showWinnerWithPaintLocal(); return; }
-      s.current=1-s.current; s.phase='move'; s.lastMoved = null; // 턴 넘기며 초기화
+      // 추가 배치 단계로
+      extraIdx  = 0;
+      phase     = 'place-extra';
+      current   = extraOrder[0];
+      selected  = null;
+
+      updateTurnText('말을 배치하세요');
       clearMovable();
-      commitState();
+      updateScores();
+      refreshSkipWallButton();
+
+      // 오디오 설정 복원
+      restoreAudioPrefs();
+
+      openHelp(); // 설명 팝업
     }
 
-    // 이동 없이 벽 설치 → lastMoved 없이 wall 단계로 (제한 없음)
-    skipWallBtn.addEventListener('click',()=>{
-      local.state = normalizeState(local.state);
-      const s=local.state; if(!s||s.phase!=='move'||!isMyTurn()) return;
-      clearMovable(); local.selected=null; s.phase='wall'; s.lastMoved = null; // ▼ 변경
-      commitState();
+    // ===== 공용 유틸 =====
+    function inBounds(r,c){ return r>=0 && r<GRID && c>=0 && c<GRID; }
+    function isPoint(r,c){ return (r%2===0) && (c%2===0); }
+
+    function updateTurnText(extra=''){
+      turnEl.textContent = `Player ${current+1}`;
+      turnEl.style.color = COLORS[current];
+      if (extra) turnEl.textContent += ` — ${extra}`;
+    }
+
+    function clearMovable(){
+      document.querySelectorAll('.movable').forEach(el => el.classList.remove('movable'));
+    }
+
+    function clearFinalPaint(){
+      document.querySelectorAll('.final-p1-region, .final-p2-region').forEach(el=>{
+        el.classList.remove('final-p1-region','final-p2-region');
+        if (el.classList.contains('point')) el.style.background = '#fff';
+      });
+    }
+
+    function refreshSkipWallButton() {
+      skipWallBtn.disabled = (phase !== 'move');
+    }
+
+    // ===== 도움말 모달 =====
+    function openHelp(){ helpOverlay.style.display = 'flex'; }
+    function closeHelp(){ helpOverlay.style.display = 'none'; }
+    helpBtn.addEventListener('click', openHelp);
+    helpCloseBtn.addEventListener('click', closeHelp);
+    helpOverlay.addEventListener('click', (e) => {
+      if (e.target === helpOverlay) closeHelp();
     });
 
-    /* ---------- DB 동기화 ---------- */
-    async function commitState(){
-      if(!local.roomId||!local.state) return;
-      await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state);
-    }
-    function applyRemote(state){ local.state = normalizeState(state); renderFromState(); }
+    // ===== 클릭 처리 =====
+    function onPointClick(r,c){
+      const cell = grid[r][c];
+      if (!cell.classList.contains('point')) return;
 
-    /* ---------- 방 생성/참여 (기존 동일) ---------- */
-    const btnCreate=document.getElementById('btnCreate');
-    const btnJoin  =document.getElementById('btnJoin');
+      if (phase === 'place-extra'){
+        if (cell.querySelector('.piece')) return;
+        const who = extraOrder[extraIdx];
+        placePiece(who, r, c);
+        extraIdx++;
 
-    btnCreate.onclick = async ()=>{
-      const roomId = requireRoomName();
-      if (!roomId) return;
-
-      await pruneRoomsToMax(10);
-
-      const roomRef = ref(db, `wbaduk/rooms/${roomId}`);
-      const exist = await get(roomRef);
-      if (exist.exists()) { alert('이미 존재하는 방 이름입니다. 다른 이름을 사용해주세요.'); return; }
-
-      const now = Date.now();
-      await set(roomRef, {
-        name: roomId,
-        status: 'waiting',
-        createdAt: now,
-        playerCount: 1,
-        players: { [uid]: { role: 0, joinedAt: now } },
-        state: initialState()
-      });
-
-      await pruneRoomsToMax(10);
-
-      onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
-      enterRoom(roomId, 0);
-    };
-
-    btnJoin.onclick = async () => {
-      const roomId = requireRoomName();
-      if (!roomId) return;
-
-      const roomRef    = ref(db, `wbaduk/rooms/${roomId}`);
-      const playersRef = ref(db, `wbaduk/rooms/${roomId}/players`);
-      const stateRef   = ref(db, `wbaduk/rooms/${roomId}/state`);
-
-      const roomSnap = await get(roomRef);
-      if (!roomSnap.exists()) {
-        alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.');
-        return;
-      }
-
-      let myRole = 1;
-      const txn = await runTransaction(playersRef, (players) => {
-        players = players || {};
-        const ids = Object.keys(players);
-        const hasMe = !!players[uid];
-
-        if (!hasMe && ids.length >= 2) return;
-
-        if (hasMe) {
-          myRole = players[uid].role ?? 1;
-          return players;
-        }
-
-        const rolesTaken = Object.values(players).map(p => p.role);
-        myRole = rolesTaken.includes(0) ? 1 : 0;
-        players[uid] = { role: myRole, joinedAt: Date.now() };
-        return players;
-      });
-
-      if (!txn.committed) {
-        const after = await get(playersRef);
-        const cnt = after.exists() ? Object.keys(after.val()).length : 0;
-        if (cnt >= 2 && !(after.val() && after.val()[uid])) {
-          alert('이미 2명이 입장했습니다. 다른 방을 이용해 주세요.');
+        if (extraIdx >= extraOrder.length){
+          // 본 게임 시작: 이동 60초
+          startMovePhase(true);
         } else {
-          alert('입장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+          current = extraOrder[extraIdx];
+          updateTurnText('말을 배치하세요');
         }
         return;
       }
 
-      const playersNow = txn.snapshot.val() || {};
-      const cntNow = Math.min(2, Object.keys(playersNow).length);
-      await update(roomRef, {
-        playerCount: cntNow,
-        status: cntNow >= 2 ? 'playing' : 'waiting'
-      });
-      const st = await get(stateRef);
-      if (!st.exists()) {
-        await set(stateRef, initialState());
-      }
+      if (phase === 'move'){
+        const piece = cell.querySelector('.piece');
 
-      onDisconnect(ref(db, `wbaduk/rooms/${roomId}/players/${uid}`)).remove();
-      enterRoom(roomId, myRole);
-    };
-
-    function enterRoom(roomId, role){
-      local.roomId = roomId; local.role = role;
-
-      if (unsubRoom)   { unsubRoom();   unsubRoom = null; }
-      if (unsubPlayers){ unsubPlayers();unsubPlayers = null; }
-
-      document.getElementById('setup').style.display='none';
-      document.getElementById('panel').style.display='flex';
-      document.getElementById('turnLine').style.display='block';
-      document.getElementById('scores').style.display='block';
-      document.getElementById('bottomBar').style.display='flex';
-
-      roomLine.textContent = `방: ${roomId} — 나는 ${role===0?'P1(빨강)':'P2(파랑)'} 입니다.`;
-
-      makeBoard();
-
-      unsubRoom = onValue(ref(db, `wbaduk/rooms/${roomId}`), snap => {
-        const room = snap.val();
-        if (!room) {
-          alert('방이 삭제되었습니다. 로비로 돌아갑니다.');
-          location.reload();
+        // 선택 해제: 같은 말 재클릭
+        if (selected && selected.r === r && selected.c === c) {
+          selected = null;
+          clearMovable();
+          updateTurnText('말을 이동하세요');
           return;
         }
-        if (room.state) applyRemote(room.state);
 
-        if (room.state?.phase === 'ended') {
-          cleanupRoomAfterEnd(roomId, 1500);
+        // 내 말 선택
+        if (!selected && piece && +piece.dataset.player === current){
+          selected = { r, c };
+          const cnt = showMovableFrom(r,c); // 가능 칸 수
+          if (cnt === 0){
+            selected = null;
+            clearMovable();
+            if (!anyMovableForPlayer(current)) {
+              updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 누르세요');
+            } else {
+              updateTurnText('이동 불가: 다른 말을 선택하세요');
+            }
+          }
+          return;
         }
 
-        if (room.status === 'waiting') {
-          const t = document.getElementById('turnColor');
-          t.textContent = '상대 대기 중…';
-          t.style.color = '#777';
+        // 이동 목적지
+        if (selected && cell.classList.contains('movable')){
+          moveSelectedTo(r,c);
+          playSafe(sndMove);
+          // 벽 단계로 전환 + 10초 타이머
+          startWallPhase();
+          return;
         }
-      });
-
-      unsubPlayers = onValue(ref(db, `wbaduk/rooms/${roomId}/players`), snap => {
-        if (cleanupScheduled) return;
-        const cnt = snap.exists() ? Object.keys(snap.val()).length : 0;
-        update(ref(db, `wbaduk/rooms/${roomId}`), {
-          playerCount: Math.min(2, cnt),
-          status: cnt >= 2 ? 'playing' : 'waiting'
-        });
-      });
-
-      resetBtn.onclick = async ()=>{
-        await runTransaction(ref(db, `wbaduk/rooms/${roomId}`), room=>{
-          if(!room) return room;
-          room.status = playerCountOf(room)>=2 ? 'playing' : 'waiting';
-          room.state = initialState();
-          return room;
-        });
-      };
-
-      helpOverlay.style.display='flex';
-      document.getElementById('helpCloseBtn').onclick = ()=> helpOverlay.style.display='none';
+      }
+      // phase === 'wall'일 때 점 클릭은 무시
     }
 
-    window.addEventListener('beforeunload', () => {
-      if (local.roomId) remove(ref(db, `wbaduk/rooms/${local.roomId}/players/${uid}`));
+    function onWallClick(r,c){
+      if (phase !== 'wall') return;
+      const cell = grid[r][c];
+      const isWall = cell.classList.contains('h-wall') || cell.classList.contains('v-wall');
+      if (!isWall) return;
+      if (cell.classList.contains('placed')) return;
+
+      // 벽 설치
+      placeWall(cell);
+
+      // 벽 설치 후 구역 계산 & 종료 체크
+      const end = checkGameEndAndScore();
+      if (end){
+        clearTurnTimer();
+        playSafe(sndWin);
+        setTimeout(showWinnerWithPaint, 50);
+        return;
+      }
+
+      // 턴 교대 → 이동 단계(60초)
+      current = 1 - current;
+      startMovePhase(true);
+    }
+
+    // ===== 하단 버튼: 이동 없이 벽 설치 =====
+    skipWallBtn.addEventListener('click', () => {
+      if (phase !== 'move') return;
+      selected = null;
+      clearMovable();
+      // 바로 벽 단계 + 10초 타이머
+      startWallPhase(true);
     });
 
-    function openHelp(){ const ov = document.getElementById('helpOverlay'); if (ov) ov.style.display = 'flex'; }
-    function closeHelp(){ const ov = document.getElementById('helpOverlay'); if (ov) ov.style.display = 'none'; }
-    window.openHelp = openHelp;
-    window.closeHelp = closeHelp;
-
-    const helpBtnEl = document.getElementById('helpBtn');
-    const helpCloseBtnEl = document.getElementById('helpCloseBtn');
-    const helpOverlayEl = document.getElementById('helpOverlay');
-    if (helpBtnEl) helpBtnEl.addEventListener('click', openHelp);
-    if (helpCloseBtnEl) helpCloseBtnEl.addEventListener('click', closeHelp);
-    if (helpOverlayEl) {
-      helpOverlayEl.addEventListener('click', (e)=>{ if (e.target === helpOverlayEl) closeHelp(); });
-    }
-
-    endBtn.onclick = async () => {
-      if (!local.roomId) return;
-      const roomId = local.roomId;
-
-      const ok = confirm('정말 게임을 종료하고 방을 삭제할까요?');
-      if (!ok) return;
-
-      try {
-        if (unsubRoom)   { unsubRoom();   unsubRoom = null; }
-        if (unsubPlayers){ unsubPlayers();unsubPlayers = null; }
-
-        await remove(ref(db, `wbaduk/rooms/${roomId}`));
-
-        const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
-        if (latestSnap.exists() && latestSnap.val()?.roomCode === roomId) {
-          await remove(ref(db, 'wbaduk/latestRoom'));
-        }
-      } catch (e) {
-        alert('방 삭제 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
-        console.error(e);
-      } finally {
-        location.reload();
+    // ===== 단계 전환 =====
+    function startMovePhase(startTimer=false){
+      phase = 'move';
+      selected = null;
+      clearMovable();
+      refreshSkipWallButton();
+      if (!anyMovableForPlayer(current)){
+        updateTurnText('이동 불가: [이동 없이 벽 설치] 버튼을 누르세요');
+      } else {
+        updateTurnText('말을 이동하세요');
       }
-    };
-
-    let cleanupScheduled = false;
-
-    async function cleanupRoomAfterEnd(roomId, delay = 2500) {
-      if (!roomId || cleanupScheduled) return;
-      cleanupScheduled = true;
-
-      setTimeout(async () => {
-        try {
-          if (unsubRoom)   { unsubRoom();   unsubRoom = null; }
-          if (unsubPlayers){ unsubPlayers();unsubPlayers = null; }
-
-          const lockRef = ref(db, `wbaduk/rooms/${roomId}/__cleanupLock`);
-          const res = await runTransaction(lockRef, v => v || uid);
-          if (!res.committed || res.snapshot.val() !== uid) {
-            return;
-          }
-
-          await remove(ref(db, `wbaduk/rooms/${roomId}`));
-
-          const latestSnap = await get(ref(db, 'wbaduk/latestRoom'));
-          if (latestSnap.exists() && latestSnap.val()?.roomCode === roomId) {
-            await remove(ref(db, 'wbaduk/latestRoom'));
-          }
-        } catch (e) {
-          console.error('방 자동 삭제 중 오류:', e);
-        } finally {
-          location.reload();
-        }
-      }, delay);
+      if (startTimer) startTurnTimer(MOVE_SECONDS);
     }
+
+    function startWallPhase(fromSkip=false){
+      phase = 'wall';
+      selected = null;
+      clearMovable();
+      updateTurnText(fromSkip ? '이동 없이: 빈 벽을 하나 세우세요' : '빈 벽을 하나 세우세요');
+      refreshSkipWallButton(); // 벽 단계에서는 비활성
+      startTurnTimer(WALL_SECONDS); // 벽만 별도 10초
+    }
+
+    function anyMovableForPlayer(player){
+      for (const p of pieces[player]){
+        if (countMovableFrom(p.r, p.c) > 0) return true;
+      }
+      return false;
+    }
+
+    // ===== 말 배치/이동 =====
+    function placePiece(player, r, c){
+      const cell = grid[r][c];
+      const p = document.createElement('div');
+      p.classList.add('piece');
+      p.style.background = COLORS[player];
+      p.dataset.player = String(player);
+      cell.appendChild(p);
+      pieces[player].push({r,c});
+    }
+
+    function moveSelectedTo(nr,nc){
+      const idx = pieces[current].findIndex(p => p.r===selected.r && p.c===selected.c);
+      if (idx < 0) return;
+
+      const fromCell = grid[selected.r][selected.c];
+      const toCell   = grid[nr][nc];
+      const pieceEl  = fromCell.querySelector('.piece');
+      if (!pieceEl) return;
+
+      fromCell.removeChild(pieceEl);
+      toCell.appendChild(pieceEl);
+      pieces[current][idx] = { r:nr, c:nc };
+    }
+
+    // ===== 벽 설치 공통 함수 =====
+    function placeWall(cell){
+      cell.classList.add('placed');
+      cell.style.background = COLORS[current];
+      playSafe(sndWall);
+    }
+
+    // 빈 벽 랜덤 자동 설치
+    function autoPlaceRandomWall(){
+      const candidates = [];
+      for (let r=0; r<GRID; r++){
+        for (let c=0; c<GRID; c++){
+          const cell = grid[r][c];
+          if (!cell) continue;
+          const isWall = cell.classList.contains('h-wall') || cell.classList.contains('v-wall');
+          if (isWall && !cell.classList.contains('placed')) candidates.push(cell);
+        }
+      }
+      if (candidates.length === 0) return false;
+      const pick = candidates[Math.floor(Math.random()*candidates.length)];
+      placeWall(pick);
+      return true;
+    }
+
+    // 인접 점으로 갈 수 있는 곳(1칸)
+    function neighborsReachable(r,c){
+      const dirs = [
+        {dr:-2, dc:0}, {dr:2, dc:0}, {dr:0, dc:-2}, {dr:0, dc:2}
+      ];
+      const out = [];
+      for (const {dr,dc} of dirs){
+        const nr = r+dr, nc=c+dc;
+        if (!inBounds(nr,nc) || !isPoint(nr,nc)) continue;
+        const wr = r + dr/2, wc = c + dc/2;
+        if (!inBounds(wr,wc)) continue;
+        const wall = grid[wr][wc];
+        const isWallPos = wall.classList.contains('h-wall') || wall.classList.contains('v-wall');
+        if (!isWallPos) continue;
+        if (wall.classList.contains('placed')) continue; // 벽 있으면 막힘
+        if (grid[nr][nc].querySelector('.piece')) continue; // 말 있으면 불가
+        out.push({nr,nc});
+      }
+      return out;
+    }
+
+    // 1칸 또는 1칸+1칸 (직각 가능, 경유점도 비어있어야 함)
+    function showMovableFrom(sr,sc){
+      clearMovable();
+      return markMovable(sr,sc);
+    }
+    function countMovableFrom(sr,sc){
+      return markMovable(sr,sc,false);
+    }
+    // BFS 깊이2, mark=true면 .movable 표시, false면 개수만
+    function markMovable(sr,sc,mark=true){
+      const visited = Array.from({length:GRID},()=>Array(GRID).fill(false));
+      const q = [];
+      visited[sr][sc] = true;
+      q.push({r:sr,c:sc,d:0});
+      let cnt = 0;
+
+      while(q.length){
+        const {r,c,d} = q.shift();
+        if (d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
+          if (mark) grid[r][c].classList.add('movable');
+          cnt++;
+        }
+        if (d===2) continue;
+        for (const {nr,nc} of neighborsReachable(r,c)){
+          if (!visited[nr][nc]){
+            visited[nr][nc] = true;
+            q.push({r:nr,c:nc,d:d+1});
+          }
+        }
+      }
+      return cnt;
+    }
+
+    // ===== 구역 계산 & 종료 =====
+    function checkGameEndAndScore(){
+      const { regions, hasMixed } = computeRegions();
+      const scores = [0,0];
+      for (const reg of regions){
+        if (reg.players.size === 1){
+          const owner = [...reg.players][0];
+          scores[owner] += reg.points.length; // 구역의 점 개수 합산
+        }
+      }
+      s1El.textContent = scores[0];
+      s2El.textContent = scores[1];
+      return !hasMixed; // 혼재 구역이 하나도 없으면 종료
+    }
+
+    function updateScores(){
+      const end = checkGameEndAndScore();
+      if (end && phase!=='place-extra'){
+        clearTurnTimer();
+        playSafe(sndWin);
+        setTimeout(showWinnerWithPaint, 50);
+      }
+    }
+
+    // 최종 칠하기 + 승자 알림
+    function showWinnerWithPaint(){
+      fillFinalRegions();
+      const p1 = parseInt(s1El.textContent,10);
+      const p2 = parseInt(s2El.textContent,10);
+      let msg = `게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n`;
+      if (p1>p2) msg += '승자: P1(빨강)';
+      else if (p2>p1) msg += '승자: P2(파랑)';
+      else msg += '무승부';
+      alert(msg);
+    }
+
+    // 연결 컴포넌트(구역) 계산
+    function computeRegions(){
+      const visited = Array.from({length:GRID},()=>Array(GRID).fill(false));
+      const regions = [];
+      let hasMixed = false;
+
+      for (let r=0;r<GRID;r+=2){
+        for (let c=0;c<GRID;c+=2){
+          if (visited[r][c]) continue;
+          const queue = [{r,c}];
+          visited[r][c] = true;
+          const pts = [];
+          const presentPlayers = new Set();
+
+          while(queue.length){
+            const cur = queue.shift();
+            pts.push(cur);
+            const piece = grid[cur.r][cur.c].querySelector('.piece');
+            if (piece){ presentPlayers.add(+piece.dataset.player); }
+            for (const {nr,nc} of neighborsByWall(cur.r,cur.c)){
+              if (!visited[nr][nc]){
+                visited[nr][nc] = true;
+                queue.push({r:nr,c:nc});
+              }
+            }
+          }
+          if (presentPlayers.size >= 2) hasMixed = true;
+          regions.push({ points: pts, players: presentPlayers });
+        }
+      }
+      return { regions, hasMixed };
+    }
+
+    function neighborsByWall(r,c){
+      const dirs = [{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}];
+      const out=[];
+      for (const {dr,dc} of dirs){
+        const nr=r+dr, nc=c+dc;
+        if (!inBounds(nr,nc) || !isPoint(nr,nc)) continue;
+        const wr = r+dr/2, wc=c+dc/2;
+        const wall = grid[wr][wc];
+        const isWallPos = wall.classList.contains('h-wall') || wall.classList.contains('v-wall');
+        if (!isWallPos) continue;
+        if (wall.classList.contains('placed')) continue; // 벽 있으면 연결 막힘
+        out.push({nr,nc});
+      }
+      return out;
+    }
+
+    function fillFinalRegions(){
+      clearFinalPaint();
+      const { regions } = computeRegions();
+      for (const reg of regions){
+        if (reg.players.size !== 1) continue; // 혼재/무주지는 칠하지 않음
+        const owner = [...reg.players][0]; // 0 or 1
+        for (const {r,c} of reg.points){
+          const cell = grid[r][c];
+          if (!cell) continue;
+          cell.classList.remove('movable');
+          if (owner === 0) cell.classList.add('final-p1-region'); // 분홍
+          if (owner === 1) cell.classList.add('final-p2-region'); // 하늘색
+        }
+      }
+    }
+
+    // ===== 턴 타이머 =====
+    function startTurnTimer(seconds){
+      clearTurnTimer();
+      turnDeadline = Date.now() + seconds * 1000;
+      tickTimer(); // 즉시 1회 표시
+      turnTimerId = setInterval(tickTimer, 200);
+    }
+
+    function clearTurnTimer(){
+      if (turnTimerId){
+        clearInterval(turnTimerId);
+        turnTimerId = null;
+      }
+      timerEl.textContent = '';
+    }
+
+    function tickTimer(){
+      const remainMs = Math.max(0, turnDeadline - Date.now());
+      const sec = Math.ceil(remainMs / 1000);
+      const mm = String(Math.floor(sec/60)).padStart(2,'0');
+      const ss = String(sec%60).padStart(2,'0');
+      timerEl.textContent = `${mm}:${ss}`;
+
+      if (remainMs <= 0){
+        clearTurnTimer();
+        handleTurnTimeout();
+      }
+    }
+
+    function handleTurnTimeout(){
+      // 시간 초과 시: 현재 단계가 무엇이든 랜덤 빈 벽 자동 설치
+      autoPlaceRandomWall();
+
+      // 점수/종료 체크
+      const end = checkGameEndAndScore();
+      if (end){
+        playSafe(sndWin);
+        setTimeout(showWinnerWithPaint, 50);
+        return;
+      }
+
+      // 다음 플레이어로 턴 넘김 (다음 턴 이동 60초)
+      current = 1 - current;
+      startMovePhase(true);
+    }
+
+    // ===== 오디오 UI =====
+    function applyVolumeUI(volume, muted){
+      allSounds.forEach(a => { a.volume = volume; a.muted = muted; });
+      volSlider.value = String(volume);
+      volVal.textContent = `${Math.round(volume*100)}%`;
+      muteBtn.textContent = muted ? '🔇' : '🔊';
+      muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    }
+
+    function restoreAudioPrefs(){
+      const savedVol = parseFloat(localStorage.getItem('wb_vol') ?? '1');
+      const savedMute = localStorage.getItem('wb_mute') === '1';
+      applyVolumeUI(isNaN(savedVol)?1:savedVol, savedMute);
+    }
+
+    volSlider.addEventListener('input', (e)=>{
+      const v = parseFloat(e.target.value);
+      applyVolumeUI(v, muteBtn.getAttribute('aria-pressed')==='true');
+      localStorage.setItem('wb_vol', String(v));
+    });
+
+    muteBtn.addEventListener('click', ()=>{
+      const nowMuted = !(muteBtn.getAttribute('aria-pressed')==='true');
+      applyVolumeUI(parseFloat(volSlider.value||'1'), nowMuted);
+      localStorage.setItem('wb_mute', nowMuted ? '1' : '0');
+    });
+
+    // ===== 이벤트 =====
+    resetBtn.addEventListener('click', init);
+
+    // 초기 시작
+    init();
   </script>
 </body>
 </html>
