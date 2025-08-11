@@ -63,15 +63,12 @@
     .lightbox.hidden { display: none; }
     .lightbox img { max-width: min(92vw, 1200px); max-height: 92vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.6); user-select: none; }
     .lightbox .close-btn { position: absolute; top: 10px; right: 10px; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 28px; line-height: 1; border-radius: 10px; padding: 6px 12px; cursor: pointer; }
-  
-  /* 저장 오버레이 */
-.saving {
-  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,.45); z-index: 99999; color: #fff; font-weight: 700;
-}
-.saving.hidden { display: none; }
-.saving .box { background:#111; padding:16px 20px; border-radius:12px; }
 
+    /* 저장 오버레이 */
+    .saving { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.45); z-index: 99999; color: #fff; font-weight: 700; }
+    .saving.hidden { display: none; }
+    .saving .box { background:#111; padding:16px 20px; border-radius:12px; }
   </style>
 </head>
 <body>
@@ -179,9 +176,11 @@
       </div>
     </section>
   </main>
-<div id="savingOverlay" class="saving hidden">
-  <div class="box">저장 중… <span id="savingText">준비</span></div>
-</div>
+
+  <!-- 저장 오버레이 -->
+  <div id="savingOverlay" class="saving hidden">
+    <div class="box">저장 중… <span id="savingText">준비</span></div>
+  </div>
 
   <!-- 이미지 라이트박스 -->
   <div id="imgModal" class="lightbox hidden" aria-modal="true" role="dialog">
@@ -201,7 +200,7 @@
     import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    // 질문에서 주신 설정 그대로 사용
+    // 프로젝트 설정
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
       authDomain: "ionic6-3b7b2.firebaseapp.com",
@@ -216,7 +215,19 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
 
-    // ======= 전역 상태 & 유틸 =======
+    // 익명 로그인 보장 (전역)
+    async function ensureAuth() {
+      if (auth.currentUser) return auth.currentUser;
+      try {
+        const cred = await signInAnonymously(auth);
+        return cred.user;
+      } catch (err) {
+        console.error('익명 로그인 실패:', err);
+        throw err;
+      }
+    }
+
+    // ======= 전역 유틸 =======
     const $ = (sel, root=document) => root.querySelector(sel);
     const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
@@ -227,11 +238,10 @@
     let editorPhotos = [], newPhotoFiles = [];
     let editorReceipts = {}, newReceiptFiles = {};
 
-    // Firebase helpers
+    // DB helpers
     async function getAllMeetings() {
       const snap = await get(ref(db, 'meetings'));
       const obj = snap.exists() ? snap.val() : {};
-      // 값은 객체(id: meeting). 배열로 변환
       return Object.values(obj).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
     }
     async function getMeetingById(id) {
@@ -248,14 +258,14 @@
       await update(ref(db, `meetings/${id}`), { paidStatus });
     }
 
-    // ======= 네비 & 화면 전환 =======
+    // ======= 화면 전환 =======
     const viewList = $('#view-list'), viewEditor = $('#view-editor'), viewDetail = $('#view-detail');
     function show(id){ [viewList,viewEditor,viewDetail].forEach(v=>v.classList.add('hidden')); id.classList.remove('hidden'); window.scrollTo({top:0, behavior:'smooth'}); }
 
     $('#btnList').onclick = ()=> { renderList(); show(viewList); };
     $('#btnNew').onclick  = ()=> { resetEditor(); show(viewEditor); };
 
-    // 내보내기: DB → JSON
+    // 내보내기/가져오기
     $('#btnExport').onclick = async ()=>{
       const data = await getAllMeetings();
       const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
@@ -265,7 +275,6 @@
       a.click();
       URL.revokeObjectURL(a.href);
     };
-    // 가져오기: JSON → DB (덮어쓰기 아님, id 기준 upsert)
     $('#importFile').onchange = async (e)=>{
       const f = e.target.files[0]; if(!f) return;
       try {
@@ -278,7 +287,7 @@
       finally { e.target.value = ''; }
     };
 
-    // ======= 목록(2열) 렌더링 =======
+    // ======= 목록(2열) =======
     async function renderList(){
       const list = await getAllMeetings();
       const body = $('#listBody'); body.innerHTML=''; $('#emptyNote').style.display = list.length ? 'none' : 'block';
@@ -310,7 +319,7 @@
 
     function addRound(){
       const container = document.createElement('div');
-      const idx = $$('.round').length; // 0-based
+      const idx = $$('.round').length;
       container.className='round'; container.dataset.idx=String(idx);
       editorReceipts[idx]=editorReceipts[idx]||[]; newReceiptFiles[idx]=newReceiptFiles[idx]||[];
 
@@ -411,27 +420,28 @@
       });
     }
 
+    // 미리보기
     $('#btnPreview').onclick = ()=>{
       const dummy = buildSummaryFromEditor(); if(!dummy) return;
       $('#editorSummary').innerHTML = dummy.html; $('#editorPreview').classList.remove('hidden');
     };
 
-const savingEl = document.getElementById('savingOverlay');
-const savingTxt = document.getElementById('savingText');
-function showSaving(msg){ savingTxt.textContent = msg || '처리 중'; savingEl.classList.remove('hidden'); }
-function setSaving(msg){ savingTxt.textContent = msg; }
-function hideSaving(){ savingEl.classList.add('hidden'); }
+    // 저장 오버레이/압축 유틸
+    const savingEl = document.getElementById('savingOverlay');
+    const savingTxt = document.getElementById('savingText');
+    function showSaving(msg){ savingTxt.textContent = msg || '처리 중'; savingEl.classList.remove('hidden'); }
+    function setSaving(msg){ savingTxt.textContent = msg; }
+    function hideSaving(){ savingEl.classList.add('hidden'); }
 
-async function compressFiles(files, {label='사진'} = {}) {
-  const out = [];
-  for (let i=0;i<files.length;i++){
-    setSaving(`${label} ${i+1}/${files.length}`);
-    out.push(await fileToDataURLCompressed(files[i])); // 1024px, q=0.72로 압축
-    await new Promise(r=>setTimeout(r,0)); // 메인스레드 양보
-  }
-  return out;
-}
-
+    async function compressFiles(files, {label='사진'} = {}) {
+      const out = [];
+      for (let i=0;i<files.length;i++){
+        setSaving(`${label} ${i+1}/${files.length}`);
+        out.push(await fileToDataURLCompressed(files[i])); // 1024px, q=0.72
+        await new Promise(r=>setTimeout(r,0));
+      }
+      return out;
+    }
 
     function buildSummaryFromEditor(){
       const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); return null; }
@@ -468,7 +478,6 @@ async function compressFiles(files, {label='사진'} = {}) {
     }
 
     function fileToDataURLCompressed(file, maxW=1024, quality=0.72) {
-
       return new Promise((resolve,reject)=>{
         const reader = new FileReader();
         reader.onload = ()=>{
@@ -497,7 +506,6 @@ async function compressFiles(files, {label='사진'} = {}) {
       const photos = [...editorPhotos];
       showSaving('사진 처리 중…');
       const newPhotoData = await compressFiles(newPhotoFiles, {label:'사진'});
-
       photos.push(...newPhotoData);
 
       const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); throw new Error('no rounds'); }
@@ -513,8 +521,8 @@ async function compressFiles(files, {label='사진'} = {}) {
         const existing = editorReceipts[i] || [];
         const newFiles = newReceiptFiles[i] || [];
         const newData = await compressFiles(newFiles, {label:`${i+1}차 영수증`});
-
         const receiptImages = [...existing, ...newData];
+
         if(!corp && amount !== null && amount <= 0){ alert(`${i+1}차 금액을 확인하세요.`); throw new Error('bad amount'); }
         rounds.push({ amount, attendees, exclusions, receiptImages, corp });
       }
@@ -528,40 +536,43 @@ async function compressFiles(files, {label='사진'} = {}) {
       return { id: isEditing ? editingId : Date.now().toString(), date, title, place, rounds, photos, paidStatus };
     }
 
+    // 저장 버튼
     $('#btnSave').onclick = async ()=>{
-  try {
-   const btn = $('#btnSave');
-   btn.disabled = true; btn.textContent = '저장 중…';
-   showSaving('준비 중…');
+      try {
+        const btn = $('#btnSave');
+        btn.disabled = true; btn.textContent = '저장 중…';
+        showSaving('준비 중…');
 
-    await ensureAuth();   
-    // 익명 로그인 보장
-async function ensureAuth() {
-  if (auth.currentUser) return auth.currentUser;
-  try {
-    const cred = await signInAnonymously(auth);
-    return cred.user;
-  } catch (err) {
-    console.error('익명 로그인 실패:', err);
-    throw err; // 저장을 중단하고 catch로 보내기
-  }
-}
-              // (있으면 유지)
-    const data = await collectEditorData();  // ← 여기서 진행표시가 갱신됩니다.
-    await saveMeetingToDB(data);
+        await ensureAuth();
 
-    alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
-    await renderList(); show(viewList);
-} catch (e) {
-   console.error(e);
-    alert(`저장 실패: ${e.code || e.name || ''}\n${e.message || e}`);
-  } finally {
-   hideSaving();
-   const btn = $('#btnSave');
-   btn.disabled = false; btn.textContent = '이 회식 저장';
-  }
-};
+        const data = await collectEditorData();
 
+        // 편집 중이면 paidStatus 병합 유지
+        if (isEditing) {
+          const old = await getMeetingById(editingId);
+          if (!old) throw new Error('기존 데이터 없음');
+          const newIncluded = Array.from(new Set(
+            data.rounds.flatMap(r=> r.attendees.filter(n=> !(r.exclusions||[]).includes(n)))
+          ));
+          const merged = {};
+          newIncluded.forEach(n=>{
+            merged[n] = (old.paidStatus && n in old.paidStatus) ? old.paidStatus[n] : false;
+          });
+          data.paidStatus = merged;
+        }
+
+        await saveMeetingToDB(data);
+        alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
+        await renderList(); show(viewList);
+      } catch (e) {
+        console.error(e);
+        alert(`저장 실패: ${e.code || e.name || ''}\n${e.message || e}`);
+      } finally {
+        hideSaving();
+        const btn = $('#btnSave');
+        btn.disabled = false; btn.textContent = '이 회식 저장';
+      }
+    };
 
     // ======= 상세 보기 / 수정 / 입금 토글 / 삭제 =======
     async function openDetail(id){
@@ -588,8 +599,10 @@ async function ensureAuth() {
         await deleteMeetingFromDB(id);
         await renderList(); show(viewList);
       };
-       $('#btnCapture').onclick = ()=> captureElement($('#detailSummary'), `정산결과_${item.date||'회식'}-${(item.title||'').replace(/[\\/:*?"<>|]/g,'')}.png`);
-
+      $('#btnCapture').onclick = ()=> captureElement(
+        $('#detailSummary'),
+        `정산결과_${item.date||'회식'}-${(item.title||'').replace(/[\\/:*?"<>|]/g,'')}.png`
+      );
       $('#btnEdit').onclick = ()=> startEdit(id);
 
       show(viewDetail);
@@ -700,14 +713,14 @@ async function ensureAuth() {
       });
     }
 
-    // ======= 공용 유틸 & 라이트박스 & 위임 =======
+    // ======= 공용 유틸 & 라이트박스 =======
     function formatNumber(num){ return Math.round(num).toLocaleString('ko-KR'); }
-    async function captureElement(el, filename='정산표.png'){
+    async function captureElement(el, filename='정산결과.png'){
       const canvas = await html2canvas(el,{ scale:2, useCORS:true, backgroundColor:'#fff',
         windowWidth: el.scrollWidth, windowHeight: el.scrollHeight, scrollX:0, scrollY:-window.scrollY });
       const link = document.createElement('a'); link.download=filename; link.href=canvas.toDataURL('image/png'); link.click();
     }
-    window.captureElement = captureElement; // 버튼에서 사용
+    window.captureElement = captureElement;
 
     const imgModal = $('#imgModal'), imgModalImg = $('#imgModalImg'), imgModalClose = $('#imgModalClose');
     function openImgModal(src){ imgModalImg.src=src; imgModal.classList.remove('hidden'); document.body.style.overflow='hidden'; }
@@ -735,21 +748,20 @@ async function ensureAuth() {
 
     // ======= 초기화: 익명 로그인 후 시작 =======
     function initUI(){
-      // 버튼 핸들러들
-      $('#btnCapture').onclick = ()=> captureElement($('#detailWrap'), '정산표.png');
+      $('#btnCapture').onclick = ()=> captureElement($('#detailSummary'), '정산결과.png');
       renderList(); show(viewList);
     }
 
     signInAnonymously(auth).catch((err)=>{
       console.error('Firebase 익명 로그인 실패:', err);
-      alert('로그인에 실패했습니다. 네트워크를 확인해 주세요.');
+      alert(`로그인 실패: ${err.code}\n${err.message}`);
     });
 
     onAuthStateChanged(auth, (user)=>{
       if (user) { initUI(); }
     });
 
-    // 전역 노출(버튼에서 호출하는 함수들)
+    // 전역 노출
     window.addRound = addRound;
   </script>
 </body>
