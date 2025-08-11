@@ -534,15 +534,27 @@ async function compressFiles(files, {label='사진'} = {}) {
    btn.disabled = true; btn.textContent = '저장 중…';
    showSaving('준비 중…');
 
-    await ensureAuth();                 // (있으면 유지)
+    await ensureAuth();   
+    // 익명 로그인 보장
+async function ensureAuth() {
+  if (auth.currentUser) return auth.currentUser;
+  try {
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  } catch (err) {
+    console.error('익명 로그인 실패:', err);
+    throw err; // 저장을 중단하고 catch로 보내기
+  }
+}
+              // (있으면 유지)
     const data = await collectEditorData();  // ← 여기서 진행표시가 갱신됩니다.
     await saveMeetingToDB(data);
 
     alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
     await renderList(); show(viewList);
-  } catch (e) {
-    console.error(e);
-    alert(`저장 실패: ${e.code||e}`);
+} catch (e) {
+   console.error(e);
+    alert(`저장 실패: ${e.code || e.name || ''}\n${e.message || e}`);
   } finally {
    hideSaving();
    const btn = $('#btnSave');
@@ -576,7 +588,8 @@ async function compressFiles(files, {label='사진'} = {}) {
         await deleteMeetingFromDB(id);
         await renderList(); show(viewList);
       };
-      $('#btnCapture').onclick = ()=> captureElement($('#detailWrap'), `${item.date||'회식'}-${item.title||''}.png`);
+       $('#btnCapture').onclick = ()=> captureElement($('#detailSummary'), `정산결과_${item.date||'회식'}-${(item.title||'').replace(/[\\/:*?"<>|]/g,'')}.png`);
+
       $('#btnEdit').onclick = ()=> startEdit(id);
 
       show(viewDetail);
