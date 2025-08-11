@@ -375,4 +375,498 @@
     }
 
     function addRound() {
-      const container = document.
+      const container = document.createElement('div');
+      const idx = $$('.round').length; // 0-based
+      container.className = 'round';
+      container.dataset.idx = String(idx);
+      editorReceipts[idx] = editorReceipts[idx] || [];
+      newReceiptFiles[idx] = newReceiptFiles[idx] || [];
+
+      container.innerHTML = `
+        <div class="section-title">${idx+1}차</div>
+        <div class="grid grid-3">
+          <div>
+            <label>금액(원)</label>
+            <input type="number" class="amount" min="0" placeholder="예: 150000">
+          </div>
+          <div>
+            <label>영수증 업로드</label>
+            <input type="file" accept="image/*" class="receiptInput" multiple>
+          </div>
+          <div>
+            <label class="muted">영수증 미리보기 (삭제/추가 가능)</label>
+            <div class="receiptPreview preview-row"></div>
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <div class="section-title">참석자</div>
+          <div class="attendee-list"></div>
+        </div>
+      `;
+      $('#rounds').appendChild(container);
+      updateAllAttendeeLists();
+
+      // 업로드 추가 → 새 파일 캐시에 넣고 미리보기 렌더
+      $('.receiptInput', container).addEventListener('change', (e)=>{
+        const files = Array.from(e.target.files || []);
+        const rIdx = parseInt(container.dataset.idx, 10);
+        newReceiptFiles[rIdx].push(...files);
+        renderReceiptPreview(container);
+        e.target.value = '';
+      });
+
+      renderReceiptPreview(container);
+    }
+
+    function renderReceiptPreview(roundEl) {
+      const rIdx = parseInt(roundEl.dataset.idx, 10);
+      const box = roundEl.querySelector('.receiptPreview');
+      box.innerHTML = '';
+
+      // 기존 영수증
+      (editorReceipts[rIdx] || []).forEach((src, i)=>{
+        const wrap = document.createElement('div');
+        wrap.className = 'preview-row';
+        const img = document.createElement('img');
+        img.src = src; img.alt = `영수증`; img.classList.add('zoomable');
+        const btn = document.createElement('button');
+        btn.className = 'mini-del';
+        btn.textContent = '삭제';
+        btn.dataset.role = 'del-receipt-existing';
+        btn.dataset.idx = String(rIdx);
+        btn.dataset.i = String(i);
+        wrap.appendChild(img); wrap.appendChild(btn);
+        box.appendChild(wrap);
+      });
+
+      // 새로 추가된 영수증(파일)
+      (newReceiptFiles[rIdx] || []).forEach((file, i)=>{
+        const url = URL.createObjectURL(file);
+        const wrap = document.createElement('div');
+        wrap.className = 'preview-row';
+        const img = document.createElement('img');
+        img.src = url; img.alt = `영수증(신규)`; img.classList.add('zoomable');
+        const btn = document.createElement('button');
+        btn.className = 'mini-del';
+        btn.textContent = '삭제';
+        btn.dataset.role = 'del-receipt-new';
+        btn.dataset.idx = String(rIdx);
+        btn.dataset.i = String(i);
+        wrap.appendChild(img); wrap.appendChild(btn);
+        box.appendChild(wrap);
+        img.onload = ()=> URL.revokeObjectURL(url);
+      });
+    }
+
+    // 사진 업로드 → 새 파일 캐시에 넣고 통합 미리보기 렌더
+    $('#groupPhoto').addEventListener('change', (e)=>{
+      const files = Array.from(e.target.files || []);
+      newPhotoFiles.push(...files);
+      renderPhotoPreview();
+      e.target.value = '';
+    });
+
+    function renderPhotoPreview() {
+      const box = $('#photoPreview'); box.innerHTML = '';
+
+      // 기존 사진
+      editorPhotos.forEach((src, i)=>{
+        const wrap = document.createElement('div');
+        wrap.className = 'preview-row';
+        const img = document.createElement('img');
+        img.src = src; img.alt = '사진'; img.classList.add('zoomable');
+        const btn = document.createElement('button');
+        btn.className = 'mini-del';
+        btn.textContent = '삭제';
+        btn.dataset.role = 'del-photo-existing';
+        btn.dataset.i = String(i);
+        wrap.appendChild(img); wrap.appendChild(btn);
+        box.appendChild(wrap);
+      });
+
+      // 새로 추가된 사진
+      newPhotoFiles.forEach((file, i)=>{
+        const url = URL.createObjectURL(file);
+        const wrap = document.createElement('div');
+        wrap.className = 'preview-row';
+        const img = document.createElement('img');
+        img.src = url; img.alt = '사진(신규)'; img.classList.add('zoomable');
+        const btn = document.createElement('button');
+        btn.className = 'mini-del';
+        btn.textContent = '삭제';
+        btn.dataset.role = 'del-photo-new';
+        btn.dataset.i = String(i);
+        wrap.appendChild(img); wrap.appendChild(btn);
+        box.appendChild(wrap);
+        img.onload = ()=> URL.revokeObjectURL(url);
+      });
+    }
+
+    // 미리보기 (에디터 내부)
+    $('#btnPreview').onclick = ()=>{
+      const dummy = buildSummaryFromEditor();
+      if (!dummy) return;
+      $('#editorSummary').innerHTML = dummy.html;
+      $('#editorPreview').classList.remove('hidden');
+    };
+
+    function buildSummaryFromEditor() {
+      const roundEls = $$('.round');
+      if (!roundEls.length) { alert('차수를 추가하세요.'); return null; }
+      const roundTitles = roundEls.map((_,i)=>`${i+1}차`);
+      const memberMap = {};
+      for (let i=0;i<roundEls.length;i++){
+        const el = roundEls[i];
+        const amount = parseInt($('.amount', el).value || '0', 10);
+        const checked = $$('input[type="checkbox"]:checked', el).map(v=>v.value);
+        if (!checked.length || !amount) continue;
+        const per = amount / checked.length;
+        checked.forEach(n=>{
+          if (!memberMap[n]) memberMap[n] = { total:0, rounds:[] };
+          memberMap[n].rounds[i] = per; memberMap[n].total += per;
+        });
+      }
+      const rows = Object.entries(memberMap);
+      let html = `<table><thead><tr><th>이름</th>${roundTitles.map(r=>`<th>${r}</th>`).join('')}<th>총액</th></tr></thead><tbody>`;
+      rows.forEach(([name, data])=>{
+        html += `<tr><td>${name}</td>`;
+        for (let i=0;i<roundTitles.length;i++){
+          const v = data.rounds[i] ? formatNumber(data.rounds[i])+'원' : '-';
+          html += `<td>${v}</td>`;
+        }
+        html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
+      });
+      html += `</tbody></table>`;
+      return { html, count: rows.length };
+    }
+
+    // 파일 → DataURL 압축
+    function fileToDataURLCompressed(file, maxW=1400, quality=0.85) {
+      return new Promise((resolve, reject)=>{
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = ()=>{
+            const canvas = document.createElement('canvas');
+            const scale = Math.min(1, maxW / img.width);
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = reject;
+          img.src = reader.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function collectEditorData() {
+      const date = $('#meetingDate').value;
+      const title = $('#meetingTitle').value.trim();
+      const place = $('#meetingPlace').value.trim();
+      if (!date || !title) { alert('날짜와 제목은 필수입니다.'); throw new Error('required'); }
+
+      // photos (기존 + 신규)
+      const photos = [...editorPhotos];
+      const newPhotoData = await Promise.all(newPhotoFiles.map(f=>fileToDataURLCompressed(f)));
+      photos.push(...newPhotoData);
+
+      // rounds
+      const roundEls = $$('.round');
+      if (!roundEls.length) { alert('차수를 추가하세요.'); throw new Error('no rounds'); }
+
+      const rounds = [];
+      for (let i=0;i<roundEls.length;i++) {
+        const rEl = roundEls[i];
+        const amount = parseInt($('.amount', rEl).value || '0', 10);
+        const attendees = $$(`.attendee-list input[type="checkbox"]:checked`, rEl).map(el=>el.value);
+        if (!attendees.length) { alert('각 차수마다 최소 1명 이상 선택하세요.'); throw new Error('no attendees'); }
+        if (!amount || amount <= 0) { alert('금액을 입력하세요.'); throw new Error('no amount'); }
+
+        const existing = editorReceipts[i] || [];
+        const newFiles = newReceiptFiles[i] || [];
+        const newData = await Promise.all(newFiles.map(f=>fileToDataURLCompressed(f)));
+        const receiptImages = [...existing, ...newData];
+
+        rounds.push({ amount, attendees, receiptImages });
+      }
+
+      // 초기/병합 paidStatus
+      let paidStatus = {};
+      if (!isEditing) {
+        const people = Array.from(new Set(rounds.flatMap(r=>r.attendees)));
+        paidStatus = Object.fromEntries(people.map(n=>[n,false]));
+      }
+
+      return { id: isEditing ? editingId : Date.now().toString(), date, title, place, rounds, photos, paidStatus };
+    }
+
+    // 저장 (신규 or 수정)
+    $('#btnSave').onclick = async ()=>{
+      try {
+        const data = await collectEditorData();
+        const db = loadDB();
+
+        if (isEditing) {
+          const old = db.find(x=>x.id === editingId);
+          if (!old) throw new Error('기존 데이터를 찾을 수 없습니다.');
+          // paidStatus 병합: 기존 이름은 유지, 신규는 false
+          const newNames = Array.from(new Set(data.rounds.flatMap(r=>r.attendees)));
+          const mergedPaid = {};
+          newNames.forEach(n => mergedPaid[n] = (old.paidStatus && n in old.paidStatus) ? old.paidStatus[n] : false);
+          data.paidStatus = mergedPaid;
+
+          const idx = db.findIndex(x=>x.id === editingId);
+          db[idx] = data;
+        } else {
+          db.push(data);
+        }
+        saveDB(db);
+        alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
+        renderList(); show(viewList);
+      } catch(e) { /* validation alert already shown */ }
+    };
+
+    /*****************
+     * 상세 보기 + 수정하기
+     *****************/
+    function openDetail(id) {
+      const db = loadDB();
+      const item = db.find(x=>x.id === id);
+      if (!item) { alert('데이터를 찾을 수 없습니다.'); return; }
+
+      $('#detailTitle').textContent = item.title || '(제목 없음)';
+      const uniqueCnt = new Set(item.rounds.flatMap(r=>r.attendees)).size;
+      $('#detailMeta').textContent = `${item.date || '-'} · 참석 ${uniqueCnt.toLocaleString('ko-KR')}명 · 장소 ${item.place || '-'}`;
+
+      // 요약(정산표)
+      $('#detailSummary').innerHTML = buildSummaryHTML(item);
+
+      // 영수증
+      const recWrap = $('#detailReceipts'); recWrap.innerHTML = '';
+      item.rounds.forEach((r, idx)=>{
+        (r.receiptImages || []).forEach(src=>{
+          const img = document.createElement('img');
+          img.src = src; img.alt = `${idx+1}차 영수증`;
+          img.classList.add('zoomable');
+          recWrap.appendChild(img);
+        });
+      });
+
+      // 사진
+      const pWrap = $('#detailPhotos'); pWrap.innerHTML = '';
+      (item.photos || []).forEach(src=>{
+        const img = document.createElement('img');
+        img.src = src; img.alt = '회식 사진';
+        img.classList.add('zoomable');
+        pWrap.appendChild(img);
+      });
+
+      // 입금 확인
+      renderPaidTable(item);
+
+      // 버튼들
+      $('#btnBackToList').onclick = ()=> { renderList(); show(viewList); };
+      $('#btnDelete').onclick = ()=>{
+        if (!confirm('이 회식 기록을 삭제할까요?')) return;
+        const next = loadDB().filter(x=>x.id !== id);
+        saveDB(next);
+        renderList(); show(viewList);
+      };
+      $('#btnCapture').onclick = ()=> captureElement($('#detailWrap'), `${item.date || '회식'}-${item.title || ''}.png`);
+      $('#btnEdit').onclick = ()=> startEdit(id);
+
+      show(viewDetail);
+    }
+
+    function startEdit(id) {
+      const db = loadDB();
+      const item = db.find(x=>x.id === id);
+      if (!item) { alert('수정할 데이터를 찾지 못했습니다.'); return; }
+
+      // 편집 상태 세팅
+      isEditing = true;
+      editingId = id;
+
+      // 참석자 마스터에 누락된 이름 추가
+      const allNames = Array.from(new Set(item.rounds.flatMap(r=>r.attendees)));
+      allNames.forEach(n => { if (!allAttendees.includes(n)) allAttendees.push(n); });
+
+      // 에디터 초기화
+      $('#meetingDate').value = item.date || '';
+      $('#meetingTitle').value = item.title || '';
+      $('#meetingPlace').value = item.place || '';
+
+      editorPhotos = [...(item.photos || [])];
+      newPhotoFiles = [];
+      $('#rounds').innerHTML = '';
+      editorReceipts = {};
+      newReceiptFiles = {};
+
+      // 라운드 재구성
+      item.rounds.forEach((r, i)=>{
+        addRound(); // round idx = i
+        const roundEl = $$('.round')[i];
+        $('.amount', roundEl).value = r.amount || 0;
+        editorReceipts[i] = [...(r.receiptImages || [])];
+        newReceiptFiles[i] = [];
+        renderReceiptPreview(roundEl);
+        // 참석자 체크
+        const cbs = $$('input[type="checkbox"]', roundEl);
+        cbs.forEach(cb => { cb.checked = r.attendees.includes(cb.value); });
+      });
+
+      renderPhotoPreview();
+      show(viewEditor);
+    }
+
+    function buildSummaryHTML(item) {
+      const roundTitles = item.rounds.map((_,i)=>`${i+1}차`);
+      const memberMap = {};
+      item.rounds.forEach((r, idx)=>{
+        const per = r.amount / (r.attendees.length || 1);
+        r.attendees.forEach(n=>{
+          if (!memberMap[n]) memberMap[n] = { total:0, rounds:[] };
+          memberMap[n].rounds[idx] = per; memberMap[n].total += per;
+        });
+      });
+      const entries = Object.entries(memberMap).sort((a,b)=>a[0].localeCompare(b[0],'ko'));
+
+      let html = `<div class="section-title">정산 결과</div>`;
+      html += `<table><thead><tr><th>이름</th>${roundTitles.map(r=>`<th>${r}</th>`).join('')}<th>총액</th></tr></thead><tbody>`;
+      entries.forEach(([name, data])=>{
+        html += `<tr><td>${name}</td>`;
+        for (let i=0;i<roundTitles.length;i++){
+          const v = data.rounds[i] ? formatNumber(data.rounds[i])+'원' : '-';
+          html += `<td>${v}</td>`;
+        }
+        html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
+      });
+      html += `</tbody></table>`;
+      return html;
+    }
+
+    function renderPaidTable(item) {
+      const totals = {};
+      item.rounds.forEach((r)=>{
+        const per = r.amount / (r.attendees.length || 1);
+        r.attendees.forEach(n=>{
+          totals[n] = (totals[n]||0) + per;
+        });
+      });
+      const names = Object.keys(totals).sort((a,b)=>a.localeCompare(b,'ko'));
+      const wrap = $('#detailPaid');
+      let html = `<table><thead><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr></thead><tbody>`;
+      names.forEach(n=>{
+        const paid = !!item.paidStatus?.[n];
+        html += `<tr>
+          <td>${n}</td>
+          <td>${formatNumber(totals[n])}원</td>
+          <td><button class="${paid?'paid':'unpaid'}" data-name="${n}" data-id="${item.id}">
+            ${paid?'확인됨':'미입금'}
+          </button></td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+      wrap.innerHTML = html;
+
+      $$('button[data-name]', wrap).forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.dataset.id;
+          const name = btn.dataset.name;
+          const db = loadDB();
+          const it = db.find(x=>x.id===id); if (!it) return;
+          it.paidStatus = it.paidStatus || {};
+          it.paidStatus[name] = !it.paidStatus[name];
+          saveDB(db);
+          renderPaidTable(it);
+        };
+      });
+    }
+
+    /*****************
+     * 공용 유틸
+     *****************/
+    function formatNumber(num) { return Math.round(num).toLocaleString('ko-KR'); }
+
+    async function captureElement(el, filename='정산표.png') {
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+        scrollX: 0,
+        scrollY: -window.scrollY
+      });
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    /******** 이미지 라이트박스 + 삭제 위임 ********/
+    const imgModal = document.getElementById('imgModal');
+    const imgModalImg = document.getElementById('imgModalImg');
+    const imgModalClose = document.getElementById('imgModalClose');
+
+    function openImgModal(src) {
+      imgModalImg.src = src;
+      imgModal.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeImgModal() {
+      imgModal.classList.add('hidden');
+      imgModalImg.src = '';
+      document.body.style.overflow = '';
+    }
+    imgModalClose.addEventListener('click', closeImgModal);
+    imgModal.addEventListener('click', (e) => { if (e.target === imgModal) closeImgModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !imgModal.classList.contains('hidden')) closeImgModal(); });
+
+    document.addEventListener('click', (e) => {
+      // 확대 보기
+      const img = e.target.closest('img.zoomable');
+      if (img) { openImgModal(img.src); return; }
+
+      // 삭제 액션 위임
+      const btn = e.target.closest('[data-role]');
+      if (!btn) return;
+
+      // 사진 삭제(기존/신규)
+      if (btn.dataset.role === 'del-photo-existing') {
+        const i = parseInt(btn.dataset.i, 10);
+        editorPhotos.splice(i, 1);
+        renderPhotoPreview();
+      } else if (btn.dataset.role === 'del-photo-new') {
+        const i = parseInt(btn.dataset.i, 10);
+        newPhotoFiles.splice(i, 1);
+        renderPhotoPreview();
+      }
+
+      // 영수증 삭제(기존/신규)
+      if (btn.dataset.role === 'del-receipt-existing') {
+        const rIdx = parseInt(btn.dataset.idx, 10);
+        const i = parseInt(btn.dataset.i, 10);
+        (editorReceipts[rIdx] ||= []).splice(i, 1);
+        const roundEl = $$('.round')[rIdx];
+        if (roundEl) renderReceiptPreview(roundEl);
+      } else if (btn.dataset.role === 'del-receipt-new') {
+        const rIdx = parseInt(btn.dataset.idx, 10);
+        const i = parseInt(btn.dataset.i, 10);
+        (newReceiptFiles[rIdx] ||= []).splice(i, 1);
+        const roundEl = $$('.round')[rIdx];
+        if (roundEl) renderReceiptPreview(roundEl);
+      }
+    });
+
+    /*****************
+     * 초기화
+     *****************/
+    renderList(); show(viewList);
+  </script>
+</body>
+</html>
