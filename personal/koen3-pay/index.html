@@ -41,29 +41,36 @@
     .section-title { font-size:16px; font-weight:800; margin:6px 0 8px; }
 
     .round { border:1px dashed #d1d5db; border-radius:12px; padding:12px; background:#fcfcfe; }
-    .preview-row { display:flex; gap:8px; flex-wrap:wrap; }
+    .preview-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .preview-row img { height:88px; border-radius:10px; border:1px solid #e5e7eb; }
+    .mini-del {
+      border:1px solid #e5e7eb; background:#fff; border-radius:8px; padding:3px 6px; font-size:12px; cursor:pointer;
+    }
 
     table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:auto; display:block; }
     th, td { border:1px solid #e5e7eb; padding:10px; text-align:center; white-space:nowrap; }
     thead th { background:#f8fafc; }
 
-    /* 목록(리스트) */
-    .list-row { display:grid; grid-template-columns: 86px 140px 1fr 110px 1fr; gap:8px; align-items:center; padding:10px; border-bottom:1px solid #eee; }
+    /* 목록(2열 레이아웃) */
+    .list-row {
+      display:grid; grid-template-columns: 1fr 120px; gap:12px; align-items:center;
+      padding:12px; border-bottom:1px solid #eee;
+    }
     .list-row:hover { background:#fafcff; }
-    .list-head { font-weight:800; color:#475569; }
+    .list-head { font-weight:800; color:#475569; grid-template-columns: 1fr 120px; }
+    .info-date a { color:var(--primary); font-weight:800; text-decoration:none; }
+    .info-title { font-weight:700; margin-top:4px; }
+    .info-meta { color:#6b7280; font-size:14px; margin-top:2px; }
+
     .thumb {
-      width:72px; height:72px; object-fit:cover; border-radius:10px; border:1px solid #e5e7eb; background:#f1f5f9; display:block;
+      width:112px; height:78px; object-fit:cover; border-radius:10px; border:1px solid #e5e7eb; background:#f1f5f9; display:block; margin-left:auto;
     }
     .thumb.placeholder {
       display:flex; align-items:center; justify-content:center; font-size:12px; color:#94a3b8; border-style:dashed;
     }
     @media (max-width:700px) {
-      .list-row { grid-template-columns: 1fr; gap:6px; }
-      .list-head { display:none; }
-      .row-box { border:1px solid #eee; border-radius:12px; padding:10px; background:#fff; }
-      .row-box div { margin:2px 0; }
-      .row-title { font-weight:800; }
+      .list-row { grid-template-columns: 1fr; }
+      .thumb { margin-left:0; width:100%; height:160px; }
     }
 
     .paid { color:#16a34a; font-weight:800; }
@@ -118,14 +125,14 @@
     <section id="view-list" class="grid">
       <div class="card">
         <div class="list-row list-head">
-          <div>사진</div><div>날짜</div><div>제목</div><div>참석인원</div><div>장소</div>
+          <div>정보</div><div style="text-align:right;">사진</div>
         </div>
         <div id="listBody"></div>
         <p class="muted" id="emptyNote" style="display:none; padding:10px 2px;">아직 저장된 회식이 없습니다. “새 회식”을 눌러 입력한 후 저장하세요.</p>
       </div>
     </section>
 
-    <!-- 작성 화면 -->
+    <!-- 작성/편집 화면 -->
     <section id="view-editor" class="grid hidden">
       <div class="card">
         <div class="grid grid-3">
@@ -187,6 +194,7 @@
             <button class="btn" id="btnBackToList">목록으로</button>
             <button class="btn" id="btnDelete">삭제</button>
             <button class="btn" id="btnCapture">이미지로 저장</button>
+            <button class="btn" id="btnEdit">수정하기</button>
           </div>
         </div>
 
@@ -239,6 +247,16 @@
     function saveDB(list) { localStorage.setItem(LS_KEY, JSON.stringify(list)); }
 
     /*****************
+     * 편집 상태 관리
+     *****************/
+    let isEditing = false;
+    let editingId = null;
+    let editorPhotos = [];       // 기존 사진(DataURL)
+    let newPhotoFiles = [];      // 새 업로드 파일들
+    let editorReceipts = {};     // { roundIdx: [DataURL, ...] }
+    let newReceiptFiles = {};    // { roundIdx: [File, ...] }
+
+    /*****************
      * 네비 & 화면 전환
      *****************/
     const viewList   = $('#view-list');
@@ -280,7 +298,7 @@
     };
 
     /*****************
-     * 목록 랜더링 (썸네일 포함)
+     * 목록 랜더링 (2열, 우측 썸네일)
      *****************/
     function renderList() {
       const list = loadDB().sort((a,b)=> (b.date||'').localeCompare(a.date||''));
@@ -293,17 +311,18 @@
         const thumbSrc = (item.photos && item.photos[0]) ? item.photos[0] : null;
 
         const row = document.createElement('div');
-        row.className = 'list-row row-box';
+        row.className = 'list-row';
         row.innerHTML = `
+          <div>
+            <div class="info-date"><a href="#" data-id="${item.id}" class="link-date">${item.date || '-'}</a></div>
+            <div class="info-title">${item.title || '-'}</div>
+            <div class="info-meta">참석 ${unique.size.toLocaleString('ko-KR')}명 · 장소 ${item.place || '-'}</div>
+          </div>
           <div>
             ${thumbSrc
               ? `<img src="${thumbSrc}" alt="회식 썸네일" class="thumb zoomable">`
               : `<div class="thumb placeholder">사진없음</div>`}
           </div>
-          <div><a href="#" data-id="${item.id}" class="link-date" style="color:var(--primary); font-weight:800; text-decoration:none;">${item.date || '-'}</a></div>
-          <div>${item.title || '-'}</div>
-          <div>${unique.size.toLocaleString('ko-KR')}명</div>
-          <div>${item.place || '-'}</div>
         `;
         body.appendChild(row);
       });
@@ -314,18 +333,25 @@
     }
 
     /*****************
-     * 작성 화면
+     * 작성/편집 화면
      *****************/
     function resetEditor() {
+      isEditing = false;
+      editingId = null;
+      editorPhotos = [];
+      newPhotoFiles = [];
+      editorReceipts = {};
+      newReceiptFiles = {};
+
       $('#meetingDate').value = '';
       $('#meetingTitle').value = '';
       $('#meetingPlace').value = '';
       $('#rounds').innerHTML = '';
       $('#groupPhoto').value = '';
-      $('#photoPreview').innerHTML = '';
+      renderPhotoPreview(); // 빈 상태 반영
       $('#editorPreview').classList.add('hidden');
       $('#editorSummary').innerHTML = '';
-      // 기본 라운드 1개
+
       addRound();
     }
 
@@ -349,337 +375,4 @@
     }
 
     function addRound() {
-      const container = document.createElement('div');
-      const idx = $$('.round').length + 1;
-      container.className = 'round';
-      container.innerHTML = `
-        <div class="section-title">${idx}차</div>
-        <div class="grid grid-3">
-          <div>
-            <label>금액(원)</label>
-            <input type="number" class="amount" min="0" placeholder="예: 150000">
-          </div>
-          <div>
-            <label>영수증 업로드</label>
-            <input type="file" accept="image/*" class="receiptInput" multiple>
-          </div>
-          <div>
-            <label class="muted">영수증 미리보기</label>
-            <div class="receiptPreview preview-row"></div>
-          </div>
-        </div>
-        <div style="margin-top:8px;">
-          <div class="section-title">참석자</div>
-          <div class="attendee-list"></div>
-        </div>
-      `;
-      $('#rounds').appendChild(container);
-      updateAllAttendeeLists();
-      $('.receiptInput', container).addEventListener('change', (e)=> previewReceipts(e.target));
-    }
-
-    function previewReceipts(inputEl) {
-      const box = inputEl.closest('.round').querySelector('.receiptPreview');
-      box.innerHTML = '';
-      Array.from(inputEl.files || []).forEach(file=>{
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(file);
-        img.onload = ()=> URL.revokeObjectURL(img.src);
-        img.classList.add('zoomable');          // 확대 가능
-        box.appendChild(img);
-      });
-    }
-
-    $('#groupPhoto').addEventListener('change', (e)=>{
-      const box = $('#photoPreview'); box.innerHTML = '';
-      Array.from(e.target.files || []).forEach(file=>{
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(file);
-        img.onload = ()=> URL.revokeObjectURL(img.src);
-        img.classList.add('zoomable');          // 확대 가능
-        box.appendChild(img);
-      });
-    });
-
-    // 이미지 용량을 줄여 로컬 저장 안정화
-    function fileToDataURLCompressed(file, maxW=1400, quality=0.85) {
-      return new Promise((resolve, reject)=>{
-        const reader = new FileReader();
-        reader.onload = () => {
-          const img = new Image();
-          img.onload = ()=>{
-            const canvas = document.createElement('canvas');
-            const scale = Math.min(1, maxW / img.width);
-            canvas.width = Math.max(1, Math.round(img.width * scale));
-            canvas.height = Math.max(1, Math.round(img.height * scale));
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-          };
-          img.onerror = reject;
-          img.src = reader.result;
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-    }
-
-    async function collectEditorData() {
-      const date = $('#meetingDate').value;
-      const title = $('#meetingTitle').value.trim();
-      const place = $('#meetingPlace').value.trim();
-      if (!date || !title) { alert('날짜와 제목은 필수입니다.'); throw new Error('required'); }
-
-      // photos
-      const photos = await Promise.all(Array.from($('#groupPhoto').files || []).map(f=>fileToDataURLCompressed(f)));
-
-      // rounds
-      const roundEls = $$('.round');
-      if (!roundEls.length) { alert('차수를 추가하세요.'); throw new Error('no rounds'); }
-
-      const rounds = [];
-      for (const rEl of roundEls) {
-        const amount = parseInt($('.amount', rEl).value || '0', 10);
-        const attendees = $$(`.attendee-list input[type="checkbox"]:checked`, rEl).map(el=>el.value);
-        if (!attendees.length) { alert('각 차수마다 최소 1명 이상 선택하세요.'); throw new Error('no attendees'); }
-        if (!amount || amount <= 0) { alert('금액을 입력하세요.'); throw new Error('no amount'); }
-        const receiptFiles = Array.from($('.receiptInput', rEl).files || []);
-        const receiptImages = await Promise.all(receiptFiles.map(f=>fileToDataURLCompressed(f)));
-        rounds.push({ amount, attendees, receiptImages });
-      }
-
-      // 초기 paidStatus (모두 미입금)
-      const people = Array.from(new Set(rounds.flatMap(r=>r.attendees)));
-      const paidStatus = Object.fromEntries(people.map(n=>[n,false]));
-
-      return { id: Date.now().toString(), date, title, place, rounds, photos, paidStatus };
-    }
-
-    // 미리보기 (에디터 내부)
-    $('#btnPreview').onclick = ()=>{
-      const dummy = buildSummaryFromEditor();
-      if (!dummy) return;
-      $('#editorSummary').innerHTML = dummy.html;
-      $('#editorPreview').classList.remove('hidden');
-    };
-
-    function buildSummaryFromEditor() {
-      const roundEls = $$('.round');
-      if (!roundEls.length) { alert('차수를 추가하세요.'); return null; }
-      const roundTitles = roundEls.map((_,i)=>`${i+1}차`);
-      const memberMap = {};
-      for (let i=0;i<roundEls.length;i++){
-        const el = roundEls[i];
-        const amount = parseInt($('.amount', el).value || '0', 10);
-        const checked = $$('input[type="checkbox"]:checked', el).map(v=>v.value);
-        if (!checked.length || !amount) continue;
-        const per = amount / checked.length;
-        checked.forEach(n=>{
-          if (!memberMap[n]) memberMap[n] = { total:0, rounds:[] };
-          memberMap[n].rounds[i] = per; memberMap[n].total += per;
-        });
-      }
-      const rows = Object.entries(memberMap);
-      let html = `<table><thead><tr><th>이름</th>${roundTitles.map(r=>`<th>${r}</th>`).join('')}<th>총액</th></tr></thead><tbody>`;
-      rows.forEach(([name, data])=>{
-        html += `<tr><td>${name}</td>`;
-        for (let i=0;i<roundTitles.length;i++){
-          const v = data.rounds[i] ? formatNumber(data.rounds[i])+'원' : '-';
-          html += `<td>${v}</td>`;
-        }
-        html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
-      });
-      html += `</tbody></table>`;
-      return { html, count: rows.length };
-    }
-
-    $('#btnSave').onclick = async ()=>{
-      try {
-        const data = await collectEditorData();
-        const db = loadDB();
-        db.push(data);
-        saveDB(db);
-        alert('저장되었습니다.');
-        renderList();
-        show(viewList);
-      } catch(e) { /* validation alert already shown */ }
-    };
-
-    /*****************
-     * 상세 보기
-     *****************/
-    function openDetail(id) {
-      const db = loadDB();
-      const item = db.find(x=>x.id === id);
-      if (!item) { alert('데이터를 찾을 수 없습니다.'); return; }
-
-      $('#detailTitle').textContent = item.title || '(제목 없음)';
-      const uniqueCnt = new Set(item.rounds.flatMap(r=>r.attendees)).size;
-      $('#detailMeta').textContent = `${item.date || '-'} · 참석 ${uniqueCnt.toLocaleString('ko-KR')}명 · 장소 ${item.place || '-'}`;
-
-      // 요약(정산표)
-      $('#detailSummary').innerHTML = buildSummaryHTML(item);
-
-      // 영수증
-      const recWrap = $('#detailReceipts'); recWrap.innerHTML = '';
-      item.rounds.forEach((r, idx)=>{
-        (r.receiptImages || []).forEach(src=>{
-          const img = document.createElement('img');
-          img.src = src; img.alt = `${idx+1}차 영수증`;
-          img.classList.add('zoomable');          // 확대 가능
-          recWrap.appendChild(img);
-        });
-      });
-
-      // 사진
-      const pWrap = $('#detailPhotos'); pWrap.innerHTML = '';
-      (item.photos || []).forEach(src=>{
-        const img = document.createElement('img');
-        img.src = src; img.alt = '회식 사진';
-        img.classList.add('zoomable');            // 확대 가능
-        pWrap.appendChild(img);
-      });
-
-      // 입금 확인
-      renderPaidTable(item);
-
-      // 버튼들
-      $('#btnBackToList').onclick = ()=> { renderList(); show(viewList); };
-      $('#btnDelete').onclick = ()=>{
-        if (!confirm('이 회식 기록을 삭제할까요?')) return;
-        const next = loadDB().filter(x=>x.id !== id);
-        saveDB(next);
-        renderList(); show(viewList);
-      };
-      $('#btnCapture').onclick = ()=> captureElement($('#detailWrap'), `${item.date || '회식'}-${item.title || ''}.png`);
-
-      // 표시
-      show(viewDetail);
-    }
-
-    function buildSummaryHTML(item) {
-      const roundTitles = item.rounds.map((_,i)=>`${i+1}차`);
-      const memberMap = {};
-      item.rounds.forEach((r, idx)=>{
-        const per = r.amount / (r.attendees.length || 1);
-        r.attendees.forEach(n=>{
-          if (!memberMap[n]) memberMap[n] = { total:0, rounds:[] };
-          memberMap[n].rounds[idx] = per; memberMap[n].total += per;
-        });
-      });
-      const entries = Object.entries(memberMap).sort((a,b)=>a[0].localeCompare(b[0],'ko'));
-
-      let html = `<div class="section-title">정산 결과</div>`;
-      html += `<table><thead><tr><th>이름</th>${roundTitles.map(r=>`<th>${r}</th>`).join('')}<th>총액</th></tr></thead><tbody>`;
-      entries.forEach(([name, data])=>{
-        html += `<tr><td>${name}</td>`;
-        for (let i=0;i<roundTitles.length;i++){
-          const v = data.rounds[i] ? formatNumber(data.rounds[i])+'원' : '-';
-          html += `<td>${v}</td>`;
-        }
-        html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
-      });
-      html += `</tbody></table>`;
-      return html;
-    }
-
-    function renderPaidTable(item) {
-      // 총액 다시 계산(안전)
-      const totals = {};
-      item.rounds.forEach((r)=>{
-        const per = r.amount / (r.attendees.length || 1);
-        r.attendees.forEach(n=>{
-          totals[n] = (totals[n]||0) + per;
-        });
-      });
-      const names = Object.keys(totals).sort((a,b)=>a.localeCompare(b,'ko'));
-      const wrap = $('#detailPaid');
-      let html = `<table><thead><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr></thead><tbody>`;
-      names.forEach(n=>{
-        const paid = !!item.paidStatus?.[n];
-        html += `<tr>
-          <td>${n}</td>
-          <td>${formatNumber(totals[n])}원</td>
-          <td><button class="${paid?'paid':'unpaid'}" data-name="${n}" data-id="${item.id}">
-            ${paid?'확인됨':'미입금'}
-          </button></td>
-        </tr>`;
-      });
-      html += `</tbody></table>`;
-      wrap.innerHTML = html;
-
-      // 토글 핸들러
-      $$('button[data-name]', wrap).forEach(btn=>{
-        btn.onclick = ()=>{
-          const id = btn.dataset.id;
-          const name = btn.dataset.name;
-          const db = loadDB();
-          const it = db.find(x=>x.id===id); if (!it) return;
-          it.paidStatus = it.paidStatus || {};
-          it.paidStatus[name] = !it.paidStatus[name];
-          saveDB(db);
-          renderPaidTable(it);
-        };
-      });
-    }
-
-    /*****************
-     * 공용 유틸
-     *****************/
-    function formatNumber(num) { return Math.round(num).toLocaleString('ko-KR'); }
-
-    async function captureElement(el, filename='정산표.png') {
-      // 전체가 잘리면 안되므로 scrollHeight 기준으로 렌더
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        windowWidth: el.scrollWidth,
-        windowHeight: el.scrollHeight,
-        scrollX: 0,
-        scrollY: -window.scrollY
-      });
-      const link = document.createElement('a');
-      link.download = filename;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    }
-
-    /******** 이미지 라이트박스 ********/
-    const imgModal = document.getElementById('imgModal');
-    const imgModalImg = document.getElementById('imgModalImg');
-    const imgModalClose = document.getElementById('imgModalClose');
-
-    function openImgModal(src) {
-      imgModalImg.src = src;
-      imgModal.classList.remove('hidden');
-      document.body.style.overflow = 'hidden';
-    }
-    function closeImgModal() {
-      imgModal.classList.add('hidden');
-      imgModalImg.src = '';
-      document.body.style.overflow = '';
-    }
-
-    // 닫기 버튼 / 배경 클릭 / ESC
-    imgModalClose.addEventListener('click', closeImgModal);
-    imgModal.addEventListener('click', (e) => {
-      if (e.target === imgModal) closeImgModal();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !imgModal.classList.contains('hidden')) closeImgModal();
-    });
-
-    // 이미지 클릭 → 확대 (zoomable 클래스 대상 전역 위임)
-    document.addEventListener('click', (e) => {
-      const img = e.target.closest('img.zoomable');
-      if (img) openImgModal(img.src);
-    });
-
-    /*****************
-     * 초기화
-     *****************/
-    renderList(); show(viewList);
-  </script>
-</body>
-</html>
+      const container = document.
