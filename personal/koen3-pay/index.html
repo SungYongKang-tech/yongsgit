@@ -1,191 +1,608 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>회식 정산기</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>남동3기 회식비 정산</title>
   <style>
-    body { font-family: sans-serif; padding: 1em; background: #f9f9f9; }
-    h1, h2 { text-align: center; }
-    .row { margin-bottom: 1em; display: flex; flex-direction: column; gap: 0.5em; }
+    :root { --primary:#2b6cb0; --muted:#f5f7fb; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; margin: 0; background: #fafafa; color:#222; }
+    header { position: sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid #e5e7eb; }
+    .bar {
+      max-width: 1100px; margin: 0 auto; padding: 10px 14px;
+      display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+    }
+    .bar h1 { font-size: clamp(18px, 4.5vw, 22px); margin:0; }
+    .bar .actions { display:flex; gap:6px; flex-wrap:wrap; }
+    button, .btn {
+      appearance:none; border:1px solid #cbd5e1; background:#fff; color:#111;
+      padding: 8px 12px; border-radius:10px; cursor:pointer; font-weight:600;
+    }
+    button.primary, .btn.primary { background: var(--primary); color:#fff; border-color: var(--primary); }
+    button.ghost { background:transparent; border-color:transparent; color:var(--primary); }
+    main { max-width: 1100px; margin: 0 auto; padding: 14px; }
+
+    /* 카드/섹션 */
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .grid { display:grid; gap:12px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    @media (max-width: 900px) { .grid-3{grid-template-columns:1fr;} }
+    @media (max-width: 700px) { .grid-2{grid-template-columns:1fr;} }
+
+    label { display:block; font-weight:600; margin: 6px 0 4px; }
     input[type="text"], input[type="number"], input[type="date"] {
-      padding: 0.5em; width: 100%; box-sizing: border-box;
+      width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff;
     }
-    .attendee-list label { display: inline-block; margin-right: 1em; margin-bottom: 0.5em; }
-    .section { border: 1px solid #ccc; padding: 1em; background: #fff; margin-bottom: 1em; }
-    button { padding: 0.75em 1em; margin-top: 1em; font-size: 1em; }
-    img { max-width: 100%; height: auto; margin-top: 0.5em; }
-    .summary { margin-top: 2em; background: #eef; padding: 1em; overflow-x: auto; }
-    .paid { color: green; font-weight: bold; }
-    .unpaid { color: red; font-weight: bold; }
-    table {
-      border-collapse: collapse;
-      margin-top: 1em;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
+
+    .attendee-list { display:flex; flex-wrap:wrap; gap:8px; background:var(--muted); padding:10px; border-radius:10px; }
+    .attendee-list label { font-weight:500; background:#fff; border:1px solid #e5e7eb; padding:6px 10px; border-radius:20px; }
+    .section-title { font-size:16px; font-weight:800; margin:6px 0 8px; }
+
+    .round { border:1px dashed #d1d5db; border-radius:12px; padding:12px; background:#fcfcfe; }
+    .preview-row { display:flex; gap:8px; flex-wrap:wrap; }
+    .preview-row img { height:88px; border-radius:10px; border:1px solid #e5e7eb; }
+
+    table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:auto; display:block; }
+    th, td { border:1px solid #e5e7eb; padding:10px; text-align:center; white-space:nowrap; }
+    thead th { background:#f8fafc; }
+
+    .list-row { display:grid; grid-template-columns: 140px 1fr 110px 1fr; gap:8px; align-items:center; padding:10px; border-bottom:1px solid #eee; }
+    .list-row:hover { background:#fafcff; }
+    .list-head { font-weight:800; color:#475569; }
+    @media (max-width:700px) {
+      .list-row { grid-template-columns: 1fr; gap:4px; }
+      .list-head { display:none; }
+      .row-box { border:1px solid #eee; border-radius:12px; padding:10px; background:#fff; }
+      .row-box div { margin:2px 0; }
+      .row-title { font-weight:800; }
     }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 0.75em;
-      text-align: center;
-      white-space: nowrap;
-    }
-    @media (max-width: 600px) {
-      table, thead, tbody, th, td, tr {
-        font-size: 0.9em;
-      }
-      .row {
-        flex-direction: column;
-      }
-      input, button {
-        width: 100%;
-      }
-    }
+
+    .paid { color:#16a34a; font-weight:800; }
+    .unpaid { color:#dc2626; font-weight:800; }
+    .muted { color:#6b7280; }
+
+    .hidden { display:none; }
+
+    /* 캡처 영역 보정 */
+    .capture-wrap { background:#fff; padding:12px; border-radius:14px; border:1px solid #e5e7eb; }
   </style>
 </head>
 <body>
-  <h1>회식 정산기</h1>
+  <header>
+    <div class="bar">
+      <h1>남동3기 회식비 정산</h1>
+      <div class="actions">
+        <button class="btn" id="btnList">목록</button>
+        <button class="btn" id="btnNew">새 회식</button>
+        <button class="btn" id="btnExport">내보내기</button>
+        <label class="btn" for="importFile" style="margin:0;">가져오기</label>
+        <input id="importFile" type="file" accept="application/json" class="hidden">
+      </div>
+    </div>
+  </header>
 
-  <div class="row">
-    <label>회식 날짜: <input type="date" id="meetingDate"></label>
-    <label>제목: <input type="text" id="meetingTitle" placeholder="예: 3월 회식"></label>
-    <label>참석자 추가: <input type="text" id="newAttendee" placeholder="이름 입력">
-      <button onclick="addAttendee()">추가</button>
-    </label>
-    <button onclick="addRound()">차수 추가</button>
-  </div>
+  <main>
+    <!-- 목록 화면 -->
+    <section id="view-list" class="grid">
+      <div class="card">
+        <div class="list-row list-head">
+          <div>날짜</div><div>제목</div><div>참석인원</div><div>장소</div>
+        </div>
+        <div id="listBody"></div>
+        <p class="muted" id="emptyNote" style="display:none; padding:10px 2px;">아직 저장된 회식이 없습니다. “새 회식”을 눌러 입력한 후 저장하세요.</p>
+      </div>
+    </section>
 
-  <div id="rounds"></div>
+    <!-- 작성 화면 -->
+    <section id="view-editor" class="grid hidden">
+      <div class="card">
+        <div class="grid grid-3">
+          <div>
+            <label>회식 날짜</label>
+            <input type="date" id="meetingDate">
+          </div>
+          <div>
+            <label>제목</label>
+            <input type="text" id="meetingTitle" placeholder="예: 3월 회식">
+          </div>
+          <div>
+            <label>장소</label>
+            <input type="text" id="meetingPlace" placeholder="예: 진주 ○○식당">
+          </div>
+        </div>
 
-  <div class="row">
-    <label>회식 사진 업로드: 
-      <input type="file" accept="image/*" id="groupPhoto" multiple onchange="previewGroupPhoto(event)">
-    </label>
-    <div id="photoPreview"></div>
-  </div>
+        <div style="margin-top:8px;">
+          <label>참석자 추가</label>
+          <div class="grid grid-2">
+            <input type="text" id="newAttendee" placeholder="이름 입력">
+            <button class="btn" onclick="addAttendee()">이름 추가</button>
+          </div>
+        </div>
 
-  <button onclick="calculateSummary()">정산표 생성</button>
-  <button onclick="saveAsImage()">이미지로 저장</button>
+        <div style="margin-top:10px;">
+          <button class="btn" onclick="addRound()">차수 추가</button>
+        </div>
 
-  <div id="summary" class="summary"></div>
+        <div id="rounds" style="margin-top:12px;" class="grid"></div>
+
+        <div style="margin-top:12px;">
+          <label>회식 사진 업로드 (여러 장)</label>
+          <input type="file" accept="image/*" id="groupPhoto" multiple>
+          <div id="photoPreview" class="preview-row" style="margin-top:6px;"></div>
+        </div>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+          <button class="btn primary" id="btnSave">이 회식 저장</button>
+          <button class="btn" id="btnPreview">정산표 미리보기</button>
+        </div>
+
+        <div id="editorPreview" class="card hidden" style="margin-top:12px;">
+          <div class="section-title">정산표 미리보기</div>
+          <div id="editorSummary"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 상세 화면 -->
+    <section id="view-detail" class="grid hidden">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div>
+            <div id="detailTitle" style="font-weight:900; font-size:18px;"></div>
+            <div class="muted" id="detailMeta"></div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" id="btnBackToList">목록으로</button>
+            <button class="btn" id="btnDelete">삭제</button>
+            <button class="btn" id="btnCapture">이미지로 저장</button>
+          </div>
+        </div>
+
+        <div id="detailWrap" class="capture-wrap" style="margin-top:12px;">
+          <div id="detailSummary"></div>
+
+          <div style="margin-top:16px;">
+            <div class="section-title">영수증</div>
+            <div id="detailReceipts" class="preview-row"></div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="section-title">사진</div>
+            <div id="detailPhotos" class="preview-row"></div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="section-title">입금 확인</div>
+            <div id="detailPaid"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
-    const defaultAttendees = ["성용", "범준", "기현", "승호", "재환", "창현", "계민", "인찬", "정선", "현정", "정록", "영화", "재화", "원용", "윤숙", "인수"];
+    /***************
+     * 간단한 “DB”
+     ***************/
+    const LS_KEY = 'koen_meetings_v2';
+    const defaultAttendees = ["성용","범준","기현","승호","재환","창현","계민","인찬","정선","현정","정록","영화","재화","원용","윤숙","인수"];
     let allAttendees = [...defaultAttendees];
-    let roundCount = 0;
-    let paidStatus = {};
+
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+    function loadDB() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    }
+    function saveDB(list) { localStorage.setItem(LS_KEY, JSON.stringify(list)); }
+
+    /*****************
+     * 네비 & 화면 전환
+     *****************/
+    const viewList   = $('#view-list');
+    const viewEditor = $('#view-editor');
+    const viewDetail = $('#view-detail');
+
+    function show(id) {
+      [viewList, viewEditor, viewDetail].forEach(v => v.classList.add('hidden'));
+      id.classList.remove('hidden');
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+
+    $('#btnList').onclick = ()=> { renderList(); show(viewList); };
+    $('#btnNew').onclick  = ()=> { resetEditor(); show(viewEditor); };
+    $('#btnExport').onclick = ()=> {
+      const blob = new Blob([JSON.stringify(loadDB(), null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '남동3기-회식정산-백업.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    $('#importFile').onchange = async (e)=>{
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        if (!Array.isArray(data)) throw new Error('형식 오류');
+        saveDB(data);
+        renderList();
+        show(viewList);
+        alert('가져오기가 완료되었습니다.');
+      } catch(err) {
+        alert('가져오기 실패: ' + err.message);
+      } finally {
+        e.target.value = '';
+      }
+    };
+
+    /*****************
+     * 목록 랜더링
+     *****************/
+    function renderList() {
+      const list = loadDB().sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+      const body = $('#listBody');
+      body.innerHTML = '';
+      $('#emptyNote').style.display = list.length ? 'none' : 'block';
+
+      list.forEach(item=>{
+        const unique = new Set(item.rounds.flatMap(r=>r.attendees || []));
+        const row = document.createElement('div');
+        row.className = 'list-row row-box';
+        row.innerHTML = `
+          <div><a href="#" data-id="${item.id}" class="link-date" style="color:var(--primary); font-weight:800; text-decoration:none;">${item.date || '-'}</a></div>
+          <div>${item.title || '-'}</div>
+          <div>${unique.size.toLocaleString('ko-KR')}명</div>
+          <div>${item.place || '-'}</div>
+        `;
+        body.appendChild(row);
+      });
+
+      $$('.link-date', body).forEach(a=>{
+        a.onclick = (e)=>{ e.preventDefault(); openDetail(a.dataset.id); };
+      });
+    }
+
+    /*****************
+     * 작성 화면
+     *****************/
+    function resetEditor() {
+      $('#meetingDate').value = '';
+      $('#meetingTitle').value = '';
+      $('#meetingPlace').value = '';
+      $('#rounds').innerHTML = '';
+      $('#groupPhoto').value = '';
+      $('#photoPreview').innerHTML = '';
+      $('#editorPreview').classList.add('hidden');
+      $('#editorSummary').innerHTML = '';
+      // 기본 라운드 1개
+      addRound();
+    }
 
     function addAttendee() {
-      const name = document.getElementById('newAttendee').value.trim();
+      const name = $('#newAttendee').value.trim();
       if (name && !allAttendees.includes(name)) {
         allAttendees.push(name);
         updateAllAttendeeLists();
-        document.getElementById('newAttendee').value = '';
+        $('#newAttendee').value = '';
       }
     }
 
     function updateAllAttendeeLists() {
-      document.querySelectorAll('.attendee-list').forEach((div) => {
-        const previousChecked = [...div.querySelectorAll('input:checked')].map(el => el.value);
-        div.innerHTML = allAttendees.map(name =>
-          `<label><input type='checkbox' value='${name}' ${previousChecked.includes(name) ? 'checked' : ''}> ${name}</label>`
-        ).join('');
+      $$('.attendee-list').forEach(div=>{
+        const prev = $$('input:checked', div).map(el=>el.value);
+        div.innerHTML = allAttendees.map(n=>{
+          const checked = prev.includes(n) ? 'checked' : '';
+          return `<label><input type="checkbox" value="${n}" ${checked}> ${n}</label>`;
+        }).join('');
       });
     }
 
     function addRound() {
-      roundCount++;
-      const div = document.createElement('div');
-      div.className = 'section';
-      div.innerHTML = `
-        <h2>${roundCount}차</h2>
-        <label>금액: <input type="number" class="amount"></label><br>
-        <label>영수증 업로드: <input type="file" accept="image/*"></label><br>
-        <div class="attendee-list"></div>
+      const container = document.createElement('div');
+      const idx = $$('.round').length + 1;
+      container.className = 'round';
+      container.innerHTML = `
+        <div class="section-title">${idx}차</div>
+        <div class="grid grid-3">
+          <div>
+            <label>금액(원)</label>
+            <input type="number" class="amount" min="0" placeholder="예: 150000">
+          </div>
+          <div>
+            <label>영수증 업로드</label>
+            <input type="file" accept="image/*" class="receiptInput" multiple>
+          </div>
+          <div>
+            <label class="muted">영수증 미리보기</label>
+            <div class="receiptPreview preview-row"></div>
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <div class="section-title">참석자</div>
+          <div class="attendee-list"></div>
+        </div>
       `;
-      document.getElementById('rounds').appendChild(div);
+      $('#rounds').appendChild(container);
       updateAllAttendeeLists();
+      $('.receiptInput', container).addEventListener('change', (e)=> previewReceipts(e.target));
     }
 
-    function previewGroupPhoto(event) {
-      const preview = document.getElementById('photoPreview');
-      preview.innerHTML = '';
-      [...event.target.files].forEach(file => {
+    function previewReceipts(inputEl) {
+      const box = inputEl.closest('.round').querySelector('.receiptPreview');
+      box.innerHTML = '';
+      Array.from(inputEl.files || []).forEach(file=>{
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.onload = ()=> URL.revokeObjectURL(img.src);
+        box.appendChild(img);
+      });
+    }
+
+    $('#groupPhoto').addEventListener('change', (e)=>{
+      const box = $('#photoPreview'); box.innerHTML = '';
+      Array.from(e.target.files || []).forEach(file=>{
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.onload = ()=> URL.revokeObjectURL(img.src);
+        box.appendChild(img);
+      });
+    });
+
+    // 이미지 용량을 줄여 로컬 저장 안정화
+    function fileToDataURLCompressed(file, maxW=1400, quality=0.85) {
+      return new Promise((resolve, reject)=>{
         const reader = new FileReader();
-        reader.onload = function(e) {
-          const img = document.createElement('img');
-          img.src = e.target.result;
-          preview.appendChild(img);
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = ()=>{
+            const canvas = document.createElement('canvas');
+            const scale = Math.min(1, maxW / img.width);
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = reject;
+          img.src = reader.result;
         };
+        reader.onerror = reject;
         reader.readAsDataURL(file);
       });
     }
 
-    function formatNumber(num) {
-      return Math.round(num).toLocaleString('ko-KR');
+    async function collectEditorData() {
+      const date = $('#meetingDate').value;
+      const title = $('#meetingTitle').value.trim();
+      const place = $('#meetingPlace').value.trim();
+      if (!date || !title) { alert('날짜와 제목은 필수입니다.'); throw new Error('required'); }
+
+      // photos
+      const photos = await Promise.all(Array.from($('#groupPhoto').files || []).map(f=>fileToDataURLCompressed(f)));
+
+      // rounds
+      const roundEls = $$('.round');
+      if (!roundEls.length) { alert('차수를 추가하세요.'); throw new Error('no rounds'); }
+
+      const rounds = [];
+      for (const rEl of roundEls) {
+        const amount = parseInt($('.amount', rEl).value || '0', 10);
+        const attendees = $$(`.attendee-list input[type="checkbox"]:checked`, rEl).map(el=>el.value);
+        if (!attendees.length) { alert('각 차수마다 최소 1명 이상 선택하세요.'); throw new Error('no attendees'); }
+        if (!amount || amount <= 0) { alert('금액을 입력하세요.'); throw new Error('no amount'); }
+        const receiptFiles = Array.from($('.receiptInput', rEl).files || []);
+        const receiptImages = await Promise.all(receiptFiles.map(f=>fileToDataURLCompressed(f)));
+        rounds.push({ amount, attendees, receiptImages });
+      }
+
+      // 초기 paidStatus (모두 미입금)
+      const people = Array.from(new Set(rounds.flatMap(r=>r.attendees)));
+      const paidStatus = Object.fromEntries(people.map(n=>[n,false]));
+
+      return { id: Date.now().toString(), date, title, place, rounds, photos, paidStatus };
     }
 
-    function calculateSummary() {
+    // 미리보기 (에디터 내부)
+    $('#btnPreview').onclick = ()=>{
+      const dummy = buildSummaryFromEditor();
+      if (!dummy) return;
+      $('#editorSummary').innerHTML = dummy.html;
+      $('#editorPreview').classList.remove('hidden');
+    };
+
+    function buildSummaryFromEditor() {
+      const roundEls = $$('.round');
+      if (!roundEls.length) { alert('차수를 추가하세요.'); return null; }
+      const roundTitles = roundEls.map((_,i)=>`${i+1}차`);
       const memberMap = {};
-      const roundTitles = [];
-      const sections = document.querySelectorAll('.section');
-
-      sections.forEach((section, idx) => {
-        const roundLabel = `${idx + 1}차`;
-        roundTitles.push(roundLabel);
-        const amount = parseInt(section.querySelector('.amount').value);
-        const checked = [...section.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value);
-        const perPerson = amount / checked.length;
-
-        checked.forEach(name => {
-          if (!memberMap[name]) memberMap[name] = { total: 0, rounds: [] };
-          memberMap[name].rounds[idx] = perPerson;
-          memberMap[name].total += perPerson;
+      for (let i=0;i<roundEls.length;i++){
+        const el = roundEls[i];
+        const amount = parseInt($('.amount', el).value || '0', 10);
+        const checked = $$('input[type="checkbox"]:checked', el).map(v=>v.value);
+        if (!checked.length || !amount) continue;
+        const per = amount / checked.length;
+        checked.forEach(n=>{
+          if (!memberMap[n]) memberMap[n] = { total:0, rounds:[] };
+          memberMap[n].rounds[i] = per; memberMap[n].total += per;
         });
-      });
-
-      let html = '<h2>정산 결과</h2><table><tr><th>이름</th>';
-      roundTitles.forEach(r => html += `<th>${r}</th>`);
-      html += '<th>총액</th></tr>';
-
-      Object.entries(memberMap).forEach(([name, data]) => {
+      }
+      const rows = Object.entries(memberMap);
+      let html = `<table><thead><tr><th>이름</th>${roundTitles.map(r=>`<th>${r}</th>`).join('')}<th>총액</th></tr></thead><tbody>`;
+      rows.forEach(([name, data])=>{
         html += `<tr><td>${name}</td>`;
-        roundTitles.forEach((_, idx) => {
-          const val = data.rounds[idx] ? formatNumber(data.rounds[idx]) + '원' : '-';
-          html += `<td>${val}</td>`;
-        });
+        for (let i=0;i<roundTitles.length;i++){
+          const v = data.rounds[i] ? formatNumber(data.rounds[i])+'원' : '-';
+          html += `<td>${v}</td>`;
+        }
         html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
       });
-      html += '</table>';
+      html += `</tbody></table>`;
+      return { html, count: rows.length };
+    }
 
-      html += '<h2>입금 확인</h2><table><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr>';
-      Object.entries(memberMap).forEach(([name, data]) => {
-        if (!(name in paidStatus)) paidStatus[name] = false;
-        const paidClass = paidStatus[name] ? 'paid' : 'unpaid';
-        html += `<tr><td>${name}</td><td>${formatNumber(data.total)}원</td><td><button onclick="togglePaid('${name}')" class='${paidClass}'>${paidStatus[name] ? '확인됨' : '미입금'}</button></td></tr>`;
+    $('#btnSave').onclick = async ()=>{
+      try {
+        const data = await collectEditorData();
+        const db = loadDB();
+        db.push(data);
+        saveDB(db);
+        alert('저장되었습니다.');
+        renderList();
+        show(viewList);
+      } catch(e) { /* validation alert already shown */ }
+    };
+
+    /*****************
+     * 상세 보기
+     *****************/
+    function openDetail(id) {
+      const db = loadDB();
+      const item = db.find(x=>x.id === id);
+      if (!item) { alert('데이터를 찾을 수 없습니다.'); return; }
+
+      $('#detailTitle').textContent = item.title || '(제목 없음)';
+      const uniqueCnt = new Set(item.rounds.flatMap(r=>r.attendees)).size;
+      $('#detailMeta').textContent = `${item.date || '-'} · 참석 ${uniqueCnt.toLocaleString('ko-KR')}명 · 장소 ${item.place || '-'}`;
+
+      // 요약(정산표)
+      $('#detailSummary').innerHTML = buildSummaryHTML(item);
+
+      // 영수증
+      const recWrap = $('#detailReceipts'); recWrap.innerHTML = '';
+      item.rounds.forEach((r, idx)=>{
+        (r.receiptImages || []).forEach(src=>{
+          const img = document.createElement('img');
+          img.src = src; img.alt = `${idx+1}차 영수증`;
+          recWrap.appendChild(img);
+        });
       });
-      html += '</table>';
 
-      document.getElementById('summary').innerHTML = html;
+      // 사진
+      const pWrap = $('#detailPhotos'); pWrap.innerHTML = '';
+      (item.photos || []).forEach(src=>{
+        const img = document.createElement('img');
+        img.src = src; img.alt = '회식 사진';
+        pWrap.appendChild(img);
+      });
+
+      // 입금 확인
+      renderPaidTable(item);
+
+      // 버튼들
+      $('#btnBackToList').onclick = ()=> { renderList(); show(viewList); };
+      $('#btnDelete').onclick = ()=>{
+        if (!confirm('이 회식 기록을 삭제할까요?')) return;
+        const next = loadDB().filter(x=>x.id !== id);
+        saveDB(next);
+        renderList(); show(viewList);
+      };
+      $('#btnCapture').onclick = ()=> captureElement($('#detailWrap'), `${item.date || '회식'}-${item.title || ''}.png`);
+
+      // 표시
+      show(viewDetail);
     }
 
-    function togglePaid(name) {
-      paidStatus[name] = !paidStatus[name];
-      calculateSummary();
+    function buildSummaryHTML(item) {
+      const roundTitles = item.rounds.map((_,i)=>`${i+1}차`);
+      const memberMap = {};
+      item.rounds.forEach((r, idx)=>{
+        const per = r.amount / (r.attendees.length || 1);
+        r.attendees.forEach(n=>{
+          if (!memberMap[n]) memberMap[n] = { total:0, rounds:[] };
+          memberMap[n].rounds[idx] = per; memberMap[n].total += per;
+        });
+      });
+      const entries = Object.entries(memberMap).sort((a,b)=>a[0].localeCompare(b[0],'ko'));
+
+      let html = `<div class="section-title">정산 결과</div>`;
+      html += `<table><thead><tr><th>이름</th>${roundTitles.map(r=>`<th>${r}</th>`).join('')}<th>총액</th></tr></thead><tbody>`;
+      entries.forEach(([name, data])=>{
+        html += `<tr><td>${name}</td>`;
+        for (let i=0;i<roundTitles.length;i++){
+          const v = data.rounds[i] ? formatNumber(data.rounds[i])+'원' : '-';
+          html += `<td>${v}</td>`;
+        }
+        html += `<td><strong>${formatNumber(data.total)}원</strong></td></tr>`;
+      });
+      html += `</tbody></table>`;
+      return html;
     }
 
-    function saveAsImage() {
-      const target = document.getElementById("summary");
-      target.style.background = "white";
-      html2canvas(target, { scale: 2, useCORS: true, windowWidth: document.body.scrollWidth }).then(canvas => {
-        const link = document.createElement('a');
-        link.download = '정산표.png';
-        link.href = canvas.toDataURL();
-        link.click();
+    function renderPaidTable(item) {
+      // 총액 다시 계산(안전)
+      const totals = {};
+      item.rounds.forEach((r)=>{
+        const per = r.amount / (r.attendees.length || 1);
+        r.attendees.forEach(n=>{
+          totals[n] = (totals[n]||0) + per;
+        });
+      });
+      const names = Object.keys(totals).sort((a,b)=>a.localeCompare(b,'ko'));
+      const wrap = $('#detailPaid');
+      let html = `<table><thead><tr><th>이름</th><th>총액</th><th>입금 상태</th></tr></thead><tbody>`;
+      names.forEach(n=>{
+        const paid = !!item.paidStatus?.[n];
+        html += `<tr>
+          <td>${n}</td>
+          <td>${formatNumber(totals[n])}원</td>
+          <td><button class="${paid?'paid':'unpaid'}" data-name="${n}" data-id="${item.id}">
+            ${paid?'확인됨':'미입금'}
+          </button></td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+      wrap.innerHTML = html;
+
+      // 토글 핸들러
+      $$('button[data-name]', wrap).forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.dataset.id;
+          const name = btn.dataset.name;
+          const db = loadDB();
+          const it = db.find(x=>x.id===id); if (!it) return;
+          it.paidStatus = it.paidStatus || {};
+          it.paidStatus[name] = !it.paidStatus[name];
+          saveDB(db);
+          renderPaidTable(it);
+        };
       });
     }
+
+    /*****************
+     * 공용 유틸
+     *****************/
+    function formatNumber(num) { return Math.round(num).toLocaleString('ko-KR'); }
+
+    async function captureElement(el, filename='정산표.png') {
+      // 전체가 잘리면 안되므로 scrollHeight 기준으로 렌더
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+        scrollX: 0,
+        scrollY: -window.scrollY
+      });
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    /*****************
+     * 초기화
+     *****************/
+    // 시작 시 목록 표시
+    renderList(); show(viewList);
   </script>
 </body>
 </html>
