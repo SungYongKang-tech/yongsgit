@@ -63,6 +63,15 @@
     .lightbox.hidden { display: none; }
     .lightbox img { max-width: min(92vw, 1200px); max-height: 92vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.6); user-select: none; }
     .lightbox .close-btn { position: absolute; top: 10px; right: 10px; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 28px; line-height: 1; border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+  
+  /* 저장 오버레이 */
+.saving {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45); z-index: 99999; color: #fff; font-weight: 700;
+}
+.saving.hidden { display: none; }
+.saving .box { background:#111; padding:16px 20px; border-radius:12px; }
+
   </style>
 </head>
 <body>
@@ -170,6 +179,9 @@
       </div>
     </section>
   </main>
+<div id="savingOverlay" class="saving hidden">
+  <div class="box">저장 중… <span id="savingText">준비</span></div>
+</div>
 
   <!-- 이미지 라이트박스 -->
   <div id="imgModal" class="lightbox hidden" aria-modal="true" role="dialog">
@@ -404,6 +416,23 @@
       $('#editorSummary').innerHTML = dummy.html; $('#editorPreview').classList.remove('hidden');
     };
 
+const savingEl = document.getElementById('savingOverlay');
+const savingTxt = document.getElementById('savingText');
+function showSaving(msg){ savingTxt.textContent = msg || '처리 중'; savingEl.classList.remove('hidden'); }
+function setSaving(msg){ savingTxt.textContent = msg; }
+function hideSaving(){ savingEl.classList.add('hidden'); }
+
+async function compressFiles(files, {label='사진'} = {}) {
+  const out = [];
+  for (let i=0;i<files.length;i++){
+    setSaving(`${label} ${i+1}/${files.length}`);
+    out.push(await fileToDataURLCompressed(files[i])); // 1024px, q=0.72로 압축
+    await new Promise(r=>setTimeout(r,0)); // 메인스레드 양보
+  }
+  return out;
+}
+
+
     function buildSummaryFromEditor(){
       const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); return null; }
       const roundTitles = roundEls.map((_,i)=>`${i+1}차`);
@@ -438,7 +467,8 @@
       return { html, count: rows.length };
     }
 
-    function fileToDataURLCompressed(file, maxW=1400, quality=0.85){
+    function fileToDataURLCompressed(file, maxW=1024, quality=0.72) {
+
       return new Promise((resolve,reject)=>{
         const reader = new FileReader();
         reader.onload = ()=>{
@@ -465,7 +495,9 @@
       if(!date || !title){ alert('날짜와 제목은 필수입니다.'); throw new Error('required'); }
 
       const photos = [...editorPhotos];
-      const newPhotoData = await Promise.all(newPhotoFiles.map(f=>fileToDataURLCompressed(f)));
+      showSaving('사진 처리 중…');
+      const newPhotoData = await compressFiles(newPhotoFiles, {label:'사진'});
+
       photos.push(...newPhotoData);
 
       const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); throw new Error('no rounds'); }
@@ -480,7 +512,8 @@
         const exclusions = $$('label.pill[data-excluded="1"]', el).map(l=>l.dataset.name).filter(n=>attendees.includes(n));
         const existing = editorReceipts[i] || [];
         const newFiles = newReceiptFiles[i] || [];
-        const newData = await Promise.all(newFiles.map(f=>fileToDataURLCompressed(f)));
+        const newData = await compressFiles(newFiles, {label:`${i+1}차 영수증`});
+
         const receiptImages = [...existing, ...newData];
         if(!corp && amount !== null && amount <= 0){ alert(`${i+1}차 금액을 확인하세요.`); throw new Error('bad amount'); }
         rounds.push({ amount, attendees, exclusions, receiptImages, corp });
@@ -496,20 +529,27 @@
     }
 
     $('#btnSave').onclick = async ()=>{
-      try{
-        const data = await collectEditorData();
-        if(isEditing){
-          const old = await getMeetingById(editingId);
-          if(!old) throw new Error('기존 데이터 없음');
-          const newIncluded = Array.from(new Set(data.rounds.flatMap(r=> r.attendees.filter(n=> !(r.exclusions||[]).includes(n)) )));
-          const merged = {}; newIncluded.forEach(n=> merged[n] = (old.paidStatus && n in old.paidStatus) ? old.paidStatus[n] : false);
-          data.paidStatus = merged;
-        }
-        await saveMeetingToDB(data);
-        alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
-        await renderList(); show(viewList);
-      }catch(e){}
-    };
+  try {
+   const btn = $('#btnSave');
+   btn.disabled = true; btn.textContent = '저장 중…';
+   showSaving('준비 중…');
+
+    await ensureAuth();                 // (있으면 유지)
+    const data = await collectEditorData();  // ← 여기서 진행표시가 갱신됩니다.
+    await saveMeetingToDB(data);
+
+    alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
+    await renderList(); show(viewList);
+  } catch (e) {
+    console.error(e);
+    alert(`저장 실패: ${e.code||e}`);
+  } finally {
+   hideSaving();
+   const btn = $('#btnSave');
+   btn.disabled = false; btn.textContent = '이 회식 저장';
+  }
+};
+
 
     // ======= 상세 보기 / 수정 / 입금 토글 / 삭제 =======
     async function openDetail(id){
