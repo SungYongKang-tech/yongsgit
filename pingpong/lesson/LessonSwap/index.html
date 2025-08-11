@@ -5,119 +5,222 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>탁구 레슨 시간표(실시간)</title>
   <style>
-    body {
-      font-family: 'Arial', sans-serif;
-      background-color: #f0f0f0;
-      padding: 10px;
-      text-align: center;
+    :root{
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #ff8a3d;
+      --primary-ink:#7a3e14;
+      --accent: #4f46e5;
+      --accent-ink:#1e1b4b;
+      --ok:#10b981;
+      --warn:#f59e0b;
+      --danger:#ef4444;
+
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --shadow-1: 0 8px 24px rgba(0,0,0,.08);
+      --shadow-2: 0 12px 36px rgba(0,0,0,.10);
+
+      --table-border:#e5e7eb;
+      --table-zebra:#fafafa;
+      --table-hover:#fff7ed;
+      --empty-pattern:#f3f4f6;
+      --selected-ring: rgba(255,138,61,.45);
     }
 
-    h1 {
-      color: #333;
-      font-size: 6vw;
+    /* 다크모드여도 라이트 유지 */
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg: #f6f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
+        --primary:#ff8a3d; --primary-ink:#7a3e14; --accent:#4f46e5; --accent-ink:#1e1b4b;
+        --ok:#10b981; --warn:#f59e0b; --danger:#ef4444;
+        --table-border:#e5e7eb; --table-zebra:#fafafa; --table-hover:#fff7ed;
+        --empty-pattern:#f3f4f6; --selected-ring: rgba(255,138,61,.45);
+      }
+    }
+
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Arial', sans-serif;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #ffd5bd40 0%, transparent 60%),
+        radial-gradient(1000px 800px at 110% 10%, #c7d2fe30 0%, transparent 55%),
+        var(--bg);
+      color: var(--text);
+      padding: 14px;
+      display: grid;
+      place-items: start center;
+      color-scheme: light only; /* 라이트 강제 */
+    }
+
+    .app {
+      width: min(960px, 100%);
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-2);
+      padding: 14px 14px 18px;
+    }
+
+    /* 헤더: 가운데 정렬 */
+    .header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
       margin-bottom: 10px;
+      text-align: center;
+    }
+    h1 {
+      margin: 0;
+      line-height: 1.15;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      font-size: clamp(22px, 6vw, 36px);
+      background: linear-gradient(90deg, var(--text) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
     }
 
     .controls {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
       gap: 8px;
-      margin-bottom: 14px;
+      margin: 10px 0 14px;
+    }
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: clamp(14px, 4vw, 16px);
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .05s ease, box-shadow .2s ease, background .2s ease, opacity .2s ease;
+      box-shadow: var(--shadow-1);
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:active { transform: translateY(1px) scale(.99); }
+
+    .btn-warn { background: linear-gradient(180deg, #ffe8d1, #ffd4ae); color: #7a4a15; }
+    .btn-warn:hover { box-shadow: 0 8px 22px rgba(255,152,0,.25); }
+
+    .btn-swap {
+      background: linear-gradient(180deg, #e6ecff, #d7defe);
+      color: var(--accent-ink);
+    }
+    /* 서로 변경 더 두껍게 */
+    #swapBtn { font-weight: 900; letter-spacing: .01em; }
+
+    .btn-swap:disabled{
+      opacity: .55; filter: grayscale(.3); cursor: not-allowed; box-shadow: none;
     }
 
-    button {
-      padding: 8px 14px;
-      font-size: 4.2vw;
-      min-width: 90px;
-      flex: 1 1 auto;
-      max-width: 140px;
+    .btn-reset { background: linear-gradient(180deg, #ecfdf5, #d1fae5); color: #065f46; }
+    .btn-reset:hover { box-shadow: 0 8px 22px rgba(16,185,129,.25); }
+
+    #scheduleContainer {
+      background: linear-gradient(180deg, rgba(0,0,0,.03), transparent);
+      border: 1px solid var(--table-border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-1);
     }
 
     table {
       width: 100%;
-      max-width: 600px;
-      margin: 0 auto;
-      border-collapse: collapse;
-      font-size: 4.2vw;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: clamp(14px, 4.2vw, 18px);
     }
-
     th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
+      border-bottom: 1px solid var(--table-border);
+      padding: clamp(8px, 2.6vw, 12px);
+      text-align: center;
     }
-
-    th {
-      background-color: #ffe8d6;
+    thead th {
+      position: sticky; top: 0;
+      background: linear-gradient(180deg, #fff3e9, #ffe8d6);
+      z-index: 1; font-weight: 800; letter-spacing: .02em;
     }
+    tbody tr:nth-child(even) td { background: var(--table-zebra); }
+    tbody tr:hover td { background: var(--table-hover); }
 
-    td.empty {
-      background-color: #eee;
-      cursor: pointer;
-    }
-
-    td {
-      cursor: pointer;
+    td { cursor: pointer; }
+    td.empty{
+      background:
+        repeating-linear-gradient(45deg, var(--empty-pattern), var(--empty-pattern) 8px, transparent 8px, transparent 16px);
+      color: var(--muted);
+      font-weight: 600;
     }
 
     .selected {
-      outline: 3px solid #ff9800;
-      background-color: #fff8e1 !important;
+      position: relative;
+      background: #fff8e1 !important;
+      box-shadow: 0 0 0 3px var(--selected-ring) inset, 0 1px 0 rgba(0,0,0,.02);
+      animation: glow .8s ease-out;
+    }
+    @keyframes glow {
+      from { box-shadow: 0 0 0 6px rgba(255,138,61,.65) inset; }
+      to   { box-shadow: 0 0 0 3px var(--selected-ring) inset; }
     }
 
     .modified {
-      font-weight: bold;
-      color: #1976d2;
+      font-weight: 800;
+      color: var(--accent);
+      position: relative;
+    }
+    .modified::after{
+      content: '•'; margin-left: 6px; font-size: 1.1em; color: var(--accent); vertical-align: middle;
     }
 
     #note {
-      margin-top: 24px;
-      font-size: 4.2vw;
-      color: #555;
-      text-align: left;
-      max-width: 600px;
-      margin-left: auto;
-      margin-right: auto;
+      margin-top: 18px; color: var(--muted); text-align: left;
+      font-size: clamp(13px, 3.8vw, 15px); line-height: 1.6;
+      background: linear-gradient(180deg, rgba(79,70,229,.06), rgba(79,70,229,.02));
+      border: 1px dashed rgba(79,70,229,.25);
+      padding: 12px 14px; border-radius: 12px;
+      max-width: 960px; margin-left: auto; margin-right: auto;
+    }
+    #note strong { color: var(--text); }
+
+    @media (min-width: 768px){
+      .app { padding: 18px 18px 22px; }
+      .controls { gap: 10px; }
+      button { padding: 12px 16px; }
     }
 
-    @media (min-width: 768px) {
-      button {
-        font-size: 16px;
-        padding: 8px 16px;
-        max-width: none;
-      }
-
-      h1 {
-        font-size: 28px;
-      }
-
-      table {
-        font-size: 18px;
-      }
-
-      #note {
-        font-size: 16px;
-      }
+    ::-webkit-scrollbar{ height: 10px; width: 10px; }
+    ::-webkit-scrollbar-thumb{
+      background: linear-gradient(180deg, #ffedd5, #dbeafe);
+      border-radius: 999px;
     }
+    ::-webkit-scrollbar-track{ background: transparent; }
   </style>
 </head>
 <body>
-  <h1>탁구 레슨 시간표</h1>
-  <div id="userNameDisplay"></div>
+  <main class="app">
+    <div class="header">
+      <h1>탁구 레슨 시간표</h1>
+    </div>
 
-  <div class="controls">
-    <button onclick="markAbsent()">비우기</button>
-    <button id="swapBtn" onclick="handleSwap()" disabled>서로 변경</button>
-    <button onclick="importSchedule()">시간표 초기화</button>
-  </div>
+    <div class="controls">
+      <button class="btn-warn" onclick="markAbsent()">🧹 비우기</button>
+      <button class="btn-swap" id="swapBtn" onclick="handleSwap()" disabled>🔁 서로 변경</button>
+      <button class="btn-reset" onclick="importSchedule()">✅ 시간표 초기화</button>
+    </div>
 
-  <div id="scheduleContainer"></div>
+    <div id="scheduleContainer"><!-- script.js가 표를 주입 --></div>
 
-  <div id="note">
-    ※ <strong>불참</strong> : 이름 선택 후 <strong>[비우기]</strong> 버튼 클릭<br>
-    ※ <strong>빈 시간 등록</strong> : 이름 선택 후 <strong>비어 있는 칸</strong> 클릭<br>
-    ※ <strong>서로변경</strong> : 이름 두개 선택 후 <strong>[서로 변경]</strong> 버튼 클릭
-  </div>
+    <div id="note">
+      ※ <strong>불참</strong> : 이름 선택 후 <strong>[비우기]</strong> 버튼 클릭<br>
+      ※ <strong>빈 시간 등록</strong> : 이름 선택 후 <strong>빈 칸</strong> 클릭<br>
+      ※ <strong>서로 변경</strong> : 이름 두 개 선택 후 <strong>[서로 변경]</strong> 버튼 클릭
+    </div>
+  </main>
 
   <script type="module" src="script.js"></script>
 </body>
