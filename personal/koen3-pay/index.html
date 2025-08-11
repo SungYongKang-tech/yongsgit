@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>남동3기 회식비 정산 (Firebase)</title>
+  <title>남동3기 회식비 정산 (Firebase Storage)</title>
   <style>
     :root { --primary:#2b6cb0; --muted:#f5f7fb; }
     * { box-sizing: border-box; }
@@ -199,6 +199,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
     // 프로젝트 설정
     const firebaseConfig = {
@@ -214,6 +215,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth(app);
+    const storage = getStorage(app);
 
     // 익명 로그인 보장 (전역)
     async function ensureAuth() {
@@ -236,7 +238,7 @@
 
     let isEditing = false, editingId = null;
     let editorPhotos = [], newPhotoFiles = [];
-    let editorReceipts = {}, newReceiptFiles = {};
+    let editorReceipts = {}, newReceiptFiles = {}; // per round
 
     // DB helpers
     async function getAllMeetings() {
@@ -248,14 +250,85 @@
       const snap = await get(ref(db, `meetings/${id}`));
       return snap.exists() ? snap.val() : null;
     }
-    async function saveMeetingToDB(meeting) {
-      await set(ref(db, `meetings/${meeting.id}`), meeting);
+    async function saveMeetingToDB(meeting) { await set(ref(db, `meetings/${meeting.id}`), meeting); }
+    async function deleteMeetingFromDB(id) { await remove(ref(db, `meetings/${id}`)); }
+    async function updatePaidStatus(id, paidStatus) { await update(ref(db, `meetings/${id}`), { paidStatus }); }
+
+    // ======= 이미지 처리/업로드 =======
+    const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+    function showSaving(msg){ $('#savingText').textContent = msg || '처리 중'; $('#savingOverlay').classList.remove('hidden'); }
+    function setSaving(msg){ $('#savingText').textContent = msg; }
+    function hideSaving(){ $('#savingOverlay').classList.add('hidden'); }
+
+    function loadImage(src){
+      return new Promise((resolve,reject)=>{
+        const img = new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src;
+      });
     }
-    async function deleteMeetingFromDB(id) {
-      await remove(ref(db, `meetings/${id}`));
+    function fileToDataURL(file){
+      return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
     }
-    async function updatePaidStatus(id, paidStatus) {
-      await update(ref(db, `meetings/${id}`), { paidStatus });
+    async function drawToCanvas(src, maxW){
+      const img = typeof src === 'string' && src.startsWith('data:') ? await loadImage(src) : await loadImage(src);
+      const s = Math.min(1, maxW / img.width);
+      const w = Math.max(1, Math.round(img.width * s));
+      const h = Math.max(1, Math.round(img.height * s));
+      const canvas = document.createElement('canvas'); canvas.width=w; canvas.height=h;
+      const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+      return canvas;
+    }
+    function canvasToBlob(canvas, quality=0.8, type='image/jpeg'){
+      return new Promise((resolve)=> canvas.toBlob(b=>resolve(b), type, quality));
+    }
+    async function compressWithLimit(fileOrDataURL, {maxW, qualityStart=0.82, minQuality=0.55, step=0.07}){
+      // 입력이 File이면 DataURL로
+      const dataURL = (fileOrDataURL instanceof File) ? await fileToDataURL(fileOrDataURL) : fileOrDataURL;
+      let q = qualityStart, w = maxW;
+      for (let attempt=0; attempt<6; attempt++){
+        const canvas = await drawToCanvas(dataURL, w);
+        const blob = await canvasToBlob(canvas, q);
+        if (blob.size <= MAX_BYTES) return blob;
+        // 더 줄이기: 품질 ↓ → 그래도 크면 가로폭 ↓
+        if (q > minQuality) { q = Math.max(minQuality, q - step); }
+        else { w = Math.round(w * 0.85); if (w < 600) return blob; } // 더 못 줄이면 그대로
+      }
+      const canvas = await drawToCanvas(dataURL, w);
+      return await canvasToBlob(canvas, minQuality);
+    }
+    function randomId(){ return Math.random().toString(36).slice(2,10); }
+
+    async function uploadBlob(meetingId, blob, path, onProgress){
+      const storageRef = sRef(storage, path);
+      const task = uploadBytesResumable(storageRef, blob, { contentType: 'image/jpeg' });
+      return await new Promise((resolve, reject)=>{
+        task.on('state_changed',
+          (snap)=>{ if(onProgress){ const pct = Math.round((snap.bytesTransferred/snap.totalBytes)*100); onProgress(pct); } },
+          reject,
+          async ()=> resolve(await getDownloadURL(task.snapshot.ref))
+        );
+      });
+    }
+
+    async function uploadPhotoSet(meetingId, file, index, total){
+      setSaving(`사진 ${index}/${total} 준비`);
+      const fullBlob = await compressWithLimit(file, {maxW: 1400, qualityStart: 0.82});
+      const thumbBlob = await compressWithLimit(file, {maxW: 320, qualityStart: 0.75});
+      const base = `meetings/${meetingId}`;
+      const name = `${Date.now()}_${randomId()}.jpg`;
+      setSaving(`사진 업로드 ${index}/${total} (원본)`);
+      const fullUrl  = await uploadBlob(meetingId, fullBlob, `${base}/photos/${name}`, (p)=>setSaving(`사진 업로드 ${index}/${total} (원본 ${p}%)`));
+      setSaving(`사진 업로드 ${index}/${total} (썸네일)`);
+      const thumbUrl = await uploadBlob(meetingId, thumbBlob, `${base}/thumbs/${name}`, (p)=>setSaving(`사진 업로드 ${index}/${total} (썸네일 ${p}%)`));
+      return { full: fullUrl, thumb: thumbUrl };
+    }
+
+    async function uploadReceipt(meetingId, roundIdx, file, index, total){
+      setSaving(`영수증 ${index}/${total} 준비`);
+      const blob = await compressWithLimit(file, {maxW: 1200, qualityStart: 0.8});
+      const base = `meetings/${meetingId}`;
+      const name = `${Date.now()}_${randomId()}.jpg`;
+      const url = await uploadBlob(meetingId, blob, `${base}/receipts/${name}`, (p)=>setSaving(`영수증 업로드 ${index}/${total} (${p}%)`));
+      return url;
     }
 
     // ======= 화면 전환 =======
@@ -272,19 +345,17 @@
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = '남동3기-회식정산-백업.json';
-      a.click();
-      URL.revokeObjectURL(a.href);
+      a.click(); URL.revokeObjectURL(a.href);
     };
     $('#importFile').onchange = async (e)=>{
       const f = e.target.files[0]; if(!f) return;
-      try {
+      try{
         const list = JSON.parse(await f.text());
         if (!Array.isArray(list)) throw new Error('형식 오류');
         for (const m of list) { if (m && m.id) await saveMeetingToDB(m); }
-        alert('가져오기가 완료되었습니다.');
-        await renderList(); show(viewList);
-      } catch(err) { alert('가져오기 실패: ' + err.message); }
-      finally { e.target.value = ''; }
+        alert('가져오기가 완료되었습니다.'); await renderList(); show(viewList);
+      }catch(err){ alert('가져오기 실패: '+err.message); }
+      finally { e.target.value=''; }
     };
 
     // ======= 목록(2열) =======
@@ -293,7 +364,11 @@
       const body = $('#listBody'); body.innerHTML=''; $('#emptyNote').style.display = list.length ? 'none' : 'block';
       list.forEach(item=>{
         const unique = new Set(item.rounds.flatMap(r=>r.attendees||[]));
-        const thumbSrc = (item.photos && item.photos[0]) ? item.photos[0] : null;
+        let thumbSrc = null;
+        if (item.photos && item.photos[0]){
+          const p = item.photos[0];
+          thumbSrc = typeof p === 'string' ? p : (p.thumb || p.full);
+        }
         const row = document.createElement('div'); row.className='list-row';
         row.innerHTML = `
           <div>
@@ -301,7 +376,7 @@
             <div class="info-title">${item.title||'-'}</div>
             <div class="info-meta">참석 ${unique.size.toLocaleString('ko-KR')}명 · 장소 ${item.place||'-'}</div>
           </div>
-          <div>${thumbSrc ? `<img src="${thumbSrc}" alt="회식 썸네일" class="thumb zoomable">` : `<div class="thumb placeholder">사진없음</div>`}</div>
+          <div>${thumbSrc ? `<img src="${thumbSrc}" alt="회식 썸네일" class="thumb zoomable" loading="lazy">` : `<div class="thumb placeholder">사진없음</div>`}</div>
         `;
         body.appendChild(row);
       });
@@ -350,8 +425,13 @@
       updateAttendeeListFor(container);
 
       $('.receiptInput', container).addEventListener('change', (e)=>{
-        const files = Array.from(e.target.files||[]); const rIdx = parseInt(container.dataset.idx,10);
-        newReceiptFiles[rIdx].push(...files); renderReceiptPreview(container); e.target.value='';
+        const files = Array.from(e.target.files||[]);
+        const rIdx = parseInt(container.dataset.idx,10);
+        // 2MB 사전 필터
+        const filtered = files.filter(f=> f.size <= MAX_BYTES);
+        if (filtered.length < files.length) alert('2MB를 초과한 영수증은 제외했습니다.');
+        newReceiptFiles[rIdx].push(...filtered);
+        renderReceiptPreview(container); e.target.value='';
       });
       renderReceiptPreview(container);
 
@@ -382,8 +462,9 @@
       const rIdx = parseInt(roundEl.dataset.idx,10);
       const box = roundEl.querySelector('.receiptPreview'); box.innerHTML='';
       (editorReceipts[rIdx]||[]).forEach((src,i)=>{
+        const viewSrc = typeof src === 'string' ? src : (src.thumb || src.full || src);
         const wrap = document.createElement('div'); wrap.className='preview-row';
-        const img = document.createElement('img'); img.src=src; img.alt='영수증'; img.classList.add('zoomable');
+        const img = document.createElement('img'); img.src=viewSrc; img.alt='영수증'; img.classList.add('zoomable');
         const btn = document.createElement('button'); btn.className='ex-toggle'; btn.textContent='삭제';
         btn.dataset.role='del-receipt-existing'; btn.dataset.idx=String(rIdx); btn.dataset.i=String(i);
         wrap.appendChild(img); wrap.appendChild(btn); box.appendChild(wrap);
@@ -400,13 +481,17 @@
     }
 
     $('#groupPhoto').addEventListener('change', (e)=>{
-      const files = Array.from(e.target.files||[]); newPhotoFiles.push(...files); renderPhotoPreview(); e.target.value='';
+      const files = Array.from(e.target.files||[]);
+      const filtered = files.filter(f=> f.size <= MAX_BYTES);
+      if (filtered.length < files.length) alert('2MB를 초과한 사진은 제외했습니다.');
+      newPhotoFiles.push(...filtered); renderPhotoPreview(); e.target.value='';
     });
     function renderPhotoPreview(){
       const box = $('#photoPreview'); box.innerHTML='';
       editorPhotos.forEach((src,i)=>{
+        const viewSrc = (typeof src === 'string') ? src : (src.thumb || src.full);
         const wrap = document.createElement('div'); wrap.className='preview-row';
-        const img = document.createElement('img'); img.src=src; img.alt='사진'; img.classList.add('zoomable');
+        const img = document.createElement('img'); img.src=viewSrc; img.alt='사진'; img.classList.add('zoomable');
         const btn = document.createElement('button'); btn.className='ex-toggle'; btn.textContent='삭제'; btn.dataset.role='del-photo-existing'; btn.dataset.i=String(i);
         wrap.appendChild(img); wrap.appendChild(btn); box.appendChild(wrap);
       });
@@ -425,23 +510,6 @@
       const dummy = buildSummaryFromEditor(); if(!dummy) return;
       $('#editorSummary').innerHTML = dummy.html; $('#editorPreview').classList.remove('hidden');
     };
-
-    // 저장 오버레이/압축 유틸
-    const savingEl = document.getElementById('savingOverlay');
-    const savingTxt = document.getElementById('savingText');
-    function showSaving(msg){ savingTxt.textContent = msg || '처리 중'; savingEl.classList.remove('hidden'); }
-    function setSaving(msg){ savingTxt.textContent = msg; }
-    function hideSaving(){ savingEl.classList.add('hidden'); }
-
-    async function compressFiles(files, {label='사진'} = {}) {
-      const out = [];
-      for (let i=0;i<files.length;i++){
-        setSaving(`${label} ${i+1}/${files.length}`);
-        out.push(await fileToDataURLCompressed(files[i])); // 1024px, q=0.72
-        await new Promise(r=>setTimeout(r,0));
-      }
-      return out;
-    }
 
     function buildSummaryFromEditor(){
       const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); return null; }
@@ -477,66 +545,9 @@
       return { html, count: rows.length };
     }
 
-    function fileToDataURLCompressed(file, maxW=1024, quality=0.72) {
-      return new Promise((resolve,reject)=>{
-        const reader = new FileReader();
-        reader.onload = ()=>{
-          const img = new Image();
-          img.onload = ()=>{
-            const canvas = document.createElement('canvas');
-            const s = Math.min(1, maxW/img.width);
-            canvas.width = Math.max(1, Math.round(img.width*s));
-            canvas.height = Math.max(1, Math.round(img.height*s));
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img,0,0,canvas.width,canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-          };
-          img.onerror = reject; img.src = reader.result;
-        };
-        reader.onerror = reject; reader.readAsDataURL(file);
-      });
-    }
+    function formatNumber(num){ return Math.round(num).toLocaleString('ko-KR'); }
 
-    async function collectEditorData(){
-      const date = $('#meetingDate').value;
-      const title = $('#meetingTitle').value.trim();
-      const place = $('#meetingPlace').value.trim();
-      if(!date || !title){ alert('날짜와 제목은 필수입니다.'); throw new Error('required'); }
-
-      const photos = [...editorPhotos];
-      showSaving('사진 처리 중…');
-      const newPhotoData = await compressFiles(newPhotoFiles, {label:'사진'});
-      photos.push(...newPhotoData);
-
-      const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); throw new Error('no rounds'); }
-      const rounds = [];
-      for(let i=0;i<roundEls.length;i++){
-        const el = roundEls[i];
-        const corp = $('.corpCard', el).checked;
-        const amountRaw = $('.amount', el).value.trim();
-        const amount = amountRaw === '' ? null : parseInt(amountRaw,10);
-        const attendees = $$('input[data-role="attend"]:checked', el).map(cb=>cb.value);
-        if(!attendees.length){ alert(`${i+1}차 참석자를 선택하세요.`); throw new Error('no attendees'); }
-        const exclusions = $$('label.pill[data-excluded="1"]', el).map(l=>l.dataset.name).filter(n=>attendees.includes(n));
-        const existing = editorReceipts[i] || [];
-        const newFiles = newReceiptFiles[i] || [];
-        const newData = await compressFiles(newFiles, {label:`${i+1}차 영수증`});
-        const receiptImages = [...existing, ...newData];
-
-        if(!corp && amount !== null && amount <= 0){ alert(`${i+1}차 금액을 확인하세요.`); throw new Error('bad amount'); }
-        rounds.push({ amount, attendees, exclusions, receiptImages, corp });
-      }
-
-      let paidStatus = {};
-      if(!isEditing){
-        const people = Array.from(new Set(rounds.flatMap(r=> r.attendees.filter(n=> !(r.exclusions||[]).includes(n)) )));
-        paidStatus = Object.fromEntries(people.map(n=>[n,false]));
-      }
-
-      return { id: isEditing ? editingId : Date.now().toString(), date, title, place, rounds, photos, paidStatus };
-    }
-
-    // 저장 버튼
+    // ======= 저장 버튼 (업로드 → DB) =======
     $('#btnSave').onclick = async ()=>{
       try {
         const btn = $('#btnSave');
@@ -545,9 +556,66 @@
 
         await ensureAuth();
 
-        const data = await collectEditorData();
+        const date = $('#meetingDate').value;
+        const title = $('#meetingTitle').value.trim();
+        const place = $('#meetingPlace').value.trim();
+        if(!date || !title){ alert('날짜와 제목은 필수입니다.'); throw new Error('required'); }
 
-        // 편집 중이면 paidStatus 병합 유지
+        const meetingId = isEditing ? editingId : Date.now().toString();
+
+        // rounds 메타 수집
+        const roundEls = $$('.round'); if(!roundEls.length){ alert('차수를 추가하세요.'); throw new Error('no rounds'); }
+        const rounds = [];
+        for(let i=0;i<roundEls.length;i++){
+          const el = roundEls[i];
+          const corp = $('.corpCard', el).checked;
+          const amountRaw = $('.amount', el).value.trim();
+          const amount = amountRaw === '' ? null : parseInt(amountRaw,10);
+          const attendees = $$('input[data-role="attend"]:checked', el).map(cb=>cb.value);
+          if(!attendees.length){ alert(`${i+1}차 참석자를 선택하세요.`); throw new Error('no attendees'); }
+          const exclusions = $$('label.pill[data-excluded="1"]', el).map(l=>l.dataset.name).filter(n=>attendees.includes(n));
+          rounds.push({ amount, attendees, exclusions, corp, receiptImages: [] }); // URL 나중에 채움
+        }
+
+        // 사진 업로드 (기존+신규)
+        const photos = [];
+        // 기존 보존(문자열 or {full,thumb})
+        editorPhotos.forEach(p=>{
+          if (typeof p === 'string') photos.push(p); else photos.push({full: p.full, thumb: p.thumb || p.full});
+        });
+        // 신규 업로드
+        for(let i=0;i<newPhotoFiles.length;i++){
+          const result = await uploadPhotoSet(meetingId, newPhotoFiles[i], i+1, newPhotoFiles.length);
+          photos.push(result); // {full, thumb}
+        }
+
+        // 영수증 업로드
+        const totalReceipts = Object.values(newReceiptFiles).reduce((acc,arr)=> acc + (arr?.length||0), 0) || 0;
+        let uploaded = 0;
+        for(let r=0;r<rounds.length;r++){
+          // 기존 보존(문자열 URL 또는 dataURL)
+          (editorReceipts[r]||[]).forEach(u=>{
+            if (typeof u === 'string') rounds[r].receiptImages.push(u);
+            else rounds[r].receiptImages.push(u.full || u.thumb); // 혹시 객체 형태가 들어온 경우
+          });
+          // 신규 업로드
+          const files = newReceiptFiles[r] || [];
+          for (let i=0;i<files.length;i++){
+            const url = await uploadReceipt(meetingId, r, files[i], ++uploaded, totalReceipts);
+            rounds[r].receiptImages.push(url);
+          }
+        }
+
+        // paidStatus
+        let paidStatus = {};
+        if(!isEditing){
+          const people = Array.from(new Set(rounds.flatMap(r=> r.attendees.filter(n=> !(r.exclusions||[]).includes(n)) )));
+          paidStatus = Object.fromEntries(people.map(n=>[n,false]));
+        }
+
+        const data = { id: meetingId, date, title, place, rounds, photos, paidStatus };
+
+        // 편집 시 paidStatus 병합
         if (isEditing) {
           const old = await getMeetingById(editingId);
           if (!old) throw new Error('기존 데이터 없음');
@@ -564,6 +632,10 @@
         await saveMeetingToDB(data);
         alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
         await renderList(); show(viewList);
+
+        // 에디터 초기화
+        resetEditor();
+
       } catch (e) {
         console.error(e);
         alert(`저장 실패: ${e.code || e.name || ''}\n${e.message || e}`);
@@ -586,10 +658,14 @@
 
       const recWrap = $('#detailReceipts'); recWrap.innerHTML='';
       item.rounds.forEach((r,idx)=> (r.receiptImages||[]).forEach(src=>{
-        const img=document.createElement('img'); img.src=src; img.alt=`${idx+1}차 영수증`; img.classList.add('zoomable'); recWrap.appendChild(img);
+        const viewSrc = (typeof src === 'string') ? src : (src.full || src.thumb || src);
+        const img=document.createElement('img'); img.src=viewSrc; img.alt=`${idx+1}차 영수증`; img.classList.add('zoomable'); recWrap.appendChild(img);
       }));
       const pWrap = $('#detailPhotos'); pWrap.innerHTML='';
-      (item.photos||[]).forEach(src=>{ const img=document.createElement('img'); img.src=src; img.alt='회식 사진'; img.classList.add('zoomable'); pWrap.appendChild(img); });
+      (item.photos||[]).forEach(p=>{
+        const viewSrc = (typeof p === 'string') ? p : (p.full || p.thumb);
+        const img=document.createElement('img'); img.src=viewSrc; img.alt='회식 사진'; img.classList.add('zoomable'); pWrap.appendChild(img);
+      });
 
       renderPaidTable(item);
 
@@ -713,8 +789,7 @@
       });
     }
 
-    // ======= 공용 유틸 & 라이트박스 =======
-    function formatNumber(num){ return Math.round(num).toLocaleString('ko-KR'); }
+    // ======= 캡처 & 라이트박스 =======
     async function captureElement(el, filename='정산결과.png'){
       const canvas = await html2canvas(el,{ scale:2, useCORS:true, backgroundColor:'#fff',
         windowWidth: el.scrollWidth, windowHeight: el.scrollHeight, scrollX:0, scrollY:-window.scrollY });
@@ -746,7 +821,7 @@
       if (btn.dataset.role === 'del-receipt-new'){ const rIdx=+btn.dataset.idx, i=+btn.dataset.i; (newReceiptFiles[rIdx]||[]).splice(i,1); const roundEl=$$('.round')[rIdx]; if(roundEl) renderReceiptPreview(roundEl); return; }
     });
 
-    // ======= 초기화: 익명 로그인 후 시작 =======
+    // ======= 초기화 =======
     function initUI(){
       $('#btnCapture').onclick = ()=> captureElement($('#detailSummary'), '정산결과.png');
       renderList(); show(viewList);
