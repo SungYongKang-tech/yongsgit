@@ -87,7 +87,7 @@
     <section id="view-list" class="grid">
       <div class="card">
         <div class="list-row list-head">
-          <div>정보</div><div style="text-align:right;">사진</div>
+      <!--    <div>정보</div><div style="text-align:right;">사진</div>  -->
         </div>
         <div id="listBody"></div>
         <p class="muted" id="emptyNote" style="display:none; padding:10px 2px;">아직 저장된 회식이 없습니다. “새 회식”을 눌러 입력한 후 저장하세요.</p>
@@ -654,14 +654,18 @@ summary.textContent = buildOverridesSummary(container);
       const btn = document.createElement('button'); btn.className='ex-toggle'; btn.textContent='삭제'; btn.dataset.role='del-photo-existing'; btn.dataset.i=String(i);
       wrap.appendChild(img); wrap.appendChild(btn); box.appendChild(wrap);
     });
-    newPhotoFiles.forEach((file,i)=>{
-      const url = URL.createObjectURL(file);
-      const wrap = document.createElement('div'); wrap.className='preview-row';
-      const img = document.createElement('img'); img.src=url; img.alt='사진(신규)'; img.classList.add('zoomable');
-      const btn = document.createElement('button'); btn.className='ex-toggle'; btn.textContent='삭제'; btn.dataset.role='del-photo-new'; btn.dataset.i=String(i);
-      wrap.appendChild(img); wrap.appendChild(btn); box.appendChild(wrap);
-      img.onload = ()=> URL.revokeObjectURL(url);
-    });
+   newPhotoFiles
+  .filter(f => f instanceof Blob)   // ✅ Blob/File만 처리
+  .forEach((file,i)=>{
+    const url = URL.createObjectURL(file);
+    const wrap = document.createElement('div'); wrap.className='preview-row';
+    const img = document.createElement('img'); img.src=url; img.alt='사진(신규)'; img.classList.add('zoomable');
+    const btn = document.createElement('button'); btn.className='ex-toggle'; btn.textContent='삭제';
+    btn.dataset.role='del-photo-new'; btn.dataset.i=String(i);
+    wrap.appendChild(img); wrap.appendChild(btn); box.appendChild(wrap);
+    img.onload = ()=> URL.revokeObjectURL(url);
+  });
+
   }
 
   $('#btnPreview').onclick = ()=>{
@@ -943,7 +947,6 @@ function renderPaidTable(item){
 
       // ✅ 영수증/오버라이드 세팅 (여기에 넣기)
       editorReceipts[i]   = [...(r.receiptImages||[])];
-      newPhotoFiles[i]    = newPhotoFiles[i] || [];    // (필수 아님, 안전용)
       newReceiptFiles[i]  = [];
       editorOverrides[i]  = { ...(r.overrides || {}) };  // ← 오버라이드 불러오기
       renderReceiptPreview(roundEl);                      // 미리보기 1번만 호출!
