@@ -351,7 +351,7 @@ async function compressWithLimit(fileOrDataURL, {maxW, qualityStart=0.82, minQua
 }
 
    // ✅ 워치독(30초 무진행 시 재시도) + Blob 타입 반영 + 캐시 설정
-async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 2){
+async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
   const tryOnce = () => new Promise((resolve, reject)=>{
     const storageRef = sRef(storage, path);
 
@@ -366,7 +366,7 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 2){
     let lastBytes = 0;
     let stalledMs = 0;
     const TICK = 1000;         // 1초마다 체크
-    const STALL_LIMIT = 30000; // 30초 무진행 시 재시도
+    const STALL_LIMIT = 45000; // 45초 무진행 시 재시도
 
     const watchdog = setInterval(()=>{
       const snap = task.snapshot;
@@ -392,9 +392,17 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 2){
         }
       },
       (err)=>{
-        clearInterval(watchdog);
-        reject(err);
-      },
+  clearInterval(watchdog);
+  console.error('[UPLOAD ERROR]', {
+    code: err.code,
+    message: err.message,
+    name: err.name,
+    path,
+    contentType: meta.contentType
+  });
+  reject(err);
+},
+
       async ()=>{
         clearInterval(watchdog);
         try {
@@ -410,16 +418,26 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 2){
   let attempt = 0, lastErr = null;
   while (attempt <= maxRetries){
     try {
+      if (!navigator.onLine) {
+        setSaving('오프라인 감지됨. 네트워크 복구 대기...');
+        // 온라인 될 때까지 대기
+        await new Promise(resolve => {
+          const h = ()=>{ window.removeEventListener('online', h); resolve(); };
+          window.addEventListener('online', h);
+        });
+      }
       if (attempt > 0) setSaving(`재시도 중... (${attempt}/${maxRetries})`);
       return await tryOnce();
     } catch (e) {
       lastErr = e;
-      // 권한 문제는 재시도해도 소용 없음 → 즉시 실패
-      if (String(e.code||'').includes('unauthorized')) throw e;
-
-      // 스톨/네트워크 이슈는 재시도
+      // 권한 문제/앱체크는 재시도해도 소용 없음 → 즉시 실패
+      if (String(e.code||'').includes('unauthorized') || String(e.code||'').includes('appCheck')) {
+        throw e;
+      }
       attempt++;
-      await new Promise(r => setTimeout(r, 800)); // 짧게 쉬고 재시도
+      // 지수 백오프
+      const backoff = Math.min(3000, 500 * attempt);
+      await new Promise(r=>setTimeout(r, backoff));
     }
   }
   throw lastErr || new Error('upload-failed');
