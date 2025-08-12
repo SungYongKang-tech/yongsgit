@@ -578,6 +578,7 @@ let editorOverrides = {};  // { [roundIdx]: { [name]: number } }
     // [개별 금액] 패널 열기/적용/초기화/닫기
 const panel = $('[data-role="overrides-panel"]', container);
 const summary = $('[data-role="overrides-summary"]', container);
+summary.textContent = buildOverridesSummary(container);
 
 $('[data-role="open-overrides"]', container).onclick = ()=>{
   renderOverridesPanel(container);
@@ -617,21 +618,41 @@ $('.amount', container).addEventListener('input', ()=> {
 // ✅ 요약 초기 표시 (함수 내부!)
 summary.textContent = buildOverridesSummary(container);
 }
-  function updateAttendeeListFor(roundEl){
-    const div = $('.attendee-list', roundEl);
-    const prevChecked = $$('input[data-role="attend"]:checked', div).map(el=>el.value);
-    const prevExcluded = $$('label.pill[data-excluded="1"]', div).map(el=>el.dataset.name);
-    div.innerHTML = allAttendees.map(n=>{
-      const checked = prevChecked.includes(n) ? 'checked' : '';
-      const excluded = prevExcluded.includes(n) ? ' data-excluded="1"' : '';
-      const exText = prevExcluded.includes(n) ? '제외됨' : '제외';
-      return `
-        <label class="pill"${excluded} data-name="${n}">
-          <input type="checkbox" data-role="attend" value="${n}" ${checked}> ${n}
-          <button type="button" class="ex-toggle${prevExcluded.includes(n)?' active':''}" data-role="ex-toggle" data-name="${n}">${exText}</button>
-        </label>`;
-    }).join('');
-  }
+function updateAttendeeListFor(roundEl){
+  const div = $('.attendee-list', roundEl);
+
+  // 이전 선택/제외 상태 유지
+  const prevChecked  = $$('input[data-role="attend"]:checked', div).map(el => el.value);
+  const prevExcluded = $$('label.pill[data-excluded="1"]', div).map(el => el.dataset.name);
+
+  // 참석자 UI 다시 그리기
+  div.innerHTML = allAttendees.map(n => {
+    const checked  = prevChecked.includes(n) ? 'checked' : '';
+    const excluded = prevExcluded.includes(n) ? ' data-excluded="1"' : '';
+    const exText   = prevExcluded.includes(n) ? '제외됨' : '제외';
+    return `
+      <label class="pill"${excluded} data-name="${n}">
+        <input type="checkbox" data-role="attend" value="${n}" ${checked}> ${n}
+        <button type="button" class="ex-toggle${prevExcluded.includes(n)?' active':''}"
+                data-role="ex-toggle" data-name="${n}">${exText}</button>
+      </label>`;
+  }).join('');
+
+  // ✅ 체크박스 변경 시, 패널이 열려 있으면 즉시 다시 계산/표시 + 요약도 갱신
+  $$('input[data-role="attend"]', div).forEach(cb => {
+    cb.addEventListener('change', () => {
+      const panel = $('[data-role="overrides-panel"]', roundEl);
+      if (panel && !panel.classList.contains('hidden')) {
+        renderOverridesPanel(roundEl);      // 패널 내용 다시 그림
+      }
+      const sumEl = $('[data-role="overrides-summary"]', roundEl);
+      if (sumEl) {
+        sumEl.textContent = buildOverridesSummary(roundEl); // 요약 문구 갱신
+      }
+    });
+  });
+}
+
 
   function renderReceiptPreview(roundEl){
     const rIdx = parseInt(roundEl.dataset.idx,10);
@@ -1010,13 +1031,21 @@ function renderPaidTable(item){
     const img = e.target.closest('img.zoomable'); if(img){ openImgModal(img.src); return; }
     const btn = e.target.closest('[data-role]'); if(!btn) return;
     if (btn.dataset.role === 'ex-toggle'){
-      const pill = btn.closest('label.pill'); if(!pill) return;
-      const isEx = pill.getAttribute('data-excluded') === '1';
-      pill.setAttribute('data-excluded', isEx ? '0' : '1');
-      btn.textContent = isEx ? '제외' : '제외됨';
-      btn.classList.toggle('active', !isEx);
-      return;
-    }
+  const pill = btn.closest('label.pill'); if(!pill) return;
+  const isEx = pill.getAttribute('data-excluded') === '1';
+  pill.setAttribute('data-excluded', isEx ? '0' : '1');
+  btn.textContent = isEx ? '제외' : '제외됨';
+  btn.classList.toggle('active', !isEx);
+
+  // ⬇️ 패널/요약 즉시 갱신
+  const roundEl = btn.closest('.round');
+  const panel = $('[data-role="overrides-panel"]', roundEl);
+  if (panel && !panel.classList.contains('hidden')) renderOverridesPanel(roundEl);
+  const sumEl = $('[data-role="overrides-summary"]', roundEl);
+  if (sumEl) sumEl.textContent = buildOverridesSummary(roundEl);
+
+  return;
+}
     if (btn.dataset.role === 'del-photo-existing'){ const i = +btn.dataset.i; editorPhotos.splice(i,1); renderPhotoPreview(); return; }
     if (btn.dataset.role === 'del-photo-new'){ const i = +btn.dataset.i; newPhotoFiles.splice(i,1); renderPhotoPreview(); return; }
     if (btn.dataset.role === 'del-receipt-existing'){ const rIdx=+btn.dataset.idx, i=+btn.dataset.i; (editorReceipts[rIdx]||[]).splice(i,1); const roundEl=$$('.round')[rIdx]; if(roundEl) renderReceiptPreview(roundEl); return; }
@@ -1144,7 +1173,14 @@ $('#btnAddMember').onclick = () => {
   // 저장 & 모든 차수 참석자 UI 다시 그리기(체크/제외 상태는 유지됨)
   saveAttendees();
   $$('.round').forEach(r => updateAttendeeListFor(r));
-
+$$('.round').forEach(r => {
+  updateAttendeeListFor(r);
+  // ⬇️ 열려 있는 패널은 바로 다시 그림, 요약도 업데이트
+  const panel = $('[data-role="overrides-panel"]', r);
+  if (panel && !panel.classList.contains('hidden')) renderOverridesPanel(r);
+  const sumEl = $('[data-role="overrides-summary"]', r);
+  if (sumEl) sumEl.textContent = buildOverridesSummary(r);
+});
   alert(`뉴멤버 ${added}명 추가 완료!`);
 };
 
