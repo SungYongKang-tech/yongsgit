@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>남동3기 회식비 정산 (Firebase Storage)</title>
+  <title>남동3기 회식비 정산 (Cloudinary)</title>
   <style>
     :root { --primary:#2b6cb0; --muted:#f5f7fb; }
     * { box-sizing: border-box; }
@@ -40,7 +40,6 @@
     th, td { border:1px solid #e5e7eb; padding:10px; text-align:center; white-space:nowrap; }
     thead th { background:#f8fafc; }
 
-    /* 목록(2열, 좌: 정보 / 우: 썸네일) */
     .list-row { display:grid; grid-template-columns: 1fr 120px; gap:12px; align-items:center; padding:12px; border-bottom:1px solid #eee; }
     .list-row:hover { background:#fafcff; }
     .list-head { font-weight:800; color:#475569; grid-template-columns: 1fr 120px; }
@@ -58,13 +57,11 @@
 
     .capture-wrap { background:#fff; padding:12px; border-radius:14px; border:1px solid #e5e7eb; }
 
-    /* 라이트박스 */
     .lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; padding: 16px; }
     .lightbox.hidden { display: none; }
     .lightbox img { max-width: min(92vw, 1200px); max-height: 92vh; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.6); user-select: none; }
     .lightbox .close-btn { position: absolute; top: 10px; right: 10px; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 28px; line-height: 1; border-radius: 10px; padding: 6px 12px; cursor: pointer; }
 
-    /* 저장 오버레이 */
     .saving { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       background: rgba(0,0,0,.45); z-index: 99999; color: #fff; font-weight: 700; }
     .saving.hidden { display: none; }
@@ -191,48 +188,46 @@
   <!-- html2canvas -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-  <!-- Firebase + App 코드 (모듈) -->
+  <!-- Firebase (App/DB/Auth만 사용) -->
   <script type="module">
     /*************
-     * Firebase
+     * 환경 설정
      *************/
+    // 1) Cloudinary — 본인 값으로 변경
+    const CLOUD_NAME   = 'dqpcvlakz';     // ← 당신의 Cloud name
+    const UPLOAD_PRESET = 'koen3pay';     // ← 방금 만든 unsigned preset 이름
+    const CLD_DELIVERY_BASE = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload`;
+
+    // 2) Firebase — 기존 프로젝트
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
-    // 프로젝트 설정
- const firebaseConfig = {
-  apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
-  authDomain: "ionic6-3b7b2.firebaseapp.com",
-  databaseURL: "https://ionic6-3b7b2-default-rtdb.firebaseio.com",
-  projectId: "ionic6-3b7b2",
-  storageBucket: "ionic6-3b7b2.appspot.com",   // ← 이 값으로 교체
-  messagingSenderId: "306251113324",
-  appId: "1:306251113324:web:456c689fdb4757adc18949"
-};
+    const firebaseConfig = {
+      apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
+      authDomain: "ionic6-3b7b2.firebaseapp.com",
+      databaseURL: "https://ionic6-3b7b2-default-rtdb.firebaseio.com",
+      projectId: "ionic6-3b7b2",
+      storageBucket: "ionic6-3b7b2.appspot.com",
+      messagingSenderId: "306251113324",
+      appId: "1:306251113324:web:456c689fdb4757adc18949"
+    };
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth(app);
-    const storage = getStorage(app);
 
-    // 익명 로그인 보장 (전역)
     async function ensureAuth() {
       if (auth.currentUser) return auth.currentUser;
-      try {
-        const cred = await signInAnonymously(auth);
-        return cred.user;
-      } catch (err) {
-        console.error('익명 로그인 실패:', err);
-        throw err;
-      }
+      const cred = await signInAnonymously(auth);
+      return cred.user;
     }
 
-    // ======= 전역 유틸 =======
-    const $ = (sel, root=document) => root.querySelector(sel);
+    /*************
+     * 유틸
+     *************/
+    const $  = (sel, root=document) => root.querySelector(sel);
     const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-
     const defaultAttendees = ["성용","범준","기현","승호","재환","창현","계민","인찬","정선","현정","정록","영화","재화","원용","윤숙","인수"];
     let allAttendees = [...defaultAttendees];
 
@@ -240,21 +235,19 @@
     let editorPhotos = [], newPhotoFiles = [];
     let editorReceipts = {}, newReceiptFiles = {}; // per round
 
-    // DB helpers
     async function getAllMeetings() {
       const snap = await get(ref(db, 'meetings'));
       const obj = snap.exists() ? snap.val() : {};
       return Object.values(obj).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
     }
-    async function getMeetingById(id) {
-      const snap = await get(ref(db, `meetings/${id}`));
-      return snap.exists() ? snap.val() : null;
-    }
+    async function getMeetingById(id) { const snap = await get(ref(db, `meetings/${id}`)); return snap.exists() ? snap.val() : null; }
     async function saveMeetingToDB(meeting) { await set(ref(db, `meetings/${meeting.id}`), meeting); }
     async function deleteMeetingFromDB(id) { await remove(ref(db, `meetings/${id}`)); }
     async function updatePaidStatus(id, paidStatus) { await update(ref(db, `meetings/${id}`), { paidStatus }); }
 
-    // ======= 이미지 처리/업로드 =======
+    /*************
+     * 이미지 처리 (압축)
+     *************/
     const MAX_BYTES = 2 * 1024 * 1024; // 2MB
     function showSaving(msg){ $('#savingText').textContent = msg || '처리 중'; $('#savingOverlay').classList.remove('hidden'); }
     function setSaving(msg){ $('#savingText').textContent = msg; }
@@ -265,241 +258,126 @@
         const img = new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src;
       });
     }
-    function fileToDataURL(file){
-      return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+    async function drawToCanvas(src, maxW){
+      async function bitmapToCanvas(bmp, maxW){
+        const s = Math.min(1, maxW / bmp.width);
+        const w = Math.max(1, Math.round(bmp.width * s));
+        const h = Math.max(1, Math.round(bmp.height * s));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bmp, 0, 0, w, h);
+        try { bmp.close && bmp.close(); } catch(_){}
+        return canvas;
+      }
+      if (src instanceof File) {
+        try {
+          const bmp = await createImageBitmap(src);
+          return await bitmapToCanvas(bmp, maxW);
+        } catch (e) { /* 폴백 */ }
+      }
+      const url = (typeof src === 'string') ? src : URL.createObjectURL(src);
+      const img = await loadImage(url);
+      const s = Math.min(1, maxW / img.width);
+      const w = Math.max(1, Math.round(img.width * s));
+      const h = Math.max(1, Math.round(img.height * s));
+      const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+      if (typeof src !== 'string') { try { URL.revokeObjectURL(url); } catch(_){} }
+      return canvas;
     }
-   // ✅ HEIC/HEIF 대응 + createImageBitmap 우선
-async function drawToCanvas(src, maxW){
-  // 내부 공통 변환: ImageBitmap → Canvas
-  async function bitmapToCanvas(bmp, maxW){
-    const s = Math.min(1, maxW / bmp.width);
-    const w = Math.max(1, Math.round(bmp.width * s));
-    const h = Math.max(1, Math.round(bmp.height * s));
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(bmp, 0, 0, w, h);
-    try { bmp.close && bmp.close(); } catch(_){}
-    return canvas;
-  }
-
-  // 1) File이면 createImageBitmap 시도 (HEIC 등 지원 브라우저에서 성공)
-  if (src instanceof File) {
-    try {
-      const bmp = await createImageBitmap(src);
-      return await bitmapToCanvas(bmp, maxW);
-    } catch (e) {
-      // 미지원/실패 → 아래 일반 <img> 로드로 폴백
-    }
-  }
-
-  // 2) dataURL/URL → <img> 로드
-  const url = (typeof src === 'string') ? src : URL.createObjectURL(src);
-  const img = await loadImage(url);
-  const s = Math.min(1, maxW / img.width);
-  const w = Math.max(1, Math.round(img.width * s));
-  const h = Math.max(1, Math.round(img.height * s));
-  const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-  if (typeof src !== 'string') { try { URL.revokeObjectURL(url); } catch(_){} }
-  return canvas;
-}
-
-    function canvasToBlob(canvas, quality=0.8, type='image/jpeg'){
+    function canvasToBlob(canvas, quality=0.82, type='image/jpeg'){
       return new Promise((resolve)=> canvas.toBlob(b=>resolve(b), type, quality));
     }
-    // ✅ 디코딩 실패 시 원본 업로드 폴백 + 2MB 맞출 때까지 단계적 축소
-async function compressWithLimit(fileOrDataURL, {maxW, qualityStart=0.82, minQuality=0.55, step=0.07}){
-  try {
-    const src = fileOrDataURL; // File 또는 dataURL
-    let q = qualityStart, w = maxW, lastBlob = null;
-
-    for (let attempt = 0; attempt < 6; attempt++){
-      const canvas = await drawToCanvas(src, w);        // ← 위에서 교체한 함수 사용
-      const blob   = await canvasToBlob(canvas, q);     // JPEG
-      lastBlob = blob;
-      if (blob.size <= MAX_BYTES) return blob;
-
-      // 더 줄이기: 품질 ↓ → 그래도 크면 가로폭 ↓
-      if (q > minQuality) q = Math.max(minQuality, q - step);
-      else {
-        w = Math.round(w * 0.85);
-        if (w < 480) return blob; // 최소 폭 이하이면 여기서 종료
-      }
-    }
-    return lastBlob; // 마지막 시도 결과 반환
-  } catch (e) {
-    // ❗ 디코딩 자체가 안 되는 경우(HEIC 등) → 원본 그대로 업로드
-    if (fileOrDataURL instanceof File) return fileOrDataURL;
-    throw e; // dataURL인데 실패했다면 상위에서 처리
-  }
-}
-
-    function randomId(){ return Math.random().toString(36).slice(2,10); }
-
-
-    function extFromType(t){
-  if(!t) return 'jpg';
-  t = t.toLowerCase();
-  if (t.includes('jpeg')) return 'jpg';
-  if (t.includes('png'))  return 'png';
-  if (t.includes('webp')) return 'webp';
-  if (t.includes('heic')) return 'heic';
-  if (t.includes('heif')) return 'heif';
-  if (t.includes('avif')) return 'avif';
-  return 'jpg';
-}
-
-   // ✅ 워치독(30초 무진행 시 재시도) + Blob 타입 반영 + 캐시 설정
-async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
-  const tryOnce = () => new Promise((resolve, reject)=>{
-    const storageRef = sRef(storage, path);
-
-    // Blob/File 타입을 그대로 반영 (HEIC/AVIF 등도 OK)
-    const meta = {
-      contentType: (blob && blob.type) ? blob.type : 'image/jpeg',
-      cacheControl: 'public, max-age=31536000'
-    };
-
-    const task = uploadBytesResumable(storageRef, blob, meta);
-
-    let lastBytes = 0;
-    let stalledMs = 0;
-    const TICK = 1000;         // 1초마다 체크
-    const STALL_LIMIT = 45000; // 45초 무진행 시 재시도
-
-    const watchdog = setInterval(()=>{
-      const snap = task.snapshot;
-      if (!snap) return;
-      if (snap.bytesTransferred > lastBytes) {
-        lastBytes = snap.bytesTransferred;
-        stalledMs = 0;
-      } else {
-        stalledMs += TICK;
-        if (stalledMs >= STALL_LIMIT) {
-          clearInterval(watchdog);
-          try { task.cancel(); } catch(_){}
-          reject(new Error('upload-stalled'));
+    async function compressWithLimit(fileOrDataURL, {maxW, qualityStart=0.82, minQuality=0.55, step=0.07}){
+      try {
+        const src = fileOrDataURL;
+        let q = qualityStart, w = maxW, lastBlob = null;
+        for (let attempt = 0; attempt < 6; attempt++){
+          const canvas = await drawToCanvas(src, w);
+          const blob   = await canvasToBlob(canvas, q);
+          lastBlob = blob;
+          if (blob.size <= MAX_BYTES) return blob;
+          if (q > minQuality) q = Math.max(minQuality, q - step);
+          else {
+            w = Math.round(w * 0.85);
+            if (w < 480) return blob;
+          }
         }
-      }
-    }, TICK);
-
-    task.on('state_changed',
-      (snap)=>{
-        if (onProgress) {
-          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-          onProgress(pct);
-        }
-      },
-      (err)=>{
-  clearInterval(watchdog);
-  console.error('[UPLOAD ERROR]', {
-    code: err.code,
-    message: err.message,
-    name: err.name,
-    path,
-    contentType: meta.contentType
-  });
-  reject(err);
-},
-
-      async ()=>{
-        clearInterval(watchdog);
-        try {
-          const url = await getDownloadURL(task.snapshot.ref);
-          resolve(url);
-        } catch (e) {
-          reject(e);
-        }
-      }
-    );
-  });
-
-  let attempt = 0, lastErr = null;
-  while (attempt <= maxRetries){
-    try {
-      if (!navigator.onLine) {
-        setSaving('오프라인 감지됨. 네트워크 복구 대기...');
-        // 온라인 될 때까지 대기
-        await new Promise(resolve => {
-          const h = ()=>{ window.removeEventListener('online', h); resolve(); };
-          window.addEventListener('online', h);
-        });
-      }
-      if (attempt > 0) setSaving(`재시도 중... (${attempt}/${maxRetries})`);
-      return await tryOnce();
-    } catch (e) {
-      lastErr = e;
-      // 권한 문제/앱체크는 재시도해도 소용 없음 → 즉시 실패
-      if (String(e.code||'').includes('unauthorized') || String(e.code||'').includes('appCheck')) {
+        return lastBlob;
+      } catch (e) {
+        if (fileOrDataURL instanceof File) return fileOrDataURL; // 원본 업로드
         throw e;
       }
-      attempt++;
-      // 지수 백오프
-      const backoff = Math.min(3000, 500 * attempt);
-      await new Promise(r=>setTimeout(r, backoff));
     }
-  }
-  throw lastErr || new Error('upload-failed');
-}
+    function randomId(){ return Math.random().toString(36).slice(2,10); }
 
+    /*************
+     * Cloudinary 업로드 (Unsigned)
+     * - 한 번만 업로드하고, 썸네일은 URL 변환(c_limit,w_320)로 생성
+     *************/
+    function xhrUpload(url, formData, onProgress){
+      return new Promise((resolve, reject)=>{
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.onload = ()=> {
+          try { resolve(JSON.parse(xhr.responseText)); } catch(e){ reject(e); }
+        };
+        xhr.onerror = ()=> reject(new Error('upload-error'));
+        if (xhr.upload && onProgress){
+          xhr.upload.onprogress = (e)=>{
+            if (e.lengthComputable) onProgress(Math.round((e.loaded/e.total)*100));
+          };
+        }
+        xhr.send(formData);
+      });
+    }
+
+    async function uploadToCloudinary(blobOrFile, folder, onProgress){
+      const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+      const publicId = `${Date.now()}_${randomId()}`;
+      const fd = new FormData();
+      fd.append('file', blobOrFile);
+      fd.append('upload_preset', UPLOAD_PRESET);
+      fd.append('folder', folder);
+      fd.append('public_id', publicId);
+
+      const res = await xhrUpload(url, fd, onProgress);
+      const pid = res.public_id;               // 폴더 포함된 public_id
+      const fmt = res.format || 'jpg';
+      const full = res.secure_url || `${CLD_DELIVERY_BASE}/${pid}.${fmt}`;
+      // 썸네일 변환 URL (가로 320 제한, 포맷/퀄 자동)
+      const thumb = `${CLD_DELIVERY_BASE}/c_limit,w_320,f_auto,q_auto/${pid}.${fmt}`;
+      return { full, thumb };
+    }
 
     async function uploadPhotoSet(meetingId, file, index, total){
-  setSaving(`사진 ${index}/${total} 준비`);
-
-  // 원본(표시용)과 썸네일 후보 생성
-  const fullBlob  = await compressWithLimit(file, { maxW: 1400, qualityStart: 0.82 });
-  const thumbBlob = await compressWithLimit(file, { maxW: 320,  qualityStart: 0.75 });
-
-  const base = `meetings/${meetingId}`;
-  const nameBase = `${Date.now()}_${randomId()}`;
-
-  // 파일 확장자는 실제 blob.type에 맞춰서
-  const fullExt  = extFromType(fullBlob && fullBlob.type);
-  const fullPath = `${base}/photos/${nameBase}.${fullExt}`;
-
-  setSaving(`사진 업로드 ${index}/${total} (원본)`);
-  const fullUrl  = await uploadBlob(meetingId, fullBlob, fullPath, (p)=>setSaving(`사진 업로드 ${index}/${total} (원본 ${p}%)`));
-
-  // 썸네일: 변환 실패/부적절하면 fullUrl로 폴백
-  let thumbUrl = fullUrl;
-  try {
-    // thumbBlob가 존재하고, 사이즈도 충분히 작으며, fullBlob과 다른 객체일 때만 업로드
-    if (thumbBlob && thumbBlob !== fullBlob) {
-      const thumbExt  = extFromType(thumbBlob.type);
-      const thumbPath = `${base}/thumbs/${nameBase}.${thumbExt}`;
-      setSaving(`사진 업로드 ${index}/${total} (썸네일)`);
-      thumbUrl = await uploadBlob(meetingId, thumbBlob, thumbPath, (p)=>setSaving(`사진 업로드 ${index}/${total} (썸네일 ${p}%)`));
+      setSaving(`사진 ${index}/${total} 준비`);
+      const blob = await compressWithLimit(file, { maxW: 1600, qualityStart: 0.82 });
+      setSaving(`사진 업로드 ${index}/${total} (전송 중…)`);
+      return await uploadToCloudinary(
+        blob,
+        `meetings/${meetingId}/photos`,
+        (p)=> setSaving(`사진 업로드 ${index}/${total} (${p}%)`)
+      );
     }
-  } catch(_) {
-    // 썸네일 업로드 실패 → 그대로 fullUrl 사용
-    thumbUrl = fullUrl;
-  }
-
-  return { full: fullUrl, thumb: thumbUrl };
-}
-
 
     async function uploadReceipt(meetingId, roundIdx, file, index, total){
-  setSaving(`영수증 ${index}/${total} 준비`);
-  const blob = await compressWithLimit(file, { maxW: 1200, qualityStart: 0.8 });
+      setSaving(`영수증 ${index}/${total} 준비`);
+      const blob = await compressWithLimit(file, { maxW: 1200, qualityStart: 0.8 });
+      setSaving(`영수증 업로드 ${index}/${total} (전송 중…)`);
+      const r = await uploadToCloudinary(
+        blob,
+        `meetings/${meetingId}/receipts`,
+        (p)=> setSaving(`영수증 업로드 ${index}/${total} (${p}%)`)
+      );
+      // 영수증은 한 URL만 저장(상세에서 그대로 표시)
+      return r.full;
+    }
 
-  const base = `meetings/${meetingId}`;
-  const nameBase = `${Date.now()}_${randomId()}`;
-  const ext = extFromType(blob && blob.type);
-  const path = `${base}/receipts/${nameBase}.${ext}`;
-
-  const url = await uploadBlob(
-    meetingId,
-    blob,
-    path,
-    (p)=> setSaving(`영수증 업로드 ${index}/${total} (${p}%)`)
-  );
-  return url;
-}
-
-
-    // ======= 화면 전환 =======
+    /*************
+     * 화면 전환/목록/에디터
+     *************/
     const viewList = $('#view-list'), viewEditor = $('#view-editor'), viewDetail = $('#view-detail');
     function show(id){ [viewList,viewEditor,viewDetail].forEach(v=>v.classList.add('hidden')); id.classList.remove('hidden'); window.scrollTo({top:0, behavior:'smooth'}); }
 
@@ -526,7 +404,6 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
       finally { e.target.value=''; }
     };
 
-    // ======= 목록(2열) =======
     async function renderList(){
       const list = await getAllMeetings();
       const body = $('#listBody'); body.innerHTML=''; $('#emptyNote').style.display = list.length ? 'none' : 'block';
@@ -551,7 +428,6 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
       $$('.link-date', body).forEach(a=> a.onclick = (e)=>{ e.preventDefault(); openDetail(a.dataset.id); });
     }
 
-    // ======= 작성/편집 =======
     function resetEditor(){
       isEditing=false; editingId=null; editorPhotos=[]; newPhotoFiles=[]; editorReceipts={}; newReceiptFiles={};
       $('#meetingDate').value=''; $('#meetingTitle').value=''; $('#meetingPlace').value='';
@@ -593,12 +469,12 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
       updateAttendeeListFor(container);
 
       $('.receiptInput', container).addEventListener('change', (e)=>{
-  const files = Array.from(e.target.files || []);
-  const rIdx = parseInt(container.dataset.idx, 10);
-  newReceiptFiles[rIdx].push(...files);      // 용량과 관계없이 모두 추가
-  renderReceiptPreview(container);
-  e.target.value = '';
-});
+        const files = Array.from(e.target.files || []);
+        const rIdx = parseInt(container.dataset.idx, 10);
+        newReceiptFiles[rIdx].push(...files);
+        renderReceiptPreview(container);
+        e.target.value = '';
+      });
 
       renderReceiptPreview(container);
 
@@ -648,11 +524,11 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
     }
 
     $('#groupPhoto').addEventListener('change', (e)=>{
-  const files = Array.from(e.target.files || []);
-  newPhotoFiles.push(...files);   // 용량과 관계없이 모두 추가
-  renderPhotoPreview();
-  e.target.value = '';
-});
+      const files = Array.from(e.target.files || []);
+      newPhotoFiles.push(...files);
+      renderPhotoPreview();
+      e.target.value = '';
+    });
     function renderPhotoPreview(){
       const box = $('#photoPreview'); box.innerHTML='';
       editorPhotos.forEach((src,i)=>{
@@ -714,7 +590,9 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
 
     function formatNumber(num){ return Math.round(num).toLocaleString('ko-KR'); }
 
-    // ======= 저장 버튼 (업로드 → DB) =======
+    /*************
+     * 저장 (Cloudinary 업로드 → DB 저장)
+     *************/
     $('#btnSave').onclick = async ()=>{
       try {
         const btn = $('#btnSave');
@@ -741,16 +619,15 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
           const attendees = $$('input[data-role="attend"]:checked', el).map(cb=>cb.value);
           if(!attendees.length){ alert(`${i+1}차 참석자를 선택하세요.`); throw new Error('no attendees'); }
           const exclusions = $$('label.pill[data-excluded="1"]', el).map(l=>l.dataset.name).filter(n=>attendees.includes(n));
-          rounds.push({ amount, attendees, exclusions, corp, receiptImages: [] }); // URL 나중에 채움
+          rounds.push({ amount, attendees, exclusions, corp, receiptImages: [] });
         }
 
         // 사진 업로드 (기존+신규)
         const photos = [];
-        // 기존 보존(문자열 or {full,thumb})
         editorPhotos.forEach(p=>{
-          if (typeof p === 'string') photos.push(p); else photos.push({full: p.full, thumb: p.thumb || p.full});
+          if (typeof p === 'string') photos.push(p);
+          else photos.push({full: p.full, thumb: p.thumb || p.full});
         });
-        // 신규 업로드
         for(let i=0;i<newPhotoFiles.length;i++){
           const result = await uploadPhotoSet(meetingId, newPhotoFiles[i], i+1, newPhotoFiles.length);
           photos.push(result); // {full, thumb}
@@ -760,12 +637,10 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
         const totalReceipts = Object.values(newReceiptFiles).reduce((acc,arr)=> acc + (arr?.length||0), 0) || 0;
         let uploaded = 0;
         for(let r=0;r<rounds.length;r++){
-          // 기존 보존(문자열 URL 또는 dataURL)
           (editorReceipts[r]||[]).forEach(u=>{
             if (typeof u === 'string') rounds[r].receiptImages.push(u);
-            else rounds[r].receiptImages.push(u.full || u.thumb); // 혹시 객체 형태가 들어온 경우
+            else rounds[r].receiptImages.push(u.full || u.thumb);
           });
-          // 신규 업로드
           const files = newReceiptFiles[r] || [];
           for (let i=0;i<files.length;i++){
             const url = await uploadReceipt(meetingId, r, files[i], ++uploaded, totalReceipts);
@@ -782,7 +657,6 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
 
         const data = { id: meetingId, date, title, place, rounds, photos, paidStatus };
 
-        // 편집 시 paidStatus 병합
         if (isEditing) {
           const old = await getMeetingById(editingId);
           if (!old) throw new Error('기존 데이터 없음');
@@ -790,17 +664,13 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
             data.rounds.flatMap(r=> r.attendees.filter(n=> !(r.exclusions||[]).includes(n)))
           ));
           const merged = {};
-          newIncluded.forEach(n=>{
-            merged[n] = (old.paidStatus && n in old.paidStatus) ? old.paidStatus[n] : false;
-          });
+          newIncluded.forEach(n=>{ merged[n] = (old.paidStatus && n in old.paidStatus) ? old.paidStatus[n] : false; });
           data.paidStatus = merged;
         }
 
         await saveMeetingToDB(data);
         alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
         await renderList(); show(viewList);
-
-        // 에디터 초기화
         resetEditor();
 
       } catch (e) {
@@ -808,12 +678,13 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
         alert(`저장 실패: ${e.code || e.name || ''}\n${e.message || e}`);
       } finally {
         hideSaving();
-        const btn = $('#btnSave');
-        btn.disabled = false; btn.textContent = '이 회식 저장';
+        const btn = $('#btnSave'); btn.disabled = false; btn.textContent = '이 회식 저장';
       }
     };
 
-    // ======= 상세 보기 / 수정 / 입금 토글 / 삭제 =======
+    /*************
+     * 상세 보기/수정/입금/삭제
+     *************/
     async function openDetail(id){
       const item = await getMeetingById(id);
       if(!item){ alert('데이터를 찾을 수 없습니다.'); return; }
@@ -956,7 +827,6 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
       });
     }
 
-    // ======= 캡처 & 라이트박스 =======
     async function captureElement(el, filename='정산결과.png'){
       const canvas = await html2canvas(el,{ scale:2, useCORS:true, backgroundColor:'#fff',
         windowWidth: el.scrollWidth, windowHeight: el.scrollHeight, scrollX:0, scrollY:-window.scrollY });
@@ -988,7 +858,6 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
       if (btn.dataset.role === 'del-receipt-new'){ const rIdx=+btn.dataset.idx, i=+btn.dataset.i; (newReceiptFiles[rIdx]||[]).splice(i,1); const roundEl=$$('.round')[rIdx]; if(roundEl) renderReceiptPreview(roundEl); return; }
     });
 
-    // ======= 초기화 =======
     function initUI(){
       $('#btnCapture').onclick = ()=> captureElement($('#detailSummary'), '정산결과.png');
       renderList(); show(viewList);
@@ -998,12 +867,8 @@ async function uploadBlob(meetingId, blob, path, onProgress, maxRetries = 4){
       console.error('Firebase 익명 로그인 실패:', err);
       alert(`로그인 실패: ${err.code}\n${err.message}`);
     });
+    onAuthStateChanged(auth, (user)=>{ if (user) { initUI(); } });
 
-    onAuthStateChanged(auth, (user)=>{
-      if (user) { initUI(); }
-    });
-
-    // 전역 노출
     window.addRound = addRound;
   </script>
 </body>
