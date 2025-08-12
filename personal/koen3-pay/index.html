@@ -3,15 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>남동3기 회식비 정산 (Cloudinary)</title>
+  <title>남동3기 동기모임</title>
   <style>
     :root { --primary:#2b6cb0; --muted:#f5f7fb; }
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; margin: 0; background: #fafafa; color:#222; }
     header { position: sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid #e5e7eb; }
-    .bar { max-width: 1100px; margin: 0 auto; padding: 10px 14px; display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
-    .bar h1 { font-size: clamp(18px, 4.5vw, 22px); margin:0; }
-    .bar .actions { display:flex; gap:6px; flex-wrap:wrap; }
+   .bar {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;   /* 타이틀 위, 버튼 아래 */
+  align-items: center;      /* 가운데 정렬 */
+  gap: 10px;
+}
+.bar h1 {
+  font-size: clamp(18px, 4.5vw, 22px);
+  margin: 0;
+  text-align: center;       /* 타이틀 텍스트 가운데 */
+}
+.bar .actions { display:flex; gap:6px; flex-wrap:wrap; }
+
     button, .btn { appearance:none; border:1px solid #cbd5e1; background:#fff; color:#111; padding: 8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
     button.primary, .btn.primary { background: var(--primary); color:#fff; border-color: var(--primary); }
     main { max-width: 1100px; margin: 0 auto; padding: 14px; }
@@ -71,16 +84,14 @@
 <body>
   <header>
     <div class="bar">
-      <h1>남동3기 회식비 정산</h1>
+     <h1>남동3기 동기모임</h1>
       <div class="actions">
         <button class="btn" id="btnList">목록</button>
-        <button class="btn" id="btnNew">새 회식</button>
-        <button class="btn" id="btnExport">내보내기</button>
-        <label class="btn" for="importFile" style="margin:0;">가져오기</label>
-        <input id="importFile" type="file" accept="application/json" class="hidden">
-      </div>
+       <button class="btn" id="btnNew">새 회식</button>
+      <button class="btn" id="btnAdminLogin">관리자 로그인</button>
     </div>
-  </header>
+  </div>
+</header>
 
   <main>
     <!-- 목록 화면 -->
@@ -188,7 +199,7 @@
   <!-- html2canvas -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<button class="btn" id="btnAdminLogin">관리자 로그인</button>
+
 
 
 
@@ -442,25 +453,7 @@ let editorOverrides = {};  // { [roundIdx]: { [name]: number } }
   $('#btnList').onclick = ()=> { renderList(); show(viewList); };
   $('#btnNew').onclick  = ()=> { resetEditor(); show(viewEditor); };
 
-  $('#btnExport').onclick = async ()=>{
-    const data = await getAllMeetings();
-    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '남동3기-회식정산-백업.json';
-    a.click(); URL.revokeObjectURL(a.href);
-  };
-  $('#importFile').onchange = async (e)=>{
-    const f = e.target.files[0]; if(!f) return;
-    try{
-      const list = JSON.parse(await f.text());
-      if (!Array.isArray(list)) throw new Error('형식 오류');
-      for (const m of list) { if (m && m.id) await saveMeetingToDB(m); }
-      alert('가져오기가 완료되었습니다.'); await renderList(); show(viewList);
-    }catch(err){ alert('가져오기 실패: '+err.message); }
-    finally { e.target.value=''; }
-  };
-
+  
   async function renderList(){
     const list = await getAllMeetings();
     const body = $('#listBody'); body.innerHTML=''; $('#emptyNote').style.display = list.length ? 'none' : 'block';
