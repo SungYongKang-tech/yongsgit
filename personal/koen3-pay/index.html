@@ -89,6 +89,7 @@
         <button class="btn" id="btnList">목록</button>
        <button class="btn" id="btnNew">새 회식</button>
       <button class="btn" id="btnAdminLogin">관리자 로그인</button>
+      <button class="btn" id="btnAdminLogout" style="display:none;">관리자 로그아웃</button>
     </div>
   </div>
 </header>
@@ -214,11 +215,7 @@
    *************/
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-  import {
-    getAuth,
-    signInAnonymously,
-    signInWithEmailAndPassword,
-    onAuthStateChanged,
+  import { getAuth, signInAnonymously, signInWithEmailAndPassword, onAuthStateChanged, signOut,
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
   /*************
@@ -274,6 +271,50 @@
       alert('로그인 실패: ' + (e.message || e));
     }
   };
+
+  const loginBtn  = document.getElementById('btnAdminLogin');
+const logoutBtn = document.getElementById('btnAdminLogout');
+
+// 기존 로그인 핸들러는 그대로 두고…
+logoutBtn.onclick = async () => {
+  try {
+    await signOut(auth);         // 현재 계정 로그아웃
+    alert('관리자에서 로그아웃되었습니다.');
+    // onAuthStateChanged의 else 블록에서 자동으로 익명 로그인 시도함
+  } catch (e) {
+    alert('로그아웃 실패: ' + (e.message || e));
+  }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  if (u) {
+    try {
+      const s = await get(ref(db, `admins/${u.uid}`));
+      IS_ADMIN = s.exists() && s.val() === true;
+    } catch { IS_ADMIN = false; }
+  } else {
+    IS_ADMIN = false;
+    try { await signInAnonymously(auth); } catch {}
+  }
+
+  updateWho(u);
+  console.log('current uid:', u?.uid, 'isAdmin:', IS_ADMIN);
+
+  // ⬇️ 버튼 표시/숨김 토글
+  if (IS_ADMIN) {
+    loginBtn.style.display = 'none';
+    logoutBtn.style.display = '';
+  } else {
+    loginBtn.style.display = '';
+    logoutBtn.style.display = 'none';
+  }
+
+  if (!uiInited && u) {
+    initUI();
+    uiInited = true;
+  }
+});
+
 
   // 로그인 상태 감지
   let uiInited = false;
