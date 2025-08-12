@@ -125,6 +125,7 @@
 
         <div style="margin-top:10px;">
           <button class="btn" onclick="addRound()">차수 추가</button>
+          <button class="btn" id="btnAddMember">뉴멤버 추가</button>
         </div>
 
         <div id="rounds" style="margin-top:12px;" class="grid"></div>
@@ -309,7 +310,29 @@
   const $  = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const defaultAttendees = ["성용","범준","기현","승호","재환","창현","계민","인찬","정선","현정","정록","영화","재화","원용","윤숙","인수"];
-  let allAttendees = [...defaultAttendees];
+  const LS_KEY = 'nd3-attendees';
+function loadAttendees(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return [...defaultAttendees];
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      // 기본 멤버 + 저장된 멤버 합치고 중복 제거
+      return Array.from(new Set([...defaultAttendees, ...arr]));
+    }
+    return [...defaultAttendees];
+  }catch{ return [...defaultAttendees]; }
+}
+function saveAttendees(){
+  try{
+    // 기본 멤버를 빼고 추가된 멤버만 저장(용량 절약)
+    const added = allAttendees.filter(n => !defaultAttendees.includes(n));
+    localStorage.setItem(LS_KEY, JSON.stringify(added));
+  }catch{}
+}
+
+let allAttendees = loadAttendees();
+
 
   let isEditing = false, editingId = null;
   let editorPhotos = [], newPhotoFiles = [];
@@ -1085,6 +1108,45 @@ function buildOverridesSummary(roundEl){
   if (!cnt) return '';
   return `개별 조정 ${Object.keys(ov).length}명 적용${warn ? ' (초과 경고)' : ''}`;
 }
+
+// 뉴멤버 추가 버튼
+$('#btnAddMember').onclick = () => {
+  // 쉼표(,)나 띄어쓰기 기준으로 여러 명 한 번에 입력도 지원
+  const input = prompt('추가할 이름(여러 명은 쉼표 또는 띄어쓰기로 구분):');
+  if (!input) return;
+
+  const cand = input
+    .split(/[, ]+/)           // , 또는 공백으로 분리
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (!cand.length) return;
+
+  // 이름 정리 & 중복 제거
+  const clean = cand
+    .map(n => n.replace(/[^\w가-힣·.\-]/g, '')) // 안전 문자만
+    .filter(n => n.length > 0);
+
+  // 새로 추가된 게 있는지 체크
+  let added = 0;
+  clean.forEach(n => {
+    if (!allAttendees.includes(n)) {
+      allAttendees.push(n);
+      added++;
+    }
+  });
+
+  if (!added) { alert('새로 추가된 이름이 없습니다.'); return; }
+
+  // 정렬(한글 우선 보기 좋게)
+  allAttendees.sort((a,b)=> a.localeCompare(b,'ko'));
+
+  // 저장 & 모든 차수 참석자 UI 다시 그리기(체크/제외 상태는 유지됨)
+  saveAttendees();
+  $$('.round').forEach(r => updateAttendeeListFor(r));
+
+  alert(`뉴멤버 ${added}명 추가 완료!`);
+};
 
 
 </script>
