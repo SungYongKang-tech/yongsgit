@@ -177,7 +177,12 @@ function initialState(){
     lastMoved:null
   };
 }
-
+function showGameUI(){
+  document.getElementById('panel').style.display='flex';
+  document.getElementById('turnLine').style.display='block';
+  document.getElementById('scores').style.display='block';
+  document.getElementById('bottomBar').style.display='flex';
+}
 /* 상태 정규화 */
 function normalizeState(s){
   if(!s) return s;
@@ -322,16 +327,55 @@ if (mode === 'solo') {
   if (mode === 'join') joinRoom(roomName);
 }
 
-/* ================= Firebase 온라인 함수 ================= */
-function initFirebase(){
-  // Firebase 초기화 & 익명 로그인 (기존 코드 그대로)
+/* ================= 2인용(같은 도메인 탭 간) 간이 동기화 ================= */
+let chan = null;
+
+function initFirebase(){ /* Firebase 미사용 */ }
+
+function openChannel(roomId){
+  if (chan) chan.close();
+  chan = new BroadcastChannel('wb-' + roomId);
+  chan.onmessage = (ev) => {
+    const msg = ev.data || {};
+    // 상대가 보낸 상태 수신
+    if (msg.type === 'state' && msg.from !== local.role) {
+      local.state = normalizeState(msg.state);
+      renderFromState();
+    }
+    // 동기화 요청이면 현재 상태 송신
+    if (msg.type === 'sync-request' && local.state) {
+      chan.postMessage({ type:'state', from:local.role, state:local.state });
+    }
+  };
 }
+
+function setupBoardForOnline(){
+  showGameUI();
+  makeBoard();
+  resizeBoard();
+}
+
 function createRoom(name){
-  // 방 생성 (기존 코드 그대로)
+  const rid = name && name.trim() ? name.trim() : ('room-' + Date.now());
+  local.roomId = rid;
+  local.role   = 0;                  // 방장은 P1(빨강)
+  openChannel(rid);
+  setupBoardForOnline();
+  local.state = initialState();
+  renderFromState();
 }
+
 function joinRoom(name){
-  // 방 참여 (기존 코드 그대로)
+  const rid = name && name.trim() ? name.trim() : 'default-room';
+  local.roomId = rid;
+  local.role   = 1;                  // 참여자는 P2(파랑)
+  openChannel(rid);
+  setupBoardForOnline();
+  // 방장한테 현재 상태 달라고 요청
+  chan.postMessage({ type:'sync-request', from: local.role });
 }
+
+
 
 /* ================= 싱글모드 시작 ================= */
 function enterSoloGame(){
@@ -347,7 +391,7 @@ function enterSoloGame(){
 
 /* ================= commitState ================= */
 async function commitState(){
-  if(local.isSolo){
+  if (local.isSolo) {
     renderFromState();
     const s = normalizeState(local.state);
     if (s && s.current===1 && (s.phase==='move' || s.phase==='wall' || s.phase==='place-extra')) {
@@ -355,8 +399,13 @@ async function commitState(){
     }
     return;
   }
-  // 온라인 모드 → Firebase set()
+  // 온라인(2인) → 상태 브로드캐스트
+  if (chan) {
+    chan.postMessage({ type:'state', from: local.role, state: local.state });
+  }
+  renderFromState();
 }
+
 
 /* ================= AI 로직 ================= */
 function aiTurn(){
