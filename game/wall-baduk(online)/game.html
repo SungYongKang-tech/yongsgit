@@ -312,9 +312,10 @@ function listEmptyWallsFromState(s){
 
 /* ================= URL 모드 ================= */
 const params = new URLSearchParams(location.search);
-const mode = params.get('mode') || 'solo';
-const level = params.get('level') || 'easy';
-const roomName = params.get('room') || '';
+const mode = ((params.get('mode') || 'solo') + '').trim().toLowerCase();
+const level = ((params.get('level') || 'easy') + '').trim().toLowerCase();
+const roomName = ((params.get('room') || '') + '').trim();
+
 
 let local = { roomId:null, role:0, state:null, selected:null, prevWallCount:null, isSolo:false, aiLevel:level };
 
@@ -333,20 +334,31 @@ let chan = null;
 function initFirebase(){ /* Firebase 미사용 */ }
 
 function openChannel(roomId){
-  if (chan) chan.close();
-  chan = new BroadcastChannel('wb-' + roomId);
-  chan.onmessage = (ev) => {
-    const msg = ev.data || {};
-    // 상대가 보낸 상태 수신
-    if (msg.type === 'state' && msg.from !== local.role) {
-      local.state = normalizeState(msg.state);
-      renderFromState();
-    }
-    // 동기화 요청이면 현재 상태 송신
-    if (msg.type === 'sync-request' && local.state) {
-      chan.postMessage({ type:'state', from:local.role, state:local.state });
-    }
-  };
+  // BroadcastChannel 지원/권한 가드
+  if (!('BroadcastChannel' in window)) {
+    console.warn('BroadcastChannel 미지원 환경입니다. 동기화 없이 로컬 보드만 표시합니다.');
+    chan = null;
+    return;
+  }
+  try {
+    if (chan) chan.close();
+    chan = new BroadcastChannel('wb-' + roomId);
+    chan.onmessage = (ev) => {
+      const msg = ev.data || {};
+      // 상대가 보낸 상태 수신
+      if (msg.type === 'state' && msg.from !== local.role) {
+        local.state = normalizeState(msg.state);
+        renderFromState();
+      }
+      // 동기화 요청이면 현재 상태 송신
+      if (msg.type === 'sync-request' && local.state) {
+        chan.postMessage({ type:'state', from:local.role, state:local.state });
+      }
+    };
+  } catch (e) {
+    console.warn('BroadcastChannel 생성 실패:', e);
+    chan = null; // 동기화는 포기하고 UI만 표시
+  }
 }
 
 function setupBoardForOnline(){
@@ -356,23 +368,35 @@ function setupBoardForOnline(){
 }
 
 function createRoom(name){
-  const rid = name && name.trim() ? name.trim() : ('room-' + Date.now());
+  const rid = name ? name : ('room-' + Date.now());
   local.roomId = rid;
   local.role   = 0;                  // 방장은 P1(빨강)
-  openChannel(rid);
+
+  // 1) 보드 먼저
   setupBoardForOnline();
   local.state = initialState();
   renderFromState();
+
+  // 2) 채널 시도 (실패해도 보드는 유지)
+  openChannel(rid);
+
+  // 3) 초기 상태 방송
+  if (chan) chan.postMessage({ type:'state', from: local.role, state: local.state });
 }
 
 function joinRoom(name){
-  const rid = name && name.trim() ? name.trim() : 'default-room';
+  const rid = name || 'default-room';
   local.roomId = rid;
   local.role   = 1;                  // 참여자는 P2(파랑)
-  openChannel(rid);
+
+  // 1) 보드 먼저
   setupBoardForOnline();
-  // 방장한테 현재 상태 달라고 요청
-  chan.postMessage({ type:'sync-request', from: local.role });
+
+  // 2) 채널 시도
+  openChannel(rid);
+
+  // 3) 방장에게 상태 요청
+  if (chan) chan.postMessage({ type:'sync-request', from: local.role });
 }
 
 
@@ -399,7 +423,7 @@ async function commitState(){
     }
     return;
   }
-  // 온라인(2인) → 상태 브로드캐스트
+  // 온라인(2인) → 상태 브로드캐스트 (채널이 있을 때만)
   if (chan) {
     chan.postMessage({ type:'state', from: local.role, state: local.state });
   }
