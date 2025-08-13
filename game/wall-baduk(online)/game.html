@@ -94,6 +94,16 @@
 
 <script type="module">
 
+
+/* DOM 엘리먼트 참조 */
+const boardEl   = document.getElementById('board');
+const skipWallBtn = document.getElementById('skipWallBtn');
+const turnEl    = document.getElementById('turnColor');
+const s1El      = document.getElementById('s1');
+const s2El      = document.getElementById('s2');
+const resetBtn = document.getElementById('resetBtn');
+const endBtn   = document.getElementById('endBtn');
+
 /* 새로 시작 / 종료 버튼 동작 */
 resetBtn?.addEventListener('click', () => {
   local.selected = null;
@@ -109,16 +119,6 @@ endBtn?.addEventListener('click', () => {
   local.state = initialState();
   renderFromState();
 });
-
-/* DOM 엘리먼트 참조 */
-const boardEl   = document.getElementById('board');
-const skipWallBtn = document.getElementById('skipWallBtn');
-const turnEl    = document.getElementById('turnColor');
-const s1El      = document.getElementById('s1');
-const s2El      = document.getElementById('s2');
-const resetBtn = document.getElementById('resetBtn');
-const endBtn   = document.getElementById('endBtn');
-
 
 /* 게임 상수/상태 */
 const BOARD_POINTS = 7;
@@ -591,25 +591,23 @@ function computeRegionsLocal() {
   return { regions, hasMixed };
 }
 
-function updateScoresLocal() {
-  const { regions } = computeRegionsLocal();
-  const sc = [0, 0];
-  for (const reg of regions) {
-    if (reg.players.size === 1) {
-      const owner = [...reg.players][0];
-      sc[owner] += reg.points.length;
-    }
+function updateScoresLocal(){
+  const ended = checkGameEndAndScoreLocal();
+  if (ended && local.state?.phase !== 'ended'){
+    local.state.phase = 'ended';
+    showWinnerWithPaintLocal();
   }
-  s1El.textContent = sc[0];
-  s2El.textContent = sc[1];
 }
 
-function showWinnerWithPaintLocal() {
+function showWinnerWithPaintLocal(){
+  fillFinalRegionsLocal(); // 최종 영역 칠하기
   const p1 = +s1El.textContent, p2 = +s2El.textContent;
-  if (p1 > p2) alert('승자: P1(빨강)');
-  else if (p2 > p1) alert('승자: P2(파랑)');
-  else alert('무승부');
+  alert(
+    `게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n` +
+    (p1>p2 ? '승자: P1(빨강)' : p2>p1 ? '승자: P2(파랑)' : '무승부')
+  );
 }
+
 /* 보드 연결을 기준으로 영역을 계산해 점수를 산출하고,
    두 플레이어 말이 함께 있는 영역이 하나도 없으면 즉시 종료 */
 function checkGameEndAndScoreLocal(){
@@ -668,6 +666,9 @@ if (helpOverlay) {
     if (e.target === helpOverlay) closeHelp();
   });
 }
+
+
+
 
 /* ======== 나머지 함수들 ======== 
 - distToOpponent, distToCenter, freedomScore
