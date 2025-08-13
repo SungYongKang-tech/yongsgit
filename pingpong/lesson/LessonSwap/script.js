@@ -1,32 +1,27 @@
 // script.js
 import { db } from './firebase.js';
 import {
-  ref, onValue, set, get, update
+  ref, onValue, set, get, update, push, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// ✅ 익명 로그인 완료 대기(Promise)
-//  - HTML에서 window.authReady를 제공(이전 답변의 부트스트랩 코드)
-//  - 없으면 경고만 띄우고 진행(규칙이 auth != null이면 쓰기 실패)
+// ✅ 익명 로그인 완료 대기 (HTML의 부트스트랩에서 제공)
 const authReady = window.authReady || Promise.resolve(null);
 async function requireAuth() {
   const user = await authReady;
-  if (!user) console.warn('authReady가 없습니다. 규칙이 auth != null이면 쓰기가 실패합니다.');
+  if (!user) throw new Error('인증되지 않았습니다.');
   return user;
 }
 
-// ✅ 공통 쓰기 유틸 (set 전 로그인 보장)
-async function writeSet(path, value) {
-  await requireAuth();
-  return set(ref(db, path), value);
-}
-
+// 최근 DB 스냅샷을 보관(UNDO에 사용)
+let latestData = {};
 const scheduleRef = ref(db, 'schedule');
 
 onValue(scheduleRef, (snapshot) => {
-  const data = snapshot.val() || {};
-  renderSchedule(data);
+  latestData = snapshot.val() || {};
+  renderSchedule(latestData);
 });
 
+// 초기 템플릿
 const initialData = {
   mon_0: { name: "정승목" }, tue_0: { name: "김승일" }, wed_0: { name: "정승목" }, thu_0: { name: "김승일" },
   mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
@@ -35,29 +30,73 @@ const initialData = {
   mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
 };
 
-window.importSchedule = async function () {
-  try {
-    await writeSet('schedule', initialData);
-    // alert("시간표가 초기화되었습니다.");
-  } catch (e) {
-    console.error(e);
-    alert('시간표 초기화 실패: ' + e.message);
+// ---------- 공용 유틸: 멀티경로 원자 업데이트 + 로그 + 1단계 UNDO ----------
+async function atomicApply(changes, logPayload = {}) {
+  // changes: [{ key: 'mon_0', newName: '홍길동' }, ...]
+  const user = await requireAuth();
+  const uid = user.uid;
+
+  // UNDO에 저장할 "변경 전" 값들
+  const undoEntries = {};
+  // 실제 update에 보낼 멀티경로 객체
+  const multi = {};
+
+  for (const { key, newName } of changes) {
+    const prevName = (latestData[key]?.name) ?? "";
+    undoEntries[`schedule/${key}`] = { name: prevName };
+    multi[`schedule/${key}`] = { name: newName, _by: uid, _ts: serverTimestamp() };
   }
+
+  // 로그 엔트리 생성 (push key를 만들고 멀티경로에 포함)
+  const logKey = push(ref(db, 'logs')).key;
+  multi[`logs/${logKey}`] = {
+    ...logPayload,
+    items: changes.map(({ key, newName }) => ({
+      key,
+      from: (latestData[key]?.name) ?? "",
+      to: newName
+    })),
+    by: uid,
+    ts: serverTimestamp()
+  };
+
+  // 사용자별 되돌리기(1단계)
+  multi[`undo/last/${uid}`] = {
+    entries: undoEntries,
+    by: uid,
+    ts: serverTimestamp()
+  };
+
+  // 원자 적용
+  await update(ref(db), multi);
+}
+
+// ---------- 초기화(임포트) ----------
+window.importSchedule = async function () {
+  const user = await requireAuth();
+  // 초기화도 원자 처리 + 로그 + UNDO
+  const changes = Object.keys(initialData).map(key => ({
+    key,
+    newName: initialData[key].name
+  }));
+  await atomicApply(changes, { type: 'import' });
 };
 
-// (옵션) 외부에서 부르는 버튼이 없다면 남겨도 무방하지만, userNameKey 미정이므로 사용 주의
+// (옵션) 남아있는 외부 함수
 window.changeName = function () {
-  try {
-    localStorage.removeItem(userNameKey);
-  } catch {}
+  try { localStorage.removeItem(userNameKey); } catch {}
   location.reload();
 };
 
+// ---------- 렌더링 ----------
 let selectedCells = [];
 
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
   container.innerHTML = "";
+
+  // 되돌리기 버튼을 상단 컨트롤에 동적으로 추가(중복 방지)
+  ensureUndoButton();
 
   const wrapper = document.createElement("div");
   wrapper.style.overflowX = "auto";
@@ -134,6 +173,7 @@ function renderSchedule(data) {
   container.appendChild(wrapper);
 }
 
+// ---------- 셀 인터랙션 ----------
 function handleCellClick(cell, key) {
   const name = cell.textContent.trim();
   const isEmpty = !name;
@@ -147,7 +187,7 @@ function handleCellClick(cell, key) {
     return;
   }
 
-  // 1개 선택 후 빈 셀 클릭 → 복사
+  // 1개 선택 후 빈 셀 클릭 → 복사(원자 업데이트)
   if (selectedCells.length === 1 && isEmpty) {
     const from = selectedCells[0];
     const copiedName = from.cell.textContent.trim();
@@ -159,7 +199,10 @@ function handleCellClick(cell, key) {
     cell.classList.remove("empty");
     cell.style.backgroundColor = "";
 
-    writeSet(`schedule/${key}`, { name: copiedName })
+    atomicApply(
+      [{ key, newName: copiedName }],
+      { type: 'copy', fromKey: from.key ?? from.cell?.dataset?.key, toKey: key }
+    )
       .then(() => {
         from.cell.classList.remove("selected");
         selectedCells = [];
@@ -185,6 +228,7 @@ function handleCellClick(cell, key) {
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
 
+// ---------- 스왑: 멀티경로 원자 처리 ----------
 window.handleSwap = async function () {
   if (selectedCells.length !== 2) return;
 
@@ -197,10 +241,13 @@ window.handleSwap = async function () {
   cellB.textContent = nameA;
 
   try {
-    await Promise.all([
-      writeSet(`schedule/${keyA}`, { name: nameB }),
-      writeSet(`schedule/${keyB}`, { name: nameA })
-    ]);
+    await atomicApply(
+      [
+        { key: keyA, newName: nameB },
+        { key: keyB, newName: nameA }
+      ],
+      { type: 'swap' }
+    );
   } catch (e) {
     // 실패 시 되돌리기
     cellA.textContent = nameA;
@@ -215,6 +262,7 @@ window.handleSwap = async function () {
   document.getElementById("swapBtn").disabled = true;
 };
 
+// ---------- 비우기(불참): 원자 처리 ----------
 window.markAbsent = async function () {
   if (selectedCells.length !== 1) return alert("하나의 셀만 선택해야 합니다.");
 
@@ -231,7 +279,7 @@ window.markAbsent = async function () {
   cell.classList.remove("selected");
 
   try {
-    await writeSet(`schedule/${key}`, { name: "" });
+    await atomicApply([{ key, newName: "" }], { type: 'absent' });
   } catch (e) {
     // 실패 시 원복
     cell.textContent = prevText;
@@ -245,32 +293,91 @@ window.markAbsent = async function () {
   document.getElementById("swapBtn").disabled = true;
 };
 
-// -------- 주간 자동 초기화 --------
+// ---------- 되돌리기(1단계) ----------
+window.undoLast = async function () {
+  const user = await requireAuth();
+  const uid = user.uid;
+
+  // 내 UNDO 정보 읽기
+  const snap = await get(ref(db, `undo/last/${uid}`));
+  if (!snap.exists()) {
+    alert('되돌릴 내역이 없습니다.');
+    return;
+  }
+  const undo = snap.val() || {};
+  const entries = undo.entries || {};
+
+  // 멀티경로로 복구 + 로그 기록 + UNDO 비우기
+  const logKey = push(ref(db, 'logs')).key;
+  const multi = {};
+
+  // entries는 { "schedule/mon_0": {name: "홍길동"}, ... } 형태
+  for (const path in entries) {
+    multi[path] = { name: entries[path]?.name ?? "", _by: uid, _ts: serverTimestamp() };
+  }
+
+  multi[`logs/${logKey}`] = {
+    type: 'undo',
+    items: Object.keys(entries).map(path => ({
+      key: path.split('/')[1], // schedule/{key}
+      to: entries[path]?.name ?? ""
+    })),
+    by: uid,
+    ts: serverTimestamp()
+  };
+
+  // UNDO 클리어
+  multi[`undo/last/${uid}`] = null;
+
+  try {
+    await update(ref(db), multi);
+  } catch (e) {
+    alert('되돌리기 실패: ' + e.message);
+  }
+};
+
+// ---------- 주간 자동 초기화(금 17시 이후 1회) ----------
 function shouldResetSchedule() {
   const now = new Date();
-  const day = now.getDay(); // 일: 0, 월: 1, ..., 금: 5
+  const day = now.getDay(); // 일:0, 월:1, ..., 금:5
   const hour = now.getHours();
-  return (day === 5 && hour >= 17); // 금요일 17시 이후
+  return (day === 5 && hour >= 17);
 }
-
 function resetOncePerWeek() {
   const resetKey = 'scheduleResetWeek';
   const currentWeek = getWeekKey();
   if (shouldResetSchedule() && localStorage.getItem(resetKey) !== currentWeek) {
-    // 로그인 보장 뒤 초기화
     authReady.then(() => {
       window.importSchedule();
       localStorage.setItem(resetKey, currentWeek);
     });
   }
 }
-
 function getWeekKey() {
   const now = new Date();
   const year = now.getFullYear();
   const week = Math.ceil(((now - new Date(year, 0, 1)) / 86400000 + new Date(year, 0, 1).getDay() + 1) / 7);
   return `${year}-W${week}`;
 }
-
-// 초기화 실행
 resetOncePerWeek();
+
+// ---------- UI 도우미 ----------
+function ensureUndoButton() {
+  const controls = document.querySelector('.controls');
+  if (!controls || controls.querySelector('#undoBtn')) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'undoBtn';
+  btn.textContent = '↩️ 되돌리기';
+  btn.className = 'btn-reset';
+  btn.style.fontWeight = '800';
+  btn.onclick = () => window.undoLast();
+
+  // "서로 변경" 버튼 뒤에 삽입
+  const swapBtn = document.getElementById('swapBtn');
+  if (swapBtn && swapBtn.parentElement === controls) {
+    controls.insertBefore(btn, swapBtn.nextSibling);
+  } else {
+    controls.appendChild(btn);
+  }
+}
