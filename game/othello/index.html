@@ -70,7 +70,35 @@
     }
     #toast.show{ opacity:1; }
 
-    @media (min-width:720px){ :root{ --cell:56px; } }
+    /* ===== 종료 결과 오버레이 ===== */
+    #resultOverlay{
+      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,.6); z-index: 10; /* header보다 위 */
+      padding: 16px;
+    }
+    #resultPanel{
+      width:min(680px, 96vw);
+      background:#ffffff; border-radius:18px; padding: clamp(16px, 3.2vw, 28px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25); text-align:center;
+    }
+    #resultTitle{
+      font-size: clamp(28px, 7.8vw, 46px);
+      font-weight: 900; margin: 6px 0 8px;
+    }
+    #resultScore{
+      font-size: clamp(20px, 5.6vw, 28px);
+      color:#374151; margin-bottom: 12px;
+    }
+    #resultHint{
+      font-size: clamp(14px, 4vw, 16px);
+      color:#6b7280; margin-bottom: 16px;
+    }
+    #overlayButtons{
+      display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+    }
+    .btn-light{
+      background:#fff; color:#0d47a1; border:1px solid #0d47a1; border-radius:10px; padding:10px 14px; font-weight:700;
+    }
   </style>
 </head>
 <body>
@@ -117,6 +145,18 @@
         <button id="leaveBtn" class="small">나가기</button>
       </div>
     </section>
+  </div>
+
+  <!-- 종료 결과 오버레이 -->
+  <div id="resultOverlay" role="dialog" aria-modal="true">
+    <div id="resultPanel">
+      <div id="resultTitle">게임 종료</div>
+      <div id="resultScore">흑 0 · 백 0</div>
+      <div id="resultHint">나가기를 누를 때까지 결과가 유지됩니다.</div>
+      <div id="overlayButtons">
+        <button id="overlayLeave" class="btn-light">나가기</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast"></div>
@@ -206,7 +246,7 @@
         const [ax,ay]=cSquares[2*k];
         const [bx,by]=cSquares[2*k+1];
         const cornerOwner=board[cx][cy];
-        if(cornerOwner===EMPTY){
+        if(cornerOwner===0){
           if(board[xx][xy]===me) score-=25; else if(board[xx][xy]===opp) score+=25;
           if(board[ax][ay]===me) score-=10; else if(board[ax][ay]===opp) score+=10;
           if(board[bx][by]===me) score-=10; else if(board[bx][by]===opp) score+=10;
@@ -241,6 +281,13 @@
     const leaveBtn = document.getElementById('leaveBtn');
     const sndPlace = document.getElementById('sndPlace');
     const toast = document.getElementById('toast');
+
+    // 결과 오버레이
+    const resultOverlay = document.getElementById('resultOverlay');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultScore = document.getElementById('resultScore');
+    const overlayLeave = document.getElementById('overlayLeave');
+
     const showToast=(m)=>{ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1600); };
 
     /* =========================
@@ -269,7 +316,7 @@
             const isBlack = board[x][y]===BLACK;
             s.className = 'stone ' + (isBlack?'black':'white');
             const lm = isBlack ? lastMove.black : lastMove.white;
-            if(lm && lm.x===x && lm.y===y) s.classList.add('last'); // ✅ 최근 착수 하이라이트
+            if(lm && lm.x===x && lm.y===y) s.classList.add('last');
             cell.appendChild(s);
           }else{
             if(turn===myColor && hintSet.has(`${x}-${y}`)) cell.classList.add('hint');
@@ -278,14 +325,33 @@
         }
       }
     }
+
+    function showEndOverlay(board){
+      const {b,w} = countPieces(board);
+      let title = '무승부';
+      if(b>w) title = '흑 승리!';
+      else if(w>b) title = '백 승리!';
+      resultTitle.textContent = title;
+      resultScore.textContent = `흑 ${b} · 백 ${w}`;
+      resultOverlay.style.display = 'flex';
+      // 버튼 상태
+      passBtn.disabled = true;
+      resetBtn.disabled = true;     // ✅ 종료 시 재시작 비활성화(결과 유지)
+    }
+    function hideEndOverlay(){
+      resultOverlay.style.display = 'none';
+      resetBtn.disabled = false;
+    }
+
     function setUICommon(room){
       const {b,w}=countPieces(room.board);
       blackCountEl.textContent=b; whiteCountEl.textContent=w;
+
       if(room.status==='ended'){
-        let result='무승부'; if(b>w) result='흑 승!'; else if(w>b) result='백 승!';
-        statusEl.textContent=`종료 · ${result} (흑:${b} 백:${w})`;
-        passBtn.disabled = true;
+        statusEl.textContent=`종료 · ${b>w?'흑 승!':(w>b?'백 승!':'무승부')} (흑:${b} 백:${w})`;
+        showEndOverlay(room.board);      // ✅ 크게 표시 & 유지
       }else{
+        hideEndOverlay();
         const turnLabel = (room.turn===BLACK?'흑':'백');
         const mine = (room.turn===myColor);
         const passInfo = room.passCount?` · 연속패스:${room.passCount}`:'';
@@ -295,6 +361,7 @@
       roleLabel.textContent = myColor===BLACK? '흑(선공)' : '백(후공)';
       renderBoard(room.board, room.turn);
     }
+
     async function playSound(){ try{ sndPlace.currentTime=0; await sndPlace.play(); }catch{} }
 
     /* =========================
@@ -309,6 +376,7 @@
     function backToLobby(){
       if(unsubRoom){ unsubRoom(); unsubRoom=null; }
       mode='online'; roomId=null; myColor=null;
+      hideEndOverlay();
       game.style.display='none';
       lobby.style.display='';
     }
@@ -360,7 +428,7 @@
         }
         return val;
       }
-      let bestMove=null, bestScore=-1e9, depth=2;
+      let bestMove=null, depth=2, bestScore=-1e9;
       while(depth<=maxDepth){
         if(performance.now()-start>timeLimitMs) break;
         const moves=validMoves(board, aiColor);
@@ -378,35 +446,24 @@
       return bestMove;
     }
 
-    // 솔로: 차례 시작 시 자동 패스/종료 판정 및 AI 호출 관리
     function ensureTurnPlayableSolo(){
       if(!soloState || soloState.status!=='playing') return;
       const turn=soloState.turn;
       const curMoves=validMoves(soloState.board, turn).length;
       const oppMoves=validMoves(soloState.board, 3-turn).length;
-
       if(curMoves===0 && oppMoves===0){
         soloState.status='ended';
         setUICommon(soloState);
-        const {b,w}=countPieces(soloState.board);
-        showToast(`종료 · ${b>w?'흑 승':'백 승'} (흑:${b} 백:${w})`);
         return;
       }
       if(curMoves===0){
-        // 자동 패스
         soloState.passCount=(soloState.passCount||0)+1;
         soloState.turn = 3-turn;
         setUICommon(soloState);
-        showToast(turn===myColor ? '둘 곳이 없어 패스합니다' : '상대가 둘 곳이 없어 패스');
-        if(soloState.turn===WHITE){ // AI 차례면 2초 후 둠
-          setTimeout(maybeAI, 2000);
-        }
+        if(soloState.turn===WHITE) setTimeout(maybeAI, 2000);
         return;
       }
-      // 정상 진행
-      if(soloState.turn===WHITE){
-        setTimeout(maybeAI, 2000); // AI 차례면 대기 후 진행
-      }
+      if(soloState.turn===WHITE) setTimeout(maybeAI, 2000);
     }
 
     async function soloClickCell(x,y){
@@ -416,45 +473,35 @@
       if(!myMoves.some(([xx,yy])=>xx===x&&yy===y)) return;
 
       soloState.board = applyMove(soloState.board, x,y, myColor);
-      lastMove.black = {x,y}; // ✅ 최근 착수 저장
+      lastMove.black = {x,y};
       await playSound();
 
-      // 턴 전환
       const next=WHITE;
       const vmNext=validMoves(soloState.board, next);
       const vmMe=validMoves(soloState.board, myColor);
       if(vmNext.length===0 && vmMe.length===0){
         soloState.status='ended'; soloState.passCount=2; setUICommon(soloState);
-        const {b,w}=countPieces(soloState.board);
-        showToast(`종료 · ${b>w?'흑 승':'백 승'} (흑:${b} 백:${w})`);
         return;
       }
       if(vmNext.length===0){
         soloState.turn=myColor; soloState.passCount=(soloState.passCount||0)+1;
         setUICommon(soloState);
-        showToast('상대가 둘 곳이 없어 패스');
-        // 내 턴 유지 → 자동 판정(혹시 또 못 두면 연속 패스/종료)
         ensureTurnPlayableSolo();
       }else{
         soloState.turn=next; soloState.passCount=0;
         setUICommon(soloState);
-        setTimeout(maybeAI, 2000); // ✅ 2초 후 AI
+        setTimeout(maybeAI, 2000);
       }
     }
 
     function maybeAI(){
       if(mode!=='solo' || !soloState || soloState.status!=='playing') return;
-      if(soloState.turn!==WHITE) return; // AI=백
-
+      if(soloState.turn!==WHITE) return;
       const move = aiChooseMove(soloState.board, WHITE, 1400);
-      if(!move){
-        // AI 패스 또는 종료
-        ensureTurnPlayableSolo();
-        return;
-      }
+      if(!move){ ensureTurnPlayableSolo(); return; }
       const [x,y]=move;
       soloState.board = applyMove(soloState.board, x,y, WHITE);
-      lastMove.white = {x,y}; // ✅ 최근 착수 저장
+      lastMove.white = {x,y};
       playSound();
 
       const vmHuman=validMoves(soloState.board, BLACK);
@@ -462,15 +509,11 @@
       if(vmHuman.length===0 && vmAI.length===0){
         soloState.status='ended';
         setUICommon(soloState);
-        const {b,w}=countPieces(soloState.board);
-        showToast(`종료 · ${b>w?'흑 승':'백 승'} (흑:${b} 백:${w})`);
         return;
       }
       if(vmHuman.length===0){
-        // 사람 패스 → AI 연속(2초 간격 유지)
         soloState.turn=WHITE; soloState.passCount=(soloState.passCount||0)+1;
         setUICommon(soloState);
-        showToast('둘 곳이 없어 패스합니다');
         setTimeout(maybeAI, 2000);
       }else{
         soloState.turn=BLACK; soloState.passCount=0;
@@ -519,7 +562,6 @@
       if(unsubRoom) { unsubRoom(); unsubRoom=null; }
       unsubRoom = onValue(roomRef, (snap)=>{
         const room = snap.val(); if(!room) return;
-        // 온라인 모드에서는 최근 착수 좌표를 따로 저장하지 않았으므로 힌트만 유지
         setUICommon(room);
       });
     }
@@ -539,7 +581,6 @@
       history.replaceState({},'',url.toString());
     }
 
-    // 클릭 처리
     boardEl.addEventListener('click', async (e)=>{
       const cell = e.target.closest('.cell'); if(!cell) return;
       const x=+cell.dataset.x, y=+cell.dataset.y;
@@ -576,7 +617,6 @@
         soloState.passCount=(soloState.passCount||0)+1;
         soloState.turn=WHITE;
         setUICommon(soloState);
-        showToast('둘 곳이 없어 패스합니다');
         setTimeout(maybeAI, 2000);
         return;
       }
@@ -595,20 +635,26 @@
 
     resetBtn.onclick = async ()=>{
       if(mode==='solo'){
-        startSolo(); showToast('재시작'); return;
+        // 종료 결과는 "나가기" 전까지 유지 → 재시작 비활성화 상태
+        showToast('결과 확인 후 나가기를 눌러주세요');
+        return;
       }
       if(!roomId) return;
-      const roomRef = ref(db, `othelloRooms/${roomId}`);
-      await update(roomRef, { board: initialBoard(), turn:BLACK, status:'playing', passCount:0, createdAt: serverTimestamp() });
-      showToast('재시작');
+      showToast('결과 확인 후 나가기를 눌러주세요'); // 온라인도 동일 정책
     };
 
-    leaveBtn.onclick = ()=>{ backToLobby(); showToast('나갔습니다'); };
+    function doLeave(){
+      hideEndOverlay();
+      backToLobby();
+      showToast('나갔습니다');
+    }
+    leaveBtn.onclick = doLeave;
+    overlayLeave.onclick = doLeave;
 
     // 로비 버튼
     createBtn.onclick = async ()=>{
       try{
-        const code = String(Math.floor(100000 + Math.random()*900000));
+        const code = randCode();
         const roomRef = ref(db, `othelloRooms/${code}`);
         await set(roomRef, { createdAt: serverTimestamp(), status:'playing', board:initialBoard(), turn:BLACK, players:{}, passCount:0 });
         await enterRoom(code);
