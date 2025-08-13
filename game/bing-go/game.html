@@ -4,12 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>빙고 게임</title>
+  <link rel="icon" href="data:,">
   <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      text-align: center;
-      padding: 10px;
-    }
+    body { font-family: 'Segoe UI', sans-serif; text-align: center; padding: 10px; background:#f7f7f7; }
     #bingo-board {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
@@ -24,94 +21,65 @@
       font-size: 20px;
       cursor: pointer;
       border-radius: 6px;
+      user-select: none;
     }
-    .cell.marked {
-      background-color: #4CAF50;
-      color: white;
-      font-weight: bold;
+    .cell.marked { background-color: #4CAF50; color: white; font-weight: bold; }
+
+    #nickname-area button { height: 40px; font-size: 16px; padding: 5px 12px; }
+    #nickname { height: 48px; font-size: 18px; padding: 5px 12px; box-sizing: border-box; }
+    #nickname-area input { margin-right: 8px; }
+
+    .modal {
+      position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
     }
-     #nickname-area button {
-    height: 40px;
-    font-size: 16px;
-    padding: 5px 12px;
-  }
+    .modal-content {
+      background-color: white; padding: 24px; border-radius: 12px; width: 90%; max-width: 400px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.25); text-align: center;
+    }
+    .modal-content h2 { margin-top: 0; }
+    .modal-content button {
+      margin-top: 20px; padding: 10px 20px; font-size: 16px;
+      background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer;
+    }
 
-  #nickname {
-    height: 48px;
-    font-size: 18px;
-    padding: 5px 12px;
-    box-sizing: border-box;
-  }
-    
-  #nickname-area input {
-  margin-right: 8px;
-  }
-.modal {
-  position: fixed;
-  z-index: 9999;
-  left: 0; top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.modal-content {
-  background-color: white;
-  padding: 24px;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.25);
-  text-align: center;
-}
-.modal-content h2 {
-  margin-top: 0;
-}
-.modal-content button {
-  margin-top: 20px;
-  padding: 10px 20px;
-  font-size: 16px;
-  background: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
+    #score-board { max-width: 420px; margin: 10px auto; text-align: left; }
+    #called-list { margin: 8px auto; color:#333; }
+    #exit-button { padding:10px 16px; border:0; border-radius:8px; background:#444; color:#fff; cursor:pointer; }
   </style>
 </head>
 <body>
   <h2 id="room-title">빙고 게임</h2>
 
-<div id="nickname-area">
-  <input type="text" id="nickname" placeholder="닉네임 입력" />
-  <button onclick="registerPlayer()">입장</button>
-</div>
+  <div id="nickname-area">
+    <input type="text" id="nickname" placeholder="닉네임 입력" />
+    <button onclick="registerPlayer()">입장</button>
+  </div>
 
-   <audio id="btn-sound" src="name.mp3" preload="auto"></audio>
-   <audio id="win-sound" src="win.mp3" preload="auto"></audio>
-   <audio id="bingo-sound" src="binggo.mp3" preload="auto"></audio>
-   <audio id="number-sound" src="number.mp3" preload="auto"></audio>
+  <audio id="btn-sound" src="name.mp3" preload="auto"></audio>
+  <audio id="win-sound" src="win.mp3" preload="auto"></audio>
+  <audio id="bingo-sound" src="binggo.mp3" preload="auto"></audio>
+  <audio id="number-sound" src="number.mp3" preload="auto"></audio>
 
-
-<div id="game-area" style="display:none;">
-  <h3 id="turn-info">차례 정보를 불러오는 중...</h3>
-  <div id="bingo-board"></div>
-  <div id="called-list"></div>
-  <h4 id="bingo-count">빙고: 0줄</h4>
-  <div id="score-board"></div>
-  <button id="exit-button" onclick="leaveRoom()" style="margin-top: 20px;">방 나가기</button>
-</div>
+  <div id="game-area" style="display:none;">
+    <h3 id="turn-info">차례 정보를 불러오는 중...</h3>
+    <div id="bingo-board"></div>
+    <div id="called-list"></div>
+    <h4 id="bingo-count">빙고: 0줄</h4>
+    <div id="score-board"></div>
+    <button id="exit-button" onclick="leaveRoom()" style="margin-top: 20px;">방 나가기</button>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import {
-      getDatabase, ref, set, get, update,
-      onValue, child, remove
+      getDatabase, ref, set, get, update, onValue, child, remove, onDisconnect
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import {
+      getAuth, onAuthStateChanged, signInAnonymously
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
+    // --- Firebase ---
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -121,45 +89,95 @@
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:1f7246a5fa2d02c291a561"
     };
-
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const auth = getAuth(app);
 
+    // --- Room code ---
     const urlParams = new URLSearchParams(location.search);
     const roomCode = urlParams.get('room');
     document.getElementById('room-title').innerText = `방 코드: ${roomCode}`;
+    if (!roomCode) {
+      alert('room 파라미터가 없습니다.');
+      location.href = 'index.html';
+    }
 
+    // --- State ---
     let nickname = "";
+    let myUid = null;
     let myTurn = -1;
     let currentTurn = 0;
-    let calledNumbers = [];
+    let calledNumbers = []; // 공유되는 호출 번호
     let board = [];
+    let previousBingoCount = 0;
 
-    window.registerPlayer = function () {
-      nickname = document.getElementById('nickname').value.trim();
-      if (!nickname) return alert("닉네임을 입력해주세요.");
-      document.getElementById('btn-sound').play().catch(e => console.log("버튼 사운드 오류:", e));
-
-
-      const playersRef = ref(db, `rooms/${roomCode}/players`);
-      get(playersRef).then(snapshot => {
-        const playerCount = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
-        const turn = playerCount;
-
-        set(child(playersRef, nickname), { turn: turn });
-        set(ref(db, `rooms/${roomCode}/playersOrder/${turn}`), nickname);
-        set(ref(db, `rooms/${roomCode}/ready/${nickname}`), true);
-
-        myTurn = turn;
-        document.getElementById('nickname-area').style.display = 'none';
-        document.getElementById('game-area').style.display = 'block';
-        generateBoard();
-        setupRealtime();
+    // --- Auth ---
+    async function ensureAnonAuth() {
+      if (auth.currentUser) return auth.currentUser;
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, (u) => { if (u) { unsub(); resolve(u); }});
+        signInAnonymously(auth).catch(reject);
       });
+    }
+
+    // --- UI helpers ---
+    const $ = (id) => document.getElementById(id);
+
+    // --- 입장 ---
+    window.registerPlayer = async function () {
+      nickname = $('nickname').value.trim();
+      if (!nickname) return alert("닉네임을 입력해주세요.");
+      $('btn-sound').play().catch(()=>{});
+
+      const user = await ensureAnonAuth();
+      myUid = user.uid;
+
+      // 방 기본 구조 보정 (누락 시)
+      const baseUpdates = {};
+      const roomSnap = await get(ref(db, `rooms/${roomCode}`));
+      const rv = roomSnap.val() || {};
+      if (!('players' in rv)) baseUpdates[`rooms/${roomCode}/players`] = {};
+      if (!('playersOrder' in rv)) baseUpdates[`rooms/${roomCode}/playersOrder`] = [];
+      if (!('ready' in rv)) baseUpdates[`rooms/${roomCode}/ready`] = {};
+      if (!('scores' in rv)) baseUpdates[`rooms/${roomCode}/scores`] = {};
+      if (!('calledNumbers' in rv)) baseUpdates[`rooms/${roomCode}/calledNumbers`] = [];
+      if (!('currentTurn' in rv)) baseUpdates[`rooms/${roomCode}/currentTurn`] = 0;
+      if (Object.keys(baseUpdates).length) await update(ref(db), baseUpdates);
+
+      // 내 정보 기록 (uid 키)
+      await set(ref(db, `rooms/${roomCode}/players/${myUid}`), {
+        name: nickname, joinedAt: Date.now()
+      });
+
+      // playersOrder에 내 uid가 없으면 추가
+      const orderRef = ref(db, `rooms/${roomCode}/playersOrder`);
+      const orderSnap = await get(orderRef);
+      const order = orderSnap.val() || [];
+      if (!order.includes(myUid)) {
+        order.push(myUid);
+        await set(orderRef, order);
+      }
+      // 내 턴 인덱스 계산
+      myTurn = (order || []).indexOf(myUid);
+
+      // ready/scores 세팅
+      await set(ref(db, `rooms/${roomCode}/ready/${myUid}`), true);
+      await set(ref(db, `rooms/${roomCode}/scores/${myUid}`), 0);
+
+      // 접속 종료 시 정리(선택)
+      onDisconnect(ref(db, `rooms/${roomCode}/players/${myUid}`)).remove();
+      onDisconnect(ref(db, `rooms/${roomCode}/ready/${myUid}`)).remove();
+      onDisconnect(ref(db, `rooms/${roomCode}/scores/${myUid}`)).remove();
+
+      $('nickname-area').style.display = 'none';
+      $('game-area').style.display = 'block';
+      generateBoard();
+      setupRealtime();
     };
 
+    // --- 빙고판 생성 ---
     function generateBoard() {
-      const boardEl = document.getElementById('bingo-board');
+      const boardEl = $('bingo-board');
       const nums = Array.from({length: 75}, (_, i) => i + 1).sort(() => Math.random() - 0.5);
       board = nums.slice(0, 25);
       boardEl.innerHTML = '';
@@ -168,196 +186,196 @@
         const cell = document.createElement('div');
         cell.className = 'cell';
         cell.innerText = num;
-        cell.onclick = () => {
-          
+        cell.onclick = async () => {
+          if (myUid == null) return;
           if (myTurn !== currentTurn) return; // 내 차례가 아니면 무시
-          const number = num;
-          document.getElementById('number-sound').play().catch(e => console.log("숫자 사운드 오류:", e));
 
+          const number = num;
+          $('number-sound').play().catch(()=>{});
+
+          // 이미 불렀던 숫자면 내 판만 표시 갱신
           if (calledNumbers.includes(number)) {
             cell.classList.add('marked');
             updateBingoCount();
             return;
           }
 
-          if (myTurn === currentTurn && !calledNumbers.includes(number)) {
-            get(ref(db, `rooms/${roomCode}/playersOrder`)).then(snapshot => {
-              const order = snapshot.val();
-              const nextTurn = (currentTurn + 1) % order.length;
-              if (!calledNumbers.includes(number)) {
-               calledNumbers.push(number);
+          // 턴 진행
+          const orderSnap = await get(ref(db, `rooms/${roomCode}/playersOrder`));
+          const order = orderSnap.val() || [];
+          const nextTurn = order.length ? (currentTurn + 1) % order.length : 0;
 
-               update(ref(db, `rooms/${roomCode}`), {
-               currentTurn: nextTurn,
-               lastNumber: number,
-               calledNumbers: calledNumbers
-                });
-          }
+          const newList = calledNumbers.includes(number)
+            ? calledNumbers
+            : [...calledNumbers, number];
 
-            });
-          }
+          await update(ref(db, `rooms/${roomCode}`), {
+            currentTurn: nextTurn,
+            lastNumber: number,
+            calledNumbers: newList,
+            lastCaller: myUid
+          });
         };
         boardEl.appendChild(cell);
       });
-    }
 
-  let previousBingoCount = 0; // 전역에 추가 (전 빙고 수)
-
-function updateBingoCount() {
-  const cells = [...document.querySelectorAll('.cell')];
-  const matrix = [];
-  while (cells.length) matrix.push(cells.splice(0, 5));
-
-  let bingo = 0;
-  for (let i = 0; i < 5; i++) {
-    if (matrix[i].every(c => c.classList.contains('marked'))) bingo++;
-    if (matrix.map(r => r[i]).every(c => c.classList.contains('marked'))) bingo++;
-  }
-  if (matrix.map((r, i) => r[i]).every(c => c.classList.contains('marked'))) bingo++;
-  if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
-
-  document.getElementById('bingo-count').innerText = `빙고: ${bingo}줄`;
-
-  // 🔊 줄 수가 늘어났을 때만 소리 재생
-  if (bingo > previousBingoCount) {
-    document.getElementById('bingo-sound').play();
-  }
-
-  previousBingoCount = bingo; // 줄 수 갱신
-
-  // 점수 저장
-  set(ref(db, `rooms/${roomCode}/scores/${nickname}`), bingo);
-
-  // 우승 조건 판단
-  if (bingo >= 5) {
-    const winnerRef = ref(db, `rooms/${roomCode}/winner`);
-    get(winnerRef).then(snapshot => {
-      if (!snapshot.exists()) {
-        set(winnerRef, nickname);
-      }
-    });
-  }
-}
-
-
-    function setupRealtime() {
-  const roomRef = ref(db, `rooms/${roomCode}`);
-  onValue(roomRef, snapshot => {
-    const data = snapshot.val();
-    if (!data) return;
-
-    
-    const last = data.lastNumber;
-    currentTurn = data.currentTurn || 0;
-
-    // 🟡 우승자 메시지 및 방 삭제
-    if (data.winner) {
-  // 🔊 승리자 본인에게만 win-sound 재생
-  if (data.winner === nickname) {
-    document.getElementById('win-sound').play();
-  }
-
-  document.getElementById('turn-info').innerText =
-    `🎉 우승자: ${data.winner} 님이 빙고 5줄로 승리하셨습니다!`;
-
-      const cells = document.querySelectorAll('.cell');
-      cells.forEach(cell => {
-        cell.style.pointerEvents = 'none';
-      });
-
-      setTimeout(() => {
-        alert("게임이 종료되어 방이 삭제되었습니다.");
-        remove(ref(db, `rooms/${roomCode}`)).then(() => {
-          window.location.href = "index.html";
+      // 이미 부른 숫자가 있으면 초기 마킹
+      if (calledNumbers.length) {
+        const cells = document.querySelectorAll('.cell');
+        cells.forEach(c => {
+          if (calledNumbers.includes(Number(c.innerText))) c.classList.add('marked');
         });
-      }, 5000);
-    } else {
-      // 🟢 정상 게임 진행 시 차례 표시
-      document.getElementById('turn-info').innerText =
-        `현재 차례: ${data.playersOrder?.[currentTurn] || "..."}`;
-    }
-
-    // 🟡 숫자 업데이트 및 마킹
-    if (last) {
-      document.getElementById('called-list').innerText =
-        `부른 숫자: ${calledNumbers.join(", ")}`;
-
-      const cells = document.querySelectorAll('.cell');
-      cells.forEach(cell => {
-        if (Number(cell.innerText) === last) {
-          cell.classList.add('marked');
-        }
-      });
-
-      updateBingoCount();
-    }
-
-    // 🟢 점수표 갱신
-    
-      // 점수표 제거
-document.getElementById('score-board').innerHTML = '';
-
-    
-
-    // 🟡 우승 조건 체크 (다른 참가자도 5줄일 수 있으므로 모든 사용자에게 적용)
-    if (!data.winner && data.scores) {
-      for (let player in data.scores) {
-        if (data.scores[player] >= 5) {
-          set(ref(db, `rooms/${roomCode}/winner`), player);
-          break;
-        }
+        updateBingoCount();
       }
     }
-    calledNumbers = data.calledNumbers || [];
-  });
-}
 
-window.leaveRoom = function () {
-  if (!nickname || !roomCode) return;
+    // --- 빙고 줄수 계산/저장 ---
+    function updateBingoCount() {
+      const cells = [...document.querySelectorAll('.cell')];
+      const matrix = [];
+      while (cells.length) matrix.push(cells.splice(0, 5));
 
-  const playerRef = ref(db, `rooms/${roomCode}/players/${nickname}`);
-  const orderRef = ref(db, `rooms/${roomCode}/playersOrder`);
+      let bingo = 0;
+      for (let i = 0; i < 5; i++) {
+        if (matrix[i].every(c => c.classList.contains('marked'))) bingo++;
+        if (matrix.map(r => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+      }
+      if (matrix.map((r, i) => r[i]).every(c => c.classList.contains('marked'))) bingo++;
+      if (matrix.map((r, i) => r[4 - i]).every(c => c.classList.contains('marked'))) bingo++;
 
-  // 플레이어 삭제
-  remove(playerRef).then(() => {
-    // playersOrder에서 닉네임 제거
-    get(orderRef).then(snapshot => {
-      const order = snapshot.val() || [];
-      const newOrder = order.filter(name => name !== nickname);
-      set(orderRef, newOrder).then(() => {
+      $('bingo-count').innerText = `빙고: ${bingo}줄`;
+
+      // 새 줄이 생겼을 때만 소리
+      if (bingo > previousBingoCount) $('bingo-sound').play().catch(()=>{});
+      previousBingoCount = bingo;
+
+      // 점수 저장 및 우승 조건 검사
+      if (myUid) set(ref(db, `rooms/${roomCode}/scores/${myUid}`), bingo);
+      if (bingo >= 5) {
+        const winnerRef = ref(db, `rooms/${roomCode}/winner`);
+        get(winnerRef).then(s => {
+          if (!s.exists()) set(winnerRef, myUid);
+        });
+      }
+    }
+
+    // --- 실시간 구독 ---
+    function setupRealtime() {
+      const roomRef = ref(db, `rooms/${roomCode}`);
+      onValue(roomRef, snapshot => {
+        const data = snapshot.val() || {};
+        const playersMap = data.players || {};
+        const resolveName = (uid) => playersMap?.[uid]?.name || '...';
+
+        currentTurn = data.currentTurn || 0;
+        calledNumbers = Array.isArray(data.calledNumbers) ? data.calledNumbers : [];
+
+        // 현재 내 턴 인덱스 재계산(참가자 변화 대응)
+        const order = data.playersOrder || [];
+        myTurn = order.indexOf(myUid);
+
+        // 우승 처리
+        if (data.winner) {
+          if (data.winner === myUid) $('win-sound').play().catch(()=>{});
+          $('turn-info').innerText = `🎉 우승자: ${resolveName(data.winner)} 님이 빙고 5줄로 승리!`;
+
+          // 클릭 막기
+          document.querySelectorAll('.cell').forEach(cell => cell.style.pointerEvents = 'none');
+
+          // 잠시 후 방 삭제 → 로비로 이동
+          setTimeout(() => {
+            alert("게임이 종료되어 방이 삭제되었습니다.");
+            remove(ref(db, `rooms/${roomCode}`)).then(() => {
+              window.location.href = "index.html";
+            });
+          }, 5000);
+        } else {
+          // 정상 진행: 현재 차례 표시
+          const uidTurn = order[currentTurn];
+          $('turn-info').innerText = `현재 차례: ${resolveName(uidTurn)}`;
+        }
+
+        // 호출 숫자 리스트 UI
+        $('called-list').innerText = calledNumbers.length
+          ? `부른 숫자: ${calledNumbers.join(", ")}`
+          : '부른 숫자 없음';
+
+        // 내 보드에 마킹 반영
+        document.querySelectorAll('.cell').forEach(cell => {
+          const n = Number(cell.innerText);
+          if (calledNumbers.includes(n)) cell.classList.add('marked');
+        });
+        updateBingoCount();
+
+        // 점수판
+        const sb = $('score-board');
+        sb.innerHTML = '';
+        if (data.scores) {
+          const entries = Object.entries(data.scores)
+            .map(([uid, sc]) => ({ name: resolveName(uid), sc: Number(sc)||0 }))
+            .sort((a,b)=>b.sc-a.sc);
+          sb.innerHTML = '<h4>점수판</h4>' +
+            entries.map(e => `<div>${e.name}: ${e.sc}줄</div>`).join('');
+        }
+
+        // 다른 참가자도 5줄이 되면 우승 확정
+        if (!data.winner && data.scores) {
+          for (const uid in data.scores) {
+            if (Number(data.scores[uid]) >= 5) {
+              set(ref(db, `rooms/${roomCode}/winner`), uid);
+              break;
+            }
+          }
+        }
+      });
+    }
+
+    // --- 나가기 ---
+    window.leaveRoom = function () {
+      if (!myUid || !roomCode) return;
+
+      const playerRef = ref(db, `rooms/${roomCode}/players/${myUid}`);
+      const orderRef  = ref(db, `rooms/${roomCode}/playersOrder`);
+
+      remove(playerRef).then(async () => {
+        const snap = await get(orderRef);
+        const order = snap.val() || [];
+        const newOrder = order.filter(uid => uid !== myUid);
+        await set(orderRef, newOrder);
+        await remove(ref(db, `rooms/${roomCode}/ready/${myUid}`));
+        await remove(ref(db, `rooms/${roomCode}/scores/${myUid}`));
+
+        // 방에 아무도 없으면 방 삭제
+        const pSnap = await get(ref(db, `rooms/${roomCode}/players`));
+        if (!pSnap.exists() || Object.keys(pSnap.val()).length === 0) {
+          await remove(ref(db, `rooms/${roomCode}`));
+        }
+
         alert("방에서 나갑니다.");
         window.location.href = "index.html";
       });
+    };
+
+    // --- 모달 ---
+    window.addEventListener('DOMContentLoaded', () => {
+      $('modal').style.display = 'flex';
     });
-  });
-};
-
-window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('modal').style.display = 'flex';
-});
-
-window.closeModal = function () {
-  document.getElementById('modal').style.display = 'none';
-};
-
-      
-    
-
+    window.closeModal = function () { $('modal').style.display = 'none'; };
   </script>
-  <!-- 게임 설명 모달 -->
-<div id="modal" class="modal">
-  <div class="modal-content">
-    <h2>빙고 게임 설명</h2>
-    <p>
-      ✅ 1. 닉네임을 입력 후 입장하세요.<br>
-      ✅ 2. 각자 5x5 빙고판이 랜덤 생성됩니다.<br>
-      ✅ 3. 자신의 차례에 숫자를 클릭해 상대도 해당 숫자를 마킹합니다.<br>
-      ✅ 4. 가로/세로/대각선으로 5줄이 되면 승리합니다.<br>
-      ✅ 5. 승리하면 자동으로 방이 종료되고 결과가 표시됩니다.
-    </p>
-    <button onclick="closeModal()">게임 시작</button>
-  </div>
-</div>
 
+  <!-- 게임 설명 모달 -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <h2>빙고 게임 설명</h2>
+      <p>
+        ✅ 1. 닉네임을 입력 후 입장하세요.<br>
+        ✅ 2. 각자 5x5 빙고판이 랜덤 생성됩니다.<br>
+        ✅ 3. 자신의 차례에 숫자를 클릭하면 모두가 그 숫자를 마킹합니다.<br>
+        ✅ 4. 가로/세로/대각선으로 5줄이 되면 승리합니다.<br>
+        ✅ 5. 승리하면 자동으로 방이 종료됩니다.
+      </p>
+      <button onclick="closeModal()">게임 시작</button>
+    </div>
+  </div>
 </body>
 </html>
