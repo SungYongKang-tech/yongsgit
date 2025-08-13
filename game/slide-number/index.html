@@ -4,12 +4,38 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>숫자 퍼즐</title>
+
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; margin: 0; padding: 16px; }
+    #timer { font-size: 6vw; margin-top: 12px; }
+    #board { display: grid; grid-template-columns: repeat(4,1fr); gap: 2vw; width: 92vw; max-width: 480px; margin: 20px auto; }
+    .tile { background: #fff; border: 2px solid #999; font-size: 8vw; aspect-ratio: 1/1; display:flex; justify-content:center; align-items:center; cursor:pointer; transition: transform .2s, background-color .3s; }
+    .tile:active { transform: scale(.95); }
+    .empty { background:#ccc; cursor: default; }
+    #status { font-size: 5vw; margin-top: 12px; color: #006400; }
+    #rankingList { padding:0; margin-top:16px; font-size:16px; list-style:none; max-height:240px; overflow-y:auto; }
+    #rankingList li { padding: 4px 0; }
+    #buttons { margin:16px; }
+    #buttons button { font-size: 5vw; padding: 8px 16px; margin: 0 8px; }
+
+    html, body { overflow:auto; height:100%; }
+    .modal { display:none; position:fixed; z-index:1000; inset:0; background:rgba(0,0,0,.5); overflow:auto; }
+    .modal.show { display:block; }
+    .modal-content { background:#fff; margin:15% auto; padding:20px; border-radius:10px; width:80%; max-width:400px; box-shadow:0 0 20px rgba(0,0,0,.3); }
+    .close { color:#888; float:right; font-size:24px; font-weight:bold; cursor:pointer; }
+    .close:hover { color:#000; }
+  </style>
+
   <script type="module">
+    /* ===================== Firebase (v9.22.2) ===================== */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, get, child
+      getDatabase, ref, set, get, child, remove, onValue
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    // ★ 익명 로그인 추가
+    import {
+      getAuth, onAuthStateChanged, signInAnonymously
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -22,16 +48,36 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    const db  = getDatabase(app);
 
+    // ★ 익명 로그인 보장
+    const auth = getAuth(app);
+    async function ensureAnonAuth() {
+      if (auth.currentUser) return auth.currentUser;
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, (u) => { if (u) { unsub(); resolve(u); } });
+        signInAnonymously(auth).catch((e) => { console.error("익명 로그인 실패:", e); reject(e); });
+      });
+    }
+
+    // 서버 시간 오프셋 (클라이언트 시계 보정)
+    let serverOffset = 0;
+    onValue(ref(db, ".info/serverTimeOffset"), (snap) => { serverOffset = snap.val() || 0; });
+    const nowMs = () => Date.now() + serverOffset;
+
+    /* ===================== DOM 참조 ===================== */
+    const board      = document.getElementById('board');
+    const timerEl    = document.getElementById('timer');
+    const statusEl   = document.getElementById('status');
+    const pauseBtn   = document.getElementById('pauseBtn');
+    const restartBtn = document.getElementById('restartBtn');
+
+    const howToModal = document.getElementById('howToModal');
+    const closeBtn   = document.getElementById('modalClose');
+
+    /* ===================== 게임 상태 ===================== */
     let tiles, startTime, timerInterval, completed = false, paused = false;
     let timerStarted = false;
-
-    const board = document.getElementById('board');
-    const timerEl = document.getElementById('timer');
-    const statusEl = document.getElementById('status');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const restartBtn = document.getElementById('restartBtn');
 
     function formatTime(sec) {
       const m = Math.floor(sec / 60);
@@ -60,23 +106,22 @@
     }
 
     function moveTile(index) {
-  if (completed || paused) return;
+      if (completed || paused) return;
 
-  if (!timerStarted) {
-    startTimer();
-    timerStarted = true;
-  }
+      if (!timerStarted) {
+        startTimer();
+        timerStarted = true;
+      }
 
-  const emptyIndex = tiles.indexOf('');
-  const diff = Math.abs(index - emptyIndex);
-  const sameRow = Math.floor(index / 4) === Math.floor(emptyIndex / 4);
-  if ((diff === 1 && sameRow) || diff === 4) {
-    [tiles[index], tiles[emptyIndex]] = [tiles[emptyIndex], tiles[index]];
-    render();
-    checkWin();
-  }
-}
-
+      const emptyIndex = tiles.indexOf('');
+      const diff = Math.abs(index - emptyIndex);
+      const sameRow = Math.floor(index / 4) === Math.floor(emptyIndex / 4);
+      if ((diff === 1 && sameRow) || diff === 4) {
+        [tiles[index], tiles[emptyIndex]] = [tiles[emptyIndex], tiles[index]];
+        render();
+        checkWin();
+      }
+    }
 
     function checkWin() {
       const solved = [...Array(15).keys()].map(i => i + 1).concat('');
@@ -99,102 +144,113 @@
       }, 1000);
     }
 
-    function saveRanking(name, timeSec) {
+    // ★ 이름을 key로 저장(기존 방식 유지)
+    async function saveRanking(name, timeSec) {
+      await ensureAnonAuth();
       return set(ref(db, 'puzzleRankings/' + name), timeSec);
     }
 
-    function loadTopRankings() {
-      const dbRef = ref(db);
-      get(child(dbRef, 'puzzleRankings')).then(snapshot => {
-        const list = document.getElementById('rankingList');
-        list.innerHTML = '';
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const sorted = Object.entries(data)
-            .map(([name, time]) => ({ name, time }))
-            .sort((a, b) => a.time - b.time)
-            .slice(0, 10);
-      sorted.forEach((entry, index) => {
-  const li = document.createElement('li');
-  li.textContent = `${index + 1}등 - ${entry.name} (${formatTime(entry.time)})`;
-  list.appendChild(li);
-});
-
-        }
-      });
-    }
-
-    function checkAndSaveRanking(newTime) {
-      const dbRef = ref(db);
-      get(child(dbRef, 'puzzleRankings')).then(snapshot => {
-        const data = snapshot.val() || {};
+    async function loadTopRankings() {
+      await ensureAnonAuth(); // 읽기에도 일관되게 인증
+      const snap = await get(child(ref(db), 'puzzleRankings'));
+      const list = document.getElementById('rankingList');
+      list.innerHTML = '';
+      if (snap.exists()) {
+        const data = snap.val();
         const sorted = Object.entries(data)
           .map(([name, time]) => ({ name, time }))
-          .sort((a, b) => a.time - b.time);
-
-        if (sorted.length < 10 || newTime < sorted[9].time) {
-          const name = prompt("🎉 10등 안에 들었습니다! 이름을 입력하세요:");
-          if (name) {
-            saveRanking(name, newTime).then(loadTopRankings);
-          }
-        } else {
-          alert("좋은 기록이지만 10위 안에는 들지 못했습니다.");
-          loadTopRankings();
-        }
-      });
-    }
-
-   function restartGame() {
- function isSolvable(array) {
-  const size = 4; // 4x4 퍼즐
-  let inversions = 0;
-
-  // 역전 수 계산
-  for (let i = 0; i < array.length; i++) {
-    if (array[i] === '') continue;
-    for (let j = i + 1; j < array.length; j++) {
-      if (array[j] !== '' && array[i] > array[j]) {
-        inversions++;
+          .sort((a, b) => a.time - b.time)
+          .slice(0, 10);
+        sorted.forEach((entry, index) => {
+          const li = document.createElement('li');
+          li.textContent = `${index + 1}등 - ${entry.name} (${formatTime(entry.time)})`;
+          list.appendChild(li);
+        });
       }
     }
-  }
 
-  const emptyIndex = array.indexOf('');
-  const emptyRowFromBottom = size - Math.floor(emptyIndex / size); // 아래서부터 행
+    async function checkAndSaveRanking(newTime) {
+      await ensureAnonAuth();
+      const snap = await get(child(ref(db), 'puzzleRankings'));
+      const data = snap.val() || {};
+      const sorted = Object.entries(data)
+        .map(([name, time]) => ({ name, time }))
+        .sort((a, b) => a.time - b.time);
 
-  if (size % 2 === 0) {
-    // 가로 크기 짝수
-    if (emptyRowFromBottom % 2 === 0) {
-      return inversions % 2 === 1;
-    } else {
-      return inversions % 2 === 0;
+      if (sorted.length < 10 || newTime < sorted[9].time) {
+        const name = prompt("🎉 10등 안에 들었습니다! 이름을 입력하세요:");
+        if (name) {
+          try {
+            await saveRanking(name, newTime);
+            await loadTopRankings();
+          } catch (e) {
+            alert("저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+            console.warn(e);
+          }
+        }
+      } else {
+        alert("좋은 기록이지만 10위 안에는 들지 못했습니다.");
+        loadTopRankings();
+      }
     }
-  } else {
-    // 가로 크기 홀수
-    return inversions % 2 === 0;
-  }
-}
 
+    // 퍼즐이 풀 수 있는 상태인지 체크
+    function isSolvable(array) {
+      const size = 4;
+      let inversions = 0;
+      for (let i = 0; i < array.length; i++) {
+        if (array[i] === '') continue;
+        for (let j = i + 1; j < array.length; j++) {
+          if (array[j] !== '' && array[i] > array[j]) inversions++;
+        }
+      }
+      const emptyIndex = array.indexOf('');
+      const emptyRowFromBottom = size - Math.floor(emptyIndex / size);
+      if (size % 2 === 0) {
+        return emptyRowFromBottom % 2 === 0 ? inversions % 2 === 1 : inversions % 2 === 0;
+      } else {
+        return inversions % 2 === 0;
+      }
+    }
 
+    function restartGame() {
+      let temp;
+      do {
+        temp = shuffle([...Array(15).keys()].map(i => i + 1).concat(''));
+      } while (!isSolvable(temp));
+      tiles = temp;
+      completed = false;
+      paused = false;
+      timerStarted = false;
+      clearInterval(timerInterval);
+      render();
+      timerEl.textContent = '⏱️ 0:00';
+      statusEl.textContent = "";
+    }
 
+    // ★ 금요일 12시(KST 로컬 기준) 랭킹 리셋
+    async function resetRankingIfFridayNoon() {
+      try {
+        await ensureAnonAuth();
+        const now = new Date();
+        const isFriday = now.getDay() === 5;
+        const hour = now.getHours();
+        const today = now.toISOString().slice(0, 10);
+        if (isFriday && hour >= 12) {
+          const resetKey = "rankingReset_" + today;
+          if (!localStorage.getItem(resetKey)) {
+            await remove(ref(db, 'puzzleRankings'));
+            console.log("✅ 금요일 오후 12시 이후 랭킹 리셋 완료");
+            localStorage.setItem(resetKey, "done");
+            await loadTopRankings();
+          }
+        }
+      } catch (err) {
+        console.error("랭킹 리셋 실패:", err);
+      }
+    }
 
-
-  let temp;
-  do {
-    temp = shuffle([...Array(15).keys()].map(i => i + 1).concat(''));
-  } while (!isSolvable(temp));
-
-  tiles = temp;
-  completed = false;
-  paused = false;
-  timerStarted = false;
-  clearInterval(timerInterval);
-  render();
-  timerEl.textContent = '⏱️ 0:00';
-  statusEl.textContent = "";
-}
-
-
+    /* ===================== 이벤트 바인딩 ===================== */
     pauseBtn.onclick = () => {
       paused = !paused;
       pauseBtn.textContent = paused ? "▶️ 재개" : "⏸️ 일시정지";
@@ -205,158 +261,27 @@
       pauseBtn.textContent = "⏸️ 일시정지";
     };
 
-    restartGame();
-    loadTopRankings();
+    // 모달 제어
+    function openHowTo()  { howToModal.classList.add('show'); }
+    function closeModal() { howToModal.classList.remove('show'); }
+    window.closeModal = closeModal; // inline onclick에서 호출
+
+    // 초기화
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await ensureAnonAuth();             // ★ 시작 시 로그인 보장
+      } catch {}
+      restartGame();
+      await loadTopRankings();
+      openHowTo();
+      await resetRankingIfFridayNoon();
+    });
+
+    // 주기적으로 리셋 체크(선택)
+    setInterval(resetRankingIfFridayNoon, 60 * 1000);
   </script>
-<script>
-  function closeModal() {
-    document.getElementById('howToModal').style.display = 'none';
-  }
-
-  window.onload = function () {
-    document.getElementById('howToModal').style.display = 'block';
-    resetRankingIfFridayNoon(); // ✅ 리셋 조건 확인
-  };
-  function resetRankingIfFridayNoon() {
-  const now = new Date();
-  const isFriday = now.getDay() === 5; // 금요일
-  const hour = now.getHours();
-  const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
-
-  if (isFriday && hour >= 12) {
-    const resetKey = "rankingReset_" + today;
-    if (!localStorage.getItem(resetKey)) {
-      remove(ref(db, 'puzzleRankings'))
-        .then(() => {
-          console.log("✅ 금요일 오후 12시 이후 랭킹 리셋 완료");
-          localStorage.setItem(resetKey, "done");
-          loadTopRankings(); // 리셋 후 랭킹 다시 불러오기
-        })
-        .catch(err => {
-          console.error("랭킹 리셋 실패:", err);
-        });
-    }
-  }
-}
-
-</script>
-
-  <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      background: #f0f0f0;
-      margin: 0;
-      padding: 16px;
-    }
-
-    #timer {
-      font-size: 6vw;
-      margin-top: 12px;
-    }
-
-    #board {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 2vw;
-      width: 92vw;
-      max-width: 480px;
-      margin: 20px auto;
-    }
-
-    .tile {
-      background: #ffffff;
-      border: 2px solid #999;
-      font-size: 8vw;
-      aspect-ratio: 1 / 1;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      transition: transform 0.2s ease, background-color 0.3s;
-    }
-
-    .tile:active {
-      transform: scale(0.95);
-    }
-
-    .empty {
-      background: #ccc;
-      cursor: default;
-    }
-
-    #status {
-      font-size: 5vw;
-      margin-top: 12px;
-      color: #006400;
-    }
-
-    #rankingList {
-      padding: 0;
-      margin-top: 16px;
-      font-size: 4vw;
-      list-style: none;
-    }
-
-    #buttons {
-      margin: 16px;
-    }
-
-    #buttons button {
-      font-size: 5vw;
-      padding: 8px 16px;
-      margin: 0 8px;
-    }
-    html, body {
-  overflow: auto;
-  height: 100%;
-}
-.modal {
-  display: block;
-  position: fixed;
-  z-index: 1000;
-  left: 0; top: 0;
-  width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  overflow: auto;
-}
-
-.modal-content {
-  background-color: #fff;
-  margin: 15% auto;
-  padding: 20px;
-  border-radius: 10px;
-  width: 80%;
-  max-width: 400px;
-  box-shadow: 0 0 20px rgba(0,0,0,0.3);
-}
-
-.close {
-  color: #888;
-  float: right;
-  font-size: 24px;
-  font-weight: bold;
-  cursor: pointer;
-}
-.close:hover {
-  color: #000;
-}
-#rankingList {
-  padding: 0;
-  margin-top: 16px;
-  font-size: 16px;
-  list-style: none;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-#rankingList li {
-  padding: 4px 0;
-}
-
-
-  </style>
 </head>
+
 <body>
   <h2>숫자 퍼즐 (1~15 정렬)</h2>
   <div id="timer">⏱️ 0:00</div>
@@ -370,21 +295,21 @@
 
   <h3>🏆 상위 10위</h3>
   <ol id="rankingList"></ol>
-<div id="howToModal" class="modal">
-</body>
 
-<div class="modal-content">
-    <span class="close" onclick="closeModal()">&times;</span>
-    <h2>📌 숫자 퍼즐 게임 방법</h2>
-    <ul style="text-align: left; font-size: 16px;">
-      <li>1. 1부터 15까지 숫자를 순서대로 맞추는 게임입니다.</li>
-      <li>2. 빈 칸과 인접한 숫자만 이동할 수 있습니다.</li>
-      <li>3. 움직이면 자동으로 타이머가 시작됩니다.</li>
-      <li>4. 완성하면 걸린 시간에 따라 랭킹이 저장됩니다.</li>
-      <li>5. 상위 10위 안에 들면 이름을 입력해 랭킹 등록!</li>
-      <li>6. 매주 금요일 낮 12시 랭킹 리셋됩니다!</li>
-    </ul>
+  <!-- 안내 모달 (마크업 정리) -->
+  <div id="howToModal" class="modal">
+    <div class="modal-content">
+      <span id="modalClose" class="close" onclick="closeModal()">&times;</span>
+      <h2>📌 숫자 퍼즐 게임 방법</h2>
+      <ul style="text-align:left; font-size:16px;">
+        <li>1. 1부터 15까지 숫자를 순서대로 맞추는 게임입니다.</li>
+        <li>2. 빈 칸과 인접한 숫자만 이동할 수 있습니다.</li>
+        <li>3. 움직이면 자동으로 타이머가 시작됩니다.</li>
+        <li>4. 완성하면 걸린 시간에 따라 랭킹이 저장됩니다.</li>
+        <li>5. 상위 10위 안에 들면 이름을 입력해 랭킹 등록!</li>
+        <li>6. 매주 금요일 낮 12시 랭킹 리셋됩니다!</li>
+      </ul>
+    </div>
   </div>
-</div>
-
+</body>
 </html>
