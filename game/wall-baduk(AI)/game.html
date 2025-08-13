@@ -2,132 +2,121 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
-<title>Wall-baduk 게임</title>
+<title>Wall-baduk (AI 대전)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <style>
-    :root {
-  --bar-h: 60px;
-  --p: min(42px, calc((100vw - 20px) / 13)); /* 13칸 그리드에 맞춤 */
-  --t: calc(var(--p) * 0.35); /* 점 크기의 비율로 벽 두께 */
-}
+  :root {
+    --bar-h: 60px;
+    --p: min(42px, calc((100vw - 20px) / 13)); /* 13칸 그리드에 맞춤 */
+    --t: calc(var(--p) * 0.35); /* 점 크기의 비율로 벽 두께 */
+  }
+  body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
+    display:grid; grid-template-rows:auto auto auto auto auto; }
+  h1 { margin: 8px 0 4px; }
 
-    body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
-      display:grid; grid-template-rows:auto auto auto auto auto; }
-    h1 { margin: 8px 0 4px; }
+  /* 상단 패널 */
+  #panel { margin:8px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  #panel button { padding:10px 14px; border:1px solid #999; border-radius:10px; background:#fff; cursor:pointer; }
 
-    /* 로비 */
-    #setup { margin:10px 0 4px; }
-    #setup .row { display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
-    #roomInput { width:min(260px, 70vw); padding:10px 12px; border:1px solid #bbb; border-radius:8px; font-size:16px; }
-    #setup button { padding:12px 14px; border-radius:10px; border:1px solid #999; background:#fff; cursor:pointer; }
-    #roomLine { font-size:13px; color:#555; margin:6px 0 6px; }
+  #turnLine { margin:2px 0; font-size:16px; display:flex; gap:8px; justify-content:center; align-items:center; }
+  #turnColor { font-weight:700; }
+  #timer { font-variant-numeric: tabular-nums; padding:2px 6px; border:1px solid #ddd; border-radius:8px; background:#fff;
+    min-width: 54px; display:inline-block; }
+  #scores { margin:0 0 4px; font-size:14px; }
 
-    /* 상단 패널 */
-    #panel { margin:4px 0 6px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-    #panel button { padding:10px 14px; border:1px solid #999; border-radius:10px; background:#fff; cursor:pointer; }
+  /* 보드 */
+  #wrap { display:flex; justify-content:center; align-items:flex-start; padding:0 10px 6px; overflow:auto; }
+  #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
+  .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
 
-    #turnLine { margin:2px 0; font-size:16px; display:flex; gap:8px; justify-content:center; align-items:center; }
-    #turnColor { font-weight:700; }
-    #timer { font-variant-numeric: tabular-nums; padding:2px 6px; border:1px solid #ddd; border-radius:8px; background:#fff;
-      min-width: 54px; display:inline-block; }
-    #scores { margin:0 0 4px; font-size:14px; }
+  .point { width:var(--p); height:var(--p); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
+  .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
+  .h-wall { width:var(--p); height:var(--t); background:#fff; cursor:pointer; }
+  .v-wall { width:var(--t); height:var(--p); background:#fff; cursor:pointer; }
+  .blank  { width:var(--t); height:var(--t); background:#15326b; }
 
-    /* 오디오 컨트롤 */
-    .audio-wrap { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; }
-    #volSlider { width: 160px; }
-    #volVal { min-width:36px; display:inline-block; text-align:right; }
+  .movable { background:#d0d0d0 !important; }
+  .final-p1-region { background:#ffd6e7 !important; }
+  .final-p2-region { background:#d6ecff !important; }
 
-    /* 보드 */
-    #wrap { display:flex; justify-content:center; align-items:flex-start; padding:0 10px 6px; overflow:auto; }
-    #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
-    .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
+  #bottomBar { position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
+    border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px; }
+  #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
 
-    .point { width:var(--p); height:var(--p); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
-    .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
-    .h-wall { width:var(--p); height:var(--t); background:#fff; cursor:pointer; }
-    .v-wall { width:var(--t); height:var(--p); background:#fff; cursor:pointer; }
-    .blank  { width:var(--t); height:var(--t); background:#15326b; }
+  /* 도움말 모달 */
+  #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:10000; padding:16px; }
+  #helpCard { width:100%; max-width:560px; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.2); text-align:left; overflow:hidden; }
+  #helpHeader { padding:14px 18px; background:#222; color:#fff; font-weight:800; }
+  #helpBody { padding:14px 18px; color:#222; line-height:1.5; font-size:15px; }
+  #helpBody ul { margin:6px 0 0 8px; padding-left:12px; }
+  #helpBody ul ul { margin-left:6px; padding-left:10px; }
+  #helpBody li { margin:4px 0; }
+  #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
+  .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
 
-    .movable { background:#d0d0d0 !important; }
-    .final-p1-region { background:#ffd6e7 !important; }
-    .final-p2-region { background:#d6ecff !important; }
-
-    #bottomBar { position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
-      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px; }
-    #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-
-    /* 도움말 모달 */
-    #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:10000; padding:16px; }
-    #helpCard { width:100%; max-width:560px; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.2); text-align:left; overflow:hidden; }
-    #helpHeader { padding:14px 18px; background:#222; color:#fff; font-weight:800; }
-    #helpBody { padding:14px 18px; color:#222; line-height:1.5; font-size:15px; }
-    #helpBody ul { margin:6px 0 0 8px; padding-left:12px; }
-    #helpBody ul ul { margin-left:6px; padding-left:10px; }
-    #helpBody li { margin:4px 0; }
-    #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
-    .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
-
-    @media (max-width:420px){ #volSlider { width:120px; } }
-  </style>
+  @media (max-width:420px){ #volSlider { width:120px; } }
+</style>
 </head>
 <body>
-<h1>Wall-baduk (벽바둑)</h1>
-<div id="gameRoomTitle" style="font-size:18px;font-weight:bold;margin-bottom:6px;display:none;"></div>
+<h1>Wall-baduk (AI 대전)</h1>
 
-<div id="panel" style="display:none">
+<div id="panel">
   <button id="resetBtn">새로 시작</button>
   <button id="helpBtn" onclick="openHelp()">도움말</button>
   <button id="endBtn">게임 종료</button>
 </div>
 
-<div id="turnLine" style="display:none">현재 턴: <span id="turnColor"></span> <span id="timer"></span></div>
-<div id="scores" style="display:none">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
+<div id="turnLine">현재 턴: <span id="turnColor"></span> <span id="timer"></span></div>
+<div id="scores">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
 
 <div id="wrap"><div id="board"></div></div>
-<div id="bottomBar" style="display:none"><button id="skipWallBtn" disabled>이동 없이 벽 설치</button></div>
+<div id="bottomBar"><button id="skipWallBtn" disabled>이동 없이 벽 설치</button></div>
 
+<!-- 도움말 -->
 <div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
   <div id="helpCard">
     <div id="helpHeader"><span id="helpTitle">게임 설명</span></div>
     <div id="helpBody">
-      <!-- 기존 게임 설명 리스트 -->
+      <ul>
+        <li>말 이동은 상하좌우로 <b>최대 2칸</b> (벽은 통과 불가, 다른 말이 있는 점은 불가).</li>
+        <li>이동 후 <b>벽 1개</b>를 설치합니다. (가로/세로 벽 칸)</li>
+        <li>영역이 나뉘어 <b>단독 소유</b>인 점들의 합이 점수입니다.</li>
+        <li>혼합 영역(양쪽 말이 섞인 구역)이 없으면 게임 종료!</li>
+      </ul>
     </div>
     <div id="helpFooter"><button class="helpBtn" id="helpCloseBtn">시작하기</button></div>
   </div>
 </div>
+
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2315326b'/%3E%3Ccircle cx='22' cy='22' r='10' fill='%23e74c3c'/%3E%3Ccircle cx='42' cy='42' r='10' fill='%233498db'/%3E%3C/svg%3E">
 
 <script type="module">
-
-
-/* DOM 엘리먼트 참조 */
+/* DOM */
 const boardEl   = document.getElementById('board');
 const skipWallBtn = document.getElementById('skipWallBtn');
 const turnEl    = document.getElementById('turnColor');
 const s1El      = document.getElementById('s1');
 const s2El      = document.getElementById('s2');
-const resetBtn = document.getElementById('resetBtn');
-const endBtn   = document.getElementById('endBtn');
-// ===== 오디오 객체 =====
+const resetBtn  = document.getElementById('resetBtn');
+const endBtn    = document.getElementById('endBtn');
+
+/* 오디오 */
 const audioMal  = new Audio('mal.mp3');
 const audioWall = new Audio('wall.mp3');
 const audioWin  = new Audio('win.mp3');
 
-/* 새로 시작 / 종료 버튼 동작 */
-resetBtn?.addEventListener('click', () => {
+/* 새로 시작 / 종료 */
+resetBtn.addEventListener('click', () => {
   local.selected = null;
   local.prevWallCount = null;
   local.state = initialState();
   renderFromState();
 });
-
-endBtn?.addEventListener('click', () => {
+endBtn.addEventListener('click', () => {
   if (!confirm('현재 상황으로 게임을 종료할까요?')) return;
-
-  // 점수 계산(단독 소유 영역만 합산)
   const { regions } = computeRegionsLocal();
-  const sc = [0, 0];
+  const sc = [0,0];
   for (const reg of regions) {
     if (reg.players.size === 1) {
       const owner = [...reg.players][0];
@@ -136,31 +125,20 @@ endBtn?.addEventListener('click', () => {
   }
   s1El.textContent = sc[0];
   s2El.textContent = sc[1];
-
-  // 종료 처리: 영역 칠하고 결과 알림
   local.state.phase = 'ended';
   fillFinalRegionsLocal();
   showWinnerWithPaintLocal();
-
-  // ====== 화면 나가기 ======
-  // 1) 같은 페이지 새로고침:
-  // location.reload();
-
-  // 2) index.html 등 다른 페이지로 이동:
-  location.href = 'index.html';
+  // 단일 파일: 새로 시작은 reset 버튼으로, 여기서는 화면 유지
 });
 
-function randomChoice(arr){
-  return (arr && arr.length) ? arr[Math.floor(Math.random()*arr.length)] : null;
-}
-
-/* 게임 상수/상태 */
+/* 공통 상수/상태 */
 const BOARD_POINTS = 7;
 const GRID = BOARD_POINTS * 2 - 1;      // 7점 → 13그리드
 const COLORS = ['#e74c3c', '#3498db'];  // P1 빨강 / P2 파랑
 let grid = [];                           // 보드 셀 2차원 배열
 
-/* 보조 함수 */
+/* 유틸 */
+function randomChoice(arr){ return (arr && arr.length) ? arr[Math.floor(Math.random()*arr.length)] : null; }
 function pt(p){ return (p-1)*2; }
 const asArray = x => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
 function inBounds(r,c){ return r>=0 && r<GRID && c>=0 && c<GRID; }
@@ -171,10 +149,10 @@ function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.cl
 function initialState(){
   return {
     phase:'place-extra',
-    current:0,
+    current:0,                 // 0=사람(P1), 1=AI(P2)
     extraOrder:[0,1,1,0],
     extraIdx:0,
-    pieces:{ 
+    pieces:{
       '0':[ {r:pt(2),c:pt(2)}, {r:pt(6),c:pt(6)} ],
       '1':[ {r:pt(6),c:pt(2)}, {r:pt(2),c:pt(6)} ]
     },
@@ -182,13 +160,6 @@ function initialState(){
     lastMoved:null
   };
 }
-function showGameUI(){
-  document.getElementById('panel').style.display='flex';
-  document.getElementById('turnLine').style.display='block';
-  document.getElementById('scores').style.display='block';
-  document.getElementById('bottomBar').style.display='flex';
-}
-/* 상태 정규화 */
 function normalizeState(s){
   if(!s) return s;
   s.walls = asArray(s.walls);
@@ -200,7 +171,7 @@ function normalizeState(s){
   return s;
 }
 
-/* 벽(미배치) 통과 가능한 이웃 점 찾기 */
+/* 벽/이웃 탐색 (DOM 기반) */
 function neighborsReachable(r,c){
   const dirs=[{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}], out=[];
   for(const {dr,dc} of dirs){
@@ -214,8 +185,6 @@ function neighborsReachable(r,c){
   }
   return out;
 }
-
-/* 벽 기준 연결 이웃(영역 계산용) */
 function neighborsByWall(r,c){
   const dirs=[{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}], out=[];
   for(const {dr,dc} of dirs){
@@ -229,32 +198,7 @@ function neighborsByWall(r,c){
   return out;
 }
 
-/* 선택 말에서 2스텝 이내 이동 가능 점 표시 */
-function showMovableFrom(sr,sc){
-  clearMovable();
-  const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
-  const q=[{r:sr,c:sc,d:0}]; v[sr][sc]=true; let cnt=0;
-  while(q.length){
-    const {r,c,d}=q.shift();
-    if(d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
-      grid[r][c].classList.add('movable'); cnt++;
-    }
-    if(d===2) continue;
-    for(const {nr,nc} of neighborsReachable(r,c)){
-      if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:d+1}); }
-    }
-  }
-  return cnt;
-}
-
-/* 보드 리사이즈(간단 버전) — 없으면 에러 나므로 정의 */
-function resizeBoard(){
-  boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
-  boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
-}
-
-
-/** 말이 놓일 수 있는 모든 빈 점(배치 단계용) */
+/* 배치/이동 후보 */
 function allEmptyPoints(s){
   const occ = new Set();
   for (const pid of ['0','1']){
@@ -268,18 +212,13 @@ function allEmptyPoints(s){
   }
   return out;
 }
-
-/** (벽을 고려해) sr,sc에서 맨해튼 2스텝 이내로 갈 수 있는 목적지 목록 */
 function listMovable(s, sr, sc){
-  // 그리드/벽/점유 상태는 DOM을 그대로 사용 (grid, neighborsReachable)
   const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
   const q=[{r:sr,c:sc,d:0}]; v[sr][sc]=true;
   const dest=[];
   while(q.length){
     const {r,c,d}=q.shift();
-    if(d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
-      dest.push({r,c});
-    }
+    if(d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')) dest.push({r,c});
     if(d===2) continue;
     for(const {nr,nc} of neighborsReachable(r,c)){
       if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:d+1}); }
@@ -287,8 +226,6 @@ function listMovable(s, sr, sc){
   }
   return dest;
 }
-
-/** 특정 점 주변(상하좌우)의 빈 벽 칸 반환 (타임아웃/AI 벽 설치용) */
 function adjacentEmptyWallsOfPoint(s, pr, pc){
   const occupied = new Set(s.walls.map(w=>`${w.r},${w.c}`));
   const cand = [{r:pr-1,c:pc},{r:pr+1,c:pc},{r:pr,c:pc-1},{r:pr,c:pc+1}];
@@ -299,8 +236,6 @@ function adjacentEmptyWallsOfPoint(s, pr, pc){
     return inBoard && isWallPos && free;
   });
 }
-
-/** 보드의 모든 빈 벽 칸 목록 (타임아웃/AI 벽 설치용) */
 function listEmptyWallsFromState(s){
   const occupied = new Set(s.walls.map(w=>`${w.r},${w.c}`));
   const out=[];
@@ -314,474 +249,7 @@ function listEmptyWallsFromState(s){
   return out;
 }
 
-
-/* ================= URL 모드 ================= */
-const params = new URLSearchParams(location.search);
-const mode = ((params.get('mode') || 'solo') + '').trim().toLowerCase();
-const level = ((params.get('level') || 'easy') + '').trim().toLowerCase();
-const roomName = ((params.get('room') || '') + '').trim();
-
-
-let local = { roomId:null, role:0, state:null, selected:null, prevWallCount:null, isSolo:false, aiLevel:level };
-
-if (mode === 'solo') {
-  local.isSolo = true;
-  enterSoloGame();
-} else {
-  initFirebase();
-  if (mode === 'create') createRoom(roomName);
-  if (mode === 'join') joinRoom(roomName);
-}
-
-/* ================= 2인용(같은 도메인 탭 간) 간이 동기화 ================= */
-let chan = null;
-
-function initFirebase(){ /* Firebase 미사용 */ }
-
-function openChannel(roomId){
-  // BroadcastChannel 지원/권한 가드
-  if (!('BroadcastChannel' in window)) {
-    console.warn('BroadcastChannel 미지원 환경입니다. 동기화 없이 로컬 보드만 표시합니다.');
-    chan = null;
-    return;
-  }
-  try {
-    if (chan) chan.close();
-    chan = new BroadcastChannel('wb-' + roomId);
-    chan.onmessage = (ev) => {
-      const msg = ev.data || {};
-      // 상대가 보낸 상태 수신
-      if (msg.type === 'state' && msg.from !== local.role) {
-        local.state = normalizeState(msg.state);
-        renderFromState();
-      }
-      // 동기화 요청이면 현재 상태 송신
-      if (msg.type === 'sync-request' && local.state) {
-        chan.postMessage({ type:'state', from:local.role, state:local.state });
-      }
-    };
-  } catch (e) {
-    console.warn('BroadcastChannel 생성 실패:', e);
-    chan = null; // 동기화는 포기하고 UI만 표시
-  }
-}
-
-function setupBoardForOnline(){
-  showGameUI();
-  makeBoard();
-  resizeBoard();
-}
-
-function createRoom(name){
-  const rid = name ? name : ('room-' + Date.now());
-  local.roomId = rid;
-  local.role   = 0;                  // 방장은 P1(빨강)
-
-  // 1) 보드 먼저
-  setupBoardForOnline();
-  local.state = initialState();
-  renderFromState();
-
-  // 2) 채널 시도 (실패해도 보드는 유지)
-  openChannel(rid);
-
-  // 3) 초기 상태 방송
-  if (chan) chan.postMessage({ type:'state', from: local.role, state: local.state });
-}
-
-function joinRoom(name){
-  const rid = name || 'default-room';
-  local.roomId = rid;
-  local.role   = 1;                  // 참여자는 P2(파랑)
-
-  // 1) 보드 먼저
-  setupBoardForOnline();
-
-  // 2) 채널 시도
-  openChannel(rid);
-
-  // 3) 방장에게 상태 요청
-  if (chan) chan.postMessage({ type:'sync-request', from: local.role });
-}
-
-
-
-/* ================= 싱글모드 시작 ================= */
-function enterSoloGame(){
-  document.getElementById('panel').style.display='flex';
-  document.getElementById('turnLine').style.display='block';
-  document.getElementById('scores').style.display='block';
-  document.getElementById('bottomBar').style.display='flex';
-  makeBoard();
-  resizeBoard();
-  local.state = initialState();
-  renderFromState();
-}
-
-/* ================= commitState ================= */
-async function commitState(){
-  if (local.isSolo) {
-    renderFromState();
-    const s = normalizeState(local.state);
-    if (s && s.current===1 && (s.phase==='move' || s.phase==='wall' || s.phase==='place-extra')) {
-      setTimeout(aiTurn, 500);
-    }
-    return;
-  }
-  // 온라인(2인) → 상태 브로드캐스트 (채널이 있을 때만)
-  if (chan) {
-    chan.postMessage({ type:'state', from: local.role, state: local.state });
-  }
-  renderFromState();
-}
-
-
-/* ================= AI 로직 ================= */
-function aiTurn(){
-  const s = normalizeState(local.state);
-  if (!s || s.current !== 1) return;
-
-  if (s.phase === 'place-extra') aiPlaceExtra(s);
-  else if (s.phase === 'move') aiMove(s);
-  else if (s.phase === 'wall') aiPlaceWall(s);
-
-  renderFromState();
-  if (s.phase !== 'ended') commitState();
-}
-function aiPlaceExtra(s){
-  const points = allEmptyPoints(s);
-  const pick = randomChoice(points);
-  s.pieces['1'].push({r:pick.r,c:pick.c});
-  s.extraIdx++;
-  if(s.extraIdx >= s.extraOrder.length) s.phase='move';
-  else s.current = s.extraOrder[s.extraIdx];
-}
-/* ===== 강화된 휴리스틱 헬퍼 ===== */
-
-// (r,c)가 속한 구역에 존재하는 플레이어 집합
-function playersInRegion(r, c){
-  const visited = Array.from({ length: GRID }, () => Array(GRID).fill(false));
-  const q = [{ r, c }];
-  visited[r][c] = true;
-  const present = new Set();
-  while(q.length){
-    const cur = q.shift();
-    const piece = grid[cur.r][cur.c].querySelector('.piece');
-    if (piece) present.add(+piece.dataset.player);
-    for (const { nr, nc } of neighborsByWall(cur.r, cur.c)){
-      if (!visited[nr][nc]){ visited[nr][nc] = true; q.push({ r:nr, c:nc }); }
-    }
-  }
-  return present; // 예: Set {0}, Set {1}, Set {0,1}
-}
-
-// 목적지 기준 이동 자유도(내가 그 칸에 있을 때 2스텝 이내 목적지 수)
-function mobilityAt(r, c){
-  // 현재 벽 상태를 그대로 쓰고, 말 점유만 체크
-  let cnt = 0;
-  const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
-  const q=[{r, c, d:0}]; v[r][c]=true;
-  while(q.length){
-    const cur=q.shift();
-    if(cur.d>0 && cur.d<=2 && isPoint(cur.r,cur.c) && !grid[cur.r][cur.c].querySelector('.piece')) cnt++;
-    if(cur.d===2) continue;
-    for(const {nr,nc} of neighborsReachable(cur.r,cur.c)){
-      if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:cur.d+1}); }
-    }
-  }
-  return cnt;
-}
-
-// 벽 좌표(wr,wc)가 가르는 두 점을 구함 (없으면 null)
-function wallEndpoints(wr, wc){
-  if (wr%2===1 && wc%2===0) return [{r:wr-1,c:wc},{r:wr+1,c:wc}]; // 가로벽: 위점-아래점
-  if (wr%2===0 && wc%2===1) return [{r:wr,c:wc-1},{r:wr,c:wc+1}]; // 세로벽: 왼점-오른점
-  return null;
-}
-
-// 후보 벽이 상대 기동력에 주는 차단 점수(근접 상대 말 수 + 인접 점 이동로 차단 수)
-function blockScoreForWall(wr, wc, opponent=0){
-  const ends = wallEndpoints(wr, wc);
-  if (!ends) return 0;
-
-  // 1) 벽 양끝 주변 2-맨해튼 안의 상대 말 수
-  let nearOpp = 0;
-  for (const pidEl of document.querySelectorAll('.piece')){
-    const pid = +pidEl.dataset.player;
-    if (pid!==opponent) continue;
-    const cell = pidEl.parentElement;
-    const rc = cellToRC(cell);
-    if (!rc) continue;
-    const d = Math.abs(rc.r-ends[0].r)+Math.abs(rc.c-ends[0].c);
-    const e = Math.abs(rc.r-ends[1].r)+Math.abs(rc.c-ends[1].c);
-    if (Math.min(d,e) <= 2) nearOpp++;
-  }
-
-  // 2) 현재 개방된 통로인지(=지금은 통과 가능, 벽을 두면 막힘) 가산
-  let openPass = 0;
-  const [A,B] = ends;
-  // neighborsReachable은 점→이웃점이 "열려있고 도착점 비어야" true이므로,
-  // 통로가 열려있고 도착이 빈 점이라면 실제로 이동 후보에 나타남
-  const neighA = neighborsReachable(A.r, A.c).some(v => v.nr===B.r && v.nc===B.c);
-  const neighB = neighborsReachable(B.r, B.c).some(v => v.nr===A.r && v.nc===A.c);
-  if (neighA || neighB) openPass = 1;
-
-  // 가중 합: 상대 근접도 *2 + 개방 통로 차단 *3
-  return nearOpp*2 + openPass*3;
-}
-
-// DOM 셀 → 보드 좌표 (r,c)
-function cellToRC(cell){
-  if (!cell) return null;
-  // grid[r][c]를 만들어둘 때 참조를 저장했으므로, 빠르게 역탐색:
-  for (let r=0;r<GRID;r++){
-    for (let c=0;c<GRID;c++){
-      if (grid[r][c]===cell) return {r,c};
-    }
-  }
-  return null;
-}
-
-/* ===================== [드롭인 AI 교체] 1-수 시뮬레이션 ===================== */
-
-/* --- 가중치 (난이도에 따라 자동 스케일) --- */
-const W_TERR_EZ   = 1.0, W_TRAP_EZ = 0.8, W_MOB_EZ = 0.6, W_CLASH_EZ = 0.6;
-const W_TERR_MD   = 1.4, W_TRAP_MD = 1.2, W_MOB_MD = 0.9, W_CLASH_MD = 0.8;
-const W_TERR_HARD = 1.8, W_TRAP_HARD = 1.8, W_MOB_HARD = 1.2, W_CLASH_HARD = 1.0;
-
-function weightsByLevel(level){
-  if(level==='hard')   return {WT:W_TERR_HARD, WP:W_TRAP_HARD, WM:W_MOB_HARD, WC:W_CLASH_HARD};
-  if(level==='medium') return {WT:W_TERR_MD,   WP:W_TRAP_MD,   WM:W_MOB_MD,   WC:W_CLASH_MD};
-  return {WT:W_TERR_EZ, WP:W_TRAP_EZ, WM:W_MOB_EZ, WC:W_CLASH_EZ};
-}
-
-/* --- 상태 전용 유틸 (DOM 의존 없음) --- */
-function keyRC(r,c){ return `${r},${c}`; }
-function wallKey(wr,wc){ return `w:${wr},${wc}`; }
-
-function pointsNeighborsByWalls(wallsSet, r, c){
-  const out=[];
-  const dirs = [[-2,0],[2,0],[0,-2],[0,2]];
-  for(const [dr,dc] of dirs){
-    const nr=r+dr, nc=c+dc;
-    if(nr<0||nr>=GRID||nc<0||nc>=GRID||nr%2||nc%2) continue;
-    const wr=r+dr/2, wc=c+dc/2;
-    if(wallsSet.has(wallKey(wr,wc))) continue; // 벽이면 막힘
-    out.push([nr,nc]);
-  }
-  return out;
-}
-
-function listMovableState(wallsSet, occSet, sr, sc){
-  const v = new Set([keyRC(sr,sc)]);
-  const q = [{r:sr,c:sc,d:0}];
-  const dest=[];
-  while(q.length){
-    const {r,c,d} = q.shift();
-    if(d>0 && d<=2 && !occSet.has(keyRC(r,c))) dest.push({r,c});
-    if(d===2) continue;
-    for(const [nr,nc] of pointsNeighborsByWalls(wallsSet,r,c)){
-      const k = keyRC(nr,nc);
-      if(!v.has(k)){ v.add(k); q.push({r:nr,c:nc,d:d+1}); }
-    }
-  }
-  return dest;
-}
-
-function mobilityAtState(wallsSet, occSet, r, c){
-  const v = new Set([keyRC(r,c)]);
-  const q = [{r,c,d:0}];
-  let cnt=0;
-  while(q.length){
-    const cur = q.shift();
-    if(cur.d>0 && cur.d<=2 && !occSet.has(keyRC(cur.r,cur.c))) cnt++;
-    if(cur.d===2) continue;
-    for(const [nr,nc] of pointsNeighborsByWalls(wallsSet,cur.r,cur.c)){
-      const k=keyRC(nr,nc);
-      if(!v.has(k)){ v.add(k); q.push({r:nr,c:nc,d:cur.d+1}); }
-    }
-  }
-  return cnt;
-}
-
-function regionsFromState(wallsSet, p0Set, p1Set){
-  const visited = new Set();
-  const regs=[];
-  for(let r=0;r<GRID;r+=2){
-    for(let c=0;c<GRID;c+=2){
-      const start = keyRC(r,c);
-      if(visited.has(start)) continue;
-      const q=[[r,c]];
-      visited.add(start);
-      const points=[];
-      let has0=false, has1=false;
-      while(q.length){
-        const [cr,cc]=q.shift();
-        points.push([cr,cc]);
-        const k=keyRC(cr,cc);
-        if(p0Set.has(k)) has0=true;
-        if(p1Set.has(k)) has1=true;
-        for(const [nr,nc] of pointsNeighborsByWalls(wallsSet,cr,cc)){
-          const nk=keyRC(nr,nc);
-          if(!visited.has(nk)){ visited.add(nk); q.push([nr,nc]); }
-        }
-      }
-      regs.push({points, has0, has1});
-    }
-  }
-  return regs;
-}
-
-function territoryDiffAfter(wallsSet, p0Set, p1Set){
-  const regs = regionsFromState(wallsSet,p0Set,p1Set);
-  let me=0, opp=0;
-  for(const reg of regs){
-    if(reg.has0 && !reg.has1) opp+=reg.points.length;
-    else if(reg.has1 && !reg.has0) me+=reg.points.length;
-  }
-  return me - opp; // 내 순영역
-}
-
-/* --- 1-수(이동+벽) 시뮬레이션 평가 --- */
-function evaluateMovePlusBestWall(s, pieceFrom, moveTo, level){
-  const {WT,WP,WM,WC} = weightsByLevel(level);
-
-  // 세트 구성
-  const wallsSet = new Set(s.walls.map(w=>wallKey(w.r,w.c)));
-  const p0Set = new Set(s.pieces['0'].map(p=>keyRC(p.r,p.c)));
-  const p1 = s.pieces['1'].map(p=>({r:p.r,c:p.c}));
-  // 내 말 이동 가상 반영
-  const idx = p1.findIndex(pp => pp.r===pieceFrom.r && pp.c===pieceFrom.c);
-  p1[idx] = {r:moveTo.r, c:moveTo.c};
-  const p1Set = new Set(p1.map(p=>keyRC(p.r,p.c)));
-
-  // 기동력(이동 후 기준)
-  const occForMob = new Set([...p0Set, ...p1Set]);
-  const myMob = mobilityAtState(wallsSet, occForMob, moveTo.r, moveTo.c);
-
-  // 상대 기동력 총합 (잡는/가두는 가치 반영)
-  let oppMobBefore=0, oppMobAfter=0;
-  for(const k of p0Set){
-    const [r,c] = k.split(',').map(Number);
-    oppMobBefore += mobilityAtState(wallsSet, occForMob, r, c);
-  }
-
-  // 벽 후보: 이동지 주변 우선, 없으면 전체 빈 벽
-  let candWalls = [];
-  for(const [wr,wc] of [[moveTo.r-1,moveTo.c],[moveTo.r+1,moveTo.c],[moveTo.r,moveTo.c-1],[moveTo.r,moveTo.c+1]]){
-    const isWallPos = wr>=0&&wr<GRID&&wc>=0&&wc<GRID && ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
-    if(isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr,c:wc});
-  }
-  if(candWalls.length===0){
-    for(let wr=0;wr<GRID;wr++){
-      for(let wc=0;wc<GRID;wc++){
-        const isWallPos = ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
-        if(isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr,c:wc});
-      }
-    }
-  }
-
-  // 각 벽을 가정해 최고 점수 선택
-  let bestScore=-Infinity, bestWall=null;
-  for(const w of candWalls){
-    const ws = new Set(wallsSet); ws.add(wallKey(w.r,w.c));
-
-    // 영역 차(내-상대)
-    const terrDiff = territoryDiffAfter(ws, p0Set, p1Set);
-
-    // 상대 기동력(벽 반영 후)
-    oppMobAfter = 0;
-    for(const k of p0Set){
-      const [r,c] = k.split(',').map(Number);
-      oppMobAfter += mobilityAtState(ws, occForMob, r, c);
-    }
-    const trapGain = Math.max(0, oppMobBefore - oppMobAfter); // 줄었을수록 좋음
-
-    // 충돌 위험(상대와 너무 붙어있으면 페널티)
-    let minOpp=Infinity;
-    for(const k of p0Set){
-      const [r,c] = k.split(',').map(Number);
-      const d = Math.abs(r - moveTo.r) + Math.abs(c - moveTo.c);
-      if(d<minOpp) minOpp=d;
-    }
-    const clashPenalty = Math.max(0, 3 - (isFinite(minOpp)?minOpp:99)); // 1~2칸이면 1~2 페널티
-
-    const score = WT*terrDiff + WP*trapGain + WM*myMob - WC*clashPenalty;
-    if(score>bestScore){ bestScore=score; bestWall=w; }
-  }
-
-  return {score: bestScore, bestWall};
-}
-
-/* --- AI 메인: 이동+벽 동시 결정 --- */
-function aiMove(s){
-  const myPieces = s.pieces['1'];
-  let best=null, bestScore=-Infinity, bestWall=null;
-
-  // 현재 점유 세트(시뮬 목적)
-  for(const p of myPieces){
-    const moves = listMovable(s, p.r, p.c); // ← DOM 기반이지만 "현재" 상태 조회는 OK
-    for(const m of moves){
-      const {score, bestWall:wallChoice} = evaluateMovePlusBestWall(s, p, m, local.aiLevel);
-      if(score>bestScore){ bestScore=score; best={from:p, to:m}; bestWall=wallChoice; }
-    }
-  }
-
-  if(best){
-    // 실제 반영
-    const arr = s.pieces['1'];
-    const idx = arr.findIndex(pp=>pp.r===best.from.r && pp.c===best.from.c);
-    arr[idx] = {r:best.to.r, c:best.to.c};
-    s.phase = 'wall';
-    s.lastMoved = {r:best.to.r, c:best.to.c};
-     audioMal.play();
-
-    // 다음 단계에서 벽을 바로 둘 수 있도록 저장
-    s._aiPlannedWall = bestWall; // 임시 속성
-  }
-}
-
-function aiPlaceWall(s){
-  let pick = s._aiPlannedWall || null;
-  if(!pick){
-    // 혹시 이동 단계에서 못 정했으면(이동 불가 등) 기본 후보로 보정
-    let candidates = [];
-    if (s.lastMoved) candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
-    if (candidates.length === 0) candidates = listEmptyWallsFromState(s);
-    pick = candidates && candidates.length ? candidates[0] : null;
-  }
-  if(pick) s.walls.push({ r:pick.r, c:pick.c, owner:1 });
-  audioWall.play();
-
-  delete s._aiPlannedWall;
-  s.current = 0; s.phase = 'move'; s.lastMoved = null;
-}
-
-/* --- 더 이상 쓰지 않음: evalMoveScore (남겨두면 호출되지 않도록 주석처리) --- */
-// function evalMoveScore(...) { ... }
-
-
-
-
-
-function distToOpponent(pos) {
-  const oppPieces = local.state.pieces['0']; // AI는 1번 플레이어로 가정
-  let minDist = Infinity;
-  for (const p of oppPieces) {
-    const d = Math.abs(p.r - pos.r) + Math.abs(p.c - pos.c);
-    if (d < minDist) minDist = d;
-  }
-  return minDist;
-}
-
-function distToCenter(pos) {
-  const center = { r: Math.floor(GRID/2), c: Math.floor(GRID/2) };
-  return Math.abs(center.r - pos.r) + Math.abs(center.c - pos.c);
-}
-
-function freedomScore(pos) {
-  return neighborsReachable(pos.r, pos.c).length;
-}
+/* 보드 생성/렌더 */
 function makeBoard() {
   boardEl.innerHTML = '';
   boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
@@ -810,7 +278,6 @@ function makeBoard() {
       grid[r][c] = cell;
     }
   }
-  resizeBoard();
 }
 function renderFromState() {
   const s = normalizeState(local.state);
@@ -825,6 +292,7 @@ function renderFromState() {
 
   skipWallBtn.disabled = !(s.phase === 'move' && s.current === local.role);
 
+  // 말
   document.querySelectorAll('.piece').forEach(el => el.remove());
   for (const pid of [0, 1]) {
     for (const p of s.pieces[String(pid)]) {
@@ -838,6 +306,7 @@ function renderFromState() {
     }
   }
 
+  // 벽
   for (let r = 0; r < GRID; r++) {
     for (let c = 0; c < GRID; c++) {
       const cell = grid[r][c];
@@ -857,27 +326,36 @@ function renderFromState() {
   }
 
   updateScoresLocal();
+
+  // AI 차례 자동 처리
+  if (s.current===1 && (s.phase==='place-extra' || s.phase==='move' || s.phase==='wall') && s.phase!=='ended') {
+    setTimeout(aiTurn, 500);
+  }
 }
+
+/* 상호작용 */
 function onPointClick(r, c) {
   const s = normalizeState(local.state);
   if (!s) return;
 
+  // 배치 단계
   if (s.phase === 'place-extra') {
     if (s.current !== local.role) return;
     const cell = grid[r][c];
     if (cell.querySelector('.piece')) return;
     s.pieces[String(s.current)].push({ r, c });
-    audioMal.play();   // 🔊 말 놓기 소리
+    audioMal.play();
     s.extraIdx++;
     if (s.extraIdx >= s.extraOrder.length) {
       s.phase = 'move';
     } else {
       s.current = s.extraOrder[s.extraIdx];
     }
-    commitState();
+    renderFromState();
     return;
   }
 
+  // 이동 단계
   if (s.phase === 'move') {
     if (s.current !== local.role) return;
     const cell = grid[r][c];
@@ -904,17 +382,32 @@ function onPointClick(r, c) {
       const idx = arr.findIndex(p => p.r === local.selected.r && p.c === local.selected.c);
       if (idx >= 0) {
         arr[idx] = { r, c };
-        audioMal.play();   // 🔊 말 이동 소리
+        audioMal.play();
         s.phase = 'wall';
         s.lastMoved = { r, c };
         clearMovable();
         local.selected = null;
-        commitState();
+        renderFromState(); // 벽 단계로 전환
       }
     }
   }
 }
-
+function showMovableFrom(sr,sc){
+  clearMovable();
+  const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
+  const q=[{r:sr,c:sc,d:0}]; v[sr][sc]=true; let cnt=0;
+  while(q.length){
+    const {r,c,d}=q.shift();
+    if(d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
+      grid[r][c].classList.add('movable'); cnt++;
+    }
+    if(d===2) continue;
+    for(const {nr,nc} of neighborsReachable(r,c)){
+      if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:d+1}); }
+    }
+  }
+  return cnt;
+}
 function onWallClick(r, c) {
   const s = normalizeState(local.state);
   if (!s || s.phase !== 'wall' || s.current !== local.role) return;
@@ -923,14 +416,13 @@ function onWallClick(r, c) {
   if (!isWall || cell.classList.contains('placed')) return;
 
   s.walls.push({ r, c, owner: local.role });
-  audioWall.play();  // 🔊 벽 설치 소리
+  audioWall.play();
   s.current = 1 - s.current;
   s.phase = 'move';
   s.lastMoved = null;
   clearMovable();
-  commitState();
+  renderFromState();
 }
-
 skipWallBtn.addEventListener('click', () => {
   const s = normalizeState(local.state);
   if (!s || s.phase !== 'move' || s.current !== local.role) return;
@@ -938,8 +430,10 @@ skipWallBtn.addEventListener('click', () => {
   local.selected = null;
   s.phase = 'wall';
   s.lastMoved = null;
-  commitState();
+  renderFromState();
 });
+
+/* ===== 점수/종료 ===== */
 function computeRegionsLocal() {
   const visited = Array.from({ length: GRID }, () => Array(GRID).fill(false));
   const regions = [];
@@ -970,7 +464,6 @@ function computeRegionsLocal() {
   }
   return { regions, hasMixed };
 }
-
 function updateScoresLocal(){
   const ended = checkGameEndAndScoreLocal();
   if (ended && local.state?.phase !== 'ended'){
@@ -978,37 +471,19 @@ function updateScoresLocal(){
     showWinnerWithPaintLocal();
   }
 }
-
-function showWinnerWithPaintLocal(){
-  audioWin.play(); // 🔊 경기 종료 소리
-  fillFinalRegionsLocal(); // 최종 영역 칠하기
-  const p1 = +s1El.textContent, p2 = +s2El.textContent;
-  alert(
-    `게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n` +
-    (p1>p2 ? '승자: P1(빨강)' : p2>p1 ? '승자: P2(파랑)' : '무승부')
-  );
-}
-
-/* 보드 연결을 기준으로 영역을 계산해 점수를 산출하고,
-   두 플레이어 말이 함께 있는 영역이 하나도 없으면 즉시 종료 */
 function checkGameEndAndScoreLocal(){
   const { regions, hasMixed } = computeRegionsLocal();
   const sc = [0, 0];
-
   for (const reg of regions){
     if (reg.players.size === 1){
       const owner = [...reg.players][0];
-      sc[owner] += reg.points.length;     // 해당 영역의 모든 점을 소유자 점수로
+      sc[owner] += reg.points.length;
     }
   }
   s1El.textContent = sc[0];
   s2El.textContent = sc[1];
-
-  // 혼합 영역이 없으면 모든 영역의 소유자가 결정된 상태 → 종료
   return !hasMixed;
 }
-
-/* 최종 영역에 색을 칠해 가시화 */
 function fillFinalRegionsLocal(){
   const { regions } = computeRegionsLocal();
   for (const reg of regions){
@@ -1021,43 +496,235 @@ function fillFinalRegionsLocal(){
     }
   }
 }
-
-
-
-
-/* ===== 도움말 오버레이 핸들러 ===== */
-function openHelp(){ 
-  const ov = document.getElementById('helpOverlay');
-  if (ov) ov.style.display = 'flex';
-}
-function closeHelp(){ 
-  const ov = document.getElementById('helpOverlay');
-  if (ov) ov.style.display = 'none';
-}
-/* 전역에서 호출될 수 있게 노출 */
-window.openHelp = openHelp;
-window.closeHelp = closeHelp;
-
-/* 닫기 버튼/오버레이 클릭으로 닫기 */
-const helpCloseBtn = document.getElementById('helpCloseBtn');
-if (helpCloseBtn) helpCloseBtn.addEventListener('click', closeHelp);
-const helpOverlay = document.getElementById('helpOverlay');
-if (helpOverlay) {
-  helpOverlay.addEventListener('click', (e)=>{
-    if (e.target === helpOverlay) closeHelp();
-  });
+function showWinnerWithPaintLocal(){
+  audioWin.play();
+  fillFinalRegionsLocal();
+  const p1 = +s1El.textContent, p2 = +s2El.textContent;
+  alert(
+    `게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n` +
+    (p1>p2 ? '승자: P1(빨강)' : p2>p1 ? '승자: P2(파랑)' : '무승부')
+  );
 }
 
+/* ====== AI 로직 (강화 휴리스틱) ====== */
+/* 상태 전용 유틸(시뮬) */
+function keyRC(r,c){ return `${r},${c}`; }
+function wallKey(wr,wc){ return `w:${wr},${wc}`; }
+function pointsNeighborsByWalls(wallsSet, r, c){
+  const out=[], dirs=[[-2,0],[2,0],[0,-2],[0,2]];
+  for(const [dr,dc] of dirs){
+    const nr=r+dr, nc=c+dc;
+    if(nr<0||nr>=GRID||nc<0||nc>=GRID||nr%2||nc%2) continue;
+    const wr=r+dr/2, wc=c+dc/2;
+    if(wallsSet.has(wallKey(wr,wc))) continue;
+    out.push([nr,nc]);
+  }
+  return out;
+}
+function listMovableState(wallsSet, occSet, sr, sc){
+  const v = new Set([keyRC(sr,sc)]), q=[{r:sr,c:sc,d:0}], dest=[];
+  while(q.length){
+    const {r,c,d} = q.shift();
+    if(d>0 && d<=2 && !occSet.has(keyRC(r,c))) dest.push({r,c});
+    if(d===2) continue;
+    for(const [nr,nc] of pointsNeighborsByWalls(wallsSet,r,c)){
+      const k = keyRC(nr,nc);
+      if(!v.has(k)){ v.add(k); q.push({r:nr,c:nc,d:d+1}); }
+    }
+  }
+  return dest;
+}
+function mobilityAtState(wallsSet, occSet, r, c){
+  const v = new Set([keyRC(r,c)]), q=[{r,c,d:0}]; let cnt=0;
+  while(q.length){
+    const cur = q.shift();
+    if(cur.d>0 && cur.d<=2 && !occSet.has(keyRC(cur.r,cur.c))) cnt++;
+    if(cur.d===2) continue;
+    for(const [nr,nc] of pointsNeighborsByWalls(wallsSet,cur.r,cur.c)){
+      const k=keyRC(nr,nc);
+      if(!v.has(k)){ v.add(k); q.push({r:nr,c:nc,d:cur.d+1}); }
+    }
+  }
+  return cnt;
+}
+function regionsFromState(wallsSet, p0Set, p1Set){
+  const visited = new Set(), regs=[];
+  for(let r=0;r<GRID;r+=2){
+    for(let c=0;c<GRID;c+=2){
+      const start = keyRC(r,c);
+      if(visited.has(start)) continue;
+      const q=[[r,c]]; visited.add(start);
+      const points=[]; let has0=false, has1=false;
+      while(q.length){
+        const [cr,cc]=q.shift();
+        points.push([cr,cc]);
+        const k=keyRC(cr,cc);
+        if(p0Set.has(k)) has0=true;
+        if(p1Set.has(k)) has1=true;
+        for(const [nr,nc] of pointsNeighborsByWalls(wallsSet,cr,cc)){
+          const nk=keyRC(nr,nc);
+          if(!visited.has(nk)){ visited.add(nk); q.push([nr,nc]); }
+        }
+      }
+      regs.push({points, has0, has1});
+    }
+  }
+  return regs;
+}
+function territoryDiffAfter(ws, p0Set, p1Set){
+  const regs = regionsFromState(ws,p0Set,p1Set);
+  let me=0, opp=0;
+  for(const reg of regs){
+    if(reg.has0 && !reg.has1) opp+=reg.points.length;
+    else if(reg.has1 && !reg.has0) me+=reg.points.length;
+  }
+  return me - opp;
+}
 
+/* 난이도 가중치 (원하면 'hard','medium','easy'로 바꿔 사용 가능) */
+const level = 'hard';
+const W_TERR   = {easy:1.0, medium:1.4, hard:1.8}[level];
+const W_TRAP   = {easy:0.8, medium:1.2, hard:1.8}[level];
+const W_MOB    = {easy:0.6, medium:0.9, hard:1.2}[level];
+const W_CLASH  = {easy:0.6, medium:0.8, hard:1.0}[level];
 
+function evaluateMovePlusBestWall(s, pieceFrom, moveTo){
+  const wallsSet = new Set(s.walls.map(w=>wallKey(w.r,w.c)));
+  const p0Set = new Set(s.pieces['0'].map(p=>keyRC(p.r,p.c)));
+  const p1 = s.pieces['1'].map(p=>({r:p.r,c:p.c}));
+  const idx = p1.findIndex(pp => pp.r===pieceFrom.r && pp.c===pieceFrom.c);
+  p1[idx] = {r:moveTo.r, c:moveTo.c};
+  const p1Set = new Set(p1.map(p=>keyRC(p.r,p.c)));
 
-/* ======== 나머지 함수들 ======== 
-- distToOpponent, distToCenter, freedomScore
-- makeBoard, resizeBoard, renderFromState
-- onPointClick, onWallClick, skipWallBtn 이벤트
-- 점수 계산, 승리 판정
-모두 기존 index.html 코드에서 그대로 붙여주세요
-*/
+  const occForMob = new Set([...p0Set, ...p1Set]);
+  const myMob = mobilityAtState(wallsSet, occForMob, moveTo.r, moveTo.c);
+
+  // 상대 기동력 (전/후) 비교
+  let oppMobBefore=0, oppMobAfter=0;
+  for(const k of p0Set){
+    const [r,c] = k.split(',').map(Number);
+    oppMobBefore += mobilityAtState(wallsSet, occForMob, r, c);
+  }
+
+  // 벽 후보: 이동지 인접 우선, 없으면 전체
+  let candWalls = [];
+  for(const [wr,wc] of [[moveTo.r-1,moveTo.c],[moveTo.r+1,moveTo.c],[moveTo.r,moveTo.c-1],[moveTo.r,moveTo.c+1]]){
+    const isWallPos = wr>=0&&wr<GRID&&wc>=0&&wc<GRID && ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
+    if(isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr,c:wc});
+  }
+  if(candWalls.length===0){
+    for(let wr=0;wr<GRID;wr++) for(let wc=0;wc<GRID;wc++){
+      const isWallPos = ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
+      if(isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr,c:wc});
+    }
+  }
+
+  let bestScore=-Infinity, bestWall=null;
+  for(const w of candWalls){
+    const ws = new Set(wallsSet); ws.add(wallKey(w.r,w.c));
+    const terrDiff = territoryDiffAfter(ws, p0Set, p1Set);
+
+    oppMobAfter = 0;
+    for(const k of p0Set){
+      const [r,c] = k.split(',').map(Number);
+      oppMobAfter += mobilityAtState(ws, occForMob, r, c);
+    }
+    const trapGain = Math.max(0, oppMobBefore - oppMobAfter);
+
+    // 충돌 위험(상대와 너무 붙으면 페널티)
+    let minOpp=Infinity;
+    for(const k of p0Set){
+      const [r,c] = k.split(',').map(Number);
+      const d = Math.abs(r - moveTo.r) + Math.abs(c - moveTo.c);
+      if(d<minOpp) minOpp=d;
+    }
+    const clashPenalty = Math.max(0, 3 - (isFinite(minOpp)?minOpp:99));
+
+    const score = W_TERR*terrDiff + W_TRAP*trapGain + W_MOB*myMob - W_CLASH*clashPenalty;
+    if(score>bestScore){ bestScore=score; bestWall=w; }
+  }
+  return {score: bestScore, bestWall};
+}
+
+function aiTurn(){
+  const s = normalizeState(local.state);
+  if (!s || s.current !== 1) return;
+
+  if (s.phase === 'place-extra') aiPlaceExtra(s);
+  else if (s.phase === 'move') aiMove(s);
+  else if (s.phase === 'wall') aiPlaceWall(s);
+
+  renderFromState();
+}
+function aiPlaceExtra(s){
+  const points = allEmptyPoints(s);
+  const pick = randomChoice(points);
+  s.pieces['1'].push({r:pick.r,c:pick.c});
+  s.extraIdx++;
+  if(s.extraIdx >= s.extraOrder.length) s.phase='move';
+  else s.current = s.extraOrder[s.extraIdx];
+}
+function listMovableStateForDOM(s, r, c){
+  // DOM 기반 이동 후보 (현재 보드 상태)
+  return listMovable(s, r, c);
+}
+function aiMove(s){
+  const myPieces = s.pieces['1'];
+  let best=null, bestScore=-Infinity, bestWall=null;
+
+  for(const p of myPieces){
+    const moves = listMovableStateForDOM(s, p.r, p.c);
+    for(const m of moves){
+      const {score, bestWall:wallChoice} = evaluateMovePlusBestWall(s, p, m);
+      if(score>bestScore){ bestScore=score; best={from:p, to:m}; bestWall=wallChoice; }
+    }
+  }
+
+  if(best){
+    const arr = s.pieces['1'];
+    const idx = arr.findIndex(pp=>pp.r===best.from.r && pp.c===best.from.c);
+    arr[idx] = { r:best.to.r, c:best.to.c };
+    s.phase = 'wall';
+    s.lastMoved = { r:best.to.r, c:best.to.c };
+    audioMal.play();
+    s._aiPlannedWall = bestWall;
+  }else{
+    // 이동 불가 → 바로 벽 단계로(혹은 패스)
+    s.phase='wall';
+    s.lastMoved=null;
+  }
+}
+function aiPlaceWall(s){
+  let pick = s._aiPlannedWall || null;
+  if(!pick){
+    let candidates = [];
+    if (s.lastMoved) candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
+    if (candidates.length === 0) candidates = listEmptyWallsFromState(s);
+    pick = candidates && candidates.length ? candidates[0] : null;
+  }
+  if(pick) s.walls.push({ r:pick.r, c:pick.c, owner:1 });
+  audioWall.play();
+
+  delete s._aiPlannedWall;
+  s.current = 0; s.phase = 'move'; s.lastMoved = null;
+}
+
+/* 도움말 오버레이 */
+function openHelp(){ document.getElementById('helpOverlay').style.display='flex'; }
+function closeHelp(){ document.getElementById('helpOverlay').style.display='none'; }
+window.openHelp = openHelp; window.closeHelp = closeHelp;
+document.getElementById('helpCloseBtn')?.addEventListener('click', closeHelp);
+document.getElementById('helpOverlay')?.addEventListener('click', (e)=>{
+  if (e.target.id==='helpOverlay') closeHelp();
+});
+
+/* 로컬 컨트롤러 */
+let local = { role:0, state:null, selected:null, prevWallCount:null };
+
+/* 시작 */
+makeBoard();
+local.state = initialState();
+renderFromState();
 </script>
 </body>
 </html>
