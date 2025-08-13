@@ -42,19 +42,19 @@ const initialData = {
 
 // ---- 공용 유틸: 멀티경로 원자 업데이트 + 로그 + 1단계 UNDO ----
 async function atomicApply(changes, logPayload = {}) {
-  // changes: [{ key: 'mon_0', newName: '홍길동' }, ...]
   const user = await requireAuth();
   const uid = user.uid;
 
-  const undoEntries = {};   // 되돌리기용 이전값
-  const multi = {};         // 멀티 경로 업데이트 페이로드
+  const multi = {};
+  const undoSchedule = {}; // ✅ UNDO를 중첩 객체로 저장 (슬래시 금지 회피)
 
   for (const { key, newName } of changes) {
     const prevName = (latestData[key]?.name) ?? "";
-    undoEntries[`schedule/${key}`] = { name: prevName };
+    undoSchedule[key] = { name: prevName }; // 예: entries.schedule.mon_0 = {name: ...}
     multi[`schedule/${key}`] = { name: newName, _by: uid, _ts: serverTimestamp() };
   }
 
+  // 로그
   const logKey = push(ref(db, 'logs')).key;
   multi[`logs/${logKey}`] = {
     ...logPayload,
@@ -67,8 +67,9 @@ async function atomicApply(changes, logPayload = {}) {
     ts: serverTimestamp()
   };
 
+  // ✅ UNDO 구조 변경: entries: { schedule: { mon_0: {...}, ... } }
   multi[`undo/last/${uid}`] = {
-    entries: undoEntries,
+    entries: { schedule: undoSchedule },
     by: uid,
     ts: serverTimestamp()
   };
@@ -292,6 +293,7 @@ window.markAbsent = async function () {
 };
 
 // ---- 되돌리기(1단계) ----
+// 되돌리기(1단계)
 window.undoLast = async function () {
   const user = await requireAuth();
   const uid = user.uid;
@@ -301,26 +303,32 @@ window.undoLast = async function () {
     alert('되돌릴 내역이 없습니다.');
     return;
   }
+
   const undo = snap.val() || {};
-  const entries = undo.entries || {};
-
-  const logKey = push(ref(db, 'logs')).key;
-  const multi = {};
-
-  for (const path in entries) {
-    multi[path] = { name: entries[path]?.name ?? "", _by: uid, _ts: serverTimestamp() };
+  const scheduleEntries = (undo.entries && undo.entries.schedule) || {};
+  const keys = Object.keys(scheduleEntries);
+  if (keys.length === 0) {
+    alert('되돌릴 항목이 없습니다.');
+    return;
   }
 
+  const multi = {};
+  // UNDO에 저장된 값으로 복구
+  keys.forEach(k => {
+    const name = scheduleEntries[k]?.name ?? "";
+    multi[`schedule/${k}`] = { name, _by: uid, _ts: serverTimestamp() };
+  });
+
+  // 로그 기록
+  const logKey = push(ref(db, 'logs')).key;
   multi[`logs/${logKey}`] = {
     type: 'undo',
-    items: Object.keys(entries).map(path => ({
-      key: path.split('/')[1],
-      to: entries[path]?.name ?? ""
-    })),
+    items: keys.map(k => ({ key: k, to: scheduleEntries[k]?.name ?? "" })),
     by: uid,
     ts: serverTimestamp()
   };
 
+  // UNDO 클리어
   multi[`undo/last/${uid}`] = null;
 
   try {
@@ -329,6 +337,7 @@ window.undoLast = async function () {
     alert('되돌리기 실패: ' + e.message);
   }
 };
+
 
 // ---- 주간 자동 초기화(금 17시 이후 1회) ----
 function shouldResetSchedule() {
