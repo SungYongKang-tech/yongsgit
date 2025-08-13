@@ -3,25 +3,35 @@ import { db } from './firebase.js';
 import {
   ref, onValue, set, get, update, push, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import {
+  getAuth, signInAnonymously, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-// ✅ 익명 로그인 완료 대기 (HTML의 부트스트랩에서 제공)
-const authReady = window.authReady || Promise.resolve(null);
+// ---- 익명 로그인(스크립트 내부에서 자체 처리) ----
+const auth = getAuth(); // firebase.js에서 만든 기본 앱을 사용
+const authReady = new Promise((resolve) => {
+  onAuthStateChanged(auth, (user) => { if (user) resolve(user); });
+});
+signInAnonymously(auth).catch((e) => {
+  console.error('익명 로그인 실패:', e);
+  alert('익명 로그인 실패: ' + e.message);
+});
+
 async function requireAuth() {
   const user = await authReady;
-  if (!user) throw new Error('인증되지 않았습니다.');
+  if (!user) throw new Error('인증되지 않았습니다. (익명 로그인 미완료)');
   return user;
 }
 
-// 최근 DB 스냅샷을 보관(UNDO에 사용)
+// ---- 상태 스냅샷 (UNDO에 사용) ----
 let latestData = {};
 const scheduleRef = ref(db, 'schedule');
-
 onValue(scheduleRef, (snapshot) => {
   latestData = snapshot.val() || {};
   renderSchedule(latestData);
 });
 
-// 초기 템플릿
+// ---- 초기 템플릿 ----
 const initialData = {
   mon_0: { name: "정승목" }, tue_0: { name: "김승일" }, wed_0: { name: "정승목" }, thu_0: { name: "김승일" },
   mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
@@ -30,16 +40,14 @@ const initialData = {
   mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
 };
 
-// ---------- 공용 유틸: 멀티경로 원자 업데이트 + 로그 + 1단계 UNDO ----------
+// ---- 공용 유틸: 멀티경로 원자 업데이트 + 로그 + 1단계 UNDO ----
 async function atomicApply(changes, logPayload = {}) {
   // changes: [{ key: 'mon_0', newName: '홍길동' }, ...]
   const user = await requireAuth();
   const uid = user.uid;
 
-  // UNDO에 저장할 "변경 전" 값들
-  const undoEntries = {};
-  // 실제 update에 보낼 멀티경로 객체
-  const multi = {};
+  const undoEntries = {};   // 되돌리기용 이전값
+  const multi = {};         // 멀티 경로 업데이트 페이로드
 
   for (const { key, newName } of changes) {
     const prevName = (latestData[key]?.name) ?? "";
@@ -47,7 +55,6 @@ async function atomicApply(changes, logPayload = {}) {
     multi[`schedule/${key}`] = { name: newName, _by: uid, _ts: serverTimestamp() };
   }
 
-  // 로그 엔트리 생성 (push key를 만들고 멀티경로에 포함)
   const logKey = push(ref(db, 'logs')).key;
   multi[`logs/${logKey}`] = {
     ...logPayload,
@@ -60,21 +67,18 @@ async function atomicApply(changes, logPayload = {}) {
     ts: serverTimestamp()
   };
 
-  // 사용자별 되돌리기(1단계)
   multi[`undo/last/${uid}`] = {
     entries: undoEntries,
     by: uid,
     ts: serverTimestamp()
   };
 
-  // 원자 적용
   await update(ref(db), multi);
 }
 
-// ---------- 초기화(임포트) ----------
+// ---- 초기화(임포트) ----
 window.importSchedule = async function () {
-  const user = await requireAuth();
-  // 초기화도 원자 처리 + 로그 + UNDO
+  await requireAuth();
   const changes = Object.keys(initialData).map(key => ({
     key,
     newName: initialData[key].name
@@ -88,14 +92,13 @@ window.changeName = function () {
   location.reload();
 };
 
-// ---------- 렌더링 ----------
+// ---- 렌더링 ----
 let selectedCells = [];
 
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
   container.innerHTML = "";
 
-  // 되돌리기 버튼을 상단 컨트롤에 동적으로 추가(중복 방지)
   ensureUndoButton();
 
   const wrapper = document.createElement("div");
@@ -128,7 +131,6 @@ function renderSchedule(data) {
     { label: "3교시", time: "12:10~" },
     { label: "4교시", time: "12:25~" }
   ];
-
   const days = ["mon", "tue", "wed", "thu"];
 
   periods.forEach((periodObj, pIdx) => {
@@ -173,7 +175,7 @@ function renderSchedule(data) {
   container.appendChild(wrapper);
 }
 
-// ---------- 셀 인터랙션 ----------
+// ---- 셀 인터랙션 ----
 function handleCellClick(cell, key) {
   const name = cell.textContent.trim();
   const isEmpty = !name;
@@ -192,7 +194,7 @@ function handleCellClick(cell, key) {
     const from = selectedCells[0];
     const copiedName = from.cell.textContent.trim();
 
-    // Optimistic UI
+    // 낙관적 UI
     const prevClasses = cell.className;
     const prevBg = cell.style.backgroundColor;
     cell.textContent = copiedName;
@@ -209,7 +211,7 @@ function handleCellClick(cell, key) {
         document.getElementById("swapBtn").disabled = true;
       })
       .catch((e) => {
-        // 실패 시 UI 원복
+        // 실패 시 원복
         cell.textContent = "";
         cell.className = prevClasses;
         cell.style.backgroundColor = prevBg;
@@ -228,7 +230,7 @@ function handleCellClick(cell, key) {
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
 
-// ---------- 스왑: 멀티경로 원자 처리 ----------
+// ---- 스왑(원자 처리) ----
 window.handleSwap = async function () {
   if (selectedCells.length !== 2) return;
 
@@ -236,7 +238,7 @@ window.handleSwap = async function () {
   const nameA = cellA.textContent;
   const nameB = cellB.textContent;
 
-  // Optimistic UI
+  // 낙관적 UI
   cellA.textContent = nameB;
   cellB.textContent = nameA;
 
@@ -249,26 +251,23 @@ window.handleSwap = async function () {
       { type: 'swap' }
     );
   } catch (e) {
-    // 실패 시 되돌리기
     cellA.textContent = nameA;
     cellB.textContent = nameB;
     alert('서로 변경 실패: ' + e.message);
     return;
   }
 
-  // 스타일 초기화
   selectedCells.forEach(({ cell }) => cell.classList.remove("selected"));
   selectedCells = [];
   document.getElementById("swapBtn").disabled = true;
 };
 
-// ---------- 비우기(불참): 원자 처리 ----------
+// ---- 비우기(불참, 원자 처리) ----
 window.markAbsent = async function () {
   if (selectedCells.length !== 1) return alert("하나의 셀만 선택해야 합니다.");
 
   const { cell, key } = selectedCells[0];
 
-  // Optimistic UI
   const prevText = cell.textContent;
   const prevClasses = cell.className;
   const prevBg = cell.style.backgroundColor;
@@ -281,7 +280,6 @@ window.markAbsent = async function () {
   try {
     await atomicApply([{ key, newName: "" }], { type: 'absent' });
   } catch (e) {
-    // 실패 시 원복
     cell.textContent = prevText;
     cell.className = prevClasses;
     cell.style.backgroundColor = prevBg;
@@ -293,12 +291,11 @@ window.markAbsent = async function () {
   document.getElementById("swapBtn").disabled = true;
 };
 
-// ---------- 되돌리기(1단계) ----------
+// ---- 되돌리기(1단계) ----
 window.undoLast = async function () {
   const user = await requireAuth();
   const uid = user.uid;
 
-  // 내 UNDO 정보 읽기
   const snap = await get(ref(db, `undo/last/${uid}`));
   if (!snap.exists()) {
     alert('되돌릴 내역이 없습니다.');
@@ -307,11 +304,9 @@ window.undoLast = async function () {
   const undo = snap.val() || {};
   const entries = undo.entries || {};
 
-  // 멀티경로로 복구 + 로그 기록 + UNDO 비우기
   const logKey = push(ref(db, 'logs')).key;
   const multi = {};
 
-  // entries는 { "schedule/mon_0": {name: "홍길동"}, ... } 형태
   for (const path in entries) {
     multi[path] = { name: entries[path]?.name ?? "", _by: uid, _ts: serverTimestamp() };
   }
@@ -319,14 +314,13 @@ window.undoLast = async function () {
   multi[`logs/${logKey}`] = {
     type: 'undo',
     items: Object.keys(entries).map(path => ({
-      key: path.split('/')[1], // schedule/{key}
+      key: path.split('/')[1],
       to: entries[path]?.name ?? ""
     })),
     by: uid,
     ts: serverTimestamp()
   };
 
-  // UNDO 클리어
   multi[`undo/last/${uid}`] = null;
 
   try {
@@ -336,7 +330,7 @@ window.undoLast = async function () {
   }
 };
 
-// ---------- 주간 자동 초기화(금 17시 이후 1회) ----------
+// ---- 주간 자동 초기화(금 17시 이후 1회) ----
 function shouldResetSchedule() {
   const now = new Date();
   const day = now.getDay(); // 일:0, 월:1, ..., 금:5
@@ -361,7 +355,7 @@ function getWeekKey() {
 }
 resetOncePerWeek();
 
-// ---------- UI 도우미 ----------
+// ---- UI 도우미 ----
 function ensureUndoButton() {
   const controls = document.querySelector('.controls');
   if (!controls || controls.querySelector('#undoBtn')) return;
@@ -373,7 +367,6 @@ function ensureUndoButton() {
   btn.style.fontWeight = '800';
   btn.onclick = () => window.undoLast();
 
-  // "서로 변경" 버튼 뒤에 삽입
   const swapBtn = document.getElementById('swapBtn');
   if (swapBtn && swapBtn.parentElement === controls) {
     controls.insertBefore(btn, swapBtn.nextSibling);
