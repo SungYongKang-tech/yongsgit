@@ -48,10 +48,18 @@
       width:calc(var(--cell)*0.74); height:calc(var(--cell)*0.74); border-radius:50%;
       box-shadow: inset 0 3px 10px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.25);
       transform:scale(0.98);
+      position: relative;
     }
     .black{ background: radial-gradient(circle at 30% 30%, #555 0%, #111 65%, #000 100%); }
     .white{ background: radial-gradient(circle at 30% 30%, #fff 0%, #e9e9e9 60%, #cfcfcf 100%); box-shadow: inset 0 1px 6px rgba(0,0,0,.18), 0 1px 2px rgba(0,0,0,.2); }
     .hint{ box-shadow: inset 0 0 0 3px rgba(255,255,0,.6) !important; }
+    /* 최근 착수 하이라이트 */
+    .stone.last::after{
+      content:""; position:absolute; inset:-3px;
+      border:3px solid #ffeb3b; border-radius:50%;
+      box-shadow: 0 0 6px rgba(255,235,59,.9);
+      pointer-events:none;
+    }
 
     #actions{ display:flex; gap:8px; justify-content:center; margin:10px 0 4px; flex-wrap:wrap; }
 
@@ -160,7 +168,7 @@
       return {b,w};
     };
 
-    // PSQT(위치 가중치) & 코너/가동성 반영 (고급 AI)
+    // 평가(고급 AI용)
     const PSQT = [
       [120,-20, 20,  5,  5, 20,-20,120],
       [-20,-40, -5, -5, -5, -5,-40,-20],
@@ -174,52 +182,38 @@
     const cornerPos = [[0,0],[0,7],[7,0],[7,7]];
     const xSquares = [[1,1],[1,6],[6,1],[6,6]];
     const cSquares = [[0,1],[1,0],[0,6],[1,7],[6,0],[7,1],[6,7],[7,6]];
-
     function evaluate(board, me){
       const opp = 3-me;
       let score=0, myDiscs=0, oppDiscs=0;
-
       for(let i=0;i<SIZE;i++){
         for(let j=0;j<SIZE;j++){
-          const v = board[i][j];
-          if(v===me){ score += PSQT[i][j]; myDiscs++; }
-          else if(v===opp){ score -= PSQT[i][j]; oppDiscs++; }
+          const v=board[i][j];
+          if(v===me){ score+=PSQT[i][j]; myDiscs++; }
+          else if(v===opp){ score-=PSQT[i][j]; oppDiscs++; }
         }
       }
-      // mobility (가동성)
       const myMoves = validMoves(board, me).length;
       const opMoves = validMoves(board, opp).length;
-      if(myMoves+opMoves !== 0) score += 8 * ( (myMoves - opMoves) / (myMoves + opMoves) );
-
-      // corner control
+      if(myMoves+opMoves!==0) score += 8*((myMoves-opMoves)/(myMoves+opMoves));
       let myC=0, opC=0;
       for(const [x,y] of cornerPos){
-        if(board[x][y]===me) myC++;
-        else if(board[x][y]===opp) opC++;
+        if(board[x][y]===me) myC++; else if(board[x][y]===opp) opC++;
       }
-      score += 45 * (myC - opC);
-
-      // X-/C- square penalty if corner not taken
+      score += 45*(myC-opC);
       for(let k=0;k<4;k++){
         const [cx,cy]=cornerPos[k];
         const [xx,xy]=xSquares[k];
         const [ax,ay]=cSquares[2*k];
         const [bx,by]=cSquares[2*k+1];
-        const cornerOwner = board[cx][cy];
+        const cornerOwner=board[cx][cy];
         if(cornerOwner===EMPTY){
-          if(board[xx][xy]===me) score -= 25;
-          else if(board[xx][xy]===opp) score += 25;
-          if(board[ax][ay]===me) score -= 10;
-          else if(board[ax][ay]===opp) score += 10;
-          if(board[bx][by]===me) score -= 10;
-          else if(board[bx][by]===opp) score += 10;
+          if(board[xx][xy]===me) score-=25; else if(board[xx][xy]===opp) score+=25;
+          if(board[ax][ay]===me) score-=10; else if(board[ax][ay]===opp) score+=10;
+          if(board[bx][by]===me) score-=10; else if(board[bx][by]===opp) score+=10;
         }
       }
-
-      // parity (후반 디스크 우위 소폭)
-      const discs = myDiscs + oppDiscs;
-      if(discs > 48){ score += (myDiscs - oppDiscs) * 0.6; }
-
+      const discs = myDiscs+oppDiscs;
+      if(discs>48) score += (myDiscs-oppDiscs)*0.6;
       return score;
     }
 
@@ -247,19 +241,20 @@
     const leaveBtn = document.getElementById('leaveBtn');
     const sndPlace = document.getElementById('sndPlace');
     const toast = document.getElementById('toast');
-
-    const showToast=(m)=>{ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1400); };
+    const showToast=(m)=>{ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1600); };
 
     /* =========================
        모드 상태 (online/solo)
        ========================= */
     let mode = 'online';            // 'online' | 'solo'
-    let uid = null;                 // online에서만 의미
-    let roomId = null;              // online에서만 의미
+    let uid = null;                 // online에서만
+    let roomId = null;              // online에서만
     let myColor = null;             // 공통 (1=흑, 2=백)
     let unsubRoom = null;           // online 구독 해제
 
-    // 공통 렌더
+    // 최근 착수 표시용
+    let lastMove = { black: null, white: null }; // {x,y}
+
     function renderBoard(board, turn){
       boardEl.innerHTML="";
       const moves = validMoves(board, myColor);
@@ -271,7 +266,10 @@
           cell.dataset.x=x; cell.dataset.y=y;
           if(board[x][y]===BLACK || board[x][y]===WHITE){
             const s = document.createElement('div');
-            s.className = 'stone ' + (board[x][y]===BLACK?'black':'white');
+            const isBlack = board[x][y]===BLACK;
+            s.className = 'stone ' + (isBlack?'black':'white');
+            const lm = isBlack ? lastMove.black : lastMove.white;
+            if(lm && lm.x===x && lm.y===y) s.classList.add('last'); // ✅ 최근 착수 하이라이트
             cell.appendChild(s);
           }else{
             if(turn===myColor && hintSet.has(`${x}-${y}`)) cell.classList.add('hint');
@@ -304,16 +302,6 @@
        ========================= */
     let soloState = null; // {board, turn, status, passCount}
 
-    function startSolo(){
-      mode='solo'; roomId=null; myColor=BLACK;
-      soloState = { board: initialBoard(), turn: BLACK, status:'playing', passCount:0 };
-      modeLabel.textContent='혼자하기(고급 AI)';
-      roomCodeLabel.textContent='-';
-      showGame();
-      setUICommon(soloState);
-      maybeAI(); // 시작은 흑(사람)이므로 대기
-    }
-
     function showGame(){
       lobby.style.display='none';
       game.style.display='';
@@ -325,128 +313,169 @@
       lobby.style.display='';
     }
 
+    function startSolo(){
+      mode='solo'; roomId=null; myColor=BLACK;
+      lastMove = { black:null, white:null };
+      soloState = { board: initialBoard(), turn: BLACK, status:'playing', passCount:0 };
+      modeLabel.textContent='혼자하기(고급 AI)';
+      roomCodeLabel.textContent='-';
+      showGame();
+      setUICommon(soloState);
+      ensureTurnPlayableSolo(); // 시작 시 체크
+    }
+
     // 고급 AI: iterative deepening + alpha-beta + move ordering
     function aiChooseMove(board, aiColor, timeLimitMs=1400){
       const start=performance.now();
-      const opp=3-aiColor;
-      let bestMove=null, bestScore=-1e9;
-      let depth=2;                 // 초깊이
-      const maxDepth=8;            // 최대 탐색 깊이
-      const orderMoves = (b, color, moves)=>{
-        // 코너 > 좋은 PSQT > 중앙, 대략적 정렬
+      const maxDepth=8;
+      const orderMoves=(b,color,moves)=>{
         return moves.sort((a,bm)=>{
           const [ax,ay]=a,[bx,by]=bm;
-          const ac = ( (ax===0||ax===7)&&(ay===0||ay===7) ) ? 1 : 0;
-          const bc = ( (bx===0||bx===7)&&(by===0||by===7) ) ? 1 : 0;
+          const ac = ((ax===0||ax===7)&&(ay===0||ay===7)) ? 1 : 0;
+          const bc = ((bx===0||bx===7)&&(by===0||by===7)) ? 1 : 0;
           if(ac!==bc) return bc-ac;
           return PSQT[bx][by]-PSQT[ax][ay];
         });
       };
-      const EVAL=(b)=>evaluate(b, aiColor);
-
-      function alphabeta(b, color, d, alpha, beta){
-        // 종료 조건
-        const myMoves=validMoves(b, color);
-        const opMoves=validMoves(b, 3-color);
+      const EVAL=(b,me)=>evaluate(b, me);
+      function alphabeta(b,color,d,alpha,beta,me){
+        const myMoves=validMoves(b,color);
+        const opMoves=validMoves(b,3-color);
         const discs=countPieces(b); const total=discs.b+discs.w;
         if(d===0 || total===64 || (myMoves.length===0 && opMoves.length===0)){
-          return EVAL(b);
+          return EVAL(b,me);
         }
-        // 패스 처리
         if(myMoves.length===0){
-          // 연속 패스 또는 상대도 없음 → 종료는 상단에서 잡힘
-          return -alphabeta(b, 3-color, d-1, -beta, -alpha);
+          return -alphabeta(b,3-color,d-1,-beta,-alpha,me);
         }
-        const ordered = orderMoves(b, color, myMoves);
+        const ordered=orderMoves(b,color,myMoves);
         let val=-1e9;
         for(const [x,y] of ordered){
-          const nb = applyMove(b,x,y,color);
-          const sc = -alphabeta(nb, 3-color, d-1, -beta, -alpha);
-          if(sc>val){ val=sc; }
+          const nb=applyMove(b,x,y,color);
+          const sc=-alphabeta(nb,3-color,d-1,-beta,-alpha,me);
+          if(sc>val) val=sc;
           if(val>alpha) alpha=val;
-          if(alpha>=beta) break;      // 가지치기
-          // 시간 체크
-          if(performance.now()-start > timeLimitMs) break;
+          if(alpha>=beta) break;
+          if(performance.now()-start>timeLimitMs) break;
         }
         return val;
       }
-
-      // 반복 심화(시간 내 최선 갱신)
+      let bestMove=null, bestScore=-1e9, depth=2;
       while(depth<=maxDepth){
-        if(performance.now()-start > timeLimitMs) break;
-        const moves = validMoves(board, aiColor);
-        if(moves.length===0) { bestMove=null; break; }
-        // 전체 후보 정렬 후 탐색
+        if(performance.now()-start>timeLimitMs) break;
+        const moves=validMoves(board, aiColor);
+        if(moves.length===0){ bestMove=null; break; }
         let localBest=null, localScore=-1e9;
         for(const [x,y] of moves){
-          if(performance.now()-start > timeLimitMs) break;
-          const nb = applyMove(board,x,y,aiColor);
-          const sc = -alphabeta(nb, 3-aiColor, depth-1, -1e9, 1e9);
+          if(performance.now()-start>timeLimitMs) break;
+          const nb=applyMove(board,x,y,aiColor);
+          const sc=-alphabeta(nb,3-aiColor,depth-1,-1e9,1e9,aiColor);
           if(sc>localScore){ localScore=sc; localBest=[x,y]; }
         }
         if(localBest){ bestMove=localBest; bestScore=localScore; }
         depth++;
       }
-      return bestMove; // [x,y] or null(패스)
+      return bestMove;
+    }
+
+    // 솔로: 차례 시작 시 자동 패스/종료 판정 및 AI 호출 관리
+    function ensureTurnPlayableSolo(){
+      if(!soloState || soloState.status!=='playing') return;
+      const turn=soloState.turn;
+      const curMoves=validMoves(soloState.board, turn).length;
+      const oppMoves=validMoves(soloState.board, 3-turn).length;
+
+      if(curMoves===0 && oppMoves===0){
+        soloState.status='ended';
+        setUICommon(soloState);
+        const {b,w}=countPieces(soloState.board);
+        showToast(`종료 · ${b>w?'흑 승':'백 승'} (흑:${b} 백:${w})`);
+        return;
+      }
+      if(curMoves===0){
+        // 자동 패스
+        soloState.passCount=(soloState.passCount||0)+1;
+        soloState.turn = 3-turn;
+        setUICommon(soloState);
+        showToast(turn===myColor ? '둘 곳이 없어 패스합니다' : '상대가 둘 곳이 없어 패스');
+        if(soloState.turn===WHITE){ // AI 차례면 2초 후 둠
+          setTimeout(maybeAI, 2000);
+        }
+        return;
+      }
+      // 정상 진행
+      if(soloState.turn===WHITE){
+        setTimeout(maybeAI, 2000); // AI 차례면 대기 후 진행
+      }
     }
 
     async function soloClickCell(x,y){
       if(!soloState || soloState.status!=='playing') return;
       if(soloState.turn!==myColor) return;
-
-      const myMoves = validMoves(soloState.board, myColor);
+      const myMoves=validMoves(soloState.board, myColor);
       if(!myMoves.some(([xx,yy])=>xx===x&&yy===y)) return;
 
       soloState.board = applyMove(soloState.board, x,y, myColor);
+      lastMove.black = {x,y}; // ✅ 최근 착수 저장
       await playSound();
-      // 상대(백=AI) 유효수 확인
-      const next = 3-myColor;
-      const vmNext = validMoves(soloState.board, next);
-      const myNext = validMoves(soloState.board, myColor);
-      if(vmNext.length===0 && myNext.length===0){
-        soloState.status='ended'; soloState.passCount=2; setUICommon(soloState); return;
+
+      // 턴 전환
+      const next=WHITE;
+      const vmNext=validMoves(soloState.board, next);
+      const vmMe=validMoves(soloState.board, myColor);
+      if(vmNext.length===0 && vmMe.length===0){
+        soloState.status='ended'; soloState.passCount=2; setUICommon(soloState);
+        const {b,w}=countPieces(soloState.board);
+        showToast(`종료 · ${b>w?'흑 승':'백 승'} (흑:${b} 백:${w})`);
+        return;
       }
-      if(vmNext.length===0){ soloState.turn=myColor; soloState.passCount=(soloState.passCount||0)+1; }
-      else{ soloState.turn=next; soloState.passCount=0; }
-      setUICommon(soloState);
-      maybeAI();
+      if(vmNext.length===0){
+        soloState.turn=myColor; soloState.passCount=(soloState.passCount||0)+1;
+        setUICommon(soloState);
+        showToast('상대가 둘 곳이 없어 패스');
+        // 내 턴 유지 → 자동 판정(혹시 또 못 두면 연속 패스/종료)
+        ensureTurnPlayableSolo();
+      }else{
+        soloState.turn=next; soloState.passCount=0;
+        setUICommon(soloState);
+        setTimeout(maybeAI, 2000); // ✅ 2초 후 AI
+      }
     }
+
     function maybeAI(){
       if(mode!=='solo' || !soloState || soloState.status!=='playing') return;
-      if(soloState.turn!==WHITE) return; // AI는 백
-      // 약간의 지연으로 UI 부하 완화
-      setTimeout(()=>{
-        const move = aiChooseMove(soloState.board, WHITE, 1400);
-        if(!move){
-          // AI 패스
-          const myMoves = validMoves(soloState.board, BLACK);
-          if(myMoves.length===0){
-            soloState.status='ended'; soloState.passCount=(soloState.passCount||0)+1;
-          }else{
-            soloState.turn=BLACK; soloState.passCount=(soloState.passCount||0)+1;
-          }
-          setUICommon(soloState);
-          return;
-        }
-        const [x,y]=move;
-        soloState.board = applyMove(soloState.board, x,y, WHITE);
-        playSound();
-        const vmHuman = validMoves(soloState.board, BLACK);
-        const vmAI = validMoves(soloState.board, WHITE);
-        if(vmHuman.length===0 && vmAI.length===0){
-          soloState.status='ended';
-        }else if(vmHuman.length===0){
-          // 사람 패스 → AI 연속
-          soloState.turn=WHITE; soloState.passCount=(soloState.passCount||0)+1;
-          setUICommon(soloState);
-          // 연속 둠(시간 체크)
-          setTimeout(maybeAI, 200);
-          return;
-        }else{
-          soloState.turn=BLACK; soloState.passCount=0;
-        }
+      if(soloState.turn!==WHITE) return; // AI=백
+
+      const move = aiChooseMove(soloState.board, WHITE, 1400);
+      if(!move){
+        // AI 패스 또는 종료
+        ensureTurnPlayableSolo();
+        return;
+      }
+      const [x,y]=move;
+      soloState.board = applyMove(soloState.board, x,y, WHITE);
+      lastMove.white = {x,y}; // ✅ 최근 착수 저장
+      playSound();
+
+      const vmHuman=validMoves(soloState.board, BLACK);
+      const vmAI=validMoves(soloState.board, WHITE);
+      if(vmHuman.length===0 && vmAI.length===0){
+        soloState.status='ended';
         setUICommon(soloState);
-      }, 200);
+        const {b,w}=countPieces(soloState.board);
+        showToast(`종료 · ${b>w?'흑 승':'백 승'} (흑:${b} 백:${w})`);
+        return;
+      }
+      if(vmHuman.length===0){
+        // 사람 패스 → AI 연속(2초 간격 유지)
+        soloState.turn=WHITE; soloState.passCount=(soloState.passCount||0)+1;
+        setUICommon(soloState);
+        showToast('둘 곳이 없어 패스합니다');
+        setTimeout(maybeAI, 2000);
+      }else{
+        soloState.turn=BLACK; soloState.passCount=0;
+        setUICommon(soloState);
+      }
     }
 
     /* =========================
@@ -490,6 +519,7 @@
       if(unsubRoom) { unsubRoom(); unsubRoom=null; }
       unsubRoom = onValue(roomRef, (snap)=>{
         const room = snap.val(); if(!room) return;
+        // 온라인 모드에서는 최근 착수 좌표를 따로 저장하지 않았으므로 힌트만 유지
         setUICommon(room);
       });
     }
@@ -509,7 +539,7 @@
       history.replaceState({},'',url.toString());
     }
 
-    // UI 동작: 클릭
+    // 클릭 처리
     boardEl.addEventListener('click', async (e)=>{
       const cell = e.target.closest('.cell'); if(!cell) return;
       const x=+cell.dataset.x, y=+cell.dataset.y;
@@ -542,13 +572,13 @@
     passBtn.onclick = async ()=>{
       if(mode==='solo'){
         if(!soloState || soloState.turn!==myColor) return;
-        const myMoves = validMoves(soloState.board, myColor);
-        if(myMoves.length>0){ showToast('둘 곳이 있습니다'); return; }
-        const next=WHITE;
-        const nextMoves = validMoves(soloState.board, next);
-        if(nextMoves.length===0){ soloState.status='ended'; soloState.passCount=(soloState.passCount||0)+1; }
-        else { soloState.turn=next; soloState.passCount=(soloState.passCount||0)+1; }
-        setUICommon(soloState); maybeAI(); return;
+        if(validMoves(soloState.board, myColor).length>0){ showToast('둘 곳이 있습니다'); return; }
+        soloState.passCount=(soloState.passCount||0)+1;
+        soloState.turn=WHITE;
+        setUICommon(soloState);
+        showToast('둘 곳이 없어 패스합니다');
+        setTimeout(maybeAI, 2000);
+        return;
       }
       // online
       if(!roomId) return;
@@ -578,7 +608,7 @@
     // 로비 버튼
     createBtn.onclick = async ()=>{
       try{
-        const code = randCode();
+        const code = String(Math.floor(100000 + Math.random()*900000));
         const roomRef = ref(db, `othelloRooms/${code}`);
         await set(roomRef, { createdAt: serverTimestamp(), status:'playing', board:initialBoard(), turn:BLACK, players:{}, passCount:0 });
         await enterRoom(code);
