@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>Wall-baduk 게임</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+/* ===== 기존 CSS 전체 ===== */
+:root { --bar-h: 60px; --p: 42px; --t: 15px; }
+body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
+  display:grid; grid-template-rows:auto auto auto auto auto; }
+h1 { margin: 8px 0 4px; }
+/* ... 여기 기존 CSS 전체를 붙여주세요 (보드, 패널, 도움말 모달 포함) ... */
+</style>
+</head>
+<body>
+<h1>Wall-baduk (벽바둑)</h1>
+<div id="gameRoomTitle" style="font-size:18px;font-weight:bold;margin-bottom:6px;display:none;"></div>
+
+<div id="panel" style="display:none">
+  <button id="resetBtn">새로 시작</button>
+  <button id="helpBtn" onclick="openHelp()">도움말</button>
+  <button id="endBtn">게임 종료</button>
+</div>
+
+<div id="turnLine" style="display:none">현재 턴: <span id="turnColor"></span> <span id="timer"></span></div>
+<div id="scores" style="display:none">P1(빨강): <span id="s1">0</span> / P2(파랑): <span id="s2">0</span></div>
+
+<div id="wrap"><div id="board"></div></div>
+<div id="bottomBar" style="display:none"><button id="skipWallBtn" disabled>이동 없이 벽 설치</button></div>
+
+<div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div id="helpCard">
+    <div id="helpHeader"><span id="helpTitle">게임 설명</span></div>
+    <div id="helpBody">
+      <!-- 기존 게임 설명 리스트 -->
+    </div>
+    <div id="helpFooter"><button class="helpBtn" id="helpCloseBtn">시작하기</button></div>
+  </div>
+</div>
+
+<script type="module">
+/* ================= URL 모드 ================= */
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') || 'solo';
+const level = params.get('level') || 'easy';
+const roomName = params.get('room') || '';
+
+let local = { roomId:null, role:0, state:null, selected:null, prevWallCount:null, isSolo:false, aiLevel:level };
+
+if (mode === 'solo') {
+  local.isSolo = true;
+  enterSoloGame();
+} else {
+  initFirebase();
+  if (mode === 'create') createRoom(roomName);
+  if (mode === 'join') joinRoom(roomName);
+}
+
+/* ================= Firebase 온라인 함수 ================= */
+function initFirebase(){
+  // Firebase 초기화 & 익명 로그인 (기존 코드 그대로)
+}
+function createRoom(name){
+  // 방 생성 (기존 코드 그대로)
+}
+function joinRoom(name){
+  // 방 참여 (기존 코드 그대로)
+}
+
+/* ================= 싱글모드 시작 ================= */
+function enterSoloGame(){
+  document.getElementById('panel').style.display='flex';
+  document.getElementById('turnLine').style.display='block';
+  document.getElementById('scores').style.display='block';
+  document.getElementById('bottomBar').style.display='flex';
+  makeBoard();
+  resizeBoard();
+  local.state = initialState();
+  renderFromState();
+}
+
+/* ================= commitState ================= */
+async function commitState(){
+  if(local.isSolo){
+    renderFromState();
+    const s = normalizeState(local.state);
+    if (s && s.current===1 && (s.phase==='move' || s.phase==='wall' || s.phase==='place-extra')) {
+      setTimeout(aiTurn, 500);
+    }
+    return;
+  }
+  // 온라인 모드 → Firebase set()
+}
+
+/* ================= AI 로직 ================= */
+function aiTurn(){
+  const s = normalizeState(local.state);
+  if (!s || s.current !== 1) return;
+
+  if (s.phase === 'place-extra') aiPlaceExtra(s);
+  else if (s.phase === 'move') aiMove(s);
+  else if (s.phase === 'wall') aiPlaceWall(s);
+
+  renderFromState();
+  if (s.phase !== 'ended') commitState();
+}
+function aiPlaceExtra(s){
+  const points = allEmptyPoints(s);
+  const pick = randomChoice(points);
+  s.pieces['1'].push({r:pick.r,c:pick.c});
+  s.extraIdx++;
+  if(s.extraIdx >= s.extraOrder.length) s.phase='move';
+  else s.current = s.extraOrder[s.extraIdx];
+}
+function aiMove(s){
+  const myPieces = s.pieces['1'];
+  let best = null, bestScore = -Infinity;
+  for (const p of myPieces) {
+    const moves = listMovable(s, p.r, p.c);
+    for (const m of moves) {
+      const score = evalMoveScore(m, local.aiLevel);
+      if (score > bestScore) { bestScore = score; best = {from:p, to:m}; }
+    }
+  }
+  if (best) {
+    const arr = s.pieces['1'];
+    const idx = arr.findIndex(pp=>pp.r===best.from.r && pp.c===best.from.c);
+    arr[idx] = {r:best.to.r, c:best.to.c};
+    s.phase = 'wall';
+    s.lastMoved = {r:best.to.r, c:best.to.c};
+  }
+}
+function aiPlaceWall(s){
+  let candidates = [];
+  if (s.lastMoved) candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
+  if (candidates.length === 0) candidates = listEmptyWallsFromState(s);
+  const pick = randomChoice(candidates);
+  if (pick) s.walls.push({r:pick.r, c:pick.c, owner:1});
+  s.current = 0; s.phase = 'move'; s.lastMoved = null;
+}
+
+/* ================= 유틸 ================= */
+function randomChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function evalMoveScore(move, level){
+  if (level==='easy') return Math.random();
+  if (level==='medium') return -distToOpponent(move);
+  if (level==='hard') return (-distToOpponent(move))*1.0 + (-distToCenter(move))*0.6 + freedomScore(move)*1.2;
+  return Math.random();
+}
+function distToOpponent(pos) {
+  const oppPieces = local.state.pieces['0']; // AI는 1번 플레이어로 가정
+  let minDist = Infinity;
+  for (const p of oppPieces) {
+    const d = Math.abs(p.r - pos.r) + Math.abs(p.c - pos.c);
+    if (d < minDist) minDist = d;
+  }
+  return minDist;
+}
+
+function distToCenter(pos) {
+  const center = { r: Math.floor(GRID/2), c: Math.floor(GRID/2) };
+  return Math.abs(center.r - pos.r) + Math.abs(center.c - pos.c);
+}
+
+function freedomScore(pos) {
+  return neighborsReachable(pos.r, pos.c).length;
+}
+function makeBoard() {
+  boardEl.innerHTML = '';
+  boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
+  boardEl.style.gridTemplateRows = `repeat(${GRID}, auto)`;
+  grid = Array.from({ length: GRID }, () => Array(GRID).fill(null));
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const cell = document.createElement('div');
+      cell.classList.add('cell');
+
+      if (r % 2 === 0 && c % 2 === 0) {
+        cell.classList.add('point');
+        cell.addEventListener('click', () => onPointClick(r, c));
+      } else if (r % 2 === 1 && c % 2 === 0) {
+        cell.classList.add('h-wall');
+        cell.addEventListener('click', () => onWallClick(r, c));
+      } else if (r % 2 === 0 && c % 2 === 1) {
+        cell.classList.add('v-wall');
+        cell.addEventListener('click', () => onWallClick(r, c));
+      } else {
+        cell.classList.add('blank');
+      }
+
+      boardEl.appendChild(cell);
+      grid[r][c] = cell;
+    }
+  }
+  resizeBoard();
+}
+function renderFromState() {
+  const s = normalizeState(local.state);
+  if (!s) return;
+
+  const phaseLabel = s.phase === 'place-extra' ? ' — 말 배치'
+                    : s.phase === 'move' ? ' — 말 이동'
+                    : s.phase === 'wall' ? ' — 벽 설치'
+                    : s.phase === 'ended' ? ' — 종료' : '';
+  turnEl.textContent = ((s.current === 0) ? 'P1(빨강)' : 'P2(파랑)') + ' 차례' + phaseLabel;
+  turnEl.style.color = COLORS[s.current];
+
+  skipWallBtn.disabled = !(s.phase === 'move' && s.current === local.role);
+
+  document.querySelectorAll('.piece').forEach(el => el.remove());
+  for (const pid of [0, 1]) {
+    for (const p of s.pieces[String(pid)]) {
+      const cell = grid[p.r]?.[p.c];
+      if (!cell) continue;
+      const dot = document.createElement('div');
+      dot.classList.add('piece');
+      dot.style.background = COLORS[pid];
+      dot.dataset.player = String(pid);
+      cell.appendChild(dot);
+    }
+  }
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const cell = grid[r][c];
+      if (!cell) continue;
+      if (cell.classList.contains('h-wall') || cell.classList.contains('v-wall')) {
+        cell.classList.remove('placed');
+        cell.style.background = '#fff';
+      }
+    }
+  }
+  for (const w of s.walls) {
+    const cell = grid[w.r]?.[w.c];
+    if (cell) {
+      cell.classList.add('placed');
+      cell.style.background = COLORS[w.owner];
+    }
+  }
+
+  updateScoresLocal();
+}
+function onPointClick(r, c) {
+  const s = normalizeState(local.state);
+  if (!s) return;
+
+  if (s.phase === 'place-extra') {
+    if (s.current !== local.role) return;
+    const cell = grid[r][c];
+    if (cell.querySelector('.piece')) return;
+    s.pieces[String(s.current)].push({ r, c });
+    s.extraIdx++;
+    if (s.extraIdx >= s.extraOrder.length) {
+      s.phase = 'move';
+    } else {
+      s.current = s.extraOrder[s.extraIdx];
+    }
+    commitState();
+    return;
+  }
+
+  if (s.phase === 'move') {
+    if (s.current !== local.role) return;
+    const cell = grid[r][c];
+    const piece = cell.querySelector('.piece');
+
+    if (local.selected && local.selected.r === r && local.selected.c === c) {
+      local.selected = null;
+      clearMovable();
+      return;
+    }
+
+    if (!local.selected && piece && +piece.dataset.player === local.role) {
+      local.selected = { r, c };
+      const cnt = showMovableFrom(r, c);
+      if (cnt === 0) {
+        local.selected = null;
+        clearMovable();
+      }
+      return;
+    }
+
+    if (local.selected && cell.classList.contains('movable')) {
+      const arr = s.pieces[String(local.role)];
+      const idx = arr.findIndex(p => p.r === local.selected.r && p.c === local.selected.c);
+      if (idx >= 0) {
+        arr[idx] = { r, c };
+        s.phase = 'wall';
+        s.lastMoved = { r, c };
+        clearMovable();
+        local.selected = null;
+        commitState();
+      }
+    }
+  }
+}
+
+function onWallClick(r, c) {
+  const s = normalizeState(local.state);
+  if (!s || s.phase !== 'wall' || s.current !== local.role) return;
+  const cell = grid[r][c];
+  const isWall = cell.classList.contains('h-wall') || cell.classList.contains('v-wall');
+  if (!isWall || cell.classList.contains('placed')) return;
+
+  s.walls.push({ r, c, owner: local.role });
+  s.current = 1 - s.current;
+  s.phase = 'move';
+  s.lastMoved = null;
+  clearMovable();
+  commitState();
+}
+
+skipWallBtn.addEventListener('click', () => {
+  const s = normalizeState(local.state);
+  if (!s || s.phase !== 'move' || s.current !== local.role) return;
+  clearMovable();
+  local.selected = null;
+  s.phase = 'wall';
+  s.lastMoved = null;
+  commitState();
+});
+function computeRegionsLocal() {
+  const visited = Array.from({ length: GRID }, () => Array(GRID).fill(false));
+  const regions = [];
+  let hasMixed = false;
+
+  for (let r = 0; r < GRID; r += 2) {
+    for (let c = 0; c < GRID; c += 2) {
+      if (visited[r][c]) continue;
+      const q = [{ r, c }];
+      visited[r][c] = true;
+      const pts = [];
+      const present = new Set();
+      while (q.length) {
+        const cur = q.shift();
+        pts.push(cur);
+        const piece = grid[cur.r][cur.c].querySelector('.piece');
+        if (piece) present.add(+piece.dataset.player);
+        for (const { nr, nc } of neighborsByWall(cur.r, cur.c)) {
+          if (!visited[nr][nc]) {
+            visited[nr][nc] = true;
+            q.push({ r: nr, c: nc });
+          }
+        }
+      }
+      if (present.size >= 2) hasMixed = true;
+      regions.push({ points: pts, players: present });
+    }
+  }
+  return { regions, hasMixed };
+}
+
+function updateScoresLocal() {
+  const { regions } = computeRegionsLocal();
+  const sc = [0, 0];
+  for (const reg of regions) {
+    if (reg.players.size === 1) {
+      const owner = [...reg.players][0];
+      sc[owner] += reg.points.length;
+    }
+  }
+  s1El.textContent = sc[0];
+  s2El.textContent = sc[1];
+}
+
+function showWinnerWithPaintLocal() {
+  const p1 = +s1El.textContent, p2 = +s2El.textContent;
+  if (p1 > p2) alert('승자: P1(빨강)');
+  else if (p2 > p1) alert('승자: P2(파랑)');
+  else alert('무승부');
+}
+
+/* ======== 나머지 함수들 ======== 
+- distToOpponent, distToCenter, freedomScore
+- makeBoard, resizeBoard, renderFromState
+- onPointClick, onWallClick, skipWallBtn 이벤트
+- 점수 계산, 승리 판정
+모두 기존 index.html 코드에서 그대로 붙여주세요
+*/
+</script>
+</body>
+</html>
