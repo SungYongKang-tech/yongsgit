@@ -207,37 +207,37 @@ function isPoint(r,c){ return (r%2===0) && (c%2===0); }
 function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
 
 /* ✅ 화면에 맞춰 보드 크기 자동 조절 */
-function resizeBoard(){
-  const h1 = document.querySelector('h1')?.offsetHeight || 0;
-  const panel = document.getElementById('panel')?.offsetHeight || 0;
-  const turn = document.getElementById('turnLine')?.offsetHeight || 0;
-  const scores = document.getElementById('scores')?.offsetHeight || 0;
-  const bottom = document.getElementById('bottomBar')?.offsetHeight || 0;
+  function resizeBoard() {
+      const headerH = (document.querySelector('h1')?.offsetHeight || 0)
+        + (document.getElementById('panel')?.offsetHeight || 0)
+        + (document.getElementById('turnLine')?.offsetHeight || 0)
+        + (document.getElementById('scores')?.offsetHeight || 0)
+        + 20;
+      const bottomH = (document.getElementById('bottomBar')?.offsetHeight || 0) + 10;
+      const availW = document.getElementById('wrap').clientWidth - 4;
+      const availH = window.innerHeight - headerH - bottomH;
+      const maxSquare = Math.max(220, Math.min(availW, availH));
+      const k = 0.36;
+      let p = Math.floor(maxSquare / (7 + 6*k));
+      let t = Math.floor(p * k);
+      t = Math.max(8, Math.min(28, t));
+      p = Math.max(26, Math.min(82, p));
+      const total = 7*p + 6*t;
+      if (total > maxSquare) {
+        const diff = total - maxSquare;
+        const shrinkP = Math.min(diff, p - 26);
+        p -= shrinkP;
+        let remain = diff - shrinkP;
+        if (remain > 0) { const shrinkT = Math.min(remain, t - 8); t -= shrinkT; }
+      }
+      document.documentElement.style.setProperty('--p', p + 'px');
+      document.documentElement.style.setProperty('--t', t + 'px');
+      boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
+      boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
+    }
+    window.addEventListener('resize', resizeBoard);
+    window.addEventListener('orientationchange', ()=>setTimeout(resizeBoard, 50));
 
-  const verticalPadding = 16;
-  const availableH = window.innerHeight - (h1 + panel + turn + scores + bottom) - verticalPadding;
-  const availableW = wrapEl.clientWidth - 4;
-
-  // 칸 크기 p는 정수
-  let p = Math.floor(Math.min(availableW / GRID, availableH / GRID));
-  p = Math.max(p, 22);
-
-  // 🔧 벽 두께 t를 정수 픽셀로 (소수점 금지)
-  let t = Math.round(p * 0.35);
-  if (t < 1) t = 1;
-
-  // CSS 변수 반영
-  document.documentElement.style.setProperty('--p', p + 'px');
-  document.documentElement.style.setProperty('--t', t + 'px');
-
-  const size = p * GRID;
-  boardEl.style.width = size + 'px';
-  boardEl.style.height = size + 'px';
-}
-
-
-window.addEventListener('resize', () => { resizeBoard(); });
-window.addEventListener('orientationchange', () => { setTimeout(resizeBoard, 50); });
 
 /* 초기 상태 */
 function initialState(){
