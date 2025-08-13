@@ -222,6 +222,57 @@
     </div>
   </main>
 
+  <!-- 기존 앱 로직 -->
   <script type="module" src="script.js"></script>
+
+  <!-- ✅ 익명 로그인 부트스트랩 (중복 초기화 방지 + 로그인 완료 보장) -->
+  <script type="module">
+    import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+    // 1) 먼저 기존에 초기화된 앱을 기다림(스크립트 로드 순서와 무관하게 안전)
+    async function ensureApp() {
+      const start = Date.now();
+      while (Date.now() - start < 800) {             // 최대 0.8초까지 기존 초기화 대기
+        if (getApps().length) return getApp();
+        await new Promise(r => setTimeout(r, 20));
+      }
+      // 2) 없다면 여기서 초기화 (⚠️ 실제 값으로 교체하세요)
+      const firebaseConfig = {
+        // TODO: 여기에 이 페이지가 사용하는 firebaseConfig를 넣으세요.
+        // projectId, apiKey, authDomain, databaseURL 등
+      };
+      return initializeApp(firebaseConfig);
+    }
+
+    const app = await ensureApp();
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // 전역 노출(원하면 script.js에서 활용 가능)
+    window.firebaseApp = app;
+    window.db = db;
+    window.auth = auth;
+
+    // 로그인 완료 Promise
+    window.authReady = new Promise((resolve) => {
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          // UI 활성화 예시
+          const swapBtn = document.getElementById('swapBtn');
+          if (swapBtn) swapBtn.disabled = false;
+          resolve(user);
+        }
+      });
+    });
+
+    try {
+      await signInAnonymously(auth);
+    } catch (e) {
+      console.error('익명 로그인 실패:', e);
+      alert('네트워크/권한 문제로 로그인에 실패했습니다.');
+    }
+  </script>
 </body>
 </html>

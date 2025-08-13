@@ -1,7 +1,24 @@
 // script.js
 import { db } from './firebase.js';
-import { ref, onValue, set, get, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import {
+  ref, onValue, set, get, update
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+// ✅ 익명 로그인 완료 대기(Promise)
+//  - HTML에서 window.authReady를 제공(이전 답변의 부트스트랩 코드)
+//  - 없으면 경고만 띄우고 진행(규칙이 auth != null이면 쓰기 실패)
+const authReady = window.authReady || Promise.resolve(null);
+async function requireAuth() {
+  const user = await authReady;
+  if (!user) console.warn('authReady가 없습니다. 규칙이 auth != null이면 쓰기가 실패합니다.');
+  return user;
+}
+
+// ✅ 공통 쓰기 유틸 (set 전 로그인 보장)
+async function writeSet(path, value) {
+  await requireAuth();
+  return set(ref(db, path), value);
+}
 
 const scheduleRef = ref(db, 'schedule');
 
@@ -10,26 +27,29 @@ onValue(scheduleRef, (snapshot) => {
   renderSchedule(data);
 });
 
-  const initialData = {
-    mon_0: { name: "정승목" }, tue_0: { name: "김승일" }, wed_0: { name: "정승목" }, thu_0: { name: "김승일" },
-    mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
-    mon_2: { name: "이낭주" }, tue_2: { name: "양충현" }, wed_2: { name: "이낭주" }, thu_2: { name: "양충현" },
-    mon_3: { name: "조보미" }, tue_3: { name: "송은아" }, wed_3: { name: "조보미" }, thu_3: { name: "송은아" },
-    mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
-  };
-
-window.importSchedule = function () {
- // if (!confirm("기존 시간표를 덮어씁니다. 계속하시겠습니까?")) return;
-
-
-
-  set(scheduleRef, initialData)
-//    .then(() => alert("시간표가 초기화되었습니다."))
-//    .catch((error) => alert("초기화 중 오류 발생: " + error.message));
+const initialData = {
+  mon_0: { name: "정승목" }, tue_0: { name: "김승일" }, wed_0: { name: "정승목" }, thu_0: { name: "김승일" },
+  mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
+  mon_2: { name: "이낭주" }, tue_2: { name: "양충현" }, wed_2: { name: "이낭주" }, thu_2: { name: "양충현" },
+  mon_3: { name: "조보미" }, tue_3: { name: "송은아" }, wed_3: { name: "조보미" }, thu_3: { name: "송은아" },
+  mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
 };
 
+window.importSchedule = async function () {
+  try {
+    await writeSet('schedule', initialData);
+    // alert("시간표가 초기화되었습니다.");
+  } catch (e) {
+    console.error(e);
+    alert('시간표 초기화 실패: ' + e.message);
+  }
+};
+
+// (옵션) 외부에서 부르는 버튼이 없다면 남겨도 무방하지만, userNameKey 미정이므로 사용 주의
 window.changeName = function () {
-  localStorage.removeItem(userNameKey);
+  try {
+    localStorage.removeItem(userNameKey);
+  } catch {}
   location.reload();
 };
 
@@ -95,11 +115,9 @@ function renderSchedule(data) {
 
       if (value) {
         cell.textContent = value;
-       
         if (initialData[key]?.name !== value) {
-         cell.classList.add("modified");
-      }
-     
+          cell.classList.add("modified");
+        }
       } else {
         cell.classList.add("empty");
         cell.style.backgroundColor = "#f5f5f5";
@@ -134,14 +152,26 @@ function handleCellClick(cell, key) {
     const from = selectedCells[0];
     const copiedName = from.cell.textContent.trim();
 
+    // Optimistic UI
+    const prevClasses = cell.className;
+    const prevBg = cell.style.backgroundColor;
     cell.textContent = copiedName;
     cell.classList.remove("empty");
     cell.style.backgroundColor = "";
-    set(ref(db, `schedule/${key}`), { name: copiedName });
 
-    from.cell.classList.remove("selected");
-    selectedCells = [];
-    document.getElementById("swapBtn").disabled = true;
+    writeSet(`schedule/${key}`, { name: copiedName })
+      .then(() => {
+        from.cell.classList.remove("selected");
+        selectedCells = [];
+        document.getElementById("swapBtn").disabled = true;
+      })
+      .catch((e) => {
+        // 실패 시 UI 원복
+        cell.textContent = "";
+        cell.className = prevClasses;
+        cell.style.backgroundColor = prevBg;
+        alert('저장 실패: ' + e.message);
+      });
     return;
   }
 
@@ -155,21 +185,29 @@ function handleCellClick(cell, key) {
   document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
 }
 
-
-window.handleSwap = function () {
+window.handleSwap = async function () {
   if (selectedCells.length !== 2) return;
 
   const [{ cell: cellA, key: keyA }, { cell: cellB, key: keyB }] = selectedCells;
   const nameA = cellA.textContent;
   const nameB = cellB.textContent;
 
-  // Swap UI
+  // Optimistic UI
   cellA.textContent = nameB;
   cellB.textContent = nameA;
 
-  // Firebase 반영
-  set(ref(db, `schedule/${keyA}`), { name: nameB });
-  set(ref(db, `schedule/${keyB}`), { name: nameA });
+  try {
+    await Promise.all([
+      writeSet(`schedule/${keyA}`, { name: nameB }),
+      writeSet(`schedule/${keyB}`, { name: nameA })
+    ]);
+  } catch (e) {
+    // 실패 시 되돌리기
+    cellA.textContent = nameA;
+    cellB.textContent = nameB;
+    alert('서로 변경 실패: ' + e.message);
+    return;
+  }
 
   // 스타일 초기화
   selectedCells.forEach(({ cell }) => cell.classList.remove("selected"));
@@ -177,47 +215,56 @@ window.handleSwap = function () {
   document.getElementById("swapBtn").disabled = true;
 };
 
-window.markAbsent = function () {
+window.markAbsent = async function () {
   if (selectedCells.length !== 1) return alert("하나의 셀만 선택해야 합니다.");
-  
+
   const { cell, key } = selectedCells[0];
 
-  set(ref(db, `schedule/${key}`), { name: "" })
-    .then(() => {
-     // alert("불참 처리되었습니다.");
-      cell.textContent = "";
-      cell.classList.add("empty");
-      cell.style.backgroundColor = "#f5f5f5";
+  // Optimistic UI
+  const prevText = cell.textContent;
+  const prevClasses = cell.className;
+  const prevBg = cell.style.backgroundColor;
 
-      // 🔽 추가: 선택 해제 처리
-      cell.classList.remove("selected");
-      selectedCells = [];
+  cell.textContent = "";
+  cell.classList.add("empty");
+  cell.style.backgroundColor = "#f5f5f5";
+  cell.classList.remove("selected");
 
-      document.getElementById("swapBtn").disabled = true;
-    });
+  try {
+    await writeSet(`schedule/${key}`, { name: "" });
+  } catch (e) {
+    // 실패 시 원복
+    cell.textContent = prevText;
+    cell.className = prevClasses;
+    cell.style.backgroundColor = prevBg;
+    alert('불참 처리 실패: ' + e.message);
+    return;
+  }
+
+  selectedCells = [];
+  document.getElementById("swapBtn").disabled = true;
 };
 
-
+// -------- 주간 자동 초기화 --------
 function shouldResetSchedule() {
   const now = new Date();
   const day = now.getDay(); // 일: 0, 월: 1, ..., 금: 5
   const hour = now.getHours();
-
-  // 금요일 17시(5시) 이후인지 체크
-  return (day === 5 && hour >= 17);
+  return (day === 5 && hour >= 17); // 금요일 17시 이후
 }
 
 function resetOncePerWeek() {
   const resetKey = 'scheduleResetWeek';
   const currentWeek = getWeekKey();
-
   if (shouldResetSchedule() && localStorage.getItem(resetKey) !== currentWeek) {
-    importSchedule();  // 초기화 함수 실행
-    localStorage.setItem(resetKey, currentWeek);
+    // 로그인 보장 뒤 초기화
+    authReady.then(() => {
+      window.importSchedule();
+      localStorage.setItem(resetKey, currentWeek);
+    });
   }
 }
 
-// 해당 주차를 구분하기 위한 키 생성
 function getWeekKey() {
   const now = new Date();
   const year = now.getFullYear();

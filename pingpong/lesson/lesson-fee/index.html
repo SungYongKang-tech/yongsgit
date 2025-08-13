@@ -5,63 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>탁구 레슨비 입금확인</title>
   <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 20px;
-      background-color: #f2f2f2;
-    }
-    h2 {
-      text-align: center;
-      color: #0d47a1;
-      margin-bottom: 20px;
-    }
-    .member {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin-bottom: 10px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    .member span {
-      font-size: 16px;
-      font-weight: 500;
-      flex: 1;
-      text-align: left;
-    }
-    .member .actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .member button {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: bold;
-      color: white;
-      background-color: gray;
-      transition: 0.2s;
-    }
-    .member button.paid {
-      background-color: green;
-    }
-    .timestamp {
-      font-size: 13px;
-      color: gray;
-    }
+    body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background-color: #f2f2f2; }
+    h2 { text-align: center; color: #0d47a1; margin-bottom: 20px; }
+    .member { display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .member span { font-size: 16px; font-weight: 500; flex: 1; text-align: left; }
+    .member .actions { display: flex; align-items: center; gap: 8px; }
+    .member button { padding: 8px 16px; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; color: white; background-color: gray; transition: 0.2s; }
+    .member button.paid { background-color: green; }
+    .member button:disabled { opacity: .6; cursor: not-allowed; }
+    .timestamp { font-size: 13px; color: gray; min-width: 48px; text-align: right; }
     @media (max-width: 480px) {
-      .member span {
-        font-size: 14px;
-      }
-      .member button {
-        padding: 6px 12px;
-        font-size: 13px;
-      }
+      .member span { font-size: 14px; }
+      .member button { padding: 6px 12px; font-size: 13px; }
     }
   </style>
 </head>
@@ -70,73 +25,118 @@
   <div id="playerList"></div>
 
   <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
-    authDomain: "lessonswap-26e9b.firebaseapp.com",
-    databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
-    projectId: "lessonswap-26e9b",
-    storageBucket: "lessonswap-26e9b.appspot.com",
-    messagingSenderId: "1068278553187",
-    appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
-  };
+    // --- Firebase 초기화 ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
+      authDomain: "lessonswap-26e9b.firebaseapp.com",
+      databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
+      projectId: "lessonswap-26e9b",
+      storageBucket: "lessonswap-26e9b.appspot.com",
+      messagingSenderId: "1068278553187",
+      appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
-
-  const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "양충현", "조보미", "송은아", "고은선", "임춘근"];
-  const nextMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() + 1);
-  const yearMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
-  const displayMonth = `${nextMonthDate.getMonth() + 1}`;
-  document.getElementById("pageTitle").innerText = `🏓 ${displayMonth}월 레슨비 입금확인`;
-
-  const paymentRef = ref(db, `payments/${yearMonth}`);
-  const playerList = document.getElementById("playerList");
-
-  onValue(paymentRef, (snapshot) => {
-    const data = snapshot.val() || {};
-    playerList.innerHTML = "";
-
-    names.forEach(name => {
-      const entry = data[name] || {};
-      const isPaid = entry.status === "paid";
-      const timestamp = entry.timestamp;
-
-      const div = document.createElement("div");
-      div.className = "member";
-
-      const displayDate = timestamp ? (() => {
-        const d = new Date(timestamp);
-        return `${d.getMonth() + 1}/${d.getDate()}`;
-      })() : "";
-
-      div.innerHTML = `
-        <span>${name}</span>
-        <div class="actions">
-          <button id="btn-${name}" class="${isPaid ? 'paid' : ''}">
-            ${isPaid ? '입금 완료' : '입금 대기'}
-          </button>
-          <div class="timestamp">${isPaid && displayDate ? displayDate : ""}</div>
-        </div>
-      `;
-      playerList.appendChild(div);
-
-      document.getElementById(`btn-${name}`).onclick = async () => {
-        if (isPaid) {
-          await set(ref(db, `payments/${yearMonth}/${name}`), { status: "pending" });
-        } else {
-          const now = new Date();
-          const dateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          await set(ref(db, `payments/${yearMonth}/${name}`), {
-            status: "paid",
-            timestamp: dateOnly.toISOString()
-          });
-        }
-      };
+    // --- 익명 로그인 보장 ---
+    let authed = false;
+    const authReady = new Promise((resolve) => {
+      onAuthStateChanged(auth, (user) => {
+        if (user) { authed = true; resolve(user); enableAllActionButtons(); }
+      });
     });
-  });
-</script>
+    signInAnonymously(auth).catch(err => {
+      console.error('익명 로그인 실패:', err);
+      alert('네트워크/권한 문제로 로그인에 실패했습니다.');
+    });
+
+    function enableAllActionButtons() {
+      document.querySelectorAll('button[data-role="toggle"]').forEach(btn => btn.disabled = false);
+    }
+
+    // --- 데이터/화면 구성 ---
+    const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "양충현", "조보미", "송은아", "고은선", "임춘근"];
+
+    const nextMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() + 1);
+    const yearMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const displayMonth = `${nextMonthDate.getMonth() + 1}`;
+    document.getElementById("pageTitle").innerText = `🏓 ${displayMonth}월 레슨비 입금확인`;
+
+    const paymentRef = ref(db, `payments/${yearMonth}`);
+    const playerList = document.getElementById("playerList");
+
+    onValue(paymentRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      playerList.innerHTML = "";
+
+      names.forEach(name => {
+        const entry = data[name] || {};
+        const isPaid = entry.status === "paid";
+        const timestamp = entry.timestamp;
+
+        const div = document.createElement("div");
+        div.className = "member";
+
+        const displayDate = timestamp ? (() => {
+          const d = new Date(timestamp);
+          return `${d.getMonth() + 1}/${d.getDate()}`;
+        })() : "";
+
+        const btnId = `btn-${name}`;
+        div.innerHTML = `
+          <span>${name}</span>
+          <div class="actions">
+            <button id="${btnId}" data-role="toggle" class="${isPaid ? 'paid' : ''}" ${authed ? '' : 'disabled'}>
+              ${isPaid ? '입금 완료' : '입금 대기'}
+            </button>
+            <div class="timestamp">${isPaid && displayDate ? displayDate : ""}</div>
+          </div>
+        `;
+        playerList.appendChild(div);
+
+        const btn = document.getElementById(btnId);
+        btn.onclick = async () => {
+          // ✅ 로그인 완료 보장
+          await authReady;
+
+          // 낙관적 UI(optional): 즉시 토글 표시, 실패 시 원복
+          const prevText = btn.textContent;
+          const prevPaid = btn.classList.contains('paid');
+
+          try {
+            if (prevPaid) {
+              // 완료 → 대기
+              btn.classList.remove('paid');
+              btn.textContent = '입금 대기';
+              await set(ref(db, `payments/${yearMonth}/${name}`), { status: "pending" });
+            } else {
+              // 대기 → 완료
+              btn.classList.add('paid');
+              btn.textContent = '입금 완료';
+              const now = new Date();
+              const dateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              await set(ref(db, `payments/${yearMonth}/${name}`), {
+                status: "paid",
+                timestamp: dateOnly.toISOString()
+              });
+            }
+          } catch (e) {
+            // 실패 시 원복
+            if (prevPaid) {
+              btn.classList.add('paid'); btn.textContent = '입금 완료';
+            } else {
+              btn.classList.remove('paid'); btn.textContent = '입금 대기';
+            }
+            alert('저장 실패: ' + e.message);
+          }
+        };
+      });
+    });
+  </script>
 </body>
 </html>
