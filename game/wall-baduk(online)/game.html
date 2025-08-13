@@ -352,41 +352,180 @@ function aiPlaceExtra(s){
   if(s.extraIdx >= s.extraOrder.length) s.phase='move';
   else s.current = s.extraOrder[s.extraIdx];
 }
+/* ===== 강화된 휴리스틱 헬퍼 ===== */
+
+// (r,c)가 속한 구역에 존재하는 플레이어 집합
+function playersInRegion(r, c){
+  const visited = Array.from({ length: GRID }, () => Array(GRID).fill(false));
+  const q = [{ r, c }];
+  visited[r][c] = true;
+  const present = new Set();
+  while(q.length){
+    const cur = q.shift();
+    const piece = grid[cur.r][cur.c].querySelector('.piece');
+    if (piece) present.add(+piece.dataset.player);
+    for (const { nr, nc } of neighborsByWall(cur.r, cur.c)){
+      if (!visited[nr][nc]){ visited[nr][nc] = true; q.push({ r:nr, c:nc }); }
+    }
+  }
+  return present; // 예: Set {0}, Set {1}, Set {0,1}
+}
+
+// 목적지 기준 이동 자유도(내가 그 칸에 있을 때 2스텝 이내 목적지 수)
+function mobilityAt(r, c){
+  // 현재 벽 상태를 그대로 쓰고, 말 점유만 체크
+  let cnt = 0;
+  const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
+  const q=[{r, c, d:0}]; v[r][c]=true;
+  while(q.length){
+    const cur=q.shift();
+    if(cur.d>0 && cur.d<=2 && isPoint(cur.r,cur.c) && !grid[cur.r][cur.c].querySelector('.piece')) cnt++;
+    if(cur.d===2) continue;
+    for(const {nr,nc} of neighborsReachable(cur.r,cur.c)){
+      if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:cur.d+1}); }
+    }
+  }
+  return cnt;
+}
+
+// 벽 좌표(wr,wc)가 가르는 두 점을 구함 (없으면 null)
+function wallEndpoints(wr, wc){
+  if (wr%2===1 && wc%2===0) return [{r:wr-1,c:wc},{r:wr+1,c:wc}]; // 가로벽: 위점-아래점
+  if (wr%2===0 && wc%2===1) return [{r:wr,c:wc-1},{r:wr,c:wc+1}]; // 세로벽: 왼점-오른점
+  return null;
+}
+
+// 후보 벽이 상대 기동력에 주는 차단 점수(근접 상대 말 수 + 인접 점 이동로 차단 수)
+function blockScoreForWall(wr, wc, opponent=0){
+  const ends = wallEndpoints(wr, wc);
+  if (!ends) return 0;
+
+  // 1) 벽 양끝 주변 2-맨해튼 안의 상대 말 수
+  let nearOpp = 0;
+  for (const pidEl of document.querySelectorAll('.piece')){
+    const pid = +pidEl.dataset.player;
+    if (pid!==opponent) continue;
+    const cell = pidEl.parentElement;
+    const rc = cellToRC(cell);
+    if (!rc) continue;
+    const d = Math.abs(rc.r-ends[0].r)+Math.abs(rc.c-ends[0].c);
+    const e = Math.abs(rc.r-ends[1].r)+Math.abs(rc.c-ends[1].c);
+    if (Math.min(d,e) <= 2) nearOpp++;
+  }
+
+  // 2) 현재 개방된 통로인지(=지금은 통과 가능, 벽을 두면 막힘) 가산
+  let openPass = 0;
+  const [A,B] = ends;
+  // neighborsReachable은 점→이웃점이 "열려있고 도착점 비어야" true이므로,
+  // 통로가 열려있고 도착이 빈 점이라면 실제로 이동 후보에 나타남
+  const neighA = neighborsReachable(A.r, A.c).some(v => v.nr===B.r && v.nc===B.c);
+  const neighB = neighborsReachable(B.r, B.c).some(v => v.nr===A.r && v.nc===A.c);
+  if (neighA || neighB) openPass = 1;
+
+  // 가중 합: 상대 근접도 *2 + 개방 통로 차단 *3
+  return nearOpp*2 + openPass*3;
+}
+
+// DOM 셀 → 보드 좌표 (r,c)
+function cellToRC(cell){
+  if (!cell) return null;
+  // grid[r][c]를 만들어둘 때 참조를 저장했으므로, 빠르게 역탐색:
+  for (let r=0;r<GRID;r++){
+    for (let c=0;c<GRID;c++){
+      if (grid[r][c]===cell) return {r,c};
+    }
+  }
+  return null;
+}
+
+/* ===== 이동 평가 함수(강화) ===== */
+function evalMoveScore(move, level){
+  // move는 {r,c}
+  // ① 자유도(높을수록 좋음)
+  const free = mobilityAt(move.r, move.c);
+
+  // ② 구역 안전도: 내 말만 있는 구역이면 큰 보너스, 혼합이면 페널티
+  const regionPlayers = playersInRegion(move.r, move.c);
+  let regionBonus = 0;
+  if (regionPlayers.size===0) regionBonus += 1;           // 아직 말이 없는 구역(중립) 약간 선호
+  if (regionPlayers.size===1 && regionPlayers.has(1)) regionBonus += 4; // 내 독점구역 강하게 선호
+  if (regionPlayers.size===1 && regionPlayers.has(0)) regionBonus += 0; // 상대 독점구역은 중립
+  if (regionPlayers.size>=2) regionBonus -= 3;            // 혼합구역은 회피
+
+  // ③ 중앙성(중앙 가까울수록 소폭 보너스)
+  const center = { r: Math.floor(GRID/2), c: Math.floor(GRID/2) };
+  const centerScore = - (Math.abs(center.r - move.r) + Math.abs(center.c - move.c)) * 0.3;
+
+  // ④ 상대 충돌 위험: 상대 말과 너무 가까우면 약간 페널티(교전 회피)
+  let minOpp = Infinity;
+  for (const p of local.state.pieces['0']){
+    const d = Math.abs(p.r - move.r) + Math.abs(p.c - move.c);
+    if (d < minOpp) minOpp = d;
+  }
+  const avoidClash = Math.max(0, 3 - (isFinite(minOpp)?minOpp:99)); // 1~2칸이면 페널티
+  const clashPenalty = -avoidClash * 0.8;
+
+  // 난이도별 가중치
+  const score =
+    (level==='easy'  ? 1.0 : level==='medium' ? 1.2 : 1.5) * free +
+    (level==='easy'  ? 1.0 : level==='medium' ? 1.2 : 1.6) * regionBonus +
+    centerScore +
+    clashPenalty;
+
+  return score + (Math.random()*0.1); // 동점 깨기용 소량 노이즈
+}
+
+/* ===== AI 이동(강화) ===== */
 function aiMove(s){
   const myPieces = s.pieces['1'];
   let best = null, bestScore = -Infinity;
-  for (const p of myPieces) {
+
+  for (const p of myPieces){
     const moves = listMovable(s, p.r, p.c);
-    for (const m of moves) {
+    for (const m of moves){
       const score = evalMoveScore(m, local.aiLevel);
       if (score > bestScore) { bestScore = score; best = {from:p, to:m}; }
     }
   }
-  if (best) {
+
+  if (best){
     const arr = s.pieces['1'];
-    const idx = arr.findIndex(pp=>pp.r===best.from.r && pp.c===best.from.c);
-    arr[idx] = {r:best.to.r, c:best.to.c};
+    const idx = arr.findIndex(pp => pp.r===best.from.r && pp.c===best.from.c);
+    arr[idx] = { r:best.to.r, c:best.to.c };
     s.phase = 'wall';
-    s.lastMoved = {r:best.to.r, c:best.to.c};
+    s.lastMoved = { r:best.to.r, c:best.to.c };
   }
 }
+
+/* ===== AI 벽 설치(강화) ===== */
 function aiPlaceWall(s){
   let candidates = [];
   if (s.lastMoved) candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
   if (candidates.length === 0) candidates = listEmptyWallsFromState(s);
-  const pick = randomChoice(candidates);
-  if (pick) s.walls.push({r:pick.r, c:pick.c, owner:1});
+
+  // 상대(pid=0) 차단 효과가 큰 벽 우선
+  let best = null, bestScore = -Infinity;
+  for (const w of candidates){
+    const bs = blockScoreForWall(w.r, w.c, 0);
+    // 내 말 독점구역을 더 안전하게 둘러치는 벽이라면 약간 가산
+    let regionSecure = 0;
+    const ends = wallEndpoints(w.r, w.c);
+    if (ends){
+      const A = playersInRegion(ends[0].r, ends[0].c);
+      const B = playersInRegion(ends[1].r, ends[1].c);
+      // 둘 다 내 독점이면 +1
+      if (A.size===1 && A.has(1) && B.size===1 && B.has(1)) regionSecure = 1;
+    }
+    const score = bs*1.0 + regionSecure*1.0 + (Math.random()*0.05);
+    if (score > bestScore){ bestScore = score; best = w; }
+  }
+
+  const pick = best || candidates[0];
+  if (pick) s.walls.push({ r:pick.r, c:pick.c, owner:1 });
+
   s.current = 0; s.phase = 'move'; s.lastMoved = null;
 }
 
-/* ================= 유틸 ================= */
-function randomChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-function evalMoveScore(move, level){
-  if (level==='easy') return Math.random();
-  if (level==='medium') return -distToOpponent(move);
-  if (level==='hard') return (-distToOpponent(move))*1.0 + (-distToCenter(move))*0.6 + freedomScore(move)*1.2;
-  return Math.random();
-}
 function distToOpponent(pos) {
   const oppPieces = local.state.pieces['0']; // AI는 1번 플레이어로 가정
   let minDist = Infinity;
