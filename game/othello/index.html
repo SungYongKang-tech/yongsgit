@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>오델로(온라인 1:1)</title>
+  <style>
+    :root {
+      --cell: min(10.5vw, 56px);  /* 셀 한 변 크기(모바일 우선) */
+      --gap: 1px;
+      --margin: 10px;
+      --board-size: calc(var(--cell) * 8 + var(--gap) * 9);
+    }
+    html { color-scheme: light only; } /* ✅ 다크모드 강제 방지 */
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, "Noto Sans KR", sans-serif;
+      margin: 0; background:#f5f5f5; color:#222; text-align:center;
+      display:flex; flex-direction:column; align-items:center; min-height:100dvh;
+    }
+    header { width:100%; padding:12px 10px; background:#fff; border-bottom:1px solid #e5e7eb; position:sticky; top:0; z-index:3; }
+    header h1 { margin:0; font-size:clamp(18px, 4.8vw, 26px); }
+    .wrap { width:100%; max-width: 560px; padding: 12px; }
+    .card {
+      background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin:10px auto;
+      box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    .row { display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
+
+    /* 로비 */
+    #lobby input[type="text"]{
+      width:min(260px, 70vw); padding:10px 12px; border:1px solid #bbb; border-radius:8px; font-size:16px;
+    }
+    button {
+      padding:10px 14px; border:1px solid #999; border-radius:10px; background:#0d47a1; color:#fff; font-weight:600;
+    }
+    button.ghost { background:#fff; color:#0d47a1; border-color:#0d47a1; }
+    button:disabled { opacity:.6; pointer-events:none; }
+
+    /* 정보 바 */
+    #infoBar { display:grid; grid-template-columns: 1fr 1fr; gap:6px; align-items:center; margin:6px 0 10px; }
+    #infoBar .box {
+      background:#fafafa; border:1px solid #e5e7eb; border-radius:10px; padding:8px; font-size:14px;
+    }
+    #status { font-weight:700; color:#0d47a1; }
+
+    /* 보드 */
+    #boardWrap { display:flex; justify-content:center; }
+    #board {
+      width:var(--board-size); height:var(--board-size);
+      background:#2e7d32; padding: var(--gap);
+      display:grid; grid-template-columns: repeat(8, var(--cell)); grid-template-rows: repeat(8, var(--cell));
+      gap:var(--gap); border-radius:14px; box-shadow: inset 0 0 0 3px #1b5e20;
+      touch-action: manipulation;
+    }
+    .cell {
+      background: #3fa34d; position:relative; border:1px solid rgba(0,0,0,.2);
+      display:flex; align-items:center; justify-content:center; cursor:pointer;
+    }
+    .cell::after { /* 교차선 느낌 */
+      content:""; position:absolute; inset:0; outline:1px solid rgba(0,0,0,.12); pointer-events:none;
+    }
+    .stone {
+      width: calc(var(--cell) * 0.74); height: calc(var(--cell) * 0.74); border-radius: 50%;
+      box-shadow: inset 0 3px 10px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.25);
+      transform: scale(0.98);
+    }
+    .black { background: radial-gradient(circle at 30% 30%, #555 0%, #111 65%, #000 100%); }
+    .white {
+      background: radial-gradient(circle at 30% 30%, #fff 0%, #e9e9e9 60%, #cfcfcf 100%);
+      box-shadow: inset 0 1px 6px rgba(0,0,0,.18), 0 1px 2px rgba(0,0,0,.2);
+    }
+    .hint { box-shadow: inset 0 0 0 3px rgba(255,255,0,.6) !important; }
+
+    /* 하단 버튼 */
+    #actions { display:flex; gap:8px; justify-content:center; margin:10px 0 4px; flex-wrap:wrap; }
+    .small { font-size:13px; padding:8px 10px; }
+
+    /* 토스트 */
+    #toast {
+      position: fixed; left:50%; bottom:18px; transform: translateX(-50%);
+      background: rgba(0,0,0,.8); color:#fff; padding:10px 14px; border-radius:10px; font-size:14px;
+      opacity:0; pointer-events:none; transition: opacity .25s;
+    }
+    #toast.show { opacity: 1; }
+
+    @media (min-width: 720px) {
+      :root { --cell: 56px; }
+    }
+  </style>
+</head>
+<body>
+  <header><h1>오델로 · 온라인 1:1</h1></header>
+
+  <div class="wrap">
+    <!-- 로비 -->
+    <section id="lobby" class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <button id="createBtn">방 만들기</button>
+        <input id="roomInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="방 코드(예: 824136)" />
+        <button id="joinBtn" class="ghost">입장</button>
+      </div>
+      <div class="row">
+        <button id="shareBtn" class="small">방 코드 복사/공유</button>
+        <span id="lobbyInfo" style="font-size:14px;color:#555;"></span>
+      </div>
+    </section>
+
+    <!-- 게임 영역 -->
+    <section id="game" class="card" style="display:none;">
+      <div id="infoBar">
+        <div class="box">
+          <div><b>방:</b> <span id="roomCodeLabel">-</span></div>
+          <div><b>역할:</b> <span id="roleLabel">-</span></div>
+        </div>
+        <div class="box">
+          <div><b>흑</b>: <span id="blackCount">2</span>  <b>백</b>: <span id="whiteCount">2</span></div>
+          <div id="status">대기 중…</div>
+        </div>
+      </div>
+
+      <div id="boardWrap">
+        <div id="board" aria-label="오델로 보드"></div>
+      </div>
+
+      <div id="actions">
+        <button id="passBtn" class="small">패스</button>
+        <button id="resetBtn" class="small">재시작</button>
+        <button id="leaveBtn" class="small">나가기</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast"></div>
+  <audio id="sndPlace" src="button-29.mp3" preload="auto"></audio>
+
+  <script type="module">
+    // ===== Firebase v9 모듈 =====
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import {
+      getDatabase, ref, onValue, set, update, get, child, serverTimestamp, runTransaction, push
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    // === 사용자 제공 설정 ===
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
+      authDomain: "number-baseball-aee52.firebaseapp.com",
+      databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
+      projectId: "number-baseball-aee52",
+      storageBucket: "number-baseball-aee52.firebasestorage.app",
+      messagingSenderId: "998537150772",
+      appId: "1:998537150772:web:6c0de75eee58c24691a561"
+    };
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    // ===== DOM =====
+    const lobby = document.getElementById('lobby');
+    const createBtn = document.getElementById('createBtn');
+    const joinBtn = document.getElementById('joinBtn');
+    const roomInput = document.getElementById('roomInput');
+    const lobbyInfo = document.getElementById('lobbyInfo');
+    const shareBtn = document.getElementById('shareBtn');
+
+    const game = document.getElementById('game');
+    const roomCodeLabel = document.getElementById('roomCodeLabel');
+    const roleLabel = document.getElementById('roleLabel');
+    const statusEl = document.getElementById('status');
+    const blackCountEl = document.getElementById('blackCount');
+    const whiteCountEl = document.getElementById('whiteCount');
+
+    const boardEl = document.getElementById('board');
+    const passBtn = document.getElementById('passBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
+
+    const sndPlace = document.getElementById('sndPlace');
+    const toast = document.getElementById('toast');
+
+    // ===== 전역 상태 =====
+    const SIZE = 8;
+    const EMPTY = 0, BLACK = 1, WHITE = 2;
+    const directions = [
+      [-1,-1],[-1,0],[-1,1],
+      [0,-1],        [0,1],
+      [1,-1],[1,0],[1,1]
+    ];
+
+    let uid = null;
+    let roomId = null;
+    let myColor = null; // 1=흑, 2=백
+    let unsubRoom = null; // onValue 취소용
+
+    // ===== 유틸 =====
+    const randCode = () => String(Math.floor(100000 + Math.random()*900000)); // 6자리
+    const showToast = (msg) => {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'), 1400);
+    };
+    const countPieces = (board) => {
+      let b=0,w=0;
+      for (let i=0;i<SIZE;i++){
+        for (let j=0;j<SIZE;j++){
+          if(board[i][j]===BLACK) b++;
+          else if(board[i][j]===WHITE) w++;
+        }
+      }
+      return {b,w};
+    };
+    const cloneBoard = (board)=> board.map(r=>r.slice());
+
+    const isOnBoard = (x,y) => x>=0 && x<SIZE && y>=0 && y<SIZE;
+
+    const validMoves = (board, color) => {
+      const moves = [];
+      for (let x=0;x<SIZE;x++){
+        for (let y=0;y<SIZE;y++){
+          if (board[x][y] !== EMPTY) continue;
+          for (const [dx,dy] of directions){
+            let nx=x+dx, ny=y+dy, found=false;
+            while (isOnBoard(nx,ny) && board[nx][ny]===3-color){
+              nx+=dx; ny+=dy; found=true;
+            }
+            if (found && isOnBoard(nx,ny) && board[nx][ny]===color){
+              moves.push([x,y]); break;
+            }
+          }
+        }
+      }
+      return moves;
+    };
+
+    const applyMove = (board, x, y, color) => {
+      const nb = cloneBoard(board);
+      nb[x][y] = color;
+      for (const [dx,dy] of directions){
+        let nx=x+dx, ny=y+dy;
+        const path=[];
+        while (isOnBoard(nx,ny) && nb[nx][ny]===3-color){
+          path.push([nx,ny]);
+          nx+=dx; ny+=dy;
+        }
+        if (path.length && isOnBoard(nx,ny) && nb[nx][ny]===color){
+          for (const [px,py] of path) nb[px][py]=color;
+        }
+      }
+      return nb;
+    };
+
+    const initialBoard = () => {
+      const b = Array.from({length:SIZE},()=>Array(SIZE).fill(EMPTY));
+      b[3][3]=WHITE; b[4][4]=WHITE;
+      b[3][4]=BLACK; b[4][3]=BLACK;
+      return b;
+    };
+
+    const renderBoard = (board, turn) => {
+      boardEl.innerHTML = "";
+      const moves = validMoves(board, myColor);
+      const hintSet = new Set(moves.map(([x,y])=>`${x}-${y}`));
+
+      for (let x=0;x<SIZE;x++){
+        for (let y=0;y<SIZE;y++){
+          const idx = x*SIZE+y;
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.x = x; cell.dataset.y = y;
+          if (board[x][y]===BLACK || board[x][y]===WHITE){
+            const s = document.createElement('div');
+            s.className = 'stone ' + (board[x][y]===BLACK ? 'black' : 'white');
+            cell.appendChild(s);
+          } else {
+            // 힌트 표시(내 턴일 때만)
+            if (turn===myColor && hintSet.has(`${x}-${y}`)) cell.classList.add('hint');
+          }
+          boardEl.appendChild(cell);
+        }
+      }
+    };
+
+    const setUIByState = (room) => {
+      const {board, turn, status, players, passCount=0} = room;
+      const {b,w} = countPieces(board);
+      blackCountEl.textContent = b;
+      whiteCountEl.textContent = w;
+
+      if (status==='ended'){
+        let result = "무승부";
+        if (b>w) result = "흑 승!";
+        else if (w>b) result = "백 승!";
+        statusEl.textContent = `종료 · ${result} (흑:${b} 백:${w})`;
+        passBtn.disabled = true;
+      } else {
+        const turnLabel = (turn===BLACK? '흑' : '백');
+        const mine = (turn===myColor);
+        statusEl.textContent = `진행중 · ${turnLabel} 차례${mine?' (내 턴)':''}${passCount?` · 연속패스:${passCount}`:''}`;
+        passBtn.disabled = !(turn===myColor) || validMoves(room.board, myColor).length>0;
+      }
+
+      // 좌석 라벨
+      roleLabel.textContent = myColor===BLACK? '흑(선공)' : '백(후공)';
+
+      renderBoard(board, room.turn);
+    };
+
+    const ensurePlayersSeat = async (roomRef) => {
+      // 첫 입장: 흑/백 자동 배정
+      await runTransaction(child(roomRef, 'players'), (players)=>{
+        players = players || {};
+        if (!players.black) players.black = uid;
+        else if (!players.white && players.black!==uid) players.white = uid;
+        return players;
+      });
+      const snap = await get(roomRef);
+      const players = snap.val().players || {};
+      if (players.black===uid) myColor = BLACK;
+      else if (players.white===uid) myColor = WHITE;
+      else {
+        alert('이 방은 이미 2명이 가득 찼습니다.');
+        return false;
+      }
+      return true;
+    };
+
+    // ===== 이벤트 바인딩 =====
+    createBtn.onclick = async () => {
+      try {
+        const code = randCode();
+        const roomRef = ref(db, `othelloRooms/${code}`);
+        await set(roomRef, {
+          createdAt: serverTimestamp(),
+          status: 'playing',
+          board: initialBoard(),
+          turn: BLACK,
+          players: {},   // 좌석은 입장 시 배정
+          passCount: 0
+        });
+        await enterRoom(code);
+      } catch(e){
+        console.error(e);
+        showToast('방 만들기 실패');
+      }
+    };
+
+    joinBtn.onclick = async () => {
+      const code = (roomInput.value||'').trim();
+      if (!/^\d{6}$/.test(code)) { showToast('6자리 숫자 코드'); return; }
+      await enterRoom(code);
+    };
+
+    shareBtn.onclick = async ()=>{
+      if (!roomId) {
+        const code = (roomInput.value||'').trim();
+        if (!/^\d{6}$/.test(code)) { showToast('먼저 방 코드 입력'); return; }
+        try {
+          await navigator.clipboard.writeText(code);
+          showToast('방 코드 복사됨');
+        } catch { showToast('복사 실패'); }
+        return;
+      }
+      const url = `${location.origin}${location.pathname}?room=${roomId}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('방 링크 복사됨');
+      } catch { showToast('복사 실패'); }
+    };
+
+    boardEl.addEventListener('click', async (e)=>{
+      const cell = e.target.closest('.cell');
+      if (!cell || !roomId) return;
+      const x = +cell.dataset.x, y = +cell.dataset.y;
+      const roomRef = ref(db, `othelloRooms/${roomId}`);
+      const snap = await get(roomRef);
+      const room = snap.val();
+      if (!room || room.status!=='playing') return;
+      if (room.turn !== myColor) return; // 내 턴 아님
+
+      // 유효수 체크
+      const moves = validMoves(room.board, myColor);
+      if (!moves.some(([xx,yy])=>xx===x && yy===y)) return;
+
+      // 둠 + 뒤집기 + 턴 전환
+      const newBoard = applyMove(room.board, x, y, myColor);
+      const nextTurn = 3 - myColor;
+
+      // 다음 턴 유효수 확인 (자동 패스는 버튼으로 처리하되, 힌트용으로만 계산)
+      const vmNext = validMoves(newBoard, nextTurn);
+      const newStatus = (vmNext.length===0 && validMoves(newBoard, myColor).length===0) ? 'ended' : 'playing';
+      const passCount = (vmNext.length===0) ? ( (room.passCount||0) + 1 ) : 0;
+
+      await update(roomRef, {
+        board: newBoard,
+        turn: (vmNext.length>0? nextTurn : myColor), // 상대 유효수 없으면 내 턴 유지(패스 필요)
+        status: newStatus,
+        passCount
+      });
+
+      // 사운드
+      try { sndPlace.currentTime = 0; await sndPlace.play(); } catch {}
+    });
+
+    passBtn.onclick = async ()=>{
+      if (!roomId) return;
+      const roomRef = ref(db, `othelloRooms/${roomId}`);
+      const snap = await get(roomRef);
+      const room = snap.val();
+      if (!room || room.status!=='playing') return;
+      if (room.turn !== myColor) return;
+
+      // 내 유효수가 없을 때만 패스 허용
+      const myMoves = validMoves(room.board, myColor);
+      if (myMoves.length>0) { showToast('둘 곳이 있습니다'); return; }
+
+      const nextTurn = 3 - myColor;
+      const nextMoves = validMoves(room.board, nextTurn);
+      const newStatus = (nextMoves.length===0) ? 'ended' : 'playing';
+      const passCount = (room.passCount||0) + 1;
+
+      await update(roomRef, {
+        turn: nextTurn,
+        status: newStatus,
+        passCount
+      });
+    };
+
+    resetBtn.onclick = async ()=>{
+      if (!roomId) return;
+      const roomRef = ref(db, `othelloRooms/${roomId}`);
+      await update(roomRef, {
+        board: initialBoard(), turn: BLACK, status:'playing', passCount:0, createdAt: serverTimestamp()
+      });
+      showToast('재시작');
+    };
+
+    leaveBtn.onclick = ()=>{
+      // 단순 나가기(UI만). 방은 유지(상대가 계속 보도록)
+      cleanupRoomListener();
+      roomId = null; myColor = null;
+      game.style.display = 'none';
+      lobby.style.display = '';
+      showToast('나갔습니다');
+    };
+
+    // ===== 방 입장 / 구독 =====
+    async function enterRoom(code){
+      const roomRef = ref(db, `othelloRooms/${code}`);
+      const s = await get(roomRef);
+      if (!s.exists()){
+        showToast('방이 없습니다');
+        return;
+      }
+      roomId = code;
+      roomCodeLabel.textContent = code;
+      roomInput.value = code;
+
+      const ok = await ensurePlayersSeat(roomRef);
+      if (!ok) { roomId=null; return; }
+
+      // UI 전환
+      lobby.style.display = 'none';
+      game.style.display = '';
+
+      // 구독
+      subscribeRoom(roomRef);
+      // 공유 URL 업데이트
+      const url = new URL(location.href);
+      url.searchParams.set('room', code);
+      history.replaceState({}, '', url.toString());
+    }
+
+    function subscribeRoom(roomRef){
+      cleanupRoomListener();
+      unsubRoom = onValue(roomRef, (snap)=>{
+        const room = snap.val();
+        if (!room) return;
+        setUIByState(room);
+      });
+    }
+    function cleanupRoomListener(){
+      if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+    }
+
+    // ===== 익명 로그인 & URL 방 자동 입장 =====
+    onAuthStateChanged(auth, async (user)=>{
+      if (user) {
+        uid = user.uid;
+        // URL ?room=XXXXXX 처리
+        const url = new URL(location.href);
+        const code = url.searchParams.get('room');
+        if (code && /^\d{6}$/.test(code)) {
+          await enterRoom(code);
+        }
+      } else {
+        try {
+          await signInAnonymously(auth);
+        } catch(e){
+          console.error(e);
+          lobbyInfo.textContent = '익명 로그인 실패';
+        }
+      }
+    });
+
+    // 초기가이드
+    lobbyInfo.textContent = '방을 만들거나 6자리 코드를 입력해 입장하세요.';
+  </script>
+</body>
+</html>
