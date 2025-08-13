@@ -40,6 +40,175 @@ h1 { margin: 8px 0 4px; }
 </div>
 
 <script type="module">
+
+  /* ===== 필요한 전역/유틸 드롭인 패치 ===== */
+
+/* DOM 엘리먼트 참조 */
+const boardEl   = document.getElementById('board');
+const skipWallBtn = document.getElementById('skipWallBtn');
+const turnEl    = document.getElementById('turnColor');
+const s1El      = document.getElementById('s1');
+const s2El      = document.getElementById('s2');
+
+/* 게임 상수/상태 */
+const BOARD_POINTS = 7;
+const GRID = BOARD_POINTS * 2 - 1;      // 7점 → 13그리드
+const COLORS = ['#e74c3c', '#3498db'];  // P1 빨강 / P2 파랑
+let grid = [];                           // 보드 셀 2차원 배열
+
+/* 보조 함수 */
+function pt(p){ return (p-1)*2; }
+const asArray = x => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.values(x) : [];
+function inBounds(r,c){ return r>=0 && r<GRID && c>=0 && c<GRID; }
+function isPoint(r,c){ return (r%2===0) && (c%2===0); }
+function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
+
+/* 초기 상태 */
+function initialState(){
+  return {
+    phase:'place-extra',
+    current:0,
+    extraOrder:[0,1,1,0],
+    extraIdx:0,
+    pieces:{ 
+      '0':[ {r:pt(2),c:pt(2)}, {r:pt(6),c:pt(6)} ],
+      '1':[ {r:pt(6),c:pt(2)}, {r:pt(2),c:pt(6)} ]
+    },
+    walls:[],
+    lastMoved:null
+  };
+}
+
+/* 상태 정규화 */
+function normalizeState(s){
+  if(!s) return s;
+  s.walls = asArray(s.walls);
+  if(!s.pieces) s.pieces={'0':[],'1':[]};
+  s.pieces['0']=asArray(s.pieces['0']);
+  s.pieces['1']=asArray(s.pieces['1']);
+  s.extraOrder=asArray(s.extraOrder||[0,1,1,0]);
+  if (s.lastMoved && (typeof s.lastMoved.r!=='number' || typeof s.lastMoved.c!=='number')) s.lastMoved=null;
+  return s;
+}
+
+/* 벽(미배치) 통과 가능한 이웃 점 찾기 */
+function neighborsReachable(r,c){
+  const dirs=[{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}], out=[];
+  for(const {dr,dc} of dirs){
+    const nr=r+dr, nc=c+dc; if(!inBounds(nr,nc)||!isPoint(nr,nc)) continue;
+    const wr=r+dr/2, wc=c+dc/2; const wall=grid[wr]?.[wc];
+    const isWallPos = wall && (wall.classList.contains('h-wall')||wall.classList.contains('v-wall'));
+    if(!isWallPos) continue;                 // 점 사이가 아니라면 이동 불가
+    if(wall.classList.contains('placed')) continue;  // 이미 벽이 있으면 통과 불가
+    if(grid[nr][nc].querySelector('.piece')) continue; // 도착점에 말 있으면 불가
+    out.push({nr,nc});
+  }
+  return out;
+}
+
+/* 벽 기준 연결 이웃(영역 계산용) */
+function neighborsByWall(r,c){
+  const dirs=[{dr:-2,dc:0},{dr:2,dc:0},{dr:0,dc:-2},{dr:0,dc:2}], out=[];
+  for(const {dr,dc} of dirs){
+    const nr=r+dr, nc=c+dc; if(!inBounds(nr,nc)||!isPoint(nr,nc)) continue;
+    const wr=r+dr/2, wc=c+dc/2; const wall=grid[wr]?.[wc];
+    const isWallPos = wall && (wall.classList.contains('h-wall')||wall.classList.contains('v-wall'));
+    if(!isWallPos) continue;
+    if(wall.classList.contains('placed')) continue; // 벽이 있으면 막힘
+    out.push({nr,nc});
+  }
+  return out;
+}
+
+/* 선택 말에서 2스텝 이내 이동 가능 점 표시 */
+function showMovableFrom(sr,sc){
+  clearMovable();
+  const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
+  const q=[{r:sr,c:sc,d:0}]; v[sr][sc]=true; let cnt=0;
+  while(q.length){
+    const {r,c,d}=q.shift();
+    if(d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
+      grid[r][c].classList.add('movable'); cnt++;
+    }
+    if(d===2) continue;
+    for(const {nr,nc} of neighborsReachable(r,c)){
+      if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:d+1}); }
+    }
+  }
+  return cnt;
+}
+
+/* 보드 리사이즈(간단 버전) — 없으면 에러 나므로 정의 */
+function resizeBoard(){
+  boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
+  boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
+}
+
+/* ===== 드롭인 패치 끝 ===== */
+
+/* ===== AI/이동 보조 드롭인 패치 ===== */
+
+/** 말이 놓일 수 있는 모든 빈 점(배치 단계용) */
+function allEmptyPoints(s){
+  const occ = new Set();
+  for (const pid of ['0','1']){
+    for (const p of s.pieces[pid]) occ.add(`${p.r},${p.c}`);
+  }
+  const out=[];
+  for (let r=0; r<GRID; r+=2){
+    for (let c=0; c<GRID; c+=2){
+      if (!occ.has(`${r},${c}`)) out.push({r,c});
+    }
+  }
+  return out;
+}
+
+/** (벽을 고려해) sr,sc에서 맨해튼 2스텝 이내로 갈 수 있는 목적지 목록 */
+function listMovable(s, sr, sc){
+  // 그리드/벽/점유 상태는 DOM을 그대로 사용 (grid, neighborsReachable)
+  const v=Array.from({length:GRID},()=>Array(GRID).fill(false));
+  const q=[{r:sr,c:sc,d:0}]; v[sr][sc]=true;
+  const dest=[];
+  while(q.length){
+    const {r,c,d}=q.shift();
+    if(d>0 && d<=2 && isPoint(r,c) && !grid[r][c].querySelector('.piece')){
+      dest.push({r,c});
+    }
+    if(d===2) continue;
+    for(const {nr,nc} of neighborsReachable(r,c)){
+      if(!v[nr][nc]){ v[nr][nc]=true; q.push({r:nr,c:nc,d:d+1}); }
+    }
+  }
+  return dest;
+}
+
+/** 특정 점 주변(상하좌우)의 빈 벽 칸 반환 (타임아웃/AI 벽 설치용) */
+function adjacentEmptyWallsOfPoint(s, pr, pc){
+  const occupied = new Set(s.walls.map(w=>`${w.r},${w.c}`));
+  const cand = [{r:pr-1,c:pc},{r:pr+1,c:pc},{r:pr,c:pc-1},{r:pr,c:pc+1}];
+  return cand.filter(({r,c})=>{
+    const inBoard = r>=0 && r<GRID && c>=0 && c<GRID;
+    const isWallPos = (r%2===1 && c%2===0) || (r%2===0 && c%2===1);
+    const free = !occupied.has(`${r},${c}`);
+    return inBoard && isWallPos && free;
+  });
+}
+
+/** 보드의 모든 빈 벽 칸 목록 (타임아웃/AI 벽 설치용) */
+function listEmptyWallsFromState(s){
+  const occupied = new Set(s.walls.map(w=>`${w.r},${w.c}`));
+  const out=[];
+  for(let r=0;r<GRID;r++){
+    for(let c=0;c<GRID;c++){
+      const isWallPos = (r%2===1 && c%2===0) || (r%2===0 && c%2===1);
+      if(!isWallPos) continue;
+      if(!occupied.has(`${r},${c}`)) out.push({r,c});
+    }
+  }
+  return out;
+}
+/* ===== 드롭인 패치 끝 ===== */
+
 /* ================= URL 모드 ================= */
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'solo';
@@ -370,6 +539,28 @@ function showWinnerWithPaintLocal() {
   if (p1 > p2) alert('승자: P1(빨강)');
   else if (p2 > p1) alert('승자: P2(파랑)');
   else alert('무승부');
+}
+/* ===== 도움말 오버레이 핸들러 ===== */
+function openHelp(){ 
+  const ov = document.getElementById('helpOverlay');
+  if (ov) ov.style.display = 'flex';
+}
+function closeHelp(){ 
+  const ov = document.getElementById('helpOverlay');
+  if (ov) ov.style.display = 'none';
+}
+/* 전역에서 호출될 수 있게 노출 */
+window.openHelp = openHelp;
+window.closeHelp = closeHelp;
+
+/* 닫기 버튼/오버레이 클릭으로 닫기 */
+const helpCloseBtn = document.getElementById('helpCloseBtn');
+if (helpCloseBtn) helpCloseBtn.addEventListener('click', closeHelp);
+const helpOverlay = document.getElementById('helpOverlay');
+if (helpOverlay) {
+  helpOverlay.addEventListener('click', (e)=>{
+    if (e.target === helpOverlay) closeHelp();
+  });
 }
 
 /* ======== 나머지 함수들 ======== 
