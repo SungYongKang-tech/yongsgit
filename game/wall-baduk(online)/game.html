@@ -113,12 +113,28 @@ resetBtn?.addEventListener('click', () => {
 });
 
 endBtn?.addEventListener('click', () => {
-  if (!confirm('게임을 종료할까요?')) return;
-  local.selected = null;
-  local.prevWallCount = null;
-  local.state = initialState();
-  renderFromState();
+  if (!confirm('현재 상황으로 게임을 종료할까요?')) return;
+
+  // 점수 계산(단독 소유 영역만 합산)
+  const { regions } = computeRegionsLocal();
+  const sc = [0, 0];
+  for (const reg of regions) {
+    if (reg.players.size === 1) {
+      const owner = [...reg.players][0];
+      sc[owner] += reg.points.length;
+    }
+  }
+  s1El.textContent = sc[0];
+  s2El.textContent = sc[1];
+
+  // 종료 처리: 영역 칠하고 결과 알림
+  local.state.phase = 'ended';
+  fillFinalRegionsLocal();
+  showWinnerWithPaintLocal();
 });
+function randomChoice(arr){
+  return (arr && arr.length) ? arr[Math.floor(Math.random()*arr.length)] : null;
+}
 
 /* 게임 상수/상태 */
 const BOARD_POINTS = 7;
