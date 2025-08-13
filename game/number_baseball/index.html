@@ -36,21 +36,21 @@
       border-radius: 6px;
       font-size: 14px;
     }
-    h2, h3 {
-      margin-bottom: 10px;
-    }
+    h2, h3 { margin-bottom: 10px; }
+    .muted { font-size: 13px; color: #666; }
+    .row { display:flex; justify-content:center; align-items:center; gap:8px; max-width:600px; margin:0 auto; }
+    .hidden { display:none !important; }
   </style>
 </head>
 <body>
   <h2 id="page-title">⚾ 숫자야구 대전</h2>
 
   <div id="setup-area">
-  <button id="create-btn">방 만들기</button>
-  <button id="join-btn">방 참여하기</button>
-  <button id="solo-btn">혼자하기</button>
-  <p id="room-info"></p>
-</div>
-
+    <button id="create-btn" disabled>방 만들기</button>
+    <button id="join-btn" disabled>방 참여하기</button>
+    <button id="solo-btn" disabled>혼자하기</button>
+    <p id="room-info" class="muted"></p>
+  </div>
 
   <div id="game-area">
     <h3 id="role-label"></h3>
@@ -60,17 +60,14 @@
       <button id="secret-btn">비밀 숫자 등록</button>
     </div>
 
-    <!-- 변경된 guess-section 부분 -->
-<div id="guess-section" style="display:none;">
-  <div style="display: flex; justify-content: center; align-items: center; gap: 8px; max-width: 600px; margin: auto;">
-    <input type="text" id="guess-input" maxlength="3" placeholder="추측 숫자"
-      style="width: 50%; padding: 10px; font-size: 16px;" />
-    <button id="guess-btn"
-      style="width: 50%; padding: 10px; font-size: 16px;">추측하기</button>
-  </div>
-</div>
+    <div id="wait-both" class="muted hidden">양쪽 모두 비밀 숫자 입력이 끝나면 추측을 시작합니다.</div>
 
-
+    <div id="guess-section" class="hidden">
+      <div class="row">
+        <input type="text" id="guess-input" maxlength="3" placeholder="추측 숫자" />
+        <button id="guess-btn">추측하기</button>
+      </div>
+    </div>
 
     <div id="log"></div>
   </div>
@@ -78,15 +75,13 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase,
-      ref,
-      set,
-      get,
-      update,
-      onValue,
-      remove  // ← 이 줄 추가
+      getDatabase, ref, set, get, update, onValue, remove
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-  
+    import {
+      getAuth, signInAnonymously, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+    // --- Firebase ---
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -96,342 +91,356 @@
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:50c5a06d1d2eedfe91a561"
     };
-
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const auth = getAuth(app);
 
+    // --- State ---
     let roomCode = '';
     let playerRole = '';
     let playerName = '';
     let guessCount = 0;
+    let uid = null;
 
+    // --- Solo ---
+    let soloMode = false;
+    let soloSecret = '';
+
+    // --- Elements ---
+    const createBtn = document.getElementById("create-btn");
+    const joinBtn = document.getElementById("join-btn");
+    const soloBtn = document.getElementById("solo-btn");
+    const roomInfo = document.getElementById("room-info");
+    const pageTitle = document.getElementById("page-title");
+    const setupArea = document.getElementById("setup-area");
+    const gameArea = document.getElementById("game-area");
+    const roleLabel = document.getElementById("role-label");
+    const secretSection = document.getElementById("secret-section");
+    const secretInput = document.getElementById("secret-input");
+    const secretBtn = document.getElementById("secret-btn");
+    const guessSection = document.getElementById("guess-section");
+    const guessBtn = document.getElementById("guess-btn");
+    const guessInput = document.getElementById("guess-input");
+    const waitBoth = document.getElementById("wait-both");
+
+    // --- Auth gate ---
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        uid = user.uid;
+        createBtn.disabled = false;
+        joinBtn.disabled = false;
+        soloBtn.disabled = false;
+        roomInfo.textContent = "";
+      } else {
+        // 최초엔 null로 들어올 수 있으므로 로그인 시도
+        try {
+          roomInfo.textContent = "익명 로그인 중...";
+          await signInAnonymously(auth);
+        } catch (e) {
+          console.error(e);
+          roomInfo.textContent = "익명 로그인 실패. 새로고침해 주세요.";
+        }
+      }
+    });
+
+    // --- Helpers ---
+    const pad = (n) => n.toString().padStart(2, '0');
+
+    function attachGameListeners(roomCodeLocal) {
+      const opponent = playerRole === "A" ? "B" : "A";
+
+      // 상대 이름 감지 → 상단 레이블 갱신
+      const oppRef = ref(db, `rooms/${roomCodeLocal}/players/${opponent}/name`);
+      onValue(oppRef, (oppSnap) => {
+        const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
+        roleLabel.innerText = `${playerName} (나) vs ${oppName} - 야구 대전 시작!`;
+      });
+
+      // 턴 감시 → 내 턴일 때만 버튼 활성화
+      const turnRef = ref(db, `rooms/${roomCodeLocal}/turn`);
+      onValue(turnRef, (snapshot) => {
+        const currentTurn = snapshot.val();
+        if (soloMode) return;
+        if (currentTurn === playerRole) {
+          guessBtn.disabled = false;
+          guessBtn.innerText = "추측하기 (내 턴)";
+        } else {
+          guessBtn.disabled = true;
+          guessBtn.innerText = currentTurn === "WAIT" ? "비밀 숫자 입력 대기중..." : "상대 턴 대기중...";
+        }
+      });
+
+      // 양쪽 비밀 숫자 감시 → 둘 다 입력되면 추측 UI 노출
+      const mySecretRef = ref(db, `rooms/${roomCodeLocal}/players/${playerRole}/secret`);
+      const opponentSecretRef = ref(db, `rooms/${roomCodeLocal}/players/${opponent}/secret`);
+
+      async function updateGuessVisibility() {
+        const [mySnap, oppSnap] = await Promise.all([get(mySecretRef), get(opponentSecretRef)]);
+        const bothReady = mySnap.exists() && oppSnap.exists();
+        waitBoth.classList.toggle("hidden", bothReady);
+        guessSection.classList.toggle("hidden", !bothReady);
+      }
+
+      onValue(mySecretRef, updateGuessVisibility);
+      onValue(opponentSecretRef, updateGuessVisibility);
+
+      // 승자 감지
+      const winnerRef = ref(db, `rooms/${roomCodeLocal}/winner`);
+      onValue(winnerRef, (snap) => {
+        if (snap.exists() && snap.val() !== "") {
+          const winner = snap.val();
+          if (winner !== playerName) {
+            alert(`❗ ${winner} 님이 먼저 정답을 맞췄습니다. 경기가 종료됩니다.`);
+          } else {
+            alert(`🎉 축하합니다! ${winner} 님이 승리하셨습니다.`);
+          }
+
+          secretSection.style.display = "none";
+          guessSection.classList.add("hidden");
+
+          const log = document.getElementById("log");
+          const msg = document.createElement("div");
+          msg.className = "log-entry";
+          msg.style.background = "#ffeb3b";
+          msg.style.fontSize = "18px";
+          msg.style.textAlign = "center";
+          msg.style.fontWeight = "bold";
+          msg.innerText = `${winner} 님이 승리하셨습니다!`;
+          log.prepend(msg);
+
+          const winSound = document.getElementById("win-sound");
+          if (winSound) {
+            winSound.currentTime = 0;
+            winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
+          }
+        }
+      });
+    }
+
+    // --- Room flow ---
     async function createRoom() {
-  // 현재 시각 기반 방번호 생성
-  const now = new Date();
-  const pad = (n) => n.toString().padStart(2, '0');
-  roomCode = `${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
+      if (!auth.currentUser) return alert("로그인 후 이용해 주세요.");
+      const now = new Date();
+      roomCode = `${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
 
-  playerName = prompt("사용자 이름을 입력하세요");
-  if (!playerName) return alert("이름을 입력해야 합니다.");
+      const name = prompt("사용자 이름을 입력하세요");
+      if (!name) return alert("이름을 입력해야 합니다.");
+      playerName = name;
 
-  const roomRef = ref(db, 'rooms/' + roomCode);
-await set(roomRef, {
-  players: {
-    A: { name: playerName }
-  },
-  turn: "WAIT",  // ✅ 먼저 WAIT으로 설정
-  winner: "",
-  createdAt: Date.now()
-});
+      const roomRef = ref(db, 'rooms/' + roomCode);
+      await set(roomRef, {
+        players: {
+          A: { name: playerName, uid }
+        },
+        turn: "WAIT",
+        winner: "",
+        createdAt: Date.now(),
+        createdBy: uid
+      });
 
+      await set(ref(db, 'latestRoom'), {
+        roomCode,
+        createdAt: Date.now()
+      });
 
-  // 최근 방 기록 (참여자가 이걸 기준으로 입장함)
-  await set(ref(db, 'latestRoom'), {
-    roomCode,
-    createdAt: Date.now()
-  });
-
-  playerRole = "A";
-  enterGame();
-}
-
+      playerRole = "A";
+      enterGame();
+    }
 
     async function joinRoom() {
-  const latestRef = ref(db, 'latestRoom');
-  const latestSnap = await get(latestRef);
+      if (!auth.currentUser) return alert("로그인 후 이용해 주세요.");
 
-  if (!latestSnap.exists()) {
-    alert("참여 가능한 방이 없습니다.");
-    return;
-  }
+      const latestRef = ref(db, 'latestRoom');
+      const latestSnap = await get(latestRef);
 
-  const latestData = latestSnap.val();
-  const now = Date.now();
-  const diffMs = now - latestData.createdAt;
-
-  if (diffMs > 3 * 60 * 1000) { // 3분 초과
-    alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
-    return;
-  }
-
-  roomCode = latestData.roomCode;
-
-  playerName = prompt("사용자 이름을 입력하세요");
-  if (!playerName) return alert("이름을 입력해야 합니다.");
-
-  const roomRef = ref(db, `rooms/${roomCode}`);
-  const snapshot = await get(roomRef);
-  if (!snapshot.exists()) {
-    alert("해당 방이 존재하지 않습니다.");
-    return;
-  }
-
-  const roomData = snapshot.val();
-  if (roomData.players.B) {
-    alert("이미 두 명이 참여한 방입니다.");
-    return;
-  }
-
-  await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName });
-  playerRole = "B";
-  enterGame();
-}
-
-
-function enterGame() {
-  document.getElementById("page-title").innerText = `⚾ 숫자야구 대전 - 방번호: ${roomCode}`;
-  document.getElementById("setup-area").style.display = "none";
-  document.getElementById("game-area").style.display = "block";
-  document.getElementById("room-info").innerText = `방 번호: ${roomCode}`;
-
-  const opponent = playerRole === "A" ? "B" : "A";
-  const myRef = ref(db, `rooms/${roomCode}/players/${playerRole}/name`);
-  const oppRef = ref(db, `rooms/${roomCode}/players/${opponent}/name`);
-
-  let myName = playerName;
-
-  // 상대 이름 업데이트 감지
- onValue(oppRef, (oppSnap) => {
-  const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
-  const label = `${playerName} (나) vs ${oppName} - 야구 대전 시작!`;
-  document.getElementById("role-label").innerText = label;
-
-  const turnRef = ref(db, `rooms/${roomCode}/turn`);
-onValue(turnRef, (snapshot) => {
-  const currentTurn = snapshot.val();
-  const guessBtn = document.getElementById("guess-btn");
-
-  if (currentTurn === playerRole) {
-    guessBtn.disabled = false;
-    guessBtn.innerText = "추측하기 (내 턴)";
-  } else {
-    guessBtn.disabled = true;
-    guessBtn.innerText = currentTurn === "WAIT" ? "상대 비밀번호 입력 대기중..." : "상대 턴 대기중...";
-  }
-});
-
-
-});
-
-  // 상대 비밀 숫자 입력 감지
-  const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
-  onValue(opponentSecretRef, (snapshot) => {
-    if (snapshot.exists()) {
-      alert("상대가 비밀 숫자를 입력했습니다. 이제 추측할 수 있어요!");
-      document.getElementById("guess-section").style.display = "flex";
-    }
-  });
-
-  // 승자 감지
-  const winnerRef = ref(db, `rooms/${roomCode}/winner`);
-  onValue(winnerRef, (snap) => {
-    if (snap.exists() && snap.val() !== "") {
-      const winner = snap.val();
-      if (winner !== myName) {
-        alert(`❗ ${winner} 님이 먼저 정답을 맞췄습니다. 경기가 종료됩니다.`);
-      } else {
-        alert(`🎉 축하합니다! ${winner} 님이 승리하셨습니다.`);
+      if (!latestSnap.exists()) {
+        alert("참여 가능한 방이 없습니다.");
+        return;
       }
 
-      document.getElementById("secret-section").style.display = "none";
-      document.getElementById("guess-section").style.display = "none";
-
-      const log = document.getElementById("log");
-      const msg = document.createElement("div");
-      msg.className = "log-entry";
-      msg.style.background = "#ffeb3b";
-      msg.style.fontSize = "18px";
-      msg.style.textAlign = "center";
-      msg.style.fontWeight = "bold";
-      msg.innerText = `${winner} 님이 승리하셨습니다!`;
-      log.prepend(msg);
-
-      // 사운드
-      const winSound = document.getElementById("win-sound");
-      if (winSound) {
-        winSound.currentTime = 0;
-        winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
+      const latestData = latestSnap.val();
+      const now = Date.now();
+      if (now - latestData.createdAt > 3 * 60 * 1000) {
+        alert("방 생성 후 3분이 지나 참여할 수 없습니다.");
+        return;
       }
+
+      roomCode = latestData.roomCode;
+
+      const name = prompt("사용자 이름을 입력하세요");
+      if (!name) return alert("이름을 입력해야 합니다.");
+      playerName = name;
+
+      const roomRef = ref(db, `rooms/${roomCode}`);
+      const snapshot = await get(roomRef);
+      if (!snapshot.exists()) return alert("해당 방이 존재하지 않습니다.");
+
+      const roomData = snapshot.val();
+      if (roomData.players.B) {
+        alert("이미 두 명이 참여한 방입니다.");
+        return;
+      }
+
+      await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName, uid });
+      playerRole = "B";
+      enterGame();
     }
-  });
-}
 
+    function enterGame() {
+      pageTitle.innerText = `⚾ 숫자야구 대전 - 방번호: ${roomCode}`;
+      setupArea.style.display = "none";
+      gameArea.style.display = "block";
+      roomInfo.innerText = `방 번호: ${roomCode}`;
 
-   async function submitSecret() {
-      const val = document.getElementById("secret-input").value;
+      attachGameListeners(roomCode);
+    }
+
+    async function submitSecret() {
+      const val = secretInput.value;
       if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
         alert("서로 다른 숫자 3자리로 입력하세요.");
         return;
       }
-      set(ref(db, `rooms/${roomCode}/players/${playerRole}/secret`), val);
-      document.getElementById("secret-section").style.display = "none";
+      const myPath = `rooms/${roomCode}/players/${playerRole}/secret`;
+      await set(ref(db, myPath), val);
+      secretSection.style.display = "none";
 
+      // 양쪽 모두 입력 시 A부터 시작
       const opponent = playerRole === "A" ? "B" : "A";
-      get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`)).then(snap => {
-        if (snap.exists()) {
-     //     document.getElementById("guess-section").style.display = "flex";
+      const [mySnap, oppSnap] = await Promise.all([
+        get(ref(db, `rooms/${roomCode}/players/${playerRole}/secret`)),
+        get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`))
+      ]);
+      if (mySnap.exists() && oppSnap.exists()) {
+        await update(ref(db, `rooms/${roomCode}`), { turn: "A" });
+      }
+    }
+
+    async function submitGuess() {
+      const val = guessInput.value;
+      if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
+        alert("서로 다른 숫자 3자리로 입력하세요.");
+        return;
+      }
+
+      let secret = "";
+      if (soloMode) {
+        secret = soloSecret;
+      } else {
+        const opponent = playerRole === "A" ? "B" : "A";
+        const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
+        if (!secretSnap.exists()) {
+          alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
+          return;
         }
-      });
-      // 둘 다 입력했는지 확인 후 턴 시작
-const mySecretRef = ref(db, `rooms/${roomCode}/players/${playerRole}/secret`);
-const opponentSecretRef = ref(db, `rooms/${roomCode}/players/${opponent}/secret`);
+        secret = secretSnap.val();
+      }
 
-const [mySnap, oppSnap] = await Promise.all([get(mySecretRef), get(opponentSecretRef)]);
-if (mySnap.exists() && oppSnap.exists()) {
-  await update(ref(db, `rooms/${roomCode}`), { turn: "A" }); // A부터 시작
-}
+      let strike = 0, ball = 0;
+      for (let i = 0; i < 3; i++) {
+        if (val[i] === secret[i]) strike++;
+        else if (secret.includes(val[i])) ball++;
+      }
 
+      guessCount++;
+      const result = `${strike} Strike / ${ball} Ball`;
+      const log = document.getElementById("log");
+      const div = document.createElement("div");
+      div.className = "log-entry";
+      div.innerHTML = `
+        ${guessCount}번 힌트&nbsp;&nbsp;
+        <span style="color:blue; font-weight:bold;">${val.split('').join(' ')}</span>
+        &nbsp;&nbsp;
+        <span style="color:red; font-weight:bold;">${result}</span>
+      `;
+      log.prepend(div);
+
+      if (strike === 3) {
+        const winSound = document.getElementById("win-sound");
+        if (winSound) {
+          winSound.currentTime = 0;
+          winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
+        }
+        alert("🎉 정답입니다! 승리하셨습니다.");
+
+        if (soloMode) {
+          guessSection.classList.add("hidden");
+        } else {
+          await update(ref(db, `rooms/${roomCode}`), { winner: playerName });
+
+          // 5초 후 방 삭제
+          setTimeout(() => {
+            const roomRef = ref(db, `rooms/${roomCode}`);
+            remove(roomRef).catch(err => console.warn("방 삭제 실패:", err));
+          }, 5000);
+        }
+      }
+
+      guessInput.value = "";
+      guessInput.focus();
+
+      // 정답이 아니고 멀티모드면 턴 변경
+      if (strike !== 3 && !soloMode) {
+        const nextTurn = playerRole === "A" ? "B" : "A";
+        await update(ref(db, `rooms/${roomCode}`), { turn: nextTurn });
+      }
     }
 
-  
- async function submitGuess() {
-  const guessInput = document.getElementById("guess-input");
-  const val = guessInput.value;
+    // --- Solo mode ---
+    function startSoloGame() {
+      playerName = "혼자하기";
+      roomCode = "solo";
+      playerRole = "Solo";
+      soloMode = true;
 
-  if (!/^[0-9]{3}$/.test(val) || new Set(val).size !== 3) {
-    alert("서로 다른 숫자 3자리로 입력하세요.");
-    return;
-  }
+      // 랜덤 3자리(중복 없음)
+      const digits = [];
+      while (digits.length < 3) {
+        const r = Math.floor(Math.random() * 10);
+        if (!digits.includes(r)) digits.push(r);
+      }
+      soloSecret = digits.join('');
 
-  let secret = "";
-
-  if (soloMode) {
-    secret = soloSecret;
-  } else {
-    const opponent = playerRole === "A" ? "B" : "A";
-    const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
-    if (!secretSnap.exists()) {
-      alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
-      return;
+      pageTitle.innerText = `⚾ 숫자야구 (혼자 도전!)`;
+      setupArea.style.display = "none";
+      gameArea.style.display = "block";
+      roleLabel.innerText = `혼자 도전 모드 - 비밀번호를 맞춰보세요!`;
+      secretSection.style.display = "none";
+      guessSection.classList.remove("hidden");
+      roomInfo.innerText = "혼자하기 모드입니다.";
+      guessBtn.disabled = false;
     }
-    secret = secretSnap.val();
-  }
 
-  let strike = 0, ball = 0;
-  for (let i = 0; i < 3; i++) {
-    if (val[i] === secret[i]) strike++;
-    else if (secret.includes(val[i])) ball++;
-  }
-
-  guessCount++;
-  const result = `${strike} Strike / ${ball} Ball`;
-  const log = document.getElementById("log");
-  const div = document.createElement("div");
-  div.className = "log-entry";
-  div.innerHTML = `
-    ${guessCount}번 힌트&nbsp;&nbsp;
-    <span style="color:blue; font-weight:bold;">${val.split('').join(' ')}</span>
-    &nbsp;&nbsp;
-    <span style="color:red; font-weight:bold;">${result}</span>
-  `;
-  log.prepend(div);
-
-  if (strike === 3) {
-  const winSound = document.getElementById("win-sound");
-  if (winSound) {
-    winSound.currentTime = 0;
-    winSound.play().catch((err) => console.warn("사운드 재생 실패:", err));
-  }
-
-  alert("🎉 정답입니다! 승리하셨습니다.");
-
-  if (soloMode) {
-    document.getElementById("guess-section").style.display = "none";
-  } else {
-    await update(ref(db, `rooms/${roomCode}`), { winner: playerName });
-    
-    // ✅ 방 삭제
-    setTimeout(() => {
-      const roomRef = ref(db, `rooms/${roomCode}`);
-      remove(roomRef).then(() => {
-        console.log("방 삭제 완료");
-      }).catch(err => {
-        console.warn("방 삭제 실패:", err);
-      });
-    }, 5000); // 5초 후 삭제 (사운드 재생과 메시지 이후 삭제되도록 약간 지연)
-  }
-}
-
-
-  guessInput.value = "";
-  guessInput.focus();
-
-  // 정답이 아닐 경우 턴을 변경
-if (strike !== 3 && !soloMode) {
-  const nextTurn = playerRole === "A" ? "B" : "A";
-  await update(ref(db, `rooms/${roomCode}`), { turn: nextTurn });
-}
-
-}
-
-
-
-
-
-
-
-    window.createRoom = createRoom;
-    window.joinRoom = joinRoom;
-    window.submitSecret = submitSecret;
-    window.submitGuess = submitGuess;
-
+    // --- UI Events ---
     document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("create-btn").addEventListener("click", createRoom);
-  document.getElementById("join-btn").addEventListener("click", joinRoom);
-  document.getElementById("secret-btn").addEventListener("click", submitSecret);
-  document.getElementById("guess-btn").addEventListener("click", submitGuess);
+      // 버튼 이벤트 연결
+      createBtn.addEventListener("click", createRoom);
+      joinBtn.addEventListener("click", joinRoom);
+      soloBtn.addEventListener("click", startSoloGame);
+      secretBtn.addEventListener("click", submitSecret);
+      guessBtn.addEventListener("click", submitGuess);
 
-  // 📌 페이지 열자마자 설명 모달 보여주기
-  document.getElementById("howto-modal").style.display = "flex";
-});
-
-    //혼자하기
-    let soloMode = false;
-let soloSecret = '';
-
-function startSoloGame() {
-  playerName = "혼자하기";
-  roomCode = "solo";
-  playerRole = "Solo";
-  soloMode = true;
-
-  // 랜덤한 3자리 숫자 생성
-  const digits = [];
-  while (digits.length < 3) {
-    const rand = Math.floor(Math.random() * 10);
-    if (!digits.includes(rand)) digits.push(rand);
-  }
-  soloSecret = digits.join('');
-
-  // 화면 전환 및 UI 세팅
-  document.getElementById("page-title").innerText = `⚾ 숫자야구 (혼자 도전!)`;
-  document.getElementById("setup-area").style.display = "none";
-  document.getElementById("game-area").style.display = "block";
-  document.getElementById("role-label").innerText = `혼자 도전 모드 - 비밀번호를 맞춰보세요!`;
-  document.getElementById("secret-section").style.display = "none";
-  document.getElementById("guess-section").style.display = "flex";
-  document.getElementById("room-info").innerText = "혼자하기 모드입니다.";
-}
-window.startSoloGame = startSoloGame;
-document.getElementById("solo-btn").addEventListener("click", startSoloGame);
+      // 설명 모달 표시
+      document.getElementById("howto-modal").style.display = "flex";
+    });
   </script>
-<!-- 게임 설명 모달 -->
-<div id="howto-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; justify-content:center; align-items:center;">
-  <div style="background:white; padding:20px 30px; border-radius:10px; max-width:90%; width:400px; text-align:left; position:relative;">
-    <h3 style="margin-top:0;">⚾ 숫자야구 대전 사용법</h3>
-    <ul style="line-height:1.6; font-size:15px; padding-left:20px;">
-      <li><strong>혼자하기:</strong> 랜덤 3자리 숫자를 맞히는 모드입니다.</li>
-      <li><strong>방 만들기:</strong> 본인이 먼저 방을 만든 후, 상대가 입장하면 게임이 시작됩니다.</li>
-      <li><strong>방 참여하기:</strong> 최근 만들어진 방에 자동 입장합니다 (3분 이내).</li>
-      <li><strong>게임 방식:</strong> 서로 다른 3자리 숫자를 정하고, 상대 숫자를 추측합니다.</li>
-      <li>정확한 자리: <strong>Strike</strong>, 다른 자리에 존재: <strong>Ball</strong></li>
-    </ul>
-    <button onclick="document.getElementById('howto-modal').style.display='none'"
-      style="margin-top:15px; width:100%; padding:10px; font-size:16px; background:#1e88e5; color:white; border:none; border-radius:6px;">확인</button>
-  </div>
-</div>
- 
-</body>
-<audio id="win-sound" src="win.mp3" preload="auto"></audio>
 
+  <!-- 게임 설명 모달 -->
+  <div id="howto-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; justify-content:center; align-items:center;">
+    <div style="background:white; padding:20px 30px; border-radius:10px; max-width:90%; width:400px; text-align:left; position:relative;">
+      <h3 style="margin-top:0;">⚾ 숫자야구 대전 사용법</h3>
+      <ul style="line-height:1.6; font-size:15px; padding-left:20px;">
+        <li><strong>혼자하기:</strong> 랜덤 3자리 숫자를 맞히는 모드입니다.</li>
+        <li><strong>방 만들기:</strong> 본인이 먼저 방을 만든 후, 상대가 입장하면 게임이 시작됩니다.</li>
+        <li><strong>방 참여하기:</strong> 최근 만들어진 방에 자동 입장합니다 (3분 이내).</li>
+        <li><strong>게임 방식:</strong> 서로 다른 3자리 숫자를 정하고, 상대 숫자를 추측합니다.</li>
+        <li>정확한 자리: <strong>Strike</strong>, 다른 자리에 존재: <strong>Ball</strong></li>
+      </ul>
+      <button onclick="document.getElementById('howto-modal').style.display='none'"
+        style="margin-top:15px; width:100%; padding:10px; font-size:16px; background:#1e88e5; color:white; border:none; border-radius:6px;">확인</button>
+    </div>
+  </div>
+
+  <audio id="win-sound" src="win.mp3" preload="auto"></audio>
+</body>
 </html>
