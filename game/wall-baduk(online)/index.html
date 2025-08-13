@@ -5,16 +5,9 @@
   <title>Wall-baduk (온라인 2인 · 7x7)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    :root {
-      --bar-h: 60px;
-      /* 보드 셀 크기(점 칸)와 벽 두께: JS에서 동적으로 갱신됨 */
-      --p: 42px; /* point size (fallback) */
-      --t: 15px; /* wall thickness (fallback) */
-    }
-    body {
-      font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
-      display:grid; grid-template-rows:auto auto auto auto auto;
-    }
+    :root { --bar-h: 60px; --p: 42px; --t: 15px; }
+    body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
+      display:grid; grid-template-rows:auto auto auto auto auto; }
     h1 { margin: 8px 0 4px; }
 
     /* 로비 */
@@ -30,41 +23,32 @@
 
     #turnLine { margin:2px 0; font-size:16px; display:flex; gap:8px; justify-content:center; align-items:center; }
     #turnColor { font-weight:700; }
-    #timer {
-      font-variant-numeric: tabular-nums; padding:2px 6px; border:1px solid #ddd; border-radius:8px; background:#fff;
-      min-width: 54px; display:inline-block;
-    }
-    #scores   { margin:0 0 4px; font-size:14px; }
+    #timer { font-variant-numeric: tabular-nums; padding:2px 6px; border:1px solid #ddd; border-radius:8px; background:#fff;
+      min-width: 54px; display:inline-block; }
+    #scores { margin:0 0 4px; font-size:14px; }
 
     /* 오디오 컨트롤 */
-    .audio-wrap {
-      display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff;
-    }
+    .audio-wrap { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; }
     #volSlider { width: 160px; }
     #volVal { min-width:36px; display:inline-block; text-align:right; }
 
     /* 보드 */
     #wrap { display:flex; justify-content:center; align-items:flex-start; padding:0 10px 6px; overflow:auto; }
     #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
-
     .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
 
-    /* ✅ 픽셀 고정값 제거 → CSS 변수 사용 */
     .point { width:var(--p); height:var(--p); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
     .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
     .h-wall { width:var(--p); height:var(--t); background:#fff; cursor:pointer; }
     .v-wall { width:var(--t); height:var(--p); background:#fff; cursor:pointer; }
     .blank  { width:var(--t); height:var(--t); background:#15326b; }
 
-    .movable { background:#d0d0d0 !important; } /* 이동 가능 점 표시 */
+    .movable { background:#d0d0d0 !important; }
     .final-p1-region { background:#ffd6e7 !important; }
     .final-p2-region { background:#d6ecff !important; }
 
-    /* 하단 바 */
-    #bottomBar {
-      position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
-      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px;
-    }
+    #bottomBar { position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
+      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px; }
     #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
     button:disabled { opacity:.5; cursor:not-allowed; }
 
@@ -79,15 +63,12 @@
     #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
     .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
 
-    /* 소형 폰에서도 자동 축소 */
-    @media (max-width:420px){
-      #volSlider { width:120px; }
-    }
+    @media (max-width:420px){ #volSlider { width:120px; } }
   </style>
 </head>
 <body>
   <h1>Wall-baduk (벽바둑)</h1>
-<div id="gameRoomTitle" style="font-size:18px; font-weight:bold; margin-bottom:6px; display:none;"></div>
+  <div id="gameRoomTitle" style="font-size:18px; font-weight:bold; margin-bottom:6px; display:none;"></div>
 
   <!-- 방 생성/참여 -->
   <div id="setup">
@@ -163,6 +144,8 @@
     /* ================= Firebase ================= */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, get, set, onValue, runTransaction, onDisconnect, remove, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    // ★ 익명 로그인 모듈 추가
+    import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -175,6 +158,17 @@
     };
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
+
+    // ★ 익명 로그인 보장
+    const auth = getAuth(app);
+    async function ensureAnonAuth(){
+      if (auth.currentUser) return auth.currentUser;
+      return new Promise((resolve, reject)=>{
+        const unsub = onAuthStateChanged(auth, (u)=>{ if(u){ unsub(); resolve(u); } });
+        signInAnonymously(auth).catch((e)=>{ console.error("익명 로그인 실패:", e); reject(e); });
+      });
+    }
+    await ensureAnonAuth().catch(()=>{}); // 모듈 상단에서 한 번 확보
 
     /* ================= 공통 유틸/상수 ================= */
     const uid = (() => {
@@ -211,23 +205,19 @@
     const s1El=document.getElementById('s1');
     const s2El=document.getElementById('s2');
 
-    // 오디오 UI
     const volSlider=document.getElementById('volSlider');
     const volVal=document.getElementById('volVal');
     const muteBtn=document.getElementById('muteBtn');
 
-    // 효과음
     const sndMove = new Audio('mal.mp3');
     const sndWall = new Audio('wall.mp3');
     const sndWin  = new Audio('win.mp3');
     const allSounds=[sndMove, sndWall, sndWin];
     function playSafe(a){ try{ a.currentTime=0; a.play().catch(()=>{}); }catch(e){} }
 
-    // 로컬 상태
     let grid=[], unsubRoom=null, unsubPlayers=null, cleanupScheduled=false;
     let local = { roomId:null, role:0, state:null, selected:null, prevWallCount:null };
 
-    // 타이머
     let turnTimerId=null, turnDeadline=0;
     function clearTurnTimer(){ if(turnTimerId){ clearInterval(turnTimerId); turnTimerId=null; } timerEl.textContent=''; }
     function startTurnTimer(seconds){
@@ -248,56 +238,35 @@
       return !!s && s.current === local.role && (s.phase==='move' || s.phase==='wall');
     }
 
-    /* ============== 📏 보드 자동 리사이즈 ============== */
+    /* ============== 보드 자동 리사이즈 ============== */
     function resizeBoard() {
-      // 상단/하단 UI 높이 합을 빼고 남는 세로 공간 계산
       const headerH = (document.querySelector('h1')?.offsetHeight || 0)
         + (document.getElementById('panel')?.offsetHeight || 0)
         + (document.getElementById('turnLine')?.offsetHeight || 0)
         + (document.getElementById('scores')?.offsetHeight || 0)
-        + 20; // 여유치
-
+        + 20;
       const bottomH = (document.getElementById('bottomBar')?.offsetHeight || 0) + 10;
-
-      const availW = document.getElementById('wrap').clientWidth - 4; // 좌우 padding 여유
+      const availW = document.getElementById('wrap').clientWidth - 4;
       const availH = window.innerHeight - headerH - bottomH;
-
-      const maxSquare = Math.max(220, Math.min(availW, availH)); // 정사각 최대 픽셀
-
-      // 총 보드 폭 = 7*P + 6*T (열 기준)  → 이를 maxSquare에 맞춤
-      // 비율은 기존 42:15 ≈ 0.357 → T ≈ 0.36*P (하한 8px, 상한 28px)
-      // 식: 7P + 6T = maxSquare,  T = kP  ⇒ P = maxSquare / (7 + 6k)
+      const maxSquare = Math.max(220, Math.min(availW, availH));
       const k = 0.36;
       let p = Math.floor(maxSquare / (7 + 6*k));
       let t = Math.floor(p * k);
-
-      // 너무 얇은 벽/너무 작은 점 방지 + 너무 큰 셀 제한(데스크탑 과도확대 방지)
       t = Math.max(8, Math.min(28, t));
       p = Math.max(26, Math.min(82, p));
-
-      // 다시 정확히 보드 최대 안 넘게 보정
       const total = 7*p + 6*t;
       if (total > maxSquare) {
         const diff = total - maxSquare;
-        // p 우선 줄임
         const shrinkP = Math.min(diff, p - 26);
         p -= shrinkP;
         let remain = diff - shrinkP;
-        if (remain > 0) {
-          const shrinkT = Math.min(remain, t - 8);
-          t -= shrinkT;
-        }
+        if (remain > 0) { const shrinkT = Math.min(remain, t - 8); t -= shrinkT; }
       }
-
-      // CSS 변수로 반영
       document.documentElement.style.setProperty('--p', p + 'px');
       document.documentElement.style.setProperty('--t', t + 'px');
-
-      // 보드 자체도 그리드 템플릿 유지
       boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
       boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
     }
-
     window.addEventListener('resize', resizeBoard);
     window.addEventListener('orientationchange', ()=>setTimeout(resizeBoard, 50));
 
@@ -342,7 +311,6 @@
           boardEl.appendChild(cell); grid[r][c]=cell;
         }
       }
-      // 보드 생성 후 즉시 사이즈 계산
       resizeBoard();
     }
     function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
@@ -433,10 +401,7 @@
     }
     function computeRegionsLocal(){
       const visited=Array.from({length:GRID},()=>Array(GRID).fill(false)); const regions=[]; let hasMixed=false;
-      for(let r=0;r<GRID;r+=2){ for(let c=0;c+=2,c<GRID;){
-        /* loop header fixed in next for; left as is intentionally */
-      }}
-      // ↑ 위 for 문을 안전하게 다시 작성
+      // 안전한 루프
       for(let r=0;r<GRID;r+=2){
         for(let c=0;c<GRID;c+=2){
           if(visited[r][c]) continue; const q=[{r,c}]; visited[r][c]=true; const pts=[]; const present=new Set();
@@ -573,6 +538,7 @@
 
     async function handleTurnTimeout(){
       if(!local.roomId) return;
+      await ensureAnonAuth(); // ★
       const stateRef = ref(db, `wbaduk/rooms/${local.roomId}/state`);
 
       await runTransaction(stateRef, (raw)=>{
@@ -615,6 +581,7 @@
     /* ================= DB 동기화 ================= */
     async function commitState(){
       if(!local.roomId||!local.state) return;
+      await ensureAnonAuth(); // ★
       await set(ref(db, `wbaduk/rooms/${local.roomId}/state`), local.state);
     }
     function applyRemote(state){
@@ -624,6 +591,7 @@
 
     /* ================= 방 생성/참여 ================= */
     async function pruneRoomsToMax(max=MAX_ROOMS){
+      await ensureAnonAuth(); // ★
       const roomsRef=ref(db,'wbaduk/rooms'); const snap=await get(roomsRef); if(!snap.exists()) return;
       let rooms=Object.entries(snap.val()||{}).map(([id,r])=>({id,createdAt:r?.createdAt||0}));
       if(rooms.length<=max) return;
@@ -635,6 +603,7 @@
     const btnJoin  =document.getElementById('btnJoin');
 
     btnCreate.onclick = async ()=>{
+      await ensureAnonAuth(); // ★
       const roomId=requireRoomName(); if(!roomId) return;
       await pruneRoomsToMax(10);
       const roomRef=ref(db,`wbaduk/rooms/${roomId}`);
@@ -653,6 +622,7 @@
     };
 
     btnJoin.onclick = async ()=>{
+      await ensureAnonAuth(); // ★
       const roomId=requireRoomName(); if(!roomId) return;
       const roomRef=ref(db,`wbaduk/rooms/${roomId}`);
       const playersRef=ref(db,`wbaduk/rooms/${roomId}/players`);
@@ -701,8 +671,8 @@
 
       roomLine.textContent=`방: ${roomId} — 나는 ${role===0?'P1(빨강)':'P2(파랑)'} 입니다.`;
 
-      makeBoard();       // 보드 생성
-      resizeBoard();     // 초회 리사이즈
+      makeBoard();
+      resizeBoard();
 
       unsubRoom = onValue(ref(db, `wbaduk/rooms/${roomId}`), snap=>{
         const room=snap.val();
@@ -719,6 +689,7 @@
       });
 
       resetBtn.onclick = async ()=>{
+        await ensureAnonAuth(); // ★
         await runTransaction(ref(db, `wbaduk/rooms/${roomId}`), room=>{
           if(!room) return room;
           room.status = (room.players && Object.keys(room.players).length>=2) ? 'playing' : 'waiting';
@@ -726,7 +697,7 @@
           return room;
         });
       };
-  
+
       const gameRoomTitle = document.getElementById('gameRoomTitle');
       gameRoomTitle.textContent = `방: ${roomId}`;
       gameRoomTitle.style.display = 'block';
@@ -745,6 +716,7 @@
       cleanupScheduled=true;
       setTimeout(async()=>{
         try{
+          await ensureAnonAuth(); // ★
           if(unsubRoom){unsubRoom();unsubRoom=null;}
           if(unsubPlayers){unsubPlayers();unsubPlayers=null;}
           const lockRef=ref(db,`wbaduk/rooms/${roomId}/__cleanupLock`);
@@ -770,6 +742,7 @@
       const roomId=local.roomId;
       const ok=confirm('정말 게임을 종료하고 방을 삭제할까요?'); if(!ok) return;
       try{
+        await ensureAnonAuth(); // ★
         if(unsubRoom){unsubRoom();unsubRoom=null;}
         if(unsubPlayers){unsubPlayers();unsubPlayers=null;}
         await remove(ref(db,`wbaduk/rooms/${roomId}`));
