@@ -4,10 +4,55 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>전기차 충전 할인 계산기</title>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #e0f7fa, #ffffff);
+      margin: 0;
+      padding: 30px 15px;
+    }
+    h2 { text-align: center; color: #01579b; margin-bottom: 20px; }
+    .container {
+      max-width: 680px; margin: auto; background: #ffffffee;
+      padding: 20px 25px; border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    }
+    input {
+      width: 100%; padding: 12px 14px; font-size: 16px;
+      border: 1px solid #bbb; border-radius: 8px; margin-bottom: 20px;
+    }
+    .description { font-size: 14px; margin-bottom: 10px; color: #444; text-align: center; }
+    table {
+      width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px;
+      background-color: white; border-radius: 10px; overflow: hidden;
+      box-shadow: 0 0 5px rgba(0,0,0,0.05);
+    }
+    th {
+      background-color: #b3e5fc; color: #01579b; padding: 10px; font-weight: bold;
+      border-bottom: 1px solid #90caf9;
+    }
+    td { padding: 10px; border-bottom: 1px solid #e0e0e0; background-color: #f9f9f9; }
+    td:last-child { background-color: #fff3f3; }
+    button {
+      padding: 6px 12px; border-radius: 6px; border: none;
+      background: #ef5350; color: white; cursor: pointer; font-size: 13px;
+    }
+    button:hover { background: #d32f2f; }
+    @media (max-width: 600px) {
+      .container { padding: 15px; }
+      th, td { font-size: 12px; padding: 6px; }
+      input { font-size: 15px; }
+      button { font-size: 12px; padding: 5px 10px; }
+    }
+  </style>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
+    // --- Firebase 설정 ---
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
       authDomain: "ionic6-3b7b2.firebaseapp.com",
@@ -20,197 +65,116 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const auth = getAuth(app);
 
-    const MAX_DISCOUNT = 30000;
-    const DISCOUNT_RATE = 0.7;
-    const PRICE_PER_KWH = 341;
-    const BATTERY_CAPACITY = 77.4;
+    // --- 상수 ---
+    const MAX_DISCOUNT = 30_000;     // 월 최대 할인
+    const DISCOUNT_RATE = 0.7;       // 70%
+    const PRICE_PER_KWH = 341;       // 원/kWh
+    const BATTERY_CAPACITY = 77.4;   // kWh
 
+    // --- DOM 참조 ---
     const amountInput = document.getElementById("amount");
-    const logsTable = document.getElementById("logTable");
+    const logsTable  = document.getElementById("logTable");
 
-    const currentMonth = new Date().toISOString().substring(0, 7);
-    const logRef = ref(db, `chargingLogs/${currentMonth}`);
+    // --- 로그인 후 앱 시작 ---
+    onAuthStateChanged(auth, (user) => {
+      if (user) startApp();
+      else signInAnonymously(auth).catch(err => {
+        console.error('익명 로그인 실패:', err);
+        alert('익명 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      });
+    });
 
-    let totalDiscountUsed = 0;
+    function startApp() {
+      const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
+      const logRef = ref(db, `chargingLogs/${currentMonth}`);
 
-    onValue(logRef, (snapshot) => {
-      const data = snapshot.val();
-      totalDiscountUsed = 0;
-      if (data) {
-        Object.values(data).forEach(log => {
-          totalDiscountUsed += log.discount;
+      let totalDiscountUsed = 0;
+
+      onValue(logRef, (snapshot) => {
+        const data = snapshot.val();
+        totalDiscountUsed = 0;
+        if (data) {
+          Object.values(data).forEach(log => {
+            totalDiscountUsed += Number(log.discount || 0);
+          });
+        }
+        renderLogs(data);
+      }, (error) => {
+        console.error('읽기 권한 오류:', error);
+      });
+
+      amountInput.addEventListener("change", () => {
+        const amount = Number(amountInput.value);
+        if (!amount || amount <= 0) return;
+
+        const now = new Date();
+        const isoDate = now.toISOString();
+        const monthKey = isoDate.substring(0, 7);
+
+        const remainingCap = Math.max(0, MAX_DISCOUNT - totalDiscountUsed);
+        const discount     = Math.min(amount * DISCOUNT_RATE, remainingCap);
+        const remaining    = Math.max(0, MAX_DISCOUNT - (totalDiscountUsed + discount));
+        const moreCharge   = remaining / DISCOUNT_RATE;            // 추가 결제 가능 금액
+        const moreKwh      = moreCharge / PRICE_PER_KWH;           // 추가 kWh
+        const batteryPct   = (moreKwh / BATTERY_CAPACITY) * 100;   // 배터리 %
+
+        const data = {
+          timestamp: isoDate,
+          amount: Math.round(amount),
+          discount: Math.round(discount),
+          remaining: Math.round(remaining),
+          moreCharge: Math.floor(moreCharge),
+          moreKwh: parseFloat(moreKwh.toFixed(2)),
+          batteryPercent: parseFloat(batteryPct.toFixed(1))
+        };
+
+        push(ref(db, `chargingLogs/${monthKey}`), data);
+        amountInput.value = "";
+      });
+
+      function renderLogs(data) {
+        logsTable.innerHTML = `<tr>
+          <th>날짜</th>
+          <th>금액</th>
+          <th>할인</th>
+          <th>남은할인한도</th>
+          <th>추가충전가능금액</th>
+          <th>추가kWh</th>
+          <th>충전%</th>
+          <th>삭제</th>
+        </tr>`;
+
+        const entries = Object.entries(data || {})
+          .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+
+        entries.forEach(([key, log]) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${log.timestamp.substring(5, 10)}</td>
+            <td>${Number(log.amount).toLocaleString()}</td>
+            <td>${Number(log.discount).toLocaleString()}</td>
+            <td>${Number(log.remaining).toLocaleString()}</td>
+            <td>${Number(log.moreCharge).toLocaleString()}</td>
+            <td>${log.moreKwh}</td>
+            <td>${log.batteryPercent}%</td>
+            <td><button data-key="${key}" class="del">삭제</button></td>
+          `;
+          logsTable.appendChild(row);
+        });
+
+        // 위임 삭제
+        logsTable.querySelectorAll('button.del').forEach(btn => {
+          btn.onclick = () => deleteEntry(btn.dataset.key);
         });
       }
-      renderLogs(data);
-    });
 
-    amountInput.addEventListener("change", () => {
-      const amount = parseFloat(amountInput.value);
-      if (!amount) return;
-
-      const now = new Date();
-      const isoDate = now.toISOString();
-      const monthKey = isoDate.substring(0, 7);
-
-      const discount = Math.min(amount * DISCOUNT_RATE, MAX_DISCOUNT - totalDiscountUsed);
-      const remaining = MAX_DISCOUNT - (totalDiscountUsed + discount);
-      const moreCharge = remaining / DISCOUNT_RATE;
-      const moreKwh = moreCharge / PRICE_PER_KWH;
-      const batteryPercent = (moreKwh / BATTERY_CAPACITY * 100);
-
-      const data = {
-        timestamp: isoDate,
-        amount,
-        discount,
-        remaining,
-        moreCharge,
-        moreKwh: parseFloat(moreKwh.toFixed(2)),
-        batteryPercent: parseFloat(batteryPercent.toFixed(1))
+      window.deleteEntry = function(key) {
+        remove(ref(db, `chargingLogs/${currentMonth}/${key}`));
       };
-
-      push(ref(db, `chargingLogs/${monthKey}`), data);
-      amountInput.value = "";
-    });
-
-    function renderLogs(data) {
-      logsTable.innerHTML = `<tr>
-        <th>날짜</th>
-        <th>금액</th>
-        <th>할인</th>
-        <th>남은할인한도</th>
-        <th>추가충전가능금액</th>
-        <th>추가kWh</th>
-        <th>충전%</th>
-        <th>삭제</th>
-      </tr>`;
-
-      const entries = Object.entries(data || {}).sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
-      entries.forEach(([key, log]) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${log.timestamp.substring(5, 10)}</td>
-          <td>${log.amount.toLocaleString()}</td>
-          <td>${log.discount.toLocaleString()}</td>
-          <td>${log.remaining.toLocaleString()}</td>
-          <td>${Math.floor(log.moreCharge).toLocaleString()}</td>
-          <td>${log.moreKwh}</td>
-          <td>${log.batteryPercent}%</td>
-          <td><button onclick="deleteEntry('${key}')">삭제</button></td>
-        `;
-        logsTable.appendChild(row);
-      });
     }
-
-    window.deleteEntry = function(key) {
-      remove(ref(db, `chargingLogs/${currentMonth}/${key}`));
-    };
   </script>
-  <style>
-    <style>
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(to right, #e0f7fa, #ffffff);
-    margin: 0;
-    padding: 30px 15px;
-  }
-
-  h2 {
-    text-align: center;
-    color: #01579b;
-    margin-bottom: 20px;
-  }
-
-  .container {
-    max-width: 680px;
-    margin: auto;
-    background: #ffffffee;
-    padding: 20px 25px;
-    border-radius: 14px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-  }
-
-  input {
-    width: 100%;
-    padding: 12px 14px;
-    font-size: 16px;
-    border: 1px solid #bbb;
-    border-radius: 8px;
-    margin-bottom: 20px;
-  }
-
-  .description {
-    font-size: 14px;
-    margin-bottom: 10px;
-    color: #444;
-    text-align: center;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    font-size: 14px;
-    background-color: white;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
-  }
-
-  th {
-    background-color: #b3e5fc;
-    color: #01579b;
-    padding: 10px;
-    font-weight: bold;
-    border-bottom: 1px solid #90caf9;
-  }
-
-  td {
-    padding: 10px;
-    border-bottom: 1px solid #e0e0e0;
-    background-color: #f9f9f9;
-  }
-
-  td:last-child {
-    background-color: #fff3f3;
-  }
-
-  button {
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: none;
-    background: #ef5350;
-    color: white;
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  button:hover {
-    background: #d32f2f;
-  }
-
-  @media (max-width: 600px) {
-    .container {
-      padding: 15px;
-    }
-
-    th, td {
-      font-size: 12px;
-      padding: 6px;
-    }
-
-    input {
-      font-size: 15px;
-    }
-
-    button {
-      font-size: 12px;
-      padding: 5px 10px;
-    }
-  }
-</style>
-
-  </style>
 </head>
 <body>
   <div class="container">
