@@ -82,7 +82,7 @@
   <div id="setup">
     <button id="createBtn">방 생성하기</button>
     <button id="joinBtn">방 참여하기</button>
-    <button id="soloBtn">혼자하기 (컴퓨터와 대전)</button>
+    <button id="soloBtn">혼자하기 (컴퓨터와 대전 · 고급)</button>
     <p id="room-info"></p>
   </div>
 
@@ -123,9 +123,7 @@
     let currentUser = null;
     let resolveAuthReady;
     const authReady = new Promise(res => (resolveAuthReady = res));
-    onAuthStateChanged(auth, (user) => {
-      if (user) { currentUser = user; resolveAuthReady(user); }
-    });
+    onAuthStateChanged(auth, (user) => { if (user) { currentUser = user; resolveAuthReady(user); } });
     try { await signInAnonymously(auth); } catch (e) { console.error(e); }
 
     /* =========================
@@ -136,10 +134,13 @@
     let gameMode = 'online'; // 'online' | 'solo'
     let roomCode = '', playerRole = '', playerName = '';
     let pendingMove = null; // 임시 둔 돌 위치 저장
-    let localBoard = null;  // 솔로 모드 보드 (2차원 배열)
-    let localTurn = 'A';    // 솔로 모드 턴
-    const HUMAN = 'A';      // 솔로 모드에서 사람은 항상 A(흑)
-    const AI    = 'B';      // AI는 백
+
+    // === SOLO 모드 전용 상태
+    let localBoard = null;  // 2차원 배열
+    let localTurn = 'A';    // 'A'(흑=사람) / 'B'(백=AI)
+    const HUMAN = 'A';
+    const AI    = 'B';
+    const STONE = { A: '●', B: '○' };
 
     function randomName() {
       const names = ['호랑이','펭귄','고양이','사자','부엉이','치타'];
@@ -200,7 +201,7 @@
     }
 
     /* =========================
-       승리 판정 (공용)
+       (온라인) 승리 판정
        ========================= */
     function checkWinGeneric(r, c, stone, board) {
       const directions = [[0,1],[1,0],[1,1],[1,-1]];
@@ -252,10 +253,7 @@
       const latestRef = ref(db, 'latestRoom');
       const latestSnap = await get(latestRef);
       const now = Date.now();
-      if (latestSnap.exists() && now - latestSnap.val().createdAt < 60_000) {
-        alert("1분 내 생성된 방이 있어요");
-        return;
-      }
+      if (latestSnap.exists() && now - latestSnap.val().createdAt < 60_000) { alert("1분 내 생성된 방이 있어요"); return; }
       roomCode = randomRoomName();
       playerName = randomName();
 
@@ -278,12 +276,9 @@
             .map(([key, value]) => ({ key, createdAt: value.createdAt || 0 }))
             .sort((a, b) => b.createdAt - a.createdAt);
           const roomsToDelete = roomsArray.slice(10);
-          for (const room of roomsToDelete) {
-            try { await remove(ref(db, `rooms/${room.key}`)); } catch {}
-          }
+          for (const room of roomsToDelete) { try { await remove(ref(db, `rooms/${room.key}`)); } catch {} }
         }
       } catch {}
-
       await set(latestRef, { roomCode, createdAt: now, by: currentUser.uid });
       playerRole = 'A';
       gameMode = 'online';
@@ -316,7 +311,6 @@
       document.getElementById("setup").style.display = "none";
       document.getElementById("game").style.display = "block";
       document.getElementById("title").innerText = `⚫ 오목 대전 - 방번호: ${roomCode}`;
-
       try { await remove(ref(db, `rooms/${roomCode}/winner`)); } catch {}
       renderBoard();
       listenBoardOnline();
@@ -329,21 +323,12 @@
       onValue(ref(db, `rooms/${roomCode}/board`), snap => {
         if (!snap.exists()) return;
         const data = snap.val();
-        for (let r = 0; r < SIZE; r++) {
-          for (let c = 0; c < SIZE; c++) {
-            const value = data[r]?.[c] || "";
-            placeStoneDOM(r, c, value);
-          }
-        }
+        for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) placeStoneDOM(r, c, data[r]?.[c] || "");
       });
-
-      // 마지막 착수 위치 강조 + 소리
       onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
         const move = snap.val();
         if (!move) return;
-        if (move.role !== playerRole) {
-          document.getElementById("place-sound").play().catch(()=>{});
-        }
+        if (move.role !== playerRole) document.getElementById("place-sound").play().catch(()=>{});
         clearLastMoveHighlight();
         highlightLastMove(move.row, move.col, move.role === playerRole);
       });
@@ -377,10 +362,7 @@
           const stone = cell.querySelector('.stone');
           if (stone) stone.classList.add("blink");
         });
-        setTimeout(async () => {
-          await deleteRoom(roomCode);
-          location.reload();
-        }, 3000);
+        setTimeout(async () => { await deleteRoom(roomCode); location.reload(); }, 3000);
       });
     }
 
@@ -419,24 +401,23 @@
       try { await remove(ref(db, `latestRoom`)); } catch {}
     }
 
-    /* =========================
-       솔로(혼자하기) 모드
-       ========================= */
+    /* ======================================================
+       솔로(혼자하기) 모드 — 고급 AI (알파–베타 + 패턴 평가)
+       ====================================================== */
     function startSolo() {
       gameMode = 'solo';
       roomCode = 'SOLO';
-      playerRole = HUMAN; // 사람은 항상 흑
+      playerRole = HUMAN; // 사람은 흑
       localBoard = emptyBoard();
       localTurn = 'A';
       pendingMove = null;
 
       document.getElementById("setup").style.display = "none";
       document.getElementById("game").style.display = "block";
-      document.getElementById("title").innerText = `⚫ 오목 대전 - 혼자하기(컴퓨터)`;
+      document.getElementById("title").innerText = `⚫ 오목 대전 - 혼자하기(컴퓨터 · 고급)`;
       document.getElementById("turn").innerText = "내 차례";
 
       renderBoard();
-      // 초기화: 클릭 가능
       for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) placeStoneDOM(r, c, "");
     }
 
@@ -446,15 +427,14 @@
       if (localTurn !== HUMAN) { alert("상대(컴퓨터) 차례입니다."); return; }
       if (localBoard[row][col] !== "") { alert("이미 착수된 자리입니다."); return; }
 
-      // 사람 수 두기
-      const myStone = '●';
-      localBoard[row][col] = myStone;
-      placeStoneDOM(row, col, myStone);
+      // 사람 수
+      localBoard[row][col] = STONE[HUMAN];
+      placeStoneDOM(row, col, STONE[HUMAN]);
       clearLastMoveHighlight();
       highlightLastMove(row, col, true);
       document.getElementById("place-sound").play().catch(()=>{});
 
-      const winPos = checkWinGeneric(row, col, myStone, localBoard);
+      const winPos = checkWinGeneric(row, col, STONE[HUMAN], localBoard);
       if (winPos) return finishSolo(winPos, true);
 
       pendingMove = null;
@@ -462,12 +442,11 @@
       document.getElementById("turn").innerText = "상대 차례";
       document.getElementById("confirm-move").disabled = true;
 
-      // 컴퓨터 수 두기 (약간의 지연으로 자연스럽게)
-      setTimeout(aiMove, 200);
+      // ✅ 요청: 2초 뒤에 AI 착수
+      setTimeout(aiMoveAdvanced, 2000);
     }
 
     function finishSolo(winPositions, isHumanWin) {
-      // 반짝임 표시
       winPositions.forEach(([r, c]) => {
         const idx = r * SIZE + c;
         const cell = document.getElementById("board").children[idx];
@@ -475,139 +454,284 @@
         if (stone) stone.classList.add("blink");
       });
       alert(isHumanWin ? "🎉 당신이 이겼습니다!" : "🤖 컴퓨터가 이겼습니다.");
-      // 새로고침으로 초기화
       setTimeout(() => location.reload(), 2000);
     }
 
-    // AI 의사결정: 즉승 ▶ 차단 ▶ 인접 확장 ▶ 중앙
-    function aiMove() {
-      // 1) 즉시 승리 수 탐색
-      const winChoice = findImmediateWin('○');
-      if (winChoice) return placeAI(winChoice.r, winChoice.c);
-
-      // 2) 상대(흑) 즉시 승리 차단
-      const blockChoice = findImmediateWin('●');
-      if (blockChoice) return placeAI(blockChoice.r, blockChoice.c);
-
-      // 3) 주변 확장 가중치 + 중앙 선호
-      const { r, c } = pickHeuristic();
-      return placeAI(r, c);
-    }
-
-    function placeAI(r, c) {
-      if (localBoard[r][c] !== "") {
-        // 드물게 동시 클릭 등으로 이미 채워진 경우 대비: 빈 자리 아무 곳
-        const fallback = findFirstEmpty();
-        if (!fallback) { alert("무승부!"); return setTimeout(()=>location.reload(), 1500); }
-        r = fallback.r; c = fallback.c;
-      }
-      localBoard[r][c] = '○';
-      placeStoneDOM(r, c, '○');
-      clearLastMoveHighlight();
-      highlightLastMove(r, c, false);
-      document.getElementById("place-sound").play().catch(()=>{});
-
-      const winPos = checkWinGeneric(r, c, '○', localBoard);
-      if (winPos) return finishSolo(winPos, false);
-
-      localTurn = HUMAN;
-      document.getElementById("turn").innerText = "내 차례";
-    }
-
-    function findImmediateWin(stone) {
-      // 빈 칸에 stone을 가상으로 둬서 승리인지 검사
+    // --- 후보 생성: 기존 돌에서 맨해튼 ≤ 2
+    function generateCandidates(board) {
+      let hasStone = false;
+      const cand = new Set();
       for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
-          if (localBoard[r][c] !== "") continue;
-          localBoard[r][c] = stone;
-          const win = checkWinGeneric(r, c, stone, localBoard);
-          localBoard[r][c] = "";
-          if (win) return { r, c };
+          if (board[r][c] !== "") {
+            hasStone = true;
+            for (let dr = -2; dr <= 2; dr++) {
+              for (let dc = -2; dc <= 2; dc++) {
+                const nr = r + dr, nc = c + dc;
+                if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+                if (Math.abs(dr) + Math.abs(dc) > 2) continue;
+                if (board[nr][nc] === "") cand.add(nr + "," + nc);
+              }
+            }
+          }
         }
       }
-      return null;
+      // 초반 비어있으면 중앙
+      if (!hasStone) return [{ r: CENTER, c: CENTER }];
+      return Array.from(cand).map(s => {
+        const [r, c] = s.split(",").map(Number);
+        return { r, c };
+      });
     }
 
-    function pickHeuristic() {
-      let best = { r: CENTER, c: CENTER, score: -Infinity };
-      for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
-          if (localBoard[r][c] !== "") continue;
-          const score = scoreCell(r, c);
-          if (score > best.score) best = { r, c, score };
-        }
-      }
-      return best;
-    }
-
-    function scoreCell(r, c) {
-      // 중앙 선호
-      const centerBias = 10 - (Math.abs(CENTER - r) + Math.abs(CENTER - c)); // -∞~10
-      // 주변(8방향) 내 돌/상대 돌 인접 가중치
+    // --- 간단 휴리스틱 (정렬용)
+    function scoreCellHeuristic(board, r, c) {
+      const centerBias = 10 - (Math.abs(CENTER - r) + Math.abs(CENTER - c));
       let neighbor = 0;
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           if (dr === 0 && dc === 0) continue;
           const nr = r + dr, nc = c + dc;
           if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
-          if (localBoard[nr][nc] === '○') neighbor += 3;
-          if (localBoard[nr][nc] === '●') neighbor += 2;
+          if (board[nr][nc] === STONE[AI]) neighbor += 3;
+          if (board[nr][nc] === STONE[HUMAN]) neighbor += 2;
         }
       }
-      // 간단한 연속 가능성 가중치(가로/세로/대각)
-      const lineDirs = [[0,1],[1,0],[1,1],[1,-1]];
-      let lineScore = 0;
-      for (const [dr, dc] of lineDirs) {
-        lineScore += evalLinePotential(r, c, dr, dc, '○') * 2;
-        lineScore += evalLinePotential(r, c, dr, dc, '●'); // 상대 라인에도 위치하면 점수(차단 기회)
-      }
-      return centerBias + neighbor + lineScore;
+      return centerBias + neighbor;
     }
 
-    function evalLinePotential(r, c, dr, dc, stone) {
-      // (r,c)에 stone을 둔다 가정하고, 양방향으로 같은 돌 수와 열린 끝 개수 파악
-      let count = 1, openEnds = 0;
-      // 반대
-      for (let i = 1; i <= 4; i++) {
-        const nr = r - dr*i, nc = c - dc*i;
-        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
-        const v = localBoard[nr][nc];
-        if (v === stone) count++;
-        else { if (v === "") openEnds++; break; }
+    // --- 패턴 평가 (열린4/닫힌4/열린3/닫힌3/2 등)
+    function evaluateBoard(board) {
+      // 승리 즉시 판정 우선
+      const winnerScore = 1_000_000;
+      // 가중치 (조정 가능)
+      const W = {
+        five: 200_000,
+        open4:  50_000,
+        close4: 15_000,
+        open3:   6_000,
+        close3:  2_000,
+        open2:     600,
+        close2:    200
+      };
+      function lineScore(lineArr, stone) {
+        let score = 0;
+        const opp = (stone === '●') ? '○' : '●';
+
+        // 문자열로 변환해서 패턴 탐색
+        const s = lineArr.join('');
+        // 즉승
+        if (s.includes(stone.repeat(5))) return W.five;
+
+        // 열린/닫힌 패턴 대략 측정
+        // 열린4: _XXXX_ (빈칸 + 4연속 + 빈칸)
+        if (s.includes(` ${stone.repeat(4)} `)) score += W.open4;
+        // 닫힌4: (끝막힘 포함) ex: OXXXX_ or _XXXXO
+        if (s.match(new RegExp(`(?:${opp}|^){1}${stone.repeat(4)} `)) || s.match(new RegExp(` ${stone.repeat(4)}(?:${opp}|$){1}`))) score += W.close4;
+
+        // 열린3: _XXX_ (단, 양 끝이 열려야)
+        if (s.includes(` ${stone.repeat(3)} `)) score += W.open3;
+        // 닫힌3:
+        if (s.match(new RegExp(`(?:${opp}|^){1}${stone.repeat(3)} `)) || s.match(new RegExp(` ${stone.repeat(3)}(?:${opp}|$){1}`))) score += W.close3;
+
+        // 열린2 / 닫힌2 (완화)
+        if (s.includes(` ${stone.repeat(2)} `)) score += W.open2;
+        if (s.match(new RegExp(`(?:${opp}|^){1}${stone.repeat(2)} `)) || s.match(new RegExp(` ${stone.repeat(2)}(?:${opp}|$){1}`))) score += W.close2;
+
+        return score;
       }
-      // 정방향
-      for (let i = 1; i <= 4; i++) {
-        const nr = r + dr*i, nc = c + dc*i;
-        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
-        const v = localBoard[nr][nc];
-        if (v === stone) count++;
-        else { if (v === "") openEnds++; break; }
+
+      function totalFor(stone) {
+        let total = 0;
+        // 가로/세로/대각2방향 라인들 점수 합
+        for (let r = 0; r < SIZE; r++) {
+          const row = Array(SIZE + 2).fill(' ').map((_,i)=> (i===0||i===SIZE+1)?' ': (board[r][i-1] || ' '));
+          total += lineScore(row, stone);
+        }
+        for (let c = 0; c < SIZE; c++) {
+          const col = Array(SIZE + 2).fill(' ').map((_,i)=> (i===0||i===SIZE+1)?' ': (board[i-1]?.[c] || ' '));
+          total += lineScore(col, stone);
+        }
+        // diag ↘
+        for (let k = -(SIZE-1); k <= (SIZE-1); k++) {
+          const diag = [];
+          for (let r = 0; r < SIZE; r++) {
+            const c = r - k;
+            if (c < 0 || c >= SIZE) continue;
+            diag.push(board[r][c] || ' ');
+          }
+          if (diag.length) {
+            const d = [' ', ...diag, ' '];
+            total += lineScore(d, stone);
+          }
+        }
+        // diag ↗
+        for (let k = 0; k <= 2*(SIZE-1); k++) {
+          const diag = [];
+          for (let r = 0; r < SIZE; r++) {
+            const c = k - r;
+            if (c < 0 || c >= SIZE) continue;
+            diag.push(board[r][c] || ' ');
+          }
+          if (diag.length) {
+            const d = [' ', ...diag, ' '];
+            total += lineScore(d, stone);
+          }
+        }
+        return total;
       }
-      // 간단한 점수화
-      // 열린 끝이 많을수록, count가 클수록 유리
-      return count * (openEnds + 1);
+
+      // 즉시 승패 큰 점수
+      // (여기서는 패턴 점수에 five가 매우 커서 충분)
+      return totalFor(STONE[AI]) - totalFor(STONE[HUMAN]);
     }
 
-    function findFirstEmpty() {
-      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (localBoard[r][c] === "") return { r, c };
+    // --- Minimax with Alpha-Beta (depth=2)
+    const MAX_DEPTH = 2; // 고급 기본값 (모바일 성능 고려)
+    const MAX_BRANCH = 24; // 후보 상한
+
+    function aiMoveAdvanced() {
+      // 1) 즉시 승리 / 차단 우선 (빠른 전처리)
+      const quick = findImmediateTactic(localBoard);
+      if (quick) return placeAI(quick.r, quick.c);
+
+      // 2) 알파–베타 탐색
+      const cand = generateCandidates(localBoard);
+      // 정렬: 휴리스틱 높은 수 우선
+      cand.sort((a,b) => scoreCellHeuristic(localBoard, b.r, b.c) - scoreCellHeuristic(localBoard, a.r, a.c));
+      const trimmed = cand.slice(0, MAX_BRANCH);
+
+      let best = null;
+      let alpha = -Infinity, beta = Infinity;
+
+      for (const mv of trimmed) {
+        localBoard[mv.r][mv.c] = STONE[AI];
+        const val = minimax(localBoard, MAX_DEPTH-1, false, alpha, beta);
+        localBoard[mv.r][mv.c] = "";
+
+        if (best === null || val > best.score) {
+          best = { r: mv.r, c: mv.c, score: val };
+        }
+        alpha = Math.max(alpha, val);
+        if (alpha >= beta) break; // 가지치기
+      }
+
+      const choice = best || trimmed[0] || findFirstEmpty(localBoard) || { r: CENTER, c: CENTER };
+      placeAI(choice.r, choice.c);
+    }
+
+    function minimax(board, depth, isMax, alpha, beta) {
+      // 단말: 평가
+      if (depth === 0) return evaluateBoard(board);
+
+      // 즉승/즉패 감지 빠른 컷
+      const tactical = findImmediateTerminal(board);
+      if (tactical !== null) return tactical;
+
+      const cand = generateCandidates(board);
+      cand.sort((a,b) => scoreCellHeuristic(board, b.r, b.c) - scoreCellHeuristic(board, a.r, a.c));
+      const list = cand.slice(0, MAX_BRANCH);
+
+      if (isMax) {
+        let best = -Infinity;
+        for (const mv of list) {
+          board[mv.r][mv.c] = STONE[AI];
+          const val = minimax(board, depth-1, false, alpha, beta);
+          board[mv.r][mv.c] = "";
+          best = Math.max(best, val);
+          alpha = Math.max(alpha, val);
+          if (alpha >= beta) break;
+        }
+        return best === -Infinity ? evaluateBoard(board) : best;
+      } else {
+        let best = Infinity;
+        for (const mv of list) {
+          board[mv.r][mv.c] = STONE[HUMAN];
+          const val = minimax(board, depth-1, true, alpha, beta);
+          board[mv.r][mv.c] = "";
+          best = Math.min(best, val);
+          beta = Math.min(beta, val);
+          if (alpha >= beta) break;
+        }
+        return best === Infinity ? evaluateBoard(board) : best;
+      }
+    }
+
+    // 전술 우선 탐색: 즉시 승리, 즉시 차단
+    function findImmediateTactic(board) {
+      // AI 즉승
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+        if (board[r][c] !== "") continue;
+        board[r][c] = STONE[AI];
+        const win = checkWinGeneric(r, c, STONE[AI], board);
+        board[r][c] = "";
+        if (win) return { r, c };
+      }
+      // 사람 즉승 차단
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+        if (board[r][c] !== "") continue;
+        board[r][c] = STONE[HUMAN];
+        const win = checkWinGeneric(r, c, STONE[HUMAN], board);
+        board[r][c] = "";
+        if (win) return { r, c };
+      }
+      return null;
+    }
+
+    // 터미널 컷: 즉시 승/즉시 패면 큰 점수 반환
+    function findImmediateTerminal(board) {
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+        if (board[r][c] !== "") continue;
+        // AI가 두면 승리?
+        board[r][c] = STONE[AI];
+        const aiWin = checkWinGeneric(r, c, STONE[AI], board);
+        board[r][c] = "";
+        if (aiWin) return 999999;
+
+        // HUMAN이 두면 승리?
+        board[r][c] = STONE[HUMAN];
+        const huWin = checkWinGeneric(r, c, STONE[HUMAN], board);
+        board[r][c] = "";
+        if (huWin) return -999999;
+      }
+      return null;
+      // (이 함수는 빠른 컷 용도로만 사용)
+    }
+
+    function placeAI(r, c) {
+      if (localBoard[r][c] !== "") {
+        const fb = findFirstEmpty(localBoard);
+        if (!fb) { alert("무승부!"); return setTimeout(()=>location.reload(), 1500); }
+        r = fb.r; c = fb.c;
+      }
+      localBoard[r][c] = STONE[AI];
+      placeStoneDOM(r, c, STONE[AI]);
+      clearLastMoveHighlight();
+      highlightLastMove(r, c, false);
+      document.getElementById("place-sound").play().catch(()=>{});
+
+      const winPos = checkWinGeneric(r, c, STONE[AI], localBoard);
+      if (winPos) return finishSolo(winPos, false);
+
+      localTurn = HUMAN;
+      document.getElementById("turn").innerText = "내 차례";
+    }
+
+    function findFirstEmpty(board) {
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (board[r][c] === "") return { r, c };
       return null;
     }
 
     /* =========================
-       공용 커밋 분기
+       공용 커밋 분기 / 종료
        ========================= */
     function commitMove() {
       if (gameMode === 'online') return commitMoveOnline();
       return commitMoveSolo();
     }
 
-    /* =========================
-       종료 / 리셋
-       ========================= */
     async function endGame() {
-      if (gameMode === 'online' && roomCode && roomCode !== 'SOLO') {
-        await deleteRoom(roomCode);
-      }
+      if (gameMode === 'online' && roomCode && roomCode !== 'SOLO') { await deleteRoom(roomCode); }
       location.reload();
     }
 
@@ -635,7 +759,7 @@
       <ul style="text-align:left; font-size: 16px; line-height:1.6;">
         <li>1. <b>방 생성하기</b>: 온라인 대전용 방을 만듭니다.</li>
         <li>2. <b>방 참여하기</b>: 1분 이내에 생성된 최신 방에 입장합니다.</li>
-        <li>3. <b>혼자하기</b>: 컴퓨터와 오목을 둡니다(로컬 모드).</li>
+        <li>3. <b>혼자하기(고급)</b>: 컴퓨터와 오목을 둡니다.</li>
         <li>4. 흑(⚫)과 백(⚪)이 번갈아 돌을 둡니다. 흑은 항상 먼저 둡니다.</li>
         <li>5. 가로/세로/대각선으로 같은 색 5개를 먼저 연결하면 승리합니다.</li>
         <li>6. 마지막 둔 돌은 테두리로 표시되고, 승리한 돌은 반짝입니다.</li>
