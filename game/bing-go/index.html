@@ -10,10 +10,9 @@
       background-color: #f9f9f9;
       padding: 20px;
       text-align: center;
+      color-scheme: light only; /* 다크모드 강제 방지 (선택) */
     }
-    h1 {
-      color: #333;
-    }
+    h1 { color: #333; }
     button, input {
       padding: 12px;
       margin: 10px;
@@ -32,46 +31,50 @@
       border-radius: 6px;
       cursor: pointer;
     }
-    button:hover {
-      background-color: #45a049;
-    }
+    button:hover { background-color: #45a049; }
+
     /* 모달 팝업 스타일 */
-.modal {
-  display: block; /* 페이지 로드 시 보여줌 */
-  position: fixed;
-  z-index: 9999;
-  left: 0; top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.5);
-}
-
-.modal-content {
-  background-color: #fff;
-  margin: 15% auto;
-  padding: 30px;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 400px;
-  text-align: center;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-}
-
+    .modal {
+      display: block; /* 페이지 로드 시 보여줌 */
+      position: fixed;
+      z-index: 9999;
+      left: 0; top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 15% auto;
+      padding: 30px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
   </style>
 </head>
 <body>
   <h1>빙고 게임 - 방 입장</h1>
 
-  <button onclick="createRoom()">🔧 방 생성</button><br/>
-  <button onclick="autoJoin()">⏱ 자동 입장 (1분 이내)</button><br/>
+  <button id="createBtn" onclick="createRoom()">🔧 방 생성</button><br/>
+  <button id="autoBtn" onclick="autoJoin()">⏱ 자동 입장 (1분 이내)</button><br/>
 
-  <input type="number" id="roomCodeInput" placeholder="4자리 방 코드 입력"/>
-  <button onclick="manualJoin()">🔑 수동 입장</button>
+  <!-- 숫자 4자리만 받도록 보조 옵션 추가 -->
+  <input type="text" id="roomCodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="4자리 방 코드 입력" />
+  <button id="manualBtn" onclick="manualJoin()">🔑 수동 입장</button>
 
   <script type="module">
-    // Firebase 연동
+    // --- Firebase 연동 ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, set, get, child, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { 
+      getDatabase, ref, set, get, query, orderByChild, startAt, limitToLast 
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    // ★ 추가: 익명 로그인용 Auth 모듈
+    import { 
+      getAuth, onAuthStateChanged, signInAnonymously 
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -85,93 +88,135 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const auth = getAuth(app);
 
-    // 방 생성 함수
-    window.createRoom = function () {
-  const code = Math.floor(1000 + Math.random() * 9000).toString();
-  const createdAt = Date.now();
-
-  set(ref(db, `rooms/${code}`), {
-    createdAt: createdAt
-  }).then(() => {
-    alert(`방이 생성되었습니다! 코드: ${code}`);
-    window.location.href = `game.html?room=${code}`;
-  });
-};
-
-    // 자동 입장 함수 (1분 이내 방 탐색)
-   window.autoJoin = function () {
-  const dbRef = ref(db, 'rooms');
-  get(dbRef).then(snapshot => {
-    console.log("자동입장: 전체 방 목록 가져옴");
-
-    if (!snapshot.exists()) {
-      alert("입장 가능한 방이 없습니다.");
-      return;
-    }
-
-    const now = Date.now();
-    let found = false;
-
-    snapshot.forEach(child => {
-      const data = child.val();
-      console.log(`방 ${child.key} 생성 시간: ${data.createdAt}, 현재 시간: ${now}`);
-      if (now - data.createdAt <= 60_000) {
-        found = true;
-        console.log(`자동 입장: ${child.key}`);
-        window.location.href = `game.html?room=${child.key}`;
-        return true;
-      }
+    // 입력란: 숫자만 & 4자리 제한
+    const codeInput = document.getElementById('roomCodeInput');
+    codeInput.addEventListener('input', () => {
+      codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 4);
     });
 
-    if (!found) alert("1분 이내 생성된 방이 없습니다.");
-  }).catch(error => {
-    console.error("자동 입장 오류:", error);
-  });
-};
+    // 버튼들 (로그인 전 클릭 방지하고 싶으면 잠깐 비활성화)
+    const buttons = [document.getElementById('createBtn'), document.getElementById('autoBtn'), document.getElementById('manualBtn')];
+    // buttons.forEach(b => b.disabled = true); // 필요시 주석 해제
 
+    // ★ 추가: 익명 로그인 보장 함수
+    async function ensureAnonAuth() {
+      const user = auth.currentUser;
+      if (user) return user;
 
-    // 수동 코드 입장
-    window.manualJoin = function () {
-  const code = document.getElementById('roomCodeInput').value;
-  if (!code || code.length !== 4) {
-    alert("4자리 숫자 코드를 입력해주세요.");
-    return;
-  }
-
-  console.log("수동입장 코드 확인:", code);
-
-  get(ref(db, `rooms/${code}`)).then(snapshot => {
-    if (!snapshot.exists()) {
-      alert("해당 방이 존재하지 않습니다.");
-      return;
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, (u) => {
+          if (u) {
+            unsub();
+            resolve(u);
+          }
+        });
+        signInAnonymously(auth).catch((e) => {
+          console.error('익명 로그인 실패:', e);
+          reject(e);
+        });
+      });
     }
-    console.log("수동입장 성공, 이동 중...");
-    window.location.href = `game.html?room=${code}`;
-  }).catch(error => {
-    console.error("수동 입장 오류:", error);
-  });
-};
 
-// 모달 닫기 함수
-window.closeModal = function () {
-  document.getElementById('modal').style.display = 'none';
-};
+    // 초기 로그인 시도 (UI에 "로그인 확인중" 같은 문구는 표시하지 않음)
+    ensureAnonAuth()
+      .then(() => {
+        // buttons.forEach(b => b.disabled = false); // 필요시 주석 해제
+      })
+      .catch(() => {
+        alert('로그인에 문제가 발생했습니다. 새로고침 후 다시 시도해 주세요.');
+      });
 
+    // --- 방 생성 ---
+    window.createRoom = async function () {
+      const user = await ensureAnonAuth();
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const createdAt = Date.now();
 
+      // ★ hostUid 를 기록 (누가 만든 방인지 추적 가능)
+      await set(ref(db, `rooms/${code}`), {
+        createdAt,
+        hostUid: user.uid,
+        status: 'lobby'
+      });
+
+      alert(`방이 생성되었습니다! 코드: ${code}`);
+      window.location.href = `game.html?room=${code}`;
+    };
+
+    // --- 자동 입장 (최근 1분 내 생성된 최신 방 1개 조회) ---
+    window.autoJoin = async function () {
+      await ensureAnonAuth();
+
+      const now = Date.now();
+      const recentQ = query(
+        ref(db, 'rooms'),
+        orderByChild('createdAt'),
+        startAt(now - 60_000),
+        limitToLast(1) // 최신 1개만
+      );
+
+      try {
+        const snap = await get(recentQ);
+        if (!snap.exists()) {
+          alert("1분 이내 생성된 방이 없습니다.");
+          return;
+        }
+        // limitToLast(1)이므로 단 하나만 순회
+        let targetCode = null;
+        snap.forEach(child => { targetCode = child.key; });
+        if (!targetCode) {
+          alert("입장 가능한 방이 없습니다.");
+          return;
+        }
+        window.location.href = `game.html?room=${targetCode}`;
+      } catch (error) {
+        console.error("자동 입장 오류:", error);
+        alert("자동 입장 중 오류가 발생했습니다.");
+      }
+    };
+
+    // --- 수동 입장 ---
+    window.manualJoin = async function () {
+      await ensureAnonAuth();
+
+      const code = codeInput.value;
+      if (!code || code.length !== 4) {
+        alert("4자리 숫자 코드를 입력해주세요.");
+        return;
+      }
+      try {
+        const roomSnap = await get(ref(db, `rooms/${code}`));
+        if (!roomSnap.exists()) {
+          alert("해당 방이 존재하지 않습니다.");
+          return;
+        }
+        window.location.href = `game.html?room=${code}`;
+      } catch (error) {
+        console.error("수동 입장 오류:", error);
+        alert("수동 입장 중 오류가 발생했습니다.");
+      }
+    };
+
+    // 모달 닫기
+    window.closeModal = function () {
+      document.getElementById('modal').style.display = 'none';
+    };
   </script>
-  <!-- 게임 설명 모달 -->
-<div id="modal" class="modal">
-  <div class="modal-content">
-    <h2>게임 설명</h2>
-    <p>1. "방 생성" 버튼으로 4자리 숫자 방을 만들 수 있습니다.<br/>
-       2. 친구는 "수동 입장" 또는 "자동 입장"으로 같은 방에 들어옵니다.<br/>
-       3. 1분 내 생성된 방은 "자동 입장"으로 바로 연결됩니다.<br/>
-       4. 게임은 game.html에서 시작됩니다.
-    </p>
-    <button onclick="closeModal()">시작하기</button>
-  </div>
-</div>
 
+  <!-- 게임 설명 모달 -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <h2>게임 설명</h2>
+      <p>
+        1) 「방 생성」으로 4자리 숫자 방을 만듭니다.<br/>
+        2) 친구는 「수동 입장」 또는 「자동 입장」으로 같은 방에 들어옵니다.<br/>
+        3) 생성 후 1분 내인 방은 「자동 입장」으로 바로 연결됩니다.<br/>
+        4) 게임은 <code>game.html</code>에서 시작됩니다.
+      </p>
+      <button onclick="closeModal()">시작하기</button>
+    </div>
+  </div>
 </body>
 </html>
