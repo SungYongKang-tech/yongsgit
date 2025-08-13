@@ -38,27 +38,27 @@
     .stone.black { background: black !important; }
     .stone.white { background: white; border: 1px solid #333; }
     .stone.gray  { background: gray; opacity: 0.5; }
-    .stone.blink {
-      animation: blink 1s infinite;
-    }
+    .stone.blink { animation: blink 1s infinite; }
     @keyframes blink {
       0%, 100% { box-shadow: 0 0 5px 5px rgba(255, 0, 0, 0.6); }
       50% { box-shadow: 0 0 5px 5px rgba(255, 255, 255, 0); }
     }
     #players, #turn, #room-info { font-weight: bold; margin: 0.5rem; }
+    #setup { display: grid; gap: 10px; width: min(420px, 92%); margin: 12px auto; }
     button {
-      width: 90%;
-      max-width: 240px;
+      width: 100%;
       padding: 14px;
       font-size: 18px;
-      margin: 1rem auto;
-      display: block;
       border: none;
       border-radius: 6px;
       background-color: #333;
       color: white;
+      cursor: pointer;
     }
     button:hover { background-color: #555; }
+    #soloBtn { background: #00695c; }
+    #soloBtn:hover { background:#0a7d70; }
+
     .last-move-me { outline: 2px solid rgba(0, 123, 255, 0.9); outline-offset: 0px; z-index: 10; }
     .last-move-opponent { outline: 2px solid rgba(255, 0, 0, 0.8); outline-offset: 0px; z-index: 10; }
 
@@ -70,7 +70,7 @@
 
     #control-area { margin-top: 10px; }
     #game-buttons { display: flex; justify-content: space-between; align-items: center; margin: 20px auto; width: 95vmin; max-width: 600px; gap: 8px; }
-    #game-buttons button { flex: 0 0 auto; width: 44%; font-size: 16px; padding: 14px; border-radius: 8px; border: none; color: white; }
+    #game-buttons button { flex: 0 0 auto; width: 48%; font-size: 16px; padding: 14px; border-radius: 8px; border: none; color: white; }
     #end-button { background-color: #d32f2f; }
     #end-button:hover { background-color: #a72828; }
     #confirm-move { background-color: #007bff; color: white; }
@@ -82,6 +82,7 @@
   <div id="setup">
     <button id="createBtn">방 생성하기</button>
     <button id="joinBtn">방 참여하기</button>
+    <button id="soloBtn">혼자하기 (컴퓨터와 대전)</button>
     <p id="room-info"></p>
   </div>
 
@@ -98,10 +99,10 @@
 
   <script type="module">
     /* =========================
-       Firebase 초기화 + 익명 로그인
+       Firebase 초기화 + 익명 로그인 (온라인 모드에서 사용)
        ========================= */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, get, update, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, get, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const firebaseConfig = {
@@ -122,21 +123,23 @@
     let currentUser = null;
     let resolveAuthReady;
     const authReady = new Promise(res => (resolveAuthReady = res));
-
     onAuthStateChanged(auth, (user) => {
-      if (user) {
-        currentUser = user; // ✅ 익명 로그인 사용자
-        resolveAuthReady(user);
-      }
+      if (user) { currentUser = user; resolveAuthReady(user); }
     });
-    // 로그인 시도는 onAuthStateChanged 등록 후 수행
-    try { await signInAnonymously(auth); } catch (e) { console.error(e); alert('익명 로그인에 실패했습니다.\n' + e.message); }
+    try { await signInAnonymously(auth); } catch (e) { console.error(e); }
 
     /* =========================
-       게임 상태 변수 & 유틸
+       공통 상태 & 유틸
        ========================= */
+    const SIZE = 15;
+    const CENTER = Math.floor(SIZE/2);
+    let gameMode = 'online'; // 'online' | 'solo'
     let roomCode = '', playerRole = '', playerName = '';
     let pendingMove = null; // 임시 둔 돌 위치 저장
+    let localBoard = null;  // 솔로 모드 보드 (2차원 배열)
+    let localTurn = 'A';    // 솔로 모드 턴
+    const HUMAN = 'A';      // 솔로 모드에서 사람은 항상 A(흑)
+    const AI    = 'B';      // AI는 백
 
     function randomName() {
       const names = ['호랑이','펭귄','고양이','사자','부엉이','치타'];
@@ -146,104 +149,18 @@
       const animals = ['호랑이', '펭귄', '고양이', '사자', '부엉이', '치타'];
       return animals[Math.floor(Math.random() * animals.length)] + Math.floor(Math.random() * 100) + '방';
     }
-
-    /* =========================
-       방 생성 / 참여
-       ========================= */
-    async function createRoom() {
-      await authReady; // ✅ 로그인 완료 대기
-
-      const latestRef = ref(db, 'latestRoom');
-      const latestSnap = await get(latestRef);
-      const now = Date.now();
-
-      if (latestSnap.exists() && now - latestSnap.val().createdAt < 60_000) {
-        alert("1분 내 생성된 방이 있어요"); // ✅ 안내 문구 일치
-        return;
-      }
-
-      roomCode = randomRoomName();
-      playerName = randomName();
-
-      await set(ref(db, 'rooms/' + roomCode), {
-        players: { A: { name: playerName, uid: currentUser.uid } },
-        turn: 'A',
-        board: Array.from({ length: 15 }, () => Array(15).fill("")),
-        winner: null,
-        createdAt: now,
-        createdBy: currentUser.uid
-      });
-
-      // ✅ 최근 10개만 남기고 나머지 삭제
-      const roomsRef = ref(db, 'rooms');
-      const snapshot = await get(roomsRef);
-      if (snapshot.exists()) {
-        const allRooms = snapshot.val();
-        const roomsArray = Object.entries(allRooms)
-          .map(([key, value]) => ({ key, createdAt: value.createdAt || 0 }))
-          .sort((a, b) => b.createdAt - a.createdAt);
-
-        const roomsToDelete = roomsArray.slice(10);
-        for (const room of roomsToDelete) {
-          try { await remove(ref(db, `rooms/${room.key}`)); } catch (e) { console.warn('방 삭제 실패:', e); }
-        }
-      }
-
-      await set(latestRef, { roomCode, createdAt: now, by: currentUser.uid });
-
-      playerRole = 'A';
-      startGame();
-    }
-
-    async function joinRoom() {
-      await authReady; // ✅ 로그인 완료 대기
-
-      const latestSnap = await get(ref(db, 'latestRoom'));
-      if (!latestSnap.exists()) { alert("참여 가능한 방이 없습니다."); return; }
-
-      const { roomCode: code, createdAt } = latestSnap.val();
-      const now = Date.now();
-      if (now - createdAt > 60_000) { alert("참여 시간이 초과되었습니다."); return; }
-
-      const roomRef = ref(db, `rooms/${code}`);
-      const roomSnap = await get(roomRef);
-      if (!roomSnap.exists()) { alert("방이 존재하지 않습니다."); return; }
-
-      const data = roomSnap.val();
-      if (data.players?.B) { alert("이미 두 명이 참여 중입니다."); return; }
-
-      playerName = randomName();
-      await set(ref(db, `rooms/${code}/players/B`), { name: playerName, uid: currentUser.uid });
-      roomCode = code;
-      playerRole = 'B';
-      startGame();
+    function emptyBoard() {
+      return Array.from({ length: SIZE }, () => Array(SIZE).fill(""));
     }
 
     /* =========================
-       게임 시작 & 렌더링
+       공통 렌더
        ========================= */
-    async function startGame() {
-      await authReady; // ✅ 로그인 완료 대기 (재확인)
-
-      document.getElementById("setup").style.display = "none";
-      document.getElementById("game").style.display = "block";
-      document.getElementById("title").innerText = `⚫ 오목 대전 - 방번호: ${roomCode}`;
-
-      // ✅ 이전 winner 기록 삭제
-      try { await remove(ref(db, `rooms/${roomCode}/winner`)); } catch {}
-
-      renderBoard();
-      listenBoard();
-      listenWinner();
-      listenTurn();
-      listenPeerJoin();
-    }
-
     function renderBoard() {
       const boardDiv = document.getElementById("board");
       boardDiv.innerHTML = "";
-      for (let r = 0; r < 15; r++) {
-        for (let c = 0; c < 15; c++) {
+      for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
           const cell = document.createElement("div");
           cell.className = "cell";
           cell.dataset.row = r;
@@ -254,177 +171,208 @@
       }
     }
 
-    function handleMove(r, c) {
-      // 기존 임시 수 제거
-      if (pendingMove) {
-        const prevIdx = pendingMove.row * 15 + pendingMove.col;
-        const prevCell = document.getElementById("board").children[prevIdx];
-        prevCell.innerHTML = "";
-      }
-
-      pendingMove = { row: r, col: c };
-
-      const idx = r * 15 + c;
+    function placeStoneDOM(r, c, stoneChar) {
+      const idx = r * SIZE + c;
       const cell = document.getElementById("board").children[idx];
       cell.innerHTML = "";
-
-      const div = document.createElement("div");
-      div.className = "stone gray"; // ✅ 회색 돌로 미리보기
-      cell.appendChild(div);
-
-      // 내 차례일 때만 착수 버튼 활성화
-      document.getElementById("confirm-move").disabled = false;
-    }
-
-    async function commitMove() {
-      if (!pendingMove) return;
-
-      const { row, col } = pendingMove;
-      const turnSnap = await get(ref(db, `rooms/${roomCode}/turn`));
-      const turn = turnSnap.val();
-      if (turn !== playerRole) { alert("상대 차례입니다"); return; }
-
-      const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
-      const board = boardSnap.val();
-      if (board[row][col] !== "") { alert("이미 착수된 자리입니다."); return; }
-
-      const stone = playerRole === 'A' ? '●' : '○';
-      board[row][col] = stone;
-      const winPos = checkWin(row, col, stone, board);
-
-      await set(ref(db, `rooms/${roomCode}/board/${row}/${col}`), stone);
-
-      // 🔊 돌 놓는 소리
-      document.getElementById("place-sound").play().catch(e => console.warn("사운드 오류:", e));
-
-      if (winPos) {
-        await set(ref(db, `rooms/${roomCode}/winner`), { name: playerName, positions: winPos });
+      if (stoneChar === "●" || stoneChar === "○") {
+        const div = document.createElement("div");
+        div.classList.add("stone", stoneChar === "●" ? "black" : "white");
+        cell.appendChild(div);
+        cell.style.pointerEvents = "none";
+      } else if (stoneChar === "preview") {
+        const div = document.createElement("div");
+        div.className = "stone gray";
+        cell.appendChild(div);
       } else {
-        await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
+        cell.style.pointerEvents = "auto";
       }
-
-      await set(ref(db, `rooms/${roomCode}/lastMove`), { row, col, role: playerRole });
-
-      pendingMove = null;
-      document.getElementById("confirm-move").disabled = true;
     }
 
-    function checkWin(r, c, stone, board) {
+    function clearLastMoveHighlight() {
+      document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => el.classList.remove("last-move-me", "last-move-opponent"));
+    }
+    function highlightLastMove(r, c, mine) {
+      const idx = r * SIZE + c;
+      const cell = document.getElementById("board").children[idx];
+      const stone = cell.querySelector(".stone");
+      if (stone) stone.classList.add(mine ? "last-move-me" : "last-move-opponent");
+    }
+
+    /* =========================
+       승리 판정 (공용)
+       ========================= */
+    function checkWinGeneric(r, c, stone, board) {
       const directions = [[0,1],[1,0],[1,1],[1,-1]];
       for (const [dr, dc] of directions) {
         let count = 1, pos = [[r, c]];
         let blockedStart = false, blockedEnd = false;
 
-        // 반대 방향
         for (let i = 1; i < 5; i++) {
           const nr = r - dr * i, nc = c - dc * i;
-          if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) { blockedStart = true; break; }
+          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { blockedStart = true; break; }
           if (board[nr][nc] === stone) { count++; pos.unshift([nr, nc]); }
           else if (board[nr][nc] !== "") { blockedStart = true; break; }
           else break;
         }
-        // 정방향
         for (let i = 1; i < 5; i++) {
           const nr = r + dr * i, nc = c + dc * i;
-          if (nr < 0 || nr >= 15 || nc < 0 || nc >= 15) { blockedEnd = true; break; }
+          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { blockedEnd = true; break; }
           if (board[nr][nc] === stone) { count++; pos.push([nr, nc]); }
           else if (board[nr][nc] !== "") { blockedEnd = true; break; }
           else break;
         }
 
         if (count >= 5) return pos;
-        // 4개지만 양쪽이 모두 열린 경우만 승리 인정
-        if (count === 4 && !blockedStart && !blockedEnd) return pos;
+        if (count === 4 && !blockedStart && !blockedEnd) return pos; // 열린4도 승리로 처리(기존 로직 유지)
       }
       return null;
     }
 
-    function listenBoard() {
+    /* =========================
+       입력 처리 (공용)
+       ========================= */
+    function handleMove(r, c) {
+      // 기존 임시 수 제거
+      if (pendingMove) {
+        const prevIdx = pendingMove.row * SIZE + pendingMove.col;
+        const prevCell = document.getElementById("board").children[prevIdx];
+        prevCell.innerHTML = "";
+      }
+      pendingMove = { row: r, col: c };
+      placeStoneDOM(r, c, "preview");
+      document.getElementById("confirm-move").disabled = false;
+    }
+
+    /* =========================
+       온라인 모드 (기존)
+       ========================= */
+    async function createRoom() {
+      await authReady;
+      const latestRef = ref(db, 'latestRoom');
+      const latestSnap = await get(latestRef);
+      const now = Date.now();
+      if (latestSnap.exists() && now - latestSnap.val().createdAt < 60_000) {
+        alert("1분 내 생성된 방이 있어요");
+        return;
+      }
+      roomCode = randomRoomName();
+      playerName = randomName();
+
+      await set(ref(db, 'rooms/' + roomCode), {
+        players: { A: { name: playerName, uid: currentUser.uid } },
+        turn: 'A',
+        board: emptyBoard(),
+        winner: null,
+        createdAt: now,
+        createdBy: currentUser.uid
+      });
+
+      // 최근 10개만 유지
+      try {
+        const roomsRef = ref(db, 'rooms');
+        const snapshot = await get(roomsRef);
+        if (snapshot.exists()) {
+          const allRooms = snapshot.val();
+          const roomsArray = Object.entries(allRooms)
+            .map(([key, value]) => ({ key, createdAt: value.createdAt || 0 }))
+            .sort((a, b) => b.createdAt - a.createdAt);
+          const roomsToDelete = roomsArray.slice(10);
+          for (const room of roomsToDelete) {
+            try { await remove(ref(db, `rooms/${room.key}`)); } catch {}
+          }
+        }
+      } catch {}
+
+      await set(latestRef, { roomCode, createdAt: now, by: currentUser.uid });
+      playerRole = 'A';
+      gameMode = 'online';
+      startOnline();
+    }
+
+    async function joinRoom() {
+      await authReady;
+      const latestSnap = await get(ref(db, 'latestRoom'));
+      if (!latestSnap.exists()) { alert("참여 가능한 방이 없습니다."); return; }
+      const { roomCode: code, createdAt } = latestSnap.val();
+      const now = Date.now();
+      if (now - createdAt > 60_000) { alert("참여 시간이 초과되었습니다."); return; }
+
+      const roomRef = ref(db, `rooms/${code}`);
+      const roomSnap = await get(roomRef);
+      if (!roomSnap.exists()) { alert("방이 존재하지 않습니다."); return; }
+      const data = roomSnap.val();
+      if (data.players?.B) { alert("이미 두 명이 참여 중입니다."); return; }
+
+      playerName = randomName();
+      await set(ref(db, `rooms/${code}/players/B`), { name: playerName, uid: currentUser.uid });
+      roomCode = code;
+      playerRole = 'B';
+      gameMode = 'online';
+      startOnline();
+    }
+
+    async function startOnline() {
+      document.getElementById("setup").style.display = "none";
+      document.getElementById("game").style.display = "block";
+      document.getElementById("title").innerText = `⚫ 오목 대전 - 방번호: ${roomCode}`;
+
+      try { await remove(ref(db, `rooms/${roomCode}/winner`)); } catch {}
+      renderBoard();
+      listenBoardOnline();
+      listenWinnerOnline();
+      listenTurnOnline();
+      listenPeerJoinOnline();
+    }
+
+    function listenBoardOnline() {
       onValue(ref(db, `rooms/${roomCode}/board`), snap => {
         if (!snap.exists()) return;
         const data = snap.val();
-        for (let r = 0; r < 15; r++) {
-          for (let c = 0; c < 15; c++) {
-            const idx = r * 15 + c;
-            const cell = document.getElementById("board").children[idx];
+        for (let r = 0; r < SIZE; r++) {
+          for (let c = 0; c < SIZE; c++) {
             const value = data[r]?.[c] || "";
-
-            const prevStone = cell.querySelector('.stone');
-            const isNewStone =
-              (value === "●" && (!prevStone || !prevStone.classList.contains("black"))) ||
-              (value === "○" && (!prevStone || !prevStone.classList.contains("white")));
-
-            if (prevStone && ((value === "●" && prevStone.classList.contains("black")) || (value === "○" && prevStone.classList.contains("white")))) {
-              cell.style.pointerEvents = "none";
-              continue;
-            }
-
-            // 새로 그림
-            cell.innerHTML = "";
-            if (value === "●" || value === "○") {
-              const div = document.createElement("div");
-              div.classList.add("stone", value === "●" ? "black" : "white");
-              cell.appendChild(div);
-              cell.style.pointerEvents = "none";
-            } else {
-              cell.style.pointerEvents = "auto";
-            }
-
-            // 상대가 방금 둔 수에 대한 사운드 (내 차례가 되었을 때만 재생)
-            if (isNewStone) {
-              const turnRef = ref(db, `rooms/${roomCode}/turn`);
-              get(turnRef).then(s => {
-                if (s.exists() && s.val() === playerRole) {
-                  document.getElementById("place-sound").play().catch(() => {});
-                }
-              });
-            }
+            placeStoneDOM(r, c, value);
           }
         }
       });
 
-      // 마지막 착수 위치 강조
+      // 마지막 착수 위치 강조 + 소리
       onValue(ref(db, `rooms/${roomCode}/lastMove`), snap => {
         const move = snap.val();
         if (!move) return;
         if (move.role !== playerRole) {
-          document.getElementById("place-sound").play().catch(() => {});
+          document.getElementById("place-sound").play().catch(()=>{});
         }
-        document.querySelectorAll(".last-move-me, .last-move-opponent").forEach(el => el.classList.remove("last-move-me", "last-move-opponent"));
-        const idx = move.row * 15 + move.col;
-        const cell = document.getElementById("board").children[idx];
-        const stoneDiv = cell.querySelector('.stone');
-        if (stoneDiv) { stoneDiv.classList.add(move.role === playerRole ? "last-move-me" : "last-move-opponent"); }
+        clearLastMoveHighlight();
+        highlightLastMove(move.row, move.col, move.role === playerRole);
       });
     }
 
-    function listenTurn() {
+    function listenTurnOnline() {
       const btn = document.getElementById('confirm-move');
       onValue(ref(db, `rooms/${roomCode}/turn`), snap => {
         const isMyTurn = snap.val() === playerRole;
         document.getElementById("turn").innerText = isMyTurn ? "내 차례" : "상대 차례";
-        // 임시 수가 있을 때만 버튼 활성화
         btn.disabled = !(isMyTurn && pendingMove);
       });
     }
 
-    function listenPeerJoin() {
+    function listenPeerJoinOnline() {
       const otherPlayer = playerRole === 'A' ? 'B' : 'A';
       onValue(ref(db, `rooms/${roomCode}/players/${otherPlayer}`), snap => {
-        if (snap.exists()) {
-          alert(`🎮 상대방(${snap.val().name})이 입장했습니다!`);
-        }
+        if (snap.exists()) alert(`🎮 상대방(${snap.val().name})이 입장했습니다!`);
       });
     }
 
-    function listenWinner() {
+    function listenWinnerOnline() {
       onValue(ref(db, `rooms/${roomCode}/winner`), snap => {
         const data = snap.val();
         if (!data || !data.name || !Array.isArray(data.positions)) return;
         const isWinner = data.name === playerName;
         alert(isWinner ? "🎉 당신이 이겼습니다!" : "😢 당신이 패배하였습니다.");
         data.positions.forEach(([r, c]) => {
-          const idx = r * 15 + c;
+          const idx = r * SIZE + c;
           const cell = document.getElementById("board").children[idx];
           const stone = cell.querySelector('.stone');
           if (stone) stone.classList.add("blink");
@@ -436,9 +384,34 @@
       });
     }
 
-    async function endGame() {
-      await deleteRoom(roomCode);
-      location.reload();
+    async function commitMoveOnline() {
+      if (!pendingMove) return;
+      const { row, col } = pendingMove;
+
+      const turnSnap = await get(ref(db, `rooms/${roomCode}/turn`));
+      const turn = turnSnap.val();
+      if (turn !== playerRole) { alert("상대 차례입니다"); return; }
+
+      const boardSnap = await get(ref(db, `rooms/${roomCode}/board`));
+      const board = boardSnap.val();
+      if (board[row][col] !== "") { alert("이미 착수된 자리입니다."); return; }
+
+      const stone = playerRole === 'A' ? '●' : '○';
+      board[row][col] = stone;
+      const winPos = checkWinGeneric(row, col, stone, board);
+
+      await set(ref(db, `rooms/${roomCode}/board/${row}/${col}`), stone);
+      document.getElementById("place-sound").play().catch(()=>{});
+
+      if (winPos) {
+        await set(ref(db, `rooms/${roomCode}/winner`), { name: playerName, positions: winPos });
+      } else {
+        await set(ref(db, `rooms/${roomCode}/turn`), playerRole === 'A' ? 'B' : 'A');
+      }
+      await set(ref(db, `rooms/${roomCode}/lastMove`), { row, col, role: playerRole });
+
+      pendingMove = null;
+      document.getElementById("confirm-move").disabled = true;
     }
 
     async function deleteRoom(code) {
@@ -446,9 +419,204 @@
       try { await remove(ref(db, `latestRoom`)); } catch {}
     }
 
-    // 버튼 바인딩
+    /* =========================
+       솔로(혼자하기) 모드
+       ========================= */
+    function startSolo() {
+      gameMode = 'solo';
+      roomCode = 'SOLO';
+      playerRole = HUMAN; // 사람은 항상 흑
+      localBoard = emptyBoard();
+      localTurn = 'A';
+      pendingMove = null;
+
+      document.getElementById("setup").style.display = "none";
+      document.getElementById("game").style.display = "block";
+      document.getElementById("title").innerText = `⚫ 오목 대전 - 혼자하기(컴퓨터)`;
+      document.getElementById("turn").innerText = "내 차례";
+
+      renderBoard();
+      // 초기화: 클릭 가능
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) placeStoneDOM(r, c, "");
+    }
+
+    function commitMoveSolo() {
+      if (!pendingMove) return;
+      const { row, col } = pendingMove;
+      if (localTurn !== HUMAN) { alert("상대(컴퓨터) 차례입니다."); return; }
+      if (localBoard[row][col] !== "") { alert("이미 착수된 자리입니다."); return; }
+
+      // 사람 수 두기
+      const myStone = '●';
+      localBoard[row][col] = myStone;
+      placeStoneDOM(row, col, myStone);
+      clearLastMoveHighlight();
+      highlightLastMove(row, col, true);
+      document.getElementById("place-sound").play().catch(()=>{});
+
+      const winPos = checkWinGeneric(row, col, myStone, localBoard);
+      if (winPos) return finishSolo(winPos, true);
+
+      pendingMove = null;
+      localTurn = AI;
+      document.getElementById("turn").innerText = "상대 차례";
+      document.getElementById("confirm-move").disabled = true;
+
+      // 컴퓨터 수 두기 (약간의 지연으로 자연스럽게)
+      setTimeout(aiMove, 200);
+    }
+
+    function finishSolo(winPositions, isHumanWin) {
+      // 반짝임 표시
+      winPositions.forEach(([r, c]) => {
+        const idx = r * SIZE + c;
+        const cell = document.getElementById("board").children[idx];
+        const stone = cell.querySelector('.stone');
+        if (stone) stone.classList.add("blink");
+      });
+      alert(isHumanWin ? "🎉 당신이 이겼습니다!" : "🤖 컴퓨터가 이겼습니다.");
+      // 새로고침으로 초기화
+      setTimeout(() => location.reload(), 2000);
+    }
+
+    // AI 의사결정: 즉승 ▶ 차단 ▶ 인접 확장 ▶ 중앙
+    function aiMove() {
+      // 1) 즉시 승리 수 탐색
+      const winChoice = findImmediateWin('○');
+      if (winChoice) return placeAI(winChoice.r, winChoice.c);
+
+      // 2) 상대(흑) 즉시 승리 차단
+      const blockChoice = findImmediateWin('●');
+      if (blockChoice) return placeAI(blockChoice.r, blockChoice.c);
+
+      // 3) 주변 확장 가중치 + 중앙 선호
+      const { r, c } = pickHeuristic();
+      return placeAI(r, c);
+    }
+
+    function placeAI(r, c) {
+      if (localBoard[r][c] !== "") {
+        // 드물게 동시 클릭 등으로 이미 채워진 경우 대비: 빈 자리 아무 곳
+        const fallback = findFirstEmpty();
+        if (!fallback) { alert("무승부!"); return setTimeout(()=>location.reload(), 1500); }
+        r = fallback.r; c = fallback.c;
+      }
+      localBoard[r][c] = '○';
+      placeStoneDOM(r, c, '○');
+      clearLastMoveHighlight();
+      highlightLastMove(r, c, false);
+      document.getElementById("place-sound").play().catch(()=>{});
+
+      const winPos = checkWinGeneric(r, c, '○', localBoard);
+      if (winPos) return finishSolo(winPos, false);
+
+      localTurn = HUMAN;
+      document.getElementById("turn").innerText = "내 차례";
+    }
+
+    function findImmediateWin(stone) {
+      // 빈 칸에 stone을 가상으로 둬서 승리인지 검사
+      for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+          if (localBoard[r][c] !== "") continue;
+          localBoard[r][c] = stone;
+          const win = checkWinGeneric(r, c, stone, localBoard);
+          localBoard[r][c] = "";
+          if (win) return { r, c };
+        }
+      }
+      return null;
+    }
+
+    function pickHeuristic() {
+      let best = { r: CENTER, c: CENTER, score: -Infinity };
+      for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+          if (localBoard[r][c] !== "") continue;
+          const score = scoreCell(r, c);
+          if (score > best.score) best = { r, c, score };
+        }
+      }
+      return best;
+    }
+
+    function scoreCell(r, c) {
+      // 중앙 선호
+      const centerBias = 10 - (Math.abs(CENTER - r) + Math.abs(CENTER - c)); // -∞~10
+      // 주변(8방향) 내 돌/상대 돌 인접 가중치
+      let neighbor = 0;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr, nc = c + dc;
+          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+          if (localBoard[nr][nc] === '○') neighbor += 3;
+          if (localBoard[nr][nc] === '●') neighbor += 2;
+        }
+      }
+      // 간단한 연속 가능성 가중치(가로/세로/대각)
+      const lineDirs = [[0,1],[1,0],[1,1],[1,-1]];
+      let lineScore = 0;
+      for (const [dr, dc] of lineDirs) {
+        lineScore += evalLinePotential(r, c, dr, dc, '○') * 2;
+        lineScore += evalLinePotential(r, c, dr, dc, '●'); // 상대 라인에도 위치하면 점수(차단 기회)
+      }
+      return centerBias + neighbor + lineScore;
+    }
+
+    function evalLinePotential(r, c, dr, dc, stone) {
+      // (r,c)에 stone을 둔다 가정하고, 양방향으로 같은 돌 수와 열린 끝 개수 파악
+      let count = 1, openEnds = 0;
+      // 반대
+      for (let i = 1; i <= 4; i++) {
+        const nr = r - dr*i, nc = c - dc*i;
+        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
+        const v = localBoard[nr][nc];
+        if (v === stone) count++;
+        else { if (v === "") openEnds++; break; }
+      }
+      // 정방향
+      for (let i = 1; i <= 4; i++) {
+        const nr = r + dr*i, nc = c + dc*i;
+        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
+        const v = localBoard[nr][nc];
+        if (v === stone) count++;
+        else { if (v === "") openEnds++; break; }
+      }
+      // 간단한 점수화
+      // 열린 끝이 많을수록, count가 클수록 유리
+      return count * (openEnds + 1);
+    }
+
+    function findFirstEmpty() {
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (localBoard[r][c] === "") return { r, c };
+      return null;
+    }
+
+    /* =========================
+       공용 커밋 분기
+       ========================= */
+    function commitMove() {
+      if (gameMode === 'online') return commitMoveOnline();
+      return commitMoveSolo();
+    }
+
+    /* =========================
+       종료 / 리셋
+       ========================= */
+    async function endGame() {
+      if (gameMode === 'online' && roomCode && roomCode !== 'SOLO') {
+        await deleteRoom(roomCode);
+      }
+      location.reload();
+    }
+
+    /* =========================
+       버튼 바인딩
+       ========================= */
     document.getElementById('createBtn').addEventListener('click', createRoom);
     document.getElementById('joinBtn').addEventListener('click', joinRoom);
+    document.getElementById('soloBtn').addEventListener('click', startSolo);
     document.getElementById('end-button').addEventListener('click', endGame);
     document.getElementById('confirm-move').addEventListener('click', commitMove);
   </script>
@@ -465,11 +633,12 @@
       <span class="close" onclick="closeModal()">&times;</span>
       <h2>🕹️ 오목 대전 게임 방법</h2>
       <ul style="text-align:left; font-size: 16px; line-height:1.6;">
-        <li>1. "방 생성하기"를 누르면 대기방이 생성됩니다.</li>
-        <li>2. 다른 사용자가 1분 이내 "방 참여하기"를 눌러야 게임이 시작됩니다.</li>
-        <li>3. 흑(⚫)과 백(⚪)이 번갈아 가며 바둑판 위에 돌을 둡니다.</li>
-        <li>4. 가로, 세로, 대각선으로 같은 색 돌 5개를 먼저 연결하면 승리합니다.</li>
-        <li>5. 마지막 둔 돌은 테두리 색으로 표시되며, 승리한 돌은 반짝입니다.</li>
+        <li>1. <b>방 생성하기</b>: 온라인 대전용 방을 만듭니다.</li>
+        <li>2. <b>방 참여하기</b>: 1분 이내에 생성된 최신 방에 입장합니다.</li>
+        <li>3. <b>혼자하기</b>: 컴퓨터와 오목을 둡니다(로컬 모드).</li>
+        <li>4. 흑(⚫)과 백(⚪)이 번갈아 돌을 둡니다. 흑은 항상 먼저 둡니다.</li>
+        <li>5. 가로/세로/대각선으로 같은 색 5개를 먼저 연결하면 승리합니다.</li>
+        <li>6. 마지막 둔 돌은 테두리로 표시되고, 승리한 돌은 반짝입니다.</li>
       </ul>
     </div>
   </div>
