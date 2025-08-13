@@ -94,7 +94,21 @@
 
 <script type="module">
 
-  /* ===== 필요한 전역/유틸 드롭인 패치 ===== */
+/* 새로 시작 / 종료 버튼 동작 */
+resetBtn?.addEventListener('click', () => {
+  local.selected = null;
+  local.prevWallCount = null;
+  local.state = initialState();
+  renderFromState();
+});
+
+endBtn?.addEventListener('click', () => {
+  if (!confirm('게임을 종료할까요?')) return;
+  local.selected = null;
+  local.prevWallCount = null;
+  local.state = initialState();
+  renderFromState();
+});
 
 /* DOM 엘리먼트 참조 */
 const boardEl   = document.getElementById('board');
@@ -102,6 +116,9 @@ const skipWallBtn = document.getElementById('skipWallBtn');
 const turnEl    = document.getElementById('turnColor');
 const s1El      = document.getElementById('s1');
 const s2El      = document.getElementById('s2');
+const resetBtn = document.getElementById('resetBtn');
+const endBtn   = document.getElementById('endBtn');
+
 
 /* 게임 상수/상태 */
 const BOARD_POINTS = 7;
@@ -593,6 +610,61 @@ function showWinnerWithPaintLocal() {
   else if (p2 > p1) alert('승자: P2(파랑)');
   else alert('무승부');
 }
+/* 보드 연결을 기준으로 영역을 계산해 점수를 산출하고,
+   두 플레이어 말이 함께 있는 영역이 하나도 없으면 즉시 종료 */
+function checkGameEndAndScoreLocal(){
+  const { regions, hasMixed } = computeRegionsLocal();
+  const sc = [0, 0];
+
+  for (const reg of regions){
+    if (reg.players.size === 1){
+      const owner = [...reg.players][0];
+      sc[owner] += reg.points.length;     // 해당 영역의 모든 점을 소유자 점수로
+    }
+  }
+  s1El.textContent = sc[0];
+  s2El.textContent = sc[1];
+
+  // 혼합 영역이 없으면 모든 영역의 소유자가 결정된 상태 → 종료
+  return !hasMixed;
+}
+
+/* 최종 영역에 색을 칠해 가시화 */
+function fillFinalRegionsLocal(){
+  const { regions } = computeRegionsLocal();
+  for (const reg of regions){
+    if (reg.players.size !== 1) continue;
+    const owner = [...reg.players][0];
+    for (const { r, c } of reg.points){
+      grid[r][c].classList.remove('movable');
+      if (owner === 0) grid[r][c].classList.add('final-p1-region');
+      else grid[r][c].classList.add('final-p2-region');
+    }
+  }
+}
+
+/* 종료 연출 + 알림 */
+function showWinnerWithPaintLocal(){
+  fillFinalRegionsLocal();
+  const p1 = +s1El.textContent, p2 = +s2El.textContent;
+  alert(
+    `게임 종료!\nP1(빨강): ${p1} / P2(파랑): ${p2}\n` +
+    (p1>p2 ? '승자: P1(빨강)' : p2>p1 ? '승자: P2(파랑)' : '무승부')
+  );
+}
+
+/* 렌더 이후마다 점수 갱신 및 종료 체크 */
+function updateScoresLocal(){
+  const ended = checkGameEndAndScoreLocal();
+  if (ended && local.state?.phase !== 'ended'){
+    local.state.phase = 'ended';
+    showWinnerWithPaintLocal();
+  }
+}
+
+
+
+
 /* ===== 도움말 오버레이 핸들러 ===== */
 function openHelp(){ 
   const ov = document.getElementById('helpOverlay');
