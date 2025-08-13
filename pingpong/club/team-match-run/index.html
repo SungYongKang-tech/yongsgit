@@ -5,8 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>단체전 진행</title>
 
+  <!-- Firebase SDK (Compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- html2canvas -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <style>
@@ -26,48 +30,16 @@
     .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
     .popup button { margin:5px; }
 
-/* 순위표 모바일 대응 스타일 */
-.scroll-table {
-  overflow-x: auto;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  margin: 20px auto;
-  width: 100%;
-  max-width: 720px;
-}
+    /* 순위표 모바일 대응 스타일 */
+    .scroll-table { overflow-x: auto; border: 1px solid #ccc; border-radius: 8px; margin: 20px auto; width: 100%; max-width: 720px; }
+    .scroll-table table { border-collapse: collapse; width: 100%; min-width: 500px; background-color: white; }
+    .scroll-table th, .scroll-table td { border: 1px solid #888; padding: 16px 10px; text-align: center; font-size: 16px; white-space: nowrap; }
+    .scroll-table th:first-child, .scroll-table td:first-child { background-color: #ffe082; font-weight: bold; }
 
-.scroll-table table {
-  border-collapse: collapse;
-  width: 100%;
-  min-width: 500px; /* 최소 너비 */
-  background-color: white;
-}
-
-.scroll-table th, .scroll-table td {
-  border: 1px solid #888;
-  padding: 16px 10px;
-  text-align: center;
-  font-size: 16px;
-  white-space: nowrap;
-}
-
-.scroll-table th:first-child,
-.scroll-table td:first-child {
-  background-color: #ffe082; /* 첫 열 강조 */
-  font-weight: bold;
-}
-
-@media screen and (max-width: 600px) {
-  .scroll-table th, .scroll-table td {
-    font-size: 13px;
-    padding: 12px 8px;
-  }
-
-  .scroll-table table {
-    min-width: 100%;
-  }
-}
-
+    @media screen and (max-width: 600px) {
+      .scroll-table th, .scroll-table td { font-size: 13px; padding: 12px 8px; }
+      .scroll-table table { min-width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -75,50 +47,78 @@
   <h2>단체전 진행</h2>
   <div class="config">
     단식
-<select id="singlesCnt">
-  <option value="0">0경기</option>
-  <option value="1">1경기</option>
-  <option value="2">2경기</option>
-  <option value="3" selected>3경기</option>
-  <option value="4">4경기</option>
-  <option value="5">5경기</option>
-</select>
-복식
-<select id="doublesCnt">
-  <option value="0">0경기</option>
-  <option value="1">1경기</option>
-  <option value="2" selected>2경기</option>
-  <option value="3">3경기</option>
-</select>
+    <select id="singlesCnt">
+      <option value="0">0경기</option>
+      <option value="1">1경기</option>
+      <option value="2">2경기</option>
+      <option value="3" selected>3경기</option>
+      <option value="4">4경기</option>
+      <option value="5">5경기</option>
+    </select>
+    복식
+    <select id="doublesCnt">
+      <option value="0">0경기</option>
+      <option value="1">1경기</option>
+      <option value="2" selected>2경기</option>
+      <option value="3">3경기</option>
+    </select>
     <button onclick="handleGenerateMatches()">대진표 생성</button>
     <button onclick="saveAsImage()">대진결과 저장</button>
-
-<!--  <button onclick="renderAllMatchesFromFirebase()">대진표 생성</button>  -->
   </div>
-  
+
   <div id="popup" class="popup" style="display:none;"></div>
 
   <div id="captureArea">
     <div id="summaryArea"></div>
     <div id="rankingArea" style="margin-top: 40px;"></div>
   </div>
-  
 
 <script>
+/* ---------------- Firebase 설정 & 익명 로그인 ---------------- */
 const firebaseConfig = {
-      apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
-      authDomain: "koen-teamleague.firebaseapp.com",
-      projectId: "koen-teamleague",
-      storageBucket: "koen-teamleague.firebasestorage.app",
-      messagingSenderId: "487164547059",
-      appId: "1:487164547059:web:658a10c8bfe7272ca78c86",
-      databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com"
-    };
+  apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
+  authDomain: "koen-teamleague.firebaseapp.com",
+  projectId: "koen-teamleague",
+  storageBucket: "koen-teamleague.appspot.com", // 참고: 표준 버킷 도메인
+  messagingSenderId: "487164547059",
+  appId: "1:487164547059:web:658a10c8bfe7272ca78c86",
+  databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com"
+};
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+
+/** 로그인 보장 유틸 */
+async function requireAuth() {
+  const u = firebase.auth().currentUser;
+  if (u) return u;
+  await firebase.auth().signInAnonymously();
+  return new Promise(resolve => {
+    const unsub = firebase.auth().onAuthStateChanged(user => {
+      if (user) { unsub(); resolve(user); }
+    });
+  });
+}
+
+/** 로그인 상태 변화: 로그인 완료 후에만 초기 데이터 로드 */
+firebase.auth().onAuthStateChanged(async (user) => {
+  if (!user) {
+    try {
+      await firebase.auth().signInAnonymously();
+      console.log("✅ 익명 로그인 시도");
+    } catch (e) {
+      console.error("❌ 익명 로그인 실패:", e);
+    }
+    return;
+  }
+  console.log("✅ 로그인됨:", user.uid);
+  await loadTeams();
+  listenToMatchUpdates();
+});
+
+/* ---------------- 전역 상태 ---------------- */
 let teamNames = [], teamData = {};
 
-// Firebase에서 팀 불러오기
+/* ---------------- 팀 로드/표시 ---------------- */
 function loadTeams() {
   return db.ref("teams").once("value").then(snap => {
     const raw = snap.val();
@@ -138,13 +138,6 @@ function loadTeams() {
   });
 }
 
-// 버튼 클릭 시
-function handleGenerateMatches() {
-  loadTeams().then(() => {
-    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
-  });
-}
-
 function renderTeamList() {
   let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원 목록</th></tr>';
   teamNames.forEach(team => {
@@ -155,78 +148,81 @@ function renderTeamList() {
   document.getElementById('teamListArea').innerHTML = html;
 }
 
-function renderAllMatchesFromFirebase() {
-  // ✅ 기존 matches 지우고 새로 생성
-  db.ref("matches").remove().then(() => {
-    const singles = +document.getElementById("singlesCnt").value;
-    const doubles = +document.getElementById("doublesCnt").value;
-    const totalMatches = [];
-
-    for (let i = 0; i < teamNames.length; i++) {
-      for (let j = i + 1; j < teamNames.length; j++) {
-        totalMatches.push({ teamA: teamNames[i], teamB: teamNames[j] });
-      }
-    }
-
-    const updates = {};
-    totalMatches.forEach(match => {
-      const matchList = [];
-      for (let i = 0; i < singles; i++)
-        matchList.push({ label: `${i + 1}단`, players: `미정 vs 미정`, result: "-" });
-      for (let i = 0; i < doubles; i++)
-        matchList.push({ label: `${i + 1}복`, players: `미정/미정 vs 미정/미정`, result: "-" });
-
-      const key = `${match.teamA}_vs_${match.teamB}`;
-      updates[`matches/${key}`] = {
-        teamA: match.teamA,
-        teamB: match.teamB,
-        matchList
-      };
-
-      // 화면에도 바로 반영
-      renderMatchCard(match.teamA, match.teamB, matchList);
-    });
-
-    db.ref().update(updates);
+/* ---------------- 대진 생성 ---------------- */
+function handleGenerateMatches() {
+  loadTeams().then(() => {
+    renderAllMatchesFromFirebase(); // 팀 로드 완료 후 실행
   });
 }
 
+async function renderAllMatchesFromFirebase() {
+  await requireAuth(); // 쓰기 전 인증 보장
 
+  await db.ref("matches").remove();
+
+  const singles = +document.getElementById("singlesCnt").value;
+  const doubles = +document.getElementById("doublesCnt").value;
+  const totalMatches = [];
+
+  for (let i = 0; i < teamNames.length; i++) {
+    for (let j = i + 1; j < teamNames.length; j++) {
+      totalMatches.push({ teamA: teamNames[i], teamB: teamNames[j] });
+    }
+  }
+
+  const updates = {};
+  document.getElementById("summaryArea").innerHTML = ""; // 화면 초기화
+
+  totalMatches.forEach(match => {
+    const matchList = [];
+    for (let i = 0; i < singles; i++)
+      matchList.push({ label: `${i + 1}단`, players: `미정 vs 미정`, result: "-" });
+    for (let i = 0; i < doubles; i++)
+      matchList.push({ label: `${i + 1}복`, players: `미정/미정 vs 미정/미정`, result: "-" });
+
+    const key = `${match.teamA}_vs_${match.teamB}`;
+    updates[`matches/${key}`] = { teamA: match.teamA, teamB: match.teamB, matchList };
+
+    // 화면에도 즉시 반영
+    renderMatchCard(match.teamA, match.teamB, matchList);
+  });
+
+  await db.ref().update(updates);
+}
+
+/* ---------------- 대진 카드 렌더 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
   const container = document.getElementById("summaryArea");
   let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
   html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
- matchList.forEach((match, idx) => {
-  let playerHTML = match.players;
-  const [a, b] = (match.result || "").split(":").map(Number);
 
-  if (!isNaN(a) && !isNaN(b) && match.players.includes(" vs ")) {
-    let [aNames, bNames] = match.players.split(" vs ");
-    aNames = aNames.trim();
-    bNames = bNames.trim();
+  matchList.forEach((match) => {
+    let playerHTML = match.players;
+    const [a, b] = (match.result || "").split(":").map(Number);
 
-    if (a > b) {
-      playerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
-    } else if (b > a) {
-      playerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+    if (!isNaN(a) && !isNaN(b) && match.players.includes(" vs ")) {
+      let [aNames, bNames] = match.players.split(" vs ");
+      aNames = aNames.trim();
+      bNames = bNames.trim();
+      if (a > b) playerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
+      else if (b > a) playerHTML = `${aNames} vs <strong>${bNames}</strong>`;
     }
-  }
 
-  html += `<tr>
-    <td>${match.label}</td>
-    <td contenteditable='false' onclick="openPlayerPopup('${teamA}', '${teamB}', this)">${playerHTML}</td>
-    <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
-  </tr>`;
-});
+    html += `<tr>
+      <td>${match.label}</td>
+      <td contenteditable='false' onclick="openPlayerPopup('${teamA}', '${teamB}', this)">${playerHTML}</td>
+      <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
+    </tr>`;
+  });
 
   html += `</tbody></table></div>`;
   container.innerHTML += html;
 }
 
+/* ---------------- 선수 선택 팝업 ---------------- */
 function openPlayerPopup(teamA, teamB, cell) {
   const popup = document.getElementById("popup");
-  const isDoubles = cell.innerText.includes("/");
-
+  const isDoubles = cell.innerText.includes("/"); // 복식 여부
   const inputType = isDoubles ? 'checkbox' : 'radio';
 
   const playersA = teamData[teamA].players.map(p =>
@@ -244,28 +240,16 @@ function openPlayerPopup(teamA, teamB, cell) {
   popup.style.display = 'block';
 }
 
-function setPlayer(btn, teamA, teamB, side, isDouble) {
-  const popup = document.getElementById("popup");
-  const cell = popup.targetCell;
-  const name = btn.innerText;
-  let current = cell.innerText.split(" vs ");
-  if (current.length === 2) {
-    current[side === 'A' ? 0 : 1] = name;
-  } else {
-    current = side === 'A' ? [name, '미정'] : ['미정', name];
-  }
-  cell.innerText = current.join(" vs ");
-  closePopup();
-}
+async function setDoubles(teamA, teamB) {
+  await requireAuth();
 
-function setDoubles(teamA, teamB) {
   const popup = document.getElementById("popup");
   const cell = popup.targetCell;
+
   const selectedA = Array.from(popup.querySelectorAll("input[name='teamA']:checked"));
   const selectedB = Array.from(popup.querySelectorAll("input[name='teamB']:checked"));
-  if (selectedA.length !== 2 || selectedB.length !== 2) {
-    alert("각 팀에서 2명씩 선택해주세요"); return;
-  }
+  if (selectedA.length !== 2 || selectedB.length !== 2) { alert("각 팀에서 2명씩 선택해주세요"); return; }
+
   const teamAText = selectedA.map(el => el.value).join("/");
   const teamBText = selectedB.map(el => el.value).join("/");
   cell.innerText = `${teamAText} vs ${teamBText}`;
@@ -275,66 +259,46 @@ function setDoubles(teamA, teamB) {
   const teamKey = `${teams[0]}_vs_${teams[1]}`;
   const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-  db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${teamAText} vs ${teamBText}`);
-  popup.style.display = 'none'; // ✅ 이 한 줄만!
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${teamAText} vs ${teamBText}`);
+
+  popup.style.display = 'none';
   // 결과 입력창 자동 열기
   const resultCell = cell.parentElement.querySelector("td:last-child");
-  openResultPopup(resultCell);  // ✅ 자동 결과 입력창 호출
-
+  openResultPopup(resultCell);
 }
 
-function setSingles(teamA, teamB) {
+async function setSingles(teamA, teamB) {
+  await requireAuth();
+
   const popup = document.getElementById("popup");
   const cell = popup.targetCell;
 
   const selectedA = popup.querySelector("input[name='teamA']:checked");
   const selectedB = popup.querySelector("input[name='teamB']:checked");
-
-  if (!selectedA || !selectedB) {
-    alert("양 팀에서 각각 1명씩 선택해주세요.");
-    return;
-  }
+  if (!selectedA || !selectedB) { alert("양 팀에서 각각 1명씩 선택해주세요."); return; }
 
   const playerA = selectedA.value;
   const playerB = selectedB.value;
 
   cell.innerText = `${playerA} vs ${playerB}`;
- // closePopup();
- popup.style.display = 'none';
+  popup.style.display = 'none';
 
   const card = cell.closest(".match-card");
   const teams = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${teams[0]}_vs_${teams[1]}`;
   const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-  // ✅ matchList의 players 값만 수정
-  const playerValue = `${playerA} vs ${playerB}`;
-  db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(playerValue);
-// 결과 입력창 자동 열기
-const resultCell = cell.parentElement.querySelector("td:last-child");
-openResultPopup(resultCell);
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${playerA} vs ${playerB}`);
 
-
-}
-
-function setPlayer(btn, teamA, teamB, side) {
-  const popup = document.getElementById("popup");
-  const cell = popup.targetCell;
-  const name = btn.innerText;
-  let current = cell.innerText.split(" vs ");
-  if (current.length === 2) {
-    current[side === 'A' ? 0 : 1] = name;
-  } else {
-    current = side === 'A' ? [name, '미정'] : ['미정', name];
-  }
-  cell.innerText = current.join(" vs ");
-  closePopup();
+  // 결과 입력창 자동 열기
+  const resultCell = cell.parentElement.querySelector("td:last-child");
+  openResultPopup(resultCell);
 }
 
 function closePopup() {
   document.getElementById("popup").style.display = 'none';
 
-  // ✅ 팝업 닫힌 후 수동으로 Firebase 다시 불러오기
+  // 팝업 닫힌 후 화면/순위 재계산 (실시간 리스너가 있어도 UX용)
   db.ref("matches").once("value").then(snapshot => {
     const matches = snapshot.val();
     if (!matches) return;
@@ -346,13 +310,10 @@ function closePopup() {
 
       if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
         ({ teamA, teamB, matchList } = matches[key]);
-        matchList = Array.isArray(matchList)
-          ? matchList
-          : Object.values(matchList || {});  // ✅ 여기 중요!!
+        matchList = Array.isArray(matchList) ? matchList : Object.values(matchList || {});
       } else {
         [teamA, teamB] = key.split("_vs_");
         matchList = [];
-
         for (const label in matches[key]) {
           const data = matches[key][label];
           matchList.push({
@@ -362,14 +323,13 @@ function closePopup() {
           });
         }
       }
-
       renderMatchCard(teamA, teamB, matchList);
     }
-
-    calculateTeamResults(); // 순위 다시 계산
+    calculateTeamResults();
   });
 }
 
+/* ---------------- 결과 입력 팝업 ---------------- */
 function openResultPopup(cell) {
   const popup = document.getElementById("popup");
   const row = cell.parentElement;
@@ -391,7 +351,9 @@ function openResultPopup(cell) {
   popup.style.display = "block";
 }
 
-function setMatchResult(score) {
+async function setMatchResult(score) {
+  await requireAuth();
+
   const popup = document.getElementById("popup");
   const cell = popup.targetCell;
   const card = cell.closest(".match-card");
@@ -399,43 +361,27 @@ function setMatchResult(score) {
   const teamKey = `${teams[0]}_vs_${teams[1]}`;
   const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-  // ✅ Firebase에 저장
-  db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score)
-    .then(() => {
-      // ✅ 셀 직접 반영 (UI만 갱신, summaryArea 전체는 다시 그리지 않음)
-//이줄부터 추가
-   // 경기 라벨과 선수 셀 추출
-const row = cell.parentElement;
-const playerCell = row.children[1]; // 선수 이름 셀
-const playerText = playerCell.innerText;
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score);
 
-// 점수 분석
-const [a, b] = score.split(":").map(Number);
-if (isNaN(a) || isNaN(b)) return;
+  // UI 즉시 반영 (승자 굵게)
+  const row = cell.parentElement;
+  const playerCell = row.children[1];
+  const playerText = playerCell.innerText;
 
-// 팀 이름 분리 (단식: A vs B, 복식: A/A vs B/B)
-let [aNames, bNames] = playerText.split(" vs ");
-aNames = aNames.trim();
-bNames = bNames.trim();
+  const [a, b] = score.split(":").map(Number);
+  if (!isNaN(a) && !isNaN(b) && playerText.includes(" vs ")) {
+    let [aNames, bNames] = playerText.split(" vs ");
+    aNames = aNames.trim(); bNames = bNames.trim();
+    if (a > b) playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
+    else playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+  }
+  cell.innerText = score;
 
-// 이긴 쪽 이름 굵게
-if (a > b) {
-  playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
-} else {
-  playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+  document.getElementById("popup").style.display = "none";
+  calculateTeamResults();
 }
 
-// 결과 입력 셀에는 점수만 표시
-cell.innerText = score; // ✅ 이 줄은 유지해도 괜찮음 (다른 셀임)
-
-      popup.style.display = "none";
-      calculateTeamResults();
-    })
-    .catch(err => {
-      alert("❌ 저장 실패: " + err.message);
-    });
-}
-
+/* ---------------- 순위 계산 ---------------- */
 function calculateTeamResults() {
   const summaryCards = document.querySelectorAll(".match-card");
   const teamStats = {}; // 팀별 통계
@@ -464,21 +410,13 @@ function calculateTeamResults() {
       const [a, b] = result.split(":").map(Number);
       if (isNaN(a) || isNaN(b)) return;
 
-      if (a > b) teamAWin++;
-      else teamBWin++;
-
-      teamASet += a;
-      teamBSet += b;
+      if (a > b) teamAWin++; else teamBWin++;
+      teamASet += a; teamBSet += b;
     });
 
     if (teamAWin + teamBWin > 0) {
-      if (teamAWin > teamBWin) {
-        teamStats[teamA].win++;
-        teamStats[teamB].lose++;
-      } else {
-        teamStats[teamB].win++;
-        teamStats[teamA].lose++;
-      }
+      if (teamAWin > teamBWin) { teamStats[teamA].win++; teamStats[teamB].lose++; }
+      else { teamStats[teamB].win++; teamStats[teamA].lose++; }
 
       teamStats[teamA].setDiff += (teamASet - teamBSet);
       teamStats[teamB].setDiff += (teamBSet - teamASet);
@@ -486,76 +424,30 @@ function calculateTeamResults() {
   });
 
   const singles = +document.getElementById("singlesCnt").value;
-const doubles = +document.getElementById("doublesCnt").value;
-const totalGames = singles + doubles;
+  const doubles = +document.getElementById("doublesCnt").value;
+  const totalGames = singles + doubles;
 
-const sorted = Object.entries(teamStats).sort((a, b) => {
-  if (totalGames % 2 === 0) {
-    // 단식+복식 경기 수가 짝수일 경우 → 세트득실 기준
-    return b[1].setDiff - a[1].setDiff;
-  } else {
-    // 홀수일 경우 → 승수 > 세트득실 기준
-    if (b[1].win !== a[1].win) return b[1].win - a[1].win;
-    return b[1].setDiff - a[1].setDiff;
-  }
-});
-
+  const sorted = Object.entries(teamStats).sort((a, b) => {
+    if (totalGames % 2 === 0) {
+      // 짝수 경기: 세트득실 우선
+      return b[1].setDiff - a[1].setDiff;
+    } else {
+      // 홀수 경기: 승수 > 세트득실
+      if (b[1].win !== a[1].win) return b[1].win - a[1].win;
+      return b[1].setDiff - a[1].setDiff;
+    }
+  });
 
   let html = '<h3 style="text-align:center; margin-top:40px;">📊 팀별 경기결과 및 순위표</h3>';
   html += '<div class="scroll-table"><table><thead><tr><th>팀명</th><th>승</th><th>패</th><th>세트득실</th><th>순위</th></tr></thead><tbody>';
-
   sorted.forEach(([team, stat], idx) => {
     html += `<tr><td>${team}</td><td>${stat.win}</td><td>${stat.lose}</td><td>${stat.setDiff}</td><td>${idx + 1}</td></tr>`;
   });
-
   html += '</tbody></table></div>';
   document.getElementById("rankingArea").innerHTML = html;
 }
 
-
-
-
-loadTeams().then(() => {
-  listenToMatchUpdates();  // ✅ 실시간 리스너 시작
-});
-
-
-function convertMatchListToArray() {
-  const matchesRef = db.ref("matches");
-
-  matchesRef.once("value").then(snapshot => {
-    const matches = snapshot.val();
-    if (!matches) return;
-
-    const updates = {};
-
-    for (const key in matches) {
-      const match = matches[key];
-      const originalList = match.matchList;
-
-      // 이미 배열이면 패스
-      if (Array.isArray(originalList)) continue;
-
-      // 객체라면 배열로 변환
-      const newList = [];
-      for (const label in originalList) {
-        const item = originalList[label];
-        newList.push({
-          label: label,
-          players: item.players || "미정 vs 미정",
-          result: item.result || "-"
-        });
-      }
-
-      updates[`matches/${key}/matchList`] = newList;
-    }
-
-    db.ref().update(updates)
-      .then(() => alert("✅ matchList를 배열로 변환 완료"))
-      .catch(err => alert("❌ 변환 중 오류: " + err.message));
-  });
-}
-
+/* ---------------- 실시간 리스너 ---------------- */
 function listenToMatchUpdates() {
   db.ref("matches").on("value", snapshot => {
     const matches = snapshot.val();
@@ -568,13 +460,10 @@ function listenToMatchUpdates() {
 
       if (matches[key].teamA && matches[key].teamB && matches[key].matchList) {
         ({ teamA, teamB, matchList } = matches[key]);
-        matchList = Array.isArray(matchList)
-          ? matchList
-          : Object.values(matchList || {});
+        matchList = Array.isArray(matchList) ? matchList : Object.values(matchList || {});
       } else {
         [teamA, teamB] = key.split("_vs_");
         matchList = [];
-
         for (const label in matches[key]) {
           const data = matches[key][label];
           matchList.push({
@@ -588,13 +477,13 @@ function listenToMatchUpdates() {
       renderMatchCard(teamA, teamB, matchList);
     }
 
-    calculateTeamResults(); // ✅ 순위표도 함께 갱신
+    calculateTeamResults();
   });
 }
 
+/* ---------------- 유틸 ---------------- */
 function saveAsImage() {
   const target = document.getElementById("captureArea");
-
   html2canvas(target).then(canvas => {
     const link = document.createElement("a");
     link.download = `단체전_대진결과_${new Date().toISOString().slice(0, 10)}.png`;
@@ -602,12 +491,37 @@ function saveAsImage() {
     link.click();
   });
 }
+
+/* 선택적: 과거 객체형 matchList → 배열로 변환 */
+async function convertMatchListToArray() {
+  await requireAuth();
+
+  const matchesRef = db.ref("matches");
+  const snapshot = await matchesRef.once("value");
+  const matches = snapshot.val();
+  if (!matches) return;
+
+  const updates = {};
+  for (const key in matches) {
+    const match = matches[key];
+    const originalList = match.matchList;
+    if (Array.isArray(originalList)) continue;
+
+    const newList = [];
+    for (const label in originalList) {
+      const item = originalList[label];
+      newList.push({
+        label,
+        players: item.players || "미정 vs 미정",
+        result: item.result || "-"
+      });
+    }
+    updates[`matches/${key}/matchList`] = newList;
+  }
+
+  await db.ref().update(updates);
+  alert("✅ matchList를 배열로 변환 완료");
+}
 </script>
-
-
-
-
-
-
 </body>
 </html>
