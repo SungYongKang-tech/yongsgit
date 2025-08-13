@@ -7,11 +7,16 @@
 <style>
   :root {
     --bar-h: 60px;
-    --p: min(42px, calc((100vw - 20px) / 13)); /* 13칸 그리드에 맞춤 */
-    --t: calc(var(--p) * 0.35); /* 점 크기의 비율로 벽 두께 */
+    /* JS에서 동적으로 --p, --t를 설정합니다 */
+    --p: 36px;                 /* 폴백 값 */
+    --t: calc(var(--p) * 0.35);
   }
-  body { font-family: sans-serif; background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
-    display:grid; grid-template-rows:auto auto auto auto auto; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Pretendard, sans-serif;
+    background:#f5f5f5; text-align:center; margin:0; min-height:100vh;
+    display:grid; grid-template-rows:auto auto auto auto 1fr auto;
+  }
   h1 { margin: 8px 0 4px; }
 
   /* 상단 패널 */
@@ -24,26 +29,33 @@
     min-width: 54px; display:inline-block; }
   #scores { margin:0 0 4px; font-size:14px; }
 
-   /* 보드 */
-    #wrap { display:flex; justify-content:center; align-items:flex-start; padding:0 10px 6px; overflow:auto; }
-    #board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
-    .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
+  /* 보드 */
+  #wrap {
+    display:flex; justify-content:center; align-items:flex-start;
+    padding:0 10px 6px; overflow:hidden; /* 보드가 화면에 맞게 들어오도록 */
+  }
+  #board {
+    display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation;
+    /* 가로/세로 크기는 JS에서 보정 */
+  }
+  .cell { box-sizing:border-box; border:1px solid #000; display:flex; align-items:center; justify-content:center; }
 
-    .point { width:var(--p); height:var(--p); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
-    .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
-    .h-wall { width:var(--p); height:var(--t); background:#fff; cursor:pointer; }
-    .v-wall { width:var(--t); height:var(--p); background:#fff; cursor:pointer; }
-    .blank  { width:var(--t); height:var(--t); background:#15326b; }
+  .point { width:var(--p); height:var(--p); background:#fff; position:relative; cursor:pointer; transition:background .1s; }
+  .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
+  .h-wall { width:var(--p); height:var(--t); background:#fff; cursor:pointer; }
+  .v-wall { width:var(--t); height:var(--p); background:#fff; cursor:pointer; }
+  .blank  { width:var(--t); height:var(--t); background:#15326b; }
 
-    .movable { background:#d0d0d0 !important; }
-    .final-p1-region { background:#ffd6e7 !important; }
-    .final-p2-region { background:#d6ecff !important; }
+  .movable { background:#d0d0d0 !important; }
+  .final-p1-region { background:#ffd6e7 !important; }
+  .final-p2-region { background:#d6ecff !important; }
 
-    #bottomBar { position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
-      border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px; }
-    #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-
+  #bottomBar {
+    position:sticky; bottom:0; left:0; right:0; background:#ffffffcc; backdrop-filter:blur(6px);
+    border-top:1px solid #ddd; display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 12px;
+  }
+  #skipWallBtn { width:min(340px,92vw); height:40px; border-radius:12px; font-weight:700; background:#ffd6e7; border:1px solid #e7a3bd; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
 
   /* 도움말 모달 */
   #helpOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:10000; padding:16px; }
@@ -56,7 +68,10 @@
   #helpFooter { display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; background:#fafafa; }
   .helpBtn { padding:10px 14px; border:1px solid #ccc; border-radius:10px; background:#fff; cursor:pointer; }
 
-  @media (max-width:420px){ #volSlider { width:120px; } }
+  @media (max-width:420px){
+    /* 작은 화면에서 제목 여백 조금 축소 */
+    h1 { margin:6px 0 2px; font-size:18px; }
+  }
 </style>
 </head>
 <body>
@@ -95,6 +110,7 @@
 <script type="module">
 /* DOM */
 const boardEl   = document.getElementById('board');
+const wrapEl    = document.getElementById('wrap');
 const skipWallBtn = document.getElementById('skipWallBtn');
 const turnEl    = document.getElementById('turnColor');
 const s1El      = document.getElementById('s1');
@@ -129,9 +145,8 @@ endBtn.addEventListener('click', () => {
   local.state.phase = 'ended';
   fillFinalRegionsLocal();
   showWinnerWithPaintLocal();
-  // 단일 파일: 새로 시작은 reset 버튼으로, 여기서는 화면 유지
 
-   // index.html로 이동
+  // index.html로 이동
   window.location.href = 'index.html';
 });
 
@@ -148,6 +163,38 @@ const asArray = x => Array.isArray(x) ? x : (x && typeof x==='object') ? Object.
 function inBounds(r,c){ return r>=0 && r<GRID && c>=0 && c<GRID; }
 function isPoint(r,c){ return (r%2===0) && (c%2===0); }
 function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
+
+/* ✅ 화면에 맞춰 보드 크기 자동 조절 */
+function resizeBoard(){
+  // 상단 요소 높이 합산
+  const h1 = document.querySelector('h1')?.offsetHeight || 0;
+  const panel = document.getElementById('panel')?.offsetHeight || 0;
+  const turn = document.getElementById('turnLine')?.offsetHeight || 0;
+  const scores = document.getElementById('scores')?.offsetHeight || 0;
+  const bottom = document.getElementById('bottomBar')?.offsetHeight || 0;
+
+  const verticalPadding = 16; // 여유
+  const availableH = window.innerHeight - (h1 + panel + turn + scores + bottom) - verticalPadding;
+  const availableW = wrapEl.clientWidth - 4; // 보더 여유
+
+  // 한 칸 크기(px): 가로/세로 중 작은 쪽 기준
+  let p = Math.floor(Math.min(availableW / GRID, availableH / GRID));
+
+  // 너무 작아지지 않도록 하한선(원하면 조정 가능)
+  p = Math.max(p, 22);
+
+  // CSS 변수 반영
+  document.documentElement.style.setProperty('--p', p + 'px');
+  document.documentElement.style.setProperty('--t', (p * 0.35) + 'px');
+
+  // 보드 외형 사이즈 고정(정사각)
+  const size = p * GRID;
+  boardEl.style.width = size + 'px';
+  boardEl.style.height = size + 'px';
+}
+
+window.addEventListener('resize', () => { resizeBoard(); });
+window.addEventListener('orientationchange', () => { setTimeout(resizeBoard, 50); });
 
 /* 초기 상태 */
 function initialState(){
@@ -282,6 +329,8 @@ function makeBoard() {
       grid[r][c] = cell;
     }
   }
+  // 최초 렌더 직후 보드 크기 계산
+  resizeBoard();
 }
 function renderFromState() {
   const s = normalizeState(local.state);
@@ -330,6 +379,9 @@ function renderFromState() {
   }
 
   updateScoresLocal();
+
+  // 사이즈가 달라졌을 수 있으니 한 번 더 보정
+  requestAnimationFrame(resizeBoard);
 
   // AI 차례 자동 처리
   if (s.current===1 && (s.phase==='place-extra' || s.phase==='move' || s.phase==='wall') && s.phase!=='ended') {
@@ -511,7 +563,6 @@ function showWinnerWithPaintLocal(){
 }
 
 /* ====== AI 로직 (강화 휴리스틱) ====== */
-/* 상태 전용 유틸(시뮬) */
 function keyRC(r,c){ return `${r},${c}`; }
 function wallKey(wr,wc){ return `w:${wr},${wc}`; }
 function pointsNeighborsByWalls(wallsSet, r, c){
@@ -669,7 +720,6 @@ function aiPlaceExtra(s){
   else s.current = s.extraOrder[s.extraIdx];
 }
 function listMovableStateForDOM(s, r, c){
-  // DOM 기반 이동 후보 (현재 보드 상태)
   return listMovable(s, r, c);
 }
 function aiMove(s){
@@ -693,7 +743,6 @@ function aiMove(s){
     audioMal.play();
     s._aiPlannedWall = bestWall;
   }else{
-    // 이동 불가 → 바로 벽 단계로(혹은 패스)
     s.phase='wall';
     s.lastMoved=null;
   }
