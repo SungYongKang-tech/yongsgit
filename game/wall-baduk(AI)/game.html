@@ -37,8 +37,13 @@
   touch-action: manipulation;
 }
 
-/* 전역 테두리 X */
-.cell{ box-sizing:border-box; display:flex; align-items:center; justify-content:center; border:0; }
+/* 전역 테두리 X (강제) */
+.cell{
+  box-sizing: border-box;
+  display:flex; align-items:center; justify-content:center;
+  border:0 !important;          /* ← 중요 */
+  outline: none;
+}
 
 /* 점(네이비) */
 .point{ width:var(--p); height:var(--p); position:relative; background:#fff; cursor:pointer; }
@@ -89,8 +94,7 @@
     /* 작은 화면에서 제목 여백 조금 축소 */
     h1 { margin:6px 0 2px; font-size:18px; }
   }
-
-    .h-wall, .v-wall, .blank { transform: translateZ(0); backface-visibility: hidden; }
+.h-wall, .v-wall, .blank { transform: translateZ(0); backface-visibility: hidden; }
 
 </style>
 </head>
@@ -196,29 +200,32 @@ function resizeBoard(){
   const availW = document.getElementById('wrap').clientWidth - 4;
   const availH = window.innerHeight - headerH - bottomH;
 
-  const GRID = 13; // 7점 보드 → 13 그리드
   const maxSquare = Math.max(220, Math.min(availW, availH));
 
-  // 한 점 칸(p)과 벽 두께(t) 계산
-  // p는 정수, t도 반드시 정수(px)로 고정(소수점 금지)
+  // p: 점칸, t: 벽 두께 (정수 px)
   let p = Math.floor(maxSquare / GRID);
   p = Math.max(26, Math.min(82, p));
   let t = Math.round(p * 0.35);
   t = Math.max(8, Math.min(28, t));
 
-
-
+  // CSS 변수 반영
   document.documentElement.style.setProperty('--p', p + 'px');
   document.documentElement.style.setProperty('--t', t + 'px');
-  applyGridTracks();     // ✅ 창 크기 바뀔 때도 트랙 갱신
+
+  // 트랙 갱신(p,t 교대)
+  applyGridTracks();
+
+  // 보드 외형 사이즈 고정(정사각형) → 우측 빈 여백/흐릿한 스케일 방지
+  const total = 7*p + 6*t;         // 7개의 점칸 + 6개의 벽칸
+  boardEl.style.width  = total + 'px';
+  boardEl.style.height = total + 'px';
 }
 
-
-// 🔧 격자 트랙을 p,t 교대로 고정
-function applyGridTracks() {
+// p,t 교대로 트랙 고정
+function applyGridTracks(){
   const tracks = Array.from({length: GRID}, (_, i) => (i % 2 === 0) ? 'var(--p)' : 'var(--t)').join(' ');
-  boardEl.style.gridTemplateColumns = tracks;  // p,t,p,t...,p
-  boardEl.style.gridTemplateRows    = tracks;  // p,t,p,t...,p
+  boardEl.style.gridTemplateColumns = tracks;
+  boardEl.style.gridTemplateRows    = tracks;
 }
 
 
