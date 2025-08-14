@@ -585,70 +585,165 @@ function territoryDiffAfter(ws, p0Set, p1Set){
   return me - opp;
 }
 
-/* 난이도 가중치 (원하면 'hard','medium','easy'로 바꿔 사용 가능) */
-const level = 'hard';
-const W_TERR   = {easy:1.0, medium:1.4, hard:1.8}[level];
-const W_TRAP   = {easy:0.8, medium:1.2, hard:1.8}[level];
-const W_MOB    = {easy:0.6, medium:0.9, hard:1.2}[level];
-const W_CLASH  = {easy:0.6, medium:0.8, hard:1.0}[level];
+// === 추가 가중치 (간단 버전) ===
+const W_SEAL_A = 2.2;  // 밀봉: 내 단독영역 '점수' 증가 보너스
+const W_SEAL_B = 1.2;  // 밀봉: 혼합영역 개수 감소 보너스
+const W_DIST   = 0.9;  // 말 분산(평균 거리) 보너스
+const W_CENT   = 0.6;  // 중앙 근접 보너스
+const W_FRONT  = 0.7;  // 프론티어(이동지 주변에 벽이 아직 없는 방향 수) 보너스
+
+// ==== 경량 유틸 (간단 보너스 계산) ====
+
+// 평균 맨해튼 거리(말들이 흩어지면 값↑)
+function avgPairwiseManhattan(pointsArr){
+  const arr = Array.from(pointsArr, p => ({r: p.r, c: p.c}));
+  const n = arr.length;
+  if (n < 2) return 0;
+  let sum = 0, cnt = 0;
+  for (let i=0;i<n;i++){
+    for (let j=i+1;j<n;j++){
+      sum += Math.abs(arr[i].r - arr[j].r) + Math.abs(arr[i].c - arr[j].c);
+      cnt++;
+    }
+  }
+  return sum / cnt;
+}
+
+// 중앙 보너스: 중심에 가까울수록 큼 (정규화)
+function centerBonus(r, c){
+  const mid = (GRID - 1) / 2;
+  const dist = Math.abs(r - mid) + Math.abs(c - mid);
+  const maxDist = (GRID - 1); // 대략적 상한
+  return (maxDist - dist) / maxDist; // 0~1
+}
+
+// 프론티어 보너스: 이동 위치 주변 4방향 중 아직 '벽이 안 놓인' 방향 수(0~4)를 0~1로 정규화
+function frontierBonus(r, c, wallsSet){
+  let free = 0, total = 0;
+  const cand = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+  for (const [wr, wc] of cand){
+    const inBoard = wr>=0 && wr<GRID && wc>=0 && wc<GRID;
+    const isWallPos = inBoard && ((wr%2===1 && wc%2===0) || (wr%2===0 && wc%2===1));
+    if (!isWallPos) continue;
+    total++;
+    if (!wallsSet.has(wallKey(wr, wc))) free++;
+  }
+  return total ? free / total : 0;
+}
+
 
 function evaluateMovePlusBestWall(s, pieceFrom, moveTo){
+  // 현재 벽/말 상태 세트 구성
   const wallsSet = new Set(s.walls.map(w=>wallKey(w.r,w.c)));
   const p0Set = new Set(s.pieces['0'].map(p=>keyRC(p.r,p.c)));
-  const p1 = s.pieces['1'].map(p=>({r:p.r,c:p.c}));
-  const idx = p1.findIndex(pp => pp.r===pieceFrom.r && pp.c===pieceFrom.c);
-  p1[idx] = {r:moveTo.r, c:moveTo.c};
-  const p1Set = new Set(p1.map(p=>keyRC(p.r,p.c)));
 
+  // 내 말 배열/세트(이동 반영)
+  const p1Arr = s.pieces['1'].map(p=>({r:p.r,c:p.c}));
+  const idx = p1Arr.findIndex(pp => pp.r===pieceFrom.r && pp.c===pieceFrom.c);
+  p1Arr[idx] = {r:moveTo.r, c:moveTo.c};
+  const p1Set = new Set(p1Arr.map(p=>keyRC(p.r,p.c)));
+
+  // 공통 사전 계산(벽 고르기 전)
   const occForMob = new Set([...p0Set, ...p1Set]);
   const myMob = mobilityAtState(wallsSet, occForMob, moveTo.r, moveTo.c);
 
-  // 상대 기동력 (전/후) 비교
-  let oppMobBefore=0, oppMobAfter=0;
-  for(const k of p0Set){
+  // 분산(평균 맨해튼 거리): 내 말↑, 상대↓이면 유리
+  // 상대는 p0Set을 배열로 변환
+  const p0Arr = Array.from(p0Set, k => { const [r,c]=k.split(',').map(Number); return {r,c}; });
+  const myAvgDist  = avgPairwiseManhattan(p1Arr);
+  const oppAvgDist = avgPairwiseManhattan(p0Arr);
+  const distTerm = myAvgDist - oppAvgDist; // 상대보다 더 흩어지면 +
+
+  // 중앙·프론티어 보너스(벽과 무관, 이동 위치만으로 산정)
+  const cent = centerBonus(moveTo.r, moveTo.c);
+  const front = frontierBonus(moveTo.r, moveTo.c, wallsSet);
+
+  // 상대 기동력(벽 전/후) 비교용: 먼저 이전값
+  let oppMobBefore = 0;
+  for (const k of p0Set){
     const [r,c] = k.split(',').map(Number);
     oppMobBefore += mobilityAtState(wallsSet, occForMob, r, c);
   }
 
-  // 벽 후보: 이동지 인접 우선, 없으면 전체
+  // 밀봉 보너스 계산을 위한 "이동만 반영된 상태"의 기준값(벽 놓기 전)
+  const regsBefore = regionsFromState(wallsSet, p0Set, p1Set);
+  const mixedBefore = regsBefore.filter(r => r.has0 && r.has1).length;
+  const myExclusiveBefore = regsBefore
+    .filter(r => r.has1 && !r.has0)
+    .reduce((acc, r) => acc + r.points.length, 0);
+
+  // 벽 후보(이동지 인접 우선, 없으면 전체)
   let candWalls = [];
-  for(const [wr,wc] of [[moveTo.r-1,moveTo.c],[moveTo.r+1,moveTo.c],[moveTo.r,moveTo.c-1],[moveTo.r,moveTo.c+1]]){
+  for (const [wr, wc] of [[moveTo.r-1,moveTo.c],[moveTo.r+1,moveTo.c],[moveTo.r,moveTo.c-1],[moveTo.r,moveTo.c+1]]){
     const isWallPos = wr>=0&&wr<GRID&&wc>=0&&wc<GRID && ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
-    if(isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr,c:wc});
+    if (isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr, c:wc});
   }
-  if(candWalls.length===0){
-    for(let wr=0;wr<GRID;wr++) for(let wc=0;wc<GRID;wc++){
-      const isWallPos = ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
-      if(isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr,c:wc});
+  if (candWalls.length === 0){
+    for (let wr=0; wr<GRID; wr++){
+      for (let wc=0; wc<GRID; wc++){
+        const isWallPos = ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
+        if (isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr, c:wc});
+      }
     }
   }
 
-  let bestScore=-Infinity, bestWall=null;
-  for(const w of candWalls){
-    const ws = new Set(wallsSet); ws.add(wallKey(w.r,w.c));
-    const terrDiff = territoryDiffAfter(ws, p0Set, p1Set);
+  let bestScore = -Infinity, bestWall = null;
 
-    oppMobAfter = 0;
-    for(const k of p0Set){
+  // 각 벽 후보 평가
+  for (const w of candWalls){
+    // 가상으로 벽을 추가
+    const ws = new Set(wallsSet); ws.add(wallKey(w.r,w.c));
+
+    // 기본 테리토리(현재 코드와 호환)
+    const terrDiff = territoryDiffAfter(ws, p0Set, p1Set); // (나-상대) 단독영역 차
+
+    // 상대 기동력 감소(함정)
+    let oppMobAfter = 0;
+    for (const k of p0Set){
       const [r,c] = k.split(',').map(Number);
       oppMobAfter += mobilityAtState(ws, occForMob, r, c);
     }
     const trapGain = Math.max(0, oppMobBefore - oppMobAfter);
 
-    // 충돌 위험(상대와 너무 붙으면 페널티)
-    let minOpp=Infinity;
-    for(const k of p0Set){
+    // 밀봉(혼합→단독) 보너스: 혼합영역 감소 + 내 단독영역 증가량
+    const regsAfter = regionsFromState(ws, p0Set, p1Set);
+    const mixedAfter = regsAfter.filter(r => r.has0 && r.has1).length;
+    const myExclusiveAfter = regsAfter
+      .filter(r => r.has1 && !r.has0)
+      .reduce((acc, r) => acc + r.points.length, 0);
+    const mixedToPureDelta = Math.max(0, mixedBefore - mixedAfter);
+    const sealedPointsGain = Math.max(0, myExclusiveAfter - myExclusiveBefore);
+
+    // 충돌(과도한 근접) 패널티: 상대와의 최소 맨해튼 거리 2 미만일 때 불이익
+    let minOpp = Infinity;
+    for (const k of p0Set){
       const [r,c] = k.split(',').map(Number);
       const d = Math.abs(r - moveTo.r) + Math.abs(c - moveTo.c);
-      if(d<minOpp) minOpp=d;
+      if (d < minOpp) minOpp = d;
     }
-    const clashPenalty = Math.max(0, 3 - (isFinite(minOpp)?minOpp:99));
+    const clashPenalty = Math.max(0, 3 - (isFinite(minOpp) ? minOpp : 99)); // 2 이하면 패
 
-    const score = W_TERR*terrDiff + W_TRAP*trapGain + W_MOB*myMob - W_CLASH*clashPenalty;
-    if(score>bestScore){ bestScore=score; bestWall=w; }
+    // 최종 점수 (간단·가벼운 강화판)
+    const score =
+        W_TERR  * terrDiff
+      + W_SEAL_A* sealedPointsGain
+      + W_SEAL_B* mixedToPureDelta
+      + W_TRAP  * trapGain
+      + W_MOB   * myMob
+      - W_CLASH * clashPenalty
+      + W_DIST  * distTerm
+      + W_CENT  * cent
+      + W_FRONT * front;
+
+    if (score > bestScore){
+      bestScore = score;
+      bestWall = w;
+    }
   }
-  return {score: bestScore, bestWall};
+
+  return { score: bestScore, bestWall };
 }
+
 
 function aiTurn(){
   const s = normalizeState(local.state);
