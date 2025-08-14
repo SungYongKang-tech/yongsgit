@@ -93,6 +93,16 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2315326b'/%3E%3Ccircle cx='22' cy='22' r='10' fill='%23e74c3c'/%3E%3Ccircle cx='42' cy='42' r='10' fill='%233498db'/%3E%3C/svg%3E">
 
 <script type="module">
+  // ==== 전역 에러 트랩 (로딩 직후 예외 원인 즉시 표시) ====
+window.addEventListener('error', (e) => {
+  console.error('[WINDOW ERROR]', e?.error || e);
+  alert('스크립트 오류(동기):\n' + (e?.error?.message || e?.message || e));
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[PROMISE ERROR]', e?.reason || e);
+  alert('스크립트 오류(비동기):\n' + (e?.reason?.message || e?.reason || e));
+});
+
 /* DOM */
 const boardEl   = document.getElementById('board');
 const skipWallBtn = document.getElementById('skipWallBtn');
@@ -284,6 +294,13 @@ function makeBoard() {
   }
 }
 function renderFromState() {
+
+// AI 차례 자동 처리
+// console.log('AI auto?', s.current, s.phase); // ← 임시 로그
+if (s.current===1 && (s.phase==='place-extra' || s.phase==='move' || s.phase==='wall') && s.phase!=='ended') {
+  setTimeout(aiTurn, 500);
+}
+
   const s = normalizeState(local.state);
   if (!s) return;
 
@@ -636,6 +653,111 @@ const W_TRAP  = 1.2;  // 상대 기동력 감소(함정)
 const W_MOB   = 0.8;  // 내 기동력
 const W_CLASH = 0.8;  // 과도한 근접 패널티
 
+// 범용 평가(이동 to + 그 후 최적 벽 1개) — moverId: 0(사람), 1(AI)
+function evalForMover(s, moverId, pieceFrom, moveTo){
+  const wallsSet = new Set(s.walls.map(w=>wallKey(w.r,w.c)));
+
+  // 말 배열 복사 후 mover의 그 말 이동 반영
+  const myArr  = s.pieces[String(moverId)].map(p=>({r:p.r,c:p.c}));
+  const oppArr = s.pieces[String(1-moverId)].map(p=>({r:p.r,c:p.c}));
+  const idx = myArr.findIndex(pp => pp.r===pieceFrom.r && pp.c===pieceFrom.c);
+  if (idx < 0) return {score:-1e9, bestWall:null};
+  myArr[idx] = { r:moveTo.r, c:moveTo.c };
+
+  const mySet  = new Set(myArr.map(p=>keyRC(p.r,p.c)));
+  const oppSet = new Set(oppArr.map(p=>keyRC(p.r,p.c)));
+  const occForMob = new Set([...mySet, ...oppSet]);
+
+  // 내 기동력
+  const myMob = mobilityAtState(wallsSet, occForMob, moveTo.r, moveTo.c);
+
+  // 상대 기동력(벽 전)
+  let oppMobBefore = 0;
+  for(const k of oppSet){
+    const [r,c] = k.split(',').map(Number);
+    oppMobBefore += mobilityAtState(wallsSet, occForMob, r, c);
+  }
+
+  // 이동만 반영한 상태에서의 기준값(혼합/단독)
+  const regsBefore = regionsFromState(wallsSet, oppSet, mySet);
+  const mixedBefore = regsBefore.filter(r => r.has0 && r.has1).length;
+  const myExclusiveBefore = regsBefore
+    .filter(r => r.has1 && !r.has0)
+    .reduce((acc, r) => acc + r.points.length, 0);
+
+  // 벽 후보(이동지 인접 우선, 없으면 전체)
+  let candWalls = [];
+  for (const [wr, wc] of [[moveTo.r-1,moveTo.c],[moveTo.r+1,moveTo.c],[moveTo.r,moveTo.c-1],[moveTo.r,moveTo.c+1]]){
+    const isWallPos = wr>=0&&wr<GRID&&wc>=0&&wc<GRID && ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
+    if (isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr, c:wc});
+  }
+  if (candWalls.length === 0){
+    for (let wr=0; wr<GRID; wr++){
+      for (let wc=0; wc<GRID; wc++){
+        const isWallPos = ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
+        if (isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr, c:wc});
+      }
+    }
+  }
+  if (!candWalls.length) return {score:-1e9, bestWall:null};
+
+  // 분산·중앙·프론티어 (이동 위치 기준)
+  const myAvgDist  = avgPairwiseManhattan(myArr);
+  const oppAvgDist = avgPairwiseManhattan(oppArr);
+  const distTerm = myAvgDist - oppAvgDist;
+  const cent  = centerBonus(moveTo.r, moveTo.c);
+  const front = frontierBonus(moveTo.r, moveTo.c, wallsSet);
+
+  let bestScore=-Infinity, bestWall=null;
+  for(const w of candWalls){
+    const ws = new Set(wallsSet); ws.add(wallKey(w.r,w.c));
+
+    // 단독영역 차: (mover가 '1'인 것으로 가정된 기존 함수와 동일 구조가 되도록)
+    const terrDiff = territoryDiffAfter(ws, oppSet, mySet);
+
+    // 상대 기동력 감소
+    let oppMobAfter=0;
+    for(const k of oppSet){
+      const [r,c] = k.split(',').map(Number);
+      oppMobAfter += mobilityAtState(ws, occForMob, r, c);
+    }
+    const trapGain = Math.max(0, oppMobBefore - oppMobAfter);
+
+    // 밀봉 효과
+    const regsAfter = regionsFromState(ws, oppSet, mySet);
+    const mixedAfter = regsAfter.filter(r => r.has0 && r.has1).length;
+    const myExclusiveAfter = regsAfter
+      .filter(r => r.has1 && !r.has0)
+      .reduce((acc, r) => acc + r.points.length, 0);
+    const mixedToPureDelta = Math.max(0, mixedBefore - mixedAfter);
+    const sealedPointsGain = Math.max(0, myExclusiveAfter - myExclusiveBefore);
+
+    // 근접 패널티
+    let minOpp = Infinity;
+    for(const k of oppSet){
+      const [r,c] = k.split(',').map(Number);
+      const d = Math.abs(r - moveTo.r) + Math.abs(c - moveTo.c);
+      if (d < minOpp) minOpp = d;
+    }
+    const clashPenalty = Math.max(0, 3 - (isFinite(minOpp)?minOpp:99));
+
+    const score =
+        W_TERR  * terrDiff
+      + W_SEAL_A* sealedPointsGain
+      + W_SEAL_B* mixedToPureDelta
+      + W_TRAP  * trapGain
+      + W_MOB   * myMob
+      - W_CLASH * clashPenalty
+      + W_DIST  * distTerm
+      + W_CENT  * cent
+      + W_FRONT * front;
+
+    if (score > bestScore){ bestScore = score; bestWall = w; }
+  }
+  return {score: bestScore, bestWall};
+}
+
+
 function evaluateMovePlusBestWall(s, pieceFrom, moveTo){
   // 현재 벽/말 상태 세트 구성
   const wallsSet = new Set(s.walls.map(w=>wallKey(w.r,w.c)));
@@ -691,8 +813,9 @@ function evaluateMovePlusBestWall(s, pieceFrom, moveTo){
     }
   }
 
-  let bestScore = -Infinity, bestWall = null;
-  if (!candWalls.length) return { score: -1e9, bestWall: null };
+let bestScore = -Infinity, bestWall = null;
+if (!candWalls.length) return { score: -1e9, bestWall: null };
+
 
   // 각 벽 후보 평가
   for (const w of candWalls){
@@ -751,36 +874,122 @@ function evaluateMovePlusBestWall(s, pieceFrom, moveTo){
 
 
 function aiTurn(){
-  const s = normalizeState(local.state);
-  if (!s || s.current !== 1) return;
+  try{
+    const s = normalizeState(local.state);
+    if (!s || s.current !== 1 || s.phase==='ended') return;
 
-  if (s.phase === 'place-extra') aiPlaceExtra(s);
-  else if (s.phase === 'move') aiMove(s);
-  else if (s.phase === 'wall') aiPlaceWall(s);
+    if (s.phase === 'place-extra') aiPlaceExtra(s);
+    else if (s.phase === 'move') aiMove(s);
+    else if (s.phase === 'wall') aiPlaceWall(s);
 
-  renderFromState();
+    renderFromState();
+  }catch(err){
+    console.error('[AI ERROR]', err);
+    alert('AI 처리 중 오류:\n' + (err?.message || err));
+    if (local?.state){ // 안전 복구
+      local.state.current = 0;
+      local.state.phase = 'move';
+      renderFromState();
+    }
+  }
 }
+
 function aiPlaceExtra(s){
-  const points = allEmptyPoints(s);
-  const pick = randomChoice(points);
+  // 내/상대 말 좌표 수집
+  const my = s.pieces['1'];
+  const opp = s.pieces['0'];
+  const cand = allEmptyPoints(s);
+
+  // 간단한 점수: 중앙 보너스 + 내 말과의 분산 + 상대 말과의 견제 거리
+  let best = null, bestScore = -Infinity;
+  for(const p of cand){
+    // 중앙 보너스 (기존 함수 재사용)
+    const cent = centerBonus(p.r, p.c);
+
+    // 내 말과의 평균 거리(뭉치지 않게)
+    let myDist = 0;
+    if (my.length){
+      for (const m of my) myDist += Math.abs(m.r - p.r) + Math.abs(m.c - p.c);
+      myDist /= my.length;
+    }
+
+    // 상대와의 평균 거리(초반에 너무 붙지 않게 약간 띄움)
+    let oppDist = 0;
+    if (opp.length){
+      for (const o of opp) oppDist += Math.abs(o.r - p.r) + Math.abs(o.c - p.c);
+      oppDist /= opp.length;
+    }
+
+    const score = 0.7*cent + 0.25*(myDist/(GRID)) + 0.05*(oppDist/(GRID));
+    if (score > bestScore){ bestScore = score; best = p; }
+  }
+
+  const pick = best || randomChoice(cand);
   s.pieces['1'].push({r:pick.r,c:pick.c});
   s.extraIdx++;
   if(s.extraIdx >= s.extraOrder.length) s.phase='move';
   else s.current = s.extraOrder[s.extraIdx];
 }
+
 function listMovableStateForDOM(s, r, c){
   // DOM 기반 이동 후보 (현재 보드 상태)
   return listMovable(s, r, c);
 }
 function aiMove(s){
-  const myPieces = s.pieces['1'];
-  let best=null, bestScore=-Infinity, bestWall=null;
+  const K_MY = 4;     // 내(인공지능) 후보 상위 N
+  const K_OPP = 3;    // 상대(사람) 응수 상위 N
+  const TIME_BUDGET_MS = 25;
+  const t0 = Date.now();
 
+  const myPieces = s.pieces['1'];
+  let cand = [];
+
+  // 1단계: 내 모든 이동을 1수 평가로 스코어링 → 상위 K_MY만 유지
   for(const p of myPieces){
     const moves = listMovableStateForDOM(s, p.r, p.c);
     for(const m of moves){
-      const {score, bestWall:wallChoice} = evaluateMovePlusBestWall(s, p, m);
-      if(score>bestScore){ bestScore=score; best={from:p, to:m}; bestWall=wallChoice; }
+      const {score, bestWall} = evalForMover(s, 1, p, m); // mover=1 (AI)
+      cand.push({from:p, to:m, score1:score, wall1:bestWall});
+    }
+  }
+  cand.sort((a,b)=>b.score1 - a.score1);
+  if (cand.length > K_MY) cand = cand.slice(0, K_MY);
+
+  // 2단계: 각 후보에 대해, 그 수를 둔 뒤 상대의 최선 응수(상위 K_OPP 탐색)로 페널티
+  let best = null, bestScore = -Infinity;
+  for (const c of cand){
+    if (Date.now() - t0 > TIME_BUDGET_MS) break;
+
+    // 가상 적용: 내 말 이동 + 내 벽(최선)
+    const sim = JSON.parse(JSON.stringify(s)); // 얕은 복사로 충분
+    // 말 이동
+    const arr = sim.pieces['1'];
+    const idx = arr.findIndex(pp => pp.r===c.from.r && pp.c===c.from.c);
+    if (idx < 0) continue;
+    arr[idx] = { r:c.to.r, c:c.to.c };
+    // 벽 배치(있으면)
+    if (c.wall1) sim.walls.push({ r:c.wall1.r, c:c.wall1.c, owner:1 });
+
+    // 상대 응수 후보
+    const oppPieces = sim.pieces['0'];
+    let oppCand = [];
+    for(const op of oppPieces){
+      const moves2 = listMovableStateForDOM(sim, op.r, op.c);
+      for(const m2 of moves2){
+        const {score:oppScore} = evalForMover(sim, 0, op, m2); // mover=0 (사람)
+        oppCand.push({from:op, to:m2, oppScore});
+      }
+    }
+    oppCand.sort((a,b)=>b.oppScore - a.oppScore);
+    if (oppCand.length > K_OPP) oppCand = oppCand.slice(0, K_OPP);
+
+    // 미니맥스: 내 점수에서 상대 최선(들)의 평균/최대 중 택1 (보수적으로 최대 사용)
+    const worstReply = oppCand.length ? oppCand[0].oppScore : 0;
+    const finalScore = c.score1 - 0.8*worstReply; // 상대 응수 반영 가중치(0.6~1.0 사이 조절)
+
+    if (finalScore > bestScore){
+      bestScore = finalScore;
+      best = { from:c.from, to:c.to, wall:c.wall1 };
     }
   }
 
@@ -790,28 +999,36 @@ function aiMove(s){
     arr[idx] = { r:best.to.r, c:best.to.c };
     s.phase = 'wall';
     s.lastMoved = { r:best.to.r, c:best.to.c };
-    audioMal.play();
-    s._aiPlannedWall = bestWall;
+    safePlay ? safePlay(audioMal) : audioMal.play?.();
+    s._aiPlannedWall = best.wall;
   }else{
-    // 이동 불가 → 바로 벽 단계로(혹은 패스)
+    // 시간이 다 소모됐거나 이동 불가 → 벽 단계로 전환
     s.phase='wall';
     s.lastMoved=null;
   }
 }
+
 function aiPlaceWall(s){
   let pick = s._aiPlannedWall || null;
+
   if(!pick){
     let candidates = [];
     if (s.lastMoved) candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
     if (candidates.length === 0) candidates = listEmptyWallsFromState(s);
     pick = candidates && candidates.length ? candidates[0] : null;
   }
-  if(pick) s.walls.push({ r:pick.r, c:pick.c, owner:1 });
-  audioWall.play();
+
+  if (pick) {
+    s.walls.push({ r:pick.r, c:pick.c, owner:1 });
+    safePlay(audioWall);
+  }
 
   delete s._aiPlannedWall;
-  s.current = 0; s.phase = 'move'; s.lastMoved = null;
+  s.current = 0;
+  s.phase = 'move';
+  s.lastMoved = null;
 }
+
 
 /* 도움말 오버레이 */
 function openHelp(){ document.getElementById('helpOverlay').style.display='flex'; }
