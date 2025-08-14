@@ -28,66 +28,71 @@
     min-width: 54px; display:inline-block; }
   #scores { margin:0 0 4px; font-size:14px; }
 
-/* 보드 */
-    #wrap { display:flex; justify-content:center; align-items:flex-start; padding:0 10px 6px; overflow:auto; }
-/* 격자 전체 틀 */
-#board { display:grid; background:#fff; border:2px solid #333; user-select:none; touch-action:manipulation; }
+/* === 보드: 깔끔한 직선 + 네이비 점 === */
+#board {
+  display: grid;
+  background: #fff;
+  border: 2px solid #333;
+  user-select: none;
+  touch-action: manipulation;
+}
 
-/* 모든 셀 기본값 */
-.cell { box-sizing:border-box; display:flex; align-items:center; justify-content:center; border:0; }
+/* 모든 셀 공통: 전역 테두리 ❌ */
+.cell { box-sizing: border-box; display:flex; align-items:center; justify-content:center; border:0; }
 
-/* 교차점(네이비 점) */
+/* 교차점(점) */
 .point{
-  width:var(--p);
-  height:var(--p);
-  background:#fff;
-  position:relative;
-  cursor:pointer;
-  transition:background .1s;
+  width: var(--p);
+  height: var(--p);
+  background: #fff;
+  position: relative;
+  cursor: pointer;
+  transition: background .1s;
 }
 .point::after{
-  content:"";
-  position:absolute;
-  width:var(--t);
-  height:var(--t);
-  background:#15326b;
-  top:50%; left:50%;
-  transform:translate(-50%,-50%);
-  border-radius:2px;
+  content: "";
+  position: absolute;
+  width: var(--t);
+  height: var(--t);
+  background: #15326b;        /* 네이비 점 */
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
 }
 
-/* 가로선은 '윗선' 한 줄만 그려서 이중선 방지 */
+/* 가로선: 위쪽 한 줄만 (이중선 방지) */
 .h-wall{
-  width:var(--p);
-  height:var(--t);
-  background:#fff;
-  cursor:pointer;
-  border-top:1px solid #000;     /* ← 여기만 */
+  width: var(--p);
+  height: var(--t);
+  background: #fff;
+  cursor: pointer;
+  border-top: 1px solid #000;
 }
 
-/* 세로선은 '왼선' 한 줄만 */
+/* 세로선: 왼쪽 한 줄만 */
 .v-wall{
-  width:var(--t);
-  height:var(--p);
-  background:#fff;
-  cursor:pointer;
-  border-left:1px solid #000;    /* ← 여기만 */
+  width: var(--t);
+  height: var(--p);
+  background: #fff;
+  cursor: pointer;
+  border-left: 1px solid #000;
 }
 
-/* 교차칸은 두 방향 모두 이어준다(끊김 방지) */
+/* 교차칸: 두 방향 모두 이어줘서 단절 방지 */
 .blank{
-  width:var(--t);
-  height:var(--t);
-  background:#fff;
-  border-top:1px solid #000;
-  border-left:1px solid #000;
+  width: var(--t);
+  height: var(--t);
+  background: #fff;           /* 기존 #15326b → 흰색으로 */
+  border-top: 1px solid #000; /* 가로선 이어주기 */
+  border-left: 1px solid #000;/* 세로선 이어주기 */
 }
 
-/* 말/하이라이트 유지 */
+/* 말/하이라이트 기존 유지 */
 .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
 .movable { background:#d0d0d0 !important; }
 .final-p1-region { background:#ffd6e7 !important; }
 .final-p2-region { background:#d6ecff !important; }
+
 
 
     .movable { background:#d0d0d0 !important; }
@@ -207,34 +212,34 @@ function isPoint(r,c){ return (r%2===0) && (c%2===0); }
 function clearMovable(){ document.querySelectorAll('.movable').forEach(el=>el.classList.remove('movable')); }
 
 /* ✅ 화면에 맞춰 보드 크기 자동 조절 */
-  function resizeBoard() {
-      const headerH = (document.querySelector('h1')?.offsetHeight || 0)
-        + (document.getElementById('panel')?.offsetHeight || 0)
-        + (document.getElementById('turnLine')?.offsetHeight || 0)
-        + (document.getElementById('scores')?.offsetHeight || 0)
-        + 20;
-      const bottomH = (document.getElementById('bottomBar')?.offsetHeight || 0) + 10;
-      const availW = document.getElementById('wrap').clientWidth - 4;
-      const availH = window.innerHeight - headerH - bottomH;
-      const maxSquare = Math.max(220, Math.min(availW, availH));
-      const k = 0.36;
-      let p = Math.floor(maxSquare / (7 + 6*k));
-      let t = Math.floor(p * k);
-      t = Math.max(8, Math.min(28, t));
-      p = Math.max(26, Math.min(82, p));
-      const total = 7*p + 6*t;
-      if (total > maxSquare) {
-        const diff = total - maxSquare;
-        const shrinkP = Math.min(diff, p - 26);
-        p -= shrinkP;
-        let remain = diff - shrinkP;
-        if (remain > 0) { const shrinkT = Math.min(remain, t - 8); t -= shrinkT; }
-      }
-      document.documentElement.style.setProperty('--p', p + 'px');
-      document.documentElement.style.setProperty('--t', t + 'px');
-      boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
-      boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
-    }
+function resizeBoard(){
+  const headerH =
+    (document.querySelector('h1')?.offsetHeight || 0) +
+    (document.getElementById('panel')?.offsetHeight || 0) +
+    (document.getElementById('turnLine')?.offsetHeight || 0) +
+    (document.getElementById('scores')?.offsetHeight || 0) + 20;
+
+  const bottomH = (document.getElementById('bottomBar')?.offsetHeight || 0) + 10;
+  const availW = document.getElementById('wrap').clientWidth - 4;
+  const availH = window.innerHeight - headerH - bottomH;
+
+  const GRID = 13; // 7점 보드 → 13 그리드
+  const maxSquare = Math.max(220, Math.min(availW, availH));
+
+  // 한 점 칸(p)과 벽 두께(t) 계산
+  // p는 정수, t도 반드시 정수(px)로 고정(소수점 금지)
+  let p = Math.floor(maxSquare / GRID);
+  p = Math.max(26, Math.min(82, p));
+  let t = Math.round(p * 0.35);
+  t = Math.max(8, Math.min(28, t));
+
+  document.documentElement.style.setProperty('--p', p + 'px');
+  document.documentElement.style.setProperty('--t', t + 'px');
+
+  boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
+  boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
+}
+
     window.addEventListener('resize', resizeBoard);
     window.addEventListener('orientationchange', ()=>setTimeout(resizeBoard, 50));
 
