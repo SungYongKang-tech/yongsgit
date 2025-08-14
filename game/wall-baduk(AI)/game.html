@@ -695,14 +695,7 @@ function evalForMover(s, moverId, pieceFrom, moveTo){
     const isWallPos = wr>=0&&wr<GRID&&wc>=0&&wc<GRID && ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
     if (isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr, c:wc});
   }
-  if (candWalls.length === 0){
-    for (let wr=0; wr<GRID; wr++){
-      for (let wc=0; wc<GRID; wc++){
-        const isWallPos = ((wr%2===1&&wc%2===0)||(wr%2===0&&wc%2===1));
-        if (isWallPos && !wallsSet.has(wallKey(wr,wc))) candWalls.push({r:wr, c:wc});
-      }
-    }
-  }
+
   if (!candWalls.length) return {score:-1e9, bestWall:null};
 
   // 분산·중앙·프론티어 (이동 위치 기준)
@@ -1006,26 +999,45 @@ function aiMove(s){
     safePlay(audioMal);
     s._aiPlannedWall = best.wall;
   }else{
-    // 시간이 다 소모됐거나 이동 불가 → 벽 단계로 전환
-    s.phase='wall';
-    s.lastMoved=null;
+       // 시간이 다 소모됐거나 이동 불가 → 벽 단계로 전환
+    // 후보가 비었지만 실제로는 움직일 수 있는 경우 대비: 아무 합법 수나 1개
+    let picked = null;
+    for (const p of s.pieces['1']){
+      const ms = listMovable(s, p.r, p.c);
+      if (ms.length){ picked = {from:p, to:ms[0]}; break; }
+    }
+    if (picked){
+      const arr = s.pieces['1'];
+      const idx = arr.findIndex(pp=>pp.r===picked.from.r && pp.c===picked.from.c);
+      arr[idx] = { r:picked.to.r, c:picked.to.c };
+      s.phase='wall';
+      s.lastMoved = { r:picked.to.r, c:picked.to.c };
+      safePlay(audioMal);
+      s._aiPlannedWall = null; // 벽은 사방에서 다시 고름
+    }else{
+      // 정말로 한 칸도 못 움직이면 그때만 벽 단계
+      s.phase='wall';
+      s.lastMoved=null;
+    }
   }
 }
 
 function aiPlaceWall(s){
+
   let pick = s._aiPlannedWall || null;
+  // lastMoved가 없거나, 계획된 벽이 인접이 아니면 무효화
+  const isAdj = (p,w) => p && w &&
+    ((w.r===p.r-1&&w.c===p.c)||(w.r===p.r+1&&w.c===p.c)||(w.r===p.r&&w.c===p.c-1)||(w.r===p.r&&w.c===p.c+1));
+  if (!isAdj(s.lastMoved, pick)) pick = null;
 
-  if(!pick){
-    let candidates = [];
-    if (s.lastMoved) candidates = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
-    if (candidates.length === 0) candidates = listEmptyWallsFromState(s);
-    pick = candidates && candidates.length ? candidates[0] : null;
+  // 항상 '이동 말 사방'에서만 뽑기
+  if (!pick && s.lastMoved){
+    const cand = adjacentEmptyWallsOfPoint(s, s.lastMoved.r, s.lastMoved.c);
+    pick = cand.length ? cand[0] : null;
   }
 
-  if (pick) {
-    s.walls.push({ r:pick.r, c:pick.c, owner:1 });
-    safePlay(audioWall);
-  }
+  // 이동을 못했거나(사방이 막힘) 인접 벽이 없으면 이번 턴 벽 생략
+  if (pick) { s.walls.push({ r:pick.r, c:pick.c, owner:1 }); safePlay(audioWall); }
 
   delete s._aiPlannedWall;
   s.current = 0;
