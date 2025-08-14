@@ -37,55 +37,25 @@
   touch-action: manipulation;
 }
 
-/* 모든 셀 공통: 전역 테두리 ❌ */
-.cell { box-sizing: border-box; display:flex; align-items:center; justify-content:center; border:0; }
+/* 전역 테두리 X */
+.cell{ box-sizing:border-box; display:flex; align-items:center; justify-content:center; border:0; }
 
-/* 교차점(점) */
-.point{
-  width: var(--p);
-  height: var(--p);
-  background: #fff;
-  position: relative;
-  cursor: pointer;
-  transition: background .1s;
-}
+/* 점(네이비) */
+.point{ width:var(--p); height:var(--p); position:relative; background:#fff; cursor:pointer; }
 .point::after{
-  content: "";
-  position: absolute;
-  width: var(--t);
-  height: var(--t);
-  background: #15326b;        /* 네이비 점 */
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 2px;
+  content:""; position:absolute; width:var(--t); height:var(--t);
+  background:#15326b; top:50%; left:50%; transform:translate(-50%,-50%); border-radius:2px;
 }
 
-/* 가로선: 위쪽 한 줄만 (이중선 방지) */
-.h-wall{
-  width: var(--p);
-  height: var(--t);
-  background: #fff;
-  cursor: pointer;
-  border-top: 1px solid #000;
-}
+/* 가로선 = 위쪽 한 줄만 */
+.h-wall{ width:var(--p); height:var(--t); background:#fff; cursor:pointer; border-top:1px solid #000; }
 
-/* 세로선: 왼쪽 한 줄만 */
-.v-wall{
-  width: var(--t);
-  height: var(--p);
-  background: #fff;
-  cursor: pointer;
-  border-left: 1px solid #000;
-}
+/* 세로선 = 왼쪽 한 줄만 */
+.v-wall{ width:var(--t); height:var(--p); background:#fff; cursor:pointer; border-left:1px solid #000; }
 
-/* 교차칸: 두 방향 모두 이어줘서 단절 방지 */
-.blank{
-  width: var(--t);
-  height: var(--t);
-  background: #fff;           /* 기존 #15326b → 흰색으로 */
-  border-top: 1px solid #000; /* 가로선 이어주기 */
-  border-left: 1px solid #000;/* 세로선 이어주기 */
-}
+/* 교차칸은 두 방향 이어주기 */
+.blank{ width:var(--t); height:var(--t); background:#fff; border-top:1px solid #000; border-left:1px solid #000; }
+
 
 /* 말/하이라이트 기존 유지 */
 .piece { width:80%; height:80%; border-radius:50%; pointer-events:none; }
@@ -233,12 +203,22 @@ function resizeBoard(){
   let t = Math.round(p * 0.35);
   t = Math.max(8, Math.min(28, t));
 
+  .h-wall, .v-wall, .blank { transform: translateZ(0); backface-visibility: hidden; }
+
+
   document.documentElement.style.setProperty('--p', p + 'px');
   document.documentElement.style.setProperty('--t', t + 'px');
-
-  boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
-  boardEl.style.gridTemplateRows    = `repeat(${GRID}, auto)`;
+  applyGridTracks();     // ✅ 창 크기 바뀔 때도 트랙 갱신
 }
+
+
+// 🔧 격자 트랙을 p,t 교대로 고정
+function applyGridTracks() {
+  const tracks = Array.from({length: GRID}, (_, i) => (i % 2 === 0) ? 'var(--p)' : 'var(--t)').join(' ');
+  boardEl.style.gridTemplateColumns = tracks;  // p,t,p,t...,p
+  boardEl.style.gridTemplateRows    = tracks;  // p,t,p,t...,p
+}
+
 
     window.addEventListener('resize', resizeBoard);
     window.addEventListener('orientationchange', ()=>setTimeout(resizeBoard, 50));
@@ -349,10 +329,8 @@ function listEmptyWallsFromState(s){
 }
 
 /* 보드 생성/렌더 */
-function makeBoard() {
+function makeBoard(){
   boardEl.innerHTML = '';
-  boardEl.style.gridTemplateColumns = `repeat(${GRID}, auto)`;
-  boardEl.style.gridTemplateRows = `repeat(${GRID}, auto)`;
   grid = Array.from({ length: GRID }, () => Array(GRID).fill(null));
 
   for (let r = 0; r < GRID; r++) {
@@ -360,26 +338,20 @@ function makeBoard() {
       const cell = document.createElement('div');
       cell.classList.add('cell');
 
-      if (r % 2 === 0 && c % 2 === 0) {
-        cell.classList.add('point');
-        cell.addEventListener('click', () => onPointClick(r, c));
-      } else if (r % 2 === 1 && c % 2 === 0) {
-        cell.classList.add('h-wall');
-        cell.addEventListener('click', () => onWallClick(r, c));
-      } else if (r % 2 === 0 && c % 2 === 1) {
-        cell.classList.add('v-wall');
-        cell.addEventListener('click', () => onWallClick(r, c));
-      } else {
-        cell.classList.add('blank');
-      }
+      if (r % 2 === 0 && c % 2 === 0) { cell.classList.add('point'); cell.addEventListener('click',()=>onPointClick(r,c)); }
+      else if (r % 2 === 1 && c % 2 === 0) { cell.classList.add('h-wall'); cell.addEventListener('click',()=>onWallClick(r,c)); }
+      else if (r % 2 === 0 && c % 2 === 1) { cell.classList.add('v-wall'); cell.addEventListener('click',()=>onWallClick(r,c)); }
+      else { cell.classList.add('blank'); }
 
       boardEl.appendChild(cell);
       grid[r][c] = cell;
     }
   }
-  // 최초 렌더 직후 보드 크기 계산
+
+  applyGridTracks();   // ✅ 트랙 고정
   resizeBoard();
 }
+
 function renderFromState() {
   const s = normalizeState(local.state);
   if (!s) return;
