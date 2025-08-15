@@ -22,94 +22,106 @@
   </div>
 
   <style>
-  body {
-  font-family: 'Segoe UI', sans-serif;
-  background: linear-gradient(to right, #e0f7fa, #ffffff);
-  margin: 0;
-  padding: 20px;
-  font-size: 20px; /* 기본 글씨 크기 크게 */
-}
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #e0f7fa, #ffffff);
+      margin: 0;
+      padding: 20px;
+      font-size: 20px; /* 기본 글씨 크기 크게 */
+    }
 
-h2 {
-  text-align: center;
-  color: #01579b;
-  margin-bottom: 20px;
-  font-size: 2rem; /* 제목 크게 */
-}
+    h2 {
+      text-align: center;
+      color: #01579b;
+      margin-bottom: 20px;
+      font-size: 2rem; /* 제목 크게 */
+    }
 
-.auth-panel input {
-  flex: 1 1 200px;
-  padding: 16px; /* 터치 영역 확장 */
-  border-radius: 8px;
-  border: 1px solid #bbb;
-  font-size: 1.2rem; /* 입력창 글씨 크게 */
-}
+    .auth-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
 
-.btn {
-  padding: 16px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 1.2rem; /* 버튼 글씨 크게 */
-  cursor: pointer;
-}
+    .auth-panel input {
+      flex: 1 1 200px;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #bbb;
+      font-size: 1.2rem;
+      box-sizing: border-box;
+    }
 
-.description {
-  font-size: 1.1rem;
-  text-align: center;
-  margin: 14px 0;
-  color: #444;
-}
+    .btn {
+      padding: 16px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 1.1rem; /* 표 글씨 크게 */
-  min-width: 600px;
-}
+    .btn.green { background: #4caf50; color: white; }
+    .btn.gray { background: #888; color: white; }
 
-th, td {
-  padding: 16px 10px; /* 셀 높이 키움 */
-  border-bottom: 1px solid #e0e0e0;
-  text-align: center;
-}
+    #amount {
+      width: 100%;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #bbb;
+      font-size: 1.2rem;
+      margin-bottom: 15px;
+      box-sizing: border-box;
+    }
 
-button.del {
-  padding: 8px 12px;
-  font-size: 1rem;
-  border: none;
-  background: #ef5350;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-}
+    .description {
+      font-size: 1.1rem;
+      text-align: center;
+      margin: 14px 0;
+      color: #444;
+    }
 
-@media (max-width: 600px) {
-  body {
-    padding: 10px;
-    font-size: 22px; /* 모바일에서 전체 글씨 더 크게 */
-  }
-  h2 {
-    font-size: 2.2rem;
-  }
-  .auth-panel input, .btn {
-    font-size: 1.4rem;
-    padding: 18px;
-  }
-  table {
-    font-size: 1.2rem; /* 표 글씨 더 크게 */
-  }
-  th, td {
-    padding: 18px 10px;
-  }
-}
+    .table-wrapper { overflow-x: auto; }
 
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 1.1rem;
+      min-width: 600px;
+    }
 
+    th, td {
+      padding: 16px 10px;
+      border-bottom: 1px solid #e0e0e0;
+      text-align: center;
+    }
+
+    button.del {
+      padding: 8px 12px;
+      font-size: 1rem;
+      border: none;
+      background: #ef5350;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 10px; font-size: 22px; }
+      h2 { font-size: 2.2rem; }
+      .auth-panel input, .btn { font-size: 1.4rem; padding: 18px; }
+      table { font-size: 1.2rem; }
+      th, td { padding: 18px 10px; }
+    }
   </style>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, push, onValue, remove, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import { 
+      getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
+      setPersistence, browserLocalPersistence
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
@@ -142,18 +154,23 @@ button.del {
     let totalDiscountUsed = 0;
     let isAdmin = false;
 
+    // 로그인 버튼 클릭 → 로그인 유지 후 로그인 실행
     loginBtn.addEventListener("click", () => {
-      signInWithEmailAndPassword(auth, emailInput.value, pwInput.value)
+      setPersistence(auth, browserLocalPersistence)
+        .then(() => {
+          return signInWithEmailAndPassword(auth, emailInput.value, pwInput.value);
+        })
         .catch(err => alert("로그인 실패: " + err.message));
     });
 
+    // 로그아웃 버튼
     logoutBtn.addEventListener("click", () => {
       signOut(auth).catch(err => alert("로그아웃 실패: " + err.message));
     });
 
+    // 로그인 상태 변경 감지
     onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // 관리자 여부 확인
         const adminSnap = await get(child(ref(db), `admins/${user.uid}`));
         isAdmin = adminSnap.exists() && adminSnap.val() === true;
 
