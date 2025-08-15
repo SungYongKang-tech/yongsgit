@@ -1,58 +1,27 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>전기차 충전 할인 계산기</title>
+<body>
+  <div class="container">
+    <h2>전기차 충전 할인 계산기</h2>
 
-  <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(to right, #e0f7fa, #ffffff);
-      margin: 0;
-      padding: 30px 15px;
-    }
-    h2 { text-align: center; color: #01579b; margin-bottom: 20px; }
-    .container {
-      max-width: 680px; margin: auto; background: #ffffffee;
-      padding: 20px 25px; border-radius: 14px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
-    }
-    input {
-      width: 100%; padding: 12px 14px; font-size: 16px;
-      border: 1px solid #bbb; border-radius: 8px; margin-bottom: 20px;
-    }
-    .description { font-size: 14px; margin-bottom: 10px; color: #444; text-align: center; }
-    table {
-      width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px;
-      background-color: white; border-radius: 10px; overflow: hidden;
-      box-shadow: 0 0 5px rgba(0,0,0,0.05);
-    }
-    th {
-      background-color: #b3e5fc; color: #01579b; padding: 10px; font-weight: bold;
-      border-bottom: 1px solid #90caf9;
-    }
-    td { padding: 10px; border-bottom: 1px solid #e0e0e0; background-color: #f9f9f9; }
-    td:last-child { background-color: #fff3f3; }
-    button {
-      padding: 6px 12px; border-radius: 6px; border: none;
-      background: #ef5350; color: white; cursor: pointer; font-size: 13px;
-    }
-    button:hover { background: #d32f2f; }
-    @media (max-width: 600px) {
-      .container { padding: 15px; }
-      th, td { font-size: 12px; padding: 6px; }
-      input { font-size: 15px; }
-      button { font-size: 12px; padding: 5px 10px; }
-    }
-  </style>
+    <!-- 🔹 로그인/로그아웃 버튼 -->
+    <div style="text-align:center; margin-bottom:15px;">
+      <button id="loginBtn" style="background:#4caf50;">로그인</button>
+      <button id="logoutBtn" style="background:#888;">로그아웃</button>
+      <div id="userStatus" style="margin-top:8px; font-size:14px; color:#333;"></div>
+    </div>
+
+    <input type="number" id="amount" placeholder="충전금액 입력 (₩)" />
+    <div class="description">
+      환경부카드 월 최대 30,000원까지 할인 적용됩니다.<br />
+      아래 표에는 남은 할인 한도, 추가 충전량 등이 표시됩니다.
+    </div>
+    <table id="logTable"></table>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-    // --- Firebase 설정 ---
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
       authDomain: "ionic6-3b7b2.firebaseapp.com",
@@ -67,30 +36,47 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
 
-    // --- 상수 ---
-    const MAX_DISCOUNT = 30_000;     // 월 최대 할인
-    const DISCOUNT_RATE = 0.7;       // 70%
-    const PRICE_PER_KWH = 341;       // 원/kWh
-    const BATTERY_CAPACITY = 77.4;   // kWh
+    const MAX_DISCOUNT = 30000;
+    const DISCOUNT_RATE = 0.7;
+    const PRICE_PER_KWH = 341;
+    const BATTERY_CAPACITY = 77.4;
 
-    // --- DOM 참조 ---
     const amountInput = document.getElementById("amount");
     const logsTable  = document.getElementById("logTable");
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const userStatus = document.getElementById("userStatus");
 
-    // --- 로그인 후 앱 시작 ---
+    let currentMonth = new Date().toISOString().substring(0, 7);
+    let totalDiscountUsed = 0;
+
+    // 🔹 로그인 버튼 클릭 → 익명 로그인
+    loginBtn.addEventListener("click", () => {
+      signInAnonymously(auth)
+        .then(() => console.log("익명 로그인 성공"))
+        .catch(err => alert("로그인 실패: " + err.message));
+    });
+
+    // 🔹 로그아웃 버튼 클릭
+    logoutBtn.addEventListener("click", () => {
+      signOut(auth)
+        .then(() => console.log("로그아웃 성공"))
+        .catch(err => alert("로그아웃 실패: " + err.message));
+    });
+
+    // 🔹 로그인 상태 변경 감지
     onAuthStateChanged(auth, (user) => {
-      if (user) startApp();
-      else signInAnonymously(auth).catch(err => {
-        console.error('익명 로그인 실패:', err);
-        alert('익명 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-      });
+      if (user) {
+        userStatus.textContent = `로그인됨 (UID: ${user.uid})`;
+        startApp();
+      } else {
+        userStatus.textContent = "로그아웃됨";
+        logsTable.innerHTML = "";
+      }
     });
 
     function startApp() {
-      const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
       const logRef = ref(db, `chargingLogs/${currentMonth}`);
-
-      let totalDiscountUsed = 0;
 
       onValue(logRef, (snapshot) => {
         const data = snapshot.val();
@@ -101,11 +87,9 @@
           });
         }
         renderLogs(data);
-      }, (error) => {
-        console.error('읽기 권한 오류:', error);
       });
 
-      amountInput.addEventListener("change", () => {
+      amountInput.onchange = () => {
         const amount = Number(amountInput.value);
         if (!amount || amount <= 0) return;
 
@@ -116,9 +100,9 @@
         const remainingCap = Math.max(0, MAX_DISCOUNT - totalDiscountUsed);
         const discount     = Math.min(amount * DISCOUNT_RATE, remainingCap);
         const remaining    = Math.max(0, MAX_DISCOUNT - (totalDiscountUsed + discount));
-        const moreCharge   = remaining / DISCOUNT_RATE;            // 추가 결제 가능 금액
-        const moreKwh      = moreCharge / PRICE_PER_KWH;           // 추가 kWh
-        const batteryPct   = (moreKwh / BATTERY_CAPACITY) * 100;   // 배터리 %
+        const moreCharge   = remaining / DISCOUNT_RATE;
+        const moreKwh      = moreCharge / PRICE_PER_KWH;
+        const batteryPct   = (moreKwh / BATTERY_CAPACITY) * 100;
 
         const data = {
           timestamp: isoDate,
@@ -132,59 +116,36 @@
 
         push(ref(db, `chargingLogs/${monthKey}`), data);
         amountInput.value = "";
-      });
-
-      function renderLogs(data) {
-        logsTable.innerHTML = `<tr>
-          <th>날짜</th>
-          <th>금액</th>
-          <th>할인</th>
-          <th>남은할인한도</th>
-          <th>추가충전가능금액</th>
-          <th>추가kWh</th>
-          <th>충전%</th>
-          <th>삭제</th>
-        </tr>`;
-
-        const entries = Object.entries(data || {})
-          .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
-
-        entries.forEach(([key, log]) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${log.timestamp.substring(5, 10)}</td>
-            <td>${Number(log.amount).toLocaleString()}</td>
-            <td>${Number(log.discount).toLocaleString()}</td>
-            <td>${Number(log.remaining).toLocaleString()}</td>
-            <td>${Number(log.moreCharge).toLocaleString()}</td>
-            <td>${log.moreKwh}</td>
-            <td>${log.batteryPercent}%</td>
-            <td><button data-key="${key}" class="del">삭제</button></td>
-          `;
-          logsTable.appendChild(row);
-        });
-
-        // 위임 삭제
-        logsTable.querySelectorAll('button.del').forEach(btn => {
-          btn.onclick = () => deleteEntry(btn.dataset.key);
-        });
-      }
-
-      window.deleteEntry = function(key) {
-        remove(ref(db, `chargingLogs/${currentMonth}/${key}`));
       };
     }
+
+    function renderLogs(data) {
+      logsTable.innerHTML = `<tr>
+        <th>날짜</th><th>금액</th><th>할인</th><th>남은할인한도</th>
+        <th>추가충전가능금액</th><th>추가kWh</th><th>충전%</th><th>삭제</th>
+      </tr>`;
+
+      const entries = Object.entries(data || {})
+        .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+
+      entries.forEach(([key, log]) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${log.timestamp.substring(5, 10)}</td>
+          <td>${Number(log.amount).toLocaleString()}</td>
+          <td>${Number(log.discount).toLocaleString()}</td>
+          <td>${Number(log.remaining).toLocaleString()}</td>
+          <td>${Number(log.moreCharge).toLocaleString()}</td>
+          <td>${log.moreKwh}</td>
+          <td>${log.batteryPercent}%</td>
+          <td><button data-key="${key}" class="del">삭제</button></td>
+        `;
+        logsTable.appendChild(row);
+      });
+
+      logsTable.querySelectorAll('button.del').forEach(btn => {
+        btn.onclick = () => remove(ref(db, `chargingLogs/${currentMonth}/${btn.dataset.key}`));
+      });
+    }
   </script>
-</head>
-<body>
-  <div class="container">
-    <h2>전기차 충전 할인 계산기</h2>
-    <input type="number" id="amount" placeholder="충전금액 입력 (₩)" />
-    <div class="description">
-      환경부카드 월 최대 30,000원까지 할인 적용됩니다.<br />
-      아래 표에는 남은 할인 한도, 추가 충전량 등이 표시됩니다.
-    </div>
-    <table id="logTable"></table>
-  </div>
 </body>
-</html>
