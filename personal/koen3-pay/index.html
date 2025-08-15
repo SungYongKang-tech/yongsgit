@@ -9,10 +9,7 @@
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; margin: 0; background: #fafafa; color:#222; }
     header { position: sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid #e5e7eb; }
-    .bar {
-      max-width: 1100px; margin: 0 auto; padding: 16px 14px;
-      display: flex; flex-direction: column; align-items: center; gap: 10px;
-    }
+    .bar { max-width: 1100px; margin: 0 auto; padding: 16px 14px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
     .bar h1 { font-size: clamp(18px, 4.5vw, 22px); margin: 0; text-align: center; }
     .bar .actions { display:flex; gap:6px; flex-wrap:wrap; }
 
@@ -334,11 +331,7 @@
     function setSaving(msg){ $('#savingText').textContent = msg; }
     function hideSaving(){ $('#savingOverlay').classList.add('hidden'); }
 
-    function loadImage(src){
-      return new Promise((resolve,reject)=>{
-        const img = new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src;
-      });
-    }
+    function loadImage(src){ return new Promise((resolve,reject)=>{ const img = new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src; }); }
     async function drawToCanvas(src, maxW){
       async function bitmapToCanvas(bmp, maxW){
         const s = Math.min(1, maxW / bmp.width);
@@ -365,9 +358,7 @@
       if (typeof src !== 'string') { try { URL.revokeObjectURL(url); } catch(_){} }
       return canvas;
     }
-    function canvasToBlob(canvas, quality=0.82, type='image/jpeg'){
-      return new Promise((resolve)=> canvas.toBlob(b=>resolve(b), type, quality));
-    }
+    function canvasToBlob(canvas, quality=0.82, type='image/jpeg'){ return new Promise((resolve)=> canvas.toBlob(b=>resolve(b), type, quality)); }
     async function compressWithLimit(fileOrDataURL, {maxW, qualityStart=0.82, minQuality=0.55, step=0.07}){
       try {
         const src = fileOrDataURL;
@@ -378,10 +369,7 @@
           lastBlob = blob;
           if (blob.size <= MAX_BYTES) return blob;
           if (q > minQuality) q = Math.max(minQuality, q - step);
-          else {
-            w = Math.round(w * 0.85);
-            if (w < 480) return blob;
-          }
+          else { w = Math.round(w * 0.85); if (w < 480) return blob; }
         }
         return lastBlob;
       } catch (e) {
@@ -423,19 +411,13 @@
       setSaving(`사진 ${index}/${total} 준비`);
       const blob = await compressWithLimit(file, { maxW: 1600, qualityStart: 0.82 });
       setSaving(`사진 업로드 ${index}/${total} (전송 중…)`);
-      return await uploadToCloudinary(
-        blob, `meetings/${meetingId}/photos`,
-        (p)=> setSaving(`사진 업로드 ${index}/${total} (${p}%)`)
-      );
+      return await uploadToCloudinary(blob, `meetings/${meetingId}/photos`, (p)=> setSaving(`사진 업로드 ${index}/${total} (${p}%)`));
     }
     async function uploadReceipt(meetingId, file, index, total){
       setSaving(`영수증 ${index}/${total} 준비`);
       const blob = await compressWithLimit(file, { maxW: 1200, qualityStart: 0.8 });
       setSaving(`영수증 업로드 ${index}/${total} (전송 중…)`);
-      const r = await uploadToCloudinary(
-        blob, `meetings/${meetingId}/receipts`,
-        (p)=> setSaving(`영수증 업로드 ${index}/${total} (${p}%)`)
-      );
+      const r = await uploadToCloudinary(blob, `meetings/${meetingId}/receipts`, (p)=> setSaving(`영수증 업로드 ${index}/${total} (${p}%)`));
       return r.full; // 영수증은 원본 URL만 사용
     }
 
@@ -443,8 +425,8 @@
     const viewList = $('#view-list'), viewEditor = $('#view-editor'), viewDetail = $('#view-detail');
     function show(id){ [viewList,viewEditor,viewDetail].forEach(v=>v.classList.add('hidden')); id.classList.remove('hidden'); window.scrollTo({top:0, behavior:'smooth'}); }
 
-    $('#btnList').onclick = ()=> { renderList(); show(viewList); };
-    $('#btnNew').onclick  = ()=> { resetEditor(); show(viewEditor); };
+    $('#btnList').onclick = ()=> { renderList(); show(viewList); /* 목록 버튼은 히스토리 건드리지 않음 */ };
+    $('#btnNew').onclick  = ()=> { resetEditor(); show(viewEditor); /* 에디터 히스토리는 이번 요구사항 범위 밖 */ };
 
     /************ 리스트 ************/
     async function renderList(){
@@ -643,7 +625,6 @@
     });
     function renderGlobalReceiptPreview(){
       const box = $('#allReceiptPreview'); box.innerHTML='';
-      // 기존(편집 시 로드된) + 신규 파일 함께 보여주기
       globalReceiptsExisting.forEach((url, i)=>{
         const wrap = document.createElement('div'); wrap.className='preview-row';
         const img = document.createElement('img'); img.src=url; img.alt='영수증(기존)'; img.classList.add('zoomable');
@@ -834,6 +815,8 @@
         await saveMeetingToDB(data);
         alert(isEditing ? '수정되었습니다.' : '저장되었습니다.');
         await renderList(); show(viewList);
+        // 목록 상태로 스테이트 정리
+        history.replaceState({ view: 'list' }, '', location.href);
         resetEditor();
 
       } catch (e) {
@@ -875,12 +858,15 @@
 
       renderPaidTable(item);
 
-      $('#btnBackToList').onclick = async ()=>{ await renderList(); show(viewList); };
+      // “목록으로” 버튼 → 뒤로가기와 동일 UX
+      $('#btnBackToList').onclick = ()=> { history.back(); };
+
       $('#btnDelete').onclick = async ()=>{
         if(!IS_ADMIN){ return alert('관리자만 삭제할 수 있어요.'); }
         if(!confirm('이 회식 기록을 삭제할까요?')) return;
         await deleteMeetingFromDB(id);
         await renderList(); show(viewList);
+        history.replaceState({ view: 'list' }, '', location.href);
       };
       $('#btnCapture').onclick = ()=> captureElement(
         $('#detailSummary'),
@@ -889,6 +875,9 @@
       $('#btnEdit').onclick = ()=> startEdit(id);
 
       show(viewDetail);
+
+      // ✅ 뒤로가면 목록으로 복귀하도록 detail 상태 push
+      history.pushState({ view: 'detail', id }, '', location.href);
     }
 
     function buildSummaryHTML(item){
@@ -1033,7 +1022,7 @@
     }
     window.captureElement = captureElement;
 
-    /************ 라이트박스(좌우 넘김/스와이프) ************/
+    /************ 라이트박스(좌우 넘김/스와이프 + 히스토리 연동) ************/
     const imgModal = $('#imgModal'), imgModalImg = $('#imgModalImg'), imgModalClose = $('#imgModalClose');
 
     // 현재 갤러리 컨텍스트
@@ -1044,6 +1033,10 @@
       galleryNodes = Array.from(container.querySelectorAll('img.zoomable'));
       galleryIndex = Math.max(0, galleryNodes.indexOf(startNode));
       if (!galleryNodes.length) return;
+
+      // ✅ 라이트박스 전용 히스토리 스택 추가
+      history.pushState({ lightbox: true }, '', location.href);
+
       showGalleryImage();
       imgModal.classList.remove('hidden');
       document.body.style.overflow='hidden';
@@ -1053,11 +1046,20 @@
       if (!node) return;
       imgModalImg.src = node.src;
     }
-    function closeImgModal(){ imgModal.classList.add('hidden'); imgModalImg.src=''; document.body.style.overflow=''; }
+    function closeImgModal(opts = { fromPop: false }){
+      imgModal.classList.add('hidden');
+      imgModalImg.src='';
+      document.body.style.overflow='';
+
+      // X 버튼 등으로 닫았을 땐 히스토리 한 칸 되돌려서 스택 정리
+      if (!opts.fromPop && history.state && history.state.lightbox) {
+        history.back();
+      }
+    }
     function nextImg(){ if (!galleryNodes.length) return; galleryIndex = (galleryIndex+1) % galleryNodes.length; showGalleryImage(); }
     function prevImg(){ if (!galleryNodes.length) return; galleryIndex = (galleryIndex-1+galleryNodes.length) % galleryNodes.length; showGalleryImage(); }
 
-    imgModalClose.addEventListener('click', closeImgModal);
+    imgModalClose.addEventListener('click', ()=> closeImgModal());
     imgModal.addEventListener('click', e=>{ if(e.target===imgModal) closeImgModal(); });
     document.addEventListener('keydown', e=>{
       if (imgModal.classList.contains('hidden')) return;
@@ -1111,9 +1113,30 @@
       if (btn.dataset.role === 'del-global-receipt-new'){ const i = +btn.dataset.i; globalReceiptFiles.splice(i,1); renderGlobalReceiptPreview(); return; }
     });
 
+    /************ 뒤로가기(popstate) 통합 처리 ************/
+    window.addEventListener('popstate', async () => {
+      // 1) 라이트박스가 열려 있으면 → 닫고 끝
+      if (!imgModal.classList.contains('hidden')) {
+        closeImgModal({ fromPop: true });
+        return;
+      }
+      // 2) 상세 화면이 보이는 중이면 → 목록으로 전환
+      if (!viewDetail.classList.contains('hidden')) {
+        await renderList();
+        show(viewList);
+        // 목록 상태로 스테이트 정리
+        history.replaceState({ view: 'list' }, '', location.href);
+        return;
+      }
+      // 3) 나머지(목록/에디터)는 기본 동작 그대로
+    });
+
     function initUI(){
       $('#btnCapture').onclick = ()=> captureElement($('#detailSummary'), '정산결과.png');
       renderList(); show(viewList);
+
+      // ✅ 현재 페이지를 '목록' 상태로 고정
+      history.replaceState({ view: 'list' }, '', location.href);
     }
 
     /************ 분배 계산/패널 ************/
