@@ -2,25 +2,81 @@
   <div class="container">
     <h2>전기차 충전 할인 계산기</h2>
 
-    <!-- 🔹 로그인/로그아웃 버튼 -->
-    <div style="text-align:center; margin-bottom:15px;">
-      <button id="loginBtn" style="background:#4caf50;">로그인</button>
-      <button id="logoutBtn" style="background:#888;">로그아웃</button>
-      <div id="userStatus" style="margin-top:8px; font-size:14px; color:#333;"></div>
+    <!-- 로그인/로그아웃 UI -->
+    <div class="auth-panel">
+      <input type="email" id="email" placeholder="관리자 이메일" />
+      <input type="password" id="password" placeholder="비밀번호" />
+      <button id="loginBtn" class="btn green">로그인</button>
+      <button id="logoutBtn" class="btn gray">로그아웃</button>
+      <div id="userStatus"></div>
     </div>
 
-    <input type="number" id="amount" placeholder="충전금액 입력 (₩)" />
+    <input type="number" id="amount" placeholder="충전금액 입력 (₩)" disabled />
     <div class="description">
       환경부카드 월 최대 30,000원까지 할인 적용됩니다.<br />
       아래 표에는 남은 할인 한도, 추가 충전량 등이 표시됩니다.
     </div>
-    <table id="logTable"></table>
+    <div class="table-wrapper">
+      <table id="logTable"></table>
+    </div>
   </div>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #e0f7fa, #ffffff);
+      margin: 0; padding: 20px;
+    }
+    .container {
+      max-width: 700px; margin: auto; background: #ffffffee;
+      padding: 20px; border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    }
+    h2 { text-align: center; color: #01579b; margin-bottom: 20px; }
+    .auth-panel {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      justify-content: center; margin-bottom: 15px;
+    }
+    .auth-panel input {
+      flex: 1 1 200px; padding: 10px; border-radius: 8px;
+      border: 1px solid #bbb; font-size: 14px;
+    }
+    .btn {
+      padding: 10px 14px; border: none; border-radius: 8px;
+      font-size: 14px; cursor: pointer;
+    }
+    .btn.green { background: #4caf50; color: white; }
+    .btn.gray { background: #888; color: white; }
+    #userStatus {
+      flex-basis: 100%; text-align: center; font-size: 13px; color: #333;
+    }
+    .description { font-size: 14px; text-align: center; margin: 10px 0; color: #444; }
+    .table-wrapper { overflow-x: auto; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px; min-width: 600px;
+    }
+    th, td {
+      padding: 8px; border-bottom: 1px solid #e0e0e0; text-align: center;
+    }
+    th { background-color: #b3e5fc; color: #01579b; }
+    td:last-child { background-color: #fff3f3; }
+    button.del {
+      padding: 4px 8px; font-size: 12px; border: none;
+      background: #ef5350; color: white; border-radius: 4px; cursor: pointer;
+    }
+    button.del:disabled { background: #ccc; cursor: not-allowed; }
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      h2 { font-size: 18px; }
+      .auth-panel input { font-size: 13px; }
+      table { font-size: 12px; }
+    }
+  </style>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import { getDatabase, ref, push, onValue, remove, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
@@ -46,32 +102,36 @@
     const loginBtn = document.getElementById("loginBtn");
     const logoutBtn = document.getElementById("logoutBtn");
     const userStatus = document.getElementById("userStatus");
+    const emailInput = document.getElementById("email");
+    const pwInput = document.getElementById("password");
 
     let currentMonth = new Date().toISOString().substring(0, 7);
     let totalDiscountUsed = 0;
+    let isAdmin = false;
 
-    // 🔹 로그인 버튼 클릭 → 익명 로그인
     loginBtn.addEventListener("click", () => {
-      signInAnonymously(auth)
-        .then(() => console.log("익명 로그인 성공"))
+      signInWithEmailAndPassword(auth, emailInput.value, pwInput.value)
         .catch(err => alert("로그인 실패: " + err.message));
     });
 
-    // 🔹 로그아웃 버튼 클릭
     logoutBtn.addEventListener("click", () => {
-      signOut(auth)
-        .then(() => console.log("로그아웃 성공"))
-        .catch(err => alert("로그아웃 실패: " + err.message));
+      signOut(auth).catch(err => alert("로그아웃 실패: " + err.message));
     });
 
-    // 🔹 로그인 상태 변경 감지
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
       if (user) {
-        userStatus.textContent = `로그인됨 (UID: ${user.uid})`;
+        // 관리자 여부 확인
+        const adminSnap = await get(child(ref(db), `admins/${user.uid}`));
+        isAdmin = adminSnap.exists() && adminSnap.val() === true;
+
+        userStatus.textContent = isAdmin ? "관리자 로그인됨" : "일반 사용자 로그인됨";
+        amountInput.disabled = !isAdmin;
+
         startApp();
       } else {
         userStatus.textContent = "로그아웃됨";
         logsTable.innerHTML = "";
+        amountInput.disabled = true;
       }
     });
 
@@ -90,6 +150,12 @@
       });
 
       amountInput.onchange = () => {
+        if (!isAdmin) {
+          alert("관리자만 수정 가능합니다.");
+          amountInput.value = "";
+          return;
+        }
+
         const amount = Number(amountInput.value);
         if (!amount || amount <= 0) return;
 
@@ -138,13 +204,19 @@
           <td>${Number(log.moreCharge).toLocaleString()}</td>
           <td>${log.moreKwh}</td>
           <td>${log.batteryPercent}%</td>
-          <td><button data-key="${key}" class="del">삭제</button></td>
+          <td><button data-key="${key}" class="del" ${!isAdmin ? "disabled" : ""}>삭제</button></td>
         `;
         logsTable.appendChild(row);
       });
 
       logsTable.querySelectorAll('button.del').forEach(btn => {
-        btn.onclick = () => remove(ref(db, `chargingLogs/${currentMonth}/${btn.dataset.key}`));
+        btn.onclick = () => {
+          if (!isAdmin) {
+            alert("관리자만 삭제 가능합니다.");
+            return;
+          }
+          remove(ref(db, `chargingLogs/${currentMonth}/${btn.dataset.key}`));
+        };
       });
     }
   </script>
