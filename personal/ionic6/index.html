@@ -113,6 +113,10 @@
       table { font-size: 1.2rem; }
       th, td { padding: 18px 10px; }
     }
+
+    #loginBtn, #logoutBtn {
+  display: none; /* 기본은 숨김, JS에서 상태에 맞게 보이게 함 */
+}
   </style>
 
   <script type="module">
@@ -170,20 +174,28 @@
 
     // 로그인 상태 변경 감지
     onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const adminSnap = await get(child(ref(db), `admins/${user.uid}`));
-        isAdmin = adminSnap.exists() && adminSnap.val() === true;
+  if (user) {
+    // 버튼 표시: 로그인 상태면 로그인 버튼 숨기고 로그아웃 버튼만 보이게
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "inline-block";
 
-        userStatus.textContent = isAdmin ? "관리자 로그인됨" : "일반 사용자 로그인됨";
-        amountInput.disabled = !isAdmin;
+    const adminSnap = await get(child(ref(db), `admins/${user.uid}`));
+    isAdmin = adminSnap.exists() && adminSnap.val() === true;
 
-        startApp();
-      } else {
-        userStatus.textContent = "로그아웃됨";
-        logsTable.innerHTML = "";
-        amountInput.disabled = true;
-      }
-    });
+    userStatus.textContent = isAdmin ? "관리자 로그인됨" : "일반 사용자 로그인됨";
+    amountInput.disabled = !isAdmin;
+
+    startApp();
+  } else {
+    // 버튼 표시: 로그아웃 상태면 로그아웃 버튼 숨기고 로그인 버튼만 보이게
+    loginBtn.style.display = "inline-block";
+    logoutBtn.style.display = "none";
+
+    userStatus.textContent = "로그아웃됨";
+    logsTable.innerHTML = "";
+    amountInput.disabled = true;
+  }
+});
 
     function startApp() {
       const logRef = ref(db, `chargingLogs/${currentMonth}`);
