@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HTML 장기 게임 (최종 수정판 · 궁 X 정렬)</title>
+  <title>HTML 장기 게임 (궁 X 표시 고정판)</title>
   <style>
     :root {
       --cell-size: 56px;
@@ -57,8 +57,8 @@
           var(--border-color) var(--cell-size)
         );
       background-size: var(--cell-size) var(--cell-size);
-      /* 격자 바깥 테두리 */
       border: 1px solid var(--border-color);
+      z-index: 1;
     }
 
     /* 말 토큰 (SVG 이미지를 배경으로) */
@@ -74,14 +74,16 @@
       transition: transform 0.2s ease, box-shadow 0.2s ease;
       transform: translate(-50%, -50%);
       box-sizing: border-box;
+      z-index: 2;
     }
     .piece.selected { box-shadow: 0 0 15px 5px rgba(255, 0, 0, 0.7); }
 
-    /* 궁 X 오버레이 */
+    /* 궁 X 오버레이: 격자/말 위에 확실히 보이도록 */
     #palace-overlay {
       position: absolute;
       inset: 0;
       pointer-events: none; /* 클릭 통과 */
+      z-index: 3;
     }
   </style>
 </head>
@@ -147,7 +149,8 @@
         ln.setAttribute('x2', x2); ln.setAttribute('y2', y2);
         ln.setAttribute('stroke', getComputedStyle(document.documentElement)
                             .getPropertyValue('--border-color').trim() || '#3a2a1a');
-        ln.setAttribute('stroke-width', 2);
+        ln.setAttribute('stroke-width', 3);
+        ln.setAttribute('stroke-linecap', 'square');
         ln.setAttribute('shape-rendering', 'crispEdges');
         return ln;
       };
@@ -173,7 +176,6 @@
         el.className = 'piece';
 
         // 파일명 규칙: 같은 폴더에 han_*.svg / cho_*.svg 존재
-        // byung/jol 이름만 서로 다름 → 파일명은 그대로 사용
         const pieceName =
           info.team === 'han' && info.piece === 'byung' ? 'byung' :
           info.team === 'cho' && info.piece === 'jol'   ? 'jol'   : info.piece;
@@ -227,4 +229,14 @@
         selected.dataset.row = row;
         selected.dataset.col = col;
 
-        selected.
+        selected.classList.remove('selected');
+        selected = null;
+      }
+    });
+
+    // 초기 렌더
+    drawPalaceLines();
+    placePieces();
+  </script>
+</body>
+</html>
