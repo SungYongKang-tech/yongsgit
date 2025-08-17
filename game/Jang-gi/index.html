@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML 장기 게임 (수정판)</title>
+    <title>HTML 장기 게임 (최종 수정판)</title>
     <style>
         :root {
             --cell-size: 56px;
@@ -41,11 +41,14 @@
             position: relative;
             width: var(--board-width);
             height: var(--board-height);
-            /* 가로선과 세로선을 background-image로 그리기 */
             background-image:
                 repeating-linear-gradient(to right, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size)),
                 repeating-linear-gradient(to bottom, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size));
             background-size: var(--cell-size) var(--cell-size);
+            
+            /* --- 수정된 부분: 맨 위/왼쪽 선 추가 --- */
+            border-top: 1px solid var(--border-color);
+            border-left: 1px solid var(--border-color);
             border-right: 1px solid var(--border-color);
             border-bottom: 1px solid var(--border-color);
         }
@@ -66,7 +69,7 @@
         /* 궁성 대각선 */
         .diag1 { top: 0; left: 0; width: 1px; height: calc(var(--cell-size) * 2.828); transform: rotate(45deg); transform-origin: top left; }
         .diag2 { top: 0; right: 0; width: 1px; height: calc(var(--cell-size) * 2.828); transform: rotate(-45deg); transform-origin: top right; }
-        /* 궁성 세로선 (추가) */
+        /* 궁성 세로선 */
         .vert { top: 0; left: var(--cell-size); width: 1px; height: calc(var(--cell-size) * 2); }
 
 
@@ -80,7 +83,6 @@
             border-radius: 50%;
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
-            /* 교차점에 위치하도록 위치 보정 */
             transform: translate(-50%, -50%);
             box-sizing: border-box;
         }
@@ -92,7 +94,7 @@
 </head>
 <body>
 
-    <h1>HTML 장기 게임 (수정판)</h1>
+    <h1>HTML 장기 게임 (최종 수정판)</h1>
     <div id="janggi-board-container">
         <div id="janggi-board">
             <div id="cho-palace" class="palace">
@@ -112,10 +114,7 @@
         const boardElement = document.getElementById('janggi-board');
         const CELL_SIZE = 56;
 
-        // 표준 기물 배치 (귀마 포진 기준, row, col)
-        // (0,0)이 좌상단 교차점
         const initialSetup = {
-            // 초나라 (상단)
             '0,0': { team: 'cho', piece: 'cha' }, '0,1': { team: 'cho', piece: 'sang' },
             '0,2': { team: 'cho', piece: 'ma' },  '0,3': { team: 'cho', piece: 'sa' },
             '0,5': { team: 'cho', piece: 'sa' },  '0,6': { team: 'cho', piece: 'ma' },
@@ -126,7 +125,6 @@
             '3,4': { team: 'cho', piece: 'jol' }, '3,6': { team: 'cho', piece: 'jol' },
             '3,8': { team: 'cho', piece: 'jol' },
 
-            // 한나라 (하단)
             '9,0': { team: 'han', piece: 'cha' }, '9,1': { team: 'han', piece: 'sang' },
             '9,2': { team: 'han', piece: 'ma' },  '9,3': { team: 'han', piece: 'sa' },
             '9,5': { team: 'han', piece: 'sa' },  '9,6': { team: 'han', piece: 'ma' },
@@ -138,7 +136,6 @@
             '6,8': { team: 'han', piece: 'byung' }
         };
 
-        // 기물 배치 함수
         function placePieces() {
             Object.entries(initialSetup).forEach(([pos, pieceInfo]) => {
                 const [row, col] = pos.split(',').map(Number);
@@ -154,7 +151,6 @@
                 pieceElement.dataset.row = row;
                 pieceElement.dataset.col = col;
 
-                // 교차점에 위치시키기
                 pieceElement.style.top = `${row * CELL_SIZE}px`;
                 pieceElement.style.left = `${col * CELL_SIZE}px`;
 
@@ -164,18 +160,15 @@
         
         placePieces();
 
-        // 게임 로직 (선택 및 이동)
         let selectedPiece = null;
 
         boardElement.addEventListener('click', (e) => {
             const target = e.target;
 
-            // 기물 선택/해제
             if (target.classList.contains('piece')) {
                 if (selectedPiece) {
                     selectedPiece.classList.remove('selected');
                 }
-                // 이미 선택된 기물을 다시 클릭하면 선택 해제
                 if (selectedPiece === target) {
                     selectedPiece = null;
                     return;
@@ -183,9 +176,7 @@
                 selectedPiece = target;
                 selectedPiece.classList.add('selected');
             }
-            // 빈 공간 클릭 (기물 이동)
             else if (selectedPiece) {
-                // 클릭한 위치의 row, col 계산
                 const boardRect = boardElement.getBoundingClientRect();
                 const x = e.clientX - boardRect.left;
                 const y = e.clientY - boardRect.top;
@@ -195,22 +186,18 @@
 
                 // TODO: 여기에 실제 장기 규칙에 따른 이동 가능 여부 검사 로직이 필요합니다.
 
-                // 이동 위치에 다른 기물이 있는지 확인
                 const targetPiece = document.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
                 
-                if (targetPiece) { // 다른 기물이 있다면
+                if (targetPiece) { 
                     if (targetPiece.dataset.team !== selectedPiece.dataset.team) {
-                        // 상대 기물일 경우 잡기
                         targetPiece.remove();
                     } else {
-                        // 같은 팀 기물이면 이동 불가
                         selectedPiece.classList.remove('selected');
                         selectedPiece = null;
                         return;
                     }
                 }
                 
-                // 기물 위치 업데이트
                 selectedPiece.style.left = `${col * CELL_SIZE}px`;
                 selectedPiece.style.top = `${row * CELL_SIZE}px`;
                 selectedPiece.dataset.row = row;
