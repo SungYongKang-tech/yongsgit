@@ -6,7 +6,7 @@
   <title>장기 (SVG 말 로딩 예제)</title>
   <style>
     :root {
-      --board-w: min(92vmin, 860px); /* 전체 보드 폭 */
+      --board-w: min(92vmin, 860px);
     }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; background:#f6f7fb; color:#222; display:flex; justify-content:center; }
     .wrap { width: var(--board-w); padding: 14px 10px 24px; }
@@ -15,13 +15,9 @@
     .toolbar { display:flex; gap:8px; }
     button { padding:8px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; cursor:pointer; }
     .board-box { position: relative; width:100%; aspect-ratio: 9/10; background:#fdfcf7; border: 2px solid #222; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-
-    /* 선택/합법수 표시 */
     .hint { pointer-events:none; }
     .hint circle { fill: rgba(0,0,0,.15); }
     .last-move line { stroke:#3b82f6; stroke-width:6; stroke-linecap:round; opacity:.5 }
-
-    /* 반응형 안내 */
     .note { color:#475569; font-size: 12px; margin-top:8px }
   </style>
 </head>
@@ -34,48 +30,30 @@
         <button id="flipBtn">상하 뒤집기</button>
       </div>
     </header>
-
-    <!-- SVG로 보드와 말을 함께 렌더링합니다. -->
     <div class="board-box">
       <svg id="board" viewBox="0 0 900 1000" width="100%" height="100%">
-        <!-- 격자(9x10 교차점) -->
         <g id="grid" stroke="#111" stroke-width="2">
-          <!-- 세로선 9개 (x = 0..8) -->
           <g id="vlines"></g>
-          <!-- 가로선 10개 (y = 0..9) -->
           <g id="hlines"></g>
         </g>
-
-        <!-- 궁(宮) 대각선: 위/아래 각 3x3 영역 -->
         <g id="palace" stroke="#111" stroke-width="2">
-          <!-- 위 궁: (x:3..5, y:0..2) -->
           <line x1="300" y1="0" x2="600" y2="300" />
           <line x1="600" y1="0" x2="300" y2="300" />
-          <!-- 아래 궁: (x:3..5, y:7..9) -->
           <line x1="300" y1="700" x2="600" y2="1000" />
           <line x1="600" y1="700" x2="300" y2="1000" />
         </g>
-
-        <!-- 최근 수 표시 (선) -->
         <g class="last-move" id="lastMove"></g>
-
-        <!-- 합법 수 힌트 -->
         <g class="hint" id="hints"></g>
-
-        <!-- 말 레이어 -->
         <g id="pieces"></g>
       </svg>
     </div>
-    <div class="note">※ 말은 외부 SVG 파일을 그대로 <image>로 올립니다. 파일 경로만 맞추면 됩니다.</div>
+    <div class="note">※ 같은 폴더의 han_*.svg, cho_*.svg 파일을 불러옵니다.</div>
   </div>
 
 <script>
-// ====== 기본 설정 ======
-const FILES = 9;   // x: 0..8
-const RANKS = 10;  // y: 0..9
-const CELL = 100;  // viewBox 스케일(900x1000)
-
-// SVG 참조
+const FILES = 9;
+const RANKS = 10;
+const CELL = 100;
 const svg = document.getElementById('board');
 const vLayer = document.getElementById('vlines');
 const hLayer = document.getElementById('hlines');
@@ -83,13 +61,12 @@ const pLayer = document.getElementById('pieces');
 const hintLayer = document.getElementById('hints');
 const lastMoveLayer = document.getElementById('lastMove');
 
-// 보드 선 그리기
 for (let x = 0; x < FILES; x++) {
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
   line.setAttribute('x1', x*CELL);
   line.setAttribute('y1', 0);
   line.setAttribute('x2', x*CELL);
-  line.setAttribute('y2', 9*CELL); // 가운데 강 없음: 위아래 모두 연결
+  line.setAttribute('y2', 9*CELL);
   vLayer.appendChild(line);
 }
 for (let y = 0; y < RANKS; y++) {
@@ -101,43 +78,36 @@ for (let y = 0; y < RANKS; y++) {
   hLayer.appendChild(line);
 }
 
-// ====== 말 로딩 ======
-// 파일 경로 규칙(원하는대로 바꾸세요)
-// 한: han_cha.svg, han_ma.svg, han_sang.svg, han_sa.svg, han_jang.svg, han_po.svg, han_byung.svg
-// 초: cho_cha.svg, cho_ma.svg, cho_sang.svg, cho_sa.svg, cho_jang.svg, cho_po.svg, cho_jol.svg
 const PIECE_SOURCES = {
   han: {
-    cha:  'pieces/han_cha.svg',
-    ma:   'pieces/han_ma.svg',
-    sang: 'pieces/han_sang.svg',
-    sa:   'pieces/han_sa.svg',
-    jang: 'pieces/han_jang.svg',
-    po:   'pieces/han_po.svg',
-    byung:'pieces/han_byung.svg',
+    cha:  'han_cha.svg',
+    ma:   'han_ma.svg',
+    sang: 'han_sang.svg',
+    sa:   'han_sa.svg',
+    jang: 'han_jang.svg',
+    po:   'han_po.svg',
+    byung:'han_byung.svg',
   },
   cho: {
-    cha:  'pieces/cho_cha.svg',
-    ma:   'pieces/cho_ma.svg',
-    sang: 'pieces/cho_sang.svg',
-    sa:   'pieces/cho_sa.svg',
-    jang: 'pieces/cho_jang.svg',
-    po:   'pieces/cho_po.svg',
-    jol:  'pieces/cho_jol.svg',
+    cha:  'cho_cha.svg',
+    ma:   'cho_ma.svg',
+    sang: 'cho_sang.svg',
+    sa:   'cho_sa.svg',
+    jang: 'cho_jang.svg',
+    po:   'cho_po.svg',
+    jol:  'cho_jol.svg',
   }
 };
 
-// 초기 배치 (상단: 한 / 하단: 초) — 일반적인 대칭 배치
-// 좌표는 교차점 기준: (file x:0..8, rank y:0..9) 위가 y=0
 function initialPosition() {
   const pos = [];
-  // 한(위)
   const H = 'han';
   pos.push(
     {side:H, type:'cha',  x:0, y:0},
     {side:H, type:'ma',   x:1, y:0},
     {side:H, type:'sang', x:2, y:0},
     {side:H, type:'sa',   x:3, y:0},
-    {side:H, type:'jang', x:4, y:1}, // 흔한 변형: 장은 y=1 중앙. (룰에 따라 y=0 중앙 사용도 있음)
+    {side:H, type:'jang', x:4, y:1},
     {side:H, type:'sa',   x:5, y:0},
     {side:H, type:'sang', x:6, y:0},
     {side:H, type:'ma',   x:7, y:0},
@@ -150,14 +120,13 @@ function initialPosition() {
     {side:H, type:'byung',x:6, y:3},
     {side:H, type:'byung',x:8, y:3},
   );
-  // 초(아래)
   const C = 'cho';
   pos.push(
     {side:C, type:'cha',  x:0, y:9},
     {side:C, type:'ma',   x:1, y:9},
     {side:C, type:'sang', x:2, y:9},
     {side:C, type:'sa',   x:3, y:9},
-    {side:C, type:'jang', x:4, y:8}, // 초 장은 y=8 중앙
+    {side:C, type:'jang', x:4, y:8},
     {side:C, type:'sa',   x:5, y:9},
     {side:C, type:'sang', x:6, y:9},
     {side:C, type:'ma',   x:7, y:9},
@@ -173,21 +142,18 @@ function initialPosition() {
   return pos;
 }
 
-// 상태
 let pieces = initialPosition();
-let turn = 'cho'; // 선: 초
+let turn = 'cho';
 let selectedId = null;
-let flipped = false; // 상하 뒤집기
+let flipped = false;
 let moveHistory = [];
 
-// 좌표 → 픽셀(중심)
 function toXY(x, y) {
-  const py = y * CELL; // 교차점 위치
+  const py = y * CELL;
   const px = x * CELL;
   return { cx: px, cy: py };
 }
 
-// 말 렌더링
 function drawPieces() {
   pLayer.innerHTML = '';
   pieces.forEach((p, id) => {
@@ -196,7 +162,6 @@ function drawPieces() {
     g.setAttribute('data-id', id);
     g.style.cursor = 'pointer';
 
-    // 말 이미지 (외부 SVG)
     const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     const href = PIECE_SOURCES[p.side][p.type];
     img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', href);
@@ -205,22 +170,8 @@ function drawPieces() {
     img.setAttribute('width', 76);
     img.setAttribute('height', 76);
     img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-
-    // 로딩 실패 대비(원형 토큰)
-    img.addEventListener('error', () => {
-      const fallback = document.createElementNS('http://www.w3.org/2000/svg','circle');
-      fallback.setAttribute('cx', cx);
-      fallback.setAttribute('cy', cy);
-      fallback.setAttribute('r', 34);
-      fallback.setAttribute('fill', p.side==='cho' ? '#e11d48' : '#111827');
-      fallback.setAttribute('stroke', '#fff');
-      fallback.setAttribute('stroke-width', '2');
-      g.appendChild(fallback);
-    }, { once:true });
-
     g.appendChild(img);
 
-    // 선택 링
     if (Number(selectedId) === id) {
       const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
       ring.setAttribute('cx', cx);
@@ -232,143 +183,16 @@ function drawPieces() {
       g.appendChild(ring);
     }
 
-    // 클릭 핸들러
     g.addEventListener('click', () => onPieceClick(id));
     pLayer.appendChild(g);
   });
 }
 
-// 합법 수 계산 (첫 버전: 데모용 — 차/마/상/포/병/졸/사/장 전체는 이후 확장)
-function legalMoves(id) {
-  const p = pieces[id];
-  if (!p) return [];
-
-  // 차(룩) 완전 구현 (궁 대각 제외 — 차/장/병의 궁 대각은 이후 확장)
-  const ray = (dx, dy) => {
-    const res = [];
-    let x = p.x + dx, y = p.y + dy;
-    while (x>=0 && x<FILES && y>=0 && y<RANKS) {
-      const hit = pieceAt(x,y);
-      if (hit == null) res.push({x,y});
-      else { if (pieces[hit].side !== p.side) res.push({x,y}); break; }
-      x += dx; y += dy;
-    }
-    return res;
-  };
-
-  switch (p.type) {
-    case 'cha':
-      return [ ...ray(1,0), ...ray(-1,0), ...ray(0,1), ...ray(0,-1) ];
-    case 'byung': { // 병: 앞/좌/우 1칸 (후진 금지). 초는 +y, 한은 -y 방향이 앞으로.
-      const dir = (p.side==='cho') ? 1 : -1;
-      const candidates = [ {x:p.x, y:p.y+dir}, {x:p.x-1, y:p.y}, {x:p.x+1, y:p.y} ];
-      return candidates.filter(c => inBoard(c.x,c.y) && !allyAt(p.side,c.x,c.y));
-    }
-    case 'jol': { // 졸: 동일 (명칭만 다름)
-      const dir = (p.side==='cho') ? 1 : -1;
-      const candidates = [ {x:p.x, y:p.y+dir}, {x:p.x-1, y:p.y}, {x:p.x+1, y:p.y} ];
-      return candidates.filter(c => inBoard(c.x,c.y) && !allyAt(p.side,c.x,c.y));
-    }
-    default:
-      // TODO: 마/상/포/사/장 및 궁 대각, 포의 점프 포획, 체크 필터링 등 단계적 확장
-      return [];
-  }
-}
-
-function inBoard(x,y){ return x>=0 && x<FILES && y>=0 && y<RANKS; }
-function pieceAt(x,y){ return pieces.findIndex(pp => pp.x===x && pp.y===y); }
-function allyAt(side,x,y){ const i=pieceAt(x,y); return i!==-1 && pieces[i].side===side; }
-
-// 힌트 렌더
-function showHints(moves) {
-  hintLayer.innerHTML = '';
-  moves.forEach(m => {
-    const {cx, cy} = toXY(m.x, m.y);
-    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    c.setAttribute('cx', cx);
-    c.setAttribute('cy', cy);
-    c.setAttribute('r', 12);
-    hintLayer.appendChild(c);
-  });
-}
-
-// 말/빈칸 클릭 처리
-svg.addEventListener('click', (e) => {
-  // 빈칸 클릭 시: 선택된 말이 있으면 이동 시도
-  if (e.target.closest('#pieces')) return; // 말 클릭은 onPieceClick에서 처리
-  if (selectedId==null) return;
-  const pt = pointerToCell(e);
-  tryMove(selectedId, pt.x, pt.y);
-});
-
-function onPieceClick(id){
-  const p = pieces[id];
-  if (p.side !== turn) { // 내 차례가 아니면, 내가 선택 중일 때 상대 말로의 포획 시도 허용
-    if (selectedId!=null) {
-      const tgt = pieces[id];
-      tryMove(selectedId, tgt.x, tgt.y);
-    }
-    return;
-  }
-  selectedId = (selectedId===id) ? null : id;
-  showHints(selectedId==null ? [] : legalMoves(selectedId));
-  drawPieces();
-}
-
-function pointerToCell(evt){
-  const pt = svg.createSVGPoint();
-  pt.x = evt.clientX; pt.y = evt.clientY;
-  const m = svg.getScreenCTM().inverse();
-  const sp = pt.matrixTransform(m);
-  const x = Math.round(sp.x / CELL);
-  const y = Math.round(sp.y / CELL);
-  return { x: Math.max(0,Math.min(8,x)), y: Math.max(0,Math.min(9,y)) };
-}
-
-function tryMove(id, tx, ty){
-  const p = pieces[id];
-  const moves = legalMoves(id);
-  if (!moves.some(m => m.x===tx && m.y===ty)) return; // 불법수
-
-  // 포획
-  const enemy = pieceAt(tx,ty);
-  let captured = null;
-  if (enemy!==-1 && pieces[enemy].side!==p.side) {
-    captured = pieces[enemy];
-    pieces.splice(enemy,1);
-    // id가 바뀔 수 있으니 다시 찾기
-    id = pieces.findIndex(q=>q===p);
-  }
-
-  // 이동
-  const from = {x:p.x, y:p.y};
-  p.x = tx; p.y = ty;
-
-  // 턴 교체
-  moveHistory.push({ from, to:{x:tx,y:ty}, side:p.side, type:p.type, captured });
-  turn = (turn==='cho') ? 'han' : 'cho';
-  selectedId = null;
-  showHints([]);
-  drawPieces();
-  drawLastMove(from, {x:tx,y:ty});
-}
-
-function drawLastMove(a,b){
-  lastMoveLayer.innerHTML = '';
-  const l = document.createElementNS('http://www.w3.org/2000/svg','line');
-  const A = toXY(a.x,a.y); const B = toXY(b.x,b.y);
-  l.setAttribute('x1', A.cx); l.setAttribute('y1', A.cy);
-  l.setAttribute('x2', B.cx); l.setAttribute('y2', B.cy);
-  lastMoveLayer.appendChild(l);
-}
-
-// 초기화 & 뒤집기
 function reset() {
   pieces = initialPosition();
   turn = 'cho';
   selectedId = null;
   moveHistory = [];
-  showHints([]);
   drawPieces();
   lastMoveLayer.innerHTML = '';
 }
@@ -378,11 +202,8 @@ function flip(){
 }
 
 document.getElementById('resetBtn').addEventListener('click', reset);
-Document.getElementById?.('flipBtn'); // 타입가드
-const flipBtn = document.getElementById('flipBtn');
-flipBtn.addEventListener('click', flip);
+document.getElementById('flipBtn').addEventListener('click', flip);
 
-// 시작 렌더
 reset();
 </script>
 </body>
