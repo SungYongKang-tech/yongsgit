@@ -31,16 +31,13 @@
       </div>
     </header>
     <div class="board-box">
-      <svg id="board" viewBox="0 0 900 1000" width="100%" height="100%">
-        <g id="grid" stroke="#111" stroke-width="2">
-          <g id="vlines"></g>
-          <g id="hlines"></g>
-        </g>
+      <svg id="board" viewBox="0 0 800 900" width="100%" height="100%">
+        <g id="grid" stroke="#111" stroke-width="2"></g>
         <g id="palace" stroke="#111" stroke-width="2">
-          <line x1="300" y1="0" x2="600" y2="300" />
-          <line x1="600" y1="0" x2="300" y2="300" />
-          <line x1="300" y1="700" x2="600" y2="1000" />
-          <line x1="600" y1="700" x2="300" y2="1000" />
+          <line x1="240" y1="0" x2="560" y2="270" />
+          <line x1="560" y1="0" x2="240" y2="270" />
+          <line x1="240" y1="630" x2="560" y2="900" />
+          <line x1="560" y1="630" x2="240" y2="900" />
         </g>
         <g class="last-move" id="lastMove"></g>
         <g class="hint" id="hints"></g>
@@ -55,25 +52,25 @@ const FILES = 9;
 const RANKS = 10;
 const CELL = 100;
 const svg = document.getElementById('board');
-const vLayer = document.getElementById('vlines');
-const hLayer = document.getElementById('hlines');
+const gridLayer = document.getElementById('grid');
 const pLayer = document.getElementById('pieces');
 const hintLayer = document.getElementById('hints');
 const lastMoveLayer = document.getElementById('lastMove');
 
+// 보드 선 (x:0..8, y:0..9, 좌표를 100단위로)
 for (let x = 0; x < FILES; x++) {
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
   line.setAttribute('x1', x*CELL);
   line.setAttribute('y1', 0);
   line.setAttribute('x2', x*CELL);
-  line.setAttribute('y2', 9*CELL);
+  line.setAttribute('y2', 10*CELL); // 전체 높이(0..1000)
   vLayer.appendChild(line);
 }
 for (let y = 0; y < RANKS; y++) {
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
   line.setAttribute('x1', 0);
   line.setAttribute('y1', y*CELL);
-  line.setAttribute('x2', 8*CELL);
+  line.setAttribute('x2', 9*CELL); // 전체 너비(0..900)
   line.setAttribute('y2', y*CELL);
   hLayer.appendChild(line);
 }
@@ -107,7 +104,7 @@ function initialPosition() {
     {side:H, type:'ma',   x:1, y:0},
     {side:H, type:'sang', x:2, y:0},
     {side:H, type:'sa',   x:3, y:0},
-    {side:H, type:'jang', x:4, y:1},
+    {side:H, type:'jang', x:4, y:0},
     {side:H, type:'sa',   x:5, y:0},
     {side:H, type:'sang', x:6, y:0},
     {side:H, type:'ma',   x:7, y:0},
@@ -126,7 +123,7 @@ function initialPosition() {
     {side:C, type:'ma',   x:1, y:9},
     {side:C, type:'sang', x:2, y:9},
     {side:C, type:'sa',   x:3, y:9},
-    {side:C, type:'jang', x:4, y:8},
+    {side:C, type:'jang', x:4, y:9},
     {side:C, type:'sa',   x:5, y:9},
     {side:C, type:'sang', x:6, y:9},
     {side:C, type:'ma',   x:7, y:9},
@@ -143,62 +140,34 @@ function initialPosition() {
 }
 
 let pieces = initialPosition();
-let turn = 'cho';
-let selectedId = null;
-let flipped = false;
-let moveHistory = [];
 
 function toXY(x, y) {
-  const py = y * CELL;
-  const px = x * CELL;
-  return { cx: px, cy: py };
+  return { cx: x*100, cy: y*100 };
 }
 
 function drawPieces() {
   pLayer.innerHTML = '';
   pieces.forEach((p, id) => {
     const {cx, cy} = toXY(p.x, p.y);
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    g.setAttribute('data-id', id);
-    g.style.cursor = 'pointer';
-
     const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     const href = PIECE_SOURCES[p.side][p.type];
     img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', href);
-    img.setAttribute('x', cx - 38);
-    img.setAttribute('y', cy - 38);
-    img.setAttribute('width', 76);
-    img.setAttribute('height', 76);
+    img.setAttribute('x', cx - 40);
+    img.setAttribute('y', cy - 40);
+    img.setAttribute('width', 80);
+    img.setAttribute('height', 80);
     img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    g.appendChild(img);
-
-    if (Number(selectedId) === id) {
-      const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
-      ring.setAttribute('cx', cx);
-      ring.setAttribute('cy', cy);
-      ring.setAttribute('r', 40);
-      ring.setAttribute('fill','none');
-      ring.setAttribute('stroke', '#0ea5e9');
-      ring.setAttribute('stroke-width', '4');
-      g.appendChild(ring);
-    }
-
-    g.addEventListener('click', () => onPieceClick(id));
-    pLayer.appendChild(g);
+    pLayer.appendChild(img);
   });
 }
 
 function reset() {
   pieces = initialPosition();
-  turn = 'cho';
-  selectedId = null;
-  moveHistory = [];
   drawPieces();
   lastMoveLayer.innerHTML = '';
 }
 function flip(){
-  flipped = !flipped;
-  svg.setAttribute('viewBox', flipped ? '0 1000 900 -1000' : '0 0 900 1000');
+  svg.setAttribute('viewBox', svg.getAttribute('viewBox')==='0 0 800 900' ? '0 900 800 -900' : '0 0 800 900');
 }
 
 document.getElementById('resetBtn').addEventListener('click', reset);
