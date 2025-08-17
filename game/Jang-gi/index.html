@@ -3,8 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML 장기 게임</title>
+    <title>HTML 장기 게임 (수정판)</title>
     <style>
+        :root {
+            --cell-size: 56px;
+            --board-width: calc(var(--cell-size) * 8);
+            --board-height: calc(var(--cell-size) * 9);
+            --border-color: #3a2a1a;
+            --board-bg: #e4c59a;
+        }
+
         body {
             font-family: sans-serif;
             display: flex;
@@ -12,178 +20,206 @@
             align-items: center;
             flex-direction: column;
             background-color: #f0e6d2;
+            padding: 20px;
         }
+
         h1 {
             color: #333;
         }
-        #janggi-board {
-            display: grid;
-            grid-template-columns: repeat(9, 60px);
-            grid-template-rows: repeat(10, 60px);
-            border: 2px solid #3a2a1a;
-            background-color: #e4c59a;
+
+        #janggi-board-container {
             position: relative;
-        }
-        .cell {
+            width: calc(var(--board-width) + var(--cell-size));
+            height: calc(var(--board-height) + var(--cell-size));
+            background-color: var(--board-bg);
+            border: 2px solid var(--border-color);
+            padding: calc(var(--cell-size) / 2);
             box-sizing: border-box;
-            border: 1px solid #a0856c;
-            position: relative;
         }
+
+        #janggi-board {
+            position: relative;
+            width: var(--board-width);
+            height: var(--board-height);
+            /* 가로선과 세로선을 background-image로 그리기 */
+            background-image:
+                repeating-linear-gradient(to right, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size)),
+                repeating-linear-gradient(to bottom, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size));
+            background-size: var(--cell-size) var(--cell-size);
+            border-right: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .palace {
+            position: absolute;
+            width: calc(var(--cell-size) * 2);
+            height: calc(var(--cell-size) * 2);
+            left: calc(var(--cell-size) * 3);
+        }
+        #cho-palace { top: 0; }
+        #han-palace { bottom: 0; }
+
+        .palace-line {
+            position: absolute;
+            background-color: var(--border-color);
+        }
+        /* 궁성 대각선 */
+        .diag1 { top: 0; left: 0; width: 1px; height: calc(var(--cell-size) * 2.828); transform: rotate(45deg); transform-origin: top left; }
+        .diag2 { top: 0; right: 0; width: 1px; height: calc(var(--cell-size) * 2.828); transform: rotate(-45deg); transform-origin: top right; }
+        /* 궁성 세로선 (추가) */
+        .vert { top: 0; left: var(--cell-size); width: 1px; height: calc(var(--cell-size) * 2); }
+
+
         .piece {
-            width: 100%;
-            height: 100%;
+            position: absolute;
+            width: calc(var(--cell-size) * 0.9);
+            height: calc(var(--cell-size) * 0.9);
             background-size: contain;
             background-repeat: no-repeat;
             background-position: center;
+            border-radius: 50%;
             cursor: pointer;
-            transition: transform 0.2s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            /* 교차점에 위치하도록 위치 보정 */
+            transform: translate(-50%, -50%);
+            box-sizing: border-box;
         }
-        .piece:hover {
-            transform: scale(1.1);
+        
+        .piece.selected {
+            box-shadow: 0 0 15px 5px rgba(255, 0, 0, 0.7);
         }
-        /* 궁성 라인 */
-        .palace-line {
-            position: absolute;
-            background-color: #3a2a1a;
-            z-index: -1;
-        }
-        /* 세로선 */
-        .col-3-row-0 { top: 30px; left: 210px; width: 1px; height: 120px; }
-        .col-5-row-0 { top: 30px; left: 330px; width: 1px; height: 120px; }
-        .col-3-row-7 { top: 450px; left: 210px; width: 1px; height: 120px; }
-        .col-5-row-7 { top: 450px; left: 330px; width: 1px; height: 120px; }
-        /* 가로선 */
-        .col-3-row-0-diag1 { top: 90px; left: 210px; width: 120px; height: 1px; transform: rotate(45deg); transform-origin: top left; }
-        .col-3-row-0-diag2 { top: 90px; left: 330px; width: 120px; height: 1px; transform: rotate(-45deg); transform-origin: top right; }
-        .col-3-row-7-diag1 { top: 510px; left: 210px; width: 120px; height: 1px; transform: rotate(45deg); transform-origin: top left; }
-        .col-3-row-7-diag2 { top: 510px; left: 330px; width: 120px; height: 1px; transform: rotate(-45deg); transform-origin: top right; }
-
     </style>
 </head>
 <body>
 
-    <h1>HTML 장기 게임</h1>
-    <div id="janggi-board">
-        <div class="palace-line col-3-row-0"></div>
-        <div class="palace-line col-5-row-0"></div>
-        <div class="palace-line col-3-row-7"></div>
-        <div class="palace-line col-5-row-7"></div>
-        <div class="palace-line col-3-row-0-diag1"></div>
-        <div class="palace-line col-3-row-0-diag2"></div>
-        <div class="palace-line col-3-row-7-diag1"></div>
-        <div class="palace-line col-3-row-7-diag2"></div>
+    <h1>HTML 장기 게임 (수정판)</h1>
+    <div id="janggi-board-container">
+        <div id="janggi-board">
+            <div id="cho-palace" class="palace">
+                <div class="palace-line vert"></div>
+                <div class="palace-line diag1"></div>
+                <div class="palace-line diag2"></div>
+            </div>
+            <div id="han-palace" class="palace">
+                <div class="palace-line vert"></div>
+                <div class="palace-line diag1"></div>
+                <div class="palace-line diag2"></div>
+            </div>
+        </div>
     </div>
 
     <script>
         const boardElement = document.getElementById('janggi-board');
+        const CELL_SIZE = 56;
 
-        // 초기 기물 배치
+        // 표준 기물 배치 (귀마 포진 기준, row, col)
+        // (0,0)이 좌상단 교차점
         const initialSetup = {
-            // 한나라 (하단)
-            '9,0': { team: 'han', piece: 'cha' },
-            '9,1': { team: 'han', piece: 'ma' },
-            '9,2': { team: 'han', piece: 'sang' },
-            '9,3': { team: 'han', piece: 'sa' },
-            '9,5': { team: 'han', piece: 'sa' },
-            '9,6': { team: 'han', piece: 'sang' },
-            '9,7': { team: 'han', piece: 'ma' },
-            '9,8': { team: 'han', piece: 'cha' },
-            '8,4': { team: 'han', piece: 'jang' },
-            '7,1': { team: 'han', piece: 'po' },
-            '7,7': { team: 'han', piece: 'po' },
-            '6,0': { team: 'han', piece: 'byung' },
-            '6,2': { team: 'han', piece: 'byung' },
-            '6,4': { team: 'han', piece: 'byung' },
-            '6,6': { team: 'han', piece: 'byung' },
-            '6,8': { team: 'han', piece: 'byung' },
-
             // 초나라 (상단)
-            '0,0': { team: 'cho', piece: 'cha' },
-            '0,1': { team: 'cho', piece: 'ma' },
-            '0,2': { team: 'cho', piece: 'sang' },
-            '0,3': { team: 'cho', piece: 'sa' },
-            '0,5': { team: 'cho', piece: 'sa' },
-            '0,6': { team: 'cho', piece: 'sang' },
-            '0,7': { team: 'cho', piece: 'ma' },
-            '0,8': { team: 'cho', piece: 'cha' },
+            '0,0': { team: 'cho', piece: 'cha' }, '0,1': { team: 'cho', piece: 'sang' },
+            '0,2': { team: 'cho', piece: 'ma' },  '0,3': { team: 'cho', piece: 'sa' },
+            '0,5': { team: 'cho', piece: 'sa' },  '0,6': { team: 'cho', piece: 'ma' },
+            '0,7': { team: 'cho', piece: 'sang' },'0,8': { team: 'cho', piece: 'cha' },
             '1,4': { team: 'cho', piece: 'jang' },
-            '2,1': { team: 'cho', piece: 'po' },
-            '2,7': { team: 'cho', piece: 'po' },
-            '3,0': { team: 'cho', piece: 'jol' },
-            '3,2': { team: 'cho', piece: 'jol' },
-            '3,4': { team: 'cho', piece: 'jol' },
-            '3,6': { team: 'cho', piece: 'jol' },
+            '2,1': { team: 'cho', piece: 'po' },  '2,7': { team: 'cho', piece: 'po' },
+            '3,0': { team: 'cho', piece: 'jol' }, '3,2': { team: 'cho', piece: 'jol' },
+            '3,4': { team: 'cho', piece: 'jol' }, '3,6': { team: 'cho', piece: 'jol' },
             '3,8': { team: 'cho', piece: 'jol' },
+
+            // 한나라 (하단)
+            '9,0': { team: 'han', piece: 'cha' }, '9,1': { team: 'han', piece: 'sang' },
+            '9,2': { team: 'han', piece: 'ma' },  '9,3': { team: 'han', piece: 'sa' },
+            '9,5': { team: 'han', piece: 'sa' },  '9,6': { team: 'han', piece: 'ma' },
+            '9,7': { team: 'han', piece: 'sang' },'9,8': { team: 'han', piece: 'cha' },
+            '8,4': { team: 'han', piece: 'jang' },
+            '7,1': { team: 'han', piece: 'po' },  '7,7': { team: 'han', piece: 'po' },
+            '6,0': { team: 'han', piece: 'byung' }, '6,2': { team: 'han', piece: 'byung' },
+            '6,4': { team: 'han', piece: 'byung' }, '6,6': { team: 'han', piece: 'byung' },
+            '6,8': { team: 'han', piece: 'byung' }
         };
 
-        // 장기판 및 기물 생성
-        function createBoard() {
-            for (let row = 0; row < 10; row++) {
-                for (let col = 0; col < 9; col++) {
-                    const cell = document.createElement('div');
-                    cell.classList.add('cell');
-                    cell.dataset.row = row;
-                    cell.dataset.col = col;
+        // 기물 배치 함수
+        function placePieces() {
+            Object.entries(initialSetup).forEach(([pos, pieceInfo]) => {
+                const [row, col] = pos.split(',').map(Number);
+                const pieceElement = document.createElement('div');
+                pieceElement.classList.add('piece');
+                
+                const pieceName = pieceInfo.team === 'han' && pieceInfo.piece === 'byung' ? 'byung' :
+                                  pieceInfo.team === 'cho' && pieceInfo.piece === 'jol' ? 'jol' : pieceInfo.piece;
 
-                    const pos = `${row},${col}`;
-                    if (initialSetup[pos]) {
-                        const pieceInfo = initialSetup[pos];
-                        const pieceElement = document.createElement('div');
-                        pieceElement.classList.add('piece');
-                        const pieceName = pieceInfo.team === 'han' && pieceInfo.piece === 'byung' ? 'byung' :
-                                          pieceInfo.team === 'cho' && pieceInfo.piece === 'jol' ? 'jol' : pieceInfo.piece;
-                        pieceElement.style.backgroundImage = `url('${pieceInfo.team}_${pieceName}.svg')`;
-                        pieceElement.dataset.team = pieceInfo.team;
-                        pieceElement.dataset.piece = pieceInfo.piece;
-                        cell.appendChild(pieceElement);
-                    }
+                pieceElement.style.backgroundImage = `url('${pieceInfo.team}_${pieceName}.svg')`;
+                pieceElement.dataset.team = pieceInfo.team;
+                pieceElement.dataset.piece = pieceInfo.piece;
+                pieceElement.dataset.row = row;
+                pieceElement.dataset.col = col;
 
-                    boardElement.appendChild(cell);
-                }
-            }
+                // 교차점에 위치시키기
+                pieceElement.style.top = `${row * CELL_SIZE}px`;
+                pieceElement.style.left = `${col * CELL_SIZE}px`;
+
+                boardElement.appendChild(pieceElement);
+            });
         }
+        
+        placePieces();
 
-        createBoard();
-
-        // 게임 로직 (간단한 드래그 앤 드롭 예시)
+        // 게임 로직 (선택 및 이동)
         let selectedPiece = null;
 
         boardElement.addEventListener('click', (e) => {
             const target = e.target;
 
-            // 기물 선택
-            if (target.classList.contains('piece') && !selectedPiece) {
+            // 기물 선택/해제
+            if (target.classList.contains('piece')) {
+                if (selectedPiece) {
+                    selectedPiece.classList.remove('selected');
+                }
+                // 이미 선택된 기물을 다시 클릭하면 선택 해제
+                if (selectedPiece === target) {
+                    selectedPiece = null;
+                    return;
+                }
                 selectedPiece = target;
-                target.style.border = '2px solid red';
+                selectedPiece.classList.add('selected');
             }
-            // 기물 이동 또는 선택 해제
+            // 빈 공간 클릭 (기물 이동)
             else if (selectedPiece) {
-                const targetCell = target.closest('.cell');
-                if (targetCell) {
-                    // 같은 칸 클릭 시 선택 해제
-                    if (selectedPiece.parentElement === targetCell) {
-                         selectedPiece.style.border = 'none';
-                         selectedPiece = null;
-                         return;
-                    }
-                    // 빈 칸으로 이동
-                    if (!targetCell.hasChildNodes()) {
-                        targetCell.appendChild(selectedPiece);
-                    }
-                    // 다른 기물 잡기
-                    else if (targetCell.firstChild !== selectedPiece) {
-                        const opponentPiece = targetCell.firstChild;
-                        if (opponentPiece.dataset.team !== selectedPiece.dataset.team) {
-                             targetCell.removeChild(opponentPiece);
-                             targetCell.appendChild(selectedPiece);
-                        }
+                // 클릭한 위치의 row, col 계산
+                const boardRect = boardElement.getBoundingClientRect();
+                const x = e.clientX - boardRect.left;
+                const y = e.clientY - boardRect.top;
+
+                const col = Math.round(x / CELL_SIZE);
+                const row = Math.round(y / CELL_SIZE);
+
+                // TODO: 여기에 실제 장기 규칙에 따른 이동 가능 여부 검사 로직이 필요합니다.
+
+                // 이동 위치에 다른 기물이 있는지 확인
+                const targetPiece = document.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
+                
+                if (targetPiece) { // 다른 기물이 있다면
+                    if (targetPiece.dataset.team !== selectedPiece.dataset.team) {
+                        // 상대 기물일 경우 잡기
+                        targetPiece.remove();
+                    } else {
+                        // 같은 팀 기물이면 이동 불가
+                        selectedPiece.classList.remove('selected');
+                        selectedPiece = null;
+                        return;
                     }
                 }
-                selectedPiece.style.border = 'none';
+                
+                // 기물 위치 업데이트
+                selectedPiece.style.left = `${col * CELL_SIZE}px`;
+                selectedPiece.style.top = `${row * CELL_SIZE}px`;
+                selectedPiece.dataset.row = row;
+                selectedPiece.dataset.col = col;
+                
+                selectedPiece.classList.remove('selected');
                 selectedPiece = null;
             }
         });
-
     </script>
 </body>
 </html>
