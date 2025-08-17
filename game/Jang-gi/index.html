@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HTML 장기 게임 (궁 X 표시 고정판)</title>
+  <title>HTML 장기 게임 (궁 X 레이어 고정)</title>
   <style>
     :root {
       --cell-size: 56px;
@@ -35,6 +35,7 @@
       box-sizing: border-box;
     }
 
+    /* 보드: 격자 배경만 담당(스택 컨텍스트 만들지 않도록 z-index 주지 않음) */
     #janggi-board {
       position: relative;
       width: var(--board-width);
@@ -58,7 +59,23 @@
         );
       background-size: var(--cell-size) var(--cell-size);
       border: 1px solid var(--border-color);
+      /* z-index 없음! */
+    }
+
+    /* 궁 X (SVG) 레이어: 격자 위, 말 아래 */
+    #palace-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
       z-index: 1;
+    }
+
+    /* 말 레이어: 항상 궁 X 위 */
+    #pieces-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none; /* 클릭은 각 말에만 먹이도록 기본은 막음 */
     }
 
     /* 말 토큰 (SVG 이미지를 배경으로) */
@@ -74,25 +91,9 @@
       transition: transform 0.2s ease, box-shadow 0.2s ease;
       transform: translate(-50%, -50%);
       box-sizing: border-box;
-      z-index: 2;
+      pointer-events: auto; /* 말은 클릭 가능 */
     }
     .piece.selected { box-shadow: 0 0 15px 5px rgba(255, 0, 0, 0.7); }
-
-   /* 궁 X 오버레이: 격자 뒤에 깔리도록 */
-#palace-overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none; /* 클릭 통과 */
-  z-index: 0; /* ✅ 제일 아래로 */
-}
-
-/* 말은 항상 위로 */
-.piece {
-  position: absolute;
-  z-index: 5;  /* ✅ 말 레이어가 더 위 */
-  /* ... 나머지 속성 그대로 ... */
-}
-
   </style>
 </head>
 <body>
@@ -100,16 +101,19 @@
   <h1>HTML 장기 게임 (최종 수정판)</h1>
   <div id="janggi-board-container">
     <div id="janggi-board">
-      <!-- 궁 대각선(X) SVG 오버레이: JS가 CELL_SIZE 기준 동적 생성 -->
+      <!-- 궁 대각선(X) SVG -->
       <svg id="palace-overlay" width="100%" height="100%"></svg>
+      <!-- 말 전용 레이어 -->
+      <div id="pieces-layer"></div>
     </div>
   </div>
 
   <script>
     const boardElement = document.getElementById('janggi-board');
     const overlay = document.getElementById('palace-overlay');
+    const piecesLayer = document.getElementById('pieces-layer');
 
-    // CSS 변수에서 CELL_SIZE 읽기 (px 제거)
+    // CSS 변수에서 CELL_SIZE 읽기
     const CELL_SIZE = parseFloat(getComputedStyle(document.documentElement)
                         .getPropertyValue('--cell-size'));
 
@@ -125,7 +129,6 @@
       '3,0': { team: 'cho', piece: 'jol' }, '3,2': { team: 'cho', piece: 'jol' },
       '3,4': { team: 'cho', piece: 'jol' }, '3,6': { team: 'cho', piece: 'jol' },
       '3,8': { team: 'cho', piece: 'jol' },
-
       // 한 (아래)
       '9,0': { team: 'han', piece: 'cha' }, '9,1': { team: 'han', piece: 'sang' },
       '9,2': { team: 'han', piece: 'ma' },  '9,3': { team: 'han', piece: 'sa' },
@@ -140,17 +143,13 @@
 
     /** 궁 X를 CELL_SIZE 기준으로 정확히 그리기 */
     function drawPalaceLines() {
-      // 보드 내부 픽셀 크기 (CSS 변수와 동일)
       const W = 8 * CELL_SIZE; // cols 0..8 → 8칸 간격
       const H = 9 * CELL_SIZE; // rows 0..9 → 9칸 간격
 
-      // SVG 좌표계 고정: 1px == 보드의 1px
       overlay.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
-      // 기존 선 지우기
       while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
 
-      // 선 생성 helper
       const mkLine = (x1, y1, x2, y2) => {
         const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         ln.setAttribute('x1', x1); ln.setAttribute('y1', y1);
@@ -163,17 +162,13 @@
         return ln;
       };
 
-      // 위 궁: (col:3..5, row:0..2) → (3,0)-(5,2)
-      const ux1 = 3 * CELL_SIZE, uy1 = 0 * CELL_SIZE;
-      const ux2 = 5 * CELL_SIZE, uy2 = 2 * CELL_SIZE;
-      overlay.appendChild(mkLine(ux1, uy1, ux2, uy2));
-      overlay.appendChild(mkLine(ux2, uy1, ux1, uy2));
+      // 위 궁: (3,0)-(5,2)
+      overlay.appendChild(mkLine(3*CELL_SIZE, 0*CELL_SIZE, 5*CELL_SIZE, 2*CELL_SIZE));
+      overlay.appendChild(mkLine(5*CELL_SIZE, 0*CELL_SIZE, 3*CELL_SIZE, 2*CELL_SIZE));
 
       // 아래 궁: (3,7)-(5,9)
-      const lx1 = 3 * CELL_SIZE, ly1 = 7 * CELL_SIZE;
-      const lx2 = 5 * CELL_SIZE, ly2 = 9 * CELL_SIZE;
-      overlay.appendChild(mkLine(lx1, ly1, lx2, ly2));
-      overlay.appendChild(mkLine(lx2, ly1, lx1, ly2));
+      overlay.appendChild(mkLine(3*CELL_SIZE, 7*CELL_SIZE, 5*CELL_SIZE, 9*CELL_SIZE));
+      overlay.appendChild(mkLine(5*CELL_SIZE, 7*CELL_SIZE, 3*CELL_SIZE, 9*CELL_SIZE));
     }
 
     /** 말 배치 */
@@ -183,7 +178,7 @@
         const el = document.createElement('div');
         el.className = 'piece';
 
-        // 파일명 규칙: 같은 폴더에 han_*.svg / cho_*.svg 존재
+        // 같은 폴더: han_*.svg / cho_*.svg
         const pieceName =
           info.team === 'han' && info.piece === 'byung' ? 'byung' :
           info.team === 'cho' && info.piece === 'jol'   ? 'jol'   : info.piece;
@@ -198,21 +193,25 @@
         el.style.left = `${col * CELL_SIZE}px`;
         el.style.top  = `${row * CELL_SIZE}px`;
 
-        boardElement.appendChild(el);
+        piecesLayer.appendChild(el);
       });
     }
 
     // === 선택 & 이동 (룰 체크 없이 데모 이동) ===
     let selected = null;
 
+    // 클릭은 보드 전체에, 실제 타깃은 말에만 적용되도록
     boardElement.addEventListener('click', (e) => {
-      const t = e.target;
-      if (t.classList.contains('piece')) {
+      const t = e.target.closest('.piece');
+      if (t) {
         if (selected) selected.classList.remove('selected');
         if (selected === t) { selected = null; return; }
         selected = t;
         selected.classList.add('selected');
-      } else if (selected) {
+        return;
+      }
+
+      if (selected) {
         const rect = boardElement.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -220,16 +219,13 @@
         const col = Math.round(x / CELL_SIZE);
         const row = Math.round(y / CELL_SIZE);
 
-        // 보드 범위 clamp
         if (col < 0 || col > 8 || row < 0 || row > 9) return;
 
-        // 간단한 충돌 처리(상대 말만 제거)
-        const target = document.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
+        // 간단 충돌 처리(상대 말만 제거)
+        const target = piecesLayer.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
         if (target) {
           if (target.dataset.team !== selected.dataset.team) target.remove();
-          else {
-            selected.classList.remove('selected'); selected = null; return;
-          }
+          else { selected.classList.remove('selected'); selected = null; return; }
         }
 
         selected.style.left = `${col * CELL_SIZE}px`;
