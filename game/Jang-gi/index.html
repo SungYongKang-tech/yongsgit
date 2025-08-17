@@ -1,179 +1,189 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>장기 (SVG 말 로딩 예제)</title>
-  <style>
-    :root {
-      --board-w: min(92vmin, 860px);
-    }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; background:#f6f7fb; color:#222; display:flex; justify-content:center; }
-    .wrap { width: var(--board-w); padding: 14px 10px 24px; }
-    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-    h1 { font-size: clamp(18px, 2.8vw, 24px); margin:0; }
-    .toolbar { display:flex; gap:8px; }
-    button { padding:8px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; cursor:pointer; }
-    .board-box { position: relative; width:100%; aspect-ratio: 9/10; background:#fdfcf7; border: 2px solid #222; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-    .hint { pointer-events:none; }
-    .hint circle { fill: rgba(0,0,0,.15); }
-    .last-move line { stroke:#3b82f6; stroke-width:6; stroke-linecap:round; opacity:.5 }
-    .note { color:#475569; font-size: 12px; margin-top:8px }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML 장기 게임</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background-color: #f0e6d2;
+        }
+        h1 {
+            color: #333;
+        }
+        #janggi-board {
+            display: grid;
+            grid-template-columns: repeat(9, 60px);
+            grid-template-rows: repeat(10, 60px);
+            border: 2px solid #3a2a1a;
+            background-color: #e4c59a;
+            position: relative;
+        }
+        .cell {
+            box-sizing: border-box;
+            border: 1px solid #a0856c;
+            position: relative;
+        }
+        .piece {
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .piece:hover {
+            transform: scale(1.1);
+        }
+        /* 궁성 라인 */
+        .palace-line {
+            position: absolute;
+            background-color: #3a2a1a;
+            z-index: -1;
+        }
+        /* 세로선 */
+        .col-3-row-0 { top: 30px; left: 210px; width: 1px; height: 120px; }
+        .col-5-row-0 { top: 30px; left: 330px; width: 1px; height: 120px; }
+        .col-3-row-7 { top: 450px; left: 210px; width: 1px; height: 120px; }
+        .col-5-row-7 { top: 450px; left: 330px; width: 1px; height: 120px; }
+        /* 가로선 */
+        .col-3-row-0-diag1 { top: 90px; left: 210px; width: 120px; height: 1px; transform: rotate(45deg); transform-origin: top left; }
+        .col-3-row-0-diag2 { top: 90px; left: 330px; width: 120px; height: 1px; transform: rotate(-45deg); transform-origin: top right; }
+        .col-3-row-7-diag1 { top: 510px; left: 210px; width: 120px; height: 1px; transform: rotate(45deg); transform-origin: top left; }
+        .col-3-row-7-diag2 { top: 510px; left: 330px; width: 120px; height: 1px; transform: rotate(-45deg); transform-origin: top right; }
+
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>장기 (SVG 말 사용)</h1>
-      <div class="toolbar">
-        <button id="resetBtn">초기배치</button>
-        <button id="flipBtn">상하 뒤집기</button>
-      </div>
-    </header>
-    <div class="board-box">
-      <svg id="board" viewBox="0 0 800 900" width="100%" height="100%">
-        <g id="grid" stroke="#111" stroke-width="2"></g>
-        <g id="palace" stroke="#111" stroke-width="2">
-          <line x1="240" y1="0" x2="560" y2="270" />
-          <line x1="560" y1="0" x2="240" y2="270" />
-          <line x1="240" y1="630" x2="560" y2="900" />
-          <line x1="560" y1="630" x2="240" y2="900" />
-        </g>
-        <g class="last-move" id="lastMove"></g>
-        <g class="hint" id="hints"></g>
-        <g id="pieces"></g>
-      </svg>
+
+    <h1>HTML 장기 게임</h1>
+    <div id="janggi-board">
+        <div class="palace-line col-3-row-0"></div>
+        <div class="palace-line col-5-row-0"></div>
+        <div class="palace-line col-3-row-7"></div>
+        <div class="palace-line col-5-row-7"></div>
+        <div class="palace-line col-3-row-0-diag1"></div>
+        <div class="palace-line col-3-row-0-diag2"></div>
+        <div class="palace-line col-3-row-7-diag1"></div>
+        <div class="palace-line col-3-row-7-diag2"></div>
     </div>
-    <div class="note">※ 같은 폴더의 han_*.svg, cho_*.svg 파일을 불러옵니다.</div>
-  </div>
 
-<script>
-const FILES = 9;
-const RANKS = 10;
-const CELL = 100;
-const svg = document.getElementById('board');
-const gridLayer = document.getElementById('grid');
-const pLayer = document.getElementById('pieces');
-const hintLayer = document.getElementById('hints');
-const lastMoveLayer = document.getElementById('lastMove');
+    <script>
+        const boardElement = document.getElementById('janggi-board');
 
-// 보드 선 (x:0..8, y:0..9, 좌표를 100단위로)
-for (let x = 0; x < FILES; x++) {
-  const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-  line.setAttribute('x1', x*CELL);
-  line.setAttribute('y1', 0);
-  line.setAttribute('x2', x*CELL);
-  line.setAttribute('y2', 10*CELL); // 전체 높이(0..1000)
-  vLayer.appendChild(line);
-}
-for (let y = 0; y < RANKS; y++) {
-  const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-  line.setAttribute('x1', 0);
-  line.setAttribute('y1', y*CELL);
-  line.setAttribute('x2', 9*CELL); // 전체 너비(0..900)
-  line.setAttribute('y2', y*CELL);
-  hLayer.appendChild(line);
-}
+        // 초기 기물 배치
+        const initialSetup = {
+            // 한나라 (하단)
+            '9,0': { team: 'han', piece: 'cha' },
+            '9,1': { team: 'han', piece: 'ma' },
+            '9,2': { team: 'han', piece: 'sang' },
+            '9,3': { team: 'han', piece: 'sa' },
+            '9,5': { team: 'han', piece: 'sa' },
+            '9,6': { team: 'han', piece: 'sang' },
+            '9,7': { team: 'han', piece: 'ma' },
+            '9,8': { team: 'han', piece: 'cha' },
+            '8,4': { team: 'han', piece: 'jang' },
+            '7,1': { team: 'han', piece: 'po' },
+            '7,7': { team: 'han', piece: 'po' },
+            '6,0': { team: 'han', piece: 'byung' },
+            '6,2': { team: 'han', piece: 'byung' },
+            '6,4': { team: 'han', piece: 'byung' },
+            '6,6': { team: 'han', piece: 'byung' },
+            '6,8': { team: 'han', piece: 'byung' },
 
-const PIECE_SOURCES = {
-  han: {
-    cha:  'han_cha.svg',
-    ma:   'han_ma.svg',
-    sang: 'han_sang.svg',
-    sa:   'han_sa.svg',
-    jang: 'han_jang.svg',
-    po:   'han_po.svg',
-    byung:'han_byung.svg',
-  },
-  cho: {
-    cha:  'cho_cha.svg',
-    ma:   'cho_ma.svg',
-    sang: 'cho_sang.svg',
-    sa:   'cho_sa.svg',
-    jang: 'cho_jang.svg',
-    po:   'cho_po.svg',
-    jol:  'cho_jol.svg',
-  }
-};
+            // 초나라 (상단)
+            '0,0': { team: 'cho', piece: 'cha' },
+            '0,1': { team: 'cho', piece: 'ma' },
+            '0,2': { team: 'cho', piece: 'sang' },
+            '0,3': { team: 'cho', piece: 'sa' },
+            '0,5': { team: 'cho', piece: 'sa' },
+            '0,6': { team: 'cho', piece: 'sang' },
+            '0,7': { team: 'cho', piece: 'ma' },
+            '0,8': { team: 'cho', piece: 'cha' },
+            '1,4': { team: 'cho', piece: 'jang' },
+            '2,1': { team: 'cho', piece: 'po' },
+            '2,7': { team: 'cho', piece: 'po' },
+            '3,0': { team: 'cho', piece: 'jol' },
+            '3,2': { team: 'cho', piece: 'jol' },
+            '3,4': { team: 'cho', piece: 'jol' },
+            '3,6': { team: 'cho', piece: 'jol' },
+            '3,8': { team: 'cho', piece: 'jol' },
+        };
 
-function initialPosition() {
-  const pos = [];
-  const H = 'han';
-  pos.push(
-    {side:H, type:'cha',  x:0, y:0},
-    {side:H, type:'ma',   x:1, y:0},
-    {side:H, type:'sang', x:2, y:0},
-    {side:H, type:'sa',   x:3, y:0},
-    {side:H, type:'jang', x:4, y:0},
-    {side:H, type:'sa',   x:5, y:0},
-    {side:H, type:'sang', x:6, y:0},
-    {side:H, type:'ma',   x:7, y:0},
-    {side:H, type:'cha',  x:8, y:0},
-    {side:H, type:'po',   x:1, y:2},
-    {side:H, type:'po',   x:7, y:2},
-    {side:H, type:'byung',x:0, y:3},
-    {side:H, type:'byung',x:2, y:3},
-    {side:H, type:'byung',x:4, y:3},
-    {side:H, type:'byung',x:6, y:3},
-    {side:H, type:'byung',x:8, y:3},
-  );
-  const C = 'cho';
-  pos.push(
-    {side:C, type:'cha',  x:0, y:9},
-    {side:C, type:'ma',   x:1, y:9},
-    {side:C, type:'sang', x:2, y:9},
-    {side:C, type:'sa',   x:3, y:9},
-    {side:C, type:'jang', x:4, y:9},
-    {side:C, type:'sa',   x:5, y:9},
-    {side:C, type:'sang', x:6, y:9},
-    {side:C, type:'ma',   x:7, y:9},
-    {side:C, type:'cha',  x:8, y:9},
-    {side:C, type:'po',   x:1, y:7},
-    {side:C, type:'po',   x:7, y:7},
-    {side:C, type:'jol',  x:0, y:6},
-    {side:C, type:'jol',  x:2, y:6},
-    {side:C, type:'jol',  x:4, y:6},
-    {side:C, type:'jol',  x:6, y:6},
-    {side:C, type:'jol',  x:8, y:6},
-  );
-  return pos;
-}
+        // 장기판 및 기물 생성
+        function createBoard() {
+            for (let row = 0; row < 10; row++) {
+                for (let col = 0; col < 9; col++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
 
-let pieces = initialPosition();
+                    const pos = `${row},${col}`;
+                    if (initialSetup[pos]) {
+                        const pieceInfo = initialSetup[pos];
+                        const pieceElement = document.createElement('div');
+                        pieceElement.classList.add('piece');
+                        const pieceName = pieceInfo.team === 'han' && pieceInfo.piece === 'byung' ? 'byung' :
+                                          pieceInfo.team === 'cho' && pieceInfo.piece === 'jol' ? 'jol' : pieceInfo.piece;
+                        pieceElement.style.backgroundImage = `url('${pieceInfo.team}_${pieceName}.svg')`;
+                        pieceElement.dataset.team = pieceInfo.team;
+                        pieceElement.dataset.piece = pieceInfo.piece;
+                        cell.appendChild(pieceElement);
+                    }
 
-function toXY(x, y) {
-  return { cx: x*100, cy: y*100 };
-}
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
 
-function drawPieces() {
-  pLayer.innerHTML = '';
-  pieces.forEach((p, id) => {
-    const {cx, cy} = toXY(p.x, p.y);
-    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-    const href = PIECE_SOURCES[p.side][p.type];
-    img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', href);
-    img.setAttribute('x', cx - 40);
-    img.setAttribute('y', cy - 40);
-    img.setAttribute('width', 80);
-    img.setAttribute('height', 80);
-    img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    pLayer.appendChild(img);
-  });
-}
+        createBoard();
 
-function reset() {
-  pieces = initialPosition();
-  drawPieces();
-  lastMoveLayer.innerHTML = '';
-}
-function flip(){
-  svg.setAttribute('viewBox', svg.getAttribute('viewBox')==='0 0 800 900' ? '0 900 800 -900' : '0 0 800 900');
-}
+        // 게임 로직 (간단한 드래그 앤 드롭 예시)
+        let selectedPiece = null;
 
-document.getElementById('resetBtn').addEventListener('click', reset);
-document.getElementById('flipBtn').addEventListener('click', flip);
+        boardElement.addEventListener('click', (e) => {
+            const target = e.target;
 
-reset();
-</script>
+            // 기물 선택
+            if (target.classList.contains('piece') && !selectedPiece) {
+                selectedPiece = target;
+                target.style.border = '2px solid red';
+            }
+            // 기물 이동 또는 선택 해제
+            else if (selectedPiece) {
+                const targetCell = target.closest('.cell');
+                if (targetCell) {
+                    // 같은 칸 클릭 시 선택 해제
+                    if (selectedPiece.parentElement === targetCell) {
+                         selectedPiece.style.border = 'none';
+                         selectedPiece = null;
+                         return;
+                    }
+                    // 빈 칸으로 이동
+                    if (!targetCell.hasChildNodes()) {
+                        targetCell.appendChild(selectedPiece);
+                    }
+                    // 다른 기물 잡기
+                    else if (targetCell.firstChild !== selectedPiece) {
+                        const opponentPiece = targetCell.firstChild;
+                        if (opponentPiece.dataset.team !== selectedPiece.dataset.team) {
+                             targetCell.removeChild(opponentPiece);
+                             targetCell.appendChild(selectedPiece);
+                        }
+                    }
+                }
+                selectedPiece.style.border = 'none';
+                selectedPiece = null;
+            }
+        });
+
+    </script>
 </body>
 </html>
