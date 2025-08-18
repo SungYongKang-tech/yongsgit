@@ -185,6 +185,50 @@
     const aiMoveBtn = document.getElementById('aiMoveBtn');
 
     // === 유틸/상수 ===
+    // === 게임 상태 / 사운드 ===
+let gameOver = false;
+
+// 한 수 둘 때마다 효과음 (같은 폴더에 button-29.mp3)
+const moveSfx = new Audio('button-29.mp3');
+moveSfx.preload = 'auto';
+function playMove(){
+  // 연속 재생/중첩 보장
+  try { moveSfx.cloneNode(true).play(); } catch(e) {}
+}
+
+    // === [추가] 반복/왕복 감지용 유틸 ===
+function hashBoardMap(B){
+  // 정렬된 문자열 해시 (간단)
+  const arr = [];
+  for (const [pos,info] of B.entries()){
+    arr.push(`${info.team[0]}-${info.piece}-${pos}`);
+  }
+  arr.sort();
+  return arr.join('|');
+}
+
+// 최근 포지션(간단히 마지막 12개만 보관)
+const POS_HISTORY = [];
+let lastMoveGlobal = null;      // {team, piece, r,c,tr,tc}
+let prevLastMoveGlobal = null;  // 직전 턴 전의 내 마지막 수 (왕복 감지 세밀화용)
+
+function pushPosition(B){
+  const h = hashBoardMap(B);
+  POS_HISTORY.push(h);
+  if (POS_HISTORY.length > 12) POS_HISTORY.shift();
+}
+
+function isRecentRepeat(B){
+  const h = hashBoardMap(B);
+  // 최근 6 ply 안에 동일 포지션이 있으면 true
+  for (let i = POS_HISTORY.length - 2; i >= 0 && i >= POS_HISTORY.length - 6; i--){
+    if (POS_HISTORY[i] === h) return true;
+  }
+  return false;
+}
+
+// 초기 보드 푸시 (placePieces 이후 한 번 실행)
+    
     const getCellSize = () =>
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
     const inside = (r,c)=> r>=0 && r<=9 && c>=0 && c<=8;
@@ -624,41 +668,88 @@
     }
 
     // 체크/외통
-    function afterMoveChecks(){
-      const B = snapshotBoard();
-      const toMove = turn;
-      const inChk = isInCheck(B, toMove);
-      if (!inChk){ setMsg(''); return; }
-      for (const [pos,info] of B.entries()){
-        if (info.team!==toMove) continue;
-        const [r,c] = pos.split(',').map(Number);
-        const pseudo = genPseudoMoves(B, r,c, info);
-        const legal = filterLegal(B, r,c, info, pseudo);
-        if (legal.length>0){ setMsg('장군!'); return; }
-      }
-      setMsg('장군 · 외통수!');
-    }
+   function afterMoveChecks(){
+  const B = snapshotBoard();
+  const toMove = turn;
+
+  const inChk = isInCheck(B, toMove);
+
+  // toMove가 둘 수 있는 합법수 하나라도 있는지 확인
+  let hasAny = false;
+  for (const [pos,info] of B.entries()){
+    if (info.team !== toMove) continue;
+    const [r,c] = pos.split(',').map(Number);
+    const pseudo = genPseudoMoves(B, r,c, info);
+    const legal = filterLegal(B, r,c, info, pseudo);
+    if (legal.length > 0){ hasAny = true; break; }
+  }
+
+  if (inChk && !hasAny){
+    setMsg('장군 · 외통수!'); // 체크메이트
+    gameOver = true;
+    return;
+  }
+  if (!inChk && !hasAny){
+    setMsg('행마 불가 · 무승부'); // 스테일메이트
+    gameOver = true;
+    return;
+  }
+
+  // 게임 계속
+  setMsg(inChk ? '장군!' : '');
+}
+
 
     // === 입력/이동 ===
     let selected = null;
     let aiThinkingFlag = false;
 
     function doMove(el, rr, cc){
-      const tgt = pieceAtDOM(rr,cc);
-      if (tgt && tgt.dataset.team === el.dataset.team) return;
-      if (tgt) tgt.remove();
-      el.dataset.row = rr; el.dataset.col = cc;
-      el.style.setProperty('--row', rr);
-      el.style.setProperty('--col', cc);
-      clearDots();
-      el.classList.remove('selected'); selected = null;
-      plyCount++; turn = opp(turn); updateTurnText();
-      afterMoveChecks();
-      // AI 자동 응수
-      if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
-    }
+  if (gameOver) return; // 게임 끝나면 아무 것도 못 하게
+
+  // 1) 이동 전 좌표
+  const fromR = +el.dataset.row;
+  const fromC = +el.dataset.col;
+
+  // 2) 같은 편 차단 & 캡처 처리
+  const tgt = pieceAtDOM(rr,cc);
+  if (tgt && tgt.dataset.team === el.dataset.team) return;
+  if (tgt) tgt.remove();
+
+  // 3) 실제 이동
+  el.dataset.row = rr; el.dataset.col = cc;
+  el.style.setProperty('--row', rr);
+  el.style.setProperty('--col', cc);
+
+  // 4) 하이라이트/선택 정리
+  clearDots();
+  el.classList.remove('selected');
+  selected = null;
+
+  // 5) 효과음
+  playMove();
+
+  // 6) 최근 수/포지션 기록
+  prevLastMoveGlobal = lastMoveGlobal;
+  lastMoveGlobal = { team: el.dataset.team, piece: el.dataset.piece, r: fromR, c: fromC, tr: rr, tc: cc };
+  pushPosition(snapshotBoard());
+
+  // 7) 턴 전환 및 체크
+  plyCount++;
+  turn = opp(turn);
+  updateTurnText();
+
+  // 8) 체크/외통/스테일 판단 및 종료 처리
+  afterMoveChecks(); // 내부에서 gameOver 판단
+
+  // 9) AI 자동 응수 (게임 끝나면 자동응수 금지)
+  if (!gameOver && autoReplyEl.checked) setTimeout(maybeAIMove, 30);
+}
+
+
 
     boardEl.addEventListener('click', (e)=>{
+      if (gameOver) return;
       if (aiThinkingFlag) return;
       const t = e.target.closest('.piece');
       if (t){
@@ -677,54 +768,141 @@
 
     // 배치 적용
     btnApply.addEventListener('click', ()=>{
-      currentSetup = makeInitialSetup(selCho.value, selHan.value);
-      turn = 'cho'; plyCount=0; updateTurnText(); setMsg('');
-      placePieces(); clearDots();
-      if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
-    });
+  currentSetup = makeInitialSetup(selCho.value, selHan.value);
+  turn = 'cho'; plyCount = 0; gameOver = false; setMsg('');
+  // 반복/왕복 히스토리 초기화
+  POS_HISTORY.length = 0;
+  lastMoveGlobal = null;
+  prevLastMoveGlobal = null;
+
+  placePieces(); clearDots();
+  updateTurnText();
+
+  // 시작 포지션 기록
+  pushPosition(snapshotBoard());
+
+  if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
+});
+
 
     // ======= AI 구현 (고급/최고급) =======
     function enumerateLegalMoves(B, team, forbidFirstPo){
-      const moves = [];
-      for (const [pos,info] of B.entries()){
-        if (info.team!==team) continue;
-        const [r,c] = pos.split(',').map(Number);
-        if (forbidFirstPo && info.piece==='po') continue;
-        const pseudo = genPseudoMoves(B, r,c, info);
-        const legal = filterLegal(B, r,c, info, pseudo);
-        for (const [tr,tc] of legal){
-          const cap = bGet(B,tr,tc);
-          const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
-          // 체크 여부(간단): 이동 후 상대 왕 체크면 플래그
-          const NB = bMove(B, r,c, tr,tc);
-          const givesCheck = isInCheck(NB, opp(team));
-          moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck});
+  const moves = [];
+  for (const [pos,info] of B.entries()){
+    if (info.team!==team) continue;
+    const [r,c] = pos.split(',').map(Number);
+    if (forbidFirstPo && info.piece==='po') continue;
+
+    const pseudo = genPseudoMoves(B, r,c, info);
+    const legal = filterLegal(B, r,c, info, pseudo);
+
+    for (const [tr,tc] of legal){
+      const cap = bGet(B,tr,tc);
+      const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
+
+      // 체크 플래그
+      const NB = bMove(B, r,c, tr,tc);
+      const givesCheck = isInCheck(NB, opp(team));
+
+      // [추가] 왕복(되돌이) 페널티
+      let antiOscPenalty = 0;
+      if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
+        // 직전 상대가 (tr,tc)->(r,c)로 두었고, 내가 (r,c)->(tr,tc)로 되돌리는 경우
+        if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
+            lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
+          antiOscPenalty -= 120; // 강한 페널티
         }
       }
-      // 캡처/체크 우선 정렬
-      moves.sort((a,b)=> (b.capVal-a.capVal) || (b.givesCheck - a.givesCheck));
-      return moves;
+      // 같은 말이 연속 두 번 같은 라인에서 왕복하는 경향도 소폭 억제
+      if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
+        if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOscPenalty -= 20;
+      }
+
+      // [추가] 전진/중앙화 보너스(간단)
+      let progress = 0;
+      if (info.piece==='jol' || info.piece==='byung'){
+        // 앞으로 전진할수록 + (최대 약 +24)
+        progress += (team==='cho' ? (tr - r) : (r - tr)) * 6;
+      }
+      // 중앙 성향(차/마/상에게 살짝 부여)
+      const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr); // 대략
+      if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang') progress += Math.max(0, 10 - 2*centerDist);
+
+      const orderScore = capVal*10 + (givesCheck?7:0) + progress + antiOscPenalty;
+      moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
     }
+  }
+  // 캡처/체크/전진/왕복페널티 반영 정렬
+  moves.sort((a,b)=> b.orderScore - a.orderScore);
+  return moves;
+}
+
 
     function evaluate(B, perspective){
-      // 재료
-      let sum=0;
-      for (const v of B.values()){
-        const s = (PIECE_VALUE[v.piece]||0);
-        sum += (v.team===perspective ? s : -s);
+  let sum = 0;
+
+  // 3-1) 재료
+  for (const v of B.values()){
+    const s = (PIECE_VALUE[v.piece]||0);
+    sum += (v.team===perspective ? s : -s);
+  }
+
+  // 3-2) 기동성
+  const myMoves  = enumerateLegalMoves(B, perspective, false).length;
+  const oppMoves = enumerateLegalMoves(B, opp(perspective), false).length;
+  sum += (myMoves - oppMoves) * 3;
+
+  // 3-3) 폰(졸/병) 전진 보너스
+  for (const [pos,v] of B.entries()){
+    if (v.piece!=='jol' && v.piece!=='byung') continue;
+    const [r,c] = pos.split(',').map(Number);
+    const adv = (v.team==='cho') ? r : (9 - r);
+    const bonus = adv * 2; // 최대 ~18
+    sum += (v.team===perspective ? bonus : -bonus);
+  }
+
+  // 3-4) 포(대포) 운용 점수: 방향별로 스크린 유무 보너스
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  let myPoScore=0, oppPoScore=0;
+  for (const [pos,v] of B.entries()){
+    if (v.piece!=='po') continue;
+    const [r,c] = pos.split(',').map(Number);
+    let dirScore = 0;
+    for (const [dr,dc] of dirs){
+      // 첫 장애물 찾기
+      let rr=r+dr, cc=c+dc, screenFound=null;
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (occ){ screenFound = occ; rr+=dr; cc+=dc; break; }
+        rr+=dr; cc+=dc;
       }
-      // 기동성
-      const myMoves  = enumerateLegalMoves(B, perspective, false).length;
-      const oppMoves = enumerateLegalMoves(B, opp(perspective), false).length;
-      sum += (myMoves - oppMoves) * 3;
-
-      // 체크/빅장 보너스/패널티
-      if (isInCheck(B, opp(perspective))) sum += 40;
-      if (isInCheck(B, perspective)) sum -= 40;
-      if (kingsFacing(B)) sum -= 20; // 보드 상태가 빅장에 가까우면 페널티
-
-      return sum;
+      if (!screenFound || screenFound.piece==='po') continue; // 포는 스크린 불가
+      // 스크린 뒤의 캡/진출 가능성
+      let pathOpen=false, danger=false;
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (!occ){ pathOpen=true; rr+=dr; cc+=dc; continue; }
+        if (occ.team!==v.team && occ.piece!=='po'){ pathOpen=true; break; }
+        danger=true; break;
+      }
+      if (pathOpen) dirScore += 4;        // 스크린 뒤 활동 여지
+      if (danger)  dirScore -= 2;        // 막혀있거나 애매한 경우
     }
+    if (v.team===perspective) myPoScore += dirScore; else oppPoScore += dirScore;
+  }
+  sum += (myPoScore - oppPoScore);
+
+  // 3-5) 체크/왕 마주봄
+  if (isInCheck(B, opp(perspective))) sum += 40;
+  if (isInCheck(B, perspective))      sum -= 40;
+  if (kingsFacing(B))                 sum -= 25;
+
+  // 3-6) 포지션 반복 소폭 감점 (무의미한 왔다갔다 억제)
+  if (isRecentRepeat(B)) sum -= 12;
+
+  return sum;
+}
+
 
     function aiSearch(B, toMove, perspective, depth, alpha, beta, deadline, useQuiescence, forbidFirstPo){
       // 시간 체크
@@ -786,31 +964,52 @@
     }
 
     function maybeAIMove(){
-      const aiTeam = aiSideEl.value;
-      if (aiTeam==='none' || aiTeam!==turn) return;
-      aiThinkingFlag = true; thinking.classList.add('show'); setMsg('');
+  const aiTeam = aiSideEl.value;
+  if (gameOver) return;
+  if (aiTeam==='none' || aiTeam!==turn) return;
 
-      // 프레임 양보 후 탐색 (UI 업데이트)
-      requestAnimationFrame(()=>{
-        const mv = chooseAIMove();
-        if (!mv){ aiThinkingFlag=false; thinking.classList.remove('show'); return; }
-        const el = pieceAtDOM(mv.r, mv.c);
-        if (el) doMove(el, mv.tr, mv.tc);
-        aiThinkingFlag=false; thinking.classList.remove('show');
-      });
+  aiThinkingFlag = true; thinking.classList.add('show'); setMsg('');
+
+  requestAnimationFrame(()=>{
+    const mv = chooseAIMove();
+    if (!mv){
+      // AI가 둘 수 있는 수가 없는 상태 → 여기서도 종료 처리
+      const B = snapshotBoard();
+      const inChk = isInCheck(B, aiTeam);
+      if (inChk){
+        setMsg('장군 · 외통수!'); // 내가 방금 메이트 낸 상황
+      }else{
+        setMsg('행마 불가 · 무승부');
+      }
+      gameOver = true;
+      aiThinkingFlag=false; thinking.classList.remove('show');
+      return;
     }
+    const el = pieceAtDOM(mv.r, mv.c);
+    if (el) doMove(el, mv.tr, mv.tc); // doMove 안에서 사운드/체크/오버 처리
+    aiThinkingFlag=false; thinking.classList.remove('show');
+  });
+}
+
 
     aiMoveBtn.addEventListener('click', ()=> maybeAIMove());
 
     // 초기 렌더
-    function renderAll(){ updateCellSize(); drawPalaceLines(); }
-    updateCellSize(); drawPalaceLines();
-    placePieces(); updateTurnText(); setMsg('');
-    addEventListener('resize', renderAll);
-    addEventListener('orientationchange', renderAll);
+function renderAll(){ updateCellSize(); drawPalaceLines(); }
+updateCellSize(); drawPalaceLines();
+placePieces(); updateTurnText(); setMsg('');
+
+// [추가] 시작 포지션 기록
+pushPosition(snapshotBoard());
+
+addEventListener('resize', renderAll);
+addEventListener('orientationchange', renderAll);
+
 
     // 시작 시 AI가 먼저 두는 설정이면 자동 진행
     if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
+
+
   </script>
 </body>
 </html>
