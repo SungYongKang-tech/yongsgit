@@ -207,6 +207,13 @@ function minAttackerValue(B, team, r, c){
   }
   return (best===Infinity) ? null : best;
 }
+// 초중반 구분
+function isOpening(){ return plyCount < 14; }
+
+// 적 진영(강 건넌 쪽) 판정
+function inEnemyHalf(team, r){
+  return (team==='cho') ? (r>=5) : (r<=4);
+}
 
 
 // 졸/병 판별 & 강 건넘 여부
@@ -828,84 +835,100 @@ function isRecentRepeat(B){
     const legal = filterLegal(B, r,c, info, pseudo);
 
     for (const [tr,tc] of legal){
-      const cap = bGet(B,tr,tc);
-      const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
+  const cap = bGet(B,tr,tc);
+  const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
 
-      // 이동 후 보드/체크
-      const NB = bMove(B, r,c, tr,tc);
-      const givesCheck = isInCheck(NB, opp(team));
+  // 이동 후 보드/체크
+  const NB = bMove(B, r,c, tr,tc);
+  const givesCheck = isInCheck(NB, opp(team));
 
-      // 도착칸 공격/수비
-      const enemyAtk = countAttackers(NB, opp(team), tr, tc);
-      const myDef    = countAttackers(NB, team,      tr, tc);
+  // 도착칸 공격/수비
+  const enemyAtk = countAttackers(NB, opp(team), tr, tc);
+  const myDef    = countAttackers(NB, team,      tr, tc);
 
-      // === 새로 추가: 교환(SEE) 기반 위험 평가 ===
-      const myVal = (PIECE_VALUE[info.piece]||0);
-      let tradeBias = 0;
+  // === (A) 캡처 순교환(SEE) + '안전 마진' ===
+  const myVal = (PIECE_VALUE[info.piece]||0);
+  let tradeBias = 0;
 
-      if (capVal>0){
-        // 캡처 직후 그 자리를 적이 최소 얼마짜리 말로 되잡을 수 있는지
-        const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
-        const enemyAtk2   = enemyAtk;       // 가독성
-        const myDef2      = myDef;
+  if (capVal>0){
+    const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
+    const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
+    const exch = capVal - worstReturn; // (+)이면 유리
 
-        // 보수적 순교환 추정: 내가 캡하면, 상대가 최소가로 되잡음
-        const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
-        const exch = capVal - worstReturn;  // (+)면 유리, (-)면 손해
-
-        if (enemyAtk2===0){
-          // 되잡을 수 없으면 캡처 장려
-          tradeBias += Math.max(12, Math.floor(capVal*0.4));
-        }else{
-          if (exch < 0){
-            // 손해 교환은 강하게 억제 (말 값 클수록 더 크게)
-            tradeBias -= Math.min(260, Math.floor((-exch)*4 + myVal*0.25));
-          }else{
-            // 유리한 교환이더라도 수비 열세면 보너스 줄임
-            if (enemyAtk2>myDef2) tradeBias += Math.floor(exch*0.3) - 30;
-            else                  tradeBias += Math.floor(exch*0.6) + 8;
-          }
-        }
-      }
-
-      // === 기존: 말 값 비례 노출/안전성 ===
-      let safety = 0;
-      if (enemyAtk>0 && myDef===0){
-        safety -= Math.min(220, Math.floor(myVal*0.95));
-      } else if (enemyAtk>myDef){
-        safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.20));
-      } else if (myDef>enemyAtk && myVal>=350){
-        safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
-      }
-
-      // 되돌이 억제 (필요시 유지)
-      let antiOsc = 0;
-      if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
-        if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
-            lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
-          antiOsc -= 120;
-        }
-      }
-      if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
-        if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
-      }
-
-      // 전진/중앙화(그대로)
-      let progress = 0;
-      if (isPawn(info.piece)){
-        const dr = (team==='cho' ? (tr - r) : (r - tr));
-        if (crossedRiver(team, tr)) progress += dr * 3;
-        if (!crossedRiver(team, tr) && enemyAtk>myDef) progress -= 10;
-        if (tr===r && Math.abs(tc-c)===1) progress += 6;
-      }else{
-        const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr);
-        if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang')
-          progress += Math.max(0, 10 - 2*centerDist);
-      }
-
-      const orderScore = capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias;
-      moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
+    if (enemyAtk===0){
+      // 되잡을 수 없으면 장려
+      tradeBias += Math.max(12, Math.floor(capVal*0.4));
+    }else{
+      // 손해 교환은 강하게 억제
+      if (exch < 0) tradeBias -= Math.min(280, Math.floor((-exch)*4 + myVal*0.25));
     }
+
+    // ★ 고가 말 캡처 '안전 마진' (초반일수록 보수적)
+    if (myVal>=350){
+      const margin = isOpening() ? 80 : 20; // 초반엔 +80 이상 이득 아니면 꺼림
+      if (exch < margin) tradeBias -= (margin - exch) * 2; // 마진 미달 억제
+    }
+  }
+
+  // === (B) 일반 안전성(말 값 비례) ===
+  let safety = 0;
+  if (enemyAtk>0 && myDef===0){
+    safety -= Math.min(240, Math.floor(myVal*1.0));
+  } else if (enemyAtk>myDef){
+    safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.22));
+  } else if (myDef>enemyAtk && myVal>=350){
+    safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
+  }
+
+  // === (C) 차(車) 특수: 초반 단독 난입/얇은 침투 억제 ===
+  let rookCare = 0;
+  if (info.piece==='cha'){
+    // 초반에 적 진영으로 들어가면서 수비 열세면 큰 페널티
+    if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef){
+      rookCare -= 70;
+    }
+    // 초반 캡처인데 순교환 이득이 작거나 음수면 강하게 억제
+    if (isOpening() && capVal>0){
+      const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
+      const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
+      const exch = capVal - worstReturn;
+      if (exch < 60) rookCare -= (60 - exch) + 60; // 최소 +60 못 벌면 거의 금지
+    }
+    // 수비 0이면 차는 특히 위험: 추가 감점
+    if (enemyAtk>0 && myDef===0) rookCare -= 60;
+  }
+
+  // 되돌이 억제(기존)
+  let antiOsc = 0;
+  if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
+    if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
+        lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
+      antiOsc -= 120;
+    }
+  }
+  if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
+    if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
+  }
+
+  // 전진/중앙화(기존)
+  let progress = 0;
+  if (isPawn(info.piece)){
+    const dr = (team==='cho' ? (tr - r) : (r - tr));
+    if (crossedRiver(team, tr)) progress += dr * 3;
+    if (!crossedRiver(team, tr) && enemyAtk>myDef) progress -= 10;
+    if (tr===r && Math.abs(tc-c)===1) progress += 6;
+  }else{
+    const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr);
+    if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang')
+      progress += Math.max(0, 10 - 2*centerDist);
+  }
+
+  const orderScore =
+    capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + rookCare;
+
+  moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
+}
+
   }
   moves.sort((a,b)=> b.orderScore - a.orderScore);
   return moves;
@@ -940,30 +963,33 @@ function isRecentRepeat(B){
     }
   }
 
-  // === 비싼 말 노출 패널티: 공격>수비면 말 값에 비례해 큰 감점
-  for (const [pos,v] of B.entries()){
-    const [r,c] = pos.split(',').map(Number);
-    const val = (PIECE_VALUE[v.piece]||0);
-    if (val<=0) continue;
+// === 비싼 말 노출 패널티 ...
+for (const [pos,v] of B.entries()){
+  const [r,c] = pos.split(',').map(Number);
+  const val = (PIECE_VALUE[v.piece]||0);
+  if (val<=0) continue;
 
-    const enemyAtk = countAttackers(B, opp(v.team), r, c);
-    const myDef    = countAttackers(B, v.team,      r, c);
+  const enemyAtk = countAttackers(B, opp(v.team), r, c);
+  const myDef    = countAttackers(B, v.team,      r, c);
 
-    let exposure = 0;
-    if (enemyAtk>0 && myDef===0){
-      // 완전 노출: 값이 클수록 크게 손해
-      exposure -= Math.min(220, Math.floor(val*0.80));
-    } else if (enemyAtk>myDef){
-      // 수비 열세: 초과분만큼 비례 감점
-      exposure -= Math.ceil((enemyAtk-myDef) * (val*0.15));
-    } else if (myDef>enemyAtk && val>=350){
-      // 안전하게 지켜지는 비싼 말엔 소폭 보너스
-      exposure += Math.min(15, (myDef-enemyAtk)*4);
-    }
-
-    // 관점 반영
-    sum += (v.team===perspective ? exposure : -exposure);
+  let exposure = 0;
+  if (enemyAtk>0 && myDef===0){
+    exposure -= Math.min(220, Math.floor(val*0.80));
+  } else if (enemyAtk>myDef){
+    exposure -= Math.ceil((enemyAtk-myDef) * (val*0.15));
+  } else if (myDef>enemyAtk && val>=350){
+    exposure += Math.min(15, (myDef-enemyAtk)*4);
   }
+
+  // ★ 차(車) 추가 보정: 적 진영에서 수비 약하면 좀 더 깎기
+  if (v.piece==='cha'){
+    if (inEnemyHalf(v.team, r) && enemyAtk>myDef) exposure -= 12;
+    if (myDef===0 && enemyAtk>0) exposure -= 10;
+  }
+
+  sum += (v.team===perspective ? exposure : -exposure);
+}
+
 
 
   // (4) 졸/병 구조: 연결/고립/과신(오버익스텐션)
