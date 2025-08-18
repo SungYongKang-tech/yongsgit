@@ -12,7 +12,7 @@
       --border-color:#3a2a1a;
       --board-bg:#e4c59a;
       --piece-scale:1.3;
-      --dot-size: 16px;
+      --dot-size:16px;
     }
     *{box-sizing:border-box}
     body{
@@ -99,7 +99,6 @@
     }
     label { user-select:none; }
 
-    /* AI 생각중 오버레이 */
     .thinking{
       position:absolute; inset:0; background:rgba(255,255,255,.6);
       display:none; align-items:center; justify-content:center;
@@ -111,7 +110,6 @@
 <body>
   <h1>HTML 장기 게임 (규칙 3단계 + AI)</h1>
 
-  <!-- 배치 / 턴 -->
   <div class="bar">
     <span>초 배치:</span>
     <select id="setupCho">
@@ -131,13 +129,11 @@
     <span>| 현재 차례: <span id="turnText" class="turn">초</span></span>
   </div>
 
-  <!-- 옵션 -->
   <div class="row">
     <label><input type="checkbox" id="noFirstPo" checked> 선수 포 금지</label>
     <span class="msg" id="statusMsg"></span>
   </div>
 
-  <!-- AI 설정 -->
   <div class="row">
     <label>AI 진영
       <select id="aiSide">
@@ -185,7 +181,6 @@
     const aiMoveBtn = document.getElementById('aiMoveBtn');
 
     // === 유틸/상수 ===
-    // --- 공격/수비 계산 ---
 function countAttackers(B, team, r, c){
   let cnt = 0;
   for (const [pos,info] of B.entries()){
@@ -207,17 +202,16 @@ function minAttackerValue(B, team, r, c){
   }
   return (best===Infinity) ? null : best;
 }
-// 내/상대 진영 도우미
 function isOpening(){ return plyCount < 14; }
 function inEnemyHalf(team, r){ return (team==='cho') ? (r>=5) : (r<=4); }
 
-// 궁 중앙 좌표/판정
+// 궁
 function myPalaceCenter(team){ return (team==='cho') ? [8,4] : [1,4]; }
 function isPalaceCenter(r,c){ return (r===8&&c===4) || (r===1&&c===4); }
 
-// 적 포가 내 궁(3x3) 안의 점(모서리/중앙 포함)을 대각 공격 중인지(현재 보드 기준)
+// 적 포가 내 궁 3x3을 대각 공격하는지
 function enemyPoHitsMyPalace(B, team){
-  const pal = (team==='cho') ? palaceBottom : palaceTop; // Set('r,c')
+  const pal = (team==='cho') ? palaceBottom : palaceTop;
   for (const [pos,info] of B.entries()){
     if (info.team!==opp(team) || info.piece!=='po') continue;
     const [r,c] = pos.split(',').map(Number);
@@ -227,28 +221,20 @@ function enemyPoHitsMyPalace(B, team){
   return false;
 }
 
-
-// 졸/병 판별 & 강 건넘 여부
+// 졸/병
 function isPawn(piece){ return piece==='jol' || piece==='byung'; }
 function crossedRiver(team, r){
-  // 강: 4~5 사이. 초는 r>=5, 한은 r<=4면 강 건넌 것.
   return (team==='cho') ? (r>=5) : (r<=4);
 }
 
     // === 게임 상태 / 사운드 ===
 let gameOver = false;
-
-// 한 수 둘 때마다 효과음 (같은 폴더에 button-29.mp3)
 const moveSfx = new Audio('button-29.mp3');
 moveSfx.preload = 'auto';
-function playMove(){
-  // 연속 재생/중첩 보장
-  try { moveSfx.cloneNode(true).play(); } catch(e) {}
-}
+function playMove(){ try { moveSfx.cloneNode(true).play(); } catch(e) {} }
 
-    // === [추가] 반복/왕복 감지용 유틸 ===
+    // === 반복/왕복 유틸 ===
 function hashBoardMap(B){
-  // 정렬된 문자열 해시 (간단)
   const arr = [];
   for (const [pos,info] of B.entries()){
     arr.push(`${info.team[0]}-${info.piece}-${pos}`);
@@ -256,43 +242,33 @@ function hashBoardMap(B){
   arr.sort();
   return arr.join('|');
 }
-// --- 경량 캐시 (포지션 해시 기반)
-const CACHE = {
-  enemyPoMyPalace: new Map(), // key: hash + '|' + team  -> boolean
-};
-
-// 헬퍼: 현재 보드 해시 (이미 있는 hashBoardMap 재활용)
+const CACHE = { enemyPoMyPalace: new Map() };
 function cacheKey(B, team){ return hashBoardMap(B) + '|' + team; }
 
-// 최근 포지션(간단히 마지막 12개만 보관)
 const POS_HISTORY = [];
-let lastMoveGlobal = null;      // {team, piece, r,c,tr,tc}
-let prevLastMoveGlobal = null;  // 직전 턴 전의 내 마지막 수 (왕복 감지 세밀화용)
+let lastMoveGlobal = null;
+let prevLastMoveGlobal = null;
 
 function pushPosition(B){
   const h = hashBoardMap(B);
   POS_HISTORY.push(h);
   if (POS_HISTORY.length > 12) POS_HISTORY.shift();
 }
-
 function isRecentRepeat(B){
   const h = hashBoardMap(B);
-  // 최근 6 ply 안에 동일 포지션이 있으면 true
   for (let i = POS_HISTORY.length - 2; i >= 0 && i >= POS_HISTORY.length - 6; i--){
     if (POS_HISTORY[i] === h) return true;
   }
   return false;
 }
 
-// 초기 보드 푸시 (placePieces 이후 한 번 실행)
-    
     const getCellSize = () =>
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
     const inside = (r,c)=> r>=0 && r<=9 && c>=0 && c<=8;
     const key = (r,c)=> `${r},${c}`;
     const opp = (team)=> team==='cho' ? 'han' : 'cho';
 
-    const PIECE_VALUE = { // 재료 평가치
+    const PIECE_VALUE = {
       jang:10000, cha:550, po:350, ma:300, sang:250, sa:150, jol:90, byung:90
     };
 
@@ -308,8 +284,8 @@ function isRecentRepeat(B){
       '7,3': [['8,4']], '7,5': [['8,4']], '9,3': [['8,4']], '9,5': [['8,4']]
     };
     const diagNeighbors = (r,c)=> (palaceDiagNeighbors[key(r,c)]||[]).map(([s])=>s.split(',').map(Number));
-    const topCorners = ['0,3','0,5','2,3','2,5'];      const topCenter = '1,4';
-    const botCorners = ['7,3','7,5','9,3','9,5'];      const botCenter = '8,4';
+    const topCorners = ['0,3','0,5','2,3','2,5']; const topCenter = '1,4';
+    const botCorners = ['7,3','7,5','9,3','9,5']; const botCenter = '8,4';
     const oppositeCorner = (r,c)=>{
       const s = key(r,c);
       if (topCorners.includes(s)){
@@ -455,7 +431,7 @@ function isRecentRepeat(B){
       return true;
     }
 
-    // ===== 공격/의사수/합법수 (3단계와 동일 로직) =====
+    // ===== 공격/의사수/합법수 =====
     function addLineAttacks(B, team, r,c, dr,dc, out){
       let rr=r+dr, cc=c+dc;
       while (inside(rr,cc)){
@@ -669,7 +645,7 @@ function isRecentRepeat(B){
           const occ=bGet(B,rr,cc); if (!occ || occ.team!==team) out.push([rr,cc]);
         }
         for (const [rr,cc] of diagNeighbors(r,c)){
-          const occ=bGet(B,rr,cc); if (!occ || occ.team!==team) out.push([rr,cc]);
+          const occ=bGet(B,rr,cc); if (!occ || !occ.team!==team) out.push([rr,cc]);
         }
       }
       return out;
@@ -713,7 +689,6 @@ function isRecentRepeat(B){
       movesLay.appendChild(dot);
     }
 
-    // 하이라이트
     function showLegalMoves(el){
       clearDots();
       const B = snapshotBoard();
@@ -725,92 +700,67 @@ function isRecentRepeat(B){
     }
 
     // 체크/외통
-   function afterMoveChecks(){
-  const B = snapshotBoard();
-  const toMove = turn;
+    function afterMoveChecks(){
+      const B = snapshotBoard();
+      const toMove = turn;
+      const inChk = isInCheck(B, toMove);
 
-  const inChk = isInCheck(B, toMove);
+      let hasAny = false;
+      for (const [pos,info] of B.entries()){
+        if (info.team !== toMove) continue;
+        const [r,c] = pos.split(',').map(Number);
+        const pseudo = genPseudoMoves(B, r,c, info);
+        const legal = filterLegal(B, r,c, info, pseudo);
+        if (legal.length > 0){ hasAny = true; break; }
+      }
 
-  // toMove가 둘 수 있는 합법수 하나라도 있는지 확인
-  let hasAny = false;
-  for (const [pos,info] of B.entries()){
-    if (info.team !== toMove) continue;
-    const [r,c] = pos.split(',').map(Number);
-    const pseudo = genPseudoMoves(B, r,c, info);
-    const legal = filterLegal(B, r,c, info, pseudo);
-    if (legal.length > 0){ hasAny = true; break; }
-  }
-
-  if (inChk && !hasAny){
-    setMsg('장군 · 외통수!'); // 체크메이트
-    gameOver = true;
-    return;
-  }
-  if (!inChk && !hasAny){
-    setMsg('행마 불가 · 무승부'); // 스테일메이트
-    gameOver = true;
-    return;
-  }
-
-  // 게임 계속
-  setMsg(inChk ? '장군!' : '');
-}
-
+      if (inChk && !hasAny){ setMsg('장군 · 외통수!'); gameOver = true; return; }
+      if (!inChk && !hasAny){ setMsg('행마 불가 · 무승부'); gameOver = true; return; }
+      setMsg(inChk ? '장군!' : '');
+    }
 
     // === 입력/이동 ===
     let selected = null;
     let aiThinkingFlag = false;
 
     function doMove(el, rr, cc){
-  if (gameOver) return; // 게임 끝나면 아무 것도 못 하게
+      if (gameOver) return;
 
-  // 1) 이동 전 좌표
-  const fromR = +el.dataset.row;
-  const fromC = +el.dataset.col;
+      const fromR = +el.dataset.row;
+      const fromC = +el.dataset.col;
 
-  // 2) 같은 편 차단 & 캡처 처리
-  const tgt = pieceAtDOM(rr,cc);
-  if (tgt && tgt.dataset.team === el.dataset.team) return;
-  if (tgt) tgt.remove();
+      const tgt = pieceAtDOM(rr,cc);
+      if (tgt && tgt.dataset.team === el.dataset.team) return;
+      if (tgt) tgt.remove();
 
-  // 3) 실제 이동
-  el.dataset.row = rr; el.dataset.col = cc;
-  el.style.setProperty('--row', rr);
-  el.style.setProperty('--col', cc);
+      el.dataset.row = rr; el.dataset.col = cc;
+      el.style.setProperty('--row', rr);
+      el.style.setProperty('--col', cc);
 
-  // 4) 하이라이트/선택 정리
-  clearDots();
-  el.classList.remove('selected');
-  selected = null;
+      clearDots();
+      el.classList.remove('selected');
+      selected = null;
 
-  // 5) 효과음
-  playMove();
+      playMove();
 
-  // 6) 최근 수/포지션 기록
-  prevLastMoveGlobal = lastMoveGlobal;
-  lastMoveGlobal = { team: el.dataset.team, piece: el.dataset.piece, r: fromR, c: fromC, tr: rr, tc: cc };
-  pushPosition(snapshotBoard());
+      prevLastMoveGlobal = lastMoveGlobal;
+      lastMoveGlobal = { team: el.dataset.team, piece: el.dataset.piece, r: fromR, c: fromC, tr: rr, tc: cc };
+      pushPosition(snapshotBoard());
 
-  // 7) 턴 전환 및 체크
-  plyCount++;
-  turn = opp(turn);
-  updateTurnText();
+      plyCount++;
+      turn = opp(turn);
+      updateTurnText();
 
-  // 8) 체크/외통/스테일 판단 및 종료 처리
-  afterMoveChecks(); // 내부에서 gameOver 판단
+      afterMoveChecks();
 
-  // 9) AI 자동 응수 (게임 끝나면 자동응수 금지)
-  if (!gameOver && autoReplyEl.checked) setTimeout(maybeAIMove, 30);
-}
-
-
+      if (!gameOver && autoReplyEl.checked) setTimeout(maybeAIMove, 30);
+    }
 
     boardEl.addEventListener('click', (e)=>{
       if (gameOver) return;
       if (aiThinkingFlag) return;
       const t = e.target.closest('.piece');
       if (t){
-        // 선수 포 금지 (인간 턴)
         if (plyCount===0 && turn==='cho' && t.dataset.piece==='po' && noFirstPoEl.checked){
           setMsg('선수 포 금지: 초의 첫 수에는 포를 움직일 수 없습니다.'); return;
         }
@@ -825,358 +775,356 @@ function isRecentRepeat(B){
 
     // 배치 적용
     btnApply.addEventListener('click', ()=>{
-  currentSetup = makeInitialSetup(selCho.value, selHan.value);
-  turn = 'cho'; plyCount = 0; gameOver = false; setMsg('');
-  // 반복/왕복 히스토리 초기화
-  POS_HISTORY.length = 0;
-  lastMoveGlobal = null;
-  prevLastMoveGlobal = null;
+      currentSetup = makeInitialSetup(selCho.value, selHan.value);
+      turn = 'cho'; plyCount = 0; gameOver = false; setMsg('');
+      POS_HISTORY.length = 0;
+      lastMoveGlobal = null;
+      prevLastMoveGlobal = null;
+      CACHE.enemyPoMyPalace.clear();
 
-    // ★ 캐시 정리
-  CACHE.enemyPoMyPalace.clear();
+      placePieces(); clearDots();
+      updateTurnText();
 
-  placePieces(); clearDots();
-  updateTurnText();
+      pushPosition(snapshotBoard());
 
-  // 시작 포지션 기록
-  pushPosition(snapshotBoard());
-
-  if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
-});
-
+      if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
+    });
 
     // ======= AI 구현 (고급/최고급) =======
-  function enumerateLegalMoves(B, team, forbidFirstPo){
-  const moves = [];
-  // 이 포지션에서 "상대 포가 내 궁을 대각으로 때리는지"를 캐시
-const kPal = cacheKey(B, team);
-let cachedEnemyPo = CACHE.enemyPoMyPalace.get(kPal);
-if (cachedEnemyPo === undefined){
-  cachedEnemyPo = enemyPoHitsMyPalace(B, team);
-  CACHE.enemyPoMyPalace.set(kPal, cachedEnemyPo);
-}
+    function enumerateLegalMoves(B, team, forbidFirstPo){
+      const moves = [];
 
-  for (const [pos,info] of B.entries()){
-    if (info.team!==team) continue;
-    const [r,c] = pos.split(',').map(Number);
-    if (forbidFirstPo && info.piece==='po') continue;
-
-    const pseudo = genPseudoMoves(B, r,c, info);
-    const legal = filterLegal(B, r,c, info, pseudo);
-
-    for (const [tr,tc] of legal){
-  const cap = bGet(B,tr,tc);
-  const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
-
-  // 이동 후 보드/체크
-  const NB = bMove(B, r,c, tr,tc);
-  const givesCheck = isInCheck(NB, opp(team));
-
-  // 도착칸 공격/수비
-  const enemyAtk = countAttackers(NB, opp(team), tr, tc);
-  const myDef    = countAttackers(NB, team,      tr, tc);
-
-  // --- 공통: 교환(SEE) 기반 ---
-const myVal = (PIECE_VALUE[info.piece]||0);
-let tradeBias = 0;
-let exch = 0; // ← 추가: 교환값을 바깥 변수로
-
-if (capVal>0){
-  const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
-  const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
-  exch = capVal - worstReturn;  // (+) 유리, (-) 손해
-
-  if (enemyAtk===0){
-    tradeBias += Math.max(12, Math.floor(capVal*0.4));
-  }else if (exch < 0){
-    tradeBias -= Math.min(300, Math.floor((-exch)*4 + myVal*0.3));
-  }
-
-  if (info.piece==='po' && cap && cap.piece==='sang'){
-    const need = isOpening()? 110 : 80;
-    if (exch < need) tradeBias -= (need-exch)*3 + 60;
-  }
-
-  if ((info.piece==='po' || info.piece==='cha') && exch < (isOpening()? 80:20)){
-    tradeBias -= (isOpening()? 160:40);
-  }
-}
-
-// === [추가] 캡처 보너스 재가중(차의 무모한 졸/병 캡 방지) ===
-let capBonus = 0;
-if (capVal > 0) {
-  const valueRatio = capVal / Math.max(1, myVal);
-  let base = capVal * 6;              // 기존 *10 → *6로 완화
-
-  // 고가(차/포)가 저가(졸/병/사)를 잡을 때는 과도 보너스 억제
-  if (myVal >= 350 && capVal <= 150) {
-    base *= 0.25;                     // 75% 감쇠
-  } else {
-    base *= (0.65 + 0.6 * valueRatio); // 비율에 따른 미세 가중
-  }
-
-  // 교환이 확실히 유리하지 않으면(특히 초반) 보너스 삭감
-  if (exch < (isOpening() ? 60 : 10)) {
-    base -= (isOpening() ? 140 : 40);
-  }
-
-  // 차가 싼 말 먹고 공격≥수비면 더 강하게 금지
-  if (info.piece === 'cha' && capVal <= 150 && enemyAtk >= myDef) {
-    base -= 220;
-  }
-
-  capBonus = base;
-}
-// === [추가 끝] ===
-
-
-  // --- 일반 안전성: 말 값 비례 ---
-  let safety = 0;
-  if (enemyAtk>0 && myDef===0){
-    safety -= Math.min(260, Math.floor(myVal*1.05));
-  } else if (enemyAtk>myDef){
-    safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.22));
-  } else if (myDef>enemyAtk && myVal>=350){
-    safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
-  }
-
-  // --- 차(車) 보수 운용(그대로) + 포(砲) 전용 보수 운용 ---
-  let pieceCare = 0;
-
-  // 차: 초반 적 진영 얇은 침투 억제
-  if (info.piece==='cha'){
-  if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 70;
-  if (enemyAtk>0 && myDef===0) pieceCare -= 60;
-
-  // 추가: 적 진영으로 강 건너가면서 공격≥수비면 더 억제
-  if (isOpening() && inEnemyHalf(team, tr) && enemyAtk >= myDef) pieceCare -= 40;
-
-  // 추가: 싼 말 캡처인데 위험하면 더 깎기(캡처 보너스와 합쳐 강한 제동)
-  if (capVal<=150 && enemyAtk >= myDef) pieceCare -= 80;
-}
-
-
-  // ★ 포: 수비 열세/무수비 침투 강한 페널티 + 궁중앙 차단 보너스
-  if (info.piece==='po'){
-    // 수비 없으면 특히 위험
-    if (enemyAtk>0 && myDef===0) pieceCare -= 80;
-    // 초반에 적 진영 깊숙이 가는데 수비 열세면 억제
-    if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 60;
-
-    // 궁 중앙 차단 보너스: '내' 궁 중앙에 안전하게 세워 상대 포의 대각 노선 차단
-    const [cr,cc] = myPalaceCenter(team);
-    if (tr===cr && tc===cc){
-  if (enemyAtk<=myDef){
-    let bonus = 35;
-    if (cachedEnemyPo) bonus += 25;
-    pieceCare += bonus;
-  }else{
-    pieceCare -= 10;
-  }
-}
-
-  }
-
-  // 되돌이 억제 (기존)
-  let antiOsc = 0;
-  if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
-    if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
-        lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
-      antiOsc -= 120;
-    }
-  }
-  if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
-    if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
-  }
-
-  // 전진/중앙화(기존)
-  let progress = 0;
-  if (isPawn(info.piece)){
-    const dr = (team==='cho' ? (tr - r) : (r - tr));
-    if (crossedRiver(team, tr)) progress += dr * 3;
-    if (!crossedRiver(team, tr) && enemyAtk>myDef) progress -= 10;
-    if (tr===r && Math.abs(tc-c)===1) progress += 6;
-  }else{
-    const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr);
-    if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang')
-      progress += Math.max(0, 10 - 2*centerDist);
-  }
-
-const orderScore =
-  capBonus + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + pieceCare;
-
-  moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
-}
-
-
-  }
-  moves.sort((a,b)=> b.orderScore - a.orderScore);
-  return moves;
-}
-
-
-
-
-   function evaluate(B, perspective){
-  let sum = 0;
-
-  // (1) 재료
-  for (const v of B.values()){
-    const s = (PIECE_VALUE[v.piece]||0);
-    sum += (v.team===perspective ? s : -s);
-  }
-
-  // (2) 기동성
-  const myMoves  = enumerateLegalMoves(B, perspective, false).length;
-  const oppMoves = enumerateLegalMoves(B, opp(perspective), false).length;
-  sum += (myMoves - oppMoves) * 3;
-
-  // (3) 졸/병 전진 보너스 (완화): 강 건넌 이후에만 가산, 폭 낮춤
-  for (const [pos,v] of B.entries()){
-    if (!isPawn(v.piece)) continue;
-    const [r,c] = pos.split(',').map(Number);
-    if (crossedRiver(v.team, r)){
-      // 초는 r 커질수록, 한은 r 작아질수록 + (기존 2 → 1.2 정도)
-      const adv = (v.team==='cho') ? (r-5) : (4 - r); // 강 건넌 후 상대 진영에서의 진도
-      const bonus = Math.max(0, adv) * 1.2;
-      sum += (v.team===perspective ? bonus : -bonus);
-    }
-  }
-
-// === 비싼 말 노출 패널티 ...
-for (const [pos,v] of B.entries()){
-  const [r,c] = pos.split(',').map(Number);
-  const val = (PIECE_VALUE[v.piece]||0);
-  if (val<=0) continue;
-
-  const enemyAtk = countAttackers(B, opp(v.team), r, c);
-  const myDef    = countAttackers(B, v.team,      r, c);
-
-  let exposure = 0;
-  if (enemyAtk>0 && myDef===0){
-    exposure -= Math.min(220, Math.floor(val*0.80));
-  } else if (enemyAtk>myDef){
-    exposure -= Math.ceil((enemyAtk-myDef) * (val*0.15));
-  } else if (myDef>enemyAtk && val>=350){
-    exposure += Math.min(15, (myDef-enemyAtk)*4);
-  }
-
-  // ★ 차(車) 보정
-  if (v.piece==='cha'){
-    if (inEnemyHalf(v.team, r) && enemyAtk>myDef) exposure -= 12;
-    if (myDef===0 && enemyAtk>0) exposure -= 10;
-  }
-
-  // ★ 포(砲) 보정: 내 궁 중앙의 포 = 상대 포 대각 차단 가치
-  if (v.piece==='po'){
-    const [cr,cc] = myPalaceCenter(v.team);
-    if (r===cr && c===cc){
-      const kPalEval = cacheKey(B, v.team);
-      let cachedEnemyPo = CACHE.enemyPoMyPalace.get(kPalEval);
+      // 1) 궁 대각 포 캐시
+      const kPal = cacheKey(B, team);
+      let cachedEnemyPo = CACHE.enemyPoMyPalace.get(kPal);
       if (cachedEnemyPo === undefined){
-        cachedEnemyPo = enemyPoHitsMyPalace(B, v.team);
-        CACHE.enemyPoMyPalace.set(kPalEval, cachedEnemyPo);
+        cachedEnemyPo = enemyPoHitsMyPalace(B, team);
+        CACHE.enemyPoMyPalace.set(kPal, cachedEnemyPo);
       }
-      let shield = 30;
-      if (cachedEnemyPo) shield += 20;
-      exposure += shield; // <- 포 보너스는 exposure에 더해 한 번에 sum 반영
-    }
-  }
 
-  sum += (v.team===perspective ? exposure : -exposure);
-}
-// ← 그리고 루프 '바깥'에 있던 포 보정 블록은 삭제
+      // 2) 내 궁 중앙 목표 플래그
+      const [pcR, pcC] = myPalaceCenter(team);
+      const centerOcc  = bGet(B, pcR, pcC);
+      const centerFreeOrOurs = !centerOcc || centerOcc.team===team;
+      const wantPoCenter = cachedEnemyPo && centerFreeOrOurs;
 
-
-
-
-
-  // (4) 졸/병 구조: 연결/고립/과신(오버익스텐션)
-  for (const [pos,v] of B.entries()){
-    if (!isPawn(v.piece)) continue;
-    const [r,c] = pos.split(',').map(Number);
-
-    // 연결: 같은 팀의 같은 행 좌우 인접 졸/병 있으면 + (연결 전선 유지)
-    const left  = bGet(B, r, c-1);
-    const right = bGet(B, r, c+1);
-    let structure = 0;
-    if (left  && left.team===v.team && isPawn(left.piece))  structure += 4;
-    if (right && right.team===v.team && isPawn(right.piece)) structure += 4;
-
-    // 고립: 같은 행 양옆에 아군 말이 전혀 없고, 수비도 없으면 -
-    const myDef = countAttackers(B, v.team, r, c);
-    if (!left && !right && myDef===0) structure -= 6;
-
-    // 과신: 강 안 건넌 상태에서 전진이 깊고(초 r>=4, 한 r<=5) 수비<공격이면 소폭 -
-    const enemyAtk = countAttackers(B, opp(v.team), r, c);
-    if (!crossedRiver(v.team, r) && enemyAtk>myDef){
-      structure -= 4;
-    }
-
-    sum += (v.team===perspective ? structure : -structure);
-  }
-
-  // (5) 포(대포) 운용 (기존 로직 유지)
-  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-  let myPoScore=0, oppPoScore=0;
-  for (const [pos,v] of B.entries()){
-    if (v.piece!=='po') continue;
-    const [r,c] = pos.split(',').map(Number);
-    let dirScore = 0;
-    for (const [dr,dc] of dirs){
-      let rr=r+dr, cc=c+dc, screenFound=null;
-      while (inside(rr,cc)){
-        const occ = bGet(B,rr,cc);
-        if (occ){ screenFound = occ; rr+=dr; cc+=dc; break; }
-        rr+=dr; cc+=dc;
+      // 3) 고가 기물(차/포 이상) 응급 스캔
+      const endangered = new Set();
+      for (const [p,info2] of B.entries()){
+        if (info2.team!==team) continue;
+        const val = PIECE_VALUE[info2.piece]||0;
+        if (val < 500) continue; // 차(550) 이상
+        const [rr,cc] = p.split(',').map(Number);
+        const ea = countAttackers(B, opp(team), rr, cc);
+        const md = countAttackers(B, team,      rr, cc);
+        if (ea>0 && md<=ea) endangered.add(p);
       }
-      if (!screenFound || screenFound.piece==='po') continue;
-      let pathOpen=false, danger=false;
-      while (inside(rr,cc)){
-        const occ = bGet(B,rr,cc);
-        if (!occ){ pathOpen=true; rr+=dr; cc+=dc; continue; }
-        if (occ.team!==v.team && occ.piece!=='po'){ pathOpen=true; break; }
-        danger=true; break;
+      const rescueMode = endangered.size>0;
+
+      for (const [pos,info] of B.entries()){
+        if (info.team!==team) continue;
+        const [r,c] = pos.split(',').map(Number);
+        if (forbidFirstPo && info.piece==='po') continue;
+
+        const pseudo = genPseudoMoves(B, r,c, info);
+        const legal = filterLegal(B, r,c, info, pseudo);
+
+        for (const [tr,tc] of legal){
+          const cap = bGet(B,tr,tc);
+          const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
+
+          const NB = bMove(B, r,c, tr,tc);
+          const givesCheck = isInCheck(NB, opp(team));
+
+          const enemyAtk = countAttackers(NB, opp(team), tr, tc);
+          const myDef    = countAttackers(NB, team,      tr, tc);
+
+          // 교환 기반 편향
+          const myVal = (PIECE_VALUE[info.piece]||0);
+          let tradeBias = 0;
+          let exch = 0;
+
+          if (capVal>0){
+            const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
+            const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
+            exch = capVal - worstReturn;
+
+            if (enemyAtk===0){
+              tradeBias += Math.max(12, Math.floor(capVal*0.4));
+            }else if (exch < 0){
+              tradeBias -= Math.min(300, Math.floor((-exch)*4 + myVal*0.3));
+            }
+
+            if (info.piece==='po' && cap && cap.piece==='sang'){
+              const need = isOpening()? 110 : 80;
+              if (exch < need) tradeBias -= (need-exch)*3 + 60;
+            }
+
+            if ((info.piece==='po' || info.piece==='cha') && exch < (isOpening()? 80:20)){
+              tradeBias -= (isOpening()? 160:40);
+            }
+          }
+
+          // === 캡처 보너스 재가중 (차의 무모한 졸/병 캡 억제) ===
+          let capBonus = 0;
+          if (capVal > 0) {
+            const valueRatio = capVal / Math.max(1, myVal);
+            let base = capVal * 6; // 기존 *10 → *6
+            if (myVal >= 350 && capVal <= 150) {
+              base *= 0.25;        // 고가→저가 캡 억제
+            } else {
+              base *= (0.65 + 0.6 * valueRatio);
+            }
+            if (exch < (isOpening() ? 60 : 10)) {
+              base -= (isOpening() ? 140 : 40);
+            }
+            if (info.piece === 'cha' && capVal <= 150 && enemyAtk >= myDef) {
+              base -= 220;
+            }
+            capBonus = base;
+          }
+
+          // 일반 안전성
+          let safety = 0;
+          if (enemyAtk>0 && myDef===0){
+            safety -= Math.min(260, Math.floor(myVal*1.05));
+          } else if (enemyAtk>myDef){
+            safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.22));
+          } else if (myDef>enemyAtk && myVal>=350){
+            safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
+          }
+
+          // 차/포 운용
+          let pieceCare = 0;
+          if (info.piece==='cha'){
+            if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 70;
+            if (enemyAtk>0 && myDef===0) pieceCare -= 60;
+            if (isOpening() && inEnemyHalf(team, tr) && enemyAtk >= myDef) pieceCare -= 40;
+            if (capVal<=150 && enemyAtk >= myDef) pieceCare -= 80;
+          }
+          if (info.piece==='po'){
+            if (enemyAtk>0 && myDef===0) pieceCare -= 80;
+            if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 60;
+
+            const [cr,cc] = myPalaceCenter(team);
+            if (tr===cr && tc===cc){
+              if (enemyAtk<=myDef){
+                let bonus = 35;
+                if (cachedEnemyPo) bonus += 25;
+                pieceCare += bonus;
+              }else{
+                pieceCare -= 10;
+              }
+            }
+          }
+
+          // 되돌이 억제
+          let antiOsc = 0;
+          if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
+            if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
+                lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
+              antiOsc -= 120;
+            }
+          }
+          if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
+            if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
+          }
+
+          // 전진/중앙화 + 졸 왕복 억제
+          let progress = 0;
+          if (isPawn(info.piece)){
+            const dr = (team==='cho' ? (tr - r) : (r - tr));
+            if (crossedRiver(team, tr)) progress += dr * 3;
+            if (!crossedRiver(team, tr) && enemyAtk>myDef) progress -= 10;
+
+            if (tr===r && Math.abs(tc-c)===1){
+              if (crossedRiver(team, r)) progress += 5;
+              else                       progress -= 8;
+            }
+            if ((info.piece==='jol' || info.piece==='byung') && prevLastMoveGlobal &&
+                prevLastMoveGlobal.team===team &&
+                prevLastMoveGlobal.piece===info.piece &&
+                prevLastMoveGlobal.r===tr && prevLastMoveGlobal.c===tc &&
+                prevLastMoveGlobal.tr===r && prevLastMoveGlobal.tc===c){
+              progress -= 60;
+            }
+          }else{
+            const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr);
+            if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang')
+              progress += Math.max(0, 10 - 2*centerDist);
+          }
+
+          // 응급 구출 가중치
+          let rescueBias = 0;
+          if (rescueMode){
+            const hereKey = key(r,c);
+            if (endangered.has(hereKey) && myVal>=500){
+              const afterAtk = countAttackers(NB, opp(team), tr, tc);
+              const afterDef = countAttackers(NB, team,      tr, tc);
+              if (afterAtk===0 || afterDef>afterAtk) rescueBias += 220;
+              else                                    rescueBias -= 40;
+            }else{
+              rescueBias -= 15;
+            }
+          }
+
+          // 포 중앙 목표 보너스
+          let goalBias = 0;
+          if (info.piece==='po' && tr===pcR && tc===pcC){
+            if (enemyAtk<=myDef){
+              goalBias += wantPoCenter ? (isOpening()? 170 : 130) : 90;
+            }else{
+              goalBias -= 20;
+            }
+          }
+
+          const orderScore =
+            capBonus + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + pieceCare
+            + rescueBias + goalBias;
+
+          moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
+        }
       }
-      if (pathOpen) dirScore += 4;
-      if (danger)  dirScore -= 2;
+      moves.sort((a,b)=> b.orderScore - a.orderScore);
+      return moves;
     }
-    if (v.team===perspective) myPoScore += dirScore; else oppPoScore += dirScore;
-  }
-  sum += (myPoScore - oppPoScore);
 
-  // (6) 체크/왕 마주봄/반복
-  if (isInCheck(B, opp(perspective))) sum += 40;
-  if (isInCheck(B, perspective))      sum -= 40;
-  if (kingsFacing(B))                 sum -= 25;
-  if (isRecentRepeat(B))              sum -= 12;
+    function evaluate(B, perspective){
+      let sum = 0;
 
-  return sum;
-}
+      // (1) 재료
+      for (const v of B.values()){
+        const s = (PIECE_VALUE[v.piece]||0);
+        sum += (v.team===perspective ? s : -s);
+      }
 
+      // (2) 기동성
+      const myMoves  = enumerateLegalMoves(B, perspective, false).length;
+      const oppMoves = enumerateLegalMoves(B, opp(perspective), false).length;
+      sum += (myMoves - oppMoves) * 3;
 
+      // (3) 졸/병 전진 보너스 (강 건넌 후만)
+      for (const [pos,v] of B.entries()){
+        if (!isPawn(v.piece)) continue;
+        const [r,c] = pos.split(',').map(Number);
+        if (crossedRiver(v.team, r)){
+          const adv = (v.team==='cho') ? (r-5) : (4 - r);
+          const bonus = Math.max(0, adv) * 1.2;
+          sum += (v.team===perspective ? bonus : -bonus);
+        }
+      }
+
+      // (3.5) 고가 말 노출 패널티 + 포/차 보정
+      for (const [pos,v] of B.entries()){
+        const [r,c] = pos.split(',').map(Number);
+        const val = (PIECE_VALUE[v.piece]||0);
+        if (val<=0) continue;
+
+        const enemyAtk = countAttackers(B, opp(v.team), r, c);
+        const myDef    = countAttackers(B, v.team,      r, c);
+
+        let exposure = 0;
+        if (enemyAtk>0 && myDef===0){
+          exposure -= Math.min(220, Math.floor(val*0.80));
+        } else if (enemyAtk>myDef){
+          exposure -= Math.ceil((enemyAtk-myDef) * (val*0.15));
+        } else if (myDef>enemyAtk && val>=350){
+          exposure += Math.min(15, (myDef-enemyAtk)*4);
+        }
+
+        if (v.piece==='cha'){
+          if (inEnemyHalf(v.team, r) && enemyAtk>myDef) exposure -= 12;
+          if (myDef===0 && enemyAtk>0) exposure -= 10;
+        }
+
+        if (v.piece==='po'){
+          const [cr,cc] = myPalaceCenter(v.team);
+          if (r===cr && c===cc){
+            const kPalEval = cacheKey(B, v.team);
+            let cachedEnemyPo = CACHE.enemyPoMyPalace.get(kPalEval);
+            if (cachedEnemyPo === undefined){
+              cachedEnemyPo = enemyPoHitsMyPalace(B, v.team);
+              CACHE.enemyPoMyPalace.set(kPalEval, cachedEnemyPo);
+            }
+            let shield = 30;
+            if (cachedEnemyPo) shield += 20;
+            exposure += shield;
+          }
+        }
+
+        sum += (v.team===perspective ? exposure : -exposure);
+      }
+
+      // (4) 졸/병 구조
+      for (const [pos,v] of B.entries()){
+        if (!isPawn(v.piece)) continue;
+        const [r,c] = pos.split(',').map(Number);
+        const left  = bGet(B, r, c-1);
+        const right = bGet(B, r, c+1);
+        let structure = 0;
+        if (left  && left.team===v.team && isPawn(left.piece))  structure += 4;
+        if (right && right.team===v.team && isPawn(right.piece)) structure += 4;
+        const myDef = countAttackers(B, v.team, r, c);
+        if (!left && !right && myDef===0) structure -= 6;
+        const enemyAtk = countAttackers(B, opp(v.team), r, c);
+        if (!crossedRiver(v.team, r) && enemyAtk>myDef) structure -= 4;
+        sum += (v.team===perspective ? structure : -structure);
+      }
+
+      // (5) 포 운용
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      let myPoScore=0, oppPoScore=0;
+      for (const [pos,v] of B.entries()){
+        if (v.piece!=='po') continue;
+        const [r,c] = pos.split(',').map(Number);
+        let dirScore = 0;
+        for (const [dr,dc] of dirs){
+          let rr=r+dr, cc=c+dc, screenFound=null;
+          while (inside(rr,cc)){
+            const occ = bGet(B,rr,cc);
+            if (occ){ screenFound = occ; rr+=dr; cc+=dc; break; }
+            rr+=dr; cc+=dc;
+          }
+          if (!screenFound || screenFound.piece==='po') continue;
+          let pathOpen=false, danger=false;
+          while (inside(rr,cc)){
+            const occ = bGet(B,rr,cc);
+            if (!occ){ pathOpen=true; rr+=dr; cc+=dc; continue; }
+            if (occ.team!==v.team && occ.piece!=='po'){ pathOpen=true; break; }
+            danger=true; break;
+          }
+          if (pathOpen) dirScore += 4;
+          if (danger)  dirScore -= 2;
+        }
+        if (v.team===perspective) myPoScore += dirScore; else oppPoScore += dirScore;
+      }
+      sum += (myPoScore - oppPoScore);
+
+      // (6) 체크/왕 마주봄/반복
+      if (isInCheck(B, opp(perspective))) sum += 40;
+      if (isInCheck(B, perspective))      sum -= 40;
+      if (kingsFacing(B))                 sum -= 25;
+      if (isRecentRepeat(B))              sum -= 12;
+
+      return sum;
+    }
 
     function aiSearch(B, toMove, perspective, depth, alpha, beta, deadline, useQuiescence, forbidFirstPo){
-      // 시간 체크
-      // 깊이에 따른 최대 브랜치 수(정렬 후 잘라서 탐색)
-function branchLimit(d){
-  if (d>=4) return 14; // 깊을수록 더 강하게 절단
-  if (d===3) return 18;
-  if (d===2) return 22;
-  return 28; // 루트 근처
-}
+      function branchLimit(d){
+        if (d>=4) return 14;
+        if (d===3) return 18;
+        if (d===2) return 22;
+        return 28;
+      }
 
       if (deadline && performance.now() > deadline) return {score: evaluate(B, perspective), move:null, timeout:true};
 
-      // 무수/기저
       const moves = enumerateLegalMoves(B, toMove, forbidFirstPo);
-      // enumerateLegalMoves가 orderScore로 내림차순 정렬하므로 상위만
-const maxB = branchLimit(depth);
-if (moves.length > maxB) moves.length = maxB;
+      const maxB = branchLimit(depth);
+      if (moves.length > maxB) moves.length = maxB;
 
       if (depth===0){
         if (useQuiescence){
-          // 캡처/체크만 확장
           let stand = evaluate(B, perspective);
           let best = {score: stand, move:null};
           for (const m of moves){
@@ -1194,8 +1142,7 @@ if (moves.length > maxB) moves.length = maxB;
         return {score: evaluate(B, perspective), move:null};
       }
       if (moves.length===0){
-        // 체크메이트/스테일메이트
-        if (isInCheck(B, toMove)) return {score: -999999 + (4-depth), move:null}; // 가깝게 질수록 안 좋게
+        if (isInCheck(B, toMove)) return {score: -999999 + (4-depth), move:null};
         return {score: 0, move:null};
       }
 
@@ -1217,13 +1164,11 @@ if (moves.length > maxB) moves.length = maxB;
       if (aiTeam==='none' || aiTeam!==turn) return null;
 
       const level = aiLevelEl.value; // pro, master
-const depth = (level==='master') ? 4 : 3;
-const useQuiescence = (level==='master');
+      const depth = (level==='master') ? 4 : 3;
+      const useQuiescence = (level==='master');
 
-// 이전: pro는 0ms라 무제한 → 고립된 케이스에서 멈춘 것처럼 보임
-// 새로: pro도 타임가드 부여
-const timeMs = (level==='master') ? 1500 : 900;
-const deadline = performance.now() + timeMs;
+      const timeMs = (level==='master') ? 1500 : 900;
+      const deadline = performance.now() + timeMs;
 
       const forbidFirstPo = (plyCount===0 && turn==='cho' && noFirstPoEl.checked);
       const res = aiSearch(B, aiTeam, aiTeam, depth, -1e15, 1e15, deadline, useQuiescence, forbidFirstPo);
@@ -1231,55 +1176,40 @@ const deadline = performance.now() + timeMs;
     }
 
     function maybeAIMove(){
-  const aiTeam = aiSideEl.value;
-  if (gameOver) return;
-  if (aiTeam==='none' || aiTeam!==turn) return;
+      const aiTeam = aiSideEl.value;
+      if (gameOver) return;
+      if (aiTeam==='none' || aiTeam!==turn) return;
 
-  aiThinkingFlag = true; thinking.classList.add('show'); setMsg('');
+      aiThinkingFlag = true; thinking.classList.add('show'); setMsg('');
 
-  requestAnimationFrame(()=>{
-    const mv = chooseAIMove();
-    if (!mv){
-      // AI가 둘 수 있는 수가 없는 상태 → 여기서도 종료 처리
-      const B = snapshotBoard();
-      const inChk = isInCheck(B, aiTeam);
-      if (inChk){
-        setMsg('장군 · 외통수!'); // 내가 방금 메이트 낸 상황
-      }else{
-        setMsg('행마 불가 · 무승부');
-      }
-      gameOver = true;
-      aiThinkingFlag=false; thinking.classList.remove('show');
-      return;
+      requestAnimationFrame(()=>{
+        const mv = chooseAIMove();
+        if (!mv){
+          const B = snapshotBoard();
+          const inChk = isInCheck(B, aiTeam);
+          if (inChk) setMsg('장군 · 외통수!'); else setMsg('행마 불가 · 무승부');
+          gameOver = true;
+          aiThinkingFlag=false; thinking.classList.remove('show');
+          return;
+        }
+        const el = pieceAtDOM(mv.r, mv.c);
+        if (el) doMove(el, mv.tr, mv.tc);
+        aiThinkingFlag = false;
+        thinking.classList.remove('show');
+      });
     }
-    const el = pieceAtDOM(mv.r, mv.c);
-    if (el) doMove(el, mv.tr, mv.tc); // doMove 안에서 사운드/체크/오버 처리
-    // 안전망: 어떤 이유로든 빠져나오면 스피너 끄기
-aiThinkingFlag = false;
-thinking.classList.remove('show');
-
-  });
-}
-
 
     aiMoveBtn.addEventListener('click', ()=> maybeAIMove());
 
     // 초기 렌더
-function renderAll(){ updateCellSize(); drawPalaceLines(); }
-updateCellSize(); drawPalaceLines();
-placePieces(); updateTurnText(); setMsg('');
+    function renderAll(){ updateCellSize(); drawPalaceLines(); }
+    updateCellSize(); drawPalaceLines();
+    placePieces(); updateTurnText(); setMsg('');
+    pushPosition(snapshotBoard());
+    addEventListener('resize', renderAll);
+    addEventListener('orientationchange', renderAll);
 
-// [추가] 시작 포지션 기록
-pushPosition(snapshotBoard());
-
-addEventListener('resize', renderAll);
-addEventListener('orientationchange', renderAll);
-
-
-    // 시작 시 AI가 먼저 두는 설정이면 자동 진행
     if (autoReplyEl.checked) setTimeout(maybeAIMove, 30);
-
-
   </script>
 </body>
 </html>
