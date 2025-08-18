@@ -185,6 +185,24 @@
     const aiMoveBtn = document.getElementById('aiMoveBtn');
 
     // === 유틸/상수 ===
+    // --- 공격/수비 계산 ---
+function countAttackers(B, team, r, c){
+  let cnt = 0;
+  for (const [pos,info] of B.entries()){
+    if (info.team!==team) continue;
+    const [rr,cc] = pos.split(',').map(Number);
+    if (genAttacksForPiece(B, rr, cc, info).has(key(r,c))) cnt++;
+  }
+  return cnt;
+}
+
+// 졸/병 판별 & 강 건넘 여부
+function isPawn(piece){ return piece==='jol' || piece==='byung'; }
+function crossedRiver(team, r){
+  // 강: 4~5 사이. 초는 r>=5, 한은 r<=4면 강 건넌 것.
+  return (team==='cho') ? (r>=5) : (r<=4);
+}
+
     // === 게임 상태 / 사운드 ===
 let gameOver = false;
 
@@ -786,7 +804,7 @@ function isRecentRepeat(B){
 
 
     // ======= AI 구현 (고급/최고급) =======
-    function enumerateLegalMoves(B, team, forbidFirstPo){
+   function enumerateLegalMoves(B, team, forbidFirstPo){
   const moves = [];
   for (const [pos,info] of B.entries()){
     if (info.team!==team) continue;
@@ -800,68 +818,110 @@ function isRecentRepeat(B){
       const cap = bGet(B,tr,tc);
       const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
 
-      // 체크 플래그
+      // 다음 보드
       const NB = bMove(B, r,c, tr,tc);
       const givesCheck = isInCheck(NB, opp(team));
 
-      // [추가] 왕복(되돌이) 페널티
-      let antiOscPenalty = 0;
+      // --- 안전성: 도착 칸 공격/수비 수 ---
+      const enemyAtk = countAttackers(NB, opp(team), tr, tc);
+      const myDef    = countAttackers(NB, team,      tr, tc);
+      const myVal    = (PIECE_VALUE[info.piece]||0);
+
+      let safety = 0;
+      // 수비 없이 공격만 받는 '헛발'은 강하게 억제
+      if (enemyAtk>0 && myDef===0) safety -= Math.min(180, Math.floor(myVal*0.9));
+      // 수비가 더 적으면 소폭 페널티
+      else if (enemyAtk>myDef) safety -= 25;
+
+      // --- 되돌이(왕복) 억제 (그대로 유지) ---
+      let antiOsc = 0;
       if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
-        // 직전 상대가 (tr,tc)->(r,c)로 두었고, 내가 (r,c)->(tr,tc)로 되돌리는 경우
         if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
             lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
-          antiOscPenalty -= 120; // 강한 페널티
+          antiOsc -= 120;
         }
       }
-      // 같은 말이 연속 두 번 같은 라인에서 왕복하는 경향도 소폭 억제
       if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
-        if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOscPenalty -= 20;
+        if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
       }
 
-      // [추가] 전진/중앙화 보너스(간단)
+      // --- 전진/중앙화: 전진 가중치 축소 + 강 건넌 뒤만 보너스 ---
       let progress = 0;
-      if (info.piece==='jol' || info.piece==='byung'){
-        // 앞으로 전진할수록 + (최대 약 +24)
-        progress += (team==='cho' ? (tr - r) : (r - tr)) * 6;
+      if (isPawn(info.piece)){
+        const dr = (team==='cho' ? (tr - r) : (r - tr)); // 전진=양수
+        if (crossedRiver(team, tr)) progress += dr * 3;  // 기존 6 → 3로 축소, 강 건넌 뒤에만
+        // 무지성 돌진 억제: 강 건너기 전인데 수비<공격이면 추가 페널티
+        if (!crossedRiver(team, tr) && enemyAtk>myDef) progress -= 10;
+        // 측면 컨트롤 유도: 같은 행 좌우로 전개 시 소폭 보너스
+        if (tr===r && Math.abs(tc-c)===1) progress += 6;
+      }else{
+        const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr);
+        if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang')
+          progress += Math.max(0, 10 - 2*centerDist);
       }
-      // 중앙 성향(차/마/상에게 살짝 부여)
-      const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr); // 대략
-      if (info.piece==='cha' || info.piece==='ma' || info.piece==='sang') progress += Math.max(0, 10 - 2*centerDist);
 
-      const orderScore = capVal*10 + (givesCheck?7:0) + progress + antiOscPenalty;
+      const orderScore = capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc;
       moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
     }
   }
-  // 캡처/체크/전진/왕복페널티 반영 정렬
   moves.sort((a,b)=> b.orderScore - a.orderScore);
   return moves;
 }
 
 
-    function evaluate(B, perspective){
+
+   function evaluate(B, perspective){
   let sum = 0;
 
-  // 3-1) 재료
+  // (1) 재료
   for (const v of B.values()){
     const s = (PIECE_VALUE[v.piece]||0);
     sum += (v.team===perspective ? s : -s);
   }
 
-  // 3-2) 기동성
+  // (2) 기동성
   const myMoves  = enumerateLegalMoves(B, perspective, false).length;
   const oppMoves = enumerateLegalMoves(B, opp(perspective), false).length;
   sum += (myMoves - oppMoves) * 3;
 
-  // 3-3) 폰(졸/병) 전진 보너스
+  // (3) 졸/병 전진 보너스 (완화): 강 건넌 이후에만 가산, 폭 낮춤
   for (const [pos,v] of B.entries()){
-    if (v.piece!=='jol' && v.piece!=='byung') continue;
+    if (!isPawn(v.piece)) continue;
     const [r,c] = pos.split(',').map(Number);
-    const adv = (v.team==='cho') ? r : (9 - r);
-    const bonus = adv * 2; // 최대 ~18
-    sum += (v.team===perspective ? bonus : -bonus);
+    if (crossedRiver(v.team, r)){
+      // 초는 r 커질수록, 한은 r 작아질수록 + (기존 2 → 1.2 정도)
+      const adv = (v.team==='cho') ? (r-5) : (4 - r); // 강 건넌 후 상대 진영에서의 진도
+      const bonus = Math.max(0, adv) * 1.2;
+      sum += (v.team===perspective ? bonus : -bonus);
+    }
   }
 
-  // 3-4) 포(대포) 운용 점수: 방향별로 스크린 유무 보너스
+  // (4) 졸/병 구조: 연결/고립/과신(오버익스텐션)
+  for (const [pos,v] of B.entries()){
+    if (!isPawn(v.piece)) continue;
+    const [r,c] = pos.split(',').map(Number);
+
+    // 연결: 같은 팀의 같은 행 좌우 인접 졸/병 있으면 + (연결 전선 유지)
+    const left  = bGet(B, r, c-1);
+    const right = bGet(B, r, c+1);
+    let structure = 0;
+    if (left  && left.team===v.team && isPawn(left.piece))  structure += 4;
+    if (right && right.team===v.team && isPawn(right.piece)) structure += 4;
+
+    // 고립: 같은 행 양옆에 아군 말이 전혀 없고, 수비도 없으면 -
+    const myDef = countAttackers(B, v.team, r, c);
+    if (!left && !right && myDef===0) structure -= 6;
+
+    // 과신: 강 안 건넌 상태에서 전진이 깊고(초 r>=4, 한 r<=5) 수비<공격이면 소폭 -
+    const enemyAtk = countAttackers(B, opp(v.team), r, c);
+    if (!crossedRiver(v.team, r) && enemyAtk>myDef){
+      structure -= 4;
+    }
+
+    sum += (v.team===perspective ? structure : -structure);
+  }
+
+  // (5) 포(대포) 운용 (기존 로직 유지)
   const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   let myPoScore=0, oppPoScore=0;
   for (const [pos,v] of B.entries()){
@@ -869,15 +929,13 @@ function isRecentRepeat(B){
     const [r,c] = pos.split(',').map(Number);
     let dirScore = 0;
     for (const [dr,dc] of dirs){
-      // 첫 장애물 찾기
       let rr=r+dr, cc=c+dc, screenFound=null;
       while (inside(rr,cc)){
         const occ = bGet(B,rr,cc);
         if (occ){ screenFound = occ; rr+=dr; cc+=dc; break; }
         rr+=dr; cc+=dc;
       }
-      if (!screenFound || screenFound.piece==='po') continue; // 포는 스크린 불가
-      // 스크린 뒤의 캡/진출 가능성
+      if (!screenFound || screenFound.piece==='po') continue;
       let pathOpen=false, danger=false;
       while (inside(rr,cc)){
         const occ = bGet(B,rr,cc);
@@ -885,23 +943,22 @@ function isRecentRepeat(B){
         if (occ.team!==v.team && occ.piece!=='po'){ pathOpen=true; break; }
         danger=true; break;
       }
-      if (pathOpen) dirScore += 4;        // 스크린 뒤 활동 여지
-      if (danger)  dirScore -= 2;        // 막혀있거나 애매한 경우
+      if (pathOpen) dirScore += 4;
+      if (danger)  dirScore -= 2;
     }
     if (v.team===perspective) myPoScore += dirScore; else oppPoScore += dirScore;
   }
   sum += (myPoScore - oppPoScore);
 
-  // 3-5) 체크/왕 마주봄
+  // (6) 체크/왕 마주봄/반복
   if (isInCheck(B, opp(perspective))) sum += 40;
   if (isInCheck(B, perspective))      sum -= 40;
   if (kingsFacing(B))                 sum -= 25;
-
-  // 3-6) 포지션 반복 소폭 감점 (무의미한 왔다갔다 억제)
-  if (isRecentRepeat(B)) sum -= 12;
+  if (isRecentRepeat(B))              sum -= 12;
 
   return sum;
 }
+
 
 
     function aiSearch(B, toMove, perspective, depth, alpha, beta, deadline, useQuiescence, forbidFirstPo){
