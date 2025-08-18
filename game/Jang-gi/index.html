@@ -227,14 +227,6 @@ function enemyPoHitsMyPalace(B, team){
   return false;
 }
 
-// 초중반 구분
-function isOpening(){ return plyCount < 14; }
-
-// 적 진영(강 건넌 쪽) 판정
-function inEnemyHalf(team, r){
-  return (team==='cho') ? (r>=5) : (r<=4);
-}
-
 
 // 졸/병 판별 & 강 건넘 여부
 function isPawn(piece){ return piece==='jol' || piece==='byung'; }
@@ -264,6 +256,13 @@ function hashBoardMap(B){
   arr.sort();
   return arr.join('|');
 }
+// --- 경량 캐시 (포지션 해시 기반)
+const CACHE = {
+  enemyPoMyPalace: new Map(), // key: hash + '|' + team  -> boolean
+};
+
+// 헬퍼: 현재 보드 해시 (이미 있는 hashBoardMap 재활용)
+function cacheKey(B, team){ return hashBoardMap(B) + '|' + team; }
 
 // 최근 포지션(간단히 마지막 12개만 보관)
 const POS_HISTORY = [];
@@ -833,6 +832,9 @@ function isRecentRepeat(B){
   lastMoveGlobal = null;
   prevLastMoveGlobal = null;
 
+    // ★ 캐시 정리
+  CACHE.enemyPoMyPalace.clear();
+
   placePieces(); clearDots();
   updateTurnText();
 
@@ -846,6 +848,14 @@ function isRecentRepeat(B){
     // ======= AI 구현 (고급/최고급) =======
   function enumerateLegalMoves(B, team, forbidFirstPo){
   const moves = [];
+  // 이 포지션에서 "상대 포가 내 궁을 대각으로 때리는지"를 캐시
+const kPal = cacheKey(B, team);
+let cachedEnemyPo = CACHE.enemyPoMyPalace.get(kPal);
+if (cachedEnemyPo === undefined){
+  cachedEnemyPo = enemyPoHitsMyPalace(B, team);
+  CACHE.enemyPoMyPalace.set(kPal, cachedEnemyPo);
+}
+
   for (const [pos,info] of B.entries()){
     if (info.team!==team) continue;
     const [r,c] = pos.split(',').map(Number);
@@ -922,17 +932,15 @@ function isRecentRepeat(B){
     // 궁 중앙 차단 보너스: '내' 궁 중앙에 안전하게 세워 상대 포의 대각 노선 차단
     const [cr,cc] = myPalaceCenter(team);
     if (tr===cr && tc===cc){
-      // 안전해야 가산
-      if (enemyAtk<=myDef){
-        let bonus = 35;
-        // 현재 보드에서 상대 포가 내 궁을 대각으로 때릴 여지가 있으면 더 큰 보너스
-        if (enemyPoHitsMyPalace(B, team)) bonus += 25;
-        pieceCare += bonus;
-      }else{
-        // 위험하면 보너스 없음 (심지어 약간 감점)
-        pieceCare -= 10;
-      }
-    }
+  if (enemyAtk<=myDef){
+    let bonus = 35;
+    if (cachedEnemyPo) bonus += 25;
+    pieceCare += bonus;
+  }else{
+    pieceCare -= 10;
+  }
+}
+
   }
 
   // 되돌이 억제 (기존)
@@ -1019,26 +1027,34 @@ for (const [pos,v] of B.entries()){
     exposure += Math.min(15, (myDef-enemyAtk)*4);
   }
 
-  // ★ 차(車) 추가 보정: 적 진영에서 수비 약하면 좀 더 깎기
+  // ★ 차(車) 보정
   if (v.piece==='cha'){
     if (inEnemyHalf(v.team, r) && enemyAtk>myDef) exposure -= 12;
     if (myDef===0 && enemyAtk>0) exposure -= 10;
   }
 
+  // ★ 포(砲) 보정: 내 궁 중앙의 포 = 상대 포 대각 차단 가치
+  if (v.piece==='po'){
+    const [cr,cc] = myPalaceCenter(v.team);
+    if (r===cr && c===cc){
+      const kPalEval = cacheKey(B, v.team);
+      let cachedEnemyPo = CACHE.enemyPoMyPalace.get(kPalEval);
+      if (cachedEnemyPo === undefined){
+        cachedEnemyPo = enemyPoHitsMyPalace(B, v.team);
+        CACHE.enemyPoMyPalace.set(kPalEval, cachedEnemyPo);
+      }
+      let shield = 30;
+      if (cachedEnemyPo) shield += 20;
+      exposure += shield; // <- 포 보너스는 exposure에 더해 한 번에 sum 반영
+    }
+  }
+
   sum += (v.team===perspective ? exposure : -exposure);
 }
+// ← 그리고 루프 '바깥'에 있던 포 보정 블록은 삭제
 
-// ... 기존 노출 패널티 계산 후
 
-// ★ 포 전용 보정: 내 궁 중앙의 포 = 상대 포 대각 길 차단 가치
-if (v.piece==='po'){
-  const [cr,cc] = myPalaceCenter(v.team);
-  if (r===cr && c===cc){
-    let shield = 30;
-    if (enemyPoHitsMyPalace(B, v.team)) shield += 20; // 실제로 차단 중이면 더 보너스
-    sum += (v.team===perspective ? shield : -shield);
-  }
-}
+
 
 
   // (4) 졸/병 구조: 연결/고립/과신(오버익스텐션)
@@ -1108,10 +1124,22 @@ if (v.piece==='po'){
 
     function aiSearch(B, toMove, perspective, depth, alpha, beta, deadline, useQuiescence, forbidFirstPo){
       // 시간 체크
+      // 깊이에 따른 최대 브랜치 수(정렬 후 잘라서 탐색)
+function branchLimit(d){
+  if (d>=4) return 14; // 깊을수록 더 강하게 절단
+  if (d===3) return 18;
+  if (d===2) return 22;
+  return 28; // 루트 근처
+}
+
       if (deadline && performance.now() > deadline) return {score: evaluate(B, perspective), move:null, timeout:true};
 
       // 무수/기저
       const moves = enumerateLegalMoves(B, toMove, forbidFirstPo);
+      // enumerateLegalMoves가 orderScore로 내림차순 정렬하므로 상위만
+const maxB = branchLimit(depth);
+if (moves.length > maxB) moves.length = maxB;
+
       if (depth===0){
         if (useQuiescence){
           // 캡처/체크만 확장
@@ -1155,10 +1183,13 @@ if (v.piece==='po'){
       if (aiTeam==='none' || aiTeam!==turn) return null;
 
       const level = aiLevelEl.value; // pro, master
-      const depth = (level==='master') ? 4 : 3;
-      const useQuiescence = (level==='master');
-      const timeMs = (level==='master') ? 1500 : 0; // 최고급만 시간제한
-      const deadline = timeMs ? performance.now() + timeMs : null;
+const depth = (level==='master') ? 4 : 3;
+const useQuiescence = (level==='master');
+
+// 이전: pro는 0ms라 무제한 → 고립된 케이스에서 멈춘 것처럼 보임
+// 새로: pro도 타임가드 부여
+const timeMs = (level==='master') ? 1500 : 900;
+const deadline = performance.now() + timeMs;
 
       const forbidFirstPo = (plyCount===0 && turn==='cho' && noFirstPoEl.checked);
       const res = aiSearch(B, aiTeam, aiTeam, depth, -1e15, 1e15, deadline, useQuiescence, forbidFirstPo);
@@ -1189,7 +1220,10 @@ if (v.piece==='po'){
     }
     const el = pieceAtDOM(mv.r, mv.c);
     if (el) doMove(el, mv.tr, mv.tc); // doMove 안에서 사운드/체크/오버 처리
-    aiThinkingFlag=false; thinking.classList.remove('show');
+    // 안전망: 어떤 이유로든 빠져나오면 스피너 끄기
+aiThinkingFlag = false;
+thinking.classList.remove('show');
+
   });
 }
 
