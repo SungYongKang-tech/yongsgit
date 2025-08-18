@@ -195,6 +195,19 @@ function countAttackers(B, team, r, c){
   }
   return cnt;
 }
+function minAttackerValue(B, team, r, c){
+  let best = Infinity;
+  for (const [pos,info] of B.entries()){
+    if (info.team!==team) continue;
+    const [rr,cc] = pos.split(',').map(Number);
+    if (genAttacksForPiece(B, rr, cc, info).has(key(r,c))){
+      const v = PIECE_VALUE[info.piece]||0;
+      if (v>0 && v<best) best = v;
+    }
+  }
+  return (best===Infinity) ? null : best;
+}
+
 
 // 졸/병 판별 & 강 건넘 여부
 function isPawn(piece){ return piece==='jol' || piece==='byung'; }
@@ -826,32 +839,63 @@ function isRecentRepeat(B){
       const enemyAtk = countAttackers(NB, opp(team), tr, tc);
       const myDef    = countAttackers(NB, team,      tr, tc);
 
-      // === 핵심: 말 값에 비례한 '위험' 페널티 ===
+      // === 새로 추가: 교환(SEE) 기반 위험 평가 ===
       const myVal = (PIECE_VALUE[info.piece]||0);
-      let safety = 0;
+      let tradeBias = 0;
 
-      // 수비 0인데 맞는 자리로 들어가면, 말 값만큼 큰 페널티
+      if (capVal>0){
+        // 캡처 직후 그 자리를 적이 최소 얼마짜리 말로 되잡을 수 있는지
+        const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
+        const enemyAtk2   = enemyAtk;       // 가독성
+        const myDef2      = myDef;
+
+        // 보수적 순교환 추정: 내가 캡하면, 상대가 최소가로 되잡음
+        const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
+        const exch = capVal - worstReturn;  // (+)면 유리, (-)면 손해
+
+        if (enemyAtk2===0){
+          // 되잡을 수 없으면 캡처 장려
+          tradeBias += Math.max(12, Math.floor(capVal*0.4));
+        }else{
+          if (exch < 0){
+            // 손해 교환은 강하게 억제 (말 값 클수록 더 크게)
+            tradeBias -= Math.min(260, Math.floor((-exch)*4 + myVal*0.25));
+          }else{
+            // 유리한 교환이더라도 수비 열세면 보너스 줄임
+            if (enemyAtk2>myDef2) tradeBias += Math.floor(exch*0.3) - 30;
+            else                  tradeBias += Math.floor(exch*0.6) + 8;
+          }
+        }
+      }
+
+      // === 기존: 말 값 비례 노출/안전성 ===
+      let safety = 0;
       if (enemyAtk>0 && myDef===0){
         safety -= Math.min(220, Math.floor(myVal*0.95));
       } else if (enemyAtk>myDef){
-        // 공격이 수비보다 많으면, 초과 비율만큼 말 값에 비례해 감점
         safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.20));
       } else if (myDef>enemyAtk && myVal>=350){
-        // 비싼 말(차/포/장/사)인데 안전 지점이면 약간의 안심 보너스
         safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
       }
 
-      // 되돌이 억제(기존 유지)
+      // 되돌이 억제 (필요시 유지)
       let antiOsc = 0;
+      if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
+        if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
+            lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
+          antiOsc -= 120;
+        }
+      }
+      if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
+        if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
+      }
 
-      // --- 전진/중앙화: 전진 가중치 축소 + 강 건넌 뒤만 보너스 ---
+      // 전진/중앙화(그대로)
       let progress = 0;
       if (isPawn(info.piece)){
-        const dr = (team==='cho' ? (tr - r) : (r - tr)); // 전진=양수
-        if (crossedRiver(team, tr)) progress += dr * 3;  // 기존 6 → 3로 축소, 강 건넌 뒤에만
-        // 무지성 돌진 억제: 강 건너기 전인데 수비<공격이면 추가 페널티
+        const dr = (team==='cho' ? (tr - r) : (r - tr));
+        if (crossedRiver(team, tr)) progress += dr * 3;
         if (!crossedRiver(team, tr) && enemyAtk>myDef) progress -= 10;
-        // 측면 컨트롤 유도: 같은 행 좌우로 전개 시 소폭 보너스
         if (tr===r && Math.abs(tc-c)===1) progress += 6;
       }else{
         const centerDist = Math.abs(4 - tc) + Math.abs((team==='cho'?5:4) - tr);
@@ -859,13 +903,14 @@ function isRecentRepeat(B){
           progress += Math.max(0, 10 - 2*centerDist);
       }
 
-      const orderScore = capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc;
+      const orderScore = capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias;
       moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
     }
   }
   moves.sort((a,b)=> b.orderScore - a.orderScore);
   return moves;
 }
+
 
 
 
