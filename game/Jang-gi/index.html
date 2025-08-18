@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HTML 장기 게임 (반응형 · 비율 스케일 · 규칙 1단계)</title>
+  <title>HTML 장기 게임 (반응형 · 비율 스케일 · 규칙 2단계: 포)</title>
   <style>
     :root{
-      --cell-size:56px;                 /* JS가 화면에 맞춰 갱신 */
+      --cell-size:56px;
       --board-width:calc(var(--cell-size)*8);
       --board-height:calc(var(--cell-size)*9);
       --border-color:#3a2a1a;
       --board-bg:#e4c59a;
-      --piece-scale:1.3;               /* 말 크기 배율 */
-      --dot-size: 16px;                /* 이동 후보 점 크기 */
+      --piece-scale:1.3;
+      --dot-size: 16px;
     }
     *{box-sizing:border-box}
     body{
@@ -22,7 +22,6 @@
     }
     h1{margin:8px 0 6px;font-size:clamp(18px,4.5vw,28px);color:#333}
 
-    /* 배치/턴 컨트롤 바 */
     .bar{
       display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center;
       margin:6px 0 10px;
@@ -63,13 +62,12 @@
     #pieces-layer{position:absolute;inset:0;pointer-events:none;z-index:2}
     #moves-layer{position:absolute;inset:0;pointer-events:none;z-index:3}
 
-    /* 말: 위치는 % 비율, 크기는 칸 크기에 연동 */
     .piece{
       position:absolute;
       width:calc(var(--cell-size) * var(--piece-scale));
       height:calc(var(--cell-size) * var(--piece-scale));
-      left:calc(var(--col) * 100% / 8);    /* 0..8 칸 → 8분할 */
-      top:calc(var(--row) * 100% / 9);     /* 0..9 칸 → 9분할 */
+      left:calc(var(--col) * 100% / 8);
+      top:calc(var(--row) * 100% / 9);
       transform:translate(-50%, -50%);
       background-size:contain;background-repeat:no-repeat;background-position:center;
       border-radius:50%;
@@ -78,9 +76,7 @@
       transition:box-shadow .15s ease, transform .15s ease;
     }
     .piece.selected{ box-shadow:0 0 12px 4px rgba(255,0,0,.55) }
-    .piece.po { filter: grayscale(0.3) opacity(0.8); } /* 1단계에서 이동 불가 표시 */
 
-    /* 이동 후보 점 */
     .move-dot{
       position:absolute;
       width:var(--dot-size); height:var(--dot-size);
@@ -96,9 +92,8 @@
   </style>
 </head>
 <body>
-  <h1>HTML 장기 게임 (규칙 1단계)</h1>
+  <h1>HTML 장기 게임 (규칙 2단계: 포 적용)</h1>
 
-  <!-- 배치/턴 컨트롤 -->
   <div class="bar">
     <span>초 배치:</span>
     <select id="setupCho">
@@ -140,20 +135,20 @@
     const getCellSize = () =>
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
 
-    // === 유틸 ===
+    // 유틸
     const inside = (r,c)=> r>=0 && r<=9 && c>=0 && c<=8;
     const key = (r,c)=> `${r},${c}`;
     const pieceAt = (r,c)=> piecesLay.querySelector(`.piece[data-row='${r}'][data-col='${c}']`);
     const isEnemy = (a,b)=> a && b && a.dataset.team!==b.dataset.team;
     const isAlly  = (a,b)=> a && b && a.dataset.team===b.dataset.team;
 
-    // 궁 좌표(윗궁/아랫궁)
+    // 궁 좌표
     const palaceTop    = new Set(['0,3','0,4','0,5','1,3','1,4','1,5','2,3','2,4','2,5']);
     const palaceBottom = new Set(['7,3','7,4','7,5','8,3','8,4','8,5','9,3','9,4','9,5']);
     const inPalace = (r,c)=> palaceTop.has(key(r,c)) || palaceBottom.has(key(r,c));
     const palaceKind = (r,c)=> palaceTop.has(key(r,c)) ? 'top' : (palaceBottom.has(key(r,c))?'bottom':null);
 
-    // 궁 대각선 인접(센터 <-> 4코너)
+    // 궁 대각 이웃(센터 <-> 4코너)
     const palaceDiagNeighbors = {
       // top
       '1,4': [['0,3'],['0,5'],['2,3'],['2,5']],
@@ -164,7 +159,27 @@
     };
     const diagNeighbors = (r,c)=> (palaceDiagNeighbors[key(r,c)]||[]).map(([s])=>s.split(',').map(Number));
 
-    // === 보드 크기 반응형 ===
+    // 궁 코너/센터 매핑 (포 대각 전용)
+    const topCorners = ['0,3','0,5','2,3','2,5'];      const topCenter = '1,4';
+    const botCorners = ['7,3','7,5','9,3','9,5'];      const botCenter = '8,4';
+    const oppositeCorner = (r,c)=>{
+      const s = key(r,c);
+      if (topCorners.includes(s)){
+        if (s==='0,3') return [2,5];
+        if (s==='2,5') return [0,3];
+        if (s==='0,5') return [2,3];
+        if (s==='2,3') return [0,5];
+      }
+      if (botCorners.includes(s)){
+        if (s==='7,3') return [9,5];
+        if (s==='9,5') return [7,3];
+        if (s==='7,5') return [9,3];
+        if (s==='9,3') return [7,5];
+      }
+      return null;
+    };
+
+    // 반응형 셀 크기
     function updateCellSize(){
       const titleH = (document.querySelector('h1')?.offsetHeight || 0);
       const barH   = (document.querySelector('.bar')?.offsetHeight || 0);
@@ -175,7 +190,7 @@
       document.documentElement.style.setProperty('--cell-size', cell + 'px');
     }
 
-    // === 궁 X 그리기 (1px, 약간 연함) ===
+    // 궁 X 그리기
     function drawPalaceLines(){
       const CELL = getCellSize();
       const W = 8 * CELL, H = 9 * CELL;
@@ -202,7 +217,7 @@
       overlay.appendChild(mk(5*CELL,7*CELL,3*CELL,9*CELL));
     }
 
-    // === 초기 배치 생성 (마상 패턴 반영) ===
+    // 초기 배치 생성 (마상 패턴)
     function makeInitialSetup(pCho='마상마상', pHan='마상마상'){
       const map = {
         '마상마상': ['ma','sang','ma','sang'],
@@ -213,7 +228,7 @@
       const aCho = map[pCho], aHan = map[pHan];
 
       const S = {};
-      // 초 (위쪽)
+      // 초
       S['0,0']={team:'cho',piece:'cha'};
       S['0,1']={team:'cho',piece:aCho[0]};
       S['0,2']={team:'cho',piece:aCho[1]};
@@ -227,7 +242,7 @@
       S['2,7']={team:'cho',piece:'po'};
       for (const c of [0,2,4,6,8]) S[`3,${c}`]={team:'cho',piece:'jol'};
 
-      // 한 (아래쪽)
+      // 한
       S['9,0']={team:'han',piece:'cha'};
       S['9,1']={team:'han',piece:aHan[0]};
       S['9,2']={team:'han',piece:aHan[1]};
@@ -245,17 +260,16 @@
     }
 
     let currentSetup = makeInitialSetup();
-    let turn = 'cho'; // 초부터 시작
+    let turn = 'cho';
     function updateTurnText(){ turnText.textContent = (turn==='cho'?'초':'한'); }
 
-    // === 말 깔기 ===
+    // 말 렌더
     function placePieces(){
       piecesLay.innerHTML='';
       for (const [pos,info] of Object.entries(currentSetup)){
         const [row,col] = pos.split(',').map(Number);
         const el = document.createElement('div');
         el.className = 'piece';
-        if (info.piece==='po') el.classList.add('po'); // 1단계: 이동 불가 표시
 
         const name = (info.team==='han' && info.piece==='byung') ? 'byung'
                    : (info.team==='cho' && info.piece==='jol')   ? 'jol'
@@ -274,7 +288,7 @@
       }
     }
 
-    // === 이동 후보 점 ===
+    // 이동 후보 점
     function clearDots(){ movesLay.innerHTML=''; }
     function addDot(r,c, onClick){
       const dot = document.createElement('div');
@@ -288,7 +302,61 @@
       movesLay.appendChild(dot);
     }
 
-    // === 합법수 생성기 ===
+    // === 포 직선 스캔(장기 규칙) ===
+    function addPoLineMoves(el, r, c, dr, dc, out){
+      let rr = r + dr, cc = c + dc;
+      // 1) 스크린 찾기(포 제외)
+      while (inside(rr,cc)){
+        const occ = pieceAt(rr,cc);
+        if (!occ){ rr+=dr; cc+=dc; continue; }
+        if (occ.dataset.piece === 'po') return; // 포는 스크린 불가 → 라인 차단
+        // 스크린 획득
+        rr+=dr; cc+=dc;
+        break;
+      }
+      if (!inside(rr,cc)) return;
+
+      // 2) 스크린 뒤: 빈칸들로 '이동' 가능
+      while (inside(rr,cc)){
+        const occ = pieceAt(rr,cc);
+        if (!occ){
+          out.push([rr,cc]); // 점프 이후 빈칸 이동
+          rr+=dr; cc+=dc;
+          continue;
+        }
+        // 3) 첫 번째 말 → 포획 후보 (상대이고, 포가 아니어야)
+        if (occ && isEnemy(el,occ) && occ.dataset.piece!=='po'){
+          out.push([rr,cc]);
+        }
+        // 한 개 넘은 뒤 첫 말에서 종료 (여러 개는 불가)
+        return;
+      }
+    }
+
+    // === 포 궁 대각(코너↔코너) ===
+    function addPoPalaceDiagonal(el, r, c, out){
+      const kind = palaceKind(r,c);
+      if (!kind) return;
+      const s = key(r,c);
+      const center = (kind==='top') ? topCenter : botCenter;
+      const [cr,cc] = center.split(',').map(Number);
+      const opp = oppositeCorner(r,c); // 반대 코너
+      if (!opp) return;
+
+      // 반드시 코너에서만 허용 (규칙상 실전에서 그렇게 사용)
+      const isCorner = (kind==='top' ? topCorners.includes(s) : botCorners.includes(s));
+      if (!isCorner) return;
+
+      const mid = pieceAt(cr,cc);
+      if (!mid || mid.dataset.piece==='po') return; // 중앙 스크린 필요, 포는 불가
+
+      const [or,oc] = opp;
+      const occ = pieceAt(or,oc);
+      if (!occ){ out.push([or,oc]); }                    // 대각 이동
+      else if (isEnemy(el,occ) && occ.dataset.piece!=='po'){ out.push([or,oc]); } // 대각 포획
+    }
+
+    // 합법수 생성기
     function genMoves(el){
       const team = el.dataset.team, piece = el.dataset.piece;
       const r = Number(el.dataset.row), c = Number(el.dataset.col);
@@ -300,12 +368,10 @@
         const occ = pieceAt(rr,cc);
         if (!occ) { moves.push([rr,cc]); return true; }
         if (isEnemy(el,occ)) { moves.push([rr,cc]); return false; }
-        return false; // 아군이면 막힘
+        return false;
       };
 
-      // 차: 직선 슬라이드 + 궁 대각 슬라이드
       if (piece==='cha'){
-        // 상하좌우
         for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
           let rr=r+dr, cc=c+dc;
           while (inside(rr,cc)){
@@ -313,27 +379,23 @@
             rr+=dr; cc+=dc;
           }
         }
-        // 궁 안이면 대각 슬라이드 (코너<->센터<->코너)
         if (inPalace(r,c)){
           for (const [nr,nc] of diagNeighbors(r,c)){
-            // 한 칸씩 진행(센터↔코너밖에 없음)
             const occ = pieceAt(nr,nc);
-            if (!occ || isEnemy(el,occ)) moves.push([nr,nc]);
+            if (!isAlly(el,occ)) moves.push([nr,nc]);
           }
         }
       }
-
-      // 마: (직선 1칸 발) 비어있어야, 그 방향 대각 2곳
       else if (piece==='ma'){
         const legs = [
-          {b:[-1,0], dst:[[-2,-1],[-2,1]]}, // 위
-          {b:[ 1,0], dst:[[ 2,-1],[ 2,1]]}, // 아래
-          {b:[ 0,-1], dst:[[-1,-2],[ 1,-2]]}, // 좌
-          {b:[ 0, 1], dst:[[-1, 2],[ 1, 2]]}, // 우
+          {b:[-1,0], dst:[[-2,-1],[-2,1]]},
+          {b:[ 1,0], dst:[[ 2,-1],[ 2,1]]},
+          {b:[ 0,-1], dst:[[-1,-2],[ 1,-2]]},
+          {b:[ 0, 1], dst:[[-1, 2],[ 1, 2]]},
         ];
         for (const {b:[br,bc], dst} of legs){
           const lr=r+br, lc=c+bc;
-          if (!inside(lr,lc) || pieceAt(lr,lc)) continue; // 다리 막힘
+          if (!inside(lr,lc) || pieceAt(lr,lc)) continue;
           for (const [dr,dc] of dst){
             const rr=r+dr, cc=c+dc;
             if (!inside(rr,cc)) continue;
@@ -342,42 +404,35 @@
           }
         }
       }
-
-      // 상: (직선 1칸) + (그 다음 대각 1칸) 비어있어야, 최종 대각 1칸
       else if (piece==='sang'){
         const paths = [
-          {step1:[-1,0], step2:[-2,-1], dst:[-3,-2]}, // 위왼
-          {step1:[-1,0], step2:[-2, 1], dst:[-3, 2]}, // 위오
-          {step1:[ 1,0], step2:[ 2,-1], dst:[ 3,-2]}, // 아래왼
-          {step1:[ 1,0], step2:[ 2, 1], dst:[ 3, 2]}, // 아래오
-          {step1:[0,-1], step2:[-1,-2], dst:[-2,-3]}, // 좌위
-          {step1:[0,-1], step2:[ 1,-2], dst:[ 2,-3]}, // 좌아
-          {step1:[0, 1], step2:[-1, 2], dst:[-2, 3]}, // 우위
-          {step1:[0, 1], step2:[ 1, 2], dst:[ 2, 3]}, // 우아
+          {step1:[-1,0], step2:[-2,-1], dst:[-3,-2]},
+          {step1:[-1,0], step2:[-2, 1], dst:[-3, 2]},
+          {step1:[ 1,0], step2:[ 2,-1], dst:[ 3,-2]},
+          {step1:[ 1,0], step2:[ 2, 1], dst:[ 3, 2]},
+          {step1:[0,-1], step2:[-1,-2], dst:[-2,-3]},
+          {step1:[0,-1], step2:[ 1,-2], dst:[ 2,-3]},
+          {step1:[0, 1], step2:[-1, 2], dst:[-2, 3]},
+          {step1:[0, 1], step2:[ 1, 2], dst:[ 2, 3]},
         ];
         for (const {step1:[a,b], step2:[c1,d1], dst:[e,f]} of paths){
           const s1r=r+a, s1c=c+b;
           const s2r=r+c1, s2c=c+d1;
           const tr = r+e, tc = c+f;
-          if (!inside(s1r,s1c) || pieceAt(s1r,s1c)) continue; // 다리 막힘
-          if (!inside(s2r,s2c) || pieceAt(s2r,s2c)) continue; // 눈 막힘
+          if (!inside(s1r,s1c) || pieceAt(s1r,s1c)) continue;
+          if (!inside(s2r,s2c) || pieceAt(s2r,s2c)) continue;
           if (!inside(tr,tc)) continue;
           const occ = pieceAt(tr,tc);
           if (!occ || isEnemy(el,occ)) moves.push([tr,tc]);
         }
       }
-
-      // 졸/병: 전진 1칸, 좌우 1칸, 궁 안에서는 전진 대각 1칸 추가
       else if (piece==='jol' || piece==='byung'){
-        // 전진
         const fr = r + forwardDir;
         if (inside(fr,c) && !isAlly(el,pieceAt(fr,c))) moves.push([fr,c]);
-        // 좌우
         for (const dc of [-1,1]){
           const cc = c+dc;
           if (inside(r,cc) && !isAlly(el,pieceAt(r,cc))) moves.push([r,cc]);
         }
-        // 궁 안 전진 대각
         if (inPalace(r,c)){
           for (const [nr,nc] of diagNeighbors(r,c)){
             if ((team==='cho' && nr>r) || (team==='han' && nr<r)){
@@ -387,37 +442,38 @@
           }
         }
       }
-
-      // 장/사: 궁 내부 9점, 선을 따라 한 칸(직선+대각) 이동
       else if (piece==='jang' || piece==='sa'){
-        if (!inPalace(r,c)) return moves; // 이론상 밖으로 나가지 않음
-        // 직선 이웃
+        if (!inPalace(r,c)) return moves;
         for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
           const rr=r+dr, cc=c+dc;
           if (!inPalace(rr,cc)) continue;
           const occ = pieceAt(rr,cc);
           if (!isAlly(el,occ)) moves.push([rr,cc]);
         }
-        // 대각 이웃(궁 X)
         for (const [rr,cc] of diagNeighbors(r,c)){
           const occ = pieceAt(rr,cc);
           if (!isAlly(el,occ)) moves.push([rr,cc]);
         }
       }
-
-      // 포: 2단계에서 구현 (지금은 이동 불가)
-      // else if (piece==='po'){ ... }
+      else if (piece==='po'){ // ✅ 포: 직선 점프 + 궁 대각(코너↔코너)
+        // 직선 4방
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          addPoLineMoves(el, r, c, dr, dc, moves);
+        }
+        // 궁 대각(코너↔코너, 중앙 스크린 필요)
+        addPoPalaceDiagonal(el, r, c, moves);
+      }
 
       return moves;
     }
 
-    // === 입력/이동 ===
+    // 입력/이동
     let selected = null;
-    let currentMoves = new Set(); // "r,c"
+    let currentMoves = new Set();
 
+    function clearDotsSet(){ clearDots(); currentMoves.clear(); }
     function showMovesFor(el){
-      clearDots();
-      currentMoves.clear();
+      clearDotsSet();
       const mv = genMoves(el);
       mv.forEach(([rr,cc])=>{
         currentMoves.add(key(rr,cc));
@@ -426,39 +482,34 @@
     }
 
     function doMove(el, rr, cc){
-      // 캡처 처리
       const tgt = pieceAt(rr,cc);
       if (tgt){
-        if (tgt.dataset.team === el.dataset.team) return; // 아군 금지
+        if (tgt.dataset.team === el.dataset.team) return;
         tgt.remove();
       }
       el.dataset.row = rr; el.dataset.col = cc;
       el.style.setProperty('--row', rr);
       el.style.setProperty('--col', cc);
 
-      // 턴 종료
-      clearDots();
+      clearDotsSet();
       el.classList.remove('selected');
       selected = null;
       turn = (turn==='cho' ? 'han' : 'cho');
       updateTurnText();
     }
 
-    // 보드 클릭: 하이라이트 칸 외엔 무시
     boardEl.addEventListener('click', (e)=>{
       const t = e.target.closest('.piece');
       if (t){
-        if (t.dataset.team !== turn) return; // 자기 턴만 선택
+        if (t.dataset.team !== turn) return;
         if (selected === t){
-          selected.classList.remove('selected'); selected=null; clearDots(); return;
+          selected.classList.remove('selected'); selected=null; clearDotsSet(); return;
         }
         if (selected) { selected.classList.remove('selected'); }
         selected = t; selected.classList.add('selected');
         showMovesFor(selected);
         return;
       }
-
-      // 빈칸 클릭 → 후보 칸이면 이동
       if (!selected) return;
       const CELL = getCellSize();
       const rect = boardEl.getBoundingClientRect();
@@ -467,12 +518,12 @@
       if (currentMoves.has(key(row,col))) doMove(selected,row,col);
     });
 
-    // === 배치 적용 ===
+    // 배치 적용
     btnApply.addEventListener('click', ()=>{
       currentSetup = makeInitialSetup(selCho.value, selHan.value);
       turn = 'cho'; updateTurnText();
       placePieces();
-      clearDots();
+      clearDotsSet();
     });
 
     function renderAll(){ updateCellSize(); drawPalaceLines(); }
