@@ -207,6 +207,26 @@ function minAttackerValue(B, team, r, c){
   }
   return (best===Infinity) ? null : best;
 }
+// 내/상대 진영 도우미
+function isOpening(){ return plyCount < 14; }
+function inEnemyHalf(team, r){ return (team==='cho') ? (r>=5) : (r<=4); }
+
+// 궁 중앙 좌표/판정
+function myPalaceCenter(team){ return (team==='cho') ? [8,4] : [1,4]; }
+function isPalaceCenter(r,c){ return (r===8&&c===4) || (r===1&&c===4); }
+
+// 적 포가 내 궁(3x3) 안의 점(모서리/중앙 포함)을 대각 공격 중인지(현재 보드 기준)
+function enemyPoHitsMyPalace(B, team){
+  const pal = (team==='cho') ? palaceBottom : palaceTop; // Set('r,c')
+  for (const [pos,info] of B.entries()){
+    if (info.team!==opp(team) || info.piece!=='po') continue;
+    const [r,c] = pos.split(',').map(Number);
+    const atk = genAttacksForPiece(B, r, c, info);
+    for (const sq of atk){ if (pal.has(sq)) return true; }
+  }
+  return false;
+}
+
 // 초중반 구분
 function isOpening(){ return plyCount < 14; }
 
@@ -846,59 +866,76 @@ function isRecentRepeat(B){
   const enemyAtk = countAttackers(NB, opp(team), tr, tc);
   const myDef    = countAttackers(NB, team,      tr, tc);
 
-  // === (A) 캡처 순교환(SEE) + '안전 마진' ===
+  // --- 공통: 교환(SEE) 기반 ---
   const myVal = (PIECE_VALUE[info.piece]||0);
   let tradeBias = 0;
 
   if (capVal>0){
     const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
     const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
-    const exch = capVal - worstReturn; // (+)이면 유리
+    const exch = capVal - worstReturn; // (+) 유리, (-) 손해
 
     if (enemyAtk===0){
-      // 되잡을 수 없으면 장려
       tradeBias += Math.max(12, Math.floor(capVal*0.4));
-    }else{
-      // 손해 교환은 강하게 억제
-      if (exch < 0) tradeBias -= Math.min(280, Math.floor((-exch)*4 + myVal*0.25));
+    }else if (exch < 0){
+      tradeBias -= Math.min(300, Math.floor((-exch)*4 + myVal*0.3));
     }
 
-    // ★ 고가 말 캡처 '안전 마진' (초반일수록 보수적)
-    if (myVal>=350){
-      const margin = isOpening() ? 80 : 20; // 초반엔 +80 이상 이득 아니면 꺼림
-      if (exch < margin) tradeBias -= (margin - exch) * 2; // 마진 미달 억제
+    // ★ 포가 상을 잡을 때는 '확실한 이득'만 허용 (되잡힘 방지)
+    if (info.piece==='po' && cap && cap.piece==='sang'){
+      const need = isOpening()? 110 : 80;     // 초반엔 더 엄격
+      if (exch < need) tradeBias -= (need-exch)*3 + 60;
+    }
+
+    // ★ 고가 말(차/포) 캡처엔 안전마진 요구
+    if ((info.piece==='po' || info.piece==='cha') && exch < (isOpening()? 80:20)){
+      tradeBias -= (isOpening()? 160:40);
     }
   }
 
-  // === (B) 일반 안전성(말 값 비례) ===
+  // --- 일반 안전성: 말 값 비례 ---
   let safety = 0;
   if (enemyAtk>0 && myDef===0){
-    safety -= Math.min(240, Math.floor(myVal*1.0));
+    safety -= Math.min(260, Math.floor(myVal*1.05));
   } else if (enemyAtk>myDef){
     safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.22));
   } else if (myDef>enemyAtk && myVal>=350){
     safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
   }
 
-  // === (C) 차(車) 특수: 초반 단독 난입/얇은 침투 억제 ===
-  let rookCare = 0;
+  // --- 차(車) 보수 운용(그대로) + 포(砲) 전용 보수 운용 ---
+  let pieceCare = 0;
+
+  // 차: 초반 적 진영 얇은 침투 억제
   if (info.piece==='cha'){
-    // 초반에 적 진영으로 들어가면서 수비 열세면 큰 페널티
-    if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef){
-      rookCare -= 70;
-    }
-    // 초반 캡처인데 순교환 이득이 작거나 음수면 강하게 억제
-    if (isOpening() && capVal>0){
-      const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
-      const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
-      const exch = capVal - worstReturn;
-      if (exch < 60) rookCare -= (60 - exch) + 60; // 최소 +60 못 벌면 거의 금지
-    }
-    // 수비 0이면 차는 특히 위험: 추가 감점
-    if (enemyAtk>0 && myDef===0) rookCare -= 60;
+    if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 70;
+    if (enemyAtk>0 && myDef===0) pieceCare -= 60;
   }
 
-  // 되돌이 억제(기존)
+  // ★ 포: 수비 열세/무수비 침투 강한 페널티 + 궁중앙 차단 보너스
+  if (info.piece==='po'){
+    // 수비 없으면 특히 위험
+    if (enemyAtk>0 && myDef===0) pieceCare -= 80;
+    // 초반에 적 진영 깊숙이 가는데 수비 열세면 억제
+    if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 60;
+
+    // 궁 중앙 차단 보너스: '내' 궁 중앙에 안전하게 세워 상대 포의 대각 노선 차단
+    const [cr,cc] = myPalaceCenter(team);
+    if (tr===cr && tc===cc){
+      // 안전해야 가산
+      if (enemyAtk<=myDef){
+        let bonus = 35;
+        // 현재 보드에서 상대 포가 내 궁을 대각으로 때릴 여지가 있으면 더 큰 보너스
+        if (enemyPoHitsMyPalace(B, team)) bonus += 25;
+        pieceCare += bonus;
+      }else{
+        // 위험하면 보너스 없음 (심지어 약간 감점)
+        pieceCare -= 10;
+      }
+    }
+  }
+
+  // 되돌이 억제 (기존)
   let antiOsc = 0;
   if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
     if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
@@ -924,10 +961,11 @@ function isRecentRepeat(B){
   }
 
   const orderScore =
-    capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + rookCare;
+    capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + pieceCare;
 
   moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
 }
+
 
   }
   moves.sort((a,b)=> b.orderScore - a.orderScore);
@@ -990,6 +1028,17 @@ for (const [pos,v] of B.entries()){
   sum += (v.team===perspective ? exposure : -exposure);
 }
 
+// ... 기존 노출 패널티 계산 후
+
+// ★ 포 전용 보정: 내 궁 중앙의 포 = 상대 포 대각 길 차단 가치
+if (v.piece==='po'){
+  const [cr,cc] = myPalaceCenter(v.team);
+  if (r===cr && c===cc){
+    let shield = 30;
+    if (enemyPoHitsMyPalace(B, v.team)) shield += 20; // 실제로 차단 중이면 더 보너스
+    sum += (v.team===perspective ? shield : -shield);
+  }
+}
 
 
   // (4) 졸/병 구조: 연결/고립/과신(오버익스텐션)
