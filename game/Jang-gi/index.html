@@ -804,7 +804,7 @@ function isRecentRepeat(B){
 
 
     // ======= AI 구현 (고급/최고급) =======
-   function enumerateLegalMoves(B, team, forbidFirstPo){
+  function enumerateLegalMoves(B, team, forbidFirstPo){
   const moves = [];
   for (const [pos,info] of B.entries()){
     if (info.team!==team) continue;
@@ -818,32 +818,31 @@ function isRecentRepeat(B){
       const cap = bGet(B,tr,tc);
       const capVal = cap ? (PIECE_VALUE[cap.piece]||0) : 0;
 
-      // 다음 보드
+      // 이동 후 보드/체크
       const NB = bMove(B, r,c, tr,tc);
       const givesCheck = isInCheck(NB, opp(team));
 
-      // --- 안전성: 도착 칸 공격/수비 수 ---
+      // 도착칸 공격/수비
       const enemyAtk = countAttackers(NB, opp(team), tr, tc);
       const myDef    = countAttackers(NB, team,      tr, tc);
-      const myVal    = (PIECE_VALUE[info.piece]||0);
 
+      // === 핵심: 말 값에 비례한 '위험' 페널티 ===
+      const myVal = (PIECE_VALUE[info.piece]||0);
       let safety = 0;
-      // 수비 없이 공격만 받는 '헛발'은 강하게 억제
-      if (enemyAtk>0 && myDef===0) safety -= Math.min(180, Math.floor(myVal*0.9));
-      // 수비가 더 적으면 소폭 페널티
-      else if (enemyAtk>myDef) safety -= 25;
 
-      // --- 되돌이(왕복) 억제 (그대로 유지) ---
+      // 수비 0인데 맞는 자리로 들어가면, 말 값만큼 큰 페널티
+      if (enemyAtk>0 && myDef===0){
+        safety -= Math.min(220, Math.floor(myVal*0.95));
+      } else if (enemyAtk>myDef){
+        // 공격이 수비보다 많으면, 초과 비율만큼 말 값에 비례해 감점
+        safety -= Math.ceil((enemyAtk-myDef) * (myVal*0.20));
+      } else if (myDef>enemyAtk && myVal>=350){
+        // 비싼 말(차/포/장/사)인데 안전 지점이면 약간의 안심 보너스
+        safety += Math.min(18, Math.floor((myDef-enemyAtk)*6));
+      }
+
+      // 되돌이 억제(기존 유지)
       let antiOsc = 0;
-      if (lastMoveGlobal && lastMoveGlobal.team === opp(team)){
-        if (lastMoveGlobal.r === tr && lastMoveGlobal.c === tc &&
-            lastMoveGlobal.tr === r && lastMoveGlobal.tc === c){
-          antiOsc -= 120;
-        }
-      }
-      if (prevLastMoveGlobal && prevLastMoveGlobal.team === team && prevLastMoveGlobal.piece === info.piece){
-        if (prevLastMoveGlobal.r === tr && prevLastMoveGlobal.c === tc) antiOsc -= 20;
-      }
 
       // --- 전진/중앙화: 전진 가중치 축소 + 강 건넌 뒤만 보너스 ---
       let progress = 0;
@@ -895,6 +894,32 @@ function isRecentRepeat(B){
       sum += (v.team===perspective ? bonus : -bonus);
     }
   }
+
+  // === 비싼 말 노출 패널티: 공격>수비면 말 값에 비례해 큰 감점
+  for (const [pos,v] of B.entries()){
+    const [r,c] = pos.split(',').map(Number);
+    const val = (PIECE_VALUE[v.piece]||0);
+    if (val<=0) continue;
+
+    const enemyAtk = countAttackers(B, opp(v.team), r, c);
+    const myDef    = countAttackers(B, v.team,      r, c);
+
+    let exposure = 0;
+    if (enemyAtk>0 && myDef===0){
+      // 완전 노출: 값이 클수록 크게 손해
+      exposure -= Math.min(220, Math.floor(val*0.80));
+    } else if (enemyAtk>myDef){
+      // 수비 열세: 초과분만큼 비례 감점
+      exposure -= Math.ceil((enemyAtk-myDef) * (val*0.15));
+    } else if (myDef>enemyAtk && val>=350){
+      // 안전하게 지켜지는 비싼 말엔 소폭 보너스
+      exposure += Math.min(15, (myDef-enemyAtk)*4);
+    }
+
+    // 관점 반영
+    sum += (v.team===perspective ? exposure : -exposure);
+  }
+
 
   // (4) 졸/병 구조: 연결/고립/과신(오버익스텐션)
   for (const [pos,v] of B.entries()){
