@@ -877,31 +877,58 @@ if (cachedEnemyPo === undefined){
   const myDef    = countAttackers(NB, team,      tr, tc);
 
   // --- 공통: 교환(SEE) 기반 ---
-  const myVal = (PIECE_VALUE[info.piece]||0);
-  let tradeBias = 0;
+const myVal = (PIECE_VALUE[info.piece]||0);
+let tradeBias = 0;
+let exch = 0; // ← 추가: 교환값을 바깥 변수로
 
-  if (capVal>0){
-    const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
-    const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
-    const exch = capVal - worstReturn; // (+) 유리, (-) 손해
+if (capVal>0){
+  const minEnemyVal = minAttackerValue(NB, opp(team), tr, tc);
+  const worstReturn = (minEnemyVal==null) ? 0 : Math.min(minEnemyVal, myVal);
+  exch = capVal - worstReturn;  // (+) 유리, (-) 손해
 
-    if (enemyAtk===0){
-      tradeBias += Math.max(12, Math.floor(capVal*0.4));
-    }else if (exch < 0){
-      tradeBias -= Math.min(300, Math.floor((-exch)*4 + myVal*0.3));
-    }
-
-    // ★ 포가 상을 잡을 때는 '확실한 이득'만 허용 (되잡힘 방지)
-    if (info.piece==='po' && cap && cap.piece==='sang'){
-      const need = isOpening()? 110 : 80;     // 초반엔 더 엄격
-      if (exch < need) tradeBias -= (need-exch)*3 + 60;
-    }
-
-    // ★ 고가 말(차/포) 캡처엔 안전마진 요구
-    if ((info.piece==='po' || info.piece==='cha') && exch < (isOpening()? 80:20)){
-      tradeBias -= (isOpening()? 160:40);
-    }
+  if (enemyAtk===0){
+    tradeBias += Math.max(12, Math.floor(capVal*0.4));
+  }else if (exch < 0){
+    tradeBias -= Math.min(300, Math.floor((-exch)*4 + myVal*0.3));
   }
+
+  if (info.piece==='po' && cap && cap.piece==='sang'){
+    const need = isOpening()? 110 : 80;
+    if (exch < need) tradeBias -= (need-exch)*3 + 60;
+  }
+
+  if ((info.piece==='po' || info.piece==='cha') && exch < (isOpening()? 80:20)){
+    tradeBias -= (isOpening()? 160:40);
+  }
+}
+
+// === [추가] 캡처 보너스 재가중(차의 무모한 졸/병 캡 방지) ===
+let capBonus = 0;
+if (capVal > 0) {
+  const valueRatio = capVal / Math.max(1, myVal);
+  let base = capVal * 6;              // 기존 *10 → *6로 완화
+
+  // 고가(차/포)가 저가(졸/병/사)를 잡을 때는 과도 보너스 억제
+  if (myVal >= 350 && capVal <= 150) {
+    base *= 0.25;                     // 75% 감쇠
+  } else {
+    base *= (0.65 + 0.6 * valueRatio); // 비율에 따른 미세 가중
+  }
+
+  // 교환이 확실히 유리하지 않으면(특히 초반) 보너스 삭감
+  if (exch < (isOpening() ? 60 : 10)) {
+    base -= (isOpening() ? 140 : 40);
+  }
+
+  // 차가 싼 말 먹고 공격≥수비면 더 강하게 금지
+  if (info.piece === 'cha' && capVal <= 150 && enemyAtk >= myDef) {
+    base -= 220;
+  }
+
+  capBonus = base;
+}
+// === [추가 끝] ===
+
 
   // --- 일반 안전성: 말 값 비례 ---
   let safety = 0;
@@ -918,9 +945,16 @@ if (cachedEnemyPo === undefined){
 
   // 차: 초반 적 진영 얇은 침투 억제
   if (info.piece==='cha'){
-    if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 70;
-    if (enemyAtk>0 && myDef===0) pieceCare -= 60;
-  }
+  if (isOpening() && inEnemyHalf(team, tr) && enemyAtk>myDef) pieceCare -= 70;
+  if (enemyAtk>0 && myDef===0) pieceCare -= 60;
+
+  // 추가: 적 진영으로 강 건너가면서 공격≥수비면 더 억제
+  if (isOpening() && inEnemyHalf(team, tr) && enemyAtk >= myDef) pieceCare -= 40;
+
+  // 추가: 싼 말 캡처인데 위험하면 더 깎기(캡처 보너스와 합쳐 강한 제동)
+  if (capVal<=150 && enemyAtk >= myDef) pieceCare -= 80;
+}
+
 
   // ★ 포: 수비 열세/무수비 침투 강한 페널티 + 궁중앙 차단 보너스
   if (info.piece==='po'){
@@ -968,8 +1002,8 @@ if (cachedEnemyPo === undefined){
       progress += Math.max(0, 10 - 2*centerDist);
   }
 
-  const orderScore =
-    capVal*10 + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + pieceCare;
+const orderScore =
+  capBonus + (givesCheck?7:0) + progress + safety + antiOsc + tradeBias + pieceCare;
 
   moves.push({r,c,tr,tc,piece:info.piece, capVal, givesCheck, orderScore});
 }
