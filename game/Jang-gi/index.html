@@ -3,114 +3,74 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HTML 장기 게임 (궁 X 레이어 고정 · 반응형)</title>
+  <title>HTML 장기 게임 (반응형 · 비율 스케일)</title>
   <style>
-   :root {
-  --cell-size: 56px;
-  --board-width: calc(var(--cell-size) * 8);
-  --board-height: calc(var(--cell-size) * 9);
-  --border-color: #3a2a1a;
-  --board-bg: #e4c59a;
+    :root{
+      --cell-size:56px;                 /* JS가 화면에 맞춰 갱신 */
+      --board-width:calc(var(--cell-size)*8);
+      --board-height:calc(var(--cell-size)*9);
+      --border-color:#3a2a1a;
+      --board-bg:#e4c59a;
 
-  /* ✅ 말 크기 스케일 (기존 대비 +30%) */
-  --piece-scale: 1.17; /* 0.9 × 1.3 = 1.17 */
-}
+      /* ✅ 말 크기 배율(칸 대비): 1.17 ≈ 기존보다 +30% */
+      --piece-scale:1.17;
+    }
+    *{box-sizing:border-box}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+      display:flex;justify-content:center;align-items:center;flex-direction:column;
+      background:#f0e6d2;margin:0;padding:16px;min-height:100dvh;
+    }
+    h1{margin:8px 0 12px;font-size:clamp(18px,4.5vw,28px);color:#333}
 
-    * { box-sizing: border-box; }
-
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
-      background-color: #f0e6d2;
-      padding: 16px;
-      margin: 0;
-      min-height: 100dvh; /* 모바일 주소창 고려 */
+    #janggi-board-container{
+      position:relative;
+      width:calc(var(--board-width)+var(--cell-size));
+      height:calc(var(--board-height)+var(--cell-size));
+      max-width:100vw;
+      max-height:calc(100dvh - 100px);
+      background:var(--board-bg);
+      border:2px solid var(--border-color);
+      padding:calc(var(--cell-size)/2);
+      overflow:hidden;
     }
 
-    h1 { color: #333; margin: 8px 0 12px; font-size: clamp(18px, 4.5vw, 28px); }
-
-    #janggi-board-container {
-      position: relative;
-      width: calc(var(--board-width) + var(--cell-size));
-      height: calc(var(--board-height) + var(--cell-size));
-      max-width: 100vw;  /* 가로 넘침 방지 */
-      max-height: calc(100dvh - 100px); /* 제목/여백 고려 */
-      background-color: var(--board-bg);
-      border: 2px solid var(--border-color);
-      padding: calc(var(--cell-size) / 2);
-      overflow: hidden; /* 혹시 모를 넘침 컷 */
-    }
-
-    /* 격자 배경 */
-    #janggi-board {
-      position: relative;
-      width: var(--board-width);
-      height: var(--board-height);
+    #janggi-board{
+      position:relative;
+      width:var(--board-width);
+      height:var(--board-height);
       background-image:
-        /* 세로줄 */
-        repeating-linear-gradient(
-          to right,
-          transparent,
-          transparent calc(var(--cell-size) - 1px),
-          var(--border-color) calc(var(--cell-size) - 1px),
-          var(--border-color) var(--cell-size)
-        ),
-        /* 가로줄 */
-        repeating-linear-gradient(
-          to bottom,
-          transparent,
-          transparent calc(var(--cell-size) - 1px),
-          var(--border-color) calc(var(--cell-size) - 1px),
-          var(--border-color) var(--cell-size)
-        );
-      background-size: var(--cell-size) var(--cell-size);
-      border: 1px solid var(--border-color);
+        repeating-linear-gradient(to right, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size)),
+        repeating-linear-gradient(to bottom, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size));
+      background-size:var(--cell-size) var(--cell-size);
+      border:1px solid var(--border-color);
     }
 
-    /* 궁 X (SVG) : 격자 위, 말 아래 */
-    #palace-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 1;
-    }
+    #palace-overlay{position:absolute;inset:0;pointer-events:none;z-index:1}
+    #pieces-layer{position:absolute;inset:0;pointer-events:none;z-index:2}
 
-    /* 말 레이어: 궁 X 위 */
-    #pieces-layer {
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      pointer-events: none;
+    /* ✅ 말: 위치는 % 비율, 크기는 칸 크기에 연동 */
+    .piece{
+      position:absolute;
+      width:calc(var(--cell-size) * var(--piece-scale));
+      height:calc(var(--cell-size) * var(--piece-scale));
+      left:calc(var(--col) * 100% / 8);    /* 0..8 칸 → 8분할 */
+      top:calc(var(--row) * 100% / 9);     /* 0..9 칸 → 9분할 */
+      transform:translate(-50%, -50%);
+      background-size:contain;background-repeat:no-repeat;background-position:center;
+      border-radius:50%;
+      cursor:pointer;
+      pointer-events:auto;
+      transition:transform .2s ease, box-shadow .2s ease;
     }
-
-    /* 말 토큰 */
-    .piece {
-  position: absolute;
-  width: calc(var(--cell-size) * var(--piece-scale));
-  height: calc(var(--cell-size) * var(--piece-scale));
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
-    }
-    .piece.selected { box-shadow: 0 0 12px 4px rgba(255, 0, 0, 0.55); }
+    .piece.selected{box-shadow:0 0 12px 4px rgba(255,0,0,.55)}
   </style>
 </head>
 <body>
-
-  <h1>HTML 장기 게임 (반응형 · 최종 수정)</h1>
+  <h1>HTML 장기 게임 (반응형 비율 스케일)</h1>
   <div id="janggi-board-container">
     <div id="janggi-board">
-      <!-- 궁 대각선(X) SVG -->
       <svg id="palace-overlay" width="100%" height="100%"></svg>
-      <!-- 말 전용 레이어 -->
       <div id="pieces-layer"></div>
     </div>
   </div>
@@ -120,175 +80,135 @@
     const overlay = document.getElementById('palace-overlay');
     const piecesLayer = document.getElementById('pieces-layer');
 
-    // 현재 CSS 변수 값 읽기
     const getCellSize = () =>
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
 
-    // 초기 배치
     const initialSetup = {
-      // 초 (위)
-      '0,0': { team: 'cho', piece: 'cha' }, '0,1': { team: 'cho', piece: 'sang' },
-      '0,2': { team: 'cho', piece: 'ma' },  '0,3': { team: 'cho', piece: 'sa' },
-      '0,5': { team: 'cho', piece: 'sa' },  '0,6': { team: 'cho', piece: 'ma' },
-      '0,7': { team: 'cho', piece: 'sang' },'0,8': { team: 'cho', piece: 'cha' },
-      '1,4': { team: 'cho', piece: 'jang' },
-      '2,1': { team: 'cho', piece: 'po' },  '2,7': { team: 'cho', piece: 'po' },
-      '3,0': { team: 'cho', piece: 'jol' }, '3,2': { team: 'cho', piece: 'jol' },
-      '3,4': { team: 'cho', piece: 'jol' }, '3,6': { team: 'cho', piece: 'jol' },
-      '3,8': { team: 'cho', piece: 'jol' },
-      // 한 (아래)
-      '9,0': { team: 'han', piece: 'cha' }, '9,1': { team: 'han', piece: 'sang' },
-      '9,2': { team: 'han', piece: 'ma' },  '9,3': { team: 'han', piece: 'sa' },
-      '9,5': { team: 'han', piece: 'sa' },  '9,6': { team: 'han', piece: 'ma' },
-      '9,7': { team: 'han', piece: 'sang' },'9,8': { team: 'han', piece: 'cha' },
-      '8,4': { team: 'han', piece: 'jang' },
-      '7,1': { team: 'han', piece: 'po' },  '7,7': { team: 'han', piece: 'po' },
-      '6,0': { team: 'han', piece: 'byung' }, '6,2': { team: 'han', piece: 'byung' },
-      '6,4': { team: 'han', piece: 'byung' }, '6,6': { team: 'han', piece: 'byung' },
-      '6,8': { team: 'han', piece: 'byung' }
+      // 초
+      '0,0':{team:'cho',piece:'cha'}, '0,1':{team:'cho',piece:'sang'},
+      '0,2':{team:'cho',piece:'ma'},  '0,3':{team:'cho',piece:'sa'},
+      '0,5':{team:'cho',piece:'sa'},  '0,6':{team:'cho',piece:'ma'},
+      '0,7':{team:'cho',piece:'sang'},'0,8':{team:'cho',piece:'cha'},
+      '1,4':{team:'cho',piece:'jang'},
+      '2,1':{team:'cho',piece:'po'},  '2,7':{team:'cho',piece:'po'},
+      '3,0':{team:'cho',piece:'jol'}, '3,2':{team:'cho',piece:'jol'},
+      '3,4':{team:'cho',piece:'jol'}, '3,6':{team:'cho',piece:'jol'},
+      '3,8':{team:'cho',piece:'jol'},
+      // 한
+      '9,0':{team:'han',piece:'cha'}, '9,1':{team:'han',piece:'sang'},
+      '9,2':{team:'han',piece:'ma'},  '9,3':{team:'han',piece:'sa'},
+      '9,5':{team:'han',piece:'sa'},  '9,6':{team:'han',piece:'ma'},
+      '9,7':{team:'han',piece:'sang'},'9,8':{team:'han',piece:'cha'},
+      '8,4':{team:'han',piece:'jang'},
+      '7,1':{team:'han',piece:'po'},  '7,7':{team:'han',piece:'po'},
+      '6,0':{team:'han',piece:'byung'},'6,2':{team:'han',piece:'byung'},
+      '6,4':{team:'han',piece:'byung'},'6,6':{team:'han',piece:'byung'},
+      '6,8':{team:'han',piece:'byung'}
     };
 
-    /** 반응형: 화면에 맞춰 --cell-size 자동 계산 */
-    function updateCellSize() {
+    function updateCellSize(){
       const titleH = (document.querySelector('h1')?.offsetHeight || 0);
-      const pad = 16 * 2; // body 좌우 패딩
-      const extraH = titleH + 24; // 제목 + 여유
-      // 전체 컨테이너는 9칸(가로), 10칸(세로) 크기만큼 차지
+      const pad = 16*2, extraH = titleH + 24;
       const maxCellByW = (window.innerWidth - pad) / 9;
       const maxCellByH = (window.innerHeight - pad - extraH) / 10;
-      // 너무 작아지지 않도록 하한값(32px) 부여
       const cell = Math.floor(Math.max(32, Math.min(maxCellByW, maxCellByH)));
       document.documentElement.style.setProperty('--cell-size', cell + 'px');
     }
 
-    /** 궁 X를 CELL_SIZE 기준으로 정확히 그리기 (두께 1px, 살짝 연함) */
-    function drawPalaceLines() {
+    function drawPalaceLines(){
       const CELL_SIZE = getCellSize();
-      const W = 8 * CELL_SIZE;
-      const H = 9 * CELL_SIZE;
-
+      const W = 8 * CELL_SIZE, H = 9 * CELL_SIZE;
       overlay.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+      while(overlay.firstChild) overlay.removeChild(overlay.firstChild);
 
       const strokeColor = getComputedStyle(document.documentElement)
                             .getPropertyValue('--border-color').trim() || '#3a2a1a';
-
-      const mkLine = (x1, y1, x2, y2) => {
-        const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        ln.setAttribute('x1', x1); ln.setAttribute('y1', y1);
-        ln.setAttribute('x2', x2); ln.setAttribute('y2', y2);
-        ln.setAttribute('stroke', strokeColor);
-        ln.setAttribute('stroke-width', 1);          // ✔ 격자선과 동일 두께
-        ln.setAttribute('stroke-opacity', 0.8);      // ✔ 약간 연하게
-        ln.setAttribute('shape-rendering', 'crispEdges');
+      const mk = (x1,y1,x2,y2)=>{
+        const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+        ln.setAttribute('x1',x1); ln.setAttribute('y1',y1);
+        ln.setAttribute('x2',x2); ln.setAttribute('y2',y2);
+        ln.setAttribute('stroke',strokeColor);
+        ln.setAttribute('stroke-width',1);
+        ln.setAttribute('stroke-opacity',0.8);
+        ln.setAttribute('shape-rendering','crispEdges');
         return ln;
       };
-
-      // 위 궁: (3,0)-(5,2)
-      overlay.appendChild(mkLine(3*CELL_SIZE, 0*CELL_SIZE, 5*CELL_SIZE, 2*CELL_SIZE));
-      overlay.appendChild(mkLine(5*CELL_SIZE, 0*CELL_SIZE, 3*CELL_SIZE, 2*CELL_SIZE));
-
-      // 아래 궁: (3,7)-(5,9)
-      overlay.appendChild(mkLine(3*CELL_SIZE, 7*CELL_SIZE, 5*CELL_SIZE, 9*CELL_SIZE));
-      overlay.appendChild(mkLine(5*CELL_SIZE, 7*CELL_SIZE, 3*CELL_SIZE, 9*CELL_SIZE));
+      overlay.appendChild(mk(3*CELL_SIZE,0*CELL_SIZE,5*CELL_SIZE,2*CELL_SIZE));
+      overlay.appendChild(mk(5*CELL_SIZE,0*CELL_SIZE,3*CELL_SIZE,2*CELL_SIZE));
+      overlay.appendChild(mk(3*CELL_SIZE,7*CELL_SIZE,5*CELL_SIZE,9*CELL_SIZE));
+      overlay.appendChild(mk(5*CELL_SIZE,7*CELL_SIZE,3*CELL_SIZE,9*CELL_SIZE));
     }
 
-    /** 말 최초 배치 */
-    function placePieces() {
-      piecesLayer.innerHTML = '';
-      for (const [pos, info] of Object.entries(initialSetup)) {
-        const [row, col] = pos.split(',').map(Number);
+    function placePieces(){
+      piecesLayer.innerHTML='';
+      for (const [pos,info] of Object.entries(initialSetup)){
+        const [row,col] = pos.split(',').map(Number);
         const el = document.createElement('div');
-        el.className = 'piece';
+        el.className='piece';
 
-        const pieceName =
-          info.team === 'han' && info.piece === 'byung' ? 'byung' :
-          info.team === 'cho' && info.piece === 'jol'   ? 'jol'   : info.piece;
+        const name = (info.team==='han' && info.piece==='byung') ? 'byung'
+                   : (info.team==='cho' && info.piece==='jol')   ? 'jol'
+                   : info.piece;
+        el.style.backgroundImage = `url('${info.team}_${name}.svg')`;
 
-        el.style.backgroundImage = `url('${info.team}_${pieceName}.svg')`;
         el.dataset.team = info.team;
         el.dataset.piece = info.piece;
         el.dataset.row = row;
         el.dataset.col = col;
 
+        /* ✅ 위치를 CSS 커스텀 변수로 저장 → % 비율로 반영됨 */
+        el.style.setProperty('--row', row);
+        el.style.setProperty('--col', col);
+
         piecesLayer.appendChild(el);
       }
-      repositionPieces();
     }
-
-    /** 셀 크기 변경 시 말 위치 재계산 */
-   function repositionPieces() {
-  const CELL_SIZE = getCellSize();
-  const pieceScale = parseFloat(getComputedStyle(document.documentElement)
-                      .getPropertyValue('--piece-scale')) || 1.5;
-
-  const nodes = piecesLayer.querySelectorAll('.piece');
-  nodes.forEach(el => {
-    const row = Number(el.dataset.row);
-    const col = Number(el.dataset.col);
-    el.style.left = `${col * CELL_SIZE}px`;
-    el.style.top  = `${row * CELL_SIZE}px`;
-    el.style.width  = `${CELL_SIZE * pieceScale}px`;
-    el.style.height = `${CELL_SIZE * pieceScale}px`;
-  });
-}
-
 
     // === 선택 & 이동 (룰 체크 없이 데모 이동) ===
     let selected = null;
-
-    boardElement.addEventListener('click', (e) => {
+    boardElement.addEventListener('click', (e)=>{
       const t = e.target.closest('.piece');
-      if (t) {
+      if (t){
         if (selected) selected.classList.remove('selected');
-        if (selected === t) { selected = null; return; }
-        selected = t;
-        selected.classList.add('selected');
-        return;
+        if (selected === t){ selected = null; return; }
+        selected = t; selected.classList.add('selected'); return;
+      }
+      if (!selected) return;
+
+      const CELL_SIZE = getCellSize();
+      const rect = boardElement.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+
+      const col = Math.round(x / CELL_SIZE);
+      const row = Math.round(y / CELL_SIZE);
+      if (col<0||col>8||row<0||row>9){ selected.classList.remove('selected'); selected=null; return; }
+
+      // 충돌(상대만 제거)
+      const target = piecesLayer.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
+      if (target){
+        if (target.dataset.team !== selected.dataset.team) target.remove();
+        else { selected.classList.remove('selected'); selected=null; return; }
       }
 
-      if (selected) {
-        const CELL_SIZE = getCellSize();
-        const rect = boardElement.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+      selected.dataset.row = row;
+      selected.dataset.col = col;
+      /* ✅ 위치 변수만 갱신하면 크기/위치는 자동 비율 반영 */
+      selected.style.setProperty('--row', row);
+      selected.style.setProperty('--col', col);
 
-        const col = Math.round(x / CELL_SIZE);
-        const row = Math.round(y / CELL_SIZE);
-
-        if (col < 0 || col > 8 || row < 0 || row > 9) return;
-
-        // 간단 충돌 처리(상대 말만 제거)
-        const target = piecesLayer.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
-        if (target) {
-          if (target.dataset.team !== selected.dataset.team) target.remove();
-          else { selected.classList.remove('selected'); selected = null; return; }
-        }
-
-        selected.dataset.row = row;
-        selected.dataset.col = col;
-        repositionPieces();
-
-        selected.classList.remove('selected');
-        selected = null;
-      }
+      selected.classList.remove('selected'); selected=null;
     });
 
-    // 초기 렌더 + 리사이즈 대응
-    function renderAll() {
-      updateCellSize();
-      drawPalaceLines();
-      repositionPieces();
-    }
+    function renderAll(){ updateCellSize(); drawPalaceLines(); }
 
-    // 최초 실행
+    // 초기 렌더
     updateCellSize();
     drawPalaceLines();
     placePieces();
 
-    // 화면 회전/리사이즈 시 자동 맞춤
-    window.addEventListener('resize', renderAll);
-    window.addEventListener('orientationchange', renderAll);
+    // 화면 회전/리사이즈 대응
+    addEventListener('resize', renderAll);
+    addEventListener('orientationchange', renderAll);
   </script>
 </body>
 </html>
