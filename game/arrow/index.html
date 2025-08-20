@@ -71,9 +71,10 @@
     border-right:16px solid transparent;
     border-top:50px solid var(--accent); /* ↑를 가리키는 삼각형 */
     filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
-    /* [수정] 회전축을 요소의 정중앙으로 설정하여 원의 중심과 일치시킴 */
+    /* [수정] 회전축을 요소의 정중앙으로 설정 */
     transform-origin:50% 50%;
-    transform:rotate(0deg);
+    /* [수정] 화살표를 시각적으로 중앙에 배치하기 위해 Y축으로 이동 */
+    transform: translateY(-15px) rotate(0deg);
   }
 
   .tools{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px }
@@ -116,7 +117,7 @@
           </div>
 
           <div class="center-row">
-            <button id="spin" title="가운데 화살표가 5~6초 랜덤으로 회전 후 멈춥니다">시작(돌리기)</button>
+            <button id="spin" title="버튼을 누르고 있으면 돌고, 떼면 멈춥니다">시작(돌리기)</button>
             <button id="reset" class="ghost">초기화</button>
           </div>
           <div id="result" class="result"></div>
@@ -143,10 +144,12 @@
 (() => {
   // ===== 상태 =====
   let names = ["1번","2번","3번","4번","5번","6번"];
-  let spinning = false;
-  let currentDeg = 0;      // 화살표의 현재 각도(도수, 0도는 '↑' = 12시 방향)
-  let targetDeg = 0;       // 이번 회전 목표 각도(도수)
-  let startTime = 0, duration = 0;
+  let spinning = false; // 최종 감속 애니메이션 중인지 여부
+  let isMouseDown = false; // 마우스 버튼을 누르고 있는지 여부
+  let continuousSpinId = null; // 연속 회전 애니메이션 ID
+  let currentDeg = 0;   // 화살표의 현재 각도
+  let targetDeg = 0;    // 이번 회전 목표 각도
+  const arrowOffsetY = -15; // 화살표 Y축 위치 보정값
 
   // ===== 엘리먼트 =====
   const $count = document.getElementById('count');
@@ -174,11 +177,13 @@
 
   // ===== 섹터 색상 =====
   function sectorColor(i){
-    const base = [
-      "#fde047","#93c5fd","#fca5a5","#a7f3d0","#c4b5fd","#fcd34d",
-      "#bae6fd","#fecaca","#86efac","#ddd6fe"
-    ];
+    const base = ["#fde047","#93c5fd","#fca5a5","#a7f3d0","#c4b5fd","#fcd34d","#bae6fd","#fecaca","#86efac","#ddd6fe"];
     return base[i % base.length];
+  }
+  
+  // ===== 화살표 transform 설정 헬퍼 =====
+  function setArrowTransform(deg) {
+    $arrow.style.transform = `translateY(${arrowOffsetY}px) rotate(${deg}deg)`;
   }
 
   // ===== 룰렛 그리기 =====
@@ -188,19 +193,13 @@
     const r = Math.min(W,H)/2 - 12 * (devicePixelRatio || 1);
     const cx = W/2, cy = H/2;
     ctx.clearRect(0,0,W,H);
-
-    // 외곽 그림자 링
     ctx.save();
     ctx.beginPath(); ctx.arc(cx,cy,r+6,0,Math.PI*2);
     ctx.strokeStyle = "#11182722"; ctx.lineWidth = 12; ctx.stroke();
     ctx.restore();
-
     const n = names.length;
     if(n === 0) return;
-
     const step = (Math.PI*2)/n;
-
-    // 섹터: 시작을 '12시(= -90°)'로 잡아 시계방향으로 배치
     for(let i=0;i<n;i++){
       ctx.beginPath();
       const a0 = -Math.PI/2 + i*step;
@@ -214,15 +213,12 @@
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-
-    // 라벨 텍스트
     ctx.save();
     ctx.translate(cx,cy);
     ctx.fillStyle = "#111827";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = `${Math.floor(r*0.12)}px system-ui, -apple-system, Segoe UI, Roboto, Pretendard, sans-serif`;
-
     for(let i=0;i<n;i++){
       const aMid = -Math.PI/2 + (i+0.5)*step;
       const tx = Math.cos(aMid) * r*0.62;
@@ -244,16 +240,12 @@
   function splitLabel(s, max){
     if(s.length <= max) return [s];
     const words = s.split(/\s+/);
-    if(words.length === 1){
-      return [s.slice(0,max), s.slice(max, max*2)];
-    }
-    const lines = [];
-    let cur = "";
+    if(words.length === 1) return [s.slice(0,max), s.slice(max, max*2)];
+    const lines = []; let cur = "";
     for(const w of words){
       if((cur + " " + w).trim().length > max){
-        if(cur) lines.push(cur);
-        cur = w;
-      }else{
+        if(cur) lines.push(cur); cur = w;
+      } else {
         cur = (cur ? cur + " " : "") + w;
       }
     }
@@ -266,21 +258,15 @@
     $nameList.innerHTML = "";
     names.forEach((nm, idx) => {
       const row = document.createElement('div');
-      row.className = 'row';
-      row.style.margin = "0";
+      row.className = 'row'; row.style.margin = "0";
       const lab = document.createElement('label');
-      lab.textContent = `${idx+1}.`;
-      lab.style.minWidth = "28px";
+      lab.textContent = `${idx+1}.`; lab.style.minWidth = "28px";
       const inp = document.createElement('input');
-      inp.value = nm;
-      inp.placeholder = `${idx+1}번`;
+      inp.value = nm; inp.placeholder = `${idx+1}번`;
       inp.addEventListener('input', () => {
-        names[idx] = inp.value;
-        drawWheel();
+        names[idx] = inp.value; drawWheel();
       });
-      row.appendChild(lab);
-      row.appendChild(inp);
-      $nameList.appendChild(row);
+      row.appendChild(lab); row.appendChild(inp); $nameList.appendChild(row);
     });
   }
 
@@ -288,9 +274,7 @@
   function buildByCount(){
     const n = clamp(parseInt($count.value||"0",10), 2, 50);
     names = Array.from({length:n}, (_,i)=>`${i+1}번`);
-    rebuildNameInputs();
-    drawWheel();
-    $result.textContent = "";
+    rebuildNameInputs(); drawWheel(); $result.textContent = "";
   }
 
   // ===== 셔플 =====
@@ -299,34 +283,33 @@
       const j = Math.floor(Math.random()*(i+1));
       [names[i], names[j]] = [names[j], names[i]];
     }
-    rebuildNameInputs();
-    drawWheel();
+    rebuildNameInputs(); drawWheel();
   }
 
-  // ===== 스핀(중앙 화살표 회전) =====
-  function spin(){
+  // ===== 최종 멈춤 애니메이션 =====
+  function startStoppingAnimation(){
     if(spinning || names.length < 2) return;
     spinning = true;
-    $result.textContent = "돌아가는 중…";
+    $result.textContent = "누가 될까요…";
 
-    // 5~6초 랜덤 시간 + 5~7바퀴 + 임의 각도
-    duration = (5 + Math.random()) * 1000;      // ms
-    const extraTurns = 5 + Math.random()*2;     // 5~7바퀴
-    const extraAngle = Math.random()*360;       // 0~360도 랜덤
-    targetDeg = currentDeg + extraTurns*360 + extraAngle;
+    const duration = (5 + Math.random()) * 1000;
+    const extraTurns = 5 + Math.random() * 2;
+    const extraAngle = Math.random() * 360;
+    targetDeg = currentDeg + extraTurns * 360 + extraAngle;
 
     const start = performance.now();
     const stepFrame = (now) => {
       const t = clamp((now - start) / duration, 0, 1);
       const eased = easeOutCubic(t);
-      const deg = lerp(currentDeg, targetDeg, eased) % 360;
+      const deg = lerp(currentDeg, targetDeg, eased);
 
-      $arrow.style.transform = `rotate(${deg}deg)`;
+      setArrowTransform(deg % 360);
+
       if(t < 1){
         requestAnimationFrame(stepFrame);
       }else{
         spinning = false;
-        currentDeg = (deg + 360) % 360; // 정상화
+        currentDeg = (deg + 360) % 360;
         showWinner(currentDeg);
       }
     };
@@ -335,13 +318,10 @@
 
   // ===== 당첨 계산 =====
   function showWinner(deg){
-    // 기준: 화살표 0도는 '↑(12시)'.
-    // 섹터도 12시에서 시작하여 시계방향으로 나누었음.
     const n = names.length;
     const stepDeg = 360 / n;
     const idx = Math.floor((deg % 360) / stepDeg) % n;
     const winner = (names[idx]||"").trim() || `${idx+1}번`;
-
     $result.innerHTML = `👉 <b>${winner}</b> 님이 당첨!`;
     flashRing();
   }
@@ -369,17 +349,49 @@
     rebuildNameInputs(); drawWheel();
   });
   $shuffle.addEventListener('click', shuffleNames);
-  $spin.addEventListener('click', ()=>{ if(!spinning) spin(); });
+  
+  // [수정] 시작 버튼 이벤트 로직 변경
+  $spin.addEventListener('mousedown', () => {
+    if (spinning) return;
+    isMouseDown = true;
+    cancelAnimationFrame(continuousSpinId);
+    $result.textContent = "버튼을 놓으면 멈춥니다";
+
+    let lastTime = performance.now();
+    const continuousSpeed = 400; // 초당 400도 회전
+
+    const continuousSpin = (now) => {
+      if (!isMouseDown) { // 마우스를 놓았을 때
+        startStoppingAnimation();
+        return;
+      }
+      const delta = now - lastTime;
+      lastTime = now;
+      currentDeg = (currentDeg + (continuousSpeed * delta) / 1000);
+      setArrowTransform(currentDeg % 360);
+      continuousSpinId = requestAnimationFrame(continuousSpin);
+    };
+    continuousSpinId = requestAnimationFrame(continuousSpin);
+  });
+
+  // 마우스 버튼에서 손을 떼면 회전이 멈추도록 전역 리스너 추가
+  window.addEventListener('mouseup', () => {
+    if (isMouseDown) {
+      isMouseDown = false;
+    }
+  });
+  
   $reset.addEventListener('click', ()=>{
-    if(spinning) return;
+    if(spinning || isMouseDown) return;
     currentDeg = 0;
-    $arrow.style.transform = `rotate(0deg)`;
+    setArrowTransform(0);
     $result.textContent = "";
   });
 
   // ===== 초기 세팅 =====
   rebuildNameInputs();
   resizeCanvas();
+  setArrowTransform(0);
 })();
 </script>
 </body>
