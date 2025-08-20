@@ -1,124 +1,394 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Wall-baduk — AI 대전</title>
-  <meta name="theme-color" content="#0b3954">
-  <style>
-    :root{
-      --bg: #f4f7fa;
-      --fg: #1f2937;
-      --muted:#6b7280;
-      --card:#ffffff;
-      --line:#e5e7eb;
-      --pri:#0b3954;           /* 메인 버튼 색 */
-      --pri-light:#1f5a7a;     
-      --pri-ink:#ffffff;
-      --sec:#f97316;           /* 포인트 컬러 */
-      --shadow:0 10px 30px rgba(0,0,0,.08);
-      --radius:16px;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Pretendard,sans-serif;
-      background:var(--bg); color:var(--fg);
-      display:grid; place-items:center; padding:clamp(12px,3vw,28px);
-    }
-    .card{
-      width:min(720px, 96vw);
-      background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-      box-shadow:var(--shadow); overflow:hidden;
-    }
-    .hero{
-      background: linear-gradient(135deg, var(--pri) 0%, var(--pri-light) 100%);
-      color:#fff; padding:26px 18px; text-align:center;
-    }
-    .title{margin:0 0 6px; font-weight:900; font-size:clamp(22px,5.4vw,30px)}
-    .subtitle{margin:0; opacity:.95; font-size:clamp(13px,3.4vw,15px)}
-    .body{padding:20px; display:grid; gap:18px}
-    label{display:block; font-size:14px; color:var(--muted); margin-bottom:6px}
-    select{
-      width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff;
-      font-size:16px; outline:none; cursor:pointer;
-    }
-    select:focus{border-color:var(--sec); box-shadow:0 0 0 2px rgba(249,115,22,.3)}
-    .btn{
-      display:flex; align-items:center; justify-content:center; gap:8px;
-      border-radius:12px; border:none; padding:14px 16px; font-weight:800;
-      background:var(--pri); color:var(--pri-ink); cursor:pointer; width:100%;
-      transition:transform .05s ease, filter .2s ease; font-size:clamp(15px,4.2vw,17px);
-    }
-    .btn:active{ transform:translateY(1px) }
-    .btn.secondary{
-      background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-weight:700;
-    }
-    .hint{font-size:13px; color:var(--muted)}
-    .quick{
-      border:1px dashed var(--line); border-radius:12px; padding:14px;
-      background:#fafbff; font-size:14px; color:#374151;
-    }
-    ul{margin:6px 0 0 18px; padding:0;}
-    ul li{margin-bottom:4px;}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>너야너 룰렛</title>
+<style>
+  :root{
+    --accent:#2563eb;
+    --accent-2:#10b981;
+    --bg:#f6f7fb;
+    --ink:#111827;
+    --muted:#6b7280;
+    --card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Pretendard,"Noto Sans KR",sans-serif;
+    min-height:100dvh; display:grid; grid-template-rows:auto 1fr auto;
+  }
+  header{
+    padding:14px 16px; background:#fff; border-bottom:1px solid #e5e7eb;
+    position:sticky; top:0; z-index:5;
+  }
+  h1{margin:0; font-size:20px; letter-spacing:.3px}
+  main{display:grid; place-items:center; padding:18px}
+  .panel{
+    width:min(920px,95vw); background:var(--card); border:1px solid #e5e7eb;
+    border-radius:16px; padding:16px; box-shadow:0 6px 24px rgba(0,0,0,.06);
+  }
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:8px 0 10px}
+  label{font-size:14px; color:var(--muted)}
+  input,button,textarea{
+    font-size:16px; padding:10px 12px; border-radius:12px; border:1px solid #d1d5db; background:#fff;
+  }
+  input[type=number]{width:110px}
+  button{
+    border:none; color:#fff; cursor:pointer; background:var(--accent);
+    padding:10px 16px; font-weight:600; box-shadow:0 4px 14px rgba(37,99,235,.22);
+  }
+  button.secondary{ background:#6b7280; box-shadow:none }
+  button.ghost{ background:#fff; color:var(--ink); border:1px solid #d1d5db; box-shadow:none }
+  button:disabled{opacity:.55; cursor:not-allowed}
+  .grid{
+    display:grid; grid-template-columns: 1fr; gap:14px; margin-top:10px;
+  }
+  @media(min-width:860px){
+    .grid{ grid-template-columns: 1.3fr .9fr; align-items:start; }
+  }
+  .canvas-wrap{
+    background:conic-gradient(from 0deg, #fafafa, #ffffff);
+    border-radius:18px; border:1px solid #e5e7eb; padding:14px; position:relative;
+  }
+  canvas{ display:block; width:100%; height:auto; border-radius:10px; background:#fff; }
+  .arrow-pivot{
+    position:absolute; inset:0; display:grid; place-items:center; pointer-events:none;
+  }
+  .arrow-ring{
+    width:min(110px,20vmin); height:min(110px,20vmin);
+    border-radius:50%; background:#fff; border:6px solid #11182722;
+    display:grid; place-items:center; box-shadow:0 10px 30px rgba(0,0,0,.18);
+  }
+  .arrow{
+    width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent;
+    border-bottom:42px solid var(--accent); filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
+    transform-origin:50% 140%;
+  }
+  .tools{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px }
+  .tools h3{ margin:0 0 8px 0; font-size:16px }
+  .muted{ color:var(--muted); font-size:13px }
+  .list{
+    display:grid; gap:6px; max-height:46vh; overflow:auto; padding-right:4px;
+  }
+  .list input{ width:100% }
+  .badge{
+    display:inline-flex; align-items:center; gap:6px; border-radius:999px; background:#eef2ff;
+    color:#1d4ed8; padding:6px 10px; font-size:13px; font-weight:600;
+  }
+  .center-row{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:10px }
+  .result{
+    margin-top:8px; font-size:18px; text-align:center; min-height:28px;
+  }
+  footer{ padding:10px 14px; text-align:center; color:#9ca3af; font-size:12px }
+</style>
 </head>
 <body>
-  <main class="card" role="main">
-    <section class="hero">
-      <h1 class="title">♟️ Wall-baduk (AI 대전)</h1>
-      <p class="subtitle">난이도를 고르고 바로 시작하세요. 네트워크 없이 로컬에서 진행됩니다.</p>
-    </section>
+  <header><h1>너야너 룰렛 (화살표가 도는 방식)</h1></header>
 
-    <section class="body">
-      <div>
-        <label for="aiLevel">🎯 AI 난이도</label>
-        <select id="aiLevel">
-          <option value="easy">🟢 초급 · 입문용</option>
-          <option value="medium">🟡 중급 · 균형형</option>
-          <option value="hard">🔴 고급 · 공격적 봉쇄</option>
-        </select>
+  <main>
+    <div class="panel">
+      <div class="row">
+        <label>인원 수</label>
+        <input type="number" id="count" min="2" max="20" value="6" />
+        <button id="build">참가자 생성</button>
+        <span class="muted">최대 20명 권장</span>
       </div>
 
-      <button id="btnSolo" class="btn">
-        🚀 AI와 대전 시작
-      </button>
-      <p class="hint">선택한 난이도는 저장되어 다음 시작 시 자동 적용됩니다.</p>
+      <div class="grid">
+        <!-- 캔버스 / 룰렛 -->
+        <div class="canvas-wrap">
+          <canvas id="wheel" aria-label="룰렛"></canvas>
+          <div class="arrow-pivot">
+            <div class="arrow-ring">
+              <div id="arrow" class="arrow"></div>
+            </div>
+          </div>
+          <div class="center-row">
+            <button id="spin" title="가운데 화살표가 5~6초 랜덤으로 회전 후 멈춥니다">시작(돌리기)</button>
+            <button id="reset" class="ghost">초기화</button>
+          </div>
+          <div id="result" class="result"></div>
+        </div>
 
-      <div class="quick">
-        <strong>📜 빠른 규칙</strong>
-        <ul>
-          <li>말은 상하좌우 최대 2칸 이동 (벽/말 통과 불가)</li>
-          <li>이동 후 벽 1개 설치</li>
-          <li>단독 영역 점 수 합이 점수</li>
-          <li>혼합 영역이 없어지면 즉시 종료</li>
-        </ul>
+        <!-- 참가자 목록 -->
+        <div class="tools">
+          <h3>참가자 이름</h3>
+          <div class="row">
+            <span class="badge">Tip</span>
+            <span class="muted">이름을 수정하면 룰렛에도 즉시 반영됩니다.</span>
+          </div>
+          <div id="nameList" class="list"></div>
+          <div class="row" style="margin-top:10px">
+            <button id="autofill" class="secondary">이름 자동 채우기</button>
+            <button id="shuffle" class="ghost">순서 섞기</button>
+          </div>
+        </div>
       </div>
-
-      <button id="btnHow" class="btn secondary">ℹ️ 게임 도움말</button>
-    </section>
+    </div>
   </main>
 
-  <script>
-    const levelSel = document.getElementById('aiLevel');
-    const saved = localStorage.getItem('wb_ai_level');
-    if(saved) levelSel.value = saved;
+  <footer>© 너야너 • 화살표 회전 방식 • 모바일 대응</footer>
 
-    function startSolo(){
-      const level = levelSel.value || 'easy';
-      localStorage.setItem('wb_ai_level', level);
-      location.href = `game.html?mode=solo&level=${encodeURIComponent(level)}`;
+<script>
+(() => {
+  // 상태
+  let names = ["1번", "2번", "3번", "4번", "5번", "6번"];
+  let spinning = false;
+  let currentAngle = 0;   // 화살표 현재 각도(라디안)
+  let targetAngle = 0;    // 이번 스핀 목표 각도(라디안)
+  let startTime = 0, duration = 0;
+
+  // 엘리먼트
+  const $count = document.getElementById('count');
+  const $build = document.getElementById('build');
+  const $nameList = document.getElementById('nameList');
+  const $wheel = document.getElementById('wheel');
+  const $spin = document.getElementById('spin');
+  const $reset = document.getElementById('reset');
+  const $autofill = document.getElementById('autofill');
+  const $shuffle = document.getElementById('shuffle');
+  const $result = document.getElementById('result');
+  const $arrow = document.getElementById('arrow');
+
+  // 캔버스 크기/스케일 설정 (레티나 대응)
+  function resizeCanvas() {
+    const maxW = Math.min(800, document.body.clientWidth - 60);
+    const cssSize = Math.max(320, Math.floor(maxW));
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    $wheel.width = cssSize * dpr;
+    $wheel.height = cssSize * dpr;
+    $wheel.style.width = cssSize + "px";
+    $wheel.style.height = cssSize + "px";
+    drawWheel();
+  }
+
+  // 색 팔레트(섹터 번갈아가며)
+  function sectorColor(i){
+    const base = [
+      "#fde047","#93c5fd","#fca5a5","#a7f3d0","#c4b5fd","#fcd34d",
+      "#bae6fd","#fecaca","#86efac","#ddd6fe"
+    ];
+    return base[i % base.length];
+  }
+
+  // 룰렛 그리기(원판 + 섹터 + 라벨)
+  function drawWheel(){
+    const ctx = $wheel.getContext('2d');
+    const W = $wheel.width, H = $wheel.height;
+    const r = Math.min(W,H)/2 - 12 * (devicePixelRatio || 1);
+    const cx = W/2, cy = H/2;
+    ctx.clearRect(0,0,W,H);
+
+    // 외곽 그림자 링
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,r+6,0,Math.PI*2);
+    ctx.strokeStyle = "#11182722"; ctx.lineWidth = 12; ctx.stroke();
+    ctx.restore();
+
+    const n = names.length;
+    if(n === 0) return;
+
+    const step = (Math.PI*2)/n;
+    // 섹터 본체
+    for(let i=0;i<n;i++){
+      ctx.beginPath();
+      const a0 = -Math.PI/2 + i*step; // 12시 방향부터 시계방향
+      const a1 = a0 + step;
+      ctx.moveTo(cx,cy);
+      ctx.arc(cx,cy,r,a0,a1);
+      ctx.closePath();
+      ctx.fillStyle = sectorColor(i);
+      ctx.fill();
+      // 경계선
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
-    document.getElementById('btnSolo').addEventListener('click', startSolo);
-    levelSel.addEventListener('keydown', e => { if(e.key==='Enter') startSolo(); });
 
-    document.getElementById('btnHow').addEventListener('click', ()=>{
-      alert(`벽바둑 규칙 요약:
-• 말 이동: 상하좌우 최대 2칸(벽/말 통과 불가)
-• 이동 후 벽 1개 설치
-• 단독 영역 점수 합이 승부를 가름
-• 혼합 영역이 없어지면 즉시 종료`);
+    // 라벨 텍스트
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.fillStyle = "#111827";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `${Math.floor(r*0.12)}px system-ui, -apple-system, Segoe UI, Roboto, Pretendard, sans-serif`;
+
+    for(let i=0;i<n;i++){
+      const aMid = -Math.PI/2 + (i+0.5)*step;
+      const tx = Math.cos(aMid) * r*0.62;
+      const ty = Math.sin(aMid) * r*0.62;
+      // 이름이 길면 줄바꿈 처리(간단)
+      const label = names[i].trim() || `${i+1}번`;
+      const maxChars = Math.floor(r*0.21/8); // 대략치
+      const lines = splitLabel(label, maxChars);
+      if(lines.length === 1){
+        ctx.fillText(lines[0], tx, ty);
+      }else{
+        const lh = r*0.12*0.95;
+        lines.forEach((line,idx)=>{
+          ctx.fillText(line, tx, ty + (idx-(lines.length-1)/2)*lh);
+        });
+      }
+    }
+    ctx.restore();
+  }
+
+  function splitLabel(s, max){
+    if(s.length <= max) return [s];
+    const words = s.split(/\s+/);
+    if(words.length === 1){
+      return [s.slice(0,max), s.slice(max, max*2)];
+    }
+    const lines = [];
+    let cur = "";
+    for(const w of words){
+      if((cur + " " + w).trim().length > max){
+        if(cur) lines.push(cur);
+        cur = w;
+      }else{
+        cur = (cur ? cur + " " : "") + w;
+      }
+    }
+    if(cur) lines.push(cur);
+    return lines.slice(0,2);
+  }
+
+  // 이름 UI 생성/갱신
+  function rebuildNameInputs(){
+    $nameList.innerHTML = "";
+    names.forEach((nm, idx) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.margin = "0";
+      const lab = document.createElement('label');
+      lab.textContent = `${idx+1}.`;
+      lab.style.minWidth = "28px";
+      const inp = document.createElement('input');
+      inp.value = nm;
+      inp.placeholder = `${idx+1}번`;
+      inp.addEventListener('input', () => {
+        names[idx] = inp.value;
+        drawWheel();
+      });
+      row.appendChild(lab);
+      row.appendChild(inp);
+      $nameList.appendChild(row);
     });
-  </script>
+  }
+
+  // 참가자 수로 배열 재생성
+  function buildByCount(){
+    const n = clamp(parseInt($count.value||"0",10), 2, 50);
+    names = Array.from({length:n}, (_,i)=>`${i+1}번`);
+    rebuildNameInputs();
+    drawWheel();
+    $result.textContent = "";
+  }
+
+  // 셔플
+  function shuffleNames(){
+    for(let i=names.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [names[i], names[j]] = [names[j], names[i]];
+    }
+    rebuildNameInputs();
+    drawWheel();
+  }
+
+  // 스핀 애니메이션 (화살표 회전)
+  function spin(){
+    if(spinning || names.length < 2) return;
+    spinning = true;
+    $result.textContent = "돌아가는 중…";
+
+    // 5~6초 랜덤 시간, 시작~끝 각도(Ease-out)
+    duration = (5 + Math.random()) * 1000; // ms
+    const extraTurns = 5 + Math.random()*2; // 5~7바퀴
+    targetAngle = currentAngle + extraTurns * Math.PI*2 + Math.random()*Math.PI*2;
+
+    startTime = performance.now();
+    requestAnimationFrame(step);
+  }
+
+  // 이징 함수 (easeOutCubic)
+  function easeOut(t){ return 1 - Math.pow(1 - t, 3); }
+
+  function step(now){
+    const t = clamp((now - startTime) / duration, 0, 1);
+    const eased = easeOut(t);
+    const angle = lerp(currentAngle, targetAngle, eased);
+
+    // 화살표 DOM 회전 (deg)
+    const deg = radToDeg(angle) % 360;
+    $arrow.style.transform = `rotate(${deg}deg)`;
+
+    if(t < 1){
+      requestAnimationFrame(step);
+    }else{
+      spinning = false;
+      currentAngle = angle % (Math.PI*2);
+      showWinner();
+    }
+  }
+
+  // 승자 계산 (화살표가 가리키는 방향: 위쪽을 0도로 가정)
+  function showWinner(){
+    const n = names.length;
+    const step = (Math.PI*2)/n;
+
+    // 화살표 꼭지점이 가리키는 각도: 화면 기준 12시 방향이 0(rad)라고 설정.
+    // currentAngle은 화살표 자체의 회전 각도(시계방향 +).
+    // 화살표가 위(12시)를 향했을 때 캔버스 섹터는 -90도부터 인덱싱했으므로,
+    // 화살표 방향을 12시(= -90도 보정)로 맞춰 인덱스 산출.
+    const arrowAngleFromTop = (currentAngle) % (Math.PI*2);
+    // 12시 기준으로 섹터는 [-90°]에서 시작했으므로 +90° 보정
+    let a = (arrowAngleFromTop + Math.PI/2) % (Math.PI*2);
+    if(a < 0) a += Math.PI*2;
+
+    const index = Math.floor(a / step) % n;
+    const winner = names[index]?.trim() || `${index+1}번`;
+
+    $result.innerHTML = `👉 <b>${winner}</b> 님이 당첨!`;
+    flashRing();
+  }
+
+  // 시각 효과: 링 살짝 반짝
+  function flashRing(){
+    const ring = document.querySelector('.arrow-ring');
+    ring.animate([
+      { boxShadow:'0 10px 30px rgba(0,0,0,.18)' },
+      { boxShadow:'0 0 0 10px rgba(16,185,129,.35)' },
+      { boxShadow:'0 10px 30px rgba(0,0,0,.18)' },
+    ], { duration: 520, easing:'ease-out' });
+  }
+
+  // 도우미
+  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+  const lerp = (a,b,t)=>a+(b-a)*t;
+  const radToDeg = r=>r*180/Math.PI;
+
+  // 이벤트 바인딩
+  window.addEventListener('resize', resizeCanvas);
+  $build.addEventListener('click', buildByCount);
+  $autofill.addEventListener('click', ()=>{
+    names = names.map((_,i)=>`${i+1}번`);
+    rebuildNameInputs(); drawWheel();
+  });
+  $shuffle.addEventListener('click', shuffleNames);
+  $spin.addEventListener('click', ()=>{ if(!spinning) spin(); });
+  $reset.addEventListener('click', ()=>{
+    if(spinning) return;
+    currentAngle = 0;
+    $arrow.style.transform = `rotate(0deg)`;
+    $result.textContent = "";
+  });
+
+  // 초기 세팅
+  rebuildNameInputs();
+  resizeCanvas();
+})();
+</script>
 </body>
 </html>
