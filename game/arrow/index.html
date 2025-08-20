@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>너야너 룰렛</title>
+<title>너야너 룰렛 (중앙 화살표 회전)</title>
 <style>
   :root{
     --accent:#2563eb;
@@ -26,12 +26,12 @@
   h1{margin:0; font-size:20px; letter-spacing:.3px}
   main{display:grid; place-items:center; padding:18px}
   .panel{
-    width:min(920px,95vw); background:var(--card); border:1px solid #e5e7eb;
+    width:min(960px,95vw); background:var(--card); border:1px solid #e5e7eb;
     border-radius:16px; padding:16px; box-shadow:0 6px 24px rgba(0,0,0,.06);
   }
   .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:8px 0 10px}
   label{font-size:14px; color:var(--muted)}
-  input,button,textarea{
+  input,button{
     font-size:16px; padding:10px 12px; border-radius:12px; border:1px solid #d1d5db; background:#fff;
   }
   input[type=number]{width:110px}
@@ -45,27 +45,36 @@
   .grid{
     display:grid; grid-template-columns: 1fr; gap:14px; margin-top:10px;
   }
-  @media(min-width:860px){
-    .grid{ grid-template-columns: 1.3fr .9fr; align-items:start; }
+  @media(min-width:880px){
+    .grid{ grid-template-columns: 1.25fr .95fr; align-items:start; }
   }
+
+  /* 룰렛 영역 */
   .canvas-wrap{
     background:conic-gradient(from 0deg, #fafafa, #ffffff);
     border-radius:18px; border:1px solid #e5e7eb; padding:14px; position:relative;
   }
   canvas{ display:block; width:100%; height:auto; border-radius:10px; background:#fff; }
+
+  /* 중앙 화살표(↑) 자체가 회전 */
   .arrow-pivot{
     position:absolute; inset:0; display:grid; place-items:center; pointer-events:none;
   }
   .arrow-ring{
-    width:min(110px,20vmin); height:min(110px,20vmin);
+    width:min(120px,22vmin); height:min(120px,22vmin);
     border-radius:50%; background:#fff; border:6px solid #11182722;
     display:grid; place-items:center; box-shadow:0 10px 30px rgba(0,0,0,.18);
   }
   .arrow{
-    width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent;
-    border-bottom:42px solid var(--accent); filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
-    transform-origin:50% 140%;
+    width:0; height:0;
+    border-left:16px solid transparent;
+    border-right:16px solid transparent;
+    border-top:50px solid var(--accent); /* ↑를 가리키는 삼각형 */
+    filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
+    transform-origin:50% 180%; /* 중심 아래쪽을 회전축으로 */
+    transform:rotate(0deg);
   }
+
   .tools{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px }
   .tools h3{ margin:0 0 8px 0; font-size:16px }
   .muted{ color:var(--muted); font-size:13px }
@@ -85,26 +94,28 @@
 </style>
 </head>
 <body>
-  <header><h1>너야너 룰렛 (화살표가 도는 방식)</h1></header>
+  <header><h1>너야너 룰렛 (가운데 화살표 회전)</h1></header>
 
   <main>
     <div class="panel">
       <div class="row">
         <label>인원 수</label>
-        <input type="number" id="count" min="2" max="20" value="6" />
+        <input type="number" id="count" min="2" max="50" value="6" />
         <button id="build">참가자 생성</button>
-        <span class="muted">최대 20명 권장</span>
+        <button id="shuffle" class="ghost">순서 섞기</button>
+        <span class="muted">이름은 오른쪽에서 바로 수정하면 룰렛에 즉시 반영됩니다.</span>
       </div>
 
       <div class="grid">
         <!-- 캔버스 / 룰렛 -->
         <div class="canvas-wrap">
           <canvas id="wheel" aria-label="룰렛"></canvas>
+
+          <!-- 중앙 화살표(↑)가 실제로 회전 -->
           <div class="arrow-pivot">
-            <div class="arrow-ring">
-              <div id="arrow" class="arrow"></div>
-            </div>
+            <div class="arrow-ring"><div id="arrow" class="arrow"></div></div>
           </div>
+
           <div class="center-row">
             <button id="spin" title="가운데 화살표가 5~6초 랜덤으로 회전 후 멈춥니다">시작(돌리기)</button>
             <button id="reset" class="ghost">초기화</button>
@@ -112,35 +123,34 @@
           <div id="result" class="result"></div>
         </div>
 
-        <!-- 참가자 목록 -->
+        <!-- 참가자 이름 편집 -->
         <div class="tools">
           <h3>참가자 이름</h3>
           <div class="row">
             <span class="badge">Tip</span>
-            <span class="muted">이름을 수정하면 룰렛에도 즉시 반영됩니다.</span>
+            <span class="muted">“참가자 생성” 후 이곳에서 이름을 바꾸면 바로 반영됩니다.</span>
           </div>
           <div id="nameList" class="list"></div>
           <div class="row" style="margin-top:10px">
-            <button id="autofill" class="secondary">이름 자동 채우기</button>
-            <button id="shuffle" class="ghost">순서 섞기</button>
+            <button id="autofill" class="secondary">이름 자동 채우기(1번~n번)</button>
           </div>
         </div>
       </div>
     </div>
   </main>
 
-  <footer>© 너야너 • 화살표 회전 방식 • 모바일 대응</footer>
+  <footer>© 너야너 • 중앙 화살표 회전 • 모바일 대응</footer>
 
 <script>
 (() => {
-  // 상태
-  let names = ["1번", "2번", "3번", "4번", "5번", "6번"];
+  // ===== 상태 =====
+  let names = ["1번","2번","3번","4번","5번","6번"];
   let spinning = false;
-  let currentAngle = 0;   // 화살표 현재 각도(라디안)
-  let targetAngle = 0;    // 이번 스핀 목표 각도(라디안)
+  let currentDeg = 0;     // 화살표의 현재 각도(도수, 0도는 '↑' = 12시 방향)
+  let targetDeg = 0;      // 이번 회전 목표 각도(도수)
   let startTime = 0, duration = 0;
 
-  // 엘리먼트
+  // ===== 엘리먼트 =====
   const $count = document.getElementById('count');
   const $build = document.getElementById('build');
   const $nameList = document.getElementById('nameList');
@@ -152,9 +162,9 @@
   const $result = document.getElementById('result');
   const $arrow = document.getElementById('arrow');
 
-  // 캔버스 크기/스케일 설정 (레티나 대응)
+  // ===== 캔버스 크기/스케일(레티나 대응) =====
   function resizeCanvas() {
-    const maxW = Math.min(800, document.body.clientWidth - 60);
+    const maxW = Math.min(820, document.body.clientWidth - 60);
     const cssSize = Math.max(320, Math.floor(maxW));
     const dpr = Math.min(devicePixelRatio || 1, 2);
     $wheel.width = cssSize * dpr;
@@ -164,7 +174,7 @@
     drawWheel();
   }
 
-  // 색 팔레트(섹터 번갈아가며)
+  // ===== 섹터 색상 =====
   function sectorColor(i){
     const base = [
       "#fde047","#93c5fd","#fca5a5","#a7f3d0","#c4b5fd","#fcd34d",
@@ -173,7 +183,7 @@
     return base[i % base.length];
   }
 
-  // 룰렛 그리기(원판 + 섹터 + 라벨)
+  // ===== 룰렛 그리기 =====
   function drawWheel(){
     const ctx = $wheel.getContext('2d');
     const W = $wheel.width, H = $wheel.height;
@@ -191,17 +201,17 @@
     if(n === 0) return;
 
     const step = (Math.PI*2)/n;
-    // 섹터 본체
+
+    // 섹터: 시작을 '12시(= -90°)'로 잡아 시계방향으로 배치
     for(let i=0;i<n;i++){
       ctx.beginPath();
-      const a0 = -Math.PI/2 + i*step; // 12시 방향부터 시계방향
+      const a0 = -Math.PI/2 + i*step;
       const a1 = a0 + step;
       ctx.moveTo(cx,cy);
       ctx.arc(cx,cy,r,a0,a1);
       ctx.closePath();
       ctx.fillStyle = sectorColor(i);
       ctx.fill();
-      // 경계선
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
       ctx.stroke();
@@ -219,10 +229,8 @@
       const aMid = -Math.PI/2 + (i+0.5)*step;
       const tx = Math.cos(aMid) * r*0.62;
       const ty = Math.sin(aMid) * r*0.62;
-      // 이름이 길면 줄바꿈 처리(간단)
-      const label = names[i].trim() || `${i+1}번`;
-      const maxChars = Math.floor(r*0.21/8); // 대략치
-      const lines = splitLabel(label, maxChars);
+      const label = (names[i]||"").trim() || `${i+1}번`;
+      const lines = splitLabel(label, Math.floor(r*0.21/8));
       if(lines.length === 1){
         ctx.fillText(lines[0], tx, ty);
       }else{
@@ -255,7 +263,7 @@
     return lines.slice(0,2);
   }
 
-  // 이름 UI 생성/갱신
+  // ===== 이름 입력 UI =====
   function rebuildNameInputs(){
     $nameList.innerHTML = "";
     names.forEach((nm, idx) => {
@@ -278,7 +286,7 @@
     });
   }
 
-  // 참가자 수로 배열 재생성
+  // ===== 참가자 수로 배열 재생성 =====
   function buildByCount(){
     const n = clamp(parseInt($count.value||"0",10), 2, 50);
     names = Array.from({length:n}, (_,i)=>`${i+1}번`);
@@ -287,7 +295,7 @@
     $result.textContent = "";
   }
 
-  // 셔플
+  // ===== 셔플 =====
   function shuffleNames(){
     for(let i=names.length-1;i>0;i--){
       const j = Math.floor(Math.random()*(i+1));
@@ -297,79 +305,65 @@
     drawWheel();
   }
 
-  // 스핀 애니메이션 (화살표 회전)
+  // ===== 스핀(중앙 화살표 회전) =====
   function spin(){
     if(spinning || names.length < 2) return;
     spinning = true;
     $result.textContent = "돌아가는 중…";
 
-    // 5~6초 랜덤 시간, 시작~끝 각도(Ease-out)
-    duration = (5 + Math.random()) * 1000; // ms
-    const extraTurns = 5 + Math.random()*2; // 5~7바퀴
-    targetAngle = currentAngle + extraTurns * Math.PI*2 + Math.random()*Math.PI*2;
+    // 5~6초 랜덤 시간 + 5~7바퀴 + 임의 각도
+    duration = (5 + Math.random()) * 1000;      // ms
+    const extraTurns = 5 + Math.random()*2;     // 5~7바퀴
+    const extraAngle = Math.random()*360;       // 0~360도 랜덤
+    targetDeg = currentDeg + extraTurns*360 + extraAngle;
 
-    startTime = performance.now();
-    requestAnimationFrame(step);
+    const start = performance.now();
+    const stepFrame = (now) => {
+      const t = clamp((now - start) / duration, 0, 1);
+      const eased = easeOutCubic(t);
+      const deg = lerp(currentDeg, targetDeg, eased) % 360;
+
+      $arrow.style.transform = `rotate(${deg}deg)`;
+      if(t < 1){
+        requestAnimationFrame(stepFrame);
+      }else{
+        spinning = false;
+        currentDeg = (deg + 360) % 360; // 정상화
+        showWinner(currentDeg);
+      }
+    };
+    requestAnimationFrame(stepFrame);
   }
 
-  // 이징 함수 (easeOutCubic)
-  function easeOut(t){ return 1 - Math.pow(1 - t, 3); }
-
-  function step(now){
-    const t = clamp((now - startTime) / duration, 0, 1);
-    const eased = easeOut(t);
-    const angle = lerp(currentAngle, targetAngle, eased);
-
-    // 화살표 DOM 회전 (deg)
-    const deg = radToDeg(angle) % 360;
-    $arrow.style.transform = `rotate(${deg}deg)`;
-
-    if(t < 1){
-      requestAnimationFrame(step);
-    }else{
-      spinning = false;
-      currentAngle = angle % (Math.PI*2);
-      showWinner();
-    }
-  }
-
-  // 승자 계산 (화살표가 가리키는 방향: 위쪽을 0도로 가정)
-  function showWinner(){
+  // ===== 당첨 계산 =====
+  function showWinner(deg){
+    // 기준: 화살표 0도는 '↑(12시)'.
+    // 섹터도 12시에서 시작하여 시계방향으로 나누었음.
     const n = names.length;
-    const step = (Math.PI*2)/n;
-
-    // 화살표 꼭지점이 가리키는 각도: 화면 기준 12시 방향이 0(rad)라고 설정.
-    // currentAngle은 화살표 자체의 회전 각도(시계방향 +).
-    // 화살표가 위(12시)를 향했을 때 캔버스 섹터는 -90도부터 인덱싱했으므로,
-    // 화살표 방향을 12시(= -90도 보정)로 맞춰 인덱스 산출.
-    const arrowAngleFromTop = (currentAngle) % (Math.PI*2);
-    // 12시 기준으로 섹터는 [-90°]에서 시작했으므로 +90° 보정
-    let a = (arrowAngleFromTop + Math.PI/2) % (Math.PI*2);
-    if(a < 0) a += Math.PI*2;
-
-    const index = Math.floor(a / step) % n;
-    const winner = names[index]?.trim() || `${index+1}번`;
+    const stepDeg = 360 / n;
+    const idx = Math.floor((deg % 360) / stepDeg) % n;
+    const winner = (names[idx]||"").trim() || `${idx+1}번`;
 
     $result.innerHTML = `👉 <b>${winner}</b> 님이 당첨!`;
     flashRing();
   }
 
-  // 시각 효과: 링 살짝 반짝
+  // ===== 효과 =====
   function flashRing(){
     const ring = document.querySelector('.arrow-ring');
     ring.animate([
       { boxShadow:'0 10px 30px rgba(0,0,0,.18)' },
-      { boxShadow:'0 0 0 10px rgba(16,185,129,.35)' },
+      { boxShadow:'0 0 0 12px rgba(16,185,129,.35)' },
       { boxShadow:'0 10px 30px rgba(0,0,0,.18)' },
     ], { duration: 520, easing:'ease-out' });
   }
 
-  // 도우미
+  // ===== 도우미 =====
   const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
   const lerp = (a,b,t)=>a+(b-a)*t;
-  const radToDeg = r=>r*180/Math.PI;
+  const easeOutCubic = (t)=>1 - Math.pow(1 - t, 3);
 
-  // 이벤트 바인딩
+  // ===== 이벤트 바인딩 =====
   window.addEventListener('resize', resizeCanvas);
   $build.addEventListener('click', buildByCount);
   $autofill.addEventListener('click', ()=>{
@@ -380,12 +374,12 @@
   $spin.addEventListener('click', ()=>{ if(!spinning) spin(); });
   $reset.addEventListener('click', ()=>{
     if(spinning) return;
-    currentAngle = 0;
+    currentDeg = 0;
     $arrow.style.transform = `rotate(0deg)`;
     $result.textContent = "";
   });
 
-  // 초기 세팅
+  // ===== 초기 세팅 =====
   rebuildNameInputs();
   resizeCanvas();
 })();
