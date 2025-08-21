@@ -39,7 +39,7 @@
     padding:10px 16px; font-weight:600; box-shadow:0 4px 14px rgba(37,99,235,.22);
   }
   button.secondary{ background:#6b7280; box-shadow:none }
-  button.ghost{ background:#fff; color:var(--ink); border:1px solid #d1d5db; box-shadow:none }
+  button.ghost{ background:#fff; color:#1f2937; border:1px solid #d1d5db; box-shadow:none }
   button:disabled{opacity:.55; cursor:not-allowed}
   .grid{
     display:grid; grid-template-columns: 1fr; gap:14px; margin-top:10px;
@@ -55,28 +55,36 @@
   }
   canvas{ display:block; width:100%; height:auto; border-radius:10px; background:#fff; }
 
-  /* 중앙 화살표: '로터'를 회전축(원 중심)으로, 화살표는 그 위에 얹어서 회전 */
+  /* 중앙 화살표: '로터'를 원 중심에 두고, 화살표(몸통+촉)는 로터에 붙임 */
   .arrow-pivot{
     position:absolute; inset:0; display:grid; place-items:center; pointer-events:none;
   }
-  .arrow-ring{
-    width:min(120px,22vmin); height:min(120px,22vmin);
-    border-radius:50%; background:#fff; border:6px solid #11182722;
-    display:grid; place-items:center; box-shadow:0 10px 30px rgba(0,0,0,.18);
-  }
-  /* 회전 전용 컨테이너: 원점(0,0)이 정확히 원 중심에 놓임 */
+  /* 가운데 작은 원(링) 제거 → 로터만 남김 */
   .arrow-rotor{
-    position:relative; width:0; height:0; transform:rotate(0deg);
+    position:relative;
+    width:1px; height:1px;           /* 회전 기준점(중앙) */
+    transform-origin:50% 50%;
+    transform:rotate(0deg);
   }
-  /* 실제 화살표(삼각형): 밑변이 (0,0)에 놓이도록 위로 올려 배치 → 팁이 위쪽(12시) */
-  .arrow{
+  /* 화살표 몸통 */
+  .arrow-body{
     position:absolute;
-    left:-16px;           /* 삼각형 밑변 중심 정렬(밑변 폭 = 32px) */
-    top:-60px;            /* 삼각형 높이만큼 위로 올려 밑변을 (0,0)에 맞춤 */
+    left:-5px;     /* 몸통 폭 10px의 중앙 정렬 */
+    bottom:0;      /* 로터(중심)에서 위로 자라나게 */
+    width:10px; height:70px;
+    background:var(--accent);
+    border-radius:6px;
+    filter:drop-shadow(0 4px 6px rgba(0,0,0,.25));
+  }
+  /* 화살표 촉(↑) */
+  .arrow-head{
+    position:absolute;
+    left:-16px;          /* 촉 밑변 32px 중앙 정렬 */
+    bottom:70px;         /* 몸통 꼭대기에 접합 */
     width:0; height:0;
     border-left:16px solid transparent;
     border-right:16px solid transparent;
-    border-top:60px solid var(--accent); /* 위를 향한 삼각형 */
+    border-bottom:28px solid var(--accent); /* 위쪽을 향하는 삼각형(촉) */
     filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
   }
 
@@ -108,7 +116,7 @@
         <input type="number" id="count" min="2" max="50" value="6" />
         <button id="build">참가자 생성</button>
         <button id="shuffle" class="ghost">순서 섞기</button>
-        <span class="muted">이름은 오른쪽에서 바로 수정하면 룰렛에 즉시 반영됩니다.</span>
+        <span class="muted">오른쪽에서 이름을 바꾸면 룰렛에 즉시 반영됩니다.</span>
       </div>
 
       <div class="grid">
@@ -116,17 +124,16 @@
         <div class="canvas-wrap">
           <canvas id="wheel" aria-label="룰렛"></canvas>
 
-          <!-- 중앙에 정확히 정렬: 로터가 회전, 화살표는 로터 위에서 팁 기준 회전 -->
+          <!-- 중앙 회전 화살표 (작은 원 제거) -->
           <div class="arrow-pivot">
-            <div class="arrow-ring">
-              <div id="rotor" class="arrow-rotor">
-                <div class="arrow"></div>
-              </div>
+            <div id="rotor" class="arrow-rotor">
+              <div class="arrow-body"></div>
+              <div class="arrow-head"></div>
             </div>
           </div>
 
           <div class="center-row">
-            <button id="spin" title="버튼을 누르고 있으면 돌고, 떼면 감속 후 멈춥니다">시작(돌리기)</button>
+            <button id="spin" title="누르고 있으면 빠르게 회전, 떼면 감속 후 5~6초 뒤 정지">시작(돌리기)</button>
             <button id="reset" class="ghost">초기화</button>
           </div>
           <div id="result" class="result"></div>
@@ -154,10 +161,10 @@
 (() => {
   // ===== 상태 =====
   let names = ["1번","2번","3번","4번","5번","6번"];
-  let spinning = false;       // 감속 애니 중 여부
-  let isHolding = false;      // 버튼 홀드 중 여부(마우스/터치)
-  let rafId = null;           // 연속 회전 RAF id
-  let currentDeg = 0;         // 화살표 현재 각도(↑=0°, 시계방향 +)
+  let spinning = false;       // 감속 애니메이션 중
+  let isHolding = false;      // 버튼 홀드 중(마우스/터치)
+  let rafId = null;           // RAF id
+  let currentDeg = 0;         // 현재 각도(↑=0°, 시계방향 +)
   let targetDeg = 0;          // 목표 각도
 
   // ===== 엘리먼트 =====
@@ -300,15 +307,15 @@
     $rotor.style.transform = `rotate(${deg%360}deg)`;
   }
 
-  // ===== 감속 애니메이션으로 멈추기 (5~6초) =====
+  // ===== 감속 애니메이션(5~6초) =====
   function startStoppingAnimation(){
     if(spinning || names.length < 2) return;
     spinning = true;
     $result.textContent = "누가 될까요…";
 
-    const duration = (5 + Math.random()) * 1000;    // 5~6초
-    const extraTurns = 5 + Math.random() * 2;       // 5~7바퀴
-    const extraAngle = Math.random() * 360;         // 0~360°
+    const duration = (5 + Math.random()) * 1000;  // 5~6초
+    const extraTurns = 5 + Math.random() * 2;     // 5~7바퀴
+    const extraAngle = Math.random() * 360;       // 0~360°
     targetDeg = currentDeg + extraTurns*360 + extraAngle;
 
     const start = performance.now();
@@ -328,24 +335,13 @@
     rafId = requestAnimationFrame(stepFrame);
   }
 
-  // ===== 당첨 계산(화살표 팁 기준, 12시가 0°) =====
+  // ===== 당첨 계산(화살표 '촉'이 가리키는 섹터) =====
   function showWinner(deg){
     const n = names.length;
     const stepDeg = 360 / n;
-    const idx = Math.floor((deg % 360) / stepDeg) % n;   // 0°~stepDeg → 0번 섹터
+    const idx = Math.floor((deg % 360) / stepDeg) % n;   // 0°~stepDeg → 0번 섹터(12시부터 시계방향)
     const winner = (names[idx]||"").trim() || `${idx+1}번`;
     $result.innerHTML = `👉 <b>${winner}</b> 님이 당첨!`;
-    flashRing();
-  }
-
-  // ===== 효과 =====
-  function flashRing(){
-    const ring = document.querySelector('.arrow-ring');
-    ring.animate([
-      { boxShadow:'0 10px 30px rgba(0,0,0,.18)' },
-      { boxShadow:'0 0 0 12px rgba(16,185,129,.35)' },
-      { boxShadow:'0 10px 30px rgba(0,0,0,.18)' },
-    ], { duration: 520, easing:'ease-out' });
   }
 
   // ===== 도우미 =====
@@ -359,7 +355,7 @@
   $autofill.addEventListener('click', ()=>{ names = names.map((_,i)=>`${i+1}번`); rebuildNameInputs(); drawWheel(); });
   $shuffle.addEventListener('click', shuffleNames);
 
-  // 버튼 ‘홀드→회전 / 해제→감속’ (마우스 + 터치)
+  // 버튼 ‘홀드→빠르게 회전 / 해제→감속’
   const startHoldSpin = () => {
     if (spinning) return;
     isHolding = true;
@@ -367,7 +363,7 @@
     $result.textContent = "버튼을 놓으면 멈춥니다";
 
     let last = performance.now();
-    const speed = 400; // deg/s
+    const speed = 1080; // ← 더 빠르게! deg/s (약 초당 3바퀴)
     const loop = (now) => {
       if (!isHolding) { startStoppingAnimation(); return; }
       const dt = (now - last) / 1000;
