@@ -5,22 +5,30 @@
   <title>장기 온라인 · 로비</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
+    :root { --card:#fff; --muted:#6b7280; }
     *{box-sizing:border-box}
     body{
       margin:0; min-height:100vh; display:grid; place-items:center;
       background:linear-gradient(135deg,#e0f7fa,#fce4ec);
       font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
     }
-    .panel{ width:min(560px,92vw); background:#fff; border:1px solid #e5e7eb; border-radius:16px;
-      box-shadow:0 8px 30px rgba(0,0,0,.10); padding:18px 16px; }
+    .panel{
+      width:min(560px,92vw);
+      background:#fff; border:1px solid #e5e7eb; border-radius:16px;
+      box-shadow:0 8px 30px rgba(0,0,0,.10); padding:18px 16px;
+    }
     h1{margin:4px 0 14px; text-align:center; font-size:clamp(20px,5.5vw,28px); color:#222}
     .row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center}
     .field{display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; margin:8px 0}
     label{font-size:14px; color:#374151}
-    select, input[type="text"]{ padding:10px 12px; font-size:15px; border:1px solid #cbd5e1; border-radius:12px; }
+    select, input[type="text"]{
+      padding:10px 12px; font-size:15px; border:1px solid #cbd5e1; border-radius:12px;
+    }
     #roomInput{ width:min(320px,80vw); }
-    button{ padding:12px 16px; font-size:15px; border-radius:12px; cursor:pointer;
-      border:1px solid #94a3b8; background:#fff; transition:.12s; }
+    button{
+      padding:12px 16px; font-size:15px; border-radius:12px; cursor:pointer;
+      border:1px solid #94a3b8; background:#fff; transition:transform .12s ease, box-shadow .12s ease;
+    }
     button:hover{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(0,0,0,.10) }
     .hint{margin-top:10px; color:#6b7280; font-size:13px; text-align:center}
     .me{margin-top:6px; text-align:center; font-size:12px; color:#94a3b8}
@@ -34,7 +42,7 @@
       <input id="roomInput" type="text" placeholder="방 이름 (예: 부엉이1929)" />
     </div>
 
-    <!-- 생성 시 선택 -->
+    <!-- 내 진영/배치 선택 (생성 시에만 사용) -->
     <div class="field">
       <label for="mySide">내 진영:</label>
       <select id="mySide">
@@ -45,13 +53,17 @@
     <div class="field">
       <label for="choPattern">초 배치:</label>
       <select id="choPattern">
-        <option>마상마상</option><option>상마상마</option>
-        <option>마상상마</option><option>상마마상</option>
+        <option>마상마상</option>
+        <option>상마상마</option>
+        <option>마상상마</option>
+        <option>상마마상</option>
       </select>
       <label for="hanPattern">한 배치:</label>
       <select id="hanPattern">
-        <option>상마상마</option><option>마상마상</option>
-        <option>마상상마</option><option>상마마상</option>
+        <option>상마상마</option>
+        <option>마상마상</option>
+        <option>마상상마</option>
+        <option>상마마상</option>
       </select>
     </div>
 
@@ -86,73 +98,84 @@
     const auth = getAuth(app);
 
     const meLine = document.getElementById('meLine');
-    const sanitize = s => (s||'').trim().replace(/[.#$/\[\]\/]/g,'-').slice(1,33); // 첫글자 공백 방지
+    function sanitizeRoomName(raw){
+      return (raw||'').trim().replace(/[.#$/\[\]\/]/g,'-').slice(0,32);
+    }
 
     async function ensureAnon(){
       if (auth.currentUser) return auth.currentUser;
-      return new Promise((res,rej)=>{
-        const unsub = onAuthStateChanged(auth, u=>{ if(u){unsub(); res(u);} });
-        signInAnonymously(auth).catch(rej);
+      return new Promise((resolve,reject)=>{
+        const unsub = onAuthStateChanged(auth, u=>{ if(u){unsub(); resolve(u);} });
+        signInAnonymously(auth).catch(reject);
       });
     }
-    ensureAnon().then(u=>{ meLine.textContent = `UID: ${u.uid.slice(0,8)}…`; })
-                .catch(()=>{ meLine.textContent = '로그인 실패'; });
+    ensureAnon().then(u=>{ meLine.textContent = `UID: ${u.uid.slice(0,8)}…`; }).catch(()=>{ meLine.textContent = '로그인 실패'; });
 
-    async function createRoom(){
+    const btnCreate = document.getElementById('btnCreate');
+    const btnJoin   = document.getElementById('btnJoin');
+
+    btnCreate.onclick = async ()=>{
       await ensureAnon();
-      const room = sanitize(document.getElementById('roomInput').value);
+      const room = sanitizeRoomName(document.getElementById('roomInput').value);
       if(!room){ alert('방 이름을 적어주세요.'); return; }
-      const mySide = document.getElementById('mySide').value; // 'cho' | 'han'
+
+      const mySide     = document.getElementById('mySide').value; // 'cho' | 'han'
       const choPattern = document.getElementById('choPattern').value;
       const hanPattern = document.getElementById('hanPattern').value;
+      const creatorRole = (mySide === 'cho') ? 0 : 1;
 
       const roomRef = ref(db, `janggi/rooms/${room}`);
-      const exist = await get(roomRef);
-      if (exist.exists()){ alert('이미 존재하는 방입니다.'); return; }
+      const snap = await get(roomRef);
+      if (snap.exists()){ alert('이미 존재하는 방입니다. 다른 이름을 사용해주세요.'); return; }
 
       const uid = auth.currentUser.uid;
       const now = Date.now();
       await set(roomRef, {
-        name: room, createdAt: now, status: 'waiting', playerCount: 1,
-        settings: { creatorRole: (mySide==='cho'?0:1), choPattern, hanPattern, firstTurn:'cho' },
-        players: { [uid]: { role: (mySide==='cho'?0:1), joinedAt: now } }
+        name: room,
+        createdAt: now,
+        status: 'waiting',
+        playerCount: 1,
+        settings: {
+          creatorRole,
+          choPattern,
+          hanPattern,
+          firstTurn: 'cho'
+        },
+        players: { [uid]: { role: creatorRole, joinedAt: now } }
       });
       onDisconnect(ref(db, `janggi/rooms/${room}/players/${uid}`)).remove();
       location.href = `game.html?room=${encodeURIComponent(room)}`;
-    }
+    };
 
-    async function joinRoom(){
+    btnJoin.onclick = async ()=>{
       await ensureAnon();
-      const room = sanitize(document.getElementById('roomInput').value);
+      const room = sanitizeRoomName(document.getElementById('roomInput').value);
       if(!room){ alert('방 이름을 적어주세요.'); return; }
 
-      const roomRef    = ref(db, `janggi/rooms/${room}`);
       const playersRef = ref(db, `janggi/rooms/${room}/players`);
-      const r = await get(roomRef);
-      if(!r.exists()){ alert('해당 방이 없습니다.'); return; }
+      const roomRef    = ref(db, `janggi/rooms/${room}`);
+      const exist = await get(roomRef);
+      if(!exist.exists()){ alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.'); return; }
 
       const uid = auth.currentUser.uid;
       let myRole = 1;
-      const tx = await runTransaction(playersRef, (players)=>{
+      const res = await runTransaction(playersRef, (players)=>{
         players = players || {};
         const ids = Object.keys(players);
-        if (!players[uid] && ids.length>=2) return; // 꽉참
+        if (!players[uid] && ids.length >= 2) return; // 꽉 찼음
         if (players[uid]) return players;
         const taken = Object.values(players).map(p=>p.role);
         myRole = taken.includes(0) ? 1 : 0;
         players[uid] = { role: myRole, joinedAt: Date.now() };
         return players;
       });
-      if (!tx.committed){ alert('이미 2명이 입장했습니다.'); return; }
+      if (!res.committed){ alert('이미 2명이 입장했습니다.'); return; }
 
-      const cnt = Object.keys(tx.snapshot.val()||{}).length;
+      const cnt = Object.keys(res.snapshot.val()||{}).length;
       await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
       onDisconnect(ref(db, `janggi/rooms/${room}/players/${uid}`)).remove();
       location.href = `game.html?room=${encodeURIComponent(room)}`;
-    }
-
-    document.getElementById('btnCreate').onclick = createRoom;
-    document.getElementById('btnJoin').onclick   = joinRoom;
+    };
   </script>
 </body>
 </html>
