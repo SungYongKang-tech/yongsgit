@@ -64,6 +64,7 @@
     #pieces-layer{position:absolute;inset:0;pointer-events:none;z-index:2}
     #moves-layer{position:absolute;inset:0;pointer-events:none;z-index:3}
 
+
     /* 말 */
     .piece{
       position:absolute;
@@ -100,6 +101,29 @@
       font-size:14px;
     }
     label { user-select:none; }
+
+    /* ✅ 큰 착수 안내 배너 (초=파랑, 한=빨강) */
+.banner{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  pointer-events:none; z-index:4;
+  font-weight:900; letter-spacing:2px; text-shadow:0 2px 6px rgba(0,0,0,.25);
+  font-size:clamp(28px, 8vw, 96px); opacity:0; transition:opacity .3s ease;
+}
+.banner.show{ opacity:.9; }
+.banner.cho{ color:#1e64ff; }  /* 초 = 파랑 */
+.banner.han{ color:#e53935; }  /* 한 = 빨강 */
+
+/* ✅ 승패 오버레이 (보드만하게 크게) */
+#result-overlay{
+  position:absolute; inset:0; z-index:6;
+  background:rgba(0,0,0,.66); display:none;
+  align-items:center; justify-content:center;
+}
+#result-text{
+  color:#fff; font-size:clamp(36px, 12vw, 120px); font-weight:900;
+  text-shadow:0 4px 18px rgba(0,0,0,.65);
+}
+
   </style>
 </head>
 <body>
@@ -135,9 +159,14 @@
       <svg id="palace-overlay" width="100%" height="100%"></svg>
       <div id="pieces-layer"></div>
       <div id="moves-layer"></div>
+     <!-- ✅ 큰 착수 안내 배너 -->
+      <div id="turn-banner" class="banner"></div>
+     <!-- ✅ 승패 오버레이 -->
+      <div id="result-overlay"><div id="result-text"></div></div>
     </div>
   </div>
 <audio id="moveSnd" src="button-29.mp3" preload="auto"></audio>
+<audio id="capSnd"  src="button2.mp3"  preload="auto"></audio>
 
   <script>
     const boardEl   = document.getElementById('janggi-board');
@@ -156,9 +185,41 @@ function playMoveSound(){
   if (!moveSnd) return;
   try {
     moveSnd.currentTime = 0;
-    moveSnd.play().catch(()=>{}); // 모바일 첫 상호작용 전 차단될 수 있음
+    moveSnd.play().catch(()=>{});
   } catch(e){}
 }
+
+const capSnd = document.getElementById('capSnd'); // ✅ 추가
+function playCaptureSound(){                      // ✅ 추가
+  if (!capSnd) return;
+  try {
+    capSnd.currentTime = 0;
+    capSnd.play().catch(()=>{});
+  } catch(e){}
+}
+
+// ✅ 큰 착수 배너 & 승패 오버레이
+const bannerEl   = document.getElementById('turn-banner');
+const resultOv   = document.getElementById('result-overlay');
+const resultText = document.getElementById('result-text');
+let bannerTimer = null;
+let gameOver = false;
+
+function showTurnBanner(team){
+  if (!bannerEl) return;
+  bannerEl.className = 'banner ' + (team==='cho' ? 'cho' : 'han');
+  bannerEl.textContent = team==='cho' ? '초 착수' : '한 착수';
+  bannerEl.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(()=> bannerEl.classList.remove('show'), 1000);
+}
+
+function showResult(winnerTeam){ // 'cho' | 'han'
+  gameOver = true;
+  resultText.textContent = (winnerTeam==='cho' ? '초 승' : '한 승');
+  resultOv.style.display = 'flex';
+}
+
 
     // === 보조 유틸 ===
     const getCellSize = () =>
@@ -700,50 +761,68 @@ function playMoveSound(){
     }
 
     // 체크/외통 메시지
-    function afterMoveChecks(){
-      const B = snapshotBoard();
-      const toMove = turn;          // 현재 차례(상대)
-      const inChk = isInCheck(B, toMove);
-      if (!inChk){ setMsg(''); return; }
+   function afterMoveChecks(){
+  const B = snapshotBoard();
+  const toMove = turn; // 현재 차례(체크/외통 당할 쪽)
 
-      // 외통 여부: 현재 차례 쪽이 합법수가 1개라도 있는지 검사
-      for (const [pos,info] of B.entries()){
-        if (info.team!==toMove) continue;
-        const [r,c] = pos.split(',').map(Number);
-        const pseudo = genPseudoMoves(B, r,c, info);
-        const legal = filterLegal(B, r,c, info, pseudo);
-        if (legal.length>0){ setMsg('장군!'); return; }
-      }
-      setMsg('장군 · 외통수!');
-    }
+  const inChk = isInCheck(B, toMove);
+  if (!inChk){ setMsg(''); return; }
+
+  // 외통 여부: 현재 차례(toMove)에게 합법수가 1개라도 있으면 외통 아님
+  for (const [pos,info] of B.entries()){
+    if (info.team!==toMove) continue;
+    const [r,c] = pos.split(',').map(Number);
+    const pseudo = genPseudoMoves(B, r,c, info);
+    const legal = filterLegal(B, r,c, info, pseudo);
+    if (legal.length>0){ setMsg('장군!'); return; }
+  }
+
+  // ✅ 체크메이트: 이동 불가 → 방금 둔 쪽 승리
+  setMsg('장군 · 외통수!');
+  const winner = opp(toMove);
+  showResult(winner);
+}
+
 
     // === 입력/이동 ===
     let selected = null;
-    function doMove(el, rr, cc){
-      // 캡처
-      const tgt = pieceAtDOM(rr,cc);
-      if (tgt && tgt.dataset.team === el.dataset.team) return;
-      if (tgt) tgt.remove();
+   function doMove(el, rr, cc){
+  if (gameOver) return;
 
-      // 이동
-      el.dataset.row = rr; el.dataset.col = cc;
-      el.style.setProperty('--row', rr);
-      el.style.setProperty('--col', cc);
+  // ✅ 캡처 여부 판별 (버그 fix: captured 정의)
+  let captured = false;
+  const tgt = pieceAtDOM(rr,cc);
+  if (tgt && tgt.dataset.team === el.dataset.team) return;
+  if (tgt){ captured = true; tgt.remove(); }
 
-      clearDots();
-      el.classList.remove('selected');
-      selected = null;
-      playMoveSound();        // ✅ 여기! 착수 사운드
-      // 턴 전환
-      plyCount++;
-      turn = opp(turn);
-      updateTurnText();
+  // 이동
+  el.dataset.row = rr; el.dataset.col = cc;
+  el.style.setProperty('--row', rr);
+  el.style.setProperty('--col', cc);
 
-      // 장군/외통 판정
-      afterMoveChecks();
-    }
+  clearDots();
+  el.classList.remove('selected');
+  selected = null;
+
+  // ✅ 사운드
+  if (captured) playCaptureSound();
+  else          playMoveSound();
+
+  // 턴 전환
+  plyCount++;
+  turn = opp(turn);
+  updateTurnText();
+
+  // 장군/외통 판정 → 외통이면 오버레이
+  afterMoveChecks();
+
+  // ✅ 게임 계속이면 큰 배너로 착수 표시
+  if (!gameOver) showTurnBanner(turn);
+}
+
 
     boardEl.addEventListener('click', (e)=>{
+      if (gameOver) return; // ✅ 종료 후 입력 막기
       const t = e.target.closest('.piece');
       if (t){
         setMsg('');
@@ -761,18 +840,25 @@ function playMoveSound(){
     });
 
     // 배치 적용
-    btnApply.addEventListener('click', ()=>{
-      currentSetup = makeInitialSetup(selCho.value, selHan.value);
-      turn = 'cho'; plyCount=0; updateTurnText();
-      setMsg('');
-      placePieces();
-      clearDots();
-    });
+   btnApply.addEventListener('click', ()=>{
+  currentSetup = makeInitialSetup(selCho.value, selHan.value);
+  turn = 'cho'; plyCount=0; updateTurnText();
+  setMsg('');
+  placePieces();
+  clearDots();
+
+  // ✅ 재시작 초기화
+  gameOver = false;
+  if (resultOv) resultOv.style.display = 'none';
+  showTurnBanner(turn);
+});
+
 
     // 초기 렌더
     function renderAll(){ updateCellSize(); drawPalaceLines(); }
     updateCellSize(); drawPalaceLines();
     placePieces(); updateTurnText(); setMsg('');
+    showTurnBanner(turn); // ✅ 시작 배너
     addEventListener('resize', renderAll);
     addEventListener('orientationchange', renderAll);
   </script>
