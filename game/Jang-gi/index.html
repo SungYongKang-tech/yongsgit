@@ -3,17 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HTML 장기 게임 (반응형 · 비율 스케일)</title>
+  <title>HTML 장기 게임 (반응형 · 규칙 3단계: 체크/빅장/외통 + 선포 금지)</title>
   <style>
     :root{
-      --cell-size:56px;                 /* JS가 화면에 맞춰 갱신 */
+      --cell-size:56px;
       --board-width:calc(var(--cell-size)*8);
       --board-height:calc(var(--cell-size)*9);
       --border-color:#3a2a1a;
       --board-bg:#e4c59a;
-
-      /* ✅ 말 크기 배율(칸 대비): 1.17 ≈ 기존보다 +30% */
-      --piece-scale:1.3;
+      --piece-scale:1.3;      /* 말 크기 배율 */
+      --dot-size: 16px;       /* 이동 후보 점 */
     }
     *{box-sizing:border-box}
     body{
@@ -21,14 +20,23 @@
       display:flex;justify-content:center;align-items:center;flex-direction:column;
       background:#f0e6d2;margin:0;padding:16px;min-height:100dvh;
     }
-    h1{margin:8px 0 12px;font-size:clamp(18px,4.5vw,28px);color:#333}
+    h1{margin:8px 0 6px;font-size:clamp(18px,4.5vw,28px);color:#333}
+
+    /* 컨트롤 바 */
+    .bar{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center;
+      margin:6px 0 8px;
+    }
+    .bar select, .bar button { padding:6px 10px; font-size:14px; }
+    .turn { font-weight:700; color:#0b4; }
+    .msg { min-height:22px; font-weight:700; color:#b00020; }
 
     #janggi-board-container{
       position:relative;
       width:calc(var(--board-width)+var(--cell-size));
       height:calc(var(--board-height)+var(--cell-size));
       max-width:100vw;
-      max-height:calc(100dvh - 100px);
+      max-height:calc(100dvh - 170px);
       background:var(--board-bg);
       border:2px solid var(--border-color);
       padding:calc(var(--cell-size)/2);
@@ -40,89 +48,173 @@
       width:var(--board-width);
       height:var(--board-height);
       background-image:
-        repeating-linear-gradient(to right, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size)),
-        repeating-linear-gradient(to bottom, transparent, transparent calc(var(--cell-size) - 1px), var(--border-color) calc(var(--cell-size) - 1px), var(--border-color) var(--cell-size));
+        repeating-linear-gradient(to right,
+          transparent, transparent calc(var(--cell-size) - 1px),
+          var(--border-color) calc(var(--cell-size) - 1px),
+          var(--border-color) var(--cell-size)),
+        repeating-linear-gradient(to bottom,
+          transparent, transparent calc(var(--cell-size) - 1px),
+          var(--border-color) calc(var(--cell-size) - 1px),
+          var(--border-color) var(--cell-size));
       background-size:var(--cell-size) var(--cell-size);
       border:1px solid var(--border-color);
     }
 
     #palace-overlay{position:absolute;inset:0;pointer-events:none;z-index:1}
     #pieces-layer{position:absolute;inset:0;pointer-events:none;z-index:2}
+    #moves-layer{position:absolute;inset:0;pointer-events:none;z-index:3}
 
-    /* ✅ 말: 위치는 % 비율, 크기는 칸 크기에 연동 */
+    /* 말 */
     .piece{
       position:absolute;
       width:calc(var(--cell-size) * var(--piece-scale));
       height:calc(var(--cell-size) * var(--piece-scale));
-      left:calc(var(--col) * 100% / 8);    /* 0..8 칸 → 8분할 */
-      top:calc(var(--row) * 100% / 9);     /* 0..9 칸 → 9분할 */
+      left:calc(var(--col) * 100% / 8);
+      top:calc(var(--row) * 100% / 9);
       transform:translate(-50%, -50%);
       background-size:contain;background-repeat:no-repeat;background-position:center;
       border-radius:50%;
       cursor:pointer;
       pointer-events:auto;
-      transition:transform .2s ease, box-shadow .2s ease;
+      transition:box-shadow .15s ease, transform .15s ease;
     }
-    .piece.selected{box-shadow:0 0 12px 4px rgba(255,0,0,.55)}
+    .piece.selected{ box-shadow:0 0 12px 4px rgba(255,0,0,.55) }
+
+    /* 이동 후보 점 */
+    .move-dot{
+      position:absolute;
+      width:var(--dot-size); height:var(--dot-size);
+      left:calc(var(--col) * 100% / 8);
+      top:calc(var(--row) * 100% / 9);
+      transform:translate(-50%, -50%);
+      border-radius:50%;
+      background:rgba(0,0,0,.15);
+      border:2px solid rgba(0,0,0,.35);
+      pointer-events:auto;
+      cursor:pointer;
+    }
+
+    .row{
+      display:flex; gap:12px; align-items:center; justify-content:center;
+      margin:4px 0 10px;
+      font-size:14px;
+    }
+    label { user-select:none; }
   </style>
 </head>
 <body>
-  <h1>HTML 장기 게임 (반응형 비율 스케일)</h1>
+  <h1>HTML 장기 게임 (규칙 3단계)</h1>
+
+  <!-- 컨트롤 -->
+  <div class="bar">
+    <span>초 배치:</span>
+    <select id="setupCho">
+      <option>마상마상</option>
+      <option>상마상마</option>
+      <option>마상상마</option>
+      <option>상마마상</option>
+    </select>
+    <span>한 배치:</span>
+    <select id="setupHan">
+      <option>마상마상</option>
+      <option>상마상마</option>
+      <option>마상상마</option>
+      <option>상마마상</option>
+    </select>
+    <button id="applyBtn">배치 적용</button>
+    <span>| 현재 차례: <span id="turnText" class="turn">초</span></span>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="noFirstPo" checked> 선수 포 금지</label>
+    <span class="msg" id="statusMsg"></span>
+  </div>
+
   <div id="janggi-board-container">
     <div id="janggi-board">
       <svg id="palace-overlay" width="100%" height="100%"></svg>
       <div id="pieces-layer"></div>
+      <div id="moves-layer"></div>
     </div>
   </div>
 
   <script>
-    const boardElement = document.getElementById('janggi-board');
-    const overlay = document.getElementById('palace-overlay');
-    const piecesLayer = document.getElementById('pieces-layer');
+    const boardEl   = document.getElementById('janggi-board');
+    const overlay   = document.getElementById('palace-overlay');
+    const piecesLay = document.getElementById('pieces-layer');
+    const movesLay  = document.getElementById('moves-layer');
 
+    const selCho = document.getElementById('setupCho');
+    const selHan = document.getElementById('setupHan');
+    const btnApply = document.getElementById('applyBtn');
+    const turnText = document.getElementById('turnText');
+    const statusMsg = document.getElementById('statusMsg');
+    const noFirstPoEl = document.getElementById('noFirstPo');
+
+    // === 보조 유틸 ===
     const getCellSize = () =>
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
+    const inside = (r,c)=> r>=0 && r<=9 && c>=0 && c<=8;
+    const key = (r,c)=> `${r},${c}`;
+    const opp = (team)=> team==='cho' ? 'han' : 'cho';
 
-    const initialSetup = {
-      // 초
-      '0,0':{team:'cho',piece:'cha'}, '0,1':{team:'cho',piece:'sang'},
-      '0,2':{team:'cho',piece:'ma'},  '0,3':{team:'cho',piece:'sa'},
-      '0,5':{team:'cho',piece:'sa'},  '0,6':{team:'cho',piece:'ma'},
-      '0,7':{team:'cho',piece:'sang'},'0,8':{team:'cho',piece:'cha'},
-      '1,4':{team:'cho',piece:'jang'},
-      '2,1':{team:'cho',piece:'po'},  '2,7':{team:'cho',piece:'po'},
-      '3,0':{team:'cho',piece:'jol'}, '3,2':{team:'cho',piece:'jol'},
-      '3,4':{team:'cho',piece:'jol'}, '3,6':{team:'cho',piece:'jol'},
-      '3,8':{team:'cho',piece:'jol'},
-      // 한
-      '9,0':{team:'han',piece:'cha'}, '9,1':{team:'han',piece:'sang'},
-      '9,2':{team:'han',piece:'ma'},  '9,3':{team:'han',piece:'sa'},
-      '9,5':{team:'han',piece:'sa'},  '9,6':{team:'han',piece:'ma'},
-      '9,7':{team:'han',piece:'sang'},'9,8':{team:'han',piece:'cha'},
-      '8,4':{team:'han',piece:'jang'},
-      '7,1':{team:'han',piece:'po'},  '7,7':{team:'han',piece:'po'},
-      '6,0':{team:'han',piece:'byung'},'6,2':{team:'han',piece:'byung'},
-      '6,4':{team:'han',piece:'byung'},'6,6':{team:'han',piece:'byung'},
-      '6,8':{team:'han',piece:'byung'}
+    // 궁 좌표
+    const palaceTop    = new Set(['0,3','0,4','0,5','1,3','1,4','1,5','2,3','2,4','2,5']);
+    const palaceBottom = new Set(['7,3','7,4','7,5','8,3','8,4','8,5','9,3','9,4','9,5']);
+    const inPalace = (r,c)=> palaceTop.has(key(r,c)) || palaceBottom.has(key(r,c));
+    const palaceKind = (r,c)=> palaceTop.has(key(r,c)) ? 'top' : (palaceBottom.has(key(r,c))?'bottom':null);
+
+    // 궁 대각 이웃(센터 <-> 4코너)
+    const palaceDiagNeighbors = {
+      // top
+      '1,4': [['0,3'],['0,5'],['2,3'],['2,5']],
+      '0,3': [['1,4']], '0,5': [['1,4']], '2,3': [['1,4']], '2,5': [['1,4']],
+      // bottom
+      '8,4': [['7,3'],['7,5'],['9,3'],['9,5']],
+      '7,3': [['8,4']], '7,5': [['8,4']], '9,3': [['8,4']], '9,5': [['8,4']]
+    };
+    const diagNeighbors = (r,c)=> (palaceDiagNeighbors[key(r,c)]||[]).map(([s])=>s.split(',').map(Number));
+
+    // 궁 코너/센터 (포 대각)
+    const topCorners = ['0,3','0,5','2,3','2,5'];      const topCenter = '1,4';
+    const botCorners = ['7,3','7,5','9,3','9,5'];      const botCenter = '8,4';
+    const oppositeCorner = (r,c)=>{
+      const s = key(r,c);
+      if (topCorners.includes(s)){
+        if (s==='0,3') return [2,5];
+        if (s==='2,5') return [0,3];
+        if (s==='0,5') return [2,3];
+        if (s==='2,3') return [0,5];
+      }
+      if (botCorners.includes(s)){
+        if (s==='7,3') return [9,5];
+        if (s==='9,5') return [7,3];
+        if (s==='7,5') return [9,3];
+        if (s==='9,3') return [7,5];
+      }
+      return null;
     };
 
+    // 반응형 셀
     function updateCellSize(){
       const titleH = (document.querySelector('h1')?.offsetHeight || 0);
-      const pad = 16*2, extraH = titleH + 24;
+      const barH   = (document.querySelector('.bar')?.offsetHeight || 0);
+      const rowH   = (document.querySelector('.row')?.offsetHeight || 0);
+      const pad = 16*2, extraH = titleH + barH + rowH + 24;
       const maxCellByW = (window.innerWidth - pad) / 9;
       const maxCellByH = (window.innerHeight - pad - extraH) / 10;
       const cell = Math.floor(Math.max(32, Math.min(maxCellByW, maxCellByH)));
       document.documentElement.style.setProperty('--cell-size', cell + 'px');
     }
 
+    // 궁 X
     function drawPalaceLines(){
-      const CELL_SIZE = getCellSize();
-      const W = 8 * CELL_SIZE, H = 9 * CELL_SIZE;
+      const CELL = getCellSize();
+      const W = 8 * CELL, H = 9 * CELL;
       overlay.setAttribute('viewBox', `0 0 ${W} ${H}`);
       while(overlay.firstChild) overlay.removeChild(overlay.firstChild);
 
       const strokeColor = getComputedStyle(document.documentElement)
-                            .getPropertyValue('--border-color').trim() || '#3a2a1a';
+        .getPropertyValue('--border-color').trim() || '#3a2a1a';
       const mk = (x1,y1,x2,y2)=>{
         const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
         ln.setAttribute('x1',x1); ln.setAttribute('y1',y1);
@@ -133,18 +225,437 @@
         ln.setAttribute('shape-rendering','crispEdges');
         return ln;
       };
-      overlay.appendChild(mk(3*CELL_SIZE,0*CELL_SIZE,5*CELL_SIZE,2*CELL_SIZE));
-      overlay.appendChild(mk(5*CELL_SIZE,0*CELL_SIZE,3*CELL_SIZE,2*CELL_SIZE));
-      overlay.appendChild(mk(3*CELL_SIZE,7*CELL_SIZE,5*CELL_SIZE,9*CELL_SIZE));
-      overlay.appendChild(mk(5*CELL_SIZE,7*CELL_SIZE,3*CELL_SIZE,9*CELL_SIZE));
+      // 위 궁
+      overlay.appendChild(mk(3*CELL,0*CELL,5*CELL,2*CELL));
+      overlay.appendChild(mk(5*CELL,0*CELL,3*CELL,2*CELL));
+      // 아래 궁
+      overlay.appendChild(mk(3*CELL,7*CELL,5*CELL,9*CELL));
+      overlay.appendChild(mk(5*CELL,7*CELL,3*CELL,9*CELL));
     }
 
+    // 초기 배치 (마/상 패턴)
+    function makeInitialSetup(pCho='마상마상', pHan='마상마상'){
+      const map = {
+        '마상마상': ['ma','sang','ma','sang'],
+        '상마상마': ['sang','ma','sang','ma'],
+        '마상상마': ['ma','sang','sang','ma'],
+        '상마마상': ['sang','ma','ma','sang']
+      };
+      const aCho = map[pCho], aHan = map[pHan];
+
+      const S = {};
+      // 초
+      S['0,0']={team:'cho',piece:'cha'};
+      S['0,1']={team:'cho',piece:aCho[0]};
+      S['0,2']={team:'cho',piece:aCho[1]};
+      S['0,3']={team:'cho',piece:'sa'};
+      S['0,5']={team:'cho',piece:'sa'};
+      S['0,6']={team:'cho',piece:aCho[2]};
+      S['0,7']={team:'cho',piece:aCho[3]};
+      S['0,8']={team:'cho',piece:'cha'};
+      S['1,4']={team:'cho',piece:'jang'};
+      S['2,1']={team:'cho',piece:'po'};
+      S['2,7']={team:'cho',piece:'po'};
+      for (const c of [0,2,4,6,8]) S[`3,${c}`]={team:'cho',piece:'jol'};
+
+      // 한
+      S['9,0']={team:'han',piece:'cha'};
+      S['9,1']={team:'han',piece:aHan[0]};
+      S['9,2']={team:'han',piece:aHan[1]};
+      S['9,3']={team:'han',piece:'sa'};
+      S['9,5']={team:'han',piece:'sa'};
+      S['9,6']={team:'han',piece:aHan[2]};
+      S['9,7']={team:'han',piece:aHan[3]};
+      S['9,8']={team:'han',piece:'cha'};
+      S['8,4']={team:'han',piece:'jang'};
+      S['7,1']={team:'han',piece:'po'};
+      S['7,7']={team:'han',piece:'po'};
+      for (const c of [0,2,4,6,8]) S[`6,${c}`]={team:'han',piece:'byung'};
+
+      return S;
+    }
+
+    let currentSetup = makeInitialSetup();
+    let turn = 'cho';
+    let plyCount = 0; // 전체 수 카운트(0=초의 첫 수)
+    function updateTurnText(){ turnText.textContent = (turn==='cho'?'초':'한'); }
+    function setMsg(t){ statusMsg.textContent = t || ''; }
+
+    // ========== 보드 스냅샷(시뮬레이션용) ==========
+    function snapshotBoard(){
+      const M = new Map();
+      const nodes = piecesLay.querySelectorAll('.piece');
+      nodes.forEach(el=>{
+        const r = +el.dataset.row, c = +el.dataset.col;
+        M.set(key(r,c), {team: el.dataset.team, piece: el.dataset.piece});
+      });
+      return M;
+    }
+    const bGet = (B,r,c)=> B.get(key(r,c)) || null;
+    function bMove(B, fr,fc, tr,tc){
+      const NB = new Map(B);
+      const fromK = key(fr,fc), toK = key(tr,tc);
+      const P = NB.get(fromK);
+      if (!P) return NB;
+      NB.delete(fromK);
+      NB.set(toK, {team:P.team, piece:P.piece});
+      return NB;
+    }
+    function findKing(B, team){
+      for (const [k,v] of B.entries()){
+        if (v.piece==='jang' && v.team===team){
+          const [r,c] = k.split(',').map(Number);
+          return [r,c];
+        }
+      }
+      return null;
+    }
+
+    // 빅장(왕 대면) 판정: 같은 파일에 두 장이 있고 그 사이가 비면 true
+    function kingsFacing(B){
+      let choK=null, hanK=null;
+      for (const [k,v] of B.entries()){
+        if (v.piece!=='jang') continue;
+        const rc = k.split(',').map(Number);
+        if (v.team==='cho') choK=rc; else hanK=rc;
+      }
+      if (!choK || !hanK) return false;
+      const [r1,c1]=choK, [r2,c2]=hanK;
+      if (c1!==c2) return false;
+      const c=c1;
+      const [s,e] = r1<r2 ? [r1+1, r2-1] : [r2+1, r1-1];
+      for (let r=s;r<=e;r++){
+        if (bGet(B,r,c)) return false; // 사이에 뭔가 있으면 마주봄 아님
+      }
+      return true;
+    }
+
+    // ====== 공격 집합 생성(체크 판정용) ======
+    function addLineAttacks(B, team, r,c, dr,dc, out){
+      let rr=r+dr, cc=c+dc;
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (!occ){ out.add(key(rr,cc)); rr+=dr; cc+=dc; continue; }
+        if (occ.team!==team) out.add(key(rr,cc)); // 첫 적 말까지 공격
+        return;
+      }
+    }
+    function addPoLineAttacks(B, team, r,c, dr,dc, out){ // 포: 정확히 스크린 1개 뒤의 첫 적만 공격
+      let rr=r+dr, cc=c+dc;
+      // 스크린 탐색(포 제외)
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (!occ){ rr+=dr; cc+=dc; continue; }
+        if (occ.piece==='po') return; // 포는 스크린 불가
+        // 스크린 하나 찾았으니, 그 뒤 첫 말이 적이면 공격
+        rr+=dr; cc+=dc;
+        break;
+      }
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (!occ){ rr+=dr; cc+=dc; continue; }
+        if (occ.team!==team && occ.piece!=='po') out.add(key(rr,cc));
+        return;
+      }
+    }
+    function addPoPalaceDiagAttack(B, team, r,c, out){ // 코너↔코너: 중앙에 스크린(포 제외) 필요
+      const kind = palaceKind(r,c);
+      if (!kind) return;
+      const s = key(r,c);
+      const center = (kind==='top') ? topCenter : botCenter;
+      const [cr,cc] = center.split(',').map(Number);
+      const oppC = oppositeCorner(r,c);
+      if (!oppC) return;
+      const isCorner = (kind==='top' ? topCorners.includes(s) : botCorners.includes(s));
+      if (!isCorner) return;
+      const mid = bGet(B,cr,cc);
+      if (!mid || mid.piece==='po') return;
+      const [or,oc] = oppC;
+      const occ = bGet(B,or,oc);
+      if (occ && occ.team!==team && occ.piece!=='po') out.add(key(or,oc));
+    }
+
+    function genAttacksForPiece(B, r,c, info){
+      const out = new Set();
+      const team = info.team, pc = info.piece;
+      const forwardDir = (team==='cho') ? +1 : -1;
+
+      if (pc==='cha'){
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addLineAttacks(B, team, r,c, dr,dc, out);
+        if (inPalace(r,c)){
+          for (const [nr,nc] of diagNeighbors(r,c)){
+            // 궁 대각은 1스텝만
+            const occ = bGet(B,nr,nc);
+            if (!occ || occ.team!==team) out.add(key(nr,nc));
+          }
+        }
+      }
+      else if (pc==='po'){
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addPoLineAttacks(B, team, r,c, dr,dc, out);
+        addPoPalaceDiagAttack(B, team, r,c, out);
+      }
+      else if (pc==='ma'){
+        const legs = [
+          {b:[-1,0], dst:[[-2,-1],[-2,1]]},
+          {b:[ 1,0], dst:[[ 2,-1],[ 2,1]]},
+          {b:[ 0,-1], dst:[[-1,-2],[ 1,-2]]},
+          {b:[ 0, 1], dst:[[-1, 2],[ 1, 2]]},
+        ];
+        for (const {b:[br,bc], dst} of legs){
+          const lr=r+br, lc=c+bc;
+          if (!inside(lr,lc) || bGet(B,lr,lc)) continue; // 다리 막힘
+          for (const [dr,dc] of dst){
+            const rr=r+dr, cc=c+dc;
+            if (!inside(rr,cc)) continue;
+            const occ = bGet(B,rr,cc);
+            if (!occ || occ.team!==team) out.add(key(rr,cc));
+          }
+        }
+      }
+      else if (pc==='sang'){
+        const paths = [
+          {step1:[-1,0], step2:[-2,-1], dst:[-3,-2]},
+          {step1:[-1,0], step2:[-2, 1], dst:[-3, 2]},
+          {step1:[ 1,0], step2:[ 2,-1], dst:[ 3,-2]},
+          {step1:[ 1,0], step2:[ 2, 1], dst:[ 3, 2]},
+          {step1:[0,-1], step2:[-1,-2], dst:[-2,-3]},
+          {step1:[0,-1], step2:[ 1,-2], dst:[ 2,-3]},
+          {step1:[0, 1], step2:[-1, 2], dst:[-2, 3]},
+          {step1:[0, 1], step2:[ 1, 2], dst:[ 2, 3]},
+        ];
+        for (const {step1:[a,b], step2:[c1,d1], dst:[e,f]} of paths){
+          const s1r=r+a, s1c=c+b;
+          const s2r=r+c1, s2c=c+d1;
+          const tr = r+e, tc = c+f;
+          if (!inside(s1r,s1c) || bGet(B,s1r,s1c)) continue;
+          if (!inside(s2r,s2c) || bGet(B,s2r,s2c)) continue;
+          if (!inside(tr,tc)) continue;
+          const occ = bGet(B,tr,tc);
+          if (!occ || occ.team!==team) out.add(key(tr,tc));
+        }
+      }
+      else if (pc==='jol' || pc==='byung'){
+        // 전진
+        const fr = r + forwardDir;
+        if (inside(fr,c)){
+          const occ = bGet(B,fr,c);
+          if (!occ || occ.team!==team) out.add(key(fr,c));
+        }
+        // 좌우
+        for (const dc of [-1,1]){
+          const cc = c+dc;
+          if (!inside(r,cc)) continue;
+          const occ = bGet(B,r,cc);
+          if (!occ || occ.team!==team) out.add(key(r,cc));
+        }
+        // 궁 안 전진 대각
+        if (inPalace(r,c)){
+          for (const [nr,nc] of diagNeighbors(r,c)){
+            if ((team==='cho' && nr>r) || (team==='han' && nr<r)){
+              const occ = bGet(B,nr,nc);
+              if (!occ || occ.team!==team) out.add(key(nr,nc));
+            }
+          }
+        }
+      }
+      else if (pc==='jang' || pc==='sa'){
+        if (!inPalace(r,c)) return out;
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const rr=r+dr, cc=c+dc;
+          if (!inPalace(rr,cc)) continue;
+          const occ = bGet(B,rr,cc);
+          if (!occ || occ.team!==team) out.add(key(rr,cc));
+        }
+        for (const [rr,cc] of diagNeighbors(r,c)){
+          const occ = bGet(B,rr,cc);
+          if (!occ || occ.team!==team) out.add(key(rr,cc));
+        }
+      }
+      return out;
+    }
+
+    function isInCheck(B, team){
+      // 빅장 자체도 불법 상태이지만, 체크 판정은 통상 '상대의 공격에 노출'로 판단
+      const K = findKing(B, team);
+      if (!K) return false;
+      const target = key(...K);
+      // 상대 모든 말의 공격 집합
+      for (const [pos,info] of B.entries()){
+        if (info.team===team) continue;
+        const [r,c] = pos.split(',').map(Number);
+        const atk = genAttacksForPiece(B, r,c, info);
+        if (atk.has(target)) return true;
+      }
+      return false;
+    }
+
+    // ====== 수 생성(의사수 → 필터로 합법수) ======
+    function addPush(B, team, rr,cc, out){ // 빈칸이면 추가, 적이면 추가하고 중단(호출부에서 사용)
+      if (!inside(rr,cc)) return 'stop';
+      const occ = bGet(B,rr,cc);
+      if (!occ){ out.push([rr,cc]); return 'cont'; }
+      if (occ.team!==team){ out.push([rr,cc]); return 'stop'; }
+      return 'stop';
+    }
+    function addPoLineMoves(B, team, r,c, dr,dc, out){
+      let rr=r+dr, cc=c+dc;
+      // 스크린 탐색(포 제외)
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (!occ){ rr+=dr; cc+=dc; continue; }
+        if (occ.piece==='po') return;
+        // 스크린 뒤
+        rr+=dr; cc+=dc; break;
+      }
+      while (inside(rr,cc)){
+        const occ = bGet(B,rr,cc);
+        if (!occ){ out.push([rr,cc]); rr+=dr; cc+=dc; continue; }
+        if (occ.team!==team && occ.piece!=='po') out.push([rr,cc]);
+        return;
+      }
+    }
+    function addPoPalaceDiagonal(B, team, r,c, out){
+      const kind = palaceKind(r,c);
+      if (!kind) return;
+      const s = key(r,c);
+      const center = (kind==='top') ? topCenter : botCenter;
+      const [cr,cc] = center.split(',').map(Number);
+      const oppC = oppositeCorner(r,c);
+      if (!oppC) return;
+      const isCorner = (kind==='top' ? topCorners.includes(s) : botCorners.includes(s));
+      if (!isCorner) return;
+      const mid = bGet(B,cr,cc);
+      if (!mid || mid.piece==='po') return;
+      const [or,oc] = oppC;
+      const occ = bGet(B,or,oc);
+      if (!occ) out.push([or,oc]); // 이동
+      else if (occ.team!==team && occ.piece!=='po') out.push([or,oc]); // 포획
+    }
+
+    function genPseudoMoves(B, r,c, info){
+      const team = info.team, pc = info.piece;
+      const out = [];
+      const forwardDir = (team==='cho') ? +1 : -1;
+
+      if (pc==='cha'){
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          let rr=r+dr, cc=c+dc;
+          while (inside(rr,cc)){
+            const res = addPush(B, team, rr,cc, out);
+            if (res==='stop') break;
+            rr+=dr; cc+=dc;
+          }
+        }
+        if (inPalace(r,c)){
+          for (const [nr,nc] of diagNeighbors(r,c)){
+            const occ = bGet(B,nr,nc);
+            if (!occ || occ.team!==team) out.push([nr,nc]);
+          }
+        }
+      }
+      else if (pc==='po'){
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addPoLineMoves(B, team, r,c, dr,dc, out);
+        addPoPalaceDiagonal(B, team, r,c, out);
+      }
+      else if (pc==='ma'){
+        const legs = [
+          {b:[-1,0], dst:[[-2,-1],[-2,1]]},
+          {b:[ 1,0], dst:[[ 2,-1],[ 2,1]]},
+          {b:[ 0,-1], dst:[[-1,-2],[ 1,-2]]},
+          {b:[ 0, 1], dst:[[-1, 2],[ 1, 2]]},
+        ];
+        for (const {b:[br,bc], dst} of legs){
+          const lr=r+br, lc=c+bc;
+          if (!inside(lr,lc) || bGet(B,lr,lc)) continue;
+          for (const [dr,dc] of dst){
+            const rr=r+dr, cc=c+dc;
+            if (!inside(rr,cc)) continue;
+            const occ = bGet(B,rr,cc);
+            if (!occ || occ.team!==team) out.push([rr,cc]);
+          }
+        }
+      }
+      else if (pc==='sang'){
+        const paths = [
+          {step1:[-1,0], step2:[-2,-1], dst:[-3,-2]},
+          {step1:[-1,0], step2:[-2, 1], dst:[-3, 2]},
+          {step1:[ 1,0], step2:[ 2,-1], dst:[ 3,-2]},
+          {step1:[ 1,0], step2:[ 2, 1], dst:[ 3, 2]},
+          {step1:[0,-1], step2:[-1,-2], dst:[-2,-3]},
+          {step1:[0,-1], step2:[ 1,-2], dst:[ 2,-3]},
+          {step1:[0, 1], step2:[-1, 2], dst:[-2, 3]},
+          {step1:[0, 1], step2:[ 1, 2], dst:[ 2, 3]},
+        ];
+        for (const {step1:[a,b], step2:[c1,d1], dst:[e,f]} of paths){
+          const s1r=r+a, s1c=c+b;
+          const s2r=r+c1, s2c=c+d1;
+          const tr = r+e, tc = c+f;
+          if (!inside(s1r,s1c) || bGet(B,s1r,s1c)) continue;
+          if (!inside(s2r,s2c) || bGet(B,s2r,s2c)) continue;
+          if (!inside(tr,tc)) continue;
+          const occ = bGet(B,tr,tc);
+          if (!occ || occ.team!==team) out.push([tr,tc]);
+        }
+      }
+      else if (pc==='jol' || pc==='byung'){
+        const fr = r + forwardDir;
+        if (inside(fr,c)){
+          const occ = bGet(B,fr,c);
+          if (!occ || occ.team!==team) out.push([fr,c]);
+        }
+        for (const dc of [-1,1]){
+          const cc = c+dc;
+          if (!inside(r,cc)) continue;
+          const occ = bGet(B,r,cc);
+          if (!occ || occ.team!==team) out.push([r,cc]);
+        }
+        if (inPalace(r,c)){
+          for (const [nr,nc] of diagNeighbors(r,c)){
+            if ((team==='cho' && nr>r) || (team==='han' && nr<r)){
+              const occ = bGet(B,nr,nc);
+              if (!occ || occ.team!==team) out.push([nr,nc]);
+            }
+          }
+        }
+      }
+      else if (pc==='jang' || pc==='sa'){
+        if (!inPalace(r,c)) return out;
+        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const rr=r+dr, cc=c+dc;
+          if (!inPalace(rr,cc)) continue;
+          const occ = bGet(B,rr,cc);
+          if (!occ || occ.team!==team) out.push([rr,cc]);
+        }
+        for (const [rr,cc] of diagNeighbors(r,c)){
+          const occ = bGet(B,rr,cc);
+          if (!occ || occ.team!==team) out.push([rr,cc]);
+        }
+      }
+      return out;
+    }
+
+    function filterLegal(B, fromR,fromC, info, pseudoMoves){
+      const team = info.team;
+      const legal = [];
+      for (const [tr,tc] of pseudoMoves){
+        const NB = bMove(B, fromR,fromC, tr,tc);
+        // 캡처 처리 반영(덮어쓰기 형태라 이미 반영됨)
+        // 1) 빅장 금지
+        if (kingsFacing(NB)) continue;
+        // 2) 자기 장 체크 금지
+        if (isInCheck(NB, team)) continue;
+        legal.push([tr,tc]);
+      }
+      return legal;
+    }
+
+    // ===== DOM 조작 =====
     function placePieces(){
-      piecesLayer.innerHTML='';
-      for (const [pos,info] of Object.entries(initialSetup)){
+      piecesLay.innerHTML='';
+      for (const [pos,info] of Object.entries(currentSetup)){
         const [row,col] = pos.split(',').map(Number);
         const el = document.createElement('div');
-        el.className='piece';
+        el.className = 'piece';
 
         const name = (info.team==='han' && info.piece==='byung') ? 'byung'
                    : (info.team==='cho' && info.piece==='jol')   ? 'jol'
@@ -156,57 +667,118 @@
         el.dataset.row = row;
         el.dataset.col = col;
 
-        /* ✅ 위치를 CSS 커스텀 변수로 저장 → % 비율로 반영됨 */
         el.style.setProperty('--row', row);
         el.style.setProperty('--col', col);
 
-        piecesLayer.appendChild(el);
+        piecesLay.appendChild(el);
       }
     }
+    const pieceAtDOM = (r,c)=> piecesLay.querySelector(`.piece[data-row='${r}'][data-col='${c}']`);
 
-    // === 선택 & 이동 (룰 체크 없이 데모 이동) ===
+    // 이동 후보 점
+    function clearDots(){ movesLay.innerHTML=''; }
+    function addDot(r,c, onClick){
+      const dot = document.createElement('div');
+      dot.className='move-dot';
+      dot.style.setProperty('--row', r);
+      dot.style.setProperty('--col', c);
+      dot.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        onClick();
+      });
+      movesLay.appendChild(dot);
+    }
+
+    // 합법수 표시에 쓰는 래퍼
+    function showLegalMoves(el){
+      clearDots();
+      const B = snapshotBoard();
+      const r = +el.dataset.row, c = +el.dataset.col;
+      const info = {team:el.dataset.team, piece:el.dataset.piece};
+      const pseudo = genPseudoMoves(B, r,c, info);
+      const legal = filterLegal(B, r,c, info, pseudo);
+      legal.forEach(([rr,cc])=> addDot(rr,cc, ()=> doMove(el, rr, cc)));
+    }
+
+    // 체크/외통 메시지
+    function afterMoveChecks(){
+      const B = snapshotBoard();
+      const toMove = turn;          // 현재 차례(상대)
+      const inChk = isInCheck(B, toMove);
+      if (!inChk){ setMsg(''); return; }
+
+      // 외통 여부: 현재 차례 쪽이 합법수가 1개라도 있는지 검사
+      for (const [pos,info] of B.entries()){
+        if (info.team!==toMove) continue;
+        const [r,c] = pos.split(',').map(Number);
+        const pseudo = genPseudoMoves(B, r,c, info);
+        const legal = filterLegal(B, r,c, info, pseudo);
+        if (legal.length>0){ setMsg('장군!'); return; }
+      }
+      setMsg('장군 · 외통수!');
+    }
+
+    // === 입력/이동 ===
     let selected = null;
-    boardElement.addEventListener('click', (e)=>{
+    function doMove(el, rr, cc){
+      // 캡처
+      const tgt = pieceAtDOM(rr,cc);
+      if (tgt && tgt.dataset.team === el.dataset.team) return;
+      if (tgt) tgt.remove();
+
+      // 이동
+      el.dataset.row = rr; el.dataset.col = cc;
+      el.style.setProperty('--row', rr);
+      el.style.setProperty('--col', cc);
+
+      clearDots();
+      el.classList.remove('selected');
+      selected = null;
+
+      // 턴 전환
+      plyCount++;
+      turn = opp(turn);
+      updateTurnText();
+
+      // 장군/외통 판정
+      afterMoveChecks();
+    }
+
+    boardEl.addEventListener('click', (e)=>{
       const t = e.target.closest('.piece');
       if (t){
-        if (selected) selected.classList.remove('selected');
-        if (selected === t){ selected = null; return; }
-        selected = t; selected.classList.add('selected'); return;
+        // 선수 포 금지
+        if (plyCount===0 && turn==='cho' && t.dataset.piece==='po' && noFirstPoEl.checked){
+          setMsg('선수 포 금지: 초의 첫 수에는 포를 움직일 수 없습니다.');
+          return;
+        }
+        setMsg('');
+
+        if (t.dataset.team !== turn) return;
+        if (selected === t){
+          selected.classList.remove('selected'); selected=null; clearDots(); return;
+        }
+        if (selected) { selected.classList.remove('selected'); }
+        selected = t; selected.classList.add('selected');
+        showLegalMoves(selected); // ✅ 불법 수 제외 후 하이라이트
+        return;
       }
-      if (!selected) return;
-
-      const CELL_SIZE = getCellSize();
-      const rect = boardElement.getBoundingClientRect();
-      const x = e.clientX - rect.left, y = e.clientY - rect.top;
-
-      const col = Math.round(x / CELL_SIZE);
-      const row = Math.round(y / CELL_SIZE);
-      if (col<0||col>8||row<0||row>9){ selected.classList.remove('selected'); selected=null; return; }
-
-      // 충돌(상대만 제거)
-      const target = piecesLayer.querySelector(`.piece[data-row='${row}'][data-col='${col}']`);
-      if (target){
-        if (target.dataset.team !== selected.dataset.team) target.remove();
-        else { selected.classList.remove('selected'); selected=null; return; }
-      }
-
-      selected.dataset.row = row;
-      selected.dataset.col = col;
-      /* ✅ 위치 변수만 갱신하면 크기/위치는 자동 비율 반영 */
-      selected.style.setProperty('--row', row);
-      selected.style.setProperty('--col', col);
-
-      selected.classList.remove('selected'); selected=null;
+      // 빈칸 클릭 → 무시 (이동은 점을 눌러야)
     });
 
-    function renderAll(){ updateCellSize(); drawPalaceLines(); }
+    // 배치 적용
+    btnApply.addEventListener('click', ()=>{
+      currentSetup = makeInitialSetup(selCho.value, selHan.value);
+      turn = 'cho'; plyCount=0; updateTurnText();
+      setMsg('');
+      placePieces();
+      clearDots();
+    });
 
     // 초기 렌더
-    updateCellSize();
-    drawPalaceLines();
-    placePieces();
-
-    // 화면 회전/리사이즈 대응
+    function renderAll(){ updateCellSize(); drawPalaceLines(); }
+    updateCellSize(); drawPalaceLines();
+    placePieces(); updateTurnText(); setMsg('');
     addEventListener('resize', renderAll);
     addEventListener('orientationchange', renderAll);
   </script>
