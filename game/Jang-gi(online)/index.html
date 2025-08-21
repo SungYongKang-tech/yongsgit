@@ -13,16 +13,18 @@
       font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
     }
     .panel{
-      width:min(520px,92vw);
+      width:min(560px,92vw);
       background:#fff; border:1px solid #e5e7eb; border-radius:16px;
       box-shadow:0 8px 30px rgba(0,0,0,.10); padding:18px 16px;
     }
     h1{margin:4px 0 14px; text-align:center; font-size:clamp(20px,5.5vw,28px); color:#222}
     .row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center}
-    #roomInput{
-      width:min(320px,80vw); padding:12px 14px; font-size:16px;
-      border:1px solid #cbd5e1; border-radius:12px;
+    .field{display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; margin:8px 0}
+    label{font-size:14px; color:#374151}
+    select, input[type="text"]{
+      padding:10px 12px; font-size:15px; border:1px solid #cbd5e1; border-radius:12px;
     }
+    #roomInput{ width:min(320px,80vw); }
     button{
       padding:12px 16px; font-size:15px; border-radius:12px; cursor:pointer;
       border:1px solid #94a3b8; background:#fff; transition:transform .12s ease, box-shadow .12s ease;
@@ -35,12 +37,45 @@
 <body>
   <div class="panel">
     <h1>장기 온라인 (2인)</h1>
+
     <div class="row" style="margin-bottom:10px">
-      <input id="roomInput" type="text" placeholder="방 이름을 적어주세요 (예: 부엉이1929)" />
+      <input id="roomInput" type="text" placeholder="방 이름 (예: 부엉이1929)" />
+    </div>
+
+    <!-- 내 진영/배치 선택 (생성 시에만 사용) -->
+    <div class="field">
+      <label for="mySide">내 진영:</label>
+      <select id="mySide">
+        <option value="cho">초 (파랑)</option>
+        <option value="han">한 (빨강)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="choPattern">초 배치:</label>
+      <select id="choPattern">
+        <option>마상마상</option>
+        <option>상마상마</option>
+        <option>마상상마</option>
+        <option>상마마상</option>
+      </select>
+      <label for="hanPattern">한 배치:</label>
+      <select id="hanPattern">
+        <option>마상마상</option>
+        <option>상마상마</option>
+        <option>마상상마</option>
+        <option>상마마상</option>
+      </select>
+    </div>
+
+    <div class="row" style="margin-top:8px">
       <button id="btnCreate">방 생성하기</button>
       <button id="btnJoin">방 참여하기</button>
     </div>
-    <div class="hint">생성자는 <b>초</b>, 참여자는 자동으로 <b>한</b>으로 배정됩니다.<br/>입장 시 자동으로 익명 로그인합니다.</div>
+
+    <div class="hint">
+      생성자는 선택한 <b>내 진영</b>으로 시작합니다. 참여자는 자동으로 반대 진영으로 배정됩니다.<br/>
+      배치는 여기서 정한 값이 게임에 바로 적용됩니다.
+    </div>
     <div class="me" id="meLine">로그인 대기중…</div>
   </div>
 
@@ -76,12 +111,17 @@
 
     const btnCreate = document.getElementById('btnCreate');
     const btnJoin   = document.getElementById('btnJoin');
-    const roomInput = document.getElementById('roomInput');
 
     btnCreate.onclick = async ()=>{
       await ensureAnon();
-      const room = sanitizeRoomName(roomInput.value);
+      const room = sanitizeRoomName(document.getElementById('roomInput').value);
       if(!room){ alert('방 이름을 적어주세요.'); return; }
+
+      const mySide = document.getElementById('mySide').value; // 'cho' | 'han'
+      const choPattern = document.getElementById('choPattern').value;
+      const hanPattern = document.getElementById('hanPattern').value;
+
+      const creatorRole = (mySide === 'cho') ? 0 : 1;
 
       const roomRef = ref(db, `janggi/rooms/${room}`);
       const snap = await get(roomRef);
@@ -94,7 +134,13 @@
         createdAt: now,
         status: 'waiting',
         playerCount: 1,
-        players: { [uid]: { role: 0, joinedAt: now } } // 0 = 초, 1 = 한
+        settings: {
+          creatorRole,
+          choPattern,
+          hanPattern,
+          firstTurn: 'cho'
+        },
+        players: { [uid]: { role: creatorRole, joinedAt: now } }
       });
       onDisconnect(ref(db, `janggi/rooms/${room}/players/${uid}`)).remove();
       location.href = `game.html?room=${encodeURIComponent(room)}`;
@@ -102,7 +148,7 @@
 
     btnJoin.onclick = async ()=>{
       await ensureAnon();
-      const room = sanitizeRoomName(roomInput.value);
+      const room = sanitizeRoomName(document.getElementById('roomInput').value);
       if(!room){ alert('방 이름을 적어주세요.'); return; }
 
       const playersRef = ref(db, `janggi/rooms/${room}/players`);
@@ -115,8 +161,8 @@
       const res = await runTransaction(playersRef, (players)=>{
         players = players || {};
         const ids = Object.keys(players);
-        if (!players[uid] && ids.length >= 2) return; // 꽉 찼음 → 취소
-        if (players[uid]) return players;             // 이미 존재
+        if (!players[uid] && ids.length >= 2) return; // 꽉 찼음
+        if (players[uid]) return players;
         const taken = Object.values(players).map(p=>p.role);
         myRole = taken.includes(0) ? 1 : 0;
         players[uid] = { role: myRole, joinedAt: Date.now() };

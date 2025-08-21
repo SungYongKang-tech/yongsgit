@@ -23,8 +23,11 @@
     h1{margin:8px 0 6px;font-size:clamp(18px,4.5vw,28px);color:#333}
     .topline{font-size:14px;margin:4px 0 10px;color:#444;text-align:center}
 
-    .bar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; margin:6px 0 8px;}
-    .bar select, .bar button { padding:6px 10px; font-size:14px; }
+    /* 배치 정보 표시(읽기전용) */
+    .bar{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; margin:6px 0 8px;
+      font-size:14px; color:#374151;
+    }
     .msg { min-height:22px; font-weight:700; color:#b00020; text-align:center; }
 
     #janggi-board-container{
@@ -32,7 +35,7 @@
       width:calc(var(--board-width)+var(--cell-size));
       height:calc(var(--board-height)+var(--cell-size));
       max-width:100vw;
-      max-height:calc(100dvh - 210px);
+      max-height:calc(100dvh - 190px);
       background:var(--board-bg);
       border:2px solid var(--border-color);
       padding:calc(var(--cell-size)/2);
@@ -107,24 +110,8 @@
   <h1>장기 게임 (온라인)</h1>
   <div class="topline" id="roomInfo">방 정보 불러오는 중…</div>
 
-  <!-- 컨트롤 -->
-  <div class="bar">
-    <span>초 배치:</span>
-    <select id="setupCho">
-      <option>마상마상</option>
-      <option>상마상마</option>
-      <option>마상상마</option>
-      <option>상마마상</option>
-    </select>
-    <span>한 배치:</span>
-    <select id="setupHan">
-      <option>마상마상</option>
-      <option>상마상마</option>
-      <option>마상상마</option>
-      <option>상마마상</option>
-    </select>
-    <button id="applyBtn" title="첫 수 전까지만 적용">배치 적용</button>
-  </div>
+  <!-- 배치 정보(읽기전용) -->
+  <div class="bar" id="setupInfo">초 배치 / 한 배치 불러오는 중…</div>
 
   <!-- 상태 메시지 -->
   <div class="row"><span class="msg" id="statusMsg"></span></div>
@@ -179,19 +166,21 @@
     const playersRef = ref(db, `janggi/rooms/${roomId}/players`);
     const stateRef   = ref(db, `janggi/rooms/${roomId}/state`);
 
-    const roomInfo = document.getElementById('roomInfo');
+    const roomInfo  = document.getElementById('roomInfo');
+    const setupInfo = document.getElementById('setupInfo');
 
-    let myRole = null; // 0=초, 1=한
-    let myTeam = null; // 'cho' | 'han'
+    let myRole = null;       // 0=초, 1=한
+    let myTeam = null;       // 'cho' | 'han'
     let gameOver = false;
     let lastPly = 0;
+    let roomSettings = { choPattern:'마상마상', hanPattern:'마상마상', firstTurn:'cho', creatorRole:0 };
 
     function roleToTeam(r){ return r===0 ? 'cho' : 'han'; }
 
     async function enterRoom(){
       const uid = auth.currentUser.uid;
 
-      // 플레이어 등록 (없으면 자동 배정)
+      // 플레이어 등록(없으면 자동 배정)
       let assigned = 0;
       const txn = await runTransaction(playersRef, (players)=>{
         players = players || {};
@@ -214,6 +203,11 @@
       myRole = cur[auth.currentUser.uid].role;
       myTeam = roleToTeam(myRole);
 
+      // 방 설정 읽기
+      const rs = await get(roomRef);
+      const rv = rs.val()||{};
+      roomSettings = rv.settings || roomSettings;
+
       // 상태 업데이트 (대기/플레이)
       const cnt = Math.min(2, Object.keys(cur).length);
       await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
@@ -221,18 +215,16 @@
       onDisconnect(ref(db, `janggi/rooms/${roomId}/players/${uid}`)).remove();
 
       roomInfo.innerHTML = `방: <b>${roomId}</b> — 나는 <b>${myTeam==='cho'?'초':'한'}</b>입니다.`;
+      setupInfo.textContent = `초 배치: ${roomSettings.choPattern} · 한 배치: ${roomSettings.hanPattern}`;
     }
 
     await enterRoom();
 
-    /* ================== 장기 로직 (원본 + 보완) ================== */
+    /* ================== 장기 로직 (시점 반전 적용) ================== */
     const boardEl   = document.getElementById('janggi-board');
     const overlay   = document.getElementById('palace-overlay');
     const piecesLay = document.getElementById('pieces-layer');
     const movesLay  = document.getElementById('moves-layer');
-    const selCho    = document.getElementById('setupCho');
-    const selHan    = document.getElementById('setupHan');
-    const btnApply  = document.getElementById('applyBtn');
     const statusMsg = document.getElementById('statusMsg');
 
     const moveSnd = document.getElementById('moveSnd');
@@ -260,13 +252,24 @@
       resultOv.style.display = 'flex';
     }
 
+    // === 좌표/보드 유틸 ===
     const getCellSize = () =>
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
     const inside = (r,c)=> r>=0 && r<=9 && c>=0 && c<=8;
     const key = (r,c)=> `${r},${c}`;
     const opp = (team)=> team==='cho' ? 'han' : 'cho';
 
-    // 궁 영역/대각
+    // 👇 시점(뷰) 변환: 내 진영이 아래로 오도록
+    function toViewRC(r,c){
+      // 캐논: 한이 아래(행 9), 초가 위(행 0).
+      // 내가 초면 화면을 180도 회전한 것처럼 표시한다.
+      return (myTeam === 'cho') ? [9 - r, 8 - c] : [r, c];
+    }
+    function fromViewRC(vr,vc){
+      return (myTeam === 'cho') ? [9 - vr, 8 - vc] : [vr, vc];
+    }
+
+    // 궁/대각
     const palaceTop    = new Set(['0,3','0,4','0,5','1,3','1,4','1,5','2,3','2,4','2,5']);
     const palaceBottom = new Set(['7,3','7,4','7,5','8,3','8,4','8,5','9,3','9,4','9,5']);
     const inPalace = (r,c)=> palaceTop.has(key(r,c)) || palaceBottom.has(key(r,c));
@@ -325,10 +328,9 @@
         ln.setAttribute('shape-rendering','crispEdges');
         return ln;
       };
-      // 위 궁
+      // 위/아래 궁 X (대칭이라 시점반전과 무관)
       overlay.appendChild(mk(3*CELL,0*CELL,5*CELL,2*CELL));
       overlay.appendChild(mk(5*CELL,0*CELL,3*CELL,2*CELL));
-      // 아래 궁
       overlay.appendChild(mk(3*CELL,7*CELL,5*CELL,9*CELL));
       overlay.appendChild(mk(5*CELL,7*CELL,3*CELL,9*CELL));
     }
@@ -342,6 +344,7 @@
       };
       const aCho = map[pCho], aHan = map[pHan];
       const S = {};
+      // 캐논 보드: 초가 위(행 0~3), 한이 아래(행 6~9)
       // 초
       S['0,0']={team:'cho',piece:'cha'};
       S['0,1']={team:'cho',piece:aCho[0]};
@@ -397,7 +400,6 @@
       }
       return null;
     }
-
     function kingsFacing(B){
       let choK=null, hanK=null;
       for (const [k,v] of B.entries()){
@@ -611,7 +613,7 @@
       return legal;
     }
 
-    // DOM helpers
+    // DOM helpers (시점반영)
     function placePieces(boardObj){
       piecesLay.innerHTML='';
       for (const [pos,info] of Object.entries(boardObj)){
@@ -622,20 +624,23 @@
                    : (info.team==='cho' && info.piece==='jol')   ? 'jol'
                    : info.piece;
         el.style.backgroundImage = `url('${info.team}_${name}.svg')`;
+        // 데이터는 캐논 좌표로 유지
         el.dataset.team = info.team; el.dataset.piece = info.piece;
         el.dataset.row = row; el.dataset.col = col;
-        el.style.setProperty('--row', row);
-        el.style.setProperty('--col', col);
+        // 화면 배치는 시점 변환
+        const [vr,vc] = toViewRC(row,col);
+        el.style.setProperty('--row', vr);
+        el.style.setProperty('--col', vc);
         piecesLay.appendChild(el);
       }
     }
-    function pieceAtDOM(r,c){ return piecesLay.querySelector(`.piece[data-row='${r}'][data-col='${c}']`); }
     function clearDots(){ movesLay.innerHTML=''; }
-    function addDot(r,c, onClick){
+    function addDotCanonical(r,c, onClickCanonical){
       const dot = document.createElement('div');
       dot.className='move-dot';
-      dot.style.setProperty('--row', r); dot.style.setProperty('--col', c);
-      dot.addEventListener('click', (e)=>{ e.stopPropagation(); onClick(); });
+      const [vr,vc] = toViewRC(r,c);
+      dot.style.setProperty('--row', vr); dot.style.setProperty('--col', vc);
+      dot.addEventListener('click', (e)=>{ e.stopPropagation(); onClickCanonical(); });
       movesLay.appendChild(dot);
     }
 
@@ -659,7 +664,7 @@
         resultOv.style.display = 'none';
       }
 
-      // 소리(간단): 수가 증가했으면 이동음
+      // 이동음(간단): 수가 증가했으면
       if (plyCount > lastPly) playMove();
       lastPly = plyCount;
     }
@@ -672,15 +677,14 @@
     addEventListener('orientationchange', renderAll);
 
     /* ================== DB 동기화 ================== */
-    // 상태 구독
+    // 상태 구독 (없으면 index에서 고른 배치로 초기화)
     onValue(stateRef, snap=>{
       if (!snap.exists()){
-        // 상태가 없으면 기본 세팅으로 초기화(첫 생성자/참여자 모두 가능)
         runTransaction(stateRef, (s)=>{
           if (s) return s;
           return {
-            board: makeInitialSetup(selCho.value, selHan.value),
-            turn: 'cho',
+            board: makeInitialSetup(roomSettings.choPattern, roomSettings.hanPattern),
+            turn: roomSettings.firstTurn || 'cho',
             plyCount: 0,
             ended: false,
             winner: null
@@ -708,11 +712,11 @@
     function showLegalMoves(el){
       clearDots();
       const B = new Map(Object.entries(currentSetup)); // "r,c" -> {team,piece}
-      const r = +el.dataset.row, c = +el.dataset.col;
+      const r = +el.dataset.row, c = +el.dataset.col; // 캐논 좌표
       const info = {team:el.dataset.team, piece:el.dataset.piece};
       const pseudo = genPseudoMoves(B, r,c, info);
       const legal = filterLegal(B, r,c, info, pseudo);
-      legal.forEach(([rr,cc])=> addDot(rr,cc, ()=> commitMove(r,c, rr,cc)));
+      legal.forEach(([rr,cc])=> addDotCanonical(rr,cc, ()=> commitMove(r,c, rr,cc)));
     }
 
     // 이동 커밋 (트랜잭션 검증)
@@ -723,31 +727,23 @@
       const ok = await runTransaction(stateRef, (s)=>{
         if (!s || s.ended) return s;
 
-        // 차례 확인
-        if (s.turn !== roleToTeam(myRole)) return s;
+        if (s.turn !== roleToTeam(myRole)) return s; // 차례 확인
 
-        // 합법성 검증
         const B = new Map(Object.entries(s.board||{}));
         const P = B.get(key(fr,fc));
         if (!P || P.team !== s.turn) return s;
 
-        // 합법수 생성
         const pseudo = genPseudoMoves(B, fr,fc, P);
-        const legal = filterLegal(B, fr,fc, P, pseudo);
+        const legal  = filterLegal(B, fr,fc, P, pseudo);
         const isLegal = legal.some(([rr,cc])=> rr===tr && cc===tc);
         if (!isLegal) return s;
 
-        // 캡처 여부 (UI용 힌트는 로컬에서 처리)
-        const captured = !!B.get(key(tr,tc));
-
-        // 이동 반영
+        const captured = !!B.get(key(tr,tc)); // UI 참고용
         const NB = bMove(B, fr,fc, tr,tc);
 
-        // 다음 차례 계산 및 체크/외통 판정
         const nextTurn = opp(s.turn);
         let ended=false, winner=null, message='';
 
-        // 외통 판정: 다음 차례가 체크 상태이며 어떤 말도 합법수가 없으면 종료
         const inChk = isInCheck(NB, nextTurn);
         if (inChk){
           let anyLegal = false;
@@ -765,8 +761,6 @@
           } else {
             message = '장군!';
           }
-        } else {
-          message = '';
         }
 
         return {
@@ -779,47 +773,26 @@
       }).then(res=>res.committed);
 
       if (ok){
-        // 사운드: 단순 처리 (캡처 감지는 원격에서 생략)
-        // 이동/캡처 음은 onValue에서 plyCount 증가로 이동음을 이미 재생합니다.
         selected = null; clearDots();
       } else {
         setMsg('이동 실패 또는 불가한 수입니다.');
       }
     }
 
-    // 말/보드 클릭
+    // 말 클릭
     boardEl.addEventListener('click', (e)=>{
       if (gameOver) return;
       const t = e.target.closest('.piece');
       if (t){
         setMsg('');
-        if (t.dataset.team !== roleToTeam(myRole)) return;     // 내 말만 선택
+        if (t.dataset.team !== roleToTeam(myRole)) return;     // 내 말만
         if (turn !== roleToTeam(myRole)) { setMsg('내 차례가 아닙니다.'); return; }
 
         if (selected === t){ selected.classList.remove('selected'); selected=null; clearDots(); return; }
         if (selected) selected.classList.remove('selected');
         selected = t; selected.classList.add('selected');
         showLegalMoves(selected);
-      } else {
-        // 빈 곳 클릭 → 무시 (점 눌러 이동)
       }
-    });
-
-    // 배치 적용 (첫 수 전)
-    btnApply.addEventListener('click', async ()=>{
-      const pCho = selCho.value; const pHan = selHan.value;
-      await runTransaction(stateRef, (s)=>{
-        s = s || {};
-        if ((s.plyCount|0) > 0 || s.ended) return s; // 첫 수 이후 금지
-        return {
-          board: makeInitialSetup(pCho, pHan),
-          turn: 'cho',
-          plyCount: 0,
-          ended: false,
-          winner: null,
-          message: ''
-        };
-      });
     });
 
     // 떠날 때 players에서 제거
