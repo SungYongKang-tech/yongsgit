@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HTML 장기 게임 (반응형 · 규칙 3단계: 체크/빅장/외통 + 선포 금지)</title>
+  <title>HTML 장기 게임 (반응형 · 규칙 3단계: 체크/빅장/외통)</title>
   <style>
     :root{
       --cell-size:56px;
@@ -124,8 +124,9 @@
     <button id="applyBtn">배치 적용</button>
     <span>| 현재 차례: <span id="turnText" class="turn">초</span></span>
   </div>
+
+  <!-- 상태 메시지만 유지 -->
   <div class="row">
-    <label><input type="checkbox" id="noFirstPo" checked> 선수 포 금지</label>
     <span class="msg" id="statusMsg"></span>
   </div>
 
@@ -148,7 +149,6 @@
     const btnApply = document.getElementById('applyBtn');
     const turnText = document.getElementById('turnText');
     const statusMsg = document.getElementById('statusMsg');
-    const noFirstPoEl = document.getElementById('noFirstPo');
 
     // === 보조 유틸 ===
     const getCellSize = () =>
@@ -311,7 +311,7 @@
       return null;
     }
 
-    // 빅장(왕 대면) 판정: 같은 파일에 두 장이 있고 그 사이가 비면 true
+    // 빅장(왕 대면) 판정
     function kingsFacing(B){
       let choK=null, hanK=null;
       for (const [k,v] of B.entries()){
@@ -325,7 +325,7 @@
       const c=c1;
       const [s,e] = r1<r2 ? [r1+1, r2-1] : [r2+1, r1-1];
       for (let r=s;r<=e;r++){
-        if (bGet(B,r,c)) return false; // 사이에 뭔가 있으면 마주봄 아님
+        if (bGet(B,r,c)) return false;
       }
       return true;
     }
@@ -336,20 +336,17 @@
       while (inside(rr,cc)){
         const occ = bGet(B,rr,cc);
         if (!occ){ out.add(key(rr,cc)); rr+=dr; cc+=dc; continue; }
-        if (occ.team!==team) out.add(key(rr,cc)); // 첫 적 말까지 공격
+        if (occ.team!==team) out.add(key(rr,cc));
         return;
       }
     }
-    function addPoLineAttacks(B, team, r,c, dr,dc, out){ // 포: 정확히 스크린 1개 뒤의 첫 적만 공격
+    function addPoLineAttacks(B, team, r,c, dr,dc, out){
       let rr=r+dr, cc=c+dc;
-      // 스크린 탐색(포 제외)
       while (inside(rr,cc)){
         const occ = bGet(B,rr,cc);
         if (!occ){ rr+=dr; cc+=dc; continue; }
-        if (occ.piece==='po') return; // 포는 스크린 불가
-        // 스크린 하나 찾았으니, 그 뒤 첫 말이 적이면 공격
-        rr+=dr; cc+=dc;
-        break;
+        if (occ.piece==='po') return;
+        rr+=dr; cc+=dc; break;
       }
       while (inside(rr,cc)){
         const occ = bGet(B,rr,cc);
@@ -358,7 +355,7 @@
         return;
       }
     }
-    function addPoPalaceDiagAttack(B, team, r,c, out){ // 코너↔코너: 중앙에 스크린(포 제외) 필요
+    function addPoPalaceDiagAttack(B, team, r,c, out){
       const kind = palaceKind(r,c);
       if (!kind) return;
       const s = key(r,c);
@@ -384,7 +381,6 @@
         for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addLineAttacks(B, team, r,c, dr,dc, out);
         if (inPalace(r,c)){
           for (const [nr,nc] of diagNeighbors(r,c)){
-            // 궁 대각은 1스텝만
             const occ = bGet(B,nr,nc);
             if (!occ || occ.team!==team) out.add(key(nr,nc));
           }
@@ -475,11 +471,9 @@
     }
 
     function isInCheck(B, team){
-      // 빅장 자체도 불법 상태이지만, 체크 판정은 통상 '상대의 공격에 노출'로 판단
       const K = findKing(B, team);
       if (!K) return false;
       const target = key(...K);
-      // 상대 모든 말의 공격 집합
       for (const [pos,info] of B.entries()){
         if (info.team===team) continue;
         const [r,c] = pos.split(',').map(Number);
@@ -490,7 +484,7 @@
     }
 
     // ====== 수 생성(의사수 → 필터로 합법수) ======
-    function addPush(B, team, rr,cc, out){ // 빈칸이면 추가, 적이면 추가하고 중단(호출부에서 사용)
+    function addPush(B, team, rr,cc, out){
       if (!inside(rr,cc)) return 'stop';
       const occ = bGet(B,rr,cc);
       if (!occ){ out.push([rr,cc]); return 'cont'; }
@@ -499,12 +493,10 @@
     }
     function addPoLineMoves(B, team, r,c, dr,dc, out){
       let rr=r+dr, cc=c+dc;
-      // 스크린 탐색(포 제외)
       while (inside(rr,cc)){
         const occ = bGet(B,rr,cc);
         if (!occ){ rr+=dr; cc+=dc; continue; }
         if (occ.piece==='po') return;
-        // 스크린 뒤
         rr+=dr; cc+=dc; break;
       }
       while (inside(rr,cc)){
@@ -528,8 +520,8 @@
       if (!mid || mid.piece==='po') return;
       const [or,oc] = oppC;
       const occ = bGet(B,or,oc);
-      if (!occ) out.push([or,oc]); // 이동
-      else if (occ.team!==team && occ.piece!=='po') out.push([or,oc]); // 포획
+      if (!occ) out.push([or,oc]);
+      else if (occ.team!==team && occ.piece!=='po') out.push([or,oc]);
     }
 
     function genPseudoMoves(B, r,c, info){
@@ -639,10 +631,7 @@
       const legal = [];
       for (const [tr,tc] of pseudoMoves){
         const NB = bMove(B, fromR,fromC, tr,tc);
-        // 캡처 처리 반영(덮어쓰기 형태라 이미 반영됨)
-        // 1) 빅장 금지
         if (kingsFacing(NB)) continue;
-        // 2) 자기 장 체크 금지
         if (isInCheck(NB, team)) continue;
         legal.push([tr,tc]);
       }
@@ -747,11 +736,6 @@
     boardEl.addEventListener('click', (e)=>{
       const t = e.target.closest('.piece');
       if (t){
-        // 선수 포 금지
-        if (plyCount===0 && turn==='cho' && t.dataset.piece==='po' && noFirstPoEl.checked){
-          setMsg('선수 포 금지: 초의 첫 수에는 포를 움직일 수 없습니다.');
-          return;
-        }
         setMsg('');
 
         if (t.dataset.team !== turn) return;
@@ -760,7 +744,7 @@
         }
         if (selected) { selected.classList.remove('selected'); }
         selected = t; selected.classList.add('selected');
-        showLegalMoves(selected); // ✅ 불법 수 제외 후 하이라이트
+        showLegalMoves(selected);
         return;
       }
       // 빈칸 클릭 → 무시 (이동은 점을 눌러야)
