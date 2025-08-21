@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>너야너 룰렛 (중앙 화살표 회전)</title>
+<title>너야너 룰렛 (방법 A: 보드 전용 래퍼)</title>
 <style>
   :root{
     --accent:#2563eb;
@@ -44,42 +44,40 @@
   .grid{ display:grid; grid-template-columns:1fr; gap:14px; margin-top:10px; }
   @media(min-width:880px){ .grid{ grid-template-columns:1.25fr .95fr; align-items:start; } }
 
-  /* 룰렛 영역 */
+  /* ===== 보드(캔버스+로터만) ===== */
   .canvas-wrap{
-    position:relative;
     background:conic-gradient(from 0deg, #fafafa, #ffffff);
     border-radius:18px; border:1px solid #e5e7eb; padding:14px;
   }
+  .board{ position:relative; display:inline-block; width:100%; }
   canvas{ display:block; width:100%; height:auto; border-radius:10px; background:#fff; }
 
-  /* === 중앙 화살표: 회전축을 '정확히' 원의 중심으로 고정 === */
-  /* 작은 원/링 제거 → 컨테이너 한 개만 사용 */
+  /* 중앙 회전 로터: 보드(=캔버스) 정중앙을 축으로 */
   .arrow-rotor{
     position:absolute;
     top:50%; left:50%;
-    transform:translate(-50%,-50%) rotate(0deg); /* 중심에 맞춘 뒤 회전 */
-    width:0; height:0;                             /* 회전 원점 = (0,0) */
+    transform:translate(-50%,-50%) rotate(0deg);
+    width:0; height:0;           /* 회전 원점이 이 한 점 */
     pointer-events:none;
   }
-  /* 화살표 몸통(중앙에서 위로 뻗음) */
+  /* 화살표(몸통+촉) — 작은 원/링 없음 */
   .arrow-body{
     position:absolute;
-    left:-5px;          /* 몸통 폭(10px)의 중앙 정렬 */
-    top:-70px;          /* 중심에서 위로 70px */
+    left:-5px;         /* 몸통 폭 10px 중앙정렬 */
+    top:-70px;         /* 중심에서 위로 70px */
     width:10px; height:70px;
     background:var(--accent);
     border-radius:6px;
     filter:drop-shadow(0 4px 6px rgba(0,0,0,.25));
   }
-  /* 화살표 촉(몸통 위에 결합) */
   .arrow-head{
     position:absolute;
-    left:-16px;         /* 밑변 32px 중앙 정렬 */
-    top:-98px;          /* 몸통(70) + 촉높이(28)와 맞춤 */
+    left:-16px;        /* 밑변 32px 중앙정렬 */
+    top:-98px;         /* 몸통(70) 위에 연결 (촉높이 28) */
     width:0; height:0;
     border-left:16px solid transparent;
     border-right:16px solid transparent;
-    border-bottom:28px solid var(--accent); /* 위쪽(12시)을 가리킴 */
+    border-bottom:28px solid var(--accent); /* ↑ 방향 */
     filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
   }
 
@@ -95,7 +93,7 @@
 </style>
 </head>
 <body>
-  <header><h1>너야너 룰렛 (가운데 화살표 회전)</h1></header>
+  <header><h1>너야너 룰렛 (보드 전용 래퍼)</h1></header>
 
   <main>
     <div class="panel">
@@ -108,16 +106,18 @@
       </div>
 
       <div class="grid">
-        <!-- 캔버스 / 룰렛 -->
+        <!-- 왼쪽: 룰렛 -->
         <div class="canvas-wrap">
-          <canvas id="wheel" aria-label="룰렛"></canvas>
-
-          <!-- 중앙 회전 화살표 (링 제거, 정확 중앙 앵커) -->
-          <div id="rotor" class="arrow-rotor">
-            <div class="arrow-body"></div>
-            <div class="arrow-head"></div>
+          <!-- 보드 안에는 '캔버스 + 로터'만 -->
+          <div id="board" class="board">
+            <canvas id="wheel" aria-label="룰렛"></canvas>
+            <div id="rotor" class="arrow-rotor">
+              <div class="arrow-body"></div>
+              <div class="arrow-head"></div>
+            </div>
           </div>
 
+          <!-- 버튼/결과는 보드 바깥 ⇒ 중심 불일치 없음 -->
           <div class="center-row">
             <button id="spin" title="누르고 있으면 빠르게 회전, 떼면 감속 후 5~6초 뒤 정지">시작(돌리기)</button>
             <button id="reset" class="ghost">초기화</button>
@@ -125,7 +125,7 @@
           <div id="result" class="result"></div>
         </div>
 
-        <!-- 참가자 이름 편집 -->
+        <!-- 오른쪽: 참가자 이름 편집 -->
         <div class="tools">
           <h3>참가자 이름</h3>
           <div class="row">
@@ -151,24 +151,23 @@
   let isHolding = false;      // 버튼 홀드 중(마우스/터치)
   let rafId = null;           // RAF id
   let currentDeg = 0;         // 현재 각도(↑=0°, 시계방향 +)
-  let targetDeg = 0;          // 목표 각도
 
   // ===== 엘리먼트 =====
+  const $board = document.getElementById('board');
+  const $wheel = document.getElementById('wheel');
+  const $rotor = document.getElementById('rotor');
   const $count = document.getElementById('count');
   const $build = document.getElementById('build');
   const $nameList = document.getElementById('nameList');
-  const $wheel = document.getElementById('wheel');
   const $spin = document.getElementById('spin');
   const $reset = document.getElementById('reset');
   const $autofill = document.getElementById('autofill');
   const $shuffle = document.getElementById('shuffle');
   const $result = document.getElementById('result');
-  const $rotor = document.getElementById('rotor');
 
-  // ===== 캔버스 크기/스케일(레티나 대응) =====
+  // ===== 캔버스 크기/스케일(보드 기준, 레티나 대응) =====
   function resizeCanvas() {
-    const maxW = Math.min(820, document.body.clientWidth - 60);
-    const cssSize = Math.max(320, Math.floor(maxW));
+    const cssSize = Math.max(320, Math.min(820, Math.floor($board.clientWidth)));
     const dpr = Math.min(devicePixelRatio || 1, 2);
     $wheel.width = cssSize * dpr;
     $wheel.height = cssSize * dpr;
@@ -288,7 +287,7 @@
     rebuildNameInputs(); drawWheel();
   }
 
-  // ===== 로터 회전 헬퍼 =====
+  // ===== 로터 회전 헬퍼 (보드 중심 기준) =====
   function setRotorDeg(deg){
     $rotor.style.transform = `translate(-50%,-50%) rotate(${deg%360}deg)`;
   }
@@ -321,7 +320,7 @@
     rafId = requestAnimationFrame(stepFrame);
   }
 
-  // ===== 당첨 계산(화살표 '촉' 기준, 12시가 0°) =====
+  // ===== 당첨 계산(촉 기준, 12시=0°) =====
   function showWinner(deg){
     const n = names.length;
     const stepDeg = 360 / n;
@@ -341,7 +340,7 @@
   $autofill.addEventListener('click', ()=>{ names = names.map((_,i)=>`${i+1}번`); rebuildNameInputs(); drawWheel(); });
   $shuffle.addEventListener('click', shuffleNames);
 
-  // 버튼 ‘홀드→초당 4바퀴 / 해제→감속’
+  // 버튼 ‘홀드→빠르게 회전 / 해제→감속’
   const startHoldSpin = () => {
     if (spinning) return;
     isHolding = true;
@@ -349,7 +348,7 @@
     $result.textContent = "버튼을 놓으면 멈춥니다";
 
     let last = performance.now();
-    const speed = 1440; // deg/s (초당 4바퀴) ← 더 빠르게
+    const speed = 1440; // deg/s (초당 4바퀴) — 필요시 숫자만 바꾸면 됨
     const loop = (now) => {
       if (!isHolding) { startStoppingAnimation(); return; }
       const dt = (now - last) / 1000;
