@@ -135,6 +135,9 @@
     import { getDatabase, ref, get, set, runTransaction, onValue, update, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
+    let endedFlag = false; // ← 종료 여부 캐싱
+
+
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -679,31 +682,49 @@
     /* ================== DB 동기화 ================== */
     // 상태 구독 (없으면 index에서 고른 배치로 초기화)
     onValue(stateRef, snap=>{
-      if (!snap.exists()){
-        runTransaction(stateRef, (s)=>{
-          if (s) return s;
-          return {
-            board: makeInitialSetup(roomSettings.choPattern, roomSettings.hanPattern),
-            turn: roomSettings.firstTurn || 'cho',
-            plyCount: 0,
-            ended: false,
-            winner: null
-          };
-        });
-        return;
-      }
-      applyRemoteState(snap.val());
+  if (!snap.exists()){
+    runTransaction(stateRef, (s)=>{
+      if (s) return s;
+      return {
+        board: makeInitialSetup(roomSettings.choPattern, roomSettings.hanPattern),
+        turn: roomSettings.firstTurn || 'cho',
+        plyCount: 0,
+        ended: false,
+        winner: null
+      };
     });
+    return;
+  }
+  const v = snap.val();
+  endedFlag = !!v.ended;            // ← ★ 추가: 종료 여부 캐싱
+  applyRemoteState(v);
+});
+
 
     // 플레이어 수 모니터링: 0명이면 방 삭제
-    onValue(playersRef, async snap=>{
-      const players = snap.val()||{};
-      const cnt = Object.keys(players).length;
-      await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
-      if (cnt===0){
+onValue(playersRef, async snap=>{
+  const players = snap.val()||{};
+  const cnt = Object.keys(players).length;
+
+  // 플레이어 수/상태 표시는 그대로
+  await update(roomRef, { playerCount: cnt, status: (cnt>=2 ? 'playing' : 'waiting') });
+
+  // ★ 종료된 방이고, 모두 나갔을 때만 방 삭제
+  if (cnt === 0 && endedFlag) {
+    try {
+      // 중복 삭제 방지용 간단 락
+      const lockRef = ref(db, `janggi/rooms/${roomId}/__cleanupLock`);
+      const uid = auth.currentUser?.uid || Math.random().toString(36).slice(2);
+      const res = await runTransaction(lockRef, v => v || uid);
+      if (res.committed && res.snapshot.val() === uid) {
         await remove(roomRef);
       }
-    });
+    } catch (e) {
+      console.error('room cleanup failed:', e);
+    }
+  }
+});
+
 
     /* ================== 입력 처리 ================== */
     let selected = null;
