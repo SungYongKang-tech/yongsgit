@@ -201,34 +201,36 @@
     }
 
     /* =========================
-       (온라인) 승리 판정
-       ========================= */
-    function checkWinGeneric(r, c, stone, board) {
-      const directions = [[0,1],[1,0],[1,1],[1,-1]];
-      for (const [dr, dc] of directions) {
-        let count = 1, pos = [[r, c]];
-        let blockedStart = false, blockedEnd = false;
+   (공용) 승리 판정: 오직 5목 이상만 승리
+   ========================= */
+function checkWinGeneric(r, c, stone, board) {
+  const directions = [[0,1],[1,0],[1,1],[1,-1]];
+  for (const [dr, dc] of directions) {
+    let count = 1;
+    let pos = [[r, c]];
 
-        for (let i = 1; i < 5; i++) {
-          const nr = r - dr * i, nc = c - dc * i;
-          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { blockedStart = true; break; }
-          if (board[nr][nc] === stone) { count++; pos.unshift([nr, nc]); }
-          else if (board[nr][nc] !== "") { blockedStart = true; break; }
-          else break;
-        }
-        for (let i = 1; i < 5; i++) {
-          const nr = r + dr * i, nc = c + dc * i;
-          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { blockedEnd = true; break; }
-          if (board[nr][nc] === stone) { count++; pos.push([nr, nc]); }
-          else if (board[nr][nc] !== "") { blockedEnd = true; break; }
-          else break;
-        }
-
-        if (count >= 5) return pos;
-        if (count === 4 && !blockedStart && !blockedEnd) return pos; // 열린4도 승리로 처리(기존 로직 유지)
-      }
-      return null;
+    // 반대 방향으로 연속 카운트
+    for (let i = 1; i < 5; i++) {
+      const nr = r - dr * i, nc = c - dc * i;
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
+      if (board[nr][nc] === stone) { count++; pos.unshift([nr, nc]); }
+      else break;
     }
+
+    // 정방향으로 연속 카운트
+    for (let i = 1; i < 5; i++) {
+      const nr = r + dr * i, nc = c + dc * i;
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
+      if (board[nr][nc] === stone) { count++; pos.push([nr, nc]); }
+      else break;
+    }
+
+    // ✅ 오직 5목(이상)만 승리. 열린4는 승리로 처리하지 않음.
+    if (count >= 5) return pos;
+  }
+  return null;
+}
+
 
     /* =========================
        입력 처리 (공용)
