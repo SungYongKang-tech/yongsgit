@@ -49,14 +49,7 @@
     background:conic-gradient(from 0deg, #fafafa, #ffffff);
     border-radius:18px; border:1px solid #e5e7eb; padding:14px;
   }
-  .board{
-    position:relative; display:inline-block; width:100%;
-    /* JS가 resize하면서 보드 크기에 맞춰 갱신하는 기본값 */
-    --arrow-l: 72px;         /* 화살표 몸통 길이 */
-    --arrow-thick: 10px;     /* 화살표 두께(폭) */
-    --head-h: 28px;          /* 화살표 촉 높이 */
-    --head-w: 32px;          /* 화살표 촉 밑변 너비 */
-  }
+  .board{ position:relative; display:inline-block; width:100%; }
   canvas{ display:block; width:100%; height:auto; border-radius:10px; background:#fff; }
 
   /* 중앙 회전 로터: 보드(=캔버스) 정중앙을 축으로 */
@@ -66,28 +59,25 @@
     transform:translate(-50%,-50%) rotate(0deg);
     width:0; height:0;           /* 회전 원점이 이 한 점 */
     pointer-events:none;
-    will-change: transform;      /* 미세 튐 완화 */
   }
-
-  /* ★ 화살표(몸통+촉) — 보드 크기 비율로 자동 스케일 */
+  /* 화살표(몸통+촉) — 작은 원/링 없음 */
   .arrow-body{
     position:absolute;
-    left: calc(-0.5 * var(--arrow-thick));
-    top:  calc(-1 * var(--arrow-l));
-    width: var(--arrow-thick);
-    height: var(--arrow-l);
+    left:-5px;         /* 몸통 폭 10px 중앙정렬 */
+    top:-70px;         /* 중심에서 위로 70px */
+    width:10px; height:70px;
     background:var(--accent);
     border-radius:6px;
     filter:drop-shadow(0 4px 6px rgba(0,0,0,.25));
   }
   .arrow-head{
     position:absolute;
-    left: calc(-0.5 * var(--head-w));
-    top:  calc(-1 * (var(--arrow-l) + var(--head-h)));
+    left:-16px;        /* 밑변 32px 중앙정렬 */
+    top:-98px;         /* 몸통(70) 위에 연결 (촉높이 28) */
     width:0; height:0;
-    border-left:  calc(0.5 * var(--head-w)) solid transparent;
-    border-right: calc(0.5 * var(--head-w)) solid transparent;
-    border-bottom: var(--head-h) solid var(--accent); /* ↑ 방향 */
+    border-left:16px solid transparent;
+    border-right:16px solid transparent;
+    border-bottom:28px solid var(--accent); /* ↑ 방향 */
     filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));
   }
 
@@ -112,6 +102,7 @@
         <input type="number" id="count" min="2" max="50" value="6" />
         <button id="build">참가자 생성</button>
         <button id="shuffle" class="ghost">순서<br>섞기</button>
+       <!--<span class="muted">오른쪽에서 이름을 바꾸면 룰렛에 즉시 반영됩니다.</span> -->
       </div>
 
       <div class="grid">
@@ -174,7 +165,7 @@
   const $shuffle = document.getElementById('shuffle');
   const $result = document.getElementById('result');
 
-  // ===== 캔버스 크기/스케일(보드 기준, 레티나 대응) + 화살표 스케일 =====
+  // ===== 캔버스 크기/스케일(보드 기준, 레티나 대응) =====
   function resizeCanvas() {
     const cssSize = Math.max(320, Math.min(820, Math.floor($board.clientWidth)));
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -182,21 +173,7 @@
     $wheel.height = cssSize * dpr;
     $wheel.style.width = cssSize + "px";
     $wheel.style.height = cssSize + "px";
-
-    // ★ 보드 크기 기준으로 화살표 비율 동적 설정
-    const arrowL    = cssSize * 0.12;  // 몸통 길이
-    const arrowThk  = cssSize * 0.016; // 두께(폭)
-    const headH     = cssSize * 0.05;  // 촉 높이
-    const headW     = cssSize * 0.09;  // 촉 밑변 너비
-    $board.style.setProperty('--arrow-l',    arrowL + 'px');
-    $board.style.setProperty('--arrow-thick',arrowThk + 'px');
-    $board.style.setProperty('--head-h',     headH + 'px');
-    $board.style.setProperty('--head-w',     headW + 'px');
-
     drawWheel();
-
-    // ★ 리사이즈 후 현재 각도 재적용(점프 방지)
-    setRotorDeg(currentDeg);
   }
 
   // ===== 섹터 색상 =====
@@ -319,10 +296,6 @@
   function startStoppingAnimation(){
     if(spinning || names.length < 2) return;
     spinning = true;
-
-    // ★ 혹시 남아있을 수 있는 이전 루프 취소
-    cancelAnimationFrame(rafId);
-
     $result.textContent = "누가 될까요…";
 
     const duration = (5 + Math.random()) * 1000;  // 5~6초
@@ -347,26 +320,13 @@
     rafId = requestAnimationFrame(stepFrame);
   }
 
-  // ===== 당첨 계산(촉 기준, 12시=0°) + 정중앙 스냅 =====
+  // ===== 당첨 계산(촉 기준, 12시=0°) =====
   function showWinner(deg){
     const n = names.length;
     const stepDeg = 360 / n;
-
-    // 0~360 정규화
-    const a = ((deg % 360) + 360) % 360;
-
-    // 경계 애매함 방지: 반 칸 더해서 '가까운 섹터'로 라운딩
-    const idx = Math.floor((a + stepDeg/2) / stepDeg) % n;
-
+    const idx = Math.floor((deg % 360) / stepDeg) % n;   // 0°~stepDeg → 0번 섹터
     const winner = (names[idx]||"").trim() || `${idx+1}번`;
     $result.innerHTML = `👉 <b>${winner}</b> 님이 당첨!`;
-
-    // ★ 시각적 안정성: 당첨 섹터의 정중앙 각도로 1프레임 뒤 스냅
-    const center = (idx * stepDeg + stepDeg/2) % 360;
-    requestAnimationFrame(() => {
-      currentDeg = center;
-      setRotorDeg(currentDeg);
-    });
   }
 
   // ===== 도우미 =====
@@ -388,7 +348,7 @@
     $result.textContent = "버튼을 놓으면 멈춥니다";
 
     let last = performance.now();
-    const speed = 1440; // deg/s (초당 4바퀴)
+    const speed = 1440; // deg/s (초당 4바퀴) — 필요시 숫자만 바꾸면 됨
     const loop = (now) => {
       if (!isHolding) { startStoppingAnimation(); return; }
       const dt = (now - last) / 1000;
