@@ -102,53 +102,75 @@
 
 
   <!-- ✅ 팝업 표시용 Firebase JS -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
-      authDomain: "lessonswap-26e9b.firebaseapp.com",
-      databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
-      projectId: "lessonswap-26e9b",
-      storageBucket: "lessonswap-26e9b.appspot.com",
-      messagingSenderId: "1068278553187",
-      appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
+    authDomain: "lessonswap-26e9b.firebaseapp.com",
+    databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
+    projectId: "lessonswap-26e9b",
+    storageBucket: "lessonswap-26e9b.appspot.com",
+    messagingSenderId: "1068278553187",
+    appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
-    const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "양충현", "조보미", "송은아", "고은선", "임춘근"];
+  const names = ["정승목","김승일","이상준","박나령","이낭주","양충현","조보미","송은아","고은선","임춘근"];
 
-    const today = new Date();
-const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1);
-const yearMonth = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+  // ✅ URL에 ?testModal=1 붙이면 강제로 팝업 테스트 가능
+  const urlParams = new URLSearchParams(location.search);
+  const forceTest = urlParams.get("testModal") === "1";
 
-if (today.getDate() >= 24) {
-  const paymentRef = ref(db, `payments/${yearMonth}`);
-  get(paymentRef).then(snapshot => {
-    const data = snapshot.val() || {};
-    const unpaidExists = names.some(name => {
-      const entry = data[name];
-      return !(entry && entry.status === "paid");
-    });
+  const today = new Date();
+  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1);
+  const yearMonth = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2,"0")}`;
 
-    if (unpaidExists) {
-      const nextMonthNumber = nextMonth.getMonth() + 1;
-      const monthText = `${nextMonthNumber}월`;
+  // 디버그 로그
+  console.log("[Modal] today:", today.toString());
+  console.log("[Modal] yearMonth:", yearMonth, "date:", today.getDate());
 
-      document.getElementById("lessonInfo").innerText =
-        `${monthText} 레슨은 입금 완료 후에만 참여할 수 있습니다.`;
+  function showModal(msg) {
+    if (msg) console.log("[Modal] reason:", msg);
+    document.getElementById("paymentModal").style.display = "flex";
+  }
 
-      document.getElementById("paymentInfo").innerText =
-        `${monthText} 레슨 등록을 위해 레슨비 10만원을 아래 계좌로 입금해 주세요!`;
+  // 1) 날짜 조건 검사
+  if (forceTest || today.getDate() >= 24) {
+    if (forceTest) showModal("forceTest=1");
 
-      document.getElementById("paymentModal").style.display = "flex";
-    }
-  });
-}
+    const paymentRef = ref(db, `payments/${yearMonth}`);
+    get(paymentRef)
+      .then((snapshot) => {
+        const data = snapshot.val() || {};
+        console.log("[Modal] fetched data:", data);
 
-  </script>
+        // entry가 없거나, status !== "paid" 이면 미납으로 간주
+        const unpaidExists = names.some((name) => !(data[name] && data[name].status === "paid"));
+        console.log("[Modal] unpaidExists:", unpaidExists);
+
+        if (unpaidExists || forceTest) {
+          const nextMonthNumber = nextMonth.getMonth() + 1;
+          const monthText = `${nextMonthNumber}월`;
+          document.getElementById("lessonInfo").innerText =
+            `${monthText} 레슨은 입금 완료 후에만 참여할 수 있습니다.`;
+          document.getElementById("paymentInfo").innerText =
+            `${monthText} 레슨 등록을 위해 레슨비 10만원을 아래 계좌로 입금해 주세요!`;
+          showModal("unpaidExists=true");
+        }
+      })
+      .catch((err) => {
+        console.error("[Modal] Firebase get() error:", err);
+        // ⚠️ 읽기 실패해도 24일 이후에는 알림을 띄워 사용자에게 안내 (페일-오픈)
+        showModal("firebase_read_error");
+      });
+  } else {
+    console.log("[Modal] <24일: 조건 미충족, 팝업 없음");
+  }
+</script>
+
 </body>
 </html>
