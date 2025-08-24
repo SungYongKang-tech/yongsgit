@@ -107,10 +107,45 @@
     const popupText = document.getElementById("popupText");
     const scoreButtons = document.getElementById("scoreButtons");
 
+    // 🆕 선택/결과를 "이름(부수)" 문자열 ID로 관리
     let currentPlayers = [];
-    let selected = [];
-    let results = {};
+    let selected = [];   // 배열: ["강성용(5)","김범일(5)", ...]  (과거 숫자 인덱스도 수용)
+    let results = {};    // 객체: {"강성용(5)__김범일(5)": "3-2", ...}  (과거 "0-1"도 읽기만 호환)
     let hideDefault = false;
+
+    // 유틸: 선택값을 항상 "문자열 ID" 배열로 반환 (과거 숫자형도 안전 변환)
+    function getSelectedIds() {
+      if (!Array.isArray(selected)) return [];
+      if (selected.length === 0) return [];
+      if (typeof selected[0] === "number") {
+        return selected.map(i => currentPlayers[i]).filter(Boolean);
+      }
+      return selected.slice();
+    }
+
+    // 유틸: 결과 조회 (ID 기반 우선, 없으면 구버전 숫자키도 조회)
+    function getResult(idA, idB) {
+      const k = `${idA}__${idB}`;
+      if (results && results[k]) return results[k];
+
+      // 구버전 호환: 현재 선택 배열의 순서로 숫자키 매핑
+      const ids = getSelectedIds();
+      const ia = ids.indexOf(idA);
+      const ib = ids.indexOf(idB);
+      if (ia >= 0 && ib >= 0) {
+        const legacy = results?.[`${ia}-${ib}`];
+        if (legacy) return legacy;
+      }
+      return "";
+    }
+
+    // 유틸: 결과 기록 (양방향 동시 저장)
+    function setResult(idA, idB, score) {
+      const [a, b] = score.split("-").map(Number);
+      results[`${idA}__${idB}`] = score;
+      results[`${idB}__${idA}`] = `${b}-${a}`;
+      set(resultsRef, results); // 기존 숫자키가 있으면 그대로 남고, 새 키는 문자열로 저장됨
+    }
 
     // ✅ 익명 로그인 보장
     async function ensureAnonAuth() {
@@ -121,7 +156,7 @@
       });
     }
 
-    // ✅ 초기 부트: 로그인 완료 후 리스너/버튼 활성화
+    // ✅ 초기 부트
     (async function boot() {
       try {
         await ensureAnonAuth();
@@ -130,22 +165,53 @@
         onValue(playersRef, (snap) => { if (!snap.exists()) set(playersRef, defaultPlayers); }, { onlyOnce:true });
 
         // 리스너
-        onValue(playersRef, (snapshot) => { currentPlayers = snapshot.val() || []; renderPlayers(currentPlayers); });
-        onValue(resultsRef, (snapshot) => { results = snapshot.val() || {}; renderSchedule(); });
-        onValue(selectedRef, (snapshot) => { selected = snapshot.val() || []; renderPlayers(currentPlayers); renderSchedule(); });
+        onValue(playersRef, (snapshot) => {
+          currentPlayers = snapshot.val() || [];
+          renderPlayers(currentPlayers);
+          renderSchedule();
+        });
+
+        onValue(resultsRef, (snapshot) => {
+          results = snapshot.val() || {};
+          renderSchedule();
+        });
+
+        onValue(selectedRef, (snapshot) => {
+          selected = snapshot.val() || [];
+          renderPlayers(currentPlayers);
+          renderSchedule();
+        });
 
         // 버튼들
-        document.getElementById("resetBtn").onclick = () => { results = {}; set(resultsRef, {}); renderSchedule(); };
-        document.getElementById("clearBtn").onclick = () => { remove(playersRef); remove(resultsRef); remove(selectedRef); location.reload(); };
+        document.getElementById("resetBtn").onclick = () => {
+          results = {};
+          set(resultsRef, {});
+          renderSchedule();
+        };
+
+        document.getElementById("clearBtn").onclick = () => {
+          remove(playersRef);
+          remove(resultsRef);
+          remove(selectedRef);
+          location.reload();
+        };
+
         document.getElementById("addPlayerBtn").onclick = () => {
           const name = document.getElementById("playerName").value.trim();
           const level = document.getElementById("playerLevel").value.trim();
           if (!name || !level) return alert("이름과 부수를 입력하세요");
           const newEntry = `${name}(${level})`;
-          if (!currentPlayers.includes(newEntry)) { currentPlayers.push(newEntry); set(playersRef, currentPlayers); }
+          if (!currentPlayers.includes(newEntry)) {
+            currentPlayers = currentPlayers.concat(newEntry); // 맨 뒤 추가는 OK (이제 인덱스에 의존하지 않음)
+            set(playersRef, currentPlayers);
+          }
+          document.getElementById("playerName").value = "";
+          document.getElementById("playerLevel").value = "";
         };
+
         document.getElementById("saveImageBtn").onclick = () => {
           const scheduleDiv = document.getElementById("scheduleTable");
+          if (!scheduleDiv) return;
           const now = new Date(); const pad = (n)=>n.toString().padStart(2,'0');
           const y=now.getFullYear(), m=pad(now.getMonth()+1), d=pad(now.getDate());
           const w=['일','월','화','수','목','금','토'][now.getDay()];
@@ -158,13 +224,17 @@
             link.click();
           });
         };
+
         document.getElementById("toggleDefaultBtn").onclick = () => {
           hideDefault = !hideDefault;
           renderPlayers(currentPlayers);
           document.getElementById("toggleDefaultBtn").innerText = hideDefault ? "기존선수 보이기" : "기존선수 숨김";
         };
         document.getElementById("toggleDefaultBtn").innerText = "기존선수 숨김";
-        document.getElementById("closeUsageModal").onclick = () => { document.getElementById("usageModal").style.display = "none"; };
+
+        document.getElementById("closeUsageModal").onclick = () => {
+          document.getElementById("usageModal").style.display = "none";
+        };
       } catch (e) {
         console.error("익명 로그인 실패:", e);
         alert("로그인 오류가 발생했습니다. 새로고침 후 다시 시도하세요.");
@@ -173,6 +243,7 @@
 
     // ===== 렌더/동작 함수들 =====
     function renderPlayers(players) {
+      const selectedIds = getSelectedIds();
       playerList.innerHTML = "";
       players.forEach((player, i) => {
         const isDefault = defaultPlayers.includes(player);
@@ -188,7 +259,7 @@
           else div.classList.add("lv13to14");
         }
         if (!isDefault) div.classList.add("new-player");
-        if (selected.includes(i)) div.classList.add("selected");
+        if (selectedIds.includes(player)) div.classList.add("selected");
         div.textContent = player;
         div.onclick = () => togglePlayer(i);
         playerList.appendChild(div);
@@ -196,34 +267,45 @@
     }
 
     function togglePlayer(index) {
-      const idx = selected.indexOf(index);
-      if (idx > -1) selected.splice(idx, 1); else selected.push(index);
-      set(selectedRef, selected);
+      const id = currentPlayers[index]; // "이름(부수)" 문자열
+      let ids = getSelectedIds();
+      const pos = ids.indexOf(id);
+      if (pos > -1) ids.splice(pos, 1); else ids.push(id);
+      selected = ids;
+      set(selectedRef, ids); // 항상 문자열 ID 배열로 저장
+      renderPlayers(currentPlayers);
+      renderSchedule();
     }
 
     function renderSchedule() {
-      if (selected.length < 2) { schedule.innerHTML = "<p>2명 이상 선택해주세요.</p>"; return; }
-      const players = selected.map(i => currentPlayers[i]);
+      const players = getSelectedIds().filter(id => currentPlayers.includes(id));
+      if (players.length < 2) { schedule.innerHTML = "<p>2명 이상 선택해주세요.</p>"; return; }
+
       let html = "<div id='scheduleTable'><table><tr><th>구분</th>";
       players.forEach(p => html += `<th>${p}</th>`); html += "</tr>";
 
       players.forEach((p1, i) => {
         html += `<tr><th>${p1}</th>`;
         players.forEach((p2, j) => {
-          const key = `${i}-${j}`; const val = i===j ? "X" : (results[key] || "");
+          const val = i===j ? "X" : (getResult(p1, p2) || "");
           html += `<td onclick='openPopup(${i},${j})'>${val}</td>`;
         });
         html += "</tr>";
       });
       html += "</table>";
 
+      // 승/세트 계산
       const winCount = Array(players.length).fill(0);
       const setCount = Array(players.length).fill(0);
       for (let i=0;i<players.length;i++){
         for (let j=0;j<players.length;j++){
           if (i===j) continue;
-          const result = results[`${i}-${j}`];
-          if (result){ const [a,b]=result.split("-").map(Number); if (a>b) winCount[i]++; setCount[i]+=a; }
+          const result = getResult(players[i], players[j]);
+          if (result){
+            const [a,b]=result.split("-").map(Number);
+            if (a>b) winCount[i]++;
+            setCount[i]+=a;
+          }
         }
       }
       const rankIndex = winCount.map((_,i)=>i).sort((a,b)=> winCount[b]-winCount[a] || setCount[b]-setCount[a]);
@@ -237,7 +319,7 @@
     }
 
     window.openPopup = (i, j) => {
-      const players = selected.map(i => currentPlayers[i]);
+      const players = getSelectedIds().filter(id => currentPlayers.includes(id));
       popupText.textContent = `${players[i]} 선수는 ${players[j]} 선수와의 경기에서 몇 대 몇으로 이겼나요?`;
       const scores = ["3-0","3-1","3-2","2-0","2-1"];
       scoreButtons.innerHTML = "";
@@ -245,10 +327,7 @@
         const btn = document.createElement("button");
         btn.textContent = score;
         btn.onclick = () => {
-          results[`${i}-${j}`] = score;
-          const [a,b] = score.split("-").map(Number);
-          results[`${j}-${i}`] = `${b}-${a}`;
-          set(resultsRef, results);
+          setResult(players[i], players[j], score);
           popup.style.display = "none";
           renderSchedule();
         };
