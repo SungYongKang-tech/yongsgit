@@ -253,74 +253,75 @@
     }
 
     function assignTeams() {
-      let teamCount = finalizedLeaders.length;
+  let teamCount = finalizedLeaders.length;
 
-      if (teamCount < 1) {
-        const input = prompt("팀장을 선정하지 않으셨습니다.\n몇 팀으로 구성하시겠습니까?");
-        if (!input) return;
-        teamCount = parseInt(input);
-        if (isNaN(teamCount) || teamCount < 1) {
-          alert("올바른 숫자를 입력해주세요.");
-          return;
-        }
-        // 팀장 자동 선정: 부수 높은(숫자 큰) 순
-        const sortedSelected = [...selected].sort((a, b) => allPlayers[b].level - allPlayers[a].level);
-        finalizedLeaders = sortedSelected.slice(0, teamCount);
-      }
-
-      const teams = [];
-      const used = new Set();
-
-      for (let i = 0; i < teamCount; i++) {
-        const idx = finalizedLeaders[i];
-        teams.push({
-          leader: allPlayers[idx],
-          members: [],
-          sum: allPlayers[idx].level,
-        });
-        used.add(idx);
-      }
-
-      const teamMembers = selected.filter(i => !used.has(i));
-      const uniqueMembers = [...new Set(teamMembers)].map(i => allPlayers[i]);
-
-      const grouped = {};
-      uniqueMembers.forEach(p => {
-        if (!grouped[p.level]) grouped[p.level] = [];
-        grouped[p.level].push(p);
-      });
-
-      let sorted = [];
-      Object.keys(grouped).sort((a, b) => b - a).forEach(level => {
-        const shuffledSameLevel = shuffle(grouped[level]);
-        sorted = sorted.concat(shuffledSameLevel);
-      });
-
-      sorted.forEach(player => {
-        teams.sort((a, b) => a.sum - b.sum);
-        teams[0].members.push(player);
-        teams[0].sum += player.level;
-      });
-
-      const teamBox = document.getElementById("teams");
-      teamBox.innerHTML = "";
-
-      teams.forEach((team) => {
-        const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
-        const div = document.createElement("div");
-        div.className = "team-card";
-        div.innerHTML = `
-          <h3>${team.leader.name} 팀</h3>
-          <ul>
-            <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
-            ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
-          </ul>
-          <p><small>부수합: ${team.sum}</small></p>`;
-        teamBox.appendChild(div);
-      });
-
-      latestTeams = teams;
+  if (teamCount < 1) {
+    const input = prompt("팀장을 선정하지 않으셨습니다.\n몇 팀으로 구성하시겠습니까?");
+    if (!input) return;
+    teamCount = parseInt(input);
+    if (isNaN(teamCount) || teamCount < 1) {
+      alert("올바른 숫자를 입력해주세요.");
+      return;
     }
+    // ★ 자동 팀장 선정: 부수 숫자가 작은 순(=실력 높은 순)
+    const sortedSelected = [...selected].sort((a, b) => allPlayers[a].level - allPlayers[b].level);
+    finalizedLeaders = sortedSelected.slice(0, teamCount);
+  }
+
+  const teams = [];
+  const used = new Set();
+
+  for (let i = 0; i < teamCount; i++) {
+    const idx = finalizedLeaders[i];
+    teams.push({
+      leader: allPlayers[idx],
+      members: [],
+      sum: allPlayers[idx].level,
+    });
+    used.add(idx);
+  }
+
+  const teamMembers = selected.filter(i => !used.has(i));
+  const uniqueMembers = [...new Set(teamMembers)].map(i => allPlayers[i]);
+
+  const grouped = {};
+  uniqueMembers.forEach(p => {
+    if (!grouped[p.level]) grouped[p.level] = [];
+    grouped[p.level].push(p);
+  });
+
+  let sorted = [];
+  Object.keys(grouped).sort((a, b) => b - a).forEach(level => {
+    const shuffledSameLevel = shuffle(grouped[level]);
+    sorted = sorted.concat(shuffledSameLevel);
+  });
+
+  sorted.forEach(player => {
+    teams.sort((a, b) => a.sum - b.sum);
+    teams[0].members.push(player);
+    teams[0].sum += player.level;
+  });
+
+  const teamBox = document.getElementById("teams");
+  teamBox.innerHTML = "";
+
+  teams.forEach((team) => {
+    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.innerHTML = `
+      <h3>${team.leader.name} 팀</h3>
+      <ul>
+        <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
+        ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
+      </ul>
+      <p><small>부수합: ${team.sum}</small></p>`;
+    teamBox.appendChild(div);
+  });
+
+  latestTeams = teams;
+}
+
 
     function resetAll() {
       selected = [];
