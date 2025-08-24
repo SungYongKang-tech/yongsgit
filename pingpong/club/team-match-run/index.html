@@ -336,7 +336,7 @@ function openResultPopup(cell) {
   const playerCell = row.children[1];
   const playerText = playerCell.innerText;
 
-  const scores = ["3:2", "3:1", "3:0", "1:3", "2:3", "2:1", "2:0", "1:2", "0:2"];
+  const scores = ["3:2", "3:1", "3:0", "1:3", "2:3", "2:1", "2:0", "1:2", "0:2", "0:0"];
   const buttons = scores.map(score =>
     `<button onclick="setMatchResult('${score}')">${score}</button>`
   ).join(" ");
@@ -371,15 +371,24 @@ async function setMatchResult(score) {
   const [a, b] = score.split(":").map(Number);
   if (!isNaN(a) && !isNaN(b) && playerText.includes(" vs ")) {
     let [aNames, bNames] = playerText.split(" vs ");
-    aNames = aNames.trim(); bNames = bNames.trim();
-    if (a > b) playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
-    else playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+    aNames = aNames.trim(); 
+    bNames = bNames.trim();
+
+    if (a > b) {
+      playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
+    } else if (b > a) {
+      playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+    } else {
+      // 동점(예: 0:0) → 굵게 표시 없음
+      playerCell.innerHTML = `${aNames} vs ${bNames}`;
+    }
   }
   cell.innerText = score;
 
   document.getElementById("popup").style.display = "none";
   calculateTeamResults();
 }
+
 
 /* ---------------- 순위 계산 ---------------- */
 function calculateTeamResults() {
@@ -405,23 +414,22 @@ function calculateTeamResults() {
     let teamASet = 0, teamBSet = 0;
 
     rows.forEach(row => {
-      const result = row.children[2].innerText.trim();
-      if (!result.includes(":")) return;
-      const [a, b] = result.split(":").map(Number);
-      if (isNaN(a) || isNaN(b)) return;
+  const result = row.children[2].innerText.trim();
+  if (!result.includes(":")) return;
+  const [a, b] = result.split(":").map(Number);
+  if (isNaN(a) || isNaN(b)) return;
 
-      if (a > b) teamAWin++; else teamBWin++;
-      teamASet += a; teamBSet += b;
-    });
+  if (a > b) {
+    teamAWin++;
+  } else if (b > a) {
+    teamBWin++;
+  } 
+  // 동점(a===b)은 승/패 미반영
 
-    if (teamAWin + teamBWin > 0) {
-      if (teamAWin > teamBWin) { teamStats[teamA].win++; teamStats[teamB].lose++; }
-      else { teamStats[teamB].win++; teamStats[teamA].lose++; }
+  teamASet += a; 
+  teamBSet += b;
+});
 
-      teamStats[teamA].setDiff += (teamASet - teamBSet);
-      teamStats[teamB].setDiff += (teamBSet - teamASet);
-    }
-  });
 
   const singles = +document.getElementById("singlesCnt").value;
   const doubles = +document.getElementById("doublesCnt").value;
