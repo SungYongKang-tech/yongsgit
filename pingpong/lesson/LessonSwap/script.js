@@ -7,8 +7,8 @@ import {
   getAuth, signInAnonymously, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-// ---- 익명 로그인(스크립트 내부에서 자체 처리) ----
-const auth = getAuth(); // firebase.js에서 만든 기본 앱을 사용
+// -------------------- 인증 (익명 로그인) --------------------
+const auth = getAuth();
 const authReady = new Promise((resolve) => {
   onAuthStateChanged(auth, (user) => { if (user) resolve(user); });
 });
@@ -16,14 +16,13 @@ signInAnonymously(auth).catch((e) => {
   console.error('익명 로그인 실패:', e);
   alert('익명 로그인 실패: ' + e.message);
 });
-
 async function requireAuth() {
   const user = await authReady;
   if (!user) throw new Error('인증되지 않았습니다. (익명 로그인 미완료)');
   return user;
 }
 
-// ---- 상태 스냅샷 (UNDO에 사용) ----
+// -------------------- 상태 스냅샷 & 구독 --------------------
 let latestData = {};
 const scheduleRef = ref(db, 'schedule');
 onValue(scheduleRef, (snapshot) => {
@@ -31,7 +30,7 @@ onValue(scheduleRef, (snapshot) => {
   renderSchedule(latestData);
 });
 
-// ---- 초기 템플릿 ----
+// -------------------- 초기 템플릿 --------------------
 const initialData = {
   mon_0: { name: "정승목" }, tue_0: { name: "김승일" }, wed_0: { name: "정승목" }, thu_0: { name: "김승일" },
   mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
@@ -40,21 +39,49 @@ const initialData = {
   mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
 };
 
-// ---- 공용 유틸: 멀티경로 원자 업데이트 + 로그 + 1단계 UNDO ----
+// -------------------- 공용 유틸 --------------------
+// swapBtn 안전 가드
+function setSwapBtnDisabled(disabled) {
+  const btn = document.getElementById('swapBtn');
+  if (btn) btn.disabled = disabled;
+}
+
+// 되돌리기 버튼 보장
+function ensureUndoButton() {
+  const controls = document.querySelector('.controls');
+  if (!controls) return;
+  if (controls.querySelector('#undoBtn')) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'undoBtn';
+  btn.textContent = '↩️ 되돌리기';
+  btn.className = 'btn btn-reset';
+  btn.style.fontWeight = '800';
+  btn.onclick = () => window.undoLast();
+
+  const swapBtn = document.getElementById('swapBtn');
+  if (swapBtn && swapBtn.parentElement === controls) {
+    controls.insertBefore(btn, swapBtn.nextSibling);
+  } else {
+    controls.appendChild(btn);
+  }
+}
+
+// 멀티경로 원자 업데이트 + 로그 + 1단계 UNDO 저장
 async function atomicApply(changes, logPayload = {}) {
   const user = await requireAuth();
   const uid = user.uid;
 
   const multi = {};
-  const undoSchedule = {}; // ✅ UNDO를 중첩 객체로 저장 (슬래시 금지 회피)
+  const undoSchedule = {}; // { key: {name: prev} }
 
   for (const { key, newName } of changes) {
     const prevName = (latestData[key]?.name) ?? "";
-    undoSchedule[key] = { name: prevName }; // 예: entries.schedule.mon_0 = {name: ...}
+    undoSchedule[key] = { name: prevName };
     multi[`schedule/${key}`] = { name: newName, _by: uid, _ts: serverTimestamp() };
   }
 
-  // 로그
+  // 로그 기록
   const logKey = push(ref(db, 'logs')).key;
   multi[`logs/${logKey}`] = {
     ...logPayload,
@@ -67,7 +94,7 @@ async function atomicApply(changes, logPayload = {}) {
     ts: serverTimestamp()
   };
 
-  // ✅ UNDO 구조 변경: entries: { schedule: { mon_0: {...}, ... } }
+  // UNDO 저장 (슬래시 없는 중첩 구조)
   multi[`undo/last/${uid}`] = {
     entries: { schedule: undoSchedule },
     by: uid,
@@ -77,29 +104,28 @@ async function atomicApply(changes, logPayload = {}) {
   await update(ref(db), multi);
 }
 
-// ---- 초기화(임포트) ----
+// -------------------- 초기화(임포트) --------------------
 window.importSchedule = async function () {
   await requireAuth();
-  const changes = Object.keys(initialData).map(key => ({
-    key,
-    newName: initialData[key].name
-  }));
+  const changes = Object.keys(initialData).map(key => ({ key, newName: initialData[key].name }));
   await atomicApply(changes, { type: 'import' });
 };
 
-// (옵션) 남아있는 외부 함수
+// (옵션) 사용자명 초기화 예시 - 필요 없으면 제거하세요.
+const userNameKey = 'userName';
 window.changeName = function () {
   try { localStorage.removeItem(userNameKey); } catch {}
   location.reload();
 };
 
-// ---- 렌더링 ----
+// -------------------- 렌더링 --------------------
 let selectedCells = [];
 
 function renderSchedule(data) {
   const container = document.getElementById("scheduleContainer");
-  container.innerHTML = "";
+  if (!container) return;
 
+  container.innerHTML = "";
   ensureUndoButton();
 
   const wrapper = document.createElement("div");
@@ -107,20 +133,12 @@ function renderSchedule(data) {
   wrapper.style.maxWidth = "100%";
 
   const table = document.createElement("table");
-  table.style.width = "100%";
-  table.style.borderCollapse = "collapse";
-  table.style.fontSize = "4.5vw";
-  table.style.tableLayout = "fixed";
 
+  // 헤더
   const header = document.createElement("tr");
-  const headerTitles = ["교시", "월", "화", "수", "목"];
-  headerTitles.forEach(title => {
+  ["교시", "월", "화", "수", "목"].forEach(title => {
     const th = document.createElement("th");
     th.textContent = title;
-    th.style.backgroundColor = "#ffe8d6";
-    th.style.padding = "6px";
-    th.style.fontSize = "4.2vw";
-    th.style.border = "1px solid #ccc";
     header.appendChild(th);
   });
   table.appendChild(header);
@@ -138,10 +156,7 @@ function renderSchedule(data) {
     const row = document.createElement("tr");
 
     const timeCell = document.createElement("td");
-    timeCell.innerHTML = `<div>${periodObj.label}</div><div style="font-size: 12px; color: #888;">${periodObj.time}</div>`;
-    timeCell.style.border = "1px solid #ccc";
-    timeCell.style.padding = "8px";
-    timeCell.style.textAlign = "center";
+    timeCell.innerHTML = `<div>${periodObj.label}</div><div style="font-size:12px;color:#888">${periodObj.time}</div>`;
     row.appendChild(timeCell);
 
     days.forEach(day => {
@@ -149,11 +164,6 @@ function renderSchedule(data) {
       const cell = document.createElement("td");
       const value = data[key]?.name || "";
       cell.dataset.key = key;
-      cell.style.border = "1px solid #ccc";
-      cell.style.padding = "6px";
-      cell.style.fontSize = "4.2vw";
-      cell.style.wordBreak = "break-word";
-      cell.style.textAlign = "center";
 
       if (value) {
         cell.textContent = value;
@@ -162,7 +172,7 @@ function renderSchedule(data) {
         }
       } else {
         cell.classList.add("empty");
-        cell.style.backgroundColor = "#f5f5f5";
+        cell.textContent = "";
       }
 
       cell.onclick = () => handleCellClick(cell, key);
@@ -174,23 +184,26 @@ function renderSchedule(data) {
 
   wrapper.appendChild(table);
   container.appendChild(wrapper);
+
+  // 렌더 후 스왑버튼 상태 재평가
+  setSwapBtnDisabled(selectedCells.length !== 2);
 }
 
-// ---- 셀 인터랙션 ----
+// -------------------- 셀 인터랙션 --------------------
 function handleCellClick(cell, key) {
   const name = cell.textContent.trim();
   const isEmpty = !name;
 
-  // 이미 선택된 셀이면 해제
+  // 이미 선택된 셀 → 선택 해제
   const alreadyIndex = selectedCells.findIndex(item => item.cell === cell);
   if (alreadyIndex > -1) {
     selectedCells.splice(alreadyIndex, 1);
     cell.classList.remove("selected");
-    document.getElementById("swapBtn").disabled = true;
+    setSwapBtnDisabled(true);
     return;
   }
 
-  // 1개 선택 후 빈 셀 클릭 → 복사(원자 업데이트)
+  // 1개 선택 후 빈 셀 클릭 → 복사
   if (selectedCells.length === 1 && isEmpty) {
     const from = selectedCells[0];
     const copiedName = from.cell.textContent.trim();
@@ -209,7 +222,7 @@ function handleCellClick(cell, key) {
       .then(() => {
         from.cell.classList.remove("selected");
         selectedCells = [];
-        document.getElementById("swapBtn").disabled = true;
+        setSwapBtnDisabled(true);
       })
       .catch((e) => {
         // 실패 시 원복
@@ -227,11 +240,11 @@ function handleCellClick(cell, key) {
     cell.classList.add("selected");
   }
 
-  // 서로 변경 버튼 활성화 조건
-  document.getElementById("swapBtn").disabled = (selectedCells.length !== 2);
+  // 스왑 버튼 활성화 조건
+  setSwapBtnDisabled(selectedCells.length !== 2);
 }
 
-// ---- 스왑(원자 처리) ----
+// -------------------- 서로 변경 (스왑) --------------------
 window.handleSwap = async function () {
   if (selectedCells.length !== 2) return;
 
@@ -252,6 +265,7 @@ window.handleSwap = async function () {
       { type: 'swap' }
     );
   } catch (e) {
+    // 롤백
     cellA.textContent = nameA;
     cellB.textContent = nameB;
     alert('서로 변경 실패: ' + e.message);
@@ -260,10 +274,10 @@ window.handleSwap = async function () {
 
   selectedCells.forEach(({ cell }) => cell.classList.remove("selected"));
   selectedCells = [];
-  document.getElementById("swapBtn").disabled = true;
+  setSwapBtnDisabled(true);
 };
 
-// ---- 비우기(불참, 원자 처리) ----
+// -------------------- 불참 처리 --------------------
 window.markAbsent = async function () {
   if (selectedCells.length !== 1) return alert("하나의 셀만 선택해야 합니다.");
 
@@ -273,6 +287,7 @@ window.markAbsent = async function () {
   const prevClasses = cell.className;
   const prevBg = cell.style.backgroundColor;
 
+  // 낙관적 UI
   cell.textContent = "";
   cell.classList.add("empty");
   cell.style.backgroundColor = "#f5f5f5";
@@ -281,6 +296,7 @@ window.markAbsent = async function () {
   try {
     await atomicApply([{ key, newName: "" }], { type: 'absent' });
   } catch (e) {
+    // 롤백
     cell.textContent = prevText;
     cell.className = prevClasses;
     cell.style.backgroundColor = prevBg;
@@ -289,11 +305,10 @@ window.markAbsent = async function () {
   }
 
   selectedCells = [];
-  document.getElementById("swapBtn").disabled = true;
+  setSwapBtnDisabled(true);
 };
 
-// ---- 되돌리기(1단계) ----
-// 되돌리기(1단계)
+// -------------------- 되돌리기 (1단계) --------------------
 window.undoLast = async function () {
   const user = await requireAuth();
   const uid = user.uid;
@@ -313,13 +328,11 @@ window.undoLast = async function () {
   }
 
   const multi = {};
-  // UNDO에 저장된 값으로 복구
   keys.forEach(k => {
     const name = scheduleEntries[k]?.name ?? "";
     multi[`schedule/${k}`] = { name, _by: uid, _ts: serverTimestamp() };
   });
 
-  // 로그 기록
   const logKey = push(ref(db, 'logs')).key;
   multi[`logs/${logKey}`] = {
     type: 'undo',
@@ -328,7 +341,7 @@ window.undoLast = async function () {
     ts: serverTimestamp()
   };
 
-  // UNDO 클리어
+  // UNDO 제거
   multi[`undo/last/${uid}`] = null;
 
   try {
@@ -338,13 +351,18 @@ window.undoLast = async function () {
   }
 };
 
-
-// ---- 주간 자동 초기화(금 17시 이후 1회) ----
+// -------------------- 주간 자동 초기화 (금 17시 이후 1회, 단말 기준) --------------------
 function shouldResetSchedule() {
   const now = new Date();
-  const day = now.getDay(); // 일:0, 월:1, ..., 금:5
+  const day = now.getDay(); // 일:0 ~ 토:6
   const hour = now.getHours();
   return (day === 5 && hour >= 17);
+}
+function getWeekKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const week = Math.ceil(((now - new Date(year, 0, 1)) / 86400000 + new Date(year, 0, 1).getDay() + 1) / 7);
+  return `${year}-W${week}`;
 }
 function resetOncePerWeek() {
   const resetKey = 'scheduleResetWeek';
@@ -356,30 +374,4 @@ function resetOncePerWeek() {
     });
   }
 }
-function getWeekKey() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const week = Math.ceil(((now - new Date(year, 0, 1)) / 86400000 + new Date(year, 0, 1).getDay() + 1) / 7);
-  return `${year}-W${week}`;
-}
 resetOncePerWeek();
-
-// ---- UI 도우미 ----
-function ensureUndoButton() {
-  const controls = document.querySelector('.controls');
-  if (!controls || controls.querySelector('#undoBtn')) return;
-
-  const btn = document.createElement('button');
-  btn.id = 'undoBtn';
-  btn.textContent = '↩️ 되돌리기';
-  btn.className = 'btn-reset';
-  btn.style.fontWeight = '800';
-  btn.onclick = () => window.undoLast();
-
-  const swapBtn = document.getElementById('swapBtn');
-  if (swapBtn && swapBtn.parentElement === controls) {
-    controls.insertBefore(btn, swapBtn.nextSibling);
-  } else {
-    controls.appendChild(btn);
-  }
-}
