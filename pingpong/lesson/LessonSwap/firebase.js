@@ -6,7 +6,7 @@ const firebaseConfig = {
   authDomain: "lessonswap-26e9b.firebaseapp.com",
   databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
   projectId: "lessonswap-26e9b",
-  storageBucket: "lessonswap-26e9b.firebasestorage.app",
+  storageBucket: "lessonswap-26e9b.appspot.com",  // ✅ 수정
   messagingSenderId: "1068278553187",
   appId: "1:1068278553187:web:5b1bc4b61f1c4dc53fb656"
 };
