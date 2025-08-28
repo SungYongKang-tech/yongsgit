@@ -100,78 +100,89 @@
 
   <!-- ✅ 팝업 표시용 Firebase JS -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
-      authDomain: "lessonswap-26e9b.firebaseapp.com",
-      databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
-      projectId: "lessonswap-26e9b",
-      storageBucket: "lessonswap-26e9b.appspot.com",
-      messagingSenderId: "1068278553187",
-      appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
+    authDomain: "lessonswap-26e9b.firebaseapp.com",
+    databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
+    projectId: "lessonswap-26e9b",
+    storageBucket: "lessonswap-26e9b.appspot.com",
+    messagingSenderId: "1068278553187",
+    appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
-    const names = ["정승목","김승일","이상준","박나령","이낭주","양충현","조보미","송은아","고은선","임춘근"];
+  // ✅ URL에 ?testModal=1 붙이면 강제 팝업 테스트
+  const urlParams = new URLSearchParams(location.search);
+  const forceTest = urlParams.get("testModal") === "1";
 
-    // ✅ URL에 ?testModal=1 붙이면 강제로 팝업 테스트 가능
-    const urlParams = new URLSearchParams(location.search);
-    const forceTest = urlParams.get("testModal") === "1";
+  const today = new Date();
+  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1);
+  const yearMonth = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}`;
 
-    const today = new Date();
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1);
-    const yearMonth = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2,"0")}`;
+  // 고정 금액(월별 10만원)
+  const FIXED_AMOUNT = 100000;
+  const amountText = FIXED_AMOUNT.toLocaleString("ko-KR");
 
-    // 고정 금액(월별 10만원)
-    const FIXED_AMOUNT = 100000;
-    const amountText = FIXED_AMOUNT.toLocaleString("ko-KR");
+  function showModal(reason) {
+    if (reason) console.log("[Modal] reason:", reason);
+    document.getElementById("paymentModal").style.display = "flex";
+  }
 
-    // 디버그 로그
-    console.log("[Modal] today:", today.toString());
-    console.log("[Modal] yearMonth:", yearMonth, "date:", today.getDate());
+  console.log("[Modal] today:", today.toString());
+  console.log("[Modal] target yearMonth:", yearMonth, "date:", today.getDate());
 
-    function showModal(msg) {
-      if (msg) console.log("[Modal] reason:", msg);
-      document.getElementById("paymentModal").style.display = "flex";
-    }
+  // 1) 날짜 조건(매월 24일 이후) 또는 강제 테스트
+  if (forceTest || today.getDate() >= 24) {
+    if (forceTest) console.log("[Modal] forceTest=1");
 
-    // 1) 날짜 조건 검사(매월 24일 이후) 또는 강제 테스트
-    if (forceTest || today.getDate() >= 24) {
-      if (forceTest) showModal("forceTest=1");
+    const paymentRef = ref(db, `payments/${yearMonth}`);
+    get(paymentRef)
+      .then((snapshot) => {
+        const data = snapshot.val() || {};
+        const entries = Object.values(data);
+        const hasData = entries.length > 0;
 
-      const paymentRef = ref(db, `payments/${yearMonth}`);
-      get(paymentRef)
-        .then((snapshot) => {
-          const data = snapshot.val() || {};
-          console.log("[Modal] fetched data:", data);
+        // ✅ 핵심 변경:
+        // DB에 있는 모든 사람의 status가 "paid"이면 팝업을 띄우지 않는다.
+        // (DB가 비어 있으면 아직 아무도 누르지 않은 것으로 간주 → 미납 처리)
+        const unpaidExists = hasData
+          ? entries.some(entry => !entry || entry.status !== "paid")
+          : true;
 
-          // entry가 없거나, status !== "paid" 이면 미납으로 간주
-          const unpaidExists = names.some((name) => !(data[name] && data[name].status === "paid"));
-          console.log("[Modal] unpaidExists:", unpaidExists);
+        console.log("[Modal] hasData:", hasData, "unpaidExists:", unpaidExists);
 
-          if (unpaidExists || forceTest) {
-            const nextMonthNumber = nextMonth.getMonth() + 1;
-            const monthText = `${nextMonthNumber}월`;
+        if (forceTest || unpaidExists) {
+          const monthText = `${nextMonth.getMonth() + 1}월`;
+          document.getElementById("lessonInfo").innerText =
+            `다음 달(${monthText}) 레슨비 ${amountText}원을 입금해 주세요.`;
+          showModal(unpaidExists ? "unpaidExists=true" : "forceTest");
+        } else {
+          // ✅ 전원 paid → 팝업 숨김
+          document.getElementById("paymentModal").style.display = "none";
+          console.log("[Modal] ✅ All paid → modal hidden");
+        }
+      })
+      .catch((err) => {
+        console.error("[Modal] Firebase get() error:", err);
+        // 에러 시에는 테스트 모드에서만 팝업(오탐 방지)
+        if (forceTest) {
+          const monthText = `${nextMonth.getMonth() + 1}월`;
+          document.getElementById("lessonInfo").innerText =
+            `다음 달(${monthText}) 레슨비 ${amountText}원을 입금해 주세요.`;
+          showModal("firebase_read_error + forceTest");
+        } else {
+          console.warn("[Modal] read error & not forceTest → modal suppressed");
+        }
+      });
+  } else {
+    console.log("[Modal] <24일: 조건 미충족, 팝업 없음");
+  }
+</script>
 
-            // ✅ 한 줄 문구만 출력
-            document.getElementById("lessonInfo").innerText =
-              `다음 달(${monthText}) 레슨비 ${amountText}원을 입금해 주세요.`;
-
-            showModal("unpaidExists=true");
-          }
-        })
-        .catch((err) => {
-          console.error("[Modal] Firebase get() error:", err);
-          // ⚠️ 읽기 실패해도 24일 이후에는 알림을 띄워 사용자에게 안내 (페일-오픈)
-          showModal("firebase_read_error");
-        });
-    } else {
-      console.log("[Modal] <24일: 조건 미충족, 팝업 없음");
-    }
-  </script>
 </body>
 </html>
