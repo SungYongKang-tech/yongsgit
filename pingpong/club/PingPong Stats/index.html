@@ -31,13 +31,6 @@
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
 
-    /* 제목 아래 defaultPlayersRaw 보여주는 코드블록 */
-    pre.code{
-      background:#0b1020; color:#e5e7eb; border-radius:12px; padding:12px 14px; overflow:auto;
-      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:13px;
-      border:1px solid #1f2937; box-shadow:var(--shadow); margin-top:8px;
-    }
-
     /* 최근 저장 리스트 */
     ul.log{margin:8px 0 0 0; padding-left:18px}
   </style>
@@ -46,7 +39,7 @@
   <header>
     <div class="wrap">
       <h1>KOEN 탁구 Manager · 성적입력</h1>
-      <pre id="defaultListBlock" class="code"></pre>
+      <!-- 검은 코드블록( defaultPlayersRaw 표시 ) 제거됨 -->
     </div>
   </header>
 
@@ -88,7 +81,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
     import {
-      getDatabase, ref, get, set, push, onValue, query, orderByChild, limitToLast
+      getDatabase, ref, push, onValue, query, orderByChild, limitToLast
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     // 0) Firebase
@@ -97,7 +90,7 @@
       authDomain: "koen-pingpong.firebaseapp.com",
       databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
       projectId: "koen-pingpong",
-      storageBucket: "koen-pingpong.appspot.com",   // (옵션) 버킷 표준 도메인
+      storageBucket: "koen-pingpong.appspot.com",
       messagingSenderId: "597358811982",
       appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
     };
@@ -119,12 +112,11 @@
       "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
       "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
-    
+
     // 파싱 → [{id,name,level}]
     const players = defaultPlayersRaw.map((s,i)=>{
       const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
       const name = m[1]; const level = Number(m[2]);
-      // 동일 이름 대비 키 유니크 처리
       let id = slugify(name);
       return { id: id + '-' + i, name, level };
     }).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
@@ -168,7 +160,7 @@
         ts: Date.now(),
         type: 'single',
         membersA: [a.id], membersB: [b.id],
-        namesA: [a.name], namesB: [b.name],   // 편의상 이름도 같이 저장
+        namesA: [a.name], namesB: [b.name],
         levelsA: [a.level], levelsB: [b.level],
         winnerSide: side,
         score: null,
@@ -187,7 +179,7 @@
     $('#winA').onclick=()=>saveWinner('A');
     $('#winB').onclick=()=>saveWinner('B');
 
-    // 4) 최근 저장 표시(옵션)
+    // 4) 최근 저장 표시
     function watchRecent(){
       const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
       onValue(q, snap=>{
@@ -199,7 +191,6 @@
         const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
         arr.forEach(m=>{
           const li = document.createElement('li');
-          // 이름이 저장되어 있으면 이름 사용, 없으면 id로 복구
           const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
           const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
           li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${m.winnerSide}`;
@@ -212,7 +203,7 @@
     signInAnonymously(auth).catch(console.error);
     onAuthStateChanged(auth, ()=>{
       renderChips(); renderWinnerBox();
-      watchRecent(); // 읽기 권한 있을 때 동작
+      watchRecent();
     });
   </script>
 </body>
