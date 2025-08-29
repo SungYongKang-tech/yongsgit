@@ -15,15 +15,11 @@
     header{position:sticky; top:0; z-index:20; background:#fff; border-bottom:1px solid #e5e7eb}
     .wrap{max-width:980px; margin:0 auto; padding:14px 16px}
     h1{margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)}
-
     main{max-width:980px; margin:12px auto; padding:0 16px 30px}
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
 
     .chips{display:flex; flex-wrap:wrap; gap:8px}
-    .chip{
-      padding:10px 12px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer;
-      background:#eef2ff; font-size:15px;
-    }
+    .chip{padding:10px 12px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer; background:#eef2ff; font-size:15px}
     .chip.selected{outline:2px solid var(--accent); background:#fff}
 
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
@@ -35,30 +31,31 @@
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
 
-    /* 제목 아래 코드블록(요청하신 배열 그대로 표기) */
+    /* 제목 아래 defaultPlayersRaw 보여주는 코드블록 */
     pre.code{
       background:#0b1020; color:#e5e7eb; border-radius:12px; padding:12px 14px; overflow:auto;
       font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:13px;
       border:1px solid #1f2937; box-shadow:var(--shadow); margin-top:8px;
     }
+
+    /* 최근 저장 리스트 */
+    ul.log{margin:8px 0 0 0; padding-left:18px}
   </style>
 </head>
 <body>
   <header>
     <div class="wrap">
       <h1>KOEN 탁구 Manager · 성적입력</h1>
-      <!-- 제목 바로 아래: defaultPlayersRaw를 그대로 보여줌 -->
       <pre id="defaultListBlock" class="code"></pre>
     </div>
   </header>
 
   <main>
-    <!-- 단식 전용: 버튼에서 두 명 선택 → 승자 버튼으로 즉시 저장 -->
-    <section id="secSingle" class="active">
+    <section class="active">
       <div class="card">
         <div class="row">
           <div style="font-size:14px; color:var(--muted)">
-            단식은 <b>두 선수</b>를 선택한 뒤 아래의 <b>승자 버튼</b>을 누르면 즉시 저장됩니다.
+            단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.
           </div>
           <button id="clearSel" class="btn" style="margin-left:auto">선택 초기화</button>
         </div>
@@ -71,9 +68,15 @@
             <button id="winB" class="btn warn">승자: <span id="nameB"></span></button>
           </div>
           <div style="text-align:center; margin-top:6px; color:var(--muted); font-size:13px">
-            저장 후 자동으로 초기화됩니다.
+            저장 후 자동 초기화됩니다.
           </div>
         </div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:6px">최근 저장</div>
+        <ul id="recent" class="log"></ul>
+        <div id="recentEmpty" style="color:var(--muted); font-size:13px">아직 기록이 없습니다.</div>
       </div>
     </section>
   </main>
@@ -84,15 +87,17 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-    import { getDatabase, ref, get, set, push, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import {
+      getDatabase, ref, get, set, push, onValue, query, orderByChild, limitToLast
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // ---- Firebase 초기화 ----
+    // 0) Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
       authDomain: "koen-pingpong.firebaseapp.com",
       databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
       projectId: "koen-pingpong",
-      storageBucket: "koen-pingpong.firebasestorage.app",
+      storageBucket: "koen-pingpong.appspot.com",   // (옵션) 버킷 표준 도메인
       messagingSenderId: "597358811982",
       appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
     };
@@ -100,21 +105,21 @@
     const auth = getAuth(app);
     const db = getDatabase(app);
 
-    // ---- 유틸 ----
-    const $ = (sel, ctx=document) => ctx.querySelector(sel);
+    // 유틸
+    const $ = (sel, ctx=document)=>ctx.querySelector(sel);
     const toast = (msg='저장되었습니다')=>{
       const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)
     };
+    const slugify = (s)=> s.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
 
-    // ---- 기본 선수 목록 (요청하신 배열을 그대로 사용) ----
+    // 1) 기본 선수 (코드 기반)
     const defaultPlayersRaw = [
       "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
       "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
       "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
       "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
-
-    // 제목 아래에 그대로 출력
+    // 화면에 그대로 표시
     $('#defaultListBlock').textContent =
 `const defaultPlayersRaw = [
   "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
@@ -123,125 +128,99 @@
   "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
 ];`;
 
-    // slug 생성(고유 id)
-    function slugify(str){
-      return str
-        .replace(/[()]/g,'')
-        .replace(/\s+/g,'-')
-        .replace(/[^\p{L}\p{N}-]/gu,'')
-        .toLowerCase();
-    }
+    // 파싱 → [{id,name,level}]
+    const players = defaultPlayersRaw.map((s,i)=>{
+      const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
+      const name = m[1]; const level = Number(m[2]);
+      // 동일 이름 대비 키 유니크 처리
+      let id = slugify(name);
+      return { id: id + '-' + i, name, level };
+    }).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
 
-    // players 컬렉션에 초기 등록(처음 1회)
-    async function ensurePlayers(){
-      const snap = await get(ref(db,'players'));
-      if(!snap.exists()){
-        const batch = {};
-        const seen = new Set();
-        defaultPlayersRaw.forEach((s,i)=>{
-          const m = s.match(/^(.*)\((\d+)\)$/);
-          if(!m) return;
-          const name = m[1];
-          const level = Number(m[2]);
-          let key = slugify(name);
-          while(seen.has(key)) key = key + ("-"+(i+1));
-          seen.add(key);
-          batch[key] = { name, level, isActive:true, createdAt: Date.now() };
-        });
-        await set(ref(db,'players'), batch);
-      }
-    }
-
-    // ---- 상태 & 렌더링(단식: 2명 선택) ----
-    let players = []; // [{id,name,level}]
-    const singleState = { sel: [] }; // [{id,name,level}] 2명 제한
-
+    // 2) UI: 칩, 선택, 승자 박스
+    const state = { sel: [] }; // 단식: 2명 제한
     function renderChips(){
-      const box = $('#chips');
-      box.innerHTML = '';
+      const box = $('#chips'); box.innerHTML='';
       players.forEach(p=>{
         const btn = document.createElement('button');
-        btn.className = 'chip';
+        btn.className='chip';
         btn.textContent = `${p.name}(${p.level})`;
-        if(singleState.sel.some(x=>x.id===p.id)) btn.classList.add('selected');
-
+        if(state.sel.some(x=>x.id===p.id)) btn.classList.add('selected');
         btn.onclick = ()=>{
-          // 토글 선택
-          const idx = singleState.sel.findIndex(x=>x.id===p.id);
-          if(idx>=0){
-            singleState.sel.splice(idx,1);
-          }else{
-            if(singleState.sel.length>=2){
-              toast('단식은 두 명만 선택할 수 있습니다');
-              return;
-            }
-            singleState.sel.push(p);
+          const idx = state.sel.findIndex(x=>x.id===p.id);
+          if(idx>=0) state.sel.splice(idx,1);
+          else{
+            if(state.sel.length>=2){ toast('단식은 두 명만 선택'); return; }
+            state.sel.push(p);
           }
-          renderChips();
-          renderWinnerBox();
+          renderChips(); renderWinnerBox();
         };
-
         box.appendChild(btn);
       });
     }
-
     function renderWinnerBox(){
       const wb = $('#winnerBox');
-      if(singleState.sel.length===2){
-        $('#nameA').textContent = singleState.sel[0].name;
-        $('#nameB').textContent = singleState.sel[1].name;
-        wb.style.display = '';
-      }else{
-        wb.style.display = 'none';
-      }
+      if(state.sel.length===2){
+        $('#nameA').textContent = state.sel[0].name;
+        $('#nameB').textContent = state.sel[1].name;
+        wb.style.display='';
+      }else wb.style.display='none';
     }
+    $('#clearSel').onclick=()=>{ state.sel=[]; renderChips(); renderWinnerBox(); };
 
-    $('#clearSel').onclick = ()=>{
-      singleState.sel = [];
-      renderChips();
-      renderWinnerBox();
-    };
-
-    // ---- 저장 로직: 승자 버튼 누르면 즉시 저장 ----
+    // 3) 저장 (Firebase /matches)
     async function saveWinner(side){
-      if(singleState.sel.length!==2){
-        toast('두 선수를 먼저 선택하세요'); return;
-      }
-      const a = singleState.sel[0], b = singleState.sel[1];
-      const winnerSide = side; // 'A' or 'B'
+      if(state.sel.length!==2){ toast('두 선수를 먼저 선택하세요'); return; }
+      const [a,b] = state.sel;
       const match = {
         ts: Date.now(),
         type: 'single',
-        membersA: [a.id],
-        membersB: [b.id],
-        winnerSide,
+        membersA: [a.id], membersB: [b.id],
+        namesA: [a.name], namesB: [b.name],   // 편의상 이름도 같이 저장
+        levelsA: [a.level], levelsB: [b.level],
+        winnerSide: side,
         score: null,
         createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
         createdAt: Date.now()
       };
-      await push(ref(db,'matches'), match);
-      toast('성적이 저장되었습니다');
-      // 초기화
-      singleState.sel = [];
-      renderChips();
-      renderWinnerBox();
+      try{
+        await push(ref(db,'matches'), match);
+        toast('성적이 저장되었습니다');
+        state.sel=[]; renderChips(); renderWinnerBox();
+      }catch(e){
+        console.error(e);
+        toast(e?.message || '저장 실패');
+      }
+    }
+    $('#winA').onclick=()=>saveWinner('A');
+    $('#winB').onclick=()=>saveWinner('B');
+
+    // 4) 최근 저장 표시(옵션)
+    function watchRecent(){
+      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
+      onValue(q, snap=>{
+        const ul = $('#recent'), empty = $('#recentEmpty');
+        ul.innerHTML='';
+        const val = snap.val();
+        if(!val){ empty.style.display=''; return; }
+        empty.style.display='none';
+        const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
+        arr.forEach(m=>{
+          const li = document.createElement('li');
+          // 이름이 저장되어 있으면 이름 사용, 없으면 id로 복구
+          const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
+          const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
+          li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${m.winnerSide}`;
+          ul.appendChild(li);
+        });
+      });
     }
 
-    $('#winA').onclick = ()=> saveWinner('A');
-    $('#winB').onclick = ()=> saveWinner('B');
-
-    // ---- 시작 시퀀스 ----
+    // 5) 시작
     signInAnonymously(auth).catch(console.error);
-    onAuthStateChanged(auth, async ()=>{
-      await ensurePlayers();
-      onValue(ref(db,'players'), (snap)=>{
-        const obj = snap.val() || {};
-        players = Object.entries(obj)
-          .map(([id,v])=>({id, ...v}))
-          .sort((a,b)=> a.name.localeCompare(b.name,'ko'));
-        renderChips();
-        renderWinnerBox();
-      });
+    onAuthStateChanged(auth, ()=>{
+      renderChips(); renderWinnerBox();
+      watchRecent(); // 읽기 권한 있을 때 동작
     });
   </script>
 </body>
