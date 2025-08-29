@@ -218,7 +218,10 @@
       if(sec===secLevels) tabLevels.classList.add('active');
       if(sec===secResult) tabResult.classList.add('active');
     }
-    tabLevels.onclick=()=>show(secLevels);
+    tabLevels.onclick=()=>{
+  show(secLevels);
+  renderLevelsTable();   // ← 탭 전환 시 즉시 다시 그림
+};
     tabResult.onclick=()=>show(secResult);
 
     // ---- 5) 선수 데이터 로딩 ----
@@ -373,11 +376,17 @@
     }
     $('#refreshPlayers').onclick=()=>onValue(ref(db,'players'),()=>{}, {onlyOnce:true});
 
-    // ---- 8) 시작 시퀀스 ----
-    onAuthStateChanged(auth, async ()=>{
-      await ensurePlayers();
-      // onValue 훅이 렌더 담당
-    });
+   onAuthStateChanged(auth, async ()=>{
+  await ensurePlayers();
+
+  // 추가: 최초 1회 로드해서 테이블/칩 즉시 그림
+  const snap = await get(ref(db,'players'));
+  players = mapPlayers(snap.val());
+  renderLevelsTable();
+  renderResChips();
+  // 이후 실시간 onValue가 계속 갱신
+});
+
   </script>
 </body>
 </html>
