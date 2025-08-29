@@ -3,25 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>KOEN 탁구 Manager · 성적입력 · 부수확인</title>
+  <title>KOEN 탁구 Manager · 성적입력</title>
   <style>
     :root{
       --ink:#0f172a; --muted:#64748b; --card:#ffffff; --bg:#f5f7fb; --primary:#0d47a1; --accent:#2563eb; --danger:#ef4444; --ok:#16a34a;
-      --chip:#eef2ff; --chip2:#e0f2fe; --chip3:#fef3c7; --shadow:0 8px 28px rgba(0,0,0,.08)
+      --shadow:0 8px 28px rgba(0,0,0,.08)
     }
     *{box-sizing:border-box}
     body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif; color:var(--ink); background:var(--bg)}
     header{position:sticky; top:0; z-index:20; background:#fff; border-bottom:1px solid #e5e7eb}
     .wrap{max-width:980px; margin:0 auto; padding:14px 16px}
     h1{margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)}
-    .tabs{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 6px}
-    .tabs button{padding:8px 12px; border:1px solid #d1d5db; background:#fff; border-radius:999px; cursor:pointer}
-    .tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent)}
 
     main{max-width:980px; margin:12px auto; padding:0 16px 30px}
-    section{display:none}
-    section.active{display:block}
-
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
     .row>.grow{flex:1}
@@ -33,87 +27,53 @@
     .btn.ok{background:var(--ok); color:#fff; border-color:var(--ok)}
 
     .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
-    .chip{padding:8px 10px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer; background:var(--chip)}
-    .chip.lv7{background:var(--chip2)}
-    .chip.lv10{background:var(--chip3)}
-    .chip.selected{outline:2px solid var(--accent)}
+    .chip{padding:8px 10px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer; background:#eef2ff}
 
     .slots{display:grid; grid-template-columns:1fr 24px 1fr; gap:10px; align-items:start; margin-top:8px}
     .slot{border:1px dashed #cbd5e1; min-height:44px; border-radius:10px; padding:8px; background:#fff}
-    .slot .pill{display:inline-flex; padding:6px 10px; margin:4px; border-radius:999px; background:#e2e8f0; gap:6px; align-items:center}
-    .slot .pill b{font-weight:600}
-    .slot .pill button{border:0; background:transparent; cursor:pointer; color:#475569}
+    .pill{display:inline-flex; padding:6px 10px; margin:4px; border-radius:999px; background:#e2e8f0; gap:6px; align-items:center}
+    .pill b{font-weight:600}
+    .pill button{border:0; background:transparent; cursor:pointer; color:#475569}
     .vs{display:grid; place-items:center; color:#64748b; font-weight:700}
 
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
 
-    table{width:100%; border-collapse:collapse}
-    th,td{border-bottom:1px solid #e5e7eb; padding:10px 12px; text-align:left}
-    th{background:#f8fafc; font-weight:700}
-    td .levelBox{display:inline-flex; align-items:center; gap:6px}
-    td .levelBox button{width:28px; height:28px; border-radius:8px; border:1px solid #d1d5db; background:#fff; cursor:pointer}
-    .hidden{display:none}
-    .nameBtn{background:transparent; border:0; font-size:16px; padding:0; cursor:pointer; color:var(--ink)}
-    .nameBtn:hover{text-decoration:underline}
+    /* 코드 블록(제목 바로 아래 array 표시용) */
+    pre.code{
+      background:#0b1020; color:#e5e7eb; border-radius:12px; padding:12px 14px; overflow:auto;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:13px;
+      border:1px solid #1f2937; box-shadow:var(--shadow); margin-top:8px;
+    }
   </style>
 </head>
 <body>
   <header>
     <div class="wrap">
-      <h1>KOEN 탁구 Manager</h1>
-      <div class="tabs">
-        <!-- 부수확인을 첫 탭으로, 기본 활성화 -->
-        <button id="tabLevels" class="active">부수확인</button>
-        <button id="tabResult">성적입력</button>
-      </div>
+      <h1>KOEN 탁구 Manager · 성적입력</h1>
+      <!-- 제목 바로 아래: defaultPlayersRaw를 그대로 보여주는 코드 블록 -->
+      <pre id="defaultListBlock" class="code"></pre>
     </div>
   </header>
 
   <main>
-    <!-- 부수확인 (맨 앞, 기본 활성화) -->
-    <section id="secLevels" class="active">
-      <div class="card">
-        <div class="row">
-          <div class="grow"></div>
-          <button class="btn" id="refreshPlayers">새로고침</button>
-        </div>
-        <div class="card">
-          <table>
-            <thead>
-              <tr><th>이름</th><th>부수</th><th>조정</th></tr>
-            </thead>
-            <tbody id="lvlTbody"></tbody>
-          </table>
-        </div>
-        <div class="card" style="font-size:14px; color:var(--muted)">
-          이름을 클릭하면 해당 행에 <b>+ / −</b> 버튼이 나타납니다.
-        </div>
-      </div>
-    </section>
-
-    <!-- 성적입력 (그대로 유지) -->
-    <section id="secResult">
+    <!-- 성적입력 단일 화면 -->
+    <section id="secResult" class="active">
       <div class="card">
         <div class="row">
           <label>경기 종류</label>
-          <div class="row">
-            <select id="resType">
-              <option value="single" selected>단식</option>
-              <option value="double">복식</option>
-            </select>
-          </div>
-        </div>
+          <select id="resType">
+            <option value="single" selected>단식</option>
+            <option value="double">복식</option>
+          </select>
 
-        <div class="row" style="margin-top:8px">
           <div class="grow"></div>
-          <div class="row">
-            <label>시각</label>
-            <input id="resTime" type="datetime-local">
-          </div>
+
+          <label>시각</label>
+          <input id="resTime" type="datetime-local">
         </div>
 
-        <!-- 선수 선택: chips + 슬롯 (기존 성적입력용 간단 셀렉터 유지) -->
+        <!-- 선수 선택: 칩 + 슬롯 -->
         <div class="card">
           <div class="chips" id="resChips"></div>
           <div class="slots">
@@ -164,13 +124,29 @@
     const auth = getAuth(app);
     const db = getDatabase(app);
 
-    // ---- 1) 익명 로그인 ----
-    signInAnonymously(auth).catch(console.error);
-
-    // ---- 2) 유틸 ----
+    // ---- 1) 유틸 ----
     const $ = (sel, ctx=document) => ctx.querySelector(sel);
-    const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
-    const toast = (msg='저장되었습니다')=>{ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600) };
+    const toast = (msg='저장되었습니다')=>{
+      const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)
+    };
+
+    // ---- 2) 기본 선수 목록 (DB 초기 등록용) ----
+    const defaultPlayersRaw = [
+      "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
+      "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
+      "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
+      "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
+    ];
+
+    // 제목 바로 아래 코드블록에 동일 내용 그대로 출력
+    const codeBlock = $('#defaultListBlock');
+    codeBlock.textContent =
+`const defaultPlayersRaw = [
+  "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
+  "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
+  "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
+  "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
+];`;
 
     function slugify(str){
       return str
@@ -179,15 +155,6 @@
         .replace(/[^\p{L}\p{N}-]/gu,'')
         .toLowerCase();
     }
-    const includesHangul = (a,b)=> a.toLowerCase().includes((b||'').toLowerCase());
-
-    // ---- 3) 기본 선수 목록 ----
-    const defaultPlayersRaw = [
-      "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
-      "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
-      "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
-      "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
-    ];
 
     async function ensurePlayers(){
       const snap = await get(ref(db,'players'));
@@ -208,40 +175,16 @@
       }
     }
 
-    // ---- 4) 탭 전환 (부수확인 / 성적입력) ----
-    const tabLevels=$('#tabLevels'), tabResult=$('#tabResult');
-    const secLevels=$('#secLevels'), secResult=$('#secResult');
-    function show(sec){
-      [secLevels,secResult].forEach(s=>s.classList.remove('active'));
-      sec.classList.add('active');
-      [tabLevels,tabResult].forEach(b=>b.classList.remove('active'));
-      if(sec===secLevels) tabLevels.classList.add('active');
-      if(sec===secResult) tabResult.classList.add('active');
-    }
-    tabLevels.onclick=()=>{
-  show(secLevels);
-  renderLevelsTable();   // ← 탭 전환 시 즉시 다시 그림
-};
-    tabResult.onclick=()=>show(secResult);
-
-    // ---- 5) 선수 데이터 로딩 ----
+    // ---- 3) 데이터 로딩/칩 렌더 ----
     let players = []; // [{id,name,level}]
     const mapPlayers = (obj)=> !obj ? [] : Object.entries(obj)
       .map(([id,v])=>({id, ...v}))
       .sort((a,b)=> a.name.localeCompare(b.name,'ko'));
 
-    onValue(ref(db,'players'), (snap)=>{
-      players = mapPlayers(snap.val());
-      renderLevelsTable();
-      renderResChips();
-    });
-
-    // ---- 6) 성적입력: 간단 선택기 ----
-    function renderResChips(keyword=''){
-      const list = keyword ? players.filter(p=>includesHangul(p.name, keyword)) : players;
+    function renderResChips(){
       const chipsEl = $('#resChips');
       chipsEl.innerHTML='';
-      list.forEach(p=>{
+      players.forEach(p=>{
         const chip = document.createElement('button');
         chip.className='chip';
         chip.textContent = `${p.name}(${p.level})`;
@@ -250,6 +193,12 @@
       });
     }
 
+    onValue(ref(db,'players'), (snap)=>{
+      players = mapPlayers(snap.val());
+      renderResChips();
+    });
+
+    // ---- 4) 성적입력 선택/저장 ----
     const resState = { type:'single', selA:[], selB:[] };
     $('#resType').onchange = (e)=>{
       resState.type = e.target.value;
@@ -324,69 +273,15 @@
     }
     $('#saveResult').onclick=saveResult;
 
-    // ---- 7) 부수 확인/조정 (이름 클릭 시 + / − 표시) ----
-    function renderLevelsTable(){
-      const tbody = $('#lvlTbody');
-      tbody.innerHTML='';
-      players.forEach(p=>{
-        const tr = document.createElement('tr');
-
-        // 이름: 버튼처럼 눌러서 조정 영역 토글
-        const tdN = document.createElement('td');
-        const nameBtn = document.createElement('button');
-        nameBtn.className = 'nameBtn';
-        nameBtn.textContent = p.name;
-        nameBtn.onclick = ()=> {
-          const box = tr.querySelector('.levelBox');
-          box.classList.toggle('hidden');
-        };
-        tdN.appendChild(nameBtn);
-        tr.appendChild(tdN);
-
-        // 부수 표시
-        const tdL = document.createElement('td');
-        tdL.textContent = p.level;
-        tr.appendChild(tdL);
-
-        // 조정: 기본은 숨김, 이름 클릭 시 표시
-        const tdA = document.createElement('td');
-        const box = document.createElement('div');
-        box.className='levelBox hidden';
-        const minus = document.createElement('button'); minus.textContent='-';
-        const plus = document.createElement('button'); plus.textContent='+';
-        const span = document.createElement('span'); span.textContent=p.level;
-
-        minus.onclick= async()=>{
-          const v=Math.max(1,(p.level||1)-1);
-          await update(ref(db,`players/${p.id}`),{level:v});
-          toast(`${p.name} 부수 ${p.level}→${v}`);
-        };
-        plus.onclick= async()=>{
-          const v=(p.level||1)+1;
-          await update(ref(db,`players/${p.id}`),{level:v});
-          toast(`${p.name} 부수 ${p.level}→${v}`);
-        };
-
-        box.append(minus, span, plus);
-        tdA.appendChild(box);
-        tr.appendChild(tdA);
-
-        tbody.appendChild(tr);
-      });
-    }
-    $('#refreshPlayers').onclick=()=>onValue(ref(db,'players'),()=>{}, {onlyOnce:true});
-
-   onAuthStateChanged(auth, async ()=>{
-  await ensurePlayers();
-
-  // 추가: 최초 1회 로드해서 테이블/칩 즉시 그림
-  const snap = await get(ref(db,'players'));
-  players = mapPlayers(snap.val());
-  renderLevelsTable();
-  renderResChips();
-  // 이후 실시간 onValue가 계속 갱신
-});
-
+    // ---- 5) 시작 시퀀스 ----
+    signInAnonymously(auth).catch(console.error);
+    onAuthStateChanged(auth, async ()=>{
+      await ensurePlayers();
+      // 최초 1회 즉시 렌더
+      const snap = await get(ref(db,'players'));
+      players = mapPlayers(snap.val());
+      renderResChips();
+    });
   </script>
 </body>
 </html>
