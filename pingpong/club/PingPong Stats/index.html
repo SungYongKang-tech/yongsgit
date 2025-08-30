@@ -197,29 +197,39 @@
     $('#clearSel').onclick=()=>{ state.sel=[]; renderChips(); renderWinnerBox(); };
 
     // 3) 저장 (Firebase /matches)
-    async function saveWinner(side){
-      if(state.sel.length!==2){ toast('두 선수를 먼저 선택하세요'); return; }
-      const [a,b] = state.sel;
-      const match = {
-        ts: Date.now(),
-        type: 'single',
-        membersA: [a.id], membersB: [b.id],
-        namesA: [a.name], namesB: [b.name],
-        levelsA: [a.level], levelsB: [b.level],
-        winnerSide: side,
-        score: null,
-        createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
-        createdAt: Date.now()
-      };
-      try{
-        await push(ref(db,'matches'), match);
-        toast('성적이 저장되었습니다');
-        state.sel=[]; renderChips(); renderWinnerBox();
-      }catch(e){
-        console.error(e);
-        toast(e?.message || '저장 실패');
-      }
-    }
+    // 3) 저장 (Firebase /matches)
+async function saveWinner(side){
+  if(state.sel.length!==2){ toast('두 선수를 먼저 선택하세요'); return; }
+  const [a,b] = state.sel;
+
+  // ✅ 추가: KST(Asia/Seoul) 기준 monthKey("YYYY-MM") 계산
+  const nowKST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const monthKey = `${nowKST.getFullYear()}-${String(nowKST.getMonth()+1).padStart(2,'0')}`;
+
+  // ✅ monthKey를 함께 저장 (ts/createdAt은 그대로 숫자 ms)
+  const match = {
+    ts: Date.now(),
+    monthKey,                 // ← 추가됨
+    type: 'single',
+    membersA: [a.id], membersB: [b.id],
+    namesA: [a.name], namesB: [b.name],
+    levelsA: [a.level], levelsB: [b.level],
+    winnerSide: side,
+    score: null,
+    createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
+    createdAt: Date.now()
+  };
+
+  try{
+    await push(ref(db,'matches'), match);
+    toast('성적이 저장되었습니다');
+    state.sel=[]; renderChips(); renderWinnerBox();
+  }catch(e){
+    console.error(e);
+    toast(e?.message || '저장 실패');
+  }
+}
+
     $('#winA').onclick=()=>saveWinner('A');
     $('#winB').onclick=()=>saveWinner('B');
 
