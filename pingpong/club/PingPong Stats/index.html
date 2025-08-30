@@ -20,7 +20,7 @@
 
     .chips{display:flex; flex-wrap:wrap; gap:8px}
     .chip{padding:10px 12px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer; background:#eef2ff; font-size:15px}
-    .chip.selected{outline:2px solid var(--accent); background:#fff}
+    .chip.selected{outline:2px solid #2563eb; background:#fff}
 
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
     .row.center{justify-content:center}
@@ -45,12 +45,8 @@
 
     /* 헤더 버튼 보이도록 강제 */
     header a.btn.primary{
-      display:inline-block;
-      white-space:nowrap;
-      background:var(--accent) !important;
-      color:#fff !important;
-      border-color:var(--accent) !important;
-      outline:0;
+      display:inline-block; white-space:nowrap;
+      background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important;
     }
     @media (max-width:520px){
       header .row{justify-content:space-between}
@@ -159,13 +155,30 @@
     const auth = getAuth(app);
     const db = getDatabase(app);
 
-    // 유틸
+    // ===== 유틸 =====
     const $ = (sel, ctx=document)=>ctx.querySelector(sel);
     const toast = (msg='저장되었습니다')=>{
       const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)
     };
     const slugify = (s)=> s.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
     const fmtTeam = (arr)=> arr.map(p=>p.name).join(' + ') || '-';
+
+    // ✅ 날짜 포맷: yymmdd hh:mm (요일) — KST 고정
+    const toKST = (t) => new Date(new Date(t ?? Date.now()).toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
+    const WEEK = ['일','월','화','수','목','금','토'];
+    const fmtYYMMDD_HHMM_WD = (t) => {
+      const d = toKST(t);
+      const yy = String(d.getFullYear()).slice(-2);
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mi = String(d.getMinutes()).padStart(2,'0');
+      const wd = WEEK[d.getDay()];
+      return `${yy}${mm}${dd} ${hh}:${mi} (${wd})`;
+    };
+
+    // ✅ 삭제 비밀번호
+    const DELETE_PASSWORD = '7910';
 
     // 1) 기본 선수
     const defaultPlayersRaw = [
@@ -196,7 +209,7 @@
       renderChips(); renderWinnerBox();
       hintEl.innerHTML = state.mode==='single'
         ? '단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.'
-        : '복식: <b>네 선수</b>를 선택하세요. <b>앞 두 명=A팀</b>, <b>뒤 두 명=B팀</b>으로 자동 배정됩니다. 필요하면 <b>팀 스왑</b>을 누르세요.';
+        : '복식: <b>네 선수</b>를 선택하세요. <b>앞 두 명=A팀</b>, <b>뒤 두 명=B팀</b>. 필요하면 <b>팀 스왑</b>을 누르세요.';
     });
 
     function renderChips(){
@@ -236,7 +249,6 @@
 
     function renderWinnerBox(){
       const wb = $('#winnerBox');
-      const need = (state.mode==='single') ? 2 : 4;
       const teams = computeTeams();
       if(teams){
         $('#teamA').textContent = fmtTeam(teams.A);
@@ -257,8 +269,8 @@
       const teams = computeTeams();
       if(!teams){ toast(state.mode==='single'?'두 선수를 먼저 선택하세요':'네 선수를 먼저 선택하세요'); return; }
 
-      // ✅ Asia/Seoul 기준 monthKey
-      const nowKST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+      // Asia/Seoul 기준 monthKey
+      const nowKST = toKST();
       const monthKey = `${nowKST.getFullYear()}-${String(nowKST.getMonth()+1).padStart(2,'0')}`;
 
       const membersA = teams.A.map(p=>p.id), membersB = teams.B.map(p=>p.id);
@@ -291,9 +303,16 @@
     $('#winA').onclick=()=>saveWinner('A');
     $('#winB').onclick=()=>saveWinner('B');
 
-    // 4) 최근 저장 + 삭제
+    // 4) 최근 저장 + 삭제(비번 7910)
     async function deleteMatch(key){
-      if(!confirm('이 기록을 삭제할까요?')) return;
+      const pw = prompt('삭제 비밀번호 4자리를 입력하세요.');
+      if (pw === null) return;                 // 취소
+      if (pw !== DELETE_PASSWORD){
+        toast('비밀번호가 올바르지 않습니다');
+        return;
+      }
+      if(!confirm('정말 삭제할까요?')) return;
+
       try{
         await remove(ref(db, 'matches/'+key));
         toast('삭제되었습니다');
@@ -310,8 +329,7 @@
         ul.innerHTML='';
         let arr = [];
         snap.forEach(child=>{
-          const m = child.val();
-          arr.push({ key: child.key, m });
+          arr.push({ key: child.key, m: child.val() });
         });
         if(!arr.length){ empty.style.display=''; return; }
         empty.style.display='none';
@@ -329,7 +347,7 @@
           const item = document.createElement('div');
           item.className='item';
           item.innerHTML = `
-            <div>${new Date(m.ts).toLocaleString('ko-KR')} · [${typeLabel}] ${A} vs ${B} → <b>${winnerName}</b></div>
+            <div>${fmtYYMMDD_HHMM_WD(m.ts ?? m.createdAt)} · [${typeLabel}] ${A} vs ${B} → <b>${winnerName}</b></div>
           `;
 
           const del = document.createElement('button');
