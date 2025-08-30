@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>KOEN 탁구 · 관리자</title>
+  <style>
+    :root{
+      --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
+      --primary:#0d47a1; --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+      --shadow:0 8px 28px rgba(0,0,0,.08)
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif; color:var(--ink); background:var(--bg)}
+    header{position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid #e5e7eb}
+    .wrap{max-width:1040px; margin:0 auto; padding:14px 16px}
+    h1{margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)}
+    main{max-width:1040px; margin:16px auto; padding:0 16px 40px}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .btn{border:1px solid #d1d5db; border-radius:10px; padding:8px 12px; font-size:14px; background:#fff; cursor:pointer}
+    .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .btn.warn{background:#ef4444; color:#fff; border-color:#ef4444}
+    .btn.ok{background:#16a34a; color:#fff; border-color:#16a34a}
+    .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
+    table{width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden}
+    thead th{background:#f8fafc; border-bottom:1px solid #e5e7eb; padding:10px; font-size:14px; color:#334155; text-align:left}
+    tbody td{border-bottom:1px solid #f1f5f9; padding:8px; font-size:14px}
+    .right{text-align:right}
+    .muted{color:var(--muted)}
+    input[type="number"]{width:90px; padding:6px 8px}
+    input[type="text"]{padding:6px 8px}
+    .grid{display:grid; gap:12px}
+    .grid.cols-2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+    .badge{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; font-size:12px}
+    .small{font-size:12px}
+    .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
+    .toast.show{opacity:1}
+    .color-row{display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px dashed #e5e7eb}
+    .color-row label{width:60px; color:#334155; font-weight:600}
+    .hint{color:#64748b; font-size:13px}
+    iframe#snapFrame{position:fixed; inset:-9999px; width:800px; height:1200px; border:0}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="row">
+      <h1 style="margin-right:auto">KOEN 탁구 · 관리자</h1>
+      <a class="btn" href="./">← 성적입력</a>
+      <a class="btn" href="monthly-report.html">📊 이번달 성적표</a>
+    </div>
+    <div class="row">
+      <span class="badge">실험판 · 브라우저에서 동작</span>
+      <span class="small muted">※ 예약 자동 저장은 Cloud Functions 권장</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- 로스터 관리 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">선수(로스터) 관리</div>
+      <div class="small muted">부수는 숫자 작을수록 상위입니다.</div>
+    </div>
+    <div class="grid cols-2" style="margin-top:8px">
+      <div>
+        <div class="muted small" style="margin-bottom:6px">선수 추가</div>
+        <div class="row">
+          <input id="newName" type="text" placeholder="이름" />
+          <input id="newLevel" type="number" min="1" max="20" step="1" placeholder="부수" />
+          <button id="addPlayer" class="btn ok">추가</button>
+        </div>
+        <div class="hint" style="margin-top:6px">이름만 입력해도 되지만 부수 입력을 권장합니다.</div>
+      </div>
+      <div>
+        <div class="muted small" style="margin-bottom:6px">정렬</div>
+        <div class="row">
+          <button id="sortByLevel" class="btn primary">부수 오름차순</button>
+          <button id="sortByName" class="btn">이름 가나다</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="overflow:auto; margin-top:12px">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:56px">번호</th>
+            <th>이름</th>
+            <th style="width:120px" class="right">부수</th>
+            <th style="width:220px" class="right">작업</th>
+          </tr>
+        </thead>
+        <tbody id="playerBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 통계/옵션 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">통계 재계산 / 옵션</div>
+      <div class="small muted">월간 리포트는 이 값을 즉시 반영하게 패치 스니펫 제공</div>
+    </div>
+    <div class="grid cols-2" style="margin-top:8px">
+      <div class="card" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">복식 가중치</div>
+        <div class="row">
+          <input id="doubleWeight" type="number" min="0" max="1" step="0.1" />
+          <button id="saveDoubleWeight" class="btn primary">저장</button>
+        </div>
+        <div class="hint" style="margin-top:6px">예) 0.5 ⇒ 복식은 단식의 절반 가중</div>
+      </div>
+      <div class="card" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">삭제 비밀번호</div>
+        <div class="row">
+          <input id="deletePassword" type="text" placeholder="예: 7910" />
+          <button id="saveDeletePassword" class="btn primary">저장</button>
+        </div>
+        <div class="hint" style="margin-top:6px">성적입력 화면에서 삭제 시 사용하는 4자리 비밀번호</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 칩 색상 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">UI / 칩 색상 맵</div>
+      <div class="small muted">부수 → 칩 배경색 (글씨는 검정)</div>
+    </div>
+    <div id="colorList" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="saveColors" class="btn primary">색상 맵 저장</button>
+      <span class="hint">입력하지 않은 부수는 기본 팔레트를 사용합니다.</span>
+    </div>
+  </section>
+
+  <!-- 스냅샷 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">월 마감 / 스냅샷 이미지 저장</div>
+      <div class="small muted">브라우저에서 수동 저장 · Storage에 PNG 업로드</div>
+    </div>
+    <div class="grid cols-2" style="margin-top:8px">
+      <div class="card" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">이번달</div>
+        <div class="row">
+          <button id="snapThisMonth" class="btn primary">이번달 스냅샷 저장</button>
+        </div>
+      </div>
+      <div class="card" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">전월</div>
+        <div class="row">
+          <button id="snapPrevMonth" class="btn">전월 스냅샷 저장</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:8px">
+      자동 예약(매달 말일 23:00 / 매월 1일 00:05)은
+      Firebase **Cloud Functions (scheduled)**로 구현하는 것을 권장합니다.
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast">Saved</div>
+<iframe id="snapFrame" title="snapshot"></iframe>
+
+<!-- html2canvas for snapshot -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+  import { getDatabase, ref, push, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { getStorage, ref as sRef, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
+
+  // ===== Firebase =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
+    authDomain: "koen-pingpong.firebaseapp.com",
+    databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
+    projectId: "koen-pingpong",
+    storageBucket: "koen-pingpong.appspot.com",
+    messagingSenderId: "597358811982",
+    appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+  const storage = getStorage(app);
+
+  // ===== Utils =====
+  const $ = (s, ctx=document)=>ctx.querySelector(s);
+  const toast = (msg='저장되었습니다')=>{
+    const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600);
+  };
+  const pad = (n)=> String(n).padStart(2,'0');
+  const toKST = (t = Date.now()) => new Date( new Date(t).toLocaleString('en-US', { timeZone:'Asia/Seoul' }) );
+  const yyyymm = (d)=> `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+  const prevMonth = (d)=> new Date(d.getFullYear(), d.getMonth()-1, 1);
+
+  // ===== 로스터 =====
+  let players = []; // {id, name, level}
+  let sortMode = 'level';
+
+  function renderPlayers(){
+    const body = $('#playerBody'); body.innerHTML='';
+    const rows = [...players];
+    if(sortMode==='level'){
+      rows.sort((a,b)=> (a.level??999) - (b.level??999) || a.name.localeCompare(b.name,'ko'));
+    }else{
+      rows.sort((a,b)=> a.name.localeCompare(b.name,'ko') || (a.level??999)-(b.level??999));
+    }
+    rows.forEach((p, idx)=>{
+      const tr = document.createElement('tr');
+
+      const tdNo = document.createElement('td'); tdNo.textContent = String(idx+1); tr.appendChild(tdNo);
+
+      const tdName = document.createElement('td');
+      const nameIn = document.createElement('input'); nameIn.type='text'; nameIn.value=p.name; nameIn.style.width='100%';
+      tdName.appendChild(nameIn); tr.appendChild(tdName);
+
+      const tdLevel = document.createElement('td'); tdLevel.className='right';
+      const lvlIn = document.createElement('input'); lvlIn.type='number'; lvlIn.min='1'; lvlIn.max='20'; lvlIn.step='1'; lvlIn.value = (p.level ?? '');
+      tdLevel.appendChild(lvlIn); tr.appendChild(tdLevel);
+
+      const tdAct = document.createElement('td'); tdAct.className='right';
+      const btnSave = document.createElement('button'); btnSave.className='btn primary'; btnSave.textContent='저장';
+      const btnDel  = document.createElement('button'); btnDel.className='btn warn'; btnDel.style.marginLeft='6px'; btnDel.textContent='삭제';
+      btnSave.onclick = async()=>{
+        const name = nameIn.value.trim(); const level = lvlIn.value==='' ? null : Number(lvlIn.value);
+        if(!name){ toast('이름을 입력하세요'); return; }
+        await update(ref(db,'players/'+p.id), { name, level });
+        toast('저장됨');
+      };
+      btnDel.onclick = async()=>{
+        if(!confirm(`정말 삭제할까요? (${p.name})`)) return;
+        await remove(ref(db,'players/'+p.id));
+        toast('삭제됨');
+      };
+      tdAct.append(btnSave, btnDel); tr.appendChild(tdAct);
+
+      body.appendChild(tr);
+    });
+  }
+
+  $('#addPlayer').onclick = async()=>{
+    const name = $('#newName').value.trim();
+    const levelStr = $('#newLevel').value.trim();
+    const level = levelStr==='' ? null : Number(levelStr);
+    if(!name){ toast('이름을 입력하세요'); return; }
+    const key = push(ref(db,'players')).key; // key를 id로 사용
+    await set(ref(db,'players/'+key), {
+      name, level, createdAt: Date.now()
+    });
+    $('#newName').value=''; $('#newLevel').value='';
+    toast('추가됨');
+  };
+  $('#sortByLevel').onclick=()=>{ sortMode='level'; renderPlayers(); };
+  $('#sortByName').onclick =()=>{ sortMode='name' ; renderPlayers(); };
+
+  onValue(ref(db,'players'), (snap)=>{
+    const val = snap.val() || {};
+    players = Object.entries(val).map(([id, v])=>({ id, name:v.name, level:v.level }));
+    renderPlayers();
+    renderColorRows(); // 레벨 목록도 바뀜
+  });
+
+  // ===== 옵션: 복식 가중치 / 삭제 비번 =====
+  onValue(ref(db,'config/doubleWeight'), (s)=>{
+    const v = s.val(); $('#doubleWeight').value = (v ?? 0.5);
+  });
+  $('#saveDoubleWeight').onclick = async()=>{
+    const v = parseFloat($('#doubleWeight').value);
+    if(!isFinite(v) || v<0 || v>1){ toast('0~1 사이의 수를 입력하세요'); return; }
+    await set(ref(db,'config/doubleWeight'), v);
+    toast('복식 가중치 저장');
+  };
+
+  onValue(ref(db,'config/deletePassword'), (s)=>{
+    const v = s.val(); $('#deletePassword').value = (v ?? '7910');
+  });
+  $('#saveDeletePassword').onclick = async()=>{
+    const v = $('#deletePassword').value.trim();
+    if(!v){ toast('비밀번호를 입력하세요'); return; }
+    await set(ref(db,'config/deletePassword'), v);
+    toast('삭제 비밀번호 저장');
+  };
+
+  // ===== UI 색상 맵 =====
+  const defaultPalette = [
+    '#e3f2fd','#e8f5e9','#fff3e0','#f3e8ff','#e0f7fa','#fce4ec','#ede7f6','#f1f8e9',
+    '#fffde7','#e0f2f1','#f8f9fa'
+  ];
+  let chipColors = {};
+  onValue(ref(db,'config/chipColors'), (s)=>{
+    chipColors = s.val() || {};
+    renderColorRows();
+  });
+
+  function levelsInUse(){
+    const setLv = new Set();
+    players.forEach(p=>{ if(p.level!=null) setLv.add(p.level); });
+    return Array.from(setLv).sort((a,b)=> a-b);
+  }
+  function colorFor(level){
+    return chipColors[level] || defaultPalette[level % defaultPalette.length];
+  }
+  function renderColorRows(){
+    const box = $('#colorList'); if(!box) return;
+    const levels = levelsInUse();
+    box.innerHTML = '';
+    if(levels.length===0){
+      box.innerHTML = '<div class="hint">등록된 선수의 부수가 아직 없습니다. 선수를 추가하거나 부수를 입력하세요.</div>';
+      return;
+    }
+    levels.forEach(lv=>{
+      const row = document.createElement('div'); row.className='color-row';
+      const label = document.createElement('label'); label.textContent = `${lv}부`;
+      const input = document.createElement('input'); input.type='color'; input.value = toHex(colorFor(lv));
+      input.oninput = (e)=>{ chipColors[lv] = e.target.value; };
+      row.append(label, input);
+      box.appendChild(row);
+    });
+  }
+  function toHex(c){
+    // 허용: #abc / #aabbcc / rgb(...). 간단정규화
+    if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c)) return c;
+    return '#e3f2fd';
+  }
+  $('#saveColors').onclick = async()=>{
+    await set(ref(db,'config/chipColors'), chipColors);
+    toast('색상 맵 저장');
+  };
+
+  // ===== 스냅샷 저장 (Storage) =====
+  async function snapshotMonth(mon){ // mon: 'YYYY-MM'
+    const frame = $('#snapFrame');
+    frame.src = `monthly-report.html?mon=${encodeURIComponent(mon)}&forSnapshot=1`;
+    await waitEvent(frame, 'load');
+    // 약간 대기(글꼴/데이터 렌더링)
+    await delay(700);
+    const doc = frame.contentDocument;
+    const canvas = await html2canvas(doc.body, { backgroundColor:'#fff', scale:2 });
+    const dataURL = canvas.toDataURL('image/png');
+    const path = `snapshots/${mon}/report-${Date.now()}.png`;
+    const r = sRef(storage, path);
+    await uploadString(r, dataURL, 'data_url');
+    const url = await getDownloadURL(r);
+    toast('스냅샷 저장 완료');
+    window.open(url, '_blank');
+  }
+  function delay(ms){ return new Promise(res=>setTimeout(res,ms)); }
+  function waitEvent(el, ev){ return new Promise(res=> el.addEventListener(ev, res, { once:true })); }
+
+  $('#snapThisMonth').onclick = async()=>{
+    const now = toKST();
+    await snapshotMonth( yyyymm(now) );
+  };
+  $('#snapPrevMonth').onclick = async()=>{
+    const now = toKST();
+    await snapshotMonth( yyyymm( prevMonth(now) ) );
+  };
+
+  // ===== 시작 =====
+  signInAnonymously(auth).catch(console.error);
+  onAuthStateChanged(auth, ()=>{ /* no-op */ });
+</script>
+</body>
+</html>
