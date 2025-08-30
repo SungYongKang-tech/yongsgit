@@ -20,7 +20,6 @@
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
     .btn{border:1px solid #d1d5db; border-radius:10px; padding:8px 12px; font-size:14px; background:#fff; cursor:pointer}
     .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
-    .btn.ghost{background:#f1f5ff; color:#1e40af; border-color:#c7d2fe}
     .badge{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; font-size:13px}
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
 
@@ -47,6 +46,7 @@
     </div>
     <div class="row">
       <span id="monthBadge" class="badge">이번달: -</span>
+      <span id="lastUpdate" class="badge">실시간 연결: 대기중</span>
       <button id="sortWinrate" class="btn primary">정렬: 승률</button>
       <button id="sortGames" class="btn">정렬: 최다경기</button>
       <button id="sortWins" class="btn">정렬: 다승</button>
@@ -116,18 +116,19 @@
 
   // --- 시간 범위(이번달) ---
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();        // KST 로컬 기준
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth()+1, 1).getTime();
 
-  // UI: 이번달 표시
+  // UI
   const monthBadge = document.getElementById('monthBadge');
   monthBadge.textContent = `이번달: ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}`;
+  const lastUpdateEl = document.getElementById('lastUpdate');
 
-  // 상태 & 정렬
-  let sortMode = 'winrate'; // 'winrate' | 'games' | 'wins'
-  document.getElementById('sortWinrate').onclick = ()=>{ sortMode='winrate'; refresh(); toggleSortButtons(); };
-  document.getElementById('sortGames').onclick   = ()=>{ sortMode='games';   refresh(); toggleSortButtons(); };
-  document.getElementById('sortWins').onclick    = ()=>{ sortMode='wins';    refresh(); toggleSortButtons(); };
+  // 정렬 상태
+  let sortMode = 'winrate';
+  document.getElementById('sortWinrate').onclick = ()=>{ sortMode='winrate'; render(); toggleSortButtons(); };
+  document.getElementById('sortGames').onclick   = ()=>{ sortMode='games';   render(); toggleSortButtons(); };
+  document.getElementById('sortWins').onclick    = ()=>{ sortMode='wins';    render(); toggleSortButtons(); };
   function toggleSortButtons(){
     document.getElementById('sortWinrate').classList.toggle('primary', sortMode==='winrate');
     document.getElementById('sortGames').classList.toggle('primary', sortMode==='games');
@@ -139,12 +140,8 @@
   const pct = (v)=> isFinite(v) ? (v*100).toFixed(1)+'%' : '-';
   const fmtIntOrHalf = (n)=> Number.isInteger(n) ? n.toString() : n.toFixed(1);
 
-  // 집계용 구조
-  // stats[pid] = {
-  //   name, prev:{gw,ww}, month:{games,wins,losses,gw,ww}, // gw/ww = weighted games/wins(복식 0.5)
-  // }
+  // 집계 상태
   let stats = {};
-
   function ensurePlayer(pid, nameHint){
     if(!stats[pid]) stats[pid] = { name: nameHint || pid, prev:{gw:0, ww:0}, month:{games:0, wins:0, losses:0, gw:0, ww:0} };
     if(nameHint && (!stats[pid].name || stats[pid].name.length<2)) stats[pid].name = nameHint;
@@ -155,7 +152,7 @@
     const isMonth = (ts >= monthStart && ts < nextMonthStart);
     const isPrev  = (ts < monthStart);
 
-    // 타입 판별 및 가중치(승률만)
+    // 타입 판별 + 복식 가중치
     let type = m.type;
     if(!type){
       const la = (m.membersA?.length||0), lb=(m.membersB?.length||0);
@@ -163,17 +160,14 @@
     }
     const weight = (type==='double') ? 0.5 : 1;
 
-    // A/B 진영의 선수(pid, name) 배열 만들기
     const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
                   (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
     const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
                   (m.namesB && m.namesB.length ? m.namesB.map((nm)=>[slugify(nm), nm]) : []));
 
-    // 승패 판정
     const winA = m.winnerSide === 'A';
     const winB = m.winnerSide === 'B';
 
-    // 집계 함수
     const bump = (pid, name, {play=0, win=0, loss=0, wplay=0, wwin=0}, bucket)=>{
       ensurePlayer(pid, name);
       if(bucket==='month'){
@@ -182,43 +176,32 @@
         stats[pid].month.losses += loss;
         stats[pid].month.gw     += wplay;
         stats[pid].month.ww     += wwin;
-      }else{ // prev
+      }else{
         stats[pid].prev.gw += wplay;
         stats[pid].prev.ww += wwin;
       }
-      // 이름 최신화
       if(name) stats[pid].name = name;
     };
 
-    // 이번달/이전 누적 반영
     if(isMonth || isPrev){
-      // A 진영
       sideA.forEach(([pid, name])=>{
         if(isMonth){
-          bump(pid, name, {
-            play:1, win: (winA?1:0), loss:(winB?1:0),
-            wplay:weight, wwin:(winA?weight:0)
-          }, 'month');
+          bump(pid, name, {play:1, win:(winA?1:0), loss:(winB?1:0), wplay:weight, wwin:(winA?weight:0)}, 'month');
         }else{
-          bump(pid, name, { wplay:weight, wwin:(winA?weight:0) }, 'prev');
+          bump(pid, name, {wplay:weight, wwin:(winA?weight:0)}, 'prev');
         }
       });
-      // B 진영
       sideB.forEach(([pid, name])=>{
         if(isMonth){
-          bump(pid, name, {
-            play:1, win: (winB?1:0), loss:(winA?1:0),
-            wplay:weight, wwin:(winB?weight:0)
-          }, 'month');
+          bump(pid, name, {play:1, win:(winB?1:0), loss:(winA?1:0), wplay:weight, wwin:(winB?weight:0)}, 'month');
         }else{
-          bump(pid, name, { wplay:weight, wwin:(winB?weight:0) }, 'prev');
+          bump(pid, name, {wplay:weight, wwin:(winB?weight:0)}, 'prev');
         }
       });
     }
   }
 
   function buildRows(){
-    // 이번달 한 경기라도 뛴 선수만 표에 표시
     const rows = Object.entries(stats)
       .filter(([,s])=> s.month.games>0)
       .map(([pid, s])=>{
@@ -226,16 +209,12 @@
         const monthRate = (s.month.gw>0) ? (s.month.ww / s.month.gw) : NaN;
         const delta = (isFinite(monthRate) && isFinite(prevRate)) ? (monthRate - prevRate) : NaN;
         return {
-          pid,
-          name: s.name || pid,
-          games: s.month.games,   // 이번달 게임수(단식=1, 복식=1)
-          wins: s.month.wins,     // 이번달 승수(단식=1, 복식=1)
-          losses: s.month.losses, // 이번달 패수
+          pid, name: s.name || pid,
+          games: s.month.games, wins: s.month.wins, losses: s.month.losses,
           prevRate, monthRate, delta
         };
       });
 
-    // 정렬
     if(sortMode==='winrate'){
       rows.sort((a,b)=>{
         const ar = isFinite(a.monthRate) ? a.monthRate : -1;
@@ -246,10 +225,9 @@
       });
     }else if(sortMode==='games'){
       rows.sort((a,b)=> (b.games - a.games) || (b.wins - a.wins) || a.name.localeCompare(b.name,'ko'));
-    }else{ // wins
+    }else{
       rows.sort((a,b)=> (b.wins - a.wins) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
     }
-
     return rows;
   }
 
@@ -260,67 +238,16 @@
 
     rows.forEach((r, i)=>{
       const tr = document.createElement('tr');
-
       const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tbody.appendChild(tr); tr.appendChild(tdNo);
       const tdNm = document.createElement('td'); tdNm.textContent = r.name; tr.appendChild(tdNm);
-
       const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
       const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; tr.appendChild(tdWP);
-
       const tdPrev = document.createElement('td'); tdPrev.className='right muted'; tdPrev.textContent = pct(r.prevRate); tr.appendChild(tdPrev);
       const tdMon  = document.createElement('td'); tdMon.className='right'; tdMon.textContent  = pct(r.monthRate); tr.appendChild(tdMon);
-
       const tdDelta= document.createElement('td'); tdDelta.className='right';
       if(isFinite(r.delta)){
         tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p';
         tdDelta.classList.add(r.delta>=0 ? 'delta','pos' : 'delta','neg');
       }else{
         tdDelta.textContent = '-';
-        tdDelta.classList.add('muted');
-      }
-      tr.appendChild(tdDelta);
-    });
-
-    // 어워드
-    const mostGamesBox = document.getElementById('mostGames');
-    const topWinsList  = document.getElementById('topWins');
-
-    if(rows.length){
-      // 최다경기왕 (게임수 많음 → 승수 → 이름)
-      const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
-      const mg = byGames[0];
-      mostGamesBox.textContent = `${mg.name} · ${mg.games}경기`;
-
-      // 다승 TOP3 (승수 → 게임수 → 이름)
-      const byWins = [...rows].sort((a,b)=> (b.wins-a.wins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
-      topWinsList.innerHTML = '';
-      byWins.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        li.textContent = `${idx+1}위 ${p.name} · ${p.wins}승`;
-        topWinsList.appendChild(li);
-      });
-    }else{
-      mostGamesBox.textContent='-';
-      topWinsList.innerHTML='';
-    }
-  }
-
-  function refresh(){
-    render();
-  }
-
-  // 데이터 로드 & 실시간 반영
-  onAuthStateChanged(auth, ()=>{
-    onValue(ref(db,'matches'), (snap)=>{
-      stats = {};
-      const all = snap.val();
-      if(all){
-        Object.values(all).forEach(addMatchToStats);
-      }
-      refresh();
-    });
-  });
-  signInAnonymously(auth).catch(console.error);
-</script>
-</body>
-</html>
+        tdDelt
