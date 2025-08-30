@@ -65,6 +65,17 @@
 
     .search{display:flex; gap:8px; align-items:center}
     .search input{flex:1}
+
+    /* 승률표 모달 */
+    .modal-wrap{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; padding:16px; z-index:50}
+    .modal{background:#fff; width:min(720px, 96vw); max-height:92vh; overflow:auto; border-radius:16px; box-shadow:var(--shadow); border:1px solid #e5e7eb}
+    .modal header{position:sticky; top:0; background:#fff; border-bottom:1px solid #e5e7eb}
+    .modal .wrap{padding:12px 16px}
+    .modal h2{margin:0; font-size:18px}
+    .kv{display:grid; grid-template-columns:140px 1fr; gap:6px; margin:8px 0}
+    .pill-sm{display:inline-block; padding:4px 8px; border-radius:999px; background:#eef2ff; border:1px solid #dbe2ff; margin:2px}
+    .table-like{width:100%; border-collapse:collapse; margin-top:6px}
+    .table-like th, .table-like td{border-bottom:1px solid #e5e7eb; padding:6px 8px; text-align:left}
   </style>
 </head>
 <body>
@@ -198,13 +209,25 @@
 
   <div id="toast" class="toast">Saved</div>
 
+  <!-- 승률표 모달 -->
+  <div id="statsModal" class="modal-wrap" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
+    <div class="modal">
+      <header><div class="wrap" style="display:flex;align-items:center;gap:8px">
+        <h2 id="statsTitle">개인 승률</h2>
+        <div class="grow"></div>
+        <button id="statsClose" class="btn ghost">닫기</button>
+      </div></header>
+      <div class="wrap" id="statsBody"></div>
+    </div>
+  </div>
+
   <!-- Firebase SDK (ESM) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-    import { getDatabase, ref, child, get, set, push, update, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, child, get, set, push, update, onValue, query, orderByChild } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // ---- 0) Firebase 초기화 (사용자 제공 설정) ----
+    // ---- 0) Firebase ----
     const firebaseConfig = {
       apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
       authDomain: "koen-pingpong.firebaseapp.com",
@@ -218,24 +241,19 @@
     const auth = getAuth(app);
     const db = getDatabase(app);
 
-    // ---- 1) 익명 로그인 ----
+    // ---- 1) 로그인 ----
     signInAnonymously(auth).catch(console.error);
 
     // ---- 2) 유틸 ----
     const $ = (sel, ctx=document) => ctx.querySelector(sel);
     const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
     const toast = (msg='저장되었습니다')=>{ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600) };
+    const fmtRate = (w,l)=> (w+l? ((w/(w+l))*100).toFixed(1):'0.0') + '%';
 
     function slugify(str){
-      return str
-        .replace(/[()]/g,'')
-        .replace(/\s+/g,'-')
-        .replace(/[^\p{L}\p{N}-]/gu,'')
-        .toLowerCase();
+      return str.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
     }
-
-    // 초성 검색용 간단 matcher (아주 단순화)
-    function includesHangul(a,b){ return a.toLowerCase().includes(b.toLowerCase()); }
+    function includesHangul(a,b){ return a.toLowerCase().includes((b||'').toLowerCase()); }
 
     // ---- 3) 기본 선수 목록 ----
     const defaultPlayersRaw = [
@@ -248,7 +266,6 @@
     async function ensurePlayers(){
       const snap = await get(ref(db,'players'));
       if(!snap.exists()){
-        // 최초 1회 등록
         const batch = {};
         const seen = new Set();
         defaultPlayersRaw.forEach((s,i)=>{
@@ -278,19 +295,36 @@
     tabResult.onclick=()=>show(secResult);
     tabLevels.onclick=()=>show(secLevels);
 
-    // ---- 5) 선수 데이터 로딩 ----
+    // ---- 5) 선수/경기 데이터 로딩 ----
     let players = []; // [{id,name,level}]
+    let playersById = {};
+    let matches = []; // [{...}]
 
     function mapPlayers(obj){
       if(!obj) return [];
-      return Object.entries(obj).map(([id,v])=>({id, ...v})).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
+      const arr = Object.entries(obj).map(([id,v])=>({id, ...v})).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
+      playersById = Object.fromEntries(arr.map(p=>[p.id,p]));
+      return arr;
     }
+
+    onValue(ref(db,'players'), (snap)=>{
+      players = mapPlayers(snap.val());
+      renderAllUIs();
+      renderLevelsTable();
+    });
+
+    // 전체 matches 실시간 수신 (승률표 계산용)
+    onValue(query(ref(db,'matches'), orderByChild('ts')), (snap)=>{
+      const val = snap.val()||{};
+      matches = Object.values(val);
+    });
 
     function filterPlayers(keyword){
       if(!keyword) return players;
       return players.filter(p=> includesHangul(p.name, keyword) );
     }
 
+    // 칩 렌더 (칩 더블클릭/우클릭 → 승률표)
     function renderChips(container, keyword, onClick){
       const list = filterPlayers(keyword);
       container.innerHTML = '';
@@ -299,15 +333,11 @@
         chip.className = 'chip';
         chip.textContent = `${p.name}(${p.level})`;
         chip.onclick = ()=> onClick(p);
+        chip.ondblclick = (e)=>{ e.preventDefault(); openStats(p.id); };
+        chip.oncontextmenu = (e)=>{ e.preventDefault(); openStats(p.id); };
         container.appendChild(chip);
       });
     }
-
-    onValue(ref(db,'players'), (snap)=>{
-      players = mapPlayers(snap.val());
-      renderAllUIs();
-      renderLevelsTable();
-    });
 
     // ---- 6) 공통 선택 상태(단식=1, 복식=2) ----
     function makeSelector(typeToggleId, chipsId, slotAId, slotBId, searchId, clearBtnId){
@@ -328,8 +358,10 @@
           arr.forEach(p=>{
             const pill = document.createElement('span');
             pill.className='pill';
-            pill.innerHTML = `<b>${p.name}</b> (${p.level}) <button title="제거">×</button>`;
+            pill.innerHTML = `<b class="name">${p.name}</b> (${p.level}) <button title="제거">×</button>`;
             pill.querySelector('button').onclick=()=>{ remove(side,p.id); };
+            // 슬롯 안의 이름 클릭 → 승률표
+            pill.querySelector('.name').onclick = ()=> openStats(p.id);
             slot.appendChild(pill);
           });
         };
@@ -355,7 +387,7 @@
             typeToggle.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
             btn.classList.add('active');
             type = btn.dataset.v;
-            // 초과 인원 잘라냄
+            // 초과 인원 잘라냄 (복식 지원)
             selA = selA.slice(0, limit()); selB = selB.slice(0, limit());
             updateSlots(); updateGuide(); renderChips(chipsEl, search.value, onChipClick);
           };
@@ -378,8 +410,6 @@
         typeToggle.querySelectorAll('button').forEach(b=> b.classList.toggle('active', b.dataset.v===type));
       }
 
-      function names(arr){ return arr.map(p=>p.name).join(', ') }
-
       function updateGuide(){}
 
       wire();
@@ -392,13 +422,14 @@
       const {type, selA, selB} = startSel.getState();
       const g = $('#startGuide');
       const hA = Number($('#handicapA').value||0), hB = Number($('#handicapB').value||0);
-      if( (type==='single' && (selA.length!==1 || selB.length!==1)) || (type==='double' && (selA.length!==2 || selB.length!==2)) ){
+      const need = type==='single'?1:2;
+      if(selA.length!==need || selB.length!==need){
         g.textContent = '선수를 선택하면 여기에서 “누구(팀)에게 몇 점 주고 경기하라” 안내가 표시됩니다.';
         return;
       }
       const A = selA.map(p=>p.name).join(', '); const B = selB.map(p=>p.name).join(', ');
       const hand = (hA||hB)? ` (핸디: A ${hA}점, B ${hB}점)` : '';
-      g.textContent = `${type==='single'?'단식':'복식'}: A팀(${A}) vs B팀(${B}) — ${A} / ${B} 중 우승팀을 아래에서 선택하세요.${hand}`;
+      g.textContent = `${type==='single'?'단식':'복식'}: A팀(${A}) vs B팀(${B}) — 승자 버튼을 눌러 저장하세요.${hand}`;
     }
     ['handicapA','handicapB','startScore'].forEach(id=> $("#"+id).oninput=refreshStartGuide );
     startSel.updateGuide = refreshStartGuide;
@@ -456,7 +487,7 @@
     }
     $('#saveResult').onclick=saveResult;
 
-    // ---- 9) 부수 확인/조정 ----
+    // ---- 9) 부수 확인/조정 + "이름 클릭→승률표" ----
     function renderLevelsTable(){
       const kw = $('#lvlSearch').value||'';
       const tbody = $('#lvlTbody');
@@ -464,8 +495,16 @@
       tbody.innerHTML='';
       list.forEach(p=>{
         const tr = document.createElement('tr');
-        const tdN = document.createElement('td'); tdN.textContent = p.name; tr.appendChild(tdN);
+        const tdN = document.createElement('td');
+        const nameBtn = document.createElement('button');
+        nameBtn.textContent = p.name;
+        nameBtn.style.cssText='background:none;border:0;color:#0f172a;font-size:15px;cursor:pointer;text-align:left;padding:0';
+        nameBtn.onclick = ()=> openStats(p.id); // ← 클릭 시 승률표
+        tdN.appendChild(nameBtn);
+        tr.appendChild(tdN);
+
         const tdL = document.createElement('td'); tdL.textContent = p.level; tr.appendChild(tdL);
+
         const tdA = document.createElement('td');
         const box = document.createElement('div'); box.className='levelBox';
         const minus = document.createElement('button'); minus.textContent='-';
@@ -473,7 +512,6 @@
         const span = document.createElement('span'); span.textContent=p.level;
         minus.onclick= async()=>{ const v=Math.max(1, (p.level||1)-1); await update(ref(db,`players/${p.id}`),{level:v}); toast(`${p.name} 부수 ${p.level}→${v}`) };
         plus.onclick= async()=>{ const v=(p.level||1)+1; await update(ref(db,`players/${p.id}`),{level:v}); toast(`${p.name} 부수 ${p.level}→${v}`) };
-        // 실시간 반영 위해 onValue에서 재렌더 → 여기선 즉시 UI 갱신도
         box.append(minus, span, plus); tdA.appendChild(box); tr.appendChild(tdA);
         tbody.appendChild(tr);
       })
@@ -482,19 +520,110 @@
     $('#refreshPlayers').onclick=()=>onValue(ref(db,'players'),()=>{}, {onlyOnce:true});
 
     function renderAllUIs(){
-      // chips 다시 그림 (검색어 유지)
       renderChips($('#startChips'), $('#startSearch').value, (p)=> startSel.add(startSel.getState().selA.length < (startSel.getState().type==='single'?1:2) ? 'A':'B', p));
       renderChips($('#resChips'), $('#resSearch').value, (p)=> resSel.add(resSel.getState().selA.length < (resSel.getState().type==='single'?1:2) ? 'A':'B', p));
       startSel.updateGuide();
       renderLevelsTable();
     }
 
-    // ---- 10) 시작 시퀀스 ----
-    onAuthStateChanged(auth, async (user)=>{
-      await ensurePlayers();
-      // players onValue 훅이 렌더를 담당
-    });
+    // ---- 10) 승률표 계산 & 모달 ----
+    function openStats(pid){
+      const player = playersById[pid];
+      if(!player){ return; }
+      const name = player.name;
 
+      // 이 선수가 참여한 경기
+      const myMatches = matches.filter(m=> (m.membersA||[]).includes(pid) || (m.membersB||[]).includes(pid) );
+      const total = myMatches.length;
+      const isWin = (m)=> ((m.membersA||[]).includes(pid) && m.winnerSide==='A') || ((m.membersB||[]).includes(pid) && m.winnerSide==='B');
+      const wins = myMatches.filter(isWin).length;
+      const losses = total - wins;
+
+      const singles = myMatches.filter(m=>m.type==='single');
+      const singlesW = singles.filter(isWin).length;
+      const singlesL = singles.length - singlesW;
+
+      const doubles = myMatches.filter(m=>m.type==='double');
+      const doublesW = doubles.filter(isWin).length;
+      const doublesL = doubles.length - doublesW;
+
+      // 파트너/상대 빈도 (복식 중심)
+      const partnerMap = new Map(); // id -> {name, total, wins}
+      const oppMap = new Map(); // id -> {name, total, winsAgainst}
+
+      function addCount(map, id, won){
+        if(!playersById[id]) return;
+        const o = map.get(id) || { name: playersById[id].name, total:0, wins:0 };
+        o.total += 1; if(won) o.wins += 1; map.set(id,o);
+      }
+
+      doubles.forEach(m=>{
+        const inA = (m.membersA||[]).includes(pid);
+        const team = inA ? (m.membersA||[]) : (m.membersB||[]);
+        const opp = inA ? (m.membersB||[]) : (m.membersA||[]);
+        const won = (inA && m.winnerSide==='A') || (!inA && m.winnerSide==='B');
+        team.filter(x=>x!==pid).forEach(x=> addCount(partnerMap, x, won));
+        opp.forEach(x=> addCount(oppMap, x, won)); // wins = 내 팀이 이겼을 때
+      });
+
+      const partners = Array.from(partnerMap.values()).sort((a,b)=> b.total-a.total).slice(0,5);
+      const opps = Array.from(oppMap.values()).sort((a,b)=> b.total-a.total).slice(0,5);
+
+      // 최근 10경기
+      const recent = myMatches.slice().sort((a,b)=> b.ts-a.ts).slice(0,10).map(m=>{
+        const inA = (m.membersA||[]).includes(pid);
+        const oppTeamIds = inA ? (m.membersB||[]) : (m.membersA||[]);
+        const oppNames = oppTeamIds.map(id=> playersById[id]?.name || id).join(', ');
+        const result = isWin(m)?'W':'L';
+        const when = new Date(m.ts||0).toLocaleString('ko-KR');
+        const t = m.type==='double'?'복식':'단식';
+        return `${when} · ${t} vs ${oppNames} → ${result}`;
+      });
+
+      // 모달 DOM 작성
+      $('#statsTitle').textContent = `개인 승률 · ${name}`;
+      $('#statsBody').innerHTML = `
+        <div class="kv">
+          <div>총 전적</div><div><span class="pill-sm">W ${wins}</span> <span class="pill-sm">L ${losses}</span> <span class="pill-sm">승률 ${fmtRate(wins,losses)}</span></div>
+          <div>단식</div><div><span class="pill-sm">W ${singlesW}</span> <span class="pill-sm">L ${singlesL}</span> <span class="pill-sm">승률 ${fmtRate(singlesW,singlesL)}</span></div>
+          <div>복식</div><div><span class="pill-sm">W ${doublesW}</span> <span class="pill-sm">L ${doublesL}</span> <span class="pill-sm">승률 ${fmtRate(doublesW,doublesL)}</span></div>
+        </div>
+
+        <div class="card" style="margin:10px 0">
+          <div class="title">주요 파트너(복식)</div>
+          <table class="table-like">
+            <thead><tr><th>이름</th><th>전적</th><th>승률</th></tr></thead>
+            <tbody>
+              ${partners.map(p=>`<tr><td>${p.name}</td><td>${p.wins}승 ${p.total-p.wins}패</td><td>${fmtRate(p.wins, p.total-p.wins)}</td></tr>`).join('') || `<tr><td colspan="3" class="help">데이터 없음</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin:10px 0">
+          <div class="title">주요 상대</div>
+          <table class="table-like">
+            <thead><tr><th>이름</th><th>전적</th><th>승률</th></tr></thead>
+            <tbody>
+              ${opps.map(o=>`<tr><td>${o.name}</td><td>${o.wins}승 ${o.total-o.wins}패</td><td>${fmtRate(o.wins, o.total-o.wins)}</td></tr>`).join('') || `<tr><td colspan="3" class="help">데이터 없음</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin:10px 0">
+          <div class="title">최근 경기 (10)</div>
+          <div class="help">${recent.length? recent.map(x=>`<div>• ${x}</div>`).join('') : '데이터 없음'}</div>
+        </div>
+      `;
+      $('#statsModal').style.display='flex';
+    }
+    $('#statsClose').onclick = ()=> $('#statsModal').style.display='none';
+    $('#statsModal').addEventListener('click', (e)=>{ if(e.target.id==='statsModal') $('#statsModal').style.display='none'; });
+
+    // ---- 11) 시작 시퀀스 ----
+    onAuthStateChanged(auth, async ()=>{
+      await ensurePlayers();
+      // players / matches onValue 훅이 렌더 담당
+    });
   </script>
 </body>
 </html>
