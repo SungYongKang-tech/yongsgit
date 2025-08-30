@@ -28,14 +28,22 @@
     .btn.ok{background:var(--ok); color:#fff; border-color:var(--ok)}
     .btn.warn{background:var(--danger); color:#fff; border-color:var(--danger)}
     .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .btn.sm{padding:6px 10px; font-size:13px; border-radius:8px}
+
+    .seg{display:inline-flex; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; padding:2px}
+    .seg button{border:0; background:transparent; padding:8px 12px; border-radius:999px; cursor:pointer; font-size:14px}
+    .seg button.active{background:#fff; outline:2px solid var(--accent)}
 
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
 
     /* 최근 저장 리스트 */
-    ul.log{margin:8px 0 0 0; padding-left:18px}
+    ul.log{margin:8px 0 0 0; padding-left:0; list-style:none}
+    ul.log li{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f1f5f9}
+    ul.log .item{flex:1 1 auto}
+    ul.log .meta{color:var(--muted); font-size:12px}
 
-    /* ✅ 헤더 버튼이 확실히 보이도록 강제 */
+    /* 헤더 버튼 보이도록 강제 */
     header a.btn.primary{
       display:inline-block;
       white-space:nowrap;
@@ -65,19 +73,28 @@
   <main>
     <section class="active">
       <div class="card">
-        <div class="row">
-          <div style="font-size:14px; color:var(--muted)">
-            단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.
+        <div class="row" style="gap:12px">
+          <div class="seg" id="modeSeg">
+            <button data-mode="single" class="active">단식</button>
+            <button data-mode="double">복식</button>
           </div>
-          <button id="clearSel" class="btn" style="margin-left:auto">선택 초기화</button>
+          <div class="meta" style="color:var(--muted); font-size:13px">
+            <span id="hint">단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.</span>
+          </div>
+          <button id="swapTeams" class="btn sm" style="margin-left:auto; display:none">팀 스왑</button>
+          <button id="clearSel" class="btn sm">선택 초기화</button>
         </div>
 
-        <div id="chips" class="chips"></div>
+        <div id="chips" class="chips" style="margin-top:8px"></div>
 
         <div class="card" id="winnerBox" style="display:none; margin-top:12px">
+          <div class="row center" style="gap:8px; margin-bottom:6px">
+            <span class="btn sm" style="pointer-events:none">A팀: <b id="teamA"></b></span>
+            <span class="btn sm" style="pointer-events:none">B팀: <b id="teamB"></b></span>
+          </div>
           <div class="row center" style="gap:12px">
-            <button id="winA" class="btn ok">승자: <span id="nameA"></span></button>
-            <button id="winB" class="btn warn">승자: <span id="nameB"></span></button>
+            <button id="winA" class="btn ok">승자: A팀</button>
+            <button id="winB" class="btn warn">승자: B팀</button>
           </div>
           <div style="text-align:center; margin-top:6px; color:var(--muted); font-size:13px">
             저장 후 자동 초기화됩니다.
@@ -100,10 +117,10 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
     import {
-      getDatabase, ref, push, onValue, query, orderByChild, limitToLast
+      getDatabase, ref, push, onValue, query, orderByChild, limitToLast, remove
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    /* ✅ 헤더 버튼이 없을 때(배포/캐시 등) 자동 생성 */
+    /* 헤더 버튼 자동 생성 (캐시 대비) */
     (() => {
       const wrap = document.querySelector('header .wrap');
       const exists = document.getElementById('reportBtn');
@@ -148,16 +165,15 @@
       const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)
     };
     const slugify = (s)=> s.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
+    const fmtTeam = (arr)=> arr.map(p=>p.name).join(' + ') || '-';
 
-    // 1) 기본 선수 (코드 기반)
+    // 1) 기본 선수
     const defaultPlayersRaw = [
       "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
       "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
       "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
       "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
-
-    // 파싱 → [{id,name,level}]
     const players = defaultPlayersRaw.map((s,i)=>{
       const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
       const name = m[1]; const level = Number(m[2]);
@@ -165,10 +181,27 @@
       return { id: id + '-' + i, name, level };
     }).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
 
-    // 2) UI: 칩, 선택, 승자 박스
-    const state = { sel: [] }; // 단식: 2명 제한
+    // 2) 상태 + UI
+    const state = { mode:'single', sel:[], swap:false }; // mode: single|double
+    const modeSeg = $('#modeSeg');
+    const hintEl = $('#hint');
+    const swapBtn = $('#swapTeams');
+
+    modeSeg.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-mode]'); if(!btn) return;
+      modeSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b===btn));
+      state.mode = btn.dataset.mode;
+      state.sel = [];
+      state.swap = false;
+      renderChips(); renderWinnerBox();
+      hintEl.innerHTML = state.mode==='single'
+        ? '단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.'
+        : '복식: <b>네 선수</b>를 선택하세요. <b>앞 두 명=A팀</b>, <b>뒤 두 명=B팀</b>으로 자동 배정됩니다. 필요하면 <b>팀 스왑</b>을 누르세요.';
+    });
+
     function renderChips(){
       const box = $('#chips'); box.innerHTML='';
+      const need = (state.mode==='single') ? 2 : 4;
       players.forEach(p=>{
         const btn = document.createElement('button');
         btn.className='chip';
@@ -178,7 +211,7 @@
           const idx = state.sel.findIndex(x=>x.id===p.id);
           if(idx>=0) state.sel.splice(idx,1);
           else{
-            if(state.sel.length>=2){ toast('단식은 두 명만 선택'); return; }
+            if(state.sel.length>=need){ toast(state.mode==='single'?'단식은 두 명만 선택':'복식은 네 명만 선택'); return; }
             state.sel.push(p);
           }
           renderChips(); renderWinnerBox();
@@ -186,69 +219,126 @@
         box.appendChild(btn);
       });
     }
+
+    function computeTeams(){
+      const need = (state.mode==='single') ? 2 : 4;
+      if(state.sel.length!==need) return null;
+      let A = [], B = [];
+      if(state.mode==='single'){
+        A = [state.sel[0]]; B = [state.sel[1]];
+      }else{
+        A = [state.sel[0], state.sel[1]];
+        B = [state.sel[2], state.sel[3]];
+      }
+      if(state.swap){ const tmp=A; A=B; B=tmp; }
+      return {A,B};
+    }
+
     function renderWinnerBox(){
       const wb = $('#winnerBox');
-      if(state.sel.length===2){
-        $('#nameA').textContent = state.sel[0].name;
-        $('#nameB').textContent = state.sel[1].name;
+      const need = (state.mode==='single') ? 2 : 4;
+      const teams = computeTeams();
+      if(teams){
+        $('#teamA').textContent = fmtTeam(teams.A);
+        $('#teamB').textContent = fmtTeam(teams.B);
         wb.style.display='';
-      }else wb.style.display='none';
+        swapBtn.style.display = (state.mode==='double') ? '' : 'none';
+      }else{
+        wb.style.display='none';
+        swapBtn.style.display = 'none';
+      }
     }
-    $('#clearSel').onclick=()=>{ state.sel=[]; renderChips(); renderWinnerBox(); };
 
-    // 3) 저장 (Firebase /matches)
-    // 3) 저장 (Firebase /matches)
-async function saveWinner(side){
-  if(state.sel.length!==2){ toast('두 선수를 먼저 선택하세요'); return; }
-  const [a,b] = state.sel;
+    $('#swapTeams').onclick = ()=>{ state.swap = !state.swap; renderWinnerBox(); };
+    $('#clearSel').onclick  = ()=>{ state.sel=[]; state.swap=false; renderChips(); renderWinnerBox(); };
 
-  // ✅ 추가: KST(Asia/Seoul) 기준 monthKey("YYYY-MM") 계산
-  const nowKST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  const monthKey = `${nowKST.getFullYear()}-${String(nowKST.getMonth()+1).padStart(2,'0')}`;
+    // 3) 저장
+    async function saveWinner(side){
+      const teams = computeTeams();
+      if(!teams){ toast(state.mode==='single'?'두 선수를 먼저 선택하세요':'네 선수를 먼저 선택하세요'); return; }
 
-  // ✅ monthKey를 함께 저장 (ts/createdAt은 그대로 숫자 ms)
-  const match = {
-    ts: Date.now(),
-    monthKey,                 // ← 추가됨
-    type: 'single',
-    membersA: [a.id], membersB: [b.id],
-    namesA: [a.name], namesB: [b.name],
-    levelsA: [a.level], levelsB: [b.level],
-    winnerSide: side,
-    score: null,
-    createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
-    createdAt: Date.now()
-  };
+      // ✅ Asia/Seoul 기준 monthKey
+      const nowKST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+      const monthKey = `${nowKST.getFullYear()}-${String(nowKST.getMonth()+1).padStart(2,'0')}`;
 
-  try{
-    await push(ref(db,'matches'), match);
-    toast('성적이 저장되었습니다');
-    state.sel=[]; renderChips(); renderWinnerBox();
-  }catch(e){
-    console.error(e);
-    toast(e?.message || '저장 실패');
-  }
-}
+      const membersA = teams.A.map(p=>p.id), membersB = teams.B.map(p=>p.id);
+      const namesA   = teams.A.map(p=>p.name), namesB   = teams.B.map(p=>p.name);
 
+      const match = {
+        ts: Date.now(),
+        monthKey,
+        type: state.mode,                 // 'single' | 'double'
+        membersA, membersB,
+        namesA, namesB,
+        levelsA: teams.A.map(p=>p.level),
+        levelsB: teams.B.map(p=>p.level),
+        winnerSide: side,                 // 'A' | 'B'
+        score: null,
+        createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
+        createdAt: Date.now()
+      };
+
+      try{
+        await push(ref(db,'matches'), match);
+        toast('성적이 저장되었습니다');
+        state.sel=[]; state.swap=false;
+        renderChips(); renderWinnerBox();
+      }catch(e){
+        console.error(e);
+        toast(e?.message || '저장 실패');
+      }
+    }
     $('#winA').onclick=()=>saveWinner('A');
     $('#winB').onclick=()=>saveWinner('B');
 
-    // 4) 최근 저장 표시
+    // 4) 최근 저장 + 삭제
+    async function deleteMatch(key){
+      if(!confirm('이 기록을 삭제할까요?')) return;
+      try{
+        await remove(ref(db, 'matches/'+key));
+        toast('삭제되었습니다');
+      }catch(e){
+        console.error(e);
+        toast(e?.message || '삭제 실패');
+      }
+    }
+
     function watchRecent(){
-      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
+      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(20));
       onValue(q, snap=>{
         const ul = $('#recent'), empty = $('#recentEmpty');
         ul.innerHTML='';
-        const val = snap.val();
-        if(!val){ empty.style.display=''; return; }
+        let arr = [];
+        snap.forEach(child=>{
+          const m = child.val();
+          arr.push({ key: child.key, m });
+        });
+        if(!arr.length){ empty.style.display=''; return; }
         empty.style.display='none';
-        const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
-        arr.forEach(m=>{
-          const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
-          const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
-          const winnerName = m.winnerSide === 'A' ? A : B;  // ✅ 승자 이름 표시
+        arr.sort((a,b)=>(a.m.ts||0)-(b.m.ts||0));
+        arr.slice(-20).reverse().forEach(({key, m})=>{
           const li = document.createElement('li');
-          li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${winnerName}`;
+
+          const typeLabel = (m.type==='double') ? '복식' : '단식';
+          const A = (m.namesA && m.namesA.length) ? m.namesA.join(' + ')
+                   : (m.membersA && m.membersA.length ? m.membersA.join(' + ') : 'A');
+          const B = (m.namesB && m.namesB.length) ? m.namesB.join(' + ')
+                   : (m.membersB && m.membersB.length ? m.membersB.join(' + ') : 'B');
+          const winnerName = (m.winnerSide==='A') ? 'A팀' : 'B팀';
+
+          const item = document.createElement('div');
+          item.className='item';
+          item.innerHTML = `
+            <div>${new Date(m.ts).toLocaleString('ko-KR')} · [${typeLabel}] ${A} vs ${B} → <b>${winnerName}</b></div>
+          `;
+
+          const del = document.createElement('button');
+          del.className='btn sm warn';
+          del.textContent='삭제';
+          del.onclick = ()=> deleteMatch(key);
+
+          li.appendChild(item);
+          li.appendChild(del);
           ul.appendChild(li);
         });
       });
