@@ -180,24 +180,26 @@
     $('#winB').onclick=()=>saveWinner('B');
 
     // 4) 최근 저장 표시
-    function watchRecent(){
-      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
-      onValue(q, snap=>{
-        const ul = $('#recent'), empty = $('#recentEmpty');
-        ul.innerHTML='';
-        const val = snap.val();
-        if(!val){ empty.style.display=''; return; }
-        empty.style.display='none';
-        const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
-        arr.forEach(m=>{
-          const li = document.createElement('li');
-          const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
-          const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
-          li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${m.winnerSide}`;
-          ul.appendChild(li);
-        });
-      });
-    }
+function watchRecent(){
+  const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
+  onValue(q, snap=>{
+    const ul = $('#recent'), empty = $('#recentEmpty');
+    ul.innerHTML='';
+    const val = snap.val();
+    if(!val){ empty.style.display=''; return; }
+    empty.style.display='none';
+    const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
+    arr.forEach(m=>{
+      const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
+      const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
+      const winnerName = m.winnerSide === 'A' ? A : B;  // ✅ 승자 이름 표시
+      const li = document.createElement('li');
+      li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${winnerName}`;
+      ul.appendChild(li);
+    });
+  });
+}
+
 
     // 5) 시작
     signInAnonymously(auth).catch(console.error);
