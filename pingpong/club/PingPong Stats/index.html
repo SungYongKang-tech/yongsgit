@@ -185,7 +185,12 @@
       const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)
     };
     const slugify = (s)=> s.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
-    const fmtTeam = (arr)=> arr.map(p=>p.name).join(' + ') || '-';
+    // 복식이면 ' / ', 단식이면 ' + '
+const fmtTeam = (arr, isDouble=false)=>{
+  const joiner = isDouble ? ' / ' : ' + ';
+  return arr.map(p=>p.name).join(joiner) || '-';
+};
+
 
     // ✅ 날짜 포맷: yymmdd hh:mm (요일) — KST 고정
     const toKST = (t) => new Date(new Date(t ?? Date.now()).toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
@@ -275,8 +280,10 @@
       const wb = $('#winnerBox');
       const teams = computeTeams();
       if(teams){
-        $('#teamA').textContent = fmtTeam(teams.A);
-        $('#teamB').textContent = fmtTeam(teams.B);
+        const isDouble = (state.mode === 'double');
+$('#teamA').textContent = fmtTeam(teams.A, isDouble);
+$('#teamB').textContent = fmtTeam(teams.B, isDouble);
+
         wb.style.display='';
         swapBtn.style.display = (state.mode==='double') ? '' : 'none';
       }else{
@@ -362,10 +369,12 @@
           const li = document.createElement('li');
 
           const typeLabel = (m.type==='double') ? '복식' : '단식';
-          const A = (m.namesA && m.namesA.length) ? m.namesA.join(' + ')
-                   : (m.membersA && m.membersA.length ? m.membersA.join(' + ') : 'A');
-          const B = (m.namesB && m.namesB.length) ? m.namesB.join(' + ')
-                   : (m.membersB && m.membersB.length ? m.membersB.join(' + ') : 'B');
+          const joiner = (m.type === 'double') ? ' / ' : ' + ';
+const A = (m.namesA && m.namesA.length) ? m.namesA.join(joiner)
+         : (m.membersA && m.membersA.length ? m.membersA.join(joiner) : 'A');
+const B = (m.namesB && m.namesB.length) ? m.namesB.join(joiner)
+         : (m.membersB && m.membersB.length ? m.membersB.join(joiner) : 'B');
+
           const winnerName = (m.winnerSide==='A') ? 'A팀' : 'B팀';
 
           const item = document.createElement('div');
