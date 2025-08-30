@@ -20,9 +20,12 @@
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
     .row>.grow{flex:1}
     label{font-size:13px; color:var(--muted)}
-    select, input[type="number"], input[type="text"], .btn{border:1px solid #d1d5db; border-radius:10px; padding:10px 12px; font-size:15px; background:#fff}
+    select, input[type="number"], .btn{border:1px solid #d1d5db; border-radius:10px; padding:10px 12px; font-size:15px; background:#fff}
     .btn{cursor:pointer; display:inline-flex; align-items:center; gap:8px}
     .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .btn.ghost{background:#fff}
+    .btn.warn{background:var(--danger); color:#fff; border-color:var(--danger)}
+    .btn.ok{background:var(--ok); color:#fff; border-color:var(--ok)}
 
     .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
     .chip{padding:8px 10px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer; background:var(--chip)}
@@ -39,14 +42,6 @@
     .hint{font-size:12px; color:var(--muted); margin:6px 2px 0}
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
-
-    /* 초성 필터 바 */
-    .filters{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
-    .filters .fbtn{
-      padding:6px 10px; border:1px solid #d1d5db; background:#fff; border-radius:999px; cursor:pointer; font-size:14px;
-    }
-    .filters .fbtn.active{background:var(--accent); color:#fff; border-color:var(--accent)}
-    .filters .sp{width:6px; height:1px}
 
     /* 승률표 모달 */
     .modal-wrap{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; padding:16px; z-index:50}
@@ -84,16 +79,31 @@
           </div>
         </div>
 
-        <!-- 초성 필터 + 칩 -->
+        <!-- 🔵 선수 버튼 목록 (초성/검색 없음, 전체 바로 표시) -->
         <div class="card" style="margin-top:10px">
-          <div class="filters" id="resFilters"></div>
           <div class="chips" id="resChips"></div>
+          <div class="hint">버튼을 누르면 A→B→A→B 순서로 자동 배치됩니다. (복식은 팀당 2명)</div>
         </div>
 
         <div class="slots">
-          <div class="slot" id="resSlotA"></div>
+          <div>
+            <div class="help" style="margin:2px 4px 6px">A팀</div>
+            <div class="slot" id="resSlotA"></div>
+            <div class="row" style="margin-top:6px">
+              <button class="btn ghost" id="clearA">A 비우기</button>
+            </div>
+          </div>
           <div class="vs">VS</div>
-          <div class="slot" id="resSlotB"></div>
+          <div>
+            <div class="help" style="margin:2px 4px 6px">B팀</div>
+            <div class="slot" id="resSlotB"></div>
+            <div class="row" style="margin-top:6px">
+              <button class="btn ghost" id="clearB">B 비우기</button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn ghost" id="clearAll">전체 초기화</button>
         </div>
 
         <div class="row" style="margin-top:10px; gap:8px">
@@ -117,7 +127,7 @@
 
   <div id="toast" class="toast">Saved</div>
 
-  <!-- 승률표 모달(이름 더블클릭/우클릭 시) -->
+  <!-- 승률표 모달(선수 이름 더블클릭/우클릭 시 열림) -->
   <div id="statsModal" class="modal-wrap" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
     <div class="modal">
       <header><div class="wrap" style="display:flex;align-items:center;gap:8px">
@@ -155,23 +165,6 @@
     const fmtRate = (w,l)=> (w+l? ((w/(w+l))*100).toFixed(1):'0.0') + '%';
     const slugify = (str)=> str.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
 
-    // 초성 필터
-    const CHO_LIST = ['ㄱ','ㄴ','ㄷ','ㄹ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
-    function toChosung(str=''){
-      const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
-      let out = '';
-      for (const ch of str) {
-        const code = ch.charCodeAt(0);
-        if (code >= 0xAC00 && code <= 0xD7A3) {
-          const idx = Math.floor((code - 0xAC00)/588);
-          out += CHO[idx] || ch;
-        } else if (/[ㄱ-ㅎ]/.test(ch)) out += ch;
-        else if (/\s/.test(ch)) {} else out += ch.toLowerCase();
-      }
-      return out;
-    }
-    function startsWithCho(name, cho){ if(!cho) return true; const firstCho = toChosung(name[0])[0]; return firstCho===cho; }
-
     // ---- 기본 선수(최초 자동 등록) ----
     const defaultPlayersRaw = [
       "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
@@ -199,35 +192,16 @@
     let playersById = {};
     let matches = [];         // 저장된 경기(승률표용)
 
-    // 실시간 로딩
     function mapPlayers(obj){
       if(!obj) return [];
       const arr = Object.entries(obj).map(([id,v])=>({id, ...v})).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
       playersById = Object.fromEntries(arr.map(p=>[p.id,p]));
       return arr;
     }
+
+    // 실시간 로딩
     onValue(ref(db,'players'), (snap)=>{ players = mapPlayers(snap.val()); renderResChips(); });
     onValue(query(ref(db,'matches'), orderByChild('ts')), (snap)=>{ matches = Object.values(snap.val()||{}); });
-
-    // ---- 초성 필터 바 + 칩 렌더 ----
-    function mountChoFilters(containerEl, onChange){
-      containerEl.innerHTML = '';
-      const mk=(label,value=null)=>{ const b=document.createElement('button'); b.className='fbtn'; b.textContent=label; b.dataset.value=value||''; return b; };
-      const allBtn=mk('전체',null); containerEl.appendChild(allBtn);
-      containerEl.appendChild(Object.assign(document.createElement('span'),{className:'sp'}));
-      CHO_LIST.forEach(cho=> containerEl.appendChild(mk(cho,cho)));
-      let current=null;
-      function setActive(v){
-        current=v||null;
-        containerEl.querySelectorAll('.fbtn').forEach(b=> b.classList.toggle('active', (b.dataset.value||null)===(current||null)));
-        onChange(current);
-      }
-      containerEl.addEventListener('click',(e)=>{ const btn=e.target.closest('.fbtn'); if(!btn) return; setActive(btn.dataset.value||null); });
-      setActive(null);
-      return { get:()=>current, set:setActive };
-    }
-
-    const resFiltersCtl = mountChoFilters($('#resFilters'), renderResChips);
 
     // ---- 성적입력: 선택기 ----
     const resTypeToggle = $('#resTypeToggle');
@@ -241,19 +215,19 @@
         btn.classList.add('active'); btn.style.background='#111827'; btn.style.color='#fff';
         resType = btn.dataset.v;
         selA = selA.slice(0,limit()); selB = selB.slice(0,limit());
-        renderSlots(); renderResChips();
+        renderSlots();
       };
     });
 
+    // 전체 선수 버튼 렌더링
     function renderResChips(){
       const container = $('#resChips');
-      const cho = resFiltersCtl.get(); // null=전체
-      const list = players.filter(p=> startsWithCho(p.name, cho));
       container.innerHTML = '';
-      list.forEach(p=>{
+      players.forEach(p=>{
         const chip=document.createElement('button');
         chip.className='chip'; chip.textContent=`${p.name}(${p.level})`;
         chip.onclick=()=> addToSlots(p);
+        // 승률표: 이름 더블클릭/우클릭
         chip.ondblclick=(e)=>{ e.preventDefault(); openStats(p.id); };
         chip.oncontextmenu=(e)=>{ e.preventDefault(); openStats(p.id); };
         container.appendChild(chip);
@@ -276,16 +250,36 @@
       draw(slotA, selA, 'A'); draw(slotB, selB, 'B');
     }
 
+    // 클릭클릭 자동 배치: A → B → A → B …
     function addToSlots(p){
-      const arr = selA.length<limit()? selA: selB;
+      // 이미 선택된 선수는 무시
       if(selA.concat(selB).some(x=>x.id===p.id)) return;
-      arr.push(p); renderSlots();
+      const need = limit();
+      // 우선 빈 팀부터 넣고, 두 팀이 동일 인원 수면 A에 넣기
+      const aLen = selA.length, bLen = selB.length;
+      let target = null;
+      if(aLen < need || bLen < need){
+        if(aLen === bLen){ target = 'A'; }
+        else if(aLen < bLen){ target = 'A'; }
+        else { target = 'B'; }
+      }
+      if(!target) target = 'A';
+      if(target==='A' && selA.length < need) selA.push(p);
+      else if(target==='B' && selB.length < need) selB.push(p);
+      else if(selA.length < need) selA.push(p);
+      else if(selB.length < need) selB.push(p);
+      renderSlots();
     }
     function removeFromSlots(side,id){
       if(side==='A') selA = selA.filter(x=>x.id!==id);
       else selB = selB.filter(x=>x.id!==id);
       renderSlots();
     }
+
+    // 초기화 버튼
+    $('#clearA').onclick=()=>{ selA=[]; renderSlots(); };
+    $('#clearB').onclick=()=>{ selB=[]; renderSlots(); };
+    $('#clearAll').onclick=()=>{ selA=[]; selB=[]; renderSlots(); };
 
     // ---- 저장 ----
     function defaultDateTimeLocal(){
@@ -310,6 +304,7 @@
       };
       await push(ref(db,'matches'), match);
       toast('성적이 저장되었습니다');
+      // 초기화
       $('#resScore').value=''; $('#resWinner').value='A'; $('#resTime').value = defaultDateTimeLocal();
       selA=[]; selB=[]; renderSlots();
     }
