@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>KOEN 탁구 · 이번달 성적 확인표</title>
+  <style>
+    :root{
+      --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
+      --primary:#0d47a1; --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+      --shadow:0 8px 28px rgba(0,0,0,.08)
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif; color:var(--ink); background:var(--bg)}
+    header{position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid #e5e7eb}
+    .wrap{max-width:1040px; margin:0 auto; padding:14px 16px}
+    h1{margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)}
+    main{max-width:1040px; margin:16px auto; padding:0 16px 28px}
+
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .btn{border:1px solid #d1d5db; border-radius:10px; padding:8px 12px; font-size:14px; background:#fff; cursor:pointer}
+    .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .btn.ghost{background:#f1f5ff; color:#1e40af; border-color:#c7d2fe}
+    .badge{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; font-size:13px}
+    .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
+
+    table{width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden}
+    thead th{background:#f8fafc; border-bottom:1px solid #e5e7eb; padding:10px; font-size:14px; color:#334155; text-align:left}
+    tbody td{border-bottom:1px solid #f1f5f9; padding:10px; font-size:14px}
+    tbody tr:hover{background:#fafafa}
+    .right{text-align:right}
+    .muted{color:var(--muted)}
+    .delta.pos{color:var(--ok); font-weight:600}
+    .delta.neg{color:var(--danger); font-weight:600}
+    .awards{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px}
+    .award{border:1px dashed #d1d5db; border-radius:14px; padding:12px}
+    .award b{font-size:16px}
+    .small{font-size:12px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="row">
+      <h1 style="margin-right:auto">KOEN 탁구 · 이번달 성적 확인표</h1>
+      <a class="btn" href="./" title="성적입력으로 돌아가기">← 성적입력</a>
+    </div>
+    <div class="row">
+      <span id="monthBadge" class="badge">이번달: -</span>
+      <button id="sortWinrate" class="btn primary">정렬: 승률</button>
+      <button id="sortGames" class="btn">정렬: 최다경기</button>
+      <button id="sortWins" class="btn">정렬: 다승</button>
+      <span class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="awards">
+      <div class="award">
+        <div class="muted small">어워드</div>
+        <b>최다경기왕</b>
+        <div id="mostGames" style="margin-top:6px">-</div>
+      </div>
+      <div class="award">
+        <div class="muted small">어워드</div>
+        <b>다승 TOP3</b>
+        <ol id="topWins" style="margin:6px 0 0 18px; padding:0"></ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">선수별 상세(이번달)</div>
+      <div class="muted small">이전 승률 = 전월 이전 누적, 이달 승률 = 이번달, 승률 증감 = 이달 − 이전</div>
+    </div>
+    <div style="overflow:auto; margin-top:8px">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:64px">번호</th>
+            <th>이름</th>
+            <th class="right">게임수</th>
+            <th class="right">승/패</th>
+            <th class="right">이전 승률</th>
+            <th class="right">이달 승률</th>
+            <th class="right">승률 증감</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+  // --- Firebase ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
+    authDomain: "koen-pingpong.firebaseapp.com",
+    databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
+    projectId: "koen-pingpong",
+    storageBucket: "koen-pingpong.appspot.com",
+    messagingSenderId: "597358811982",
+    appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+
+  // --- 시간 범위(이번달) ---
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();        // KST 로컬 기준
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth()+1, 1).getTime();
+
+  // UI: 이번달 표시
+  const monthBadge = document.getElementById('monthBadge');
+  monthBadge.textContent = `이번달: ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // 상태 & 정렬
+  let sortMode = 'winrate'; // 'winrate' | 'games' | 'wins'
+  document.getElementById('sortWinrate').onclick = ()=>{ sortMode='winrate'; refresh(); toggleSortButtons(); };
+  document.getElementById('sortGames').onclick   = ()=>{ sortMode='games';   refresh(); toggleSortButtons(); };
+  document.getElementById('sortWins').onclick    = ()=>{ sortMode='wins';    refresh(); toggleSortButtons(); };
+  function toggleSortButtons(){
+    document.getElementById('sortWinrate').classList.toggle('primary', sortMode==='winrate');
+    document.getElementById('sortGames').classList.toggle('primary', sortMode==='games');
+    document.getElementById('sortWins').classList.toggle('primary', sortMode==='wins');
+  }
+
+  // 유틸
+  const slugify = (s)=> s?.toString().replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
+  const pct = (v)=> isFinite(v) ? (v*100).toFixed(1)+'%' : '-';
+  const fmtIntOrHalf = (n)=> Number.isInteger(n) ? n.toString() : n.toFixed(1);
+
+  // 집계용 구조
+  // stats[pid] = {
+  //   name, prev:{gw,ww}, month:{games,wins,losses,gw,ww}, // gw/ww = weighted games/wins(복식 0.5)
+  // }
+  let stats = {};
+
+  function ensurePlayer(pid, nameHint){
+    if(!stats[pid]) stats[pid] = { name: nameHint || pid, prev:{gw:0, ww:0}, month:{games:0, wins:0, losses:0, gw:0, ww:0} };
+    if(nameHint && (!stats[pid].name || stats[pid].name.length<2)) stats[pid].name = nameHint;
+  }
+
+  function addMatchToStats(m){
+    const ts = m.ts || m.createdAt || 0;
+    const isMonth = (ts >= monthStart && ts < nextMonthStart);
+    const isPrev  = (ts < monthStart);
+
+    // 타입 판별 및 가중치(승률만)
+    let type = m.type;
+    if(!type){
+      const la = (m.membersA?.length||0), lb=(m.membersB?.length||0);
+      type = (la>=2 || lb>=2) ? 'double' : 'single';
+    }
+    const weight = (type==='double') ? 0.5 : 1;
+
+    // A/B 진영의 선수(pid, name) 배열 만들기
+    const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
+                  (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
+    const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
+                  (m.namesB && m.namesB.length ? m.namesB.map((nm)=>[slugify(nm), nm]) : []));
+
+    // 승패 판정
+    const winA = m.winnerSide === 'A';
+    const winB = m.winnerSide === 'B';
+
+    // 집계 함수
+    const bump = (pid, name, {play=0, win=0, loss=0, wplay=0, wwin=0}, bucket)=>{
+      ensurePlayer(pid, name);
+      if(bucket==='month'){
+        stats[pid].month.games  += play;
+        stats[pid].month.wins   += win;
+        stats[pid].month.losses += loss;
+        stats[pid].month.gw     += wplay;
+        stats[pid].month.ww     += wwin;
+      }else{ // prev
+        stats[pid].prev.gw += wplay;
+        stats[pid].prev.ww += wwin;
+      }
+      // 이름 최신화
+      if(name) stats[pid].name = name;
+    };
+
+    // 이번달/이전 누적 반영
+    if(isMonth || isPrev){
+      // A 진영
+      sideA.forEach(([pid, name])=>{
+        if(isMonth){
+          bump(pid, name, {
+            play:1, win: (winA?1:0), loss:(winB?1:0),
+            wplay:weight, wwin:(winA?weight:0)
+          }, 'month');
+        }else{
+          bump(pid, name, { wplay:weight, wwin:(winA?weight:0) }, 'prev');
+        }
+      });
+      // B 진영
+      sideB.forEach(([pid, name])=>{
+        if(isMonth){
+          bump(pid, name, {
+            play:1, win: (winB?1:0), loss:(winA?1:0),
+            wplay:weight, wwin:(winB?weight:0)
+          }, 'month');
+        }else{
+          bump(pid, name, { wplay:weight, wwin:(winB?weight:0) }, 'prev');
+        }
+      });
+    }
+  }
+
+  function buildRows(){
+    // 이번달 한 경기라도 뛴 선수만 표에 표시
+    const rows = Object.entries(stats)
+      .filter(([,s])=> s.month.games>0)
+      .map(([pid, s])=>{
+        const prevRate  = (s.prev.gw>0) ? (s.prev.ww / s.prev.gw) : NaN;
+        const monthRate = (s.month.gw>0) ? (s.month.ww / s.month.gw) : NaN;
+        const delta = (isFinite(monthRate) && isFinite(prevRate)) ? (monthRate - prevRate) : NaN;
+        return {
+          pid,
+          name: s.name || pid,
+          games: s.month.games,   // 이번달 게임수(단식=1, 복식=1)
+          wins: s.month.wins,     // 이번달 승수(단식=1, 복식=1)
+          losses: s.month.losses, // 이번달 패수
+          prevRate, monthRate, delta
+        };
+      });
+
+    // 정렬
+    if(sortMode==='winrate'){
+      rows.sort((a,b)=>{
+        const ar = isFinite(a.monthRate) ? a.monthRate : -1;
+        const br = isFinite(b.monthRate) ? b.monthRate : -1;
+        if(br!==ar) return br - ar;
+        if(b.games!==a.games) return b.games - a.games;
+        return a.name.localeCompare(b.name,'ko');
+      });
+    }else if(sortMode==='games'){
+      rows.sort((a,b)=> (b.games - a.games) || (b.wins - a.wins) || a.name.localeCompare(b.name,'ko'));
+    }else{ // wins
+      rows.sort((a,b)=> (b.wins - a.wins) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
+    }
+
+    return rows;
+  }
+
+  function render(){
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    const rows = buildRows();
+
+    rows.forEach((r, i)=>{
+      const tr = document.createElement('tr');
+
+      const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tbody.appendChild(tr); tr.appendChild(tdNo);
+      const tdNm = document.createElement('td'); tdNm.textContent = r.name; tr.appendChild(tdNm);
+
+      const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
+      const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; tr.appendChild(tdWP);
+
+      const tdPrev = document.createElement('td'); tdPrev.className='right muted'; tdPrev.textContent = pct(r.prevRate); tr.appendChild(tdPrev);
+      const tdMon  = document.createElement('td'); tdMon.className='right'; tdMon.textContent  = pct(r.monthRate); tr.appendChild(tdMon);
+
+      const tdDelta= document.createElement('td'); tdDelta.className='right';
+      if(isFinite(r.delta)){
+        tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p';
+        tdDelta.classList.add(r.delta>=0 ? 'delta','pos' : 'delta','neg');
+      }else{
+        tdDelta.textContent = '-';
+        tdDelta.classList.add('muted');
+      }
+      tr.appendChild(tdDelta);
+    });
+
+    // 어워드
+    const mostGamesBox = document.getElementById('mostGames');
+    const topWinsList  = document.getElementById('topWins');
+
+    if(rows.length){
+      // 최다경기왕 (게임수 많음 → 승수 → 이름)
+      const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
+      const mg = byGames[0];
+      mostGamesBox.textContent = `${mg.name} · ${mg.games}경기`;
+
+      // 다승 TOP3 (승수 → 게임수 → 이름)
+      const byWins = [...rows].sort((a,b)=> (b.wins-a.wins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
+      topWinsList.innerHTML = '';
+      byWins.slice(0,3).forEach((p, idx)=>{
+        const li = document.createElement('li');
+        li.textContent = `${idx+1}위 ${p.name} · ${p.wins}승`;
+        topWinsList.appendChild(li);
+      });
+    }else{
+      mostGamesBox.textContent='-';
+      topWinsList.innerHTML='';
+    }
+  }
+
+  function refresh(){
+    render();
+  }
+
+  // 데이터 로드 & 실시간 반영
+  onAuthStateChanged(auth, ()=>{
+    onValue(ref(db,'matches'), (snap)=>{
+      stats = {};
+      const all = snap.val();
+      if(all){
+        Object.values(all).forEach(addMatchToStats);
+      }
+      refresh();
+    });
+  });
+  signInAnonymously(auth).catch(console.error);
+</script>
+</body>
+</html>
