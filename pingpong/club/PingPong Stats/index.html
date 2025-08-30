@@ -18,15 +18,19 @@
     main{max-width:980px; margin:12px auto; padding:0 16px 30px}
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
 
-    /* 선수 칩(휴대폰에서 얇게) */
+    /* 선수 칩(휴대폰에서 얇게) + 부수별 색상 변수 사용 */
     .chips{display:flex; flex-wrap:wrap; gap:6px}
     .chip{
       display:inline-flex; align-items:center;
-      padding:6px 10px; border-radius:999px; border:1px solid #d1d5db;
-      cursor:pointer; background:#eef2ff; font-size:13px; line-height:1.1; white-space:nowrap;
+      padding:6px 10px; border-radius:999px;
+      border:1px solid var(--chip-bd, #d1d5db);   /* ← 부수별 테두리 색 */
+      cursor:pointer;
+      background:var(--chip-bg, #eef2ff);         /* ← 부수별 배경색(옅게) */
+      color:#111;                                  /* 글씨는 검정 */
+      font-size:13px; line-height:1.1; white-space:nowrap;
       -webkit-tap-highlight-color:transparent;
     }
-    .chip.selected{outline:2px solid var(--accent); background:#fff}
+    .chip.selected{outline:2px solid var(--accent); background:#fff} /* 선택 시 흰색으로 */
     @media (max-width:520px){
       .chip{padding:5px 8px; font-size:12.5px; line-height:1.05}
       .chips{gap:5px}
@@ -98,7 +102,7 @@
             <button data-mode="single" class="active">단식</button>
             <button data-mode="double">복식</button>
           </div>
-          <!-- 선택 초기화: 토글 옆으로 이동 -->
+          <!-- 선택 초기화: 토글 옆 -->
           <button id="clearSel" class="btn sm">선택 초기화</button>
 
           <!-- 안내 문구 -->
@@ -218,12 +222,24 @@
       "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
       "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
+
+    // 부수 → 파스텔 색상 계산 (작을수록 따뜻한 톤)
+    function levelStyle(level){
+      const L = Math.max(4, Math.min(14, Number(level)||14)); // 4~14 클램프
+      const t = (L - 4) / (14 - 4);                           // 0..1
+      const hue = 45 + (220 - 45) * t;                        // 45°(골드) → 220°(블루)
+      const bg = `hsl(${hue.toFixed(0)} 70% 92%)`;            // 아주 옅은 배경
+      const bd = `hsl(${hue.toFixed(0)} 45% 70%)`;            // 살짝 진한 테두리
+      return { bg, bd };
+    }
+
+    // 파싱 → [{id,name,level}]  정렬: 부수 오름차순(숫자 작을수록 먼저) → 이름
     const players = defaultPlayersRaw.map((s,i)=>{
       const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
       const name = m[1]; const level = Number(m[2]);
       let id = slugify(name);
       return { id: id + '-' + i, name, level };
-    }).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
+    }).filter(Boolean).sort((a,b)=> (a.level - b.level) || a.name.localeCompare(b.name,'ko'));
 
     // 2) 상태 + UI  (swap 제거)
     const state = { mode:'single', sel:[] }; // mode: single|double
@@ -248,6 +264,12 @@
         const btn = document.createElement('button');
         btn.className='chip';
         btn.textContent = `${p.name}(${p.level})`;
+
+        // 부수별 파스텔 색 적용 (CSS 변수로 넣어 선택 시 흰색 오버라이드 가능)
+        const { bg, bd } = levelStyle(p.level);
+        btn.style.setProperty('--chip-bg', bg);
+        btn.style.setProperty('--chip-bd', bd);
+
         if(state.sel.some(x=>x.id===p.id)) btn.classList.add('selected');
         btn.onclick = ()=>{
           const idx = state.sel.findIndex(x=>x.id===p.id);
@@ -280,8 +302,8 @@
       const teams = computeTeams();
       if(teams){
         const isDouble = (state.mode === 'double');
-        $('#teamA').textContent = fmtTeam(teams.A, isDouble);
-        $('#teamB').textContent = fmtTeam(teams.B, isDouble);
+        document.getElementById('teamA').textContent = fmtTeam(teams.A, isDouble);
+        document.getElementById('teamB').textContent = fmtTeam(teams.B, isDouble);
         wb.style.display='';
       }else{
         wb.style.display='none';
