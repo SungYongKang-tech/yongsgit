@@ -100,7 +100,7 @@
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
   import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  // --- Firebase ---
+  // ========== Firebase ==========
   const firebaseConfig = {
     apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
     authDomain: "koen-pingpong.firebaseapp.com",
@@ -114,42 +114,48 @@
   const auth = getAuth(app);
   const db = getDatabase(app);
 
-  // --- 월 키(YYYY-MM), KST 로컬 기준 ---
+  // ========== KST 기준 월 키 ==========
   const pad = (n)=> String(n).padStart(2,'0');
+  const toKST = (t = Date.now()) => new Date(
+    new Date(t).toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
+  );
   function monthKeyFromTs(ts){
-    const d = new Date(ts);
+    const d = toKST(ts);
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
   }
-  const now = new Date();
-  const CUR_MON = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+  const nowKST = toKST();
+  const CUR_MON = `${nowKST.getFullYear()}-${pad(nowKST.getMonth()+1)}`;
   document.getElementById('monthBadge').textContent = `이번달: ${CUR_MON}`;
 
-  // 정렬 상태
+  // ========== 정렬 상태 ==========
   let sortMode = 'winrate';
-  document.getElementById('sortWinrate').onclick = ()=>{ sortMode='winrate'; render(); toggleSortButtons(); };
-  document.getElementById('sortGames').onclick   = ()=>{ sortMode='games';   render(); toggleSortButtons(); };
-  document.getElementById('sortWins').onclick    = ()=>{ sortMode='wins';    render(); toggleSortButtons(); };
-  function toggleSortButtons(){
+  const toggleSortButtons = ()=>{
     document.getElementById('sortWinrate').classList.toggle('primary', sortMode==='winrate');
     document.getElementById('sortGames').classList.toggle('primary', sortMode==='games');
     document.getElementById('sortWins').classList.toggle('primary', sortMode==='wins');
-  }
+  };
+  document.getElementById('sortWinrate').onclick = ()=>{ sortMode='winrate'; render(); toggleSortButtons(); };
+  document.getElementById('sortGames').onclick   = ()=>{ sortMode='games';   render(); toggleSortButtons(); };
+  document.getElementById('sortWins').onclick    = ()=>{ sortMode='wins';    render(); toggleSortButtons(); };
+  toggleSortButtons();
 
-  // 유틸
+  // ========== 유틸 ==========
   const slugify = (s)=> s?.toString().replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
   const pct = (v)=> isFinite(v) ? (v*100).toFixed(1)+'%' : '-';
   const fmtIntOrHalf = (n)=> Number.isInteger(n) ? n.toString() : n.toFixed(1);
   const isNum = (v)=> typeof v === 'number' && isFinite(v);
+  const lastBadge = document.getElementById('lastUpdate');
 
-  // 집계 구조
-  const names = {};               // pid -> 최신 이름
-  const prev  = {};               // pid -> {gw, ww}
-  const mon   = {};               // pid -> {games, wins, losses, gw, ww}
+  // ========== 집계 상태 ==========
+  const names = {};                 // pid -> 최신 이름
+  const prev  = {};                 // pid -> {gw, ww}
+  const mon   = {};                 // pid -> {games, wins, losses, gw, ww}
   function ensurePrev(pid){ if(!prev[pid]) prev[pid] = {gw:0, ww:0}; }
-  function ensureMon(pid){ if(!mon[pid]) mon[pid] = {games:0, wins:0, losses:0, gw:0, ww:0}; }
+  function ensureMon(pid){ if(!mon[pid])  mon[pid]  = {games:0, wins:0, losses:0, gw:0, ww:0}; }
 
+  // 경기 1건을 집계에 반영
   function addMatch(bucket, m){
-    // 타입 & 가중치
+    // 타입 & 가중치(복식=0.5)
     let type = m.type;
     if(!type){
       const la = (m.membersA?.length||0), lb=(m.membersB?.length||0);
@@ -157,7 +163,7 @@
     }
     const weight = (type==='double') ? 0.5 : 1;
 
-    // 양 팀 명단
+    // A/B 명단 (id, name)
     const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
                   (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
     const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
@@ -169,11 +175,11 @@
     if(bucket === 'month'){
       sideA.forEach(([pid, nm])=>{
         ensureMon(pid); if(nm) names[pid]=nm;
-        mon[pid].games  += 1;
+        mon[pid].games  += 1;                     // 게임수는 단/복 동일 1
         mon[pid].wins   += (winA?1:0);
         mon[pid].losses += (winB?1:0);
-        mon[pid].gw     += weight;
-        mon[pid].ww     += (winA?weight:0);
+        mon[pid].gw     += weight;                // 승률 계산용 가중 게임수
+        mon[pid].ww     += (winA?weight:0);       // 가중 승
       });
       sideB.forEach(([pid, nm])=>{
         ensureMon(pid); if(nm) names[pid]=nm;
@@ -183,7 +189,7 @@
         mon[pid].gw     += weight;
         mon[pid].ww     += (winB?weight:0);
       });
-    }else{ // prev
+    }else{ // 이전 누적(전월 이전)
       sideA.forEach(([pid, nm])=>{
         ensurePrev(pid); if(nm) names[pid]=nm;
         prev[pid].gw += weight;
@@ -197,18 +203,16 @@
     }
   }
 
+  // 전체 스냅샷을 KST 월 기준으로 재집계
   function rebuild(all){
-    // 초기화
-    for(const k in names){} // 이름은 최신 유지
     for(const k in prev) delete prev[k];
     for(const k in mon)  delete mon[k];
 
-    // 전체 스냅샷을 순회하며 월키로 분기
     Object.values(all || {}).forEach((m)=>{
-      // ts/createdAt/월키 파싱
+      // monthKey 우선, 없으면 KST 변환 ts로 월키 계산
       const ts = isNum(m.ts) ? m.ts : (isNum(m.createdAt) ? m.createdAt : NaN);
-      const key = m.monthKey || (isNum(ts) ? monthKeyFromTs(ts) : null);
-      if(!key) return; // 시간 정보 없으면 스킵
+      const key = m.monthKey || (isFinite(ts) ? monthKeyFromTs(ts) : null);
+      if(!key) return;
 
       if(key === CUR_MON){
         addMatch('month', m);
@@ -218,6 +222,7 @@
     });
   }
 
+  // 렌더 데이터 구성
   function buildRows(){
     const pids = Object.keys(mon).filter(pid=> mon[pid].games>0);
     const rows = pids.map(pid=>{
@@ -248,6 +253,7 @@
     return rows;
   }
 
+  // 렌더
   function render(){
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
@@ -255,21 +261,47 @@
 
     rows.forEach((r, i)=>{
       const tr = document.createElement('tr');
-      const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tbody.appendChild(tr); tr.appendChild(tdNo);
-      const tdNm = document.createElement('td'); tdNm.textContent = r.name; tr.appendChild(tdNm);
-      const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
-      const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; tr.appendChild(tdWP);
-      const tdPrev = document.createElement('td'); tdPrev.className='right muted'; tdPrev.textContent = pct(r.prevRate); tr.appendChild(tdPrev);
-      const tdMon  = document.createElement('td'); tdMon.className='right'; tdMon.textContent  = pct(r.monthRate); tr.appendChild(tdMon);
-      const tdDelta= document.createElement('td'); tdDelta.className='right';
+
+      const tdNo = document.createElement('td');
+      tdNo.textContent = (i+1).toString();
+      tr.appendChild(tdNo);
+
+      const tdNm = document.createElement('td');
+      tdNm.textContent = r.name;
+      tr.appendChild(tdNm);
+
+      const tdGm = document.createElement('td');
+      tdGm.className='right';
+      tdGm.textContent = r.games.toString();
+      tr.appendChild(tdGm);
+
+      const tdWP = document.createElement('td');
+      tdWP.className='right';
+      tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`;
+      tr.appendChild(tdWP);
+
+      const tdPrev = document.createElement('td');
+      tdPrev.className='right muted';
+      tdPrev.textContent = pct(r.prevRate);
+      tr.appendChild(tdPrev);
+
+      const tdMon  = document.createElement('td');
+      tdMon.className='right';
+      tdMon.textContent  = pct(r.monthRate);
+      tr.appendChild(tdMon);
+
+      const tdDelta= document.createElement('td');
+      tdDelta.className='right';
       if(isFinite(r.delta)){
         tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p';
-        tdDelta.classList.add(r.delta>=0 ? 'delta','pos' : 'delta','neg');
+        tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg'));
       }else{
         tdDelta.textContent = '-';
         tdDelta.classList.add('muted');
       }
       tr.appendChild(tdDelta);
+
+      tbody.appendChild(tr);
     });
 
     // 어워드
@@ -293,27 +325,27 @@
     }
   }
 
-  // ✅ 로그인 후 전체 경로를 "한 번만" 실시간 구독 → 즉시 반영
+  // ========== 실시간 구독 ==========
   onAuthStateChanged(auth, (user)=>{
     if(!user) return;
-    const last = document.getElementById('lastUpdate');
-    last.textContent = '실시간 연결: 연결됨';
-
+    lastBadge.textContent = '실시간 연결: 연결됨';
     onValue(ref(db,'matches'), (snap)=>{
       const all = snap.val() || {};
+      // 디버깅용 콘솔 접근
+      window.lastAll = all;
       rebuild(all);
       render();
-      last.textContent = '실시간 연결: 갱신 ' + new Date().toLocaleTimeString('ko-KR');
+      lastBadge.textContent = '실시간 연결: 갱신 ' + new Date().toLocaleTimeString('ko-KR');
     }, (err)=>{
       console.error(err);
-      last.textContent = '실시간 연결: 오류';
+      lastBadge.textContent = '실시간 연결: 오류';
     });
   });
 
   // 로그인 시작
   signInAnonymously(auth).catch(e=>{
     console.error(e);
-    document.getElementById('lastUpdate').textContent = '실시간 연결: 로그인 실패';
+    lastBadge.textContent = '실시간 연결: 로그인 실패';
   });
 </script>
 </body>
