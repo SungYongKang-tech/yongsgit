@@ -98,9 +98,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-  import {
-    getDatabase, ref, onValue, query, orderByChild, startAt, endAt
-  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
   // --- Firebase ---
   const firebaseConfig = {
@@ -116,13 +114,15 @@
   const auth = getAuth(app);
   const db = getDatabase(app);
 
-  // --- 시간 범위(이번달, 로컬기준 KST) ---
+  // --- 월 키(YYYY-MM), KST 로컬 기준 ---
+  const pad = (n)=> String(n).padStart(2,'0');
+  function monthKeyFromTs(ts){
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+  }
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth()+1, 1).getTime();
-  const monthBadge = document.getElementById('monthBadge');
-  monthBadge.textContent = `이번달: ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}`;
-  const lastUpdateEl = document.getElementById('lastUpdate');
+  const CUR_MON = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+  document.getElementById('monthBadge').textContent = `이번달: ${CUR_MON}`;
 
   // 정렬 상태
   let sortMode = 'winrate';
@@ -141,76 +141,84 @@
   const fmtIntOrHalf = (n)=> Number.isInteger(n) ? n.toString() : n.toFixed(1);
   const isNum = (v)=> typeof v === 'number' && isFinite(v);
 
-  // 집계 상태(이전/이번달 분리 후 합산 렌더)
-  const names = {}; // pid -> 최신 이름
-  const prev  = {}; // pid -> {gw, ww}
-  const mon   = {}; // pid -> {games, wins, losses, gw, ww}
-
+  // 집계 구조
+  const names = {};               // pid -> 최신 이름
+  const prev  = {};               // pid -> {gw, ww}
+  const mon   = {};               // pid -> {games, wins, losses, gw, ww}
   function ensurePrev(pid){ if(!prev[pid]) prev[pid] = {gw:0, ww:0}; }
   function ensureMon(pid){ if(!mon[pid]) mon[pid] = {games:0, wins:0, losses:0, gw:0, ww:0}; }
 
-  function sideArray(m, side){ // [['pid','name'], ...]
-    const members = m[side+'A'] || m[side+'B']; // not used
+  function addMatch(bucket, m){
+    // 타입 & 가중치
+    let type = m.type;
+    if(!type){
+      const la = (m.membersA?.length||0), lb=(m.membersB?.length||0);
+      type = (la>=2 || lb>=2) ? 'double' : 'single';
+    }
+    const weight = (type==='double') ? 0.5 : 1;
+
+    // 양 팀 명단
+    const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
+                  (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
+    const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
+                  (m.namesB && m.namesB.length ? m.namesB.map((nm)=>[slugify(nm), nm]) : []));
+
+    const winA = m.winnerSide === 'A';
+    const winB = m.winnerSide === 'B';
+
+    if(bucket === 'month'){
+      sideA.forEach(([pid, nm])=>{
+        ensureMon(pid); if(nm) names[pid]=nm;
+        mon[pid].games  += 1;
+        mon[pid].wins   += (winA?1:0);
+        mon[pid].losses += (winB?1:0);
+        mon[pid].gw     += weight;
+        mon[pid].ww     += (winA?weight:0);
+      });
+      sideB.forEach(([pid, nm])=>{
+        ensureMon(pid); if(nm) names[pid]=nm;
+        mon[pid].games  += 1;
+        mon[pid].wins   += (winB?1:0);
+        mon[pid].losses += (winA?1:0);
+        mon[pid].gw     += weight;
+        mon[pid].ww     += (winB?weight:0);
+      });
+    }else{ // prev
+      sideA.forEach(([pid, nm])=>{
+        ensurePrev(pid); if(nm) names[pid]=nm;
+        prev[pid].gw += weight;
+        prev[pid].ww += (winA?weight:0);
+      });
+      sideB.forEach(([pid, nm])=>{
+        ensurePrev(pid); if(nm) names[pid]=nm;
+        prev[pid].gw += weight;
+        prev[pid].ww += (winB?weight:0);
+      });
+    }
   }
 
-  function addSnapshotTo(bucket, snap){
-    const val = snap.val();
-    if(!val) return;
-    Object.values(val).forEach((m)=>{
-      // ts 보정 (string/ServerValue/undefined 대비)
-      const mts = isNum(m.ts) ? m.ts : (isNum(m.createdAt) ? m.createdAt : 0);
+  function rebuild(all){
+    // 초기화
+    for(const k in names){} // 이름은 최신 유지
+    for(const k in prev) delete prev[k];
+    for(const k in mon)  delete mon[k];
 
-      // 타입 판별 + 복식 가중치(승률만)
-      let type = m.type;
-      if(!type){
-        const la = (m.membersA?.length||0), lb=(m.membersB?.length||0);
-        type = (la>=2 || lb>=2) ? 'double' : 'single';
-      }
-      const weight = (type==='double') ? 0.5 : 1;
+    // 전체 스냅샷을 순회하며 월키로 분기
+    Object.values(all || {}).forEach((m)=>{
+      // ts/createdAt/월키 파싱
+      const ts = isNum(m.ts) ? m.ts : (isNum(m.createdAt) ? m.createdAt : NaN);
+      const key = m.monthKey || (isNum(ts) ? monthKeyFromTs(ts) : null);
+      if(!key) return; // 시간 정보 없으면 스킵
 
-      // A/B 진영의 선수 목록
-      const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
-                    (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
-      const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
-                    (m.namesB && m.namesB.length ? m.namesB.map((nm)=>[slugify(nm), nm]) : []));
-
-      const winA = m.winnerSide === 'A';
-      const winB = m.winnerSide === 'B';
-
-      if(bucket === 'month'){
-        sideA.forEach(([pid, nm])=>{
-          ensureMon(pid); if(nm) names[pid]=nm;
-          mon[pid].games  += 1;
-          mon[pid].wins   += (winA?1:0);
-          mon[pid].losses += (winB?1:0);
-          mon[pid].gw     += weight;
-          mon[pid].ww     += (winA?weight:0);
-        });
-        sideB.forEach(([pid, nm])=>{
-          ensureMon(pid); if(nm) names[pid]=nm;
-          mon[pid].games  += 1;
-          mon[pid].wins   += (winB?1:0);
-          mon[pid].losses += (winA?1:0);
-          mon[pid].gw     += weight;
-          mon[pid].ww     += (winB?weight:0);
-        });
-      }else{ // prev
-        sideA.forEach(([pid, nm])=>{
-          ensurePrev(pid); if(nm) names[pid]=nm;
-          prev[pid].gw += weight;
-          prev[pid].ww += (winA?weight:0);
-        });
-        sideB.forEach(([pid, nm])=>{
-          ensurePrev(pid); if(nm) names[pid]=nm;
-          prev[pid].gw += weight;
-          prev[pid].ww += (winB?weight:0);
-        });
+      if(key === CUR_MON){
+        addMatch('month', m);
+      }else if(key < CUR_MON){
+        addMatch('prev', m);
       }
     });
   }
 
   function buildRows(){
-    // 이번달 한 경기라도 뛴 선수만
     const pids = Object.keys(mon).filter(pid=> mon[pid].games>0);
     const rows = pids.map(pid=>{
       const m = mon[pid], p = prev[pid] || {gw:0, ww:0};
@@ -285,36 +293,27 @@
     }
   }
 
-  // ✅ 로그인 후, 이번달/이전 누적을 "각각" 실시간 쿼리로 구독
+  // ✅ 로그인 후 전체 경로를 "한 번만" 실시간 구독 → 즉시 반영
   onAuthStateChanged(auth, (user)=>{
     if(!user) return;
-    lastUpdateEl.textContent = '실시간 연결: 연결됨';
+    const last = document.getElementById('lastUpdate');
+    last.textContent = '실시간 연결: 연결됨';
 
-    // 이전 누적 (전월 이전)
-    const prevQ  = query(ref(db,'matches'), orderByChild('ts'), endAt(monthStart - 1));
-    onValue(prevQ, snap=>{
-      // 이전 누적 초기화 후 재집계
-      for(const k in prev) delete prev[k];
-      addSnapshotTo('prev', snap);
+    onValue(ref(db,'matches'), (snap)=>{
+      const all = snap.val() || {};
+      rebuild(all);
       render();
-      lastUpdateEl.textContent = '실시간 연결: 갱신 ' + new Date().toLocaleTimeString();
-    }, (err)=>{ console.error(err); lastUpdateEl.textContent='실시간 연결: 오류(prev)'; });
-
-    // 이번달 (이번달 1일 00:00 ~ 다음달 1일 직전)
-    const monQ   = query(ref(db,'matches'), orderByChild('ts'), startAt(monthStart), endAt(nextMonthStart - 1));
-    onValue(monQ, snap=>{
-      // 이번달 초기화 후 재집계
-      for(const k in mon) delete mon[k];
-      addSnapshotTo('month', snap);
-      render();
-      lastUpdateEl.textContent = '실시간 연결: 갱신 ' + new Date().toLocaleTimeString();
-    }, (err)=>{ console.error(err); lastUpdateEl.textContent='실시간 연결: 오류(month)'; });
+      last.textContent = '실시간 연결: 갱신 ' + new Date().toLocaleTimeString('ko-KR');
+    }, (err)=>{
+      console.error(err);
+      last.textContent = '실시간 연결: 오류';
+    });
   });
 
   // 로그인 시작
   signInAnonymously(auth).catch(e=>{
     console.error(e);
-    lastUpdateEl.textContent = '실시간 연결: 로그인 실패';
+    document.getElementById('lastUpdate').textContent = '실시간 연결: 로그인 실패';
   });
 </script>
 </body>
