@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>KOEN 탁구 Manager · 경기시작 · 성적입력 · 부수확인</title>
+  <title>KOEN 탁구 Manager · 성적입력</title>
   <style>
     :root{
       --ink:#0f172a; --muted:#64748b; --card:#ffffff; --bg:#f5f7fb; --primary:#0d47a1; --accent:#2563eb; --danger:#ef4444; --ok:#16a34a;
@@ -14,14 +14,8 @@
     header{position:sticky; top:0; z-index:20; background:#fff; border-bottom:1px solid #e5e7eb}
     .wrap{max-width:980px; margin:0 auto; padding:14px 16px}
     h1{margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)}
-    .tabs{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 6px}
-    .tabs button{padding:8px 12px; border:1px solid #d1d5db; background:#fff; border-radius:999px; cursor:pointer}
-    .tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent)}
 
     main{max-width:980px; margin:12px auto; padding:0 16px 30px}
-    section{display:none}
-    section.active{display:block}
-
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
     .row>.grow{flex:1}
@@ -29,42 +23,30 @@
     select, input[type="number"], input[type="text"], .btn{border:1px solid #d1d5db; border-radius:10px; padding:10px 12px; font-size:15px; background:#fff}
     .btn{cursor:pointer; display:inline-flex; align-items:center; gap:8px}
     .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
-    .btn.ghost{background:#fff}
-    .btn.warn{background:var(--danger); color:#fff; border-color:var(--danger)}
-    .btn.ok{background:var(--ok); color:#fff; border-color:var(--ok)}
-
-    .toggle{display:inline-flex; border:1px solid #d1d5db; border-radius:12px; overflow:hidden}
-    .toggle button{padding:8px 12px; background:#fff; border:0; cursor:pointer}
-    .toggle button.active{background:#111827; color:#fff}
 
     .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
     .chip{padding:8px 10px; border-radius:999px; border:1px solid #d1d5db; cursor:pointer; background:var(--chip)}
-    .chip.lv7{background:var(--chip2)}
-    .chip.lv10{background:var(--chip3)}
-    .chip.selected{outline:2px solid var(--accent)}
+    .chip:hover{filter:brightness(0.97)}
 
     .slots{display:grid; grid-template-columns:1fr 24px 1fr; gap:10px; align-items:start; margin-top:8px}
     .slot{border:1px dashed #cbd5e1; min-height:44px; border-radius:10px; padding:8px; background:#fff}
     .slot .pill{display:inline-flex; padding:6px 10px; margin:4px; border-radius:999px; background:#e2e8f0; gap:6px; align-items:center}
-    .slot .pill b{font-weight:600}
+    .slot .pill b{font-weight:600; cursor:pointer}
     .slot .pill button{border:0; background:transparent; cursor:pointer; color:#475569}
     .vs{display:grid; place-items:center; color:#64748b; font-weight:700}
 
     .help{font-size:13px; color:var(--muted)}
     .hint{font-size:12px; color:var(--muted); margin:6px 2px 0}
-    .big{font-size:16px}
-    .title{font-size:18px; font-weight:700; margin:4px 0 8px}
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
 
-    table{width:100%; border-collapse:collapse}
-    th,td{border-bottom:1px solid #e5e7eb; padding:8px 10px; text-align:left}
-    th{background:#f8fafc; font-weight:700}
-    td .levelBox{display:inline-flex; align-items:center; gap:6px}
-    td .levelBox button{width:28px; height:28px; border-radius:8px; border:1px solid #d1d5db; background:#fff; cursor:pointer}
-
-    .search{display:flex; gap:8px; align-items:center}
-    .search input{flex:1}
+    /* 초성 필터 바 */
+    .filters{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
+    .filters .fbtn{
+      padding:6px 10px; border:1px solid #d1d5db; background:#fff; border-radius:999px; cursor:pointer; font-size:14px;
+    }
+    .filters .fbtn.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .filters .sp{width:6px; height:1px}
 
     /* 승률표 모달 */
     .modal-wrap{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; padding:16px; z-index:50}
@@ -81,91 +63,39 @@
 <body>
   <header>
     <div class="wrap">
-      <h1>KOEN 탁구 Manager</h1>
-      <div class="tabs">
-        <button id="tabStart" class="active">경기시작</button>
-        <button id="tabResult">성적입력</button>
-        <button id="tabLevels">부수확인</button>
-      </div>
+      <h1>KOEN 탁구 Manager · 성적입력</h1>
     </div>
   </header>
 
   <main>
-    <!-- 경기시작 -->
-    <section id="secStart" class="active">
+    <!-- ✅ 성적입력 단일 화면 -->
+    <section id="secResult" class="active">
       <div class="card">
         <div class="row">
           <label>경기 종류</label>
-          <div class="toggle" id="startTypeToggle">
-            <button data-v="single" class="active">단식</button>
-            <button data-v="double">복식</button>
+          <div class="toggle" id="resTypeToggle" style="display:inline-flex; border:1px solid #d1d5db; border-radius:12px; overflow:hidden">
+            <button data-v="single" class="active" style="padding:8px 12px; background:#111827; color:#fff; border:0; cursor:pointer">단식</button>
+            <button data-v="double" style="padding:8px 12px; background:#fff; border:0; cursor:pointer">복식</button>
           </div>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <div class="grow search">
-            <input id="startSearch" type="text" placeholder="이름 검색 (초성/부분 입력)" />
-            <button class="btn" id="startClearSel">선택 초기화</button>
-          </div>
-        </div>
-        <div class="chips" id="startChips"></div>
-
-        <div class="slots">
-          <div class="slot" id="startSlotA"></div>
-          <div class="vs">VS</div>
-          <div class="slot" id="startSlotB"></div>
-        </div>
-
-        <div class="card" style="margin-top:12px">
-          <div class="title">안내</div>
-          <div id="startGuide" class="big help">선수를 선택하면 여기에서 “누구(팀)에게 몇 점 주고 경기하라” 안내가 표시됩니다.</div>
-          <div class="row" style="margin-top:10px; gap:12px">
-            <label>핸디(선택)</label>
-            <div class="row">
-              <span class="help">A팀</span><input type="number" id="handicapA" value="0" min="0" style="width:80px">
-              <span class="help">B팀</span><input type="number" id="handicapB" value="0" min="0" style="width:80px">
-            </div>
-            <label>스코어(선택)</label>
-            <select id="startScore">
-              <option value="">스코어 선택(선택)</option>
-              <option>3-2</option><option>3-1</option><option>3-0</option>
-              <option>2-1</option><option>2-0</option>
-            </select>
-          </div>
-          <div class="row" style="margin-top:10px; gap:8px">
-            <button class="btn ok" id="winnerA">승자: A팀</button>
-            <button class="btn warn" id="winnerB">승자: B팀</button>
-          </div>
-          <div class="hint">승자를 누르면 결과가 미리 채워진 상태로 저장됩니다.</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 성적입력 -->
-    <section id="secResult">
-      <div class="card">
-        <div class="row">
-          <label>경기 종류</label>
-          <div class="toggle" id="resTypeToggle">
-            <button data-v="single" class="active">단식</button>
-            <button data-v="double">복식</button>
-          </div>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <div class="grow search">
-            <input id="resSearch" type="text" placeholder="이름 검색 (초성/부분 입력)" />
-            <button class="btn" id="resClearSel">선택 초기화</button>
-          </div>
+          <div class="grow"></div>
           <div class="row">
             <label>시각</label>
             <input id="resTime" type="datetime-local">
           </div>
         </div>
-        <div class="chips" id="resChips"></div>
+
+        <!-- 초성 필터 + 칩 -->
+        <div class="card" style="margin-top:10px">
+          <div class="filters" id="resFilters"></div>
+          <div class="chips" id="resChips"></div>
+        </div>
+
         <div class="slots">
           <div class="slot" id="resSlotA"></div>
           <div class="vs">VS</div>
           <div class="slot" id="resSlotB"></div>
         </div>
+
         <div class="row" style="margin-top:10px; gap:8px">
           <label>승자</label>
           <select id="resWinner">
@@ -183,39 +113,17 @@
         <div class="hint">저장 후 폼이 초기화되어 연속 입력이 빠릅니다.</div>
       </div>
     </section>
-
-    <!-- 부수확인 -->
-    <section id="secLevels">
-      <div class="card">
-        <div class="row">
-          <div class="title">부수 목록</div>
-          <div class="grow"></div>
-          <button class="btn" id="refreshPlayers">새로고침</button>
-        </div>
-        <div class="card">
-          <div class="search"><input id="lvlSearch" type="text" placeholder="이름 검색"/></div>
-        </div>
-        <div class="card">
-          <table>
-            <thead>
-              <tr><th>이름</th><th>부수</th><th>조정</th></tr>
-            </thead>
-            <tbody id="lvlTbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
   </main>
 
   <div id="toast" class="toast">Saved</div>
 
-  <!-- 승률표 모달 -->
+  <!-- 승률표 모달(이름 더블클릭/우클릭 시) -->
   <div id="statsModal" class="modal-wrap" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
     <div class="modal">
       <header><div class="wrap" style="display:flex;align-items:center;gap:8px">
         <h2 id="statsTitle">개인 승률</h2>
         <div class="grow"></div>
-        <button id="statsClose" class="btn ghost">닫기</button>
+        <button id="statsClose" class="btn">닫기</button>
       </div></header>
       <div class="wrap" id="statsBody"></div>
     </div>
@@ -225,9 +133,9 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-    import { getDatabase, ref, child, get, set, push, update, onValue, query, orderByChild } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, get, set, push, update, onValue, query, orderByChild } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // ---- 0) Firebase ----
+    // ---- Firebase ----
     const firebaseConfig = {
       apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
       authDomain: "koen-pingpong.firebaseapp.com",
@@ -241,239 +149,160 @@
     const auth = getAuth(app);
     const db = getDatabase(app);
 
-    // ---- 1) 로그인 ----
-    signInAnonymously(auth).catch(console.error);
-
-    // ---- 2) 유틸 ----
+    // ---- 공통 유틸 ----
     const $ = (sel, ctx=document) => ctx.querySelector(sel);
-    const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
     const toast = (msg='저장되었습니다')=>{ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600) };
     const fmtRate = (w,l)=> (w+l? ((w/(w+l))*100).toFixed(1):'0.0') + '%';
+    const slugify = (str)=> str.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
 
-    function slugify(str){
-      return str.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
+    // 초성 필터
+    const CHO_LIST = ['ㄱ','ㄴ','ㄷ','ㄹ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+    function toChosung(str=''){
+      const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+      let out = '';
+      for (const ch of str) {
+        const code = ch.charCodeAt(0);
+        if (code >= 0xAC00 && code <= 0xD7A3) {
+          const idx = Math.floor((code - 0xAC00)/588);
+          out += CHO[idx] || ch;
+        } else if (/[ㄱ-ㅎ]/.test(ch)) out += ch;
+        else if (/\s/.test(ch)) {} else out += ch.toLowerCase();
+      }
+      return out;
     }
-    function includesHangul(a,b){ return a.toLowerCase().includes((b||'').toLowerCase()); }
+    function startsWithCho(name, cho){ if(!cho) return true; const firstCho = toChosung(name[0])[0]; return firstCho===cho; }
 
-    // ---- 3) 기본 선수 목록 ----
+    // ---- 기본 선수(최초 자동 등록) ----
     const defaultPlayersRaw = [
       "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
       "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
       "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
       "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
-
     async function ensurePlayers(){
       const snap = await get(ref(db,'players'));
       if(!snap.exists()){
         const batch = {};
         const seen = new Set();
         defaultPlayersRaw.forEach((s,i)=>{
-          const m = s.match(/^(.*)\((\d+)\)$/);
-          if(!m) return;
-          const name = m[1];
-          const level = Number(m[2]);
-          let key = slugify(name);
-          while(seen.has(key)) key = key + ("-"+(i+1));
-          seen.add(key);
-          batch[key] = { name, level, isActive:true, createdAt: Date.now() };
+          const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return;
+          const name = m[1]; const level = Number(m[2]);
+          let key = slugify(name); while(seen.has(key)) key = key + ("-"+(i+1));
+          seen.add(key); batch[key] = { name, level, isActive:true, createdAt: Date.now() };
         });
         await set(ref(db,'players'), batch);
       }
     }
 
-    // ---- 4) 탭 전환 ----
-    const tabStart=$('#tabStart'), tabResult=$('#tabResult'), tabLevels=$('#tabLevels');
-    const secStart=$('#secStart'), secResult=$('#secResult'), secLevels=$('#secLevels');
-    function show(sec){ [secStart,secResult,secLevels].forEach(s=>s.classList.remove('active')); sec.classList.add('active');
-      [tabStart,tabResult,tabLevels].forEach(b=>b.classList.remove('active'));
-      if(sec===secStart) tabStart.classList.add('active');
-      if(sec===secResult) tabResult.classList.add('active');
-      if(sec===secLevels) tabLevels.classList.add('active');
-    }
-    tabStart.onclick=()=>show(secStart);
-    tabResult.onclick=()=>show(secResult);
-    tabLevels.onclick=()=>show(secLevels);
-
-    // ---- 5) 선수/경기 데이터 로딩 ----
-    let players = []; // [{id,name,level}]
+    // ---- 상태 ----
+    let players = [];         // [{id,name,level}]
     let playersById = {};
-    let matches = []; // [{...}]
+    let matches = [];         // 저장된 경기(승률표용)
 
+    // 실시간 로딩
     function mapPlayers(obj){
       if(!obj) return [];
       const arr = Object.entries(obj).map(([id,v])=>({id, ...v})).sort((a,b)=> a.name.localeCompare(b.name,'ko'));
       playersById = Object.fromEntries(arr.map(p=>[p.id,p]));
       return arr;
     }
+    onValue(ref(db,'players'), (snap)=>{ players = mapPlayers(snap.val()); renderResChips(); });
+    onValue(query(ref(db,'matches'), orderByChild('ts')), (snap)=>{ matches = Object.values(snap.val()||{}); });
 
-    onValue(ref(db,'players'), (snap)=>{
-      players = mapPlayers(snap.val());
-      renderAllUIs();
-      renderLevelsTable();
-    });
-
-    // 전체 matches 실시간 수신 (승률표 계산용)
-    onValue(query(ref(db,'matches'), orderByChild('ts')), (snap)=>{
-      const val = snap.val()||{};
-      matches = Object.values(val);
-    });
-
-    function filterPlayers(keyword){
-      if(!keyword) return players;
-      return players.filter(p=> includesHangul(p.name, keyword) );
+    // ---- 초성 필터 바 + 칩 렌더 ----
+    function mountChoFilters(containerEl, onChange){
+      containerEl.innerHTML = '';
+      const mk=(label,value=null)=>{ const b=document.createElement('button'); b.className='fbtn'; b.textContent=label; b.dataset.value=value||''; return b; };
+      const allBtn=mk('전체',null); containerEl.appendChild(allBtn);
+      containerEl.appendChild(Object.assign(document.createElement('span'),{className:'sp'}));
+      CHO_LIST.forEach(cho=> containerEl.appendChild(mk(cho,cho)));
+      let current=null;
+      function setActive(v){
+        current=v||null;
+        containerEl.querySelectorAll('.fbtn').forEach(b=> b.classList.toggle('active', (b.dataset.value||null)===(current||null)));
+        onChange(current);
+      }
+      containerEl.addEventListener('click',(e)=>{ const btn=e.target.closest('.fbtn'); if(!btn) return; setActive(btn.dataset.value||null); });
+      setActive(null);
+      return { get:()=>current, set:setActive };
     }
 
-    // 칩 렌더 (칩 더블클릭/우클릭 → 승률표)
-    function renderChips(container, keyword, onClick){
-      const list = filterPlayers(keyword);
+    const resFiltersCtl = mountChoFilters($('#resFilters'), renderResChips);
+
+    // ---- 성적입력: 선택기 ----
+    const resTypeToggle = $('#resTypeToggle');
+    let resType = 'single';
+    let selA = []; let selB = [];
+    function limit(){ return resType==='single'?1:2 }
+
+    resTypeToggle.querySelectorAll('button').forEach(btn=>{
+      btn.onclick=()=>{
+        resTypeToggle.querySelectorAll('button').forEach(b=>{ b.classList.remove('active'); b.style.background='#fff'; b.style.color='#000'; });
+        btn.classList.add('active'); btn.style.background='#111827'; btn.style.color='#fff';
+        resType = btn.dataset.v;
+        selA = selA.slice(0,limit()); selB = selB.slice(0,limit());
+        renderSlots(); renderResChips();
+      };
+    });
+
+    function renderResChips(){
+      const container = $('#resChips');
+      const cho = resFiltersCtl.get(); // null=전체
+      const list = players.filter(p=> startsWithCho(p.name, cho));
       container.innerHTML = '';
       list.forEach(p=>{
-        const chip = document.createElement('button');
-        chip.className = 'chip';
-        chip.textContent = `${p.name}(${p.level})`;
-        chip.onclick = ()=> onClick(p);
-        chip.ondblclick = (e)=>{ e.preventDefault(); openStats(p.id); };
-        chip.oncontextmenu = (e)=>{ e.preventDefault(); openStats(p.id); };
+        const chip=document.createElement('button');
+        chip.className='chip'; chip.textContent=`${p.name}(${p.level})`;
+        chip.onclick=()=> addToSlots(p);
+        chip.ondblclick=(e)=>{ e.preventDefault(); openStats(p.id); };
+        chip.oncontextmenu=(e)=>{ e.preventDefault(); openStats(p.id); };
         container.appendChild(chip);
       });
     }
 
-    // ---- 6) 공통 선택 상태(단식=1, 복식=2) ----
-    function makeSelector(typeToggleId, chipsId, slotAId, slotBId, searchId, clearBtnId){
-      const typeToggle = $(typeToggleId);
-      const chipsEl = $(chipsId);
-      const slotA = $(slotAId);
-      const slotB = $(slotBId);
-      const search = $(searchId);
-      const clearBtn = $(clearBtnId);
-      let type = 'single';
-      let selA = []; let selB = [];
-
-      function limit(){ return type==='single'?1:2 }
-
-      function updateSlots(){
-        const renderSlot = (slot, arr, side)=>{
-          slot.innerHTML='';
-          arr.forEach(p=>{
-            const pill = document.createElement('span');
-            pill.className='pill';
-            pill.innerHTML = `<b class="name">${p.name}</b> (${p.level}) <button title="제거">×</button>`;
-            pill.querySelector('button').onclick=()=>{ remove(side,p.id); };
-            // 슬롯 안의 이름 클릭 → 승률표
-            pill.querySelector('.name').onclick = ()=> openStats(p.id);
-            slot.appendChild(pill);
-          });
-        };
-        renderSlot(slotA, selA, 'A');
-        renderSlot(slotB, selB, 'B');
-      }
-
-      function add(side, p){
-        const arr = side==='A'? selA: selB;
-        if(arr.some(x=>x.id===p.id)) return; // 중복 금지
-        if(selA.concat(selB).some(x=>x.id===p.id)) return; // 교차 금지
-        if(arr.length >= limit()) return; // 최대 인원
-        arr.push(p); updateSlots(); updateGuide();
-      }
-      function remove(side, id){
-        if(side==='A') selA = selA.filter(x=>x.id!==id); else selB = selB.filter(x=>x.id!==id);
-        updateSlots(); updateGuide();
-      }
-
-      function hookToggle(){
-        typeToggle.querySelectorAll('button').forEach(btn=>{
-          btn.onclick=()=>{
-            typeToggle.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            type = btn.dataset.v;
-            // 초과 인원 잘라냄 (복식 지원)
-            selA = selA.slice(0, limit()); selB = selB.slice(0, limit());
-            updateSlots(); updateGuide(); renderChips(chipsEl, search.value, onChipClick);
-          };
-        })
-      }
-
-      function onChipClick(p){ add(selA.length<limit()? 'A':'B', p); }
-
-      function wire(){
-        hookToggle();
-        renderChips(chipsEl, '', onChipClick);
-        search.oninput = ()=> renderChips(chipsEl, search.value, onChipClick);
-        clearBtn.onclick = ()=>{ selA=[]; selB=[]; updateSlots(); updateGuide(); };
-      }
-
-      function getState(){ return { type, selA, selB } }
-
-      function setState({type:v, selA:a, selB:b}){
-        type = v || type; selA = a||selA; selB = b||selB; updateSlots(); updateGuide();
-        typeToggle.querySelectorAll('button').forEach(b=> b.classList.toggle('active', b.dataset.v===type));
-      }
-
-      function updateGuide(){}
-
-      wire();
-      return { getState, setState, updateGuide, add, remove, updateSlots, chipsEl };
-    }
-
-    // ---- 7) 경기시작 전용 가이드 & 저장(승자 버튼) ----
-    const startSel = makeSelector('#startTypeToggle','#startChips','#startSlotA','#startSlotB','#startSearch','#startClearSel');
-    function refreshStartGuide(){
-      const {type, selA, selB} = startSel.getState();
-      const g = $('#startGuide');
-      const hA = Number($('#handicapA').value||0), hB = Number($('#handicapB').value||0);
-      const need = type==='single'?1:2;
-      if(selA.length!==need || selB.length!==need){
-        g.textContent = '선수를 선택하면 여기에서 “누구(팀)에게 몇 점 주고 경기하라” 안내가 표시됩니다.';
-        return;
-      }
-      const A = selA.map(p=>p.name).join(', '); const B = selB.map(p=>p.name).join(', ');
-      const hand = (hA||hB)? ` (핸디: A ${hA}점, B ${hB}점)` : '';
-      g.textContent = `${type==='single'?'단식':'복식'}: A팀(${A}) vs B팀(${B}) — 승자 버튼을 눌러 저장하세요.${hand}`;
-    }
-    ['handicapA','handicapB','startScore'].forEach(id=> $("#"+id).oninput=refreshStartGuide );
-    startSel.updateGuide = refreshStartGuide;
-
-    async function saveWinner(side){
-      const {type, selA, selB} = startSel.getState();
-      const need = type==='single'?1:2;
-      if(selA.length!==need || selB.length!==need) return toast('선수를 먼저 선택하세요');
-      const score = $('#startScore').value || '';
-      const match = {
-        ts: Date.now(), type,
-        membersA: selA.map(p=>p.id), membersB: selB.map(p=>p.id),
-        winnerSide: side, score: score||null,
-        createdBy: (auth.currentUser&&auth.currentUser.uid)||'anon',
-        createdAt: Date.now()
+    function renderSlots(){
+      const slotA = $('#resSlotA'); const slotB = $('#resSlotB');
+      slotA.innerHTML=''; slotB.innerHTML='';
+      const draw=(slot, arr, side)=>{
+        arr.forEach(p=>{
+          const pill = document.createElement('span');
+          pill.className='pill';
+          pill.innerHTML = `<b class="name">${p.name}</b> (${p.level}) <button title="제거">×</button>`;
+          pill.querySelector('button').onclick=()=> removeFromSlots(side,p.id);
+          pill.querySelector('.name').onclick=()=> openStats(p.id);
+          slot.appendChild(pill);
+        });
       };
-      await push(ref(db,'matches'), match);
-      toast('결과가 저장되었습니다');
-      // 초기화
-      $('#startScore').value=''; $('#handicapA').value=0; $('#handicapB').value=0;
-      startSel.setState({ selA:[], selB:[] });
+      draw(slotA, selA, 'A'); draw(slotB, selB, 'B');
     }
-    $('#winnerA').onclick=()=>saveWinner('A');
-    $('#winnerB').onclick=()=>saveWinner('B');
 
-    // ---- 8) 성적입력 폼 저장 ----
-    const resSel = makeSelector('#resTypeToggle','#resChips','#resSlotA','#resSlotB','#resSearch','#resClearSel');
+    function addToSlots(p){
+      const arr = selA.length<limit()? selA: selB;
+      if(selA.concat(selB).some(x=>x.id===p.id)) return;
+      arr.push(p); renderSlots();
+    }
+    function removeFromSlots(side,id){
+      if(side==='A') selA = selA.filter(x=>x.id!==id);
+      else selB = selB.filter(x=>x.id!==id);
+      renderSlots();
+    }
+
+    // ---- 저장 ----
     function defaultDateTimeLocal(){
-      const d = new Date();
-      const pad=n=>String(n).padStart(2,'0');
+      const d = new Date(); const pad=n=>String(n).padStart(2,'0');
       return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
     $('#resTime').value = defaultDateTimeLocal();
 
     async function saveResult(){
-      const {type, selA, selB} = resSel.getState();
-      const need = type==='single'?1:2;
+      const need = limit();
       if(selA.length!==need || selB.length!==need) return toast('선수를 먼저 선택하세요');
       const winnerSide = $('#resWinner').value;
       const score = $('#resScore').value || '';
       const tsLocal = $('#resTime').value;
       const ts = tsLocal ? new Date(tsLocal).getTime() : Date.now();
       const match = {
-        ts, type,
+        ts, type: resType,
         membersA: selA.map(p=>p.id), membersB: selB.map(p=>p.id),
         winnerSide, score: score||null,
         createdBy: (auth.currentUser&&auth.currentUser.uid)||'anon',
@@ -481,95 +310,41 @@
       };
       await push(ref(db,'matches'), match);
       toast('성적이 저장되었습니다');
-      // 초기화
       $('#resScore').value=''; $('#resWinner').value='A'; $('#resTime').value = defaultDateTimeLocal();
-      resSel.setState({ selA:[], selB:[] });
+      selA=[]; selB=[]; renderSlots();
     }
     $('#saveResult').onclick=saveResult;
 
-    // ---- 9) 부수 확인/조정 + "이름 클릭→승률표" ----
-    function renderLevelsTable(){
-      const kw = $('#lvlSearch').value||'';
-      const tbody = $('#lvlTbody');
-      const list = filterPlayers(kw);
-      tbody.innerHTML='';
-      list.forEach(p=>{
-        const tr = document.createElement('tr');
-        const tdN = document.createElement('td');
-        const nameBtn = document.createElement('button');
-        nameBtn.textContent = p.name;
-        nameBtn.style.cssText='background:none;border:0;color:#0f172a;font-size:15px;cursor:pointer;text-align:left;padding:0';
-        nameBtn.onclick = ()=> openStats(p.id); // ← 클릭 시 승률표
-        tdN.appendChild(nameBtn);
-        tr.appendChild(tdN);
-
-        const tdL = document.createElement('td'); tdL.textContent = p.level; tr.appendChild(tdL);
-
-        const tdA = document.createElement('td');
-        const box = document.createElement('div'); box.className='levelBox';
-        const minus = document.createElement('button'); minus.textContent='-';
-        const plus = document.createElement('button'); plus.textContent='+';
-        const span = document.createElement('span'); span.textContent=p.level;
-        minus.onclick= async()=>{ const v=Math.max(1, (p.level||1)-1); await update(ref(db,`players/${p.id}`),{level:v}); toast(`${p.name} 부수 ${p.level}→${v}`) };
-        plus.onclick= async()=>{ const v=(p.level||1)+1; await update(ref(db,`players/${p.id}`),{level:v}); toast(`${p.name} 부수 ${p.level}→${v}`) };
-        box.append(minus, span, plus); tdA.appendChild(box); tr.appendChild(tdA);
-        tbody.appendChild(tr);
-      })
-    }
-    $('#lvlSearch').oninput=renderLevelsTable;
-    $('#refreshPlayers').onclick=()=>onValue(ref(db,'players'),()=>{}, {onlyOnce:true});
-
-    function renderAllUIs(){
-      renderChips($('#startChips'), $('#startSearch').value, (p)=> startSel.add(startSel.getState().selA.length < (startSel.getState().type==='single'?1:2) ? 'A':'B', p));
-      renderChips($('#resChips'), $('#resSearch').value, (p)=> resSel.add(resSel.getState().selA.length < (resSel.getState().type==='single'?1:2) ? 'A':'B', p));
-      startSel.updateGuide();
-      renderLevelsTable();
-    }
-
-    // ---- 10) 승률표 계산 & 모달 ----
+    // ---- 승률표 ----
     function openStats(pid){
-      const player = playersById[pid];
-      if(!player){ return; }
-      const name = player.name;
-
-      // 이 선수가 참여한 경기
+      const player = playersById[pid]; if(!player) return;
       const myMatches = matches.filter(m=> (m.membersA||[]).includes(pid) || (m.membersB||[]).includes(pid) );
-      const total = myMatches.length;
       const isWin = (m)=> ((m.membersA||[]).includes(pid) && m.winnerSide==='A') || ((m.membersB||[]).includes(pid) && m.winnerSide==='B');
-      const wins = myMatches.filter(isWin).length;
-      const losses = total - wins;
+      const wins = myMatches.filter(isWin).length; const losses = myMatches.length - wins;
 
       const singles = myMatches.filter(m=>m.type==='single');
-      const singlesW = singles.filter(isWin).length;
-      const singlesL = singles.length - singlesW;
+      const singlesW = singles.filter(isWin).length; const singlesL = singles.length - singlesW;
 
       const doubles = myMatches.filter(m=>m.type==='double');
-      const doublesW = doubles.filter(isWin).length;
-      const doublesL = doubles.length - doublesW;
+      const doublesW = doubles.filter(isWin).length; const doublesL = doubles.length - doublesW;
 
-      // 파트너/상대 빈도 (복식 중심)
-      const partnerMap = new Map(); // id -> {name, total, wins}
-      const oppMap = new Map(); // id -> {name, total, winsAgainst}
-
+      const partnerMap = new Map(), oppMap = new Map();
       function addCount(map, id, won){
         if(!playersById[id]) return;
         const o = map.get(id) || { name: playersById[id].name, total:0, wins:0 };
         o.total += 1; if(won) o.wins += 1; map.set(id,o);
       }
-
       doubles.forEach(m=>{
         const inA = (m.membersA||[]).includes(pid);
         const team = inA ? (m.membersA||[]) : (m.membersB||[]);
-        const opp = inA ? (m.membersB||[]) : (m.membersA||[]);
+        const opp  = inA ? (m.membersB||[]) : (m.membersA||[]);
         const won = (inA && m.winnerSide==='A') || (!inA && m.winnerSide==='B');
         team.filter(x=>x!==pid).forEach(x=> addCount(partnerMap, x, won));
-        opp.forEach(x=> addCount(oppMap, x, won)); // wins = 내 팀이 이겼을 때
+        opp.forEach(x=> addCount(oppMap, x, won));
       });
 
       const partners = Array.from(partnerMap.values()).sort((a,b)=> b.total-a.total).slice(0,5);
       const opps = Array.from(oppMap.values()).sort((a,b)=> b.total-a.total).slice(0,5);
-
-      // 최근 10경기
       const recent = myMatches.slice().sort((a,b)=> b.ts-a.ts).slice(0,10).map(m=>{
         const inA = (m.membersA||[]).includes(pid);
         const oppTeamIds = inA ? (m.membersB||[]) : (m.membersA||[]);
@@ -580,15 +355,13 @@
         return `${when} · ${t} vs ${oppNames} → ${result}`;
       });
 
-      // 모달 DOM 작성
-      $('#statsTitle').textContent = `개인 승률 · ${name}`;
+      $('#statsTitle').textContent = `개인 승률 · ${player.name}`;
       $('#statsBody').innerHTML = `
         <div class="kv">
           <div>총 전적</div><div><span class="pill-sm">W ${wins}</span> <span class="pill-sm">L ${losses}</span> <span class="pill-sm">승률 ${fmtRate(wins,losses)}</span></div>
           <div>단식</div><div><span class="pill-sm">W ${singlesW}</span> <span class="pill-sm">L ${singlesL}</span> <span class="pill-sm">승률 ${fmtRate(singlesW,singlesL)}</span></div>
           <div>복식</div><div><span class="pill-sm">W ${doublesW}</span> <span class="pill-sm">L ${doublesL}</span> <span class="pill-sm">승률 ${fmtRate(doublesW,doublesL)}</span></div>
         </div>
-
         <div class="card" style="margin:10px 0">
           <div class="title">주요 파트너(복식)</div>
           <table class="table-like">
@@ -598,7 +371,6 @@
             </tbody>
           </table>
         </div>
-
         <div class="card" style="margin:10px 0">
           <div class="title">주요 상대</div>
           <table class="table-like">
@@ -608,7 +380,6 @@
             </tbody>
           </table>
         </div>
-
         <div class="card" style="margin:10px 0">
           <div class="title">최근 경기 (10)</div>
           <div class="help">${recent.length? recent.map(x=>`<div>• ${x}</div>`).join('') : '데이터 없음'}</div>
@@ -619,11 +390,10 @@
     $('#statsClose').onclick = ()=> $('#statsModal').style.display='none';
     $('#statsModal').addEventListener('click', (e)=>{ if(e.target.id==='statsModal') $('#statsModal').style.display='none'; });
 
-    // ---- 11) 시작 시퀀스 ----
-    onAuthStateChanged(auth, async ()=>{
-      await ensurePlayers();
-      // players / matches onValue 훅이 렌더 담당
-    });
+    // ---- 시작 ----
+    signInAnonymously(auth).catch(console.error);
+    onAuthStateChanged(auth, async ()=>{ await ensurePlayers(); });
+
   </script>
 </body>
 </html>
