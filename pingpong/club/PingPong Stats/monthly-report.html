@@ -49,7 +49,7 @@
       <span id="lastUpdate" class="badge">실시간 연결: 대기중</span>
       <button id="sortWinrate" class="btn primary">정렬: 승률</button>
       <button id="sortGames" class="btn">정렬: 최다경기</button>
-      <button id="sortWins" class="btn">정렬: 다승</button>
+      <button id="sortWins" class="btn">정렬: 다승(가중)</button>
       <span class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span>
     </div>
   </div>
@@ -65,7 +65,7 @@
       </div>
       <div class="award">
         <div class="muted small">어워드</div>
-        <b>다승 TOP3</b>
+        <b>다승(가중) TOP3</b>
         <ol id="topWins" style="margin:6px 0 0 18px; padding:0"></ol>
       </div>
     </div>
@@ -231,10 +231,12 @@
       const monthRate = (m.gw>0) ? (m.ww/m.gw) : NaN;
       const delta = (isFinite(prevRate) && isFinite(monthRate)) ? (monthRate - prevRate) : NaN;
       return {
-        pid, name: names[pid] || pid,
-        games: m.games, wins: m.wins, losses: m.losses,
-        prevRate, monthRate, delta
-      };
+  pid, name: names[pid] || pid,
+  games: m.games, wins: m.wins, losses: m.losses,
+  prevRate, monthRate, delta,
+  weightedWins: m.ww   // ← 추가 (복식 0.5 반영된 승 수)
+};
+
     });
 
     if(sortMode==='winrate'){
@@ -247,9 +249,10 @@
       });
     }else if(sortMode==='games'){
       rows.sort((a,b)=> (b.games - a.games) || (b.wins - a.wins) || a.name.localeCompare(b.name,'ko'));
-    }else{
-      rows.sort((a,b)=> (b.wins - a.wins) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
-    }
+   }else{
+  rows.sort((a,b)=> (b.weightedWins - a.weightedWins) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
+   }
+
     return rows;
   }
 
@@ -312,13 +315,15 @@
       const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
       mostGamesBox.textContent = `${byGames[0].name} · ${byGames[0].games}경기`;
 
-      const byWins = [...rows].sort((a,b)=> (b.wins-a.wins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
-      topWinsList.innerHTML = '';
-      byWins.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        li.textContent = `${idx+1}위 ${p.name} · ${p.wins}승`;
-        topWinsList.appendChild(li);
-      });
+      const byWins = [...rows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
+topWinsList.innerHTML = '';
+byWins.slice(0,3).forEach((p, idx)=>{
+  const li = document.createElement('li');
+  const winTxt = Number.isInteger(p.weightedWins) ? p.weightedWins : p.weightedWins.toFixed(1);
+  li.textContent = `${idx+1}위 ${p.name} · ${winTxt}승(가중)`;
+  topWinsList.appendChild(li);
+});
+
     }else{
       mostGamesBox.textContent='-';
       topWinsList.innerHTML='';
