@@ -27,23 +27,39 @@
     .btn{border:1px solid #d1d5db; border-radius:10px; padding:10px 14px; font-size:15px; cursor:pointer; background:#fff}
     .btn.ok{background:var(--ok); color:#fff; border-color:var(--ok)}
     .btn.warn{background:var(--danger); color:#fff; border-color:var(--danger)}
+    .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
 
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
 
     /* 최근 저장 리스트 */
     ul.log{margin:8px 0 0 0; padding-left:18px}
+
+    /* ✅ 헤더 버튼이 확실히 보이도록 강제 */
+    header a.btn.primary{
+      display:inline-block;
+      white-space:nowrap;
+      background:var(--accent) !important;
+      color:#fff !important;
+      border-color:var(--accent) !important;
+      outline:0;
+    }
+    @media (max-width:520px){
+      header .row{justify-content:space-between}
+      header a.btn.primary{flex:0 0 auto}
+    }
   </style>
 </head>
 <body>
   <header>
     <div class="wrap">
-      <h1>KOEN 탁구 Manager · 성적입력</h1>
-      <!-- 검은 코드블록( defaultPlayersRaw 표시 ) 제거됨 -->
+      <div class="row" style="gap:8px; align-items:center; justify-content:space-between">
+        <h1 style="margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)">
+          KOEN 탁구 Manager · 성적입력
+        </h1>
+        <a id="reportBtn" href="monthly-report.html" class="btn primary">📊 이번달 성적 확인표</a>
+      </div>
     </div>
-    <div class="row" style="gap:8px">
-  <a href="monthly-report.html" class="btn" style="margin-left:auto">이번달 성적 확인표</a>
-</div>
   </header>
 
   <main>
@@ -86,6 +102,31 @@
     import {
       getDatabase, ref, push, onValue, query, orderByChild, limitToLast
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    /* ✅ 헤더 버튼이 없을 때(배포/캐시 등) 자동 생성 */
+    (() => {
+      const wrap = document.querySelector('header .wrap');
+      const exists = document.getElementById('reportBtn');
+      if (wrap && !exists) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.gap = '8px';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        const h1 = document.createElement('h1');
+        h1.textContent = 'KOEN 탁구 Manager · 성적입력';
+        h1.style.margin = '4px 0 6px';
+        h1.style.fontSize = 'clamp(18px,4vw,24px)';
+        h1.style.color = 'var(--primary)';
+        const a = document.createElement('a');
+        a.id = 'reportBtn';
+        a.href = 'monthly-report.html';
+        a.className = 'btn primary';
+        a.textContent = '📊 이번달 성적 확인표';
+        row.append(h1, a);
+        wrap.appendChild(row);
+      }
+    })();
 
     // 0) Firebase
     const firebaseConfig = {
@@ -183,26 +224,25 @@
     $('#winB').onclick=()=>saveWinner('B');
 
     // 4) 최근 저장 표시
-function watchRecent(){
-  const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
-  onValue(q, snap=>{
-    const ul = $('#recent'), empty = $('#recentEmpty');
-    ul.innerHTML='';
-    const val = snap.val();
-    if(!val){ empty.style.display=''; return; }
-    empty.style.display='none';
-    const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
-    arr.forEach(m=>{
-      const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
-      const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
-      const winnerName = m.winnerSide === 'A' ? A : B;  // ✅ 승자 이름 표시
-      const li = document.createElement('li');
-      li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${winnerName}`;
-      ul.appendChild(li);
-    });
-  });
-}
-
+    function watchRecent(){
+      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(10));
+      onValue(q, snap=>{
+        const ul = $('#recent'), empty = $('#recentEmpty');
+        ul.innerHTML='';
+        const val = snap.val();
+        if(!val){ empty.style.display=''; return; }
+        empty.style.display='none';
+        const arr = Object.values(val).sort((a,b)=>a.ts-b.ts);
+        arr.forEach(m=>{
+          const A = m.namesA?.[0] || players.find(p=>p.id===m.membersA?.[0])?.name || 'A';
+          const B = m.namesB?.[0] || players.find(p=>p.id===m.membersB?.[0])?.name || 'B';
+          const winnerName = m.winnerSide === 'A' ? A : B;  // ✅ 승자 이름 표시
+          const li = document.createElement('li');
+          li.textContent = `${new Date(m.ts).toLocaleString()} · ${A} vs ${B} → 승자 ${winnerName}`;
+          ul.appendChild(li);
+        });
+      });
+    }
 
     // 5) 시작
     signInAnonymously(auth).catch(console.error);
