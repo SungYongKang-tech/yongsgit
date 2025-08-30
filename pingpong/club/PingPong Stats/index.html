@@ -18,32 +18,17 @@
     main{max-width:980px; margin:12px auto; padding:0 16px 30px}
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
 
-    .chips{display:flex; flex-wrap:wrap; gap:8px}
+    /* 선수 칩(휴대폰에서 얇게) */
+    .chips{display:flex; flex-wrap:wrap; gap:6px}
     .chip{
-      display:inline-flex;
-      align-items:center;
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid #d1d5db;
-      cursor:pointer;
-      background:#eef2ff;
-      font-size:13px;
-      line-height:1.1;
-      white-space:nowrap;
-      -webkit-tap-highlight-color: transparent;
+      display:inline-flex; align-items:center;
+      padding:6px 10px; border-radius:999px; border:1px solid #d1d5db;
+      cursor:pointer; background:#eef2ff; font-size:13px; line-height:1.1; white-space:nowrap;
+      -webkit-tap-highlight-color:transparent;
     }
     .chip.selected{outline:2px solid var(--accent); background:#fff}
-
-    /* 칩 사이 간격도 살짝만 줄임 */
-    .chips{display:flex; flex-wrap:wrap; gap:6px}
-
-    /* 모바일에서 더 얇게 */
     @media (max-width:520px){
-      .chip{
-        padding:5px 8px;
-        font-size:12.5px;
-        line-height:1.05;
-      }
+      .chip{padding:5px 8px; font-size:12.5px; line-height:1.05}
       .chips{gap:5px}
     }
 
@@ -63,11 +48,23 @@
     .toast.show{opacity:1}
     .win{color:var(--accent); font-weight:700}
 
-    /* 최근 저장 리스트 */
+    /* 최근 저장 레이아웃 */
     ul.log{margin:8px 0 0 0; padding-left:0; list-style:none}
-    ul.log li{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f1f5f9}
+    ul.log li{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9}
     ul.log .item{flex:1 1 auto}
-    ul.log .meta{color:var(--muted); font-size:12px}
+    /* PC/태블릿: 한 줄( combined 만 표시 ) */
+    .log .item .combined{display:block}
+    .log .item .line1, .log .item .line2{display:none}
+    /* 폰: 두 줄( line1=날짜, line2=내용 ) */
+    @media (max-width:520px){
+      ul.log li{align-items:flex-start}
+      .log .item{display:flex; flex-direction:column; gap:2px}
+      .log .item .combined{display:none}
+      .log .item .line1, .log .item .line2{display:block}
+      .log .item .line1{font-size:12px; color:var(--muted)}
+      .log .item .line2{font-size:14px}
+      .log li .btn{align-self:center; margin-left:8px}
+    }
 
     /* 헤더 버튼 보이도록 강제 */
     header a.btn.primary{
@@ -188,7 +185,7 @@
     };
     const slugify = (s)=> s.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
 
-    // 복식이면 '/' , 단식이면 ' + '
+    // 복식이면 '/', 단식이면 ' + '
     const fmtTeam = (arr, isDouble=false)=>{
       const joiner = isDouble ? '/' : ' + ';
       return arr.map(p=>p.name).join(joiner) || '-';
@@ -378,16 +375,20 @@
           const B = (m.namesB && m.namesB.length) ? m.namesB.join(joiner)
                    : (m.membersB && m.membersB.length ? m.membersB.join(joiner) : 'B');
 
-          // 승자 표시
+          // 승자 표시: 승자 쪽에만 (승) + 파란 굵은 글씨
           const winIsA = (m.winnerSide === 'A');
           const ALabel = winIsA ? `<span class="win">${A} (승)</span>` : A;
           const BLabel = !winIsA ? `<span class="win">${B} (승)</span>` : B;
 
-          // ✅ item 요소가 누락되어 오류났던 부분: 요소 생성 추가
           const item = document.createElement('div');
           item.className = 'item';
+
+          const dateText = fmtYYMMDD_HHMM_WD(m.ts ?? m.createdAt);
+          // PC/태블릿: 한 줄, 폰: 두 줄
           item.innerHTML = `
-            <div>${fmtYYMMDD_HHMM_WD(m.ts ?? m.createdAt)} · [${typeLabel}] ${ALabel} vs ${BLabel}</div>
+            <div class="combined">${dateText} · [${typeLabel}] ${ALabel} vs ${BLabel}</div>
+            <div class="line1">${dateText}</div>
+            <div class="line2">[${typeLabel}] ${ALabel} vs ${BLabel}</div>
           `;
 
           const del = document.createElement('button');
