@@ -68,6 +68,7 @@ tbody td.name {
     <div class="row">
       <h1 style="margin-right:auto">KOEN 탁구 · 이번달 성적 확인표</h1>
       <a class="btn primary" href="./" title="성적입력으로 돌아가기">← 성적입력</a>
+      <a href="admin.html" class="btn">⚙️ 관리자</a>
 
     </div>
     <div class="row">
@@ -76,7 +77,8 @@ tbody td.name {
       <button id="sortWinrate" class="btn primary">정렬: 승률</button>
       <button id="sortGames" class="btn">정렬: 최다경기</button>
       <button id="sortWins" class="btn">정렬: 다승</button>
-      <span class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span>
+      <span id="dwNote" class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span>
+
     </div>
   </div>
 </header>
@@ -152,6 +154,25 @@ tbody td.name {
   const auth = getAuth(app);
   const db = getDatabase(app);
 
+  let DOUBLE_WEIGHT = 0.5; // 기본값
+
+// /config/doubleWeight 실시간 반영
+onValue(ref(db, 'config/doubleWeight'), (s) => {
+  const v = parseFloat(s.val());
+  DOUBLE_WEIGHT = (isFinite(v) ? v : 0.5);
+
+  // 데이터가 이미 로드되어 있다면 바로 재집계+렌더
+  if (window.lastAll) { 
+    rebuild(window.lastAll);
+    render();
+  }
+
+  // (선택) 화면 안내 문구도 함께 갱신하고 싶다면 ↓
+const note = document.getElementById('dwNote');
+if (note) note.textContent = `※ 복식은 승률 계산에 ${DOUBLE_WEIGHT}배 반영됩니다.`;
+
+});
+
   // ========== KST 기준 월 키 ==========
   const pad = (n)=> String(n).padStart(2,'0');
   const toKST = (t = Date.now()) => new Date(
@@ -161,8 +182,12 @@ tbody td.name {
     const d = toKST(ts);
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
   }
-  const nowKST = toKST();
-  const CUR_MON = `${nowKST.getFullYear()}-${pad(nowKST.getMonth()+1)}`;
+  const qs = new URLSearchParams(location.search);
+const monOverride = qs.get('mon'); // 'YYYY-MM' or null
+const nowKST = toKST();
+const CUR_MON = monOverride && /^\d{4}-\d{2}$/.test(monOverride) ? monOverride
+              : `${nowKST.getFullYear()}-${pad(nowKST.getMonth()+1)}`;
+document.getElementById('monthBadge').textContent = `이번달: ${CUR_MON}`;
   document.getElementById('monthBadge').textContent = `이번달: ${CUR_MON}`;
 
   // ========== 정렬 상태 ==========
