@@ -202,7 +202,6 @@
   const toast = (msg='저장되었습니다')=>{
     const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600);
   };
-  const pad = (n)=> String(n).padStart(2,'0');
 
   // ===== 로스터 =====
   let players = []; // {id, name, level}
@@ -295,27 +294,27 @@
   // DB: config/skillAdjust = { perLevel:number, minFav:number, maxDog:number }
   function clamp(min, x, max){ return Math.max(min, Math.min(max, x)); }
 
-  function getAdjustedWeight(levelA, levelB, winner){ // winner: 'A' | 'B'
-    const sa = currentSA;
-    const d = Math.abs((levelA ?? 99) - (levelB ?? 99)); // level 미입력시 큰 값으로 취급
-    // 숫자 작을수록 상위(고수)
-    const aIsFav = (levelA ?? 99) < (levelB ?? 99);
-    const favWin = clamp(sa.minFav, 1 - sa.perLevel * d, 1);
-    const dogWin = clamp(1, 1 + sa.perLevel * d, sa.maxDog);
-    if(winner === 'A'){
-      return aIsFav ? favWin : dogWin;
-    }else{ // winner === 'B'
-      const bIsFav = !aIsFav;
-      return bIsFav ? favWin : dogWin;
-    }
-  }
-
   let currentSA = { perLevel:0.05, minFav:0.6, maxDog:1.8 };
 
   function renderSAInputs(sa){
     $('#saPerLevel').value = sa.perLevel;
     $('#saMinFav').value  = sa.minFav;
     $('#saMaxDog').value  = sa.maxDog;
+  }
+
+  // 미리보기용 동일 공식
+  function getAdjustedWeight(levelA, levelB, winner){ // winner: 'A' | 'B'
+    const sa = currentSA;
+    const d = Math.abs((levelA ?? 99) - (levelB ?? 99)); // level 미입력시 큰 값
+    const aIsFav = (levelA ?? 99) < (levelB ?? 99);      // 숫자 작을수록 상위
+    const favWin = clamp(sa.minFav, 1 - sa.perLevel * d, 1);
+    const dogWin = clamp(1,         1 + sa.perLevel * d, sa.maxDog);
+    if(winner === 'A'){
+      return aIsFav ? favWin : dogWin;
+    }else{
+      const bIsFav = !aIsFav;
+      return bIsFav ? favWin : dogWin;
+    }
   }
 
   onValue(ref(db,'config/skillAdjust'), (s)=>{
@@ -328,7 +327,6 @@
       };
       renderSAInputs(currentSA);
     }else{
-      // 초기값 표시
       renderSAInputs(currentSA);
     }
   });
@@ -371,7 +369,7 @@ B가 승리 시 가중치: ${wB.toFixed(3)}
   }
   $('#pvCalc').onclick = showPreview;
 
-  // ===== 시작 =====
+  // 시작
   signInAnonymously(auth).catch(console.error);
   onAuthStateChanged(auth, ()=>{ /* no-op */ });
 </script>
