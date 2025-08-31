@@ -1,481 +1,462 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>KOEN 탁구 · 성적입력</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KOEN 탁구 성적입력</title>
   <style>
     :root{
-      --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
-      --primary:#0d47a1; --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+      --ink:#0f172a; --muted:#64748b; --card:#ffffff; --bg:#f5f7fb;
+      --primary:#0d47a1; --accent:#2563eb; --danger:#ef4444; --ok:#16a34a;
       --shadow:0 8px 28px rgba(0,0,0,.08)
     }
     *{box-sizing:border-box}
     body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif; color:var(--ink); background:var(--bg)}
-    header{position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid #e5e7eb}
-    .wrap{max-width:1040px; margin:0 auto; padding:14px 16px}
+    header{position:sticky; top:0; z-index:20; background:#fff; border-bottom:1px solid #e5e7eb}
+    .wrap{max-width:980px; margin:0 auto; padding:14px 16px}
     h1{margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)}
-    main{max-width:1040px; margin:16px auto; padding:0 16px 40px}
-    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
-    .col{display:flex; flex-direction:column; gap:8px}
+    main{max-width:980px; margin:12px auto; padding:0 16px 30px}
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
-    label{font-size:13px; color:#334155}
-    select, input[type="text"], input[type="number"]{padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; background:#fff; min-width:160px}
-    .btn{border:1px solid #d1d5db; border-radius:10px; padding:10px 14px; font-size:14px; background:#fff; cursor:pointer}
+
+    /* 선수 칩(휴대폰에서 얇게) + 부수별 색상 변수 사용 */
+    .chips{display:flex; flex-wrap:wrap; gap:6px}
+    .chip{
+      display:inline-flex; align-items:center;
+      padding:6px 10px; border-radius:999px;
+      border:1px solid var(--chip-bd, #d1d5db);   /* ← 부수별 테두리 색 */
+      cursor:pointer;
+      background:var(--chip-bg, #eef2ff);         /* ← 부수별 배경색(옅게) */
+      color:#111;                                  /* 글씨는 검정 */
+      font-size:13px; line-height:1.1; white-space:nowrap;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .chip.selected{outline:2px solid var(--accent); background:#fff} /* 선택 시 흰색으로 */
+    @media (max-width:520px){
+      .chip{padding:5px 8px; font-size:12.5px; line-height:1.05}
+      .chips{gap:5px}
+    }
+
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .row.center{justify-content:center}
+    .btn{border:1px solid #d1d5db; border-radius:10px; padding:10px 14px; font-size:15px; cursor:pointer; background:#fff}
+    .btn.ok{background:var(--ok); color:#fff; border-color:var(--ok)}
+    .btn.warn{background:var(--danger); color:#fff; border-color:var(--danger)}
     .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
-    .btn.warn{background:#ef4444; color:#fff; border-color:#ef4444}
-    .btn.ok{background:#16a34a; color:#fff; border-color:#16a34a}
-    .muted{color:var(--muted)}
-    .small{font-size:12px}
-    .grid{display:grid; gap:14px}
-    .grid.cols-2{grid-template-columns:repeat(auto-fit, minmax(280px,1fr))}
-    .chip{display:inline-flex; gap:6px; align-items:center; padding:6px 10px; border-radius:999px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px}
+    .btn.sm{padding:6px 10px; font-size:13px; border-radius:8px}
+
+    .seg{display:inline-flex; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; padding:2px}
+    .seg button{border:0; background:transparent; padding:8px 12px; border-radius:999px; cursor:pointer; font-size:14px}
+    .seg button.active{background:#fff; outline:2px solid var(--accent)}
+
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
-    .divider{height:1px; background:#e5e7eb; margin:10px 0}
+    .win{color:var(--accent); font-weight:700}
+
+    /* 최근 저장 레이아웃 */
+    ul.log{margin:8px 0 0 0; padding-left:0; list-style:none}
+    ul.log li{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9}
+    ul.log .item{flex:1 1 auto}
+    /* PC/태블릿: 한 줄( combined 만 표시 ) */
+    .log .item .combined{display:block; font-size:14px;}
+    .log .item .line1, .log .item .line2{display:none}
+    /* 폰: 두 줄( line1=날짜, line2=내용 ) */
+    @media (max-width:520px){
+      ul.log li{align-items:flex-start}
+      .log .item{display:flex; flex-direction:column; gap:2px}
+      .log .item .combined{display:none}
+      .log .item .line1, .log .item .line2{display:block}
+      .log .item .line1{font-size:14px; color:var(--muted)}
+      .log .item .line2{font-size:14px}
+      .log li .btn{align-self:center; margin-left:8px}
+    }
+
+    /* 헤더 버튼 보이도록 강제 */
+    header a.btn.primary{
+      display:inline-block; white-space:nowrap;
+      background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important;
+    }
+    @media (max-width:520px){
+      header .row{justify-content:space-between}
+      header a.btn.primary{flex:0 0 auto}
+    }
   </style>
 </head>
 <body>
-<header>
-  <div class="wrap">
-    <div class="row">
-      <h1 style="margin-right:auto">KOEN 탁구 · 성적입력</h1>
-      <a class="btn" href="admin.html">⚙️ 관리자</a>
-      <a class="btn" href="monthly-report.html">📊 이번달 성적표</a>
-    </div>
-    <div class="row">
-      <span class="chip">실험판</span>
-      <span class="small muted">※ 가중치는 관리자에서 설정하세요.</span>
-    </div>
-  </div>
-</header>
+  <header>
+    <div class="wrap">
+      <div class="row" style="gap:8px; align-items:center; justify-content:space-between">
+        <h1 style="margin:4px 0 6px; font-size:clamp(18px,4vw,24px); color:var(--primary)">
+          KOEN 탁구 성적입력
+        </h1>
+        <a id="reportBtn" href="monthly-report.html" class="btn primary">📊 이번달 성적 확인</a>
+        <a href="admin.html" class="btn">⚙️ 관리자</a>
 
-<main>
-  <section class="card">
-    <div class="grid cols-2">
-      <div class="col">
-        <div class="row">
-          <label>경기 종류</label>
-          <select id="matchType">
-            <option value="singles">단식</option>
-            <option value="doubles">복식</option>
-          </select>
-          <span class="small muted">복식 가중치는 관리자 설정 사용</span>
-        </div>
-        <div class="divider"></div>
-
-        <div class="row">
-          <label style="min-width:64px">A 선수</label>
-          <select id="playerA"></select>
-          <span id="lvA" class="chip">부수: -</span>
-        </div>
-        <div class="row doublesOnly" style="display:none">
-          <label style="min-width:64px">A 파트너</label>
-          <select id="partnerA"></select>
-        </div>
-
-        <div class="row">
-          <label style="min-width:64px">B 선수</label>
-          <select id="playerB"></select>
-          <span id="lvB" class="chip">부수: -</span>
-        </div>
-        <div class="row doublesOnly" style="display:none">
-          <label style="min-width:64px">B 파트너</label>
-          <select id="partnerB"></select>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="row">
-          <label>세트 스코어</label>
-          <input id="scoreInput" type="text" placeholder="예: 3-2" style="min-width:120px"/>
-          <span class="small muted">형식: 3-2, 2:0 등</span>
-        </div>
-
-        <div class="row">
-          <label>승자</label>
-          <select id="winnerSel">
-            <option value="A">A팀(또는 A선수)</option>
-            <option value="B">B팀(또는 B선수)</option>
-          </select>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="row">
-          <button id="confirmBtn" class="btn primary">✅ 경기 확정 & 누적 반영</button>
-          <button id="resetBtn" class="btn">초기화</button>
-        </div>
-        <div class="small muted" id="preview"></div>
-      </div>
-
-      <div class="col">
-        <div class="row"><strong>적용될 가중치(미리보기)</strong></div>
-        <div class="row">
-          <div class="chip">실력차 보정: <span id="wSkill">-</span></div>
-          <div class="chip">복식 가중: <span id="wDouble">-</span></div>
-          <div class="chip">최종 가중: <span id="wFinal">-</span></div>
-        </div>
-        <div class="divider"></div>
-        <div class="small muted">선수/승자/스코어를 바꾸면 자동 갱신됩니다.</div>
       </div>
     </div>
-  </section>
-</main>
+  </header>
 
-<div id="toast" class="toast">Saved</div>
+  <main>
+    <section class="active">
+      <div class="card">
+        <div class="row" style="gap:12px">
+          <!-- 단/복식 토글 -->
+          <div class="seg" id="modeSeg">
+            <button data-mode="single" class="active">단식</button>
+            <button data-mode="double">복식</button>
+          </div>
+          <!-- 선택 초기화: 토글 옆 -->
+          <button id="clearSel" class="btn sm">선택 초기화</button>
 
-<!-- Firebase + Logic -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-  import { getDatabase, ref, onValue, get, set, update, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+          <!-- 안내 문구 -->
+          <div class="meta" style="color:var(--muted); font-size:13px">
+            <span id="hint">단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.</span>
+          </div>
+        </div>
 
-  // ===== Firebase ===== (🔧 수정 지점: 프로젝트 바꾸면 이 객체만 바꾸세요)
-  const firebaseConfig = {
-    apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
-    authDomain: "koen-pingpong.firebaseapp.com",
-    databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
-    projectId: "koen-pingpong",
-    storageBucket: "koen-pingpong.appspot.com",
-    messagingSenderId: "597358811982",
-    appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
-  };
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getDatabase(app);
+        <div id="chips" class="chips" style="margin-top:8px"></div>
 
-  // ===== Utils =====
-  const $ = (s, ctx=document)=>ctx.querySelector(s);
-  const toast = (msg='저장되었습니다')=>{
-    const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600);
-  };
-  const pad = (n)=> String(n).padStart(2,'0');
-  const toKST = (t = Date.now()) => new Date( new Date(t).toLocaleString('en-US', { timeZone:'Asia/Seoul' }) );
-  const yyyymm = (d)=> `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+        <div class="card" id="winnerBox" style="display:none; margin-top:12px">
+          <div class="row center" style="gap:8px; margin-bottom:6px">
+            <span class="btn sm" style="pointer-events:none">A팀: <b id="teamA"></b></span>
+            <span class="btn sm" style="pointer-events:none">B팀: <b id="teamB"></b></span>
+          </div>
+          <div class="row center" style="gap:12px">
+            <button id="winA" class="btn ok">승자: A팀</button>
+            <button id="winB" class="btn warn">승자: B팀</button>
+          </div>
+          <div style="text-align:center; margin-top:6px; color:var(--muted); font-size:13px">
+            저장 후 자동 초기화됩니다.
+          </div>
+        </div>
+      </div>
 
-  function parseSetScore(scoreStr){
-    const m = /^(\d+)\s*[-:]\s*(\d+)$/.exec(String(scoreStr||"").trim());
-    if(!m) return { for:0, against:0 };
-    return { for:Number(m[1]), against:Number(m[2]) };
-  }
-  function clamp(min, x, max){ return Math.max(min, Math.min(max, x)); }
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:6px">최근 저장</div>
+        <ul id="recent" class="log"></ul>
+        <div id="recentEmpty" style="color:var(--muted); font-size:13px">아직 기록이 없습니다.</div>
+      </div>
+    </section>
+  </main>
 
-  // ===== 전역 상태 =====
-  let players = [];      // {id, name, level}
-  let skillAdjust = { perLevel:0.05, minFav:0.6, maxDog:1.8 }; // 관리자 설정 기본값
-  let doubleWeight = 0.5; // 관리자 설정 기본값
+  <div id="toast" class="toast">Saved</div>
 
-  // ===== 보정 가중치 계산 =====
-  // 🔧 수정 지점: 다른 페이지에서도 동일 로직을 쓰세요.
-  function getAdjustedWeight(levelA, levelB, winner){ // winner: 'A' | 'B'
-    const sa = skillAdjust;
-    const d = Math.abs((levelA ?? 99) - (levelB ?? 99)); // level 미기입은 큰 값
-    const aIsFav = (levelA ?? 99) < (levelB ?? 99);      // 숫자 작을수록 상위
-    const favWin = clamp(sa.minFav, 1 - sa.perLevel * d, 1);
-    const dogWin = clamp(1,         1 + sa.perLevel * d, sa.maxDog);
-    if(winner === 'A'){
-      return aIsFav ? favWin : dogWin;
-    }else{
-      const bIsFav = !aIsFav;
-      return bIsFav ? favWin : dogWin;
+  <!-- Firebase SDK (ESM) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import {
+      getDatabase, ref, push, onValue, query, orderByChild, limitToLast, remove
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    /* 헤더 버튼 자동 생성 (캐시 대비) */
+    (() => {
+      const wrap = document.querySelector('header .wrap');
+      const exists = document.getElementById('reportBtn');
+      if (wrap && !exists) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.gap = '8px';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        const h1 = document.createElement('h1');
+        h1.textContent = 'KOEN 탁구 성적입력';
+        h1.style.margin = '4px 0 6px';
+        h1.style.fontSize = 'clamp(18px,4vw,24px)';
+        h1.style.color = 'var(--primary)';
+        const a = document.createElement('a');
+        a.id = 'reportBtn';
+        a.href = 'monthly-report.html';
+        a.className = 'btn primary';
+        a.textContent = '📊 이번달 성적 확인';
+        row.append(h1, a);
+        wrap.appendChild(row);
+      }
+    })();
+
+    // 0) Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
+      authDomain: "koen-pingpong.firebaseapp.com",
+      databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
+      projectId: "koen-pingpong",
+      storageBucket: "koen-pingpong.appspot.com",
+      messagingSenderId: "597358811982",
+      appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
+    };
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    // ===== 유틸 =====
+    const $ = (sel, ctx=document)=>ctx.querySelector(sel);
+    const toast = (msg='저장되었습니다')=>{
+      const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)
+    };
+    const slugify = (s)=> s.replace(/[()]/g,'').replace(/\s+/g,'-').replace(/[^\p{L}\p{N}-]/gu,'').toLowerCase();
+
+    // 복식이면 '/', 단식이면 ' + '
+    const fmtTeam = (arr, isDouble=false)=>{
+      const joiner = isDouble ? '/' : ' + ';
+      return arr.map(p=>p.name).join(joiner) || '-';
+    };
+
+    // 날짜 포맷: 25년 08월 30일(토) 20:30 — KST
+    const toKST = (t) => new Date(new Date(t ?? Date.now()).toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
+    const WEEK = ['일','월','화','수','목','금','토'];
+    const fmtYYMMDD_HHMM_WD = (t) => {
+      const d = toKST(t);
+      const yy = String(d.getFullYear()).slice(-2);
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mi = String(d.getMinutes()).padStart(2,'0');
+      const wd = WEEK[d.getDay()];
+      return `${yy}년 ${mm}월 ${dd}일(${wd}) ${hh}:${mi}`;
+    };
+
+    // 삭제 비밀번호
+    const DELETE_PASSWORD = '7910';
+
+    // 1) 기본 선수
+    const defaultPlayersRaw = [
+      "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
+      "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
+      "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
+      "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
+    ];
+
+    // 부수 → 파스텔 색상 계산 (작을수록 따뜻한 톤)
+    function levelStyle(level){
+      const L = Math.max(4, Math.min(14, Number(level)||14)); // 4~14 클램프
+      const t = (L - 4) / (14 - 4);                           // 0..1
+      const hue = 45 + (220 - 45) * t;                        // 45°(골드) → 220°(블루)
+      const bg = `hsl(${hue.toFixed(0)} 70% 92%)`;            // 아주 옅은 배경
+      const bd = `hsl(${hue.toFixed(0)} 45% 70%)`;            // 살짝 진한 테두리
+      return { bg, bd };
     }
-  }
 
-  // ===== DB 접근: 월간 스탯 누적 =====
-  // 🔧 수정 지점: 누적 경로/필드명을 프로젝트 표준에 맞게 바꾸려면 여기만 조정
-  async function applyDeltaToPlayer(monthKey, playerId, delta){
-    const pRef = ref(db, `stats/${monthKey}/${playerId}`);
-    const snap = await get(pRef);
-    const cur = snap.val() || {
-      wWins:0, wLosses:0, wSetsFor:0, wSetsAgainst:0,
-      matches:0,    // 비가중 경기 수
-      lastUpdated:0
-    };
-    const next = {
-      wWins:        (cur.wWins        || 0) + (delta.wWins        || 0),
-      wLosses:      (cur.wLosses      || 0) + (delta.wLosses      || 0),
-      wSetsFor:     (cur.wSetsFor     || 0) + (delta.wSetsFor     || 0),
-      wSetsAgainst: (cur.wSetsAgainst || 0) + (delta.wSetsAgainst || 0),
-      matches:      (cur.matches      || 0) + (delta.matches      || 0),
-      lastUpdated: Date.now()
-    };
-    await update(pRef, next);
-  }
+    // 파싱 → [{id,name,level}]  정렬: 부수 오름차순(숫자 작을수록 먼저) → 이름
+    const players = defaultPlayersRaw.map((s,i)=>{
+      const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
+      const name = m[1]; const level = Number(m[2]);
+      let id = slugify(name);
+      return { id: id + '-' + i, name, level };
+    }).filter(Boolean).sort((a,b)=> (a.level - b.level) || a.name.localeCompare(b.name,'ko'));
 
-  // ===== 경기 확정(단식/복식 공통 진입) =====
-  // 🔧 핵심 함수: 여기서 finalWeight를 만들고 각 선수에게 델타를 반영합니다.
-  async function confirmSinglesResult({ monthKey, playerAId, playerBId, levelA, levelB, winner, score }){
-    const weight  = getAdjustedWeight(levelA, levelB, winner);
-    const dbl     = 1; // 단식
-    const finalWeight = weight * dbl;
+    // 2) 상태 + UI  (swap 제거)
+    const state = { mode:'single', sel:[] }; // mode: single|double
+    const modeSeg = $('#modeSeg');
+    const hintEl = $('#hint');
 
-    const { for:setsForA, against:setsAgainstA } = parseSetScore(score);
-    const setsForB     = setsAgainstA;
-    const setsAgainstB = setsForA;
-
-    const deltaA = {
-      wWins:        (winner === 'A') ? finalWeight : 0,
-      wLosses:      (winner === 'B') ? finalWeight : 0,
-      wSetsFor:     setsForA     * finalWeight,
-      wSetsAgainst: setsAgainstA * finalWeight,
-      matches:      1
-    };
-    const deltaB = {
-      wWins:        (winner === 'B') ? finalWeight : 0,
-      wLosses:      (winner === 'A') ? finalWeight : 0,
-      wSetsFor:     setsForB     * finalWeight,
-      wSetsAgainst: setsAgainstB * finalWeight,
-      matches:      1
-    };
-
-    await Promise.all([
-      applyDeltaToPlayer(monthKey, playerAId, deltaA),
-      applyDeltaToPlayer(monthKey, playerBId, deltaB),
-    ]);
-
-    return { finalWeight, weight, dbl };
-  }
-
-  async function confirmDoublesResult({ monthKey, a1, a2, b1, b2, levelAmin, levelBmin, winner, score }){
-    // 복식은 팀의 "대표 레벨"을 어떻게 볼지 결정 필요:
-    // 여기서는 각 팀의 "최상위자(숫자 가장 작은 부수)"로 비교(간단/일관).
-    const teamALevel = levelAmin;
-    const teamBLevel = levelBmin;
-
-    const skillW = getAdjustedWeight(teamALevel, teamBLevel, winner);
-    const dbl    = doubleWeight;            // 관리자 설정값
-    const finalWeight = skillW * dbl;
-
-    const { for:setsForA, against:setsAgainstA } = parseSetScore(score);
-    const setsForB     = setsAgainstA;
-    const setsAgainstB = setsForA;
-
-    const deltaTeamA = {
-      wWins:        (winner === 'A') ? finalWeight : 0,
-      wLosses:      (winner === 'B') ? finalWeight : 0,
-      wSetsFor:     setsForA     * finalWeight,
-      wSetsAgainst: setsAgainstA * finalWeight,
-      matches:      1
-    };
-    const deltaTeamB = {
-      wWins:        (winner === 'B') ? finalWeight : 0,
-      wLosses:      (winner === 'A') ? finalWeight : 0,
-      wSetsFor:     setsForB     * finalWeight,
-      wSetsAgainst: setsAgainstB * finalWeight,
-      matches:      1
-    };
-
-    // 각 팀 2명 모두에게 동일 델타 반영
-    await Promise.all([
-      applyDeltaToPlayer(monthKey, a1, deltaTeamA),
-      applyDeltaToPlayer(monthKey, a2, deltaTeamA),
-      applyDeltaToPlayer(monthKey, b1, deltaTeamB),
-      applyDeltaToPlayer(monthKey, b2, deltaTeamB),
-    ]);
-
-    return { finalWeight, weight:skillW, dbl };
-  }
-
-  // (선택) 경기 로그 저장
-  async function logMatch(monthKey, payload){
-    const mRef = ref(db, `matches/${monthKey}`);
-    await set(push(mRef), { ...payload, ts: Date.now() });
-  }
-
-  // ===== UI/데이터 바인딩 =====
-  const els = {
-    matchType: $('#matchType'),
-    playerA:   $('#playerA'),
-    partnerA:  $('#partnerA'),
-    playerB:   $('#playerB'),
-    partnerB:  $('#partnerB'),
-    lvA:       $('#lvA'),
-    lvB:       $('#lvB'),
-    score:     $('#scoreInput'),
-    winnerSel: $('#winnerSel'),
-    confirm:   $('#confirmBtn'),
-    reset:     $('#resetBtn'),
-    preview:   $('#preview'),
-    wSkill:    $('#wSkill'),
-    wDouble:   $('#wDouble'),
-    wFinal:    $('#wFinal'),
-  };
-
-  function fillPlayerSelect(sel){
-    sel.innerHTML = '<option value="">선택</option>';
-    players
-      .slice()
-      .sort((a,b)=> a.name.localeCompare(b.name,'ko'))
-      .forEach(p=>{
-        const opt=document.createElement('option');
-        opt.value=p.id;
-        opt.textContent = p.level!=null ? `${p.name} (${p.level})` : `${p.name}`;
-        sel.appendChild(opt);
-      });
-  }
-
-  function findPlayer(id){ return players.find(p=>p.id===id); }
-  function getLevel(id){ return findPlayer(id)?.level ?? null; }
-
-  function updateDoublesVisibility(){
-    const show = els.matchType.value === 'doubles';
-    document.querySelectorAll('.doublesOnly').forEach(el=>{
-      el.style.display = show ? '' : 'none';
+    modeSeg.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-mode]'); if(!btn) return;
+      modeSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b===btn));
+      state.mode = btn.dataset.mode;
+      state.sel = [];
+      renderChips(); renderWinnerBox();
+      hintEl.innerHTML = state.mode==='single'
+        ? '단식: <b>두 선수</b>를 선택한 뒤 아래 <b>승자 버튼</b>을 누르면 저장됩니다.'
+        : '복식: <b>네 선수</b>를 선택하세요. <b>앞 두 명=A팀</b>, <b>뒤 두 명=B팀</b>. (팀 바꾸려면 선택을 해제하고 다시 선택하세요)';
     });
-  }
 
-  function refreshLevelsBadge(){
-    const la = getLevel(els.playerA.value);
-    const lb = getLevel(els.playerB.value);
-    els.lvA.textContent = `부수: ${la ?? '-'}`;
-    els.lvB.textContent = `부수: ${lb ?? '-'}`;
-  }
+    function renderChips(){
+      const box = $('#chips'); box.innerHTML='';
+      const need = (state.mode==='single') ? 2 : 4;
+      players.forEach(p=>{
+        const btn = document.createElement('button');
+        btn.className='chip';
+        btn.textContent = `${p.name}(${p.level})`;
 
-  function previewWeights(){
-    const isDbl = (els.matchType.value === 'doubles');
-    const winner = els.winnerSel.value; // 'A' or 'B'
-    let skillW = 1, dblW = 1, finalW = 1;
+        // 부수별 파스텔 색 적용 (CSS 변수로 넣어 선택 시 흰색 오버라이드 가능)
+        const { bg, bd } = levelStyle(p.level);
+        btn.style.setProperty('--chip-bg', bg);
+        btn.style.setProperty('--chip-bd', bd);
 
-    if(!isDbl){
-      const la = getLevel(els.playerA.value);
-      const lb = getLevel(els.playerB.value);
-      skillW = getAdjustedWeight(la, lb, winner);
-      dblW   = 1;
-      finalW = skillW * dblW;
-    }else{
-      const la1 = getLevel(els.playerA.value);
-      const la2 = getLevel(els.partnerA.value);
-      const lb1 = getLevel(els.playerB.value);
-      const lb2 = getLevel(els.partnerB.value);
-      // 팀 대표 레벨: 최상위자(숫자 가장 작은 값)
-      const teamALvl = Math.min(...[la1, la2].map(v=> v ?? 99));
-      const teamBLvl = Math.min(...[lb1, lb2].map(v=> v ?? 99));
-      skillW = getAdjustedWeight(teamALvl, teamBLvl, winner);
-      dblW   = doubleWeight;
-      finalW = skillW * dblW;
-    }
-
-    els.wSkill.textContent = isFinite(skillW) ? skillW.toFixed(3) : '-';
-    els.wDouble.textContent = isFinite(dblW)   ? dblW.toFixed(3)   : '-';
-    els.wFinal.textContent  = isFinite(finalW) ? finalW.toFixed(3) : '-';
-  }
-
-  function validateSelection(){
-    const isDbl = (els.matchType.value === 'doubles');
-    if(!els.playerA.value || !els.playerB.value) return false;
-    if(isDbl && (!els.partnerA.value || !els.partnerB.value)) return false;
-    if(els.playerA.value === els.playerB.value) return false;
-    if(isDbl && (els.playerA.value===els.partnerA.value || els.playerB.value===els.partnerB.value)) return false;
-    if(isDbl && (new Set([els.playerA.value, els.partnerA.value]).size<2)) return false;
-    if(isDbl && (new Set([els.playerB.value, els.partnerB.value]).size<2)) return false;
-    return true;
-  }
-
-  // 이벤트 바인딩
-  els.matchType.addEventListener('change', ()=>{ updateDoublesVisibility(); previewWeights(); });
-  [els.playerA, els.playerB, els.partnerA, els.partnerB].forEach(s=>{
-    s.addEventListener('change', ()=>{ refreshLevelsBadge(); previewWeights(); });
-  });
-  els.winnerSel.addEventListener('change', previewWeights);
-  els.score.addEventListener('input', previewWeights);
-
-  els.reset.addEventListener('click', ()=>{
-    els.playerA.value='';
-    els.partnerA.value='';
-    els.playerB.value='';
-    els.partnerB.value='';
-    els.score.value='';
-    els.winnerSel.value='A';
-    refreshLevelsBadge(); previewWeights();
-  });
-
-  els.confirm.addEventListener('click', async()=>{
-    if(!validateSelection()){ toast('선수(팀) 선택을 확인하세요'); return; }
-    const monthKey = yyyymm(toKST());
-    const score = els.score.value || '3-2'; // 입력 없으면 3-2로 처리
-
-    if(els.matchType.value === 'singles'){
-      const payload = {
-        monthKey,
-        playerAId: els.playerA.value,
-        playerBId: els.playerB.value,
-        levelA: getLevel(els.playerA.value),
-        levelB: getLevel(els.playerB.value),
-        winner: els.winnerSel.value,
-        score
-      };
-      const res = await confirmSinglesResult(payload);
-
-      // (선택) 경기 로그
-      await logMatch(monthKey, { type:'singles', ...payload, weights:res });
-
-      toast('단식 결과 반영 완료');
-    }else{
-      const a1 = els.playerA.value, a2 = els.partnerA.value;
-      const b1 = els.playerB.value, b2 = els.partnerB.value;
-      const la1 = getLevel(a1), la2 = getLevel(a2);
-      const lb1 = getLevel(b1), lb2 = getLevel(b2);
-      const res = await confirmDoublesResult({
-        monthKey,
-        a1, a2, b1, b2,
-        levelAmin: Math.min(la1??99, la2??99),
-        levelBmin: Math.min(lb1??99, lb2??99),
-        winner: els.winnerSel.value,
-        score
+        if(state.sel.some(x=>x.id===p.id)) btn.classList.add('selected');
+        btn.onclick = ()=>{
+          const idx = state.sel.findIndex(x=>x.id===p.id);
+          if(idx>=0) state.sel.splice(idx,1);
+          else{
+            if(state.sel.length>=need){ toast(state.mode==='single'?'단식은 두 명만 선택':'복식은 네 명만 선택'); return; }
+            state.sel.push(p);
+          }
+          renderChips(); renderWinnerBox();
+        };
+        box.appendChild(btn);
       });
-
-      // (선택) 경기 로그
-      await logMatch(monthKey, {
-        type:'doubles',
-        monthKey, a1, a2, b1, b2,
-        winner: els.winnerSel.value, score,
-        weights:res
-      });
-
-      toast('복식 결과 반영 완료');
     }
-  });
 
-  // ===== 데이터 로딩 =====
-  function fillAllSelects(){
-    [els.playerA, els.partnerA, els.playerB, els.partnerB].forEach(fillPlayerSelect);
-  }
+    function computeTeams(){
+      const need = (state.mode==='single') ? 2 : 4;
+      if(state.sel.length!==need) return null;
+      let A = [], B = [];
+      if(state.mode==='single'){
+        A = [state.sel[0]]; B = [state.sel[1]];
+      }else{
+        A = [state.sel[0], state.sel[1]];
+        B = [state.sel[2], state.sel[3]];
+      }
+      return {A,B};
+    }
 
-  // 선수
-  onValue(ref(db,'players'), (snap)=>{
-    const val = snap.val() || {};
-    players = Object.entries(val).map(([id, v])=>({ id, name:v.name, level:v.level }));
-    fillAllSelects();
-    refreshLevelsBadge();
-    previewWeights();
-  });
+    function renderWinnerBox(){
+      const wb = $('#winnerBox');
+      const teams = computeTeams();
+      if(teams){
+        const isDouble = (state.mode === 'double');
+        document.getElementById('teamA').textContent = fmtTeam(teams.A, isDouble);
+        document.getElementById('teamB').textContent = fmtTeam(teams.B, isDouble);
+        wb.style.display='';
+      }else{
+        wb.style.display='none';
+      }
+    }
 
-  // 관리자 설정: 복식 가중치
-  onValue(ref(db,'config/doubleWeight'), (s)=>{
-    doubleWeight = s.val() ?? 0.5;
-    previewWeights();
-  });
+    document.getElementById('clearSel').onclick  = ()=>{
+      state.sel=[]; renderChips(); renderWinnerBox();
+    };
 
-  // 관리자 설정: 실력차 보정
-  onValue(ref(db,'config/skillAdjust'), (s)=>{
-    const v = s.val();
-    if(v && typeof v==='object'){
-      skillAdjust = {
-        perLevel: Number(v.perLevel ?? 0.05),
-        minFav:   Number(v.minFav   ?? 0.6 ),
-        maxDog:   Number(v.maxDog   ?? 1.8 )
+    // 3) 저장
+    async function saveWinner(side){
+      const teams = computeTeams();
+      if(!teams){ toast(state.mode==='single'?'두 선수를 먼저 선택하세요':'네 선수를 먼저 선택하세요'); return; }
+
+      // Asia/Seoul 기준 monthKey
+      const nowKST = toKST();
+      const monthKey = `${nowKST.getFullYear()}-${String(nowKST.getMonth()+1).padStart(2,'0')}`;
+
+      const membersA = teams.A.map(p=>p.id), membersB = teams.B.map(p=>p.id);
+      const namesA   = teams.A.map(p=>p.name), namesB   = teams.B.map(p=>p.name);
+
+      const match = {
+        ts: Date.now(),
+        monthKey,
+        type: state.mode,                 // 'single' | 'double'
+        membersA, membersB,
+        namesA, namesB,
+        levelsA: teams.A.map(p=>p.level),
+        levelsB: teams.B.map(p=>p.level),
+        winnerSide: side,                 // 'A' | 'B'
+        score: null,
+        createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
+        createdAt: Date.now()
       };
-      previewWeights();
+
+      try{
+        await push(ref(db,'matches'), match);
+        toast('성적이 저장되었습니다');
+        state.sel=[];
+        renderChips(); renderWinnerBox();
+      }catch(e){
+        console.error(e);
+        toast(e?.message || '저장 실패');
+      }
     }
-  });
+    document.getElementById('winA').onclick=()=>saveWinner('A');
+    document.getElementById('winB').onclick=()=>saveWinner('B');
 
-  // 시작
-  signInAnonymously(auth).catch(console.error);
-  onAuthStateChanged(auth, ()=>{ /* no-op */ });
+    // 4) 최근 저장 + 삭제(비번 7910)
+    async function deleteMatch(key){
+      const pw = prompt('삭제 비밀번호 4자리를 입력하세요.');
+      if (pw === null) return;                 // 취소
+      if (pw !== DELETE_PASSWORD){
+        toast('비밀번호가 올바르지 않습니다');
+        return;
+      }
+      if(!confirm('정말 삭제할까요?')) return;
 
-  // 초기 표시
-  updateDoublesVisibility();
-</script>
+      try{
+        await remove(ref(db, 'matches/'+key));
+        toast('삭제되었습니다');
+      }catch(e){
+        console.error(e);
+        toast(e?.message || '삭제 실패');
+      }
+    }
+
+    function watchRecent(){
+      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(20));
+      onValue(q, snap=>{
+        const ul = $('#recent'), empty = $('#recentEmpty');
+        ul.innerHTML='';
+        let arr = [];
+        snap.forEach(child=>{
+          arr.push({ key: child.key, m: child.val() });
+        });
+        if(!arr.length){ empty.style.display=''; return; }
+        empty.style.display='none';
+        arr.sort((a,b)=>(a.m.ts||0)-(b.m.ts||0));
+        arr.slice(-20).reverse().forEach(({key, m})=>{
+          const li = document.createElement('li');
+
+          const typeLabel = (m.type==='double') ? '복식' : '단식';
+          const joiner = (m.type === 'double') ? '/' : ' + ';
+
+          // 팀 문자열(단식: "이름 + 이름", 복식: "이름/이름")
+          const A = (m.namesA && m.namesA.length) ? m.namesA.join(joiner)
+                   : (m.membersA && m.membersA.length ? m.membersA.join(joiner) : 'A');
+          const B = (m.namesB && m.namesB.length) ? m.namesB.join(joiner)
+                   : (m.membersB && m.membersB.length ? m.membersB.join(joiner) : 'B');
+
+          // 승자 표시: 승자 쪽에만 (승) + 파란 굵은 글씨
+          const winIsA = (m.winnerSide === 'A');
+          const ALabel = winIsA ? `<span class="win">${A} (승)</span>` : A;
+          const BLabel = !winIsA ? `<span class="win">${B} (승)</span>` : B;
+
+          const item = document.createElement('div');
+          item.className = 'item';
+
+          const dateText = fmtYYMMDD_HHMM_WD(m.ts ?? m.createdAt);
+          // PC/태블릿: 한 줄, 폰: 두 줄
+          item.innerHTML = `
+            <div class="combined">${dateText} · [${typeLabel}] ${ALabel} vs ${BLabel}</div>
+            <div class="line1">${dateText}</div>
+            <div class="line2">[${typeLabel}] ${ALabel} vs ${BLabel}</div>
+          `;
+
+          const del = document.createElement('button');
+          del.className='btn sm warn';
+          del.textContent='삭제';
+          del.onclick = ()=> deleteMatch(key);
+
+          li.appendChild(item);
+          li.appendChild(del);
+          ul.appendChild(li);
+        });
+      });
+    }
+
+    // 5) 시작
+    signInAnonymously(auth).catch(console.error);
+    onAuthStateChanged(auth, ()=>{
+      renderChips(); renderWinnerBox();
+      watchRecent();
+    });
+
+    // ===== 관리자 비밀번호 가드 =====
+const ADMIN_PW  = '771225';              // ← 원하는 비밀번호
+const ADMIN_KEY = 'koen.admin.ok';       // 세션(탭) 단위 기억 키
+
+function goAdminWithGuard(){
+  // 이미 인증했으면 바로 이동
+  if (sessionStorage.getItem(ADMIN_KEY) === '1') {
+    location.href = 'admin.html';
+    return;
+  }
+  const input = prompt('관리자 비밀번호를 입력하세요.');
+  if (input === null) return;                    // 취소
+  if (input === ADMIN_PW) {
+    sessionStorage.setItem(ADMIN_KEY, '1');      // 이 탭에서는 재입력 안 함
+    location.href = 'admin.html';
+  } else {
+    alert('비밀번호가 올바르지 않습니다.');
+  }
+}
+
+// 버튼 이벤트 연결
+const adminBtn = document.getElementById('adminBtn');
+if (adminBtn) adminBtn.addEventListener('click', goAdminWithGuard);
+
+  </script>
 </body>
 </html>
