@@ -23,14 +23,14 @@
     .chip{
       display:inline-flex; align-items:center;
       padding:6px 10px; border-radius:999px;
-      border:1px solid var(--chip-bd, #d1d5db);   /* ← 부수별 테두리 색 */
+      border:1px solid var(--chip-bd, #d1d5db);
       cursor:pointer;
-      background:var(--chip-bg, #eef2ff);         /* ← 부수별 배경색(옅게) */
-      color:#111;                                  /* 글씨는 검정 */
+      background:var(--chip-bg, #eef2ff);
+      color:#111;
       font-size:13px; line-height:1.1; white-space:nowrap;
       -webkit-tap-highlight-color:transparent;
     }
-    .chip.selected{outline:2px solid var(--accent); background:#fff} /* 선택 시 흰색으로 */
+    .chip.selected{outline:2px solid var(--accent); background:#fff}
     @media (max-width:520px){
       .chip{padding:5px 8px; font-size:12.5px; line-height:1.05}
       .chips{gap:5px}
@@ -56,10 +56,8 @@
     ul.log{margin:8px 0 0 0; padding-left:0; list-style:none}
     ul.log li{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9}
     ul.log .item{flex:1 1 auto}
-    /* PC/태블릿: 한 줄( combined 만 표시 ) */
     .log .item .combined{display:block; font-size:14px;}
     .log .item .line1, .log .item .line2{display:none}
-    /* 폰: 두 줄( line1=날짜, line2=내용 ) */
     @media (max-width:520px){
       ul.log li{align-items:flex-start}
       .log .item{display:flex; flex-direction:column; gap:2px}
@@ -70,7 +68,6 @@
       .log li .btn{align-self:center; margin-left:8px}
     }
 
-    /* 헤더 버튼 보이도록 강제 */
     header a.btn.primary{
       display:inline-block; white-space:nowrap;
       background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important;
@@ -214,6 +211,44 @@
       return `${yy}년 ${mm}월 ${dd}일(${wd}) ${hh}:${mi}`;
     };
 
+    // ===== [추가] 관리자 설정(보정 파라미터 / 복식 가중치) 불러오기 =====
+    // 기본값
+    let skillAdjust = { perLevel:0.05, minFav:0.6, maxDog:1.8 };
+    let doubleWeight = 0.5;
+
+    onValue(ref(db,'config/skillAdjust'), (s)=>{
+      const v = s.val();
+      if(v && typeof v==='object'){
+        skillAdjust = {
+          perLevel: Number(v.perLevel ?? 0.05),
+          minFav:   Number(v.minFav   ?? 0.6 ),
+          maxDog:   Number(v.maxDog   ?? 1.8 )
+        };
+      }
+    });
+    onValue(ref(db,'config/doubleWeight'), (s)=>{
+      const v = s.val();
+      if(v != null) doubleWeight = Number(v) || 0.5;
+    });
+
+    // [추가] 가중치 계산 유틸
+    const clamp = (min,x,max)=> Math.max(min, Math.min(max, x));
+    // levelA/B: 숫자 작을수록 상위(고수), winner: 'A'|'B'
+    function getAdjustedWeight(levelA, levelB, winner){
+      const sa = skillAdjust;
+      const la = (levelA ?? 99), lb = (levelB ?? 99);
+      const d = Math.abs(la - lb);
+      const aIsFav = la < lb; // 숫자 작을수록 상위
+      const favWin = clamp(sa.minFav, 1 - sa.perLevel*d, 1);
+      const dogWin = clamp(1,        1 + sa.perLevel*d, sa.maxDog);
+      if(winner === 'A'){
+        return aIsFav ? favWin : dogWin;
+      }else{
+        const bIsFav = lb < la;
+        return bIsFav ? favWin : dogWin;
+      }
+    }
+
     // 삭제 비밀번호
     const DELETE_PASSWORD = '7910';
 
@@ -225,17 +260,15 @@
       "송은아(13)","이낭주(13)","이승철(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
 
-    // 부수 → 파스텔 색상 계산 (작을수록 따뜻한 톤)
     function levelStyle(level){
-      const L = Math.max(4, Math.min(14, Number(level)||14)); // 4~14 클램프
-      const t = (L - 4) / (14 - 4);                           // 0..1
-      const hue = 45 + (220 - 45) * t;                        // 45°(골드) → 220°(블루)
-      const bg = `hsl(${hue.toFixed(0)} 70% 92%)`;            // 아주 옅은 배경
-      const bd = `hsl(${hue.toFixed(0)} 45% 70%)`;            // 살짝 진한 테두리
+      const L = Math.max(4, Math.min(14, Number(level)||14));
+      const t = (L - 4) / (14 - 4);
+      const hue = 45 + (220 - 45) * t;
+      const bg = `hsl(${hue.toFixed(0)} 70% 92%)`;
+      const bd = `hsl(${hue.toFixed(0)} 45% 70%)`;
       return { bg, bd };
     }
 
-    // 파싱 → [{id,name,level}]  정렬: 부수 오름차순(숫자 작을수록 먼저) → 이름
     const players = defaultPlayersRaw.map((s,i)=>{
       const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
       const name = m[1]; const level = Number(m[2]);
@@ -243,7 +276,7 @@
       return { id: id + '-' + i, name, level };
     }).filter(Boolean).sort((a,b)=> (a.level - b.level) || a.name.localeCompare(b.name,'ko'));
 
-    // 2) 상태 + UI  (swap 제거)
+    // 2) 상태 + UI
     const state = { mode:'single', sel:[] }; // mode: single|double
     const modeSeg = $('#modeSeg');
     const hintEl = $('#hint');
@@ -267,7 +300,6 @@
         btn.className='chip';
         btn.textContent = `${p.name}(${p.level})`;
 
-        // 부수별 파스텔 색 적용 (CSS 변수로 넣어 선택 시 흰색 오버라이드 가능)
         const { bg, bd } = levelStyle(p.level);
         btn.style.setProperty('--chip-bg', bg);
         btn.style.setProperty('--chip-bd', bd);
@@ -316,7 +348,7 @@
       state.sel=[]; renderChips(); renderWinnerBox();
     };
 
-    // 3) 저장
+    // 3) 저장  [변경: 관리자 가중치/보정 파라미터를 적용해 match에 함께 저장]
     async function saveWinner(side){
       const teams = computeTeams();
       if(!teams){ toast(state.mode==='single'?'두 선수를 먼저 선택하세요':'네 선수를 먼저 선택하세요'); return; }
@@ -327,6 +359,18 @@
 
       const membersA = teams.A.map(p=>p.id), membersB = teams.B.map(p=>p.id);
       const namesA   = teams.A.map(p=>p.name), namesB   = teams.B.map(p=>p.name);
+      const levelsA  = teams.A.map(p=>p.level), levelsB = teams.B.map(p=>p.level);
+
+      // ===== [추가] 보정/가중치 계산 =====
+      // 대표 레벨: 단식은 각 1명, 복식은 팀 내 최상위자(숫자 가장 작은 레벨)
+      const repLevelA = (state.mode==='single') ? levelsA[0] : Math.min(...levelsA.map(v=> v ?? 99));
+      const repLevelB = (state.mode==='single') ? levelsB[0] : Math.min(...levelsB.map(v=> v ?? 99));
+      // 실력차 보정 가중
+      const skillWeight = getAdjustedWeight(repLevelA, repLevelB, side); // side = 'A'|'B'
+      // 복식 가중(단식은 1)
+      const dblWeight   = (state.mode==='double') ? (Number(doubleWeight)||0.5) : 1;
+      // 최종 가중
+      const finalWeight = skillWeight * dblWeight;
 
       const match = {
         ts: Date.now(),
@@ -334,12 +378,24 @@
         type: state.mode,                 // 'single' | 'double'
         membersA, membersB,
         namesA, namesB,
-        levelsA: teams.A.map(p=>p.level),
-        levelsB: teams.B.map(p=>p.level),
+        levelsA, levelsB,
         winnerSide: side,                 // 'A' | 'B'
         score: null,
         createdBy: (auth.currentUser && auth.currentUser.uid) || 'anon',
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        // [추가 저장] 관리자 설정 및 계산 결과
+        weights: {
+          params: {
+            perLevel: skillAdjust.perLevel,
+            minFav:   skillAdjust.minFav,
+            maxDog:   skillAdjust.maxDog,
+            doubleWeight
+          },
+          repLevelA, repLevelB,
+          skillWeight,
+          dblWeight,
+          finalWeight
+        }
       };
 
       try{
@@ -358,7 +414,7 @@
     // 4) 최근 저장 + 삭제(비번 7910)
     async function deleteMatch(key){
       const pw = prompt('삭제 비밀번호 4자리를 입력하세요.');
-      if (pw === null) return;                 // 취소
+      if (pw === null) return;
       if (pw !== DELETE_PASSWORD){
         toast('비밀번호가 올바르지 않습니다');
         return;
@@ -392,13 +448,11 @@
           const typeLabel = (m.type==='double') ? '복식' : '단식';
           const joiner = (m.type === 'double') ? '/' : ' + ';
 
-          // 팀 문자열(단식: "이름 + 이름", 복식: "이름/이름")
           const A = (m.namesA && m.namesA.length) ? m.namesA.join(joiner)
                    : (m.membersA && m.membersA.length ? m.membersA.join(joiner) : 'A');
           const B = (m.namesB && m.namesB.length) ? m.namesB.join(joiner)
                    : (m.membersB && m.membersB.length ? m.membersB.join(joiner) : 'B');
 
-          // 승자 표시: 승자 쪽에만 (승) + 파란 굵은 글씨
           const winIsA = (m.winnerSide === 'A');
           const ALabel = winIsA ? `<span class="win">${A} (승)</span>` : A;
           const BLabel = !winIsA ? `<span class="win">${B} (승)</span>` : B;
@@ -407,7 +461,6 @@
           item.className = 'item';
 
           const dateText = fmtYYMMDD_HHMM_WD(m.ts ?? m.createdAt);
-          // PC/태블릿: 한 줄, 폰: 두 줄
           item.innerHTML = `
             <div class="combined">${dateText} · [${typeLabel}] ${ALabel} vs ${BLabel}</div>
             <div class="line1">${dateText}</div>
@@ -434,26 +487,24 @@
     });
 
     // ===== 관리자 비밀번호 가드 =====
-const ADMIN_PW  = '771225';              // ← 원하는 비밀번호
-const ADMIN_KEY = 'koen.admin.ok';       // 세션(탭) 단위 기억 키
+const ADMIN_PW  = '771225';
+const ADMIN_KEY = 'koen.admin.ok';
 
 function goAdminWithGuard(){
-  // 이미 인증했으면 바로 이동
   if (sessionStorage.getItem(ADMIN_KEY) === '1') {
     location.href = 'admin.html';
     return;
   }
   const input = prompt('관리자 비밀번호를 입력하세요.');
-  if (input === null) return;                    // 취소
+  if (input === null) return;
   if (input === ADMIN_PW) {
-    sessionStorage.setItem(ADMIN_KEY, '1');      // 이 탭에서는 재입력 안 함
+    sessionStorage.setItem(ADMIN_KEY, '1');
     location.href = 'admin.html';
   } else {
     alert('비밀번호가 올바르지 않습니다.');
   }
 }
 
-// 버튼 이벤트 연결
 const adminBtn = document.getElementById('adminBtn');
 if (adminBtn) adminBtn.addEventListener('click', goAdminWithGuard);
 
