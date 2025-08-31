@@ -31,14 +31,13 @@
     input[type="text"]{padding:6px 8px}
     .grid{display:grid; gap:12px}
     .grid.cols-2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
-    .badge{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; font-size:12px}
     .small{font-size:12px}
+    .hint{color:#64748b; font-size:13px}
+    .badge{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#eef2ff; border:1px solid #d1d5db; border-radius:999px; font-size:12px}
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:.25s}
     .toast.show{opacity:1}
-    .color-row{display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px dashed #e5e7eb}
-    .color-row label{width:60px; color:#334155; font-weight:600}
-    .hint{color:#64748b; font-size:13px}
-    iframe#snapFrame{position:fixed; inset:-9999px; width:800px; height:1200px; border:0}
+    .preview{background:#f9fafb; border:1px dashed #e5e7eb; border-radius:12px; padding:10px}
+    .grow{flex:1}
   </style>
 </head>
 <body>
@@ -51,7 +50,7 @@
     </div>
     <div class="row">
       <span class="badge">실험판 · 브라우저에서 동작</span>
-      <span class="small muted">※ 예약 자동 저장은 Cloud Functions 권장</span>
+      <span class="small muted">※ 예약 저장/통계 반영은 Cloud Functions 권장</span>
     </div>
   </div>
 </header>
@@ -100,10 +99,12 @@
   <!-- 통계/옵션 -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
-      <div style="font-weight:700">통계 재계산 / 옵션</div>
-      <div class="small muted">월간 리포트는 이 값을 즉시 반영하게 패치 스니펫 제공</div>
+      <div style="font-weight:700">통계 옵션</div>
+      <div class="small muted">월간 리포트는 이 값을 즉시 반영(읽기)하도록 구현 권장</div>
     </div>
+
     <div class="grid cols-2" style="margin-top:8px">
+      <!-- 복식 가중치 -->
       <div class="card" style="margin:0">
         <div class="muted small" style="margin-bottom:6px">복식 가중치</div>
         <div class="row">
@@ -112,6 +113,8 @@
         </div>
         <div class="hint" style="margin-top:6px">예) 0.5 ⇒ 복식은 단식의 절반 가중</div>
       </div>
+
+      <!-- 삭제 비밀번호 -->
       <div class="card" style="margin:0">
         <div class="muted small" style="margin-bottom:6px">삭제 비밀번호</div>
         <div class="row">
@@ -123,57 +126,62 @@
     </div>
   </section>
 
-  <!-- 칩 색상 -->
+  <!-- 실력차 보정(고수/하수 가중치) -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
-      <div style="font-weight:700">UI / 칩 색상 맵</div>
-      <div class="small muted">부수 → 칩 배경색 (글씨는 검정)</div>
+      <div style="font-weight:700">실력차 보정 (고수/하수 승률 가중치)</div>
+      <div class="small muted">레벨 차에 따라 경기 결과 반영 가중치를 자동 조정</div>
     </div>
-    <div id="colorList" style="margin-top:8px"></div>
-    <div class="row" style="margin-top:10px">
-      <button id="saveColors" class="btn primary">색상 맵 저장</button>
-      <span class="hint">입력하지 않은 부수는 기본 팔레트를 사용합니다.</span>
-    </div>
-  </section>
 
-  <!-- 스냅샷 -->
-  <section class="card">
-    <div class="row" style="justify-content:space-between">
-      <div style="font-weight:700">월 마감 / 스냅샷 이미지 저장</div>
-      <div class="small muted">브라우저에서 수동 저장 · Storage에 PNG 업로드</div>
-    </div>
     <div class="grid cols-2" style="margin-top:8px">
       <div class="card" style="margin:0">
-        <div class="muted small" style="margin-bottom:6px">이번달</div>
+        <div class="muted small" style="margin-bottom:6px">보정 파라미터</div>
         <div class="row">
-          <button id="snapThisMonth" class="btn primary">이번달 스냅샷 저장</button>
+          <label class="small muted" style="width:110px">레벨당 증감(perLevel)</label>
+          <input id="saPerLevel" type="number" min="0" max="1" step="0.01" value="0.05">
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label class="small muted" style="width:110px">고수승 최소(minFav)</label>
+          <input id="saMinFav" type="number" min="0" max="1" step="0.01" value="0.6">
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label class="small muted" style="width:110px">하수승 최대(maxDog)</label>
+          <input id="saMaxDog" type="number" min="1" max="3" step="0.01" value="1.8">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="saveSkillAdjust" class="btn primary">보정값 저장</button>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          공식: d = |Lv 차|, 고수 승리 ⇒ max(minFav, 1 - perLevel·d), 하수 승리 ⇒ min(maxDog, 1 + perLevel·d)
         </div>
       </div>
-      <div class="card" style="margin:0">
-        <div class="muted small" style="margin-bottom:6px">전월</div>
+
+      <div class="card preview" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">미리보기 계산기</div>
         <div class="row">
-          <button id="snapPrevMonth" class="btn">전월 스냅샷 저장</button>
+          <label class="small muted">A 부수</label><input id="pvLvA" type="number" min="1" max="20" step="1" value="5">
+          <label class="small muted">B 부수</label><input id="pvLvB" type="number" min="1" max="20" step="1" value="9">
+          <button id="pvCalc" class="btn">계산</button>
+        </div>
+        <div id="pvOut" class="hint" style="margin-top:8px; white-space:pre-line">
+          A가 고수(숫자 작음)일 때 고수승 가중치, 하수승 가중치를 표시합니다.
         </div>
       </div>
     </div>
+
     <div class="hint" style="margin-top:8px">
-      자동 예약(매달 말일 23:00 / 매월 1일 00:05)은
-      Firebase **Cloud Functions (scheduled)**로 구현하는 것을 권장합니다.
+      ⚙️ 적용 방법(성적입력/통계 코드): 경기 확정 시
+      <code>weight = getAdjustedWeight(levelA, levelB, winner)</code>를 곱해 승/패/포인트에 반영하세요.
     </div>
   </section>
 </main>
 
 <div id="toast" class="toast">Saved</div>
-<iframe id="snapFrame" title="snapshot"></iframe>
-
-<!-- html2canvas for snapshot -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
   import { getDatabase, ref, push, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-  import { getStorage, ref as sRef, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
 
   // ===== Firebase =====
   const firebaseConfig = {
@@ -188,7 +196,6 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getDatabase(app);
-  const storage = getStorage(app);
 
   // ===== Utils =====
   const $ = (s, ctx=document)=>ctx.querySelector(s);
@@ -196,9 +203,6 @@
     const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600);
   };
   const pad = (n)=> String(n).padStart(2,'0');
-  const toKST = (t = Date.now()) => new Date( new Date(t).toLocaleString('en-US', { timeZone:'Asia/Seoul' }) );
-  const yyyymm = (d)=> `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
-  const prevMonth = (d)=> new Date(d.getFullYear(), d.getMonth()-1, 1);
 
   // ===== 로스터 =====
   let players = []; // {id, name, level}
@@ -264,7 +268,6 @@
     const val = snap.val() || {};
     players = Object.entries(val).map(([id, v])=>({ id, name:v.name, level:v.level }));
     renderPlayers();
-    renderColorRows(); // 레벨 목록도 바뀜
   });
 
   // ===== 옵션: 복식 가중치 / 삭제 비번 =====
@@ -288,80 +291,85 @@
     toast('삭제 비밀번호 저장');
   };
 
-  // ===== UI 색상 맵 =====
-  const defaultPalette = [
-    '#e3f2fd','#e8f5e9','#fff3e0','#f3e8ff','#e0f7fa','#fce4ec','#ede7f6','#f1f8e9',
-    '#fffde7','#e0f2f1','#f8f9fa'
-  ];
-  let chipColors = {};
-  onValue(ref(db,'config/chipColors'), (s)=>{
-    chipColors = s.val() || {};
-    renderColorRows();
+  // ===== 실력차 보정 설정 =====
+  // DB: config/skillAdjust = { perLevel:number, minFav:number, maxDog:number }
+  function clamp(min, x, max){ return Math.max(min, Math.min(max, x)); }
+
+  function getAdjustedWeight(levelA, levelB, winner){ // winner: 'A' | 'B'
+    const sa = currentSA;
+    const d = Math.abs((levelA ?? 99) - (levelB ?? 99)); // level 미입력시 큰 값으로 취급
+    // 숫자 작을수록 상위(고수)
+    const aIsFav = (levelA ?? 99) < (levelB ?? 99);
+    const favWin = clamp(sa.minFav, 1 - sa.perLevel * d, 1);
+    const dogWin = clamp(1, 1 + sa.perLevel * d, sa.maxDog);
+    if(winner === 'A'){
+      return aIsFav ? favWin : dogWin;
+    }else{ // winner === 'B'
+      const bIsFav = !aIsFav;
+      return bIsFav ? favWin : dogWin;
+    }
+  }
+
+  let currentSA = { perLevel:0.05, minFav:0.6, maxDog:1.8 };
+
+  function renderSAInputs(sa){
+    $('#saPerLevel').value = sa.perLevel;
+    $('#saMinFav').value  = sa.minFav;
+    $('#saMaxDog').value  = sa.maxDog;
+  }
+
+  onValue(ref(db,'config/skillAdjust'), (s)=>{
+    const v = s.val();
+    if(v && typeof v === 'object'){
+      currentSA = {
+        perLevel: Number(v.perLevel ?? 0.05),
+        minFav:   Number(v.minFav   ?? 0.6 ),
+        maxDog:   Number(v.maxDog   ?? 1.8 )
+      };
+      renderSAInputs(currentSA);
+    }else{
+      // 초기값 표시
+      renderSAInputs(currentSA);
+    }
   });
 
-  function levelsInUse(){
-    const setLv = new Set();
-    players.forEach(p=>{ if(p.level!=null) setLv.add(p.level); });
-    return Array.from(setLv).sort((a,b)=> a-b);
-  }
-  function colorFor(level){
-    return chipColors[level] || defaultPalette[level % defaultPalette.length];
-  }
-  function renderColorRows(){
-    const box = $('#colorList'); if(!box) return;
-    const levels = levelsInUse();
-    box.innerHTML = '';
-    if(levels.length===0){
-      box.innerHTML = '<div class="hint">등록된 선수의 부수가 아직 없습니다. 선수를 추가하거나 부수를 입력하세요.</div>';
-      return;
-    }
-    levels.forEach(lv=>{
-      const row = document.createElement('div'); row.className='color-row';
-      const label = document.createElement('label'); label.textContent = `${lv}부`;
-      const input = document.createElement('input'); input.type='color'; input.value = toHex(colorFor(lv));
-      input.oninput = (e)=>{ chipColors[lv] = e.target.value; };
-      row.append(label, input);
-      box.appendChild(row);
-    });
-  }
-  function toHex(c){
-    // 허용: #abc / #aabbcc / rgb(...). 간단정규화
-    if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c)) return c;
-    return '#e3f2fd';
-  }
-  $('#saveColors').onclick = async()=>{
-    await set(ref(db,'config/chipColors'), chipColors);
-    toast('색상 맵 저장');
+  $('#saveSkillAdjust').onclick = async()=>{
+    const perLevel = parseFloat($('#saPerLevel').value);
+    const minFav   = parseFloat($('#saMinFav').value);
+    const maxDog   = parseFloat($('#saMaxDog').value);
+
+    if(!(perLevel>=0 && perLevel<=1)) { toast('perLevel은 0~1 사이로 입력하세요'); return; }
+    if(!(minFav>=0 && minFav<=1))     { toast('minFav는 0~1 사이로 입력하세요'); return; }
+    if(!(maxDog>=1 && maxDog<=3))     { toast('maxDog는 1~3 사이로 입력하세요'); return; }
+    if(minFav > 1)                    { toast('minFav는 최대 1입니다'); return; }
+    if(maxDog < 1)                    { toast('maxDog는 최소 1입니다'); return; }
+
+    const sa = { perLevel, minFav, maxDog };
+    await set(ref(db,'config/skillAdjust'), sa);
+    currentSA = sa;
+    toast('실력차 보정 저장');
   };
 
-  // ===== 스냅샷 저장 (Storage) =====
-  async function snapshotMonth(mon){ // mon: 'YYYY-MM'
-    const frame = $('#snapFrame');
-    frame.src = `monthly-report.html?mon=${encodeURIComponent(mon)}&forSnapshot=1`;
-    await waitEvent(frame, 'load');
-    // 약간 대기(글꼴/데이터 렌더링)
-    await delay(700);
-    const doc = frame.contentDocument;
-    const canvas = await html2canvas(doc.body, { backgroundColor:'#fff', scale:2 });
-    const dataURL = canvas.toDataURL('image/png');
-    const path = `snapshots/${mon}/report-${Date.now()}.png`;
-    const r = sRef(storage, path);
-    await uploadString(r, dataURL, 'data_url');
-    const url = await getDownloadURL(r);
-    toast('스냅샷 저장 완료');
-    window.open(url, '_blank');
-  }
-  function delay(ms){ return new Promise(res=>setTimeout(res,ms)); }
-  function waitEvent(el, ev){ return new Promise(res=> el.addEventListener(ev, res, { once:true })); }
+  // 미리보기 계산기
+  function showPreview(){
+    const lvA = Number($('#pvLvA').value);
+    const lvB = Number($('#pvLvB').value);
+    const d = Math.abs(lvA - lvB);
+    const fav = (lvA < lvB) ? 'A' : (lvB < lvA) ? 'B' : '동일';
+    const wA = getAdjustedWeight(lvA, lvB, 'A');
+    const wB = getAdjustedWeight(lvA, lvB, 'B');
+    const text =
+`레벨 차 d = ${d} (작을수록 상위)
+고수는: ${fav === '동일' ? '없음(동일 레벨)' : fav}
 
-  $('#snapThisMonth').onclick = async()=>{
-    const now = toKST();
-    await snapshotMonth( yyyymm(now) );
-  };
-  $('#snapPrevMonth').onclick = async()=>{
-    const now = toKST();
-    await snapshotMonth( yyyymm( prevMonth(now) ) );
-  };
+A가 승리 시 가중치: ${wA.toFixed(3)}
+B가 승리 시 가중치: ${wB.toFixed(3)}
+
+※ 고수 승리(기대 결과)는 ${currentSA.minFav} 이상으로 작게,
+   하수 승리(이변)는 ${currentSA.maxDog} 이하로 크게 반영`;
+    $('#pvOut').textContent = text;
+  }
+  $('#pvCalc').onclick = showPreview;
 
   // ===== 시작 =====
   signInAnonymously(auth).catch(console.error);
