@@ -99,6 +99,13 @@
         <b>다승 TOP3</b>
         <ol id="topWins" style="margin:6px 0 0 18px; padding:0"></ol>
       </div>
+      <div class="award">
+        <div class="muted small">어워드</div>
+        <b>부수상향 권고</b>
+        <ul id="upgradeList" style="margin:6px 0 0 18px; padding:0"></ul>
+        <div class="small muted">(조건: 이번달 10경기 이상, 승률 ≥ 70%)</div>
+</div>
+
     </div>
   </section>
 
@@ -356,77 +363,103 @@
 
   // 렌더
   function render(){
-    const tbody = document.getElementById('tbody');
-    tbody.innerHTML = '';
-    const rows = buildRows();
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  const rows = buildRows();
 
-    rows.forEach((r, i)=>{
-      const tr = document.createElement('tr');
+  // 표 렌더
+  rows.forEach((r, i)=>{
+    const tr = document.createElement('tr');
 
-      const tdNo = document.createElement('td');
-      tdNo.textContent = (i+1).toString();
-      tr.appendChild(tdNo);
+    const tdNo = document.createElement('td');
+    tdNo.textContent = (i+1).toString();
+    tr.appendChild(tdNo);
 
-      const tdNm = document.createElement('td');
-      tdNm.className = 'name';
-      tdNm.textContent = r.name;
-      tr.appendChild(tdNm);
+    const tdNm = document.createElement('td');
+    tdNm.className = 'name';
+    tdNm.textContent = r.name;
+    tr.appendChild(tdNm);
 
-      const tdGm = document.createElement('td');
-      tdGm.className='right';
-      tdGm.textContent = r.games.toString();
-      tr.appendChild(tdGm);
+    const tdGm = document.createElement('td');
+    tdGm.className='right';
+    tdGm.textContent = r.games.toString();
+    tr.appendChild(tdGm);
 
-      const tdWP = document.createElement('td');
-      tdWP.className='right';
-      tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`;
-      tr.appendChild(tdWP);
+    const tdWP = document.createElement('td');
+    tdWP.className='right';
+    tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`;
+    tr.appendChild(tdWP);
 
-      const tdPrev = document.createElement('td');
-      tdPrev.className='right muted';
-      tdPrev.textContent = pct(r.prevRate);
-      tr.appendChild(tdPrev);
+    const tdPrev = document.createElement('td');
+    tdPrev.className='right muted';
+    tdPrev.textContent = pct(r.prevRate);
+    tr.appendChild(tdPrev);
 
-      const tdMon  = document.createElement('td');
-      tdMon.className='right';
-      tdMon.textContent  = pct(r.monthRate);
-      tr.appendChild(tdMon);
+    const tdMon  = document.createElement('td');
+    tdMon.className='right';
+    tdMon.textContent  = pct(r.monthRate);
+    tr.appendChild(tdMon);
 
-      const tdDelta= document.createElement('td');
-      tdDelta.className='right';
-      if(isFinite(r.delta)){
-        tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p';
-        tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg'));
-      }else{
-        tdDelta.textContent = '-';
-        tdDelta.classList.add('muted');
-      }
-      tr.appendChild(tdDelta);
-
-      tbody.appendChild(tr);
-    });
-
-    // 어워드
-    const mostGamesBox = document.getElementById('mostGames');
-    const topWinsList  = document.getElementById('topWins');
-
-    if(rows.length){
-      const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
-      mostGamesBox.textContent = `${byGames[0].name} · ${byGames[0].games}경기`;
-
-      const byWins = [...rows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
-      topWinsList.innerHTML = '';
-      byWins.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        const winTxt = Number.isInteger(p.weightedWins) ? p.weightedWins : p.weightedWins.toFixed(1);
-        li.textContent = `${idx+1}위 ${p.name} · ${winTxt}승`;
-        topWinsList.appendChild(li);
-      });
+    const tdDelta= document.createElement('td');
+    tdDelta.className='right';
+    if(isFinite(r.delta)){
+      tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p';
+      tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg'));
     }else{
-      mostGamesBox.textContent='-';
-      topWinsList.innerHTML='';
+      tdDelta.textContent = '-';
+      tdDelta.classList.add('muted');
+    }
+    tr.appendChild(tdDelta);
+
+    tbody.appendChild(tr);
+  });
+
+  // 기존 어워드: 최다경기왕 / 다승 TOP3
+  const mostGamesBox = document.getElementById('mostGames');
+  const topWinsList  = document.getElementById('topWins');
+
+  if(rows.length){
+    const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
+    mostGamesBox.textContent = `${byGames[0].name} · ${byGames[0].games}경기`;
+
+    const byWins = [...rows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
+    topWinsList.innerHTML = '';
+    byWins.slice(0,3).forEach((p, idx)=>{
+      const li = document.createElement('li');
+      const winTxt = Number.isInteger(p.weightedWins) ? p.weightedWins : p.weightedWins.toFixed(1);
+      li.textContent = `${idx+1}위 ${p.name} · ${winTxt}승`;
+      topWinsList.appendChild(li);
+    });
+  }else{
+    mostGamesBox.textContent='-';
+    topWinsList.innerHTML='';
+  }
+
+  // ✅ 새 어워드: 부수상향 권고 (10경기 이상 & 승률 70% 이상)
+  const upList = document.getElementById('upgradeList');
+  if (upList) {
+    const candidates = rows
+      .filter(r => r.games >= 10 && isFinite(r.monthRate) && r.monthRate >= 0.7)
+      .sort((a,b) =>
+        (b.monthRate - a.monthRate) || (b.games - a.games) || a.name.localeCompare(b.name,'ko')
+      );
+
+    upList.innerHTML = '';
+    if (candidates.length) {
+      candidates.forEach(p => {
+        const li = document.createElement('li');
+        li.textContent = `${p.name} · 승률 ${(p.monthRate*100).toFixed(0)}% / ${p.games}경기`;
+        upList.appendChild(li);
+      });
+    } else {
+      const li = document.createElement('li');
+      li.className = 'muted';
+      li.textContent = '해당 없음';
+      upList.appendChild(li);
     }
   }
+}
+
 
   // ========== 실시간 구독 ==========
   onAuthStateChanged(auth, (user)=>{
