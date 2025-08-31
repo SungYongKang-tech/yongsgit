@@ -174,6 +174,18 @@
       <code>weight = getAdjustedWeight(levelA, levelB, winner)</code>를 곱해 승/패/포인트에 반영하세요.
     </div>
   </section>
+
+  <!-- 🔥 데이터 관리: 전체 최근 경기 삭제 버튼 (신규) -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700; color:#b91c1c">데이터 관리</div>
+      <div class="small muted">되돌릴 수 없으니 주의하세요.</div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="purgeMatches" class="btn warn">🗑️ 모든 경기 기록 삭제</button>
+      <span class="hint">`matches` 전체를 삭제합니다. (월간 통계는 별도 관리 시 그대로 남습니다)</span>
+    </div>
+  </section>
 </main>
 
 <div id="toast" class="toast">Saved</div>
@@ -270,6 +282,7 @@
   });
 
   // ===== 옵션: 복식 가중치 / 삭제 비번 =====
+  let currentDeletePw = '7910'; // 실시간 반영용 변수
   onValue(ref(db,'config/doubleWeight'), (s)=>{
     const v = s.val(); $('#doubleWeight').value = (v ?? 0.5);
   });
@@ -281,19 +294,20 @@
   };
 
   onValue(ref(db,'config/deletePassword'), (s)=>{
-    const v = s.val(); $('#deletePassword').value = (v ?? '7910');
+    const v = s.val(); 
+    $('#deletePassword').value = (v ?? '7910');
+    currentDeletePw = v ?? '7910';
   });
   $('#saveDeletePassword').onclick = async()=>{
     const v = $('#deletePassword').value.trim();
     if(!v){ toast('비밀번호를 입력하세요'); return; }
     await set(ref(db,'config/deletePassword'), v);
+    currentDeletePw = v;
     toast('삭제 비밀번호 저장');
   };
 
   // ===== 실력차 보정 설정 =====
-  // DB: config/skillAdjust = { perLevel:number, minFav:number, maxDog:number }
   function clamp(min, x, max){ return Math.max(min, Math.min(max, x)); }
-
   let currentSA = { perLevel:0.05, minFav:0.6, maxDog:1.8 };
 
   function renderSAInputs(sa){
@@ -302,11 +316,10 @@
     $('#saMaxDog').value  = sa.maxDog;
   }
 
-  // 미리보기용 동일 공식
   function getAdjustedWeight(levelA, levelB, winner){ // winner: 'A' | 'B'
     const sa = currentSA;
-    const d = Math.abs((levelA ?? 99) - (levelB ?? 99)); // level 미입력시 큰 값
-    const aIsFav = (levelA ?? 99) < (levelB ?? 99);      // 숫자 작을수록 상위
+    const d = Math.abs((levelA ?? 99) - (levelB ?? 99));
+    const aIsFav = (levelA ?? 99) < (levelB ?? 99);
     const favWin = clamp(sa.minFav, 1 - sa.perLevel * d, 1);
     const dogWin = clamp(1,         1 + sa.perLevel * d, sa.maxDog);
     if(winner === 'A'){
@@ -368,6 +381,26 @@ B가 승리 시 가중치: ${wB.toFixed(3)}
     $('#pvOut').textContent = text;
   }
   $('#pvCalc').onclick = showPreview;
+
+  // ===== 🔥 모든 경기 기록 삭제 (matches 전체 제거) =====
+  async function purgeAllMatches(){
+    const pw = prompt('삭제 비밀번호 4자리를 입력하세요.');
+    if (pw === null) return; // 취소
+    if (pw !== currentDeletePw){
+      toast('비밀번호가 올바르지 않습니다');
+      return;
+    }
+    if (!confirm('정말 모든 경기 기록을 삭제할까요? 되돌릴 수 없습니다.')) return;
+
+    try{
+      await remove(ref(db, 'matches'));
+      toast('모든 경기 기록을 삭제했습니다');
+    }catch(e){
+      console.error(e);
+      toast(e?.message || '삭제 실패');
+    }
+  }
+  document.getElementById('purgeMatches').onclick = purgeAllMatches;
 
   // 시작
   signInAnonymously(auth).catch(console.error);
