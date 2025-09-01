@@ -64,14 +64,8 @@
       thead th, tbody td { padding: 6px 8px; }
     }
 
-    /* 이름은 줄바꿈 금지(말줄임은 꺼둔 상태 유지) */
-    tbody td.name {
-      white-space: nowrap; /* 줄바꿈 금지 */
-      /* overflow: hidden; */
-      /* text-overflow: ellipsis; */
-    }
-
-    /* ---- 캡처 전용 보정 (이미지 저장 시 깜빡임 방지용) ---- */
+    /* 이름은 줄바꿈 금지(요청대로 ellipsis 미사용) */
+    tbody td.name { white-space: nowrap; }
     .capture-ready * { -webkit-font-smoothing: antialiased; }
   </style>
 </head>
@@ -79,24 +73,25 @@
 <header>
   <div class="wrap">
     <div class="row">
-      <h1 style="margin-right:auto">KOEN 탁구 월간리그</h1>
+      <h1 style="margin-right:8px">KOEN 탁구 월간리그
+        <!-- ▼ 추가: 제목 옆 월 표시 -->
+        <span id="titleMonth" class="muted" style="margin-left:8px; font-weight:500"></span>
+      </h1>
       <a class="btn primary" href="./" title="성적입력으로 돌아가기">← 성적입력</a>
     </div>
     <div class="row">
-      <span id="monthBadge" class="badge">이번달: -</span>
-      <span id="lastUpdate" class="badge">실시간 연결 : 대기중</span>
+      <!-- ▼ 요청대로 monthBadge, lastUpdate 제거 -->
       <button id="sortWinrate" class="btn primary">정렬 : 승률</button>
       <button id="sortGames" class="btn">최다경기</button>
       <button id="sortWins" class="btn">다승</button>
-      <!-- ▼ 추가: 이미지 저장 버튼 -->
       <button id="saveImage" class="btn">이미지 저장</button>
-     <!-- <span id="dwNote" class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span> -->
+      <span id="dwNote" class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span>
     </div>
   </div>
 </header>
 
 <main>
-  <!-- ▼ 추가: 캡처 영역 래퍼 -->
+  <!-- 캡처 영역 -->
   <div id="captureArea">
     <section class="card">
       <div class="awards">
@@ -151,10 +146,9 @@
       </div>
     </section>
   </div>
-  <!-- ▲ 캡처 영역 끝 -->
 </main>
 
-<!-- html2canvas(비모듈) 추가 -->
+<!-- html2canvas -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
 
 <script type="module">
@@ -176,16 +170,15 @@
   const auth = getAuth(app);
   const db = getDatabase(app);
 
-  
   // === 복식 가중치 실시간 구독 ===
-  //let DOUBLE_WEIGHT = 0.5;
-  //onValue(ref(db, 'config/doubleWeight'), (s) => {
-  //  const v = parseFloat(s.val());
-  //  DOUBLE_WEIGHT = (isFinite(v) ? v : 0.5);
-  //  if (window.lastAll) { rebuild(window.lastAll); render(); }
-  //  const note = document.getElementById('dwNote');
-  //  if (note) note.textContent = `※ 복식은 승률 계산에 ${DOUBLE_WEIGHT}배 반영됩니다.`;
-  //});
+  let DOUBLE_WEIGHT = 0.5;
+  onValue(ref(db, 'config/doubleWeight'), (s) => {
+    const v = parseFloat(s.val());
+    DOUBLE_WEIGHT = (isFinite(v) ? v : 0.5);
+    if (window.lastAll) { rebuild(window.lastAll); render(); }
+    const note = document.getElementById('dwNote');
+    if (note) note.textContent = `※ 복식은 승률 계산에 ${DOUBLE_WEIGHT}배 반영됩니다.`;
+  });
 
   // === 실력차 보정 설정 구독 (perLevel, minFav, maxDog) ===
   let SKILL = { perLevel: 0.05, minFav: 0.6, maxDog: 1.8 };
@@ -210,19 +203,26 @@
     const d = toKST(ts);
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
   }
-  function prevMonthKey(key){ // key = 'YYYY-MM'
+  function prevMonthKey(key){
     const [y,m] = key.split('-').map(Number);
-    const d = new Date(y, m-2, 1); // JS month: 0-11, m-2 => 전월
+    const d = new Date(y, m-2, 1);
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+  }
+  function titleMon(key){
+    const [y,m] = key.split('-').map(Number);
+    return `('${String(y).slice(-2)}.${pad(m)})`;
   }
 
   const qs = new URLSearchParams(location.search);
-  const monOverride = qs.get('mon'); // 'YYYY-MM' or null
+  const monOverride = qs.get('mon');
   const nowKST = toKST();
   const CUR_MON = monOverride && /^\d{4}-\d{2}$/.test(monOverride) ? monOverride
                 : `${nowKST.getFullYear()}-${pad(nowKST.getMonth()+1)}`;
   const PREV_MON = prevMonthKey(CUR_MON);
-  document.getElementById('monthBadge').textContent = `이번달: ${CUR_MON}`;
+
+  // 제목 옆 월 표시
+  const titleMonthEl = document.getElementById('titleMonth');
+  if (titleMonthEl) titleMonthEl.textContent = titleMon(CUR_MON);
 
   // ========== 정렬 상태 ==========
   let sortMode = 'winrate';
@@ -242,12 +242,11 @@
   const fmtIntOrHalf = (n)=> Number.isInteger(n) ? n.toString() : n.toFixed(1);
   const isNum = (v)=> typeof v === 'number' && isFinite(v);
 
-  // === 보정 함수/대표 레벨 ===
   const clamp = (min, x, max) => Math.max(min, Math.min(max, x));
   function getAdjustedWeight(levelA, levelB, winner){
     const la = (levelA ?? 99), lb = (levelB ?? 99);
     const d = Math.abs(la - lb);
-    const aIsFav = la < lb; // 숫자 작을수록 상위
+    const aIsFav = la < lb;
     const favWin = clamp(SKILL.minFav, 1 - SKILL.perLevel * d, 1);
     const dogWin = clamp(1,            1 + SKILL.perLevel * d, SKILL.maxDog);
     if (winner === 'A') return aIsFav ? favWin : dogWin;
@@ -261,21 +260,19 @@
   }
 
   // ========== 집계 상태 ==========
-  const names = {};                 // pid -> 최신 이름
-  const prev  = {};                 // pid -> {gw, ww}   // 지난달 전용
-  const mon   = {};                 // pid -> {games, wins, losses, gw, ww}
+  const names = {};
+  const prev  = {};
+  const mon   = {};
   function ensurePrev(pid){ if(!prev[pid]) prev[pid] = {gw:0, ww:0}; }
   function ensureMon(pid){ if(!mon[pid])  mon[pid]  = {games:0, wins:0, losses:0, gw:0, ww:0}; }
 
   function addMatch(bucket, m){
-    // 타입 판별
     let type = m.type;
     if (!type) {
       const la = (m.membersA?.length || 0), lb = (m.membersB?.length || 0);
       type = (la >= 2 || lb >= 2) ? 'double' : 'single';
     }
 
-    // 가중치 결정
     let weight;
     if (m?.weights && typeof m.weights.finalWeight === 'number' && isFinite(m.weights.finalWeight)) {
       weight = Number(m.weights.finalWeight);
@@ -297,32 +294,20 @@
     const winB = m.winnerSide === 'B';
 
     if(bucket === 'month'){
-      sideA.forEach(([pid, nm])=>{
-        ensureMon(pid); if(nm) names[pid]=nm;
-        mon[pid].games  += 1;
-        mon[pid].wins   += (winA?1:0);
-        mon[pid].losses += (winB?1:0);
-        mon[pid].gw     += weight;
-        mon[pid].ww     += (winA?weight:0);
+      sideA.forEach(([pid, nm])=>{ ensureMon(pid); if(nm) names[pid]=nm;
+        mon[pid].games+=1; mon[pid].wins+=(winA?1:0); mon[pid].losses+=(winB?1:0);
+        mon[pid].gw+=weight; mon[pid].ww+=(winA?weight:0);
       });
-      sideB.forEach(([pid, nm])=>{
-        ensureMon(pid); if(nm) names[pid]=nm;
-        mon[pid].games  += 1;
-        mon[pid].wins   += (winB?1:0);
-        mon[pid].losses += (winA?1:0);
-        mon[pid].gw     += weight;
-        mon[pid].ww     += (winB?weight:0);
+      sideB.forEach(([pid, nm])=>{ ensureMon(pid); if(nm) names[pid]=nm;
+        mon[pid].games+=1; mon[pid].wins+=(winB?1:0); mon[pid].losses+=(winA?1:0);
+        mon[pid].gw+=weight; mon[pid].ww+=(winB?weight:0);
       });
-    }else{ // 지난달
-      sideA.forEach(([pid, nm])=>{
-        ensurePrev(pid); if(nm) names[pid]=nm;
-        prev[pid].gw += weight;
-        prev[pid].ww += (winA?weight:0);
+    }else{
+      sideA.forEach(([pid, nm])=>{ ensurePrev(pid); if(nm) names[pid]=nm;
+        prev[pid].gw+=weight; prev[pid].ww+=(winA?weight:0);
       });
-      sideB.forEach(([pid, nm])=>{
-        ensurePrev(pid); if(nm) names[pid]=nm;
-        prev[pid].gw += weight;
-        prev[pid].ww += (winB?weight:0);
+      sideB.forEach(([pid, nm])=>{ ensurePrev(pid); if(nm) names[pid]=nm;
+        prev[pid].gw+=weight; prev[pid].ww+=(winB?weight:0);
       });
     }
   }
@@ -336,11 +321,8 @@
       const key = m.monthKey || (isFinite(ts) ? monthKeyFromTs(ts) : null);
       if(!key) return;
 
-      if(key === CUR_MON){
-        addMatch('month', m);
-      }else if(key === PREV_MON){
-        addMatch('prev', m);
-      }
+      if(key === CUR_MON) addMatch('month', m);
+      else if(key === PREV_MON) addMatch('prev', m);
     });
   }
 
@@ -351,28 +333,21 @@
       const prevRate  = (p.gw>0) ? (p.ww/p.gw) : NaN;
       const monthRate = (m.gw>0) ? (m.ww/m.gw) : NaN;
       const delta = (isFinite(prevRate) && isFinite(monthRate)) ? (monthRate - prevRate) : NaN;
-      return {
-        pid, name: names[pid] || pid,
-        games: m.games, wins: m.wins, losses: m.losses,
-        prevRate, monthRate, delta,
-        weightedWins: m.ww
-      };
+      return { pid, name:names[pid]||pid, games:m.games, wins:m.wins, losses:m.losses,
+               prevRate, monthRate, delta, weightedWins:m.ww };
     });
 
     if(sortMode==='winrate'){
       rows.sort((a,b)=>{
         const ar = isFinite(a.monthRate) ? a.monthRate : -1;
         const br = isFinite(b.monthRate) ? b.monthRate : -1;
-        if(br!==ar) return br - ar;
-        if(b.games!==a.games) return b.games - a.games;
-        return a.name.localeCompare(b.name,'ko');
+        return (br-ar) || (b.games-a.games) || a.name.localeCompare(b.name,'ko');
       });
     }else if(sortMode==='games'){
-      rows.sort((a,b)=> (b.games - a.games) || (b.wins - a.wins) || a.name.localeCompare(b.name,'ko'));
+      rows.sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
     }else{
-      rows.sort((a,b)=> (b.weightedWins - a.weightedWins) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
+      rows.sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
     }
-
     return rows;
   }
 
@@ -383,47 +358,16 @@
 
     rows.forEach((r, i)=>{
       const tr = document.createElement('tr');
-
-      const tdNo = document.createElement('td');
-      tdNo.textContent = (i+1).toString();
-      tr.appendChild(tdNo);
-
-      const tdNm = document.createElement('td');
-      tdNm.className = 'name';
-      tdNm.textContent = r.name;
-      tr.appendChild(tdNm);
-
-      const tdGm = document.createElement('td');
-      tdGm.className='right';
-      tdGm.textContent = r.games.toString();
-      tr.appendChild(tdGm);
-
-      const tdWP = document.createElement('td');
-      tdWP.className='right';
-      tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`;
-      tr.appendChild(tdWP);
-
-      const tdPrev = document.createElement('td');
-      tdPrev.className='right muted';
-      tdPrev.textContent = pct(r.prevRate);
-      tr.appendChild(tdPrev);
-
-      const tdMon  = document.createElement('td');
-      tdMon.className='right';
-      tdMon.textContent  = pct(r.monthRate);
-      tr.appendChild(tdMon);
-
-      const tdDelta= document.createElement('td');
-      tdDelta.className='right';
-      if(isFinite(r.delta)){
-        tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p';
-        tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg'));
-      }else{
-        tdDelta.textContent = '-';
-        tdDelta.classList.add('muted');
-      }
+      const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tr.appendChild(tdNo);
+      const tdNm = document.createElement('td'); tdNm.className = 'name'; tdNm.textContent = r.name; tr.appendChild(tdNm);
+      const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
+      const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; tr.appendChild(tdWP);
+      const tdPrev = document.createElement('td'); tdPrev.className='right muted'; tdPrev.textContent = pct(r.prevRate); tr.appendChild(tdPrev);
+      const tdMon  = document.createElement('td'); tdMon.className='right'; tdMon.textContent  = pct(r.monthRate); tr.appendChild(tdMon);
+      const tdDelta= document.createElement('td'); tdDelta.className='right';
+      if(isFinite(r.delta)){ tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p'; tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg')); }
+      else { tdDelta.textContent = '-'; tdDelta.classList.add('muted'); }
       tr.appendChild(tdDelta);
-
       tbody.appendChild(tr);
     });
 
@@ -451,9 +395,7 @@
     if (upList) {
       const candidates = rows
         .filter(r => r.games >= 10 && isFinite(r.monthRate) && r.monthRate >= 0.7)
-        .sort((a,b) =>
-          (b.monthRate - a.monthRate) || (b.games - a.games) || a.name.localeCompare(b.name,'ko')
-        );
+        .sort((a,b) => (b.monthRate - a.monthRate) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
 
       upList.innerHTML = '';
       if (candidates.length) {
@@ -471,76 +413,43 @@
     }
   }
 
-  // ========== 실시간 구독 ==========
+  // 실시간 구독 (배지 업데이트 코드는 제거)
   onAuthStateChanged(auth, (user)=>{
     if(!user) return;
-    const lastBadge = document.getElementById('lastUpdate');
-    lastBadge.textContent = '실시간 연결: 연결됨';
     onValue(ref(db,'matches'), (snap)=>{
       const all = snap.val() || {};
       window.lastAll = all;
       rebuild(all);
       render();
-      lastBadge.textContent = '실시간 연결: 갱신 ' + new Date().toLocaleTimeString('ko-KR');
-    }, (err)=>{
-      console.error(err);
-      lastBadge.textContent = '실시간 연결: 오류';
-    });
+    }, (err)=>{ console.error(err); });
   });
 
-  signInAnonymously(auth).catch(e=>{
-    console.error(e);
-    const lastBadge = document.getElementById('lastUpdate');
-    lastBadge.textContent = '실시간 연결: 로그인 실패';
-  });
+  // 로그인 시작 (lastUpdate 관련 코드 제거)
+  signInAnonymously(auth).catch(e=>{ console.error(e); });
 
   // ================== 이미지 저장 ==================
-  // html2canvas는 상단에서 defer로 로드됨. window.html2canvas로 접근 가능.
   function downloadDataUrl(filename, dataUrl){
     const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = dataUrl; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
   }
-
   async function saveCaptureAsImage(){
     const area = document.getElementById('captureArea');
     if(!area){ alert('캡처 영역을 찾을 수 없습니다.'); return; }
-
-    // 캡처 품질 개선: 스크롤바/오버플로우 영향 최소화
     area.classList.add('capture-ready');
-
-    // DPR(고해상도) 반영
-    const scale = Math.min(window.devicePixelRatio || 1, 2); // 과도한 용량 방지로 최대 2배
-    // html2canvas가 로드되었는지 확인
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
     if(!window.html2canvas){
-      alert('이미지 모듈 로드 중입니다. 잠시 후 다시 시도해주세요.');
-      area.classList.remove('capture-ready');
-      return;
+      alert('이미지 모듈 로드 중입니다. 다시 시도해주세요.');
+      area.classList.remove('capture-ready'); return;
     }
-
-    const canvas = await window.html2canvas(area, {
-      backgroundColor: '#ffffff',
-      scale,
-      useCORS: true,
-      windowWidth: document.documentElement.clientWidth
-    });
-
+    const canvas = await window.html2canvas(area, { backgroundColor:'#ffffff', scale, useCORS:true, windowWidth:document.documentElement.clientWidth });
     area.classList.remove('capture-ready');
-
     const dataUrl = canvas.toDataURL('image/png');
-    // 파일명: KOEN_월간리그_YYYY-MM.png
     const fname = `KOEN_월간리그_${CUR_MON}.png`;
     downloadDataUrl(fname, dataUrl);
   }
-
-  // 버튼 연결
   const saveBtn = document.getElementById('saveImage');
-  if(saveBtn){
-    saveBtn.addEventListener('click', saveCaptureAsImage);
-  }
+  if(saveBtn) saveBtn.addEventListener('click', saveCaptureAsImage);
 </script>
 </body>
 </html>
