@@ -101,6 +101,16 @@
 .modal-body h3{ margin:12px 0 6px; font-size:15px; color:var(--primary) }
 .modal-body ul, .modal-body ol{ margin:6px 0 0 18px }
 
+/* 날짜 구분선 */
+ul.log li.day-sep{
+  border:0; padding:0; margin:10px 0;
+}
+ul.log li.day-sep hr{
+  border:0; border-top:2px solid #cbd5e1;  /* 평소 구분선보다 두껍게 */
+  margin:8px 0;
+}
+
+
   </style>
 </head>
 <body>
@@ -502,53 +512,86 @@ function levelStyle(level){
     }
 
     function watchRecent(){
-      const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(20));
-      onValue(q, snap=>{
-        const ul = $('#recent'), empty = $('#recentEmpty');
-        ul.innerHTML='';
-        let arr = [];
-        snap.forEach(child=>{
-          arr.push({ key: child.key, m: child.val() });
-        });
-        if(!arr.length){ empty.style.display=''; return; }
-        empty.style.display='none';
-        arr.sort((a,b)=>(a.m.ts||0)-(b.m.ts||0));
-        arr.slice(-20).reverse().forEach(({key, m})=>{
-          const li = document.createElement('li');
+  const q = query(ref(db,'matches'), orderByChild('ts'), limitToLast(50)); // 여유있게 50건
+  onValue(q, snap=>{
+    const ul = $('#recent'), empty = $('#recentEmpty');
+    ul.innerHTML='';
+    let arr = [];
+    snap.forEach(child=>{
+      arr.push({ key: child.key, m: child.val() });
+    });
 
-          const typeLabel = (m.type==='double') ? '복식' : '단식';
-          const joiner = (m.type === 'double') ? '/' : ' + ';
-
-          const A = (m.namesA && m.namesA.length) ? m.namesA.join(joiner)
-                   : (m.membersA && m.membersA.length ? m.membersA.join(joiner) : 'A');
-          const B = (m.namesB && m.namesB.length) ? m.namesB.join(joiner)
-                   : (m.membersB && m.membersB.length ? m.membersB.join(joiner) : 'B');
-
-          const winIsA = (m.winnerSide === 'A');
-          const ALabel = winIsA ? `<span class="win">${A} (승)</span>` : A;
-          const BLabel = !winIsA ? `<span class="win">${B} (승)</span>` : B;
-
-          const item = document.createElement('div');
-          item.className = 'item';
-
-          const dateText = fmtYYMMDD_HHMM_WD(m.ts ?? m.createdAt);
-          item.innerHTML = `
-            <div class="combined">${dateText} · [${typeLabel}] ${ALabel} vs ${BLabel}</div>
-            <div class="line1">${dateText}</div>
-            <div class="line2">[${typeLabel}] ${ALabel} vs ${BLabel}</div>
-          `;
-
-          const del = document.createElement('button');
-          del.className='btn sm warn';
-          del.textContent='삭제';
-          del.onclick = ()=> deleteMatch(key);
-
-          li.appendChild(item);
-          li.appendChild(del);
-          ul.appendChild(li);
-        });
-      });
+    if(!arr.length){ 
+      empty.style.display=''; 
+      return; 
     }
+    empty.style.display='none';
+
+    // 최신순 정렬
+    arr.sort((a,b)=>(a.m.ts||0)-(b.m.ts||0));
+    const recent = arr.slice(-50).reverse();
+
+    // 🔑 날짜 키(KST 기준) 생성
+    const dateKeyKST = (t)=>{
+      const d = toKST(t ?? Date.now());
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,'0');
+      const dd= String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${dd}`;
+    };
+
+    let prevDateKey = null;
+
+    recent.forEach(({key, m}, idx)=>{
+      const t = m.ts ?? m.createdAt ?? Date.now();
+      const curKey = dateKeyKST(t);
+
+      // ✅ 날짜가 바뀌면 굵은 가로줄 삽입
+      if (prevDateKey && prevDateKey !== curKey){
+        const sep = document.createElement('li');
+        sep.className = 'day-sep';
+        sep.innerHTML = '<hr />';
+        ul.appendChild(sep);
+      }
+      prevDateKey = curKey;
+
+      // 항목 렌더
+      const li = document.createElement('li');
+
+      const typeLabel = (m.type==='double') ? '복식' : '단식';
+      const joiner = (m.type === 'double') ? '/' : ' + ';
+
+      const A = (m.namesA && m.namesA.length) ? m.namesA.join(joiner)
+               : (m.membersA && m.membersA.length ? m.membersA.join(joiner) : 'A');
+      const B = (m.namesB && m.namesB.length) ? m.namesB.join(joiner)
+               : (m.membersB && m.membersB.length ? m.membersB.join(joiner) : 'B');
+
+      const winIsA = (m.winnerSide === 'A');
+      const ALabel = winIsA ? `<span class="win">${A} (승)</span>` : A;
+      const BLabel = !winIsA ? `<span class="win">${B} (승)</span>` : B;
+
+      const item = document.createElement('div');
+      item.className = 'item';
+
+      const dateText = fmtYYMMDD_HHMM_WD(t);
+      item.innerHTML = `
+        <div class="combined">${dateText} · [${typeLabel}] ${ALabel} vs ${BLabel}</div>
+        <div class="line1">${dateText}</div>
+        <div class="line2">[${typeLabel}] ${ALabel} vs ${BLabel}</div>
+      `;
+
+      const del = document.createElement('button');
+      del.className='btn sm warn';
+      del.textContent='삭제';
+      del.onclick = ()=> deleteMatch(key);
+
+      li.appendChild(item);
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
+  });
+}
+
 
     // 5) 시작
     signInAnonymously(auth).catch(console.error);
