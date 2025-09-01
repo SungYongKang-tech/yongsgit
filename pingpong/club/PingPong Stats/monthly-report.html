@@ -58,20 +58,21 @@
     table col.col-month { width: 50px; }
     table col.col-delta { width: 50px; }
 
+    /* 모바일: 이름 폭 넉넉히 */
     @media (max-width: 640px){
       table col.col-name { width: 50%; }
       thead th, tbody td { padding: 6px 8px; }
     }
-    @media (max-width: 640px){
-      table col.col-name { width: 38%; }
-      tbody td, thead th { padding: 8px; }
-    }
+
+    /* 이름은 줄바꿈 금지(말줄임은 꺼둔 상태 유지) */
     tbody td.name {
-      white-space: nowrap;      /* 줄바꿈 금지 */
-     /* overflow: hidden;         /* 영역 넘치면 숨김 */
-     /* text-overflow: ellipsis;  /* 말줄임(...) 표시 */
+      white-space: nowrap; /* 줄바꿈 금지 */
+      /* overflow: hidden; */
+      /* text-overflow: ellipsis; */
     }
 
+    /* ---- 캡처 전용 보정 (이미지 저장 시 깜빡임 방지용) ---- */
+    .capture-ready * { -webkit-font-smoothing: antialiased; }
   </style>
 </head>
 <body>
@@ -87,65 +88,74 @@
       <button id="sortWinrate" class="btn primary">정렬 : 승률</button>
       <button id="sortGames" class="btn">최다경기</button>
       <button id="sortWins" class="btn">다승</button>
+      <!-- ▼ 추가: 이미지 저장 버튼 -->
+      <button id="saveImage" class="btn">이미지 저장</button>
       <span id="dwNote" class="small muted">※ 복식은 승률 계산에 0.5배 반영됩니다.</span>
     </div>
   </div>
 </header>
 
 <main>
-  <section class="card">
-    <div class="awards">
-      <div class="award">
-        <div class="muted small">어워드</div>
-        <b>최다경기왕</b>
-        <div id="mostGames" style="margin-top:6px">-</div>
+  <!-- ▼ 추가: 캡처 영역 래퍼 -->
+  <div id="captureArea">
+    <section class="card">
+      <div class="awards">
+        <div class="award">
+          <div class="muted small">어워드</div>
+          <b>최다경기왕</b>
+          <div id="mostGames" style="margin-top:6px">-</div>
+        </div>
+        <div class="award">
+          <div class="muted small">어워드</div>
+          <b>다승 TOP3</b>
+          <ol id="topWins" style="margin:6px 0 0 18px; padding:0"></ol>
+        </div>
+        <div class="award">
+          <div class="muted small">어워드</div>
+          <b>부수상향 권고</b>
+          <ul id="upgradeList" style="margin:6px 0 0 18px; padding:0"></ul>
+          <div class="small muted">(조건: 이번달 10경기 이상, 승률 ≥ 70%)</div>
+        </div>
       </div>
-      <div class="award">
-        <div class="muted small">어워드</div>
-        <b>다승 TOP3</b>
-        <ol id="topWins" style="margin:6px 0 0 18px; padding:0"></ol>
-      </div>
-      <div class="award">
-        <div class="muted small">어워드</div>
-        <b>부수상향 권고</b>
-        <ul id="upgradeList" style="margin:6px 0 0 18px; padding:0"></ul>
-        <div class="small muted">(조건: 이번달 10경기 이상, 승률 ≥ 70%)</div>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <section class="card">
-    <div class="row" style="justify-content:space-between">
-      <div style="font-weight:700">선수별 상세(이번달)</div>
-      <div class="muted small">이전 승률 = 지난달, 이달 승률 = 이번달, 승률 증감 = 이달 − 지난달</div>
-    </div>
-    <div style="overflow:auto; margin-top:8px">
-      <table>
-        <colgroup>
-          <col class="col-no" />
-          <col class="col-name" />
-          <col class="col-games" />
-          <col class="col-wp" />
-          <col class="col-prev" />
-          <col class="col-month" />
-          <col class="col-delta" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>번호</th>
-            <th>이름</th>
-            <th class="right">게임수</th>
-            <th class="right">승/패</th>
-            <th class="right">이전 승률</th>
-            <th class="right">이달 승률</th>
-            <th class="right">승률 증감</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-  </section>
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <div style="font-weight:700">선수별 상세(이번달)</div>
+        <div class="muted small">이전 승률 = 지난달, 이달 승률 = 이번달, 승률 증감 = 이달 − 지난달</div>
+      </div>
+      <div style="overflow:auto; margin-top:8px">
+        <table>
+          <colgroup>
+            <col class="col-no" />
+            <col class="col-name" />
+            <col class="col-games" />
+            <col class="col-wp" />
+            <col class="col-prev" />
+            <col class="col-month" />
+            <col class="col-delta" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>번호</th>
+              <th>이름</th>
+              <th class="right">게임수</th>
+              <th class="right">승/패</th>
+              <th class="right">이전 승률</th>
+              <th class="right">이달 승률</th>
+              <th class="right">승률 증감</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <!-- ▲ 캡처 영역 끝 -->
 </main>
+
+<!-- html2canvas(비모듈) 추가 -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -251,12 +261,11 @@
 
   // ========== 집계 상태 ==========
   const names = {};                 // pid -> 최신 이름
-  const prev  = {};                 // pid -> {gw, ww}   // ← 이제 '지난달' 전용
+  const prev  = {};                 // pid -> {gw, ww}   // 지난달 전용
   const mon   = {};                 // pid -> {games, wins, losses, gw, ww}
   function ensurePrev(pid){ if(!prev[pid]) prev[pid] = {gw:0, ww:0}; }
   function ensureMon(pid){ if(!mon[pid])  mon[pid]  = {games:0, wins:0, losses:0, gw:0, ww:0}; }
 
-  // 경기 1건을 집계에 반영
   function addMatch(bucket, m){
     // 타입 판별
     let type = m.type;
@@ -265,7 +274,7 @@
       type = (la >= 2 || lb >= 2) ? 'double' : 'single';
     }
 
-    // 🔁 가중치 결정: 기록된 finalWeight 우선, 없으면 실시간 설정으로 재계산
+    // 가중치 결정
     let weight;
     if (m?.weights && typeof m.weights.finalWeight === 'number' && isFinite(m.weights.finalWeight)) {
       weight = Number(m.weights.finalWeight);
@@ -279,7 +288,6 @@
       weight = skillW * dblW;
     }
 
-    // A/B 명단 (id, name)
     const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
                   (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
     const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
@@ -304,7 +312,7 @@
         mon[pid].gw     += weight;
         mon[pid].ww     += (winB?weight:0);
       });
-    }else{ // 지난달 전용
+    }else{ // 지난달
       sideA.forEach(([pid, nm])=>{
         ensurePrev(pid); if(nm) names[pid]=nm;
         prev[pid].gw += weight;
@@ -318,7 +326,6 @@
     }
   }
 
-  // 전체 스냅샷을 KST 월 기준으로 재집계 (지난달만 prev에 반영)
   function rebuild(all){
     for(const k in prev) delete prev[k];
     for(const k in mon)  delete mon[k];
@@ -333,17 +340,15 @@
       }else if(key === PREV_MON){
         addMatch('prev', m);
       }
-      // 그 외의 더 이전 달은 이번 표에서는 사용하지 않음
     });
   }
 
-  // 렌더 데이터 구성
   function buildRows(){
     const pids = Object.keys(mon).filter(pid=> mon[pid].games>0);
     const rows = pids.map(pid=>{
       const m = mon[pid], p = prev[pid] || {gw:0, ww:0};
-      const prevRate  = (p.gw>0) ? (p.ww/p.gw) : NaN;     // 지난달 승률
-      const monthRate = (m.gw>0) ? (m.ww/m.gw) : NaN;     // 이번달 승률
+      const prevRate  = (p.gw>0) ? (p.ww/p.gw) : NaN;
+      const monthRate = (m.gw>0) ? (m.ww/m.gw) : NaN;
       const delta = (isFinite(prevRate) && isFinite(monthRate)) ? (monthRate - prevRate) : NaN;
       return {
         pid, name: names[pid] || pid,
@@ -370,13 +375,11 @@
     return rows;
   }
 
-  // 렌더
   function render(){
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
     const rows = buildRows();
 
-    // 표 렌더
     rows.forEach((r, i)=>{
       const tr = document.createElement('tr');
 
@@ -401,7 +404,7 @@
 
       const tdPrev = document.createElement('td');
       tdPrev.className='right muted';
-      tdPrev.textContent = pct(r.prevRate); // 지난달 승률
+      tdPrev.textContent = pct(r.prevRate);
       tr.appendChild(tdPrev);
 
       const tdMon  = document.createElement('td');
@@ -423,7 +426,6 @@
       tbody.appendChild(tr);
     });
 
-    // 기존 어워드: 최다경기왕 / 다승 TOP3
     const mostGamesBox = document.getElementById('mostGames');
     const topWinsList  = document.getElementById('topWins');
 
@@ -444,7 +446,6 @@
       topWinsList.innerHTML='';
     }
 
-    // 부수상향 권고 (10경기 이상 & 승률 70% 이상)
     const upList = document.getElementById('upgradeList');
     if (upList) {
       const candidates = rows
@@ -486,12 +487,59 @@
     });
   });
 
-  // 로그인 시작
   signInAnonymously(auth).catch(e=>{
     console.error(e);
     const lastBadge = document.getElementById('lastUpdate');
     lastBadge.textContent = '실시간 연결: 로그인 실패';
   });
+
+  // ================== 이미지 저장 ==================
+  // html2canvas는 상단에서 defer로 로드됨. window.html2canvas로 접근 가능.
+  function downloadDataUrl(filename, dataUrl){
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function saveCaptureAsImage(){
+    const area = document.getElementById('captureArea');
+    if(!area){ alert('캡처 영역을 찾을 수 없습니다.'); return; }
+
+    // 캡처 품질 개선: 스크롤바/오버플로우 영향 최소화
+    area.classList.add('capture-ready');
+
+    // DPR(고해상도) 반영
+    const scale = Math.min(window.devicePixelRatio || 1, 2); // 과도한 용량 방지로 최대 2배
+    // html2canvas가 로드되었는지 확인
+    if(!window.html2canvas){
+      alert('이미지 모듈 로드 중입니다. 잠시 후 다시 시도해주세요.');
+      area.classList.remove('capture-ready');
+      return;
+    }
+
+    const canvas = await window.html2canvas(area, {
+      backgroundColor: '#ffffff',
+      scale,
+      useCORS: true,
+      windowWidth: document.documentElement.clientWidth
+    });
+
+    area.classList.remove('capture-ready');
+
+    const dataUrl = canvas.toDataURL('image/png');
+    // 파일명: KOEN_월간리그_YYYY-MM.png
+    const fname = `KOEN_월간리그_${CUR_MON}.png`;
+    downloadDataUrl(fname, dataUrl);
+  }
+
+  // 버튼 연결
+  const saveBtn = document.getElementById('saveImage');
+  if(saveBtn){
+    saveBtn.addEventListener('click', saveCaptureAsImage);
+  }
 </script>
 </body>
 </html>
