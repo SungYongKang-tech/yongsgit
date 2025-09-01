@@ -128,8 +128,9 @@
     <section class="card">
       <div class="awards">
         <div class="award">
-          <b>최다경기왕</b>
-          <div id="mostGames" style="margin-top:6px">-</div>
+          <b>최다경기 TOP3</b>
+          <!-- ▼ div → ol 로 변경 -->
+          <ol id="mostGames" style="margin:6px 0 0 18px; padding:0"></ol>
         </div>
         <div class="award">
           <b>다승 TOP3</b>
@@ -176,8 +177,9 @@
     <section id="prevAwards" class="card" style="display:none">
       <div class="awards">
         <div class="award">
-          <b>지난달 최다경기왕</b>
-          <div id="prevMostGames" style="margin-top:6px">-</div>
+          <b>지난달 최다경기 TOP3</b>
+          <!-- ▼ div → ol 로 변경 -->
+          <ol id="prevMostGames" style="margin:6px 0 0 18px; padding:0"></ol>
         </div>
         <div class="award">
           <b>지난달 다승 TOP3</b>
@@ -244,7 +246,7 @@
 
   // 제목 옆 월 표시
   const titleMonthEl = document.getElementById('titleMonth');
-  if (titleMonthEl) titleMonthEl.textContent = titleMon(CUR_MON);
+  if (titleMonthEl) titleMonthEl.textContent = titleMon(CUR_MON));
 
   // ========== 정렬 상태 ==========
   let sortMode = 'winrate';
@@ -265,19 +267,17 @@
   const isNum = (v)=> typeof v === 'number' && isFinite(v);
 
   // ========== 집계 상태 ==========
-  const names  = {};                 // pid -> 최신 이름
-  const prev   = {};                 // (지난달 승률 비교용) pid -> {gw, ww}
-  const mon    = {};                 // (이달 전적)         pid -> {games,wins,losses,gw,ww}
-  const prevMon= {};                 // (지난달 전적 표/어워드) pid -> {games,wins,losses,gw,ww}
+  const names  = {};
+  const prev   = {};
+  const mon    = {};
+  const prevMon= {};
   function ensurePrev(pid){ if(!prev[pid])    prev[pid]    = {gw:0, ww:0}; }
   function ensureMon(pid){  if(!mon[pid])     mon[pid]     = {games:0, wins:0, losses:0, gw:0, ww:0}; }
   function ensurePrevMon(pid){ if(!prevMon[pid]) prevMon[pid] = {games:0, wins:0, losses:0, gw:0, ww:0}; }
 
-  // 경기 반영 (리포트는 가중치 미사용 = weight=1)
+  // 경기 반영 (리포트는 가중치 미사용)
   function addMatch(bucket, m){
-    // weight 고정 1 (복식/실력차 가중치 미사용)
     const weight = 1;
-
     const sideA = (m.membersA && m.membersA.length ? m.membersA.map((pid,i)=>[pid, m.namesA?.[i]]) :
                   (m.namesA && m.namesA.length ? m.namesA.map((nm)=>[slugify(nm), nm]) : []));
     const sideB = (m.membersB && m.membersB.length ? m.membersB.map((pid,i)=>[pid, m.namesB?.[i]]) :
@@ -286,34 +286,24 @@
     const winB = m.winnerSide === 'B';
 
     if(bucket === 'month'){
-      sideA.forEach(([pid, nm])=>{
-        ensureMon(pid); if(nm) names[pid]=nm;
-        mon[pid].games  += 1;
-        mon[pid].wins   += (winA?1:0);
-        mon[pid].losses += (winB?1:0);
-        mon[pid].gw     += weight;
-        mon[pid].ww     += (winA?weight:0);
+      sideA.forEach(([pid, nm])=>{ ensureMon(pid); if(nm) names[pid]=nm;
+        mon[pid].games+=1; mon[pid].wins+=(winA?1:0); mon[pid].losses+=(winB?1:0);
+        mon[pid].gw+=weight; mon[pid].ww+=(winA?weight:0);
       });
-      sideB.forEach(([pid, nm])=>{
-        ensureMon(pid); if(nm) names[pid]=nm;
-        mon[pid].games  += 1;
-        mon[pid].wins   += (winB?1:0);
-        mon[pid].losses += (winA?1:0);
-        mon[pid].gw     += weight;
-        mon[pid].ww     += (winB?weight:0);
+      sideB.forEach(([pid, nm])=>{ ensureMon(pid); if(nm) names[pid]=nm;
+        mon[pid].games+=1; mon[pid].wins+=(winB?1:0); mon[pid].losses+=(winA?1:0);
+        mon[pid].gw+=weight; mon[pid].ww+=(winB?weight:0);
       });
-    }else{ // 지난달
-      sideA.forEach(([pid, nm])=>{
-        ensurePrev(pid); ensurePrevMon(pid); if(nm) names[pid]=nm;
-        prev[pid].gw += weight; prev[pid].ww += (winA?weight:0);
-        prevMon[pid].games += 1; prevMon[pid].wins += (winA?1:0); prevMon[pid].losses += (winB?1:0);
-        prevMon[pid].gw += weight; prevMon[pid].ww += (winA?weight:0);
+    }else{
+      sideA.forEach(([pid, nm])=>{ ensurePrev(pid); ensurePrevMon(pid); if(nm) names[pid]=nm;
+        prev[pid].gw+=weight; prev[pid].ww+=(winA?weight:0);
+        prevMon[pid].games+=1; prevMon[pid].wins+=(winA?1:0); prevMon[pid].losses+=(winB?1:0);
+        prevMon[pid].gw+=weight; prevMon[pid].ww+=(winA?weight:0);
       });
-      sideB.forEach(([pid, nm])=>{
-        ensurePrev(pid); ensurePrevMon(pid); if(nm) names[pid]=nm;
-        prev[pid].gw += weight; prev[pid].ww += (winB?weight:0);
-        prevMon[pid].games += 1; prevMon[pid].wins += (winB?1:0); prevMon[pid].losses += (winA?1:0);
-        prevMon[pid].gw += weight; prevMon[pid].ww += (winB?weight:0);
+      sideB.forEach(([pid, nm])=>{ ensurePrev(pid); ensurePrevMon(pid); if(nm) names[pid]=nm;
+        prev[pid].gw+=weight; prev[pid].ww+=(winB?weight:0);
+        prevMon[pid].games+=1; prevMon[pid].wins+=(winB?1:0); prevMon[pid].losses+=(winA?1:0);
+        prevMon[pid].gw+=weight; prevMon[pid].ww+=(winB?weight:0);
       });
     }
   }
@@ -381,14 +371,21 @@
       tbody.appendChild(tr);
     });
 
-    // 이달 어워드
-    const mostGamesBox = document.getElementById('mostGames');
-    const topWinsList  = document.getElementById('topWins');
+    // ===== 이달 어워드 =====
+    const mostGamesList = document.getElementById('mostGames');
+    const topWinsList   = document.getElementById('topWins');
 
     if(rows.length){
+      // 최다경기 TOP3
       const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
-      mostGamesBox.textContent = `${byGames[0].name} · ${byGames[0].games}경기`;
+      mostGamesList.innerHTML = '';
+      byGames.slice(0,3).forEach((p, idx)=>{
+        const li = document.createElement('li');
+        li.textContent = `${idx+1}위 ${p.name} · ${p.games}경기`;
+        mostGamesList.appendChild(li);
+      });
 
+      // 다승 TOP3
       const byWins = [...rows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
       topWinsList.innerHTML = '';
       byWins.slice(0,3).forEach((p, idx)=>{
@@ -398,10 +395,11 @@
         topWinsList.appendChild(li);
       });
     }else{
-      mostGamesBox.textContent='-';
+      mostGamesList.innerHTML='';
       topWinsList.innerHTML='';
     }
 
+    // 부수상향 권고 (이달)
     const upList = document.getElementById('upgradeList');
     if (upList) {
       const candidates = rows
@@ -441,7 +439,7 @@
       const prevTitleMonth = document.getElementById('prevTitleMonth');
       if (prevTitleMonth) prevTitleMonth.textContent = titleMon(PREV_MON);
 
-      // 정렬(승률 > 게임수 > 이름)
+      // 표 정렬(승률 > 게임수 > 이름)
       prevRows.sort((a,b)=>{
         const ar = isFinite(a.rate) ? a.rate : -1;
         const br = isFinite(b.rate) ? b.rate : -1;
@@ -460,14 +458,20 @@
         prevTbody.appendChild(tr);
       });
 
-      // 어워드
+      // 지난달 어워드: 최다경기 TOP3
       const prevMostGames = document.getElementById('prevMostGames');
       const prevTopWins   = document.getElementById('prevTopWins');
       const prevUpList    = document.getElementById('prevUpgradeList');
 
       const byGamesPrev = [...prevRows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
-      prevMostGames.textContent = `${byGamesPrev[0].name} · ${byGamesPrev[0].games}경기`;
+      prevMostGames.innerHTML = '';
+      byGamesPrev.slice(0,3).forEach((p, idx)=>{
+        const li = document.createElement('li');
+        li.textContent = `${idx+1}위 ${p.name} · ${p.games}경기`;
+        prevMostGames.appendChild(li);
+      });
 
+      // 지난달 어워드: 다승 TOP3
       prevTopWins.innerHTML = '';
       const byWinsPrev = [...prevRows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
       byWinsPrev.slice(0,3).forEach((p, idx)=>{
@@ -477,6 +481,7 @@
         prevTopWins.appendChild(li);
       });
 
+      // 지난달 부수상향 권고
       prevUpList.innerHTML = '';
       const prevCandidates = prevRows
         .filter(r => r.games >= 10 && isFinite(r.rate) && r.rate >= 0.7)
@@ -534,7 +539,6 @@
       window.lastAll = all;
       rebuild(all);
       render();
-      // 자동 정리
       await pruneOld(all);
     }, (err)=>{ console.error(err); });
   });
