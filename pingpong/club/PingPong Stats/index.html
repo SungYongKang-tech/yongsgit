@@ -30,7 +30,8 @@
       font-size:13px; line-height:1.1; white-space:nowrap;
       -webkit-tap-highlight-color:transparent;
     }
-    .chip.selected{outline:2px solid var(--accent); background:#fff}
+    .chip.selected{outline:2px solid var(--chip-ol, var(--accent));background:#fff}
+
     @media (max-width:520px){
       .chip{padding:5px 8px; font-size:12.5px; line-height:1.05}
       .chips{gap:5px}
@@ -321,14 +322,21 @@
       "송은아(13)","이낭주(13)","박나령(14)","고은선(14)","정승목(14)"
     ];
 
-    function levelStyle(level){
-      const L = Math.max(4, Math.min(14, Number(level)||14));
-      const t = (L - 4) / (14 - 4);
-      const hue = 45 + (220 - 45) * t;
-      const bg = `hsl(${hue.toFixed(0)} 70% 92%)`;
-      const bd = `hsl(${hue.toFixed(0)} 45% 70%)`;
-      return { bg, bd };
-    }
+    // 🔄 기존 levelStyle(level) 교체
+function levelStyle(level){
+  // 4~14 부수 → 서로 확연히 다른 11색 (빨-주-노-연두-초-청록-하늘-남-보-자홍-로즈)
+  const hues = [0, 25, 50, 95, 140, 185, 215, 245, 275, 310, 340];
+  const L = Math.max(4, Math.min(14, Number(level) || 14));
+  const idx = L - 4;                       // 0..10
+  const hue = hues[idx] ?? 200;
+
+  // 배경은 밝고 쨍하게, 테두리는 더 진하게, 선택 아웃라인은 한 톤 더 진하게
+  const bg = `hsl(${hue} 85% 92%)`;
+  const bd = `hsl(${hue} 60% 46%)`;
+  const ol = `hsl(${hue} 65% 38%)`;
+  return { bg, bd, ol };
+}
+
 
     const players = defaultPlayersRaw.map((s,i)=>{
       const m = s.match(/^(.*)\((\d+)\)$/); if(!m) return null;
@@ -361,9 +369,11 @@
         btn.className='chip';
         btn.textContent = `${p.name}(${p.level})`;
 
-        const { bg, bd } = levelStyle(p.level);
+        const { bg, bd, ol } = levelStyle(p.level);
         btn.style.setProperty('--chip-bg', bg);
         btn.style.setProperty('--chip-bd', bd);
+        btn.style.setProperty('--chip-ol', ol);   // ← 이 줄 추가
+
 
         if(state.sel.some(x=>x.id===p.id)) btn.classList.add('selected');
         btn.onclick = ()=>{
