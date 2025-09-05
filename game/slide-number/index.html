@@ -145,54 +145,70 @@
     }
 
     // ★ 이름을 key로 저장(기존 방식 유지)
-    async function saveRanking(name, timeSec) {
-      await ensureAnonAuth();
-      return set(ref(db, 'puzzleRankings/' + name), timeSec);
-    }
+   async function saveRanking(name, timeSec) {
+  await ensureAnonAuth();
+  const key = sanitizeKey(name);
+  if (!key) throw new Error("이름이 비었습니다.");
+  // 기존: 값만 숫자 → 규칙에 따라 막히는 경우가 있어 객체로 저장(더 안전)
+  const data = {
+    time: timeSec,
+    name: name.trim(),
+    uid: getAuth().currentUser?.uid || null,
+    createdAt: Date.now()
+  };
+  return set(ref(db, 'puzzleRankings/' + key), data);
+}
 
     async function loadTopRankings() {
-      await ensureAnonAuth(); // 읽기에도 일관되게 인증
-      const snap = await get(child(ref(db), 'puzzleRankings'));
-      const list = document.getElementById('rankingList');
-      list.innerHTML = '';
-      if (snap.exists()) {
-        const data = snap.val();
-        const sorted = Object.entries(data)
-          .map(([name, time]) => ({ name, time }))
-          .sort((a, b) => a.time - b.time)
-          .slice(0, 10);
-        sorted.forEach((entry, index) => {
-          const li = document.createElement('li');
-          li.textContent = `${index + 1}등 - ${entry.name} (${formatTime(entry.time)})`;
-          list.appendChild(li);
-        });
-      }
-    }
+  await ensureAnonAuth();
+  const snap = await get(child(ref(db), 'puzzleRankings'));
+  const list = document.getElementById('rankingList');
+  list.innerHTML = '';
+  if (!snap.exists()) return;
+
+  const raw = snap.val();
+  const arr = Object.values(raw)       // {key:{name,time,...}} → [{name,time,...}]
+    .filter(v => v && typeof v.time === 'number')
+    .sort((a,b) => a.time - b.time)
+    .slice(0, 10);
+
+  arr.forEach((entry, idx) => {
+    const li = document.createElement('li');
+    li.textContent = `${idx + 1}등 - ${entry.name} (${formatTime(entry.time)})`;
+    list.appendChild(li);
+  });
+}
+
 
     async function checkAndSaveRanking(newTime) {
-      await ensureAnonAuth();
-      const snap = await get(child(ref(db), 'puzzleRankings'));
-      const data = snap.val() || {};
-      const sorted = Object.entries(data)
-        .map(([name, time]) => ({ name, time }))
-        .sort((a, b) => a.time - b.time);
+  await ensureAnonAuth();
+  const snap = await get(child(ref(db), 'puzzleRankings'));
+  const data = snap.val() || {};
+  const sorted = Object.values(data)
+    .filter(v => v && typeof v.time === 'number')
+    .sort((a,b) => a.time - b.time);
 
-      if (sorted.length < 10 || newTime < sorted[9].time) {
-        const name = prompt("🎉 10등 안에 들었습니다! 이름을 입력하세요:");
-        if (name) {
-          try {
-            await saveRanking(name, newTime);
-            await loadTopRankings();
-          } catch (e) {
-            alert("저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
-            console.warn(e);
-          }
-        }
-      } else {
-        alert("좋은 기록이지만 10위 안에는 들지 못했습니다.");
-        loadTopRankings();
+  if (sorted.length < 10 || newTime < sorted[9].time) {
+    const name = prompt("🎉 10등 안에 들었습니다! 이름을 입력하세요:");
+    if (name) {
+      try {
+        await saveRanking(name, newTime);
+        await loadTopRankings();
+      } catch (e) {
+        alert(
+          "저장 실패: " + (e?.message || e) +
+          "\n\n이름에 금지문자(. # $ [ ] /)가 있었는지,\n" +
+          "또는 DB 규칙/권한 문제가 아닌지 확인해 주세요."
+        );
+        console.warn(e);
       }
     }
+  } else {
+    alert("좋은 기록이지만 10위 안에는 들지 못했습니다.");
+    loadTopRankings();
+  }
+}
+
 
     // 퍼즐이 풀 수 있는 상태인지 체크
     function isSolvable(array) {
