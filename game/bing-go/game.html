@@ -102,32 +102,30 @@
       const data = snap.val() || {};
       const hostUid = data.hostUid || null;
 
-      // 1) A/B 슬롯 배정 (루트 update보다 먼저 해야 권한 생김)
+      // 1) A/B 슬롯 배정
       const aRef = ref(db, `rooms/${roomCode}/players/A`);
       const bRef = ref(db, `rooms/${roomCode}/players/B`);
       const aSnap = await get(aRef);
       const bSnap = await get(bRef);
 
       if (hostUid === myUid) {
-        // 방장 → A
-        if (!aSnap.exists()) await set(aRef, { name:nickname, uid:myUid }); // hostUid는 rooms/$code 에 이미 있음
+        if (!aSnap.exists()) await set(aRef, { name:nickname, uid:myUid });
         myRole = 'A';
       } else {
-        // 비방장 → B가 비어 있으면 생성 (규칙: B는 !data.exists()일 때만 쓰기 허용)
         if (!bSnap.exists()) {
           await set(bRef, { name:nickname, uid:myUid });
           myRole = 'B';
         } else if (bSnap.val()?.uid === myUid) {
-          myRole = 'B'; // 재입장
+          myRole = 'B';
         } else if (aSnap.exists() && aSnap.val()?.uid === myUid) {
-          myRole = 'A'; // 혹시 A가 내 uid인 재입장
+          myRole = 'A';
         } else {
           alert('입장 가능한 자리가 없습니다. (A/B 모두 사용중)');
           return;
         }
       }
 
-      // 2) 필드 보정(이제 참가자 권한 있음 → rooms/{code}에 한해서 업데이트)
+      // 2) 필드 보정(참가자 권한 생긴 뒤)
       const patch = {};
       if (!Array.isArray(data.calledNumbers)) patch.calledNumbers = [];
       if (typeof data.turn !== 'string')       patch.turn = 'A';
@@ -160,7 +158,7 @@
         cell.innerText = num;
         cell.onclick = async () => {
           if (!myUid || !myRole) return;
-          if (turn !== myRole) return;               // 내 차례가 아니면 무시
+          if (turn !== myRole) return;  // 내 차례가 아니면 무시
 
           const number = num;
           $('number-sound').play().catch(()=>{});
@@ -175,7 +173,6 @@
           const nextTurn = (myRole === 'A') ? 'B' : 'A';
           const newList = [...calledNumbers, number];
 
-          // 규칙에 맞는 필드만 업데이트
           await update(ref(db, `rooms/${roomCode}`), {
             turn: nextTurn,
             lastMove: { number, by: myUid, at: Date.now() },
@@ -212,10 +209,21 @@
       if (bingo > previousBingoCount) $('bingo-sound').play().catch(()=>{});
       previousBingoCount = bingo;
 
+      // 점수 저장
       if (myUid) set(ref(db, `rooms/${roomCode}/scores/${myUid}`), bingo);
+
+      // 우승 기록 (규칙에 맞는 객체로 저장)
       if (bingo >= 5) {
         const winnerRef = ref(db, `rooms/${roomCode}/winner`);
-        get(winnerRef).then(s => { if (!s.exists()) set(winnerRef, myUid); });
+        get(winnerRef).then(s => {
+          if (!s.exists()) {
+            set(winnerRef, {
+              uid: myUid,
+              name: nickname,
+              positions: Array.isArray(calledNumbers) ? calledNumbers : []
+            });
+          }
+        });
       }
     }
 
@@ -234,9 +242,15 @@
         turn = typeof data.turn === 'string' ? data.turn : 'A';
         calledNumbers = Array.isArray(data.calledNumbers) ? data.calledNumbers : [];
 
+        // 우승 감지 (객체/문자열 모두 처리)
         if (data.winner) {
-          if (data.winner === myUid) $('win-sound').play().catch(()=>{});
-          $('turn-info').innerText = `🎉 우승자: ${resolveName(data.winner)} 님 승리!`;
+          const w = (typeof data.winner === 'object')
+            ? data.winner
+            : { uid: data.winner, name: resolveName(data.winner), positions: calledNumbers };
+
+          if (w.uid === myUid) $('win-sound').play().catch(()=>{});
+          $('turn-info').innerText = `🎉 우승자: ${w.name || resolveName(w.uid)} 님 승리!`;
+
           document.querySelectorAll('.cell').forEach(cell => cell.style.pointerEvents='none');
           setTimeout(() => {
             alert("게임이 종료되어 방이 삭제되었습니다.");
@@ -266,27 +280,26 @@
           sb.innerHTML = '<h4>점수판</h4>' + entries.map(e=>`<div>${e.name}: ${e.sc}줄</div>`).join('');
         }
 
-if (!data.winner && data.scores) {
-  for (const uid in data.scores) {
-    if (Number(data.scores[uid]) >= 5) {
-      // 규칙 통과용: 객체로 저장
-      set(ref(db, `rooms/${roomCode}/winner`), {
-        uid,
-        name: resolveName(uid),
-        positions: Array.isArray(data.calledNumbers) ? data.calledNumbers : []
+        // 다른 참가자도 5줄이면 우승 확정(객체로 저장)
+        if (!data.winner && data.scores) {
+          for (const uid in data.scores) {
+            if (Number(data.scores[uid]) >= 5) {
+              set(ref(db, `rooms/${roomCode}/winner`), {
+                uid,
+                name: resolveName(uid),
+                positions: Array.isArray(data.calledNumbers) ? data.calledNumbers : []
+              });
+              break;
+            }
+          }
+        }
       });
-      break;
-    }
-  }
-}
-);
     }
 
     // --- 나가기 ---
     window.leaveRoom = async function () {
       if (!myUid || !roomCode) return;
 
-      // ready/scores만 정리 (players/B는 규칙상 삭제권한 제한)
       await remove(ref(db, `rooms/${roomCode}/ready/${myUid}`));
       await remove(ref(db, `rooms/${roomCode}/scores/${myUid}`));
 
