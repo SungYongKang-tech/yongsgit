@@ -96,7 +96,8 @@
     <div class="modal-content">
       <h2>🎉 축하합니다!</h2>
       <p>상위 10위 안에 들었습니다. 이름을 입력해 순위에 등록하세요.</p>
-      <input id="nameInput" maxlength="12" placeholder="이름 (최대 12자)" />
+      <input id="nameInput" maxlength="10" placeholder="이름 (최대 10자)" />
+
       <div class="modal-actions">
         <button id="saveRank" class="btn primary">등록</button>
         <button id="skipRank" class="btn secondary">건너뛰기</button>
@@ -310,10 +311,23 @@
     }
 
     // ★ 랭킹 저장: 인증 보장 후 push
-    async function saveRank(name, timeTaken){
-      await ensureAnonAuth();
-      await push(rankRef, { name, time: timeTaken, ts: nowMs(), uid: auth.currentUser?.uid || null });
-    }
+   async function saveRank(name, timeTaken){
+  // ★ 익명 로그인 보장
+  await ensureAnonAuth();
+
+  const cleanName = String(name).trim().slice(0, 10);
+  const cleanTime = Number(timeTaken);        // 규칙: time은 숫자
+  const createdAt = nowMs();                  // 규칙: createdAt(<= now+10000)
+
+  // 규칙 필드에 정확히 맞춰 저장
+  await push(rankRef, {
+    uid: auth.currentUser?.uid || null,       // 규칙: uid === auth.uid
+    name: cleanName,                           // <= 10자
+    time: cleanTime,                           // 숫자
+    createdAt                                  // 숫자, now 보정 사용
+  });
+}
+
 
     // 랭킹 체크 및 등록 (Top10)
     function checkRanking(timeTaken){
@@ -369,6 +383,22 @@
       guideModal.classList.add('show');
     }
     window.addEventListener('DOMContentLoaded', init);
+
+    onValue(qy, (snap) => {
+  const arr = [];
+  snap.forEach(child => {
+    const v = child.val();
+    if (v && v.name && v.time != null) {
+      const t = typeof v.time === 'number' ? v.time : Number(v.time);
+      if (!Number.isNaN(t)) arr.push({ name: v.name, time: t });
+    }
+  });
+  arr.sort((a,b) => a.time - b.time);   // 안전망
+  ranksCache = arr;
+  showRanking(arr);
+});
+
+
   </script>
 </body>
 </html>
