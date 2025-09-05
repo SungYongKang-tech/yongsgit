@@ -73,7 +73,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import {
-      getDatabase, ref, set, get, update, onValue, remove, onDisconnect
+      getDatabase, ref, set, get, update, onValue, child, remove, onDisconnect
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
     import {
       getAuth, onAuthStateChanged, signInAnonymously
@@ -105,9 +105,9 @@
     // --- State ---
     let nickname = "";
     let myUid = null;
-    let myRole = null; // 'A' | 'B'
-    let turn = 'A';
-    let calledNumbers = [];
+    let myTurn = -1;
+    let currentTurn = 0;
+    let calledNumbers = []; // 공유되는 호출 번호
     let board = [];
     let previousBingoCount = 0;
 
@@ -132,57 +132,42 @@
       const user = await ensureAnonAuth();
       myUid = user.uid;
 
-      // 방 정보 조회
+      // 방 기본 구조 보정 (누락 시)  ✅ 루트 업데이트 금지: rooms/{roomCode} 기준으로만 업데이트
       const roomRef = ref(db, `rooms/${roomCode}`);
-      const snap = await get(roomRef);
-      if (!snap.exists()) {
-        alert('방이 없습니다.');
-        location.href = 'index.html';
-        return;
+      const roomSnap = await get(roomRef);
+      const rv = roomSnap.val() || {};
+
+      const baseUpdates = {};
+      if (!('players' in rv))        baseUpdates['players'] = {};
+      if (!('playersOrder' in rv))   baseUpdates['playersOrder'] = [];
+      if (!('ready' in rv))          baseUpdates['ready'] = {};
+      if (!('scores' in rv))         baseUpdates['scores'] = {};
+      if (!('calledNumbers' in rv))  baseUpdates['calledNumbers'] = [];
+      if (!('currentTurn' in rv))    baseUpdates['currentTurn'] = 0;
+      if (Object.keys(baseUpdates).length) await update(roomRef, baseUpdates); // ← 여기만 수정!
+
+      // 내 정보 기록 (uid 키)
+      await set(ref(db, `rooms/${roomCode}/players/${myUid}`), {
+        name: nickname, joinedAt: Date.now()
+      });
+
+      // playersOrder에 내 uid가 없으면 추가
+      const orderRef = ref(db, `rooms/${roomCode}/playersOrder`);
+      const orderSnap = await get(orderRef);
+      const order = orderSnap.val() || [];
+      if (!order.includes(myUid)) {
+        order.push(myUid);
+        await set(orderRef, order);
       }
-      const data = snap.val() || {};
-      const hostUid = data.hostUid || null;
+      // 내 턴 인덱스 계산
+      myTurn = (order || []).indexOf(myUid);
 
-      // --- A/B 슬롯 배정 ---
-      const aRef = ref(db, `rooms/${roomCode}/players/A`);
-      const bRef = ref(db, `rooms/${roomCode}/players/B`);
-      const aSnap = await get(aRef);
-      const bSnap = await get(bRef);
-
-      // 방장이면 A, 아니면 B가 비어있을 때 B
-      if (hostUid === myUid) {
-        // A가 없으면 내가 A로
-        if (!aSnap.exists()) await set(aRef, { name: nickname, uid: myUid });
-        myRole = 'A';
-      } else {
-        if (!bSnap.exists()) {
-          await set(bRef, { name: nickname, uid: myUid }); // 규칙상 B는 비어있을 때 누구나 1회 작성 가능
-          myRole = 'B';
-        } else {
-          // 이미 B가 있으면 내가 B 자격인지 확인(같은 uid로 재입장)
-          if (bSnap.val()?.uid === myUid) {
-            myRole = 'B';
-          } else if (aSnap.exists() && aSnap.val()?.uid === myUid) {
-            myRole = 'A';
-          } else {
-            alert('입장 가능한 자리가 없습니다.');
-            return;
-          }
-        }
-      }
-
-      // 초기 필드 보정(객체 경로로만 업데이트: 루트 업데이트 금지)
-      const patch = {};
-      if (!Array.isArray(data.calledNumbers)) patch.calledNumbers = [];
-      if (typeof data.turn !== 'string') patch.turn = 'A';
-      if (data.status !== 'lobby') patch.status = 'lobby';
-      if (Object.keys(patch).length) await update(roomRef, patch);
-
-      // 준비/점수(개인 키에만 기록 — 규칙 허용)
+      // ready/scores 세팅
       await set(ref(db, `rooms/${roomCode}/ready/${myUid}`), true);
       await set(ref(db, `rooms/${roomCode}/scores/${myUid}`), 0);
 
-      // 접속 종료 시 정리(개인 영역만)
+      // 접속 종료 시 정리(선택)
+      onDisconnect(ref(db, `rooms/${roomCode}/players/${myUid}`)).remove();
       onDisconnect(ref(db, `rooms/${roomCode}/ready/${myUid}`)).remove();
       onDisconnect(ref(db, `rooms/${roomCode}/scores/${myUid}`)).remove();
 
@@ -204,10 +189,8 @@
         cell.className = 'cell';
         cell.innerText = num;
         cell.onclick = async () => {
-          if (!myUid || !myRole) return;
-
-          // 내 차례인지 확인
-          if (turn !== myRole) return;
+          if (myUid == null) return;
+          if (myTurn !== currentTurn) return; // 내 차례가 아니면 무시
 
           const number = num;
           $('number-sound').play().catch(()=>{});
@@ -219,21 +202,26 @@
             return;
           }
 
-          // 다음 턴 계산(A↔B)
-          const nextTurn = (myRole === 'A') ? 'B' : 'A';
-          const newList = [...calledNumbers, number];
+          // 턴 진행
+          const orderSnap = await get(ref(db, `rooms/${roomCode}/playersOrder`));
+          const order = orderSnap.val() || [];
+          const nextTurn = order.length ? (currentTurn + 1) % order.length : 0;
 
-          // 방 상태 갱신(부모 경로지만 A/B만 허용되므로 규칙 충족)
+          const newList = calledNumbers.includes(number)
+            ? calledNumbers
+            : [...calledNumbers, number];
+
           await update(ref(db, `rooms/${roomCode}`), {
-            turn: nextTurn,
-            lastMove: { number, by: myUid, at: Date.now() },
-            calledNumbers: newList
+            currentTurn: nextTurn,
+            lastNumber: number,
+            calledNumbers: newList,
+            lastCaller: myUid
           });
         };
         boardEl.appendChild(cell);
       });
 
-      // 이미 부른 숫자 초기 마킹
+      // 이미 부른 숫자가 있으면 초기 마킹
       if (calledNumbers.length) {
         const cells = document.querySelectorAll('.cell');
         cells.forEach(c => {
@@ -259,6 +247,7 @@
 
       $('bingo-count').innerText = `빙고: ${bingo}줄`;
 
+      // 새 줄이 생겼을 때만 소리
       if (bingo > previousBingoCount) $('bingo-sound').play().catch(()=>{});
       previousBingoCount = bingo;
 
@@ -277,23 +266,25 @@
       const roomRef = ref(db, `rooms/${roomCode}`);
       onValue(roomRef, snapshot => {
         const data = snapshot.val() || {};
-        const players = data.players || {};
-        const resolveName = (roleOrUid) => {
-          if (roleOrUid === 'A' || roleOrUid === 'B') return players?.[roleOrUid]?.name || '...';
-          // uid 점수판 표시용
-          const matchRole = (players.A?.uid === roleOrUid) ? 'A'
-                            : (players.B?.uid === roleOrUid) ? 'B' : null;
-          return matchRole ? players[matchRole].name : '...';
-        };
+        const playersMap = data.players || {};
+        const resolveName = (uid) => playersMap?.[uid]?.name || '...';
 
-        turn = typeof data.turn === 'string' ? data.turn : 'A';
+        currentTurn = data.currentTurn || 0;
         calledNumbers = Array.isArray(data.calledNumbers) ? data.calledNumbers : [];
+
+        // 현재 내 턴 인덱스 재계산(참가자 변화 대응)
+        const order = data.playersOrder || [];
+        myTurn = order.indexOf(myUid);
 
         // 우승 처리
         if (data.winner) {
           if (data.winner === myUid) $('win-sound').play().catch(()=>{});
           $('turn-info').innerText = `🎉 우승자: ${resolveName(data.winner)} 님이 빙고 5줄로 승리!`;
+
+          // 클릭 막기
           document.querySelectorAll('.cell').forEach(cell => cell.style.pointerEvents = 'none');
+
+          // 잠시 후 방 삭제 → 로비로 이동
           setTimeout(() => {
             alert("게임이 종료되어 방이 삭제되었습니다.");
             remove(ref(db, `rooms/${roomCode}`)).then(() => {
@@ -301,7 +292,9 @@
             });
           }, 5000);
         } else {
-          $('turn-info').innerText = `현재 차례: ${resolveName(turn)}`;
+          // 정상 진행: 현재 차례 표시
+          const uidTurn = order[currentTurn];
+          $('turn-info').innerText = `현재 차례: ${resolveName(uidTurn)}`;
         }
 
         // 호출 숫자 리스트 UI
@@ -340,27 +333,29 @@
     }
 
     // --- 나가기 ---
-    window.leaveRoom = async function () {
+    window.leaveRoom = function () {
       if (!myUid || !roomCode) return;
 
-      // ready/scores만 정리 (players A/B는 규칙상 아무나 지우지 않도록 유지)
-      await remove(ref(db, `rooms/${roomCode}/ready/${myUid}`));
-      await remove(ref(db, `rooms/${roomCode}/scores/${myUid}`));
+      const playerRef = ref(db, `rooms/${roomCode}/players/${myUid}`);
+      const orderRef  = ref(db, `rooms/${roomCode}/playersOrder`);
 
-      // 방장이고 상대가 없다면 방 삭제
-      const roomRef = ref(db, `rooms/${roomCode}`);
-      const snap = await get(roomRef);
-      const data = snap.val() || {};
-      const players = data.players || {};
-      const others =
-        [players.A?.uid, players.B?.uid].filter(u => !!u && u !== myUid);
+      remove(playerRef).then(async () => {
+        const snap = await get(orderRef);
+        const order = snap.val() || [];
+        const newOrder = order.filter(uid => uid !== myUid);
+        await set(orderRef, newOrder);
+        await remove(ref(db, `rooms/${roomCode}/ready/${myUid}`));
+        await remove(ref(db, `rooms/${roomCode}/scores/${myUid}`));
 
-      if (data.hostUid === myUid && others.length === 0) {
-        await remove(roomRef);
-      }
+        // 방에 아무도 없으면 방 삭제
+        const pSnap = await get(ref(db, `rooms/${roomCode}/players`));
+        if (!pSnap.exists() || Object.keys(pSnap.val()).length === 0) {
+          await remove(ref(db, `rooms/${roomCode}`));
+        }
 
-      alert("방에서 나갑니다.");
-      window.location.href = "index.html";
+        alert("방에서 나갑니다.");
+        window.location.href = "index.html";
+      });
     };
 
     // --- 모달 ---
@@ -377,7 +372,7 @@
       <p>
         ✅ 1. 닉네임을 입력 후 입장하세요.<br>
         ✅ 2. 각자 5x5 빙고판이 랜덤 생성됩니다.<br>
-        ✅ 3. 자신의 차례(상단 표시)에 숫자를 클릭하면 모두가 그 숫자를 마킹합니다.<br>
+        ✅ 3. 자신의 차례에 숫자를 클릭하면 모두가 그 숫자를 마킹합니다.<br>
         ✅ 4. 가로/세로/대각선으로 5줄이 되면 승리합니다.<br>
         ✅ 5. 승리하면 자동으로 방이 종료됩니다.
       </p>
