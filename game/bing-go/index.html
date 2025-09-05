@@ -129,60 +129,58 @@
       });
 
     // --- 방 생성 ---
-    window.createRoom = async function () {
-      const user = await ensureAnonAuth();
-      const code = Math.floor(1000 + Math.random() * 9000).toString();
-      const createdAt = Date.now();
+   // --- 방 생성 ---
+window.createRoom = async function () {
+  const user = await ensureAnonAuth();
+  const code = Math.floor(1000 + Math.random() * 9000).toString();
+  const createdAt = Date.now();
 
-      // ★ hostUid 를 기록 (누가 만든 방인지 추적 가능)
-     await set(ref(db, `rooms/${code}`), {
-  createdAt: Date.now(),
-  hostUid: user.uid,
-  status: 'lobby',
-  players: {},          // map(uid -> {name, joinedAt})
-  playersOrder: [],     // 턴 순서: uid 배열
-  ready: {},            // map(uid -> true/false)
-  scores: {},           // map(uid -> bingoCount)
-  calledNumbers: [],    // 이미 부른 숫자들
-  currentTurn: 0        // 현재 턴 인덱스
-});
+  await set(ref(db, `rooms/${code}`), {
+    createdAt,
+    hostUid: user.uid,
+    status: 'lobby',
+    players: {},
+    playersOrder: [],
+    ready: {},
+    scores: {},
+    calledNumbers: [],
+    currentTurn: 0
+  });
+
+  // ✅ 최신 방 코드 안내 (rules에 맞게 저장)
+  await set(ref(db, 'latestRoom'), {
+    roomCode: code,
+    createdAt,
+    by: user.uid // 있어도 되고 없어도 됨(규칙에서 선택 항목으로 허용)
+  });
+
+  alert(`방이 생성되었습니다! 코드: ${code}`);
+  window.location.href = `game.html?room=${code}`;
+};
 
 
-      alert(`방이 생성되었습니다! 코드: ${code}`);
-      window.location.href = `game.html?room=${code}`;
-    };
+   // --- 자동 입장 (latestRoom 사용) ---
+window.autoJoin = async function () {
+  await ensureAnonAuth();
 
-    // --- 자동 입장 (최근 1분 내 생성된 최신 방 1개 조회) ---
-    window.autoJoin = async function () {
-      await ensureAnonAuth();
+  try {
+    const snap = await get(ref(db, 'latestRoom'));
+    if (!snap.exists()) {
+      alert('최근 생성된 방이 없습니다.');
+      return;
+    }
+    const { roomCode, createdAt } = snap.val();
+    if (!roomCode || Date.now() - createdAt > 60_000) {
+      alert('1분 이내 생성된 방이 없습니다.');
+      return;
+    }
+    window.location.href = `game.html?room=${roomCode}`;
+  } catch (error) {
+    console.error('자동 입장 오류:', error);
+    alert('자동 입장 중 오류가 발생했습니다.');
+  }
+};
 
-      const now = Date.now();
-      const recentQ = query(
-        ref(db, 'rooms'),
-        orderByChild('createdAt'),
-        startAt(now - 60_000),
-        limitToLast(1) // 최신 1개만
-      );
-
-      try {
-        const snap = await get(recentQ);
-        if (!snap.exists()) {
-          alert("1분 이내 생성된 방이 없습니다.");
-          return;
-        }
-        // limitToLast(1)이므로 단 하나만 순회
-        let targetCode = null;
-        snap.forEach(child => { targetCode = child.key; });
-        if (!targetCode) {
-          alert("입장 가능한 방이 없습니다.");
-          return;
-        }
-        window.location.href = `game.html?room=${targetCode}`;
-      } catch (error) {
-        console.error("자동 입장 오류:", error);
-        alert("자동 입장 중 오류가 발생했습니다.");
-      }
-    };
 
     // --- 수동 입장 ---
     window.manualJoin = async function () {
