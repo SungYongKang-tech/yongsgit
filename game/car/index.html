@@ -33,14 +33,12 @@
       transition: box-shadow 120ms ease;
     }
 
-    /* 공통 장애물 스타일 */
     .obstacle {
       position: absolute;
       border-radius: 8px;
       z-index: 2;
       box-shadow: 0 4px 10px rgba(0,0,0,0.25);
     }
-    /* 타입별 시각 효과 */
     .ob-basic { background: #8bc34a; }
     .ob-zigzag { background: #ff7043; }
     .ob-drift  { background: #42a5f5; }
@@ -94,7 +92,6 @@
     .btn:hover { background: #777; }
     .hidden { visibility: hidden; }
 
-    /* 좌하단 컨트롤 */
     #controls {
       position: absolute;
       bottom: 8px; left: 8px;
@@ -102,7 +99,6 @@
       z-index: 1000;
     }
 
-    /* 우하단 상위 점수 보드(상시) */
     #top-scores {
       position: absolute;
       bottom: 8px; right: 8px;
@@ -128,7 +124,6 @@
     <div id="top-scores"></div>
   </div>
 
-  <!-- 게임 종료 후 랭킹 표시 (오버레이 안에서도 그리지만, 독립 구성 유지) -->
   <div id="scoreboard" style="display:none; text-align:center; margin-top:30px;">
     <h2>🏆 상위 10위 점수</h2>
     <ol id="score-list"></ol>
@@ -150,9 +145,9 @@ let gameRunning = true;
 let paused = false;
 let lives = 3;
 let score = 0;
-let isInvincible = false; // 피격 무적시간
-let hasShield = false;    // 방어막 보유
-let shieldTimeout = null; // 방어막 타이머 핸들
+let isInvincible = false;
+let hasShield = false;
+let shieldTimeout = null;
 
 // 플레이어 위치/속도
 let playerX = window.innerWidth / 2 - 30;
@@ -160,14 +155,18 @@ let playerY = window.innerHeight - 120;
 const PLAYER_W = 60, PLAYER_H = 90;
 let moveVX = 0, moveVY = 0;
 
-// 스폰 & 난이도 타이머(accumulator)
+// 루프/타이머 ID
+let lastTs = null;
+let rafId = null;
+
+// 스폰 & 난이도 타이머
 let obstacleSpawnAcc = 0;
 let coinSpawnAcc = 0;
 let heartSpawnAcc = 0;
 let shieldSpawnAcc = 0;
 let scoreAcc = 0;
 let difficultyAcc = 0;
-let heartCooldownAcc = 30000; // 하트 쿨다운 초기화
+let heartCooldownAcc = 30000;
 
 // 스폰 주기/확률/속도 배율
 let obstacleSpawnMs = 1100;
@@ -178,15 +177,15 @@ const HEART_COOLDOWN_MS = 30000;
 let shieldSpawnMs = 5000;
 let speedMul = 1;
 
-// 골드 콤보로 생명 보너스
+// 골드 콤보
 let goldCombo = 0;
 let goldComboTimer = null;
 
-// 엔티티 컨테이너
+// 엔티티
 const obstacles = [];
 const items = [];
 
-// 플레이어 초기 배치
+// 초기 배치
 function syncPlayer() {
   playerEl.style.left = playerX + 'px';
   playerEl.style.top  = playerY + 'px';
@@ -200,14 +199,13 @@ const MAX_PLAYER_SPEED = 5.0;
 function startBGMOnce() { tryPlayBGM(); }
 ['click','touchstart'].forEach(ev=>document.addEventListener(ev,startBGMOnce,{once:true,passive:true}));
 
-game.addEventListener('touchstart', (e) => {
+function handleTouchStart(e){
   const t = e.touches[0]; if (!t) return;
   activeTouchId = t.identifier;
   startTouchX = t.clientX; startTouchY = t.clientY;
   isDragging = true;
-}, { passive: true });
-
-game.addEventListener('touchmove', (e) => {
+}
+function handleTouchMove(e){
   if (!isDragging) return;
   for (const t of e.touches) {
     if (t.identifier === activeTouchId) {
@@ -222,9 +220,8 @@ game.addEventListener('touchmove', (e) => {
       break;
     }
   }
-}, { passive: true });
-
-game.addEventListener('touchend', (e) => {
+}
+function handleTouchEnd(e){
   for (const t of e.changedTouches) {
     if (t.identifier === activeTouchId) {
       isDragging = false;
@@ -232,9 +229,13 @@ game.addEventListener('touchend', (e) => {
       break;
     }
   }
-}, { passive: true });
+}
 
-// ========= 랜덤 헬퍼 =========
+game.addEventListener('touchstart', handleTouchStart, { passive:true });
+game.addEventListener('touchmove',  handleTouchMove,  { passive:true });
+game.addEventListener('touchend',   handleTouchEnd,   { passive:true });
+
+// ========= 랜덤 =========
 function rand(min, max){ return Math.random()*(max-min)+min; }
 
 // ========= 장애물 생성 =========
@@ -336,15 +337,15 @@ function onHit(){
 
 function showSimpleGameOver(){
   overlay.style.display = 'flex';
-  overlay.innerHTML = `\
+  overlay.innerHTML = '\
     <div style="display:flex;flex-direction:column;align-items:center;padding:24px;color:white;">\
       <div style="font-size:2rem;margin-bottom:12px;">💥 GAME OVER 💥</div>\
-      <div style="margin:10px 0 18px;">점수: <strong>${score}</strong></div>\
+      <div style="margin:10px 0 18px;">점수: <strong>'+score+'</strong></div>\
       <div>새로고침(F5) 또는 아래 버튼으로 재시작하세요.</div>\
       <div style="margin-top:16px;">\
         <button class="btn" onclick="location.reload()">🔄 재시작</button>\
       </div>\
-    </div>`;
+    </div>';
 }
 
 function updateShieldIndicator(){
@@ -352,7 +353,6 @@ function updateShieldIndicator(){
 }
 
 // ========= 메인 루프 =========
-let lastTs = null;
 function loop(ts){
   if (lastTs === null) lastTs = ts;
   const dtMs = ts - lastTs;
@@ -460,9 +460,9 @@ function loop(ts){
     }
   }
 
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+rafId = requestAnimationFrame(loop);
 
 // 일시정지
 const pauseBtn = document.getElementById('pause-btn');
@@ -484,30 +484,69 @@ const bgmList = [ new Audio('car01.mp3'), new Audio('car02.mp3'), new Audio('car
 let bgm = bgmList[Math.floor(Math.random()*bgmList.length)];
 bgm.loop = true; bgm.volume = 0.6;
 function tryPlayBGM(){ bgm.play().catch(()=>{}); }
-window.bgm = bgm; // ★ 게임오버에서 접근 가능하도록 전역 연결
+window.bgm = bgm;
 
-// 초기 라이프/스코어 UI
+// 초기 UI
 livesEl.textContent = `❤️ x ${lives}`;
 scoreEl.textContent = `점수: ${score}`;
+
+// ========= 완전 종료 =========
+function terminateGame() {
+  // 상태 정지
+  gameRunning = false;
+  paused = true;
+
+  // 루프 중지
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  // 상위 점수 보드 타이머 중지(모듈에서 등록한 전역 값을 사용)
+  if (window.floatingTopTimerId) {
+    clearInterval(window.floatingTopTimerId);
+    window.floatingTopTimerId = null;
+  }
+
+  // 입력 리스너 제거
+  game.removeEventListener('touchstart', handleTouchStart, { passive:true });
+  game.removeEventListener('touchmove',  handleTouchMove,  { passive:true });
+  game.removeEventListener('touchend',   handleTouchEnd,   { passive:true });
+
+  // 사운드 정지
+  try { bgm.pause(); } catch(e){}
+  try { coinSound.pause(); coinSound.currentTime = 0; } catch(e){}
+
+  // UI 고정
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div style="color:white;text-align:center;font-size:2rem;padding:24px">
+      👋 게임이 종료되었습니다.<br/>페이지를 닫거나 새로고침(F5) 해주세요.
+    </div>
+  `;
+
+  // 버튼 비활성화
+  const pauseBtn = document.getElementById('pause-btn');
+  if (pauseBtn) { pauseBtn.disabled = true; pauseBtn.textContent = '⏹'; }
+}
+
+window.terminateGame = terminateGame; // 버튼에서 호출 가능하게 노출
 </script>
 
 <!-- ===================== Firebase(익명 로그인 + 순위) ===================== -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { 
-    getDatabase, ref, get, remove, set, push, query, orderByChild, limitToLast, onValue 
+    getDatabase, ref, get, remove, set, push, query, orderByChild, limitToLast
   } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-  // ★ 추가: 익명 로그인 모듈
-  import {
-    getAuth, onAuthStateChanged, signInAnonymously
-  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+  import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
     authDomain: "number-baseball-aee52.firebaseapp.com",
     databaseURL: "https://number-baseball-aee52-default-rtdb.firebaseio.com",
     projectId: "number-baseball-aee52",
-    storageBucket: "number-baseball-aee52.firebasestorage.app", /* 사용 안 해도 무방 */
+    storageBucket: "number-baseball-aee52.firebasestorage.app",
     messagingSenderId: "998537150772",
     appId: "1:998537150772:web:c937403c219103d491a561"
   };
@@ -516,7 +555,6 @@ scoreEl.textContent = `점수: ${score}`;
   const db  = getDatabase(app);
   const auth = getAuth(app);
 
-  // ★ 익명 로그인 보장
   async function ensureAnonAuth() {
     if (auth.currentUser) return auth.currentUser;
     return new Promise((resolve, reject) => {
@@ -527,32 +565,27 @@ scoreEl.textContent = `점수: ${score}`;
     });
   }
 
-  // ===== 점수 저장/정리 =====
+  // ===== 점수 저장 =====
   async function saveScore(name, score) {
-    await ensureAnonAuth(); // ★ 규칙이 auth 필요할 때 대비
+    await ensureAnonAuth();
     const scoresRef = ref(db, 'carGameScores');
     const newScoreRef = push(scoresRef);
-    await set(newScoreRef, { name, score, timestamp: Date.now(), uid: auth.currentUser?.uid || null });
-    cleanupExtraScores(); // 10개 초과 삭제(비동기)
-  }
-
-  function cleanupExtraScores() {
-    const scoresRef = ref(db, 'carGameScores');
-    get(scoresRef).then(snapshot => {
-      const entries = [];
-      snapshot.forEach(child => {
-        const val = child.val();
-        if (val && typeof val.score === "number") entries.push({ key: child.key, score: val.score });
+    try {
+      await set(newScoreRef, {
+        name,
+        score,
+        timestamp: Date.now(),
+        uid: auth.currentUser?.uid || null
       });
-      entries.sort((a,b)=>b.score-a.score);
-      const extra = entries.slice(10);
-      extra.forEach(entry => remove(ref(db, `carGameScores/${entry.key}`)).catch(()=>{}));
-    }).catch(()=>{});
+    } catch (e) {
+      console.error('랭킹 저장 실패:', e);
+      alert('랭킹 저장에 실패했습니다: ' + e.code);
+    }
   }
 
   // ===== 상위 점수 HTML 생성(1회 조회) =====
   async function generateTopScoresHTML() {
-    await ensureAnonAuth(); // ★ 읽기는 public이어도 일관성 유지
+    await ensureAnonAuth();
     const q = query(ref(db, 'carGameScores'), orderByChild('score'), limitToLast(10));
     const snapshot = await get(q);
     const list = [];
@@ -561,27 +594,27 @@ scoreEl.textContent = `점수: ${score}`;
     return list.map((item,i)=>`<div><strong>${i+1}위</strong>: ${item.name} - ${item.score}점</div>`).join('');
   }
 
-  // 우하단 상시 보드 업데이트 (3초마다)
+  // 우하단 상시 보드 (3초마다)
   async function refreshFloatingTop(){
     try {
       const html = await generateTopScoresHTML();
       const box = document.getElementById('top-scores');
       if (box) box.innerHTML = html || '';
     } catch(e) {
-      // 무시 (일시 네트워크/인증 문제)
+      // 무시
     }
   }
 
-  // 금요일 12시 이후 주간 랭킹 초기화 (클라이언트 기준)
+  // 금요일 12시 이후 주간 랭킹 초기화 (옵션)
   async function resetRankingIfFridayNoon() {
     const now = new Date();
-    const isFriday = now.getDay() === 5; // 0=Sun
+    const isFriday = now.getDay() === 5;
     const hour = now.getHours();
     const today = now.toISOString().slice(0, 10);
     const resetKey = "carRankingReset_" + today;
     if (isFriday && hour >= 12 && !localStorage.getItem(resetKey)) {
       try {
-        await ensureAnonAuth(); // ★ remove 전에 인증
+        await ensureAnonAuth();
         await remove(ref(db, 'carGameScores'));
         localStorage.setItem(resetKey, 'done');
         await refreshFloatingTop();
@@ -592,7 +625,8 @@ scoreEl.textContent = `점수: ${score}`;
   // 초기화: 로그인 보장 후 주기 작업 시작
   ensureAnonAuth().then(()=>{
     refreshFloatingTop();
-    setInterval(refreshFloatingTop, 3000);
+    // 전역에 인터벌 ID를 노출해서 terminateGame()이 해제할 수 있게 함
+    window.floatingTopTimerId = setInterval(refreshFloatingTop, 3000);
     resetRankingIfFridayNoon();
   }).catch(()=>{
     // 로그인 실패시에도 게임은 진행되게 함
@@ -621,7 +655,7 @@ scoreEl.textContent = `점수: ${score}`;
         </div>
         <div style="margin-top: 20px; text-align:center;">
           <button class="btn" onclick="location.reload()">🔄 재시작</button>
-          <button class="btn" onclick="document.getElementById('overlay').innerHTML='<div style=\'color:white;text-align:center;font-size:2rem;\'>👋 게임이 종료되었습니다.<br>새로고침해 주세요.</div>'">❌ 종료</button>
+          <button class="btn" onclick="terminateGame()">❌ 종료</button>
         </div>
       </div>`;
     overlay.style.display = 'flex';
