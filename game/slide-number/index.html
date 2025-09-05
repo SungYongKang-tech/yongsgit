@@ -30,8 +30,9 @@
     /* ===================== Firebase (v9.22.2) ===================== */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getDatabase, ref, set, get, child, remove, onValue
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  getDatabase, ref, set, get, child, remove, onValue, push
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
     // ★ 익명 로그인 추가
     import {
       getAuth, onAuthStateChanged, signInAnonymously
@@ -145,19 +146,17 @@
     }
 
     // ★ 이름을 key로 저장(기존 방식 유지)
-   async function saveRanking(name, timeSec) {
+  async function saveRanking(name, timeSec) {
   await ensureAnonAuth();
-  const key = sanitizeKey(name);
-  if (!key) throw new Error("이름이 비었습니다.");
-  // 기존: 값만 숫자 → 규칙에 따라 막히는 경우가 있어 객체로 저장(더 안전)
   const data = {
     time: timeSec,
-    name: name.trim(),
-    uid: getAuth().currentUser?.uid || null,
+    name: String(name).trim().slice(0, 20),
+    uid: auth.currentUser?.uid || null,
     createdAt: Date.now()
   };
-  return set(ref(db, 'puzzleRankings/' + key), data);
+  return push(ref(db, 'puzzleRankings'), data);
 }
+
 
     async function loadTopRankings() {
   await ensureAnonAuth();
