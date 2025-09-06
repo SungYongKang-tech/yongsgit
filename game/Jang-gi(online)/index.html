@@ -84,6 +84,7 @@
     import { getDatabase, ref, get, set, runTransaction, update, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
+    // --- Firebase ---
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -93,15 +94,15 @@
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:dfe39687717f28b891a561"
     };
-    const app = initializeApp(firebaseConfig);
-    const db  = getDatabase(app);
+    const app  = initializeApp(firebaseConfig);
+    const db   = getDatabase(app);
     const auth = getAuth(app);
 
+    // --- Utils ---
     const meLine = document.getElementById('meLine');
     function sanitizeRoomName(raw){
       return (raw||'').trim().replace(/[.#$/\[\]\/]/g,'-').slice(0,32);
     }
-
     async function ensureAnon(){
       if (auth.currentUser) return auth.currentUser;
       return new Promise((resolve,reject)=>{
@@ -109,72 +110,104 @@
         signInAnonymously(auth).catch(reject);
       });
     }
-    ensureAnon().then(u=>{ meLine.textContent = `UID: ${u.uid.slice(0,8)}…`; }).catch(()=>{ meLine.textContent = '로그인 실패'; });
+    ensureAnon().then(u=>{ meLine.textContent = `UID: ${u.uid.slice(0,8)}…`; })
+                .catch(()=>{ meLine.textContent = '로그인 실패'; });
 
+    // ---- 장기 전용 경로 (완전 분리) ----
+    const NS = 'janggiRooms'; // ← 장기만 사용하는 전용 네임스페이스
+    const r = (room, p='') => ref(db, p ? `${NS}/${room}/${p}` : `${NS}/${room}`);
+
+    // --- UI refs ---
     const btnCreate = document.getElementById('btnCreate');
     const btnJoin   = document.getElementById('btnJoin');
 
+    // --- Create Room ---
     btnCreate.onclick = async ()=>{
-      await ensureAnon();
-      const room = sanitizeRoomName(document.getElementById('roomInput').value);
-      if(!room){ alert('방 이름을 적어주세요.'); return; }
+      try{
+        await ensureAnon();
+        const room = sanitizeRoomName(document.getElementById('roomInput').value);
+        if(!room){ alert('방 이름을 적어주세요.'); return; }
 
-      const mySide     = document.getElementById('mySide').value; // 'cho' | 'han'
-      const choPattern = document.getElementById('choPattern').value;
-      const hanPattern = document.getElementById('hanPattern').value;
-      const creatorRole = (mySide === 'cho') ? 0 : 1;
+        const mySide     = document.getElementById('mySide').value; // 'cho' | 'han'
+        const choPattern = document.getElementById('choPattern').value;
+        const hanPattern = document.getElementById('hanPattern').value;
+        const creatorRole = (mySide === 'cho') ? 0 : 1;
 
-      const roomRef = ref(db, `janggi/rooms/${room}`);
-      const snap = await get(roomRef);
-      if (snap.exists()){ alert('이미 존재하는 방입니다. 다른 이름을 사용해주세요.'); return; }
+        const roomRef = r(room);
+        const snap = await get(roomRef);
+        if (snap.exists()){
+          alert('이미 존재하는 방입니다. 다른 이름을 사용해주세요.');
+          return;
+        }
 
-      const uid = auth.currentUser.uid;
-      const now = Date.now();
-      await set(roomRef, {
-        name: room,
-        createdAt: now,
-        status: 'waiting',
-        playerCount: 1,
-        settings: {
-          creatorRole,
-          choPattern,
-          hanPattern,
-          firstTurn: 'cho'
-        },
-        players: { [uid]: { role: creatorRole, joinedAt: now } }
-      });
-      onDisconnect(ref(db, `janggi/rooms/${room}/players/${uid}`)).remove();
-      location.href = `game.html?room=${encodeURIComponent(room)}`;
+        const uid = auth.currentUser.uid;
+        const now = Date.now();
+
+        await set(roomRef, {
+          name: room,
+          createdAt: now,
+          status: 'waiting',
+          playerCount: 1,
+          settings: {
+            creatorRole,
+            choPattern,
+            hanPattern,
+            firstTurn: 'cho'
+          },
+          players: { [uid]: { role: creatorRole, joinedAt: now } }
+        });
+
+        onDisconnect(r(room, `players/${uid}`)).remove();
+        location.href = `game.html?room=${encodeURIComponent(room)}`;
+      }catch(e){
+        console.error('방 생성 실패:', e);
+        alert((e && e.message) ? e.message : '방 생성 중 오류가 발생했습니다.');
+      }
     };
 
+    // --- Join Room ---
     btnJoin.onclick = async ()=>{
-      await ensureAnon();
-      const room = sanitizeRoomName(document.getElementById('roomInput').value);
-      if(!room){ alert('방 이름을 적어주세요.'); return; }
+      try{
+        await ensureAnon();
+        const room = sanitizeRoomName(document.getElementById('roomInput').value);
+        if(!room){ alert('방 이름을 적어주세요.'); return; }
 
-      const playersRef = ref(db, `janggi/rooms/${room}/players`);
-      const roomRef    = ref(db, `janggi/rooms/${room}`);
-      const exist = await get(roomRef);
-      if(!exist.exists()){ alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.'); return; }
+        const roomRef    = r(room);
+        const playersRef = r(room, 'players');
+        const exist = await get(roomRef);
+        if(!exist.exists()){
+          alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.');
+          return;
+        }
 
-      const uid = auth.currentUser.uid;
-      let myRole = 1;
-      const res = await runTransaction(playersRef, (players)=>{
-        players = players || {};
-        const ids = Object.keys(players);
-        if (!players[uid] && ids.length >= 2) return; // 꽉 찼음
-        if (players[uid]) return players;
-        const taken = Object.values(players).map(p=>p.role);
-        myRole = taken.includes(0) ? 1 : 0;
-        players[uid] = { role: myRole, joinedAt: Date.now() };
-        return players;
-      });
-      if (!res.committed){ alert('이미 2명이 입장했습니다.'); return; }
+        const uid = auth.currentUser.uid;
+        let myRole = 1;
+        const res = await runTransaction(playersRef, (players)=>{
+          players = players || {};
+          const ids = Object.keys(players);
+          if (!players[uid] && ids.length >= 2) return; // 꽉 찼음(커밋 X)
+          if (players[uid]) return players;             // 이미 입장함(변경 X)
 
-      const cnt = Object.keys(res.snapshot.val()||{}).length;
-      await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
-      onDisconnect(ref(db, `janggi/rooms/${room}/players/${uid}`)).remove();
-      location.href = `game.html?room=${encodeURIComponent(room)}`;
+          const taken = Object.values(players).map(p=>p.role);
+          myRole = taken.includes(0) ? 1 : 0;           // 0 없으면 0, 있으면 1
+          players[uid] = { role: myRole, joinedAt: Date.now() };
+          return players;
+        });
+
+        if (!res.committed){
+          alert('이미 2명이 입장했습니다.');
+          return;
+        }
+
+        const cnt = Object.keys(res.snapshot.val()||{}).length;
+        await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
+
+        onDisconnect(r(room, `players/${uid}`)).remove();
+        location.href = `game.html?room=${encodeURIComponent(room)}`;
+      }catch(e){
+        console.error('방 참여 실패:', e);
+        alert((e && e.message) ? e.message : '방 참여 중 오류가 발생했습니다.');
+      }
     };
   </script>
 </body>
