@@ -132,7 +132,6 @@
         soloBtn.disabled = false;
         roomInfo.textContent = "";
       } else {
-        // 최초엔 null로 들어올 수 있으므로 로그인 시도
         try {
           roomInfo.textContent = "익명 로그인 중...";
           await signInAnonymously(auth);
@@ -150,14 +149,14 @@
       const opponent = playerRole === "A" ? "B" : "A";
 
       // 상대 이름 감지 → 상단 레이블 갱신
-      const oppRef = ref(db, `rooms/${roomCodeLocal}/players/${opponent}/name`);
+      const oppRef = ref(db, `nbb/rooms/${roomCodeLocal}/players/${opponent}/name`);
       onValue(oppRef, (oppSnap) => {
         const oppName = oppSnap.exists() ? oppSnap.val() : "(상대 대기 중)";
         roleLabel.innerText = `${playerName} (나) vs ${oppName} - 야구 대전 시작!`;
       });
 
       // 턴 감시 → 내 턴일 때만 버튼 활성화
-      const turnRef = ref(db, `rooms/${roomCodeLocal}/turn`);
+      const turnRef = ref(db, `nbb/rooms/${roomCodeLocal}/turn`);
       onValue(turnRef, (snapshot) => {
         const currentTurn = snapshot.val();
         if (soloMode) return;
@@ -171,8 +170,8 @@
       });
 
       // 양쪽 비밀 숫자 감시 → 둘 다 입력되면 추측 UI 노출
-      const mySecretRef = ref(db, `rooms/${roomCodeLocal}/players/${playerRole}/secret`);
-      const opponentSecretRef = ref(db, `rooms/${roomCodeLocal}/players/${opponent}/secret`);
+      const mySecretRef = ref(db, `nbb/rooms/${roomCodeLocal}/players/${playerRole}/secret`);
+      const opponentSecretRef = ref(db, `nbb/rooms/${roomCodeLocal}/players/${opponent}/secret`);
 
       async function updateGuessVisibility() {
         const [mySnap, oppSnap] = await Promise.all([get(mySecretRef), get(opponentSecretRef)]);
@@ -185,7 +184,7 @@
       onValue(opponentSecretRef, updateGuessVisibility);
 
       // 승자 감지
-      const winnerRef = ref(db, `rooms/${roomCodeLocal}/winner`);
+      const winnerRef = ref(db, `nbb/rooms/${roomCodeLocal}/winner`);
       onValue(winnerRef, (snap) => {
         if (snap.exists() && snap.val() !== "") {
           const winner = snap.val();
@@ -227,7 +226,7 @@
       if (!name) return alert("이름을 입력해야 합니다.");
       playerName = name;
 
-      const roomRef = ref(db, 'rooms/' + roomCode);
+      const roomRef = ref(db, 'nbb/rooms/' + roomCode);
       await set(roomRef, {
         players: {
           A: { name: playerName, uid }
@@ -238,9 +237,11 @@
         createdBy: uid
       });
 
-      await set(ref(db, 'latestRoom'), {
+      // latestRoom에는 규칙 검증용 by: uid 포함
+      await set(ref(db, 'nbb/latestRoom'), {
         roomCode,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        by: uid
       });
 
       playerRole = "A";
@@ -250,7 +251,7 @@
     async function joinRoom() {
       if (!auth.currentUser) return alert("로그인 후 이용해 주세요.");
 
-      const latestRef = ref(db, 'latestRoom');
+      const latestRef = ref(db, 'nbb/latestRoom');
       const latestSnap = await get(latestRef);
 
       if (!latestSnap.exists()) {
@@ -271,7 +272,7 @@
       if (!name) return alert("이름을 입력해야 합니다.");
       playerName = name;
 
-      const roomRef = ref(db, `rooms/${roomCode}`);
+      const roomRef = ref(db, `nbb/rooms/${roomCode}`);
       const snapshot = await get(roomRef);
       if (!snapshot.exists()) return alert("해당 방이 존재하지 않습니다.");
 
@@ -281,7 +282,7 @@
         return;
       }
 
-      await set(ref(db, `rooms/${roomCode}/players/B`), { name: playerName, uid });
+      await set(ref(db, `nbb/rooms/${roomCode}/players/B`), { name: playerName, uid });
       playerRole = "B";
       enterGame();
     }
@@ -301,18 +302,18 @@
         alert("서로 다른 숫자 3자리로 입력하세요.");
         return;
       }
-      const myPath = `rooms/${roomCode}/players/${playerRole}/secret`;
+      const myPath = `nbb/rooms/${roomCode}/players/${playerRole}/secret`;
       await set(ref(db, myPath), val);
       secretSection.style.display = "none";
 
       // 양쪽 모두 입력 시 A부터 시작
       const opponent = playerRole === "A" ? "B" : "A";
       const [mySnap, oppSnap] = await Promise.all([
-        get(ref(db, `rooms/${roomCode}/players/${playerRole}/secret`)),
-        get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`))
+        get(ref(db, `nbb/rooms/${roomCode}/players/${playerRole}/secret`)),
+        get(ref(db, `nbb/rooms/${roomCode}/players/${opponent}/secret`))
       ]);
       if (mySnap.exists() && oppSnap.exists()) {
-        await update(ref(db, `rooms/${roomCode}`), { turn: "A" });
+        await update(ref(db, `nbb/rooms/${roomCode}`), { turn: "A" });
       }
     }
 
@@ -328,7 +329,7 @@
         secret = soloSecret;
       } else {
         const opponent = playerRole === "A" ? "B" : "A";
-        const secretSnap = await get(ref(db, `rooms/${roomCode}/players/${opponent}/secret`));
+        const secretSnap = await get(ref(db, `nbb/rooms/${roomCode}/players/${opponent}/secret`));
         if (!secretSnap.exists()) {
           alert("상대가 아직 비밀 숫자를 등록하지 않았습니다.");
           return;
@@ -349,7 +350,7 @@
       div.className = "log-entry";
       div.innerHTML = `
         ${guessCount}번 힌트&nbsp;&nbsp;
-        <span style="color:blue; font-weight:bold;">${val.split('').join(' ')}</span>
+        <span style="font-weight:bold;">${val.split('').join(' ')}</span>
         &nbsp;&nbsp;
         <span style="color:red; font-weight:bold;">${result}</span>
       `;
@@ -366,12 +367,12 @@
         if (soloMode) {
           guessSection.classList.add("hidden");
         } else {
-          await update(ref(db, `rooms/${roomCode}`), { winner: playerName });
+          await update(ref(db, `nbb/rooms/${roomCode}`), { winner: playerName });
 
           // 5초 후 방 삭제
           setTimeout(() => {
-            const roomRef = ref(db, `rooms/${roomCode}`);
-            remove(roomRef).catch(err => console.warn("방 삭제 실패:", err));
+            const rmRef = ref(db, `nbb/rooms/${roomCode}`);
+            remove(rmRef).catch(err => console.warn("방 삭제 실패:", err));
           }, 5000);
         }
       }
@@ -382,7 +383,7 @@
       // 정답이 아니고 멀티모드면 턴 변경
       if (strike !== 3 && !soloMode) {
         const nextTurn = playerRole === "A" ? "B" : "A";
-        await update(ref(db, `rooms/${roomCode}`), { turn: nextTurn });
+        await update(ref(db, `nbb/rooms/${roomCode}`), { turn: nextTurn });
       }
     }
 
@@ -413,7 +414,6 @@
 
     // --- UI Events ---
     document.addEventListener("DOMContentLoaded", () => {
-      // 버튼 이벤트 연결
       createBtn.addEventListener("click", createRoom);
       joinBtn.addEventListener("click", joinRoom);
       soloBtn.addEventListener("click", startSoloGame);
