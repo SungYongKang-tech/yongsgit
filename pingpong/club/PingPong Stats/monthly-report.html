@@ -347,12 +347,26 @@ thead th, tbody td { text-align: center; }
     });
 
     if(sortMode==='winrate'){
-      rows.sort((a,b)=>{
-        const ar = isFinite(a.monthRate) ? a.monthRate : -1;
-        const br = isFinite(b.monthRate) ? b.monthRate : -1;
-        return (br-ar) || (b.games-a.games) || a.name.localeCompare(b.name,'ko');
-      });
-    }else if(sortMode==='games'){
+  rows.sort((a, b) => {
+    // 우선순위:
+    // 1. 5게임 이상 vs 이하: 5게임 이상이 우선
+    const a5 = a.games >= 5 ? 1 : 0;
+    const b5 = b.games >= 5 ? 1 : 0;
+    if (a5 !== b5) return b5 - a5;
+
+    // 2. 승률 (유효한 값일 때)
+    const ar = isFinite(a.monthRate) ? a.monthRate : -1;
+    const br = isFinite(b.monthRate) ? b.monthRate : -1;
+    if (br !== ar) return br - ar;
+
+    // 3. 게임 횟수
+    if (b.games !== a.games) return b.games - a.games;
+
+    // 4. 이름 (가나다순)
+    return a.name.localeCompare(b.name, 'ko');
+  });
+}
+else if(sortMode==='games'){
       rows.sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
     }else{
       rows.sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
