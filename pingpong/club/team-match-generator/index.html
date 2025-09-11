@@ -108,6 +108,7 @@
 
   <div class="action-buttons">
     <button onclick="assignTeams()">팀 자동 배정</button>
+    <button onclick="startManualTeamAssign()">팀 수동 배정</button> <!-- ⬅️ 이 줄 추가 -->
     <button onclick="resetAll()">전체 초기화</button>
     <button id="saveTeamImageButton" onclick="saveTeamsAsImage()">팀 이미지 저장</button>
     <button onclick="uploadTeamsToFirebase()" style="background-color:#f57f17;">경기 시작</button>
@@ -410,6 +411,148 @@
 
     // 최초 렌더
     renderPlayers();
+
+    // ✅ 수동 팀 구성 상태
+let manualTeams = [];
+let manualAssigned = new Set(); // 중복 배정 방지
+
+// ✅ 수동 배정 시작 (팀장 선정 불필요)
+function startManualTeamAssign() {
+  // 참가자 풀: 선택된 선수가 있으면 그들만, 없으면 전체 선수
+  const poolIndices = selected.length ? [...selected] : allPlayers.map((_, i) => i);
+  if (poolIndices.length < 2) {
+    alert("선수가 2명 이상 있어야 합니다. (참석자 선택이 없으면 전체 명단을 사용합니다)");
+    return;
+  }
+
+  const count = parseInt(prompt("몇 팀으로 구성하시겠습니까? (예: 4)"));
+  if (isNaN(count) || count < 2 || count > 8) {
+    alert("2~8 사이의 숫자를 입력해주세요.");
+    return;
+  }
+
+  // 팀 이름 입력
+  const names = [];
+  for (let i = 1; i <= count; i++) {
+    const name = prompt(`팀 ${i} 이름을 입력하세요 (예: 우리팀A, 초청팀B)`, i <= 2 ? `우리팀${String.fromCharCode(64+i)}` : `초청팀${String.fromCharCode(62+i)}`);
+    if (!name) return;
+    names.push(name.trim());
+  }
+
+  // 상태 초기화
+  manualTeams = names.map(n => ({ name: n, members: [], sum: 0 }));
+  manualAssigned.clear();
+
+  renderManualTeamUI(poolIndices);
+}
+
+// ✅ 수동 배정 UI 렌더링
+function renderManualTeamUI(poolIndices) {
+  const teamBox = document.getElementById("teams");
+  teamBox.innerHTML = "";
+
+  // 팀 카드
+  manualTeams.forEach((team, teamIdx) => {
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.id = `team-${teamIdx}`;
+    div.innerHTML = `
+      <h3>${team.name}</h3>
+      <ul id="team-list-${teamIdx}"></ul>
+      <p><small>부수합: <span id="team-sum-${teamIdx}">0</span></small></p>
+    `;
+    teamBox.appendChild(div);
+  });
+
+  // 참가자 목록 영역을 "수동배정 모드"로 전환
+  const list = document.getElementById("playerList");
+  list.innerHTML = "";
+
+  poolIndices.forEach((idx) => {
+    const p = allPlayers[idx];
+
+    // 한 번 배정되면 목록에서 제거
+    if (manualAssigned.has(idx)) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.alignItems = "center";
+    wrapper.style.gap = "8px";
+    wrapper.style.margin = "4px 6px";
+
+    const tag = document.createElement("div");
+    tag.className = "player";
+    tag.textContent = `${p.name}(${p.level}부)`;
+
+    const btns = document.createElement("div");
+    manualTeams.forEach((team, i) => {
+      const btn = document.createElement("button");
+      btn.textContent = `→ ${team.name}`;
+      btn.style.fontSize = "12px";
+      btn.onclick = () => {
+        // 중복 방지
+        if (manualAssigned.has(idx)) return;
+
+        team.members.push(p);
+        team.sum += p.level;
+        manualAssigned.add(idx);
+
+        renderTeamMembers(i);
+        wrapper.style.opacity = "0.4";
+        wrapper.style.pointerEvents = "none";
+      };
+      btns.appendChild(btn);
+    });
+
+    wrapper.appendChild(tag);
+    wrapper.appendChild(btns);
+    list.appendChild(wrapper);
+  });
+
+  // 저장/업로드 버튼 (teams 아래)
+  const controls = document.createElement("div");
+  controls.style.display = "flex";
+  controls.style.gap = "10px";
+  controls.style.justifyContent = "center";
+  controls.style.marginTop = "10px";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "✅ 수동 팀 저장";
+  saveBtn.onclick = () => {
+    latestTeams = manualTeams.map(t => ({
+      // 업로드 구조와 호환: leader.name을 팀 이름으로 사용
+      leader: { name: t.name },
+      members: t.members,
+      sum: t.sum
+    }));
+    alert("저장 완료! 이제 '경기 시작'을 누르면 저장된 팀으로 진행됩니다.");
+  };
+
+  const uploadBtn = document.createElement("button");
+  uploadBtn.textContent = "⚡ 저장 후 즉시 경기 시작";
+  uploadBtn.onclick = () => {
+    latestTeams = manualTeams.map(t => ({
+      leader: { name: t.name },
+      members: t.members,
+      sum: t.sum
+    }));
+    uploadTeamsToFirebase();
+  };
+
+  controls.appendChild(saveBtn);
+  controls.appendChild(uploadBtn);
+  teamBox.appendChild(controls);
+}
+
+// ✅ 팀 카드 내용 갱신
+function renderTeamMembers(teamIdx) {
+  const ul = document.getElementById(`team-list-${teamIdx}`);
+  ul.innerHTML = manualTeams[teamIdx].members
+    .map(p => `<li>${p.name}(${p.level}부)</li>`)
+    .join('');
+  document.getElementById(`team-sum-${teamIdx}`).textContent = manualTeams[teamIdx].sum;
+}
+
   </script>
 </body>
 </html>
