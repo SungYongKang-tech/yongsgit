@@ -382,12 +382,19 @@
 
       const firebaseData = {};
       latestTeams.forEach((team, idx) => {
-        firebaseData[`team${idx + 1}`] = {
-          teamName: `${team.leader.name} 팀`,
-          teamLeader: team.leader.name,
-          players: [team.leader, ...team.members]
-        };
-      });
+   const isAuto = team.leader && typeof team.leader.level === "number";
+   const teamName = team.teamName
+     ? team.teamName
+     : (isAuto ? `${team.leader.name} 팀` : `팀${idx + 1}`);
+   const teamLeader = isAuto ? team.leader.name : (team.teamLeader || "");
+   const players = isAuto ? [team.leader, ...team.members] : team.members;
+
+   firebaseData[`team${idx + 1}`] = {
+     teamName,
+     teamLeader,
+     players
+   };
+ });
 
       db.ref("teams").set(firebaseData)
         .then(() => {
@@ -493,7 +500,7 @@ function renderManualTeamUI(poolIndices) {
         // 중복 방지
         if (manualAssigned.has(idx)) return;
 
-        team.members.push(p);
+        team.members.push({ name: p.name, level: p.level });
         team.sum += p.level;
         manualAssigned.add(idx);
 
@@ -519,11 +526,10 @@ function renderManualTeamUI(poolIndices) {
   const saveBtn = document.createElement("button");
   saveBtn.textContent = "✅ 수동 팀 저장";
   saveBtn.onclick = () => {
-    latestTeams = manualTeams.map(t => ({
-      // 업로드 구조와 호환: leader.name을 팀 이름으로 사용
-      leader: { name: t.name },
-      members: t.members,
-      sum: t.sum
+   latestTeams = manualTeams.map(t => ({
+   teamName: t.name,           // ✅ 팀 이름은 별도로 저장
+   members: t.members,         // ✅ 선수만 들어감 (name, level 갖춘 배열)
+   sum: t.sum
     }));
     alert("저장 완료! 이제 '경기 시작'을 누르면 저장된 팀으로 진행됩니다.");
   };
@@ -532,9 +538,9 @@ function renderManualTeamUI(poolIndices) {
   uploadBtn.textContent = "⚡ 저장 후 즉시 경기 시작";
   uploadBtn.onclick = () => {
     latestTeams = manualTeams.map(t => ({
-      leader: { name: t.name },
-      members: t.members,
-      sum: t.sum
+     teamName: t.name,           // ✅ 팀 이름은 별도로 저장
+     members: t.members,         // ✅ 선수만 들어감 (name, level 갖춘 배열)
+     sum: t.sum
     }));
     uploadTeamsToFirebase();
   };
