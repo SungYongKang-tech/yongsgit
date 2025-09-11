@@ -108,8 +108,7 @@
 
   <div class="action-buttons">
     <button onclick="assignTeams()">팀 자동 배정</button>
-  <button onclick="startManualTeamAssign()">팀 수동 배정</button> <!-- ✅ 추가 -->
-  <button onclick="resetAll()">전체 초기화</button>
+    <button onclick="resetAll()">전체 초기화</button>
     <button id="saveTeamImageButton" onclick="saveTeamsAsImage()">팀 이미지 저장</button>
     <button onclick="uploadTeamsToFirebase()" style="background-color:#f57f17;">경기 시작</button>
   </div>
@@ -227,91 +226,6 @@
         }
       });
     }
-
-    // ✅ 수동 팀 구성용 전역 변수
-let manualTeams = [];
-
-function startManualTeamAssign() {
-  const count = parseInt(prompt("몇 팀으로 구성하시겠습니까? (예: 4)"));
-  if (isNaN(count) || count < 2 || count > 6) {
-    alert("2~6 사이의 숫자를 입력해주세요.");
-    return;
-  }
-
-  const names = [];
-  for (let i = 1; i <= count; i++) {
-    const name = prompt(`팀 ${i} 이름을 입력하세요 (예: 우리팀A, 초청팀B)`);
-    if (!name) return;
-    names.push(name);
-  }
-
-  manualTeams = names.map(n => ({ name: n, members: [], sum: 0 }));
-  renderManualTeamUI();
-}
-
-function renderManualTeamUI() {
-  const teamBox = document.getElementById("teams");
-  teamBox.innerHTML = "";
-
-  manualTeams.forEach((team, teamIdx) => {
-    const div = document.createElement("div");
-    div.className = "team-card";
-    div.id = `team-${teamIdx}`;
-    div.innerHTML = `
-      <h3>${team.name}</h3>
-      <ul id="team-list-${teamIdx}"></ul>
-      <p><small>부수합: <span id="team-sum-${teamIdx}">0</span></small></p>
-    `;
-    teamBox.appendChild(div);
-  });
-
-  const list = document.getElementById("playerList");
-  list.innerHTML = "";
-  selected.forEach((idx) => {
-    const p = allPlayers[idx];
-    const wrapper = document.createElement("div");
-    wrapper.className = "player";
-    wrapper.textContent = `${p.name}(${p.level}부)`;
-
-    const btns = document.createElement("div");
-    manualTeams.forEach((team, i) => {
-      const btn = document.createElement("button");
-      btn.textContent = `→ ${team.name}`;
-      btn.style.fontSize = "12px";
-      btn.onclick = () => {
-  team.members.push(p);
-  team.sum += p.level;
-  renderTeamMembers(i);
-  wrapper.style.display = "none";  // ✅ 전체 블럭을 숨기도록 수정
-};
-
-      btns.appendChild(btn);
-    });
-
-    list.appendChild(wrapper);
-    list.appendChild(btns);
-  });
-
-  // 저장 버튼
-  const saveBtn = document.createElement("button");
-  saveBtn.textContent = "⚡ 수동 팀 저장 및 업로드";
-  saveBtn.onclick = () => {
-    latestTeams = manualTeams.map(t => ({
-      leader: { name: t.name }, members: t.members, sum: t.sum
-    }));
-    uploadTeamsToFirebase();
-  };
-  teamBox.appendChild(saveBtn);
-}
-
-function renderTeamMembers(teamIdx) {
-  const ul = document.getElementById(`team-list-${teamIdx}`);
-  ul.innerHTML = manualTeams[teamIdx].members
-    .map(p => `<li>${p.name}(${p.level}부)</li>`)
-    .join('');
-  document.getElementById(`team-sum-${teamIdx}`).textContent = manualTeams[teamIdx].sum;
-}
-
 
     function toggleSelect(i, el) {
       const player = allPlayers[i];
