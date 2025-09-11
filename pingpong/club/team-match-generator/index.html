@@ -422,6 +422,28 @@
     // ✅ 수동 팀 구성 상태
 let manualTeams = [];
 let manualAssigned = new Set(); // 중복 배정 방지
+// === 팀 색상 팔레트 & 가독성 보정 ===
+const TEAM_COLORS = [
+  "#1976d2", // 파랑
+  "#2e7d32", // 초록
+  "#ef6c00", // 주황
+  "#6a1b9a", // 보라
+  "#c62828", // 빨강
+  "#00897b", // 청록
+  "#283593", // 인디고
+  "#f9a825"  // 노랑
+];
+
+// 배경색에 맞춰 글자색(검/흰) 결정
+function contrastText(hex) {
+  const c = hex.replace("#",""); 
+  const r = parseInt(c.substr(0,2),16);
+  const g = parseInt(c.substr(2,2),16);
+  const b = parseInt(c.substr(4,2),16);
+  // YIQ 대비
+  const yiq = (r*299 + g*587 + b*114)/1000;
+  return yiq >= 128 ? "#000000" : "#ffffff";
+}
 
 // ✅ 수동 배정 시작 (팀장 선정 불필요)
 function startManualTeamAssign() {
@@ -447,7 +469,9 @@ function startManualTeamAssign() {
   }
 
   // 상태 초기화
-  manualTeams = names.map(n => ({ name: n, members: [], sum: 0 }));
+  manualTeams = names.map((n, i) => ({name: n, members: [], sum: 0, color: TEAM_COLORS[i % TEAM_COLORS.length]  // ✅ 팀별 색
+ }));
+
   manualAssigned.clear();
 
   renderManualTeamUI(poolIndices);
@@ -463,8 +487,14 @@ function renderManualTeamUI(poolIndices) {
     const div = document.createElement("div");
     div.className = "team-card";
     div.id = `team-${teamIdx}`;
+    div.style.borderTop = `4px solid ${team.color || '#1976d2'}`;
     div.innerHTML = `
-      <h3>${team.name}</h3>
+      <h3 style="display:flex;align-items:center;gap:8px;">
+       <span style="
+         display:inline-block;width:12px;height:12px;border-radius:3px;
+         background:${team.color || '#1976d2'}"></span>
+       ${team.name}
+     </h3>
       <ul id="team-list-${teamIdx}"></ul>
       <p><small>부수합: <span id="team-sum-${teamIdx}">0</span></small></p>
     `;
@@ -496,6 +526,15 @@ function renderManualTeamUI(poolIndices) {
       const btn = document.createElement("button");
       btn.textContent = `→ ${team.name}`;
       btn.style.fontSize = "12px";
+  // ✅ 팀 색상 적용
+   const bg = team.color || TEAM_COLORS[i % TEAM_COLORS.length];
+   btn.style.backgroundColor = bg;
+   btn.style.color = contrastText(bg);
+  btn.style.border = "1px solid rgba(0,0,0,0.15)";
+   btn.style.padding = "6px 10px";
+   btn.style.borderRadius = "6px";
+   btn.style.cursor = "pointer";
+
       btn.onclick = () => {
         // 중복 방지
         if (manualAssigned.has(idx)) return;
@@ -530,6 +569,7 @@ function renderManualTeamUI(poolIndices) {
    teamName: t.name,           // ✅ 팀 이름은 별도로 저장
    members: t.members,         // ✅ 선수만 들어감 (name, level 갖춘 배열)
    sum: t.sum
+   color: t.color // 옵션
     }));
     alert("저장 완료! 이제 '경기 시작'을 누르면 저장된 팀으로 진행됩니다.");
   };
