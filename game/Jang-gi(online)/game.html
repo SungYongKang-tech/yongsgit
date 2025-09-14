@@ -104,6 +104,109 @@
 </head>
 <body>
   <h1>장기 게임 (온라인)</h1>
+
+  <!-- 기존 HTML 코드에 기능 버튼 추가 및 Firebase 동기화 기능 확장 -->
+<!-- 아래 코드를 <body> 안 적절한 위치에 추가하세요 -->
+<div class="row" id="setupControls">
+  <label>초 배치:
+    <select id="choPattern">
+      <option value="마상마상">마상마상</option>
+      <option value="상마상마">상마상마</option>
+      <option value="마상상마">마상상마</option>
+      <option value="상마마상">상마마상</option>
+    </select>
+  </label>
+  <label>한 배치:
+    <select id="hanPattern">
+      <option value="마상마상">마상마상</option>
+      <option value="상마상마">상마상마</option>
+      <option value="마상상마">마상상마</option>
+      <option value="상마마상">상마마상</option>
+    </select>
+  </label>
+  <button id="startBtn">시작</button>
+  <button id="restartBtn">재시작</button>
+  <button id="endBtn">게임 종료</button>
+</div>
+
+<script type="module">
+// Firebase 전역 db, auth, NS, roomId, roomRef, stateRef는 이미 존재함
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const endBtn = document.getElementById('endBtn');
+const choPatternEl = document.getElementById('choPattern');
+const hanPatternEl = document.getElementById('hanPattern');
+
+const readyRef = ref(db, `${NS}/${roomId}/playersReady/${auth.currentUser.uid}`);
+const readyAllRef = ref(db, `${NS}/${roomId}/playersReady`);
+
+// 시작 버튼 - 본인만 ready true로 설정
+startBtn.onclick = () => {
+  update(roomRef, {
+    settings: {
+      choPattern: choPatternEl.value,
+      hanPattern: hanPatternEl.value,
+      firstTurn: 'cho',
+      creatorRole: myRole
+    }
+  });
+  set(readyRef, true);
+  setMsg('시작 준비 완료. 상대방도 시작 버튼을 눌러야 합니다.');
+};
+
+// 재시작 버튼 - 초기화
+restartBtn.onclick = async () => {
+  if (!confirm('정말 재시작 하시겠습니까?')) return;
+  await update(roomRef, {
+    settings: {
+      choPattern: choPatternEl.value,
+      hanPattern: hanPatternEl.value,
+      firstTurn: 'cho',
+      creatorRole: myRole
+    }
+  });
+  await set(stateRef, {
+    board: makeInitialSetup(choPatternEl.value, hanPatternEl.value),
+    turn: 'cho', plyCount: 0,
+    ended: false, winner: null
+  });
+  setMsg('게임이 재시작되었습니다.');
+  resultOv.style.display = 'none';
+};
+
+// 게임 종료 버튼
+endBtn.onclick = async () => {
+  if (!confirm('게임을 종료하시겠습니까?')) return;
+  await update(stateRef, {
+    ended: true,
+    winner: null,
+    message: '게임이 강제로 종료되었습니다.'
+  });
+  setMsg('게임이 종료되었습니다.');
+};
+
+// 양측 모두 시작 눌렀는지 확인
+onValue(readyAllRef, async snap => {
+  const ready = snap.val() || {};
+  const playersSnap = await get(playersRef);
+  const players = playersSnap.val() || {};
+  const playerCount = Object.keys(players).length;
+  const readyCount = Object.keys(ready).filter(uid => ready[uid]).length;
+
+  if (playerCount === 2 && readyCount === 2) {
+    const settingsSnap = await get(ref(db, `${NS}/${roomId}/settings`));
+    const settings = settingsSnap.val() || roomSettings;
+    await set(stateRef, {
+      board: makeInitialSetup(settings.choPattern, settings.hanPattern),
+      turn: settings.firstTurn || 'cho',
+      plyCount: 0, ended: false, winner: null
+    });
+    await remove(readyAllRef);
+    setMsg('게임이 시작되었습니다.');
+  }
+});
+</script>
+
   <div class="topline" id="roomInfo">방 정보 불러오는 중…</div>
 
   <div class="bar" id="setupInfo">초 배치 / 한 배치 불러오는 중…</div>
