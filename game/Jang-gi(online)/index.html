@@ -13,21 +13,17 @@
       font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
     }
     .panel{
-      width:min(560px,92vw);
+      width:min(460px,92vw);
       background:#fff; border:1px solid #e5e7eb; border-radius:16px;
       box-shadow:0 8px 30px rgba(0,0,0,.10); padding:18px 16px;
+      text-align:center;
     }
-    h1{margin:4px 0 14px; text-align:center; font-size:clamp(20px,5.5vw,28px); color:#222}
-    .row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center}
-    .field{display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; margin:8px 0}
-    label{font-size:14px; color:#374151}
-    select, input[type="text"]{
-      padding:10px 12px; font-size:15px; border:1px solid #cbd5e1; border-radius:12px;
-    }
-    #roomInput{ width:min(320px,80vw); }
+    h1{margin:4px 0 14px; font-size:clamp(20px,5.5vw,28px); color:#222}
     button{
       padding:12px 16px; font-size:15px; border-radius:12px; cursor:pointer;
       border:1px solid #94a3b8; background:#fff; transition:transform .12s ease, box-shadow .12s ease;
+      width:150px;
+      margin:8px;
     }
     button:hover{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(0,0,0,.10) }
     .hint{margin-top:10px; color:#6b7280; font-size:13px; text-align:center}
@@ -38,43 +34,14 @@
   <div class="panel">
     <h1>장기 온라인 (2인)</h1>
 
-    <div class="row" style="margin-bottom:10px">
-      <input id="roomInput" type="text" placeholder="방 이름 (예: 부엉이1929)" />
-    </div>
-
-    <!-- 내 진영/배치 선택 (생성 시에만 사용) -->
-    <div class="field">
-      <label for="mySide">내 진영:</label>
-      <select id="mySide">
-        <option value="cho">초 (파랑)</option>
-        <option value="han">한 (빨강)</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="choPattern">초 배치:</label>
-      <select id="choPattern">
-        <option>마상마상</option>
-        <option>상마상마</option>
-        <option>마상상마</option>
-        <option>상마마상</option>
-      </select>
-      <label for="hanPattern">한 배치:</label>
-      <select id="hanPattern">
-        <option>상마상마</option>
-        <option>마상마상</option>
-        <option>마상상마</option>
-        <option>상마마상</option>
-      </select>
-    </div>
-
-    <div class="row" style="margin-top:8px">
+    <div>
       <button id="btnCreate">방 생성하기</button>
       <button id="btnJoin">방 참여하기</button>
     </div>
 
     <div class="hint">
-      생성자는 선택한 <b>내 진영</b>으로 시작합니다. 참여자는 자동으로 반대 진영으로 배정됩니다.<br/>
-      배치는 여기서 정한 값이 게임에 바로 적용됩니다.
+      방은 생성 후 <b>1분</b> 안에 참여해야 합니다.<br>
+      1분이 지나면 자동으로 입장이 제한됩니다.
     </div>
     <div class="me" id="meLine">로그인 대기중…</div>
   </div>
@@ -84,7 +51,7 @@
     import { getDatabase, ref, get, set, runTransaction, update, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-    // --- Firebase ---
+    // --- Firebase 초기화 ---
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -98,11 +65,9 @@
     const db   = getDatabase(app);
     const auth = getAuth(app);
 
-    // --- Utils ---
     const meLine = document.getElementById('meLine');
-    function sanitizeRoomName(raw){
-      return (raw||'').trim().replace(/[.#$/\[\]\/]/g,'-').slice(0,32);
-    }
+
+    // 익명 로그인
     async function ensureAnon(){
       if (auth.currentUser) return auth.currentUser;
       return new Promise((resolve,reject)=>{
@@ -113,70 +78,65 @@
     ensureAnon().then(u=>{ meLine.textContent = `UID: ${u.uid.slice(0,8)}…`; })
                 .catch(()=>{ meLine.textContent = '로그인 실패'; });
 
-    // ---- 장기 전용 경로 (완전 분리) ----
-    const NS = 'janggiRooms'; // ← 장기만 사용하는 전용 네임스페이스
+    // --- 전용 경로 ---
+    const NS = 'janggiRooms';
     const r = (room, p='') => ref(db, p ? `${NS}/${room}/${p}` : `${NS}/${room}`);
 
-    // --- UI refs ---
     const btnCreate = document.getElementById('btnCreate');
     const btnJoin   = document.getElementById('btnJoin');
 
-    // --- Create Room ---
+    // 랜덤 방 코드 생성
+    function randomRoomCode(){
+      return 'room-' + Math.random().toString(36).substring(2,8);
+    }
+
+    // --- 방 생성 ---
     btnCreate.onclick = async ()=>{
       try{
         await ensureAnon();
-        const room = sanitizeRoomName(document.getElementById('roomInput').value);
-        if(!room){ alert('방 이름을 적어주세요.'); return; }
-
-        const mySide     = document.getElementById('mySide').value; // 'cho' | 'han'
-        const choPattern = document.getElementById('choPattern').value;
-        const hanPattern = document.getElementById('hanPattern').value;
-        const creatorRole = (mySide === 'cho') ? 0 : 1;
-
-        const roomRef = r(room);
-        const snap = await get(roomRef);
-        if (snap.exists()){
-          alert('이미 존재하는 방입니다. 다른 이름을 사용해주세요.');
-          return;
-        }
-
+        const room = randomRoomCode();
         const uid = auth.currentUser.uid;
         const now = Date.now();
 
-        await set(roomRef, {
-          name: room,
+        await set(r(room), {
           createdAt: now,
           status: 'waiting',
           playerCount: 1,
-          settings: {
-            creatorRole,
-            choPattern,
-            hanPattern,
-            firstTurn: 'cho'
-          },
-          players: { [uid]: { role: creatorRole, joinedAt: now } }
+          players: { [uid]: { role: 0, joinedAt: now } } // 생성자는 항상 role=0
         });
 
         onDisconnect(r(room, `players/${uid}`)).remove();
+        sessionStorage.setItem('currentRoom', room); // 참여자가 알 수 있도록 저장
+        alert(`방이 생성되었습니다! 1분 안에 다른 사용자가 참여해야 합니다.`);
         location.href = `game.html?room=${encodeURIComponent(room)}`;
       }catch(e){
         console.error('방 생성 실패:', e);
-        alert((e && e.message) ? e.message : '방 생성 중 오류가 발생했습니다.');
+        alert('방 생성 중 오류가 발생했습니다.');
       }
     };
 
-    // --- Join Room ---
+    // --- 방 참여 ---
     btnJoin.onclick = async ()=>{
       try{
         await ensureAnon();
-        const room = sanitizeRoomName(document.getElementById('roomInput').value);
-        if(!room){ alert('방 이름을 적어주세요.'); return; }
+        const room = sessionStorage.getItem('currentRoom');
+        if(!room){
+          alert('현재 참여 가능한 방이 없습니다. 먼저 방을 생성해 주세요.');
+          return;
+        }
 
-        const roomRef    = r(room);
+        const roomRef = r(room);
         const playersRef = r(room, 'players');
         const exist = await get(roomRef);
         if(!exist.exists()){
-          alert('해당 방이 없습니다. 방 이름을 확인하거나 새로 생성해주세요.');
+          alert('방이 존재하지 않습니다.');
+          return;
+        }
+
+        // ★ 방 생성 후 1분 이내 체크
+        const createdAt = exist.val().createdAt;
+        if(Date.now() - createdAt > 60000){
+          alert('방이 생성된 지 1분이 지나 입장할 수 없습니다.');
           return;
         }
 
@@ -185,11 +145,11 @@
         const res = await runTransaction(playersRef, (players)=>{
           players = players || {};
           const ids = Object.keys(players);
-          if (!players[uid] && ids.length >= 2) return; // 꽉 찼음(커밋 X)
-          if (players[uid]) return players;             // 이미 입장함(변경 X)
+          if (!players[uid] && ids.length >= 2) return; // 꽉 찼음
+          if (players[uid]) return players; // 이미 입장
 
           const taken = Object.values(players).map(p=>p.role);
-          myRole = taken.includes(0) ? 1 : 0;           // 0 없으면 0, 있으면 1
+          myRole = taken.includes(0) ? 1 : 0;
           players[uid] = { role: myRole, joinedAt: Date.now() };
           return players;
         });
@@ -200,13 +160,13 @@
         }
 
         const cnt = Object.keys(res.snapshot.val()||{}).length;
-        await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
+        await update(roomRef, { playerCount: cnt, status: (cnt>=2 ? 'playing' : 'waiting') });
 
         onDisconnect(r(room, `players/${uid}`)).remove();
         location.href = `game.html?room=${encodeURIComponent(room)}`;
       }catch(e){
         console.error('방 참여 실패:', e);
-        alert((e && e.message) ? e.message : '방 참여 중 오류가 발생했습니다.');
+        alert('방 참여 중 오류가 발생했습니다.');
       }
     };
   </script>
