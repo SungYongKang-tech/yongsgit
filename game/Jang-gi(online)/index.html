@@ -6,28 +6,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
     :root { --card:#fff; --muted:#6b7280; }
-    *{box-sizing:border-box}
-    body{
-      margin:0; min-height:100vh; display:grid; place-items:center;
-      background:linear-gradient(135deg,#e0f7fa,#fce4ec);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: linear-gradient(135deg, #e0f7fa, #fce4ec);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
     }
-    .panel{
-      width:min(460px,92vw);
-      background:#fff; border:1px solid #e5e7eb; border-radius:16px;
-      box-shadow:0 8px 30px rgba(0,0,0,.10); padding:18px 16px;
-      text-align:center;
+    .panel {
+      width: min(460px, 92vw);
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.10);
+      padding: 18px 16px;
+      text-align: center;
     }
-    h1{margin:4px 0 14px; font-size:clamp(20px,5.5vw,28px); color:#222}
-    button{
-      padding:12px 16px; font-size:15px; border-radius:12px; cursor:pointer;
-      border:1px solid #94a3b8; background:#fff; transition:transform .12s ease, box-shadow .12s ease;
-      width:150px;
-      margin:8px;
+    h1 {
+      margin: 4px 0 14px;
+      font-size: clamp(20px, 5.5vw, 28px);
+      color: #222;
     }
-    button:hover{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(0,0,0,.10) }
-    .hint{margin-top:10px; color:#6b7280; font-size:13px; text-align:center}
-    .me{margin-top:6px; text-align:center; font-size:12px; color:#94a3b8}
+    button {
+      padding: 12px 16px;
+      font-size: 15px;
+      border-radius: 12px;
+      cursor: pointer;
+      border: 1px solid #94a3b8;
+      background: #fff;
+      transition: transform .12s ease, box-shadow .12s ease;
+      width: 150px;
+      margin: 8px;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(0,0,0,.10);
+    }
+    .hint {
+      margin-top: 10px;
+      color: #6b7280;
+      font-size: 13px;
+      text-align: center;
+    }
+    .me {
+      margin-top: 6px;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+    }
   </style>
 </head>
 <body>
@@ -48,10 +73,16 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, runTransaction, update, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import {
+      getDatabase, ref, get, set, runTransaction, update, onDisconnect, remove
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import {
+      getAuth, onAuthStateChanged, signInAnonymously
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-    // --- Firebase 초기화 ---
+    /* -----------------------------
+       Firebase 초기화
+    ------------------------------ */
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
       authDomain: "number-baseball-aee52.firebaseapp.com",
@@ -61,43 +92,54 @@
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:dfe39687717f28b891a561"
     };
+
     const app  = initializeApp(firebaseConfig);
     const db   = getDatabase(app);
     const auth = getAuth(app);
 
     const meLine = document.getElementById('meLine');
 
-    // 익명 로그인
-    async function ensureAnon(){
+    /* -----------------------------
+       익명 로그인
+    ------------------------------ */
+    async function ensureAnon() {
       if (auth.currentUser) return auth.currentUser;
-      return new Promise((resolve,reject)=>{
-        const unsub = onAuthStateChanged(auth, u=>{ if(u){unsub(); resolve(u);} });
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, u => { if (u) { unsub(); resolve(u); } });
         signInAnonymously(auth).catch(reject);
       });
     }
-    ensureAnon().then(u=>{ meLine.textContent = `UID: ${u.uid.slice(0,8)}…`; })
-                .catch(()=>{ meLine.textContent = '로그인 실패'; });
 
-    // --- 전용 경로 ---
-    const NS = 'janggiRooms';  // ✅ 장기 전용 네임스페이스
+    ensureAnon()
+      .then(u => { meLine.textContent = `UID: ${u.uid.slice(0, 8)}…`; })
+      .catch(() => { meLine.textContent = '로그인 실패'; });
+
+    /* -----------------------------
+       장기 전용 네임스페이스
+    ------------------------------ */
+    const NS = 'janggiRooms';  // 장기 전용 경로
     const latestRoomRef = ref(db, `${NS}/latestRoom`);
-    const r = (room, p='') => ref(db, p ? `${NS}/rooms/${room}/${p}` : `${NS}/rooms/${room}`);
+    const r = (room, p = '') =>
+      ref(db, p ? `${NS}/rooms/${room}/${p}` : `${NS}/rooms/${room}`);
 
     const btnCreate = document.getElementById('btnCreate');
     const btnJoin   = document.getElementById('btnJoin');
 
-    function randomRoomCode(){
-      return 'janggi-' + Math.random().toString(36).substring(2,8);
+    function randomRoomCode() {
+      return 'janggi-' + Math.random().toString(36).substring(2, 8);
     }
 
-    // --- 방 생성 ---
-    btnCreate.onclick = async ()=>{
-      try{
+    /* -----------------------------
+       방 생성
+    ------------------------------ */
+    btnCreate.onclick = async () => {
+      try {
         await ensureAnon();
         const room = randomRoomCode();
         const uid = auth.currentUser.uid;
         const now = Date.now();
 
+        // 방 정보 저장
         await set(r(room), {
           createdAt: now,
           status: 'waiting',
@@ -105,31 +147,37 @@
           players: { [uid]: { role: 0, joinedAt: now } } // 생성자는 항상 role=0
         });
 
-        // ✅ 장기 전용 최신방 경로에 저장
+        // 최신 방 정보 업데이트
         await set(latestRoomRef, { roomCode: room, createdAt: now });
 
+        // 플레이어 연결 종료 시 자동 제거
         onDisconnect(r(room, `players/${uid}`)).remove();
+
         alert(`방이 생성되었습니다! 1분 안에 다른 사용자가 참여해야 합니다.`);
         location.href = `game.html?room=${encodeURIComponent(room)}`;
-      }catch(e){
+      } catch (e) {
         console.error('방 생성 실패:', e);
         alert('방 생성 중 오류가 발생했습니다.');
       }
     };
 
-    // --- 방 참여 ---
-    btnJoin.onclick = async ()=>{
-      try{
+    /* -----------------------------
+       방 참여
+    ------------------------------ */
+    btnJoin.onclick = async () => {
+      try {
         await ensureAnon();
         const latestSnap = await get(latestRoomRef);
-        if(!latestSnap.exists()){
+
+        if (!latestSnap.exists()) {
           alert('현재 참여 가능한 방이 없습니다.');
           return;
         }
 
         const { roomCode, createdAt } = latestSnap.val();
 
-        if(Date.now() - createdAt > 60000){
+        // 1분 제한 체크
+        if (Date.now() - createdAt > 60000) {
           alert('방이 생성된 지 1분이 지나 입장할 수 없습니다.');
           return;
         }
@@ -138,31 +186,39 @@
         const uid = auth.currentUser.uid;
         let myRole = 1;
 
-        const res = await runTransaction(roomRef, (players)=>{
+        // 트랜잭션으로 플레이어 추가
+        const res = await runTransaction(roomRef, (players) => {
           players = players || {};
           const ids = Object.keys(players);
-          if (!players[uid] && ids.length >= 2) return; // 두 명 꽉참
+          if (!players[uid] && ids.length >= 2) return; // 두 명 초과 방지
           if (players[uid]) return players;
 
-          const taken = Object.values(players).map(p=>p.role);
+          const taken = Object.values(players).map(p => p.role);
           myRole = taken.includes(0) ? 1 : 0;
           players[uid] = { role: myRole, joinedAt: Date.now() };
           return players;
         });
 
-        if (!res.committed){
+        if (!res.committed) {
           alert('이미 2명이 입장했습니다.');
           return;
         }
 
+        // 플레이어 수 갱신 및 상태 업데이트
         await update(ref(db, `${NS}/rooms/${roomCode}`), {
-          playerCount: Object.keys(res.snapshot.val()||{}).length,
+          playerCount: Object.keys(res.snapshot.val() || {}).length,
           status: 'playing'
         });
 
+        // ✅ 참여 직후 최신 방 정보 삭제 (3명 이상 입장 방지)
+        await remove(latestRoomRef);
+
+        // 연결 종료 시 플레이어 제거
         onDisconnect(r(roomCode, `players/${uid}`)).remove();
+
+        // 게임 화면으로 이동
         location.href = `game.html?room=${encodeURIComponent(roomCode)}`;
-      }catch(e){
+      } catch (e) {
         console.error('방 참여 실패:', e);
         alert('방 참여 중 오류가 발생했습니다.');
       }
