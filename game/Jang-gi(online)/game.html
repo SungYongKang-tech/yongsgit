@@ -5,7 +5,7 @@
   <title>장기 게임 (온라인 2인)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    :root{
+    :root {
       --cell-size:56px;
       --board-width:calc(var(--cell-size)*8);
       --board-height:calc(var(--cell-size)*9);
@@ -105,112 +105,31 @@
 <body>
   <h1>장기 게임 (온라인)</h1>
 
-  <!-- 기존 HTML 코드에 기능 버튼 추가 및 Firebase 동기화 기능 확장 -->
-<!-- 아래 코드를 <body> 안 적절한 위치에 추가하세요 -->
-<div class="row" id="setupControls">
-  <label>초 배치:
-    <select id="choPattern">
-      <option value="마상마상">마상마상</option>
-      <option value="상마상마">상마상마</option>
-      <option value="마상상마">마상상마</option>
-      <option value="상마마상">상마마상</option>
-    </select>
-  </label>
-  <label>한 배치:
-    <select id="hanPattern">
-      <option value="마상마상">마상마상</option>
-      <option value="상마상마">상마상마</option>
-      <option value="마상상마">마상상마</option>
-      <option value="상마마상">상마마상</option>
-    </select>
-  </label>
-  <button id="startBtn">시작</button>
-  <button id="restartBtn">재시작</button>
-  <button id="endBtn">게임 종료</button>
-</div>
-
-<script type="module">
-// Firebase 전역 db, auth, NS, roomId, roomRef, stateRef는 이미 존재함
-const startBtn = document.getElementById('startBtn');
-const restartBtn = document.getElementById('restartBtn');
-const endBtn = document.getElementById('endBtn');
-const choPatternEl = document.getElementById('choPattern');
-const hanPatternEl = document.getElementById('hanPattern');
-
-const readyRef = ref(db, `${NS}/${roomId}/playersReady/${auth.currentUser.uid}`);
-const readyAllRef = ref(db, `${NS}/${roomId}/playersReady`);
-
-// 시작 버튼 - 본인만 ready true로 설정
-startBtn.onclick = () => {
-  update(roomRef, {
-    settings: {
-      choPattern: choPatternEl.value,
-      hanPattern: hanPatternEl.value,
-      firstTurn: 'cho',
-      creatorRole: myRole
-    }
-  });
-  set(readyRef, true);
-  setMsg('시작 준비 완료. 상대방도 시작 버튼을 눌러야 합니다.');
-};
-
-// 재시작 버튼 - 초기화
-restartBtn.onclick = async () => {
-  if (!confirm('정말 재시작 하시겠습니까?')) return;
-  await update(roomRef, {
-    settings: {
-      choPattern: choPatternEl.value,
-      hanPattern: hanPatternEl.value,
-      firstTurn: 'cho',
-      creatorRole: myRole
-    }
-  });
-  await set(stateRef, {
-    board: makeInitialSetup(choPatternEl.value, hanPatternEl.value),
-    turn: 'cho', plyCount: 0,
-    ended: false, winner: null
-  });
-  setMsg('게임이 재시작되었습니다.');
-  resultOv.style.display = 'none';
-};
-
-// 게임 종료 버튼
-endBtn.onclick = async () => {
-  if (!confirm('게임을 종료하시겠습니까?')) return;
-  await update(stateRef, {
-    ended: true,
-    winner: null,
-    message: '게임이 강제로 종료되었습니다.'
-  });
-  setMsg('게임이 종료되었습니다.');
-};
-
-// 양측 모두 시작 눌렀는지 확인
-onValue(readyAllRef, async snap => {
-  const ready = snap.val() || {};
-  const playersSnap = await get(playersRef);
-  const players = playersSnap.val() || {};
-  const playerCount = Object.keys(players).length;
-  const readyCount = Object.keys(ready).filter(uid => ready[uid]).length;
-
-  if (playerCount === 2 && readyCount === 2) {
-    const settingsSnap = await get(ref(db, `${NS}/${roomId}/settings`));
-    const settings = settingsSnap.val() || roomSettings;
-    await set(stateRef, {
-      board: makeInitialSetup(settings.choPattern, settings.hanPattern),
-      turn: settings.firstTurn || 'cho',
-      plyCount: 0, ended: false, winner: null
-    });
-    await remove(readyAllRef);
-    setMsg('게임이 시작되었습니다.');
-  }
-});
-</script>
+  <!-- 게임 시작, 재시작, 종료 및 배치 선택 UI -->
+  <div class="row" id="setupControls">
+    <label>초 배치:
+      <select id="choPattern">
+        <option value="마상마상">마상마상</option>
+        <option value="상마상마">상마상마</option>
+        <option value="마상상마">마상상마</option>
+        <option value="상마마상">상마마상</option>
+      </select>
+    </label>
+    <label>한 배치:
+      <select id="hanPattern">
+        <option value="마상마상">마상마상</option>
+        <option value="상마상마">상마상마</option>
+        <option value="마상상마">마상상마</option>
+        <option value="상마마상">상마마상</option>
+      </select>
+    </label>
+    <button id="startBtn">시작</button>
+    <button id="restartBtn">재시작</button>
+    <button id="endBtn">게임 종료</button>
+  </div>
 
   <div class="topline" id="roomInfo">방 정보 불러오는 중…</div>
-
   <div class="bar" id="setupInfo">초 배치 / 한 배치 불러오는 중…</div>
-
   <div class="row"><span class="msg" id="statusMsg"></span></div>
 
   <div id="janggi-board-container">
@@ -229,10 +148,10 @@ onValue(readyAllRef, async snap => {
   <script type="module">
     /* ================= Firebase ================= */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, runTransaction, onValue, update, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-
-    let endedFlag = false;
+    import { getDatabase, ref, get, set, runTransaction, onValue, update, remove, onDisconnect } 
+      from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getAuth, onAuthStateChanged, signInAnonymously } 
+      from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCoHcYm0_fdpCcJbyh6PO60fjOZZKoR8xg",
@@ -243,25 +162,26 @@ onValue(readyAllRef, async snap => {
       messagingSenderId: "998537150772",
       appId: "1:998537150772:web:dfe39687717f28b891a561"
     };
+
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
     const auth = getAuth(app);
 
-    async function ensureAnon(){
+    async function ensureAnon() {
       if (auth.currentUser) return auth.currentUser;
-      return new Promise((resolve,reject)=>{
-        const unsub = onAuthStateChanged(auth, u=>{ if(u){unsub(); resolve(u);} });
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, u => { if(u){unsub(); resolve(u);} });
         signInAnonymously(auth).catch(reject);
       });
     }
     await ensureAnon();
 
-    /* ================ URL 파라미터 / 방 진입 ================ */
+    /* URL 파라미터 / 방 진입 */
     const params = new URLSearchParams(location.search);
     const roomId = params.get('room');
-    if (!roomId){ alert('room 파라미터가 없습니다.'); location.href='index.html'; }
+    if (!roomId) { alert('room 파라미터가 없습니다.'); location.href='index.html'; }
 
-    // ★ 전용 네임스페이스: 규칙과 일치
+    // 네임스페이스
     const NS = 'janggiRooms';
 
     const roomRef    = ref(db, `${NS}/${roomId}`);
@@ -282,666 +202,77 @@ onValue(readyAllRef, async snap => {
     const opp        = (t)=> t==='cho' ? 'han' : 'cho';
     const setMsg     = (t)=> statusMsg.textContent = t || '';
 
-    async function enterRoom(){
-      const uid = auth.currentUser.uid;
+    // 시작, 재시작, 종료 버튼 로직
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const endBtn = document.getElementById('endBtn');
+    const choPatternEl = document.getElementById('choPattern');
+    const hanPatternEl = document.getElementById('hanPattern');
 
-      // 플레이어 등록(없으면 자동 배정)
-      let assigned = 0;
-      const txn = await runTransaction(playersRef, (players)=>{
-        players = players || {};
-        if (players[uid]) return players;
-        const ids = Object.keys(players);
-        if (ids.length >= 2) return; // full
-        const taken = Object.values(players).map(p=>p.role);
-        assigned = taken.includes(0) ? 1 : 0;
-        players[uid] = { role: assigned, joinedAt: Date.now() };
-        return players;
+    const readyRef = ref(db, `${NS}/${roomId}/playersReady/${auth.currentUser.uid}`);
+    const readyAllRef = ref(db, `${NS}/${roomId}/playersReady`);
+
+    startBtn.onclick = () => {
+      update(roomRef, {
+        settings: {
+          choPattern: choPatternEl.value,
+          hanPattern: hanPatternEl.value,
+          firstTurn: 'cho',
+          creatorRole: myRole
+        }
       });
-
-      if (!txn.committed){
-        alert('이미 2명이 있습니다. 다른 방을 이용해 주세요.');
-        location.href='index.html';
-        return;
-      }
-
-      const cur = txn.snapshot.val()||{};
-      myRole = cur[auth.currentUser.uid].role;
-      myTeam = roleToTeam(myRole);
-
-      // 방 설정 읽기
-      const rs = await get(roomRef);
-      const rv = rs.val()||{};
-      roomSettings = rv.settings || roomSettings;
-
-      // 상태 업데이트 (대기/플레이)
-      const cnt = Math.min(2, Object.keys(cur).length);
-      await update(roomRef, { playerCount: cnt, status: (cnt>=2?'playing':'waiting') });
-
-      onDisconnect(ref(db, `${NS}/${roomId}/players/${uid}`)).remove();
-
-      roomInfo.innerHTML = `방: <b>${roomId}</b> — 나는 <b>${myTeam==='cho'?'초':'한'}</b>입니다.`;
-      setupInfo.textContent = `초 배치: ${roomSettings.choPattern} · 한 배치: ${roomSettings.hanPattern}`;
-    }
-
-    await enterRoom();
-
-    /* ================== 장기 로직 (시점 반전 포함) ================== */
-    const boardEl   = document.getElementById('janggi-board');
-    const overlay   = document.getElementById('palace-overlay');
-    const piecesLay = document.getElementById('pieces-layer');
-    const movesLay  = document.getElementById('moves-layer');
-    const moveSnd = document.getElementById('moveSnd');
-    const capSnd  = document.getElementById('capSnd');
-    const bannerEl   = document.getElementById('turn-banner');
-    const resultOv   = document.getElementById('result-overlay');
-    const resultText = document.getElementById('result-text');
-    let bannerTimer = null;
-
-    const playMove=()=>{ try{ moveSnd.currentTime=0; moveSnd.play().catch(()=>{});}catch{} }
-    const playCap =()=>{ try{ capSnd.currentTime=0;  capSnd.play().catch(()=>{});}catch{} }
-
-    function showTurnBanner(team){
-      bannerEl.className = 'banner ' + (team==='cho' ? 'cho' : 'han');
-      bannerEl.textContent = team==='cho' ? '초 차례' : '한 차례';
-      bannerEl.classList.add('show');
-      clearTimeout(bannerTimer);
-      bannerTimer = setTimeout(()=> bannerEl.classList.remove('show'), 900);
-    }
-    function showResult(winnerTeam){
-      gameOver = true;
-      resultText.textContent = (winnerTeam==='cho' ? '초 승' : '한 승');
-      resultOv.style.display = 'flex';
-    }
-
-    // === 좌표/보드 유틸 ===
-    const getCellSize = () =>
-      parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
-    const inside = (r,c)=> r>=0 && r<=9 && c>=0 && c<=8;
-    const key = (r,c)=> `${r},${c}`;
-
-    // 시점 변환: 내가 초면 180도 회전한 좌표로 렌더
-    const toViewRC   = (r,c)=> (myTeam === 'cho') ? [9 - r, 8 - c] : [r, c];
-    const fromViewRC = (vr,vc)=> (myTeam === 'cho') ? [9 - vr, 8 - vc] : [vr, vc];
-
-    const palaceTop    = new Set(['0,3','0,4','0,5','1,3','1,4','1,5','2,3','2,4','2,5']);
-    const palaceBottom = new Set(['7,3','7,4','7,5','8,3','8,4','8,5','9,3','9,4','9,5']);
-    const inPalace = (r,c)=> palaceTop.has(key(r,c)) || palaceBottom.has(key(r,c));
-    const palaceKind = (r,c)=> palaceTop.has(key(r,c)) ? 'top' : (palaceBottom.has(key(r,c))?'bottom':null);
-    const palaceDiagNeighbors = {
-      '1,4': [['0,3'],['0,5'],['2,3'],['2,5']],
-      '0,3': [['1,4']], '0,5': [['1,4']], '2,3': [['1,4']], '2,5': [['1,4']],
-      '8,4': [['7,3'],['7,5'],['9,3'],['9,5']],
-      '7,3': [['8,4']], '7,5': [['8,4']], '9,3': [['8,4']], '9,5': [['8,4']]
-    };
-    const topCorners = ['0,3','0,5','2,3','2,5'];      const topCenter = '1,4';
-    const botCorners = ['7,3','7,5','9,3','9,5'];      const botCenter = '8,4';
-    const diagNeighbors = (r,c)=> (palaceDiagNeighbors[key(r,c)]||[]).map(([s])=>s.split(',').map(Number));
-    const oppositeCorner = (r,c)=>{
-      const s = key(r,c);
-      if (topCorners.includes(s)){
-        if (s==='0,3') return [2,5];
-        if (s==='2,5') return [0,3];
-        if (s==='0,5') return [2,3];
-        if (s==='2,3') return [0,5];
-      }
-      if (botCorners.includes(s)){
-        if (s==='7,3') return [9,5];
-        if (s==='9,5') return [7,3];
-        if (s==='7,5') return [9,3];
-        if (s==='9,3') return [7,5];
-      }
-      return null;
+      set(readyRef, true);
+      setMsg('시작 준비 완료. 상대방도 시작 버튼을 눌러야 합니다.');
     };
 
-    function updateCellSize(){
-      const titleH = (document.querySelector('h1')?.offsetHeight || 0)
-                   + (document.querySelector('.topline')?.offsetHeight || 0)
-                   + (document.querySelector('.bar')?.offsetHeight || 0)
-                   + (document.querySelector('.row')?.offsetHeight || 0);
-      const pad = 16*2, extraH = titleH + 28;
-      const maxCellByW = (window.innerWidth - pad) / 9;
-      const maxCellByH = (window.innerHeight - pad - extraH) / 10;
-      const cell = Math.floor(Math.max(32, Math.min(maxCellByW, maxCellByH)));
-      document.documentElement.style.setProperty('--cell-size', cell + 'px');
-    }
-
-    function drawPalaceLines(){
-      const CELL = getCellSize();
-      const W = 8 * CELL, H = 9 * CELL;
-      overlay.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      while(overlay.firstChild) overlay.removeChild(overlay.firstChild);
-      const strokeColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim() || '#3a2a1a';
-      const mk = (x1,y1,x2,y2)=>{
-        const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
-        ln.setAttribute('x1',x1); ln.setAttribute('y1',y1);
-        ln.setAttribute('x2',x2); ln.setAttribute('y2',y2);
-        ln.setAttribute('stroke',strokeColor);
-        ln.setAttribute('stroke-width',1);
-        ln.setAttribute('stroke-opacity',0.8);
-        ln.setAttribute('shape-rendering','crispEdges');
-        return ln;
-      };
-      overlay.appendChild(mk(3*CELL,0*CELL,5*CELL,2*CELL));
-      overlay.appendChild(mk(5*CELL,0*CELL,3*CELL,2*CELL));
-      overlay.appendChild(mk(3*CELL,7*CELL,5*CELL,9*CELL));
-      overlay.appendChild(mk(5*CELL,7*CELL,3*CELL,9*CELL));
-    }
-
-    function makeInitialSetup(pCho='마상마상', pHan='마상마상'){
-      const map = {
-        '마상마상': ['ma','sang','ma','sang'],
-        '상마상마': ['sang','ma','sang','ma'],
-        '마상상마': ['ma','sang','sang','ma'],
-        '상마마상': ['sang','ma','ma','sang']
-      };
-      const aCho = map[pCho], aHan = map[pHan];
-      const S = {};
-      // 초
-      S['0,0']={team:'cho',piece:'cha'};
-      S['0,1']={team:'cho',piece:aCho[0]};
-      S['0,2']={team:'cho',piece:aCho[1]};
-      S['0,3']={team:'cho',piece:'sa'};
-      S['0,5']={team:'cho',piece:'sa'};
-      S['0,6']={team:'cho',piece:aCho[2]};
-      S['0,7']={team:'cho',piece:aCho[3]};
-      S['0,8']={team:'cho',piece:'cha'};
-      S['1,4']={team:'cho',piece:'jang'};
-      S['2,1']={team:'cho',piece:'po'};
-      S['2,7']={team:'cho',piece:'po'};
-      for (const c of [0,2,4,6,8]) S[`3,${c}`]={team:'cho',piece:'jol'};
-      // 한
-      S['9,0']={team:'han',piece:'cha'};
-      S['9,1']={team:'han',piece:aHan[0]};
-      S['9,2']={team:'han',piece:aHan[1]};
-      S['9,3']={team:'han',piece:'sa'};
-      S['9,5']={team:'han',piece:'sa'};
-      S['9,6']={team:'han',piece:aHan[2]};
-      S['9,7']={team:'han',piece:aHan[3]};
-      S['9,8']={team:'han',piece:'cha'};
-      S['8,4']={team:'han',piece:'jang'};
-      S['7,1']={team:'han',piece:'po'};
-      S['7,7']={team:'han',piece:'po'};
-      for (const c of [0,2,4,6,8]) S[`6,${c}`]={team:'han',piece:'byung'};
-      return S;
-    }
-
-    // ====== 보드 자료구조/판정 유틸 ======
-    let currentSetup = makeInitialSetup();
-    let turn = 'cho';
-    let plyCount = 0;
-
-    const bGet = (B,r,c)=> B.get(key(r,c)) || null;
-    function bMove(B, fr,fc, tr,tc){
-      const NB = new Map(B);
-      const fromK = key(fr,fc), toK = key(tr,tc);
-      const P = NB.get(fromK);
-      if (!P) return NB;
-      NB.delete(fromK);
-      NB.set(toK, {team:P.team, piece:P.piece});
-      return NB;
-    }
-    function findKing(B, team){
-      for (const [k,v] of B.entries()){
-        if (v.piece==='jang' && v.team===team){
-          const [r,c] = k.split(',').map(Number);
-          return [r,c];
+    restartBtn.onclick = async () => {
+      if (!confirm('정말 재시작 하시겠습니까?')) return;
+      await update(roomRef, {
+        settings: {
+          choPattern: choPatternEl.value,
+          hanPattern: hanPatternEl.value,
+          firstTurn: 'cho',
+          creatorRole: myRole
         }
-      }
-      return null;
-    }
-    function kingsFacing(B){
-      let choK=null, hanK=null;
-      for (const [k,v] of B.entries()){
-        if (v.piece!=='jang') continue;
-        const rc = k.split(',').map(Number);
-        if (v.team==='cho') choK=rc; else hanK=rc;
-      }
-      if (!choK || !hanK) return false;
-      const [r1,c1]=choK, [r2,c2]=hanK;
-      if (c1!==c2) return false;
-      const c=c1;
-      const [s,e] = r1<r2 ? [r1+1, r2-1] : [r2+1, r1-1];
-      for (let r=s;r<=e;r++){ if (bGet(B,r,c)) return false; }
-      return true;
-    }
+      });
+      await set(stateRef, {
+        board: makeInitialSetup(choPatternEl.value, hanPatternEl.value),
+        turn: 'cho', plyCount: 0,
+        ended: false, winner: null
+      });
+      setMsg('게임이 재시작되었습니다.');
+      resultOv.style.display = 'none';
+    };
 
-    function addLineAttacks(B, team, r,c, dr,dc, out){
-      let rr=r+dr, cc=c+dc;
-      while (inside(rr,cc)){
-        const occ = bGet(B,rr,cc);
-        if (!occ){ out.add(key(rr,cc)); rr+=dr; cc+=dc; continue; }
-        if (occ.team!==team) out.add(key(rr,cc));
-        return;
-      }
-    }
-    function addPoLineAttacks(B, team, r,c, dr,dc, out){
-      let rr=r+dr, cc=c+dc;
-      while (inside(rr,cc)){
-        const occ = bGet(B,rr,cc);
-        if (!occ){ rr+=dr; cc+=dc; continue; }
-        if (occ.piece==='po') return;
-        rr+=dr; cc+=dc; break;
-      }
-      while (inside(rr,cc)){
-        const occ = bGet(B,rr,cc);
-        if (!occ){ rr+=dr; cc+=dc; continue; }
-        if (occ.team!==team && occ.piece!=='po') out.add(key(rr,cc));
-        return;
-      }
-    }
-    function addPoPalaceDiagAttack(B, team, r,c, out){
-      const kind = palaceKind(r,c); if (!kind) return;
-      const s = key(r,c);
-      const center = (kind==='top') ? '1,4' : '8,4';
-      const [cr,cc] = center.split(',').map(Number);
-      const oppC = oppositeCorner(r,c); if (!oppC) return;
-      const isCorner = (kind==='top' ? ['0,3','0,5','2,3','2,5'].includes(s)
-                                     : ['7,3','7,5','9,3','9,5'].includes(s));
-      if (!isCorner) return;
-      const mid = bGet(B,cr,cc); if (!mid || mid.piece==='po') return;
-      const [or,oc] = oppC;
-      const occ = bGet(B,or,oc);
-      if (occ && occ.team!==team && occ.piece!=='po') out.add(key(or,oc));
-    }
+    endBtn.onclick = async () => {
+      if (!confirm('게임을 종료하시겠습니까?')) return;
+      await update(stateRef, {
+        ended: true,
+        winner: null,
+        message: '게임이 강제로 종료되었습니다.'
+      });
+      setMsg('게임이 종료되었습니다.');
+    };
 
-    function genAttacksForPiece(B, r,c, info){
-      const out = new Set();
-      const team = info.team, pc = info.piece;
+    // 양측 모두 시작 눌렀는지 확인
+    onValue(readyAllRef, async snap => {
+      const ready = snap.val() || {};
+      const playersSnap = await get(playersRef);
+      const players = playersSnap.val() || {};
+      const playerCount = Object.keys(players).length;
+      const readyCount = Object.keys(ready).filter(uid => ready[uid]).length;
 
-      if (pc==='cha'){
-        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addLineAttacks(B, team, r,c, dr,dc, out);
-        if (inPalace(r,c)){ for (const [nr,nc] of diagNeighbors(r,c)){ const occ=bGet(B,nr,nc); if (!occ || occ.team!==team) out.add(key(nr,nc)); } }
-      } else if (pc==='po'){
-        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addPoLineAttacks(B, team, r,c, dr,dc, out);
-        addPoPalaceDiagAttack(B, team, r,c, out);
-      } else if (pc==='ma'){
-        const legs = [
-          {b:[-1,0], dst:[[-2,-1],[-2,1]]},
-          {b:[ 1,0], dst:[[ 2,-1],[ 2,1]]},
-          {b:[ 0,-1], dst:[[-1,-2],[ 1,-2]]},
-          {b:[ 0, 1], dst:[[-1, 2],[ 1, 2]]},
-        ];
-        for (const {b:[br,bc], dst} of legs){
-          const lr=r+br, lc=c+bc; if (!inside(lr,lc) || bGet(B,lr,lc)) continue;
-          for (const [dr,dc] of dst){ const rr=r+dr, cc=c+dc; if (!inside(rr,cc)) continue; const occ=bGet(B,rr,cc); if (!occ || occ.team!==team) out.add(key(rr,cc)); }
-        }
-      } else if (pc==='sang'){
-        const paths = [
-          {step1:[-1,0], step2:[-2,-1], dst:[-3,-2]},
-          {step1:[-1,0], step2:[-2, 1], dst:[-3, 2]},
-          {step1:[ 1,0], step2:[ 2,-1], dst:[ 3,-2]},
-          {step1:[ 1,0], step2:[ 2, 1], dst:[ 3, 2]},
-          {step1:[0,-1], step2:[-1,-2], dst:[-2,-3]},
-          {step1:[0,-1], step2:[ 1,-2], dst:[ 2,-3]},
-          {step1:[0, 1], step2:[-1, 2], dst:[-2, 3]},
-          {step1:[0, 1], step2:[ 1, 2], dst:[ 2, 3]},
-        ];
-        for (const {step1:[a,b], step2:[c1,d1], dst:[e,f]} of paths){
-          const s1r=r+a, s1c=c+b; const s2r=r+c1, s2c=c+d1; const tr=r+e, tc=c+f;
-          if (!inside(s1r,s1c) || bGet(B,s1r,s1c)) continue;
-          if (!inside(s2r,s2c) || bGet(B,s2r,s2c)) continue;
-          if (!inside(tr,tc)) continue;
-          const occ = bGet(B,tr,tc); if (!occ || occ.team!==team) out.add(key(tr,tc));
-        }
-      } else if (pc==='jol' || pc==='byung'){
-        const forwardDir = (team==='cho') ? +1 : -1;
-        const fr = r + forwardDir;
-        if (inside(fr,c)){ const occ=bGet(B,fr,c); if(!occ || occ.team!==team) out.add(key(fr,c)); }
-        for (const dc of [-1,1]){ const cc=c+dc; if(!inside(r,cc)) continue; const occ=bGet(B,r,cc); if(!occ || occ.team!==team) out.add(key(r,cc)); }
-        if (inPalace(r,c)){ for (const [nr,nc] of diagNeighbors(r,c)){ if ((team==='cho' && nr>r) || (team==='han' && nr<r)){ const occ=bGet(B,nr,nc); if(!occ || occ.team!==team) out.add(key(nr,nc)); } } }
-      } else if (pc==='jang' || pc==='sa'){
-        if (!inPalace(r,c)) return out;
-        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){ const rr=r+dr, cc=c+dc; if (!inPalace(rr,cc)) continue; const occ=bGet(B,rr,cc); if (!occ || occ.team!==team) out.add(key(rr,cc)); }
-        for (const [rr,cc] of diagNeighbors(r,c)){ const occ=bGet(B,rr,cc); if (!occ || occ.team!==team) out.add(key(rr,cc)); }
-      }
-      return out;
-    }
-
-    function isInCheck(B, team){
-      const K = findKing(B, team);
-      if (!K) return false;
-      const target = key(...K);
-      for (const [pos,info] of B.entries()){
-        if (info.team===team) continue;
-        const [r,c] = pos.split(',').map(Number);
-        const atk = genAttacksForPiece(B, r,c, info);
-        if (atk.has(target)) return true;
-      }
-      return false;
-    }
-
-    function addPush(B, team, rr,cc, out){
-      if (!inside(rr,cc)) return 'stop';
-      const occ = bGet(B,rr,cc);
-      if (!occ){ out.push([rr,cc]); return 'cont'; }
-      if (occ.team!==team){ out.push([rr,cc]); return 'stop'; }
-      return 'stop';
-    }
-    function addPoLineMoves(B, team, r,c, dr,dc, out){
-      let rr=r+dr, cc=c+dc;
-      while (inside(rr,cc)){
-        const occ=bGet(B,rr,cc);
-        if(!occ){ rr+=dr; cc+=dc; continue; }
-        if(occ.piece==='po') return;
-        rr+=dr; cc+=dc; break;
-      }
-      while (inside(rr,cc)){
-        const occ=bGet(B,rr,cc);
-        if(!occ){ out.push([rr,cc]); rr+=dr; cc+=dc; continue; }
-        if(occ.team!==team && occ.piece!=='po') out.push([rr,cc]);
-        return;
-      }
-    }
-    function addPoPalaceDiagonal(B, team, r,c, out){
-      const kind = palaceKind(r,c); if (!kind) return;
-      const s = key(r,c);
-      const center = (kind==='top') ? '1,4' : '8,4';
-      const [cr,cc] = center.split(',').map(Number);
-      const oppC = oppositeCorner(r,c); if (!oppC) return;
-      const isCorner = (kind==='top' ? ['0,3','0,5','2,3','2,5'].includes(s)
-                                     : ['7,3','7,5','9,3','9,5'].includes(s));
-      if (!isCorner) return;
-      const mid = bGet(B,cr,cc); if (!mid || mid.piece==='po') return;
-      const [or,oc] = oppC; const occ=bGet(B,or,oc);
-      if (!occ) out.push([or,oc]); else if (occ.team!==team && occ.piece!=='po') out.push([or,oc]);
-    }
-
-    function genPseudoMoves(B, r,c, info){
-      const team = info.team, pc = info.piece;
-      const out = [];
-      const forwardDir = (team==='cho') ? +1 : -1;
-
-      if (pc==='cha'){
-        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          let rr=r+dr, cc=c+dc;
-          while (inside(rr,cc)){
-            const res=addPush(B,team,rr,cc,out);
-            if(res==='stop') break;
-            rr+=dr; cc+=dc;
-          }
-        }
-        if (inPalace(r,c)){
-          for (const [nr,nc] of diagNeighbors(r,c)){
-            const occ=bGet(B,nr,nc); if (!occ || occ.team!==team) out.push([nr,nc]);
-          }
-        }
-      } else if (pc==='po'){
-        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]) addPoLineMoves(B, team, r,c, dr,dc, out);
-        addPoPalaceDiagonal(B, team, r,c, out);
-      } else if (pc==='ma'){
-        const legs = [
-          {b:[-1,0], dst:[[-2,-1],[-2,1]]},
-          {b:[ 1,0], dst:[[ 2,-1],[ 2,1]]},
-          {b:[ 0,-1], dst:[[-1,-2],[ 1,-2]]},
-          {b:[ 0, 1], dst:[[-1, 2],[ 1, 2]]},
-        ];
-        for (const {b:[br,bc], dst} of legs){
-          const lr=r+br, lc=c+bc; if (!inside(lr,lc) || bGet(B,lr,lc)) continue;
-          for (const [dr,dc] of dst){
-            const rr=r+dr, cc=c+dc;
-            if (!inside(rr,cc)) continue;
-            const occ=bGet(B,rr,cc); if (!occ || occ.team!==team) out.push([rr,cc]);
-          }
-        }
-      } else if (pc==='sang'){
-        const paths = [
-          {step1:[-1,0], step2:[-2,-1], dst:[-3,-2]},
-          {step1:[-1,0], step2:[-2, 1], dst:[-3, 2]},
-          {step1:[ 1,0], step2:[ 2,-1], dst:[ 3,-2]},
-          {step1:[ 1,0], step2:[ 2, 1], dst:[ 3, 2]},
-          {step1:[0,-1], step2:[-1,-2], dst:[-2,-3]},
-          {step1:[0,-1], step2:[ 1,-2], dst:[ 2,-3]},
-          {step1:[0, 1], step2:[-1, 2], dst:[-2, 3]},
-          {step1:[0, 1], step2:[ 1, 2], dst:[ 2, 3]},
-        ];
-        for (const {step1:[a,b], step2:[c1,d1], dst:[e,f]} of paths){
-          const s1r=r+a, s1c=c+b; const s2r=r+c1, s2c=c+d1; const tr=r+e, tc=c+f;
-          if (!inside(s1r,s1c) || bGet(B,s1r,s1c)) continue;
-          if (!inside(s2r,s2c) || bGet(B,s2r,s2c)) continue;
-          if (!inside(tr,tc)) continue;
-          const occ=bGet(B,tr,tc); if (!occ || occ.team!==team) out.push([tr,tc]);
-        }
-      } else if (pc==='jol' || pc==='byung'){
-        const fr = r + forwardDir;
-        if (inside(fr,c)){ const occ=bGet(B,fr,c); if (!occ || occ.team!==team) out.push([fr,c]); }
-        for (const dc of [-1,1]){
-          const cc=c+dc; if(!inside(r,cc)) continue;
-          const occ=bGet(B,r,cc); if(!occ || occ.team!==team) out.push([r,cc]);
-        }
-        if (inPalace(r,c)){
-          for (const [nr,nc] of diagNeighbors(r,c)){
-            if ((team==='cho' && nr>r) || (team==='han' && nr<r)){
-              const occ=bGet(B,nr,nc); if(!occ || occ.team!==team) out.push([nr,nc]);
-            }
-          }
-        }
-      } else if (pc==='jang' || pc==='sa'){
-        if (!inPalace(r,c)) return out;
-        for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const rr=r+dr, cc=c+dc; if(!inPalace(rr,cc)) continue;
-          const occ=bGet(B,rr,cc); if(!occ || occ.team!==team) out.push([rr,cc]);
-        }
-        for (const [rr,cc] of diagNeighbors(r,c)){
-          const occ=bGet(B,rr,cc); if(!occ || occ.team!==team) out.push([rr,cc]);
-        }
-      }
-      return out;
-    }
-
-    function filterLegal(B, fromR,fromC, info, pseudoMoves){
-      const team = info.team;
-      const legal = [];
-      for (const [tr,tc] of pseudoMoves){
-        const NB = bMove(B, fromR,fromC, tr,tc);
-        if (kingsFacing(NB)) continue;
-        if (isInCheck(NB, team)) continue;
-        legal.push([tr,tc]);
-      }
-      return legal;
-    }
-
-    // ===== DOM helpers (시점반영) =====
-    function clearDots(){ movesLay.innerHTML=''; }
-
-    function placePieces(boardObj){
-      piecesLay.innerHTML = '';
-      for (const [pos,info] of Object.entries(boardObj)){
-        const [row,col] = pos.split(',').map(Number);
-        const el = document.createElement('div');
-        el.className = 'piece';
-
-        const name = (info.team==='han' && info.piece==='byung') ? 'byung'
-                   : (info.team==='cho' && info.piece==='jol')   ? 'jol'
-                   : info.piece;
-        el.style.backgroundImage = `url('${info.team}_${name}.svg')`;
-
-        el.dataset.team  = info.team;
-        el.dataset.piece = info.piece;
-        el.dataset.row   = row;
-        el.dataset.col   = col;
-
-        const [vr,vc] = toViewRC(row,col);
-        el.style.setProperty('--row', vr);
-        el.style.setProperty('--col', vc);
-
-        piecesLay.appendChild(el);
-      }
-    }
-
-    function addDotCanonical(r,c, onClickCanonical){
-      const dot = document.createElement('div');
-      dot.className = 'move-dot';
-      const [vr,vc] = toViewRC(r,c);
-      dot.style.setProperty('--row', vr);
-      dot.style.setProperty('--col', vc);
-      dot.addEventListener('click', (e)=>{ e.stopPropagation(); onClickCanonical(); });
-      movesLay.appendChild(dot);
-    }
-
-    // 원격 상태 → 화면 반영
-    function applyRemoteState(s){
-      if (!s) return;
-      currentSetup = s.board || currentSetup;
-      turn = s.turn || 'cho';
-      plyCount = s.plyCount|0;
-      gameOver = !!s.ended;
-
-      placePieces(currentSetup);
-      clearDots();
-
-      setMsg(s.message||'');
-
-      if (gameOver && s.winner){
-        showResult(s.winner);
-      } else {
-        showTurnBanner(turn);
-        resultOv.style.display = 'none';
-      }
-
-      if (plyCount > lastPly) playMove();
-      lastPly = plyCount;
-    }
-
-    // 초기 보드 그리기/반응형
-    const renderAll = ()=>{ updateCellSize(); drawPalaceLines(); }
-    updateCellSize(); drawPalaceLines();
-    placePieces(currentSetup);
-    addEventListener('resize', renderAll);
-    addEventListener('orientationchange', renderAll);
-
-    /* ================== DB 동기화 ================== */
-    onValue(stateRef, snap=>{
-      if (!snap.exists()){
-        runTransaction(stateRef, (s)=>{
-          if (s) return s;
-          return {
-            board: makeInitialSetup(roomSettings.choPattern, roomSettings.hanPattern),
-            turn: roomSettings.firstTurn || 'cho',
-            plyCount: 0,
-            ended: false,
-            winner: null
-          };
+      if (playerCount === 2 && readyCount === 2) {
+        const settingsSnap = await get(ref(db, `${NS}/${roomId}/settings`));
+        const settings = settingsSnap.val() || roomSettings;
+        await set(stateRef, {
+          board: makeInitialSetup(settings.choPattern, settings.hanPattern),
+          turn: settings.firstTurn || 'cho',
+          plyCount: 0, ended: false, winner: null
         });
-        return;
+        await remove(readyAllRef);
+        setMsg('게임이 시작되었습니다.');
       }
-      const v = snap.val();
-      endedFlag = !!v.ended;
-      applyRemoteState(v);
-    });
-
-    // 플레이어 수 모니터링: 종료된 방 & 모두 나가면 삭제
-    onValue(playersRef, async snap=>{
-      const players = snap.val()||{};
-      const cnt = Object.keys(players).length;
-      await update(roomRef, { playerCount: cnt, status: (cnt>=2 ? 'playing' : 'waiting') });
-
-      if (cnt === 0 && endedFlag) {
-        try {
-          const lockRef = ref(db, `${NS}/${roomId}/__cleanupLock`);
-          const uid = auth.currentUser?.uid || Math.random().toString(36).slice(2);
-          const res = await runTransaction(lockRef, v => v || uid);
-          if (res.committed && res.snapshot.val() === uid) {
-            await remove(roomRef);
-          }
-        } catch (e) {
-          console.error('room cleanup failed:', e);
-        }
-      }
-    });
-
-    /* ================== 입력 처리 ================== */
-    let selected = null;
-
-    function showLegalMoves(el){
-      clearDots();
-      const B = new Map(Object.entries(currentSetup)); // "r,c" -> {team,piece}
-      const r = +el.dataset.row, c = +el.dataset.col; // 캐논 좌표
-      const info = {team:el.dataset.team, piece:el.dataset.piece};
-      const pseudo = genPseudoMoves(B, r,c, info);
-      const legal = filterLegal(B, r,c, info, pseudo);
-      legal.forEach(([rr,cc])=> addDotCanonical(rr,cc, ()=> commitMove(r,c, rr,cc)));
-    }
-
-    async function commitMove(fr,fc, tr,tc){
-      if (gameOver) return;
-      if (roleToTeam(myRole) !== turn){ setMsg('내 차례가 아닙니다.'); return; }
-
-      const ok = await runTransaction(stateRef, (s)=>{
-        if (!s || s.ended) return s;
-
-        if (s.turn !== roleToTeam(myRole)) return s;
-
-        const B = new Map(Object.entries(s.board||{}));
-        const P = B.get(key(fr,fc));
-        if (!P || P.team !== s.turn) return s;
-
-        const pseudo = genPseudoMoves(B, fr,fc, P);
-        const legal  = filterLegal(B, fr,fc, P, pseudo);
-        const isLegal = legal.some(([rr,cc])=> rr===tr && cc===tc);
-        if (!isLegal) return s;
-
-        const captured = !!B.get(key(tr,tc));
-        const NB = bMove(B, fr,fc, tr,tc);
-
-        const nextTurn = opp(s.turn);
-        let ended=false, winner=null, message='';
-
-        const inChk = isInCheck(NB, nextTurn);
-        if (inChk){
-          let anyLegal = false;
-          for (const [pos,info] of NB.entries()){
-            if (info.team!==nextTurn) continue;
-            const [r,c] = pos.split(',').map(Number);
-            const ps = genPseudoMoves(NB, r,c, info);
-            const lg = filterLegal(NB, r,c, info, ps);
-            if (lg.length>0){ anyLegal=true; break; }
-          }
-          if (!anyLegal){
-            ended = true;
-            winner = s.turn; // 방금 둔 쪽 승리
-            message = '장군 · 외통수!';
-          } else {
-            message = '장군!';
-          }
-        }
-
-        return {
-          board: Object.fromEntries(NB.entries()),
-          turn: ended ? s.turn : nextTurn,
-          plyCount: (s.plyCount|0) + 1,
-          ended, winner,
-          message
-        };
-      }).then(res=>res.committed);
-
-      if (ok){
-        selected = null; clearDots();
-      } else {
-        setMsg('이동 실패 또는 불가한 수입니다.');
-      }
-    }
-
-    // 말 클릭
-    const piecesLayEl = document.getElementById('pieces-layer');
-    piecesLayEl.addEventListener('click', (e)=>{
-      if (gameOver) return;
-      const t = e.target.closest('.piece');
-      if (t){
-        setMsg('');
-        if (t.dataset.team !== roleToTeam(myRole)) return;
-        if (turn !== roleToTeam(myRole)) { setMsg('내 차례가 아닙니다.'); return; }
-
-        if (selected === t){ selected.classList.remove('selected'); selected=null; clearDots(); return; }
-        if (selected) selected.classList.remove('selected');
-        selected = t; selected.classList.add('selected');
-        showLegalMoves(selected);
-      }
-    });
-
-    // 떠날 때 players에서 제거
-    window.addEventListener('beforeunload', ()=>{
-      const uid = auth.currentUser?.uid;
-      if (uid) remove(ref(db, `${NS}/${roomId}/players/${uid}`));
     });
   </script>
 </body>
