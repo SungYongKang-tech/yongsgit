@@ -148,7 +148,7 @@
   <script type="module">
     /* ================= Firebase ================= */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, get, set, runTransaction, onValue, update, remove, onDisconnect } 
+    import { getDatabase, ref, get, set, onValue, update, remove } 
       from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { getAuth, onAuthStateChanged, signInAnonymously } 
       from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
@@ -184,9 +184,12 @@
     // 네임스페이스
     const NS = 'janggiRooms';
 
-    const roomRef    = ref(db, `${NS}/${roomId}`);
-    const playersRef = ref(db, `${NS}/${roomId}/players`);
-    const stateRef   = ref(db, `${NS}/${roomId}/state`);
+    // 경로 통일: rooms 하위에 roomId
+    const roomRef    = ref(db, `${NS}/rooms/${roomId}`);
+    const playersRef = ref(db, `${NS}/rooms/${roomId}/players`);
+    const stateRef   = ref(db, `${NS}/rooms/${roomId}/state`);
+    const readyRef   = ref(db, `${NS}/rooms/${roomId}/playersReady/${auth.currentUser.uid}`);
+    const readyAllRef= ref(db, `${NS}/rooms/${roomId}/playersReady`);
 
     const roomInfo  = document.getElementById('roomInfo');
     const setupInfo = document.getElementById('setupInfo');
@@ -209,9 +212,7 @@
     const choPatternEl = document.getElementById('choPattern');
     const hanPatternEl = document.getElementById('hanPattern');
 
-    const readyRef = ref(db, `${NS}/${roomId}/playersReady/${auth.currentUser.uid}`);
-    const readyAllRef = ref(db, `${NS}/${roomId}/playersReady`);
-
+    // 시작 준비
     startBtn.onclick = () => {
       update(roomRef, {
         settings: {
@@ -225,6 +226,7 @@
       setMsg('시작 준비 완료. 상대방도 시작 버튼을 눌러야 합니다.');
     };
 
+    // 게임 재시작
     restartBtn.onclick = async () => {
       if (!confirm('정말 재시작 하시겠습니까?')) return;
       await update(roomRef, {
@@ -241,9 +243,10 @@
         ended: false, winner: null
       });
       setMsg('게임이 재시작되었습니다.');
-      resultOv.style.display = 'none';
+      document.getElementById('result-overlay').style.display = 'none';
     };
 
+    // 게임 종료
     endBtn.onclick = async () => {
       if (!confirm('게임을 종료하시겠습니까?')) return;
       await update(stateRef, {
@@ -263,7 +266,7 @@
       const readyCount = Object.keys(ready).filter(uid => ready[uid]).length;
 
       if (playerCount === 2 && readyCount === 2) {
-        const settingsSnap = await get(ref(db, `${NS}/${roomId}/settings`));
+        const settingsSnap = await get(ref(db, `${NS}/rooms/${roomId}/settings`));
         const settings = settingsSnap.val() || roomSettings;
         await set(stateRef, {
           board: makeInitialSetup(settings.choPattern, settings.hanPattern),
