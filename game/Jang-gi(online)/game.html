@@ -57,7 +57,6 @@
     #pieces-layer{position:absolute;inset:0;z-index:2}
     #moves-layer{position:absolute;inset:0;pointer-events:none;z-index:3}
     .move-dot{ pointer-events:auto; }
-
     .piece{
       position:absolute;
       width:calc(var(--cell-size) * var(--piece-scale));
@@ -71,41 +70,25 @@
       transition:box-shadow .15s ease, transform .15s ease;
     }
     .piece.selected{ box-shadow:0 0 12px 4px rgba(255,0,0,.55) }
-
     .move-dot{
       position:absolute; width:var(--dot-size); height:var(--dot-size);
       left:calc(var(--col) * 100% / 8); top:calc(var(--row) * 100% / 9);
       transform:translate(-50%, -50%); border-radius:50%;
       background:rgba(0,0,0,.15); border:2px solid rgba(0,0,0,.35); cursor:pointer;
     }
-
     .row{display:flex; gap:12px; align-items:center; justify-content:center; margin:4px 0 10px; font-size:14px;}
     label { user-select:none; }
-
-    .banner{
-      position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-      pointer-events:none; z-index:4;
-      font-weight:900; letter-spacing:2px; text-shadow:0 2px 6px rgba(0,0,0,.25);
-      font-size:clamp(28px, 8vw, 96px); opacity:0; transition:opacity .3s ease;
-    }
+    .banner{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:4; font-weight:900; letter-spacing:2px; text-shadow:0 2px 6px rgba(0,0,0,.25); font-size:clamp(28px, 8vw, 96px); opacity:0; transition:opacity .3s ease;}
     .banner.show{ opacity:.9; }
     .banner.cho{ color:#1e64ff; }
     .banner.han{ color:#e53935; }
-
-    #result-overlay{
-      position:absolute; inset:0; z-index:6; background:rgba(0,0,0,.66); display:none;
-      align-items:center; justify-content:center;
-    }
-    #result-text{
-      color:#fff; font-size:clamp(36px, 12vw, 120px); font-weight:900;
-      text-shadow:0 4px 18px rgba(0,0,0,.65);
-    }
+    #result-overlay{position:absolute; inset:0; z-index:6; background:rgba(0,0,0,.66); display:none; align-items:center; justify-content:center;}
+    #result-text{color:#fff; font-size:clamp(36px, 12vw, 120px); font-weight:900; text-shadow:0 4px 18px rgba(0,0,0,.65);}
   </style>
 </head>
 <body>
   <h1>장기 게임 (온라인)</h1>
 
-  <!-- 게임 시작, 재시작, 종료 및 배치 선택 UI -->
   <div class="row" id="setupControls">
     <label>초 배치:
       <select id="choPattern">
@@ -181,102 +164,144 @@
     const roomId = params.get('room');
     if (!roomId) { alert('room 파라미터가 없습니다.'); location.href='index.html'; }
 
-    // 네임스페이스
+    // ---- 경로 통일: /janggiRooms/rooms/{roomId} ----
     const NS = 'janggiRooms';
-
-    // 경로 통일: rooms 하위에 roomId
-    const roomRef    = ref(db, `${NS}/rooms/${roomId}`);
-    const playersRef = ref(db, `${NS}/rooms/${roomId}/players`);
-    const stateRef   = ref(db, `${NS}/rooms/${roomId}/state`);
-    const readyRef   = ref(db, `${NS}/rooms/${roomId}/playersReady/${auth.currentUser.uid}`);
-    const readyAllRef= ref(db, `${NS}/rooms/${roomId}/playersReady`);
+    const basePath     = `${NS}/rooms/${roomId}`;
+    const roomRef      = ref(db, basePath);                           // 읽기 전용(쓰기 금지)
+    const playersRef   = ref(db, `${basePath}/players`);
+    const settingsRef  = ref(db, `${basePath}/settings`);
+    const stateRef     = ref(db, `${basePath}/state`);
+    const readyRef     = ref(db, `${basePath}/playersReady/${auth.currentUser.uid}`);
+    const readyAllRef  = ref(db, `${basePath}/playersReady`);
 
     const roomInfo  = document.getElementById('roomInfo');
     const setupInfo = document.getElementById('setupInfo');
     const statusMsg = document.getElementById('statusMsg');
+    const setMsg    = (t)=> statusMsg.textContent = t || '';
 
-    let myRole = null;  // 0=초, 1=한
-    let myTeam = null;  // 'cho' | 'han'
+    let myRole = null;     // 0=초, 1=한
+    let myTeam = null;     // 'cho' | 'han'
     let gameOver = false;
-    let lastPly = 0;
-    let roomSettings = { choPattern:'마상마상', hanPattern:'마상마상', firstTurn:'cho', creatorRole:0 };
 
-    const roleToTeam = (r)=> r===0 ? 'cho' : 'han';
-    const opp        = (t)=> t==='cho' ? 'han' : 'cho';
-    const setMsg     = (t)=> statusMsg.textContent = t || '';
+    // --- 내가 방의 플레이어인지 확인(규칙 만족 보장) ---
+    try {
+      const me = auth.currentUser.uid;
+      const meSnap = await get(ref(db, `${basePath}/players/${me}`));
+      if (!meSnap.exists()) {
+        alert('이 방의 플레이어가 아닙니다. 로비에서 입장 후 다시 시도해주세요.');
+        location.href = 'index.html';
+      } else {
+        myRole = meSnap.val().role;
+        myTeam = (myRole === 0) ? 'cho' : 'han';
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
-    // 시작, 재시작, 종료 버튼 로직
-    const startBtn = document.getElementById('startBtn');
-    const restartBtn = document.getElementById('restartBtn');
-    const endBtn = document.getElementById('endBtn');
+    // UI 요소
+    const startBtn     = document.getElementById('startBtn');
+    const restartBtn   = document.getElementById('restartBtn');
+    const endBtn       = document.getElementById('endBtn');
     const choPatternEl = document.getElementById('choPattern');
     const hanPatternEl = document.getElementById('hanPattern');
 
-    // 시작 준비
-    startBtn.onclick = () => {
-      update(roomRef, {
-        settings: {
+    // ====== 시작 준비 ======
+    startBtn.onclick = async () => {
+      try {
+        // ✅ 부모가 아니라 child 경로(settingsRef)에 직접 쓰기
+        await update(settingsRef, {
           choPattern: choPatternEl.value,
           hanPattern: hanPatternEl.value,
           firstTurn: 'cho',
           creatorRole: myRole
-        }
-      });
-      set(readyRef, true);
-      setMsg('시작 준비 완료. 상대방도 시작 버튼을 눌러야 합니다.');
+        });
+        await set(readyRef, true); // playersReady/{uid}: true
+        setMsg('시작 준비 완료. 상대방도 시작 버튼을 눌러야 합니다.');
+      } catch (e) {
+        console.error('start error', e);
+        alert('시작 설정 저장에 실패했습니다.');
+      }
     };
 
-    // 게임 재시작
+    // ====== 재시작 ======
     restartBtn.onclick = async () => {
       if (!confirm('정말 재시작 하시겠습니까?')) return;
-      await update(roomRef, {
-        settings: {
+      try {
+        await update(settingsRef, {
           choPattern: choPatternEl.value,
           hanPattern: hanPatternEl.value,
           firstTurn: 'cho',
           creatorRole: myRole
-        }
-      });
-      await set(stateRef, {
-        board: makeInitialSetup(choPatternEl.value, hanPatternEl.value),
-        turn: 'cho', plyCount: 0,
-        ended: false, winner: null
-      });
-      setMsg('게임이 재시작되었습니다.');
-      document.getElementById('result-overlay').style.display = 'none';
+        });
+        await set(stateRef, {
+          board: makeInitialSetup(choPatternEl.value, hanPatternEl.value),
+          turn: 'cho',
+          plyCount: 0,
+          ended: false,
+          winner: null
+        });
+        setMsg('게임이 재시작되었습니다.');
+        document.getElementById('result-overlay').style.display = 'none';
+      } catch (e) {
+        console.error('restart error', e);
+        alert('재시작에 실패했습니다.');
+      }
     };
 
-    // 게임 종료
+    // ====== 종료 ======
     endBtn.onclick = async () => {
       if (!confirm('게임을 종료하시겠습니까?')) return;
-      await update(stateRef, {
-        ended: true,
-        winner: null,
-        message: '게임이 강제로 종료되었습니다.'
-      });
-      setMsg('게임이 종료되었습니다.');
+      try {
+        await update(stateRef, {
+          ended: true,
+          winner: null,
+          message: '게임이 강제로 종료되었습니다.'
+        });
+        setMsg('게임이 종료되었습니다.');
+      } catch (e) {
+        console.error('end error', e);
+        alert('종료 처리에 실패했습니다.');
+      }
     };
 
-    // 양측 모두 시작 눌렀는지 확인
-    onValue(readyAllRef, async snap => {
+    // ====== 두 명 모두 준비되면 시작 ======
+    onValue(readyAllRef, async (snap) => {
       const ready = snap.val() || {};
       const playersSnap = await get(playersRef);
       const players = playersSnap.val() || {};
       const playerCount = Object.keys(players).length;
       const readyCount = Object.keys(ready).filter(uid => ready[uid]).length;
 
+      // (디버그 표시)
+      console.log('[ready]', ready, 'players', players);
+
       if (playerCount === 2 && readyCount === 2) {
-        const settingsSnap = await get(ref(db, `${NS}/rooms/${roomId}/settings`));
-        const settings = settingsSnap.val() || roomSettings;
-        await set(stateRef, {
-          board: makeInitialSetup(settings.choPattern, settings.hanPattern),
-          turn: settings.firstTurn || 'cho',
-          plyCount: 0, ended: false, winner: null
-        });
-        await remove(readyAllRef);
-        setMsg('게임이 시작되었습니다.');
+        const settingsSnap = await get(settingsRef);
+        const settings = settingsSnap.val() || {
+          choPattern:'마상마상', hanPattern:'마상마상', firstTurn:'cho'
+        };
+        try {
+          await set(stateRef, {
+            board: makeInitialSetup(settings.choPattern, settings.hanPattern),
+            turn: settings.firstTurn || 'cho',
+            plyCount: 0,
+            ended: false,
+            winner: null
+          });
+          await remove(readyAllRef);
+          setMsg('게임이 시작되었습니다.');
+        } catch (e) {
+          console.error('start game error', e);
+          alert('게임 시작에 실패했습니다.');
+        }
       }
     });
+
+    // --------- 필요 함수 (프로젝트에 이미 있다면 중복 정의 불필요) ---------
+    function makeInitialSetup(choPattern, hanPattern){
+      // TODO: 실제 초기 배치 생성 로직으로 교체
+      return { /* 보드 상태 */ };
+    }
   </script>
 </body>
 </html>
