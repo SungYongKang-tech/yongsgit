@@ -254,18 +254,21 @@ function allPairs(players, used) {
 }
 
 function pickDoublesPairs(playersA, playersB, need) {
-  const usedA = new Set(), usedB = new Set();
-  const usedPair = new Set(); // 같은 조합 방지
+  const usedPair = new Set(); // 같은 두 선수 조합 방지
   const res = [];
 
   for (let k = 0; k < need; k++) {
-    let pairsA = allPairs(playersA, usedA);
-    let pairsB = allPairs(playersB, usedB);
+    let pairsA = allPairs(playersA, new Set()); // usedA 제거
+    let pairsB = allPairs(playersB, new Set()); // usedB 제거
 
+    // 같은 조합(두 사람) 반복 방지
     pairsA = pairsA.filter(pa => !usedPair.has(pa.pair.map(x=>x.name).sort().join('-')));
     pairsB = pairsB.filter(pb => !usedPair.has(pb.pair.map(x=>x.name).sort().join('-')));
 
-    if (pairsA.length === 0 || pairsB.length === 0) break;
+    if (pairsA.length === 0 || pairsB.length === 0) {
+      console.warn("복식 조합 부족, 일부 경기를 채우지 못했습니다.");
+      continue; // break → continue
+    }
 
     let best = null, bestDiff = Infinity;
 
@@ -279,20 +282,19 @@ function pickDoublesPairs(playersA, playersB, need) {
       });
     });
 
-    if (!best) break;
+    if (!best) continue;
 
     const [a1, a2] = best.a, [b1, b2] = best.b;
     res.push({ a1, a2, b1, b2 });
 
-    usedA.add(a1.name); usedA.add(a2.name);
-    usedB.add(b1.name); usedB.add(b2.name);
-
+    // 같은 팀에서 동일한 두 사람이 다시 팀을 이루는 것만 금지
     usedPair.add([a1.name, a2.name].sort().join('-'));
     usedPair.add([b1.name, b2.name].sort().join('-'));
   }
 
   return res;
 }
+
 
 /* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
