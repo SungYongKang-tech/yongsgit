@@ -17,17 +17,17 @@
     h2 { text-align:center; color:#0d47a1; margin:10px 0 30px }
     .config { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:20px }
     select, button { padding:6px 14px; font-size:15px; cursor:pointer }
-    table { border-collapse:collapse; width:100%; max-width:600px; margin:0 auto }
+    table { border-collapse:collapse; width:100%; max-width:720px; margin:0 auto }
     th, td { border:1px solid #888; padding:8px 12px; text-align:center }
     th { background:#e3f2fd }
     .match-card { border:3px solid #0d47a1; padding:20px; margin:30px auto; max-width:720px; background:#fff; border-radius:14px; box-shadow:2px 2px 10px rgba(0,0,0,0.12) }
     .match-card h3 { text-align:center; margin-bottom:20px; font-size:20px; color:#0d47a1 }
+    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
+    .popup button { margin:5px; }
     .scroll-table { overflow-x:auto; border:1px solid #ccc; border-radius:8px; margin:20px auto; width:100%; max-width:720px; }
     .scroll-table table { border-collapse:collapse; width:100%; min-width:500px; background:#fff; }
     .scroll-table th, .scroll-table td { border:1px solid #888; padding:16px 10px; text-align:center; font-size:16px; white-space:nowrap; }
     .scroll-table th:first-child, .scroll-table td:first-child { background:#ffe082; font-weight:bold; }
-    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
-    .popup button { margin:5px; }
   </style>
 </head>
 <body>
@@ -79,7 +79,8 @@ const db = firebase.database();
 
 /* ---------------- 전역 상태 ---------------- */
 let teamNames = [], teamData = {};
-let autoMode = -1;
+let autoMode = -1; // 0:고수 우선, 1:하수 우선, 2:조합 우선
+const modeNames = ["고수 우선", "하수 우선", "조합 우선"];
 
 /* ---------------- 비밀번호 확인 ---------------- */
 function checkPassword() {
@@ -122,7 +123,7 @@ function loadTeams() {
       return false;
     }
     Object.values(raw).forEach(team => {
-      teamData[team.teamName] = team;
+      teamData[team.teamName] = team;  // players: [{name, level}, ...]
       teamNames.push(team.teamName);
     });
     renderTeamList();
@@ -133,7 +134,7 @@ function loadTeams() {
 function renderTeamList() {
   let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원</th></tr>';
   teamNames.forEach(team => {
-    const players = teamData[team].players.map(p => `${p.name}(${p.level})`).join(', ');
+    const players = (teamData[team].players||[]).map(p => `${p.name}(${p.level})`).join(', ');
     html += `<tr><td>${team}</td><td>${players}</td></tr>`;
   });
   html += '</table>';
@@ -145,17 +146,14 @@ async function manualMatch() {
   if (!checkPassword()) return;
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
-  await generateManualMatches();
-}
 
-async function generateManualMatches() {
   await requireAuth();
   await db.ref("matches").remove();
+
   const singles = parseInt(document.getElementById("singlesCnt").value, 10);
   const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
-  const updates = {};
-  document.getElementById("summaryArea").innerHTML = "";
 
+  const updates = {};
   for (let i = 0; i < teamNames.length; i++) {
     for (let j = i + 1; j < teamNames.length; j++) {
       const matchList = [];
@@ -163,85 +161,11 @@ async function generateManualMatches() {
         matchList.push({ label: `${s + 1}단`, players: "미정 vs 미정", result: "-" });
       for (let d = 0; d < doubles; d++)
         matchList.push({ label: `${d + 1}복`, players: "미정/미정 vs 미정/미정", result: "-" });
-
       const key = `${teamNames[i]}_vs_${teamNames[j]}`;
       updates[`matches/${key}`] = { teamA: teamNames[i], teamB: teamNames[j], matchList };
-      renderMatchCard(teamNames[i], teamNames[j], matchList);
     }
   }
   await db.ref().update(updates);
-}
-
-/* ---------------- 조합 키 생성 ---------------- */
-function pairKey(a, b) {
-  return [a, b].sort().join('-');
-}
-
-/* ---------------- 단식 조합 생성 ---------------- */
-function generateSinglesPairs(playersA, playersB, singlesCnt, singlesHistory) {
-  const pairs = [];
-  for (let a of playersA) {
-    for (let b of playersB) {
-      const key = pairKey(a.name, b.name);
-      if (!singlesHistory.has(key)) {
-        pairs.push({ a, b, key, diff: Math.abs(a.level - b.level) }); 
-      }
-    }
-  }
-  // 레벨 차이가 작은 순으로 정렬 → 비슷한 레벨끼리 우선 대전
-  pairs.sort((x, y) => x.diff - y.diff);
-
-  const selected = pairs.slice(0, singlesCnt);
-  selected.forEach(p => singlesHistory.add(p.key));
-  return selected;
-}
-
-
-/* ---------------- 복식 조합 생성 ---------------- */
-function allPairs(players, used) {
-  const res = [];
-  for (let i = 0; i < players.length; i++) {
-    for (let j = i + 1; j < players.length; j++) {
-      if (used.has(players[i].name) || used.has(players[j].name)) continue;
-      res.push({ pair: [players[i], players[j]], total: players[i].level + players[j].level });
-    }
-  }
-  return res;
-}
-
-function pickDoublesPairs(playersA, playersB, need, doublesHistory) {
-  const usedA = new Set(), usedB = new Set();
-  const result = [];
-
-  for (let k = 0; k < need; k++) {
-    let pairsA = allPairs(playersA, usedA);
-    let pairsB = allPairs(playersB, usedB);
-
-    if (pairsA.length === 0 || pairsB.length === 0) break;
-
-    let best = null, bestDiff = Infinity;
-
-    pairsA.forEach(pa => {
-      pairsB.forEach(pb => {
-        const key = pairKey(pa.pair.map(p => p.name).join('/'), pb.pair.map(p => p.name).join('/'));
-        if (doublesHistory.has(key)) return; // 동일 조합 금지
-        const diff = Math.abs(pa.total - pb.total);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          best = { a: pa.pair, b: pb.pair, key };
-        }
-      });
-    });
-
-    if (!best) break;
-
-    const [a1, a2] = best.a, [b1, b2] = best.b;
-    result.push({ a1, a2, b1, b2 });
-    usedA.add(a1.name); usedA.add(a2.name);
-    usedB.add(b1.name); usedB.add(b2.name);
-    doublesHistory.add(best.key);
-  }
-  return result;
 }
 
 /* ---------------- 자동 대진 생성 ---------------- */
@@ -250,6 +174,9 @@ async function autoMatch() {
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
 
+  autoMode = (autoMode + 1) % 3;
+  alert(`자동 생성 모드: ${modeNames[autoMode]}`);
+
   await requireAuth();
   await db.ref("matches").remove();
 
@@ -257,21 +184,16 @@ async function autoMatch() {
   const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
 
   const updates = {};
-  document.getElementById("summaryArea").innerHTML = "";
-
-  const singlesHistory = new Set();
-  const doublesHistory = new Set();
-
-  teamNames.forEach((teamA, i) => {
+  for (let i = 0; i < teamNames.length; i++) {
     for (let j = i + 1; j < teamNames.length; j++) {
-      const teamB = teamNames[j];
-      const playersA = [...teamData[teamA].players].sort((a,b) => a.level - b.level);
-      const playersB = [...teamData[teamB].players].sort((a,b) => a.level - b.level);
+      const teamA = teamNames[i], teamB = teamNames[j];
+      const playersA = [...(teamData[teamA].players||[])].sort((a,b)=>a.level-b.level); // 부수 낮음=강자
+      const playersB = [...(teamData[teamB].players||[])].sort((a,b)=>a.level-b.level);
+
+      const singles = generateSinglesPairsByMode(playersA, playersB, singlesCnt, autoMode);
+      const doubles = generateDoublesPairsByMode(playersA, playersB, doublesCnt, autoMode);
 
       const matchList = [];
-
-      // 단식 생성
-      const singles = generateSinglesPairs(playersA, playersB, singlesCnt, singlesHistory);
       singles.forEach((m, idx) => {
         matchList.push({
           label: `${idx + 1}단`,
@@ -279,46 +201,151 @@ async function autoMatch() {
           result: "-"
         });
       });
-
-      // 복식 생성
-      const doubles = pickDoublesPairs(playersA, playersB, doublesCnt, doublesHistory);
       doubles.forEach((m, idx) => {
         matchList.push({
           label: `${idx + 1}복`,
-          players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ` +
-                   `${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
+          players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
           result: "-"
         });
       });
 
       const key = `${teamA}_vs_${teamB}`;
       updates[`matches/${key}`] = { teamA, teamB, matchList };
-      renderMatchCard(teamA, teamB, matchList);
     }
-  });
+  }
   await db.ref().update(updates);
 }
 
-/* ---------------- 유틸 함수 ---------------- */
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+/* ---------------- 단식(레벨차 최소 + 모드 우선순위) ---------------- */
+function generateSinglesPairsByMode(A, B, need, mode) {
+  const pairs = [];
+  for (let ai = 0; ai < A.length; ai++) {
+    for (let bi = 0; bi < B.length; bi++) {
+      const a = A[ai], b = B[bi];
+      const diff = Math.abs(a.level - b.level);
+      // 강자 우선: (ai+bi) 작은 순, 하수 우선: 큰 순, 조합 우선: 강자 우선과 동일
+      const bias = (mode === 1) ? -(ai + bi) : (ai + bi);
+      pairs.push({ a, b, diff, bias, ai, bi });
+    }
   }
+  pairs.sort((x,y)=>{
+    if (x.diff !== y.diff) return x.diff - y.diff;
+    return x.bias - y.bias;
+  });
+
+  const usedSet = new Set(); // 같은 두 선수 재매칭 금지
+  const res = [];
+  for (const p of pairs) {
+    const key = `${p.a.name}__${p.b.name}`;
+    if (usedSet.has(key)) continue;
+    res.push(p);
+    usedSet.add(key);
+    if (res.length >= need) break;
+  }
+
+  // 부족하면(이론상 거의 없음) 랜덤 보충(다른 조합으로)
+  if (res.length < need) {
+    const extra = pairs.filter(p => !usedSet.has(`${p.a.name}__${p.b.name}`));
+    for (const p of extra) {
+      res.push(p);
+      if (res.length >= need) break;
+    }
+  }
+  return res.slice(0, need);
 }
 
-/* ---------------- 경기 카드 출력 ---------------- */
+/* ---------------- 복식 조합 유틸 ---------------- */
+function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
+function allTeamPairs(players, filterFn) {
+  const res = [];
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const p1 = players[i], p2 = players[j];
+      if (filterFn && !filterFn(i, j, players.length)) continue;
+      res.push({ p1, p2, sum: p1.level + p2.level, i, j });
+    }
+  }
+  return res;
+}
+function greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB) {
+  // usedPairsA/B: 같은 두 명이 같은 팀 재조합 금지
+  const res = [];
+  for (let k = 0; k < need; k++) {
+    let best = null, bestDiff = Infinity, bestIdx = [-1,-1];
+    for (let ai = 0; ai < pairsA.length; ai++) {
+      const a = pairsA[ai];
+      if (!a) continue;
+      const aKey = pairKeySorted(a.p1.name, a.p2.name);
+      if (usedPairsA.has(aKey)) continue;
+      for (let bi = 0; bi < pairsB.length; bi++) {
+        const b = pairsB[bi];
+        if (!b) continue;
+        const bKey = pairKeySorted(b.p1.name, b.p2.name);
+        if (usedPairsB.has(bKey)) continue;
+        const diff = Math.abs(a.sum - b.sum);
+        if (diff < bestDiff) { bestDiff = diff; best = { a, b }; bestIdx = [ai, bi]; }
+      }
+    }
+    if (!best) break;
+    res.push({ a1: best.a.p1, a2: best.a.p2, b1: best.b.p1, b2: best.b.p2 });
+    usedPairsA.add(pairKeySorted(best.a.p1.name, best.a.p2.name));
+    usedPairsB.add(pairKeySorted(best.b.p1.name, best.b.p2.name));
+    // 사용된 후보는 제거해서 동일 페어 방지
+    pairsA[bestIdx[0]] = null;
+    pairsB[bestIdx[1]] = null;
+  }
+  return res;
+}
+
+/* ---------------- 복식(모드별) ---------------- */
+function generateDoublesPairsByMode(A, B, need, mode) {
+  const halfA = Math.ceil(A.length / 2);
+  const halfB = Math.ceil(B.length / 2);
+
+  // 필터: 강자/하수/혼합
+  const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2));
+  const weakFilter   = (i, j, n) => (i >= Math.floor(n/2) && j >= Math.floor(n/2));
+  const mixedFilter  = (i, j, n) => ( (i < Math.ceil(n/2) && j >= Math.floor(n/2)) || (j < Math.ceil(n/2) && i >= Math.floor(n/2)) );
+
+  let pairsA, pairsB;
+
+  if (mode === 0) { // 고수 우선: 강자끼리 vs 강자끼리
+    pairsA = allTeamPairs(A, strongFilter).sort((x,y)=>x.sum - y.sum); // 강자 합 낮은 순
+    pairsB = allTeamPairs(B, strongFilter).sort((x,y)=>x.sum - y.sum);
+  } else if (mode === 1) { // 하수 우선: 하수끼리 vs 하수끼리
+    pairsA = allTeamPairs(A, weakFilter).sort((x,y)=>y.sum - x.sum); // 하수 합 높은 순
+    pairsB = allTeamPairs(B, weakFilter).sort((x,y)=>y.sum - x.sum);
+  } else { // 조합 우선: 강+약 vs 강+약 (부수합 근접)
+    pairsA = allTeamPairs(A, mixedFilter);
+    pairsB = allTeamPairs(B, mixedFilter);
+    // 근접 매칭을 위해 정렬은 하지 않고 greedyMatchPairs에서 diff 최소로 고름
+  }
+
+  const usedPairsA = new Set();
+  const usedPairsB = new Set();
+  let res = greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB);
+
+  // 요청 경기 수를 반드시 맞춤: 부족하면(강/약 풀이 모자랄 때) 전체 페어로 완충
+  if (res.length < need) {
+    const addA = allTeamPairs(A).filter(p=>!usedPairsA.has(pairKeySorted(p.p1.name,p.p2.name)));
+    const addB = allTeamPairs(B).filter(p=>!usedPairsB.has(pairKeySorted(p.p1.name,p.p2.name)));
+    res = res.concat(greedyMatchPairs(addA, addB, need - res.length, usedPairsA, usedPairsB));
+  }
+  return res.slice(0, need);
+}
+
+/* ---------------- 화면 렌더 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
   let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
   html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
-  matchList.forEach(match => {
+  matchList.forEach((m, idx) => {
     html += `<tr>
-      <td>${match.label}</td>
-      <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${match.players}</td>
-      <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
+      <td>${m.label}</td>
+      <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${m.players}</td>
+      <td onclick="openResultPopup(this)" style="cursor:pointer;">${m.result||"-"}</td>
     </tr>`;
   });
-  html += "</tbody></table></div>";
+  html += `</tbody></table></div>`;
   document.getElementById("summaryArea").innerHTML += html;
 }
 
@@ -328,10 +355,10 @@ function openPlayerPopup(teamA, teamB, cell) {
   const isDoubles = cell.innerText.includes("/");
   const inputType = isDoubles ? 'checkbox' : 'radio';
 
-  const playersA = teamData[teamA].players.map(p =>
-    `<label><input type='${inputType}' name='teamA' value="${p.name}">${p.name}(${p.level})</label><br>`).join('');
-  const playersB = teamData[teamB].players.map(p =>
-    `<label><input type='${inputType}' name='teamB' value="${p.name}">${p.name}(${p.level})</label><br>`).join('');
+  const playersA = (teamData[teamA].players||[]).map(p =>
+    `<label><input type='${inputType}' name='teamA' value="${p.name}"> ${p.name}(${p.level})</label><br>`).join('');
+  const playersB = (teamData[teamB].players||[]).map(p =>
+    `<label><input type='${inputType}' name='teamB' value="${p.name}"> ${p.name}(${p.level})</label><br>`).join('');
 
   popup.innerHTML = `
     <h4>${teamA} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersA}
@@ -343,119 +370,166 @@ function openPlayerPopup(teamA, teamB, cell) {
   popup.style.display = 'block';
 }
 
-async function setDoubles(teamA, teamB) {
-  const popup = document.getElementById("popup");
-  const cell = popup.targetCell;
-  const selectedA = Array.from(popup.querySelectorAll("input[name='teamA']:checked"));
-  const selectedB = Array.from(popup.querySelectorAll("input[name='teamB']:checked"));
-  if (selectedA.length !== 2 || selectedB.length !== 2) { alert("각 팀에서 2명씩 선택해주세요"); return; }
-  const teamAText = selectedA.map(el => el.value).join("/");
-  const teamBText = selectedB.map(el => el.value).join("/");
-  cell.innerText = `${teamAText} vs ${teamBText}`;
-  popup.style.display = 'none';
+function findLevel(teamName, playerName){
+  const p = (teamData[teamName].players||[]).find(x=>x.name===playerName);
+  return p ? p.level : '?';
 }
 
 async function setSingles(teamA, teamB) {
+  await requireAuth();
   const popup = document.getElementById("popup");
   const cell = popup.targetCell;
   const selectedA = popup.querySelector("input[name='teamA']:checked");
   const selectedB = popup.querySelector("input[name='teamB']:checked");
   if (!selectedA || !selectedB) { alert("양 팀에서 각각 1명씩 선택해주세요."); return; }
-  cell.innerText = `${selectedA.value} vs ${selectedB.value}`;
+
+  const aTxt = `${selectedA.value}(${findLevel(teamA, selectedA.value)})`;
+  const bTxt = `${selectedB.value}(${findLevel(teamB, selectedB.value)})`;
+  cell.innerText = `${aTxt} vs ${bTxt}`;
+
+  // DB 반영
+  const card = cell.closest(".match-card");
+  const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
+  const teamKey = `${aTeam}_vs_${bTeam}`;
+  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
+
   popup.style.display = 'none';
 }
 
-function closePopup() {
-  document.getElementById("popup").style.display = 'none';
+async function setDoubles(teamA, teamB) {
+  await requireAuth();
+  const popup = document.getElementById("popup");
+  const cell = popup.targetCell;
+
+  const selectedA = Array.from(popup.querySelectorAll("input[name='teamA']:checked"));
+  const selectedB = Array.from(popup.querySelectorAll("input[name='teamB']:checked"));
+  if (selectedA.length !== 2 || selectedB.length !== 2) { alert("각 팀에서 2명씩 선택해주세요"); return; }
+
+  const a1 = selectedA[0].value, a2 = selectedA[1].value;
+  const b1 = selectedB[0].value, b2 = selectedB[1].value;
+
+  const aTxt = `${a1}(${findLevel(teamA,a1)})/${a2}(${findLevel(teamA,a2)})`;
+  const bTxt = `${b1}(${findLevel(teamB,b1)})/${b2}(${findLevel(teamB,b2)})`;
+  cell.innerText = `${aTxt} vs ${bTxt}`;
+
+  // DB 반영
+  const card = cell.closest(".match-card");
+  const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
+  const teamKey = `${aTeam}_vs_${bTeam}`;
+  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
+
+  popup.style.display = 'none';
 }
 
-/* ---------------- 경기 결과 팝업 ---------------- */
+function closePopup(){ document.getElementById("popup").style.display = 'none'; }
+
+/* ---------------- 경기 결과 팝업 & DB 반영 ---------------- */
 function openResultPopup(cell) {
   const popup = document.getElementById("popup");
+  const playerText = cell.parentElement.children[1].innerText;
   const scores = ["3:2","3:1","3:0","0:3","1:3","2:3","2:1","2:0","1:2","0:2","0:0"];
-  const buttons = scores.map(score =>
-    `<button onclick="setMatchResult('${score}')">${score}</button>`).join(" ");
-  popup.innerHTML = `<p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
+  const buttons = scores.map(s=>`<button onclick="setMatchResult('${s}')">${s}</button>`).join(" ");
+  popup.innerHTML = `
+    <p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
+    <p style="text-align:center;">${playerText}</p>
     <div style="text-align:center; margin:10px 0;">${buttons}</div>
     <div style="text-align:center;"><button onclick="closePopup()">닫기</button></div>`;
   popup.targetCell = cell;
   popup.style.display = "block";
 }
 
-function setMatchResult(score) {
+async function setMatchResult(score) {
+  await requireAuth();
   const popup = document.getElementById("popup");
-  popup.targetCell.innerText = score;
+  const cell = popup.targetCell;
+
+  // UI 승자 굵게
+  const row = cell.parentElement;
+  const playerCell = row.children[1];
+  const text = playerCell.innerText;
+  const [a,b] = score.split(":").map(Number);
+  if (!isNaN(a) && !isNaN(b) && text.includes(" vs ")) {
+    let [aNames, bNames] = text.split(" vs ");
+    if (a>b) playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
+    else if (b>a) playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+    else playerCell.innerHTML = `${aNames} vs ${bNames}`;
+  }
+  cell.innerText = score;
+
+  // DB 반영
+  const card = cell.closest(".match-card");
+  const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
+  const teamKey = `${teamA}_vs_${teamB}`;
+  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score);
+
   popup.style.display = "none";
   calculateTeamResults();
+}
+
+/* ---------------- 실시간 Firebase 리스너 ---------------- */
+function listenToMatchUpdates() {
+  db.ref("matches").on("value", snap => {
+    const matches = snap.val();
+    document.getElementById("summaryArea").innerHTML = "";
+    if (!matches) { document.getElementById("rankingArea").innerHTML = ""; return; }
+    for (const key in matches) {
+      const { teamA, teamB } = matches[key];
+      let list = matches[key].matchList;
+      list = Array.isArray(list) ? list : Object.values(list||{});
+      renderMatchCard(teamA, teamB, list);
+    }
+    calculateTeamResults();
+  });
 }
 
 /* ---------------- 순위 계산 ---------------- */
 function calculateTeamResults() {
   const cards = document.querySelectorAll(".match-card");
   const stats = {};
-  const allTeams = new Set();
+  const teams = new Set();
 
   cards.forEach(card => {
-    const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
-    allTeams.add(teamA); allTeams.add(teamB);
+    const [a,b] = card.querySelector("h3").innerText.split(" VS ");
+    teams.add(a); teams.add(b);
   });
-
-  allTeams.forEach(name => stats[name] = { win:0, lose:0, setDiff:0 });
+  teams.forEach(t => stats[t] = { win:0, lose:0, setDiff:0 });
 
   cards.forEach(card => {
     const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
     const rows = card.querySelectorAll("tbody tr");
-    let teamAWin=0, teamBWin=0, teamASet=0, teamBSet=0;
-
-    rows.forEach(row => {
-      const result = row.children[2].innerText.trim();
+    let wA=0, wB=0, sA=0, sB=0;
+    rows.forEach(r => {
+      const result = r.children[2].innerText.trim();
       if (!result.includes(":")) return;
       const [a,b] = result.split(":").map(Number);
-      if (a>b) teamAWin++; else if (b>a) teamBWin++;
-      teamASet += a; teamBSet += b;
+      if (a>b) wA++; else if (b>a) wB++;
+      sA += a||0; sB += b||0;
     });
-
-    stats[teamA].win += teamAWin;
-    stats[teamA].lose += teamBWin;
-    stats[teamA].setDiff += teamASet - teamBSet;
-
-    stats[teamB].win += teamBWin;
-    stats[teamB].lose += teamAWin;
-    stats[teamB].setDiff += teamBSet - teamASet;
+    stats[teamA].win += wA; stats[teamA].lose += wB; stats[teamA].setDiff += (sA-sB);
+    stats[teamB].win += wB; stats[teamB].lose += wA; stats[teamB].setDiff += (sB-sA);
   });
 
-  const sorted = Object.entries(stats).sort((a,b)=>{
-    if(b[1].win!==a[1].win) return b[1].win - a[1].win;
-    return b[1].setDiff - a[1].setDiff;
+  const sorted = Object.entries(stats).sort((x,y)=>{
+    if (y[1].win !== x[1].win) return y[1].win - x[1].win;
+    return y[1].setDiff - x[1].setDiff;
   });
 
   let html = '<h3 style="text-align:center">📊 팀별 경기결과 및 순위표</h3>';
   html += '<div class="scroll-table"><table><thead><tr><th>팀명</th><th>승</th><th>패</th><th>세트득실</th><th>순위</th></tr></thead><tbody>';
-  sorted.forEach(([team, stat], idx)=>{
-    html += `<tr><td>${team}</td><td>${stat.win}</td><td>${stat.lose}</td><td>${stat.setDiff}</td><td>${idx+1}</td></tr>`;
+  sorted.forEach(([team, st], idx)=>{
+    html += `<tr><td>${team}</td><td>${st.win}</td><td>${st.lose}</td><td>${st.setDiff}</td><td>${idx+1}</td></tr>`;
   });
   html += '</tbody></table></div>';
   document.getElementById("rankingArea").innerHTML = html;
 }
 
-/* ---------------- 실시간 Firebase 리스너 ---------------- */
-function listenToMatchUpdates() {
-  db.ref("matches").on("value", snapshot => {
-    const matches = snapshot.val();
-    if (!matches) return;
-    document.getElementById("summaryArea").innerHTML = "";
-    for (const key in matches) {
-      const {teamA, teamB, matchList} = matches[key];
-      const safeList = Array.isArray(matchList) ? matchList : Object.values(matchList || {});
-      renderMatchCard(teamA, teamB, safeList);
-    }
-    calculateTeamResults();
-  });
-}
-
 /* ---------------- 이미지 저장 ---------------- */
 function saveAsImage() {
-  html2canvas(document.getElementById("captureArea")).then(canvas => {
+  const target = document.getElementById("captureArea");
+  html2canvas(target).then(canvas => {
     const link = document.createElement("a");
     link.download = `단체전_대진결과_${new Date().toISOString().slice(0,10)}.png`;
     link.href = canvas.toDataURL();
