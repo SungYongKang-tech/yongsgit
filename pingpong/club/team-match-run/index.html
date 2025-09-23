@@ -26,6 +26,8 @@
     .scroll-table table { border-collapse:collapse; width:100%; min-width:500px; background:#fff; }
     .scroll-table th, .scroll-table td { border:1px solid #888; padding:16px 10px; text-align:center; font-size:16px; white-space:nowrap; }
     .scroll-table th:first-child, .scroll-table td:first-child { background:#ffe082; font-weight:bold; }
+    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ccc; padding:15px; z-index:1000; display:none; }
+    .popup button { margin:5px; }
   </style>
 </head>
 <body>
@@ -47,13 +49,15 @@
       <option value="1">1경기</option>
       <option value="2" selected>2경기</option>
       <option value="3">3경기</option>
-      <option value="4">4경기</option> <!-- 최대 4경기까지 지원 -->
+      <option value="4">4경기</option>
     </select>
 
     <button onclick="manualMatch()">대진표 수동 생성</button>
     <button onclick="autoMatch()">대진표 자동 생성</button>
     <button onclick="saveAsImage()">대진결과 저장</button>
   </div>
+
+  <div id="popup" class="popup"></div>
 
   <div id="captureArea">
     <div id="summaryArea"></div>
@@ -150,7 +154,7 @@ async function generateManualMatches() {
   await db.ref("matches").remove();
 
   const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
+  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
 
   const updates = {};
   document.getElementById("summaryArea").innerHTML = "";
@@ -184,7 +188,7 @@ async function autoMatch() {
   await requireAuth();
   await db.ref("matches").remove();
   const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
+  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
 
   const updates = {};
   document.getElementById("summaryArea").innerHTML = "";
@@ -254,21 +258,18 @@ function allPairs(players, used) {
 }
 
 function pickDoublesPairs(playersA, playersB, need) {
-  const usedPair = new Set(); // 같은 두 선수 조합 방지
+  const usedA = new Set(), usedB = new Set();
+  const usedPair = new Set(); 
   const res = [];
 
   for (let k = 0; k < need; k++) {
-    let pairsA = allPairs(playersA, new Set()); // usedA 제거
-    let pairsB = allPairs(playersB, new Set()); // usedB 제거
+    let pairsA = allPairs(playersA, usedA);
+    let pairsB = allPairs(playersB, usedB);
 
-    // 같은 조합(두 사람) 반복 방지
     pairsA = pairsA.filter(pa => !usedPair.has(pa.pair.map(x=>x.name).sort().join('-')));
     pairsB = pairsB.filter(pb => !usedPair.has(pb.pair.map(x=>x.name).sort().join('-')));
 
-    if (pairsA.length === 0 || pairsB.length === 0) {
-      console.warn("복식 조합 부족, 일부 경기를 채우지 못했습니다.");
-      continue; // break → continue
-    }
+    if (pairsA.length === 0 || pairsB.length === 0) break;
 
     let best = null, bestDiff = Infinity;
 
@@ -282,12 +283,14 @@ function pickDoublesPairs(playersA, playersB, need) {
       });
     });
 
-    if (!best) continue;
+    if (!best) break;
 
     const [a1, a2] = best.a, [b1, b2] = best.b;
     res.push({ a1, a2, b1, b2 });
 
-    // 같은 팀에서 동일한 두 사람이 다시 팀을 이루는 것만 금지
+    usedA.add(a1.name); usedA.add(a2.name);
+    usedB.add(b1.name); usedB.add(b2.name);
+
     usedPair.add([a1.name, a2.name].sort().join('-'));
     usedPair.add([b1.name, b2.name].sort().join('-'));
   }
@@ -295,20 +298,87 @@ function pickDoublesPairs(playersA, playersB, need) {
   return res;
 }
 
-
 /* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
   let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
   html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
-  matchList.forEach(match => {
+  matchList.forEach((match, index) => {
     html += `<tr>
       <td>${match.label}</td>
-      <td>${match.players}</td>
-      <td>${match.result}</td>
+      <td onclick="openPlayerPopup('${teamA}','${teamB}',${index},this)" style="cursor:pointer;">${match.players}</td>
+      <td onclick="openResultPopup('${teamA}','${teamB}',${index},this)" style="cursor:pointer;">${match.result}</td>
     </tr>`;
   });
   html += "</tbody></table></div>";
   document.getElementById("summaryArea").innerHTML += html;
+}
+
+/* ---------------- 선수 선택 팝업 ---------------- */
+function openPlayerPopup(teamA, teamB, matchIndex, cell) {
+  const popup = document.getElementById("popup");
+  const isDoubles = cell.innerText.includes("/");
+  const inputType = isDoubles ? 'checkbox' : 'radio';
+
+  const playersA = teamData[teamA].players.map(p =>
+    `<label><input type='${inputType}' name='teamA' value="${p.name}">${p.name}(${p.level})</label><br>`).join('');
+  const playersB = teamData[teamB].players.map(p =>
+    `<label><input type='${inputType}' name='teamB' value="${p.name}">${p.name}(${p.level})</label><br>`).join('');
+
+  popup.innerHTML = `
+    <h4>${teamA} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersA}
+    <hr>
+    <h4>${teamB} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersB}
+    <br><button onclick="setPlayers('${teamA}','${teamB}',${matchIndex},${isDoubles})">선택 완료</button>
+    <button onclick="closePopup()">닫기</button>`;
+  popup.style.display = 'block';
+}
+
+async function setPlayers(teamA, teamB, matchIndex, isDoubles) {
+  const popup = document.getElementById("popup");
+  const selectedA = Array.from(popup.querySelectorAll("input[name='teamA']:checked")).map(el => el.value);
+  const selectedB = Array.from(popup.querySelectorAll("input[name='teamB']:checked")).map(el => el.value);
+
+  if (isDoubles) {
+    if (selectedA.length !== 2 || selectedB.length !== 2) {
+      alert("복식은 각 팀에서 2명씩 선택해야 합니다.");
+      return;
+    }
+  } else {
+    if (selectedA.length !== 1 || selectedB.length !== 1) {
+      alert("단식은 각 팀에서 1명씩 선택해야 합니다.");
+      return;
+    }
+  }
+
+  const playerText = isDoubles
+    ? `${selectedA.join("/")} vs ${selectedB.join("/")}`
+    : `${selectedA[0]} vs ${selectedB[0]}`;
+
+  const key = `${teamA}_vs_${teamB}`;
+  await db.ref(`matches/${key}/matchList/${matchIndex}/players`).set(playerText);
+
+  popup.style.display = 'none';
+}
+
+function closePopup() {
+  document.getElementById("popup").style.display = 'none';
+}
+
+/* ---------------- 경기 결과 팝업 ---------------- */
+function openResultPopup(teamA, teamB, matchIndex, cell) {
+  const popup = document.getElementById("popup");
+  const scores = ["3:0","3:1","3:2","2:3","1:3","0:3","0:0"];
+  const buttons = scores.map(score =>
+    `<button onclick="setMatchResult('${teamA}','${teamB}',${matchIndex},'${score}')">${score}</button>`).join(' ');
+  popup.innerHTML = `<h4>경기 결과 입력</h4>${buttons}<br><br><button onclick="closePopup()">닫기</button>`;
+  popup.style.display = 'block';
+}
+
+async function setMatchResult(teamA, teamB, matchIndex, score) {
+  const key = `${teamA}_vs_${teamB}`;
+  await db.ref(`matches/${key}/matchList/${matchIndex}/result`).set(score);
+  closePopup();
+  calculateTeamResults();
 }
 
 /* ---------------- 순위 계산 ---------------- */
