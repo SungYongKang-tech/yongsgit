@@ -123,7 +123,7 @@ function loadTeams() {
       return false;
     }
     Object.values(raw).forEach(team => {
-      teamData[team.teamName] = team;  // players: [{name, level}, ...]
+      teamData[team.teamName] = team; // players: [{name, level}, ...]
       teamNames.push(team.teamName);
     });
     renderTeamList();
@@ -187,11 +187,11 @@ async function autoMatch() {
   for (let i = 0; i < teamNames.length; i++) {
     for (let j = i + 1; j < teamNames.length; j++) {
       const teamA = teamNames[i], teamB = teamNames[j];
-      const playersA = [...(teamData[teamA].players||[])].sort((a,b)=>a.level-b.level); // 부수 낮음=강자
-      const playersB = [...(teamData[teamB].players||[])].sort((a,b)=>a.level-b.level);
+      const A = [...(teamData[teamA].players||[])].sort((a,b)=>a.level-b.level); // 부수 낮을수록 강자
+      const B = [...(teamData[teamB].players||[])].sort((a,b)=>a.level-b.level);
 
-      const singles = generateSinglesPairsByMode(playersA, playersB, singlesCnt, autoMode);
-      const doubles = generateDoublesPairsByMode(playersA, playersB, doublesCnt, autoMode);
+      const singles = generateSinglesPairsByMode(A, B, singlesCnt, autoMode);
+      const doubles = generateDoublesPairsByMode(A, B, doublesCnt, autoMode);
 
       const matchList = [];
       singles.forEach((m, idx) => {
@@ -216,132 +216,142 @@ async function autoMatch() {
   await db.ref().update(updates);
 }
 
-/* ---------------- 단식(레벨차 최소 + 모드 우선순위) ---------------- */
+/* -------- 단식: 비슷한 레벨 우선, 중복은 더 이상 조합이 없을 때만 허용 -------- */
 function generateSinglesPairsByMode(A, B, need, mode) {
   const pairs = [];
   for (let ai = 0; ai < A.length; ai++) {
     for (let bi = 0; bi < B.length; bi++) {
       const a = A[ai], b = B[bi];
       const diff = Math.abs(a.level - b.level);
-      // 강자 우선: (ai+bi) 작은 순, 하수 우선: 큰 순, 조합 우선: 강자 우선과 동일
-      const bias = (mode === 1) ? -(ai + bi) : (ai + bi);
+      const bias = (mode === 1) ? -(ai + bi) : (ai + bi); // 하수우선은 큰 인덱스 선호
       pairs.push({ a, b, diff, bias, ai, bi });
     }
   }
-  pairs.sort((x,y)=>{
-    if (x.diff !== y.diff) return x.diff - y.diff;
-    return x.bias - y.bias;
-  });
+  pairs.sort((x,y)=> (x.diff!==y.diff)? x.diff-y.diff : x.bias-y.bias);
 
-  const usedSet = new Set(); // 같은 두 선수 재매칭 금지
-  const res = [];
+  const usedPair = new Set(); // 동일 A선수-B선수 조합 재경기 방지
+  const result = [];
+
+  // 1차: 중복 없이 채우기
   for (const p of pairs) {
     const key = `${p.a.name}__${p.b.name}`;
-    if (usedSet.has(key)) continue;
-    res.push(p);
-    usedSet.add(key);
-    if (res.length >= need) break;
+    if (usedPair.has(key)) continue;
+    usedPair.add(key);
+    result.push(p);
+    if (result.length >= need) break;
   }
-
-  // 부족하면(이론상 거의 없음) 랜덤 보충(다른 조합으로)
-  if (res.length < need) {
-    const extra = pairs.filter(p => !usedSet.has(`${p.a.name}__${p.b.name}`));
-    for (const p of extra) {
-      res.push(p);
-      if (res.length >= need) break;
+  // 2차: 더 이상 새로운 조합이 없으면 중복 허용
+  if (result.length < need) {
+    for (const p of pairs) {
+      result.push(p);
+      if (result.length >= need) break;
     }
   }
-  return res.slice(0, need);
+  return result.slice(0, need);
 }
 
 /* ---------------- 복식 조합 유틸 ---------------- */
-function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
-function allTeamPairs(players, filterFn) {
+const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2)); // 상위 절반
+const weakFilter   = (i, j, n) => (i >= Math.floor(n/2) && j >= Math.floor(n/2)); // 하위 절반
+const mixedFilter  = (i, j, n) => ( (i < Math.ceil(n/2) && j >= Math.floor(n/2)) || (j < Math.ceil(n/2) && i >= Math.floor(n/2)) );
+
+function allTeamPairsFiltered(players, filterFn) {
   const res = [];
-  for (let i = 0; i < players.length; i++) {
-    for (let j = i + 1; j < players.length; j++) {
+  const n = players.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (filterFn && !filterFn(i, j, n)) continue;
       const p1 = players[i], p2 = players[j];
-      if (filterFn && !filterFn(i, j, players.length)) continue;
       res.push({ p1, p2, sum: p1.level + p2.level, i, j });
     }
   }
   return res;
 }
-function greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB) {
-  // usedPairsA/B: 같은 두 명이 같은 팀 재조합 금지
+function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
+function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
+function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
+
+function greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB, usedVersus, allowDuplicates=false) {
   const res = [];
-  for (let k = 0; k < need; k++) {
-    let best = null, bestDiff = Infinity, bestIdx = [-1,-1];
-    for (let ai = 0; ai < pairsA.length; ai++) {
-      const a = pairsA[ai];
+  while (res.length < need) {
+    let best=null, bestDiff=Infinity;
+    for (const a of pairsA) {
       if (!a) continue;
       const aKey = pairKeySorted(a.p1.name, a.p2.name);
-      if (usedPairsA.has(aKey)) continue;
-      for (let bi = 0; bi < pairsB.length; bi++) {
-        const b = pairsB[bi];
+      if (!allowDuplicates && usedPairsA.has(aKey)) continue;
+      for (const b of pairsB) {
         if (!b) continue;
         const bKey = pairKeySorted(b.p1.name, b.p2.name);
-        if (usedPairsB.has(bKey)) continue;
+        if (!allowDuplicates && usedPairsB.has(bKey)) continue;
+        const vKey = versusKey(a.p1,a.p2,b.p1,b.p2);
+        if (!allowDuplicates && usedVersus.has(vKey)) continue;
         const diff = Math.abs(a.sum - b.sum);
-        if (diff < bestDiff) { bestDiff = diff; best = { a, b }; bestIdx = [ai, bi]; }
+        if (diff < bestDiff) { bestDiff = diff; best = { a, b, aKey, bKey, vKey }; }
       }
     }
     if (!best) break;
     res.push({ a1: best.a.p1, a2: best.a.p2, b1: best.b.p1, b2: best.b.p2 });
-    usedPairsA.add(pairKeySorted(best.a.p1.name, best.a.p2.name));
-    usedPairsB.add(pairKeySorted(best.b.p1.name, best.b.p2.name));
-    // 사용된 후보는 제거해서 동일 페어 방지
-    pairsA[bestIdx[0]] = null;
-    pairsB[bestIdx[1]] = null;
+    usedPairsA.add(best.aKey); usedPairsB.add(best.bKey); usedVersus.add(best.vKey);
   }
   return res;
 }
 
-/* ---------------- 복식(모드별) ---------------- */
+/* -------- 복식: 모드별 우선 규칙, 중복은 최후의 수단으로 허용 -------- */
 function generateDoublesPairsByMode(A, B, need, mode) {
-  const halfA = Math.ceil(A.length / 2);
-  const halfB = Math.ceil(B.length / 2);
-
-  // 필터: 강자/하수/혼합
-  const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2));
-  const weakFilter   = (i, j, n) => (i >= Math.floor(n/2) && j >= Math.floor(n/2));
-  const mixedFilter  = (i, j, n) => ( (i < Math.ceil(n/2) && j >= Math.floor(n/2)) || (j < Math.ceil(n/2) && i >= Math.floor(n/2)) );
-
-  let pairsA, pairsB;
-
-  if (mode === 0) { // 고수 우선: 강자끼리 vs 강자끼리
-    pairsA = allTeamPairs(A, strongFilter).sort((x,y)=>x.sum - y.sum); // 강자 합 낮은 순
-    pairsB = allTeamPairs(B, strongFilter).sort((x,y)=>x.sum - y.sum);
-  } else if (mode === 1) { // 하수 우선: 하수끼리 vs 하수끼리
-    pairsA = allTeamPairs(A, weakFilter).sort((x,y)=>y.sum - x.sum); // 하수 합 높은 순
-    pairsB = allTeamPairs(B, weakFilter).sort((x,y)=>y.sum - x.sum);
-  } else { // 조합 우선: 강+약 vs 강+약 (부수합 근접)
-    pairsA = allTeamPairs(A, mixedFilter);
-    pairsB = allTeamPairs(B, mixedFilter);
-    // 근접 매칭을 위해 정렬은 하지 않고 greedyMatchPairs에서 diff 최소로 고름
-  }
+  if (need <= 0) return [];
 
   const usedPairsA = new Set();
   const usedPairsB = new Set();
-  let res = greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB);
+  const usedVersus = new Set();
 
-  // 요청 경기 수를 반드시 맞춤: 부족하면(강/약 풀이 모자랄 때) 전체 페어로 완충
-  if (res.length < need) {
-    const addA = allTeamPairs(A).filter(p=>!usedPairsA.has(pairKeySorted(p.p1.name,p.p2.name)));
-    const addB = allTeamPairs(B).filter(p=>!usedPairsB.has(pairKeySorted(p.p1.name,p.p2.name)));
-    res = res.concat(greedyMatchPairs(addA, addB, need - res.length, usedPairsA, usedPairsB));
+  let bucketOrder = [];
+  // 우선순위 버킷: 각 버킷마다 후보를 만들고 -> greedy로 최대한 채움 -> 부족하면 다음 버킷
+  if (mode === 0) { // 고수 우선
+    bucketOrder = [
+      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) }, // 강자vs강자
+      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },   // 하수vs하수
+      { a: allTeamPairs(A),                       b: allTeamPairs(B) }                         // 전체
+    ];
+  } else if (mode === 1) { // 하수 우선
+    bucketOrder = [
+      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },   // 하수vs하수
+      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) }, // 강자vs강자
+      { a: allTeamPairs(A),                       b: allTeamPairs(B) }                         // 전체
+    ];
+  } else { // 조합 우선: 강+약 vs 강+약
+    bucketOrder = [
+      { a: allTeamPairsFiltered(A, mixedFilter),  b: allTeamPairsFiltered(B, mixedFilter) },  // 강약 혼합
+      { a: allTeamPairs(A),                       b: allTeamPairs(B) }                         // 전체
+    ];
   }
-  return res.slice(0, need);
+
+  let result = [];
+  for (const bucket of bucketOrder) {
+    if (result.length >= need) break;
+    const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length, usedPairsA, usedPairsB, usedVersus, false);
+    result = result.concat(add);
+  }
+
+  // 그래도 부족하면: 중복 허용해서 반드시 채움
+  if (result.length < need) {
+    for (const bucket of bucketOrder) {
+      if (result.length >= need) break;
+      const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length, usedPairsA, usedPairsB, usedVersus, true);
+      result = result.concat(add);
+    }
+  }
+  return result.slice(0, need);
 }
 
-/* ---------------- 화면 렌더 ---------------- */
+/* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
   let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
   html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
-  matchList.forEach((m, idx) => {
+  matchList.forEach((m) => {
+    const players = m.players || "미정 vs 미정";
     html += `<tr>
       <td>${m.label}</td>
-      <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${m.players}</td>
+      <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${players}</td>
       <td onclick="openResultPopup(this)" style="cursor:pointer;">${m.result||"-"}</td>
     </tr>`;
   });
@@ -387,7 +397,6 @@ async function setSingles(teamA, teamB) {
   const bTxt = `${selectedB.value}(${findLevel(teamB, selectedB.value)})`;
   cell.innerText = `${aTxt} vs ${bTxt}`;
 
-  // DB 반영
   const card = cell.closest(".match-card");
   const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${aTeam}_vs_${bTeam}`;
@@ -413,7 +422,6 @@ async function setDoubles(teamA, teamB) {
   const bTxt = `${b1}(${findLevel(teamB,b1)})/${b2}(${findLevel(teamB,b2)})`;
   cell.innerText = `${aTxt} vs ${bTxt}`;
 
-  // DB 반영
   const card = cell.closest(".match-card");
   const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${aTeam}_vs_${bTeam}`;
