@@ -51,7 +51,6 @@
       <option value="3">3경기</option>
     </select>
 
-    <!-- 새 버튼 -->
     <button onclick="manualMatch()">대진표 수동 생성</button>
     <button onclick="autoMatch()">대진표 자동 생성</button>
     <button onclick="saveAsImage()">대진결과 저장</button>
@@ -79,15 +78,7 @@ const db = firebase.database();
 
 /* ---------------- 전역 상태 ---------------- */
 let teamNames = [], teamData = {};
-let autoMode = -1; // ★ 첫 클릭=강자끼리가 되도록 -1에서 시작 (0=강자끼리, 1=약자끼리, 2=강약 혼합)
-
-/* ---------------- 비밀번호 확인 ---------------- */
-function checkPassword() {
-  const pw = prompt("비밀번호를 입력하세요:");
-  if (pw === "7910") return true;
-  alert("비밀번호가 틀렸습니다.");
-  return false;
-}
+let autoMode = -1; // 첫 클릭은 강자끼리
 
 /* ---------------- 로그인 처리 ---------------- */
 async function requireAuth() {
@@ -142,7 +133,6 @@ function renderTeamList() {
 
 /* ---------------- 수동 대진 생성 ---------------- */
 async function manualMatch() {
-  if (!checkPassword()) return;
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
   await generateManualMatches();
@@ -175,11 +165,10 @@ async function generateManualMatches() {
 
 /* ---------------- 자동 대진 생성 ---------------- */
 async function autoMatch() {
-  if (!checkPassword()) return;
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
 
-  autoMode = (autoMode + 1) % 3; // -1->0(강자), 0->1(약자), 1->2(혼합), 2->0...
+  autoMode = (autoMode + 1) % 3;
   const modeNames = ["강자끼리", "약자끼리", "강약 혼합"];
   alert(`자동 생성 모드: ${modeNames[autoMode]}`);
 
@@ -196,22 +185,24 @@ async function autoMatch() {
       let playersA = [...teamData[teamA].players];
       let playersB = [...teamData[teamB].players];
 
-      if (autoMode === 0) {          // 강자끼리
+      if (autoMode === 0) { // 강자끼리
         playersA.sort((a,b) => b.level - a.level);
         playersB.sort((a,b) => b.level - a.level);
-      } else if (autoMode === 1) {   // 약자끼리
+      } else if (autoMode === 1) { // 약자끼리
         playersA.sort((a,b) => a.level - b.level);
         playersB.sort((a,b) => a.level - b.level);
-      } else {                       // 강약 혼합 (A 강자↔B 약자)
+      } else { // 강약 혼합
         playersA.sort((a,b) => b.level - a.level);
         playersB.sort((a,b) => a.level - b.level);
       }
 
       const matchList = [];
       for (let s = 0; s < singles; s++) {
+        const aPlayer = playersA[s % playersA.length];
+        const bPlayer = playersB[s % playersB.length];
         matchList.push({
           label: `${s + 1}단`,
-          players: `${playersA[s % playersA.length].name} vs ${playersB[s % playersB.length].name}`,
+          players: `${aPlayer.name}(${aPlayer.level}) vs ${bPlayer.name}(${bPlayer.level})`,
           result: "-"
         });
       }
@@ -222,7 +213,7 @@ async function autoMatch() {
         const b2 = playersB[(d*2+1) % playersB.length];
         matchList.push({
           label: `${d + 1}복`,
-          players: `${a1.name}/${a2.name} vs ${b1.name}/${b2.name}`,
+          players: `${a1.name}(${a1.level})/${a2.name}(${a2.level}) vs ${b1.name}(${b1.level})/${b2.name}(${b2.level})`,
           result: "-"
         });
       }
@@ -257,9 +248,9 @@ function openPlayerPopup(teamA, teamB, cell) {
   const inputType = isDoubles ? 'checkbox' : 'radio';
 
   const playersA = teamData[teamA].players.map(p =>
-    `<label><input type='${inputType}' name='teamA' value="${p.name}"> ${p.name}(${p.level})</label><br>`).join('');
+    `<label><input type='${inputType}' name='teamA' value="${p.name}(${p.level})"> ${p.name}(${p.level})</label><br>`).join('');
   const playersB = teamData[teamB].players.map(p =>
-    `<label><input type='${inputType}' name='teamB' value="${p.name}"> ${p.name}(${p.level})</label><br>`).join('');
+    `<label><input type='${inputType}' name='teamB' value="${p.name}(${p.level})"> ${p.name}(${p.level})</label><br>`).join('');
 
   popup.innerHTML = `
     <h4>${teamA} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersA}
@@ -284,7 +275,7 @@ async function setDoubles(teamA, teamB) {
   const teamBText = selectedB.map(el => el.value).join("/");
   cell.innerText = `${teamAText} vs ${teamBText}`;
 
-  // ★ DB 반영
+  // DB 반영
   const card = cell.closest(".match-card");
   const [aTeam, bTeam] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${aTeam}_vs_${bTeam}`;
@@ -305,7 +296,7 @@ async function setSingles(teamA, teamB) {
 
   cell.innerText = `${selectedA.value} vs ${selectedB.value}`;
 
-  // ★ DB 반영
+  // DB 반영
   const card = cell.closest(".match-card");
   const [aTeam, bTeam] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${aTeam}_vs_${bTeam}`;
@@ -355,7 +346,7 @@ async function setMatchResult(score) {
   }
   cell.innerText = score;
 
-  // ★ DB 반영
+  // DB 반영
   const card = cell.closest(".match-card");
   const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${teamA}_vs_${teamB}`;
