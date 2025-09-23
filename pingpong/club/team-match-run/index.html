@@ -26,7 +26,7 @@
     .scroll-table table { border-collapse:collapse; width:100%; min-width:500px; background:#fff; }
     .scroll-table th, .scroll-table td { border:1px solid #888; padding:16px 10px; text-align:center; font-size:16px; white-space:nowrap; }
     .scroll-table th:first-child, .scroll-table td:first-child { background:#ffe082; font-weight:bold; }
-    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ccc; padding:15px; z-index:1000; display:none; }
+    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
     .popup button { margin:5px; }
   </style>
 </head>
@@ -57,8 +57,7 @@
     <button onclick="saveAsImage()">대진결과 저장</button>
   </div>
 
-  <div id="popup" class="popup"></div>
-
+  <div id="popup" class="popup" style="display:none;"></div>
   <div id="captureArea">
     <div id="summaryArea"></div>
     <div id="rankingArea" style="margin-top:40px;"></div>
@@ -80,7 +79,7 @@ const db = firebase.database();
 
 /* ---------------- 전역 상태 ---------------- */
 let teamNames = [], teamData = {};
-let autoMode = -1; // 첫 클릭은 강자끼리
+let autoMode = -1;
 
 /* ---------------- 비밀번호 확인 ---------------- */
 function checkPassword() {
@@ -152,10 +151,8 @@ async function manualMatch() {
 async function generateManualMatches() {
   await requireAuth();
   await db.ref("matches").remove();
-
   const singles = parseInt(document.getElementById("singlesCnt").value, 10);
   const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
-
   const updates = {};
   document.getElementById("summaryArea").innerHTML = "";
 
@@ -175,64 +172,116 @@ async function generateManualMatches() {
   await db.ref().update(updates);
 }
 
+/* ---------------- 조합 키 생성 ---------------- */
+function pairKey(a, b) {
+  return [a, b].sort().join('-');
+}
+
+/* ---------------- 단식 조합 생성 ---------------- */
+function generateSinglesPairs(playersA, playersB, singlesCnt, singlesHistory) {
+  const pairs = [];
+  for (let a of playersA) {
+    for (let b of playersB) {
+      const key = pairKey(a.name, b.name);
+      if (!singlesHistory.has(key)) pairs.push({ a, b, key });
+    }
+  }
+  shuffle(pairs);
+  const selected = pairs.slice(0, singlesCnt);
+  selected.forEach(p => singlesHistory.add(p.key));
+  return selected;
+}
+
+/* ---------------- 복식 조합 생성 ---------------- */
+function allPairs(players, used) {
+  const res = [];
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      if (used.has(players[i].name) || used.has(players[j].name)) continue;
+      res.push({ pair: [players[i], players[j]], total: players[i].level + players[j].level });
+    }
+  }
+  return res;
+}
+
+function pickDoublesPairs(playersA, playersB, need, doublesHistory) {
+  const usedA = new Set(), usedB = new Set();
+  const result = [];
+
+  for (let k = 0; k < need; k++) {
+    let pairsA = allPairs(playersA, usedA);
+    let pairsB = allPairs(playersB, usedB);
+
+    if (pairsA.length === 0 || pairsB.length === 0) break;
+
+    let best = null, bestDiff = Infinity;
+
+    pairsA.forEach(pa => {
+      pairsB.forEach(pb => {
+        const key = pairKey(pa.pair.map(p => p.name).join('/'), pb.pair.map(p => p.name).join('/'));
+        if (doublesHistory.has(key)) return; // 동일 조합 금지
+        const diff = Math.abs(pa.total - pb.total);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = { a: pa.pair, b: pb.pair, key };
+        }
+      });
+    });
+
+    if (!best) break;
+
+    const [a1, a2] = best.a, [b1, b2] = best.b;
+    result.push({ a1, a2, b1, b2 });
+    usedA.add(a1.name); usedA.add(a2.name);
+    usedB.add(b1.name); usedB.add(b2.name);
+    doublesHistory.add(best.key);
+  }
+  return result;
+}
+
 /* ---------------- 자동 대진 생성 ---------------- */
 async function autoMatch() {
   if (!checkPassword()) return;
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
 
-  autoMode = (autoMode + 1) % 3;
-  const modeNames = ["강자끼리", "약자끼리", "강약 혼합"];
-  alert(`자동 생성 모드: ${modeNames[autoMode]}`);
-
   await requireAuth();
   await db.ref("matches").remove();
-  const singles = parseInt(document.getElementById("singlesCnt").value, 10);
-  const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
+
+  const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
+  const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
 
   const updates = {};
   document.getElementById("summaryArea").innerHTML = "";
 
+  const singlesHistory = new Set();
+  const doublesHistory = new Set();
+
   teamNames.forEach((teamA, i) => {
     for (let j = i + 1; j < teamNames.length; j++) {
       const teamB = teamNames[j];
-      let playersA = [...teamData[teamA].players];
-      let playersB = [...teamData[teamB].players];
-
-      // 부수가 낮을수록 강자 → 오름차순
-      if (autoMode === 0) { // 강자끼리
-        playersA.sort((a,b) => a.level - b.level);
-        playersB.sort((a,b) => a.level - b.level);
-      } else if (autoMode === 1) { // 약자끼리
-        playersA.sort((a,b) => b.level - a.level);
-        playersB.sort((a,b) => b.level - a.level);
-      } else {
-        var singlesA = [...playersA].sort((a,b) => a.level - b.level); 
-        var singlesB = [...playersB].sort((a,b) => a.level - b.level); 
-        playersA.sort((a,b) => a.level - b.level); // 복식용 A팀 강자순
-        playersB.sort((a,b) => b.level - a.level); // 복식용 B팀 약자순
-      }
+      const playersA = [...teamData[teamA].players].sort((a,b) => a.level - b.level);
+      const playersB = [...teamData[teamB].players].sort((a,b) => a.level - b.level);
 
       const matchList = [];
 
-      // 단식은 항상 강자순
-      for (let s = 0; s < singles; s++) {
-        const aPlayer = (autoMode === 2 ? singlesA : playersA)[s % playersA.length];
-        const bPlayer = (autoMode === 2 ? singlesB : playersB)[s % playersB.length];
+      // 단식 생성
+      const singles = generateSinglesPairs(playersA, playersB, singlesCnt, singlesHistory);
+      singles.forEach((m, idx) => {
         matchList.push({
-          label: `${s + 1}단`,
-          players: `${aPlayer.name}(${aPlayer.level}) vs ${bPlayer.name}(${bPlayer.level})`,
+          label: `${idx + 1}단`,
+          players: `${m.a.name}(${m.a.level}) vs ${m.b.name}(${m.b.level})`,
           result: "-"
         });
-      }
+      });
 
-      // 복식 자동 조합
-      const doublesList = pickDoublesPairs(playersA, playersB, doubles);
-      doublesList.forEach((pair, index) => {
+      // 복식 생성
+      const doubles = pickDoublesPairs(playersA, playersB, doublesCnt, doublesHistory);
+      doubles.forEach((m, idx) => {
         matchList.push({
-          label: `${index + 1}복`,
-          players: `${pair.a1.name}(${pair.a1.level})/${pair.a2.name}(${pair.a2.level}) vs ` +
-                   `${pair.b1.name}(${pair.b1.level})/${pair.b2.name}(${pair.b2.level})`,
+          label: `${idx + 1}복`,
+          players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ` +
+                   `${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
           result: "-"
         });
       });
@@ -245,68 +294,23 @@ async function autoMatch() {
   await db.ref().update(updates);
 }
 
-/* ---------------- 복식 조합 함수 ---------------- */
-function allPairs(players, used) {
-  const res = [];
-  for (let i = 0; i < players.length; i++) {
-    for (let j = i + 1; j < players.length; j++) {
-      if (used.has(players[i].name) || used.has(players[j].name)) continue;
-      res.push({ pair: [players[i], players[j]], total: players[i].level + players[j].level });
-    }
+/* ---------------- 유틸 함수 ---------------- */
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
   }
-  return res;
-}
-
-function pickDoublesPairs(playersA, playersB, need) {
-  const usedA = new Set(), usedB = new Set();
-  const usedPair = new Set(); 
-  const res = [];
-
-  for (let k = 0; k < need; k++) {
-    let pairsA = allPairs(playersA, usedA);
-    let pairsB = allPairs(playersB, usedB);
-
-    pairsA = pairsA.filter(pa => !usedPair.has(pa.pair.map(x=>x.name).sort().join('-')));
-    pairsB = pairsB.filter(pb => !usedPair.has(pb.pair.map(x=>x.name).sort().join('-')));
-
-    if (pairsA.length === 0 || pairsB.length === 0) break;
-
-    let best = null, bestDiff = Infinity;
-
-    pairsA.forEach(pa => {
-      pairsB.forEach(pb => {
-        const diff = Math.abs(pa.total - pb.total);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          best = { a: pa.pair, b: pb.pair };
-        }
-      });
-    });
-
-    if (!best) break;
-
-    const [a1, a2] = best.a, [b1, b2] = best.b;
-    res.push({ a1, a2, b1, b2 });
-
-    usedA.add(a1.name); usedA.add(a2.name);
-    usedB.add(b1.name); usedB.add(b2.name);
-
-    usedPair.add([a1.name, a2.name].sort().join('-'));
-    usedPair.add([b1.name, b2.name].sort().join('-'));
-  }
-
-  return res;
 }
 
 /* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
   let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
   html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
-  matchList.forEach((match, index) => {
+  matchList.forEach(match => {
     html += `<tr>
       <td>${match.label}</td>
-      <td onclick="openPlayerPopup('${teamA}','${teamB}',${index},this)" style="cursor:pointer;">${match.players}</td>
-      <td onclick="openResultPopup('${teamA}','${teamB}',${index},this)" style="cursor:pointer;">${match.result}</td>
+      <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${match.players}</td>
+      <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
     </tr>`;
   });
   html += "</tbody></table></div>";
@@ -314,7 +318,7 @@ function renderMatchCard(teamA, teamB, matchList) {
 }
 
 /* ---------------- 선수 선택 팝업 ---------------- */
-function openPlayerPopup(teamA, teamB, matchIndex, cell) {
+function openPlayerPopup(teamA, teamB, cell) {
   const popup = document.getElementById("popup");
   const isDoubles = cell.innerText.includes("/");
   const inputType = isDoubles ? 'checkbox' : 'radio';
@@ -328,35 +332,31 @@ function openPlayerPopup(teamA, teamB, matchIndex, cell) {
     <h4>${teamA} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersA}
     <hr>
     <h4>${teamB} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersB}
-    <br><button onclick="setPlayers('${teamA}','${teamB}',${matchIndex},${isDoubles})">선택 완료</button>
+    <br><button onclick="${isDoubles ? `setDoubles('${teamA}','${teamB}')` : `setSingles('${teamA}','${teamB}')`}">선택 완료</button>
     <button onclick="closePopup()">닫기</button>`;
+  popup.targetCell = cell;
   popup.style.display = 'block';
 }
 
-async function setPlayers(teamA, teamB, matchIndex, isDoubles) {
+async function setDoubles(teamA, teamB) {
   const popup = document.getElementById("popup");
-  const selectedA = Array.from(popup.querySelectorAll("input[name='teamA']:checked")).map(el => el.value);
-  const selectedB = Array.from(popup.querySelectorAll("input[name='teamB']:checked")).map(el => el.value);
+  const cell = popup.targetCell;
+  const selectedA = Array.from(popup.querySelectorAll("input[name='teamA']:checked"));
+  const selectedB = Array.from(popup.querySelectorAll("input[name='teamB']:checked"));
+  if (selectedA.length !== 2 || selectedB.length !== 2) { alert("각 팀에서 2명씩 선택해주세요"); return; }
+  const teamAText = selectedA.map(el => el.value).join("/");
+  const teamBText = selectedB.map(el => el.value).join("/");
+  cell.innerText = `${teamAText} vs ${teamBText}`;
+  popup.style.display = 'none';
+}
 
-  if (isDoubles) {
-    if (selectedA.length !== 2 || selectedB.length !== 2) {
-      alert("복식은 각 팀에서 2명씩 선택해야 합니다.");
-      return;
-    }
-  } else {
-    if (selectedA.length !== 1 || selectedB.length !== 1) {
-      alert("단식은 각 팀에서 1명씩 선택해야 합니다.");
-      return;
-    }
-  }
-
-  const playerText = isDoubles
-    ? `${selectedA.join("/")} vs ${selectedB.join("/")}`
-    : `${selectedA[0]} vs ${selectedB[0]}`;
-
-  const key = `${teamA}_vs_${teamB}`;
-  await db.ref(`matches/${key}/matchList/${matchIndex}/players`).set(playerText);
-
+async function setSingles(teamA, teamB) {
+  const popup = document.getElementById("popup");
+  const cell = popup.targetCell;
+  const selectedA = popup.querySelector("input[name='teamA']:checked");
+  const selectedB = popup.querySelector("input[name='teamB']:checked");
+  if (!selectedA || !selectedB) { alert("양 팀에서 각각 1명씩 선택해주세요."); return; }
+  cell.innerText = `${selectedA.value} vs ${selectedB.value}`;
   popup.style.display = 'none';
 }
 
@@ -365,19 +365,22 @@ function closePopup() {
 }
 
 /* ---------------- 경기 결과 팝업 ---------------- */
-function openResultPopup(teamA, teamB, matchIndex, cell) {
+function openResultPopup(cell) {
   const popup = document.getElementById("popup");
-  const scores = ["3:0","3:1","3:2","2:3","1:3","0:3","0:0"];
+  const scores = ["3:2","3:1","3:0","0:3","1:3","2:3","2:1","2:0","1:2","0:2","0:0"];
   const buttons = scores.map(score =>
-    `<button onclick="setMatchResult('${teamA}','${teamB}',${matchIndex},'${score}')">${score}</button>`).join(' ');
-  popup.innerHTML = `<h4>경기 결과 입력</h4>${buttons}<br><br><button onclick="closePopup()">닫기</button>`;
-  popup.style.display = 'block';
+    `<button onclick="setMatchResult('${score}')">${score}</button>`).join(" ");
+  popup.innerHTML = `<p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
+    <div style="text-align:center; margin:10px 0;">${buttons}</div>
+    <div style="text-align:center;"><button onclick="closePopup()">닫기</button></div>`;
+  popup.targetCell = cell;
+  popup.style.display = "block";
 }
 
-async function setMatchResult(teamA, teamB, matchIndex, score) {
-  const key = `${teamA}_vs_${teamB}`;
-  await db.ref(`matches/${key}/matchList/${matchIndex}/result`).set(score);
-  closePopup();
+function setMatchResult(score) {
+  const popup = document.getElementById("popup");
+  popup.targetCell.innerText = score;
+  popup.style.display = "none";
   calculateTeamResults();
 }
 
