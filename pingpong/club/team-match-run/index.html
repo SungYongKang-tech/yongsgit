@@ -17,14 +17,14 @@
     h2 { text-align:center; color:#0d47a1; margin:10px 0 30px }
     .config { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:20px }
     select, button { padding:6px 14px; font-size:15px; cursor:pointer }
-    table { border-collapse:collapse; width:100%; max-width:600px; margin:0 auto }
+    table { border-collapse:collapse; width:100%; max-width:720px; margin:0 auto }
     th, td { border:1px solid #888; padding:8px 12px; text-align:center }
     th { background:#e3f2fd }
-    .match-card { border:3px solid #0d47a1; padding:20px; margin:30px auto; max-width:720px; background:#fff; border-radius:14px; box-shadow:2px 2px 10px rgba(0,0,0,0.12) }
+    .match-card { border:3px solid #0d47a1; padding:20px; margin:30px auto; max-width:820px; background:#fff; border-radius:14px; box-shadow:2px 2px 10px rgba(0,0,0,0.12) }
     .match-card h3 { text-align:center; margin-bottom:20px; font-size:20px; color:#0d47a1 }
-    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
+    .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; max-width:90vw }
     .popup button { margin:5px; }
-    .scroll-table { overflow-x:auto; border:1px solid #ccc; border-radius:8px; margin:20px auto; width:100%; max-width:720px; }
+    .scroll-table { overflow-x:auto; border:1px solid #ccc; border-radius:8px; margin:20px auto; width:100%; max-width:820px; }
     .scroll-table table { border-collapse:collapse; width:100%; min-width:500px; background:#fff; }
     .scroll-table th, .scroll-table td { border:1px solid #888; padding:16px 10px; text-align:center; font-size:16px; white-space:nowrap; }
     .scroll-table th:first-child, .scroll-table td:first-child { background:#ffe082; font-weight:bold; }
@@ -78,7 +78,7 @@ const db = firebase.database();
 
 /* ---------------- 전역 상태 ---------------- */
 let teamNames = [], teamData = {};
-let autoMode = -1; // 첫 클릭 = 강자끼리 (0: 강자, 1: 약자, 2: 강약혼합)
+let autoMode = -1; // 첫 클릭=강자끼리 (0: 강자끼리, 1: 약자끼리, 2: 강약 혼합)
 
 /* ---------------- 비밀번호 확인 ---------------- */
 function checkPassword() {
@@ -110,18 +110,15 @@ firebase.auth().onAuthStateChanged(async (user) => {
   listenToMatchUpdates();
 });
 
-/* ---------------- 팀 로드/표시 ---------------- */
+/* ---------------- 팀 로드 ---------------- */
 function loadTeams() {
   return db.ref("teams").once("value").then(snap => {
     const raw = snap.val();
     teamData = {};
     teamNames = [];
-    if (!raw) {
-      alert("팀 정보가 없습니다. 먼저 팀을 구성해주세요.");
-      return false;
-    }
+    if (!raw) { alert("팀 정보가 없습니다. 먼저 팀을 구성해주세요."); return false; }
     Object.values(raw).forEach(team => {
-      teamData[team.teamName] = team; // team.players: [{name, level}]
+      teamData[team.teamName] = team; // team.players: [{name, level}] (level: 부수)
       teamNames.push(team.teamName);
     });
     renderTeamList();
@@ -178,8 +175,8 @@ async function autoMatch() {
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
 
-  autoMode = (autoMode + 1) % 3; // -1→0(강자), 0→1(약자), 1→2(혼합), 2→0...
-  const modeNames = ["강자끼리", "약자끼리", "강약 혼합(단식 제외)"];
+  autoMode = (autoMode + 1) % 3;
+  const modeNames = ["강자끼리", "약자끼리", "강약 혼합(단식은 강자)"];
   alert(`자동 생성 모드: ${modeNames[autoMode]}`);
 
   await requireAuth();
@@ -196,23 +193,23 @@ async function autoMatch() {
       let playersA = [...teamData[teamA].players];
       let playersB = [...teamData[teamB].players];
 
-      // 정렬 로직
+      // 강자 기준: 부수가 낮을수록 강자 → 오름차순이 강자순
       if (autoMode === 0) { // 강자끼리
-        playersA.sort((a,b) => b.level - a.level);
-        playersB.sort((a,b) => b.level - a.level);
-      } else if (autoMode === 1) { // 약자끼리
         playersA.sort((a,b) => a.level - b.level);
         playersB.sort((a,b) => a.level - b.level);
-      } else { // 강약 혼합: 단식은 강자끼리, 복식만 강약 혼합
-        var singlesA = [...playersA].sort((a,b) => b.level - a.level);
-        var singlesB = [...playersB].sort((a,b) => b.level - a.level);
-        playersA.sort((a,b) => b.level - a.level); // 복식(A) 강자순
-        playersB.sort((a,b) => a.level - b.level); // 복식(B) 약자순
+      } else if (autoMode === 1) { // 약자끼리
+        playersA.sort((a,b) => b.level - a.level);
+        playersB.sort((a,b) => b.level - a.level);
+      } else {                 // 강약 혼합: 단식은 강자끼리, 복식만 강약 혼합
+        var singlesA = [...playersA].sort((a,b) => a.level - b.level);
+        var singlesB = [...playersB].sort((a,b) => a.level - b.level);
+        playersA.sort((a,b) => a.level - b.level); // 복식에서 A는 강자순
+        playersB.sort((a,b) => b.level - a.level); // 복식에서 B는 약자순
       }
 
       const matchList = [];
 
-      // 단식: 항상 강자순 vs 강자순 (혼합 모드에서도 예외 없이)
+      // 단식: 항상 강자순 vs 강자순 (혼합 모드도 동일)
       for (let s = 0; s < singles; s++) {
         const aP = (autoMode === 2 ? singlesA : playersA)[s % playersA.length];
         const bP = (autoMode === 2 ? singlesB : playersB)[s % playersB.length];
@@ -223,18 +220,16 @@ async function autoMatch() {
         });
       }
 
-      // 복식: 모드에 따라 (강자/약자/강약)
-      for (let d = 0; d < doubles; d++) {
-        const a1 = playersA[(d*2) % playersA.length];
-        const a2 = playersA[(d*2+1) % playersA.length];
-        const b1 = playersB[(d*2) % playersB.length];
-        const b2 = playersB[(d*2+1) % playersB.length];
+      // 복식: 두 선수 합이 상대팀과 가장 비슷하도록 매칭
+      const doublesPairs = pickDoublesPairs(playersA, playersB, doubles, autoMode);
+      doublesPairs.forEach((pair, idx) => {
+        const {a1,a2,b1,b2} = pair;
         matchList.push({
-          label: `${d + 1}복`,
+          label: `${idx + 1}복`,
           players: `${a1.name}(${a1.level})/${a2.name}(${a2.level}) vs ${b1.name}(${b1.level})/${b2.name}(${b2.level})`,
           result: "-"
         });
-      }
+      });
 
       const key = `${teamA}_vs_${teamB}`;
       updates[`matches/${key}`] = { teamA, teamB, matchList };
@@ -244,13 +239,105 @@ async function autoMatch() {
   await db.ref().update(updates);
 }
 
-/* ---------------- 경기 카드 렌더 ---------------- */
+/* ---- 복식 조합 유틸: 합이 비슷(강자/약자/혼합 모드 반영), 중복 최소화 ---- */
+function pickDoublesPairs(playersA, playersB, need, mode) {
+  const usedA = new Set(), usedB = new Set();
+  const res = [];
+  const isMixed = (p) => Math.abs(p[0].level - p[1].level) >= 2; // 차이 2 이상이면 강약 혼합으로 간주
+
+  for (let k = 0; k < need; k++) {
+    // 사용되지 않은 선수만으로 가능한 페어 생성
+    let pairsA = allPairs(playersA, usedA);
+    let pairsB = allPairs(playersB, usedB);
+
+    // 모드별 페어 선호도 정렬
+    const sortStrong = (x,y)=> (x.sum - y.sum);         // 합 작을수록 강함
+    const sortWeak   = (x,y)=> (y.sum - x.sum);         // 합 클수록 약함
+    const sortMixed  = (x,y)=> (y.diff - x.diff || x.sum - y.sum); // 차이 큰 페어 우선, 다음 합이 비슷한 쪽
+
+    if (mode === 0) { pairsA.sort(sortStrong); pairsB.sort(sortStrong); }
+    else if (mode === 1) { pairsA.sort(sortWeak); pairsB.sort(sortWeak); }
+    else { // 혼합: 혼합 페어를 우선 필터
+      const mixA = pairsA.filter(p=>isMixed(p.pair));
+      const mixB = pairsB.filter(p=>isMixed(p.pair));
+      if (mixA.length) pairsA = mixA;
+      if (mixB.length) pairsB = mixB;
+      pairsA.sort(sortMixed); pairsB.sort(sortMixed);
+    }
+
+    if (!pairsA.length || !pairsB.length) break;
+
+    // A에서 하나 뽑고 B에서 합 차이가 가장 가까운 페어 선택
+    let chosenA = null, chosenB = null, bestDiff = Infinity;
+    for (const a of pairsA) {
+      for (const b of pairsB) {
+        // 모드 0/1에서는 굳이 추가 제약 X, 모드 2에서는 서로 혼합 성향 비슷하도록(둘 다 혼합이면 가산점)
+        const base = Math.abs(a.sum - b.sum);
+        const bonus = (mode===2 && isMixed(a.pair) && isMixed(b.pair)) ? -0.5 : 0; // 혼합-혼합이면 약간 가산
+        const score = base + bonus;
+        if (score < bestDiff) { bestDiff = score; chosenA = a; chosenB = b; }
+      }
+    }
+
+    if (!chosenA || !chosenB) break;
+
+    // 결과에 채택하고 사용 처리
+    const [a1,a2] = chosenA.pair, [b1,b2] = chosenB.pair;
+    res.push({ a1, a2, b1, b2 });
+    usedA.add(a1.name); usedA.add(a2.name);
+    usedB.add(b1.name); usedB.add(b2.name);
+  }
+
+  // 필요한 수를 못 채웠으면 잔여 인원으로 라운드로빈 보충
+  while (res.length < need) {
+    const a1 = firstUnused(playersA, usedA) ?? playersA[res.length % playersA.length];
+    usedA.add(a1.name);
+    const a2 = firstUnused(playersA, usedA) ?? playersA[(res.length+1) % playersA.length];
+    usedA.add(a2.name);
+
+    const b1 = firstUnused(playersB, usedB) ?? playersB[res.length % playersB.length];
+    usedB.add(b1.name);
+    const b2 = firstUnused(playersB, usedB) ?? playersB[(res.length+1) % playersB.length];
+    usedB.add(b2.name);
+
+    res.push({ a1, a2, b1, b2 });
+  }
+  return res;
+}
+
+function allPairs(players, used) {
+  const out = [];
+  for (let i=0;i<players.length;i++) {
+    if (used.has(players[i].name)) continue;
+    for (let j=i+1;j<players.length;j++) {
+      if (used.has(players[j].name)) continue;
+      const p1 = players[i], p2 = players[j];
+      out.push({ pair:[p1,p2], sum: p1.level + p2.level, diff: Math.abs(p1.level - p2.level) });
+    }
+  }
+  // 만약 사용 안된 인원이 1명 이하라면, 재사용 허용 페어도 생성(최소 기능 보장)
+  if (!out.length && players.length >= 2) {
+    for (let i=0;i<players.length;i++) {
+      for (let j=i+1;j<players.length;j++) {
+        const p1 = players[i], p2 = players[j];
+        out.push({ pair:[p1,p2], sum: p1.level + p2.level, diff: Math.abs(p1.level - p2.level) });
+      }
+    }
+  }
+  return out;
+}
+
+function firstUnused(players, used) {
+  for (const p of players) if (!used.has(p.name)) return p;
+  return null;
+}
+
+/* ---------------- 경기 카드 렌더 + 승자 굵게 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
   let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
   html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
 
   matchList.forEach((match) => {
-    // 결과에 따라 승자 굵게 표시
     let playerHTML = match.players;
     const [a, b] = (match.result || "").split(":").map(Number);
     if (!isNaN(a) && !isNaN(b) && match.players.includes(" vs ")) {
@@ -263,7 +350,7 @@ function renderMatchCard(teamA, teamB, matchList) {
     html += `<tr>
       <td>${match.label}</td>
       <td onclick="openPlayerPopup('${teamA}', '${teamB}', this)">${playerHTML}</td>
-      <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result}</td>
+      <td onclick="openResultPopup(this)" style="cursor:pointer;">${match.result || "-"}</td>
     </tr>`;
   });
 
@@ -286,8 +373,10 @@ function openPlayerPopup(teamA, teamB, cell) {
     <h4>${teamA} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersA}
     <hr>
     <h4>${teamB} ${isDoubles ? '(2명 선택)' : '(1명 선택)'}</h4>${playersB}
-    <br><button onclick="${isDoubles ? `setDoubles('${teamA}', '${teamB}')` : `setSingles('${teamA}', '${teamB}')`}">선택 완료</button>
-    <button onclick="closePopup()">닫기</button>`;
+    <div style="margin-top:10px; text-align:center;">
+      <button onclick="${isDoubles ? `setDoubles('${teamA}', '${teamB}')` : `setSingles('${teamA}', '${teamB}')`}">선택 완료</button>
+      <button onclick="closePopup()">닫기</button>
+    </div>`;
   popup.targetCell = cell;
   popup.style.display = 'block';
 }
@@ -422,9 +511,17 @@ function calculateTeamResults() {
     stats[teamB].setDiff += teamBSet - teamASet;
   });
 
+  const singles = +document.getElementById("singlesCnt").value;
+  const doubles = +document.getElementById("doublesCnt").value;
+  const totalGames = singles + doubles;
+
   const sorted = Object.entries(stats).sort((a,b)=>{
-    if(b[1].win!==a[1].win) return b[1].win - a[1].win;
-    return b[1].setDiff - a[1].setDiff;
+    if (totalGames % 2 === 0) { // 짝수 경기: 세트득실 우선
+      return b[1].setDiff - a[1].setDiff;
+    } else {                    // 홀수 경기: 승수 → 세트득실
+      if (b[1].win !== a[1].win) return b[1].win - a[1].win;
+      return b[1].setDiff - a[1].setDiff;
+    }
   });
 
   let html = '<h3 style="text-align:center">📊 팀별 경기결과 및 순위표</h3>';
@@ -453,9 +550,9 @@ function listenToMatchUpdates() {
     if (!matches) return;
     document.getElementById("summaryArea").innerHTML = "";
     for (const key in matches) {
-      const {teamA, teamB, matchList} = matches[key];
-      const safeList = Array.isArray(matchList) ? matchList : Object.values(matchList || {});
-      renderMatchCard(teamA, teamB, safeList);
+      const m = matches[key];
+      const safeList = Array.isArray(m.matchList) ? m.matchList : Object.values(m.matchList || {});
+      renderMatchCard(m.teamA, m.teamB, safeList);
     }
     calculateTeamResults();
   });
