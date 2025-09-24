@@ -510,24 +510,40 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     result = result.concat(add);
   }
 
-  /* 2단계: 남은 경기(3복, 4복)는 일부 중복 허용 */
-  if (result.length < need) {
-    for (const bucket of bucketOrder) {
-      if (result.length >= need) break;
-      const add = greedyMatchPairs(
-        bucket.a, bucket.b, need - result.length,
-        usedPlayersA, usedPlayersB,
-        usedPairsA, usedPairsB,
-        usedVersus,
-        true, // 중복 일부 허용
-        lockedPairs // 첫 두 경기의 조합은 절대 재사용 불가
-      );
-      result = result.concat(add);
-    }
+ /* 2단계: 남은 경기(3복, 4복)는 일부 중복 허용 */
+if (result.length < need) {
+  for (const bucket of bucketOrder) {
+    if (result.length >= need) break;
+    const add = greedyMatchPairs(
+      bucket.a, bucket.b, need - result.length,
+      usedPlayersA, usedPlayersB,
+      usedPairsA, usedPairsB,
+      usedVersus,
+      true, // 중복 일부 허용
+      lockedPairs // 첫 두 경기의 조합은 절대 재사용 불가
+    );
+    result = result.concat(add);
   }
-
-  return result.slice(0, need);
 }
+
+/* 3단계: 그래도 경기 수가 부족하면 강제로 중복 허용 (최종 예외 처리) */
+if (result.length < need) {
+  console.warn("⚠️ 선수 부족으로 인해 복식 경기 강제 중복 생성");
+  for (const bucket of bucketOrder) {
+    if (result.length >= need) break;
+    const add = greedyMatchPairs(
+      bucket.a, bucket.b, need - result.length,
+      new Set(), new Set(), // 완전히 초기화 → 중복 완전 허용
+      new Set(), new Set(),
+      new Set(),
+      true, // 모든 중복 허용
+      new Set()
+    );
+    result = result.concat(add);
+  }
+}
+
+return result.slice(0, need);
 
 
 
