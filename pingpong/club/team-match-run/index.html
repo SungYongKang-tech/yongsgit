@@ -302,16 +302,17 @@ function allTeamPairsFiltered(players, filterFn) {
     for (let j = i + 1; j < n; j++) {
       if (filterFn && !filterFn(i, j, n)) continue;
       const p1 = players[i], p2 = players[j];
-      res.push({ p1, p2, sum: p1.level + p2.level });
+      res.push({ p1, p2, sum: p1.level + p2.level, i, j });
     }
   }
   return res;
 }
+
 function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
 function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
 function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
-function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedVersus, allowDuplicates=false) {
+function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedVersus, allowDuplicates = false) {
   const res = [];
 
   while (res.length < need) {
@@ -320,12 +321,15 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
 
     for (const a of pairsA) {
       const aPlayers = [a.p1.name, a.p2.name];
+      // 중복 방지: A팀 선수 둘 중 하나라도 이미 출전했다면 제외
       if (!allowDuplicates && (usedPlayersA.has(aPlayers[0]) || usedPlayersA.has(aPlayers[1]))) continue;
 
       for (const b of pairsB) {
         const bPlayers = [b.p1.name, b.p2.name];
+        // 중복 방지: B팀 선수 둘 중 하나라도 이미 출전했다면 제외
         if (!allowDuplicates && (usedPlayersB.has(bPlayers[0]) || usedPlayersB.has(bPlayers[1]))) continue;
 
+        // 동일 조합, 동일 상대팀 중복 경기 방지
         const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
         if (!allowDuplicates && usedVersus.has(vKey)) continue;
 
@@ -337,13 +341,16 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
       }
     }
 
+    // 더 이상 조합이 없으면 종료
     if (!best) break;
 
+    // 선택된 경기 확정
     res.push({
       a1: best.a.p1, a2: best.a.p2,
       b1: best.b.p1, b2: best.b.p2
     });
 
+    // 사용 처리
     best.aPlayers.forEach(name => usedPlayersA.add(name));
     best.bPlayers.forEach(name => usedPlayersB.add(name));
     usedVersus.add(best.vKey);
@@ -351,6 +358,7 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
 
   return res;
 }
+
 
 
 function generateDoublesPairsByMode(A, B, need, mode) {
@@ -362,7 +370,7 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   let bucketOrder = [];
 
-  // 모드별 우선순위 버킷
+  // 모드별 우선순위
   if (mode === 0) { // 고수 우선
     bucketOrder = [
       { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) },
@@ -384,7 +392,7 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   let result = [];
 
-  // 1단계: 중복 없이 채우기
+  // 1단계: 중복 없는 배정
   for (const bucket of bucketOrder) {
     if (result.length >= need) break;
     const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length,
@@ -392,7 +400,7 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     result = result.concat(add);
   }
 
-  // 2단계: 중복 허용하여 부족분 채우기
+  // 2단계: 경기 수가 부족하면 중복 허용
   if (result.length < need) {
     for (const bucket of bucketOrder) {
       if (result.length >= need) break;
@@ -404,6 +412,7 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   return result.slice(0, need);
 }
+
 
 
 /* ---------------- 경기 카드 출력 ---------------- */
