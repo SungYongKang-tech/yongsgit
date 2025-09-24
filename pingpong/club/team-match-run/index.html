@@ -309,7 +309,7 @@ function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
 function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
 function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
-function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedVersus, allowDuplicates = false) {
+function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedPairsA, usedPairsB, usedVersus, allowDuplicates = false) {
   const res = [];
 
   while (res.length < need) {
@@ -318,29 +318,34 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
 
     for (const a of pairsA) {
       const aPlayers = [a.p1.name, a.p2.name];
+      const aKey = pairKeySorted(a.p1.name, a.p2.name);
 
-      // 중복 방지: 이미 출전한 선수가 있다면 제외
+      // 같은 조합이 이미 사용되었는지 체크
+      if (!allowDuplicates && usedPairsA.has(aKey)) continue;
+
+      // 두 선수 중 한 명이라도 이미 출전했으면 제외
       if (!allowDuplicates && (usedPlayersA.has(aPlayers[0]) || usedPlayersA.has(aPlayers[1]))) continue;
 
       for (const b of pairsB) {
         const bPlayers = [b.p1.name, b.p2.name];
+        const bKey = pairKeySorted(b.p1.name, b.p2.name);
 
-        // 중복 방지: 이미 출전한 선수가 있다면 제외
+        if (!allowDuplicates && usedPairsB.has(bKey)) continue;
         if (!allowDuplicates && (usedPlayersB.has(bPlayers[0]) || usedPlayersB.has(bPlayers[1]))) continue;
 
-        // 동일한 팀 조합은 제외
+        // 동일 상대팀 조합 방지
         const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
         if (!allowDuplicates && usedVersus.has(vKey)) continue;
 
         const diff = Math.abs(a.sum - b.sum);
         if (diff < bestDiff) {
           bestDiff = diff;
-          best = { a, b, aPlayers, bPlayers, vKey };
+          best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
         }
       }
     }
 
-    if (!best) break; // 더 이상 배정 불가
+    if (!best) break; // 더 이상 조합이 없으면 종료
 
     // 선택 확정
     res.push({
@@ -348,9 +353,15 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
       b1: best.b.p1, b2: best.b.p2
     });
 
-    // 사용 처리
+    // 선수 사용 기록
     best.aPlayers.forEach(name => usedPlayersA.add(name));
     best.bPlayers.forEach(name => usedPlayersB.add(name));
+
+    // **팀 내 조합 사용 기록**
+    usedPairsA.add(best.aKey);
+    usedPairsB.add(best.bKey);
+
+    // 상대팀 조합 기록
     usedVersus.add(best.vKey);
   }
 
@@ -360,12 +371,17 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
 
 
 
+
 function generateDoublesPairsByMode(A, B, need, mode) {
   if (need <= 0) return [];
 
   const usedPlayersA = new Set();
   const usedPlayersB = new Set();
-  const usedVersus = new Set();
+
+  const usedPairsA = new Set();  // 팀 내 동일 2명 조합 방지
+  const usedPairsB = new Set();
+
+  const usedVersus = new Set();  // 동일 상대팀 방지
 
   let bucketOrder = [];
 
@@ -391,20 +407,30 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   let result = [];
 
-  // 1단계: 중복 없이 채우기
+  // **1단계: 중복 없이 최대한 채우기**
   for (const bucket of bucketOrder) {
     if (result.length >= need) break;
-    const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length,
-                                 usedPlayersA, usedPlayersB, usedVersus, false);
+    const add = greedyMatchPairs(
+      bucket.a, bucket.b, need - result.length,
+      usedPlayersA, usedPlayersB,
+      usedPairsA, usedPairsB,
+      usedVersus,
+      false // 중복 완전 금지
+    );
     result = result.concat(add);
   }
 
-  // 2단계: 부족 시 중복 허용
+  // **2단계: 부족 시 중복 허용**
   if (result.length < need) {
     for (const bucket of bucketOrder) {
       if (result.length >= need) break;
-      const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length,
-                                   usedPlayersA, usedPlayersB, usedVersus, true);
+      const add = greedyMatchPairs(
+        bucket.a, bucket.b, need - result.length,
+        usedPlayersA, usedPlayersB,
+        usedPairsA, usedPairsB,
+        usedVersus,
+        true // 부족 시 중복 허용
+      );
       result = result.concat(add);
     }
   }
