@@ -134,26 +134,25 @@ th {
 
   /* ===== 카드 내부 모달(로컬 오버레이) ===== */
   .local-modal-backdrop {
-    position: absolute;
-    inset: 0;                  /* 카드 전체 덮기 */
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;       /* 수직 중앙 */
-    justify-content: center;   /* 수평 중앙 */
-    z-index: 10;
-    border-radius: 10px;
-    padding: 8px;
-  }
-  .local-modal {
+  position: fixed;            /* ✅ 화면 전체 기준으로 변경 */
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;              /* 항상 제일 위로 */
+}
+
+.local-modal {
   background: #fff;
   border-radius: 12px;
   padding: 16px;
   width: min(420px, 92%);
-  max-height: 90vh;        /* ✅ 기존 80vh → 90vh */
-  overflow-y: auto;        /* ✅ 세로 스크롤 허용 */
+  max-height: 95vh;           /* ✅ 높이 확장 */
+  overflow-y: auto;           /* ✅ 세로 스크롤 */
   box-shadow: 0 10px 24px rgba(0,0,0,0.25);
-  text-align: left;
 }
+
 
   .local-modal h4 {
     margin: 6px 0 10px;
@@ -686,25 +685,35 @@ async function setDoubles() {
   await requireAuth();
 
   const { teamA, teamB } = modalContext;
-  const selectedA = Array.from(document.querySelectorAll(".local-modal input[name='teamA']:checked"));
-  const selectedB = Array.from(document.querySelectorAll(".local-modal input[name='teamB']:checked"));
-  if (selectedA.length !== 2 || selectedB.length !== 2) { alert("각 팀에서 2명씩 선택해주세요"); return; }
+
+  // ✅ 현재 열린 모달 내부에서만 탐색
+  const modal = modalTargetCell.closest(".match-card").querySelector('.local-modal');
+  const selectedA = Array.from(modal.querySelectorAll("input[name='teamA']:checked"));
+  const selectedB = Array.from(modal.querySelectorAll("input[name='teamB']:checked"));
+
+  if (selectedA.length !== 2 || selectedB.length !== 2) {
+    alert("각 팀에서 2명씩 선택해주세요");
+    return;
+  }
 
   const a1 = selectedA[0].value, a2 = selectedA[1].value;
   const b1 = selectedB[0].value, b2 = selectedB[1].value;
 
   const aTxt = `${a1}(${findLevel(teamA,a1)})/${a2}(${findLevel(teamA,a2)})`;
   const bTxt = `${b1}(${findLevel(teamB,b1)})/${b2}(${findLevel(teamB,b2)})`;
+
   modalTargetCell.innerText = `${aTxt} vs ${bTxt}`;
 
   const card = modalTargetCell.closest(".match-card");
   const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${aTeam}_vs_${bTeam}`;
-  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(modalTargetCell.parentElement);
-  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
+  const rowIndex = [...card.querySelectorAll("tbody tr")]
+                    .indexOf(modalTargetCell.parentElement);
 
+  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
   closeLocalModal();
 }
+
 
 /* ---------------- 경기 결과 팝업 ---------------- */
 function openResultPopup(cell) {
