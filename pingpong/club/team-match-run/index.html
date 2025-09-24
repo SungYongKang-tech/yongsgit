@@ -721,8 +721,13 @@ async function setDoubles() {
 function openResultPopup(cell) {
   const card = cell.closest(".match-card");
   const playerText = cell.parentElement.children[1].innerText;
-  const scores = ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"];
+  const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
+  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
+  modalTargetCell = cell;
+  modalContext = { teamA, teamB, rowIndex };  // ✅ 경기 위치 정보 저장
+
+  const scores = ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"];
   const inner = `
     <h4>경기 결과 입력</h4>
     <p style="text-align:center;margin:6px 0 12px;">${playerText}</p>
@@ -733,40 +738,38 @@ function openResultPopup(cell) {
       <button onclick="closeLocalModal()">닫기</button>
     </div>
   `;
-
-  modalTargetCell = cell;
-  modalContext = { type: 'result' };
-  openLocalModal(card, inner);
+  openLocalModal(document.body, inner);  // 팝업을 body에 붙임
 }
 
 async function setMatchResult(score) {
-  if (!modalTargetCell) return;
+  if (!modalTargetCell || !modalContext) return;
   await requireAuth();
+
+  const { teamA, teamB, rowIndex } = modalContext;
 
   const row = modalTargetCell.parentElement;
   const playerCell = row.children[1];
   const text = playerCell.innerText;
 
-  const [a,b] = score.split(":").map(Number);
+  // 승자 강조 표시
+  const [a, b] = score.split(":").map(Number);
   if (!isNaN(a) && !isNaN(b) && text.includes(" vs ")) {
     let [aNames, bNames] = text.split(" vs ");
-    if (a>b) playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
-    else if (b>a) playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
+    if (a > b) playerCell.innerHTML = `<strong>${aNames}</strong> vs ${bNames}`;
+    else if (b > a) playerCell.innerHTML = `${aNames} vs <strong>${bNames}</strong>`;
     else playerCell.innerHTML = `${aNames} vs ${bNames}`;
   }
 
   modalTargetCell.innerText = score;
 
-  const card = modalTargetCell.closest(".match-card");
-  const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
+  // ✅ Firebase 업데이트
   const teamKey = `${teamA}_vs_${teamB}`;
-  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(modalTargetCell.parentElement);
-
   await db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score);
 
   closeLocalModal();
   calculateTeamResults();
 }
+
 
 
 /* ---------------- 실시간 Firebase 리스너 ---------------- */
