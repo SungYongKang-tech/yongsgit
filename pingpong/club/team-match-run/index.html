@@ -309,7 +309,7 @@ function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
 function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
 function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
-function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedPairsA, usedPairsB, usedVersus, allowDuplicates = false) {
+function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedPairsA, usedPairsB, usedVersus, allowDuplicates = false, lockedPairs = new Set()) {
   const res = [];
 
   while (res.length < need) {
@@ -321,7 +321,7 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
       const aKey = pairKeySorted(a.p1.name, a.p2.name);
 
       // A팀 동일 조합 방지
-      if (!allowDuplicates && usedPairsA.has(aKey)) continue;
+      if ((!allowDuplicates && usedPairsA.has(aKey)) || lockedPairs.has(aKey)) continue;
 
       // 선수 개별 중복 방지
       if (!allowDuplicates && (usedPlayersA.has(aPlayers[0]) || usedPlayersA.has(aPlayers[1]))) continue;
@@ -331,14 +331,14 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
         const bKey = pairKeySorted(b.p1.name, b.p2.name);
 
         // B팀 동일 조합 방지
-        if (!allowDuplicates && usedPairsB.has(bKey)) continue;
+        if ((!allowDuplicates && usedPairsB.has(bKey)) || lockedPairs.has(bKey)) continue;
 
         // 선수 개별 중복 방지
         if (!allowDuplicates && (usedPlayersB.has(bPlayers[0]) || usedPlayersB.has(bPlayers[1]))) continue;
 
         // 동일 상대 조합 방지
         const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-        if (!allowDuplicates && usedVersus.has(vKey)) continue;
+        if ((!allowDuplicates && usedVersus.has(vKey)) || lockedPairs.has(vKey)) continue;
 
         const diff = Math.abs(a.sum - b.sum);
         if (diff < bestDiff) {
@@ -350,7 +350,7 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
 
     if (!best) break; // 더 이상 조합이 없으면 종료
 
-    // 선택 확정
+    // 확정
     res.push({
       a1: best.a.p1, a2: best.a.p2,
       b1: best.b.p1, b2: best.b.p2
@@ -362,10 +362,18 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
     usedPairsA.add(best.aKey);
     usedPairsB.add(best.bKey);
     usedVersus.add(best.vKey);
+
+    // 첫 두 경기 확정 조합은 lockedPairs에 추가 → 이후 절대 재사용 불가
+    if (res.length <= 2) {
+      lockedPairs.add(best.aKey);
+      lockedPairs.add(best.bKey);
+      lockedPairs.add(best.vKey);
+    }
   }
 
   return res;
 }
+
 
 
 function generateDoublesPairsByMode(A, B, need, mode) {
@@ -374,10 +382,10 @@ function generateDoublesPairsByMode(A, B, need, mode) {
   const usedPlayersA = new Set();
   const usedPlayersB = new Set();
 
-  const usedPairsA = new Set();  // 팀 내 동일 조합 방지
+  const usedPairsA = new Set(); // 팀 내 동일 2명 조합 방지
   const usedPairsB = new Set();
-
-  const usedVersus = new Set();  // 동일 상대팀 방지
+  const usedVersus = new Set(); // 동일 상대팀 방지
+  const lockedPairs = new Set(); // 1복, 2복 확정 후 고정
 
   let bucketOrder = [];
 
@@ -403,25 +411,21 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   let result = [];
 
-  /* ---------------------
-   * 1단계: 2경기까지 중복 완전 금지
-   * --------------------- */
-  const firstTwo = Math.min(2, need); // 첫 두 경기만 중복 절대 금지
+  /* 1단계: 첫 두 경기는 완전 중복 금지 */
   for (const bucket of bucketOrder) {
-    if (result.length >= firstTwo) break;
+    if (result.length >= 2 || result.length >= need) break;
     const add = greedyMatchPairs(
-      bucket.a, bucket.b, firstTwo - result.length,
+      bucket.a, bucket.b, 2 - result.length,
       usedPlayersA, usedPlayersB,
       usedPairsA, usedPairsB,
       usedVersus,
-      false // 중복 완전 금지
+      false, // 완전 중복 금지
+      lockedPairs
     );
     result = result.concat(add);
   }
 
-  /* ---------------------
-   * 2단계: 3복 이후는 중복 일부 허용
-   * --------------------- */
+  /* 2단계: 남은 경기(3복, 4복)는 일부 중복 허용 */
   if (result.length < need) {
     for (const bucket of bucketOrder) {
       if (result.length >= need) break;
@@ -430,7 +434,8 @@ function generateDoublesPairsByMode(A, B, need, mode) {
         usedPlayersA, usedPlayersB,
         usedPairsA, usedPairsB,
         usedVersus,
-        true // 부족 시 중복 허용
+        true, // 중복 일부 허용
+        lockedPairs // 첫 두 경기의 조합은 절대 재사용 불가
       );
       result = result.concat(add);
     }
@@ -438,6 +443,7 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   return result.slice(0, need);
 }
+
 
 
 
