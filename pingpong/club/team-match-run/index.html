@@ -248,34 +248,47 @@ function generateSinglesPairsByMode(A, B, need, mode) {
     for (let bi = 0; bi < B.length; bi++) {
       const a = A[ai], b = B[bi];
       const diff = Math.abs(a.level - b.level);
-      const bias = (mode === 1) ? -(ai + bi) : (ai + bi);
+      const bias = (mode === 1) ? -(ai + bi) : (ai + bi); // 하수 우선 모드
       pairs.push({ a, b, diff, bias });
     }
   }
-  pairs.sort((x,y)=> (x.diff!==y.diff)? x.diff-y.diff : x.bias-y.bias);
 
-  const used = new Set();
+  // 레벨 차이 우선 → bias로 보조 정렬
+  pairs.sort((x, y) => (x.diff !== y.diff) ? x.diff - y.diff : x.bias - y.bias);
+
+  const usedA = new Set();
+  const usedB = new Set();
+  const usedPair = new Set();
   const result = [];
 
-  // 1차: 중복 없는 조합
+  // 1단계: 중복 없이 채우기
   for (const p of pairs) {
+    if (usedA.has(p.a.name) || usedB.has(p.b.name)) continue; // 한 선수가 여러 경기 배정 X
     const key = `${p.a.name}_${p.b.name}`;
-    if (used.has(key)) continue;
-    used.add(key);
+    if (usedPair.has(key)) continue;
+
+    usedA.add(p.a.name);
+    usedB.add(p.b.name);
+    usedPair.add(key);
     result.push(p);
     if (result.length >= need) break;
   }
 
-  // 2차: 부족 시 중복 허용
+  // 2단계: 경기 수가 부족하면 중복 허용하여 채우기
   if (result.length < need) {
     for (const p of pairs) {
-      result.push(p);
+      const key = `${p.a.name}_${p.b.name}`;
+      if (!usedPair.has(key)) {
+        usedPair.add(key);
+        result.push(p);
+      }
       if (result.length >= need) break;
     }
   }
 
   return result.slice(0, need);
 }
+
 
 /* -------- 복식: 동일팀/상대팀 중복 방지, 부족 시 중복 허용 -------- */
 const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2));
