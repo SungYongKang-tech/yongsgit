@@ -311,50 +311,71 @@ function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
 function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
 function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
-function greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB, usedVersus, allowDuplicates=false) {
+function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedVersus, allowDuplicates=false) {
   const res = [];
+
   while (res.length < need) {
-    let best=null, bestDiff=Infinity;
+    let best = null;
+    let bestDiff = Infinity;
+
     for (const a of pairsA) {
-      const aKey = pairKeySorted(a.p1.name, a.p2.name);
-      if (!allowDuplicates && usedPairsA.has(aKey)) continue;
+      const aPlayers = [a.p1.name, a.p2.name];
+      if (!allowDuplicates && (usedPlayersA.has(aPlayers[0]) || usedPlayersA.has(aPlayers[1]))) continue;
+
       for (const b of pairsB) {
-        const bKey = pairKeySorted(b.p1.name, b.p2.name);
-        if (!allowDuplicates && usedPairsB.has(bKey)) continue;
-        const vKey = versusKey(a.p1,a.p2,b.p1,b.p2);
+        const bPlayers = [b.p1.name, b.p2.name];
+        if (!allowDuplicates && (usedPlayersB.has(bPlayers[0]) || usedPlayersB.has(bPlayers[1]))) continue;
+
+        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
         if (!allowDuplicates && usedVersus.has(vKey)) continue;
+
         const diff = Math.abs(a.sum - b.sum);
-        if (diff < bestDiff) { bestDiff = diff; best = { a, b, aKey, bKey, vKey }; }
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = { a, b, aPlayers, bPlayers, vKey };
+        }
       }
     }
+
     if (!best) break;
-    res.push({ a1: best.a.p1, a2: best.a.p2, b1: best.b.p1, b2: best.b.p2 });
-    usedPairsA.add(best.aKey); usedPairsB.add(best.bKey); usedVersus.add(best.vKey);
+
+    res.push({
+      a1: best.a.p1, a2: best.a.p2,
+      b1: best.b.p1, b2: best.b.p2
+    });
+
+    best.aPlayers.forEach(name => usedPlayersA.add(name));
+    best.bPlayers.forEach(name => usedPlayersB.add(name));
+    usedVersus.add(best.vKey);
   }
+
   return res;
 }
+
 
 function generateDoublesPairsByMode(A, B, need, mode) {
   if (need <= 0) return [];
 
-  const usedPairsA = new Set();
-  const usedPairsB = new Set();
+  const usedPlayersA = new Set();
+  const usedPlayersB = new Set();
   const usedVersus = new Set();
 
   let bucketOrder = [];
-  if (mode === 0) {
+
+  // 모드별 우선순위 버킷
+  if (mode === 0) { // 고수 우선
     bucketOrder = [
       { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) },
       { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },
       { a: allTeamPairs(A),                       b: allTeamPairs(B) }
     ];
-  } else if (mode === 1) {
+  } else if (mode === 1) { // 하수 우선
     bucketOrder = [
       { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },
       { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) },
       { a: allTeamPairs(A),                       b: allTeamPairs(B) }
     ];
-  } else {
+  } else { // 조합 우선
     bucketOrder = [
       { a: allTeamPairsFiltered(A, mixedFilter),  b: allTeamPairsFiltered(B, mixedFilter) },
       { a: allTeamPairs(A),                       b: allTeamPairs(B) }
@@ -362,21 +383,28 @@ function generateDoublesPairsByMode(A, B, need, mode) {
   }
 
   let result = [];
+
+  // 1단계: 중복 없이 채우기
   for (const bucket of bucketOrder) {
     if (result.length >= need) break;
-    const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length, usedPairsA, usedPairsB, usedVersus, false);
+    const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length,
+                                 usedPlayersA, usedPlayersB, usedVersus, false);
     result = result.concat(add);
   }
 
+  // 2단계: 중복 허용하여 부족분 채우기
   if (result.length < need) {
     for (const bucket of bucketOrder) {
       if (result.length >= need) break;
-      const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length, usedPairsA, usedPairsB, usedVersus, true);
+      const add = greedyMatchPairs(bucket.a, bucket.b, need - result.length,
+                                   usedPlayersA, usedPlayersB, usedVersus, true);
       result = result.concat(add);
     }
   }
+
   return result.slice(0, need);
 }
+
 
 /* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
