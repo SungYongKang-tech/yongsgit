@@ -24,38 +24,35 @@
     .match-card h3 { text-align:center; margin-bottom:20px; font-size:20px; color:#0d47a1 }
     .popup { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #999; padding:20px; box-shadow:0 0 10px rgba(0,0,0,0.2); z-index:9999; }
     .popup button { margin:5px; }
+
     /* 순위표 - 화면에 맞춰 자동 축소 */
-.scroll-table {
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  margin: 20px auto;
-  width: 100%;
-  max-width: 100%; /* 항상 화면 너비에 맞춤 */
-  overflow: hidden; /* 가로 스크롤 제거 */
-}
-
-.scroll-table table {
-  border-collapse: collapse;
-  width: 100%; /* 화면 너비에 맞춤 */
-  background: #fff;
-  table-layout: fixed; /* 칸 크기를 균등하게 자동 조정 */
-}
-
-.scroll-table th,
-.scroll-table td {
-  border: 1px solid #888;
-  padding: 10px 4px;
-  text-align: center;
-  font-size: clamp(11px, 2vw, 15px); /* 화면 크기에 맞춰 글자 크기 자동 조정 */
-  word-wrap: break-word;
-}
-
-.scroll-table th:first-child,
-.scroll-table td:first-child {
-  background: #ffe082;
-  font-weight: bold;
-}
-
+    .scroll-table {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      margin: 20px auto;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .scroll-table table {
+      border-collapse: collapse;
+      width: 100%;
+      background: #fff;
+      table-layout: fixed;
+    }
+    .scroll-table th,
+    .scroll-table td {
+      border: 1px solid #888;
+      padding: 10px 4px;
+      text-align: center;
+      font-size: clamp(11px, 2vw, 15px);
+      word-wrap: break-word;
+    }
+    .scroll-table th:first-child,
+    .scroll-table td:first-child {
+      background: #ffe082;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -107,7 +104,7 @@ const db = firebase.database();
 
 /* ---------------- 전역 상태 ---------------- */
 let teamNames = [], teamData = {};
-let autoMode = -1; // 0:고수 우선, 1:하수 우선, 2:조합 우선
+let autoMode = -1; 
 const modeNames = ["고수 우선", "하수 우선", "조합 우선"];
 
 /* ---------------- 비밀번호 확인 ---------------- */
@@ -151,7 +148,7 @@ function loadTeams() {
       return false;
     }
     Object.values(raw).forEach(team => {
-      teamData[team.teamName] = team; // players: [{name, level}, ...]
+      teamData[team.teamName] = team;
       teamNames.push(team.teamName);
     });
     renderTeamList();
@@ -215,7 +212,7 @@ async function autoMatch() {
   for (let i = 0; i < teamNames.length; i++) {
     for (let j = i + 1; j < teamNames.length; j++) {
       const teamA = teamNames[i], teamB = teamNames[j];
-      const A = [...(teamData[teamA].players||[])].sort((a,b)=>a.level-b.level); // 부수 낮을수록 강자
+      const A = [...(teamData[teamA].players||[])].sort((a,b)=>a.level-b.level);
       const B = [...(teamData[teamB].players||[])].sort((a,b)=>a.level-b.level);
 
       const singles = generateSinglesPairsByMode(A, B, singlesCnt, autoMode);
@@ -244,44 +241,46 @@ async function autoMatch() {
   await db.ref().update(updates);
 }
 
-/* -------- 단식: 비슷한 레벨 우선, 중복은 더 이상 조합이 없을 때만 허용 -------- */
+/* -------- 단식: 중복 없는 조합 우선, 부족 시 중복 허용 -------- */
 function generateSinglesPairsByMode(A, B, need, mode) {
   const pairs = [];
   for (let ai = 0; ai < A.length; ai++) {
     for (let bi = 0; bi < B.length; bi++) {
       const a = A[ai], b = B[bi];
       const diff = Math.abs(a.level - b.level);
-      const bias = (mode === 1) ? -(ai + bi) : (ai + bi); // 하수우선은 큰 인덱스 선호
-      pairs.push({ a, b, diff, bias, ai, bi });
+      const bias = (mode === 1) ? -(ai + bi) : (ai + bi);
+      pairs.push({ a, b, diff, bias });
     }
   }
   pairs.sort((x,y)=> (x.diff!==y.diff)? x.diff-y.diff : x.bias-y.bias);
 
-  const usedPair = new Set(); // 동일 A선수-B선수 조합 재경기 방지
+  const used = new Set();
   const result = [];
 
-  // 1차: 중복 없이 채우기
+  // 1차: 중복 없는 조합
   for (const p of pairs) {
-    const key = `${p.a.name}__${p.b.name}`;
-    if (usedPair.has(key)) continue;
-    usedPair.add(key);
+    const key = `${p.a.name}_${p.b.name}`;
+    if (used.has(key)) continue;
+    used.add(key);
     result.push(p);
     if (result.length >= need) break;
   }
-  // 2차: 더 이상 새로운 조합이 없으면 중복 허용
+
+  // 2차: 부족 시 중복 허용
   if (result.length < need) {
     for (const p of pairs) {
       result.push(p);
       if (result.length >= need) break;
     }
   }
+
   return result.slice(0, need);
 }
 
-/* ---------------- 복식 조합 유틸 ---------------- */
-const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2)); // 상위 절반
-const weakFilter   = (i, j, n) => (i >= Math.floor(n/2) && j >= Math.floor(n/2)); // 하위 절반
-const mixedFilter  = (i, j, n) => ( (i < Math.ceil(n/2) && j >= Math.floor(n/2)) || (j < Math.ceil(n/2) && i >= Math.floor(n/2)) );
+/* -------- 복식: 동일팀/상대팀 중복 방지, 부족 시 중복 허용 -------- */
+const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2));
+const weakFilter   = (i, j, n) => (i >= Math.floor(n/2) && j >= Math.floor(n/2));
+const mixedFilter  = (i, j, n) => ((i < Math.ceil(n/2) && j >= Math.floor(n/2)) || (j < Math.ceil(n/2) && i >= Math.floor(n/2)));
 
 function allTeamPairsFiltered(players, filterFn) {
   const res = [];
@@ -290,7 +289,7 @@ function allTeamPairsFiltered(players, filterFn) {
     for (let j = i + 1; j < n; j++) {
       if (filterFn && !filterFn(i, j, n)) continue;
       const p1 = players[i], p2 = players[j];
-      res.push({ p1, p2, sum: p1.level + p2.level, i, j });
+      res.push({ p1, p2, sum: p1.level + p2.level });
     }
   }
   return res;
@@ -304,11 +303,9 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB, usedVers
   while (res.length < need) {
     let best=null, bestDiff=Infinity;
     for (const a of pairsA) {
-      if (!a) continue;
       const aKey = pairKeySorted(a.p1.name, a.p2.name);
       if (!allowDuplicates && usedPairsA.has(aKey)) continue;
       for (const b of pairsB) {
-        if (!b) continue;
         const bKey = pairKeySorted(b.p1.name, b.p2.name);
         if (!allowDuplicates && usedPairsB.has(bKey)) continue;
         const vKey = versusKey(a.p1,a.p2,b.p1,b.p2);
@@ -324,7 +321,6 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPairsA, usedPairsB, usedVers
   return res;
 }
 
-/* -------- 복식: 모드별 우선 규칙, 중복은 최후의 수단으로 허용 -------- */
 function generateDoublesPairsByMode(A, B, need, mode) {
   if (need <= 0) return [];
 
@@ -333,23 +329,22 @@ function generateDoublesPairsByMode(A, B, need, mode) {
   const usedVersus = new Set();
 
   let bucketOrder = [];
-  // 우선순위 버킷: 각 버킷마다 후보를 만들고 -> greedy로 최대한 채움 -> 부족하면 다음 버킷
-  if (mode === 0) { // 고수 우선
+  if (mode === 0) {
     bucketOrder = [
-      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) }, // 강자vs강자
-      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },   // 하수vs하수
-      { a: allTeamPairs(A),                       b: allTeamPairs(B) }                         // 전체
+      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) },
+      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },
+      { a: allTeamPairs(A),                       b: allTeamPairs(B) }
     ];
-  } else if (mode === 1) { // 하수 우선
+  } else if (mode === 1) {
     bucketOrder = [
-      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },   // 하수vs하수
-      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) }, // 강자vs강자
-      { a: allTeamPairs(A),                       b: allTeamPairs(B) }                         // 전체
+      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },
+      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) },
+      { a: allTeamPairs(A),                       b: allTeamPairs(B) }
     ];
-  } else { // 조합 우선: 강+약 vs 강+약
+  } else {
     bucketOrder = [
-      { a: allTeamPairsFiltered(A, mixedFilter),  b: allTeamPairsFiltered(B, mixedFilter) },  // 강약 혼합
-      { a: allTeamPairs(A),                       b: allTeamPairs(B) }                         // 전체
+      { a: allTeamPairsFiltered(A, mixedFilter),  b: allTeamPairsFiltered(B, mixedFilter) },
+      { a: allTeamPairs(A),                       b: allTeamPairs(B) }
     ];
   }
 
@@ -360,7 +355,6 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     result = result.concat(add);
   }
 
-  // 그래도 부족하면: 중복 허용해서 반드시 채움
   if (result.length < need) {
     for (const bucket of bucketOrder) {
       if (result.length >= need) break;
@@ -461,7 +455,7 @@ async function setDoubles(teamA, teamB) {
 
 function closePopup(){ document.getElementById("popup").style.display = 'none'; }
 
-/* ---------------- 경기 결과 팝업 & DB 반영 ---------------- */
+/* ---------------- 경기 결과 팝업 ---------------- */
 function openResultPopup(cell) {
   const popup = document.getElementById("popup");
   const playerText = cell.parentElement.children[1].innerText;
@@ -481,7 +475,6 @@ async function setMatchResult(score) {
   const popup = document.getElementById("popup");
   const cell = popup.targetCell;
 
-  // UI 승자 굵게
   const row = cell.parentElement;
   const playerCell = row.children[1];
   const text = playerCell.innerText;
@@ -494,7 +487,6 @@ async function setMatchResult(score) {
   }
   cell.innerText = score;
 
-  // DB 반영
   const card = cell.closest(".match-card");
   const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
   const teamKey = `${teamA}_vs_${teamB}`;
@@ -565,10 +557,9 @@ function calculateTeamResults() {
 /* ---------------- 이미지 저장 ---------------- */
 function saveAsImage() {
   const captureArea = document.getElementById("captureArea");
-
   html2canvas(captureArea, {
-    scale: 2,           // 이미지 해상도 2배로
-    scrollX: 0,         // 스크롤 보정
+    scale: 2,
+    scrollX: 0,
     scrollY: 0,
     useCORS: true
   }).then(canvas => {
@@ -578,7 +569,6 @@ function saveAsImage() {
     link.click();
   });
 }
-
 </script>
 </body>
 </html>
