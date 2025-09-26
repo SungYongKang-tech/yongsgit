@@ -77,6 +77,8 @@
     .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
     .button-group button { padding: 6px 12px; font-size: 14px; }
     .hidden { display: none !important; }
+/* 수동배정: 교체 선택 하이라이트 */
+.swap-pending { outline: 2px dashed #ff6f00; border-radius: 6px; }
 
   </style>
 </head>
@@ -326,14 +328,6 @@
 }
 
 
-    function resetAll() {
-      selected = [];
-      leaders = [];
-      finalizedLeaders = [];
-      document.getElementById("teams").innerHTML = "";
-      document.getElementById("matchSchedule").innerHTML = "";
-      renderPlayers();
-    }
 
     function saveTeamsAsImage() {
       const teamsArea = document.getElementById("teams");
@@ -428,6 +422,9 @@
     // ✅ 수동 팀 구성 상태
 let manualTeams = [];
 let manualAssigned = new Set(); // 중복 배정 방지
+let manualPool = [];      // 수동배정 풀(미배정/참가자 목록) 인덱스 보관
+let swapBuffer = null;    // { teamIdx, playerIdx } 형태로 1차 선택 저장
+
 // === 팀 색상 팔레트 & 가독성 보정 ===
 const TEAM_COLORS = [
   "#1976d2", // 파랑
@@ -453,8 +450,10 @@ function contrastText(hex) {
 
 // ✅ 수동 배정 시작 (팀장 선정 불필요)
 function startManualTeamAssign() {
-  const poolIndices = selected.length ? [...selected] : allPlayers.map((_, i) => i);
-  if (poolIndices.length < 2) {
+  // 참석자 선택이 있으면 그 집합으로, 없으면 전체 인원으로
+  manualPool = selected.length ? [...selected] : allPlayers.map((_, i) => i);
+
+  if (manualPool.length < 2) {
     alert("선수가 2명 이상 있어야 합니다. (참석자 선택이 없으면 전체 명단을 사용합니다)");
     return;
   }
@@ -465,12 +464,10 @@ function startManualTeamAssign() {
     return;
   }
 
-  // ✅ 팀명 A팀, B팀, C팀 순으로 자동 부여
+  // 팀명 A팀, B팀...
   const names = [];
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  for (let i = 0; i < count; i++) {
-    names.push(`${alphabet[i]}팀`);
-  }
+  for (let i = 0; i < count; i++) names.push(`${alphabet[i]}팀`);
 
   // 상태 초기화
   manualTeams = names.map((n, i) => ({
@@ -479,12 +476,13 @@ function startManualTeamAssign() {
     sum: 0,
     color: TEAM_COLORS[i % TEAM_COLORS.length]
   }));
-
   manualAssigned.clear();
+  swapBuffer = null;
 
   enterManualAssignMode();
-  renderManualTeamUI(poolIndices);
+  renderManualTeamUI(); // ← manualPool을 내부에서 참조
 }
+
 
 
 function resetAll() {
@@ -499,7 +497,7 @@ function resetAll() {
 }
 
 // ✅ 수동 배정 UI 렌더링
-function renderManualTeamUI(poolIndices) {
+function renderManualTeamUI() {
   const teamBox = document.getElementById("teams");
   teamBox.innerHTML = "";
 
@@ -509,28 +507,34 @@ function renderManualTeamUI(poolIndices) {
     div.className = "team-card";
     div.id = `team-${teamIdx}`;
     div.style.borderTop = `4px solid ${team.color || '#1976d2'}`;
+    const fg = contrastText(team.color || '#1976d2');
     div.innerHTML = `
-      <h3 style="display:flex;align-items:center;gap:8px;">
-       <span style="
-         display:inline-block;width:12px;height:12px;border-radius:3px;
-         background:${team.color || '#1976d2'}"></span>
-       ${team.name}
-     </h3>
+      <h3 style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${team.color || '#1976d2'}"></span>
+          ${team.name}
+        </span>
+        <button onclick="promptAddPlayerToTeam(${teamIdx})"
+                style="font-size:12px;padding:6px 10px;background:${team.color || '#1976d2'};color:${fg};border:1px solid rgba(0,0,0,.15);border-radius:6px;cursor:pointer">
+          + 팀에 선수 추가
+        </button>
+      </h3>
       <ul id="team-list-${teamIdx}"></ul>
       <p><small>부수합: <span id="team-sum-${teamIdx}">0</span></small></p>
     `;
     teamBox.appendChild(div);
+
+    // 팀원 목록 초기 렌더
+    renderTeamMembers(teamIdx);
   });
 
   // 참가자 목록 영역을 "수동배정 모드"로 전환
   const list = document.getElementById("playerList");
   list.innerHTML = "";
 
-  poolIndices.forEach((idx) => {
+  manualPool.forEach((idx) => {
     const p = allPlayers[idx];
-
-    // 한 번 배정되면 목록에서 제거
-    if (manualAssigned.has(idx)) return;
+    if (manualAssigned.has(idx)) return; // 이미 배정된 사람은 숨김
 
     const wrapper = document.createElement("div");
     wrapper.style.display = "flex";
@@ -545,25 +549,20 @@ function renderManualTeamUI(poolIndices) {
     const btns = document.createElement("div");
     manualTeams.forEach((team, i) => {
       const btn = document.createElement("button");
+      const bg = team.color || TEAM_COLORS[i % TEAM_COLORS.length];
       btn.textContent = `→ ${team.name}`;
       btn.style.fontSize = "12px";
-  // ✅ 팀 색상 적용
-   const bg = team.color || TEAM_COLORS[i % TEAM_COLORS.length];
-   btn.style.backgroundColor = bg;
-   btn.style.color = contrastText(bg);
-  btn.style.border = "1px solid rgba(0,0,0,0.15)";
-   btn.style.padding = "6px 10px";
-   btn.style.borderRadius = "6px";
-   btn.style.cursor = "pointer";
-
+      btn.style.backgroundColor = bg;
+      btn.style.color = contrastText(bg);
+      btn.style.border = "1px solid rgba(0,0,0,0.15)";
+      btn.style.padding = "6px 10px";
+      btn.style.borderRadius = "6px";
+      btn.style.cursor = "pointer";
       btn.onclick = () => {
-        // 중복 방지
         if (manualAssigned.has(idx)) return;
-
-        team.members.push({ name: p.name, level: p.level });
-        team.sum += p.level;
+        manualTeams[i].members.push({ name: p.name, level: p.level, _srcIdx: idx });
+        manualTeams[i].sum += p.level;
         manualAssigned.add(idx);
-
         renderTeamMembers(i);
         wrapper.style.opacity = "0.4";
         wrapper.style.pointerEvents = "none";
@@ -576,7 +575,7 @@ function renderManualTeamUI(poolIndices) {
     list.appendChild(wrapper);
   });
 
-  // 저장/업로드 버튼 (teams 아래)
+  // 저장/업로드 버튼
   const controls = document.createElement("div");
   controls.style.display = "flex";
   controls.style.gap = "10px";
@@ -584,43 +583,59 @@ function renderManualTeamUI(poolIndices) {
   controls.style.marginTop = "10px";
 
   const saveBtn = document.createElement("button");
-saveBtn.textContent = "✅ 수동 팀 저장";
-saveBtn.onclick = () => {
-  latestTeams = manualTeams.map(t => ({
-    teamName: t.name,           // ✅ 팀 이름은 별도로 저장
-    members: t.members,         // ✅ 선수만 들어감 (name, level 갖춘 배열)
-    sum: t.sum,                 // ⬅️ 여기 뒤에 쉼표 추가
-    color: t.color              // 옵션
-  }));
-  alert("저장 완료! 이제 '경기 시작'을 누르면 저장된 팀으로 진행됩니다.");
-};
+  saveBtn.textContent = "✅ 수동 팀 저장";
+  saveBtn.onclick = () => {
+    latestTeams = manualTeams.map(t => ({
+      teamName: t.name,
+      members: t.members.map(m => ({ name: m.name, level: m.level })),
+      sum: t.sum,
+      color: t.color
+    }));
+    alert("저장 완료! 이제 '경기 시작'을 누르면 저장된 팀으로 진행됩니다.");
+  };
 
   const uploadBtn = document.createElement("button");
-uploadBtn.textContent = "⚡ 저장 후 즉시 경기 시작";
-uploadBtn.onclick = () => {
-  latestTeams = manualTeams.map(t => ({
-    teamName: t.name,
-    members: t.members,
-    sum: t.sum,
-    color: t.color         // 옵션
-  }));
-  uploadTeamsToFirebase();
-};
+  uploadBtn.textContent = "⚡ 저장 후 즉시 경기 시작";
+  uploadBtn.onclick = () => {
+    latestTeams = manualTeams.map(t => ({
+      teamName: t.name,
+      members: t.members.map(m => ({ name: m.name, level: m.level })),
+      sum: t.sum,
+      color: t.color
+    }));
+    uploadTeamsToFirebase();
+  };
 
+  const addAnyBtn = document.createElement("button");
+  addAnyBtn.textContent = "➕ (신규) 선수 직접 추가";
+  addAnyBtn.onclick = () => promptAddPlayer();
 
   controls.appendChild(saveBtn);
   controls.appendChild(uploadBtn);
+  controls.appendChild(addAnyBtn);
   teamBox.appendChild(controls);
 }
+
 
 // ✅ 팀 카드 내용 갱신
 function renderTeamMembers(teamIdx) {
   const ul = document.getElementById(`team-list-${teamIdx}`);
   ul.innerHTML = manualTeams[teamIdx].members
-    .map(p => `<li>${p.name}(${p.level}부)</li>`)
-    .join('');
+    .map((p, idx) => {
+      return `
+        <li id="t${teamIdx}-p${idx}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span>${p.name}(${p.level}부)</span>
+          <span style="display:flex;gap:6px;">
+            <button onclick="beginSwap(${teamIdx}, ${idx})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
+            <button onclick="movePlayer(${teamIdx}, ${idx})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
+            <button onclick="removePlayerFromTeam(${teamIdx}, ${idx})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+          </span>
+        </li>
+      `;
+    }).join('');
   document.getElementById(`team-sum-${teamIdx}`).textContent = manualTeams[teamIdx].sum;
 }
+
 
 function enterManualAssignMode() {
   // 선수 추가 영역 숨김
@@ -639,6 +654,141 @@ function exitManualAssignMode() {
 
   const leaderSection = document.getElementById('leaderCandidates')?.closest('.section');
   if (leaderSection) leaderSection.classList.remove('hidden');
+}
+
+// (A) 교체: 첫 선수 선택 → 두 번째 선수 선택 시 서로 스왑
+function beginSwap(teamIdx, playerIdx) {
+  // 같은 li DOM 얻기
+  const liId = `t${teamIdx}-p${playerIdx}`;
+  const li = document.getElementById(liId);
+
+  if (!swapBuffer) {
+    swapBuffer = { teamIdx, playerIdx, liId };
+    if (li) li.classList.add('swap-pending');
+    return;
+  }
+
+  // 동일 항목이면 취소
+  if (swapBuffer.teamIdx === teamIdx && swapBuffer.playerIdx === playerIdx) {
+    const prevLi = document.getElementById(swapBuffer.liId);
+    if (prevLi) prevLi.classList.remove('swap-pending');
+    swapBuffer = null;
+    return;
+  }
+
+  // 두 번째 선택 → 스왑
+  const aTeam = manualTeams[swapBuffer.teamIdx];
+  const bTeam = manualTeams[teamIdx];
+  const a = aTeam.members[swapBuffer.playerIdx];
+  const b = bTeam.members[playerIdx];
+
+  // 합계 수정
+  aTeam.sum = aTeam.sum - a.level + b.level;
+  bTeam.sum = bTeam.sum - b.level + a.level;
+
+  // 실제 스왑
+  aTeam.members[swapBuffer.playerIdx] = b;
+  bTeam.members[playerIdx] = a;
+
+  // UI 갱신
+  renderTeamMembers(swapBuffer.teamIdx);
+  renderTeamMembers(teamIdx);
+
+  // 선택 초기화
+  const prevLi = document.getElementById(swapBuffer.liId);
+  if (prevLi) prevLi.classList.remove('swap-pending');
+  swapBuffer = null;
+}
+
+// (B) 이동: 한 선수를 다른 팀으로 이동
+function movePlayer(fromTeamIdx, playerIdx, toTeamIdx = null) {
+  const player = manualTeams[fromTeamIdx].members[playerIdx];
+
+  if (toTeamIdx === null) {
+    const teamNames = manualTeams.map((t, i) => `${i}: ${t.name}`).join("\n");
+    const input = prompt(`'${player.name}' 이동할 팀 번호를 입력하세요:\n${teamNames}`);
+    if (input === null) return;
+    toTeamIdx = parseInt(input, 10);
+  }
+
+  if (isNaN(toTeamIdx) || toTeamIdx < 0 || toTeamIdx >= manualTeams.length) {
+    alert("잘못된 팀 번호입니다.");
+    return;
+  }
+  if (toTeamIdx === fromTeamIdx) {
+    alert("같은 팀으로는 이동할 수 없습니다.");
+    return;
+  }
+
+  // 합계/배열 갱신
+  manualTeams[fromTeamIdx].members.splice(playerIdx, 1);
+  manualTeams[fromTeamIdx].sum -= player.level;
+
+  manualTeams[toTeamIdx].members.push(player);
+  manualTeams[toTeamIdx].sum += player.level;
+
+  renderTeamMembers(fromTeamIdx);
+  renderTeamMembers(toTeamIdx);
+
+  // 스왑중 표시 초기화
+  if (swapBuffer) {
+    const prevLi = document.getElementById(swapBuffer.liId);
+    if (prevLi) prevLi.classList.remove('swap-pending');
+    swapBuffer = null;
+  }
+}
+
+// (C) 해제: 팀에서 빼서 ‘미배정’ 상태로 복귀
+function removePlayerFromTeam(teamIdx, playerIdx) {
+  const player = manualTeams[teamIdx].members[playerIdx];
+
+  // 합계/배열 갱신
+  manualTeams[teamIdx].members.splice(playerIdx, 1);
+  manualTeams[teamIdx].sum -= player.level;
+  renderTeamMembers(teamIdx);
+
+  // 참가자 풀에서의 인덱스 추정: 최초 배정 때 저장한 _srcIdx가 있으면 그걸 복귀
+  // (신규 추가한 선수라면 _srcIdx가 없으므로 풀에는 안 돌아가고, 화면 유지)
+  if (typeof player._srcIdx === 'number') {
+    manualAssigned.delete(player._srcIdx);
+  }
+
+  // 참가자 목록 재렌더
+  renderManualTeamUI();
+}
+
+// (D) 팀에 신규 선수 추가 (즉석 입력)
+function promptAddPlayerToTeam(teamIdx) {
+  const name = prompt("새 선수 이름:");
+  if (!name) return;
+
+  const level = parseInt(prompt("새 선수 부수 (1~20):"), 10);
+  if (isNaN(level) || level < 1 || level > 20) {
+    alert("부수는 1~20 사이 숫자로 입력해주세요.");
+    return;
+  }
+
+  addPlayerToTeam(teamIdx, name.trim(), level);
+}
+
+// (E) 전역 ‘신규 선수 추가’ 버튼 (팀 먼저 고르고 입력)
+function promptAddPlayer() {
+  const teamNames = manualTeams.map((t, i) => `${i}: ${t.name}`).join("\n");
+  const input = prompt(`선수를 추가할 팀 번호를 선택하세요:\n${teamNames}`);
+  if (input === null) return;
+  const teamIdx = parseInt(input, 10);
+  if (isNaN(teamIdx) || teamIdx < 0 || teamIdx >= manualTeams.length) {
+    alert("잘못된 팀 번호입니다.");
+    return;
+  }
+  promptAddPlayerToTeam(teamIdx);
+}
+
+// (F) 실제 추가 로직
+function addPlayerToTeam(teamIdx, name, level) {
+  manualTeams[teamIdx].members.push({ name, level });
+  manualTeams[teamIdx].sum += level;
+  renderTeamMembers(teamIdx);
 }
 
   </script>
