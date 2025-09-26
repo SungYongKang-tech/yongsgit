@@ -552,23 +552,41 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     result = result.concat(add);
   }
 
-/* 2단계: 남은 경기(3복 이후)는 일부 중복 허용 → 5복까지 확장 가능 */
+/* 2단계: 남은 경기(3복 이후)는 먼저 '중복 없이' 시도하고, 부족할 때만 중복 허용 */
 if (result.length < need) {
   for (const bucket of bucketOrder) {
     if (result.length >= need) break;
+
     const remaining = need - result.length;
 
-    const add = greedyMatchPairs(
+    // 🟢 2-1단계: 중복 없이 최대한 채우기
+    const noDupAdd = greedyMatchPairs(
       bucket.a, bucket.b, remaining,
       usedPlayersA, usedPlayersB,
       usedPairsA, usedPairsB,
       usedVersus,
-      true,  // 중복 허용
-      lockedPairs // 1복, 2복은 여전히 재사용 금지
+      false,      // ❌ 중복 허용 안 함
+      lockedPairs // 1복, 2복은 절대 재사용 금지
     );
-    result = result.concat(add);
+    result = result.concat(noDupAdd);
+
+    // 🟢 2-2단계: 그래도 부족하면 중복 허용으로 채우기
+    if (result.length < need) {
+      const stillRemaining = need - result.length;
+      const dupAdd = greedyMatchPairs(
+        bucket.a, bucket.b, stillRemaining,
+        usedPlayersA, usedPlayersB,
+        usedPairsA, usedPairsB,
+        usedVersus,
+        true,       // ✅ 중복 허용
+        lockedPairs
+      );
+      result = result.concat(dupAdd);
+    }
   }
 }
+
+
 
 /* 3단계: 그래도 경기 수가 부족하면 강제로 중복 허용 (최종 예외 처리) */
 if (result.length < need) {
