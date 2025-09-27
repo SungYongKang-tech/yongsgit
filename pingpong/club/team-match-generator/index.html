@@ -194,10 +194,7 @@
       margin-right: 4px;
     }
     
-   .swap-pending {
-  outline: 2px dashed #ff6f00;
-  border-radius: 6px;
-}
+
 
 
   </style>
@@ -647,32 +644,30 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
   return mixedPlayers;
 }
 
-// 모든 팀을 하나의 배열로 묶어 전체 인원 균형 + 부수 균형 배치
-function distributeToAllGroups(players, allTeams) {
-  if (!allTeams || allTeams.length === 0) return;
+// 그룹 내부에서만 인원 균형 → 부수 균형
+function distributePlayers(players, teams) {
+  if (!teams || teams.length === 0) return;
 
-  // 부수 높은 순 정렬
+  // 부수 높은 순으로 먼저 정렬
   players.sort((a, b) => {
-    if (a.level === b.level) return Math.random() - 0.5; // 동점이면 랜덤
+    if (a.level === b.level) return Math.random() - 0.5; // 같은 부수는 랜덤
     return b.level - a.level;
   });
 
   players.forEach(player => {
-    allTeams.sort((a, b) => {
-      const countDiff = a.members.length - b.members.length;
+    teams.sort((a, b) => {
+      const diff = a.members.length - b.members.length;
 
-      // 1순위: 인원 수 차이가 2 이상 → 인원 적은 팀 우선
-      if (Math.abs(countDiff) >= 2) return countDiff;
+      // 1순위: 인원 수가 적은 팀 우선
+      if (Math.abs(diff) >= 2) return diff;
+      if (diff !== 0) return diff;
 
-      // 2순위: 인원 수가 다르면 적은 팀 우선
-      if (countDiff !== 0) return countDiff;
-
-      // 3순위: 부수 합계가 낮은 팀 우선
+      // 2순위: 부수 합계가 낮은 팀 우선
       return a.sum - b.sum;
     });
 
-    allTeams[0].members.push(player);
-    allTeams[0].sum += player.level;
+    teams[0].members.push(player);
+    teams[0].sum += player.level;
   });
 }
 
@@ -714,20 +709,14 @@ function createExchangeMatch() {
     ? pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams)
     : [];
 
-  /* ---------- 2) 전체 그룹 하나로 통합 후 균형 배치 ---------- */
-  const allTeams = [
-    ...exchangeTeams.ourTeams,
-    ...exchangeTeams.opponentTeams,
-    ...exchangeTeams.mixedTeams
-  ];
-
-  const allPlayersForBalance = [...ourPlayers, ...opponentPlayers, ...mixedPlayers];
-
-  // 한 번에 전체 배치 → 인원 균형 → 부수 균형
-  distributeToAllGroups(allPlayersForBalance, allTeams);
+  /* ---------- 2) 각 그룹별로 독립 배치 ---------- */
+  distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);        // 혼합팀 배치
+  distributePlayers(ourPlayers, exchangeTeams.ourTeams);            // 우리팀 배치
+  distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);  // 상대팀 배치
 
   renderExchangeTeams(); // 결과 화면 출력
 }
+
 
 
 
