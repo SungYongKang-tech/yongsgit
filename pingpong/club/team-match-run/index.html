@@ -258,6 +258,26 @@ th { background: #e3f2fd; }
   text-align: center;
 }
 
+/* ❌ 삭제 버튼 */
+.delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  background: #e53935;
+  color: white;
+  border: none;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  z-index: 10;
+}
+.delete-btn:hover {
+  background: #b71c1c;
+}
+.match-card {
+  position: relative; /* 버튼 위치 기준 */
+}
 
 </style>
 
@@ -725,19 +745,28 @@ return result.slice(0, need);
 
 /* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList) {
-  let html = `<div class='match-card'><h3>${teamA} VS ${teamB}</h3><table>`;
-  html += `<thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead><tbody>`;
+  let key = `${teamA}_vs_${teamB}`;
+  let html = `
+    <div class='match-card'>
+      <button class="delete-btn" onclick="deleteMatch('${key}')">❌</button>
+      <h3>${teamA} VS ${teamB}</h3>
+      <table>
+        <thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead>
+        <tbody>
+  `;
   matchList.forEach((m) => {
     const players = m.players || "미정 vs 미정";
-    html += `<tr>
-      <td>${m.label}</td>
-      <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${players}</td>
-      <td onclick="openResultPopup(this)" style="cursor:pointer;">${m.result||"-"}</td>
-    </tr>`;
+    html += `
+      <tr>
+        <td>${m.label}</td>
+        <td onclick="openPlayerPopup('${teamA}','${teamB}',this)">${players}</td>
+        <td onclick="openResultPopup(this)" style="cursor:pointer;">${m.result||"-"}</td>
+      </tr>`;
   });
   html += `</tbody></table></div>`;
   document.getElementById("summaryArea").innerHTML += html;
 }
+
 
 /* ---------------- 선수 선택 팝업 ---------------- */
 function openPlayerPopup(teamA, teamB, cell) {
@@ -980,6 +1009,27 @@ function showQR() {
 function closePopup() {
   document.getElementById("popup").style.display = "none";
 }
+
+async function deleteMatch(key) {
+  const pw = prompt("비밀번호를 입력하세요:");
+  if (pw === null) return; // 취소 시 종료
+  if (pw !== "7910") {
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+
+  if (!confirm("정말 이 경기를 삭제하시겠습니까?")) return;
+
+  try {
+    await db.ref(`matches/${key}`).remove();
+    alert("해당 경기가 삭제되었습니다.");
+    calculateTeamResults(); // 남은 경기로 순위 다시 계산
+  } catch (error) {
+    console.error("경기 삭제 오류:", error);
+    alert("경기 삭제 중 오류가 발생했습니다.");
+  }
+}
+
 
 </script>
 </body>
