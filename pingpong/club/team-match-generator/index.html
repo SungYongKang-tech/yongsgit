@@ -211,13 +211,6 @@
     </div>
   </div>
 
-  <div class="section">
-    <div style="display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap;">
-      <h3 style="margin:0; text-align:center;">팀장 후보 (1~6부)</h3>
-      <button onclick="finalizeLeaders()" style="font-size:14px; padding:6px 12px;">팀장 선정 완료</button>
-    </div>
-    <div class="player-list" id="leaderCandidates"></div>
-  </div>
 
   <div class="section">
     <h3>참석자 목록</h3>
@@ -362,47 +355,31 @@
     savedAddedPlayers.forEach(p => allPlayers.push({ ...p, new: true }));
 
     let selected = [];
-    let leaders = [];
-    let finalizedLeaders = [];
     let latestTeams = []; // 업로드용 전역 저장소
 
     function renderPlayers() {
-      const playerList = document.getElementById("playerList");
-      const leaderCandidates = document.getElementById("leaderCandidates");
-      playerList.innerHTML = "";
-      leaderCandidates.innerHTML = "";
+  const playerList = document.getElementById("playerList");
+  playerList.innerHTML = "";
 
-      allPlayers.forEach((p, i) => {
-        const el = document.createElement("span");
-        el.className = "player";
-        el.textContent = `${p.name}(${p.level}부)`;
-        el.onclick = () => toggleSelect(i, el);
+  allPlayers.forEach((p, i) => {
+    const el = document.createElement("span");
+    el.className = "player";
+    el.textContent = `${p.name}(${p.level}부)`;
+    el.onclick = () => toggleSelect(i, el);
 
-        if (p.level >= 1 && p.level <= 6) {
-          el.classList.add("lv1to6");
-          leaderCandidates.appendChild(el);
-        } else if (p.level <= 9) {
-          el.classList.add("lv7to9");
-          playerList.appendChild(el);
-        } else if (p.level <= 12) {
-          el.classList.add("lv10to12");
-          playerList.appendChild(el);
-        } else if (p.level <= 15) {
-          el.classList.add("lv13to15");
-          playerList.appendChild(el);
-        } else {
-          el.classList.add("lv16to20");
-          playerList.appendChild(el);
-        }
+    if (p.level <= 6) el.classList.add("lv1to6");
+    else if (p.level <= 9) el.classList.add("lv7to9");
+    else if (p.level <= 12) el.classList.add("lv10to12");
+    else if (p.level <= 15) el.classList.add("lv13to15");
+    else el.classList.add("lv16to20");
 
-        if (p.new) el.classList.add("new-player");
+    if (p.new) el.classList.add("new-player");
+    if (selected.includes(i)) el.classList.add("selected");
 
-        if (selected.includes(i)) {
-          el.classList.add("selected");
-          if (finalizedLeaders.includes(i)) el.classList.add("leader");
-        }
-      });
-    }
+    playerList.appendChild(el);
+  });
+}
+
 
     function toggleSelect(i, el) {
       const player = allPlayers[i];
@@ -420,84 +397,61 @@
       }
     }
 
-    function finalizeLeaders() {
-      finalizedLeaders = [...leaders];
-      alert(`팀장 ${finalizedLeaders.length}명 선정 완료되었습니다.`);
-    }
-
     function shuffle(arr) {
       return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
     }
 
     function assignTeams() {
-  let teamCount = finalizedLeaders.length;
+  // 전체 또는 선택 인원 기준으로 팀 구성
+  let pool = selected.length ? [...selected] : allPlayers.map((_, i) => i);
 
-  if (teamCount < 1) {
-    const input = prompt("팀장을 선정하지 않으셨습니다.\n몇 팀으로 구성하시겠습니까?");
-    if (!input) return;
-    teamCount = parseInt(input);
-    if (isNaN(teamCount) || teamCount < 1) {
-      alert("올바른 숫자를 입력해주세요.");
-      return;
-    }
-    // ★ 자동 팀장 선정: 부수 숫자가 작은 순(=실력 높은 순)
-    const sortedSelected = [...selected].sort((a, b) => allPlayers[a].level - allPlayers[b].level);
-    finalizedLeaders = sortedSelected.slice(0, teamCount);
+  if (pool.length < 2) {
+    alert("선수가 2명 이상 있어야 합니다.");
+    return;
+  }
+
+  const teamCount = parseInt(prompt("몇 팀으로 구성하시겠습니까?"));
+  if (isNaN(teamCount) || teamCount < 2 || teamCount > 8) {
+    alert("2~8 사이의 숫자를 입력해주세요.");
+    return;
   }
 
   const teams = [];
-  const used = new Set();
-
   for (let i = 0; i < teamCount; i++) {
-    const idx = finalizedLeaders[i];
-    teams.push({
-      leader: allPlayers[idx],
-      members: [],
-      sum: allPlayers[idx].level,
-    });
-    used.add(idx);
+    teams.push({ name: `${i + 1}팀`, members: [], sum: 0 });
   }
 
-  const teamMembers = selected.filter(i => !used.has(i));
-  const uniqueMembers = [...new Set(teamMembers)].map(i => allPlayers[i]);
+  // 부수 높은 사람부터 순서대로 팀 배치
+  const playersSorted = pool
+    .map(i => allPlayers[i])
+    .sort((a, b) => a.level - b.level);
 
-  const grouped = {};
-  uniqueMembers.forEach(p => {
-    if (!grouped[p.level]) grouped[p.level] = [];
-    grouped[p.level].push(p);
-  });
-
-  let sorted = [];
-  Object.keys(grouped).sort((a, b) => b - a).forEach(level => {
-    const shuffledSameLevel = shuffle(grouped[level]);
-    sorted = sorted.concat(shuffledSameLevel);
-  });
-
-  sorted.forEach(player => {
+  playersSorted.forEach(player => {
     teams.sort((a, b) => a.sum - b.sum);
     teams[0].members.push(player);
     teams[0].sum += player.level;
   });
 
+  // 출력
   const teamBox = document.getElementById("teams");
   teamBox.innerHTML = "";
-
-  teams.forEach((team) => {
+  teams.forEach(team => {
     const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
     const div = document.createElement("div");
     div.className = "team-card";
     div.innerHTML = `
-      <h3>${team.leader.name} 팀</h3>
+      <h3>${team.name}</h3>
       <ul>
-        <li><strong>${team.leader.name}(${team.leader.level}부)</strong> - 팀장</li>
         ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
       </ul>
-      <p><small>부수합: ${team.sum}</small></p>`;
+      <p><small>부수합: ${team.sum}</small></p>
+    `;
     teamBox.appendChild(div);
   });
 
   latestTeams = teams;
 }
+
 
 
 
@@ -810,23 +764,15 @@ function renderTeamMembers(teamIdx) {
 
 
 function enterManualAssignMode() {
-  // 선수 추가 영역 숨김
   const inputWrap = document.querySelector('.input-wrap');
   if (inputWrap) inputWrap.classList.add('hidden');
-
-  // 팀장 후보 섹션(제목/버튼/명단 전체) 숨김
-  const leaderSection = document.getElementById('leaderCandidates')?.closest('.section');
-  if (leaderSection) leaderSection.classList.add('hidden');
 }
 
 function exitManualAssignMode() {
-  // 다시 보이게
   const inputWrap = document.querySelector('.input-wrap');
   if (inputWrap) inputWrap.classList.remove('hidden');
-
-  const leaderSection = document.getElementById('leaderCandidates')?.closest('.section');
-  if (leaderSection) leaderSection.classList.remove('hidden');
 }
+
 
 // (A) 교체: 첫 선수 선택 → 두 번째 선수 선택 시 서로 스왑
 function beginSwap(teamIdx, playerIdx) {
