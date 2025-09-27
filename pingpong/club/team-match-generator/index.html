@@ -413,20 +413,27 @@ function renderExchangeTeams() {
       const div = document.createElement("div");
       div.className = "team-card";
       div.style.borderTop = `4px solid ${team.color}`;
+
+      // 🔹 버튼 3개로 교체
       div.innerHTML = `
         <h3>${team.name}</h3>
         <ul>
           ${team.members.map((p, i) => `
-            <li>
-              ${p.name}(${p.level}부)
-              <button onclick="removeExchangePlayer('${title}', ${idx}, ${i})">✖</button>
-            </li>`).join('')}
+  <li style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+  <span>${p.name}(${p.level}부)</span>
+  <button onclick="removeExchangePlayer('${title}', ${idx}, ${i})" 
+          style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+</li>
+
+          `).join('')}
         </ul>
         <p><small>부수합: ${team.sum}</small></p>
       `;
       teamBox.appendChild(div);
     });
   };
+
+  
 
   renderGroup(exchangeTeams.ourTeams, "우리팀");
   renderGroup(exchangeTeams.opponentTeams, "상대팀");
@@ -523,19 +530,24 @@ function removeExchangePlayer(groupType, teamIdx, playerIdx) {
 function distributePlayers(players, teams) {
   if (!teams || teams.length === 0) return;
 
-  // 부수 높은 순 정렬 (동일 부수는 랜덤)
+  // 부수 높은 순 정렬
   players.sort((a, b) => {
     if (a.level === b.level) return Math.random() - 0.5;
     return b.level - a.level;
   });
 
-  // 합계가 가장 낮은 팀부터 배치
   players.forEach(player => {
-    teams.sort((a, b) => a.sum - b.sum);
+    teams.sort((a, b) => {
+      if (a.members.length === b.members.length) {
+        return a.sum - b.sum; // 인원 수 같으면 부수 합계 비교
+      }
+      return a.members.length - b.members.length; // 인원 수 적은 팀 우선
+    });
     teams[0].members.push(player);
     teams[0].sum += player.level;
   });
 }
+
 
 
 function createExchangeMatch() {
@@ -607,21 +619,23 @@ function createExchangeMatch() {
     const shuffledOur = shuffle([...ourPlayers]);
     const ourForMixed = shuffledOur.slice(0, Math.min(halfCount, totalOurPlayers));
 
-    // 추출된 인원을 우리팀 배열에서 제거
-    ourForMixed.forEach(player => {
-      const idx = ourPlayers.indexOf(player);
-      if (idx > -1) ourPlayers.splice(idx, 1);
-    });
-
+    
     // === 상대팀 → 혼합팀 절반 추출 ===
     const shuffledOpponent = shuffle([...opponentPlayers]);
     const opponentForMixed = shuffledOpponent.slice(0, Math.min(halfCount, totalOpponentPlayers));
 
-    // 추출된 인원을 상대팀 배열에서 제거
-    opponentForMixed.forEach(player => {
-      const idx = opponentPlayers.indexOf(player);
-      if (idx > -1) opponentPlayers.splice(idx, 1);
-    });
+   // 우리팀에서 혼합팀 인원 제거
+ourForMixed.forEach(mixedPlayer => {
+  const idx = ourPlayers.findIndex(p => p.name === mixedPlayer.name && p.level === mixedPlayer.level);
+  if (idx > -1) ourPlayers.splice(idx, 1);
+});
+
+// 상대팀에서 혼합팀 인원 제거
+opponentForMixed.forEach(mixedPlayer => {
+  const idx = opponentPlayers.findIndex(p => p.name === mixedPlayer.name && p.level === mixedPlayer.level);
+  if (idx > -1) opponentPlayers.splice(idx, 1);
+});
+
 
     // 혼합팀 최종 구성
     mixedPlayers.push(...ourForMixed, ...opponentForMixed);
@@ -635,6 +649,8 @@ function createExchangeMatch() {
   distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
 
   renderExchangeTeams(); // 결과 화면에 출력
+
+
 }
 
 
