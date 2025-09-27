@@ -648,24 +648,54 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 function distributePlayers(players, teams) {
   if (!teams || teams.length === 0 || players.length === 0) return;
 
-  // 1. 부수 높은 순으로 정렬
+  // 1. 부수 높은 순으로 먼저 정렬 (강한 선수 먼저 배치)
   players.sort((a, b) => {
-    if (a.level === b.level) return Math.random() - 0.5; // 같은 부수는 랜덤
-    return b.level - a.level; // 높은 부수 우선
+    if (a.level === b.level) return Math.random() - 0.5; // 같은 부수면 랜덤
+    return b.level - a.level;
   });
 
-  // 2. 한 명씩 돌아가며 팀에 배치 (인원 우선)
+  const totalPlayers = players.length;
+  const teamCount = teams.length;
+
+  // 2. 각 팀 목표 인원수 계산 (예: 17명 3팀 → [6, 6, 5])
+  const baseSize = Math.floor(totalPlayers / teamCount);
+  let remainder = totalPlayers % teamCount;
+  const targetSizes = new Array(teamCount).fill(baseSize).map(size => {
+    if (remainder > 0) {
+      remainder--;
+      return size + 1; // 나머지 인원은 앞쪽 팀부터 +1
+    }
+    return size;
+  });
+
+  // 3. 선수 배치
   players.forEach(player => {
     teams.sort((a, b) => {
-      const countDiff = a.members.length - b.members.length;
-      if (countDiff !== 0) return countDiff; // 인원 수 적은 팀 우선
-      return a.sum - b.sum; // 인원이 같으면 부수합 적은 팀 우선
+      const aIdx = teams.indexOf(a);
+      const bIdx = teams.indexOf(b);
+
+      const aCount = a.members.length;
+      const bCount = b.members.length;
+
+      // 현재 팀 목표 인원 비교
+      const aTarget = targetSizes[aIdx];
+      const bTarget = targetSizes[bIdx];
+
+      // 1순위: 목표 인원 미달 팀 우선
+      if (aCount < aTarget && bCount >= bTarget) return -1;
+      if (bCount < bTarget && aCount >= aTarget) return 1;
+
+      // 둘 다 목표 미달이면, 인원 적은 팀 우선
+      if (aCount !== bCount) return aCount - bCount;
+
+      // 인원이 같으면 부수 합 적은 팀 우선
+      return a.sum - b.sum;
     });
+
     teams[0].members.push(player);
     teams[0].sum += player.level;
   });
 }
-
 
 
 function createExchangeMatch() {
@@ -705,16 +735,20 @@ function createExchangeMatch() {
     ? pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams)
     : [];
 
- /* ---------- 2) 각 그룹별로 독립 배치 ---------- */
+  // 혼합팀 인원은 우리팀/상대팀에서 제거
+  mixedPlayers.forEach(mixed => {
+    const ourIdx = ourPlayers.findIndex(p => p.name === mixed.name && p.level === mixed.level);
+    if (ourIdx !== -1) ourPlayers.splice(ourIdx, 1);
 
-// 혼합팀: 우리팀+상대팀에서 반반 추출된 mixedPlayers 사용
-distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
+    const oppIdx = opponentPlayers.findIndex(p => p.name === mixed.name && p.level === mixed.level);
+    if (oppIdx !== -1) opponentPlayers.splice(oppIdx, 1);
+  });
 
-// 우리팀: 남은 ourPlayers만
-distributePlayers(ourPlayers, exchangeTeams.ourTeams);
+  /* ---------- 2) 각 그룹별 독립 배치 ---------- */
+  distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);        // 혼합팀
+  distributePlayers(ourPlayers, exchangeTeams.ourTeams);            // 우리팀
+  distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);  // 상대팀
 
-// 상대팀: 남은 opponentPlayers만
-distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
   renderExchangeTeams(); // 결과 화면 출력
 }
 
