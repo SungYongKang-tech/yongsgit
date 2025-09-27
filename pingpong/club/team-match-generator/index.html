@@ -583,57 +583,56 @@ function createExchangeMatch() {
   }
 
   // === 선수 분류 ===
-  // ✅ 교체된 코드
   const selectedPlayers = selected.length ? selected.map(idx => allPlayers[idx]) : [...allPlayers];
   const ourPlayers = selectedPlayers.filter(p => !p.new);      // 기존 선수 → 우리팀
   const opponentPlayers = selectedPlayers.filter(p => p.new);  // 추가 선수 → 상대팀
-  
 
-// === 자동 배정 ===
-distributePlayers(ourPlayers, exchangeTeams.ourTeams);
-distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
+  /* ------------------------
+   * 1) 혼합팀 인원 먼저 추출 및 제거
+   * ------------------------ */
+  if (mixedCount > 0) {
+    const mixedPlayers = [];
 
-// === 혼합팀: 우리팀 절반 + 상대팀 절반 ===
-if (mixedCount > 0) {
-  const mixedPlayers = [];
+    const totalOurPlayers = ourPlayers.length;
+    const totalOpponentPlayers = opponentPlayers.length;
+    const totalPlayers = totalOurPlayers + totalOpponentPlayers;
 
-  const totalOurPlayers = ourPlayers.length;
-  const totalOpponentPlayers = opponentPlayers.length;
-  const totalPlayers = totalOurPlayers + totalOpponentPlayers;
+    const totalTeams = ourCount + opponentCount + mixedCount;
+    const playersPerTeam = Math.floor(totalPlayers / totalTeams);
 
-  const totalTeams = ourCount + opponentCount + mixedCount;
-  const playersPerTeam = Math.floor(totalPlayers / totalTeams);
+    const totalMixedPlayers = playersPerTeam * mixedCount;
+    const halfCount = Math.floor(totalMixedPlayers / 2);
 
-  const totalMixedPlayers = playersPerTeam * mixedCount;
-  const halfCount = Math.floor(totalMixedPlayers / 2);
+    // === 우리팀 → 혼합팀 절반 추출 ===
+    const shuffledOur = shuffle([...ourPlayers]);
+    const ourForMixed = shuffledOur.slice(0, Math.min(halfCount, totalOurPlayers));
 
-  // === 우리팀에서 혼합팀용 인원 랜덤 추출 ===
-  const shuffledOur = shuffle([...ourPlayers]);
-  const ourForMixed = shuffledOur.slice(0, Math.min(halfCount, totalOurPlayers));
+    // 추출된 인원을 우리팀 배열에서 제거
+    ourForMixed.forEach(player => {
+      const idx = ourPlayers.indexOf(player);
+      if (idx > -1) ourPlayers.splice(idx, 1);
+    });
 
-  // 혼합팀으로 뽑힌 선수 → 우리팀에서 제거
-  ourForMixed.forEach(player => {
-    const idx = ourPlayers.indexOf(player);
-    if (idx > -1) ourPlayers.splice(idx, 1);
-  });
+    // === 상대팀 → 혼합팀 절반 추출 ===
+    const shuffledOpponent = shuffle([...opponentPlayers]);
+    const opponentForMixed = shuffledOpponent.slice(0, Math.min(halfCount, totalOpponentPlayers));
 
-  // === 상대팀에서 혼합팀용 인원 랜덤 추출 ===
-  const shuffledOpponent = shuffle([...opponentPlayers]);
-  const opponentForMixed = shuffledOpponent.slice(0, Math.min(halfCount, totalOpponentPlayers));
+    // 추출된 인원을 상대팀 배열에서 제거
+    opponentForMixed.forEach(player => {
+      const idx = opponentPlayers.indexOf(player);
+      if (idx > -1) opponentPlayers.splice(idx, 1);
+    });
 
-  // 혼합팀으로 뽑힌 선수 → 상대팀에서 제거
-  opponentForMixed.forEach(player => {
-    const idx = opponentPlayers.indexOf(player);
-    if (idx > -1) opponentPlayers.splice(idx, 1);
-  });
+    // 혼합팀 최종 구성
+    mixedPlayers.push(...ourForMixed, ...opponentForMixed);
+    distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
+  }
 
-  // === 혼합팀 구성 ===
-  mixedPlayers.push(...ourForMixed, ...opponentForMixed);
-  distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
-}
-
-
-
+  /* ------------------------
+   * 2) 남은 인원으로 우리팀/상대팀 배치
+   * ------------------------ */
+  distributePlayers(ourPlayers, exchangeTeams.ourTeams);
+  distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
 
   renderExchangeTeams(); // 결과 화면에 출력
 }
