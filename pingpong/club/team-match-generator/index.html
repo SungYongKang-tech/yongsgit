@@ -624,27 +624,37 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
   latestTeams = teams;
 }
 
-function distributePlayers(players, teams) {
+ffunction distributePlayers(players, teams) {
   if (!teams || teams.length === 0) return;
 
-  // 부수 높은 순 정렬
+  // 1) 선수들을 부수 높은 순으로 정렬
   players.sort((a, b) => {
-    if (a.level === b.level) return Math.random() - 0.5;
-    return b.level - a.level;
+    if (a.level === b.level) return Math.random() - 0.5; // 부수 같으면 랜덤
+    return b.level - a.level; // 부수 높은 순
   });
 
+  // 2) 한 명씩 팀에 배치
   players.forEach(player => {
     teams.sort((a, b) => {
-      if (a.members.length === b.members.length) {
-        return a.sum - b.sum; // 인원 수 같으면 부수 합계 비교
+      const diff = a.members.length - b.members.length;
+
+      // (1) 인원 수 차이가 2 이상 벌어지면 강제 균형
+      if (Math.abs(diff) >= 2) {
+        return diff; // 인원 수 적은 팀 우선
       }
-      return a.members.length - b.members.length; // 인원 수 적은 팀 우선
+
+      // (2) 인원 수 다르면 인원 수 적은 팀 우선
+      if (diff !== 0) return diff;
+
+      // (3) 인원 수가 같으면 부수 합계 낮은 팀 우선
+      return a.sum - b.sum;
     });
+
+    // 가장 적합한 팀에 선수 배치
     teams[0].members.push(player);
     teams[0].sum += player.level;
   });
 }
-
 
 
 function createExchangeMatch() {
