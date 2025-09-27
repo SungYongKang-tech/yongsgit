@@ -220,6 +220,7 @@
   <div class="action-buttons">
     <button onclick="assignTeams()">팀 자동 배정</button>
     <button onclick="startManualTeamAssign()">팀 수동 배정</button> <!-- ⬅️ 이 줄 추가 -->
+    <button onclick="createExchangeMatch()">교류전 생성</button>
     <button onclick="resetAll()">전체 초기화</button>
     <button id="saveTeamImageButton" onclick="saveTeamsAsImage()">팀 이미지 저장</button>
     <button onclick="uploadTeamsToFirebase()" style="background-color:#f57f17;">경기 시작</button>
@@ -355,6 +356,23 @@
     savedAddedPlayers.forEach(p => allPlayers.push({ ...p, new: true }));
 
     let selected = [];
+    let exchangeTeams = {
+  ourTeams: [],
+  opponentTeams: [],
+  mixedTeams: []
+};
+
+// === 팀 색상 팔레트 & 가독성 보정 ===
+const TEAM_COLORS = [
+  "#1976d2", // 파랑
+  "#2e7d32", // 초록
+  "#ef6c00", // 주황
+  "#6a1b9a", // 보라
+  "#c62828", // 빨강
+  "#00897b", // 청록
+  "#283593", // 인디고
+  "#f9a825"  // 노랑
+];
     let latestTeams = []; // 업로드용 전역 저장소
 
     function renderPlayers() {
@@ -379,6 +397,59 @@
    
     playerList.appendChild(el);
   });
+}
+
+function renderExchangeTeams() {
+  const teamBox = document.getElementById("teams");
+  teamBox.innerHTML = "";
+
+  const renderGroup = (group, title) => {
+    if (group.length === 0) return;
+    const groupHeader = document.createElement("h3");
+    groupHeader.textContent = title;
+    teamBox.appendChild(groupHeader);
+
+    group.forEach((team, idx) => {
+      const div = document.createElement("div");
+      div.className = "team-card";
+      div.style.borderTop = `4px solid ${team.color}`;
+      div.innerHTML = `
+        <h3>${team.name}</h3>
+        <ul>
+          ${team.members.map((p, i) => `
+            <li>
+              ${p.name}(${p.level}부)
+              <button onclick="removeExchangePlayer('${title}', ${idx}, ${i})">✖</button>
+            </li>`).join('')}
+        </ul>
+        <p><small>부수합: ${team.sum}</small></p>
+      `;
+      teamBox.appendChild(div);
+    });
+  };
+
+  renderGroup(exchangeTeams.ourTeams, "우리팀");
+  renderGroup(exchangeTeams.opponentTeams, "상대팀");
+  renderGroup(exchangeTeams.mixedTeams, "혼합팀");
+  latestTeams = [
+  ...exchangeTeams.ourTeams,
+  ...exchangeTeams.opponentTeams,
+  ...exchangeTeams.mixedTeams
+];
+
+}
+
+function removeExchangePlayer(groupType, teamIdx, playerIdx) {
+  let group;
+  if (groupType === "우리팀") group = exchangeTeams.ourTeams;
+  else if (groupType === "상대팀") group = exchangeTeams.opponentTeams;
+  else group = exchangeTeams.mixedTeams;
+
+  const player = group[teamIdx].members[playerIdx];
+  group[teamIdx].members.splice(playerIdx, 1);
+  group[teamIdx].sum -= player.level;
+
+  renderExchangeTeams();
 }
 
 
@@ -449,6 +520,85 @@
   latestTeams = teams;
 }
 
+function distributePlayers(players, teams) {
+  if (!teams || teams.length === 0) return;
+
+  // 부수 높은 순 정렬 (동일 부수는 랜덤)
+  players.sort((a, b) => {
+    if (a.level === b.level) return Math.random() - 0.5;
+    return b.level - a.level;
+  });
+
+  // 합계가 가장 낮은 팀부터 배치
+  players.forEach(player => {
+    teams.sort((a, b) => a.sum - b.sum);
+    teams[0].members.push(player);
+    teams[0].sum += player.level;
+  });
+}
+
+
+function createExchangeMatch() {
+  const ourCount = parseInt(prompt("우리팀 몇 팀으로 구성할까요?"), 10);
+  const opponentCount = parseInt(prompt("상대팀 몇 팀으로 구성할까요?"), 10);
+  const mixedCount = parseInt(prompt("혼합팀 몇 팀으로 구성할까요? (없으면 0 입력)"), 10) || 0;
+
+  if (isNaN(ourCount) || isNaN(opponentCount)) {
+    alert("⚠️ 숫자를 정확히 입력해주세요.");
+    return;
+  }
+
+  // === 팀 초기화 ===
+  exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  // 우리팀
+  for (let i = 0; i < ourCount; i++) {
+    exchangeTeams.ourTeams.push({
+      name: `우리팀 ${alphabet[i]}`,
+      members: [],
+      sum: 0,
+      color: TEAM_COLORS[i % TEAM_COLORS.length]
+    });
+  }
+
+  // 상대팀
+  for (let i = 0; i < opponentCount; i++) {
+    exchangeTeams.opponentTeams.push({
+      name: `상대팀 ${alphabet[i]}`,
+      members: [],
+      sum: 0,
+      color: TEAM_COLORS[(i + ourCount) % TEAM_COLORS.length]
+    });
+  }
+
+  // 혼합팀
+  for (let i = 0; i < mixedCount; i++) {
+    exchangeTeams.mixedTeams.push({
+      name: `혼합팀 ${alphabet[i]}`,
+      members: [],
+      sum: 0,
+      color: TEAM_COLORS[(i + ourCount + opponentCount) % TEAM_COLORS.length]
+    });
+  }
+
+  // === 선수 분류 ===
+  // ✅ 교체된 코드
+  const selectedPlayers = selected.length ? selected.map(idx => allPlayers[idx]) : [...allPlayers];
+  const ourPlayers = selectedPlayers.filter(p => !p.new);      // 기존 선수 → 우리팀
+  const opponentPlayers = selectedPlayers.filter(p => p.new);  // 추가 선수 → 상대팀
+  const mixedPlayers = [...ourPlayers, ...opponentPlayers];    // 혼합팀 → 전체에서
+ 
+
+  // === 자동 배정 ===
+  distributePlayers(ourPlayers, exchangeTeams.ourTeams);
+  distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
+  if (mixedCount > 0) {
+    distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
+  }
+
+  renderExchangeTeams(); // 결과 화면에 출력
+}
 
 
 
@@ -548,17 +698,7 @@ let manualAssigned = new Set(); // 중복 배정 방지
 let manualPool = [];      // 수동배정 풀(미배정/참가자 목록) 인덱스 보관
 let swapBuffer = null;    // { teamIdx, playerIdx } 형태로 1차 선택 저장
 
-// === 팀 색상 팔레트 & 가독성 보정 ===
-const TEAM_COLORS = [
-  "#1976d2", // 파랑
-  "#2e7d32", // 초록
-  "#ef6c00", // 주황
-  "#6a1b9a", // 보라
-  "#c62828", // 빨강
-  "#00897b", // 청록
-  "#283593", // 인디고
-  "#f9a825"  // 노랑
-];
+
 
 // 배경색에 맞춰 글자색(검/흰) 결정
 function contrastText(hex) {
@@ -923,6 +1063,10 @@ function addPlayerToTeam(teamIdx, name, level) {
     document.getElementById('helpModal').addEventListener('click', function(e) {
       if (e.target === this) closeModal();
     });
+
+ 
+
+
   </script>
 </body>
 </html>
