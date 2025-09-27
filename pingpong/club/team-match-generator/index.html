@@ -194,6 +194,12 @@
       margin-right: 4px;
     }
     
+   .swap-pending {
+  outline: 2px dashed #ff6f00;
+  border-radius: 6px;
+}
+
+
   </style>
 </head>
 <body>
@@ -299,6 +305,9 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
   <script>
+
+    let exchangeSwapBuffer = null; // 교체 기능 임시 저장 버퍼
+
     // Firebase 설정
     const firebaseConfig = {
       apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
@@ -417,16 +426,20 @@ function renderExchangeTeams() {
       // 🔹 버튼 3개로 교체
       div.innerHTML = `
         <h3>${team.name}</h3>
-        <ul>
-          ${team.members.map((p, i) => `
-  <li style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+       <ul>
+  ${team.members.map((p, i) => `
+<li id="ex-${title}-${idx}-p${i}" 
+    style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
   <span>${p.name}(${p.level}부)</span>
-  <button onclick="removeExchangePlayer('${title}', ${idx}, ${i})" 
-          style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+  <span style="display:flex;gap:6px;">
+    <button onclick="beginExchangeSwap('${title}', ${idx}, ${i})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
+    <button onclick="moveExchangePlayer('${title}', ${idx}, ${i})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
+    <button onclick="removeExchangePlayer('${title}', ${idx}, ${i})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+  </span>
 </li>
+  `).join('')}
+</ul>
 
-          `).join('')}
-        </ul>
         <p><small>부수합: ${team.sum}</small></p>
       `;
       teamBox.appendChild(div);
@@ -457,6 +470,90 @@ function removeExchangePlayer(groupType, teamIdx, playerIdx) {
   group[teamIdx].sum -= player.level;
 
   renderExchangeTeams();
+}
+
+// (B) 이동: 한 선수를 다른 팀으로 이동
+function moveExchangePlayer(groupType, teamIdx, playerIdx) {
+  // 현재 선택된 팀 그룹 가져오기
+  const sourceGroup = getExchangeGroup(groupType);
+  const player = sourceGroup[teamIdx].members[playerIdx];
+
+  // 모든 팀 목록을 하나로 합치기 (우리팀 + 상대팀 + 혼합팀)
+  const allGroups = [
+    ...exchangeTeams.ourTeams.map((t, i) => ({ group: "우리팀", teamIdx: i, name: t.name })),
+    ...exchangeTeams.opponentTeams.map((t, i) => ({ group: "상대팀", teamIdx: i, name: t.name })),
+    ...exchangeTeams.mixedTeams.map((t, i) => ({ group: "혼합팀", teamIdx: i, name: t.name }))
+  ];
+
+  // 팀 목록을 prompt에 표시
+  const options = allGroups.map((g, i) => `${i}: [${g.group}] ${g.name}`).join("\n");
+  const choice = prompt(`'${player.name}' 이동할 팀 선택:\n${options}`);
+  if (choice === null) return; // 취소 시 종료
+
+  const selected = allGroups[parseInt(choice, 10)];
+  if (!selected) {
+    alert("잘못된 선택입니다.");
+    return;
+  }
+
+  // 동일 팀으로 이동하려는 경우 방지
+  if (selected.group === groupType && selected.teamIdx === teamIdx) {
+    alert("같은 팀으로 이동할 수 없습니다.");
+    return;
+  }
+
+  // ---- 이동 처리 ----
+  // 기존 팀에서 제거
+  sourceGroup[teamIdx].members.splice(playerIdx, 1);
+  sourceGroup[teamIdx].sum -= player.level;
+
+  // 새로운 팀으로 추가
+  const targetGroup = getExchangeGroup(selected.group);
+  targetGroup[selected.teamIdx].members.push(player);
+  targetGroup[selected.teamIdx].sum += player.level;
+
+  // 화면 갱신
+  renderExchangeTeams();
+}
+
+
+function beginExchangeSwap(groupType, teamIdx, playerIdx) {
+  const liId = `ex-${groupType}-${teamIdx}-p${playerIdx}`;
+  const li = document.getElementById(liId);
+
+  // 첫 번째 선택
+  if (!exchangeSwapBuffer) {
+    exchangeSwapBuffer = { groupType, teamIdx, playerIdx, liId };
+    if (li) li.classList.add('swap-pending');
+    return;
+  }
+
+  // 동일한 선수 클릭 → 취소
+  if (exchangeSwapBuffer.groupType === groupType &&
+      exchangeSwapBuffer.teamIdx === teamIdx &&
+      exchangeSwapBuffer.playerIdx === playerIdx) {
+    const prevLi = document.getElementById(exchangeSwapBuffer.liId);
+    if (prevLi) prevLi.classList.remove('swap-pending');
+    exchangeSwapBuffer = null;
+    return;
+  }
+
+  // 두 번째 선택 → 스왑
+  const aTeam = getExchangeGroup(exchangeSwapBuffer.groupType)[exchangeSwapBuffer.teamIdx];
+  const bTeam = getExchangeGroup(groupType)[teamIdx];
+  const a = aTeam.members[exchangeSwapBuffer.playerIdx];
+  const b = bTeam.members[playerIdx];
+
+  // 합계 갱신
+  aTeam.sum = aTeam.sum - a.level + b.level;
+  bTeam.sum = bTeam.sum - b.level + a.level;
+
+  // 스왑
+  aTeam.members[exchangeSwapBuffer.playerIdx] = b;
+  bTeam.members[playerIdx] = a;
+
+  renderExchangeTeams();
+  exchangeSwapBuffer = null;
 }
 
 
@@ -1117,7 +1214,12 @@ function addPlayerToTeam(teamIdx, name, level) {
       if (e.target === this) closeModal();
     });
 
- 
+ function getExchangeGroup(groupType) {
+  if (groupType === "우리팀") return exchangeTeams.ourTeams;
+  if (groupType === "상대팀") return exchangeTeams.opponentTeams;
+  return exchangeTeams.mixedTeams;
+}
+
 
 
   </script>
