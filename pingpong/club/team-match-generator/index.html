@@ -597,35 +597,41 @@ distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
 if (mixedCount > 0) {
   const mixedPlayers = [];
 
-  // 우리팀 + 상대팀 총 인원수
   const totalOurPlayers = ourPlayers.length;
   const totalOpponentPlayers = opponentPlayers.length;
   const totalPlayers = totalOurPlayers + totalOpponentPlayers;
 
-  // 총 팀 수 (우리팀 + 상대팀 + 혼합팀)
   const totalTeams = ourCount + opponentCount + mixedCount;
-
-  // 혼합팀 1개당 평균 인원 = 전체 인원 / 전체 팀 수
   const playersPerTeam = Math.floor(totalPlayers / totalTeams);
 
-  // 혼합팀 전체 필요 인원 = 혼합팀 팀 수 × 평균 인원
   const totalMixedPlayers = playersPerTeam * mixedCount;
-
-  // 혼합팀 인원의 절반을 우리팀, 절반을 상대팀에서 가져오기
   const halfCount = Math.floor(totalMixedPlayers / 2);
 
-  // 우리팀에서 절반 랜덤 선택
-  const ourForMixed = shuffle([...ourPlayers]).slice(0, Math.min(halfCount, totalOurPlayers));
+  // === 우리팀에서 혼합팀용 인원 랜덤 추출 ===
+  const shuffledOur = shuffle([...ourPlayers]);
+  const ourForMixed = shuffledOur.slice(0, Math.min(halfCount, totalOurPlayers));
 
-  // 상대팀에서 절반 랜덤 선택
-  const opponentForMixed = shuffle([...opponentPlayers]).slice(0, Math.min(halfCount, totalOpponentPlayers));
+  // 혼합팀으로 뽑힌 선수 → 우리팀에서 제거
+  ourForMixed.forEach(player => {
+    const idx = ourPlayers.indexOf(player);
+    if (idx > -1) ourPlayers.splice(idx, 1);
+  });
 
-  // 혼합팀용 배열 합치기
+  // === 상대팀에서 혼합팀용 인원 랜덤 추출 ===
+  const shuffledOpponent = shuffle([...opponentPlayers]);
+  const opponentForMixed = shuffledOpponent.slice(0, Math.min(halfCount, totalOpponentPlayers));
+
+  // 혼합팀으로 뽑힌 선수 → 상대팀에서 제거
+  opponentForMixed.forEach(player => {
+    const idx = opponentPlayers.indexOf(player);
+    if (idx > -1) opponentPlayers.splice(idx, 1);
+  });
+
+  // === 혼합팀 구성 ===
   mixedPlayers.push(...ourForMixed, ...opponentForMixed);
-
-  // 혼합팀에 균등 배치
   distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
 }
+
 
 
 
