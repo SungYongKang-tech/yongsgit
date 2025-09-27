@@ -587,15 +587,65 @@ function createExchangeMatch() {
   const selectedPlayers = selected.length ? selected.map(idx => allPlayers[idx]) : [...allPlayers];
   const ourPlayers = selectedPlayers.filter(p => !p.new);      // 기존 선수 → 우리팀
   const opponentPlayers = selectedPlayers.filter(p => p.new);  // 추가 선수 → 상대팀
-  const mixedPlayers = [...ourPlayers, ...opponentPlayers];    // 혼합팀 → 전체에서
- 
+  
 
-  // === 자동 배정 ===
-  distributePlayers(ourPlayers, exchangeTeams.ourTeams);
-  distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
-  if (mixedCount > 0) {
-    distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
-  }
+// === 자동 배정 ===
+distributePlayers(ourPlayers, exchangeTeams.ourTeams);
+distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
+
+// ✅ 혼합팀: 우리팀 절반 + 상대팀 절반
+if (mixedCount > 0) {
+  const mixedPlayers = [];
+  
+  // 혼합팀에 필요한 총 인원 계산 (혼합팀 1개당 4명 기준)
+  // === 혼합팀: 우리팀 절반 + 상대팀 절반 ===
+if (mixedCount > 0) {
+  const mixedPlayers = [];
+
+  // 우리팀 + 상대팀 총 인원수
+  const totalOurPlayers = ourPlayers.length;
+  const totalOpponentPlayers = opponentPlayers.length;
+  const totalPlayers = totalOurPlayers + totalOpponentPlayers;
+
+  // 총 팀 수 (우리팀 + 상대팀 + 혼합팀)
+  const totalTeams = ourCount + opponentCount + mixedCount;
+
+  // 혼합팀 1개당 평균 인원 = 전체 인원 / 전체 팀 수
+  const playersPerTeam = Math.floor(totalPlayers / totalTeams);
+
+  // 혼합팀 전체 필요 인원 = 혼합팀 팀 수 × 평균 인원
+  const totalMixedPlayers = playersPerTeam * mixedCount;
+
+  // 혼합팀 인원의 절반을 우리팀, 절반을 상대팀에서 가져오기
+  const halfCount = Math.floor(totalMixedPlayers / 2);
+
+  // 우리팀에서 절반 랜덤 선택
+  const ourForMixed = shuffle([...ourPlayers]).slice(0, Math.min(halfCount, totalOurPlayers));
+
+  // 상대팀에서 절반 랜덤 선택
+  const opponentForMixed = shuffle([...opponentPlayers]).slice(0, Math.min(halfCount, totalOpponentPlayers));
+
+  // 혼합팀용 배열 합치기
+  mixedPlayers.push(...ourForMixed, ...opponentForMixed);
+
+  // 혼합팀에 균등 배치
+  distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
+}
+
+
+  // 우리팀에서 절반 인원 뽑기
+  const ourForMixed = shuffle([...ourPlayers]).slice(0, Math.min(halfCount, ourPlayers.length));
+
+  // 상대팀에서 절반 인원 뽑기
+  const opponentForMixed = shuffle([...opponentPlayers]).slice(0, Math.min(halfCount, opponentPlayers.length));
+
+  // 합치기
+  mixedPlayers.push(...ourForMixed, ...opponentForMixed);
+
+  // 혼합팀에 균등 배치
+  distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
+}
+
 
   renderExchangeTeams(); // 결과 화면에 출력
 }
