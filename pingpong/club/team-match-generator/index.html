@@ -648,22 +648,22 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 function distributePlayers(players, teams) {
   if (!teams || teams.length === 0 || players.length === 0) return;
 
-  // 1. 부수 높은 순으로 먼저 정렬 (강한 선수 먼저 배치)
+  // 1. 부수 낮은 선수(실력 높은 선수)부터 배치
   players.sort((a, b) => {
-    if (a.level === b.level) return Math.random() - 0.5; // 같은 부수면 랜덤
-    return b.level - a.level;
+    if (a.level === b.level) return Math.random() - 0.5; 
+    return a.level - b.level; // 낮은 부수(강자)가 먼저
   });
 
   const totalPlayers = players.length;
   const teamCount = teams.length;
 
-  // 2. 각 팀 목표 인원수 계산 (예: 17명 3팀 → [6, 6, 5])
+  // 2. 팀 목표 인원수 계산 (예: 17명 3팀 → [6, 6, 5])
   const baseSize = Math.floor(totalPlayers / teamCount);
   let remainder = totalPlayers % teamCount;
   const targetSizes = new Array(teamCount).fill(baseSize).map(size => {
     if (remainder > 0) {
       remainder--;
-      return size + 1; // 나머지 인원은 앞쪽 팀부터 +1
+      return size + 1;
     }
     return size;
   });
@@ -677,25 +677,31 @@ function distributePlayers(players, teams) {
       const aCount = a.members.length;
       const bCount = b.members.length;
 
-      // 현재 팀 목표 인원 비교
       const aTarget = targetSizes[aIdx];
       const bTarget = targetSizes[bIdx];
 
-      // 1순위: 목표 인원 미달 팀 우선
+      // ---- 1순위: 목표 인원 미달 팀 우선 ----
       if (aCount < aTarget && bCount >= bTarget) return -1;
       if (bCount < bTarget && aCount >= aTarget) return 1;
 
-      // 둘 다 목표 미달이면, 인원 적은 팀 우선
+      // ---- 2순위: 평균 부수 낮은 팀(강팀) 먼저 배정 ----
+      const aAvg = aCount === 0 ? 0 : a.sum / aCount;
+      const bAvg = bCount === 0 ? 0 : b.sum / bCount;
+      if (aAvg !== bAvg) return aAvg - bAvg;
+
+      // ---- 3순위: 인원이 적은 팀 우선 ----
       if (aCount !== bCount) return aCount - bCount;
 
-      // 인원이 같으면 부수 합 적은 팀 우선
+      // ---- 4순위: 마지막으로 부수 합이 낮은 팀 ----
       return a.sum - b.sum;
     });
 
+    // 최종 선택된 팀에 선수 추가
     teams[0].members.push(player);
     teams[0].sum += player.level;
   });
 }
+
 
 
 function createExchangeMatch() {
@@ -751,6 +757,7 @@ function createExchangeMatch() {
 
   renderExchangeTeams(); // 결과 화면 출력
 }
+
 
 
 
