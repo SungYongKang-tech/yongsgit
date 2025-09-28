@@ -790,6 +790,10 @@ function createExchangeMatch() {
   distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);  // 상대팀
 
   renderExchangeTeams(); // 결과 화면 출력
+
+  balanceFinalMixedTeams(exchangeTeams);
+renderExchangeTeams(); // 조정된 결과 다시 출력
+
 }
 
 
@@ -1265,6 +1269,93 @@ function addPlayerToTeam(teamIdx, name, level) {
   return exchangeTeams.mixedTeams;
 }
 
+function balanceFinalMixedTeams(exchangeTeams) {
+  const allGroups = [exchangeTeams.ourTeams, exchangeTeams.opponentTeams, exchangeTeams.mixedTeams];
+
+  // 합계 계산 함수
+  const calcSum = (teams) => teams.reduce((sum, t) => sum + t.sum, 0);
+  const calcCount = (teams) => teams.reduce((cnt, t) => cnt + t.members.length, 0);
+  const calcAvg = (teams) => (calcCount(teams) > 0 ? calcSum(teams) / calcCount(teams) : 0);
+
+  const avgOur = calcAvg(exchangeTeams.ourTeams);
+  const avgOpponent = calcAvg(exchangeTeams.opponentTeams);
+  let avgMixed = calcAvg(exchangeTeams.mixedTeams);
+
+  console.log("초기 평균 부수", { avgOur, avgOpponent, avgMixed });
+
+  // 허용 편차: 우리팀/상대팀 평균과 혼합팀 평균의 차이가 이 값 이하면 OK
+  const TOLERANCE = 1.5;
+
+  // 조정 반복
+  let attempts = 0;
+  while ((Math.abs(avgMixed - avgOur) > TOLERANCE || Math.abs(avgMixed - avgOpponent) > TOLERANCE) && attempts < 20) {
+    attempts++;
+
+    // 혼합팀에서 가장 부수가 높은 선수와,
+    // 우리팀 또는 상대팀에서 가장 부수가 낮은 선수 교체
+    const mixedTeam = exchangeTeams.mixedTeams.flatMap(t => t.members);
+    const ourTeam = exchangeTeams.ourTeams.flatMap(t => t.members);
+    const opponentTeam = exchangeTeams.opponentTeams.flatMap(t => t.members);
+
+    const highestMixed = mixedTeam.reduce((max, p) => (p.level > max.level ? p : max), mixedTeam[0]);
+    const lowestOur = ourTeam.reduce((min, p) => (p.level < min.level ? p : min), ourTeam[0]);
+    const lowestOpponent = opponentTeam.reduce((min, p) => (p.level < min.level ? p : min), opponentTeam[0]);
+
+    // 혼합팀 평균이 너무 높으면 → 강한 선수 넣기
+    if (avgMixed > Math.max(avgOur, avgOpponent) + TOLERANCE) {
+      if (lowestOur && lowestOur.level < highestMixed.level) {
+        swapPlayers(highestMixed, lowestOur, exchangeTeams);
+      } else if (lowestOpponent && lowestOpponent.level < highestMixed.level) {
+        swapPlayers(highestMixed, lowestOpponent, exchangeTeams);
+      }
+    }
+    // 혼합팀 평균이 너무 낮으면 → 약한 선수 넣기
+    else if (avgMixed < Math.min(avgOur, avgOpponent) - TOLERANCE) {
+      const weakestMixed = mixedTeam.reduce((min, p) => (p.level < min.level ? p : min), mixedTeam[0]);
+      const highestOur = ourTeam.reduce((max, p) => (p.level > max.level ? p : max), ourTeam[0]);
+      const highestOpponent = opponentTeam.reduce((max, p) => (p.level > max.level ? p : max), opponentTeam[0]);
+
+      if (highestOur && highestOur.level > weakestMixed.level) {
+        swapPlayers(weakestMixed, highestOur, exchangeTeams);
+      } else if (highestOpponent && highestOpponent.level > weakestMixed.level) {
+        swapPlayers(weakestMixed, highestOpponent, exchangeTeams);
+      }
+    }
+
+    // 평균 다시 계산
+    avgMixed = calcAvg(exchangeTeams.mixedTeams);
+  }
+
+  console.log("조정 후 평균 부수", { avgOur, avgOpponent, avgMixed });
+}
+
+function swapPlayers(mixedPlayer, otherPlayer, exchangeTeams) {
+  // 어떤 팀에 속해있는지 찾기
+  function findPlayerTeam(player) {
+    for (const groupName of ['ourTeams', 'opponentTeams', 'mixedTeams']) {
+      for (const team of exchangeTeams[groupName]) {
+        const idx = team.members.indexOf(player);
+        if (idx !== -1) return { groupName, team, idx };
+      }
+    }
+    return null;
+  }
+
+  const mixedInfo = findPlayerTeam(mixedPlayer);
+  const otherInfo = findPlayerTeam(otherPlayer);
+
+  if (!mixedInfo || !otherInfo) return;
+
+  // 교환
+  mixedInfo.team.members[mixedInfo.idx] = otherPlayer;
+  otherInfo.team.members[otherInfo.idx] = mixedPlayer;
+
+  // 부수합 갱신
+  mixedInfo.team.sum = mixedInfo.team.members.reduce((sum, p) => sum + p.level, 0);
+  otherInfo.team.sum = otherInfo.team.members.reduce((sum, p) => sum + p.level, 0);
+
+  console.log(`교환됨: ${mixedPlayer.name} ↔ ${otherPlayer.name}`);
+}
 
 
   </script>
