@@ -625,23 +625,57 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
 function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
   const mixedPlayers = [];
   const totalPlayers = ourPlayers.length + opponentPlayers.length;
-  const playersPerTeam = Math.floor(totalPlayers / totalTeams); // 한 팀당 평균 인원
+
+  // 혼합팀 총 인원 = 혼합팀 수 × 한 팀당 목표 인원
+  const playersPerTeam = Math.floor(totalPlayers / totalTeams);
   const totalMixedPlayers = playersPerTeam * mixedCount;
 
-  const half = Math.floor(totalMixedPlayers / 2); // 우리팀 절반, 상대팀 절반
+  // 1. 우리팀, 상대팀 각각 부수 오름차순(강자 우선) 정렬
+  ourPlayers.sort((a, b) => a.level - b.level);
+  opponentPlayers.sort((a, b) => a.level - b.level);
 
-  // 부수 높은 순으로 정렬
-  ourPlayers.sort((a, b) => b.level - a.level);
-  opponentPlayers.sort((a, b) => b.level - a.level);
-
-  // 우리팀 → 상대팀 번갈아 추가
+  // 2. 초기에는 우리팀/상대팀 번갈아 뽑기 → 50:50 비율
+  const half = Math.floor(totalMixedPlayers / 2);
   for (let i = 0; i < half; i++) {
-    if (ourPlayers.length > 0) mixedPlayers.push(ourPlayers.shift());
+    if (ourPlayers.length > 0) mixedPlayers.push(ourPlayers.shift()); // 강자 우선
     if (opponentPlayers.length > 0) mixedPlayers.push(opponentPlayers.shift());
+  }
+
+  // 3. 혼합팀의 평균 부수 계산
+  const getAverageLevel = (arr) => arr.reduce((sum, p) => sum + p.level, 0) / arr.length;
+  let avgLevel = getAverageLevel(mixedPlayers);
+
+  // 4. 경기 가능한 범위 확인 (예: 평균 부수 8 이하 유지)
+  const MAX_AVG = 8; // 이 값은 경기 상황에 맞게 조정 가능
+  if (avgLevel > MAX_AVG) {
+    console.log("⚠ 혼합팀 평균 부수가 너무 높음 → 강자 추가 배치 시도");
+
+    // 부족한 강자 보충: 남아있는 강한 선수 중에서 추가
+    while (avgLevel > MAX_AVG && (ourPlayers.length > 0 || opponentPlayers.length > 0)) {
+      // 양쪽에서 가장 강한 선수 중 하나 선택
+      let candidate = null;
+      if (ourPlayers.length > 0 && opponentPlayers.length > 0) {
+        candidate = (ourPlayers[0].level < opponentPlayers[0].level)
+          ? ourPlayers.shift()
+          : opponentPlayers.shift();
+      } else if (ourPlayers.length > 0) {
+        candidate = ourPlayers.shift();
+      } else if (opponentPlayers.length > 0) {
+        candidate = opponentPlayers.shift();
+      }
+
+      if (candidate) {
+        mixedPlayers.push(candidate);
+        avgLevel = getAverageLevel(mixedPlayers);
+      } else {
+        break;
+      }
+    }
   }
 
   return mixedPlayers;
 }
+
 
 
 // 그룹 내부에서만 인원 균형 → 부수 균형
