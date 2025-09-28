@@ -648,24 +648,10 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
     teams[0].sum += player.level;
   });
 
-  // 출력
-  const teamBox = document.getElementById("teams");
-  teamBox.innerHTML = "";
-  teams.forEach(team => {
-    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
-    const div = document.createElement("div");
-    div.className = "team-card";
-    div.innerHTML = `
-      <h3>${team.name}</h3>
-      <ul>
-        ${sortedMembers.map(m => `<li>${m.name}(${m.level}부)</li>`).join('')}
-      </ul>
-      <p><small>부수합: ${team.sum}</small></p>
-    `;
-    teamBox.appendChild(div);
-  });
+  // 출력 (중복 제거 후)
+latestTeams = teams;
+assignTeamsRender(latestTeams);
 
-  latestTeams = teams;
 }
 
 
@@ -1402,6 +1388,111 @@ function swapPlayers(mixedPlayer, otherPlayer, exchangeTeams) {
   otherInfo.team.sum = otherInfo.team.members.reduce((sum, p) => sum + p.level, 0);
 
   console.log(`교환됨: ${mixedPlayer.name} ↔ ${otherPlayer.name}`);
+}
+
+let autoSwapBuffer = null;
+
+function beginAutoSwap(teamIdx, playerIdx) {
+  const liId = `auto-${teamIdx}-p${playerIdx}`;
+  const li = document.getElementById(liId);
+
+  // 첫 번째 선수 선택
+  if (!autoSwapBuffer) {
+    autoSwapBuffer = { teamIdx, playerIdx, liId };
+    if (li) li.classList.add('swap-pending');
+    return;
+  }
+
+  // 같은 선수 다시 클릭 → 취소
+  if (autoSwapBuffer.teamIdx === teamIdx && autoSwapBuffer.playerIdx === playerIdx) {
+    const prevLi = document.getElementById(autoSwapBuffer.liId);
+    if (prevLi) prevLi.classList.remove('swap-pending');
+    autoSwapBuffer = null;
+    return;
+  }
+
+  // 두 번째 선수 → 스왑 실행
+  const teamA = latestTeams[autoSwapBuffer.teamIdx];
+  const teamB = latestTeams[teamIdx];
+  const a = teamA.members[autoSwapBuffer.playerIdx];
+  const b = teamB.members[playerIdx];
+
+  teamA.members[autoSwapBuffer.playerIdx] = b;
+  teamB.members[playerIdx] = a;
+
+  // 합계 갱신
+  teamA.sum = teamA.members.reduce((sum, p) => sum + p.level, 0);
+  teamB.sum = teamB.members.reduce((sum, p) => sum + p.level, 0);
+
+  // UI 새로 렌더링
+  assignTeamsRender(latestTeams);
+
+  autoSwapBuffer = null;
+}
+
+function moveAutoPlayer(fromTeamIdx, playerIdx) {
+  const player = latestTeams[fromTeamIdx].members[playerIdx];
+
+  const teamNames = latestTeams.map((t, i) => `${i}: ${t.name}`).join("\n");
+  const choice = prompt(`'${player.name}' 이동할 팀 번호 입력:\n${teamNames}`);
+  if (choice === null) return;
+
+  const toTeamIdx = parseInt(choice, 10);
+  if (isNaN(toTeamIdx) || toTeamIdx < 0 || toTeamIdx >= latestTeams.length) {
+    alert("잘못된 팀 번호입니다.");
+    return;
+  }
+  if (toTeamIdx === fromTeamIdx) {
+    alert("같은 팀으로 이동할 수 없습니다.");
+    return;
+  }
+
+  // 이동 처리
+  latestTeams[fromTeamIdx].members.splice(playerIdx, 1);
+  latestTeams[fromTeamIdx].sum = latestTeams[fromTeamIdx].members.reduce((sum, p) => sum + p.level, 0);
+
+  latestTeams[toTeamIdx].members.push(player);
+  latestTeams[toTeamIdx].sum = latestTeams[toTeamIdx].members.reduce((sum, p) => sum + p.level, 0);
+
+  assignTeamsRender(latestTeams);
+}
+
+function removeAutoPlayer(teamIdx, playerIdx) {
+  if (!confirm("이 선수를 팀에서 해제하시겠습니까?")) return;
+
+  latestTeams[teamIdx].members.splice(playerIdx, 1);
+  latestTeams[teamIdx].sum = latestTeams[teamIdx].members.reduce((sum, p) => sum + p.level, 0);
+
+  assignTeamsRender(latestTeams);
+}
+
+function assignTeamsRender(teams) {
+  const teamBox = document.getElementById("teams");
+  teamBox.innerHTML = "";
+
+  teams.forEach((team, teamIdx) => {
+    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.id = `auto-team-${teamIdx}`;
+    div.innerHTML = `
+      <h3>${team.name}</h3>
+      <ul>
+        ${sortedMembers.map((m, playerIdx) => `
+          <li id="auto-${teamIdx}-p${playerIdx}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span>${m.name}(${m.level}부)</span>
+            <span style="display:flex;gap:6px;">
+              <button onclick="beginAutoSwap(${teamIdx}, ${playerIdx})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
+              <button onclick="moveAutoPlayer(${teamIdx}, ${playerIdx})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
+              <button onclick="removeAutoPlayer(${teamIdx}, ${playerIdx})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+            </span>
+          </li>
+        `).join('')}
+      </ul>
+      <p><small>부수합: <span id="auto-sum-${teamIdx}">${team.sum}</span></small></p>
+    `;
+    teamBox.appendChild(div);
+  });
 }
 
 
