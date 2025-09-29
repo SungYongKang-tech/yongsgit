@@ -84,7 +84,31 @@
     </div>
   </section>
 
-  <!-- 🔥 데이터 관리 -->
+  <!-- 선수 관리 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">선수 관리</div>
+      <div class="small muted">비활성화 후 2개월 뒤 자동 완전 삭제</div>
+    </div>
+    <div style="overflow:auto; margin-top:8px">
+      <table>
+        <thead>
+          <tr>
+            <th>이름</th>
+            <th>부수</th>
+            <th>상태</th>
+            <th>관리</th>
+          </tr>
+        </thead>
+        <tbody id="playersTableBody"></tbody>
+      </table>
+    </div>
+    <div class="small muted" style="margin-top:8px">
+      · 비활성화 = 칩/입력에서 숨김(기록은 보존) · 완전 삭제 = 최근 2개월 기록이 없을 때만 허용
+    </div>
+  </section>
+
+  <!-- 데이터 관리 -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div style="font-weight:700; color:#b91c1c">데이터 관리</div>
@@ -102,7 +126,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-  import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { getDatabase, ref, set, remove, onValue, update, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
   // ===== Firebase =====
   const firebaseConfig = {
@@ -128,7 +152,7 @@
   let currentDeletePw = '7910';
 
   onValue(ref(db,'config/doubleWeight'), (s)=>{
-    const v = s.val(); $('#doubleWeight').value = (v ?? 0.5);
+    $('#doubleWeight').value = (s.val() ?? 0.5);
   });
   $('#saveDoubleWeight').onclick = async()=>{
     const v = parseFloat($('#doubleWeight').value);
@@ -138,9 +162,9 @@
   };
 
   onValue(ref(db,'config/deletePassword'), (s)=>{
-    const v = s.val();
-    $('#deletePassword').value = (v ?? '7910');
-    currentDeletePw = v ?? '7910';
+    const val = s.val();
+    $('#deletePassword').value = (val ?? '7910');
+    currentDeletePw = val ?? '7910';
   });
   $('#saveDeletePassword').onclick = async()=>{
     const v = $('#deletePassword').value.trim();
@@ -150,29 +174,99 @@
     toast('삭제 비밀번호 저장');
   };
 
-  // ===== 🔥 모든 경기 기록 삭제 (matches 전체 제거) =====
+  // ===== 🔥 모든 경기 기록 삭제 =====
   async function purgeAllMatches(){
     const pw = prompt('삭제 비밀번호 4자리를 입력하세요.');
-    if (pw === null) return;
-    if (pw !== currentDeletePw){
-      toast('비밀번호가 올바르지 않습니다');
-      return;
-    }
+    if (pw !== currentDeletePw){ toast('비밀번호가 올바르지 않습니다'); return; }
     if (!confirm('정말 모든 경기 기록을 삭제할까요? 되돌릴 수 없습니다.')) return;
-
-    try{
-      await remove(ref(db, 'matches'));
-      toast('모든 경기 기록을 삭제했습니다');
-    }catch(e){
-      console.error(e);
-      toast(e?.message || '삭제 실패');
-    }
+    await remove(ref(db, 'matches'));
+    toast('모든 경기 기록을 삭제했습니다');
   }
-  document.getElementById('purgeMatches').onclick = purgeAllMatches;
+  $('#purgeMatches').onclick = purgeAllMatches;
+
+  // ===== 선수 관리 =====
+  const playersTable = document.getElementById('playersTableBody');
+
+  function renderPlayers(players){
+    playersTable.innerHTML = '';
+    Object.entries(players).forEach(([key, player])=>{
+      const tr = document.createElement('tr');
+      if (player.active === false) tr.style.opacity = '0.5';
+
+      const safeName = String(player.name ?? '');
+      const safeLevel = String(player.level ?? '');
+
+      tr.innerHTML = `
+        <td>${safeName}</td>
+        <td>${safeLevel}</td>
+        <td>${player.active === false ? '비활성화' : '활성'}</td>
+        <td style="display:flex; gap:6px; flex-wrap:wrap">
+          ${player.active === false
+            ? `<button class="btn ok"   data-act="activate"   data-id="${key}" data-name="${safeName}">복구</button>`
+            : `<button class="btn warn" data-act="deactivate" data-id="${key}" data-name="${safeName}">비활성화</button>`}
+          <button class="btn" data-act="hardDelete" data-id="${key}" data-name="${safeName}">완전 삭제(안전)</button>
+        </td>
+      `;
+      playersTable.appendChild(tr);
+    });
+  }
+
+  function loadPlayers(){
+    onValue(ref(db, 'players'), (snap)=>{
+      const players = snap.val() || {};
+      renderPlayers(players);
+    });
+  }
+
+  // 테이블 버튼 위임
+  playersTable.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const act = btn.dataset.act;
+    const id = btn.dataset.id;
+    const name = btn.dataset.name || id;
+
+    if(act === 'deactivate'){
+      const pw = prompt(`${name} 선수 비활성화. 비밀번호?`);
+      if(pw !== currentDeletePw){ toast('비밀번호 오류'); return; }
+      if(!confirm(`${name} 선수를 비활성화하시겠습니까?\n\n칩/입력에서 숨겨지고 기록은 보존됩니다.`)) return;
+      await update(ref(db, 'players/'+id), { active:false });
+      toast(`${name} 비활성화됨`);
+    }
+
+    if(act === 'activate'){
+      if(!confirm(`${name} 선수를 복구하시겠습니까?`)) return;
+      await update(ref(db, 'players/'+id), { active:true });
+      toast(`${name} 복구됨`);
+    }
+
+    if(act === 'hardDelete'){
+      const pw = prompt(`${name} 선수를 완전 삭제합니다. 비밀번호?`);
+      if(pw !== currentDeletePw){ toast('비밀번호 오류'); return; }
+
+      // 최근 2개월 matches에 참여 기록이 있는지 검사 → 있으면 삭제 금지
+      const matchesSnap = await get(ref(db, 'matches'));
+      const all = matchesSnap.val() || {};
+      let hasRecent = false;
+      for(const m of Object.values(all)){
+        const a = (m.membersA||[]);
+        const b = (m.membersB||[]);
+        if(a.includes(id) || b.includes(id)){ hasRecent = true; break; }
+      }
+      if(hasRecent){
+        alert('최근 2개월 내 경기 기록이 있어 완전 삭제할 수 없습니다.\n→ 비활성화 상태로 유지하세요.');
+        return;
+      }
+
+      if(!confirm(`[최종 확인]\n정말 ${name} 선수를 완전 삭제하시겠습니까?\n(되돌릴 수 없습니다)`)) return;
+      await remove(ref(db, 'players/'+id));
+      toast(`${name} 완전 삭제됨`);
+    }
+  });
 
   // 시작
   signInAnonymously(auth).catch(console.error);
-  onAuthStateChanged(auth, ()=>{ /* no-op */ });
+  onAuthStateChanged(auth, ()=> loadPlayers());
 </script>
 </body>
 </html>
