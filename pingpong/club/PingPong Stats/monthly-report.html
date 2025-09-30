@@ -22,16 +22,9 @@
     .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
     .card{background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:14px; box-shadow:var(--shadow); margin:12px 0}
 
-    table{
-      width:100%;
-      border-collapse:collapse;
-      background:#fff;
-      border-radius:12px;
-      overflow:hidden;
-      table-layout: fixed;
-    }
+    table{width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; table-layout: fixed;}
     thead th{background:#f8fafc; border-bottom:1px solid #e5e7eb; padding:8px 10px; font-size:14px; color:#334155}
-    tbody td{border-bottom:1px solid #f1f5f9; padding:8px 10px; font-size:14px; line-height:1.25}
+    tbody td{border-bottom:1px solid #f1f5f9; padding:8px 10px; font-size:14px; line-height:1.25; white-space: nowrap}
     tbody tr:hover{background:#fafafa}
     .right{text-align:right}
     .muted{color:var(--muted)}
@@ -120,337 +113,177 @@
   </div>
 </main>
 
+<!-- html2canvas -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
   import { getDatabase, ref, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  // Firebase
-  const app = initializeApp({ /* ...firebaseConfig... */});
+  // ===== Firebase 설정 =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
+    authDomain: "koen-pingpong.firebaseapp.com",
+    databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
+    projectId: "koen-pingpong",
+    storageBucket: "koen-pingpong.appspot.com",
+    messagingSenderId: "597358811982",
+    appId: "1:597358811982:web:b66dcb6a7159fb5f321c1f"
+  };
+  const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getDatabase(app);
 
-  // 월 계산
+  // ===== 월 키 계산 =====
   const pad = (n)=> String(n).padStart(2,'0');
   const toKST = (t=Date.now())=> new Date(new Date(t).toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
   function prevMonthKey(key){ const [y,m]=key.split('-').map(Number); return `${new Date(y,m-2,1).getFullYear()}-${pad(new Date(y,m-2,1).getMonth()+1)}`;}
   function titleMon(key){ const [y,m]=key.split('-').map(Number); return `'${String(y).slice(-2)}.${pad(m)}`;}
+  function monthKeyFromTs(ts){ const d=new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+  function pct(v){ return isFinite(v) ? (v*100).toFixed(1)+'%' : '-'; }
 
   const nowKST = toKST();
   const CUR_MON = `${nowKST.getFullYear()}-${pad(nowKST.getMonth()+1)}`;
   const PREV_MON = prevMonthKey(CUR_MON);
 
-  // 제목 세팅
   document.getElementById('titleMonth').textContent = `(${titleMon(CUR_MON)})`;
   document.getElementById('thisMonthTitle').textContent = `이달(${titleMon(CUR_MON)})의 전적`;
   document.getElementById('prevTitle').textContent = `지난달(${titleMon(PREV_MON)})의 전적`;
 
-  function render(){
-    // ===== 이달 표 =====
-    const tbody = document.getElementById('tbody');
-    tbody.innerHTML = '';
-    const rows = buildRows();
+  // ===== 데이터 저장소 =====
+  let thisMon = {}, prevMon = {}, names = {};
 
-    rows.forEach((r, i)=>{
-      const tr = document.createElement('tr');
-      const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tr.appendChild(tdNo);
-      const tdNm = document.createElement('td'); tdNm.className = 'name'; tdNm.textContent = r.name; tr.appendChild(tdNm);
-      const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
-      const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; tr.appendChild(tdWP);
-      const tdPrev = document.createElement('td'); tdPrev.className='right muted'; tdPrev.textContent = pct(r.prevRate); tr.appendChild(tdPrev);
-      const tdMon  = document.createElement('td'); tdMon.className='right'; tdMon.textContent  = pct(r.monthRate); tr.appendChild(tdMon);
-      const tdDelta= document.createElement('td'); tdDelta.className='right';
-      if(isFinite(r.delta)){ tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p'; tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg')); }
-      else { tdDelta.textContent = '-'; tdDelta.classList.add('muted'); }
-      tr.appendChild(tdDelta);
+  function rebuild(all){
+    thisMon={}; prevMon={};
+    Object.entries(all).forEach(([id,m])=>{
+      const ts=m.ts||m.createdAt; if(!ts) return;
+      const monKey=monthKeyFromTs(ts);
+      const pid=m.pid||m.player||'unknown';
+      if(!names[pid]) names[pid]=m.name||pid;
+      let target;
+      if(monKey===CUR_MON) target=thisMon;
+      else if(monKey===PREV_MON) target=prevMon;
+      else return;
+      if(!target[pid]) target[pid]={games:0,wins:0,losses:0,ww:0,gw:0};
+      target[pid].games++;
+      if(m.result==='W'){target[pid].wins++; target[pid].ww++;}
+      else if(m.result==='L'){target[pid].losses++;}
+      target[pid].gw++;
+    });
+  }
+
+  function buildRows(){
+    const rows=[];
+    Object.keys(thisMon).forEach(pid=>{
+      const p=thisMon[pid];
+      const prev=prevMon[pid]||{ww:0,gw:0};
+      const prevRate=prev.gw>0?prev.ww/prev.gw:NaN;
+      const monthRate=p.gw>0?p.ww/p.gw:NaN;
+      const delta=(isFinite(prevRate)&&isFinite(monthRate))?(monthRate-prevRate):NaN;
+      rows.push({pid,name:names[pid]||pid,games:p.games,wins:p.wins,losses:p.losses,prevRate,monthRate,delta,weightedWins:p.ww});
+    });
+    return rows;
+  }
+
+  function render(){
+    // --- 이번달 표 ---
+    const tbody=document.getElementById('tbody');
+    tbody.innerHTML='';
+    const rows=buildRows();
+
+    rows.forEach((r,i)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${i+1}</td><td>${r.name}</td>
+        <td class="right">${r.games}</td>
+        <td class="right">${r.wins}/${r.losses}</td>
+        <td class="right muted">${pct(r.prevRate)}</td>
+        <td class="right">${pct(r.monthRate)}</td>
+        <td class="right ${isFinite(r.delta)?(r.delta>=0?'delta pos':'delta neg'):'muted'}">
+          ${isFinite(r.delta)?(r.delta>=0?'+':'')+(r.delta*100).toFixed(1)+'%p':'-'}
+        </td>`;
       tbody.appendChild(tr);
     });
 
-// 전체 게임 수 합계 행 추가
-const totalGames = rows.reduce((sum, r) => sum + r.games, 0);
-if (rows.length > 0) {
-  const trTotal = document.createElement('tr');
-  trTotal.style.fontWeight = 'bold';
-  trTotal.style.background = '#f8fafc';
-
-  // 번호 + 이름 + 승/패 칸까지 합치기 → colSpan=3
-  const tdLabel = document.createElement('td');
-  tdLabel.colSpan = 3;
-  tdLabel.textContent = '전체 경기수';
-  trTotal.appendChild(tdLabel);
-
-  // 게임횟수 합계
-  const tdGames = document.createElement('td');
-  tdGames.className = 'right';
-  tdGames.textContent = `${totalGames} 게임`;
-  trTotal.appendChild(tdGames);
-
-  // 나머지 칸(이전승률, 이달승률, 증감)은 빈칸
-  for (let i = 0; i < 3; i++) {
-    const td = document.createElement('td');
-    trTotal.appendChild(td);
-  }
-
-  tbody.appendChild(trTotal);
-}
-
-
-
-
-    // ===== 이달 어워드 =====
-    const mostGamesList = document.getElementById('mostGames');
-    const topWinsList   = document.getElementById('topWins');
-
+    // 전체 경기수
+    const totalGames=rows.reduce((s,r)=>s+r.games,0);
     if(rows.length){
-      // 최다경기 TOP3
-      const byGames = [...rows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
-      mostGamesList.innerHTML = '';
-      byGames.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        li.textContent = `${idx+1}위 ${p.name} · ${p.games}경기`;
-        mostGamesList.appendChild(li);
-      });
+      const tr=document.createElement('tr');
+      tr.style.fontWeight='bold'; tr.style.background='#f8fafc';
+      tr.innerHTML=`<td colspan="3">전체 경기수</td><td class="right">${totalGames} 게임</td><td></td><td></td><td></td>`;
+      tbody.appendChild(tr);
+    }
 
-      // 다승 TOP3
-      const byWins = [...rows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
-      topWinsList.innerHTML = '';
-      byWins.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        const winTxt = Number.isInteger(p.weightedWins) ? p.weightedWins : p.weightedWins.toFixed(1);
-        li.textContent = `${idx+1}위 ${p.name} · ${winTxt}승`;
-        topWinsList.appendChild(li);
-      });
-     
-      // 기량상승 TOP3
-const risingList = document.getElementById('risingTop3');
-if (rows.length) {
-  const rising = [...rows]
-    .filter(r => r.games >= 15 && isFinite(r.delta))
-    .sort((a,b) => b.delta - a.delta)
-    .slice(0,3);
+    // --- 이번달 어워드 ---
+    const mostGames=document.getElementById('mostGames');
+    const topWins=document.getElementById('topWins');
+    const rising=document.getElementById('risingTop3');
+    mostGames.innerHTML=topWins.innerHTML=rising.innerHTML='';
 
-  risingList.innerHTML = '';
-  if (rising.length) {
-    rising.forEach((p, idx) => {
-      const li = document.createElement('li');
-      li.textContent = `${idx+1}위 ${p.name} · ${(p.delta*100).toFixed(1)}%p`;
-      risingList.appendChild(li);
+    [...rows].sort((a,b)=>b.games-a.games).slice(0,3).forEach((p,idx)=>{
+      mostGames.innerHTML+=`<li>${idx+1}위 ${p.name} · ${p.games}경기</li>`;
     });
-  } else {
-    const li = document.createElement('li');
-    li.className = 'muted';
-    li.textContent = '해당 없음';
-    risingList.appendChild(li);
-  }
-}
-
-
-
-    }else{
-      mostGamesList.innerHTML='';
-      topWinsList.innerHTML='';
-    }
-
-    // 부수상향 권고 (이달)
-    const upList = document.getElementById('upgradeList');
-    if (upList) {
-      const candidates = rows
-        .filter(r => r.games >= 10 && isFinite(r.monthRate) && r.monthRate >= 0.7)
-        .sort((a,b) => (b.monthRate - a.monthRate) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
-
-      upList.innerHTML = '';
-      if (candidates.length) {
-        candidates.forEach(p => {
-          const li = document.createElement('li');
-          li.textContent = `${p.name} · 승률 ${(p.monthRate*100).toFixed(0)}% / ${p.games}경기`;
-          upList.appendChild(li);
-        });
-      } else {
-        const li = document.createElement('li');
-        li.className = 'muted';
-        li.textContent = '해당 없음';
-        upList.appendChild(li);
-      }
-    }
-
-    // ===== 지난달 표/어워드 =====
-    const prevSection = document.getElementById('prevSection');
-    const prevAwards  = document.getElementById('prevAwards');
-    const prevTbody   = document.getElementById('prevTbody');
-
-    const prevRows = Object.keys(prevMon)
-      .filter(pid => prevMon[pid].games > 0)
-      .map(pid => {
-        const p = prevMon[pid];
-        const rate = (p.gw > 0) ? (p.ww / p.gw) : NaN;
-        return { pid, name: names[pid] || pid, games: p.games, wins: p.wins, losses: p.losses, rate, weightedWins: p.ww };
-      });
-
-    if (prevRows.length){
-      // 제목 월 표시
-     // const prevTitleMonth = document.getElementById('prevTitleMonth');
-     // if (prevTitleMonth) prevTitleMonth.textContent = titleMon(PREV_MON);
-
-      // 표 정렬(승률 > 게임수 > 이름)
-      prevRows.sort((a,b)=>{
-        const ar = isFinite(a.rate) ? a.rate : -1;
-        const br = isFinite(b.rate) ? b.rate : -1;
-        return (br-ar) || (b.games-a.games) || a.name.localeCompare(b.name,'ko');
-      });
-
-      
-// 표 렌더
-prevTbody.innerHTML = '';
-prevRows.forEach((r, i)=>{
-  const tr = document.createElement('tr');
-  const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tr.appendChild(tdNo);
-  const tdNm = document.createElement('td'); tdNm.className='name'; tdNm.textContent = r.name; tr.appendChild(tdNm);
-  const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
-  const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${r.wins}/${r.losses}`; tr.appendChild(tdWP);
-  const tdRt = document.createElement('td'); tdRt.className='right'; tdRt.textContent = isFinite(r.rate)? (r.rate*100).toFixed(1)+'%' : '-'; tr.appendChild(tdRt);
-  prevTbody.appendChild(tr);
-});
-
-// ✅ 지난달 전체 경기수 합계 행 추가
-const totalPrevGames = prevRows.reduce((sum, r) => sum + r.games, 0);
-if (prevRows.length > 0) {
-  const trTotal = document.createElement('tr');
-  trTotal.style.fontWeight = 'bold';
-  trTotal.style.background = '#f8fafc';
-
-  // 번호+이름 합치기 → colSpan=2
-  const tdLabel = document.createElement('td');
-  tdLabel.colSpan = 2;
-  tdLabel.textContent = '전체 경기수';
-  trTotal.appendChild(tdLabel);
-
-  // 합계 경기수
-  const tdGames = document.createElement('td');
-  tdGames.className = 'right';
-  tdGames.textContent = `${totalPrevGames} 게임`;
-  trTotal.appendChild(tdGames);
-
-  // 승/패, 승률 칸 빈칸 처리
-  for (let i = 0; i < 2; i++) {
-    const td = document.createElement('td');
-    trTotal.appendChild(td);
-  }
-
-  prevTbody.appendChild(trTotal);
-}
-
-
-      // 지난달 어워드: 최다경기 TOP3
-      const prevMostGames = document.getElementById('prevMostGames');
-      const prevTopWins   = document.getElementById('prevTopWins');
-      const prevUpList    = document.getElementById('prevUpgradeList');
-
-      const byGamesPrev = [...prevRows].sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
-      prevMostGames.innerHTML = '';
-      byGamesPrev.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        li.textContent = `${idx+1}위 ${p.name} · ${p.games}경기`;
-        prevMostGames.appendChild(li);
-      });
-
-      // 지난달 어워드: 다승 TOP3
-      prevTopWins.innerHTML = '';
-      const byWinsPrev = [...prevRows].sort((a,b)=> (b.weightedWins-a.weightedWins) || (b.games-a.games) || a.name.localeCompare(b.name,'ko'));
-      byWinsPrev.slice(0,3).forEach((p, idx)=>{
-        const li = document.createElement('li');
-        const winTxt = Number.isInteger(p.weightedWins) ? p.weightedWins : p.weightedWins.toFixed(1);
-        li.textContent = `${idx+1}위 ${p.name} · ${winTxt}승`;
-        prevTopWins.appendChild(li);
-      });
-
-      // 지난달 부수상향 권고
-      prevUpList.innerHTML = '';
-      const prevCandidates = prevRows
-        .filter(r => r.games >= 10 && isFinite(r.rate) && r.rate >= 0.7)
-        .sort((a,b)=> (b.rate - a.rate) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'));
-      if(prevCandidates.length){
-        prevCandidates.forEach(p=>{
-          const li = document.createElement('li');
-          li.textContent = `${p.name} · 승률 ${(p.rate*100).toFixed(0)}% / ${p.games}경기`;
-          prevUpList.appendChild(li);
-        });
-      }else{
-        const li = document.createElement('li');
-        li.className = 'muted';
-        li.textContent = '해당 없음';
-        prevUpList.appendChild(li);
-      }
-
-      // 섹션 보이기
-      prevSection.style.display = '';
-      prevAwards.style.display  = '';
-    }else{
-      prevSection.style.display = 'none';
-      prevAwards.style.display  = 'none';
-    }
-  }
-
-  // ===== 전전달 이전 데이터 자동 정리(이달+지난달만 유지) =====
-  const realNowKST   = toKST();
-  const REAL_CUR_MON = `${realNowKST.getFullYear()}-${pad(realNowKST.getMonth()+1)}`;
-  const REAL_PREV_MON= prevMonthKey(REAL_CUR_MON);
-
-  async function pruneOld(all){
-    const removals = [];
-    Object.entries(all || {}).forEach(([key, m])=>{
-      const ts  = isNum(m.ts) ? m.ts : (isNum(m.createdAt) ? m.createdAt : NaN);
-      const mon = m.monthKey || (isFinite(ts) ? monthKeyFromTs(ts) : null);
-      if(!mon) return;
-      // REAL_PREV_MON 보다 이전(전전달 포함 그 이전) 데이터 삭제
-      if (mon < REAL_PREV_MON) removals.push(key);
+    [...rows].sort((a,b)=>b.weightedWins-a.weightedWins).slice(0,3).forEach((p,idx)=>{
+      topWins.innerHTML+=`<li>${idx+1}위 ${p.name} · ${p.weightedWins}승</li>`;
     });
-    if (!removals.length) return;
-    try{
-      await Promise.all(removals.map(id => remove(ref(db, 'matches/'+id))));
-      console.log('[prune] removed old months:', removals.length);
-    }catch(e){
-      console.error('[prune] failed:', e);
-    }
+    const risingRows=[...rows].filter(r=>r.games>=15 && isFinite(r.delta)).sort((a,b)=>b.delta-a.delta).slice(0,3);
+    if(risingRows.length){
+      risingRows.forEach((p,idx)=>{ rising.innerHTML+=`<li>${idx+1}위 ${p.name} · ${(p.delta*100).toFixed(1)}%p</li>`; });
+    } else rising.innerHTML='<li class="muted">해당 없음</li>';
+
+    // --- 지난달 표 ---
+    const prevSection=document.getElementById('prevSection');
+    const prevAwards=document.getElementById('prevAwards');
+    const prevTbody=document.getElementById('prevTbody');
+    const prevRows=Object.keys(prevMon).map(pid=>{
+      const p=prevMon[pid];
+      const rate=p.gw>0?p.ww/p.gw:NaN;
+      return {pid,name:names[pid]||pid,games:p.games,wins:p.wins,losses:p.losses,rate,weightedWins:p.ww};
+    });
+
+    if(prevRows.length){
+      prevSection.style.display=prevAwards.style.display='';
+      prevTbody.innerHTML='';
+      prevRows.forEach((r,i)=>{
+        prevTbody.innerHTML+=`
+          <tr><td>${i+1}</td><td>${r.name}</td>
+          <td class="right">${r.games}</td><td class="right">${r.wins}/${r.losses}</td>
+          <td class="right">${isFinite(r.rate)?(r.rate*100).toFixed(1)+'%':'-'}</td></tr>`;
+      });
+      const totalPrev=prevRows.reduce((s,r)=>s+r.games,0);
+      prevTbody.innerHTML+=`<tr style="font-weight:bold;background:#f8fafc"><td colspan="2">전체 경기수</td><td class="right">${totalPrev} 게임</td><td></td><td></td></tr>`;
+      // 어워드(지난달)
+      const pm=document.getElementById('prevMostGames');
+      const pw=document.getElementById('prevTopWins');
+      const pu=document.getElementById('prevUpgradeList');
+      pm.innerHTML=pw.innerHTML=pu.innerHTML='';
+      [...prevRows].sort((a,b)=>b.games-a.games).slice(0,3).forEach((p,idx)=>{ pm.innerHTML+=`<li>${idx+1}위 ${p.name} · ${p.games}경기</li>`; });
+      [...prevRows].sort((a,b)=>b.weightedWins-a.weightedWins).slice(0,3).forEach((p,idx)=>{ pw.innerHTML+=`<li>${idx+1}위 ${p.name} · ${p.weightedWins}승</li>`; });
+      const candidates=prevRows.filter(r=>r.games>=10 && isFinite(r.rate) && r.rate>=0.7);
+      if(candidates.length){ candidates.forEach(p=>{ pu.innerHTML+=`<li>${p.name} · 승률 ${(p.rate*100).toFixed(0)}% / ${p.games}경기</li>`; }); }
+      else pu.innerHTML='<li class="muted">해당 없음</li>';
+    } else { prevSection.style.display=prevAwards.style.display='none'; }
   }
 
-  // 실시간 구독
-  onAuthStateChanged(auth, (user)=>{
+  // 데이터 구독
+  onAuthStateChanged(auth,(user)=>{
     if(!user) return;
-    onValue(ref(db,'matches'), async (snap)=>{
-      const all = snap.val() || {};
-      window.lastAll = all;
-      rebuild(all);
-      render();
-      await pruneOld(all);
-    }, (err)=>{ console.error(err); });
+    onValue(ref(db,'matches'),(snap)=>{
+      const all=snap.val()||{}; rebuild(all); render();
+    });
   });
+  signInAnonymously(auth).catch(e=>console.error(e));
 
-  // 로그인
-  signInAnonymously(auth).catch(e=>{ console.error(e); });
-
-  // ================== 이미지 저장 ==================
-  function downloadDataUrl(filename, dataUrl){
-    const a = document.createElement('a');
-    a.href = dataUrl; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-  }
+  // 이미지 저장
   async function saveCaptureAsImage(){
-    const area = document.getElementById('captureArea');
-    if(!area){ alert('캡처 영역을 찾을 수 없습니다.'); return; }
-    area.classList.add('capture-ready');
-    const scale = Math.min(window.devicePixelRatio || 1, 2);
-    if(!window.html2canvas){
-      alert('이미지 모듈 로드 중입니다. 다시 시도해주세요.');
-      area.classList.remove('capture-ready'); return;
-    }
-    const canvas = await window.html2canvas(area, { backgroundColor:'#ffffff', scale, useCORS:true, windowWidth:document.documentElement.clientWidth });
-    area.classList.remove('capture-ready');
-    const dataUrl = canvas.toDataURL('image/png');
-    const fname = `KOEN_월간리그_${CUR_MON}.png`;
-    downloadDataUrl(fname, dataUrl);
+    const area=document.getElementById('captureArea'); if(!area) return;
+    const scale=Math.min(window.devicePixelRatio||1,2);
+    const canvas=await window.html2canvas(area,{backgroundColor:'#fff',scale});
+    const dataUrl=canvas.toDataURL('image/png');
+    const a=document.createElement('a'); a.href=dataUrl; a.download=`KOEN_월간리그_${CUR_MON}.png`; a.click();
   }
-  const saveBtn = document.getElementById('saveImage');
-  if(saveBtn) saveBtn.addEventListener('click', saveCaptureAsImage);
+  document.getElementById('saveImage').onclick=saveCaptureAsImage;
 </script>
 </body>
 </html>
