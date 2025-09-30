@@ -257,6 +257,13 @@ ul.log li.day-sep hr{
     const auth = getAuth(app);
     const db = getDatabase(app);
 
+// ===== 숨김 선수 목록 동기화 =====
+let hiddenPlayers = [];
+onValue(ref(db, 'hiddenPlayers'), (snapshot) => {
+  hiddenPlayers = snapshot.val() || [];
+  renderChips();  // 숨김 목록이 바뀌면 자동으로 UI 갱신
+});
+
     // ===== 유틸 =====
     const $ = (sel, ctx=document)=>ctx.querySelector(sel);
     const toast = (msg='저장되었습니다')=>{
@@ -330,7 +337,7 @@ ul.log li.day-sep hr{
       "김희영(4)","강성용(5)","김범일(5)","이영진(6)","박주민(6)","강다훈(6)",
       "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
       "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","문우용(9)","김현곤(9)","오국환(9)","조보미(12)",
-      "송은아(13)","이낭주(13)","박나령(14)","고은선(14)","정승목(14)"
+      "송은아(13)","이낭주(13)","박나령(14)","고은선(14)","정승목(14)","홍길동(7)"
     ];
      // 🔄 @@ 중요 @@   선수 삭제는 관리자 모드에서 할것, 다 꼬임
      // 🔄 @@ 중요 @@   선수 추가는 맨 뒤에 순서대로 할것 
@@ -379,29 +386,37 @@ function levelStyle(level){
     function renderChips(){
       const box = $('#chips'); box.innerHTML='';
       const need = (state.mode==='single') ? 2 : 4;
-      players.forEach(p=>{
-        const btn = document.createElement('button');
-        btn.className='chip';
-        btn.textContent = `${p.name}(${p.level})`;
+      players.forEach(p => {
+  // 🔹 숨김 선수 목록에 이름이 포함되어 있다면 표시하지 않음
+  if (hiddenPlayers.includes(p.name)) return;
 
-        const { bg, bd, ol } = levelStyle(p.level);
-        btn.style.setProperty('--chip-bg', bg);
-        btn.style.setProperty('--chip-bd', bd);
-        btn.style.setProperty('--chip-ol', ol);   // ← 이 줄 추가
+  const btn = document.createElement('button');
+  btn.className = 'chip';
+  btn.textContent = `${p.name}(${p.level})`;
 
+  const { bg, bd, ol } = levelStyle(p.level);
+  btn.style.setProperty('--chip-bg', bg);
+  btn.style.setProperty('--chip-bd', bd);
+  btn.style.setProperty('--chip-ol', ol);
 
-        if(state.sel.some(x=>x.id===p.id)) btn.classList.add('selected');
-        btn.onclick = ()=>{
-          const idx = state.sel.findIndex(x=>x.id===p.id);
-          if(idx>=0) state.sel.splice(idx,1);
-          else{
-            if(state.sel.length>=need){ toast(state.mode==='single'?'단식은 두 명만 선택':'복식은 네 명만 선택'); return; }
-            state.sel.push(p);
-          }
-          renderChips(); renderWinnerBox();
-        };
-        box.appendChild(btn);
-      });
+  if (state.sel.some(x => x.id === p.id)) btn.classList.add('selected');
+
+  btn.onclick = () => {
+    const idx = state.sel.findIndex(x => x.id === p.id);
+    if (idx >= 0) state.sel.splice(idx, 1);
+    else {
+      if (state.sel.length >= need) {
+        toast(state.mode === 'single' ? '단식은 두 명만 선택' : '복식은 네 명만 선택');
+        return;
+      }
+      state.sel.push(p);
+    }
+    renderChips();
+    renderWinnerBox();
+  };
+  box.appendChild(btn);
+});
+
     }
 
     function computeTeams(){
