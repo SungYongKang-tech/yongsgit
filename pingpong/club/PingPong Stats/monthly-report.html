@@ -77,6 +77,17 @@ table thead tr > th:nth-child(2){ white-space: nowrap; }
 /* 헤더·바디 전부 중앙 */
 thead th, tbody td { text-align: center; }
 
+/* 기준 충족자 강조 */
+tr.over-threshold {
+  background-color: #f0f9ff; /* 파스텔 블루 */
+}
+
+/* 메달 뱃지 */
+.medal {
+  margin-left: 4px;
+  font-size: 14px;
+}
+
   </style>
 </head>
 <body>
@@ -391,25 +402,85 @@ else if(sortMode==='games'){
   }
 
   function render(){
+  // ===== 지난달 다승 TOP3 선수 pid 구하기 =====
+  let prevTop3Wins = [];
+  const byWinsPrev = Object.keys(prevMon)
+    .filter(pid => prevMon[pid].games > 0)
+    .map(pid => {
+      const p = prevMon[pid];
+      return { pid, wins: p.ww, games: p.games, name: names[pid] || pid };
+    })
+    .sort((a,b)=> (b.wins - a.wins) || (b.games - a.games) || a.name.localeCompare(b.name,'ko'))
+    .slice(0,3);
+
+  prevTop3Wins = byWinsPrev.map(p => p.pid);
     // ===== 이달 표 =====
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
     const rows = buildRows();
 
-    rows.forEach((r, i)=>{
-      const tr = document.createElement('tr');
-      const tdNo = document.createElement('td'); tdNo.textContent = (i+1).toString(); tr.appendChild(tdNo);
-      const tdNm = document.createElement('td'); tdNm.className = 'name'; tdNm.textContent = r.name; tr.appendChild(tdNm);
-      const tdGm = document.createElement('td'); tdGm.className='right'; tdGm.textContent = r.games.toString(); tr.appendChild(tdGm);
-      const tdWP = document.createElement('td'); tdWP.className='right'; tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; tr.appendChild(tdWP);
-      const tdPrev = document.createElement('td'); tdPrev.className='right muted'; tdPrev.textContent = pct(r.prevRate); tr.appendChild(tdPrev);
-      const tdMon  = document.createElement('td'); tdMon.className='right'; tdMon.textContent  = pct(r.monthRate); tr.appendChild(tdMon);
-      const tdDelta= document.createElement('td'); tdDelta.className='right';
-      if(isFinite(r.delta)){ tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p'; tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg')); }
-      else { tdDelta.textContent = '-'; tdDelta.classList.add('muted'); }
-      tr.appendChild(tdDelta);
-      tbody.appendChild(tr);
-    });
+   rows.forEach((r, i)=>{
+  const tr = document.createElement('tr');
+
+  // === 기준 충족자 강조 ===
+  if (r.games >= threshold) {
+    tr.classList.add('over-threshold'); 
+  } else {
+    tr.classList.add('under-threshold'); 
+  }
+
+  const tdNo = document.createElement('td'); 
+  tdNo.textContent = (i+1).toString(); 
+  tr.appendChild(tdNo);
+
+  const tdNm = document.createElement('td'); 
+  tdNm.className = 'name'; 
+  tdNm.textContent = r.name;
+
+  // === 지난달 다승 TOP3 메달 표시 ===
+  const idx = prevTop3Wins.indexOf(r.pid);
+  if (idx === 0) tdNm.textContent += ' 🥇';
+  else if (idx === 1) tdNm.textContent += ' 🥈';
+  else if (idx === 2) tdNm.textContent += ' 🥉';
+
+  tr.appendChild(tdNm);
+
+  const tdGm = document.createElement('td'); 
+  tdGm.className='right'; 
+  tdGm.textContent = r.games.toString(); 
+  tr.appendChild(tdGm);
+
+  const tdWP = document.createElement('td'); 
+  tdWP.className='right'; 
+  tdWP.textContent = `${fmtIntOrHalf(r.wins)}/${fmtIntOrHalf(r.losses)}`; 
+  tr.appendChild(tdWP);
+
+  const tdPrev = document.createElement('td'); 
+  tdPrev.className='right muted'; 
+  tdPrev.textContent = pct(r.prevRate); 
+  tr.appendChild(tdPrev);
+
+  const tdMon  = document.createElement('td'); 
+  tdMon.className='right'; 
+  tdMon.textContent  = pct(r.monthRate); 
+  tr.appendChild(tdMon);
+
+  const tdDelta= document.createElement('td'); 
+  tdDelta.className='right';
+  if(isFinite(r.delta)){ 
+    tdDelta.textContent = (r.delta>=0?'+':'') + (r.delta*100).toFixed(1) + '%p'; 
+    tdDelta.classList.add('delta', (r.delta>=0 ? 'pos' : 'neg')); 
+  }
+  else { 
+    tdDelta.textContent = '-'; 
+    tdDelta.classList.add('muted'); 
+  }
+  tr.appendChild(tdDelta);
+
+  tbody.appendChild(tr);
+});
+
+
 
    // 전체 게임 수 합계 행 추가
 const totalGames = rows.reduce((sum, r) => sum + r.games, 0);
