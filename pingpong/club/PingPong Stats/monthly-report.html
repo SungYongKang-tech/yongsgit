@@ -356,13 +356,18 @@ thead th, tbody td { text-align: center; }
                prevRate, monthRate, delta, weightedWins:m.ww };
     });
 
-    if(sortMode==='winrate'){
+   if(sortMode==='winrate'){
+  // 오늘 날짜 기준으로 최소 경기수(threshold) 결정
+  const day = nowKST.getDate();  // KST 기준 일자
+  let threshold = 5;
+  if (day > 20) threshold = 15;
+  else if (day > 10) threshold = 10;
+
   rows.sort((a, b) => {
-    // 우선순위:
-    // 1. 5게임 이상 vs 이하: 5게임 이상이 우선
-    const a5 = a.games >= 5 ? 1 : 0;
-    const b5 = b.games >= 5 ? 1 : 0;
-    if (a5 !== b5) return b5 - a5;
+    // 1. threshold 이상 vs 미만: 기준 미달이면 무조건 뒤로
+    const aOK = a.games >= threshold ? 1 : 0;
+    const bOK = b.games >= threshold ? 1 : 0;
+    if (aOK !== bOK) return bOK - aOK;
 
     // 2. 승률 (유효한 값일 때)
     const ar = isFinite(a.monthRate) ? a.monthRate : -1;
@@ -376,6 +381,7 @@ thead th, tbody td { text-align: center; }
     return a.name.localeCompare(b.name, 'ko');
   });
 }
+
 else if(sortMode==='games'){
       rows.sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name,'ko'));
     }else{
@@ -530,11 +536,13 @@ if (rows.length) {
       const prevTitleMonth = document.getElementById('prevTitleMonth');
       if (prevTitleMonth) prevTitleMonth.textContent = titleMon(PREV_MON);
 
-        // 표 정렬 (5게임 이상 우선 → 승률 → 게임수 → 이름)
+// 지난달은 threshold = 15 고정
+const thresholdPrev = 15;
+
 prevRows.sort((a,b)=>{
-  const a5 = a.games >= 5 ? 1 : 0;
-  const b5 = b.games >= 5 ? 1 : 0;
-  if (a5 !== b5) return b5 - a5;  // ✅ 5게임 이상 먼저
+  const aOK = a.games >= thresholdPrev ? 1 : 0;
+  const bOK = b.games >= thresholdPrev ? 1 : 0;
+  if (aOK !== bOK) return bOK - aOK;
 
   const ar = isFinite(a.rate) ? a.rate : -1;
   const br = isFinite(b.rate) ? b.rate : -1;
