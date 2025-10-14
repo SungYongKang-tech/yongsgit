@@ -451,57 +451,48 @@ function removeSingleAddedPlayer(index) {
   renderPlayers();
 }
 
-
 function renderExchangeTeams() {
   const teamBox = document.getElementById("teams");
   teamBox.innerHTML = "";
 
-  const renderGroup = (group, title) => {
-    if (group.length === 0) return;
-    const groupHeader = document.createElement("h3");
-    groupHeader.textContent = title;
-    teamBox.appendChild(groupHeader);
+  latestTeams.forEach((team, teamIdx) => {
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.id = `auto-team-${teamIdx}`;
 
-    group.forEach((team, idx) => {
-      const div = document.createElement("div");
-      div.className = "team-card";
-      div.style.borderTop = `4px solid ${team.color}`;
+    // 평균 계산
+    const avg = team.members.length
+      ? (team.sum / team.members.length).toFixed(2)
+      : "-";
 
-      // 🔹 버튼 3개로 교체
-      div.innerHTML = `
-        <h3>${team.name}</h3>
-       <ul>
-  ${team.members.map((p, i) => `
-<li id="ex-${title}-${idx}-p${i}" 
-    style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-  <span>${p.name}(${p.level}부)</span>
-  <span style="display:flex;gap:6px;">
-    <button onclick="beginExchangeSwap('${title}', ${idx}, ${i})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
-    <button onclick="moveExchangePlayer('${title}', ${idx}, ${i})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
-    <button onclick="removeExchangePlayer('${title}', ${idx}, ${i})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
-  </span>
-</li>
-  `).join('')}
-</ul>
+    div.innerHTML = `
+      <h3>${team.name}</h3>
+      <ul>
+        ${team.members
+          .map(
+            (m, playerIdx) => `
+            <li id="auto-${teamIdx}-p${playerIdx}" 
+                style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span>${m.name} (${m.level}부)</span>
+              <span style="display:flex;gap:6px;">
+                <button onclick="beginAutoSwap(${teamIdx}, ${playerIdx})"
+                        style="font-size:12px;padding:4px 8px;">↔ 교체</button>
+                <button onclick="moveAutoPlayer(${teamIdx}, ${playerIdx})"
+                        style="font-size:12px;padding:4px 8px;">→ 이동</button>
+                <button onclick="removeAutoPlayer(${teamIdx}, ${playerIdx})"
+                        style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+              </span>
+            </li>`
+          )
+          .join("")}
+      </ul>
+      <p><small>부수합: ${team.sum} / 평균: ${avg}</small></p>
+    `;
 
-        <p><small>부수합: ${team.sum}</small></p>
-      `;
-      teamBox.appendChild(div);
-    });
-  };
-
-  
-
-  renderGroup(exchangeTeams.ourTeams, "우리팀");
-  renderGroup(exchangeTeams.opponentTeams, "상대팀");
-  renderGroup(exchangeTeams.mixedTeams, "혼합팀");
-  latestTeams = [
-  ...exchangeTeams.ourTeams,
-  ...exchangeTeams.opponentTeams,
-  ...exchangeTeams.mixedTeams
-];
-
+    teamBox.appendChild(div);
+  });
 }
+
 
 function removeExchangePlayer(groupType, teamIdx, playerIdx) {
   let group;
