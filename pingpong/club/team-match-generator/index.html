@@ -823,8 +823,6 @@ function createExchangeMatch() {
   exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const TEAM_COLORS = ["#1976d2", "#2e7d32", "#ef6c00", "#6a1b9a", "#c62828", "#00897b", "#283593", "#f9a825"];
-  const totalTeams = ourCount + opponentCount + mixedCount;
-
   const makeTeams = (count, prefix, colorOffset = 0) =>
     Array.from({ length: count }, (_, i) => ({
       name: `${prefix} ${alphabet[i]}`,
@@ -843,10 +841,11 @@ function createExchangeMatch() {
   let opponentPlayers = selectedPlayers.filter(p => p.new);
 
   const totalPlayers = ourPlayers.length + opponentPlayers.length;
+  const totalTeams = ourCount + opponentCount + mixedCount;
   const playersPerTeam = Math.floor(totalPlayers / totalTeams);
   const remainder = totalPlayers % totalTeams;
 
-  // === 혼합팀 구성 (1:1 비율로 섞기) ===
+  // === 혼합팀 구성 (1:1 비율 유지) ===
   const mixedPlayers = [];
   if (mixedCount > 0) {
     const eachMixedSize = Math.floor((playersPerTeam + (remainder > 0 ? 1 : 0)));
@@ -858,7 +857,7 @@ function createExchangeMatch() {
     }
   }
 
-  // === 균등 분배 함수 ===
+  // === 인원 균등 분배 ===
   const distributeEvenly = (players, teams) => {
     if (!players.length || !teams.length) return;
     const sorted = [...players].sort((a, b) => b.level - a.level);
@@ -879,12 +878,10 @@ function createExchangeMatch() {
     });
   };
 
-  // === 1차 분배 ===
   distributeEvenly(ourPlayers, exchangeTeams.ourTeams);
   distributeEvenly(opponentPlayers, exchangeTeams.opponentTeams);
   distributeEvenly(mixedPlayers, exchangeTeams.mixedTeams);
 
-  // === 전체 평균 균형화 ===
   const allTeams = [
     ...exchangeTeams.ourTeams,
     ...exchangeTeams.opponentTeams,
@@ -893,10 +890,10 @@ function createExchangeMatch() {
 
   const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
 
-  // ⚖️ 그룹 내부는 섞지 않고, 팀 간 부수 차이를 줄이는 반복 교환
+  // === ⚖️ 전체 균형 조정 (제약 조건 유지형) ===
   let improved = true;
   let attempt = 0;
-  while (improved && attempt < 50) {
+  while (improved && attempt < 80) {
     improved = false;
     attempt++;
 
@@ -909,31 +906,33 @@ function createExchangeMatch() {
     const diffBefore = Math.abs(calcAvg(high) - calcAvg(low));
     if (diffBefore < 0.3) break;
 
-    // 서로 같은 그룹(우리↔우리, 상대↔상대, 혼합↔혼합) 안에서만 교환 허용
-    const sameGroup = (a, b) =>
-      (exchangeTeams.ourTeams.includes(a) && exchangeTeams.ourTeams.includes(b)) ||
-      (exchangeTeams.opponentTeams.includes(a) && exchangeTeams.opponentTeams.includes(b)) ||
-      (exchangeTeams.mixedTeams.includes(a) && exchangeTeams.mixedTeams.includes(b));
-
-    // 가능한 교환 후보 탐색
     let bestPair = null;
     let bestImprove = 0;
 
+    // 가능한 모든 교환 조합 탐색 (제약 조건 내에서만)
     allTeams.forEach(teamA => {
       allTeams.forEach(teamB => {
         if (teamA === teamB) return;
-        if (!sameGroup(teamA, teamB)) return;
 
-        const avgA = calcAvg(teamA);
-        const avgB = calcAvg(teamB);
-        if (Math.abs(avgA - avgB) < 0.3) return;
+        // 제약 조건: 우리팀끼리 / 상대팀끼리 / 혼합팀끼리만 교환
+        const bothOur = exchangeTeams.ourTeams.includes(teamA) && exchangeTeams.ourTeams.includes(teamB);
+        const bothOpp = exchangeTeams.opponentTeams.includes(teamA) && exchangeTeams.opponentTeams.includes(teamB);
+        const bothMix = exchangeTeams.mixedTeams.includes(teamA) && exchangeTeams.mixedTeams.includes(teamB);
+        if (!bothOur && !bothOpp && !bothMix) return;
+
+        // 혼합팀의 경우 → 1:1 비율 유지 위해 서로 같은 타입끼리만 교환
+        const mixGroupA = teamA.members.map(p => (p.new ? "opp" : "our"));
+        const mixGroupB = teamB.members.map(p => (p.new ? "opp" : "our"));
 
         teamA.members.forEach(a => {
           teamB.members.forEach(b => {
+            if (bothMix && a.new !== b.new) return; // 혼합팀 내부 교차 금지
+
             const newAvgA = (teamA.sum - a.level + b.level) / teamA.members.length;
             const newAvgB = (teamB.sum - b.level + a.level) / teamB.members.length;
             const diffAfter = Math.abs(newAvgA - newAvgB);
-            const improve = Math.abs(avgA - avgB) - diffAfter;
+            const improve = Math.abs(calcAvg(teamA) - calcAvg(teamB)) - diffAfter;
+
             if (improve > bestImprove) {
               bestImprove = improve;
               bestPair = { teamA, teamB, a, b };
@@ -955,14 +954,15 @@ function createExchangeMatch() {
     }
   }
 
-  // === 결과 반영 ===
   latestTeams = allTeams;
   renderExchangeTeams();
 
-  console.log("✅ 교류전 생성 완료");
-  const avgAll = allTeams.map(t => (t.sum / t.members.length).toFixed(2));
-  console.log("팀별 평균 부수:", avgAll.join(" / "));
+  // === 콘솔 로그 ===
+  console.log("✅ 교류전 균형 완성");
+  const avgsFinal = allTeams.map(t => (t.sum / t.members.length).toFixed(2));
+  console.log("팀별 평균:", avgsFinal.join(" / "));
 }
+
 
 
 
