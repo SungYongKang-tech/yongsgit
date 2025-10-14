@@ -1571,29 +1571,41 @@ function assignTeamsRender(teams) {
   teamBox.innerHTML = "";
 
   teams.forEach((team, teamIdx) => {
-    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
     const div = document.createElement("div");
     div.className = "team-card";
     div.id = `auto-team-${teamIdx}`;
+
+    // 평균 부수 표시 추가 (선택 사항)
+    const avg = team.members.length ? (team.sum / team.members.length).toFixed(2) : "-";
+
+    // 🔹 원본 인덱스 매칭 보장
+    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
+
     div.innerHTML = `
       <h3>${team.name}</h3>
       <ul>
-        ${sortedMembers.map((m, playerIdx) => `
-          <li id="auto-${teamIdx}-p${playerIdx}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <span>${m.name}(${m.level}부)</span>
-            <span style="display:flex;gap:6px;">
-              <button onclick="beginAutoSwap(${teamIdx}, ${playerIdx})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
-              <button onclick="moveAutoPlayer(${teamIdx}, ${playerIdx})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
-              <button onclick="removeAutoPlayer(${teamIdx}, ${playerIdx})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
-            </span>
-          </li>
-        `).join('')}
+        ${sortedMembers.map(m => {
+          const origIdx = team.members.indexOf(m); // 원본 배열 인덱스 찾기
+          return `
+            <li id="auto-${teamIdx}-p${origIdx}" 
+                style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span>${m.name}(${m.level}부)</span>
+              <span style="display:flex;gap:6px;">
+                <button onclick="beginAutoSwap(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
+                <button onclick="moveAutoPlayer(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
+                <button onclick="removeAutoPlayer(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+              </span>
+            </li>
+          `;
+        }).join('')}
       </ul>
-      <p><small>부수합: <span id="auto-sum-${teamIdx}">${team.sum}</span></small></p>
+      <p><small>부수합: ${team.sum} / 평균: ${avg}</small></p>
     `;
+
     teamBox.appendChild(div);
   });
 }
+
 
 
   </script>
