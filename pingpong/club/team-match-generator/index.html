@@ -667,12 +667,10 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
   ourPlayers.sort((a, b) => a.level - b.level);
   opponentPlayers.sort((a, b) => a.level - b.level);
 
-  // 2. 초기에는 우리팀/상대팀 번갈아 뽑기 → 50:50 비율
-  const half = Math.floor(totalMixedPlayers / 2);
-  for (let i = 0; i < half; i++) {
-    if (ourPlayers.length > 0) mixedPlayers.push(ourPlayers.shift()); // 강자 우선
-    if (opponentPlayers.length > 0) mixedPlayers.push(opponentPlayers.shift());
-  }
+    // 2. 우리팀과 상대팀 섞기 (랜덤 기반으로 혼합팀 구성)
+  const allCandidates = shuffle([...ourPlayers, ...opponentPlayers]); // 모두 합쳐서 무작위 섞기
+  const mixedPlayers = allCandidates.slice(0, totalMixedPlayers); // 필요한 인원만 추출
+
 
   // 3. 혼합팀의 평균 부수 계산
   const getAverageLevel = (arr) => arr.reduce((sum, p) => sum + p.level, 0) / arr.length;
@@ -804,18 +802,21 @@ function createExchangeMatch() {
 
   /* ---------- 1) 혼합팀 인원 추출 ---------- */
   const totalTeams = ourCount + opponentCount + mixedCount;
-  const mixedPlayers = mixedCount > 0
-    ? pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams)
-    : [];
+ // ✅ 혼합팀 인원 복사본 생성
+const mixedPlayers = mixedCount > 0
+  ? pickMixedPlayers(
+      structuredClone(ourPlayers),
+      structuredClone(opponentPlayers),
+      mixedCount,
+      totalTeams
+    ).map(p => ({ ...p }))  // 복제 보장
+  : [];
 
-  // 혼합팀 인원은 우리팀/상대팀에서 제거
-  mixedPlayers.forEach(mixed => {
-    const ourIdx = ourPlayers.findIndex(p => p.name === mixed.name && p.level === mixed.level);
-    if (ourIdx !== -1) ourPlayers.splice(ourIdx, 1);
+// ✅ ourPlayers / opponentPlayers 정리 (filter 방식으로)
+const mixedNames = mixedPlayers.map(p => p.name + "_" + p.level);
+ourPlayers = ourPlayers.filter(p => !mixedNames.includes(p.name + "_" + p.level));
+opponentPlayers = opponentPlayers.filter(p => !mixedNames.includes(p.name + "_" + p.level));
 
-    const oppIdx = opponentPlayers.findIndex(p => p.name === mixed.name && p.level === mixed.level);
-    if (oppIdx !== -1) opponentPlayers.splice(oppIdx, 1);
-  });
 
   /* ---------- 2) 각 그룹별 독립 배치 ---------- */
   distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);        // 혼합팀
