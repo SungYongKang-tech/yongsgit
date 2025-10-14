@@ -708,7 +708,7 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 function distributePlayers(players, teams) {
   if (!players.length || !teams.length) return;
 
-  // 🔹 1. 선수들을 부수 기준으로 정렬 (강자 → 약자)
+  // 🔹 1. 선수들을 부수 높은 순으로 정렬
   const sorted = [...players].sort((a, b) => b.level - a.level);
 
   // 🔹 2. 팀 초기화
@@ -717,31 +717,38 @@ function distributePlayers(players, teams) {
     t.sum = 0;
   });
 
-  // 🔹 3. 강자부터 한 명씩 평균이 가장 낮은 팀에 배정
+  const totalPlayers = sorted.length;
+  const baseCount = Math.floor(totalPlayers / teams.length);
+  const extraCount = totalPlayers % teams.length; // 일부 팀은 1명 더 많음
+
+  // 각 팀이 가질 수 있는 최대 인원 수 (baseCount 또는 baseCount+1)
+  const maxCountPerTeam = teams.map((_, i) => (i < extraCount ? baseCount + 1 : baseCount));
+
+  // 🔹 3. 한 명씩 배정
   sorted.forEach(player => {
-    // 팀별 평균 부수 계산
-    const teamAverages = teams.map(
-      t => (t.members.length ? t.sum / t.members.length : 0)
-    );
+    // 현재 인원이 아직 최대치에 도달하지 않은 팀만 후보로
+    const candidateTeams = teams.filter((t, i) => t.members.length < maxCountPerTeam[i]);
 
-    // 인원 수 우선 → 평균 부수 고려
-    const minCount = Math.min(...teams.map(t => t.members.length));
-    const candidateTeams = teams.filter(t => t.members.length === minCount);
+    // 후보 중 평균이 가장 낮은 팀 선택
+    const target = candidateTeams.reduce((lowest, team) => {
+      const avg = team.members.length ? team.sum / team.members.length : 0;
+      const lowAvg = lowest.members.length ? lowest.sum / lowest.members.length : 0;
+      return avg < lowAvg ? team : lowest;
+    });
 
-    // 평균이 가장 낮은 팀 선택
-    const target = candidateTeams.reduce(
-      (minTeam, t) => {
-        const avg = t.members.length ? t.sum / t.members.length : 0;
-        return avg < (minTeam.sum / (minTeam.members.length || 1)) ? t : minTeam;
-      },
-      candidateTeams[0]
-    );
-
-    // 배정
+    // 선수 배정
     target.members.push(player);
     target.sum += player.level;
   });
+
+  // 🔹 4. 결과 확인용 로그
+  console.log("팀별 인원 및 평균 부수:");
+  teams.forEach(t => {
+    const avg = t.members.length ? (t.sum / t.members.length).toFixed(2) : 0;
+    console.log(`- ${t.name}: ${t.members.length}명, 평균 ${avg}`);
+  });
 }
+
 
 function createExchangeMatch() {
   const ourCount = parseInt(prompt("우리팀 몇 팀으로 구성할까요?"), 10);
