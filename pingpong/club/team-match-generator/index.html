@@ -705,10 +705,10 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 
 
 
-function distributePlayers(players, teams) {
+function distributePlayersEvenly(players, teams) {
   if (!players.length || !teams.length) return;
 
-  // 🔹 1. 선수들을 부수 높은 순으로 정렬
+  // 🔹 1. 선수 부수 기준 내림차순 정렬
   const sorted = [...players].sort((a, b) => b.level - a.level);
 
   // 🔹 2. 팀 초기화
@@ -719,35 +719,31 @@ function distributePlayers(players, teams) {
 
   const totalPlayers = sorted.length;
   const baseCount = Math.floor(totalPlayers / teams.length);
-  const extraCount = totalPlayers % teams.length; // 일부 팀은 1명 더 많음
+  const extraCount = totalPlayers % teams.length;
 
-  // 각 팀이 가질 수 있는 최대 인원 수 (baseCount 또는 baseCount+1)
+  // 팀별 목표 인원 수 (일부 팀만 1명 더)
   const maxCountPerTeam = teams.map((_, i) => (i < extraCount ? baseCount + 1 : baseCount));
 
-  // 🔹 3. 한 명씩 배정
+  // 🔹 3. 강자부터 “인원 적고 평균 낮은 팀”에 배정
   sorted.forEach(player => {
-    // 현재 인원이 아직 최대치에 도달하지 않은 팀만 후보로
-    const candidateTeams = teams.filter((t, i) => t.members.length < maxCountPerTeam[i]);
-
-    // 후보 중 평균이 가장 낮은 팀 선택
-    const target = candidateTeams.reduce((lowest, team) => {
-      const avg = team.members.length ? team.sum / team.members.length : 0;
-      const lowAvg = lowest.members.length ? lowest.sum / lowest.members.length : 0;
-      return avg < lowAvg ? team : lowest;
+    const availableTeams = teams.filter((t, i) => t.members.length < maxCountPerTeam[i]);
+    const target = availableTeams.reduce((lowest, t) => {
+      const avgT = t.members.length ? t.sum / t.members.length : 0;
+      const avgL = lowest.members.length ? lowest.sum / lowest.members.length : 0;
+      return avgT < avgL ? t : lowest;
     });
-
-    // 선수 배정
     target.members.push(player);
     target.sum += player.level;
   });
 
-  // 🔹 4. 결과 확인용 로그
-  console.log("팀별 인원 및 평균 부수:");
+  // 🔹 4. 콘솔 로그 (검증용)
+  console.log("=== 그룹별 배치 결과 ===");
   teams.forEach(t => {
     const avg = t.members.length ? (t.sum / t.members.length).toFixed(2) : 0;
-    console.log(`- ${t.name}: ${t.members.length}명, 평균 ${avg}`);
+    console.log(`${t.name}: ${t.members.length}명, 평균 ${avg}`);
   });
 }
+
 
 
 function createExchangeMatch() {
@@ -797,9 +793,10 @@ function createExchangeMatch() {
   opponentPlayers = opponentPlayers.filter(p => !mixedNames.includes(p.name + "_" + p.level));
 
   /* ---------- 2) 각 그룹별 배치 ---------- */
-  distributePlayers(mixedPlayers, exchangeTeams.mixedTeams);
-  distributePlayers(ourPlayers, exchangeTeams.ourTeams);
-  distributePlayers(opponentPlayers, exchangeTeams.opponentTeams);
+  distributePlayersEvenly(mixedPlayers, exchangeTeams.mixedTeams);
+distributePlayersEvenly(ourPlayers, exchangeTeams.ourTeams);
+distributePlayersEvenly(opponentPlayers, exchangeTeams.opponentTeams);
+
 
   /* ---------- 3) 전체 조정 ---------- */
   renderExchangeTeams();
