@@ -617,93 +617,106 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
       return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
     }
 
-   function assignTeams() {
-  // ✅ 1. 참가자 선택 여부 확인
+ function assignTeams() {
+  // ✅ 1. 참가자 선택
   let pool = selected.length ? [...selected] : allPlayers.map((_, i) => i);
   if (pool.length < 2) {
     alert("선수가 2명 이상 있어야 합니다.");
     return;
   }
 
-  // ✅ 2. 팀 수 입력
   const teamCount = parseInt(prompt("몇 팀으로 구성하시겠습니까? (2~8)"), 10);
   if (isNaN(teamCount) || teamCount < 2 || teamCount > 8) {
     alert("2~8 사이의 숫자를 입력해주세요.");
     return;
   }
 
-  // ✅ 3. 선수 목록 생성 (선택된 선수만)
+  // ✅ 2. 선수 목록 구성
   const players = pool.map(i => allPlayers[i]);
-
-  // ✅ 4. 랜덤 섞기 + 부수 높은 순으로 정렬
   shuffle(players);
-  players.sort((a, b) => b.level - a.level);
+  players.sort((a, b) => b.level - a.level); // 강자 먼저 배정
 
-  // ✅ 5. 팀 초기화
+  // ✅ 3. 팀 초기화
   const teams = Array.from({ length: teamCount }, (_, i) => ({
     name: `${i + 1}팀`,
     members: [],
     sum: 0
   }));
 
-  // ✅ 6. 인원 균등 계산
-  const totalPlayers = players.length;
-  const baseCount = Math.floor(totalPlayers / teamCount);
-  const extraCount = totalPlayers % teamCount; // 일부 팀만 1명 더
-  const maxPerTeam = teams.map((_, i) => (i < extraCount ? baseCount + 1 : baseCount));
+  // ✅ 4. 인원 균등 분배
+  const total = players.length;
+  const base = Math.floor(total / teamCount);
+  const extra = total % teamCount;
+  const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base));
 
-  // ✅ 7. 강자부터 “인원 적고 평균 낮은 팀”에 배정
-  players.forEach(player => {
+  players.forEach(p => {
     const candidates = teams.filter((t, i) => t.members.length < maxPerTeam[i]);
-    const target = candidates.reduce((lowest, t) => {
-      const avgT = t.members.length ? t.sum / t.members.length : 0;
-      const avgL = lowest.members.length ? lowest.sum / lowest.members.length : 0;
-      return avgT < avgL ? t : lowest;
+    const target = candidates.reduce((a, b) => {
+      const avgA = a.members.length ? a.sum / a.members.length : 0;
+      const avgB = b.members.length ? b.sum / b.members.length : 0;
+      return avgA < avgB ? a : b;
     });
-    target.members.push(player);
-    target.sum += player.level;
+    target.members.push(p);
+    target.sum += p.level;
   });
 
-  // ✅ 8. (선택) 내부 부수 편차 추가 보정
-  for (let k = 0; k < 3; k++) {
-    teams.sort((a, b) => (a.sum / a.members.length) - (b.sum / b.members.length));
-    const low = teams[0], high = teams[teams.length - 1];
-    const lowWeak = low.members.reduce((min, p) => p.level < min.level ? p : min, low.members[0]);
-    const highStrong = high.members.reduce((max, p) => p.level > max.level ? p : max, high.members[0]);
-    const diffBefore = (high.sum / high.members.length) - (low.sum / low.members.length);
+  // ✅ 5. 균형 조정 반복 (팀 평균 편차 줄이기)
+  const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
+  let improved = true;
+  let attempt = 0;
+  while (improved && attempt < 30) {
+    improved = false;
+    attempt++;
 
-    // 교체 시도
-    const tmpLow = { ...lowWeak };
-    const tmpHigh = { ...highStrong };
-    const lowIdx = low.members.indexOf(lowWeak);
-    const highIdx = high.members.indexOf(highStrong);
-    low.members[lowIdx] = tmpHigh;
-    high.members[highIdx] = tmpLow;
+    // 평균 계산
+    const avgs = teams.map(calcAvg);
+    const maxIdx = avgs.indexOf(Math.max(...avgs));
+    const minIdx = avgs.indexOf(Math.min(...avgs));
 
-    low.sum = low.members.reduce((s, p) => s + p.level, 0);
-    high.sum = high.members.reduce((s, p) => s + p.level, 0);
+    const high = teams[maxIdx];
+    const low = teams[minIdx];
+    const diffBefore = Math.abs(calcAvg(high) - calcAvg(low));
+    if (diffBefore < 0.3) break;
 
-    const diffAfter = (high.sum / high.members.length) - (low.sum / low.members.length);
-    if (diffAfter >= diffBefore) {
-      // 되돌리기
-      low.members[lowIdx] = tmpLow;
-      high.members[highIdx] = tmpHigh;
-      low.sum = low.members.reduce((s, p) => s + p.level, 0);
+    // 교환 후보 탐색 (효과 가장 큰 조합 선택)
+    let bestPair = null;
+    let bestImprovement = 0;
+
+    high.members.forEach(h => {
+      low.members.forEach(l => {
+        const newHighAvg = (high.sum - h.level + l.level) / high.members.length;
+        const newLowAvg = (low.sum - l.level + h.level) / low.members.length;
+        const diffAfter = Math.abs(newHighAvg - newLowAvg);
+        const improvement = diffBefore - diffAfter;
+        if (improvement > bestImprovement) {
+          bestImprovement = improvement;
+          bestPair = { h, l };
+        }
+      });
+    });
+
+    if (bestPair && bestImprovement > 0) {
+      const hiIdx = high.members.indexOf(bestPair.h);
+      const loIdx = low.members.indexOf(bestPair.l);
+      high.members[hiIdx] = bestPair.l;
+      low.members[loIdx] = bestPair.h;
       high.sum = high.members.reduce((s, p) => s + p.level, 0);
+      low.sum = low.members.reduce((s, p) => s + p.level, 0);
+      improved = true;
     }
   }
 
-  // ✅ 9. 결과 저장 및 출력
+  // ✅ 6. 결과 출력
   latestTeams = teams;
   assignTeamsRender(latestTeams);
 
-  // ✅ 10. 로그 확인용
-  console.log("=== 팀 자동 구성 결과 ===");
+  console.log("=== 자동배정 결과 ===");
   teams.forEach(t => {
     const avg = (t.sum / t.members.length).toFixed(2);
     console.log(`${t.name}: ${t.members.length}명, 평균 ${avg}`);
   });
 }
+
 
 
 
