@@ -314,7 +314,9 @@ th { background: #e3f2fd; }
   <div class="btn-group">
     <button class="btn-generate" onclick="manualMatch()">수동 생성</button>
     <button class="btn-generate" onclick="autoMatch()">자동 생성</button>
-  </div>
+  <!-- 🏓 경기시간 버튼 -->
+  <button class="btn-generate" style="background-color:#009688" onclick="estimateMatchTime()">경기시간</button>
+</div>
 
   <!-- ✅ 링크/QR 버튼 -->
   <div class="btn-group">
@@ -1029,6 +1031,54 @@ async function deleteMatch(key) {
     console.error("경기 삭제 오류:", error);
     alert("경기 삭제 중 오류가 발생했습니다.");
   }
+}
+
+/* ---------------- 경기시간 계산 ---------------- */
+function estimateMatchTime() {
+  // 현재 생성된 모든 경기(단식+복식) 개수 계산
+  const totalMatches = Array.from(document.querySelectorAll(".match-card"))
+    .reduce((sum, card) => sum + card.querySelectorAll("tbody tr").length, 0);
+
+  if (totalMatches === 0) {
+    alert("⚠️ 아직 생성된 경기가 없습니다. 먼저 대진을 생성해주세요.");
+    return;
+  }
+
+  // ① 탁구 다이(탁구대) 개수 입력받기
+  const input = prompt("🏓 탁구 다이(탁구대)는 몇 개인가요?");
+  if (!input) return;
+  const numTables = parseInt(input, 10);
+  if (isNaN(numTables) || numTables <= 0) {
+    alert("⚠️ 숫자로 올바르게 입력해주세요.");
+    return;
+  }
+
+  // ② 경기 방식 선택
+  const mode = prompt("🎮 경기 방식은?\n1 = 3판2선승제, 2 = 5판3선승제");
+  if (!mode) return;
+
+  let avgTimePerMatch = 0;
+  if (mode === "1") avgTimePerMatch = 15; // 3판2선승제 평균 15분
+  else if (mode === "2") avgTimePerMatch = 25; // 5판3선승제 평균 25분
+  else {
+    alert("⚠️ 1 또는 2 중 하나를 입력해주세요.");
+    return;
+  }
+
+  // ③ 총 소요시간 계산
+  const totalMinutes = Math.ceil((totalMatches / numTables) * avgTimePerMatch);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  // ④ 결과 메시지 출력
+  const msg =
+    `📊 총 경기 수: ${totalMatches}경기\n` +
+    `🏓 탁구 다이 수: ${numTables}개\n` +
+    `🎮 경기 방식: ${mode === "1" ? "3판2선승제" : "5판3선승제"}\n` +
+    `⏱️ 경기당 평균: ${avgTimePerMatch}분\n\n` +
+    `👉 예상 총 소요시간: ${hours > 0 ? hours + "시간 " : ""}${minutes}분 정도`;
+
+  alert(msg);
 }
 
 
