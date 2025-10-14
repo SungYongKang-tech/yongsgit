@@ -705,65 +705,43 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 
 
 
-// 그룹 내부에서만 인원 균형 → 부수 균형
 function distributePlayers(players, teams) {
-  if (!teams || teams.length === 0 || players.length === 0) return;
+  if (!players.length || !teams.length) return;
 
-  // 1. 부수 낮은 선수(실력 높은 선수)부터 배치
-  players.sort((a, b) => {
-    if (a.level === b.level) return Math.random() - 0.5; 
-    return a.level - b.level; // 낮은 부수(강자)가 먼저
+  // 🔹 1. 선수들을 부수 기준으로 정렬 (강자 → 약자)
+  const sorted = [...players].sort((a, b) => b.level - a.level);
+
+  // 🔹 2. 팀 초기화
+  teams.forEach(t => {
+    t.members = [];
+    t.sum = 0;
   });
 
-  const totalPlayers = players.length;
-  const teamCount = teams.length;
+  // 🔹 3. 강자부터 한 명씩 평균이 가장 낮은 팀에 배정
+  sorted.forEach(player => {
+    // 팀별 평균 부수 계산
+    const teamAverages = teams.map(
+      t => (t.members.length ? t.sum / t.members.length : 0)
+    );
 
-  // 2. 팀 목표 인원수 계산 (예: 17명 3팀 → [6, 6, 5])
-  const baseSize = Math.floor(totalPlayers / teamCount);
-  let remainder = totalPlayers % teamCount;
-  const targetSizes = new Array(teamCount).fill(baseSize).map(size => {
-    if (remainder > 0) {
-      remainder--;
-      return size + 1;
-    }
-    return size;
-  });
+    // 인원 수 우선 → 평균 부수 고려
+    const minCount = Math.min(...teams.map(t => t.members.length));
+    const candidateTeams = teams.filter(t => t.members.length === minCount);
 
-  // 3. 선수 배치
-  players.forEach(player => {
-    teams.sort((a, b) => {
-      const aIdx = teams.indexOf(a);
-      const bIdx = teams.indexOf(b);
+    // 평균이 가장 낮은 팀 선택
+    const target = candidateTeams.reduce(
+      (minTeam, t) => {
+        const avg = t.members.length ? t.sum / t.members.length : 0;
+        return avg < (minTeam.sum / (minTeam.members.length || 1)) ? t : minTeam;
+      },
+      candidateTeams[0]
+    );
 
-      const aCount = a.members.length;
-      const bCount = b.members.length;
-
-      const aTarget = targetSizes[aIdx];
-      const bTarget = targetSizes[bIdx];
-
-      // ---- 1순위: 목표 인원 미달 팀 우선 ----
-      if (aCount < aTarget && bCount >= bTarget) return -1;
-      if (bCount < bTarget && aCount >= aTarget) return 1;
-
-      // ---- 2순위: 평균 부수 낮은 팀(강팀) 먼저 배정 ----
-      const aAvg = aCount === 0 ? 0 : a.sum / aCount;
-      const bAvg = bCount === 0 ? 0 : b.sum / bCount;
-      if (aAvg !== bAvg) return aAvg - bAvg;
-
-      // ---- 3순위: 인원이 적은 팀 우선 ----
-      if (aCount !== bCount) return aCount - bCount;
-
-      // ---- 4순위: 마지막으로 부수 합이 낮은 팀 ----
-      return a.sum - b.sum;
-    });
-
-    // 최종 선택된 팀에 선수 추가
-    teams[0].members.push(player);
-    teams[0].sum += player.level;
+    // 배정
+    target.members.push(player);
+    target.sum += player.level;
   });
 }
-
-
 
 function createExchangeMatch() {
   const ourCount = parseInt(prompt("우리팀 몇 팀으로 구성할까요?"), 10);
