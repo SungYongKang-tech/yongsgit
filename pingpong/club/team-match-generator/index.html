@@ -193,9 +193,7 @@
       font-weight: bold;
       margin-right: 4px;
     }
-    
-
-
+ 
 
   </style>
 </head>
@@ -396,6 +394,13 @@ const TEAM_COLORS = [
 ];
     let latestTeams = []; // 업로드용 전역 저장소
 
+ function getExchangeGroup(groupType) {
+  if (groupType === "우리팀") return exchangeTeams.ourTeams;
+  if (groupType === "상대팀") return exchangeTeams.opponentTeams;
+  return exchangeTeams.mixedTeams;
+}
+
+
    function renderPlayers() {
   const playerList = document.getElementById("playerList");
   playerList.innerHTML = "";
@@ -451,11 +456,12 @@ function removeSingleAddedPlayer(index) {
   renderPlayers();
 }
 
-function renderExchangeTeams() {
+function renderExchangeTeams(teams = latestTeams) {
   const teamBox = document.getElementById("teams");
   teamBox.innerHTML = "";
 
-  latestTeams.forEach((team, teamIdx) => {
+  teams.forEach((team, teamIdx) => {
+
     const div = document.createElement("div");
     div.className = "team-card";
     div.id = `auto-team-${teamIdx}`;
@@ -800,185 +806,116 @@ function distributePlayersEvenly(players, teams) {
   });
 }
 
+// === 교류전 생성 (UI 모달로 변경) ===
 function createExchangeMatch() {
-  // 🏓 팀 이름 먼저 입력
-  const ourName = prompt("우리팀 이름을 입력하세요 (예: 남동발전)") || "우리팀";
-  const opponentName = prompt("상대팀 이름을 입력하세요 (예: OO발전)") || "상대팀";
+  document.getElementById('exchangeModal').style.display = 'flex';
+}
 
-  // ✅ 교류전 이름 자동 생성 및 전역 저장
+// 모달 닫기
+function closeExchangeModal() {
+  document.getElementById('exchangeModal').style.display = 'none';
+}
+
+// 교류전 생성 확인
+function confirmExchangeMatch() {
+  const ourName = document.getElementById('ourTeamInput').value.trim() || "우리팀";
+  const opponentName = document.getElementById('opponentTeamInput').value.trim() || "상대팀";
+  const ourCount = parseInt(document.getElementById('ourCountInput').value, 10);
+  const opponentCount = parseInt(document.getElementById('opponentCountInput').value, 10);
+  const mixedCount = parseInt(document.getElementById('mixedCountInput').value, 10);
+
+  closeExchangeModal();
+
+  if (isNaN(ourCount) || isNaN(opponentCount) || ourCount < 0 || opponentCount < 0) {
+    alert("⚠️ 팀 수를 올바르게 입력해주세요.");
+    return;
+  }
+
+  // 기존 로직 재사용
   window.currentExchange = {
     exchangeName: `${ourName}-${opponentName} 교류전`,
     teamA: ourName,
     teamB: opponentName
   };
 
-  const ourCount = parseInt(prompt(`${ourName}은(는) 몇 팀으로 구성할까요?`), 10);
-  const opponentCount = parseInt(prompt(`${opponentName}은(는) 몇 팀으로 구성할까요?`), 10);
-  const mixedCount = parseInt(prompt("혼합팀 몇 팀으로 구성할까요? (없으면 0 입력)"), 10) || 0;
+  // 기존 교류전 생성 코드 실행
+  generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount);
+}
 
-  if (isNaN(ourCount) || isNaN(opponentCount) || ourCount < 1 || opponentCount < 1) {
-    alert("⚠️ 팀 수를 정확히 입력해주세요.");
+// === 기존 교류전 생성 로직 분리 ===
+function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount) {
+  // 1️⃣ 기본 초기화
+  exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  // 2️⃣ 전체 선수 풀에서 분류
+  const ourPlayers = allPlayers.filter(p => !p.new);      // 기존 = 우리팀
+  const opponentPlayers = allPlayers.filter(p => p.new);  // 새로 추가된 선수 = 상대팀
+
+  // 인원 확인
+  if (ourPlayers.length === 0 || opponentPlayers.length === 0) {
+    alert("⚠️ 우리팀 또는 상대팀 인원이 부족합니다.\n'추가 선수'를 활용해 상대팀을 구성해주세요.");
     return;
   }
 
-  exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const TEAM_COLORS = ["#1976d2", "#2e7d32", "#ef6c00", "#6a1b9a", "#c62828", "#00897b", "#283593", "#f9a825"];
+  // 3️⃣ 혼합팀 구성
+  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, ourCount + opponentCount + mixedCount);
 
-  const makeTeams = (count, prefix, colorOffset = 0) =>
-    Array.from({ length: count }, (_, i) => ({
-      name: `${prefix} ${alphabet[i]}`,
+  // 혼합팀 구성에 사용된 인원 제외
+  const remainingOur = ourPlayers.filter(p => !mixedPlayers.includes(p));
+  const remainingOpp = opponentPlayers.filter(p => !mixedPlayers.includes(p));
+
+  // 4️⃣ 팀 객체 초기화
+  for (let i = 0; i < ourCount; i++) {
+    exchangeTeams.ourTeams.push({
+      name: `${ourName} ${alphabet[i] || i + 1}팀`,
       members: [],
-      sum: 0,
-      color: TEAM_COLORS[(i + colorOffset) % TEAM_COLORS.length]
-    }));
-
-  // ✅ 입력된 이름 적용
-  exchangeTeams.ourTeams = makeTeams(ourCount, ourName, 0);
-  exchangeTeams.opponentTeams = makeTeams(opponentCount, opponentName, ourCount);
-  exchangeTeams.mixedTeams = makeTeams(mixedCount, "혼합팀", ourCount + opponentCount);
-
-  // === 선수 분류 ===
-  const selectedPlayers = selected.length ? selected.map(i => allPlayers[i]) : [...allPlayers];
-  let ourPlayers = selectedPlayers.filter(p => !p.new);
-  let opponentPlayers = selectedPlayers.filter(p => p.new);
-
-  // === 혼합팀 구성 (보정된 1:1 섞기) ===
-  const mixedPlayers = [];
-  if (mixedCount > 0) {
-    const avgOur = ourPlayers.reduce((s, p) => s + p.level, 0) / ourPlayers.length;
-    const avgOpp = opponentPlayers.reduce((s, p) => s + p.level, 0) / opponentPlayers.length;
-
-    const strongOur = ourPlayers.filter(p => p.level >= avgOur);
-    const weakOur = ourPlayers.filter(p => p.level < avgOur);
-    const strongOpp = opponentPlayers.filter(p => p.level >= avgOpp);
-    const weakOpp = opponentPlayers.filter(p => p.level < avgOpp);
-
-    const eachMixedSize = Math.floor((ourPlayers.length + opponentPlayers.length) / (ourCount + opponentCount + mixedCount));
-    for (let i = 0; i < mixedCount; i++) {
-      const half = Math.floor(eachMixedSize / 2);
-      // 강자 위주로 균등 섞기
-      const fromOur = (i % 2 === 0 ? strongOur : weakOur).splice(0, half);
-      const fromOpp = (i % 2 === 0 ? strongOpp : weakOpp).splice(0, eachMixedSize - half);
-      mixedPlayers.push(...fromOur, ...fromOpp);
-    }
-
-    // 남은 인원 원래 리스트로 되돌리기
-    ourPlayers = [...strongOur, ...weakOur];
-    opponentPlayers = [...strongOpp, ...weakOpp];
+      sum: 0
+    });
   }
 
-  // === 분배 함수 ===
-  const distributeEvenly = (players, teams) => {
-    if (!players.length || !teams.length) return;
-    const sorted = [...players].sort((a, b) => b.level - a.level);
-    const total = sorted.length;
-    const base = Math.floor(total / teams.length);
-    const extra = total % teams.length;
-    const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base));
-
-    sorted.forEach(p => {
-      const available = teams.filter((t, i) => t.members.length < maxPerTeam[i]);
-      const target = available.reduce((a, b) => {
-        const avgA = a.members.length ? a.sum / a.members.length : 0;
-        const avgB = b.members.length ? b.sum / b.members.length : 0;
-        return avgA < avgB ? a : b;
-      });
-      target.members.push(p);
-      target.sum += p.level;
+  for (let i = 0; i < opponentCount; i++) {
+    exchangeTeams.opponentTeams.push({
+      name: `${opponentName} ${alphabet[i] || i + 1}팀`,
+      members: [],
+      sum: 0
     });
-  };
+  }
 
-  // === 1차 분배 ===
-  distributeEvenly(ourPlayers, exchangeTeams.ourTeams);
-  distributeEvenly(opponentPlayers, exchangeTeams.opponentTeams);
-  distributeEvenly(mixedPlayers, exchangeTeams.mixedTeams);
+  for (let i = 0; i < mixedCount; i++) {
+    exchangeTeams.mixedTeams.push({
+      name: `혼합 ${alphabet[i] || i + 1}팀`,
+      members: [],
+      sum: 0
+    });
+  }
 
-  const allTeams = [
+  // 5️⃣ 균등 분배
+  distributePlayersEvenly(remainingOur, exchangeTeams.ourTeams);
+  distributePlayersEvenly(remainingOpp, exchangeTeams.opponentTeams);
+  distributePlayersEvenly(mixedPlayers, exchangeTeams.mixedTeams);
+
+  // 6️⃣ 팀 내부 부수 균형 조정
+  balanceInternalTeamLevels(exchangeTeams);
+
+  // 7️⃣ 혼합팀 평균 부수 조정 (양쪽 평균에 맞추기)
+  balanceFinalMixedTeams(exchangeTeams);
+
+  // 8️⃣ 최종 결과 렌더링용 배열 구성
+  latestTeams = [
     ...exchangeTeams.ourTeams,
     ...exchangeTeams.opponentTeams,
     ...exchangeTeams.mixedTeams
   ];
 
-  const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
+  // 9️⃣ 화면에 출력
+  renderExchangeTeams();
 
-  // === ⚖️ 전체 팀 간 균형 조정 ===
-  let improved = true;
-  let attempt = 0;
-  while (improved && attempt < 100) {
-    improved = false;
-    attempt++;
-
-    const avgs = allTeams.map(calcAvg);
-    const maxIdx = avgs.indexOf(Math.max(...avgs));
-    const minIdx = avgs.indexOf(Math.min(...avgs));
-    const high = allTeams[maxIdx];
-    const low = allTeams[minIdx];
-    const diffBefore = Math.abs(calcAvg(high) - calcAvg(low));
-    if (diffBefore < 0.3) break;
-
-    let bestPair = null;
-    let bestImprove = 0;
-
-    allTeams.forEach(teamA => {
-      allTeams.forEach(teamB => {
-        if (teamA === teamB) return;
-
-        const bothMix = exchangeTeams.mixedTeams.includes(teamA) && exchangeTeams.mixedTeams.includes(teamB);
-        const bothOur = exchangeTeams.ourTeams.includes(teamA) && exchangeTeams.ourTeams.includes(teamB);
-        const bothOpp = exchangeTeams.opponentTeams.includes(teamA) && exchangeTeams.opponentTeams.includes(teamB);
-
-        // 혼합팀 ↔ 우리팀/상대팀 교차 교환도 제한적으로 허용
-        const mixAndNormal =
-          (exchangeTeams.mixedTeams.includes(teamA) && !exchangeTeams.mixedTeams.includes(teamB)) ||
-          (exchangeTeams.mixedTeams.includes(teamB) && !exchangeTeams.mixedTeams.includes(teamA));
-
-        if (!bothMix && !bothOur && !bothOpp && !mixAndNormal) return;
-
-        teamA.members.forEach(a => {
-          teamB.members.forEach(b => {
-            if (exchangeTeams.mixedTeams.includes(teamA) || exchangeTeams.mixedTeams.includes(teamB)) {
-              if (a.new !== b.new) return; // 혼합팀 1:1 유지
-            }
-            const newAvgA = (teamA.sum - a.level + b.level) / teamA.members.length;
-            const newAvgB = (teamB.sum - b.level + a.level) / teamB.members.length;
-            const diffAfter = Math.abs(newAvgA - newAvgB);
-            const improve = Math.abs(calcAvg(teamA) - calcAvg(teamB)) - diffAfter;
-            if (improve > bestImprove) {
-              bestImprove = improve;
-              bestPair = { teamA, teamB, a, b };
-            }
-          });
-        });
-      });
-    });
-
-    if (bestPair && bestImprove > 0) {
-      const { teamA, teamB, a, b } = bestPair;
-      const idxA = teamA.members.indexOf(a);
-      const idxB = teamB.members.indexOf(b);
-      teamA.members[idxA] = b;
-      teamB.members[idxB] = a;
-      teamA.sum = teamA.members.reduce((s, p) => s + p.level, 0);
-      teamB.sum = teamB.members.reduce((s, p) => s + p.level, 0);
-      improved = true;
-    }
-  }
-
-  // ✅ 먼저 팀원 정렬
-allTeams.forEach(team => {
-  team.members.sort((a, b) => a.level - b.level);
-});
-
-// ✅ 그 다음 렌더링
-latestTeams = allTeams;
-renderExchangeTeams();
-
-console.log("✅ 교류전 균형 완성");
-const avgsFinal = allTeams.map(t => (t.sum / t.members.length).toFixed(2));
-console.log("팀별 평균:", avgsFinal.join(" / "));
-
- 
+  console.log("✅ 교류전 생성 완료:", {
+    ourTeams: exchangeTeams.ourTeams.length,
+    opponentTeams: exchangeTeams.opponentTeams.length,
+    mixedTeams: exchangeTeams.mixedTeams.length
+  });
 }
 
 
@@ -1452,11 +1389,7 @@ function addPlayerToTeam(teamIdx, name, level) {
       if (e.target === this) closeModal();
     });
 
- function getExchangeGroup(groupType) {
-  if (groupType === "우리팀") return exchangeTeams.ourTeams;
-  if (groupType === "상대팀") return exchangeTeams.opponentTeams;
-  return exchangeTeams.mixedTeams;
-}
+
 
 function balanceFinalMixedTeams(exchangeTeams) {
   if (!exchangeTeams.mixedTeams || exchangeTeams.mixedTeams.length === 0) {
@@ -1727,8 +1660,69 @@ function assignTeamsRender(teams) {
   });
 }
 
-
-
   </script>
+<!-- 교류전 설정 모달 -->
+<div class="modal-overlay" id="exchangeModal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeExchangeModal()">✖</button>
+    <h2>⚔️ 교류전 설정</h2>
+
+    <div class="modal-section">
+      <h3>1️⃣ 우리팀 선택</h3>
+      <input type="text" id="ourTeamInput" placeholder="우리팀 이름을 입력 (예: 남동발전)" style="width:100%;padding:6px;font-size:14px;">
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="document.getElementById('ourTeamInput').value='남동발전'">남동발전</button>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h3>2️⃣ 상대팀 선택</h3>
+      <input type="text" id="opponentTeamInput" placeholder="상대팀 이름을 입력" style="width:100%;padding:6px;font-size:14px;">
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="document.getElementById('opponentTeamInput').value='한국토지주택공사'">한국토지주택공사</button>
+        <button onclick="document.getElementById('opponentTeamInput').value='저작권위원회'">저작권위원회</button>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h3>3️⃣ 팀 수 설정</h3>
+      <p style="margin:4px 0;">각 항목은 클릭 또는 직접 입력 가능합니다.</p>
+      <div>
+        <label>우리팀: <input type="number" id="ourCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
+        <div style="margin-top:6px;">
+          <button onclick="document.getElementById('ourCountInput').value=0">0</button>
+          <button onclick="document.getElementById('ourCountInput').value=1">1</button>
+          <button onclick="document.getElementById('ourCountInput').value=2">2</button>
+          <button onclick="document.getElementById('ourCountInput').value=3">3</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <label>상대팀: <input type="number" id="opponentCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
+        <div style="margin-top:6px;">
+          <button onclick="document.getElementById('opponentCountInput').value=0">0</button>
+          <button onclick="document.getElementById('opponentCountInput').value=1">1</button>
+          <button onclick="document.getElementById('opponentCountInput').value=2">2</button>
+          <button onclick="document.getElementById('opponentCountInput').value=3">3</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <label>혼합팀: <input type="number" id="mixedCountInput" value="0" min="0" max="8" style="width:60px;"> 팀</label>
+        <div style="margin-top:6px;">
+          <button onclick="document.getElementById('mixedCountInput').value=0">0</button>
+          <button onclick="document.getElementById('mixedCountInput').value=1">1</button>
+          <button onclick="document.getElementById('mixedCountInput').value=2">2</button>
+          <button onclick="document.getElementById('mixedCountInput').value=3">3</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:20px;">
+      <button style="padding:10px 18px;background:#1976d2;color:white;border:none;border-radius:6px;"
+        onclick="confirmExchangeMatch()">✅ 교류전 생성</button>
+    </div>
+  </div>
+</div>
+
+
 </body>
 </html>
