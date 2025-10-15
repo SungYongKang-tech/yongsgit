@@ -819,8 +819,7 @@ const allCandidates = [...ourPlayers, ...opponentPlayers].sort((a, b) => a.level
 
 /* ✅ 인원 균등 + 부수 평균 자동 균형 분배 */
 function distributePlayersBalanced(players, teams) {
-  if (!players || !teams || !Array.isArray(teams) || teams.length === 0) return; // ✅ 이 줄 추가
-
+  if (!players || !teams || !Array.isArray(teams) || teams.length === 0) return;
 
   // 1️⃣ 부수 낮을수록 강자 → 오름차순 정렬
   const sorted = [...players].sort((a, b) => a.level - b.level);
@@ -839,34 +838,34 @@ function distributePlayersBalanced(players, teams) {
     t.sum = 0;
   });
 
-sorted.forEach(p => {
-  const available = teams
-    .map((t, i) => ({ team: t, idx: i }))
-    .filter(({ idx, team }) => team.members.length < targetCount[idx]);
+  // 4️⃣ 균등 분배 (빈 자리 많은 팀 우선)
+  sorted.forEach(p => {
+    // 분배 가능한 팀 필터
+    const available = teams
+      .map((t, i) => ({ team: t, idx: i }))
+      .filter(({ idx, team }) => team.members.length < targetCount[idx]);
 
-  available.sort((a, b) => {
-    const remainA = targetCount[a.idx] - a.team.members.length;
-    const remainB = targetCount[b.idx] - a.team.members.length;
-    if (remainA !== remainB) return remainB - remainA;
-    const avgA = a.team.members.length ? a.team.sum / a.team.members.length : 0;
-    const avgB = b.team.members.length ? b.team.sum / b.team.members.length : 0;
-    return avgA - avgB;
+    // ⚠️ 모든 팀이 꽉 찼다면 그냥 랜덤 팀에 강제 추가 (예외 방어)
+    if (available.length === 0) {
+      const randomTeam = teams[Math.floor(Math.random() * teams.length)];
+      randomTeam.members.push(p);
+      randomTeam.sum += p.level;
+      return;
+    }
+
+    // 부수 평균 낮은 팀부터 채우기
+    available.sort((a, b) => {
+      const avgA = a.team.members.length ? a.team.sum / a.team.members.length : 0;
+      const avgB = b.team.members.length ? b.team.sum / b.team.members.length : 0;
+      return avgA - avgB;
+    });
+
+    const weakest = available[0].team;
+    weakest.members.push(p);
+    weakest.sum += p.level;
   });
 
-  const weakest = available[0];
-  if (!weakest || !weakest.team) {
-    console.warn("⚠️ 분배 가능한 팀이 없음 → 임시 첫 팀에 강제 배정");
-    teams[0].members.push(p);
-    teams[0].sum += p.level;
-    return;
-  }
-
-  weakest.team.members.push(p);
-  weakest.team.sum += p.level;
-});
-
-
-  // 5️⃣ 부수 균형 교환 루프 (인원 유지)
+  // 5️⃣ 부수 평균 균형 교정 루프
   let improved = true;
   let iteration = 0;
   const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
@@ -902,11 +901,24 @@ sorted.forEach(p => {
     }
   }
 
-  console.log("✅ 인원/부수 자동균형 완료");
+  // 6️⃣ 마지막 검증 — 팀 인원 정확히 맞추기
+  const totalMembers = teams.reduce((s, t) => s + t.members.length, 0);
+  const target = Math.floor(totalMembers / teams.length);
+  let spare = totalMembers % teams.length;
+
   teams.forEach(t => {
-    const avg = calcAvg(t).toFixed(2);
-    console.log(`${t.name}: ${t.members.length}명, 평균 ${avg}`);
+    while (t.members.length > target + (spare > 0 ? 1 : 0)) {
+      const weakest = teams.reduce((a, b) =>
+        (a.sum / a.members.length < b.sum / b.members.length ? a : b)
+      );
+      const moved = t.members.pop();
+      weakest.members.push(moved);
+      t.sum = t.members.reduce((s, p) => s + p.level, 0);
+      weakest.sum = weakest.members.reduce((s, p) => s + p.level, 0);
+    }
   });
+
+  console.log("✅ 인원/부수 균형 분배 완료");
 }
 
 
