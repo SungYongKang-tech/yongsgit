@@ -764,37 +764,32 @@ function runTeamAssignment(teamCount, pool) {
 }
 
 
-function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
+function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount) {
   if (mixedCount === 0) return [];
 
-  // ✅ 원본 보호
   const ourCopy = [...ourPlayers];
   const oppCopy = [...opponentPlayers];
   const mixedPlayers = [];
 
-  // 총 인원과 목표 혼합팀 비율 계산
-  const totalPlayers = ourCopy.length + oppCopy.length;
-  const totalTeamsCount = totalTeams; // 우리+상대+혼합팀
-  const mixedRatio = mixedCount / totalTeamsCount; // 혼합팀 비율
+  // 전체 인원 대비 혼합팀 비율 (최대 15%)
+  const total = ourCopy.length + oppCopy.length;
+  const targetMixed = Math.min(Math.floor(total * 0.15), mixedCount * 4); // 혼합팀당 4명 기준
 
-  // 혼합팀 총 인원은 전체의 mixedRatio만큼
-  const totalMixedPlayers = Math.round(totalPlayers * mixedRatio);
+  // 각 혼합팀당 인원
+  const perTeam = Math.max(2, Math.floor(targetMixed / mixedCount));
 
-  // 각 혼합팀당 인원 (최소 2명 보장)
-  const perTeam = Math.max(2, Math.floor(totalMixedPlayers / mixedCount));
-
-  // 우리팀 / 상대팀에서 절반씩 1:1 비율 추출
-  const half = Math.floor(perTeam / 2);
+  // 가능한 한 1:1로, 남으면 상대팀에서 채움
   for (let i = 0; i < mixedCount; i++) {
+    const half = Math.floor(perTeam / 2);
     const ourPart = shuffle(ourCopy).splice(0, half);
     const oppPart = shuffle(oppCopy).splice(0, perTeam - half);
     mixedPlayers.push(...ourPart, ...oppPart);
   }
 
-  // 부수 기준 정렬
-  mixedPlayers.sort((a, b) => a.level - b.level);
+  // 남은 인원은 각자 팀에서만 사용
   return mixedPlayers;
 }
+
 
 
 
@@ -859,34 +854,28 @@ function distributePlayersBalanced(players, teams) {
 
 
 
-/* ✅ 교류전 팀 자동 생성 - 완전 안정 버전 */
 function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount) {
   exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
   latestTeams = [];
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  // 🔹 선택된 선수 분리
+  // 🔹 선택된 선수 불러오기
   const selectedPlayers = selected.length ? selected.map(i => allPlayers[i]) : allPlayers;
   const ourPlayers = selectedPlayers.filter(p => !p.new);
   const opponentPlayers = selectedPlayers.filter(p => p.new);
 
-  if (!ourPlayers.length || !opponentPlayers.length) {
+  if (ourPlayers.length === 0 || opponentPlayers.length === 0) {
     alert("⚠️ 우리팀 또는 상대팀 인원이 부족합니다.");
     return;
   }
 
-  // 🔹 혼합팀 구성
-  const mixedPlayers = pickMixedPlayers(
-  ourPlayers,
-  opponentPlayers,
-  mixedCount,
-  ourCount + opponentCount + mixedCount
-);
-
+  // 🔹 혼합팀 인원 추출 (가능한 1:1, 원본 훼손 없음)
+  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount);
   const mixedNames = new Set(mixedPlayers.map(p => p.name));
 
-  const remainingOur = ourPlayers.filter(p => !mixedNames.has(p.name) && !p.new);
-  const remainingOpp = opponentPlayers.filter(p => !mixedNames.has(p.name) && p.new);
+  // 🔹 혼합팀 제외 후 순수한 우리팀 / 상대팀 남기기
+  const remainingOur = ourPlayers.filter(p => !mixedNames.has(p.name));
+  const remainingOpp = opponentPlayers.filter(p => !mixedNames.has(p.name));
 
   // 🔹 팀 객체 생성
   exchangeTeams.ourTeams = Array.from({ length: ourCount }, (_, i) => ({
@@ -894,27 +883,25 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
     members: [],
     sum: 0
   }));
+
   exchangeTeams.opponentTeams = Array.from({ length: opponentCount }, (_, i) => ({
     name: `${opponentName} ${alphabet[i] || i + 1}팀`,
     members: [],
     sum: 0
   }));
+
   exchangeTeams.mixedTeams = Array.from({ length: mixedCount }, (_, i) => ({
     name: `혼합 ${alphabet[i] || i + 1}팀`,
     members: [],
     sum: 0
   }));
 
-  // 🔹 분배
+  // 🔹 분배 (절대 교차 없음)
   distributePlayersBalanced(remainingOur, exchangeTeams.ourTeams);
   distributePlayersBalanced(remainingOpp, exchangeTeams.opponentTeams);
   distributePlayersBalanced(mixedPlayers, exchangeTeams.mixedTeams);
 
-  // 🔹 전체 밸런싱 보정
-  balanceInternalTeamLevels(exchangeTeams);
-  balanceFinalMixedTeams(exchangeTeams);
-  balanceAllTeams(exchangeTeams);
-
+  // 🔹 전체 묶음
   latestTeams = [
     ...exchangeTeams.ourTeams,
     ...exchangeTeams.opponentTeams,
@@ -922,7 +909,7 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
   ];
 
   renderExchangeTeams(latestTeams);
-  console.log("✅ 교류전 생성 완료 (인원/부수/비율 완전 균형)");
+  console.log("✅ 교류전 생성 완료 (우리팀/상대팀 완전 구분, 혼합 1:1)");
 }
 
 
