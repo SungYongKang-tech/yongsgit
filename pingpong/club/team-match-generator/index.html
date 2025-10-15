@@ -817,15 +817,12 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
   return mixedPlayers;
 }
 
-/* ✅ 인원 균등 + 부수 평균 자동 균형 분배 */
 function distributePlayersBalanced(players, teams) {
   if (!players || !teams || !Array.isArray(teams) || teams.length === 0) return;
 
   // 1️⃣ 부수 낮을수록 강자 → 오름차순 정렬
   const sorted = [...players].sort((a, b) => a.level - b.level);
-
-  const total = sorted.length;
-  const n = teams.length;
+  const total = sorted.length, n = teams.length;
 
   // 2️⃣ 목표 인원 계산
   const base = Math.floor(total / n);
@@ -833,79 +830,96 @@ function distributePlayersBalanced(players, teams) {
   const targetCount = Array.from({ length: n }, (_, i) => (i < extra ? base + 1 : base));
 
   // 3️⃣ 초기화
-  teams.forEach(t => {
-    t.members = [];
-    t.sum = 0;
-  });
+  teams.forEach(t => { t.members = []; t.sum = 0; });
 
-  // 4️⃣ 균등 분배 (빈 자리 많은 팀 우선)
+  // 4️⃣ 1차 분배 — 부수 평균 낮은 팀부터 채우기
   sorted.forEach(p => {
-    // 분배 가능한 팀 필터
     const available = teams
-      .map((t, i) => ({ team: t, idx: i }))
-      .filter(({ idx, team }) => team.members.length < targetCount[idx]);
-
-    // ⚠️ 모든 팀이 꽉 찼다면 그냥 랜덤 팀에 강제 추가 (예외 방어)
-    if (available.length === 0) {
-      const randomTeam = teams[Math.floor(Math.random() * teams.length)];
-      randomTeam.members.push(p);
-      randomTeam.sum += p.level;
-      return;
-    }
-
-    // 부수 평균 낮은 팀부터 채우기
+      .map((t, i) => ({ t, i }))
+      .filter(({ i, t }) => t.members.length < targetCount[i]);
     available.sort((a, b) => {
-      const avgA = a.team.members.length ? a.team.sum / a.team.members.length : 0;
-      const avgB = b.team.members.length ? b.team.sum / b.team.members.length : 0;
+      const avgA = a.t.members.length ? a.t.sum / a.t.members.length : 0;
+      const avgB = b.t.members.length ? b.t.sum / b.t.members.length : 0;
       return avgA - avgB;
     });
-
-    const weakest = available[0].team;
-    weakest.members.push(p);
-    weakest.sum += p.level;
+    const target = available[0].t;
+    target.members.push(p);
+    target.sum += p.level;
   });
 
-  // 5️⃣ 부수 평균 균형 교정 루프
+  // 5️⃣ 평균 및 합 기준 균형 조정 루프
+  const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
+  const totalSum = () => teams.reduce((s, t) => s + t.sum, 0);
+  const avgSum = () => totalSum() / n;
+
   let improved = true;
   let iteration = 0;
-  const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
+  const MAX_ITER = 120;
 
-  while (improved && iteration < 60) {
-    improved = false;
+  while (improved && iteration < MAX_ITER) {
     iteration++;
+    improved = false;
 
+    // 팀 평균 및 합 계산
     const avgs = teams.map(calcAvg);
+    const sums = teams.map(t => t.sum);
+
+    // 표준편차 계산
+    const meanSum = avgSum();
+    const std = Math.sqrt(sums.reduce((a, s) => a + (s - meanSum) ** 2, 0) / n);
+
+    // 평균 차이 / 합 차이 계산
     const maxIdx = avgs.indexOf(Math.max(...avgs));
     const minIdx = avgs.indexOf(Math.min(...avgs));
-
-    const diff = Math.abs(avgs[maxIdx] - avgs[minIdx]);
-    if (diff < 0.8) break;
-
     const high = teams[maxIdx];
     const low = teams[minIdx];
+    const diff = Math.abs(avgs[maxIdx] - avgs[minIdx]);
 
-    const worstInHigh = high.members.reduce((a, b) => (a.level > b.level ? a : b));
-    const bestInLow = low.members.reduce((a, b) => (a.level < b.level ? a : b));
+    // ✅ 종료 조건: 평균차 0.5 이하 + 표준편차 4 이하 + 합차 5 이하
+    const maxSum = Math.max(...sums);
+    const minSum = Math.min(...sums);
+    if (diff < 0.5 && std < 4 && maxSum - minSum <= 5) break;
 
-    const newHighAvg = (high.sum - worstInHigh.level + bestInLow.level) / high.members.length;
-    const newLowAvg = (low.sum - bestInLow.level + worstInHigh.level) / low.members.length;
+    // 교환 후보군 확장 (상위/하위 2팀)
+    const topTeams = [...teams].sort((a, b) => calcAvg(b) - calcAvg(a)).slice(0, 2);
+    const bottomTeams = [...teams].sort((a, b) => calcAvg(a) - calcAvg(b)).slice(0, 2);
 
-    if (Math.abs(newHighAvg - newLowAvg) < diff) {
-      const iH = high.members.indexOf(worstInHigh);
-      const iL = low.members.indexOf(bestInLow);
-      high.members[iH] = bestInLow;
-      low.members[iL] = worstInHigh;
-      high.sum = high.members.reduce((s, p) => s + p.level, 0);
-      low.sum = low.members.reduce((s, p) => s + p.level, 0);
+    let bestPair = null;
+    let bestGain = 0;
+
+    for (const highTeam of topTeams) {
+      for (const lowTeam of bottomTeams) {
+        for (const h of highTeam.members) {
+          for (const l of lowTeam.members) {
+            const newHigh = (highTeam.sum - h.level + l.level) / highTeam.members.length;
+            const newLow = (lowTeam.sum - l.level + h.level) / lowTeam.members.length;
+            const gain = Math.abs(calcAvg(highTeam) - calcAvg(lowTeam)) -
+                         Math.abs(newHigh - newLow);
+            if (gain > bestGain) {
+              bestGain = gain;
+              bestPair = { highTeam, lowTeam, h, l };
+            }
+          }
+        }
+      }
+    }
+
+    if (bestPair) {
+      const { highTeam, lowTeam, h, l } = bestPair;
+      const hiIdx = highTeam.members.indexOf(h);
+      const loIdx = lowTeam.members.indexOf(l);
+      highTeam.members[hiIdx] = l;
+      lowTeam.members[loIdx] = h;
+      highTeam.sum = highTeam.members.reduce((s, p) => s + p.level, 0);
+      lowTeam.sum = lowTeam.members.reduce((s, p) => s + p.level, 0);
       improved = true;
     }
   }
 
-  // 6️⃣ 마지막 검증 — 팀 인원 정확히 맞추기
+  // 6️⃣ 인원 오차 보정
   const totalMembers = teams.reduce((s, t) => s + t.members.length, 0);
-  const target = Math.floor(totalMembers / teams.length);
-  let spare = totalMembers % teams.length;
-
+  const target = Math.floor(totalMembers / n);
+  let spare = totalMembers % n;
   teams.forEach(t => {
     while (t.members.length > target + (spare > 0 ? 1 : 0)) {
       const weakest = teams.reduce((a, b) =>
@@ -918,8 +932,10 @@ function distributePlayersBalanced(players, teams) {
     }
   });
 
-  console.log("✅ 인원/부수 균형 분배 완료");
+  console.log("✅ 인원·부수합 균형 조정 완료");
+  teams.forEach(t => console.log(`${t.name}: 합=${t.sum}, 평균=${calcAvg(t).toFixed(2)}`));
 }
+
 
 
 /* ✅ 교류전 팀 자동 생성 - 완전 안정 버전 */
