@@ -815,45 +815,58 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 
 
 
-
 function distributePlayersEvenly(players, teams) {
   if (!players.length || !teams.length) return;
 
-  // 🔹 1. 선수 부수 기준 내림차순 정렬
-  const sorted = [...players].sort((a, b) => b.level - a.level);
+  // 🔹 1. 부수가 낮을수록 잘침 → 오름차순 정렬 (1부, 2부, 3부 ...)
+  const sorted = [...players].sort((a, b) => a.level - b.level);
 
-  // 🔹 2. 팀 초기화
+  const totalPlayers = sorted.length;
+  const totalTeams = teams.length;
+
+  // 🔹 2. 팀별 목표 인원 계산
+  const baseCount = Math.floor(totalPlayers / totalTeams);
+  const extraCount = totalPlayers % totalTeams;
+  const maxCountPerTeam = teams.map((_, i) =>
+    i < extraCount ? baseCount + 1 : baseCount
+  );
+
+  // 🔹 3. 각 팀 초기화
   teams.forEach(t => {
     t.members = [];
     t.sum = 0;
   });
 
-  const totalPlayers = sorted.length;
-  const baseCount = Math.floor(totalPlayers / teams.length);
-  const extraCount = totalPlayers % teams.length;
+  // 🔹 4. 선수 배정
+  sorted.forEach(p => {
+    // 인원 미달 팀만 후보로
+    const candidates = teams.filter(
+      (t, i) => t.members.length < maxCountPerTeam[i]
+    );
 
-  // 팀별 목표 인원 수 (일부 팀만 1명 더)
-  const maxCountPerTeam = teams.map((_, i) => (i < extraCount ? baseCount + 1 : baseCount));
-
-  // 🔹 3. 강자부터 “인원 적고 평균 낮은 팀”에 배정
-  sorted.forEach(player => {
-    const availableTeams = teams.filter((t, i) => t.members.length < maxCountPerTeam[i]);
-    const target = availableTeams.reduce((lowest, t) => {
+    // 후보 중 ‘현재 평균 부수가 높은 팀’(=약팀) 우선 배정
+    const target = candidates.reduce((best, t) => {
+      const avgBest = best.members.length ? best.sum / best.members.length : 0;
       const avgT = t.members.length ? t.sum / t.members.length : 0;
-      const avgL = lowest.members.length ? lowest.sum / lowest.members.length : 0;
-      return avgT < avgL ? t : lowest;
+      return avgT > avgBest ? t : best; // 평균 높은 팀 = 더 약한 팀
     });
-    target.members.push(player);
-    target.sum += player.level;
+
+    target.members.push(p);
+    target.sum += p.level;
   });
 
-  // 🔹 4. 콘솔 로그 (검증용)
-  console.log("=== 그룹별 배치 결과 ===");
+  // 🔹 5. 평균 계산
   teams.forEach(t => {
-    const avg = t.members.length ? (t.sum / t.members.length).toFixed(2) : 0;
-    console.log(`${t.name}: ${t.members.length}명, 평균 ${avg}`);
+    t.avg = t.members.length ? (t.sum / t.members.length).toFixed(2) : 0;
   });
+
+  // 🔹 6. 결과 로그
+  console.log("✅ 균등 분배 완료");
+  teams.forEach(t =>
+    console.log(`${t.name}: ${t.members.length}명, 평균 ${t.avg}`)
+  );
 }
+
 
 // === 교류전 생성 (UI 모달로 변경) ===
 function createExchangeMatch() {
