@@ -815,59 +815,73 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
 
 
 
-function distributePlayersEvenly(players, teams) {
+// ✅ 인원 균등 + 부수 평균 자동 조정
+function distributePlayersBalanced(players, teams) {
   if (!players.length || !teams.length) return;
 
-  // 🔹 1. 부수가 낮을수록 실력자이므로 오름차순 정렬
+  // 1️⃣ 부수가 낮을수록 잘침 → 오름차순 정렬
   const sorted = [...players].sort((a, b) => a.level - b.level);
 
-  const totalPlayers = sorted.length;
-  const totalTeams = teams.length;
+  const total = sorted.length;
+  const n = teams.length;
 
-  // 🔹 2. 팀별 목표 인원 (예: 17명 → [5,4,4,4])
-  const base = Math.floor(totalPlayers / totalTeams);
-  const extra = totalPlayers % totalTeams;
-  const maxCountPerTeam = Array.from({ length: totalTeams }, (_, i) =>
-    i < extra ? base + 1 : base
-  );
+  // 2️⃣ 목표 인원 계산 (예: 17명 → [5,4,4,4])
+  const base = Math.floor(total / n);
+  const extra = total % n;
+  const targetCount = Array.from({ length: n }, (_, i) => (i < extra ? base + 1 : base));
 
-  // 🔹 3. 초기화
-  teams.forEach(t => {
-    t.members = [];
-    t.sum = 0;
-  });
+  // 3️⃣ 초기화
+  teams.forEach(t => { t.members = []; t.sum = 0; });
 
-  // 🔹 4. 강자(낮은 부수)부터 약한 팀에 균형 배치
+  // 4️⃣ 강자(낮은 부수)부터 약한 팀(평균 높은 팀)에 배치
   sorted.forEach(p => {
-    // 인원 미달인 팀만 후보
-    const candidates = teams.filter(
-      (t, i) => t.members.length < maxCountPerTeam[i]
-    );
-
-    // 후보가 없으면 모든 팀 꽉 찼으므로 종료
-    if (candidates.length === 0) return;
-
-    // 후보 중 평균이 가장 높은 팀(=약팀) 선택
-    const target = candidates.reduce((weakest, t) => {
-      const avgWeak = weakest.members.length ? weakest.sum / weakest.members.length : 0;
-      const avgT = t.members.length ? t.sum / t.members.length : 0;
-      return avgT > avgWeak ? t : weakest;
+    const available = teams.filter((t, i) => t.members.length < targetCount[i]);
+    if (!available.length) return;
+    const weakest = available.reduce((a, b) => {
+      const avgA = a.members.length ? a.sum / a.members.length : 0;
+      const avgB = b.members.length ? b.sum / b.members.length : 0;
+      return avgA > avgB ? a : b;
     });
-
-    // 배정
-    target.members.push(p);
-    target.sum += p.level;
+    weakest.members.push(p);
+    weakest.sum += p.level;
   });
 
-  // 🔹 5. 평균 계산
-  teams.forEach(t => {
-    t.avg = t.members.length ? (t.sum / t.members.length).toFixed(2) : 0;
-  });
+  // 5️⃣ 팀간 평균 균형 자동 교정 루프
+  const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
+  let improved = true, iteration = 0;
+  while (improved && iteration < 50) {
+    improved = false;
+    iteration++;
+    const avgs = teams.map(calcAvg);
+    const maxIdx = avgs.indexOf(Math.max(...avgs));
+    const minIdx = avgs.indexOf(Math.min(...avgs));
+    const diff = Math.abs(avgs[maxIdx] - avgs[minIdx]);
+    if (diff < 0.8) break;
 
-  // 🔹 6. 검증 로그
-  console.log("✅ 인원 균등 + 부수 균형 분배 완료");
-  teams.forEach((t, i) => {
-    console.log(`${t.name}: ${t.members.length}명, 합계 ${t.sum}, 평균 ${t.avg}`);
+    const high = teams[maxIdx];
+    const low = teams[minIdx];
+    const worstHigh = high.members.reduce((a,b)=>a.level>b.level?a:b);
+    const bestLow = low.members.reduce((a,b)=>a.level<b.level?a:b);
+
+    const newHigh = (high.sum - worstHigh.level + bestLow.level)/high.members.length;
+    const newLow = (low.sum - bestLow.level + worstHigh.level)/low.members.length;
+
+    if (Math.abs(newHigh - newLow) < diff) {
+      const iH = high.members.indexOf(worstHigh);
+      const iL = low.members.indexOf(bestLow);
+      high.members[iH] = bestLow;
+      low.members[iL] = worstHigh;
+      high.sum = high.members.reduce((s,p)=>s+p.level,0);
+      low.sum = low.members.reduce((s,p)=>s+p.level,0);
+      improved = true;
+    }
+  }
+
+  // 6️⃣ 평균 로그 확인용
+  console.log("✅ 인원/부수 자동균형 완료");
+  teams.forEach(t=>{
+    const avg = calcAvg(t).toFixed(2);
+    console.log(`${t.name}: ${t.members.length}명, 평균 ${avg}`);
   });
 }
 
@@ -961,34 +975,30 @@ if (selected.length > 0) {
     sum: 0
   }));
 
-  // ✅ 팀별 균등 분배 (서로 섞이지 않음)
-  distributePlayersEvenly(remainingOur, exchangeTeams.ourTeams);
-  distributePlayersEvenly(remainingOpp, exchangeTeams.opponentTeams);
-  distributePlayersEvenly(mixedPlayers, exchangeTeams.mixedTeams);
+ // ✅ 인원/부수 자동균형 분배 함수 사용
+distributePlayersBalanced(remainingOur, exchangeTeams.ourTeams);
+distributePlayersBalanced(remainingOpp, exchangeTeams.opponentTeams);
+distributePlayersBalanced(mixedPlayers, exchangeTeams.mixedTeams);
 
-  // 내부 밸런싱
-  balanceInternalTeamLevels(exchangeTeams);
-  balanceFinalMixedTeams(exchangeTeams);
-
-  // 전체 목록 정리 후 화면 표시
- // ✅ 렌더 타이밍 조정 (100ms 후 렌더)
+// ✅ 밸런싱 완료 후 팀 결합
 latestTeams = [
   ...exchangeTeams.ourTeams,
   ...exchangeTeams.opponentTeams,
   ...exchangeTeams.mixedTeams
 ];
 
+// ✅ 렌더 시점 조정 (딱 한 번만 그리기)
 setTimeout(() => {
   renderExchangeTeams(latestTeams);
-}, 100);
+}, 200);
 
+console.log("✅ 교류전 생성 완료:", {
+  ourTeams: exchangeTeams.ourTeams.length,
+  opponentTeams: exchangeTeams.opponentTeams.length,
+  mixedTeams: exchangeTeams.mixedTeams.length
+});
 
-  console.log("✅ 교류전 생성 완료:", {
-    ourTeams: exchangeTeams.ourTeams.length,
-    opponentTeams: exchangeTeams.opponentTeams.length,
-    mixedTeams: exchangeTeams.mixedTeams.length
-  });
-  balanceAllTeams(exchangeTeams);
+ 
 
 }
 
