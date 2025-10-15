@@ -279,6 +279,19 @@ th { background: #e3f2fd; }
   position: relative; /* 버튼 위치 기준 */
 }
 
+/* 선택형 버튼 시각 효과 */
+.btn-option {
+  opacity: 0.6;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.btn-option:hover {
+  transform: translateY(-2px);
+}
+.btn-option.active {
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(0,0,0,0.2);
+}
+
 </style>
 
 </head>
@@ -1064,23 +1077,24 @@ async function deleteMatch(key) {
 function estimateMatchTime() {
   const popup = document.getElementById("popup");
   
-  // 팝업 내용 구성
   popup.innerHTML = `
     <h3 style="text-align:center;">⏱️ 경기시간 계산</h3>
     
     <div style="text-align:center; margin-bottom:10px;">
       <p><strong>🏓 탁구 다이(탁구대) 개수 선택</strong></p>
-      <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:8px;">
+      <div id="tableButtons" style="display:flex; justify-content:center; flex-wrap:wrap; gap:8px;">
         ${[1,2,3,4,5,6,7,8].map(n => 
-          `<button class="btn-save" onclick="selectTableCount(${n})">${n}대</button>`
+          `<button class="btn-save btn-option" onclick="selectTableCount(this, ${n})">${n}대</button>`
         ).join('')}
       </div>
     </div>
 
     <div id="modeSelect" style="display:none; text-align:center; margin-top:10px;">
       <p><strong>🎮 경기 방식 선택</strong></p>
-      <button class="btn-share" onclick="selectMatchMode(1)">3판 2선승제</button>
-      <button class="btn-share" onclick="selectMatchMode(2)">5판 3선승제</button>
+      <div id="modeButtons">
+        <button class="btn-share btn-option" onclick="selectMatchMode(this, 1)">3판 2선승제</button>
+        <button class="btn-share btn-option" onclick="selectMatchMode(this, 2)">5판 3선승제</button>
+      </div>
     </div>
 
     <div id="calcResult" style="display:none; text-align:center; margin-top:15px; font-weight:bold; color:#0d47a1;"></div>
@@ -1095,16 +1109,26 @@ function estimateMatchTime() {
   popup.style.display = "block";
 }
 
-// ✅ 탁구대 선택 후 방식 선택 표시
-function selectTableCount(num) {
+/* ✅ 탁구대 선택 시 버튼 색 변경 */
+function selectTableCount(btn, num) {
   const popup = document.getElementById("popup");
   popup.dataset.tables = num;
+
+  // 모든 버튼 비활성화 후 선택 버튼 강조
+  document.querySelectorAll("#tableButtons .btn-option").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
   document.getElementById("modeSelect").style.display = "block";
 }
 
-// ✅ 방식 선택 후 시간 계산
-function selectMatchMode(mode) {
+/* ✅ 경기방식 선택 시 버튼 색 변경 및 결과 표시 */
+function selectMatchMode(btn, mode) {
   const popup = document.getElementById("popup");
+  popup.dataset.mode = mode;
+
+  document.querySelectorAll("#modeButtons .btn-option").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
   const numTables = parseInt(popup.dataset.tables);
   const totalMatches = Array.from(document.querySelectorAll(".match-card"))
     .reduce((sum, card) => sum + card.querySelectorAll("tbody tr").length, 0);
@@ -1120,8 +1144,9 @@ function selectMatchMode(mode) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
-  document.getElementById("calcResult").style.display = "block";
-  document.getElementById("calcResult").innerHTML = `
+  const resultEl = document.getElementById("calcResult");
+  resultEl.style.display = "block";
+  resultEl.innerHTML = `
     📊 총 경기 수: ${totalMatches}경기<br>
     🏓 탁구대: ${numTables}개<br>
     🎮 방식: ${mode === 1 ? "3판 2선승제" : "5판 3선승제"}<br>
@@ -1129,7 +1154,6 @@ function selectMatchMode(mode) {
     👉 예상 소요시간: ${hours > 0 ? hours + "시간 " : ""}${minutes}분
   `;
 }
-
 
 </script>
 </body>
