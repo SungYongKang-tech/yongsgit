@@ -764,31 +764,38 @@ function runTeamAssignment(teamCount, pool) {
 }
 
 
+function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
+  if (mixedCount === 0) return [];
 
-function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount) {
   // ✅ 원본 보호
   const ourCopy = [...ourPlayers];
   const oppCopy = [...opponentPlayers];
   const mixedPlayers = [];
 
-  if (mixedCount === 0) return [];
+  // 총 인원과 목표 혼합팀 비율 계산
+  const totalPlayers = ourCopy.length + oppCopy.length;
+  const totalTeamsCount = totalTeams; // 우리+상대+혼합팀
+  const mixedRatio = mixedCount / totalTeamsCount; // 혼합팀 비율
 
-  // 🔸 혼합팀은 각 팀 절반씩 (1:1 비율)
-  const perTeamFromEach = Math.min(
-    Math.floor(ourCopy.length / (mixedCount * 2)),
-    Math.floor(oppCopy.length / (mixedCount * 2))
-  );
+  // 혼합팀 총 인원은 전체의 mixedRatio만큼
+  const totalMixedPlayers = Math.round(totalPlayers * mixedRatio);
 
+  // 각 혼합팀당 인원 (최소 2명 보장)
+  const perTeam = Math.max(2, Math.floor(totalMixedPlayers / mixedCount));
+
+  // 우리팀 / 상대팀에서 절반씩 1:1 비율 추출
+  const half = Math.floor(perTeam / 2);
   for (let i = 0; i < mixedCount; i++) {
-    const ourPart = shuffle(ourCopy).splice(0, perTeamFromEach);
-    const oppPart = shuffle(oppCopy).splice(0, perTeamFromEach);
+    const ourPart = shuffle(ourCopy).splice(0, half);
+    const oppPart = shuffle(oppCopy).splice(0, perTeam - half);
     mixedPlayers.push(...ourPart, ...oppPart);
   }
 
-  // ⚖️ 부수 기준 정렬
+  // 부수 기준 정렬
   mixedPlayers.sort((a, b) => a.level - b.level);
   return mixedPlayers;
 }
+
 
 
 
@@ -869,7 +876,13 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
   }
 
   // 🔹 혼합팀 구성
-  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount);
+  const mixedPlayers = pickMixedPlayers(
+  ourPlayers,
+  opponentPlayers,
+  mixedCount,
+  ourCount + opponentCount + mixedCount
+);
+
   const mixedNames = new Set(mixedPlayers.map(p => p.name));
 
   const remainingOur = ourPlayers.filter(p => !mixedNames.has(p.name) && !p.new);
