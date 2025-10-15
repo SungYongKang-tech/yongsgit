@@ -614,33 +614,88 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
       return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
     }
 
- function assignTeams() {
-  // ✅ 1. 참가자 선택
+function assignTeams() {
+  <p>팀 수를 선택하세요 (2~8팀)<br><small>현재 참가자: ${pool.length}명</small></p>
+
+  // 참가자 선택
   let pool = selected.length ? [...selected] : allPlayers.map((_, i) => i);
   if (pool.length < 2) {
     alert("선수가 2명 이상 있어야 합니다.");
     return;
   }
 
-  const teamCount = parseInt(prompt("몇 팀으로 구성하시겠습니까? (2~8)"), 10);
+  // ✅ 팀 수 선택 모달창 만들기
+  const existingPopup = document.getElementById("teamSelectPopup");
+  if (existingPopup) existingPopup.remove();
+
+  const popup = document.createElement("div");
+  popup.id = "teamSelectPopup";
+  popup.style.position = "fixed";
+  popup.style.top = "0";
+  popup.style.left = "0";
+  popup.style.width = "100%";
+  popup.style.height = "100%";
+  popup.style.background = "rgba(0,0,0,0.6)";
+  popup.style.display = "flex";
+  popup.style.alignItems = "center";
+  popup.style.justifyContent = "center";
+  popup.style.zIndex = "3000";
+
+  popup.innerHTML = `
+    <div style="background:#fff; border-radius:12px; padding:20px; width:320px; text-align:center;">
+      <h3 style="margin-top:0; color:#1976d2;">🏓 팀 자동 배정</h3>
+      <p>팀 수를 선택하세요 (2~8팀)</p>
+      <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:10px;">
+        ${[2,3,4,5,6,7,8].map(n => 
+          `<button class="btn-option" 
+              style="padding:8px 12px; border-radius:6px; border:1px solid #1976d2; background:#e3f2fd; cursor:pointer;"
+              onclick="confirmTeamCount(${n})">${n}팀</button>`
+        ).join("")}
+      </div>
+      <div style="margin-top:16px;">
+        <button onclick="document.body.removeChild(document.getElementById('teamSelectPopup'))"
+                style="padding:8px 16px; background:#999; color:white; border:none; border-radius:6px; cursor:pointer;">
+          취소
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+
+  // ✅ 선택한 팀 수를 실제 배정에 반영
+ window._assignPool = pool; // 이 한 줄만 남기고 위 코드는 삭제
+  };
+
+
+function confirmTeamCount(teamCount) {
+  const popup = document.getElementById("teamSelectPopup"); // 선택창 닫기
+  if (popup) document.body.removeChild(popup);
+
+  if (window._assignPool) { // 이전에 저장해둔 선수 목록 사용
+    runTeamAssignment(teamCount, window._assignPool);
+  }
+}
+
+// ✅ 실제 팀 배정 로직 (기존 내용 그대로)
+function runTeamAssignment(teamCount, pool) {
   if (isNaN(teamCount) || teamCount < 2 || teamCount > 8) {
-    alert("2~8 사이의 숫자를 입력해주세요.");
+    alert("2~8 사이의 팀 수를 선택해주세요.");
     return;
   }
 
-  // ✅ 2. 선수 목록 구성
   const players = pool.map(i => allPlayers[i]);
   shuffle(players);
   players.sort((a, b) => b.level - a.level); // 강자 먼저 배정
 
-  // ✅ 3. 팀 초기화
+  // 팀 초기화
   const teams = Array.from({ length: teamCount }, (_, i) => ({
     name: `${i + 1}팀`,
     members: [],
     sum: 0
   }));
 
-  // ✅ 4. 인원 균등 분배
+  // 인원 균등 분배
   const total = players.length;
   const base = Math.floor(total / teamCount);
   const extra = total % teamCount;
@@ -657,28 +712,23 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
     target.sum += p.level;
   });
 
-  // ✅ 5. 균형 조정 반복 (팀 평균 편차 줄이기)
+  // 균형 조정 반복 (기존 그대로)
   const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
   let improved = true;
   let attempt = 0;
   while (improved && attempt < 30) {
     improved = false;
     attempt++;
-
-    // 평균 계산
     const avgs = teams.map(calcAvg);
     const maxIdx = avgs.indexOf(Math.max(...avgs));
     const minIdx = avgs.indexOf(Math.min(...avgs));
-
     const high = teams[maxIdx];
     const low = teams[minIdx];
     const diffBefore = Math.abs(calcAvg(high) - calcAvg(low));
     if (diffBefore < 0.3) break;
 
-    // 교환 후보 탐색 (효과 가장 큰 조합 선택)
     let bestPair = null;
     let bestImprovement = 0;
-
     high.members.forEach(h => {
       low.members.forEach(l => {
         const newHighAvg = (high.sum - h.level + l.level) / high.members.length;
@@ -703,10 +753,9 @@ function beginExchangeSwap(groupType, teamIdx, playerIdx) {
     }
   }
 
-  // ✅ 6. 결과 출력
+  // 결과 출력
   latestTeams = teams;
   assignTeamsRender(latestTeams);
-
   console.log("=== 자동배정 결과 ===");
   teams.forEach(t => {
     const avg = (t.sum / t.members.length).toFixed(2);
