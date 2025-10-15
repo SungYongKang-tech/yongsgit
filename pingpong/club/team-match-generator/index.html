@@ -915,10 +915,38 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
     ...exchangeTeams.mixedTeams
   ];
 
+  // 🔹 추가: 전체 인원 균형 조정
+balanceTeamMemberCounts(latestTeams); // ⬅️ 이 한 줄 추가
+
   renderExchangeTeams(latestTeams);
   console.log("✅ 교류전 생성 완료 (우리팀/상대팀 완전 구분, 혼합 1:1)");
 }
 
+function balanceTeamMemberCounts(allTeams) {
+  if (!allTeams?.length) return;
+  const avgCount = allTeams.reduce((s,t)=>s+t.members.length,0) / allTeams.length;
+
+  // 인원이 너무 많은 팀 → 초과 인원 빼서 부족한 팀으로 이동
+  for (let loop=0; loop<20; loop++) {
+    const maxTeam = allTeams.reduce((a,b)=>a.members.length>b.members.length?a:b);
+    const minTeam = allTeams.reduce((a,b)=>a.members.length<b.members.length?a:b);
+    const diff = maxTeam.members.length - minTeam.members.length;
+    if (diff <= 1) break; // ±1 이내면 종료
+
+    // 부수 기준으로 중간값 가까운 선수 하나 이동
+    const sorted = [...maxTeam.members].sort((a,b)=>Math.abs(a.level-8)-Math.abs(b.level-8));
+    const move = sorted[0];
+    if (!move) break;
+
+    maxTeam.members.splice(maxTeam.members.indexOf(move),1);
+    minTeam.members.push(move);
+
+    maxTeam.sum = maxTeam.members.reduce((s,p)=>s+p.level,0);
+    minTeam.sum = minTeam.members.reduce((s,p)=>s+p.level,0);
+  }
+
+  console.log("⚖️ 전체 팀 인원 균형 조정 완료");
+}
 
 
 
