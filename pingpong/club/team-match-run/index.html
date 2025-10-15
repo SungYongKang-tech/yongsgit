@@ -746,12 +746,18 @@ return result.slice(0, need);
 
 
 /* ---------------- 경기 카드 출력 ---------------- */
-function renderMatchCard(teamA, teamB, matchList) {
+function renderMatchCard(teamA, teamB, matchList, exchangeName = "") {
   let key = `${teamA}_vs_${teamB}`;
+const titleText = exchangeName
+  ? `${exchangeName}`
+  : `${teamA} VS ${teamB}`;
+
+
   let html = `
     <div class='match-card'>
       <button class="delete-btn" onclick="deleteMatch('${key}')">❌</button>
-      <h3>${teamA} VS ${teamB}</h3>
+      <h3>${titleText}</h3>
+
       <table>
         <thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead>
         <tbody>
@@ -898,19 +904,39 @@ async function setMatchResult(score) {
 
 /* ---------------- 실시간 Firebase 리스너 ---------------- */
 function listenToMatchUpdates() {
-  db.ref("matches").on("value", snap => {
+  // ✅ 최신 교류전 1건만 불러오기
+  db.ref("matches").limitToLast(1).on("value", snap => {
     const matches = snap.val();
     document.getElementById("summaryArea").innerHTML = "";
-    if (!matches) { document.getElementById("rankingArea").innerHTML = ""; return; }
-    for (const key in matches) {
-      const { teamA, teamB } = matches[key];
-      let list = matches[key].matchList;
-      list = Array.isArray(list) ? list : Object.values(list||{});
-      renderMatchCard(teamA, teamB, list);
+
+    if (!matches) {
+      document.getElementById("rankingArea").innerHTML = "";
+      document.querySelector("h2").innerText = "단체전 진행 (데이터 없음)";
+      return;
     }
+
+    // ✅ 최신 교류전 1건만 가져오기
+    const latestKey = Object.keys(matches)[0];
+    const latestMatch = matches[latestKey];
+    const { exchangeName, teamA, teamB } = latestMatch;
+
+    // ✅ 페이지 상단 제목 갱신
+    const titleEl = document.querySelector("h2");
+    titleEl.innerText = exchangeName
+  ? `🏓 ${exchangeName}`
+  : `${teamA} vs ${teamB}`;
+
+    // ✅ 경기표 렌더링
+    const list = Array.isArray(latestMatch.matchList)
+      ? latestMatch.matchList
+      : Object.values(latestMatch.matchList || {});
+
+    renderMatchCard(teamA, teamB, list, exchangeName);
+
     calculateTeamResults();
   });
 }
+
 
 /* ---------------- 순위 계산 ---------------- */
 function calculateTeamResults() {
