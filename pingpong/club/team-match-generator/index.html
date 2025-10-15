@@ -780,7 +780,9 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
   opponentPlayers.sort((a, b) => a.level - b.level);
 
   // ✅ 2. 우리팀과 상대팀 섞기 (랜덤 기반)
-  const allCandidates = shuffle([...ourPlayers, ...opponentPlayers]);
+  // ✅ 셔플 대신 정렬 기반으로 일관성 유지
+const allCandidates = [...ourPlayers, ...opponentPlayers].sort((a, b) => a.level - b.level);
+
   const mixedPlayers = allCandidates.slice(0, totalMixedPlayers);
 
   // 3. 혼합팀의 평균 부수 계산
@@ -838,14 +840,23 @@ function distributePlayersBalanced(players, teams) {
 
   // 4️⃣ 1차 분배 (약한 팀부터 강자 배치)
   sorted.forEach(p => {
-    const available = teams.filter((t, i) => t.members.length < targetCount[i]);
-    if (!available.length) return;
+    // ✅ 1차 인원 우선 분배
+const available = teams
+  .map((t, i) => ({ team: t, idx: i }))
+  .filter(({ idx, team }) => team.members.length < targetCount[idx]);
 
-    available.sort((a, b) => {
-      const avgA = a.members.length ? a.sum / a.members.length : 0;
-      const avgB = b.members.length ? b.sum / b.members.length : 0;
-      return avgA - avgB;
-    });
+available.sort((a, b) => {
+  // 남은 자리 기준 우선
+  const remainA = targetCount[a.idx] - a.team.members.length;
+  const remainB = targetCount[b.idx] - b.team.members.length;
+  if (remainA !== remainB) return remainB - remainA;
+  
+  // 그다음 부수 평균 낮은 팀
+  const avgA = a.team.members.length ? a.team.sum / a.team.members.length : 0;
+  const avgB = b.team.members.length ? b.team.sum / b.team.members.length : 0;
+  return avgA - avgB;
+});
+
 
     const weakest = available[0];
     weakest.members.push(p);
@@ -965,14 +976,31 @@ balanceAllTeams(exchangeTeams);
 balanceFinalMixedTeams(exchangeTeams); // ✅ 추가
 renderExchangeTeams(latestTeams);
 
+// ✅ [추가] 인원 균등 검증 및 보정 루프
+  const totalMembers = latestTeams.reduce((s, t) => s + t.members.length, 0);
+  const target = Math.floor(totalMembers / latestTeams.length);
+  let spare = totalMembers % latestTeams.length;
 
+  latestTeams.forEach(t => {
+    while (t.members.length > target + (spare > 0 ? 1 : 0)) {
+      // 초과 인원은 평균 낮은 팀으로 이동
+      const weakest = latestTeams.reduce((a, b) =>
+        (a.sum / a.members.length < b.sum / b.members.length ? a : b)
+      );
+      const moved = t.members.pop();
+      weakest.members.push(moved);
+      t.sum = t.members.reduce((s, p) => s + p.level, 0);
+      weakest.sum = weakest.members.reduce((s, p) => s + p.level, 0);
+    }
+  });
+
+  renderExchangeTeams(latestTeams);
 
   console.log("✅ 교류전 생성 완료:", {
     ourTeams: exchangeTeams.ourTeams.length,
     opponentTeams: exchangeTeams.opponentTeams.length,
     mixedTeams: exchangeTeams.mixedTeams.length
   });
-
 }
 
 
