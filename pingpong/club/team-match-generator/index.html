@@ -965,6 +965,8 @@ if (selected.length > 0) {
     opponentTeams: exchangeTeams.opponentTeams.length,
     mixedTeams: exchangeTeams.mixedTeams.length
   });
+  balanceAllTeams(exchangeTeams);
+
 }
 
 
@@ -1495,6 +1497,61 @@ function balanceFinalMixedTeams(exchangeTeams) {
     avgOur: calcAvg(exchangeTeams.ourTeams),
     avgOpponent: calcAvg(exchangeTeams.opponentTeams),
     avgMixed: calcAvg(exchangeTeams.mixedTeams)
+  });
+}
+
+function balanceAllTeams(exchangeTeams) {
+  const allTeams = [
+    ...exchangeTeams.ourTeams,
+    ...exchangeTeams.opponentTeams,
+    ...exchangeTeams.mixedTeams
+  ];
+
+  if (allTeams.length === 0) return;
+
+  const calcAvg = (team) => team.members.length ? team.sum / team.members.length : 0;
+
+  let attempts = 0;
+  let improved = true;
+
+  while (improved && attempts < 30) {
+    improved = false;
+    attempts++;
+
+    const avgs = allTeams.map(calcAvg);
+    const globalAvg = avgs.reduce((a,b)=>a+b,0)/avgs.length;
+
+    // 평균과의 차이 계산
+    const maxIdx = avgs.indexOf(Math.max(...avgs)); // 평균 높은 팀 (약팀)
+    const minIdx = avgs.indexOf(Math.min(...avgs)); // 평균 낮은 팀 (강팀)
+    const high = allTeams[maxIdx];
+    const low = allTeams[minIdx];
+
+    const diff = Math.abs(avgs[maxIdx] - avgs[minIdx]);
+    if (diff < 1.2) break; // 충분히 균형 맞으면 종료
+
+    // 교환 대상 찾기
+    const bestHigh = high.members.reduce((a,b)=>a.level>b.level?a:b); // 하수
+    const bestLow = low.members.reduce((a,b)=>a.level<b.level?a:b);   // 고수
+
+    // 교환
+    const hiIdx = high.members.indexOf(bestHigh);
+    const loIdx = low.members.indexOf(bestLow);
+    if (hiIdx === -1 || loIdx === -1) break;
+
+    high.members[hiIdx] = bestLow;
+    low.members[loIdx] = bestHigh;
+
+    high.sum = high.members.reduce((s,p)=>s+p.level,0);
+    low.sum = low.members.reduce((s,p)=>s+p.level,0);
+
+    improved = true;
+  }
+
+  console.log("✅ 전체 팀 부수 균형 조정 완료");
+  allTeams.forEach(t=>{
+    const avg = calcAvg(t).toFixed(2);
+    console.log(`${t.name} 평균 부수: ${avg}`);
   });
 }
 
