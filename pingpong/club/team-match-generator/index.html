@@ -896,58 +896,56 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
   exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  // 선택된 선수 우선 적용
-  let ourPlayers = [];
-  let opponentPlayers = [];
-  if (selected.length > 0) {
-    ourPlayers = selected.map(i => allPlayers[i]).filter(p => !p.new);
-    opponentPlayers = selected.map(i => allPlayers[i]).filter(p => p.new);
-  } else {
-    ourPlayers = allPlayers.filter(p => !p.new);
-    opponentPlayers = allPlayers.filter(p => p.new);
-  }
+  // 🔸 팀/선수 데이터 불러오기
+  const ourPlayers = allPlayers.filter(p => !p.new);
+  const opponentPlayers = allPlayers.filter(p => p.new);
 
   if (ourPlayers.length === 0 || opponentPlayers.length === 0) {
-    alert("⚠️ 우리팀 또는 상대팀 인원이 부족합니다.\n'추가 선수'를 활용해 상대팀을 구성해주세요.");
+    alert("⚠️ 우리팀 또는 상대팀 인원이 부족합니다.");
     return;
   }
 
-  // 전체 팀 목록 구성
-  const totalTeams = ourCount + opponentCount + mixedCount;
-  if (totalTeams === 0) {
-    alert("⚠️ 팀 수가 0입니다.");
-    return;
-  }
+  // 🔸 혼합팀 선수 선별
+  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, ourCount + opponentCount + mixedCount);
 
-  // 전체 선수 배열 구성 (혼합팀 포함)
-  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams);
+  // 🔸 남은 선수 분리
   const remainingOur = ourPlayers.filter(p => !mixedPlayers.includes(p));
   const remainingOpp = opponentPlayers.filter(p => !mixedPlayers.includes(p));
-  const allToDistribute = [...remainingOur, ...remainingOpp, ...mixedPlayers];
 
-  // 팀 객체 초기화
-  const allTeams = [];
-  for (let i = 0; i < ourCount; i++)
-    allTeams.push({ name: `${ourName} ${alphabet[i] || i + 1}팀`, members: [], sum: 0 });
-  for (let i = 0; i < opponentCount; i++)
-    allTeams.push({ name: `${opponentName} ${alphabet[i] || i + 1}팀`, members: [], sum: 0 });
-  for (let i = 0; i < mixedCount; i++)
-    allTeams.push({ name: `혼합 ${alphabet[i] || i + 1}팀`, members: [], sum: 0 });
+  // 🔸 팀 객체 만들기
+  exchangeTeams.ourTeams = Array.from({ length: ourCount }, (_, i) => ({
+    name: `${ourName} ${alphabet[i] || i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
 
-  // ✅ 전체 팀에 선수들을 최대한 균등하게 배정
-  distributePlayersEvenly(allToDistribute, allTeams);
+  exchangeTeams.opponentTeams = Array.from({ length: opponentCount }, (_, i) => ({
+    name: `${opponentName} ${alphabet[i] || i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
 
-  // 팀 종류에 따라 나누기
-  exchangeTeams.ourTeams = allTeams.slice(0, ourCount);
-  exchangeTeams.opponentTeams = allTeams.slice(ourCount, ourCount + opponentCount);
-  exchangeTeams.mixedTeams = allTeams.slice(ourCount + opponentCount);
+  exchangeTeams.mixedTeams = Array.from({ length: mixedCount }, (_, i) => ({
+    name: `혼합 ${alphabet[i] || i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
+
+  // ✅ 팀별 균등 분배 (서로 섞이지 않음)
+  distributePlayersEvenly(remainingOur, exchangeTeams.ourTeams);
+  distributePlayersEvenly(remainingOpp, exchangeTeams.opponentTeams);
+  distributePlayersEvenly(mixedPlayers, exchangeTeams.mixedTeams);
 
   // 내부 밸런싱
   balanceInternalTeamLevels(exchangeTeams);
   balanceFinalMixedTeams(exchangeTeams);
 
-  // 화면 출력
-  latestTeams = allTeams;
+  // 전체 목록 정리 후 화면 표시
+  latestTeams = [
+    ...exchangeTeams.ourTeams,
+    ...exchangeTeams.opponentTeams,
+    ...exchangeTeams.mixedTeams
+  ];
   renderExchangeTeams();
 
   console.log("✅ 교류전 생성 완료:", {
@@ -956,6 +954,7 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
     mixedTeams: exchangeTeams.mixedTeams.length
   });
 }
+
 
 
     function saveTeamsAsImage() {
