@@ -805,6 +805,13 @@ function createExchangeMatch() {
   const ourName = prompt("우리팀 이름을 입력하세요 (예: 남동발전)") || "우리팀";
   const opponentName = prompt("상대팀 이름을 입력하세요 (예: OO발전)") || "상대팀";
 
+  // ✅ 교류전 이름 자동 생성 및 전역 저장
+  window.currentExchange = {
+    exchangeName: `${ourName}-${opponentName} 교류전`,
+    teamA: ourName,
+    teamB: opponentName
+  };
+
   const ourCount = parseInt(prompt(`${ourName}은(는) 몇 팀으로 구성할까요?`), 10);
   const opponentCount = parseInt(prompt(`${opponentName}은(는) 몇 팀으로 구성할까요?`), 10);
   const mixedCount = parseInt(prompt("혼합팀 몇 팀으로 구성할까요? (없으면 0 입력)"), 10) || 0;
@@ -1019,46 +1026,48 @@ console.log("팀별 평균:", avgsFinal.join(" / "));
       renderPlayers();
     }
 
-    async function uploadTeamsToFirebase() {
-  if (!latestTeams || latestTeams.length === 0) {
-    alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
-    return;
-  }
+  async function uploadTeamsToFirebase() {
+  try {
+    if (!latestTeams || latestTeams.length === 0) {
+      alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
+      return;
+    }
 
-  // 인증 보장
-  await requireAuth();
+    await requireAuth();
 
-  const firebaseData = {};
-  latestTeams.forEach((team, idx) => {
-    const isAuto = team.leader && typeof team.leader.level === "number";
-    const teamName = team.teamName
-      ? team.teamName
-      : (isAuto ? `${team.leader.name} 팀` : `팀${idx + 1}`);
-    const teamLeader = isAuto ? team.leader.name : (team.teamLeader || "");
-
-    // ✅ 부수 낮은 순(강자 우선)으로 정렬
-    const players = isAuto
-      ? [team.leader, ...team.members].sort((a, b) => a.level - b.level)
-      : [...team.members].sort((a, b) => a.level - b.level);
-
-    firebaseData[`team${idx + 1}`] = {
-      teamName,
-      teamLeader,
-      players
-    };
-  });
-
-  db.ref("teams").set(firebaseData)
-    .then(() => {
-      setTimeout(() => {
-        window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/";
-      }, 500);
-    })
-    .catch((err) => {
-      console.error("❌ 업로드 실패:", err);
-      alert("❌ Firebase 업로드에 실패했습니다.\n콘솔 오류를 확인해주세요.");
+    // 1️⃣ 팀 데이터 저장
+    const firebaseData = {};
+    latestTeams.forEach((team, idx) => {
+      const teamName = team.teamName || team.name || `팀${idx + 1}`;
+      const players = [...team.members].sort((a, b) => a.level - b.level);
+      firebaseData[`team${idx + 1}`] = { teamName, players };
     });
+    await db.ref("teams").set(firebaseData);
+
+    // 2️⃣ 교류전 정보 저장 (누적 저장)
+    if (window.currentExchange) {
+      const { exchangeName, teamA, teamB } = window.currentExchange;
+      const newMatchKey = db.ref("matches").push().key;
+
+      await db.ref(`matches/${newMatchKey}`).set({
+        exchangeName,
+        teamA,
+        teamB,
+        matchList: []
+      });
+    }
+
+    // 3️⃣ 페이지 이동
+    setTimeout(() => {
+      window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/";
+    }, 500);
+
+  } catch (err) {
+    console.error("❌ 업로드 실패:", err);
+    alert("❌ Firebase 업로드 실패\n자세한 내용은 콘솔을 확인하세요.");
+  }
 }
+
 
 
     function removeAddedPlayers() {
