@@ -765,9 +765,11 @@ function runTeamAssignment(teamCount, pool) {
 
 
 
-
 function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
-  const totalPlayers = ourPlayers.length + opponentPlayers.length;
+  // ✅ 원본 보호
+  const ourCopy = [...ourPlayers];
+  const oppCopy = [...opponentPlayers];
+  const totalPlayers = ourCopy.length + oppCopy.length;
 
   // 혼합팀 총 인원 = 혼합팀 수 × 한 팀당 목표 인원
   const playersPerTeam = Math.floor(totalPlayers / totalTeams);
@@ -813,7 +815,6 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, totalTeams) {
   return mixedPlayers;
 }
 
-
 /* ✅ 인원 균등 + 부수 평균 자동 균형 분배 */
 function distributePlayersBalanced(players, teams) {
   if (!players.length || !teams.length) return;
@@ -824,7 +825,7 @@ function distributePlayersBalanced(players, teams) {
   const total = sorted.length;
   const n = teams.length;
 
-  // 2️⃣ 목표 인원 계산 (총합 유지)
+  // 2️⃣ 목표 인원 계산
   const base = Math.floor(total / n);
   const extra = total % n;
   const targetCount = Array.from({ length: n }, (_, i) => (i < extra ? base + 1 : base));
@@ -835,31 +836,28 @@ function distributePlayersBalanced(players, teams) {
     t.sum = 0;
   });
 
-  // 4️⃣ 초기 분배 (약한 팀부터 강한 선수 배치)
+  // 4️⃣ 1차 분배 (약한 팀부터 강자 배치)
   sorted.forEach(p => {
-    // 현재 인원 미달 팀만 필터링
     const available = teams.filter((t, i) => t.members.length < targetCount[i]);
     if (!available.length) return;
 
-    // 평균 낮은(약팀) 순으로 정렬
     available.sort((a, b) => {
       const avgA = a.members.length ? a.sum / a.members.length : 0;
       const avgB = b.members.length ? b.sum / b.members.length : 0;
       return avgA - avgB;
     });
 
-    // 평균이 가장 낮은 팀에 배정
     const weakest = available[0];
     weakest.members.push(p);
     weakest.sum += p.level;
   });
 
-  // 5️⃣ 균형 재조정 루프 (인원 유지하며 평균 차이 줄이기)
+  // 5️⃣ 부수 균형 교환 루프 (인원 유지)
   let improved = true;
   let iteration = 0;
   const calcAvg = t => (t.members.length ? t.sum / t.members.length : 0);
 
-  while (improved && iteration < 50) {
+  while (improved && iteration < 60) {
     improved = false;
     iteration++;
 
@@ -868,21 +866,18 @@ function distributePlayersBalanced(players, teams) {
     const minIdx = avgs.indexOf(Math.min(...avgs));
 
     const diff = Math.abs(avgs[maxIdx] - avgs[minIdx]);
-    if (diff < 0.8) break; // 평균 차이가 0.8 이하이면 충분히 균형
+    if (diff < 0.8) break;
 
     const high = teams[maxIdx];
     const low = teams[minIdx];
 
-    // ✅ 인원은 그대로 유지하면서 교환만 시도
-    const worstInHigh = high.members.reduce((a, b) => (a.level > b.level ? a : b)); // 가장 하수
-    const bestInLow = low.members.reduce((a, b) => (a.level < b.level ? a : b));   // 가장 고수
+    const worstInHigh = high.members.reduce((a, b) => (a.level > b.level ? a : b));
+    const bestInLow = low.members.reduce((a, b) => (a.level < b.level ? a : b));
 
-    // 교환 후 평균 계산
     const newHighAvg = (high.sum - worstInHigh.level + bestInLow.level) / high.members.length;
     const newLowAvg = (low.sum - bestInLow.level + worstInHigh.level) / low.members.length;
 
     if (Math.abs(newHighAvg - newLowAvg) < diff) {
-      // 교환 수행
       const iH = high.members.indexOf(worstInHigh);
       const iL = low.members.indexOf(bestInLow);
       high.members[iH] = bestInLow;
@@ -893,13 +888,93 @@ function distributePlayersBalanced(players, teams) {
     }
   }
 
-  // 6️⃣ 결과 확인용 로그
   console.log("✅ 인원/부수 자동균형 완료");
   teams.forEach(t => {
     const avg = calcAvg(t).toFixed(2);
     console.log(`${t.name}: ${t.members.length}명, 평균 ${avg}`);
   });
 }
+
+
+/* ✅ 교류전 팀 자동 생성 - 완전 안정 버전 */
+function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount) {
+  // 0️⃣ 완전 초기화 (중복 방지)
+  exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
+  latestTeams = [];
+
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  // 🔸 팀/선수 데이터 새로 불러오기 (항상 fresh 상태로)
+  let ourPlayers = [];
+  let opponentPlayers = [];
+
+  if (selected.length > 0) {
+    const selectedPlayers = selected.map(i => allPlayers[i]);
+    ourPlayers = selectedPlayers.filter(p => !p.new);
+    opponentPlayers = selectedPlayers.filter(p => p.new);
+  } else {
+    ourPlayers = allPlayers.filter(p => !p.new);
+    opponentPlayers = allPlayers.filter(p => p.new);
+  }
+
+  if (ourPlayers.length === 0 || opponentPlayers.length === 0) {
+    alert("⚠️ 우리팀 또는 상대팀 인원이 부족합니다.");
+    return;
+  }
+
+  // 🔸 혼합팀 인원 선택 (원본 훼손 금지)
+  const mixedPlayers = pickMixedPlayers([...ourPlayers], [...opponentPlayers], mixedCount, ourCount + opponentCount + mixedCount);
+
+  // 🔸 남은 인원 분리
+  const remainingOur = ourPlayers.filter(p => !mixedPlayers.includes(p));
+  const remainingOpp = opponentPlayers.filter(p => !mixedPlayers.includes(p));
+
+  // 🔸 팀 객체 생성
+  exchangeTeams.ourTeams = Array.from({ length: ourCount }, (_, i) => ({
+    name: `${ourName} ${alphabet[i] || i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
+
+  exchangeTeams.opponentTeams = Array.from({ length: opponentCount }, (_, i) => ({
+    name: `${opponentName} ${alphabet[i] || i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
+
+  exchangeTeams.mixedTeams = Array.from({ length: mixedCount }, (_, i) => ({
+    name: `혼합 ${alphabet[i] || i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
+
+  // 🔹 자동 분배 (인원 균등 + 부수 균형)
+  distributePlayersBalanced(remainingOur, exchangeTeams.ourTeams);
+  distributePlayersBalanced(remainingOpp, exchangeTeams.opponentTeams);
+  distributePlayersBalanced(mixedPlayers, exchangeTeams.mixedTeams);
+
+  // 🔹 최종 병합
+  latestTeams = [
+    ...exchangeTeams.ourTeams,
+    ...exchangeTeams.opponentTeams,
+    ...exchangeTeams.mixedTeams
+  ];
+
+balanceInternalTeamLevels(exchangeTeams);
+balanceAllTeams(exchangeTeams);
+balanceFinalMixedTeams(exchangeTeams); // ✅ 추가
+renderExchangeTeams(latestTeams);
+
+
+
+  console.log("✅ 교류전 생성 완료:", {
+    ourTeams: exchangeTeams.ourTeams.length,
+    opponentTeams: exchangeTeams.opponentTeams.length,
+    mixedTeams: exchangeTeams.mixedTeams.length
+  });
+
+}
+
 
 
 
@@ -939,87 +1014,6 @@ function confirmExchangeMatch() {
   generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount);
 }
 
-// === 기존 교류전 생성 로직 분리 ===
-function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount) {
-  exchangeTeams = { ourTeams: [], opponentTeams: [], mixedTeams: [] };
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-  // 🔸 팀/선수 데이터 불러오기 (선택된 인원만 반영)
-let ourPlayers = [];
-let opponentPlayers = [];
-
-if (selected.length > 0) {
-  // ✅ 선택된 선수 중 구분
-  const selectedPlayers = selected.map(i => allPlayers[i]);
-  ourPlayers = selectedPlayers.filter(p => !p.new);
-  opponentPlayers = selectedPlayers.filter(p => p.new);
-} else {
-  // ✅ 선택 없으면 전체 불러오기 (기존 방식 유지)
-  ourPlayers = allPlayers.filter(p => !p.new);
-  opponentPlayers = allPlayers.filter(p => p.new);
-}
-
-
-  if (ourPlayers.length === 0 || opponentPlayers.length === 0) {
-    alert("⚠️ 우리팀 또는 상대팀 인원이 부족합니다.");
-    return;
-  }
-
-  // 🔸 혼합팀 선수 선별
-  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount, ourCount + opponentCount + mixedCount);
-
-  // 🔸 남은 선수 분리
-  const remainingOur = ourPlayers.filter(p => !mixedPlayers.includes(p));
-  const remainingOpp = opponentPlayers.filter(p => !mixedPlayers.includes(p));
-
-  // 🔸 팀 객체 만들기
-  exchangeTeams.ourTeams = Array.from({ length: ourCount }, (_, i) => ({
-    name: `${ourName} ${alphabet[i] || i + 1}팀`,
-    members: [],
-    sum: 0
-  }));
-
-  exchangeTeams.opponentTeams = Array.from({ length: opponentCount }, (_, i) => ({
-    name: `${opponentName} ${alphabet[i] || i + 1}팀`,
-    members: [],
-    sum: 0
-  }));
-
-  exchangeTeams.mixedTeams = Array.from({ length: mixedCount }, (_, i) => ({
-    name: `혼합 ${alphabet[i] || i + 1}팀`,
-    members: [],
-    sum: 0
-  }));
-
- // ✅ 인원/부수 자동균형 분배 함수 사용
-distributePlayersBalanced(remainingOur, exchangeTeams.ourTeams);
-distributePlayersBalanced(remainingOpp, exchangeTeams.opponentTeams);
-distributePlayersBalanced(mixedPlayers, exchangeTeams.mixedTeams);
-
-// ✅ 밸런싱 완료 후 팀 결합
-latestTeams = [
-  ...exchangeTeams.ourTeams,
-  ...exchangeTeams.opponentTeams,
-  ...exchangeTeams.mixedTeams
-];
-
-// ✅ 모든 계산이 끝난 뒤 한 프레임 후 렌더링
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-    renderExchangeTeams(latestTeams);
-  });
-});
-
-
-console.log("✅ 교류전 생성 완료:", {
-  ourTeams: exchangeTeams.ourTeams.length,
-  opponentTeams: exchangeTeams.opponentTeams.length,
-  mixedTeams: exchangeTeams.mixedTeams.length
-});
-
- 
-
-}
 
 
 
