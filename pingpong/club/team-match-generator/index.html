@@ -800,35 +800,38 @@ function pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount) {
 
 
 
-
-function distributePlayersBalanced(players, teams) {
+function distributePlayersBalanced(players, teams, targets = null) {
   if (!players?.length || !teams?.length) return;
 
   const sorted = [...players].sort((a, b) => a.level - b.level);
   const n = teams.length;
-  const base = Math.floor(sorted.length / n);
-  const extra = sorted.length % n;
 
-  teams.forEach((t, i) => {
-    t.members = [];
-    t.sum = 0;
-    t.target = base + (i < extra ? 1 : 0);
-  });
+  // 팀별 목표 인원 설정
+  if (targets && targets.length === n) {
+    teams.forEach((t, i) => { t.members = []; t.sum = 0; t.target = Math.max(0, targets[i] | 0); });
+  } else {
+    const base = Math.floor(sorted.length / n);
+    const extra = sorted.length % n;
+    teams.forEach((t, i) => { t.members = []; t.sum = 0; t.target = base + (i < extra ? 1 : 0); });
+  }
 
-  // 1️⃣ 초기 분배
+  // 1) 초기 분배: 현재 평균이 낮은 팀부터 채우기
   sorted.forEach(p => {
-    const target = teams
+    const cand = teams
       .filter(t => t.members.length < t.target)
       .sort((a, b) => (a.sum / (a.members.length || 1)) - (b.sum / (b.members.length || 1)))[0];
-    target.members.push(p);
-    target.sum += p.level;
+    if (!cand) return; // 목표치 다 찼으면 무시
+    cand.members.push(p);
+    cand.sum += p.level;
   });
 
-  // 2️⃣ 부수 균형
+  // 2) 부수 균형 미세조정
   for (let loop = 0; loop < 50; loop++) {
-    const avgs = teams.map(t => t.sum / t.members.length);
-    const hi = avgs.indexOf(Math.max(...avgs));
-    const lo = avgs.indexOf(Math.min(...avgs));
+    const filled = teams.filter(t => t.members.length > 0);
+    if (filled.length < 2) break;
+    const avgs = teams.map(t => t.members.length ? t.sum / t.members.length : Infinity);
+    const hi = avgs.indexOf(Math.max(...avgs.filter(v => isFinite(v))));
+    const lo = avgs.indexOf(Math.min(...avgs.filter(v => isFinite(v))));
     const diff = avgs[hi] - avgs[lo];
     if (diff < 0.5) break;
 
@@ -839,10 +842,7 @@ function distributePlayersBalanced(players, teams) {
         const newDiff = Math.abs((high.sum - h.level + l.level) / high.members.length -
                                  (low.sum - l.level + h.level) / low.members.length);
         const gain = diff - newDiff;
-        if (gain > bestGain) {
-          bestGain = gain;
-          bestPair = { h, l };
-        }
+        if (gain > bestGain) { bestGain = gain; bestPair = { h, l }; }
       }
     }
     if (bestPair) {
@@ -854,11 +854,68 @@ function distributePlayersBalanced(players, teams) {
       low.sum = low.members.reduce((s, p) => s + p.level, 0);
     } else break;
   }
-
-  console.log("✅ 팀 인원/부수 완전 균형 조정 완료");
 }
 
+// 전체 팀에 대해 "최대한 같은 인원"이 되도록 목표 인원 분배
+function computeTargets(totalPlayers, ourCount, opponentCount, mixedCount) {
+  const totalTeams = ourCount + opponentCount + mixedCount;
+  const base = Math.floor(totalPlayers / totalTeams);
+  let extra = totalPlayers % totalTeams;
 
+  // 분배 순서는 크게 중요치 않지만, 일관성 있게 우리→상대→혼합 순으로 +1씩 배분
+  const mk = (cnt) => Array.from({length: cnt}, () => base);
+  const ourTargets = mk(ourCount);
+  const opponentTargets = mk(opponentCount);
+  const mixedTargets = mk(mixedCount);
+
+  const buckets = [ourTargets, opponentTargets, mixedTargets];
+  while (extra > 0) {
+    for (const arr of buckets) {
+      for (let i = 0; i < arr.length && extra > 0; i++) { arr[i] += 1; extra--; }
+      if (extra === 0) break;
+    }
+  }
+  return { ourTargets, opponentTargets, mixedTargets };
+}
+
+// 혼합팀에 필요한 "총 인원수"를 먼저 맞춰서 뽑기
+// 가능하면 1:1, 부족하면 한쪽으로 채움(= 1:1 규칙 깨도 OK)
+function pickMixedPlayersByTarget(ourPlayers, opponentPlayers, mixedTargets) {
+  const need = mixedTargets.reduce((a,b)=>a+b, 0);
+  if (need <= 0) return { mixedPlayers: [], remainingOur: ourPlayers, remainingOpp: opponentPlayers };
+
+  const ourPool = [...ourPlayers];
+  const oppPool = [...opponentPlayers];
+
+  // 기본 1:1 시도
+  let ourNeed = Math.floor(need / 2);
+  let oppNeed = need - ourNeed;
+
+  // 한쪽 부족하면 다른 쪽으로 채우기
+  if (ourPool.length < ourNeed) {
+    oppNeed += (ourNeed - ourPool.length);
+    ourNeed = ourPool.length;
+  }
+  if (oppPool.length < oppNeed) {
+    ourNeed += (oppNeed - oppPool.length);
+    oppNeed = oppPool.length;
+    if (ourNeed > ourPool.length) ourNeed = ourPool.length;
+  }
+
+  const take = (pool, k) => shuffle(pool).slice(0, k);
+  const ourTake = take(ourPool, ourNeed);
+  const oppTake = take(oppPool, oppNeed);
+
+  const mixedPlayers = [...ourTake, ...oppTake];
+
+  // 남은 풀
+  const ourRemainSet = new Set(ourTake.map(p=>p.name));
+  const oppRemainSet = new Set(oppTake.map(p=>p.name));
+  const remainingOur = ourPlayers.filter(p => !ourRemainSet.has(p.name));
+  const remainingOpp = opponentPlayers.filter(p => !oppRemainSet.has(p.name));
+
+  return { mixedPlayers, remainingOur, remainingOpp };
+}
 
 
 function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, mixedCount) {
@@ -866,7 +923,7 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
   latestTeams = [];
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  // 🔹 선택된 선수 불러오기
+  // 선택 집합
   const selectedPlayers = selected.length ? selected.map(i => allPlayers[i]) : allPlayers;
   const ourPlayers = selectedPlayers.filter(p => !p.new);
   const opponentPlayers = selectedPlayers.filter(p => p.new);
@@ -876,51 +933,43 @@ function generateExchangeTeams(ourName, opponentName, ourCount, opponentCount, m
     return;
   }
 
-  // 🔹 혼합팀 인원 추출 (가능한 1:1, 원본 훼손 없음)
-  const mixedPlayers = pickMixedPlayers(ourPlayers, opponentPlayers, mixedCount);
-  const mixedNames = new Set(mixedPlayers.map(p => p.name));
+  const totalPlayers = ourPlayers.length + opponentPlayers.length;
 
-  // 🔹 혼합팀 제외 후 순수한 우리팀 / 상대팀 남기기
-  const remainingOur = ourPlayers.filter(p => !mixedNames.has(p.name));
-  const remainingOpp = opponentPlayers.filter(p => !mixedNames.has(p.name));
+  // 1) 팀별 목표 인원 계산 (전체 팀이 최대한 같은 인원)
+  const { ourTargets, opponentTargets, mixedTargets } =
+    computeTargets(totalPlayers, ourCount, opponentCount, mixedCount);
 
-  // 🔹 팀 객체 생성
+  // 2) 혼합팀 인원 먼저 확보 (가능하면 1:1, 부족하면 깨도 됨)
+  const { mixedPlayers, remainingOur, remainingOpp } =
+    pickMixedPlayersByTarget(ourPlayers, opponentPlayers, mixedTargets);
+
+  // 3) 팀 객체 생성
   exchangeTeams.ourTeams = Array.from({ length: ourCount }, (_, i) => ({
-    name: `${ourName} ${alphabet[i] || i + 1}팀`,
-    members: [],
-    sum: 0
+    name: `${ourName} ${alphabet[i] || i + 1}팀`, members: [], sum: 0
   }));
-
   exchangeTeams.opponentTeams = Array.from({ length: opponentCount }, (_, i) => ({
-    name: `${opponentName} ${alphabet[i] || i + 1}팀`,
-    members: [],
-    sum: 0
+    name: `${opponentName} ${alphabet[i] || i + 1}팀`, members: [], sum: 0
   }));
-
   exchangeTeams.mixedTeams = Array.from({ length: mixedCount }, (_, i) => ({
-    name: `혼합 ${alphabet[i] || i + 1}팀`,
-    members: [],
-    sum: 0
+    name: `혼합 ${alphabet[i] || i + 1}팀`, members: [], sum: 0
   }));
 
-  // 🔹 분배 (절대 교차 없음)
-  distributePlayersBalanced(remainingOur, exchangeTeams.ourTeams);
-  distributePlayersBalanced(remainingOpp, exchangeTeams.opponentTeams);
-  distributePlayersBalanced(mixedPlayers, exchangeTeams.mixedTeams);
+  // 4) 분배 (교차 금지 준수)
+  distributePlayersBalanced(remainingOur, exchangeTeams.ourTeams, ourTargets);
+  distributePlayersBalanced(remainingOpp, exchangeTeams.opponentTeams, opponentTargets);
+  distributePlayersBalanced(mixedPlayers, exchangeTeams.mixedTeams, mixedTargets);
 
-  // 🔹 전체 묶음
+  // 5) 결과 묶어서 렌더
   latestTeams = [
     ...exchangeTeams.ourTeams,
     ...exchangeTeams.opponentTeams,
     ...exchangeTeams.mixedTeams
   ];
-
-  // 🔹 추가: 전체 인원 균형 조정
-balanceTeamMemberCounts(latestTeams); // ⬅️ 이 한 줄 추가
-
   renderExchangeTeams(latestTeams);
-  console.log("✅ 교류전 생성 완료 (우리팀/상대팀 완전 구분, 혼합 1:1)");
+
+  console.log("✅ 교류전 생성 완료 (팀별 목표 인원 충족 + 부수 균형, 1:1은 가능할 때만)");
 }
+
 
 function balanceTeamMemberCounts(allTeams) {
   if (!allTeams?.length) return;
