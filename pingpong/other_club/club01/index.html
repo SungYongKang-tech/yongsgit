@@ -14,13 +14,15 @@ body{margin:0;font-family:system-ui,"Noto Sans KR",sans-serif;background:var(--b
 h1{text-align:center;color:var(--primary)}
 .section{margin-top:16px;background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.05);padding:14px}
 .players{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.player{border:1px solid #d1d5db;padding:6px 10px;border-radius:8px;background:#fff;cursor:pointer}
+.player{border:1px solid #d1d5db;padding:6px 10px;border-radius:8px;background:#fff;cursor:pointer;transition:.2s}
 .player.selectedA{background:#bfdbfe;border-color:#2563eb;font-weight:600}
 .player.selectedB{background:#fecaca;border-color:#dc2626;font-weight:600}
 .btn{border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:14px;cursor:pointer}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
 .btn.warn{background:var(--danger);color:#fff;border-color:var(--danger)}
+.mode-btn{padding:6px 12px;border-radius:6px;border:1px solid #ccc;background:#fff;cursor:pointer}
+.mode-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
 background:#111827;color:#fff;padding:8px 12px;border-radius:10px;opacity:0;transition:.25s}
 .toast.show{opacity:1}
@@ -30,6 +32,11 @@ background:#111827;color:#fff;padding:8px 12px;border-radius:10px;opacity:0;tran
 <div class="wrap">
   <h1>🏓 경기 결과 입력</h1>
 
+  <div class="section" style="text-align:center">
+    <button id="modeSingle" class="mode-btn active">단식</button>
+    <button id="modeDouble" class="mode-btn">복식</button>
+  </div>
+
   <div class="section">
     <h3>선수 선택</h3>
     <div class="players" id="playerArea">불러오는 중...</div>
@@ -37,12 +44,12 @@ background:#111827;color:#fff;padding:8px 12px;border-radius:10px;opacity:0;tran
 
   <div class="section">
     <h3>결과 입력</h3>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button id="winA" class="btn ok">A팀 승</button>
       <button id="winB" class="btn warn">B팀 승</button>
       <button id="reset" class="btn">선택 초기화</button>
     </div>
-    <small style="color:var(--muted)">선수를 클릭해 A/B팀 구성 후 승자를 선택하세요.</small>
+    <small style="color:var(--muted)">단식: 선수 2명 선택 후 승자 클릭<br>복식: 선수 4명 선택 후 승리팀 클릭</small>
   </div>
 </div>
 
@@ -65,7 +72,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const playerArea = document.getElementById("playerArea");
+/* ===== UI / 공통 ===== */
 const toast = (msg="저장되었습니다")=>{
   const t=document.getElementById("toast");
   t.textContent=msg;
@@ -73,14 +80,25 @@ const toast = (msg="저장되었습니다")=>{
   setTimeout(()=>t.classList.remove("show"),1500);
 };
 
+let mode="single"; // 기본 단식
+document.getElementById("modeSingle").onclick=()=>setMode("single");
+document.getElementById("modeDouble").onclick=()=>setMode("double");
+function setMode(m){
+  mode=m;
+  document.getElementById("modeSingle").classList.toggle("active",m==="single");
+  document.getElementById("modeDouble").classList.toggle("active",m==="double");
+  resetSelection();
+}
+
 /* ===== 선수 목록 불러오기 ===== */
-let players = [];
+const playerArea=document.getElementById("playerArea");
+let players=[];
 onValue(ref(db,"players"),(snap)=>{
   const data=snap.val()||{};
   players = Object.entries(data)
     .filter(([id,p])=>!p.hidden)
     .map(([id,p])=>({id,...p}))
-    .sort((a,b)=>(a.level-b.level)||a.name.localeCompare(b.name,'ko'));
+    .sort((a,b)=>(a.level-b.level)||a.name.localeCompare(b.name,"ko"));
   renderPlayers();
 });
 
@@ -92,53 +110,67 @@ function renderPlayers(){
     const div=document.createElement("div");
     div.className="player";
     div.textContent=`${p.name}(${p.level})`;
-    div.onclick=()=>{
-      if(selectedA.includes(p.id)){
-        selectedA=selectedA.filter(x=>x!==p.id);
-      }else if(selectedB.includes(p.id)){
-        selectedB=selectedB.filter(x=>x!==p.id);
-      }else if(selectedA.length<=selectedB.length){
-        selectedA.push(p.id);
-      }else{
-        selectedB.push(p.id);
-      }
-      updateSelection();
-    };
+    div.onclick=()=>selectPlayer(p.id);
     playerArea.appendChild(div);
   });
   updateSelection();
 }
 
+function selectPlayer(id){
+  // 클릭 순서에 따라 A팀/B팀 자동 분배
+  if(selectedA.includes(id)) selectedA=selectedA.filter(x=>x!==id);
+  else if(selectedB.includes(id)) selectedB=selectedB.filter(x=>x!==id);
+  else {
+    if(selectedA.length<=selectedB.length) selectedA.push(id);
+    else selectedB.push(id);
+  }
+  updateSelection();
+}
+
 function updateSelection(){
-  const playerDivs=document.querySelectorAll(".player");
-  playerDivs.forEach((div,i)=>{
-    div.classList.remove("selectedA","selectedB");
-    const id=players[i].id;
-    if(selectedA.includes(id))div.classList.add("selectedA");
-    if(selectedB.includes(id))div.classList.add("selectedB");
+  const divs=document.querySelectorAll(".player");
+  divs.forEach((d,i)=>{
+    const pid=players[i].id;
+    d.classList.remove("selectedA","selectedB");
+    if(selectedA.includes(pid)) d.classList.add("selectedA");
+    if(selectedB.includes(pid)) d.classList.add("selectedB");
   });
 }
 
-/* ===== 승패 입력 ===== */
+/* ===== 초기화 ===== */
+document.getElementById("reset").onclick=resetSelection;
+function resetSelection(){
+  selectedA=[]; selectedB=[];
+  updateSelection();
+}
+
+/* ===== 경기 저장 ===== */
 document.getElementById("winA").onclick=()=>saveMatch("A");
 document.getElementById("winB").onclick=()=>saveMatch("B");
-document.getElementById("reset").onclick=()=>{
-  selectedA=[];selectedB=[];updateSelection();
-};
 
 async function saveMatch(winnerSide){
-  if(selectedA.length===0 || selectedB.length===0){
-    toast("A팀과 B팀 선수를 선택하세요.");return;
+  // 모드별 최소 인원 체크
+  if(mode==="single"){
+    if(selectedA.length!==1 || selectedB.length!==1){
+      toast("단식은 선수 1명씩 선택하세요.");return;
+    }
+  }else{
+    if(selectedA.length!==2 || selectedB.length!==2){
+      toast("복식은 선수 2명씩 선택하세요.");return;
+    }
   }
+
   const newRef=push(ref(db,"matches"));
   await set(newRef,{
+    mode,          // single or double
     membersA:selectedA,
     membersB:selectedB,
     winnerSide,
     createdAt:Date.now()
   });
-  toast(`경기 결과 저장 (${winnerSide}팀 승)`);
-  selectedA=[];selectedB=[];updateSelection();
+
+  toast(`${mode==="single"?"단식":"복식"} 경기 저장 완료 (${winnerSide}팀 승)`);
+  resetSelection();
 }
 </script>
 </body>
