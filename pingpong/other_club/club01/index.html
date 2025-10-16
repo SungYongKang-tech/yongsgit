@@ -28,13 +28,17 @@ main{max-width:980px;margin:12px auto;padding:0 16px 30px}
 .chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;
   border:1px solid #d1d5db;cursor:pointer;background:#eef2ff;font-size:13px;white-space:nowrap}
 .chip.selected{outline:2px solid var(--accent);background:#fff}
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #e5e7eb;padding:6px 8px;font-size:13px;text-align:center}
-thead{background:#f1f5f9}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;
 background:#111827;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s}
 .toast.show{opacity:1}
 small{color:var(--muted)}
+ul#recentList{list-style:none;padding:0;margin:0}
+ul#recentList li{
+  background:#fff;border:1px solid #e5e7eb;border-radius:10px;
+  padding:8px 10px;margin-bottom:6px;box-shadow:0 2px 5px rgba(0,0,0,.04);
+  font-size:14px;line-height:1.5;
+}
+ul#recentList li b.win{color:#2563eb}
 </style>
 </head>
 <body>
@@ -51,7 +55,7 @@ small{color:var(--muted)}
 </header>
 
 <main>
-  <section class="active">
+  <section>
     <div class="card">
       <div class="row" style="gap:12px">
         <div id="modeSeg" class="row" style="gap:4px">
@@ -72,25 +76,12 @@ small{color:var(--muted)}
           <button id="winA" class="btn ok">A팀 승</button>
           <button id="winB" class="btn warn">B팀 승</button>
         </div>
-        <div style="text-align:center;margin-top:6px;color:var(--muted);font-size:13px">
-          저장 후 자동 초기화됩니다.
-        </div>
       </div>
     </div>
 
     <div class="card">
-      <div style="font-weight:700;margin-bottom:6px">🕒 최근 저장 경기</div>
-      <table>
-        <thead>
-          <tr>
-            <th>시간</th>
-            <th>경기</th>
-            <th>결과</th>
-            <th>종류</th>
-          </tr>
-        </thead>
-        <tbody id="recentTbody"></tbody>
-      </table>
+      <div style="font-weight:700;margin-bottom:6px">🕒 최근 저장</div>
+      <ul id="recentList"></ul>
       <div id="recentEmpty" style="color:var(--muted);font-size:13px;text-align:center;margin-top:6px">
         아직 저장된 경기가 없습니다.
       </div>
@@ -119,7 +110,8 @@ const db = getDatabase(app);
 
 const $=(s,ctx=document)=>ctx.querySelector(s);
 const toast=(msg='저장되었습니다')=>{
-  const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600);
+  const t=$('#toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1500);
 };
 
 // ===== 상태 =====
@@ -134,7 +126,7 @@ $('#modeSeg').addEventListener('click',e=>{
   $('#modeSeg button[data-mode="single"]').classList.toggle('primary',btn.dataset.mode==='single');
   $('#modeSeg button[data-mode="double"]').classList.toggle('primary',btn.dataset.mode==='double');
   mode=btn.dataset.mode;
-  sel=[]; renderChips(); renderWinnerBox();
+  sel=[];renderChips();renderWinnerBox();
 });
 
 $('#clearSel').onclick=()=>{sel=[];renderChips();renderWinnerBox();};
@@ -208,27 +200,26 @@ async function saveWinner(side){
   sel=[];renderChips();renderWinnerBox();
 }
 
+// 승리 버튼
 $('#winA').onclick=()=>saveWinner('A');
 $('#winB').onclick=()=>saveWinner('B');
 
-// ===== 최근 경기 표시 (KOEN 스타일)
+// ===== 최근 경기 표시 (KOEN 스타일 텍스트)
 onValue(query(ref(db,'matches'),orderByChild('ts'),limitToLast(20)),snap=>{
-  const tbody=$('#recentTbody'),empty=$('#recentEmpty');
-  tbody.innerHTML='';
+  const ul=$('#recentList'),empty=$('#recentEmpty');
+  ul.innerHTML='';
   const arr=[]; snap.forEach(c=>arr.push(c.val()));
-  if(!arr.length){empty.style.display='';return;}else empty.style.display='none';
+  if(!arr.length){empty.style.display='';return;} else empty.style.display='none';
   arr.reverse().forEach(m=>{
-    const tr=document.createElement('tr');
-    const date=new Date(m.ts).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const li=document.createElement('li');
     const A=m.namesA.join('/'),B=m.namesB.join('/');
-    const winner=(m.winnerSide==='A'?A:B)+' 승';
-    tr.innerHTML=`
-      <td>${date}</td>
-      <td>${A} vs ${B}</td>
-      <td style="color:${m.winnerSide==='A'?'#2563eb':'#dc2626'};font-weight:600">${winner}</td>
-      <td>${m.mode==='double'?'복식':'단식'}</td>
-    `;
-    tbody.appendChild(tr);
+    const winner=(m.winnerSide==='A'?m.namesA:m.namesB);
+    // 이긴 선수는 파란색으로 강조
+    const highlight=(name)=>winner.includes(name)?`<b class="win">${name}</b>`:name;
+    const htmlPlayers=[...m.namesA,...m.namesB].map(highlight);
+    // 표시 포맷
+    li.innerHTML=`${htmlPlayers.join(' vs ')}`;
+    ul.appendChild(li);
   });
 });
 </script>
