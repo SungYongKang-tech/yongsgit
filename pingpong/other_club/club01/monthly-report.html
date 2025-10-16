@@ -6,15 +6,17 @@
 <title>🏓 월간 리포트</title>
 <style>
 :root {
-  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
-  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
-  --shadow:0 8px 28px rgba(0,0,0,.08);
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
+  --card:#fff; --accent:#2563eb; --shadow:0 8px 28px rgba(0,0,0,.08);
 }
 body{margin:0;font-family:system-ui,"Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg);}
 header{background:#fff;position:sticky;top:0;z-index:10;border-bottom:1px solid #e5e7eb;}
 .wrap{max-width:980px;margin:0 auto;padding:14px 16px;}
-h1{margin:4px 0;font-size:clamp(18px,4vw,22px);color:var(--accent);}
-table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);}
+h1{margin:4px 0;font-size:clamp(18px,4vw,22px);color:var(--accent);text-align:center;}
+.top-btns{display:flex;justify-content:center;gap:8px;margin-top:6px;}
+.btn{border:1px solid #ccc;border-radius:8px;padding:6px 12px;font-size:14px;background:#fff;cursor:pointer;transition:.2s;}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+table{width:100%;border-collapse:collapse;margin-top:14px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);}
 thead th{background:#f8fafc;padding:10px;border-bottom:1px solid #e5e7eb;font-size:14px;}
 tbody td{padding:8px;border-bottom:1px solid #f1f5f9;font-size:14px;text-align:center;}
 tbody tr:nth-child(odd){background:#f9fafb;}
@@ -25,17 +27,19 @@ tbody tr:nth-child(odd){background:#f9fafb;}
 .delta-down{color:#dc2626;font-weight:600;}
 .delta-same{color:#64748b;}
 footer{text-align:center;color:#64748b;font-size:13px;margin:16px 0;}
-.btn{border:1px solid #ccc;border-radius:8px;padding:7px 12px;font-size:14px;background:#fff;cursor:pointer;margin-right:6px;}
-.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+@media(max-width:640px){
+  thead th,tbody td{font-size:13px;padding:6px;}
+  .btn{font-size:13px;}
+}
 </style>
 </head>
 <body>
 <header>
-  <div class="wrap" style="display:flex;justify-content:space-between;align-items:center;">
+  <div class="wrap">
     <h1 id="pageTitle">🏓 월간 리포트</h1>
-    <div>
-      <a href="index.html" class="btn">← 경기결과</a>
-      <a href="admin.html" class="btn primary">⚙ 관리자</a>
+    <div class="top-btns">
+      <a href="index.html" class="btn">📋 경기결과</a>
+      <a href="admin.html" class="btn primary">⚙ 관리자모드</a>
     </div>
   </div>
 </header>
@@ -47,8 +51,7 @@ footer{text-align:center;color:#64748b;font-size:13px;margin:16px 0;}
         <th>순위</th>
         <th>이름</th>
         <th>경기수</th>
-        <th>승</th>
-        <th>패</th>
+        <th>승/패</th>
         <th>이전승률(%)</th>
         <th>이달승률(%)</th>
         <th>증감</th>
@@ -77,7 +80,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const $ = s=>document.querySelector(s);
 
-// ===== 제목 캐시 + 동기화 =====
+// ===== 제목 캐시 + 실시간 반영 =====
 const titleRef = ref(db, 'config/title');
 const cachedTitle = localStorage.getItem('siteTitle');
 if (cachedTitle) {
@@ -91,13 +94,13 @@ onValue(titleRef, snap => {
   $('#pageTitle').textContent = `🏓 ${val} 월간 리포트`;
 });
 
-// ===== Firebase refs =====
+// ===== 데이터 =====
 const matchesRef = ref(db, 'matches');
 const weightRef = ref(db, 'config/doubleWeight');
 let doubleWeight = 1;
 onValue(weightRef, s=> doubleWeight = s.val() ?? 1);
 
-// ===== 최근 2개월 계산 =====
+// ===== 최근 2개월 구하기 =====
 function getMonthKeys(){
   const d=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
   const ym=(y,m)=>`${y}-${String(m).padStart(2,'0')}`;
@@ -106,72 +109,68 @@ function getMonthKeys(){
   return {prev,cur};
 }
 
-// ===== 리포트 생성 =====
+// ===== 통계 계산 =====
 onValue(matchesRef, snap=>{
   const data=snap.val()||{};
   const {prev,cur}=getMonthKeys();
 
-  const stats={}; // {name:{prev:{w,l,t},cur:{w,l,t}}}
-
+  const stats={};
   Object.values(data).forEach(m=>{
     const mk=m.monthKey;
     if(!(mk===prev||mk===cur))return;
-    const sideWeight=(m.mode==='double'?doubleWeight:1);
-    const add=(arr,winSide,who)=>{
+    const w=(m.mode==='double'?doubleWeight:1);
+    const add=(arr,who)=>{
       arr.forEach(n=>{
         if(!stats[n])stats[n]={prev:{w:0,l:0,t:0},cur:{w:0,l:0,t:0}};
         const tgt=stats[n][mk===cur?'cur':'prev'];
-        tgt.t+=sideWeight;
-        tgt.w+= (m.winnerSide===who?sideWeight:0);
-        tgt.l+= (m.winnerSide!==who?sideWeight:0);
+        tgt.t+=w;
+        tgt.w+= (m.winnerSide===who?w:0);
+        tgt.l+= (m.winnerSide!==who?w:0);
       });
     };
-    add(m.namesA||[], 'A');
-    add(m.namesB||[], 'B');
+    add(m.namesA||[],'A'); add(m.namesB||[],'B');
   });
 
   const arr=Object.entries(stats).map(([name,s])=>{
-    const prevRate=s.prev.t>0?((s.prev.w/s.prev.t)*100):0;
-    const curRate=s.cur.t>0?((s.cur.w/s.cur.t)*100):0;
+    const prevRate=s.prev.t?((s.prev.w/s.prev.t)*100):0;
+    const curRate=s.cur.t?((s.cur.w/s.cur.t)*100):0;
     const delta=(curRate - prevRate).toFixed(1);
     return {
       name,
-      prevRate:prevRate.toFixed(1),
-      curRate:curRate.toFixed(1),
-      delta,
       total:s.cur.t,
       win:s.cur.w,
-      loss:s.cur.l
+      loss:s.cur.l,
+      prevRate:prevRate.toFixed(1),
+      curRate:curRate.toFixed(1),
+      delta
     };
   }).sort((a,b)=>b.curRate-a.curRate || b.win-a.win);
-
+  
   renderTable(arr);
 });
 
 function renderTable(arr){
   const tb=$("#tbody"); tb.innerHTML="";
-  if(!arr.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999">데이터 없음</td></tr>';return;}
+  if(!arr.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999">데이터 없음</td></tr>';return;}
   arr.forEach((p,i)=>{
     const tr=document.createElement('tr');
     if(i===0)tr.classList.add('rank1');
     else if(i===1)tr.classList.add('rank2');
     else if(i===2)tr.classList.add('rank3');
 
-    // 증감 색상
-    let deltaClass='delta-same';
-    let deltaIcon='·';
-    if(p.delta>0){deltaClass='delta-up';deltaIcon='▲';}
-    else if(p.delta<0){deltaClass='delta-down';deltaIcon='▼';}
+    let deltaClass='delta-same', icon='·';
+    if(p.delta>0){deltaClass='delta-up';icon='▲';}
+    else if(p.delta<0){deltaClass='delta-down';icon='▼';}
 
     tr.innerHTML=`
       <td>${i+1}</td>
       <td style="text-align:left;padding-left:8px">${p.name}</td>
       <td>${p.total.toFixed(1)}</td>
-      <td>${p.win.toFixed(1)}</td>
-      <td>${p.loss.toFixed(1)}</td>
+      <td>${p.win.toFixed(1)}/${p.loss.toFixed(1)}</td>
       <td>${p.prevRate}%</td>
       <td>${p.curRate}%</td>
-      <td class="${deltaClass}">${deltaIcon} ${Math.abs(p.delta)}%</td>`;
+      <td class="${deltaClass}">${icon} ${Math.abs(p.delta)}%</td>
+    `;
     tb.appendChild(tr);
   });
 }
