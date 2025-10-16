@@ -6,12 +6,13 @@
 <title>🏓 월간 리포트</title>
 <style>
 :root {
-  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
-  --card:#fff; --accent:#2563eb; --shadow:0 8px 28px rgba(0,0,0,.08);
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08);
 }
 body{margin:0;font-family:system-ui,"Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg);}
 header{background:#fff;position:sticky;top:0;z-index:10;border-bottom:1px solid #e5e7eb;}
-.wrap{max-width:960px;margin:0 auto;padding:14px 16px;}
+.wrap{max-width:980px;margin:0 auto;padding:14px 16px;}
 h1{margin:4px 0;font-size:clamp(18px,4vw,22px);color:var(--accent);}
 table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);}
 thead th{background:#f8fafc;padding:10px;border-bottom:1px solid #e5e7eb;font-size:14px;}
@@ -20,6 +21,9 @@ tbody tr:nth-child(odd){background:#f9fafb;}
 .rank1{background:#dbeafe;}
 .rank2{background:#e0f2fe;}
 .rank3{background:#fef9c3;}
+.delta-up{color:#2563eb;font-weight:600;}
+.delta-down{color:#dc2626;font-weight:600;}
+.delta-same{color:#64748b;}
 footer{text-align:center;color:#64748b;font-size:13px;margin:16px 0;}
 .btn{border:1px solid #ccc;border-radius:8px;padding:7px 12px;font-size:14px;background:#fff;cursor:pointer;margin-right:6px;}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
@@ -45,7 +49,9 @@ footer{text-align:center;color:#64748b;font-size:13px;margin:16px 0;}
         <th>경기수</th>
         <th>승</th>
         <th>패</th>
-        <th>승률(%)</th>
+        <th>이전승률(%)</th>
+        <th>이달승률(%)</th>
+        <th>증감</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -69,10 +75,9 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-
 const $ = s=>document.querySelector(s);
 
-// ===== 제목 캐시 + 실시간 동기화 =====
+// ===== 제목 캐시 + 동기화 =====
 const titleRef = ref(db, 'config/title');
 const cachedTitle = localStorage.getItem('siteTitle');
 if (cachedTitle) {
@@ -88,71 +93,85 @@ onValue(titleRef, snap => {
 
 // ===== Firebase refs =====
 const matchesRef = ref(db, 'matches');
-const playersRef = ref(db, 'players');
 const weightRef = ref(db, 'config/doubleWeight');
-
 let doubleWeight = 1;
-onValue(weightRef, s=>{ doubleWeight = s.val() ?? 1; });
+onValue(weightRef, s=> doubleWeight = s.val() ?? 1);
 
-// ===== 최근 2개월 key 구하기 =====
-function getRecentKeys(){
+// ===== 최근 2개월 계산 =====
+function getMonthKeys(){
   const d=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
-  const ym = (y,m)=>`${y}-${String(m).padStart(2,'0')}`;
-  const cur=ym(d.getFullYear(), d.getMonth()+1);
-  const prev=ym(d.getMonth()===0?d.getFullYear()-1:d.getFullYear(), d.getMonth()===0?12:d.getMonth());
-  return [prev,cur];
+  const ym=(y,m)=>`${y}-${String(m).padStart(2,'0')}`;
+  const cur=ym(d.getFullYear(),d.getMonth()+1);
+  const prev=ym(d.getMonth()===0?d.getFullYear()-1:d.getFullYear(),d.getMonth()===0?12:d.getMonth());
+  return {prev,cur};
 }
 
-// ===== 리포트 계산 =====
+// ===== 리포트 생성 =====
 onValue(matchesRef, snap=>{
   const data=snap.val()||{};
-  const keys=getRecentKeys();
-  const stats={}; // {name:{win,loss,total}}
+  const {prev,cur}=getMonthKeys();
+
+  const stats={}; // {name:{prev:{w,l,t},cur:{w,l,t}}}
 
   Object.values(data).forEach(m=>{
-    if(!keys.includes(m.monthKey))return;
-    const weight=(m.mode==='double'?doubleWeight:1);
-    const aSide=m.namesA||[], bSide=m.namesB||[];
-    aSide.forEach(n=>{
-      if(!stats[n])stats[n]={win:0,loss:0,total:0};
-      stats[n].total+=weight;
-      stats[n].win += (m.winnerSide==='A'?weight:0);
-      stats[n].loss+= (m.winnerSide==='B'?weight:0);
-    });
-    bSide.forEach(n=>{
-      if(!stats[n])stats[n]={win:0,loss:0,total:0};
-      stats[n].total+=weight;
-      stats[n].win += (m.winnerSide==='B'?weight:0);
-      stats[n].loss+= (m.winnerSide==='A'?weight:0);
-    });
+    const mk=m.monthKey;
+    if(!(mk===prev||mk===cur))return;
+    const sideWeight=(m.mode==='double'?doubleWeight:1);
+    const add=(arr,winSide,who)=>{
+      arr.forEach(n=>{
+        if(!stats[n])stats[n]={prev:{w:0,l:0,t:0},cur:{w:0,l:0,t:0}};
+        const tgt=stats[n][mk===cur?'cur':'prev'];
+        tgt.t+=sideWeight;
+        tgt.w+= (m.winnerSide===who?sideWeight:0);
+        tgt.l+= (m.winnerSide!==who?sideWeight:0);
+      });
+    };
+    add(m.namesA||[], 'A');
+    add(m.namesB||[], 'B');
   });
 
-  const arr=Object.entries(stats).map(([name,s])=>({
-    name,
-    win:s.win,
-    loss:s.loss,
-    total:s.total,
-    rate:s.total>0?((s.win/s.total)*100).toFixed(1):0
-  })).sort((a,b)=>b.rate-a.rate || b.win-a.win);
+  const arr=Object.entries(stats).map(([name,s])=>{
+    const prevRate=s.prev.t>0?((s.prev.w/s.prev.t)*100):0;
+    const curRate=s.cur.t>0?((s.cur.w/s.cur.t)*100):0;
+    const delta=(curRate - prevRate).toFixed(1);
+    return {
+      name,
+      prevRate:prevRate.toFixed(1),
+      curRate:curRate.toFixed(1),
+      delta,
+      total:s.cur.t,
+      win:s.cur.w,
+      loss:s.cur.l
+    };
+  }).sort((a,b)=>b.curRate-a.curRate || b.win-a.win);
 
   renderTable(arr);
 });
 
 function renderTable(arr){
-  const tb=$("#tbody");
-  tb.innerHTML="";
+  const tb=$("#tbody"); tb.innerHTML="";
+  if(!arr.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999">데이터 없음</td></tr>';return;}
   arr.forEach((p,i)=>{
     const tr=document.createElement('tr');
     if(i===0)tr.classList.add('rank1');
     else if(i===1)tr.classList.add('rank2');
     else if(i===2)tr.classList.add('rank3');
+
+    // 증감 색상
+    let deltaClass='delta-same';
+    let deltaIcon='·';
+    if(p.delta>0){deltaClass='delta-up';deltaIcon='▲';}
+    else if(p.delta<0){deltaClass='delta-down';deltaIcon='▼';}
+
     tr.innerHTML=`
       <td>${i+1}</td>
       <td style="text-align:left;padding-left:8px">${p.name}</td>
-      <td>${p.total}</td>
-      <td>${p.win}</td>
-      <td>${p.loss}</td>
-      <td>${p.rate}</td>`;
+      <td>${p.total.toFixed(1)}</td>
+      <td>${p.win.toFixed(1)}</td>
+      <td>${p.loss.toFixed(1)}</td>
+      <td>${p.prevRate}%</td>
+      <td>${p.curRate}%</td>
+      <td class="${deltaClass}">${deltaIcon} ${Math.abs(p.delta)}%</td>`;
     tb.appendChild(tr);
   });
 }
