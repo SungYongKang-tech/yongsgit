@@ -19,6 +19,11 @@ h1{text-align:center;color:var(--accent)}
 .btn.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
 .chip{border:1px solid #ddd;border-radius:999px;padding:6px 10px;font-size:14px;cursor:pointer;transition:.2s}
 .chip.selected{outline:2px solid var(--accent);background:#fff}
+#logs{margin-top:18px;background:#fff;border-radius:12px;padding:10px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.log-item{border-bottom:1px solid #e5e7eb;padding:6px 4px;font-size:14px}
+.log-item:last-child{border-bottom:none}
+.log-time{color:#64748b;font-size:12px;margin-right:4px}
+.log-win{color:#2563eb;font-weight:600}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:8px 12px;border-radius:10px;opacity:0;transition:.25s}
 .toast.show{opacity:1}
 </style>
@@ -38,6 +43,8 @@ h1{text-align:center;color:var(--accent)}
     <button id="winA" class="btn ok">A팀 승</button>
     <button id="winB" class="btn danger">B팀 승</button>
   </div>
+
+  <div id="logs"></div>
 </div>
 
 <div id="toast" class="toast">저장되었습니다</div>
@@ -160,6 +167,49 @@ function saveMatch(winnerSide){
   push(ref(db,'matches'),obj);
   toast('경기결과 저장 완료');
   sel=[];renderChips();
+}
+
+// ===== 최근 저장 목록 =====
+onValue(ref(db,'matches'),snap=>{
+  const data=snap.val()||{};
+  const all=Object.values(data);
+
+  // 이번달 + 지난달만 표시
+  const now=new Date();
+  const kstNow=new Date(now.toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+  const curKey=`${kstNow.getFullYear()}-${String(kstNow.getMonth()+1).padStart(2,'0')}`;
+  const prevDate=new Date(kstNow.getFullYear(),kstNow.getMonth()-1,1);
+  const prevKey=`${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}`;
+
+  const arr=all.filter(m=>m.monthKey===curKey||m.monthKey===prevKey)
+               .sort((a,b)=>b.createdAt-a.createdAt);
+
+  renderLogs(arr);
+});
+
+function renderLogs(arr){
+  const logs=$("#logs");
+  logs.innerHTML='';
+  if(!arr.length){logs.innerHTML='<div class="muted" style="text-align:center;color:#999">최근 경기 기록이 없습니다.</div>';return;}
+
+  arr.forEach(m=>{
+    const d=new Date(m.createdAt);
+    const kst=new Date(d.toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+    const timeStr=`${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')} ${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
+
+    const winA=m.winnerSide==='A';
+    const namesA=m.namesA.join(', ');
+    const namesB=m.namesB.join(', ');
+    const html=`
+      <div class="log-item">
+        <span class="log-time">${timeStr}</span>
+        <span class="${winA?'log-win':''}">${namesA}</span>
+        vs
+        <span class="${!winA?'log-win':''}">${namesB}</span>
+        ${m.mode==='double'?'(복식)':'(단식)'}
+      </div>`;
+    logs.insertAdjacentHTML('beforeend',html);
+  });
 }
 </script>
 </body>
