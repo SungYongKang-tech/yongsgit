@@ -27,7 +27,7 @@ h1 {margin:4px 0 6px; font-size:clamp(18px,4vw,22px); color:var(--accent);}
   background:#fff; color:#111; cursor:pointer;
 }
 .chip.selected {border:2px solid var(--accent); background:#e0e7ff;}
-#teamDisplay {margin-top:14px; text-align:center; font-size:15px; line-height:1.5;}
+#teamDisplay {margin-top:14px; text-align:center; font-size:16px; font-weight:500;}
 #matchButtons {margin-top:10px; text-align:center; display:none;}
 #logs {
   margin-top:20px; background:#fff; border-radius:12px; box-shadow:var(--shadow);
@@ -41,9 +41,10 @@ h1 {margin:4px 0 6px; font-size:clamp(18px,4vw,22px); color:var(--accent);}
 .log-match {font-size:15px;}
 .log-win {color:#2563eb; font-weight:600;}
 .delete-btn {
-  position:absolute; right:8px; top:6px; font-size:12px; border:none;
-  background:transparent; color:#ef4444; cursor:pointer;
+  position:absolute; right:8px; top:6px; font-size:14px; border:none;
+  background:transparent; color:#9ca3af; cursor:pointer; transition:.2s;
 }
+.delete-btn:hover {color:#ef4444; transform:scale(1.1);}
 .toast {
   position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
   background:#111827; color:#fff; padding:8px 12px; border-radius:10px;
@@ -89,7 +90,7 @@ h1 {margin:4px 0 6px; font-size:clamp(18px,4vw,22px); color:var(--accent);}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, onValue, push, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, onValue, push, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 // ✅ Firebase 설정
 const firebaseConfig = {
@@ -105,6 +106,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const matchRef = ref(db,'matches');
 const playerRef = ref(db,'players');
+const deletePwRef = ref(db,'config/deletePassword');
 
 const $ = s=>document.querySelector(s);
 const toast=(msg="저장되었습니다")=>{
@@ -112,7 +114,13 @@ const toast=(msg="저장되었습니다")=>{
   setTimeout(()=>t.classList.remove("show"),1500);
 };
 
-let players=[], sel=[], mode='single';
+let players=[], sel=[], mode='single', deletePassword='7910';
+
+// ✅ 삭제 비밀번호 불러오기
+get(deletePwRef).then(s=>{
+  if(s.exists()) deletePassword = s.val();
+});
+
 const LEVEL_COLORS = {
   1:'#ef4444',2:'#06b6d4',3:'#f59e0b',4:'#8b5cf6',
   5:'#84cc16',6:'#3b82f6',7:'#f97316',8:'#10b981',
@@ -175,8 +183,7 @@ function updateTeams(){
     const half=Math.floor(sel.length/2);
     const a=sel.slice(0,half).map(p=>p.name).join('/');
     const b=sel.slice(half).map(p=>p.name).join('/');
-    disp.innerHTML = `<b>A팀:</b> ${a||'-'}　|　<b>B팀:</b> ${b||'-'}`;
-
+    disp.innerHTML=`<b>A팀:</b> ${a||'-'}　|　<b>B팀:</b> ${b||'-'}`;
   } else disp.innerHTML='';
   btns.style.display = sel.length===need ? 'block' : 'none';
 }
@@ -195,7 +202,7 @@ function saveMatch(winner){
   const b=sel.slice(need/2).map(p=>p.name);
   const obj={mode,monthKey:getMonthKey(),namesA:a,namesB:b,winnerSide:winner,createdAt:Date.now()};
   push(matchRef,obj);
-  toast("저장 완료");
+  toast("경기결과 저장 완료");
   sel=[];renderChips();updateTeams();
 }
 
@@ -216,23 +223,28 @@ function renderLogs(arr){
     const winA=m.winnerSide==='A';
     const a=m.namesA.join('/');
     const b=m.namesB.join('/');
-    const html=`
+    logs.insertAdjacentHTML('beforeend',`
     <div class="log-item">
       <span class="log-time">${time} [${m.mode==='double'?'복식':'단식'}]</span>
       <div class="log-match">
         <span class="${winA?'log-win':''}">${a}</span> vs 
         <span class="${!winA?'log-win':''}">${b}</span> (승)
       </div>
-      <button class="delete-btn" onclick="deleteMatch('${m.id}')">삭제</button>
-    </div>`;
-    logs.insertAdjacentHTML('beforeend',html);
+      <button class="delete-btn" onclick="deleteMatch('${m.id}')">🗑️</button>
+    </div>`);
   });
 }
 
-window.deleteMatch=(id)=>{
-  if(!confirm("이 경기 결과를 삭제하시겠습니까?"))return;
-  remove(ref(db,'matches/'+id));
-  toast("삭제 완료");
+// ✅ 관리자 비밀번호 기반 삭제
+window.deleteMatch = async (id) => {
+  const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
+  if (input !== deletePassword) {
+    toast("비밀번호가 올바르지 않습니다");
+    return;
+  }
+  if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
+  await remove(ref(db, 'matches/' + id));
+  toast("경기결과 삭제 완료");
 };
 </script>
 </body>
