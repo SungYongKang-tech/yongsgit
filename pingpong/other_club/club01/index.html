@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🏓 경기결과 입력</title>
 <style>
 :root{
@@ -15,6 +15,8 @@ h1{text-align:center;color:var(--accent)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:12px}
 .btn{border:1px solid #ccc;border-radius:6px;padding:6px 10px;font-size:14px;cursor:pointer}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btn.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
 .chip{border:1px solid #ddd;border-radius:999px;padding:6px 10px;font-size:14px;cursor:pointer;transition:.2s}
 .chip.selected{outline:2px solid var(--accent);background:#fff}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:8px 12px;border-radius:10px;opacity:0;transition:.25s}
@@ -24,20 +26,27 @@ h1{text-align:center;color:var(--accent)}
 <body>
 <div class="wrap">
   <h1>🏓 경기결과 입력</h1>
+
   <div class="row">
     <button id="singleBtn" class="btn primary">단식</button>
     <button id="doubleBtn" class="btn">복식</button>
   </div>
+
   <div id="chips" class="row"></div>
+
+  <div class="row" style="margin-top:10px">
+    <button id="winA" class="btn ok">A팀 승</button>
+    <button id="winB" class="btn danger">B팀 승</button>
+  </div>
 </div>
 
 <div id="toast" class="toast">저장되었습니다</div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, onValue, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// ✅ Firebase 연결
+// ✅ Firebase 설정
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
@@ -50,43 +59,37 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const $ = (s)=>document.querySelector(s);
+const $ = s=>document.querySelector(s);
 const toast=(msg="저장되었습니다")=>{
   const t=$("#toast");t.textContent=msg;t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),1500);
 };
 
-// ===== 전역상태 =====
-let players = [];
-let sel = [];
-let mode = 'single'; // 'single' or 'double'
-
-// 🎨 14색 팔레트 (순서 섞음)
-const LEVEL_COLORS = {
-  1:'#ef4444',  2:'#06b6d4', 3:'#f59e0b', 4:'#8b5cf6',
-  5:'#84cc16',  6:'#3b82f6', 7:'#f97316', 8:'#10b981',
-  9:'#a855f7', 10:'#eab308',11:'#22c55e',12:'#0ea5e9',
- 13:'#d946ef', 14:'#6366f1'
+// ===== 상태 =====
+let players=[], sel=[], mode='single';
+const LEVEL_COLORS={
+  1:'#ef4444',2:'#06b6d4',3:'#f59e0b',4:'#8b5cf6',
+  5:'#84cc16',6:'#3b82f6',7:'#f97316',8:'#10b981',
+  9:'#a855f7',10:'#eab308',11:'#22c55e',12:'#0ea5e9',
+  13:'#d946ef',14:'#6366f1'
 };
 
 // ===== 모드 전환 =====
-$("#singleBtn").onclick = ()=>{
+$("#singleBtn").onclick=()=>{
   mode='single';
   $("#singleBtn").classList.add('primary');
   $("#doubleBtn").classList.remove('primary');
-  sel=[];
-  renderChips();
+  sel=[];renderChips();
 };
-$("#doubleBtn").onclick = ()=>{
+$("#doubleBtn").onclick=()=>{
   mode='double';
   $("#doubleBtn").classList.add('primary');
   $("#singleBtn").classList.remove('primary');
-  sel=[];
-  renderChips();
+  sel=[];renderChips();
 };
 
-// ===== Firebase → players 실시간 반영 =====
-onValue(ref(db,'players'),(snap)=>{
+// ===== 선수 로딩 =====
+onValue(ref(db,'players'),snap=>{
   const data=snap.val()||{};
   players=Object.values(data)
     .filter(p=>!p.hidden)
@@ -99,17 +102,16 @@ onValue(ref(db,'players'),(snap)=>{
 function renderChips(){
   const box=$("#chips");
   box.innerHTML="";
-  const need = (mode==='single'?2:4);
+  const need=(mode==='single'?2:4);
 
   players.forEach(p=>{
     const btn=document.createElement('button');
     btn.className='chip';
     btn.textContent=`${p.name}(${p.level})`;
-
     const c=LEVEL_COLORS[p.level]||'#94a3b8';
-    btn.style.background = c + '22';  // 연한 배경
-btn.style.borderColor = c;
-btn.style.color = '#111';         // ✅ 글씨 검정 고정
+    btn.style.background=c+'22';
+    btn.style.borderColor=c;
+    btn.style.color='#111'; // 글씨 검정
 
     if(sel.some(x=>x.name===p.name)){
       btn.classList.add('selected');
@@ -126,9 +128,38 @@ btn.style.color = '#111';         // ✅ 글씨 검정 고정
       }
       renderChips();
     };
-
     box.appendChild(btn);
   });
+}
+
+// ===== KST 기준 월키 =====
+function getMonthKey(ts=Date.now()){
+  const d=new Date(new Date(ts).toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+// ===== 저장 =====
+$("#winA").onclick=()=>saveMatch('A');
+$("#winB").onclick=()=>saveMatch('B');
+
+function saveMatch(winnerSide){
+  const need=(mode==='single'?2:4);
+  if(sel.length<need){toast('선수 선택이 부족합니다');return;}
+
+  const namesA=sel.slice(0,need/2).map(p=>p.name);
+  const namesB=sel.slice(need/2).map(p=>p.name);
+
+  const obj={
+    mode,
+    monthKey:getMonthKey(),
+    namesA,
+    namesB,
+    winnerSide,
+    createdAt:Date.now()
+  };
+  push(ref(db,'matches'),obj);
+  toast('경기결과 저장 완료');
+  sel=[];renderChips();
 }
 </script>
 </body>
