@@ -3,66 +3,115 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>🏓 PingPong Club 관리자</title>
+<title>🏓 PingPong Club · 관리자</title>
 <style>
 :root{
-  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
-  --primary:#0d47a1; --accent:#2563eb; --danger:#ef4444; --ok:#16a34a;
+  --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
+  --primary:#0d47a1; --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08)
 }
-body{margin:0;font-family:system-ui,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink)}
-.wrap{max-width:640px;margin:0 auto;padding:20px}
-h1{text-align:center;color:var(--primary)}
-.card{background:#fff;border-radius:12px;padding:16px;margin-top:12px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-input{padding:6px 8px;font-size:14px;border:1px solid #ccc;border-radius:6px}
-.btn{border:1px solid #ccc;border-radius:6px;padding:6px 10px;font-size:14px;cursor:pointer}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg)}
+header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #e5e7eb}
+.wrap{max-width:1040px;margin:0 auto;padding:14px 16px}
+h1{margin:4px 0 6px;font-size:clamp(18px,4vw,24px);color:var(--primary)}
+main{max-width:1040px;margin:16px auto;padding:0 16px 40px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{border:1px solid #d1d5db;border-radius:10px;padding:8px 12px;font-size:14px;background:#fff;cursor:pointer}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-.btn.warn{background:var(--danger);color:#fff;border-color:var(--danger)}
+.btn.warn{background:#ef4444;color:#fff;border-color:#ef4444}
 .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #e5e7eb;padding:6px;text-align:center;font-size:14px}
-thead{background:#f1f5f9}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
-background:#111827;color:#fff;padding:8px 12px;border-radius:10px;opacity:0;transition:.25s}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:16px;padding:14px;box-shadow:var(--shadow);margin:12px 0}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
+thead th{background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px;font-size:14px;color:#334155;text-align:left}
+tbody td{border-bottom:1px solid #f1f5f9;padding:8px;font-size:14px}
+.muted{color:var(--muted)}
+input[type="text"],input[type="number"]{padding:6px 8px;font-size:14px}
+input[type="number"]{width:90px}
+.small{font-size:12px}
+.hint{color:#64748b;font-size:13px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#111827;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s}
 .toast.show{opacity:1}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>🏓 PingPong Club 관리자</h1>
-
-  <!-- 선수 등록 -->
-  <div class="card">
-    <h3>선수 등록</h3>
+<header>
+  <div class="wrap">
     <div class="row">
-      <input id="name" type="text" placeholder="이름 입력 (예: 김승일)" />
-      <input id="level" type="number" placeholder="부수" style="width:80px" />
-      <button id="add" class="btn primary">등록</button>
+      <h1 style="margin-right:auto">🏓 PingPong Club · 관리자</h1>
+      <a class="btn" href="index.html">← 결과입력</a>
+      <a class="btn primary" href="monthly-report.html">📊 월간리포트</a>
     </div>
-    <small style="color:var(--muted)">입력 후 등록 버튼을 누르면 Firebase에 바로 저장됩니다.</small>
-
-    <table>
-      <thead>
-        <tr>
-          <th>이름</th>
-          <th>부수</th>
-          <th>상태</th>
-          <th>관리</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
+    <div class="row"><span class="small muted">※ 복식 가중치, 숨김 선수, 경기 기록 초기화 등 관리</span></div>
   </div>
-</div>
+</header>
 
-<div id="toast" class="toast">저장되었습니다</div>
+<main>
+  <!-- 통계 옵션 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">통계 옵션</div>
+    </div>
+    <div class="grid cols-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:8px">
+      <div class="card" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">복식 가중치</div>
+        <div class="row">
+          <input id="doubleWeight" type="number" min="0" max="1" step="0.1" />
+          <button id="saveDoubleWeight" class="btn primary">저장</button>
+        </div>
+        <div class="hint" style="margin-top:6px">예) 0.5 ⇒ 복식은 단식의 절반 가중</div>
+      </div>
+
+      <div class="card" style="margin:0">
+        <div class="muted small" style="margin-bottom:6px">삭제 비밀번호</div>
+        <div class="row">
+          <input id="deletePassword" type="text" placeholder="예: 7910" />
+          <button id="saveDeletePassword" class="btn primary">저장</button>
+        </div>
+        <div class="hint" style="margin-top:6px">결과입력 화면에서 경기 삭제 시 사용하는 4자리 비밀번호</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 숨김 선수 관리 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700">숨김 선수 관리</div>
+      <div class="small muted">숨김 처리 시 결과입력 화면에서 버튼이 표시되지 않습니다.</div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="playerNameInput" type="text" placeholder="예: 송창근" />
+      <button id="addHiddenPlayer" class="btn primary">숨김 추가</button>
+    </div>
+    <div class="hint" style="margin-top:6px">선수 이름을 정확히 입력 후 숨김 추가하세요.</div>
+    <div style="overflow:auto; margin-top:14px">
+      <table>
+        <thead><tr><th>이름</th><th>관리</th></tr></thead>
+        <tbody id="hiddenPlayersTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 데이터 관리 -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div style="font-weight:700; color:#b91c1c">데이터 관리</div>
+      <div class="small muted">⚠️ 되돌릴 수 없습니다.</div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="purgeMatches" class="btn warn">🗑️ 모든 경기 기록 삭제</button>
+      <span class="hint">`matches` 전체 삭제 (테스트 시 주의)</span>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast">Saved</div>
 
 <script type="module">
-/* ===== Firebase SDK ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, push, set, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-/* ===== Firebase 연결 ===== */
+/* Firebase 연결 */
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
@@ -74,61 +123,75 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const playerRef = ref(db, "players");
 
-/* ===== 공통 함수 ===== */
-const $ = (s) => document.querySelector(s);
-const toast = (msg="저장되었습니다")=>{
-  const t=$("#toast");
-  t.textContent=msg;
-  t.classList.add("show");
-  setTimeout(()=>t.classList.remove("show"),1500);
+/* 유틸 */
+const $=(s,ctx=document)=>ctx.querySelector(s);
+const toast=(msg='저장되었습니다')=>{
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1600);
 };
 
-/* ===== 실시간 선수 목록 표시 ===== */
-onValue(playerRef, (snap)=>{
-  const tbody=$("#tbody");
-  tbody.innerHTML="";
-  const data=snap.val()||{};
-  Object.entries(data).forEach(([id,p])=>{
-    const tr=document.createElement("tr");
-    tr.innerHTML=`
-      <td>${p.name}</td>
-      <td>${p.level}</td>
-      <td>${p.hidden?"숨김":"활성"}</td>
-      <td>
-        ${p.hidden
-          ? `<button class="btn ok" onclick="unhide('${id}')">복구</button>`
-          : `<button class="btn warn" onclick="hide('${id}')">숨김</button>`}
-        <button class="btn warn" onclick="del('${id}')">삭제</button>
-      </td>`;
-    tbody.appendChild(tr);
-  });
+/* 복식 가중치 관리 */
+onValue(ref(db,'config/doubleWeight'), s=> $('#doubleWeight').value = s.val() ?? 0.5 );
+$('#saveDoubleWeight').onclick = async()=>{
+  const v = parseFloat($('#doubleWeight').value);
+  if(isNaN(v)||v<0||v>1) return toast('0~1 사이 숫자만 입력');
+  await set(ref(db,'config/doubleWeight'), v);
+  toast('복식 가중치 저장 완료');
+};
+
+/* 삭제 비밀번호 */
+let currentPw='7910';
+onValue(ref(db,'config/deletePassword'), s=>{
+  $('#deletePassword').value = s.val() ?? '7910';
+  currentPw = s.val() ?? '7910';
 });
-
-/* ===== 등록 버튼 클릭 → Firebase에 push ===== */
-$("#add").onclick = async ()=>{
-  const name=$("#name").value.trim();
-  const level=parseInt($("#level").value)||0;
-  if(!name){toast("이름을 입력하세요");return;}
-  await push(playerRef,{name,level,hidden:false,joinedAt:Date.now()});
-  $("#name").value="";$("#level").value="";
-  toast("선수 등록 완료");
+$('#saveDeletePassword').onclick = async()=>{
+  const pw = $('#deletePassword').value.trim();
+  if(!pw) return toast('비밀번호를 입력하세요');
+  await set(ref(db,'config/deletePassword'), pw);
+  toast('삭제 비밀번호 저장 완료');
 };
 
-/* ===== 숨김/복구/삭제 함수 ===== */
-window.hide=async(id)=>{
-  await set(ref(db,`players/${id}/hidden`),true);
-  toast("숨김 처리됨");
+/* 숨김 선수 */
+let hiddenPlayers=[];
+const hiddenRef = ref(db,'hiddenPlayers');
+onValue(hiddenRef,s=>{
+  hiddenPlayers = s.val()||[];
+  renderHidden();
+});
+function renderHidden(){
+  const tb=$('#hiddenPlayersTable'); tb.innerHTML='';
+  hiddenPlayers.forEach((n,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${n}</td><td><button class="btn ok" onclick="unhide(${i})">복구</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+$('#addHiddenPlayer').onclick=async()=>{
+  const name=$('#playerNameInput').value.trim();
+  if(!name) return toast('이름 입력');
+  if(hiddenPlayers.includes(name)) return toast('이미 숨김 처리됨');
+  hiddenPlayers.push(name);
+  await set(hiddenRef,hiddenPlayers);
+  $('#playerNameInput').value='';
+  toast(`${name} 숨김 처리 완료`);
 };
-window.unhide=async(id)=>{
-  await set(ref(db,`players/${id}/hidden`),false);
-  toast("복구됨");
+window.unhide=async(i)=>{
+  const name=hiddenPlayers[i];
+  if(!confirm(`${name} 숨김 해제?`))return;
+  hiddenPlayers.splice(i,1);
+  await set(hiddenRef,hiddenPlayers);
+  toast(`${name} 복구 완료`);
 };
-window.del=async(id)=>{
-  if(!confirm("정말 삭제하시겠습니까?"))return;
-  await remove(ref(db,`players/${id}`));
-  toast("삭제 완료");
+
+/* 경기 전체 삭제 */
+$('#purgeMatches').onclick=async()=>{
+  const pw=prompt('삭제 비밀번호 입력');
+  if(pw!==currentPw) return toast('비밀번호 불일치');
+  if(!confirm('⚠️ 정말 모든 경기 기록을 삭제합니까?'))return;
+  await remove(ref(db,'matches'));
+  toast('모든 경기 삭제 완료');
 };
 </script>
 </body>
