@@ -1,96 +1,58 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>🏓 경기 결과 입력</title>
 <style>
 :root{
   --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
   --primary:#0d47a1; --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
-  --chip:#eef2ff; --bd:#d1d5db;
 }
-*{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink)}
-.wrap{max-width:980px;margin:0 auto;padding:16px}
-h1{margin:4px 0 10px;color:var(--primary);font-size:clamp(18px,4vw,24px)}
-.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:14px;box-shadow:0 8px 28px rgba(0,0,0,.08);margin:12px 0}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.btn{border:1px solid var(--bd);border-radius:10px;padding:8px 12px;font-size:14px;background:#fff;cursor:pointer}
+.wrap{max-width:720px;margin:0 auto;padding:18px}
+h1{text-align:center;color:var(--primary);margin-bottom:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;margin:10px 0}
+.btn{border:1px solid #ccc;border-radius:8px;padding:8px 12px;font-size:15px;background:#fff;cursor:pointer}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
 .btn.warn{background:var(--danger);color:#fff;border-color:var(--danger)}
-.seg{display:inline-flex;background:#eef2ff;border:1px solid var(--bd);border-radius:999px;padding:2px}
-.seg button{border:0;background:transparent;padding:8px 12px;border-radius:999px;cursor:pointer;font-size:14px}
-.seg button.active{background:#fff;outline:2px solid var(--accent)}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid var(--bd);cursor:pointer;background:var(--chip);font-size:13px}
-.chip.selectedA{outline:2px solid #2563eb;background:#fff}
-.chip.selectedB{outline:2px solid #ef4444;background:#fff}
-.small{font-size:12px;color:var(--muted)}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#111827;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s}
+.player{border:1px solid #ccc;border-radius:8px;padding:8px 12px;margin:5px;background:#fff;cursor:pointer;transition:.2s}
+.player.selectedA{background:#bfdbfe;border-color:#1d4ed8}
+.player.selectedB{background:#fecaca;border-color:#b91c1c}
+.player.hidden{opacity:0.4;pointer-events:none}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transition:.25s}
 .toast.show{opacity:1}
+small{color:var(--muted)}
 </style>
 </head>
 <body>
-  <header>
-    <div class="wrap">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <h1>🏓 경기 결과 입력</h1>
-        <div class="row">
-          <a class="btn" href="admin.html">⚙️ 관리자</a>
-          <a class="btn primary" href="monthly-report.html">📊 월간 리포트</a>
-        </div>
-      </div>
-    </div>
-  </header>
+<div class="wrap">
+  <h1>🏓 경기 결과 입력</h1>
 
-  <main class="wrap">
-    <!-- 모드 토글 -->
-    <section class="card">
-      <div class="row" style="gap:12px">
-        <div class="seg" id="modeSeg">
-          <button data-mode="single" class="active">단식</button>
-          <button data-mode="double">복식</button>
-        </div>
-        <button id="clearSel" class="btn">선택 초기화</button>
-        <div class="small" id="hint">단식: 선수를 <b>두 명</b> 선택하면 아래에 <b>승자 이름 버튼</b>이 나타납니다.</div>
-      </div>
-    </section>
+  <div class="row">
+    <button id="modeSingle" class="btn primary">단식</button>
+    <button id="modeDouble" class="btn">복식</button>
+    <a href="monthly-report.html" class="btn">📊 리포트</a>
+    <a href="admin.html" class="btn">⚙️ 관리자</a>
+  </div>
 
-    <!-- 선수 목록 -->
-    <section class="card">
-      <div class="row" style="justify-content:space-between">
-        <div style="font-weight:700">선수 선택</div>
-        <div class="small">버튼: 이름(부수) · 숨김 선수는 자동 제외</div>
-      </div>
-      <div id="chips" class="chips" style="margin-top:8px">불러오는 중…</div>
-    </section>
+  <div class="row"><small>※ 선수 클릭으로 팀 선택 → 아래 승리팀 선택</small></div>
 
-    <!-- 승자 입력 -->
-    <section id="winnerCard" class="card" style="display:none">
-      <div class="row center" style="justify-content:center;gap:8px;margin-bottom:8px">
-        <span class="btn" style="pointer-events:none">A팀: <b id="teamALabel">-</b></span>
-        <span class="btn" style="pointer-events:none">B팀: <b id="teamBLabel">-</b></span>
-      </div>
-      <div id="singleWinnerBox" class="row center" style="justify-content:center;gap:12px;display:none">
-        <button id="winSingleA" class="btn ok"></button>
-        <button id="winSingleB" class="btn warn"></button>
-      </div>
-      <div id="doubleWinnerBox" class="row center" style="justify-content:center;gap:12px;display:none">
-        <button id="winA" class="btn ok">승자: A팀</button>
-        <button id="winB" class="btn warn">승자: B팀</button>
-      </div>
-      <div class="small" style="text-align:center;margin-top:6px">저장 후 자동 초기화됩니다.</div>
-    </section>
-  </main>
+  <div id="playersArea" class="row" style="justify-content:flex-start"></div>
 
-  <div id="toast" class="toast">Saved</div>
+  <div class="row">
+    <button id="winA" class="btn ok">A팀 승</button>
+    <button id="winB" class="btn warn">B팀 승</button>
+  </div>
+</div>
+
+<div id="toast" class="toast">저장되었습니다</div>
 
 <script type="module">
-/* ===== Firebase ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, push, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -102,153 +64,108 @@ const firebaseConfig = {
   appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
 };
 const app = initializeApp(firebaseConfig);
-const db  = getDatabase(app);
+const db = getDatabase(app);
 
-/* ===== Utils ===== */
-const $ = (s,ctx=document)=>ctx.querySelector(s);
-const toast = (msg='저장되었습니다')=>{
-  const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1500);
+const $=(s)=>document.querySelector(s);
+const toast=(msg="저장되었습니다")=>{
+  const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),1500);
 };
-const pad=(n)=>String(n).padStart(2,'0');
-const toKST = (t = Date.now()) => new Date(new Date(t).toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
-const monthKeyFromTs = (ts)=>{ const d=toKST(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; };
 
-/* ===== 상태 ===== */
-let mode = 'single';         // 'single' | 'double'
-let players = [];            // {id,name,level,hidden}
-let sel = [];                // 선택된 선수 id 배열 (선택 순서 유지)
+// ===== 상태 =====
+let mode="single";
+let selectedA=[], selectedB=[];
+let players=[];
 
-/* ===== 모드 토글 ===== */
-const modeSeg = $('#modeSeg'), hint = $('#hint');
-modeSeg.addEventListener('click', e=>{
-  const btn = e.target.closest('button[data-mode]'); if(!btn) return;
-  modeSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b===btn));
-  mode = btn.dataset.mode;
-  sel = [];
-  renderChips();
-  renderWinnerBox();
-  hint.innerHTML = (mode==='single')
-    ? '단식: 선수를 <b>두 명</b> 선택하면 아래에 <b>승자 이름 버튼</b>이 나타납니다.'
-    : '복식: 선수를 <b>네 명</b> 선택하세요. 앞 2명=A팀, 뒤 2명=B팀. (팀 바꾸려면 선택 해제 후 다시 선택)';
-});
-$('#clearSel').onclick = ()=>{ sel=[]; renderChips(); renderWinnerBox(); };
+// ===== 모드 선택 =====
+$("#modeSingle").onclick=()=>{mode="single";$("#modeSingle").classList.add("primary");$("#modeDouble").classList.remove("primary");resetSelection();};
+$("#modeDouble").onclick=()=>{mode="double";$("#modeDouble").classList.add("primary");$("#modeSingle").classList.remove("primary");resetSelection();};
 
-/* ===== 선수 불러오기 (숨김 제외) ===== */
-onValue(ref(db,'players'), snap=>{
-  const data = snap.val() || {};
-  players = Object.entries(data)
-    .map(([id,p])=>({ id, ...p }))
-    .filter(p=>!p.hidden)
-    .sort((a,b)=>(a.level-b.level) || a.name.localeCompare(b.name,'ko'));
-  renderChips();
+// ===== 선수 목록 로드 =====
+onValue(ref(db,"players"),snap=>{
+  const data=snap.val()||{};
+  players=Object.entries(data)
+    .filter(([id,p])=>!p.hidden)
+    .map(([id,p])=>({id,name:p.name,level:p.level}));
+  renderPlayers();
 });
 
-/* ===== 선수 칩 렌더 ===== */
-function renderChips(){
-  const box = $('#chips'); box.innerHTML='';
-  if(!players.length){ box.textContent='등록된 선수가 없습니다.'; return; }
+function renderPlayers(){
+  const area=$("#playersArea");
+  area.innerHTML="";
   players.forEach(p=>{
-    const btn = document.createElement('button');
-    btn.className = 'chip';
-    btn.textContent = `${p.name}(${p.level})`;
-    if(sel.includes(p.id)){
-      const idx = sel.indexOf(p.id);
-      btn.classList.add(idx<2 ? 'selectedA' : 'selectedB'); // 앞 2명=A, 뒤 2명=B(복식 기준)
-    }
-    btn.onclick = ()=>{
-      const need = (mode==='single') ? 2 : 4;
-      const i = sel.indexOf(p.id);
-      if(i>=0){ sel.splice(i,1); }
-      else{
-        if(sel.length>=need){ toast(mode==='single'?'단식은 두 명만 선택':'복식은 네 명만 선택'); return; }
-        sel.push(p.id);
-      }
-      renderChips(); renderWinnerBox();
-    };
-    box.appendChild(btn);
+    const btn=document.createElement("button");
+    btn.className="player";
+    btn.textContent=`${p.name}(${p.level})`;
+    btn.onclick=()=>selectPlayer(p);
+    area.appendChild(btn);
   });
 }
 
-/* ===== 팀/승자 UI ===== */
-function computeTeams(){
-  const need = (mode==='single') ? 2 : 4;
-  if(sel.length!==need) return null;
-  if(mode==='single'){
-    const A = [sel[0]], B = [sel[1]];
-    return {A,B};
+// ===== 선택 로직 =====
+function selectPlayer(p){
+  const max = (mode==="single") ? 2 : 4;
+  const area=$("#playersArea");
+  const buttons=area.querySelectorAll(".player");
+
+  const findBtn=(name)=>Array.from(buttons).find(b=>b.textContent.startsWith(name));
+
+  // 이미 선택된 선수일 경우 취소
+  if(selectedA.includes(p.name)){
+    selectedA=selectedA.filter(n=>n!==p.name);
+  }else if(selectedB.includes(p.name)){
+    selectedB=selectedB.filter(n=>n!==p.name);
   }else{
-    const A = [sel[0], sel[1]], B = [sel[2], sel[3]];
-    return {A,B};
+    // 선택
+    const totalSel=selectedA.length+selectedB.length;
+    if(totalSel>=max) return toast("선택 인원 초과");
+    if(totalSel<(max/2)) selectedA.push(p.name);
+    else selectedB.push(p.name);
   }
+
+  // 색상 업데이트
+  buttons.forEach(btn=>{
+    const nm=btn.textContent.split("(")[0];
+    btn.classList.remove("selectedA","selectedB");
+    if(selectedA.includes(nm)) btn.classList.add("selectedA");
+    if(selectedB.includes(nm)) btn.classList.add("selectedB");
+  });
 }
 
-function renderWinnerBox(){
-  const card = $('#winnerCard');
-  const tA = $('#teamALabel'), tB=$('#teamBLabel');
-  const singleBox = $('#singleWinnerBox'), doubleBox = $('#doubleWinnerBox');
-
-  const teams = computeTeams();
-  if(!teams){ card.style.display='none'; return; }
-
-  const namesA = teams.A.map(id=>players.find(p=>p.id===id)?.name||id);
-  const namesB = teams.B.map(id=>players.find(p=>p.id===id)?.name||id);
-  tA.textContent = (mode==='double') ? namesA.join('/') : namesA[0];
-  tB.textContent = (mode==='double') ? namesB.join('/') : namesB[0];
-
-  if(mode==='single'){
-    singleBox.style.display='';
-    doubleBox.style.display='none';
-    // 단식: 승자 이름 버튼 2개
-    $('#winSingleA').textContent = `승자: ${namesA[0]}`;
-    $('#winSingleB').textContent = `승자: ${namesB[0]}`;
-  }else{
-    singleBox.style.display='none';
-    doubleBox.style.display='';
-  }
-  card.style.display='';
-}
-
-/* ===== 저장 ===== */
-$('#winSingleA').onclick = ()=> saveMatch('A');
-$('#winSingleB').onclick = ()=> saveMatch('B');
-$('#winA').onclick       = ()=> saveMatch('A');
-$('#winB').onclick       = ()=> saveMatch('B');
-
+// ===== 승리 저장 =====
 async function saveMatch(winnerSide){
-  const teams = computeTeams();
-  if(!teams){ toast(mode==='single'?'두 명부터 선택하세요':'네 명부터 선택하세요'); return; }
+  const total=selectedA.length+selectedB.length;
+  if(mode==="single" && total<2) return toast("단식: 2명 선택하세요");
+  if(mode==="double" && total<4) return toast("복식: 4명 선택하세요");
+  if(selectedA.length===0 || selectedB.length===0) return toast("팀 구성이 잘못되었습니다");
 
-  // 메타 구성
-  const getMeta = (ids)=> {
-    const nms = ids.map(id=> players.find(p=>p.id===id)?.name || id);
-    const lv  = ids.map(id=> players.find(p=>p.id===id)?.level ?? null);
-    return { ids, names:nms, levels:lv };
+  const monthKey=getMonthKey();
+  const match={
+    mode,
+    monthKey,
+    namesA:selectedA,
+    namesB:selectedB,
+    winnerSide,
+    createdAt:Date.now()
   };
-  const A = getMeta(teams.A);
-  const B = getMeta(teams.B);
-
-  const now = Date.now();
-  const match = {
-    ts: now,
-    monthKey: monthKeyFromTs(now),   // KST 기준
-    mode,                            // 'single' | 'double'
-    membersA: A.ids, membersB: B.ids,
-    namesA: A.names,  namesB:  B.names,
-    levelsA: A.levels, levelsB: B.levels,
-    winnerSide,                      // 'A' | 'B'
-    score: null,
-    createdAt: now
-  };
-
-  try{
-    await set(push(ref(db,'matches')), match);
-    toast(`${mode==='single'?'단식':'복식'} 저장 완료 (${winnerSide==='A'?'A팀':'B팀'} 승)`);
-    sel=[]; renderChips(); renderWinnerBox();
-  }catch(e){
-    console.error(e);
-    toast(e?.message || '저장 실패');
-  }
+  await push(ref(db,"matches"),match);
+  toast("경기 저장 완료");
+  resetSelection();
 }
+
+function resetSelection(){
+  selectedA=[];selectedB=[];
+  $("#playersArea").querySelectorAll(".player").forEach(b=>b.classList.remove("selectedA","selectedB"));
+}
+
+function getMonthKey(){
+  const d=new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+  const y=d.getFullYear(),m=d.getMonth()+1;
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+$("#winA").onclick=()=>saveMatch("A");
+$("#winB").onclick=()=>saveMatch("B");
 </script>
 </body>
 </html>
