@@ -1,33 +1,64 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>월간리포트</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🏓 월간 리포트</title>
 <style>
-body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:#f5f7fb;color:#0f172a}
-h1{text-align:center;color:#0d47a1}
-table{width:100%;border-collapse:collapse;background:#fff}
-th,td{border:1px solid #e5e7eb;padding:6px;font-size:14px;text-align:center}
-thead{background:#f1f5f9}
+:root {
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
+  --card:#fff; --accent:#2563eb; --shadow:0 8px 28px rgba(0,0,0,.08);
+}
+body{margin:0;font-family:system-ui,"Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg);}
+header{background:#fff;position:sticky;top:0;z-index:10;border-bottom:1px solid #e5e7eb;}
+.wrap{max-width:960px;margin:0 auto;padding:14px 16px;}
+h1{margin:4px 0;font-size:clamp(18px,4vw,22px);color:var(--accent);}
+table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);}
+thead th{background:#f8fafc;padding:10px;border-bottom:1px solid #e5e7eb;font-size:14px;}
+tbody td{padding:8px;border-bottom:1px solid #f1f5f9;font-size:14px;text-align:center;}
+tbody tr:nth-child(odd){background:#f9fafb;}
+.rank1{background:#dbeafe;}
+.rank2{background:#e0f2fe;}
+.rank3{background:#fef9c3;}
+footer{text-align:center;color:#64748b;font-size:13px;margin:16px 0;}
+.btn{border:1px solid #ccc;border-radius:8px;padding:7px 12px;font-size:14px;background:#fff;cursor:pointer;margin-right:6px;}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
 </style>
 </head>
 <body>
-<h1 id="siteTitle">탁구 월간리그</h1>
-<div style="text-align:center">
-  <button onclick="location.href='index.html'">🎮 경기입력</button>
+<header>
+  <div class="wrap" style="display:flex;justify-content:space-between;align-items:center;">
+    <h1 id="pageTitle">🏓 월간 리포트</h1>
+    <div>
+      <a href="index.html" class="btn">← 경기결과</a>
+      <a href="admin.html" class="btn primary">⚙ 관리자</a>
+    </div>
+  </div>
+</header>
 
-  <button onclick="location.href='admin.html'">⚙ 관리자</button>
-</div>
-<table style="margin-top:10px">
-<thead><tr><th>이름</th><th>경기수</th><th>승</th><th>패</th><th>승률</th></tr></thead>
-<tbody id="tbody"></tbody>
-</table>
+<main class="wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>순위</th>
+        <th>이름</th>
+        <th>경기수</th>
+        <th>승</th>
+        <th>패</th>
+        <th>승률(%)</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</main>
+
+<footer>최근 2개월 경기 기준 | 복식은 설정된 가중치 반영</footer>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-const firebaseConfig={
+
+const firebaseConfig = {
   apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain:"pingpongclub-4a5fd.firebaseapp.com",
   databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
@@ -36,34 +67,95 @@ const firebaseConfig={
   messagingSenderId:"802826774007",
   appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
-const app=initializeApp(firebaseConfig);
-const db=getDatabase(app);
-const $=(s)=>document.querySelector(s);
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
-onValue(ref(db,'config/title'),s=>$('#siteTitle').textContent=s.val()||'탁구 월간리그');
+const $ = s=>document.querySelector(s);
 
-onValue(ref(db,'matches'),snap=>{
-  const all=snap.val()||{};
-  const stats={};
-  Object.values(all).forEach(m=>{
-    const monthKey=m.monthKey;
-    const now=new Date();
-    const curKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    if(monthKey!==curKey)return;
-    const A=m.namesA[0],B=m.namesB[0],winA=m.winnerSide==='A';
-    [A,B].forEach(n=>{if(!stats[n])stats[n]={g:0,w:0,l:0};});
-    stats[A].g++;stats[B].g++;
-    if(winA){stats[A].w++;stats[B].l++;}else{stats[B].w++;stats[A].l++;}
-  });
-  const arr=Object.entries(stats).map(([n,v])=>({...v,name:n,rate:v.g?(v.w/v.g):0}));
-  arr.sort((a,b)=>b.rate-a.rate);
-  const tbody=$('#tbody');tbody.innerHTML='';
-  arr.forEach(r=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${r.name}</td><td>${r.g}</td><td>${r.w}</td><td>${r.l}</td><td>${(r.rate*100).toFixed(1)}%</td>`;
-    tbody.appendChild(tr);
-  });
+// ===== 제목 캐시 + 실시간 동기화 =====
+const titleRef = ref(db, 'config/title');
+const cachedTitle = localStorage.getItem('siteTitle');
+if (cachedTitle) {
+  document.title = `🏓 ${cachedTitle} 월간 리포트`;
+  $('#pageTitle').textContent = `🏓 ${cachedTitle} 월간 리포트`;
+}
+onValue(titleRef, snap => {
+  const val = snap.val() ?? 'PingPong Club';
+  localStorage.setItem('siteTitle', val);
+  document.title = `🏓 ${val} 월간 리포트`;
+  $('#pageTitle').textContent = `🏓 ${val} 월간 리포트`;
 });
+
+// ===== Firebase refs =====
+const matchesRef = ref(db, 'matches');
+const playersRef = ref(db, 'players');
+const weightRef = ref(db, 'config/doubleWeight');
+
+let doubleWeight = 1;
+onValue(weightRef, s=>{ doubleWeight = s.val() ?? 1; });
+
+// ===== 최근 2개월 key 구하기 =====
+function getRecentKeys(){
+  const d=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+  const ym = (y,m)=>`${y}-${String(m).padStart(2,'0')}`;
+  const cur=ym(d.getFullYear(), d.getMonth()+1);
+  const prev=ym(d.getMonth()===0?d.getFullYear()-1:d.getFullYear(), d.getMonth()===0?12:d.getMonth());
+  return [prev,cur];
+}
+
+// ===== 리포트 계산 =====
+onValue(matchesRef, snap=>{
+  const data=snap.val()||{};
+  const keys=getRecentKeys();
+  const stats={}; // {name:{win,loss,total}}
+
+  Object.values(data).forEach(m=>{
+    if(!keys.includes(m.monthKey))return;
+    const weight=(m.mode==='double'?doubleWeight:1);
+    const aSide=m.namesA||[], bSide=m.namesB||[];
+    aSide.forEach(n=>{
+      if(!stats[n])stats[n]={win:0,loss:0,total:0};
+      stats[n].total+=weight;
+      stats[n].win += (m.winnerSide==='A'?weight:0);
+      stats[n].loss+= (m.winnerSide==='B'?weight:0);
+    });
+    bSide.forEach(n=>{
+      if(!stats[n])stats[n]={win:0,loss:0,total:0};
+      stats[n].total+=weight;
+      stats[n].win += (m.winnerSide==='B'?weight:0);
+      stats[n].loss+= (m.winnerSide==='A'?weight:0);
+    });
+  });
+
+  const arr=Object.entries(stats).map(([name,s])=>({
+    name,
+    win:s.win,
+    loss:s.loss,
+    total:s.total,
+    rate:s.total>0?((s.win/s.total)*100).toFixed(1):0
+  })).sort((a,b)=>b.rate-a.rate || b.win-a.win);
+
+  renderTable(arr);
+});
+
+function renderTable(arr){
+  const tb=$("#tbody");
+  tb.innerHTML="";
+  arr.forEach((p,i)=>{
+    const tr=document.createElement('tr');
+    if(i===0)tr.classList.add('rank1');
+    else if(i===1)tr.classList.add('rank2');
+    else if(i===2)tr.classList.add('rank3');
+    tr.innerHTML=`
+      <td>${i+1}</td>
+      <td style="text-align:left;padding-left:8px">${p.name}</td>
+      <td>${p.total}</td>
+      <td>${p.win}</td>
+      <td>${p.loss}</td>
+      <td>${p.rate}</td>`;
+    tb.appendChild(tr);
+  });
+}
 </script>
 </body>
 </html>
