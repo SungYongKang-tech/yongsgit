@@ -20,11 +20,25 @@ body{
   color:var(--ink);
   background:var(--bg);
 }
-header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #e5e7eb}
-.wrap{max-width:1040px;margin:0 auto;padding:14px 16px}
-h1{margin:4px 0 6px;font-size:clamp(20px,4vw,24px);color:var(--primary);font-weight:700}
-h3{margin:0 0 8px;font-size:17px;color:#1e293b;font-weight:700}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+header{
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:10;
+}
+.header-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:14px 0;
+}
+h1{
+  margin:4px 0 10px;
+  font-size:clamp(20px,4vw,24px);
+  color:var(--primary);
+  font-weight:700;
+}
 .btn{
   border:1px solid #d1d5db;border-radius:8px;padding:6px 10px;
   font-size:14px;background:#fff;cursor:pointer;font-weight:600;
@@ -32,22 +46,30 @@ h3{margin:0 0 8px;font-size:17px;color:#1e293b;font-weight:700}
 }
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn.warn{background:var(--danger);color:#fff;border-color:var(--danger)}
-.btn.gray{background:var(--gray);color:#fff;border-color:var(--gray)}
 .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
-.card{background:var(--card);border:1px solid #e5e7eb;border-radius:12px;padding:14px;box-shadow:var(--shadow);margin:10px 0}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;margin-top:8px}
-thead th{background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:6px;font-size:14px;color:#334155;text-align:center;font-weight:700}
-tbody td{
-  border-bottom:1px solid #f1f5f9;
-  padding:4px 6px;
-  font-size:14px;
-  text-align:center;
-  line-height:1.3;
+.card{
+  background:var(--card);border:1px solid #e5e7eb;border-radius:12px;
+  padding:14px;box-shadow:var(--shadow);margin:10px 0;
 }
-tbody tr:hover{background:#f9fafb}
-input[type="text"],input[type="number"]{
-  padding:6px 8px;font-size:14px;border:1px solid #cbd5e1;border-radius:6px;
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.player-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:6px;
+  margin-top:10px;
 }
+.player-item{
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:8px;
+  padding:8px 10px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:15px;
+}
+.player-item span.name{flex:1;text-align:left;}
+.player-item input{width:50px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;font-size:14px;}
 .toast{
   position:fixed;left:50%;transform:translateX(-50%);bottom:18px;
   background:#111827;color:#fff;padding:10px 14px;border-radius:12px;
@@ -55,16 +77,18 @@ input[type="text"],input[type="number"]{
 }
 .toast.show{opacity:1}
 @media(max-width:640px){
-  input[type="text"],input[type="number"]{flex:1}
-  .btn{font-size:13px;padding:5px 8px}
+  .player-grid{grid-template-columns:repeat(2,1fr);}
+  .player-item{font-size:14px;padding:6px 8px;}
+  input{font-size:13px;}
+  .btn{font-size:13px;padding:5px 8px;}
 }
 </style>
 </head>
 <body>
 <header>
-  <div class="wrap row" style="justify-content:space-between;">
+  <div class="header-inner">
     <h1 id="pageHeader">🏓 관리자모드</h1>
-    <div class="row">
+    <div class="row" style="justify-content:center;">
       <a class="btn" href="index.html">← 경기결과</a>
       <a class="btn primary" href="monthly-report.html">📊 월간 리포트</a>
     </div>
@@ -92,13 +116,10 @@ input[type="text"],input[type="number"]{
       <button id="addPlayer" class="btn primary">등록</button>
     </div>
 
-    <table>
-      <thead><tr><th>이름</th><th>부수</th><th>관리</th></tr></thead>
-      <tbody id="playersTable"></tbody>
-    </table>
+    <div id="playerList" class="player-grid"></div>
   </section>
 
-  <!-- 복식 가중치 및 비밀번호 -->
+  <!-- 설정 -->
   <section class="card">
     <h3>설정 관리</h3>
     <div class="row">
@@ -166,21 +187,24 @@ $('#saveTitle').onclick = async()=>{
   toast('제목 변경 완료');
 };
 
-// ===== 선수 관리 =====
+// ===== 선수 관리 (부수 오름차순 정렬) =====
 const playerRef = ref(db, 'players');
 onValue(playerRef,snap=>{
-  const tbody=$("#playersTable");tbody.innerHTML="";
+  const list=$("#playerList");list.innerHTML="";
   const data=snap.val()||{};
-  Object.entries(data).forEach(([id,p])=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML=`
-      <td>${p.name}</td>
-      <td><input type="number" value="${p.level}" style="width:50px;text-align:center" onchange="updateLevel('${id}',this.value)"></td>
-      <td>
-        ${p.hidden?`<button class="btn ok" onclick="unhide('${id}')">복구</button>`:`<button class="btn gray" onclick="hide('${id}')">숨김</button>`}
-        <button class="btn warn" onclick="del('${id}')">삭제</button>
-      </td>`;
-    tbody.appendChild(tr);
+  const sorted = Object.entries(data).sort(([,a],[,b])=>{
+    if(a.level === b.level) return a.name.localeCompare(b.name,'ko');
+    return a.level - b.level; // 낮은 부수가 위로
+  });
+  sorted.forEach(([id,p])=>{
+    const div=document.createElement('div');
+    div.className='player-item';
+    div.innerHTML=`
+      <span class="name">${p.name}</span>
+      <input type="number" value="${p.level}" onchange="updateLevel('${id}',this.value)">
+      <button class="btn warn" onclick="del('${id}')">삭제</button>
+    `;
+    list.appendChild(div);
   });
 });
 window.updateLevel=async(id,v)=>{await set(ref(db,`players/${id}/level`),parseInt(v));toast('부수 수정 완료');};
@@ -188,13 +212,15 @@ $('#addPlayer').onclick=async()=>{
   const name=$('#playerName').value.trim();
   const level=parseInt($('#playerLevel').value)||0;
   if(!name)return toast('이름 입력');
-  await push(playerRef,{name,level,hidden:false,joinedAt:Date.now()});
+  await push(playerRef,{name,level,joinedAt:Date.now()});
   $('#playerName').value='';$('#playerLevel').value='';
   toast('선수 등록 완료');
 };
-window.hide=async(id)=>{await set(ref(db,`players/${id}/hidden`),true);toast('숨김 처리');};
-window.unhide=async(id)=>{await set(ref(db,`players/${id}/hidden`),false);toast('복구 완료');};
-window.del=async(id)=>{if(!confirm('정말 삭제하시겠습니까?'))return;await remove(ref(db,`players/${id}`));toast('삭제 완료');};
+window.del=async(id)=>{
+  if(!confirm('정말 삭제하시겠습니까?'))return;
+  await remove(ref(db,`players/${id}`));
+  toast('삭제 완료');
+};
 
 // ===== 기타 설정 =====
 onValue(ref(db,'config/doubleWeight'),s=>$('#doubleWeight').value=s.val()??1);
@@ -211,6 +237,7 @@ $('#saveDeletePassword').onclick=async()=>{
   await set(ref(db,'config/deletePassword'),v);
   toast('삭제 비밀번호 저장');
 };
+// ✅ 관리자 비밀번호 저장 정상화
 onValue(ref(db,'config/adminPassword'),s=>$('#adminPassword').value=s.val()??'1234');
 $('#saveAdminPassword').onclick=async()=>{
   const v=$('#adminPassword').value.trim();
