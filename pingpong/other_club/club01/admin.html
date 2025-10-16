@@ -26,15 +26,18 @@ table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;ove
 thead th{background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px;font-size:14px;color:#334155;text-align:left}
 tbody td{border-bottom:1px solid #f1f5f9;padding:8px;font-size:14px}
 .muted{color:var(--muted)}
-input[type="text"],input[type="number"]{padding:6px 8px;font-size:14px}
+input[type="text"],input[type="number"]{padding:6px 8px;font-size:14px;border:1px solid #ccc;border-radius:6px}
 input[type="number"]{width:90px}
 .small{font-size:12px}
 .hint{color:#64748b;font-size:13px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#111827;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s}
 .toast.show{opacity:1}
+#locked{position:fixed;inset:0;background:#f5f7fb;display:flex;align-items:center;justify-content:center;font-size:18px;color:#555;}
 </style>
 </head>
 <body>
+<div id="locked">🔒 관리자 비밀번호를 입력하세요...</div>
+
 <header>
   <div class="wrap">
     <div class="row">
@@ -42,32 +45,20 @@ input[type="number"]{width:90px}
       <a class="btn" href="index.html">← 결과입력</a>
       <a class="btn primary" href="monthly-report.html">📊 월간리포트</a>
     </div>
-    <div class="row"><span class="small muted">※ 선수등록, 복식가중치, 숨김, 삭제 비밀번호, 제목설정, 경기 초기화 관리</span></div>
+    <div class="row"><span class="small muted">※ 선수등록, 복식가중치, 숨김, 삭제 비밀번호, 경기 초기화 관리</span></div>
   </div>
 </header>
 
-<main>
-  <!-- 페이지 제목 설정 -->
-  <section class="card">
-    <div class="row" style="justify-content:space-between">
-      <div style="font-weight:700">페이지 제목 설정</div>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <input id="pageTitleInput" type="text" placeholder="예: KOEN 탁구 월간리그" style="width:280px" />
-      <button id="saveTitle" class="btn primary">저장</button>
-    </div>
-    <div class="hint" style="margin-top:6px">index.html 상단 제목에 표시됩니다.</div>
-  </section>
-
+<main id="main" style="display:none">
   <!-- 선수 등록 -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div style="font-weight:700">선수 등록</div>
       <div class="small muted">등록 시 바로 결과입력 페이지에 반영됩니다.</div>
     </div>
-    <div class="row" style="margin-top:8px">
-      <input id="playerName" type="text" placeholder="이름 (예: 김승일)" />
-      <input id="playerLevel" type="number" placeholder="부수" />
+    <div class="row" style="margin-top:10px; justify-content:flex-start;">
+      <input id="playerName" type="text" placeholder="이름 (예: 김승일)" style="flex:1; min-width:140px;">
+      <input id="playerLevel" type="number" placeholder="부수" style="width:80px;">
       <button id="addPlayer" class="btn primary">등록</button>
     </div>
     <div style="overflow:auto; margin-top:14px">
@@ -82,19 +73,21 @@ input[type="number"]{width:90px}
   <section class="card">
     <div class="row" style="justify-content:space-between"><div style="font-weight:700">통계 옵션</div></div>
     <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:8px">
+      <!-- 복식 가중치 -->
       <div class="card" style="margin:0">
         <div class="muted small" style="margin-bottom:6px">복식 가중치</div>
         <div class="row">
-          <input id="doubleWeight" type="number" min="0" max="1" step="0.1" />
+          <input id="doubleWeight" type="number" min="0" max="1" step="0.1" value="1" />
           <button id="saveDoubleWeight" class="btn primary">저장</button>
         </div>
         <div class="hint">예) 0.5 ⇒ 복식은 단식의 절반 가중</div>
       </div>
 
+      <!-- 삭제 비밀번호 -->
       <div class="card" style="margin:0">
         <div class="muted small" style="margin-bottom:6px">삭제 비밀번호</div>
         <div class="row">
-          <input id="deletePassword" type="text" placeholder="예: 7910" />
+          <input id="deletePassword" type="text" placeholder="예: 7910" style="flex:1;max-width:120px;">
           <button id="saveDeletePassword" class="btn primary">저장</button>
         </div>
         <div class="hint">결과입력 화면에서 경기 삭제 시 사용하는 4자리 비밀번호</div>
@@ -119,7 +112,7 @@ input[type="number"]{width:90px}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, push, set, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, push, set, remove, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 /* Firebase 설정 */
 const firebaseConfig = {
@@ -133,28 +126,28 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const playerRef = ref(db,'players');
 
-/* 공통 함수 */
-const $=(s,ctx=document)=>ctx.querySelector(s);
-const toast=(msg='저장되었습니다')=>{
+const $ = (s,ctx=document)=>ctx.querySelector(s);
+const toast = (msg='저장되었습니다')=>{
   const t=$('#toast');t.textContent=msg;t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),1600);
 };
 
-/* ===== 제목 설정 ===== */
-const titleRef = ref(db, 'config/title');
-onValue(titleRef, s=>{
-  $('#pageTitleInput').value = s.val() ?? '🏓 PingPong Club 경기결과 입력';
+/* 관리자 접근 비밀번호 */
+const adminPwRef = ref(db,'config/adminPassword');
+let adminPw = '1234'; // 기본값
+get(adminPwRef).then(s=>{ if(s.exists()) adminPw = s.val(); }).then(()=>{
+  const input = prompt('관리자 비밀번호를 입력하세요');
+  if(input === adminPw){
+    $('#locked').style.display='none';
+    $('#main').style.display='block';
+  } else {
+    $('#locked').innerHTML='🚫 접근 거부: 비밀번호가 올바르지 않습니다.';
+  }
 });
-$('#saveTitle').onclick = async ()=>{
-  const title = $('#pageTitleInput').value.trim();
-  if(!title) return toast('제목을 입력하세요');
-  await set(titleRef, title);
-  toast('제목 저장 완료');
-};
 
-/* ===== 선수 관리 ===== */
+/* 선수 등록 */
+const playerRef = ref(db,'players');
 onValue(playerRef,snap=>{
   const data=snap.val()||{};
   const tbody=$('#playersTable');
@@ -175,7 +168,6 @@ onValue(playerRef,snap=>{
   });
 });
 
-/* 등록 */
 $('#addPlayer').onclick=async()=>{
   const name=$('#playerName').value.trim();
   const level=parseInt($('#playerLevel').value)||0;
@@ -185,35 +177,36 @@ $('#addPlayer').onclick=async()=>{
   toast('선수 등록 완료');
 };
 
-/* 숨김/복구/삭제 */
 window.hide=async(id)=>{await set(ref(db,`players/${id}/hidden`),true);toast('숨김 처리');};
 window.unhide=async(id)=>{await set(ref(db,`players/${id}/hidden`),false);toast('복구 완료');};
 window.del=async(id)=>{if(!confirm('정말 삭제하시겠습니까?'))return;await remove(ref(db,`players/${id}`));toast('삭제 완료');};
 
-/* ===== 복식 가중치 ===== */
-onValue(ref(db,'config/doubleWeight'),s=>$('#doubleWeight').value=s.val()??0.5);
+/* 복식 가중치 */
+const weightRef = ref(db,'config/doubleWeight');
+onValue(weightRef,s=>$('#doubleWeight').value=s.val()??1);
 $('#saveDoubleWeight').onclick=async()=>{
   const v=parseFloat($('#doubleWeight').value);
   if(isNaN(v)||v<0||v>1)return toast('0~1 사이 숫자만 입력');
-  await set(ref(db,'config/doubleWeight'),v);
+  await set(weightRef,v);
   toast('복식 가중치 저장');
 };
 
-/* ===== 삭제 비밀번호 ===== */
+/* 삭제 비밀번호 */
 let currentPw='7910';
-onValue(ref(db,'config/deletePassword'),s=>{
+const deletePwRef = ref(db,'config/deletePassword');
+onValue(deletePwRef,s=>{
   $('#deletePassword').value=s.val()??'7910';
   currentPw=s.val()??'7910';
 });
 $('#saveDeletePassword').onclick=async()=>{
   const v=$('#deletePassword').value.trim();
   if(!v)return toast('비밀번호 입력');
-  await set(ref(db,'config/deletePassword'),v);
+  await set(deletePwRef,v);
   currentPw=v;
   toast('삭제 비밀번호 저장');
 };
 
-/* ===== 경기 전체 삭제 ===== */
+/* 경기 전체 삭제 */
 $('#purgeMatches').onclick=async()=>{
   const pw=prompt('삭제 비밀번호를 입력하세요');
   if(pw!==currentPw)return toast('비밀번호 불일치');
