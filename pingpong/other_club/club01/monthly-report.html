@@ -98,8 +98,8 @@ tbody tr:hover{background:#f9fafb}
         <th>이름(부수)</th>
         <th>경기</th>
         <th>승/패</th>
-        <th>이전승률(%)</th>
-        <th>이달승률(%)</th>
+        <th>이전<br>승률</th>
+        <th>이달<br>승률</th>
         <th>증감</th>
       </tr>
     </thead>
@@ -109,7 +109,7 @@ tbody tr:hover{background:#f9fafb}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -141,11 +141,19 @@ onValue(titleRef, s=>{
 // ===== 데이터 계산 =====
 const matchRef = ref(db,'matches');
 const playerRef = ref(db,'players');
+const weightRef = ref(db,'config/doubleWeight');
 let players = {};
+let doubleWeight = 1;
+
+// ✅ 복식 가중치 불러오기
+get(weightRef).then(snap=>{
+  if(snap.exists()) doubleWeight = parseFloat(snap.val()) || 1;
+});
 
 onValue(playerRef, snap=>{
   players = snap.val() || {};
 });
+
 onValue(matchRef, snap=>{
   const data = snap.val() || {};
   const now = new Date();
@@ -157,9 +165,10 @@ onValue(matchRef, snap=>{
 
   // ===== 집계 =====
   Object.values(data).forEach(m=>{
-    const { monthKey, winnerSide, namesA, namesB } = m;
+    const { monthKey, mode, winnerSide, namesA, namesB } = m;
     const names = [...namesA, ...namesB];
     if(monthKey===thisMonth || monthKey===lastMonth){
+      const weight = (mode==='double') ? doubleWeight : 1;
       names.forEach(n=>{
         const target = (monthKey===thisMonth)?stats:prevStats;
         if(!target[n]) target[n]={win:0,lose:0};
@@ -167,20 +176,20 @@ onValue(matchRef, snap=>{
       if(winnerSide==='A'){
         namesA.forEach(n=>{
           const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].win++;
+          target[n].win += weight;
         });
         namesB.forEach(n=>{
           const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].lose++;
+          target[n].lose += weight;
         });
       } else if(winnerSide==='B'){
         namesB.forEach(n=>{
           const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].win++;
+          target[n].win += weight;
         });
         namesA.forEach(n=>{
           const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].lose++;
+          target[n].lose += weight;
         });
       }
     }
@@ -206,7 +215,7 @@ onValue(matchRef, snap=>{
       delta:diff
     };
   }).filter(p=>p.total>0)
-    // ✅ 개선된 정렬: 이달승률 ↓ → 경기수 ↓ → 부수 ↑
+    // ✅ 정렬: 이달승률 ↓ → 경기수 ↓ → 부수 ↑
     .sort((a,b)=>{
       if(b.rate !== a.rate) return b.rate - a.rate;
       if(b.total !== a.total) return b.total - a.total;
@@ -230,11 +239,11 @@ function render(arr){
       <tr>
         <td>${i+1}</td>
         <td>${p.name}(${p.level})</td>
-        <td>${p.total}</td>
-        <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
+        <td>${formatNum(p.total)}</td>
+        <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
         <td>${formatNum(p.prev)}%</td>
         <td>${formatNum(p.rate)}%</td>
-        <td class="delta ${deltaClass}">${deltaSign} ${Math.abs(formatNum(p.delta))}</td>
+        <td class="delta ${deltaClass}">${deltaSign} ${Math.abs(formatNum(p.delta)).toFixed(1)}</td>
       </tr>
     `);
   });
