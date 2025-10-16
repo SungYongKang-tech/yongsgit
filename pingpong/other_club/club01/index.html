@@ -70,11 +70,6 @@ h1 {margin:4px 0 6px; font-size:clamp(18px,4vw,22px); color:var(--accent);}
 </header>
 
 <main class="wrap">
-  <div class="row">
-    <button id="singleBtn" class="btn primary">단식</button>
-    <button id="doubleBtn" class="btn">복식</button>
-  </div>
-
   <div id="chips" class="row" style="margin-top:10px;"></div>
   <div id="teamDisplay"></div>
 
@@ -110,10 +105,8 @@ const titleRef = ref(db, 'config/title');
 onValue(titleRef, (snap) => {
   const val = snap.val() ?? '🏓 PingPong Club 경기결과 입력';
   document.getElementById('pageTitle').textContent = val;
-  document.title = val; // 브라우저 탭 제목도 동일하게 변경
+  document.title = val;
 });
-
-
 
 const matchRef = ref(db,'matches');
 const playerRef = ref(db,'players');
@@ -125,7 +118,7 @@ const toast=(msg="저장되었습니다")=>{
   setTimeout(()=>t.classList.remove("show"),1500);
 };
 
-let players=[], sel=[], mode='single', deletePassword='7910';
+let players=[], sel=[], deletePassword='7910';
 
 // ✅ 삭제 비밀번호 불러오기
 get(deletePwRef).then(s=>{
@@ -140,16 +133,7 @@ const LEVEL_COLORS = {
 };
 const shuffledColors = Object.values(LEVEL_COLORS).sort(()=>Math.random()-0.5);
 
-$("#singleBtn").onclick=()=>setMode('single');
-$("#doubleBtn").onclick=()=>setMode('double');
-
-function setMode(m){
-  mode=m;
-  $("#singleBtn").classList.toggle('primary',m==='single');
-  $("#doubleBtn").classList.toggle('primary',m==='double');
-  sel=[];renderChips();updateTeams();
-}
-
+// ✅ 선수 로드
 onValue(playerRef,snap=>{
   const data=snap.val()||{};
   players=Object.values(data)
@@ -161,7 +145,6 @@ onValue(playerRef,snap=>{
 
 function renderChips(){
   const box=$("#chips"); box.innerHTML="";
-  const need=(mode==='single'?2:4);
   players.forEach(p=>{
     const btn=document.createElement('button');
     btn.className='chip';
@@ -177,7 +160,7 @@ function renderChips(){
       const idx=sel.findIndex(x=>x.name===p.name);
       if(idx>=0) sel.splice(idx,1);
       else {
-        if(sel.length>=need){toast("선수 선택 초과");return;}
+        if(sel.length>=4){toast("선수 선택은 최대 4명입니다");return;}
         sel.push(p);
       }
       renderChips(); updateTeams();
@@ -189,14 +172,13 @@ function renderChips(){
 function updateTeams(){
   const disp=$("#teamDisplay");
   const btns=$("#matchButtons");
-  const need=(mode==='single'?2:4);
   if(sel.length>0){
     const half=Math.floor(sel.length/2);
     const a=sel.slice(0,half).map(p=>p.name).join('/');
     const b=sel.slice(half).map(p=>p.name).join('/');
     disp.innerHTML=`<b>A팀:</b> ${a||'-'}　|　<b>B팀:</b> ${b||'-'}`;
   } else disp.innerHTML='';
-  btns.style.display = sel.length===need ? 'block' : 'none';
+  btns.style.display = (sel.length===2 || sel.length===4) ? 'block' : 'none';
 }
 
 function getMonthKey(ts=Date.now()){
@@ -207,16 +189,17 @@ function getMonthKey(ts=Date.now()){
 $("#winA").onclick=()=>saveMatch('A');
 $("#winB").onclick=()=>saveMatch('B');
 function saveMatch(winner){
-  const need=(mode==='single'?2:4);
-  if(sel.length<need){toast("선수 선택 부족");return;}
-  const a=sel.slice(0,need/2).map(p=>p.name);
-  const b=sel.slice(need/2).map(p=>p.name);
+  if(sel.length!==2 && sel.length!==4){toast("선수 선택 인원 오류");return;}
+  const mode = sel.length===2 ? 'single' : 'double';
+  const a=sel.slice(0,sel.length/2).map(p=>p.name);
+  const b=sel.slice(sel.length/2).map(p=>p.name);
   const obj={mode,monthKey:getMonthKey(),namesA:a,namesB:b,winnerSide:winner,createdAt:Date.now()};
   push(matchRef,obj);
   toast("경기결과 저장 완료");
   sel=[];renderChips();updateTeams();
 }
 
+// ✅ 경기 목록 표시
 onValue(matchRef,snap=>{
   const data=snap.val()||{};
   const arr=Object.entries(data).map(([id,m])=>({...m,id}))
