@@ -145,6 +145,17 @@ h1{
       삭제 비밀번호가 일치해야 실행됩니다.
     </small>
   </section>
+  <section class="card">
+  <h3>데이터 관리 (지난달)</h3>
+  <div class="row">
+    <button id="deletePrevMonth" class="btn warn">🗑 지난달 전적 전체 삭제</button>
+  </div>
+  <small style="color:var(--danger);font-weight:600;">
+    ⚠️ 주의: 이 기능은 <b>지난달</b>의 모든 경기 결과를 삭제합니다.<br>
+    삭제 비밀번호가 일치해야 실행됩니다.
+  </small>
+</section>
+
 
 </main>
 
@@ -287,6 +298,49 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+// ✅ 지난달 전적 전체 삭제
+document.addEventListener("DOMContentLoaded", () => {
+  const btnPrev = document.getElementById("deletePrevMonth");
+  if (!btnPrev) return;
+
+  btnPrev.addEventListener("click", async () => {
+    if (!confirm("⚠️ 정말 지난달 경기결과를 전부 삭제하시겠습니까?\n(삭제 후 복구 불가)")) return;
+
+    try {
+      const pwRef = ref(db, "config/deletePassword");
+      const pwSnap = await get(pwRef);
+      const savedPw = pwSnap.exists() ? pwSnap.val() : "7910";
+
+      const input = prompt("삭제 비밀번호를 입력하세요.");
+      if (input === null) return;
+      if (input.trim() !== savedPw.trim()) {
+        alert("❌ 비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
+      const matchesRef = ref(db, "matches");
+      const snapshot = await get(matchesRef);
+      const data = snapshot.val() || {};
+      const now = new Date();
+      const prevMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`;
+      let count = 0;
+
+      for (const [id, match] of Object.entries(data)) {
+        if (match.monthKey === prevMonth) {
+          await remove(child(matchesRef, id));
+          count++;
+        }
+      }
+
+      toast(`✅ ${prevMonth} 전적 ${count}건 삭제 완료`);
+    } catch (err) {
+      console.error(err);
+      alert("⚠️ 삭제 중 오류가 발생했습니다.");
+    }
+  });
+});
+
 </script>
 </body>
 </html>
