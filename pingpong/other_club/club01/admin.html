@@ -140,6 +140,19 @@ h1{
       <button id="saveAdminPassword" class="btn primary">저장</button>
     </div>
   </section>
+
+  <!-- 기존 HTML 그대로 두고, 마지막 설정 card 아래에 이 블록 추가 -->
+<section class="card">
+  <h3>데이터 관리</h3>
+  <div class="row">
+    <button id="deleteCurrentMonth" class="btn warn">🗑 이번달 전적 전체 삭제</button>
+  </div>
+  <small style="color:var(--danger);font-weight:600;">
+    ⚠️ 주의: 이 기능은 현재 월의 모든 경기 결과를 삭제합니다.<br>
+    삭제 비밀번호가 일치해야 실행됩니다.
+  </small>
+</section>
+
 </main>
 
 <div id="toast" class="toast">저장되었습니다</div>
@@ -245,6 +258,45 @@ $('#saveAdminPassword').onclick=async()=>{
   await set(ref(db,'config/adminPassword'),v);
   toast('관리자 비밀번호 저장');
 };
+
+import { get, remove, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+// ✅ 이번달 전적 삭제 기능
+$('#deleteCurrentMonth').onclick = async () => {
+  if (!confirm("⚠️ 정말 이번달 경기결과를 전부 삭제하시겠습니까?\n(삭제 후 복구 불가)")) return;
+
+  // 비밀번호 확인
+  const pwSnap = await get(ref(db, 'config/deletePassword'));
+  const savedPw = pwSnap.exists() ? pwSnap.val() : '7910';
+  const input = prompt("삭제 비밀번호를 입력하세요.");
+  if (input === null) return;
+  if (input !== savedPw) {
+    alert("❌ 비밀번호가 올바르지 않습니다.");
+    return;
+  }
+
+  try {
+    const matchesRef = ref(db, 'matches');
+    const snapshot = await get(matchesRef);
+    const now = new Date();
+    const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}`;
+    const data = snapshot.val() || {};
+
+    let count = 0;
+    for (const [id, match] of Object.entries(data)) {
+      if (match.monthKey === thisMonth) {
+        await remove(child(matchesRef, id));
+        count++;
+      }
+    }
+
+    toast(`✅ 이번달(${thisMonth}) 전적 ${count}건 삭제 완료`);
+  } catch (err) {
+    console.error(err);
+    toast("⚠️ 삭제 중 오류가 발생했습니다");
+  }
+};
+
 </script>
 </body>
 </html>
