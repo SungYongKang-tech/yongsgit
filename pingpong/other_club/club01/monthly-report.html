@@ -170,76 +170,97 @@ onValue(matchRef, async (snap)=>{
 });
 
 // === render 함수 ===
-function render(curArr,thisMonth,prevArr,prevMonth){
-  const main=document.querySelector('main');
-  const summaryBox=document.querySelector('#summary');
-  main.innerHTML=`
-  <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
-    🏓 이달의 전적 (${thisMonth})
-  </h2>
-  <table id="tableCurrent">
-    <thead><tr><th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>이전<br>승률</th><th>이달<br>승률</th><th>증감</th></tr></thead>
-    <tbody id="tbodyCurrent"></tbody>
-  </table>
-`;
-main.appendChild(summaryBox);
+// === render 함수 ===
+function render(curArr, thisMonth, prevArr, prevMonth) {
+  const main = document.querySelector('main');
+  const summaryBox = document.querySelector('#summary');
 
-// ✅ summaryBox 아래로 지난달 전적 추가
-if(prevArr.length){
-  main.insertAdjacentHTML('beforeend', `
-    <h3 style="text-align:center;font-size:20px;color:#334155;margin:28px 0 8px;border-top:2px solid #e2e8f0;padding-top:12px;">
-      지난달 전적 (${prevMonth})
-    </h3>
-    <table id="tablePrev">
-      <thead><tr><th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>승률</th></tr></thead>
-      <tbody id="tbodyPrev"></tbody>
+  // ✅ 이달의 전적 표
+  main.innerHTML = `
+    <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
+      🏓 이달의 전적 (${thisMonth})
+    </h2>
+    <table id="tableCurrent">
+      <thead>
+        <tr>
+          <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th>
+          <th>이전<br>승률</th><th>이달<br>승률</th><th>증감</th>
+        </tr>
+      </thead>
+      <tbody id="tbodyCurrent"></tbody>
     </table>
-  `);
-}
+  `;
 
+  // ✅ summary 박스 추가 (최다경기·다승·기량상승·부수상향)
+  main.appendChild(summaryBox);
 
-  const tbody=document.querySelector('#tbodyCurrent');
-  curArr.forEach((p,i)=>{
-    const cls = p.delta>0?'up':p.delta<0?'down':'';
-    const sign = p.delta>0?'▲':p.delta<0?'▼':'–';
-    const prevText = p.prev!==null?`${formatNum(p.prev)}%`:'–';
-    const deltaText = p.prev!==null?`${sign} ${formatNum(Math.abs(p.delta))}%p`:'–';
-    tbody.insertAdjacentHTML('beforeend',`
+  // ✅ 이번달 전적 테이블 렌더링
+  const tbody = document.querySelector('#tbodyCurrent');
+  curArr.forEach((p, i) => {
+    const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
+    const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '–';
+    const prevText = p.prev !== null ? `${formatNum(p.prev)}%` : '–';
+    const deltaText = p.prev !== null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
+
+    tbody.insertAdjacentHTML('beforeend', `
       <tr>
-        <td>${i+1}</td><td>${p.name}(${p.level})</td><td>${p.total}</td>
+        <td>${i + 1}</td>
+        <td>${p.name}(${p.level})</td>
+        <td>${p.total}</td>
         <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-        <td>${prevText}</td><td>${formatNum(p.rate)}%</td>
+        <td>${prevText}</td>
+        <td>${formatNum(p.rate)}%</td>
         <td class="delta ${cls}">${deltaText}</td>
-      </tr>`);
+      </tr>
+    `);
   });
 
-  if(prevArr.length){
-    const tb=document.querySelector('#tbodyPrev');
-    prevArr.forEach((p,i)=>{
-      tb.insertAdjacentHTML('beforeend',`
+  // ✅ 지난달 전적 (summary 아래쪽에 출력)
+  if (prevArr.length) {
+    main.insertAdjacentHTML('beforeend', `
+      <h3 style="text-align:center;font-size:20px;color:#334155;margin:28px 0 8px;border-top:2px solid #e2e8f0;padding-top:12px;">
+        지난달 전적 (${prevMonth})
+      </h3>
+      <table id="tablePrev">
+        <thead>
+          <tr>
+            <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>승률</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyPrev"></tbody>
+      </table>
+    `);
+
+    const tb = document.querySelector('#tbodyPrev');
+    prevArr.forEach((p, i) => {
+      tb.insertAdjacentHTML('beforeend', `
         <tr style="background:#f9fafb;">
-          <td>${i+1}</td><td>${p.name}</td><td>${p.total}</td>
+          <td>${i + 1}</td>
+          <td>${p.name}</td>
+          <td>${p.total}</td>
           <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-          <td>${formatNum(p.rate)}%</td></tr>`);
+          <td>${formatNum(p.rate)}%</td>
+        </tr>
+      `);
     });
   }
-}
 
-// ⚠️ 순위 반영 조건 안내줄 추가
-main.insertAdjacentHTML('beforeend', `
-  <p id="ruleNote" style="
-    text-align:center;
-    background:#e0f2fe;
-    color:#1e3a8a;
-    font-size:14px;
-    margin-top:16px;
-    font-weight:700;
-    border-radius:8px;
-    padding:8px 0;
-  ">
-    ⚠️ 순위 반영 조건: <b>10일 → 5경기 이상 / 20일 → 10경기 이상 / 말일 → 15경기 이상</b>
-  </p>
-`);
+  // ✅ 안내줄 (하늘색 배경)
+  main.insertAdjacentHTML('beforeend', `
+    <p id="ruleNote" style="
+      text-align:center;
+      background:#e0f2fe;
+      color:#1e3a8a;
+      font-size:14px;
+      margin-top:20px;
+      font-weight:700;
+      border-radius:8px;
+      padding:8px 0;
+    ">
+      ⚠️ 순위 반영 조건: <b>10일 → 5경기 이상 / 20일 → 10경기 이상 / 말일 → 15경기 이상</b>
+    </p>
+  `);
+}
 
 
 // === summary ===
