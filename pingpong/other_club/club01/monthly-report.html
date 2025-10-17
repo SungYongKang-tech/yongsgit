@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>📊 월간 리포트</title>
+<title>🏓 이달의 전적</title>
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
@@ -11,6 +11,7 @@
   --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
   --accent:#2563eb; --ok:#16a34a; --danger:#ef4444; 
   --shadow:0 8px 28px rgba(0,0,0,.08);
+  --card:#ffffff;
 }
 body{
   margin:0;
@@ -44,11 +45,11 @@ h1{
 }
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .row{display:flex;justify-content:center;gap:8px;margin-bottom:10px;}
-main{max-width:900px;margin:0 auto;padding:10px 10px 40px;}
+main{max-width:900px;margin:0 auto;padding:10px 10px 60px;}
 table{
   width:100%;
   border-collapse:collapse;
-  background:#fff;
+  background:var(--card);
   box-shadow:var(--shadow);
   border-radius:12px;
   overflow:hidden;
@@ -67,7 +68,6 @@ tbody td{
   border-bottom:1px solid #f1f5f9;
   padding:6px 4px;
   text-align:center;
-  white-space:normal;
 }
 tbody tr:hover{background:#f9fafb}
 .win{color:var(--ok);font-weight:700;}
@@ -75,15 +75,59 @@ tbody tr:hover{background:#f9fafb}
 .delta{font-weight:700;}
 .delta.up{color:var(--ok);}
 .delta.down{color:var(--danger);}
+
+/* ✅ 요약 카드 스타일 */
+.summary{
+  margin-top:28px;
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px,1fr));
+  gap:14px;
+}
+.card{
+  background:var(--card);
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  padding:16px 18px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:6px;
+}
+.card h3{
+  margin:0 0 4px;
+  font-size:16px;
+  color:var(--accent);
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.card ul{
+  margin:0;
+  padding-left:20px;
+  font-size:14px;
+  line-height:1.4;
+}
+.card li{margin:2px 0;}
+.total{
+  grid-column:1 / -1;
+  text-align:center;
+  font-size:18px;
+  font-weight:700;
+  color:var(--ink);
+  background:#e8f0ff;
+  border-radius:12px;
+  padding:10px;
+}
 @media(max-width:640px){
   table{font-size:13px;}
   thead th, tbody td{padding:4px 3px;}
+  .card ul{font-size:13px;}
 }
 </style>
 </head>
 <body>
 <header>
-  <h1 id="pageHeader">📊 월간 리포트</h1>
+  <h1 id="pageHeader">🏓 이달의 전적</h1>
   <div class="row">
     <a href="index.html" class="btn">🏓 경기결과</a>
     <button id="adminBtn" class="btn primary">⚙ 관리자모드</button>
@@ -105,6 +149,8 @@ tbody tr:hover{background:#f9fafb}
     </thead>
     <tbody id="tbody"></tbody>
   </table>
+
+  <div id="summary" class="summary" style="display:none;"></div>
 </main>
 
 <script type="module">
@@ -112,129 +158,94 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebas
 import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
-  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
-  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
-  projectId: "pingpongclub-4a5fd",
-  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
-  messagingSenderId: "802826774007",
-  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+  apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain:"pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId:"pingpongclub-4a5fd",
+  storageBucket:"pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId:"802826774007",
+  appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const $ = s => document.querySelector(s);
 
-// ===== 제목 동기화 (캐시 포함) =====
+// ===== 제목 캐시 =====
 const titleRef = ref(db, 'config/title');
 const cachedTitle = localStorage.getItem('siteTitle');
 if(cachedTitle){
-  document.title = `📊 ${cachedTitle} 월간리포트`;
-  $('#pageHeader').textContent = `📊 ${cachedTitle} 월간리포트`;
+  document.title = `🏓 ${cachedTitle} 이달의 전적`;
+  $('#pageHeader').textContent = `🏓 ${cachedTitle} 이달의 전적`;
 }
 onValue(titleRef, s=>{
   const val = s.val() ?? 'PingPong Club';
   localStorage.setItem('siteTitle', val);
-  document.title = `📊 ${val} 월간리포트`;
-  $('#pageHeader').textContent = `📊 ${val} 월간리포트`;
+  document.title = `🏓 ${val} 이달의 전적`;
+  $('#pageHeader').textContent = `🏓 ${val} 이달의 전적`;
 });
 
-// ===== 데이터 계산 =====
+// ===== 데이터 =====
 const matchRef = ref(db,'matches');
 const playerRef = ref(db,'players');
 const weightRef = ref(db,'config/doubleWeight');
 let players = {};
 let doubleWeight = 1;
 
-// ✅ 복식 가중치 불러오기
 get(weightRef).then(snap=>{
   if(snap.exists()) doubleWeight = parseFloat(snap.val()) || 1;
 });
-
-onValue(playerRef, snap=>{
-  players = snap.val() || {};
-});
+onValue(playerRef, snap=>{ players = snap.val() || {}; });
 
 onValue(matchRef, snap=>{
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const lastMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2,'0')}`;
+  const stats={}, prevStats={};
 
-  const stats = {};
-  const prevStats = {};
-
-  // ===== 집계 =====
   Object.values(data).forEach(m=>{
     const { monthKey, mode, winnerSide, namesA, namesB } = m;
-    const names = [...namesA, ...namesB];
+    if(!monthKey) return;
+    const names=[...namesA,...namesB];
     if(monthKey===thisMonth || monthKey===lastMonth){
-      const weight = (mode==='double') ? doubleWeight : 1;
+      const weight=(mode==='double')?doubleWeight:1;
       names.forEach(n=>{
-        const target = (monthKey===thisMonth)?stats:prevStats;
+        const target=(monthKey===thisMonth)?stats:prevStats;
         if(!target[n]) target[n]={win:0,lose:0};
       });
       if(winnerSide==='A'){
-        namesA.forEach(n=>{
-          const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].win += weight;
-        });
-        namesB.forEach(n=>{
-          const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].lose += weight;
-        });
+        namesA.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].win+=weight);
+        namesB.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].lose+=weight);
       } else if(winnerSide==='B'){
-        namesB.forEach(n=>{
-          const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].win += weight;
-        });
-        namesA.forEach(n=>{
-          const target = (monthKey===thisMonth)?stats:prevStats;
-          target[n].lose += weight;
-        });
+        namesB.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].win+=weight);
+        namesA.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].lose+=weight);
       }
     }
   });
 
-  // ===== 승률 계산 + 개선된 정렬 =====
   const arr = Object.entries(players).map(([id,p])=>{
-    const cur = stats[p.name]||{win:0,lose:0};
-    const prev = prevStats[p.name]||{win:0,lose:0};
-    const curTotal = cur.win+cur.lose;
-    const prevTotal = prev.win+prev.lose;
-    const curRate = curTotal ? (cur.win/curTotal*100) : 0;
-    const prevRate = prevTotal ? (prev.win/prevTotal*100) : 0;
-    const diff = curRate - prevRate;
-    return {
-      name:p.name,
-      level:p.level,
-      total:curTotal,
-      win:cur.win,
-      lose:cur.lose,
-      rate:curRate,
-      prev:prevRate,
-      delta:diff
-    };
+    const cur=stats[p.name]||{win:0,lose:0};
+    const prev=prevStats[p.name]||{win:0,lose:0};
+    const curTotal=cur.win+cur.lose;
+    const prevTotal=prev.win+prev.lose;
+    const curRate=curTotal?(cur.win/curTotal*100):0;
+    const prevRate=prevTotal?(prev.win/prevTotal*100):0;
+    const diff=curRate-prevRate;
+    return {name:p.name,level:p.level,total:curTotal,win:cur.win,lose:cur.lose,rate:curRate,prev:prevRate,delta:diff};
   }).filter(p=>p.total>0)
-    // ✅ 정렬: 이달승률 ↓ → 경기수 ↓ → 부수 ↑
-    .sort((a,b)=>{
-      if(b.rate !== a.rate) return b.rate - a.rate;
-      if(b.total !== a.total) return b.total - a.total;
-      return a.level - b.level;
-    });
+  .sort((a,b)=>b.rate-a.rate||b.total-a.total||a.level-b.level);
 
   render(arr);
+  summary(arr);
 });
 
-function formatNum(n){
-  const val = Math.round(n*10)/10;
-  return val % 1 === 0 ? val.toFixed(0) : val.toFixed(1);
-}
+function formatNum(n){const v=Math.round(n*10)/10;return v%1===0?v.toFixed(0):v.toFixed(1);}
 
 function render(arr){
-  const tbody = $('#tbody'); tbody.innerHTML = '';
+  const tbody=$('#tbody'); tbody.innerHTML='';
   arr.forEach((p,i)=>{
-    const deltaClass = p.delta>0?'up':p.delta<0?'down':'';
-    const deltaSign = p.delta>0?'▲':p.delta<0?'▼':'-';
+    const cls=p.delta>0?'up':p.delta<0?'down':'';
+    const sign=p.delta>0?'▲':p.delta<0?'▼':'-';
     tbody.insertAdjacentHTML('beforeend',`
       <tr>
         <td>${i+1}</td>
@@ -243,39 +254,55 @@ function render(arr){
         <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
         <td>${formatNum(p.prev)}%</td>
         <td>${formatNum(p.rate)}%</td>
-        <td class="delta ${deltaClass}">${deltaSign} ${Math.abs(formatNum(p.delta)).toFixed(1)}</td>
+        <td class="delta ${cls}">${sign} ${Math.abs(formatNum(p.delta)).toFixed(1)}%p</td>
       </tr>
     `);
   });
 }
 
-// ✅ 모바일/PC 모두 작동하는 관리자 비밀번호 확인
-window.addEventListener("DOMContentLoaded", () => {
-  const adminBtn = document.getElementById("adminBtn");
-  if (!adminBtn) return;
+function summary(arr){
+  if(!arr.length) return;
+  const box=$('#summary');
+  const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
+  const topPlay=arr.slice().sort((a,b)=>b.total-a.total).slice(0,3);
+  const topWin=arr.slice().sort((a,b)=>b.win-a.win).slice(0,3);
+  const topDelta=arr.slice().sort((a,b)=>b.delta-a.delta).slice(0,3);
+  const promote=arr.filter(p=>p.rate>=80 && p.total>=5).slice(0,5);
 
-  adminBtn.addEventListener("click", async () => {
-    try {
-      const adminPwRef = ref(db, "config/adminPassword");
-      const snap = await get(adminPwRef);
-      const savedPw = snap.exists() ? snap.val() : "1234";
+  box.innerHTML=`
+    <div class="total">총 경기 수: ${totalMatches} 경기</div>
+    <div class="card"><h3>🎮 최다경기 TOP3</h3>
+      <ul>${topPlay.map(p=>`<li>${p.name} (${formatNum(p.total)} 경기)</li>`).join('')}</ul>
+    </div>
+    <div class="card"><h3>🏆 다승 TOP3</h3>
+      <ul>${topWin.map(p=>`<li>${p.name} (${formatNum(p.win)}승)</li>`).join('')}</ul>
+    </div>
+    <div class="card"><h3>📈 기량상승 TOP3</h3>
+      <ul>${topDelta.map(p=>`<li>${p.name} (+${formatNum(p.delta)}%p)</li>`).join('')}</ul>
+    </div>
+    <div class="card"><h3>🚀 부수상향 권고</h3>
+      <ul>${promote.length?promote.map(p=>`<li>${p.name} (${formatNum(p.rate)}%)</li>`).join(''):'<li>없음</li>'}</ul>
+    </div>
+  `;
+  box.style.display='grid';
+}
 
-      const input = prompt("관리자 비밀번호를 입력하세요.");
-      if (input === null) return; // 취소 시 종료
-      if (input !== savedPw) {
-        alert("비밀번호가 올바르지 않습니다.");
-        return;
-      }
-
-      // ✅ 통과 시 강제 이동
-      window.location.href = "admin.html";
-    } catch (err) {
-      console.error("관리자 비밀번호 확인 오류:", err);
-      alert("비밀번호 확인 중 오류가 발생했습니다.");
-    }
+// ✅ 관리자 비밀번호 확인
+window.addEventListener("DOMContentLoaded",()=>{
+  const btn=document.getElementById("adminBtn");
+  if(!btn)return;
+  btn.addEventListener("click",async()=>{
+    try{
+      const pwRef=ref(db,"config/adminPassword");
+      const snap=await get(pwRef);
+      const saved=snap.exists()?snap.val():"1234";
+      const input=prompt("관리자 비밀번호를 입력하세요.");
+      if(input===null)return;
+      if(input!==saved){alert("비밀번호가 올바르지 않습니다.");return;}
+      window.location.href="admin.html";
+    }catch(err){alert("비밀번호 확인 중 오류 발생");console.error(err);}
   });
 });
-
 </script>
 </body>
 </html>
