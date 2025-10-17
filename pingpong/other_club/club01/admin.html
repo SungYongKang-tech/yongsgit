@@ -159,7 +159,9 @@ h1{
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, set, push, remove, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { 
+  getDatabase, ref, set, push, remove, onValue, get, child 
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -170,11 +172,12 @@ const firebaseConfig = {
   messagingSenderId:"802826774007",
   appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
+
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const $ = s=>document.querySelector(s);
-const toast=(m="저장되었습니다")=>{
-  const t=$("#toast");t.textContent=m;t.classList.add("show");
+const $ = s => document.querySelector(s);
+const toast = (m="저장되었습니다")=>{
+  const t=$("#toast"); t.textContent=m; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),1500);
 };
 
@@ -194,7 +197,7 @@ onValue(titleRef, s=>{
 });
 $('#saveTitle').onclick = async()=>{
   const title = $('#siteTitle').value.trim();
-  if(!title)return toast('제목을 입력하세요');
+  if(!title) return toast('제목을 입력하세요');
   await set(titleRef, title);
   localStorage.setItem('siteTitle', title);
   toast('제목 변경 완료');
@@ -202,12 +205,12 @@ $('#saveTitle').onclick = async()=>{
 
 // ===== 선수 관리 (부수 오름차순 정렬) =====
 const playerRef = ref(db, 'players');
-onValue(playerRef,snap=>{
-  const list=$("#playerList");list.innerHTML="";
+onValue(playerRef, snap=>{
+  const list=$("#playerList"); list.innerHTML="";
   const data=snap.val()||{};
   const sorted = Object.entries(data).sort(([,a],[,b])=>{
     if(a.level === b.level) return a.name.localeCompare(b.name,'ko');
-    return a.level - b.level; // 낮은 부수가 위로
+    return a.level - b.level;
   });
   sorted.forEach(([id,p])=>{
     const div=document.createElement('div');
@@ -220,13 +223,16 @@ onValue(playerRef,snap=>{
     list.appendChild(div);
   });
 });
-window.updateLevel=async(id,v)=>{await set(ref(db,`players/${id}/level`),parseInt(v));toast('부수 수정 완료');};
+window.updateLevel = async(id,v)=>{
+  await set(ref(db,`players/${id}/level`),parseInt(v));
+  toast('부수 수정 완료');
+};
 $('#addPlayer').onclick=async()=>{
   const name=$('#playerName').value.trim();
   const level=parseInt($('#playerLevel').value)||0;
   if(!name)return toast('이름 입력');
   await push(playerRef,{name,level,joinedAt:Date.now()});
-  $('#playerName').value='';$('#playerLevel').value='';
+  $('#playerName').value=''; $('#playerLevel').value='';
   toast('선수 등록 완료');
 };
 window.del=async(id)=>{
@@ -235,7 +241,7 @@ window.del=async(id)=>{
   toast('삭제 완료');
 };
 
-// ===== 기타 설정 =====
+// ===== 설정 =====
 onValue(ref(db,'config/doubleWeight'),s=>$('#doubleWeight').value=s.val()??1);
 $('#saveDoubleWeight').onclick=async()=>{
   const v=parseFloat($('#doubleWeight').value);
@@ -243,6 +249,7 @@ $('#saveDoubleWeight').onclick=async()=>{
   await set(ref(db,'config/doubleWeight'),v);
   toast('복식 가중치 저장');
 };
+
 onValue(ref(db,'config/deletePassword'),s=>$('#deletePassword').value=s.val()??'7910');
 $('#saveDeletePassword').onclick=async()=>{
   const v=$('#deletePassword').value.trim();
@@ -250,7 +257,7 @@ $('#saveDeletePassword').onclick=async()=>{
   await set(ref(db,'config/deletePassword'),v);
   toast('삭제 비밀번호 저장');
 };
-// ✅ 관리자 비밀번호 저장 정상화
+
 onValue(ref(db,'config/adminPassword'),s=>$('#adminPassword').value=s.val()??'1234');
 $('#saveAdminPassword').onclick=async()=>{
   const v=$('#adminPassword').value.trim();
@@ -258,8 +265,6 @@ $('#saveAdminPassword').onclick=async()=>{
   await set(ref(db,'config/adminPassword'),v);
   toast('관리자 비밀번호 저장');
 };
-
-//import { get, remove, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 // ✅ 이번달 전적 삭제 기능
 $('#deleteCurrentMonth').onclick = async () => {
@@ -296,7 +301,7 @@ $('#deleteCurrentMonth').onclick = async () => {
     toast("⚠️ 삭제 중 오류가 발생했습니다");
   }
 };
-
 </script>
+
 </body>
 </html>
