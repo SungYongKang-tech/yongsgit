@@ -172,12 +172,11 @@ const firebaseConfig = {
   messagingSenderId:"802826774007",
   appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const $ = s => document.querySelector(s);
-const toast = (m="저장되었습니다")=>{
-  const t=$("#toast"); t.textContent=m; t.classList.add("show");
+const $ = s=>document.querySelector(s);
+const toast=(m="저장되었습니다")=>{
+  const t=$("#toast");t.textContent=m;t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),1500);
 };
 
@@ -197,7 +196,7 @@ onValue(titleRef, s=>{
 });
 $('#saveTitle').onclick = async()=>{
   const title = $('#siteTitle').value.trim();
-  if(!title) return toast('제목을 입력하세요');
+  if(!title)return toast('제목을 입력하세요');
   await set(titleRef, title);
   localStorage.setItem('siteTitle', title);
   toast('제목 변경 완료');
@@ -205,12 +204,12 @@ $('#saveTitle').onclick = async()=>{
 
 // ===== 선수 관리 (부수 오름차순 정렬) =====
 const playerRef = ref(db, 'players');
-onValue(playerRef, snap=>{
-  const list=$("#playerList"); list.innerHTML="";
+onValue(playerRef,snap=>{
+  const list=$("#playerList");list.innerHTML="";
   const data=snap.val()||{};
   const sorted = Object.entries(data).sort(([,a],[,b])=>{
     if(a.level === b.level) return a.name.localeCompare(b.name,'ko');
-    return a.level - b.level;
+    return a.level - b.level; // 낮은 부수가 위로
   });
   sorted.forEach(([id,p])=>{
     const div=document.createElement('div');
@@ -223,16 +222,13 @@ onValue(playerRef, snap=>{
     list.appendChild(div);
   });
 });
-window.updateLevel = async(id,v)=>{
-  await set(ref(db,`players/${id}/level`),parseInt(v));
-  toast('부수 수정 완료');
-};
+window.updateLevel=async(id,v)=>{await set(ref(db,`players/${id}/level`),parseInt(v));toast('부수 수정 완료');};
 $('#addPlayer').onclick=async()=>{
   const name=$('#playerName').value.trim();
   const level=parseInt($('#playerLevel').value)||0;
   if(!name)return toast('이름 입력');
   await push(playerRef,{name,level,joinedAt:Date.now()});
-  $('#playerName').value=''; $('#playerLevel').value='';
+  $('#playerName').value='';$('#playerLevel').value='';
   toast('선수 등록 완료');
 };
 window.del=async(id)=>{
@@ -241,7 +237,7 @@ window.del=async(id)=>{
   toast('삭제 완료');
 };
 
-// ===== 설정 =====
+// ===== 기타 설정 =====
 onValue(ref(db,'config/doubleWeight'),s=>$('#doubleWeight').value=s.val()??1);
 $('#saveDoubleWeight').onclick=async()=>{
   const v=parseFloat($('#doubleWeight').value);
@@ -249,7 +245,6 @@ $('#saveDoubleWeight').onclick=async()=>{
   await set(ref(db,'config/doubleWeight'),v);
   toast('복식 가중치 저장');
 };
-
 onValue(ref(db,'config/deletePassword'),s=>$('#deletePassword').value=s.val()??'7910');
 $('#saveDeletePassword').onclick=async()=>{
   const v=$('#deletePassword').value.trim();
@@ -257,7 +252,6 @@ $('#saveDeletePassword').onclick=async()=>{
   await set(ref(db,'config/deletePassword'),v);
   toast('삭제 비밀번호 저장');
 };
-
 onValue(ref(db,'config/adminPassword'),s=>$('#adminPassword').value=s.val()??'1234');
 $('#saveAdminPassword').onclick=async()=>{
   const v=$('#adminPassword').value.trim();
@@ -266,42 +260,49 @@ $('#saveAdminPassword').onclick=async()=>{
   toast('관리자 비밀번호 저장');
 };
 
-// ✅ 이번달 전적 삭제 기능
-$('#deleteCurrentMonth').onclick = async () => {
-  if (!confirm("⚠️ 정말 이번달 경기결과를 전부 삭제하시겠습니까?\n(삭제 후 복구 불가)")) return;
+// ✅ 이번달 전적 전체 삭제 (비밀번호 확인 포함)
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("deleteCurrentMonth");
+  if (!btn) return;
 
-  // 비밀번호 확인
-  const pwSnap = await get(ref(db, 'config/deletePassword'));
-  const savedPw = pwSnap.exists() ? pwSnap.val() : '7910';
-  const input = prompt("삭제 비밀번호를 입력하세요.");
-  if (input === null) return;
-  if (input !== savedPw) {
-    alert("❌ 비밀번호가 올바르지 않습니다.");
-    return;
-  }
+  btn.addEventListener("click", async () => {
+    if (!confirm("⚠️ 정말 이번달 경기결과를 전부 삭제하시겠습니까?\n(삭제 후 복구 불가)")) return;
 
-  try {
-    const matchesRef = ref(db, 'matches');
-    const snapshot = await get(matchesRef);
-    const now = new Date();
-    const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}`;
-    const data = snapshot.val() || {};
+    try {
+      const pwRef = ref(db, "config/deletePassword");
+      const pwSnap = await get(pwRef);
+      const savedPw = pwSnap.exists() ? pwSnap.val() : "7910";
 
-    let count = 0;
-    for (const [id, match] of Object.entries(data)) {
-      if (match.monthKey === thisMonth) {
-        await remove(child(matchesRef, id));
-        count++;
+      const input = prompt("삭제 비밀번호를 입력하세요.");
+      if (input === null) return;
+      if (input.trim() !== savedPw.trim()) {
+        alert("❌ 비밀번호가 올바르지 않습니다.");
+        return;
       }
-    }
 
-    toast(`✅ 이번달(${thisMonth}) 전적 ${count}건 삭제 완료`);
-  } catch (err) {
-    console.error(err);
-    toast("⚠️ 삭제 중 오류가 발생했습니다");
-  }
-};
+      const matchesRef = ref(db, "matches");
+      const snapshot = await get(matchesRef);
+      const data = snapshot.val() || {};
+      const now = new Date();
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}`;
+      let count = 0;
+
+      for (const [id, match] of Object.entries(data)) {
+        if (match.monthKey === thisMonth) {
+          await remove(child(matchesRef, id));
+          count++;
+        }
+      }
+
+      toast(`✅ ${thisMonth} 전적 ${count}건 삭제 완료`);
+    } catch (err) {
+      console.error(err);
+      alert("⚠️ 삭제 중 오류가 발생했습니다.");
+    }
+  });
+});
 </script>
+
 
 </body>
 </html>
