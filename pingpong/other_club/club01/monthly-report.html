@@ -246,13 +246,40 @@ onValue(matchRef, snap=>{
 function formatNum(n){const v=Math.round(n*10)/10;return v%1===0?v.toFixed(0):v.toFixed(1);}
 
 function render(arr){
-  const tbody=$('#tbody'); tbody.innerHTML='';
-  arr.forEach((p,i)=>{
-    const cls=p.delta>0?'up':p.delta<0?'down':'';
-    const sign=p.delta>0?'▲':p.delta<0?'▼':'-';
-    tbody.insertAdjacentHTML('beforeend',`
-      <tr>
-        <td>${i+1}</td>
+  const tbody = $('#tbody');
+  tbody.innerHTML = '';
+
+  // ✅ 오늘 날짜 기준 경기수 제한 설정
+  const today = new Date().getDate();
+  let requiredGames = 5;
+  if (today > 20) requiredGames = 15;
+  else if (today > 10) requiredGames = 10;
+
+  // ✅ 경기수 기준으로 그룹 분리
+  const qualified = arr.filter(p => p.total >= requiredGames);
+  const unqualified = arr.filter(p => p.total < requiredGames);
+
+  // ✅ 표 위에 기준 설명 추가
+  const table = document.querySelector('table');
+  if (!document.getElementById('ruleNote')) {
+    const note = document.createElement('p');
+    note.id = 'ruleNote';
+    note.textContent = `⚠️ 순위는 날짜 기준 경기수(10일:5경기·20일:10경기·말일:15경기) 이상자만 포함됩니다.`;
+    note.style.textAlign = 'center';
+    note.style.color = '#2563eb';
+    note.style.fontSize = '14px';
+    note.style.margin = '12px 0';
+    table.parentNode.insertBefore(note, table);
+  }
+
+  // ✅ 순위자 (하늘색 배경)
+  qualified.forEach((p, i) => {
+    const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
+    const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '-';
+    const bg = 'style="background-color:#e0f2fe"';
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr ${bg}>
+        <td>${i + 1}</td>
         <td>${p.name}(${p.level})</td>
         <td>${formatNum(p.total)}</td>
         <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
@@ -262,7 +289,31 @@ function render(arr){
       </tr>
     `);
   });
+
+  // ✅ 미달자 (순위 제외, 하단 배치)
+  if (unqualified.length > 0) {
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr><td colspan="7" style="text-align:center; background:#f8fafc; color:#64748b;">⚪ 이하 조건 미달자 ⚪</td></tr>
+    `);
+
+    unqualified.forEach(p => {
+      const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
+      const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '-';
+      tbody.insertAdjacentHTML('beforeend', `
+        <tr>
+          <td>-</td>
+          <td>${p.name}(${p.level})</td>
+          <td>${formatNum(p.total)}</td>
+          <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
+          <td>${formatNum(p.prev)}%</td>
+          <td>${formatNum(p.rate)}%</td>
+          <td class="delta ${cls}">${sign} ${Math.abs(formatNum(p.delta)).toFixed(1)}%p</td>
+        </tr>
+      `);
+    });
+  }
 }
+
 
 function summary(arr){
   if(!arr.length) return;
