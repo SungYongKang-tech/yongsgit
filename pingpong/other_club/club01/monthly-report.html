@@ -159,47 +159,13 @@ tbody tr:hover{background:#f9fafb}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, onValue, get, remove } 
+  from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-const firebaseConfig = {
-  apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
-  authDomain:"pingpongclub-4a5fd.firebaseapp.com",
-  databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
-  projectId:"pingpongclub-4a5fd",
-  storageBucket:"pingpongclub-4a5fd.firebasestorage.app",
-  messagingSenderId:"802826774007",
-  appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
-};
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const $ = s => document.querySelector(s);
 
-// ===== 제목 캐시 =====
-const titleRef = ref(db, 'config/title');
-const cachedTitle = localStorage.getItem('siteTitle');
-if(cachedTitle){
-  document.title = `🏓 ${cachedTitle} 이달의 전적`;
-  $('#pageHeader').textContent = `🏓 ${cachedTitle} 이달의 전적`;
-}
-onValue(titleRef, s=>{
-  const val = s.val() ?? 'PingPong Club';
-  localStorage.setItem('siteTitle', val);
-  document.title = `🏓 ${val} 이달의 전적`;
-  $('#pageHeader').textContent = `🏓 ${val} 이달의 전적`;
-});
-
-// ===== 데이터 =====
-const matchRef = ref(db,'matches');
-const playerRef = ref(db,'players');
-const weightRef = ref(db,'config/doubleWeight');
-let players = {};
-let doubleWeight = 1;
-
-get(weightRef).then(snap=>{
-  if(snap.exists()) doubleWeight = parseFloat(snap.val()) || 1;
-});
-onValue(playerRef, snap=>{ players = snap.val() || {}; });
-
+// ===== 주요 onValue 블록 =====
 onValue(matchRef, snap=>{
   const data = snap.val() || {};
   const now = new Date();
@@ -209,55 +175,48 @@ onValue(matchRef, snap=>{
 
   const stats = {}, prevStats = {};
 
-  // ✅ 2개월 전 데이터 자동 삭제
+  // ✅ 2개월 전 데이터 삭제
   Object.entries(data).forEach(([id, m])=>{
     if (!m.monthKey) return;
-    if (m.monthKey <= oldMonth) {
-      remove(ref(db, `matches/${id}`)); // ⚠️ 2개월 이상 지난 경기 자동 삭제
-    }
+    if (m.monthKey <= oldMonth) remove(ref(db, `matches/${id}`));
   });
 
-  // ✅ 이달 / 전달 경기 분리 집계
+  // ✅ 이달 / 전달 분리
   Object.values(data).forEach(m=>{
     const { monthKey, mode, winnerSide, namesA, namesB } = m;
-    if(!monthKey) return;
-    const names=[...namesA,...namesB];
-    const weight=(mode==='double')?doubleWeight:1;
+    if (!monthKey) return;
+    const names = [...namesA, ...namesB];
+    const weight = (mode==='double') ? doubleWeight : 1;
     const target = (monthKey===thisMonth) ? stats : (monthKey===prevMonth ? prevStats : null);
-    if(!target) return;
+    if (!target) return;
 
-    names.forEach(n=>{
-      if(!target[n]) target[n]={win:0,lose:0};
-    });
-    if(winnerSide==='A'){
-      namesA.forEach(n=>target[n].win+=weight);
-      namesB.forEach(n=>target[n].lose+=weight);
-    }else if(winnerSide==='B'){
-      namesB.forEach(n=>target[n].win+=weight);
-      namesA.forEach(n=>target[n].lose+=weight);
+    names.forEach(n => { if (!target[n]) target[n] = {win:0, lose:0}; });
+    if (winnerSide === 'A') {
+      namesA.forEach(n => target[n].win += weight);
+      namesB.forEach(n => target[n].lose += weight);
+    } else if (winnerSide === 'B') {
+      namesB.forEach(n => target[n].win += weight);
+      namesA.forEach(n => target[n].lose += weight);
     }
   });
 
-  // ✅ 전적 데이터 계산 함수
   function makeArr(obj){
     return Object.entries(players).map(([id,p])=>{
-      const d=obj[p.name]||{win:0,lose:0};
-      const total=d.win+d.lose;
-      const rate=total?(d.win/total*100):0;
-      return {name:p.name,level:p.level,total,win:d.win,lose:d.lose,rate};
+      const d = obj[p.name] || {win:0, lose:0};
+      const total = d.win + d.lose;
+      const rate = total ? (d.win/total*100) : 0;
+      return { name:p.name, level:p.level, total, win:d.win, lose:d.lose, rate };
     }).filter(p=>p.total>0)
-      .sort((a,b)=>b.rate-a.rate||b.total-a.total||a.level-b.level);
+      .sort((a,b)=>b.rate - a.rate || b.total - a.total || a.level - b.level);
   }
 
   const curArr = makeArr(stats);
-  const prevArr = makeArr(prevStats); // ✅ 꼭 있어야 함!
+  const prevArr = makeArr(prevStats);
 
-  render(curArr, thisMonth, prevArr, prevMonth); // ✅ 네 번째 인자로 전달
+  render(curArr, thisMonth, prevArr, prevMonth); // ✅ 정상 동작
 });
 
-
-function formatNum(n){const v=Math.round(n*10)/10;return v%1===0?v.toFixed(0):v.toFixed(1);}
-
+// ===== render 함수 =====
 function render(curArr, thisMonth, prevArr, prevMonth){
   const main = document.querySelector('main');
   main.innerHTML = `
