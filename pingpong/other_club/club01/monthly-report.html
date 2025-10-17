@@ -46,7 +46,6 @@ h1{
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .row{display:flex;justify-content:center;gap:8px;margin-bottom:10px;}
 main{max-width:900px;margin:0 auto;padding:10px 10px 60px;}
-/* ✅ 테이블 기본 스타일 (행 높이 개선) */
 table{
   width:100%;
   border-collapse:collapse;
@@ -59,7 +58,7 @@ table{
 thead th{
   background:#f1f5f9;
   border-bottom:1px solid #e2e8f0;
-  padding:10px 6px; /* ✅ 여유 있게 */
+  padding:10px 6px;
   text-align:center;
   color:#334155;
   font-weight:700;
@@ -67,7 +66,7 @@ thead th{
 }
 tbody td{
   border-bottom:1px solid #f1f5f9;
-  padding:10px 6px; /* ✅ 여유 있게 */
+  padding:10px 6px;
   text-align:center;
 }
 tbody tr:hover{background:#f9fafb}
@@ -77,8 +76,6 @@ tbody tr:hover{background:#f9fafb}
 .delta{font-weight:700;}
 .delta.up{color:var(--ok);}
 .delta.down{color:var(--danger);}
-
-/* ✅ 요약 카드 스타일 (글씨 키움 & 강조) */
 .summary{
   margin-top:28px;
   display:grid;
@@ -97,7 +94,7 @@ tbody tr:hover{background:#f9fafb}
 }
 .card h3{
   margin:0 0 6px;
-  font-size:18px; /* ✅ 강조 */
+  font-size:18px;
   color:var(--accent);
   display:flex;
   align-items:center;
@@ -106,8 +103,8 @@ tbody tr:hover{background:#f9fafb}
 .card ul{
   margin:0;
   padding-left:22px;
-  font-size:16px; /* ✅ 크게 변경 */
-  line-height:1.5; /* ✅ 여유있는 간격 */
+  font-size:16px;
+  line-height:1.5;
 }
 .card li{margin:3px 0;}
 .total{
@@ -122,11 +119,9 @@ tbody tr:hover{background:#f9fafb}
 }
 @media(max-width:640px){
   table{font-size:13px;}
-  thead th, tbody td{padding:7px 4px;} /* ✅ 모바일도 약간 키움 */
+  thead th, tbody td{padding:7px 4px;}
   .card ul{font-size:15px;}
 }
-
-
 </style>
 </head>
 <body>
@@ -153,7 +148,6 @@ tbody tr:hover{background:#f9fafb}
     </thead>
     <tbody id="tbody"></tbody>
   </table>
-
   <div id="summary" class="summary" style="display:none;"></div>
 </main>
 
@@ -162,7 +156,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebas
 import { getDatabase, ref, onValue, get, remove } 
   from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  const firebaseConfig = {
+const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
   databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
@@ -174,38 +168,19 @@ import { getDatabase, ref, onValue, get, remove }
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-// ✅ Firebase Realtime Database 참조 설정
 const matchRef = ref(db, 'matches');
 const playerRef = ref(db, 'players');
-const weightRef = ref(db, 'config/doubleWeight');
+
 let players = {};
-let doubleWeight = 1;
+onValue(playerRef, snap => { players = snap.val() || {}; });
 
-// ✅ 복식 가중치 불러오기
-get(weightRef).then(snap=>{
-  if(snap.exists()) doubleWeight = parseFloat(snap.val()) || 1;
-});
-
-// ✅ 선수 목록 불러오기
-onValue(playerRef, snap=>{
-  players = snap.val() || {};
-});
-
-// ✅ 항상 소수점 한 자리까지 표시 (예: 60.0%)
+// ✅ 소수점 한 자리(승률) / 정수(경기, 승, 패)
 function formatNum(n) {
   return (Math.round(n * 10) / 10).toFixed(1);
 }
 
-// 복식 가중치가 로드된 후 실행되도록 보장
-setTimeout(()=> {
-  onValue(matchRef, snap=>{
-    // ⚙ 기존 내용 그대로 유지
-  });
-}, 500);
-
-
 // ===== 주요 onValue 블록 =====
-onValue(matchRef, snap=>{
+onValue(matchRef, snap => {
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
@@ -215,62 +190,58 @@ onValue(matchRef, snap=>{
   const stats = {}, prevStats = {};
 
   // ✅ 2개월 전 데이터 삭제
-  Object.entries(data).forEach(([id, m])=>{
+  Object.entries(data).forEach(([id, m]) => {
     if (!m.monthKey) return;
     if (m.monthKey <= oldMonth) remove(ref(db, `matches/${id}`));
   });
 
   // ✅ 이달 / 전달 분리
-  Object.values(data).forEach(m=>{
-    const { monthKey, mode, winnerSide, namesA, namesB } = m;
+  Object.values(data).forEach(m => {
+    const { monthKey, winnerSide, namesA, namesB } = m;
     if (!monthKey) return;
-    const names = [...namesA, ...namesB];
-    const modeStr = String(mode || '').toLowerCase();
-    const isDouble = ['double','doubles','복식','mixed','mix'].includes(modeStr);
-    const weight = isDouble ? doubleWeight : 1;
-
-    const target = (monthKey===thisMonth) ? stats : (monthKey===prevMonth ? prevStats : null);
+    const target = (monthKey === thisMonth) ? stats : (monthKey === prevMonth ? prevStats : null);
     if (!target) return;
 
-    names.forEach(n => { if (!target[n]) target[n] = {win:0, lose:0}; });
+    const names = [...namesA, ...namesB];
+    names.forEach(n => { if (!target[n]) target[n] = { win: 0, lose: 0 }; });
+
     if (winnerSide === 'A') {
-      namesA.forEach(n => target[n].win += weight);
-      namesB.forEach(n => target[n].lose += weight);
+      namesA.forEach(n => target[n].win++);
+      namesB.forEach(n => target[n].lose++);
     } else if (winnerSide === 'B') {
-      namesB.forEach(n => target[n].win += weight);
-      namesA.forEach(n => target[n].lose += weight);
+      namesB.forEach(n => target[n].win++);
+      namesA.forEach(n => target[n].lose++);
     }
   });
 
   function makeArr(obj){
-    return Object.entries(players).map(([id,p])=>{
-      const d = obj[p.name] || {win:0, lose:0};
+    return Object.entries(players).map(([id, p]) => {
+      const d = obj[p.name] || { win: 0, lose: 0 };
       const total = d.win + d.lose;
-      const rate = total ? (d.win/total*100) : 0;
-      return { name:p.name, level:p.level, total, win:d.win, lose:d.lose, rate };
-    }).filter(p=>p.total>0)
-      .sort((a,b)=>b.rate - a.rate || b.total - a.total || a.level - b.level);
+      const rate = total ? (d.win / total * 100) : 0;
+      return { name: p.name, level: p.level, total: Math.round(total), win: Math.round(d.win), lose: Math.round(d.lose), rate };
+    }).filter(p => p.total > 0)
+      .sort((a,b) => b.rate - a.rate || b.total - a.total || a.level - b.level);
   }
 
   const curArr = makeArr(stats);
   const prevArr = makeArr(prevStats);
+  const prevMap = Object.fromEntries(prevArr.map(p => [p.name, p.rate]));
+  const curAug = curArr.map(p => {
+    const prev = prevMap[p.name] ?? null;
+    const delta = (prev === null) ? null : (p.rate - prev);
+    return { ...p, prev, delta };
+  });
 
-  render(curArr, thisMonth, prevArr, prevMonth); // ✅ 정상 동작
+  render(curAug, thisMonth, prevArr, prevMonth);
+  summary(curAug);
 });
 
 // ===== render 함수 =====
-function render(curArr, thisMonth, prevArr, prevMonth){
+function render(curArr, thisMonth, prevArr, prevMonth) {
   const main = document.querySelector('main');
-
-  
   main.innerHTML = `
-    <h2 id="currentTitle" style="
-      text-align:center;
-      font-size:22px;
-      color:#1e3a8a;
-      margin:20px 0 14px;
-      font-weight:800;
-    ">
+    <h2 id="currentTitle" style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
       🏓 이달의 전적('${thisMonth.slice(2)}')
     </h2>
     <table id="tableCurrent">
@@ -289,48 +260,27 @@ function render(curArr, thisMonth, prevArr, prevMonth){
     </table>
 
     ${prevArr.length ? `
-      <h3 style="
-        text-align:center;
-        font-size:20px;
-        color:#334155;
-        margin:28px 0 8px;
-        border-top:2px solid #e2e8f0;
-        padding-top:12px;
-      ">
+      <h3 style="text-align:center;font-size:20px;color:#334155;margin:28px 0 8px;border-top:2px solid #e2e8f0;padding-top:12px;">
         지난달 전적('${prevMonth.slice(2)}')
       </h3>
       <table id="tablePrev">
         <thead>
           <tr>
-            <th>순위</th>
-            <th>이름(부수)</th>
-            <th>경기</th>
-            <th>승/패</th>
-            <th>승률</th>
+            <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>승률</th>
           </tr>
         </thead>
         <tbody id="tbodyPrev"></tbody>
       </table>
     ` : ''}
     
-    <p id="ruleNote" style="
-      text-align:center;
-      color:#2563eb;
-      font-size:14px;
-      margin-top:16px;
-      font-weight:600;
-    ">
+    <p id="ruleNote" style="text-align:center;color:#2563eb;font-size:14px;margin-top:16px;font-weight:600;">
       ⚠️ 순위는 날짜 기준 경기수(10일:5경기 · 20일:10경기 · 말일:15경기) 이상자만 포함됩니다.
     </p>
   `;
 
-  // === 날짜 기준 경기수 제한 ===
   const today = new Date().getDate();
-  let requiredGames = 5;
-  if (today > 20) requiredGames = 15;
-  else if (today > 10) requiredGames = 10;
+  let requiredGames = today > 20 ? 15 : today > 10 ? 10 : 5;
 
-  // === 이달 데이터 ===
   const tbodyCur = document.querySelector('#tbodyCurrent');
   const qualified = curArr.filter(p => p.total >= requiredGames);
   const unqualified = curArr.filter(p => p.total < requiredGames);
@@ -338,15 +288,14 @@ function render(curArr, thisMonth, prevArr, prevMonth){
   qualified.forEach((p, i) => {
     const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
     const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '-';
-    const bg = 'style="background-color:#e0f2fe"';
-    const prevText = (p.prev && p.prev > 0) ? `${formatNum(p.prev)}%` : '–';
-    const deltaText = (p.prev && p.prev > 0) ? `${sign} ${Math.abs(formatNum(p.delta)).toFixed(1)}%p` : '–';
+    const prevText = (p.prev !== null) ? `${formatNum(p.prev)}%` : '–';
+    const deltaText = (p.prev !== null) ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
     tbodyCur.insertAdjacentHTML('beforeend', `
-      <tr ${bg}>
+      <tr style="background-color:#e0f2fe;">
         <td>${i + 1}</td>
         <td>${p.name}(${p.level})</td>
-        <td>${formatNum(p.total)}</td>
-        <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
+        <td>${p.total}</td>
+        <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
         <td>${prevText}</td>
         <td>${formatNum(p.rate)}%</td>
         <td class="delta ${cls}">${deltaText}</td>
@@ -361,14 +310,14 @@ function render(curArr, thisMonth, prevArr, prevMonth){
     unqualified.forEach(p => {
       const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
       const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '-';
-      const prevText = (p.prev && p.prev > 0) ? `${formatNum(p.prev)}%` : '–';
-      const deltaText = (p.prev && p.prev > 0) ? `${sign} ${Math.abs(formatNum(p.delta)).toFixed(1)}%p` : '–';
+      const prevText = (p.prev !== null) ? `${formatNum(p.prev)}%` : '–';
+      const deltaText = (p.prev !== null) ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
       tbodyCur.insertAdjacentHTML('beforeend', `
         <tr>
           <td>-</td>
           <td>${p.name}(${p.level})</td>
-          <td>${formatNum(p.total)}</td>
-          <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
+          <td>${p.total}</td>
+          <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
           <td>${prevText}</td>
           <td>${formatNum(p.rate)}%</td>
           <td class="delta ${cls}">${deltaText}</td>
@@ -377,7 +326,6 @@ function render(curArr, thisMonth, prevArr, prevMonth){
     });
   }
 
-  // === 지난달 데이터 ===
   if (prevArr.length > 0) {
     const tbodyPrev = document.querySelector('#tbodyPrev');
     prevArr.forEach((p, i) => {
@@ -385,8 +333,8 @@ function render(curArr, thisMonth, prevArr, prevMonth){
         <tr style="background:#f9fafb;">
           <td>${i + 1}</td>
           <td>${p.name}(${p.level})</td>
-          <td>${formatNum(p.total)}</td>
-          <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
+          <td>${p.total}</td>
+          <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
           <td>${p.total > 0 ? `${formatNum(p.rate)}%` : '–'}</td>
         </tr>
       `);
@@ -394,49 +342,47 @@ function render(curArr, thisMonth, prevArr, prevMonth){
   }
 }
 
+// ===== summary 함수 =====
+function summary(arr) {
+  if (!arr.length) return;
+  const box = document.querySelector('#summary');
+  const totalMatches = Math.round(arr.reduce((s, p) => s + p.total, 0) / 2);
+  const topPlay = arr.slice().sort((a,b)=>b.total-a.total).slice(0,3);
+  const topWin = arr.slice().sort((a,b)=>b.win-a.win).slice(0,3);
+  const topDelta = arr.slice().sort((a,b)=>b.delta-a.delta).slice(0,3);
+  const promote = arr.filter(p=>p.rate>=80 && p.total>=5).slice(0,5);
 
-
-function summary(arr){
-  if(!arr.length) return;
-  const box=$('#summary');
-  const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
-  const topPlay=arr.slice().sort((a,b)=>b.total-a.total).slice(0,3);
-  const topWin=arr.slice().sort((a,b)=>b.win-a.win).slice(0,3);
-  const topDelta=arr.slice().sort((a,b)=>b.delta-a.delta).slice(0,3);
-  const promote=arr.filter(p=>p.rate>=80 && p.total>=5).slice(0,5);
-
-  box.innerHTML=`
+  box.innerHTML = `
     <div class="total">총 경기 수: ${totalMatches} 경기</div>
     <div class="card"><h3>🎮 최다경기 TOP3</h3>
-      <ul>${topPlay.map(p=>`<li>${p.name} (${formatNum(p.total)} 경기)</li>`).join('')}</ul>
-    </div>
+      <ul>${topPlay.map(p=>`<li>${p.name} (${p.total} 경기)</li>`).join('')}</ul></div>
     <div class="card"><h3>🏆 다승 TOP3</h3>
-      <ul>${topWin.map(p=>`<li>${p.name} (${formatNum(p.win)}승)</li>`).join('')}</ul>
-    </div>
+      <ul>${topWin.map(p=>`<li>${p.name} (${p.win}승)</li>`).join('')}</ul></div>
     <div class="card"><h3>📈 기량상승 TOP3</h3>
-      <ul>${topDelta.map(p=>`<li>${p.name} (+${formatNum(p.delta)}%p)</li>`).join('')}</ul>
-    </div>
+      <ul>${topDelta.map(p=>`<li>${p.name} (+${formatNum(p.delta)}%p)</li>`).join('')}</ul></div>
     <div class="card"><h3>🚀 부수상향 권고</h3>
-      <ul>${promote.length?promote.map(p=>`<li>${p.name} (${formatNum(p.rate)}%)</li>`).join(''):'<li>없음</li>'}</ul>
-    </div>
+      <ul>${promote.length?promote.map(p=>`<li>${p.name} (${formatNum(p.rate)}%)</li>`).join(''):'<li>없음</li>'}</ul></div>
   `;
-  box.style.display='grid';
+  box.style.display = 'grid';
 }
 
-// ✅ 관리자 비밀번호 확인
-window.addEventListener("DOMContentLoaded",()=>{
-  const btn=document.getElementById("adminBtn");
-  if(!btn)return;
-  btn.addEventListener("click",async()=>{
-    try{
-      const pwRef=ref(db,"config/adminPassword");
-      const snap=await get(pwRef);
-      const saved=snap.exists()?snap.val():"1234";
-      const input=prompt("관리자 비밀번호를 입력하세요.");
-      if(input===null)return;
-      if(input!==saved){alert("비밀번호가 올바르지 않습니다.");return;}
-      window.location.href="admin.html";
-    }catch(err){alert("비밀번호 확인 중 오류 발생");console.error(err);}
+// ===== 관리자모드 =====
+window.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("adminBtn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    try {
+      const pwRef = ref(db, "config/adminPassword");
+      const snap = await get(pwRef);
+      const saved = snap.exists() ? snap.val() : "1234";
+      const input = prompt("관리자 비밀번호를 입력하세요.");
+      if (input === null) return;
+      if (input !== saved) { alert("비밀번호가 올바르지 않습니다."); return; }
+      window.location.href = "admin.html";
+    } catch (err) {
+      alert("비밀번호 확인 중 오류 발생");
+      console.error(err);
+    }
   });
 });
 </script>
