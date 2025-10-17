@@ -204,78 +204,94 @@ onValue(matchRef, snap=>{
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const lastMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2,'0')}`;
-  const stats={}, prevStats={};
+  const prevMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2,'0')}`;
+  const oldMonth = `${now.getFullYear()}-${String(now.getMonth()-1).padStart(2,'0')}`;
 
+  const stats = {}, prevStats = {};
+
+  // ✅ 2개월 전 데이터 자동 삭제
+  Object.entries(data).forEach(([id, m])=>{
+    if (!m.monthKey) return;
+    if (m.monthKey <= oldMonth) {
+      remove(ref(db, `matches/${id}`)); // ⚠️ 2개월 이상 지난 경기 자동 삭제
+    }
+  });
+
+  // ✅ 이달 / 전달 경기 분리 집계
   Object.values(data).forEach(m=>{
     const { monthKey, mode, winnerSide, namesA, namesB } = m;
     if(!monthKey) return;
     const names=[...namesA,...namesB];
-    if(monthKey===thisMonth || monthKey===lastMonth){
-      const weight=(mode==='double')?doubleWeight:1;
-      names.forEach(n=>{
-        const target=(monthKey===thisMonth)?stats:prevStats;
-        if(!target[n]) target[n]={win:0,lose:0};
-      });
-      if(winnerSide==='A'){
-        namesA.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].win+=weight);
-        namesB.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].lose+=weight);
-      } else if(winnerSide==='B'){
-        namesB.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].win+=weight);
-        namesA.forEach(n=>((monthKey===thisMonth)?stats:prevStats)[n].lose+=weight);
-      }
+    const weight=(mode==='double')?doubleWeight:1;
+    const target = (monthKey===thisMonth) ? stats : (monthKey===prevMonth ? prevStats : null);
+    if(!target) return;
+
+    names.forEach(n=>{
+      if(!target[n]) target[n]={win:0,lose:0};
+    });
+    if(winnerSide==='A'){
+      namesA.forEach(n=>target[n].win+=weight);
+      namesB.forEach(n=>target[n].lose+=weight);
+    }else if(winnerSide==='B'){
+      namesB.forEach(n=>target[n].win+=weight);
+      namesA.forEach(n=>target[n].lose+=weight);
     }
   });
 
-  const arr = Object.entries(players).map(([id,p])=>{
-    const cur=stats[p.name]||{win:0,lose:0};
-    const prev=prevStats[p.name]||{win:0,lose:0};
-    const curTotal=cur.win+cur.lose;
-    const prevTotal=prev.win+prev.lose;
-    const curRate=curTotal?(cur.win/curTotal*100):0;
-    const prevRate=prevTotal?(prev.win/prevTotal*100):0;
-    const diff=curRate-prevRate;
-    return {name:p.name,level:p.level,total:curTotal,win:cur.win,lose:cur.lose,rate:curRate,prev:prevRate,delta:diff};
-  }).filter(p=>p.total>0)
-  .sort((a,b)=>b.rate-a.rate||b.total-a.total||a.level-b.level);
+  // ✅ 전적 데이터 계산 함수
+  function makeArr(obj){
+    return Object.entries(players).map(([id,p])=>{
+      const d=obj[p.name]||{win:0,lose:0};
+      const total=d.win+d.lose;
+      const rate=total?(d.win/total*100):0;
+      return {name:p.name,level:p.level,total,win:d.win,lose:d.lose,rate};
+    }).filter(p=>p.total>0)
+      .sort((a,b)=>b.rate-a.rate||b.total-a.total||a.level-b.level);
+  }
 
-  render(arr);
-  summary(arr);
+  const curArr = makeArr(stats);
+  const prevArr = makeArr(prevStats);
+
+  render(curArr, thisMonth, prevArr, prevMonth);
 });
+
 
 function formatNum(n){const v=Math.round(n*10)/10;return v%1===0?v.toFixed(0):v.toFixed(1);}
 
-function render(arr){
+function render(curArr, thisMonth, prevArr, prevMonth){
   const tbody = $('#tbody');
   tbody.innerHTML = '';
 
-  // ✅ 오늘 날짜 기준 경기수 제한 설정
+  // === 날짜 기준 경기수 조건 계산 ===
   const today = new Date().getDate();
   let requiredGames = 5;
   if (today > 20) requiredGames = 15;
   else if (today > 10) requiredGames = 10;
 
-  // ✅ 경기수 기준으로 그룹 분리
-  const qualified = arr.filter(p => p.total >= requiredGames);
-  const unqualified = arr.filter(p => p.total < requiredGames);
-
-  // ✅ 표 위에 기준 설명 추가
+  // === 안내문 ===
   const table = document.querySelector('table');
   if (!document.getElementById('ruleNote')) {
     const note = document.createElement('p');
     note.id = 'ruleNote';
-    note.textContent = `⚠️ 순위는 날짜 기준 경기수(10일:5경기·20일:10경기·말일:15경기) 이상자만 포함됩니다.`;
+    note.textContent = `⚠️ 순위는 날짜 기준 경기수(10일:5경기 · 20일:10경기 · 말일:15경기) 이상자만 포함됩니다.`;
     note.style.textAlign = 'center';
     note.style.color = '#2563eb';
     note.style.fontSize = '14px';
-    note.style.margin = '12px 0';
+    note.style.margin = '10px 0';
     table.parentNode.insertBefore(note, table);
   }
 
-  // ✅ 순위자 (하늘색 배경)
+  // === 상단 제목 ===
+  const monthTitle = `이달의 전적('${thisMonth.slice(2)}')`;
+  const prevTitle = `지난달 전적('${prevMonth.slice(2)}')`;
+
+  tbody.insertAdjacentHTML('beforebegin', `<h3 style="text-align:center;color:#1e3a8a;margin-top:10px;">${monthTitle}</h3>`);
+
+  // === 현재월 데이터 렌더링 ===
+  const qualified = curArr.filter(p => p.total >= requiredGames);
+  const unqualified = curArr.filter(p => p.total < requiredGames);
+
   qualified.forEach((p, i) => {
-    const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
-    const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '-';
     const bg = 'style="background-color:#e0f2fe"';
     tbody.insertAdjacentHTML('beforeend', `
       <tr ${bg}>
@@ -283,36 +299,52 @@ function render(arr){
         <td>${p.name}(${p.level})</td>
         <td>${formatNum(p.total)}</td>
         <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
-        <td>${formatNum(p.prev)}%</td>
+        <td>-</td>
         <td>${formatNum(p.rate)}%</td>
-        <td class="delta ${cls}">${sign} ${Math.abs(formatNum(p.delta)).toFixed(1)}%p</td>
+        <td>-</td>
       </tr>
     `);
   });
 
-  // ✅ 미달자 (순위 제외, 하단 배치)
   if (unqualified.length > 0) {
-    tbody.insertAdjacentHTML('beforeend', `
-      <tr><td colspan="7" style="text-align:center; background:#f8fafc; color:#64748b;">⚪ 이하 조건 미달 ⚪</td></tr>
-    `);
-
+    tbody.insertAdjacentHTML('beforeend', `<tr><td colspan="7" style="text-align:center;background:#f8fafc;color:#64748b;">⚪ 이하 조건 미달자 ⚪</td></tr>`);
     unqualified.forEach(p => {
-      const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
-      const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '-';
       tbody.insertAdjacentHTML('beforeend', `
         <tr>
           <td>-</td>
           <td>${p.name}(${p.level})</td>
           <td>${formatNum(p.total)}</td>
           <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
-          <td>${formatNum(p.prev)}%</td>
+          <td>-</td>
           <td>${formatNum(p.rate)}%</td>
-          <td class="delta ${cls}">${sign} ${Math.abs(formatNum(p.delta)).toFixed(1)}%p</td>
+          <td>-</td>
+        </tr>
+      `);
+    });
+  }
+
+  // === 지난달 전적 ===
+  if (prevArr.length) {
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr><td colspan="7" style="background:#e2e8f0;color:#334155;text-align:center;font-weight:700;padding:8px;">${prevTitle}</td></tr>
+    `);
+
+    prevArr.forEach((p, i) => {
+      tbody.insertAdjacentHTML('beforeend', `
+        <tr style="background:#f9fafb;">
+          <td>${i + 1}</td>
+          <td>${p.name}(${p.level})</td>
+          <td>${formatNum(p.total)}</td>
+          <td><span class="win">${formatNum(p.win)}</span>/<span class="lose">${formatNum(p.lose)}</span></td>
+          <td>-</td>
+          <td>${formatNum(p.rate)}%</td>
+          <td>-</td>
         </tr>
       `);
     });
   }
 }
+
 
 
 function summary(arr){
