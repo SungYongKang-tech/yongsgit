@@ -364,9 +364,22 @@ function summary(arr) {
   const topPlay = arr.slice().sort((a,b)=>b.total-a.total).slice(0,3);
   const topWin = arr.slice().sort((a,b)=>b.win-a.win).slice(0,3);
   const topDelta = arr
-    .filter(p => p.delta > 0)              // ✅ 하락자 제외 (기량상승만)
-    .sort((a,b) => b.delta - a.delta)
-    .slice(0,3);
+  .filter(p => {
+    // 지난달 데이터 확인
+    const prev = prevMap[p.name];
+    const prevData = prevArr.find(x => x.name === p.name);
+    const prevTotal = prevData ? prevData.total : 0;
+
+    return (
+      p.delta > 0 &&                // 기량상승
+      p.prev !== null &&            // 전달 승률 있음
+      prevTotal >= 15 &&            // 전달 15경기 이상
+      p.total >= 15                 // 이번달도 15경기 이상
+    );
+  })
+  .sort((a,b) => b.delta - a.delta)
+  .slice(0,3);
+
 
   const promote = arr.filter(p=>p.rate>=80 && p.total>=5).slice(0,5);
 
