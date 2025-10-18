@@ -25,10 +25,9 @@ section{width:100%;max-width:740px;background:var(--card);border-radius:16px;box
 }
 .chart-container{
   width:100%;
-  height:300px;       /* 기존보다 1.5배 높게 */
-  min-height:380px;   /* 모바일에서도 세로 여유 유지 */
+  height:450px;
+  min-height:380px;
 }
-
 footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 .insights{display:grid;gap:10px;margin-top:10px;}
 .insight-card{
@@ -36,6 +35,13 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   padding:10px 12px;border-radius:8px;font-size:14px;line-height:1.5;
 }
 .insight-card.lh{border-left-color:var(--lh);}
+.total-box{display:flex;flex-wrap:wrap;justify-content:space-around;text-align:center;gap:12px;}
+.total-card{
+  flex:1;min-width:140px;background:var(--bg);
+  border-radius:10px;padding:10px;
+}
+.total-card h3{margin:0;font-size:16px;}
+.total-card p{margin:4px 0;color:var(--muted);font-size:14px;}
 </style>
 </head>
 <body>
@@ -44,6 +50,24 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   <p id="monthText"></p>
 </header>
 
+<!-- ✅ 누적 통계 -->
+<section>
+  <div class="section-title">📊 누적 활동 통계</div>
+  <div class="total-box">
+    <div class="total-card">
+      <h3 style="color:var(--koen)">KOEN</h3>
+      <p>누적 경기: <b id="koenTotalGames">-</b></p>
+      <p>누적 활동지수: <b id="koenTotalScore">-</b></p>
+    </div>
+    <div class="total-card">
+      <h3 style="color:var(--lh)">LH</h3>
+      <p>누적 경기: <b id="lhTotalGames">-</b></p>
+      <p>누적 활동지수: <b id="lhTotalScore">-</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- 🕸️ 월간 비교 -->
 <section>
   <div class="winner-banner" id="winnerText">데이터 계산 중...</div>
 
@@ -58,6 +82,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   </div>
 </section>
 
+<!-- 💡 인사이트 -->
 <section>
   <div class="section-title">💡 이번 달 주요 인사이트</div>
   <div class="insights" id="insightBox">
@@ -65,6 +90,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   </div>
 </section>
 
+<!-- 📈 부수 분포 비교 -->
 <section>
   <div class="section-title">📈 부수(Level) 분포 비교</div>
   <div class="chart-container"><canvas id="levelChart"></canvas></div>
@@ -76,20 +102,32 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+// === 날짜 키 ===
 const now=new Date();
 const year=now.getFullYear();
 const month=String(now.getMonth()+1).padStart(2,"0");
 const monthKey=`${year}-${month}`;
 document.getElementById("monthText").textContent=`${year}년 ${month}월 리그 활동 비교`;
 
-const koenConfig={apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",authDomain:"pingpongclub-4a5fd.firebaseapp.com",databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",projectId:"pingpongclub-4a5fd"};
-const lhConfig={apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",authDomain:"pingpongclub2-6ce04.firebaseapp.com",databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com",projectId:"pingpongclub2-6ce04"};
-
+// === Firebase 설정 ===
+const koenConfig={
+  apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain:"pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId:"pingpongclub-4a5fd"
+};
+const lhConfig={
+  apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",
+  authDomain:"pingpongclub2-6ce04.firebaseapp.com",
+  databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com",
+  projectId:"pingpongclub2-6ce04"
+};
 const appKoen=initializeApp(koenConfig,"koen");
 const appLh=initializeApp(lhConfig,"lh");
 const dbKoen=getDatabase(appKoen);
 const dbLh=getDatabase(appLh);
 
+// === 유틸 함수 ===
 function calcTimeIndex(matches){
   if(!matches.length)return 0;
   const zones={morning:0,noon:0,evening:0,night:0};
@@ -104,10 +142,14 @@ function calcTimeIndex(matches){
 }
 function calcLevelCount(players){
   const arr=new Array(14).fill(0);
-  players.forEach(p=>{const lv=parseInt(p.level||0);if(lv>=1&&lv<=14)arr[lv-1]++;});
+  players.forEach(p=>{
+    const lv=parseInt(p.level||0);
+    if(lv>=1&&lv<=14)arr[lv-1]++;
+  });
   return arr;
 }
 
+// === 월별 실시간 리스너 ===
 function listenClub(db,name,cb){
   const pRef=ref(db,"players");
   const mRef=ref(db,`matches/${monthKey}`);
@@ -126,6 +168,27 @@ function listenClub(db,name,cb){
   });
 }
 
+// === 누적 통계 리스너 ===
+function listenTotalStats(db, prefix) {
+  const refAll = ref(db, "matches");
+  onValue(refAll, (snap) => {
+    let totalGames = 0;
+    let totalScore = 0;
+    if (snap.exists()) {
+      const allMatches = snap.val();
+      Object.keys(allMatches).forEach((month) => {
+        const monthData = Object.values(allMatches[month]);
+        totalGames += monthData.length;
+        const activity = Math.round(monthData.length * 0.1);
+        totalScore += activity;
+      });
+    }
+    document.getElementById(`${prefix}TotalGames`).textContent = totalGames.toLocaleString();
+    document.getElementById(`${prefix}TotalScore`).textContent = totalScore.toLocaleString();
+  });
+}
+
+// === 렌더링 ===
 let koen={}, lh={}, radar, level;
 function render(koen,lh){
   const totalK=koen.score+parseFloat(koen.timeIndex);
@@ -133,7 +196,6 @@ function render(koen,lh){
   const winner=totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
   document.getElementById("winnerText").textContent=`${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
-  // 🕸️ Radar Chart
   if(radar)radar.destroy();
   radar=new Chart(document.getElementById("radarChart"),{
     type:"radar",
@@ -146,59 +208,28 @@ function render(koen,lh){
          borderColor:"rgba(249,115,22,0.6)",backgroundColor:"rgba(249,115,22,0.25)",borderWidth:1,pointRadius:3,pointBackgroundColor:"#f97316"}
       ]
     },
-    options:{plugins:{legend:{position:"bottom"}},scales:{r:{beginAtZero:true}}}
+    options:{maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{r:{beginAtZero:true}}}
   });
 
-  // 📈 Level Chart
-if(level) level.destroy();
-const ctx=document.getElementById("levelChart");
-const gK=ctx.getContext("2d").createLinearGradient(0,0,0,450);
-gK.addColorStop(0,"rgba(37,99,235,0.4)");
-gK.addColorStop(1,"rgba(37,99,235,0)");
-const gL=ctx.getContext("2d").createLinearGradient(0,0,0,450);
-gL.addColorStop(0,"rgba(249,115,22,0.4)");
-gL.addColorStop(1,"rgba(249,115,22,0)");
-const labels=Array.from({length:14},(_,i)=>`Lv${i+1}`);
+  if(level) level.destroy();
+  const ctx=document.getElementById("levelChart");
+  const gK=ctx.getContext("2d").createLinearGradient(0,0,0,450);
+  gK.addColorStop(0,"rgba(37,99,235,0.4)");
+  gK.addColorStop(1,"rgba(37,99,235,0)");
+  const gL=ctx.getContext("2d").createLinearGradient(0,0,0,450);
+  gL.addColorStop(0,"rgba(249,115,22,0.4)");
+  gL.addColorStop(1,"rgba(249,115,22,0)");
+  const labels=Array.from({length:14},(_,i)=>`Lv${i+1}`);
+  level=new Chart(ctx,{
+    type:"line",
+    data:{labels,datasets:[
+      {label:"KOEN",data:koen.levelCount,fill:true,borderColor:"#2563eb",backgroundColor:gK,tension:0.35},
+      {label:"LH",data:lh.levelCount,fill:true,borderColor:"#f97316",backgroundColor:gL,tension:0.35}
+    ]},
+    options:{maintainAspectRatio:false,responsive:true,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true}}}
+  });
 
-level=new Chart(ctx,{
-  type:"line",
-  data:{
-    labels,
-    datasets:[
-      {
-        label:"KOEN",
-        data:koen.levelCount,
-        fill:true,
-        borderColor:"#2563eb",
-        backgroundColor:gK,
-        tension:0.35
-      },
-      {
-        label:"LH",
-        data:lh.levelCount,
-        fill:true,
-        borderColor:"#f97316",
-        backgroundColor:gL,
-        tension:0.35
-      }
-    ]
-  },
-  options:{
-    maintainAspectRatio:false,  // ✅ 세로 600px 적용됨
-    responsive:true,
-    plugins:{
-      legend:{position:"bottom"},
-      tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${ctx.parsed.y}명`}}
-    },
-    scales:{
-      x:{grid:{display:false},ticks:{font:{size:11},color:"#444"}},
-      y:{beginAtZero:true,grid:{color:"rgba(0,0,0,0.08)"},ticks:{stepSize:1,font:{size:11},color:"#555"}}
-    }
-  }
-});
-
-
-  // 💬 인사이트 생성
+  // === 인사이트 ===
   const box=document.getElementById("insightBox");
   box.innerHTML="";
   const insight=(text,cls="")=>{
@@ -209,17 +240,17 @@ level=new Chart(ctx,{
   };
   if(koen.timeIndex>lh.timeIndex) insight(`KOEN은 특정 시간대(${koen.timeIndex}% 집중) 활동이 활발합니다.`);
   else insight(`LH는 특정 시간대(${lh.timeIndex}% 집중) 활동이 더 고르게 분포되어 있습니다.`,`lh`);
-
   if(koen.games>lh.games) insight(`KOEN이 이번 달 ${koen.games-lh.games}경기 더 많이 진행했습니다.`);
   else if(lh.games>koen.games) insight(`LH가 이번 달 ${lh.games-koen.games}경기 더 많이 진행했습니다.`,`lh`);
-
   if(koen.activeRate>lh.activeRate) insight(`KOEN 회원의 평균 참여율이 ${koen.activeRate}%로 높았습니다.`);
   else insight(`LH 회원의 평균 참여율이 ${lh.activeRate}%로 높았습니다.`,`lh`);
 }
 
-// 실시간 수신
+// === 실시간 감시 실행 ===
 listenClub(dbKoen,"koen",data=>{koen=data;if(lh.name)render(koen,lh);});
 listenClub(dbLh,"lh",data=>{lh=data;if(koen.name)render(koen,lh);});
+listenTotalStats(dbKoen,"koen");
+listenTotalStats(dbLh,"lh");
 </script>
 </body>
 </html>
