@@ -121,14 +121,28 @@ function calcDailyData(matches){
   });
   return days;
 }
-function calcWinData(matches){
-  let win=0, lose=0;
-  matches.forEach(m=>{
-    if(m.winner==="A")win++;
-    else if(m.winner==="B")lose++;
+function calcWinData(matches, clubName) {
+  let win = 0, lose = 0;
+
+  matches.forEach(m => {
+    if (!m.winner) return;
+
+    const w = String(m.winner).toLowerCase();
+
+    // ✅ 여러 경우 커버
+    if (["a", "koen", "승자a", "team_a"].includes(w) && clubName === "koen") win++;
+    else if (["b", "lh", "승자b", "team_b"].includes(w) && clubName === "koen") lose++;
+    else if (["b", "lh", "승자b", "team_b"].includes(w) && clubName === "lh") win++;
+    else if (["a", "koen", "승자a", "team_a"].includes(w) && clubName === "lh") lose++;
+
+    // ✅ 혹시 승자이름이 들어오는 경우도 감지 (예: "김승일" 등)
+    if (w.includes("koen") && clubName === "koen") win++;
+    if (w.includes("lh") && clubName === "lh") win++;
   });
-  return {win,lose};
+
+  return { win, lose };
 }
+
 
 // === 실시간 리스너 ===
 function listenClub(db, name, cb) {
@@ -198,17 +212,47 @@ function render(koen,lh){
   });
 
   // 🏅 승률
-  if(winK)winK.destroy(); if(winL)winL.destroy();
-  winK=new Chart(document.getElementById("koenWinChart"),{
-    type:"doughnut",
-    data:{labels:["승","패"],datasets:[{data:[koen.winData.win,koen.winData.lose],backgroundColor:["#2563eb","#cbd5e1"]}]},
-    options:{plugins:{title:{display:true,text:"KOEN"}},cutout:"65%"}
-  });
-  winL=new Chart(document.getElementById("lhWinChart"),{
-    type:"doughnut",
-    data:{labels:["승","패"],datasets:[{data:[lh.winData.win,lh.winData.lose],backgroundColor:["#f97316","#fde68a"]}]},
-    options:{plugins:{title:{display:true,text:"LH"}},cutout:"65%"}
-  });
+ if(winK)winK.destroy(); 
+if(winL)winL.destroy();
+
+const safeData = (d) => (d.win + d.lose === 0 ? [1,0] : [d.win, d.lose]);
+
+winK = new Chart(document.getElementById("koenWinChart"), {
+  type: "doughnut",
+  data: {
+    labels: ["승", "패"],
+    datasets: [{
+      data: safeData(koen.winData),
+      backgroundColor: ["#2563eb", "#cbd5e1"]
+    }]
+  },
+  options: {
+    plugins: {
+      title: { display: true, text: "KOEN" },
+      legend: { position: "bottom" }
+    },
+    cutout: "65%"
+  }
+});
+
+winL = new Chart(document.getElementById("lhWinChart"), {
+  type: "doughnut",
+  data: {
+    labels: ["승", "패"],
+    datasets: [{
+      data: safeData(lh.winData),
+      backgroundColor: ["#f97316", "#fde68a"]
+    }]
+  },
+  options: {
+    plugins: {
+      title: { display: true, text: "LH" },
+      legend: { position: "bottom" }
+    },
+    cutout: "65%"
+  }
+});
+
 
   // 📈 레벨 분포
   if(level) level.destroy();
@@ -226,8 +270,17 @@ function render(koen,lh){
 }
 
 // === 실행 ===
-listenClub(dbKoen,"koen",data=>{koen=data;if(lh.name)render(koen,lh);});
-listenClub(dbLh,"lh",data=>{lh=data;if(koen.name)render(koen,lh);});
+listenClub(dbKoen, "koen", data => {
+  koen = data;
+  koen.winData = calcWinData(Object.values(data.dailyData || {}), "koen");
+  if (lh.name) render(koen, lh);
+});
+listenClub(dbLh, "lh", data => {
+  lh = data;
+  lh.winData = calcWinData(Object.values(data.dailyData || {}), "lh");
+  if (koen.name) render(koen, lh);
+});
+
 </script>
 </body>
 </html>
