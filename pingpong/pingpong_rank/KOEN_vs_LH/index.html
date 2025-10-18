@@ -67,6 +67,11 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
   <div class="chart-container"><canvas id="radarChart"></canvas></div>
 </section>
 
+<section>
+  <div class="section-title">📈 클럽별 부수(Level) 분포 비교</div>
+  <div class="chart-container"><canvas id="levelChart"></canvas></div>
+</section>
+
 <footer>© 2025 남동본사 & LH 탁구동호회</footer>
 
 <script type="module">
@@ -105,7 +110,7 @@ const appLh = initializeApp(lhConfig, "lhApp");
 const dbKoen = getDatabase(appKoen);
 const dbLh = getDatabase(appLh);
 
-// 🔧 시간대지수 계산 함수
+// ✅ 시간대지수 계산
 function calcTimeIndex(matches){
   if(matches.length===0) return 0;
   const zones={morning:0,noon:0,evening:0,night:0};
@@ -121,7 +126,17 @@ function calcTimeIndex(matches){
   return ratio.toFixed(1);
 }
 
-// 🔧 통합 데이터 계산
+// ✅ 부수(Level) 계산 (Lv1~Lv14)
+function calcLevelCount(players){
+  const count=new Array(14).fill(0);
+  players.forEach(p=>{
+    const lv=parseInt(p.level||0);
+    if(lv>=1 && lv<=14) count[lv-1]++;
+  });
+  return count;
+}
+
+// ✅ 데이터 수집
 async function fetchClub(db){
   const [pSnap, mSnap] = await Promise.all([
     get(child(ref(db),"players")),
@@ -135,18 +150,18 @@ async function fetchClub(db){
   const activeRate=memberCount?((games/memberCount)*10).toFixed(1):0;
   const score=Math.round(games*(activeRate/100));
   const timeIndex=calcTimeIndex(matches);
-
-  return {memberCount,games,activeRate,score,timeIndex};
+  const levelCount=calcLevelCount(players);
+  return {memberCount,games,activeRate,score,timeIndex,levelCount};
 }
 
 // 🔄 실행
 Promise.all([fetchClub(dbKoen),fetchClub(dbLh)]).then(([koen,lh])=>{
+  // 카드 표시
   document.getElementById("koenMembers").textContent=koen.memberCount;
   document.getElementById("koenGames").textContent=koen.games;
   document.getElementById("koenActive").textContent=koen.activeRate;
   document.getElementById("koenScore").textContent=koen.score;
   document.getElementById("koenTime").textContent=koen.timeIndex;
-
   document.getElementById("lhMembers").textContent=lh.memberCount;
   document.getElementById("lhGames").textContent=lh.games;
   document.getElementById("lhActive").textContent=lh.activeRate;
@@ -156,9 +171,9 @@ Promise.all([fetchClub(dbKoen),fetchClub(dbLh)]).then(([koen,lh])=>{
   const totalK=koen.score+parseFloat(koen.timeIndex);
   const totalL=lh.score+parseFloat(lh.timeIndex);
   const winner=totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
-  document.getElementById("winnerText").textContent=
-    `${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
+  document.getElementById("winnerText").textContent=`${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
+  // 🕸️ Radar Chart
   new Chart(document.getElementById("radarChart"),{
     type:"radar",
     data:{
@@ -172,13 +187,61 @@ Promise.all([fetchClub(dbKoen),fetchClub(dbLh)]).then(([koen,lh])=>{
     },
     options:{
       plugins:{legend:{position:"bottom"}},
-      scales:{
-        r:{
-          beginAtZero:true,
-          angleLines:{color:"rgba(0,0,0,0.05)"},
-          grid:{color:"rgba(0,0,0,0.08)"},
-          pointLabels:{color:"#333",font:{size:12}}
+      scales:{r:{beginAtZero:true,angleLines:{color:"rgba(0,0,0,0.05)"},grid:{color:"rgba(0,0,0,0.08)"}}}
+    }
+  });
+
+  // 📈 부수(Level) 분포 그래프 (Lv1~Lv14)
+  const ctx=document.getElementById("levelChart");
+  const gradientKoen=ctx.getContext("2d").createLinearGradient(0,0,0,250);
+  gradientKoen.addColorStop(0,"rgba(37,99,235,0.4)");
+  gradientKoen.addColorStop(1,"rgba(37,99,235,0)");
+
+  const gradientLh=ctx.getContext("2d").createLinearGradient(0,0,0,250);
+  gradientLh.addColorStop(0,"rgba(249,115,22,0.4)");
+  gradientLh.addColorStop(1,"rgba(249,115,22,0)");
+
+  const levelLabels=Array.from({length:14},(_,i)=>`Lv${i+1}`);
+
+  new Chart(ctx,{
+    type:"line",
+    data:{
+      labels:levelLabels,
+      datasets:[
+        {
+          label:"KOEN",
+          data:koen.levelCount,
+          fill:true,
+          borderColor:"#2563eb",
+          backgroundColor:gradientKoen,
+          borderWidth:2,
+          tension:0.35,
+          pointRadius:3,
+          pointBackgroundColor:"#2563eb"
+        },
+        {
+          label:"LH",
+          data:lh.levelCount,
+          fill:true,
+          borderColor:"#f97316",
+          backgroundColor:gradientLh,
+          borderWidth:2,
+          tension:0.35,
+          pointRadius:3,
+          pointBackgroundColor:"#f97316"
         }
+      ]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{position:"bottom"},
+        tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${ctx.parsed.y}명`}}
+      },
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:11},color:"#444"}},
+        y:{beginAtZero:true,grid:{color:"rgba(0,0,0,0.08)"},ticks:{stepSize:1,font:{size:11},color:"#555"}}
       }
     }
   });
