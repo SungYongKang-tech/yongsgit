@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🏓 KOEN vs LH 리그 비교 대시보드</title>
+<title>🏓 KOEN vs LH 리그 종합 비교</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -18,11 +18,10 @@ body{margin:0;background:var(--bg);color:var(--ink);padding:18px;display:flex;fl
 header{text-align:center;margin-bottom:18px;}
 h1{font-size:clamp(20px,5vw,28px);margin-bottom:4px;}
 p{color:var(--muted);font-size:clamp(13px,3vw,15px);}
-section{width:100%;max-width:700px;background:var(--card);box-shadow:var(--shadow);border-radius:16px;padding:20px;margin-bottom:20px;}
+section{width:100%;max-width:720px;background:var(--card);box-shadow:var(--shadow);border-radius:16px;padding:20px;margin-bottom:20px;}
 .section-title{text-align:center;font-size:18px;margin-bottom:12px;}
 .card-wrap{display:flex;flex-wrap:wrap;justify-content:space-around;gap:12px;}
-.card{flex:1;min-width:150px;background:var(--bg);border-radius:12px;padding:12px;transition:transform .2s;}
-.card:hover{transform:translateY(-3px);}
+.card{flex:1;min-width:150px;background:var(--bg);border-radius:12px;padding:12px;}
 .card h3{margin:0;font-size:17px;}
 .card p{margin:4px 0;font-size:14px;color:var(--muted);}
 .winner-banner{
@@ -30,25 +29,26 @@ section{width:100%;max-width:700px;background:var(--card);box-shadow:var(--shado
   color:white;padding:10px 0;border-radius:12px;margin-bottom:10px;
   font-size:clamp(14px,3vw,16px);font-weight:600;box-shadow:0 4px 10px rgba(0,0,0,0.1);
 }
-.chart-container{width:100%;height:280px;}
+.chart-container{width:100%;height:300px;}
 footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🏓 KOEN vs LH 리그 비교 대시보드</h1>
-  <p>2025년 10월 활동 및 회원 현황</p>
+  <h1>🏓 KOEN vs LH 리그 종합 비교</h1>
+  <p id="monthText">데이터 불러오는 중...</p>
 </header>
 
 <section>
-  <div class="winner-banner" id="winnerText">결과를 불러오는 중...</div>
+  <div class="winner-banner" id="winnerText">결과 계산 중...</div>
   <div class="card-wrap">
     <div class="card" style="border:2px solid var(--koen)">
       <h3>KOEN</h3>
       <p>회원 수: <b id="koenMembers">-</b></p>
       <p>경기 수: <b id="koenGames">-</b></p>
       <p>평균 승률: <b id="koenRate">-</b>%</p>
+      <p>참여율: <b id="koenActive">-</b>%</p>
       <p>활동지수: <b id="koenScore">-</b></p>
     </div>
     <div class="card" style="border:2px solid var(--lh)">
@@ -56,19 +56,15 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
       <p>회원 수: <b id="lhMembers">-</b></p>
       <p>경기 수: <b id="lhGames">-</b></p>
       <p>평균 승률: <b id="lhRate">-</b>%</p>
+      <p>참여율: <b id="lhActive">-</b>%</p>
       <p>활동지수: <b id="lhScore">-</b></p>
     </div>
   </div>
 </section>
 
 <section>
-  <div class="section-title">📈 종합 비교 (Radar Chart)</div>
+  <div class="section-title">🕸️ 5각형 종합 비교 (Radar Chart)</div>
   <div class="chart-container"><canvas id="radarChart"></canvas></div>
-</section>
-
-<section>
-  <div class="section-title">👥 회원 레벨 분포 (예시)</div>
-  <div class="chart-container"><canvas id="levelChart"></canvas></div>
 </section>
 
 <footer>© 2025 남동본사 & LH 탁구동호회</footer>
@@ -77,7 +73,14 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// Firebase 설정
+// ✅ 현재 월 자동 계산
+const now = new Date();
+const year = now.getFullYear();
+const month = String(now.getMonth() + 1).padStart(2,"0");
+const monthKey = `${year}-${month}`;
+document.getElementById("monthText").textContent = `${year}년 ${month}월 데이터 비교`;
+
+// 🔹 Firebase 설정
 const koenConfig = {
   apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain:"pingpongclub-4a5fd.firebaseapp.com",
@@ -103,9 +106,9 @@ const dbKoen = getDatabase(appKoen);
 const dbLh = getDatabase(appLh);
 
 async function fetchClub(db){
-  const [pSnap,mSnap] = await Promise.all([
-    get(child(ref(db),"players")),
-    get(child(ref(db),"matches"))
+  const [pSnap, mSnap] = await Promise.all([
+    get(child(ref(db), "players")),
+    get(child(ref(db), `matches/${monthKey}`)).catch(()=>get(child(ref(db),"matches")))
   ]);
   const players = pSnap.exists()?Object.values(pSnap.val()):[];
   const matches = mSnap.exists()?Object.values(mSnap.val()):[];
@@ -114,63 +117,72 @@ async function fetchClub(db){
   const losses = matches.filter(m=>m.result==="lose").length;
   const total = wins+losses;
   const winRate = total?((wins/total)*100).toFixed(1):0;
+  const memberCount = players.length;
+  const games = matches.length;
+  const activeRate = memberCount?((games/memberCount)*10).toFixed(1):0; // 참여율(가중치)
+  const score = Math.round(games*(winRate/100));
 
-  // 레벨별 카운트
-  const levelCount = [1,2,3,4,5,6].map(l => players.filter(p=>p.level==l).length);
-
-  return {
-    members: players.length,
-    games: matches.length,
-    rate: winRate,
-    score: Math.round(matches.length*(winRate/100)),
-    levelCount
-  };
+  return {memberCount,games,winRate,activeRate,score};
 }
 
 Promise.all([fetchClub(dbKoen), fetchClub(dbLh)]).then(([koen,lh])=>{
-  // 숫자 표시
-  document.getElementById("koenMembers").textContent = koen.members;
+  // 데이터 표시
+  document.getElementById("koenMembers").textContent = koen.memberCount;
   document.getElementById("koenGames").textContent = koen.games;
-  document.getElementById("koenRate").textContent = koen.rate;
+  document.getElementById("koenRate").textContent = koen.winRate;
+  document.getElementById("koenActive").textContent = koen.activeRate;
   document.getElementById("koenScore").textContent = koen.score;
-  document.getElementById("lhMembers").textContent = lh.members;
+
+  document.getElementById("lhMembers").textContent = lh.memberCount;
   document.getElementById("lhGames").textContent = lh.games;
-  document.getElementById("lhRate").textContent = lh.rate;
+  document.getElementById("lhRate").textContent = lh.winRate;
+  document.getElementById("lhActive").textContent = lh.activeRate;
   document.getElementById("lhScore").textContent = lh.score;
 
   // 승자 계산
-  const totalK = koen.games+koen.score;
-  const totalL = lh.games+lh.score;
-  const winner = totalK > totalL ? "KOEN 🏆" : (totalK < totalL ? "LH 🏆" : "무승부 🤝");
+  const totalK = koen.score + koen.activeRate*5;
+  const totalL = lh.score + lh.activeRate*5;
+  const winner = totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
   document.getElementById("winnerText").textContent =
-    `${winner}이(가) 이번 달 더 활발히 활동했습니다!`;
+    `${winner}이(가) ${monthKey}월 최고의 활약을 보였습니다!`;
 
-  // Radar Chart
+  // 🕸️ 5각형 Radar Chart
   new Chart(document.getElementById("radarChart"),{
     type:"radar",
     data:{
-      labels:["회원수","경기수","승률","활동지수"],
+      labels:["회원수","경기수","승률","활동지수","참여율"],
       datasets:[
-        {label:"KOEN",data:[koen.members,koen.games,koen.rate,koen.score],
-         borderColor:"#2563eb",backgroundColor:"rgba(37,99,235,0.2)",fill:true},
-        {label:"LH",data:[lh.members,lh.games,lh.rate,lh.score],
-         borderColor:"#f97316",backgroundColor:"rgba(249,115,22,0.2)",fill:true}
+        {
+          label:"KOEN",
+          data:[koen.memberCount,koen.games,koen.winRate,koen.score,koen.activeRate],
+          borderColor:"rgba(37,99,235,0.6)",
+          backgroundColor:"rgba(37,99,235,0.2)",
+          borderWidth:1,
+          pointRadius:3,
+          pointBackgroundColor:"#2563eb"
+        },
+        {
+          label:"LH",
+          data:[lh.memberCount,lh.games,lh.winRate,lh.score,lh.activeRate],
+          borderColor:"rgba(249,115,22,0.6)",
+          backgroundColor:"rgba(249,115,22,0.2)",
+          borderWidth:1,
+          pointRadius:3,
+          pointBackgroundColor:"#f97316"
+        }
       ]
     },
-    options:{scales:{r:{beginAtZero:true,angleLines:{color:"#ddd"}}}}
-  });
-
-  // Level 분포 비교
-  new Chart(document.getElementById("levelChart"),{
-    type:"bar",
-    data:{
-      labels:["Lv1","Lv2","Lv3","Lv4","Lv5","Lv6"],
-      datasets:[
-        {label:"KOEN",data:koen.levelCount,backgroundColor:"rgba(37,99,235,0.8)",borderRadius:6},
-        {label:"LH",data:lh.levelCount,backgroundColor:"rgba(249,115,22,0.8)",borderRadius:6}
-      ]
-    },
-    options:{plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true}}}
+    options:{
+      plugins:{legend:{position:"bottom"}},
+      scales:{
+        r:{
+          beginAtZero:true,
+          angleLines:{color:"rgba(0,0,0,0.05)"},
+          grid:{color:"rgba(0,0,0,0.08)"},
+          pointLabels:{color:"#333",font:{size:12}}
+        }
+      }
+    }
   });
 });
 </script>
