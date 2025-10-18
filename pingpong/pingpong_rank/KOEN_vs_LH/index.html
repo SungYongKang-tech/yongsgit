@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🏓 KOEN vs LH 리그 종합 비교</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🏓 KOEN vs LH 리그 활동 분석</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -36,7 +36,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 <body>
 
 <header>
-  <h1>🏓 KOEN vs LH 리그 종합 비교</h1>
+  <h1>🏓 KOEN vs LH 리그 활동 분석</h1>
   <p id="monthText">데이터 불러오는 중...</p>
 </header>
 
@@ -47,17 +47,17 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
       <h3>KOEN</h3>
       <p>회원 수: <b id="koenMembers">-</b></p>
       <p>경기 수: <b id="koenGames">-</b></p>
-      <p>평균 승률: <b id="koenRate">-</b>%</p>
       <p>참여율: <b id="koenActive">-</b>%</p>
       <p>활동지수: <b id="koenScore">-</b></p>
+      <p>시간대지수: <b id="koenTime">-</b></p>
     </div>
     <div class="card" style="border:2px solid var(--lh)">
       <h3>LH</h3>
       <p>회원 수: <b id="lhMembers">-</b></p>
       <p>경기 수: <b id="lhGames">-</b></p>
-      <p>평균 승률: <b id="lhRate">-</b>%</p>
       <p>참여율: <b id="lhActive">-</b>%</p>
       <p>활동지수: <b id="lhScore">-</b></p>
+      <p>시간대지수: <b id="lhTime">-</b></p>
     </div>
   </div>
 </section>
@@ -73,7 +73,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// ✅ 현재 월 자동 계산
+// ✅ 이번 달 자동 계산
 const now = new Date();
 const year = now.getFullYear();
 const month = String(now.getMonth() + 1).padStart(2,"0");
@@ -105,71 +105,69 @@ const appLh = initializeApp(lhConfig, "lhApp");
 const dbKoen = getDatabase(appKoen);
 const dbLh = getDatabase(appLh);
 
+// 🔧 시간대지수 계산 함수
+function calcTimeIndex(matches){
+  if(matches.length===0) return 0;
+  const zones={morning:0,noon:0,evening:0,night:0};
+  matches.forEach(m=>{
+    const t=new Date(m.createdAt||0).getHours();
+    if(t>=5 && t<11) zones.morning++;
+    else if(t>=11 && t<15) zones.noon++;
+    else if(t>=15 && t<21) zones.evening++;
+    else zones.night++;
+  });
+  const maxZone=Math.max(...Object.values(zones));
+  const ratio=(maxZone/matches.length)*100;
+  return ratio.toFixed(1);
+}
+
+// 🔧 통합 데이터 계산
 async function fetchClub(db){
   const [pSnap, mSnap] = await Promise.all([
-    get(child(ref(db), "players")),
-    get(child(ref(db), `matches/${monthKey}`)).catch(()=>get(child(ref(db),"matches")))
+    get(child(ref(db),"players")),
+    get(child(ref(db),`matches/${monthKey}`)).catch(()=>get(child(ref(db),"matches")))
   ]);
   const players = pSnap.exists()?Object.values(pSnap.val()):[];
   const matches = mSnap.exists()?Object.values(mSnap.val()):[];
 
-  const wins = matches.filter(m=>m.result==="win").length;
-  const losses = matches.filter(m=>m.result==="lose").length;
-  const total = wins+losses;
-  const winRate = total?((wins/total)*100).toFixed(1):0;
-  const memberCount = players.length;
-  const games = matches.length;
-  const activeRate = memberCount?((games/memberCount)*10).toFixed(1):0; // 참여율(가중치)
-  const score = Math.round(games*(winRate/100));
+  const memberCount=players.length;
+  const games=matches.length;
+  const activeRate=memberCount?((games/memberCount)*10).toFixed(1):0;
+  const score=Math.round(games*(activeRate/100));
+  const timeIndex=calcTimeIndex(matches);
 
-  return {memberCount,games,winRate,activeRate,score};
+  return {memberCount,games,activeRate,score,timeIndex};
 }
 
-Promise.all([fetchClub(dbKoen), fetchClub(dbLh)]).then(([koen,lh])=>{
-  // 데이터 표시
-  document.getElementById("koenMembers").textContent = koen.memberCount;
-  document.getElementById("koenGames").textContent = koen.games;
-  document.getElementById("koenRate").textContent = koen.winRate;
-  document.getElementById("koenActive").textContent = koen.activeRate;
-  document.getElementById("koenScore").textContent = koen.score;
+// 🔄 실행
+Promise.all([fetchClub(dbKoen),fetchClub(dbLh)]).then(([koen,lh])=>{
+  document.getElementById("koenMembers").textContent=koen.memberCount;
+  document.getElementById("koenGames").textContent=koen.games;
+  document.getElementById("koenActive").textContent=koen.activeRate;
+  document.getElementById("koenScore").textContent=koen.score;
+  document.getElementById("koenTime").textContent=koen.timeIndex;
 
-  document.getElementById("lhMembers").textContent = lh.memberCount;
-  document.getElementById("lhGames").textContent = lh.games;
-  document.getElementById("lhRate").textContent = lh.winRate;
-  document.getElementById("lhActive").textContent = lh.activeRate;
-  document.getElementById("lhScore").textContent = lh.score;
+  document.getElementById("lhMembers").textContent=lh.memberCount;
+  document.getElementById("lhGames").textContent=lh.games;
+  document.getElementById("lhActive").textContent=lh.activeRate;
+  document.getElementById("lhScore").textContent=lh.score;
+  document.getElementById("lhTime").textContent=lh.timeIndex;
 
-  // 승자 계산
-  const totalK = koen.score + koen.activeRate*5;
-  const totalL = lh.score + lh.activeRate*5;
-  const winner = totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
-  document.getElementById("winnerText").textContent =
-    `${winner}이(가) ${monthKey}월 최고의 활약을 보였습니다!`;
+  const totalK=koen.score+parseFloat(koen.timeIndex);
+  const totalL=lh.score+parseFloat(lh.timeIndex);
+  const winner=totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
+  document.getElementById("winnerText").textContent=
+    `${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
-  // 🕸️ 5각형 Radar Chart
   new Chart(document.getElementById("radarChart"),{
     type:"radar",
     data:{
-      labels:["회원수","경기수","승률","활동지수","참여율"],
+      labels:["회원수","경기수","참여율","활동지수","시간대지수"],
       datasets:[
-        {
-          label:"KOEN",
-          data:[koen.memberCount,koen.games,koen.winRate,koen.score,koen.activeRate],
-          borderColor:"rgba(37,99,235,0.6)",
-          backgroundColor:"rgba(37,99,235,0.2)",
-          borderWidth:1,
-          pointRadius:3,
-          pointBackgroundColor:"#2563eb"
-        },
-        {
-          label:"LH",
-          data:[lh.memberCount,lh.games,lh.winRate,lh.score,lh.activeRate],
-          borderColor:"rgba(249,115,22,0.6)",
-          backgroundColor:"rgba(249,115,22,0.2)",
-          borderWidth:1,
-          pointRadius:3,
-          pointBackgroundColor:"#f97316"
-        }
+        {label:"KOEN",data:[koen.memberCount,koen.games,koen.activeRate,koen.score,koen.timeIndex],
+         borderColor:"rgba(37,99,235,0.6)",backgroundColor:"rgba(37,99,235,0.2)",borderWidth:1,pointRadius:3,pointBackgroundColor:"#2563eb"},
+        {label:"LH",data:[lh.memberCount,lh.games,lh.activeRate,lh.score,lh.timeIndex],
+         borderColor:"rgba(249,115,22,0.6)",backgroundColor:"rgba(249,115,22,0.2)",borderWidth:1,pointRadius:3,pointBackgroundColor:"#f97316"}
       ]
     },
     options:{
