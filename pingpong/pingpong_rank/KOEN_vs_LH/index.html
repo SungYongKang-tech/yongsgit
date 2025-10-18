@@ -183,18 +183,77 @@ function render(koen,lh){
   document.getElementById("winnerText").textContent=`${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
   // 🕸️ Radar
-  if(radar)radar.destroy();
-  radar=new Chart(document.getElementById("radarChart"),{
-    type:"radar",
-    data:{
-      labels:["회원수","경기수","참여율","활동지수","시간대지수"],
-      datasets:[
-        {label:"KOEN",data:[koen.memberCount,koen.games,koen.activeRate,koen.score,koen.timeIndex],borderColor:"rgba(37,99,235,0.6)",backgroundColor:"rgba(37,99,235,0.25)"},
-        {label:"LH",data:[lh.memberCount,lh.games,lh.activeRate,lh.score,lh.timeIndex],borderColor:"rgba(249,115,22,0.6)",backgroundColor:"rgba(249,115,22,0.25)"}
-      ]
-    },
-    options:{maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{r:{beginAtZero:true}}}
-  });
+  // === Radar Chart (자동 스케일 정규화 버전) ===
+if (radar) radar.destroy();
+
+// 🧮 스케일 자동 계산
+const normalize = (val, max) => (max === 0 ? 0 : Math.min(100, (val / max) * 100));
+
+// 두 클럽의 모든 값에서 최대값 찾기
+const maxMembers = Math.max(koen.memberCount, lh.memberCount, 1);
+const maxGames   = Math.max(koen.games, lh.games, 1);
+const maxActive  = Math.max(koen.activeRate, lh.activeRate, 1);
+const maxScore   = Math.max(koen.score, lh.score, 1);
+const maxTimeIdx = Math.max(koen.timeIndex, lh.timeIndex, 1);
+
+// 클럽별 정규화 데이터 생성
+const koenData = [
+  normalize(koen.memberCount, maxMembers),
+  normalize(koen.games, maxGames),
+  normalize(koen.activeRate, maxActive),
+  normalize(koen.score, maxScore),
+  normalize(koen.timeIndex, maxTimeIdx)
+];
+const lhData = [
+  normalize(lh.memberCount, maxMembers),
+  normalize(lh.games, maxGames),
+  normalize(lh.activeRate, maxActive),
+  normalize(lh.score, maxScore),
+  normalize(lh.timeIndex, maxTimeIdx)
+];
+
+// Radar Chart 생성
+radar = new Chart(document.getElementById("radarChart"), {
+  type: "radar",
+  data: {
+    labels: ["회원수", "경기수", "참여율", "활동지수", "시간대지수"],
+    datasets: [
+      {
+        label: "KOEN",
+        data: koenData,
+        borderColor: "rgba(37,99,235,0.6)",
+        backgroundColor: "rgba(37,99,235,0.25)",
+        borderWidth: 1,
+        pointRadius: 3,
+        pointBackgroundColor: "#2563eb"
+      },
+      {
+        label: "LH",
+        data: lhData,
+        borderColor: "rgba(249,115,22,0.6)",
+        backgroundColor: "rgba(249,115,22,0.25)",
+        borderWidth: 1,
+        pointRadius: 3,
+        pointBackgroundColor: "#f97316"
+      }
+    ]
+  },
+  options: {
+    maintainAspectRatio: false,
+    plugins: { legend: { position: "bottom" } },
+    scales: {
+      r: {
+        beginAtZero: true,
+        max: 100,              // 항상 0~100 범위
+        ticks: { stepSize: 20 },
+        grid: { color: "rgba(0,0,0,0.08)" },
+        angleLines: { color: "rgba(0,0,0,0.1)" },
+        pointLabels: { font: { size: 13 } }
+      }
+    }
+  }
+});
+
 
   // 📆 일별 경기수
   if(daily)daily.destroy();
