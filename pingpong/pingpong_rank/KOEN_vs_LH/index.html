@@ -131,25 +131,34 @@ function calcWinData(matches){
 }
 
 // === 실시간 리스너 ===
-function listenClub(db,name,cb){
-  const pRef=ref(db,"players");
-  const mRef = ref(db, "matches");
-  onValue(pRef,pSnap=>{
-    onValue(mRef,mSnap=>{
-      const players=pSnap.exists()?Object.values(pSnap.val()):[];
-      const matches=mSnap.exists()?Object.values(mSnap.val()):[];
-      const memberCount=players.length;
-      const games=matches.length;
-      const activeRate=memberCount?((games/memberCount)*10).toFixed(1):0;
-      const score=Math.round(games*(activeRate/100));
-      const timeIndex=calcTimeIndex(matches);
-      const levelCount=calcLevelCount(players);
-      const dailyData=calcDailyData(matches);
-      const winData=calcWinData(matches);
-      cb({name,memberCount,games,activeRate,score,timeIndex,levelCount,dailyData,winData});
+function listenClub(db, name, cb) {
+  const pRef = ref(db, "players");
+  const mRef = ref(db, "matches"); // ✅ 전체 matches 감시
+  onValue(pRef, pSnap => {
+    onValue(mRef, mSnap => {
+      const players = pSnap.exists() ? Object.values(pSnap.val()) : [];
+      const allMatches = mSnap.exists() ? Object.values(mSnap.val()) : [];
+
+      // ✅ 이번 달에 해당하는 경기만 필터
+      const matches = allMatches.filter(m => {
+        if (!m.createdAt) return false;
+        const d = new Date(m.createdAt);
+        return d.getFullYear() === now.getFullYear() && d.getMonth() + 1 === now.getMonth() + 1;
+      });
+
+      const memberCount = players.length;
+      const games = matches.length;
+      const activeRate = memberCount ? ((games / memberCount) * 10).toFixed(1) : 0;
+      const score = Math.round(games * (activeRate / 100));
+      const timeIndex = calcTimeIndex(matches);
+      const levelCount = calcLevelCount(players);
+      const dailyData = calcDailyData(matches);
+      const winData = calcWinData(matches);
+      cb({ name, memberCount, games, activeRate, score, timeIndex, levelCount, dailyData, winData });
     });
   });
 }
+
 
 // === 렌더링 ===
 let koen={}, lh={}, radar, daily, level, winK, winL;
