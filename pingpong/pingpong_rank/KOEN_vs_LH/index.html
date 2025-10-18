@@ -3,40 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🏓 KOEN vs LH 리그 비교</title>
+<title>🏓 KOEN vs LH 리그 비교 대시보드</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
-:root {
+:root{
   --koen:#2563eb; --lh:#f97316;
   --bg:#f5f7fb; --card:#fff; --ink:#0f172a; --muted:#64748b;
-  --shadow:0 8px 28px rgba(0,0,0,.08);
+  --shadow:0 6px 20px rgba(0,0,0,0.08);
 }
 *{box-sizing:border-box;font-family:"Pretendard","Noto Sans KR",sans-serif;}
-body{margin:0;background:var(--bg);color:var(--ink);padding:20px;display:flex;flex-direction:column;align-items:center;}
-header{text-align:center;margin-bottom:20px;}
-h1{font-size:clamp(20px,5vw,28px);margin-bottom:6px;}
+body{margin:0;background:var(--bg);color:var(--ink);padding:18px;display:flex;flex-direction:column;align-items:center;}
+header{text-align:center;margin-bottom:18px;}
+h1{font-size:clamp(20px,5vw,28px);margin-bottom:4px;}
 p{color:var(--muted);font-size:clamp(13px,3vw,15px);}
-section{width:100%;max-width:640px;background:var(--card);box-shadow:var(--shadow);border-radius:16px;padding:20px;margin-bottom:20px;}
-.section-title{text-align:center;font-size:clamp(16px,4vw,20px);margin-bottom:12px;}
-.stats{display:flex;justify-content:space-around;flex-wrap:wrap;gap:12px;}
-.card{flex:1;min-width:150px;background:var(--bg);border-radius:12px;padding:12px;}
+section{width:100%;max-width:700px;background:var(--card);box-shadow:var(--shadow);border-radius:16px;padding:20px;margin-bottom:20px;}
+.section-title{text-align:center;font-size:18px;margin-bottom:12px;}
+.card-wrap{display:flex;flex-wrap:wrap;justify-content:space-around;gap:12px;}
+.card{flex:1;min-width:150px;background:var(--bg);border-radius:12px;padding:12px;transition:transform .2s;}
+.card:hover{transform:translateY(-3px);}
 .card h3{margin:0;font-size:17px;}
 .card p{margin:4px 0;font-size:14px;color:var(--muted);}
-.chart-container{width:100%;height:260px;}
+.winner-banner{
+  text-align:center;background:linear-gradient(90deg,var(--koen),var(--lh));
+  color:white;padding:10px 0;border-radius:12px;margin-bottom:10px;
+  font-size:clamp(14px,3vw,16px);font-weight:600;box-shadow:0 4px 10px rgba(0,0,0,0.1);
+}
+.chart-container{width:100%;height:280px;}
 footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🏓 KOEN vs LH 탁구리그 비교</h1>
-  <p>2025년 10월 활동 및 회원현황</p>
+  <h1>🏓 KOEN vs LH 리그 비교 대시보드</h1>
+  <p>2025년 10월 활동 및 회원 현황</p>
 </header>
 
 <section>
-  <div class="section-title">📊 종합 요약</div>
-  <div class="stats">
+  <div class="winner-banner" id="winnerText">결과를 불러오는 중...</div>
+  <div class="card-wrap">
     <div class="card" style="border:2px solid var(--koen)">
       <h3>KOEN</h3>
       <p>회원 수: <b id="koenMembers">-</b></p>
@@ -55,18 +62,13 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 </section>
 
 <section>
-  <div class="section-title">📈 활동 비교 그래프</div>
-  <div class="chart-container"><canvas id="activityChart"></canvas></div>
+  <div class="section-title">📈 종합 비교 (Radar Chart)</div>
+  <div class="chart-container"><canvas id="radarChart"></canvas></div>
 </section>
 
 <section>
-  <div class="section-title">🏆 평균 승률 비교</div>
-  <div class="chart-container"><canvas id="winrateChart"></canvas></div>
-</section>
-
-<section>
-  <div class="section-title">👥 회원 수 비교</div>
-  <div class="chart-container"><canvas id="memberChart"></canvas></div>
+  <div class="section-title">👥 회원 레벨 분포 (예시)</div>
+  <div class="chart-container"><canvas id="levelChart"></canvas></div>
 </section>
 
 <footer>© 2025 남동본사 & LH 탁구동호회</footer>
@@ -75,7 +77,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// 🔹 KOEN Firebase
+// Firebase 설정
 const koenConfig = {
   apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain:"pingpongclub-4a5fd.firebaseapp.com",
@@ -85,8 +87,6 @@ const koenConfig = {
   messagingSenderId:"802826774007",
   appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
-
-// 🔹 LH Firebase
 const lhConfig = {
   apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",
   authDomain:"pingpongclub2-6ce04.firebaseapp.com",
@@ -97,80 +97,80 @@ const lhConfig = {
   appId:"1:27948766659:web:b7f79c1937c2123ed29976"
 };
 
-// 앱 초기화
 const appKoen = initializeApp(koenConfig, "koenApp");
 const appLh = initializeApp(lhConfig, "lhApp");
 const dbKoen = getDatabase(appKoen);
 const dbLh = getDatabase(appLh);
 
-// 데이터 가져오기
-async function fetchClubData(db) {
-  const [playersSnap, matchesSnap] = await Promise.all([
-    get(child(ref(db), "players")),
-    get(child(ref(db), "matches"))
+async function fetchClub(db){
+  const [pSnap,mSnap] = await Promise.all([
+    get(child(ref(db),"players")),
+    get(child(ref(db),"matches"))
   ]);
+  const players = pSnap.exists()?Object.values(pSnap.val()):[];
+  const matches = mSnap.exists()?Object.values(mSnap.val()):[];
 
-  const players = playersSnap.exists() ? Object.values(playersSnap.val()) : [];
-  const matches = matchesSnap.exists() ? Object.values(matchesSnap.val()) : [];
+  const wins = matches.filter(m=>m.result==="win").length;
+  const losses = matches.filter(m=>m.result==="lose").length;
+  const total = wins+losses;
+  const winRate = total?((wins/total)*100).toFixed(1):0;
 
-  // 승패 계산
-  const wins = matches.filter(m => m.result === "win").length;
-  const losses = matches.filter(m => m.result === "lose").length;
-  const total = wins + losses;
-  const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
+  // 레벨별 카운트
+  const levelCount = [1,2,3,4,5,6].map(l => players.filter(p=>p.level==l).length);
 
   return {
-    memberCount: players.length,
-    totalGames: matches.length,
-    winRate,
-    score: Math.round(matches.length * (winRate / 100))
+    members: players.length,
+    games: matches.length,
+    rate: winRate,
+    score: Math.round(matches.length*(winRate/100)),
+    levelCount
   };
 }
 
-Promise.all([fetchClubData(dbKoen), fetchClubData(dbLh)]).then(([koen, lh]) => {
-  document.getElementById("koenMembers").textContent = koen.memberCount;
-  document.getElementById("koenGames").textContent = koen.totalGames;
-  document.getElementById("koenRate").textContent = koen.winRate;
+Promise.all([fetchClub(dbKoen), fetchClub(dbLh)]).then(([koen,lh])=>{
+  // 숫자 표시
+  document.getElementById("koenMembers").textContent = koen.members;
+  document.getElementById("koenGames").textContent = koen.games;
+  document.getElementById("koenRate").textContent = koen.rate;
   document.getElementById("koenScore").textContent = koen.score;
-
-  document.getElementById("lhMembers").textContent = lh.memberCount;
-  document.getElementById("lhGames").textContent = lh.totalGames;
-  document.getElementById("lhRate").textContent = lh.winRate;
+  document.getElementById("lhMembers").textContent = lh.members;
+  document.getElementById("lhGames").textContent = lh.games;
+  document.getElementById("lhRate").textContent = lh.rate;
   document.getElementById("lhScore").textContent = lh.score;
 
-  // 활동 그래프
-  new Chart(document.getElementById("activityChart"), {
-    type: "bar",
-    data: {
-      labels: ["KOEN", "LH"],
-      datasets: [{
-        label: "총 경기 수",
-        data: [koen.totalGames, lh.totalGames],
-        backgroundColor: ["#2563eb", "#f97316"],
-        borderRadius: 8
-      }]
+  // 승자 계산
+  const totalK = koen.games+koen.score;
+  const totalL = lh.games+lh.score;
+  const winner = totalK > totalL ? "KOEN 🏆" : (totalK < totalL ? "LH 🏆" : "무승부 🤝");
+  document.getElementById("winnerText").textContent =
+    `${winner}이(가) 이번 달 더 활발히 활동했습니다!`;
+
+  // Radar Chart
+  new Chart(document.getElementById("radarChart"),{
+    type:"radar",
+    data:{
+      labels:["회원수","경기수","승률","활동지수"],
+      datasets:[
+        {label:"KOEN",data:[koen.members,koen.games,koen.rate,koen.score],
+         borderColor:"#2563eb",backgroundColor:"rgba(37,99,235,0.2)",fill:true},
+        {label:"LH",data:[lh.members,lh.games,lh.rate,lh.score],
+         borderColor:"#f97316",backgroundColor:"rgba(249,115,22,0.2)",fill:true}
+      ]
     },
-    options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    options:{scales:{r:{beginAtZero:true,angleLines:{color:"#ddd"}}}}
   });
 
-  // 승률 도넛
-  new Chart(document.getElementById("winrateChart"), {
-    type: "doughnut",
-    data: {
-      labels: ["KOEN", "LH"],
-      datasets: [{ data: [koen.winRate, lh.winRate], backgroundColor: ["#2563eb","#f97316"] }]
+  // Level 분포 비교
+  new Chart(document.getElementById("levelChart"),{
+    type:"bar",
+    data:{
+      labels:["Lv1","Lv2","Lv3","Lv4","Lv5","Lv6"],
+      datasets:[
+        {label:"KOEN",data:koen.levelCount,backgroundColor:"rgba(37,99,235,0.8)",borderRadius:6},
+        {label:"LH",data:lh.levelCount,backgroundColor:"rgba(249,115,22,0.8)",borderRadius:6}
+      ]
     },
-    options: { cutout:"70%", plugins:{legend:{position:"bottom"}} }
-  });
-
-  // 회원 수 그래프
-  new Chart(document.getElementById("memberChart"), {
-    type: "bar",
-    data: {
-      labels: ["KOEN", "LH"],
-      datasets: [{ label:"회원 수", data:[koen.memberCount, lh.memberCount], backgroundColor:["#2563eb","#f97316"], borderRadius:8 }]
-    },
-    options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+    options:{plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true}}}
   });
 });
 </script>
