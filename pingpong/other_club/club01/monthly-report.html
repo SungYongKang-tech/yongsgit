@@ -191,29 +191,33 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
     </table>
   `;
 
-  // ✅ summary 박스 추가 (최다경기·다승·기량상승·부수상향)
+  // ✅ summary 박스 추가
   main.appendChild(summaryBox);
 
-  // ✅ 이번달 전적 테이블 렌더링
-  const tbody = document.querySelector('#tbodyCurrent');
-  curArr.forEach((p, i) => {
-    const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
-    const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '–';
-    const prevText = p.prev !== null ? `${formatNum(p.prev)}%` : '–';
-    const deltaText = p.prev !== null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
-
-// ✅ 날짜별 경기 수 기준
+  // ✅ 날짜별 경기 수 기준
   const today = new Date();
   const day = today.getDate();
   let minGames = 15; // 기본: 말일 기준
   if (day <= 10) minGames = 5;
   else if (day <= 20) minGames = 10;
 
-  // ✅ 조건 "충족 시" 하늘색 배경 적용
-  const bgStyle = p.total >= minGames ? 'background:#e0f2fe;' : '';
+  // ✅ 조건 충족 / 미충족자 분리
+  const qualified = curArr.filter(p => p.total >= minGames);
+  const unqualified = curArr
+    .filter(p => p.total < minGames)
+    .sort((a, b) => b.total - a.total); // 경기 많은 순
+
+  const tbody = document.querySelector('#tbodyCurrent');
+
+  // ✅ 조건 충족자 (순위 있음, 하늘색 배경)
+  qualified.forEach((p, i) => {
+    const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
+    const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '–';
+    const prevText = p.prev !== null ? `${formatNum(p.prev)}%` : '–';
+    const deltaText = p.prev !== null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
 
     tbody.insertAdjacentHTML('beforeend', `
-      <tr>
+      <tr style="background:#e0f2fe;">
         <td>${i + 1}</td>
         <td>${p.name}(${p.level})</td>
         <td>${p.total}</td>
@@ -225,24 +229,45 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
     `);
   });
 
-   // ✅ 안내줄 (표 바로 아래, 배경 제거 / 작은 글씨)
-document.querySelector('#tableCurrent').insertAdjacentHTML('afterend', `
-  <p id="ruleNote" style="
-    text-align:center;
-    color:#475569;
-    font-size:12.5px;
-    margin-top:6px;
-    margin-bottom:14px;
-    font-weight:500;
-  ">
-    ⚠️ 순위 반영 기준: <b>10일 → 5경기 이상 / 20일 → 10경기 이상 / 말일 → 15경기 이상</b>
-  </p>
-`);
+  // ✅ 조건 미충족자 (순위 “–”, 회색 배경, 경기순 내림차순)
+  unqualified.forEach(p => {
+    const cls = p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : '';
+    const sign = p.delta > 0 ? '▲' : p.delta < 0 ? '▼' : '–';
+    const prevText = p.prev !== null ? `${formatNum(p.prev)}%` : '–';
+    const deltaText = p.prev !== null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
+
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr style="background:#f9fafb;">
+        <td>–</td>
+        <td>${p.name}(${p.level})</td>
+        <td>${p.total}</td>
+        <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
+        <td>${prevText}</td>
+        <td>${formatNum(p.rate)}%</td>
+        <td class="delta ${cls}">${deltaText}</td>
+      </tr>
+    `);
+  });
+
+  // ✅ 안내줄 (표 바로 아래, 작은 글씨)
+  document.querySelector('#tableCurrent').insertAdjacentHTML('afterend', `
+    <p id="ruleNote" style="
+      text-align:center;
+      color:#475569;
+      font-size:12.5px;
+      margin-top:6px;
+      margin-bottom:14px;
+      font-weight:500;
+    ">
+      ⚠️ 순위 반영 기준: <b>10일 → 5경기 이상 / 20일 → 10경기 이상 / 말일 → 15경기 이상</b>
+    </p>
+  `);
 
   // ✅ 지난달 전적 (summary 아래쪽에 출력)
   if (prevArr.length) {
     main.insertAdjacentHTML('beforeend', `
-      <h3 style="text-align:center;font-size:20px;color:#334155;margin:28px 0 8px;border-top:2px solid #e2e8f0;padding-top:12px;">
+      <h3 style="text-align:center;font-size:20px;color:#334155;margin:28px 0 8px;
+      border-top:2px solid #e2e8f0;padding-top:12px;">
         지난달 전적 (${prevMonth})
       </h3>
       <table id="tablePrev">
@@ -268,9 +293,8 @@ document.querySelector('#tableCurrent').insertAdjacentHTML('afterend', `
       `);
     });
   }
-
-
 }
+
 
 
 // === summary ===
