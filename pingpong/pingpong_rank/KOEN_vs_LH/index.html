@@ -186,17 +186,24 @@ function render(koen,lh){
   // === Radar Chart (자동 스케일 정규화 버전) ===
 if (radar) radar.destroy();
 
-// 🧮 스케일 자동 계산
+// === 자동 정규화 ===
 const normalize = (val, max) => (max === 0 ? 0 : Math.min(100, (val / max) * 100));
-
-// 두 클럽의 모든 값에서 최대값 찾기
 const maxMembers = Math.max(koen.memberCount, lh.memberCount, 1);
 const maxGames   = Math.max(koen.games, lh.games, 1);
 const maxActive  = Math.max(koen.activeRate, lh.activeRate, 1);
 const maxScore   = Math.max(koen.score, lh.score, 1);
 const maxTimeIdx = Math.max(koen.timeIndex, lh.timeIndex, 1);
 
-// 클럽별 정규화 데이터 생성
+// === 실제 수치 포함된 라벨 (두 줄) ===
+const labels = [
+  `회원수\n(${koen.memberCount}/${lh.memberCount})`,
+  `경기수\n(${koen.games}/${lh.games})`,
+  `참여율\n(${koen.activeRate}/${lh.activeRate})`,
+  `활동지수\n(${koen.score}/${lh.score})`,
+  `시간대지수\n(${koen.timeIndex}/${lh.timeIndex})`
+];
+
+// === 정규화 데이터 ===
 const koenData = [
   normalize(koen.memberCount, maxMembers),
   normalize(koen.games, maxGames),
@@ -212,11 +219,11 @@ const lhData = [
   normalize(lh.timeIndex, maxTimeIdx)
 ];
 
-// Radar Chart 생성
+// === Radar Chart ===
 radar = new Chart(document.getElementById("radarChart"), {
   type: "radar",
   data: {
-    labels: ["회원수", "경기수", "참여율", "활동지수", "시간대지수"],
+    labels: labels,
     datasets: [
       {
         label: "KOEN",
@@ -244,73 +251,23 @@ radar = new Chart(document.getElementById("radarChart"), {
     scales: {
       r: {
         beginAtZero: true,
-        max: 100,              // 항상 0~100 범위
+        max: 100,
         ticks: { stepSize: 20 },
+        pointLabels: {
+          font: { size: 13, weight: "500" },
+          color: "#334155",
+          // ✅ 두 줄 라벨 허용
+          callback: function(value) {
+            return value.split('\n');
+          }
+        },
         grid: { color: "rgba(0,0,0,0.08)" },
-        angleLines: { color: "rgba(0,0,0,0.1)" },
-        pointLabels: { font: { size: 13 } }
+        angleLines: { color: "rgba(0,0,0,0.1)" }
       }
     }
   }
 });
 
-
-  // 📆 일별 경기수
-  if(daily)daily.destroy();
-  const days=Array.from({length:31},(_,i)=>`${i+1}일`);
-  daily=new Chart(document.getElementById("dailyChart"),{
-    type:"line",
-    data:{
-      labels:days,
-      datasets:[
-        {label:"KOEN",data:koen.dailyData,borderColor:"#2563eb",backgroundColor:"rgba(37,99,235,0.1)",fill:true,tension:0.3},
-        {label:"LH",data:lh.dailyData,borderColor:"#f97316",backgroundColor:"rgba(249,115,22,0.1)",fill:true,tension:0.3}
-      ]
-    },
-    options:{maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
-  });
-
-  // 🏅 승률
- if(winK)winK.destroy(); 
-if(winL)winL.destroy();
-
-const safeData = (d) => (d.win + d.lose === 0 ? [1,0] : [d.win, d.lose]);
-
-winK = new Chart(document.getElementById("koenWinChart"), {
-  type: "doughnut",
-  data: {
-    labels: ["승", "패"],
-    datasets: [{
-      data: safeData(koen.winData),
-      backgroundColor: ["#2563eb", "#cbd5e1"]
-    }]
-  },
-  options: {
-    plugins: {
-      title: { display: true, text: "KOEN" },
-      legend: { position: "bottom" }
-    },
-    cutout: "65%"
-  }
-});
-
-winL = new Chart(document.getElementById("lhWinChart"), {
-  type: "doughnut",
-  data: {
-    labels: ["승", "패"],
-    datasets: [{
-      data: safeData(lh.winData),
-      backgroundColor: ["#f97316", "#fde68a"]
-    }]
-  },
-  options: {
-    plugins: {
-      title: { display: true, text: "LH" },
-      legend: { position: "bottom" }
-    },
-    cutout: "65%"
-  }
-});
 
 
   // 📈 레벨 분포
