@@ -23,11 +23,7 @@ section{width:100%;max-width:740px;background:var(--card);border-radius:16px;box
   color:white;padding:12px;border-radius:12px;margin-bottom:8px;
   font-weight:600;box-shadow:0 4px 10px rgba(0,0,0,.1);
 }
-.chart-container{
-  width:100%;
-  height:380px;
-  min-height:320px;
-}
+.chart-container{width:100%;height:380px;min-height:320px;}
 footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 </style>
 </head>
@@ -42,10 +38,9 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   <div class="section-title">🕸️ 5각형 종합 비교</div>
   <div class="chart-container"><canvas id="radarChart"></canvas></div>
 
-  <!-- 📘 지표 설명 -->
   <div class="desc-box" style="margin-top:18px;padding:14px 16px;background:linear-gradient(135deg,#f9fafb,#f1f5f9);border-radius:12px;font-size:14px;line-height:1.7;color:#334155;">
     <div><span style="color:#2563eb;font-weight:600;">📊 참여율</span> — 회원 1인당 평균 경기 횟수를 의미합니다.</div>
-    <div><span style="color:#16a34a;font-weight:600;">🏆 승률지수</span> — 1~9부별 경기 데이터를 바탕으로 계산된 <b>부수별 평균 승률</b>을 나타냅니다. 각 부의 실력 균형이 잘 잡힐수록 50%에 가까워집니다.</div>
+    <div><span style="color:#16a34a;font-weight:600;">🏆 승률지수</span> — 1~9부별 경기 데이터를 바탕으로 계산된 <b>부수별 평균 승률</b>입니다. 각 부의 실력 균형이 잘 잡힐수록 50%에 가까워집니다.</div>
     <div><span style="color:#f97316;font-weight:600;">🕒 시간대지수</span> — 경기가 특정 시간대에 몰리지 않고, <b>여러 시간대로 고르게 분산될수록 높게</b> 표시됩니다.</div>
   </div>
 </section>
@@ -59,139 +54,149 @@ import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.
 // === 날짜 ===
 const now = new Date();
 const year = now.getFullYear();
-const month = String(now.getMonth()+1).padStart(2,"0");
+const month = String(now.getMonth() + 1).padStart(2, "0");
 const monthKey = `${year}-${month}`;
 document.getElementById("monthText").textContent = `${year}년 ${month}월 리그 활동 비교`;
 
 // === Firebase 설정 ===
 const koenConfig = { apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo", authDomain:"pingpongclub-4a5fd.firebaseapp.com", databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com", projectId:"pingpongclub-4a5fd" };
 const lhConfig = { apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI", authDomain:"pingpongclub2-6ce04.firebaseapp.com", databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com", projectId:"pingpongclub2-6ce04" };
-const appKoen = initializeApp(koenConfig,"koen");
-const appLh = initializeApp(lhConfig,"lh");
+const appKoen = initializeApp(koenConfig, "koen");
+const appLh = initializeApp(lhConfig, "lh");
 const dbKoen = getDatabase(appKoen);
 const dbLh = getDatabase(appLh);
 
 // === 유틸 ===
-function calcTimeIndex(matches){
-  if(!matches.length)return 0;
-  const zones={morning:0,noon:0,evening:0,night:0};
-  matches.forEach(m=>{
-    const h=new Date(m.createdAt||0).getHours();
-    if(h>=5&&h<11)zones.morning++;
-    else if(h>=11&&h<15)zones.noon++;
-    else if(h>=15&&h<21)zones.evening++;
+function calcTimeIndex(matches) {
+  if (!matches.length) return 0;
+  const zones = { morning: 0, noon: 0, evening: 0, night: 0 };
+  matches.forEach(m => {
+    const h = new Date(m.createdAt || 0).getHours();
+    if (h >= 5 && h < 11) zones.morning++;
+    else if (h >= 11 && h < 15) zones.noon++;
+    else if (h >= 15 && h < 21) zones.evening++;
     else zones.night++;
   });
-  const concentration=(Math.max(...Object.values(zones))/matches.length)*100;
-  return (100 - concentration).toFixed(1); // ✅ 다양도 지표
+  const concentration = (Math.max(...Object.values(zones)) / matches.length) * 100;
+  return (100 - concentration).toFixed(1);
 }
 
-function calcWinRateByLevel(matches, players){
-  if(!matches.length||!players.length)return 0;
-  const levelMap={};
-  players.forEach(p=>{
-    const lv=parseInt(p.level||0);
-    if(lv>=1&&lv<=9&&p.name)levelMap[p.name]=lv;
+function calcWinRateByLevel(matches, players) {
+  if (!matches.length || !players.length) return 0;
+  const levelMap = {};
+  players.forEach(p => {
+    const lv = parseInt(p.level || 0);
+    if (lv >= 1 && lv <= 9 && p.name) levelMap[p.name] = lv;
   });
-  const levelStats={};
-  matches.forEach(m=>{
-    if(!m.winner||!m.loser)return;
-    const wLv=levelMap[m.winner];
-    const lLv=levelMap[m.loser];
-    if(!wLv||!lLv)return;
-    if(!levelStats[wLv])levelStats[wLv]={win:0,total:0};
-    if(!levelStats[lLv])levelStats[lLv]={win:0,total:0};
+  const levelStats = {};
+  matches.forEach(m => {
+    if (!m.winner || !m.loser) return;
+    const wLv = levelMap[m.winner];
+    const lLv = levelMap[m.loser];
+    if (!wLv || !lLv) return;
+    if (!levelStats[wLv]) levelStats[wLv] = { win: 0, total: 0 };
+    if (!levelStats[lLv]) levelStats[lLv] = { win: 0, total: 0 };
     levelStats[wLv].win++; levelStats[wLv].total++;
     levelStats[lLv].total++;
   });
-  let totalRate=0,count=0;
-  for(let lv=1;lv<=9;lv++){
-    const s=levelStats[lv];
-    if(s&&s.total>0){
-      const rate=(s.win/s.total)*100;
-      totalRate+=rate;
+  let totalRate = 0, count = 0;
+  for (let lv = 1; lv <= 9; lv++) {
+    const s = levelStats[lv];
+    if (s && s.total > 0) {
+      const rate = (s.win / s.total) * 100;
+      totalRate += rate;
       count++;
     }
   }
-  return count>0?(totalRate/count).toFixed(1):0;
+  return count > 0 ? (totalRate / count).toFixed(1) : 0;
 }
 
-// === 리스너 ===
-function listenClub(db,name,cb){
-  const pRef=ref(db,"players");
-  const mRef=ref(db,`matches/${monthKey}`);
-  onValue(pRef,pSnap=>{
-    onValue(mRef,mSnap=>{
-      const players=pSnap.exists()?Object.values(pSnap.val()):[];
-      const matches=mSnap.exists()?Object.values(mSnap.val()):[];
-      const memberCount=players.length;
-      const games=matches.length;
-      const activeRate=memberCount?((games/memberCount)*10).toFixed(1):0;
-      const timeIndex=calcTimeIndex(matches);
-      const winRate=calcWinRateByLevel(matches,players);
-      cb({name,memberCount,games,activeRate,timeIndex,winRate});
+// === 리스너 (자동 감지 + 필터링 추가) ===
+function listenClub(db, name, cb) {
+  const pRef = ref(db, "players");
+  const mRef = ref(db, "matches");
+  onValue(pRef, pSnap => {
+    onValue(mRef, mSnap => {
+      const players = pSnap.exists() ? Object.values(pSnap.val()) : [];
+      const allMatches = mSnap.exists() ? Object.values(mSnap.val()) : [];
+
+      // ✅ 이번 달 데이터만 필터링
+      const matches = allMatches.filter(m => {
+        if (!m.createdAt) return false;
+        const d = new Date(m.createdAt);
+        return d.getFullYear() === now.getFullYear() && (d.getMonth() + 1) === now.getMonth() + 1;
+      });
+
+      const memberCount = players.length;
+      const games = matches.length;
+      const activeRate = memberCount ? ((games / memberCount) * 10).toFixed(1) : 0;
+      const timeIndex = calcTimeIndex(matches);
+      const winRate = calcWinRateByLevel(matches, players);
+
+      cb({ name, memberCount, games, activeRate, timeIndex, winRate });
     });
   });
 }
 
 // === 렌더 ===
-let koen={},lh={},radar;
-function render(koen,lh){
-  const totalK=koen.games+parseFloat(koen.timeIndex)+parseFloat(koen.winRate);
-  const totalL=lh.games+parseFloat(lh.timeIndex)+parseFloat(lh.winRate);
-  const winner=totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
-  document.getElementById("winnerText").textContent=`${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
+let koen = {}, lh = {}, radar;
+function render(koen, lh) {
+  const totalK = koen.games + parseFloat(koen.timeIndex) + parseFloat(koen.winRate);
+  const totalL = lh.games + parseFloat(lh.timeIndex) + parseFloat(lh.winRate);
+  const winner = totalK > totalL ? "KOEN 🏆" : totalK < totalL ? "LH 🏆" : "무승부 🤝";
+  document.getElementById("winnerText").textContent = `${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
-  if(radar)radar.destroy();
-  const normalize=(v,max)=>(max===0?0:Math.min(100,(v/max)*100));
-  const maxMembers=Math.max(koen.memberCount,lh.memberCount,1);
-  const maxGames=Math.max(koen.games,lh.games,1);
-  const maxActive=Math.max(koen.activeRate,lh.activeRate,1);
-  const maxWin=Math.max(koen.winRate,lh.winRate,1);
-  const maxTime=Math.max(koen.timeIndex,lh.timeIndex,1);
+  if (radar) radar.destroy();
+  const normalize = (v, max) => (max === 0 ? 0 : Math.min(100, (v / max) * 100));
+  const maxMembers = Math.max(koen.memberCount, lh.memberCount, 1);
+  const maxGames = Math.max(koen.games, lh.games, 1);
+  const maxActive = Math.max(koen.activeRate, lh.activeRate, 1);
+  const maxWin = Math.max(koen.winRate, lh.winRate, 1);
+  const maxTime = Math.max(koen.timeIndex, lh.timeIndex, 1);
 
-  const labels=[
+  const labels = [
     `회원수\n(${koen.memberCount}/${lh.memberCount})`,
     `경기수\n(${koen.games}/${lh.games})`,
     `참여율\n(${koen.activeRate}/${lh.activeRate})`,
     `승률지수\n(${koen.winRate}/${lh.winRate})`,
     `시간대지수\n(${koen.timeIndex}/${lh.timeIndex})`
   ];
-  radar=new Chart(document.getElementById("radarChart"),{
-    type:"radar",
-    data:{
+
+  radar = new Chart(document.getElementById("radarChart"), {
+    type: "radar",
+    data: {
       labels,
-      datasets:[
-        {label:"KOEN",data:[
-          normalize(koen.memberCount,maxMembers),
-          normalize(koen.games,maxGames),
-          normalize(koen.activeRate,maxActive),
-          normalize(koen.winRate,maxWin),
-          normalize(koen.timeIndex,maxTime)
-        ],borderColor:"rgba(37,99,235,0.6)",backgroundColor:"rgba(37,99,235,0.25)",pointBackgroundColor:"#2563eb"},
-        {label:"LH",data:[
-          normalize(lh.memberCount,maxMembers),
-          normalize(lh.games,maxGames),
-          normalize(lh.activeRate,maxActive),
-          normalize(lh.winRate,maxWin),
-          normalize(lh.timeIndex,maxTime)
-        ],borderColor:"rgba(249,115,22,0.6)",backgroundColor:"rgba(249,115,22,0.25)",pointBackgroundColor:"#f97316"}
+      datasets: [
+        { label: "KOEN", data: [
+          normalize(koen.memberCount, maxMembers),
+          normalize(koen.games, maxGames),
+          normalize(koen.activeRate, maxActive),
+          normalize(koen.winRate, maxWin),
+          normalize(koen.timeIndex, maxTime)
+        ], borderColor: "rgba(37,99,235,0.6)", backgroundColor: "rgba(37,99,235,0.25)", pointBackgroundColor: "#2563eb" },
+        { label: "LH", data: [
+          normalize(lh.memberCount, maxMembers),
+          normalize(lh.games, maxGames),
+          normalize(lh.activeRate, maxActive),
+          normalize(lh.winRate, maxWin),
+          normalize(lh.timeIndex, maxTime)
+        ], borderColor: "rgba(249,115,22,0.6)", backgroundColor: "rgba(249,115,22,0.25)", pointBackgroundColor: "#f97316" }
       ]
     },
-    options:{
-      maintainAspectRatio:false,
-      plugins:{legend:{position:"bottom"}},
-      scales:{
-        r:{
-          beginAtZero:true,
-          max:100,
-          ticks:{display:false},
-          grid:{color:"rgba(0,0,0,0.08)"},
-          pointLabels:{
-            padding:22,
-            font:{size:12,weight:"500"},
-            color:"#334155",
-            callback:value=>value.split("\n")
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+      scales: {
+        r: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { display: false },
+          grid: { color: "rgba(0,0,0,0.08)" },
+          pointLabels: {
+            padding: 24,
+            font: { size: 12, weight: "500" },
+            color: "#334155",
+            callback: value => value.split("\n")
           }
         }
       }
@@ -200,8 +205,8 @@ function render(koen,lh){
 }
 
 // === 실시간 반영 ===
-listenClub(dbKoen,"koen",data=>{koen=data;if(lh.name)render(koen,lh);});
-listenClub(dbLh,"lh",data=>{lh=data;if(koen.name)render(koen,lh);});
+listenClub(dbKoen, "koen", data => { koen = data; if (lh.name) render(koen, lh); });
+listenClub(dbLh, "lh", data => { lh = data; if (koen.name) render(koen, lh); });
 </script>
 </body>
 </html>
