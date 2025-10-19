@@ -82,57 +82,40 @@ function calcTimeIndex(matches) {
 }
 
 // ✅ 승률 계산 (1~9부 기준, 실시간 반영)
+// ✅ Firebase 구조( winnerSide / namesA / namesB ) 대응 버전
 function calcWinRateByLevel(matches, players) {
-  if (!matches.length || !players.length) return 0;
+  if (!matches || !matches.length || !players || !players.length) return 0;
 
-  // 🔹 부수 정보 매핑
+  // 🔹 부수 매핑 (1~9부만)
   const levelMap = {};
   players.forEach(p => {
     const lv = parseInt(p.level || 0);
     if (lv >= 1 && lv <= 9 && p.name) {
-      const base = p.name.split("-")[0].trim(); // "김승일-15" → "김승일"
-      levelMap[base] = lv;
+      levelMap[p.name.trim()] = lv;
     }
   });
 
-  // 🔹 부수별 승/패 집계
+  // 🔹 부수별 승패 통계
   const levelStats = {};
 
   matches.forEach(m => {
-    if (!m.winner) return;
+    if (!m.winnerSide || (!m.namesA && !m.namesB)) return;
 
-    // ✅ 승자/패자 이름 목록 추출
-    let winners = [];
-    let losers = [];
+    const winners = m.winnerSide === "A" ? (m.namesA || []) : (m.namesB || []);
+    const losers = m.winnerSide === "A" ? (m.namesB || []) : (m.namesA || []);
 
-    const w = String(m.winner).toLowerCase();
-
-    // 🔸 Case 1. winner가 "A" / "B" 또는 "teamA" / "teamB"
-    if (["a", "teama", "team_a"].includes(w)) winners = m.membersA || [];
-    else if (["b", "teamb", "team_b"].includes(w)) winners = m.membersB || [];
-
-    // 🔸 Case 2. winner가 직접 이름으로 들어온 경우 (예: "김승일")
-    else if (m.membersA?.includes(m.winner)) winners = [m.winner];
-    else if (m.membersB?.includes(m.winner)) winners = [m.winner];
-
-    // 🔸 Case 3. 패자 팀 자동 판별
-    if (winners === m.membersA) losers = m.membersB || [];
-    else if (winners === m.membersB) losers = m.membersA || [];
-
-    // ✅ 승자 집계
+    // ✅ 승자 통계
     winners.forEach(name => {
-      const base = name.split("-")[0].trim();
-      const lv = levelMap[base];
+      const lv = levelMap[name];
       if (!lv) return;
       if (!levelStats[lv]) levelStats[lv] = { win: 0, total: 0 };
       levelStats[lv].win++;
       levelStats[lv].total++;
     });
 
-    // ✅ 패자 집계
+    // ✅ 패자 통계
     losers.forEach(name => {
-      const base = name.split("-")[0].trim();
-      const lv = levelMap[base];
+      const lv = levelMap[name];
       if (!lv) return;
       if (!levelStats[lv]) levelStats[lv] = { win: 0, total: 0 };
       levelStats[lv].total++;
@@ -150,7 +133,9 @@ function calcWinRateByLevel(matches, players) {
     }
   }
 
-  return count > 0 ? (totalRate / count).toFixed(1) : 0;
+  const avg = count > 0 ? (totalRate / count).toFixed(1) : 0;
+  console.log("🏓 승률지수 계산 완료:", { avg, levelStats });
+  return avg;
 }
 
 
