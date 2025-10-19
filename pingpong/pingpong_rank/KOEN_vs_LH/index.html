@@ -7,34 +7,51 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-:root{
-  --koen:#2563eb; --lh:#f97316; --bg:#f6f8fb; --card:#fff;
-  --muted:#64748b; --ink:#0f172a; --shadow:0 6px 20px rgba(0,0,0,0.08);
+:root {
+  --koen:#2563eb; --lh:#f97316;
+  --bg:#f6f8fb; --card:#fff;
+  --muted:#64748b; --ink:#0f172a;
+  --shadow:0 6px 20px rgba(0,0,0,0.08);
 }
-*{box-sizing:border-box;font-family:"Pretendard","Noto Sans KR",sans-serif;}
-body{margin:0;background:var(--bg);color:var(--ink);padding:18px;display:flex;flex-direction:column;align-items:center;}
-header{text-align:center;margin-bottom:16px;}
-h1{font-size:clamp(22px,5vw,28px);margin-bottom:6px;}
-p{color:var(--muted);font-size:14px;}
-section{width:100%;max-width:740px;background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:20px;margin-bottom:20px;}
-.section-title{text-align:center;font-size:18px;margin-bottom:10px;}
-.winner-banner{
-  text-align:center;background:linear-gradient(90deg,var(--koen),var(--lh));
-  color:white;padding:12px;border-radius:12px;margin-bottom:8px;
-  font-weight:600;box-shadow:0 4px 10px rgba(0,0,0,.1);
+* { box-sizing:border-box; font-family:"Pretendard","Noto Sans KR",sans-serif; }
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  padding:18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
 }
-.chart-container{
+header { text-align:center; margin-bottom:16px; }
+h1 { font-size:clamp(22px,5vw,28px); margin-bottom:6px; }
+p { color:var(--muted); font-size:14px; }
+section {
+  width:100%;
+  max-width:740px;
+  background:var(--card);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:20px;
+  margin-bottom:20px;
+}
+.section-title { text-align:center; font-size:18px; margin-bottom:10px; }
+.winner-banner {
+  text-align:center;
+  background:linear-gradient(90deg,var(--koen),var(--lh));
+  color:white;
+  padding:12px;
+  border-radius:12px;
+  margin-bottom:8px;
+  font-weight:600;
+  box-shadow:0 4px 10px rgba(0,0,0,.1);
+}
+.chart-container {
   width:100%;
   height:400px;
   min-height:320px;
 }
-footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
-.insights{display:grid;gap:10px;margin-top:10px;}
-.insight-card{
-  background:var(--bg);border-left:4px solid var(--koen);
-  padding:10px 12px;border-radius:8px;font-size:14px;line-height:1.5;
-}
-.insight-card.lh{border-left-color:var(--lh);}
+footer { text-align:center; color:var(--muted); font-size:13px; margin-top:10px; }
 </style>
 </head>
 <body>
@@ -50,21 +67,6 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   <div class="chart-container"><canvas id="radarChart"></canvas></div>
 </section>
 
-<!-- 📆 일별 경기수 추이 -->
-<section>
-  <div class="section-title">📆 일별 경기수 추이</div>
-  <div class="chart-container"><canvas id="dailyChart"></canvas></div>
-</section>
-
-<!-- 🏅 승률 분포 -->
-<section>
-  <div class="section-title">🏅 승률 분포 비교</div>
-  <div style="display:flex;justify-content:space-around;flex-wrap:wrap;">
-    <div style="width:45%;min-width:220px;"><canvas id="koenWinChart"></canvas></div>
-    <div style="width:45%;min-width:220px;"><canvas id="lhWinChart"></canvas></div>
-  </div>
-</section>
-
 <!-- 📈 부수(Level) 분포 -->
 <section>
   <div class="section-title">📈 부수(Level) 분포 비교</div>
@@ -77,22 +79,33 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// === 날짜 ===
-const now=new Date();
-const year=now.getFullYear();
-const month=String(now.getMonth()+1).padStart(2,"0");
-const monthKey=`${year}-${month}`;
-document.getElementById("monthText").textContent=`${year}년 ${month}월 리그 활동 비교`;
+// === 날짜 설정 ===
+const now = new Date();
+const year = now.getFullYear();
+const month = String(now.getMonth() + 1).padStart(2, "0");
+const monthKey = `${year}-${month}`;
+document.getElementById("monthText").textContent = `${year}년 ${month}월 리그 활동 비교`;
 
 // === Firebase 설정 ===
-const koenConfig={apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",authDomain:"pingpongclub-4a5fd.firebaseapp.com",databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",projectId:"pingpongclub-4a5fd"};
-const lhConfig={apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",authDomain:"pingpongclub2-6ce04.firebaseapp.com",databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com",projectId:"pingpongclub2-6ce04"};
-const appKoen=initializeApp(koenConfig,"koen");
-const appLh=initializeApp(lhConfig,"lh");
-const dbKoen=getDatabase(appKoen);
-const dbLh=getDatabase(appLh);
+const koenConfig = {
+  apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain:"pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId:"pingpongclub-4a5fd"
+};
+const lhConfig = {
+  apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",
+  authDomain:"pingpongclub2-6ce04.firebaseapp.com",
+  databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com",
+  projectId:"pingpongclub2-6ce04"
+};
 
-// === 유틸 ===
+const appKoen = initializeApp(koenConfig, "koen");
+const appLh = initializeApp(lhConfig, "lh");
+const dbKoen = getDatabase(appKoen);
+const dbLh = getDatabase(appLh);
+
+// === 계산 함수 ===
 function calcTimeIndex(matches){
   if(!matches.length)return 0;
   const zones={morning:0,noon:0,evening:0,night:0};
@@ -113,174 +126,97 @@ function calcLevelCount(players){
   });
   return arr;
 }
-function calcDailyData(matches){
-  const days=Array(31).fill(0);
-  matches.forEach(m=>{
-    const d=new Date(m.createdAt||0).getDate();
-    days[d-1]++;
-  });
-  return days;
-}
-function calcWinData(matches, clubName) {
-  let win = 0, lose = 0;
 
-  matches.forEach(m => {
-    if (!m.winner) return;
-
-    const w = String(m.winner).toLowerCase();
-
-    // ✅ 여러 경우 커버
-    if (["a", "koen", "승자a", "team_a"].includes(w) && clubName === "koen") win++;
-    else if (["b", "lh", "승자b", "team_b"].includes(w) && clubName === "koen") lose++;
-    else if (["b", "lh", "승자b", "team_b"].includes(w) && clubName === "lh") win++;
-    else if (["a", "koen", "승자a", "team_a"].includes(w) && clubName === "lh") lose++;
-
-    // ✅ 혹시 승자이름이 들어오는 경우도 감지 (예: "김승일" 등)
-    if (w.includes("koen") && clubName === "koen") win++;
-    if (w.includes("lh") && clubName === "lh") win++;
-  });
-
-  return { win, lose };
-}
-
-
-// === 실시간 리스너 ===
-function listenClub(db, name, cb) {
-  const pRef = ref(db, "players");
-  const mRef = ref(db, "matches"); // ✅ 전체 matches 감시
-  onValue(pRef, pSnap => {
-    onValue(mRef, mSnap => {
-      const players = pSnap.exists() ? Object.values(pSnap.val()) : [];
-      const allMatches = mSnap.exists() ? Object.values(mSnap.val()) : [];
-
-      // ✅ 이번 달에 해당하는 경기만 필터
-      const matches = allMatches.filter(m => {
-        if (!m.createdAt) return false;
-        const d = new Date(m.createdAt);
-        return d.getFullYear() === now.getFullYear() && d.getMonth() + 1 === now.getMonth() + 1;
-      });
-
-      const memberCount = players.length;
-      const games = matches.length;
-      const activeRate = memberCount ? ((games / memberCount) * 10).toFixed(1) : 0;
-      const score = Math.round(games * (activeRate / 100));
-      const timeIndex = calcTimeIndex(matches);
-      const levelCount = calcLevelCount(players);
-      const dailyData = calcDailyData(matches);
-      const winData = calcWinData(matches);
-      cb({ name, memberCount, games, activeRate, score, timeIndex, levelCount, dailyData, winData });
+// === 실시간 수신 ===
+function listenClub(db,name,cb){
+  const pRef=ref(db,"players");
+  const mRef=ref(db,`matches/${monthKey}`);
+  onValue(pRef,pSnap=>{
+    onValue(mRef,mSnap=>{
+      const players=pSnap.exists()?Object.values(pSnap.val()):[];
+      const matches=mSnap.exists()?Object.values(mSnap.val()):[];
+      const memberCount=players.length;
+      const games=matches.length;
+      const activeRate=memberCount?((games/memberCount)*10).toFixed(1):0;
+      const score=Math.round(games*(activeRate/100));
+      const timeIndex=calcTimeIndex(matches);
+      const levelCount=calcLevelCount(players);
+      cb({name,memberCount,games,activeRate,score,timeIndex,levelCount});
     });
   });
 }
 
-
-// === 렌더링 ===
-let koen={}, lh={}, radar, daily, level, winK, winL;
+// === 그래프 렌더링 ===
+let koen={}, lh={}, radar, level;
 function render(koen,lh){
   const totalK=koen.score+parseFloat(koen.timeIndex);
   const totalL=lh.score+parseFloat(lh.timeIndex);
   const winner=totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
   document.getElementById("winnerText").textContent=`${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
-  // 🕸️ Radar
-  // === Radar Chart (자동 스케일 정규화 버전) ===
-if (radar) radar.destroy();
+  // === Radar Chart ===
+  if(radar) radar.destroy();
 
-// === 자동 정규화 ===
-const normalize = (val, max) => (max === 0 ? 0 : Math.min(100, (val / max) * 100));
-const maxMembers = Math.max(koen.memberCount, lh.memberCount, 1);
-const maxGames   = Math.max(koen.games, lh.games, 1);
-const maxActive  = Math.max(koen.activeRate, lh.activeRate, 1);
-const maxScore   = Math.max(koen.score, lh.score, 1);
-const maxTimeIdx = Math.max(koen.timeIndex, lh.timeIndex, 1);
+  const labels=["회원수","경기수","참여율","활동지수","시간대지수"];
+  const koenVals=[koen.memberCount,koen.games,koen.activeRate,koen.score,koen.timeIndex];
+  const lhVals=[lh.memberCount,lh.games,lh.activeRate,lh.score,lh.timeIndex];
 
-// === 라벨 두 줄 (HTML 색상 포함) ===
-const labels = [
-  `회원수\n(<span style="color:#2563eb">${koen.memberCount}</span>/<span style="color:#f97316">${lh.memberCount}</span>)`,
-  `경기수\n(<span style="color:#2563eb">${koen.games}</span>/<span style="color:#f97316">${lh.games}</span>)`,
-  `참여율\n(<span style="color:#2563eb">${koen.activeRate}</span>/<span style="color:#f97316">${lh.activeRate}</span>)`,
-  `활동지수\n(<span style="color:#2563eb">${koen.score}</span>/<span style="color:#f97316">${lh.score}</span>)`,
-  `시간대지수\n(<span style="color:#2563eb">${koen.timeIndex}</span>/<span style="color:#f97316">${lh.timeIndex}</span>)`
-];
+  const normalize=(val,max)=>max===0?0:Math.min(100,(val/max)*100);
+  const koenData=koenVals.map((v,i)=>normalize(v,Math.max(koenVals[i],lhVals[i])));
+  const lhData=lhVals.map((v,i)=>normalize(v,Math.max(koenVals[i],lhVals[i])));
 
-// === 데이터 정규화 ===
-const koenData = [
-  normalize(koen.memberCount, maxMembers),
-  normalize(koen.games, maxGames),
-  normalize(koen.activeRate, maxActive),
-  normalize(koen.score, maxScore),
-  normalize(koen.timeIndex, maxTimeIdx)
-];
-const lhData = [
-  normalize(lh.memberCount, maxMembers),
-  normalize(lh.games, maxGames),
-  normalize(lh.activeRate, maxActive),
-  normalize(lh.score, maxScore),
-  normalize(lh.timeIndex, maxTimeIdx)
-];
-
-// === Radar Chart ===
-radar = new Chart(document.getElementById("radarChart"), {
-  type: "radar",
-  data: {
-    labels: labels,
-    datasets: [
-      {
-        label: "KOEN",
-        data: koenData,
-        borderColor: "rgba(37,99,235,0.6)",
-        backgroundColor: "rgba(37,99,235,0.25)",
-        borderWidth: 1,
-        pointRadius: 3,
-        pointBackgroundColor: "#2563eb"
-      },
-      {
-        label: "LH",
-        data: lhData,
-        borderColor: "rgba(249,115,22,0.6)",
-        backgroundColor: "rgba(249,115,22,0.25)",
-        borderWidth: 1,
-        pointRadius: 3,
-        pointBackgroundColor: "#f97316"
+  radar=new Chart(document.getElementById("radarChart"),{
+    type:"radar",
+    data:{
+      labels,
+      datasets:[
+        {label:"KOEN",data:koenData,borderColor:"rgba(37,99,235,0.6)",backgroundColor:"rgba(37,99,235,0.25)",pointBackgroundColor:"#2563eb",borderWidth:1,pointRadius:3},
+        {label:"LH",data:lhData,borderColor:"rgba(249,115,22,0.6)",backgroundColor:"rgba(249,115,22,0.25)",pointBackgroundColor:"#f97316",borderWidth:1,pointRadius:3}
+      ]
+    },
+    options:{
+      maintainAspectRatio:false,
+      plugins:{legend:{position:"bottom"},customLabels:{koenVals,lhVals}},
+      scales:{r:{beginAtZero:true,max:100,ticks:{stepSize:20},pointLabels:{display:false}}},
+    },
+    plugins:[{
+      id:"coloredLabels",
+      afterDraw(chart){
+        const {ctx}=chart;
+        const rScale=chart.scales.r;
+        const cx=rScale.xCenter;
+        const cy=rScale.yCenter;
+        const radius=rScale.drawingArea+18;
+        const angleStep=(Math.PI*2)/labels.length;
+        ctx.save();
+        ctx.textAlign="center";
+        ctx.textBaseline="middle";
+        ctx.font="13px Pretendard";
+        labels.forEach((label,i)=>{
+          const angle=i*angleStep-Math.PI/2;
+          const x=cx+Math.cos(angle)*radius;
+          const y=cy+Math.sin(angle)*radius;
+          ctx.fillStyle="#334155";
+          ctx.fillText(label,x,y-10);
+          const kv=koenVals[i], lv=lhVals[i];
+          const kw=ctx.measureText(kv).width, lw=ctx.measureText(lv).width, sw=ctx.measureText("/").width;
+          let startX=x-(kw+lw+sw+6)/2;
+          ctx.fillStyle="#2563eb"; ctx.fillText(kv,startX+kw/2,y+10);
+          startX+=kw+2; ctx.fillStyle="#64748b"; ctx.fillText("/",startX+sw/2,y+10);
+          startX+=sw+2; ctx.fillStyle="#f97316"; ctx.fillText(lv,startX+lw/2,y+10);
+        });
+        ctx.restore();
       }
-    ]
-  },
-  options: {
-    maintainAspectRatio: false,
-    plugins: { legend: { position: "bottom" } },
-    scales: {
-      r: {
-        beginAtZero: true,
-        max: 100,
-        ticks: { stepSize: 20 },
-        pointLabels: {
-          // 🧭 글씨 위치 약간 안쪽으로 조정
-          padding: 12,
-          font: { size: 12, weight: "500" },
-          color: "#334155",
-          callback: function(value) {
-            // HTML span이 포함된 문자열을 처리
-            const div = document.createElement("div");
-            div.innerHTML = value;
-            return div.textContent.split("\n");
-          }
-        },
-        grid: { color: "rgba(0,0,0,0.08)" },
-        angleLines: { color: "rgba(0,0,0,0.1)" }
-      }
-    }
-  }
-});
+    }]
+  });
 
-
-
-
-  // 📈 레벨 분포
+  // === 부수(Level) 그래프 ===
   if(level) level.destroy();
   const ctx=document.getElementById("levelChart");
   level=new Chart(ctx,{
     type:"line",
-    data:{labels:Array.from({length:14},(_,i)=>`Lv${i+1}`),
+    data:{
+      labels:Array.from({length:14},(_,i)=>`Lv${i+1}`),
       datasets:[
         {label:"KOEN",data:koen.levelCount,borderColor:"#2563eb",backgroundColor:"rgba(37,99,235,0.2)",fill:true,tension:0.35},
         {label:"LH",data:lh.levelCount,borderColor:"#f97316",backgroundColor:"rgba(249,115,22,0.2)",fill:true,tension:0.35}
@@ -291,17 +227,8 @@ radar = new Chart(document.getElementById("radarChart"), {
 }
 
 // === 실행 ===
-listenClub(dbKoen, "koen", data => {
-  koen = data;
-  koen.winData = calcWinData(Object.values(data.dailyData || {}), "koen");
-  if (lh.name) render(koen, lh);
-});
-listenClub(dbLh, "lh", data => {
-  lh = data;
-  lh.winData = calcWinData(Object.values(data.dailyData || {}), "lh");
-  if (koen.name) render(koen, lh);
-});
-
+listenClub(dbKoen,"koen",data=>{koen=data;if(lh.name)render(koen,lh);});
+listenClub(dbLh,"lh",data=>{lh=data;if(koen.name)render(koen,lh);});
 </script>
 </body>
 </html>
