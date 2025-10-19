@@ -73,6 +73,20 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   <div class="chart-container"><canvas id="levelChart"></canvas></div>
 </section>
 
+<section id="timeDist">
+  <div class="section-title">🕒 경기 시간대 분포 비교</div>
+  <div class="chart-container" style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;">
+    <div style="flex:1;min-width:300px;">
+      <h4 style="text-align:center;margin-bottom:8px;color:#2563eb;">KOEN</h4>
+      <canvas id="chartKoenTime"></canvas>
+    </div>
+    <div style="flex:1;min-width:300px;">
+      <h4 style="text-align:center;margin-bottom:8px;color:#f97316;">LH</h4>
+      <canvas id="chartLhTime"></canvas>
+    </div>
+  </div>
+</section>
+
 
 <footer>© 2025 남동본사 & LH 탁구동호회</footer>
 
@@ -275,6 +289,58 @@ async function loadLevelDist(){
   renderLevelDistribution(koenPlayers, lhPlayers);
 }
 loadLevelDist();
+
+/* ========= 경기 시간대 분포 ========= */
+function calcTimeDistData(matches){
+  const z={morning:0,noon:0,evening:0,night:0};
+  matches.forEach(m=>{
+    const h=new Date(m.createdAt||0).getHours();
+    if(h>=5&&h<11)z.morning++;
+    else if(h>=11&&h<15)z.noon++;
+    else if(h>=15&&h<21)z.evening++;
+    else z.night++;
+  });
+  return z;
+}
+
+async function renderTimeDistribution(){
+  const [koenSnap, lhSnap] = await Promise.all([
+    get(ref(dbKoen,"matches")),
+    get(ref(dbLh,"matches"))
+  ]);
+  const koenMatches = koenSnap.exists()?Object.values(koenSnap.val()).filter(m=>m.monthKey===monthKey):[];
+  const lhMatches   = lhSnap.exists()?Object.values(lhSnap.val()).filter(m=>m.monthKey===monthKey):[];
+
+  const k=calcTimeDistData(koenMatches);
+  const l=calcTimeDistData(lhMatches);
+
+  const labels=['아침(5~11시)','점심(11~15시)','저녁(15~21시)','야간(21~5시)'];
+  const koenData=[k.morning,k.noon,k.evening,k.night];
+  const lhData=[l.morning,l.noon,l.evening,l.night];
+
+  const makeChart=(ctx,data,color)=>new Chart(ctx,{
+    type:'doughnut',
+    data:{
+      labels,
+      datasets:[{data,backgroundColor:[
+        'rgba(59,130,246,0.6)',
+        'rgba(96,165,250,0.6)',
+        'rgba(37,99,235,0.7)',
+        'rgba(30,64,175,0.6)'
+      ]}]
+    },
+    options:{
+      plugins:{
+        legend:{position:'bottom',labels:{font:{size:13}}},
+      }
+    }
+  });
+
+  makeChart(document.getElementById('chartKoenTime'),koenData,'#2563eb');
+  makeChart(document.getElementById('chartLhTime'),lhData,'#f97316');
+}
+
+renderTimeDistribution();
 
 
 /* ========= 지난달 리포트 (15경기 이상) ========= */
