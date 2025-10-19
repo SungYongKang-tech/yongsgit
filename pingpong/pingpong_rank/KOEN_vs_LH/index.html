@@ -259,40 +259,49 @@ function calcPlayerStatsDetailed(matches, players){
 }
 
 function renderMonthlyReport(db, clubName, containerId){
-  const pRef = ref(db, "players");
-  const mRef = ref(db, "matches");
-  onValue(pRef, pSnap=>{
-    onValue(mRef, mSnap=>{
-      const players = pSnap.exists()? Object.values(pSnap.val()) : [];
-      const all = mSnap.exists()? Object.values(mSnap.val()) : [];
-      const matches = all.filter(m => m?.monthKey === prevKey); // ✅ 지난달 필터
+  const reportRef = ref(db, `monthlyReports/${prevKey}/players`);
 
-      const stats = calcPlayerStatsDetailed(matches, players);
-      const box = document.getElementById(containerId);
+  onValue(reportRef, snap => {
+    const box = document.getElementById(containerId);
 
-      if(!stats.length){
-        box.innerHTML = `<h4>${clubName.toUpperCase()} ⚪ 데이터 없음</h4><p style="color:var(--muted);font-size:13px;">15경기 이상 참가자 없음</p>`;
-        return;
-      }
-      const top = stats[0];
-      box.innerHTML = `
-        <div class="top-player">🏆 TOP PLAYER: ${top.name} (${top.level}) — 승률 ${top.rate}% (${top.win}승 ${top.lose}패)</div>
-        <h4>${clubName.toUpperCase()} 클럽</h4>
-        <table>
-          <thead><tr><th>이름(부수)</th><th>경기수</th><th>승/패</th><th>승률</th></tr></thead>
-          <tbody>
-            ${stats.map(s=>`
-              <tr>
-                <td>${s.name} (${s.level})</td>
-                <td>${s.games}</td>
-                <td>${s.win}/${s.lose}</td>
-                <td>${s.rate}%</td>
-              </tr>`).join("")}
-          </tbody>
-        </table>`;
-    }, err => showError(`리포트 matches 구독 오류: ${err?.message||err}`));
-  }, err => showError(`리포트 players 구독 오류: ${err?.message||err}`));
+    if (!snap.exists()) {
+      box.innerHTML = `<h4>${clubName.toUpperCase()} ⚪ 데이터 없음</h4>
+        <p style="color:var(--muted);font-size:13px;">${prevKey}월 리포트 없음</p>`;
+      return;
+    }
+
+    // Firebase의 players 배열 데이터
+    const stats = Object.values(snap.val())
+      .filter(s => s.total >= 15) // ✅ 15경기 이상
+      .sort((a, b) => b.rate - a.rate);
+
+    if (!stats.length) {
+      box.innerHTML = `<h4>${clubName.toUpperCase()} ⚪ 데이터 없음</h4>
+        <p style="color:var(--muted);font-size:13px;">15경기 이상 참가자 없음</p>`;
+      return;
+    }
+
+    const top = stats[0];
+    box.innerHTML = `
+      <div class="top-player">🏆 TOP PLAYER: ${top.name} (${top.level}) — 승률 ${top.rate}% (${top.win}승 ${top.lose}패)</div>
+      <h4>${clubName.toUpperCase()} 클럽</h4>
+      <table>
+        <thead>
+          <tr><th>이름(부수)</th><th>경기수</th><th>승/패</th><th>승률</th></tr>
+        </thead>
+        <tbody>
+          ${stats.map(s => `
+            <tr>
+              <td>${s.name} (${s.level})</td>
+              <td>${s.total}</td>
+              <td>${s.win}/${s.lose}</td>
+              <td>${s.rate}%</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+  });
 }
+
 
 /* ========= 실행 ========= */
 let koen={}, lh={};
