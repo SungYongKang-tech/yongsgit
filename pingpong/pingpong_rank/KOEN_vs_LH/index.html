@@ -1,16 +1,13 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>🏓 KOEN vs LH 리그 인사이트</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-:root{
-  --koen:#2563eb; --lh:#f97316; --bg:#f6f8fb; --card:#fff;
-  --muted:#64748b; --ink:#0f172a; --shadow:0 6px 20px rgba(0,0,0,0.08);
-}
+:root{ --koen:#2563eb; --lh:#f97316; --bg:#f6f8fb; --card:#fff; --muted:#64748b; --ink:#0f172a; --shadow:0 6px 20px rgba(0,0,0,0.08); }
 *{box-sizing:border-box;font-family:"Pretendard","Noto Sans KR",sans-serif;}
 body{margin:0;background:var(--bg);color:var(--ink);padding:18px;display:flex;flex-direction:column;align-items:center;}
 header{text-align:center;margin-bottom:16px;}
@@ -18,14 +15,11 @@ h1{font-size:clamp(22px,5vw,28px);margin-bottom:6px;}
 p{color:var(--muted);font-size:14px;}
 section{width:100%;max-width:740px;background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:20px;margin-bottom:20px;}
 .section-title{text-align:center;font-size:18px;margin:4px 0 6px;}
-.winner-banner{
-  text-align:center;background:linear-gradient(90deg,var(--koen),var(--lh));
-  color:white;padding:12px;border-radius:12px;margin-bottom:6px;
-  font-weight:600;box-shadow:0 4px 10px rgba(0,0,0,.1);
-}
+.banner{padding:10px;border-radius:10px;margin-bottom:8px;font-weight:600;}
+.winner-banner{ text-align:center;background:linear-gradient(90deg,var(--koen),var(--lh));color:white; }
+.error-banner{ background:#fee2e2;color:#991b1b; display:none; }
 .chart-container{width:100%;height:380px;min-height:300px;}
 footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
-
 #monthlyReport{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:18px;}
 .report-wrapper{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;}
 .report-card{flex:1 1 340px;background:var(--bg);border-radius:12px;padding:12px 14px;border-left:5px solid var(--koen);}
@@ -35,16 +29,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 .report-card th,.report-card td{text-align:center;padding:6px 0;}
 .report-card th{background:#f1f5f9;font-weight:600;color:#334155;}
 .report-card tr:nth-child(even) td{background:rgba(0,0,0,0.02);}
-.top-player{
-  text-align:center;
-  margin-bottom:14px;
-  padding:10px;
-  background:linear-gradient(90deg,#fef3c7,#fde68a);
-  border-radius:12px;
-  font-weight:600;
-  color:#78350f;
-  box-shadow:0 3px 8px rgba(0,0,0,0.08);
-}
+.top-player{ text-align:center;margin-bottom:14px;padding:10px;background:linear-gradient(90deg,#fef3c7,#fde68a);border-radius:12px;font-weight:600;color:#78350f;box-shadow:0 3px 8px rgba(0,0,0,0.08); }
 </style>
 </head>
 <body>
@@ -54,13 +39,14 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 </header>
 
 <section>
-  <div class="winner-banner" id="winnerText">데이터 계산 중...</div>
+  <div id="errorText" class="banner error-banner">에러가 발생했습니다.</div>
+  <div class="banner winner-banner" id="winnerText">데이터 계산 중...</div>
   <div class="section-title">🏓 월간 리그 퍼포먼스 비교</div>
   <div class="chart-container"><canvas id="radarChart"></canvas></div>
 </section>
 
 <section id="monthlyReport">
-  <div class="section-title">📅 지난달 클럽별 월간 리포트</div>
+  <div class="section-title">📅 지난달 클럽별 월간 리포트 (15경기 이상)</div>
   <div class="report-wrapper">
     <div class="report-card" id="koenReport"></div>
     <div class="report-card lh" id="lhReport"></div>
@@ -73,14 +59,16 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+/* ========= 날짜 ========= */
 const now = new Date();
 const year = now.getFullYear();
 const month = String(now.getMonth()+1).padStart(2,"0");
 const monthKey = `${year}-${month}`;
-const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1);
-const prevKey = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2,"0")}`;
+const prev = new Date(now.getFullYear(), now.getMonth()-1);
+const prevKey = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`;
 document.getElementById("monthText").textContent = `${year}년 ${month}월 리그 활동 비교`;
 
+/* ========= Firebase ========= */
 const koenConfig={apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",authDomain:"pingpongclub-4a5fd.firebaseapp.com",databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",projectId:"pingpongclub-4a5fd"};
 const lhConfig={apiKey:"AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",authDomain:"pingpongclub2-6ce04.firebaseapp.com",databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com",projectId:"pingpongclub2-6ce04"};
 const appKoen=initializeApp(koenConfig,"koen");
@@ -88,170 +76,231 @@ const appLh=initializeApp(lhConfig,"lh");
 const dbKoen=getDatabase(appKoen);
 const dbLh=getDatabase(appLh);
 
+/* ========= 공통 유틸 ========= */
+const showError = (msg) => {
+  const el = document.getElementById('errorText');
+  el.textContent = `⚠️ ${msg}`;
+  el.style.display = 'block';
+  console.error(msg);
+};
+window.addEventListener('error', e => showError(e.message));
+
 function calcTimeIndex(matches){
-  if(!matches.length)return 0;
-  const zones={morning:0,noon:0,evening:0,night:0};
+  if(!matches.length) return 0;
+  const z={morning:0,noon:0,evening:0,night:0};
   matches.forEach(m=>{
     const h=new Date(m.createdAt||0).getHours();
-    if(h>=5&&h<11)zones.morning++;
-    else if(h>=11&&h<15)zones.noon++;
-    else if(h>=15&&h<21)zones.evening++;
-    else zones.night++;
+    if(h>=5&&h<11)z.morning++; else if(h>=11&&h<15)z.noon++;
+    else if(h>=15&&h<21)z.evening++; else z.night++;
   });
-  const concentration=(Math.max(...Object.values(zones))/matches.length)*100;
+  const concentration=(Math.max(...Object.values(z))/matches.length)*100;
   return (100 - concentration).toFixed(1);
 }
 
+/* ✅ 승률지수: winnerSide + namesA/B + 1~9부만 */
 function calcWinRateByLevel(matches, players){
-  if(!matches.length||!players.length)return 0;
-  const levelMap={};
-  players.forEach(p=>{const lv=parseInt(p.level||0);if(lv>=1&&lv<=9&&p.name)levelMap[p.name]=lv;});
-  const stats={};
-  matches.forEach(m=>{
-    if(!m.winner||!m.loser)return;
-    const wLv=levelMap[m.winner];
-    const lLv=levelMap[m.loser];
-    if(!wLv||!lLv)return;
-    if(!stats[wLv])stats[wLv]={win:0,total:0};
-    if(!stats[lLv])stats[lLv]={win:0,total:0};
-    stats[wLv].win++;stats[wLv].total++;
-    stats[lLv].total++;
+  if(!matches.length || !players.length) return 0;
+  const levelMap = {};
+  players.forEach(p=>{
+    const lv=parseInt(p.level||0);
+    if(lv>=1 && lv<=9 && p.name) levelMap[p.name.trim()] = lv;
   });
-  let totalRate=0,count=0;
-  for(let lv=1;lv<=9;lv++){
-    const s=stats[lv];
-    if(s&&s.total>0){totalRate+=(s.win/s.total)*100;count++;}
-  }
-  return count>0?(totalRate/count).toFixed(1):0;
-}
 
-function listenClub(db,name,cb){
-  const pRef=ref(db,"players");
-  const mRef=ref(db,`matches/${monthKey}`);
-  onValue(pRef,pSnap=>{
-    onValue(mRef,mSnap=>{
-      const players=pSnap.exists()?Object.values(pSnap.val()):[];
-      const matches=mSnap.exists()?Object.values(mSnap.val()):[];
-      const memberCount=players.length;
-      const games=matches.length;
-      const activeRate=memberCount?((games/memberCount)*10).toFixed(1):0;
-      const timeIndex=calcTimeIndex(matches);
-      const winRate=calcWinRateByLevel(matches,players);
-      cb({name,memberCount,games,activeRate,timeIndex,winRate});
+  const levelStats = {};
+  matches.forEach(m=>{
+    if(!m.winnerSide) return;
+    const A = m.namesA || [], B = m.namesB || [];
+    const winners = m.winnerSide === "A" ? A : (m.winnerSide === "B" ? B : []);
+    const losers  = m.winnerSide === "A" ? B : (m.winnerSide === "B" ? A : []);
+
+    winners.forEach(n=>{
+      const lv = levelMap[n];
+      if(!lv) return;
+      if(!levelStats[lv]) levelStats[lv] = { win:0, total:0 };
+      levelStats[lv].win++; levelStats[lv].total++;
+    });
+    losers.forEach(n=>{
+      const lv = levelMap[n];
+      if(!lv) return;
+      if(!levelStats[lv]) levelStats[lv] = { win:0, total:0 };
+      levelStats[lv].total++;
     });
   });
+
+  let totalRate=0, count=0;
+  for(let lv=1; lv<=9; lv++){
+    const s=levelStats[lv];
+    if(s && s.total>0){
+      totalRate += (s.win/s.total)*100;
+      count++;
+    }
+  }
+  const avg = count>0 ? (totalRate/count).toFixed(1) : 0;
+  console.debug("🏓 승률지수:", {avg, levelStats});
+  return avg;
 }
 
-let koen={},lh={},radar;
-function render(koen,lh){
-  const totalK=koen.games+parseFloat(koen.timeIndex)+parseFloat(koen.winRate);
-  const totalL=lh.games+parseFloat(lh.timeIndex)+parseFloat(lh.winRate);
-  const winner=totalK>totalL?"KOEN 🏆":totalK<totalL?"LH 🏆":"무승부 🤝";
-  document.getElementById("winnerText").textContent=`${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
+/* ========= 실시간 구독: matches는 루트에서 읽고 monthKey로 필터 ========= */
+function listenClub(db, name, cb){
+  const pRef = ref(db, "players");
+  const mRef = ref(db, "matches"); // ✅ 루트
+  onValue(pRef, pSnap=>{
+    onValue(mRef, mSnap=>{
+      const players = pSnap.exists()? Object.values(pSnap.val()) : [];
+      const all = mSnap.exists()? Object.values(mSnap.val()) : [];
 
-  if(radar)radar.destroy();
-  const normalize=(v,max)=>(max===0?0:Math.min(100,(v/max)*100));
-  const maxMembers=Math.max(koen.memberCount,lh.memberCount,1);
-  const maxGames=Math.max(koen.games,lh.games,1);
-  const maxActive=Math.max(koen.activeRate,lh.activeRate,1);
-  const maxWin=Math.max(koen.winRate,lh.winRate,1);
-  const maxTime=Math.max(koen.timeIndex,lh.timeIndex,1);
+      // 이번 달만 필터
+      const matches = all.filter(m => m?.monthKey === monthKey);
 
-  const labels=[
-    `회원수\n(${koen.memberCount}/${lh.memberCount})`,
-    `경기수\n(${koen.games}/${lh.games})`,
-    `참여율\n(${koen.activeRate}/${lh.activeRate})`,
-    `승률지수\n(${koen.winRate}/${lh.winRate})`,
-    `시간대지수\n(${koen.timeIndex}/${lh.timeIndex})`
-  ];
-  radar=new Chart(document.getElementById("radarChart"),{
-    type:"radar",
-    data:{
-      labels,
-      datasets:[
-        {label:"KOEN",data:[
-          normalize(koen.memberCount,maxMembers),
-          normalize(koen.games,maxGames),
-          normalize(koen.activeRate,maxActive),
-          normalize(koen.winRate,maxWin),
-          normalize(koen.timeIndex,maxTime)
-        ],borderColor:"rgba(37,99,235,0.6)",backgroundColor:"rgba(37,99,235,0.25)",pointBackgroundColor:"#2563eb"},
-        {label:"LH",data:[
-          normalize(lh.memberCount,maxMembers),
-          normalize(lh.games,maxGames),
-          normalize(lh.activeRate,maxActive),
-          normalize(lh.winRate,maxWin),
-          normalize(lh.timeIndex,maxTime)
-        ],borderColor:"rgba(249,115,22,0.6)",backgroundColor:"rgba(249,115,22,0.25)",pointBackgroundColor:"#f97316"}
-      ]
-    },
-    options:{
-      maintainAspectRatio:false,
-      plugins:{legend:{position:"bottom"}},
-      scales:{
-        r:{beginAtZero:true,max:100,ticks:{display:false},
-          grid:{color:"rgba(0,0,0,0.08)"},
-          pointLabels:{padding:22,font:{size:12,weight:"500"},color:"#334155",callback:value=>value.split("\n")}}
+      const memberCount = players.length;
+      const games = matches.length;
+      const activeRate = memberCount ? ((games/memberCount)*10).toFixed(1) : 0;
+      const timeIndex = calcTimeIndex(matches);
+      const winRate = calcWinRateByLevel(matches, players);
+
+      cb({ name, memberCount, games, activeRate, timeIndex, winRate });
+    }, err => showError(`matches 구독 오류: ${err?.message||err}`));
+  }, err => showError(`players 구독 오류: ${err?.message||err}`));
+}
+
+/* ========= 레이더 ========= */
+let radar;
+function render(koen, lh){
+  try{
+    const totalK = koen.games + parseFloat(koen.timeIndex) + parseFloat(koen.winRate);
+    const totalL = lh.games + parseFloat(lh.timeIndex) + parseFloat(lh.winRate);
+    const winner = totalK>totalL ? "KOEN 🏆" : totalK<totalL ? "LH 🏆" : "무승부 🤝";
+    document.getElementById("winnerText").textContent = `${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
+
+    if(radar) radar.destroy();
+    const normalize = (v,max)=> (max===0?0:Math.min(100,(v/max)*100));
+    const maxMembers=Math.max(koen.memberCount, lh.memberCount, 1);
+    const maxGames=Math.max(koen.games, lh.games, 1);
+    const maxActive=Math.max(koen.activeRate, lh.activeRate, 1);
+    const maxWin=Math.max(koen.winRate, lh.winRate, 1);
+    const maxTime=Math.max(koen.timeIndex, lh.timeIndex, 1);
+
+    const labels=[
+      `회원수\n(${koen.memberCount}/${lh.memberCount})`,
+      `경기수\n(${koen.games}/${lh.games})`,
+      `참여율\n(${koen.activeRate}/${lh.activeRate})`,
+      `승률지수\n(${koen.winRate}/${lh.winRate})`,
+      `시간대지수\n(${koen.timeIndex}/${lh.timeIndex})`
+    ];
+
+    radar = new Chart(document.getElementById("radarChart"), {
+      type: "radar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "KOEN",
+            data: [
+              normalize(koen.memberCount, maxMembers),
+              normalize(koen.games, maxGames),
+              normalize(koen.activeRate, maxActive),
+              normalize(koen.winRate, maxWin),
+              normalize(koen.timeIndex, maxTime)
+            ],
+            borderColor:"rgba(37,99,235,0.6)",
+            backgroundColor:"rgba(37,99,235,0.25)",
+            pointBackgroundColor:"#2563eb"
+          },
+          {
+            label: "LH",
+            data: [
+              normalize(lh.memberCount, maxMembers),
+              normalize(lh.games, maxGames),
+              normalize(lh.activeRate, maxActive),
+              normalize(lh.winRate, maxWin),
+              normalize(lh.timeIndex, maxTime)
+            ],
+            borderColor:"rgba(249,115,22,0.6)",
+            backgroundColor:"rgba(249,115,22,0.25)",
+            pointBackgroundColor:"#f97316"
+          }
+        ]
+      },
+      options:{
+        maintainAspectRatio:false,
+        plugins:{legend:{position:"bottom"}},
+        scales:{
+          r:{
+            beginAtZero:true,max:100,ticks:{display:false},
+            grid:{color:"rgba(0,0,0,0.08)"},
+            pointLabels:{padding:18,font:{size:12,weight:"500"},color:"#334155",callback:v=>v.split("\n")}
+          }
+        }
       }
+    });
+  }catch(e){
+    showError(`레이더 렌더 오류: ${e.message}`);
+  }
+}
+
+/* ========= 지난달 리포트 (15경기 이상) ========= */
+function calcPlayerStatsDetailed(matches, players){
+  const stats={}; const levelMap={};
+  players.forEach(p => levelMap[p.name] = p.level || "-");
+  matches.forEach(m=>{
+    const A = m.namesA || [], B = m.namesB || [];
+    if(m.winnerSide==="A"){
+      A.forEach(n=>{ stats[n] = stats[n]||{win:0,lose:0,games:0}; stats[n].win++;  stats[n].games++; });
+      B.forEach(n=>{ stats[n] = stats[n]||{win:0,lose:0,games:0}; stats[n].lose++; stats[n].games++; });
+    }else if(m.winnerSide==="B"){
+      B.forEach(n=>{ stats[n] = stats[n]||{win:0,lose:0,games:0}; stats[n].win++;  stats[n].games++; });
+      A.forEach(n=>{ stats[n] = stats[n]||{win:0,lose:0,games:0}; stats[n].lose++; stats[n].games++; });
     }
   });
-}
-
-function calcPlayerStatsDetailed(matches, players){
-  const stats={};const levelMap={};
-  players.forEach(p=>(levelMap[p.name]=p.level||"-"));
-  matches.forEach(m=>{
-    const winSide=m.winnerSide;
-    const A=m.namesA||[], B=m.namesB||[];
-    if(winSide==="A"){A.forEach(n=>{stats[n]=stats[n]||{win:0,lose:0,games:0};stats[n].win++;stats[n].games++;});
-                      B.forEach(n=>{stats[n]=stats[n]||{win:0,lose:0,games:0};stats[n].lose++;stats[n].games++;});}
-    else if(winSide==="B"){B.forEach(n=>{stats[n]=stats[n]||{win:0,lose:0,games:0};stats[n].win++;stats[n].games++;});
-                           A.forEach(n=>{stats[n]=stats[n]||{win:0,lose:0,games:0};stats[n].lose++;stats[n].games++;});}
-  });
   return Object.entries(stats)
-    .filter(([_,s])=>s.games>=15)
-    .map(([name,s])=>({name,level:levelMap[name]||"-",games:s.games,win:s.win,lose:s.lose,rate:((s.win/s.games)*100).toFixed(1)}))
-    .sort((a,b)=>b.rate-a.rate);
+    .filter(([_,s])=> s.games>=15)
+    .map(([name,s])=>({ name, level: levelMap[name]||"-", games:s.games, win:s.win, lose:s.lose, rate: ((s.win/s.games)*100).toFixed(1) }))
+    .sort((a,b)=> b.rate - a.rate);
 }
 
-function renderMonthlyReport(db,name,containerId){
-  const pRef=ref(db,"players");
-  const mRef=ref(db,`matches/${prevKey}`);
-  onValue(pRef,pSnap=>{
-    onValue(mRef,mSnap=>{
-      if(!pSnap.exists()||!mSnap.exists())return;
-      const players=Object.values(pSnap.val());
-      const matches=Object.values(mSnap.val());
-      const stats=calcPlayerStatsDetailed(matches,players);
-      const box=document.getElementById(containerId);
+function renderMonthlyReport(db, clubName, containerId){
+  const pRef = ref(db, "players");
+  const mRef = ref(db, "matches");
+  onValue(pRef, pSnap=>{
+    onValue(mRef, mSnap=>{
+      const players = pSnap.exists()? Object.values(pSnap.val()) : [];
+      const all = mSnap.exists()? Object.values(mSnap.val()) : [];
+      const matches = all.filter(m => m?.monthKey === prevKey); // ✅ 지난달 필터
+
+      const stats = calcPlayerStatsDetailed(matches, players);
+      const box = document.getElementById(containerId);
+
       if(!stats.length){
-        box.innerHTML=`<h4>${name.toUpperCase()} ⚪ 데이터 없음</h4><p style="color:var(--muted);font-size:13px;">15경기 이상 참가자 없음</p>`;
+        box.innerHTML = `<h4>${clubName.toUpperCase()} ⚪ 데이터 없음</h4><p style="color:var(--muted);font-size:13px;">15경기 이상 참가자 없음</p>`;
         return;
       }
-      const top=stats[0];
-      box.innerHTML=`
+      const top = stats[0];
+      box.innerHTML = `
         <div class="top-player">🏆 TOP PLAYER: ${top.name} (${top.level}) — 승률 ${top.rate}% (${top.win}승 ${top.lose}패)</div>
-        <h4>${name.toUpperCase()} 클럽</h4>
+        <h4>${clubName.toUpperCase()} 클럽</h4>
         <table>
           <thead><tr><th>이름(부수)</th><th>경기수</th><th>승/패</th><th>승률</th></tr></thead>
-          <tbody>${stats.map(s=>`
-            <tr>
-              <td>${s.name} (${s.level})</td>
-              <td>${s.games}</td>
-              <td>${s.win}/${s.lose}</td>
-              <td>${s.rate}%</td>
-            </tr>`).join("")}
+          <tbody>
+            ${stats.map(s=>`
+              <tr>
+                <td>${s.name} (${s.level})</td>
+                <td>${s.games}</td>
+                <td>${s.win}/${s.lose}</td>
+                <td>${s.rate}%</td>
+              </tr>`).join("")}
           </tbody>
         </table>`;
-    });
-  });
+    }, err => showError(`리포트 matches 구독 오류: ${err?.message||err}`));
+  }, err => showError(`리포트 players 구독 오류: ${err?.message||err}`));
 }
 
-listenClub(dbKoen,"koen",data=>{koen=data;if(lh.name)render(koen,lh);});
-listenClub(dbLh,"lh",data=>{lh=data;if(koen.name)render(koen,lh);});
+/* ========= 실행 ========= */
+let koen={}, lh={};
+listenClub(dbKoen, "koen", data => { koen = data; if(lh.name) render(koen, lh); });
+listenClub(dbLh, "lh",   data => { lh   = data; if(koen.name) render(koen, lh); });
 
-renderMonthlyReport(dbKoen,"koen","koenReport");
-renderMonthlyReport(dbLh,"lh","lhReport");
+renderMonthlyReport(dbKoen, "koen", "koenReport");
+renderMonthlyReport(dbLh, "lh",   "lhReport");
 </script>
 </body>
 </html>
