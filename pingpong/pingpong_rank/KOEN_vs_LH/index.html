@@ -68,6 +68,12 @@ footer{text-align:center;color:var(--muted);font-size:13px;margin-top:10px;}
   </div>
 </section>
 
+<section id="levelDist">
+  <div class="section-title">🏓 부수별 인원 분포 비교</div>
+  <div class="chart-container"><canvas id="levelChart"></canvas></div>
+</section>
+
+
 <footer>© 2025 남동본사 & LH 탁구동호회</footer>
 
 <script type="module">
@@ -249,6 +255,28 @@ document.getElementById("winnerText").textContent = `${year}년 ${month}월 리�
   }
 }
 
+listenClub(dbKoen, "koen", data => { 
+  koen = data; 
+  if(lh.name) render(koen, lh); 
+});
+listenClub(dbLh, "lh", data => { 
+  lh = data; 
+  if(koen.name) render(koen, lh); 
+});
+
+// 🧩 두 클럽 선수 데이터도 불러와서 부수별 분포 렌더링
+import { get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+async function loadLevelDist(){
+  const pKoenSnap = await get(ref(dbKoen, "players"));
+  const pLhSnap = await get(ref(dbLh, "players"));
+  const koenPlayers = pKoenSnap.exists()? Object.values(pKoenSnap.val()) : [];
+  const lhPlayers = pLhSnap.exists()? Object.values(pLhSnap.val()) : [];
+  renderLevelDistribution(koenPlayers, lhPlayers);
+}
+loadLevelDist();
+
+
 /* ========= 지난달 리포트 (15경기 이상) ========= */
 function calcPlayerStatsDetailed(matches, players){
   const stats={}; const levelMap={};
@@ -321,6 +349,52 @@ listenClub(dbLh, "lh",   data => { lh   = data; if(koen.name) render(koen, lh); 
 
 renderMonthlyReport(dbKoen, "koen", "koenReport");
 renderMonthlyReport(dbLh, "lh",   "lhReport");
+
+/* ========= 부수별 인원 분포 ========= */
+function renderLevelDistribution(koenPlayers, lhPlayers){
+  const getLevelCount = (players)=>{
+    const counts = Array(10).fill(0); // 1~9부
+    players.forEach(p=>{
+      const lv = parseInt(p.level);
+      if(lv>=1 && lv<=9) counts[lv]++;
+    });
+    return counts.slice(1);
+  };
+
+  const ctx = document.getElementById('levelChart').getContext('2d');
+  const labels = ['1부','2부','3부','4부','5부','6부','7부','8부','9부'];
+  const koenCounts = getLevelCount(koenPlayers);
+  const lhCounts = getLevelCount(lhPlayers);
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'KOEN',
+          data: koenCounts,
+          backgroundColor: 'rgba(37,99,235,0.6)'
+        },
+        {
+          label: 'LH',
+          data: lhCounts,
+          backgroundColor: 'rgba(249,115,22,0.6)'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+      },
+      plugins: {
+        legend: { position: 'bottom' }
+      }
+    }
+  });
+}
+
 </script>
 </body>
 </html>
