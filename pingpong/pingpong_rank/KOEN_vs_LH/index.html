@@ -303,6 +303,19 @@ function calcTimeDistData(matches){
   return z;
 }
 
+/* ========= 경기 시간대 분포 ========= */
+function calcTimeDistData(matches){
+  const z={morning:0,noon:0,evening:0,night:0};
+  matches.forEach(m=>{
+    const h=new Date(m.createdAt||0).getHours();
+    if(h>=5 && h<9) z.morning++;        // 🌅 아침 (05~09시)
+    else if(h>=11 && h<13) z.noon++;    // ☀ 점심 (11~13시)
+    else if(h>=18 && h<20) z.evening++; // 🌇 저녁 (18~20시)
+    else if(h>=20 && h<22) z.night++;   // 🌙 야간 (20~22시)
+  });
+  return z;
+}
+
 async function renderTimeDistribution(){
   const [koenSnap, lhSnap] = await Promise.all([
     get(ref(dbKoen,"matches")),
@@ -314,7 +327,7 @@ async function renderTimeDistribution(){
   const k=calcTimeDistData(koenMatches);
   const l=calcTimeDistData(lhMatches);
 
-  const labels=['아침(5~11시)','점심(11~15시)','저녁(15~21시)','야간(21~5시)'];
+  const labels=['🌅 아침(05~09시)','☀ 점심(11~13시)','🌇 저녁(18~20시)','🌙 야간(20~22시)'];
   const koenData=[k.morning,k.noon,k.evening,k.night];
   const lhData=[l.morning,l.noon,l.evening,l.night];
 
@@ -322,23 +335,38 @@ async function renderTimeDistribution(){
     type:'doughnut',
     data:{
       labels,
-      datasets:[{data,backgroundColor:[
-        'rgba(59,130,246,0.6)',
-        'rgba(96,165,250,0.6)',
-        'rgba(37,99,235,0.7)',
-        'rgba(30,64,175,0.6)'
-      ]}]
+      datasets:[{
+        data,
+        backgroundColor:[
+          '#93c5fd', // 아침 - 연하늘
+          '#fde68a', // 점심 - 밝은 노랑
+          '#fca5a5', // 저녁 - 코랄
+          '#a78bfa'  // 야간 - 연보라
+        ],
+        borderColor:'#fff',
+        borderWidth:2
+      }]
     },
     options:{
       plugins:{
-        legend:{position:'bottom',labels:{font:{size:13}}},
-      }
+        legend:{
+          position:'bottom',
+          labels:{font:{size:13},color:'#334155'}
+        },
+        title:{
+          display:false
+        }
+      },
+      cutout:'55%'
     }
   });
 
   makeChart(document.getElementById('chartKoenTime'),koenData,'#2563eb');
   makeChart(document.getElementById('chartLhTime'),lhData,'#f97316');
 }
+
+renderTimeDistribution();
+
 
 renderTimeDistribution();
 
