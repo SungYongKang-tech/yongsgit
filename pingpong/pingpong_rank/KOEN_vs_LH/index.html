@@ -230,19 +230,25 @@ function listenClub(db, name, cb){
 
 /* ========= 레이더 ========= */
 let radar;
-function render(koen, lh){
-  try{
-document.getElementById("winnerText").textContent = `${year}년 ${month}월 리그 퍼포먼스 비교`;
+function render(koen, lh) {
+  try {
+    document.getElementById("winnerText").textContent = `${year}년 ${month}월 리그 퍼포먼스 비교`;
 
-    if(radar) radar.destroy();
-    const normalize = (v,max)=> (max===0?0:Math.min(100,(v/max)*100));
-    const maxMembers=Math.max(koen.memberCount, lh.memberCount, 1);
-    const maxGames=Math.max(koen.games, lh.games, 1);
-    const maxActive=Math.max(koen.activeRate, lh.activeRate, 1);
-    const maxWin=Math.max(koen.winRate, lh.winRate, 1);
-    const maxTime=Math.max(koen.timeIndex, lh.timeIndex, 1);
+    if (radar) radar.destroy();
 
-    const labels=[
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const textColor = isDark ? '#ffffff' : '#1e293b';
+    const gridColor = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.1)';
+    const angleColor = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.08)';
+
+    const normalize = (v, max) => (max === 0 ? 0 : Math.min(100, (v / max) * 100));
+    const maxMembers = Math.max(koen.memberCount, lh.memberCount, 1);
+    const maxGames = Math.max(koen.games, lh.games, 1);
+    const maxActive = Math.max(koen.activeRate, lh.activeRate, 1);
+    const maxWin = Math.max(koen.winRate, lh.winRate, 1);
+    const maxTime = Math.max(koen.timeIndex, lh.timeIndex, 1);
+
+    const labels = [
       `회원수\n(${koen.memberCount}/${lh.memberCount})`,
       `경기수\n(${koen.games}/${lh.games})`,
       `참여율\n(${koen.activeRate}/${lh.activeRate})`,
@@ -264,9 +270,9 @@ document.getElementById("winnerText").textContent = `${year}년 ${month}월 리�
               normalize(koen.winRate, maxWin),
               normalize(koen.timeIndex, maxTime)
             ],
-            borderColor:"rgba(37,99,235,0.6)",
-            backgroundColor:"rgba(37,99,235,0.25)",
-            pointBackgroundColor:"#2563eb"
+            borderColor: "rgba(37,99,235,0.6)",
+            backgroundColor: "rgba(37,99,235,0.25)",
+            pointBackgroundColor: "#2563eb"
           },
           {
             label: "LH",
@@ -277,60 +283,44 @@ document.getElementById("winnerText").textContent = `${year}년 ${month}월 리�
               normalize(lh.winRate, maxWin),
               normalize(lh.timeIndex, maxTime)
             ],
-            borderColor:"rgba(249,115,22,0.6)",
-            backgroundColor:"rgba(249,115,22,0.25)",
-            pointBackgroundColor:"#f97316"
+            borderColor: "rgba(249,115,22,0.6)",
+            backgroundColor: "rgba(249,115,22,0.25)",
+            pointBackgroundColor: "#f97316"
           }
         ]
       },
-   options: {
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      position: "bottom",
-      labels: {
-        color: window.matchMedia('(prefers-color-scheme: dark)').matches 
-          ? '#ffffff'  // ✅ 완전 흰색으로
-          : '#1e293b'
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: {
+              color: textColor
+            }
+          }
+        },
+        scales: {
+          r: {
+            beginAtZero: true,
+            max: 100,
+            ticks: { display: false },
+            grid: { color: gridColor },
+            angleLines: { color: angleColor },
+            pointLabels: {
+              padding: 18,
+              font: { size: 13, weight: "600" },
+              color: textColor,
+              callback: v => v.split("\n")
+            }
+          }
+        }
       }
-    }
-  },
-  scales: {
-    r: {
-      beginAtZero: true,
-      max: 100,
-      ticks: {
-        display: false
-      },
-      grid: {
-        color: window.matchMedia('(prefers-color-scheme: dark)').matches 
-          ? 'rgba(255,255,255,0.4)' // ✅ 밝은 흰색 계열
-          : 'rgba(0,0,0,0.1)'
-      },
-      angleLines: {
-        color: window.matchMedia('(prefers-color-scheme: dark)').matches 
-          ? 'rgba(255,255,255,0.35)' // ✅ 밝은 회색선
-          : 'rgba(0,0,0,0.08)'
-      },
-      pointLabels: {
-        padding: 20,
-        font: { size: 13, weight: "600" },
-        color: window.matchMedia('(prefers-color-scheme: dark)').matches 
-          ? '#ffffff'  // ✅ 완전 흰색으로 (눈에 확 띄게)
-          : '#334155',
-        callback: v => v.split("\n")
-      }
-    }
-  }
-}
-
-
-
     });
   } catch (e) {
     showError(`레이더 렌더 오류: ${e.message}`);
   }
 }
+
 
 listenClub(dbKoen, "koen", data => { 
   koen = data; 
@@ -555,25 +545,7 @@ function renderLevelDistribution(koenPlayers, lhPlayers){
   });
 }
 
-// ✅ 다크모드 변경 감지 시 차트 다시 그리기
-const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-darkModeQuery.addEventListener('change', e => {
-  const isDark = e.matches;
-  console.log('🌙 테마 변경 감지:', isDark ? '다크모드' : '라이트모드');
-
-  // 기존 차트들 다시 그리기
-  if (typeof radar !== 'undefined' && radar) {
-    radar.destroy();
-    render(koen, lh); // 🔄 레이더차트 다시 그리기
-  }
-
-  // 시간대 도넛차트 다시 그리기
-  renderTimeDistribution();
-
-  // 부수별 분포도 다시 그리기 (선택 사항)
-  loadLevelDist();
-});
 
 </script>
 </body>
