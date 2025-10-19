@@ -83,22 +83,57 @@ function calcTimeIndex(matches) {
 
 function calcWinRateByLevel(matches, players) {
   if (!matches.length || !players.length) return 0;
+
+  // 🔹 부수 정보 매핑 (이름만 추출)
   const levelMap = {};
   players.forEach(p => {
     const lv = parseInt(p.level || 0);
-    if (lv >= 1 && lv <= 9 && p.name) levelMap[p.name] = lv;
+    if (lv >= 1 && lv <= 9 && p.name) {
+      const baseName = p.name.split("-")[0]; // ex. "김승일-15" → "김승일"
+      levelMap[baseName] = lv;
+    }
   });
+
   const levelStats = {};
+
   matches.forEach(m => {
-    if (!m.winner || !m.loser) return;
-    const wLv = levelMap[m.winner];
-    const lLv = levelMap[m.loser];
-    if (!wLv || !lLv) return;
-    if (!levelStats[wLv]) levelStats[wLv] = { win: 0, total: 0 };
-    if (!levelStats[lLv]) levelStats[lLv] = { win: 0, total: 0 };
-    levelStats[wLv].win++; levelStats[wLv].total++;
-    levelStats[lLv].total++;
+    let winners = [];
+    let losers = [];
+
+    // 🔹 구조 대응 (winner/loser가 문자열 or 팀명일 때)
+    if (m.winner && typeof m.winner === "string") {
+      const w = m.winner.toLowerCase();
+      if (w.includes("a")) winners = m.membersA || [];
+      else if (w.includes("b")) winners = m.membersB || [];
+      else winners = [m.winner];
+    }
+    if (m.loser && typeof m.loser === "string") {
+      const l = m.loser.toLowerCase();
+      if (l.includes("a")) losers = m.membersA || [];
+      else if (l.includes("b")) losers = m.membersB || [];
+      else losers = [m.loser];
+    }
+
+    // 🔹 부수별 집계
+    winners.forEach(name => {
+      const base = name.split("-")[0];
+      const lv = levelMap[base];
+      if (!lv) return;
+      if (!levelStats[lv]) levelStats[lv] = { win: 0, total: 0 };
+      levelStats[lv].win++;
+      levelStats[lv].total++;
+    });
+
+    losers.forEach(name => {
+      const base = name.split("-")[0];
+      const lv = levelMap[base];
+      if (!lv) return;
+      if (!levelStats[lv]) levelStats[lv] = { win: 0, total: 0 };
+      levelStats[lv].total++;
+    });
   });
+
+  // 🔹 평균 승률 계산
   let totalRate = 0, count = 0;
   for (let lv = 1; lv <= 9; lv++) {
     const s = levelStats[lv];
@@ -108,8 +143,10 @@ function calcWinRateByLevel(matches, players) {
       count++;
     }
   }
+
   return count > 0 ? (totalRate / count).toFixed(1) : 0;
 }
+
 
 // === 리스너 (자동 감지 + 필터링 추가) ===
 function listenClub(db, name, cb) {
