@@ -52,6 +52,18 @@ section {
   min-height:300px;
 }
 footer { text-align:center; color:var(--muted); font-size:13px; margin-top:10px; }
+
+/* 🧾 지표 설명 */
+.desc-box {
+  margin-top:8px;
+  font-size:13px;
+  color:#475569;
+  line-height:1.5;
+  background:#f8fafc;
+  border-radius:8px;
+  padding:10px 14px;
+}
+.desc-box b { color:#1e3a8a; }
 </style>
 </head>
 <body>
@@ -65,6 +77,16 @@ footer { text-align:center; color:var(--muted); font-size:13px; margin-top:10px;
   <div class="winner-banner" id="winnerText">데이터 계산 중...</div>
   <div class="section-title">🕸️ 5각형 종합 비교</div>
   <div class="chart-container"><canvas id="radarChart"></canvas></div>
+
+  <!-- 📘 지표 설명 -->
+<div class="desc-box">
+  <div style="display:flex;flex-direction:column;gap:6px;">
+    <div><span style="color:#2563eb;">⚙️ <b>활동지수</b></span> — 전체 경기 중 회원들의 실제 참여 비율을 의미합니다.</div>
+    <div><span style="color:#7e22ce;">📊 <b>참여율</b></span> — 회원 1인당 평균 경기 횟수를 나타냅니다.</div>
+    <div><span style="color:#f97316;">🕒 <b>시간대지수</b></span> — 하루 중 가장 집중된 경기 시간대의 비율(%)을 뜻합니다.</div>
+  </div>
+</div>
+
 </section>
 
 <!-- 📈 부수(Level) 분포 -->
@@ -129,20 +151,17 @@ function calcLevelCount(players){
 // === 실시간 수신 ===
 function listenClub(db, name, cb){
   const pRef = ref(db, "players");
-  const mRef = ref(db, "matches"); // ✅ 전체 감시로 변경
+  const mRef = ref(db, "matches");
 
   onValue(pRef, pSnap => {
     onValue(mRef, mSnap => {
       const players = pSnap.exists() ? Object.values(pSnap.val()) : [];
       const allMatches = mSnap.exists() ? Object.values(mSnap.val()) : [];
-
-      // ✅ 이번 달 경기만 필터
       const matches = allMatches.filter(m => {
         if (!m.createdAt) return false;
         const d = new Date(m.createdAt);
         return d.getFullYear() === now.getFullYear() && (d.getMonth() + 1) === (now.getMonth() + 1);
       });
-
       const memberCount = players.length;
       const games = matches.length;
       const activeRate = memberCount ? ((games / memberCount) * 10).toFixed(1) : 0;
@@ -156,14 +175,12 @@ function listenClub(db, name, cb){
 
 // === 렌더링 ===
 let koen={}, lh={}, radar, level;
-
 function render(koen, lh){
   const totalK = koen.score + parseFloat(koen.timeIndex);
   const totalL = lh.score + parseFloat(lh.timeIndex);
   const winner = totalK > totalL ? "KOEN 🏆" : totalK < totalL ? "LH 🏆" : "무승부 🤝";
   document.getElementById("winnerText").textContent = `${winner}이(가) ${monthKey}월 가장 활발히 활동했습니다!`;
 
-  // === Radar Chart ===
   if (radar) radar.destroy();
 
   const labels = ["회원수", "경기수", "참여율", "활동지수", "시간대지수"];
@@ -179,42 +196,15 @@ function render(koen, lh){
     data: {
       labels,
       datasets: [
-        {
-          label: "KOEN",
-          data: koenData,
-          borderColor: "rgba(37,99,235,0.6)",
-          backgroundColor: "rgba(37,99,235,0.25)",
-          pointBackgroundColor: "#2563eb",
-          borderWidth: 1,
-          pointRadius: 3
-        },
-        {
-          label: "LH",
-          data: lhData,
-          borderColor: "rgba(249,115,22,0.6)",
-          backgroundColor: "rgba(249,115,22,0.25)",
-          pointBackgroundColor: "#f97316",
-          borderWidth: 1,
-          pointRadius: 3
-        }
+        { label: "KOEN", data: koenData, borderColor: "rgba(37,99,235,0.6)", backgroundColor: "rgba(37,99,235,0.25)", pointBackgroundColor: "#2563eb", borderWidth: 1, pointRadius: 3 },
+        { label: "LH", data: lhData, borderColor: "rgba(249,115,22,0.6)", backgroundColor: "rgba(249,115,22,0.25)", pointBackgroundColor: "#f97316", borderWidth: 1, pointRadius: 3 }
       ]
     },
     options: {
       maintainAspectRatio: false,
-      layout: { padding: 20 },  // ✅ 좌우 여백 확보
-      plugins: {
-        legend: { position: "bottom" },
-        customLabels: { koenVals, lhVals }
-      },
-      scales: {
-        r: {
-          beginAtZero: true,
-          max: 100,
-          ticks: { display: false },   // ✅ 숫자(0~100) 제거
-          pointLabels: { display: false },
-          grid: { color: "rgba(0,0,0,0.08)" }
-        }
-      }
+      layout: { padding: { left: 50, right: 20, top: 20, bottom: 20 } },  // ✅ 왼쪽 여백 확보
+      plugins: { legend: { position: "bottom" }, customLabels: { koenVals, lhVals } },
+      scales: { r: { beginAtZero: true, ticks: { display: false }, pointLabels: { display: false } } }
     },
     plugins: [{
       id: "coloredLabels",
@@ -223,7 +213,7 @@ function render(koen, lh){
         const rScale = chart.scales.r;
         const cx = rScale.xCenter;
         const cy = rScale.yCenter;
-        const radius = rScale.drawingArea * 0.85; // ✅ 반경 줄임 (글자 안짤림)
+        const radius = rScale.drawingArea * 0.85;
         const angleStep = (Math.PI * 2) / labels.length;
 
         ctx.save();
@@ -235,19 +225,14 @@ function render(koen, lh){
           const angle = i * angleStep - Math.PI / 2;
           const x = cx + Math.cos(angle) * (radius + 20);
           const y = cy + Math.sin(angle) * (radius + 20);
-
           ctx.fillStyle = "#334155";
           ctx.fillText(label, x, y - 10);
-
           const kv = koenVals[i], lv = lhVals[i];
           const kw = ctx.measureText(kv).width, lw = ctx.measureText(lv).width, sw = ctx.measureText("/").width;
           let startX = x - (kw + lw + sw + 6) / 2;
-
           ctx.fillStyle = "#2563eb"; ctx.fillText(kv, startX + kw / 2, y + 10);
-          startX += kw + 2;
-          ctx.fillStyle = "#64748b"; ctx.fillText("/", startX + sw / 2, y + 10);
-          startX += sw + 2;
-          ctx.fillStyle = "#f97316"; ctx.fillText(lv, startX + lw / 2, y + 10);
+          startX += kw + 2; ctx.fillStyle = "#64748b"; ctx.fillText("/", startX + sw / 2, y + 10);
+          startX += sw + 2; ctx.fillStyle = "#f97316"; ctx.fillText(lv, startX + lw / 2, y + 10);
         });
         ctx.restore();
       }
@@ -262,29 +247,11 @@ function render(koen, lh){
     data: {
       labels: Array.from({ length: 14 }, (_, i) => `Lv${i + 1}`),
       datasets: [
-        {
-          label: "KOEN",
-          data: koen.levelCount,
-          borderColor: "#2563eb",
-          backgroundColor: "rgba(37,99,235,0.2)",
-          fill: true,
-          tension: 0.35
-        },
-        {
-          label: "LH",
-          data: lh.levelCount,
-          borderColor: "#f97316",
-          backgroundColor: "rgba(249,115,22,0.2)",
-          fill: true,
-          tension: 0.35
-        }
+        { label: "KOEN", data: koen.levelCount, borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,0.2)", fill: true, tension: 0.35 },
+        { label: "LH", data: lh.levelCount, borderColor: "#f97316", backgroundColor: "rgba(249,115,22,0.2)", fill: true, tension: 0.35 }
       ]
     },
-    options: {
-      maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } }
-    }
+    options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } }, scales: { y: { beginAtZero: true } } }
   });
 }
 
