@@ -187,7 +187,7 @@ h1 {
   
   </div>
 
-  
+
   <!-- ✅ 오늘의 전적 버튼 추가 -->
 <div style="text-align:center; margin-top:14px;">
   <button id="todayBtn" class="btn primary">📅 오늘의 전적</button>
@@ -496,6 +496,70 @@ document.getElementById("todayBtn").addEventListener("click", async () => {
 
   document.getElementById("todayList").innerHTML = list;
   document.getElementById("todayResults").style.display = "block";
+});
+
+// ✅ 오늘의 전적 버튼 토글 기능
+let todayVisible = false;
+
+document.getElementById("todayBtn").addEventListener("click", async () => {
+  const box = document.getElementById("todayResults");
+
+  // 이미 보이는 상태면 닫기
+  if (todayVisible) {
+    box.style.display = "none";
+    todayVisible = false;
+    return;
+  }
+
+  const snap = await get(matchRef);
+  if (!snap.exists()) {
+    toast("기록이 없습니다");
+    return;
+  }
+
+  const data = Object.values(snap.val());
+  const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+  const todayMatches = data.filter(m => {
+    const d = new Date(m.createdAt);
+    const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    return kst.toLocaleDateString("ko-KR") === today;
+  });
+
+  if (!todayMatches.length) {
+    toast("오늘 경기 기록이 없습니다");
+    box.style.display = "none";
+    todayVisible = false;
+    return;
+  }
+
+  // ✅ 승/패 집계
+  const stats = {};
+  todayMatches.forEach(m => {
+    const winSide = m.winnerSide;
+    const losers = winSide === "A" ? m.namesB : m.namesA;
+    const winners = winSide === "A" ? m.namesA : m.namesB;
+    winners.forEach(n => {
+      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
+      stats[n].win++;
+    });
+    losers.forEach(n => {
+      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
+      stats[n].lose++;
+    });
+  });
+
+  // ✅ 정렬 (승리순 → 이름순)
+  const sorted = Object.entries(stats)
+    .map(([name, { win, lose }]) => ({ name, win, lose }))
+    .sort((a, b) => b.win - a.win || a.name.localeCompare(b.name, 'ko'));
+
+  const list = sorted
+    .map(p => `${p.name} ${p.win}승 ${p.lose}패`)
+    .join("<br>");
+
+  document.getElementById("todayList").innerHTML = list;
+  box.style.display = "block";
+  todayVisible = true;
 });
 
 
