@@ -214,6 +214,21 @@ h1 {
   </div>
 </div>
 
+<div id="chips" class="row" style="margin-top:10px;"></div>
+
+<!-- ✅ 오늘의 전적 버튼 추가 -->
+<div style="text-align:center; margin-top:14px;">
+  <button id="todayBtn" class="btn primary">📅 오늘의 전적</button>
+</div>
+
+<div id="teamDisplay"></div>
+
+<div id="todayResults" style="margin-top:16px; background:#fff; border-radius:12px; box-shadow:var(--shadow); padding:12px; display:none;">
+  <h3 style="text-align:center; color:#2563eb; margin-top:0;">📊 오늘의 전적</h3>
+  <div id="todayList" style="font-size:15px; line-height:1.6; font-weight:600;"></div>
+</div>
+
+
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -420,6 +435,59 @@ closeModal.addEventListener("click", () => {
 // ✅ 모달 외부 클릭 시 닫기
 window.addEventListener("click", (e) => {
   if (e.target === modal) modal.style.display = "none";
+});
+
+
+// ✅ 오늘의 전적 버튼 기능
+document.getElementById("todayBtn").addEventListener("click", async () => {
+  const snap = await get(matchRef);
+  if (!snap.exists()) {
+    toast("기록이 없습니다");
+    return;
+  }
+
+  const data = Object.values(snap.val());
+  const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+  const todayMatches = data.filter(m => {
+    const d = new Date(m.createdAt);
+    const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const dateStr = kst.toLocaleDateString("ko-KR");
+    return dateStr === today;
+  });
+
+  if (!todayMatches.length) {
+    toast("오늘 경기 기록이 없습니다");
+    document.getElementById("todayResults").style.display = "none";
+    return;
+  }
+
+  // ✅ 승/패 집계
+  const stats = {};
+  todayMatches.forEach(m => {
+    const winSide = m.winnerSide;
+    const losers = winSide === "A" ? m.namesB : m.namesA;
+    const winners = winSide === "A" ? m.namesA : m.namesB;
+    winners.forEach(n => {
+      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
+      stats[n].win++;
+    });
+    losers.forEach(n => {
+      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
+      stats[n].lose++;
+    });
+  });
+
+  // ✅ 정렬 (승리순 → 이름순)
+  const sorted = Object.entries(stats)
+    .map(([name, { win, lose }]) => ({ name, win, lose }))
+    .sort((a, b) => b.win - a.win || a.name.localeCompare(b.name, 'ko'));
+
+  const list = sorted
+    .map(p => `${p.name} ${p.win}승 ${p.lose}패`)
+    .join("<br>");
+
+  document.getElementById("todayList").innerHTML = list;
+  document.getElementById("todayResults").style.display = "block";
 });
 
 
