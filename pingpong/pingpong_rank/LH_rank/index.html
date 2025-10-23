@@ -462,133 +462,83 @@ window.addEventListener("click", (e) => {
 });
 
 
-// ✅ 오늘의 전적 버튼 기능
-document.getElementById("todayBtn").addEventListener("click", async () => {
-  const snap = await get(matchRef);
-  if (!snap.exists()) {
-    toast("기록이 없습니다");
-    return;
-  }
-
-  const data = Object.values(snap.val());
-  const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
-  const todayMatches = data.filter(m => {
-    const d = new Date(m.createdAt);
-    const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-    const dateStr = kst.toLocaleDateString("ko-KR");
-    return dateStr === today;
-  });
-
-  if (!todayMatches.length) {
-    toast("오늘 경기 기록이 없습니다");
-    document.getElementById("todayResults").style.display = "none";
-    return;
-  }
-
-  // ✅ 승/패 집계
-  const stats = {};
-  todayMatches.forEach(m => {
-    const winSide = m.winnerSide;
-    const losers = winSide === "A" ? m.namesB : m.namesA;
-    const winners = winSide === "A" ? m.namesA : m.namesB;
-    winners.forEach(n => {
-      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
-      stats[n].win++;
-    });
-    losers.forEach(n => {
-      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
-      stats[n].lose++;
-    });
-  });
-
-  // ✅ 정렬 (승리순 → 이름순)
-  const sorted = Object.entries(stats)
-    .map(([name, { win, lose }]) => ({ name, win, lose }))
-    .sort((a, b) => b.win - a.win || a.name.localeCompare(b.name, 'ko'));
-
-  const list = sorted
-    .map(p => `${p.name} ${p.win}승 ${p.lose}패`)
-    .join("<br>");
-
-  document.getElementById("todayList").innerHTML = list;
-  document.getElementById("todayResults").style.display = "block";
-});
-
-// ✅ 오늘의 전적 버튼 토글 기능
+// ✅ 오늘의 전적: 토글 + 렌더 하나로 통합
 let todayVisible = false;
 
-document.getElementById("todayBtn").addEventListener("click", async () => {
-  const box = document.getElementById("todayResults");
-
-  // 이미 보이는 상태면 닫기
-  if (todayVisible) {
-    box.style.display = "none";
-    todayVisible = false;
-    return;
-  }
-
+async function buildTodayHtml() {
   const snap = await get(matchRef);
-  if (!snap.exists()) {
-    toast("기록이 없습니다");
-    return;
-  }
+  if (!snap.exists()) return null;
 
   const data = Object.values(snap.val());
   const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+
+  // 오늘 경기만 필터
   const todayMatches = data.filter(m => {
     const d = new Date(m.createdAt);
     const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
     return kst.toLocaleDateString("ko-KR") === today;
   });
 
-  if (!todayMatches.length) {
-    toast("오늘 경기 기록이 없습니다");
+  if (!todayMatches.length) return "오늘 경기 기록이 없습니다";
+
+  // 승/패 집계
+  const stats = {};
+  todayMatches.forEach(m => {
+    const winners = m.winnerSide === "A" ? m.namesA : m.namesB;
+    const losers  = m.winnerSide === "A" ? m.namesB : m.namesA;
+    winners.forEach(n => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].win++; });
+    losers.forEach(n  => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].lose++; });
+  });
+
+  // ✅ 정렬 (부수 높은 순 → 승리순 → 이름순)
+  const sorted = Object.entries(stats)
+    .map(([name, { win, lose }]) => {
+      const p = players.find(v => v.name === name);
+      return { name, win, lose, level: p ? p.level : 99 };
+    })
+    .sort((a, b) => b.level - a.level || b.win - a.win || a.name.localeCompare(b.name, 'ko'));
+
+  // ✅ 두 줄(2열) 레이아웃 + 승/패 한 줄 표기
+let html = "";
+sorted.forEach((p, i) => {
+  const color = p.win > p.lose ? "#1e40af" : "#111";
+  html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
+             ${p.name}(${p.level}) ${p.win}승${p.lose}패
+           </span>`;
+  if ((i + 1) % 2 === 0) html += "<br>";
+})
+
+  return html;
+}
+
+// ✅ 버튼 한 개만 연결 (토글)
+document.getElementById("todayBtn").addEventListener("click", async () => {
+  const box = document.getElementById("todayResults");
+  const list = document.getElementById("todayList");
+
+  // 토글 닫기
+  if (todayVisible) {
     box.style.display = "none";
     todayVisible = false;
     return;
   }
 
-  // ✅ 승/패 집계
-  const stats = {};
-  todayMatches.forEach(m => {
-    const winSide = m.winnerSide;
-    const losers = winSide === "A" ? m.namesB : m.namesA;
-    const winners = winSide === "A" ? m.namesA : m.namesB;
-    winners.forEach(n => {
-      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
-      stats[n].win++;
-    });
-    losers.forEach(n => {
-      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
-      stats[n].lose++;
-    });
-  });
+  const html = await buildTodayHtml();
+  if (html === null) { toast("기록이 없습니다"); return; }
+  if (html === "오늘 경기 기록이 없습니다") { toast(html); box.style.display = "none"; todayVisible = false; return; }
 
-  // ✅ 정렬 (승리순 → 이름순)
-  const sorted = Object.entries(stats)
-    .map(([name, { win, lose }]) => ({ name, win, lose }))
-    .sort((a, b) => b.win - a.win || a.name.localeCompare(b.name, 'ko'));
-
-  const list = sorted
-    .map(p => `${p.name} ${p.win}승 ${p.lose}패`)
-    .join("<br>");
-
-  document.getElementById("todayList").innerHTML = list;
+  list.innerHTML = html;
   box.style.display = "block";
   todayVisible = true;
 });
 
-// ✅ 오늘의 전적 닫기 버튼
-const closeTodayBtn = document.getElementById("closeToday");
-closeTodayBtn.addEventListener("click", () => {
-  const box = document.getElementById("todayResults");
-  box.style.display = "none";
+// ✅ 닫기 버튼
+document.getElementById("closeToday").addEventListener("click", () => {
+  document.getElementById("todayResults").style.display = "none";
   todayVisible = false;
 });
 
 
 </script>
-
-
 </body>
 </html>
