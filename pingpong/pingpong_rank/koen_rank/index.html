@@ -467,67 +467,6 @@ window.addEventListener("click", (e) => {
 });
 
 
-// ✅ 오늘의 전적 버튼 기능
-document.getElementById("todayBtn").addEventListener("click", async () => {
-  const snap = await get(matchRef);
-  if (!snap.exists()) {
-    toast("기록이 없습니다");
-    return;
-  }
-
-  const data = Object.values(snap.val());
-  const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
-  const todayMatches = data.filter(m => {
-    const d = new Date(m.createdAt);
-    const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-    const dateStr = kst.toLocaleDateString("ko-KR");
-    return dateStr === today;
-  });
-
-  if (!todayMatches.length) {
-    toast("오늘 경기 기록이 없습니다");
-    document.getElementById("todayResults").style.display = "none";
-    return;
-  }
-
-  // ✅ 승/패 집계
-  const stats = {};
-  todayMatches.forEach(m => {
-    const winSide = m.winnerSide;
-    const losers = winSide === "A" ? m.namesB : m.namesA;
-    const winners = winSide === "A" ? m.namesA : m.namesB;
-    winners.forEach(n => {
-      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
-      stats[n].win++;
-    });
-    losers.forEach(n => {
-      if (!stats[n]) stats[n] = { win: 0, lose: 0 };
-      stats[n].lose++;
-    });
-  });
-
-  // ✅ 정렬 (부수 낮은 순 → 승리순 → 이름순)
-const sorted = Object.entries(stats)
-  .map(([name, { win, lose }]) => {
-    const player = players.find(p => p.name === name);
-    return { name, win, lose, level: player ? player.level : 99 };
-  })
-  .sort((a, b) => a.level - b.level || b.win - a.win || a.name.localeCompare(b.name, 'ko'));
-
-// ✅ 두 줄 정렬 + 스타일 적용
-let html = "";
-sorted.forEach((p, i) => {
-  const color = p.win > p.lose ? "#1e40af" : "#111"; // 승이 많으면 짙은 파랑
-  html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:4px 0;">
-             ${p.name}(${p.level})
-           </span>`;
-  if ((i + 1) % 2 === 0) html += "<br>"; // 2명마다 줄바꿈
-});
-
-document.getElementById("todayList").innerHTML = html;
-document.getElementById("todayResults").style.display = "block";
-
-
 // ✅ 오늘의 전적: 토글 + 렌더 하나로 통합
 let todayVisible = false;
 
