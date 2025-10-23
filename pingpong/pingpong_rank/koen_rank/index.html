@@ -506,18 +506,27 @@ document.getElementById("todayBtn").addEventListener("click", async () => {
     });
   });
 
-  // ✅ 정렬 (승리순 → 이름순)
-  const sorted = Object.entries(stats)
-    .map(([name, { win, lose }]) => ({ name, win, lose }))
-    .sort((a, b) => b.win - a.win || a.name.localeCompare(b.name, 'ko'));
+  // ✅ 정렬 (부수 낮은 순 → 승리순 → 이름순)
+const sorted = Object.entries(stats)
+  .map(([name, { win, lose }]) => {
+    const player = players.find(p => p.name === name);
+    return { name, win, lose, level: player ? player.level : 99 };
+  })
+  .sort((a, b) => a.level - b.level || b.win - a.win || a.name.localeCompare(b.name, 'ko'));
 
-  const list = sorted
-    .map(p => `${p.name} ${p.win}승 ${p.lose}패`)
-    .join("<br>");
-
-  document.getElementById("todayList").innerHTML = list;
-  document.getElementById("todayResults").style.display = "block";
+// ✅ 두 줄 정렬 + 스타일 적용
+let html = "";
+sorted.forEach((p, i) => {
+  const color = p.win > p.lose ? "#1e40af" : "#111"; // 승이 많으면 짙은 파랑
+  html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:4px 0;">
+             ${p.name}(${p.level})
+           </span>`;
+  if ((i + 1) % 2 === 0) html += "<br>"; // 2명마다 줄바꿈
 });
+
+document.getElementById("todayList").innerHTML = html;
+document.getElementById("todayResults").style.display = "block";
+
 
 // ✅ 오늘의 전적 버튼 토글 기능
 let todayVisible = false;
