@@ -209,11 +209,20 @@ function renderSingles(arr,month){
 }
 
 // === 복식 출력 ===
-function renderDoubles(arr,month){
-  const sec=document.getElementById("doubleSection");
-  const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
+// === 복식 출력 ===
+function renderDoubles(arr, month) {
+  const sec = document.getElementById("doubleSection");
+  const totalMatches = Math.round(arr.reduce((s, p) => s + p.total, 0) / 2);
 
-  sec.innerHTML=`
+  // ✅ 5일에 1경기 이상 기준 계산
+  const daysInMonth = new Date().getDate();
+  const minGames = Math.ceil(daysInMonth / 5);
+
+  // ✅ 기준 이상 / 미만 분리
+  const qualified = arr.filter(t => t.total >= minGames);
+  const unqualified = arr.filter(t => t.total < minGames);
+
+  sec.innerHTML = `
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:28px 0 14px;font-weight:800;">
       👥 복식 리그 순위 (${month}) — 승리 +2 / 패배 −1
     </h2>
@@ -224,30 +233,56 @@ function renderDoubles(arr,month){
         </tr>
       </thead>
       <tbody>
-        ${arr.map((t,i)=>{
-          const bg = t.points>=2 ? '#e0f2fe' : '#f9fafb';
-          return `
-            <tr style="background:${bg}">
-              <td>${i+1}</td>
-              <td>${
-                t.team.split(',').map(n=>{
-                  const trimmed=n.trim();
-                  const lvl=playerLevels[trimmed]||'-';
-                  return `${trimmed}(${lvl})`;
-                }).join(', ')
-              }</td>
-              <td>${t.total}</td>
-              <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-              <td>${formatNum(t.rate)}%</td>
-              <td>${t.points}</td>
-            </tr>`;
-        }).join('')}
+        ${qualified
+          .map((t, i) => {
+            const bg = "#e0f2fe"; // ✅ 하늘색
+            return `
+              <tr style="background:${bg}">
+                <td>${i + 1}</td>
+                <td>${t.team
+                  .split(",")
+                  .map(n => {
+                    const trimmed = n.trim();
+                    const lvl = playerLevels[trimmed] || "-";
+                    return `${trimmed}(${lvl})`;
+                  })
+                  .join(", ")}</td>
+                <td>${t.total}</td>
+                <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
+                <td>${formatNum(t.rate)}%</td>
+                <td>${t.points}</td>
+              </tr>`;
+          })
+          .join("")}
+        ${unqualified
+          .map(t => `
+              <tr style="background:#f9fafb">
+                <td>–</td>
+                <td>${t.team
+                  .split(",")
+                  .map(n => {
+                    const trimmed = n.trim();
+                    const lvl = playerLevels[trimmed] || "-";
+                    return `${trimmed}(${lvl})`;
+                  })
+                  .join(", ")}</td>
+                <td>${t.total}</td>
+                <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
+                <td>${formatNum(t.rate)}%</td>
+                <td>${t.points}</td>
+              </tr>`)
+          .join("")}
       </tbody>
     </table>
     <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
-    <p class="ruleNote">⚖️ 순위 기준: <b>승점 → 승률 → 경기수 → 부수합(낮을수록↑)</b> / 하늘색: 2경기↑</p>
+    <p class="ruleNote">
+      ⚖️ 순위 기준: <b>5일에 1경기 이상 (${minGames}경기↑)</b> /
+      정렬: 승점 → 승률 → 경기수 → 부수합(낮을수록↑) /
+      하늘색: 기준 충족
+    </p>
   `;
 }
+
 </script>
 </body>
 </html>
