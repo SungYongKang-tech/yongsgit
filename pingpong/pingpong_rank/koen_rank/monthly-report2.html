@@ -147,8 +147,18 @@ onValue(ref(db,"matches"), async (snap)=>{
   const doubleArr = Object.entries(statsDouble).map(([team,s])=>{
     const total=s.win+s.lose;
     const rate=total?(s.win/total*100):0;
-    return {team,total,win:s.win,lose:s.lose,rate,points:s.points};
-  }).sort((a,b)=>b.points-a.points||b.rate-a.rate||b.win-a.win);
+
+    // 부수합 계산
+    const teamNames = team.split(',').map(n=>n.trim());
+    const levelSum = teamNames.reduce((sum,n)=> sum + (parseInt(playerLevels[n]) || 99),0);
+
+    return {team,total,win:s.win,lose:s.lose,rate,points:s.points,levelSum};
+  }).sort((a,b)=>
+    (b.points - a.points) ||
+    (b.rate - a.rate) ||
+    (b.total - a.total) ||
+    (a.levelSum - b.levelSum)
+  );
 
   renderSingles(singleArr,thisMonth);
   renderDoubles(doubleArr,thisMonth);
@@ -202,11 +212,6 @@ function renderSingles(arr,month){
 function renderDoubles(arr,month){
   const sec=document.getElementById("doubleSection");
   const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
-  const daysInMonth = new Date().getDate();
-  const minGames = Math.ceil(daysInMonth / 10);
-
-  // 전체 순위는 승점→승률→승수 순으로 유지
-  const ranked = arr.sort((a,b)=>b.points-a.points||b.rate-a.rate||b.win-a.win);
 
   sec.innerHTML=`
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:28px 0 14px;font-weight:800;">
@@ -219,8 +224,8 @@ function renderDoubles(arr,month){
         </tr>
       </thead>
       <tbody>
-        ${ranked.map((t,i)=>{
-          const bg = t.total>=minGames ? '#e0f2fe' : '#f9fafb';
+        ${arr.map((t,i)=>{
+          const bg = t.total>=2 ? '#e0f2fe' : '#f9fafb';
           return `
             <tr style="background:${bg}">
               <td>${i+1}</td>
@@ -240,7 +245,7 @@ function renderDoubles(arr,month){
       </tbody>
     </table>
     <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
-    <p class="ruleNote">⚖️ 순위 기준: <b>10일에 1경기 이상 (${minGames}경기↑)</b> / 정렬: 승점 → 승률 → 승수</p>
+    <p class="ruleNote">⚖️ 순위 기준: <b>승점 → 승률 → 경기수 → 부수합(낮을수록↑)</b> / 하늘색: 2경기↑</p>
   `;
 }
 </script>
