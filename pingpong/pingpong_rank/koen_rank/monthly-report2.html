@@ -83,6 +83,20 @@ function formatNum(n){return (Math.round(n*10)/10).toFixed(1);}
 function teamKey(arr){return arr.slice().sort((a,b)=>a.localeCompare(b)).join(', ');}
 
 // === 메인 로직 ===
+import { get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+let playerLevels = {}; // 이름별 부수 저장용
+
+// players에서 이름-부수 매핑 가져오기
+const playerRef = ref(db, "players");
+const playerSnap = await get(playerRef);
+if (playerSnap.exists()) {
+  const data = playerSnap.val();
+  Object.values(data).forEach(p => {
+    if (p.name && p.level) playerLevels[p.name] = p.level;
+  });
+}
+
 onValue(ref(db,"matches"), async (snap)=>{
   const data = snap.val() || {};
   const now = new Date();
@@ -203,16 +217,22 @@ function renderDoubles(arr,month){
         </tr>
       </thead>
       <tbody>
-        ${arr.map((t,i)=>`
-          <tr style="background:${i<10?'#e0f2fe':'#f9fafb'}">
-            <td>${i+1}</td>
-            <td>${t.team}</td>
-            <td>${t.total}</td>
-            <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-            <td>${formatNum(t.rate)}%</td>
-            <td>${t.points}</td>
-          </tr>`).join('')}
-      </tbody>
+  ${arr.map((t,i)=>`
+    <tr style="background:${i<10?'#e0f2fe':'#f9fafb'}">
+      <td>${i+1}</td>
+      <td>${
+        t.team.split(',').map(n=>{
+          const trimmed = n.trim();
+          const lvl = playerLevels[trimmed] || '-';
+          return `${trimmed}(${lvl})`;
+        }).join(', ')
+      }</td>
+      <td>${t.total}</td>
+      <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
+      <td>${formatNum(t.rate)}%</td>
+      <td>${t.points}</td>
+    </tr>`).join('')}
+</tbody>
     </table>
     <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
     <p class="ruleNote">⚖️ 순위 기준: <b>승점 → 승수 → 경기수 → 승률</b></p>
