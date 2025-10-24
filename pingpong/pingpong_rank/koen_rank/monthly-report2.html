@@ -11,11 +11,14 @@
   --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
   --shadow:0 8px 28px rgba(0,0,0,.08); --card:#fff;
 }
-body{margin:0;font-family:"Pretendard","Noto Sans KR",sans-serif;
-  background:var(--bg);color:var(--ink);font-weight:600;}
+body{
+  margin:0; font-family:"Pretendard","Noto Sans KR",sans-serif;
+  background:var(--bg); color:var(--ink); font-weight:600;
+}
 header{
   background:#fff;border-bottom:1px solid #e5e7eb;
-  text-align:center;padding:14px 0;position:sticky;top:0;z-index:10;}
+  text-align:center;padding:14px 0;position:sticky;top:0;z-index:10;
+}
 h1{margin:4px 0 10px;color:var(--accent);
   font-size:clamp(18px,4vw,24px);font-weight:700;}
 .btn{border:1px solid #d1d5db;border-radius:8px;padding:6px 10px;
@@ -30,17 +33,28 @@ tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center;}
 tbody tr:hover{background:#f9fafb}
 .win{color:var(--ok);font-weight:700;}
 .lose{color:var(--danger);font-weight:700;}
-@media(max-width:640px){table{font-size:13px;}thead th,tbody td{padding:7px 1px;}}
+.totalNote{
+  text-align:center;margin-top:12px;
+  font-size:17px;font-weight:800;
+  color:#0d47a1;background:#e3f2fd;
+  display:inline-block;padding:6px 14px;
+  border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.08);
+}
+.ruleNote{
+  text-align:center;font-size:14px;color:#475569;
+  margin-top:8px;margin-bottom:20px;
+}
+@media(max-width:640px){
+  table{font-size:13px;} thead th, tbody td{padding:7px 1px;}
+  .totalNote{font-size:15px;padding:5px 10px;}
+}
 </style>
 </head>
 <body>
 <header>
   <h1 id="pageHeader">🏓 월간 단식·복식 리그 리포트</h1>
-  <div class="row" style="display:flex;justify-content:center;gap:8px;">
+  <div style="display:flex;justify-content:center;gap:8px;">
     <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
-    <a href="monthly-report.html" class="btn primary">통합 전적</a>
-    <a href="https://sensational-tulumba-65e97e.netlify.app/pingpong/pingpong_rank/koen_vs_lh/" 
-     class="btn ok">🤝 KOEN vs LH</a>
   </div>
 </header>
 
@@ -51,7 +65,7 @@ tbody tr:hover{background:#f9fafb}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, get, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -66,6 +80,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 function formatNum(n){return (Math.round(n*10)/10).toFixed(1);}
+function teamKey(arr){return arr.slice().sort((a,b)=>a.localeCompare(b)).join(', ');}
 
 // === 메인 로직 ===
 onValue(ref(db,"matches"), async (snap)=>{
@@ -74,22 +89,22 @@ onValue(ref(db,"matches"), async (snap)=>{
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const oldMonth = `${now.getFullYear()}-${String(now.getMonth()-1).padStart(2,'0')}`;
 
-  const statsSingle = {}; // 단식
-  const statsDouble = {}; // 복식 (팀단위)
+  const statsSingle = {};
+  const statsDouble = {};
 
-  // 🔹 2개월 이전 삭제
+  // 🔹 오래된 경기 제거
   Object.entries(data).forEach(([id,m])=>{
     if(m.monthKey && m.monthKey <= oldMonth) remove(ref(db,`matches/${id}`));
   });
 
-  // 🔹 이번달 데이터만 필터
+  // 🔹 이번달 경기만 계산
   Object.values(data).forEach(m=>{
     if(m.monthKey !== thisMonth) return;
 
     // ===== 단식 =====
     if(m.mode === "single"){
       const names = [...m.namesA, ...m.namesB];
-      names.forEach(n=>{ if(!statsSingle[n]) statsSingle[n]={win:0,lose:0}; });
+      names.forEach(n=>{if(!statsSingle[n]) statsSingle[n]={win:0,lose:0};});
       if(m.winnerSide==='A'){
         m.namesA.forEach(n=>statsSingle[n].win++);
         m.namesB.forEach(n=>statsSingle[n].lose++);
@@ -99,41 +114,53 @@ onValue(ref(db,"matches"), async (snap)=>{
       }
     }
 
-    // ===== 복식 =====
+    // ===== 복식 (승점제: 승+2 / 패−1) =====
     if(m.mode === "double"){
-      const teamA = m.namesA.map(n=>`${n}`).join(', ');
-      const teamB = m.namesB.map(n=>`${n}`).join(', ');
-      [teamA,teamB].forEach(t=>{if(!statsDouble[t]) statsDouble[t]={win:0,lose:0};});
+      const teamA = teamKey(m.namesA);
+      const teamB = teamKey(m.namesB);
+      [teamA, teamB].forEach(t=>{
+        if(!statsDouble[t]) statsDouble[t]={win:0,lose:0,points:0};
+      });
       if(m.winnerSide==='A'){
-        statsDouble[teamA].win++;
-        statsDouble[teamB].lose++;
+        statsDouble[teamA].win++;  statsDouble[teamA].points += 2;
+        statsDouble[teamB].lose++; statsDouble[teamB].points -= 1;
       }else if(m.winnerSide==='B'){
-        statsDouble[teamB].win++;
-        statsDouble[teamA].lose++;
+        statsDouble[teamB].win++;  statsDouble[teamB].points += 2;
+        statsDouble[teamA].lose++; statsDouble[teamA].points -= 1;
       }
     }
   });
 
-  // 🔹 단식 순위 배열 생성
+  // 🔹 단식 정렬 (승률순)
   const singleArr = Object.entries(statsSingle).map(([name,s])=>{
-    const total = s.win + s.lose;
-    const rate = total ? s.win/total*100 : 0;
-    return {name,total,win:s.win,lose:s.lose,rate};
+    const total = s.win+s.lose;
+    const rate = total ? (s.win/total*100):0;
+    // 부수 정보 추출
+    const match = name.match(/(.+)\((\d+)\)/);
+    const pname = match ? match[1] : name;
+    const level = match ? match[2] : '';
+    return { name:pname, level, total, win:s.win, lose:s.lose, rate };
   }).sort((a,b)=>b.rate-a.rate||b.total-a.total);
 
-  // 🔹 복식 팀 순위 배열 생성
+  // 🔹 복식 정렬 (승점 → 승수 → 경기수 → 승률)
   const doubleArr = Object.entries(statsDouble).map(([team,s])=>{
-    const total = s.win + s.lose;
-    const rate = total ? s.win/total*100 : 0;
-    return {team,total,win:s.win,lose:s.lose,rate};
-  }).sort((a,b)=>b.rate-a.rate||b.total-a.total);
+    const total=s.win+s.lose;
+    const rate=total?(s.win/total*100):0;
+    return { team, total, win:s.win, lose:s.lose, rate, points:s.points };
+  }).sort((a,b)=>{
+    return (b.points - a.points)
+        || (b.win - a.win)
+        || (b.total - a.total)
+        || (b.rate - a.rate)
+        || a.team.localeCompare(b.team);
+  });
 
   renderSingles(singleArr,thisMonth);
   renderDoubles(doubleArr,thisMonth);
 });
 
 // === 단식 출력 ===
-function renderSingles(arr, month){
+function renderSingles(arr,month){
   const sec=document.getElementById("singleSection");
   const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
   sec.innerHTML=`
@@ -157,27 +184,12 @@ function renderSingles(arr, month){
           </tr>`).join('')}
       </tbody>
     </table>
-
-    <p style="
-  text-align:center;
-  margin-top:12px;
-  font-size:17px;         /* 🔹 글씨 크기 ↑ */
-  color:#0d47a1;          /* 🔹 좀 더 진한 파랑 */
-  font-weight:800;        /* 🔹 두껍게 */
-  background:#e3f2fd;     /* 🔹 배경 살짝 파랑톤 */
-  display:inline-block;
-  padding:6px 14px;
-  border-radius:10px;
-  box-shadow:0 2px 5px rgba(0,0,0,0.08);
-">
-  🔹 전체 경기 수: <b>${totalMatches} 경기</b>
-</p>
-
+    <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
   `;
 }
 
 // === 복식 출력 ===
-function renderDoubles(arr, month){
+function renderDoubles(arr,month){
   const sec=document.getElementById("doubleSection");
   const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
   sec.innerHTML=`
@@ -202,23 +214,10 @@ function renderDoubles(arr, month){
           </tr>`).join('')}
       </tbody>
     </table>
-     <p style="
-  text-align:center;
-  margin-top:12px;
-  font-size:17px;         /* 🔹 글씨 크기 ↑ */
-  color:#0d47a1;          /* 🔹 좀 더 진한 파랑 */
-  font-weight:800;        /* 🔹 두껍게 */
-  background:#e3f2fd;     /* 🔹 배경 살짝 파랑톤 */
-  display:inline-block;
-  padding:6px 14px;
-  border-radius:10px;
-  box-shadow:0 2px 5px rgba(0,0,0,0.08);
-">
-  🔹 전체 경기 수: <b>${totalMatches} 경기</b>
-</p>
+    <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
+    <p class="ruleNote">⚖️ 순위 기준: <b>승점 → 승수 → 경기수 → 승률</b></p>
   `;
 }
-
 </script>
 </body>
 </html>
