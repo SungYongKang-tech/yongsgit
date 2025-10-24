@@ -55,7 +55,6 @@ tbody tr:hover{background:#f9fafb}
   <h1 id="pageHeader">🏓 월간 단식·복식 리그 리포트</h1>
   <div style="display:flex;justify-content:center;gap:8px;">
     <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
-    <a href="monthly-report.html" class="btn primary">통합 전적</a>
   </div>
 </header>
 
@@ -66,7 +65,7 @@ tbody tr:hover{background:#f9fafb}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, onValue, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -83,12 +82,8 @@ const db = getDatabase(app);
 function formatNum(n){return (Math.round(n*10)/10).toFixed(1);}
 function teamKey(arr){return arr.slice().sort((a,b)=>a.localeCompare(b)).join(', ');}
 
-// === 메인 로직 ===
-import { get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-let playerLevels = {}; // 이름별 부수 저장용
-
-// players에서 이름-부수 매핑 가져오기
+// === players 데이터에서 이름-부수 매핑 ===
+let playerLevels = {};
 const playerRef = ref(db, "players");
 const playerSnap = await get(playerRef);
 if (playerSnap.exists()) {
@@ -98,25 +93,23 @@ if (playerSnap.exists()) {
   });
 }
 
+// === 메인 로직 ===
 onValue(ref(db,"matches"), async (snap)=>{
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const oldMonth = `${now.getFullYear()}-${String(now.getMonth()-1).padStart(2,'0')}`;
-
   const statsSingle = {};
   const statsDouble = {};
 
-  // 🔹 오래된 경기 제거
   Object.entries(data).forEach(([id,m])=>{
     if(m.monthKey && m.monthKey <= oldMonth) remove(ref(db,`matches/${id}`));
   });
 
-  // 🔹 이번달 경기만 계산
   Object.values(data).forEach(m=>{
     if(m.monthKey !== thisMonth) return;
 
-    // ===== 단식 =====
+    // 단식
     if(m.mode === "single"){
       const names = [...m.namesA, ...m.namesB];
       names.forEach(n=>{if(!statsSingle[n]) statsSingle[n]={win:0,lose:0};});
@@ -129,57 +122,48 @@ onValue(ref(db,"matches"), async (snap)=>{
       }
     }
 
-    // ===== 복식 (승점제: 승+2 / 패−1) =====
+    // 복식
     if(m.mode === "double"){
       const teamA = teamKey(m.namesA);
       const teamB = teamKey(m.namesB);
-      [teamA, teamB].forEach(t=>{
-        if(!statsDouble[t]) statsDouble[t]={win:0,lose:0,points:0};
-      });
+      [teamA, teamB].forEach(t=>{if(!statsDouble[t]) statsDouble[t]={win:0,lose:0,points:0};});
       if(m.winnerSide==='A'){
-        statsDouble[teamA].win++;  statsDouble[teamA].points += 2;
-        statsDouble[teamB].lose++; statsDouble[teamB].points -= 1;
+        statsDouble[teamA].win++; statsDouble[teamA].points+=2;
+        statsDouble[teamB].lose++; statsDouble[teamB].points-=1;
       }else if(m.winnerSide==='B'){
-        statsDouble[teamB].win++;  statsDouble[teamB].points += 2;
-        statsDouble[teamA].lose++; statsDouble[teamA].points -= 1;
+        statsDouble[teamB].win++; statsDouble[teamB].points+=2;
+        statsDouble[teamA].lose++; statsDouble[teamA].points-=1;
       }
     }
   });
 
-  // 🔹 단식 정렬 (승률순)
   const singleArr = Object.entries(statsSingle).map(([name,s])=>{
     const total = s.win+s.lose;
-    const rate = total ? (s.win/total*100):0;
-    // 부수 정보 추출
-    const match = name.match(/(.+)\((\d+)\)/);
-    const pname = match ? match[1] : name;
-    const level = match ? match[2] : '';
-    return { name:pname, level, total, win:s.win, lose:s.lose, rate };
-  }).sort((a,b)=>b.rate-a.rate||b.total-a.total);
+    const rate = total?(s.win/total*100):0;
+    return {name, total, win:s.win, lose:s.lose, rate};
+  }).sort((a,b)=>b.rate-a.rate||b.win-a.win);
 
-  // 🔹 복식 정렬 (승점 → 승수 → 경기수 → 승률)
   const doubleArr = Object.entries(statsDouble).map(([team,s])=>{
     const total=s.win+s.lose;
     const rate=total?(s.win/total*100):0;
-    return { team, total, win:s.win, lose:s.lose, rate, points:s.points };
-  }).sort((a,b)=>{
-    return (b.points - a.points)
-        || (b.win - a.win)
-        || (b.total - a.total)
-        || (b.rate - a.rate)
-        || a.team.localeCompare(b.team);
-  });
+    return {team,total,win:s.win,lose:s.lose,rate,points:s.points};
+  }).sort((a,b)=>b.points-a.points||b.rate-a.rate||b.win-a.win);
 
   renderSingles(singleArr,thisMonth);
   renderDoubles(doubleArr,thisMonth);
 });
 
 // === 단식 출력 ===
-function renderSingles(arr, month) {
-  const sec = document.getElementById("singleSection");
-  const totalMatches = Math.round(arr.reduce((s, p) => s + p.total, 0) / 2);
+function renderSingles(arr,month){
+  const sec=document.getElementById("singleSection");
+  const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
+  const daysInMonth = new Date().getDate();
+  const minGames = Math.ceil(daysInMonth / 3);
 
-  sec.innerHTML = `
+  const qualified = arr.filter(p=>p.total>=minGames);
+  const unqualified = arr.filter(p=>p.total<minGames);
+
+  sec.innerHTML=`
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
       🏓 단식 리그 순위 (${month})
     </h2>
@@ -190,27 +174,26 @@ function renderSingles(arr, month) {
         </tr>
       </thead>
       <tbody>
-        ${arr
-          .map(
-            (p, i) => `
-          <tr style="background:${i < 10 ? "#e0f2fe" : "#f9fafb"}">
-            <td>${i + 1}</td>
-            <td>${
-              (() => {
-                const name = p.name.trim();
-                const lvl = playerLevels[name] || "-";
-                return `${name}(${lvl})`;
-              })()
-            }</td>
+        ${qualified.map((p,i)=>`
+          <tr style="background:#e0f2fe">
+            <td>${i+1}</td>
+            <td>${p.name}(${playerLevels[p.name]||'-'})</td>
             <td>${p.total}</td>
             <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
             <td>${formatNum(p.rate)}%</td>
-          </tr>`
-          )
-          .join("")}
+          </tr>`).join('')}
+        ${unqualified.map(p=>`
+          <tr style="background:#f9fafb">
+            <td>–</td>
+            <td>${p.name}(${playerLevels[p.name]||'-'})</td>
+            <td>${p.total}</td>
+            <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
+            <td>${formatNum(p.rate)}%</td>
+          </tr>`).join('')}
       </tbody>
     </table>
     <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
+    <p class="ruleNote">⚖️ 순위 기준: <b>3일에 1경기 이상 (${minGames}경기↑)</b> / 정렬: 승률 → 승수</p>
   `;
 }
 
@@ -218,6 +201,12 @@ function renderSingles(arr, month) {
 function renderDoubles(arr,month){
   const sec=document.getElementById("doubleSection");
   const totalMatches=Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
+  const daysInMonth = new Date().getDate();
+  const minGames = Math.ceil(daysInMonth / 10);
+
+  // 전체 순위는 승점→승률→승수 순으로 유지
+  const ranked = arr.sort((a,b)=>b.points-a.points||b.rate-a.rate||b.win-a.win);
+
   sec.innerHTML=`
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:28px 0 14px;font-weight:800;">
       👥 복식 리그 순위 (${month}) — 승리 +2 / 패배 −1
@@ -229,25 +218,28 @@ function renderDoubles(arr,month){
         </tr>
       </thead>
       <tbody>
-  ${arr.map((t,i)=>`
-    <tr style="background:${i<10?'#e0f2fe':'#f9fafb'}">
-      <td>${i+1}</td>
-      <td>${
-        t.team.split(',').map(n=>{
-          const trimmed = n.trim();
-          const lvl = playerLevels[trimmed] || '-';
-          return `${trimmed}(${lvl})`;
-        }).join(', ')
-      }</td>
-      <td>${t.total}</td>
-      <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-      <td>${formatNum(t.rate)}%</td>
-      <td>${t.points}</td>
-    </tr>`).join('')}
-</tbody>
+        ${ranked.map((t,i)=>{
+          const bg = t.total>=minGames ? '#e0f2fe' : '#f9fafb';
+          return `
+            <tr style="background:${bg}">
+              <td>${i+1}</td>
+              <td>${
+                t.team.split(',').map(n=>{
+                  const trimmed=n.trim();
+                  const lvl=playerLevels[trimmed]||'-';
+                  return `${trimmed}(${lvl})`;
+                }).join(', ')
+              }</td>
+              <td>${t.total}</td>
+              <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
+              <td>${formatNum(t.rate)}%</td>
+              <td>${t.points}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
     </table>
     <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
-    <p class="ruleNote">⚖️ 순위 기준: <b>승점 → 승수 → 경기수 → 승률</b></p>
+    <p class="ruleNote">⚖️ 순위 기준: <b>10일에 1경기 이상 (${minGames}경기↑)</b> / 정렬: 승점 → 승률 → 승수</p>
   `;
 }
 </script>
