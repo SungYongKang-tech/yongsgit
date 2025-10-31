@@ -808,97 +808,77 @@ if (diff < bestDiff) {
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
-  window.currentDoublesMode = mode;
-
   if (need <= 0) return [];
 
-  // ✅ 정렬
-  if (mode === 0) {
-    A = [...A].sort((a,b)=>a.level - b.level);
-    B = [...B].sort((a,b)=>a.level - b.level);
-  } else {
-    A = [...A].sort((a,b)=>a.level - b.level);
-    B = [...B].sort((a,b)=>b.level - a.level);
+  // 레벨 정렬
+  A = [...A].sort((a,b)=>a.level - b.level);
+  B = [...B].sort((a,b)=>a.level - b.level);
+
+  // 전원 출전 필수 (4명이라면 첫 2조는 반드시 4명 모두 소모)
+  const mustPairs = [];
+  if (A.length >= 4 && B.length >= 4) {
+    mustPairs.push({
+      a1: A[0], a2: A[3],
+      b1: B[0], b2: B[3]
+    });
+    if (need > 1) {
+      mustPairs.push({
+        a1: A[1], a2: A[2],
+        b1: B[1], b2: B[2]
+      });
+    }
   }
 
-  // ✅ A팀 모든 조합 생성
+  // 아직 2경기가 안됐고 need가 1이면 첫 경기만 리턴
+  if (need === 1) return mustPairs.slice(0, 1);
+
+  // 2경기까지는 전원 출전 조합으로 고정
+  let result = [...mustPairs.slice(0, Math.min(2, need))];
+
+  // 3경기부터는 중복 허용 + 모드(실력/조합) 반영
+  const remain = need - result.length;
+  if (remain <= 0) return result;
+
+  // 나머지 후보 조합  (중복 허용)
   const pairsA = [];
   for (let i = 0; i < A.length; i++) {
-    for (let j = i + 1; j < A.length; j++) {
+    for (let j = i+1; j < A.length; j++) {
       pairsA.push({
-        p1: A[i],
-        p2: A[j],
+        p1: A[i], p2: A[j],
         sum: A[i].level + A[j].level
       });
     }
   }
 
-  // ✅ B팀 모든 조합 생성
   const pairsB = [];
   for (let i = 0; i < B.length; i++) {
-    for (let j = i + 1; j < B.length; j++) {
+    for (let j = i+1; j < B.length; j++) {
       pairsB.push({
-        p1: B[i],
-        p2: B[j],
+        p1: B[i], p2: B[j],
         sum: B[i].level + B[j].level
       });
     }
   }
 
-  // ✅ 조합모드: 강·약 조합 유도
-  if (mode === 1) {
+  // 모드별 정렬 기준
+  if (mode === 0) {
+    // 실력매칭 → 실력 차이가 적은 조합 우선
+    pairsA.sort((x, y) => x.sum - y.sum);
+    pairsB.sort((x, y) => x.sum - y.sum);
+  } else {
+    // 조합매칭 → 강약 섞기 → 합이 큰 것부터
     pairsA.sort((x, y) => y.sum - x.sum);
     pairsB.sort((x, y) => y.sum - x.sum);
   }
 
-  const result = [];
-  const usedA = new Set();
-  const usedB = new Set();
-
-  // ✅ 1단계: 가능한 조합 중 duplication 없이 선택
-  for (const a of pairsA) {
-    if (result.length >= need) break;
-
-    if (usedA.has(a.p1.name) || usedA.has(a.p2.name)) continue;
-
-    for (const b of pairsB) {
-      if (usedB.has(b.p1.name) || usedB.has(b.p2.name)) continue;
-
-      result.push({
-        a1: a.p1, a2: a.p2,
-        b1: b.p1, b2: b.p2
-      });
-
-      usedA.add(a.p1.name);
-      usedA.add(a.p2.name);
-      usedB.add(b.p1.name);
-      usedB.add(b.p2.name);
-
-      break;
-    }
-  }
-
-  // ✅ 2단계: 부족하면 조합매칭 규칙 유지하며 중복 허용해 채움
-  while (result.length < need) {
-    let best = null;
-    let bestScore = -Infinity;
-
-    for (const a of pairsA) {
-      for (const b of pairsB) {
-
-        const diff = Math.abs(a.sum - b.sum);
-        const score = (mode === 0) ? -diff : diff;   // 실력매칭/조합매칭 분기
-
-        if (score > bestScore) {
-          bestScore = score;
-          best = { a, b };
-        }
-      }
-    }
+  // 남은 경기 채우기 (중복 허용)
+  for (let k = 0; k < remain; k++) {
+    const a = pairsA[k % pairsA.length];
+    const b = pairsB[k % pairsB.length];
 
     result.push({
-      a1: best.a.p1, a2: best.a.p2,
-      b1: best.b.p1, b2: best.b.p2
+      a1: a.p1, a2: a.p2,
+      b1: b.p1, b2: b.p2
     });
   }
 
