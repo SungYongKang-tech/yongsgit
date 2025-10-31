@@ -809,100 +809,99 @@ if (diff < bestDiff) {
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
-  // 방어: 최소 2명 미만이면 복식 불가
-  if (!Array.isArray(A) || !Array.isArray(B) || A.length < 2 || B.length < 2 || need <= 0) return [];
+  if (A.length < 2 || B.length < 2 || need <= 0) return [];
 
-  // 레벨 오름차순 정렬
   const SA = [...A].sort((a,b)=>a.level - b.level);
   const SB = [...B].sort((a,b)=>a.level - b.level);
 
   const nA = SA.length, nB = SB.length;
-  const result = [];
 
-  // ========= 1) 전원출전(중복 금지): 복식*2 == 각 팀 인원 =========
+  /* ✅ 1) 전원출전 (중복 없음) */
   if (need * 2 === nA && need * 2 === nB) {
-    for (let i = 0; i < need; i++) {
+    const res = [];
+    for (let i=0; i<need; i++) {
       if (mode === 0) {
-        // 실력매칭: (0,1), (2,3) ...
-        result.push({ a1: SA[i*2], a2: SA[i*2+1], b1: SB[i*2], b2: SB[i*2+1] });
+        res.push({ a1: SA[i*2], a2: SA[i*2+1], b1: SB[i*2], b2: SB[i*2+1] });
       } else {
-        // 조합매칭: (0,n-1), (1,n-2) ...
-        result.push({ a1: SA[i], a2: SA[nA-1-i], b1: SB[i], b2: SB[nB-1-i] });
+        res.push({ a1: SA[i], a2: SA[nA-1-i], b1: SB[i], b2: SB[nB-1-i] });
       }
     }
-    return result;
+    return res;
   }
 
-  // ========= 2) 인원 부족 → 중복 허용 + 골고루 =========
-  // 팀별로 "기본 페어 인덱스"를 각각 생성 (팀 인원수 독립)
-  function buildBasePairs(n, mode) {
-    const pairs = [];
+  /* ✅ 2) 중복 허용 + 골고루 */
+  function computeBasePairs(arr, mode) {
+    const n = arr.length;
+    let pairs = [];
+
     if (mode === 0) {
-      // 실력매칭: (0,1),(2,3),(4,5)...
       for (let i=0; i+1<n; i+=2) pairs.push([i, i+1]);
     } else {
-      // 조합매칭: (0,n-1),(1,n-2),(2,n-3)...
-      for (let i=0; i<n/2; i++) {
-        const j = n-1-i;
-        if (i<j) pairs.push([i, j]);
+      for (let i=0; i<n; i++) {
+        for (let j=i+1; j<n; j++) {
+          const strongI = i < Math.floor(n/2);
+          const strongJ = j < Math.floor(n/2);
+          if (strongI !== strongJ) pairs.push([i,j]);
+        }
       }
     }
-    // 그래도 페어가 0개면 모든 조합으로 fallback
+
     if (pairs.length === 0) {
-      for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) pairs.push([i,j]);
+      for (let i=0; i<n; i++)
+        for (let j=i+1; j<n; j++)
+          pairs.push([i,j]);
     }
+
     return pairs;
   }
 
-  const basePairsA = buildBasePairs(nA, mode);
-  const basePairsB = buildBasePairs(nB, mode);
+  const baseA = computeBasePairs(SA, mode);
+  const baseB = computeBasePairs(SB, mode);
 
-  // 골고루를 위한 회전 오프셋(전역 저장해 두면 재호출 시 균등)
-  if (typeof window.__rotA === 'undefined') window.__rotA = 0;
-  if (typeof window.__rotB === 'undefined') window.__rotB = 0;
+  /* ✅ 출전 횟수 관리 */
+  const usedA = new Map(SA.map(p=>[p.name,0]));
+  const usedB = new Map(SB.map(p=>[p.name,0]));
 
-  const cntA = new Map(SA.map(p=>[p.name,0]));
-  const cntB = new Map(SB.map(p=>[p.name,0]));
+  if (!window.__rotA2) window.__rotA2 = 0;
+  if (!window.__rotB2) window.__rotB2 = 0;
+
+  const result = [];
 
   for (let k=0; k<need; k++) {
-    // 가장 적게 나온 사람을 우선시키기 위해, 페어들을 "최소 출전 합계" 기준으로 정렬
-    const sortedA = [...basePairsA].sort((pa, pb)=>{
-      const aMin = Math.min(cntA.get(SA[pa[0]].name), cntA.get(SA[pa[1]].name));
-      const bMin = Math.min(cntA.get(SA[pb[0]].name), cntA.get(SA[pb[1]].name));
-      return aMin - bMin;
-    });
-    const sortedB = [...basePairsB].sort((pa, pb)=>{
-      const aMin = Math.min(cntB.get(SB[pa[0]].name), cntB.get(SB[pa[1]].name));
-      const bMin = Math.min(cntB.get(SB[pb[0]].name), cntB.get(SB[pb[1]].name));
+
+    const sortedA = [...baseA].sort((a,b)=>{
+      const aMin = Math.min(usedA.get(SA[a[0]].name), usedA.get(SA[a[1]].name));
+      const bMin = Math.min(usedA.get(SA[b[0]].name), usedA.get(SA[b[1]].name));
       return aMin - bMin;
     });
 
-    const pickAIdx = (k + window.__rotA) % sortedA.length;
-    const pickBIdx = (k + window.__rotB) % sortedB.length;
+    const sortedB = [...baseB].sort((a,b)=>{
+      const aMin = Math.min(usedB.get(SB[a[0]].name), usedB.get(SB[a[1]].name));
+      const bMin = Math.min(usedB.get(SB[b[0]].name), usedB.get(SB[b[1]].name));
+      return aMin - bMin;
+    });
 
-    const [ai, aj] = sortedA[pickAIdx];
-    const [bi, bj] = sortedB[pickBIdx];
+    const pA = sortedA[(k + window.__rotA2) % sortedA.length];
+    const pB = sortedB[(k + window.__rotB2) % sortedB.length];
 
-    // 방어: 인덱스 유효성
-    if (ai==null || aj==null || bi==null || bj==null) break;
+    const [ai, aj] = pA;
+    const [bi, bj] = pB;
 
-    const a1 = SA[ai], a2 = SA[aj], b1 = SB[bi], b2 = SB[bj];
-    if (!a1 || !a2 || !b1 || !b2) break;
+    const a1 = SA[ai], a2 = SA[aj];
+    const b1 = SB[bi], b2 = SB[bj];
 
     result.push({ a1, a2, b1, b2 });
 
-    // 출전 카운트 증가(골고루)
-    cntA.set(a1.name, cntA.get(a1.name)+1);
-    cntA.set(a2.name, cntA.get(a2.name)+1);
-    cntB.set(b1.name, cntB.get(b1.name)+1);
-    cntB.set(b2.name, cntB.get(b2.name)+1);
+    usedA.set(a1.name, usedA.get(a1.name)+1);
+    usedA.set(a2.name, usedA.get(a2.name)+1);
+    usedB.set(b1.name, usedB.get(b1.name)+1);
+    usedB.set(b2.name, usedB.get(b2.name)+1);
   }
 
-  // 다음 호출 때 시작점을 달리해 골고루 회전
-  window.__rotA = (window.__rotA + 1) % Math.max(1, basePairsA.length);
-  window.__rotB = (window.__rotB + 1) % Math.max(1, basePairsB.length);
+  window.__rotA2++;
+  window.__rotB2++;
 
-  return result.slice(0, need);
+  return result;
 }
 
 
