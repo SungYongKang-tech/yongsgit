@@ -516,36 +516,38 @@ async function autoMatch() {
 function generateSinglesPairsByMode(A, B, need, mode) {
   const result = [];
 
-  // ✅ 1) 기본 단식: 선수 인덱스 순서대로 1:1 매칭 (중복 없음)
-  const baseMatches = Math.min(need, A.length);
+  // ✅ 안전 체크: 선수 수 부족 시 오류 방지
+  if (A.length === 0 || B.length === 0) return [];
+  if (need > A.length + 1 || need > B.length + 1) return [];
 
-  for (let i = 0; i < baseMatches; i++) {
-    result.push({
-      a: A[i],
-      b: B[i]
-    });
+  // ✅ 4단까지는 기본 배치 (각 1번씩)
+  const baseMatches = Math.min(need, Math.min(A.length, B.length));
+
+  for (let i = 0; i < baseMatches && i < A.length && i < B.length; i++) {
+    result.push({ a: A[i], b: B[i] });
   }
 
-  // ✅ 2) 단식 5단 → 추가 1명 필요
-  if (need > A.length) {
+  // ✅ 5단 이상이면 추가 출전자 배정
+  if (need > baseMatches) {
 
     let extraA, extraB;
 
     if (mode === 0) {
-      // ✅ 고수 우선: 가장 강한 선수 (레벨 최저)
+      // ✅ 고수 우선(레벨 낮은 사람)
       extraA = A[0];
       extraB = B[0];
     }
     else if (mode === 1) {
-      // ✅ 하수 우선: 가장 약한 선수 (레벨 최고)
+      // ✅ 하수 우선(레벨 높은 사람)
       extraA = A[A.length - 1];
       extraB = B[B.length - 1];
     }
     else {
-      // ✅ 조합 우선: 레벨 차이가 가장 작은 조합을 선택
-      const candidatesA = [A[1], A[2]];   // 중간 레벨 2명
-      const candidatesB = [B[1], B[2]];
+      // ✅ 조합 우선 → 존재하는 후보만 사용
+      const candidatesA = A.slice(1, 3);
+      const candidatesB = B.slice(1, 3);
 
+      let best = null;
       let minDiff = Infinity;
 
       candidatesA.forEach(a => {
@@ -553,11 +555,13 @@ function generateSinglesPairsByMode(A, B, need, mode) {
           const diff = Math.abs(a.level - b.level);
           if (diff < minDiff) {
             minDiff = diff;
-            extraA = a;
-            extraB = b;
+            best = { a, b };
           }
         });
       });
+
+      extraA = best ? best.a : A[0];  // fallback
+      extraB = best ? best.b : B[0];
     }
 
     result.push({ a: extraA, b: extraB });
