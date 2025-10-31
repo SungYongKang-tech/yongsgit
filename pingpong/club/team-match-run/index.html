@@ -805,28 +805,55 @@ if (diff < bestDiff) {
   return res;
 }
 
+// ✅ 전원출전(복식 경기수 × 2 == 인원 수) 완전 중복 방지 버전
+function perfectFullUsePairs(SA, SB, need, mode) {
+
+  // ✅ 안정 정렬 (level → name)
+  SA = [...SA].sort((a,b)=> 
+      a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
+  );
+  SB = [...SB].sort((a,b)=> 
+      a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
+  );
+
+  const n = SA.length;
+  const result = [];
+
+  if (mode === 0) {
+    // ✅ 실력매칭 : (0,1), (2,3) ...
+    for (let i = 0; i < need; i++) {
+      result.push({
+        a1: SA[i*2], a2: SA[i*2+1],
+        b1: SB[i*2], b2: SB[i*2+1]
+      });
+    }
+  } else {
+    // ✅ 조합매칭 : (0,n-1), (1,n-2) ...
+    for (let i = 0; i < need; i++) {
+      result.push({
+        a1: SA[i], a2: SA[n-1-i],
+        b1: SB[i], b2: SB[n-1-i]
+      });
+    }
+  }
+
+  return result;
+}
+
 /* =========================================================
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
-  if (A.length < 2 || B.length < 2 || need <= 0) return [];
 
   const SA = [...A].sort((a,b)=>a.level - b.level);
   const SB = [...B].sort((a,b)=>a.level - b.level);
 
   const nA = SA.length, nB = SB.length;
+  const result = [];
 
-  /* ✅ 1) 전원출전 (중복 없음) */
+  // ✅ 전원출전 → 중복 0% 보장
   if (need * 2 === nA && need * 2 === nB) {
-    const res = [];
-    for (let i=0; i<need; i++) {
-      if (mode === 0) {
-        res.push({ a1: SA[i*2], a2: SA[i*2+1], b1: SB[i*2], b2: SB[i*2+1] });
-      } else {
-        res.push({ a1: SA[i], a2: SA[nA-1-i], b1: SB[i], b2: SB[nB-1-i] });
-      }
-    }
-    return res;
+      return perfectFullUsePairs(SA, SB, need, mode);
   }
 
   /* ✅ 2) 중복 허용 + 골고루 */
