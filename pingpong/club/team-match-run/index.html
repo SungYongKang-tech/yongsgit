@@ -816,34 +816,36 @@ function generateDoublesPairsByMode(A, B, need, mode) {
   }
 
 
-// ✅ [전원출전 규칙] 팀원수가 2×복식이면 모두 반드시 출전
 if (A.length === need * 2 && B.length === need * 2) {
 
-   
-// ✅ 실력모드일 때만 정렬!
-if (mode === 0) {
-    A = [...A].sort((a,b)=>a.level - b.level);
-    B = [...B].sort((a,b)=>a.level - b.level);
-}
-// ✅ 조합모드(mode=1)일 때는 정렬을 건드리지 말아야 함
-//    (그래야 역정렬한 B가 유지되어 강·약 조합이 정상 생성됨)
+    // ✅ 실력매칭(고수우선)일 때만 기존 방식 유지
+    if (mode === 0) {
+        A = [...A].sort((a,b)=>a.level - b.level);
+        B = [...B].sort((a,b)=>a.level - b.level);
 
- const result = [];
-
-    for (let i = 0; i < need; i++) {
-        const a1 = A[i*2];
-        const a2 = A[i*2+1];
-        const b1 = B[i*2];
-        const b2 = B[i*2+1];
-
-        result.push({
-            a1, a2,
-            b1, b2
-        });
+        const result = [];
+        for (let i = 0; i < need; i++) {
+            result.push({
+                a1: A[i*2], a2: A[i*2+1],
+                b1: B[i*2], b2: B[i*2+1]
+            });
+        }
+        return result;
     }
 
-    return result;
+    // ✅ 조합매칭(mode=1)일 때는 강·약 조합을 섞는 greedy 방식 실행
+    const pairsA = allTeamPairsFiltered(A, mixedFilter);
+    const pairsB = allTeamPairsFiltered(B, mixedFilter);
+
+    return greedyMatchPairs(
+        pairsA, pairsB, need,
+        new Set(), new Set(),
+        new Set(), new Set(),
+        new Set(),
+        false
+    );
 }
+
 
 
   if (need <= 0) return [];
