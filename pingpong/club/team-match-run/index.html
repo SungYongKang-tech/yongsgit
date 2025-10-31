@@ -578,67 +578,68 @@ function generateSinglesPairsByMode(A, B, need, mode) {
 function generateSinglesPairsForDifferentTeamSize(A, B, need) {
   const result = [];
 
-  // ✅ 0) 아무도 없으면 종료
   if (A.length === 0 || B.length === 0) return result;
 
-  // ✅ 1) 레벨 낮은 순으로 정렬 (부수 높은 순)
+  // ✅ 레벨 낮은순 정렬(고수부터)
   A = [...A].sort((a, b) => a.level - b.level);
   B = [...B].sort((a, b) => a.level - b.level);
 
-  const sizeA = A.length;  // 예: 4
-  const sizeB = B.length;  // 예: 3
+  const sizeA = A.length;
+  const sizeB = B.length;
 
-  // ✅ 2) 공통 인원(고수끼리) 매칭
-  const common = Math.min(sizeA, sizeB);  // 예: 3
+  // ✅ 1) 공통 인원수(최소값)끼리 고수순 대진
+  const common = Math.min(sizeA, sizeB);
 
   for (let i = 0; i < common && result.length < need; i++) {
     result.push({ a: A[i], b: B[i] });
   }
 
-  // ✅ 3) A에 남은 선수가 없으면 종료
+  // ✅ A팀 남은 선수가 없으면 종료
   if (sizeA === sizeB || result.length >= need) {
     return result.slice(0, need);
   }
 
-  // ✅ 4) A 남은 선수 (예: A[3])
+  // ✅ 2) A팀 남은 선수
   const remainingA = A[sizeB];
 
-  // ✅ 5) B팀 전체가 추가 출전 후보
+  // ✅ 3) B 전체 후보
   const candidatesB = [...B];
 
-  // ✅ 6) 레벨 차이 계산 함수
-  const levelDiff = (bPlayer) => Math.abs(bPlayer.level - remainingA.level);
+  const levelDiff = (b) => Math.abs(b.level - remainingA.level);
 
-  // ✅ 기본 규칙: 레벨 차이 가장 작은 B 선택
-  let bestB = candidatesB[0];
-  let minDiff = levelDiff(bestB);
-
+  // ✅ 4) 최소 레벨 차이 찾기
+  let minDiff = Infinity;
   for (const b of candidatesB) {
     const diff = levelDiff(b);
-    if (diff < minDiff) {
-      minDiff = diff;
-      bestB = b;
-    }
+    if (diff < minDiff) minDiff = diff;
   }
 
-  // ✅ 7) 예외 규칙: 레벨차 ≤ 2(2부수 이하) → B팀 순환 출전
-  if (minDiff <= 2) {
-    // 회전 index (없으면 0으로 시작)
-    const rotationIndex = window.extraRotationIndex || 0;
+  // ✅ 5) "회전 후보군" 만들기
+  // 조건: |A_last - B[i]| ≤ minDiff + 2
+  const rotateCandidates = candidatesB.filter(
+    (b) => levelDiff(b) <= minDiff + 2
+  );
 
-    const bPlayer = candidatesB[rotationIndex % candidatesB.length];
+  // ✅ 예외: rotate 후보가 1명이라도 → rotate 가능
+  if (rotateCandidates.length > 1) {
+    const idx = window.extraRotationIndex || 0;
+    const bPlayer = rotateCandidates[idx % rotateCandidates.length];
 
     result.push({ a: remainingA, b: bPlayer });
 
-    // 다음 경기 위한 회전 index 업데이트
+    // 로테이션 저장
     window.extraRotationIndex =
-      (rotationIndex + 1) % candidatesB.length;
-  } else {
-    // ✅ 레벨 차이가 크면 가장 가까운 선수 고정
+      (idx + 1) % rotateCandidates.length;
+  }
+  else {
+    // ✅ 회전 불가 → 가장 가까운 선수 1명 고정
+    let bestB = candidatesB[0];
+    for (const b of candidatesB) {
+      if (levelDiff(b) < levelDiff(bestB)) bestB = b;
+    }
     result.push({ a: remainingA, b: bestB });
   }
 
-  // ✅ 8) 필요 단식 수만큼 반환
   return result.slice(0, need);
 }
 
