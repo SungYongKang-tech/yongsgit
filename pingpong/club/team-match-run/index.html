@@ -808,139 +808,109 @@ if (diff < bestDiff) {
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
-
   const result = [];
-  const nA = A.length, nB = B.length;
+  const nA = A.length;
+  const nB = B.length;
 
-  /* ----------------------------------------------------
-     ✅ 1) 전원출전 규칙: need*2 == 인원수 → 중복 없이 출전
-     ---------------------------------------------------- */
-  const fullA = (need * 2 === nA);
-  const fullB = (need * 2 === nB);
-
-  if (fullA && fullB) {
+  /* ✅ 1. 전원출전 (중복 금지) */
+  if (need * 2 === nA && need * 2 === nB) {
     A = [...A].sort((a,b)=>a.level - b.level);
     B = [...B].sort((a,b)=>a.level - b.level);
 
     for (let i = 0; i < need; i++) {
       result.push({
-        a1: A[i * 2],
-        a2: A[i * 2 + 1],
-        b1: B[i * 2],
-        b2: B[i * 2 + 1],
+        a1: A[i*2], a2: A[i*2 + 1],
+        b1: B[i*2], b2: B[i*2 + 1]
       });
     }
     return result;
   }
 
-  /* ----------------------------------------------------
-     ✅ 2) 인원 부족 → 중복 허용 + 골고루 출전
-     ---------------------------------------------------- */
-
-  // A/B 전체 페어 조합 만들기
+  /* ✅ 2. 전체 페어 pool 생성 */
   const pairsA = [];
+  const pairsB = [];
   for (let i = 0; i < nA; i++) {
     for (let j = i+1; j < nA; j++) {
       pairsA.push({
         p1: A[i], p2: A[j],
         sum: A[i].level + A[j].level,
-        strongA: (i === 0),  // 강자 판단 보조
-        weakA:  (j === nA-1)
       });
     }
   }
-
-  const pairsB = [];
   for (let i = 0; i < nB; i++) {
     for (let j = i+1; j < nB; j++) {
       pairsB.push({
         p1: B[i], p2: B[j],
         sum: B[i].level + B[j].level,
-        strongB: (i === 0),
-        weakB:  (j === nB-1)
       });
     }
   }
 
-  /* ✅ 선수별 중복 출전 횟수 카운트 */
-  const countA = new Map(A.map(p=>[p.name,0]));
-  const countB = new Map(B.map(p=>[p.name,0]));
+  /* ✅ 3. 중복 출전 횟수 map (골고루 배분용) */
+  const countA = new Map(A.map(p => [p.name, 0]));
+  const countB = new Map(B.map(p => [p.name, 0]));
 
-  /* ----------------------------------------------------
-     ✅ 3) 실력매칭 / 조합매칭 완전 분리 로직
-     ---------------------------------------------------- */
-
-  // 3-1) 실력매칭은 sum 차이가 최소가 되는 페어 선택
-  function pickBestSkillPair() {
+  /* ✅ 4. need 만큼 반복하여 페어 선택 */
+  for (let match = 0; match < need; match++) {
     let best = null;
-    let bestDiff = Infinity;
+    let bestScore = -Infinity;
 
     for (const a of pairsA) {
       for (const b of pairsB) {
-        const diff = Math.abs(a.sum - b.sum);
-        if (diff < bestDiff) {
-          bestDiff = diff;
+
+        let score = 0;
+
+        /* ✅ 실력매칭(차이가 작을수록 점수 높음) */
+        if (mode === 0) {
+          score = -Math.abs(a.sum - b.sum);
+        }
+
+        /* ✅ 조합매칭(강약 섞임 우선) */
+        else {
+          const aStrong = a.p1.level < a.p2.level ? a.p1 : a.p2;
+          const aWeak   = a.p1.level < a.p2.level ? a.p2 : a.p1;
+
+          const bStrong = b.p1.level < b.p2.level ? b.p1 : b.p2;
+          const bWeak   = b.p1.level < b.p2.level ? b.p2 : b.p1;
+
+          const mix = (
+            aStrong.level !== aWeak.level &&
+            bStrong.level !== bWeak.level
+          );
+
+          if (mix) score += 1000;
+          else score -= Math.abs(a.sum - b.sum);
+        }
+
+        /* ✅ 중복 최소화를 위한 가점/감점 */
+        score -= countA.get(a.p1.name) * 5;
+        score -= countA.get(a.p2.name) * 5;
+        score -= countB.get(b.p1.name) * 5;
+        score -= countB.get(b.p2.name) * 5;
+
+        if (score > bestScore) {
+          bestScore = score;
           best = { a, b };
         }
       }
     }
-    return best;
-  }
 
-  // 3-2) 조합매칭은 강-약 섞인 조합을 최우선
-  function pickBestMixPair() {
-    let best = null;
-
-    // 강-약 패턴 우선
-    for (const a of pairsA) {
-      for (const b of pairsB) {
-        const isMix =
-          (a.p1.level < a.p2.level && b.p1.level > b.p2.level) ||
-          (a.p1.level > a.p2.level && b.p1.level < b.p2.level);
-
-        if (isMix) return { a, b };
-      }
-    }
-
-    // 없으면 sum 큰 순 (강한 조합끼리)
-    pairsA.sort((x,y)=>y.sum - x.sum);
-    pairsB.sort((x,y)=>y.sum - x.sum);
-    best = { a:pairsA[0], b:pairsB[0] };
-    return best;
-  }
-
-  /* ----------------------------------------------------
-     ✅ n개 경기만큼 반복 생성
-     ---------------------------------------------------- */
-  for (let k = 0; k < need; k++) {
-
-    let picked;
-
-    // 실력 매칭
-    if (mode === 0) picked = pickBestSkillPair();
-
-    // 조합 매칭
-    else picked = pickBestMixPair();
-
-    const { a, b } = picked;
+    if (!best) break;
 
     result.push({
-      a1: a.p1, a2: a.p2,
-      b1: b.p1, b2: b.p2
+      a1: best.a.p1, a2: best.a.p2,
+      b1: best.b.p1, b2: best.b.p2
     });
 
-    // 중복 카운트 증가
-    countA.set(a.p1.name, countA.get(a.p1.name) + 1);
-    countA.set(a.p2.name, countA.get(a.p2.name) + 1);
-    countB.set(b.p1.name, countB.get(b.p1.name) + 1);
-    countB.set(b.p2.name, countB.get(b.p2.name) + 1);
+    // ✅ 중복 카운트 증가
+    countA.set(best.a.p1.name, countA.get(best.a.p1.name)+1);
+    countA.set(best.a.p2.name, countA.get(best.a.p2.name)+1);
+    countB.set(best.b.p1.name, countB.get(best.b.p1.name)+1);
+    countB.set(best.b.p2.name, countB.get(best.b.p2.name)+1);
 
-    // 이미 쓴 조합은 우선순위를 낮춰야 함
-    pairsA.splice(pairsA.indexOf(a), 1);
-    pairsB.splice(pairsB.indexOf(b), 1);
-
-    if (pairsA.length === 0 || pairsB.length === 0)
-      break;
+    // ✅ 이미 사용한 조합은 제거
+    pairsA.splice(pairsA.indexOf(best.a), 1);
+    pairsB.splice(pairsB.indexOf(best.b), 1);
   }
 
   return result;
