@@ -513,62 +513,59 @@ async function autoMatch() {
 }
 
 /* -------- 단식: 중복 없는 조합 우선, 부족 시 중복 허용 -------- */
+// ✅ 단식 생성 (최종 완성)
 function generateSinglesPairsByMode(A, B, need, mode) {
   const result = [];
+  const teamSize = Math.min(A.length, B.length);
 
-  // ✅ 안전 체크: 선수 수 부족 시 오류 방지
-  if (A.length === 0 || B.length === 0) return [];
-  if (need > A.length + 1 || need > B.length + 1) return [];
+  // ✅ 안전장치
+  if (teamSize === 0) return [];
 
-  // ✅ 4단까지는 기본 배치 (각 1번씩)
-  const baseMatches = Math.min(need, Math.min(A.length, B.length));
+  // ✅ 선수 정렬 (기본 오름차순)
+  A = [...A].sort((a,b)=>a.level - b.level);
+  B = [...B].sort((a,b)=>a.level - b.level);
 
-  for (let i = 0; i < baseMatches && i < A.length && i < B.length; i++) {
+  // ✅ 1) 단식수 == 팀원수 → 전원 1번씩 출전
+  if (need === teamSize) {
+    for (let i = 0; i < teamSize; i++) {
+      result.push({ a: A[i], b: B[i] });
+    }
+    return result;
+  }
+
+  // ✅ 2) 기본 단식(팀원수까지)은 기존 방식 유지 (모드 적용)
+  for (let i = 0; i < Math.min(teamSize, need); i++) {
     result.push({ a: A[i], b: B[i] });
   }
 
-  // ✅ 5단 이상이면 추가 출전자 배정
-  if (need > baseMatches) {
+  // ✅ 3) 추가 단식은 무조건 회전 배정 (모드와 무관)
+  const extraCount = need - teamSize;
+  if (extraCount <= 0) return result;
 
-    let extraA, extraB;
+  // ✅ 후보는 전체 선수
+  const candidatesA = [...A];  // [A0, A1, A2, A3]
+  const candidatesB = [...B];
 
-    if (mode === 0) {
-      // ✅ 고수 우선(레벨 낮은 사람)
-      extraA = A[0];
-      extraB = B[0];
-    }
-    else if (mode === 1) {
-      // ✅ 하수 우선(레벨 높은 사람)
-      extraA = A[A.length - 1];
-      extraB = B[B.length - 1];
-    }
-    else {
-      // ✅ 조합 우선 → 존재하는 후보만 사용
-      const candidatesA = A.slice(1, 3);
-      const candidatesB = B.slice(1, 3);
+  // ✅ Firebase에서 로테이션 위치 가져오기
+  // 저장 위치 예: /rotation/singles/teamA
+  // (없으면 0에서 시작)
+  const rotationA = window.singlesRotationA || 0;
+  const rotationB = window.singlesRotationB || 0;
 
-      let best = null;
-      let minDiff = Infinity;
-
-      candidatesA.forEach(a => {
-        candidatesB.forEach(b => {
-          const diff = Math.abs(a.level - b.level);
-          if (diff < minDiff) {
-            minDiff = diff;
-            best = { a, b };
-          }
-        });
-      });
-
-      extraA = best ? best.a : A[0];  // fallback
-      extraB = best ? best.b : B[0];
-    }
-
-    result.push({ a: extraA, b: extraB });
+  for (let i = 0; i < extraCount; i++) {
+    result.push({
+      a: candidatesA[(rotationA + i) % candidatesA.length],
+      b: candidatesB[(rotationB + i) % candidatesB.length]
+    });
   }
+
+  // ✅ 다음 경기 때 회전 시작 위치 계속 이어가기
+  window.singlesRotationA = (rotationA + extraCount) % candidatesA.length;
+  window.singlesRotationB = (rotationB + extraCount) % candidatesB.length;
 
   return result.slice(0, need);
 }
+
 
 
 
