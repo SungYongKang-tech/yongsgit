@@ -128,7 +128,9 @@ onValue(matchRef, async (snap)=>{
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const prevMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2,'0')}`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1);
+  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
   const oldMonth = `${now.getFullYear()}-${String(now.getMonth()-1).padStart(2,'0')}`;
 
   const stats = {};
@@ -165,10 +167,11 @@ onValue(matchRef, async (snap)=>{
   const prevSnap = await get(prevReportRef);
   if(prevSnap.exists()){
     const data = prevSnap.val();
-    data.forEach(p=>{
-      prevArr.push(p);
-      prevMap[p.name]=p.rate;
-    });
+    Object.values(data).forEach(p => {
+  prevArr.push(p);
+  prevMap[p.name] = p.rate;
+});
+
   }
 
   const curAug = curArr.map(p=>{
@@ -402,7 +405,10 @@ async function autoClosePreviousMonth() {
   const day = now.getDate();
   if (day !== 1) return; // 🔹 1일에만 실행
 
-  const prevMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`;
+  // ✅ 전달 월 정확히 계산
+  const prevDate2 = new Date(now.getFullYear(), now.getMonth() - 1);
+  const prevMonth = `${prevDate2.getFullYear()}-${String(prevDate2.getMonth() + 1).padStart(2, '0')}`;
+
   const reportRef = ref(db, `monthlyReports/${prevMonth}/players`);
 
   // 이미 저장된 리포트가 있으면 중복 생성 방지
@@ -449,6 +455,7 @@ async function autoClosePreviousMonth() {
   await set(reportRef, reportArr);
   console.log(`✅ ${prevMonth} 월 리포트 자동 생성 완료`);
 }
+
 
 // 페이지 로드시 자동 실행
 autoClosePreviousMonth();
