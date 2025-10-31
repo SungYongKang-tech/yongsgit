@@ -578,40 +578,67 @@ function generateSinglesPairsByMode(A, B, need, mode) {
 function generateSinglesPairsForDifferentTeamSize(A, B, need) {
   const result = [];
 
-  // ✅ 레벨 낮은 순으로 정렬 (숫자 낮은 = 고수)
-  A = [...A].sort((a,b)=>a.level - b.level);
-  B = [...B].sort((a,b)=>a.level - b.level);
+  // ✅ 0) 아무도 없으면 종료
+  if (A.length === 0 || B.length === 0) return result;
 
-  const sizeA = A.length;  // ex) 4
-  const sizeB = B.length;  // ex) 3
+  // ✅ 1) 레벨 낮은 순으로 정렬 (부수 높은 순)
+  A = [...A].sort((a, b) => a.level - b.level);
+  B = [...B].sort((a, b) => a.level - b.level);
 
-  // ✅ 기본 단식 매칭 = 공통 인원 수만큼
-  const common = Math.min(sizeA, sizeB);  // ex) 3
+  const sizeA = A.length;  // 예: 4
+  const sizeB = B.length;  // 예: 3
 
-  for (let i = 0; i < common; i++) {
-    result.push({ a: A[i], b: B[i] });   // A3명 vs B3명
+  // ✅ 2) 공통 인원(고수끼리) 매칭
+  const common = Math.min(sizeA, sizeB);  // 예: 3
+
+  for (let i = 0; i < common && result.length < need; i++) {
+    result.push({ a: A[i], b: B[i] });
   }
 
-  // ✅ A에 남은 선수가 있다면
-  if (sizeA > sizeB) {
-    const remainingA = A[sizeB];  // ex) A[3]
+  // ✅ 3) A에 남은 선수가 없으면 종료
+  if (sizeA === sizeB || result.length >= need) {
+    return result.slice(0, need);
+  }
 
-    // ✅ B의 후보 중 A 남은 선수와 레벨 차이 가장 적은 사람 선택
-    let bestB = null;
-    let minDiff = Infinity;
+  // ✅ 4) A 남은 선수 (예: A[3])
+  const remainingA = A[sizeB];
 
-    for (const candidateB of B) {
-      const diff = Math.abs(candidateB.level - remainingA.level);
-      if (diff < minDiff) {
-        minDiff = diff;
-        bestB = candidateB;
-      }
+  // ✅ 5) B팀 전체가 추가 출전 후보
+  const candidatesB = [...B];
+
+  // ✅ 6) 레벨 차이 계산 함수
+  const levelDiff = (bPlayer) => Math.abs(bPlayer.level - remainingA.level);
+
+  // ✅ 기본 규칙: 레벨 차이 가장 작은 B 선택
+  let bestB = candidatesB[0];
+  let minDiff = levelDiff(bestB);
+
+  for (const b of candidatesB) {
+    const diff = levelDiff(b);
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestB = b;
     }
+  }
 
+  // ✅ 7) 예외 규칙: 레벨차 ≤ 2(2부수 이하) → B팀 순환 출전
+  if (minDiff <= 2) {
+    // 회전 index (없으면 0으로 시작)
+    const rotationIndex = window.extraRotationIndex || 0;
+
+    const bPlayer = candidatesB[rotationIndex % candidatesB.length];
+
+    result.push({ a: remainingA, b: bPlayer });
+
+    // 다음 경기 위한 회전 index 업데이트
+    window.extraRotationIndex =
+      (rotationIndex + 1) % candidatesB.length;
+  } else {
+    // ✅ 레벨 차이가 크면 가장 가까운 선수 고정
     result.push({ a: remainingA, b: bestB });
   }
 
-  // ✅ need가 4를 초과할 경우를 대비 (원하면 여기에 회전 추가 가능)
+  // ✅ 8) 필요 단식 수만큼 반환
   return result.slice(0, need);
 }
 
