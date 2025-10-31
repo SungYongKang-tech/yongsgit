@@ -486,7 +486,16 @@ async function autoMatch() {
       const A = [...(teamData[teamA].players||[])].sort((a,b)=>a.level-b.level);
       const B = [...(teamData[teamB].players||[])].sort((a,b)=>a.level-b.level);
 
-      const singles = generateSinglesPairsByMode(A, B, singlesCnt, autoMode);
+
+   let singles;
+     if (A.length !== B.length) {
+        // ✅ 팀원수가 다르면 level 차이 최소 + 전원출전 규칙 적용
+      singles = generateSinglesPairsForDifferentTeamSize(A, B, singlesCnt);
+      } else {
+        // ✅ 팀원수가 같으면 기존 방식
+        singles = generateSinglesPairsByMode(A, B, singlesCnt, autoMode);
+      }
+
       const doubles = generateDoublesPairsByMode(A, B, doublesCnt, autoMode);
 
       const matchList = [];
@@ -566,6 +575,45 @@ function generateSinglesPairsByMode(A, B, need, mode) {
   return result.slice(0, need);
 }
 
+function generateSinglesPairsForDifferentTeamSize(A, B, need) {
+  const result = [];
+
+  // ✅ 레벨 낮은 순으로 정렬 (숫자 낮은 = 고수)
+  A = [...A].sort((a,b)=>a.level - b.level);
+  B = [...B].sort((a,b)=>a.level - b.level);
+
+  const sizeA = A.length;  // ex) 4
+  const sizeB = B.length;  // ex) 3
+
+  // ✅ 기본 단식 매칭 = 공통 인원 수만큼
+  const common = Math.min(sizeA, sizeB);  // ex) 3
+
+  for (let i = 0; i < common; i++) {
+    result.push({ a: A[i], b: B[i] });   // A3명 vs B3명
+  }
+
+  // ✅ A에 남은 선수가 있다면
+  if (sizeA > sizeB) {
+    const remainingA = A[sizeB];  // ex) A[3]
+
+    // ✅ B의 후보 중 A 남은 선수와 레벨 차이 가장 적은 사람 선택
+    let bestB = null;
+    let minDiff = Infinity;
+
+    for (const candidateB of B) {
+      const diff = Math.abs(candidateB.level - remainingA.level);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestB = candidateB;
+      }
+    }
+
+    result.push({ a: remainingA, b: bestB });
+  }
+
+  // ✅ need가 4를 초과할 경우를 대비 (원하면 여기에 회전 추가 가능)
+  return result.slice(0, need);
+}
 
 
 
