@@ -808,81 +808,142 @@ if (diff < bestDiff) {
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
-  if (need <= 0) return [];
 
-  // 레벨 정렬
-  A = [...A].sort((a,b)=>a.level - b.level);
-  B = [...B].sort((a,b)=>a.level - b.level);
+  const result = [];
+  const nA = A.length, nB = B.length;
 
-  // 전원 출전 필수 (4명이라면 첫 2조는 반드시 4명 모두 소모)
-  const mustPairs = [];
-  if (A.length >= 4 && B.length >= 4) {
-    mustPairs.push({
-      a1: A[0], a2: A[3],
-      b1: B[0], b2: B[3]
-    });
-    if (need > 1) {
-      mustPairs.push({
-        a1: A[1], a2: A[2],
-        b1: B[1], b2: B[2]
+  /* ----------------------------------------------------
+     ✅ 1) 전원출전 규칙: need*2 == 인원수 → 중복 없이 출전
+     ---------------------------------------------------- */
+  const fullA = (need * 2 === nA);
+  const fullB = (need * 2 === nB);
+
+  if (fullA && fullB) {
+    A = [...A].sort((a,b)=>a.level - b.level);
+    B = [...B].sort((a,b)=>a.level - b.level);
+
+    for (let i = 0; i < need; i++) {
+      result.push({
+        a1: A[i * 2],
+        a2: A[i * 2 + 1],
+        b1: B[i * 2],
+        b2: B[i * 2 + 1],
       });
     }
+    return result;
   }
 
-  // 아직 2경기가 안됐고 need가 1이면 첫 경기만 리턴
-  if (need === 1) return mustPairs.slice(0, 1);
+  /* ----------------------------------------------------
+     ✅ 2) 인원 부족 → 중복 허용 + 골고루 출전
+     ---------------------------------------------------- */
 
-  // 2경기까지는 전원 출전 조합으로 고정
-  let result = [...mustPairs.slice(0, Math.min(2, need))];
-
-  // 3경기부터는 중복 허용 + 모드(실력/조합) 반영
-  const remain = need - result.length;
-  if (remain <= 0) return result;
-
-  // 나머지 후보 조합  (중복 허용)
+  // A/B 전체 페어 조합 만들기
   const pairsA = [];
-  for (let i = 0; i < A.length; i++) {
-    for (let j = i+1; j < A.length; j++) {
+  for (let i = 0; i < nA; i++) {
+    for (let j = i+1; j < nA; j++) {
       pairsA.push({
         p1: A[i], p2: A[j],
-        sum: A[i].level + A[j].level
+        sum: A[i].level + A[j].level,
+        strongA: (i === 0),  // 강자 판단 보조
+        weakA:  (j === nA-1)
       });
     }
   }
 
   const pairsB = [];
-  for (let i = 0; i < B.length; i++) {
-    for (let j = i+1; j < B.length; j++) {
+  for (let i = 0; i < nB; i++) {
+    for (let j = i+1; j < nB; j++) {
       pairsB.push({
         p1: B[i], p2: B[j],
-        sum: B[i].level + B[j].level
+        sum: B[i].level + B[j].level,
+        strongB: (i === 0),
+        weakB:  (j === nB-1)
       });
     }
   }
 
-  // 모드별 정렬 기준
-  if (mode === 0) {
-    // 실력매칭 → 실력 차이가 적은 조합 우선
-    pairsA.sort((x, y) => x.sum - y.sum);
-    pairsB.sort((x, y) => x.sum - y.sum);
-  } else {
-    // 조합매칭 → 강약 섞기 → 합이 큰 것부터
-    pairsA.sort((x, y) => y.sum - x.sum);
-    pairsB.sort((x, y) => y.sum - x.sum);
+  /* ✅ 선수별 중복 출전 횟수 카운트 */
+  const countA = new Map(A.map(p=>[p.name,0]));
+  const countB = new Map(B.map(p=>[p.name,0]));
+
+  /* ----------------------------------------------------
+     ✅ 3) 실력매칭 / 조합매칭 완전 분리 로직
+     ---------------------------------------------------- */
+
+  // 3-1) 실력매칭은 sum 차이가 최소가 되는 페어 선택
+  function pickBestSkillPair() {
+    let best = null;
+    let bestDiff = Infinity;
+
+    for (const a of pairsA) {
+      for (const b of pairsB) {
+        const diff = Math.abs(a.sum - b.sum);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = { a, b };
+        }
+      }
+    }
+    return best;
   }
 
-  // 남은 경기 채우기 (중복 허용)
-  for (let k = 0; k < remain; k++) {
-    const a = pairsA[k % pairsA.length];
-    const b = pairsB[k % pairsB.length];
+  // 3-2) 조합매칭은 강-약 섞인 조합을 최우선
+  function pickBestMixPair() {
+    let best = null;
+
+    // 강-약 패턴 우선
+    for (const a of pairsA) {
+      for (const b of pairsB) {
+        const isMix =
+          (a.p1.level < a.p2.level && b.p1.level > b.p2.level) ||
+          (a.p1.level > a.p2.level && b.p1.level < b.p2.level);
+
+        if (isMix) return { a, b };
+      }
+    }
+
+    // 없으면 sum 큰 순 (강한 조합끼리)
+    pairsA.sort((x,y)=>y.sum - x.sum);
+    pairsB.sort((x,y)=>y.sum - x.sum);
+    best = { a:pairsA[0], b:pairsB[0] };
+    return best;
+  }
+
+  /* ----------------------------------------------------
+     ✅ n개 경기만큼 반복 생성
+     ---------------------------------------------------- */
+  for (let k = 0; k < need; k++) {
+
+    let picked;
+
+    // 실력 매칭
+    if (mode === 0) picked = pickBestSkillPair();
+
+    // 조합 매칭
+    else picked = pickBestMixPair();
+
+    const { a, b } = picked;
 
     result.push({
       a1: a.p1, a2: a.p2,
       b1: b.p1, b2: b.p2
     });
+
+    // 중복 카운트 증가
+    countA.set(a.p1.name, countA.get(a.p1.name) + 1);
+    countA.set(a.p2.name, countA.get(a.p2.name) + 1);
+    countB.set(b.p1.name, countB.get(b.p1.name) + 1);
+    countB.set(b.p2.name, countB.get(b.p2.name) + 1);
+
+    // 이미 쓴 조합은 우선순위를 낮춰야 함
+    pairsA.splice(pairsA.indexOf(a), 1);
+    pairsB.splice(pairsB.indexOf(b), 1);
+
+    if (pairsA.length === 0 || pairsB.length === 0)
+      break;
   }
 
-  return result.slice(0, need);
+  return result;
 }
 
 
