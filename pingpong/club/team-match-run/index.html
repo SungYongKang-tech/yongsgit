@@ -812,7 +812,9 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   if (need <= 0) return [];
 
-  // 정렬
+  // ✅ 정렬
+  // 실력매칭: A,B 오름차순
+  // 조합매칭: A 오름차순, B 내림차순
   if (mode === 0) {
     A = [...A].sort((a,b)=>a.level - b.level);
     B = [...B].sort((a,b)=>a.level - b.level);
@@ -821,67 +823,78 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     B = [...B].sort((a,b)=>b.level - a.level);
   }
 
+  // ✅ A팀 모든 조합 생성
   const pairsA = [];
-  const pairsB = [];
-
-  // ✅ 팀 A 모든 조합 생성
   for (let i = 0; i < A.length; i++) {
     for (let j = i+1; j < A.length; j++) {
-      pairsA.push([A[i], A[j]]);
+      pairsA.push({
+        p1: A[i], p2: A[j],
+        sum: A[i].level + A[j].level
+      });
     }
   }
 
-  // ✅ 팀 B 모든 조합 생성
+  // ✅ B팀 모든 조합 생성
+  const pairsB = [];
   for (let i = 0; i < B.length; i++) {
     for (let j = i+1; j < B.length; j++) {
-      pairsB.push([B[i], B[j]]);
+      pairsB.push({
+        p1: B[i], p2: B[j],
+        sum: B[i].level + B[j].level
+      });
     }
   }
 
-  // ✅ 조합모드라면 강·약 조합 유도
+  // ✅ 조합모드면 강·약 조합 강조
   if (mode === 1) {
-    pairsA.sort((x,y)=> (y[0].level+y[1].level) - (x[0].level+x[1].level));
-    pairsB.sort((x,y)=> (y[0].level+y[1].level) - (x[0].level+x[1].level));
+    pairsA.sort((x,y)=>y.sum - x.sum);
+    pairsB.sort((x,y)=>y.sum - x.sum);
   }
 
   const result = [];
   const usedA = new Set();
   const usedB = new Set();
 
-  // ✅ (1) 먼저 가능한 조합을 모두 사용
-  for (let a of pairsA) {
-
+  // ✅ 1단계: 가능한 선에서 중복 없이 먼저 매칭
+  for (const a of pairsA) {
     if (result.length >= need) break;
-    if (usedA.has(a[0].name) || usedA.has(a[1].name)) continue;
 
-    for (let b of pairsB) {
+    if (usedA.has(a.p1.name) || usedA.has(a.p2.name)) continue;
 
-      if (usedB.has(b[0].name) || usedB.has(b[1].name)) continue;
+    let found = false;
+    for (const b of pairsB) {
 
-      result.push({ a1:a[0], a2:a[1], b1:b[0], b2:b[1] });
+      if (usedB.has(b.p1.name) || usedB.has(b.p2.name)) continue;
 
-      usedA.add(a[0].name); usedA.add(a[1].name);
-      usedB.add(b[0].name); usedB.add(b[1].name);
+      result.push({
+        a1: a.p1, a2: a.p2,
+        b1: b.p1, b2: b.p2
+      });
 
+      usedA.add(a.p1.name);
+      usedA.add(a.p2.name);
+      usedB.add(b.p1.name);
+      usedB.add(b.p2.name);
+
+      found = true;
       break;
     }
   }
 
-  // ✅ (2) 그래도 부족하면 중복 허용해서 강제로 경기 채움
+  // ✅ 2단계: 아직 부족하면 → 강제 중복 허용
   while (result.length < need) {
 
-    const idxA = result.length % pairsA.length;
-    const idxB = result.length % pairsB.length;
+    const a = pairsA[result.length % pairsA.length];
+    const b = pairsB[result.length % pairsB.length];
 
-    const a = pairsA[idxA];
-    const b = pairsB[idxB];
-
-    result.push({ a1:a[0], a2:a[1], b1:b[0], b2:b[1] });
+    result.push({
+      a1: a.p1, a2: a.p2,
+      b1: b.p1, b2: b.p2
+    });
   }
 
   return result.slice(0, need);
 }
-
 
 
 
