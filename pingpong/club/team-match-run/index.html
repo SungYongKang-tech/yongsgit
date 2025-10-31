@@ -808,69 +808,100 @@ if (diff < bestDiff) {
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
+  // 방어: 최소 2명 미만이면 복식 불가
+  if (!Array.isArray(A) || !Array.isArray(B) || A.length < 2 || B.length < 2 || need <= 0) return [];
 
+  // 레벨 오름차순 정렬
+  const SA = [...A].sort((a,b)=>a.level - b.level);
+  const SB = [...B].sort((a,b)=>a.level - b.level);
+
+  const nA = SA.length, nB = SB.length;
   const result = [];
-  const n = A.length;
 
-  /* ✅ 전원출전 (need*2 == 인원수) */
-  if (need * 2 === n) {
-    // 실력 정렬
-    A = [...A].sort((a,b)=>a.level - b.level);
-    B = [...B].sort((a,b)=>a.level - b.level);
-
+  // ========= 1) 전원출전(중복 금지): 복식*2 == 각 팀 인원 =========
+  if (need * 2 === nA && need * 2 === nB) {
     for (let i = 0; i < need; i++) {
       if (mode === 0) {
-        // ✅ 실력매칭: (0,1), (2,3)
-        result.push({
-          a1: A[i*2], a2: A[i*2 + 1],
-          b1: B[i*2], b2: B[i*2 + 1]
-        });
+        // 실력매칭: (0,1), (2,3) ...
+        result.push({ a1: SA[i*2], a2: SA[i*2+1], b1: SB[i*2], b2: SB[i*2+1] });
       } else {
-        // ✅ 조합매칭: (0,3), (1,2)
-        result.push({
-          a1: A[i],       a2: A[n - 1 - i],
-          b1: B[i],       b2: B[n - 1 - i]
-        });
+        // 조합매칭: (0,n-1), (1,n-2) ...
+        result.push({ a1: SA[i], a2: SA[nA-1-i], b1: SB[i], b2: SB[nB-1-i] });
       }
     }
     return result;
   }
 
+  // ========= 2) 인원 부족 → 중복 허용 + 골고루 =========
+  // 팀별로 "기본 페어 인덱스"를 각각 생성 (팀 인원수 독립)
+  function buildBasePairs(n, mode) {
+    const pairs = [];
+    if (mode === 0) {
+      // 실력매칭: (0,1),(2,3),(4,5)...
+      for (let i=0; i+1<n; i+=2) pairs.push([i, i+1]);
+    } else {
+      // 조합매칭: (0,n-1),(1,n-2),(2,n-3)...
+      for (let i=0; i<n/2; i++) {
+        const j = n-1-i;
+        if (i<j) pairs.push([i, j]);
+      }
+    }
+    // 그래도 페어가 0개면 모든 조합으로 fallback
+    if (pairs.length === 0) {
+      for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) pairs.push([i,j]);
+    }
+    return pairs;
+  }
 
-  /* ✅ 인원 부족 → 중복 허용 + 골고루 */
-  /* ✔ 여기서도 실력/조합 매칭 기준을 우선 적용 */
+  const basePairsA = buildBasePairs(nA, mode);
+  const basePairsB = buildBasePairs(nB, mode);
 
-  // 먼저 기준 페어(0,1) / (2,3) 또는 (0,3) / (1,2)를 생성
-  A = [...A].sort((a,b)=>a.level - b.level);
-  B = [...B].sort((a,b)=>a.level - b.level);
+  // 골고루를 위한 회전 오프셋(전역 저장해 두면 재호출 시 균등)
+  if (typeof window.__rotA === 'undefined') window.__rotA = 0;
+  if (typeof window.__rotB === 'undefined') window.__rotB = 0;
 
-  const basePairsA = (mode === 0)
-    ? [ [0,1], [2,3], [4,5] ] // 실력매칭
-    : [ [0,n-1], [1,n-2], [2,n-3] ]; // 조합매칭
+  const cntA = new Map(SA.map(p=>[p.name,0]));
+  const cntB = new Map(SB.map(p=>[p.name,0]));
 
-  const basePairsB = basePairsA.map(v => [...v]); // 동일 패턴
+  for (let k=0; k<need; k++) {
+    // 가장 적게 나온 사람을 우선시키기 위해, 페어들을 "최소 출전 합계" 기준으로 정렬
+    const sortedA = [...basePairsA].sort((pa, pb)=>{
+      const aMin = Math.min(cntA.get(SA[pa[0]].name), cntA.get(SA[pa[1]].name));
+      const bMin = Math.min(cntA.get(SA[pb[0]].name), cntA.get(SA[pb[1]].name));
+      return aMin - bMin;
+    });
+    const sortedB = [...basePairsB].sort((pa, pb)=>{
+      const aMin = Math.min(cntB.get(SB[pa[0]].name), cntB.get(SB[pa[1]].name));
+      const bMin = Math.min(cntB.get(SB[pb[0]].name), cntB.get(SB[pb[1]].name));
+      return aMin - bMin;
+    });
 
-  // 출전 카운트 (중복 골고루)
-  const countA = new Map(A.map(p=>[p.name,0]));
-  const countB = new Map(B.map(p=>[p.name,0]));
+    const pickAIdx = (k + window.__rotA) % sortedA.length;
+    const pickBIdx = (k + window.__rotB) % sortedB.length;
 
-  for (let i=0; i<need; i++) {
-    const pa = basePairsA[i % basePairsA.length];
-    const pb = basePairsB[i % basePairsB.length];
+    const [ai, aj] = sortedA[pickAIdx];
+    const [bi, bj] = sortedB[pickBIdx];
 
-    const a1 = A[pa[0]], a2 = A[pa[1]];
-    const b1 = B[pb[0]], b2 = B[pb[1]];
+    // 방어: 인덱스 유효성
+    if (ai==null || aj==null || bi==null || bj==null) break;
+
+    const a1 = SA[ai], a2 = SA[aj], b1 = SB[bi], b2 = SB[bj];
+    if (!a1 || !a2 || !b1 || !b2) break;
 
     result.push({ a1, a2, b1, b2 });
 
-    // 중복 횟수 증가
-    countA.set(a1.name, countA.get(a1.name)+1);
-    countA.set(a2.name, countA.get(a2.name)+1);
-    countB.set(b1.name, countB.get(b1.name)+1);
-    countB.set(b2.name, countB.get(b2.name)+1);
+    // 출전 카운트 증가(골고루)
+    cntA.set(a1.name, cntA.get(a1.name)+1);
+    cntA.set(a2.name, cntA.get(a2.name)+1);
+    cntB.set(b1.name, cntB.get(b1.name)+1);
+    cntB.set(b2.name, cntB.get(b2.name)+1);
   }
 
-  return result;
+  // 다음 호출 때 시작점을 달리해 골고루 회전
+  window.__rotA = (window.__rotA + 1) % Math.max(1, basePairsA.length);
+  window.__rotB = (window.__rotB + 1) % Math.max(1, basePairsB.length);
+
+  return result.slice(0, need);
 }
 
 
