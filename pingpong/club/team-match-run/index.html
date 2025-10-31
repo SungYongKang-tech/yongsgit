@@ -524,123 +524,137 @@ async function autoMatch() {
 /* -------- 단식: 중복 없는 조합 우선, 부족 시 중복 허용 -------- */
 // ✅ 단식 생성 (최종 완성)
 function generateSinglesPairsByMode(A, B, need, mode) {
-  const result = [];
-  const teamSize = Math.min(A.length, B.length);
 
-  // ✅ 안전장치
-  if (teamSize === 0) return [];
-
-  // ✅ 선수 정렬 (기본 오름차순)
-  A = [...A].sort((a,b)=>a.level - b.level);
-  B = [...B].sort((a,b)=>a.level - b.level);
-
-  // ✅ 1) 단식수 == 팀원수 → 전원 1번씩 출전
-  if (need === teamSize) {
-    for (let i = 0; i < teamSize; i++) {
-      result.push({ a: A[i], b: B[i] });
+    // ✅ 인원수가 다른 경우 성용님 맞춤 로직 사용!
+    if (A.length !== B.length) {
+        return generateSinglesPairsForDifferentTeamSize(A, B, need);
     }
-    return result;
-  }
 
-  // ✅ 2) 기본 단식(팀원수까지)은 기존 방식 유지 (모드 적용)
-  for (let i = 0; i < Math.min(teamSize, need); i++) {
-    result.push({ a: A[i], b: B[i] });
-  }
+    // ✅ 인원이 같을 때는 기존 방식 적용
+    const result = [];
 
-  // ✅ 3) 추가 단식은 무조건 회전 배정 (모드와 무관)
-  const extraCount = need - teamSize;
-  if (extraCount <= 0) return result;
+    A = [...A].sort((a,b)=>a.level - b.level);
+    B = [...B].sort((a,b)=>a.level - b.level);
 
-  // ✅ 후보는 전체 선수
-  const candidatesA = [...A];  // [A0, A1, A2, A3]
-  const candidatesB = [...B];
+    // 공통 인원수까지 기본 매칭
+    for (let i = 0; i < Math.min(A.length, need); i++) {
+        result.push({ a: A[i], b: B[i] });
+    }
 
-  // ✅ Firebase에서 로테이션 위치 가져오기
-  // 저장 위치 예: /rotation/singles/teamA
-  // (없으면 0에서 시작)
-  const rotationA = window.singlesRotationA || 0;
-  const rotationB = window.singlesRotationB || 0;
+    // 추가경기 필요 시 기존 회전 로직
+    const extraCount = need - A.length;
 
-  for (let i = 0; i < extraCount; i++) {
-    result.push({
-      a: candidatesA[(rotationA + i) % candidatesA.length],
-      b: candidatesB[(rotationB + i) % candidatesB.length]
-    });
-  }
+    if (extraCount > 0) {
+        const candidatesA = [...A];
+        const candidatesB = [...B];
 
-  // ✅ 다음 경기 때 회전 시작 위치 계속 이어가기
-  window.singlesRotationA = (rotationA + extraCount) % candidatesA.length;
-  window.singlesRotationB = (rotationB + extraCount) % candidatesB.length;
+        if (!window.singlesRotationA)
+            window.singlesRotationA = 0;
+        if (!window.singlesRotationB)
+            window.singlesRotationB = 0;
 
-  return result.slice(0, need);
+        for (let i = 0; i < extraCount; i++) {
+            result.push({
+                a: candidatesA[(window.singlesRotationA + i) % candidatesA.length],
+                b: candidatesB[(window.singlesRotationB + i) % candidatesB.length]
+            });
+        }
+
+        window.singlesRotationA += extraCount;
+        window.singlesRotationB += extraCount;
+    }
+
+    return result.slice(0, need);
 }
 
+
+
+
 function generateSinglesPairsForDifferentTeamSize(A, B, need) {
-  const result = [];
+    const result = [];
 
-  if (A.length === 0 || B.length === 0) return result;
+    // ✅ 1) 레벨 낮은 순서로 정렬 (숫자 낮을수록 고수)
+    A = [...A].sort((a,b)=>a.level - b.level);
+    B = [...B].sort((a,b)=>a.level - b.level);
 
-  // ✅ 레벨 낮은순 정렬(고수부터)
-  A = [...A].sort((a, b) => a.level - b.level);
-  B = [...B].sort((a, b) => a.level - b.level);
+    const sizeA = A.length;
+    const sizeB = B.length;
 
-  const sizeA = A.length;
-  const sizeB = B.length;
+    // ✅ 공통 인원까지는 기존 매칭
+    const common = Math.min(sizeA, sizeB);
 
-  // ✅ 1) 공통 인원수(최소값)끼리 고수순 대진
-  const common = Math.min(sizeA, sizeB);
-
-  for (let i = 0; i < common && result.length < need; i++) {
-    result.push({ a: A[i], b: B[i] });
-  }
-
-  // ✅ A팀 남은 선수가 없으면 종료
-  if (sizeA === sizeB || result.length >= need) {
-    return result.slice(0, need);
-  }
-
-  // ✅ 2) A팀 남은 선수
-  const remainingA = A[sizeB];
-
-  // ✅ 3) B 전체 후보
-  const candidatesB = [...B];
-
-  const levelDiff = (b) => Math.abs(b.level - remainingA.level);
-
-  // ✅ 4) 최소 레벨 차이 찾기
-  let minDiff = Infinity;
-  for (const b of candidatesB) {
-    const diff = levelDiff(b);
-    if (diff < minDiff) minDiff = diff;
-  }
-
-  // ✅ 5) "회전 후보군" 만들기
-  // 조건: |A_last - B[i]| ≤ minDiff + 2
-  const rotateCandidates = candidatesB.filter(
-    (b) => levelDiff(b) <= minDiff + 2
-  );
-
-  // ✅ 예외: rotate 후보가 1명이라도 → rotate 가능
-  if (rotateCandidates.length > 1) {
-    const idx = window.extraRotationIndex || 0;
-    const bPlayer = rotateCandidates[idx % rotateCandidates.length];
-
-    result.push({ a: remainingA, b: bPlayer });
-
-    // 로테이션 저장
-    window.extraRotationIndex =
-      (idx + 1) % rotateCandidates.length;
-  }
-  else {
-    // ✅ 회전 불가 → 가장 가까운 선수 1명 고정
-    let bestB = candidatesB[0];
-    for (const b of candidatesB) {
-      if (levelDiff(b) < levelDiff(bestB)) bestB = b;
+    for (let i = 0; i < common; i++) {
+        result.push({ a: A[i], b: B[i] });
     }
-    result.push({ a: remainingA, b: bestB });
-  }
 
-  return result.slice(0, need);
+    // ✅ 단식 need가 공통 인원 이하라면 여기서 끝
+    if (need <= common) return result.slice(0, need);
+
+
+    /* ---------------------------------------------------
+       ✅ 2) A 남은 1명 vs B 후보 중 차이 최소
+    --------------------------------------------------- */
+
+    // A팀 남는 선수 (예: 4명 vs 3명이면 A[3])
+    const extraA = A[common];
+    const Bteam = [...B];
+
+    let minDiff = Infinity;
+    let candidates = [];
+
+    for (const p of Bteam) {
+        const diff = Math.abs(extraA.level - p.level);
+        if (diff < minDiff) {
+            minDiff = diff;
+            candidates = [p];
+        } else if (diff === minDiff) {
+            candidates.push(p);
+        }
+    }
+
+    // ✅ 후보가 여러 명이면 로테이션
+    if (!window.singlesRotationExtraB)
+        window.singlesRotationExtraB = 0;
+
+    const idx = window.singlesRotationExtraB % candidates.length;
+    const selectedB = candidates[idx];
+
+    window.singlesRotationExtraB++;
+
+    // ✅ 매칭 추가
+    result.push({ a: extraA, b: selectedB });
+
+
+    /* ---------------------------------------------------
+       ✅ 3) need가 공통+1 보다 클 경우 (예: 5단식)
+    --------------------------------------------------- */
+
+    let extraCount = need - (common + 1);
+
+    if (extraCount > 0) {
+        const candidatesA = [...A];
+        const candidatesBrot = [...B];
+
+        if (!window.singlesRotationA2)
+            window.singlesRotationA2 = 0;
+        if (!window.singlesRotationB2)
+            window.singlesRotationB2 = 0;
+
+        for (let i = 0; i < extraCount; i++) {
+            const aSel = candidatesA[(window.singlesRotationA2 + i) % candidatesA.length];
+            const bSel = candidatesBrot[(window.singlesRotationB2 + i) % candidatesBrot.length];
+
+            result.push({
+                a: aSel,
+                b: bSel
+            });
+        }
+
+        window.singlesRotationA2 += extraCount;
+        window.singlesRotationB2 += extraCount;
+    }
+
+    return result.slice(0, need);
 }
 
 
