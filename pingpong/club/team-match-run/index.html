@@ -845,59 +845,100 @@ function perfectFullUsePairs(SA, SB, need, mode) {
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
 
-  // ✅ level → name 기준 안정 정렬
-const SA = [...A].sort((a,b)=> 
-    a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
-);
-const SB = [...B].sort((a,b)=> 
-    a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
-);
-
-
+  /* ------------------------------------------------------
+     ✅ 1) level → name 기준 안정 정렬
+  ------------------------------------------------------ */
+  const SA = [...A].sort((a,b)=> 
+      a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
+  );
+  const SB = [...B].sort((a,b)=> 
+      a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
+  );
 
   const nA = SA.length, nB = SB.length;
 
-// ✅ 전원출전 조건 (가장 먼저 체크해야 함)
-if (need * 2 === SA.length && need * 2 === SB.length) {
-  const result = [];
-  
-  if (mode === 0) {
-    // ✅ 실력매칭: (0,1), (2,3)...
-    for (let i = 0; i < need; i++) {
-      result.push({
-        a1: SA[i*2],
-        a2: SA[i*2+1],
-        b1: SB[i*2],
-        b2: SB[i*2+1]
-      });
+
+
+  /* ------------------------------------------------------
+      ✅ 2) 전원출전 조건 (4명–4명, 6명–6명 등)
+         복식 need × 2 = 인원수일 때
+  ------------------------------------------------------ */
+  if (need * 2 === SA.length && need * 2 === SB.length) {
+    const result = [];
+
+    if (mode === 0) {
+      // ✅ 실력매칭: (0,1), (2,3) --- 순서대로 짝
+      for (let i = 0; i < need; i++) {
+        result.push({
+          a1: SA[i*2], a2: SA[i*2+1],
+          b1: SB[i*2], b2: SB[i*2+1]
+        });
+      }
+    } else {
+      // ✅ 조합매칭: (0,n-1), (1,n-2) --- 강약 조합
+      const n = SA.length;
+      for (let i = 0; i < need; i++) {
+        result.push({
+          a1: SA[i], a2: SA[n - 1 - i],
+          b1: SB[i], b2: SB[n - 1 - i]
+        });
+      }
     }
-  } else {
-    // ✅ 조합매칭: (0,n-1), (1,n-2)...
-    const n = SA.length;
-    for (let i = 0; i < need; i++) {
-      result.push({
-        a1: SA[i],
-        a2: SA[n - 1 - i],
-        b1: SB[i],
-        b2: SB[n - 1 - i]
-      });
-    }
+
+    return result;   // ✅ 여기서 바로 종료 (아래 로직 절대 실행 X)
   }
 
-  return result; // ✅ 아래 로직 절대 안 가도록 즉시 반환
-}
+
+
+  /* ------------------------------------------------------
+      ✅ 3) 4명 vs 3명 전용 규칙 (2복일 때만)
+         — 성용님 문제의 핵심 해결 구간 —
+         — 중복 0% / 전원출전 100% 보장 —
+  ------------------------------------------------------ */
+  if (need === 2 && SA.length === 4 && SB.length === 3) {
+
+      // ✅ B팀 조합 3개뿐
+      const combos = [
+          [ [0,1], [1,2] ],   // B1-B2 / B2-B3
+          [ [0,1], [0,2] ],   // B1-B2 / B1-B3
+          [ [0,2], [1,2] ],   // B1-B3 / B2-B3
+      ];
+
+      // ✅ 로테이션으로 0→1→2→0→1→2 순환
+      if (!window.__rot43) window.__rot43 = 0;
+      const choice = combos[window.__rot43 % 3];
+      window.__rot43++;
+
+      // ✅ A팀은 전원출전 (0,1) , (2,3)
+      const result = [];
+      result.push({
+        a1: SA[0], a2: SA[1],
+        b1: SB[choice[0][0]], b2: SB[choice[0][1]]
+      });
+      result.push({
+        a1: SA[2], a2: SA[3],
+        b1: SB[choice[1][0]], b2: SB[choice[1][1]]
+      });
+
+      return result;
+  }
 
 
 
+  /* ------------------------------------------------------
+      ✅ 4) 그 외 일반 케이스는 기존 greedy 로직 사용
+  ------------------------------------------------------ */
 
-  /* ✅ 2) 중복 허용 + 골고루 */
+  // 기본 조합 생성
   function computeBasePairs(arr, mode) {
     const n = arr.length;
     let pairs = [];
 
     if (mode === 0) {
+      // 실력매칭: 인접한 선수끼리
       for (let i=0; i+1<n; i+=2) pairs.push([i, i+1]);
     } else {
+      // 조합매칭: 상위+하위 섞기
       for (let i=0; i<n; i++) {
         for (let j=i+1; j<n; j++) {
           const strongI = i < Math.floor(n/2);
@@ -907,6 +948,7 @@ if (need * 2 === SA.length && need * 2 === SB.length) {
       }
     }
 
+    // 조합이 하나도 안 나오면 모든 조합 사용
     if (pairs.length === 0) {
       for (let i=0; i<n; i++)
         for (let j=i+1; j<n; j++)
@@ -919,7 +961,6 @@ if (need * 2 === SA.length && need * 2 === SB.length) {
   const baseA = computeBasePairs(SA, mode);
   const baseB = computeBasePairs(SB, mode);
 
-  /* ✅ 출전 횟수 관리 */
   const usedA = new Map(SA.map(p=>[p.name,0]));
   const usedB = new Map(SB.map(p=>[p.name,0]));
 
