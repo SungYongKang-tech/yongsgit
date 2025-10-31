@@ -881,20 +881,36 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     }
   }
 
-  // ✅ 2단계: 아직 부족하면 → 강제 중복 허용
-  while (result.length < need) {
+  // ✅ 2단계: 부족한 복식은 "조합매칭 규칙"으로 다시 선택
+while (result.length < need) {
 
-    const a = pairsA[result.length % pairsA.length];
-    const b = pairsB[result.length % pairsB.length];
+  let best = null;
+  let bestScore = -Infinity;
 
-    result.push({
-      a1: a.p1, a2: a.p2,
-      b1: b.p1, b2: b.p2
-    });
+  for (const a of pairsA) {
+    for (const b of pairsB) {
+
+      // 이미 사용된 선수는 허용하되 → 조합 규칙은 반드시 반영
+      const diff = Math.abs(a.sum - b.sum);
+
+      // ✅ 실력매칭: 차이 작은 쪽 선택
+      // ✅ 조합매칭: 차이 큰 쪽 우선
+      const score = (mode === 0) ? (-diff) : diff;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = { a, b };
+      }
+    }
   }
 
-  return result.slice(0, need);
+  result.push({
+    a1: best.a.p1, a2: best.a.p2,
+    b1: best.b.p1, b2: best.b.p2
+  });
 }
+
+return result.slice(0, need);
 
 
 
