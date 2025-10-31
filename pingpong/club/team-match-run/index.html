@@ -812,9 +812,7 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
   if (need <= 0) return [];
 
-  // ✅ 복식 선수 정렬
-  // 실력매칭: A,B 모두 level 오름차순
-  // 조합매칭: A 오름차순, B 내림차순(강·약 조합 자동 유도)
+  // 정렬
   if (mode === 0) {
     A = [...A].sort((a,b)=>a.level - b.level);
     B = [...B].sort((a,b)=>a.level - b.level);
@@ -823,90 +821,67 @@ function generateDoublesPairsByMode(A, B, need, mode) {
     B = [...B].sort((a,b)=>b.level - a.level);
   }
 
-  /* =========================================================
-     ✅ [핵심] 전원출전: A,B 모두 need×2 명일 경우
-     ========================================================= */
-  if (A.length === need * 2 && B.length === need * 2) {
-    
-    // ✅ (1) 실력매칭: 기존 방식 유지
-    if (mode === 0) {
-      const result = [];
-      for (let i = 0; i < need; i++) {
-        result.push({
-          a1: A[i*2],
-          a2: A[i*2+1],
-          b1: B[i*2],
-          b2: B[i*2+1]
-        });
-      }
-      return result;
-    }
-
-    // ✅ (2) 조합매칭: 강·약 조합 생성 (성용님 요구사항 정확히 반영)
-    // 예: A=4,5,8,9 → 조합쌍 = (4,9), (5,8)
-    //     B=5,6,9,10 → 조합쌍 = (5,10), (6,9)
-
-    const result = [];
-
-    for (let i = 0; i < need; i++) {
-      const a1 = A[i];
-      const a2 = A[A.length - 1 - i];   // 뒤에서 가져와 강·약 조합 완성
-
-      const b1 = B[i];
-      const b2 = B[B.length - 1 - i];   // 뒤에서 가져와 강·약 조합 완성
-
-      result.push({ a1, a2, b1, b2 });
-    }
-
-    return result;
-  }
-
-  /* =========================================================
-     ✅ 여기 아래는 전원출전이 아닐 때 기존 로직 유지
-     ========================================================= */
-
-  const usedA = new Set();
-  const usedB = new Set();
-
   const pairsA = [];
   const pairsB = [];
 
-  // 모든 가능한 조합 생성
+  // ✅ 팀 A 모든 조합 생성
   for (let i = 0; i < A.length; i++) {
     for (let j = i+1; j < A.length; j++) {
       pairsA.push([A[i], A[j]]);
     }
   }
+
+  // ✅ 팀 B 모든 조합 생성
   for (let i = 0; i < B.length; i++) {
     for (let j = i+1; j < B.length; j++) {
       pairsB.push([B[i], B[j]]);
     }
   }
 
+  // ✅ 조합모드라면 강·약 조합 유도
+  if (mode === 1) {
+    pairsA.sort((x,y)=> (y[0].level+y[1].level) - (x[0].level+x[1].level));
+    pairsB.sort((x,y)=> (y[0].level+y[1].level) - (x[0].level+x[1].level));
+  }
+
   const result = [];
+  const usedA = new Set();
+  const usedB = new Set();
 
-  // 간단한 greedy 매칭
-  for (let x of pairsA) {
-    const [a1, a2] = x;
+  // ✅ (1) 먼저 가능한 조합을 모두 사용
+  for (let a of pairsA) {
+
     if (result.length >= need) break;
+    if (usedA.has(a[0].name) || usedA.has(a[1].name)) continue;
 
-    if (usedA.has(a1.name) || usedA.has(a2.name)) continue;
+    for (let b of pairsB) {
 
-    for (let y of pairsB) {
-      const [b1, b2] = y;
-      if (usedB.has(b1.name) || usedB.has(b2.name)) continue;
+      if (usedB.has(b[0].name) || usedB.has(b[1].name)) continue;
 
-      result.push({ a1, a2, b1, b2 });
+      result.push({ a1:a[0], a2:a[1], b1:b[0], b2:b[1] });
 
-      usedA.add(a1.name); usedA.add(a2.name);
-      usedB.add(b1.name); usedB.add(b2.name);
+      usedA.add(a[0].name); usedA.add(a[1].name);
+      usedB.add(b[0].name); usedB.add(b[1].name);
 
       break;
     }
   }
 
+  // ✅ (2) 그래도 부족하면 중복 허용해서 강제로 경기 채움
+  while (result.length < need) {
+
+    const idxA = result.length % pairsA.length;
+    const idxB = result.length % pairsB.length;
+
+    const a = pairsA[idxA];
+    const b = pairsB[idxB];
+
+    result.push({ a1:a[0], a2:a[1], b1:b[0], b2:b[1] });
+  }
+
   return result.slice(0, need);
 }
+
 
 
 
