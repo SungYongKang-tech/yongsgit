@@ -808,153 +808,175 @@ if (diff < bestDiff) {
 function generateDoublesPairsByMode(A, B, need, mode) {
   window.currentDoublesMode = mode;
 
-
-  /* ✅ 조합매칭(mode=1)일 때 강·약 섞으려면 정렬 방향을 반대로 해야 함 */
-  if (mode === 1) {
+  /* ✅ 모드별 기본 정렬
+     - 실력매칭(0): A,B 모두 레벨 오름차순
+     - 조합매칭(1): A 오름차순, B 내림차순 → 강·약 조합을 자동 유도
+  */
+  if (mode === 0) {
     A = [...A].sort((a,b)=>a.level - b.level);
-    B = [...B].sort((a,b)=>b.level - a.level);   
+    B = [...B].sort((a,b)=>a.level - b.level);
+  } else {
+    A = [...A].sort((a,b)=>a.level - b.level);
+    B = [...B].sort((a,b)=>b.level - a.level);  // ✅ 조합모드 핵심
   }
 
 
-if (A.length === need * 2 && B.length === need * 2) {
+  /* ✅ [전원출전] 팀원이 정확히 need×2 명일 때
+        - 실력매칭(0): 기존 방식 유지 (순서대로 1복,2복… 배정)
+        - 조합매칭(1): 강·약 조합을 섞어 greedy 방식으로 생성
+  */
+  if (A.length === need * 2 && B.length === need * 2) {
 
-    // ✅ 실력매칭(고수우선)일 때만 기존 방식 유지
+    // ✅ 실력매칭에서만 기존 방식 사용
     if (mode === 0) {
-        A = [...A].sort((a,b)=>a.level - b.level);
-        B = [...B].sort((a,b)=>a.level - b.level);
-
-        const result = [];
-        for (let i = 0; i < need; i++) {
-            result.push({
-                a1: A[i*2], a2: A[i*2+1],
-                b1: B[i*2], b2: B[i*2+1]
-            });
-        }
-        return result;
+      const result = [];
+      for (let i = 0; i < need; i++) {
+        result.push({
+          a1: A[i*2],
+          a2: A[i*2+1],
+          b1: B[i*2],
+          b2: B[i*2+1]
+        });
+      }
+      return result;
     }
 
-    // ✅ 조합매칭(mode=1)일 때는 강·약 조합을 섞는 greedy 방식 실행
-    const pairsA = allTeamPairsFiltered(A, mixedFilter);
-    const pairsB = allTeamPairsFiltered(B, mixedFilter);
+    // ✅ 조합매칭(1) — 전원출전 + 강·약 조합 greedy 방식
+    const pairsA = allTeamPairsFiltered(A, mixedFilter)
+                    .sort((x,y)=>y.sum - x.sum);
+    const pairsB = allTeamPairsFiltered(B, mixedFilter)
+                    .sort((x,y)=>y.sum - x.sum);
 
     return greedyMatchPairs(
-        pairsA, pairsB, need,
-        new Set(), new Set(),
-        new Set(), new Set(),
-        new Set(),
-        false
+      pairsA, pairsB, need,
+      new Set(), new Set(),   // usedPlayersA, usedPlayersB
+      new Set(), new Set(),   // usedPairsA, usedPairsB
+      new Set(),              // usedVersus
+      false,                  // allowDuplicates
+      new Set()               // lockedPairs
     );
-}
+  }
 
 
 
+  /* ✅ 이 아래는 기존 "부족 시 조합" 로직 그대로 유지 */
   if (need <= 0) return [];
 
   const usedPlayersA = new Set();
   const usedPlayersB = new Set();
-
-  const usedPairsA = new Set(); // 팀 내 동일 2명 조합 방지
+  const usedPairsA = new Set();
   const usedPairsB = new Set();
-  const usedVersus = new Set(); // 동일 상대팀 방지
-  const lockedPairs = new Set(); // 1복, 2복 확정 후 고정
+  const usedVersus = new Set();
+  const lockedPairs = new Set();
 
   let bucketOrder = [];
 
-  // 모드별 우선순위
-  if (mode === 0) { 
-    // ✅ 실력매칭(고수우선) = 강한–강한 → 약한–약한
+  /* ✅ 모드별 매칭 우선순위 구성 */
+  if (mode === 0) {
+    // ✅ 실력매칭 = 강강 → 약약 → 전체
     bucketOrder = [
-      { a: allTeamPairsFiltered(A, strongFilter), b: allTeamPairsFiltered(B, strongFilter) },
-      { a: allTeamPairsFiltered(A, weakFilter),   b: allTeamPairsFiltered(B, weakFilter) },
-      { a: allTeamPairs(A),                       b: allTeamPairs(B) }
+      { a: allTeamPairsFiltered(A, strongFilter),
+        b: allTeamPairsFiltered(B, strongFilter) },
+
+      { a: allTeamPairsFiltered(A, weakFilter),
+        b: allTeamPairsFiltered(B, weakFilter) },
+
+      { a: allTeamPairs(A), b: allTeamPairs(B) }
     ];
-} else {
-    // ✅ 조합매칭 = 강·약 섞기
+
+  } else {
+
+    // ✅ 조합매칭 = 강·약 조합 중심
     const mixedA = allTeamPairsFiltered(A, mixedFilter).sort((x,y)=>y.sum - x.sum);
-const mixedB = allTeamPairsFiltered(B, mixedFilter).sort((x,y)=>y.sum - x.sum);
+    const mixedB = allTeamPairsFiltered(B, mixedFilter).sort((x,y)=>y.sum - x.sum);
 
-bucketOrder = [
-  { a: mixedA, b: mixedB },
-  { a: allTeamPairs(A), b: allTeamPairs(B) }
-];
-
-}
-
+    bucketOrder = [
+      { a: mixedA, b: mixedB },
+      { a: allTeamPairs(A), b: allTeamPairs(B) }
+    ];
+  }
 
 
-
+  /* ✅ 1단계: 1복, 2복 — 절대 중복 금지 + 락 */
   let result = [];
 
-  /* 1단계: 첫 두 경기는 완전 중복 금지 */
   for (const bucket of bucketOrder) {
     if (result.length >= 2 || result.length >= need) break;
+
     const add = greedyMatchPairs(
-      bucket.a, bucket.b, 2 - result.length,
+      bucket.a, bucket.b,
+      2 - result.length,         // 필요한 경기 수
       usedPlayersA, usedPlayersB,
       usedPairsA, usedPairsB,
       usedVersus,
-      false, // 완전 중복 금지
-      lockedPairs
+      false,                     // 중복 허용 X
+      lockedPairs                // 1~2복 락
     );
+
     result = result.concat(add);
   }
 
-/* 2단계: 남은 경기(3복 이후)는 먼저 '중복 없이' 시도하고, 부족할 때만 중복 허용 */
-if (result.length < need) {
+
+  /* ✅ 2단계: 남은 경기 (3복 이후) - 중복방지→부족 시 중복허용 */
   for (const bucket of bucketOrder) {
     if (result.length >= need) break;
 
     const remaining = need - result.length;
 
-    // 🟢 2-1단계: 중복 없이 최대한 채우기
+    // 중복 없이 시도
     const noDupAdd = greedyMatchPairs(
-      bucket.a, bucket.b, remaining,
+      bucket.a, bucket.b,
+      remaining,
       usedPlayersA, usedPlayersB,
       usedPairsA, usedPairsB,
       usedVersus,
-      false,      // ❌ 중복 허용 안 함
-      lockedPairs // 1복, 2복은 절대 재사용 금지
+      false,
+      lockedPairs
     );
+
     result = result.concat(noDupAdd);
 
-    // 🟢 2-2단계: 그래도 부족하면 중복 허용으로 채우기
+    // 그래도 부족하면 중복 허용
     if (result.length < need) {
-      const stillRemaining = need - result.length;
+      const still = need - result.length;
       const dupAdd = greedyMatchPairs(
-        bucket.a, bucket.b, stillRemaining,
+        bucket.a, bucket.b,
+        still,
         usedPlayersA, usedPlayersB,
         usedPairsA, usedPairsB,
         usedVersus,
-        true,       // ✅ 중복 허용
+        true,   // ✅ 중복 허용
         lockedPairs
       );
       result = result.concat(dupAdd);
     }
   }
-}
 
 
+  /* ✅ 3단계: 그래도 부족하면 강제 중복 허용 */
+  if (result.length < need) {
+    const still = need - result.length;
+    console.warn("⚠️ 복식 강제 중복 매칭 발생");
 
-/* 3단계: 그래도 경기 수가 부족하면 강제로 중복 허용 (최종 예외 처리) */
-if (result.length < need) {
-  console.warn("⚠️ 선수 부족으로 인해 복식 경기 강제 중복 생성");
-  for (const bucket of bucketOrder) {
-    if (result.length >= need) break;
-    const add = greedyMatchPairs(
-      bucket.a, bucket.b, need - result.length,
-      new Set(), new Set(), // 완전히 초기화 → 중복 완전 허용
-      new Set(), new Set(),
-      new Set(),
-      true, // 모든 중복 허용
-      new Set()
-    );
-    result = result.concat(add);
+    for (const bucket of bucketOrder) {
+      if (result.length >= need) break;
+
+      const add = greedyMatchPairs(
+        bucket.a, bucket.b,
+        need - result.length,
+        new Set(), new Set(),  // 완전 리셋 → 모든 중복 허용
+        new Set(), new Set(),
+        new Set(),
+        true,
+        new Set()
+      );
+      result = result.concat(add);
+    }
   }
+
+  return result.slice(0, need);
 }
 
-return result.slice(0, need);
-
-}
 
 
 
