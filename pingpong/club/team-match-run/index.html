@@ -743,11 +743,20 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
         const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
         if ((!allowDuplicates && usedVersus.has(vKey)) || lockedPairs.has(vKey)) continue;
 
-        const diff = Math.abs(a.sum - b.sum);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
-        }
+       // ✅ 여기 diff 계산부 전체 교체
+let diff;
+
+if (window.currentDoublesMode === 0) {
+    diff = Math.abs(a.sum - b.sum);  // 실력매칭 = 차이 적은 조합 우선
+} else {
+    diff = -Math.abs(a.sum - b.sum); // 조합매칭 = 차이 큰 조합 우선
+}
+
+if (diff < bestDiff) {
+    bestDiff = diff;
+    best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
+}
+
       }
     }
 
@@ -779,16 +788,17 @@ function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, used
 
 
 function generateDoublesPairsByMode(A, B, need, mode) {
+  window.currentDoublesMode = mode;
+
 // ✅ [전원출전 규칙] 팀원수가 2×복식이면 모두 반드시 출전
 if (A.length === need * 2 && B.length === need * 2) {
 
     const result = [];
 
-    // 레벨 오름차순 정렬 (성용님 규칙과 동일)
-    A = [...A].sort((a,b)=>a.level - b.level);
-    B = [...B].sort((a,b)=>b.level - b.level); 
-    // ⚠️ B는 반대로 정렬해야 레벨이 비슷한 사람끼리 매칭됨  
-    // A[0] ↔ B[0], A[1] ↔ B[1] 식으로.
+ 
+A = [...A].sort((a,b)=>a.level - b.level);
+B = [...B].sort((a,b)=>a.level - b.level);  // ✅ 이렇게 고쳐야 함
+  
 
     for (let i = 0; i < need; i++) {
         const a1 = A[i*2];
