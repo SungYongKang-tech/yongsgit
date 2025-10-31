@@ -693,7 +693,15 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need) {
 /* -------- 복식: 동일팀/상대팀 중복 방지, 부족 시 중복 허용 -------- */
 const strongFilter = (i, j, n) => (i < Math.ceil(n/2) && j < Math.ceil(n/2));
 const weakFilter   = (i, j, n) => (i >= Math.floor(n/2) && j >= Math.floor(n/2));
-const mixedFilter  = (i, j, n) => ((i < Math.ceil(n/2) && j >= Math.floor(n/2)) || (j < Math.ceil(n/2) && i >= Math.floor(n/2)));
+
+// ✅ 강+약 조합 필터 (새로 교체해야 함)
+function mixedFilter(i, j, n) {
+  const mid = Math.floor(n / 2); // 상위 절반까지 강자
+  const isStrongI = i < mid;
+  const isStrongJ = j < mid;
+  return isStrongI !== isStrongJ;  // 한 명만 강자일 때 true
+}
+
 
 function allTeamPairsFiltered(players, filterFn) {
   const res = [];
@@ -789,6 +797,14 @@ if (diff < bestDiff) {
 
 function generateDoublesPairsByMode(A, B, need, mode) {
   window.currentDoublesMode = mode;
+
+
+  /* ✅ 조합매칭(mode=1)일 때 강·약 섞으려면 정렬 방향을 반대로 해야 함 */
+  if (mode === 1) {
+    A = [...A].sort((a,b)=>a.level - b.level);
+    B = [...B].sort((a,b)=>b.level - a.level);   
+  }
+
 
 // ✅ [전원출전 규칙] 팀원수가 2×복식이면 모두 반드시 출전
 if (A.length === need * 2 && B.length === need * 2) {
