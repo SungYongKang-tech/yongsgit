@@ -154,15 +154,16 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
 
 @media (orientation: landscape) {
   .canvas-grid {
-    grid-template-columns: 1fr !important;   /* 가로는 1열만 */
+    grid-template-columns: 1fr !important;  /* ✅ 한 줄 하나씩 */
+  }
+}
+scales: {
+  y: {
+    min: -100,
+    max: 100
   }
 }
 
-
-.canvas-box canvas {
-  width: 100% !important;
-  height: 260px !important; /* 태블릿에서도 안정 */
-}
 
 
 </style>
@@ -517,6 +518,26 @@ function renderDetails(){
   .slice(0,8);
 
 
+new Chart($('#chartOpp'), {
+  type:'bar',
+  data:{
+    labels: oppArr.map(o=>o.name),
+    datasets:[{
+      label:'단식 순승률(%)',
+      data: oppArr.map(o=>o.rate),
+      backgroundColor:'#2563eb'
+    }]
+  },
+  options:{
+    responsive:true,
+    scales:{
+      y:{
+        min:-100,
+        max:100
+      }
+    }
+  }
+});
 
   if (!oppArr.length){
     oppBox.innerHTML = `<div class="dim">11월 이후 단식 기록이 없습니다.</div>`;
@@ -552,6 +573,26 @@ const ptnArr = Object.entries(partnerMapDouble)
   .sort((a,b)=> b.total - a.total)
   .slice(0,8);
 
+new Chart($('#chartPartner'), {
+  type:'bar',
+  data:{
+    labels: ptnArr.map(o=>o.name),
+    datasets:[{
+      label:'복식 순승률(%)',
+      data: ptnArr.map(o=>o.rate),
+      backgroundColor:'#16a34a'
+    }]
+  },
+  options:{
+    responsive:true,
+    scales:{
+      y:{
+        min:-100,
+        max:100
+      }
+    }
+  }
+});
 
   if (!ptnArr.length){
     ptnBox.innerHTML = `<div class="dim">11월 이후 복식 기록이 없습니다.</div>`;
@@ -610,65 +651,22 @@ function buildCharts(){
     options:{responsive:true}
   });
 
- // ✅ 4) 상대별 순승률 (Top 8)
-const oppArr = Object.entries(oppMapSingle).map(([name,v])=>({
+  // 4) 상대별 승률 (Top 8)
+ const oppArr = Object.entries(oppMapSingle).map(([name,v])=>({
   name,
   win: v.win,
   lose: v.lose,
   total: v.win + v.lose,
-  rate: (v.win + v.lose)
-    ? ((v.win - v.lose) / (v.win + v.lose) * 100)  // ✅ 순승률 공식으로 교체
-    : 0
+  rate: (v.win + v.lose) ? (v.win / (v.win + v.lose) * 100) : 0
 }))
-.sort((a,b)=> b.total - a.total)  // ✅ 경기수 많은 순
-.slice(0,8);                      // ✅ 상위 8명
+.sort((a,b)=> b.total - a.total)  // ✅ 게임수 많은 순으로 정렬
+.slice(0,8);                      // ✅ 상위 8명만 선택
 
-new Chart($('#chartOpp'), {
-  type:'bar',
-  data:{
-    labels: oppArr.map(o=>o.name),
-    datasets:[{
-      label:'단식 순승률(%)',
-      data: oppArr.map(o=>o.rate),
-      backgroundColor:'#2563eb'
-    }]
-  },
-  options:{
-    responsive:true,
-    maintainAspectRatio:false,
-
-    plugins:{
-      legend:{
-        labels:{
-          font:{ size:16 }   // ✅ 범례 글씨 크게
-        }
-      },
-      tooltip:{
-        titleFont:{ size:16 },
-        bodyFont:{ size:15 }
-      }
-    },
-
-    scales:{
-      x:{
-        ticks:{
-          font:{ size:16 },   // ✅ X축 글씨(상대 이름) 크게
-          maxRotation:0,
-          minRotation:0
-        }
-      },
-      y:{
-        min:-100,
-        max:100,
-        ticks:{
-          font:{ size:16 }    // ✅ Y축 -100~100 글씨 크게
-        }
-      }
-    }
-  }
-});
-
-
+  new Chart($('#chartOpp'), {
+    type:'bar',
+    data:{labels: oppArr.map(o=>o.name), datasets:[{label:'단식 상대별 승률(%)', data: oppArr.map(o=>o.rate)}]},
+    options:{responsive:true}
+  });
 
   // 5) 파트너별 승률 (Top 8)
   const ptnArr = Object.entries(partnerMapDouble).map(([name,v])=>({
@@ -676,14 +674,16 @@ new Chart($('#chartOpp'), {
   win: v.win,
   lose: v.lose,
   total: v.win + v.lose,
-  rate: (v.win + v.lose)
-  ? ((v.win - v.lose) / (v.win + v.lose) * 100)
-  : 0
+  rate: (v.win + v.lose) ? (v.win / (v.win + v.lose) * 100) : 0
 }))
 .sort((a,b)=> b.total - a.total)  // ✅ 경기수 많은 순
 .slice(0,8);                      // ✅ 상위 8명
 
-
+  new Chart($('#chartPartner'), {
+    type:'bar',
+    data:{labels: ptnArr.map(o=>o.name), datasets:[{label:'복식 파트너별 승률(%)', data: ptnArr.map(o=>o.rate)}]},
+    options:{responsive:true}
+  });
 
   // 6) 월별 누적 승점(복식)
   const pts = ms.map(m => (perMonthDouble[m]?.points ?? 0));
