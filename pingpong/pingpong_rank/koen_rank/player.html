@@ -144,8 +144,192 @@ h1{
 
 
 <script type="module">
-// ✅ 여기에 다음 단계에서 Firebase 연동 / 개인 데이터 분석 로직을 추가합니다.
-// (지금은 템플릿 UI만 먼저 만드는 단계)
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ✅ URL에서 name 파라미터 가져오기
+const params = new URLSearchParams(window.location.search);
+const playerName = params.get("name");
+
+document.getElementById("pageTitle").textContent = `🏓 ${playerName} 개인 리포트`;
+
+// ✅ 기본 정보 영역
+const basicInfo = document.getElementById("basicInfo");
+const tableSingle = document.querySelector("#tableSingle tbody");
+const tableDouble = document.querySelector("#tableDouble tbody");
+const summaryBox = document.getElementById("summaryBox");
+
+let playerLevel = "-";
+let singleData = [];
+let doubleData = [];
+
+// ✅ 플레이어 부수 불러오기
+const playersRef = ref(db, "players");
+get(playersRef).then(snap => {
+  if (snap.exists()) {
+    const list = snap.val();
+    Object.values(list).forEach(p => {
+      if (p.name === playerName) playerLevel = p.level;
+    });
+  }
+});
+
+// ✅ 날짜 포맷
+function formatDate(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+}
+
+// ✅ 경기 데이터 불러오기
+onValue(ref(db, "matches"), snap => {
+  if (!snap.exists()) return;
+
+  const data = snap.val();
+  singleData = [];
+  doubleData = [];
+
+  Object.values(data).forEach(m => {
+    const isSingle = m.mode === "single";
+
+    // ✅ 단식
+    if (isSingle) {
+      if (m.namesA.includes(playerName) || m.namesB.includes(playerName)) {
+        const win = (m.winnerSide === "A" && m.namesA.includes(playerName)) ||
+                    (m.winnerSide === "B" && m.namesB.includes(playerName));
+        const opponent =
+          m.namesA.includes(playerName)
+            ? m.namesB[0]
+            : m.namesA[0];
+
+        singleData.push({
+          date: formatDate(m.createdAt),
+          opponent,
+          result: win ? "승" : "패",
+          win
+        });
+      }
+    }
+
+    // ✅ 복식
+    else {
+      if (m.namesA.includes(playerName) || m.namesB.includes(playerName)) {
+        const win = (m.winnerSide === "A" && m.namesA.includes(playerName)) ||
+                    (m.winnerSide === "B" && m.namesB.includes(playerName));
+
+        const team = m.namesA.includes(playerName) ? m.namesA : m.namesB;
+        const enemy = m.namesA.includes(playerName) ? m.namesB : m.namesA;
+
+        doubleData.push({
+          date: formatDate(m.createdAt),
+          team: team.join(" / "),
+          enemy: enemy.join(" / "),
+          result: win ? "승" : "패",
+          win
+        });
+      }
+    }
+  });
+
+  render();
+});
+
+// ✅ 렌더링
+function render() {
+
+  // ✅ 기본 정보 채우기
+  basicInfo.innerHTML = `
+    <div style="font-size:17px; line-height:1.7;">
+      <b>이름:</b> ${playerName}<br>
+      <b>부수:</b> ${playerLevel}<br>
+      <b>단식 경기수:</b> ${singleData.length}경기<br>
+      <b>복식 경기수:</b> ${doubleData.length}경기
+    </div>
+  `;
+
+  // ✅ 단식 테이블
+  tableSingle.innerHTML = singleData
+    .map(r => `
+      <tr>
+        <td>${r.date}</td>
+        <td>${r.opponent}</td>
+        <td style="color:${r.result==='승'?'#16a34a':'#ef4444'};font-weight:700;">
+          ${r.result}
+        </td>
+      </tr>
+    `)
+    .join("");
+
+  // ✅ 복식 테이블
+  tableDouble.innerHTML = doubleData
+    .map(r => `
+      <tr>
+        <td>${r.date}</td>
+        <td>${r.team}</td>
+        <td>${r.enemy}</td>
+        <td style="color:${r.result==='승'?'#16a34a':'#ef4444'};font-weight:700;">
+          ${r.result}
+        </td>
+      </tr>
+    `)
+    .join("");
+
+  // ✅ 전체 통계 계산
+  const singleWin = singleData.filter(v => v.win).length;
+  const doubleWin = doubleData.filter(v => v.win).length;
+
+  const singleRate = singleData.length
+    ? (singleWin / singleData.length * 100).toFixed(1)
+    : "0.0";
+
+  const doubleRate = doubleData.length
+    ? (doubleWin / doubleData.length * 100).toFixed(1)
+    : "0.0";
+
+  // ✅ 상대별 승률 계산
+  const opponentMap = {};
+  singleData.forEach(r => {
+    if (!opponentMap[r.opponent]) opponentMap[r.opponent] = { w:0, l:0 };
+    if (r.win) opponentMap[r.opponent].w++;
+    else opponentMap[r.opponent].l++;
+  });
+
+  const opponentList = Object.entries(opponentMap)
+    .map(([name, v]) => ({
+      name,
+      rate: (v.w / (v.w + v.l) * 100).toFixed(1),
+      total: v.w + v.l
+    }))
+    .sort((a,b) => b.total - a.total);
+
+  const strongest = opponentList[0] ? opponentList[0].name : "-";
+
+  // ✅ 종합 요약 출력
+  summaryBox.innerHTML = `
+    <div style="font-size:16px; line-height:1.7;">
+      ✅ <b>단식 승률:</b> ${singleRate}% (${singleWin}승 / ${singleData.length - singleWin}패)<br>
+      ✅ <b>복식 승률:</b> ${doubleRate}% (${doubleWin}승 / ${doubleData.length - doubleWin}패)<br>
+      ✅ <b>가장 많이 경기한 상대:</b> ${strongest}<br>
+      ✅ <b>전체 경기 수:</b> ${singleData.length + doubleData.length} 경기<br>
+    </div>
+  `;
+}
+
+
+
 </script>
 
 </body>
