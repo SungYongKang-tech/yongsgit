@@ -136,7 +136,8 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
   <!-- 월별 카드 -->
   <section class="grid" style="margin-top:12px;">
     <div class="card" style="grid-column: span 12;">
-      <h3>📅 월별 통합 기록 (2025-09, 2025-10: 통합전적 / 2025-11~: 단식·복식 합산)</h3>
+      <h3>📅 월별 통합 기록 ('25-09, '25-10: 통합전적 / '25-11~: 단식·복식 합산)</h3>
+
       <div id="monthList" class="list"></div>
       <div class="note">* 2025-09 ~ 2025-10은 단/복식 구분 없이 통합전적만 제공됩니다.</div>
     </div>
@@ -198,6 +199,8 @@ const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
 // ===== Utils =====
+// YYYY-MM → 'YY-MM 변환
+const shortMonth = (m) => `'${m.slice(2)}`;
 const $ = s => document.querySelector(s);
 const fmt1 = n => (Math.round(n*10)/10).toFixed(1);
 const yyyymm = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -367,7 +370,12 @@ function renderKPI(){
   $('#kpiDblWL').textContent    = `${sumDblWin}승 / ${sumDblLose}패`;
 
   $('#kpiPoints').textContent   = `${sumPointsFromNov}`;
-  $('#periodBadge').textContent = `집계 범위: 2025-09 ~ ${months.length? months.sort()[months.length-1] : '현재'}`;
+  const lastMonth = months.length ? months.slice().sort().pop() : null;
+$('#periodBadge').textContent =
+  lastMonth
+    ? `집계 범위: ${shortMonth('2025-09')} ~ ${shortMonth(lastMonth)}`
+    : `집계 범위: ${shortMonth('2025-09')} ~ 현재`;
+
 }
 
 function renderMonthCards(){
@@ -387,7 +395,8 @@ function renderMonthCards(){
       <div class="item">
         <div class="l">
           ${pill}
-          <div><b>${m}</b></div>
+          <div><b>${shortMonth(m)}</b></div>
+
         </div>
         <div class="r">
           ${fromNov
@@ -461,7 +470,7 @@ function buildCharts(){
   new Chart($('#chartRate'), {
     type:'line',
     data:{
-      labels: ms, datasets:[{label:'월별 승률(통합%)', data:rateAll, tension:.2}]
+      labels: ms.map(shortMonth), datasets:[{label:'월별 승률(통합%)', data:rateAll, tension:.2}]
     },
     options:{responsive:true, plugins:{legend:{display:true}}}
   });
@@ -470,7 +479,7 @@ function buildCharts(){
   const gamesAll = ms.map(m=> (perMonthAll[m]?.total ?? 0));
   new Chart($('#chartGames'), {
     type:'bar',
-    data:{labels:ms, datasets:[{label:'월별 경기수(통합)', data:gamesAll}]},
+    data:{labels: ms.map(shortMonth), datasets:[{label:'월별 경기수(통합)', data:gamesAll}]},
     options:{responsive:true}
   });
 
@@ -507,7 +516,7 @@ function buildCharts(){
   let run = 0; const ptsCum = pts.map(v=> (run+=v));
   new Chart($('#chartPoints'), {
     type:'line',
-    data:{labels:ms, datasets:[{label:'복식 누적 승점', data:ptsCum, tension:.2}]},
+    data:{labels: ms.map(shortMonth), datasets:[{label:'복식 누적 승점', data:ptsCum, tension:.2}]},
     options:{responsive:true}
   });
 }
@@ -515,6 +524,8 @@ function buildCharts(){
 // ===== Bootstrap =====
 await loadPastMonths();     // 2025-09, 2025-10 (통합)
 await loadMatchesFromNov(); // 2025-11~ (단/복식 분리)
+
+months = [...new Set(months)].sort();
 
 renderKPI();
 renderMonthCards();
