@@ -498,13 +498,20 @@ async function buildTodayHtml() {
     losers.forEach(n  => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].lose++; });
   });
 
-  // ✅ 정렬 (부수 높은 순 → 승리순 → 이름순)
-  const sorted = Object.entries(stats)
-    .map(([name, { win, lose }]) => {
-      const p = players.find(v => v.name === name);
-      return { name, win, lose, level: p ? p.level : 99 };
-    })
-    .sort((a, b) => b.level - a.level || b.win - a.win || a.name.localeCompare(b.name, 'ko'));
+  // ✅ 승점 계산 + 정렬 (승점 → 부수 낮은 순 → 이름순)
+const sorted = Object.entries(stats)
+  .map(([name, { win, lose }]) => {
+    const p = players.find(v => v.name === name);
+    const level = p ? p.level : 99;
+    const score = win * 2 - lose * 1;   // ✅ 승점 계산
+
+    return { name, win, lose, level, score };
+  })
+  .sort((a, b) =>
+    b.score - a.score ||      // ✅ 승점 높은 순
+    a.level - b.level ||      // ✅ 부수 낮은 순 (숫자 작을수록 고수)
+    a.name.localeCompare(b.name, 'ko')
+  );
 
   // ✅ 두 줄(2열) 레이아웃 + 승/패 한 줄 표기 + 승이 가장 많은 사람 진하게
   const maxWin = Math.max(...sorted.map(p => p.win)); // 가장 많은 승리 수
