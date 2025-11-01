@@ -4,10 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>🏓 개인 탁구 성적 리포트</title>
+
+<!-- Pretendard -->
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
 
-<!-- Chart.js (지연 로딩 전까지는 안 쓰지만 미리 선언해도 무방) -->
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <style>
@@ -93,6 +95,7 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
 </style>
 </head>
 <body>
+
 <header>
   <div class="header-inner">
     <div>
@@ -108,7 +111,7 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
 
 <main class="wrap">
 
-  <!-- 상단 요약 -->
+  <!-- ✅ 상단 KPI 영역 -->
   <section class="grid" style="grid-template-columns:repeat(12,1fr);">
     <div class="card" style="grid-column: span 12;">
       <div class="row" style="justify-content:space-between;">
@@ -124,25 +127,40 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
       <div class="hr"></div>
 
       <div class="kpi" id="kpiWrap">
-        <!-- KPI 타일 4개: 통합전적(누적), 11월~ 단식, 11월~ 복식, 11월~ 누적 승점 -->
-        <div class="mini"><h4>누적 경기(통합)</h4><div class="v" id="kpiAllTotal">-</div><div class="dim" id="kpiAllWL">-</div></div>
-        <div class="mini"><h4>11월~ 단식</h4><div class="v" id="kpiSglTotal">-</div><div class="dim" id="kpiSglWL">-</div></div>
-        <div class="mini"><h4>11월~ 복식</h4><div class="v" id="kpiDblTotal">-</div><div class="dim" id="kpiDblWL">-</div></div>
-        <div class="mini"><h4>11월~ 누적 승점</h4><div class="v" id="kpiPoints">-</div><div class="dim">승×2 - 패</div></div>
+        <div class="mini">
+          <h4>누적 경기(통합)</h4>
+          <div class="v" id="kpiAllTotal">-</div>
+          <div class="dim" id="kpiAllWL">-</div>
+        </div>
+        <div class="mini">
+          <h4>11월~ 단식</h4>
+          <div class="v" id="kpiSglTotal">-</div>
+          <div class="dim" id="kpiSglWL">-</div>
+        </div>
+        <div class="mini">
+          <h4>11월~ 복식</h4>
+          <div class="v" id="kpiDblTotal">-</div>
+          <div class="dim" id="kpiDblWL">-</div>
+        </div>
+        <div class="mini">
+          <h4>11월~ 누적 승점</h4>
+          <div class="v" id="kpiPoints">-</div>
+          <div class="dim">승×2 - 패</div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- 월별 카드 -->
+  <!-- ✅ 월별 카드 -->
   <section class="grid" style="margin-top:12px;">
     <div class="card" style="grid-column: span 12;">
-      <h3>📅 월별 통합 기록 (2025-09, 2025-10: 통합전적 / 2025-11~: 단식·복식 합산)</h3>
+      <h3>📅 월별 통합 기록 (2025-09, 2025-10: 통합전적 / 2025-11~: 단식·복식 분리)</h3>
       <div id="monthList" class="list"></div>
-      <div class="note">* 2025-09 ~ 2025-10은 단/복식 구분 없이 통합전적만 제공됩니다.</div>
+      <div class="note">* 2025-09 ~ 2025-10은 단·복식 구분 없이 통합전적만 제공됩니다.</div>
     </div>
   </section>
 
-  <!-- 상세 분석 -->
+  <!-- ✅ 상세 분석 -->
   <section class="grid" style="margin-top:12px;">
     <div class="card" style="grid-column: span 12;">
       <h3>🔎 상세 분석 (11월~)</h3>
@@ -159,11 +177,12 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
     </div>
   </section>
 
-  <!-- 그래프(지연 로딩) -->
+  <!-- ✅ 그래프 (지연 로딩) -->
   <section class="grid" style="margin-top:12px;">
     <div class="card" style="grid-column: span 12;">
       <h3>📊 시각화</h3>
       <button class="btn-xl" id="btnLoadCharts">📈 그래프 열기 (지연 로딩)</button>
+      
       <div class="canvas-box" id="canvasBox" style="margin-top:12px;">
         <div class="canvas-grid">
           <canvas id="chartRate"></canvas>
@@ -180,11 +199,14 @@ h1{margin:0; font-size:clamp(18px,4vw,22px); color:var(--accent); font-weight:80
 
 </main>
 
+<!-- ✅ Firebase + 데이터 처리 -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, get, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// ===== Firebase =====
+/* ------------------------------
+   ✅ Firebase 초기화
+------------------------------ */
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
@@ -197,220 +219,263 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-// ===== Utils =====
+/* ------------------------------
+   ✅ Utils
+------------------------------ */
 const $ = s => document.querySelector(s);
 const fmt1 = n => (Math.round(n*10)/10).toFixed(1);
-const yyyymm = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-const KST = (ts)=> new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
-const cmpMonth = (a,b)=> a.localeCompare(b); // YYYY-MM 문자열 비교
-const POINT_WIN = 2, POINT_LOSE = -1;
+const yyyymm = (d)=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+const POINT_WIN  = 2;
+const POINT_LOSE = -1;
 
-// ===== Query Param =====
-const params = new URLSearchParams(location.search);
-const playerName = params.get('name') || '';
-$('#playerNameSub').textContent = playerName ? `선수: ${playerName}` : '선수 이름 정보가 없습니다';
+// 월 비교
+const cmpMonth = (a,b)=> a.localeCompare(b);
 
-// ===== Data holders =====
-let playerLevels = {};      // {name: level}
-let months = [];            // 수집된 월(문자열) 정렬
-let perMonthAll = {};       // { 'YYYY-MM': { total, win, lose, rate } }  // 통합
-let perMonthSingle = {};    // { 'YYYY-MM': { total, win, lose, rate } }  // 11월~
-let perMonthDouble = {};    // { 'YYYY-MM': { total, win, lose, rate, points } } // 11월~
-let oppMapSingle = {};      // { opponentName: { win, lose } } (11월~)
-let partnerMapDouble = {};  // { "파트너": { win, lose, points } } (11월~)
-let sumPointsFromNov = 0;   // 11월~ 개인 누적 승점
+/* ------------------------------
+   ✅ URL 파라미터
+------------------------------ */
+const params     = new URLSearchParams(location.search);
+const playerName = params.get("name") || "";
+$("#playerNameSub").textContent = playerName ? `선수: ${playerName}` : "선수 정보 없음";
+
+/* ------------------------------
+   ✅ 로컬 데이터 구조
+------------------------------ */
+let playerLevels = {};
+let months = [];
+
+let perMonthAll    = {}; // 월별 통합
+let perMonthSingle = {}; // 월별 단식
+let perMonthDouble = {}; // 월별 복식
+
+let oppMapSingle   = {}; // 상대별 단식
+let partnerMapDouble = {}; // 파트너별 복식
+
+let sumAllTotal = 0, sumAllWin = 0, sumAllLose = 0;
 let sumSglTotal = 0, sumSglWin = 0, sumSglLose = 0;
 let sumDblTotal = 0, sumDblWin = 0, sumDblLose = 0;
-let sumAllTotal = 0, sumAllWin = 0, sumAllLose = 0;
+let sumPoints = 0;
 
-// ===== Fetch players level =====
-const playerSnap = await get(ref(db,'players'));
-if (playerSnap.exists()){
-  const pdata = playerSnap.val() || {};
-  Object.values(pdata).forEach(p=>{
-    if (p.name) playerLevels[p.name] = p.level ?? '-';
+/* ------------------------------
+   ✅ 1) Players (부수) 로딩
+------------------------------ */
+async function loadPlayers() {
+  const snap = await get(ref(db, "players"));
+  if (!snap.exists()) return;
+
+  const data = snap.val();
+  Object.values(data).forEach(p => {
+    if (p.name) playerLevels[p.name] = p.level ?? "-";
   });
 }
 
-// ===== 1) 9월/10월: monthlyReports → 통합전적만 =====
-async function loadPastMonths(){
-  const targets = ['2025-09','2025-10'];
-  for (const m of targets){
+/* ------------------------------
+   ✅ 2) 2025-09, 10 : monthlyReports (통합전적)
+------------------------------ */
+async function loadPastReports() {
+  const targets = ["2025-09", "2025-10"];
+
+  for (let m of targets) {
     const snap = await get(ref(db, `monthlyReports/${m}/players`));
     if (!snap.exists()) continue;
+
     const arr = Object.values(snap.val());
-    // 데이터 스키마 가변 대응: wins/losses/winRate or win/lose/rate
-    const row = arr.find(r => (r.name === playerName));
+    const row = arr.find(p => p.name === playerName);
     if (!row) continue;
 
-    const win = Number(row.wins ?? row.win ?? 0);
+    const win  = Number(row.wins ?? row.win ?? 0);
     const lose = Number(row.losses ?? row.lose ?? 0);
     const total = win + lose;
-    const rate = total ? (win/total*100) : 0;
+    const rate  = total ? win / total * 100 : 0;
 
     perMonthAll[m] = { total, win, lose, rate };
     months.push(m);
 
-    sumAllTotal += total; sumAllWin += win; sumAllLose += lose;
+    sumAllTotal += total;
+    sumAllWin   += win;
+    sumAllLose  += lose;
   }
 }
 
-// ===== 2) 11월~: matches → 단식/복식 분리 & 상세 =====
-async function loadMatchesFromNov(){
-  const snap = await get(ref(db,'matches'));
+/* ------------------------------
+   ✅ 3) 11월 이후: matches에서 단식·복식 분리
+------------------------------ */
+async function loadAfterNov() {
+  const snap = await get(ref(db, "matches"));
   if (!snap.exists()) return;
-  const data = Object.values(snap.val());
 
-  const NOV_2025 = '2025-11';
+  const NOV = "2025-11";
+  const matches = Object.values(snap.val());
 
-  // 선별: monthKey >= 2025-11 & 이 선수 포함 경기
-  const myMatches = data.filter(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    if (cmpMonth(mk, NOV_2025) < 0) return false;
-    const names = [...(m.namesA||[]), ...(m.namesB||[])];
-    return names.includes(playerName);
+  const myGames = matches.filter(m => {
+    const mk = m.monthKey;
+    if (!mk) return false;
+    if (cmpMonth(mk, NOV) < 0) return false;
+
+    return [...m.namesA, ...m.namesB].includes(playerName);
   });
 
-  // 월 목록
-  myMatches.forEach(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    if (!months.includes(mk)) months.push(mk);
+  // 월 목록 확보
+  myGames.forEach(g => {
+    if (!months.includes(g.monthKey)) months.push(g.monthKey);
   });
 
-  // 초기화
-  months.forEach(m=>{
-    if (!perMonthAll[m])    perMonthAll[m]    = { total:0, win:0, lose:0, rate:0 };
+  // 월별 초기화
+  months.forEach(m => {
+    if (!perMonthAll[m]) perMonthAll[m] = { total:0, win:0, lose:0, rate:0 };
     if (!perMonthSingle[m]) perMonthSingle[m] = { total:0, win:0, lose:0, rate:0 };
     if (!perMonthDouble[m]) perMonthDouble[m] = { total:0, win:0, lose:0, rate:0, points:0 };
   });
 
   // 집계
-  myMatches.forEach(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    const sideA = m.namesA || [];
-    const sideB = m.namesB || [];
-    const mode  = m.mode || 'single'; // 안전
-    const winA = (m.winnerSide === 'A');
-    const iAmA = sideA.includes(playerName);
-    const iAmB = sideB.includes(playerName);
+  myGames.forEach(g => {
+    const mk = g.monthKey;
+    const mode = g.mode || "single";
 
-    const iWon = (winA && iAmA) || (!winA && iAmB);
-    const iLose= !iWon;
+    const A = g.namesA || [];
+    const B = g.namesB || [];
+    const iAmA = A.includes(playerName);
+    const iWon = (g.winnerSide === "A" && iAmA) || (g.winnerSide === "B" && !iAmA);
 
     // 통합
-    perMonthAll[mk].total++; if (iWon) perMonthAll[mk].win++; else perMonthAll[mk].lose++;
+    perMonthAll[mk].total++;
+    if (iWon) perMonthAll[mk].win++; else perMonthAll[mk].lose++;
 
-    // 단/복식 분기
-    if (mode === 'single'){
-      perMonthSingle[mk].total++; if (iWon) perMonthSingle[mk].win++; else perMonthSingle[mk].lose++;
+    // 단식
+    if (mode === "single") {
+      perMonthSingle[mk].total++;
+      if (iWon) perMonthSingle[mk].win++; else perMonthSingle[mk].lose++;
 
-      // 상대 이름
-      const opp = iAmA ? sideB[0] : sideA[0];
-      if (opp){
+      const opp = iAmA ? B[0] : A[0];
+      if (opp) {
         if (!oppMapSingle[opp]) oppMapSingle[opp] = { win:0, lose:0 };
         if (iWon) oppMapSingle[opp].win++; else oppMapSingle[opp].lose++;
       }
-    } else if (mode === 'double'){
-      perMonthDouble[mk].total++; if (iWon) perMonthDouble[mk].win++; else perMonthDouble[mk].lose++;
 
-      // 승점
-      perMonthDouble[mk].points += iWon ? POINT_WIN : POINT_LOSE;
-      sumPointsFromNov += iWon ? POINT_WIN : POINT_LOSE;
+    // 복식
+    } else if (mode === "double") {
+      perMonthDouble[mk].total++;
+      if (iWon) perMonthDouble[mk].win++; else perMonthDouble[mk].lose++;
 
-      // 파트너: 같은 사이드에서 나 말고 한 명
-      let partner = null;
-      if (iAmA) partner = sideA.find(n => n !== playerName);
-      else if (iAmB) partner = sideB.find(n => n !== playerName);
-      if (partner){
+      const pts = iWon ? POINT_WIN : POINT_LOSE;
+      perMonthDouble[mk].points += pts;
+      sumPoints += pts;
+
+      const team = iAmA ? A : B;
+      const partner = team.find(n => n !== playerName);
+      if (partner) {
         if (!partnerMapDouble[partner]) partnerMapDouble[partner] = { win:0, lose:0, points:0 };
-        if (iWon){ partnerMapDouble[partner].win++; partnerMapDouble[partner].points += POINT_WIN; }
-        else     { partnerMapDouble[partner].lose++; partnerMapDouble[partner].points += POINT_LOSE; }
+        if (iWon) {
+          partnerMapDouble[partner].win++;
+          partnerMapDouble[partner].points += POINT_WIN;
+        } else {
+          partnerMapDouble[partner].lose++;
+          partnerMapDouble[partner].points += POINT_LOSE;
+        }
       }
     }
   });
 
-  // 비율 계산 + 누적합 반영
-  months.forEach(m=>{
-    const a = perMonthAll[m];    a.rate = a.total? (a.win/a.total*100):0;
-    if (perMonthSingle[m]){ const s = perMonthSingle[m]; s.rate = s.total? (s.win/s.total*100):0; }
-    if (perMonthDouble[m]){ const d = perMonthDouble[m]; d.rate = d.total? (d.win/d.total*100):0; }
-  });
+  // 승률 계산
+  months.forEach(m => {
+    const a = perMonthAll[m]; 
+    const s = perMonthSingle[m];
+    const d = perMonthDouble[m];
 
-  // KPI 집계
-  months.forEach(m=>{
-    const s = perMonthSingle[m] || { total:0, win:0, lose:0 };
-    const d = perMonthDouble[m] || { total:0, win:0, lose:0 };
+    a.rate = a.total ? a.win / a.total * 100 : 0;
+    if (s) s.rate = s.total ? s.win / s.total * 100 : 0;
+    if (d) d.rate = d.total ? d.win / d.total * 100 : 0;
+
     sumSglTotal += s.total; sumSglWin += s.win; sumSglLose += s.lose;
     sumDblTotal += d.total; sumDblWin += d.win; sumDblLose += d.lose;
+
+    sumAllTotal += a.total; sumAllWin += a.win; sumAllLose += a.lose;
   });
 }
 
-// ===== 렌더: KPI & 월별 리스트 & 상세 =====
-function renderKPI(){
-  // 누적 통합
-  // (9~10월 monthlyReports + 11월~ matches 합산)
-  // 이미 sumAll...은 9~10월 반영됨 → 11월~ 통합을 더한다
-  months.forEach(m=>{
-    if (cmpMonth(m,'2025-11')>=0){
-      const a = perMonthAll[m] || { total:0, win:0, lose:0 };
-      sumAllTotal += a.total; sumAllWin += a.win; sumAllLose += a.lose;
-    }
-  });
+/* ------------------------------
+   ✅ KPI 렌더링
+------------------------------ */
+function renderKPI() {
+  $("#kpiAllTotal").textContent = sumAllTotal;
+  $("#kpiAllWL").textContent    = `${sumAllWin}승 / ${sumAllLose}패`;
 
-  $('#kpiAllTotal').textContent = `${sumAllTotal}`;
-  $('#kpiAllWL').textContent    = `${sumAllWin}승 / ${sumAllLose}패`;
+  $("#kpiSglTotal").textContent = sumSglTotal;
+  $("#kpiSglWL").textContent    = `${sumSglWin}승 / ${sumSglLose}패`;
 
-  $('#kpiSglTotal').textContent = `${sumSglTotal}`;
-  $('#kpiSglWL').textContent    = `${sumSglWin}승 / ${sumSglLose}패`;
+  $("#kpiDblTotal").textContent = sumDblTotal;
+  $("#kpiDblWL").textContent    = `${sumDblWin}승 / ${sumDblLose}패`;
 
-  $('#kpiDblTotal').textContent = `${sumDblTotal}`;
-  $('#kpiDblWL').textContent    = `${sumDblWin}승 / ${sumDblLose}패`;
+  $("#kpiPoints").textContent   = sumPoints;
 
-  $('#kpiPoints').textContent   = `${sumPointsFromNov}`;
-  $('#periodBadge').textContent = `집계 범위: 2025-09 ~ ${months.length? months.sort()[months.length-1] : '현재'}`;
+  const last = months.slice().sort().at(-1) || "현재";
+  $("#periodBadge").textContent = `집계 범위: 2025-09 ~ ${last}`;
 }
 
-function renderMonthCards(){
-  const box = $('#monthList');
-  box.innerHTML = '';
+/* ------------------------------
+   ✅ 월별 카드 렌더링
+------------------------------ */
+function renderMonthCards() {
+  const box = $("#monthList");
+  box.innerHTML = "";
 
-  const sortedMonths = months.slice().sort();
-  sortedMonths.forEach(m=>{
-    const a = perMonthAll[m] || { total:0, win:0, lose:0, rate:0 };
-    const s = perMonthSingle[m] || { total:0, win:0, lose:0, rate:0 };
-    const d = perMonthDouble[m] || { total:0, win:0, lose:0, rate:0, points:0 };
+  const sorted = months.slice().sort();
 
-    const fromNov = cmpMonth(m,'2025-11')>=0;
-    const pill = fromNov ? `<span class="tag">단/복식 분리</span>` : `<span class="tag" style="background:#eef2ff;color:#3730a3">통합전적</span>`;
+  sorted.forEach(m => {
+    const a = perMonthAll[m];
+    const s = perMonthSingle[m];
+    const d = perMonthDouble[m];
 
-    box.insertAdjacentHTML('beforeend', `
+    const isAfterNov = cmpMonth(m, "2025-11") >= 0;
+
+    box.insertAdjacentHTML("beforeend", `
       <div class="item">
         <div class="l">
-          ${pill}
+          ${isAfterNov 
+            ? `<span class="tag">단/복식</span>` 
+            : `<span class="tag" style="background:#eef2ff;color:#3730a3">통합</span>`}
           <div><b>${m}</b></div>
         </div>
         <div class="r">
-          ${fromNov
+          ${isAfterNov
             ? `통합 ${a.total}G · ${fmt1(a.rate)}% / 단식 ${s.total}G · ${fmt1(s.rate)}% / 복식 ${d.total}G · ${fmt1(d.rate)}% · 승점 ${d.points}`
-            : `통합 ${a.total}G · ${a.win}승 ${a.lose}패 · ${fmt1(a.rate)}%`}
+            : `통합 ${a.total}G · ${a.win}승 ${a.lose}패 · ${fmt1(a.rate)}%`
+          }
         </div>
       </div>
     `);
   });
 }
 
-function renderDetails(){
-  // 단식 — 상대별
-  const oppBox = $('#opponentSingles');
-  oppBox.innerHTML = '';
-  const oppArr = Object.entries(oppMapSingle).map(([name,v])=>({name, ...v, total:v.win+v.lose, rate: (v.win+v.lose)? (v.win/(v.win+v.lose)*100):0}))
-    .sort((a,b)=> b.rate - a.rate || b.total - a.total || (playerLevels[a.name]??99) - (playerLevels[b.name]??99));
-  if (!oppArr.length){
-    oppBox.innerHTML = `<div class="dim">11월 이후 단식 기록이 없습니다.</div>`;
-  }else{
-    oppArr.forEach(o=>{
-      const lvl = playerLevels[o.name] ?? '-';
-      oppBox.insertAdjacentHTML('beforeend', `
+/* ------------------------------
+   ✅ 상세 분석 렌더링
+------------------------------ */
+function renderDetails() {
+  const oppBox = $("#opponentSingles");
+  const ptnBox = $("#partnerDoubles");
+
+  oppBox.innerHTML = "";
+  ptnBox.innerHTML = "";
+
+  // 단식 — 상대
+  const oppArr = Object.entries(oppMapSingle).map(([name,v]) => ({
+    name,
+    total: v.win + v.lose,
+    win: v.win,
+    lose: v.lose,
+    rate: (v.win + v.lose) ? (v.win / (v.win + v.lose) * 100) : 0
+  })).sort((a,b) =>
+      b.rate - a.rate ||
+      b.total - a.total ||
+      (playerLevels[a.name] ?? 99) - (playerLevels[b.name] ?? 99)
+  );
+
+  if (!oppArr.length) {
+    oppBox.innerHTML = `<div class="dim">단식 기록이 없습니다.</div>`;
+  } else {
+    oppArr.forEach(o => {
+      const lvl = playerLevels[o.name] ?? "-";
+      oppBox.insertAdjacentHTML("beforeend", `
         <div class="item">
           <div class="l">
             <span class="tag">상대</span>
@@ -422,18 +487,27 @@ function renderDetails(){
     });
   }
 
-  // 복식 — 파트너별
-  const ptnBox = $('#partnerDoubles');
-  ptnBox.innerHTML = '';
-  const ptnArr = Object.entries(partnerMapDouble).map(([name,v])=>({name, ...v, total:v.win+v.lose, rate:(v.win+v.lose)? (v.win/(v.win+v.lose)*100):0}))
-    .sort((a,b)=> (b.points - a.points) || (b.rate - a.rate) || (b.total - a.total) || (playerLevels[a.name]??99) - (playerLevels[b.name]??99));
-  if (!ptnArr.length){
-    ptnBox.innerHTML = `<div class="dim">11월 이후 복식 기록이 없습니다.</div>`;
-  }else{
-    ptnArr.forEach(p=>{
-      const lvl = playerLevels[p.name] ?? '-';
-      const sign = p.points>0? `+${p.points}` : `${p.points}`;
-      ptnBox.insertAdjacentHTML('beforeend', `
+  // 복식 — 파트너
+  const ptnArr = Object.entries(partnerMapDouble).map(([name,v]) => ({
+    name,
+    win: v.win,
+    lose: v.lose,
+    points: v.points,
+    total: v.win + v.lose,
+    rate: (v.win + v.lose) ? (v.win / (v.win + v.lose) * 100) : 0
+  })).sort((a,b) =>
+      (b.points - a.points) ||
+      (b.rate - a.rate) ||
+      (b.total - a.total)
+  );
+
+  if (!ptnArr.length) {
+    ptnBox.innerHTML = `<div class="dim">복식 기록이 없습니다.</div>`;
+  } else {
+    ptnArr.forEach(p => {
+      const lvl = playerLevels[p.name] ?? "-";
+      const sign = p.points > 0 ? `+${p.points}` : p.points;
+      ptnBox.insertAdjacentHTML("beforeend", `
         <div class="item">
           <div class="l">
             <span class="tag">파트너</span>
@@ -446,83 +520,157 @@ function renderDetails(){
   }
 }
 
-// ===== Charts (지연 로딩) =====
-let chartsLoaded = false;
-function buildCharts(){
-  if (chartsLoaded) return;
-  chartsLoaded = true;
-  $('#canvasBox').style.display = 'block';
-
-  // 월 정렬
-  const ms = months.slice().sort();
-
-  // 1) 월별 승률(통합)
-  const rateAll = ms.map(m=> (perMonthAll[m]?.rate ?? 0));
-  new Chart($('#chartRate'), {
-    type:'line',
-    data:{
-      labels: ms, datasets:[{label:'월별 승률(통합%)', data:rateAll, tension:.2}]
-    },
-    options:{responsive:true, plugins:{legend:{display:true}}}
-  });
-
-  // 2) 월별 경기수(통합)
-  const gamesAll = ms.map(m=> (perMonthAll[m]?.total ?? 0));
-  new Chart($('#chartGames'), {
-    type:'bar',
-    data:{labels:ms, datasets:[{label:'월별 경기수(통합)', data:gamesAll}]},
-    options:{responsive:true}
-  });
-
-  // 3) 단식/복식 비율 (11월~ 합산)
-  const sglSum = sumSglTotal;
-  const dblSum = sumDblTotal;
-  new Chart($('#chartModePie'), {
-    type:'doughnut',
-    data:{labels:['단식','복식'], datasets:[{data:[sglSum, dblSum]}]},
-    options:{responsive:true}
-  });
-
-  // 4) 상대별 승률 (Top 8)
-  const oppArr = Object.entries(oppMapSingle).map(([name,v])=>({name, win:v.win, lose:v.lose, rate:(v.win+v.lose)? v.win/(v.win+v.lose)*100:0}))
-                .sort((a,b)=> b.rate - a.rate).slice(0,8);
-  new Chart($('#chartOpp'), {
-    type:'bar',
-    data:{labels: oppArr.map(o=>o.name), datasets:[{label:'단식 상대별 승률(%)', data: oppArr.map(o=>o.rate)}]},
-    options:{responsive:true}
-  });
-
-  // 5) 파트너별 승률 (Top 8)
-  const ptnArr = Object.entries(partnerMapDouble).map(([name,v])=>({name, win:v.win, lose:v.lose, rate:(v.win+v.lose)? v.win/(v.win+v.lose)*100:0}))
-                .sort((a,b)=> b.rate - a.rate).slice(0,8);
-  new Chart($('#chartPartner'), {
-    type:'bar',
-    data:{labels: ptnArr.map(o=>o.name), datasets:[{label:'복식 파트너별 승률(%)', data: ptnArr.map(o=>o.rate)}]},
-    options:{responsive:true}
-  });
-
-  // 6) 월별 누적 승점(복식)
-  const pts = ms.map(m => (perMonthDouble[m]?.points ?? 0));
-  // 누적합
-  let run = 0; const ptsCum = pts.map(v=> (run+=v));
-  new Chart($('#chartPoints'), {
-    type:'line',
-    data:{labels:ms, datasets:[{label:'복식 누적 승점', data:ptsCum, tension:.2}]},
-    options:{responsive:true}
-  });
-}
-
-// ===== Bootstrap =====
-await loadPastMonths();     // 2025-09, 2025-10 (통합)
-await loadMatchesFromNov(); // 2025-11~ (단/복식 분리)
+/* ------------------------------
+   ✅ 데이터 로딩 → 렌더 실행
+------------------------------ */
+await loadPlayers();
+await loadPastReports();
+await loadAfterNov();
 
 renderKPI();
 renderMonthCards();
 renderDetails();
 
-// 버튼들
-$('#openCharts').addEventListener('click', ()=>{ $('#btnLoadCharts').scrollIntoView({behavior:'smooth',block:'center'}); });
-$('#btnLoadCharts').addEventListener('click', buildCharts);
 </script>
+
+<!-- ✅ Part 4 / 4 — Chart.js: 중복 방지 + destroy 포함 -->
+<script>
+/* ===== 안전 가드: Part 3가 데이터를 노출했는지 확인 =====
+   Part 3 맨 마지막 줄에 아래 한 줄이 반드시 있어야 합니다.
+   window.__pp = { months, perMonthAll, perMonthSingle, perMonthDouble, oppMapSingle, partnerMapDouble, sumSglTotal, sumDblTotal };
+*/
+if (!window.__pp) {
+  console.warn("⛔ window.__pp 가 없습니다. Part 3 마지막에 window.__pp 할당을 추가하세요.");
+  window.__pp = { months:[], perMonthAll:{}, perMonthSingle:{}, perMonthDouble:{}, oppMapSingle:{}, partnerMapDouble:{}, sumSglTotal:0, sumDblTotal:0 };
+}
+
+/* ===== Chart 인스턴스 레지스트리 ===== */
+window.__charts = window.__charts || {};
+window.__chartsLoaded = window.__chartsLoaded || false;
+
+function destroyAllCharts(){
+  if (!window.__charts) return;
+  Object.values(window.__charts).forEach(ch => {
+    try { ch && ch.destroy && ch.destroy(); } catch(e) {}
+  });
+  window.__charts = {};
+  window.__chartsLoaded = false;
+}
+
+/* ===== 그래프 생성 (한 번만) ===== */
+function buildChartsOnce(){
+  if (window.__chartsLoaded) return;  // 중복 생성 방지
+  window.__chartsLoaded = true;
+
+  const { months, perMonthAll, perMonthSingle, perMonthDouble, oppMapSingle, partnerMapDouble, sumSglTotal, sumDblTotal } = window.__pp;
+
+  // 캔버스 영역 표시
+  const box = document.getElementById("canvasBox");
+  if (box) box.style.display = "block";
+
+  // 공통: 정렬된 월
+  const ms = months.slice().sort();
+
+  // 1) 월별 승률(통합)
+  {
+    const ctx = document.getElementById("chartRate");
+    if (ctx){
+      const data = ms.map(m => (perMonthAll[m]?.rate ?? 0));
+      window.__charts.chartRate = new Chart(ctx, {
+        type:'line',
+        data:{ labels:ms, datasets:[{ label:'월별 승률(통합 %)', data, tension:.25 }]},
+        options:{ responsive:true, scales:{ y:{ beginAtZero:true, max:100 } } }
+      });
+    }
+  }
+
+  // 2) 월별 경기수(통합)
+  {
+    const ctx = document.getElementById("chartGames");
+    if (ctx){
+      const data = ms.map(m => (perMonthAll[m]?.total ?? 0));
+      window.__charts.chartGames = new Chart(ctx, {
+        type:'bar',
+        data:{ labels:ms, datasets:[{ label:'월별 경기수(통합)', data }]},
+        options:{ responsive:true, scales:{ y:{ beginAtZero:true } } }
+      });
+    }
+  }
+
+  // 3) 단식/복식 비율 (11월~ 합산)
+  {
+    const ctx = document.getElementById("chartModePie");
+    if (ctx){
+      window.__charts.chartModePie = new Chart(ctx, {
+        type:'doughnut',
+        data:{ labels:['단식','복식'], datasets:[{ data:[Number(sumSglTotal)||0, Number(sumDblTotal)||0] }]},
+        options:{ responsive:true, plugins:{ legend:{ position:'bottom' } } }
+      });
+    }
+  }
+
+  // 4) 단식 상대별 승률 Top 8
+  {
+    const ctx = document.getElementById("chartOpp");
+    if (ctx){
+      const arr = Object.entries(oppMapSingle).map(([name,v])=>({
+        name, rate: (v.win+v.lose)? v.win/(v.win+v.lose)*100 : 0
+      })).sort((a,b)=> b.rate - a.rate).slice(0,8);
+
+      window.__charts.chartOpp = new Chart(ctx, {
+        type:'bar',
+        data:{ labels: arr.map(o=>o.name), datasets:[{ label:'단식 상대별 승률(%)', data: arr.map(o=>o.rate) }]},
+        options:{ responsive:true, scales:{ y:{ beginAtZero:true, max:100 } } }
+      });
+    }
+  }
+
+  // 5) 복식 파트너별 승률 Top 8
+  {
+    const ctx = document.getElementById("chartPartner");
+    if (ctx){
+      const arr = Object.entries(partnerMapDouble).map(([name,v])=>({
+        name, rate: (v.win+v.lose)? v.win/(v.win+v.lose)*100 : 0
+      })).sort((a,b)=> b.rate - a.rate).slice(0,8);
+
+      window.__charts.chartPartner = new Chart(ctx, {
+        type:'bar',
+        data:{ labels: arr.map(o=>o.name), datasets:[{ label:'복식 파트너별 승률(%)', data: arr.map(o=>o.rate) }]},
+        options:{ responsive:true, scales:{ y:{ beginAtZero:true, max:100 } } }
+      });
+    }
+  }
+
+  // 6) 월별 누적 승점(복식)
+  {
+    const ctx = document.getElementById("chartPoints");
+    if (ctx){
+      const pts = ms.map(m => (perMonthDouble[m]?.points ?? 0));
+      let run = 0; const cum = pts.map(v => (run += v));
+      window.__charts.chartPoints = new Chart(ctx, {
+        type:'line',
+        data:{ labels:ms, datasets:[{ label:'복식 누적 승점', data:cum, tension:.25 }]},
+        options:{ responsive:true, scales:{ y:{ beginAtZero:true } } }
+      });
+    }
+  }
+}
+
+/* ===== 필요 시 강제 재생성 (destroy 후 다시 생성) ===== */
+function rebuildCharts(){
+  destroyAllCharts();
+  buildChartsOnce();
+}
+
+/* ===== 버튼 이벤트 바인딩 ===== */
+document.getElementById("btnLoadCharts")?.addEventListener("click", buildChartsOnce);
+document.getElementById("openCharts")?.addEventListener("click", () => {
+  document.getElementById("btnLoadCharts")?.scrollIntoView({ behavior:"smooth", block:"center" });
+});
+
+/* ===== 페이지 이탈 시 정리(선택) ===== */
+window.addEventListener("beforeunload", destroyAllCharts);
+</script>
+
 </body>
 </html>
