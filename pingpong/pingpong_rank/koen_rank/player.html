@@ -1008,50 +1008,88 @@ $('#btnLoadCharts').addEventListener('click', buildCharts);
 </div>
 
 <script type="module">
-const analysisBtn = document.getElementById("analysisBtn");
-const modal = document.getElementById("analysisModal");
-const analysisBox = document.getElementById("analysisResult");
-const closeModal = document.getElementById("closeAnalysisModal");
+/* ======================================================
+   ✅ Firebase Import & 초기화 (필수)
+====================================================== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+/* ======================================================
+   ✅ URL에서 playerName 읽기
+====================================================== */
+const params = new URLSearchParams(location.search);
+const playerName = params.get("name") || "";
+
+/* ======================================================
+   ✅ DOM 요소
+====================================================== */
+const analysisBtn  = document.getElementById("analysisBtn");
+const modal        = document.getElementById("analysisModal");
+const analysisBox  = document.getElementById("analysisResult");
+const closeModal   = document.getElementById("closeAnalysisModal");
+
+/* ======================================================
+   ✅ 모달 열기 + analysis.html 불러오기
+====================================================== */
 analysisBtn.addEventListener("click", async () => {
-  const res = await fetch(`analysis.html`);
+
+  const res = await fetch("analysis.html");
   const html = await res.text();
 
-  analysisBox.innerHTML = html;
+  analysisBox.innerHTML = html;   // ✅ 분석용 HTML 조각 삽입
   modal.style.display = "flex";
 
+  // ✅ HTML 삽입 후 runAnalysis() 실행
   setTimeout(() => {
     runAnalysis();
   }, 30);
 
-});   // ✅ ★★★★★ 요 중괄호가 반드시 필요! ★★★★★
+});
 
-
-
+/* ======================================================
+   ✅ 모달 닫기
+====================================================== */
 closeModal.addEventListener("click", () => {
   modal.style.display = "none";
 });
 
-modal.addEventListener("click", (e) => {
+modal.addEventListener("click", e => {
   if (e.target === modal) modal.style.display = "none";
 });
 
-// ✅ 분석용: player.html 안에서 실행
-
+/* ======================================================
+   ✅ Firebase에서 경기 불러오기
+====================================================== */
 async function loadMatchesForAnalysis() {
   const snap = await get(ref(db, "matches"));
   if (!snap.exists()) return [];
 
-  const data = Object.values(snap.val());
-  return data.filter(m => {
+  const all = Object.values(snap.val());
+
+  return all.filter(m => {
     const names = [...(m.namesA || []), ...(m.namesB || [])];
-    return names.includes(playerName); // ✅ 이 선수 포함 경기만
+    return names.includes(playerName);
   });
 }
 
-
-// ✅ 분석 HTML 생성
+/* ======================================================
+   ✅ 분석 HTML 생성
+====================================================== */
 function makeAnalysis(matches) {
+
   if (!matches.length) {
     return `<div class="box">경기 기록이 부족하여 분석할 수 없습니다.</div>`;
   }
@@ -1073,10 +1111,11 @@ function makeAnalysis(matches) {
         if (!opp[other]) opp[other]={win:0, lose:0};
         if (won) opp[other].win++; else opp[other].lose++;
       }
-    } else {
+    }
+    else { // double
       if (won) dWin++; else dLose++;
-      const same = isA? A : B;
-      const pt = same.find(n=>n!==playerName);
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== playerName);
       if (pt){
         if (!partner[pt]) partner[pt]={win:0, lose:0};
         if (won) partner[pt].win++; else partner[pt].lose++;
@@ -1084,57 +1123,54 @@ function makeAnalysis(matches) {
     }
   });
 
-  const sRate = (sWin+sLose)? Math.round(sWin/(sWin+sLose)*100):0;
-  const dRate = (dWin+dLose)? Math.round(dWin/(dWin+dLose)*100):0;
+  const sRate = (sWin+sLose)? Math.round(sWin/(sWin+sLose)*100) : 0;
+  const dRate = (dWin+dLose)? Math.round(dWin/(dWin+dLose)*100) : 0;
 
-  const topOpp = Object.entries(opp)
-      .sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
-
-  const topPartner = Object.entries(partner)
-      .sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
+  const topOpp = Object.entries(opp).sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
+  const topPartner = Object.entries(partner).sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
 
   return `
-  <div class="section-title">📌 전체 요약</div>
-  <div class="box">
-    <b class="highlight">${playerName}</b> 선수는  
-    <span class="good">단식 ${sRate}%</span>,  
-    <span class="highlight">복식 ${dRate}%</span> 승률을 기록했습니다.
-    <br><br>
-    경기 스타일은 <b>${dRate > sRate ? "복식에서 강점" : "단식에서 안정적"}</b>인 편입니다.
-  </div>
+    <div class="section-title">📌 전체 요약</div>
+    <div class="box">
+      <b class="highlight">${playerName}</b> 선수는  
+      <span class="good">단식 ${sRate}%</span>,  
+      <span class="highlight">복식 ${dRate}%</span> 승률을 기록했습니다.
+      <br><br>
+      경기 스타일은 <b>${dRate > sRate ? "복식에서 강점" : "단식에서 안정적"}</b>입니다.
+    </div>
 
-  <div class="section-title">🎯 단식 특징</div>
-  <div class="box">
-    ${sWin+sLose ? `
-      단식은 <b>${sWin}승 ${sLose}패</b> 입니다.<br>
-      ${topOpp ? `가장 많이 경기한 상대는 <b>${topOpp[0]}</b>입니다.` : ""}
-    ` : "단식 기록이 없습니다."}
-  </div>
+    <div class="section-title">🎯 단식 특징</div>
+    <div class="box">
+      ${sWin+sLose ? `
+        단식 <b>${sWin}승 ${sLose}패</b><br>
+        ${topOpp ? `가장 많이 만난 상대: <b>${topOpp[0]}</b>` : ""}
+      ` : "단식 기록이 없습니다."}
+    </div>
 
-  <div class="section-title">🤝 복식 특징</div>
-  <div class="box">
-    ${dWin+dLose ? `
-      복식은 <b>${dWin}승 ${dLose}패</b> 입니다.<br>
-      ${topPartner ? `가장 호흡이 많은 파트너는 <b>${topPartner[0]}</b>입니다.` : ""}
-    ` : "복식 기록이 없습니다."}
-  </div>
+    <div class="section-title">🤝 복식 특징</div>
+    <div class="box">
+      ${dWin+dLose ? `
+        복식 <b>${dWin}승 ${dLose}패</b><br>
+        ${topPartner ? `가장 많이 호흡: <b>${topPartner[0]}</b>` : ""}
+      ` : "복식 기록이 없습니다."}
+    </div>
 
-  <div class="section-title">✅ 연습 추천</div>
-  <div class="box">
-    ${
-      sRate < dRate
-        ? `복식은 좋습니다. 대신 <b class="bad">단식 안정성</b>을 개선하면 전체 성적이 크게 향상됩니다.`
-        : `단식이 안정적입니다. <b class="highlight">복식 파트너십 강화</b>가 큰 도움 됩니다.`
-    }
-  </div>
+    <div class="section-title">✅ 연습 추천</div>
+    <div class="box">
+      ${
+        sRate < dRate
+          ? `복식은 좋습니다. <b class="bad">단식 안정성 보완</b>이 필요합니다.`
+          : `<b class="highlight">복식 파트너십 강화</b>에 집중하면 성적이 향상됩니다.`
+      }
+    </div>
   `;
 }
 
-
-// ✅ 최종 실행 함수
+/* ======================================================
+   ✅ runAnalysis(): 모달 내에서 실행
+====================================================== */
 async function runAnalysis() {
   const box = document.querySelector("#analysisContent");
-
   if (!box) return;
 
   box.innerHTML = "데이터 분석 중...";
@@ -1142,8 +1178,8 @@ async function runAnalysis() {
   const matches = await loadMatchesForAnalysis();
   box.innerHTML = makeAnalysis(matches);
 }
-
 </script>
+
 
 </body>
 </html>

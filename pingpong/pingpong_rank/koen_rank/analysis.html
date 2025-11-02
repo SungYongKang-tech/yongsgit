@@ -16,18 +16,20 @@
 
   .analysis-wrap {
     padding: 10px 6px 20px 6px;
+    max-width:640px;
+    margin:0 auto;
   }
 
   h2 {
     margin:0 0 14px 0;
-    font-size:22px;
+    font-size:24px;
     font-weight:900;
     color:#1e3a8a;
     text-align:center;
   }
 
   .section-title {
-    font-size:16px;
+    font-size:17px;
     font-weight:900;
     margin-top:20px;
     margin-bottom:8px;
@@ -44,39 +46,154 @@
     margin-bottom:14px;
   }
 
-  .highlight {
-    color:#2563eb;
+  .highlight { color:#2563eb; font-weight:900; }
+  .good      { color:#0f6a00; font-weight:800; }
+  .bad       { color:#d45500; font-weight:800; }
+
+  a.back {
+    display:inline-block;
+    margin:20px 0;
+    font-size:15px;
+    text-decoration:none;
+    padding:8px 12px;
+    border-radius:8px;
+    background:#e0e7ff;
+    color:#1e3a8a;
     font-weight:900;
-  }
-
-  .good {
-    color:#0f6a00;
-    font-weight:800;
-  }
-
-  .bad {
-    color:#d45500;
-    font-weight:800;
-  }
-
-  .sub {
-    font-size:13px;
-    color:#64748b;
-    margin-bottom:6px;
-    font-weight:700;
   }
 </style>
 </head>
+
 <body>
 
 <div class="analysis-wrap">
+  <a href="javascript:history.back()" class="back">← 돌아가기</a>
+
   <h2>🏓 탁구 스타일 분석</h2>
 
-  <div id="analysisContent">
-    분석을 준비 중입니다...
-  </div>
+  <div id="analysisContent">데이터 불러오는 중...</div>
 </div>
 
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+// ✅ Firebase 초기화
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// ✅ playerName 읽기
+const params = new URLSearchParams(location.search);
+const playerName = params.get("name") || "";
+
+const box = document.getElementById("analysisContent");
+
+// ✅ 해당 선수 경기 기록 불러오기
+async function loadMatches() {
+  const snap = await get(ref(db, "matches"));
+  if (!snap.exists()) return [];
+
+  const matches = Object.values(snap.val());
+  return matches.filter(m => {
+    const names = [...(m.namesA || []), ...(m.namesB || [])];
+    return names.includes(playerName);
+  });
+}
+
+// ✅ 분석 HTML 생성
+function makeAnalysis(matches) {
+  if (!matches.length) {
+    return `<div class="box">경기 기록이 부족하여 분석할 수 없습니다.</div>`;
+  }
+
+  let sWin=0, sLose=0;
+  let dWin=0, dLose=0;
+  let opp={}, partner={};
+
+  matches.forEach(m=>{
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const isA = A.includes(playerName);
+    const won = (m.winnerSide==="A" && isA) || (m.winnerSide==="B" && !isA);
+
+    if (m.mode==="single"){
+      if (won) sWin++; else sLose++;
+      const other = isA ? B[0] : A[0];
+      if (other){
+        if (!opp[other]) opp[other]={win:0, lose:0};
+        if (won) opp[other].win++; else opp[other].lose++;
+      }
+    }
+    else { // double
+      if (won) dWin++; else dLose++;
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== playerName);
+      if (pt){
+        if (!partner[pt]) partner[pt]={win:0, lose:0};
+        if (won) partner[pt].win++; else partner[pt].lose++;
+      }
+    }
+  });
+
+  const sRate = (sWin+sLose)? Math.round(sWin/(sWin+sLose)*100) : 0;
+  const dRate = (dWin+dLose)? Math.round(dWin/(dWin+dLose)*100) : 0;
+
+  const topOpp = Object.entries(opp).sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
+  const topPartner = Object.entries(partner).sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
+
+  return `
+    <div class="section-title">📌 전체 요약</div>
+    <div class="box">
+      <b class="highlight">${playerName}</b> 선수는  
+      단식 <b>${sRate}%</b>,  
+      복식 <b>${dRate}%</b> 승률을 기록했습니다.
+      <br><br>
+      경기 스타일은 <b>${dRate > sRate ? "복식에서 강점" : "단식에서 안정적"}</b>입니다.
+    </div>
+
+    <div class="section-title">🎯 단식 특징</div>
+    <div class="box">
+      ${sWin+sLose ? `
+        단식 <b>${sWin}승 ${sLose}패</b><br>
+        ${topOpp ? `가장 많이 만난 상대: <b>${topOpp[0]}</b>` : ""}
+      ` : "단식 기록이 없습니다."}
+    </div>
+
+    <div class="section-title">🤝 복식 특징</div>
+    <div class="box">
+      ${dWin+dLose ? `
+        복식 <b>${dWin}승 ${dLose}패</b><br>
+        ${topPartner ? `가장 많이 호흡한 파트너: <b>${topPartner[0]}</b>` : ""}
+      ` : "복식 기록이 없습니다."}
+    </div>
+
+    <div class="section-title">✅ 연습 추천</div>
+    <div class="box">
+      ${
+        sRate < dRate
+          ? `복식은 좋습니다. <b class="bad">단식 안정성 보완</b>이 필요합니다.`
+          : `<b class="highlight">복식 파트너십 강화</b>에 집중하면 성적이 향상됩니다.`
+      }
+    </div>
+  `;
+}
+
+// ✅ 실행
+(async ()=>{
+  box.innerHTML = "데이터 분석 중...";
+  const matches = await loadMatches();
+  box.innerHTML = makeAnalysis(matches);
+})();
+</script>
 
 </body>
 </html>
