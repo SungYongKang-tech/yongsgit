@@ -74,6 +74,9 @@ label{font-size:12px;color:#475569;font-weight:800}
   </div>
 </header>
 
+<div class="analysis-wrap" style="pointer-events:auto;">
+
+
 <main class="wrap">
   <!-- 요약 -->
   <section class="card">
@@ -149,9 +152,9 @@ label{font-size:12px;color:#475569;font-weight:800}
 </main>
 
 <script type="module">
-/* ===============================
+/* ============================================
    ✅ Firebase
-================================*/
+===============================================*/
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
@@ -168,28 +171,20 @@ const firebaseConfig = {
 initializeApp(firebaseConfig);
 const db = getDatabase();
 
-/* ===============================
-   ✅ 기본값 & 유틸
-================================*/
+/* ============================================
+   ✅ 기본 변수
+===============================================*/
 const params = new URLSearchParams(location.search);
 const playerName = params.get("name") || "";
-
 const box = document.getElementById("analysisContent");
 
 const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
-const fmt = (n) => (Math.round(n * 10) / 10);
-const pickMax = (obj, key="total") => {
-  const arr = Object.entries(obj)
-    .map(([k, v]) => ({ name:k, ...v, total:(v.win+v.lose) }))
-    .filter(v => v.total > 0)
-    .sort((a,b)=> b[key] - a[key]);
-  return arr.length ? arr[0] : null;
-};
+const fmt = n => (Math.round(n * 10) / 10);
 
 
-/* ===============================
-   ✅ 1. 통합리그 데이터 로드 
-================================*/
+/* ============================================
+   ✅ 1. 통합 리그 데이터 로드
+===============================================*/
 async function loadMonthlyReports() {
   const snap = await get(ref(db, "monthlyReports"));
   if (!snap.exists()) return [];
@@ -199,10 +194,7 @@ async function loadMonthlyReports() {
 
   Object.entries(data).forEach(([month, obj]) => {
     if (!obj.players) return;
-
-    const arr = Object.values(obj.players);
-    const me = arr.find(p => p.name === playerName);
-
+    const me = Object.values(obj.players).find(p => p.name === playerName);
     if (!me) return;
 
     const win = Number(me.wins ?? me.win ?? 0);
@@ -221,9 +213,9 @@ async function loadMonthlyReports() {
 }
 
 
-/* ===============================
-   ✅ 2. 단식/복식 상세 데이터 로드
-================================*/
+/* ============================================
+   ✅ 2. 단식/복식 경기 로드
+===============================================*/
 async function loadMatches() {
   const snap = await get(ref(db, "matches"));
   if (!snap.exists()) return [];
@@ -237,22 +229,65 @@ async function loadMatches() {
 }
 
 
-/* ===============================
-   ✅ 3. AI 코칭 분석 생성
-================================*/
+/* ============================================
+   ✅ 통합리그 기반 세부 성향 분석
+===============================================*/
+function analyzeUnified(reports) {
+  if (!reports.length) return {
+    trend: "데이터 없음",
+    best: null,
+    worst: null,
+    steady: null,
+    pattern: "통합 기록이 부족하여 성향 분석이 제한됩니다."
+  };
+
+  const best = [...reports].sort((a,b)=> b.rate - a.rate)[0];
+  const worst = [...reports].sort((a,b)=> a.rate - b.rate)[0];
+
+  // 승률 변화량(급상승/급하락)
+  let trend = "안정적";
+  if (reports.length >= 2) {
+    const first = reports[0].rate;
+    const last  = reports[reports.length-1].rate;
+    const diff = last - first;
+
+    if (diff >= 10) trend = "승률이 뚜렷한 상승세";
+    else if (diff <= -10) trend = "승률이 눈에 띄게 하락";
+    else trend = "크게 흔들리지 않는 편";
+  }
+
+  // 경기수 편차 = 꾸준함
+  const totals = reports.map(r=>r.total);
+  const steady = fmt((Math.min(...totals) / Math.max(...totals)) * 100);
+
+  // 성향 패턴
+  let pattern = "";
+  if (best.rate >= 65) {
+    pattern += "강한 날은 몰아치듯 승률이 크게 오르며, 컨디션 영향이 큰 타입.";
+  } else if (best.rate >= 55) {
+    pattern += "전반적으로 꾸준하며, 실수 관리가 좋은 안정형 선수.";
+  } else {
+    pattern += "승부의 흐름을 타기 전에 실점이 먼저 나는 경우가 많아 경기 초반 집중력이 중요.";
+  }
+
+  return { trend, best, worst, steady, pattern };
+}
+
+
+/* ============================================
+   ✅ 단식/복식 + 통합리그 전체 통합 분석 생성
+===============================================*/
 function makeAnalysis(reports, matches) {
 
-  /* ===== 기본 변수 ===== */
+  /* ===== 통합리그 집계 ===== */
   let totalWin = 0, totalLose = 0;
-
   reports.forEach(r => { totalWin += r.win; totalLose += r.lose; });
-
   const allRate = pct(totalWin, totalWin+totalLose);
 
-  /* ===== 단식/복식 데이터 ===== */
-  let sWin=0, sLose=0;
-  let dWin=0, dLose=0;
+  const unified = analyzeUnified(reports);
 
+  /* ===== 단식/복식 집계 ===== */
+  let sWin=0, sLose=0, dWin=0, dLose=0;
   let opp={}, partner={};
 
   matches.forEach(m=>{
@@ -261,21 +296,22 @@ function makeAnalysis(reports, matches) {
     const isA = A.includes(playerName);
     const won = (m.winnerSide==="A" && isA) || (m.winnerSide==="B" && !isA);
 
-    if (m.mode === "single") {
+    if (m.mode==="single"){
       if (won) sWin++; else sLose++;
 
       const other = isA ? B[0] : A[0];
-      if (other) {
-        if (!opp[other]) opp[other] = {win:0, lose:0};
+      if (other){
+        if (!opp[other]) opp[other]={win:0,lose:0};
         if (won) opp[other].win++; else opp[other].lose++;
       }
     } else {
       if (won) dWin++; else dLose++;
 
       const same = isA ? A : B;
-      const pt = same.find(n => n !== playerName);
-      if (pt) {
-        if (!partner[pt]) partner[pt]={win:0, lose:0};
+      const pt = same.find(n=>n!==playerName);
+
+      if(pt){
+        if(!partner[pt]) partner[pt]={win:0,lose:0};
         if (won) partner[pt].win++; else partner[pt].lose++;
       }
     }
@@ -284,94 +320,100 @@ function makeAnalysis(reports, matches) {
   const sRate = pct(sWin, sWin+sLose);
   const dRate = pct(dWin, dWin+dLose);
 
-  const topOpp = pickMax(opp);
-  const topPartner = pickMax(partner);
+  const topOpp = Object.entries(opp)
+    .map(([k,v])=>({name:k, ...v, total:v.win+v.lose}))
+    .sort((a,b)=>b.total-a.total)[0];
 
-  /* ================================
-     ✅ 4. AI 코칭 분석 문장 생성
-  =================================*/
-  let lines = [];
+  const topPartner = Object.entries(partner)
+    .map(([k,v])=>({name:k, ...v, total:v.win+v.lose}))
+    .sort((a,b)=>b.total-a.total)[0];
 
-  /* ✅ 핵심 요약(큰 글씨) */
-  lines.push(`
-    <div style="
-      font-size:20px;
-      font-weight:900;
-      margin-bottom:12px;
-      color:#1e3a8a;
-    ">📌 핵심 요약</div>
-  `);
+  /* ============================================
+      ✅ HTML 생성
+  ============================================*/
+  let out = [];
 
-  lines.push(`
-    <div class="box" style="font-size:16px;">
-      <b class="highlight">${playerName}</b> 선수의 전체 승률은  
-      <b class="highlight">${allRate}%</b>이며,
-      최근 경기 흐름은 <b>${allRate >= 55 ? "상승세" : "안정적"}</b>인 편입니다.
+  /* ✅ 핵심 요약 */
+  out.push(`
+    <div style="font-size:20px;font-weight:900;color:#1e3a8a;margin-bottom:12px;">
+      📌 핵심 요약
     </div>
   `);
 
-  /* ✅ 단식/복식 분석 */
-  lines.push(`
-    <div class="section-title">🎯 단식·복식 성향</div>
+  out.push(`
+    <div class="box" style="font-size:16px;">
+      <b class="highlight">${playerName}</b> 선수는 전체 통합 기준 
+      <b class="highlight">${allRate}% 승률</b>을 기록하고 있으며,
+      최근 흐름은 <b>${unified.trend}</b>입니다.
+    </div>
+  `);
+
+  /* ✅ 통합리그 요약 */
+  out.push(`
+    <div class="section-title">📅 통합리그 요약</div>
     <div class="box">
-      ${sWin+sLose ? `
-        단식: <b>${sWin}승 ${sLose}패 (${sRate}%)</b><br>
-        ${topOpp ? `가장 자주 맞붙은 상대는 <b>${topOpp.name}</b> 입니다.<br>` : ""}
-      ` : "단식 기록이 아직 없습니다."}
+      ${
+        reports.length
+          ? `
+            가장 좋은 달은 <b>${unified.best?.month}</b> (${unified.best?.rate}%),
+            가장 어려웠던 달은 <b>${unified.worst?.month}</b> (${unified.worst?.rate}%)
+            입니다.<br><br>
+            월별 경기수 편차 기준 꾸준함 지수는 <b>${unified.steady}%</b>로,
+            ${unified.steady >= 70 ? "상당히 일정한 페이스를 유지하는 편입니다." 
+                                   : "경기수 변화가 있어 컨디션에 따른 차이가 보입니다."}
+          `
+          : "통합 리그 기록이 아직 없습니다."
+      }
+    </div>
+  `);
+
+  /* ✅ 통합 기반 세부 성향 */
+  out.push(`
+    <div class="section-title">🔍 통합 기록 기반 세부 성향</div>
+    <div class="box">
+      ${unified.pattern}
+    </div>
+  `);
+
+  /* ✅ 단식·복식 */
+  out.push(`
+    <div class="section-title">🎯 단식·복식 분석</div>
+    <div class="box">
+      <b>단식:</b> ${sWin+sLose ? `${sWin}승 ${sLose}패 (${sRate}%)`
+                                : "아직 단식 경기가 없습니다."}<br>
+      ${topOpp ? `주요 상대는 <b>${topOpp.name}</b> 입니다.` : ""}
 
       <div style="height:6px;"></div>
 
-      ${dWin+dLose ? `
-        복식: <b>${dWin}승 ${dLose}패 (${dRate}%)</b><br>
-        ${topPartner ? `주로 함께한 파트너는 <b>${topPartner.name}</b> 입니다.` : ""}
-      ` : "복식 기록이 아직 없습니다."}
+      <b>복식:</b> ${dWin+dLose ? `${dWin}승 ${dLose}패 (${dRate}%)`
+                                : "아직 복식 경기가 없습니다."}<br>
+      ${topPartner ? `가장 많이 함께한 파트너는 <b>${topPartner.name}</b>입니다.` : ""}
     </div>
   `);
 
-  /* ✅ AI 코칭 (강점/약점/개선 방향) */
-  lines.push(`
-    <div class="section-title">🤖 AI 코칭 분석</div>
+  /* ✅ AI 코칭 분석 */
+  out.push(`
+    <div class="section-title">🤖 AI 코칭 스타일</div>
     <div class="box">
-      ${ allRate >= 55
-        ? `전반적으로 안정적인 성적을 유지하고 있습니다. 
-           랠리 중 <b class="good">첫 공격 성공률을 높이는 연습</b>을 병행하면 상위권 성적도 기대됩니다.`
-        : `경기 흐름에서 초반 실점이 누적되는 경향이 보입니다. 
-           <b class="bad">리시브 안정성</b>을 보완하면 전체 승률을 빠르게 끌어올릴 수 있습니다.`
-      }
-
-      <br><br>
-
       ${
-        (!sWin && !dWin)
-          ? "아직 단식/복식 세부 자료가 없어 스타일 분석은 최소화되었습니다."
-          : `
-          데이터 기반으로 보면,  
-          ${sRate > dRate
-            ? `<b class="highlight">단식에서 강점</b>이 뚜렷하며 복식에서는 파트너 조합에 따라 편차가 있습니다.`
-            : `<b class="highlight">복식 협업 능력</b>이 높은 편이며 단식에서는 초반 흐름 관리가 중요합니다.`}
-          `
+        allRate >= 60
+          ? `기본적인 경기가 안정적이며, 랠리 초반 실수만 줄이면 상위권 성적도 노릴 수 있습니다.`
+          : `초반 실점률을 줄이면 전체 승률이 빠르게 올라갈 가능성이 큽니다. 
+             <b class="bad">리시브 안정성 강화</b>를 우선 추천합니다.`
       }
+      <br><br>
+      ${sRate >= dRate
+        ? `단식에서 강점을 보이며, 복식은 파트너 조합을 찾는 과정이 중요합니다.`
+        : `복식 감각은 좋은 편이며, 단식에서 경기 흐름 관리가 승패를 좌우합니다.`}
     </div>
   `);
 
-  /* ✅ 발전 방향 */
-  lines.push(`
-    <div class="section-title">📈 앞으로의 발전 방향</div>
-    <div class="box">
-      - 경기 후반 집중력을 유지하는 패턴을 만들면 승률이 크게 올라갑니다.<br>
-      - 복식의 경우 안정적인 파트너가 정해지면 승점 효율이 상승합니다.<br>
-      - 단식은 초반 5포인트까지의 전적 차이가 전체 승률에 직접 연관됩니다.<br>
-      - 상대별 약점 분석은 데이터 누적 시 자동으로 강화됩니다.
-    </div>
-  `);
-
-  return lines.join("\n");
+  return out.join("\n");
 }
 
-
-/* ===============================
-   ✅ 5. 실행
-================================*/
+/* ============================================
+   ✅ 실행
+===============================================*/
 (async () => {
   box.innerHTML = "데이터 불러오는 중…";
 
