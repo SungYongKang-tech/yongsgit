@@ -175,6 +175,58 @@ html, body {
     touch-action: pan-y;         /* 세로만 스크롤 → 가로 흔들림 차단 */
 }
 
+.month-card {
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 14px 16px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+  border: 1px solid #e5e7eb;
+}
+
+.month-head {
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+  margin-bottom: 10px;
+}
+
+.month-head .m {
+  font-size: 18px;
+  font-weight: 900;
+  color:#1e3a8a;
+}
+
+.month-badge {
+  font-size: 11px;
+  padding:4px 8px;
+  border-radius: 999px;
+  font-weight: 800;
+  background:#eef2ff;
+  color:#3730a3;
+}
+
+.month-badge.sep {
+  background:#e0f2fe;
+  color:#0369a1;
+}
+
+.month-row {
+  margin: 6px 0 10px;
+}
+
+.month-title {
+  font-weight:800;
+  font-size:15px;
+  margin-bottom:3px;
+}
+
+.month-stats {
+  font-size:15px;
+  font-weight:700;
+  color:#0f172a;
+  line-height:1.4;
+}
+
 
 </style>
 </head>
@@ -472,54 +524,62 @@ function renderMonthCards(){
   box.innerHTML = '';
 
   const sortedMonths = months.slice().sort();
+
   sortedMonths.forEach(m=>{
     const a = perMonthAll[m] || { total:0, win:0, lose:0, rate:0 };
     const s = perMonthSingle[m] || { total:0, win:0, lose:0, rate:0 };
     const d = perMonthDouble[m] || { total:0, win:0, lose:0, rate:0, points:0 };
 
-    const fromNov = cmpMonth(m,'2025-11')>=0;
-    const pill = fromNov 
-      ? `<span class="tag">단/복식 분리</span>` 
-      : `<span class="tag" style="background:#eef2ff;color:#3730a3">통합전적</span>`;
+    const fromNov = cmpMonth(m,'2025-11') >= 0;
+
+    const badge = fromNov 
+      ? `<span class="month-badge sep">단/복식 분리</span>` 
+      : `<span class="month-badge">통합전적</span>`;
+
+    // 📌 승률 계산
+    const rateAll = fmt1(a.rate);
+    const rateSgl = fmt1(s.rate);
+    const rateDbl = fmt1(d.rate);
 
     box.insertAdjacentHTML('beforeend', `
-      <div class="item">
-        <div class="l">
-          ${pill}
-          <div><b>${shortMonth(m)}</b></div>
+      <div class="month-card">
+
+        <div class="month-head">
+          <div class="m">${shortMonth(m)}</div>
+          ${badge}
         </div>
-        <div class="r">
-          ${fromNov
-  ? `
-    <div><b>통합</b> :
-      ${a.total}경기 &nbsp;
-      ${a.win}승 ${a.lose}패 &nbsp;
-      ${fmt1(a.rate)}%
-    </div>
 
-    <div><b>단식</b> :
-      ${s.total}경기 &nbsp;
-      ${s.win}승 ${s.lose}패 &nbsp;
-      ${fmt1(s.rate)}%
-    </div>
-
-    <div><b>복식</b> :
-      ${d.total}경기 &nbsp;
-      ${d.win}승 ${d.lose}패 &nbsp;
-      ${fmt1(d.rate)}%
-    </div>
-  `
-  : `통합 :
-      ${a.total}경기 &nbsp;
-      ${a.win}승 ${a.lose}패 &nbsp;
-      ${fmt1(a.rate)}%`
-}
-
+        <!-- ✅ 통합 -->
+        <div class="month-row">
+          <div class="month-title" style="color:#2563eb;">🔵 통합</div>
+          <div class="month-stats">
+            ${a.total}경기 · ${a.win}승 ${a.lose}패 · ${rateAll}%
+          </div>
         </div>
+
+        <!-- ✅ 단식 -->
+        ${fromNov ? `
+        <div class="month-row">
+          <div class="month-title" style="color:#16a34a;">🟢 단식</div>
+          <div class="month-stats">
+            ${s.total}경기 · ${s.win}승 ${s.lose}패 · ${rateSgl}%
+          </div>
+        </div>` : ''}
+
+        <!-- ✅ 복식 -->
+        ${fromNov ? `
+        <div class="month-row">
+          <div class="month-title" style="color:#7c3aed;">🟣 복식</div>
+          <div class="month-stats">
+            ${d.total}경기 · ${d.win}승 ${d.lose}패 · ${rateDbl}%
+          </div>
+        </div>` : ''}
+
       </div>
     `);
   });
 }
+
 
 
 function renderDetails(){
