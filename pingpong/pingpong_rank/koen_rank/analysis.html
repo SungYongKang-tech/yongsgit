@@ -65,21 +65,147 @@
     margin-bottom:6px;
     font-weight:700;
   }
-
 </style>
 </head>
 <body>
 
 <div class="analysis-wrap">
-
   <h2>🏓 탁구 스타일 분석</h2>
-
-  <!-- ✅ player.html에서 이 부분의 내용을 채움 -->
-  <div id="analysisContent">
-    데이터 불러오는 중...
-  </div>
-
+  <div id="analysisContent">데이터 불러오는 중...</div>
 </div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ✅ URL에서 playerName 읽기
+const params = new URLSearchParams(location.search);
+const name = params.get("name") || "";
+const box = document.getElementById("analysisContent");
+
+box.innerHTML = "데이터 분석 중...";
+
+// ✅ Firebase에서 경기 기록 읽기
+async function loadMatches() {
+  const snap = await get(ref(db, "matches"));
+  if (!snap.exists()) return [];
+
+  return Object.values(snap.val()).filter(m => {
+    const names = [...(m.namesA || []), ...(m.namesB || [])];
+    return names.includes(name); // 해당 선수 포함 경기만
+  });
+}
+
+// ✅ 분석 생성
+function makeAnalysis(matches) {
+  if (!matches.length) {
+    return `<div class="box">경기 기록이 부족하여 분석할 수 없습니다.</div>`;
+  }
+
+  let sWin = 0, sLose = 0;
+  let dWin = 0, dLose = 0;
+
+  let opp = {};     // 단식 상대별
+  let partner = {}; // 복식 파트너별
+
+  matches.forEach(m => {
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const isA = A.includes(name);
+    const won = (m.winnerSide === "A" && isA) || (m.winnerSide === "B" && !isA);
+
+    if (m.mode === "single") {
+      if (won) sWin++; else sLose++;
+
+      const other = isA ? B[0] : A[0];
+      if (!opp[other]) opp[other] = { win: 0, lose: 0 };
+      if (won) opp[other].win++; else opp[other].lose++;
+
+    } else {
+      if (won) dWin++; else dLose++;
+
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== name);
+      if (pt) {
+        if (!partner[pt]) partner[pt] = { win: 0, lose: 0 };
+        if (won) partner[pt].win++; else partner[pt].lose++;
+      }
+    }
+  });
+
+  // ✅ 특징 도출
+  const sTotal = sWin + sLose;
+  const dTotal = dWin + dLose;
+
+  const sRate = sTotal ? Math.round(sWin / sTotal * 100) : 0;
+  const dRate = dTotal ? Math.round(dWin / dTotal * 100) : 0;
+
+  const topOpp = Object.entries(opp).sort((a,b)=> (b[1].win + b[1].lose) - (a[1].win + a[1].lose))[0];
+  const topPartner = Object.entries(partner).sort((a,b)=> (b[1].win + b[1].lose) - (a[1].win + a[1].lose))[0];
+
+  return `
+    <div class="section-title">📌 전체 요약</div>
+    <div class="box">
+      <b class="highlight">${name}</b> 선수는 최근 경기에서  
+      <span class="good">단식 ${sRate}%</span>,  
+      <span class="highlight">복식 ${dRate}%</span>의 승률을 기록했습니다.
+      <br><br>
+      경기 스타일은 <b>단식·복식 모두 적극적으로 임하지만</b>  
+      복식에서 조금 더 강점이 있는 편입니다.
+    </div>
+
+    <div class="section-title">🎯 단식 특징</div>
+    <div class="box">
+      ${sTotal ? `
+        단식은 <b>${sWin}승 ${sLose}패</b>로,  
+        승률 <span class="good">${sRate}%</span>입니다.<br>
+        ${topOpp ? `<br>가장 많은 경기를 한 상대는 <b>${topOpp[0]}</b>입니다.` : ""}
+      ` : "단식 경기 기록이 없습니다."}
+    </div>
+
+    <div class="section-title">🤝 복식 특징</div>
+    <div class="box">
+      ${dTotal ? `
+        복식은 <b>${dWin}승 ${dLose}패</b>이며,  
+        승률 <span class="highlight">${dRate}%</span>입니다.<br>
+        ${topPartner ? `<br>가장 많이 호흡을 맞춘 파트너는 <b>${topPartner[0]}</b>입니다.` : ""}
+      ` : "복식 경기 기록이 없습니다."}
+    </div>
+
+    <div class="section-title">✅ 향후 연습 추천</div>
+    <div class="box">
+      ${
+        sRate < dRate
+        ? `<b>단식 안정성 보완</b>이 우선입니다.  
+           초반 실점을 줄이기 위한 리시브 연습이 도움이 됩니다.`
+        : `<b>복식 경쟁력 극대화</b>가 좋습니다.  
+           파트너와의 포지션 이해·동선 조정이 큰 효과를 냅니다.`
+      }
+      <br><br>
+      또한 승률이 낮거나 패배 횟수가 많았던 상대를 중심으로  
+      <b class="bad">약점 분석</b>을 진행하면 성장에 도움이 됩니다.
+    </div>
+  `;
+}
+
+(async ()=>{
+  const matches = await loadMatches();
+  box.innerHTML = makeAnalysis(matches);
+})();
+</script>
 
 </body>
 </html>
