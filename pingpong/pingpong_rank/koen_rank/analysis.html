@@ -1,222 +1,51 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>탁구 스타일 분석</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>탁구스타일 분석</title>
 
 <style>
-body {
+body{
+  font-family: "Pretendard", sans-serif;
   margin:0;
-  padding:16px;
-  font-family:"Pretendard","Noto Sans KR",sans-serif;
-  background:#ffffff;
+  padding:20px;
   color:#0f172a;
-  font-weight:600;
-  line-height:1.6;
+  line-height:1.7;
 }
-h2 {
-  margin:0 0 10px;
-  font-size:20px;
-  font-weight:900;
-  color:#1e3a8a;
+h2{
+  margin-top:0;
+  color:#2563eb;
+  font-size:22px;
 }
-.block {
-  margin-bottom:20px;
-  padding:14px 16px;
-  background:#f5f7fb;
+.box{
+  padding:16px;
+  background:#f8fafc;
   border-radius:12px;
-  border:1px solid #e5e7eb;
-}
-.tag {
-  font-size:13px;
-  background:#e2efff;
-  padding:3px 8px;
-  border-radius:999px;
-  font-weight:800;
-  color:#1e40af;
-  margin-right:6px;
-}
-.hr {
-  height:1px;
-  background:#e2e8f0;
-  margin:14px 0;
+  border:1px solid #e2e8f0;
+  margin-top:16px;
 }
 </style>
-
 </head>
+
 <body>
 
-<div id="analysisContainer">
-  <!-- JS로 내용 채움 -->
-</div>
+<h2>🏓 선수 스타일 분석</h2>
+
+<div id="result">데이터를 불러오는 중...</div>
 
 <script>
-// ✅ player.html에서 보내준 name 파라미터 읽기
+// URL 에서 name 파라미터 가져오기
 const params = new URLSearchParams(location.search);
-const playerName = params.get("name") || "선수";
+const name = params.get('name') || '';
 
-// ✅ player.html에서 전달될 수 있는 데이터 구조 시뮬레이션
-// (player.html에서 모달 로딩 직전에 replace 해도 가능)
-// 실제 구현 시 player.html에서 아래 데이터들을 함께 넘겨주면 정확도↑
-
-/*
-playerStyleData = {
-  singleWinRate: 62,
-  doubleWinRate: 55,
-  bestPartner: "김승일",
-  worstPartner: "홍길동",
-  mostWinOpponent: "이상준",
-  mostLoseOpponent: "정용빈",
-  tendencies: {
-     attack: true,
-     control: false,
-     backhandWeak: true,
-     pivotGood: true,
-  }
-}
-*/
-
-// ✅ 현재 버전은 player.html에서 생성한 값을 window에 담아서 모달에 전달하는 방식 (추천 구조)
-let data = window.playerAnalysisData || {
-  // ⚠️ 포맷은 반드시 아래 구조
-  singleWinRate: 0,
-  doubleWinRate: 0,
-  bestPartner: null,
-  worstPartner: null,
-  mostWinOpponent: null,
-  mostLoseOpponent: null,
-  tendencies: {}, // 관리자가 입력한 특성
-};
-
-// ✅ 스타일 분석 공식
-function analyzeStyle() {
-  let S = data.singleWinRate;
-  let D = data.doubleWinRate;
-  let tendencies = data.tendencies || {};
-
-  // -----------------------------
-  // ✅ 1. 기본 플레이 스타일 추정
-  // -----------------------------
-  let style = "";
-  if (S >= 60 && D >= 60) {
-    style = "균형 잡힌 올라운드형 플레이어";
-  } else if (S >= 65 && D < 50) {
-    style = "단식에 특히 강한 공격형 플레이어";
-  } else if (S < 50 && D >= 60) {
-    style = "복식 감각이 우수한 협력형 플레이어";
-  } else if (S < 50 && D < 50) {
-    style = "전체적으로 안정감 향상이 필요한 성실형 플레이어";
-  } else {
-    style = "전형적인 동호회형 올라운드 스타일";
-  }
-
-  // -----------------------------
-  // ✅ 2. 관리자 특성 기반 추가 레이어
-  // -----------------------------
-  let extra = [];
-
-  if (tendencies.attack) extra.push("초구 공격 성향이 강함");
-  if (tendencies.control) extra.push("볼 컨트롤 중심 운영");
-  if (tendencies.backhandWeak) extra.push("백핸드 안정성이 부족함");
-  if (tendencies.pivotGood) extra.push("포핸드 pivot(돌려치기)이 강점");
-
-  let tendencyText = extra.length ? extra.join(" · ") : "등록된 특성이 없습니다.";
-
-  // -----------------------------
-  // ✅ 3. 약점 분석
-  // -----------------------------
-  let weakness = "";
-
-  if (S < 50) weakness += "단식 랠리 중 안정성이 떨어지는 경향이 있음. ";
-  if (D < 50) weakness += "복식에서 포지션 이해 또는 커버 범위가 부족해 보임. ";
-  if (tendencies.backhandWeak) weakness += "백핸드 리시브·수비 범위가 약점으로 보임. ";
-
-  if (!weakness) weakness = "큰 약점보다는 세부조정이 필요한 타입입니다.";
-
-  // -----------------------------
-  // ✅ 4. 훈련 방향 추천
-  // -----------------------------
-  let training = "";
-
-  if (tendencies.backhandWeak)
-    training += "• 백드라이브 & 커트볼 안정화 훈련 필수\n";
-
-  if (S < 55)
-    training += "• 단식: 초구 실수 줄이기, 오픈 후 연결 연습 강화\n";
-
-  if (D < 55)
-    training += "• 복식: 파트너와의 포지션 약속(전·후진/사이드)을 명확히 설정\n";
-
-  training += "• 포어·백 전환 스텝을 통해 전체 반응속도 개선\n";
-  training += "• 자신 있는 구질(드라이브/블록/커트)에 대한 확신을 높여 공격 결정력 강화";
-
-  // -----------------------------
-  // ✅ 5. 상대 성향 데이터 기반 조언
-  // -----------------------------
-  let opponentTip = "";
-
-  if (data.mostLoseOpponent) {
-    opponentTip = `
-    최근 가장 어려움을 겪는 상대는 <b>${data.mostLoseOpponent}</b>입니다.<br>
-    이 선수와의 경기 패턴을 분석하여 레시브 선택, 초구 방향 선택을 조금 조정하는 것이 좋습니다.
-    `;
-  }
-
-  // -----------------------------
-  // ✅ 출력 HTML 생성
-  // -----------------------------
-  return `
-    <h2>🔍 ${playerName} 선수 스타일 분석</h2>
-
-    <div class="block">
-      <span class="tag">종합 스타일</span>
-      <div><b>${style}</b></div>
-    </div>
-
-    <div class="block">
-      <span class="tag">등록된 선수 특성</span>
-      <div>${tendencyText}</div>
-    </div>
-
-    <div class="block">
-      <span class="tag">단식/복식 승률 기반 해석</span>
-      <div>
-        단식 승률: <b>${data.singleWinRate}%</b><br>
-        복식 승률: <b>${data.doubleWinRate}%</b><br><br>
-        ${
-          data.bestPartner
-            ? `✅ 가장 잘 맞는 파트너: <b>${data.bestPartner}</b><br>`
-            : ""
-        }
-        ${
-          data.worstPartner
-            ? `⚠️ 가장 어려운 파트너: <b>${data.worstPartner}</b><br>`
-            : ""
-        }
-      </div>
-    </div>
-
-    <div class="block">
-      <span class="tag">약점 분석</span>
-      <div>${weakness}</div>
-    </div>
-
-    <div class="block">
-      <span class="tag">훈련 방향 제안</span>
-      <div style="white-space:pre-line">${training}</div>
-    </div>
-
-    ${
-      opponentTip
-        ? `<div class="block"><span class="tag">상대 분석</span>${opponentTip}</div>`
-        : ""
-    }
-  `;
-}
-
-// ✅ 화면 출력
-document.getElementById("analysisContainer").innerHTML = analyzeStyle();
+// 화면에 이름 표시
+document.getElementById("result").innerHTML = `
+  <div class="box">
+    <b>${name}</b> 선수에 대한 기본 분석입니다.<br><br>
+    ▶ 향후 분석 고도화를 위해 관리자모드에서 선수 특성을 추가할 수 있습니다.
+  </div>
+`;
 </script>
 
 </body>
