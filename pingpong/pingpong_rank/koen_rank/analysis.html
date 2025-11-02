@@ -1,84 +1,149 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>탁구 스타일 분석</title>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🔍 탁구 스타일 분석</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
 <style>
-  body {
-    margin:0;
-    padding:0;
-    font-family: "Pretendard","Noto Sans KR",sans-serif;
-    background:#fff;
-    color:#0f172a;
-  }
-
-  .analysis-wrap {
-    padding: 10px 6px 20px 6px;
-    max-width:640px;
-    margin:0 auto;
-  }
-
-  h2 {
-    margin:0 0 14px 0;
-    font-size:24px;
-    font-weight:900;
-    color:#1e3a8a;
-    text-align:center;
-  }
-
-  .section-title {
-    font-size:17px;
-    font-weight:900;
-    margin-top:20px;
-    margin-bottom:8px;
-    color:#1e3a8a;
-  }
-
-  .box {
-    background:#f8fafc;
-    border:1px solid #e2e8f0;
-    padding:12px 14px;
-    border-radius:12px;
-    font-size:15px;
-    line-height:1.55;
-    margin-bottom:14px;
-  }
-
-  .highlight { color:#2563eb; font-weight:900; }
-  .good      { color:#0f6a00; font-weight:800; }
-  .bad       { color:#d45500; font-weight:800; }
-
-  a.back {
-    display:inline-block;
-    margin:20px 0;
-    font-size:15px;
-    text-decoration:none;
-    padding:8px 12px;
-    border-radius:8px;
-    background:#e0e7ff;
-    color:#1e3a8a;
-    font-weight:900;
-  }
+:root{
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
+  --accent:#2563eb; --ok:#16a34a; --warn:#f59e0b; --bad:#ef4444;
+  --shadow:0 8px 28px rgba(2,6,23,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-weight:600}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;z-index:5}
+.head-in{max-width:900px;margin:0 auto;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+h1{margin:0;font-size:clamp(18px,4vw,22px);color:#1e40af}
+.btn{border:1px solid #d1d5db;padding:8px 12px;border-radius:10px;background:#fff;cursor:pointer;font-weight:800}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:16px;box-shadow:var(--shadow);padding:16px;margin-top:12px}
+.sec-title{font-size:16px;font-weight:900;color:#0f172a;margin:0 0 8px}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#e2efff;color:#1e40af;font-size:12px;font-weight:900}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kv{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.k{font-size:13px;color:#334155}
+.v{font-size:16px;font-weight:900}
+.note{font-size:12.5px;color:#64748b}
+ul.clean{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+li.i{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;background:linear-gradient(180deg,#fff,#fbfdff 85%)}
+.hl{color:#1e3a8a}
+.good{color:var(--ok);font-weight:900}
+.warn{color:var(--warn);font-weight:900}
+.bad{color:var(--bad);font-weight:900}
+a.link{color:#1e40af;text-decoration:none;font-weight:900}
+.divider{height:1px;background:#eef2f7;margin:12px 0}
+.small{font-size:13px;color:#475569}
+input,textarea{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit}
+label{font-size:12px;color:#475569;font-weight:800}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(12,1fr)}
+.col-12{grid-column:span 12}
+.col-6{grid-column:span 6}
+@media(max-width:720px){.col-6{grid-column:span 12}}
 </style>
 </head>
-
 <body>
+<header>
+  <div class="head-in">
+    <h1>🔍 탁구 스타일 분석</h1>
+    <div class="row">
+      <button class="btn" id="btnBack">← 개인 성적</button>
+      <button class="btn" id="btnAdminToggle">관리자모드</button>
+      <span class="badge" id="who"></span>
+    </div>
+  </div>
+</header>
 
-<div class="analysis-wrap">
-  <a href="javascript:history.back()" class="back">← 돌아가기</a>
+<main class="wrap">
+  <!-- 요약 -->
+  <section class="card">
+    <div class="sec-title">📌 핵심 요약</div>
+    <div id="summary" class="small">불러오는 중…</div>
+  </section>
 
-  <h2>🏓 탁구 스타일 분석</h2>
+  <!-- 통합리그 (9~10월) -->
+  <section class="card">
+    <div class="sec-title">📅 통합리그 요약 <span class="badge">'25-09 ~ '25-10</span></div>
+    <div id="integratedBox" class="kv"></div>
+    <div class="divider"></div>
+    <ul id="integratedBullets" class="clean"></ul>
+    <div class="note">* 통합리그는 참고용으로만 반영됩니다.</div>
+  </section>
 
-  <div id="analysisContent">데이터 불러오는 중...</div>
-</div>
+  <!-- 단식/복식 (11월~) -->
+  <section class="card">
+    <div class="sec-title">🎯 세부 성향 (11월~)</div>
+    <div class="grid">
+      <div class="col-6">
+        <div class="badge">단식</div>
+        <ul id="singleBullets" class="clean"></ul>
+      </div>
+      <div class="col-6">
+        <div class="badge">복식</div>
+        <ul id="doubleBullets" class="clean"></ul>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <ul id="recommend" class="clean"></ul>
+  </section>
+
+  <!-- 관리자 메모 (확장형) -->
+  <section class="card" id="adminCard" style="display:none">
+    <div class="sec-title">🛠 관리자 메모 (확장형)</div>
+    <p class="small">저장 경로: <code>playerDetail/{이름}/</code></p>
+    <div class="grid">
+      <div class="col-6">
+        <label>스타일 (예: 공격형, 수비형, 카운터)</label>
+        <input id="ad_style" placeholder="공격형">
+      </div>
+      <div class="col-6">
+        <label>선호 파트너 (쉼표로 구분)</label>
+        <input id="ad_favs" placeholder="홍길동, 김영희">
+      </div>
+      <div class="col-6">
+        <label>강점 (쉼표로 구분)</label>
+        <input id="ad_strengths" placeholder="초구 드라이브, 발빠른 풋워크">
+      </div>
+      <div class="col-6">
+        <label>약점 (쉼표로 구분)</label>
+        <input id="ad_weaknesses" placeholder="백쪽 커트 처리, 긴 랠리">
+      </div>
+      <div class="col-12">
+        <label>어려운 상대 (쉼표로 구분)</label>
+        <input id="ad_hards" placeholder="이상준, 박나령">
+      </div>
+      <div class="col-12">
+        <label>메모</label>
+        <textarea id="ad_memo" rows="3" placeholder="전진 공격 위주. 커트 볼 대비 필요."></textarea>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" id="btnSaveAdmin">저장</button>
+      <span class="note">※ Firebase 보안규칙에서 관리자만 쓰기 가능하도록 설정하세요.</span>
+    </div>
+  </section>
+</main>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+/* ===== 기본 유틸 ===== */
+const $ = s => document.querySelector(s);
+const shortMonth = m => `'${m.slice(2)}`;
+const fmt1 = n => (Math.round(n*10)/10).toFixed(1);
+const yyyymm = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+const KST = ts => new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+const cmpMonth = (a,b)=> a.localeCompare(b);
+const POINT_WIN = 2, POINT_LOSE = -1;
 
-// ✅ Firebase 초기화
+/* ===== URL 파라미터 ===== */
+const params = new URLSearchParams(location.search);
+const playerName = params.get('name') || '';
+
+/* ===== Firebase ===== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
@@ -91,109 +156,298 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-// ✅ playerName 읽기
-const params = new URLSearchParams(location.search);
-const playerName = params.get("name") || "";
+/* ===== 상태 보관 ===== */
+let playerLevels = {};     // {name: level}
+let months = [];
+let perMonthAll = {};
+let perMonthSingle = {};
+let perMonthDouble = {};
+let oppMapSingle = {};
+let partnerMapDouble = {};
+let sumPointsFromNov = 0;
+let sumSglTotal = 0, sumSglWin = 0, sumSglLose = 0;
+let sumDblTotal = 0, sumDblWin = 0, sumDblLose = 0;
+let sumAllTotal = 0, sumAllWin = 0, sumAllLose = 0;
 
-const box = document.getElementById("analysisContent");
+/* ===== 초기 UI ===== */
+$('#who').textContent = playerName || '선수 미지정';
+$('#btnBack').addEventListener('click', ()=> {
+  // player.html로 돌아가기
+  location.href = `player.html?name=${encodeURIComponent(playerName)}`;
+});
+$('#btnAdminToggle').addEventListener('click', ()=>{
+  const vis = $('#adminCard').style.display !== 'none';
+  $('#adminCard').style.display = vis ? 'none' : 'block';
+});
 
-// ✅ 해당 선수 경기 기록 불러오기
-async function loadMatches() {
-  const snap = await get(ref(db, "matches"));
-  if (!snap.exists()) return [];
+/* ===== 데이터 로드 ===== */
+// 0) 선수 레벨
+const playerSnap = await get(ref(db,'players'));
+if (playerSnap.exists()){
+  const pdata = playerSnap.val() || {};
+  Object.values(pdata).forEach(p=>{
+    if (p.name) playerLevels[p.name] = p.level ?? '-';
+  });
+}
 
-  const matches = Object.values(snap.val());
-  return matches.filter(m => {
-    const names = [...(m.namesA || []), ...(m.namesB || [])];
+// 1) 통합리그(9~10월)
+async function loadPastMonths(){
+  const targets = ['2025-09','2025-10'];
+  for (const m of targets){
+    const snap = await get(ref(db, `monthlyReports/${m}/players`));
+    if (!snap.exists()) continue;
+    const arr = Object.values(snap.val());
+    const row = arr.find(r => (r.name === playerName));
+    if (!row) continue;
+
+    const win = Number(row.wins ?? row.win ?? 0);
+    const lose = Number(row.losses ?? row.lose ?? 0);
+    const total = win + lose;
+    const rate = total ? (win/total*100) : 0;
+
+    perMonthAll[m] = { total, win, lose, rate };
+    months.push(m);
+
+    sumAllTotal += total; sumAllWin += win; sumAllLose += lose;
+  }
+}
+
+// 2) 11월~ matches (단/복식)
+async function loadMatchesFromNov(){
+  const snap = await get(ref(db,'matches'));
+  if (!snap.exists()) return;
+  const data = Object.values(snap.val());
+  const NOV_2025 = '2025-11';
+
+  const myMatches = data.filter(m=>{
+    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
+    if (cmpMonth(mk, NOV_2025) < 0) return false;
+    const names = [...(m.namesA||[]), ...(m.namesB||[])];
     return names.includes(playerName);
   });
-}
 
-// ✅ 분석 HTML 생성
-function makeAnalysis(matches) {
-  if (!matches.length) {
-    return `<div class="box">경기 기록이 부족하여 분석할 수 없습니다.</div>`;
-  }
+  myMatches.forEach(m=>{
+    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
+    if (!months.includes(mk)) months.push(mk);
+  });
 
-  let sWin=0, sLose=0;
-  let dWin=0, dLose=0;
-  let opp={}, partner={};
+  months.forEach(m=>{
+    if (!perMonthAll[m])    perMonthAll[m]    = { total:0, win:0, lose:0, rate:0 };
+    if (!perMonthSingle[m]) perMonthSingle[m] = { total:0, win:0, lose:0, rate:0 };
+    if (!perMonthDouble[m]) perMonthDouble[m] = { total:0, win:0, lose:0, rate:0, points:0 };
+  });
 
-  matches.forEach(m=>{
+  myMatches.forEach(m=>{
+    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
     const A = m.namesA || [];
     const B = m.namesB || [];
-    const isA = A.includes(playerName);
-    const won = (m.winnerSide==="A" && isA) || (m.winnerSide==="B" && !isA);
+    const mode = m.mode || 'single';
+    const winA = (m.winnerSide === 'A');
+    const iAmA = A.includes(playerName);
+    const iAmB = B.includes(playerName);
+    const iWon = (winA && iAmA) || (!winA && iAmB);
 
-    if (m.mode==="single"){
-      if (won) sWin++; else sLose++;
-      const other = isA ? B[0] : A[0];
-      if (other){
-        if (!opp[other]) opp[other]={win:0, lose:0};
-        if (won) opp[other].win++; else opp[other].lose++;
+    // 통합
+    perMonthAll[mk].total++; if (iWon) perMonthAll[mk].win++; else perMonthAll[mk].lose++;
+
+    if (mode === 'single'){
+      perMonthSingle[mk].total++; if (iWon) perMonthSingle[mk].win++; else perMonthSingle[mk].lose++;
+      const opp = iAmA ? B[0] : A[0];
+      if (opp){
+        if (!oppMapSingle[opp]) oppMapSingle[opp] = { win:0, lose:0 };
+        if (iWon) oppMapSingle[opp].win++; else oppMapSingle[opp].lose++;
       }
-    }
-    else { // double
-      if (won) dWin++; else dLose++;
-      const same = isA ? A : B;
-      const pt = same.find(n => n !== playerName);
-      if (pt){
-        if (!partner[pt]) partner[pt]={win:0, lose:0};
-        if (won) partner[pt].win++; else partner[pt].lose++;
+    } else {
+      perMonthDouble[mk].total++; if (iWon) perMonthDouble[mk].win++; else perMonthDouble[mk].lose++;
+      perMonthDouble[mk].points += iWon ? POINT_WIN : POINT_LOSE;
+      sumPointsFromNov += iWon ? POINT_WIN : POINT_LOSE;
+
+      let partner = null;
+      if (iAmA) partner = A.find(n=>n!==playerName);
+      else if (iAmB) partner = B.find(n=>n!==playerName);
+      if (partner){
+        if (!partnerMapDouble[partner]) partnerMapDouble[partner] = { win:0, lose:0, points:0 };
+        if (iWon){ partnerMapDouble[partner].win++; partnerMapDouble[partner].points += POINT_WIN; }
+        else     { partnerMapDouble[partner].lose++; partnerMapDouble[partner].points += POINT_LOSE; }
       }
     }
   });
 
-  const sRate = (sWin+sLose)? Math.round(sWin/(sWin+sLose)*100) : 0;
-  const dRate = (dWin+dLose)? Math.round(dWin/(dWin+dLose)*100) : 0;
+  months.forEach(m=>{
+    const a = perMonthAll[m];    a.rate = a.total? (a.win/a.total*100):0;
+    if (perMonthSingle[m]){ const s = perMonthSingle[m]; s.rate = s.total? (s.win/s.total*100):0; }
+    if (perMonthDouble[m]){ const d = perMonthDouble[m]; d.rate = d.total? (d.win/d.total*100):0; }
+  });
 
-  const topOpp = Object.entries(opp).sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
-  const topPartner = Object.entries(partner).sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
-
-  return `
-    <div class="section-title">📌 전체 요약</div>
-    <div class="box">
-      <b class="highlight">${playerName}</b> 선수는  
-      단식 <b>${sRate}%</b>,  
-      복식 <b>${dRate}%</b> 승률을 기록했습니다.
-      <br><br>
-      경기 스타일은 <b>${dRate > sRate ? "복식에서 강점" : "단식에서 안정적"}</b>입니다.
-    </div>
-
-    <div class="section-title">🎯 단식 특징</div>
-    <div class="box">
-      ${sWin+sLose ? `
-        단식 <b>${sWin}승 ${sLose}패</b><br>
-        ${topOpp ? `가장 많이 만난 상대: <b>${topOpp[0]}</b>` : ""}
-      ` : "단식 기록이 없습니다."}
-    </div>
-
-    <div class="section-title">🤝 복식 특징</div>
-    <div class="box">
-      ${dWin+dLose ? `
-        복식 <b>${dWin}승 ${dLose}패</b><br>
-        ${topPartner ? `가장 많이 호흡한 파트너: <b>${topPartner[0]}</b>` : ""}
-      ` : "복식 기록이 없습니다."}
-    </div>
-
-    <div class="section-title">✅ 연습 추천</div>
-    <div class="box">
-      ${
-        sRate < dRate
-          ? `복식은 좋습니다. <b class="bad">단식 안정성 보완</b>이 필요합니다.`
-          : `<b class="highlight">복식 파트너십 강화</b>에 집중하면 성적이 향상됩니다.`
-      }
-    </div>
-  `;
+  months.forEach(m=>{
+    const s = perMonthSingle[m] || { total:0, win:0, lose:0 };
+    const d = perMonthDouble[m] || { total:0, win:0, lose:0 };
+    sumSglTotal += s.total; sumSglWin += s.win; sumSglLose += s.lose;
+    sumDblTotal += d.total; sumDblWin += d.win; sumDblLose += d.lose;
+  });
 }
 
-// ✅ 실행
-(async ()=>{
-  box.innerHTML = "데이터 분석 중...";
-  const matches = await loadMatches();
-  box.innerHTML = makeAnalysis(matches);
-})();
-</script>
+/* ===== 관리자 메모 로드/세이브 ===== */
+function csvToArray(s){ return (s||'').split(',').map(v=>v.trim()).filter(Boolean); }
+function arrayToCSV(a){ return (a||[]).join(', '); }
 
+async function loadAdminMemo(){
+  const snap = await get(ref(db, `playerDetail/${playerName}`));
+  if (!snap.exists()) return;
+  const d = snap.val() || {};
+  $('#ad_style').value = d.style ?? '';
+  $('#ad_strengths').value = arrayToCSV(d.strengths);
+  $('#ad_weaknesses').value = arrayToCSV(d.weaknesses);
+  $('#ad_favs').value = arrayToCSV(d.favoritePartners);
+  $('#ad_hards').value = arrayToCSV(d.hardOpponents);
+  $('#ad_memo').value = d.memo ?? '';
+}
+
+$('#btnSaveAdmin').addEventListener('click', async ()=>{
+  const payload = {
+    style: $('#ad_style').value.trim() || null,
+    strengths: csvToArray($('#ad_strengths').value),
+    weaknesses: csvToArray($('#ad_weaknesses').value),
+    favoritePartners: csvToArray($('#ad_favs').value),
+    hardOpponents: csvToArray($('#ad_hards').value),
+    memo: $('#ad_memo').value.trim() || null,
+    updatedAt: Date.now()
+  };
+  await set(ref(db, `playerDetail/${playerName}`), payload);
+  alert('저장되었습니다.');
+  renderSummaryAndBullets(); // 메모 반영
+});
+
+/* ===== 렌더링 ===== */
+function bestOf(map, metric='total', take=1){
+  const arr = Object.entries(map).map(([name,v])=>({
+    name, win:v.win, lose:v.lose, total:(v.win+v.lose),
+    rate: (v.win+v.lose)? (v.win/(v.win+v.lose)*100):0,
+    points: v.points ?? 0
+  })).sort((a,b)=> (b[metric]??0) - (a[metric]??0));
+  return arr.slice(0,take);
+}
+
+function renderIntegrated(){
+  const box = $('#integratedBox'); box.innerHTML = '';
+  const monthsSorted = Object.keys(perMonthAll).filter(m => (m==='2025-09'||m==='2025-10')).sort();
+  let tWin=0,tLose=0,tTot=0;
+
+  monthsSorted.forEach(m=>{
+    const a = perMonthAll[m];
+    tWin += a.win; tLose += a.lose; tTot += a.total;
+    box.insertAdjacentHTML('beforeend', `
+      <div class="card" style="padding:12px">
+        <div class="row"><span class="badge">${shortMonth(m)}</span></div>
+        <div class="row" style="margin-top:6px">
+          <div class="k">전적</div><div class="v">${a.win}승 ${a.lose}패</div>
+          <div class="k">승률</div><div class="v">${fmt1(a.rate)}%</div>
+          <div class="k">경기수</div><div class="v">${a.total}</div>
+        </div>
+      </div>
+    `);
+  });
+
+  const bullets = $('#integratedBullets'); bullets.innerHTML='';
+  if (tTot===0){
+    bullets.insertAdjacentHTML('beforeend', `<li class="i">통합리그 기록이 아직 없습니다.</li>`);
+  }else{
+    const rate = tTot? fmt1(tWin/tTot*100) : '0.0';
+    bullets.insertAdjacentHTML('beforeend', `
+      <li class="i">통합 기준 총 <b>${tTot}</b>경기, <b>${tWin}승 ${tLose}패</b> (<b>${rate}%</b>)</li>
+      <li class="i">통합리그는 <span class="hl">참고용</span>으로 반영됩니다. 세부 성향은 11월 이후 자료를 기준으로 분석합니다.</li>
+    `);
+  }
+}
+
+async function renderSummaryAndBullets(){
+  // 관리자 메모 불러오기
+  const memoSnap = await get(ref(db, `playerDetail/${playerName}`));
+  const memo = memoSnap.exists() ? (memoSnap.val()||{}) : {};
+
+  // 통합 전체
+  let tAll = 0, wAll = 0, lAll = 0;
+  Object.values(perMonthAll).forEach(a=>{ tAll+=a.total; wAll+=a.win; lAll+=a.lose; });
+  const allRate = tAll? fmt1(wAll/tAll*100):'0.0';
+
+  // 단식/복식(11월~)
+  const sTot=sumSglTotal, sW=sumSglWin, sL=sumSglLose, sRate = sTot? fmt1(sW/sTot*100):'0.0';
+  const dTot=sumDblTotal, dW=sumDblWin, dL=sumDblLose, dRate = dTot? fmt1(dW/dTot*100):'0.0';
+
+  // 대표 상대/파트너
+  const topOpp = bestOf(oppMapSingle, 'total', 1)[0];
+  const topPtn = bestOf(partnerMapDouble, 'total', 1)[0];
+
+  // 요약 문단(짧고 선명하게)
+  const lines = [];
+  lines.push(`선수 <b class="hl">${playerName}</b>의 최근 흐름을 보면, 통합 기준 <b>${tAll}</b>경기에서 <b>${wAll}승 ${lAll}패</b>(<b>${allRate}%</b>)입니다.`);
+  if (sTot || dTot){
+    if (sTot) lines.push(`단식은 <b>${sW}승 ${sL}패</b>(<b>${sRate}%</b>)로 ${Number(sRate) >= Number(dRate) ? '안정적' : '보완 여지'}입니다.`);
+    if (dTot) lines.push(`복식은 <b>${dW}승 ${dL}패</b>(<b>${dRate}%</b>)로 ${Number(dRate) > Number(sRate) ? '강점' : '강화 필요'}이 보입니다.`);
+  } else {
+    lines.push(`<span class="warn">단식/복식 전용 데이터는 내일부터 반영됩니다.</span> (현재는 통합리그 참고)`);
+  }
+  if (topOpp) lines.push(`단식에서 자주 맞대한 상대는 <a class="link" href="player.html?name=${encodeURIComponent(topOpp.name)}">${topOpp.name}</a> 입니다.`);
+  if (topPtn) lines.push(`복식 호흡이 많은 파트너는 <a class="link" href="player.html?name=${encodeURIComponent(topPtn.name)}">${topPtn.name}</a> 입니다.`);
+  if (memo.style) lines.push(`관리자 메모: <b>${memo.style}</b> 성향.`);
+  if (memo.memo) lines.push(`메모: ${memo.memo}`);
+
+  $('#summary').innerHTML = lines.map(s=>`<div>• ${s}</div>`).join('');
+
+  // 단식 bullets
+  const singleBox = $('#singleBullets'); singleBox.innerHTML='';
+  if (!sTot){
+    singleBox.insertAdjacentHTML('beforeend', `<li class="i">단식 데이터가 아직 없습니다. (내일부터 자동 반영)</li>`);
+  }else{
+    // 승률/대진
+    singleBox.insertAdjacentHTML('beforeend', `<li class="i">전적: <b>${sW}승 ${sL}패</b> (<b>${sRate}%</b>)</li>`);
+    if (topOpp) singleBox.insertAdjacentHTML('beforeend',
+      `<li class="i">자주 맞대한 상대: <a class="link" href="player.html?name=${encodeURIComponent(topOpp.name)}">${topOpp.name}</a> — ${topOpp.win}승 ${topOpp.lose}패</li>`
+    );
+    // 강점/약점(관리자)
+    if (memo.strengths?.length) singleBox.insertAdjacentHTML('beforeend', `<li class="i">강점: ${memo.strengths.join(', ')}</li>`);
+    if (memo.weaknesses?.length) singleBox.insertAdjacentHTML('beforeend', `<li class="i">약점: ${memo.weaknesses.join(', ')}</li>`);
+    if (memo.hardOpponents?.length) singleBox.insertAdjacentHTML('beforeend', `<li class="i">어려운 상대: ${memo.hardOpponents.map(n=>`<a class="link" href="player.html?name=${encodeURIComponent(n)}">${n}</a>`).join(', ')}</li>`);
+  }
+
+  // 복식 bullets
+  const doubleBox = $('#doubleBullets'); doubleBox.innerHTML='';
+  if (!dTot){
+    doubleBox.insertAdjacentHTML('beforeend', `<li class="i">복식 데이터가 아직 없습니다. (내일부터 자동 반영)</li>`);
+  }else{
+    doubleBox.insertAdjacentHTML('beforeend', `<li class="i">전적: <b>${dW}승 ${dL}패</b> (<b>${dRate}%</b>) · 누적 승점 <b>${sumPointsFromNov>0? '+'+sumPointsFromNov: sumPointsFromNov}</b></li>`);
+    if (topPtn) doubleBox.insertAdjacentHTML('beforeend',
+      `<li class="i">호흡 많은 파트너: <a class="link" href="player.html?name=${encodeURIComponent(topPtn.name)}">${topPtn.name}</a> — ${topPtn.win}승 ${topPtn.lose}패</li>`
+    );
+    if (memo.favoritePartners?.length) doubleBox.insertAdjacentHTML('beforeend', `<li class="i">선호 파트너: ${memo.favoritePartners.map(n=>`<a class="link" href="player.html?name=${encodeURIComponent(n)}">${n}</a>`).join(', ')}</li>`);
+  }
+
+  // 연습 추천(간결)
+  const rec = $('#recommend'); rec.innerHTML='';
+  if (!sTot && !dTot){
+    rec.insertAdjacentHTML('beforeend', `<li class="i">오늘은 <b>통합리그 흐름 유지</b>에 집중하세요. 단/복식 데이터가 쌓이면 맞춤 추천이 활성화됩니다.</li>`);
+  }else{
+    if (Number(dRate) > Number(sRate)){
+      rec.insertAdjacentHTML('beforeend', `<li class="i">복식 강점 유지 + <span class="bad">단식 안정성</span> 보완(리시브/서브 1구 설계)을 권장합니다.</li>`);
+    }else{
+      rec.insertAdjacentHTML('beforeend', `<li class="i">단식은 안정적입니다. <span class="hl">복식 파트너십</span> 조직 훈련(서브 콜·포지션 교대)을 늘려보세요.</li>`);
+    }
+  }
+}
+
+/* ===== 부트스트랩 ===== */
+await loadPastMonths();
+await loadMatchesFromNov();
+months = [...new Set(months)].sort();
+
+renderIntegrated();
+await renderSummaryAndBullets();
+
+// 관리자 카드 자동 표시 (URL에 admin=1 이면)
+if (params.get('admin') === '1'){
+  $('#adminCard').style.display = 'block';
+}
+await loadAdminMemo();
+</script>
 </body>
 </html>
