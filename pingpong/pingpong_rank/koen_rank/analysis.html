@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>KOEN Ping-Pong | Analysis</title>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ---------- 유틸 ----------
+const fmt = (n)=> (Math.round(n*10)/10).toFixed(1);
+const rate = (w,t)=> t? (w/t*100):0;
+
+// 스트릭/변동성(승/패 배열만으로)
+function streakStats(bools){
+  let cur = 0, curType = null, maxW = 0, maxL = 0, switches = 0;
+  for(const r of bools){
+    if(curType===null){ curType = r; cur = 1; }
+    else if(r===curType){ cur++; }
+    else { switches++; curType = r; cur = 1; }
+    if(r) maxW = Math.max(maxW, curType===true?cur:0);
+    else  maxL = Math.max(maxL, curType===false?cur:0);
+  }
+  const volatility = bools.length>1 ? switches/(bools.length-1) : 0; // 0(안정)~1(요동)
+  const currentStreak = cur>0 ? (curType? `연승 ${cur}`:`연패 ${cur}`) : "-";
+  return {maxWinStreak:maxW, maxLoseStreak:maxL, volatility, currentStreak};
+}
+
+// 모멘텀(최근10 vs 그 이전10)
+function momentum(bools){
+  const last = bools.slice(-10);
+  const prev = bools.slice(-20,-10);
+  const lastR = last.length? (last.filter(x=>x).length/last.length*100):0;
+  const prevR = prev.length? (prev.filter(x=>x).length/prev.length*100):0;
+  return { lastR, prevR, diff: lastR - prevR };
+}
+
+// 상대 난이도(부수 낮을수록 상위로 가정, 없으면 99)
+function avg(arr){ return arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+function levelOf(name, playerLevels){ return parseInt(playerLevels[name]) || 99; }
+
+(async function run(){
+  const params = new URLSearchParams(location.search);
+  const name = params.get("name") || "";
+  if(!name){ document.getElementById("analysisResultData").innerHTML = "<p>선수명이 없습니다.</p>"; return; }
+
+  const [playersSnap, matchesSnap] = await Promise.all([
+    get(ref(db,"players")),
+    get(ref(db,"matches")),
+  ]);
+  const players = playersSnap.val()||{};
+  const matches = matchesSnap.val()||{};
+
+  // 이름->부수 매핑
+  const playerLevels = {};
+  Object.values(players).forEach(p=>{
+    if(p?.name) playerLevels[p.name] = p.level;
+  });
+
+  // 단식/복식으로 분리, 시간순 정렬 가정 없이 그대로 사용
+  const singles=[], doubles=[];
+  for(const id in matches){
+    const m = matches[id];
+    const mode = m.mode;
+    const all = [...(m.namesA||[]), ...(m.namesB||[])];
+    if(!all.includes(name)) continue;
+
+    const isA = (m.namesA||[]).includes(name);
+    const win = (m.winnerSide==='A' && isA) || (m.winnerSide==='B' && !isA);
+
+    if(mode==="single"){
+      const opp = isA ? (m.namesB?.[0]||"") : (m.namesA?.[0]||"");
+      singles.push({
+        win,
+        opponent: opp,
+        opponentLevel: levelOf(opp, playerLevels),
+        monthKey: m.monthKey||""
+      });
+    }else if(mode==="double"){
+      const partner = (isA? m.namesA: m.namesB).find(n=>n!==name) || "";
+      const oppTeam = isA? (m.namesB||[]) : (m.namesA||[]);
+      const oppAvg = avg(oppTeam.map(n=>levelOf(n, playerLevels)));
+      doubles.push({
+        win,
+        partner,
+        partnerLevel: levelOf(partner, playerLevels),
+        oppAvgLevel: oppAvg,
+        monthKey: m.monthKey||""
+      });
+    }
+  }
+
+  // 단식 요약
+  const sW = singles.filter(x=>x.win).length, sT = singles.length, sR = rate(sW,sT);
+  const sBools = singles.map(x=>x.win);
+  const sStreak = streakStats(sBools);
+  const sMomentum = momentum(sBools);
+
+  // 복식 요약
+  const dW = doubles.filter(x=>x.win).length, dT = doubles.length, dR = rate(dW,dT);
+  const dBools = doubles.map(x=>x.win);
+  const dStreak = streakStats(dBools);
+  const dMomentum = momentum(dBools);
+
+  // 상대 난이도(단식): 이긴 경기 vs 진 경기의 상대 평균 부수 비교
+  const winOppLv = avg(singles.filter(x=>x.win).map(x=>x.opponentLevel));
+  const loseOppLv = avg(singles.filter(x=>!x.win).map(x=>x.opponentLevel));
+  const oppNote = (winOppLv && loseOppLv)
+    ? (winOppLv <= loseOppLv
+        ? "상대 난이도가 높을수록(부수 낮음)도 승리 성과가 나오는 편입니다."
+        : "상대 난이도가 올라가면(부수 낮음) 승률이 떨어지는 경향이 있습니다.")
+    : "상대 난이도 비교를 위한 데이터가 충분하지 않습니다.";
+
+  // 파트너 시너지(복식)
+  const partnerMap = {};
+  doubles.forEach(x=>{
+    if(!x.partner) return;
+    if(!partnerMap[x.partner]) partnerMap[x.partner] = {w:0,t:0,pl: x.partnerLevel};
+    partnerMap[x.partner].t++; if(x.win) partnerMap[x.partner].w++;
+  });
+  const partnerArr = Object.entries(partnerMap)
+    .map(([k,v])=>({name:k, total:v.t, win:v.w, rate: rate(v.w,v.t), level:v.pl}))
+    .filter(p=>p.total>=3) // 최소 표본(원하시면 조정)
+    .sort((a,b)=> b.rate - a.rate || b.total - a.total);
+
+  // 코칭 가이드(룰 기반: 승/패만 이용)
+  const tips = [];
+  // 모멘텀
+  if(sMomentum.diff <= -10 && sT>=10) tips.push("단식 최근 폼이 하락 중입니다. 루틴(서브·리시브 고정 패턴) 점검으로 초반 리듬을 되찾아보세요.");
+  if(sMomentum.diff >= 10 && sT>=10)  tips.push("단식 최근 폼이 상승 중입니다. 현재의 서브-3구 연결 패턴을 유지·강화하는 것이 좋습니다.");
+  if(dMomentum.diff <= -10 && dT>=10) tips.push("복식은 호흡 저하가 보여 파트너와의 콜·포지션 전환 합을 점검하세요.");
+  if(dMomentum.diff >= 10 && dT>=10)  tips.push("복식 최근 상승세입니다. 리시브 뒤 커버 동선과 롤을 더 명확히 하세요.");
+
+  // 변동성(요동침)
+  if(sStreak.volatility >= 0.5 && sT>=8) tips.push("단식 결과 변동폭이 큽니다. 세트 초반 3볼 내에서의 선택(커트/푸시/드라이브)을 단순화해 안정도를 높이세요.");
+  if(dStreak.volatility >= 0.5 && dT>=8) tips.push("복식 변동성이 큽니다. 레시버 기준 크로스(안전) 우선, 다운더라인(위험)은 득점 루틴이 명확할 때 선택하세요.");
+
+  // 난이도 대응
+  if(winOppLv && loseOppLv && winOppLv > loseOppLv) tips.push("상위 부수와의 난전 대응력이 과제입니다. 랠리 길어질 때 백핸드 실수 억제를 위한 반복 드릴을 권장합니다.");
+
+  // 단식/복식 편차
+  if(sR - dR >= 15 && dT>=5) tips.push("복식 승률 개선이 필요합니다. 서브 타자-커버 담당을 고정하고, 리턴 후 교차 커버 연습을 반복하세요.");
+  if(dR - sR >= 15 && sT>=5) tips.push("단식보다 복식 성향이 강합니다. 개인전에서는 서브 코스 다양화로 초반 리드 확보를 노리세요.");
+
+  // 스트릭 기반
+  if(sStreak.maxLoseStreak >= 3) tips.push("단식에서 연패 구간이 있었습니다. 연패 탈출용 스타트 전술(세이프 서브→상대 백핸드 유도)을 준비하세요.");
+  if(sStreak.maxWinStreak >= 3)  tips.push("단식에서 연승 경험이 있습니다. 당시 득점 루틴을 메모해 ‘재현 가능한 패턴’으로 정리하세요.");
+
+  // 파트너 시너지
+  if(partnerArr[0]) tips.push(`복식은 <b>${partnerArr[0].name}</b> 선수와의 호흡이 가장 좋습니다(승률 ${fmt(partnerArr[0].rate)}%). 해당 조합의 서브/리턴 루틴을 표준화하세요.`);
+
+  // 분석 출력 HTML
+  const html = `
+    <div style="font-family:'Pretendard','Noto Sans KR',sans-serif;color:#0f172a;">
+      <h3 style="margin:0 0 10px;">🏓 <b>${name}</b> 선수 분석(승/패 기반)</h3>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;">
+          <h4 style="margin:0 0 6px;color:#2563eb;">단식 요약</h4>
+          <div>경기 ${sT} | 승률 <b>${fmt(sR)}%</b> (${sW}승 ${sT-sW}패)</div>
+          <div>최장 연승: ${sStreak.maxWinStreak} / 최장 연패: ${sStreak.maxLoseStreak}</div>
+          <div>현재 흐름: ${sStreak.currentStreak}</div>
+          <div>최근10 승률: ${fmt(sMomentum.lastR)}% (이전10 대비 ${sMomentum.diff>=0?'+':''}${fmt(sMomentum.diff)}%p)</div>
+          <div>변동성(0~1): ${fmt(sStreak.volatility)}</div>
+        </div>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;">
+          <h4 style="margin:0 0 6px;color:#2563eb;">복식 요약</h4>
+          <div>경기 ${dT} | 승률 <b>${fmt(dR)}%</b> (${dW}승 ${dT-dW}패)</div>
+          <div>최장 연승: ${dStreak.maxWinStreak} / 최장 연패: ${dStreak.maxLoseStreak}</div>
+          <div>현재 흐름: ${dStreak.currentStreak}</div>
+          <div>최근10 승률: ${fmt(dMomentum.lastR)}% (이전10 대비 ${dMomentum.diff>=0?'+':''}${fmt(dMomentum.diff)}%p)</div>
+          <div>변동성(0~1): ${fmt(dStreak.volatility)}</div>
+        </div>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;">
+          <h4 style="margin:0 0 6px;color:#2563eb;">상대 난이도(단식)</h4>
+          <div>이긴 경기 상대 평균 부수: ${winOppLv?fmt(winOppLv):'-'}</div>
+          <div>진 경기 상대 평균 부수: ${loseOppLv?fmt(loseOppLv):'-'}</div>
+          <div style="margin-top:4px;color:#475569;">${oppNote}</div>
+        </div>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;">
+          <h4 style="margin:0 0 6px;color:#2563eb;">복식 파트너 시너지(표본≥3)</h4>
+          ${partnerArr.length
+            ? `<ol style="margin:0;padding-left:18px;">${
+                partnerArr.slice(0,5).map(p=>
+                  `<li>${p.name} (부수 ${p.level||'-'}) — ${p.total}경기, 승률 <b>${fmt(p.rate)}%</b></li>`
+                ).join("")
+              }</ol>`
+            : `<div>표본이 부족합니다.</div>`
+          }
+        </div>
+      </div>
+
+      <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px;">
+        <h4 style="margin:0 0 6px;color:#0f172a;">🧭 코칭 가이드</h4>
+        ${tips.length
+          ? `<ul style="margin:6px 0;padding-left:18px;">${tips.map(t=>`<li>${t}</li>`).join("")}</ul>`
+          : `<div>표본이 적어 일반 가이드를 제시합니다. 연승 구간의 루틴을 메모하고, 연패 구간의 첫 3볼 선택을 단순화해 변동성을 낮추세요.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  document.getElementById("analysisResultData").innerHTML = html;
+})();
+</script>
+</head>
+<body>
+  <!-- player.html에서 fetch 후 innerHTML로 가져다 쓰는 영역 -->
+  <div id="analysisResultData"></div>
+</body>
+</html>
