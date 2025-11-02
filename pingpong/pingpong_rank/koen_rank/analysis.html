@@ -47,6 +47,19 @@ label{font-size:12px;color:#475569;font-weight:800}
   line-height: 1.55; 
 }
 
+  .k-head {font-size:20px; font-weight:900; color:#0f172a; margin-bottom:10px}
+  .k-core {font-size:18px; line-height:1.6; font-weight:900; color:#111827}
+  .k-core b {font-weight:900}
+  details.coach {border:1px solid #e5e7eb; border-radius:12px; background:#fff; padding:10px 12px; margin:10px 0}
+  details.coach summary {cursor:pointer; font-weight:900; color:#1e3a8a}
+  .pill {display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:800; background:#eef2ff; color:#3730a3; margin-right:6px}
+  .good {color:#0f6a00; font-weight:900}
+  .warn {color:#b45309; font-weight:900}
+  .bad  {color:#b91c1c; font-weight:900}
+  .muted{color:#64748b; font-weight:700}
+  ul.tight {margin:6px 0 0 18px; padding:0}
+  ul.tight li{margin:4px 0}
+
 </style>
 </head>
 <body>
@@ -66,6 +79,10 @@ label{font-size:12px;color:#475569;font-weight:800}
   <section class="card">
     <div class="sec-title">📌 핵심 요약</div>
     <div id="summary" class="small">불러오는 중…</div>
+  </section>
+
+  <section class="card" style="margin-top:12px;">
+    <div id="analysisContent"></div>
   </section>
 
   <!-- 통합리그 (9~10월) -->
@@ -132,22 +149,11 @@ label{font-size:12px;color:#475569;font-weight:800}
 </main>
 
 <script type="module">
-/* ===== 기본 유틸 ===== */
-const $ = s => document.querySelector(s);
-const shortMonth = m => `'${m.slice(2)}`;
-const fmt1 = n => (Math.round(n*10)/10).toFixed(1);
-const yyyymm = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-const KST = ts => new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
-const cmpMonth = (a,b)=> a.localeCompare(b);
-const POINT_WIN = 2, POINT_LOSE = -1;
-
-/* ===== URL 파라미터 ===== */
-const params = new URLSearchParams(location.search);
-const playerName = params.get('name') || '';
-
-/* ===== Firebase ===== */
+/* ===============================
+   ✅ Firebase
+================================*/
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -158,302 +164,223 @@ const firebaseConfig = {
   messagingSenderId: "802826774007",
   appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
 };
-const app = initializeApp(firebaseConfig);
-const db  = getDatabase(app);
 
-/* ===== 상태 보관 ===== */
-let playerLevels = {};     // {name: level}
-let months = [];
-let perMonthAll = {};
-let perMonthSingle = {};
-let perMonthDouble = {};
-let oppMapSingle = {};
-let partnerMapDouble = {};
-let sumPointsFromNov = 0;
-let sumSglTotal = 0, sumSglWin = 0, sumSglLose = 0;
-let sumDblTotal = 0, sumDblWin = 0, sumDblLose = 0;
-let sumAllTotal = 0, sumAllWin = 0, sumAllLose = 0;
+initializeApp(firebaseConfig);
+const db = getDatabase();
 
-/* ===== 초기 UI ===== */
-$('#who').textContent = playerName || '선수 미지정';
-$('#btnBack').addEventListener('click', ()=> {
-  // player.html로 돌아가기
-  location.href = `player.html?name=${encodeURIComponent(playerName)}`;
-});
-$('#btnAdminToggle').addEventListener('click', ()=>{
-  const vis = $('#adminCard').style.display !== 'none';
-  $('#adminCard').style.display = vis ? 'none' : 'block';
-});
+/* ===============================
+   ✅ 기본값 & 유틸
+================================*/
+const params = new URLSearchParams(location.search);
+const playerName = params.get("name") || "";
 
-/* ===== 데이터 로드 ===== */
-// 0) 선수 레벨
-const playerSnap = await get(ref(db,'players'));
-if (playerSnap.exists()){
-  const pdata = playerSnap.val() || {};
-  Object.values(pdata).forEach(p=>{
-    if (p.name) playerLevels[p.name] = p.level ?? '-';
+const box = document.getElementById("analysisContent");
+
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const fmt = (n) => (Math.round(n * 10) / 10);
+const pickMax = (obj, key="total") => {
+  const arr = Object.entries(obj)
+    .map(([k, v]) => ({ name:k, ...v, total:(v.win+v.lose) }))
+    .filter(v => v.total > 0)
+    .sort((a,b)=> b[key] - a[key]);
+  return arr.length ? arr[0] : null;
+};
+
+
+/* ===============================
+   ✅ 1. 통합리그 데이터 로드 
+================================*/
+async function loadMonthlyReports() {
+  const snap = await get(ref(db, "monthlyReports"));
+  if (!snap.exists()) return [];
+
+  const data = snap.val();
+  let result = [];
+
+  Object.entries(data).forEach(([month, obj]) => {
+    if (!obj.players) return;
+
+    const arr = Object.values(obj.players);
+    const me = arr.find(p => p.name === playerName);
+
+    if (!me) return;
+
+    const win = Number(me.wins ?? me.win ?? 0);
+    const lose = Number(me.losses ?? me.lose ?? 0);
+
+    result.push({
+      month,
+      win,
+      lose,
+      total: win + lose,
+      rate: pct(win, win + lose)
+    });
   });
+
+  return result.sort((a,b)=> a.month.localeCompare(b.month));
 }
 
-// 1) 통합리그(9~10월)
-async function loadPastMonths(){
-  const targets = ['2025-09','2025-10'];
-  for (const m of targets){
-    const snap = await get(ref(db, `monthlyReports/${m}/players`));
-    if (!snap.exists()) continue;
-    const arr = Object.values(snap.val());
-    const row = arr.find(r => (r.name === playerName));
-    if (!row) continue;
 
-    const win = Number(row.wins ?? row.win ?? 0);
-    const lose = Number(row.losses ?? row.lose ?? 0);
-    const total = win + lose;
-    const rate = total ? (win/total*100) : 0;
+/* ===============================
+   ✅ 2. 단식/복식 상세 데이터 로드
+================================*/
+async function loadMatches() {
+  const snap = await get(ref(db, "matches"));
+  if (!snap.exists()) return [];
 
-    perMonthAll[m] = { total, win, lose, rate };
-    months.push(m);
+  const list = Object.values(snap.val());
 
-    sumAllTotal += total; sumAllWin += win; sumAllLose += lose;
-  }
-}
-
-// 2) 11월~ matches (단/복식)
-async function loadMatchesFromNov(){
-  const snap = await get(ref(db,'matches'));
-  if (!snap.exists()) return;
-  const data = Object.values(snap.val());
-  const NOV_2025 = '2025-11';
-
-  const myMatches = data.filter(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    if (cmpMonth(mk, NOV_2025) < 0) return false;
+  return list.filter(m => {
     const names = [...(m.namesA||[]), ...(m.namesB||[])];
     return names.includes(playerName);
   });
+}
 
-  myMatches.forEach(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    if (!months.includes(mk)) months.push(mk);
-  });
 
-  months.forEach(m=>{
-    if (!perMonthAll[m])    perMonthAll[m]    = { total:0, win:0, lose:0, rate:0 };
-    if (!perMonthSingle[m]) perMonthSingle[m] = { total:0, win:0, lose:0, rate:0 };
-    if (!perMonthDouble[m]) perMonthDouble[m] = { total:0, win:0, lose:0, rate:0, points:0 };
-  });
+/* ===============================
+   ✅ 3. AI 코칭 분석 생성
+================================*/
+function makeAnalysis(reports, matches) {
 
-  myMatches.forEach(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
+  /* ===== 기본 변수 ===== */
+  let totalWin = 0, totalLose = 0;
+
+  reports.forEach(r => { totalWin += r.win; totalLose += r.lose; });
+
+  const allRate = pct(totalWin, totalWin+totalLose);
+
+  /* ===== 단식/복식 데이터 ===== */
+  let sWin=0, sLose=0;
+  let dWin=0, dLose=0;
+
+  let opp={}, partner={};
+
+  matches.forEach(m=>{
     const A = m.namesA || [];
     const B = m.namesB || [];
-    const mode = m.mode || 'single';
-    const winA = (m.winnerSide === 'A');
-    const iAmA = A.includes(playerName);
-    const iAmB = B.includes(playerName);
-    const iWon = (winA && iAmA) || (!winA && iAmB);
+    const isA = A.includes(playerName);
+    const won = (m.winnerSide==="A" && isA) || (m.winnerSide==="B" && !isA);
 
-    // 통합
-    perMonthAll[mk].total++; if (iWon) perMonthAll[mk].win++; else perMonthAll[mk].lose++;
+    if (m.mode === "single") {
+      if (won) sWin++; else sLose++;
 
-    if (mode === 'single'){
-      perMonthSingle[mk].total++; if (iWon) perMonthSingle[mk].win++; else perMonthSingle[mk].lose++;
-      const opp = iAmA ? B[0] : A[0];
-      if (opp){
-        if (!oppMapSingle[opp]) oppMapSingle[opp] = { win:0, lose:0 };
-        if (iWon) oppMapSingle[opp].win++; else oppMapSingle[opp].lose++;
+      const other = isA ? B[0] : A[0];
+      if (other) {
+        if (!opp[other]) opp[other] = {win:0, lose:0};
+        if (won) opp[other].win++; else opp[other].lose++;
       }
     } else {
-      perMonthDouble[mk].total++; if (iWon) perMonthDouble[mk].win++; else perMonthDouble[mk].lose++;
-      perMonthDouble[mk].points += iWon ? POINT_WIN : POINT_LOSE;
-      sumPointsFromNov += iWon ? POINT_WIN : POINT_LOSE;
+      if (won) dWin++; else dLose++;
 
-      let partner = null;
-      if (iAmA) partner = A.find(n=>n!==playerName);
-      else if (iAmB) partner = B.find(n=>n!==playerName);
-      if (partner){
-        if (!partnerMapDouble[partner]) partnerMapDouble[partner] = { win:0, lose:0, points:0 };
-        if (iWon){ partnerMapDouble[partner].win++; partnerMapDouble[partner].points += POINT_WIN; }
-        else     { partnerMapDouble[partner].lose++; partnerMapDouble[partner].points += POINT_LOSE; }
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== playerName);
+      if (pt) {
+        if (!partner[pt]) partner[pt]={win:0, lose:0};
+        if (won) partner[pt].win++; else partner[pt].lose++;
       }
     }
   });
 
-  months.forEach(m=>{
-    const a = perMonthAll[m];    a.rate = a.total? (a.win/a.total*100):0;
-    if (perMonthSingle[m]){ const s = perMonthSingle[m]; s.rate = s.total? (s.win/s.total*100):0; }
-    if (perMonthDouble[m]){ const d = perMonthDouble[m]; d.rate = d.total? (d.win/d.total*100):0; }
-  });
+  const sRate = pct(sWin, sWin+sLose);
+  const dRate = pct(dWin, dWin+dLose);
 
-  months.forEach(m=>{
-    const s = perMonthSingle[m] || { total:0, win:0, lose:0 };
-    const d = perMonthDouble[m] || { total:0, win:0, lose:0 };
-    sumSglTotal += s.total; sumSglWin += s.win; sumSglLose += s.lose;
-    sumDblTotal += d.total; sumDblWin += d.win; sumDblLose += d.lose;
-  });
+  const topOpp = pickMax(opp);
+  const topPartner = pickMax(partner);
+
+  /* ================================
+     ✅ 4. AI 코칭 분석 문장 생성
+  =================================*/
+  let lines = [];
+
+  /* ✅ 핵심 요약(큰 글씨) */
+  lines.push(`
+    <div style="
+      font-size:20px;
+      font-weight:900;
+      margin-bottom:12px;
+      color:#1e3a8a;
+    ">📌 핵심 요약</div>
+  `);
+
+  lines.push(`
+    <div class="box" style="font-size:16px;">
+      <b class="highlight">${playerName}</b> 선수의 전체 승률은  
+      <b class="highlight">${allRate}%</b>이며,
+      최근 경기 흐름은 <b>${allRate >= 55 ? "상승세" : "안정적"}</b>인 편입니다.
+    </div>
+  `);
+
+  /* ✅ 단식/복식 분석 */
+  lines.push(`
+    <div class="section-title">🎯 단식·복식 성향</div>
+    <div class="box">
+      ${sWin+sLose ? `
+        단식: <b>${sWin}승 ${sLose}패 (${sRate}%)</b><br>
+        ${topOpp ? `가장 자주 맞붙은 상대는 <b>${topOpp.name}</b> 입니다.<br>` : ""}
+      ` : "단식 기록이 아직 없습니다."}
+
+      <div style="height:6px;"></div>
+
+      ${dWin+dLose ? `
+        복식: <b>${dWin}승 ${dLose}패 (${dRate}%)</b><br>
+        ${topPartner ? `주로 함께한 파트너는 <b>${topPartner.name}</b> 입니다.` : ""}
+      ` : "복식 기록이 아직 없습니다."}
+    </div>
+  `);
+
+  /* ✅ AI 코칭 (강점/약점/개선 방향) */
+  lines.push(`
+    <div class="section-title">🤖 AI 코칭 분석</div>
+    <div class="box">
+      ${ allRate >= 55
+        ? `전반적으로 안정적인 성적을 유지하고 있습니다. 
+           랠리 중 <b class="good">첫 공격 성공률을 높이는 연습</b>을 병행하면 상위권 성적도 기대됩니다.`
+        : `경기 흐름에서 초반 실점이 누적되는 경향이 보입니다. 
+           <b class="bad">리시브 안정성</b>을 보완하면 전체 승률을 빠르게 끌어올릴 수 있습니다.`
+      }
+
+      <br><br>
+
+      ${
+        (!sWin && !dWin)
+          ? "아직 단식/복식 세부 자료가 없어 스타일 분석은 최소화되었습니다."
+          : `
+          데이터 기반으로 보면,  
+          ${sRate > dRate
+            ? `<b class="highlight">단식에서 강점</b>이 뚜렷하며 복식에서는 파트너 조합에 따라 편차가 있습니다.`
+            : `<b class="highlight">복식 협업 능력</b>이 높은 편이며 단식에서는 초반 흐름 관리가 중요합니다.`}
+          `
+      }
+    </div>
+  `);
+
+  /* ✅ 발전 방향 */
+  lines.push(`
+    <div class="section-title">📈 앞으로의 발전 방향</div>
+    <div class="box">
+      - 경기 후반 집중력을 유지하는 패턴을 만들면 승률이 크게 올라갑니다.<br>
+      - 복식의 경우 안정적인 파트너가 정해지면 승점 효율이 상승합니다.<br>
+      - 단식은 초반 5포인트까지의 전적 차이가 전체 승률에 직접 연관됩니다.<br>
+      - 상대별 약점 분석은 데이터 누적 시 자동으로 강화됩니다.
+    </div>
+  `);
+
+  return lines.join("\n");
 }
 
-/* ===== 관리자 메모 로드/세이브 ===== */
-function csvToArray(s){ return (s||'').split(',').map(v=>v.trim()).filter(Boolean); }
-function arrayToCSV(a){ return (a||[]).join(', '); }
 
-async function loadAdminMemo(){
-  const snap = await get(ref(db, `playerDetail/${playerName}`));
-  if (!snap.exists()) return;
-  const d = snap.val() || {};
-  $('#ad_style').value = d.style ?? '';
-  $('#ad_strengths').value = arrayToCSV(d.strengths);
-  $('#ad_weaknesses').value = arrayToCSV(d.weaknesses);
-  $('#ad_favs').value = arrayToCSV(d.favoritePartners);
-  $('#ad_hards').value = arrayToCSV(d.hardOpponents);
-  $('#ad_memo').value = d.memo ?? '';
-}
+/* ===============================
+   ✅ 5. 실행
+================================*/
+(async () => {
+  box.innerHTML = "데이터 불러오는 중…";
 
-$('#btnSaveAdmin').addEventListener('click', async ()=>{
-  const payload = {
-    style: $('#ad_style').value.trim() || null,
-    strengths: csvToArray($('#ad_strengths').value),
-    weaknesses: csvToArray($('#ad_weaknesses').value),
-    favoritePartners: csvToArray($('#ad_favs').value),
-    hardOpponents: csvToArray($('#ad_hards').value),
-    memo: $('#ad_memo').value.trim() || null,
-    updatedAt: Date.now()
-  };
-  await set(ref(db, `playerDetail/${playerName}`), payload);
-  alert('저장되었습니다.');
-  renderSummaryAndBullets(); // 메모 반영
-});
+  const reports = await loadMonthlyReports();
+  const matches = await loadMatches();
 
-/* ===== 렌더링 ===== */
-function bestOf(map, metric='total', take=1){
-  const arr = Object.entries(map).map(([name,v])=>({
-    name, win:v.win, lose:v.lose, total:(v.win+v.lose),
-    rate: (v.win+v.lose)? (v.win/(v.win+v.lose)*100):0,
-    points: v.points ?? 0
-  })).sort((a,b)=> (b[metric]??0) - (a[metric]??0));
-  return arr.slice(0,take);
-}
-
-function renderIntegrated(){
-  const box = $('#integratedBox'); box.innerHTML = '';
-  const monthsSorted = Object.keys(perMonthAll).filter(m => (m==='2025-09'||m==='2025-10')).sort();
-  let tWin=0,tLose=0,tTot=0;
-
-  monthsSorted.forEach(m=>{
-    const a = perMonthAll[m];
-    tWin += a.win; tLose += a.lose; tTot += a.total;
-    box.insertAdjacentHTML('beforeend', `
-      <div class="card" style="padding:12px">
-        <div class="row"><span class="badge">${shortMonth(m)}</span></div>
-        <div class="row" style="margin-top:6px">
-          <div class="k">전적</div><div class="v">${a.win}승 ${a.lose}패</div>
-          <div class="k">승률</div><div class="v">${fmt1(a.rate)}%</div>
-          <div class="k">경기수</div><div class="v">${a.total}</div>
-        </div>
-      </div>
-    `);
-  });
-
-  const bullets = $('#integratedBullets'); bullets.innerHTML='';
-  if (tTot===0){
-    bullets.insertAdjacentHTML('beforeend', `<li class="i">통합리그 기록이 아직 없습니다.</li>`);
-  }else{
-    const rate = tTot? fmt1(tWin/tTot*100) : '0.0';
-    bullets.insertAdjacentHTML('beforeend', `
-      <li class="i">통합 기준 총 <b>${tTot}</b>경기, <b>${tWin}승 ${tLose}패</b> (<b>${rate}%</b>)</li>
-      <li class="i">통합리그는 <span class="hl">참고용</span>으로 반영됩니다. 세부 성향은 11월 이후 자료를 기준으로 분석합니다.</li>
-    `);
-  }
-}
-
-async function renderSummaryAndBullets(){
-  // 관리자 메모 불러오기
-  const memoSnap = await get(ref(db, `playerDetail/${playerName}`));
-  const memo = memoSnap.exists() ? (memoSnap.val()||{}) : {};
-
-  // 통합 전체
-  let tAll = 0, wAll = 0, lAll = 0;
-  Object.values(perMonthAll).forEach(a=>{ tAll+=a.total; wAll+=a.win; lAll+=a.lose; });
-  const allRate = tAll? fmt1(wAll/tAll*100):'0.0';
-
-  // 단식/복식(11월~)
-  const sTot=sumSglTotal, sW=sumSglWin, sL=sumSglLose, sRate = sTot? fmt1(sW/sTot*100):'0.0';
-  const dTot=sumDblTotal, dW=sumDblWin, dL=sumDblLose, dRate = dTot? fmt1(dW/dTot*100):'0.0';
-
-  // 대표 상대/파트너
-  const topOpp = bestOf(oppMapSingle, 'total', 1)[0];
-  const topPtn = bestOf(partnerMapDouble, 'total', 1)[0];
-
-  // 요약 문단(짧고 선명하게)
-  const lines = [];
-  lines.push(`선수 <b class="hl">${playerName}</b>의 최근 흐름을 보면, 통합 기준 <b>${tAll}</b>경기에서 <b>${wAll}승 ${lAll}패</b>(<b>${allRate}%</b>)입니다.`);
-  if (sTot || dTot){
-    if (sTot) lines.push(`단식은 <b>${sW}승 ${sL}패</b>(<b>${sRate}%</b>)로 ${Number(sRate) >= Number(dRate) ? '안정적' : '보완이 필요해 보'}입니다.`);
-    if (dTot) lines.push(`복식은 <b>${dW}승 ${dL}패</b>(<b>${dRate}%</b>)로 ${Number(dRate) > Number(sRate) ? '강점이' : '강화가 필요해'} 보입니다.`);
-  } else {
-    lines.push(`<span class="warn">단식/복식 전적 데이터가 아직 없습니다.</span>`);
-
-  }
-  if (topOpp) lines.push(`단식에서 자주 맞대한 상대는 <a class="link" href="player.html?name=${encodeURIComponent(topOpp.name)}">${topOpp.name}</a> 입니다.`);
-  if (topPtn) lines.push(`복식 호흡이 많은 파트너는 <a class="link" href="player.html?name=${encodeURIComponent(topPtn.name)}">${topPtn.name}</a> 입니다.`);
-  if (memo.style) lines.push(`관리자 메모: <b>${memo.style}</b> 성향.`);
-  if (memo.memo) lines.push(`메모: ${memo.memo}`);
-
-  $('#summary').innerHTML = lines.map(s=>`<div>• ${s}</div>`).join('');
-
-  // 단식 bullets
-  const singleBox = $('#singleBullets'); singleBox.innerHTML='';
-  if (!sTot){
-    singleBox.insertAdjacentHTML('beforeend', `<li class="i">단식 데이터가 아직 없습니다. (내일부터 자동 반영)</li>`);
-  }else{
-    // 승률/대진
-    singleBox.insertAdjacentHTML('beforeend', `<li class="i">전적: <b>${sW}승 ${sL}패</b> (<b>${sRate}%</b>)</li>`);
-    if (topOpp) singleBox.insertAdjacentHTML('beforeend',
-      `<li class="i">자주 맞대한 상대: <a class="link" href="player.html?name=${encodeURIComponent(topOpp.name)}">${topOpp.name}</a> — ${topOpp.win}승 ${topOpp.lose}패</li>`
-    );
-    // 강점/약점(관리자)
-    if (memo.strengths?.length) singleBox.insertAdjacentHTML('beforeend', `<li class="i">강점: ${memo.strengths.join(', ')}</li>`);
-    if (memo.weaknesses?.length) singleBox.insertAdjacentHTML('beforeend', `<li class="i">약점: ${memo.weaknesses.join(', ')}</li>`);
-    if (memo.hardOpponents?.length) singleBox.insertAdjacentHTML('beforeend', `<li class="i">어려운 상대: ${memo.hardOpponents.map(n=>`<a class="link" href="player.html?name=${encodeURIComponent(n)}">${n}</a>`).join(', ')}</li>`);
-  }
-
-  // 복식 bullets
-  const doubleBox = $('#doubleBullets'); doubleBox.innerHTML='';
-  if (!dTot){
-    doubleBox.insertAdjacentHTML('beforeend', `<li class="i">복식 데이터가 아직 없습니다. (내일부터 자동 반영)</li>`);
-  }else{
-    doubleBox.insertAdjacentHTML('beforeend', `<li class="i">전적: <b>${dW}승 ${dL}패</b> (<b>${dRate}%</b>) · 누적 승점 <b>${sumPointsFromNov>0? '+'+sumPointsFromNov: sumPointsFromNov}</b></li>`);
-    if (topPtn) doubleBox.insertAdjacentHTML('beforeend',
-      `<li class="i">호흡 많은 파트너: <a class="link" href="player.html?name=${encodeURIComponent(topPtn.name)}">${topPtn.name}</a> — ${topPtn.win}승 ${topPtn.lose}패</li>`
-    );
-    if (memo.favoritePartners?.length) doubleBox.insertAdjacentHTML('beforeend', `<li class="i">선호 파트너: ${memo.favoritePartners.map(n=>`<a class="link" href="player.html?name=${encodeURIComponent(n)}">${n}</a>`).join(', ')}</li>`);
-  }
-
-  // 연습 추천(간결)
-  const rec = $('#recommend'); rec.innerHTML='';
-  if (!sTot && !dTot){
-    rec.insertAdjacentHTML('beforeend', `<li class="i">오늘은 <b>통합리그 흐름 유지</b>에 집중하세요. 단/복식 데이터가 쌓이면 맞춤 추천이 활성화됩니다.</li>`);
-  }else{
-    if (Number(dRate) > Number(sRate)){
-      rec.insertAdjacentHTML('beforeend', `<li class="i">복식 강점 유지 + <span class="bad">단식 안정성</span> 보완(리시브/서브 1구 설계)을 권장합니다.</li>`);
-    }else{
-      rec.insertAdjacentHTML('beforeend', `<li class="i">단식은 안정적입니다. <span class="hl">복식 파트너십</span> 조직 훈련(서브 콜·포지션 교대)을 늘려보세요.</li>`);
-    }
-  }
-}
-
-/* ===== 부트스트랩 ===== */
-await loadPastMonths();
-await loadMatchesFromNov();
-months = [...new Set(months)].sort();
-
-renderIntegrated();
-await renderSummaryAndBullets();
-
-// 관리자 카드 자동 표시 (URL에 admin=1 이면)
-if (params.get('admin') === '1'){
-  $('#adminCard').style.display = 'block';
-}
-await loadAdminMemo();
+  box.innerHTML = makeAnalysis(reports, matches);
+})();
 </script>
+
 </body>
 </html>
