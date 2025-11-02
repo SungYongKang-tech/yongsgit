@@ -426,64 +426,68 @@ function makeAnalysis(reports, matches, adminMemo) {
 })();
 
 /* ============================================
-   ✅ 상단 버튼 동작 + 관리자 비밀번호 인증
+   ✅ 상단 버튼 동작 + 관리자 비밀번호 인증 (DOM 로드 후 적용)
 ===============================================*/
-const btnBack = document.getElementById("btnBack");
-btnBack?.addEventListener("click", () => {
-  location.href = `player.html?name=${encodeURIComponent(playerName)}`;
-});
+document.addEventListener("DOMContentLoaded", () => {
 
-const btnAdmin = document.getElementById("btnAdminToggle");
-const adminCard = document.getElementById("adminCard");
+  const btnBack = document.getElementById("btnBack");
+  const btnAdmin = document.getElementById("btnAdminToggle");
+  const adminCard = document.getElementById("adminCard");
 
-let adminOn = false;  // 초기에는 항상 OFF
+  btnBack?.addEventListener("click", () => {
+    location.href = `player.html?name=${encodeURIComponent(playerName)}`;
+  });
 
-/* ✅ Firebase에서 관리자 비밀번호 불러오기 */
-async function loadAdminPassword() {
-  const snap = await get(ref(db, "config/adminPassword"));  
-  return snap.exists() ? snap.val() : null;
-}
+  let adminOn = false;  // 초기에는 항상 OFF
 
-/* ✅ 관리자모드 버튼 클릭 */
-btnAdmin?.addEventListener("click", async () => {
-
-  // OFF → ON 으로 전환 시도
-  if (!adminOn) {
-    const correctPw = await loadAdminPassword();
-
-    if (!correctPw) {
-      alert("⚠ 관리자 비밀번호가 설정되어 있지 않습니다.\n(관리자 페이지에서 설정 가능)");
-      return;
-    }
-
-    const input = prompt("🔐 관리자 비밀번호를 입력하세요:");
-    if (input === null) return;
-
-    if (input.trim() !== correctPw.trim()) {
-      alert("❌ 비밀번호가 올바르지 않습니다.");
-      return;
-    }
-
-    // ✅ 성공
-    adminOn = true;
-    applyAdmin();
-    alert("✅ 관리자모드 활성화");
+  /* ✅ Firebase에서 관리자 비밀번호 불러오기 */
+  async function loadAdminPassword() {
+    const snap = await get(ref(db, "config/adminPassword"));  
+    return snap.exists() ? snap.val() : null;
   }
 
-  // 이미 ON 상태 → OFF
-  else {
-    adminOn = false;
-    applyAdmin();
+  /* ✅ 관리자모드 버튼 클릭 */
+  btnAdmin?.addEventListener("click", async () => {
+
+    // OFF → ON 시도
+    if (!adminOn) {
+      const correctPw = await loadAdminPassword();
+
+      if (!correctPw) {
+        alert("⚠ 관리자 비밀번호가 설정되어 있지 않습니다.\n(관리자 페이지에서 설정 가능)");
+        return;
+      }
+
+      const input = prompt("🔐 관리자 비밀번호를 입력하세요:");
+      if (input === null) return;
+
+      if (input.trim() !== correctPw.trim()) {
+        alert("❌ 비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
+      // ✅ 성공
+      adminOn = true;
+      applyAdmin();
+      alert("✅ 관리자모드 활성화");
+    }
+
+    // ON → OFF
+    else {
+      adminOn = false;
+      applyAdmin();
+    }
+
+  });
+
+  /* ✅ UI 적용 함수 */
+  function applyAdmin() {
+    adminCard.style.display = adminOn ? "block" : "none";
+    btnAdmin.classList.toggle("primary", adminOn);
+    btnAdmin.textContent = adminOn ? "관리자모드 ON" : "관리자모드";
   }
 
-});
-
-/* ✅ UI 적용 함수 */
-function applyAdmin() {
-  adminCard.style.display = adminOn ? "block" : "none";
-  btnAdmin.classList.toggle("primary", adminOn);
-  btnAdmin.textContent = adminOn ? "관리자모드 ON" : "관리자모드";
-}
+}); // ✅ DOMContentLoaded 끝
 
 
 </script>
