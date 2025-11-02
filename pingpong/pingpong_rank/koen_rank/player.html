@@ -332,6 +332,21 @@ html, body {
 </main>
 
 <script type="module">
+  // ✅ Chart.js 충돌 자동 방지: 기존 차트 자동 삭제
+function safeChart(ctx, config) {
+  if (!window._charts) window._charts = {};
+
+  // Canvas ID 기준으로 기존 차트 제거
+  const id = ctx.id;
+  if (window._charts[id]) {
+    window._charts[id].destroy();
+  }
+
+  // 새 차트 생성
+  window._charts[id] = new Chart(ctx, config);
+  return window._charts[id];
+}
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
@@ -601,7 +616,7 @@ function renderDetails(){
   .slice(0,8);
 
 
-new Chart(document.getElementById('chartOpp'), {
+safeChart(document.getElementById('chartOpp'), {
   type:'bar',
   data:{
     labels: oppArr.map(o=>o.name),
@@ -659,7 +674,7 @@ const ptnArr = Object.entries(partnerMapDouble)
   .sort((a,b)=> b.total - a.total)
   .slice(0,8);
 
-new Chart(document.getElementById('chartPartner'), {
+safeChart(document.getElementById('chartPartner'), {
   type:'bar',
   data:{
     labels: ptnArr.map(o=>o.name),
@@ -719,7 +734,7 @@ function buildCharts(){
 
   // 1) 월별 승률(통합)
   const rateAll = ms.map(m=> (perMonthAll[m]?.rate ?? 0));
- new Chart(document.getElementById('chartRate'), {
+ safeChart(document.getElementById('chartRate'), {
     type:'line',
     data:{
       labels: ms.map(shortMonth), datasets:[{label:'월별 승률(통합%)', data:rateAll, tension:.2}]
@@ -729,7 +744,7 @@ function buildCharts(){
 
   // 2) 월별 경기수(통합)
   const gamesAll = ms.map(m=> (perMonthAll[m]?.total ?? 0));
- new Chart(document.getElementById('chartGames'), {
+ safeChart(document.getElementById('chartGames'), {
     type:'bar',
     data:{labels: ms.map(shortMonth), datasets:[{label:'월별 경기수(통합)', data:gamesAll}]},
     options:{responsive:true}
@@ -738,7 +753,7 @@ function buildCharts(){
   // 3) 단식/복식 비율 (11월~ 합산)
   const sglSum = sumSglTotal;
   const dblSum = sumDblTotal;
-  new Chart(document.getElementById('chartModePie'), {
+  safeChart(document.getElementById('chartModePie'), {
     type:'doughnut',
     data:{labels:['단식','복식'], datasets:[{data:[sglSum, dblSum]}]},
     options:{responsive:true}
@@ -755,7 +770,7 @@ function buildCharts(){
 .sort((a,b)=> b.total - a.total)  // ✅ 게임수 많은 순으로 정렬
 .slice(0,8);                      // ✅ 상위 8명만 선택
 
-  new Chart($('#chartOpp'), {
+  safeChart($('#chartOpp'), {
     type:'bar',
     data:{labels: oppArr.map(o=>o.name), datasets:[{label:'단식 상대별 승률(%)', data: oppArr.map(o=>o.rate)}]},
     options:{responsive:true}
@@ -772,7 +787,7 @@ function buildCharts(){
 .sort((a,b)=> b.total - a.total)  // ✅ 경기수 많은 순
 .slice(0,8);                      // ✅ 상위 8명
 
-  new Chart($('#chartPartner'), {
+  safeChart($('#chartPartner'), {
     type:'bar',
     data:{labels: ptnArr.map(o=>o.name), datasets:[{label:'복식 파트너별 승률(%)', data: ptnArr.map(o=>o.rate)}]},
     options:{responsive:true}
@@ -782,7 +797,7 @@ function buildCharts(){
   const pts = ms.map(m => (perMonthDouble[m]?.points ?? 0));
   // 누적합
   let run = 0; const ptsCum = pts.map(v=> (run+=v));
-  new Chart(document.getElementById('chartPoints'), {
+  safeChart(document.getElementById('chartPoints'), {
     type:'line',
     data:{labels: ms.map(shortMonth), datasets:[{label:'복식 누적 승점', data:ptsCum, tension:.2}]},
     options:{responsive:true}
