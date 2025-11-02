@@ -526,6 +526,176 @@ function renderKPI(){
 
 }
 
+function renderProfile() {
+  const name = playerName;
+  const lvl  = playerLevels[name] ?? '-';
+  const team = 'KOEN';
+
+  // ===== 전체 승률 =====
+  const totalAll = sumAllTotal;
+  const allWin   = sumAllWin;
+  const allLose  = sumAllLose;
+  const allRate  = totalAll ? fmt1(allWin / totalAll * 100) : 0;
+
+  // ===== 단식 승률 =====
+  const totalSgl = sumSglTotal;
+  const sglWin   = sumSglWin;
+  const sglLose  = sumSglLose;
+  const sglRate  = totalSgl ? fmt1(sglWin / totalSgl * 100) : 0;
+
+  // ===== 복식 승률 =====
+  const totalDbl = sumDblTotal;
+  const dblWin   = sumDblWin;
+  const dblLose  = sumDblLose;
+  const dblRate  = totalDbl ? fmt1(dblWin / totalDbl * 100) : 0;
+
+  // ======================================================
+  // ✅ 상대·파트너 분석에서 “이름만 추출”
+  // mostWinOpponent은 "홍길동 (3승)" 형태 → 이름만 분리
+  // ======================================================
+  let mostWinOpponent = '-';
+  let mostWinOpponentRaw = '';  // 클릭용 이름
+  {
+    let maxW = 0;
+    for (const [op, v] of Object.entries(oppMapSingle)) {
+      if (v.win > maxW) {
+        maxW = v.win;
+        mostWinOpponent = `${op} (${v.win}승)`;
+        mostWinOpponentRaw = op;   // ✅ 핵심
+      }
+    }
+  }
+
+  let mostLoseOpponent = '-';
+  let mostLoseOpponentRaw = '';
+  {
+    let maxL = 0;
+    for (const [op, v] of Object.entries(oppMapSingle)) {
+      if (v.lose > maxL) {
+        maxL = v.lose;
+        mostLoseOpponent = `${op} (${v.lose}패)`;
+        mostLoseOpponentRaw = op;  // ✅ 핵심
+      }
+    }
+  }
+
+  let bestPartner = '-';
+  let bestPartnerRaw = '';
+  {
+    let maxW = 0;
+    for (const [pt, v] of Object.entries(partnerMapDouble)) {
+      if (v.win > maxW) {
+        maxW = v.win;
+        bestPartner = `${pt} (${v.win}승)`;
+        bestPartnerRaw = pt;        // ✅ 핵심
+      }
+    }
+  }
+
+  let worstPartner = '-';
+  let worstPartnerRaw = '';
+  {
+    let maxL = 0;
+    for (const [pt, v] of Object.entries(partnerMapDouble)) {
+      if (v.lose > maxL) {
+        maxL = v.lose;
+        worstPartner = `${pt} (${v.lose}패)`;
+        worstPartnerRaw = pt;       // ✅ 핵심
+      }
+    }
+  }
+
+  // ======================================================
+  // ✅ HTML 출력
+  // ======================================================
+  $('#pf_name').textContent = name;
+  $('#pf_meta').textContent = `${team} · ${lvl}부`;
+
+  $('#pf_stats').innerHTML = `
+    <!-- ✅ 전체 기록 -->
+    <div style="font-size:16px; line-height:1.8; margin-bottom:18px;">
+      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 전체 기록</div>
+      <div>✅ 총 경기수 : 
+        <b style="color:#0f172a; font-size:17px;">${totalAll}</b>
+      </div>
+      <div>✅ 전체 전적 : 
+        <b style="color:#0f172a; font-size:17px;">${allWin}승 ${allLose}패 (${allRate}%)</b>
+      </div>
+    </div>
+
+    <!-- ✅ 단식/복식 -->
+    <div style="font-size:16px; line-height:1.8; margin-bottom:18px;">
+      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 단식 / 복식</div>
+      <div>🎯 단식 전적 : 
+        <b style="color:#0f172a; font-size:17px;">${sglWin}승 ${sglLose}패 (${sglRate}%)</b>
+      </div>
+      <div>🫂 복식 전적 : 
+        <b style="color:#0f172a; font-size:17px;">${dblWin}승 ${dblLose}패 (${dblRate}%)</b>
+      </div>
+    </div>
+
+    <!-- ✅ 상대·파트너 분석 -->
+    <div style="font-size:16px; line-height:1.8;">
+      <div style="font-weight:900; color:#1e3a8a; margin-bottom:8px; font-size:18px;">📌 상대·파트너 분석</div>
+
+      <!-- ✅ 단식 가장 많이 이긴 상대 -->
+      <div>
+        <span style="color:#1e3a8a; font-weight:800;">🏅 단식 가장 많이 이긴 상대 :</span>
+        ${
+          mostWinOpponentRaw
+            ? `<a href="player.html?name=${encodeURIComponent(mostWinOpponentRaw)}"
+                style="color:#0f6a00; font-size:17px; font-weight:900; text-decoration:none;">
+                ${mostWinOpponent}
+               </a>`
+            : `<b style="color:#475569; font-size:17px;">-</b>`
+        }
+      </div>
+
+      <!-- ✅ 단식 가장 많이 진 상대 -->
+      <div>
+        <span style="color:#1e3a8a; font-weight:800;">⚠️ 단식 가장 많이 진 상대 :</span>
+        ${
+          mostLoseOpponentRaw
+            ? `<a href="player.html?name=${encodeURIComponent(mostLoseOpponentRaw)}"
+                style="color:#d45500; font-size:17px; font-weight:900; text-decoration:none;">
+                ${mostLoseOpponent}
+               </a>`
+            : `<b style="color:#475569; font-size:17px;">-</b>`
+        }
+      </div>
+
+      <div style="height:10px;"></div>
+
+      <!-- ✅ 가장 잘 맞는 파트너 -->
+      <div>
+        <span style="color:#1e3a8a; font-weight:800;">🤝 가장 잘 맞는 복식 파트너 :</span>
+        ${
+          bestPartnerRaw
+            ? `<a href="player.html?name=${encodeURIComponent(bestPartnerRaw)}"
+                style="color:#0f6a00; font-size:17px; font-weight:900; text-decoration:none;">
+                ${bestPartner}
+               </a>`
+            : `<b style="color:#475569; font-size:17px;">-</b>`
+        }
+      </div>
+
+      <!-- ✅ 가장 잘 안 맞는 파트너 -->
+      <div>
+        <span style="color:#1e3a8a; font-weight:800;">😅 가장 잘 안 맞는 복식 파트너 :</span>
+        ${
+          worstPartnerRaw
+            ? `<a href="player.html?name=${encodeURIComponent(worstPartnerRaw)}"
+                style="color:#d45500; font-size:17px; font-weight:900; text-decoration:none;">
+                ${worstPartner}
+               </a>`
+            : `<b style="color:#475569; font-size:17px;">-</b>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+
 function renderMonthCards(){
   const box = $('#monthList');
   box.innerHTML = '';
@@ -811,174 +981,6 @@ renderDetails();
 window.playerName = playerName;
 // 버튼들
 
-function renderProfile() {
-  const name = playerName;
-  const lvl  = playerLevels[name] ?? '-';
-  const team = 'KOEN';
-
-  // ===== 전체 승률 =====
-  const totalAll = sumAllTotal;
-  const allWin   = sumAllWin;
-  const allLose  = sumAllLose;
-  const allRate  = totalAll ? fmt1(allWin / totalAll * 100) : 0;
-
-  // ===== 단식 승률 =====
-  const totalSgl = sumSglTotal;
-  const sglWin   = sumSglWin;
-  const sglLose  = sumSglLose;
-  const sglRate  = totalSgl ? fmt1(sglWin / totalSgl * 100) : 0;
-
-  // ===== 복식 승률 =====
-  const totalDbl = sumDblTotal;
-  const dblWin   = sumDblWin;
-  const dblLose  = sumDblLose;
-  const dblRate  = totalDbl ? fmt1(dblWin / totalDbl * 100) : 0;
-
-  // ======================================================
-  // ✅ 상대·파트너 분석에서 “이름만 추출”
-  // mostWinOpponent은 "홍길동 (3승)" 형태 → 이름만 분리
-  // ======================================================
-  let mostWinOpponent = '-';
-  let mostWinOpponentRaw = '';  // 클릭용 이름
-  {
-    let maxW = 0;
-    for (const [op, v] of Object.entries(oppMapSingle)) {
-      if (v.win > maxW) {
-        maxW = v.win;
-        mostWinOpponent = `${op} (${v.win}승)`;
-        mostWinOpponentRaw = op;   // ✅ 핵심
-      }
-    }
-  }
-
-  let mostLoseOpponent = '-';
-  let mostLoseOpponentRaw = '';
-  {
-    let maxL = 0;
-    for (const [op, v] of Object.entries(oppMapSingle)) {
-      if (v.lose > maxL) {
-        maxL = v.lose;
-        mostLoseOpponent = `${op} (${v.lose}패)`;
-        mostLoseOpponentRaw = op;  // ✅ 핵심
-      }
-    }
-  }
-
-  let bestPartner = '-';
-  let bestPartnerRaw = '';
-  {
-    let maxW = 0;
-    for (const [pt, v] of Object.entries(partnerMapDouble)) {
-      if (v.win > maxW) {
-        maxW = v.win;
-        bestPartner = `${pt} (${v.win}승)`;
-        bestPartnerRaw = pt;        // ✅ 핵심
-      }
-    }
-  }
-
-  let worstPartner = '-';
-  let worstPartnerRaw = '';
-  {
-    let maxL = 0;
-    for (const [pt, v] of Object.entries(partnerMapDouble)) {
-      if (v.lose > maxL) {
-        maxL = v.lose;
-        worstPartner = `${pt} (${v.lose}패)`;
-        worstPartnerRaw = pt;       // ✅ 핵심
-      }
-    }
-  }
-
-  // ======================================================
-  // ✅ HTML 출력
-  // ======================================================
-  $('#pf_name').textContent = name;
-  $('#pf_meta').textContent = `${team} · ${lvl}부`;
-
-  $('#pf_stats').innerHTML = `
-    <!-- ✅ 전체 기록 -->
-    <div style="font-size:16px; line-height:1.8; margin-bottom:18px;">
-      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 전체 기록</div>
-      <div>✅ 총 경기수 : 
-        <b style="color:#0f172a; font-size:17px;">${totalAll}</b>
-      </div>
-      <div>✅ 전체 전적 : 
-        <b style="color:#0f172a; font-size:17px;">${allWin}승 ${allLose}패 (${allRate}%)</b>
-      </div>
-    </div>
-
-    <!-- ✅ 단식/복식 -->
-    <div style="font-size:16px; line-height:1.8; margin-bottom:18px;">
-      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 단식 / 복식</div>
-      <div>🎯 단식 전적 : 
-        <b style="color:#0f172a; font-size:17px;">${sglWin}승 ${sglLose}패 (${sglRate}%)</b>
-      </div>
-      <div>🫂 복식 전적 : 
-        <b style="color:#0f172a; font-size:17px;">${dblWin}승 ${dblLose}패 (${dblRate}%)</b>
-      </div>
-    </div>
-
-    <!-- ✅ 상대·파트너 분석 -->
-    <div style="font-size:16px; line-height:1.8;">
-      <div style="font-weight:900; color:#1e3a8a; margin-bottom:8px; font-size:18px;">📌 상대·파트너 분석</div>
-
-      <!-- ✅ 단식 가장 많이 이긴 상대 -->
-      <div>
-        <span style="color:#1e3a8a; font-weight:800;">🏅 단식 가장 많이 이긴 상대 :</span>
-        ${
-          mostWinOpponentRaw
-            ? `<a href="player.html?name=${encodeURIComponent(mostWinOpponentRaw)}"
-                style="color:#0f6a00; font-size:17px; font-weight:900; text-decoration:none;">
-                ${mostWinOpponent}
-               </a>`
-            : `<b style="color:#475569; font-size:17px;">-</b>`
-        }
-      </div>
-
-      <!-- ✅ 단식 가장 많이 진 상대 -->
-      <div>
-        <span style="color:#1e3a8a; font-weight:800;">⚠️ 단식 가장 많이 진 상대 :</span>
-        ${
-          mostLoseOpponentRaw
-            ? `<a href="player.html?name=${encodeURIComponent(mostLoseOpponentRaw)}"
-                style="color:#d45500; font-size:17px; font-weight:900; text-decoration:none;">
-                ${mostLoseOpponent}
-               </a>`
-            : `<b style="color:#475569; font-size:17px;">-</b>`
-        }
-      </div>
-
-      <div style="height:10px;"></div>
-
-      <!-- ✅ 가장 잘 맞는 파트너 -->
-      <div>
-        <span style="color:#1e3a8a; font-weight:800;">🤝 가장 잘 맞는 복식 파트너 :</span>
-        ${
-          bestPartnerRaw
-            ? `<a href="player.html?name=${encodeURIComponent(bestPartnerRaw)}"
-                style="color:#0f6a00; font-size:17px; font-weight:900; text-decoration:none;">
-                ${bestPartner}
-               </a>`
-            : `<b style="color:#475569; font-size:17px;">-</b>`
-        }
-      </div>
-
-      <!-- ✅ 가장 잘 안 맞는 파트너 -->
-      <div>
-        <span style="color:#1e3a8a; font-weight:800;">😅 가장 잘 안 맞는 복식 파트너 :</span>
-        ${
-          worstPartnerRaw
-            ? `<a href="player.html?name=${encodeURIComponent(worstPartnerRaw)}"
-                style="color:#d45500; font-size:17px; font-weight:900; text-decoration:none;">
-                ${worstPartner}
-               </a>`
-            : `<b style="color:#475569; font-size:17px;">-</b>`
-        }
-      </div>
-    </div>
-  `;
-}
 
 // 버튼들
 $('#btnLoadCharts').addEventListener('click', buildCharts);
