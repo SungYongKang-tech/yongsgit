@@ -43,65 +43,57 @@
       messagingSenderId: "1068278553187",
       appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
     };
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const auth = getAuth(app);
+    initializeApp(firebaseConfig);
+    const db = getDatabase();
+    const auth = getAuth();
 
-    // --- 익명 로그인 보장 ---
-    let authed = false;
+    // --- 익명 로그인 ---
     const authReady = new Promise((resolve) => {
-      onAuthStateChanged(auth, (user) => {
-        if (user) { authed = true; resolve(user); enableButtons(); }
-      });
+      onAuthStateChanged(auth, (user) => { if (user) resolve(); });
     });
     signInAnonymously(auth);
-
-    function enableButtons() {
-      document.querySelectorAll('button[data-role="toggle"]').forEach(btn => btn.disabled = false);
-    }
 
     // --- 인원 목록 ---
     const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "이세란", "조보미", "송은아", "고은선", "임춘근"];
 
-    // --- 날짜 계산 규칙 적용 ---
+    // ✅ 날짜 기반 표시 규칙
     const today = new Date();
     const y = today.getFullYear();
-    const m = today.getMonth(); // 0=1월
+    const m = today.getMonth();
+
+    const thisMonth = new Date(y, m);      // 이번달
+    const nextMonth = new Date(y, m + 1);  // 다음달
 
     const getKey = (d) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-    const prevMonth = new Date(y, m - 1);
-    const nextMonth = new Date(y, m + 1);
-
     let targetMonth;
 
-    // ✅ 1일~10일 : 지난달 입금내역
-    if (today.getDate() <= 10) {
-      targetMonth = prevMonth;
-    }
-    // ✅ 10일~말일 : 다음달 입금현황
-    else {
+    // ✅ 1일~14일 → 이번달
+    // ✅ 15일~말일 → 다음달
+    if (today.getDate() < 15) {
+      targetMonth = thisMonth;
+    } else {
       targetMonth = nextMonth;
     }
 
+    const monthKey = getKey(targetMonth);
+
+    // 제목 표시
     document.getElementById("pageTitle").innerText =
       `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
 
-    const monthKey = getKey(targetMonth);
     const playerList = document.getElementById("playerList");
 
-    // --- DB 읽기 ---
+    // ✅ DB 불러오기
     onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
       const data = snapshot.val() || {};
       playerList.innerHTML = "";
       renderList(data);
     });
 
-    // --- 렌더링 함수 ---
+    // ✅ 리스트 렌더링
     function renderList(data) {
-      playerList.innerHTML = "";
-
       names.forEach(name => {
         const entry = data[name] || {};
         const isPaid = entry.status === "paid";
@@ -120,10 +112,10 @@
         div.innerHTML = `
           <span>${name}</span>
           <div class="actions">
-            <button id="${btnId}" data-role="toggle" class="${isPaid ? 'paid' : ''}" ${authed ? "" : "disabled"}>
+            <button id="${btnId}" class="${isPaid ? 'paid' : ''}">
               ${isPaid ? "입금 완료" : "입금 대기"}
             </button>
-            <div class="timestamp">${isPaid && displayDate ? displayDate : ""}</div>
+            <div class="timestamp">${displayDate}</div>
           </div>
         `;
 
@@ -131,31 +123,19 @@
 
         const btn = document.getElementById(btnId);
 
-        // ✅ 토글 기능
         btn.onclick = async () => {
           await authReady;
 
-          const wasPaid = btn.classList.contains("paid");
-
-          try {
-            if (wasPaid) {
-              btn.classList.remove("paid");
-              btn.textContent = "입금 대기";
-              await set(ref(db, `payments/${monthKey}/${name}`), {
-                status: "pending"
-              });
-            } else {
-              btn.classList.add("paid");
-              btn.textContent = "입금 완료";
-              const d = new Date();
-              const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-              await set(ref(db, `payments/${monthKey}/${name}`), {
-                status: "paid",
-                timestamp: dateOnly.toISOString()
-              });
-            }
-          } catch (e) {
-            alert("저장 실패: " + e.message);
+          // 토글 동작
+          if (isPaid) {
+            await set(ref(db, `payments/${monthKey}/${name}`), { status: "pending" });
+          } else {
+            const d = new Date();
+            const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            await set(ref(db, `payments/${monthKey}/${name}`), {
+              status: "paid",
+              timestamp: dateOnly.toISOString()
+            });
           }
         };
       });
