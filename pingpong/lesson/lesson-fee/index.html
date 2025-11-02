@@ -7,23 +7,26 @@
   <style>
     body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background-color: #f2f2f2; }
     h2 { text-align: center; color: #0d47a1; margin-bottom: 20px; }
-    .member { display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .member { 
+      display: flex; justify-content: space-between; align-items: center; 
+      background: white; padding: 12px 16px; border-radius: 8px; 
+      margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+    }
     .member span { font-size: 16px; font-weight: 500; flex: 1; text-align: left; }
-    .member .actions { display: flex; align-items: center; gap: 8px; }
-    .member button { padding: 8px 16px; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; color: white; background-color: gray; transition: 0.2s; }
-    .member button.paid { background-color: green; }
-    .member button:disabled { opacity: .6; cursor: not-allowed; }
+    .actions { display: flex; align-items: center; gap: 8px; }
+    button { 
+      padding: 8px 16px; border: none; border-radius: 6px; 
+      font-size: 14px; font-weight: bold; color: white; 
+      background-color: gray; transition: 0.2s; 
+    }
+    button.paid { background-color: green; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
     .timestamp { font-size: 13px; color: gray; min-width: 48px; text-align: right; }
-    h3 { margin-top: 40px; margin-bottom: 10px; color:#0d47a1; }
   </style>
 </head>
 <body>
-  <h2 id="pageTitle">🏓 탁구 레슨비 입금확인</h2>
+  <h2 id="pageTitle">🏓 레슨비 입금확인</h2>
   <div id="playerList"></div>
-
-  <!-- ✅ 지난달 제목/리스트 -->
-  <h3 id="prevTitle"></h3>
-  <div id="prevList"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -44,44 +47,59 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
 
-    // --- 익명 로그인 ---
+    // --- 익명 로그인 보장 ---
     let authed = false;
     const authReady = new Promise((resolve) => {
       onAuthStateChanged(auth, (user) => {
-        if (user) { authed = true; resolve(user); enableAllActionButtons(); }
+        if (user) { authed = true; resolve(user); enableButtons(); }
       });
     });
-    signInAnonymously(auth).catch(err => {
-      console.error('익명 로그인 실패:', err);
-      alert('네트워크/권한 문제로 로그인에 실패했습니다.');
-    });
+    signInAnonymously(auth);
 
-    function enableAllActionButtons() {
+    function enableButtons() {
       document.querySelectorAll('button[data-role="toggle"]').forEach(btn => btn.disabled = false);
     }
 
-    // --- 날짜 계산 ---
-    const now = new Date();
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1);
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1);
-
-    const yearMonth = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
-    const yearMonthPrev = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
-
-    const displayMonth = nextMonth.getMonth() + 1;
-    document.getElementById("pageTitle").innerText = `🏓 ${displayMonth}월 레슨비 입금확인`;
-
-    document.getElementById("prevTitle").innerText = `📌 지난달(${prevMonth.getMonth() + 1}월) 입금 현황`;
-
-    // --- 멤버 목록 ---
+    // --- 인원 목록 ---
     const names = ["정승목", "김승일", "이상준", "박나령", "이낭주", "이세란", "조보미", "송은아", "고은선", "임춘근"];
 
-    const playerList = document.getElementById("playerList");
-    const prevList = document.getElementById("prevList");
+    // --- 날짜 계산 규칙 적용 ---
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth(); // 0=1월
 
-    // ✅ 이번달 데이터
-    onValue(ref(db, `payments/${yearMonth}`), (snapshot) => {
+    const getKey = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    const prevMonth = new Date(y, m - 1);
+    const nextMonth = new Date(y, m + 1);
+
+    let targetMonth;
+
+    // ✅ 1일~10일 : 지난달 입금내역
+    if (today.getDate() <= 10) {
+      targetMonth = prevMonth;
+    }
+    // ✅ 10일~말일 : 다음달 입금현황
+    else {
+      targetMonth = nextMonth;
+    }
+
+    document.getElementById("pageTitle").innerText =
+      `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
+
+    const monthKey = getKey(targetMonth);
+    const playerList = document.getElementById("playerList");
+
+    // --- DB 읽기 ---
+    onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
       const data = snapshot.val() || {};
+      playerList.innerHTML = "";
+      renderList(data);
+    });
+
+    // --- 렌더링 함수 ---
+    function renderList(data) {
       playerList.innerHTML = "";
 
       names.forEach(name => {
@@ -98,35 +116,40 @@
         })() : "";
 
         const btnId = `btn-${name}`;
+
         div.innerHTML = `
           <span>${name}</span>
           <div class="actions">
-            <button id="${btnId}" data-role="toggle" class="${isPaid ? 'paid' : ''}" ${authed ? '' : 'disabled'}>
-              ${isPaid ? '입금 완료' : '입금 대기'}
+            <button id="${btnId}" data-role="toggle" class="${isPaid ? 'paid' : ''}" ${authed ? "" : "disabled"}>
+              ${isPaid ? "입금 완료" : "입금 대기"}
             </button>
             <div class="timestamp">${isPaid && displayDate ? displayDate : ""}</div>
           </div>
         `;
+
         playerList.appendChild(div);
 
         const btn = document.getElementById(btnId);
+
+        // ✅ 토글 기능
         btn.onclick = async () => {
           await authReady;
 
-          const prevPaid = btn.classList.contains('paid');
+          const wasPaid = btn.classList.contains("paid");
+
           try {
-            if (prevPaid) {
-              btn.classList.remove('paid');
-              btn.textContent = '입금 대기';
-              await set(ref(db, `payments/${yearMonth}/${name}`), { status: "pending" });
+            if (wasPaid) {
+              btn.classList.remove("paid");
+              btn.textContent = "입금 대기";
+              await set(ref(db, `payments/${monthKey}/${name}`), {
+                status: "pending"
+              });
             } else {
-              btn.classList.add('paid');
-              btn.textContent = '입금 완료';
-
-              const today = new Date();
-              const dateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-              await set(ref(db, `payments/${yearMonth}/${name}`), {
+              btn.classList.add("paid");
+              btn.textContent = "입금 완료";
+              const d = new Date();
+              const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+              await set(ref(db, `payments/${monthKey}/${name}`), {
                 status: "paid",
                 timestamp: dateOnly.toISOString()
               });
@@ -136,39 +159,7 @@
           }
         };
       });
-    });
-
-    // ✅ 지난달 데이터 (읽기 전용)
-    onValue(ref(db, `payments/${yearMonthPrev}`), (snapshot) => {
-      const data = snapshot.val() || {};
-      prevList.innerHTML = "";
-
-      names.forEach(name => {
-        const entry = data[name] || {};
-        const isPaid = entry.status === "paid";
-        const timestamp = entry.timestamp;
-
-        const div = document.createElement("div");
-        div.className = "member";
-
-        const displayDate = timestamp ? (() => {
-          const d = new Date(timestamp);
-          return `${d.getMonth() + 1}/${d.getDate()}`;
-        })() : "";
-
-        div.innerHTML = `
-          <span>${name}</span>
-          <div class="actions">
-            <button disabled class="${isPaid ? 'paid' : ''}">
-              ${isPaid ? '입금 완료' : '미입금'}
-            </button>
-            <div class="timestamp">${isPaid && displayDate ? displayDate : ""}</div>
-          </div>
-        `;
-        prevList.appendChild(div);
-      });
-    });
-
+    }
   </script>
 </body>
 </html>
