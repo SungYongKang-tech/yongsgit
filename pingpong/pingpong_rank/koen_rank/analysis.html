@@ -14,7 +14,17 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-weight:600}
 .wrap{max-width:900px;margin:0 auto;padding:16px}
-header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;z-index:5}
+header{
+  position:sticky;
+  top:0;
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  z-index:9999; /* ⬆️ 올림 */
+}
+
+/* 분석 본문은 헤더 아래에서 시작 (겹침 방지) */
+.analysis-wrap{ position:relative; z-index:1; }
+
 .head-in{max-width:900px;margin:0 auto;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between}
 h1{margin:0;font-size:clamp(18px,4vw,22px);color:#1e40af}
 .btn{border:1px solid #d1d5db;padding:8px 12px;border-radius:10px;background:#fff;cursor:pointer;font-weight:800}
@@ -422,6 +432,47 @@ function makeAnalysis(reports, matches) {
 
   box.innerHTML = makeAnalysis(reports, matches);
 })();
+
+
+
+/* ============================
+   🔘 상단 버튼 동작 연결
+============================ */
+const btnBack = document.getElementById('btnBack');
+const btnAdmin = document.getElementById('btnAdminToggle');
+const who = document.getElementById('who');
+const adminCard = document.getElementById('adminCard');
+
+if (who) who.textContent = playerName || '';
+
+if (btnBack) {
+  btnBack.addEventListener('click', () => {
+    // 뒤로가기가 player.html인 경우엔 history 사용, 아니면 직접 이동
+    const cameFromPlayer = document.referrer && /player\.html/i.test(document.referrer);
+    if (cameFromPlayer) history.back();
+    else location.href = `player.html?name=${encodeURIComponent(playerName || '')}`;
+  });
+}
+
+// 관리자 모드 토글 + 로컬 저장
+let adminOn = localStorage.getItem('pp_admin_on') === '1';
+applyAdmin();
+
+if (btnAdmin) {
+  btnAdmin.addEventListener('click', () => {
+    adminOn = !adminOn;
+    localStorage.setItem('pp_admin_on', adminOn ? '1' : '0');
+    applyAdmin();
+  });
+}
+
+function applyAdmin() {
+  if (!adminCard || !btnAdmin) return;
+  adminCard.style.display = adminOn ? 'block' : 'none';
+  btnAdmin.classList.toggle('primary', adminOn);
+  btnAdmin.textContent = adminOn ? '관리자모드 ON' : '관리자모드';
+}
+
 </script>
 
 </body>
