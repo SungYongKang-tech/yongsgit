@@ -19,62 +19,65 @@ body{
   border-radius:18px;
   box-shadow:0 10px 30px rgba(0,0,0,0.07);
 }
-h1{
-  font-size:22px; color:#1e3a8a; font-weight:900;
-}
+h1{font-size:22px;color:#1e3a8a;font-weight:900;margin-bottom:8px;}
+h2{font-size:18px;color:#334155;margin-top:30px;}
 select, textarea{
-  width:100%;
-  padding:12px;
-  border-radius:12px;
-  border:1px solid #cbd5e1;
+  width:100%; padding:12px;
+  border-radius:12px; border:1px solid #cbd5e1;
   font-size:15px;
-  font-family:"Pretendard","Noto Sans KR";
 }
-textarea{
-  height:320px; resize:none;
-  line-height:1.55; margin-top:12px;
-}
-.btn-row{
-  display:flex; gap:10px; margin-top:12px;
-}
+textarea{height:330px;resize:none;line-height:1.55;margin-top:12px;}
 .btn{
-  flex:1;
-  padding:10px; border:none;
-  border-radius:10px;
-  font-size:15px; font-weight:800;
-  cursor:pointer;
+  padding:10px 14px; border:none;
+  border-radius:10px; font-size:15px;
+  font-weight:800; cursor:pointer; margin-top:12px;
 }
-.btn.save{ background:#2563eb; color:white; }
-.btn.delete{ background:#ef4444; color:white; }
+.save{background:#2563eb;color:white;width:100%;}
+.delete{background:#ef4444;color:white;width:100%;margin-top:8px;}
+.split-save{background:#16a34a;color:white;width:100%;margin-top:12px;}
 .toast{
-  position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
-  padding:12px 18px;
-  background:#111827; color:white;
-  border-radius:10px;
-  font-weight:700;
-  opacity:0; transition:.3s;
+  position:fixed;left:50%;bottom:20px;transform:translateX(-50%);
+  padding:12px 18px;background:#111827;color:white;border-radius:10px;
+  font-weight:700;opacity:0;transition:.3s;
 }
-.toast.show{ opacity:1; }
+.toast.show{opacity:1;}
 </style>
 
 </head>
 <body>
 
 <div class="container">
-  <h1>🏓 선수별 분석 입력(관리자)</h1>
 
-  <label>선수 선택</label>
+  <h1>🏓 선수별 분석 입력 (관리자)</h1>
+
+  <!-- ✅ 개별 입력 영역 -->
+  <h2>✅ 1) 개별 선수 분석 입력</h2>
+
   <select id="playerSelect">
     <option value="">선수를 선택하세요</option>
   </select>
 
-  <textarea id="analysisInput" placeholder="여기에 선수 분석 내용을 입력하세요."></textarea>
+  <textarea id="analysisInput" placeholder="선수 1명 분석 내용을 입력하세요."></textarea>
 
-  <div class="btn-row">
-    <button class="btn save" id="btnSave">저장하기</button>
-    <button class="btn delete" id="btnDelete">삭제하기</button>
-  </div>
+  <button class="btn save" id="btnSave">저장하기</button>
+  <button class="btn delete" id="btnDelete">삭제하기</button>
+
+
+  <!-- ✅ 전체 입력 → 자동 분리 저장 -->
+  <h2>✅ 2) 전체 분석 한 번에 입력 (자동 분리 저장)</h2>
+
+  <textarea id="bulkInput" placeholder="[강성용]
+여기에 강성용 분석을 입력하세요...
+
+[이낭주]
+여기에 이낭주 분석을 입력하세요...
+
+이런 형식으로 전체 선수 분석을 한 번에 넣으면 자동으로 분리 저장됩니다."></textarea>
+
+  <button class="btn split-save" id="btnBulkSave">전체 분석 자동 저장하기</button>
+
 </div>
+
 
 <div class="toast" id="toast">저장되었습니다.</div>
 
@@ -91,9 +94,9 @@ const firebaseConfig = {
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
   databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
   projectId: "pingpongclub-4a5fd",
-  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
-  messagingSenderId: "802826774007",
-  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+  storageBucket:"pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId:"802826774007",
+  appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -101,12 +104,11 @@ const db = getDatabase(app);
 
 const $ = (s)=>document.querySelector(s);
 
-// ✅ Toast
 function toast(msg){
-  const t = $("#toast");
-  t.textContent = msg;
+  const t=$("#toast");
+  t.textContent=msg;
   t.classList.add("show");
-  setTimeout(()=>t.classList.remove("show"), 1500);
+  setTimeout(()=>t.classList.remove("show"),1500);
 }
 
 
@@ -115,61 +117,75 @@ async function loadPlayers(){
   const snap = await get(ref(db, "players"));
   if (!snap.exists()) return;
 
-  const data = snap.val();
   const sel = $("#playerSelect");
+  const list = Object.values(snap.val())
+              .map(p=>p.name)
+              .sort((a,b)=>a.localeCompare(b,"ko"));
 
-  const arr = Object.values(data)
-    .map(p=>p.name)
-    .filter(n=>n)
-    .sort((a,b)=>a.localeCompare(b,"ko"));
-
-  arr.forEach(name=>{
-    sel.insertAdjacentHTML("beforeend",
-      `<option value="${name}">${name}</option>`);
+  list.forEach(n=>{
+    sel.insertAdjacentHTML("beforeend", `<option value="${n}">${n}</option>`);
   });
 }
 loadPlayers();
 
 
-// ✅ 선수 선택 → 분석 자동 로드
+// ✅ 개별 입력: 선수 선택 → 기존 분석 자동 로드
 $("#playerSelect").addEventListener("change", async ()=>{
   const name = $("#playerSelect").value;
-  if (!name){
-    $("#analysisInput").value = "";
-    return;
-  }
+  if (!name){ $("#analysisInput").value=""; return; }
 
   const snap = await get(ref(db, `analysisAll/${name}`));
-  if (snap.exists()){
-    $("#analysisInput").value = snap.val();
-  } else {
-    $("#analysisInput").value = "";
-  }
+  $("#analysisInput").value = snap.exists() ? snap.val() : "";
 });
 
 
-// ✅ 저장하기
+// ✅ 개별 저장
 $("#btnSave").onclick = async ()=>{
   const name = $("#playerSelect").value;
   const text = $("#analysisInput").value.trim();
 
   if (!name) return toast("선수를 선택하세요.");
 
-  await set(ref(db, `analysisAll/${name}`), text || "");
+  await set(ref(db, `analysisAll/${name}`), text);
   toast("✅ 저장되었습니다.");
 };
 
 
-// ✅ 삭제하기
+// ✅ 개별 삭제
 $("#btnDelete").onclick = async ()=>{
   const name = $("#playerSelect").value;
   if (!name) return toast("선수를 선택하세요.");
-
   if (!confirm("정말 삭제할까요?")) return;
 
   await remove(ref(db, `analysisAll/${name}`));
-  $("#analysisInput").value = "";
+  $("#analysisInput").value="";
   toast("🗑 삭제 완료");
+};
+
+
+
+// ✅ ✅ ✅ 전체 입력 → 자동 분리 저장
+$("#btnBulkSave").onclick = async ()=>{
+  const txt = $("#bulkInput").value.trim();
+  if (!txt) return toast("전체 분석 내용을 입력하세요.");
+
+  // ✅ [이름] 블록 자동 분리
+  const blocks = txt.split(/\[(.+?)\]/g).map(s=>s.trim());
+  // blocks 예시: ["", "강성용", "강성용 내용...", "이낭주", "이낭주 내용...", ...]
+
+  let count = 0;
+
+  for (let i = 1; i < blocks.length; i += 2) {
+    const name = blocks[i];
+    const content = blocks[i+1] || "";
+
+    if (!name || !content) continue;
+
+    await set(ref(db, `analysisAll/${name}`), content.trim());
+    count++;
+  }
+
+  toast(`✅ ${count}명 저장 완료!`);
 };
 </script>
 
