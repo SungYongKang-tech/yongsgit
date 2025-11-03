@@ -2,26 +2,77 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>탁구 스타일 분석</title>
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🏓 탁구 스타일 분석</title>
+
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+
+<style>
+body{
+  margin:0;
+  background:#f1f5f9;
+  font-family:"Pretendard","Noto Sans KR",sans-serif;
+  color:#0f172a;
+  padding:20px;
+}
+.container{
+  max-width:900px;
+  margin:0 auto;
+  background:white;
+  padding:24px 28px;
+  border-radius:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.07);
+}
+h1{
+  font-size:24px;
+  font-weight:900;
+  margin-bottom:14px;
+  color:#2563eb;
+}
+#analysisBox{
+  white-space:pre-wrap;
+  line-height:1.8;
+  font-size:16px;
+  font-weight:600;
+}
+.tag{
+  font-size:13px;
+  margin-bottom:14px;
+  background:#e0f0ff;
+  color:#1e3a8a;
+  padding:4px 9px;
+  border-radius:999px;
+  display:inline-block;
+}
+.btn-back{
+  display:inline-block;
+  margin-top:22px;
+  padding:10px 14px;
+  background:#2563eb;
+  color:white;
+  border-radius:10px;
+  text-decoration:none;
+  font-weight:700;
+}
+</style>
+
 </head>
 <body>
 
-<h1 id="title">탁구 스타일 분석</h1>
+<div class="container">
+  <div class="tag">탁구 스타일 분석</div>
+  <h1 id="title">선수 분석</h1>
+  <div id="analysisBox">분석 내용을 불러오는 중...</div>
 
-<div id="content" style="
-  white-space:pre-wrap;
-  font-size:16px;
-  line-height:1.7;
-  padding:16px;
-  background:#f8fafc;
-  border-radius:12px;
-"></div>
+  <a href="javascript:history.back()" class="btn-back">⬅ 돌아가기</a>
+</div>
+
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+// ✅ Firebase 연결
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
@@ -33,27 +84,41 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const db  = getDatabase(app);
 
 // ✅ URL 파라미터로 선수 이름 가져오기
 const params = new URLSearchParams(location.search);
-const playerName = params.get("name");
+const playerName = params.get("name") || "";
 
-// ✅ 페이지 제목 변경
-document.getElementById("title").textContent = `🏓 ${playerName} – 스타일 분석`;
+// ✅ 제목 표시
+document.getElementById("title").textContent = `🏓 ${playerName} 선수 분석`;
 
-// ✅ 전체 분석 데이터를 Firebase에서 불러오기
-const snap = await get(ref(db, "analysisAll"));
+// ✅ 분석 내용 불러오기
+async function loadAnalysis() {
+  const snap = await get(ref(db, "analysisAll"));
 
-if (!snap.exists()) {
-  document.getElementById("content").textContent = "⚠ 분석 데이터가 없습니다.";
-} else {
-  const data = snap.val();
+  const box = document.getElementById("analysisBox");
 
-  // ✅ 이 선수 데이터만 출력
-  const text = data[playerName] ?? "이 선수의 분석 내용이 없습니다.";
-  document.getElementById("content").textContent = text;
+  if (!snap.exists()) {
+    box.textContent = "⚠ 분석 데이터가 없습니다.";
+    return;
+  }
+
+  const all = snap.val();
+
+  // 선수 데이터만 추출
+  const text = all[playerName];
+
+  if (!text) {
+    box.textContent = "⚠ 이 선수의 분석 내용이 아직 등록되지 않았습니다.";
+  } else {
+    box.textContent = text;
+  }
 }
+
+// ✅ 로딩 실행
+loadAnalysis();
+
 </script>
 
 </body>
