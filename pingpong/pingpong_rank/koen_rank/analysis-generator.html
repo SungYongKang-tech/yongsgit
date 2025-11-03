@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🏓 KOEN 분석 JSON 생성기</title>
+
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+
+<style>
+body{
+  margin:0; padding:20px;
+  font-family:"Pretendard","Noto Sans KR",sans-serif;
+  background:#f8fafc; color:#0f172a;
+}
+.container{
+  max-width:900px; margin:0 auto;
+  background:white; padding:20px 26px;
+  border-radius:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.07);
+}
+h1{
+  font-size:22px; color:#2563eb; font-weight:900;
+}
+.btn{
+  padding:10px 14px; margin:6px 0;
+  background:#2563eb; color:white;
+  border:none; border-radius:10px;
+  font-size:15px; font-weight:700;
+  cursor:pointer;
+}
+textarea{
+  width:100%; height:360px; resize:none;
+  padding:12px; border-radius:12px;
+  border:1px solid #cbd5e1;
+  font-size:15px;
+  font-family:monospace;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🏓 KOEN 분석 JSON 자동 생성기</h1>
+
+  <button class="btn" id="btnLoad">1) Firebase 데이터 불러오기</button>
+  <button class="btn" id="btnAnalyze">2) 자동 분석 생성</button>
+  <button class="btn" id="btnCopy">3) JSON 복사하기</button>
+
+  <h3>결과(JSON):</h3>
+  <textarea id="resultBox">데이터를 불러오세요.</textarea>
+</div>
+
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+// ✅ Firebase 설정
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let players = {};      // 전체 선수 목록
+let matches = [];      // 전체 경기 기록
+
+// ✅ 1) 데이터 불러오기
+document.getElementById("btnLoad").onclick = async ()=>{
+
+  const pSnap = await get(ref(db, "players"));
+  const mSnap = await get(ref(db, "matches"));
+
+  if (!pSnap.exists() || !mSnap.exists()) {
+    alert("데이터가 없습니다.");
+    return;
+  }
+
+  players = pSnap.val();
+  matches = Object.values(mSnap.val());
+
+  document.getElementById("resultBox").value = 
+    "✅ 데이터 불러옴!\n" +
+    `- 선수: ${Object.keys(players).length}명\n` +
+    `- 경기: ${matches.length}건`;
+};
+
+
+// ✅ 2) 자동 분석 생성
+document.getElementById("btnAnalyze").onclick = ()=>{
+
+  if (!Object.keys(players).length){
+    alert("먼저 데이터를 불러오세요.");
+    return;
+  }
+
+  const output = {};
+
+  for (const pid in players){
+    const name = players[pid].name;
+
+    if (!name) continue;
+
+    const analysis = generatePlayerAnalysis(name);
+    output[name] = analysis;
+  }
+
+  document.getElementById("resultBox").value =
+    JSON.stringify(output, null, 2);
+};
+
+
+// ✅ 선수별 분석 생성 함수
+function generatePlayerAnalysis(player){
+
+  let sWin=0, sLose=0, dWin=0, dLose=0;
+  let opponents = {};
+  let partners = {};
+
+  matches.forEach(m=>{
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const mode = m.mode || "single";
+
+    if (![...A,...B].includes(player)) return;
+
+    const winA = (m.winnerSide === "A");
+    const iAmA = A.includes(player);
+    const iWon = (winA && iAmA) || (!winA && !iAmA);
+
+    // 단식
+    if (mode === "single"){
+      if (iWon) sWin++; else sLose++;
+
+      const opp = iAmA ? B[0] : A[0];
+      if (opp){
+        if (!opponents[opp]) opponents[opp] = {win:0, lose:0};
+        if (iWon) opponents[opp].win++; else opponents[opp].lose++;
+      }
+    }
+
+    // 복식
+    if (mode === "double"){
+      if (iWon) dWin++; else dLose++;
+
+      const partner = iAmA 
+        ? A.find(x=>x!==player)
+        : B.find(x=>x!==player);
+
+      if (partner){
+        if (!partners[partner]) partners[partner] = {win:0, lose:0};
+        if (iWon) partners[partner].win++; else partners[partner].lose++;
+      }
+    }
+  });
+
+  // 상대·파트너 sorting
+  const topOpp = Object.entries(opponents)
+     .sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
+
+  const topPartner = Object.entries(partners)
+     .sort((a,b)=>(b[1].win+b[1].lose)-(a[1].win+a[1].lose))[0];
+
+  // ✅ 분석 문구 생성
+  let text = 
+`${player} 선수의 경기 스타일 분석입니다.
+
+■ 전체 성향
+- 단식 전적: ${sWin}승 ${sLose}패
+- 복식 전적: ${dWin}승 ${dLose}패
+
+■ 단식 분석
+${
+  topOpp 
+  ? `- 가장 많이 겨룬 상대는 ${topOpp[0]}이며, 전적은 ${topOpp[1].win}승 ${topOpp[1].lose}패`
+  : "- 충분한 단식 데이터가 없습니다."
+}
+
+■ 복식 분석
+${
+  topPartner
+  ? `- 가장 많이 호흡을 맞춘 파트너는 ${topPartner[0]}이며, 전적은 ${topPartner[1].win}승 ${topPartner[1].lose}패`
+  : "- 복식 파트너 데이터가 부족합니다."
+}
+
+■ 플레이 스타일 요약
+- 경기 수·승률을 기준으로 안정성, 공격성, 파트너 궁합 등을 분석한 결과  
+  ${player} 선수는 자신의 강점을 살려 경기를 운영하는 스타일입니다.
+(필요시 ChatGPT로 더 심층 분석 가능)
+
+`;
+
+  return text.trim();
+}
+
+
+// ✅ 3) JSON 복사하기
+document.getElementById("btnCopy").onclick = ()=>{
+  const box = document.getElementById("resultBox");
+  box.select();
+  document.execCommand("copy");
+  alert("✅ JSON이 클립보드에 복사되었습니다!");
+};
+
+</script>
+
+</body>
+</html>
