@@ -2,191 +2,135 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🏓 관리자 – 선수별 분석 입력</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🏓 분석 관리</title>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
 
 <style>
 body{
   margin:0; padding:20px;
+  background:#f5f7fb;
   font-family:"Pretendard","Noto Sans KR",sans-serif;
-  background:#f1f5f9; color:#0f172a;
 }
-.container{
-  max-width:900px; margin:0 auto;
-  background:white; padding:24px 28px;
-  border-radius:18px;
-  box-shadow:0 10px 30px rgba(0,0,0,0.07);
+h1{
+  font-size:22px; font-weight:900; margin-bottom:20px; color:#1e3a8a;
 }
-h1{font-size:22px;color:#1e3a8a;font-weight:900;margin-bottom:8px;}
-h2{font-size:18px;color:#334155;margin-top:30px;}
-select, textarea{
-  width:100%; padding:12px;
-  border-radius:12px; border:1px solid #cbd5e1;
-  font-size:15px;
+.card{
+  background:#fff; border:1px solid #e5e7eb;
+  padding:14px 16px; border-radius:12px;
+  margin-bottom:16px; box-shadow:0 4px 12px rgba(0,0,0,.04);
 }
-textarea{height:330px;resize:none;line-height:1.55;margin-top:12px;}
+.name{
+  font-weight:900; font-size:17px; margin-bottom:6px;
+  color:#0f172a;
+}
+textarea{
+  width:100%; height:120px;
+  padding:10px; border-radius:8px;
+  border:1px solid #cbd5e1;
+  font-size:14px;
+  font-family:inherit;
+  resize:vertical;
+}
 .btn{
-  padding:10px 14px; border:none;
-  border-radius:10px; font-size:15px;
-  font-weight:800; cursor:pointer; margin-top:12px;
+  margin-top:20px;
+  padding:14px 20px;
+  background:#2563eb; color:#fff;
+  font-weight:900; border:none; border-radius:10px;
+  width:100%; font-size:16px;
+  cursor:pointer;
 }
-.save{background:#2563eb;color:white;width:100%;}
-.delete{background:#ef4444;color:white;width:100%;margin-top:8px;}
-.split-save{background:#16a34a;color:white;width:100%;margin-top:12px;}
-.toast{
-  position:fixed;left:50%;bottom:20px;transform:translateX(-50%);
-  padding:12px 18px;background:#111827;color:white;border-radius:10px;
-  font-weight:700;opacity:0;transition:.3s;
+.btn:hover{ background:#1e4fcc; }
+.info{
+  font-size:13px; color:#475569; margin-bottom:16px;
 }
-.toast.show{opacity:1;}
 </style>
-
 </head>
+
 <body>
 
-<div class="container">
+<h1>🏓 선수별 분석 일괄 입력</h1>
+<div class="info">✅ 모든 선수의 분석 내용을 한 번에 저장할 수 있습니다.</div>
 
-  <h1>🏓 선수별 분석 입력 (관리자)</h1>
+<div id="playerBox"></div>
 
-  <!-- ✅ 개별 입력 영역 -->
-  <h2>✅ 1) 개별 선수 분석 입력</h2>
-
-  <select id="playerSelect">
-    <option value="">선수를 선택하세요</option>
-  </select>
-
-  <textarea id="analysisInput" placeholder="선수 1명 분석 내용을 입력하세요."></textarea>
-
-  <button class="btn save" id="btnSave">저장하기</button>
-  <button class="btn delete" id="btnDelete">삭제하기</button>
-
-
-  <!-- ✅ 전체 입력 → 자동 분리 저장 -->
-  <h2>✅ 2) 전체 분석 한 번에 입력 (자동 분리 저장)</h2>
-
-  <textarea id="bulkInput" placeholder="[강성용]
-여기에 강성용 분석을 입력하세요...
-
-[이낭주]
-여기에 이낭주 분석을 입력하세요...
-
-이런 형식으로 전체 선수 분석을 한 번에 넣으면 자동으로 분리 저장됩니다."></textarea>
-
-  <button class="btn split-save" id="btnBulkSave">전체 분석 자동 저장하기</button>
-
-</div>
-
-
-<div class="toast" id="toast">저장되었습니다.</div>
-
+<button class="btn" id="saveBtn">✅ 전체 저장하기</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { 
-  getDatabase, ref, get, set, remove 
-} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// ✅ Firebase 설정
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
   authDomain: "pingpongclub-4a5fd.firebaseapp.com",
   databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
   projectId: "pingpongclub-4a5fd",
-  storageBucket:"pingpongclub-4a5fd.firebasestorage.app",
-  messagingSenderId:"802826774007",
-  appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
 };
-
 const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const db  = getDatabase(app);
 
-const $ = (s)=>document.querySelector(s);
+// DOM
+const box = document.getElementById("playerBox");
 
-function toast(msg){
-  const t=$("#toast");
-  t.textContent=msg;
-  t.classList.add("show");
-  setTimeout(()=>t.classList.remove("show"),1500);
+// ✅ 1) 선수 목록 불러와서 입력칸 자동 생성
+async function loadPlayers(){
+  const snap = await get(ref(db, "players"));
+  if (!snap.exists()){
+    box.innerHTML = "<div>⚠️ 선수 목록을 찾을 수 없습니다.</div>";
+    return;
+  }
+
+  const players = Object.values(snap.val()).sort((a,b)=> a.level - b.level);
+
+  players.forEach(p => {
+    const name = p.name;
+
+    box.insertAdjacentHTML("beforeend", `
+      <div class="card">
+        <div class="name">${name} (${p.level}부)</div>
+        <textarea id="an_${name}" placeholder="이 선수의 분석 내용을 입력하세요."></textarea>
+      </div>
+    `);
+  });
+
+  // ✅ 기존 분석 불러오기 (있을 경우 textarea 자동 채우기)
+  players.forEach(p => loadOldAnalysis(p.name));
 }
 
+// ✅ 2) 기존 분석 자동 불러오기
+async function loadOldAnalysis(name){
+  const snap = await get(ref(db, "analysis/" + name + "/analysis"));
+  if (snap.exists()){
+    document.getElementById("an_" + name).value = snap.val();
+  }
+}
 
-// ✅ 1) 선수 목록 불러오기
-async function loadPlayers(){
+// ✅ 3) 전체 저장
+document.getElementById("saveBtn").addEventListener("click", async () => {
   const snap = await get(ref(db, "players"));
   if (!snap.exists()) return;
 
-  const sel = $("#playerSelect");
-  const list = Object.values(snap.val())
-              .map(p=>p.name)
-              .sort((a,b)=>a.localeCompare(b,"ko"));
-
-  list.forEach(n=>{
-    sel.insertAdjacentHTML("beforeend", `<option value="${n}">${n}</option>`);
-  });
-}
-loadPlayers();
-
-
-// ✅ 개별 입력: 선수 선택 → 기존 분석 자동 로드
-$("#playerSelect").addEventListener("change", async ()=>{
-  const name = $("#playerSelect").value;
-  if (!name){ $("#analysisInput").value=""; return; }
-
-  const snap = await get(ref(db, `analysisAll/${name}`));
-  $("#analysisInput").value = snap.exists() ? snap.val() : "";
-});
-
-
-// ✅ 개별 저장
-$("#btnSave").onclick = async ()=>{
-  const name = $("#playerSelect").value;
-  const text = $("#analysisInput").value.trim();
-
-  if (!name) return toast("선수를 선택하세요.");
-
-  await set(ref(db, `analysisAll/${name}`), text);
-  toast("✅ 저장되었습니다.");
-};
-
-
-// ✅ 개별 삭제
-$("#btnDelete").onclick = async ()=>{
-  const name = $("#playerSelect").value;
-  if (!name) return toast("선수를 선택하세요.");
-  if (!confirm("정말 삭제할까요?")) return;
-
-  await remove(ref(db, `analysisAll/${name}`));
-  $("#analysisInput").value="";
-  toast("🗑 삭제 완료");
-};
-
-
-
-// ✅ ✅ ✅ 전체 입력 → 자동 분리 저장
-$("#btnBulkSave").onclick = async ()=>{
-  const txt = $("#bulkInput").value.trim();
-  if (!txt) return toast("전체 분석 내용을 입력하세요.");
-
-  // ✅ [이름] 블록 자동 분리
-  const blocks = txt.split(/\[(.+?)\]/g).map(s=>s.trim());
-  // blocks 예시: ["", "강성용", "강성용 내용...", "이낭주", "이낭주 내용...", ...]
+  const players = Object.values(snap.val());
 
   let count = 0;
 
-  for (let i = 1; i < blocks.length; i += 2) {
-    const name = blocks[i];
-    const content = blocks[i+1] || "";
+  for (const p of players){
+    const name = p.name;
+    const txt = document.getElementById("an_" + name).value.trim();
 
-    if (!name || !content) continue;
-
-    await set(ref(db, `analysisAll/${name}`), content.trim());
+    await set(ref(db, "analysis/" + name + "/analysis"), txt);
     count++;
   }
 
-  toast(`✅ ${count}명 저장 완료!`);
-};
+  alert(`✅ ${count}명의 분석 내용이 저장되었습니다.`);
+});
+
+
+// 실행
+loadPlayers();
 </script>
 
 </body>
