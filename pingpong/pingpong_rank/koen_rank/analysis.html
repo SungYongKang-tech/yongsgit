@@ -120,23 +120,35 @@ label{font-size:12px;color:#475569;font-weight:800}
     <div id="reportBox" class="box">데이터 로딩 중…</div>
   </section>
 
-  <!-- 관리자 메모 입력 -->
-  <section class="card" id="adminCard">
-    <div class="sec-title">🛠 관리자 기술 메모</div>
+  <!-- ✅ 관리자 모드 토글 -->
+<section class="card">
+  <div class="sec-title">🛠 관리자 기술 메모</div>
+
+  <!-- ✅ 관리자 모드 열기 버튼 -->
+  <button class="btn primary" id="btnAdminOpen">관리자 모드 열기</button>
+
+  <!-- ✅ 비밀번호 입력창 -->
+  <div id="adminPwBox" style="display:none; margin-top:10px;">
+    <input id="adminPwInput" type="password" placeholder="관리자 비밀번호 입력" style="width:160px;margin-right:6px;">
+    <button class="btn" id="btnAdminPwConfirm">확인</button>
+  </div>
+
+  <!-- ✅ 관리자 폼 (잠겨있음) -->
+  <div id="adminForm" style="display:none;margin-top:14px;">
     <div class="grid">
-      <div class="col-6"><label>타법/그립</label><input id="ad_grip" placeholder="오른손 쉐이크"></div>
-      <div class="col-6"><label>구력</label><input id="ad_years" placeholder="3년"></div>
-      <div class="col-6"><label>레슨 여부</label><input id="ad_lesson" placeholder="주1회 레슨"></div>
-      <div class="col-6"><label>최근 폼</label><input id="ad_form" placeholder="드라이브 타이밍 좋아짐"></div>
-      <div class="col-6"><label>기술 강점</label><input id="ad_strong" placeholder="초구 드라이브, 전진 플릭"></div>
-      <div class="col-6"><label>기술 약점</label><input id="ad_weak" placeholder="백 전환 느림"></div>
-      <div class="col-12"><label>기타 메모</label><textarea id="ad_memo" rows="3" placeholder="예: 라켓 교체 후 적응 중…"></textarea></div>
+      <div class="col-6"><label>타법/그립</label><input id="ad_grip"></div>
+      <div class="col-6"><label>구력</label><input id="ad_years"></div>
+      <div class="col-6"><label>레슨 여부</label><input id="ad_lesson"></div>
+      <div class="col-6"><label>최근 폼</label><input id="ad_form"></div>
+      <div class="col-6"><label>기술 강점</label><input id="ad_strong"></div>
+      <div class="col-6"><label>기술 약점</label><input id="ad_weak"></div>
+      <div class="col-12"><label>기타 메모</label><textarea id="ad_memo" rows="3"></textarea></div>
     </div>
-    <div class="row" style="margin-top:10px">
-      <button class="btn primary" id="btnSaveAdmin">저장</button>
-      <span class="small">저장은 <b>playerDetail/{이름}</b>에 반영됩니다.</span>
-    </div>
-  </section>
+    <button class="btn primary" id="btnSaveAdmin" style="margin-top:10px;">저장</button>
+  </div>
+</section>
+
+
 
 </main>
 
@@ -611,6 +623,65 @@ $("#genAI").addEventListener("click", async ()=>{
     tabTpl.click();
   }
 });
+
+
+/* ============================================================
+      ✅ 관리자 기술메모 — Firebase adminPassword 기반 잠금
+============================================================ */
+
+// Firebase에서 관리자 비밀번호 불러오기
+let ADMIN_PASSWORD = null;
+
+import { ref, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+get(ref(db, "config/adminPassword")).then(snap => {
+  ADMIN_PASSWORD = snap.exists() ? snap.val() : "1234";
+});
+
+// 기존 localStorage 관리자 인증 여부
+let isAdmin = localStorage.getItem("IS_ADMIN") === "true";
+
+const btnAdminOpen = $("#btnAdminOpen");
+const pwBox = $("#adminPwBox");
+const adminForm = $("#adminForm");
+const pwInput = $("#adminPwInput");
+
+// ✅ 관리자모드 열기 버튼
+btnAdminOpen.addEventListener("click", () => {
+  if (isAdmin) {
+    adminForm.style.display = "block";
+    pwBox.style.display = "none";
+  } else {
+    pwBox.style.display = "block";
+  }
+});
+
+// ✅ 비밀번호 확인 버튼
+$("#btnAdminPwConfirm").addEventListener("click", () => {
+  const inputPw = pwInput.value.trim();
+  if (!ADMIN_PASSWORD) {
+    alert("관리자 비밀번호를 불러오지 못했습니다. 잠시 후 다시 시도하세요.");
+    return;
+  }
+
+  if (inputPw === ADMIN_PASSWORD.toString()) {
+    alert("✅ 관리자 인증 성공");
+    isAdmin = true;
+    localStorage.setItem("IS_ADMIN", "true");
+    adminForm.style.display = "block";
+    pwBox.style.display = "none";
+  } else {
+    alert("❌ 비밀번호가 틀렸습니다.");
+  }
+});
+
+// ✅ 이미 인증된 경우 바로 폼 표시
+if (isAdmin) {
+  adminForm.style.display = "block";
+  pwBox.style.display = "none";
+}
+
+
+
 </script>
 </body>
 </html>
