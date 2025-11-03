@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🏓 관리자 – 선수별 분석 입력</title>
+
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+
+<style>
+body{
+  margin:0; padding:20px;
+  font-family:"Pretendard","Noto Sans KR",sans-serif;
+  background:#f1f5f9; color:#0f172a;
+}
+.container{
+  max-width:900px; margin:0 auto;
+  background:white; padding:24px 28px;
+  border-radius:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.07);
+}
+h1{
+  font-size:22px; color:#1e3a8a; font-weight:900;
+}
+select, textarea{
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:1px solid #cbd5e1;
+  font-size:15px;
+  font-family:"Pretendard","Noto Sans KR";
+}
+textarea{
+  height:320px; resize:none;
+  line-height:1.55; margin-top:12px;
+}
+.btn-row{
+  display:flex; gap:10px; margin-top:12px;
+}
+.btn{
+  flex:1;
+  padding:10px; border:none;
+  border-radius:10px;
+  font-size:15px; font-weight:800;
+  cursor:pointer;
+}
+.btn.save{ background:#2563eb; color:white; }
+.btn.delete{ background:#ef4444; color:white; }
+.toast{
+  position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
+  padding:12px 18px;
+  background:#111827; color:white;
+  border-radius:10px;
+  font-weight:700;
+  opacity:0; transition:.3s;
+}
+.toast.show{ opacity:1; }
+</style>
+
+</head>
+<body>
+
+<div class="container">
+  <h1>🏓 선수별 분석 입력(관리자)</h1>
+
+  <label>선수 선택</label>
+  <select id="playerSelect">
+    <option value="">선수를 선택하세요</option>
+  </select>
+
+  <textarea id="analysisInput" placeholder="여기에 선수 분석 내용을 입력하세요."></textarea>
+
+  <div class="btn-row">
+    <button class="btn save" id="btnSave">저장하기</button>
+    <button class="btn delete" id="btnDelete">삭제하기</button>
+  </div>
+</div>
+
+<div class="toast" id="toast">저장되었습니다.</div>
+
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { 
+  getDatabase, ref, get, set, remove 
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+// ✅ Firebase 설정
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+const $ = (s)=>document.querySelector(s);
+
+// ✅ Toast
+function toast(msg){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1500);
+}
+
+
+// ✅ 1) 선수 목록 불러오기
+async function loadPlayers(){
+  const snap = await get(ref(db, "players"));
+  if (!snap.exists()) return;
+
+  const data = snap.val();
+  const sel = $("#playerSelect");
+
+  const arr = Object.values(data)
+    .map(p=>p.name)
+    .filter(n=>n)
+    .sort((a,b)=>a.localeCompare(b,"ko"));
+
+  arr.forEach(name=>{
+    sel.insertAdjacentHTML("beforeend",
+      `<option value="${name}">${name}</option>`);
+  });
+}
+loadPlayers();
+
+
+// ✅ 선수 선택 → 분석 자동 로드
+$("#playerSelect").addEventListener("change", async ()=>{
+  const name = $("#playerSelect").value;
+  if (!name){
+    $("#analysisInput").value = "";
+    return;
+  }
+
+  const snap = await get(ref(db, `analysisAll/${name}`));
+  if (snap.exists()){
+    $("#analysisInput").value = snap.val();
+  } else {
+    $("#analysisInput").value = "";
+  }
+});
+
+
+// ✅ 저장하기
+$("#btnSave").onclick = async ()=>{
+  const name = $("#playerSelect").value;
+  const text = $("#analysisInput").value.trim();
+
+  if (!name) return toast("선수를 선택하세요.");
+
+  await set(ref(db, `analysisAll/${name}`), text || "");
+  toast("✅ 저장되었습니다.");
+};
+
+
+// ✅ 삭제하기
+$("#btnDelete").onclick = async ()=>{
+  const name = $("#playerSelect").value;
+  if (!name) return toast("선수를 선택하세요.");
+
+  if (!confirm("정말 삭제할까요?")) return;
+
+  await remove(ref(db, `analysisAll/${name}`));
+  $("#analysisInput").value = "";
+  toast("🗑 삭제 완료");
+};
+</script>
+
+</body>
+</html>
