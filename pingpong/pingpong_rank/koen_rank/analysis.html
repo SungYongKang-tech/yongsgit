@@ -102,17 +102,19 @@ label{font-size:12px;color:#475569;font-weight:800}
 <!-- ✅ Firebase + JS -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { 
+  getDatabase, ref, get, set 
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-/* ✅ Firebase 설정 */
+/* ✅ Firebase */
 const firebaseConfig = {
-  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
-  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
-  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
-  projectId: "pingpongclub-4a5fd",
-  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
-  messagingSenderId: "802826774007",
-  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+  apiKey:"AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain:"pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL:"https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId:"pingpongclub-4a5fd",
+  storageBucket:"pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId:"802826774007",
+  appId:"1:802826774007:web:ca4d05be778eeaf1723af2"
 };
 
 initializeApp(firebaseConfig);
@@ -123,99 +125,161 @@ const params = new URLSearchParams(location.search);
 const playerName = params.get("name") || "";
 document.getElementById("who").textContent = playerName;
 
-/* ✅ 관리자메모 로드 */
+/* ====================================================================
+      1) 관리자 메모 불러오기
+==================================================================== */
 async function loadAdminMemo() {
   const snap = await get(ref(db, `playerDetail/${playerName}`));
   return snap.exists() ? snap.val() : {};
 }
 
-/* ✅ 관리자메모 저장 */
-document.getElementById("btnSaveAdmin").addEventListener("click", async () => {
-  const data = {
-    grip: document.getElementById("ad_grip").value.trim(),
-    years: document.getElementById("ad_years").value.trim(),
-    lesson: document.getElementById("ad_lesson").value.trim(),
-    form: document.getElementById("ad_form").value.trim(),
-    strong: document.getElementById("ad_strong").value.trim(),
-    weak: document.getElementById("ad_weak").value.trim(),
-    memo: document.getElementById("ad_memo").value.trim()
+/* ====================================================================
+      2) 경기 데이터(통합/단식/복식) 불러오기
+==================================================================== */
+async function loadMatchData() {
+  const snap = await get(ref(db, "matches"));
+  if (!snap.exists()) return [];
+
+  const all = Object.values(snap.val());
+  return all.filter(m => {
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    return [...A, ...B].includes(playerName);
+  });
+}
+
+/* ====================================================================
+      3) 데이터 분석 함수
+==================================================================== */
+function analyzeData(matches) {
+
+  let totalWin=0, totalLose=0;
+  let singleWin=0, singleLose=0;
+  let doubleWin=0, doubleLose=0;
+
+  let opp = {};
+  let partner = {};
+
+  matches.forEach(m => {
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const inA = A.includes(playerName);
+    const won = (m.winnerSide==="A" && inA) || (m.winnerSide==="B" && !inA);
+
+    if (won) totalWin++; else totalLose++;
+
+    if (m.mode === "single") {
+      if (won) singleWin++; else singleLose++;
+      const other = inA ? B[0] : A[0];
+      if (other) {
+        if (!opp[other]) opp[other]={w:0,l:0};
+        if (won) opp[other].w++; else opp[other].l++;
+      }
+    } else {
+      if (won) doubleWin++; else doubleLose++;
+      const same = inA ? A : B;
+      const pt = same.find(n => n !== playerName);
+      if (pt) {
+        if (!partner[pt]) partner[pt]={w:0,l:0};
+        if (won) partner[pt].w++; else partner[pt].l++;
+      }
+    }
+  });
+
+  return {
+    totalWin, totalLose,
+    totalRate: (totalWin+totalLose)? Math.round(totalWin/(totalWin+totalLose)*100):0,
+
+    singleWin, singleLose,
+    singleRate:(singleWin+singleLose)? Math.round(singleWin/(singleWin+singleLose)*100):0,
+
+    doubleWin, doubleLose,
+    doubleRate:(doubleWin+doubleLose)? Math.round(doubleWin/(doubleWin+doubleLose)*100):0,
+
+    opp, partner
   };
-
-  await set(ref(db, `playerDetail/${playerName}`), data);
-  alert("✅ 저장 완료");
-});
-
-/* ✅ 관리자 비밀번호 */
-async function getAdminPassword() {
-  const snap = await get(ref(db, "config/adminPassword"));
-  return snap.exists() ? snap.val() : null;
 }
 
-/* ✅ 관리자모드 토글 */
-let adminOn = false;
+/* ====================================================================
+      4) AI 코치 문장 생성 (문단형, 길고 깊게)
+==================================================================== */
+function makeCoachParagraph(admin, stats) {
 
-document.getElementById("btnAdminToggle").addEventListener("click", async () => {
-  if (!adminOn) {
-    const savedPw = await getAdminPassword();
-    const input = prompt("🔐 관리자 비밀번호를 입력하세요");
-    if (input !== savedPw) return alert("❌ 비밀번호 오류");
-    adminOn = true;
-  } else {
-    adminOn = false;
+  let t = "";
+
+  // ✅ 인트로
+  t += `${playerName} 선수는 `;
+  if (admin.grip) t += `${admin.grip} 스타일을 기반으로 하며, `;
+  if (admin.years) t += `구력은 약 ${admin.years} 정도로 보인다. `;
+  if (admin.lesson) t += `현재는 ${admin.lesson} 상태에서 기술 완성도를 높이고 있으며, `;
+  t += "전반적으로 경기 운영에서 드러나는 패턴이 분명한 선수이다. ";
+
+  // ✅ 성향 분석
+  if (stats.totalWin + stats.totalLose > 0) {
+    t += `전체 승률은 약 ${stats.totalRate}%로, `;
+    if (stats.singleRate > stats.doubleRate) {
+      t += `단식에서 더 안정적인 경기력을 보이며, 랠리 흐름을 주도하는 경향이 강하다. `;
+    } else {
+      t += `복식에서 오히려 높은 완성도를 보이며, 팀워크 기반 플레이에서 강점이 드러난다. `;
+    }
   }
-  applyAdmin();
-});
 
-function applyAdmin() {
-  document.getElementById("adminCard").style.display = adminOn ? "block" : "none";
-  document.getElementById("btnAdminToggle").classList.toggle("primary", adminOn);
-  document.getElementById("btnAdminToggle").textContent =
-    adminOn ? "관리자모드 ON" : "관리자모드";
+  // ✅ 관리자 메모 기반 확장
+  if (admin.form) t += `최근 컨디션은 "${admin.form}" 모습이 뚜렷하며, `;
+  if (admin.strong) t += `특히 ${admin.strong}는 경기 내내 중요한 득점 루트로 작용한다. `;
+  if (admin.weak) t += `반면 ${admin.weak} 부분은 상대 상위권 선수들에게 집중적으로 공략당할 가능성이 있다. `;
+
+  // ✅ 기타 메모
+  if (admin.memo) t += `${admin.memo} `;
+
+  return `<div class="box" style="font-size:15px;line-height:1.7">${t}</div>`;
 }
 
-/* ✅ AI 코치 분석 문장 생성기 */
-function makeAIAnalysis(adminMemo) {
-  let out = [];
+/* ====================================================================
+      5) 데이터(승률/상대/파트너) 요약 박스
+==================================================================== */
+function makeSummaryBoxes(stats) {
+  return `
+  <div class="sec-title">📌 통합 요약</div>
+  <div class="box">
+    전체: ${stats.totalWin}승 ${stats.totalLose}패 (승률 ${stats.totalRate}%)
+  </div>
 
-  out.push(`<div class="sec-title">🤖 AI 코치 분석</div>`);
+  <div class="sec-title">📌 단식</div>
+  <div class="box">
+    ${stats.singleWin}승 ${stats.singleLose}패 (승률 ${stats.singleRate}%)
+  </div>
 
-  let text = "";
-
-  text += `${playerName} 선수는 `;
-  if (adminMemo.grip) text += `${adminMemo.grip} 스타일을 사용하며 `;
-  if (adminMemo.years) text += `구력은 약 ${adminMemo.years} 정도입니다. `;
-
-  if (adminMemo.lesson) text += `현재 ${adminMemo.lesson} 상태이며 `;
-  if (adminMemo.form) text += `요즘 경기에서는 "${adminMemo.form}" 경향이 뚜렷합니다. `;
-
-  if (adminMemo.strong) text += `강점은 ${adminMemo.strong}이며 `;
-  if (adminMemo.weak) text += `보완해야 할 부분은 ${adminMemo.weak}입니다. `;
-
-  if (adminMemo.memo) text += `추가 메모: ${adminMemo.memo}`;
-
-  out.push(`<div class="box">${text}</div>`);
-
-  return out.join("\n");
+  <div class="sec-title">📌 복식</div>
+  <div class="box">
+    ${stats.doubleWin}승 ${stats.doubleLose}패 (승률 ${stats.doubleRate}%)
+  </div>
+  `;
 }
 
-/* ✅ 실행 */
+/* ====================================================================
+      6) 실행
+==================================================================== */
 (async () => {
+
   const adminMemo = await loadAdminMemo();
+  const matches = await loadMatchData();
+  const stats = analyzeData(matches);
 
-  /* 관리자메모 입력창 자동채움 */
-  if (adminMemo.grip) document.getElementById("ad_grip").value = adminMemo.grip;
-  if (adminMemo.years) document.getElementById("ad_years").value = adminMemo.years;
-  if (adminMemo.lesson) document.getElementById("ad_lesson").value = adminMemo.lesson;
-  if (adminMemo.form) document.getElementById("ad_form").value = adminMemo.form;
-  if (adminMemo.strong) document.getElementById("ad_strong").value = adminMemo.strong;
-  if (adminMemo.weak) document.getElementById("ad_weak").value = adminMemo.weak;
-  if (adminMemo.memo) document.getElementById("ad_memo").value = adminMemo.memo;
+  let html = "";
 
-  /* ✅ AI 코치 분석 생성 */
-  const html = makeAIAnalysis(adminMemo);
+  // ✅ AI 코치 문단
+  html += `<div class="sec-title" style="font-size:18px">🤖 AI 코치 분석</div>`;
+  html += makeCoachParagraph(adminMemo, stats);
+
+  // ✅ 데이터 요약
+  html += makeSummaryBoxes(stats);
+
   document.getElementById("analysisContent").innerHTML = html;
+
 })();
 </script>
+
 
 </body>
 </html>
