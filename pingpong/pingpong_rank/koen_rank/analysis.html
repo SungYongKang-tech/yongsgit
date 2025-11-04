@@ -489,6 +489,252 @@ document.addEventListener("DOMContentLoaded", () => {
 
 }); // ✅ DOMContentLoaded 끝
 
+/* ============================================
+   ✅ 질문 기반: 통합 요약/세부성향/관리자메모 자동 생성
+   - reports: loadMonthlyReports() 결과
+   - matches: loadMatches() 결과
+   - adminMemo: loadAdminMemo() 결과
+===============================================*/
+
+/* 유틸 */
+function byValueDesc(a, b) { return b.value - a.value; }
+function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
+function rate(win, total) { return total ? Math.round((win / total) * 100) : 0; }
+
+/* 통합리그 요약 상자 + 불릿 채우기 */
+function fillUnifiedSummary(reports) {
+  const wrap = document.getElementById("integratedBox");
+  const bullets = document.getElementById("integratedBullets");
+  if (!wrap || !bullets) return;
+
+  if (!reports.length) {
+    wrap.innerHTML = `<div class="small">통합 데이터가 없습니다.</div>`;
+    bullets.innerHTML = "";
+    return;
+  }
+
+  const totalGames = sum(reports.map(r => r.total));
+  const totalWins = sum(reports.map(r => r.win));
+  const totalLoses = sum(reports.map(r => r.lose));
+  const avgRate = rate(totalWins, totalGames);
+
+  const mostGames = [...reports].sort((a,b)=>b.total-a.total)[0];
+  const bestRate = [...reports].sort((a,b)=>b.rate-a.rate)[0];
+  const last = reports.at(-1);
+
+  // 3칸 요약 카드
+  wrap.innerHTML = `
+    <div class="row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+      <div class="card" style="padding:12px">
+        <div class="small">총 경기</div>
+        <div style="font-size:20px;font-weight:900">${totalGames.toLocaleString()} 경기</div>
+      </div>
+      <div class="card" style="padding:12px">
+        <div class="small">승 / 패</div>
+        <div style="font-size:20px;font-weight:900">${totalWins.toLocaleString()}승 ${totalLoses.toLocaleString()}패</div>
+      </div>
+      <div class="card" style="padding:12px">
+        <div class="small">평균 승률</div>
+        <div style="font-size:20px;font-weight:900">${avgRate}%</div>
+      </div>
+    </div>
+  `;
+
+  bullets.innerHTML = `
+    <li>가장 많이 뛴 달: <b>${mostGames.month}</b> (${mostGames.total}경기)</li>
+    <li>승률 최고 달: <b>${bestRate.month}</b> (${bestRate.rate}%)</li>
+    <li>최근 달 승률: <b>${last.month}</b> (${last.rate}%)</li>
+  `;
+}
+
+/* 단식/복식/상대/파트너 통계 만들기 */
+function buildMatchStats(matches, playerName) {
+  const s = { win:0, lose:0 };
+  const d = { win:0, lose:0 };
+  const opp = {};     // { name: {win,lose} } (단식 상대)
+  const partner = {}; // { name: {win,lose} } (복식 파트너)
+  const partnerSet = new Set();
+
+  matches.forEach(m=>{
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const isA = A.includes(playerName);
+    const won = (m.winnerSide === "A" && isA) || (m.winnerSide === "B" && !isA);
+
+    if (m.mode === "single") {
+      won ? s.win++ : s.lose++;
+      const other = isA ? B[0] : A[0];
+      if (other) {
+        if (!opp[other]) opp[other] = {win:0,lose:0};
+        won ? opp[other].win++ : opp[other].lose++;
+      }
+    } else {
+      won ? d.win++ : d.lose++;
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== playerName);
+      if (pt) {
+        partnerSet.add(pt);
+        if (!partner[pt]) partner[pt] = {win:0,lose:0};
+        won ? partner[pt].win++ : partner[pt].lose++;
+      }
+    }
+  });
+
+  const singlesTotal = s.win + s.lose;
+  const doublesTotal = d.win + d.lose;
+
+  const singlesRate = rate(s.win, singlesTotal);
+  const doublesRate = rate(d.win, doublesTotal);
+
+  // 자주 맞붙은 (>=3경기) 상대 TOP & 어려운 상대(승률<=40)
+  const oppArr = Object.entries(opp).map(([name, wl])=>{
+    const total = wl.win + wl.lose;
+    return { name, total, win: wl.win, lose: wl.lose, rate: rate(wl.win,total) };
+  }).sort((a,b)=>b.total - a.total);
+
+  const keyOpponents = oppArr.filter(o=>o.total >= 3).slice(0,3);
+  const hardOpponents = oppArr.filter(o=>o.total >= 3 && o.rate <= 40).slice(0,3);
+
+  // 파트너 TOP & 약한 궁합(승률<=40)
+  const partnerArr = Object.entries(partner).map(([name, wl])=>{
+    const total = wl.win + wl.lose;
+    return { name, total, win: wl.win, lose: wl.lose, rate: rate(wl.win,total) };
+  }).sort((a,b)=>b.total - a.total);
+
+  const favPartners = partnerArr.filter(p=>p.total >= 3).slice(0,3);
+  const weakPartners = partnerArr.filter(p=>p.total >= 3 && p.rate <= 40).slice(0,3);
+
+  return {
+    singles: { ...s, total: singlesTotal, rate: singlesRate },
+    doubles: { ...d, total: doublesTotal, rate: doublesRate },
+    oppArr, keyOpponents, hardOpponents,
+    partnerArr, favPartners, weakPartners,
+    partnerDiversity: partnerSet.size
+  };
+}
+
+/* 단식/복식 불릿 + 추천문구 채우기 (질문 반영) */
+function fillDetailBullets(stats) {
+  const sUl = document.getElementById("singleBullets");
+  const dUl = document.getElementById("doubleBullets");
+  const recUl = document.getElementById("recommend");
+  if (!sUl || !dUl || !recUl) return;
+
+  const S = stats.singles, D = stats.doubles;
+
+  sUl.innerHTML = `
+    <li>총 경기: <b>${S.total.toLocaleString()}</b> ( ${S.win}승 ${S.lose}패 )</li>
+    <li>승률: <b>${S.rate}%</b></li>
+    <li>${S.rate >= 55 ? "자신의 템포 유지 시 연속 득점력이 좋습니다." : "초반 흐름 관리와 리시브 안정화가 우선 과제입니다."}</li>
+  `;
+
+  dUl.innerHTML = `
+    <li>총 경기: <b>${D.total.toLocaleString()}</b> ( ${D.win}승 ${D.lose}패 )</li>
+    <li>승률: <b>${D.rate}%</b></li>
+    <li>${D.rate >= 55 ? "파트너 연계가 좋아 공격 전환이 빠릅니다." : "초구 역할 분담과 리턴 위치 선정 개선이 필요합니다."}</li>
+    <li>최근 파트너 다양성: <b>${stats.partnerDiversity}명</b></li>
+  `;
+
+  // 종합 추천 (질문 가이드 기반)
+  let recList = [];
+  if (S.rate >= D.rate) {
+    recList.push("단식에 강점이 뚜렷하므로 단식 비중을 높이는 전략이 유효합니다.");
+    recList.push("짧은 공 리시브 선택지(푸시/짧은 스트레이트/백 리프트)를 연습해 초반 5포인트를 안정화하세요.");
+  } else {
+    recList.push("복식에서 강점이 나타납니다. 파트너와 초구-2구 역할을 명확히 나누면 상승폭이 큽니다.");
+    recList.push("리시브 안정화 및 첫 블록 성공률을 높이면 단식도 빠르게 개선됩니다.");
+  }
+  if (stats.hardOpponents.length) {
+    recList.push(`어려운 상대(승률 ≤ 40%): ${stats.hardOpponents.map(o=>`${o.name}`).join(", ")} — 서브 패턴 대비와 템포 대응 훈련을 중점으로.`);
+  }
+  recUl.innerHTML = recList.map(t=>`<li>${t}</li>`).join("");
+}
+
+/* 질문 리스트를 반영한 "관리자 메모 추천안" 생성 (빈 칸만 자동 채움) */
+function buildAdminGuidedMemo(stats, reports, playerName) {
+  // 스타일 추정 (질문: 공격형/수비형/안정형/리듬형/연결형?)
+  // — 근거: 단식 승률이 복식보다 높고 총량도 많으면 '흐름 주도형/전진 공격형' 경향,
+  //          복식 쪽이 더 좋으면 '연결형/협업형' 경향.
+  const S = stats.singles, D = stats.doubles;
+  let style = "";
+  if (S.total >= D.total && S.rate >= D.rate) {
+    style = (S.rate >= 60) ? "전진 공격형, 흐름 주도형" : "안정형, 리듬형";
+  } else {
+    style = (D.rate >= 60) ? "연결형(복식 지향), 전환 빠름" : "협업형, 안정지향";
+  }
+
+  // 강점(질문: 가장 강한 기술? 긴랠리/짧은랠리? 결정력?)
+  // 데이터로 기술명은 특정 못하지만, 패턴 기반 문장으로 제안
+  const strengths = [
+    (S.rate >= 55 ? "단식 흐름 주도 능력" : "긴 랠리에서의 안정성"),
+    (D.rate >= 55 ? "복식 연계와 전환 속도" : "수비에서 공격 전환 타이밍")
+  ].join(", ");
+
+  // 약점(질문: 짧은공, 초구, 백처리, 강드라이브 대응?)
+  const weaknesses = [
+    "짧은 공 리시브 선택지 부족",
+    "강한 드라이브 대응 첫 블록 흔들림"
+  ].join(", ");
+
+  // 선호 파트너 (질문: 승률↑ 이유/역할분담?)
+  const favs = stats.favPartners.length
+    ? stats.favPartners.map(p=>`${p.name}(${p.total}경기 ${p.rate}%)`).slice(0,2).join(", ")
+    : "";
+
+  // 어려운 상대 (질문: 서브/템포/유형?)
+  const hards = stats.hardOpponents.length
+    ? stats.hardOpponents.map(o=>`${o.name}(${o.total}경기 ${o.rate}%)`).slice(0,3).join(", ")
+    : "";
+
+  // 종합 메모 (질문: 전술 조언 + 장기 성장 포인트)
+  const last = reports.at(-1);
+  const lastLine = last ? `최근(${last.month}) 승률 ${last.rate}% 기준, ` : "";
+  const memo = [
+    `${lastLine}초반 5포인트 구간은 짧은 랠리 위주 전술로 안정화하고,`,
+    `리시브는 푸시/짧은 스트레이트/백 리프트를 섞어 패턴을 다양화하세요.`,
+    `복식은 초구-2구 역할을 명확히 분담하고, 단식은 첫 블록 성공률 향상을 위한 반복 훈련이 핵심입니다.`
+  ].join(" ");
+
+  return { style, strengths, weaknesses, favs, hards, memo };
+}
+
+/* 관리자 입력칸에 추천안을 "빈 칸에만" 채워 넣기 */
+function fillAdminMemoFields(suggest) {
+  const f = (id) => document.getElementById(id);
+  const setIfEmpty = (el, val) => { if (el && !el.value.trim() && val) el.value = val; };
+
+  setIfEmpty(f("ad_style"), suggest.style);
+  setIfEmpty(f("ad_strengths"), suggest.strengths);
+  setIfEmpty(f("ad_weaknesses"), suggest.weaknesses);
+  setIfEmpty(f("ad_favs"), suggest.favs);
+  setIfEmpty(f("ad_hards"), suggest.hards);
+  setIfEmpty(f("ad_memo"), suggest.memo);
+}
+
+/* ============ 실행부 추가: 데이터 만든 뒤 호출 ============ */
+/* (기존 실행부)
+   const reports = await loadMonthlyReports();
+   const matches = await loadMatches();
+   const adminMemo = await loadAdminMemo();
+   box.innerHTML = makeAnalysis(reports, matches, adminMemo);
+   ... (기존 값 채워넣기)
+*/
+
+(function runQuestionBasedAnalysis() {
+  // reports, matches, playerName은 기존 스코프에 이미 존재
+  if (!window.__questionBasedDone__) window.__questionBasedDone__ = true; else return;
+
+  // 통합 요약
+  fillUnifiedSummary(reports);
+
+  // 세부 성향
+  const stats = buildMatchStats(matches, playerName);
+  fillDetailBullets(stats);
+
+  // 관리자 메모 추천안 생성 → 빈칸만 자동 채움
+  const suggest = buildAdminGuidedMemo(stats, reports, playerName);
+  fillAdminMemoFields(suggest);
+})();
 
 </script>
 
