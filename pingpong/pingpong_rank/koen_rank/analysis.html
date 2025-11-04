@@ -7,7 +7,6 @@
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
 
 <style>
-/* 전체 스타일 (생략 없이 완전 버전) */
 :root{
   --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
   --accent:#2563eb; --ok:#16a34a; --warn:#f59e0b; --bad:#ef4444;
@@ -16,14 +15,8 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-weight:600}
 .wrap{max-width:900px;margin:0 auto;padding:16px}
-header{
-  position:sticky;
-  top:0;
-  background:#fff;
-  border-bottom:1px solid #e5e7eb;
-  z-index:9999;
-}
-.analysis-wrap{ position:relative; z-index:1; }
+header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;z-index:9999}
+.analysis-wrap{position:relative;z-index:1}
 .head-in{max-width:900px;margin:0 auto;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between}
 h1{margin:0;font-size:clamp(18px,4vw,22px);color:#1e40af}
 .btn{border:1px solid #d1d5db;padding:8px 12px;border-radius:10px;background:#fff;cursor:pointer;font-weight:800}
@@ -36,14 +29,17 @@ h1{margin:0;font-size:clamp(18px,4vw,22px);color:#1e40af}
 .divider{height:1px;background:#eef2f7;margin:12px 0}
 ul.clean{list-style:none;padding:0;margin:0;display:grid;gap:6px}
 .small{font-size:13px;color:#475569}
+.box{border:1px dashed #e2e8f0;border-radius:12px;padding:12px;background:#fff}
 
-input,textarea{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit}
-label{font-size:12px;color:#475569;font-weight:800}
+input,textarea,select{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit}
+label{font-size:12px;color:#475569;font-weight:800;margin-top:8px;display:block}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(12,1fr)}
 .col-12{grid-column:span 12}
 .col-6{grid-column:span 6}
 @media(max-width:720px){.col-6{grid-column:span 12}}
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -61,10 +57,12 @@ label{font-size:12px;color:#475569;font-weight:800}
 <div class="analysis-wrap">
 <main class="wrap">
 
+  <!-- 핵심 요약/AI코칭 상단 -->
   <section class="card" style="margin-top:12px;">
     <div id="analysisContent"></div>
   </section>
 
+  <!-- 통합리그 요약 -->
   <section class="card">
     <div class="sec-title">📅 통합리그 요약</div>
     <div id="integratedBox" class="kv"></div>
@@ -72,6 +70,7 @@ label{font-size:12px;color:#475569;font-weight:800}
     <div class="small">※ 통합리그는 참고용으로 반영됩니다.</div>
   </section>
 
+  <!-- 세부 성향 -->
   <section class="card">
     <div class="sec-title">🎯 세부 성향 (단식·복식)</div>
     <div class="grid">
@@ -88,45 +87,63 @@ label{font-size:12px;color:#475569;font-weight:800}
     <ul id="recommend" class="clean"></ul>
   </section>
 
+  <!-- 관리자 코칭 입력 (비번 보호) -->
   <section class="card" id="adminCard" style="display:none">
-    <div class="sec-title">🛠 관리자 메모</div>
-    <div class="grid">
-      <div class="col-6">
-        <label>스타일</label>
-        <input id="ad_style" placeholder="예: 공격형, 안정형">
-      </div>
-      <div class="col-6">
-        <label>선호 파트너</label>
-        <input id="ad_favs" placeholder="홍길동, 김영희">
-      </div>
-      <div class="col-6">
-        <label>강점</label>
-        <input id="ad_strengths" placeholder="초구 드라이브, 발빠름">
-      </div>
-      <div class="col-6">
-        <label>약점</label>
-        <input id="ad_weaknesses" placeholder="백 커트, 리시브">
-      </div>
-      <div class="col-12">
-        <label>어려운 상대</label>
-        <input id="ad_hards" placeholder="이상준, 박나령">
-      </div>
-      <div class="col-12">
-        <label>메모</label>
-        <textarea id="ad_memo" rows="3" placeholder="전진 공격 위주…"></textarea>
-      </div>
+    <div class="sec-title">🛠 관리자 코칭 입력</div>
+    <div class="small" style="margin-bottom:10px;">
+      아래 질문에 답하면 5각형 능력 그래프와 AI 코칭 메시지가 업데이트됩니다.
     </div>
 
-    <button class="btn primary" id="btnSaveAdmin" style="margin-top:12px;">저장</button>
+    <label>1) 플레이 스타일 (예: 전진 공격형, 안정형, 연결형 등)</label>
+    <textarea id="q_style" rows="2" placeholder="예: 전진 공격형, 첫 드라이브 선호, 백 안정적"></textarea>
+
+    <label>2) 강점 (예: 초구 드라이브, 코스 공략, 랠리 지구력)</label>
+    <textarea id="q_strengths" rows="2" placeholder="예: 초구 드라이브, 코스 공략 능숙, 포핸드 결정력"></textarea>
+
+    <label>3) 약점 (예: 짧은 공 리시브, 강 드라이브 첫 블록, 백 처리)</label>
+    <textarea id="q_weaknesses" rows="2" placeholder="예: 짧은 공 리시브 선택지 부족, 첫 블록 흔들림"></textarea>
+
+    <label>4) 복식에서 잘 맞는 파트너 유형/이름</label>
+    <textarea id="q_favs" rows="2" placeholder="예: 수비 안정형 파트너, 김OO와 궁합 좋음"></textarea>
+
+    <label>5) 어려운 상대 유형/이름 + 이유</label>
+    <textarea id="q_hards" rows="2" placeholder="예: 강한 회전 서브 구사자, 템포 빠른 공격형(이OO)"></textarea>
+
+    <label>6) 코치 메모(그대로 메시지에 포함됩니다)</label>
+    <textarea id="q_memo" rows="3" placeholder="예: 초반 5포인트 안정화, 리시브 패턴 다양화 지도 예정"></textarea>
+
+    <button class="btn primary" id="btnSaveAdmin" style="margin-top:12px;">✅ 저장하기</button>
+  </section>
+
+  <!-- AI 코칭 메시지 -->
+  <section class="card">
+    <div class="sec-title">🤖 AI 코칭 메시지</div>
+    <div class="row" style="gap:8px;align-items:center;margin-bottom:8px">
+      <span class="badge">코치 톤</span>
+      <select id="coachTone" class="btn" style="padding:6px 10px">
+        <option value="expert">전문가형</option>
+        <option value="emotional">감성형</option>
+      </select>
+      <button class="btn" id="btnRefreshCoach">갱신</button>
+    </div>
+    <div id="coachMsg" class="small" style="line-height:1.7"></div>
+  </section>
+
+  <!-- 5각형 능력 그래프 -->
+  <section class="card">
+    <div class="sec-title">⭐ 5각형 능력 그래프</div>
+    <canvas id="abilityRadar" height="260"></canvas>
+    <div class="small" style="margin-top:6px">
+      축: 서브·리시브 / 랠리 지속력 / 공격 전환 / 전술 지능 / 파트너십
+    </div>
   </section>
 
 </main>
 </div>
 
-
 <script type="module">
 /* ============================================
- ✅ Firebase 초기화
+   ✅ Firebase 초기화
 ===============================================*/
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
@@ -144,7 +161,7 @@ initializeApp(firebaseConfig);
 const db = getDatabase();
 
 /* ============================================
- ✅ 기본 설정
+   ✅ 기본 설정/유틸
 ===============================================*/
 const params = new URLSearchParams(location.search);
 const playerName = params.get("name") || "";
@@ -154,77 +171,53 @@ const pct = (a,b)=>b?Math.round(a/b*100):0;
 const fmt = n=>Math.round(n*10)/10;
 const box = document.getElementById("analysisContent");
 
+const $ = (id)=>document.getElementById(id);
+
 /* ============================================
- ✅ 관리자 메모
+   ✅ 데이터 로드
 ===============================================*/
 async function loadAdminMemo(){
   const snap = await get(ref(db,`playerDetail/${playerName}`));
-  return snap.exists()?snap.val():{};
+  return snap.exists() ? snap.val() : {};
+}
+async function saveAdminMemo(q){
+  await set(ref(db,`playerDetail/${playerName}`), q);
 }
 
-document.getElementById("btnSaveAdmin")?.addEventListener("click", async ()=>{
-  const data = {
-    style: ad_style.value.trim(),
-    favs: ad_favs.value.trim(),
-    strengths: ad_strengths.value.trim(),
-    weaknesses: ad_weaknesses.value.trim(),
-    hards: ad_hards.value.trim(),
-    memo: ad_memo.value.trim(),
-  };
-  await set(ref(db,`playerDetail/${playerName}`), data);
-  alert("✅ 저장되었습니다!");
-});
-
-/* ============================================
- ✅ 통합 리그 데이터 로드
-===============================================*/
 async function loadMonthlyReports(){
   const snap = await get(ref(db,"monthlyReports"));
   if(!snap.exists()) return [];
-
+  const data = snap.val();
   let result=[];
-  Object.entries(snap.val()).forEach(([month,obj])=>{
+  Object.entries(data).forEach(([month,obj])=>{
     if(!obj.players) return;
     const me = Object.values(obj.players).find(p=>p.name===playerName);
     if(!me) return;
-
     const win  = Number(me.wins ?? me.win  ?? 0);
     const lose = Number(me.losses ?? me.lose ?? 0);
-
-    result.push({
-      month, win, lose,
-      total: win+lose,
-      rate: pct(win, win+lose)
-    });
+    result.push({ month, win, lose, total: win+lose, rate: pct(win,win+lose) });
   });
-
   return result.sort((a,b)=>a.month.localeCompare(b.month));
 }
 
-/* ============================================
- ✅ 경기 데이터 로드
-===============================================*/
 async function loadMatches(){
   const snap = await get(ref(db,"matches"));
   if(!snap.exists()) return [];
-
-  return Object.values(snap.val()).filter(m=>{
+  const list = Object.values(snap.val());
+  return list.filter(m=>{
     const names=[...(m.namesA||[]), ...(m.namesB||[])];
     return names.includes(playerName);
   });
 }
 
 /* ============================================
- ✅ 통합 분석
+   ✅ 통합 분석/렌더
 ===============================================*/
 function analyzeUnified(reports){
   if(!reports.length) return {
-    trend:"데이터 없음",
-    best:null, worst:null,
-    steady:null,
-    pattern:"통합 기록 부족"
+    trend:"데이터 없음", best:null, worst:null, steady:null,
+    pattern:"통합 기록 부족으로 상세 분석 제한"
   };
-
   const best = [...reports].sort((a,b)=>b.rate-a.rate)[0];
   const worst= [...reports].sort((a,b)=>a.rate-b.rate)[0];
 
@@ -234,98 +227,70 @@ function analyzeUnified(reports){
     if(diff>=10) trend="승률 상승세";
     else if(diff<=-10) trend="승률 하락세";
   }
-
   const totals = reports.map(r=>r.total);
-  const steady = fmt((Math.min(...totals) / Math.max(...totals)) * 100);
+  const steady = fmt((Math.min(...totals)/Math.max(...totals))*100);
 
   let pattern="";
-  if(best.rate>=65) pattern="기세를 타면 몰아치는 폭발형 경기력";
-  else if(best.rate>=55) pattern="전반적으로 안정적이고 탄탄한 경기 운영";
-  else pattern="초반 실점이 많아 집중력 유지가 중요";
+  if(best.rate>=65) pattern="기세를 타면 몰아치는 폭발형 경기력.";
+  else if(best.rate>=55) pattern="전반적으로 안정적이고 탄탄한 운영.";
+  else pattern="초반 실점 경향이 있어 집중력 관리가 중요.";
 
   return { trend, best, worst, steady, pattern };
 }
 
-/* ============================================
- ✅ HTML 구성
-===============================================*/
-function makeAnalysis(reports,matches,adminMemo){
+function makeAnalysis(reports){
   let out=[];
-
-  // 전체 집계
-  let totalWin=0, totalLose=0;
+  let totalWin=0,totalLose=0;
   reports.forEach(r=>{ totalWin+=r.win; totalLose+=r.lose; });
   const allRate=pct(totalWin,totalWin+totalLose);
   const unified=analyzeUnified(reports);
-
-  // 헤드라인
   out.push(`
-    <div style="font-size:20px;font-weight:900;margin-bottom:12px;color:#1e3a8a">
-      📌 핵심 요약
-    </div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:12px;color:#1e3a8a">📌 핵심 요약</div>
     <div class="box">
-      <b>${playerName}</b> 선수는 전체 승률 <b>${allRate}%</b>이며,
+      <b>${playerName}</b> 선수는 통합 기준 <b>${allRate}% 승률</b>이며,
       최근 흐름은 <b>${unified.trend}</b>입니다.
     </div>
-  `);
-
-  // 통합 리그
-  out.push(`
-    <div class="sec-title">📅 통합리그 분석</div>
+    <div class="sec-title" style="margin-top:12px">📅 통합리그 분석</div>
     <div class="box">
       ${
         reports.length ? `
-        최고 성적: <b>${unified.best.month}</b> (${unified.best.rate}%)<br>
-        어려웠던 달: <b>${unified.worst.month}</b> (${unified.worst.rate}%)<br><br>
-        꾸준함 지수: <b>${unified.steady}%</b><br><br>
-        ${unified.pattern}
-      ` : "통합 리그 데이터 없음"}
+          최고 달: <b>${unified.best.month}</b> (${unified.best.rate}%)<br>
+          어려운 달: <b>${unified.worst.month}</b> (${unified.worst.rate}%)<br><br>
+          꾸준함 지수: <b>${unified.steady}%</b><br><br>
+          ${unified.pattern}
+        ` : "통합 리그 데이터가 없습니다."
+      }
     </div>
   `);
-
   return out.join("\n");
 }
 
-/* ============================================
- ✅ 통합요약 + 단식·복식 + 추천 분석
-===============================================*/
+/* 통합 요약 카드/불릿 */
 function fillUnifiedSummary(reports){
-  const wrap=document.getElementById("integratedBox");
-  const bullets=document.getElementById("integratedBullets");
+  const wrap=$("integratedBox"), bullets=$("integratedBullets");
   if(!wrap||!bullets) return;
-
   if(!reports.length){
-    wrap.innerHTML=`<div class="small">통합 데이터 없음</div>`;
-    bullets.innerHTML="";
-    return;
+    wrap.innerHTML=`<div class="small">통합 데이터가 없습니다.</div>`;
+    bullets.innerHTML=""; return;
   }
-
-  const totalGames = reports.reduce((t,r)=>t+r.total,0);
-  const totalWins  = reports.reduce((t,r)=>t+r.win  ,0);
-  const totalLose  = reports.reduce((t,r)=>t+r.lose ,0);
-  const avgRate    = pct(totalWins,totalGames);
-
-  const mostGames  = [...reports].sort((a,b)=>b.total-a.total)[0];
-  const bestRate   = [...reports].sort((a,b)=>b.rate-a.rate)[0];
-  const last       = reports.at(-1);
+  const totalGames=reports.reduce((t,r)=>t+r.total,0);
+  const totalWins =reports.reduce((t,r)=>t+r.win,0);
+  const totalLoses=reports.reduce((t,r)=>t+r.lose,0);
+  const avgRate=pct(totalWins,totalGames);
+  const mostGames=[...reports].sort((a,b)=>b.total-a.total)[0];
+  const bestRate =[...reports].sort((a,b)=>b.rate-a.rate)[0];
+  const last=reports.at(-1);
 
   wrap.innerHTML=`
     <div class="row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
-      <div class="card" style="padding:12px">
-        <div class="small">총 경기</div>
-        <div style="font-size:20px;font-weight:900">${totalGames}</div>
-      </div>
-      <div class="card" style="padding:12px">
-        <div class="small">승 / 패</div>
-        <div style="font-size:20px;font-weight:900">${totalWins}승 ${totalLose}패</div>
-      </div>
-      <div class="card" style="padding:12px">
-        <div class="small">평균 승률</div>
-        <div style="font-size:20px;font-weight:900">${avgRate}%</div>
-      </div>
+      <div class="card" style="padding:12px"><div class="small">총 경기</div>
+        <div style="font-size:20px;font-weight:900">${totalGames.toLocaleString()}</div></div>
+      <div class="card" style="padding:12px"><div class="small">승 / 패</div>
+        <div style="font-size:20px;font-weight:900">${totalWins}승 ${totalLoses}패</div></div>
+      <div class="card" style="padding:12px"><div class="small">평균 승률</div>
+        <div style="font-size:20px;font-weight:900">${avgRate}%</div></div>
     </div>
   `;
-
   bullets.innerHTML=`
     <li>가장 많이 뛴 달: <b>${mostGames.month}</b> (${mostGames.total}경기)</li>
     <li>승률 최고 달: <b>${bestRate.month}</b> (${bestRate.rate}%)</li>
@@ -333,19 +298,14 @@ function fillUnifiedSummary(reports){
   `;
 }
 
-/* ✅ 경기 상세 분석 (단식/복식/상대/파트너) */
+/* 단식/복식/상대/파트너 통계 */
 function buildMatchStats(matches){
-  const s={win:0,lose:0};
-  const d={win:0,lose:0};
-  const opp={};
-  const partner={};
-  const ptSet=new Set();
-
+  const s={win:0,lose:0}, d={win:0,lose:0};
+  const opp={}, partner={}; const ptSet=new Set();
   matches.forEach(m=>{
     const A=m.namesA||[], B=m.namesB||[];
     const isA=A.includes(playerName);
-    const won = (m.winnerSide==="A" && isA) || (m.winnerSide==="B" && !isA);
-
+    const won=(m.winnerSide==="A"&&isA)||(m.winnerSide==="B"&&!isA);
     if(m.mode==="single"){
       won?s.win++:s.lose++;
       const other=isA?B[0]:A[0];
@@ -353,7 +313,7 @@ function buildMatchStats(matches){
         if(!opp[other]) opp[other]={win:0,lose:0};
         won?opp[other].win++:opp[other].lose++;
       }
-    } else {
+    }else{
       won?d.win++:d.lose++;
       const same=isA?A:B;
       const pt=same.find(n=>n!==playerName);
@@ -364,7 +324,6 @@ function buildMatchStats(matches){
       }
     }
   });
-
   return {
     singles:{...s,total:s.win+s.lose,rate:pct(s.win,s.win+s.lose)},
     doubles:{...d,total:d.win+d.lose,rate:pct(d.win,d.win+d.lose)},
@@ -374,143 +333,211 @@ function buildMatchStats(matches){
   };
 }
 
-/* ✅ 단식·복식·추천 채우기 */
+/* 세부 불릿 + 추천 */
 function fillDetailBullets(stats){
   const S=stats.singles, D=stats.doubles;
-
-  singleBullets.innerHTML=`
+  $("singleBullets").innerHTML=`
     <li>총 경기: <b>${S.total}</b> ( ${S.win}승 ${S.lose}패 )</li>
     <li>승률: <b>${S.rate}%</b></li>
-    <li>${S.rate>=55?"연속 득점력 우수":"초반 흐름·리시브 안정 필요"}</li>
+    <li>${S.rate>=55?"자신의 템포 유지 시 연속 득점력 우수":"초반 흐름 관리와 리시브 안정화가 필요"}</li>
   `;
-
-  doubleBullets.innerHTML=`
+  $("doubleBullets").innerHTML=`
     <li>총 경기: <b>${D.total}</b> ( ${D.win}승 ${D.lose}패 )</li>
     <li>승률: <b>${D.rate}%</b></li>
-    <li>${D.rate>=55?"연계 플레이 좋음":"초구 역할 분담 필요"}</li>
+    <li>${D.rate>=55?"파트너 연계가 좋아 공격 전환이 빠름":"초구 역할 분담과 리턴 위치 선정 개선 필요"}</li>
     <li>파트너 다양성: <b>${stats.partnerDiversity}명</b></li>
   `;
-
-  let rec=[];
+  const rec=[];
   if(S.rate>=D.rate){
-    rec.push("단식 강점 뚜렷 → 단식 비중 확대 추천");
-    rec.push("짧은 공 리시브 선택지 확장이 핵심");
-  } else {
-    rec.push("복식 강점 뚜렷 → 초구-2구 역할 구분 시 더 상승");
-    rec.push("첫 블록 성공률 향상이 단식에도 도움");
+    rec.push("단식 강점 → 단식 비중 확대 전략");
+    rec.push("짧은 공 리시브 선택지(푸시/짧은 스트레이트/백 리프트) 강화");
+  }else{
+    rec.push("복식 강점 → 초구-2구 역할 명확화로 상승폭 확대");
+    rec.push("첫 블록 성공률 향상이 단식에도 긍정적 영향");
   }
-  recommend.innerHTML = rec.map(v=>`<li>${v}</li>`).join("");
-}
-
-/* ✅ 관리자 자동 추천메모 */
-function buildAdminGuidedMemo(stats,reports){
-  const S=stats.singles, D=stats.doubles;
-
-  let style="";
-  if(S.rate>=D.rate) style=S.rate>=60?"전진 공격형":"안정형·리듬형";
-  else style=D.rate>=60?"연결형(복식강점)":"협업형·안정형";
-
-  const strengths = (S.rate>=55?"단식 흐름 주도":"긴 랠리 안정성") + 
-                    ", " +
-                    (D.rate>=55?"복식 연계·전환속도":"수비→공격 전환");
-
-  const weaknesses="짧은 공 리시브 선택지 부족, 강 드라이브 첫 블록 흔들림";
-
-  const hards=""; // 원하면 여기서 승률 낮은 상대 넣어줄 수 있음
-  const favs="";
-
-  const last=reports.at(-1);
-  const memo=`
-    최근(${last.month}) 승률 ${last.rate}% 기준, 
-    초반 5포인트 안정화를 위해 짧은 랠리 중심으로 전술을 구성하고 
-    리시브는 푸시·짧은 스트레이트·백 리프트를 섞어 패턴을 강화하세요. 
-    복식은 초구-2구 역할을 명확히 하고, 단식은 첫 블록 성공률 향상이 핵심입니다.
-  `.trim();
-
-  return {style,strengths,weaknesses,favs,hards,memo};
-}
-
-function fillAdminMemoFields(s){
-  if(!ad_style.value.trim()) ad_style.value=s.style;
-  if(!ad_strengths.value.trim()) ad_strengths.value=s.strengths;
-  if(!ad_weaknesses.value.trim()) ad_weaknesses.value=s.weaknesses;
-  if(!ad_favs.value.trim()) ad_favs.value=s.favs;
-  if(!ad_hards.value.trim()) ad_hards.value=s.hards;
-  if(!ad_memo.value.trim()) ad_memo.value=s.memo;
+  $("recommend").innerHTML=rec.map(v=>`<li>${v}</li>`).join("");
 }
 
 /* ============================================
- ✅ 실행(비동기)
+   ✅ 능력치 산출/레이다 차트/코치 메시지
 ===============================================*/
+function scoreFromAdminAndStats(admin={}, stats={}, reports=[]){
+  const S=stats.singles||{rate:0}, D=stats.doubles||{rate:0};
+  // 기본: 승률 기반 가중치
+  let SR=40+S.rate*0.3;        // 서브·리시브
+  let RALLY=35+S.rate*0.25;    // 랠리 지속력
+  let TRANS=35+D.rate*0.25;    // 공격 전환
+  let TACTICS=30+(S.rate+D.rate)*0.1; // 전술 지능
+  let PARTNER=30+D.rate*0.3;   // 파트너십
+
+  const text = [
+    admin.q_style||"", admin.q_strengths||"", admin.q_weaknesses||"",
+    admin.q_favs||"", admin.q_hards||""
+  ].join(" ").toLowerCase();
+
+  const inc = (keys, amt, v)=> keys.some(k=>text.includes(k)) ? v+amt : v;
+  SR      = inc(["리시브","서브","짧은","짧게"], 8, SR);
+  RALLY   = inc(["랠리","지구력","버틴"], 8, RALLY);
+  TRANS   = inc(["전환","블록","카운터","초구"], 8, TRANS);
+  TACTICS = inc(["전술","코스","유형","템포"], 7, TACTICS);
+  PARTNER = inc(["파트너","연계","궁합","더블스","복식"], 8, PARTNER);
+
+  const clamp = v=>Math.min(95,Math.max(20,Math.round(v)));
+  return {
+    labels:["서브·리시브","랠리 지속력","공격 전환","전술 지능","파트너십"],
+    data:[SR,RALLY,TRANS,TACTICS,PARTNER].map(clamp)
+  };
+}
+
+let radarChart=null;
+function drawAbilityRadar(scores){
+  const ctx = $("abilityRadar");
+  if(radarChart) radarChart.destroy();
+  radarChart = new Chart(ctx,{
+    type:"radar",
+    data:{
+      labels:scores.labels,
+      datasets:[{
+        label:"능력치",
+        data:scores.data,
+        fill:true,
+        backgroundColor:"rgba(37,99,235,0.15)",
+        borderColor:"rgba(37,99,235,0.9)",
+        pointBackgroundColor:"rgba(37,99,235,1)"
+      }]
+    },
+    options:{
+      plugins:{legend:{display:false}},
+      scales:{r:{suggestedMin:0,suggestedMax:100,ticks:{display:false}}}
+    }
+  });
+}
+
+function generateCoachMessage(admin={}, stats={}, reports=[], tone="expert"){
+  const S=stats.singles||{rate:0}, D=stats.doubles||{rate:0};
+  const last=reports.at(-1)||{month:"-", rate:0};
+  const pivot = S.rate>=D.rate ? "단식 중심 운영이 유리합니다." : "복식에서의 강점을 팀 전략에 더 반영하세요.";
+
+  let msg="";
+  if(tone==="expert"){
+    msg = `
+      <b>플레이 스타일</b>: ${admin.q_style||"정보 없음"}<br>
+      <b>강점</b>: ${admin.q_strengths||"정보 없음"}<br>
+      <b>약점</b>: ${admin.q_weaknesses||"정보 없음"}<br>
+      <b>복식 파트너</b>: ${admin.q_favs||"-"}<br>
+      <b>어려운 상대</b>: ${admin.q_hards||"-"}<br><br>
+      📊 <b>최근 (${last.month}) 승률:</b> ${last.rate}%<br>
+      🔍 <b>전략 제안</b>: ${pivot}<br><br>
+      📝 <b>코치 메모</b>: ${admin.q_memo||"-"}
+    `;
+  }else{
+    msg = `
+      ${playerName}님, ${last.month}의 흐름은 승률 <b>${last.rate}%</b>예요.<br><br>
+      당신의 강점 <b>${admin.q_strengths||"강점"}</b>을(를) 더 빛나게 하려면,
+      <b>${admin.q_weaknesses||"보완 포인트"}</b>를 천천히 다듬어 보세요.<br>
+      복식에서는 <b>${admin.q_favs||"좋은 파트너 유형"}</b>과 리듬을 맞추고,
+      까다로운 <b>${admin.q_hards||"상대"}</b> 앞에서는 템포를 잃지 않는 게 핵심입니다.<br><br>
+      💬 <b>코치 메모</b>: ${admin.q_memo||"오늘의 포인트를 마음에 담아 보세요."}
+    `;
+  }
+  $("coachMsg").innerHTML = msg;
+}
+
+/* 갱신 허브 */
+function updateRadarAndCoach(admin, stats, reports){
+  const scores = scoreFromAdminAndStats(admin, stats, reports);
+  drawAbilityRadar(scores);
+  const tone = $("coachTone").value || "expert";
+  generateCoachMessage(admin, stats, reports, tone);
+}
+
+/* ============================================
+   ✅ 실행부
+===============================================*/
+let __reports=[], __matches=[], __stats={}, __admin={};
+
 (async ()=>{
   box.innerHTML="데이터 불러오는 중…";
+  __reports = await loadMonthlyReports();
+  __matches = await loadMatches();
+  __admin   = await loadAdminMemo();
 
-  const reports = await loadMonthlyReports();
-  const matches = await loadMatches();
-  const adminMemo = await loadAdminMemo();
+  // 화면 채움
+  box.innerHTML = makeAnalysis(__reports);
+  fillUnifiedSummary(__reports);
+  __stats = buildMatchStats(__matches);
+  fillDetailBullets(__stats);
 
-  // 1. 전체 분석 출력
-  box.innerHTML = makeAnalysis(reports,matches,adminMemo);
+  // 관리자 필드 주입(q_ 통일)
+  $("q_style").value      = __admin.q_style||"";
+  $("q_strengths").value  = __admin.q_strengths||"";
+  $("q_weaknesses").value = __admin.q_weaknesses||"";
+  $("q_favs").value       = __admin.q_favs||"";
+  $("q_hards").value      = __admin.q_hards||"";
+  $("q_memo").value       = __admin.q_memo||"";
 
-  // 2. 관리자 입력 자동 채움
-  if(adminMemo.style) ad_style.value=adminMemo.style;
-  if(adminMemo.favs) ad_favs.value=adminMemo.favs;
-  if(adminMemo.strengths) ad_strengths.value=adminMemo.strengths;
-  if(adminMemo.weaknesses) ad_weaknesses.value=adminMemo.weaknesses;
-  if(adminMemo.hards) ad_hards.value=adminMemo.hards;
-  if(adminMemo.memo) ad_memo.value=adminMemo.memo;
-
-  // 3. 질문 기반 통합 요약
-  fillUnifiedSummary(reports);
-
-  // 4. 단식·복식 세부 분석
-  const stats = buildMatchStats(matches);
-  fillDetailBullets(stats);
-
-  // 5. 관리자 추천안 → 빈칸만 채움
-  const suggest = buildAdminGuidedMemo(stats,reports);
-  fillAdminMemoFields(suggest);
-
+  // 초기 레이다/코치 메시지
+  updateRadarAndCoach(__admin, __stats, __reports);
 })();
 
 /* ============================================
- ✅ 상단 버튼 / 관리자모드
+   ✅ 상단 버튼 / 관리자모드 (비번)
 ===============================================*/
-document.addEventListener("DOMContentLoaded",()=>{
-  btnBack.addEventListener("click",()=>{
-    location.href=`player.html?name=${encodeURIComponent(playerName)}`;
+document.addEventListener("DOMContentLoaded", ()=>{
+  $("btnBack").addEventListener("click", ()=>{
+    location.href = `player.html?name=${encodeURIComponent(playerName)}`;
   });
 
   let adminOn=false;
   async function loadAdminPassword(){
-    const snap=await get(ref(db,"config/adminPassword"));
+    const snap = await get(ref(db,"config/adminPassword"));
     return snap.exists()?snap.val():null;
   }
 
-  btnAdminToggle.addEventListener("click", async ()=>{
+  $("btnAdminToggle").addEventListener("click", async ()=>{
     if(!adminOn){
-      const pw=await loadAdminPassword();
-      if(!pw) return alert("⚠ 관리자 비밀번호 없음");
-      const input=prompt("🔐 관리자 비밀번호 입력:");
+      const pw = await loadAdminPassword();
+      if(!pw){ alert("⚠ 관리자 비밀번호가 설정되어 있지 않습니다."); return; }
+      const input = prompt("🔐 관리자 비밀번호를 입력하세요:");
       if(input===null) return;
-      if(input.trim()!==pw.trim()) return alert("❌ 비밀번호 불일치");
-
+      if(input.trim()!==pw.trim()){ alert("❌ 비밀번호가 올바르지 않습니다."); return; }
       adminOn=true;
-      adminCard.style.display="block";
-      btnAdminToggle.classList.add("primary");
-      btnAdminToggle.textContent="관리자모드 ON";
+      $("adminCard").style.display="block";
+      $("btnAdminToggle").classList.add("primary");
+      $("btnAdminToggle").textContent="관리자모드 ON";
       alert("✅ 관리자모드 활성화");
-    } else {
+    }else{
       adminOn=false;
-      adminCard.style.display="none";
-      btnAdminToggle.classList.remove("primary");
-      btnAdminToggle.textContent="관리자모드";
+      $("adminCard").style.display="none";
+      $("btnAdminToggle").classList.remove("primary");
+      $("btnAdminToggle").textContent="관리자모드";
     }
+  });
+
+  // 저장
+  $("btnSaveAdmin").addEventListener("click", async ()=>{
+    const data = {
+      q_style: $("q_style").value.trim(),
+      q_strengths: $("q_strengths").value.trim(),
+      q_weaknesses: $("q_weaknesses").value.trim(),
+      q_favs: $("q_favs").value.trim(),
+      q_hards: $("q_hards").value.trim(),
+      q_memo: $("q_memo").value.trim()
+    };
+    await saveAdminMemo(data);
+    __admin = data; // 로컬 최신화
+    alert("✅ 저장되었습니다!");
+    updateRadarAndCoach(__admin, __stats, __reports);
+  });
+
+  // 코치 톤 변경/갱신
+  $("coachTone").addEventListener("change", ()=>{
+    updateRadarAndCoach(__admin, __stats, __reports);
+  });
+  $("btnRefreshCoach").addEventListener("click", ()=>{
+    updateRadarAndCoach(__admin, __stats, __reports);
   });
 });
 </script>
-
-
-
 </body>
 </html>
