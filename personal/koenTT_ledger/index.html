@@ -12,11 +12,20 @@
   header{background:white;padding:16px;font-size:20px;font-weight:700;text-align:center;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;}
 
   .summary{display:flex;gap:10px;padding:10px;flex-wrap:wrap;}
-  .sum-card{flex:1;min-width:120px;padding:14px;background:white;border-radius:10px;border:1px solid #e5e7eb;text-align:center;font-weight:700;font-size:14px;}
+  .sum-card{
+    flex:1;min-width:120px;padding:14px;background:white;
+    border-radius:10px;border:1px solid #e5e7eb;text-align:center;
+    font-weight:700;font-size:14px;
+  }
 
   .controls{padding:10px;display:flex;gap:8px;flex-wrap:wrap;}
-  .controls input,.controls select{padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px;flex:1;}
-  .controls button{padding:10px 14px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+  .controls input,.controls select{
+    padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px;flex:1;
+  }
+  .controls button{
+    padding:10px 14px;border:none;border-radius:8px;
+    font-size:14px;font-weight:600;cursor:pointer;
+  }
   .btn-blue{background:#2563eb;color:white;}
   .btn-green{background:#059669;color:white;}
   .btn-gray{background:#6b7280;color:white;}
@@ -27,9 +36,17 @@
     width:100%;border-collapse:collapse;background:white;border-radius:12px;
     overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.05);
   }
-  th,td{padding:10px 6px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:14px;}
-  td input{width:90%;padding:6px;font-size:14px;text-align:center;border:1px solid #ddd;border-radius:6px;}
-  .del{background:#ef4444;color:white;border:none;border-radius:6px;padding:6px 8px;font-size:12px;}
+  th,td{
+    padding:10px 6px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:14px;
+  }
+  td input{
+    width:90%;padding:6px;font-size:14px;text-align:center;
+    border:1px solid #ddd;border-radius:6px;
+  }
+  .del{
+    background:#ef4444;color:white;border:none;border-radius:6px;
+    padding:6px 8px;font-size:12px;
+  }
   tfoot td{background:#f0f9ff;}
 </style>
 </head>
@@ -38,14 +55,12 @@
 
 <header>koenTT_ledger</header>
 
-<!-- ✅ 상단 요약 -->
 <div class="summary">
   <div class="sum-card">총입금<br><span id="sumIn">0</span></div>
   <div class="sum-card">총출금<br><span id="sumOut">0</span></div>
   <div class="sum-card">현재잔액<br><span id="sumBal">0</span></div>
 </div>
 
-<!-- ✅ 기능 버튼 -->
 <div class="controls">
   <input type="text" id="search" placeholder="검색: 날짜/내역/금액" oninput="render()">
 
@@ -57,19 +72,16 @@
     <option value="">전체 월</option>
   </select>
 
-  <button class="btn-gray" onclick="sortByDate(); render();">전체 월 Sort</button>
-  <button class="btn-blue" onclick="toggleHidden()">숨김/표시</button>
+  <button class="btn-gray" onclick="sortByDate(); render();">전체 Sort</button>
   <button class="btn-green" onclick="downloadExcel()">엑셀 다운로드</button>
   <button class="btn-red" onclick="deleteAll()">전체 삭제</button>
 </div>
 
-<!-- ✅ 엑셀 붙여넣기 -->
 <div class="controls" style="flex-direction:column">
-  <textarea id="pasteArea" rows="3" placeholder="엑셀에서 복사 → 여기에 붙여넣기"></textarea>
+  <textarea id="pasteArea" rows="3" placeholder="엑셀에서 복사 → 여기 붙여넣기"></textarea>
   <button class="btn-blue" onclick="pasteExcel()">붙여넣기 적용</button>
 </div>
 
-<!-- ✅ 테이블 -->
 <div class="wrap">
   <table>
     <thead>
@@ -79,7 +91,6 @@
     </thead>
     <tbody id="ledger-body"></tbody>
 
-    <!-- ✅ 입력줄 -->
     <tfoot>
       <tr>
         <td><input id="in-date" placeholder="예: 14.10.24"></td>
@@ -95,24 +106,22 @@
 <script>
 
 let ledger = JSON.parse(localStorage.getItem("koenTT_ledger") || "[]");
-let hiddenMode = false;
 
 const el=id=>document.getElementById(id);
-const toNum=v=>Number(String(v??0).replace(/,/g,'').trim()||0);
+const toNum=v=>Number(String(v??0).replace(/,/g,'').trim()) || 0;
 const comma=n=>toNum(n).toLocaleString();
 
-/* ✅ 저장 */
-function save(){ localStorage.setItem("koenTT_ledger", JSON.stringify(ledger)); }
-
-/* ✅ 날짜 변환 */
+/* ✅ 날짜 변환 보정 */
 function normalizeDate(s){
-  s=(s||"").trim();
+  s = (s || "").trim();
+  if (s === "") return today();
+
   const dot=/^(\d{2})\.(\d{2})\.(\d{2})$/;
   if(dot.test(s)){
     const[,yy,mm,dd]=s.match(dot);
     return `20${yy}-${mm}-${dd}`;
   }
-  return s||today();
+  return s;
 }
 
 function today(){
@@ -120,18 +129,28 @@ function today(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-function sortByDate(){ ledger.sort((a,b)=>(a.date||"").localeCompare(b.date||"")); }
+function sortByDate(){
+  ledger.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  save();
+}
 
-/* ✅ 전체 기준 누적잔액 계산 */
+/* ✅ 전체 누적잔액 계산 (NaN 방지) */
 function computeFullBalance(){
-  let bal=0;
-  ledger.forEach(r=>{
-    bal += toNum(r.income) - toNum(r.expense);
-    r.balanceFull = bal;   // ✅ 전체 누적 잔액 저장
+  let bal = 0;
+
+  ledger.forEach(r => {
+    const inc = toNum(r.income);
+    const exp = toNum(r.expense);
+
+    bal = bal + inc - exp;
+
+    if (isNaN(bal)) bal = 0; // ✅ NaN 방지
+
+    r.balanceFull = bal;
   });
 }
 
-/* ✅ 중복 체크 */
+/* ✅ 중복 방지 */
 function isDuplicate(row){
   return ledger.some(r =>
     r.date===row.date &&
@@ -141,64 +160,79 @@ function isDuplicate(row){
   );
 }
 
+/* ✅ 저장 */
+function save(){
+  localStorage.setItem("koenTT_ledger", JSON.stringify(ledger));
+}
+
 /* ✅ 행 추가 */
 function addRow(){
-  const d=normalizeDate(el("in-date").value);
-  const desc=el("in-desc").value.trim();
-  const income=toNum(el("in-income").value);
-  const expense=toNum(el("in-expense").value);
+  const row = {
+    date: normalizeDate(el("in-date").value),
+    desc: el("in-desc").value.trim(),
+    income: toNum(el("in-income").value),
+    expense: toNum(el("in-expense").value)
+  };
 
-  if(!desc){ alert("내역을 입력하세요"); return; }
+  if (!row.desc){
+    alert("내역을 입력하세요");
+    return;
+  }
 
-  const row={date:d,desc,income,expense};
-
-  if(!isDuplicate(row)) ledger.push(row);
+  if (!isDuplicate(row))
+    ledger.push(row);
 
   el("in-date").value = el("in-desc").value = el("in-income").value = el("in-expense").value = "";
+
   render();
 }
 
 /* ✅ 수정 */
 function edit(i,field,value){
-  if(field==="income"||field==="expense") ledger[i][field]=toNum(value);
-  else if(field==="date") ledger[i].date = normalizeDate(value);
-  else ledger[i][field]=value;
+  if(field==="income"||field==="expense")
+    ledger[i][field] = toNum(value);
+  else if(field==="date")
+    ledger[i].date = normalizeDate(value);
+  else
+    ledger[i][field] = value;
+
   render();
 }
 
 /* ✅ 삭제 */
-function removeRow(i){ ledger.splice(i,1); render(); }
+function removeRow(i){
+  ledger.splice(i,1);
+  render();
+}
 
 /* ✅ 전체 삭제 */
 function deleteAll(){
-  if(!confirm("전체 대장을 삭제하시겠습니까?")) return;
+  if(!confirm("전체 삭제하시겠습니까?")) return;
   ledger=[];
   save();
   render();
 }
 
-/* ✅ 숨김/표시 */
-function toggleHidden(){ hiddenMode=!hiddenMode; render(); }
-
 /* ✅ 엑셀 붙여넣기 */
 function pasteExcel(){
-  const text=el("pasteArea").value.trim();
+  const text = el("pasteArea").value.trim();
   if(!text){ alert("내용이 없습니다"); return; }
 
-  const lines=text.split(/\r?\n/);
+  const lines = text.split(/\r?\n/);
 
   lines.forEach(line=>{
-    const c=line.split(/\t/);
+    const c = line.split(/\t/);
     if(c.length < 2) return;
 
-    const row={
+    const row = {
       date: normalizeDate(c[0]),
-      desc: c[1].trim(),
+      desc: (c[1] || "").trim(),
       income: toNum(c[2]),
       expense: toNum(c[3])
     };
 
-    if(!isDuplicate(row)) ledger.push(row);
+    if (!isDuplicate(row))
+      ledger.push(row);
   });
 
   el("pasteArea").value="";
@@ -214,14 +248,14 @@ function downloadExcel(){
       내역:r.desc,
       입금:toNum(r.income),
       출금:toNum(r.expense),
-      잔액:toNum(r.balanceFull)
+      잔액:r.balanceFull
     }))
   );
   XLSX.utils.book_append_sheet(wb,ws,"ledger");
   XLSX.writeFile(wb,"koenTT_ledger.xlsx");
 }
 
-/* ✅ 검색 + 연월 필터 */
+/* ✅ 검색/필터 */
 function matchFilter(r){
   const q=el("search").value.trim();
   const y=el("yearFilter").value;
@@ -234,17 +268,16 @@ function matchFilter(r){
     const t=`${r.date} ${r.desc} ${r.income} ${r.expense}`;
     if(!t.includes(q)) return false;
   }
-
   return true;
 }
 
-/* ✅ 렌더링 */
+/* ✅ 렌더 */
 function render(){
   sortByDate();
-  computeFullBalance();  // ✅ 전체 기준 누적 잔액 계산
+  computeFullBalance();
 
-  let body=el("ledger-body");
-  body.innerHTML="";
+  let body = el("ledger-body");
+  body.innerHTML = "";
 
   let totalIn=0, totalOut=0;
 
@@ -254,8 +287,8 @@ function render(){
     const inc=toNum(r.income);
     const exp=toNum(r.expense);
 
-    totalIn+=inc;
-    totalOut+=exp;
+    totalIn += inc;
+    totalOut += exp;
 
     body.insertAdjacentHTML("beforeend",`
       <tr>
@@ -271,14 +304,16 @@ function render(){
 
   el("sumIn").textContent = comma(totalIn);
   el("sumOut").textContent = comma(totalOut);
-  el("sumBal").textContent = comma( ledger.length ? ledger[ledger.length-1].balanceFull : 0 );
 
-  /* ✅ 연도 필터 자동 생성 */
+  el("sumBal").textContent = 
+    comma( ledger.length ? ledger[ledger.length-1].balanceFull : 0 );
+
+  /* ✅ 연도 자동생성 */
   const years=[...new Set(ledger.map(r=>r.date.slice(0,4)))].filter(y=>y);
   el("yearFilter").innerHTML=`<option value="">전체 연도</option>`+
     years.map(y=>`<option value="${y}">${y}</option>`).join("");
 
-  /* ✅ 월 필터 자동 생성 */
+  /* ✅ 월 자동생성 */
   const months=[...new Set(ledger.map(r=>r.date.slice(0,7)))].filter(m=>m);
   el("monthFilter").innerHTML=`<option value="">전체 월</option>`+
     months.map(m=>`<option value="${m}">${m}</option>`).join("");
