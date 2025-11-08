@@ -13,6 +13,7 @@
   body{
     margin:0; background:#f5f7fb;
     font-family:"Pretendard","Noto Sans KR",sans-serif;
+    overflow-x:hidden;     /* ✅ 가로 화면 스크롤 제거 */
   }
   header{
     background:white; padding:16px; font-size:22px;
@@ -49,36 +50,48 @@
   /* ✅ 테이블 */
   .wrap{ padding:10px; }
   table{
-    width:100%; border-collapse:collapse; background:white;
-    border-radius:10px; overflow:hidden;
-    box-shadow:0 2px 10px rgba(0,0,0,.05);
+    width:100%;
+    border-collapse:collapse;
+    background:white;
+    border-radius:10px;
+    overflow:hidden;
+    table-layout: fixed;    /* ✅ 칸 자동정렬 */
   }
   th{
-    background:#f0f0f8; padding:10px; font-size:13px;
+    background:#f0f0f8; padding:8px; font-size:13px;
     border-bottom:1px solid #e5e7eb;
+    text-align:center;
   }
   td{
     padding:6px; border-bottom:1px solid #f1f5f9;
     vertical-align:top;
   }
 
-  /* ✅ 입력칸 */
-  .dateBox, .moneyBox{
-    width:95%; text-align:center;
+  /* ✅ 입력칸 재설계 */
+  .dateBox{
+    width:100%; text-align:center;
     padding:6px; font-size:13px;
     border:1px solid #ddd; border-radius:6px;
   }
 
-  /* ✅ 내역 textarea : 자동 줄바꿈 + 자동 높이 */
+  .moneyBox{
+    width:100%;
+    padding:4px;
+    font-size:13px;
+    text-align:right;
+    border:1px solid #ddd; border-radius:6px;
+    white-space:nowrap;
+  }
+
   .descBox{
-    width:98%;
+    width:100%;
     padding:3px 6px;
     font-size:13px;
     border:1px solid #ddd;
     border-radius:6px;
     resize:none;
     overflow:hidden;
-    line-height:18px;
+    line-height:18px; 
     height:18px;
     min-height:18px;
     box-sizing:border-box;
@@ -87,29 +100,23 @@
   /* ✅ footer 입력줄 */
   tfoot td{ background:#eef6ff; }
 
-  .delBtn{
+  .del{
     background:#ef4444; color:white;
     padding:6px 8px; border:none; border-radius:6px;
     font-size:12px;
   }
 
-  /* ✅ ✅ 모바일 최적화 */
+  /* ✅ 모바일 최적화 — 칸 비율 조정 */
   @media(max-width: 600px){
-
-    /* 날짜칸 최소 */
+    /* 날짜 */
     #ledgerTable th:nth-child(1),
-    #ledgerTable td:nth-child(1){
-      width:15%;
-      font-size:12px;
-    }
+    #ledgerTable td:nth-child(1){ width:18%; }
 
-    /* ✅ 내역칸 55% 가장 넓게 */
+    /* 내역 */
     #ledgerTable th:nth-child(2),
-    #ledgerTable td:nth-child(2){
-      width:55%;
-    }
+    #ledgerTable td:nth-child(2){ width:52%; }
 
-    /* 금액칸 좁게 */
+    /* 입금/출금/잔액 */
     #ledgerTable th:nth-child(3),
     #ledgerTable td:nth-child(3),
     #ledgerTable th:nth-child(4),
@@ -117,68 +124,8 @@
     #ledgerTable th:nth-child(5),
     #ledgerTable td:nth-child(5){
       width:10%;
-      font-size:12px;
-    }
-
-    /* ✅ textarea 모바일 최적화 */
-    .descBox{
-      width:100%;
-      font-size:13px;
-      padding:3px 4px;
-      line-height:18px;
-    }
-
-    /* 숫자칸 작게 */
-    .dateBox, .moneyBox{
-      font-size:12px;
-      padding:4px;
-    }
-
-    .delBtn, .del{
-      font-size:11px;
-      padding:4px 6px;
     }
   }
-
-  html, body {
-  overflow-x: hidden;   /* ✅ 가로 스크롤 완전 차단 */
-}
-
-/* ✅ 테이블이 화면을 절대 넘지 않도록 */
-table {
-  width: 100%;
-  max-width: 100%;
-  table-layout: fixed;   /* ✅ 칸폭 자동으로 강제 */
-}
-
-/* ✅ 모바일에서 열 폭 강제 조절 */
-@media(max-width: 600px){
-
-  #ledgerTable th:nth-child(1),
-  #ledgerTable td:nth-child(1){
-    width:15%;
-  }
-
-  #ledgerTable th:nth-child(2),
-  #ledgerTable td:nth-child(2){
-    width:55%;
-    word-break:break-word;   /* ✅ 텍스트 줄바꿈 강제 */
-  }
-
-  #ledgerTable th:nth-child(3),
-  #ledgerTable td:nth-child(3),
-  #ledgerTable th:nth-child(4),
-  #ledgerTable td:nth-child(4),
-  #ledgerTable th:nth-child(5),
-  #ledgerTable td:nth-child(5){
-    width:10%;
-  }
-
-  #ledgerTable th:nth-child(6),
-  #ledgerTable td:nth-child(6){
-    width:10%;
-  }
-}
 
 </style>
 </head>
@@ -242,7 +189,7 @@ table {
 
 <script>
 /* ------------------------------
-        ✅ 기본 함수
+      ✅ 기본 함수
 ------------------------------ */
 
 let ledger = JSON.parse(localStorage.getItem("simpleLedger") || "[]");
@@ -251,44 +198,58 @@ const el = id => document.getElementById(id);
 const toNum = v => Number(String(v||0).replace(/,/g,"").trim());
 const comma = n => toNum(n).toLocaleString();
 
-/* ✅ textarea 자동 높이조절 */
-function autoResize(el){
-  const min = parseFloat(getComputedStyle(el).lineHeight);
-  el.style.height = min + "px";
-  el.style.height = el.scrollHeight + "px";
+/* ✅ 오늘 날짜 YY.MM.DD */
+function today(){
+  const d = new Date();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  return `${yy}.${mm}.${dd}`;
 }
 
 /* ✅ 날짜 정규화 */
-function normalizeDate(raw){
-  if(!raw) return "";
+function normalizeDateInput(raw){
+  raw = raw.trim();
+  if(!raw){ 
+    const t = today();
+    return `20${t.slice(0,2)}-${t.slice(3,5)}-${t.slice(6,8)}`;
+  }
   raw = raw.replace(/[^\d]/g,"");
+
   if(raw.length===6){
     return `20${raw.slice(0,2)}-${raw.slice(2,4)}-${raw.slice(4,6)}`;
   }
   if(raw.length===8){
     return `${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}`;
   }
-  return "";
+
+  const t = today();
+  return `20${t.slice(0,2)}-${t.slice(3,5)}-${t.slice(6,8)}`;
 }
 
-/* ✅ 날짜 표시: YY.MM.DD */
+/* ✅ 표시용 YYYY-MM-DD → YY.MM.DD */
 function displayDate(date){
   if(!date) return "";
   const [y,m,d] = date.split("-");
   return `${y.slice(2)}.${m}.${d}`;
 }
 
-/* ✅ SORT */
-function sortByDate(){
-  ledger.sort((a,b)=>a.date.localeCompare(b.date));
+/* ✅ textarea 자동 높이 */
+function autoResize(el){
+  const min = parseFloat(getComputedStyle(el).lineHeight);
+  el.style.height = min + "px";
+  el.style.height = el.scrollHeight + "px";
 }
 
-/* ✅ 누적잔액 */
+/* ✅ SORT */
+function sortByDate(){ ledger.sort((a,b)=>a.date.localeCompare(b.date)); }
+
+/* ✅ 전체 누적 잔액 */
 function computeBalance(){
   let bal = 0;
   ledger.forEach(r=>{
     bal += toNum(r.income) - toNum(r.expense);
-    r.balance = bal;
+    r.balanceFull = bal;
   });
 }
 
@@ -305,15 +266,13 @@ function isDuplicate(r){
 /* ✅ 행 추가 */
 function addRow(){
   const row = {
-    date: normalizeDate(el("in-date").value),
+    date: normalizeDateInput(el("in-date").value),
     desc: el("in-desc").value.trim(),
     income: toNum(el("in-income").value),
     expense: toNum(el("in-expense").value)
   };
-  if(!row.desc){
-    alert("내역을 입력하세요.");
-    return;
-  }
+
+  if(!row.desc){ alert("내역을 입력하세요."); return; }
 
   if(!isDuplicate(row)) ledger.push(row);
 
@@ -327,17 +286,15 @@ function addRow(){
 
 /* ✅ 수정 */
 function edit(i, field, value){
-  if(field==="date") ledger[i].date = normalizeDate(value);
+  if(field==="date") ledger[i].date = normalizeDateInput(value);
   else if(field==="desc") ledger[i].desc = value;
   else ledger[i][field] = toNum(value);
+
   render();
 }
 
 /* ✅ 삭제 */
-function removeRow(i){
-  ledger.splice(i,1);
-  render();
-}
+function removeRow(i){ ledger.splice(i,1); render(); }
 
 /* ✅ 전체 삭제 */
 function deleteAll(){
@@ -351,16 +308,16 @@ function deleteAll(){
 /* ✅ 엑셀 붙여넣기 */
 function pasteExcel(){
   const text = el("pasteArea").value.trim();
-  if(!text){ alert("내용 없음"); return; }
+  if(!text) return alert("내용 없음");
 
   const lines = text.split(/\r?\n/);
 
   lines.forEach(line=>{
     const c = line.split(/\t/);
-    if(c.length < 2) return;
+    if(c.length<2) return;
 
     const row = {
-      date: normalizeDate(c[0]),
+      date: normalizeDateInput(c[0]),
       desc: c[1].trim(),
       income: toNum(c[2]),
       expense: toNum(c[3])
@@ -382,7 +339,7 @@ function downloadExcel(){
       내역: r.desc,
       입금: r.income,
       출금: r.expense,
-      잔액: r.balance
+      잔액: r.balanceFull
     }))
   );
   XLSX.utils.book_append_sheet(wb,ws,"ledger");
@@ -392,11 +349,8 @@ function downloadExcel(){
 /* ✅ 이미지 저장 */
 function saveImage(){
   const table = document.getElementById("ledgerTable");
-  html2canvas(table, {
-    scale:2,
-    scrollY: -window.scrollY,
-    backgroundColor:"#ffffff"
-  }).then(canvas=>{
+  html2canvas(table, {scale:2, scrollY:-window.scrollY, backgroundColor:"#ffffff"})
+  .then(canvas=>{
     const link = document.createElement("a");
     link.download = "ledger.png";
     link.href = canvas.toDataURL();
@@ -404,7 +358,7 @@ function saveImage(){
   });
 }
 
-/* ✅ 검색/필터 */
+/* ✅ 필터링 */
 function matchFilter(r){
   const q = el("search").value.trim().toLowerCase();
   const y = el("yearFilter").value;
@@ -425,7 +379,7 @@ function render(){
   sortByDate();
   computeBalance();
 
-  const body = el("ledger-body");
+  const body = document.getElementById("ledger-body");
   body.innerHTML = "";
 
   let totalIn = 0, totalOut = 0;
@@ -454,25 +408,25 @@ function render(){
         <td><input class="moneyBox" value="${comma(exp)}"
               onchange="edit(${i},'expense',this.value)"></td>
 
-        <td>${comma(r.balance)}</td>
-        <td><button class="delBtn" onclick="removeRow(${i})">삭제</button></td>
+        <td style="text-align:right; white-space:nowrap;">${comma(r.balanceFull)}</td>
+        <td><button class="del" onclick="removeRow(${i})">삭제</button></td>
       </tr>
     `);
   });
 
-  /* ✅ textarea 자동 높이 조절 */
-  setTimeout(()=>{
+  /* ✅ textarea 높이 자동 적용 */
+  setTimeout(()=>{ 
     document.querySelectorAll(".descBox").forEach(t=>autoResize(t));
   }, 0);
 
-  /* ✅ 합계 */
+  /* ✅ 합계 표시 */
   el("sumIn").textContent  = comma(totalIn);
   el("sumOut").textContent = comma(totalOut);
   el("sumBal").textContent = comma(
-    ledger.length ? ledger[ledger.length-1].balance : 0
+    ledger.length ? ledger[ledger.length-1].balanceFull : 0
   );
 
-  /* ✅ 연/월 필터 */
+  /* ✅ 연도/월 필터 업데이트 */
   const years  = [...new Set(ledger.map(r=>r.date.slice(0,4)))];
   const months = [...new Set(ledger.map(r=>r.date.slice(0,7)))];
 
