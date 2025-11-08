@@ -3,17 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Simple Ledger</title>
-
-<!-- XLSX / html2canvas -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<title>Excel Style Ledger</title>
 
 <style>
 body{
   margin:0; background:#f5f7fb;
   font-family:"Pretendard","Noto Sans KR",sans-serif;
-  overflow-x:hidden;          /* ✅ 가로 스크롤 방지 */
+  overflow-x:hidden;
 }
 header{
   background:white; padding:16px; font-size:22px;
@@ -22,112 +18,80 @@ header{
   position:sticky; top:0; z-index:10;
 }
 
-/* ✅ 요약 */
-.summary{ display:flex; gap:10px; padding:12px; flex-wrap:wrap; }
-.card{
-  flex:1; min-width:130px;
-  background:white; padding:16px; text-align:center;
-  border-radius:10px; border:1px solid #e5e7eb;
-  font-size:14px; font-weight:700;
-}
-
-/* ✅ 입력/필터/버튼 */
-.controls{
-  padding:10px; display:flex; flex-wrap:wrap; gap:8px;
-}
-.controls input, .controls select{
-  padding:10px; font-size:14px; border:1px solid #ccc; border-radius:6px;
-}
-.controls button{
-  padding:10px 14px; border:none; border-radius:6px;
-  font-size:14px; font-weight:600; cursor:pointer;
-}
-.blue{ background:#2563eb; color:white; }
-.green{ background:#059669; color:white; }
-.red{ background:#dc2626; color:white; }
-.gray{ background:#6b7280; color:white; }
-
-/* ✅ 테이블 */
+/* ✅ 엑셀 스타일 테이블 */
 .wrap{ padding:10px; }
 table{
-  width:100%; border-collapse:collapse; background:white;
-  border-radius:10px; overflow:hidden;
-  box-shadow:0 2px 10px rgba(0,0,0,.05);
+  width:100%; border-collapse:collapse;
+  background:white;
+  border:1px solid #d0d0d0;
+}
+th, td{
+  border:1px solid #d0d0d0;
+  padding:8px;
+  font-size:14px;
+  background:white;
 }
 th{
-  background:#f0f0f8; padding:10px; font-size:13px;
-  border-bottom:1px solid #e5e7eb;
-}
-td{
-  padding:6px; border-bottom:1px solid #f1f5f9;
-  vertical-align:top;
-  word-break:break-word;
+  background:#f1f3f8;
+  font-weight:700;
+  text-align:center;
+  white-space:nowrap;
 }
 
-/* ✅ contenteditable 스타일 */
-.cellEdit{
-  padding:6px;
-  min-height:20px;
-  border-radius:6px;
+/* ✅ contenteditable 엑셀 셀 */
+.cell{
+  min-height:22px;
+  outline:none;
 }
-.cellEdit:focus{
+.cell:focus{
+  background:#e8f0ff;
+  border:1px solid #2563eb;
+}
+
+/* ✅ 숫자 셀 오른쪽 정렬 */
+.numCell{
+  text-align:right;
+  white-space:nowrap;
+}
+
+/* ✅ 입력줄 (엑셀과 동일한 스타일) */
+.addRow td{
+  background:#f9fbff;
+}
+.addInput{
+  width:100%;
+  border:none;
+  padding:6px;
+  font-size:14px;
+}
+.addInput:focus{
   outline:2px solid #2563eb;
   background:#eef4ff;
 }
 
-/* ✅ 금액 input */
-.moneyInput{
-  width:95%; text-align:right;
-  padding:6px; font-size:14px;
-  border:1px solid #ddd; border-radius:6px;
+button{
+  padding:8px 14px;
+  border:none;
+  border-radius:6px;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
 }
+.blue{ background:#2563eb; color:white; }
+.red{ background:#dc2626; color:white; }
 
-/* ✅ 입력줄 */
-tfoot td{ background:#eef6ff; }
-.dateInput{
-  width:95%; padding:6px; text-align:center;
-  border:1px solid #ddd; border-radius:6px;
-}
-
-/* ✅ 모바일 최적화 */
 @media(max-width:600px){
-  th:nth-child(1), td:nth-child(1){ width:18%; }
-  th:nth-child(2), td:nth-child(2){ width:42%; }
-  th:nth-child(3), th:nth-child(4), th:nth-child(5){ width:13%; }
-  td:nth-child(3) input, td:nth-child(4) input{ width:90%; }
+  th:nth-child(1){ width:18%; }
+  th:nth-child(2){ width:40%; }
+  th:nth-child(3),th:nth-child(4),th:nth-child(5){ width:14%; }
 }
 </style>
 </head>
 
 <body>
 
-<header>Simple Ledger</header>
+<header>Excel Style Ledger</header>
 
-<div class="summary">
-  <div class="card">총입금<br><span id="sumIn">0</span></div>
-  <div class="card">총출금<br><span id="sumOut">0</span></div>
-  <div class="card">현재잔액<br><span id="sumBal">0</span></div>
-</div>
-
-<!-- ✅ 기능 -->
-<div class="controls">
-  <input id="search" placeholder="검색" oninput="render()">
-  <select id="yearFilter" onchange="render()"><option value="">전체 연도</option></select>
-  <select id="monthFilter" onchange="render()"><option value="">전체 월</option></select>
-
-  <button class="gray" onclick="sortByDate(); render();">Sort</button>
-  <button class="green" onclick="downloadExcel()">엑셀</button>
-  <button class="green" onclick="saveImage()">이미지</button>
-  <button class="red" onclick="deleteAll()">전체 삭제</button>
-</div>
-
-<!-- ✅ 엑셀 붙여넣기 -->
-<div class="controls" style="flex-direction:column;">
-  <textarea id="pasteArea" rows="3" placeholder="엑셀 복사 → 여기에 붙여넣기"></textarea>
-  <button class="blue" onclick="pasteExcel()">붙여넣기</button>
-</div>
-
-<!-- ✅ 테이블 -->
 <div class="wrap">
 <table id="ledgerTable">
   <thead>
@@ -142,42 +106,41 @@ tfoot td{ background:#eef6ff; }
   </thead>
   <tbody id="ledger-body"></tbody>
 
+  <!-- ✅ 입력줄 -->
   <tfoot>
-    <tr>
-      <td><input id="in-date" class="dateInput" placeholder="오늘 자동"></td>
-      <td><input id="in-desc" class="dateInput" placeholder="내역"></td>
-      <td><input id="in-income" class="moneyInput" placeholder="0"></td>
-      <td><input id="in-expense" class="moneyInput" placeholder="0"></td>
-      <td colspan="2"><button class="blue" onclick="addRow()">추가</button></td>
+    <tr class="addRow">
+      <td><input id="in-date" class="addInput" placeholder="오늘 자동"></td>
+      <td><input id="in-desc" class="addInput" placeholder="내역"></td>
+      <td><input id="in-income" class="addInput" placeholder="0"></td>
+      <td><input id="in-expense" class="addInput" placeholder="0"></td>
+      <td colspan="2">
+        <button class="blue" onclick="addRow()">추가</button>
+      </td>
     </tr>
   </tfoot>
 </table>
 </div>
 
 <script>
-let ledger = JSON.parse(localStorage.getItem("simpleLedger") || "[]");
+let ledger = JSON.parse(localStorage.getItem("excelLedger") || "[]");
 
 const el=id=>document.getElementById(id);
 const toNum=v=>Number(String(v||0).replace(/,/g,""));
 const comma=n=>toNum(n).toLocaleString();
 
-/* ✅ 날짜 정규화 */
-function normalizeDate(raw){
-  if(!raw) return "";
-  raw=raw.replace(/[^\d]/g,"");
-  if(raw.length===6) return `20${raw.slice(0,2)}-${raw.slice(2,4)}-${raw.slice(4,6)}`;
-  if(raw.length===8) return `${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}`;
+/* ✅ 날짜 변환 */
+function normalizeDate(v){
+  if(!v) return "";
+  v = v.replace(/[^\d]/g,"");
+  if(v.length===6) return `20${v.slice(0,2)}-${v.slice(2,4)}-${v.slice(4,6)}`;
+  if(v.length===8) return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;
   return "";
 }
-
-/* ✅ YY.MM.DD 표시 */
 function displayDate(date){
   if(!date) return "";
-  const [y,m,d]=date.split("-");
+  const [y,m,d] = date.split("-");
   return `${y.slice(2)}.${m}.${d}`;
 }
-
-function sortByDate(){ ledger.sort((a,b)=>a.date.localeCompare(b.date)); }
 
 /* ✅ 잔액 계산 */
 function computeBalance(){
@@ -188,145 +151,85 @@ function computeBalance(){
   });
 }
 
-/* ✅ 엑셀 붙여넣기 */
-function pasteExcel(){
-  const txt=el("pasteArea").value.trim();
-  if(!txt) return alert("내용 없음");
-  txt.split(/\r?\n/).forEach(line=>{
-    const c=line.split(/\t/);
-    const row={
-      date: normalizeDate(c[0]),
-      desc: c[1]?.trim() || "",
-      income: toNum(c[2]),
-      expense: toNum(c[3])
-    };
-    ledger.push(row);
-  });
-  el("pasteArea").value="";
-  render();
-}
-
-/* ✅ 새 행 추가 */
+/* ✅ 추가 */
 function addRow(){
   let date = el("in-date").value;
   if(!date){
-    let t=new Date();
+    const t=new Date();
     date=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
-  } else { date = normalizeDate(date); }
+  } else date = normalizeDate(date);
 
-  const row={
+  ledger.push({
     date,
-    desc:el("in-desc").value.trim(),
-    income:toNum(el("in-income").value),
-    expense:toNum(el("in-expense").value)
-  };
-  ledger.push(row);
+    desc: el("in-desc").value.trim(),
+    income: toNum(el("in-income").value),
+    expense: toNum(el("in-expense").value)
+  });
 
   el("in-date").value="";
   el("in-desc").value="";
   el("in-income").value="";
   el("in-expense").value="";
-
   render();
 }
 
 /* ✅ 셀 저장 */
-function saveCell(i,field,value){
-  if(field==="date") ledger[i].date=normalizeDate(value);
-  else if(field==="desc") ledger[i].desc=value.trim();
+function saveCell(i,field,txt){
+  if(field==="date") ledger[i].date = normalizeDate(txt);
+  else if(field==="desc") ledger[i].desc = txt;
   render();
 }
 
-/* ✅ 삭제 */
-function removeRow(i){ ledger.splice(i,1); render(); }
-
-/* ✅ 필터 */
-function matchFilter(r){
-  const q=el("search").value.toLowerCase();
-  const y=el("yearFilter").value;
-  const m=el("monthFilter").value;
-
-  if(y && !r.date.startsWith(y)) return false;
-  if(m && !r.date.startsWith(m)) return false;
-  if(q){
-    const t=`${r.date} ${r.desc} ${r.income} ${r.expense}`.toLowerCase();
-    if(!t.includes(q)) return false;
-  }
-  return true;
+/* ✅ 행 삭제 */
+function removeRow(i){
+  ledger.splice(i,1);
+  render();
 }
 
-/* ✅ 렌더링 */
 function render(){
-  sortByDate();
   computeBalance();
-
-  const body=el("ledger-body");
-  body.innerHTML="";
-
-  let totalIn=0,totalOut=0;
+  const body = el("ledger-body");
+  body.innerHTML = "";
 
   ledger.forEach((r,i)=>{
-    if(!matchFilter(r)) return;
-
-    totalIn+=toNum(r.income);
-    totalOut+=toNum(r.expense);
-
     body.insertAdjacentHTML("beforeend",`
       <tr>
-        <td><div class="cellEdit" contenteditable="true"
-              onblur="saveCell(${i},'date',this.innerText)">${displayDate(r.date)}</div></td>
+        <td><div class="cell" contenteditable="true"
+            onblur="saveCell(${i},'date',this.innerText)">
+          ${displayDate(r.date)}
+        </div></td>
 
-        <td><div class="cellEdit" contenteditable="true"
-              onblur="saveCell(${i},'desc',this.innerText)">${r.desc}</div></td>
+        <td><div class="cell" contenteditable="true"
+            onblur="saveCell(${i},'desc',this.innerText)">
+          ${r.desc}
+        </div></td>
 
-        <td><input class="moneyInput" value="${comma(r.income)}"
-              onblur="ledger[${i}].income=toNum(this.value); render();"></td>
+        <td class="numCell">
+          <div class="cell" contenteditable="true"
+              onblur="ledger[${i}].income = toNum(this.innerText); render();">
+            ${comma(r.income)}
+          </div>
+        </td>
 
-        <td><input class="moneyInput" value="${comma(r.expense)}"
-              onblur="ledger[${i}].expense=toNum(this.value); render();"></td>
+        <td class="numCell">
+          <div class="cell" contenteditable="true"
+              onblur="ledger[${i}].expense = toNum(this.innerText); render();">
+            ${comma(r.expense)}
+          </div>
+        </td>
 
-        <td style="text-align:right;">${comma(r.balance)}</td>
+        <td class="numCell">${comma(r.balance)}</td>
+
         <td><button class="red" onclick="removeRow(${i})">삭제</button></td>
       </tr>
     `);
   });
 
-  /* ✅ 합계 표시 */
-  el("sumIn").textContent=comma(totalIn);
-  el("sumOut").textContent=comma(totalOut);
-  el("sumBal").textContent=comma(
-    ledger.length ? ledger[ledger.length-1].balance : 0
-  );
-
-  /* ✅ 필터 메뉴 자동 생성 */
-  const years=[...new Set(ledger.map(r=>r.date.slice(0,4)))];
-  const months=[...new Set(ledger.map(r=>r.date.slice(0,7)))];
-
-  el("yearFilter").innerHTML=`<option value="">전체 연도</option>` +
-    years.map(y=>`<option value="${y}">${y}</option>`).join("");
-
-  el("monthFilter").innerHTML=`<option value="">전체 월</option>` +
-    months.map(m=>`<option value="${m}">${m}</option>`).join("");
-
-  localStorage.setItem("simpleLedger", JSON.stringify(ledger));
+  save();
 }
 
-/* ✅ 이미지 저장 */
-function saveImage(){
-  const table=document.getElementById("ledgerTable");
-  html2canvas(table,{scale:2,scrollY:-window.scrollY}).then(canvas=>{
-    const a=document.createElement("a");
-    a.download="ledger.png";
-    a.href=canvas.toDataURL();
-    a.click();
-  });
-}
-
-/* ✅ 전체 삭제 */
-function deleteAll(){
-  if(!confirm("전체 삭제?")) return;
-  ledger=[];
-  render();
+function save(){
+  localStorage.setItem("excelLedger", JSON.stringify(ledger));
 }
 
 render();
