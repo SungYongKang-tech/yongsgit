@@ -18,13 +18,14 @@
   --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
   --accent:#2563eb; --ok:#16a34a; --danger:#ef4444; --gray:#6b7280;
   --border:#d0d7e2;
+  --stickTop: 56px; /* JS에서 헤더높이로 갱신됨 */
 }
 *{ box-sizing:border-box; }
 body{
   margin:0; background:var(--bg);
   font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif; color:var(--ink);
-  overflow-x:hidden;
-  overflow-y:auto;   /* ✅ 추가 */
+  overflow-x:hidden;            /* 좌우 스크롤 방지 */
+  overflow-y:auto;              /* ✅ 페이지(창) 스크롤 */
 }
 header{
   background:#fff; padding:16px; font-size:20px; font-weight:800; text-align:center;
@@ -56,16 +57,15 @@ header{
   padding:10px;
   border-radius:8px;
 }
-
 @media (min-width: 600px){
   .controls{ grid-template-columns: repeat(7, 1fr); }
 }
-
 .blue{ background:#2563eb; color:#fff; }
 .green{ background:#059669; color:#fff; }
 .red{ background:#dc2626; color:#fff; }
 .gray{ background:var(--gray); color:#fff; }
 
+/* PASTE */
 .paste{ padding:10px; display:flex; gap:8px; flex-direction:column; }
 .paste textarea{
   width:100%; min-height:90px; border:1px solid #ccd2dd;
@@ -73,46 +73,36 @@ header{
 }
 
 /* TABLE */
-/* ✅ wrap이 스크롤 주체 */
-.wrap{
-  overflow-y:auto;
+.wrap{                     /* ✅ 창 스크롤이므로 overflow 제거 */
   border:1px solid var(--border);
   border-radius:10px;
   background:#fff;
   display:block;
 }
-
-/* ✅ table은 border, radius 제거 */
 table{
   width:100%;
   border-collapse:collapse;
   background:#fff;
 }
 
-/* ✅ thead 전체를 sticky 처리 */
+/* ✅ 표 제목행을 화면 상단(헤더 바로 아래)에 고정 */
 thead{
   position: sticky;
-  top: 0;
+  top: var(--stickTop);
   z-index: 30;
   background:#f3f5fb;
 }
-
 thead th{
-  position: static;   /* ✅ sticky 제거 */
   background:#f3f5fb;
   padding:8px;
   font-size:13px;
   border-bottom:1px solid var(--border);
+  text-align:center;
+  white-space:nowrap;
 }
-
-/* ✅ 상단 둥근모서리 */
-thead tr:first-child th:first-child{
-  border-top-left-radius:10px;
-}
-thead tr:first-child th:last-child{
-  border-top-right-radius:10px;
-}
-
+/* 상단 둥근모서리 */
+thead tr:first-child th:first-child{ border-top-left-radius:10px; }
+thead tr:first-child th:last-child { border-top-right-radius:10px; }
 
 tbody td, tfoot td{
   border-top:1px solid #eef2f7; border-right:1px solid var(--border);
@@ -125,9 +115,7 @@ tbody td:last-child, thead th:last-child, tfoot td:last-child{ border-right:none
   width:100%; min-height:28px; padding:4px 6px;
   font-size:14px; outline:none; background:#fff; line-height:18px;
 }
-.cell:focus{
-  background:#eaf1ff; outline:2px solid #8db4ff;
-}
+.cell:focus{ background:#eaf1ff; outline:2px solid #8db4ff; }
 
 .dateCell{ text-align:center; white-space:nowrap; }
 .descCell{ white-space:pre-wrap; word-break:break-word; }
@@ -154,22 +142,14 @@ tfoot td{ background:#f7fbff; }
 
 /* DELETE BUTTON */
 .delBtnSmall{
-  background:#f2f2f2;
-  color:#555;
-  border:1px solid #d0d0d0;
-  padding:0;
-  width:20px; height:20px;
-  font-size:12px; line-height:20px;
-  border-radius:4px;
-  text-align:center;
-  cursor:pointer;
+  background:#f2f2f2; color:#555; border:1px solid #d0d0d0;
+  padding:0; width:20px; height:20px; font-size:12px; line-height:20px;
+  border-radius:4px; text-align:center; cursor:pointer;
 }
 </style>
 </head>
 
-
 <body>
-
 <header>KOEN TT Ledger</header>
 
 <!-- SUMMARY -->
@@ -196,7 +176,7 @@ tfoot td{ background:#f7fbff; }
   <button class="blue" onclick="pasteExcel()">붙여넣기 적용</button>
 </div>
 
-<!-- TABLE WRAP (scroll container) -->
+<!-- TABLE -->
 <div class="wrap" id="wrap">
   <table id="ledgerTable">
     <thead>
@@ -222,7 +202,6 @@ tfoot td{ background:#f7fbff; }
   </table>
 </div>
 
-
 <script>
 /* ======================
       ✅ Firebase 초기화
@@ -241,7 +220,7 @@ const db = firebase.database();
 /* ======================
       ✅ GLOBAL
 ====================== */
-let ledger = {};   // { key: {date,desc,income,expense} }
+let ledger = {};   // { key: {date,desc,income,expense,createdAt} }
 
 /* ======================
       ✅ UTILS
@@ -253,16 +232,13 @@ const comma = n => toNum(n).toLocaleString();
 function normalizeDate(v){
   if(!v) return "";
   v = String(v).trim();
-  // 24.12.25 형식
-  if(/^\d{2}\.\d{2}\.\d{2}$/.test(v)){
+  if(/^\d{2}\.\d{2}\.\d{2}$/.test(v)){ // 24.12.25
     const [yy,mm,dd] = v.split(".");
     return `20${yy}-${mm}-${dd}`;
   }
-  // 숫자만
   v = v.replace(/[^\d]/g,"");
   if(v.length===6) return `20${v.slice(0,2)}-${v.slice(2,4)}-${v.slice(4,6)}`;
   if(v.length===8) return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;
-  // 이미 YYYY-MM-DD
   if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   return "";
 }
@@ -271,6 +247,17 @@ function displayDate(d){
   const [y,m,dd] = d.split("-");
   return `${y.slice(2)}.${m}.${dd}`;
 }
+
+/* ======================
+      ✅ Sticky 상단 간격 동적 반영
+====================== */
+function updateStickyTop(){
+  const h = document.querySelector("header")?.offsetHeight || 0;
+  document.documentElement.style.setProperty('--stickTop', `${h}px`);
+}
+window.addEventListener('load', updateStickyTop);
+window.addEventListener('resize', updateStickyTop);
+window.addEventListener('orientationchange', updateStickyTop);
 
 /* ======================
       ✅ Firebase 실시간
@@ -283,9 +270,7 @@ db.ref("ledger").on("value", snap=>{
 /* ======================
       ✅ DB helpers
 ====================== */
-function saveToDB(key, row){
-  return db.ref("ledger/"+key).set(row);
-}
+function saveToDB(key, row){ return db.ref("ledger/"+key).set(row); }
 function deleteRow(key){
   if(!confirm("삭제할까요?")) return;
   db.ref("ledger/"+key).remove();
@@ -306,21 +291,16 @@ function addRow(){
   } else {
     date = normalizeDate(date);
   }
-
   const row = {
     date,
     desc: el("in-desc").value.trim(),
     income: toNum(el("in-income").value),
     expense: toNum(el("in-expense").value),
-    createdAt: Date.now()   // ✅ 추가됨
+    createdAt: Date.now()          // 입력순 복원용
   };
-
   if(!row.desc){ alert("내역을 입력하세요."); return; }
-
-  // push 키로 충돌 방지
   db.ref("ledger").push(row);
 
-  // 초기화
   el("in-date").value = "";
   el("in-desc").value = "";
   el("in-income").value = "";
@@ -338,10 +318,8 @@ function saveCell(key, field, value){
 /* ======================
       ✅ 정렬(화면상)
 ====================== */
-function sortByDate(){
-  // 렌더에서 정렬하므로 여기선 단순 재렌더
-  render(true);
-}
+let sortMode = false; // false: 입력순(createdAt), true: 날짜순
+function sortByDate(){ sortMode = true; render(true); }
 
 /* ======================
       ✅ 렌더 + 합계
@@ -364,12 +342,15 @@ function render(forceTop){
   if(m) arr = arr.filter(([k,r])=> (r.date||"").startsWith(m));
 
   // 정렬
-  arr.sort((a,b)=> (a[1].date||"").localeCompare(b[1].date||""));
+  if (sortMode) {
+    arr.sort((a,b)=> (a[1].date||"").localeCompare(b[1].date||""));   // 날짜순
+  } else {
+    arr.sort((a,b)=> (a[1].createdAt||0) - (b[1].createdAt||0));      // 입력순
+  }
 
   // 누적
   let bal = 0, totalIn=0, totalOut=0;
   let rowsHTML = "";
-
   arr.forEach(([key,r])=>{
     const inc = toNum(r.income);
     const exp = toNum(r.expense);
@@ -393,7 +374,6 @@ function render(forceTop){
       </tr>
     `;
   });
-
   el("ledger-body").innerHTML = rowsHTML;
 
   // 요약
@@ -401,18 +381,14 @@ function render(forceTop){
   el("sumOut").textContent = comma(totalOut);
   el("sumBal").textContent = comma(bal);
 
-  // 필터 옵션 갱신
-  const years  = [...new Set(Object.values(ledger).map(r=>(r.date||"").slice(0,4)).filter(Boolean))].sort();
-  const months = [...new Set(Object.values(ledger).map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort();
+  // 필터 옵션 (원본 전체 기준)
+  const allVals = Object.values(ledger);
+  const years  = [...new Set(allVals.map(r=>(r.date||"").slice(0,4)).filter(Boolean))].sort();
+  const months = [...new Set(allVals.map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort();
   el("yearFilter").innerHTML  = `<option value="">전체 연도</option>` + years.map(v=>`<option value="${v}">${v}</option>`).join("");
   el("monthFilter").innerHTML = `<option value="">전체 월</option>`   + months.map(v=>`<option value="${v}">${v}</option>`).join("");
 
-  // sticky가 보이는 영역 계산
-  calcWrapHeight();
-
-  if(forceTop){
-    el("wrap").scrollTop = 0;
-  }
+  if(forceTop){ window.scrollTo({top:0, behavior:'instant'}); }
 }
 
 /* ======================
@@ -421,9 +397,8 @@ function render(forceTop){
 function pasteExcel(){
   const text = el("pasteArea").value.trim();
   if(!text) return alert("붙여넣을 내용이 없습니다.");
-
   const lines = text.split(/\r?\n/);
-  const batch = db.ref("ledger");
+  const ref = db.ref("ledger");
 
   lines.forEach(line=>{
     const c = line.split(/\t/);
@@ -439,11 +414,7 @@ function pasteExcel(){
       const t = new Date();
       date = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
     }
-    batch.push({
-  date, desc, income, expense,
-  createdAt: Date.now()     // ✅ 추가
-});
-
+    ref.push({ date, desc, income, expense, createdAt: Date.now() });
   });
 
   el("pasteArea").value = "";
@@ -485,38 +456,8 @@ function saveImage(){
   });
 }
 
-/* ======================
-      ✅ 자동 wrap 높이 계산
-====================== */
-function calcWrapHeight(){
-  const header = document.querySelector("header");
-  const summary = document.querySelector(".summary");
-  const controls = document.getElementById("controls");
-  const pasteBox = document.getElementById("pasteBox");
-  const wrap = document.getElementById("wrap");
-
-  const h = header?.getBoundingClientRect().height || 0;
-  const s = summary?.getBoundingClientRect().height || 0;
-  const c = controls?.getBoundingClientRect().height || 0;
-  const p = pasteBox?.getBoundingClientRect().height || 0;
-
-  const gap = 20; // 여유
-  const avail = window.innerHeight - (h + s + c + p + 20);
-
-
-  wrap.style.maxHeight = avail + "px";
-  wrap.style.height = avail + "px"; // 강제 높이
-}
-
-// 초기/리사이즈/회전 대응
-window.addEventListener("load", calcWrapHeight);
-window.addEventListener("resize", calcWrapHeight);
-window.addEventListener("orientationchange", calcWrapHeight);
-document.addEventListener("visibilitychange", calcWrapHeight);
-
-// 첫 렌더 트리거
+/* 초기 렌더 */
 render();
 </script>
-
 </body>
 </html>
