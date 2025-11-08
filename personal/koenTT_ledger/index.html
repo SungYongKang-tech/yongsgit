@@ -12,8 +12,9 @@
   body{margin:0;background:#f5f7fb;font-family:"Pretendard","Noto Sans KR",sans-serif;}
   header{background:#fff;padding:16px;font-size:20px;font-weight:700;text-align:center;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;}
 
-  .summary{display:flex;gap:10px;padding:10px;flex-wrap:wrap}
-  .sum-card{flex:1;min-width:120px;padding:14px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;text-align:center;font-weight:700;font-size:14px}
+  .summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;padding:10px}
+  .sum-card{padding:12px 10px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;text-align:center;font-weight:700;font-size:13px;line-height:1.35}
+  .sum-card b{display:block;font-size:14px;margin-bottom:4px}
 
   .controls{padding:10px;display:flex;gap:8px;flex-wrap:wrap}
   .controls input,.controls select{padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px;flex:1}
@@ -29,6 +30,10 @@
   td input{width:90%;padding:6px;font-size:14px;text-align:center;border:1px solid #ddd;border-radius:6px}
   .del{background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:12px}
   tfoot td{background:#f0f9ff}
+
+  @media (max-width:720px){
+    .summary{grid-template-columns:repeat(2,minmax(120px,1fr))}
+  }
 </style>
 </head>
 
@@ -38,9 +43,10 @@
 
 <!-- 상단 요약 -->
 <div class="summary">
-  <div class="sum-card">총입금<br><span id="sumIn">0</span></div>
-  <div class="sum-card">총출금<br><span id="sumOut">0</span></div>
-  <div class="sum-card">현재잔액<br><span id="sumBal">0</span></div>
+  <div class="sum-card"><b>총입금(필터)</b><span id="sumIn">0</span></div>
+  <div class="sum-card"><b>총출금(필터)</b><span id="sumOut">0</span></div>
+  <div class="sum-card"><b>기간 마지막 잔액</b><span id="sumBalPeriod">0</span></div>
+  <div class="sum-card"><b>전체 마지막 잔액</b><span id="sumBalAll">0</span></div>
 </div>
 
 <!-- 기능 영역 -->
@@ -92,6 +98,7 @@
 <script>
 /* ================== 데이터 & 유틸 ================== */
 let ledger = JSON.parse(localStorage.getItem("koenTT_ledger") || "[]");
+let idCounter = Number(localStorage.getItem("koenTT_ledger_idCounter") || "0"); // 신규 행 id 생성용
 
 const el = id => document.getElementById(id);
 const toNum = v => Number(String(v ?? 0).replace(/,/g,'').trim()) || 0;
@@ -160,20 +167,32 @@ function displayDate(d){
   return `${y.slice(2,4)}.${m}.${day}`;
 }
 
-/* 기존 저장 데이터의 날짜 일괄 보정 */
-function fixAllDates(){
+/* 기존 저장 데이터 일괄 보정 (+ id 부여) */
+function fixAllRecords(){
   let changed = false;
   ledger = ledger.map(r=>{
     const newDate = normalizeDate(r.date);
-    if (newDate !== r.date) changed = true;
-    return {...r, date: newDate};
+    const hasId = typeof r.id === "number";
+    if (!hasId){ r.id = ++idCounter; changed = true; }
+    if (newDate !== r.date){ r.date = newDate; changed = true; }
+    // 금액도 숫자 강제
+    r.income = cleanMoney(r.income);
+    r.expense = cleanMoney(r.expense);
+    return r;
   });
-  if (changed) save();
+  if (changed){
+    localStorage.setItem("koenTT_ledger_idCounter", String(idCounter));
+    save();
+  }
 }
 
-/* 정렬 & 저장 */
+/* 안정 정렬: date → id */
 function sortByDate(){
-  ledger.sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  ledger.sort((a,b)=>{
+    const da = a.date || "", db = b.date || "";
+    if (da === db) return a.id - b.id; // 같은 날짜면 입력순서 유지
+    return da.localeCompare(db);
+  });
   save();
 }
 
@@ -207,11 +226,13 @@ function save(){
 /* ================== CRUD & 동작 ================== */
 function addRow(){
   const row = {
+    id: ++idCounter,
     date: normalizeDate(el("in-date").value),
     desc: (el("in-desc").value || "").trim(),
     income: cleanMoney(el("in-income").value),
     expense: cleanMoney(el("in-expense").value)
   };
+  localStorage.setItem("koenTT_ledger_idCounter", String(idCounter));
 
   if (!row.desc){ alert("내역을 입력하세요"); return; }
   if (!isDuplicate(row)) ledger.push(row);
@@ -254,11 +275,14 @@ function pasteExcel(){
     if (c.length < 2) return;
 
     const row = {
+      id: ++idCounter,
       date: normalizeDate(c[0]),
       desc: (c[1] || "").trim(),
       income: cleanMoney(c[2]),
       expense: cleanMoney(c[3])
     };
+    localStorage.setItem("koenTT_ledger_idCounter", String(idCounter));
+
     if (!isDuplicate(row)) ledger.push(row);
   });
 
@@ -300,7 +324,8 @@ function matchFilter(r){
 
 /* ================== 렌더 ================== */
 function render(){
-  fixAllDates();
+  // 1) 기존 데이터 보정 (날짜/금액/id) → 2) 안정 정렬 → 3) 전체 잔액 계산
+  fixAllRecords();
   sortByDate();
   computeFullBalance();
 
@@ -308,6 +333,7 @@ function render(){
   body.innerHTML = "";
 
   let totalIn = 0, totalOut = 0;
+  let lastVisibleBalance = null; // 기간 마지막 잔액(표시행 기준)
 
   ledger.forEach((r,i)=>{
     if (!matchFilter(r)) return;
@@ -317,6 +343,7 @@ function render(){
 
     totalIn += inc;
     totalOut += exp;
+    lastVisibleBalance = r.balanceFull;
 
     body.insertAdjacentHTML("beforeend", `
       <tr>
@@ -330,10 +357,11 @@ function render(){
     `);
   });
 
-  // 상단 요약 (필터된 합계 / 전체 마지막 잔액)
+  // 상단 요약: 필터 합계 + 기간 마지막 잔액 + 전체 마지막 잔액
   el("sumIn").textContent = comma(totalIn);
   el("sumOut").textContent = comma(totalOut);
-  el("sumBal").textContent = comma( ledger.length ? ledger[ledger.length-1].balanceFull : 0 );
+  el("sumBalPeriod").textContent = comma(lastVisibleBalance ?? 0);
+  el("sumBalAll").textContent = comma( ledger.length ? ledger[ledger.length-1].balanceFull : 0 );
 
   // 연/월 필터 옵션 자동 구성
   const years = [...new Set(ledger.map(r=>r.date.slice(0,4)).filter(Boolean))];
