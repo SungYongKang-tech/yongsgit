@@ -9,77 +9,60 @@
 
 <style>
   body{margin:0;background:#f5f7fb;font-family:"Pretendard","Noto Sans KR",sans-serif;}
-  header{background:white;padding:16px;font-size:20px;font-weight:700;text-align:center;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;}
-
+  header{background:#fff;padding:16px;font-size:20px;font-weight:700;text-align:center;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;}
   .summary{display:flex;gap:10px;padding:10px;flex-wrap:wrap;}
-  .sum-card{flex:1;min-width:120px;padding:14px;background:white;border-radius:10px;border:1px solid #e5e7eb;text-align:center;font-weight:700;font-size:14px;}
-
+  .sum-card{flex:1;min-width:120px;padding:14px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;text-align:center;font-weight:700;font-size:14px;}
   .controls{padding:10px;display:flex;gap:8px;flex-wrap:wrap;}
   .controls input,.controls select{padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px;flex:1;}
   .controls button{padding:10px 14px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
-  .btn-blue{background:#2563eb;color:white;}
-  .btn-green{background:#059669;color:white;}
-  .btn-gray{background:#6b7280;color:white;}
-  .btn-red{background:#dc2626;color:white;}
-
-  .wrap{padding:10px;}
-  table{width:100%;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.05);}
-  th,td{padding:10px 6px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:14px;}
-  td input{width:90%;padding:6px;font-size:14px;text-align:center;border:1px solid #ddd;border-radius:6px;}
-  .del{background:#ef4444;color:white;border:none;border-radius:6px;padding:6px 8px;font-size:12px;}
-  tfoot td{background:#f0f9ff;}
+  .btn-blue{background:#2563eb;color:#fff}.btn-green{background:#059669;color:#fff}.btn-gray{background:#6b7280;color:#fff}.btn-red{background:#dc2626;color:#fff}
+  .wrap{padding:10px}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.05)}
+  th,td{padding:10px 6px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:14px}
+  td input{width:95%;padding:6px;font-size:14px;text-align:center;border:1px solid #ddd;border-radius:6px}
+  .del{background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:12px}
+  tfoot td{background:#f0f9ff}
 </style>
 </head>
-
 <body>
 
 <header>koenTT_ledger</header>
 
-<!-- ✅ 상단 요약 -->
+<!-- 요약 -->
 <div class="summary">
   <div class="sum-card">총입금<br><span id="sumIn">0</span></div>
   <div class="sum-card">총출금<br><span id="sumOut">0</span></div>
   <div class="sum-card">현재잔액<br><span id="sumBal">0</span></div>
 </div>
 
-<!-- ✅ 기능 버튼 -->
+<!-- 컨트롤 -->
 <div class="controls">
-  <input type="text" id="search" placeholder="검색: 날짜/내역/금액" oninput="render()"""
-
-  <select id="yearFilter" onchange="render()">
-    <option value="">전체 연도</option>
-  </select>
-
-  <select id="monthFilter" onchange="render()">
-    <option value="">전체 월</option>
-  </select>
-
+  <!-- 👇 오타 수정: 제대로 닫힘 -->
+  <input type="text" id="search" placeholder="검색: 날짜/내역/금액" oninput="render()">
+  <select id="yearFilter" onchange="render()"><option value="">전체 연도</option></select>
+  <select id="monthFilter" onchange="render()"><option value="">전체 월</option></select>
   <button class="btn-gray" onclick="sortByDate();render();">전체 Sort</button>
   <button class="btn-blue" onclick="toggleHidden()">숨김/표시</button>
   <button class="btn-green" onclick="downloadExcel()">엑셀 다운로드</button>
   <button class="btn-red" onclick="deleteAll()">전체 삭제</button>
 </div>
 
-<!-- ✅ 엑셀 붙여넣기 -->
+<!-- 엑셀 붙여넣기 -->
 <div class="controls" style="flex-direction:column">
   <textarea id="pasteArea" rows="3" placeholder="엑셀에서 복사 → 여기에 붙여넣기"></textarea>
   <button class="btn-blue" onclick="pasteExcel()">붙여넣기 적용</button>
 </div>
 
-<!-- ✅ 테이블 -->
+<!-- 표 -->
 <div class="wrap">
   <table>
     <thead>
-      <tr>
-        <th>일자</th><th>내역</th><th>입금</th><th>출금</th><th>잔액</th><th></th>
-      </tr>
+      <tr><th>일자</th><th>내역</th><th>입금</th><th>출금</th><th>잔액</th><th></th></tr>
     </thead>
     <tbody id="ledger-body"></tbody>
-
-    <!-- ✅ 입력줄 -->
     <tfoot>
       <tr>
-        <td><input id="in-date" placeholder="예: 24.12.25"></td>
+        <td><input id="in-date" placeholder="예: 24.12.25 / 2024-12-25"></td>
         <td><input id="in-desc" placeholder="내역"></td>
         <td><input id="in-income" placeholder="입금"></td>
         <td><input id="in-expense" placeholder="출금"></td>
@@ -90,233 +73,195 @@
 </div>
 
 <script>
-
+/* ---------- 공통 ---------- */
 let ledger = JSON.parse(localStorage.getItem("koenTT_ledger") || "[]");
+let idCounter = Number(localStorage.getItem("koenTT_ledger_idCounter") || 0);
 let hiddenMode = false;
 
 const el = id => document.getElementById(id);
+const safe = id => el(id) || { value:"", innerHTML:"" };
+const num = v => Number(String(v??"0").replace(/,/g,"").trim())||0;
+const comma = n => num(n).toLocaleString();
 
-/* ✅ 금액 파싱 */
-const cleanMoney = v => Number(String(v ?? "0").replace(/,/g,"").trim() || 0);
-const comma = n => cleanMoney(n).toLocaleString();
+function save(){
+  localStorage.setItem("koenTT_ledger", JSON.stringify(ledger));
+  localStorage.setItem("koenTT_ledger_idCounter", String(idCounter));
+}
 
-/* ✅ 저장 */
-function save(){ localStorage.setItem("koenTT_ledger", JSON.stringify(ledger)); }
-
-/* ✅ 날짜 정규화 → YY.MM.DD 통일 */
+/* ---------- 날짜 ---------- */
 function normalizeDate(s){
   if(!s) return "";
-
-  s = s.replace(/\./g,".").trim();
-  s = s.replace(/\.$/, "");   // 끝에 점(.) 제거
-
-  // 24.12.25
-  const d1 = /^(\d{2})\.(\d{2})\.(\d{2})$/;
-  // 2024.12.25
-  const d2 = /^(\d{4})\.(\d{2})\.(\d{2})$/;
-  // 24-12-25
-  const d3 = /^(\d{2})-(\d{2})-(\d{2})$/;
-  // 2024-12-25
-  const d4 = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-  let yy, mm, dd;
-
-  if(d1.test(s)){
-    [,yy,mm,dd] = s.match(d1);
-  } else if(d2.test(s)){
-    const [,yyyy,MM,DD] = s.match(d2);
-    yy = yyyy.slice(2);
-    mm = MM; dd = DD;
-  } else if(d3.test(s)){
-    [,yy,mm,dd] = s.match(d3);
-  } else if(d4.test(s)){
-    const [,yyyy,MM,DD] = s.match(d4);
-    yy = yyyy.slice(2);
-    mm = MM; dd = DD;
-  } else {
-    return "";
-  }
-
-  return `${yy}.${mm}.${dd}`;
+  s = String(s).trim().replace(/\.$/,""); // 끝 점 제거
+  let m;
+  if(m = s.match(/^(\d{2})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/))
+    return `20${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  if(m = s.match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/))
+    return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  if(m = s.match(/^(\d{4})(\d{2})(\d{2})$/))
+    return `${m[1]}-${m[2]}-${m[3]}`;
+  if(m = s.match(/^(\d{2})(\d{2})(\d{2})$/))
+    return `20${m[1]}-${m[2]}-${m[3]}`;
+  return s; // 최소 보존
+}
+function displayDate(d){
+  if(!d) return "";
+  const [y,m,dd]=d.split("-");
+  return `${y.slice(2)}.${m}.${dd}`;
 }
 
-/* ✅ 날짜 기반 정렬 (YY.MM.DD → 정렬 가능) */
+/* ---------- 정렬 & 잔액 ---------- */
 function sortByDate(){
-  ledger.sort((a,b)=>
-    normalizeDate(a.date).localeCompare(normalizeDate(b.date))
-  );
+  ledger.sort((a,b)=>{
+    if(a.date===b.date) return (a.id||0)-(b.id||0);
+    return (a.date||"").localeCompare(b.date||"");
+  });
 }
-
-/* ✅ 전체 누적 잔액 계산 */
 function computeFullBalance(){
-  let bal = 0;
+  let bal=0;
   ledger.forEach(r=>{
-    bal += cleanMoney(r.income) - cleanMoney(r.expense);
+    bal += num(r.income) - num(r.expense);
     r.balanceFull = bal;
   });
 }
 
-/* ✅ 중복 체크 (엑셀 붙여넣기 대비) */
+/* ---------- 중복 ---------- */
 function isDuplicate(row){
   return ledger.some(r =>
-    normalizeDate(r.date) === normalizeDate(row.date) &&
-    r.desc === row.desc &&
-    cleanMoney(r.income) === cleanMoney(row.income) &&
-    cleanMoney(r.expense) === cleanMoney(row.expense)
+    normalizeDate(r.date)===normalizeDate(row.date) &&
+    (r.desc||"")===(row.desc||"") &&
+    num(r.income)===num(row.income) &&
+    num(r.expense)===num(row.expense)
   );
 }
 
-/* ✅ 행 추가 */
+/* ---------- CRUD ---------- */
 function addRow(){
-  const d = normalizeDate(el("in-date").value);
-  const desc = el("in-desc").value.trim();
-  const income = cleanMoney(el("in-income").value);
-  const expense = cleanMoney(el("in-expense").value);
-
-  if(!desc){ alert("내역을 입력하세요"); return; }
-
-  const row = {date:d, desc, income, expense};
+  const row = {
+    id: ++idCounter,
+    date: normalizeDate(safe("in-date").value),
+    desc: (safe("in-desc").value||"").trim(),
+    income: num(safe("in-income").value),
+    expense: num(safe("in-expense").value)
+  };
+  if(!row.desc){ alert("내역을 입력하세요"); return; }
   if(!isDuplicate(row)) ledger.push(row);
-
-  el("in-date").value = el("in-desc").value = el("in-income").value = el("in-expense").value = "";
+  safe("in-date").value = safe("in-desc").value = safe("in-income").value = safe("in-expense").value = "";
   render();
 }
-
-/* ✅ 수정 */
 function edit(i,field,value){
-  if(field==="income" || field==="expense") ledger[i][field] = cleanMoney(value);
-  else if(field==="date") ledger[i].date = normalizeDate(value);
+  if(field==="income"||field==="expense") ledger[i][field]=num(value);
+  else if(field==="date") ledger[i].date=normalizeDate(value);
   else ledger[i][field]=value;
-
   render();
 }
-
-/* ✅ 삭제 */
 function removeRow(i){ ledger.splice(i,1); render(); }
-
-/* ✅ 전체 삭제 */
 function deleteAll(){
   if(!confirm("전체 대장을 삭제하시겠습니까?")) return;
-  ledger = [];
-  save();
-  render();
+  ledger=[]; idCounter=0; save(); render();
 }
-
-/* ✅ 숨김/표시 */
 function toggleHidden(){ hiddenMode=!hiddenMode; render(); }
 
-/* ✅ 엑셀 붙여넣기 */
+/* ---------- 엑셀 ---------- */
 function pasteExcel(){
-  const text = el("pasteArea").value.trim();
+  const text = (safe("pasteArea").value||"").trim();
   if(!text){ alert("내용이 없습니다"); return; }
-
-  const lines = text.split(/\r?\n/);
-
-  lines.forEach(line=>{
-    const c = line.split(/\t/);
-    if(c.length < 2) return;
-
-    const row = {
+  text.split(/\r?\n/).forEach(line=>{
+    const c=line.split(/\t/);
+    if(c.length<2) return;
+    const row={
+      id: ++idCounter,
       date: normalizeDate(c[0]),
-      desc: c[1].trim(),
-      income: cleanMoney(c[2]),
-      expense: cleanMoney(c[3])
+      desc: (c[1]||"").trim(),
+      income: num(c[2]),
+      expense: num(c[3])
     };
-
     if(!isDuplicate(row)) ledger.push(row);
   });
-
-  el("pasteArea").value="";
+  safe("pasteArea").value="";
   render();
 }
-
-/* ✅ 엑셀 다운로드 */
 function downloadExcel(){
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(
-    ledger.map(r=>({
-      일자: normalizeDate(r.date),
-      내역: r.desc,
-      입금: cleanMoney(r.income),
-      출금: cleanMoney(r.expense),
-      잔액: cleanMoney(r.balanceFull)
-    }))
-  );
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(ledger.map(r=>({
+    일자: displayDate(normalizeDate(r.date)),
+    내역: r.desc,
+    입금: num(r.income),
+    출금: num(r.expense),
+    잔액: r.balanceFull??0
+  })));
   XLSX.utils.book_append_sheet(wb,ws,"ledger");
   XLSX.writeFile(wb,"koenTT_ledger.xlsx");
 }
 
-/* ✅ 검색 + 필터 */
+/* ---------- 필터 ---------- */
 function matchFilter(r){
-  const q = el("search").value.trim();
-  const y = el("yearFilter").value;
-  const m = el("monthFilter").value;
+  const searchEl = safe("search");
+  const yearEl = safe("yearFilter");
+  const monthEl = safe("monthFilter");
 
-  const nd = normalizeDate(r.date);
-  const ym = nd.slice(0,5); // YY.MM
+  const q = (searchEl.value||"").trim();
+  const y = yearEl.value || "";
+  const m = monthEl.value || "";
 
-  if(y && !nd.startsWith(y)) return false;
-  if(m && !nd.startsWith(m)) return false;
+  const nd = normalizeDate(r.date); // YYYY-MM-DD
+  const ndYYMM = `${nd.slice(2,4)}.${nd.slice(5,7)}`; // YY.MM
+  const ndYY = nd.slice(2,4); // YY
+
+  if(y && ndYY !== y) return false;
+  if(m && `${ndYYMM}` !== m) return false;
 
   if(q){
-    if(!(nd+" "+r.desc+" "+r.income+" "+r.expense).includes(q)) return false;
+    const hay = `${displayDate(nd)} ${r.desc||""} ${num(r.income)} ${num(r.expense)}`;
+    if(!hay.includes(q)) return false;
   }
-
   return true;
 }
 
-/* ✅ 렌더링 */
+/* ---------- 렌더 ---------- */
 function render(){
+  // 가드: 표 본체가 없으면 중단
+  const body = el("ledger-body");
+  if(!body) return;
+
   sortByDate();
   computeFullBalance();
 
-  let body = el("ledger-body");
-  body.innerHTML = "";
-
-  let totalIn=0, totalOut=0;
+  body.innerHTML="";
+  let totalIn=0,totalOut=0;
 
   ledger.forEach((r,i)=>{
     if(!matchFilter(r)) return;
-
-    const inc = cleanMoney(r.income);
-    const exp = cleanMoney(r.expense);
-
-    totalIn += inc;
-    totalOut += exp;
+    const inc=num(r.income), exp=num(r.expense);
+    totalIn+=inc; totalOut+=exp;
 
     body.insertAdjacentHTML("beforeend",`
       <tr>
-        <td><input value="${normalizeDate(r.date)}" onchange="edit(${i},'date',this.value)"></td>
-        <td><input value="${r.desc}" onchange="edit(${i},'desc',this.value)"></td>
+        <td><input value="${displayDate(normalizeDate(r.date))}" onchange="edit(${i},'date',this.value)"></td>
+        <td><input value="${r.desc||""}" onchange="edit(${i},'desc',this.value)"></td>
         <td><input value="${comma(inc)}" onchange="edit(${i},'income',this.value)"></td>
         <td><input value="${comma(exp)}" onchange="edit(${i},'expense',this.value)"></td>
-        <td>${comma(r.balanceFull ?? 0)}</td>
+        <td>${comma(r.balanceFull??0)}</td>
         <td><button class="del" onclick="removeRow(${i})">삭제</button></td>
       </tr>
     `);
   });
 
-  el("sumIn").textContent = comma(totalIn);
-  el("sumOut").textContent = comma(totalOut);
-  el("sumBal").textContent = comma(ledger.length ? ledger[ledger.length-1].balanceFull : 0);
+  safe("sumIn").innerText = comma(totalIn);
+  safe("sumOut").innerText = comma(totalOut);
+  safe("sumBal").innerText = comma(ledger.length ? ledger[ledger.length-1].balanceFull : 0);
 
-  // ✅ 연도 필터 생성 (YY만 뽑기)
-  const years = [...new Set(ledger.map(r => normalizeDate(r.date).slice(0,2)))];
-  el("yearFilter").innerHTML =
-    `<option value="">전체 연도</option>` +
-    years.map(y=>`<option value="${y}">${y}</option>`).join("");
+  // 필터 옵션 재생성
+  const years=[...new Set(ledger.map(r=>normalizeDate(r.date).slice(2,4))).values()].filter(Boolean);
+  const months=[...new Set(ledger.map(r=>`${normalizeDate(r.date).slice(2,4)}.${normalizeDate(r.date).slice(5,7)}`)).values()].filter(Boolean);
 
-  // ✅ 월 필터 생성 (YY.MM)
-  const months = [...new Set(ledger.map(r => normalizeDate(r.date).slice(0,5)))];
-  el("monthFilter").innerHTML =
-    `<option value="">전체 월</option>` +
-    months.map(m=>`<option value="${m}">${m}</option>`).join("");
+  safe("yearFilter").innerHTML = `<option value="">전체 연도</option>` + years.map(y=>`<option value="${y}">${y}</option>`).join("");
+  safe("monthFilter").innerHTML = `<option value="">전체 월</option>` + months.map(m=>`<option value="${m}">${m}</option>`).join("");
 
   save();
 }
 
+// 최초 렌더
 render();
 </script>
-
 </body>
 </html>
