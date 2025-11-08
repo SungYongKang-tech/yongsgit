@@ -382,23 +382,38 @@ function render(){
 ====================== */
 function pasteExcel(){
   const text = el("pasteArea").value.trim();
-  if(!text) return;
+  if(!text) return alert("붙여넣을 내용이 없습니다.");
+
   const lines = text.split(/\r?\n/);
 
   lines.forEach(line=>{
     const c = line.split(/\t/);
-    if(c.length<2) return;
-    const row = {
-      date: normalizeDate(c[0]||""),
-      desc: String(c[1]||""),
-      income: toNum(c[2]||0),
-      expense: toNum(c[3]||0)
-    };
-    const key = Date.now()+Math.floor(Math.random()*99999);
-    saveToDB(key, row);
+
+    if(c.length < 2) return;
+
+    let date = normalizeDate(c[0] || "");
+    let desc = String(c[1] || "").trim();
+    let income = toNum(c[2] || 0);
+    let expense = toNum(c[3] || 0);
+
+    // ✅ desc 없어도 강제 저장
+    if(!desc) desc = "(내용 없음)";
+
+    // ✅ 날짜 없으면 오늘 날짜
+    if(!date){
+      const t = new Date();
+      date = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
+    }
+
+    const row = { date, desc, income, expense };
+
+    // ✅ push로 key 충돌 없이 저장
+    db.ref("ledger").push(row);
   });
-  el("pasteArea").value="";
+
+  el("pasteArea").value = "";
 }
+
 
 /* ======================
       ✅ 엑셀 다운로드
