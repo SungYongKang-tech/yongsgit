@@ -168,7 +168,11 @@ tfoot td{ background:#f7fbff; }
   <button class="green" onclick="downloadExcel()">엑셀 다운로드</button>
   <button class="green" onclick="saveImage()">이미지 저장</button>
   <button class="red" onclick="deleteAll()">전체 삭제</button>
+
+  <!-- ✅ 추가: 원래 보기(초기화) -->
+  <button class="gray" onclick="resetView()">원래보기</button>
 </div>
+
 
 <!-- PASTE -->
 <div class="paste" id="pasteBox">
@@ -318,16 +322,35 @@ function saveCell(key, field, value){
 /* ======================
       ✅ 정렬(화면상)
 ====================== */
-let sortMode = false; // false: 입력순(createdAt), true: 날짜순
+// 정렬 모드: false = 입력순(createdAt), true = 날짜순 정렬
+let sortMode = false;
+
+// 잔액 표시를 원장(전체 데이터 기준)으로 유지
+const useGlobalBalance = true;
 function sortByDate(){ sortMode = true; render(true); }
 
 /* ======================
       ✅ 렌더 + 합계
 ====================== */
 function render(forceTop){
-  let arr = Object.entries(ledger);
+  // ----- 0) 전체 ledger로 "원장 기준(입력순)" 누적잔액 테이블 준비 -----
+  const all = Object.entries(ledger);
 
-  // 검색
+  const master = all
+    .slice()
+    .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0)); // 입력순
+
+  // ✅ key별 전역 누적잔액 저장
+  let gBal = 0;
+  const globalBalByKey = {};
+  master.forEach(([k,r])=>{
+    gBal += toNum(r.income) - toNum(r.expense);
+    globalBalByKey[k] = gBal;
+  });
+
+  // ----- 1) 화면 필터링/검색/정렬 -----
+  let arr = all;
+
   const q = el("search").value.trim().toLowerCase();
   if(q){
     arr = arr.filter(([k,r])=>{
@@ -335,39 +358,54 @@ function render(forceTop){
         .toLowerCase().includes(q);
     });
   }
-  // 필터
+
   const y = el("yearFilter").value;
   const m = el("monthFilter").value;
   if(y) arr = arr.filter(([k,r])=> (r.date||"").startsWith(y));
   if(m) arr = arr.filter(([k,r])=> (r.date||"").startsWith(m));
 
-  // 정렬
   if (sortMode) {
-    arr.sort((a,b)=> (a[1].date||"").localeCompare(b[1].date||""));   // 날짜순
+    arr.sort((a,b)=> (a[1].date||"").localeCompare(b[1].date||""));
   } else {
-    arr.sort((a,b)=> (a[1].createdAt||0) - (b[1].createdAt||0));      // 입력순
+    arr.sort((a,b)=> (a[1].createdAt||0)-(b[1].createdAt||0));
   }
 
-  // 누적
-  let bal = 0, totalIn=0, totalOut=0;
+  // ----- 2) 합계는 필터된 행 기준, 잔액은 원장 기준 -----
+  let totalIn = 0, totalOut = 0;
+  arr.forEach(([_,r])=>{
+    totalIn  += toNum(r.income);
+    totalOut += toNum(r.expense);
+  });
+  el("sumIn").textContent  = comma(totalIn);
+  el("sumOut").textContent = comma(totalOut);
+
+  // ✅ 현재잔액은 마지막 행의 “원장 기준” 잔액
+  const lastKey = arr.length ? arr[arr.length-1][0] : null;
+  el("sumBal").textContent = lastKey ? comma(globalBalByKey[lastKey]) : "0";
+
+  // ----- 3) 행 출력 -----
   let rowsHTML = "";
   arr.forEach(([key,r])=>{
     const inc = toNum(r.income);
     const exp = toNum(r.expense);
-    totalIn += inc; totalOut += exp;
-    bal += inc - exp;
+    const showBal = globalBalByKey[key] || 0;   // ✅ 필터가 있어도 원장 기준 잔액
 
     rowsHTML += `
       <tr>
         <td><div class="cell dateCell" contenteditable="true"
-             onblur="saveCell('${key}','date',this.innerText)">${displayDate(r.date)}</div></td>
+          onblur="saveCell('${key}','date',this.innerText)">${displayDate(r.date)}</div></td>
+
         <td><div class="cell descCell" contenteditable="true"
-             onblur="saveCell('${key}','desc',this.innerText)">${r.desc||""}</div></td>
+          onblur="saveCell('${key}','desc',this.innerText)">${r.desc||""}</div></td>
+
         <td><div class="cell numCell" contenteditable="true"
-             onblur="saveCell('${key}','income',this.innerText)">${comma(inc)}</div></td>
+          onblur="saveCell('${key}','income',this.innerText)">${comma(inc)}</div></td>
+
         <td><div class="cell numCell" contenteditable="true"
-             onblur="saveCell('${key}','expense',this.innerText)">${comma(exp)}</div></td>
-        <td><div class="cell numCell">${comma(bal)}</div></td>
+          onblur="saveCell('${key}','expense',this.innerText)">${comma(exp)}</div></td>
+
+        <td><div class="cell numCell">${comma(showBal)}</div></td>
+
         <td style="text-align:center;">
           <button class="delBtnSmall" onclick="deleteRow('${key}')">X</button>
         </td>
@@ -376,20 +414,31 @@ function render(forceTop){
   });
   el("ledger-body").innerHTML = rowsHTML;
 
-  // 요약
-  el("sumIn").textContent  = comma(totalIn);
-  el("sumOut").textContent = comma(totalOut);
-  el("sumBal").textContent = comma(bal);
+  // ----- 4) 연/월 select 값 유지 -----
+  const prevY = el("yearFilter").value;
+  const prevM = el("monthFilter").value;
 
-  // 필터 옵션 (원본 전체 기준)
   const allVals = Object.values(ledger);
   const years  = [...new Set(allVals.map(r=>(r.date||"").slice(0,4)).filter(Boolean))].sort();
   const months = [...new Set(allVals.map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort();
-  el("yearFilter").innerHTML  = `<option value="">전체 연도</option>` + years.map(v=>`<option value="${v}">${v}</option>`).join("");
-  el("monthFilter").innerHTML = `<option value="">전체 월</option>`   + months.map(v=>`<option value="${v}">${v}</option>`).join("");
 
-  if(forceTop){ window.scrollTo({top:0, behavior:'instant'}); }
+  el("yearFilter").innerHTML =
+    `<option value="">전체 연도</option>` +
+    years.map(v=>`<option value="${v}">${v}</option>`).join("");
+
+  el("monthFilter").innerHTML =
+    `<option value="">전체 월</option>` +
+    months.map(v=>`<option value="${v}">${v}</option>`).join("");
+
+  // ✅ 선택값 복구
+  if(prevY && years.includes(prevY)) el("yearFilter").value = prevY;
+  if(prevM && months.includes(prevM)) el("monthFilter").value = prevM;
+
+  if(forceTop){
+    window.scrollTo({top:0, behavior:'instant'});
+  }
 }
+
 
 /* ======================
       ✅ 엑셀 붙여넣기
@@ -458,6 +507,14 @@ function saveImage(){
 
 /* 초기 렌더 */
 render();
+
+function resetView(){
+  sortMode = false;               // 정렬 해제
+  el("search").value = "";        // 검색 초기화
+  el("yearFilter").value = "";    // 연도 초기화
+  el("monthFilter").value = "";   // 월 초기화
+  render(true);
+}
 </script>
 </body>
 </html>
