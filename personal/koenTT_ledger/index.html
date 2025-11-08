@@ -153,28 +153,32 @@ tfoot td{ background:#f7fbff; }
 
 <header>KOEN TT Ledger</header>
 
+<!-- SUMMARY -->
 <div class="summary">
   <div class="card">총입금<br><span id="sumIn">0</span></div>
   <div class="card">총출금<br><span id="sumOut">0</span></div>
   <div class="card">현재잔액<br><span id="sumBal">0</span></div>
 </div>
 
-<div class="controls">
-  <input id="search" placeholder="검색" oninput="render()">
+<!-- CONTROLS -->
+<div class="controls" id="controls">
+  <input id="search" placeholder="검색 (내역/금액/날짜)" oninput="render()">
   <select id="yearFilter" onchange="render()"><option value="">전체 연도</option></select>
   <select id="monthFilter" onchange="render()"><option value="">전체 월</option></select>
-  <button class="gray" onclick="sortByDate()">정렬</button>
-  <button class="green" onclick="downloadExcel()">엑셀</button>
-  <button class="green" onclick="saveImage()">이미지</button>
-  <button class="red" onclick="deleteAll()">삭제</button>
+  <button class="gray" onclick="sortByDate()">정렬(일자↑)</button>
+  <button class="green" onclick="downloadExcel()">엑셀 다운로드</button>
+  <button class="green" onclick="saveImage()">이미지 저장</button>
+  <button class="red" onclick="deleteAll()">전체 삭제</button>
 </div>
 
-<div class="paste">
-  <textarea id="pasteArea" placeholder="엑셀에서 복사 → 여기에 붙여넣기"></textarea>
-  <button class="blue" onclick="pasteExcel()">적용</button>
+<!-- PASTE -->
+<div class="paste" id="pasteBox">
+  <textarea id="pasteArea" placeholder="엑셀에서 복사 → 여기에 붙여넣기 (열: 일자, 내역, 입금, 출금)"></textarea>
+  <button class="blue" onclick="pasteExcel()">붙여넣기 적용</button>
 </div>
 
-<div class="wrap">
+<!-- TABLE WRAP (scroll container) -->
+<div class="wrap" id="wrap">
   <table id="ledgerTable">
     <thead>
       <tr>
@@ -187,18 +191,18 @@ tfoot td{ background:#f7fbff; }
       </tr>
     </thead>
     <tbody id="ledger-body"></tbody>
-
     <tfoot>
       <tr>
-        <td><input id="in-date" class="addInput"></td>
-        <td><input id="in-desc" class="addInput"></td>
-        <td><input id="in-income" class="addInput"></td>
-        <td><input id="in-expense" class="addInput"></td>
+        <td><input id="in-date" class="addInput" placeholder="(미입력 시 오늘)"></td>
+        <td><input id="in-desc" class="addInput" placeholder="내역"></td>
+        <td><input id="in-income" class="addInput" placeholder="0"></td>
+        <td><input id="in-expense" class="addInput" placeholder="0"></td>
         <td colspan="2"><button class="blue" onclick="addRow()">추가</button></td>
       </tr>
     </tfoot>
   </table>
 </div>
+
 
 <script>
 /* ======================
@@ -218,10 +222,10 @@ const db = firebase.database();
 /* ======================
       ✅ GLOBAL
 ====================== */
-let ledger = {};   // key 기반 (Firebase 구조)
+let ledger = {};   // { key: {date,desc,income,expense} }
 
 /* ======================
-      ✅ FORMATTERS
+      ✅ UTILS
 ====================== */
 const el = id => document.getElementById(id);
 const toNum = v => Number(String(v||0).replace(/[^\d.-]/g,""));
@@ -229,51 +233,51 @@ const comma = n => toNum(n).toLocaleString();
 
 function normalizeDate(v){
   if(!v) return "";
+  v = String(v).trim();
+  // 24.12.25 형식
+  if(/^\d{2}\.\d{2}\.\d{2}$/.test(v)){
+    const [yy,mm,dd] = v.split(".");
+    return `20${yy}-${mm}-${dd}`;
+  }
+  // 숫자만
   v = v.replace(/[^\d]/g,"");
   if(v.length===6) return `20${v.slice(0,2)}-${v.slice(2,4)}-${v.slice(4,6)}`;
   if(v.length===8) return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;
+  // 이미 YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   return "";
 }
 function displayDate(d){
   if(!d) return "";
-  const [y,m,dd]=d.split("-");
+  const [y,m,dd] = d.split("-");
   return `${y.slice(2)}.${m}.${dd}`;
 }
 
 /* ======================
-      ✅ Firebase 실시간 읽기
+      ✅ Firebase 실시간
 ====================== */
 db.ref("ledger").on("value", snap=>{
-  const val = snap.val() || {};
-  ledger = val;
+  ledger = snap.val() || {};
   render();
 });
 
 /* ======================
-      ✅ Firebase 저장 (단일)
+      ✅ DB helpers
 ====================== */
 function saveToDB(key, row){
-  db.ref("ledger/"+key).set(row);
+  return db.ref("ledger/"+key).set(row);
 }
-
-/* ======================
-      ✅ 삭제
-====================== */
 function deleteRow(key){
   if(!confirm("삭제할까요?")) return;
   db.ref("ledger/"+key).remove();
 }
-
-/* ======================
-      ✅ 전체 삭제
-====================== */
 function deleteAll(){
   if(!confirm("전체 삭제?")) return;
   db.ref("ledger").remove();
 }
 
 /* ======================
-      ✅ 추가
+      ✅ 추가/수정
 ====================== */
 function addRow(){
   let date = el("in-date").value.trim();
@@ -283,28 +287,25 @@ function addRow(){
   } else {
     date = normalizeDate(date);
   }
-
   const row = {
     date,
     desc: el("in-desc").value.trim(),
     income: toNum(el("in-income").value),
     expense: toNum(el("in-expense").value)
   };
+  if(!row.desc){ alert("내역을 입력하세요."); return; }
 
-  const key = Date.now(); // 고유 키
-  saveToDB(key, row);
+  // push 키로 충돌 방지
+  db.ref("ledger").push(row);
 
-  el("in-date").value="";
-  el("in-desc").value="";
-  el("in-income").value="";
-  el("in-expense").value="";
+  // 초기화
+  el("in-date").value = "";
+  el("in-desc").value = "";
+  el("in-income").value = "";
+  el("in-expense").value = "";
 }
-
-/* ======================
-      ✅ 셀 수정 저장
-====================== */
 function saveCell(key, field, value){
-  let patch={};
+  const patch = {};
   if(field==="date") patch.date = normalizeDate(value);
   else if(field==="income") patch.income = toNum(value);
   else if(field==="expense") patch.expense = toNum(value);
@@ -313,88 +314,83 @@ function saveCell(key, field, value){
 }
 
 /* ======================
-      ✅ 정렬
+      ✅ 정렬(화면상)
 ====================== */
 function sortByDate(){
-  ledger = Object.fromEntries(
-    Object.entries(ledger).sort((a,b)=>a[1].date.localeCompare(b[1].date))
-  );
-  render();
+  // 렌더에서 정렬하므로 여기선 단순 재렌더
+  render(true);
 }
 
 /* ======================
-      ✅ 계산 + 렌더링
+      ✅ 렌더 + 합계
 ====================== */
-function render(){
+function render(forceTop){
   let arr = Object.entries(ledger);
 
-  // 검색 필터
+  // 검색
   const q = el("search").value.trim().toLowerCase();
   if(q){
     arr = arr.filter(([k,r])=>{
-      return `${displayDate(r.date)} ${r.desc} ${r.income} ${r.expense}`
+      return `${displayDate(r.date)} ${r.desc||""} ${r.income||0} ${r.expense||0}`
         .toLowerCase().includes(q);
     });
   }
-
-  // 월/연도 필터
+  // 필터
   const y = el("yearFilter").value;
   const m = el("monthFilter").value;
-  if(y) arr = arr.filter(([k,r])=>r.date.startsWith(y));
-  if(m) arr = arr.filter(([k,r])=>r.date.startsWith(m));
+  if(y) arr = arr.filter(([k,r])=> (r.date||"").startsWith(y));
+  if(m) arr = arr.filter(([k,r])=> (r.date||"").startsWith(m));
 
-  // 누적 잔액 계산
-  arr.sort((a,b)=>a[1].date.localeCompare(b[1].date));
-  let bal = 0;
+  // 정렬
+  arr.sort((a,b)=> (a[1].date||"").localeCompare(b[1].date||""));
 
-  let rowsHTML="";
-  let totalIn=0, totalOut=0;
+  // 누적
+  let bal = 0, totalIn=0, totalOut=0;
+  let rowsHTML = "";
 
   arr.forEach(([key,r])=>{
     const inc = toNum(r.income);
     const exp = toNum(r.expense);
-    totalIn+=inc; totalOut+=exp;
+    totalIn += inc; totalOut += exp;
     bal += inc - exp;
 
     rowsHTML += `
-  <tr>
-    <td><div class="cell dateCell" contenteditable="true"
-         onblur="saveCell('${key}','date',this.innerText)">${displayDate(r.date)}</div></td>
-
-    <td><div class="cell descCell" contenteditable="true"
-         onblur="saveCell('${key}','desc',this.innerText)">${r.desc}</div></td>
-
-    <td><div class="cell numCell" contenteditable="true"
-         onblur="saveCell('${key}','income',this.innerText)">${comma(inc)}</div></td>
-
-    <td><div class="cell numCell" contenteditable="true"
-         onblur="saveCell('${key}','expense',this.innerText)">${comma(exp)}</div></td>
-
-    <td><div class="cell numCell">${comma(bal)}</div></td>
-
-    <td style="text-align:center;">
-      <button class="delBtnSmall" onclick="deleteRow('${key}')">X</button>
-    </td>
-  </tr>
-`;
+      <tr>
+        <td><div class="cell dateCell" contenteditable="true"
+             onblur="saveCell('${key}','date',this.innerText)">${displayDate(r.date)}</div></td>
+        <td><div class="cell descCell" contenteditable="true"
+             onblur="saveCell('${key}','desc',this.innerText)">${r.desc||""}</div></td>
+        <td><div class="cell numCell" contenteditable="true"
+             onblur="saveCell('${key}','income',this.innerText)">${comma(inc)}</div></td>
+        <td><div class="cell numCell" contenteditable="true"
+             onblur="saveCell('${key}','expense',this.innerText)">${comma(exp)}</div></td>
+        <td><div class="cell numCell">${comma(bal)}</div></td>
+        <td style="text-align:center;">
+          <button class="delBtnSmall" onclick="deleteRow('${key}')">X</button>
+        </td>
+      </tr>
+    `;
   });
 
-  document.getElementById("ledger-body").innerHTML = rowsHTML;
+  el("ledger-body").innerHTML = rowsHTML;
 
   // 요약
-  el("sumIn").textContent = comma(totalIn);
+  el("sumIn").textContent  = comma(totalIn);
   el("sumOut").textContent = comma(totalOut);
   el("sumBal").textContent = comma(bal);
 
-  // 필터 연도/월
-  const years = [...new Set(arr.map(([k,r])=>r.date.slice(0,4)))];
-  const months = [...new Set(arr.map(([k,r])=>r.date.slice(0,7)))];
+  // 필터 옵션 갱신
+  const years  = [...new Set(Object.values(ledger).map(r=>(r.date||"").slice(0,4)).filter(Boolean))].sort();
+  const months = [...new Set(Object.values(ledger).map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort();
+  el("yearFilter").innerHTML  = `<option value="">전체 연도</option>` + years.map(v=>`<option value="${v}">${v}</option>`).join("");
+  el("monthFilter").innerHTML = `<option value="">전체 월</option>`   + months.map(v=>`<option value="${v}">${v}</option>`).join("");
 
-  el("yearFilter").innerHTML =
-    `<option value="">전체 연도</option>` + years.map(y=>`<option>${y}</option>`).join("");
+  // sticky가 보이는 영역 계산
+  calcWrapHeight();
 
-  el("monthFilter").innerHTML =
-    `<option value="">전체 월</option>` + months.map(m=>`<option>${m}</option>`).join("");
+  if(forceTop){
+    el("wrap").scrollTop = 0;
+  }
 }
 
 /* ======================
@@ -405,10 +401,10 @@ function pasteExcel(){
   if(!text) return alert("붙여넣을 내용이 없습니다.");
 
   const lines = text.split(/\r?\n/);
+  const batch = db.ref("ledger");
 
   lines.forEach(line=>{
     const c = line.split(/\t/);
-
     if(c.length < 2) return;
 
     let date = normalizeDate(c[0] || "");
@@ -416,36 +412,28 @@ function pasteExcel(){
     let income = toNum(c[2] || 0);
     let expense = toNum(c[3] || 0);
 
-    // ✅ desc 없어도 강제 저장
     if(!desc) desc = "(내용 없음)";
-
-    // ✅ 날짜 없으면 오늘 날짜
     if(!date){
       const t = new Date();
       date = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
     }
-
-    const row = { date, desc, income, expense };
-
-    // ✅ push로 key 충돌 없이 저장
-    db.ref("ledger").push(row);
+    batch.push({ date, desc, income, expense });
   });
 
   el("pasteArea").value = "";
 }
 
-
 /* ======================
       ✅ 엑셀 다운로드
 ====================== */
 function downloadExcel(){
-  const arr = Object.entries(ledger).sort((a,b)=>a[1].date.localeCompare(b[1].date));
-  let bal=0;
+  const arr = Object.entries(ledger).sort((a,b)=> (a[1].date||"").localeCompare(b[1].date||""));
+  let bal = 0;
   const rows = arr.map(([k,r])=>{
     bal += toNum(r.income) - toNum(r.expense);
     return {
       일자: displayDate(r.date),
-      내역: r.desc,
+      내역: r.desc || "",
       입금: toNum(r.income),
       출금: toNum(r.expense),
       잔액: bal
@@ -453,8 +441,8 @@ function downloadExcel(){
   });
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb,ws,"ledger");
-  XLSX.writeFile(wb,"ledger.xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, "ledger");
+  XLSX.writeFile(wb, "ledger.xlsx");
 }
 
 /* ======================
@@ -470,6 +458,36 @@ function saveImage(){
     a.click();
   });
 }
+
+/* ======================
+      ✅ 자동 wrap 높이 계산
+====================== */
+function calcWrapHeight(){
+  const header = document.querySelector("header");
+  const summary = document.querySelector(".summary");
+  const controls = document.getElementById("controls");
+  const pasteBox = document.getElementById("pasteBox");
+  const wrap = document.getElementById("wrap");
+
+  const h = header?.getBoundingClientRect().height || 0;
+  const s = summary?.getBoundingClientRect().height || 0;
+  const c = controls?.getBoundingClientRect().height || 0;
+  const p = pasteBox?.getBoundingClientRect().height || 0;
+
+  const gap = 20; // 여유
+  const avail = Math.max(200, window.innerHeight - (h + s + c + p + gap));
+  wrap.style.maxHeight = avail + "px";
+  wrap.style.height = avail + "px"; // 강제 높이
+}
+
+// 초기/리사이즈/회전 대응
+window.addEventListener("load", calcWrapHeight);
+window.addEventListener("resize", calcWrapHeight);
+window.addEventListener("orientationchange", calcWrapHeight);
+document.addEventListener("visibilitychange", calcWrapHeight);
+
+// 첫 렌더 트리거
+render();
 </script>
 
 </body>
