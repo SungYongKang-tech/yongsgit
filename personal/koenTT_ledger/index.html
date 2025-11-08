@@ -5,63 +5,32 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>koenTT_ledger</title>
 
-<style>
-  body {
-    margin:0; background:#f5f7fb;
-    font-family:"Pretendard","Noto Sans KR",sans-serif;
-    color:#0f172a;
-  }
-  header {
-    background:#fff; padding:16px; 
-    font-size:20px; font-weight:700;
-    text-align:center;
-    border-bottom:1px solid #e5e7eb;
-    position:sticky; top:0; z-index:10;
-  }
-  .input-box {
-    padding:12px; background:#fff;
-    display:flex; gap:8px; flex-direction:column;
-    border-bottom:1px solid #e5e7eb;
-  }
-  .input-box input {
-    width:100%; padding:12px;
-    font-size:15px;
-    border:1px solid #d1d5db;
-    border-radius:8px;
-  }
-  .add-btn {
-    width:100%;
-    background:#2563eb; color:white;
-    padding:12px; font-size:16px;
-    border:none; border-radius:8px;
-    font-weight:600; margin-top:4px;
-  }
+<!-- ✅ XLSX 라이브러리 (Excel 내보내기용) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
+<style>
+  body { margin:0; background:#f5f7fb; font-family:"Pretendard","Noto Sans KR",sans-serif; }
+  header { background:#fff; padding:16px; font-size:20px; font-weight:700; text-align:center; border-bottom:1px solid #e5e7eb; }
+  
+  .input-box, .paste-box {
+    padding:12px; background:#fff; border-bottom:1px solid #e5e7eb; display:flex; flex-direction:column; gap:8px;
+  }
+  input, textarea {
+    width:100%; padding:12px; font-size:15px; border:1px solid #d1d5db; border-radius:8px;
+  }
+  button {
+    padding:12px; border:none; border-radius:8px; font-size:16px; font-weight:600;
+  }
+  .add-btn { background:#2563eb; color:#fff; }
+  .excel-btn { background:#059669; color:#fff; }
   .table-wrapper { padding:12px; }
   table {
-    width:100%; border-collapse:collapse;
-    background:#fff; border-radius:12px;
-    overflow:hidden;
+    width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden;
     box-shadow:0 4px 16px rgba(0,0,0,0.06);
   }
-  th, td {
-    padding:12px 6px;
-    text-align:center;
-    border-bottom:1px solid #f1f5f9;
-    font-size:14px;
-  }
-  td input {
-    width:95%; padding:6px;
-    border:1px solid #d1d5db;
-    border-radius:6px;
-    font-size:14px;
-    text-align:center;
-  }
-  .del-btn {
-    background:#ef4444; color:white;
-    border:none; border-radius:6px;
-    padding:6px 8px; font-size:12px;
-  }
+  th, td { padding:10px 6px; text-align:center; font-size:14px; border-bottom:1px solid #f1f5f9; }
+  td input { width:90%; padding:6px; text-align:center; font-size:14px; }
+  .del-btn { background:#ef4444; color:white; border:none; border-radius:6px; padding:6px 8px; font-size:12px; }
 </style>
 </head>
 
@@ -69,7 +38,14 @@
 
 <header>koenTT_ledger</header>
 
-<!-- ✅ 입력 영역 -->
+<!-- ✅ 엑셀 붙여넣기 영역 -->
+<div class="paste-box">
+  <textarea id="pasteArea" rows="3" placeholder="엑셀에서 복사한 내용을 여기에 붙여넣기"></textarea>
+  <button class="add-btn" onclick="pasteExcel()">붙여넣기 적용</button>
+  <button class="excel-btn" onclick="downloadExcel()">엑셀로 저장</button>
+</div>
+
+<!-- ✅ 직접 입력 영역 -->
 <div class="input-box">
   <input type="text" id="desc" placeholder="내역 입력">
   <input type="number" id="income" placeholder="입금 금액">
@@ -81,12 +57,7 @@
   <table>
     <thead>
       <tr>
-        <th>일자</th>
-        <th>내역</th>
-        <th>입금</th>
-        <th>출금</th>
-        <th>잔액</th>
-        <th></th>
+        <th>일자</th><th>내역</th><th>입금</th><th>출금</th><th>잔액</th><th></th>
       </tr>
     </thead>
     <tbody id="ledger-body"></tbody>
@@ -96,70 +67,92 @@
 <script>
   let ledger = JSON.parse(localStorage.getItem("koenTT_ledger") || "[]");
 
-  function save() {
-    localStorage.setItem("koenTT_ledger", JSON.stringify(ledger));
+  function save(){ localStorage.setItem("koenTT_ledger", JSON.stringify(ledger)); }
+
+  function today(){
+    const d = new Date();
+    return d.toISOString().slice(0,10);
   }
 
-  function render() {
+  function addRow(){
+    const desc = desc.value.trim();
+    const income = Number(document.getElementById("income").value || 0);
+    const expense = Number(document.getElementById("expense").value || 0);
+
+    if(!desc){ alert("내역을 입력하세요."); return; }
+
+    ledger.push({ date: today(), desc, income, expense });
+    desc.value = ""; income.value=""; expense.value = "";
+    render();
+  }
+
+  function edit(i, field, value){ ledger[i][field] = value; render(); }
+  function removeRow(i){ ledger.splice(i,1); render(); }
+
+  function render(){
     const body = document.getElementById("ledger-body");
     body.innerHTML = "";
-
     let balance = 0;
 
-    ledger.forEach((row, index) => {
-      balance += (Number(row.income) - Number(row.expense));
-      row.balance = balance;
+    ledger.forEach((r,i)=>{
+      balance += (Number(r.income) - Number(r.expense));
+      r.balance = balance;
 
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><input type="date" value="${row.date}" onchange="edit(${index}, 'date', this.value)"></td>
-        <td><input value="${row.desc}" onchange="edit(${index}, 'desc', this.value)"></td>
-        <td><input type="number" value="${row.income}" onchange="edit(${index}, 'income', this.value)"></td>
-        <td><input type="number" value="${row.expense}" onchange="edit(${index}, 'expense', this.value)"></td>
+      body.innerHTML += `
+      <tr>
+        <td><input type="text" value="${r.date}" onchange="edit(${i},'date',this.value)"></td>
+        <td><input value="${r.desc}" onchange="edit(${i},'desc',this.value)"></td>
+        <td><input type="number" value="${r.income}" onchange="edit(${i},'income',this.value)"></td>
+        <td><input type="number" value="${r.expense}" onchange="edit(${i},'expense',this.value)"></td>
         <td>${balance.toLocaleString()}</td>
-        <td><button class="del-btn" onclick="removeRow(${index})">삭제</button></td>
-      `;
-      body.appendChild(tr);
+        <td><button class="del-btn" onclick="removeRow(${i})">삭제</button></td>
+      </tr>`;
     });
 
     save();
   }
 
-  function today() {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
-  }
+  // ✅ 엑셀 붙여넣기 파싱
+  function pasteExcel(){
+    const text = pasteArea.value.trim();
+    if(!text){ alert("내용이 비어 있습니다."); return; }
 
-  function addRow() {
-    const desc = document.getElementById("desc").value.trim();
-    const income = Number(document.getElementById("income").value || 0);
-    const expense = Number(document.getElementById("expense").value || 0);
+    const rows = text.split('\n');
 
-    if (!desc) { alert("내역을 입력하세요."); return; }
+    rows.forEach(line=>{
+      const cols = line.split(/\t/);
 
-    ledger.push({
-      date: today(),
-      desc,
-      income,
-      expense,
-      balance: 0
+      if(cols.length < 2) return;
+
+      const date = convertDate(cols[0].trim());
+      const desc = cols[1].trim();
+      const income = cleanNumber(cols[2] || "0");
+      const expense = cleanNumber(cols[3] || "0");
+
+      ledger.push({ date, desc, income, expense });
     });
 
-    document.getElementById("desc").value = "";
-    document.getElementById("income").value = "";
-    document.getElementById("expense").value = "";
-
+    pasteArea.value = "";
     render();
   }
 
-  function edit(index, field, value) {
-    ledger[index][field] = value;
-    render();
+  function cleanNumber(str){ return Number(str.replace(/,/g,"") || 0); }
+
+  // ✅ "14.07.25" → "2014-07-25" 자동 변환
+  function convertDate(str){
+    if(str.includes(".")){
+      const [yy,mm,dd] = str.split(".");
+      return `20${yy}-${mm}-${dd}`;
+    }
+    return str;
   }
 
-  function removeRow(index) {
-    ledger.splice(index, 1);
-    render();
+  // ✅ HTML → Excel 다운로드
+  function downloadExcel(){
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(ledger);
+    XLSX.utils.book_append_sheet(wb, ws, "ledger");
+    XLSX.writeFile(wb, "koenTT_ledger.xlsx");
   }
 
   render();
