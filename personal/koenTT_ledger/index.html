@@ -93,7 +93,7 @@
 
     <tfoot>
       <tr>
-        <td><input id="in-date" placeholder="예: 14.10.24"></td>
+        <td><input id="in-date" placeholder="예: 24.10.24 / 2024-10-24"></td>
         <td><input id="in-desc" placeholder="내역"></td>
         <td><input id="in-income" placeholder="입금"></td>
         <td><input id="in-expense" placeholder="출금"></td>
@@ -111,41 +111,67 @@ const el=id=>document.getElementById(id);
 const toNum=v=>Number(String(v??0).replace(/,/g,'').trim()) || 0;
 const comma=n=>toNum(n).toLocaleString();
 
-/* ✅ 날짜 변환 보정 */
-function normalizeDate(s){
-  s = (s || "").trim();
-  if (s === "") return today();
-
-  const dot=/^(\d{2})\.(\d{2})\.(\d{2})$/;
-  if(dot.test(s)){
-    const[,yy,mm,dd]=s.match(dot);
-    return `20${yy}-${mm}-${dd}`;
-  }
-  return s;
-}
-
+/* ✅ 오늘 날짜 */
 function today(){
   const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+/* ✅ 날짜 입력 → 내부 저장용 YYYY-MM-DD 로 정규화 */
+function normalizeDate(s){
+  s = (s || "").trim();
+  if (s === "") return today();
+
+  // YYYY.MM.DD / YYYY-MM-DD
+  let full = /^(\d{4})[.\-](\d{2})[.\-](\d{2})$/;
+  if (full.test(s)) {
+    let [, y, m, d] = s.match(full);
+    return `${y}-${m}-${d}`;
+  }
+
+  // YY.MM.DD / YY-MM-DD
+  let short = /^(\d{2})[.\-](\d{2})[.\-](\d{2})$/;
+  if (short.test(s)) {
+    let [, yy, m, d] = s.match(short);
+    return `20${yy}-${m}-${d}`;
+  }
+
+  // YYYYMMDD
+  let compact = /^(\d{4})(\d{2})(\d{2})$/;
+  if (compact.test(s)) {
+    let [, y, m, d] = s.match(compact);
+    return `${y}-${m}-${d}`;
+  }
+
+  // YYMMDD
+  let compact2 = /^(\d{2})(\d{2})(\d{2})$/;
+  if (compact2.test(s)) {
+    let [, yy, m, d] = s.match(compact2);
+    return `20${yy}-${m}-${d}`;
+  }
+
+  return today();
+}
+
+/* ✅ 내부 저장 YYYY-MM-DD → 화면 출력 YY.MM.DD */
+function displayDate(d){
+  if (!d) return "";
+  const [y, m, day] = d.split("-");
+  return `${y.slice(2,4)}.${m}.${day}`;
+}
+
+/* ✅ 정렬 */
 function sortByDate(){
   ledger.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
   save();
 }
 
-/* ✅ 전체 누적잔액 계산 (NaN 방지) */
+/* ✅ 전체 누적잔액 계산 */
 function computeFullBalance(){
   let bal = 0;
-
-  ledger.forEach(r => {
-    const inc = toNum(r.income);
-    const exp = toNum(r.expense);
-
-    bal = bal + inc - exp;
-
-    if (isNaN(bal)) bal = 0; // ✅ NaN 방지
-
+  ledger.forEach(r=>{
+    bal += toNum(r.income) - toNum(r.expense);
+    if (isNaN(bal)) bal = 0;
     r.balanceFull = bal;
   });
 }
@@ -292,7 +318,7 @@ function render(){
 
     body.insertAdjacentHTML("beforeend",`
       <tr>
-        <td><input value="${r.date}" onchange="edit(${i},'date',this.value)"></td>
+        <td><input value="${displayDate(r.date)}" onchange="edit(${i},'date',this.value)"></td>
         <td><input value="${r.desc}" onchange="edit(${i},'desc',this.value)"></td>
         <td><input value="${comma(inc)}" onchange="edit(${i},'income',this.value)"></td>
         <td><input value="${comma(exp)}" onchange="edit(${i},'expense',this.value)"></td>
@@ -322,6 +348,7 @@ function render(){
 }
 
 render();
+
 </script>
 
 </body>
