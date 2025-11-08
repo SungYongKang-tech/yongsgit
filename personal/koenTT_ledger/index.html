@@ -70,11 +70,17 @@
   }
 
   .descBox{
-    width:98%; height:42px;
-    padding:6px; font-size:13px;
-    border:1px solid #ddd; border-radius:6px;
-    resize:vertical;
-  }
+  width:98%;
+  min-height:28px;   /* ✅ 기본 1줄 */
+  padding:6px;
+  font-size:13px;
+  border:1px solid #ddd;
+  border-radius:6px;
+  resize:none;       /* ✅ 크기 조절 버튼 제거 */
+  overflow:hidden;   /* ✅ 스크롤바 제거 */
+  line-height:1.3;   /* ✅ 줄 간격 */
+}
+
 
   /* ✅ footer 입력줄 */
   tfoot td{ background:#eef6ff; }
@@ -154,6 +160,13 @@ let ledger = JSON.parse(localStorage.getItem("simpleLedger") || "[]");
 const el = id => document.getElementById(id);
 const toNum = v => Number(String(v||0).replace(/,/g,"").trim());
 const comma = n => toNum(n).toLocaleString();
+
+/* ✅ textarea 자동 높이조절 */
+function autoResize(el){
+  el.style.height = "auto";
+  el.style.height = (el.scrollHeight) + "px";
+}
+
 
 /* ✅ 날짜 정규화 (YY.MM.DD → YYYY-MM-DD) */
 function normalizeDate(raw){
@@ -306,62 +319,65 @@ function matchFilter(r){
 /* ✅ 렌더링 */
 function render(){
   sortByDate();
-  computeBalance();
+  computeFullBalance();
 
-  const body = el("ledger-body");
+  const body = document.getElementById("ledger-body");
   body.innerHTML = "";
 
-  let totalIn=0, totalOut=0;
+  let totalIn = 0, totalOut = 0;
 
   ledger.forEach((r,i)=>{
     if(!matchFilter(r)) return;
-    totalIn += toNum(r.income);
-    totalOut += toNum(r.expense);
 
-    body.insertAdjacentHTML("beforeend",`
+    const inc = toNum(r.income);
+    const exp = toNum(r.expense);
+    totalIn += inc;
+    totalOut += exp;
+
+    body.insertAdjacentHTML("beforeend", `
       <tr>
-        <td>
-          <input class="dateBox" value="${displayDate(r.date)}"
-            onchange="edit(${i},'date',this.value)">
-        </td>
+        <td><input value="${displayDate(r.date)}"
+              onchange="edit(${i},'date',this.value)"></td>
 
         <td>
           <textarea class="descBox"
-            onchange="edit(${i},'desc',this.value)">${r.desc}</textarea>
+            oninput="autoResize(this); edit(${i},'desc',this.value)">${r.desc}</textarea>
         </td>
 
-        <td>
-          <input class="moneyBox" value="${comma(r.income)}"
-            onchange="edit(${i},'income',this.value)">
-        </td>
+        <td><input value="${comma(inc)}"
+              onchange="edit(${i},'income',this.value)"></td>
 
-        <td>
-          <input class="moneyBox" value="${comma(r.expense)}"
-            onchange="edit(${i},'expense',this.value)">
-        </td>
+        <td><input value="${comma(exp)}"
+              onchange="edit(${i},'expense',this.value)"></td>
 
-        <td style="padding-top:12px;">${comma(r.balance)}</td>
-
-        <td><button class="delBtn" onclick="removeRow(${i})">X</button></td>
+        <td>${comma(r.balanceFull)}</td>
+        <td><button class="del" onclick="removeRow(${i})">삭제</button></td>
       </tr>
     `);
   });
 
-  el("sumIn").textContent = comma(totalIn);
-  el("sumOut").textContent = comma(totalOut);
-  el("sumBal").textContent = comma( ledger.length ? ledger[ledger.length-1].balance : 0 );
+  /* ✅ 새로 그려진 모든 descBox 높이 자동 맞춤 — 여기 위치가 정답! */
+  setTimeout(()=>{
+    document.querySelectorAll(".descBox").forEach(t=>autoResize(t));
+  }, 0);
 
-  /* ✅ 연 월 자동 생성 */
-  const years=[...new Set(ledger.map(r=>r.date.slice(0,4)))];
-  el("yearFilter").innerHTML="<option value=''>전체 연도</option>"+
-    years.map(y=>`<option value="${y}">${y}</option>`).join("");
+  // 이하 합계/필터/저장 갱신
+  document.getElementById("sumIn").textContent  = comma(totalIn);
+  document.getElementById("sumOut").textContent = comma(totalOut);
+  document.getElementById("sumBal").textContent = comma(
+    ledger.length ? ledger[ledger.length-1].balanceFull : 0
+  );
 
-  const months=[...new Set(ledger.map(r=>r.date.slice(0,7)))];
-  el("monthFilter").innerHTML="<option value=''>전체 월</option>"+
-    months.map(m=>`<option value="${m}">${m}</option>`).join("");
+  const years  = [...new Set(ledger.map(r=>r.date.slice(0,4)))];
+  const months = [...new Set(ledger.map(r=>r.date.slice(0,7)))];
+  document.getElementById("yearFilter").innerHTML =
+    `<option value="">전체 연도</option>` + years.map(y=>`<option value="${y}">${y}</option>`).join("");
+  document.getElementById("monthFilter").innerHTML =
+    `<option value="">전체 월</option>` + months.map(m=>`<option value="${m}">${m}</option>`).join("");
 
   save();
 }
+
 
 /* ✅ 저장 */
 function save(){
