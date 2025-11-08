@@ -5,63 +5,42 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>koenTT_ledger</title>
 
-<!-- ✅ Excel 다운로드 라이브러리 -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-  body { margin:0; background:#f5f7fb; font-family:"Pretendard","Noto Sans KR",sans-serif; }
+  body{margin:0;background:#f5f7fb;font-family:"Pretendard","Noto Sans KR",sans-serif;}
+  header{background:white;padding:16px;font-size:20px;font-weight:700;text-align:center;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;}
 
-  header {
-    background:white; padding:16px; font-size:20px; font-weight:700;
-    text-align:center; border-bottom:1px solid #eee;
-    position:sticky; top:0; z-index:10;
-  }
-
-  /* ✅ 상단 요약 카드 */
-  .summary {
-    display:flex; gap:10px; padding:10px; flex-wrap:wrap;
-  }
-  .sum-card {
-    flex:1; min-width:120px; padding:14px; background:white;
-    border-radius:10px; border:1px solid #e5e7eb; text-align:center;
-    font-weight:700; font-size:14px;
+  .summary{display:flex;gap:10px;padding:10px;flex-wrap:wrap;}
+  .sum-card{
+    flex:1;min-width:120px;padding:14px;background:white;
+    border-radius:10px;border:1px solid #e5e7eb;text-align:center;
+    font-weight:700;font-size:14px;
   }
 
-  /* ✅ 기능 버튼 */
-  .controls { padding:10px; display:flex; gap:8px; flex-wrap:wrap; }
-  .controls input, .controls select {
-    padding:10px; font-size:14px; border:1px solid #ccc; border-radius:8px; flex:1;
+  .controls{padding:10px;display:flex;gap:8px;flex-wrap:wrap;}
+  .controls input,.controls select{
+    padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px;flex:1;
   }
-  .controls button {
-    padding:10px 16px; border:none; border-radius:8px;
-    font-size:14px; font-weight:600; cursor:pointer;
+  .controls button{
+    padding:10px 14px;border:none;border-radius:8px;
+    font-size:14px;font-weight:600;cursor:pointer;
   }
-  .btn-green { background:#059669; color:white; }
-  .btn-blue { background:#2563eb; color:white; }
-  .btn-gray { background:#6b7280; color:white; }
+  .btn-blue{background:#2563eb;color:white;}
+  .btn-green{background:#059669;color:white;}
+  .btn-gray{background:#6b7280;color:white;}
 
-  /* ✅ 테이블 */
-  .wrap { padding:10px; }
-  table {
-    width:100%; border-collapse:collapse;
-    background:white; border-radius:12px; overflow:hidden;
-    box-shadow:0 2px 12px rgba(0,0,0,0.05);
+  .wrap{padding:10px;}
+  table{
+    width:100%;border-collapse:collapse;background:white;border-radius:12px;
+    overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.05);
   }
-  th,td {
-    padding:10px 6px; text-align:center; border-bottom:1px solid #f1f5f9;
-    font-size:14px;
+  th,td{
+    padding:10px 6px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:14px;
   }
-  td input {
-    width:90%; padding:6px; font-size:14px; text-align:center;
-    border:1px solid #ddd; border-radius:6px;
-  }
-  .del {
-    background:#ef4444; color:white; border:none; border-radius:6px;
-    padding:6px 8px; font-size:12px;
-  }
-
-  /* ✅ 입력줄 */
-  tfoot td { background:#f0f9ff; }
+  td input{width:90%;padding:6px;font-size:14px;text-align:center;border:1px solid #ddd;border-radius:6px;}
+  .del{background:#ef4444;color:white;border:none;border-radius:6px;padding:6px 8px;font-size:12px;}
+  tfoot td{background:#f0f9ff;}
 </style>
 </head>
 
@@ -76,12 +55,23 @@
   <div class="sum-card">현재잔액<br><span id="sumBal">0</span></div>
 </div>
 
-<!-- ✅ 기능 버튼 모음 -->
+<!-- ✅ 기능 버튼 -->
 <div class="controls">
   <input type="text" id="search" placeholder="검색: 날짜/내역/금액" oninput="render()">
+
+  <!-- ✅ 연도 필터 -->
+  <select id="yearFilter" onchange="render()">
+    <option value="">전체 연도</option>
+  </select>
+
+  <!-- ✅ 월 필터 -->
   <select id="monthFilter" onchange="render()">
     <option value="">전체 월</option>
   </select>
+
+  <!-- ✅ 전체 월 정렬 버튼 -->
+  <button class="btn-gray" onclick="sortByDate(); render();">전체 월 Sort</button>
+
   <button class="btn-blue" onclick="toggleHidden()">숨김/표시</button>
   <button class="btn-green" onclick="downloadExcel()">엑셀 다운로드</button>
 </div>
@@ -102,16 +92,14 @@
     </thead>
     <tbody id="ledger-body"></tbody>
 
-    <!-- ✅ 입력 줄 (맨 아래) -->
+    <!-- ✅ 입력줄 -->
     <tfoot>
       <tr>
         <td><input id="in-date" placeholder="예: 14.10.24"></td>
         <td><input id="in-desc" placeholder="내역"></td>
         <td><input id="in-income" placeholder="입금"></td>
         <td><input id="in-expense" placeholder="출금"></td>
-        <td colspan="2">
-          <button class="btn-blue" onclick="addRow()">추가</button>
-        </td>
+        <td colspan="2"><button class="btn-blue" onclick="addRow()">추가</button></td>
       </tr>
     </tfoot>
   </table>
@@ -126,9 +114,7 @@
   const toNum = v => Number(String(v ?? 0).replace(/,/g,'').trim() || 0);
   const comma = n => toNum(n).toLocaleString();
 
-  function save(){
-    localStorage.setItem("koenTT_ledger", JSON.stringify(ledger));
-  }
+  function save(){ localStorage.setItem("koenTT_ledger", JSON.stringify(ledger)); }
 
   /* ✅ 날짜 변환 */
   function normalizeDate(s){
@@ -146,9 +132,7 @@
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   }
 
-  function sortByDate(){
-    ledger.sort((a,b) => (a.date||"").localeCompare(b.date||""));
-  }
+  function sortByDate(){ ledger.sort((a,b)=>(a.date||"").localeCompare(b.date||"")); }
 
   /* ✅ 행 추가 */
   function addRow(){
@@ -156,60 +140,42 @@
     const desc = el("in-desc").value.trim();
     const income = toNum(el("in-income").value);
     const expense = toNum(el("in-expense").value);
-
     if(!desc){ alert("내역을 입력하세요"); return; }
 
     ledger.push({date:d, desc, income, expense});
-    el("in-date").value = "";
-    el("in-desc").value = "";
-    el("in-income").value = "";
-    el("in-expense").value = "";
+    el("in-date").value = el("in-desc").value = el("in-income").value = el("in-expense").value = "";
     render();
   }
 
   function edit(i, field, value){
-    if(field==="income" || field==="expense"){
-      ledger[i][field] = toNum(value);
-    } else if(field==="date"){
-      ledger[i].date = normalizeDate(value);
-    } else {
-      ledger[i][field] = value;
-    }
+    if(field==="income" || field==="expense") ledger[i][field] = toNum(value);
+    else if(field==="date") ledger[i].date = normalizeDate(value);
+    else ledger[i][field] = value;
     render();
   }
 
-  function removeRow(i){
-    ledger.splice(i,1);
-    render();
-  }
+  function removeRow(i){ ledger.splice(i,1); render(); }
 
-  /* ✅ 검색 + 월 필터 */
+  /* ✅ 검색 + 연도/월 필터 */
   function matchFilter(r){
     const q = el("search").value.trim();
+    const y = el("yearFilter").value;
     const m = el("monthFilter").value;
 
-    if(m){
-      if(!r.date.startsWith(m)) return false;
-    }
+    if(y && !r.date.startsWith(y)) return false;
+    if(m && !r.date.startsWith(m)) return false;
 
     if(q){
       const t = `${r.date} ${r.desc} ${r.income} ${r.expense}`;
       if(!t.includes(q)) return false;
     }
-
     return true;
-  }
-
-  /* ✅ 숨김/표시 */
-  function toggleHidden(){
-    hiddenMode = !hiddenMode;
-    render();
   }
 
   /* ✅ 엑셀 붙여넣기 */
   function pasteExcel(){
     const text = el("pasteArea").value.trim();
-    if(!text){ alert("내용이 비었습니다"); return; }
+    if(!text){ alert("내용이 없습니다"); return; }
 
     const lines = text.split(/\r?\n/);
     lines.forEach(line=>{
@@ -244,27 +210,23 @@
     XLSX.writeFile(wb,"koenTT_ledger.xlsx");
   }
 
-  /* ✅ 화면 표시 */
+  /* ✅ 전체 출력 */
   function render(){
     sortByDate();
 
     let body = el("ledger-body");
     body.innerHTML = "";
 
-    let bal=0, totalIn=0, totalOut=0;
+    let bal=0, totalIn=0,totalOut=0;
 
     ledger.forEach((r,i)=>{
       if(!matchFilter(r)) return;
-      if(hiddenMode && r.hidden) return;
 
-      const inc = toNum(r.income);
-      const exp = toNum(r.expense);
+      const inc=toNum(r.income), exp=toNum(r.expense);
+      totalIn+=inc; totalOut+=exp;
+      bal+=inc-exp; r.balance = bal;
 
-      totalIn += inc;
-      totalOut += exp;
-      bal += inc - exp; r.balance = bal;
-
-      body.insertAdjacentHTML("beforeend", `
+      body.insertAdjacentHTML("beforeend",`
         <tr>
           <td><input value="${r.date}" onchange="edit(${i},'date',this.value)"></td>
           <td><input value="${r.desc}" onchange="edit(${i},'desc',this.value)"></td>
@@ -280,8 +242,14 @@
     el("sumOut").textContent = comma(totalOut);
     el("sumBal").textContent = comma(bal);
 
-    /* ✅ 월 필터 목록 자동 생성 */
-    let months = [...new Set(ledger.map(r=>r.date.slice(0,7)).filter(Boolean))];
+    /* ✅ 연도 필터 자동 생성 */
+    const years = [...new Set(ledger.map(r=>r.date.slice(0,4)))].filter(y=>y);
+    el("yearFilter").innerHTML =
+      `<option value="">전체 연도</option>` +
+      years.map(y=>`<option value="${y}">${y}</option>`).join("");
+
+    /* ✅ 월 필터 자동 생성 */
+    const months = [...new Set(ledger.map(r=>r.date.slice(0,7)))].filter(m=>m);
     el("monthFilter").innerHTML =
       `<option value="">전체 월</option>` +
       months.map(m=>`<option value="${m}">${m}</option>`).join("");
