@@ -425,26 +425,46 @@ onValue(matchRef,snap=>{
 });
 
 function renderLogs(arr){
-  const logs=$("#logs"); logs.innerHTML="";
-  if(!arr.length){logs.innerHTML='<div style="text-align:center;color:#999">최근 경기 없음</div>';return;}
-  arr.forEach(m=>{
-    const d=new Date(m.createdAt);
-    const kst=new Date(d.toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
-    const time=`${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')} ${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
-    const winA=m.winnerSide==='A';
-    const a=m.namesA.join('/');
-    const b=m.namesB.join('/');
-    logs.insertAdjacentHTML('beforeend',`
-    <div class="log-item">
-      <span class="log-time">${time} [${m.mode==='double'?'복식':'단식'}]</span>
-      <div class="log-match">
-        <span class="${winA?'log-win':''}">${a}</span> vs 
-        <span class="${!winA?'log-win':''}">${b}</span> (승)
+  const logs = $("#logs"); 
+  logs.innerHTML = "";
+
+  if (!arr.length) {
+    logs.innerHTML = '<div style="text-align:center;color:#999">최근 경기 없음</div>';
+    return;
+  }
+
+  arr.forEach(m => {
+    const d = new Date(m.createdAt);
+    const kst = new Date(d.toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
+    const time =
+      `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')} ` +
+      `${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
+
+    const winA = m.winnerSide === 'A';
+    const a = m.namesA.join('/');
+    const b = m.namesB.join('/');
+
+    // ✅ 승자 뒤에만 (승) / (승)은 빨간색 + bold
+    const aHtml = winA
+      ? `<span class="log-win">${a} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+      : `<span>${a}</span>`;
+
+    const bHtml = !winA
+      ? `<span class="log-win">${b} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+      : `<span>${b}</span>`;
+
+    logs.insertAdjacentHTML("beforeend", `
+      <div class="log-item">
+        <span class="log-time">${time} [${m.mode==='double' ? '복식' : '단식'}]</span>
+        <div class="log-match">
+          ${aHtml}  vs  ${bHtml}
+        </div>
+        <button class="delete-btn" onclick="deleteMatch('${m.id}')">🗑️</button>
       </div>
-      <button class="delete-btn" onclick="deleteMatch('${m.id}')">🗑️</button>
-    </div>`);
+    `);
   });
 }
+
 
 // ✅ 경기 삭제
 window.deleteMatch = async (id) => {
