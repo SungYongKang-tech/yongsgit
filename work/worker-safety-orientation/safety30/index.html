@@ -3,43 +3,102 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>핵심 30대 산업안전보건규칙</title>
+<title>핵심 30대 산업안전보건규칙 — 트리(eBook)</title>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
 <style>
-body{margin:0;font-family:Pretendard, sans-serif;background:#f5f7fb;color:#0f172a;line-height:1.6;padding:20px;}
-h1{text-align:center;margin-bottom:20px;}
-.rule{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 4px 14px rgba(0,0,0,0.06);}
-.title{font-size:1.05rem;font-weight:700;cursor:pointer;}
-.details{display:none;margin-top:10px;padding:10px;border-left:3px solid #2563eb;background:#f0f4ff;border-radius:8px;}
+:root{
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff; --accent:#2563eb;
+  --radius:16px; --shadow:0 8px 26px rgba(2,6,23,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif;line-height:1.65}
+header{background:#fff;border-bottom:1px solid #e5e7eb;position:sticky;top:0;z-index:10}
+.header-inner{max-width:980px;margin:0 auto;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.title{font-weight:800}
+.container{max-width:980px;margin:0 auto;padding:16px 14px 60px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;cursor:pointer;transition:.2s}
+.card:hover{transform:translateY(-2px)}
+.card h3{margin:0 0 6px 0;font-size:1.05rem}
+.card .meta{color:var(--muted);font-size:.9rem}
+.list{margin-top:10px;display:none}
+.item{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:10px;margin:8px 0}
+.item .ititle{font-weight:700;cursor:pointer}
+.item .details{display:none;margin-top:8px;border-left:3px solid var(--accent);background:#eef2ff;border-radius:8px;padding:10px}
+.small{color:var(--muted);font-size:.9rem}
+footer{color:#94a3b8;text-align:center;padding:26px 0}
+.search{width:100%;border:1px solid #d1d7e0;border-radius:12px;padding:12px;font-size:1rem;margin:0 0 12px 0}
 </style>
 </head>
 <body>
+<header>
+  <div class="header-inner">
+    <div class="title">📘 핵심 30대 산업안전보건규칙 — 트리(eBook)</div>
+  </div>
+</header>
 
-<h1>핵심 30대 산업안전보건규칙</h1>
-<div id="list">불러오는 중...</div>
+<main class="container">
+  <input id="q" class="search" placeholder="검색어를 입력하세요 (예: 비계, LOTO, 누전차단기, 굴착)">
+  <div id="cats" class="grid">불러오는 중...</div>
+  <div class="small">※ 항목 제목을 탭하면 상세가 펼쳐집니다. 카테고드 카드를 누르면 목록이 열립니다.</div>
+</main>
+
+<footer>© 2025 KOEN — 모바일 최적화 트리 eBook</footer>
 
 <script>
+let DATA=[];
+
 async function load(){
-  const res = await fetch("safety30.json");
-  const data = await res.json();
-  const list = document.getElementById("list");
-  list.innerHTML = "";
-  data.forEach(item=>{
-    const div=document.createElement("div");
-    div.className="rule";
-    div.innerHTML = `
-      <div class="title" onclick="toggle('${item.id}')">${item.id}. ${item.title}</div>
-      <div class="details" id="d${item.id}">${item.details}</div>
-    `;
-    list.appendChild(div);
+  try{
+    const res = await fetch('safety30.json');
+    DATA = await res.json();
+    render(DATA);
+  }catch(e){
+    document.getElementById('cats').innerHTML = '<div class="small">safety30.json을 찾을 수 없습니다.</div>';
+  }
+}
+
+function render(arr){
+  const box = document.getElementById('cats');
+  box.innerHTML='';
+  arr.forEach(cat => {
+    const card = document.createElement('div');
+    card.className='card';
+    const count = (cat.items||[]).length;
+    card.innerHTML = `<h3>${cat.category}</h3><div class="meta">${count}개 항목</div><div class="list"></div>`;
+    const list = card.querySelector('.list');
+    (cat.items||[]).forEach(it=>{
+      const item = document.createElement('div');
+      item.className='item';
+      item.innerHTML = `<div class="ititle">${it.id}. ${it.title}</div><div class="details">${it.details}</div>`;
+      const ititle = item.querySelector('.ititle');
+      const details = item.querySelector('.details');
+      ititle.addEventListener('click', ()=>{
+        details.style.display = details.style.display==='block' ? 'none' : 'block';
+      });
+      list.appendChild(item);
+    });
+    card.addEventListener('click', (ev)=>{
+      // Avoid collapsing when clicking inner items
+      if(ev.target.classList.contains('ititle')) return;
+      if(ev.target.classList.contains('details')) return;
+      list.style.display = (list.style.display==='block') ? 'none' : 'block';
+    });
+    box.appendChild(card);
   });
 }
-function toggle(id){
-  const el=document.getElementById("d"+id);
-  el.style.display = el.style.display==="block" ? "none" : "block";
-}
+
+document.getElementById('q').addEventListener('input', (e)=>{
+  const q = e.target.value.trim();
+  if(!q){ render(DATA); return; }
+  const filtered = DATA.map(cat=>{
+    const items = (cat.items||[]).filter(it => (it.title+it.details).toLowerCase().includes(q.toLowerCase()));
+    return {...cat, items};
+  }).filter(cat => cat.items.length>0);
+  render(filtered);
+});
+
 load();
 </script>
-
 </body>
 </html>
