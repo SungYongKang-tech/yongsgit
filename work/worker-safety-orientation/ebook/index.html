@@ -42,6 +42,14 @@ mark{ background:#fff3a3; padding:.1em .2em; border-radius:.25em }
 .dark .btn{ background:#12161d; color:#e6ebf3; border-color:#1b2028 }
 .dark .container{ color:#e6eaee }
 .dark .toc-list li:hover{ background:#1a2337 }
+
+/* ===== KOEN: ordered-list legal numbering ===== */
+#content ol{ list-style:none; padding-left:1.4rem; margin:8px 0 12px 1.25rem; }
+#content li{ position:relative; margin:6px 0; }
+#content li .__koen-marker{ position:absolute; left:-1.4rem; width:1.2rem; display:inline-block; font-weight:700; }
+/* spacing for nested lists */
+#content li > ol{ margin-top:6px; }
+
 </style>
 </head>
 <body>
@@ -8198,6 +8206,47 @@ document.getElementById('findBtn').onclick = () => {
     }
   });
 };
+</script>
+<script>
+/* ===== KOEN: renumber lists (1. / 가. / (1) ...) ===== */
+(function(){
+  const hangul = ["가","나","다","라","마","바","사","아","자","차","카","타","파","하"];
+  function labelFor(depth, idx){
+    if(depth===1){ return idx + ". "; }
+    if(depth===2){ return (hangul[idx-1] || idx) + ". "; }
+    if(depth===3){ return "(" + idx + ") "; }
+    if(depth===4){ return "(" + String.fromCharCode(96 + (idx%26||26)) + ") "; } // (a) (b)
+    return idx + ". ";
+  }
+  function depthOf(li){
+    let d=0, n=li.parentElement;
+    while(n && n.id!=="content"){
+      if(n.tagName==="OL") d++;
+      n = n.parentElement;
+    }
+    return d;
+  }
+  function renumber(){
+    document.querySelectorAll("#content ol").forEach(ol=>{
+      let i=0;
+      [...ol.children].forEach(ch=>{
+        if(ch.tagName!=="LI") return;
+        i++;
+        const d = depthOf(ch);
+        let mk = ch.querySelector(":scope > .__koen-marker");
+        if(!mk){
+          mk = document.createElement("span");
+          mk.className="__koen-marker";
+          ch.prepend(mk);
+        }
+        mk.textContent = labelFor(d, i);
+      });
+    });
+  }
+  // Run once after load; also re-run when content toggled in future (if any).
+  if(document.readyState==="loading"){ document.addEventListener("DOMContentLoaded", renumber); }
+  else{ renumber(); }
+})();
 </script>
 </body>
 </html>
