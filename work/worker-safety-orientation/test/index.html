@@ -45,6 +45,19 @@
     .incorrect { color:#c62828; }
     #result { text-align:center; margin-top:40px; display:none; }
     #score-display { font-size: 2rem; font-weight:bold; color:#1a237e; }
+    .nav-buttons {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .nav-buttons button {
+      flex: 1;
+      background: #607d8b;
+    }
+    .nav-buttons button:hover {
+      background: #455a64;
+    }
   </style>
 </head>
 <body>
@@ -64,6 +77,11 @@
     <div class="question" id="question"></div>
     <ul class="options" id="options"></ul>
     <div id="feedback" class="feedback"></div>
+
+    <div class="nav-buttons">
+      <button onclick="prevQuestion()">← 이전 문제</button>
+      <button onclick="nextQuestion()">다음 문제 →</button>
+    </div>
   </div>
 
   <div id="result">
@@ -74,26 +92,23 @@
 
 </div>
 
-
 <script>
 let allQuestions = [];
 let quizSet = [];
 let current = 0;
 let score = 0;
 let userName = "";
+let answered = {}; // 각 문제의 정답 여부 저장
 
-// ✅ JSON 4개를 모두 로딩
 async function loadAllQuestions() {
   const files = [
-  "./questions_part1.json",
-  "./questions_part2.json",
-  "./questions_part3.json",
-  "./questions_part4.json"
-];
-
+    "./questions_part1.json",
+    "./questions_part2.json",
+    "./questions_part3.json",
+    "./questions_part4.json"
+  ];
 
   let list = [];
-
   for (let f of files) {
     const res = await fetch(f);
     const data = await res.json();
@@ -121,6 +136,7 @@ function startQuiz() {
     quizSet = pickRandom20(allQuestions);
     current = 0;
     score = 0;
+    answered = {};
     loadQuestion();
   });
 }
@@ -137,30 +153,56 @@ function loadQuestion() {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.textContent = o;
-    btn.onclick = () => checkAnswer(idx);
+    btn.onclick = () => checkAnswer(idx, btn);
     li.appendChild(btn);
     op.appendChild(li);
   });
+
+  // 이전에 이미 푼 문제면 피드백 표시
+  if (answered[current] !== undefined) {
+    const feedback = document.getElementById("feedback");
+    if (answered[current]) {
+      feedback.textContent = "이미 정답을 맞춘 문제입니다 ✅";
+      feedback.className = "feedback correct";
+    } else {
+      feedback.textContent = "이전에 오답이었던 문제입니다 ❌";
+      feedback.className = "feedback incorrect";
+    }
+  }
 }
 
-function checkAnswer(idx) {
+function checkAnswer(idx, btn) {
   const q = quizSet[current];
   const feedback = document.getElementById("feedback");
 
+  if (answered[current] !== undefined) return; // 이미 선택했으면 무시
+
   if (idx === q.answer) {
     score += 5;
+    answered[current] = true;
     feedback.textContent = "정답입니다 ✅";
     feedback.className = "feedback correct";
   } else {
+    answered[current] = false;
     feedback.textContent = "오답입니다 ❌";
     feedback.className = "feedback incorrect";
   }
+}
 
-  setTimeout(() => {
+function nextQuestion() {
+  if (current < quizSet.length - 1) {
     current++;
-    if (current < quizSet.length) loadQuestion();
-    else showResult();
-  }, 800);
+    loadQuestion();
+  } else {
+    showResult();
+  }
+}
+
+function prevQuestion() {
+  if (current > 0) {
+    current--;
+    loadQuestion();
+  }
 }
 
 function showResult() {
@@ -190,6 +232,7 @@ function retryQuiz() {
   quizSet = pickRandom20(allQuestions);
   current = 0;
   score = 0;
+  answered = {};
   loadQuestion();
 }
 </script>
