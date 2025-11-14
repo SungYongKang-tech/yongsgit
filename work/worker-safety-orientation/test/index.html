@@ -45,6 +45,17 @@
     .incorrect { color:#c62828; }
     #result { text-align:center; margin-top:40px; display:none; }
     #score-display { font-size: 2rem; font-weight:bold; color:#1a237e; }
+    #final-100 {
+      font-size: 3rem;
+      font-weight: 900;
+      color: #2e7d32;
+      text-shadow: 0 0 10px rgba(46,125,50,0.3);
+      animation: pop 1s ease;
+    }
+    @keyframes pop {
+      0% { transform: scale(0.8); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -68,6 +79,7 @@
 
   <div id="result">
     <p id="score-display"></p>
+    <div id="final-100" style="display:none;">🎯 최종 100점 달성!</div>
     <p id="pass-message" style="font-size:1.3rem; margin-top:10px"></p>
     <button onclick="retryQuiz()" id="retry-btn" style="display:none;">오답 문제 재시험</button>
   </div>
@@ -80,11 +92,12 @@ let allQuestions = [];
 let quizSet = [];
 let current = 0;
 let score = 0;
+let totalScore = 0;   // ✅ 총점 누적용
 let userName = "";
-let wrongQuestions = []; // 오답 문제 저장용 배열
+let wrongQuestions = []; // 오답 저장용
 let isRetake = false; // 재시험 여부
 
-// ✅ JSON 4개를 모두 로딩
+// ✅ JSON 로드
 async function loadAllQuestions() {
   const files = [
     "./questions_part1.json",
@@ -121,6 +134,7 @@ function startQuiz() {
     quizSet = pickRandom20(allQuestions);
     current = 0;
     score = 0;
+    totalScore = 0;
     wrongQuestions = [];
     isRetake = false;
     loadQuestion();
@@ -163,42 +177,50 @@ function checkAnswer(idx) {
     current++;
     if (current < quizSet.length) loadQuestion();
     else showResult();
-  }, 800);
+  }, 700);
 }
 
 function showResult() {
   document.getElementById("question-box").style.display = "none";
-  
   const result = document.getElementById("result");
   result.style.display = "block";
 
-  document.getElementById("score-display").textContent = `${userName}님의 점수: ${score}점`;
+  // ✅ 재시험이면 이전 점수와 합산
+  if (isRetake) totalScore += score;
+  else totalScore = score;
 
   const passMsg = document.getElementById("pass-message");
   const retryBtn = document.getElementById("retry-btn");
+  const final100 = document.getElementById("final-100");
 
-  if (score >= 100) {
-    passMsg.textContent = `${userName}님 만점입니다! ✅`;
+  document.getElementById("score-display").textContent = `${userName}님의 총점: ${totalScore}점`;
+
+  if (wrongQuestions.length === 0 && totalScore === 100) {
+    // ✅ 모든 문제 맞춘 경우
+    final100.style.display = "block";
+    passMsg.textContent = "모든 문항 정답! 훌륭합니다 ✅";
     retryBtn.style.display = "none";
-  } else if (score >= 80) {
+  } else if (totalScore >= 80 && wrongQuestions.length === 0) {
     passMsg.textContent = `${userName}님 합격하셨습니다 ✅`;
     retryBtn.style.display = "none";
+    final100.style.display = "none";
   } else if (wrongQuestions.length > 0) {
-    passMsg.textContent = `불합격입니다. ${wrongQuestions.length}문항 오답 → 재시험 가능합니다.`;
+    passMsg.textContent = `불합격입니다. 오답 ${wrongQuestions.length}문항 → 재시험 가능`;
     retryBtn.style.display = "block";
+    final100.style.display = "none";
   } else {
     passMsg.textContent = `불합격입니다. 다시 시험을 보셔야 합니다.`;
     retryBtn.style.display = "block";
+    final100.style.display = "none";
   }
 }
 
 function retryQuiz() {
   if (wrongQuestions.length === 0) {
-    alert("오답 문제가 없습니다. 이미 만점입니다!");
+    alert("오답이 없습니다. 이미 만점입니다!");
     return;
   }
 
-  // 오답만 다시 시험
   quizSet = [...wrongQuestions];
   current = 0;
   score = 0;
