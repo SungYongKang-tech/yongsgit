@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🔍 탁구 스타일 분석</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+
+<style>
+/* 전체 스타일 (생략 없이 완전 버전) */
+:root{
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
+  --accent:#2563eb; --ok:#16a34a; --warn:#f59e0b; --bad:#ef4444;
+  --shadow:0 8px 28px rgba(2,6,23,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-weight:600}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+header{
+  position:sticky;
+  top:0;
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  z-index:9999;
+}
+.analysis-wrap{ position:relative; z-index:1; }
+.head-in{max-width:900px;margin:0 auto;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+h1{margin:0;font-size:clamp(18px,4vw,22px);color:#1e40af}
+.btn{border:1px solid #d1d5db;padding:8px 12px;border-radius:10px;background:#fff;cursor:pointer;font-weight:800}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:16px;box-shadow:var(--shadow);padding:16px;margin-top:12px}
+.sec-title{font-size:16px;font-weight:900;color:#0f172a;margin:0 0 8px}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#e2efff;color:#1e40af;font-size:12px;font-weight:900}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kv{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.divider{height:1px;background:#eef2f7;margin:12px 0}
+ul.clean{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+.small{font-size:13px;color:#475569}
+
+input,textarea{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit}
+label{font-size:12px;color:#475569;font-weight:800}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(12,1fr)}
+.col-12{grid-column:span 12}
+.col-6{grid-column:span 6}
+@media(max-width:720px){.col-6{grid-column:span 12}}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="head-in">
+    <h1>🔍 탁구 스타일 분석</h1>
+    <div class="row">
+      <button class="btn" id="btnBack">← 개인 성적</button>
+      <button class="btn" id="btnAdminToggle">관리자모드</button>
+      <span class="badge" id="who"></span>
+    </div>
+  </div>
+</header>
+
+<div class="analysis-wrap">
+<main class="wrap">
+
+  <section class="card" style="margin-top:12px;">
+    <div id="analysisContent"></div>
+  </section>
+
+  <section class="card">
+    <div class="sec-title">📅 통합리그 요약</div>
+    <div id="integratedBox" class="kv"></div>
+    <ul id="integratedBullets" class="clean"></ul>
+    <div class="small">※ 통합리그는 참고용으로 반영됩니다.</div>
+  </section>
+
+  <section class="card">
+    <div class="sec-title">🎯 세부 성향 (단식·복식)</div>
+    <div class="grid">
+      <div class="col-6">
+        <div class="badge">단식</div>
+        <ul id="singleBullets" class="clean"></ul>
+      </div>
+      <div class="col-6">
+        <div class="badge">복식</div>
+        <ul id="doubleBullets" class="clean"></ul>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <ul id="recommend" class="clean"></ul>
+  </section>
+
+  <section class="card" id="adminCard" style="display:none">
+    <div class="sec-title">🛠 관리자 메모</div>
+    <div class="grid">
+      <div class="col-6">
+        <label>스타일</label>
+        <input id="ad_style" placeholder="예: 공격형, 안정형">
+      </div>
+      <div class="col-6">
+        <label>선호 파트너</label>
+        <input id="ad_favs" placeholder="홍길동, 김영희">
+      </div>
+      <div class="col-6">
+        <label>강점</label>
+        <input id="ad_strengths" placeholder="초구 드라이브, 발빠름">
+      </div>
+      <div class="col-6">
+        <label>약점</label>
+        <input id="ad_weaknesses" placeholder="백 커트, 리시브">
+      </div>
+      <div class="col-12">
+        <label>어려운 상대</label>
+        <input id="ad_hards" placeholder="이상준, 박나령">
+      </div>
+      <div class="col-12">
+        <label>메모</label>
+        <textarea id="ad_memo" rows="3" placeholder="전진 공격 위주…"></textarea>
+      </div>
+    </div>
+
+    <button class="btn primary" id="btnSaveAdmin" style="margin-top:12px;">저장</button>
+  </section>
+
+</main>
+</div>
+
+
+<script type="module">
+/* ============================================
+   ✅ Firebase 초기화
+===============================================*/
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+
+initializeApp(firebaseConfig);
+const db = getDatabase();
+
+
+/* ============================================
+   ✅ 기본 설정
+===============================================*/
+let reports = [];
+let matches = [];
+let stats = {};
+
+const params = new URLSearchParams(location.search);
+const playerName = params.get("name") || "";
+document.getElementById("who").textContent = playerName;
+
+const pct = (a, b) => (b ? Math.round(a / b * 100) : 0);
+const fmt = n => Math.round(n * 10) / 10;
+
+const box = document.getElementById("analysisContent");
+
+
+/* ============================================
+   ✅ 관리자 메모 불러오기
+===============================================*/
+async function loadAdminMemo() {
+  const snap = await get(ref(db, `playerDetail/${playerName}`));
+  return snap.exists() ? snap.val() : {};
+}
+
+
+/* ============================================
+   ✅ 관리자 메모 저장
+===============================================*/
+document.getElementById("btnSaveAdmin")?.addEventListener("click", async () => {
+  const data = {
+    style: document.getElementById("ad_style").value.trim(),
+    favs: document.getElementById("ad_favs").value.trim(),
+    strengths: document.getElementById("ad_strengths").value.trim(),
+    weaknesses: document.getElementById("ad_weaknesses").value.trim(),
+    hards: document.getElementById("ad_hards").value.trim(),
+    memo: document.getElementById("ad_memo").value.trim()
+  };
+
+  await set(ref(db, `playerDetail/${playerName}`), data);
+
+  alert("✅ 저장되었습니다!");
+});
+
+
+/* ============================================
+   ✅  통합리그 데이터 로드
+===============================================*/
+async function loadMonthlyReports() {
+  const snap = await get(ref(db, "monthlyReports"));
+  if (!snap.exists()) return [];
+
+  const data = snap.val();
+  let result = [];
+
+  Object.entries(data).forEach(([month, obj]) => {
+    if (!obj.players) return;
+    const me = Object.values(obj.players).find(p => p.name === playerName);
+    if (!me) return;
+
+    const win = Number(me.wins ?? me.win ?? 0);
+    const lose = Number(me.losses ?? me.lose ?? 0);
+
+    result.push({
+      month, win, lose,
+      total: win + lose,
+      rate: pct(win, win + lose)
+    });
+  });
+
+  return result.sort((a, b) => a.month.localeCompare(b.month));
+}
+
+
+/* ============================================
+   ✅ 단식/복식 경기 로드
+===============================================*/
+async function loadMatches() {
+  const snap = await get(ref(db, "matches"));
+  if (!snap.exists()) return [];
+
+  const list = Object.values(snap.val());
+  return list.filter(m => {
+    const names = [...(m.namesA || []), ...(m.namesB || [])];
+    return names.includes(playerName);
+  });
+}
+
+
+/* ============================================
+   ✅ 통합리그 분석
+===============================================*/
+function analyzeUnified(reports) {
+
+  if (!reports.length) return {
+    trend: "데이터 없음",
+    best: null,
+    worst: null,
+    steady: null,
+    pattern: "통합 기록이 부족하여 성향 분석이 제한됩니다."
+  };
+
+  const best = [...reports].sort((a, b) => b.rate - a.rate)[0];
+  const worst = [...reports].sort((a, b) => a.rate - b.rate)[0];
+
+  let trend = "안정적";
+  if (reports.length >= 2) {
+    const diff = reports.at(-1).rate - reports[0].rate;
+    if (diff >= 10) trend = "승률 상승세";
+    else if (diff <= -10) trend = "승률 하락세";
+  }
+
+  const totals = reports.map(r => r.total);
+  const steady = fmt((Math.min(...totals) / Math.max(...totals)) * 100);
+
+  let pattern = "";
+  if (best.rate >= 65) pattern = "컨디션 좋을 때 몰아치는 폭발형 경기력.";
+  else if (best.rate >= 55) pattern = "전반적으로 안정적인 경기 흐름.";
+  else pattern = "초반 실점 경향이 있으며 집중력이 매우 중요.";
+
+  return { trend, best, worst, steady, pattern };
+  
+}
+
+
+/* ============================================
+   ✅ HTML 생성 — 전체 분석
+===============================================*/
+function makeAnalysis(reports, matches, adminMemo, stats) {
+
+  let out = [];
+
+  /* ✅ 통합 집계 */
+  let totalWin = 0, totalLose = 0;
+  reports.forEach(r => { totalWin += r.win; totalLose += r.lose; });
+
+  const allRate = pct(totalWin, totalWin + totalLose);
+  const unified = analyzeUnified(reports);
+
+  /* ✅ 헤드라인 */
+  out.push(`
+    <div style="font-size:20px;font-weight:900;margin-bottom:12px;color:#1e3a8a">
+      📌 핵심 요약
+    </div>
+    <div class="box">
+      <b>${playerName}</b> 선수는 통합 기준 <b>${allRate}% 승률</b>을 기록 중이며,
+      최근 흐름은 <b>${unified.trend}</b>입니다.
+     </div>
+     <br> 
+  `);
+
+  /* ✅ 통합리그 */
+  out.push(`
+    <div class="sec-title">📅 통합리그 분석</div>
+    <div class="box">
+      ${
+        reports.length
+        ? `
+          최고 성적 달: <b>${unified.best.month}</b> (${unified.best.rate}%)<br>
+          어려웠던 달: <b>${unified.worst.month}</b> (${unified.worst.rate}%)<br><br>
+          꾸준함 지수: <b>${unified.steady}%</b><br><br>
+          ${unified.pattern}
+        `
+        : "통합 리그 데이터가 없습니다."
+      }
+    </div>
+    <br>
+  `);
+
+  /* ✅ 단식/복식 분석 */
+  let sWin=0, sLose=0, dWin=0, dLose=0;
+  let opp={}, partner={};
+
+  matches.forEach(m => {
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const isA = A.includes(playerName);
+    const won = (m.winnerSide === "A" && isA) || (m.winnerSide === "B" && !isA);
+
+    if (m.mode === "single") {
+      if (won) sWin++; else sLose++;
+      const other = isA ? B[0] : A[0];
+      if (other) {
+        if (!opp[other]) opp[other] = { win:0, lose:0 };
+        won ? opp[other].win++ : opp[other].lose++;
+      }
+    } else {
+      if (won) dWin++; else dLose++;
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== playerName);
+      if (pt) {
+        if (!partner[pt]) partner[pt] = { win:0, lose:0 };
+        won ? partner[pt].win++ : partner[pt].lose++;
+      }
+    }
+  });
+
+  const sRate = pct(sWin, sWin + sLose);
+  const dRate = pct(dWin, dWin + dLose);
+
+  const topOpp = Object.entries(opp)
+    .map(([k, v]) => ({ name:k, total:v.win + v.lose }))
+    .sort((a, b) => b.total - a.total)[0];
+
+  const topPartner = Object.entries(partner)
+    .map(([k, v]) => ({ name:k, total:v.win + v.lose }))
+    .sort((a, b) => b.total - a.total)[0];
+
+  out.push(`
+    <div class="sec-title">🎯 단식·복식 분석</div>
+    <div class="box">
+      <b>단식:</b> ${sWin+sLose ? `${sWin}승 ${sLose}패 (${sRate}%)` : "데이터 없음"}<br>
+      ${topOpp ? `주요 상대: <b>${topOpp.name}</b>` : ""}
+
+      <div style="height:6px"></div>
+
+      <b>복식:</b> ${dWin+dLose ? `${dWin}승 ${dLose}패 (${dRate}%)` : "데이터 없음"}<br>
+      ${topPartner ? `주요 파트너: <b>${topPartner.name}</b>` : ""}
+    </div>
+       <br>  <!-- ✅ 여기 추가: AI 코칭 위에 한 줄 띄움 -->
+  `);
+
+  /* ✅ AI 코칭 */
+out.push(`
+  <div class="sec-title">🤖 AI 코칭 상세 분석</div>
+  <div class="box">
+    <b>📊 종합 진단:</b><br>
+    ${unified.trend === "승률 상승세" ? "최근 경기력이 꾸준히 상승하고 있으며, 경기 후반 집중력이 좋아지고 있습니다." 
+      : unified.trend === "승률 하락세" ? "최근 피로 누적 또는 경기 감각 저하로 일시적 부진이 보입니다. 컨디션 회복이 우선입니다." 
+      : "안정적인 경기 흐름을 유지하고 있으며, 실수를 줄이려는 의식이 긍정적입니다."}
+    <br><br>
+
+    <b>🎯 기술 분석:</b><br>
+    단식에서는 ${sRate >= 60 ? "공격 전환 속도가 빠르고 초구 득점 의식이 뚜렷" 
+      : sRate >= 50 ? "균형 잡힌 랠리 운영 능력" 
+      : "수비 중심의 경기 운영으로 득점 결정력이 다소 부족"}하며, 
+    복식에서는 ${dRate >= 60 ? "파트너와의 호흡이 잘 맞고 리턴 후 전환이 빠른 편" 
+      : dRate >= 50 ? "기본적인 연결은 안정적이지만, 포지션 전환이 약간 느림" 
+      : "공간 커버와 리턴 타이밍 조정이 개선 필요"}으로 분석됩니다.
+    <br><br>
+
+    <b>🤝 전술 제안:</b><br>
+    ${stats.partnerDiversity >= 4 
+      ? "다양한 파트너와의 경기 경험이 풍부해 협업 적응력이 높습니다." 
+      : "파트너 풀이 제한되어 있어 특정 스타일에만 익숙해질 가능성이 있습니다. 파트너 교체 훈련이 도움이 됩니다."}
+    ${
+      stats.hardOpponents.length
+        ? `<br>어려운 상대(${stats.hardOpponents.map(o=>o.name).join(", ")})에게는 서브 패턴 대응과 랠리 속도 조절이 필요합니다.`
+        : ""
+    }
+    <br><br>
+
+    <b>💡 성장 방향:</b><br>
+    ${allRate >= 60
+      ? "상위권 안정세를 유지하려면 초반 리시브 안정성과 후반 체력 관리가 핵심입니다. 훈련 시 득점 패턴 반복보다 ‘실점 없는 랠리’를 목표로 설정하세요."
+      : "승률 개선을 위해 초구 실책률 감소와 리시브 성공률 향상이 필요합니다. 또한 2구-3구 연속 전환 시점의 판단 훈련을 집중하세요."}
+      <br><br>  <!-- ✅ 한 줄 띄우기 추가 -->
+      </div>
+      <br>
+`);
+
+
+  /* ✅ 관리자 입력값 반영 (입력한 것만 표시) */
+  const hasAdmin =
+    adminMemo.style ||
+    adminMemo.favs ||
+    adminMemo.strengths ||
+    adminMemo.weaknesses ||
+    adminMemo.hards ||
+    adminMemo.memo;
+
+  if (hasAdmin) {
+    out.push(`
+      <div class="sec-title">📝 관리자 코칭 참고</div>
+      <div class="box">
+        ${adminMemo.style ? `<div>• 스타일: <b>${adminMemo.style}</b></div>` : ""}
+        ${adminMemo.strengths ? `<div>• 강점: <b>${adminMemo.strengths}</b></div>` : ""}
+        ${adminMemo.weaknesses ? `<div>• 약점: <b>${adminMemo.weaknesses}</b></div>` : ""}
+        ${adminMemo.favs ? `<div>• 선호 파트너: <b>${adminMemo.favs}</b></div>` : ""}
+        ${adminMemo.hards ? `<div>• 어려운 상대: <b>${adminMemo.hards}</b></div>` : ""}
+        ${adminMemo.memo ? `<div style="margin-top:6px;color:#475569">${adminMemo.memo}</div>` : ""}
+      </div>
+      <br><br>
+    `);
+  }
+
+  return out.join("\n");
+}
+
+
+/* ============================================
+   ✅ 실행: 데이터 불러와 분석 출력
+===============================================*/
+(async () => {
+  box.innerHTML = "데이터 불러오는 중…";
+
+  reports = await loadMonthlyReports();  // ✅ 전역에 할당
+  matches = await loadMatches();         // ✅ 전역에 할당
+  const adminMemo = await loadAdminMemo();
+
+  stats = buildMatchStats(matches, playerName);  // ✅ 전역에 저장
+
+  box.innerHTML = makeAnalysis(reports, matches, adminMemo, stats);
+
+
+  /* ✅ 관리자모드 입력창도 기존 값 자동 채움 */
+  if (adminMemo.style) document.getElementById("ad_style").value = adminMemo.style;
+  if (adminMemo.favs) document.getElementById("ad_favs").value = adminMemo.favs;
+  if (adminMemo.strengths) document.getElementById("ad_strengths").value = adminMemo.strengths;
+  if (adminMemo.weaknesses) document.getElementById("ad_weaknesses").value = adminMemo.weaknesses;
+  if (adminMemo.hards) document.getElementById("ad_hards").value = adminMemo.hards;
+  if (adminMemo.memo) document.getElementById("ad_memo").value = adminMemo.memo;
+
+   // ✅ 질문 기반 분석 실행
+  fillUnifiedSummary(reports);
+  stats = buildMatchStats(matches, playerName); // 전역 변수 재활용 (const 제거)
+  fillDetailBullets(stats);
+  const suggest = buildAdminGuidedMemo(stats, reports, playerName);
+  fillAdminMemoFields(suggest);
+
+
+})();
+
+/* ============================================
+   ✅ 상단 버튼 동작 + 관리자 비밀번호 인증 (DOM 로드 후 적용)
+===============================================*/
+document.addEventListener("DOMContentLoaded", () => {
+
+  const btnBack = document.getElementById("btnBack");
+  const btnAdmin = document.getElementById("btnAdminToggle");
+  const adminCard = document.getElementById("adminCard");
+
+  btnBack?.addEventListener("click", () => {
+    location.href = `player.html?name=${encodeURIComponent(playerName)}`;
+  });
+
+  let adminOn = false;  // 초기에는 항상 OFF
+
+  /* ✅ Firebase에서 관리자 비밀번호 불러오기 */
+  async function loadAdminPassword() {
+    const snap = await get(ref(db, "config/adminPassword"));  
+    return snap.exists() ? snap.val() : null;
+  }
+
+  /* ✅ 관리자모드 버튼 클릭 */
+  btnAdmin?.addEventListener("click", async () => {
+
+    // OFF → ON 시도
+    if (!adminOn) {
+      const correctPw = await loadAdminPassword();
+
+      if (!correctPw) {
+        alert("⚠ 관리자 비밀번호가 설정되어 있지 않습니다.\n(관리자 페이지에서 설정 가능)");
+        return;
+      }
+
+      const input = prompt("🔐 관리자 비밀번호를 입력하세요:");
+      if (input === null) return;
+
+      if (input.trim() !== correctPw.trim()) {
+        alert("❌ 비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
+      // ✅ 성공
+      adminOn = true;
+      applyAdmin();
+      alert("✅ 관리자모드 활성화");
+    }
+
+    // ON → OFF
+    else {
+      adminOn = false;
+      applyAdmin();
+    }
+
+  });
+
+  /* ✅ UI 적용 함수 */
+  function applyAdmin() {
+    adminCard.style.display = adminOn ? "block" : "none";
+    btnAdmin.classList.toggle("primary", adminOn);
+    btnAdmin.textContent = adminOn ? "관리자모드 ON" : "관리자모드";
+  }
+
+}); // ✅ DOMContentLoaded 끝
+
+/* ============================================
+   ✅ 질문 기반: 통합 요약/세부성향/관리자메모 자동 생성
+   - reports: loadMonthlyReports() 결과
+   - matches: loadMatches() 결과
+   - adminMemo: loadAdminMemo() 결과
+===============================================*/
+
+/* 유틸 */
+function byValueDesc(a, b) { return b.value - a.value; }
+function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
+function rate(win, total) { return total ? Math.round((win / total) * 100) : 0; }
+
+/* 통합리그 요약 상자 + 불릿 채우기 */
+function fillUnifiedSummary(reports) {
+  const wrap = document.getElementById("integratedBox");
+  const bullets = document.getElementById("integratedBullets");
+  if (!wrap || !bullets) return;
+
+  if (!reports.length) {
+    wrap.innerHTML = `<div class="small">통합 데이터가 없습니다.</div>`;
+    bullets.innerHTML = "";
+    return;
+  }
+
+  const totalGames = sum(reports.map(r => r.total));
+  const totalWins = sum(reports.map(r => r.win));
+  const totalLoses = sum(reports.map(r => r.lose));
+  const avgRate = rate(totalWins, totalGames);
+
+  const mostGames = [...reports].sort((a,b)=>b.total-a.total)[0];
+  const bestRate = [...reports].sort((a,b)=>b.rate-a.rate)[0];
+  const last = reports.at(-1);
+
+  // 3칸 요약 카드
+  wrap.innerHTML = `
+    <div class="row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+      <div class="card" style="padding:12px">
+        <div class="small">총 경기</div>
+        <div style="font-size:20px;font-weight:900">${totalGames.toLocaleString()} 경기</div>
+      </div>
+      <div class="card" style="padding:12px">
+        <div class="small">승 / 패</div>
+        <div style="font-size:20px;font-weight:900">${totalWins.toLocaleString()}승 ${totalLoses.toLocaleString()}패</div>
+      </div>
+      <div class="card" style="padding:12px">
+        <div class="small">평균 승률</div>
+        <div style="font-size:20px;font-weight:900">${avgRate}%</div>
+      </div>
+    </div>
+  `;
+
+  bullets.innerHTML = `
+    <li>가장 많이 뛴 달: <b>${mostGames.month}</b> (${mostGames.total}경기)</li>
+    <li>승률 최고 달: <b>${bestRate.month}</b> (${bestRate.rate}%)</li>
+    <li>최근 달 승률: <b>${last.month}</b> (${last.rate}%)</li>
+  `;
+}
+
+/* 단식/복식/상대/파트너 통계 만들기 */
+function buildMatchStats(matches, playerName) {
+  const s = { win:0, lose:0 };
+  const d = { win:0, lose:0 };
+  const opp = {};     // { name: {win,lose} } (단식 상대)
+  const partner = {}; // { name: {win,lose} } (복식 파트너)
+  const partnerSet = new Set();
+
+  matches.forEach(m=>{
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const isA = A.includes(playerName);
+    const won = (m.winnerSide === "A" && isA) || (m.winnerSide === "B" && !isA);
+
+    if (m.mode === "single") {
+      won ? s.win++ : s.lose++;
+      const other = isA ? B[0] : A[0];
+      if (other) {
+        if (!opp[other]) opp[other] = {win:0,lose:0};
+        won ? opp[other].win++ : opp[other].lose++;
+      }
+    } else {
+      won ? d.win++ : d.lose++;
+      const same = isA ? A : B;
+      const pt = same.find(n => n !== playerName);
+      if (pt) {
+        partnerSet.add(pt);
+        if (!partner[pt]) partner[pt] = {win:0,lose:0};
+        won ? partner[pt].win++ : partner[pt].lose++;
+      }
+    }
+  });
+
+  const singlesTotal = s.win + s.lose;
+  const doublesTotal = d.win + d.lose;
+
+  const singlesRate = rate(s.win, singlesTotal);
+  const doublesRate = rate(d.win, doublesTotal);
+
+  // 자주 맞붙은 (>=3경기) 상대 TOP & 어려운 상대(승률<=40)
+  const oppArr = Object.entries(opp).map(([name, wl])=>{
+    const total = wl.win + wl.lose;
+    return { name, total, win: wl.win, lose: wl.lose, rate: rate(wl.win,total) };
+  }).sort((a,b)=>b.total - a.total);
+
+  const keyOpponents = oppArr.filter(o=>o.total >= 3).slice(0,3);
+  const hardOpponents = oppArr.filter(o=>o.total >= 3 && o.rate <= 40).slice(0,3);
+
+  // 파트너 TOP & 약한 궁합(승률<=40)
+  const partnerArr = Object.entries(partner).map(([name, wl])=>{
+    const total = wl.win + wl.lose;
+    return { name, total, win: wl.win, lose: wl.lose, rate: rate(wl.win,total) };
+  }).sort((a,b)=>b.total - a.total);
+
+  const favPartners = partnerArr.filter(p=>p.total >= 3).slice(0,3);
+  const weakPartners = partnerArr.filter(p=>p.total >= 3 && p.rate <= 40).slice(0,3);
+
+  return {
+    singles: { ...s, total: singlesTotal, rate: singlesRate },
+    doubles: { ...d, total: doublesTotal, rate: doublesRate },
+    oppArr, keyOpponents, hardOpponents,
+    partnerArr, favPartners, weakPartners,
+    partnerDiversity: partnerSet.size
+  };
+}
+
+/* 단식/복식 불릿 + 추천문구 채우기 (질문 반영) */
+function fillDetailBullets(stats) {
+  const sUl = document.getElementById("singleBullets");
+  const dUl = document.getElementById("doubleBullets");
+  const recUl = document.getElementById("recommend");
+  if (!sUl || !dUl || !recUl) return;
+
+  const S = stats.singles, D = stats.doubles;
+
+  sUl.innerHTML = `
+    <li>총 경기: <b>${S.total.toLocaleString()}</b> ( ${S.win}승 ${S.lose}패 )</li>
+    <li>승률: <b>${S.rate}%</b></li>
+    <li>${S.rate >= 55 ? "자신의 템포 유지 시 연속 득점력이 좋습니다." : "초반 흐름 관리와 리시브 안정화가 우선 과제입니다."}</li>
+  `;
+
+  dUl.innerHTML = `
+    <li>총 경기: <b>${D.total.toLocaleString()}</b> ( ${D.win}승 ${D.lose}패 )</li>
+    <li>승률: <b>${D.rate}%</b></li>
+    <li>${D.rate >= 55 ? "파트너 연계가 좋아 공격 전환이 빠릅니다." : "초구 역할 분담과 리턴 위치 선정 개선이 필요합니다."}</li>
+    <li>최근 파트너 다양성: <b>${stats.partnerDiversity}명</b></li>
+  `;
+
+  // 종합 추천 (질문 가이드 기반)
+  let recList = [];
+  if (S.rate >= D.rate) {
+    recList.push("단식에 강점이 뚜렷하므로 단식 비중을 높이는 전략이 유효합니다.");
+    recList.push("짧은 공 리시브 선택지(푸시/짧은 스트레이트/백 리프트)를 연습해 초반 5포인트를 안정화하세요.");
+  } else {
+    recList.push("복식에서 강점이 나타납니다. 파트너와 초구-2구 역할을 명확히 나누면 상승폭이 큽니다.");
+    recList.push("리시브 안정화 및 첫 블록 성공률을 높이면 단식도 빠르게 개선됩니다.");
+  }
+  if (stats.hardOpponents.length) {
+    recList.push(`어려운 상대(승률 ≤ 40%): ${stats.hardOpponents.map(o=>`${o.name}`).join(", ")} — 서브 패턴 대비와 템포 대응 훈련을 중점으로.`);
+  }
+  recUl.innerHTML = recList.map(t=>`<li>${t}</li>`).join("");
+}
+
+/* 질문 리스트를 반영한 "관리자 메모 추천안" 생성 (빈 칸만 자동 채움) */
+function buildAdminGuidedMemo(stats, reports, playerName) {
+  // 스타일 추정 (질문: 공격형/수비형/안정형/리듬형/연결형?)
+  // — 근거: 단식 승률이 복식보다 높고 총량도 많으면 '흐름 주도형/전진 공격형' 경향,
+  //          복식 쪽이 더 좋으면 '연결형/협업형' 경향.
+  const S = stats.singles, D = stats.doubles;
+  let style = "";
+  if (S.total >= D.total && S.rate >= D.rate) {
+    style = (S.rate >= 60) ? "전진 공격형, 흐름 주도형" : "안정형, 리듬형";
+  } else {
+    style = (D.rate >= 60) ? "연결형(복식 지향), 전환 빠름" : "협업형, 안정지향";
+  }
+
+  // 강점(질문: 가장 강한 기술? 긴랠리/짧은랠리? 결정력?)
+  // 데이터로 기술명은 특정 못하지만, 패턴 기반 문장으로 제안
+  const strengths = [
+    (S.rate >= 55 ? "단식 흐름 주도 능력" : "긴 랠리에서의 안정성"),
+    (D.rate >= 55 ? "복식 연계와 전환 속도" : "수비에서 공격 전환 타이밍")
+  ].join(", ");
+
+  // 약점(질문: 짧은공, 초구, 백처리, 강드라이브 대응?)
+  const weaknesses = [
+    "짧은 공 리시브 선택지 부족",
+    "강한 드라이브 대응 첫 블록 흔들림"
+  ].join(", ");
+
+  // 선호 파트너 (질문: 승률↑ 이유/역할분담?)
+  const favs = stats.favPartners.length
+    ? stats.favPartners.map(p=>`${p.name}(${p.total}경기 ${p.rate}%)`).slice(0,2).join(", ")
+    : "";
+
+  // 어려운 상대 (질문: 서브/템포/유형?)
+  const hards = stats.hardOpponents.length
+    ? stats.hardOpponents.map(o=>`${o.name}(${o.total}경기 ${o.rate}%)`).slice(0,3).join(", ")
+    : "";
+
+  // 종합 메모 (질문: 전술 조언 + 장기 성장 포인트)
+  const last = reports.at(-1);
+  const lastLine = last ? `최근(${last.month}) 승률 ${last.rate}% 기준, ` : "";
+  const memo = [
+    `${lastLine}초반 5포인트 구간은 짧은 랠리 위주 전술로 안정화하고,`,
+    `리시브는 푸시/짧은 스트레이트/백 리프트를 섞어 패턴을 다양화하세요.`,
+    `복식은 초구-2구 역할을 명확히 분담하고, 단식은 첫 블록 성공률 향상을 위한 반복 훈련이 핵심입니다.`
+  ].join(" ");
+
+  return { style, strengths, weaknesses, favs, hards, memo };
+}
+
+/* 관리자 입력칸에 추천안을 "빈 칸에만" 채워 넣기 */
+function fillAdminMemoFields(suggest) {
+  const f = (id) => document.getElementById(id);
+  const setIfEmpty = (el, val) => { if (el && !el.value.trim() && val) el.value = val; };
+
+  setIfEmpty(f("ad_style"), suggest.style);
+  setIfEmpty(f("ad_strengths"), suggest.strengths);
+  setIfEmpty(f("ad_weaknesses"), suggest.weaknesses);
+  setIfEmpty(f("ad_favs"), suggest.favs);
+  setIfEmpty(f("ad_hards"), suggest.hards);
+  setIfEmpty(f("ad_memo"), suggest.memo);
+}
+
+/* ============ 실행부 추가: 데이터 만든 뒤 호출 ============ */
+/* (기존 실행부)
+   const reports = await loadMonthlyReports();
+   const matches = await loadMatches();
+   const adminMemo = await loadAdminMemo();
+   box.innerHTML = makeAnalysis(reports, matches, adminMemo);
+   ... (기존 값 채워넣기)
+*/
+
+(function runQuestionBasedAnalysis() {
+  // reports, matches, playerName은 기존 스코프에 이미 존재
+  if (!window.__questionBasedDone__) window.__questionBasedDone__ = true; else return;
+
+  // 통합 요약
+  fillUnifiedSummary(reports);
+
+  // 세부 성향
+  const stats = buildMatchStats(matches, playerName);
+  fillDetailBullets(stats);
+
+  // 관리자 메모 추천안 생성 → 빈칸만 자동 채움
+  const suggest = buildAdminGuidedMemo(stats, reports, playerName);
+  fillAdminMemoFields(suggest);
+})();
+
+</script>
+
+
+</body>
+</html>

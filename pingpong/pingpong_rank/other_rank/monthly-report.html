@@ -33,11 +33,24 @@ thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:10px 6px;
   text-align:center;color:#334155;font-weight:700;white-space:nowrap;}
 tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center;}
 tbody tr:hover{background:#f9fafb}
-.win{color:var(--ok);font-weight:700;}
-.lose{color:var(--danger);font-weight:700;}
+.win { 
+  color: #dc2626;   /* 🔴 빨강(승리) */
+  font-weight: 700;
+}
+
+.lose { 
+  color: #2563eb;   /* 🔵 파랑(패배) */
+  font-weight: 700;
+}
 .delta{font-weight:700;}
-.delta.up{color:var(--ok);}
-.delta.down{color:var(--danger);}
+/* ✅ 승률 증가(빨강), 감소(파랑) */
+.delta.up { 
+  color: #dc2626;   /* 🔴 승률 증가 */
+}
+
+.delta.down { 
+  color: #2563eb;   /* 🔵 승률 감소 */
+}
 .summary{
   margin-top:28px;
   display:grid;
@@ -71,12 +84,10 @@ tbody tr:hover{background:#f9fafb}
   <h1 id="pageHeader">🏓 월간 탁구리그 리포트</h1>
   <div class="row">
     <button id="adminBtn" class="btn">⚙ 관리자모드</button>
-    <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
-    <a href="lh_monthly_report_qr.png" target="_blank" class="btn ok">📱 QR코드</a>
-
-   <!-- <a href="https://sensational-tulumba-65e97e.netlify.app/pingpong/pingpong_rank/koen_vs_lh/"  
-     class="btn ok">🤝 KOEN vs LH</a>-->
-  </div>
+    <a href="index.html" class="btn primary">경기결과 입력</a>
+    <!--<a href="monthly-report.html" class="btn primary">통합 전적</a>  -->
+    <a href="monthly-report2.html" class="btn primary">단/복식 전적</a>
+   </div>
 </header>
 
 <main>
@@ -97,13 +108,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebas
 import { getDatabase, ref, get, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCM6FQqWaeI4Rx3ovD6OnhA_o-sgFvyWyI",
-  authDomain: "pingpongclub2-6ce04.firebaseapp.com",
-  databaseURL:"https://pingpongclub2-6ce04-default-rtdb.firebaseio.com",
-  projectId: "pingpongclub2-6ce04",
-  storageBucket: "pingpongclub2-6ce04.firebasestorage.app",
-  messagingSenderId: "27948766659",
-  appId: "1:27948766659:web:b7f79c1937c2123ed29976"
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -113,7 +124,7 @@ const db = getDatabase(app);
 const titleRef = ref(db, "config/title");
 get(titleRef).then(snap=>{
   const title = snap.exists()?snap.val():"우리회사";
-  document.getElementById("pageHeader").textContent = `🏓 ${title} 월간 탁구리그`;
+  document.getElementById("pageHeader").textContent = `🏓 ${title} 월간 통합리그`;
 });
 
 const matchRef = ref(db, "matches");
@@ -129,7 +140,9 @@ onValue(matchRef, async (snap)=>{
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const prevMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2,'0')}`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1);
+  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
   const oldMonth = `${now.getFullYear()}-${String(now.getMonth()-1).padStart(2,'0')}`;
 
   const stats = {};
@@ -164,13 +177,24 @@ onValue(matchRef, async (snap)=>{
   const prevArr=[]; const prevMap={};
   const prevReportRef = ref(db, `monthlyReports/${prevMonth}/players`);
   const prevSnap = await get(prevReportRef);
-  if(prevSnap.exists()){
-    const data = prevSnap.val();
-    data.forEach(p=>{
-      prevArr.push(p);
-      prevMap[p.name]=p.rate;
-    });
-  }
+if(prevSnap.exists()){
+  const data = prevSnap.val();
+  Object.values(data).forEach(p => {
+
+    // ✅ key 변환
+    p.win  = p.wins;
+    p.lose = p.losses;
+    p.rate = p.winRate;
+
+    // ✅ total 계산
+    p.total = p.wins + p.losses;
+
+    prevArr.push(p);
+    prevMap[p.name] = p.rate;
+  });
+}
+
+
 
   const curAug = curArr.map(p=>{
     const prev = prevMap[p.name] ?? null;
@@ -182,7 +206,7 @@ onValue(matchRef, async (snap)=>{
   summary(curAug,prevArr,prevMap);
 });
 
-// === render 함수 ===
+
 // === render 함수 ===
 function render(curArr, thisMonth, prevArr, prevMonth) {
   const main = document.querySelector('main');
@@ -191,7 +215,7 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
   // ✅ 이달의 전적 표
   main.innerHTML = `
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
-      🏓 이달의 전적 (${thisMonth})
+      🏓 이달의 통합전적 (${thisMonth})
     </h2>
     <table id="tableCurrent">
       <thead>
@@ -210,15 +234,28 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
   // ✅ 날짜별 경기 수 기준
   const today = new Date();
   const day = today.getDate();
-  let minGames = 15; // 기본: 말일 기준
-  if (day <= 10) minGames = 5;
-  else if (day <= 20) minGames = 10;
+
+ // ✅ "2일에 1경기" 규칙 적용
+  let minGames = Math.ceil(day / 2);
+
 
   // ✅ 조건 충족 / 미충족자 분리
-  const qualified = curArr.filter(p => p.total >= minGames);
-  const unqualified = curArr
-    .filter(p => p.total < minGames)
-    .sort((a, b) => b.total - a.total); // 경기 많은 순
+const qualified = curArr
+  .filter(p => p.total >= minGames)
+  .sort((a, b) =>
+      b.rate - a.rate ||     // ✅ 승률 높은순
+      b.total - a.total ||   // ✅ 경기 많은순
+      a.level - b.level      // ✅ 부수 낮은순
+  );
+
+const unqualified = curArr
+  .filter(p => p.total < minGames)
+  .sort((a, b) =>
+      b.rate - a.rate ||     // ✅ 승률 높은순
+      b.total - a.total ||   // ✅ 경기 많은순
+      a.level - b.level
+  );
+
 
   const tbody = document.querySelector('#tbodyCurrent');
 
@@ -232,7 +269,14 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
     tbody.insertAdjacentHTML('beforeend', `
       <tr style="background:#e0f2fe;">
         <td>${i + 1}</td>
-        <td>${p.name}(${p.level})</td>
+
+        <td>
+        <a href="player.html?name=${encodeURIComponent(p.name)}"
+        style="color:#2563eb; font-weight:700; text-decoration:none;">
+     ${p.name}(${p.level})
+        </a>
+        </td>
+
         <td>${p.total}</td>
         <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
         <td>${prevText}</td>
@@ -252,7 +296,12 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
     tbody.insertAdjacentHTML('beforeend', `
       <tr style="background:#f9fafb;">
         <td>–</td>
-        <td>${p.name}(${p.level})</td>
+        <td>
+        <a href="player.html?name=${encodeURIComponent(p.name)}"
+     style="color:#2563eb; font-weight:700; text-decoration:none;">
+     ${p.name}(${p.level})
+        </a>
+        </td>
         <td>${p.total}</td>
         <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
         <td>${prevText}</td>
@@ -272,7 +321,8 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
       margin-bottom:14px;
       font-weight:500;
     ">
-      ⚠️ 순위 반영 기준: <b>10일(5경기↑) / 20일(10경기↑) / 말일(15경기↑)</b>
+      ⚠️ 순위 반영 기준: <b>2일에 1경기 이상 (오늘 기준 최소 ${minGames}경기)</b>
+
     </p>
   `);
 
@@ -296,15 +346,33 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
     const tb = document.querySelector('#tbodyPrev');
 
     // ✅ 지난달도 15경기 기준 분리
-    const qualifiedPrev = prevArr.filter(p => p.total >= 15);
-    const unqualifiedPrev = prevArr.filter(p => p.total < 15).sort((a,b)=>b.total - a.total);
+    const qualifiedPrev = prevArr
+  .filter(p => p.total >= 15)
+  .sort((a, b) => 
+      b.rate - a.rate ||        // 승률 순
+      b.total - a.total ||      // 경기수 순
+      a.level - b.level         // 부수 낮은 순
+  );
+
+    const unqualifiedPrev = prevArr
+  .filter(p => p.total < 15)
+  .sort((a, b) =>
+      b.rate - a.rate || 
+      b.total - a.total || 
+      a.level - b.level
+  );
 
     // ✅ 15경기 이상 (하늘색 + 순위 있음)
     qualifiedPrev.forEach((p, i) => {
       tb.insertAdjacentHTML('beforeend', `
         <tr style="background:#e0f2fe;">
           <td>${i + 1}</td>
-          <td>${p.name}</td>
+          <td>
+            <a href="player.html?name=${encodeURIComponent(p.name)}"
+            style="color:#2563eb; font-weight:700; text-decoration:none;">
+            ${p.name}  </a>
+          </td>
+
           <td>${p.total}</td>
           <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
           <td>${formatNum(p.rate)}%</td>
@@ -317,7 +385,11 @@ function render(curArr, thisMonth, prevArr, prevMonth) {
       tb.insertAdjacentHTML('beforeend', `
         <tr style="background:#f9fafb;">
           <td>–</td>
-          <td>${p.name}</td>
+          <td>
+            <a href="player.html?name=${encodeURIComponent(p.name)}"
+            style="color:#2563eb; font-weight:700; text-decoration:none;">
+            ${p.name}  </a>
+          </td>
           <td>${p.total}</td>
           <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
           <td>${formatNum(p.rate)}%</td>
@@ -403,7 +475,10 @@ async function autoClosePreviousMonth() {
   const day = now.getDate();
   if (day !== 1) return; // 🔹 1일에만 실행
 
-  const prevMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`;
+  // ✅ 전달 월 정확히 계산
+  const prevDate2 = new Date(now.getFullYear(), now.getMonth() - 1);
+  const prevMonth = `${prevDate2.getFullYear()}-${String(prevDate2.getMonth() + 1).padStart(2, '0')}`;
+
   const reportRef = ref(db, `monthlyReports/${prevMonth}/players`);
 
   // 이미 저장된 리포트가 있으면 중복 생성 방지
@@ -450,6 +525,7 @@ async function autoClosePreviousMonth() {
   await set(reportRef, reportArr);
   console.log(`✅ ${prevMonth} 월 리포트 자동 생성 완료`);
 }
+
 
 // 페이지 로드시 자동 실행
 autoClosePreviousMonth();
