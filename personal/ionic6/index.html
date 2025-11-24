@@ -4,7 +4,7 @@
   <div class="container">
     <h2>전기차 충전 할인 계산기</h2>
 
-    <!-- 로그인/로그아웃 영역 -->
+    <!-- 로그인 -->
     <div class="auth-panel">
       <input type="email" id="email" placeholder="관리자 이메일"/>
       <input type="password" id="password" placeholder="비밀번호"/>
@@ -12,15 +12,15 @@
       <button id="logoutBtn" class="btn gray">로그아웃</button>
     </div>
 
-    <!-- 충전 금액 입력 -->
+    <!-- 충전금액 입력 -->
     <input type="number" id="amount" placeholder="충전금액 입력 (₩)" disabled />
 
     <div class="description">
-      환경부카드 월 최대 <b>30,000원</b>까지 할인 적용됩니다.<br/>
-      아래 카드에서 할인 적용 내역을 확인하세요.
+      환경부카드는 월 최대 <b>30,000원</b>까지 할인됩니다.<br/>
+      아래 카드에서 충전 내역을 확인하세요.
     </div>
 
-    <!-- 카드 목록 -->
+    <!-- 카드 리스트 -->
     <div class="card-list"></div>
   </div>
 
@@ -29,8 +29,8 @@
     body {
       margin: 0;
       padding: 16px;
-      font-family: "Segoe UI", sans-serif;
-      background: #e6f7ff;
+      font-family: "Noto Sans KR", sans-serif;
+      background: #eaf7ff;
       font-size: 20px;
     }
 
@@ -41,25 +41,26 @@
       font-size: 2.1rem;
     }
 
+    /* 로그인 UI */
     .auth-panel {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      margin-bottom: 18px;
+      gap: 12px;
+      margin-bottom: 20px;
     }
 
     .auth-panel input {
       padding: 16px;
-      border-radius: 10px;
+      border-radius: 12px;
       border: 1px solid #b0bec5;
       font-size: 1.3rem;
     }
 
     .btn {
-      padding: 14px 20px;
+      padding: 16px;
+      font-size: 1.35rem;
       border: none;
-      font-size: 1.25rem;
-      border-radius: 10px;
+      border-radius: 12px;
       cursor: pointer;
     }
 
@@ -71,48 +72,60 @@
     #amount {
       width: 100%;
       padding: 16px;
-      border-radius: 10px;
+      border-radius: 12px;
       border: 1px solid #aaa;
       font-size: 1.3rem;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
 
     .description {
       text-align: center;
-      margin-bottom: 16px;
-      font-size: 1.25rem;
+      margin-bottom: 20px;
+      font-size: 1.3rem;
       color: #37474f;
     }
 
-    /* ---- 카드 스타일 ---- */
+    /* ================= 카드 UI ================= */
     .card {
       background: white;
-      padding: 20px;
-      border-radius: 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.08);
-      margin-bottom: 20px;
-      font-size: 1.35rem;
+      border-radius: 18px;
+      padding: 24px;
+      margin-bottom: 22px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+      font-size: 1.45rem;
     }
 
-    .card-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .card-row .label {
+    .card-date {
+      font-size: 1.6rem;
       font-weight: 700;
       color: #0277bd;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      font-size: 1.45rem;
+    }
+
+    .row label {
+      font-weight: 700;
+      color: #01579b;
+    }
+
+    /* 삭제 버튼 */
     .card-delete {
-      margin-top: 16px;
-      padding: 14px;
+      margin-top: 18px;
+      text-align: center;
       background: #ef5350;
       color: white;
-      text-align: center;
-      font-size: 1.35rem;
-      border-radius: 10px;
+      padding: 16px;
+      font-size: 1.5rem;
+      border-radius: 12px;
     }
   </style>
 
@@ -136,17 +149,17 @@
       appId: "1:306251113324:web:0559f88d362de423c18949"
     };
 
-    const app   = initializeApp(firebaseConfig);
-    const db    = getDatabase(app);
-    const auth  = getAuth(app);
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
 
     /* 상수 */
     const MAX_DISCOUNT = 30000;
-    const RATE         = 0.7;
-    const PRICE_KWH    = 341;
-    const BATTERY      = 77.4;
+    const RATE = 0.7;
+    const PRICE_KWH = 341;
+    const BATTERY = 77.4;
 
-    /* 요소 */
+    /* 엘리먼트 */
     const amountInput = document.getElementById("amount");
     const loginBtn    = document.getElementById("loginBtn");
     const logoutBtn   = document.getElementById("logoutBtn");
@@ -154,11 +167,11 @@
     const pwInput     = document.getElementById("password");
     const cardList    = document.querySelector(".card-list");
 
-    let currentMonth  = new Date().toISOString().substring(0,7);
+    let currentMonth = new Date().toISOString().substring(0,7);
     let totalDiscount = 0;
-    let isAdmin       = false;
+    let isAdmin = false;
 
-    /* ------------------- 로그인 ------------------- */
+    /* -------- 로그인 ---------- */
     loginBtn.onclick = () => {
       setPersistence(auth, browserLocalPersistence)
       .then(() => signInWithEmailAndPassword(auth, emailInput.value, pwInput.value))
@@ -169,7 +182,7 @@
 
     onAuthStateChanged(auth, async (user) => {
       if (user) {
-        loginBtn.style.display  = "none";
+        loginBtn.style.display = "none";
         logoutBtn.style.display = "block";
 
         const snap = await get(child(ref(db), `admins/${user.uid}`));
@@ -177,17 +190,17 @@
 
         amountInput.disabled = !isAdmin;
 
-        loadLogs();
+        startApp();
       } else {
-        loginBtn.style.display  = "block";
+        loginBtn.style.display = "block";
         logoutBtn.style.display = "none";
-        amountInput.disabled    = true;
+        amountInput.disabled = true;
         cardList.innerHTML = "";
       }
     });
 
-    /* ------------------- 데이터 로드 ------------------- */
-    function loadLogs() {
+    /* -------- DB 읽기 -------- */
+    function startApp() {
       const logRef = ref(db, `chargingLogs/${currentMonth}`);
 
       onValue(logRef, snap => {
@@ -195,43 +208,42 @@
         totalDiscount = 0;
 
         if (data) {
-          Object.values(data).forEach(l => totalDiscount += Number(l.discount));
+          Object.values(data).forEach(v => totalDiscount += v.discount);
         }
         renderCards(data);
       });
+
+      amountInput.onchange = () => {
+        if (!isAdmin) return;
+
+        const amount = Number(amountInput.value);
+        if (!amount) return;
+
+        const timestamp = new Date().toISOString();
+        const remainCap = Math.max(0, MAX_DISCOUNT - totalDiscount);
+        const discount  = Math.min(amount * RATE, remainCap);
+        const remaining = Math.max(0, MAX_DISCOUNT - (totalDiscount + discount));
+
+        const moreCharge = remaining / RATE;
+        const moreKwh    = moreCharge / PRICE_KWH;
+        const pct        = (moreKwh / BATTERY) * 100;
+
+        const log = {
+          timestamp,
+          amount: Math.round(amount),
+          discount: Math.round(discount),
+          remaining: Math.round(remaining),
+          moreCharge: Math.round(moreCharge),
+          moreKwh: Number(moreKwh.toFixed(2)),
+          batteryPercent: Number(pct.toFixed(1))
+        };
+
+        push(ref(db, `chargingLogs/${currentMonth}`), log);
+        amountInput.value = "";
+      };
     }
 
-    /* ------------------- 입력 처리 ------------------- */
-    amountInput.onchange = () => {
-      if (!isAdmin) return;
-
-      const amount = Number(amountInput.value);
-      if (!amount || amount <= 0) return;
-
-      const now   = new Date().toISOString();
-      const remainCap = Math.max(0, MAX_DISCOUNT - totalDiscount);
-      const discount  = Math.min(amount * RATE, remainCap);
-      const remain    = Math.max(0, MAX_DISCOUNT - (totalDiscount + discount));
-
-      const moreCharge = remain / RATE;
-      const moreKwh    = moreCharge / PRICE_KWH;
-      const pct        = (moreKwh / BATTERY) * 100;
-
-      const log = {
-        timestamp: now,
-        amount: Math.round(amount),
-        discount: Math.round(discount),
-        remaining: Math.round(remain),
-        moreCharge: Math.round(moreCharge),
-        moreKwh: Number(moreKwh.toFixed(2)),
-        batteryPercent: Number(pct.toFixed(1))
-      };
-
-      push(ref(db, `chargingLogs/${currentMonth}`), log);
-      amountInput.value = "";
-    };
-
-    /* ------------------- 카드 UI ------------------- */
+    /* -------- 카드 렌더링 -------- */
     function renderCards(data) {
       cardList.innerHTML = "";
 
@@ -243,13 +255,18 @@
         div.className = "card";
 
         div.innerHTML = `
-          <div class="card-row"><span class="label">날짜</span><span>${log.timestamp.substring(5,10)}</span></div>
-          <div class="card-row"><span class="label">금액</span><span>${log.amount.toLocaleString()}원</span></div>
-          <div class="card-row"><span class="label">할인</span><span>${log.discount.toLocaleString()}원</span></div>
-          <div class="card-row"><span class="label">남은 할인</span><span>${log.remaining.toLocaleString()}원</span></div>
-          <div class="card-row"><span class="label">추가 충전금액</span><span>${log.moreCharge.toLocaleString()}원</span></div>
-          <div class="card-row"><span class="label">추가 kWh</span><span>${log.moreKwh} kWh</span></div>
-          <div class="card-row"><span class="label">충전 가능 %</span><span>${log.batteryPercent}%</span></div>
+          <div class="card-date">📅 ${log.timestamp.substring(5,10)}</div>
+
+          <div class="row"><label>💰 충전금액</label><span>${log.amount.toLocaleString()}원</span></div>
+          <div class="row"><label>💸 할인적용</label><span>${log.discount.toLocaleString()}원</span></div>
+          <div class="row"><label>🏦 남은 할인</label><span>${log.remaining.toLocaleString()}원</span></div>
+
+          <hr style="margin:18px 0; border:none; border-top:2px solid #ddd;">
+
+          <div class="row"><label>⚡ 추가충전 금액</label><span>${log.moreCharge.toLocaleString()}원</span></div>
+          <div class="row"><label>🔋 추가 kWh</label><span>${log.moreKwh} kWh</span></div>
+          <div class="row"><label>📈 충전 가능%</label><span>${log.batteryPercent}%</span></div>
+
           ${
             isAdmin
             ? `<div class="card-delete" data-key="${key}">삭제</div>`
@@ -260,7 +277,6 @@
         cardList.appendChild(div);
       });
 
-      // 삭제 이벤트
       document.querySelectorAll(".card-delete").forEach(btn => {
         btn.onclick = () => {
           remove(ref(db, `chargingLogs/${currentMonth}/${btn.dataset.key}`));
