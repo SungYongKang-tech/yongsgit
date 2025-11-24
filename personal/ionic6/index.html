@@ -14,6 +14,7 @@
 
     <!-- 충전금액 입력 -->
     <input type="number" id="amount" placeholder="충전금액 입력 (₩)" disabled />
+    <button id="saveBtn" class="btn blue" disabled>저장</button>
 
     <div class="description">
       환경부카드는 월 최대 <b>30,000원</b>까지 할인됩니다.<br/>
@@ -38,7 +39,7 @@
       text-align: center;
       margin-bottom: 20px;
       color: #01579b;
-      font-size: 6rem;
+      font-size: 5rem;
     }
 
     /* 로그인 UI */
@@ -65,7 +66,7 @@
     }
 
     .btn.green { background: #4caf50; color: white; }
-    .btn.gray { background: #757575; color: white; }
+    .btn.gray  { background: #757575; color: white; }
 
     #loginBtn, #logoutBtn { display: none; }
 
@@ -81,7 +82,7 @@
     .description {
       text-align: center;
       margin-bottom: 20px;
-      font-size: 3rem;
+      font-size: 2.7rem;
       color: #37474f;
     }
 
@@ -92,14 +93,13 @@
       padding: 24px;
       margin-bottom: 22px;
       box-shadow: 0 8px 28px rgba(0,0,0,0.12);
-      font-size: 1.45rem;
     }
 
     .card-date {
       font-size: 3rem;
       font-weight: 700;
       color: #0277bd;
-      margin-bottom: 18px;
+      margin-bottom: 20px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -108,7 +108,7 @@
     .row {
       display: flex;
       justify-content: space-between;
-      margin-bottom: 14px;
+      margin-bottom: 16px;
       font-size: 3rem;
     }
 
@@ -117,13 +117,23 @@
       color: #01579b;
     }
 
-    /* 삭제 버튼 */
     .card-delete {
       margin-top: 18px;
       text-align: center;
       background: #ef5350;
       color: white;
-      padding: 16px;
+      padding: 18px;
+      font-size: 3rem;
+      border-radius: 12px;
+    }
+
+    /* 저장 버튼 파란색 */
+    .btn.blue {
+      background: #0288d1;
+      color: white;
+      width: 100%;
+      margin-top: 10px;
+      padding: 18px;
       font-size: 3rem;
       border-radius: 12px;
     }
@@ -155,21 +165,22 @@
 
     /* 상수 */
     const MAX_DISCOUNT = 30000;
-    const RATE = 0.7;
-    const PRICE_KWH = 341;
-    const BATTERY = 77.4;
+    const RATE        = 0.7;
+    const PRICE_KWH   = 341;
+    const BATTERY     = 77.4;
 
     /* 엘리먼트 */
     const amountInput = document.getElementById("amount");
+    const saveBtn     = document.getElementById("saveBtn");
     const loginBtn    = document.getElementById("loginBtn");
     const logoutBtn   = document.getElementById("logoutBtn");
     const emailInput  = document.getElementById("email");
     const pwInput     = document.getElementById("password");
     const cardList    = document.querySelector(".card-list");
 
-    let currentMonth = new Date().toISOString().substring(0,7);
-    let totalDiscount = 0;
-    let isAdmin = false;
+    let currentMonth   = new Date().toISOString().substring(0,7);
+    let totalDiscount  = 0;
+    let isAdmin        = false;
 
     /* -------- 로그인 ---------- */
     loginBtn.onclick = () => {
@@ -182,24 +193,26 @@
 
     onAuthStateChanged(auth, async (user) => {
       if (user) {
-        loginBtn.style.display = "none";
+        loginBtn.style.display  = "none";
         logoutBtn.style.display = "block";
 
         const snap = await get(child(ref(db), `admins/${user.uid}`));
         isAdmin = snap.exists() && snap.val() === true;
 
         amountInput.disabled = !isAdmin;
+        saveBtn.disabled     = !isAdmin;
 
         startApp();
       } else {
-        loginBtn.style.display = "block";
+        loginBtn.style.display  = "block";
         logoutBtn.style.display = "none";
-        amountInput.disabled = true;
-        cardList.innerHTML = "";
+        amountInput.disabled    = true;
+        saveBtn.disabled        = true;
+        cardList.innerHTML      = "";
       }
     });
 
-    /* -------- DB 읽기 -------- */
+    /* -------- 데이터 읽기 -------- */
     function startApp() {
       const logRef = ref(db, `chargingLogs/${currentMonth}`);
 
@@ -212,36 +225,40 @@
         }
         renderCards(data);
       });
-
-      amountInput.onchange = () => {
-        if (!isAdmin) return;
-
-        const amount = Number(amountInput.value);
-        if (!amount) return;
-
-        const timestamp = new Date().toISOString();
-        const remainCap = Math.max(0, MAX_DISCOUNT - totalDiscount);
-        const discount  = Math.min(amount * RATE, remainCap);
-        const remaining = Math.max(0, MAX_DISCOUNT - (totalDiscount + discount));
-
-        const moreCharge = remaining / RATE;
-        const moreKwh    = moreCharge / PRICE_KWH;
-        const pct        = (moreKwh / BATTERY) * 100;
-
-        const log = {
-          timestamp,
-          amount: Math.round(amount),
-          discount: Math.round(discount),
-          remaining: Math.round(remaining),
-          moreCharge: Math.round(moreCharge),
-          moreKwh: Number(moreKwh.toFixed(2)),
-          batteryPercent: Number(pct.toFixed(1))
-        };
-
-        push(ref(db, `chargingLogs/${currentMonth}`), log);
-        amountInput.value = "";
-      };
     }
+
+    /* -------- 저장 버튼 -------- */
+    saveBtn.onclick = () => {
+      if (!isAdmin) return alert("관리자만 입력 가능합니다.");
+
+      const amount = Number(amountInput.value);
+      if (!amount || amount <= 0) {
+        alert("충전금액을 입력하세요.");
+        return;
+      }
+
+      const timestamp = new Date().toISOString();
+      const remainCap = Math.max(0, MAX_DISCOUNT - totalDiscount);
+      const discount  = Math.min(amount * RATE, remainCap);
+      const remaining = Math.max(0, MAX_DISCOUNT - (totalDiscount + discount));
+
+      const moreCharge = remaining / RATE;
+      const moreKwh    = moreCharge / PRICE_KWH;
+      const pct        = (moreKwh / BATTERY) * 100;
+
+      const log = {
+        timestamp,
+        amount: Math.round(amount),
+        discount: Math.round(discount),
+        remaining: Math.round(remaining),
+        moreCharge: Math.round(moreCharge),
+        moreKwh: Number(moreKwh.toFixed(2)),
+        batteryPercent: Number(pct.toFixed(1))
+      };
+
+      push(ref(db, `chargingLogs/${currentMonth}`), log);
+      amountInput.value = "";
+    };
 
     /* -------- 카드 렌더링 -------- */
     function renderCards(data) {
