@@ -1,132 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
 <body>
   <div class="container">
     <h2>전기차 충전 할인 계산기</h2>
 
-    <!-- 로그인/로그아웃 UI -->
+    <!-- 로그인/로그아웃 영역 -->
     <div class="auth-panel">
-      <input type="email" id="email" placeholder="관리자 이메일" />
-      <input type="password" id="password" placeholder="비밀번호" />
+      <input type="email" id="email" placeholder="관리자 이메일"/>
+      <input type="password" id="password" placeholder="비밀번호"/>
       <button id="loginBtn" class="btn green">로그인</button>
       <button id="logoutBtn" class="btn gray">로그아웃</button>
-      <div id="userStatus"></div>
     </div>
 
+    <!-- 충전 금액 입력 -->
     <input type="number" id="amount" placeholder="충전금액 입력 (₩)" disabled />
+
     <div class="description">
-      환경부카드 월 최대 30,000원까지 할인 적용됩니다.<br />
-      아래 표에는 남은 할인 한도, 추가 충전량 등이 표시됩니다.
+      환경부카드 월 최대 <b>30,000원</b>까지 할인 적용됩니다.<br/>
+      아래 카드에서 할인 적용 내역을 확인하세요.
     </div>
-    <div class="table-wrapper">
-      <table id="logTable"></table>
-    </div>
+
+    <!-- 카드 목록 -->
+    <div class="card-list"></div>
   </div>
 
+  <!-- ================= CSS ================= -->
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(to right, #e0f7fa, #ffffff);
       margin: 0;
-      padding: 20px;
-      font-size: 20px; /* 기본 글씨 크기 크게 */
+      padding: 16px;
+      font-family: "Segoe UI", sans-serif;
+      background: #e6f7ff;
+      font-size: 20px;
     }
 
     h2 {
       text-align: center;
-      color: #01579b;
       margin-bottom: 20px;
-      font-size: 2rem; /* 제목 크게 */
+      color: #01579b;
+      font-size: 2.1rem;
     }
 
     .auth-panel {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 15px;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 18px;
     }
 
     .auth-panel input {
-      flex: 1 1 200px;
       padding: 16px;
-      border-radius: 8px;
-      border: 1px solid #bbb;
-      font-size: 1.2rem;
-      box-sizing: border-box;
+      border-radius: 10px;
+      border: 1px solid #b0bec5;
+      font-size: 1.3rem;
     }
 
     .btn {
-      padding: 16px 20px;
+      padding: 14px 20px;
       border: none;
-      border-radius: 8px;
-      font-size: 1.2rem;
+      font-size: 1.25rem;
+      border-radius: 10px;
       cursor: pointer;
     }
 
     .btn.green { background: #4caf50; color: white; }
-    .btn.gray { background: #888; color: white; }
+    .btn.gray { background: #757575; color: white; }
+
+    #loginBtn, #logoutBtn { display: none; }
 
     #amount {
       width: 100%;
       padding: 16px;
-      border-radius: 8px;
-      border: 1px solid #bbb;
-      font-size: 1.2rem;
-      margin-bottom: 15px;
-      box-sizing: border-box;
+      border-radius: 10px;
+      border: 1px solid #aaa;
+      font-size: 1.3rem;
+      margin-bottom: 16px;
     }
 
     .description {
-      font-size: 1.1rem;
       text-align: center;
-      margin: 14px 0;
-      color: #444;
+      margin-bottom: 16px;
+      font-size: 1.25rem;
+      color: #37474f;
     }
 
-    .table-wrapper { overflow-x: auto; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 1.1rem;
-      min-width: 600px;
+    /* ---- 카드 스타일 ---- */
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.08);
+      margin-bottom: 20px;
+      font-size: 1.35rem;
     }
 
-    th, td {
-      padding: 16px 10px;
-      border-bottom: 1px solid #e0e0e0;
-      text-align: center;
+    .card-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
     }
 
-    button.del {
-      padding: 8px 12px;
-      font-size: 1rem;
-      border: none;
+    .card-row .label {
+      font-weight: 700;
+      color: #0277bd;
+    }
+
+    .card-delete {
+      margin-top: 16px;
+      padding: 14px;
       background: #ef5350;
       color: white;
-      border-radius: 4px;
-      cursor: pointer;
+      text-align: center;
+      font-size: 1.35rem;
+      border-radius: 10px;
     }
-
-    @media (max-width: 600px) {
-      body { padding: 10px; font-size: 22px; }
-      h2 { font-size: 2.2rem; }
-      .auth-panel input, .btn { font-size: 1.4rem; padding: 18px; }
-      table { font-size: 1.2rem; }
-      th, td { padding: 18px 10px; }
-    }
-
-    #loginBtn, #logoutBtn {
-  display: none; /* 기본은 숨김, JS에서 상태에 맞게 보이게 함 */
-}
   </style>
 
+  <!-- ================= JS ================= -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, push, onValue, remove, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { 
+    import {
       getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
       setPersistence, browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
+    /* Firebase 설정 */
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
       authDomain: "ionic6-3b7b2.firebaseapp.com",
@@ -137,148 +136,137 @@
       appId: "1:306251113324:web:0559f88d362de423c18949"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const auth = getAuth(app);
+    const app   = initializeApp(firebaseConfig);
+    const db    = getDatabase(app);
+    const auth  = getAuth(app);
 
+    /* 상수 */
     const MAX_DISCOUNT = 30000;
-    const DISCOUNT_RATE = 0.7;
-    const PRICE_PER_KWH = 341;
-    const BATTERY_CAPACITY = 77.4;
+    const RATE         = 0.7;
+    const PRICE_KWH    = 341;
+    const BATTERY      = 77.4;
 
+    /* 요소 */
     const amountInput = document.getElementById("amount");
-    const logsTable  = document.getElementById("logTable");
-    const loginBtn = document.getElementById("loginBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const userStatus = document.getElementById("userStatus");
-    const emailInput = document.getElementById("email");
-    const pwInput = document.getElementById("password");
+    const loginBtn    = document.getElementById("loginBtn");
+    const logoutBtn   = document.getElementById("logoutBtn");
+    const emailInput  = document.getElementById("email");
+    const pwInput     = document.getElementById("password");
+    const cardList    = document.querySelector(".card-list");
 
-    let currentMonth = new Date().toISOString().substring(0, 7);
-    let totalDiscountUsed = 0;
-    let isAdmin = false;
+    let currentMonth  = new Date().toISOString().substring(0,7);
+    let totalDiscount = 0;
+    let isAdmin       = false;
 
-    // 로그인 버튼 클릭 → 로그인 유지 후 로그인 실행
-    loginBtn.addEventListener("click", () => {
+    /* ------------------- 로그인 ------------------- */
+    loginBtn.onclick = () => {
       setPersistence(auth, browserLocalPersistence)
-        .then(() => {
-          return signInWithEmailAndPassword(auth, emailInput.value, pwInput.value);
-        })
-        .catch(err => alert("로그인 실패: " + err.message));
-    });
+      .then(() => signInWithEmailAndPassword(auth, emailInput.value, pwInput.value))
+      .catch(err => alert("로그인 실패: " + err.message));
+    };
 
-    // 로그아웃 버튼
-    logoutBtn.addEventListener("click", () => {
-      signOut(auth).catch(err => alert("로그아웃 실패: " + err.message));
-    });
+    logoutBtn.onclick = () => signOut(auth);
 
-    // 로그인 상태 변경 감지
     onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    loginBtn.style.display = "none";
-    logoutBtn.style.display = "inline-block";
+      if (user) {
+        loginBtn.style.display  = "none";
+        logoutBtn.style.display = "block";
 
-    const adminSnap = await get(child(ref(db), `admins/${user.uid}`));
-    isAdmin = adminSnap.exists() && adminSnap.val() === true;
+        const snap = await get(child(ref(db), `admins/${user.uid}`));
+        isAdmin = snap.exists() && snap.val() === true;
 
-    // 상태 텍스트 표시 제거
-    amountInput.disabled = !isAdmin;
+        amountInput.disabled = !isAdmin;
 
-    startApp();
-  } else {
-    loginBtn.style.display = "inline-block";
-    logoutBtn.style.display = "none";
+        loadLogs();
+      } else {
+        loginBtn.style.display  = "block";
+        logoutBtn.style.display = "none";
+        amountInput.disabled    = true;
+        cardList.innerHTML = "";
+      }
+    });
 
-    // 상태 텍스트 표시 제거
-    logsTable.innerHTML = "";
-    amountInput.disabled = true;
-  }
-});
-
-
-    function startApp() {
+    /* ------------------- 데이터 로드 ------------------- */
+    function loadLogs() {
       const logRef = ref(db, `chargingLogs/${currentMonth}`);
 
-      onValue(logRef, (snapshot) => {
-        const data = snapshot.val();
-        totalDiscountUsed = 0;
+      onValue(logRef, snap => {
+        const data = snap.val();
+        totalDiscount = 0;
+
         if (data) {
-          Object.values(data).forEach(log => {
-            totalDiscountUsed += Number(log.discount || 0);
-          });
+          Object.values(data).forEach(l => totalDiscount += Number(l.discount));
         }
-        renderLogs(data);
+        renderCards(data);
       });
-
-      amountInput.onchange = () => {
-        if (!isAdmin) {
-          alert("관리자만 수정 가능합니다.");
-          amountInput.value = "";
-          return;
-        }
-
-        const amount = Number(amountInput.value);
-        if (!amount || amount <= 0) return;
-
-        const now = new Date();
-        const isoDate = now.toISOString();
-        const monthKey = isoDate.substring(0, 7);
-
-        const remainingCap = Math.max(0, MAX_DISCOUNT - totalDiscountUsed);
-        const discount     = Math.min(amount * DISCOUNT_RATE, remainingCap);
-        const remaining    = Math.max(0, MAX_DISCOUNT - (totalDiscountUsed + discount));
-        const moreCharge   = remaining / DISCOUNT_RATE;
-        const moreKwh      = moreCharge / PRICE_PER_KWH;
-        const batteryPct   = (moreKwh / BATTERY_CAPACITY) * 100;
-
-        const data = {
-          timestamp: isoDate,
-          amount: Math.round(amount),
-          discount: Math.round(discount),
-          remaining: Math.round(remaining),
-          moreCharge: Math.floor(moreCharge),
-          moreKwh: parseFloat(moreKwh.toFixed(2)),
-          batteryPercent: parseFloat(batteryPct.toFixed(1))
-        };
-
-        push(ref(db, `chargingLogs/${monthKey}`), data);
-        amountInput.value = "";
-      };
     }
 
-    function renderLogs(data) {
-      logsTable.innerHTML = `<tr>
-        <th>날짜</th><th>금액</th><th>할인</th><th>남은할인한도</th>
-        <th>추가충전가능금액</th><th>추가kWh</th><th>충전%</th><th>삭제</th>
-      </tr>`;
+    /* ------------------- 입력 처리 ------------------- */
+    amountInput.onchange = () => {
+      if (!isAdmin) return;
+
+      const amount = Number(amountInput.value);
+      if (!amount || amount <= 0) return;
+
+      const now   = new Date().toISOString();
+      const remainCap = Math.max(0, MAX_DISCOUNT - totalDiscount);
+      const discount  = Math.min(amount * RATE, remainCap);
+      const remain    = Math.max(0, MAX_DISCOUNT - (totalDiscount + discount));
+
+      const moreCharge = remain / RATE;
+      const moreKwh    = moreCharge / PRICE_KWH;
+      const pct        = (moreKwh / BATTERY) * 100;
+
+      const log = {
+        timestamp: now,
+        amount: Math.round(amount),
+        discount: Math.round(discount),
+        remaining: Math.round(remain),
+        moreCharge: Math.round(moreCharge),
+        moreKwh: Number(moreKwh.toFixed(2)),
+        batteryPercent: Number(pct.toFixed(1))
+      };
+
+      push(ref(db, `chargingLogs/${currentMonth}`), log);
+      amountInput.value = "";
+    };
+
+    /* ------------------- 카드 UI ------------------- */
+    function renderCards(data) {
+      cardList.innerHTML = "";
 
       const entries = Object.entries(data || {})
-        .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+        .sort((a,b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
 
       entries.forEach(([key, log]) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${log.timestamp.substring(5, 10)}</td>
-          <td>${Number(log.amount).toLocaleString()}</td>
-          <td>${Number(log.discount).toLocaleString()}</td>
-          <td>${Number(log.remaining).toLocaleString()}</td>
-          <td>${Number(log.moreCharge).toLocaleString()}</td>
-          <td>${log.moreKwh}</td>
-          <td>${log.batteryPercent}%</td>
-          <td><button data-key="${key}" class="del" ${!isAdmin ? "disabled" : ""}>삭제</button></td>
+        const div = document.createElement("div");
+        div.className = "card";
+
+        div.innerHTML = `
+          <div class="card-row"><span class="label">날짜</span><span>${log.timestamp.substring(5,10)}</span></div>
+          <div class="card-row"><span class="label">금액</span><span>${log.amount.toLocaleString()}원</span></div>
+          <div class="card-row"><span class="label">할인</span><span>${log.discount.toLocaleString()}원</span></div>
+          <div class="card-row"><span class="label">남은 할인</span><span>${log.remaining.toLocaleString()}원</span></div>
+          <div class="card-row"><span class="label">추가 충전금액</span><span>${log.moreCharge.toLocaleString()}원</span></div>
+          <div class="card-row"><span class="label">추가 kWh</span><span>${log.moreKwh} kWh</span></div>
+          <div class="card-row"><span class="label">충전 가능 %</span><span>${log.batteryPercent}%</span></div>
+          ${
+            isAdmin
+            ? `<div class="card-delete" data-key="${key}">삭제</div>`
+            : ""
+          }
         `;
-        logsTable.appendChild(row);
+
+        cardList.appendChild(div);
       });
 
-      logsTable.querySelectorAll('button.del').forEach(btn => {
+      // 삭제 이벤트
+      document.querySelectorAll(".card-delete").forEach(btn => {
         btn.onclick = () => {
-          if (!isAdmin) {
-            alert("관리자만 삭제 가능합니다.");
-            return;
-          }
           remove(ref(db, `chargingLogs/${currentMonth}/${btn.dataset.key}`));
         };
       });
     }
   </script>
 </body>
+</html>
