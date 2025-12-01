@@ -232,6 +232,35 @@ async function loadMatches() {
     return names.includes(playerName);
   });
 }
+// 이번달 실시간 분석 (matches 기반)
+async function loadThisMonthStats(playerName) {
+  const snap = await get(ref(db, "matches"));
+  if (!snap.exists()) return { month: "", win:0, lose:0, total:0, rate:0 };
+
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  const matches = Object.values(snap.val()).filter(m => m.monthKey === thisMonth);
+
+  let win = 0, lose = 0;
+
+  matches.forEach(m => {
+    const A = m.namesA || [];
+    const B = m.namesB || [];
+    const isA = A.includes(playerName);
+    const won = (m.winnerSide === "A" && isA) || (m.winnerSide === "B" && !isA);
+
+    won ? win++ : lose++;
+  });
+
+  return {
+    month: thisMonth,
+    win,
+    lose,
+    total: win + lose,
+    rate: (win + lose) ? Math.round(win / (win + lose) * 100) : 0
+  };
+}
 
 
 /* ============================================
@@ -441,8 +470,20 @@ out.push(`
 (async () => {
   box.innerHTML = "데이터 불러오는 중…";
 
-  reports = await loadMonthlyReports();  // ✅ 전역에 할당
-  matches = await loadMatches();         // ✅ 전역에 할당
+  // 지난달까지: 저장된 리포트
+  const prevReports = await loadMonthlyReports();
+
+  // 이번달: 실시간 분석
+  const thisMonthReport = await loadThisMonthStats(playerName);
+
+  // 조합
+  reports = [...prevReports];
+  if (thisMonthReport.total > 0) {
+    reports.push(thisMonthReport);
+  }
+
+  // 기존 코드 유지
+  matches = await loadMatches();
   const adminMemo = await loadAdminMemo();
 
   stats = buildMatchStats(matches, playerName);  // ✅ 전역에 저장
@@ -778,6 +819,7 @@ function fillAdminMemoFields(suggest) {
   const suggest = buildAdminGuidedMemo(stats, reports, playerName);
   fillAdminMemoFields(suggest);
 })();
+
 
 </script>
 
