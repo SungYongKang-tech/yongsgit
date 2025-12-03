@@ -4,194 +4,267 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Makeup Lesson Manager</title>
+
 <style>
 body{
-  font-family:-apple-system, BlinkMacSystemFont, "Pretendard",sans-serif;
-  background:#f5f5f7; margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif;
+  margin:0; background:#f5f5f7;
 }
 
-/* 헤더 */
+/* 제목 */
 header{
-  background:#fff; padding:16px;
+  padding:16px; background:#fff; 
   font-size:1.3rem; font-weight:700;
   border-bottom:1px solid #ddd;
 }
 
-/* 시간표 */
-.table{
+/* 레슨 표 */
+table{
+  width:100%; border-collapse:collapse; background:white;
+  margin-top:12px;
+}
+th, td{
+  border:1px solid #ccc;
+  padding:10px; text-align:center;
+}
+td.selectable{ cursor:pointer; }
+td.selected{ background:#2563eb; color:white; }
+
+/* 사이드 버튼 */
+.right-btn{
+  position:fixed; right:12px; top:12px;
+  background:#2563eb; color:#fff;
+  padding:10px 12px; border-radius:8px;
+  font-weight:700;
+}
+
+/* 보강 대상 리스트 */
+.list{
   padding:16px;
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:10px;
 }
-.cell{
-  background:#fff;
-  padding:14px;
-  border-radius:12px;
-  box-shadow:0 4px 14px rgba(0,0,0,0.08);
-  cursor:pointer;
-  font-size:0.9rem;
-}
-.cell strong{font-size:1rem;}
-
-.sheet{
-  position:fixed; left:0; right:0; bottom:-100%;
-  background:#fff; border-radius:20px 20px 0 0;
-  padding:20px; box-shadow:0 -6px 20px rgba(0,0,0,0.2);
-  transition:0.35s; max-height:70%; overflow:auto;
-}
-.sheet.open{ bottom:0; }
-
-input{
-  width:100%; padding:10px; border:1px solid #ccc;
-  border-radius:8px; margin-top:10px; font-size:1rem;
-}
-.btn{
-  padding:10px; margin-top:14px; border-radius:10px;
-  background:#2563eb; color:#fff; text-align:center;
-  font-weight:700; cursor:pointer;
-}
-
-/* 보강 리스트 */
-.list{ padding:16px; }
 .item{
-  background:#fff; padding:14px 16px; margin-bottom:12px;
-  border-radius:12px; border-left:6px solid #2563eb;
+  background:#fff; padding:14px; border-radius:10px;
+  margin-bottom:10px; border-left:5px solid #2563eb;
 }
-.name{font-weight:700; font-size:1.1rem;}
-.sub{color:#666; font-size:0.85rem;}
-.reason{margin-top:4px;}
+
+/* 보강 시간표 */
+.schedule-box{
+  padding:16px;
+}
+.slot{
+  padding:12px; background:white; 
+  margin-bottom:8px; border-radius:8px; 
+  border:1px solid #ddd; cursor:pointer;
+}
+.slot.selected{
+  background:#2563eb; color:white;
+}
+.name-item{
+  padding:10px; background:#fff; 
+  border:1px solid #ddd; border-radius:8px;
+  cursor:pointer; margin-bottom:6px;
+}
+.name-item.active{
+  background:#2563eb; color:white;
+}
+
 </style>
 </head>
-
 <body>
 
 <header>레슨 시간표</header>
 
-<!-- 시간표 -->
-<div class="table" id="lessonTable"></div>
+<!-- 보강 스케줄 생성 버튼 -->
+<div class="right-btn" onclick="showMakeupSchedule()">보강 스케줄 생성</div>
 
-<!-- 보강 생성 바텀시트 -->
-<div class="sheet" id="sheet">
-  <h3 id="sheetTitle"></h3>
-  <input type="date" id="dateInput">
-  <input id="reasonInput" placeholder="보강 사유 입력">
-  <div class="btn" onclick="createMakeup()">보강자 생성</div>
+<!-- 레슨 시간표 -->
+<div style="padding:12px;">
+<table id="lessonTable">
+  <thead>
+    <tr>
+      <th>시간</th>
+      <th>월</th>
+      <th>화</th>
+      <th>수</th>
+      <th>목</th>
+    </tr>
+  </thead>
+  <tbody id="lessonBody"></tbody>
+</table>
+
+<button onclick="createMakeupTargets()" style="margin-top:10px; padding:10px; width:100%; border:none; background:#2563eb; color:white; font-size:1rem; border-radius:8px;">
+  보강 대상자 생성
+</button>
 </div>
 
 <header>보강 대상자</header>
 <div class="list" id="makeupList"></div>
 
+<!-- 보강 스케줄 영역 -->
+<header>보강 스케줄</header>
+<div class="schedule-box">
+  <h3>보강 대상자</h3>
+  <div id="nameList"></div>
+
+  <h3 style="margin-top:16px;">시간 선택</h3>
+  <div id="timeSlots"></div>
+</div>
+
 <script>
-// --------------------------------------
-// 1. 기존 레슨 시간표 데이터
-// --------------------------------------
-const lessonData = {
-  mon_0:"정승목", mon_1:"이상준", mon_2:"이낭주", mon_3:"조보미",
-  tue_0:"이세란", tue_1:"박나령", tue_2:"김승일", tue_3:"송은아",
-  wed_0:"정승목", wed_1:"이상준", wed_2:"이낭주", wed_3:"조보미",
-  thu_0:"이세란", thu_1:"박나령", thu_2:"김승일", thu_3:"송은아"
+// ------------------------------
+// 1) 레슨 시간표 데이터
+// ------------------------------
+const timetable = {
+  "15:00": {mon:"정승목", tue:"이세란", wed:"정승목", thu:"이세란"},
+  "15:30": {mon:"이상준", tue:"박나령", wed:"이상준", thu:"박나령"},
+  "16:00": {mon:"이낭주", tue:"김승일", wed:"이낭주", thu:"김승일"},
+  "16:30": {mon:"조보미", tue:"송은아", wed:"조보미", thu:"송은아"}
 };
 
-const dayKor = {mon:"월요일", tue:"화요일", wed:"수요일", thu:"목요일"};
+// ------------------------------
+// 2) 레슨 표 렌더링
+// ------------------------------
+let selectedCells = []; // 보강 생성 대상
 
-// --------------------------------------
-// 2. 시간표 렌더링
-// --------------------------------------
 function renderLessonTable(){
-  const box = document.getElementById("lessonTable");
-  box.innerHTML="";
+  const body = document.getElementById("lessonBody");
+  body.innerHTML="";
 
-  Object.keys(lessonData).forEach(key=>{
-    const [day, group] = key.split("_");
-    const name = lessonData[key];
+  Object.keys(timetable).forEach(time=>{
+    const row = document.createElement("tr");
 
-    const div = document.createElement("div");
-    div.className="cell";
-    div.innerHTML = `
-      <strong>${name}</strong><br>
-      ${dayKor[day]} / 그룹 ${group}
-    `;
-    div.onclick=()=>openSheet(name, dayKor[day], group);
-    box.appendChild(div);
+    // 왼쪽 시간칸
+    row.innerHTML += `<td>${time}</td>`;
+
+    ["mon","tue","wed","thu"].forEach(day=>{
+      const name = timetable[time][day];
+      const td = document.createElement("td");
+      td.className="selectable";
+      td.innerText = name;
+      td.onclick = ()=>toggleSelect(time, day, name, td);
+      row.appendChild(td);
+    });
+
+    body.appendChild(row);
   });
 }
 
-// --------------------------------------
-// 3. 보강 생성 바텀시트 열기
-// --------------------------------------
-let selectedPerson = null;
-let selectedOrigin = null;
-
-function openSheet(name, day, group){
-  selectedPerson = name;
-  selectedOrigin = `${day} 그룹 ${group}`;
-
-  document.getElementById("sheetTitle").innerText =
-    `보강 생성: ${name} (${selectedOrigin})`;
-
-  document.getElementById("sheet").classList.add("open");
-}
-
-// --------------------------------------
-// 4. 보강 대상자 생성
-// --------------------------------------
-let makeupList = [];
-
-function createMakeup(){
-  const date = document.getElementById("dateInput").value.trim();
-  const reason = document.getElementById("reasonInput").value.trim();
-
-  if(date==="" || reason===""){
-    alert("날짜와 사유를 입력해주세요.");
-    return;
+function toggleSelect(time, day, name, td){
+  const key = `${time}_${day}_${name}`;
+  if(selectedCells.includes(key)){
+    selectedCells = selectedCells.filter(x => x !== key);
+    td.classList.remove("selected");
+  } else {
+    selectedCells.push(key);
+    td.classList.add("selected");
   }
-
-  makeupList.push({
-    name:selectedPerson,
-    origin:selectedOrigin,
-    date,
-    reason,
-    status:"pending"
-  });
-
-  // reset
-  document.getElementById("sheet").classList.remove("open");
-  document.getElementById("dateInput").value="";
-  document.getElementById("reasonInput").value="";
-
-  renderMakeupList();
 }
 
-// --------------------------------------
-// 5. 보강 대상자 렌더링
-// --------------------------------------
-function renderMakeupList(){
+// ------------------------------
+// 3) 보강 대상자 생성
+// ------------------------------
+let makeupTargets = [];
+
+function createMakeupTargets(){
+  makeupTargets = [];
+
+  selectedCells.forEach(key=>{
+    const [time, day, name] = key.split("_");
+    makeupTargets.push({name, day, time});
+  });
+
+  renderMakeupTargets();
+}
+
+function renderMakeupTargets(){
   const box = document.getElementById("makeupList");
   box.innerHTML="";
 
-  if(makeupList.length===0){
-    box.innerHTML='<div style="color:#999;">보강 대상자가 없습니다.</div>';
+  if(makeupTargets.length===0){
+    box.innerHTML=`<div style="color:#888;">보강 대상자 없음</div>`;
     return;
   }
 
-  makeupList.forEach(m=>{
+  makeupTargets.forEach(m=>{
     const div = document.createElement("div");
     div.className="item";
     div.innerHTML = `
       <div class="name">${m.name}</div>
-      <div class="sub">${m.origin}</div>
-      <div class="reason">사유: ${m.reason}</div>
-      <div class="sub">보강 예정일: ${m.date}</div>
+      <div class="sub">${m.day} / ${m.time}</div>
     `;
+    box.appendChild(div);
+  });
+
+  renderNameList();
+}
+
+// ------------------------------
+// 4) 보강 스케줄 생성
+// ------------------------------
+function showMakeupSchedule(){
+  // 15분 단위 생성
+  const start = 14;   // 14:00
+  const end = 18;     // 18:00
+
+  const slots = [];
+  for(let h=start; h<end; h++){
+    for(let m=0; m<60; m+=15){
+      const hh = String(h).padStart(2,"0");
+      const mm = String(m).padStart(2,"0");
+      slots.push(`${hh}:${mm}`);
+    }
+  }
+
+  const box = document.getElementById("timeSlots");
+  box.innerHTML="";
+
+  slots.forEach(t=>{
+    const div = document.createElement("div");
+    div.className="slot";
+    div.innerText = t;
+    div.onclick = ()=>assignTime(t, div);
     box.appendChild(div);
   });
 }
 
-// --------------------------------------
-renderLessonTable();
-renderMakeupList();
-</script>
+// ------------------------------
+// 5) 보강 대상자 + 시간 클릭 배정
+// ------------------------------
+let selectedName = null;
 
+function renderNameList(){
+  const box = document.getElementById("nameList");
+  box.innerHTML="";
+
+  makeupTargets.forEach((m,i)=>{
+    const div = document.createElement("div");
+    div.className="name-item";
+    div.innerText = m.name;
+    div.onclick = ()=>{
+      selectedName = m.name;
+      document.querySelectorAll(".name-item").forEach(n=>n.classList.remove("active"));
+      div.classList.add("active");
+    };
+    box.appendChild(div);
+  });
+}
+
+let assignedSchedule = {};
+
+function assignTime(t, slotDiv){
+  if(!selectedName){
+    alert("보강 받을 사람을 먼저 선택하세요.");
+    return;
+  }
+
+  assignedSchedule[t] = selectedName;
+
+  // UI 표시
+  slotDiv.classList.add("selected");
+  slotDiv.innerText = `${t}  ${selectedName}`;
+}
+
+renderLessonTable();
+</script>
 </body>
 </html>
