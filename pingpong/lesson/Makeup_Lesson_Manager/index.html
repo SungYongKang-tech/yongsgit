@@ -156,7 +156,7 @@ let makeupGroups = [];
 let scheduleList = [];
 
 let clickedSlot = null;
-let originalSlotValue = "";
+let clickedSchedule = null;
 
 /* ----------------------------
   레슨 시간표 렌더링
@@ -268,11 +268,24 @@ function renderMakeupList(){
   });
 }
 
+/* 그룹 삭제 시 스케줄에서도 초기화 */
 function deleteGroup(idx){
-  if(confirm("해당 보강 대상자 그룹을 삭제할까요?")){
-    makeupGroups.splice(idx,1);
-    renderMakeupList();
-  }
+  if(!confirm("해당 그룹을 삭제할까요?")) return;
+
+  const namesToClear = makeupGroups[idx].names.map(n=>n.name);
+
+  scheduleList.forEach(sc=>{
+    sc.slots.forEach(slot=>{
+      if(namesToClear.includes(slot.name)){
+        slot.name="";
+        slot.done=false;
+      }
+    });
+  });
+
+  makeupGroups.splice(idx,1);
+  renderMakeupList();
+  renderScheduleList();
 }
 
 /* 빈타임 보강 완료 */
@@ -290,7 +303,7 @@ function completeWithoutSchedule(date, name){
 }
 
 /* ----------------------------
-   스케쥴 생성 팝업
+   스케줄 생성 팝업
 -----------------------------*/
 
 function openSchedulePopup(){
@@ -350,10 +363,18 @@ function renderScheduleList(){
     wrap.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <h3>${sc.date} 보강 스케쥴</h3>
-        <button onclick="toggleScheduleView(${idx})" 
-          style="padding:6px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;">
-          보기/숨기기
-        </button>
+
+        <div>
+          <button onclick="toggleScheduleView(${idx})"
+            style="padding:6px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;margin-right:6px;">
+            보기/숨기기
+          </button>
+
+          <button onclick="removeSchedule(${idx})"
+            style="padding:6px 10px;border:none;border-radius:6px;background:#ef4444;color:#fff;">
+            닫기
+          </button>
+        </div>
       </div>
 
       <div id="scheduleTable_${idx}"></div>
@@ -364,8 +385,15 @@ function renderScheduleList(){
   });
 }
 
-/* 스케쥴 숨기기/보이기 */
+/* 스케쥴 닫기 */
+function removeSchedule(idx){
+  if(confirm("해당 스케쥴을 닫고 삭제할까요?")){
+    scheduleList.splice(idx,1);
+    renderScheduleList();
+  }
+}
 
+/* 보기 숨기기 */
 function toggleScheduleView(idx){
   const box=document.getElementById(`scheduleTable_${idx}`);
   box.style.display = (box.style.display === "none" ? "block" : "none");
@@ -385,7 +413,9 @@ function renderScheduleTable(idx){
   `;
 
   sc.slots.forEach((slot, sidx)=>{
-    const btnLabel = slot.done ? "보강완료" : "완료";
+
+    const btnLabel = slot.done ? "보강완료" : "보강예정";
+    const btnColor = slot.done ? "background:green;color:white;" : "background:#2563eb;color:white;";
 
     html += `
       <tr>
@@ -393,8 +423,7 @@ function renderScheduleTable(idx){
         <td onclick="openAssignPopupSchedule(${idx}, ${sidx})">${slot.name}</td>
         <td>
           <button onclick="markDoneSchedule(${idx}, ${sidx})"
-            style="padding:6px 10px;border:none;border-radius:6px;
-            ${slot.done ? "background:green;color:white;" : "background:#2563eb;color:white;"}">
+            style="padding:6px 10px;border:none;border-radius:6px;${btnColor}">
             ${btnLabel}
           </button>
         </td>
@@ -425,7 +454,7 @@ function markDoneSchedule(sIdx, slotIdx){
   renderScheduleTable(sIdx);
 }
 
-/* 보강완료 처리(대상자 리스트에도 반영) */
+/* 대상자 리스트 상태 반영 */
 function markDone(name){
   makeupGroups.forEach(g=>{
     g.names.forEach(n=>{
@@ -437,10 +466,8 @@ function markDone(name){
 }
 
 /* ----------------------------
-    이름 배정 팝업(스케쥰용)
+    이름 배정 팝업(스케줄용)
 -----------------------------*/
-
-let clickedSchedule = null;
 
 function openAssignPopupSchedule(sIdx, slotIdx){
   clickedSchedule = { sIdx, slotIdx };
@@ -448,7 +475,7 @@ function openAssignPopupSchedule(sIdx, slotIdx){
 
   const list=document.getElementById("candidateList");
 
-  makeupGroups.forEach((group, gi)=>{
+  makeupGroups.forEach((group)=>{
     const title=document.createElement("div");
     title.style="font-weight:bold;margin:10px 0 4px;";
     title.innerText = `${group.date} / ${group.reason}`;
@@ -471,15 +498,18 @@ function openAssignPopupSchedule(sIdx, slotIdx){
 
 function assignToSchedule(sIdx, slotIdx, name){
   scheduleList[sIdx].slots[slotIdx].name = name;
+  scheduleList[sIdx].slots[slotIdx].done = false;
   document.getElementById("assignPopup").style.display="none";
   renderScheduleTable(sIdx);
 }
 
-/* 삭제 버튼 */
+/* 삭제 버튼 = 초기화 */
 
 function deleteSlot(){
   if(clickedSchedule){
-    scheduleList[clickedSchedule.sIdx].slots[clickedSchedule.slotIdx].name = "";
+    const slot = scheduleList[clickedSchedule.sIdx].slots[clickedSchedule.slotIdx];
+    slot.name = "";
+    slot.done = false;
     renderScheduleTable(clickedSchedule.sIdx);
   }
   document.getElementById("assignPopup").style.display="none";
