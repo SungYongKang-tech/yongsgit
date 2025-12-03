@@ -29,18 +29,14 @@ td.selected{background:#2563eb;color:white;}
   background:#fff;padding:14px;margin-bottom:14px;border-radius:8px;
   border-left:5px solid #2563eb;
 }
-.group-title{
-  font-weight:bold;margin-bottom:6px;
-}
+.group-title{ font-weight:bold;margin-bottom:6px; }
 
 .schedule-box{padding:16px;}
-input,select{
+input{
   width:100%;padding:10px;margin:6px 0;border:1px solid #ccc;border-radius:8px;
 }
 
-.schedule-table td{
-  height:40px;cursor:pointer;
-}
+.schedule-table td{ height:40px;cursor:pointer; }
 
 /* Popup */
 .popup-bg{
@@ -55,11 +51,7 @@ input,select{
   border-radius:20px 20px 0 0;
   animation:slideUp .25s ease-out;
 }
-
-@keyframes slideUp{
-  from {transform:translateY(100%);}
-  to {transform:translateY(0);}
-}
+@keyframes slideUp{ from{transform:translateY(100%);} to{transform:translateY(0);} }
 
 .name-item{
   background:#fff;border:1px solid #ddd;padding:10px;border-radius:8px;
@@ -76,11 +68,7 @@ input,select{
 <table>
   <thead>
     <tr>
-      <th>시간</th>
-      <th>월</th>
-      <th>화</th>
-      <th>수</th>
-      <th>목</th>
+      <th>시간</th><th>월</th><th>화</th><th>수</th><th>목</th>
     </tr>
   </thead>
   <tbody id="lessonBody"></tbody>
@@ -95,7 +83,7 @@ input,select{
 <header>보강 스케쥴</header>
 <div class="schedule-box">
   <button class="btn" style="background:#16a34a;" onclick="openSchedulePopup()">보강 스케쥴 생성</button>
-  <div id="scheduleArea" style="margin-top:16px;"></div>
+  <div id="scheduleArea"></div>
 </div>
 
 <!-- 보강 대상자 생성 팝업 -->
@@ -104,23 +92,27 @@ input,select{
     <h3>보강 날짜 & 사유 입력</h3>
     <input type="date" id="makeupDate">
     <input id="makeupReason" placeholder="사유 입력">
+
     <button class="btn" onclick="createMakeupTargets()">생성</button>
+    <button class="btn" style="background:#6b7280;" onclick="closeMakeupPopup()">취소</button>
   </div>
 </div>
 
-<!-- 보강 스케줄 생성 팝업 -->
+<!-- 스케쥴 생성 팝업 -->
 <div id="schedulePopup" class="popup-bg">
   <div class="popup">
     <h3>보강 스케쥴 설정</h3>
+
     <input type="date" id="scheduleDate">
 
-    <label>시작 시간 (고정: 11:25)</label>
+    <label>시작 시간 (11:25)</label>
     <input value="11:25" disabled>
 
     <label>교시 수 (15분 단위)</label>
     <input id="periodCount" type="number" placeholder="예: 4">
 
     <button class="btn" onclick="generateSchedule()">스케쥴 생성</button>
+    <button class="btn" style="background:#6b7280;" onclick="closeSchedulePopup()">취소</button>
   </div>
 </div>
 
@@ -128,16 +120,17 @@ input,select{
 <div id="assignPopup" class="popup-bg">
   <div class="popup">
     <h3>보강 대상자 선택</h3>
+
     <div id="candidateList"></div>
 
-    <button class="btn" style="background:#ef4444;margin-top:12px;" onclick="deleteSlot()">삭제</button>
-    <button class="btn" style="background:#6b7280;margin-top:12px;" onclick="cancelAssign()">취소</button>
+    <button class="btn" style="background:#ef4444;" onclick="deleteSlot()">삭제</button>
+    <button class="btn" style="background:#6b7280;" onclick="cancelAssign()">취소</button>
   </div>
 </div>
 
 <script>
 // ----------------------------
-// 레슨 시간표
+// 레슨 시간표 원본
 // ----------------------------
 const timetable = {
   "11:25": {mon:"정승목", tue:"이세란", wed:"정승목", thu:"이세란"},
@@ -148,12 +141,12 @@ const timetable = {
 };
 
 let selectedCells = [];
-let makeupGroups = [];  // [{ date, reason, names:[{name, done:false}] }]
+let makeupGroups = [];   // [{date, reason, names:[{name,done:false}]}]
 let clickedSlot = null;
 let originalSlotValue = "";
 
 // ----------------------------
-// 시간표 렌더
+// 레슨 시간표 렌더링
 // ----------------------------
 function renderLessonTable(){
   const body=document.getElementById("lessonBody");
@@ -178,6 +171,7 @@ function renderLessonTable(){
 
 function toggle(time,day,name,td){
   const key=`${time}_${day}_${name}`;
+
   if(selectedCells.includes(key)){
     selectedCells = selectedCells.filter(x=>x!==key);
     td.classList.remove("selected");
@@ -188,42 +182,45 @@ function toggle(time,day,name,td){
 }
 
 // ----------------------------
-// 보강 대상자 생성
+// 보강 대상자 팝업
 // ----------------------------
 function openMakeupPopup(){
-  if(selectedCells.length===0){
-    alert("보강 대상자를 선택하세요.");
-    return;
-  }
   document.getElementById("makeupPopup").style.display="block";
 }
 
-function createMakeupTargets(){
-  const date=document.getElementById("makeupDate").value;
-  const reason=document.getElementById("makeupReason").value;
-  if(!date || !reason){
-    alert("날짜와 사유 입력");
-    return;
-  }
-
-  const newGroup = { date, reason, names:[] };
-
-  selectedCells.forEach(key=>{
-    const [t,d,name] = key.split("_");
-    newGroup.names.push({ name, done:false });
-  });
-
-  makeupGroups.push(newGroup);
-
-  selectedCells=[];
+function closeMakeupPopup(){
   document.getElementById("makeupPopup").style.display="none";
-
-  renderMakeupList();
-  renderLessonTable();
 }
 
 // ----------------------------
-// 보강 대상자 렌더
+// 보강 대상자 생성
+// ----------------------------
+function createMakeupTargets(){
+  const date=document.getElementById("makeupDate").value;
+  const reason=document.getElementById("makeupReason").value;
+
+  if(!date || !reason){
+    alert("날짜와 사유를 입력하세요.");
+    return;
+  }
+
+  const group={date, reason, names:[]};
+
+  selectedCells.forEach(k=>{
+    const [t,d,name] = k.split("_");
+    group.names.push({name,done:false});
+  });
+
+  makeupGroups.push(group);
+  selectedCells=[];
+  
+  closeMakeupPopup();
+  renderLessonTable();
+  renderMakeupList();
+}
+
+// ----------------------------
+// 보강 대상자 렌더링
 // ----------------------------
 function renderMakeupList(){
   const box=document.getElementById("makeupList");
@@ -238,180 +235,184 @@ function renderMakeupList(){
     const div=document.createElement("div");
     div.className="group-box";
 
-    let html=`<div class="group-title">${group.date} / ${group.reason}</div>`;
+    let html = `<div class="group-title">${group.date} / ${group.reason}</div>`;
 
     group.names.forEach(n=>{
-      const status = n.done ? "<span style='color:green'>(보강완료)</span>" : "";
-      const btn = n.done ? "" : 
+      const doneTxt = n.done ? "<span style='color:green'>(보강완료)</span>" : "";
+      const btn = n.done ? "" :
         `<button onclick="completeWithoutSchedule('${group.date}','${n.name}')">빈타임 보강완료</button>`;
 
-      html += `<div>- ${n.name} ${status} ${btn}</div>`;
+      html += `<div>- ${n.name} ${doneTxt} ${btn}</div>`;
     });
 
-    div.innerHTML = html;
+    div.innerHTML=html;
     box.appendChild(div);
   });
 }
 
-// 빈타임 보강 완료 처리
+// 빈타임 보강 완료
 function completeWithoutSchedule(date, name){
   makeupGroups.forEach(g=>{
-    if(g.date === date){
+    if(g.date===date){
       g.names.forEach(n=>{
-        if(n.name === name){
-          n.done = true;
+        if(n.name===name){
+          n.done=true;
         }
       });
     }
   });
+
   renderMakeupList();
+}
+
+// ----------------------------
+// 스케쥴 생성 팝업
+// ----------------------------
+function openSchedulePopup(){
+  document.getElementById("schedulePopup").style.display="block";
+}
+function closeSchedulePopup(){
+  document.getElementById("schedulePopup").style.display="none";
 }
 
 // ----------------------------
 // 스케쥴 생성
 // ----------------------------
-function openSchedulePopup(){
-  document.getElementById("schedulePopup").style.display="block";
-}
-
 function generateSchedule(){
   const date=document.getElementById("scheduleDate").value;
-  const period = parseInt(document.getElementById("periodCount").value);
+  const period=parseInt(document.getElementById("periodCount").value);
 
   if(!date || !period){
-    alert("값을 모두 입력");
+    alert("값을 모두 입력하세요.");
     return;
   }
 
-  document.getElementById("schedulePopup").style.display="none";
+  closeSchedulePopup();
 
   const box=document.getElementById("scheduleArea");
   box.innerHTML=`<h3>${date} 보강 스케쥴</h3>`;
 
-  let html=`<table class="schedule-table"><tr><th>시간</th><th>보강자</th><th>완료</th></tr>`;
+  let html=`<table class="schedule-table">
+  <tr><th>시간</th><th>보강자</th><th>완료</th></tr>`;
 
   let hh=11, mm=25;
 
   for(let i=0;i<period;i++){
-    const time=`${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+    const t = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
 
-    html+=`
+    html += `
       <tr>
-        <td>${time}</td>
+        <td>${t}</td>
         <td onclick="openAssignPopup(this)"></td>
         <td><button onclick="markDoneFromSchedule(this)">완료</button></td>
       </tr>
     `;
 
     mm+=15;
-    if(mm>=60){ mm=0; hh++; }
+    if(mm>=60){mm=0;hh++;}
   }
 
-  html+=`</table>`;
+  html+=`</table>
+        <button class="btn" style="background:#6b7280;margin-top:12px;" onclick="closeSchedule()">닫기</button>`;
 
-  box.innerHTML+=html;
+  box.innerHTML = html;
+}
+
+// 닫기 버튼
+function closeSchedule(){
+  document.getElementById("scheduleArea").innerHTML="";
 }
 
 // ----------------------------
-// 스케쥴에서 완료 버튼 처리
+// 스케쥴 내 완료 처리
 // ----------------------------
 function markDoneFromSchedule(btn){
   const td = btn.parentElement.previousElementSibling;
   const name = td.innerText.trim();
-  if(name === "") return alert("이 칸에 이름이 없습니다.");
+
+  if(!name) return alert("이 칸에 이름이 없습니다.");
 
   markDone(name);
   renderMakeupList();
-  alert(name + " 보강완료 처리됨");
+  alert(name+" 보강완료!");
 }
 
-// 실제 완료 처리
 function markDone(name){
   makeupGroups.forEach(g=>{
     g.names.forEach(n=>{
-      if(n.name === name){
-        n.done = true;
-      }
+      if(n.name===name) n.done=true;
     });
   });
 }
 
 // ----------------------------
-// 팝업 이름 선택
+// 배정 팝업
 // ----------------------------
-
-// 스케쥴에 이미 배정된 사람 추출
 function getAssignedNames(){
   const arr=[];
-  const tds=document.querySelectorAll("#scheduleArea td:nth-child(2)");
-  tds.forEach(td=>{
-    if(td.innerText.trim()) arr.push(td.innerText.trim());
-  });
+  document.querySelectorAll("#scheduleArea td:nth-child(2)")
+    .forEach(td=>{
+      if(td.innerText.trim()) arr.push(td.innerText.trim());
+    });
   return arr;
 }
 
 function openAssignPopup(td){
-  clickedSlot = td;
+  clickedSlot=td;
   originalSlotValue = td.innerText.trim();
 
-  const assigned = getAssignedNames();
-
+  const assigned=getAssignedNames();
   const list=document.getElementById("candidateList");
   list.innerHTML="";
 
-  makeupGroups.forEach((group, gi)=>{
+  makeupGroups.forEach((g,gi)=>{
     const title=document.createElement("div");
     title.style="font-weight:bold;margin:8px 0 4px;";
-    title.innerHTML = `${group.date} / ${group.reason}`;
+    title.innerText=`${g.date} / ${g.reason}`;
     list.appendChild(title);
 
-    group.names
-      .filter(n=> !n.done ) // 완료된 사람 제외
-      .forEach((n,ni)=>{
+    g.names.filter(n=>!n.done).forEach((n,ni)=>{
+      const div=document.createElement("div");
+      div.className="name-item";
 
-        const div=document.createElement("div");
-        div.className="name-item";
+      if(assigned.includes(n.name)){
+        div.style.opacity="0.4";
+        div.style.pointerEvents="none";
+        div.innerText=n.name+" (배정됨)";
+      } else {
+        div.innerText=n.name;
+        div.onclick=()=>assign(gi,ni);
+      }
 
-        if(assigned.includes(n.name)){
-          div.style.opacity="0.4";
-          div.style.pointerEvents="none";
-          div.innerText = n.name + " (배정됨)";
-        } else {
-          div.innerText = n.name;
-          div.onclick=()=>assign(gi, ni);
-        }
-
-        list.appendChild(div);
-      });
+      list.appendChild(div);
+    });
   });
 
   document.getElementById("assignPopup").style.display="block";
 }
 
-// 배정 로직 — 제거하지 않는다
 function assign(groupIdx, nameIdx){
   const name = makeupGroups[groupIdx].names[nameIdx].name;
-  clickedSlot.innerText = name;
-
+  clickedSlot.innerText=name;
   document.getElementById("assignPopup").style.display="none";
 }
 
-// 슬롯 삭제
 function deleteSlot(){
-  clickedSlot.innerText = "";
+  clickedSlot.innerText="";
   document.getElementById("assignPopup").style.display="none";
 }
 
 function cancelAssign(){
-  clickedSlot.innerText = originalSlotValue;
+  clickedSlot.innerText=originalSlotValue;
   document.getElementById("assignPopup").style.display="none";
 }
 
-// 초기 렌더
+// ----------------------------
+// 초기 실행
+// ----------------------------
 renderLessonTable();
 renderMakeupList();
 
 </script>
-
 </body>
 </html>
