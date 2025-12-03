@@ -109,7 +109,7 @@ input{
     <input value="11:25" disabled>
 
     <label>교시 수 (15분 단위)</label>
-    <input id="periodCount" type="number" placeholder="예: 4">
+    <input id="periodCount" type="number" placeholder="예: 5">
 
     <button class="btn" onclick="generateSchedule()">스케쥴 생성</button>
     <button class="btn" style="background:#6b7280;" onclick="closeSchedulePopup()">취소</button>
@@ -291,43 +291,40 @@ function closeSchedulePopup(){
 // ----------------------------
 function generateSchedule(){
   const date=document.getElementById("scheduleDate").value;
-  const period=parseInt(document.getElementById("periodCount").value);
+  const period = parseInt(document.getElementById("periodCount").value);
 
   if(!date || !period){
     alert("값을 모두 입력하세요.");
     return;
   }
 
-  closeSchedulePopup();
+  document.getElementById("schedulePopup").style.display="none";
 
   const box=document.getElementById("scheduleArea");
   box.innerHTML=`<h3>${date} 보강 스케쥴</h3>`;
 
-  let html=`<table class="schedule-table">
-  <tr><th>시간</th><th>보강자</th><th>완료</th></tr>`;
+  let html=`<table class="schedule-table"><tr><th>시간</th><th>보강자</th><th>완료</th></tr>`;
 
-  let hh=11, mm=25;
+  // 🔥 시작시간 고정
+  let currentTime = "11:25";
 
   for(let i=0;i<period;i++){
-    const t = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
-
     html += `
       <tr>
-        <td>${t}</td>
+        <td>${currentTime}</td>
         <td onclick="openAssignPopup(this)"></td>
         <td><button onclick="markDoneFromSchedule(this)">완료</button></td>
       </tr>
     `;
 
-    mm+=15;
-    if(mm>=60){mm=0;hh++;}
+    // 🔥 정확하게 15분 증가
+    currentTime = addMinutes(currentTime, 15);
   }
 
-  html+=`</table>
-        <button class="btn" style="background:#6b7280;margin-top:12px;" onclick="closeSchedule()">닫기</button>`;
-
-  box.innerHTML = html;
+  html += `</table>`;
+  box.innerHTML += html;
 }
+
 
 // 닫기 버튼
 function closeSchedule(){
@@ -422,6 +419,16 @@ function deleteGroup(index){
     makeupGroups.splice(index, 1);
     renderMakeupList();
   }
+}
+
+function addMinutes(time, minutesToAdd){
+  const [hh, mm] = time.split(":").map(Number);
+  const base = new Date(2000, 0, 1, hh, mm);
+  base.setMinutes(base.getMinutes() + minutesToAdd);
+
+  const newH = String(base.getHours()).padStart(2, "0");
+  const newM = String(base.getMinutes()).padStart(2, "0");
+  return `${newH}:${newM}`;
 }
 
 // ----------------------------
