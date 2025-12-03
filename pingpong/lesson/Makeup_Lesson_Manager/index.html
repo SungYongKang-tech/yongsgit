@@ -8,147 +8,206 @@
 <style>
 body{
   font-family: -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif;
-  background:#f5f5f7; margin:0; padding:0;
+  background:#f5f5f7; margin:0;
 }
 
-/* 타이틀 */
 header{
-  background:#fff; padding:16px; font-size:1.3rem;
-  font-weight:700; border-bottom:1px solid #ddd;
+  background:#fff; padding:16px;
+  font-size:1.3rem; font-weight:700;
+  border-bottom:1px solid #ddd;
 }
 
-/* 리스트 */
+/* 시간표 */
+.grid{
+  display:grid; gap:12px;
+  grid-template-columns:repeat(3,1fr);
+  padding:16px;
+}
+.slot{
+  background:white;
+  border-radius:14px;
+  padding:20px 10px;
+  text-align:center;
+  font-weight:700;
+  box-shadow:0 4px 14px rgba(0,0,0,0.1);
+  cursor:pointer;
+}
+
+/* 배정 표시 */
+.slot.assigned{
+  background:#2563eb; color:white;
+}
+
+/* 바텀시트 */
+.sheet{
+  position:fixed; left:0; right:0; bottom:-100%;
+  background:white;
+  border-radius:20px 20px 0 0;
+  box-shadow:0 -4px 20px rgba(0,0,0,0.15);
+  padding:20px;
+  transition:0.35s;
+  max-height:70%;
+  overflow:auto;
+}
+.sheet.open{ bottom:0; }
+
+.person{
+  padding:14px 0;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+}
+.name{ font-weight:700; }
+.info{ font-size:0.85rem; color:#666; }
+
+.reason-box{
+  margin-top:14px;
+}
+input{
+  width:100%; padding:10px;
+  border:1px solid #ccc; border-radius:8px;
+  font-size:1rem;
+  margin-top:6px;
+}
+.btn{
+  background:#2563eb; color:white;
+  text-align:center; padding:10px;
+  border-radius:10px;
+  margin-top:12px;
+  font-weight:700;
+}
+
+/* 보강 상태 리스트 */
 .list{
-  margin-top:10px;
+  padding:16px;
 }
 .item{
   background:#fff; padding:14px 16px;
-  border-bottom:1px solid #e5e5e5;
+  border-radius:12px;
+  margin-bottom:12px;
+  border-left:6px solid #2563eb;
 }
-.name{
-  font-size:1.15rem; font-weight:700; margin-bottom:4px;
-}
-.sub{
-  font-size:0.9rem; color:#666;
-}
-.reason{
-  font-size:0.85rem; color:#444; margin-top:4px;
-}
-.status{
-  margin-top:8px;
-  display:flex; justify-content:space-between; align-items:center;
-}
-.btn{
-  padding:6px 12px; background:#2563eb; color:#fff;
-  border-radius:8px; font-size:0.85rem; font-weight:600;
-}
-
-/* 완료 */
-.done{
-  color:#16a34a; font-weight:700;
-}
-
-.add-box{
-  background:#fff; padding:16px; margin-top:10px;
-  border-bottom:1px solid #ddd;
-}
-input,select{
-  width:100%; padding:10px; margin-top:8px;
-  border:1px solid #ccc; border-radius:8px;
-  font-size:1rem;
-}
-.add-btn{
-  margin-top:12px; background:#2563eb; color:#fff;
-  padding:10px; border-radius:8px; text-align:center;
-  font-weight:700; cursor:pointer;
-}
+.item .done{ color:#16a34a; font-weight:700; }
 </style>
-</head>
 
+</head>
 <body>
 
-<header>보강 관리</header>
+<header>보강 시간표</header>
 
-<!-- 보강 대상 추가 -->
-<div class="add-box">
-  <div style="font-weight:700;">보강 대상 추가</div>
-  
-  <input id="nameInput" placeholder="이름 입력">
-  <input id="dayInput" placeholder="원래 레슨 요일/그룹 (예: 수요일 0그룹)">
-  <input id="reasonInput" placeholder="보강 사유 (예: 코치 결석)">
-  
-  <div class="add-btn" onclick="addMakeup()">추가하기</div>
+<!-- 시간표 -->
+<div class="grid" id="timeGrid"></div>
+
+<!-- 바텀시트 -->
+<div class="sheet" id="sheet">
+  <h3 id="sheetTitle"></h3>
+  <div id="personList"></div>
+
+  <div class="reason-box">
+    <input id="reasonInput" placeholder="보강 사유 입력 (예: 코치 결석)">
+    <div class="btn" onclick="assignPerson()">보강 배정하기</div>
+  </div>
 </div>
 
-<!-- 리스트 -->
-<div class="list" id="list"></div>
+<!-- 보강 현황 -->
+<header>보강 현황</header>
+<div class="list" id="statusList"></div>
+
 
 <script>
-let makeupList = [];  // 보강 받을 사람
-let doneList = [];    // 보강 완료 기록
+/* 시간표 */
+const times = ["14:00","14:30","15:00","15:30","16:00","16:30"];
+let selectedTime = null;
 
-// 보강 대상 추가
-function addMakeup(){
-  const name = document.getElementById("nameInput").value.trim();
-  const day  = document.getElementById("dayInput").value.trim();
-  const reason = document.getElementById("reasonInput").value.trim();
+/* 보강 대상자 */
+let makeupCandidates = [
+  {name:"정승목", origin:"수요일 0그룹"},
+  {name:"이상준", origin:"화요일 1그룹"},
+  {name:"이낭주", origin:"수요일 2그룹"},
+  {name:"조보미", origin:"수요일 3그룹"},
+];
 
-  if(name==="" || day==="" || reason===""){
-    alert("모든 항목을 입력해주세요.");
-    return;
-  }
+/* 배정된 결과 */
+let assigned = {};   
+/* 예: { "14:00": {name:"정승목", reason:"코치결석"} } */
 
-  makeupList.push({
-    name, day, reason,
-    status:"pending",
-    doneTime:null
+function renderTimeGrid(){
+  const g = document.getElementById("timeGrid");
+  g.innerHTML="";
+  times.forEach(t=>{
+    const div = document.createElement("div");
+    div.className="slot"+(assigned[t]?" assigned":"");
+    div.innerHTML = assigned[t] ? `${t}<br>${assigned[t].name}` : t;
+    div.onclick = ()=>openSheet(t);
+    g.appendChild(div);
+  });
+}
+
+/* 바텀시트 열기 */
+function openSheet(time){
+  selectedTime = time;
+  document.getElementById("sheetTitle").innerText = `${time} 보강 배정`;
+
+  const list = document.getElementById("personList");
+  list.innerHTML="";
+
+  makeupCandidates.forEach((p,i)=>{
+    const div = document.createElement("div");
+    div.className="person";
+    div.innerHTML = `
+      <div class="name">${p.name}</div>
+      <div class="info">${p.origin}</div>
+    `;
+    div.onclick = ()=>selectPerson(i);
+    list.appendChild(div);
   });
 
-  render();
-  document.getElementById("nameInput").value="";
-  document.getElementById("dayInput").value="";
+  document.getElementById("sheet").classList.add("open");
+}
+
+/* 선택한 사람 저장 */
+let selectedPersonIndex = null;
+function selectPerson(idx){
+  selectedPersonIndex = idx;
+}
+
+/* 배정 */
+function assignPerson(){
+  const reason = document.getElementById("reasonInput").value.trim();
+  if(selectedPersonIndex===null){ alert("보강 받을 사람을 선택하세요."); return;}
+  if(reason===""){ alert("보강 사유를 입력하세요."); return;}
+
+  assigned[selectedTime] = {
+    name: makeupCandidates[selectedPersonIndex].name,
+    origin: makeupCandidates[selectedPersonIndex].origin,
+    reason
+  };
+
+  renderTimeGrid();
+  renderStatus();
+  document.getElementById("sheet").classList.remove("open");
   document.getElementById("reasonInput").value="";
 }
 
-// 보강 완료 처리
-function finishMakeup(idx){
-  const item = makeupList[idx];
-  item.status = "done";
-  item.doneTime = new Date().toLocaleString();
-
-  doneList.push(item);
-  makeupList.splice(idx,1);
-
-  render();
-}
-
-// 리스트 렌더링
-function render(){
-  const box = document.getElementById("list");
+/* 보강 현황 표시 */
+function renderStatus(){
+  const box = document.getElementById("statusList");
   box.innerHTML="";
 
-  if(makeupList.length===0){
-    box.innerHTML='<div style="color:#888; padding:16px;">보강 대기자가 없습니다.</div>';
-    return;
-  }
-
-  makeupList.forEach((m,idx)=>{
+  Object.keys(assigned).forEach(t=>{
+    const m = assigned[t];
     const div = document.createElement("div");
     div.className="item";
     div.innerHTML = `
-      <div class="name">${m.name}</div>
-      <div class="sub">${m.day}</div>
+      <div class="name">${m.name} (${t})</div>
       <div class="reason">사유: ${m.reason}</div>
-      <div class="status">
-        <span>상태: 보강 필요</span>
-        <div class="btn" onclick="finishMakeup(${idx})">보강 완료</div>
-      </div>
+      <div class="sub">${m.origin}</div>
     `;
     box.appendChild(div);
   });
 }
 
-render();
+renderTimeGrid();
+renderStatus();
 </script>
 
 </body>
