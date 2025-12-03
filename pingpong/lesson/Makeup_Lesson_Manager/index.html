@@ -8,47 +8,48 @@
 <style>
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif;
-  margin:0; background:#f5f5f7;
+  margin:0;background:#f5f5f7;
 }
 
+/* HEADER */
 header{
-  padding:16px; font-size:1.3rem; font-weight:700;
-  background:#fff; border-bottom:1px solid #ddd;
+  background:#fff;padding:16px;
+  font-size:1.3rem;font-weight:700;
+  border-bottom:1px solid #ddd;
 }
 
-/* 레슨 시간표 */
-table{ width:100%; border-collapse:collapse; background:white; margin-top:10px;}
-th,td{ border:1px solid #ccc; padding:10px; text-align:center; }
-td.selectable{ cursor:pointer; }
-td.selected{ background:#2563eb; color:white; }
+/* TABLE */
+table{width:100%;border-collapse:collapse;background:#fff;margin-top:10px;}
+th,td{border:1px solid #ccc;padding:10px;text-align:center;}
+td.selectable{cursor:pointer;}
+td.selected{background:#2563eb;color:white;}
 
-/* 보강 대상자 */
-.list{ padding:16px; }
+/* BUTTON */
+.btn{
+  width:100%;padding:12px;margin-top:12px;
+  background:#2563eb;color:white;border:none;
+  font-size:1rem;border-radius:8px;cursor:pointer;
+}
+
+/* LIST */
+.list{padding:16px;}
 .item{
-  background:#fff; padding:14px; margin-bottom:10px;
-  border-radius:10px; border-left:6px solid #2563eb;
+  background:#fff;padding:14px;margin-bottom:10px;
+  border-radius:8px;
 }
 
-/* 스케쥴 */
-.slot{
-  padding:12px; background:white; border:1px solid #ddd;
-  border-radius:8px; margin-bottom:8px; cursor:pointer;
+/* Schedule table */
+.schedule-box{padding:16px;}
+input{
+  width:100%;padding:10px;margin:6px 0;
+  border:1px solid #ccc;border-radius:8px;
 }
-.slot.assigned{
-  background:#2563eb; color:white; font-weight:700;
-}
-
-/* 보강 대상자 선택 */
-.name-item{
-  background:#fff; border:1px solid #ddd;
-  padding:10px; border-radius:8px; cursor:pointer;
-  margin-bottom:6px;
-}
-.name-item.active{
-  background:#2563eb; color:white;
+.schedule-table td{
+  height:40px;
 }
 </style>
 </head>
+
 <body>
 
 <header>레슨 시간표</header>
@@ -67,36 +68,51 @@ td.selected{ background:#2563eb; color:white; }
   <tbody id="lessonBody"></tbody>
 </table>
 
-<!-- 보강자 생성 버튼 -->
-<button onclick="createMakeupTargets()"
-  style="width:100%; padding:12px; margin-top:10px; border:none;
-         background:#2563eb; color:white; font-size:1rem; border-radius:8px;">
-  보강자 생성
-</button>
+<button class="btn" onclick="openMakeupPopup()">보강 대상자 생성</button>
 </div>
 
+<!-- 보강 대상자 -->
 <header>보강 대상자</header>
 <div class="list" id="makeupList"></div>
 
+<!-- 보강 스케쥴 -->
 <header>보강 스케쥴</header>
-<div style="padding:16px;">
-  <button onclick="generateSchedule()"
-    style="width:100%; padding:12px; border:none;
-           background:#16a34a; color:white; font-size:1rem; border-radius:8px;">
-    보강 스케쥴 생성
-  </button>
+<div class="schedule-box">
 
-  <h3 style="margin-top:16px;">시간표</h3>
-  <div id="scheduleBox"></div>
+  <button class="btn" style="background:#16a34a;" onclick="openSchedulePopup()">보강 스케쥴 생성</button>
 
-  <h3 style="margin-top:16px;">보강 대상자</h3>
-  <div id="nameList"></div>
+  <div id="scheduleArea" style="margin-top:16px;"></div>
+</div>
+
+<!-- 보강 대상자 생성 팝업 -->
+<div id="makeupPopup" style="
+ position:fixed;left:0;right:0;top:0;bottom:0;
+ background:rgba(0,0,0,0.35);display:none;
+">
+  <div style="background:#fff;margin:100px 20px;padding:20px;border-radius:12px;">
+    <h3>보강 날짜 & 사유 입력</h3>
+    <input type="date" id="makeupDate">
+    <input id="makeupReason" placeholder="사유 입력">
+    <button class="btn" onclick="createMakeupTargets()">생성</button>
+  </div>
+</div>
+
+<!-- 보강 스케줄 생성 팝업 -->
+<div id="schedulePopup" style="
+ position:fixed;left:0;right:0;top:0;bottom:0;
+ background:rgba(0,0,0,0.35);display:none;
+">
+  <div style="background:#fff;margin:100px 20px;padding:20px;border-radius:12px;">
+    <h3>보강 스케쥴 날짜 선택</h3>
+    <input type="date" id="scheduleDate">
+    <button class="btn" onclick="generateSchedule()">생성</button>
+  </div>
 </div>
 
 <script>
-// --------------------------------------
+// -------------------------
 // 1) 레슨 시간표 데이터
-// --------------------------------------
+// -------------------------
 const timetable = {
   "15:00": {mon:"정승목", tue:"이세란", wed:"정승목", thu:"이세란"},
   "15:30": {mon:"이상준", tue:"박나령", wed:"이상준", thu:"박나령"},
@@ -104,19 +120,16 @@ const timetable = {
   "16:30": {mon:"조보미", tue:"송은아", wed:"조보미", thu:"송은아"},
 };
 
-const dayKor = {mon:"월", tue:"화", wed:"수", thu:"목"};
+let selectedCells = [];    // 선택된 레슨자
+let makeupTargets = [];    // 보강 대상자
+let makeupHeader = {};     // 날짜 & 사유
 
-let selectedCells = [];    // 시간표에서 선택된 칸
-let makeupTargets = [];    // 보강 대상자 리스트
-let assignedSchedule = {}; // 실제 보강 스케쥴
-let selectedName = null;   // 보강 스케쥴 배정할 대상자
-
-// --------------------------------------
-// 2) 레슨 시간표 렌더
-// --------------------------------------
+// -------------------------
+// 2) 시간표 렌더링
+// -------------------------
 function renderLessonTable(){
   const body = document.getElementById("lessonBody");
-  body.innerHTML="";
+  body.innerHTML = "";
 
   Object.keys(timetable).forEach(time=>{
     const tr = document.createElement("tr");
@@ -125,7 +138,7 @@ function renderLessonTable(){
     ["mon","tue","wed","thu"].forEach(day=>{
       const name = timetable[time][day];
       const td = document.createElement("td");
-      td.className="selectable";
+      td.className = "selectable";
       td.innerText = name;
       td.onclick = ()=>toggleSelect(time,day,name,td);
       tr.appendChild(td);
@@ -135,11 +148,11 @@ function renderLessonTable(){
   });
 }
 
-function toggleSelect(time, day, name, td){
+function toggleSelect(time,day,name,td){
   const key = `${time}_${day}_${name}`;
-
+  
   if(selectedCells.includes(key)){
-    selectedCells = selectedCells.filter(x => x !== key);
+    selectedCells = selectedCells.filter(x=>x!==key);
     td.classList.remove("selected");
   }else{
     selectedCells.push(key);
@@ -147,115 +160,114 @@ function toggleSelect(time, day, name, td){
   }
 }
 
-// --------------------------------------
-// 3) 보강자 생성
-// --------------------------------------
+// -------------------------
+// 3) 보강 대상자 생성 팝업
+// -------------------------
+function openMakeupPopup(){
+  if(selectedCells.length===0){
+    alert("레슨 시간표에서 보강할 인원을 선택하세요.");
+    return;
+  }
+  document.getElementById("makeupPopup").style.display="block";
+}
+
+// -------------------------
+// 4) 보강 대상자 생성
+// -------------------------
 function createMakeupTargets(){
+  const date = document.getElementById("makeupDate").value;
+  const reason = document.getElementById("makeupReason").value;
+
+  if(!date || !reason){
+    alert("날짜와 사유를 입력하세요.");
+    return;
+  }
+
+  makeupHeader = {date, reason};
+  makeupTargets = [];
+
   selectedCells.forEach(key=>{
     const [time,day,name] = key.split("_");
-    makeupTargets.push({name,day,time});
+    makeupTargets.push({name});
   });
 
-  selectedCells = []; // 초기화
-  renderMakeupTargets();
+  selectedCells = [];
+  document.getElementById("makeupPopup").style.display="none";
+
+  renderMakeupList();
   renderLessonTable();
 }
 
-function renderMakeupTargets(){
+// -------------------------
+// 5) 보강 대상자 리스트 렌더
+// -------------------------
+function renderMakeupList(){
   const box = document.getElementById("makeupList");
   box.innerHTML="";
 
-  if(makeupTargets.length===0){
+  if(!makeupHeader.date){
     box.innerHTML = `<div style="color:#666;">보강 대상자 없음</div>`;
     return;
   }
 
+  // 맨 위: 날짜 + 사유
+  const head = document.createElement("div");
+  head.className="item";
+  head.innerHTML = `<strong>${makeupHeader.date} / ${makeupHeader.reason}</strong>`;
+  box.appendChild(head);
+
+  // 아래: 이름만
   makeupTargets.forEach(m=>{
     const div = document.createElement("div");
     div.className="item";
-    div.innerHTML = `
-      <div class="name">${m.name}</div>
-      <div class="sub">${dayKor[m.day]}요일 ${m.time}</div>
-    `;
+    div.innerHTML = m.name;
     box.appendChild(div);
   });
-
-  renderNameList();
 }
 
-// --------------------------------------
-// 4) 보강 스케쥴 생성
-// --------------------------------------
-function generateSchedule(){
-  const box = document.getElementById("scheduleBox");
-  box.innerHTML="";
+// -------------------------
+// 6) 보강 스케쥴 생성 팝업
+// -------------------------
+function openSchedulePopup(){
+  document.getElementById("schedulePopup").style.display="block";
+}
 
-  const slots = [];
+function generateSchedule(){
+  const date = document.getElementById("scheduleDate").value;
+  if(!date){
+    alert("날짜를 입력하세요.");
+    return;
+  }
+
+  document.getElementById("schedulePopup").style.display="none";
+
+  const box = document.getElementById("scheduleArea");
+  box.innerHTML = `<h3>${date} 보강 스케쥴</h3>`;
+
+  // 시간표 생성
+  let html = `<table class="schedule-table"><tr><th>시간</th><th>보강자</th></tr>`;
+  
   for(let h=14;h<18;h++){
     for(let m=0;m<60;m+=15){
       const hh = String(h).padStart(2,"0");
       const mm = String(m).padStart(2,"0");
-      slots.push(`${hh}:${mm}`);
+      const t = `${hh}:${mm}`;
+
+      html += `
+        <tr>
+          <td>${t}</td>
+          <td contenteditable="true" style="background:#fff;"></td>
+        </tr>
+      `;
     }
   }
 
-  slots.forEach(t=>{
-    const div = document.createElement("div");
-    div.className="slot";
-    div.innerText = t;
-    div.onclick = ()=>assignTime(t, div);
-    box.appendChild(div);
-  });
-}
-
-// --------------------------------------
-// 5) 보강 대상자 이름 선택
-// --------------------------------------
-function renderNameList(){
-  const box = document.getElementById("nameList");
-  box.innerHTML="";
-
-  makeupTargets.forEach((m,i)=>{
-    const div = document.createElement("div");
-    div.className="name-item";
-    div.innerText = m.name;
-
-    div.onclick = ()=>{
-      selectedName = m.name;
-      document.querySelectorAll(".name-item").forEach(n => n.classList.remove("active"));
-      div.classList.add("active");
-    };
-
-    box.appendChild(div);
-  });
-}
-
-// --------------------------------------
-// 6) 시간 클릭 → 이름 이동
-// --------------------------------------
-function assignTime(time, slotDiv){
-  if(!selectedName){
-    alert("보강 대상자를 먼저 선택해주세요.");
-    return;
-  }
-
-  // 시간표에 배정
-  assignedSchedule[time] = selectedName;
-
-  // 보강 대상자 리스트에서 제거
-  makeupTargets = makeupTargets.filter(m => m.name !== selectedName);
-
-  // UI 표시
-  slotDiv.innerText = `${time}  ${selectedName}`;
-  slotDiv.classList.add("assigned");
-
-  // 업데이트
-  selectedName = null;
-  renderMakeupTargets();
+  html += `</table>`;
+  box.innerHTML += html;
 }
 
 renderLessonTable();
-renderMakeupTargets();
+renderMakeupList();
 </script>
 
 </body>
