@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Makeup Lesson Manager</title>
-
 <style>
 body{
-  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif;
+  font-family:-apple-system, BlinkMacSystemFont, "Pretendard",sans-serif;
   background:#f5f5f7; margin:0;
 }
 
+/* 헤더 */
 header{
   background:#fff; padding:16px;
   font-size:1.3rem; font-weight:700;
@@ -18,196 +18,179 @@ header{
 }
 
 /* 시간표 */
-.grid{
-  display:grid; gap:12px;
-  grid-template-columns:repeat(3,1fr);
+.table{
   padding:16px;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
 }
-.slot{
-  background:white;
-  border-radius:14px;
-  padding:20px 10px;
-  text-align:center;
-  font-weight:700;
-  box-shadow:0 4px 14px rgba(0,0,0,0.1);
+.cell{
+  background:#fff;
+  padding:14px;
+  border-radius:12px;
+  box-shadow:0 4px 14px rgba(0,0,0,0.08);
   cursor:pointer;
+  font-size:0.9rem;
 }
+.cell strong{font-size:1rem;}
 
-/* 배정 표시 */
-.slot.assigned{
-  background:#2563eb; color:white;
-}
-
-/* 바텀시트 */
 .sheet{
   position:fixed; left:0; right:0; bottom:-100%;
-  background:white;
-  border-radius:20px 20px 0 0;
-  box-shadow:0 -4px 20px rgba(0,0,0,0.15);
-  padding:20px;
-  transition:0.35s;
-  max-height:70%;
-  overflow:auto;
+  background:#fff; border-radius:20px 20px 0 0;
+  padding:20px; box-shadow:0 -6px 20px rgba(0,0,0,0.2);
+  transition:0.35s; max-height:70%; overflow:auto;
 }
 .sheet.open{ bottom:0; }
 
-.person{
-  padding:14px 0;
-  border-bottom:1px solid #eee;
-  cursor:pointer;
-}
-.name{ font-weight:700; }
-.info{ font-size:0.85rem; color:#666; }
-
-.reason-box{
-  margin-top:14px;
-}
 input{
-  width:100%; padding:10px;
-  border:1px solid #ccc; border-radius:8px;
-  font-size:1rem;
-  margin-top:6px;
+  width:100%; padding:10px; border:1px solid #ccc;
+  border-radius:8px; margin-top:10px; font-size:1rem;
 }
 .btn{
-  background:#2563eb; color:white;
-  text-align:center; padding:10px;
-  border-radius:10px;
-  margin-top:12px;
-  font-weight:700;
+  padding:10px; margin-top:14px; border-radius:10px;
+  background:#2563eb; color:#fff; text-align:center;
+  font-weight:700; cursor:pointer;
 }
 
-/* 보강 상태 리스트 */
-.list{
-  padding:16px;
-}
+/* 보강 리스트 */
+.list{ padding:16px; }
 .item{
-  background:#fff; padding:14px 16px;
-  border-radius:12px;
-  margin-bottom:12px;
-  border-left:6px solid #2563eb;
+  background:#fff; padding:14px 16px; margin-bottom:12px;
+  border-radius:12px; border-left:6px solid #2563eb;
 }
-.item .done{ color:#16a34a; font-weight:700; }
+.name{font-weight:700; font-size:1.1rem;}
+.sub{color:#666; font-size:0.85rem;}
+.reason{margin-top:4px;}
 </style>
-
 </head>
+
 <body>
 
-<header>보강 시간표</header>
+<header>레슨 시간표</header>
 
 <!-- 시간표 -->
-<div class="grid" id="timeGrid"></div>
+<div class="table" id="lessonTable"></div>
 
-<!-- 바텀시트 -->
+<!-- 보강 생성 바텀시트 -->
 <div class="sheet" id="sheet">
   <h3 id="sheetTitle"></h3>
-  <div id="personList"></div>
-
-  <div class="reason-box">
-    <input id="reasonInput" placeholder="보강 사유 입력 (예: 코치 결석)">
-    <div class="btn" onclick="assignPerson()">보강 배정하기</div>
-  </div>
+  <input type="date" id="dateInput">
+  <input id="reasonInput" placeholder="보강 사유 입력">
+  <div class="btn" onclick="createMakeup()">보강자 생성</div>
 </div>
 
-<!-- 보강 현황 -->
-<header>보강 현황</header>
-<div class="list" id="statusList"></div>
-
+<header>보강 대상자</header>
+<div class="list" id="makeupList"></div>
 
 <script>
-/* 시간표 */
-const times = ["14:00","14:30","15:00","15:30","16:00","16:30"];
-let selectedTime = null;
+// --------------------------------------
+// 1. 기존 레슨 시간표 데이터
+// --------------------------------------
+const lessonData = {
+  mon_0:"정승목", mon_1:"이상준", mon_2:"이낭주", mon_3:"조보미",
+  tue_0:"이세란", tue_1:"박나령", tue_2:"김승일", tue_3:"송은아",
+  wed_0:"정승목", wed_1:"이상준", wed_2:"이낭주", wed_3:"조보미",
+  thu_0:"이세란", thu_1:"박나령", thu_2:"김승일", thu_3:"송은아"
+};
 
-/* 보강 대상자 */
-let makeupCandidates = [
-  {name:"정승목", origin:"수요일 0그룹"},
-  {name:"이상준", origin:"화요일 1그룹"},
-  {name:"이낭주", origin:"수요일 2그룹"},
-  {name:"조보미", origin:"수요일 3그룹"},
-];
+const dayKor = {mon:"월요일", tue:"화요일", wed:"수요일", thu:"목요일"};
 
-/* 배정된 결과 */
-let assigned = {};   
-/* 예: { "14:00": {name:"정승목", reason:"코치결석"} } */
+// --------------------------------------
+// 2. 시간표 렌더링
+// --------------------------------------
+function renderLessonTable(){
+  const box = document.getElementById("lessonTable");
+  box.innerHTML="";
 
-function renderTimeGrid(){
-  const g = document.getElementById("timeGrid");
-  g.innerHTML="";
-  times.forEach(t=>{
+  Object.keys(lessonData).forEach(key=>{
+    const [day, group] = key.split("_");
+    const name = lessonData[key];
+
     const div = document.createElement("div");
-    div.className="slot"+(assigned[t]?" assigned":"");
-    div.innerHTML = assigned[t] ? `${t}<br>${assigned[t].name}` : t;
-    div.onclick = ()=>openSheet(t);
-    g.appendChild(div);
+    div.className="cell";
+    div.innerHTML = `
+      <strong>${name}</strong><br>
+      ${dayKor[day]} / 그룹 ${group}
+    `;
+    div.onclick=()=>openSheet(name, dayKor[day], group);
+    box.appendChild(div);
   });
 }
 
-/* 바텀시트 열기 */
-function openSheet(time){
-  selectedTime = time;
-  document.getElementById("sheetTitle").innerText = `${time} 보강 배정`;
+// --------------------------------------
+// 3. 보강 생성 바텀시트 열기
+// --------------------------------------
+let selectedPerson = null;
+let selectedOrigin = null;
 
-  const list = document.getElementById("personList");
-  list.innerHTML="";
+function openSheet(name, day, group){
+  selectedPerson = name;
+  selectedOrigin = `${day} 그룹 ${group}`;
 
-  makeupCandidates.forEach((p,i)=>{
-    const div = document.createElement("div");
-    div.className="person";
-    div.innerHTML = `
-      <div class="name">${p.name}</div>
-      <div class="info">${p.origin}</div>
-    `;
-    div.onclick = ()=>selectPerson(i);
-    list.appendChild(div);
-  });
+  document.getElementById("sheetTitle").innerText =
+    `보강 생성: ${name} (${selectedOrigin})`;
 
   document.getElementById("sheet").classList.add("open");
 }
 
-/* 선택한 사람 저장 */
-let selectedPersonIndex = null;
-function selectPerson(idx){
-  selectedPersonIndex = idx;
-}
+// --------------------------------------
+// 4. 보강 대상자 생성
+// --------------------------------------
+let makeupList = [];
 
-/* 배정 */
-function assignPerson(){
+function createMakeup(){
+  const date = document.getElementById("dateInput").value.trim();
   const reason = document.getElementById("reasonInput").value.trim();
-  if(selectedPersonIndex===null){ alert("보강 받을 사람을 선택하세요."); return;}
-  if(reason===""){ alert("보강 사유를 입력하세요."); return;}
 
-  assigned[selectedTime] = {
-    name: makeupCandidates[selectedPersonIndex].name,
-    origin: makeupCandidates[selectedPersonIndex].origin,
-    reason
-  };
+  if(date==="" || reason===""){
+    alert("날짜와 사유를 입력해주세요.");
+    return;
+  }
 
-  renderTimeGrid();
-  renderStatus();
+  makeupList.push({
+    name:selectedPerson,
+    origin:selectedOrigin,
+    date,
+    reason,
+    status:"pending"
+  });
+
+  // reset
   document.getElementById("sheet").classList.remove("open");
+  document.getElementById("dateInput").value="";
   document.getElementById("reasonInput").value="";
+
+  renderMakeupList();
 }
 
-/* 보강 현황 표시 */
-function renderStatus(){
-  const box = document.getElementById("statusList");
+// --------------------------------------
+// 5. 보강 대상자 렌더링
+// --------------------------------------
+function renderMakeupList(){
+  const box = document.getElementById("makeupList");
   box.innerHTML="";
 
-  Object.keys(assigned).forEach(t=>{
-    const m = assigned[t];
+  if(makeupList.length===0){
+    box.innerHTML='<div style="color:#999;">보강 대상자가 없습니다.</div>';
+    return;
+  }
+
+  makeupList.forEach(m=>{
     const div = document.createElement("div");
     div.className="item";
     div.innerHTML = `
-      <div class="name">${m.name} (${t})</div>
-      <div class="reason">사유: ${m.reason}</div>
+      <div class="name">${m.name}</div>
       <div class="sub">${m.origin}</div>
+      <div class="reason">사유: ${m.reason}</div>
+      <div class="sub">보강 예정일: ${m.date}</div>
     `;
     box.appendChild(div);
   });
 }
 
-renderTimeGrid();
-renderStatus();
+// --------------------------------------
+renderLessonTable();
+renderMakeupList();
 </script>
 
 </body>
