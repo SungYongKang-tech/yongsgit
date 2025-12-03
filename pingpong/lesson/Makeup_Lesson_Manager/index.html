@@ -3,244 +3,153 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>🏓 KOEN 탁구 보강 관리</title>
-
-<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+<title>Makeup Lesson Manager</title>
 
 <style>
-:root{
-  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
-  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
-  --shadow:0 8px 28px rgba(0,0,0,.08);
-}
-*{box-sizing:border-box;margin:0;padding:0}
 body{
-  font-family:"Pretendard","Noto Sans KR",sans-serif;
-  background:var(--bg); color:var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif;
+  background:#f5f5f7; margin:0; padding:0;
 }
 
-/* 상단 탭 */
-.tabs{
-  display:flex; background:#fff; border-bottom:1px solid #e5e7eb;
-  position:sticky; top:0; z-index:10;
+/* 타이틀 */
+header{
+  background:#fff; padding:16px; font-size:1.3rem;
+  font-weight:700; border-bottom:1px solid #ddd;
 }
-.tab{
-  flex:1; text-align:center; padding:14px 0; font-weight:700;
-  border-bottom:3px solid transparent; cursor:pointer;
-}
-.tab.active{color:var(--accent); border-color:var(--accent);}
 
-/* 리스트 공통 */
-.section{padding:16px;}
-.card{
-  background:var(--card); padding:16px;
-  border-radius:14px; box-shadow:var(--shadow);
-  margin-bottom:14px;
+/* 리스트 */
+.list{
+  margin-top:10px;
 }
-.card h3{margin-bottom:8px;font-size:1.25rem;}
-.row{margin:6px 0; color:var(--muted);}
-
-/* 버튼 */
+.item{
+  background:#fff; padding:14px 16px;
+  border-bottom:1px solid #e5e5e5;
+}
+.name{
+  font-size:1.15rem; font-weight:700; margin-bottom:4px;
+}
+.sub{
+  font-size:0.9rem; color:#666;
+}
+.reason{
+  font-size:0.85rem; color:#444; margin-top:4px;
+}
+.status{
+  margin-top:8px;
+  display:flex; justify-content:space-between; align-items:center;
+}
 .btn{
-  display:inline-block; padding:10px 14px; border-radius:10px;
-  font-weight:600; text-align:center; cursor:pointer;
+  padding:6px 12px; background:#2563eb; color:#fff;
+  border-radius:8px; font-size:0.85rem; font-weight:600;
 }
-.btn.blue{background:var(--accent); color:white;}
-.btn.green{background:var(--ok); color:white;}
-.btn.gray{background:#e5e7eb; color:var(--ink);}
 
-/* 시간 블록 */
-.time-grid{
-  display:grid; grid-template-columns:repeat(3,1fr);
-  gap:10px; margin-top:10px;
+/* 완료 */
+.done{
+  color:#16a34a; font-weight:700;
 }
-.time{
-  padding:14px 10px; background:#fff; border-radius:12px;
-  text-align:center; font-weight:700; box-shadow:var(--shadow);
-  cursor:pointer;
+
+.add-box{
+  background:#fff; padding:16px; margin-top:10px;
+  border-bottom:1px solid #ddd;
 }
-.time.active{background:var(--accent); color:#fff;}
-
-/* 보강 완료 기록 */
-.done-card{border-left:6px solid var(--ok);}
-
+input,select{
+  width:100%; padding:10px; margin-top:8px;
+  border:1px solid #ccc; border-radius:8px;
+  font-size:1rem;
+}
+.add-btn{
+  margin-top:12px; background:#2563eb; color:#fff;
+  padding:10px; border-radius:8px; text-align:center;
+  font-weight:700; cursor:pointer;
+}
 </style>
 </head>
+
 <body>
 
-<!-- 상단 탭 -->
-<div class="tabs">
-  <div class="tab active" onclick="showTab('pending')">보강 받을 사람</div>
-  <div class="tab" onclick="showTab('done')">보강 완료한 사람</div>
-</div>
+<header>보강 관리</header>
 
-<!-- 보강 받을 사람 -->
-<div id="pending" class="section">
-
-  <h2>📌 보강 대상자</h2>
-  <div id="pendingList"></div>
-
-  <h2 style="margin-top:24px;">📅 보강 스케줄 잡기</h2>
-  <div class="time-grid" id="timeSlots"></div>
+<!-- 보강 대상 추가 -->
+<div class="add-box">
+  <div style="font-weight:700;">보강 대상 추가</div>
   
+  <input id="nameInput" placeholder="이름 입력">
+  <input id="dayInput" placeholder="원래 레슨 요일/그룹 (예: 수요일 0그룹)">
+  <input id="reasonInput" placeholder="보강 사유 (예: 코치 결석)">
+  
+  <div class="add-btn" onclick="addMakeup()">추가하기</div>
 </div>
 
-<!-- 보강 완료 -->
-<div id="done" class="section" style="display:none;">
-  <h2>✅ 보강 완료 기록</h2>
-  <div id="doneList"></div>
-</div>
+<!-- 리스트 -->
+<div class="list" id="list"></div>
 
 <script>
-// --------------------------------------
-// 1) 기본 레슨자 데이터
-// --------------------------------------
-const initialData = {
-  mon_0:{name:"정승목"}, tue_0:{name:"이세란"}, wed_0:{name:"정승목"}, thu_0:{name:"이세란"},
-  mon_1:{name:"이상준"}, tue_1:{name:"박나령"}, wed_1:{name:"이상준"}, thu_1:{name:"박나령"},
-  mon_2:{name:"이낭주"}, tue_2:{name:"김승일"}, wed_2:{name:"이낭주"}, thu_2:{name:"김승일"},
-  mon_3:{name:"조보미"}, tue_3:{name:"송은아"}, wed_3:{name:"조보미"}, thu_3:{name:"송은А"},
-  mon_4:{name:"고은선"}, tue_4:{name:"임춘근"}, wed_4:{name:"고은선"}, thu_4:{name:"임춘근"}
-};
+let makeupList = [];  // 보강 받을 사람
+let doneList = [];    // 보강 완료 기록
 
-// --------------------------------------
-// 2) 보강 대상자, 보강 완료자 리스트
-// --------------------------------------
-let makeupList = [];
-let doneList = [];
+// 보강 대상 추가
+function addMakeup(){
+  const name = document.getElementById("nameInput").value.trim();
+  const day  = document.getElementById("dayInput").value.trim();
+  const reason = document.getElementById("reasonInput").value.trim();
 
-// 예시: 수요일 코치 결석 → 보강 대상 자동 생성
-function createMakeupListFromDay(day){
-  makeupList = [];
-  for(let i=0;i<5;i++){
-    const key = `${day}_${i}`;
-    if(initialData[key]){
-      makeupList.push({name:initialData[key].name, group:i, day});
-    }
+  if(name==="" || day==="" || reason===""){
+    alert("모든 항목을 입력해주세요.");
+    return;
   }
-  renderAll();
+
+  makeupList.push({
+    name, day, reason,
+    status:"pending",
+    doneTime:null
+  });
+
+  render();
+  document.getElementById("nameInput").value="";
+  document.getElementById("dayInput").value="";
+  document.getElementById("reasonInput").value="";
 }
 
-// 테스트용 기본 생성
-createMakeupListFromDay("wed");
+// 보강 완료 처리
+function finishMakeup(idx){
+  const item = makeupList[idx];
+  item.status = "done";
+  item.doneTime = new Date().toLocaleString();
 
-// --------------------------------------
-// 3) 보강 가능한 시간 슬롯 만들기
-// --------------------------------------
-const timeSlots = ["14:00","14:30","15:00","15:30","16:00","16:30"];
+  doneList.push(item);
+  makeupList.splice(idx,1);
 
-let selectedTime = null;
+  render();
+}
 
-function renderTimeSlots(){
-  const box = document.getElementById("timeSlots");
-  box.innerHTML = "";
-  timeSlots.forEach(t=>{
+// 리스트 렌더링
+function render(){
+  const box = document.getElementById("list");
+  box.innerHTML="";
+
+  if(makeupList.length===0){
+    box.innerHTML='<div style="color:#888; padding:16px;">보강 대기자가 없습니다.</div>';
+    return;
+  }
+
+  makeupList.forEach((m,idx)=>{
     const div = document.createElement("div");
-    div.className="time"+(selectedTime===t?" active":"");
-    div.innerText=t;
-    div.onclick=()=>{
-      selectedTime=t;
-      renderTimeSlots();
-    };
+    div.className="item";
+    div.innerHTML = `
+      <div class="name">${m.name}</div>
+      <div class="sub">${m.day}</div>
+      <div class="reason">사유: ${m.reason}</div>
+      <div class="status">
+        <span>상태: 보강 필요</span>
+        <div class="btn" onclick="finishMakeup(${idx})">보강 완료</div>
+      </div>
+    `;
     box.appendChild(div);
   });
 }
 
-// --------------------------------------
-// 4) 보강 대상자 렌더링
-// --------------------------------------
-function renderPending(){
-  const box = document.getElementById("pendingList");
-  box.innerHTML="";
-
-  if(makeupList.length===0){
-    box.innerHTML='<div style="color:#999;">보강 대기자가 없습니다.</div>';
-    return;
-  }
-
-  makeupList.forEach(m=>{
-    let c = document.createElement("div");
-    c.className="card";
-    c.innerHTML = `
-      <h3>${m.name}</h3>
-      <div class="row">원래 레슨 요일: ${m.day.toUpperCase()} 그룹 ${m.group}</div>
-      <div class="btn green" style="margin-top:10px;"
-        onclick="assignMakeup('${m.name}')">보강 완료 처리</div>
-    `;
-    box.appendChild(c);
-  });
-}
-
-// --------------------------------------
-// 5) 보강 완료 처리 (수동만 허용)
-// --------------------------------------
-function assignMakeup(name){
-  const target = makeupList.find(m=>m.name===name);
-  if(!target) return;
-
-  doneList.push({
-    ...target,
-    time:selectedTime,
-    date:new Date().toLocaleString()
-  });
-
-  makeupList = makeupList.filter(m=>m.name!==name);
-
-  selectedTime = null;
-  renderAll();
-}
-
-// --------------------------------------
-// 6) 보강 완료 리스트 렌더링
-// --------------------------------------
-function renderDone(){
-  const box = document.getElementById("doneList");
-  box.innerHTML="";
-
-  if(doneList.length===0){
-    box.innerHTML='<div style="color:#999;">아직 보강 완료 기록이 없습니다.</div>';
-    return;
-  }
-
-  doneList.forEach(m=>{
-    let c = document.createElement("div");
-    c.className="card done-card";
-    c.innerHTML = `
-      <h3>${m.name}</h3>
-      <div class="row">레슨 요일: ${m.day.toUpperCase()} 그룹 ${m.group}</div>
-      <div class="row">보강 시간: ${m.time ?? "수동 처리(시간 없음)"}</div>
-      <div class="row">완료 일시: ${m.date}</div>
-    `;
-    box.appendChild(c);
-  });
-}
-
-// --------------------------------------
-// 7) 탭 전환
-// --------------------------------------
-function showTab(id){
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  document.querySelectorAll(".section").forEach(s=>s.style.display="none");
-
-  if(id==="pending"){
-    document.querySelectorAll(".tab")[0].classList.add("active");
-    document.getElementById("pending").style.display="block";
-  } else {
-    document.querySelectorAll(".tab")[1].classList.add("active");
-    document.getElementById("done").style.display="block";
-  }
-}
-
-// --------------------------------------
-// 최초 렌더
-// --------------------------------------
-function renderAll(){
-  renderPending();
-  renderDone();
-  renderTimeSlots();
-}
-renderAll();
-
+render();
 </script>
+
 </body>
 </html>
