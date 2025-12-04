@@ -112,16 +112,16 @@ input{
   </div>
 </div>
 
-<!-- 보강 스케줄 생성 팝업 -->
+<!-- 스케줄 생성 팝업 -->
 <div id="schedulePopup" class="popup-bg">
   <div class="popup">
     <h3>보강 스케쥴 설정</h3>
     <input type="date" id="scheduleDate">
 
-    <label>시작 시간 (수정 가능)</label>
+    <label>시작 시간</label>
     <input id="startTime" type="time" value="11:25">
 
-    <label>교시 수 (기본 5교시 / 15분 단위)</label>
+    <label>교시 수 (15분 단위)</label>
     <input id="periodCount" type="number" value="5" min="1">
 
     <button class="btn" onclick="generateSchedule()">스케쥴 생성</button>
@@ -140,11 +140,50 @@ input{
   </div>
 </div>
 
-<script>
-/* ----------------------------  
-     기본 데이터
------------------------------*/
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js"></script>
 
+<script>
+/* ----------------------
+    Firebase 초기화
+-----------------------*/
+const firebaseConfig = {
+  apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
+  authDomain: "lessonswap-26e9b.firebaseapp.com",
+  databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
+  projectId: "lessonswap-26e9b",
+  storageBucket: "lessonswap-26e9b.appspot.com",
+  messagingSenderId: "1068278553187",
+  appId: "1:1068278553187:web:410ff81cc7e96f293fb656"
+};
+
+const app = firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ----------------------
+   Firebase 저장/불러오기 함수
+-----------------------*/
+function saveMakeupGroups() {
+  db.ref("makeupGroups").set(makeupGroups);
+}
+function saveScheduleList() {
+  db.ref("scheduleList").set(scheduleList);
+}
+
+// 실시간 감시
+db.ref("makeupGroups").on("value", snap => {
+  makeupGroups = snap.val() || [];
+  renderMakeupList();
+});
+db.ref("scheduleList").on("value", snap => {
+  scheduleList = snap.val() || [];
+  renderScheduleList();
+});
+
+/* ----------------------
+      기본 데이터
+-----------------------*/
 const timetable = {
   "11:25": {mon:"정승목", tue:"이세란", wed:"정승목", thu:"이세란"},
   "11:40": {mon:"이상준", tue:"박나령", wed:"이상준", thu:"박나령"},
@@ -154,15 +193,13 @@ const timetable = {
 };
 
 let selectedCells = [];
-let makeupGroups = [];  
+let makeupGroups = [];
 let scheduleList = [];
-
 let clickedSchedule = null;
 
-/* ----------------------------  
-  레슨 시간표 렌더링
------------------------------*/
-
+/* ----------------------
+   레슨 시간표 렌더링
+-----------------------*/
 function renderLessonTable(){
   const body=document.getElementById("lessonBody");
   body.innerHTML="";
@@ -195,30 +232,17 @@ function toggle(time,day,name,td){
   }
 }
 
-/* ----------------------------  
+/* ----------------------
     보강 대상자 생성
------------------------------*/
-
-function openMakeupPopup(){
-  if(selectedCells.length===0){
-    alert("보강 대상자를 선택하세요.");
-    return;
-  }
-  document.getElementById("makeupPopup").style.display="block";
-}
-
-function closeMakeupPopup(){
-  document.getElementById("makeupPopup").style.display="none";
-}
+-----------------------*/
+function openMakeupPopup(){ document.getElementById("makeupPopup").style.display="block"; }
+function closeMakeupPopup(){ document.getElementById("makeupPopup").style.display="none"; }
 
 function createMakeupTargets(){
   const date=document.getElementById("makeupDate").value;
   const reason=document.getElementById("makeupReason").value;
 
-  if(!date || !reason){
-    alert("날짜와 사유 입력");
-    return;
-  }
+  if(!date || !reason) return alert("날짜와 사유를 입력하세요.");
 
   const newGroup = { date, reason, names:[] };
 
@@ -228,22 +252,21 @@ function createMakeupTargets(){
   });
 
   makeupGroups.push(newGroup);
+  saveMakeupGroups();
+
   selectedCells=[];
   closeMakeupPopup();
-
-  renderMakeupList();
-  renderLessonTable();
 }
 
-/* ----------------------------  
+/* ----------------------
     보강 대상자 리스트
------------------------------*/
+-----------------------*/
 function renderMakeupList(){
   const box=document.getElementById("makeupList");
   box.innerHTML="";
 
   if(makeupGroups.length===0){
-    box.innerHTML=`<div style="color:#666;">보강 대상자 없음</div>`;
+    box.innerHTML = "<div style='color:#666;'>보강 대상자 없음</div>";
     return;
   }
 
@@ -254,25 +277,26 @@ function renderMakeupList(){
     let html = `
       <div class="group-title">
         <span>${group.date} (${getKoreanDay(group.date)}) / ${group.reason}</span>
-        <button style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 8px;font-size:0.8rem;"
-          onclick="deleteGroup(${idx})">삭제</button>
+        <button onclick="deleteGroup(${idx})"
+         style="background:#ef4444;padding:4px 8px;border:none;color:#fff;border-radius:6px;font-size:0.8rem;">
+         삭제
+        </button>
       </div>
     `;
 
     group.names.forEach((n,i)=>{
       const state = n.done 
-  ? "<span style='color:green; font-weight:bold;'>(보강완료)</span>" 
-  : "<span style='color:#999'>(보강예정)</span>";
+        ? "<span style='color:green;font-weight:bold;'>(보강완료)</span>"
+        : "<span style='color:#999'>(보강예정)</span>";
 
-
-      const btn = `
-        <button onclick="completeWithoutSchedule(${idx}, ${i})"
-          style="margin-left:8px;padding:4px 6px;">
-          ${n.done ? "보강완료 취소" : "빈타임 보강완료"}
-        </button>
+      html += `
+        <div>- ${n.name} ${state}
+          <button onclick="completeWithoutSchedule(${idx}, ${i})"
+            style="margin-left:8px;padding:4px 6px;">
+            ${n.done ? "보강완료 취소" : "빈타임 보강완료"}
+          </button>
+        </div>
       `;
-
-      html += `<div>- ${n.name} ${state} ${btn}</div>`;
     });
 
     div.innerHTML = html;
@@ -280,58 +304,53 @@ function renderMakeupList(){
   });
 }
 
-
 function deleteGroup(idx){
-  if(!confirm("해당 그룹을 삭제할까요?")) return;
-
+  if(!confirm("삭제하시겠습니까?")) return;
   makeupGroups.splice(idx,1);
-  renderMakeupList();
+  saveMakeupGroups();
 }
 
-/* ----------------------------  
-   스케줄 생성
------------------------------*/
-
-function openSchedulePopup(){
-  document.getElementById("schedulePopup").style.display="block";
+function completeWithoutSchedule(groupIndex, nameIndex){
+  const target = makeupGroups[groupIndex].names[nameIndex];
+  target.done = !target.done;
+  saveMakeupGroups();
 }
 
-function closeSchedulePopup(){
-  document.getElementById("schedulePopup").style.display="none";
-}
+/* ----------------------
+    스케줄 생성
+-----------------------*/
+function openSchedulePopup(){ document.getElementById("schedulePopup").style.display="block"; }
+function closeSchedulePopup(){ document.getElementById("schedulePopup").style.display="none"; }
 
 function generateSchedule(){
-  const date = document.getElementById("scheduleDate").value;
-  const period = parseInt(document.getElementById("periodCount").value);
-  const startTime = document.getElementById("startTime").value;
+  const date=document.getElementById("scheduleDate").value;
+  const period=parseInt(document.getElementById("periodCount").value);
+  const startTime=document.getElementById("startTime").value;
 
-  if(!date || !period || !startTime){
-    alert("값을 모두 입력하세요.");
-    return;
-  }
-
-  closeSchedulePopup();
+  if(!date || !period || !startTime) return alert("모든 값을 입력하세요.");
 
   let schedule = { date, slots:[] };
-
   let [hh, mm] = startTime.split(":").map(Number);
 
   for(let i=0;i<period;i++){
-    const time = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
-    schedule.slots.push({ time, name:"", done:false, groupDate:null });
+    schedule.slots.push({
+      time:`${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`,
+      name:"",
+      done:false,
+      groupDate:null
+    });
 
-    mm += 15;
-    if(mm >= 60){ mm = 0; hh++; }
+    mm += 15; if(mm>=60){ mm=0; hh++; }
   }
 
   scheduleList.push(schedule);
-  renderScheduleList();
+  saveScheduleList();
+  closeSchedulePopup();
 }
 
-/* ----------------------------  
-    스케줄 리스트 렌더링
------------------------------*/
-
+/* ----------------------
+    스케줄 리스트 표시
+-----------------------*/
 function renderScheduleList(){
   const box=document.getElementById("scheduleArea");
   box.innerHTML="";
@@ -341,18 +360,18 @@ function renderScheduleList(){
     wrap.style="margin-bottom:20px;background:#fff;padding:14px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.08);";
 
     wrap.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-       <h3>${sc.date} (${getKoreanDay(sc.date)})</br> 보강 스케쥴</h3>
+      <div style="display:flex;justify-content:space-between;">
+        <h3>${sc.date} (${getKoreanDay(sc.date)})<br>보강 스케쥴</h3>
 
         <div>
           <button onclick="toggleScheduleView(${idx})"
-            style="padding:6px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;margin-right:6px;">
-            보기/숨기기
+           style="background:#2563eb;color:#fff;padding:6px 10px;border:none;border-radius:6px;margin-right:6px;">
+           보기/숨기기
           </button>
 
           <button onclick="removeSchedule(${idx})"
-            style="padding:6px 10px;border:none;border-radius:6px;background:#ef4444;color:#fff;">
-            닫기
+           style="background:#ef4444;color:#fff;padding:6px 10px;border:none;border-radius:6px;">
+           닫기
           </button>
         </div>
       </div>
@@ -367,22 +386,20 @@ function renderScheduleList(){
 
 function toggleScheduleView(idx){
   const box=document.getElementById(`scheduleTable_${idx}`);
-  box.style.display = (box.style.display==="none" ? "block" : "none");
+  box.style.display = box.style.display==="none" ? "block" : "none";
 }
 
 function removeSchedule(idx){
-  if(confirm("이 스케쥴을 삭제하시겠습니까?")){
-    scheduleList.splice(idx,1);
-    renderScheduleList();
-  }
+  if(!confirm("삭제하시겠습니까?")) return;
+  scheduleList.splice(idx,1);
+  saveScheduleList();
 }
 
-/* ----------------------------  
+/* ----------------------
     스케줄 테이블 렌더링
------------------------------*/
-
+-----------------------*/
 function renderScheduleTable(idx){
-  const sc = scheduleList[idx];
+  const sc=scheduleList[idx];
   const container=document.getElementById(`scheduleTable_${idx}`);
 
   let html = `
@@ -390,7 +407,7 @@ function renderScheduleTable(idx){
       <tr><th>시간</th><th>보강자</th><th>상태</th></tr>
   `;
 
-  sc.slots.forEach((slot, sidx)=>{
+  sc.slots.forEach((slot,sidx)=>{
     const btnLabel = slot.done ? "보강완료" : "보강예정";
     const btnColor = slot.done ? "background:green;color:white;" : "background:#2563eb;color:white;";
 
@@ -400,7 +417,7 @@ function renderScheduleTable(idx){
         <td onclick="openAssignPopupSchedule(${idx}, ${sidx})">${slot.name}</td>
         <td>
           <button onclick="markDoneSchedule(${idx}, ${sidx})"
-            style="padding:6px 10px;border:none;border-radius:6px;${btnColor}">
+            style="padding:6px 10px;border-radius:6px;border:none;${btnColor}">
             ${btnLabel}
           </button>
         </td>
@@ -408,48 +425,35 @@ function renderScheduleTable(idx){
     `;
   });
 
-  html += `</table>`;
+  html += "</table>";
   container.innerHTML = html;
 }
 
-/* ----------------------------  
-    보강완료 처리 (그룹 구분)
------------------------------*/
-
+/* ----------------------
+    보강완료 처리
+-----------------------*/
 function markDoneSchedule(sIdx, slotIdx){
-  const slot = scheduleList[sIdx].slots[slotIdx];
-  if(!slot.name){
-    alert("보강자를 먼저 배정하세요.");
-    return;
-  }
+  const slot=scheduleList[sIdx].slots[slotIdx];
+  if(!slot.name) return alert("먼저 이름을 배정하세요.");
 
   slot.done = true;
 
-  // groupDate 기준으로 해당 그룹만 완료 처리
-  markDoneGroup(slot.groupDate, slot.name);
-
-  renderMakeupList();
-  renderScheduleTable(sIdx);
-}
-
-function markDoneGroup(groupDate, name){
+  // 그룹 데이터에도 반영
   makeupGroups.forEach(g=>{
-    if(g.date === groupDate){
-      g.names.forEach(n=>{
-        if(n.name === name){
-          n.done = true;
-        }
-      });
+    if(g.date === slot.groupDate){
+      g.names.forEach(n=>{ if(n.name===slot.name) n.done=true; });
     }
   });
+
+  saveMakeupGroups();
+  saveScheduleList();
 }
 
-/* ----------------------------  
-    이름 배정 팝업
------------------------------*/
-
+/* ----------------------
+    이름 선택 팝업
+-----------------------*/
 function openAssignPopupSchedule(sIdx, slotIdx){
-  clickedSchedule = { sIdx, slotIdx };
+  clickedSchedule={ sIdx, slotIdx };
 
   const list=document.getElementById("candidateList");
   list.innerHTML="";
@@ -461,12 +465,12 @@ function openAssignPopupSchedule(sIdx, slotIdx){
     list.appendChild(title);
 
     group.names
-      .filter(x => !x.done)
-      .forEach(n => {
+      .filter(x=>!x.done)
+      .forEach(n=>{
         const div=document.createElement("div");
         div.className="name-item";
-        div.innerText = n.name;
-        div.onclick = ()=>assignToSchedule(sIdx, slotIdx, n.name, group.date);
+        div.innerText=n.name;
+        div.onclick=()=>assignToSchedule(sIdx, slotIdx, n.name, group.date);
         list.appendChild(div);
       });
   });
@@ -475,55 +479,44 @@ function openAssignPopupSchedule(sIdx, slotIdx){
 }
 
 function assignToSchedule(sIdx, slotIdx, name, groupDate){
-  const slot = scheduleList[sIdx].slots[slotIdx];
-  slot.name = name;
-  slot.done = false;
-  slot.groupDate = groupDate;  // ⭐ 그룹 날짜 저장 → 그룹 구분 가능
+  const slot=scheduleList[sIdx].slots[slotIdx];
+
+  slot.name=name;
+  slot.done=false;
+  slot.groupDate=groupDate;
+
+  saveScheduleList();
 
   document.getElementById("assignPopup").style.display="none";
-  renderScheduleTable(sIdx);
 }
 
+/* ----------------------
+    팝업에서 삭제
+-----------------------*/
 function deleteSlot(){
   if(clickedSchedule){
-    const slot = scheduleList[clickedSchedule.sIdx].slots[clickedSchedule.slotIdx];
-    slot.name = "";
-    slot.done = false;
-    slot.groupDate = null;
-    renderScheduleTable(clickedSchedule.sIdx);
+    const slot=scheduleList[clickedSchedule.sIdx].slots[clickedSchedule.slotIdx];
+    slot.name="";
+    slot.done=false;
+    slot.groupDate=null;
+
+    saveScheduleList();
   }
   document.getElementById("assignPopup").style.display="none";
 }
 
-function cancelAssign(){
-  document.getElementById("assignPopup").style.display="none";
-}
-
-/* ----------------------------  
-    날짜 → 요일 변환
------------------------------*/
-
+/* ----------------------
+    날짜 → 요일
+-----------------------*/
 function getKoreanDay(dateStr){
-  const days = ["일","월","화","수","목","금","토"];
+  const days=["일","월","화","수","목","금","토"];
   return days[new Date(dateStr).getDay()];
 }
 
-/* ----------------------------
-   빈타임 보강완료 / 취소 (토글)
------------------------------*/
-function completeWithoutSchedule(groupIndex, nameIndex){
-  const target = makeupGroups[groupIndex].names[nameIndex];
+function cancelAssign(){ document.getElementById("assignPopup").style.display="none"; }
 
-  // 상태 토글
-  target.done = !target.done;
-
-  // 화면 갱신
-  renderMakeupList();
-}
-
-/* 초기 렌더링 */
+/* 초기 실행 */
 renderLessonTable();
-renderMakeupList();
 
 </script>
 
