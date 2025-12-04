@@ -123,16 +123,17 @@ input{
     <h3>보강 스케쥴 설정</h3>
     <input type="date" id="scheduleDate">
 
-    <label>시작 시간 (고정: 11:25)</label>
-    <input value="11:25" disabled>
+    <label>시작 시간 (수정 가능)</label>
+    <input id="startTime" type="time" value="11:25">
 
-    <label>교시 수 (15분 단위)</label>
-    <input id="periodCount" type="number" placeholder="예: 4">
+    <label>교시 수 (기본 5교시 / 15분 단위)</label>
+    <input id="periodCount" type="number" value="5" min="1">
 
     <button class="btn" onclick="generateSchedule()">스케쥴 생성</button>
     <button class="btn" style="background:#6b7280;" onclick="closeSchedulePopup()">취소</button>
   </div>
 </div>
+
 
 <!-- 이름 선택 팝업 -->
 <div id="assignPopup" class="popup-bg">
@@ -336,11 +337,12 @@ function closeSchedulePopup(){
 -----------------------------*/
 
 function generateSchedule(){
-  const date=document.getElementById("scheduleDate").value;
-  const period=parseInt(document.getElementById("periodCount").value);
+  const date = document.getElementById("scheduleDate").value;
+  const period = parseInt(document.getElementById("periodCount").value);
+  const startTime = document.getElementById("startTime").value; // ← 추가
 
-  if(!date || !period){
-    alert("값을 모두 입력하세요.");
+  if(!date || !period || !startTime){
+    alert("날짜, 시작시간, 교시 수를 모두 입력하세요.");
     return;
   }
 
@@ -351,19 +353,25 @@ function generateSchedule(){
     slots:[]
   };
 
-  let hh=11, mm=25;
+  // 시작 시간 분리
+  let [hh, mm] = startTime.split(":").map(Number);
 
+  // 15분 간격으로 생성
   for(let i=0;i<period;i++){
-    const time=`${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+    const time = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
     schedule.slots.push({ time, name:"", done:false });
 
-    mm+=15;
-    if(mm>=60){ mm=0; hh++; }
+    mm += 15;
+    if(mm >= 60){
+      mm = 0;
+      hh++;
+    }
   }
 
   scheduleList.push(schedule);
   renderScheduleList();
 }
+
 
 /* ----------------------------
     스케쥴 리스트 렌더링
