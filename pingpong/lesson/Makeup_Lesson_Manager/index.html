@@ -159,6 +159,8 @@ const firebaseConfig = {
 };
 
 
+let firebaseReady = { groups: false, schedule: false };
+
 const app = firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -175,12 +177,16 @@ function saveScheduleList() {
 // 실시간 감시
 db.ref("makeupGroups").on("value", snap => {
   makeupGroups = snap.val() || [];
-  renderMakeupList();
+  firebaseReady.groups = true;
+  initIfReady();   // ✔ 준비됐는지 확인
 });
+
 db.ref("scheduleList").on("value", snap => {
   scheduleList = snap.val() || [];
-  renderScheduleList();
+  firebaseReady.schedule = true;
+  initIfReady();   // ✔ 준비됐는지 확인
 });
+
 
 /* ----------------------
       기본 데이터
@@ -232,6 +238,15 @@ function toggle(time,day,name,td){
     td.classList.add("selected");
   }
 }
+
+function initIfReady() {
+  if (firebaseReady.groups && firebaseReady.schedule) {
+    renderLessonTable();     // ★ 시간표 생성
+    renderMakeupList();      // ★ 대상자 목록 생성
+    renderScheduleList();    // ★ 스케줄 목록 생성
+  }
+}
+
 
 /* ----------------------
     보강 대상자 생성
@@ -520,10 +535,6 @@ function getKoreanDay(dateStr){
 
 function cancelAssign(){ document.getElementById("assignPopup").style.display="none"; }
 
-/* 초기 실행 */
-window.onload = () => {
-  renderLessonTable();
-};
 
 
 </script>
