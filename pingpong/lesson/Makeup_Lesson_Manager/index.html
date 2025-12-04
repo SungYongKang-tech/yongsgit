@@ -290,39 +290,49 @@ function createMakeupTargets(){
 /* ----------------------
     보강 대상자 리스트
 -----------------------*/
-function renderMakeupList(){
-  const box=document.getElementById("makeupList");
-  box.innerHTML="";
+function renderMakeupList() {
+  const box = document.getElementById("makeupList");
+  box.innerHTML = "";
 
-  if(makeupGroups.length===0){
+  if (makeupGroups.length === 0) {
     box.innerHTML = "<div style='color:#666;'>보강 대상자 없음</div>";
     return;
   }
 
-  makeupGroups.forEach((group, idx)=>{
-    const div=document.createElement("div");
-    div.className="group-box";
+  makeupGroups.forEach((group, idx) => {
+    const div = document.createElement("div");
+    div.className = "group-box";
 
     let html = `
       <div class="group-title">
         <span>${group.date} (${getKoreanDay(group.date)}) / ${group.reason}</span>
         <button onclick="deleteGroup(${idx})"
-         style="background:#ef4444;padding:4px 8px;border:none;color:#fff;border-radius:6px;font-size:0.8rem;">
-         삭제
+          style="background:#ef4444;padding:4px 8px;border:none;color:#fff;border-radius:6px;font-size:0.8rem;">
+          삭제
         </button>
       </div>
     `;
 
-    group.names.forEach((n,i)=>{
-      const state = n.done 
+    group.names.forEach((n, i) => {
+      const state = n.done
         ? "<span style='color:green;font-weight:bold;'>(보강완료)</span>"
         : "<span style='color:#999'>(보강예정)</span>";
 
+      const btnLabel = n.done ? "보강완료 취소" : "빈타임 보강완료";
+
       html += `
-        <div>- ${n.name} ${state}
+        <div style="margin-bottom:6px;">
+          - <span style="font-weight:${n.done ? 'bold' : 'normal'}">${n.name}</span> 
+            ${state}
           <button onclick="completeWithoutSchedule(${idx}, ${i})"
-            style="margin-left:8px;padding:4px 6px;">
-            ${n.done ? "보강완료 취소" : "빈타임 보강완료"}
+            style="margin-left:8px;padding:4px 6px;border-radius:6px;border:1px solid #ccc;">
+            ${btnLabel}
+          </button>
+
+          <!-- 이름 변경 기능(보강대상자 교체 기능) -->
+          <button onclick="openChangeTargetPopup(${idx}, ${i})"
+            style="margin-left:6px;padding:4px 6px;border-radius:6px;border:1px solid #2563eb;color:#2563eb;">
+            변경
           </button>
         </div>
       `;
@@ -332,6 +342,7 @@ function renderMakeupList(){
     box.appendChild(div);
   });
 }
+
 
 function deleteGroup(idx){
   if(!confirm("삭제하시겠습니까?")) return;
@@ -482,31 +493,38 @@ function markDoneSchedule(sIdx, slotIdx){
 /* ----------------------
     이름 선택 팝업
 -----------------------*/
-function openAssignPopupSchedule(sIdx, slotIdx){
-  clickedSchedule={ sIdx, slotIdx };
+function openAssignPopupSchedule(sIdx, slotIdx) {
+  // 현재 선택한 슬롯 정보를 저장
+  clickedSchedule = { sIdx, slotIdx };
 
-  const list=document.getElementById("candidateList");
-  list.innerHTML="";
+  const list = document.getElementById("candidateList");
+  list.innerHTML = "";
 
-  makeupGroups.forEach(group=>{
-    const title=document.createElement("div");
-    title.style="font-weight:bold;margin:10px 0 4px;";
+  // 모든 보강 그룹 출력
+  makeupGroups.forEach(group => {
+    // 그룹 제목
+    const title = document.createElement("div");
+    title.style = "font-weight:bold;margin:10px 0 4px;";
     title.innerText = `${group.date} (${getKoreanDay(group.date)}) / ${group.reason}`;
     list.appendChild(title);
 
-   group.names.forEach(n => {
-  const div = document.createElement("div");
-  div.className = "name-item";
-  div.innerText = n.name;
+    // 그룹 내 이름 목록 출력
+    group.names.forEach(n => {
+      const div = document.createElement("div");
+      div.className = "name-item";
+      div.innerText = n.name;
 
-  // 이미 done 상태라도 선택 가능하도록 허용
-  div.onclick = () => assignToSchedule(sIdx, slotIdx, n.name, group.date);
+      // done 여부 상관없이 선택 가능
+      div.onclick = () => {
+        assignToSchedule(sIdx, slotIdx, n.name, group.date);
+      };
 
-  list.appendChild(div);
-});
+      list.appendChild(div);
+    });
+  });
 
-
-  document.getElementById("assignPopup").style.display="block";
+  // 팝업 열기
+  document.getElementById("assignPopup").style.display = "block";
 }
 
 function assignToSchedule(sIdx, slotIdx, name, groupDate){
