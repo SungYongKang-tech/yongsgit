@@ -364,18 +364,35 @@
       });
     }
 
-    // ------ 앱 상태 ------
-    let allPlayers = [
-      { name: "노정림", level: 3 }, { name: "김희영", level: 4 }, { name: "강성용", level: 5 }, { name: "김범일", level: 5 },
-      { name: "이영진", level: 5 }, { name: "박주민", level: 6 }, { name: "강다훈", level: 6 },
-      { name: "박진우", level: 7 }, { name: "배성국", level: 7 }, { name: "이상준", level: 7 },
-      { name: "황경진", level: 8 }, { name: "양충현", level: 8 }, { name: "박인찬", level: 8 },
-      { name: "임춘근", level: 9 }, { name: "전성무", level: 9 }, { name: "송창근", level: 9 },
-      { name: "김승일", level: 9 }, { name: "김현곤", level: 9 }, { name: "문우용", level: 9 },
-      { name: "오국환", level: 9 }, { name: "조보미", level: 11 }, { name: "송은아", level: 13 },
-      { name: "이낭주", level: 13 }, { name: "박승목", level: 14 }, { name: "박나령", level: 14 },
-      { name: "고은선", level: 14 }, { name: "이세란", level: 14 }
-    ];
+    let allPlayers = [];
+
+
+async function loadPlayers() {
+  try {
+    const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json");
+    const json = await res.json();
+
+    // JSON → 배열 변환
+    const basePlayers = Object.values(json);
+
+    // 기본 선수 세팅
+    allPlayers = basePlayers.map(p => ({
+      name: p.name,
+      level: p.level,
+      new: false
+    }));
+
+    // LocalStorage 신규 선수 병합
+    const saved = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
+    saved.forEach(p => allPlayers.push({ ...p, new: true }));
+
+    renderPlayers();
+  } catch (err) {
+    console.error("❌ 선수 목록 로딩 실패:", err);
+  }
+}
+
+loadPlayers();
 
     // 저장된 추가 선수 복원
     const savedAddedPlayers = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
