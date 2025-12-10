@@ -371,24 +371,24 @@ function generateSchedule() {
     return alert("모든 값을 입력하세요.");
   }
 
-  // 🔍 1) 시작시간 문자열 공백 제거 후 안전 파싱
-  let timeStr = startTime.trim();
-  let [hh, mm] = timeStr.split(":").map(v => parseInt(v));
+  // 1) 날짜 + 시간으로 Date 객체 생성
+  let baseDate = new Date(`${date}T${startTime}:00`);
 
-  // 🔒 2) NaN 방지
-  if (isNaN(hh) || isNaN(mm)) {
-    alert("시간 형식이 잘못되었습니다. (예: 11:25)");
+  if (isNaN(baseDate.getTime())) {
+    alert("시간 형식이 잘못되었습니다.");
     return;
   }
 
-  // 🔧 3) 기본 구조 생성
-  let schedule = { 
+  let schedule = {
     date,
     slots: []
   };
 
-  // 🔁 4) 15분씩 증가하며 period 개수만큼 슬롯 생성
+  // 2) period 횟수만큼 15분씩 증가
   for (let i = 0; i < period; i++) {
+
+    let hh = baseDate.getHours();
+    let mm = baseDate.getMinutes();
 
     let timeText = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 
@@ -399,23 +399,17 @@ function generateSchedule() {
       groupDate: null
     });
 
-    // 15분 증가
-    mm += 15;
-
-    // 분 ≥ 60 처리
-    if (mm >= 60) {
-      mm -= 60;  // mm = mm - 60  (0으로 리셋 X)
-      hh++;
-    }
+    // 🔥 Date 객체로 15분 증가
+    baseDate.setMinutes(baseDate.getMinutes() + 15);
   }
 
-  // 📝 5) Firebase에 저장
+  // Firebase 저장
   scheduleList.push(schedule);
   saveScheduleList();
 
-  // 팝업 닫기
   closeSchedulePopup();
 }
+
 
 
 /* ----------------------
