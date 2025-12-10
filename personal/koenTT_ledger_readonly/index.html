@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KOEN TT Ledger - ReadOnly</title>
+
+<!-- XLSX / html2canvas -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<style>
+:root{
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#fff;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444; --gray:#6b7280;
+  --border:#d0d7e2;
+  --stickTop: 56px;
+}
+body{
+  margin:0; background:var(--bg);
+  font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif; color:var(--ink);
+  overflow-x:hidden;
+  overflow-y:auto;
+}
+header{
+  background:#fff; padding:16px; font-size:20px; font-weight:800;
+  text-align:center; border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:20;
+}
+
+/* SUMMARY */
+.summary{
+  display:flex; gap:10px; padding:12px; flex-wrap:wrap;
+}
+.card{
+  flex:1; min-width:140px; background:#fff; padding:14px; text-align:center;
+  border-radius:10px; border:1px solid #e5e7eb;
+  box-shadow:0 2px 10px rgba(0,0,0,.03);
+  font-size:14px; font-weight:700;
+}
+
+/* CONTROLS */
+.controls{
+  padding:10px;
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:8px;
+}
+.controls input,
+.controls select,
+.controls button{
+  width:100%; font-size:14px; padding:10px; border-radius:8px;
+}
+@media (min-width: 600px){
+  .controls{ grid-template-columns: repeat(6, 1fr); }
+}
+.blue{ background:#2563eb; color:#fff; }
+.green{ background:#059669; color:#fff; }
+.gray{ background:var(--gray); color:#fff; }
+
+/* TABLE */
+.wrap{
+  border:1px solid var(--border);
+  border-radius:10px; background:#fff;
+}
+table{
+  width:100%; border-collapse:collapse; background:#fff;
+}
+thead{
+  position: sticky;
+  top: var(--stickTop);
+  z-index: 30;
+  background:#f3f5fb;
+}
+thead th{
+  background:#f3f5fb; padding:8px; font-size:13px;
+  border-bottom:1px solid var(--border);
+  text-align:center; white-space:nowrap;
+}
+thead tr:first-child th:first-child{ border-top-left-radius:10px; }
+thead tr:first-child th:last-child { border-top-right-radius:10px; }
+
+tbody td{
+  border-top:1px solid #eef2f7; border-right:1px solid var(--border);
+  padding:4px 6px; font-size:14px;
+}
+tbody td:last-child{ border-right:none; }
+
+/* CELLS */
+.dateCell{ text-align:center; white-space:nowrap; }
+.descCell{ white-space:pre-wrap; word-break:break-word; }
+.numCell{ text-align:right; white-space:nowrap; }
+
+/* MOBILE */
+@media (max-width: 600px){
+  thead th:nth-child(1){ width:18%; }
+  thead th:nth-child(2){ width:55%; }
+  thead th:nth-child(3){ width:10%; }
+  thead th:nth-child(4){ width:10%; }
+  thead th:nth-child(5){ width:7%; }
+  .numCell{ font-size:12.5px; padding-right:3px; }
+}
+</style>
+</head>
+
+<body>
+<header>KOEN TT Ledger (Read-Only)</header>
+
+<!-- SUMMARY -->
+<div class="summary">
+  <div class="card">총입금<br><span id="sumIn">0</span></div>
+  <div class="card">총출금<br><span id="sumOut">0</span></div>
+  <div class="card">현재잔액<br><span id="sumBal">0</span></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <input id="search" placeholder="검색 (내역/금액/날짜)" oninput="render()">
+  <select id="yearFilter" onchange="render()"><option value="">전체 연도</option></select>
+  <select id="monthFilter" onchange="render()"><option value="">전체 월</option></select>
+  <button class="gray" onclick="sortByDate()">정렬(일자↑)</button>
+  <button class="green" onclick="downloadExcel()">엑셀</button>
+  <button class="green" onclick="saveImage()">이미지</button>
+  <button class="blue" onclick="scrollToBottom()">맨 아래</button>
+</div>
+
+<!-- TABLE -->
+<div class="wrap">
+  <table id="ledgerTable">
+    <thead>
+      <tr>
+        <th>일자</th>
+        <th>내역</th>
+        <th>입금</th>
+        <th>출금</th>
+        <th>잔액</th>
+      </tr>
+    </thead>
+    <tbody id="ledger-body"></tbody>
+  </table>
+</div>
+
+<script>
+/* Firebase 초기화 */
+firebase.initializeApp({
+  apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
+  authDomain: "ionic6-3b7b2.firebaseapp.com",
+  databaseURL: "https://ionic6-3b7b2-default-rtdb.firebaseio.com",
+  projectId: "ionic6-3b7b2",
+  storageBucket: "ionic6-3b7b2.appspot.com",
+  messagingSenderId: "306251113324",
+  appId: "1:306251113324:web:5c34044f4a7679b1c18949"
+});
+const db = firebase.database();
+
+/* GLOBAL */
+let ledger = {};
+let sortMode = false;
+const el = id => document.getElementById(id);
+const toNum = v => Number(String(v||0).replace(/[^\d.-]/g,""));
+const comma = n => toNum(n).toLocaleString();
+
+/* 날짜 표시 */
+function displayDate(d){
+  if(!d) return "";
+  const [y,m,dd] = d.split("-");
+  return `${y.slice(2)}.${m}.${dd}`;
+}
+
+function updateStickyTop(){
+  const h = document.querySelector("header").offsetHeight;
+  document.documentElement.style.setProperty("--stickTop", h+"px");
+}
+window.onload = updateStickyTop;
+window.onresize = updateStickyTop;
+
+/* Firebase listener (READ ONLY) */
+db.ref("ledger").on("value", snap=>{
+  ledger = snap.val() || {};
+  render();
+});
+
+/* 정렬 */
+function sortByDate(){ sortMode = true; render(); }
+
+/* 렌더링 */
+function render(){
+  const all = Object.entries(ledger);
+
+  // 잔액 계산용 원본 순서
+  const master = all.slice().sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
+  let gBal = 0;
+  const globalBal = {};
+  master.forEach(([k,r])=>{
+    gBal += toNum(r.income) - toNum(r.expense);
+    globalBal[k] = gBal;
+  });
+
+  // 검색 / 필터
+  let arr = all;
+  const q = el("search").value.toLowerCase();
+  if(q){
+    arr = arr.filter(([k,r])=>{
+      return `${displayDate(r.date)} ${r.desc} ${r.income} ${r.expense}`.toLowerCase().includes(q);
+    });
+  }
+
+  const y = el("yearFilter").value;
+  const m = el("monthFilter").value;
+  if(y) arr = arr.filter(([k,r])=>(r.date||"").startsWith(y));
+  if(m) arr = arr.filter(([k,r])=>(r.date||"").startsWith(m));
+
+  // 정렬
+  if(sortMode){
+    arr.sort((a,b)=>(a[1].date||"").localeCompare(b[1].date||""));
+  } else {
+    arr.sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
+  }
+
+  // 합계
+  let sumIn=0, sumOut=0;
+  arr.forEach(([_,r])=>{
+    sumIn+=toNum(r.income); sumOut+=toNum(r.expense);
+  });
+  el("sumIn").textContent = comma(sumIn);
+  el("sumOut").textContent = comma(sumOut);
+
+  const lastKey = arr.length ? arr[arr.length-1][0] : null;
+  el("sumBal").textContent = lastKey ? comma(globalBal[lastKey]) : "0";
+
+  // 출력
+  let html="";
+  arr.forEach(([key,r])=>{
+    html += `
+      <tr>
+        <td class="dateCell">${displayDate(r.date)}</td>
+        <td class="descCell">${r.desc}</td>
+        <td class="numCell">${comma(r.income)}</td>
+        <td class="numCell">${comma(r.expense)}</td>
+        <td class="numCell">${comma(globalBal[key]||0)}</td>
+      </tr>`;
+  });
+  el("ledger-body").innerHTML = html;
+
+  // 연/월 필터 옵션 생성
+  const vals = Object.values(ledger);
+  const years=[...new Set(vals.map(r=>(r.date||"").slice(0,4)).filter(Boolean))].sort();
+  const months=[...new Set(vals.map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort();
+
+  el("yearFilter").innerHTML = `<option value="">전체 연도</option>` +
+    years.map(v=>`<option value="${v}">${v}</option>`).join("");
+
+  el("monthFilter").innerHTML = `<option value="">전체 월</option>` +
+    months.map(v=>`<option value="${v}">${v}</option>`).join("");
+}
+
+/* 엑셀 다운로드 */
+function downloadExcel(){
+  const arr = Object.entries(ledger).sort((a,b)=>(a[1].date||"").localeCompare(b[1].date||""));
+  let bal=0;
+  const rows = arr.map(([k,r])=>{
+    bal += toNum(r.income) - toNum(r.expense);
+    return {
+      일자:displayDate(r.date),
+      내역:r.desc,
+      입금:toNum(r.income),
+      출금:toNum(r.expense),
+      잔액:bal
+    };
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, "ledger");
+  XLSX.writeFile(wb, "ledger-readonly.xlsx");
+}
+
+/* 이미지 저장 */
+function saveImage(){
+  html2canvas(document.getElementById("ledgerTable"), {scale:2, backgroundColor:"#ffffff"})
+    .then(c=>{
+      const a=document.createElement("a");
+      a.download="ledger.png";
+      a.href=c.toDataURL();
+      a.click();
+    });
+}
+
+function scrollToBottom(){
+  window.scrollTo({ top: document.body.scrollHeight, behavior:"smooth" });
+}
+</script>
+</body>
+</html>
