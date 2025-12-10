@@ -362,31 +362,61 @@ function completeWithoutSchedule(groupIndex, nameIndex){
 function openSchedulePopup(){ document.getElementById("schedulePopup").style.display="block"; }
 function closeSchedulePopup(){ document.getElementById("schedulePopup").style.display="none"; }
 
-function generateSchedule(){
-  const date=document.getElementById("scheduleDate").value;
-  const period=parseInt(document.getElementById("periodCount").value);
-  const startTime=document.getElementById("startTime").value;
+function generateSchedule() {
+  const date = document.getElementById("scheduleDate").value;
+  const period = parseInt(document.getElementById("periodCount").value);
+  const startTime = document.getElementById("startTime").value;
 
-  if(!date || !period || !startTime) return alert("모든 값을 입력하세요.");
-
-  let schedule = { date, slots:[] };
-  let [hh, mm] = startTime.split(":").map(Number);
-
-  for(let i=0;i<period;i++){
-    schedule.slots.push({
-      time:`${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`,
-      name:"",
-      done:false,
-      groupDate:null
-    });
-
-    mm += 15; if(mm>=60){ mm=0; hh++; }
+  if (!date || !period || !startTime) {
+    return alert("모든 값을 입력하세요.");
   }
 
+  // 🔍 1) 시작시간 문자열 공백 제거 후 안전 파싱
+  let timeStr = startTime.trim();
+  let [hh, mm] = timeStr.split(":").map(v => parseInt(v));
+
+  // 🔒 2) NaN 방지
+  if (isNaN(hh) || isNaN(mm)) {
+    alert("시간 형식이 잘못되었습니다. (예: 11:25)");
+    return;
+  }
+
+  // 🔧 3) 기본 구조 생성
+  let schedule = { 
+    date,
+    slots: []
+  };
+
+  // 🔁 4) 15분씩 증가하며 period 개수만큼 슬롯 생성
+  for (let i = 0; i < period; i++) {
+
+    let timeText = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+
+    schedule.slots.push({
+      time: timeText,
+      name: "",
+      done: false,
+      groupDate: null
+    });
+
+    // 15분 증가
+    mm += 15;
+
+    // 분 ≥ 60 처리
+    if (mm >= 60) {
+      mm -= 60;  // mm = mm - 60  (0으로 리셋 X)
+      hh++;
+    }
+  }
+
+  // 📝 5) Firebase에 저장
   scheduleList.push(schedule);
   saveScheduleList();
+
+  // 팝업 닫기
   closeSchedulePopup();
 }
+
 
 /* ----------------------
     스케줄 리스트 표시
