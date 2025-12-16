@@ -14,11 +14,10 @@
     .actions{ margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
     button,.btn{ appearance:none; border:1px solid #cbd5e1; background:#fff; color:#111; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
     .btn.primary{ background:var(--primary); color:#fff; border-color:var(--primary); }
-    .btn.danger{ border-color:#fecaca; background:#fff; color:#991b1b; }
     main{ max-width:1100px; margin:0 auto; padding:14px; }
     .card{ background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
     .muted{ color:#6b7280; }
-    input[type="text"], input[type="date"], textarea{
+    input[type="text"], textarea, input[type="date"]{
       width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; font-family:inherit;
     }
     textarea{ min-height:84px; resize:vertical; }
@@ -43,32 +42,24 @@
       -webkit-user-select:none;
       -webkit-touch-callout:none;
     }
-    .photo .meta{ padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
-    .photo .meta .top{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
-    .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; max-width:70%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .comments{ border-top:1px dashed #e5e7eb; padding-top:10px; display:flex; flex-direction:column; gap:8px; }
-    .c-item{ background:#f8fafc; border:1px solid #e5e7eb; padding:8px 10px; border-radius:10px; }
+    .meta{ padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
+
+    .top{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; }
+    .dateBtn{
+      border:none; background:transparent; padding:0; margin:0;
+      color:#6b7280; font-size:12px; cursor:pointer; text-decoration:underline;
+    }
+
+    .caption{ font-size:13px; color:#334155; font-weight:700; line-height:1.35; }
+
+    .commentsWrap{ display:flex; flex-direction:column; gap:8px; }
+    .c-item{ background:#f8fafc; border:1px solid #e5e7eb; padding:8px 10px; border-radius:10px; position:relative; }
     .c-item b{ margin-right:6px; }
+
     .c-form{ display:grid; gap:8px; }
     .c-form .row{ display:grid; grid-template-columns:140px 1fr; gap:8px; }
     @media (max-width:520px){ .c-form .row{ grid-template-columns:1fr; } }
-
-    .editbox{
-      border:1px solid #e5e7eb;
-      border-radius:12px;
-      padding:10px;
-      background:#fafafa;
-      display:grid;
-      gap:8px;
-    }
-    .editbox .row2{
-      display:grid;
-      grid-template-columns: 1fr 180px;
-      gap:8px;
-    }
-    @media (max-width:520px){
-      .editbox .row2{ grid-template-columns:1fr; }
-    }
 
     .lightbox{ position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; padding:16px; }
     .lightbox.hidden{ display:none; }
@@ -105,8 +96,8 @@
         </div>
         <div>
           <div style="font-weight:800; margin-bottom:6px;">업로드 시 표시 내용(선택)</div>
-          <input type="text" id="uploaderName" placeholder="예: 3기 모임 / 단체사진 / 2015년 추억">
-          <p class="muted" style="margin:8px 0 0;">비우면 표시 내용은 공백으로 둡니다.</p>
+          <input type="text" id="captionInput" placeholder="예: 진주에서 모임 / 삼천포 추억샷">
+          <p class="muted" style="margin:8px 0 0;">비우면 표시 내용 없이 업로드됩니다.</p>
         </div>
       </div>
 
@@ -114,10 +105,6 @@
         <button class="btn primary" id="btnUpload">선택한 사진 업로드</button>
         <button class="btn" id="btnRefresh">새로고침</button>
       </div>
-
-      <p class="muted" style="margin:10px 0 0;">
-        ✅ 사진 삭제: 사진을 <b>길게 누르면</b>(약 0.7초) 삭제됩니다.
-      </p>
     </section>
 
     <section class="card">
@@ -140,7 +127,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, get, set, push, remove, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getDatabase, ref, get, set, push, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     /************ Cloudinary ************/
@@ -184,6 +171,14 @@
 
     $('#btnBack').onclick = ()=> location.href = 'index.html';
     $('#btnRefresh').onclick = ()=> renderGallery();
+
+    /************ 날짜 유틸 ************/
+    function toYMD(d){
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
 
     /************ 이미지 압축 ************/
     function loadImage(src){
@@ -273,9 +268,10 @@
       return { full, thumb };
     }
 
-    /************ 사진 삭제 (롱프레스) ************/
-    async function deletePhotoAndComments(photoId){
-      if (!confirm('이 사진과 모든 댓글을 삭제할까요?')) return;
+    /************ 사진 삭제 (롱프레스만) ************/
+    async function deletePhoto(photoId){
+      // 원하시면 confirm 제거도 가능합니다. 일단 안전하게 한 번 확인만 둡니다.
+      if (!confirm('이 사진을 삭제할까요?')) return;
       await ensureAuth();
       await remove(ref(db, `albumPhotos/${photoId}`));
       await remove(ref(db, `albumComments/${photoId}`));
@@ -291,7 +287,7 @@
         timer = setTimeout(async () => {
           fired = true;
           try{
-            await deletePhotoAndComments(photoId);
+            await deletePhoto(photoId);
           }catch(err){
             console.error(err);
             alert('사진 삭제 중 오류가 발생했습니다.');
@@ -312,75 +308,52 @@
       imgEl.addEventListener('mouseup', cancel);
       imgEl.addEventListener('mouseleave', cancel);
 
+      // 롱프레스 후 클릭(확대) 막기
       imgEl.addEventListener('click', (e)=>{
         if (fired) { e.preventDefault(); e.stopPropagation(); }
       }, true);
-    }
-
-    /************ 사진 메타 수정(내용/날짜) ************/
-    async function savePhotoMeta(photoId, caption, dateStr){
-      // caption: string (빈 값 허용)
-      // dateStr: YYYY-MM-DD (빈 값이면 today로)
-      const payload = {
-        caption: caption ?? "",
-        date: dateStr || toYMD(new Date())
-      };
-      await ensureAuth();
-      await update(ref(db, `albumPhotos/${photoId}`), payload);
     }
 
     /************ 갤러리 ************/
     async function renderGallery(){
       const snap = await get(ref(db, 'albumPhotos'));
       const obj = snap.exists() ? snap.val() : {};
+
+      // ✅ 날짜(date) 기준 최신이 위 / 같은 날짜면 createdAt 최신이 위
       const list = Object.values(obj).sort((a, b) => {
-  // 1순위: 사용자가 설정한 날짜(date)
-  const da = a.date || toYMD(a.createdAt ? new Date(a.createdAt) : new Date(0));
-  const db = b.date || toYMD(b.createdAt ? new Date(b.createdAt) : new Date(0));
-
-  // 날짜 문자열 YYYY-MM-DD → Date 비교
-  const ta = new Date(da).getTime();
-  const tb = new Date(db).getTime();
-
-  // 최신 날짜가 위로
-  return tb - ta;
-});
-
+        const da = a.date || (a.createdAt ? toYMD(new Date(a.createdAt)) : "1970-01-01");
+        const db = b.date || (b.createdAt ? toYMD(new Date(b.createdAt)) : "1970-01-01");
+        const ta = new Date(da).getTime();
+        const tb = new Date(db).getTime();
+        if (ta !== tb) return tb - ta;
+        return (b.createdAt||0) - (a.createdAt||0);
+      });
 
       $('#countText').textContent = `총 ${list.length.toLocaleString('ko-KR')}장`;
 
       const g = $('#gallery');
       g.innerHTML = list.map(p=>{
-        const caption = p.caption || "";
-        const dateStr = p.date || toYMD(p.createdAt ? new Date(p.createdAt) : new Date());
+        const dateStr = p.date || (p.createdAt ? toYMD(new Date(p.createdAt)) : '');
         return `
         <div class="photo" data-id="${p.id}">
           <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
+
           <div class="meta">
             <div class="top">
-              <span class="pill" title="${escapeHtml(caption)}">${escapeHtml(caption) || ' '}</span>
-              <span class="muted" style="font-size:12px;">${escapeHtml(dateStr)}</span>
-            </div>
-
-            <div class="editbox">
-              <div style="font-weight:800;">표시 내용/날짜 수정</div>
-              <div class="row2">
-                <input type="text" data-role="p-caption" value="${escapeAttr(caption)}" placeholder="표시 내용(예: 단체사진 / 2015년 / 워크샵)">
-                <input type="date" data-role="p-date" value="${escapeAttr(dateStr)}">
-              </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button class="btn" data-role="p-save">저장</button>
-                <button class="btn danger" data-role="p-del">삭제(사진+댓글)</button>
-              </div>
-              <div class="muted" style="font-size:12px;">
-                ※ 삭제 버튼이 싫으면 이 줄 전체(삭제 버튼) 제거하셔도 됩니다. (롱프레스 삭제는 그대로 동작)
+              <span class="pill">등록</span>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button type="button" class="dateBtn" data-role="date-btn">${escapeHtml(dateStr || '-')}</button>
+                <input type="date" data-role="date-input" value="${escapeHtml(dateStr || '')}" style="display:none;">
               </div>
             </div>
 
-            <div class="comments">
-              <div class="muted" style="font-weight:800;">댓글</div>
+            ${p.caption ? `<div class="caption" data-role="caption-text">${escapeHtml(p.caption)}</div>` : `<div class="muted" style="font-size:12px;" data-role="caption-text">(내용 없음)</div>`}
+
+            <!-- ✅ 사진 밑에 바로 댓글 목록 -->
+            <div class="commentsWrap">
               <div data-role="comment-list" class="grid" style="gap:6px;"></div>
 
+              <!-- ✅ 그 밑에 댓글 입력 -->
               <div class="c-form">
                 <div class="row">
                   <input type="text" data-role="c-name" placeholder="이름(필수)">
@@ -390,8 +363,7 @@
               </div>
             </div>
           </div>
-        </div>
-        `;
+        </div>`;
       }).join('');
 
       // 댓글 로드
@@ -407,40 +379,35 @@
         img.addEventListener('click', ()=>{
           openModal(img.dataset.full || img.src);
         });
+
         bindLongPressDelete(img, photoId);
       });
 
-      // 사진 메타 저장 버튼
-      $$('[data-role="p-save"]', g).forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
+      // ✅ 날짜 클릭 → date input 열기 → 변경 시 DB 업데이트
+      $$('#gallery [data-role="date-btn"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
           const card = btn.closest('.photo');
-          const photoId = card.dataset.id;
-          const captionEl = $('[data-role="p-caption"]', card);
-          const dateEl = $('[data-role="p-date"]', card);
-
-          const caption = (captionEl.value || '').trim();
-          const dateStr = (dateEl.value || '').trim();
-
-          try{
-            showSaving('저장 중');
-            await savePhotoMeta(photoId, caption, dateStr);
-            alert('저장 완료!');
-            await renderGallery();
-          }catch(e){
-            console.error(e);
-            alert('저장 실패: ' + (e.message || e));
-          }finally{
-            hideSaving();
-          }
+          const input = card.querySelector('[data-role="date-input"]');
+          input.style.display = 'block';
+          input.focus();
+          try{ input.showPicker && input.showPicker(); }catch{}
         });
       });
 
-      // 사진 삭제 버튼(옵션)
-      $$('[data-role="p-del"]', g).forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          const card = btn.closest('.photo');
+      $$('#gallery [data-role="date-input"]').forEach(input=>{
+        input.addEventListener('change', async ()=>{
+          const card = input.closest('.photo');
           const photoId = card.dataset.id;
-          await deletePhotoAndComments(photoId);
+          const newDate = (input.value || '').trim();
+          if (!newDate) return;
+
+          await ensureAuth();
+          await update(ref(db, `albumPhotos/${photoId}`), { date: newDate });
+          await renderGallery();
+        });
+
+        input.addEventListener('blur', ()=>{
+          input.style.display = 'none';
         });
       });
 
@@ -468,6 +435,22 @@
           await loadCommentsInto(photoId);
         });
       });
+
+      // ✅ 사진 “내용(캡션)” 클릭해서 수정
+      $$('#gallery [data-role="caption-text"]').forEach(el=>{
+        el.addEventListener('click', async ()=>{
+          const card = el.closest('.photo');
+          const photoId = card.dataset.id;
+
+          const current = el.textContent === '(내용 없음)' ? '' : el.textContent;
+          const next = prompt('사진에 표시할 내용을 수정하세요.', current);
+          if (next === null) return;
+
+          await ensureAuth();
+          await update(ref(db, `albumPhotos/${photoId}`), { caption: next.trim() });
+          await renderGallery();
+        });
+      });
     }
 
     /************ 댓글 로드(+X 삭제 버튼 포함) ************/
@@ -484,7 +467,7 @@
         .sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
 
       listEl.innerHTML = items.length ? items.map(c=>`
-        <div class="c-item" style="position:relative; padding-right:34px;">
+        <div class="c-item" style="padding-right:34px;">
           <button
             type="button"
             data-role="c-del"
@@ -502,7 +485,7 @@
 
           <div>
             <b>${escapeHtml(c.name || '')}</b>
-            <span class="muted" style="font-size:12px;">${escapeHtml(formatDateOnly(c.createdAt))}</span>
+            <span class="muted" style="font-size:12px;">${formatDateOnly(c.createdAt)}</span>
           </div>
           <div style="margin-top:4px;">${escapeHtml(c.text || '')}</div>
         </div>
@@ -533,8 +516,8 @@
         showSaving('로그인 준비');
         await ensureAuth();
 
-        const caption = ($('#uploaderName').value || '').trim(); // 표시 내용(선택)
-        const todayStr = toYMD(new Date());
+        const caption = ($('#captionInput').value || '').trim();
+        const today = toYMD(new Date());
 
         for (let i=0; i<files.length; i++){
           setSaving(`압축 ${i+1}/${files.length}`);
@@ -553,15 +536,15 @@
             id,
             full: up.full,
             thumb: up.thumb,
-            caption,           // ✅ 표시 내용
-            date: todayStr,    // ✅ 표시 날짜(시간 없음)
+            caption,     // ✅ 표시 내용
+            date: today, // ✅ 등록날짜(기본 오늘)
             createdAt
           });
         }
 
         alert('업로드 완료!');
         $('#photoInput').value = '';
-        $('#uploaderName').value = '';
+        $('#captionInput').value = '';
         await renderGallery();
 
       }catch(e){
@@ -573,22 +556,14 @@
     };
 
     /************ 유틸 ************/
-    function toYMD(d){
-      const dd = (d instanceof Date) ? d : new Date(d);
-      const y = dd.getFullYear();
-      const m = String(dd.getMonth()+1).padStart(2,'0');
-      const day = String(dd.getDate()).padStart(2,'0');
-      return `${y}-${m}-${day}`;
-    }
     function formatDateOnly(ts){
-      if (!ts) return '-';
-      try{ return toYMD(new Date(ts)); }catch{ return '-'; }
+      if (!ts) return '';
+      try{
+        return toYMD(new Date(ts));
+      }catch{ return ''; }
     }
     function escapeHtml(s){
       return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
-    }
-    function escapeAttr(s){
-      return String(s).replace(/"/g, '&quot;');
     }
 
     /************ 라이트박스 ************/
