@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>남동3기 사진첩</title>
+  <style>
+    :root{ --primary:#2b6cb0; --muted:#f5f7fb; }
+    *{ box-sizing:border-box; }
+    body{ font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif; margin:0; background:#fafafa; color:#222; }
+    header{ position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid #e5e7eb; }
+    .bar{ max-width:1100px; margin:0 auto; padding:16px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .bar h1{ margin:0; font-size:clamp(18px,4.5vw,22px); }
+    .actions{ margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+    button,.btn{ appearance:none; border:1px solid #cbd5e1; background:#fff; color:#111; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
+    .btn.primary{ background:var(--primary); color:#fff; border-color:var(--primary); }
+    main{ max-width:1100px; margin:0 auto; padding:14px; }
+    .card{ background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+    .muted{ color:#6b7280; }
+    input[type="text"], textarea{
+      width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; font-family:inherit;
+    }
+    textarea{ min-height:84px; resize:vertical; }
+    .grid{ display:grid; gap:12px; }
+    .grid-2{ grid-template-columns:1fr 1fr; }
+    @media (max-width:800px){ .grid-2{ grid-template-columns:1fr; } }
+
+    .gallery{ display:grid; gap:12px; grid-template-columns:repeat(4, minmax(0,1fr)); }
+    @media (max-width:1000px){ .gallery{ grid-template-columns:repeat(3,1fr);} }
+    @media (max-width:750px){ .gallery{ grid-template-columns:repeat(2,1fr);} }
+    @media (max-width:480px){ .gallery{ grid-template-columns:1fr;} }
+
+    .photo{
+      border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; background:#fff;
+      box-shadow:0 1px 2px rgba(0,0,0,.04);
+      display:flex; flex-direction:column;
+    }
+    .photo img{ width:100%; height:220px; object-fit:cover; cursor:zoom-in; background:#f1f5f9; }
+    .photo .meta{ padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+    .photo .meta .top{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; }
+    .comments{ border-top:1px dashed #e5e7eb; padding-top:10px; display:flex; flex-direction:column; gap:8px; }
+    .c-item{ background:#f8fafc; border:1px solid #e5e7eb; padding:8px 10px; border-radius:10px; }
+    .c-item b{ margin-right:6px; }
+    .c-form{ display:grid; gap:8px; }
+    .c-form .row{ display:grid; grid-template-columns:140px 1fr; gap:8px; }
+    @media (max-width:520px){ .c-form .row{ grid-template-columns:1fr; } }
+
+    .lightbox{ position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; padding:16px; }
+    .lightbox.hidden{ display:none; }
+    .lightbox img{ max-width:min(92vw,1200px); max-height:92vh; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.6); }
+    .lightbox .close-btn{ position:absolute; top:10px; right:10px; border:none; background:rgba(255,255,255,.15); color:#fff;
+      font-size:28px; line-height:1; border-radius:10px; padding:6px 12px; cursor:pointer; }
+
+    .saving{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); z-index:99999; color:#fff; font-weight:700; }
+    .saving.hidden{ display:none; }
+    .saving .box{ background:#111; padding:16px 20px; border-radius:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <h1>남동3기 사진첩</h1>
+      <div class="actions">
+        <button class="btn" id="btnBack">돌아가기</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <div class="grid grid-2">
+        <div>
+          <div style="font-weight:800; margin-bottom:6px;">사진 업로드</div>
+          <input type="file" id="photoInput" accept="image/*" multiple>
+          <p class="muted" style="margin:8px 0 0;">
+            업로드된 사진은 Cloudinary에 저장되고, 댓글/목록은 Firebase에 저장됩니다.
+          </p>
+        </div>
+        <div>
+          <div style="font-weight:800; margin-bottom:6px;">업로드 시 표시 이름(선택)</div>
+          <input type="text" id="uploaderName" placeholder="예: 성용">
+          <p class="muted" style="margin:8px 0 0;">이름을 비우면 “익명”으로 표시됩니다.</p>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn primary" id="btnUpload">선택한 사진 업로드</button>
+        <button class="btn" id="btnRefresh">새로고침</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:end; gap:10px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:900;">전체 사진</div>
+          <div class="muted" id="countText" style="margin-top:4px;">불러오는 중…</div>
+        </div>
+      </div>
+      <div id="gallery" class="gallery" style="margin-top:12px;"></div>
+    </section>
+  </main>
+
+  <div id="savingOverlay" class="saving hidden"><div class="box">처리 중… <span id="savingText">준비</span></div></div>
+
+  <div id="imgModal" class="lightbox hidden" aria-modal="true" role="dialog">
+    <img id="imgModalImg" alt="확대 이미지" />
+    <button type="button" class="close-btn" id="imgModalClose" aria-label="닫기">×</button>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getDatabase, ref, get, set, push, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    /************ Cloudinary ************/
+    const CLOUD_NAME = 'dqpcvlakz';
+    const UPLOAD_PRESET = 'koen3pay';
+    const CLD_DELIVERY_BASE = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload`;
+
+    /************ Firebase ************/
+    const firebaseConfig = {
+      apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
+      authDomain: "ionic6-3b7b2.firebaseapp.com",
+      databaseURL: "https://ionic6-3b7b2-default-rtdb.firebaseio.com",
+      projectId: "ionic6-3b7b2",
+      storageBucket: "ionic6-3b7b2.appspot.com",
+      messagingSenderId: "306251113324",
+      appId: "1:306251113324:web:456c689fdb4757adc18949"
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const db   = getDatabase(app);
+    const auth = getAuth(app);
+
+    const $  = (s, r=document)=> r.querySelector(s);
+    const $$ = (s, r=document)=> Array.from(r.querySelectorAll(s));
+    const MAX_BYTES = 2 * 1024 * 1024;
+
+    function showSaving(msg){ $('#savingText').textContent = msg || '처리 중'; $('#savingOverlay').classList.remove('hidden'); }
+    function setSaving(msg){ $('#savingText').textContent = msg || '처리 중'; }
+    function hideSaving(){ $('#savingOverlay').classList.add('hidden'); }
+
+    async function ensureAuth(){
+      if (auth.currentUser) return auth.currentUser;
+      const cred = await signInAnonymously(auth);
+      return cred.user;
+    }
+
+    onAuthStateChanged(auth, async (u)=>{
+      if (!u) { try { await signInAnonymously(auth); } catch {} }
+      await renderGallery();
+    });
+
+    $('#btnBack').onclick = ()=> location.href = 'index.html';
+    $('#btnRefresh').onclick = ()=> renderGallery();
+
+    /************ 이미지 압축 ************/
+    function loadImage(src){
+      return new Promise((resolve,reject)=>{
+        const img = new Image();
+        img.onload = ()=> resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+    async function drawToCanvas(src, maxW){
+      if (src instanceof File) {
+        try {
+          const bmp = await createImageBitmap(src);
+          const s = Math.min(1, maxW / bmp.width);
+          const w = Math.max(1, Math.round(bmp.width * s));
+          const h = Math.max(1, Math.round(bmp.height * s));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+          try { bmp.close && bmp.close(); } catch {}
+          return canvas;
+        } catch {}
+      }
+      const url = URL.createObjectURL(src);
+      const img = await loadImage(url);
+      const s = Math.min(1, maxW / img.width);
+      const w = Math.max(1, Math.round(img.width * s));
+      const h = Math.max(1, Math.round(img.height * s));
+      const canvas = document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      try { URL.revokeObjectURL(url); } catch {}
+      return canvas;
+    }
+    function canvasToBlob(canvas, quality=0.82, type='image/jpeg'){
+      return new Promise((resolve)=> canvas.toBlob(b=>resolve(b), type, quality));
+    }
+    async function compressWithLimit(file, {maxW, qualityStart=0.82, minQuality=0.55, step=0.07}){
+      let q = qualityStart, w = maxW, lastBlob = file;
+      for (let attempt=0; attempt<6; attempt++){
+        const canvas = await drawToCanvas(file, w);
+        const blob = await canvasToBlob(canvas, q);
+        lastBlob = blob;
+        if (blob.size <= MAX_BYTES) return blob;
+        if (q > minQuality) q = Math.max(minQuality, q - step);
+        else { w = Math.round(w * 0.85); if (w < 480) return blob; }
+      }
+      return lastBlob;
+    }
+
+    /************ Cloudinary 업로드 ************/
+    function randomId(){ return Math.random().toString(36).slice(2,10); }
+
+    function xhrUpload(url, formData, onProgress){
+      return new Promise((resolve, reject)=>{
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.onload = ()=> { try { resolve(JSON.parse(xhr.responseText)); } catch(e){ reject(e); } };
+        xhr.onerror = ()=> reject(new Error('upload-error'));
+        if (xhr.upload && onProgress){
+          xhr.upload.onprogress = (e)=>{
+            if (e.lengthComputable) onProgress(Math.round((e.loaded/e.total)*100));
+          };
+        }
+        xhr.send(formData);
+      });
+    }
+
+    async function uploadToCloudinary(blobOrFile, folder, onProgress){
+      const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+      const publicId = `${Date.now()}_${randomId()}`;
+      const fd = new FormData();
+      fd.append('file', blobOrFile);
+      fd.append('upload_preset', UPLOAD_PRESET);
+      fd.append('folder', folder);
+      fd.append('public_id', publicId);
+
+      const res = await xhrUpload(url, fd, onProgress);
+      const pid = res.public_id;
+      const fmt = res.format || 'jpg';
+      const full  = res.secure_url || `${CLD_DELIVERY_BASE}/${pid}.${fmt}`;
+      const thumb = `${CLD_DELIVERY_BASE}/c_limit,w_420,f_auto,q_auto/${pid}.${fmt}`;
+      return { full, thumb };
+    }
+
+    /************ DB 구조 ************
+      albumPhotos/{photoId} = { id, full, thumb, uploader, createdAt }
+      albumComments/{photoId}/{commentId} = { name, text, createdAt }
+    *********************************/
+    async function renderGallery(){
+      const snap = await get(ref(db, 'albumPhotos'));
+      const obj = snap.exists() ? snap.val() : {};
+      const list = Object.values(obj).sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
+
+      $('#countText').textContent = `총 ${list.length.toLocaleString('ko-KR')}장`;
+
+      const g = $('#gallery');
+      g.innerHTML = list.map(p=>`
+        <div class="photo" data-id="${p.id}">
+          <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
+          <div class="meta">
+            <div class="top">
+              <span class="pill">${(p.uploader||'익명')}</span>
+              <span class="muted" style="font-size:12px;">${formatTime(p.createdAt)}</span>
+            </div>
+
+            <div class="comments" data-role="comments">
+              <div class="muted" style="font-weight:800;">댓글</div>
+              <div data-role="comment-list" class="grid" style="gap:6px;"></div>
+
+              <div class="c-form">
+                <div class="row">
+                  <input type="text" data-role="c-name" placeholder="이름(예: 성용)">
+                  <input type="text" data-role="c-text" placeholder="댓글 내용">
+                </div>
+                <button class="btn" data-role="c-submit">댓글 등록</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      // 댓글 로드 + 이벤트 바인딩
+      for (const p of list){
+        await loadCommentsInto(p.id);
+      }
+
+      // 이미지 클릭 → 라이트박스
+      $$('#gallery img').forEach(img=>{
+        img.addEventListener('click', ()=>{
+          openModal(img.dataset.full || img.src);
+        });
+      });
+
+      // 댓글 등록
+      $$('[data-role="c-submit"]', g).forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const card = btn.closest('.photo');
+          const photoId = card.dataset.id;
+          const nameEl = $('[data-role="c-name"]', card);
+          const textEl = $('[data-role="c-text"]', card);
+          const name = (nameEl.value || '').trim() || '익명';
+          const text = (textEl.value || '').trim();
+          if (!text) return alert('댓글 내용을 입력하세요.');
+
+          await ensureAuth();
+          const createdAt = Date.now();
+          const newRef = push(ref(db, `albumComments/${photoId}`));
+          await set(newRef, { name, text, createdAt });
+
+          textEl.value = '';
+          await loadCommentsInto(photoId);
+        });
+      });
+    }
+
+    async function loadCommentsInto(photoId){
+      const card = $(`.photo[data-id="${photoId}"]`);
+      if (!card) return;
+      const listEl = $('[data-role="comment-list"]', card);
+      const snap = await get(ref(db, `albumComments/${photoId}`));
+      const obj = snap.exists() ? snap.val() : {};
+      const items = Object.values(obj).sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+      listEl.innerHTML = items.length ? items.map(c=>`
+        <div class="c-item">
+          <div><b>${escapeHtml(c.name || '익명')}</b><span class="muted" style="font-size:12px;">${formatTime(c.createdAt)}</span></div>
+          <div style="margin-top:4px;">${escapeHtml(c.text || '')}</div>
+        </div>
+      `).join('') : `<div class="muted">아직 댓글이 없습니다.</div>`;
+    }
+
+    function formatTime(ts){
+      if (!ts) return '-';
+      try{
+        const d = new Date(ts);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}
+          ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      }catch{ return '-'; }
+    }
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+    }
+
+    /************ 업로드 ************/
+    $('#btnUpload').onclick = async ()=>{
+      const files = Array.from($('#photoInput').files || []);
+      if (!files.length) return alert('사진을 먼저 선택하세요.');
+
+      try{
+        showSaving('로그인 준비');
+        await ensureAuth();
+
+        const uploader = ($('#uploaderName').value || '').trim() || '익명';
+
+        for (let i=0; i<files.length; i++){
+          setSaving(`압축 ${i+1}/${files.length}`);
+          const blob = await compressWithLimit(files[i], { maxW: 1600, qualityStart: 0.82 });
+
+          setSaving(`업로드 ${i+1}/${files.length} (전송 중…)`);
+          // ✅ 폴더명을 "namdong3gi/album" 로 저장
+          const up = await uploadToCloudinary(blob, `namdong3gi/album`, (p)=>{
+            setSaving(`업로드 ${i+1}/${files.length} (${p}%)`);
+          });
+
+          const createdAt = Date.now();
+          const photoRef = push(ref(db, 'albumPhotos'));
+          const id = photoRef.key;
+
+          await set(photoRef, {
+            id,
+            full: up.full,
+            thumb: up.thumb,
+            uploader,
+            createdAt
+          });
+        }
+
+        alert('업로드 완료!');
+        $('#photoInput').value = '';
+        await renderGallery();
+
+      }catch(e){
+        console.error(e);
+        alert('업로드 실패: ' + (e.message || e));
+      }finally{
+        hideSaving();
+      }
+    };
+
+    /************ 라이트박스 ************/
+    const imgModal = $('#imgModal');
+    const imgModalImg = $('#imgModalImg');
+    const imgModalClose = $('#imgModalClose');
+
+    function openModal(src){
+      imgModalImg.src = src;
+      imgModal.classList.remove('hidden');
+      document.body.style.overflow='hidden';
+    }
+    function closeModal(){
+      imgModal.classList.add('hidden');
+      imgModalImg.src = '';
+      document.body.style.overflow='';
+    }
+    imgModalClose.onclick = closeModal;
+    imgModal.addEventListener('click', (e)=>{ if (e.target === imgModal) closeModal(); });
+    document.addEventListener('keydown', (e)=>{ if (!imgModal.classList.contains('hidden') && e.key==='Escape') closeModal(); });
+  </script>
+</body>
+</html>
