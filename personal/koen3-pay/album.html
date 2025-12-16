@@ -253,9 +253,28 @@
 
       const g = $('#gallery');
       g.innerHTML = list.map(p=>`
-        <div class="photo" data-id="${p.id}">
-          <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
-          <div class="meta">
+        <div class="photo" data-id="${p.id}" style="position:relative;">
+  <button
+    type="button"
+    data-role="photo-del"
+    data-photo="${p.id}"
+    aria-label="사진 삭제"
+    title="사진 삭제"
+    style="
+      position:absolute; top:8px; right:8px; z-index:2;
+      width:26px; height:26px;
+      border-radius:10px;
+      border:1px solid #e5e7eb;
+      background:rgba(255,255,255,.9);
+      cursor:pointer;
+      font-weight:900;
+      line-height:1;
+    "
+  >×</button>
+
+  <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
+  <div class="meta">
+
             <div class="top">
               <span class="pill">${escapeHtml(p.uploader || '익명')}</span>
               <span class="muted" style="font-size:12px;">${formatTime(p.createdAt)}</span>
@@ -368,6 +387,28 @@
       await remove(ref(db, `albumComments/${photoId}/${cid}`));
       await loadCommentsInto(photoId);
     });
+
+    // 사진 삭제(X)
+$('#gallery').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('[data-role="photo-del"]');
+  if (!btn) return;
+
+  const photoId = btn.dataset.photo;
+
+  if (!confirm('이 사진과 모든 댓글을 삭제할까요?')) return;
+
+  await ensureAuth();
+
+  // 1) 사진 DB 삭제
+  await remove(ref(db, `albumPhotos/${photoId}`));
+
+  // 2) 해당 사진의 댓글 전부 삭제
+  await remove(ref(db, `albumComments/${photoId}`));
+
+  // 3) 화면 갱신
+  await renderGallery();
+});
+
 
     /************ 업로드 ************/
     $('#btnUpload').onclick = async ()=>{
