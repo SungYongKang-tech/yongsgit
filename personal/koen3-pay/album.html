@@ -110,7 +110,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, get, set, push, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getDatabase, ref, get, set, push, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     /************ Cloudinary ************/
@@ -164,6 +164,7 @@
         img.src = src;
       });
     }
+
     async function drawToCanvas(src, maxW){
       if (src instanceof File) {
         try {
@@ -189,9 +190,11 @@
       try { URL.revokeObjectURL(url); } catch {}
       return canvas;
     }
+
     function canvasToBlob(canvas, quality=0.82, type='image/jpeg'){
       return new Promise((resolve)=> canvas.toBlob(b=>resolve(b), type, quality));
     }
+
     async function compressWithLimit(file, {maxW, qualityStart=0.82, minQuality=0.55, step=0.07}){
       let q = qualityStart, w = maxW, lastBlob = file;
       for (let attempt=0; attempt<6; attempt++){
@@ -240,10 +243,7 @@
       return { full, thumb };
     }
 
-    /************ DB 구조 ************
-      albumPhotos/{photoId} = { id, full, thumb, uploader, createdAt }
-      albumComments/{photoId}/{commentId} = { name, text, createdAt }
-    *********************************/
+    /************ 갤러리 ************/
     async function renderGallery(){
       const snap = await get(ref(db, 'albumPhotos'));
       const obj = snap.exists() ? snap.val() : {};
@@ -257,17 +257,17 @@
           <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
           <div class="meta">
             <div class="top">
-              <span class="pill">${(p.uploader||'익명')}</span>
+              <span class="pill">${escapeHtml(p.uploader || '익명')}</span>
               <span class="muted" style="font-size:12px;">${formatTime(p.createdAt)}</span>
             </div>
 
-            <div class="comments" data-role="comments">
+            <div class="comments">
               <div class="muted" style="font-weight:800;">댓글</div>
               <div data-role="comment-list" class="grid" style="gap:6px;"></div>
 
               <div class="c-form">
                 <div class="row">
-                  <input type="text" data-role="c-name" placeholder="이름(예: 성용)">
+                  <input type="text" data-role="c-name" placeholder="이름(필수)">
                   <input type="text" data-role="c-text" placeholder="댓글 내용">
                 </div>
                 <button class="btn" data-role="c-submit">댓글 등록</button>
@@ -277,7 +277,7 @@
         </div>
       `).join('');
 
-      // 댓글 로드 + 이벤트 바인딩
+      // 댓글 로드
       for (const p of list){
         await loadCommentsInto(p.id);
       }
@@ -289,16 +289,20 @@
         });
       });
 
-      // 댓글 등록
+      // 댓글 등록 버튼들
       $$('[data-role="c-submit"]', g).forEach(btn=>{
         btn.addEventListener('click', async ()=>{
           const card = btn.closest('.photo');
           const photoId = card.dataset.id;
+
           const nameEl = $('[data-role="c-name"]', card);
           const textEl = $('[data-role="c-text"]', card);
-          const name = (nameEl.value || '').trim() || '익명';
+
+          const name = (nameEl.value || '').trim();
           const text = (textEl.value || '').trim();
-          if (!text) return alert('댓글 내용을 입력하세요.');
+
+          if (!name) { alert('이름을 입력해야 댓글을 등록할 수 있어요.'); nameEl.focus(); return; }
+          if (!text) { alert('댓글 내용을 입력하세요.'); textEl.focus(); return; }
 
           await ensureAuth();
           const createdAt = Date.now();
@@ -311,32 +315,59 @@
       });
     }
 
+    /************ 댓글 로드(+X 삭제 버튼 포함) ************/
     async function loadCommentsInto(photoId){
       const card = $(`.photo[data-id="${photoId}"]`);
       if (!card) return;
+
       const listEl = $('[data-role="comment-list"]', card);
       const snap = await get(ref(db, `albumComments/${photoId}`));
       const obj = snap.exists() ? snap.val() : {};
-      const items = Object.values(obj).sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+
+      const items = Object.entries(obj)
+        .map(([cid, c]) => ({ cid, ...c }))
+        .sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+
       listEl.innerHTML = items.length ? items.map(c=>`
-        <div class="c-item">
-          <div><b>${escapeHtml(c.name || '익명')}</b><span class="muted" style="font-size:12px;">${formatTime(c.createdAt)}</span></div>
+        <div class="c-item" style="position:relative; padding-right:34px;">
+          <button
+            type="button"
+            data-role="c-del"
+            data-photo="${photoId}"
+            data-cid="${c.cid}"
+            aria-label="댓글 삭제"
+            title="삭제"
+            style="
+              position:absolute; top:8px; right:8px;
+              width:22px; height:22px; border-radius:8px;
+              border:1px solid #e5e7eb; background:#fff; cursor:pointer;
+              font-weight:900; line-height:1;
+            "
+          >×</button>
+
+          <div>
+            <b>${escapeHtml(c.name || '')}</b>
+            <span class="muted" style="font-size:12px;">${formatTime(c.createdAt)}</span>
+          </div>
           <div style="margin-top:4px;">${escapeHtml(c.text || '')}</div>
         </div>
       `).join('') : `<div class="muted">아직 댓글이 없습니다.</div>`;
     }
 
-    function formatTime(ts){
-      if (!ts) return '-';
-      try{
-        const d = new Date(ts);
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}
-          ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      }catch{ return '-'; }
-    }
-    function escapeHtml(s){
-      return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
-    }
+    // 댓글 삭제(X) - 이벤트 위임
+    $('#gallery').addEventListener('click', async (e)=>{
+      const delBtn = e.target.closest('[data-role="c-del"]');
+      if (!delBtn) return;
+
+      const photoId = delBtn.dataset.photo;
+      const cid = delBtn.dataset.cid;
+
+      if (!confirm('이 댓글을 삭제할까요?')) return;
+
+      await ensureAuth();
+      await remove(ref(db, `albumComments/${photoId}/${cid}`));
+      await loadCommentsInto(photoId);
+    });
 
     /************ 업로드 ************/
     $('#btnUpload').onclick = async ()=>{
@@ -354,7 +385,6 @@
           const blob = await compressWithLimit(files[i], { maxW: 1600, qualityStart: 0.82 });
 
           setSaving(`업로드 ${i+1}/${files.length} (전송 중…)`);
-          // ✅ 폴더명을 "namdong3gi/album" 로 저장
           const up = await uploadToCloudinary(blob, `namdong3gi/album`, (p)=>{
             setSaving(`업로드 ${i+1}/${files.length} (${p}%)`);
           });
@@ -383,6 +413,19 @@
         hideSaving();
       }
     };
+
+    /************ 유틸 ************/
+    function formatTime(ts){
+      if (!ts) return '-';
+      try{
+        const d = new Date(ts);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}
+          ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      }catch{ return '-'; }
+    }
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+    }
 
     /************ 라이트박스 ************/
     const imgModal = $('#imgModal');
