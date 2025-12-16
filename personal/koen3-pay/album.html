@@ -14,14 +14,12 @@
     .actions{ margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
     button,.btn{ appearance:none; border:1px solid #cbd5e1; background:#fff; color:#111; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
     .btn.primary{ background:var(--primary); color:#fff; border-color:var(--primary); }
-    .btn.small{ padding:6px 10px; border-radius:10px; font-size:12px; }
     main{ max-width:1100px; margin:0 auto; padding:14px; }
     .card{ background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
     .muted{ color:#6b7280; }
-    input[type="text"], textarea, input[type="date"]{
+    input[type="text"]{
       width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; font-family:inherit;
     }
-    textarea{ min-height:84px; resize:vertical; }
     .grid{ display:grid; gap:12px; }
     .grid-2{ grid-template-columns:1fr 1fr; }
     @media (max-width:800px){ .grid-2{ grid-template-columns:1fr; } }
@@ -39,24 +37,25 @@
     .photo img{
       width:100%; height:220px; object-fit:cover;
       cursor:zoom-in; background:#f1f5f9;
-      user-select:none;
-      -webkit-user-select:none;
-      -webkit-touch-callout:none;
+      user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
     }
     .meta{ padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
 
-    .top{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .topLine{ display:flex; align-items:center; gap:8px; }
     .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; }
-    .dateBtn{
-      border:none; background:transparent; padding:0; margin:0;
+    .date{
       color:#6b7280; font-size:12px; cursor:pointer; text-decoration:underline;
     }
 
-    .captionWrap{ display:flex; flex-direction:column; gap:8px; }
+    /* 날짜 아래 "내용" 한 줄(빈칸도 클릭 가능) */
     .caption{
-      font-size:13px; color:#334155; font-weight:700; line-height:1.35;
+      font-size:14px;
+      line-height:1.35;
       min-height:18px;
+      color:#111;
+      cursor:pointer;
       white-space:pre-wrap;
+      word-break:break-word;
     }
 
     .commentsWrap{ display:flex; flex-direction:column; gap:8px; }
@@ -103,7 +102,7 @@
         <div>
           <div style="font-weight:800; margin-bottom:6px;">업로드 시 표시 내용(선택)</div>
           <input type="text" id="captionInput" placeholder="예: 진주에서 모임 / 삼천포 추억샷">
-          <p class="muted" style="margin:8px 0 0;">비우면 내용 없이 업로드됩니다. (나중에 사진별로 등록 가능)</p>
+          <p class="muted" style="margin:8px 0 0;">비우면 내용 없이 업로드됩니다.</p>
         </div>
       </div>
 
@@ -185,8 +184,19 @@
       const dd = String(d.getDate()).padStart(2,'0');
       return `${yyyy}-${mm}-${dd}`;
     }
+    function formatDateFromAny(photo){
+      // photo.date(YYYY-MM-DD) 우선, 없으면 createdAt로 날짜
+      if (photo.date) return photo.date;
+      if (photo.createdAt) return toYMD(new Date(photo.createdAt));
+      return '';
+    }
+    function ymdToCreatedAt(ymd){
+      // 날짜를 바꾸면 “그날 등록된 것처럼” 정렬되도록 createdAt도 같이 세팅(로컬 00:00)
+      const t = new Date(`${ymd}T00:00:00`).getTime();
+      return Number.isFinite(t) ? t : Date.now();
+    }
     function escapeHtml(s){
-      return String(s).replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+      return String(s ?? '').replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
     }
 
     /************ 이미지 압축 ************/
@@ -307,159 +317,6 @@
       }, true);
     }
 
-    /************ 갤러리 ************/
-    async function renderGallery(){
-      const snap = await get(ref(db, 'albumPhotos'));
-      const obj = snap.exists() ? snap.val() : {};
-
-      const list = Object.values(obj).sort((a, b) => {
-        const da = a.date || (a.createdAt ? toYMD(new Date(a.createdAt)) : "1970-01-01");
-        const dbb = b.date || (b.createdAt ? toYMD(new Date(b.createdAt)) : "1970-01-01");
-        const ta = new Date(da).getTime();
-        const tb = new Date(dbb).getTime();
-        if (ta !== tb) return tb - ta;
-        return (b.createdAt||0) - (a.createdAt||0);
-      });
-
-      $('#countText').textContent = `총 ${list.length.toLocaleString('ko-KR')}장`;
-
-      const g = $('#gallery');
-      g.innerHTML = list.map(p=>{
-        const dateStr = p.date || (p.createdAt ? toYMD(new Date(p.createdAt)) : '');
-        const cap = (p.caption || '');
-        return `
-        <div class="photo" data-id="${p.id}">
-          <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
-
-          <div class="meta">
-            <div class="top">
-  <div style="display:flex; flex-direction:column; gap:4px;">
-    <div>
-      <span class="pill">${escapeHtml(p.uploader || '익명')}</span>
-      <span class="muted" style="font-size:12px; margin-left:6px;" data-role="date" title="날짜 클릭 → 수정">
-        ${formatDate(p.photoDate || p.createdAt)}
-      </span>
-    </div>
-
-    <!-- ✅ 날짜 옆 '등록 버튼' 삭제 → 그 자리(바로 아래)에 내용 표시 -->
-    <div
-      data-role="caption"
-      title="내용 클릭 → 수정"
-      style="
-        font-size:14px;
-        line-height:1.35;
-        min-height:18px;              /* 내용 없을 때도 클릭 가능 */
-        color:#111;
-        cursor:pointer;
-        white-space:pre-wrap;
-        word-break:break-word;
-      "
-    >${escapeHtml(p.caption || '')}</div>
-  </div>
-</div>
-
-
-            <div class="captionWrap">
-              <div class="caption" data-role="caption-text">${escapeHtml(cap)}</div>
-              <button class="btn small" type="button" data-role="caption-edit">
-                ${cap ? '내용 수정' : '내용 등록'}
-              </button>
-            </div>
-
-            <div class="commentsWrap">
-              <div data-role="comment-list" class="grid" style="gap:6px;"></div>
-
-              <div class="c-form">
-                <div class="row">
-                  <input type="text" data-role="c-name" placeholder="이름(필수)">
-                  <input type="text" data-role="c-text" placeholder="댓글 내용">
-                </div>
-                <button class="btn" data-role="c-submit">댓글 등록</button>
-              </div>
-            </div>
-          </div>
-        </div>`;
-      }).join('');
-
-      // 댓글 로드
-      for (const p of list) await loadCommentsInto(p.id);
-
-      // 이미지: 클릭=확대 / 길게=삭제
-      $$('#gallery .photo').forEach(card=>{
-        const img = card.querySelector('img');
-        const photoId = card.dataset.id;
-
-        img.addEventListener('click', ()=> openModal(img.dataset.full || img.src));
-        bindLongPressDelete(img, photoId);
-      });
-
-      // 날짜 클릭→date input 열기 / 변경 시 저장
-      $$('#gallery [data-role="date-btn"]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const card = btn.closest('.photo');
-          const input = card.querySelector('[data-role="date-input"]');
-          input.style.display = 'block';
-          input.focus();
-          try{ input.showPicker && input.showPicker(); }catch{}
-        });
-      });
-      $$('#gallery [data-role="date-input"]').forEach(input=>{
-        input.addEventListener('change', async ()=>{
-          const card = input.closest('.photo');
-          const photoId = card.dataset.id;
-          const newDate = (input.value || '').trim();
-          if (!newDate) return;
-
-          await ensureAuth();
-          await update(ref(db, `albumPhotos/${photoId}`), { date: newDate });
-          await renderGallery();
-        });
-        input.addEventListener('blur', ()=>{ input.style.display = 'none'; });
-      });
-
-      // ✅ 내용 등록/수정 버튼
-      $$('#gallery [data-role="caption-edit"]').forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          const card = btn.closest('.photo');
-          const photoId = card.dataset.id;
-          const textEl = card.querySelector('[data-role="caption-text"]');
-          const current = textEl ? textEl.textContent : '';
-
-          const next = prompt('사진에 표시할 내용을 입력하세요.', current);
-          if (next === null) return;
-
-          await ensureAuth();
-          await update(ref(db, `albumPhotos/${photoId}`), { caption: next.trim() });
-          await renderGallery();
-        });
-      });
-
-      // 댓글 등록
-      $$('[data-role="c-submit"]', g).forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          const card = btn.closest('.photo');
-          const photoId = card.dataset.id;
-
-          const nameEl = $('[data-role="c-name"]', card);
-          const textEl = $('[data-role="c-text"]', card);
-
-          const name = (nameEl.value || '').trim();
-          const text = (textEl.value || '').trim();
-
-          if (!name) { alert('이름을 입력해야 댓글을 등록할 수 있어요.'); nameEl.focus(); return; }
-          if (!text) { alert('댓글 내용을 입력하세요.'); textEl.focus(); return; }
-
-          await ensureAuth();
-          const createdAt = Date.now();
-          const newRef = push(ref(db, `albumComments/${photoId}`));
-          await set(newRef, { name, text, createdAt });
-
-          textEl.value = '';
-          await loadCommentsInto(photoId);
-        });
-      });
-    }
-
     /************ 댓글 로드(+X 삭제 버튼 포함) ************/
     async function loadCommentsInto(photoId){
       const card = $(`.photo[data-id="${photoId}"]`);
@@ -514,6 +371,133 @@
       await loadCommentsInto(photoId);
     });
 
+    /************ 갤러리 ************/
+    async function renderGallery(){
+      const snap = await get(ref(db, 'albumPhotos'));
+      const obj = snap.exists() ? snap.val() : {};
+
+      const list = Object.values(obj).sort((a, b) => {
+        const da = (a.date || (a.createdAt ? toYMD(new Date(a.createdAt)) : "1970-01-01"));
+        const dbb = (b.date || (b.createdAt ? toYMD(new Date(b.createdAt)) : "1970-01-01"));
+        const ta = new Date(`${da}T00:00:00`).getTime();
+        const tb = new Date(`${dbb}T00:00:00`).getTime();
+        if (ta !== tb) return tb - ta;         // 날짜 최신이 위
+        return (b.createdAt||0) - (a.createdAt||0);
+      });
+
+      $('#countText').textContent = `총 ${list.length.toLocaleString('ko-KR')}장`;
+
+      const g = $('#gallery');
+      g.innerHTML = list.map(p=>{
+        const dateStr = formatDateFromAny(p);
+        const cap = (p.caption || '');
+        return `
+        <div class="photo" data-id="${p.id}">
+          <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
+          <div class="meta">
+            <div class="topLine">
+              <span class="pill">${escapeHtml(p.uploader || '익명')}</span>
+              <span class="date" data-role="date" title="클릭해서 날짜 수정">${escapeHtml(dateStr)}</span>
+            </div>
+
+            <!-- ✅ 날짜 옆 등록버튼 삭제 / 그 자리에 내용 표시(빈칸 가능) -->
+            <div class="caption" data-role="caption" title="클릭해서 내용 수정">${escapeHtml(cap)}</div>
+
+            <!-- ✅ 사진 밑에 바로 댓글 목록 → 그 아래 입력폼 -->
+            <div class="commentsWrap">
+              <div data-role="comment-list" class="grid" style="gap:6px;"></div>
+
+              <div class="c-form">
+                <div class="row">
+                  <input type="text" data-role="c-name" placeholder="이름(필수)">
+                  <input type="text" data-role="c-text" placeholder="댓글 내용">
+                </div>
+                <button class="btn" data-role="c-submit">댓글 등록</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      // 댓글 로드
+      for (const p of list) await loadCommentsInto(p.id);
+
+      // 이미지: 클릭=확대 / 길게=삭제
+      $$('#gallery .photo').forEach(card=>{
+        const img = card.querySelector('img');
+        const photoId = card.dataset.id;
+
+        img.addEventListener('click', ()=> openModal(img.dataset.full || img.src));
+        bindLongPressDelete(img, photoId);
+      });
+
+      // ✅ 날짜 클릭 → prompt → 저장(date + createdAt 같이 변경)
+      $$('#gallery [data-role="date"]').forEach(el=>{
+        el.addEventListener('click', async ()=>{
+          const card = el.closest('.photo');
+          const photoId = card.dataset.id;
+          const cur = (el.textContent || '').trim() || toYMD(new Date());
+
+          const next = prompt('사진 날짜를 입력하세요. (YYYY-MM-DD)', cur);
+          if (next === null) return;
+          const ymd = next.trim();
+
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+            alert('날짜 형식이 올바르지 않습니다. 예: 2025-12-16');
+            return;
+          }
+
+          await ensureAuth();
+          await update(ref(db, `albumPhotos/${photoId}`), {
+            date: ymd,
+            createdAt: ymdToCreatedAt(ymd) // 날짜 바꾸면 정렬도 같이 바뀜
+          });
+          await renderGallery();
+        });
+      });
+
+      // ✅ 내용 클릭 → prompt → 저장(빈칸 허용)
+      $$('#gallery [data-role="caption"]').forEach(el=>{
+        el.addEventListener('click', async ()=>{
+          const card = el.closest('.photo');
+          const photoId = card.dataset.id;
+          const cur = (el.textContent || ''); // 빈칸 가능
+
+          const next = prompt('사진 내용(설명)을 입력하세요.\n(비우면 빈칸으로 저장됩니다)', cur);
+          if (next === null) return;
+
+          await ensureAuth();
+          await update(ref(db, `albumPhotos/${photoId}`), { caption: next.trim() });
+          await renderGallery();
+        });
+      });
+
+      // 댓글 등록
+      $$('[data-role="c-submit"]', g).forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const card = btn.closest('.photo');
+          const photoId = card.dataset.id;
+
+          const nameEl = $('[data-role="c-name"]', card);
+          const textEl = $('[data-role="c-text"]', card);
+
+          const name = (nameEl.value || '').trim();
+          const text = (textEl.value || '').trim();
+
+          if (!name) { alert('이름을 입력해야 댓글을 등록할 수 있어요.'); nameEl.focus(); return; }
+          if (!text) { alert('댓글 내용을 입력하세요.'); textEl.focus(); return; }
+
+          await ensureAuth();
+          const createdAt = Date.now();
+          const newRef = push(ref(db, `albumComments/${photoId}`));
+          await set(newRef, { name, text, createdAt });
+
+          textEl.value = '';
+          await loadCommentsInto(photoId);
+        });
+      });
+    }
+
     /************ 업로드 ************/
     $('#btnUpload').onclick = async ()=>{
       const files = Array.from($('#photoInput').files || []);
@@ -535,17 +519,17 @@
             setSaving(`업로드 ${i+1}/${files.length} (${p}%)`);
           });
 
-          const createdAt = Date.now();
           const photoRef = push(ref(db, 'albumPhotos'));
           const id = photoRef.key;
 
+          // ✅ 등록일(오늘)로 저장. 나중에 날짜를 바꾸면 createdAt도 같이 바뀜.
           await set(photoRef, {
             id,
             full: up.full,
             thumb: up.thumb,
-            caption: caption, // ✅ 빈 문자열 가능
+            caption: caption,   // 빈 문자열 가능
             date: today,
-            createdAt
+            createdAt: Date.now()
           });
         }
 
