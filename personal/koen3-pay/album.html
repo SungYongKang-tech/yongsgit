@@ -35,7 +35,13 @@
       box-shadow:0 1px 2px rgba(0,0,0,.04);
       display:flex; flex-direction:column;
     }
-    .photo img{ width:100%; height:220px; object-fit:cover; cursor:zoom-in; background:#f1f5f9; }
+    .photo img{
+      width:100%; height:220px; object-fit:cover;
+      cursor:zoom-in; background:#f1f5f9;
+      user-select:none;
+      -webkit-user-select:none;
+      -webkit-touch-callout:none;
+    }
     .photo .meta{ padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
     .photo .meta .top{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
     .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; }
@@ -49,8 +55,10 @@
     .lightbox{ position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; padding:16px; }
     .lightbox.hidden{ display:none; }
     .lightbox img{ max-width:min(92vw,1200px); max-height:92vh; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.6); }
-    .lightbox .close-btn{ position:absolute; top:10px; right:10px; border:none; background:rgba(255,255,255,.15); color:#fff;
-      font-size:28px; line-height:1; border-radius:10px; padding:6px 12px; cursor:pointer; }
+    .lightbox .close-btn{
+      position:absolute; top:10px; right:10px; border:none; background:rgba(255,255,255,.15); color:#fff;
+      font-size:28px; line-height:1; border-radius:10px; padding:6px 12px; cursor:pointer;
+    }
 
     .saving{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); z-index:99999; color:#fff; font-weight:700; }
     .saving.hidden{ display:none; }
@@ -88,6 +96,10 @@
         <button class="btn primary" id="btnUpload">선택한 사진 업로드</button>
         <button class="btn" id="btnRefresh">새로고침</button>
       </div>
+
+      <p class="muted" style="margin:10px 0 0;">
+        ✅ 삭제: 사진을 <b>길게 누르면</b>(약 0.7초) 삭제할 수 있습니다.
+      </p>
     </section>
 
     <section class="card">
@@ -243,6 +255,53 @@
       return { full, thumb };
     }
 
+    /************ 사진 삭제 (롱프레스) ************/
+    async function deletePhotoAndComments(photoId){
+      if (!confirm('이 사진과 모든 댓글을 삭제할까요?')) return;
+      await ensureAuth();
+      await remove(ref(db, `albumPhotos/${photoId}`));
+      await remove(ref(db, `albumComments/${photoId}`));
+      await renderGallery();
+    }
+
+    function bindLongPressDelete(imgEl, photoId){
+      let timer = null;
+      let fired = false;
+
+      const start = () => {
+        fired = false;
+        timer = setTimeout(async () => {
+          fired = true;
+          try{
+            await deletePhotoAndComments(photoId);
+          }catch(err){
+            console.error(err);
+            alert('사진 삭제 중 오류가 발생했습니다.');
+          }
+        }, 650);
+      };
+
+      const cancel = () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+      };
+
+      // 모바일(터치)
+      imgEl.addEventListener('touchstart', start, { passive:true });
+      imgEl.addEventListener('touchend', cancel, { passive:true });
+      imgEl.addEventListener('touchcancel', cancel, { passive:true });
+
+      // PC(마우스)
+      imgEl.addEventListener('mousedown', start);
+      imgEl.addEventListener('mouseup', cancel);
+      imgEl.addEventListener('mouseleave', cancel);
+
+      // 롱프레스 후 클릭(확대) 막기
+      imgEl.addEventListener('click', (e)=>{
+        if (fired) { e.preventDefault(); e.stopPropagation(); }
+      }, true);
+    }
+
     /************ 갤러리 ************/
     async function renderGallery(){
       const snap = await get(ref(db, 'albumPhotos'));
@@ -253,28 +312,9 @@
 
       const g = $('#gallery');
       g.innerHTML = list.map(p=>`
-        <div class="photo" data-id="${p.id}" style="position:relative;">
-  <button
-    type="button"
-    data-role="photo-del"
-    data-photo="${p.id}"
-    aria-label="사진 삭제"
-    title="사진 삭제"
-    style="
-      position:absolute; top:8px; right:8px; z-index:2;
-      width:26px; height:26px;
-      border-radius:10px;
-      border:1px solid #e5e7eb;
-      background:rgba(255,255,255,.9);
-      cursor:pointer;
-      font-weight:900;
-      line-height:1;
-    "
-  >×</button>
-
-  <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
-  <div class="meta">
-
+        <div class="photo" data-id="${p.id}">
+          <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
+          <div class="meta">
             <div class="top">
               <span class="pill">${escapeHtml(p.uploader || '익명')}</span>
               <span class="muted" style="font-size:12px;">${formatTime(p.createdAt)}</span>
@@ -301,14 +341,19 @@
         await loadCommentsInto(p.id);
       }
 
-      // 이미지 클릭 → 라이트박스
-      $$('#gallery img').forEach(img=>{
+      // 이미지 이벤트: 짧게=확대 / 길게=삭제
+      $$('#gallery .photo').forEach(card=>{
+        const img = card.querySelector('img');
+        const photoId = card.dataset.id;
+
         img.addEventListener('click', ()=>{
           openModal(img.dataset.full || img.src);
         });
+
+        bindLongPressDelete(img, photoId);
       });
 
-      // 댓글 등록 버튼들
+      // 댓글 등록
       $$('[data-role="c-submit"]', g).forEach(btn=>{
         btn.addEventListener('click', async ()=>{
           const card = btn.closest('.photo');
@@ -388,28 +433,6 @@
       await loadCommentsInto(photoId);
     });
 
-    // 사진 삭제(X)
-$('#gallery').addEventListener('click', async (e)=>{
-  const btn = e.target.closest('[data-role="photo-del"]');
-  if (!btn) return;
-
-  const photoId = btn.dataset.photo;
-
-  if (!confirm('이 사진과 모든 댓글을 삭제할까요?')) return;
-
-  await ensureAuth();
-
-  // 1) 사진 DB 삭제
-  await remove(ref(db, `albumPhotos/${photoId}`));
-
-  // 2) 해당 사진의 댓글 전부 삭제
-  await remove(ref(db, `albumComments/${photoId}`));
-
-  // 3) 화면 갱신
-  await renderGallery();
-});
-
-
     /************ 업로드 ************/
     $('#btnUpload').onclick = async ()=>{
       const files = Array.from($('#photoInput').files || []);
@@ -460,8 +483,7 @@ $('#gallery').addEventListener('click', async (e)=>{
       if (!ts) return '-';
       try{
         const d = new Date(ts);
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}
-          ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
       }catch{ return '-'; }
     }
     function escapeHtml(s){
