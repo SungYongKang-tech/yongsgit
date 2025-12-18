@@ -83,6 +83,20 @@
   color:#9ca3af;
   font-weight:500;
 }
+/* 날짜 옆 삭제 버튼 */
+.p-del{
+  border:1px solid #e5e7eb;
+  background:#fff;
+  color:#111;
+  font-size:12px;
+  padding:4px 8px;
+  border-radius:10px;
+  cursor:pointer;
+  font-weight:800;
+}
+.p-del:hover{ background:#f8fafc; }
+
+
   </style>
 </head>
 <body>
@@ -403,23 +417,21 @@ g.innerHTML = list.map(p=>{
   <div class="photo" data-id="${p.id}">
     <img src="${p.thumb || p.full}" data-full="${p.full}" alt="사진" loading="lazy">
 
-    <div class="meta">
-      <!-- 상단 한 줄: 왼쪽=내용(없으면 안내), 오른쪽=날짜 -->
-      <div class="topLine" style="justify-content:space-between;">
-        <div
-          class="caption ${capClass}"
-          data-role="caption"
-          title="클릭해서 내용 수정"
-          style="font-weight:700;"
-        >${escapeHtml(cap)}</div>
+    <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+  <span
+    class="date"
+    data-role="date"
+    title="클릭해서 날짜 수정"
+  >${escapeHtml(dateStr)}</span>
 
-        <span
-          class="date"
-          data-role="date"
-          title="클릭해서 날짜 수정"
-          style="flex-shrink:0;"
-        >${escapeHtml(dateStr)}</span>
-      </div>
+  <button
+    type="button"
+    class="p-del"
+    data-role="p-del"
+    title="삭제"
+  >삭제</button>
+</div>
+
 
       <!-- 댓글: 목록 → 입력폼 -->
       <div class="commentsWrap">
@@ -490,6 +502,38 @@ g.innerHTML = list.map(p=>{
           await renderGallery();
         });
       });
+
+// ✅ 삭제 버튼 클릭 → 비번 확인(04140) → 삭제
+$$('#gallery [data-role="p-del"]').forEach(btn=>{
+  btn.addEventListener('click', async (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+
+    const card = btn.closest('.photo');
+    const photoId = card.dataset.id;
+
+    const pw = prompt('삭제 비밀번호를 입력하세요.');
+    if (pw === null) return;
+
+    if (pw.trim() !== '04140') {
+      alert('비밀번호가 틀립니다.');
+      return;
+    }
+
+    if (!confirm('이 사진을 삭제할까요?')) return;
+
+    try{
+      await ensureAuth();
+      await remove(ref(db, `albumPhotos/${photoId}`));
+      await remove(ref(db, `albumComments/${photoId}`));
+      await renderGallery();
+    }catch(err){
+      console.error(err);
+      alert('사진 삭제 중 오류가 발생했습니다.');
+    }
+  });
+});
+
 
       // 댓글 등록
       $$('[data-role="c-submit"]', g).forEach(btn=>{
