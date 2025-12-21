@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>학습 모드</title>
+  <style>
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif; background:#f5f7fb; color:#0f172a; }
+    header{ background:#fff; border-bottom:1px solid #e5e7eb; position:sticky; top:0; }
+    .wrap{ max-width:900px; margin:0 auto; padding:16px; }
+    .card{ background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:16px; box-shadow:0 10px 24px rgba(0,0,0,.06); }
+    .muted{ color:#64748b; font-size:13px; }
+    .q{ font-size:18px; font-weight:800; line-height:1.4; margin:8px 0 14px; }
+    .choices{ display:grid; gap:10px; }
+    button{ width:100%; padding:12px 14px; border-radius:12px; border:1px solid #e5e7eb; background:#fff; text-align:left; font-weight:700; cursor:pointer; }
+    button:hover{ border-color:#cbd5e1; }
+    img{ max-width:100%; border-radius:12px; border:1px solid #e5e7eb; background:#fff; }
+    a{ color:#2563eb; text-decoration:none; font-weight:800; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <div>
+          <div style="font-weight:900;">학습 모드</div>
+          <div class="muted" id="meta">데이터 로딩 중…</div>
+        </div>
+        <a href="./index.html">← 홈</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="card">
+      <div class="muted" id="qid"></div>
+      <div class="q" id="question"></div>
+
+      <div id="imgBox" style="display:none; margin:12px 0;">
+        <img id="qimg" alt="문제 그림" />
+      </div>
+
+      <div class="choices" id="choices"></div>
+      <div class="muted" id="msg" style="margin-top:12px;"></div>
+    </div>
+  </main>
+
+  <script>
+    const LS_KEY = "EJK_SELECTED_DATASET_URL";
+
+    function getDatasetUrl(){
+      const params = new URLSearchParams(location.search);
+      const fromQS = params.get("data");
+      if(fromQS) return fromQS;
+
+      const fromLS = localStorage.getItem(LS_KEY);
+      if(fromLS) return fromLS;
+
+      // fallback (루트/data에 파일이 있다고 가정)
+      return "./data/EJK_2024_01_test.json";
+    }
+
+    async function main(){
+      const url = getDatasetUrl();
+      document.getElementById("meta").textContent = "데이터: " + url;
+
+      const res = await fetch(url, { cache: "no-store" });
+      if(!res.ok) throw new Error("JSON 로드 실패: HTTP " + res.status);
+
+      const questions = await res.json();
+      if(!Array.isArray(questions) || questions.length === 0) throw new Error("문제 배열이 비어있음");
+
+      const q = questions[0]; // 테스트: 첫 문제
+      document.getElementById("qid").textContent = `${q.id} · ${q.subject} · ${q.chapter1}/${q.chapter2}`;
+      document.getElementById("question").textContent = q.question;
+
+      const imgBox = document.getElementById("imgBox");
+      if(q.image_url){
+        imgBox.style.display = "block";
+        document.getElementById("qimg").src = q.image_url;
+      }
+
+      const choicesEl = document.getElementById("choices");
+      choicesEl.innerHTML = "";
+      (q.choices || []).forEach((txt, idx) => {
+        const btn = document.createElement("button");
+        btn.textContent = `${idx+1}. ${txt}`;
+        btn.onclick = () => {
+          const correct = (idx+1) === Number(q.answer);
+          document.getElementById("msg").textContent = correct ? "✅ 정답입니다." : `❌ 오답입니다. 정답: ${q.answer}`;
+        };
+        choicesEl.appendChild(btn);
+      });
+
+      document.getElementById("msg").textContent = "보기를 눌러 정답 체크가 되는지 확인해보세요.";
+    }
+
+    main().catch(err => {
+      document.getElementById("meta").textContent = "오류 발생";
+      document.getElementById("msg").textContent =
+        "학습모드 로딩에 실패했습니다. (1) /study.html 파일이 배포에 있는지, (2) JSON 경로가 맞는지, (3) JSON이 배열([]) 형태인지 확인하세요. 에러: " + err.message;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
