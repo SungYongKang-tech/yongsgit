@@ -21,7 +21,7 @@
       background:rgba(7,11,20,.75); backdrop-filter: blur(10px);
       border-bottom:1px solid rgba(255,255,255,.06);
     }
-    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
     h1{margin:0;font-size:20px;letter-spacing:.2px}
     .sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.35}
     .grid{display:grid; gap:12px}
@@ -34,17 +34,18 @@
     }
     .k{color:var(--muted);font-size:12px}
     .v{margin-top:8px;font-size:18px;font-weight:750}
-    .tiny{margin-top:6px;color:var(--muted);font-size:12px}
-    .row{display:grid; grid-template-columns: 1.2fr 1.8fr; gap:12px; margin-top:12px}
+    .tiny{margin-top:6px;color:var(--muted);font-size:12px;line-height:1.35}
+    .row{display:grid; grid-template-columns: 1.15fr 1.85fr; gap:12px; margin-top:12px}
     .inputs{display:grid; gap:10px}
     label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
-    input, select{
+    input, select, textarea{
       width:100%; padding:10px 11px; border-radius:12px;
       border:1px solid rgba(255,255,255,.10);
       background:rgba(10,16,30,.75);
       color:var(--text);
       outline:none;
     }
+    textarea{min-height:64px; resize:vertical}
     input::placeholder{color:rgba(169,182,214,.55)}
     .btns{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
     button{
@@ -69,19 +70,21 @@
       margin-top:10px; padding:12px; border-radius:14px;
       border:1px dashed rgba(255,255,255,.14);
       background:rgba(10,16,30,.55);
-      color:var(--muted); font-size:13px; line-height:1.55
+      color:var(--muted); font-size:13px; line-height:1.6;
+      white-space:pre-wrap;
     }
     table{
       width:100%; border-collapse:collapse; margin-top:10px; overflow:hidden;
       border-radius:14px; border:1px solid rgba(255,255,255,.08);
     }
     th, td{
-      padding:10px 10px; text-align:right;
+      padding:9px 10px; text-align:right;
       border-bottom:1px solid rgba(255,255,255,.07);
       font-size:13px;
     }
     th:first-child, td:first-child{text-align:center}
     th:nth-child(2), td:nth-child(2){text-align:center}
+    th:nth-child(3), td:nth-child(3){text-align:center}
     th{
       color:var(--muted); font-weight:750;
       background:rgba(10,16,30,.55);
@@ -94,9 +97,20 @@
       font-size:12px; border:1px solid rgba(255,255,255,.10);
       color:var(--muted); background:rgba(10,16,30,.45);
     }
+    .tabs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
+    .tab{
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(10,16,30,.55);
+      color:var(--muted);
+      padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:700; font-size:12px;
+    }
+    .tab.active{background:rgba(32,52,88,.85); color:var(--text)}
+    .split{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
     @media (max-width: 980px){
       .kpis{grid-template-columns: repeat(2, minmax(0, 1fr));}
       .row{grid-template-columns:1fr}
+      .split{grid-template-columns:1fr}
       th{top:120px}
     }
   </style>
@@ -137,122 +151,184 @@
         <div class="tiny">≥ 1.00%</div>
       </div>
     </div>
+
+    <div class="tabs">
+      <div class="tab active" id="tab2026">2026 입력/조절</div>
+      <div class="tab" id="tab2025">2025 실적(기준/참고)</div>
+      <div class="tab" id="tabReport">보고서/내보내기</div>
+      <div class="pill" style="margin-left:auto">
+        <span id="nowInfo"></span>
+      </div>
+    </div>
   </div>
 </header>
 
 <main class="wrap">
-  <div class="row">
+
+  <!-- 2026 -->
+  <section id="sec2026">
+    <div class="row">
+      <div class="card">
+        <div class="pill">
+          <span>입력 대상:</span>
+          <strong>2026년 본사</strong>
+          <span style="opacity:.7">·</span>
+          <span class="tag">이전 입력값 확인/수정 가능</span>
+        </div>
+
+        <div class="inputs" style="margin-top:12px">
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap:10px">
+            <div>
+              <label>월 선택</label>
+              <select id="selMonth"></select>
+            </div>
+            <div>
+              <label>실적/예상</label>
+              <select id="selType">
+                <option value="actual">실적(확정)</option>
+                <option value="forecast">예상(미확정)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap:10px">
+            <div>
+              <label>전기 (본사, MWh)</label>
+              <input id="inpElec" type="number" step="0.001" placeholder="예: 305.129" />
+              <div class="tiny" id="hintElec"></div>
+            </div>
+            <div>
+              <label>열 (본사, Gcal)</label>
+              <input id="inpHeat" type="number" step="0.1" placeholder="예: 85.1" />
+              <div class="tiny" id="hintHeat"></div>
+            </div>
+          </div>
+
+          <div>
+            <label>메모(보고서 참고)</label>
+            <textarea id="inpMemo" placeholder="예: 3월 공조 가동 증가, 7월 폭염 영향 등"></textarea>
+            <div class="tiny">※ 메모도 함께 저장되며 CSV/JSON 내보내기에 포함됩니다.</div>
+          </div>
+
+          <div class="btns">
+            <button id="btnAutoHeat">열 자동(2025 동일월)</button>
+            <button id="btnAutoBoth">전기·열 자동(2025 동일월)</button>
+            <button id="btnSave">저장</button>
+            <button id="btnClearMonth">이 달 입력 삭제</button>
+          </div>
+
+          <div class="coach" id="coachBox">다음 달 권장 사용량을 계산합니다…</div>
+
+          <div class="coach" id="detailBox" style="border-style:solid">
+            선택 월 상세(보고서용): 계산 중…
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="pill">
+          <span>2026 월별 현황(전기·열·TOE)</span>
+          <span style="opacity:.7">·</span>
+          <span class="tag">미입력 달은 2025 동일월로 자동 예측</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>월</th>
+              <th>구분</th>
+              <th>입력여부</th>
+              <th>전기(MWh)</th>
+              <th>열(Gcal)</th>
+              <th>월 TOE</th>
+              <th>누계 TOE</th>
+            </tr>
+          </thead>
+          <tbody id="tbody2026"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2025 -->
+  <section id="sec2025" style="display:none">
     <div class="card">
       <div class="pill">
-        <span>입력 대상:</span>
-        <strong>2026년 본사</strong>
+        <span>2025 실적(본사)</span>
         <span style="opacity:.7">·</span>
-        <span id="nowInfo"></span>
+        <span class="tag">12월 전기=2024년 12월 300.766 MWh 대체</span>
+        <span class="tag">12월 열=고지서 59.6 Gcal</span>
       </div>
 
-      <div class="inputs" style="margin-top:12px">
-        <div class="grid" style="grid-template-columns: 1fr 1fr; gap:10px">
-          <div>
-            <label>월 선택</label>
-            <select id="selMonth"></select>
-          </div>
-          <div>
-            <label>실적/예상</label>
-            <select id="selType">
-              <option value="actual">실적(고지서 확정)</option>
-              <option value="forecast">예상(파워플래너/추정)</option>
-            </select>
-          </div>
+      <div class="split" style="margin-top:12px">
+        <div class="coach">
+          <div style="color:var(--text);font-weight:800;margin-bottom:8px">2025 연간 요약</div>
+          <div id="box2025sum"></div>
         </div>
-
-        <div class="grid" style="grid-template-columns: 1fr 1fr; gap:10px">
+        <div class="coach">
+          <div style="color:var(--text);font-weight:800;margin-bottom:8px">용도</div>
           <div>
-            <label>전기 (본사, MWh)</label>
-            <input id="inpElec" type="number" step="0.001" placeholder="예: 305.129" />
-            <div class="tiny" id="hintElec"></div>
+            - 2026의 미입력 달에 기본 예측으로 사용합니다.<br/>
+            - 보고서 작성 시 “전년 동월 대비” 근거로 사용합니다.<br/>
           </div>
-          <div>
-            <label>열 (본사, Gcal)</label>
-            <input id="inpHeat" type="number" step="0.1" placeholder="예: 85.1" />
-            <div class="tiny" id="hintHeat"></div>
-          </div>
-        </div>
-
-        <div class="btns">
-          <button id="btnAutoHeat">열 예측값 자동(2025 동일월)</button>
-          <button id="btnAutoBoth">전기·열 기본예측 불러오기(2025 동일월)</button>
-          <button id="btnSave">저장</button>
-          <button id="btnClearMonth">이 달 입력 삭제</button>
-        </div>
-
-        <div class="coach" id="coachBox">
-          다음 달 권장 사용량을 계산합니다…
         </div>
       </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>월</th>
+            <th>연도</th>
+            <th>구분</th>
+            <th>전기(MWh)</th>
+            <th>열(Gcal)</th>
+            <th>월 TOE</th>
+            <th>누계 TOE</th>
+          </tr>
+        </thead>
+        <tbody id="tbody2025"></tbody>
+      </table>
     </div>
+  </section>
 
+  <!-- Report / Export -->
+  <section id="secReport" style="display:none">
     <div class="card">
       <div class="pill">
-        <span>2025 기준 패턴(내장)</span>
+        <span>보고서/내보내기</span>
         <span style="opacity:.7">·</span>
-        <span class="tag">전기(본사)</span>
-        <span class="tag">열(본사)</span>
+        <span class="tag">CSV는 엑셀에 바로 붙여넣기 가능</span>
       </div>
 
-      <div class="coach" style="margin-top:12px">
-        <div style="color:var(--text);font-weight:750;margin-bottom:6px">작동 방식</div>
-        <div>
-          ① 2026에 월별 실적을 입력하면 즉시 반영됩니다.<br/>
-          ② 입력하지 않은 달은 <b>2025 동일월</b>을 기본 예측으로 사용합니다.<br/>
-          ③ 목표(연말 1% 절감) 달성을 위해 남은 달 목표를 2025 패턴 비율로 재배분하고,<br/>
-          &nbsp;&nbsp;&nbsp;&nbsp;그 결과로 <b>다음 달 전기(MWh) 권장 상한</b>을 제시합니다.<br/>
+      <div class="split" style="margin-top:12px">
+        <div class="coach" id="reportSummary">요약 계산 중…</div>
+        <div class="coach">
+          <div style="color:var(--text);font-weight:800;margin-bottom:8px">내보내기</div>
+          <div class="btns">
+            <button id="btnExportCSV">2026 CSV 내보내기</button>
+            <button id="btnExportJSON">2026 JSON 내보내기</button>
+            <button id="btnResetAll">2026 데이터 전체 초기화</button>
+          </div>
+          <pre id="exportBox" class="mono" style="display:none;margin-top:10px;white-space:pre-wrap;background:rgba(10,16,30,.6);border:1px solid rgba(255,255,255,.08);padding:10px;border-radius:12px;color:var(--muted);font-size:12px"></pre>
         </div>
       </div>
-
-      <div class="btns" style="margin-top:12px">
-        <button id="btnResetAll">2026 데이터 전체 초기화</button>
-        <button id="btnExport">2026 데이터 내보내기(JSON)</button>
-      </div>
-      <pre id="exportBox" style="display:none;margin-top:10px;white-space:pre-wrap;background:rgba(10,16,30,.6);border:1px solid rgba(255,255,255,.08);padding:10px;border-radius:12px;color:var(--muted);font-size:12px"></pre>
     </div>
-  </div>
+  </section>
 
-  <div class="card" style="margin-top:12px">
-    <div class="pill">
-      <span>2026 월별 현황</span>
-      <span style="opacity:.7">·</span>
-      <span class="tag">실적은 actual</span>
-      <span class="tag">예측은 forecast</span>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>월</th>
-          <th>구분</th>
-          <th>전기(MWh)</th>
-          <th>열(Gcal)</th>
-          <th>월 TOE</th>
-          <th>누계 TOE</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
 </main>
 
 <script>
 /* =========================
    고정값(확정)
 ========================= */
-const BASELINE_TOE = 1065.772;               // 20~22 평균(이미 확정)
+const BASELINE_TOE = 1065.772;               // 20~22 평균(확정)
 const TARGET_TOE   = BASELINE_TOE * 0.99;    // 1% 절감 목표
 const F_ELEC = 0.229;                        // toe/MWh
 const F_HEAT = 0.1;                          // toe/Gcal
 
 /* =========================
    2025 기준(본사) 내장 데이터
-   - 전기: 12월 미발행 → 2024.12(300.766) 대체 적용
+   - 전기: 12월 미발행 → 2024.12(300.766) 대체
    - 열: 12월 59.6 고지서(확정)
 ========================= */
 const Y2025 = {
@@ -263,25 +339,22 @@ const Y2025 = {
 function toeOfMonth(elecMWh, heatGcal){
   return (elecMWh||0)*F_ELEC + (heatGcal||0)*F_HEAT;
 }
-
-/* 2025 월 TOE(패턴 가중치 계산용) */
 const toe25 = Array.from({length:12}, (_,i)=> toeOfMonth(Y2025.elec[i], Y2025.heat[i]));
 
 /* =========================
    2026 데이터 저장(로컬)
 ========================= */
-const LS_KEY = "energy_insights_2026_v1";
+const LS_KEY = "energy_insights_2026_v2";
 
 function default2026(){
-  // 기본: 값은 비워두되, 예측 표시를 위해 렌더링 시 2025 동일월을 사용
   return Array.from({length:12}, (_,i)=>({
     m:i+1,
-    type:"forecast",         // 기본은 forecast
-    elec_mwh:null,           // 입력 없으면 null
-    heat_gcal:null           // 입력 없으면 null (열은 auto 버튼으로 2025 동일월 적용 가능)
+    type:"forecast",
+    elec_mwh:null,
+    heat_gcal:null,
+    memo:""
   }));
 }
-
 function load2026(){
   const raw = localStorage.getItem(LS_KEY);
   if(!raw) return default2026();
@@ -291,14 +364,14 @@ function load2026(){
     return parsed.map((x,i)=>({
       m:i+1,
       type: (x.type==="actual"||x.type==="forecast") ? x.type : "forecast",
-      elec_mwh: (x.elec_mwh===null || x.elec_mwh===undefined || x.elec_mwh==="") ? null : Number(x.elec_mwh),
-      heat_gcal: (x.heat_gcal===null || x.heat_gcal===undefined || x.heat_gcal==="") ? null : Number(x.heat_gcal)
+      elec_mwh: (x.elec_mwh==null || x.elec_mwh==="") ? null : Number(x.elec_mwh),
+      heat_gcal: (x.heat_gcal==null || x.heat_gcal==="") ? null : Number(x.heat_gcal),
+      memo: (x.memo==null) ? "" : String(x.memo)
     }));
   }catch(e){
     return default2026();
   }
 }
-
 function save2026(data){
   localStorage.setItem(LS_KEY, JSON.stringify(data));
 }
@@ -306,138 +379,189 @@ function save2026(data){
 /* =========================
    UI helpers
 ========================= */
+const el = (id)=>document.getElementById(id);
+
 function fmt(n, digits=3){
   if(n===null || n===undefined || Number.isNaN(n)) return "-";
   const x = Number(n);
   return x.toLocaleString("en-US",{minimumFractionDigits:digits, maximumFractionDigits:digits});
 }
+function fmt2(n){ return fmt(n,2); }
+function fmt1(n){ return fmt(n,1); }
+function fmt3(n){ return fmt(n,3); }
 function fmtPct(n){
   if(n===null || n===undefined || Number.isNaN(n)) return "-";
   return (Number(n)).toFixed(2);
 }
-function monthName(m){ return `${m}월`; }
-
-const el = (id)=>document.getElementById(id);
 
 /* =========================
-   계산: 2026 예상 연간, 절감률, 코치(다음달 권장)
+   계산: 2026 예측 포함 연간/절감률
 ========================= */
-function computeAll(data){
-  // 각 월에 대해 "실제 계산에 쓰는 값" 결정:
-  // - 입력값 있으면 그 값
-  // - 없으면 2025 동일월 기본예측 사용 (전기/열 모두)
+function compute2026(data){
   const used = data.map((row,i)=>{
+    const hasInput = (row.elec_mwh!=null || row.heat_gcal!=null || (row.memo||"").trim()!=="");
     const elec = (row.elec_mwh!=null) ? row.elec_mwh : Y2025.elec[i];
     const heat = (row.heat_gcal!=null) ? row.heat_gcal : Y2025.heat[i];
     const toe  = toeOfMonth(elec, heat);
-    return { ...row, used_elec:elec, used_heat:heat, used_toe:toe };
+    return { ...row, hasInput, used_elec:elec, used_heat:heat, used_toe:toe };
   });
 
-  const annualToeEst = used.reduce((s,r)=> s + r.used_toe, 0);
-  const savingPctFinal = (BASELINE_TOE - annualToeEst) / BASELINE_TOE * 100;
-
-  // 누계 TOE(표용)
   let cum = 0;
   const withCum = used.map(r=>{
     cum += r.used_toe;
     return {...r, cum_toe:cum};
   });
 
+  const annualToeEst = withCum.reduce((s,r)=> s + r.used_toe, 0);
+  const savingPctFinal = (BASELINE_TOE - annualToeEst) / BASELINE_TOE * 100;
+
   return { withCum, annualToeEst, savingPctFinal };
 }
 
+/* =========================
+   코치: 다음달 권장 전기 상한
+   - 확정 실적(actual + elec/heat 둘다 입력) 제외한 나머지 달은 2025 패턴 비율로 재배분
+========================= */
 function coachNextMonth(data, selectedMonth){
-  // 목표: TARGET_TOE 이하가 되도록 남은 달(선택월 포함) 예산 배분
-  // 실제: 이미 "actual"로 확정된 달은 실적 사용, 나머지는 조절대상으로 본다.
-  const calc = computeAll(data);
+  const calc = compute2026(data);
   const used = calc.withCum;
 
-  // actual 달은 입력값이 있어야 실적으로 의미가 있으니,
-  // type=actual 이더라도 값이 null이면 실제로는 예측 사용 중 → 그 경우도 조절 대상에 포함
   const isLockedActual = (r)=> (r.type==="actual" && r.elec_mwh!=null && r.heat_gcal!=null);
 
   const locked = used.filter(isLockedActual);
   const toeLocked = locked.reduce((s,r)=> s + r.used_toe, 0);
 
-  // 조절 대상 월 = locked actual 제외한 나머지 달
   const adjustable = used.filter(r=> !isLockedActual(r));
-
   const budgetRemain = TARGET_TOE - toeLocked;
 
-  // 이미 locked가 목표를 초과하면 경고
   if(budgetRemain < 0){
-    return {
-      msg: `⚠️ 이미 확정된 실적(LOCK)만으로 목표(연 1% 절감)를 초과했습니다.\n` +
-           `- 확정 실적 합계: ${fmt(toeLocked,2)} toe\n` +
-           `- 목표: ${fmt(TARGET_TOE,2)} toe\n` +
-           `→ 남은 달을 0으로 잡아도 PASS가 어려울 수 있습니다. (목표 재설정 또는 운영조치 필요)`
-    };
+    return `⚠️ 이미 확정된 실적(LOCK)만으로 목표(연 1% 절감)를 초과했습니다.\n` +
+           `- 확정 실적 합계: ${fmt2(toeLocked)} toe\n` +
+           `- 목표: ${fmt2(TARGET_TOE)} toe\n` +
+           `→ 남은 달을 0으로 잡아도 PASS가 어려울 수 있습니다.`;
   }
 
-  // 남은 달 배분 가중치: 2025 월 TOE 비율
   const sumW = adjustable.reduce((s,r)=> s + toe25[r.m-1], 0);
-  const weights = adjustable.map(r=>({
-    m:r.m,
-    w: (sumW>0 ? toe25[r.m-1]/sumW : 1/adjustable.length)
-  }));
+  const weightOf = (m)=>{
+    const r = adjustable.find(x=>x.m===m);
+    if(!r) return null;
+    return (sumW>0 ? toe25[m-1]/sumW : 1/adjustable.length);
+  };
 
-  // 선택월 "다음달" 권장치를 보여주기
   const nextM = selectedMonth < 12 ? selectedMonth+1 : null;
-
-  // nextM이 조절대상에 속하는지 확인
   if(nextM===null){
-    return { msg:`12월입니다. 올해 데이터 확정/점검만 하시면 됩니다.\n(연말 예상 절감률은 상단에서 확인 가능합니다.)` };
+    return `12월입니다. 올해 데이터 확정/점검만 하시면 됩니다.\n(연말 예상 절감률은 상단 KPI를 확인하세요.)`;
   }
 
-  // next month 목표 TOE
-  const wNext = weights.find(x=>x.m===nextM);
-  // 만약 nextM이 locked actual이면 “이미 확정” 안내
   const nextRow = used[nextM-1];
   if(isLockedActual(nextRow)){
-    return { msg:`다음 달(${nextM}월)은 이미 실적으로 확정(LOCK)되어 있습니다.\n다른 달 입력/조절로 목표를 맞춰주세요.` };
+    return `다음 달(${nextM}월)은 이미 실적으로 확정(LOCK)되어 있습니다.\n다른 달 입력/조절로 목표를 맞춰주세요.`;
   }
 
-  const toeGoalNext = budgetRemain * (wNext ? wNext.w : 0);
+  const wNext = weightOf(nextM) ?? 0;
+  const toeGoalNext = budgetRemain * wNext;
 
-  // 열은 2025 동일월을 기본 예측으로 사용(사용자가 입력하면 그 값)
   const heatNext = (nextRow.heat_gcal!=null) ? nextRow.heat_gcal : Y2025.heat[nextM-1];
   const heatToeNext = heatNext * F_HEAT;
 
-  // 전기 목표 TOE = 전체 목표 TOE - 열 TOE
   const elecToeGoal = Math.max(0, toeGoalNext - heatToeNext);
   const elecMWhGoal = elecToeGoal / F_ELEC;
 
-  // 참고: 2025 동일월 전기 대비
   const elecRef = Y2025.elec[nextM-1];
   const deltaPct = (elecMWhGoal - elecRef) / elecRef * 100;
 
-  const msg =
-    `📌 목표(연 1% 절감) 달성을 위한 “다음 달(${nextM}월) 권장 상한”\n` +
-    `- 열(기본예측): ${fmt(heatNext,1)} Gcal → ${fmt(heatToeNext,2)} toe\n` +
-    `- 전기(권장): ${fmt(elecMWhGoal,3)} MWh 이하\n` +
-    `- 참고: 2025년 ${nextM}월 전기 ${fmt(elecRef,3)} MWh 대비 ` +
-    `${deltaPct>=0 ? "+" : ""}${deltaPct.toFixed(1)}%\n\n` +
-    `※ 계산원리: 확정 실적(LOCK)을 제외한 남은 달을 2025 패턴 비율로 재배분하여, 연간 목표(≤ ${fmt(TARGET_TOE,2)} toe)를 맞춥니다.`;
-
-  return { msg };
+  return `📌 목표(연 1% 절감) 달성을 위한 “다음 달(${nextM}월) 권장 상한”\n` +
+         `- 열(기본예측): ${fmt1(heatNext)} Gcal → ${fmt2(heatToeNext)} toe\n` +
+         `- 전기(권장): ${fmt3(elecMWhGoal)} MWh 이하\n` +
+         `- 참고: 2025년 ${nextM}월 전기 ${fmt3(elecRef)} MWh 대비 ` +
+         `${deltaPct>=0 ? "+" : ""}${deltaPct.toFixed(1)}%`;
 }
 
 /* =========================
-   렌더
+   선택 월 상세(보고서용)
 ========================= */
-function render(){
+function detailForMonth(data, m){
+  const row = data[m-1];
+  const elec = (row.elec_mwh!=null) ? row.elec_mwh : Y2025.elec[m-1];
+  const heat = (row.heat_gcal!=null) ? row.heat_gcal : Y2025.heat[m-1];
+  const toe = toeOfMonth(elec, heat);
+
+  const refElec = Y2025.elec[m-1];
+  const refHeat = Y2025.heat[m-1];
+  const refToe  = toe25[m-1];
+
+  const dElec = (elec - refElec) / refElec * 100;
+  const dHeat = (heat - refHeat) / refHeat * 100;
+  const dToe  = (toe - refToe) / refToe * 100;
+
+  const src = (row.type==="actual" ? "actual(실적)" : "forecast(예상)");
+  const inputState = (row.elec_mwh!=null || row.heat_gcal!=null) ? "입력값 사용" : "미입력(2025 동일월 자동예측)";
+
+  const memo = (row.memo||"").trim();
+
+  return `🧾 ${m}월 상세(2026)\n` +
+         `- 구분: ${src}\n` +
+         `- 전기: ${fmt3(elec)} MWh (${inputState})\n` +
+         `- 열  : ${fmt1(heat)} Gcal (${inputState})\n` +
+         `- 월 TOE: ${fmt2(toe)} toe\n\n` +
+         `📌 전년(2025) 동월 대비\n` +
+         `- 전기: ${fmt3(refElec)} → ${fmt3(elec)} (${dElec>=0?"+":""}${dElec.toFixed(1)}%)\n` +
+         `- 열  : ${fmt1(refHeat)} → ${fmt1(heat)} (${dHeat>=0?"+":""}${dHeat.toFixed(1)}%)\n` +
+         `- TOE : ${fmt2(refToe)} → ${fmt2(toe)} (${dToe>=0?"+":""}${dToe.toFixed(1)}%)\n` +
+         (memo ? `\n📝 메모\n- ${memo}` : `\n📝 메모\n- (없음)`);
+}
+
+/* =========================
+   2025 표 렌더
+========================= */
+function render2025(){
+  const tbody = el("tbody2025");
+  tbody.innerHTML = "";
+  let cum = 0;
+  for(let i=0;i<12;i++){
+    const toe = toe25[i];
+    cum += toe;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td>2025</td>
+      <td><span class="tag">actual</span></td>
+      <td>${fmt3(Y2025.elec[i])}</td>
+      <td>${fmt1(Y2025.heat[i])}</td>
+      <td>${fmt2(toe)}</td>
+      <td>${fmt2(cum)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  const sumElec = Y2025.elec.reduce((a,b)=>a+b,0);
+  const sumHeat = Y2025.heat.reduce((a,b)=>a+b,0);
+  const sumToe  = toe25.reduce((a,b)=>a+b,0);
+  const savingPct = (BASELINE_TOE - sumToe) / BASELINE_TOE * 100;
+
+  el("box2025sum").innerHTML =
+    `- 전기 합계: <b>${fmt3(sumElec)}</b> MWh<br/>` +
+    `- 열 합계: <b>${fmt1(sumHeat)}</b> Gcal<br/>` +
+    `- 연간 TOE: <b>${fmt2(sumToe)}</b> toe<br/>` +
+    `- 기준 대비 절감률: <b>${fmtPct(savingPct)}%</b>`;
+}
+
+/* =========================
+   2026 표/KPI/상세/리포트 렌더
+========================= */
+function render2026(){
   const data = load2026();
   const mSel = Number(el("selMonth").value || 1);
 
   // KPI
-  el("kpiBaseline").textContent = fmt(BASELINE_TOE,3);
-  el("kpiTarget").textContent   = fmt(TARGET_TOE,3);
+  el("kpiBaseline").textContent = fmt3(BASELINE_TOE);
+  el("kpiTarget").textContent   = fmt3(TARGET_TOE);
 
-  const calc = computeAll(data);
+  const calc = compute2026(data);
   const annualToeEst = calc.annualToeEst;
   const savingPct = calc.savingPctFinal;
 
-  el("kpiEstToe").textContent = fmt(annualToeEst,2);
+  el("kpiEstToe").textContent = fmt2(annualToeEst);
   el("kpiSaving").textContent = `${fmtPct(savingPct)}%`;
 
   const pass = savingPct >= 1.0;
@@ -445,66 +569,129 @@ function render(){
   el("kpiPass").className = `v status ${pass ? "good" : "bad"}`;
   el("kpiSaving").className = `v ${pass ? "good" : "warn"}`;
 
-  // now info
-  const now = new Date();
-  el("nowInfo").textContent = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
-
-  // 입력칸 채우기(선택월)
+  // 입력칸(선택월)
   const row = data[mSel-1];
   el("selType").value = row.type;
   el("inpElec").value = (row.elec_mwh==null) ? "" : row.elec_mwh;
   el("inpHeat").value = (row.heat_gcal==null) ? "" : row.heat_gcal;
+  el("inpMemo").value = row.memo || "";
 
-  el("hintElec").textContent = `기본예측(2025 ${mSel}월): ${fmt(Y2025.elec[mSel-1],3)} MWh`;
-  el("hintHeat").textContent = `기본예측(2025 ${mSel}월): ${fmt(Y2025.heat[mSel-1],1)} Gcal`;
+  el("hintElec").textContent = `기본예측(2025 ${mSel}월): ${fmt3(Y2025.elec[mSel-1])} MWh`;
+  el("hintHeat").textContent = `기본예측(2025 ${mSel}월): ${fmt1(Y2025.heat[mSel-1])} Gcal`;
 
-  // 코치 박스
-  const coach = coachNextMonth(data, mSel);
-  el("coachBox").textContent = coach.msg;
+  // 코치 + 상세
+  el("coachBox").textContent = coachNextMonth(data, mSel);
+  el("detailBox").textContent = detailForMonth(data, mSel);
 
   // 테이블
-  const tbody = el("tbody");
+  const tbody = el("tbody2026");
   tbody.innerHTML = "";
   calc.withCum.forEach((r,i)=>{
-    const tr = document.createElement("tr");
-    const isActual = (r.type==="actual" && r.elec_mwh!=null && r.heat_gcal!=null);
-    const typeLabel = isActual ? "actual" : "forecast";
+    const lockedActual = (r.type==="actual" && r.elec_mwh!=null && r.heat_gcal!=null);
+    const typeLabel = lockedActual ? "actual" : "forecast";
+    const inputLabel = (r.elec_mwh!=null || r.heat_gcal!=null || (r.memo||"").trim()!=="") ? "입력" : "자동";
 
+    const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${r.m}</td>
       <td><span class="tag">${typeLabel}</span></td>
-      <td>${fmt(r.used_elec,3)}</td>
-      <td>${fmt(r.used_heat,1)}</td>
-      <td>${fmt(r.used_toe,2)}</td>
-      <td>${fmt(r.cum_toe,2)}</td>
+      <td><span class="tag">${inputLabel}</span></td>
+      <td>${fmt3(r.used_elec)}</td>
+      <td>${fmt1(r.used_heat)}</td>
+      <td>${fmt2(r.used_toe)}</td>
+      <td>${fmt2(r.cum_toe)}</td>
     `;
     tbody.appendChild(tr);
   });
+
+  // 보고서 요약
+  el("reportSummary").textContent =
+    `📄 2026 보고서 요약(현재 입력 기준)\n` +
+    `- 기준(20~22 평균): ${fmt3(BASELINE_TOE)} toe\n` +
+    `- 만점 목표(−1%): ${fmt3(TARGET_TOE)} toe 이하\n` +
+    `- 2026 예상 연간: ${fmt2(annualToeEst)} toe\n` +
+    `- 최종 절감률(연말 예상): ${fmtPct(savingPct)}%\n` +
+    `- 판정: ${pass ? "PASS" : "FAIL"}\n\n` +
+    `※ 월별 사용량(전기·열·TOE)은 ‘2026 월별 현황’ 표와 ‘선택 월 상세’에 근거로 표시됩니다.`;
 }
 
 /* =========================
-   이벤트 바인딩
+   Export
+========================= */
+function export2026CSV(){
+  const data = load2026();
+  const calc = compute2026(data);
+  // CSV 헤더: 보고서용(연도/월/구분/입력값/적용값/TOE/누계/메모)
+  const lines = [];
+  lines.push([
+    "year","month","type","input_elec_mwh","input_heat_gcal","used_elec_mwh","used_heat_gcal","month_toe","cum_toe","memo"
+  ].join(","));
+
+  calc.withCum.forEach(r=>{
+    const esc = (s)=> `"${String(s??"").replaceAll('"','""')}"`;
+    lines.push([
+      "2026",
+      r.m,
+      r.type,
+      (r.elec_mwh==null ? "" : r.elec_mwh),
+      (r.heat_gcal==null ? "" : r.heat_gcal),
+      r.used_elec,
+      r.used_heat,
+      r.used_toe,
+      r.cum_toe,
+      esc(r.memo||"")
+    ].join(","));
+  });
+
+  return lines.join("\n");
+}
+function export2026JSON(){
+  return JSON.stringify({year:2026, baseline_toe:BASELINE_TOE, target_toe:TARGET_TOE, factors:{elec:F_ELEC, heat:F_HEAT}, data:load2026()}, null, 2);
+}
+
+/* =========================
+   Tabs
+========================= */
+function setTab(which){
+  const t2026 = el("tab2026"), t2025 = el("tab2025"), tRep = el("tabReport");
+  const s2026 = el("sec2026"), s2025 = el("sec2025"), sRep = el("secReport");
+
+  [t2026,t2025,tRep].forEach(x=>x.classList.remove("active"));
+  [s2026,s2025,sRep].forEach(x=>x.style.display="none");
+
+  if(which==="2026"){ t2026.classList.add("active"); s2026.style.display="block"; }
+  if(which==="2025"){ t2025.classList.add("active"); s2025.style.display="block"; }
+  if(which==="report"){ tRep.classList.add("active"); sRep.style.display="block"; }
+}
+
+/* =========================
+   init
 ========================= */
 function init(){
+  // date
+  const now = new Date();
+  el("nowInfo").textContent = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+
   // month select
   const sel = el("selMonth");
   for(let m=1;m<=12;m++){
     const opt = document.createElement("option");
     opt.value = m;
-    opt.textContent = monthName(m);
+    opt.textContent = `${m}월`;
     sel.appendChild(opt);
   }
   sel.value = String(new Date().getMonth()+1);
 
-  sel.addEventListener("change", render);
-  el("selType").addEventListener("change", render);
+  // events
+  sel.addEventListener("change", ()=>render2026());
+  el("selType").addEventListener("change", ()=>render2026());
 
   el("btnAutoHeat").addEventListener("click", ()=>{
     const data = load2026();
     const m = Number(sel.value);
     data[m-1].heat_gcal = Y2025.heat[m-1];
     save2026(data);
-    render();
+    render2026();
   });
 
   el("btnAutoBoth").addEventListener("click", ()=>{
@@ -513,21 +700,25 @@ function init(){
     data[m-1].elec_mwh = Y2025.elec[m-1];
     data[m-1].heat_gcal = Y2025.heat[m-1];
     save2026(data);
-    render();
+    render2026();
   });
 
   el("btnSave").addEventListener("click", ()=>{
     const data = load2026();
     const m = Number(sel.value);
+
     const elec = el("inpElec").value.trim();
     const heat = el("inpHeat").value.trim();
+    const memo = el("inpMemo").value;
 
     data[m-1].type = el("selType").value;
     data[m-1].elec_mwh = (elec==="") ? null : Number(elec);
     data[m-1].heat_gcal = (heat==="") ? null : Number(heat);
+    data[m-1].memo = memo || "";
 
     save2026(data);
-    render();
+    render2026();
+    alert(`${m}월 저장되었습니다. (이전 입력 이력은 표에서 계속 확인 가능합니다)`);
   });
 
   el("btnClearMonth").addEventListener("click", ()=>{
@@ -536,24 +727,43 @@ function init(){
     data[m-1].type = "forecast";
     data[m-1].elec_mwh = null;
     data[m-1].heat_gcal = null;
+    data[m-1].memo = "";
     save2026(data);
-    render();
+    render2026();
+  });
+
+  el("btnExportCSV").addEventListener("click", ()=>{
+    const csv = export2026CSV();
+    const box = el("exportBox");
+    box.style.display = "block";
+    box.textContent = csv;
+  });
+
+  el("btnExportJSON").addEventListener("click", ()=>{
+    const json = export2026JSON();
+    const box = el("exportBox");
+    box.style.display = "block";
+    box.textContent = json;
   });
 
   el("btnResetAll").addEventListener("click", ()=>{
     if(!confirm("2026 입력 데이터를 모두 초기화할까요?")) return;
     localStorage.removeItem(LS_KEY);
-    render();
-  });
-
-  el("btnExport").addEventListener("click", ()=>{
+    render2026();
     const box = el("exportBox");
-    const data = load2026();
-    box.style.display = (box.style.display==="none" ? "block" : "none");
-    box.textContent = JSON.stringify({year:2026, data}, null, 2);
+    box.style.display = "none";
+    box.textContent = "";
   });
 
-  render();
+  // tabs
+  el("tab2026").addEventListener("click", ()=>setTab("2026"));
+  el("tab2025").addEventListener("click", ()=>setTab("2025"));
+  el("tabReport").addEventListener("click", ()=>setTab("report"));
+
+  // first render
+  render2025();
+  render2026();
+  setTab("2026");
 }
 
 init();
