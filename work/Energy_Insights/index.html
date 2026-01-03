@@ -9,6 +9,7 @@
       --bg:#0b1220; --card:#111a2e; --text:#e8eefc; --muted:#a9b6d6;
       --line:#243252; --good:#24c37a; --bad:#ff5c7a; --warn:#ffcc00;
       --btn:#1b2a4a; --btn2:#203458;
+      --thTop: 64px; /* ✅ sticky header top (JS가 자동 갱신) */
     }
     *{box-sizing:border-box}
     body{
@@ -73,29 +74,43 @@
       color:var(--muted); font-size:13px; line-height:1.6;
       white-space:pre-wrap;
     }
+
+    /* ✅ TABLE FIX: 열 흔들림/밀림 방지 */
     table{
-      width:100%; border-collapse:collapse; margin-top:10px; overflow:hidden;
-      border-radius:14px; border:1px solid rgba(255,255,255,.08);
+      width:100%;
+      border-collapse:collapse;
+      table-layout: fixed; /* ✅ 열폭 고정 */
+      margin-top:10px;
+      overflow:hidden;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.08);
     }
     th, td{
-      padding:9px 10px; text-align:right;
+      padding:9px 10px;
       border-bottom:1px solid rgba(255,255,255,.07);
       font-size:13px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap; /* ✅ pill 때문에 줄바꿈으로 흔들리는 현상 방지 */
     }
-    th:first-child, td:first-child{text-align:center}
-    th:nth-child(2), td:nth-child(2){text-align:center}
-    th:nth-child(3), td:nth-child(3){text-align:center}
     th{
       color:var(--muted); font-weight:750;
       background:rgba(10,16,30,.55);
-      position:sticky; top:64px;
+      position:sticky;
+      top:var(--thTop);   /* ✅ 헤더 높이 자동 보정 */
+      z-index:2;
+      text-align:right;
     }
+    td{ text-align:right; }
+    th.center, td.center{ text-align:center; }
     tr:hover td{background:rgba(255,255,255,.03)}
+
     .tag{
       display:inline-flex; gap:6px; align-items:center;
       padding:4px 8px; border-radius:999px;
       font-size:12px; border:1px solid rgba(255,255,255,.10);
       color:var(--muted); background:rgba(10,16,30,.45);
+      max-width:100%;
     }
     .tabs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
     .tab{
@@ -111,7 +126,6 @@
       .kpis{grid-template-columns: repeat(2, minmax(0, 1fr));}
       .row{grid-template-columns:1fr}
       .split{grid-template-columns:1fr}
-      th{top:120px}
     }
   </style>
 </head>
@@ -232,12 +246,22 @@
           <span class="tag">미입력 달은 2025 동일월로 자동 예측</span>
         </div>
 
+        <!-- ✅ colgroup으로 열폭 고정 -->
         <table>
+          <colgroup>
+            <col style="width:56px">   <!-- 월 -->
+            <col style="width:96px">   <!-- 구분 -->
+            <col style="width:96px">   <!-- 입력여부 -->
+            <col style="width:140px">  <!-- 전기 -->
+            <col style="width:120px">  <!-- 열 -->
+            <col style="width:120px">  <!-- 월 TOE -->
+            <col style="width:120px">  <!-- 누계 TOE -->
+          </colgroup>
           <thead>
             <tr>
-              <th>월</th>
-              <th>구분</th>
-              <th>입력여부</th>
+              <th class="center">월</th>
+              <th class="center">구분</th>
+              <th class="center">입력여부</th>
               <th>전기(MWh)</th>
               <th>열(Gcal)</th>
               <th>월 TOE</th>
@@ -275,11 +299,20 @@
       </div>
 
       <table>
+        <colgroup>
+          <col style="width:56px">
+          <col style="width:70px">
+          <col style="width:96px">
+          <col style="width:140px">
+          <col style="width:120px">
+          <col style="width:120px">
+          <col style="width:120px">
+        </colgroup>
         <thead>
           <tr>
-            <th>월</th>
-            <th>연도</th>
-            <th>구분</th>
+            <th class="center">월</th>
+            <th class="center">연도</th>
+            <th class="center">구분</th>
             <th>전기(MWh)</th>
             <th>열(Gcal)</th>
             <th>월 TOE</th>
@@ -344,7 +377,7 @@ const toe25 = Array.from({length:12}, (_,i)=> toeOfMonth(Y2025.elec[i], Y2025.he
 /* =========================
    2026 데이터 저장(로컬)
 ========================= */
-const LS_KEY = "energy_insights_2026_v2";
+const LS_KEY = "energy_insights_2026_v3";
 
 function default2026(){
   return Array.from({length:12}, (_,i)=>({
@@ -394,6 +427,13 @@ function fmtPct(n){
   return (Number(n)).toFixed(2);
 }
 
+/* ✅ sticky header top을 실제 헤더 높이로 자동 세팅 */
+function setStickyTop(){
+  const header = document.querySelector("header");
+  const h = header ? header.getBoundingClientRect().height : 64;
+  document.documentElement.style.setProperty("--thTop", `${Math.ceil(h)}px`);
+}
+
 /* =========================
    계산: 2026 예측 포함 연간/절감률
 ========================= */
@@ -420,7 +460,6 @@ function compute2026(data){
 
 /* =========================
    코치: 다음달 권장 전기 상한
-   - 확정 실적(actual + elec/heat 둘다 입력) 제외한 나머지 달은 2025 패턴 비율로 재배분
 ========================= */
 function coachNextMonth(data, selectedMonth){
   const calc = compute2026(data);
@@ -496,7 +535,6 @@ function detailForMonth(data, m){
 
   const src = (row.type==="actual" ? "actual(실적)" : "forecast(예상)");
   const inputState = (row.elec_mwh!=null || row.heat_gcal!=null) ? "입력값 사용" : "미입력(2025 동일월 자동예측)";
-
   const memo = (row.memo||"").trim();
 
   return `🧾 ${m}월 상세(2026)\n` +
@@ -523,9 +561,9 @@ function render2025(){
     cum += toe;
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${i+1}</td>
-      <td>2025</td>
-      <td><span class="tag">actual</span></td>
+      <td class="center">${i+1}</td>
+      <td class="center">2025</td>
+      <td class="center"><span class="tag">actual</span></td>
       <td>${fmt3(Y2025.elec[i])}</td>
       <td>${fmt1(Y2025.heat[i])}</td>
       <td>${fmt2(toe)}</td>
@@ -553,7 +591,6 @@ function render2026(){
   const data = load2026();
   const mSel = Number(el("selMonth").value || 1);
 
-  // KPI
   el("kpiBaseline").textContent = fmt3(BASELINE_TOE);
   el("kpiTarget").textContent   = fmt3(TARGET_TOE);
 
@@ -569,7 +606,6 @@ function render2026(){
   el("kpiPass").className = `v status ${pass ? "good" : "bad"}`;
   el("kpiSaving").className = `v ${pass ? "good" : "warn"}`;
 
-  // 입력칸(선택월)
   const row = data[mSel-1];
   el("selType").value = row.type;
   el("inpElec").value = (row.elec_mwh==null) ? "" : row.elec_mwh;
@@ -579,23 +615,21 @@ function render2026(){
   el("hintElec").textContent = `기본예측(2025 ${mSel}월): ${fmt3(Y2025.elec[mSel-1])} MWh`;
   el("hintHeat").textContent = `기본예측(2025 ${mSel}월): ${fmt1(Y2025.heat[mSel-1])} Gcal`;
 
-  // 코치 + 상세
   el("coachBox").textContent = coachNextMonth(data, mSel);
   el("detailBox").textContent = detailForMonth(data, mSel);
 
-  // 테이블
   const tbody = el("tbody2026");
   tbody.innerHTML = "";
-  calc.withCum.forEach((r,i)=>{
+  calc.withCum.forEach((r)=>{
     const lockedActual = (r.type==="actual" && r.elec_mwh!=null && r.heat_gcal!=null);
     const typeLabel = lockedActual ? "actual" : "forecast";
     const inputLabel = (r.elec_mwh!=null || r.heat_gcal!=null || (r.memo||"").trim()!=="") ? "입력" : "자동";
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${r.m}</td>
-      <td><span class="tag">${typeLabel}</span></td>
-      <td><span class="tag">${inputLabel}</span></td>
+      <td class="center">${r.m}</td>
+      <td class="center"><span class="tag">${typeLabel}</span></td>
+      <td class="center"><span class="tag">${inputLabel}</span></td>
       <td>${fmt3(r.used_elec)}</td>
       <td>${fmt1(r.used_heat)}</td>
       <td>${fmt2(r.used_toe)}</td>
@@ -612,7 +646,7 @@ function render2026(){
     `- 2026 예상 연간: ${fmt2(annualToeEst)} toe\n` +
     `- 최종 절감률(연말 예상): ${fmtPct(savingPct)}%\n` +
     `- 판정: ${pass ? "PASS" : "FAIL"}\n\n` +
-    `※ 월별 사용량(전기·열·TOE)은 ‘2026 월별 현황’ 표와 ‘선택 월 상세’에 근거로 표시됩니다.`;
+    `※ 근거: 2026 월별 표 + 선택 월 상세(전년 동월 대비)`;
 }
 
 /* =========================
@@ -621,7 +655,6 @@ function render2026(){
 function export2026CSV(){
   const data = load2026();
   const calc = compute2026(data);
-  // CSV 헤더: 보고서용(연도/월/구분/입력값/적용값/TOE/누계/메모)
   const lines = [];
   lines.push([
     "year","month","type","input_elec_mwh","input_heat_gcal","used_elec_mwh","used_heat_gcal","month_toe","cum_toe","memo"
@@ -642,7 +675,6 @@ function export2026CSV(){
       esc(r.memo||"")
     ].join(","));
   });
-
   return lines.join("\n");
 }
 function export2026JSON(){
@@ -662,13 +694,15 @@ function setTab(which){
   if(which==="2026"){ t2026.classList.add("active"); s2026.style.display="block"; }
   if(which==="2025"){ t2025.classList.add("active"); s2025.style.display="block"; }
   if(which==="report"){ tRep.classList.add("active"); sRep.style.display="block"; }
+
+  // 탭 전환 시 sticky top 재계산(헤더 높이 변동 반영)
+  setStickyTop();
 }
 
 /* =========================
    init
 ========================= */
 function init(){
-  // date
   const now = new Date();
   el("nowInfo").textContent = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 
@@ -682,7 +716,6 @@ function init(){
   }
   sel.value = String(new Date().getMonth()+1);
 
-  // events
   sel.addEventListener("change", ()=>render2026());
   el("selType").addEventListener("change", ()=>render2026());
 
@@ -718,7 +751,7 @@ function init(){
 
     save2026(data);
     render2026();
-    alert(`${m}월 저장되었습니다. (이전 입력 이력은 표에서 계속 확인 가능합니다)`);
+    alert(`${m}월 저장되었습니다. (이전 입력 이력은 표에서 확인 가능)`);
   });
 
   el("btnClearMonth").addEventListener("click", ()=>{
@@ -733,17 +766,15 @@ function init(){
   });
 
   el("btnExportCSV").addEventListener("click", ()=>{
-    const csv = export2026CSV();
     const box = el("exportBox");
     box.style.display = "block";
-    box.textContent = csv;
+    box.textContent = export2026CSV();
   });
 
   el("btnExportJSON").addEventListener("click", ()=>{
-    const json = export2026JSON();
     const box = el("exportBox");
     box.style.display = "block";
-    box.textContent = json;
+    box.textContent = export2026JSON();
   });
 
   el("btnResetAll").addEventListener("click", ()=>{
@@ -760,10 +791,14 @@ function init(){
   el("tab2025").addEventListener("click", ()=>setTab("2025"));
   el("tabReport").addEventListener("click", ()=>setTab("report"));
 
+  // sticky top auto
+  window.addEventListener("resize", setStickyTop);
+
   // first render
   render2025();
   render2026();
   setTab("2026");
+  setStickyTop();
 }
 
 init();
