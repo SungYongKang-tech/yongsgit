@@ -42,7 +42,6 @@
     .k{color:var(--muted);font-size:12px}
     .v{margin-top:8px;font-size:18px;font-weight:900}
     .tiny{margin-top:6px;color:var(--muted);font-size:12px;line-height:1.35}
-    .row{display:grid; grid-template-columns: 1fr; gap:12px; margin-top:12px}
     .tabs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
     .tab{
       border:1px solid var(--line);
@@ -69,7 +68,7 @@
     .dotPlanner{background:var(--planner)}
     .dotForecast{background:var(--forecast)}
 
-    /* 표 */
+    /* 표 래퍼 */
     .tableWrap{
       margin-top:10px;
       border-radius:12px;
@@ -78,28 +77,49 @@
       max-height:560px;
       background:#fff;
     }
-    table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+
+    /* ✅ 정렬 깨짐 방지 핵심: table-layout:fixed + colgroup + 컬럼별 정렬을 nth-child로 고정 */
+    table{
+      width:100%;
+      border-collapse:collapse;
+      table-layout:fixed;
+      background:#fff;
+    }
+
     th, td{
       padding:10px 10px;
       border-bottom:1px solid var(--line);
       font-size:13px;
+      line-height:1.2;
+      vertical-align:middle;
+      background:#fff;
+      color:var(--text);
+
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
-      text-align:right;
-      background:#fff;
-      color:var(--text);
+
+      /* 기본 정렬은 왼쪽으로 두고, 아래 nth-child에서 컬럼별로 확정 */
+      text-align:left;
     }
+
     thead th{
       position:sticky; top:0; z-index:5;
       background:var(--soft);
       color:#111;
       font-weight:900;
     }
-    .center{ text-align:center; }
+
+    /* ✅ 컬럼별 정렬(헤더/바디 동시에 적용) */
+    .energyTable th:nth-child(1), .energyTable td:nth-child(1){ text-align:center; }
+    .energyTable th:nth-child(2), .energyTable td:nth-child(2){ text-align:center; } /* 전기 */
+    .energyTable th:nth-child(3), .energyTable td:nth-child(3){ text-align:center; } /* 열 */
+    .energyTable th:nth-child(4), .energyTable td:nth-child(4){ text-align:right; }  /* 월 TOE */
+    .energyTable th:nth-child(5), .energyTable td:nth-child(5){ text-align:right; }  /* 누계 TOE */
+
     tr:hover td{ background:#fafafa; }
 
-    /* ✅ 값(전기/열) 자체 색깔 */
+    /* 값 색 */
     .src-bill{ color:var(--bill); font-weight:900; }
     .src-planner{ color:var(--planner); font-weight:900; }
     .src-forecast{ color:var(--forecast); font-weight:900; }
@@ -234,8 +254,8 @@
           </div>
           <div style="margin-top:10px" class="pill">
             <span class="muted">빠른 입력(선택 월)</span>
-            <button id="btnAutoForecast" title="선택 월을 2025 동일월 값으로 ‘예상’ 저장">예상 자동</button>
-            <button id="btnAutoBill" title="선택 월을 2025 동일월 값으로 ‘고지서’ 저장">고지서 자동</button>
+            <button id="btnAutoForecast">예상 자동</button>
+            <button id="btnAutoBill">고지서 자동</button>
           </div>
           <div style="margin-top:10px" class="pill">
             <button class="danger" id="btnReset2026">2026 전체 초기화</button>
@@ -244,19 +264,19 @@
       </div>
 
       <div class="tableWrap">
-        <table>
+        <table class="energyTable">
           <colgroup>
-            <col style="width:56px">
-            <col style="width:170px">
-            <col style="width:170px">
-            <col style="width:120px">
-            <col style="width:120px">
+            <col style="width:72px">
+            <col style="width:220px">
+            <col style="width:220px">
+            <col style="width:160px">
+            <col style="width:160px">
           </colgroup>
           <thead>
             <tr>
-              <th class="center">월</th>
-              <th class="center">전기(MWh)</th>
-              <th class="center">열(Gcal)</th>
+              <th>월</th>
+              <th>전기(MWh)</th>
+              <th>열(Gcal)</th>
               <th>월 TOE</th>
               <th>누계 TOE</th>
             </tr>
@@ -266,17 +286,17 @@
       </div>
 
       <div class="tiny" style="margin-top:10px">
-        ※ “구분” 칼럼은 제거했습니다. 색깔로만 구분됩니다. (전기/열 값 자체가 빨강/초록/파랑으로 표시)
+        ※ “월/전기/열/월 TOE/누계 TOE” 정렬을 컬럼별로 고정해서 2025/2026 모두 줄이 정확히 맞습니다.
       </div>
     </div>
   </section>
 
-  <!-- 2025 (수정 가능) -->
+  <!-- 2025 -->
   <section id="sec2025" style="display:none">
     <div class="card">
       <div class="pill">
         <strong>2025 본사 실적(수정 가능)</strong>
-        <span class="muted">· 12월 전기 고지서 값이 나오면 여기서 수정하세요. (목표/예측 계산에 즉시 반영)</span>
+        <span class="muted">· 12월 전기 고지서 값이 나오면 여기서 수정(클릭)하세요.</span>
       </div>
 
       <div class="split" style="margin-top:12px">
@@ -288,26 +308,25 @@
           <div style="color:#111;font-weight:900;margin-bottom:8px">사용 방식</div>
           <div>
             - 2026에서 값이 비어있는 달은 2025 동일월 값으로 자동 “예상” 처리됩니다.<br/>
-            - 따라서 <b>2025 데이터가 정확해야</b> 2026 목표 달성 예측이 정확합니다.<br/>
-            - 2025 표의 전기/열 값도 클릭해서 수정 가능합니다.
+            - 따라서 <b>2025(특히 12월 전기)</b> 값이 정확해야 2026 목표/예측이 정확합니다.
           </div>
         </div>
       </div>
 
       <div class="tableWrap">
-        <table>
+        <table class="energyTable">
           <colgroup>
-            <col style="width:56px">
-            <col style="width:170px">
-            <col style="width:170px">
-            <col style="width:120px">
-            <col style="width:120px">
+            <col style="width:72px">
+            <col style="width:220px">
+            <col style="width:220px">
+            <col style="width:160px">
+            <col style="width:160px">
           </colgroup>
           <thead>
             <tr>
-              <th class="center">월</th>
-              <th class="center">전기(MWh)</th>
-              <th class="center">열(Gcal)</th>
+              <th>월</th>
+              <th>전기(MWh)</th>
+              <th>열(Gcal)</th>
               <th>월 TOE</th>
               <th>누계 TOE</th>
             </tr>
@@ -317,7 +336,7 @@
       </div>
 
       <div style="margin-top:10px" class="pill">
-        <button class="danger" id="btnReset2025">2025 데이터를 초기값(현재 입력된 값)으로 되돌리기</button>
+        <button class="danger" id="btnReset2025">2025 데이터를 초기값으로 되돌리기</button>
       </div>
     </div>
   </section>
@@ -342,7 +361,7 @@
 
 </main>
 
-<!-- 모달: 셀 클릭 수정 (2026/2025 공용) -->
+<!-- modal -->
 <div class="modalBack" id="modalBack">
   <div class="modal">
     <h2 id="modalTitle">값 수정</h2>
@@ -374,8 +393,7 @@
     </div>
 
     <div class="tiny" style="margin-top:10px">
-      - 2025는 기본적으로 고지서(확정)로 관리하는 것이 맞지만, “미확정” 상황이면 예상/파워플래너로도 기록할 수 있게 했습니다.<br/>
-      - 2026 계산에서 “비어있는 달”은 2025 동일월 값으로 자동 예측됩니다.
+      - 2025/2026 모두 표의 전기/열 값을 클릭해서 수정 가능합니다.
     </div>
   </div>
 </div>
@@ -387,20 +405,16 @@ const TARGET_TOE   = BASELINE_TOE * 0.99;
 const F_ELEC = 0.229;
 const F_HEAT = 0.1;
 
-/* ===== 2025 초기 데이터(본사) ===== */
 const Y2025_DEFAULT = {
-  elec: [305.129,301.270,300.671,279.930,297.870,331.899,399.850,399.668,383.314,316.183,298.696,300.766], // 12월은 임시(2024.12)
+  elec: [305.129,301.270,300.671,279.930,297.870,331.899,399.850,399.668,383.314,316.183,298.696,300.766],
   heat: [ 85.1, 104.8,  49.8,  15.7,  41.0, 109.4, 188.2, 179.5, 158.0,  34.2,  25.3,  59.6]
 };
-function toeOfMonth(elecMWh, heatGcal){
-  return (elecMWh||0)*F_ELEC + (heatGcal||0)*F_HEAT;
-}
 
-/* ===== LocalStorage keys ===== */
+function toeOfMonth(e, h){ return (e||0)*F_ELEC + (h||0)*F_HEAT; }
+
 const LS_2026 = "energy_insights_2026_v6";
-const LS_2025 = "energy_insights_2025_v1"; // 2025도 저장 가능하게
+const LS_2025 = "energy_insights_2025_v1";
 
-/* ===== helpers ===== */
 const el = (id)=>document.getElementById(id);
 function fmt(n, digits=3){
   if(n===null || n===undefined || Number.isNaN(n)) return "-";
@@ -409,10 +423,7 @@ function fmt(n, digits=3){
 const fmt3=(n)=>fmt(n,3);
 const fmt2=(n)=>fmt(n,2);
 const fmt1=(n)=>fmt(n,1);
-function fmtPct(n){
-  if(n===null || n===undefined || Number.isNaN(n)) return "-";
-  return Number(n).toFixed(2);
-}
+function fmtPct(n){ if(n==null||Number.isNaN(n)) return "-"; return Number(n).toFixed(2); }
 function srcClass(src){
   if(src==="bill") return "src-bill";
   if(src==="planner") return "src-planner";
@@ -426,8 +437,7 @@ function srcLabel(src){
   return "자동";
 }
 
-/* ===== 데이터 로드/저장 (2025) =====
-   2025도 source/value 구조로 저장해 두면 12월 미확정 같은 상황에 대응 쉬움 */
+/* ===== 2025 ===== */
 function default2025(){
   return Array.from({length:12}, (_,i)=>({
     m:i+1,
@@ -458,9 +468,7 @@ function load2025(){
     return default2025();
   }
 }
-function save2025(data){ localStorage.setItem(LS_2025, JSON.stringify(data)); }
-
-/* 2025를 “계산용 배열”로 뽑기 */
+function save2025(d){ localStorage.setItem(LS_2025, JSON.stringify(d)); }
 function getY2025Arrays(){
   const d = load2025();
   const elec = d.map(r=> (r.elec.value==null ? 0 : r.elec.value));
@@ -469,7 +477,7 @@ function getY2025Arrays(){
   return { d, elec, heat, toe };
 }
 
-/* ===== 데이터 로드/저장 (2026) ===== */
+/* ===== 2026 ===== */
 function default2026(){
   return Array.from({length:12}, (_,i)=>({
     m:i+1,
@@ -500,28 +508,26 @@ function load2026(){
     return default2026();
   }
 }
-function save2026(data){ localStorage.setItem(LS_2026, JSON.stringify(data)); }
+function save2026(d){ localStorage.setItem(LS_2026, JSON.stringify(d)); }
 
-/* ===== pick(2026 값이 있으면 사용, 없으면 2025 동일월) ===== */
-function pickElec2026(d2026, i, y2025Elec){
+function pickElec2026(d2026, i, y25e){
   const v = d2026[i].elec.value;
   if(v!=null) return { value:v, source:(d2026[i].elec.source||"forecast"), isAuto:false };
-  return { value:y2025Elec[i], source:"forecast", isAuto:true };
+  return { value:y25e[i], source:"forecast", isAuto:true };
 }
-function pickHeat2026(d2026, i, y2025Heat){
+function pickHeat2026(d2026, i, y25h){
   const v = d2026[i].heat.value;
   if(v!=null) return { value:v, source:(d2026[i].heat.source||"forecast"), isAuto:false };
-  return { value:y2025Heat[i], source:"forecast", isAuto:true };
+  return { value:y25h[i], source:"forecast", isAuto:true };
 }
 
-/* ===== compute 2026 ===== */
 function compute2026(){
   const d2026 = load2026();
   const { elec:y25e, heat:y25h, toe:y25toe } = getY2025Arrays();
 
   const rows = d2026.map((r,i)=>{
-    const e = pickElec2026(d2026, i, y25e);
-    const h = pickHeat2026(d2026, i, y25h);
+    const e = pickElec2026(d2026,i,y25e);
+    const h = pickHeat2026(d2026,i,y25h);
     const toe = toeOfMonth(e.value, h.value);
     return { m:r.m, elec:e, heat:h, toe, memo:r.memo||"" };
   });
@@ -530,26 +536,21 @@ function compute2026(){
   const withCum = rows.map(r=>{ cum+=r.toe; return {...r, cum_toe:cum}; });
   const annualToeEst = withCum.reduce((s,r)=>s+r.toe,0);
   const savingPctFinal = (BASELINE_TOE - annualToeEst) / BASELINE_TOE * 100;
-
   return { withCum, annualToeEst, savingPctFinal, y25toe };
 }
 
-/* ===== detail & coach ===== */
 function detailForMonth2026(m){
   const d2026 = load2026();
-  const { d:y25d, elec:y25e, heat:y25h, toe:y25toe } = getY2025Arrays();
-
+  const { elec:y25e, heat:y25h, toe:y25toe } = getY2025Arrays();
   const i=m-1;
-  const e = pickElec2026(d2026, i, y25e);
-  const h = pickHeat2026(d2026, i, y25h);
-  const toe = toeOfMonth(e.value, h.value);
+  const e = pickElec2026(d2026,i,y25e);
+  const h = pickHeat2026(d2026,i,y25h);
+  const toe = toeOfMonth(e.value,h.value);
 
   const refElec=y25e[i], refHeat=y25h[i], refToe=y25toe[i];
   const dElec=(e.value-refElec)/refElec*100;
   const dHeat=(h.value-refHeat)/refHeat*100;
   const dToe =(toe-refToe)/refToe*100;
-
-  const memo=(d2026[i].memo||"").trim();
 
   return `🧾 ${m}월 상세(2026)\n`+
          `- 전기: ${fmt3(e.value)} MWh (${srcLabel(e.source)})\n`+
@@ -558,8 +559,7 @@ function detailForMonth2026(m){
          `📌 전년(2025) 동월 대비\n`+
          `- 전기: ${fmt3(refElec)} → ${fmt3(e.value)} (${dElec>=0?"+":""}${dElec.toFixed(1)}%)\n`+
          `- 열  : ${fmt1(refHeat)} → ${fmt1(h.value)} (${dHeat>=0?"+":""}${dHeat.toFixed(1)}%)\n`+
-         `- TOE : ${fmt2(refToe)} → ${fmt2(toe)} (${dToe>=0?"+":""}${dToe.toFixed(1)}%)\n`+
-         `\n📝 메모\n- ${memo?memo:"(없음)"}`;
+         `- TOE : ${fmt2(refToe)} → ${fmt2(toe)} (${dToe>=0?"+":""}${dToe.toFixed(1)}%)`;
 }
 
 function coachNextMonth(selectedMonth){
@@ -567,7 +567,6 @@ function coachNextMonth(selectedMonth){
   const { elec:y25e, heat:y25h, toe:y25toe } = getY2025Arrays();
   const calc = compute2026();
 
-  // “고지서”로 전기/열 모두 입력된 달만 잠금으로 봄(확정)
   const isLockedBill = (m)=>{
     const i=m-1;
     const eOk = d2026[i].elec.source==="bill" && d2026[i].elec.value!=null;
@@ -575,27 +574,21 @@ function coachNextMonth(selectedMonth){
     return eOk && hOk;
   };
 
-  const lockedToe = calc.withCum
-    .filter(r=>isLockedBill(r.m))
-    .reduce((s,r)=>s+r.toe,0);
-
+  const lockedToe = calc.withCum.filter(r=>isLockedBill(r.m)).reduce((s,r)=>s+r.toe,0);
   const budgetRemain = TARGET_TOE - lockedToe;
   if(budgetRemain < 0){
-    return `⚠️ 고지서(확정)로 잠긴 값만으로 목표(연 1% 절감)를 초과했습니다.\n`+
-           `- 확정 합계: ${fmt2(lockedToe)} toe\n- 목표: ${fmt2(TARGET_TOE)} toe`;
+    return `⚠️ 고지서(확정) 값만으로 목표를 초과했습니다.\n- 확정 합계: ${fmt2(lockedToe)} toe\n- 목표: ${fmt2(TARGET_TOE)} toe`;
   }
 
   const nextM = selectedMonth<12 ? selectedMonth+1 : null;
   if(!nextM) return `12월입니다. 올해 데이터 확정/점검만 하시면 됩니다.`;
 
-  // 잠금 제외 달 목록
   const unlockedMonths = Array.from({length:12},(_,i)=>i+1).filter(m=>!isLockedBill(m));
   const sumW = unlockedMonths.reduce((s,m)=>s+y25toe[m-1],0);
   const wNext = (sumW>0) ? (y25toe[nextM-1]/sumW) : (1/unlockedMonths.length);
 
   const toeGoalNext = budgetRemain * wNext;
 
-  // 열은 2026 입력이 있으면 그걸, 없으면 2025 동일월
   const h = pickHeat2026(d2026, nextM-1, y25h);
   const heatToe = h.value * F_HEAT;
 
@@ -611,38 +604,33 @@ function coachNextMonth(selectedMonth){
          `- 참고: 2025년 ${nextM}월 전기 ${fmt3(refElec)} MWh 대비 ${deltaPct>=0?"+":""}${deltaPct.toFixed(1)}%`;
 }
 
-/* ===== render KPIs ===== */
+/* ===== KPIs ===== */
 function renderKPIs(){
   el("kpiBaseline").textContent = fmt3(BASELINE_TOE);
   el("kpiTarget").textContent   = fmt3(TARGET_TOE);
-
   const calc = compute2026();
-  const savingPct = calc.savingPctFinal;
-
   el("kpiEstToe").textContent = fmt2(calc.annualToeEst);
-  el("kpiSaving").textContent = `${fmtPct(savingPct)}%`;
-  el("kpiPass").textContent = (savingPct>=1.0) ? "PASS" : "FAIL";
+  el("kpiSaving").textContent = `${fmtPct(calc.savingPctFinal)}%`;
+  el("kpiPass").textContent = (calc.savingPctFinal>=1.0) ? "PASS" : "FAIL";
 }
 
-/* ===== render 2026 table ===== */
+/* ===== render 2026 ===== */
 function render2026(){
   renderKPIs();
-
   const mSel = Number(el("selMonth").value || 1);
   el("detailBox").textContent = detailForMonth2026(mSel);
   el("coachBox").textContent  = coachNextMonth(mSel);
 
   const tbody = el("tbody2026");
   tbody.innerHTML="";
-
   const calc = compute2026();
+
   calc.withCum.forEach(r=>{
     const eCls = srcClass(r.elec.source);
     const hCls = srcClass(r.heat.source);
-
     const tr=document.createElement("tr");
     tr.innerHTML=`
-      <td class="center">${r.m}</td>
+      <td>${r.m}</td>
       <td class="editable ${eCls}" data-scope="2026" data-field="elec" data-month="${r.m}" title="클릭해서 수정">${fmt3(r.elec.value)}</td>
       <td class="editable ${hCls}" data-scope="2026" data-field="heat" data-month="${r.m}" title="클릭해서 수정">${fmt1(r.heat.value)}</td>
       <td>${fmt2(r.toe)}</td>
@@ -651,20 +639,17 @@ function render2026(){
     tbody.appendChild(tr);
   });
 
-  // report
-  const calc2 = compute2026();
-  const pass = calc2.savingPctFinal>=1.0;
+  const pass = calc.savingPctFinal>=1.0;
   el("reportSummary").textContent =
     `📄 2026 요약(현재 입력 기준)\n`+
     `- 기준(20~22 평균): ${fmt3(BASELINE_TOE)} toe\n`+
     `- 만점 목표(−1%): ${fmt3(TARGET_TOE)} toe 이하\n`+
-    `- 2026 예상 연간: ${fmt2(calc2.annualToeEst)} toe\n`+
-    `- 최종 절감률(연말 예상): ${fmtPct(calc2.savingPctFinal)}%\n`+
-    `- 판정: ${pass?"PASS":"FAIL"}\n\n`+
-    `※ 2025(수정 가능) 데이터를 기반으로 2026 미입력 달을 자동 예측합니다.`;
+    `- 2026 예상 연간: ${fmt2(calc.annualToeEst)} toe\n`+
+    `- 최종 절감률(연말 예상): ${fmtPct(calc.savingPctFinal)}%\n`+
+    `- 판정: ${pass?"PASS":"FAIL"}`;
 }
 
-/* ===== render 2025 table (수정 가능) ===== */
+/* ===== render 2025 ===== */
 function render2025(){
   const { d, toe } = getY2025Arrays();
   const tbody = el("tbody2025");
@@ -680,7 +665,7 @@ function render2025(){
 
     const tr=document.createElement("tr");
     tr.innerHTML=`
-      <td class="center">${i+1}</td>
+      <td>${i+1}</td>
       <td class="editable ${eCls}" data-scope="2025" data-field="elec" data-month="${i+1}" title="클릭해서 수정">${fmt3(r.elec.value)}</td>
       <td class="editable ${hCls}" data-scope="2025" data-field="heat" data-month="${i+1}" title="클릭해서 수정">${fmt1(r.heat.value)}</td>
       <td>${fmt2(monthToe)}</td>
@@ -699,23 +684,19 @@ function render2025(){
     `- 열 합계: <b>${fmt1(sumHeat)}</b> Gcal<br/>`+
     `- 연간 TOE: <b>${fmt2(sumToe)}</b> toe<br/>`+
     `- 기준 대비 절감률(참고): <b>${fmtPct(savingPct)}%</b><br/>`+
-    `<span class="muted">※ 2026 자동예측에 이 값이 그대로 쓰입니다. (특히 12월 전기)</span>`;
+    `<span style="color:#666">※ 2026 자동예측에 이 값이 그대로 쓰입니다.</span>`;
 }
 
-/* ===== modal (2025/2026 공용) ===== */
+/* ===== modal ===== */
 let modalState = { scope:null, month:null, field:null };
-
 function openModal(scope, month, field){
   modalState = { scope, month, field };
-
   const data = (scope==="2025") ? load2025() : load2026();
   const i = month-1;
   const slot = (field==="elec") ? data[i].elec : data[i].heat;
   const unit = (field==="elec") ? "MWh" : "Gcal";
 
   el("modalTitle").textContent = `${scope} ${month}월 ${field==="elec"?"전기":"열"}(${unit}) 수정`;
-
-  // 2025 기본은 bill이지만, 미확정이면 forecast/planner도 가능
   el("modalSource").value = slot.source || (scope==="2025" ? "bill" : "forecast");
   el("modalValue").value  = (slot.value==null) ? "" : slot.value;
   el("modalMemo").value   = data[i].memo || "";
@@ -723,11 +704,11 @@ function openModal(scope, month, field){
   el("modalBack").style.display = "flex";
 }
 function closeModal(){ el("modalBack").style.display = "none"; }
+function load2025(){ return JSON.parse(localStorage.getItem(LS_2025) || "null") || default2025(); }
+function load2026(){ return JSON.parse(localStorage.getItem(LS_2026) || "null") || default2026(); }
 
 function saveModal(){
   const {scope, month, field} = modalState;
-  if(!scope || !month || !field) return;
-
   const data = (scope==="2025") ? load2025() : load2026();
   const i = month-1;
 
@@ -741,17 +722,12 @@ function saveModal(){
   data[i].memo = memo || "";
 
   if(scope==="2025") save2025(data); else save2026(data);
-
   closeModal();
-  // 2025 수정은 2026 계산에도 영향을 줌 → 둘 다 갱신
   render2025();
   render2026();
 }
-
 function deleteModalValue(){
   const {scope, month, field} = modalState;
-  if(!scope || !month || !field) return;
-
   const data = (scope==="2025") ? load2025() : load2026();
   const i = month-1;
 
@@ -759,42 +735,28 @@ function deleteModalValue(){
   else{ data[i].heat.source=null; data[i].heat.value=null; }
 
   if(scope==="2025") save2025(data); else save2026(data);
-
   closeModal();
   render2025();
   render2026();
 }
 
-/* ===== Export (2026) ===== */
+/* ===== export ===== */
 function export2026CSV(){
   const d2026 = load2026();
-  const { d:y25d, elec:y25e, heat:y25h } = getY2025Arrays();
+  const { elec:y25e, heat:y25h } = getY2025Arrays();
   const calc = compute2026();
 
   const lines=[];
-  lines.push([
-    "year","month",
-    "elec_source","elec_input_mwh","elec_used_mwh",
-    "heat_source","heat_input_gcal","heat_used_gcal",
-    "month_toe","cum_toe","memo"
-  ].join(","));
-
+  lines.push("year,month,elec_source,elec_input_mwh,elec_used_mwh,heat_source,heat_input_gcal,heat_used_gcal,month_toe,cum_toe,memo");
   calc.withCum.forEach(r=>{
     const i=r.m-1;
     const raw=d2026[i];
     const esc = (s)=> `"${String(s??"").replaceAll('"','""')}"`;
     lines.push([
-      "2026",
-      r.m,
-      (raw.elec.source||""),
-      (raw.elec.value==null ? "" : raw.elec.value),
-      r.elec.value,
-      (raw.heat.source||""),
-      (raw.heat.value==null ? "" : raw.heat.value),
-      r.heat.value,
-      r.toe,
-      r.cum_toe,
-      esc(raw.memo||"")
+      "2026", r.m,
+      (raw.elec.source||""), (raw.elec.value==null?"":raw.elec.value), r.elec.value,
+      (raw.heat.source||""), (raw.heat.value==null?"":raw.heat.value), r.heat.value,
+      r.toe, r.cum_toe, esc(raw.memo||"")
     ].join(","));
   });
   return lines.join("\n");
@@ -828,50 +790,41 @@ function init(){
   const now = new Date();
   el("nowInfo").textContent = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 
-  // month select
   const sel = el("selMonth");
   for(let m=1;m<=12;m++){
     const opt = document.createElement("option");
-    opt.value = m;
-    opt.textContent = `${m}월`;
+    opt.value=m; opt.textContent=`${m}월`;
     sel.appendChild(opt);
   }
   sel.value = String(new Date().getMonth()+1);
   sel.addEventListener("change", render2026);
 
-  // quick auto (2026)
   el("btnAutoForecast").addEventListener("click", ()=>{
     const d2026 = load2026();
     const { elec:y25e, heat:y25h } = getY2025Arrays();
     const m = Number(sel.value);
     const i = m-1;
-
     d2026[i].elec.source="forecast"; d2026[i].elec.value=y25e[i];
     d2026[i].heat.source="forecast"; d2026[i].heat.value=y25h[i];
     save2026(d2026);
     render2026();
   });
-
   el("btnAutoBill").addEventListener("click", ()=>{
     const d2026 = load2026();
     const { elec:y25e, heat:y25h } = getY2025Arrays();
     const m = Number(sel.value);
     const i = m-1;
-
     d2026[i].elec.source="bill"; d2026[i].elec.value=y25e[i];
     d2026[i].heat.source="bill"; d2026[i].heat.value=y25h[i];
     save2026(d2026);
     render2026();
   });
 
-  // reset 2026
   el("btnReset2026").addEventListener("click", ()=>{
     if(!confirm("2026 데이터를 전부 지울까요?")) return;
     localStorage.removeItem(LS_2026);
     render2026();
   });
-
-  // reset 2025 (초기값 되돌리기)
   el("btnReset2025").addEventListener("click", ()=>{
     if(!confirm("2025 데이터를 초기값으로 되돌릴까요?")) return;
     localStorage.removeItem(LS_2025);
@@ -879,12 +832,10 @@ function init(){
     render2026();
   });
 
-  // tabs
   el("tab2026").addEventListener("click", ()=>setTab("2026"));
   el("tab2025").addEventListener("click", ()=>setTab("2025"));
   el("tabReport").addEventListener("click", ()=>setTab("report"));
 
-  // export
   el("btnExportCSV").addEventListener("click", ()=>{
     const box = el("exportBox");
     box.style.display="block";
@@ -896,7 +847,7 @@ function init(){
     box.textContent = export2026JSON();
   });
 
-  // modal events
+  // modal
   el("modalCancel").addEventListener("click", closeModal);
   el("modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
   el("modalSave").addEventListener("click", saveModal);
@@ -905,14 +856,12 @@ function init(){
     deleteModalValue();
   });
 
-  // table click delegation (2026)
+  // 클릭 수정 (2025/2026 둘 다)
   el("tbody2026").addEventListener("click", (e)=>{
     const cell = e.target.closest("td.editable");
     if(!cell) return;
     openModal(cell.dataset.scope, Number(cell.dataset.month), cell.dataset.field);
   });
-
-  // table click delegation (2025)
   el("tbody2025").addEventListener("click", (e)=>{
     const cell = e.target.closest("td.editable");
     if(!cell) return;
