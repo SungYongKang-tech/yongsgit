@@ -381,6 +381,33 @@ const KST = (ts)=> new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/
 const cmpMonth = (a,b)=> a.localeCompare(b); // YYYY-MM 문자열 비교
 const POINT_WIN = 2, POINT_LOSE = -1;
 
+// ✅ match에서 월(YYYY-MM) 안전 추출
+function getMonthKey(m){
+  // 1) 저장된 monthKey가 있으면 최우선
+  if (m?.monthKey && /^\d{4}-\d{2}$/.test(m.monthKey)) return m.monthKey;
+
+  // 2) 날짜 문자열 필드들(프로젝트마다 이름이 다를 수 있어 여러 개 후보)
+  const dateStr =
+    m?.matchDate || m?.gameDate || m?.date || m?.playedDate || m?.playedAtDate;
+
+  if (typeof dateStr === "string") {
+    // "YYYY-MM-DD" 또는 "YYYY/MM/DD" 등 처리
+    const norm = dateStr.replace(/\//g, "-");
+    if (/^\d{4}-\d{2}-\d{2}/.test(norm)) return norm.slice(0,7);
+    if (/^\d{4}-\d{2}/.test(norm)) return norm.slice(0,7);
+  }
+
+  // 3) createdAt 타임스탬프 처리 (ms / seconds / ISO string)
+  const ca = m?.createdAt;
+  if (typeof ca === "number") return yyyymm(KST(ca));
+  if (typeof ca === "string" && !isNaN(Date.parse(ca))) return yyyymm(KST(Date.parse(ca)));
+  if (ca?.seconds) return yyyymm(KST(ca.seconds * 1000));
+
+  // 4) 없으면 null (절대 Date.now()로 현재월 만들지 않음)
+  return null;
+}
+
+
 // ===== Query Param =====
 const params = new URLSearchParams(location.search);
 const playerName = params.get('name') || '';
@@ -439,18 +466,22 @@ async function loadMatchesFromNov(){
   const NOV_2025 = '2025-11';
 
   // 선별: monthKey >= 2025-11 & 이 선수 포함 경기
-  const myMatches = data.filter(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    if (cmpMonth(mk, NOV_2025) < 0) return false;
-    const names = [...(m.namesA||[]), ...(m.namesB||[])];
-    return names.includes(playerName);
-  });
+ const myMatches = data.filter(m=>{
+  const mk = getMonthKey(m);
+  if (!mk) return false;                 // ✅ 월을 못 뽑으면 제외(현재월로 넣지 않음)
+  if (cmpMonth(mk, NOV_2025) < 0) return false;
+  const names = [...(m.namesA||[]), ...(m.namesB||[])];
+  return names.includes(playerName);
+});
+
 
   // 월 목록
   myMatches.forEach(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
-    if (!months.includes(mk)) months.push(mk);
-  });
+  const mk = getMonthKey(m);
+  if (!mk) return;
+  if (!months.includes(mk)) months.push(mk);
+});
+
 
   // 초기화
   months.forEach(m=>{
@@ -461,7 +492,8 @@ async function loadMatchesFromNov(){
 
   // 집계
   myMatches.forEach(m=>{
-    const mk = m.monthKey || yyyymm(KST(m.createdAt ?? Date.now()));
+    const mk = getMonthKey(m);
+    if (!mk) return;
     const sideA = m.namesA || [];
     const sideB = m.namesB || [];
     const mode  = m.mode || 'single'; // 안전
