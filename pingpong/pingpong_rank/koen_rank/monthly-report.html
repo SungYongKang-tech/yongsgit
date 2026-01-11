@@ -479,23 +479,21 @@ import { set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database
 
 async function autoClosePreviousMonth() {
   const now = new Date();
-  const day = now.getDate();
-  if (day !== 1) return; // 🔹 1일에만 실행
 
-  // ✅ 전달 월 정확히 계산
-  const prevDate2 = new Date(now.getFullYear(), now.getMonth() - 1);
+  // ✅ 전달 월 계산(정확)
+  const prevDate2 = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonth = `${prevDate2.getFullYear()}-${String(prevDate2.getMonth() + 1).padStart(2, '0')}`;
 
   const reportRef = ref(db, `monthlyReports/${prevMonth}/players`);
 
-  // 이미 저장된 리포트가 있으면 중복 생성 방지
+  // ✅ 이미 저장된 리포트가 있으면 중복 생성 방지
   const existing = await get(reportRef);
   if (existing.exists()) {
     console.log(`ℹ️ ${prevMonth} 월 리포트 이미 존재`);
     return;
   }
 
-  console.log(`📦 ${prevMonth} 월 리포트 자동 생성 시작...`);
+  console.log(`📦 ${prevMonth} 월 리포트 생성 시작...`);
 
   // 🔹 지난달 경기 데이터 불러오기
   const matchSnap = await get(ref(db, 'matches'));
@@ -506,14 +504,16 @@ async function autoClosePreviousMonth() {
   const stats = {};
   Object.values(matchData).forEach(m => {
     if (m.monthKey !== prevMonth) return;
-    const names = [...m.namesA, ...m.namesB];
+
+    const names = [...(m.namesA || []), ...(m.namesB || [])];
     names.forEach(n => { if (!stats[n]) stats[n] = { win: 0, lose: 0 }; });
+
     if (m.winnerSide === 'A') {
-      m.namesA.forEach(n => stats[n].win++);
-      m.namesB.forEach(n => stats[n].lose++);
+      (m.namesA || []).forEach(n => stats[n].win++);
+      (m.namesB || []).forEach(n => stats[n].lose++);
     } else if (m.winnerSide === 'B') {
-      m.namesB.forEach(n => stats[n].win++);
-      m.namesA.forEach(n => stats[n].lose++);
+      (m.namesB || []).forEach(n => stats[n].win++);
+      (m.namesA || []).forEach(n => stats[n].lose++);
     }
   });
 
@@ -530,8 +530,9 @@ async function autoClosePreviousMonth() {
   }
 
   await set(reportRef, reportArr);
-  console.log(`✅ ${prevMonth} 월 리포트 자동 생성 완료`);
+  console.log(`✅ ${prevMonth} 월 리포트 생성 완료`);
 }
+
 
 
 // 페이지 로드시 자동 실행
