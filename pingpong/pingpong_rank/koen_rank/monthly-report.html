@@ -105,7 +105,7 @@ tbody tr:hover{background:#f9fafb}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getDatabase, ref, get, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getDatabase, ref, get, onValue, remove, set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
@@ -131,26 +131,106 @@ const matchRef = ref(db, "matches");
 const playerRef = ref(db, "players");
 
 let players = {};
+let cleanedOldMatches = false;  // ✅ 오래된 경기 삭제 1회만
+let autoClosed = false;        // ✅ 월마감 생성 1회만
+
 onValue(playerRef, snap=>{players = snap.val() || {};});
 
 function formatNum(n){ return (Math.round(n*10)/10).toFixed(1); }
 
+async function autoClosePreviousMonth() {
+  const now = new Date();
+
+  // ✅ 전달 월 계산(정확)
+  const prevDate2 = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonth = `${prevDate2.getFullYear()}-${String(prevDate2.getMonth() + 1).padStart(2, '0')}`;
+
+  const reportRef = ref(db, `monthlyReports/${prevMonth}/players`);
+
+  // ✅ 이미 저장된 리포트가 있으면 중복 생성 방지
+  const existing = await get(reportRef);
+  if (existing.exists()) {
+    console.log(`ℹ️ ${prevMonth} 월 리포트 이미 존재`);
+    return;
+  }
+
+  console.log(`📦 ${prevMonth} 월 리포트 생성 시작...`);
+
+  // 🔹 지난달 경기 데이터 불러오기
+  const matchSnap = await get(ref(db, 'matches'));
+  const matchData = matchSnap.val() || {};
+  const playerSnap = await get(ref(db, 'players'));
+  const playerData = playerSnap.val() || {};
+
+  const stats = {};
+  Object.values(matchData).forEach(m => {
+    if (m.monthKey !== prevMonth) return;
+
+    const names = [...(m.namesA || []), ...(m.namesB || [])];
+    names.forEach(n => { if (!stats[n]) stats[n] = { win: 0, lose: 0 }; });
+
+    if (m.winnerSide === 'A') {
+      (m.namesA || []).forEach(n => stats[n].win++);
+      (m.namesB || []).forEach(n => stats[n].lose++);
+    } else if (m.winnerSide === 'B') {
+      (m.namesB || []).forEach(n => stats[n].win++);
+      (m.namesA || []).forEach(n => stats[n].lose++);
+    }
+  });
+
+  const reportArr = Object.entries(playerData).map(([id, p]) => {
+    const d = stats[p.name] || { win: 0, lose: 0 };
+    const total = d.win + d.lose;
+    const rate = total ? (d.win / total * 100) : 0;
+    return { name: p.name, level: p.level, total, win: d.win, lose: d.lose, rate };
+  }).filter(p => p.total > 0);
+
+  if (reportArr.length === 0) {
+    console.log(`⚠️ ${prevMonth} 월 경기 없음 — 마감 스킵`);
+    return;
+  }
+
+  const reportObj = {};
+reportArr.forEach(p => {
+  const safeKey = p.name.replace(/[.#$\[\]\/]/g, "_");
+  reportObj[safeKey] = p;
+});
+await set(reportRef, reportObj);
+
+
+  console.log(`✅ ${prevMonth} 월 리포트 생성 완료`);
+}
+
+
 // === 메인 로직 ===
 onValue(matchRef, async (snap)=>{
+   // ✅ 월마감(지난달 리포트 생성) 1회만 실행
+  if (!autoClosed) {
+    autoClosed = true;
+    await autoClosePreviousMonth();
+  }
   const data = snap.val() || {};
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const prevDate = new Date(now.getFullYear(), now.getMonth() - 1);
   const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
-  const oldMonth = `${now.getFullYear()}-${String(now.getMonth()-1).padStart(2,'0')}`;
+  const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const oldMonth = `${twoMonthsAgo.getFullYear()}-${String(twoMonthsAgo.getMonth()+1).padStart(2,'0')}`;
 
   const stats = {};
 
-  // 2개월 이전 삭제
-  Object.entries(data).forEach(([id,m])=>{
-    if(m.monthKey && m.monthKey <= oldMonth) remove(ref(db,`matches/${id}`));
+  // 2개월 이전 삭제 (✅ 1회만 실행)
+if (!cleanedOldMatches) {
+  cleanedOldMatches = true;
+
+  Object.entries(data).forEach(([id, m]) => {
+    if (m.monthKey && m.monthKey <= oldMonth) {
+      remove(ref(db, `matches/${id}`));
+    }
   });
+}
+
 
   // 이번달 통계 계산
   Object.values(data).forEach(m=>{
@@ -474,69 +554,7 @@ document.getElementById("adminBtn").addEventListener("click", async ()=>{
   window.location.href="admin.html";
 });
 
-// ✅ 자동 월마감 기능 (매달 1일에 페이지 열리면 자동 실행)
-import { set } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-async function autoClosePreviousMonth() {
-  const now = new Date();
-
-  // ✅ 전달 월 계산(정확)
-  const prevDate2 = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevMonth = `${prevDate2.getFullYear()}-${String(prevDate2.getMonth() + 1).padStart(2, '0')}`;
-
-  const reportRef = ref(db, `monthlyReports/${prevMonth}/players`);
-
-  // ✅ 이미 저장된 리포트가 있으면 중복 생성 방지
-  const existing = await get(reportRef);
-  if (existing.exists()) {
-    console.log(`ℹ️ ${prevMonth} 월 리포트 이미 존재`);
-    return;
-  }
-
-  console.log(`📦 ${prevMonth} 월 리포트 생성 시작...`);
-
-  // 🔹 지난달 경기 데이터 불러오기
-  const matchSnap = await get(ref(db, 'matches'));
-  const matchData = matchSnap.val() || {};
-  const playerSnap = await get(ref(db, 'players'));
-  const playerData = playerSnap.val() || {};
-
-  const stats = {};
-  Object.values(matchData).forEach(m => {
-    if (m.monthKey !== prevMonth) return;
-
-    const names = [...(m.namesA || []), ...(m.namesB || [])];
-    names.forEach(n => { if (!stats[n]) stats[n] = { win: 0, lose: 0 }; });
-
-    if (m.winnerSide === 'A') {
-      (m.namesA || []).forEach(n => stats[n].win++);
-      (m.namesB || []).forEach(n => stats[n].lose++);
-    } else if (m.winnerSide === 'B') {
-      (m.namesB || []).forEach(n => stats[n].win++);
-      (m.namesA || []).forEach(n => stats[n].lose++);
-    }
-  });
-
-  const reportArr = Object.entries(playerData).map(([id, p]) => {
-    const d = stats[p.name] || { win: 0, lose: 0 };
-    const total = d.win + d.lose;
-    const rate = total ? (d.win / total * 100) : 0;
-    return { name: p.name, level: p.level, total, win: d.win, lose: d.lose, rate };
-  }).filter(p => p.total > 0);
-
-  if (reportArr.length === 0) {
-    console.log(`⚠️ ${prevMonth} 월 경기 없음 — 마감 스킵`);
-    return;
-  }
-
-  await set(reportRef, reportArr);
-  console.log(`✅ ${prevMonth} 월 리포트 생성 완료`);
-}
-
-
-
-// 페이지 로드시 자동 실행
-autoClosePreviousMonth();
 
 </script>
 </body>
