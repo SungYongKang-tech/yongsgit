@@ -34,7 +34,7 @@ onValue(scheduleRef, (snapshot) => {
 const initialData = {
   mon_0: { name: "정승목" }, tue_0: { name: "이세란" }, wed_0: { name: "정승목" }, thu_0: { name: "이세란" },
   mon_1: { name: "이상준" }, tue_1: { name: "박나령" }, wed_1: { name: "이상준" }, thu_1: { name: "박나령" },
-  mon_2: { name: "이낭주" }, tue_2: { name: "김승일" }, wed_2: { name: "이낭주" }, thu_2: { name: "김승일" },
+  mon_2: { name: "이낭주" }, tue_2: { name: "오국환" }, wed_2: { name: "이낭주" }, thu_2: { name: "오국환" },
   mon_3: { name: "조보미" }, tue_3: { name: "송은아" }, wed_3: { name: "조보미" }, thu_3: { name: "송은아" },
   mon_4: { name: "고은선" }, tue_4: { name: "임춘근" }, wed_4: { name: "고은선" }, thu_4: { name: "임춘근" }
 };
