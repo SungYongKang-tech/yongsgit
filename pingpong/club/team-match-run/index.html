@@ -779,55 +779,57 @@ function greedyMatchPairs(
 
   while (res.length < need) {
     let best = null;
-
-    // ✅ 모드에 따라 bestDiff 초기값이 달라야 함
-    let bestDiff = (window.currentDoublesMode === 0) ? Infinity : -Infinity;
+    let bestDiff = Infinity; // ✅ 어떤 모드든 "차이 최소"로 통일
 
     for (const a of pairsA) {
       const aPlayers = [a.p1.name, a.p2.name];
       const aKey = pairKeySorted(a.p1.name, a.p2.name);
 
+      // A팀 동일 조합 방지
       if ((!allowDuplicates && usedPairsA.has(aKey)) || lockedPairs.has(aKey)) continue;
+
+      // 선수 개별 중복 방지
       if (!allowDuplicates && (usedPlayersA.has(aPlayers[0]) || usedPlayersA.has(aPlayers[1]))) continue;
 
       for (const b of pairsB) {
         const bPlayers = [b.p1.name, b.p2.name];
         const bKey = pairKeySorted(b.p1.name, b.p2.name);
 
+        // B팀 동일 조합 방지
         if ((!allowDuplicates && usedPairsB.has(bKey)) || lockedPairs.has(bKey)) continue;
+
+        // 선수 개별 중복 방지
         if (!allowDuplicates && (usedPlayersB.has(bPlayers[0]) || usedPlayersB.has(bPlayers[1]))) continue;
 
+        // 동일 상대 조합 방지
         const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
         if ((!allowDuplicates && usedVersus.has(vKey)) || lockedPairs.has(vKey)) continue;
 
+        // ✅ 실력매칭/조합매칭 모두 "경기 균형" = 차이 최소
         const diff = Math.abs(a.sum - b.sum);
-
-        if (window.currentDoublesMode === 0) {
-          // ✅ 실력매칭: diff 최소
-          if (diff < bestDiff) {
-            bestDiff = diff;
-            best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
-          }
-        } else {
-          // ✅ 조합매칭: diff 최대
-          if (diff > bestDiff) {
-            bestDiff = diff;
-            best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
-          }
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
         }
       }
     }
 
     if (!best) break;
 
-    res.push({ a1: best.a.p1, a2: best.a.p2, b1: best.b.p1, b2: best.b.p2 });
+    // 확정
+    res.push({
+      a1: best.a.p1, a2: best.a.p2,
+      b1: best.b.p1, b2: best.b.p2
+    });
 
+    // 사용 기록
     best.aPlayers.forEach(n => usedPlayersA.add(n));
     best.bPlayers.forEach(n => usedPlayersB.add(n));
     usedPairsA.add(best.aKey);
     usedPairsB.add(best.bKey);
     usedVersus.add(best.vKey);
 
+    // 초반 확정 조합 잠금
     if (res.length <= 2) {
       lockedPairs.add(best.aKey);
       lockedPairs.add(best.bKey);
