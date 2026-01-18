@@ -24,8 +24,10 @@
     .player {
       margin: 4px; padding: 6px 10px; border: 1px solid #2196f3; border-radius: 6px;
       display: inline-block; cursor: pointer; font-size: 14px;
+      user-select: none;
     }
     .player.selected { background: #1976d2; color: white; }
+    .player.locked { opacity: .45; cursor: not-allowed; }
 
     table { border-collapse: collapse; width: 100%; margin-top: 20px; background: white; font-size: 14px; }
     td, th { border: 1px solid #888; padding: 6px 10px; text-align: center; }
@@ -38,10 +40,6 @@
       padding: 10px 20px; font-size: 16px; background: #1976d2; color: white; border: none; border-radius: 6px; cursor: pointer;
     }
     .button-group button:hover { background: #1565c0; }
-    @media (max-width: 600px) {
-      .button-group { flex-direction: column; align-items: center; }
-      .button-group button { width: 100%; max-width: 300px; font-size: 14px; }
-    }
 
     .scroll-table { overflow: auto; max-height: 80vh; max-width: 100%; border: 1px solid #aaa; }
     .scroll-table table th { position: sticky; top: 0; background: #ffe0b2; z-index: 2; }
@@ -54,7 +52,7 @@
       background: #fff; border: 2px solid #333; padding: 20px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,.3);
       width: 90%; max-width: 400px;
     }
-    #popup button { margin: 5px; padding: 8px 12px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+    #popup button { margin: 5px 0; padding: 8px 12px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
     #popupText { margin-bottom: 10px; font-weight: bold; }
 
     #controlPanel input[type="text"] { padding: 10px; font-size: 16px; margin: 5px; width: 200px; max-width: 90%; }
@@ -66,9 +64,37 @@
       .player { font-size: 13px; padding: 5px 8px; }
       #controlPanel button { font-size: 14px; padding: 8px 10px; width: 100%; margin-bottom: 10px; }
       #controlPanel input[type="text"] { width: 100%; font-size: 14px; }
+      .button-group { flex-direction: column; align-items: center; }
+      .button-group button { width: 100%; max-width: 300px; font-size: 14px; }
     }
 
     .player-list { display: flex; flex-wrap: wrap; justify-content: center; }
+
+    /* ✅ B) 운영 편의 UI */
+    #modeBar{
+      margin: 10px auto 0;
+      max-width: 900px;
+      padding: 10px 12px;
+      border: 1px dashed #999;
+      border-radius: 10px;
+      background: #fafafa;
+      text-align: center;
+      font-weight: 700;
+      display:none;
+    }
+    .mini-btn{
+      padding: 6px 10px;
+      font-size: 12px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #111;
+      color:#fff;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+    .mini-btn.danger{ background:#c62828; }
+    .mini-btn.gray{ background:#607d8b; }
   </style>
 </head>
 <body>
@@ -81,6 +107,9 @@
     <button id="toggleDefaultBtn">기존 선수 숨김</button>
     <button id="removeAddedBtn">추가 선수 삭제</button>
   </div>
+
+  <!-- ✅ B) 팀 수정 모드 표시줄 -->
+  <div id="modeBar"></div>
 
   <div id="playerList" class="player-list"></div>
 
@@ -101,28 +130,23 @@
 
   <script type="module">
 
-async function loadDefaultPlayers() {
-  const url = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json";
+    async function loadDefaultPlayers() {
+      const url = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json";
+      const res = await fetch(url);
+      const data = await res.json();
 
-  const res = await fetch(url);
-  const data = await res.json();
-
-  const arr = Object.values(data).map(p => `${p.name}(${p.level})`);
-
-  arr.sort((a, b) => {
-    const lvA = Number(a.match(/\((\d+)\)/)[1]);
-    const lvB = Number(b.match(/\((\d+)\)/)[1]);
-    return lvA - lvB;
-  });
-
-  return arr;
-}
-
-
+      const arr = Object.values(data).map(p => `${p.name}(${p.level})`);
+      arr.sort((a, b) => {
+        const lvA = Number(a.match(/\((\d+)\)/)[1]);
+        const lvB = Number(b.match(/\((\d+)\)/)[1]);
+        return lvA - lvB;
+      });
+      return arr;
+    }
 
     // ===== Firebase SDK =====
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
     import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     // ===== Config =====
@@ -143,24 +167,21 @@ async function loadDefaultPlayers() {
     // ===== Refs =====
     const extraPlayersRef = ref(db, "players/koen_takgu/extra");   // 추가 선수
     const resultsRef      = ref(db, "players/koen_takgu/results"); // 경기 결과 (객체: "i-j":"3-1")
-    const selectedRef     = ref(db, "players/koen_takgu/selected");// 임시 선택(인덱스 배열)
+    const selectedRef     = ref(db, "players/koen_takgu/selected");// ✅ A) "선수 문자열 배열"로 저장
     const teamListRef     = ref(db, "players/koen_takgu/teamList");// 팀 리스트 [{names:[],level:n},...]
 
     // ===== State =====
     let hideDefault = false;
     let currentPlayers = [];
-    let tempSelected = [];
     let teamList = [];
-    let results = {}; // ← 배열이 아니라 객체로!
+    let results = {};          // 객체
     let extraPlayers = [];
 
-    
-    //const defaultPlayers = [
-    // "노정림(3)","김희영(4)","강성용(5)","김범일(5)","이영진(5)","박주민(6)","강다훈(6)",
-    //  "박진우(7)","배성국(7)","이상준(7)","황경진(8)","양충현(8)","임춘근(9)",
-    //  "박인찬(8)","전성무(9)","송창근(9)","김승일(9)","김현곤(9)","오국환(9)","문우용(9)","조보미(11)",
-    //  "송은아(13)","이낭주(13)","박나령(14)","고은선(14)","정승목(14)","이세란(14)"
-    //];
+    // ✅ A) 선택은 index가 아니라 "선수 문자열"
+    let tempSelected = [];     // 예: ["강성용(5)","김범일(5)"]
+
+    // ✅ B) 팀 수정 모드(로컬)
+    let editingTeamIndex = null;
 
     let defaultPlayers = [];
 
@@ -173,32 +194,30 @@ async function loadDefaultPlayers() {
       });
     }
 
-    // ===== Boot after login =====
+    // ===== Boot =====
     (async function boot() {
-  try {
-    await ensureAnonAuth();
+      try {
+        await ensureAnonAuth();
 
-    // ⭐ 여기 추가: JSON에서 기본 선수 로딩
-    defaultPlayers = await loadDefaultPlayers();
-    currentPlayers = [...defaultPlayers];
+        defaultPlayers = await loadDefaultPlayers();
+        currentPlayers = [...defaultPlayers];
 
-    // 실시간: 추가 선수 로딩
-    onValue(extraPlayersRef, (snapshot) => {
-      extraPlayers = snapshot.val() || [];
-      currentPlayers = [...defaultPlayers, ...extraPlayers];
-      renderPlayerList();
-    });
+        onValue(extraPlayersRef, (snapshot) => {
+          extraPlayers = snapshot.val() || [];
+          currentPlayers = [...defaultPlayers, ...extraPlayers];
+          renderPlayerList();
+        });
 
-
-        // 실시간: 결과/선택/팀
         onValue(resultsRef, (snapshot) => {
           results = snapshot.val() || {};
           if (teamList.length >= 2) createSchedule();
         });
 
+        // ✅ A) 여기서도 문자열 배열로 받음
         onValue(selectedRef, (snapshot) => {
           tempSelected = snapshot.val() || [];
           renderPlayerList();
+          updateModeBar();
         });
 
         onValue(teamListRef, (snapshot) => {
@@ -206,14 +225,16 @@ async function loadDefaultPlayers() {
           if (!teamList || teamList.length < 2) {
             document.getElementById("schedule").innerHTML = "<p>2팀 이상 등록해주세요.</p>";
             document.getElementById("summary").innerHTML = "";
+            renderPlayerList();
             return;
           }
           createSchedule();
+          renderPlayerList();
         });
 
-        // 버튼 핸들러 (로그인 이후 활성화)
+        // 버튼 핸들러
         document.getElementById("resetBtn").onclick = async () => {
-          await set(resultsRef, {}); // 점수 초기화
+          await set(resultsRef, {});
           results = {};
           createSchedule();
         };
@@ -222,12 +243,16 @@ async function loadDefaultPlayers() {
           tempSelected = [];
           teamList = [];
           results = {};
+          editingTeamIndex = null;
+
           await set(teamListRef, []);
-          await set(selectedRef, []);
+          await set(selectedRef, []);   // ✅ A) 문자열 배열
           await set(resultsRef, {});
+
           document.getElementById("schedule").innerHTML = "<p>2팀 이상 등록해주세요.</p>";
           document.getElementById("summary").innerHTML = "";
           renderPlayerList();
+          updateModeBar();
         };
 
         document.getElementById("removeAddedBtn").onclick = async () => {
@@ -240,6 +265,7 @@ async function loadDefaultPlayers() {
           const name = document.getElementById("playerName").value.trim();
           const level = document.getElementById("playerLevel").value.trim();
           if (!name || !level) return alert("이름과 부수를 입력하세요");
+
           const newEntry = `${name}(${level})`;
           if ([...defaultPlayers, ...extraPlayers].includes(newEntry)) {
             alert("이미 등록된 선수입니다.");
@@ -247,6 +273,9 @@ async function loadDefaultPlayers() {
           }
           extraPlayers.push(newEntry);
           await set(extraPlayersRef, extraPlayers);
+
+          document.getElementById("playerName").value = "";
+          document.getElementById("playerLevel").value = "";
         };
 
         document.getElementById("saveImageBtn").onclick = () => {
@@ -257,6 +286,7 @@ async function loadDefaultPlayers() {
           const w=['일','월','화','수','목','금','토'][now.getDay()];
           const hh=pad(now.getHours()), mm=pad(now.getMinutes());
           const filename = `koen_league_result_${y}-${m}-${d}(${w})_${hh}-${mm}.jpg`;
+
           html2canvas(scheduleDiv).then(canvas => {
             const link = document.createElement("a");
             link.download = filename;
@@ -271,98 +301,177 @@ async function loadDefaultPlayers() {
           document.getElementById("toggleDefaultBtn").innerText = hideDefault ? "기존선수 보이기" : "기존선수 숨김";
         };
         document.getElementById("toggleDefaultBtn").innerText = "기존선수 숨김";
+
       } catch (e) {
         console.error("익명 로그인 실패:", e);
         alert("로그인 오류가 발생했습니다. 새로고침 후 다시 시도하세요.");
       }
     })();
 
+    // ===== Utils =====
+    function nameOnlyFromPlayerStr(playerStr){
+      return playerStr.split("(")[0].trim();
+    }
+    function levelFromPlayerStr(playerStr){
+      const m = playerStr.match(/\((\d+)\)/);
+      return m ? Number(m[1]) : 0;
+    }
+    function isPlayerInAnyTeam(nameOnly){
+      return teamList.some(t => t.names.includes(nameOnly));
+    }
+    function isPlayerInEditingTeam(nameOnly){
+      if (editingTeamIndex === null) return false;
+      const t = teamList[editingTeamIndex];
+      if (!t) return false;
+      return t.names.includes(nameOnly);
+    }
+
+    // ✅ B) 모드바 표시
+    function updateModeBar(){
+      const bar = document.getElementById("modeBar");
+      if (editingTeamIndex === null){
+        bar.style.display = "none";
+        bar.innerHTML = "";
+        return;
+      }
+      const t = teamList[editingTeamIndex];
+      const teamText = t ? `${t.names.join("/")} (${t.level})` : `#${editingTeamIndex+1}`;
+      bar.style.display = "block";
+      bar.innerHTML = `
+        팀 수정 모드: <b>${teamText}</b> → 수정할 <b>2명</b>을 다시 선택하세요.
+        <button class="mini-btn gray" id="cancelEditBtn">수정 취소</button>
+      `;
+      document.getElementById("cancelEditBtn").onclick = async () => {
+        editingTeamIndex = null;
+        tempSelected = [];
+        await set(selectedRef, []);
+        renderPlayerList();
+        updateModeBar();
+      };
+    }
+
     // ===== 렌더링 =====
     function renderPlayerList() {
       const playerList = document.getElementById("playerList");
       playerList.innerHTML = "";
 
-      // 기본 선수는 부수로 정렬, 추가 선수는 뒤에
       const sortedPlayers = [
         ...[...currentPlayers]
           .filter(p => defaultPlayers.includes(p))
-          .sort((a,b)=> parseInt(a.match(/\((\d+)\)/)[1]) - parseInt(b.match(/\((\d+)\)/)[1])),
+          .sort((a,b)=> levelFromPlayerStr(a) - levelFromPlayerStr(b)),
         ...extraPlayers
       ];
 
-      sortedPlayers.forEach((player, sortedIndex) => {
-  const i = currentPlayers.findIndex(p => p === player);
-  if (i === -1) return;
-  if (hideDefault && defaultPlayers.includes(player)) return;
+      sortedPlayers.forEach((playerStr) => {
+        if (hideDefault && defaultPlayers.includes(playerStr)) return;
 
-  const div = document.createElement("div");
-  div.className = "player";
-  div.textContent = player;
+        const div = document.createElement("div");
+        div.className = "player";
+        div.textContent = playerStr;
 
-  const match = player.match(/\((\d+)\)/);
-  if (match) {
-    const level = Number(match[1]);
-    if (level <= 6) div.classList.add("lv4to6");
-    else if (level <= 9) div.classList.add("lv7to9");
-    else if (level <= 12) div.classList.add("lv10to12");
-    else div.classList.add("lv13to14");
-  }
-  if (!defaultPlayers.includes(player)) div.classList.add("new-player");
+        const level = levelFromPlayerStr(playerStr);
+        if (level <= 6) div.classList.add("lv4to6");
+        else if (level <= 9) div.classList.add("lv7to9");
+        else if (level <= 12) div.classList.add("lv10to12");
+        else div.classList.add("lv13to14");
 
-  const nameOnly = player.split("(")[0].trim();
-  const isInTeam = teamList.some(team => team.names.includes(nameOnly));
-  if (tempSelected.includes(sortedIndex) || isInTeam) div.classList.add("selected");
+        if (!defaultPlayers.includes(playerStr)) div.classList.add("new-player");
 
-  // 화면 순서 index를 togglePlayer로 전달
-  div.onclick = () => togglePlayer(sortedIndex);
+        const nm = nameOnlyFromPlayerStr(playerStr);
+        const inTeam = isPlayerInAnyTeam(nm);
 
-  playerList.appendChild(div);
-});
+        // ✅ A) 선택 판정: 인덱스가 아니라 문자열로
+        if (tempSelected.includes(playerStr) || inTeam) div.classList.add("selected");
+
+        // ✅ B) 이미 다른 팀에 들어간 선수는 선택 잠금(단, 수정모드에서 해당 팀 선수는 허용)
+        const locked = inTeam && !isPlayerInEditingTeam(nm);
+        if (locked) div.classList.add("locked");
+
+        div.onclick = () => {
+          if (locked) return;
+          togglePlayer(playerStr);
+        };
+
+        playerList.appendChild(div);
+      });
     }
 
-    // ===== 선택/팀 구성 =====
-    async function togglePlayer(index) {
-      const selectedEls = document.querySelectorAll(".player");
-      const target = selectedEls[index];
-      if (!target) return;
-
-      if (tempSelected.includes(index)) {
-        tempSelected = tempSelected.filter(i => i !== index);
-        target.classList.remove("selected");
+    // ===== ✅ A) 선택/팀 구성(문자열 기반) + ✅ B) 수정모드 =====
+    async function togglePlayer(playerStr) {
+      if (tempSelected.includes(playerStr)) {
+        tempSelected = tempSelected.filter(p => p !== playerStr);
       } else {
-        tempSelected.push(index);
-        target.classList.add("selected");
+        tempSelected = [...tempSelected, playerStr];
 
-        // 2명 선택되면 팀 등록
         if (tempSelected.length === 2) {
-          const players = tempSelected.map(i => {
-            const txt = selectedEls[i].textContent;
-            return { name: txt.split("(")[0].trim(), level: parseInt(txt.match(/\d+/)[0]) };
-          });
-          const newTeam = { names: players.map(p => p.name), level: players[0].level + players[1].level };
-          teamList = [...teamList, newTeam];
-          await set(teamListRef, teamList);
+          const players = tempSelected.map(txt => ({
+            name: nameOnlyFromPlayerStr(txt),
+            level: levelFromPlayerStr(txt)
+          }));
 
-          tempSelected.forEach(i => selectedEls[i].classList.remove("selected"));
+          const newTeam = { names: players.map(p => p.name), level: players[0].level + players[1].level };
+
+          // ✅ B) 수정모드면 팀 교체, 아니면 팀 추가
+          if (editingTeamIndex !== null) {
+            // 해당 팀 관련 결과만 삭제(인덱스는 그대로)
+            const idx = editingTeamIndex;
+            const newResults = { ...results };
+            Object.keys(newResults).forEach(k => {
+              const [a,b] = k.split("-").map(Number);
+              if (a === idx || b === idx) delete newResults[k];
+            });
+            results = newResults;
+            await set(resultsRef, results);
+
+            teamList = teamList.map((t,i) => i === idx ? newTeam : t);
+            await set(teamListRef, teamList);
+
+            editingTeamIndex = null;
+          } else {
+            teamList = [...teamList, newTeam];
+            await set(teamListRef, teamList);
+          }
+
           tempSelected = [];
-          renderPlayerList();
-          createSchedule();
         }
       }
+
       await set(selectedRef, tempSelected);
+      renderPlayerList();
+      createSchedule();
+      updateModeBar();
     }
 
-    // ===== 리그 표/요약 =====
+    // ===== 리그 표/요약 + ✅ B) 팀 삭제/수정 버튼 =====
     function createSchedule() {
       const container = document.getElementById("schedule");
-      if (teamList.length < 2) { container.innerHTML = "<p>2팀 이상 등록해주세요.</p>"; return; }
+      if (!teamList || teamList.length < 2) {
+        container.innerHTML = "<p>2팀 이상 등록해주세요.</p>";
+        document.getElementById("summary").innerHTML = "";
+        return;
+      }
 
       let html = "<div id='scheduleTable'><table><tr><th>팀</th>";
-      teamList.forEach(t => { html += `<th>${t.names.join("/")} (${t.level})</th>`; });
+      teamList.forEach((t, idx) => {
+        html += `<th>
+          ${t.names.join("/")} (${t.level})
+          <div style="margin-top:6px">
+            <button class="mini-btn" onclick="startEditTeam(${idx})">수정</button>
+            <button class="mini-btn danger" onclick="deleteTeam(${idx})">삭제</button>
+          </div>
+        </th>`;
+      });
       html += "</tr>";
 
       teamList.forEach((t1, i) => {
-        html += `<tr><th>${t1.names.join("/")} (${t1.level})</th>`;
+        html += `<tr><th>
+          ${t1.names.join("/")} (${t1.level})
+          <div style="margin-top:6px">
+            <button class="mini-btn" onclick="startEditTeam(${i})">수정</button>
+            <button class="mini-btn danger" onclick="deleteTeam(${i})">삭제</button>
+          </div>
+        </th>`;
+
         teamList.forEach((t2, j) => {
           if (i === j) html += "<td>X</td>";
           else {
@@ -376,9 +485,10 @@ async function loadDefaultPlayers() {
       html += "</table></div>";
       container.innerHTML = html;
 
-      // 요약 표
+      // 요약 표(승/세트)
       let wins = Array(teamList.length).fill(0);
       let sets = Array(teamList.length).fill(0);
+
       for (let i=0;i<teamList.length;i++){
         for (let j=0;j<teamList.length;j++){
           if (i===j || i>j) continue;
@@ -390,7 +500,11 @@ async function loadDefaultPlayers() {
           sets[i]+=a; sets[j]+=b;
         }
       }
-      const ranking = wins.map((w,i)=>({i,w,s:sets[i]})).sort((a,b)=> (b.w-a.w) || (b.s-a.s));
+
+      const ranking = wins
+        .map((w,i)=>({i,w,s:sets[i]}))
+        .sort((a,b)=> (b.w-a.w) || (b.s-a.s));
+
       let summaryHtml = "<h3>팀 요약</h3><table><tr><th>팀</th><th>승</th><th>세트</th><th>순위</th></tr>";
       ranking.forEach((r,rank)=>{
         const t = teamList[r.i];
@@ -400,14 +514,63 @@ async function loadDefaultPlayers() {
       document.getElementById("summary").innerHTML = summaryHtml;
     }
 
+    // ✅ B) 팀 삭제: 팀 제거 + 결과 키 재매핑 + 선택 초기화
+    window.deleteTeam = async (idx) => {
+      if (!teamList[idx]) return;
+      const txt = teamList[idx].names.join("/") + ` (${teamList[idx].level})`;
+      if (!confirm(`이 팀을 삭제할까요?\n\n${txt}\n\n(해당 팀 관련 결과는 삭제됩니다)`)) return;
+
+      // 1) teamList에서 제거
+      const newTeamList = teamList.filter((_,i)=> i !== idx);
+
+      // 2) results 재매핑 (인덱스가 앞으로 당겨지므로 키 재계산)
+      const newResults = {};
+      Object.entries(results).forEach(([k,v]) => {
+        const [a,b] = k.split("-").map(Number);
+        if (a === idx || b === idx) return; // 삭제된 팀 관련 결과 제거
+
+        const na = a > idx ? a - 1 : a;
+        const nb = b > idx ? b - 1 : b;
+        newResults[`${na}-${nb}`] = v;
+      });
+
+      teamList = newTeamList;
+      results = newResults;
+
+      // 선택도 초기화
+      tempSelected = [];
+      editingTeamIndex = null;
+
+      await set(teamListRef, teamList);
+      await set(resultsRef, results);
+      await set(selectedRef, []);
+
+      renderPlayerList();
+      createSchedule();
+      updateModeBar();
+    };
+
+    // ✅ B) 팀 수정 시작: 수정 모드 ON + 선택 초기화(2명 다시 고르면 교체)
+    window.startEditTeam = async (idx) => {
+      if (!teamList[idx]) return;
+      editingTeamIndex = idx;
+      tempSelected = [];
+      await set(selectedRef, []);
+      renderPlayerList();
+      updateModeBar();
+      alert("팀 수정 모드입니다.\n수정할 선수 2명을 다시 선택하세요.");
+    };
+
     // ===== 팝업/점수 입력 =====
     window.openPopup = (matchKey) => {
       const popup = document.getElementById("popup");
       const popupText = document.getElementById("popupText");
       const scoreButtons = document.getElementById("scoreButtons");
       popupText.textContent = "해당 경기의 점수를 선택하세요";
+
       const scores = ["3-0","3-1","3-2","2-0","2-1"];
       scoreButtons.innerHTML = "";
+
       scores.forEach(score => {
         const btn = document.createElement("button");
         btn.textContent = score;
@@ -420,12 +583,21 @@ async function loadDefaultPlayers() {
         };
         scoreButtons.appendChild(btn);
       });
+
       popup.style.display = "block";
     };
+
     window.closePopup = () => document.getElementById("popup").style.display = "none";
 
-    function reverseKey(key) { const [a,b] = key.split("-"); return `${b}-${a}`; }
-    function reverseScore(score) { const [a,b] = score.split("-").map(Number); return `${b}-${a}`; }
+    function reverseKey(key) {
+      const [a,b] = key.split("-");
+      return `${b}-${a}`;
+    }
+    function reverseScore(score) {
+      const [a,b] = score.split("-").map(Number);
+      return `${b}-${a}`;
+    }
+
   </script>
 </body>
 </html>
