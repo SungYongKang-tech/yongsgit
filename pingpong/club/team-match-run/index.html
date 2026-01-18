@@ -293,6 +293,17 @@ th { background: #e3f2fd; }
   <h2>단체전 진행(made by Sung-Yong)</h2>
   <div class="config">
 
+    <!-- ✅ 경기 중 신규 선수 추가 -->
+<div class="btn-group" style="width:100%; max-width:640px;">
+  <input id="addName" placeholder="이름" style="flex:1; padding:10px; border:2px solid #1976d2; border-radius:6px;">
+  <input id="addLevel" type="number" placeholder="부수" style="width:90px; padding:10px; border:2px solid #1976d2; border-radius:6px; text-align:center;">
+  <select id="addTeamSelect" style="width:140px; padding:10px; border:2px solid #1976d2; border-radius:6px;">
+    <option value="">팀 선택</option>
+  </select>
+  <button class="btn-save" onclick="addPlayerQuick()">추가</button>
+</div>
+
+
    <div class="match-count-group">
   <label>단식
     <select id="singlesCnt">
@@ -444,10 +455,12 @@ function loadTeams() {
       alert("팀 정보가 없습니다. 먼저 팀을 구성해주세요.");
       return false;
     }
-    Object.values(raw).forEach(team => {
-      teamData[team.teamName] = team;
-      teamNames.push(team.teamName);
-    });
+    Object.entries(raw).forEach(([id, team]) => {
+  team._id = id; // ✅ Firebase teams의 실제 key 저장
+  teamData[team.teamName] = team;
+  teamNames.push(team.teamName);
+});
+
     renderTeamList();
     return true;
   });
@@ -461,6 +474,10 @@ function renderTeamList() {
   });
   html += '</table>';
   document.getElementById('teamListArea').innerHTML = html;
+   const sel = document.getElementById("addTeamSelect");
+  if (sel) {
+    sel.innerHTML = `<option value="">팀 선택</option>` +
+      teamNames.map(t => `<option value="${t}">${t}</option>`).join("");
 }
 
 /* ---------------- 수동 대진 생성 ---------------- */
@@ -1815,6 +1832,50 @@ function selectAutoMode(mode) {
   autoMode = mode;      // ✅ 선택된 모드 저장
   closePopup();         // ✅ 팝업 닫기
   autoMatch();          // ✅ 자동 생성 실행
+}
+
+async function addPlayerQuick() {
+  if (!checkPassword()) return;
+
+  const name = String(document.getElementById("addName").value || "").trim();
+  const level = Number(document.getElementById("addLevel").value);
+  const teamName = document.getElementById("addTeamSelect").value;
+
+  if (!teamName) { alert("팀을 선택해주세요."); return; }
+  if (!name) { alert("이름을 입력해주세요."); return; }
+  if (!Number.isFinite(level) || level <= 0) { alert("부수를 숫자로 입력해주세요."); return; }
+
+  // ✅ 팀 내 이름 중복 방지
+  const cur = (teamData[teamName]?.players || []).map(p => String(p.name||"").trim());
+  if (cur.includes(name)) {
+    alert("이미 같은 이름이 해당 팀에 있습니다.");
+    return;
+  }
+
+  const teamId = teamData[teamName]?._id;
+  if (!teamId) {
+    alert("팀 ID를 찾을 수 없습니다. loadTeams()에서 _id 저장이 필요합니다.");
+    return;
+  }
+
+  await requireAuth();
+
+  const ref = db.ref(`teams/${teamId}/players`);
+  const snap = await ref.once("value");
+  const raw = snap.val();
+
+  const list = Array.isArray(raw) ? raw.slice() : Object.values(raw || {});
+  list.push({ name, level });
+
+  await ref.set(list);
+
+  // ✅ 입력칸 정리
+  document.getElementById("addName").value = "";
+  document.getElementById("addLevel").value = "";
+
+  // ✅ 즉시 반영(팀 목록 + 팝업 목록에도 반영)
+  await loadTeams();
+  alert(`✅ ${teamName}에 ${name}(${level}) 추가 완료`);
 }
 
 
