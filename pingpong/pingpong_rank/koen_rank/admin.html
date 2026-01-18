@@ -263,7 +263,7 @@ $('#saveAdminPassword').onclick=async()=>{
   toast('관리자 비밀번호 저장');
 };
 
-// ✅ 이번달 전적 전체 삭제 (비밀번호 확인 포함)
+// ✅ 이번달 전적 전체 삭제 (비밀번호 확인 + 리포트도 삭제)
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("deleteCurrentMonth");
   if (!btn) return;
@@ -272,9 +272,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirm("⚠️ 정말 이번달 경기결과를 전부 삭제하시겠습니까?\n(삭제 후 복구 불가)")) return;
 
     try {
-      const pwRef = ref(db, "config/deletePassword");
-      const pwSnap = await get(pwRef);
-      const savedPw = pwSnap.exists() ? pwSnap.val() : "7910";
+      const pwSnap = await get(ref(db, "config/deletePassword"));
+      const savedPw = pwSnap.exists() ? String(pwSnap.val()) : "7910";
 
       const input = prompt("삭제 비밀번호를 입력하세요.");
       if (input === null) return;
@@ -291,19 +290,23 @@ document.addEventListener("DOMContentLoaded", () => {
       let count = 0;
 
       for (const [id, match] of Object.entries(data)) {
-        if (match.monthKey === thisMonth) {
-          await remove(child(matchesRef, id));
+        if (match && match.monthKey === thisMonth) {
+          await remove(ref(db, `matches/${id}`)); // 스타일 통일
           count++;
         }
       }
 
-      toast(`✅ ${thisMonth} 전적 ${count}건 삭제 완료`);
+      // ✅ 월간리포트도 같이 삭제
+      await remove(ref(db, `monthlyReports/${thisMonth}`));
+
+      toast(`✅ ${thisMonth} 전적 ${count}건 + 리포트 삭제 완료`);
     } catch (err) {
       console.error(err);
       alert("⚠️ 삭제 중 오류가 발생했습니다.");
     }
   });
 });
+
 
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 
