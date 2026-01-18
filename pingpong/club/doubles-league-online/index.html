@@ -27,7 +27,6 @@
       user-select: none;
     }
     .player.selected { background: #1976d2; color: white; }
-    .player.locked { opacity: .45; cursor: not-allowed; }
 
     table { border-collapse: collapse; width: 100%; margin-top: 20px; background: white; font-size: 14px; }
     td, th { border: 1px solid #888; padding: 6px 10px; text-align: center; }
@@ -40,6 +39,10 @@
       padding: 10px 20px; font-size: 16px; background: #1976d2; color: white; border: none; border-radius: 6px; cursor: pointer;
     }
     .button-group button:hover { background: #1565c0; }
+    @media (max-width: 600px) {
+      .button-group { flex-direction: column; align-items: center; }
+      .button-group button { width: 100%; max-width: 300px; font-size: 14px; }
+    }
 
     .scroll-table { overflow: auto; max-height: 80vh; max-width: 100%; border: 1px solid #aaa; }
     .scroll-table table th { position: sticky; top: 0; background: #ffe0b2; z-index: 2; }
@@ -52,7 +55,7 @@
       background: #fff; border: 2px solid #333; padding: 20px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,.3);
       width: 90%; max-width: 400px;
     }
-    #popup button { margin: 5px 0; padding: 8px 12px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+    #popup button { margin: 5px; padding: 8px 12px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
     #popupText { margin-bottom: 10px; font-weight: bold; }
 
     #controlPanel input[type="text"] { padding: 10px; font-size: 16px; margin: 5px; width: 200px; max-width: 90%; }
@@ -64,37 +67,9 @@
       .player { font-size: 13px; padding: 5px 8px; }
       #controlPanel button { font-size: 14px; padding: 8px 10px; width: 100%; margin-bottom: 10px; }
       #controlPanel input[type="text"] { width: 100%; font-size: 14px; }
-      .button-group { flex-direction: column; align-items: center; }
-      .button-group button { width: 100%; max-width: 300px; font-size: 14px; }
     }
 
     .player-list { display: flex; flex-wrap: wrap; justify-content: center; }
-
-    /* ✅ B) 운영 편의 UI */
-    #modeBar{
-      margin: 10px auto 0;
-      max-width: 900px;
-      padding: 10px 12px;
-      border: 1px dashed #999;
-      border-radius: 10px;
-      background: #fafafa;
-      text-align: center;
-      font-weight: 700;
-      display:none;
-    }
-    .mini-btn{
-      padding: 6px 10px;
-      font-size: 12px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      background: #111;
-      color:#fff;
-      margin-left: 6px;
-      white-space: nowrap;
-    }
-    .mini-btn.danger{ background:#c62828; }
-    .mini-btn.gray{ background:#607d8b; }
   </style>
 </head>
 <body>
@@ -107,9 +82,6 @@
     <button id="toggleDefaultBtn">기존 선수 숨김</button>
     <button id="removeAddedBtn">추가 선수 삭제</button>
   </div>
-
-  <!-- ✅ B) 팀 수정 모드 표시줄 -->
-  <div id="modeBar"></div>
 
   <div id="playerList" class="player-list"></div>
 
@@ -129,7 +101,6 @@
   </div>
 
   <script type="module">
-
     async function loadDefaultPlayers() {
       const url = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json";
       const res = await fetch(url);
@@ -167,23 +138,20 @@
     // ===== Refs =====
     const extraPlayersRef = ref(db, "players/koen_takgu/extra");   // 추가 선수
     const resultsRef      = ref(db, "players/koen_takgu/results"); // 경기 결과 (객체: "i-j":"3-1")
-    const selectedRef     = ref(db, "players/koen_takgu/selected");// ✅ A) "선수 문자열 배열"로 저장
+    const selectedRef     = ref(db, "players/koen_takgu/selected");// ✅ A) 임시 선택: 선수 문자열 배열
     const teamListRef     = ref(db, "players/koen_takgu/teamList");// 팀 리스트 [{names:[],level:n},...]
 
     // ===== State =====
     let hideDefault = false;
     let currentPlayers = [];
-    let teamList = [];
-    let results = {};          // 객체
+    let defaultPlayers = [];
     let extraPlayers = [];
 
-    // ✅ A) 선택은 index가 아니라 "선수 문자열"
-    let tempSelected = [];     // 예: ["강성용(5)","김범일(5)"]
+    // ✅ A) index가 아니라 "강성용(5)" 같은 문자열을 저장
+    let tempSelected = [];  // ["강성용(5)","김범일(5)"]
 
-    // ✅ B) 팀 수정 모드(로컬)
-    let editingTeamIndex = null;
-
-    let defaultPlayers = [];
+    let teamList = [];
+    let results = {}; // 객체
 
     // ===== Auth =====
     async function ensureAnonAuth() {
@@ -194,32 +162,43 @@
       });
     }
 
-    // ===== Boot =====
+    function nameOnly(playerStr) {
+      return playerStr.split("(")[0].trim();
+    }
+    function levelOnly(playerStr) {
+      const m = playerStr.match(/\((\d+)\)/);
+      return m ? Number(m[1]) : 0;
+    }
+
+    // ===== Boot after login =====
     (async function boot() {
       try {
         await ensureAnonAuth();
 
+        // 기본 선수 로딩
         defaultPlayers = await loadDefaultPlayers();
         currentPlayers = [...defaultPlayers];
 
+        // 실시간: 추가 선수 로딩
         onValue(extraPlayersRef, (snapshot) => {
           extraPlayers = snapshot.val() || [];
           currentPlayers = [...defaultPlayers, ...extraPlayers];
           renderPlayerList();
         });
 
+        // 실시간: 결과
         onValue(resultsRef, (snapshot) => {
           results = snapshot.val() || {};
           if (teamList.length >= 2) createSchedule();
         });
 
-        // ✅ A) 여기서도 문자열 배열로 받음
+        // ✅ A) 실시간: 선택(문자열 배열)
         onValue(selectedRef, (snapshot) => {
           tempSelected = snapshot.val() || [];
           renderPlayerList();
-          updateModeBar();
         });
 
+        // 실시간: 팀 리스트
         onValue(teamListRef, (snapshot) => {
           teamList = snapshot.val() || [];
           if (!teamList || teamList.length < 2) {
@@ -232,35 +211,34 @@
           renderPlayerList();
         });
 
-        // 버튼 핸들러
+        // 점수 초기화
         document.getElementById("resetBtn").onclick = async () => {
           await set(resultsRef, {});
           results = {};
           createSchedule();
         };
 
+        // 선수 선택/팀/결과 초기화
         document.getElementById("clearBtn").onclick = async () => {
           tempSelected = [];
           teamList = [];
           results = {};
-          editingTeamIndex = null;
-
           await set(teamListRef, []);
-          await set(selectedRef, []);   // ✅ A) 문자열 배열
+          await set(selectedRef, []);
           await set(resultsRef, {});
-
           document.getElementById("schedule").innerHTML = "<p>2팀 이상 등록해주세요.</p>";
           document.getElementById("summary").innerHTML = "";
           renderPlayerList();
-          updateModeBar();
         };
 
+        // 추가 선수 삭제
         document.getElementById("removeAddedBtn").onclick = async () => {
           if (!confirm("추가한 선수를 모두 삭제하시겠습니까?")) return;
           extraPlayers = [];
           await set(extraPlayersRef, extraPlayers);
         };
 
+        // 선수 추가
         document.getElementById("addPlayerBtn").onclick = async () => {
           const name = document.getElementById("playerName").value.trim();
           const level = document.getElementById("playerLevel").value.trim();
@@ -278,9 +256,11 @@
           document.getElementById("playerLevel").value = "";
         };
 
+        // 이미지 저장
         document.getElementById("saveImageBtn").onclick = () => {
           const scheduleDiv = document.getElementById("scheduleTable");
           if (!scheduleDiv) return alert("저장할 표가 없습니다.");
+
           const now = new Date(), pad = (n)=>n.toString().padStart(2,'0');
           const y=now.getFullYear(), m=pad(now.getMonth()+1), d=pad(now.getDate());
           const w=['일','월','화','수','목','금','토'][now.getDay()];
@@ -295,6 +275,7 @@
           });
         };
 
+        // 기존선수 숨김 토글
         document.getElementById("toggleDefaultBtn").onclick = () => {
           hideDefault = !hideDefault;
           renderPlayerList();
@@ -308,57 +289,16 @@
       }
     })();
 
-    // ===== Utils =====
-    function nameOnlyFromPlayerStr(playerStr){
-      return playerStr.split("(")[0].trim();
-    }
-    function levelFromPlayerStr(playerStr){
-      const m = playerStr.match(/\((\d+)\)/);
-      return m ? Number(m[1]) : 0;
-    }
-    function isPlayerInAnyTeam(nameOnly){
-      return teamList.some(t => t.names.includes(nameOnly));
-    }
-    function isPlayerInEditingTeam(nameOnly){
-      if (editingTeamIndex === null) return false;
-      const t = teamList[editingTeamIndex];
-      if (!t) return false;
-      return t.names.includes(nameOnly);
-    }
-
-    // ✅ B) 모드바 표시
-    function updateModeBar(){
-      const bar = document.getElementById("modeBar");
-      if (editingTeamIndex === null){
-        bar.style.display = "none";
-        bar.innerHTML = "";
-        return;
-      }
-      const t = teamList[editingTeamIndex];
-      const teamText = t ? `${t.names.join("/")} (${t.level})` : `#${editingTeamIndex+1}`;
-      bar.style.display = "block";
-      bar.innerHTML = `
-        팀 수정 모드: <b>${teamText}</b> → 수정할 <b>2명</b>을 다시 선택하세요.
-        <button class="mini-btn gray" id="cancelEditBtn">수정 취소</button>
-      `;
-      document.getElementById("cancelEditBtn").onclick = async () => {
-        editingTeamIndex = null;
-        tempSelected = [];
-        await set(selectedRef, []);
-        renderPlayerList();
-        updateModeBar();
-      };
-    }
-
     // ===== 렌더링 =====
     function renderPlayerList() {
       const playerList = document.getElementById("playerList");
       playerList.innerHTML = "";
 
+      // 기본 선수는 부수로 정렬, 추가 선수는 뒤에
       const sortedPlayers = [
         ...[...currentPlayers]
           .filter(p => defaultPlayers.includes(p))
-          .sort((a,b)=> levelFromPlayerStr(a) - levelFromPlayerStr(b)),
+          .sort((a,b)=> levelOnly(a) - levelOnly(b)),
         ...extraPlayers
       ];
 
@@ -369,7 +309,7 @@
         div.className = "player";
         div.textContent = playerStr;
 
-        const level = levelFromPlayerStr(playerStr);
+        const level = levelOnly(playerStr);
         if (level <= 6) div.classList.add("lv4to6");
         else if (level <= 9) div.classList.add("lv7to9");
         else if (level <= 12) div.classList.add("lv10to12");
@@ -377,72 +317,51 @@
 
         if (!defaultPlayers.includes(playerStr)) div.classList.add("new-player");
 
-        const nm = nameOnlyFromPlayerStr(playerStr);
-        const inTeam = isPlayerInAnyTeam(nm);
+        // ✅ 팀에 이미 포함된 선수는 선택 표시(기존 동작 유지)
+        const nm = nameOnly(playerStr);
+        const isInTeam = teamList.some(team => team.names.includes(nm));
 
-        // ✅ A) 선택 판정: 인덱스가 아니라 문자열로
-        if (tempSelected.includes(playerStr) || inTeam) div.classList.add("selected");
+        // ✅ A) 선택 기준: 문자열 배열로 동기화
+        if (tempSelected.includes(playerStr) || isInTeam) div.classList.add("selected");
 
-        // ✅ B) 이미 다른 팀에 들어간 선수는 선택 잠금(단, 수정모드에서 해당 팀 선수는 허용)
-        const locked = inTeam && !isPlayerInEditingTeam(nm);
-        if (locked) div.classList.add("locked");
-
-        div.onclick = () => {
-          if (locked) return;
-          togglePlayer(playerStr);
-        };
-
+        div.onclick = () => togglePlayer(playerStr);
         playerList.appendChild(div);
       });
     }
 
-    // ===== ✅ A) 선택/팀 구성(문자열 기반) + ✅ B) 수정모드 =====
+    // ===== ✅ A) 선택/팀 구성 (문자열 기반) =====
     async function togglePlayer(playerStr) {
       if (tempSelected.includes(playerStr)) {
         tempSelected = tempSelected.filter(p => p !== playerStr);
       } else {
         tempSelected = [...tempSelected, playerStr];
 
+        // 2명 선택되면 팀 등록
         if (tempSelected.length === 2) {
           const players = tempSelected.map(txt => ({
-            name: nameOnlyFromPlayerStr(txt),
-            level: levelFromPlayerStr(txt)
+            name: nameOnly(txt),
+            level: levelOnly(txt)
           }));
 
-          const newTeam = { names: players.map(p => p.name), level: players[0].level + players[1].level };
+          const newTeam = {
+            names: players.map(p => p.name),
+            level: players[0].level + players[1].level
+          };
 
-          // ✅ B) 수정모드면 팀 교체, 아니면 팀 추가
-          if (editingTeamIndex !== null) {
-            // 해당 팀 관련 결과만 삭제(인덱스는 그대로)
-            const idx = editingTeamIndex;
-            const newResults = { ...results };
-            Object.keys(newResults).forEach(k => {
-              const [a,b] = k.split("-").map(Number);
-              if (a === idx || b === idx) delete newResults[k];
-            });
-            results = newResults;
-            await set(resultsRef, results);
-
-            teamList = teamList.map((t,i) => i === idx ? newTeam : t);
-            await set(teamListRef, teamList);
-
-            editingTeamIndex = null;
-          } else {
-            teamList = [...teamList, newTeam];
-            await set(teamListRef, teamList);
-          }
+          teamList = [...teamList, newTeam];
+          await set(teamListRef, teamList);
 
           tempSelected = [];
+          renderPlayerList();
+          createSchedule();
         }
       }
 
+      // ✅ A) 선택 상태는 문자열 배열로 저장
       await set(selectedRef, tempSelected);
-      renderPlayerList();
-      createSchedule();
-      updateModeBar();
     }
 
-    // ===== 리그 표/요약 + ✅ B) 팀 삭제/수정 버튼 =====
+    // ===== 리그 표/요약 =====
     function createSchedule() {
       const container = document.getElementById("schedule");
       if (!teamList || teamList.length < 2) {
@@ -452,26 +371,11 @@
       }
 
       let html = "<div id='scheduleTable'><table><tr><th>팀</th>";
-      teamList.forEach((t, idx) => {
-        html += `<th>
-          ${t.names.join("/")} (${t.level})
-          <div style="margin-top:6px">
-            <button class="mini-btn" onclick="startEditTeam(${idx})">수정</button>
-            <button class="mini-btn danger" onclick="deleteTeam(${idx})">삭제</button>
-          </div>
-        </th>`;
-      });
+      teamList.forEach(t => { html += `<th>${t.names.join("/")} (${t.level})</th>`; });
       html += "</tr>";
 
       teamList.forEach((t1, i) => {
-        html += `<tr><th>
-          ${t1.names.join("/")} (${t1.level})
-          <div style="margin-top:6px">
-            <button class="mini-btn" onclick="startEditTeam(${i})">수정</button>
-            <button class="mini-btn danger" onclick="deleteTeam(${i})">삭제</button>
-          </div>
-        </th>`;
-
+        html += `<tr><th>${t1.names.join("/")} (${t1.level})</th>`;
         teamList.forEach((t2, j) => {
           if (i === j) html += "<td>X</td>";
           else {
@@ -485,7 +389,7 @@
       html += "</table></div>";
       container.innerHTML = html;
 
-      // 요약 표(승/세트)
+      // 요약 표
       let wins = Array(teamList.length).fill(0);
       let sets = Array(teamList.length).fill(0);
 
@@ -514,58 +418,12 @@
       document.getElementById("summary").innerHTML = summaryHtml;
     }
 
-    // ✅ B) 팀 삭제: 팀 제거 + 결과 키 재매핑 + 선택 초기화
-    window.deleteTeam = async (idx) => {
-      if (!teamList[idx]) return;
-      const txt = teamList[idx].names.join("/") + ` (${teamList[idx].level})`;
-      if (!confirm(`이 팀을 삭제할까요?\n\n${txt}\n\n(해당 팀 관련 결과는 삭제됩니다)`)) return;
-
-      // 1) teamList에서 제거
-      const newTeamList = teamList.filter((_,i)=> i !== idx);
-
-      // 2) results 재매핑 (인덱스가 앞으로 당겨지므로 키 재계산)
-      const newResults = {};
-      Object.entries(results).forEach(([k,v]) => {
-        const [a,b] = k.split("-").map(Number);
-        if (a === idx || b === idx) return; // 삭제된 팀 관련 결과 제거
-
-        const na = a > idx ? a - 1 : a;
-        const nb = b > idx ? b - 1 : b;
-        newResults[`${na}-${nb}`] = v;
-      });
-
-      teamList = newTeamList;
-      results = newResults;
-
-      // 선택도 초기화
-      tempSelected = [];
-      editingTeamIndex = null;
-
-      await set(teamListRef, teamList);
-      await set(resultsRef, results);
-      await set(selectedRef, []);
-
-      renderPlayerList();
-      createSchedule();
-      updateModeBar();
-    };
-
-    // ✅ B) 팀 수정 시작: 수정 모드 ON + 선택 초기화(2명 다시 고르면 교체)
-    window.startEditTeam = async (idx) => {
-      if (!teamList[idx]) return;
-      editingTeamIndex = idx;
-      tempSelected = [];
-      await set(selectedRef, []);
-      renderPlayerList();
-      updateModeBar();
-      alert("팀 수정 모드입니다.\n수정할 선수 2명을 다시 선택하세요.");
-    };
-
     // ===== 팝업/점수 입력 =====
     window.openPopup = (matchKey) => {
       const popup = document.getElementById("popup");
       const popupText = document.getElementById("popupText");
       const scoreButtons = document.getElementById("scoreButtons");
+
       popupText.textContent = "해당 경기의 점수를 선택하세요";
 
       const scores = ["3-0","3-1","3-2","2-0","2-1"];
@@ -597,7 +455,6 @@
       const [a,b] = score.split("-").map(Number);
       return `${b}-${a}`;
     }
-
   </script>
 </body>
 </html>
