@@ -381,6 +381,15 @@ let teamNames = [], teamData = {};
 let autoMode = -1; 
 const modeNames = ["실력매칭(고수 우선)", "조합매칭(강·약 조합)"];
 
+if (!window.__doublesHistory) {
+  window.__doublesHistory = {
+    usedPairsA: new Set(),
+    usedPairsB: new Set(),
+    usedVersus: new Set(),
+    usedPlayersA: new Map(),
+    usedPlayersB: new Map(),
+  };
+}
 
 
 /* ---------------- 비밀번호 확인 ---------------- */
@@ -768,6 +777,108 @@ function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
 function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
 function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
+// ✅ [추가] 전원출전(need*2==인원)일 때 가능한 "완전 매칭" 후보 생성
+function allPerfectMatchings(indices) {
+  // indices: [0,1,2,3,...]
+  if (indices.length === 0) return [[]];
+  const res = [];
+  const first = indices[0];
+  for (let i = 1; i < indices.length; i++) {
+    const pair = [first, indices[i]];
+    const rest = indices.slice(1, i).concat(indices.slice(i + 1));
+    for (const sub of allPerfectMatchings(rest)) {
+      res.push([pair, ...sub]);
+    }
+  }
+  return res;
+}
+
+// ✅ [추가] 모드 선호도 점수(낮을수록 그 모드에 더 "가깝다")
+// - mode 0: 실력매칭 성격(인접한 인덱스끼리) 선호 → |i-j| 합이 작을수록 좋음
+// - mode 1: 조합매칭 성격(강+약) 선호 → mixedFilter를 만족하는 페어가 많을수록 좋음
+function modePreferenceScore(pairs, n, mode) {
+  if (mode === 0) {
+    // 인접 선호: gap 합이 작을수록 좋음
+    return pairs.reduce((sum, [i,j]) => sum + Math.abs(i - j), 0);
+  } else {
+    // 강+약 조합 선호: mixedFilter 만족 못하면 큰 벌점
+    let bad = 0;
+    for (const [i,j] of pairs) {
+      if (!mixedFilter(i, j, n)) bad += 1;
+    }
+    // bad가 0이면 최고, bad가 많으면 나쁨
+    return bad * 1000;
+  }
+}
+
+
+// ✅ [추가] 전원출전 케이스에서 "최적 라운드" 선택
+function pickBestFullParticipationRound(SA, SB, need, mode, history) {
+  const n = SA.length; // = SB.length, = need*2
+  const idx = Array.from({length:n}, (_,i)=>i);
+
+  // 모든 완전 매칭 후보 생성
+  let candA = allPerfectMatchings(idx);
+  let candB = allPerfectMatchings(idx);
+
+  // 모드 선호도 점수로 정렬 + 후보 수 제한(속도 안전장치)
+  candA.sort((x,y)=>modePreferenceScore(x,n,mode) - modePreferenceScore(y,n,mode));
+  candB.sort((x,y)=>modePreferenceScore(x,n,mode) - modePreferenceScore(y,n,mode));
+
+  const MAX = 60; // ✅ 필요시 40~120 범위로 조절
+  candA = candA.slice(0, Math.min(MAX, candA.length));
+  candB = candB.slice(0, Math.min(MAX, candB.length));
+
+  // A후보 x B후보 조합 중 scoreRound가 최소인 것 선택
+  let best = null;
+  let bestScore = Infinity;
+
+  for (const ra of candA) {
+    for (const rb of candB) {
+      const sc = scoreRound(SA, SB, ra, rb, history);
+      if (sc < bestScore) {
+        bestScore = sc;
+        best = { ra, rb };
+      }
+    }
+  }
+
+  return best; // {ra, rb} 또는 null
+}
+
+
+// ✅ 3단계: 라운드 점수(균형 + 중복 페널티) 계산
+function scoreRound(SA, SB, roundA, roundB, history) {
+  const pairsA = roundA.map(([i,j]) => {
+    const p1 = SA[i], p2 = SA[j];
+    return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name) };
+  }).sort((x,y)=>x.sum - y.sum);
+
+  const pairsB = roundB.map(([i,j]) => {
+    const p1 = SB[i], p2 = SB[j];
+    return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name) };
+  }).sort((x,y)=>x.sum - y.sum);
+
+  let score = 0;
+
+  for (let k=0; k<pairsA.length; k++) {
+    const a = pairsA[k], b = pairsB[k];
+
+    // 1) 균형: diff 작을수록 좋음
+    score += Math.abs(a.sum - b.sum);
+
+    // 2) 중복 페널티(재사용이면 벌점)
+    if (history.usedPairsA.has(a.key)) score += 100;
+    if (history.usedPairsB.has(b.key)) score += 100;
+
+    const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+    if (history.usedVersus.has(vKey)) score += 150;
+  }
+
+  return score;
+}
+
+
 function greedyMatchPairs(
   pairsA, pairsB, need,
   usedPlayersA, usedPlayersB,
@@ -840,6 +951,23 @@ function greedyMatchPairs(
   return res;
 }
 
+function buildRoundRobinPairRounds(n) {
+  const rounds = [];
+  let arr = Array.from({length:n}, (_,i)=>i);
+
+  for (let r = 0; r < n - 1; r++) {
+    const pairs = [];
+    for (let i = 0; i < n/2; i++) {
+      pairs.push([arr[i], arr[n-1-i]]);
+    }
+    rounds.push(pairs);
+
+    // 원형 회전: 첫 번째는 고정, 나머지 회전
+    arr = [arr[0], arr[n-1], ...arr.slice(1, n-1)];
+  }
+  return rounds;
+}
+
 
 /* =========================================================
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
@@ -860,71 +988,71 @@ function generateDoublesPairsByMode(A, B, need, mode) {
   const nA = SA.length, nB = SB.length;
 
 
+/* ------------------------------------------------------
+    ✅ 2) 전원출전 조건 (4명–4명, 6명–6명 등)
+       복식 need × 2 = 인원수일 때
+       - 경기 균형(차이 최소) + 중복 최소(history 페널티)
+------------------------------------------------------ */
+if (need * 2 === SA.length && need * 2 === SB.length) {
+  const history = window.__doublesHistory || {
+    usedPairsA: new Set(),
+    usedPairsB: new Set(),
+    usedVersus: new Set(),
+    usedPlayersA: new Map(),
+    usedPlayersB: new Map(),
+  };
+  window.__doublesHistory = history;
 
-  /* ------------------------------------------------------
-      ✅ 2) 전원출전 조건 (4명–4명, 6명–6명 등)
-         복식 need × 2 = 인원수일 때
-  ------------------------------------------------------ */
-  if (need * 2 === SA.length && need * 2 === SB.length) {
+  // ✅ 최적 라운드 선택
+  const picked = pickBestFullParticipationRound(SA, SB, need, mode, history);
+
+  // 혹시 후보 선택 실패하면(거의 없음) 기존 고정 로직으로 fallback
+  if (!picked) {
     const result = [];
-
     if (mode === 0) {
-      // ✅ 실력매칭: (0,1), (2,3) --- 순서대로 짝
       for (let i = 0; i < need; i++) {
-        result.push({
-          a1: SA[i*2], a2: SA[i*2+1],
-          b1: SB[i*2], b2: SB[i*2+1]
-        });
+        result.push({ a1: SA[i*2], a2: SA[i*2+1], b1: SB[i*2], b2: SB[i*2+1] });
       }
     } else {
-      // ✅ 조합매칭: (0,n-1), (1,n-2) --- 강약 조합
       const n = SA.length;
       for (let i = 0; i < need; i++) {
-        result.push({
-          a1: SA[i], a2: SA[n - 1 - i],
-          b1: SB[i], b2: SB[n - 1 - i]
-        });
+        result.push({ a1: SA[i], a2: SA[n-1-i], b1: SB[i], b2: SB[n-1-i] });
       }
     }
-
-    return result;   // ✅ 여기서 바로 종료 (아래 로직 절대 실행 X)
+    return result;
   }
 
+  // picked.ra / picked.rb 는 [[i,j],[i,j],...]
+  // 경기 균형을 위해 "합이 작은 페어끼리 매칭" 되도록 정렬
+  const pairsA = picked.ra.map(([i,j]) => ({
+    i, j,
+    p1: SA[i], p2: SA[j],
+    sum: SA[i].level + SA[j].level,
+    key: pairKeySorted(SA[i].name, SA[j].name),
+  })).sort((x,y)=>x.sum - y.sum);
 
+  const pairsB = picked.rb.map(([i,j]) => ({
+    i, j,
+    p1: SB[i], p2: SB[j],
+    sum: SB[i].level + SB[j].level,
+    key: pairKeySorted(SB[i].name, SB[j].name),
+  })).sort((x,y)=>x.sum - y.sum);
 
-  /* ------------------------------------------------------
-      ✅ 3) 4명 vs 3명 전용 규칙 (2복일 때만)
-         — 성용님 문제의 핵심 해결 구간 —
-         — 중복 0% / 전원출전 100% 보장 —
-  ------------------------------------------------------ */
-  if (need === 2 && SA.length === 4 && SB.length === 3) {
+  const result = [];
+  for (let k=0; k<need; k++) {
+    const a = pairsA[k], b = pairsB[k];
+    result.push({ a1: a.p1, a2: a.p2, b1: b.p1, b2: b.p2 });
 
-      // ✅ B팀 조합 3개뿐
-      const combos = [
-          [ [0,1], [1,2] ],   // B1-B2 / B2-B3
-          [ [0,1], [0,2] ],   // B1-B2 / B1-B3
-          [ [0,2], [1,2] ],   // B1-B3 / B2-B3
-      ];
-
-      // ✅ 로테이션으로 0→1→2→0→1→2 순환
-      if (!window.__rot43) window.__rot43 = 0;
-      const choice = combos[window.__rot43 % 3];
-      window.__rot43++;
-
-      // ✅ A팀은 전원출전 (0,1) , (2,3)
-      const result = [];
-      result.push({
-        a1: SA[0], a2: SA[1],
-        b1: SB[choice[0][0]], b2: SB[choice[0][1]]
-      });
-      result.push({
-        a1: SA[2], a2: SA[3],
-        b1: SB[choice[1][0]], b2: SB[choice[1][1]]
-      });
-
-      return result;
+    // ✅ history 기록(다음 자동생성 때 중복 페널티가 실제로 작동)
+    history.usedPairsA.add(a.key);
+    history.usedPairsB.add(b.key);
+    history.usedVersus.add(versusKey(a.p1, a.p2, b.p1, b.p2));
   }
 
+  return result; // ✅ 여기서 종료
+}
+
+ 
 
 
   /* ------------------------------------------------------
