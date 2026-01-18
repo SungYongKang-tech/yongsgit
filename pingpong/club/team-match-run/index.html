@@ -1053,89 +1053,128 @@ if (need * 2 === SA.length && need * 2 === SB.length) {
 }
 
  
-
-
   /* ------------------------------------------------------
-      ✅ 4) 그 외 일반 케이스는 기존 greedy 로직 사용
+      ✅ 4) 그 외 일반 케이스: 균형 + 중복 최소화 (개선본)
   ------------------------------------------------------ */
 
-  // 기본 조합 생성
-  function computeBasePairs(arr, mode) {
-    const n = arr.length;
-    let pairs = [];
+  const history = window.__doublesHistory || {
+    usedPairsA: new Set(),
+    usedPairsB: new Set(),
+    usedVersus: new Set(),
+    usedPlayersA: new Map(),
+    usedPlayersB: new Map(),
+  };
+  window.__doublesHistory = history;
 
-    if (mode === 0) {
-      // 실력매칭: 인접한 선수끼리
-      for (let i=0; i+1<n; i+=2) pairs.push([i, i+1]);
-    } else {
-      // 조합매칭: 상위+하위 섞기
-      for (let i=0; i<n; i++) {
-        for (let j=i+1; j<n; j++) {
-          const strongI = i < Math.floor(n/2);
-          const strongJ = j < Math.floor(n/2);
-          if (strongI !== strongJ) pairs.push([i,j]);
+  // ✅ 후보 페어를 "전부" 생성 (실력매칭이어도 후보는 넓게, 선택은 균형점수로)
+  const pairsA = allTeamPairs(SA);
+  const pairsB = allTeamPairs(SB);
+
+  // ✅ 선수별 최대 출전 허용치(필수 중복은 허용하되, 골고루)
+  // 예: 4명, 복식 4경기 → 총 출전슬롯 8 → 1인당 최대 2회가 목표
+  const maxA = Math.ceil((need * 2) / SA.length);
+  const maxB = Math.ceil((need * 2) / SB.length);
+
+  const countA = new Map(SA.map(p => [p.name, 0]));
+  const countB = new Map(SB.map(p => [p.name, 0]));
+
+  const usedPairsA_local = new Set();
+  const usedPairsB_local = new Set();
+  const usedVersus_local = new Set();
+
+  function canUsePair(p1, p2, counts, maxPerPlayer) {
+    return (counts.get(p1.name) < maxPerPlayer) && (counts.get(p2.name) < maxPerPlayer);
+  }
+
+  function pickOne(allowOverMax = false) {
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const a of pairsA) {
+      const aKey = pairKeySorted(a.p1.name, a.p2.name);
+
+      // 같은 팀 조합 반복 강하게 회피(가능하면)
+      if (usedPairsA_local.has(aKey)) continue;
+
+      // 출전횟수 상한(가능하면 지키기)
+      if (!allowOverMax && !canUsePair(a.p1, a.p2, countA, maxA)) continue;
+
+      for (const b of pairsB) {
+        const bKey = pairKeySorted(b.p1.name, b.p2.name);
+
+        if (usedPairsB_local.has(bKey)) continue;
+        if (!allowOverMax && !canUsePair(b.p1, b.p2, countB, maxB)) continue;
+
+        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+
+        // 완전 동일 대진 반복 회피
+        if (usedVersus_local.has(vKey)) continue;
+
+        // ===== 점수 계산(낮을수록 좋음) =====
+        let score = 0;
+
+        // 1) 경기 균형: 합 차이 최소
+        score += Math.abs(a.sum - b.sum);
+
+        // 2) 과거(history) 중복 페널티(다음 자동생성 때도 중복 줄이기)
+        if (history.usedPairsA.has(aKey)) score += 120;
+        if (history.usedPairsB.has(bKey)) score += 120;
+        if (history.usedVersus.has(vKey)) score += 180;
+
+        // 3) 모드 성향(너무 강제하지 말고 “가산점/벌점” 정도로만)
+        if (mode === 0) {
+          // 실력매칭: 같은 팀 내에서도 비슷한 급끼리(인덱스 가까운 조합) 약간 선호
+          score += 0.3 * (Math.abs(a.i - a.j) + Math.abs(b.i - b.j));
+        } else {
+          // 조합매칭: 강+약 조합 선호(안 맞으면 약간 벌점)
+          if (!mixedFilter(a.i, a.j, SA.length)) score += 8;
+          if (!mixedFilter(b.i, b.j, SB.length)) score += 8;
+        }
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = { a, b, aKey, bKey, vKey };
         }
       }
     }
 
-    // 조합이 하나도 안 나오면 모든 조합 사용
-    if (pairs.length === 0) {
-      for (let i=0; i<n; i++)
-        for (let j=i+1; j<n; j++)
-          pairs.push([i,j]);
-    }
-
-    return pairs;
+    return best;
   }
-
-  const baseA = computeBasePairs(SA, mode);
-  const baseB = computeBasePairs(SB, mode);
-
-  const usedA = new Map(SA.map(p=>[p.name,0]));
-  const usedB = new Map(SB.map(p=>[p.name,0]));
-
-  if (!window.__rotA2) window.__rotA2 = 0;
-  if (!window.__rotB2) window.__rotB2 = 0;
 
   const result = [];
+  while (result.length < need) {
+    // 1차: 출전횟수 상한 지키면서 선택
+    let best = pickOne(false);
 
-  for (let k=0; k<need; k++) {
+    // 2차(불가피): 상한을 잠시 풀고라도 중복 최소로 채우기
+    if (!best) best = pickOne(true);
 
-    const sortedA = [...baseA].sort((a,b)=>{
-      const aMin = Math.min(usedA.get(SA[a[0]].name), usedA.get(SA[a[1]].name));
-      const bMin = Math.min(usedA.get(SA[b[0]].name), usedA.get(SA[b[1]].name));
-      return aMin - bMin;
-    });
+    // 더 이상 조합이 없으면 종료
+    if (!best) break;
 
-    const sortedB = [...baseB].sort((a,b)=>{
-      const aMin = Math.min(usedB.get(SB[a[0]].name), usedB.get(SB[a[1]].name));
-      const bMin = Math.min(usedB.get(SB[b[0]].name), usedB.get(SB[b[1]].name));
-      return aMin - bMin;
-    });
+    result.push({ a1: best.a.p1, a2: best.a.p2, b1: best.b.p1, b2: best.b.p2 });
 
-    const pA = sortedA[(k + window.__rotA2) % sortedA.length];
-    const pB = sortedB[(k + window.__rotB2) % sortedB.length];
+    // 로컬 중복 기록
+    usedPairsA_local.add(best.aKey);
+    usedPairsB_local.add(best.bKey);
+    usedVersus_local.add(best.vKey);
 
-    const [ai, aj] = pA;
-    const [bi, bj] = pB;
+    // 선수 출전 카운트
+    countA.set(best.a.p1.name, countA.get(best.a.p1.name) + 1);
+    countA.set(best.a.p2.name, countA.get(best.a.p2.name) + 1);
+    countB.set(best.b.p1.name, countB.get(best.b.p1.name) + 1);
+    countB.set(best.b.p2.name, countB.get(best.b.p2.name) + 1);
 
-    const a1 = SA[ai], a2 = SA[aj];
-    const b1 = SB[bi], b2 = SB[bj];
-
-    result.push({ a1, a2, b1, b2 });
-
-    usedA.set(a1.name, usedA.get(a1.name)+1);
-    usedA.set(a2.name, usedA.get(a2.name)+1);
-    usedB.set(b1.name, usedB.get(b1.name)+1);
-    usedB.set(b2.name, usedB.get(b2.name)+1);
+    // history에도 기록(다음 번 자동생성에서 중복 페널티 작동)
+    history.usedPairsA.add(best.aKey);
+    history.usedPairsB.add(best.bKey);
+    history.usedVersus.add(best.vKey);
   }
 
-  window.__rotA2++;
-  window.__rotB2++;
-
   return result;
-}
 
+}
+  
 
 
 
