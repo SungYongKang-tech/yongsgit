@@ -92,6 +92,8 @@
   </div>
 
   <div id="schedule" class="scroll-table"></div>
+  <div id="standings" class="scroll-table" style="margin-top:12px;"></div>
+
 
   <div id="popup">
     <p id="popupText"></p>
@@ -242,8 +244,32 @@
         renderPlayers();
       };
 
+      document.getElementById("saveImageBtn").onclick = async () => {
+  const target = document.getElementById("scheduleTable");
+  if (!target) return alert("저장할 표가 없습니다. 선수 2명 이상 선택하세요.");
+
+  // 스크롤 영역 안에서도 표 전체 캡처되도록 약간의 옵션
+  const canvas = await html2canvas(target, {
+    backgroundColor: "#ffffff",
+    scale: 2,
+    useCORS: true
+  });
+
+  const link = document.createElement("a");
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  link.download = `KOEN_단식리그_${yyyy}${mm}${dd}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+};
+
     })();
 
+function escQuote(s){
+  return String(s).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+}
 
     // =====================================================
     //   렌더링: 선수 목록
@@ -299,30 +325,39 @@
     //   스케줄 테이블 생성
     // =====================================================
     function renderSchedule() {
-      const list = selected.filter(x => currentPlayers.includes(x));
+  const list = selected.filter(x => currentPlayers.includes(x));
 
-      if (list.length < 2) {
-        schedule.innerHTML = "<p>2명 이상 선택하세요</p>";
-        return;
-      }
+  if (list.length < 2) {
+    schedule.innerHTML = "<p>2명 이상 선택하세요</p>";
+    const st = document.getElementById("standings");
+    if (st) st.innerHTML = "";
+    return;
+  }
 
-      let html = "<div id='scheduleTable'><table><tr><th>구분</th>";
+  let html = "<div id='scheduleTable'><table><tr><th>구분</th>";
 
-      list.forEach(p => { html += `<th>${p}</th>`; });
-      html += "</tr>";
+  list.forEach(p => { html += `<th>${p}</th>`; });
+  html += "</tr>";
 
-      list.forEach((a, i) => {
-        html += `<tr><th>${a}</th>`;
-        list.forEach((b, j) => {
-          const val = (i === j) ? "X" : (results?.[`${a}__${b}`] || "");
-          html += `<td onclick="openPopup('${a}','${b}')">${val}</td>`;
-        });
-        html += "</tr>";
-      });
+  list.forEach((a, i) => {
+    html += `<tr><th>${a}</th>`;
+    list.forEach((b, j) => {
+      const isSelf = (i === j);
+      const val = isSelf ? "X" : (results?.[`${a}__${b}`] || "");
+      html += isSelf
+        ? `<td>${val}</td>`
+        : `<td onclick="openPopup('${escQuote(a)}','${escQuote(b)}')">${val}</td>`;
+    });
+    html += "</tr>";
+  });
 
-      html += "</table></div>";
-      schedule.innerHTML = html;
-    }
+  html += "</table></div>";
+  schedule.innerHTML = html;
+
+  // 👇 이 줄이 성적표를 실제로 그려주는 핵심
+  renderStandings(list);
+}
+
 
 
     // =====================================================
@@ -355,6 +390,93 @@
     };
 
     window.closePopup = () => popup.style.display = "none";
+
+    function computeStandings(list) {
+  // list: 선택된 선수 id 배열
+  const stats = {};
+  list.forEach(p => {
+    stats[p] = { p, gp:0, w:0, l:0, setFor:0, setAgainst:0 };
+  });
+
+  // a__b 형태 결과만 집계 (중복 방지 위해 i<j만)
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      const s = results?.[`${a}__${b}`];   // 예: "3-1"
+      if (!s || s === "0-0") continue;
+
+      const m = String(s).match(/^(\d+)-(\d+)$/);
+      if (!m) continue;
+
+      const x = Number(m[1]);
+      const y = Number(m[2]);
+
+      // 경기수
+      stats[a].gp++; stats[b].gp++;
+
+      // 승패
+      if (x > y) { stats[a].w++; stats[b].l++; }
+      else if (x < y) { stats[b].w++; stats[a].l++; }
+      // 동점은 거의 없지만 혹시 있으면 승패 미반영
+
+      // 득실(세트 득/실)
+      stats[a].setFor += x; stats[a].setAgainst += y;
+      stats[b].setFor += y; stats[b].setAgainst += x;
+    }
+  }
+
+  // 정렬: 승수 desc → 득실차 desc → 득점 desc
+  const rows = Object.values(stats).map(o => ({
+    ...o,
+    diff: o.setFor - o.setAgainst,
+    winRate: (o.gp ? (o.w / o.gp) : 0)
+  }));
+
+  rows.sort((r1, r2) =>
+    (r2.w - r1.w) ||
+    (r2.diff - r1.diff) ||
+    (r2.setFor - r1.setFor) ||
+    (r1.p.localeCompare(r2.p, "ko"))
+  );
+
+  // 순위 부여(동률 공동순위 처리 간단버전)
+  rows.forEach((r, idx) => r.rank = idx + 1);
+
+  return rows;
+}
+
+function renderStandings(list){
+  const wrap = document.getElementById("standings");
+  if (!wrap) return;
+
+  const rows = computeStandings(list);
+  if (!rows.length) {
+    wrap.innerHTML = "<p>성적표를 표시할 데이터가 없습니다.</p>";
+    return;
+  }
+
+  let html = "<div id='standingsTable'><table>";
+  html += "<tr><th>순위</th><th>선수</th><th>경기</th><th>승</th><th>패</th><th>승률</th><th>득</th><th>실</th><th>득실</th></tr>";
+
+  rows.forEach(r => {
+    const rate = (r.gp ? (r.w / r.gp * 100) : 0).toFixed(1) + "%";
+    html += `<tr>
+      <td>${r.rank}</td>
+      <td>${r.p}</td>
+      <td>${r.gp}</td>
+      <td>${r.w}</td>
+      <td>${r.l}</td>
+      <td>${rate}</td>
+      <td>${r.setFor}</td>
+      <td>${r.setAgainst}</td>
+      <td>${r.diff}</td>
+    </tr>`;
+  });
+
+  html += "</table></div>";
+  wrap.innerHTML = html;
+}
+
 
   </script>
 
