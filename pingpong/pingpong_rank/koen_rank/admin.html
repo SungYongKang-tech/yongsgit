@@ -308,24 +308,18 @@ document.addEventListener("DOMContentLoaded", () => {
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 
 
-// ✅ 지난달 전적 전체 삭제 (1월/연말 버그 해결 버전)
+// ✅ 지난달 전적 전체 삭제 (1월/연말 버그 해결 + 리포트도 삭제)
 document.addEventListener("DOMContentLoaded", () => {
   const btnPrev = document.getElementById("deletePrevMonth");
   if (!btnPrev) return;
-
-  // monthKey 유틸(혹시 위에 이미 있으면 중복 선언은 하지 마세요)
-  const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 
   btnPrev.addEventListener("click", async () => {
     if (!confirm("⚠️ 정말 지난달 경기결과를 전부 삭제하시겠습니까?\n(삭제 후 복구 불가)")) return;
 
     try {
-      // 1) 저장된 삭제 비밀번호 불러오기
-      const pwRef = ref(db, "config/deletePassword");
-      const pwSnap = await get(pwRef);
+      const pwSnap = await get(ref(db, "config/deletePassword"));
       const savedPw = pwSnap.exists() ? String(pwSnap.val()) : "7910";
 
-      // 2) 입력받기
       const input = prompt("삭제 비밀번호를 입력하세요.");
       if (input === null) return;
       if (input.trim() !== savedPw.trim()) {
@@ -333,12 +327,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 3) 지난달 monthKey 계산 (연말/1월 자동 처리)
       const now = new Date();
       const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const prevMonth = monthKey(prev);
 
-      // 4) matches 전체 조회 후 지난달만 삭제
       const matchesRef = ref(db, "matches");
       const snapshot = await get(matchesRef);
       const data = snapshot.val() || {};
@@ -351,13 +343,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      toast(`✅ ${prevMonth} 전적 ${count}건 삭제 완료`);
+      // ✅ 월간리포트(캐시/집계)도 같이 삭제
+      await remove(ref(db, `monthlyReports/${prevMonth}`));
+
+      toast(`✅ ${prevMonth} 전적 ${count}건 + 리포트 삭제 완료`);
     } catch (err) {
       console.error(err);
       alert("⚠️ 삭제 중 오류가 발생했습니다.");
     }
   });
 });
+
 
 
 </script>
