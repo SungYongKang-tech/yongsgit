@@ -75,13 +75,6 @@ button:hover {
   transform: translateY(-2px);
 }
 
-/* 버튼 그룹 간 간격 */
-.btn-group {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-
 /* ===== 생성 버튼 (초록색) ===== */
 .btn-generate {
   font-size: 18px;     
@@ -775,70 +768,66 @@ function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
 function pairKeySorted(n1, n2) { return [n1, n2].sort().join('/'); }
 function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
-function greedyMatchPairs(pairsA, pairsB, need, usedPlayersA, usedPlayersB, usedPairsA, usedPairsB, usedVersus, allowDuplicates = false, lockedPairs = new Set()) {
+function greedyMatchPairs(
+  pairsA, pairsB, need,
+  usedPlayersA, usedPlayersB,
+  usedPairsA, usedPairsB, usedVersus,
+  allowDuplicates = false,
+  lockedPairs = new Set()
+) {
   const res = [];
 
   while (res.length < need) {
     let best = null;
-    let bestDiff = Infinity;
+
+    // ✅ 모드에 따라 bestDiff 초기값이 달라야 함
+    let bestDiff = (window.currentDoublesMode === 0) ? Infinity : -Infinity;
 
     for (const a of pairsA) {
       const aPlayers = [a.p1.name, a.p2.name];
       const aKey = pairKeySorted(a.p1.name, a.p2.name);
 
-      // A팀 동일 조합 방지
       if ((!allowDuplicates && usedPairsA.has(aKey)) || lockedPairs.has(aKey)) continue;
-
-      // 선수 개별 중복 방지
       if (!allowDuplicates && (usedPlayersA.has(aPlayers[0]) || usedPlayersA.has(aPlayers[1]))) continue;
 
       for (const b of pairsB) {
         const bPlayers = [b.p1.name, b.p2.name];
         const bKey = pairKeySorted(b.p1.name, b.p2.name);
 
-        // B팀 동일 조합 방지
         if ((!allowDuplicates && usedPairsB.has(bKey)) || lockedPairs.has(bKey)) continue;
-
-        // 선수 개별 중복 방지
         if (!allowDuplicates && (usedPlayersB.has(bPlayers[0]) || usedPlayersB.has(bPlayers[1]))) continue;
 
-        // 동일 상대 조합 방지
         const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
         if ((!allowDuplicates && usedVersus.has(vKey)) || lockedPairs.has(vKey)) continue;
 
-       // ✅ 여기 diff 계산부 전체 교체
-let diff;
+        const diff = Math.abs(a.sum - b.sum);
 
-if (window.currentDoublesMode === 0) {
-    diff = Math.abs(a.sum - b.sum);  // 실력매칭 = 차이 적은 조합 우선
-} else {
-    diff = -Math.abs(a.sum - b.sum); // 조합매칭 = 차이 큰 조합 우선
-}
-
-if (diff < bestDiff) {
-    bestDiff = diff;
-    best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
-}
-
+        if (window.currentDoublesMode === 0) {
+          // ✅ 실력매칭: diff 최소
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
+          }
+        } else {
+          // ✅ 조합매칭: diff 최대
+          if (diff > bestDiff) {
+            bestDiff = diff;
+            best = { a, b, aPlayers, bPlayers, aKey, bKey, vKey };
+          }
+        }
       }
     }
 
-    if (!best) break; // 더 이상 조합이 없으면 종료
+    if (!best) break;
 
-    // 확정
-    res.push({
-      a1: best.a.p1, a2: best.a.p2,
-      b1: best.b.p1, b2: best.b.p2
-    });
+    res.push({ a1: best.a.p1, a2: best.a.p2, b1: best.b.p1, b2: best.b.p2 });
 
-    // 사용 기록
-    best.aPlayers.forEach(name => usedPlayersA.add(name));
-    best.bPlayers.forEach(name => usedPlayersB.add(name));
+    best.aPlayers.forEach(n => usedPlayersA.add(n));
+    best.bPlayers.forEach(n => usedPlayersB.add(n));
     usedPairsA.add(best.aKey);
     usedPairsB.add(best.bKey);
     usedVersus.add(best.vKey);
 
-    // 첫 두 경기 확정 조합은 lockedPairs에 추가 → 이후 절대 재사용 불가
     if (res.length <= 2) {
       lockedPairs.add(best.aKey);
       lockedPairs.add(best.bKey);
@@ -849,46 +838,13 @@ if (diff < bestDiff) {
   return res;
 }
 
-// ✅ 전원출전(복식 경기수 × 2 == 인원 수) 완전 중복 방지 버전
-function perfectFullUsePairs(SA, SB, need, mode) {
-
-  // ✅ 안정 정렬 (level → name)
-  SA = [...SA].sort((a,b)=> 
-      a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
-  );
-  SB = [...SB].sort((a,b)=> 
-      a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
-  );
-
-  const n = SA.length;
-  const result = [];
-
-  if (mode === 0) {
-    // ✅ 실력매칭 : (0,1), (2,3) ...
-    for (let i = 0; i < need; i++) {
-      result.push({
-        a1: SA[i*2], a2: SA[i*2+1],
-        b1: SB[i*2], b2: SB[i*2+1]
-      });
-    }
-  } else {
-    // ✅ 조합매칭 : (0,n-1), (1,n-2) ...
-    for (let i = 0; i < need; i++) {
-      result.push({
-        a1: SA[i], a2: SA[n-1-i],
-        b1: SB[i], b2: SB[n-1-i]
-      });
-    }
-  }
-
-  return result;
-}
 
 /* =========================================================
    ✅ 복식 자동 생성 (전원출전 + 조합모드 정상 작동 완성본)
    ========================================================= */
 function generateDoublesPairsByMode(A, B, need, mode) {
 
+  window.currentDoublesMode = mode;
   /* ------------------------------------------------------
      ✅ 1) level → name 기준 안정 정렬
   ------------------------------------------------------ */
