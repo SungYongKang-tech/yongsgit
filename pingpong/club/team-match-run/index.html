@@ -8,7 +8,8 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="단체전 진행 페이지">
   <meta property="og:description" content="탁구 단체전 실시간 경기 기록 및 순위 확인">
-  <meta property="og:image" content="https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run//images/sinyubin.png">
+  <meta property="og:image" content="https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/images/sinyubin.png">
+
   <meta property="og:url" content="https://bit.ly/단체전진행">
  
    <title>단체전 진행</title>
@@ -1055,17 +1056,13 @@ function generateDoublesPairsByMode(A, B, need, mode) {
 
 /* ---------------- 경기 카드 출력 ---------------- */
 function renderMatchCard(teamA, teamB, matchList, exchangeName = "") {
-  let key = `${teamA}_vs_${teamB}`;
-const titleText = exchangeName
-  ? `${exchangeName}`
-  : `${teamA} VS ${teamB}`;
-
+  const key = `${teamA}_vs_${teamB}`;
+  const titleText = exchangeName ? `${exchangeName} (${teamA} VS ${teamB})` : `${teamA} VS ${teamB}`;
 
   let html = `
-    <div class='match-card'>
+    <div class='match-card' data-key="${key}" data-team-a="${teamA}" data-team-b="${teamB}">
       <button class="delete-btn" onclick="deleteMatch('${key}')">❌</button>
       <h3>${titleText}</h3>
-
       <table>
         <thead><tr><th>경기</th><th>출전 선수</th><th>결과</th></tr></thead>
         <tbody>
@@ -1127,10 +1124,10 @@ async function setSingles(teamA, teamB) {
   cell.innerText = `${aTxt} vs ${bTxt}`;
 
   const card = cell.closest(".match-card");
-  const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
-  const teamKey = `${aTeam}_vs_${bTeam}`;
-  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
-  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
+const teamKey = card.dataset.key;  // ✅ h3 파싱 금지!
+const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+
+await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
 
   popup.style.display = 'none';
 }
@@ -1152,10 +1149,10 @@ async function setDoubles(teamA, teamB) {
   cell.innerText = `${aTxt} vs ${bTxt}`;
 
   const card = cell.closest(".match-card");
-  const [aTeam,bTeam] = card.querySelector("h3").innerText.split(" VS ");
-  const teamKey = `${aTeam}_vs_${bTeam}`;
-  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
-  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
+const teamKey = card.dataset.key;  // ✅ h3 파싱 금지!
+const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+
+await db.ref(`matches/${teamKey}/matchList/${rowIndex}/players`).set(`${aTxt} vs ${bTxt}`);
 
   popup.style.display = 'none';
 }
@@ -1201,10 +1198,10 @@ async function setMatchResult(score) {
   cell.innerText = score;
 
   const card = cell.closest(".match-card");
-  const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
-  const teamKey = `${teamA}_vs_${teamB}`;
-  const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
-  await db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score);
+const teamKey = card.dataset.key;   // h3 안 봄
+const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
+
+await db.ref(`matches/${teamKey}/matchList/${rowIndex}/result`).set(score);
 
   popup.style.display = "none";
   calculateTeamResults();
@@ -1253,23 +1250,36 @@ function calculateTeamResults() {
   const stats = {};
   const teams = new Set();
 
+  // ✅ dataset 기반으로 팀 수집
   cards.forEach(card => {
-    const [a,b] = card.querySelector("h3").innerText.split(" VS ");
-    teams.add(a); teams.add(b);
+    const teamA = card.dataset.teamA;
+    const teamB = card.dataset.teamB;
+    if (!teamA || !teamB) return;
+    teams.add(teamA); teams.add(teamB);
   });
+
   teams.forEach(t => stats[t] = { win:0, lose:0, setDiff:0 });
 
+  // ✅ dataset 기반으로 결과 집계
   cards.forEach(card => {
-    const [teamA, teamB] = card.querySelector("h3").innerText.split(" VS ");
+    const teamA = card.dataset.teamA;
+    const teamB = card.dataset.teamB;
+    if (!teamA || !teamB) return;
+
     const rows = card.querySelectorAll("tbody tr");
     let wA=0, wB=0, sA=0, sB=0;
+
     rows.forEach(r => {
       const result = r.children[2].innerText.trim();
       if (!result.includes(":")) return;
+
       const [a,b] = result.split(":").map(Number);
+      if (Number.isNaN(a) || Number.isNaN(b)) return;
+
       if (a>b) wA++; else if (b>a) wB++;
-      sA += a||0; sB += b||0;
+      sA += a; sB += b;
     });
+
     stats[teamA].win += wA; stats[teamA].lose += wB; stats[teamA].setDiff += (sA-sB);
     stats[teamB].win += wB; stats[teamB].lose += wA; stats[teamB].setDiff += (sB-sA);
   });
@@ -1287,6 +1297,7 @@ function calculateTeamResults() {
   html += '</tbody></table></div>';
   document.getElementById("rankingArea").innerHTML = html;
 }
+
 
 /* ---------------- 이미지 저장 ---------------- */
 function saveAsImage() {
