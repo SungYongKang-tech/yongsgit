@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>승강기 홀·짝 운영 보고(웹앱)</title>
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --ink:#0f172a; --muted:#64748b; --line:#e5e7eb;
+      --accent:#2563eb; --warn:#f59e0b; --bad:#ef4444; --ok:#16a34a;
+      --shadow:0 10px 30px rgba(2,6,23,.08);
+      --radius:18px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; background:var(--bg); color:var(--ink);
+      font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR","Apple SD Gothic Neo",sans-serif;
+      line-height:1.45;
+    }
+    header{
+      position:sticky; top:0; z-index:10;
+      background:rgba(246,247,251,.9); backdrop-filter: blur(10px);
+      border-bottom:1px solid var(--line);
+    }
+    .wrap{max-width:980px; margin:0 auto; padding:14px 14px 44px}
+    .topbar{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+    }
+    .title{
+      display:flex; flex-direction:column; gap:2px;
+    }
+    .title h1{margin:0; font-size:18px}
+    .title p{margin:0; color:var(--muted); font-size:12px}
+    .seg{
+      display:flex; align-items:center; gap:6px;
+      background:#fff; border:1px solid var(--line); border-radius:999px;
+      padding:6px;
+      box-shadow: var(--shadow);
+    }
+    .seg button{
+      border:0; background:transparent; padding:8px 10px; border-radius:999px;
+      font-weight:700; cursor:pointer; color:var(--muted); font-size:12px;
+      white-space:nowrap;
+    }
+    .seg button.active{background:var(--accent); color:#fff}
+    .grid{
+      display:grid; gap:12px; margin-top:14px;
+      grid-template-columns: 1.2fr .8fr;
+    }
+    @media (max-width:900px){
+      .grid{grid-template-columns:1fr}
+      .seg{box-shadow:none}
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:14px;
+    }
+    .card h2{
+      margin:0 0 10px;
+      font-size:15px;
+      display:flex; align-items:center; gap:8px;
+    }
+    .badge{
+      font-size:11px; font-weight:800;
+      padding:4px 8px; border-radius:999px;
+      border:1px solid var(--line);
+      color:var(--muted);
+      background:#fff;
+      white-space:nowrap;
+    }
+    .badge.ok{border-color:rgba(22,163,74,.25); color:var(--ok); background:rgba(22,163,74,.06)}
+    .badge.warn{border-color:rgba(245,158,11,.25); color:var(--warn); background:rgba(245,158,11,.08)}
+    .badge.bad{border-color:rgba(239,68,68,.25); color:var(--bad); background:rgba(239,68,68,.06)}
+    .muted{color:var(--muted)}
+    .kpi{
+      display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px;
+    }
+    .kpi .box{
+      border:1px solid var(--line); border-radius:14px; padding:10px;
+      background:linear-gradient(180deg,#fff, #fafbff);
+    }
+    .kpi .n{font-size:18px; font-weight:900}
+    .kpi .t{font-size:12px; color:var(--muted); margin-top:2px}
+    .table{
+      width:100%; border-collapse:separate; border-spacing:0;
+      overflow:hidden; border:1px solid var(--line); border-radius:14px; margin-top:10px;
+    }
+    .table th,.table td{
+      padding:10px; border-bottom:1px solid var(--line);
+      font-size:13px; text-align:left;
+    }
+    .table th{background:#f8fafc; font-weight:900}
+    .table tr:last-child td{border-bottom:0}
+    .pill{
+      display:inline-flex; gap:6px; align-items:center;
+      padding:6px 10px; border-radius:999px; font-size:12px; font-weight:800;
+      border:1px solid var(--line); background:#fff;
+    }
+    .pill.even{border-color:rgba(37,99,235,.25); background:rgba(37,99,235,.06); color:var(--accent)}
+    .pill.odd{border-color:rgba(99,102,241,.25); background:rgba(99,102,241,.06); color:#4f46e5}
+    .pill.all{border-color:rgba(22,163,74,.25); background:rgba(22,163,74,.06); color:var(--ok)}
+    .pill.stair{border-color:rgba(245,158,11,.25); background:rgba(245,158,11,.08); color:var(--warn)}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .inputRow{
+      display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;
+    }
+    @media (max-width:520px){ .inputRow{grid-template-columns:1fr} }
+    label{font-size:12px; color:var(--muted); display:block; margin-bottom:6px}
+    select, input, textarea{
+      width:100%;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      outline:none;
+      font-size:14px;
+      background:#fff;
+    }
+    textarea{min-height:110px; resize:vertical}
+    .btnRow{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
+    .btn{
+      border:1px solid var(--line);
+      background:#fff;
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .btn.primary{background:var(--accent); border-color:rgba(37,99,235,.35); color:#fff}
+    .btn.danger{background:rgba(239,68,68,.08); border-color:rgba(239,68,68,.25); color:var(--bad)}
+    .note{
+      margin-top:10px; padding:10px 12px; border-radius:14px;
+      border:1px dashed var(--line);
+      background:#fbfdff;
+      color:var(--muted);
+      font-size:12px;
+    }
+    details{
+      border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff;
+      margin-top:10px;
+    }
+    summary{
+      padding:12px; cursor:pointer; font-weight:900; list-style:none;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    summary::-webkit-details-marker{display:none}
+    details .content{padding:0 12px 12px; color:var(--muted); font-size:13px}
+    .small{font-size:12px}
+    .hr{height:1px; background:var(--line); margin:12px 0}
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background:#111827; color:#fff; padding:10px 12px; border-radius:999px;
+      font-size:13px; box-shadow: var(--shadow);
+      opacity:0; pointer-events:none; transition:.2s;
+    }
+    .toast.show{opacity:1}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="title">
+        <h1>승강기 홀·짝 운영 보고(시범)</h1>
+        <p>지하 1층~17층 / 4대(1~4호기) / 부분 홀수·짝수층 분리 운행</p>
+      </div>
+      <div class="seg" role="tablist" aria-label="보기 전환">
+        <button id="tabSummary" class="active" type="button">요약</button>
+        <button id="tabGuide" type="button">운영 가이드</button>
+        <button id="tabFeedback" type="button">피드백</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- ===================== 요약 ===================== -->
+  <section id="viewSummary">
+    <div class="grid">
+      <div class="card">
+        <h2>1) 개요 <span class="badge ok">시범 도입</span></h2>
+        <div class="row small">
+          <span class="pill even">1·2호기: 짝수층 전용</span>
+          <span class="pill odd">3·4호기: 홀수층 전용</span>
+          <span class="pill all">예외층: B1·1·4·14·17 (전 호기 정차)</span>
+        </div>
+        <div class="kpi">
+          <div class="box">
+            <div class="n">4대</div>
+            <div class="t">승강기(1~4호기)</div>
+          </div>
+          <div class="box">
+            <div class="n">B1~17F</div>
+            <div class="t">운행 범위</div>
+          </div>
+          <div class="box">
+            <div class="n">그룹운전</div>
+            <div class="t">해제 필요(수동 호출)</div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <h2>2) 변경 전·후 요약 <span class="badge">핵심 비교</span></h2>
+        <table class="table" aria-label="변경 전후 비교">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>변경 전</th>
+              <th>변경 후</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>운행 방식</td>
+              <td>그룹운전(가까운 호기 자동 배정)</td>
+              <td>층 구분 운행(홀/짝 전용)</td>
+            </tr>
+            <tr>
+              <td>1~2호기</td>
+              <td>전층 운행</td>
+              <td>짝수층 전용(예외층 제외)</td>
+            </tr>
+            <tr>
+              <td>3~4호기</td>
+              <td>전층 운행</td>
+              <td>홀수층 전용(예외층 제외)</td>
+            </tr>
+            <tr>
+              <td>호출 방식</td>
+              <td>자동 배정</td>
+              <td>호기별 사용자가 직접 선택 호출</td>
+            </tr>
+            <tr>
+              <td>층 간 이동</td>
+              <td>자유 이동</td>
+              <td>홀↔짝 이동 시 비상계단 이용 필요(예외층 환승 안내 필요)</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="note">
+          ※ 예외층(B1·1·4·14·17)은 모든 호기가 정차하도록 설정하여 환승 및 주요 동선 불편을 완화합니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>3) 예상 문제점 <span class="badge bad">불편/민원 리스크</span></h2>
+
+        <details open>
+          <summary>층 간 이동 불편(비상계단)</summary>
+          <div class="content">
+            예) 5층 → 6층 이동 시 승강기 “환승”이 불가하여 비상계단 이용이 필요합니다.<br/>
+            특히 비상계단이 타 부서 사무실 내부와 연결된 경우, 보안상 우려가 발생할 수 있습니다.<br/>
+            고령자·외부 방문자에게 물리적 부담이 커질 수 있습니다.
+          </div>
+        </details>
+
+        <details>
+          <summary>그룹운전 해제에 따른 호출 혼선</summary>
+          <div class="content">
+            기존 자동 배정 방식에서, 홀/짝에 맞는 호기를 사용자가 직접 선택 호출해야 합니다.<br/>
+            이용자들이 호기 구분에 익숙하지 않아 초기 혼선이 예상됩니다.
+          </div>
+        </details>
+
+        <details>
+          <summary>운행 효율 저하 가능성</summary>
+          <div class="content">
+            각 승강기의 운행층이 제한되어 특정 층에서 호출이 집중될 수 있으며,
+            오히려 대기 시간이 증가할 우려가 있습니다.
+          </div>
+        </details>
+
+        <details>
+          <summary>민원 증가 가능성</summary>
+          <div class="content">
+            운행 원리를 잘 모르는 이용자는 호출 오류/이동 제한으로 불편을 크게 느낄 수 있어
+            민원 증가 가능성이 있습니다.
+          </div>
+        </details>
+
+        <div class="hr"></div>
+
+        <h2>4) 보완 방안 <span class="badge warn">현장 조치 우선</span></h2>
+        <ul class="small muted" style="margin:0; padding-left:18px">
+          <li><b>명확한 안내</b>: 엘리베이터 앞 운행층/호기 스티커, 바닥 유도선 등 시각 안내 강화</li>
+          <li><b>층간 유도 표시</b>: 비상계단 위치 + “환승 가능한 예외층(B1·1·4·14·17)” 동선 표기</li>
+          <li><b>피드백 수렴</b>: 시범 기간 중 이용자 의견 수집 후 개선 여부 재검토</li>
+          <li><b>향후 대안</b>: 스마트엘리베이터(목적층 지정 등) 도입 검토</li>
+        </ul>
+
+        <div class="note">
+          결론: 시범 운영은 진행하되, “안내 강화 + 현장 피드백 수렴”을 통해 운영 효율성과 사용자 만족도를 함께 고려한 개선이 필요합니다.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 운영 가이드 ===================== -->
+  <section id="viewGuide" hidden>
+    <div class="grid">
+      <div class="card">
+        <h2>운영 규칙(호기별 운행층) <span class="badge">한눈에 보기</span></h2>
+
+        <div class="row" style="margin-top:6px">
+          <span class="pill even">1호기</span>
+          <span class="pill even">2호기</span>
+          <span class="pill odd">3호기</span>
+          <span class="pill odd">4호기</span>
+          <span class="pill all">예외층 전 호기 정차</span>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="inputRow">
+          <div>
+            <label for="fromFloor">출발층</label>
+            <select id="fromFloor"></select>
+          </div>
+          <div>
+            <label for="toFloor">도착층</label>
+            <select id="toFloor"></select>
+          </div>
+        </div>
+
+        <div class="btnRow">
+          <button class="btn primary" id="btnRoute" type="button">추천 이용 방법 보기</button>
+          <button class="btn" id="btnSwap" type="button">출발↔도착 바꾸기</button>
+        </div>
+
+        <div id="routeResult" class="note" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <h2>현장 안내문(바로 복사) <span class="badge ok">스티커/배너 문구</span></h2>
+
+        <label for="copyText">안내문 텍스트</label>
+        <textarea id="copyText" readonly></textarea>
+        <div class="btnRow">
+          <button class="btn primary" id="btnCopy" type="button">복사</button>
+        </div>
+
+        <div class="hr"></div>
+
+        <h2>체크리스트 <span class="badge warn">시행 전 점검</span></h2>
+        <ul class="small muted" style="margin:0; padding-left:18px">
+          <li>그룹운전 해제 및 호기별 수동 호출 가능 여부 확인</li>
+          <li>예외층(B1·1·4·14·17) 전 호기 정차 설정 적용 여부 확인</li>
+          <li>홀/짝 전용 표기 스티커(호기 번호 포함) 부착</li>
+          <li>비상계단/환승동선(예외층) 유도 표지 설치</li>
+          <li>보안 구역과 연결된 계단 동선의 출입 통제/안내 보완</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 피드백 ===================== -->
+  <section id="viewFeedback" hidden>
+    <div class="grid">
+      <div class="card">
+        <h2>이용자 피드백 접수 <span class="badge">로컬 저장</span></h2>
+
+        <div class="inputRow">
+          <div>
+            <label for="fbType">구분</label>
+            <select id="fbType">
+              <option value="불편">불편</option>
+              <option value="혼선">혼선(호기 선택/호출)</option>
+              <option value="보안">보안(비상계단 동선)</option>
+              <option value="대기시간">대기시간</option>
+              <option value="개선제안">개선제안</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+          <div>
+            <label for="fbFloor">발생 층(선택)</label>
+            <select id="fbFloor"></select>
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <label for="fbMsg">내용</label>
+          <textarea id="fbMsg" placeholder="예) 5층에서 6층 이동 시 비상계단 동선이 불명확합니다. 예외층 안내가 필요합니다."></textarea>
+        </div>
+
+        <div class="btnRow">
+          <button class="btn primary" id="btnSave" type="button">저장</button>
+          <button class="btn" id="btnExport" type="button">CSV 내보내기</button>
+          <button class="btn danger" id="btnClear" type="button">전체 삭제</button>
+        </div>
+
+        <div class="note">
+          이 페이지는 서버 없이도 동작하도록 <b>브라우저(localStorage)</b>에만 저장됩니다.<br/>
+          사내 공유가 필요하면 “CSV 내보내기”로 내려받아 취합하시면 됩니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>저장된 피드백 <span id="fbCount" class="badge">0건</span></h2>
+        <div id="fbList" class="small muted">아직 저장된 피드백이 없습니다.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+
+<script>
+  // ========================= 데이터/규칙 =========================
+  const EXCEPTIONS = new Set(["B1","1","4","14","17"]);
+  // 1~2호기: 짝수층 + 예외층 / 3~4호기: 홀수층 + 예외층
+  function isEvenFloor(f){ return f !== "B1" && (parseInt(f,10) % 2 === 0); }
+  function isOddFloor(f){ return f !== "B1" && (parseInt(f,10) % 2 === 1); }
+
+  function elevatorsForFloor(f){
+    if (EXCEPTIONS.has(f)) return [1,2,3,4];
+    if (f === "B1") return [1,2,3,4]; // 예외에 포함되어도 무방, 가독성 위해 유지
+    if (isEvenFloor(f)) return [1,2];
+    return [3,4];
+  }
+
+  function routeAdvice(from, to){
+    const fromE = elevatorsForFloor(from);
+    const toE = elevatorsForFloor(to);
+
+    // 같은 구역(홀/짝) 또는 예외층이면 승강기만으로 이동 가능
+    const share = fromE.filter(x => toE.includes(x));
+    const isDirect = share.length > 0;
+
+    const fromLabel = labelFloor(from);
+    const toLabel = labelFloor(to);
+
+    if (from === to){
+      return {
+        type: "ok",
+        text: `출발층과 도착층이 같습니다. (${fromLabel})`
+      };
+    }
+
+    if (isDirect){
+      // 추천: 홀/짝 전용 해당 호기 안내 + 예외층이면 전호기 가능
+      let suggestion = "";
+      if (EXCEPTIONS.has(from) && EXCEPTIONS.has(to)){
+        suggestion = `예외층 간 이동입니다. 전 호기 이용 가능하며, 혼잡 시 가장 먼저 도착한 호기를 이용하시면 됩니다.`;
+      } else if (EXCEPTIONS.has(from)){
+        suggestion = `출발층이 예외층(${fromLabel})입니다. 도착층(${toLabel}) 구역에 맞는 호기를 호출하세요: ${toE.join(", ")}호기.`;
+      } else if (EXCEPTIONS.has(to)){
+        suggestion = `도착층이 예외층(${toLabel})입니다. 출발층(${fromLabel}) 구역에 맞는 호기를 호출하세요: ${fromE.join(", ")}호기.`;
+      } else {
+        suggestion = `같은 구역(홀/짝) 이동이므로 승강기만으로 이동 가능합니다. 호출 호기: ${share.join(", ")}호기.`;
+      }
+      return { type:"ok", text:`${fromLabel} → ${toLabel}\n${suggestion}` };
+    }
+
+    // 홀<->짝 이동(예외층이 아닌 경우): 계단 필요 (또는 예외층으로 우회하라 안내)
+    // 본문 요구사항: 환승 불가로 비상계단 이용 필요. 다만 예외층 안내는 보완방안이므로 "권장 우회"도 함께 제시.
+    const exceptionsArr = ["B1","1","4","14","17"];
+    return {
+      type:"warn",
+      text:
+`${fromLabel} → ${toLabel}\n` +
+`홀↔짝 구역 간 이동으로 승강기 “직접 이동/환승”이 어렵습니다.\n` +
+`- 원칙: 비상계단 이용 필요\n` +
+`- 보완 권장: 예외층(${exceptionsArr.join(", ")}) 중 가까운 층으로 먼저 이동 후, 다시 목적층 구역 호기를 이용하는 동선을 안내(현장 표지 필요)`
+    };
+  }
+
+  function labelFloor(f){
+    return (f === "B1") ? "지하 1층(B1)" : `${f}층`;
+  }
+
+  // ========================= UI: 탭 =========================
+  const views = {
+    Summary: document.getElementById("viewSummary"),
+    Guide: document.getElementById("viewGuide"),
+    Feedback: document.getElementById("viewFeedback")
+  };
+  const tabs = {
+    Summary: document.getElementById("tabSummary"),
+    Guide: document.getElementById("tabGuide"),
+    Feedback: document.getElementById("tabFeedback")
+  };
+
+  function setTab(name){
+    Object.keys(views).forEach(k => views[k].hidden = (k !== name));
+    Object.keys(tabs).forEach(k => tabs[k].classList.toggle("active", k === name));
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
+  tabs.Summary.onclick = () => setTab("Summary");
+  tabs.Guide.onclick = () => setTab("Guide");
+  tabs.Feedback.onclick = () => setTab("Feedback");
+
+  // ========================= UI: 층 옵션 생성 =========================
+  const floors = ["B1", ...Array.from({length:17}, (_,i)=>String(i+1))];
+
+  function fillSelect(sel, includeBlank=false){
+    sel.innerHTML = "";
+    if (includeBlank){
+      const o = document.createElement("option");
+      o.value = ""; o.textContent = "선택";
+      sel.appendChild(o);
+    }
+    floors.forEach(f=>{
+      const opt = document.createElement("option");
+      opt.value = f;
+      opt.textContent = labelFloor(f);
+      sel.appendChild(opt);
+    });
+  }
+
+  // Guide selects
+  const fromFloor = document.getElementById("fromFloor");
+  const toFloor = document.getElementById("toFloor");
+  fillSelect(fromFloor);
+  fillSelect(toFloor);
+  fromFloor.value = "1";
+  toFloor.value = "6";
+
+  // Feedback select
+  const fbFloor = document.getElementById("fbFloor");
+  fillSelect(fbFloor, true);
+
+  // ========================= 운영 가이드: 추천 동선 =========================
+  const routeResult = document.getElementById("routeResult");
+  document.getElementById("btnRoute").onclick = () => {
+    const a = fromFloor.value;
+    const b = toFloor.value;
+    const r = routeAdvice(a,b);
+    routeResult.style.display = "block";
+    routeResult.textContent = r.text;
+
+    routeResult.style.borderStyle = "solid";
+    routeResult.style.borderWidth = "1px";
+    if (r.type === "ok"){
+      routeResult.style.borderColor = "rgba(22,163,74,.25)";
+      routeResult.style.background = "rgba(22,163,74,.06)";
+      routeResult.style.color = "#065f46";
+    } else {
+      routeResult.style.borderColor = "rgba(245,158,11,.25)";
+      routeResult.style.background = "rgba(245,158,11,.08)";
+      routeResult.style.color = "#92400e";
+    }
+  };
+
+  document.getElementById("btnSwap").onclick = () => {
+    const a = fromFloor.value;
+    fromFloor.value = toFloor.value;
+    toFloor.value = a;
+    toast("출발/도착을 바꿨습니다.");
+  };
+
+  // ========================= 안내문 자동 생성 =========================
+  const copyText = document.getElementById("copyText");
+  copyText.value =
+`[승강기 부분 홀·짝수층 분리 운행 안내(시범)]
+- 1·2호기: 짝수층 전용 운행
+- 3·4호기: 홀수층 전용 운행
+- 예외층(B1, 1, 4, 14, 17층): 모든 호기 정차
+
+※ 홀↔짝 구역 간 층 이동은 비상계단 이용이 필요할 수 있습니다.
+※ 이용 혼선을 줄이기 위해 승강기 전면의 “운행층/호기 안내” 표기를 확인해 주십시오.`;
+
+  document.getElementById("btnCopy").onclick = async () => {
+    try{
+      await navigator.clipboard.writeText(copyText.value);
+      toast("안내문을 복사했습니다.");
+    }catch(e){
+      // 일부 환경에서 clipboard 차단 시
+      copyText.focus(); copyText.select();
+      toast("복사가 제한되어 텍스트를 선택했습니다. (Ctrl+C)");
+    }
+  };
+
+  // ========================= 피드백 저장 (localStorage) =========================
+  const LS_KEY = "elevator_odd_even_feedback_v1";
+  const fbType = document.getElementById("fbType");
+  const fbMsg = document.getElementById("fbMsg");
+  const fbList = document.getElementById("fbList");
+  const fbCount = document.getElementById("fbCount");
+
+  function loadFeedback(){
+    try{
+      return JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    }catch(e){
+      return [];
+    }
+  }
+  function saveFeedback(items){
+    localStorage.setItem(LS_KEY, JSON.stringify(items));
+  }
+  function renderFeedback(){
+    const items = loadFeedback();
+    fbCount.textContent = `${items.length}건`;
+    if (!items.length){
+      fbList.textContent = "아직 저장된 피드백이 없습니다.";
+      return;
+    }
+    fbList.innerHTML = items
+      .slice().reverse()
+      .map(it=>{
+        const when = new Date(it.ts).toLocaleString("ko-KR");
+        const floorTxt = it.floor ? labelFloor(it.floor) : "미지정";
+        return `
+          <div style="border:1px solid var(--line); border-radius:14px; padding:10px; margin-top:10px; background:#fff">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+              <span class="badge">${escapeHtml(it.type)}</span>
+              <span class="badge">${escapeHtml(floorTxt)}</span>
+              <span class="muted" style="font-size:12px">${when}</span>
+            </div>
+            <div style="margin-top:8px; white-space:pre-wrap; color:var(--ink)">${escapeHtml(it.msg)}</div>
+          </div>
+        `;
+      }).join("");
+  }
+  renderFeedback();
+
+  document.getElementById("btnSave").onclick = () => {
+    const msg = (fbMsg.value || "").trim();
+    if (!msg){
+      toast("내용을 입력해 주십시오.");
+      fbMsg.focus();
+      return;
+    }
+    const items = loadFeedback();
+    items.push({
+      ts: Date.now(),
+      type: fbType.value,
+      floor: fbFloor.value || "",
+      msg
+    });
+    saveFeedback(items);
+    fbMsg.value = "";
+    fbFloor.value = "";
+    renderFeedback();
+    toast("피드백을 저장했습니다.");
+  };
+
+  document.getElementById("btnClear").onclick = () => {
+    if (!confirm("저장된 피드백을 모두 삭제하시겠습니까?")) return;
+    localStorage.removeItem(LS_KEY);
+    renderFeedback();
+    toast("전체 삭제했습니다.");
+  };
+
+  document.getElementById("btnExport").onclick = () => {
+    const items = loadFeedback();
+    if (!items.length){
+      toast("내보낼 데이터가 없습니다.");
+      return;
+    }
+    const header = ["timestamp","datetime(ko-KR)","type","floor","message"];
+    const rows = items.map(it=>{
+      const dt = new Date(it.ts).toLocaleString("ko-KR");
+      return [
+        it.ts,
+        csvSafe(dt),
+        csvSafe(it.type),
+        csvSafe(it.floor ? labelFloor(it.floor) : ""),
+        csvSafe(it.msg)
+      ].join(",");
+    });
+    const csv = [header.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `승강기_홀짝운영_피드백_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("CSV를 내보냈습니다.");
+  };
+
+  // ========================= 유틸 =========================
+  function toast(msg){
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    setTimeout(()=>el.classList.remove("show"), 1700);
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, m => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[m]));
+  }
+  function csvSafe(s){
+    const str = String(s ?? "");
+    // 콤마/따옴표/줄바꿈 포함 시 쌍따옴표로 감싸고 내부 쌍따옴표 이스케이프
+    if (/[,"\n]/.test(str)) return `"${str.replace(/"/g,'""')}"`;
+    return str;
+  }
+
+  // 첫 화면
+  setTab("Summary");
+</script>
+</body>
+</html>
