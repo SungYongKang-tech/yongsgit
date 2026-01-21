@@ -128,7 +128,9 @@ exports.handler = async () => {
         const source = pickSource(b);
         return { title, link, pubDate, source };
       })
-      .filter((x) => x.title && x.link);
+      .filter(x => x.title && x.link)
+  // 🔽 여기서 제목에 키워드 포함된 기사만 통과
+  .filter(x => KEYWORDS.some(k => x.title.includes(k)));
 
     // 2) 그룹핑
     // - 정확히 같은 정규화 제목: 같은 그룹
