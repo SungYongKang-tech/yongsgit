@@ -152,7 +152,7 @@ exports.handler = async () => {
         const g = groups[i];
 
         const ov = overlapCount(toks, g._tokens);
-        if (ov < 2) continue; // 너무 다른 건 합치지 않음
+        if (ov < 1) continue; // 너무 다른 건 합치지 않음
 
         const jac = jaccard(toks, g._tokens);
         const di = dice(norm, g._normTitle);
@@ -161,7 +161,7 @@ exports.handler = async () => {
         const score = Math.max(jac, di);
 
         // 느슨 기준
-        if (score > bestScore && (jac >= 0.55 || di >= 0.62)) {
+        if (score > bestScore && (jac >= 0.45 || di >= 0.56)) {
           bestScore = score;
           bestIdx = i;
         }
