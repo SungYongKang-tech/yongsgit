@@ -1,4 +1,3 @@
-// netlify/functions/news.js
 exports.handler = async () => {
   const RSS_URL =
     "https://news.google.com/rss/search?q=%ED%95%9C%EA%B5%AD%EB%82%A8%EB%8F%99%EB%B0%9C%EC%A0%84&hl=ko&gl=KR&ceid=KR:ko";
@@ -28,7 +27,7 @@ exports.handler = async () => {
         .replace(/&#39;/g, "'");
 
     const itemBlocks = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
-      .slice(0, 60)
+      .slice(0, 80)
       .map((m) => m[1]);
 
     const pick = (block, tag) => {
@@ -41,33 +40,33 @@ exports.handler = async () => {
       return m ? decode(m[1].trim()) : "";
     };
 
-    // 제목 정규화: "제목 - 언론사" 꼬리 제거, 괄호/특수문자 정리
+    const cleanLink = (link) => (link || "").split("&utm_")[0];
+
+    // 제목 정규화: 꼬리( - 언론사 ), 속보/종합 등 제거, 기호 정리
     const normalizeTitle = (t) => {
       let s = (t || "").trim();
-
-      // " - 언론사" 꼬리 제거(흔한 패턴)
-      s = s.replace(/\s*-\s*[^-]{2,25}$/u, "").trim();
-
-      // 대괄호/소괄호 안의 짧은 꼬리 제거(예: [속보], (종합), (영상) 등)
-      s = s.replace(/\[[^\]]{1,10}\]\s*/g, "").trim();
+      s = s.replace(/\s*-\s*[^-]{2,40}$/u, "").trim(); // - 언론사
+      s = s.replace(/\[[^\]]{1,12}\]\s*/g, "").trim(); // [속보]
       s = s.replace(/\((속보|종합|단독|영상|포토|인터뷰|기획|현장|칼럼|사설|분석)\)/g, "").trim();
 
-      // 불필요 기호 정리
       s = s.replace(/[“”"']/g, "");
       s = s.replace(/[·•]/g, " ");
+      s = s.replace(/[’]/g, "");
       s = s.replace(/\s+/g, " ").trim();
-
       return s;
     };
 
-    // 토큰화(비슷한 제목도 묶기용)
+    // 토큰화: 한글/영문/숫자만 남기고 분리
     const tokenize = (s) =>
       normalizeTitle(s)
         .toLowerCase()
         .replace(/[^0-9a-z가-힣\s]/g, " ")
         .split(/\s+/)
-        .filter((w) => w.length >= 2 && !["기자", "뉴스", "단독", "속보", "종합"].includes(w));
+        .filter((w) => w.length >= 2)
+        // 흔한 잡단어 제거(원하시면 더 추가 가능)
+        .filter((w) => !["기자", "뉴스", "속보", "종합", "단독", "관련"].includes(w));
 
+    // Set 기반 Jaccard
     const jaccard = (aTokens, bTokens) => {
       const A = new Set(aTokens);
       const B = new Set(bTokens);
@@ -77,7 +76,48 @@ exports.handler = async () => {
       return union === 0 ? 0 : inter / union;
     };
 
-    const cleanLink = (link) => (link || "").split("&utm_")[0];
+    // 공통 토큰 개수
+    const overlapCount = (aTokens, bTokens) => {
+      const A = new Set(aTokens);
+      const B = new Set(bTokens);
+      let inter = 0;
+      for (const x of A) if (B.has(x)) inter++;
+      return inter;
+    };
+
+    // 한국어에 강한 문자 기반 유사도(Dice coefficient over bigrams)
+    const bigrams = (s) => {
+      const t = normalizeTitle(s)
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+      const arr = [];
+      for (let i = 0; i < t.length - 1; i++) {
+        const bg = t.slice(i, i + 2);
+        if (bg.trim().length === 0) continue;
+        arr.push(bg);
+      }
+      return arr;
+    };
+
+    const dice = (a, b) => {
+      const A = bigrams(a);
+      const B = bigrams(b);
+      if (!A.length || !B.length) return 0;
+
+      const m = new Map();
+      for (const x of A) m.set(x, (m.get(x) || 0) + 1);
+
+      let inter = 0;
+      for (const x of B) {
+        const c = m.get(x) || 0;
+        if (c > 0) {
+          inter++;
+          m.set(x, c - 1);
+        }
+      }
+      return (2 * inter) / (A.length + B.length);
+    };
 
     // 1) RSS 아이템 파싱
     const items = itemBlocks
@@ -90,46 +130,52 @@ exports.handler = async () => {
       })
       .filter((x) => x.title && x.link);
 
-    // 2) 그룹핑(중복 제거 + 유사 제목 묶기)
-    // 기준:
-    // - normalizedTitle가 같으면 무조건 같은 그룹
-    // - 아니면 토큰 유사도(Jaccard) >= 0.78면 같은 그룹로 묶기
+    // 2) 그룹핑
+    // - 정확히 같은 정규화 제목: 같은 그룹
+    // - 아니면 (공통 토큰 >= 2) AND (Jaccard >= 0.55 OR Dice >= 0.62) 면 같은 그룹
     const groups = [];
-    const normIndex = new Map(); // normalizedTitle -> groupIndex
+    const normIndex = new Map();
 
     for (const it of items) {
       const norm = normalizeTitle(it.title);
       const toks = tokenize(it.title);
 
-      // 2-1) 정확 매칭
       if (normIndex.has(norm)) {
-        const gi = normIndex.get(norm);
-        groups[gi].articles.push(it);
+        groups[normIndex.get(norm)].articles.push(it);
         continue;
       }
 
-      // 2-2) 유사도 매칭
       let bestIdx = -1;
       let bestScore = 0;
 
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i];
-        const score = jaccard(toks, g._tokens);
-        if (score > bestScore) {
+
+        const ov = overlapCount(toks, g._tokens);
+        if (ov < 2) continue; // 너무 다른 건 합치지 않음
+
+        const jac = jaccard(toks, g._tokens);
+        const di = dice(norm, g._normTitle);
+
+        // 둘 중 큰 값을 점수로
+        const score = Math.max(jac, di);
+
+        // 느슨 기준
+        if (score > bestScore && (jac >= 0.55 || di >= 0.62)) {
           bestScore = score;
           bestIdx = i;
         }
       }
 
-      if (bestScore >= 0.65 && bestIdx >= 0) {
+      if (bestIdx >= 0) {
         groups[bestIdx].articles.push(it);
-        // 이 norm도 같은 그룹로 인덱싱(다음부터 빨리 매칭)
         normIndex.set(norm, bestIdx);
       } else {
         const gid = `g_${hash(norm)}`;
         groups.push({
           id: gid,
           title: norm || it.title,
+          _normTitle: norm || it.title,
           _tokens: toks,
           articles: [it],
         });
@@ -137,7 +183,7 @@ exports.handler = async () => {
       }
     }
 
-    // 3) 그룹 내부 정리: 같은 링크 중복 제거 + 최신순 정렬(대략)
+    // 3) 그룹 내부 정리
     for (const g of groups) {
       const seen = new Set();
       g.articles = g.articles
@@ -147,21 +193,19 @@ exports.handler = async () => {
           return true;
         })
         .sort((a, b) => {
-          // pubDate 문자열은 포맷이 제각각일 수 있어 Date로 파싱 시도
           const da = Date.parse(a.pubDate || "") || 0;
           const db = Date.parse(b.pubDate || "") || 0;
           return db - da;
         });
 
-      // 대표 날짜/대표 출처(첫 기사 기준)
       g.pubDate = g.articles[0]?.pubDate || "";
       g.sources = [...new Set(g.articles.map((a) => a.source).filter(Boolean))];
 
-      // 내부 키 제거(응답 payload는 깔끔하게)
       delete g._tokens;
+      delete g._normTitle;
     }
 
-    // 4) 그룹 정렬(최신 그룹이 위로)
+    // 4) 그룹 정렬
     groups.sort((a, b) => {
       const da = Date.parse(a.pubDate || "") || 0;
       const db = Date.parse(b.pubDate || "") || 0;
@@ -191,7 +235,6 @@ exports.handler = async () => {
   }
 };
 
-// 간단 해시(그룹 id용)
 function hash(str) {
   let h = 2166136261;
   for (let i = 0; i < (str || "").length; i++) {
