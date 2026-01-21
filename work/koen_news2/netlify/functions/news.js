@@ -121,7 +121,7 @@ exports.handler = async () => {
         }
       }
 
-      if (bestScore >= 0.78 && bestIdx >= 0) {
+      if (bestScore >= 0.72 && bestIdx >= 0) {
         groups[bestIdx].articles.push(it);
         // 이 norm도 같은 그룹로 인덱싱(다음부터 빨리 매칭)
         normIndex.set(norm, bestIdx);
