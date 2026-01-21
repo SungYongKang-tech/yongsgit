@@ -161,7 +161,7 @@ exports.handler = async () => {
         const score = Math.max(jac, di);
 
         // 느슨 기준
-        if (score > bestScore && (jac >= 0.45 || di >= 0.56)) {
+        if (score > bestScore && (jac >= 0.40 || di >= 0.50)) {
           bestScore = score;
           bestIdx = i;
         }
