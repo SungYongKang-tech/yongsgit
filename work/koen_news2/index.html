@@ -8,6 +8,7 @@
     :root{
       --bg:#f5f7fb; --card:#fff; --line:#e5e7eb; --ink:#0f172a; --muted:#64748b;
       --accent:#2563eb; --new:#f59e0b; --shadow:0 10px 30px rgba(0,0,0,.07);
+      --chip:#f1f5f9;
     }
     body{margin:0;font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink);}
     header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:12px 14px;z-index:10}
@@ -19,29 +20,35 @@
     .pill.new{border-color:var(--new);color:#b45309;background:#fff7ed}
     main{max-width:980px;margin:0 auto;padding:14px}
     .grid{display:grid;grid-template-columns:1fr;gap:10px}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:0 2px 0 rgba(0,0,0,.02)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
     .card.new{border-color:var(--new);box-shadow:var(--shadow)}
     a{color:var(--accent);text-decoration:none}
     a:hover{text-decoration:underline}
-    .title{font-size:15px;line-height:1.35;margin:0 0 6px 0;font-weight:800}
-    .meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+    .title{font-size:15px;line-height:1.35;margin:0 0 8px 0;font-weight:900}
+    .meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .small{font-size:12px;color:var(--muted)}
     .topbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:var(--chip);border:1px solid #e2e8f0;font-size:12px;color:#334155}
+    .links{margin-top:10px;display:grid;gap:6px}
+    .linkrow{display:flex;gap:8px;align-items:flex-start}
+    .src{min-width:64px;font-weight:800;color:#334155}
+    .when{margin-left:auto;color:var(--muted);font-size:11px;white-space:nowrap}
   </style>
 </head>
 <body>
 <header>
   <div class="row">
-    <h1>한국남동발전 뉴스 모아보기</h1>
+    <h1>한국남동발전 뉴스 (기사 묶음)</h1>
     <div class="topbar">
       <span id="badge" class="pill new" style="display:none;"></span>
+      <span id="counts" class="pill">-</span>
       <span id="updated" class="pill">업데이트: -</span>
       <button class="btn" id="reset">새 글 표시 초기화</button>
       <button class="btn primary" id="refresh">새로고침</button>
     </div>
   </div>
   <div class="small" style="margin-top:6px;">
-    ※ 이 페이지를 열면 최신 뉴스 목록을 불러와 보여주며, 이전에 없던 링크는 “새 글”로 표시됩니다.
+    ※ 같은 내용(유사 제목)의 기사는 한 카드로 묶고, 아래에 매체별 링크를 모아서 보여줍니다.
   </div>
 </header>
 
@@ -51,12 +58,14 @@
 </main>
 
 <script>
-  const SEEN_KEY = "koen_news_seen_links_v1";
+  // 그룹 단위로 “봤음” 처리
+  const SEEN_KEY = "koen_news_seen_groups_v1";
 
   const $status = document.getElementById("status");
   const $list = document.getElementById("list");
   const $badge = document.getElementById("badge");
   const $updated = document.getElementById("updated");
+  const $counts = document.getElementById("counts");
 
   const loadSeen = () => {
     try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || "[]")); }
@@ -71,6 +80,12 @@
     } catch { return iso; }
   };
 
+  const fmtPub = (s) => {
+    // RSS pubDate는 이미 사람이 읽을 수 있게 나오니, 너무 길면 줄임
+    if (!s) return "";
+    return s.replace(/\sGMT.*$/,"").trim();
+  }
+
   async function fetchNews() {
     $status.textContent = "불러오는 중…";
     $list.innerHTML = "";
@@ -81,44 +96,74 @@
     const res = await fetch("/.netlify/functions/news", { cache: "no-store" });
     const data = await res.json();
 
-    if (!data.items) {
+    if (!data.groups) {
       $status.textContent = "불러오기 실패 (Functions가 동작하는 배포인지 확인 필요)";
       return;
     }
 
     $updated.textContent = "업데이트: " + fmt(data.fetchedAt);
+    $counts.textContent = `원문 ${data.rawCount}건 · 묶음 ${data.groupCount}건`;
 
     let newCount = 0;
 
-    data.items.forEach((it) => {
-      const isNew = !seen.has(it.link);
+    data.groups.forEach((g) => {
+      const isNew = !seen.has(g.id);
       if (isNew) newCount++;
 
       const card = document.createElement("div");
       card.className = "card" + (isNew ? " new" : "");
+
+      const sources = (g.sources || []).slice(0, 8).map(s => `<span class="chip">${escapeHtml(s)}</span>`).join(" ");
+      const more = (g.sources || []).length > 8 ? `<span class="chip">+${(g.sources||[]).length - 8}</span>` : "";
+
+      const linksHtml = (g.articles || []).map(a => {
+        const src = a.source ? escapeHtml(a.source) : "링크";
+        const title = escapeHtml(a.title || g.title || "");
+        const when = fmtPub(a.pubDate);
+        return `
+          <div class="linkrow">
+            <div class="src">${src}</div>
+            <div class="ttl"><a href="${a.link}" target="_blank" rel="noopener">${title}</a></div>
+            <div class="when">${escapeHtml(when)}</div>
+          </div>
+        `;
+      }).join("");
+
       card.innerHTML = `
-        <p class="title">
-          <a href="${it.link}" target="_blank" rel="noopener">${it.title}</a>
-        </p>
+        <p class="title">${escapeHtml(g.title || "")}</p>
         <div class="meta">
-          <span>${it.source ? "출처: " + it.source : ""}</span>
-          <span>${it.pubDate ? "게시: " + it.pubDate : ""}</span>
-          ${isNew ? `<span class="pill new">새 글</span>` : `<span class="pill">읽음</span>`}
+          ${isNew ? `<span class="pill new">새 이슈</span>` : `<span class="pill">확인됨</span>`}
+          <span class="pill">${(g.articles||[]).length}개 매체 링크</span>
+          ${g.pubDate ? `<span class="pill">최신: ${escapeHtml(fmtPub(g.pubDate))}</span>` : ``}
         </div>
+        <div class="meta" style="margin-top:8px;gap:6px;">
+          ${sources} ${more}
+        </div>
+        <div class="links">${linksHtml}</div>
       `;
+
       $list.appendChild(card);
     });
 
-    $status.textContent = `총 ${data.items.length}건 표시`;
+    $status.textContent = `묶음 ${data.groupCount}건 표시`;
 
     if (newCount > 0) {
       $badge.style.display = "inline-flex";
-      $badge.textContent = `새 글 ${newCount}건`;
+      $badge.textContent = `새 이슈 ${newCount}건`;
     }
 
-    // “페이지를 보면 읽었다”로 처리: 불러온 링크를 seen에 저장
-    data.items.forEach(x => seen.add(x.link));
+    // “페이지를 보면 읽었다”: 그룹 id를 저장
+    data.groups.forEach(g => seen.add(g.id));
     saveSeen(seen);
+  }
+
+  function escapeHtml(s){
+    return (s ?? "").toString()
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#39;");
   }
 
   document.getElementById("refresh").addEventListener("click", () => fetchNews().catch(() => {
@@ -127,7 +172,7 @@
 
   document.getElementById("reset").addEventListener("click", () => {
     localStorage.removeItem(SEEN_KEY);
-    alert("새 글 표시 기준을 초기화했습니다. 다시 불러오면 모두 새 글로 보일 수 있습니다.");
+    alert("새 이슈 표시 기준을 초기화했습니다. 다시 불러오면 모두 새 이슈로 보일 수 있습니다.");
   });
 
   fetchNews().catch(() => { $status.textContent = "오류 발생"; });
