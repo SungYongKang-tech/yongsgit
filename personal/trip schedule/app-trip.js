@@ -344,9 +344,9 @@ $("saveModal")?.addEventListener("click", async () => {
 // -------------------- List query --------------------
 const q = query(
   collection(db, "trips", tripId, "items"),
-  orderBy("date"),
-  orderBy("time")
+  orderBy("date")
 );
+
 
 // ✅ 렌더 함수: 캐시(cachedItems) + viewMode 기준으로만 그림
 function renderItems() {
