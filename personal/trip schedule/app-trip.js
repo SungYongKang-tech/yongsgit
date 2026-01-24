@@ -23,6 +23,14 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+window.addEventListener("error", (e) => {
+  alert("에러: " + (e.message || e.error?.message || e.error || "unknown"));
+});
+window.addEventListener("unhandledrejection", (e) => {
+  alert("Promise 에러: " + (e.reason?.message || e.reason || "unknown"));
+});
+
+
 // -------------------- tripId --------------------
 const tripId = new URLSearchParams(location.search).get("trip");
 if (!tripId) {
