@@ -1,34 +1,98 @@
+// app-trip.js
 import { auth, db } from "./firebase.js";
 import { uploadToCloudinary } from "./cloudinary.js";
-import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
 import {
-  doc, getDoc, setDoc, serverTimestamp,
-  collection, addDoc, onSnapshot, query, orderBy,
-  updateDoc, deleteDoc
+  signInAnonymously,
+  onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  updateDoc,
+  deleteDoc,
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
 const $ = (id) => document.getElementById(id);
 
+// -------------------- tripId --------------------
 const tripId = new URLSearchParams(location.search).get("trip");
 if (!tripId) {
-  alert("trip 파라미터가 없습니다. (trip.html?trip=XXXX)");
+  alert("trip 파라미터가 없습니다. (예: trip.html?trip=XXXX)");
   location.href = "index.html";
 }
 
+// -------------------- util --------------------
 function todayISO() {
   const d = new Date();
-  const m = String(d.getMonth()+1).padStart(2,"0");
-  const day = String(d.getDate()).padStart(2,"0");
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
 }
+function iso(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+function addDays(baseDate, n) {
+  const d = new Date(baseDate);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+function safeText(s) {
+  return (s ?? "")
+    .toString()
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 $("date").value = todayISO();
 
-const authReady = new Promise((resolve) => onAuthStateChanged(auth, (u) => u && resolve(u)));
-signInAnonymously(auth).catch(e => alert("익명 로그인 실패: " + e.message));
+// -------------------- Auth --------------------
+const authReady = new Promise((resolve) => {
+  onAuthStateChanged(auth, (u) => u && resolve(u));
+});
 
-let me = { uid:null, name:"익명" };
+signInAnonymously(auth).catch((e) => {
+  console.error("익명 로그인 실패:", e);
+  alert(`익명 로그인 실패\ncode: ${e.code}\nmessage: ${e.message}`);
+});
+
+// -------------------- me / members --------------------
+let me = { uid: null, name: "익명" };
 let members = {};
 
+// -------------------- view mode --------------------
+let viewMode = "all"; // all | today | tomorrow
+
+function setViewMode(mode) {
+  viewMode = mode;
+  // 버튼 UI 피드백(선택 표시가 없더라도 최소한 힌트 변경)
+  const hint = $("viewHint");
+  if (!hint) return;
+
+  if (mode === "today") hint.textContent = "오늘 일정만 보여줍니다.";
+  else if (mode === "tomorrow") hint.textContent = "내일 일정만 보여줍니다.";
+  else hint.textContent = "전체 일정을 날짜별로 묶어서 보여줍니다.";
+}
+
+// 버튼 연결(HTML에 id가 있으면 작동)
+$("viewAll")?.addEventListener("click", () => setViewMode("all"));
+$("viewToday")?.addEventListener("click", () => setViewMode("today"));
+$("viewTomorrow")?.addEventListener("click", () => setViewMode("tomorrow"));
+
+// -------------------- Join --------------------
 async function ensureJoined() {
   const user = await authReady;
   me.uid = user.uid;
@@ -44,17 +108,20 @@ async function ensureJoined() {
   return false;
 }
 
-$("joinBtn").addEventListener("click", async () => {
+$("joinBtn")?.addEventListener("click", async () => {
   const user = await authReady;
-  const nick = $("nick").value.trim() || "익명";
+  const nick = $("nick")?.value.trim() || "익명";
+
   await setDoc(doc(db, "trips", tripId, "members", user.uid), {
     name: nick,
-    joinedAt: serverTimestamp()
+    joinedAt: serverTimestamp(),
   });
+
   $("joinCard").style.display = "none";
 });
 
-$("shareBtn").addEventListener("click", async () => {
+// -------------------- Share --------------------
+$("shareBtn")?.addEventListener("click", async () => {
   const url = location.href;
   try {
     await navigator.clipboard.writeText(url);
@@ -64,7 +131,7 @@ $("shareBtn").addEventListener("click", async () => {
   }
 });
 
-// 여행 메타 로드
+// -------------------- Load trip meta --------------------
 (async () => {
   const t = await getDoc(doc(db, "trips", tripId));
   if (!t.exists()) {
@@ -74,18 +141,20 @@ $("shareBtn").addEventListener("click", async () => {
   }
   const meta = t.data()?.meta || {};
   $("tripTitle").textContent = `📌 ${meta.title || "여행"}`;
-  $("tripPeriod").textContent = (meta.startDate && meta.endDate) ? `${meta.startDate} ~ ${meta.endDate}` : "";
+  $("tripPeriod").textContent =
+    meta.startDate && meta.endDate ? `${meta.startDate} ~ ${meta.endDate}` : "";
+
   await ensureJoined();
 })();
 
-// 멤버 구독(이름 표시용)
+// -------------------- Members subscription --------------------
 onSnapshot(collection(db, "trips", tripId, "members"), (snap) => {
   members = {};
-  snap.forEach(d => members[d.id] = d.data());
+  snap.forEach((d) => (members[d.id] = d.data()));
 });
 
-// 일정 추가
-$("addBtn").addEventListener("click", async () => {
+// -------------------- Add item --------------------
+$("addBtn")?.addEventListener("click", async () => {
   const ok = await ensureJoined();
   if (!ok) return;
 
@@ -100,7 +169,10 @@ $("addBtn").addEventListener("click", async () => {
   const note = $("note").value.trim();
   const files = $("photos").files;
 
-  if (!date || !title) return (statusEl.textContent = "날짜와 제목은 필수입니다.");
+  if (!date || !title) {
+    statusEl.textContent = "날짜와 제목은 필수입니다.";
+    return;
+  }
 
   let images = [];
   try {
@@ -108,78 +180,46 @@ $("addBtn").addEventListener("click", async () => {
       statusEl.textContent = `사진 업로드 중… (${files.length}장)`;
       for (const f of files) {
         const up = await uploadToCloudinary(f);
-        images.push({ url: up.secure_url, public_id: up.public_id, name: up.original_filename });
+        images.push({
+          url: up.secure_url,
+          public_id: up.public_id,
+          name: up.original_filename,
+        });
       }
     }
+
     statusEl.textContent = "저장 중…";
 
     await addDoc(collection(db, "trips", tripId, "items"), {
-      date, time, title, place, mapUrl, note,
+      date,
+      time,
+      title,
+      place,
+      mapUrl,
+      note,
       images,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      updatedBy: me.uid
+      updatedBy: me.uid,
     });
 
+    // 입력 초기화
     $("time").value = "";
     $("title").value = "";
     $("place").value = "";
     $("mapUrl").value = "";
     $("note").value = "";
     $("photos").value = "";
+
     statusEl.textContent = "추가 완료";
-    setTimeout(() => statusEl.textContent = "", 1200);
+    setTimeout(() => (statusEl.textContent = ""), 900);
   } catch (e) {
+    console.error(e);
     statusEl.textContent = e.message || String(e);
   }
 });
 
-// 일정 리스트 실시간 구독
-const q = query(collection(db, "trips", tripId, "items"), orderBy("date"), orderBy("time"));
-onSnapshot(q, (snap) => {
-  const list = $("list");
-  list.innerHTML = "";
-
-  if (snap.empty) {
-    list.innerHTML = `<div class="card"><p class="small">아직 일정이 없습니다. 위에서 추가해 주세요.</p></div>`;
-    return;
-  }
-
-  snap.forEach((d) => {
-    const it = d.data();
-    const who = members?.[it.updatedBy]?.name || "누군가";
-    const map = it.mapUrl ? `<a href="${it.mapUrl}" target="_blank">지도</a>` : "";
-    const imgs = (it.images || []).map(img => `<img src="${img.url}" alt="photo">`).join("");
-
-    const el = document.createElement("div");
-    el.className = "item";
-    el.innerHTML = `
-      <div class="item-title">${it.title}</div>
-      <div class="meta">
-        <span>📅 ${it.date} ${it.time || ""}</span>
-        ${it.place ? `<span>📍 ${it.place}</span>` : ""}
-        ${map ? `<span>${map}</span>` : ""}
-      </div>
-      ${it.note ? `<div class="small" style="margin-top:8px">${it.note}</div>` : ""}
-      ${imgs ? `<div class="grid-img">${imgs}</div>` : ""}
-      <div class="actions">
-        <div class="chip" data-act="edit">수정</div>
-        <div class="chip" data-act="del">삭제</div>
-        <span class="small">마지막 수정: ${who}</span>
-      </div>
-    `;
-
-    el.querySelector('[data-act="edit"]').addEventListener("click", async () => openEdit(d.id, it));
-    el.querySelector('[data-act="del"]').addEventListener("click", async () => {
-      if (!confirm("이 일정을 삭제할까요?")) return;
-      await deleteDoc(doc(db, "trips", tripId, "items", d.id));
-    });
-
-    list.appendChild(el);
-  });
-});
-
-// ---- 수정 모달 ----
+// -------------------- Edit modal --------------------
 let editingId = null;
 let editingItem = null;
 
@@ -191,8 +231,8 @@ function openModal(open) {
   }
 }
 
-$("closeModal").addEventListener("click", () => openModal(false));
-$("modalBack").addEventListener("click", (e) => {
+$("closeModal")?.addEventListener("click", () => openModal(false));
+$("modalBack")?.addEventListener("click", (e) => {
   if (e.target === $("modalBack")) openModal(false);
 });
 
@@ -209,10 +249,11 @@ async function openEdit(id, item) {
   $("mPlace").value = item.place || "";
   $("mMapUrl").value = item.mapUrl || "";
   $("mNote").value = item.note || "";
+
   openModal(true);
 }
 
-$("saveModal").addEventListener("click", async () => {
+$("saveModal")?.addEventListener("click", async () => {
   const ok = await ensureJoined();
   if (!ok) return;
 
@@ -229,7 +270,10 @@ $("saveModal").addEventListener("click", async () => {
   const note = $("mNote").value.trim();
   const files = $("mPhotos").files;
 
-  if (!date || !title) return (st.textContent = "날짜와 제목은 필수입니다.");
+  if (!date || !title) {
+    st.textContent = "날짜와 제목은 필수입니다.";
+    return;
+  }
 
   try {
     let addImages = [];
@@ -237,7 +281,11 @@ $("saveModal").addEventListener("click", async () => {
       st.textContent = `사진 업로드 중… (${files.length}장)`;
       for (const f of files) {
         const up = await uploadToCloudinary(f);
-        addImages.push({ url: up.secure_url, public_id: up.public_id, name: up.original_filename });
+        addImages.push({
+          url: up.secure_url,
+          public_id: up.public_id,
+          name: up.original_filename,
+        });
       }
     }
 
@@ -245,15 +293,114 @@ $("saveModal").addEventListener("click", async () => {
 
     st.textContent = "저장 중…";
     await updateDoc(doc(db, "trips", tripId, "items", editingId), {
-      date, time, title, place, mapUrl, note,
+      date,
+      time,
+      title,
+      place,
+      mapUrl,
+      note,
       images: nextImages,
       updatedAt: serverTimestamp(),
-      updatedBy: me.uid
+      updatedBy: me.uid,
     });
 
     st.textContent = "저장 완료";
-    setTimeout(() => openModal(false), 600);
+    setTimeout(() => openModal(false), 500);
   } catch (e) {
+    console.error(e);
     st.textContent = e.message || String(e);
   }
+});
+
+// -------------------- List subscription (group by date + filter) --------------------
+const q = query(
+  collection(db, "trips", tripId, "items"),
+  orderBy("date"),
+  orderBy("time")
+);
+
+onSnapshot(q, (snap) => {
+  const listEl = $("list");
+  listEl.innerHTML = "";
+
+  if (snap.empty) {
+    listEl.innerHTML = `<div class="card"><p class="small">아직 일정이 없습니다. 위에서 추가해 주세요.</p></div>`;
+    return;
+  }
+
+  const today = iso(new Date());
+  const tomorrow = iso(addDays(new Date(), 1));
+
+  // 1) docs -> array
+  let items = [];
+  snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
+
+  // 2) filter by viewMode
+  if (viewMode === "today") items = items.filter((it) => it.date === today);
+  if (viewMode === "tomorrow") items = items.filter((it) => it.date === tomorrow);
+
+  if (!items.length) {
+    listEl.innerHTML = `<div class="card"><p class="small">해당 보기 모드에 일정이 없습니다.</p></div>`;
+    return;
+  }
+
+  // 3) group by date
+  const groups = {};
+  for (const it of items) {
+    const key = it.date || "미정";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(it);
+  }
+
+  // 4) render in date order
+  Object.keys(groups)
+    .sort()
+    .forEach((dateKey) => {
+      const wrap = document.createElement("div");
+      wrap.className = "card";
+      wrap.innerHTML = `<h2>📅 ${safeText(dateKey)}</h2><div class="list" id="g-${safeText(dateKey)}"></div>`;
+      listEl.appendChild(wrap);
+
+      const g = wrap.querySelector(".list");
+
+      // time order inside date
+      groups[dateKey].sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+
+      for (const it of groups[dateKey]) {
+        const who = members?.[it.updatedBy]?.name || "누군가";
+        const map = it.mapUrl
+          ? `<a href="${safeText(it.mapUrl)}" target="_blank" rel="noopener">지도</a>`
+          : "";
+        const imgs = (it.images || [])
+          .map((img) => `<img src="${safeText(img.url)}" alt="photo">`)
+          .join("");
+
+        const el = document.createElement("div");
+        el.className = "item";
+        el.innerHTML = `
+          <div class="item-title">${it.time ? `⏰ ${safeText(it.time)}  ` : ""}${safeText(it.title)}</div>
+          <div class="meta">
+            ${it.place ? `<span>📍 ${safeText(it.place)}</span>` : ""}
+            ${map ? `<span>${map}</span>` : ""}
+          </div>
+          ${it.note ? `<div class="small" style="margin-top:8px">${safeText(it.note)}</div>` : ""}
+          ${imgs ? `<div class="grid-img">${imgs}</div>` : ""}
+          <div class="actions">
+            <div class="chip" data-act="edit">수정</div>
+            <div class="chip" data-act="del">삭제</div>
+            <span class="small">마지막 수정: ${safeText(who)}</span>
+          </div>
+        `;
+
+        el.querySelector('[data-act="edit"]').addEventListener("click", () =>
+          openEdit(it.id, it)
+        );
+        el.querySelector('[data-act="del"]').addEventListener("click", async () => {
+          if (!confirm("이 일정을 삭제할까요?")) return;
+          await deleteDoc(doc(db, "trips", tripId, "items", it.id));
+        });
+
+        g.appendChild(el);
+      }
+    });
 });
