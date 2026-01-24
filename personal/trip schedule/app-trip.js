@@ -57,7 +57,8 @@ function safeText(s) {
     .replaceAll("'", "&#039;");
 }
 
-$("date").value = todayISO();
+// -------------------- 기본값 --------------------
+if ($("date")) $("date").value = todayISO();
 
 // -------------------- Auth --------------------
 const authReady = new Promise((resolve) => {
@@ -73,21 +74,25 @@ signInAnonymously(auth).catch((e) => {
 let me = { uid: null, name: "익명" };
 let members = {};
 
-// -------------------- view mode --------------------
+// -------------------- view mode + cache --------------------
 let viewMode = "all"; // all | today | tomorrow
+let cachedItems = []; // ✅ 마지막 스냅샷 items 저장
 
 function setViewMode(mode) {
   viewMode = mode;
-  // 버튼 UI 피드백(선택 표시가 없더라도 최소한 힌트 변경)
-  const hint = $("viewHint");
-  if (!hint) return;
 
-  if (mode === "today") hint.textContent = "오늘 일정만 보여줍니다.";
-  else if (mode === "tomorrow") hint.textContent = "내일 일정만 보여줍니다.";
-  else hint.textContent = "전체 일정을 날짜별로 묶어서 보여줍니다.";
+  const hint = $("viewHint");
+  if (hint) {
+    if (mode === "today") hint.textContent = "오늘 일정만 보여줍니다.";
+    else if (mode === "tomorrow") hint.textContent = "내일 일정만 보여줍니다.";
+    else hint.textContent = "전체 일정을 날짜별로 묶어서 보여줍니다.";
+  }
+
+  // ✅ 버튼을 누르면 캐시로 즉시 다시 그림
+  renderItems();
 }
 
-// 버튼 연결(HTML에 id가 있으면 작동)
+// 버튼 연결
 $("viewAll")?.addEventListener("click", () => setViewMode("all"));
 $("viewToday")?.addEventListener("click", () => setViewMode("today"));
 $("viewTomorrow")?.addEventListener("click", () => setViewMode("tomorrow"));
@@ -145,12 +150,18 @@ $("shareBtn")?.addEventListener("click", async () => {
     meta.startDate && meta.endDate ? `${meta.startDate} ~ ${meta.endDate}` : "";
 
   await ensureJoined();
+
+  // ✅ 처음 진입 시 전체 보기로 시작(원하시면 today로 바꾸셔도 됩니다)
+  setViewMode("all");
 })();
 
 // -------------------- Members subscription --------------------
 onSnapshot(collection(db, "trips", tripId, "members"), (snap) => {
   members = {};
   snap.forEach((d) => (members[d.id] = d.data()));
+
+  // 멤버명이 늦게 들어와도 화면 갱신
+  renderItems();
 });
 
 // -------------------- Add item --------------------
@@ -289,7 +300,7 @@ $("saveModal")?.addEventListener("click", async () => {
       }
     }
 
-    const nextImages = [...(editingItem.images || []), ...addImages];
+    const nextImages = [...(editingItem?.images || []), ...addImages];
 
     st.textContent = "저장 중…";
     await updateDoc(doc(db, "trips", tripId, "items", editingId), {
@@ -312,18 +323,21 @@ $("saveModal")?.addEventListener("click", async () => {
   }
 });
 
-// -------------------- List subscription (group by date + filter) --------------------
+// -------------------- List query --------------------
 const q = query(
   collection(db, "trips", tripId, "items"),
   orderBy("date"),
   orderBy("time")
 );
 
-onSnapshot(q, (snap) => {
+// ✅ 렌더 함수: 캐시(cachedItems) + viewMode 기준으로만 그림
+function renderItems() {
   const listEl = $("list");
+  if (!listEl) return;
+
   listEl.innerHTML = "";
 
-  if (snap.empty) {
+  if (!cachedItems.length) {
     listEl.innerHTML = `<div class="card"><p class="small">아직 일정이 없습니다. 위에서 추가해 주세요.</p></div>`;
     return;
   }
@@ -331,11 +345,8 @@ onSnapshot(q, (snap) => {
   const today = iso(new Date());
   const tomorrow = iso(addDays(new Date(), 1));
 
-  // 1) docs -> array
-  let items = [];
-  snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
-
-  // 2) filter by viewMode
+  // 보기모드 필터
+  let items = [...cachedItems];
   if (viewMode === "today") items = items.filter((it) => it.date === today);
   if (viewMode === "tomorrow") items = items.filter((it) => it.date === tomorrow);
 
@@ -344,7 +355,7 @@ onSnapshot(q, (snap) => {
     return;
   }
 
-  // 3) group by date
+  // 날짜별 그룹화
   const groups = {};
   for (const it of items) {
     const key = it.date || "미정";
@@ -352,18 +363,15 @@ onSnapshot(q, (snap) => {
     groups[key].push(it);
   }
 
-  // 4) render in date order
   Object.keys(groups)
     .sort()
     .forEach((dateKey) => {
       const wrap = document.createElement("div");
       wrap.className = "card";
-      wrap.innerHTML = `<h2>📅 ${safeText(dateKey)}</h2><div class="list" id="g-${safeText(dateKey)}"></div>`;
+      wrap.innerHTML = `<h2>📅 ${safeText(dateKey)}</h2><div class="list"></div>`;
       listEl.appendChild(wrap);
 
       const g = wrap.querySelector(".list");
-
-      // time order inside date
       groups[dateKey].sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
       for (const it of groups[dateKey]) {
@@ -392,9 +400,7 @@ onSnapshot(q, (snap) => {
           </div>
         `;
 
-        el.querySelector('[data-act="edit"]').addEventListener("click", () =>
-          openEdit(it.id, it)
-        );
+        el.querySelector('[data-act="edit"]').addEventListener("click", () => openEdit(it.id, it));
         el.querySelector('[data-act="del"]').addEventListener("click", async () => {
           if (!confirm("이 일정을 삭제할까요?")) return;
           await deleteDoc(doc(db, "trips", tripId, "items", it.id));
@@ -403,4 +409,11 @@ onSnapshot(q, (snap) => {
         g.appendChild(el);
       }
     });
+}
+
+// ✅ onSnapshot은 캐시만 갱신하고 renderItems만 호출
+onSnapshot(q, (snap) => {
+  cachedItems = [];
+  snap.forEach((d) => cachedItems.push({ id: d.id, ...d.data() }));
+  renderItems();
 });
