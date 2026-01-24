@@ -102,16 +102,34 @@ async function ensureJoined() {
   const user = await authReady;
   me.uid = user.uid;
 
-  const myMemberDoc = await getDoc(doc(db, "trips", tripId, "members", me.uid));
-  if (myMemberDoc.exists()) {
-    me.name = myMemberDoc.data()?.name || "익명";
+  const myRef = doc(db, "trips", tripId, "members", me.uid);
+  const mySnap = await getDoc(myRef);
+
+  // 이미 가입돼 있으면 OK
+  if (mySnap.exists()) {
+    me.name = mySnap.data()?.name || "익명";
     $("joinCard").style.display = "none";
     return true;
   }
 
-  $("joinCard").style.display = "block";
-  return false;
+  // ✅ 자동 가입(닉네임 없으면 "익명")
+  const nickInput = $("nick")?.value?.trim();
+  const nickFromLS = localStorage.getItem("tripNick")?.trim();
+  const nick = nickInput || nickFromLS || "익명";
+
+  await setDoc(myRef, {
+    name: nick,
+    joinedAt: serverTimestamp(),
+  });
+
+  localStorage.setItem("tripNick", nick);
+  me.name = nick;
+
+  // joinCard는 굳이 안 띄워도 됨
+  $("joinCard").style.display = "none";
+  return true;
 }
+
 
 $("joinBtn")?.addEventListener("click", async () => {
   const user = await authReady;
