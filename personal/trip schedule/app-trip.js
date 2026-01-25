@@ -21,6 +21,10 @@ import {
   deleteDoc,
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
+window.addEventListener("unhandledrejection", e => alert(e.reason?.message || e.reason));
+window.addEventListener("error", e => alert(e.message || e.error?.message || e.error));
+
+
 const $ = (id) => document.getElementById(id);
 
 window.addEventListener("error", (e) => {
