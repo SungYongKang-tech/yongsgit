@@ -426,7 +426,7 @@ function renderItems() {
           <div class="actions">
             <div class="chip" data-act="edit">수정</div>
             <div class="chip" data-act="del">삭제</div>
-            <span class="small">마지막 수정: ${safeText(who)}</span>
+            
           </div>
         `;
 
