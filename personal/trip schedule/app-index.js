@@ -1,4 +1,4 @@
-// app-index.js
+// app-index.js (공용 여행 목록 버전 - 중복 제거)
 import { auth, db } from "./firebase.js";
 import {
   signInAnonymously,
@@ -34,7 +34,7 @@ function randomId(len = 16) {
 }
 
 function escapeHtml(s) {
-  return (s || "")
+  return (s ?? "")
     .toString()
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -60,16 +60,13 @@ signInAnonymously(auth).catch((e) => {
 });
 
 // ============================================================
-// ✅ (A) 공용 여행 목록: Firestore trips에서 읽어오기
-//  - index.html에 <div id="tripList"></div> 가 있어야 합니다.
-//  - (선택) <p class="small" id="tripListStatus"></p> 있으면 상태 표시
+// ✅ 공용 여행 목록: Firestore trips에서 읽어오기
+// index.html에 <div id="tripList"></div> 필요
 // ============================================================
-function renderPublicTrips() {
-  const listEl = $("tripList");
-  const listStatus = $("tripListStatus");
-  if (!listEl) return;
+const listEl = $("tripList");
+const listStatus = $("tripListStatus");
 
-  // ✅ createdAt 최상단 기준 정렬
+if (listEl) {
   const q = query(collection(db, "trips"), orderBy("createdAt", "desc"), limit(50));
 
   onSnapshot(
@@ -97,12 +94,23 @@ function renderPublicTrips() {
           <div class="item-title">${escapeHtml(title)}</div>
           <div class="meta">
             <span>📅 ${escapeHtml(period)}</span>
-            <span class="small">ID: ${escapeHtml(d.id)}</span>
           </div>
           <div class="actions">
             <a class="chip" href="trip.html?trip=${encodeURIComponent(d.id)}">열기</a>
+            <div class="chip" data-copy="${escapeHtml(d.id)}">링크 복사</div>
           </div>
         `;
+
+        // 링크 복사
+        card.querySelector("[data-copy]")?.addEventListener("click", async () => {
+          const url = `${location.origin}${location.pathname.replace(/index\.html?$/,"")}trip.html?trip=${encodeURIComponent(d.id)}`;
+          try {
+            await navigator.clipboard.writeText(url);
+            alert("여행 링크를 복사했습니다. 카톡에 붙여넣기 하시면 됩니다.");
+          } catch {
+            prompt("복사가 안 되면 아래 링크를 복사하세요:", url);
+          }
+        });
 
         listEl.appendChild(card);
       });
@@ -116,72 +124,6 @@ function renderPublicTrips() {
     }
   );
 }
-
-renderPublicTrips();
-
-// ============================================================
-// (선택) 기존 로컬 목록 유지: 같은 기기에서 "최근 여행" 편의용
-//  - 다른 폰에서는 안 보이는 게 정상
-// ============================================================
-const LS_KEY = "myTrips";
-
-function saveTripToLocal({ tripId, title, startDate, endDate }) {
-  const prev = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
-  const next = [
-    { tripId, title, startDate, endDate, savedAt: Date.now() },
-    ...prev.filter((x) => x.tripId !== tripId),
-  ].slice(0, 30);
-  localStorage.setItem(LS_KEY, JSON.stringify(next));
-}
-
-function renderMyTrips() {
-  const box = $("myTrips");
-  const hint = $("myTripsHint");
-  if (!box) return;
-
-  const list = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
-  if (!list.length) {
-    box.innerHTML = `<div class="small">이 기기에서 최근에 열었던 여행이 없습니다.</div>`;
-    if (hint) hint.textContent = "";
-    return;
-  }
-
-  box.innerHTML = list
-    .map(
-      (t) => `
-      <div class="item">
-        <div class="item-title">${escapeHtml(t.title || "여행")}</div>
-        <div class="meta">
-          <span>📅 ${
-            t.startDate && t.endDate ? `${t.startDate} ~ ${t.endDate}` : ""
-          }</span>
-          <span class="small">${new Date(t.savedAt).toLocaleString()}</span>
-        </div>
-        <div class="actions">
-          <a class="chip" href="trip.html?trip=${encodeURIComponent(t.tripId)}">열기</a>
-          <div class="chip" data-del="${t.tripId}">목록에서 제거</div>
-        </div>
-      </div>
-    `
-    )
-    .join("");
-
-  box.querySelectorAll("[data-del]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-del");
-      const cur = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
-      const next = cur.filter((x) => x.tripId !== id);
-      localStorage.setItem(LS_KEY, JSON.stringify(next));
-      renderMyTrips();
-    });
-  });
-
-  if (hint)
-    hint.textContent =
-      "※ 이 목록(최근 여행)은 이 기기(브라우저)에만 저장됩니다. 공용 여행 목록은 위에서 확인하세요.";
-}
-
-renderMyTrips();
 
 // -------------------- 여행 만들기 --------------------
 $("createBtn")?.addEventListener("click", async () => {
@@ -200,9 +142,9 @@ $("createBtn")?.addEventListener("click", async () => {
   try {
     statusEl.textContent = "저장 중…";
 
-    // ✅ trips 문서: createdAt 최상단 추가(공용 목록 정렬용)
+    // ✅ 공용 목록 정렬을 위해 createdAt 최상단 저장
     await setDoc(doc(db, "trips", tripId), {
-      createdAt: serverTimestamp(), // ✅ 핵심
+      createdAt: serverTimestamp(),
       meta: {
         title,
         startDate,
@@ -212,15 +154,11 @@ $("createBtn")?.addEventListener("click", async () => {
       },
     });
 
-    // 멤버 등록
+    // 멤버 등록(작성자)
     await setDoc(doc(db, "trips", tripId, "members", user.uid), {
       name: myName,
       joinedAt: serverTimestamp(),
     });
-
-    // (선택) 로컬에도 저장(같은 기기 편의)
-    saveTripToLocal({ tripId, title, startDate, endDate });
-    renderMyTrips();
 
     // 이동
     location.href = `trip.html?trip=${encodeURIComponent(tripId)}`;
