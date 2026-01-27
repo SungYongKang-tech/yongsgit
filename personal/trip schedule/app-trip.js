@@ -23,6 +23,9 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+// trip meta 캐시(제목/기간 표 상단에 쓰기)
+let tripMetaCache = { title: "여행", startDate: "", endDate: "" };
+
 // ✅ 에러 핸들러 (중복 제거 + 너무 자주 alert 뜨는 것 방지)
 let _lastAlertAt = 0;
 function safeAlert(msg) {
@@ -182,6 +185,8 @@ $("shareBtn")?.addEventListener("click", async () => {
   }
 
   const meta = t.data()?.meta || {};
+  tripMetaCache = { title: meta.title || "여행", startDate: meta.startDate || "", endDate: meta.endDate || "" };
+
   $("tripTitle") && ($("tripTitle").textContent = `📌 ${meta.title || "여행"}`);
   $("tripPeriod") &&
     ($("tripPeriod").textContent =
@@ -550,6 +555,168 @@ const timeLabel =
     });
 }
 
+// ======================================================
+// ✅ 표로 보기 (여행 제목 + 전체 일정표)
+// ======================================================
+
+
+
+// Load trip meta 부분에서 meta를 캐시에 저장하도록 2줄만 추가하세요.
+// (기존 코드에서 meta 읽는 부분 바로 아래에 추가)
+/// tripMetaCache = { title: meta.title || "여행", startDate: meta.startDate || "", endDate: meta.endDate || "" };
+
+function openTableModal() {
+  const back = $("tableBack");
+  if (!back) return;
+
+  // 제목/기간
+  const tTitle = tripMetaCache.title || "여행";
+  const period =
+    tripMetaCache.startDate && tripMetaCache.endDate
+      ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
+      : "";
+
+  $("tableTitle") && ($("tableTitle").textContent = `📌 ${tTitle} - 전체 일정표`);
+$("tableSub") && ($("tableSub").textContent = period ? `기간: ${period}` : "");
+
+
+  // 현재 보기 모드(viewMode)에 맞춰 표 생성 (원하시면 항상 전체로도 가능)
+  const today = iso(new Date());
+  const tomorrow = iso(addDays(new Date(), 1));
+
+  let items = [...cachedItems];
+  if (viewMode === "today") items = items.filter((it) => it.date === today);
+  if (viewMode === "tomorrow") items = items.filter((it) => it.date === tomorrow);
+
+  // 표 렌더
+  renderTable(items);
+
+  $("tableMsg") && ($("tableMsg").textContent = "");
+
+  back.style.display = "flex";
+}
+
+function closeTableModal() {
+  const back = $("tableBack");
+  if (!back) return;
+  back.style.display = "none";
+  $("tableEl") && ($("tableEl").innerHTML = "");
+$("tableMsg") && ($("tableMsg").textContent = "");
+
+}
+
+function formatTimeLabel(it) {
+  const s = (it.timeStart || "").trim();
+  const e = (it.timeEnd || "").trim();
+  if (s && e) return `${s}~${e}`;
+  if (s) return s;
+  return ""; // 시간 없을 수도 있음
+}
+
+function renderTable(items) {
+  const table = $("tableEl");
+  if (!table) return;
+
+  // 정렬: date → timeSort
+  items.sort((a, b) => {
+    const ad = a.date || "";
+    const bd = b.date || "";
+    if (ad !== bd) return ad.localeCompare(bd);
+
+    const at = a.timeSort || makeTimeSort(a.timeStart);
+    const bt = b.timeSort || makeTimeSort(b.timeStart);
+    return String(at).localeCompare(String(bt));
+  });
+
+  // 헤더
+  table.innerHTML = `
+    <thead>
+      <tr style="background:#fafafa;">
+        <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">날짜</th>
+        <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">시간</th>
+        <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">제목</th>
+        <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">장소</th>
+        <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">지도</th>
+        <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">메모</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = table.querySelector("tbody");
+  if (!tbody) return;
+
+  if (!items.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="padding:12px; color:#666;">표시할 일정이 없습니다.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  // 바디
+  for (const it of items) {
+    const date = it.date || "";
+    const time = formatTimeLabel(it);
+    const title = it.title || "";
+    const place = it.place || "";
+    const note = it.note || "";
+    const mapUrl = it.mapUrl || "";
+
+    const mapCell = mapUrl
+      ? `<a href="${safeText(mapUrl)}" target="_blank" rel="noopener">열기</a>`
+      : "";
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="padding:10px; border-bottom:1px solid #f0f0f0; white-space:nowrap;">${safeText(date)}</td>
+      <td style="padding:10px; border-bottom:1px solid #f0f0f0; white-space:nowrap;">${safeText(time)}</td>
+      <td style="padding:10px; border-bottom:1px solid #f0f0f0;">${safeText(title)}</td>
+      <td style="padding:10px; border-bottom:1px solid #f0f0f0;">${safeText(place)}</td>
+      <td style="padding:10px; border-bottom:1px solid #f0f0f0;">${mapCell}</td>
+      <td style="padding:10px; border-bottom:1px solid #f0f0f0;">${safeText(note)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+// ✅ 표 복사(엑셀/구글시트/카톡 메모 등에 붙여넣기 쉬운 TSV)
+async function copyTableAsTSV() {
+  const items = buildTableItemsForCurrentView();
+
+  const header = ["날짜", "시간", "제목", "장소", "지도", "메모"];
+  const rows = items.map((it) => [
+    it.date || "",
+    formatTimeLabel(it),
+    it.title || "",
+    it.place || "",
+    it.mapUrl || "",
+    (it.note || "").replace(/\s+/g, " ").trim(),
+  ]);
+
+  const tsv = [header, ...rows].map((r) => r.join("\t")).join("\n");
+
+  try {
+    await navigator.clipboard.writeText(tsv);
+    $("tableMsg") && ($("tableMsg").textContent = "표를 복사했습니다. (엑셀/시트에 붙여넣기 가능)");
+  } catch {
+    $("tableMsg") && ($("tableMsg").textContent = "복사에 실패했습니다. 브라우저 권한을 확인해 주세요.");
+  }
+}
+
+
+// 버튼 연결
+$("openTable")?.addEventListener("click", openTableModal);
+$("closeTable")?.addEventListener("click", closeTableModal);
+$("copyTable")?.addEventListener("click", copyTableAsTSV);
+
+// 모달 바깥 클릭 닫기
+$("tableBack")?.addEventListener("click", (e) => {
+  if (e.target === $("tableBack")) closeTableModal();
+});
+
+
 // ✅ 썸네일 클릭(이벤트 위임)
 $("list")?.addEventListener("click", async (e) => {
   const btn = e.target.closest('[data-act="viewimg"]');
@@ -618,3 +785,76 @@ $("imgDelete")?.addEventListener("click", async () => {
     $("imgMsg") && ($("imgMsg").textContent = e.message || String(e));
   }
 });
+
+function csvEscape(v) {
+  const s = (v ?? "").toString();
+  // CSV 규칙: 쉼표/따옴표/줄바꿈 있으면 "로 감싸고 내부 "는 ""로
+  if (/[",\n]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+  return s;
+}
+
+function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function buildTableItemsForCurrentView() {
+  const today = iso(new Date());
+  const tomorrow = iso(addDays(new Date(), 1));
+
+  let items = [...cachedItems];
+  if (viewMode === "today") items = items.filter((it) => it.date === today);
+  if (viewMode === "tomorrow") items = items.filter((it) => it.date === tomorrow);
+
+  items.sort((a, b) => {
+    const ad = a.date || "";
+    const bd = b.date || "";
+    if (ad !== bd) return ad.localeCompare(bd);
+
+    const at = a.timeSort || makeTimeSort(a.timeStart);
+    const bt = b.timeSort || makeTimeSort(b.timeStart);
+    return String(at).localeCompare(String(bt));
+  });
+
+  return items;
+}
+
+function downloadTableCSV() {
+  const items = buildTableItemsForCurrentView();
+
+  const title = (tripMetaCache.title || "여행").replace(/[\\/:*?"<>|]/g, "_");
+  const filename = `${title}_일정표.csv`;
+
+  // ✅ 사진(images) 완전 제외
+  const header = ["날짜", "시간", "제목", "장소", "지도URL", "메모"];
+  const rows = items.map((it) => [
+    it.date || "",
+    formatTimeLabel(it),
+    it.title || "",
+    it.place || "",
+    it.mapUrl || "",
+    (it.note || "").replace(/\r?\n/g, " ").trim(),
+  ]);
+
+  const csv =
+    [header, ...rows]
+      .map((r) => r.map(csvEscape).join(","))
+      .join("\n");
+
+  // 엑셀 한글 깨짐 방지(BOM)
+  const withBom = "\uFEFF" + csv;
+
+  downloadTextFile(filename, withBom);
+  $("tableMsg") && ($("tableMsg").textContent = "CSV로 다운로드했습니다. (사진 제외)");
+
+}
+
+// 버튼 연결
+$("downloadTable")?.addEventListener("click", downloadTableCSV);
