@@ -1057,7 +1057,6 @@ function buildPrintTableHTML_MultiPage(items) {
         <th class="time">시간</th>
         <th class="title">제목</th>
         <th class="place">장소</th>
-s
         <th class="map">지도URL</th>
         <th class="memo">메모</th>
       </tr>
