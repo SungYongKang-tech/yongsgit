@@ -86,6 +86,13 @@ signInAnonymously(auth).catch((e) => {
 let me = { uid: null, name: "익명" };
 let members = {};
 
+// ✅ 최신 items를 id로 바로 찾기 위해 저장
+let latestItemsById = {};
+
+// ✅ 현재 미리보기로 열려있는 이미지 정보
+let viewing = { itemId: null, public_id: null, url: null, name: "" };
+
+
 // -------------------- view mode + cache --------------------
 let viewMode = "all"; // all | today | tomorrow
 let cachedItems = []; // ✅ 마지막 스냅샷 items 저장
@@ -356,8 +363,10 @@ $("saveModal")?.addEventListener("click", async () => {
 // -------------------- List query --------------------
 const q = query(
   collection(db, "trips", tripId, "items"),
-  orderBy("date")
+  orderBy("date"),
+  orderBy("time")
 );
+
 
 
 // ✅ 렌더 함수: 캐시(cachedItems) + viewMode 기준으로만 그림
@@ -410,8 +419,18 @@ function renderItems() {
           ? `<a href="${safeText(it.mapUrl)}" target="_blank" rel="noopener">지도</a>`
           : "";
         const imgs = (it.images || [])
-          .map((img) => `<img src="${safeText(img.url)}" alt="photo">`)
-          .join("");
+  .map((img) => `
+    <button class="thumb" type="button"
+      data-act="viewimg"
+      data-itemid="${safeText(it.id)}"
+      data-url="${safeText(img.url)}"
+      data-pid="${safeText(img.public_id || "")}"
+      data-name="${safeText(img.name || "")}">
+      <img src="${safeText(img.url)}" alt="photo">
+    </button>
+  `)
+  .join("");
+
 
         const el = document.createElement("div");
         el.className = "item";
@@ -439,11 +458,89 @@ function renderItems() {
         g.appendChild(el);
       }
     });
+     
+
 }
+
+$("list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest('[data-act="viewimg"]');
+  if (!btn) return;
+
+  const ok = await ensureJoined(); // 수정/삭제까지 있으니 통일
+  if (!ok) return;
+
+  openImgViewer({
+    itemId: btn.getAttribute("data-itemid"),
+    url: btn.getAttribute("data-url"),
+    public_id: btn.getAttribute("data-pid"),
+    name: btn.getAttribute("data-name"),
+  });
+});
+
 
 // ✅ onSnapshot은 캐시만 갱신하고 renderItems만 호출
 onSnapshot(q, (snap) => {
   cachedItems = [];
-  snap.forEach((d) => cachedItems.push({ id: d.id, ...d.data() }));
+  latestItemsById = {};
+
+  snap.forEach((d) => {
+    const it = { id: d.id, ...d.data() };
+    cachedItems.push(it);
+    latestItemsById[it.id] = it;
+  });
+
   renderItems();
+});
+
+
+function openImgViewer({ itemId, url, public_id, name }) {
+  viewing = { itemId, url, public_id, name };
+
+  $("imgView").src = url;
+  $("imgInfo").textContent = name ? `파일명: ${name}` : "";
+  $("imgMsg").textContent = "";
+  $("imgBack").style.display = "flex";
+}
+
+function closeImgViewer() {
+  $("imgBack").style.display = "none";
+  $("imgView").src = "";
+  $("imgMsg").textContent = "";
+  viewing = { itemId: null, public_id: null, url: null, name: "" };
+}
+
+$("imgClose")?.addEventListener("click", closeImgViewer);
+$("imgBack")?.addEventListener("click", (e) => {
+  if (e.target === $("imgBack")) closeImgViewer();
+});
+
+$("imgDelete")?.addEventListener("click", async () => {
+  if (!viewing.itemId || !viewing.url) return;
+
+  const ok = confirm("이 사진을 이 일정에서 삭제할까요?");
+  if (!ok) return;
+
+  try {
+    const item = latestItemsById[viewing.itemId];
+    if (!item) {
+      $("imgMsg").textContent = "일정 정보를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.";
+      return;
+    }
+
+    const nextImages = (item.images || []).filter((img) => img.url !== viewing.url);
+
+    $("imgMsg").textContent = "삭제 중…";
+
+    await updateDoc(doc(db, "trips", tripId, "items", viewing.itemId), {
+      images: nextImages,
+      updatedAt: serverTimestamp(),
+      updatedBy: me.uid,
+    });
+
+    $("imgMsg").textContent = "삭제 완료";
+    setTimeout(() => closeImgViewer(), 300);
+  } catch (e) {
+    console.error(e);
+    $("imgMsg").textContent = e.message || String(e);
+  }
 });
