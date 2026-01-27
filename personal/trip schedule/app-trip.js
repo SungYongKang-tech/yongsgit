@@ -21,9 +21,6 @@ import {
   deleteDoc,
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
-window.addEventListener("unhandledrejection", e => alert(e.reason?.message || e.reason));
-window.addEventListener("error", e => alert(e.message || e.error?.message || e.error));
-
 
 const $ = (id) => document.getElementById(id);
 
@@ -363,8 +360,8 @@ $("saveModal")?.addEventListener("click", async () => {
 // -------------------- List query --------------------
 const q = query(
   collection(db, "trips", tripId, "items"),
-  orderBy("date"),
-  
+  orderBy("date")  
+  orderBy("time")
 );
 
 
@@ -479,18 +476,34 @@ $("list")?.addEventListener("click", async (e) => {
 
 
 // ✅ onSnapshot은 캐시만 갱신하고 renderItems만 호출
-onSnapshot(q, (snap) => {
-  cachedItems = [];
-  latestItemsById = {};
+onSnapshot(
+  q,
+  (snap) => {
+    cachedItems = [];
+    latestItemsById = {};
 
-  snap.forEach((d) => {
-    const it = { id: d.id, ...d.data() };
-    cachedItems.push(it);
-    latestItemsById[it.id] = it;
-  });
+    snap.forEach((d) => {
+      const it = { id: d.id, ...d.data() };
+      cachedItems.push(it);
+      latestItemsById[it.id] = it;
+    });
 
-  renderItems();
-});
+    renderItems();
+  },
+  (err) => {
+    console.error("items onSnapshot error:", err);
+    const listEl = $("list");
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="card">
+          <h2>일정 불러오기 오류</h2>
+          <p class="small">${safeText(err.code || "")} ${safeText(err.message || String(err))}</p>
+        </div>
+      `;
+    }
+    alert(`일정 불러오기 오류\n${err.code || ""}\n${err.message || err}`);
+  }
+);
 
 
 function openImgViewer({ itemId, url, public_id, name }) {
