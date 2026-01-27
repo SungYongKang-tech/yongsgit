@@ -894,10 +894,13 @@ function buildTableItemsForCurrentView() {
 }
 
 function downloadTableCSV() {
-  const items = buildTableItemsForCurrentView();
+  // ✅ xlsx 라이브러리 확인
+  if (!window.XLSX) {
+    alert("엑셀 다운로드 모듈(XLSX)을 불러오지 못했습니다. trip.html에 xlsx 스크립트를 추가했는지 확인하세요.");
+    return;
+  }
 
-  const title = (tripMetaCache.title || "여행").replace(/[\\/:*?"<>|]/g, "_");
-  const filename = `${title}_일정표.tsv`; // ✅ .xls 말고 .tsv
+  const items = buildTableItemsForCurrentView();
 
   // ✅ 날짜 포맷: 2026-01-25 -> 26.01.25
   const fmtDate = (s) => {
@@ -907,7 +910,6 @@ function downloadTableCSV() {
     return `${m[1].slice(2)}.${m[2]}.${m[3]}`;
   };
 
-  // ✅ 값 정리(탭/줄바꿈 제거)
   const clean = (v) =>
     (v ?? "")
       .toString()
@@ -915,47 +917,62 @@ function downloadTableCSV() {
       .replace(/\t/g, " ")
       .trim();
 
-  const header = ["날짜", "시간", "제목", "장소", "지도URL", "메모"];
+  const title = (tripMetaCache.title || "여행").replace(/[\\/:*?"<>|]/g, "_");
+  const filename = `${title}_일정표.xlsx`;
 
-  const rows = items.map((it) => [
-    fmtDate(it.date || ""),
-    clean(formatTimeLabel(it)),
-    clean(it.title || ""),
-    clean(it.place || ""),
-    clean(it.mapUrl || ""),
-    clean(it.note || ""),
-  ]);
+  // ✅ 첫 줄에 여행 제목(표 맨 위)
+  const period =
+    tripMetaCache.startDate && tripMetaCache.endDate
+      ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
+      : "";
 
-  // ✅ TSV 텍스트 생성 (CRLF 권장)
-  const tsv = [header, ...rows].map((r) => r.join("\t")).join("\r\n");
+  const aoa = [];
+  aoa.push([`📌 ${tripMetaCache.title || "여행"} - 전체 일정표`]); // 1행
+  if (period) aoa.push([`기간: ${period}`]);                      // 2행(옵션)
+  aoa.push([]);                                                   // 한 줄 띄우기
 
-  // ✅ 핵심: UTF-16LE 바이트로 직접 인코딩 + BOM(FF FE)
-  function toUtf16LeBytes(str) {
-    const buf = new Uint8Array(str.length * 2 + 2);
-    buf[0] = 0xff; // BOM
-    buf[1] = 0xfe;
-    for (let i = 0; i < str.length; i++) {
-      const code = str.charCodeAt(i);
-      buf[2 + i * 2] = code & 0xff;         // low byte
-      buf[2 + i * 2 + 1] = (code >> 8) & 0xff; // high byte
-    }
-    return buf;
+  // 헤더
+  aoa.push(["날짜", "시간", "제목", "장소", "지도URL", "메모"]);
+
+  // 데이터(✅ 사진 제외)
+  for (const it of items) {
+    aoa.push([
+      fmtDate(it.date || ""),
+      clean(formatTimeLabel(it)),
+      clean(it.title || ""),
+      clean(it.place || ""),
+      clean(it.mapUrl || ""),
+      clean(it.note || ""),
+    ]);
   }
 
-  const bytes = toUtf16LeBytes(tsv);
-  const blob = new Blob([bytes], { type: "text/tab-separated-values" });
+  // ✅ 시트 생성
+  const ws = window.XLSX.utils.aoa_to_sheet(aoa);
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // ✅ 보기 좋게: 열 너비 지정(대략)
+  ws["!cols"] = [
+    { wch: 10 }, // 날짜
+    { wch: 12 }, // 시간
+    { wch: 28 }, // 제목
+    { wch: 22 }, // 장소
+    { wch: 35 }, // 지도URL
+    { wch: 40 }, // 메모
+  ];
 
-  $("tableMsg") && ($("tableMsg").textContent = "TSV로 다운로드했습니다. (엑셀에서 한글 안 깨짐)");
+  // ✅ 제목행 병합 (A1~F1)
+  ws["!merges"] = ws["!merges"] || [];
+  ws["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+  if (period) ws["!merges"].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } });
+
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, "일정표");
+
+  // ✅ 파일 저장
+  window.XLSX.writeFile(wb, filename);
+
+  $("tableMsg") && ($("tableMsg").textContent = "엑셀(.xlsx)로 다운로드했습니다. (한글/모바일 OK)");
 }
+
 
 
 
