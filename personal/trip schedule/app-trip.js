@@ -973,6 +973,122 @@ function downloadTableCSV() {
   $("tableMsg") && ($("tableMsg").textContent = "엑셀(.xlsx)로 다운로드했습니다. (한글/모바일 OK)");
 }
 
+function fmtDateYY(s) {
+  // 2026-01-25 -> 26.01.25
+  if (!s) return "";
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(s);
+  return `${m[1].slice(2)}.${m[2]}.${m[3]}`;
+}
+
+function buildPrintTableHTML_MultiPage(items) {
+  items = [...items].sort((a, b) => {
+    const ad = a.date || "";
+    const bd = b.date || "";
+    if (ad !== bd) return ad.localeCompare(bd);
+    const at = a.timeSort || makeTimeSort(a.timeStart);
+    const bt = b.timeSort || makeTimeSort(b.timeStart);
+    return String(at).localeCompare(String(bt));
+  });
+
+  const title = tripMetaCache.title || "여행";
+  const period =
+    tripMetaCache.startDate && tripMetaCache.endDate
+      ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
+      : "";
+
+  const rows = items.map((it) => {
+    const date = fmtDateYY(it.date || "");
+    const time = formatTimeLabel(it);
+    const t = it.title || "";
+    const place = it.place || "";
+    const map = it.mapUrl || "";
+    const note = (it.note || "").replace(/\r?\n/g, " ");
+
+    return `
+      <tr>
+        <td class="date">${safeText(date)}</td>
+        <td class="time">${safeText(time)}</td>
+        <td class="title">${safeText(t)}</td>
+        <td class="place">${safeText(place)}</td>
+        <td class="map">${safeText(map)}</td>
+        <td class="memo">${safeText(note)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <title>${safeText(title)}_일정표</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    html, body { margin:0; padding:0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
+    h1 { margin: 0 0 6px 0; font-size: 18px; }
+    .sub { margin: 0 0 10px 0; color:#555; font-size: 12px; }
+
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #ddd; padding: 6px; font-size: 11px; vertical-align: top; }
+    th { background: #f3f3f3; text-align: left; }
+
+    thead { display: table-header-group; } /* ✅ 페이지마다 헤더 반복 */
+    tr { page-break-inside: avoid; break-inside: avoid; }
+
+    .date  { width: 78px;  white-space: nowrap; }
+    .time  { width: 86px;  white-space: nowrap; }
+    .title { width: 260px; }
+    .place { width: 160px; }
+    .map   { width: 210px; word-break: break-all; }
+    .memo  { width: auto; }
+  </style>
+</head>
+<body>
+  <h1>📌 ${safeText(title)} - 전체 일정표</h1>
+  ${period ? `<div class="sub">기간: ${safeText(period)}</div>` : ``}
+
+  <table>
+    <thead>
+      <tr>
+        <th class="date">날짜</th>
+        <th class="time">시간</th>
+        <th class="title">제목</th>
+        <th class="place">장소</th>
+s
+        <th class="map">지도URL</th>
+        <th class="memo">메모</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows || `<tr><td colspan="6">표시할 일정이 없습니다.</td></tr>`}
+    </tbody>
+  </table>
+
+  <script>
+    setTimeout(() => window.print(), 200);
+  </script>
+</body>
+</html>
+  `;
+}
+
+function downloadPdfMultiPage() {
+  const items = buildTableItemsForCurrentView(); // ✅ 이미 만들어두신 함수 재사용
+  const w = window.open("", "_blank");
+  if (!w) {
+    alert("팝업이 차단되어 PDF 창을 열 수 없습니다. 팝업 허용 후 다시 시도해 주세요.");
+    return;
+  }
+  w.document.open();
+  w.document.write(buildPrintTableHTML_MultiPage(items));
+  w.document.close();
+}
+
+// ✅ 버튼 연결 (CSV는 그대로)
+$("downloadPdf")?.addEventListener("click", downloadPdfMultiPage);
 
 
 
