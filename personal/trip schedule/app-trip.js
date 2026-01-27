@@ -897,10 +897,7 @@ function downloadTableCSV() {
   const items = buildTableItemsForCurrentView();
 
   const title = (tripMetaCache.title || "여행").replace(/[\\/:*?"<>|]/g, "_");
-  const filename = `${title}_일정표.xls`; // ✅ 엑셀이 더 잘 열도록 .xls 확장자 사용(내용은 텍스트)
-
-  // ✅ 헤더(사진 제외)
-  const header = ["날짜", "시간", "제목", "장소", "지도URL", "메모"];
+  const filename = `${title}_일정표.tsv`; // ✅ .xls 말고 .tsv
 
   // ✅ 날짜 포맷: 2026-01-25 -> 26.01.25
   const fmtDate = (s) => {
@@ -910,13 +907,15 @@ function downloadTableCSV() {
     return `${m[1].slice(2)}.${m[2]}.${m[3]}`;
   };
 
-  // ✅ 값 정리(탭/줄바꿈 제거 → 엑셀 깨끗)
+  // ✅ 값 정리(탭/줄바꿈 제거)
   const clean = (v) =>
     (v ?? "")
       .toString()
       .replace(/\r?\n/g, " ")
       .replace(/\t/g, " ")
       .trim();
+
+  const header = ["날짜", "시간", "제목", "장소", "지도URL", "메모"];
 
   const rows = items.map((it) => [
     fmtDate(it.date || ""),
@@ -927,12 +926,24 @@ function downloadTableCSV() {
     clean(it.note || ""),
   ]);
 
-  // ✅ 엑셀 친화: TSV(탭 구분)
+  // ✅ TSV 텍스트 생성 (CRLF 권장)
   const tsv = [header, ...rows].map((r) => r.join("\t")).join("\r\n");
 
-  // ✅ A안 핵심: UTF-16LE + BOM(FFFE)
-  const bom = "\uFEFF";
-  const blob = new Blob([bom + tsv], { type: "text/tab-separated-values;charset=utf-16le" });
+  // ✅ 핵심: UTF-16LE 바이트로 직접 인코딩 + BOM(FF FE)
+  function toUtf16LeBytes(str) {
+    const buf = new Uint8Array(str.length * 2 + 2);
+    buf[0] = 0xff; // BOM
+    buf[1] = 0xfe;
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      buf[2 + i * 2] = code & 0xff;         // low byte
+      buf[2 + i * 2 + 1] = (code >> 8) & 0xff; // high byte
+    }
+    return buf;
+  }
+
+  const bytes = toUtf16LeBytes(tsv);
+  const blob = new Blob([bytes], { type: "text/tab-separated-values" });
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -943,8 +954,9 @@ function downloadTableCSV() {
   a.remove();
   URL.revokeObjectURL(url);
 
-  $("tableMsg") && ($("tableMsg").textContent = "엑셀용 파일로 다운로드했습니다. (한글 깨짐 방지)");
+  $("tableMsg") && ($("tableMsg").textContent = "TSV로 다운로드했습니다. (엑셀에서 한글 안 깨짐)");
 }
+
 
 
 // 버튼 연결
