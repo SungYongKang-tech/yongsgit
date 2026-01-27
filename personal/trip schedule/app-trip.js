@@ -65,6 +65,13 @@ function addDays(baseDate, n) {
   d.setDate(d.getDate() + n);
   return d;
 }
+function formatDateShort(dateStr) {
+  // "2026-01-25" → "26.01.25"
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr || "";
+  const [y, m, d] = dateStr.split("-");
+  return `${y.slice(2)}.${m}.${d}`;
+}
+
 function safeText(s) {
   return (s ?? "")
     .toString()
@@ -666,7 +673,8 @@ function renderTable(items) {
 
   // 바디
   for (const it of items) {
-    const date = it.date || "";
+    const date = formatDateShort(it.date);
+
     const time = formatTimeLabel(it);
     const title = it.title || "";
     const place = it.place || "";
@@ -705,7 +713,8 @@ function renderCards(items) {
   }
 
   for (const it of items) {
-    const date = it.date || "";
+    const date = formatDateShort(it.date);
+
     const time = formatTimeLabel(it);
     const title = it.title || "";
     const place = it.place || "";
