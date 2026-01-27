@@ -589,7 +589,16 @@ $("tableSub") && ($("tableSub").textContent = period ? `기간: ${period}` : "")
   if (viewMode === "tomorrow") items = items.filter((it) => it.date === tomorrow);
 
   // 표 렌더
+  if (isMobile()) {
+  $("tableEl") && ($("tableEl").style.display = "none");
+  $("tableCards") && ($("tableCards").style.display = "block");
+  renderCards(items);
+} else {
+  $("tableEl") && ($("tableEl").style.display = "table");
+  $("tableCards") && ($("tableCards").style.display = "none");
   renderTable(items);
+}
+
 
   $("tableMsg") && ($("tableMsg").textContent = "");
 
@@ -680,6 +689,55 @@ function renderTable(items) {
     tbody.appendChild(tr);
   }
 }
+
+function isMobile() {
+  return window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+}
+
+function renderCards(items) {
+  const wrap = $("tableCards");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+
+  if (!items.length) {
+    wrap.innerHTML = `<div class="small" style="color:#666; padding:12px;">표시할 일정이 없습니다.</div>`;
+    return;
+  }
+
+  for (const it of items) {
+    const date = it.date || "";
+    const time = formatTimeLabel(it);
+    const title = it.title || "";
+    const place = it.place || "";
+    const note = it.note || "";
+    const mapUrl = it.mapUrl || "";
+
+    const card = document.createElement("div");
+    card.style.cssText = `
+      background:#fff;
+      border:1px solid #eee;
+      border-radius:14px;
+      padding:12px;
+      margin-bottom:10px;
+    `;
+
+    card.innerHTML = `
+      <div style="font-weight:800; margin-bottom:6px;">
+        ${safeText(title)}
+      </div>
+      <div class="small" style="color:#444; line-height:1.5;">
+        ${date ? `📅 ${safeText(date)}<br/>` : ""}
+        ${time ? `⏰ ${safeText(time)}<br/>` : ""}
+        ${place ? `📍 ${safeText(place)}<br/>` : ""}
+        ${mapUrl ? `🗺️ <a href="${safeText(mapUrl)}" target="_blank" rel="noopener">지도 열기</a><br/>` : ""}
+        ${note ? `📝 ${safeText(note)}` : ""}
+      </div>
+    `;
+
+    wrap.appendChild(card);
+  }
+}
+
 
 // ✅ 표 복사(엑셀/구글시트/카톡 메모 등에 붙여넣기 쉬운 TSV)
 async function copyTableAsTSV() {
