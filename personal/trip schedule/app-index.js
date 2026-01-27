@@ -1,4 +1,4 @@
-// app-index.js (공용 여행 목록 버전 - 중복 제거)
+// app-index.js (공용 여행 목록 + ID 표시 + 삭제 버튼)
 import { auth, db } from "./firebase.js";
 import {
   signInAnonymously,
@@ -14,6 +14,7 @@ import {
   orderBy,
   limit,
   onSnapshot,
+  deleteDoc, // ✅ 추가
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
 const $ = (id) => document.getElementById(id);
@@ -60,8 +61,7 @@ signInAnonymously(auth).catch((e) => {
 });
 
 // ============================================================
-// ✅ 공용 여행 목록: Firestore trips에서 읽어오기
-// index.html에 <div id="tripList"></div> 필요
+// ✅ 공용 여행 목록 + ID 표시 + 삭제 버튼
 // ============================================================
 const listEl = $("tripList");
 const listStatus = $("tripListStatus");
@@ -88,27 +88,50 @@ if (listEl) {
         const period =
           meta.startDate && meta.endDate ? `${meta.startDate} ~ ${meta.endDate}` : "";
 
+        const tripId = d.id;
+
         const card = document.createElement("div");
         card.className = "item";
         card.innerHTML = `
           <div class="item-title">${escapeHtml(title)}</div>
           <div class="meta">
-            <span>📅 ${escapeHtml(period)}</span>
+            ${period ? `<span>📅 ${escapeHtml(period)}</span>` : ""}
+            <span class="small" style="display:block; margin-top:4px; opacity:.75;">
+              ID: ${escapeHtml(tripId)}
+            </span>
           </div>
           <div class="actions">
-            <a class="chip" href="trip.html?trip=${encodeURIComponent(d.id)}">열기</a>
-            <div class="chip" data-copy="${escapeHtml(d.id)}">링크 복사</div>
+            <a class="chip" href="trip.html?trip=${encodeURIComponent(tripId)}">열기</a>
+            <div class="chip" data-copy="${escapeHtml(tripId)}">링크 복사</div>
+            <div class="chip" data-del="${escapeHtml(tripId)}">삭제</div>
           </div>
         `;
 
         // 링크 복사
         card.querySelector("[data-copy]")?.addEventListener("click", async () => {
-          const url = `${location.origin}${location.pathname.replace(/index\.html?$/,"")}trip.html?trip=${encodeURIComponent(d.id)}`;
+          const base = location.origin + location.pathname.replace(/index\.html?$/i, "");
+          const url = `${base}trip.html?trip=${encodeURIComponent(tripId)}`;
           try {
             await navigator.clipboard.writeText(url);
             alert("여행 링크를 복사했습니다. 카톡에 붙여넣기 하시면 됩니다.");
           } catch {
             prompt("복사가 안 되면 아래 링크를 복사하세요:", url);
+          }
+        });
+
+        // ✅ 삭제(트립 문서만 삭제)
+        card.querySelector("[data-del]")?.addEventListener("click", async () => {
+          const ok = confirm(
+            `이 여행을 삭제할까요?\n\n- trips/${tripId} 문서만 삭제됩니다.\n- items, members는 콘솔에서 별도로 지우셔야 완전 삭제됩니다.`
+          );
+          if (!ok) return;
+
+          try {
+            await deleteDoc(doc(db, "trips", tripId));
+            alert("삭제했습니다. (하위 items/members는 콘솔에서 추가 삭제 필요)");
+          } catch (e) {
+            console.error(e);
+            alert(`삭제 실패: ${e.code || ""}\n${e.message || e}`);
           }
         });
 
@@ -142,7 +165,6 @@ $("createBtn")?.addEventListener("click", async () => {
   try {
     statusEl.textContent = "저장 중…";
 
-    // ✅ 공용 목록 정렬을 위해 createdAt 최상단 저장
     await setDoc(doc(db, "trips", tripId), {
       createdAt: serverTimestamp(),
       meta: {
@@ -160,7 +182,6 @@ $("createBtn")?.addEventListener("click", async () => {
       joinedAt: serverTimestamp(),
     });
 
-    // 이동
     location.href = `trip.html?trip=${encodeURIComponent(tripId)}`;
   } catch (e) {
     console.error(e);
