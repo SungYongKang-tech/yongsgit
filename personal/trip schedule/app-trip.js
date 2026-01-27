@@ -897,31 +897,55 @@ function downloadTableCSV() {
   const items = buildTableItemsForCurrentView();
 
   const title = (tripMetaCache.title || "여행").replace(/[\\/:*?"<>|]/g, "_");
-  const filename = `${title}_일정표.csv`;
+  const filename = `${title}_일정표.xls`; // ✅ 엑셀이 더 잘 열도록 .xls 확장자 사용(내용은 텍스트)
 
-  // ✅ 사진(images) 완전 제외
+  // ✅ 헤더(사진 제외)
   const header = ["날짜", "시간", "제목", "장소", "지도URL", "메모"];
+
+  // ✅ 날짜 포맷: 2026-01-25 -> 26.01.25
+  const fmtDate = (s) => {
+    if (!s) return "";
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return String(s);
+    return `${m[1].slice(2)}.${m[2]}.${m[3]}`;
+  };
+
+  // ✅ 값 정리(탭/줄바꿈 제거 → 엑셀 깨끗)
+  const clean = (v) =>
+    (v ?? "")
+      .toString()
+      .replace(/\r?\n/g, " ")
+      .replace(/\t/g, " ")
+      .trim();
+
   const rows = items.map((it) => [
-    it.date || "",
-    formatTimeLabel(it),
-    it.title || "",
-    it.place || "",
-    it.mapUrl || "",
-    (it.note || "").replace(/\r?\n/g, " ").trim(),
+    fmtDate(it.date || ""),
+    clean(formatTimeLabel(it)),
+    clean(it.title || ""),
+    clean(it.place || ""),
+    clean(it.mapUrl || ""),
+    clean(it.note || ""),
   ]);
 
-  const csv =
-    [header, ...rows]
-      .map((r) => r.map(csvEscape).join(","))
-      .join("\n");
+  // ✅ 엑셀 친화: TSV(탭 구분)
+  const tsv = [header, ...rows].map((r) => r.join("\t")).join("\r\n");
 
-  // 엑셀 한글 깨짐 방지(BOM)
-  const withBom = "\uFEFF" + csv;
+  // ✅ A안 핵심: UTF-16LE + BOM(FFFE)
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + tsv], { type: "text/tab-separated-values;charset=utf-16le" });
 
-  downloadTextFile(filename, withBom);
-  $("tableMsg") && ($("tableMsg").textContent = "CSV로 다운로드했습니다. (사진 제외)");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 
+  $("tableMsg") && ($("tableMsg").textContent = "엑셀용 파일로 다운로드했습니다. (한글 깨짐 방지)");
 }
+
 
 // 버튼 연결
 $("downloadTable")?.addEventListener("click", downloadTableCSV);
