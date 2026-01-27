@@ -208,6 +208,7 @@ $("addBtn")?.addEventListener("click", async () => {
 
   const date = $("date").value;
   const time = $("time").value || "";
+  const timeSort = time || "99:99";
   const title = $("title").value.trim();
   const place = $("place").value.trim();
   const mapUrl = $("mapUrl").value.trim();
@@ -310,6 +311,7 @@ $("saveModal")?.addEventListener("click", async () => {
 
   const date = $("mDate").value;
   const time = $("mTime").value || "";
+  const timeSort = time || "99:99";
   const title = $("mTitle").value.trim();
   const place = $("mPlace").value.trim();
   const mapUrl = $("mMapUrl").value.trim();
@@ -341,7 +343,7 @@ $("saveModal")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "trips", tripId, "items", editingId), {
       date,
       time,
-      timesort,
+      timeSort,
       title,
       place,
       mapUrl,
@@ -363,7 +365,7 @@ $("saveModal")?.addEventListener("click", async () => {
 const q = query(
   collection(db, "trips", tripId, "items"),
   orderBy("date"),  
-  orderBy("timesort")
+  orderBy("timeSort")
 );
 
 
