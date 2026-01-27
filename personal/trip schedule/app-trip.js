@@ -204,11 +204,17 @@ $("addBtn")?.addEventListener("click", async () => {
   if (!ok) return;
 
   const statusEl = $("status");
-  if (statusEl) statusEl.textContent = "";
+  statusEl.textContent = "";
 
   const date = $("date").value;
-  const time = $("time").value || "";
-  const timeSort = makeTimeSort(time);
+
+  // ✅ A안: 시작/끝 시간 2개
+  const timeStart = $("timeStart")?.value || "";
+  const timeEnd   = $("timeEnd")?.value || "";
+
+  // ✅ 정렬용 timeSort: 시작시간이 있으면 시작시간, 없으면 99:99
+  const timeSort = (timeStart && /^\d{2}:\d{2}$/.test(timeStart)) ? timeStart : "99:99";
+
   const title = $("title").value.trim();
   const place = $("place").value.trim();
   const mapUrl = $("mapUrl").value.trim();
@@ -216,14 +222,14 @@ $("addBtn")?.addEventListener("click", async () => {
   const files = $("photos").files;
 
   if (!date || !title) {
-    if (statusEl) statusEl.textContent = "날짜와 제목은 필수입니다.";
+    statusEl.textContent = "날짜와 제목은 필수입니다.";
     return;
   }
 
   let images = [];
   try {
     if (files && files.length > 0) {
-      if (statusEl) statusEl.textContent = `사진 업로드 중… (${files.length}장)`;
+      statusEl.textContent = `사진 업로드 중… (${files.length}장)`;
       for (const f of files) {
         const up = await uploadToCloudinary(f);
         images.push({
@@ -234,12 +240,15 @@ $("addBtn")?.addEventListener("click", async () => {
       }
     }
 
-    if (statusEl) statusEl.textContent = "저장 중…";
+    statusEl.textContent = "저장 중…";
 
     await addDoc(collection(db, "trips", tripId, "items"), {
       date,
-      time,
-      timeSort, // ✅ 반드시 저장 (필드명 통일)
+      // ✅ 저장 필드
+      timeStart,
+      timeEnd,
+      timeSort,
+
       title,
       place,
       mapUrl,
@@ -251,20 +260,22 @@ $("addBtn")?.addEventListener("click", async () => {
     });
 
     // 입력 초기화
-    $("time").value = "";
+    $("timeStart") && ($("timeStart").value = "");
+    $("timeEnd") && ($("timeEnd").value = "");
     $("title").value = "";
     $("place").value = "";
     $("mapUrl").value = "";
     $("note").value = "";
     $("photos").value = "";
 
-    if (statusEl) statusEl.textContent = "추가 완료";
-    setTimeout(() => statusEl && (statusEl.textContent = ""), 900);
+    statusEl.textContent = "추가 완료";
+    setTimeout(() => (statusEl.textContent = ""), 900);
   } catch (e) {
     console.error(e);
-    if (statusEl) statusEl.textContent = e.message || String(e);
+    statusEl.textContent = e.message || String(e);
   }
 });
+
 
 // -------------------- Edit modal --------------------
 let editingId = null;
@@ -291,7 +302,11 @@ async function openEdit(id, item) {
   editingItem = item;
 
   $("mDate").value = item.date || todayISO();
-  $("mTime").value = item.time || "";
+
+  // ✅ A안: 시작/끝 시간
+  $("mTimeStart") && ($("mTimeStart").value = item.timeStart || "");
+  $("mTimeEnd") && ($("mTimeEnd").value = item.timeEnd || "");
+
   $("mTitle").value = item.title || "";
   $("mPlace").value = item.place || "";
   $("mMapUrl").value = item.mapUrl || "";
@@ -305,12 +320,18 @@ $("saveModal")?.addEventListener("click", async () => {
   if (!ok) return;
 
   const st = $("mStatus");
-  if (st) st.textContent = "";
+  st.textContent = "";
+
   if (!editingId) return;
 
   const date = $("mDate").value;
-  const time = $("mTime").value || "";
-  const timeSort = makeTimeSort(time);
+
+  // ✅ A안: 시작/끝 시간
+  const timeStart = $("mTimeStart")?.value || "";
+  const timeEnd   = $("mTimeEnd")?.value || "";
+
+  const timeSort = (timeStart && /^\d{2}:\d{2}$/.test(timeStart)) ? timeStart : "99:99";
+
   const title = $("mTitle").value.trim();
   const place = $("mPlace").value.trim();
   const mapUrl = $("mMapUrl").value.trim();
@@ -318,14 +339,14 @@ $("saveModal")?.addEventListener("click", async () => {
   const files = $("mPhotos").files;
 
   if (!date || !title) {
-    if (st) st.textContent = "날짜와 제목은 필수입니다.";
+    st.textContent = "날짜와 제목은 필수입니다.";
     return;
   }
 
   try {
     let addImages = [];
     if (files && files.length > 0) {
-      if (st) st.textContent = `사진 업로드 중… (${files.length}장)`;
+      st.textContent = `사진 업로드 중… (${files.length}장)`;
       for (const f of files) {
         const up = await uploadToCloudinary(f);
         addImages.push({
@@ -338,11 +359,13 @@ $("saveModal")?.addEventListener("click", async () => {
 
     const nextImages = [...(editingItem?.images || []), ...addImages];
 
-    if (st) st.textContent = "저장 중…";
+    st.textContent = "저장 중…";
     await updateDoc(doc(db, "trips", tripId, "items", editingId), {
       date,
-      time,
-      timeSort, // ✅ 반드시 업데이트 (필드명 통일)
+      timeStart,
+      timeEnd,
+      timeSort,
+
       title,
       place,
       mapUrl,
@@ -352,13 +375,14 @@ $("saveModal")?.addEventListener("click", async () => {
       updatedBy: me.uid,
     });
 
-    if (st) st.textContent = "저장 완료";
+    st.textContent = "저장 완료";
     setTimeout(() => openModal(false), 500);
   } catch (e) {
     console.error(e);
-    if (st) st.textContent = e.message || String(e);
+    st.textContent = e.message || String(e);
   }
 });
+
 
 // -------------------- List query + onSnapshot (인덱스 없으면 자동 폴백) --------------------
 let unsubscribeItems = null;
@@ -465,12 +489,18 @@ function renderItems() {
 
       // ✅ 화면에서 timeSort 기준 정렬 (폴백 쿼리여도 정상)
       groups[dateKey].sort((a, b) => {
-        const at = a.timeSort || makeTimeSort(a.time);
-        const bt = b.timeSort || makeTimeSort(b.time);
+        const at = a.timeSort || makeTimeSort(a.timeStart);
+        const bt = b.timeSort || makeTimeSort(b.timeStart);
         return String(at).localeCompare(String(bt));
       });
 
       for (const it of groups[dateKey]) {
+        // ✅ A안 시간 표시 문자열 만들기
+const timeLabel =
+  it.timeStart && it.timeEnd ? `${it.timeStart}~${it.timeEnd}`
+  : it.timeStart ? it.timeStart
+  : "";
+
         const map = it.mapUrl
           ? `<a href="${safeText(it.mapUrl)}" target="_blank" rel="noopener">지도</a>`
           : "";
@@ -493,7 +523,10 @@ function renderItems() {
         const el = document.createElement("div");
         el.className = "item";
         el.innerHTML = `
-          <div class="item-title">${it.time ? `⏰ ${safeText(it.time)}  ` : ""}${safeText(it.title)}</div>
+          <div class="item-title">
+  ${timeLabel ? `⏰ ${safeText(timeLabel)}  ` : ""}${safeText(it.title)}
+</div>
+
           <div class="meta">
             ${it.place ? `<span>📍 ${safeText(it.place)}</span>` : ""}
             ${map ? `<span>${map}</span>` : ""}
