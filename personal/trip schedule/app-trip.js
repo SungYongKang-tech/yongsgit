@@ -388,28 +388,31 @@ function startItemsListener() {
         });
         renderItems();
       },
-      (err) => {
-        console.error(`items onSnapshot error (${usedName}):`, err);
+      // startItemsListener() 안의 onSnapshot 에러 핸들러 부분만 교체
 
-        // ✅ 인덱스 없으면 자동으로 폴백 쿼리로 다시 붙임
-        if (usedName === "q1" && err?.code === "failed-precondition") {
-          console.warn("Composite index missing → fallback to q2 (orderBy date only)");
-          attach(q2, "q2");
-          return;
-        }
+(err) => {
+  // ✅ q1에서 인덱스 없을 때는 "정상적인 폴백 경로"라서 error로 찍지 않음
+  if (usedName === "q1" && err?.code === "failed-precondition") {
+    console.warn("Composite index missing → fallback to q2 (orderBy date only)");
+    attach(q2, "q2");
+    return;
+  }
 
-        const listEl = $("list");
-        if (listEl) {
-          listEl.innerHTML = `
-            <div class="card">
-              <h2>일정 불러오기 오류</h2>
-              <p class="small">${safeText(err.code || "")} ${safeText(err.message || String(err))}</p>
-              <p class="small">※ 계속 뜨면 Firebase 콘솔에서 인덱스를 생성해야 합니다.</p>
-            </div>
-          `;
-        }
-        alert(`일정 불러오기 오류\n${err.code || ""}\n${err.message || err}`);
-      }
+  // ✅ 그 외 진짜 에러만 error 처리
+  console.error(`items onSnapshot error (${usedName}):`, err);
+
+  const listEl = $("list");
+  if (listEl) {
+    listEl.innerHTML = `
+      <div class="card">
+        <h2>일정 불러오기 오류</h2>
+        <p class="small">${safeText(err.code || "")} ${safeText(err.message || String(err))}</p>
+      </div>
+    `;
+  }
+  alert(`일정 불러오기 오류\n${err.code || ""}\n${err.message || err}`);
+}
+
     );
   };
 
