@@ -364,7 +364,7 @@ $("saveModal")?.addEventListener("click", async () => {
 const q = query(
   collection(db, "trips", tripId, "items"),
   orderBy("date"),
-  orderBy("time")
+  
 );
 
 
