@@ -238,6 +238,7 @@ $("addBtn")?.addEventListener("click", async () => {
     await addDoc(collection(db, "trips", tripId, "items"), {
       date,
       time,
+      timeSort,
       title,
       place,
       mapUrl,
@@ -340,6 +341,7 @@ $("saveModal")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "trips", tripId, "items", editingId), {
       date,
       time,
+      timesort,
       title,
       place,
       mapUrl,
@@ -360,8 +362,8 @@ $("saveModal")?.addEventListener("click", async () => {
 // -------------------- List query --------------------
 const q = query(
   collection(db, "trips", tripId, "items"),
-  orderBy("date")  
-  orderBy("time")
+  orderBy("date"),  
+  orderBy("timesort")
 );
 
 
