@@ -1,6 +1,14 @@
-exports.handler = async () => {
+exports.handler = async (event) => {
+  // ✅ q 파라미터 받기 (없으면 기본값: 발전5개사 OR ... )
+  const q =
+    (event?.queryStringParameters?.q || "").trim() ||
+    "발전5개사 OR 남동발전 OR 남부발전 OR 중부발전 OR 서부발전 OR 동서발전";
+
+  // ✅ Google 뉴스 RSS URL 동적 생성
   const RSS_URL =
-    "https://news.google.com/rss/search?q=%ED%95%9C%EA%B5%AD%EB%82%A8%EB%8F%99%EB%B0%9C%EC%A0%84&hl=ko&gl=KR&ceid=KR:ko";
+    "https://news.google.com/rss/search?q=" +
+    encodeURIComponent(q) +
+    "&hl=ko&gl=KR&ceid=KR:ko";
 
   try {
     const res = await fetch(RSS_URL, {
@@ -47,7 +55,12 @@ exports.handler = async () => {
       let s = (t || "").trim();
       s = s.replace(/\s*-\s*[^-]{2,40}$/u, "").trim(); // - 언론사
       s = s.replace(/\[[^\]]{1,12}\]\s*/g, "").trim(); // [속보]
-      s = s.replace(/\((속보|종합|단독|영상|포토|인터뷰|기획|현장|칼럼|사설|분석)\)/g, "").trim();
+      s = s
+        .replace(
+          /\((속보|종합|단독|영상|포토|인터뷰|기획|현장|칼럼|사설|분석)\)/g,
+          ""
+        )
+        .trim();
 
       s = s.replace(/[“”"']/g, "");
       s = s.replace(/[·•]/g, " ");
@@ -63,7 +76,6 @@ exports.handler = async () => {
         .replace(/[^0-9a-z가-힣\s]/g, " ")
         .split(/\s+/)
         .filter((w) => w.length >= 2)
-        // 흔한 잡단어 제거(원하시면 더 추가 가능)
         .filter((w) => !["기자", "뉴스", "속보", "종합", "단독", "관련"].includes(w));
 
     // Set 기반 Jaccard
@@ -87,10 +99,7 @@ exports.handler = async () => {
 
     // 한국어에 강한 문자 기반 유사도(Dice coefficient over bigrams)
     const bigrams = (s) => {
-      const t = normalizeTitle(s)
-        .toLowerCase()
-        .replace(/\s+/g, " ")
-        .trim();
+      const t = normalizeTitle(s).toLowerCase().replace(/\s+/g, " ").trim();
       const arr = [];
       for (let i = 0; i < t.length - 1; i++) {
         const bg = t.slice(i, i + 2);
@@ -128,11 +137,9 @@ exports.handler = async () => {
         const source = pickSource(b);
         return { title, link, pubDate, source };
       })
-       .filter((x) => x.title && x.link);
+      .filter((x) => x.title && x.link);
 
     // 2) 그룹핑
-    // - 정확히 같은 정규화 제목: 같은 그룹
-    // - 아니면 (공통 토큰 >= 2) AND (Jaccard >= 0.55 OR Dice >= 0.62) 면 같은 그룹
     const groups = [];
     const normIndex = new Map();
 
@@ -152,15 +159,13 @@ exports.handler = async () => {
         const g = groups[i];
 
         const ov = overlapCount(toks, g._tokens);
-        if (ov < 1) continue; // 너무 다른 건 합치지 않음
+        if (ov < 1) continue;
 
         const jac = jaccard(toks, g._tokens);
         const di = dice(norm, g._normTitle);
 
-        // 둘 중 큰 값을 점수로
         const score = Math.max(jac, di);
 
-        // 느슨 기준
         if (score > bestScore && (jac >= 0.40 || di >= 0.50)) {
           bestScore = score;
           bestIdx = i;
@@ -219,7 +224,7 @@ exports.handler = async () => {
         "Cache-Control": "no-store",
       },
       body: JSON.stringify({
-        keyword: "한국남동발전",
+        keyword: q,                 // ✅ 여기만 q로 변경
         fetchedAt: new Date().toISOString(),
         groups,
         rawCount: items.length,
@@ -238,7 +243,7 @@ exports.handler = async () => {
 function hash(str) {
   let h = 2166136261;
   for (let i = 0; i < (str || "").length; i++) {
-    h ^= (str.charCodeAt(i) & 0xff);
+    h ^= str.charCodeAt(i) & 0xff;
     h = Math.imul(h, 16777619);
   }
   return (h >>> 0).toString(16);
