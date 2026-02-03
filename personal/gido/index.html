@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>기도 실적 공유표 (날짜별)</title>
+  <style>
+    :root { --bd:#e5e7eb; --bg:#f6f7fb; --card:#fff; --txt:#111827; --mut:#6b7280; --danger:#b91c1c; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--txt); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 10px; }
+
+    /* ✅ 상단을 아주 얇게 */
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(246,247,251,.92); backdrop-filter: blur(8px);
+      padding: 8px 0;
+      border-bottom: 1px solid var(--bd);
+    }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .grow { flex: 1 1 auto; }
+
+    .pill {
+      display:inline-flex; gap:8px; align-items:center;
+      padding:6px 10px; border:1px solid var(--bd); border-radius:999px; background:#fff;
+      font-size:12px; color: var(--mut);
+    }
+    .pill b { color: var(--txt); }
+
+    input, select, button {
+      font: inherit;
+      border:1px solid var(--bd);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background:#fff;
+      outline: none;
+    }
+    button {
+      cursor:pointer;
+      background:#111827;
+      color:#fff;
+      border-color:#111827;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    button.ghost { background:#fff; color:#111827; }
+    button.danger { background:var(--danger); border-color:var(--danger); }
+
+    .card { background:var(--card); border:1px solid var(--bd); border-radius: 14px; padding: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.04); }
+    .label { font-size: 12px; color: var(--mut); margin-bottom: 6px; }
+    .small { font-size:12px; color:var(--mut); }
+    .members { display:flex; gap:8px; flex-wrap:wrap; }
+    .member { display:inline-flex; gap:8px; align-items:center; border:1px solid var(--bd); background:#fff; padding:6px 10px; border-radius:999px; }
+    .member b { font-size: 13px; }
+    .member .x { cursor:pointer; color:var(--danger); font-weight:800; }
+
+    /* ✅ settings 접기 */
+    details.settings {
+      border:1px solid var(--bd);
+      border-radius: 14px;
+      background:#fff;
+      overflow:hidden;
+    }
+    details.settings > summary {
+      list-style:none;
+      cursor:pointer;
+      padding: 10px 12px;
+      display:flex; align-items:center; justify-content:space-between;
+      user-select:none;
+      font-weight:800;
+    }
+    details.settings > summary::-webkit-details-marker { display:none; }
+    .settingsBody { padding: 10px 12px; border-top:1px solid var(--bd); }
+
+    /* ✅ 표 */
+    .tableWrap { overflow:auto; border-radius: 14px; border:1px solid var(--bd); background:#fff; }
+    table { border-collapse: collapse; width: 100%; min-width: 720px; }
+    th, td { border-bottom:1px solid var(--bd); border-right:1px solid var(--bd); padding: 8px; text-align:center; vertical-align: top; }
+    thead th { position: sticky; top: 0; background:#fff; z-index: 3; }
+    th:first-child, td:first-child { position: sticky; left: 0; background:#fff; z-index: 2; }
+    th { font-size: 12px; color: var(--mut); }
+    td:last-child, th:last-child { border-right: none; }
+    tr:last-child td { border-bottom: none; }
+
+    .dateCell { font-weight: 800; text-align:left; min-width: 110px; }
+    .dow { font-weight: 700; color: var(--mut); font-size:12px; margin-left:6px; }
+
+    /* ✅ 셀: 숫자 + 메모 버튼(작게) */
+    .cellBox { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+    .minInput {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 10px;
+      text-align:center;
+    }
+    .cellBtns { display:flex; gap:6px; }
+    .miniBtn {
+      flex:1 1 auto;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border:1px solid var(--bd);
+      background:#fff;
+      color: var(--txt);
+      font-weight:700;
+      font-size: 12px;
+      cursor:pointer;
+    }
+    .miniBtn.noteOn { border-color:#111827; }
+
+    .footerHint { margin-top:10px; }
+
+    @media (max-width: 520px) {
+      .wrap { padding: 8px; }
+      input, select, button { padding: 9px 10px; border-radius: 12px; }
+      table { min-width: 640px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="wrap">
+      <!-- ✅ 상단 얇은 줄: 월 선택 + 상태 + 새로고침 -->
+      <div class="row">
+        <div class="grow">
+          <div class="label">월 선택</div>
+          <input id="month" type="month" />
+        </div>
+
+        <div class="pill">
+          <span>연결</span>
+          <b id="status">공개 연결됨</b>
+        </div>
+
+        <button class="ghost" id="rebuildBtn">표 새로고침</button>
+      </div>
+
+      <!-- ✅ 설정은 접기/펼치기 (기본은 접힘) -->
+      <details class="settings" id="settings">
+        <summary>
+          <span>설정 / 멤버 관리</span>
+          <span class="small">열기/닫기</span>
+        </summary>
+        <div class="settingsBody">
+          <div class="row">
+            <div class="grow">
+              <div class="label">멤버 추가 (표의 열)</div>
+              <div class="row">
+                <input id="memberName" class="grow" placeholder="예: 성용, 민주, 경민…" />
+                <button id="addMemberBtn">추가</button>
+              </div>
+          
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <div class="label">현재 멤버</div>
+            <div id="members" class="members"></div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="label">기도 실적 표 (날짜별)</div>
+      <div class="tableWrap">
+        <table id="grid"></table>
+      </div>
+      <div class="small footerHint">
+        ✅ 저장 방식: 값 변경/포커스 이동 시 자동 저장. (0 + 메모 없음이면 기록 삭제)
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    // ✅ Firebase 설정 (사용자 값 반영)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCu-IfczmlCaReh_7Onk9a5ey86DnN0fXA",
+      authDomain: "gido-645c1.firebaseapp.com",
+      projectId: "gido-645c1",
+      storageBucket: "gido-645c1.firebasestorage.app",
+      messagingSenderId: "799221874446",
+      appId: "1:799221874446:web:f26238310c99c9a11f615f",
+      databaseURL: "https://gido-645c1-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+
+    // -------------------- 유틸 --------------------
+    const $ = (id) => document.getElementById(id);
+    const pad2 = (n) => String(n).padStart(2, "0");
+
+    function ymd(d) {
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    }
+    function ym(d) {
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+    }
+    function daysInMonth(year, month1to12) {
+      return new Date(year, month1to12, 0).getDate();
+    }
+    function dowK(d) {
+      const arr = ["일","월","화","수","목","금","토"];
+      return arr[d.getDay()];
+    }
+    function safeKey(name) {
+      return name.trim().replace(/\s+/g, "_").replace(/[.#$\[\]\/]/g, "_");
+    }
+
+    // -------------------- Firebase --------------------
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // ✅ 경로 (날짜별로만 저장)
+    // members: /prayer/members/{memberKey} = { name }
+    // records: /prayer/records/{YYYY-MM-DD}/{memberKey} = { minutes, note, updatedAt }
+    const membersPath = () => ref(db, `prayer/members`);
+    const dayPath = (date) => ref(db, `prayer/records/${date}`);
+    const cellPath = (date, memberKey) => ref(db, `prayer/records/${date}/${memberKey}`);
+
+    // -------------------- 상태 --------------------
+    let members = [];  // [{key, name}]
+    let currentMonth = ""; // "YYYY-MM"
+    let monthUnsubToken = 0; // 구독 구분용
+
+    // 초기 월값: 오늘
+    const now = new Date();
+    $("month").value = ym(now);
+    currentMonth = $("month").value;
+
+    // ✅ 모바일에서 표가 먼저 보이게: 설정은 기본 접힘
+    $("settings").open = false;
+
+    // -------------------- 멤버 렌더 --------------------
+    function renderMembers() {
+      const box = $("members");
+      box.innerHTML = "";
+
+      if (members.length === 0) {
+        const span = document.createElement("div");
+        span.className = "small";
+        span.textContent = "아직 멤버가 없습니다. 위에서 멤버를 추가해 주세요.";
+        box.appendChild(span);
+        return;
+      }
+
+      members.forEach((m) => {
+        const el = document.createElement("div");
+        el.className = "member";
+        el.innerHTML = `<b>${m.name}</b> <span class="x" title="멤버 삭제">×</span>`;
+        el.querySelector(".x").onclick = async () => {
+          if (!confirm(`'${m.name}' 멤버를 삭제하시겠습니까?\n(기존 기록은 남아있지만 표 열에서는 사라집니다.)`)) return;
+          await remove(ref(db, `prayer/members/${m.key}`));
+        };
+        box.appendChild(el);
+      });
+    }
+
+    $("addMemberBtn").onclick = async () => {
+      const name = ($("memberName").value || "").trim();
+      if (!name) return alert("멤버 이름을 입력해 주세요.");
+      const key = safeKey(name);
+      await set(ref(db, `prayer/members/${key}`), { name });
+      $("memberName").value = "";
+    };
+
+    // 멤버 실시간 구독
+    onValue(membersPath(), (snap) => {
+      const v = snap.val() || {};
+      members = Object.entries(v)
+        .map(([key, val]) => ({ key, name: val?.name || key }))
+        .sort((a,b) => a.name.localeCompare(b.name, "ko"));
+      renderMembers();
+      rebuildGrid(); // 멤버 변경 시 표 다시 그림
+    });
+
+    // -------------------- 표 생성 --------------------
+    function rebuildGrid() {
+      const monthStr = $("month").value || ym(new Date());
+      currentMonth = monthStr;
+
+      const [Y, M] = monthStr.split("-").map(Number);
+      const last = daysInMonth(Y, M);
+
+      const table = $("grid");
+      table.innerHTML = "";
+
+      // 헤더
+      const thead = document.createElement("thead");
+      const hr = document.createElement("tr");
+
+      const th0 = document.createElement("th");
+      th0.textContent = "날짜";
+      hr.appendChild(th0);
+
+      members.forEach((m) => {
+        const th = document.createElement("th");
+        th.textContent = m.name;
+        hr.appendChild(th);
+      });
+
+      thead.appendChild(hr);
+      table.appendChild(thead);
+
+      // 바디
+      const tbody = document.createElement("tbody");
+
+      for (let day = 1; day <= last; day++) {
+        const d = new Date(Y, M-1, day);
+        const dateStr = ymd(d);
+
+        const tr = document.createElement("tr");
+
+        const tdDate = document.createElement("td");
+        tdDate.className = "dateCell";
+        tdDate.innerHTML = `${dateStr} <span class="dow">(${dowK(d)})</span>`;
+        tr.appendChild(tdDate);
+
+        members.forEach((m) => {
+          const td = document.createElement("td");
+          td.dataset.date = dateStr;
+          td.dataset.memberKey = m.key;
+
+          const box = document.createElement("div");
+          box.className = "cellBox";
+
+          const inp = document.createElement("input");
+          inp.type = "number";
+          inp.min = "0";
+          inp.step = "5";
+          inp.placeholder = "0";
+          inp.inputMode = "numeric";
+          inp.className = "minInput";
+
+          const btnRow = document.createElement("div");
+          btnRow.className = "cellBtns";
+
+          const noteBtn = document.createElement("button");
+          noteBtn.type = "button";
+          noteBtn.className = "miniBtn";
+          noteBtn.textContent = "메모";
+
+          const clearBtn = document.createElement("button");
+          clearBtn.type = "button";
+          clearBtn.className = "miniBtn";
+          clearBtn.textContent = "지우기";
+
+          btnRow.appendChild(noteBtn);
+          btnRow.appendChild(clearBtn);
+
+          box.appendChild(inp);
+          box.appendChild(btnRow);
+          td.appendChild(box);
+          tr.appendChild(td);
+
+          // 저장 함수
+          const save = async (noteText = null) => {
+            const minutes = Number(inp.value || 0);
+            const date = dateStr;
+            const mk = m.key;
+
+            // 현재 저장된 note를 유지하려면, 메모 호출 시만 noteText를 바꾸고,
+            // 일반 저장(분 변경)에서는 DB에서 값을 가져오지 않고 "기존 note"를 td에 캐시합니다.
+            const currentNote = td.dataset.note || "";
+
+            const nextNote = (noteText === null) ? currentNote : (noteText || "");
+            td.dataset.note = nextNote;
+
+            // 버튼 스타일
+            if (nextNote.trim()) noteBtn.classList.add("noteOn");
+            else noteBtn.classList.remove("noteOn");
+
+            // 둘 다 비면 삭제
+            if (!minutes && !nextNote.trim()) {
+              await remove(cellPath(date, mk));
+              return;
+            }
+
+            await set(cellPath(date, mk), {
+              minutes,
+              note: nextNote,
+              updatedAt: Date.now()
+            });
+          };
+
+          // 분 변경 저장
+          inp.addEventListener("change", () => save(null));
+          inp.addEventListener("blur", () => save(null));
+
+          // 메모 입력(프롬프트)
+          noteBtn.addEventListener("click", async () => {
+            const prev = td.dataset.note || "";
+            const text = prompt(`[${dateStr}] ${m.name} 메모`, prev);
+            if (text === null) return; // 취소
+            await save(text);
+          });
+
+          // 지우기(분=0, 메모=삭제)
+          clearBtn.addEventListener("click", async () => {
+            if (!confirm("이 칸의 기록(분/메모)을 지우시겠습니까?")) return;
+            inp.value = "";
+            td.dataset.note = "";
+            noteBtn.classList.remove("noteOn");
+            await remove(cellPath(dateStr, m.key));
+          });
+        });
+
+        tbody.appendChild(tr);
+      }
+
+      table.appendChild(tbody);
+
+      // 월 데이터 구독
+      subscribeMonth(monthStr);
+    }
+
+    $("rebuildBtn").onclick = rebuildGrid;
+    $("month").onchange = rebuildGrid;
+
+    // -------------------- 월 데이터 구독 --------------------
+    function subscribeMonth(monthStr) {
+      // 이전 구독 콜백 무시용 토큰
+      const token = ++monthUnsubToken;
+
+      const [Y, M] = monthStr.split("-").map(Number);
+      const last = daysInMonth(Y, M);
+
+      // 월의 모든 날짜를 각각 구독(간단/명확 버전)
+      for (let day = 1; day <= last; day++) {
+        const dateStr = `${monthStr}-${pad2(day)}`;
+
+        onValue(dayPath(dateStr), (snap) => {
+          // 월 바뀌었으면 무시
+          if (token !== monthUnsubToken) return;
+
+          const dayData = snap.val() || {}; // { memberKey: {minutes, note...} }
+
+          // 해당 날짜 행의 모든 멤버 셀 갱신
+          const tds = document.querySelectorAll(`td[data-date="${dateStr}"]`);
+          tds.forEach((td) => {
+            const mk = td.dataset.memberKey;
+            const data = dayData[mk] || null;
+
+            const inp = td.querySelector("input.minInput");
+            const noteBtn = td.querySelector("button.miniBtn");
+
+            const newMin = data?.minutes ?? "";
+            const newNote = data?.note ?? "";
+
+            // 입력 중 튀지 않게
+            if (document.activeElement !== inp) inp.value = newMin;
+
+            td.dataset.note = newNote;
+
+            if (newNote.trim()) noteBtn.classList.add("noteOn");
+            else noteBtn.classList.remove("noteOn");
+          });
+        });
+      }
+    }
+
+    // 초기 생성
+    rebuildGrid();
+  </script>
+</body>
+</html>
