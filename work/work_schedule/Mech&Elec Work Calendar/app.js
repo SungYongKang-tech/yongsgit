@@ -21,8 +21,8 @@ const calTable = $("calTable");
 
 const modalBack = $("modalBack");
 const modalTitle = $("modalTitle");
-const fDate = $("fDate");         // 표시용(YYYY-MM-DD)
-const fEndDate = $("fEndDate");   // type="date"
+const fDate = $("fDate");
+const fEndDate = $("fEndDate");
 const fType = $("fType");
 const fStart = $("fStart");
 const fEnd = $("fEnd");
@@ -52,6 +52,7 @@ function getMemberColor(name){
   const m = membersAll.find(x => x.name === name);
   return m?.color || "#1f6feb";
 }
+
 function getGridRange(){
   const y = current.getFullYear();
   const m = current.getMonth();
@@ -63,6 +64,7 @@ function getGridRange(){
   gridEnd.setDate(last.getDate() + (6 - last.getDay())); // Sat
   return { gridStart, gridEnd, gridStartKey: ymd(gridStart), gridEndKey: ymd(gridEnd) };
 }
+
 function weekDates(weekStart){
   const arr = [];
   const d = new Date(weekStart);
@@ -72,26 +74,43 @@ function weekDates(weekStart){
   }
   return arr;
 }
+
 function toVisibleEventList(){
   const { gridStartKey, gridEndKey } = getGridRange();
   const list = [];
+
   Object.entries(eventsAll || {}).forEach(([startDate, objs])=>{
     const sKey = normalizeDate(startDate) || startDate;
+
     Object.entries(objs || {}).forEach(([eventId, ev])=>{
       const eKey = normalizeDate(ev?.endDate) || sKey;
+
+      // 그리드 범위 밖은 제외
       if(eKey < gridStartKey || sKey > gridEndKey) return;
-      list.push({ ...ev, eventId, startDate: sKey, endDate: eKey });
+
+      list.push({
+        ...ev,
+        eventId,
+        startDate: sKey,
+        endDate: eKey
+      });
     });
   });
+
   return list;
 }
+
 function splitIntoWeekSegment(ev, weekStartKey, weekEndKey){
   const s = ev.startDate;
   const e = ev.endDate;
   if(e < weekStartKey || s > weekEndKey) return null;
+
   const segStart = (s < weekStartKey) ? weekStartKey : s;
   const segEnd   = (e > weekEndKey)   ? weekEndKey   : e;
+
+  // 주 안에서 하루만 걸치면 "멀티바"로 그리지 않음
   if(segStart === segEnd) return null;
+
   return { ...ev, segStart, segEnd };
 }
 
@@ -106,6 +125,9 @@ function openModal({dateKey, eventId=null, event=null}){
   modalBack.classList.add("show");
   fDate.value = dateKey;
   fOwner.value = selectedName;
+
+  // 새 입력일 때 종료일 min 설정(사용자 실수 방지)
+  fEndDate.min = dateKey;
 
   if(event){
     modalTitle.textContent = "일정 수정";
@@ -128,7 +150,6 @@ function openModal({dateKey, eventId=null, event=null}){
     fTitle.value = "";
     fDetail.value = "";
     fEndDate.value = "";
-    fEndDate.min = dateKey;
 
     saveBtn.disabled = false;
     deleteBtn.style.display = "none";
@@ -179,6 +200,7 @@ function renderMemberButtons(){
     memberBar.appendChild(btn);
   });
 }
+
 function subscribeMembers(){
   onValue(ref(db, "config/members"), (snap)=>{
     const obj = snap.val() || {};
@@ -233,12 +255,16 @@ function renderCalendar(){
   while(cursor <= gridEnd){
     const weekStart = new Date(cursor);
     const weekStartKey = ymd(weekStart);
+    const weekEndKey = ymd(addDays(weekStart, 6));
+    const wdays = weekDates(weekStart);
+
     const tr = document.createElement("tr");
     tr.dataset.weekStart = weekStartKey;
 
     for(let i=0;i<7;i++){
       const td = document.createElement("td");
       const dateKey = ymd(cursor);
+
       td.dataset.dateKey = dateKey;
       td.dataset.col = String(i);
 
@@ -267,7 +293,7 @@ function renderCalendar(){
       td.appendChild(cell);
 
       td.addEventListener("click",(e)=>{
-        if(e.target.closest(".mbar")) return;
+        if(e.target.closest(".mseg")) return;
         if(e.target.closest(".day-item")) return;
         openModal({ dateKey });
       });
@@ -278,9 +304,11 @@ function renderCalendar(){
 
     tbody.appendChild(tr);
 
-    // 하루짜리만 즉시 표시
+    // 1) 하루짜리 표시(칸 안)
     allEvents.forEach(ev=>{
       if(ev.startDate !== ev.endDate) return;
+      if(ev.startDate < weekStartKey || ev.startDate > weekEndKey) return;
+
       const td = tr.querySelector(`td[data-date-key="${ev.startDate}"]`);
       if(!td) return;
 
@@ -301,119 +329,96 @@ function renderCalendar(){
 
       items.appendChild(item);
     });
-  }
 
-  // ✅ 테이블 레이아웃 확정 후 멀티바 배치 (2프레임)
-  requestAnimationFrame(()=>{
-    requestAnimationFrame(()=>{
-      layoutMultiBars(allEvents);
-    });
-  });
-}
-
-function layoutMultiBars(allEvents){
-  // 기존 bar-wrap 제거
-  document.querySelectorAll(".bar-wrap").forEach(el => el.remove());
-
-  const rows = calTable.querySelectorAll("tbody tr");
-  rows.forEach(tr=>{
-    const weekStartKey = tr.dataset.weekStart;
-    if(!weekStartKey) return;
-
-    const weekStart = new Date(weekStartKey + "T00:00:00");
-    const weekEnd = addDays(weekStart, 6);
-    const weekEndKey = ymd(weekEnd);
-    const wdays = weekDates(weekStart);
-
-    const tds = Array.from(tr.querySelectorAll("td"));
-    if(tds.length !== 7) return;
-
-    // 멀티데이 세그먼트
+    // 2) 멀티데이 표시(각 날짜칸 bar-slot 안에 조각으로 “이어 붙이기”)
     const segments = [];
     allEvents.forEach(ev=>{
       if(ev.startDate === ev.endDate) return;
       const seg = splitIntoWeekSegment(ev, weekStartKey, weekEndKey);
       if(seg) segments.push(seg);
     });
-    if(!segments.length) return;
 
-    // td 실제 픽셀 폭
-    const colW = tds.map(td => td.getBoundingClientRect().width);
-    const totalW = colW.reduce((a,b)=>a+b,0);
-    const prefix = (idx) => colW.slice(0, idx).reduce((a,b)=>a+b,0);
+    if(segments.length){
+      segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
 
-    // 레인 배치
-    segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
-    const lanes = [];
-    const placed = [];
+      // 레인 배치
+      const lanes = []; // lanes[row][col] boolean
+      const placed = [];
 
-    const canPlace = (lane, sIdx, eIdx) => {
-      for(let k=sIdx;k<=eIdx;k++) if(lane[k]) return false;
-      return true;
-    };
-    const occupy = (lane, sIdx, eIdx) => {
-      for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
-    };
+      const canPlace = (lane, sIdx, eIdx)=>{
+        for(let k=sIdx;k<=eIdx;k++) if(lane[k]) return false;
+        return true;
+      };
+      const occupy = (lane, sIdx, eIdx)=>{
+        for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
+      };
 
-    segments.forEach(seg=>{
-      const c1 = wdays.indexOf(seg.segStart);
-      const c2 = wdays.indexOf(seg.segEnd);
-      if(c1 < 0 || c2 < 0) return;
+      segments.forEach(seg=>{
+        const c1 = wdays.indexOf(seg.segStart);
+        const c2 = wdays.indexOf(seg.segEnd);
+        if(c1 < 0 || c2 < 0) return;
 
-      let row = -1;
-      for(let r=0;r<lanes.length;r++){
-        if(canPlace(lanes[r], c1, c2)){ row = r; break; }
-      }
-      if(row === -1){
-        lanes.push(new Array(7).fill(false));
-        row = lanes.length - 1;
-      }
-      occupy(lanes[row], c1, c2);
-      placed.push({ seg, c1, c2, row });
-    });
-
-    // ✅ 일요일 칸 slot에 bar-wrap 생성
-    const sundayTd = tds[0];
-    const slot = sundayTd.querySelector(".bar-slot");
-    if(!slot) return;
-
-    // slot 높이를 레인 수만큼 늘려줌
-    const isMobile = window.matchMedia("(max-width:640px)").matches;
-    const rowH = isMobile ? 20 : 22;
-    slot.style.height = `${Math.max(1, lanes.length) * (rowH + 2)}px`;
-
-    const wrap = document.createElement("div");
-    wrap.className = "bar-wrap";
-    wrap.style.width = `${totalW}px`;
-    wrap.style.height = "100%";
-    slot.appendChild(wrap);
-
-    placed.forEach(({seg, c1, c2, row})=>{
-      const left = prefix(c1) + 2;
-      const width = (prefix(c2+1) - prefix(c1)) - 4;
-
-      const bar = document.createElement("div");
-      bar.className = "mbar";
-
-      const color = getMemberColor(seg.owner);
-      bar.style.borderColor = color;
-      bar.style.background = color + "18";
-      bar.style.color = color;
-
-      bar.style.left = `${left}px`;
-      bar.style.width = `${Math.max(28, width)}px`;
-      bar.style.top = `${row * (rowH + 2)}px`;
-
-      bar.textContent = seg.title || "(제목없음)";
-
-      bar.addEventListener("click",(e2)=>{
-        e2.stopPropagation();
-        openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
+        let row = -1;
+        for(let r=0;r<lanes.length;r++){
+          if(canPlace(lanes[r], c1, c2)){ row = r; break; }
+        }
+        if(row === -1){
+          lanes.push(new Array(7).fill(false));
+          row = lanes.length - 1;
+        }
+        occupy(lanes[row], c1, c2);
+        placed.push({ seg, c1, c2, row });
       });
 
-      wrap.appendChild(bar);
-    });
-  });
+      // slot 높이 확장(레인 수만큼)
+      const isMobile = window.matchMedia("(max-width:640px)").matches;
+      const rowH = isMobile ? 20 : 22;
+      const slotH = Math.max(1, lanes.length) * (rowH + 2);
+
+      tr.querySelectorAll(".bar-slot").forEach(s=>{
+        s.style.height = `${slotH}px`;
+      });
+
+      // 각 날짜 칸에 조각을 심는다(연결된 바처럼 보임)
+      placed.forEach(({ seg, c1, c2, row })=>{
+        const color = getMemberColor(seg.owner);
+
+        for(let col=c1; col<=c2; col++){
+          const dateKey = wdays[col];
+          const td = tr.querySelector(`td[data-date-key="${dateKey}"]`);
+          if(!td) continue;
+
+          const slot = td.querySelector(".bar-slot");
+          if(!slot) continue;
+
+          const part = document.createElement("div");
+          part.className = "mseg";
+
+          // 라운드 처리
+          const isStart = (col === c1);
+          const isEnd = (col === c2);
+          if(isStart) part.classList.add("start");
+          if(isEnd) part.classList.add("end");
+          if(!isStart && !isEnd) part.classList.add("mid");
+
+          part.style.top = `${row * (rowH + 2)}px`;
+          part.style.borderColor = color;
+          part.style.background = color + "18";
+          part.style.color = color;
+
+          // 텍스트는 시작 조각에만(중간/끝은 텍스트 공백) → 보기 깔끔
+          part.textContent = isStart ? (seg.title || "(제목없음)") : "";
+
+          part.addEventListener("click",(e2)=>{
+            e2.stopPropagation();
+            openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
+          });
+
+          slot.appendChild(part);
+        }
+      });
+    }
+  }
 }
 
 // ---------- save/delete ----------
@@ -446,6 +451,7 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
+  // 수정
   if(editing.eventId){
     const exist = eventsAll?.[editing.dateKey]?.[editing.eventId];
     if(!exist){
@@ -457,8 +463,8 @@ saveBtn.addEventListener("click", async ()=>{
       return;
     }
 
+    // 시작일이 바뀌면 key 이동
     if(startKey !== editing.dateKey){
-      // 시작일이 바뀌면 키 이동
       const newRef = push(ref(db, `events/${startKey}`));
       await set(newRef, payload);
       await remove(ref(db, `events/${editing.dateKey}/${editing.eventId}`));
@@ -466,6 +472,7 @@ saveBtn.addEventListener("click", async ()=>{
       await update(ref(db, `events/${editing.dateKey}/${editing.eventId}`), payload);
     }
   }else{
+    // 신규
     const newRef = push(ref(db, `events/${startKey}`));
     await set(newRef, payload);
   }
@@ -507,7 +514,7 @@ $("todayBtn").addEventListener("click", ()=>{
   renderCalendar();
 });
 
-// ✅ 리사이즈 시 재배치(폭이 바뀌면 위치 재계산 필요)
+// 화면 회전/리사이즈 대응
 window.addEventListener("resize", ()=>{
   renderCalendar();
 });
