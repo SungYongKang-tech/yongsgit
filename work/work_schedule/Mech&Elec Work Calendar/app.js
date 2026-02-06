@@ -14,7 +14,7 @@ let selectedName = localStorage.getItem(LS_NAME) || "";
 
 // ✅ events 원본/필터
 let eventsAll = {};          // { "YYYY-MM-DD": {eventId: evObj} }
-let eventsByDate = {};       // 현재월 필터된 결과
+let eventsByDate = {};       // 현재 월(겹침 포함) 필터 결과
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,7 +26,7 @@ const calTable = $("calTable");
 
 const modalBack = $("modalBack");
 const modalTitle = $("modalTitle");
-const fDate = $("fDate");         // (권장) HTML에서 type="date" disabled 로
+const fDate = $("fDate");         // (권장) HTML에서 type="date" disabled
 const fEndDate = $("fEndDate");   // type="date"
 const fType = $("fType");
 const fStart = $("fStart");
@@ -47,28 +47,25 @@ function ymd(d){
   return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 }
 
+function normalizeDate(v){
+  if(!v) return "";
+  const s = String(v).trim().slice(0,10).replaceAll(".", "-").replaceAll("/", "-");
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
 // 작성자 이름 → 색상 찾기
 function getMemberColor(name){
   const m = membersAll.find(x => x.name === name);
   return m?.color || "#1f6feb";
 }
 
-function normalizeDate(v){
-  if(!v) return "";
-  const s = String(v).trim().slice(0, 10).replaceAll(".", "-").replaceAll("/", "-");
-  // YYYY-MM-DD만 통과
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
-  return s;
-}
-
-
-// ✅ eventsByDate(현재월의 시작일키 구조) → 이벤트 리스트로 평탄화
+// ✅ eventsByDate(시작일키 구조) → 이벤트 리스트로 평탄화
 function toEventList() {
   const list = [];
   Object.entries(eventsByDate || {}).forEach(([startDate, objs]) => {
     Object.entries(objs || {}).forEach(([eventId, ev]) => {
-      const s = startDate;
-      const e = ev.endDate || startDate;
+      const s = normalizeDate(startDate) || startDate;
+      const e = normalizeDate(ev?.endDate) || s; // ✅ endDate 강제
       list.push({ ...ev, eventId, startDate: s, endDate: e });
     });
   });
@@ -120,7 +117,10 @@ function openModal({dateKey, eventId=null, event=null}){
   fOwner.value = selectedName;
 
   // 종료일 기본값 = 시작일
-  if (fEndDate) fEndDate.value = dateKey;
+  if (fEndDate){
+    fEndDate.value = dateKey;
+    fEndDate.min = dateKey; // ✅ 종료일은 시작일 이전 선택 불가
+  }
 
   if(event){
     modalTitle.textContent = "일정 수정";
@@ -129,7 +129,7 @@ function openModal({dateKey, eventId=null, event=null}){
     fEnd.value = event.end || "";
     fTitle.value = event.title || "";
     fDetail.value = event.detail || "";
-    if (fEndDate) fEndDate.value = (event.endDate || dateKey);
+    if (fEndDate) fEndDate.value = normalizeDate(event.endDate) || dateKey;
     fOwner.value = event.owner || selectedName;
 
     const canEdit = (event.owner === selectedName);
@@ -192,7 +192,6 @@ function renderMemberButtons(){
     memberBar.appendChild(btn);
   });
 
-  // 선택된 이름이 목록에 없으면 자동으로 첫 활성 멤버로
   if(!selectedName && members.length){
     selectedName = members[0].name;
     localStorage.setItem(LS_NAME, selectedName);
@@ -209,7 +208,6 @@ function subscribeMembers(){
     membersAll = list;
     members = list.filter(x=>x.active !== false);
 
-    // selectedName이 비활성/삭제되면 자동으로 첫 활성으로
     if(selectedName && !members.some(m=>m.name === selectedName)){
       selectedName = members[0]?.name || "";
       localStorage.setItem(LS_NAME, selectedName);
@@ -219,34 +217,29 @@ function subscribeMembers(){
 }
 
 // -------------------- events subscribe/filter --------------------
+// ✅ 핵심: "시작일이 이번달"이 아니라 "이번달과 겹치면" 포함
 function applyMonthFilterAndRender(){
   const { startKey, endKey } = monthRangeKeys();
   eventsByDate = {};
 
-  // ✅ 시작일 키가 이번달 밖이더라도, 이벤트가 이번달과 "겹치면" 포함
-  Object.entries(eventsAll).forEach(([startDateKey, objs]) => {
-    if (!objs) return;
+  Object.entries(eventsAll || {}).forEach(([startDateKey, objs]) => {
+    if(!objs) return;
 
+    const s = normalizeDate(startDateKey) || startDateKey;
+
+    // 이 시작일 아래에 이벤트가 여러개 있을 수 있으니 하나라도 겹치면 유지
     let keepAny = false;
-
-    Object.entries(objs).forEach(([eventId, ev]) => {
-      const s = startDateKey;                  // DB 키 = 시작일
-      const e = (ev?.endDate || s).slice(0,10);
-
-      // overlap: (s <= endKey) && (e >= startKey)
-      if (s <= endKey && e >= startKey) {
-        keepAny = true;
-      }
+    Object.values(objs).forEach((ev)=>{
+      const e = normalizeDate(ev?.endDate) || s;
+      // overlap: s <= endKey && e >= startKey
+      if (s <= endKey && e >= startKey) keepAny = true;
     });
 
-    if (keepAny) {
-      eventsByDate[startDateKey] = objs;
-    }
+    if (keepAny) eventsByDate[startDateKey] = objs;
   });
 
   renderCalendar();
 }
-
 
 function subscribeEvents(){
   onValue(ref(db, "events"), (snap)=>{
@@ -261,7 +254,6 @@ function renderCalendar(){
   const m = current.getMonth();
   monthTitle.textContent = `${y}.${pad2(m+1)}`;
 
-  // calendar grid start (Sun)
   const first = new Date(y, m, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
@@ -273,7 +265,6 @@ function renderCalendar(){
   const days = ["일","월","화","수","목","금","토"];
   calTable.innerHTML = "";
 
-  // thead
   const thead = document.createElement("thead");
   const trh = document.createElement("tr");
   days.forEach(d=>{
@@ -285,11 +276,11 @@ function renderCalendar(){
   calTable.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  const allEvents = toEventList(); // 현재월 기준 이벤트 리스트
+  const allEvents = toEventList();
 
   let cursor = new Date(start);
   while(cursor <= end){
-    const weekStart = new Date(cursor); // 이번 주 일요일
+    const weekStart = new Date(cursor);
     const weekEnd = new Date(cursor);
     weekEnd.setDate(weekEnd.getDate()+6);
 
@@ -298,9 +289,8 @@ function renderCalendar(){
     const wdays = weekDates(weekStart);
 
     const tr = document.createElement("tr");
-
-    // ✅ 7칸 생성
     const tds = [];
+
     for(let i=0;i<7;i++){
       const td = document.createElement("td");
       const inMonth = (cursor.getMonth() === m);
@@ -308,11 +298,9 @@ function renderCalendar(){
 
       const dateKey = ymd(cursor);
 
-      // td 내부 컨테이너
       const cell = document.createElement("div");
       cell.className = "day-cell";
 
-      // 날짜 상단
       const top = document.createElement("div");
       top.className = "day-top";
       const num = document.createElement("div");
@@ -320,7 +308,6 @@ function renderCalendar(){
       num.textContent = cursor.getDate();
       top.appendChild(num);
 
-      // 하루짜리 일정 표시 영역
       const items = document.createElement("div");
       items.className = "day-items";
       items.dataset.dateKey = dateKey;
@@ -329,7 +316,6 @@ function renderCalendar(){
       cell.appendChild(items);
       td.appendChild(cell);
 
-      // 날짜 클릭 → 추가
       td.addEventListener("click", (e)=>{
         if(e.target.closest(".mbar")) return;
         if(e.target.closest(".day-item")) return;
@@ -343,10 +329,10 @@ function renderCalendar(){
       cursor.setDate(cursor.getDate()+1);
     }
 
-    // ✅ (1) 하루짜리 일정
+    // (1) 하루짜리
     for(const ev of allEvents){
       const s = ev.startDate;
-      const e = ev.endDate || ev.startDate;
+      const e = ev.endDate;
 
       if(s === e && s >= weekStartKey && s <= weekEndKey){
         const dayIndex = wdays.indexOf(s);
@@ -373,15 +359,12 @@ function renderCalendar(){
       }
     }
 
-    // ✅ (2) 멀티데이 바
+    // (2) 멀티데이 바
     const segments = [];
     for(const ev of allEvents){
       const seg = splitIntoWeekSegments(ev, weekStartKey, weekEndKey);
       if(!seg) continue;
-
-      if(seg.segStart !== seg.segEnd){
-        segments.push(seg);
-      }
+      if(seg.segStart !== seg.segEnd) segments.push(seg);
     }
 
     segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
@@ -453,11 +436,10 @@ function renderCalendar(){
 
 // -------------------- save/delete --------------------
 saveBtn.addEventListener("click", async ()=>{
-  const dateKey = editing.dateKey;   // ✅ 시작일은 무조건 이걸 기준으로
+  const dateKey = editing.dateKey; // ✅ 시작일은 무조건 여기
   if(!dateKey) return;
 
-  const endDateRaw = (fEndDate?.value || dateKey);
-  const endDate = normalizeDate(endDateRaw) || dateKey;
+  const endDate = normalizeDate(fEndDate?.value) || dateKey;
 
   if (endDate < dateKey) {
     alert("종료일은 시작일보다 빠를 수 없습니다.");
@@ -471,7 +453,7 @@ saveBtn.addEventListener("click", async ()=>{
     owner: selectedName,
     start: (fStart.value || "").trim(),
     end: (fEnd.value || "").trim(),
-    endDate,                       // ✅ 멀티데이 핵심
+    endDate, // ✅ 멀티데이 핵심
     createdAt: serverTimestamp()
   };
 
@@ -485,12 +467,13 @@ saveBtn.addEventListener("click", async ()=>{
       const ev = eventsByDate?.[dateKey]?.[editing.eventId];
       if(!ev) return alert("데이터를 찾을 수 없습니다.");
       if(ev.owner !== selectedName) return alert("작성자 본인만 수정할 수 있습니다.");
-
       await update(ref(db, `events/${dateKey}/${editing.eventId}`), payload);
     } else {
       const newRef = push(ref(db, `events/${dateKey}`));
       await set(newRef, payload);
     }
+
+    // ✅ 성공했을 때만 닫기
     closeModal();
   } catch (err) {
     console.error(err);
@@ -498,25 +481,22 @@ saveBtn.addEventListener("click", async ()=>{
   }
 });
 
-
-
 deleteBtn.addEventListener("click", async ()=>{
   const { dateKey, eventId } = editing;
   if(!dateKey || !eventId) return;
 
   const ev = eventsByDate?.[dateKey]?.[eventId];
-  if(!ev){
-    alert("데이터를 찾을 수 없습니다.");
-    return;
-  }
-  if(ev.owner !== selectedName){
-    alert("작성자 본인만 삭제할 수 있습니다.");
-    return;
-  }
+  if(!ev) return alert("데이터를 찾을 수 없습니다.");
+  if(ev.owner !== selectedName) return alert("작성자 본인만 삭제할 수 있습니다.");
   if(!confirm("삭제하시겠습니까?")) return;
 
-  await remove(ref(db, `events/${dateKey}/${eventId}`));
-  closeModal();
+  try {
+    await remove(ref(db, `events/${dateKey}/${eventId}`));
+    closeModal();
+  } catch (err) {
+    console.error(err);
+    alert("삭제 실패: " + (err?.message || err));
+  }
 });
 
 // -------------------- nav buttons --------------------
