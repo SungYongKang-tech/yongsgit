@@ -5,7 +5,7 @@ import { ref, onValue, push, set, update, remove, serverTimestamp } from
 const LS_NAME = "mecal_selected_name";
 
 let current = new Date();
-current.setDate(1);
+current = new Date(current.getFullYear(), current.getMonth(), 1);
 
 let members = [];
 let membersAll = [];
@@ -17,7 +17,7 @@ const $ = (id) => document.getElementById(id);
 
 const memberBar = $("memberBar");
 const monthTitle = $("monthTitle");
-const calTable = $("calTable");
+const calGrid = $("calGrid");
 
 const modalBack = $("modalBack");
 const modalTitle = $("modalTitle");
@@ -39,9 +39,15 @@ let editing = { dateKey: null, eventId: null };
 // ---------- utils ----------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-function normalizeDate(s){
-  const t = (s||"").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : "";
+function parseYmd(s){
+  if(!s) return null;
+  const t = String(s).trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+  const [Y,M,D] = t.split("-").map(Number);
+  const dt = new Date(Y, M-1, D);
+  // 방어: JS가 자동 보정하는 경우 차단
+  if(dt.getFullYear() !== Y || dt.getMonth() !== M-1 || dt.getDate() !== D) return null;
+  return dt;
 }
 function addDays(d, n){
   const x = new Date(d);
@@ -53,63 +59,55 @@ function getMemberColor(name){
   return m?.color || "#1f6feb";
 }
 
+function monthTitleText(){
+  return `${current.getFullYear()}.${pad2(current.getMonth()+1)}`;
+}
+
 function getGridRange(){
   const y = current.getFullYear();
   const m = current.getMonth();
   const first = new Date(y, m, 1);
   const gridStart = new Date(first);
   gridStart.setDate(first.getDate() - first.getDay()); // Sun
+
   const last = new Date(y, m+1, 0);
   const gridEnd = new Date(last);
   gridEnd.setDate(last.getDate() + (6 - last.getDay())); // Sat
-  return { gridStart, gridEnd, gridStartKey: ymd(gridStart), gridEndKey: ymd(gridEnd) };
-}
 
-function weekDates(weekStart){
-  const arr = [];
-  const d = new Date(weekStart);
-  for(let i=0;i<7;i++){
-    arr.push(ymd(d));
-    d.setDate(d.getDate()+1);
-  }
-  return arr;
+  return { gridStart, gridEnd };
 }
 
 function toVisibleEventList(){
-  const { gridStartKey, gridEndKey } = getGridRange();
+  const { gridStart, gridEnd } = getGridRange();
+  const gridStartKey = ymd(gridStart);
+  const gridEndKey = ymd(gridEnd);
+
   const list = [];
-
-  Object.entries(eventsAll || {}).forEach(([startDate, objs])=>{
-    const sKey = normalizeDate(startDate) || startDate;
-
+  Object.entries(eventsAll || {}).forEach(([startKey, objs])=>{
     Object.entries(objs || {}).forEach(([eventId, ev])=>{
-      const eKey = normalizeDate(ev?.endDate) || sKey;
+      const s = startKey;
+      const e = (ev?.endDate && String(ev.endDate).trim()) ? String(ev.endDate).trim() : startKey;
 
-      // 그리드 범위 밖은 제외
-      if(eKey < gridStartKey || sKey > gridEndKey) return;
+      if(e < gridStartKey || s > gridEndKey) return;
 
       list.push({
         ...ev,
         eventId,
-        startDate: sKey,
-        endDate: eKey
+        startDate: s,
+        endDate: e
       });
     });
   });
-
   return list;
 }
 
-function splitIntoWeekSegment(ev, weekStartKey, weekEndKey){
+function splitToWeekSegment(ev, weekStartKey, weekEndKey){
   const s = ev.startDate;
   const e = ev.endDate;
   if(e < weekStartKey || s > weekEndKey) return null;
 
   const segStart = (s < weekStartKey) ? weekStartKey : s;
   const segEnd   = (e > weekEndKey)   ? weekEndKey   : e;
-
-  // 주 안에서 하루만 걸치면 "멀티바"로 그리지 않음
-  if(segStart === segEnd) return null;
 
   return { ...ev, segStart, segEnd };
 }
@@ -123,10 +121,13 @@ function openModal({dateKey, eventId=null, event=null}){
   editing = { dateKey, eventId };
 
   modalBack.classList.add("show");
+
+  // 신규/수정 모두 시작일 입력 가능(멀티 일정 생성/수정 용이)
   fDate.value = dateKey;
+  fDate.min = ""; // 필요시 제한 가능
   fOwner.value = selectedName;
 
-  // 새 입력일 때 종료일 min 설정(사용자 실수 방지)
+  // 종료일 min은 시작일
   fEndDate.min = dateKey;
 
   if(event){
@@ -136,7 +137,11 @@ function openModal({dateKey, eventId=null, event=null}){
     fEnd.value = event.end || "";
     fTitle.value = event.title || "";
     fDetail.value = event.detail || "";
+
+    // 멀티면 종료일 표시, 아니면 비움(=하루)
     fEndDate.value = (event.endDate && event.endDate !== event.startDate) ? event.endDate : "";
+
+    fOwner.value = event.owner || selectedName;
 
     const canEdit = (event.owner === selectedName);
     saveBtn.disabled = !canEdit;
@@ -168,6 +173,9 @@ function renderMemberButtons(){
   memberBar.innerHTML = "";
   if(!members.length) return;
 
+  if(selectedName && !members.some(m=>m.name === selectedName)){
+    selectedName = "";
+  }
   if(!selectedName){
     selectedName = members[0].name;
     localStorage.setItem(LS_NAME, selectedName);
@@ -175,7 +183,7 @@ function renderMemberButtons(){
 
   members.forEach(m=>{
     const btn = document.createElement("button");
-    btn.className = "member-btn" + (m.name === selectedName ? " active" : "");
+    btn.className = "member-btn";
     btn.textContent = m.name;
 
     const c = m.color || "#1f6feb";
@@ -204,16 +212,12 @@ function renderMemberButtons(){
 function subscribeMembers(){
   onValue(ref(db, "config/members"), (snap)=>{
     const obj = snap.val() || {};
-    const list = Object.entries(obj).map(([id,v])=>({id, ...v}));
+    const list = Object.entries(obj).map(([id,v])=>({ id, ...v }));
     list.sort((a,b)=>(a.order ?? 999) - (b.order ?? 999));
     membersAll = list;
     members = list.filter(x=>x.active !== false);
-
-    if(selectedName && !members.some(m=>m.name === selectedName)){
-      selectedName = members[0]?.name || "";
-      localStorage.setItem(LS_NAME, selectedName);
-    }
     renderMemberButtons();
+    renderCalendar();
   });
 }
 
@@ -227,209 +231,211 @@ function subscribeEvents(){
 
 // ---------- render ----------
 function renderCalendar(){
-  const y = current.getFullYear();
-  const m = current.getMonth();
-  monthTitle.textContent = `${y}.${pad2(m+1)}`;
+  monthTitle.textContent = monthTitleText();
+  calGrid.innerHTML = "";
+
+  // 요일 헤더
+  const dow = document.createElement("div");
+  dow.className = "dow";
+  ["일","월","화","수","목","금","토"].forEach(d=>{
+    const x = document.createElement("div");
+    x.textContent = d;
+    dow.appendChild(x);
+  });
+  calGrid.appendChild(dow);
 
   const { gridStart, gridEnd } = getGridRange();
   const allEvents = toVisibleEventList();
 
-  calTable.innerHTML = "";
-
-  const days = ["일","월","화","수","목","금","토"];
-  const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  days.forEach(d=>{
-    const th = document.createElement("th");
-    th.textContent = d;
-    trh.appendChild(th);
-  });
-  thead.appendChild(trh);
-  calTable.appendChild(thead);
-
-  const tbody = document.createElement("tbody");
-  calTable.appendChild(tbody);
+  // 날짜→칸 DOM 빠르게 찾기 위한 map
+  const cellMap = new Map(); // dateKey -> dayEl
+  const weeks = []; // week containers
 
   let cursor = new Date(gridStart);
-
   while(cursor <= gridEnd){
     const weekStart = new Date(cursor);
     const weekStartKey = ymd(weekStart);
     const weekEndKey = ymd(addDays(weekStart, 6));
-    const wdays = weekDates(weekStart);
 
-    const tr = document.createElement("tr");
-    tr.dataset.weekStart = weekStartKey;
+    const weekRow = document.createElement("div");
+    weekRow.className = "week-row";
+    weekRow.dataset.weekStart = weekStartKey;
 
-    for(let i=0;i<7;i++){
-      const td = document.createElement("td");
+    // 멀티바 레이어(주 전체)
+    const barsLayer = document.createElement("div");
+    barsLayer.className = "week-bars";
+    weekRow.appendChild(barsLayer);
+
+    // 7일 칸
+    for(let col=0; col<7; col++){
       const dateKey = ymd(cursor);
+      const day = document.createElement("div");
+      day.className = "day";
+      day.dataset.dateKey = dateKey;
+      day.dataset.col = String(col);
 
-      td.dataset.dateKey = dateKey;
-      td.dataset.col = String(i);
+      const inMonth = (cursor.getMonth() === current.getMonth());
+      if(!inMonth) day.classList.add("muted");
 
-      const inMonth = (cursor.getMonth() === m);
-      if(!inMonth) td.classList.add("day-muted");
-
-      const cell = document.createElement("div");
-      cell.className = "day-cell";
-
-      const top = document.createElement("div");
-      top.className = "day-top";
       const num = document.createElement("div");
       num.className = "day-num";
       num.textContent = cursor.getDate();
-      top.appendChild(num);
-
-      const barSlot = document.createElement("div");
-      barSlot.className = "bar-slot";
 
       const items = document.createElement("div");
       items.className = "day-items";
 
-      cell.appendChild(top);
-      cell.appendChild(barSlot);
-      cell.appendChild(items);
-      td.appendChild(cell);
+      day.appendChild(num);
+      day.appendChild(items);
 
-      td.addEventListener("click",(e)=>{
-        if(e.target.closest(".mseg")) return;
+      day.addEventListener("click",(e)=>{
+        if(e.target.closest(".mbar")) return;
         if(e.target.closest(".day-item")) return;
         openModal({ dateKey });
       });
 
-      tr.appendChild(td);
-      cursor.setDate(cursor.getDate()+1);
+      weekRow.appendChild(day);
+      cellMap.set(dateKey, day);
+
+      cursor = addDays(cursor, 1);
     }
 
-    tbody.appendChild(tr);
+    calGrid.appendChild(weekRow);
+    weeks.push({ weekRow, barsLayer, weekStartKey, weekEndKey });
+  }
 
-    // 1) 하루짜리 표시(칸 안)
-    allEvents.forEach(ev=>{
-      if(ev.startDate !== ev.endDate) return;
-      if(ev.startDate < weekStartKey || ev.startDate > weekEndKey) return;
+  // 1) 하루 일정(칸 안)
+  for(const ev of allEvents){
+    if(ev.startDate !== ev.endDate) continue;
+    const cell = cellMap.get(ev.startDate);
+    if(!cell) continue;
 
-      const td = tr.querySelector(`td[data-date-key="${ev.startDate}"]`);
-      if(!td) return;
+    const items = cell.querySelector(".day-items");
+    const item = document.createElement("div");
+    item.className = "day-item";
+    item.textContent = ev.title || "(제목없음)";
 
-      const items = td.querySelector(".day-items");
-      const item = document.createElement("div");
-      item.className = "day-item";
-      item.textContent = ev.title || "(제목없음)";
+    const c = getMemberColor(ev.owner);
+    item.style.borderColor = c;
+    item.style.color = c;
+    item.style.background = c + "12";
 
-      const c = getMemberColor(ev.owner);
-      item.style.borderColor = c;
-      item.style.color = c;
-      item.style.background = c + "12";
-
-      item.addEventListener("click",(e2)=>{
-        e2.stopPropagation();
-        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-      });
-
-      items.appendChild(item);
+    item.addEventListener("click",(e)=>{
+      e.stopPropagation();
+      openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
     });
 
-    // 2) 멀티데이 표시(각 날짜칸 bar-slot 안에 조각으로 “이어 붙이기”)
-    const segments = [];
-    allEvents.forEach(ev=>{
-      if(ev.startDate === ev.endDate) return;
-      const seg = splitIntoWeekSegment(ev, weekStartKey, weekEndKey);
-      if(seg) segments.push(seg);
-    });
+    items.appendChild(item);
+  }
 
-    if(segments.length){
-      segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
+  // 2) 멀티 일정(주 단위 “한 줄 스팬 바”)
+  for(const wk of weeks){
+    const { barsLayer, weekStartKey, weekEndKey, weekRow } = wk;
 
-      // 레인 배치
-      const lanes = []; // lanes[row][col] boolean
-      const placed = [];
-
-      const canPlace = (lane, sIdx, eIdx)=>{
-        for(let k=sIdx;k<=eIdx;k++) if(lane[k]) return false;
-        return true;
-      };
-      const occupy = (lane, sIdx, eIdx)=>{
-        for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
-      };
-
-      segments.forEach(seg=>{
-        const c1 = wdays.indexOf(seg.segStart);
-        const c2 = wdays.indexOf(seg.segEnd);
-        if(c1 < 0 || c2 < 0) return;
-
-        let row = -1;
-        for(let r=0;r<lanes.length;r++){
-          if(canPlace(lanes[r], c1, c2)){ row = r; break; }
-        }
-        if(row === -1){
-          lanes.push(new Array(7).fill(false));
-          row = lanes.length - 1;
-        }
-        occupy(lanes[row], c1, c2);
-        placed.push({ seg, c1, c2, row });
-      });
-
-      // slot 높이 확장(레인 수만큼)
-      const isMobile = window.matchMedia("(max-width:640px)").matches;
-      const rowH = isMobile ? 20 : 22;
-      const slotH = Math.max(1, lanes.length) * (rowH + 2);
-
-      tr.querySelectorAll(".bar-slot").forEach(s=>{
-        s.style.height = `${slotH}px`;
-      });
-
-      // 각 날짜 칸에 조각을 심는다(연결된 바처럼 보임)
-      placed.forEach(({ seg, c1, c2, row })=>{
-        const color = getMemberColor(seg.owner);
-
-        for(let col=c1; col<=c2; col++){
-          const dateKey = wdays[col];
-          const td = tr.querySelector(`td[data-date-key="${dateKey}"]`);
-          if(!td) continue;
-
-          const slot = td.querySelector(".bar-slot");
-          if(!slot) continue;
-
-          const part = document.createElement("div");
-          part.className = "mseg";
-
-          // 라운드 처리
-          const isStart = (col === c1);
-          const isEnd = (col === c2);
-          if(isStart) part.classList.add("start");
-          if(isEnd) part.classList.add("end");
-          if(!isStart && !isEnd) part.classList.add("mid");
-
-          part.style.top = `${row * (rowH + 2)}px`;
-          part.style.borderColor = color;
-          part.style.background = color + "18";
-          part.style.color = color;
-
-          // 텍스트는 시작 조각에만(중간/끝은 텍스트 공백) → 보기 깔끔
-          part.textContent = isStart ? (seg.title || "(제목없음)") : "";
-
-          part.addEventListener("click",(e2)=>{
-            e2.stopPropagation();
-            openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
-          });
-
-          slot.appendChild(part);
-        }
-      });
+    // 이 주에 걸치는 멀티 이벤트 세그먼트
+    const segs = [];
+    for(const ev of allEvents){
+      if(ev.startDate === ev.endDate) continue;
+      const seg = splitToWeekSegment(ev, weekStartKey, weekEndKey);
+      if(seg) segs.push(seg);
     }
+    if(!segs.length) continue;
+
+    segs.sort((a,b)=> a.segStart.localeCompare(b.segStart));
+
+    // 레인 배치 (겹치면 다음 줄)
+    const lanes = []; // lanes[row][col]=true
+    const placed = [];
+
+    const canPlace = (lane, s, e)=>{
+      for(let k=s;k<=e;k++) if(lane[k]) return false;
+      return true;
+    };
+    const occupy = (lane, s, e)=>{
+      for(let k=s;k<=e;k++) lane[k] = true;
+    };
+
+    for(const seg of segs){
+      const sCell = weekRow.querySelector(`.day[data-date-key="${seg.segStart}"]`);
+      const eCell = weekRow.querySelector(`.day[data-date-key="${seg.segEnd}"]`);
+      if(!sCell || !eCell) continue;
+
+      const sCol = Number(sCell.dataset.col);
+      const eCol = Number(eCell.dataset.col);
+
+      let row = -1;
+      for(let r=0;r<lanes.length;r++){
+        if(canPlace(lanes[r], sCol, eCol)){ row = r; break; }
+      }
+      if(row === -1){
+        lanes.push(new Array(7).fill(false));
+        row = lanes.length - 1;
+      }
+      occupy(lanes[row], sCol, eCol);
+      placed.push({ seg, sCol, eCol, row });
+    }
+
+    const isMobile = window.matchMedia("(max-width:640px)").matches;
+    const rowH = isMobile ? 20 : 22;
+    const gapY = 2;
+
+    // 바를 그린다(주 전체 폭 기준 %)
+    for(const p of placed){
+      const { seg, sCol, eCol, row } = p;
+      const span = (eCol - sCol + 1);
+
+      const bar = document.createElement("div");
+      bar.className = "mbar";
+
+      const leftPct = (sCol / 7) * 100;
+      const widthPct = (span / 7) * 100;
+
+      bar.style.left = `calc(${leftPct}% + 6px)`;     // 칸 패딩 보정
+      bar.style.width = `calc(${widthPct}% - 12px)`;  // 양쪽 패딩 보정
+      bar.style.top = `${row * (rowH + gapY)}px`;
+
+      const c = getMemberColor(seg.owner);
+      bar.style.borderColor = c;
+      bar.style.background = c + "18";
+      bar.style.color = c;
+
+      // ✅ 멀티일정은 “한 줄 바”에 텍스트 길게 표시
+      bar.textContent = seg.title || "(제목없음)";
+
+      bar.addEventListener("click",(e)=>{
+        e.stopPropagation();
+        openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
+      });
+
+      barsLayer.appendChild(bar);
+    }
+
+    // 주 높이(칸 높이)는 그대로 두되, 바가 많아도 잘 보이게 최소 높이 확보
+    const needH = (lanes.length) * (rowH + gapY) + 26;
+    const oneDay = weekRow.querySelector(".day");
+    const minH = Math.max(92, needH + 56); // 보기 좋게
+    weekRow.querySelectorAll(".day").forEach(d=>{
+      d.style.minHeight = `${minH}px`;
+    });
   }
 }
 
 // ---------- save/delete ----------
 saveBtn.addEventListener("click", async ()=>{
-  const startKey = normalizeDate(fDate.value);
-  if(!startKey){
-    alert("시작일이 올바르지 않습니다.");
+  if(!selectedName){
+    alert("상단에서 이름을 먼저 선택해 주세요.");
     return;
   }
 
-  const endKey = normalizeDate(fEndDate.value) || startKey;
+  const startDt = parseYmd(fDate.value);
+  if(!startDt){
+    alert("시작일이 올바르지 않습니다.");
+    return;
+  }
+  const startKey = ymd(startDt);
+
+  const endDt = parseYmd(fEndDate.value);
+  const endKey = endDt ? ymd(endDt) : startKey;
+
   if(endKey < startKey){
     alert("종료일은 시작일보다 빠를 수 없습니다.");
     return;
@@ -463,7 +469,7 @@ saveBtn.addEventListener("click", async ()=>{
       return;
     }
 
-    // 시작일이 바뀌면 key 이동
+    // 시작일 변경 시 key 이동
     if(startKey !== editing.dateKey){
       const newRef = push(ref(db, `events/${startKey}`));
       await set(newRef, payload);
@@ -471,7 +477,7 @@ saveBtn.addEventListener("click", async ()=>{
     }else{
       await update(ref(db, `events/${editing.dateKey}/${editing.eventId}`), payload);
     }
-  }else{
+  } else {
     // 신규
     const newRef = push(ref(db, `events/${startKey}`));
     await set(newRef, payload);
@@ -501,11 +507,11 @@ deleteBtn.addEventListener("click", async ()=>{
 
 // ---------- nav ----------
 $("prevBtn").addEventListener("click", ()=>{
-  current.setMonth(current.getMonth()-1);
+  current = new Date(current.getFullYear(), current.getMonth()-1, 1);
   renderCalendar();
 });
 $("nextBtn").addEventListener("click", ()=>{
-  current.setMonth(current.getMonth()+1);
+  current = new Date(current.getFullYear(), current.getMonth()+1, 1);
   renderCalendar();
 });
 $("todayBtn").addEventListener("click", ()=>{
@@ -514,10 +520,8 @@ $("todayBtn").addEventListener("click", ()=>{
   renderCalendar();
 });
 
-// 화면 회전/리사이즈 대응
-window.addEventListener("resize", ()=>{
-  renderCalendar();
-});
+// 회전/리사이즈 시 스팬 계산 재렌더
+window.addEventListener("resize", ()=> renderCalendar());
 
 // ---------- start ----------
 subscribeMembers();
