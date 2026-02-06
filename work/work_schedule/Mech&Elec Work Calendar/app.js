@@ -17,7 +17,8 @@ let eventsByDate = {};       // { "YYYY-MM-DD": {eventId: eventObj} }
 const $ = (id) => document.getElementById(id);
 
 const memberBar = $("memberBar");
-const selectedNameView = $("selectedNameView");
+const selectedNameView = document.getElementById("selectedNameView"); // 없을 수도 있음
+
 const monthTitle = $("monthTitle");
 const calTable = $("calTable");
 
@@ -90,7 +91,7 @@ closeBtn.addEventListener("click", closeModal);
 
 function renderMemberButtons(){
   memberBar.innerHTML = "";
-  selectedNameView.textContent = selectedName || "-";
+  if(selectedNameView) selectedNameView.textContent = selectedName || "-";
 
   members.forEach(m=>{
     const btn = document.createElement("button");
@@ -105,7 +106,7 @@ function renderMemberButtons(){
       selectedName = m.name;
       localStorage.setItem(LS_NAME, selectedName);
       renderMemberButtons();
-      selectedNameView.textContent = selectedName;
+      if(selectedNameView) selectedNameView.textContent = selectedName;
     };
     memberBar.appendChild(btn);
   });
@@ -114,7 +115,7 @@ function renderMemberButtons(){
   if(!selectedName && members.length){
     selectedName = members[0].name;
     localStorage.setItem(LS_NAME, selectedName);
-    selectedNameView.textContent = selectedName;
+    if(selectedNameView) selectedNameView.textContent = selectedName;
     renderMemberButtons();
   }
 }
@@ -173,11 +174,9 @@ function renderCalendar(){
       num.className = "day-num";
       num.textContent = cursor.getDate();
       const add = document.createElement("div");
-      add.className = "badge";
-      add.textContent = "추가";
+      
       top.appendChild(num);
-      top.appendChild(add);
-
+    
       td.appendChild(top);
 
       // events
