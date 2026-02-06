@@ -52,7 +52,6 @@ function getMemberColor(name){
   const m = membersAll.find(x => x.name === name);
   return m?.color || "#1f6feb";
 }
-
 function getVisibleRange(){
   const y = current.getFullYear();
   const m = current.getMonth();
@@ -73,7 +72,6 @@ function weekDates(weekStart){
   }
   return arr;
 }
-
 function toVisibleEventList(){
   const { gridStartKey, gridEndKey } = getVisibleRange();
   const list = [];
@@ -87,7 +85,6 @@ function toVisibleEventList(){
   });
   return list;
 }
-
 function splitIntoWeekSegment(ev, weekStartKey, weekEndKey){
   const s = ev.startDate;
   const e = ev.endDate;
@@ -95,6 +92,11 @@ function splitIntoWeekSegment(ev, weekStartKey, weekEndKey){
   const segStart = (s < weekStartKey) ? weekStartKey : s;
   const segEnd   = (e > weekEndKey)   ? weekEndKey   : e;
   return { ...ev, segStart, segEnd };
+}
+function sum(arr, from, toInclusive){
+  let s = 0;
+  for(let i=from;i<=toInclusive;i++) s += arr[i];
+  return s;
 }
 
 // -------- modal --------
@@ -181,7 +183,6 @@ function renderMemberButtons(){
     memberBar.appendChild(btn);
   });
 }
-
 function subscribeMembers(){
   onValue(ref(db, "config/members"), (snap)=>{
     const obj = snap.val() || {};
@@ -215,8 +216,8 @@ function renderCalendar(){
   const { gridStart, gridEnd } = getVisibleRange();
 
   calTable.innerHTML = "";
-
   const days = ["일","월","화","수","목","금","토"];
+
   const thead = document.createElement("thead");
   const trh = document.createElement("tr");
   days.forEach(d=>{
@@ -243,7 +244,6 @@ function renderCalendar(){
     const tr = document.createElement("tr");
     const tds = [];
 
-    // 7칸 만들기 (칸 내부에 bar-slot 추가)
     for(let i=0;i<7;i++){
       const td = document.createElement("td");
       const inMonth = (cursor.getMonth() === m);
@@ -263,7 +263,6 @@ function renderCalendar(){
 
       const barSlot = document.createElement("div");
       barSlot.className = "bar-slot";
-      barSlot.dataset.weekStartKey = weekStartKey; // 디버그용
 
       const items = document.createElement("div");
       items.className = "day-items";
@@ -288,7 +287,10 @@ function renderCalendar(){
 
     tbody.appendChild(tr);
 
-    // ---- 하루짜리(칸 안) ----
+    // ✅ 픽셀 폭 측정(이게 날짜 오차/밀림 해결 핵심)
+    const colW = tds.map(td => td.getBoundingClientRect().width);
+
+    // ---- 하루짜리 ----
     for(const ev of allEvents){
       if(ev.startDate !== ev.endDate) continue;
       const s = ev.startDate;
@@ -317,7 +319,7 @@ function renderCalendar(){
       items.appendChild(item);
     }
 
-    // ---- 멀티데이(바): “이 주의 첫칸(일요일)” bar-slot에 bar-wrap 올리기 ----
+    // ---- 멀티데이(바) ----
     const sundaySlot = tds[0].querySelector(".bar-slot");
     if(!sundaySlot) continue;
 
@@ -353,19 +355,26 @@ function renderCalendar(){
         row = lanes.length - 1;
       }
       occupy(lanes[row], colStart, colEnd);
-
       placed.push({ seg, colStart, colEnd, row });
     });
 
-    // bar-wrap 생성(레인 없으면 만들지 않음)
     if(placed.length){
+      // ✅ 일요일 칸이 다른 칸 위로 올라오게(바가 가려지는 것 방지)
+      tds[0].style.zIndex = "5";
+
       const barWrap = document.createElement("div");
       barWrap.className = "bar-wrap";
+
+      // ✅ barWrap 폭을 “주 전체 폭(px)”로 지정
+      const totalW = sum(colW, 0, 6);
+      barWrap.style.width = `${totalW}px`;
+
       sundaySlot.appendChild(barWrap);
 
-      const rowH = window.matchMedia("(max-width:640px)").matches ? 20 : 22;
+      const isMobile = window.matchMedia("(max-width:640px)").matches;
+      const rowH = isMobile ? 20 : 22;
       const needH = Math.max(1, lanes.length) * (rowH + 2);
-      sundaySlot.style.height = `${needH + 2}px`; // ✅ slot 높이 확장
+      sundaySlot.style.height = `${needH + 2}px`;
 
       placed.forEach(({seg, colStart, colEnd, row})=>{
         const bar = document.createElement("div");
@@ -376,11 +385,12 @@ function renderCalendar(){
         bar.style.background = c + "18";
         bar.style.color = c;
 
-        const leftPct = (colStart * 100) / 7;
-        const widthPct = ((colEnd - colStart + 1) * 100) / 7;
+        // ✅ left/width를 px 합산으로 계산
+        const leftPx = sum(colW, 0, colStart-1);
+        const widthPx = sum(colW, colStart, colEnd);
 
-        bar.style.left = `calc(${leftPct}% + 2px)`;
-        bar.style.width = `calc(${widthPct}% - 4px)`;
+        bar.style.left = `${leftPx + 2}px`;
+        bar.style.width = `${Math.max(20, widthPx - 4)}px`;
         bar.style.top = `${row * (rowH + 2)}px`;
 
         bar.textContent = seg.title || "(제목없음)";
