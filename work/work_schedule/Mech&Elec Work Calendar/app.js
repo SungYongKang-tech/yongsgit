@@ -26,8 +26,8 @@ const calTable = $("calTable");
 
 const modalBack = $("modalBack");
 const modalTitle = $("modalTitle");
-const fDate = $("fDate");
-const fEndDate = $("fEndDate");
+const fDate = $("fDate");         // (권장) HTML에서 type="date" disabled 로
+const fEndDate = $("fEndDate");   // type="date"
 const fType = $("fType");
 const fStart = $("fStart");
 const fEnd = $("fEnd");
@@ -107,7 +107,7 @@ function openModal({dateKey, eventId=null, event=null}){
   editing = { dateKey, eventId };
 
   modalBack.classList.add("show");
-  fDate.value = dateKey;
+  fDate.value = dateKey;       // 표시용
   fOwner.value = selectedName;
 
   // 종료일 기본값 = 시작일
@@ -304,9 +304,9 @@ function renderCalendar(){
 
       // 날짜 클릭 → 추가
       td.addEventListener("click", (e)=>{
-        if(e.target.closest(".mbar")) return;       // 바 클릭은 바에서 처리
-        if(e.target.closest(".day-item")) return;   // day-item 클릭은 item에서 처리
-        if(e.target.closest(".week-layer")) return; // ✅ 레이어 클릭 가로채기 방지
+        if(e.target.closest(".mbar")) return;
+        if(e.target.closest(".day-item")) return;
+        if(e.target.closest(".week-layer")) return;
         openModal({ dateKey });
       });
 
@@ -316,7 +316,7 @@ function renderCalendar(){
       cursor.setDate(cursor.getDate()+1);
     }
 
-    // ✅ (1) 하루짜리 일정: 해당 날짜 칸 안에만 표시
+    // ✅ (1) 하루짜리 일정
     for(const ev of allEvents){
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
@@ -346,13 +346,12 @@ function renderCalendar(){
       }
     }
 
-    // ✅ (2) 2일 이상 일정: 칸 안에서 옆칸까지 이어지는 바(주 단위 세그먼트)
+    // ✅ (2) 멀티데이 바
     const segments = [];
     for(const ev of allEvents){
       const seg = splitIntoWeekSegments(ev, weekStartKey, weekEndKey);
       if(!seg) continue;
 
-      // ✅ 세그먼트 기준으로 멀티데이만
       if(seg.segStart !== seg.segEnd){
         segments.push(seg);
       }
@@ -360,8 +359,7 @@ function renderCalendar(){
 
     segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
 
-    // 레인 배치(겹치면 다음 줄)
-    const lanes = []; // lanes[row] = Array(7).fill(false)
+    const lanes = [];
     function canPlace(lane, sIdx, eIdx){
       for(let k=sIdx;k<=eIdx;k++) if(lane[k]) return false;
       return true;
@@ -370,7 +368,6 @@ function renderCalendar(){
       for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
     }
 
-    // 주 레이어 생성
     const layer = document.createElement("div");
     layer.className = "week-layer";
     const grid = document.createElement("div");
@@ -378,8 +375,8 @@ function renderCalendar(){
     layer.appendChild(grid);
 
     segments.forEach(seg=>{
-      const colStart = wdays.indexOf(seg.segStart); // 0~6
-      const colEnd = wdays.indexOf(seg.segEnd);     // 0~6
+      const colStart = wdays.indexOf(seg.segStart);
+      const colEnd = wdays.indexOf(seg.segEnd);
       if(colStart < 0 || colEnd < 0) return;
 
       let rowIndex = -1;
@@ -412,7 +409,6 @@ function renderCalendar(){
       grid.appendChild(bar);
     });
 
-    // 레이어를 첫 td에 붙이고 7칸 폭으로 덮기
     const firstTd = tr.children[0];
     if(firstTd){
       firstTd.style.position = "relative";
@@ -433,7 +429,14 @@ saveBtn.addEventListener("click", async ()=>{
   const dateKey = editing.dateKey;
   if(!dateKey) return;
 
-  const endDate = (fEndDate?.value || dateKey).trim() || dateKey;
+  // ✅ endDate는 YYYY-MM-DD만 허용 (멀티데이 저장 안정화)
+  let endDate = (fEndDate && fEndDate.value) ? fEndDate.value : dateKey;
+  endDate = String(endDate).trim().slice(0,10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    alert("종료일 형식이 올바르지 않습니다. (YYYY-MM-DD)");
+    return;
+  }
   if (endDate < dateKey) {
     alert("종료일은 시작일보다 빠를 수 없습니다.");
     return;
@@ -493,7 +496,7 @@ deleteBtn.addEventListener("click", async ()=>{
   closeModal();
 });
 
-// -------------------- nav buttons (구독 누적 방지) --------------------
+// -------------------- nav buttons --------------------
 $("prevBtn").addEventListener("click", ()=>{
   current.setMonth(current.getMonth()-1);
   applyMonthFilterAndRender();
