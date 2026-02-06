@@ -205,6 +205,7 @@ function renderCalendar(){
   const days = ["일","월","화","수","목","금","토"];
   calTable.innerHTML = "";
 
+  // thead
   const thead = document.createElement("thead");
   const trh = document.createElement("tr");
   days.forEach(d=>{
@@ -217,12 +218,22 @@ function renderCalendar(){
 
   const tbody = document.createElement("tbody");
 
+  const allEvents = toEventList(); // {startDate,endDate,eventId,...}
+
   let cursor = new Date(start);
   while(cursor <= end){
-    const weekStart = new Date(cursor);      // ✅ 이번 주 시작(일요일) 고정
+    const weekStart = new Date(cursor); // 이번 주 일요일
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(weekEnd.getDate()+6);
+
+    const weekStartKey = ymd(weekStart);
+    const weekEndKey = ymd(weekEnd);
+    const wdays = weekDates(weekStart);
+
     const tr = document.createElement("tr");
 
-    // ✅ 7칸 날짜(칸 안에는 아무 이벤트도 표시하지 않음)
+    // ✅ 7칸 생성
+    const tds = [];
     for(let i=0;i<7;i++){
       const td = document.createElement("td");
       const inMonth = (cursor.getMonth() === m);
@@ -230,83 +241,138 @@ function renderCalendar(){
 
       const dateKey = ymd(cursor);
 
+      // td 내부 컨테이너
+      const cell = document.createElement("div");
+      cell.className = "day-cell";
+
+      // 날짜 상단
       const top = document.createElement("div");
       top.className = "day-top";
       const num = document.createElement("div");
       num.className = "day-num";
       num.textContent = cursor.getDate();
-
       top.appendChild(num);
-      td.appendChild(top);
 
-      // ✅ 날짜칸 클릭 → 바로 추가(추가 버튼 없음)
+      // 하루짜리 일정 표시 영역
+      const items = document.createElement("div");
+      items.className = "day-items";
+      items.dataset.dateKey = dateKey;
+
+      cell.appendChild(top);
+      cell.appendChild(items);
+      td.appendChild(cell);
+
+      // 날짜 클릭 → 추가
       td.addEventListener("click", (e)=>{
-        // bar 클릭은 별도 처리, 여기서는 날짜칸 클릭만
-        if (e.target.closest(".bar")) return;
+        if(e.target.closest(".mbar")) return;    // 바 클릭은 바에서 처리
+        if(e.target.closest(".day-item")) return; // day-item 클릭은 item에서 처리
         openModal({ dateKey });
       });
 
       tr.appendChild(td);
+      tds.push(td);
+
       cursor.setDate(cursor.getDate()+1);
     }
 
-    // ✅ 주별 "바" 줄 추가 (2일 이상 일정이 가로로 이어짐)
-    const barTr = document.createElement("tr");
-    barTr.className = "weekbars";
-    const barTd = document.createElement("td");
-    barTd.colSpan = 7;
+    // ✅ (1) 하루짜리 일정: 해당 날짜 칸 안에만 표시
+    // - 기준: startDate == endDate 인 이벤트
+    for(const ev of allEvents){
+      const s = ev.startDate;
+      const e = ev.endDate || ev.startDate;
 
-    const grid = document.createElement("div");
-    grid.className = "weekbar-grid";
+      if(s === e && s >= weekStartKey && s <= weekEndKey){
+        const dayIndex = wdays.indexOf(s);
+        if(dayIndex < 0) continue;
 
-    const ws = new Date(weekStart);
-    const we = new Date(weekStart);
-    we.setDate(we.getDate() + 6);
+        const items = tds[dayIndex].querySelector(".day-items");
+        if(!items) continue;
 
-    const weekStartKey = ymd(ws);
-    const weekEndKey = ymd(we);
+        const item = document.createElement("div");
+        item.className = "day-item";
+        item.textContent = ev.title || "(제목없음)";
 
-    const allEvents = toEventList();
+        // 작성자 색상(이미 getMemberColor 함수가 있다면 더 좋고, 없으면 기본)
+        const userColor = (typeof getMemberColor === "function")
+          ? getMemberColor(ev.owner)
+          : "#1f6feb";
+        item.style.borderColor = userColor;
+        item.style.color = userColor;
+        item.style.background = userColor + "12";
 
-    // 이번 주에 걸치는 이벤트만 segment로 생성
-    const segments = [];
-    for (const ev of allEvents) {
-      const seg = splitIntoWeekSegments(ev, weekStartKey, weekEndKey);
-      if (seg) segments.push(seg);
+        item.addEventListener("click", (e)=>{
+          e.stopPropagation();
+          openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+        });
+
+        items.appendChild(item);
+      }
     }
 
-    // 정렬: segStart 기준
-    segments.sort((a,b)=> (a.segStart.localeCompare(b.segStart)) || ((a.owner||"").localeCompare(b.owner||"")));
+    // ✅ (2) 2일 이상 일정: "칸 안에서 옆칸까지 이어지는 바"로 표시 (중복 없음)
+    // - 이번 주에 걸치는 이벤트를 segStart~segEnd로 잘라서 주 단위로 배치
+    const segments = [];
+    for(const ev of allEvents){
+      const seg = splitIntoWeekSegments(ev, weekStartKey, weekEndKey);
+      if(!seg) continue;
 
-    const wdays = weekDates(ws);
+      // 멀티데이만 바로 표현
+      if(seg.startDate !== seg.endDate){
+        segments.push(seg);
+      }
+    }
+
+    // 정렬(시작이 빠른 것부터)
+    segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
+
+    // 레인 배치(겹치면 다음 줄)
+    const lanes = []; // lanes[row] = Array(7).fill(false)
+    function canPlace(lane, sIdx, eIdx){
+      for(let k=sIdx;k<=eIdx;k++) if(lane[k]) return false;
+      return true;
+    }
+    function occupy(lane, sIdx, eIdx){
+      for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
+    }
+
+    // 주 레이어 생성 (tr 전체 위에 1개)
+    const layer = document.createElement("div");
+    layer.className = "week-layer";
+    const grid = document.createElement("div");
+    grid.className = "week-layer-grid";
+    layer.appendChild(grid);
 
     segments.forEach(seg=>{
-      const colStart = wdays.indexOf(seg.segStart) + 1; // grid-column은 1부터
-      const colEnd = wdays.indexOf(seg.segEnd) + 1;
-      const span = (colEnd - colStart + 1);
+      const colStart = wdays.indexOf(seg.segStart); // 0~6
+      const colEnd = wdays.indexOf(seg.segEnd);     // 0~6
+      if(colStart < 0 || colEnd < 0) return;
+
+      let rowIndex = -1;
+      for(let r=0;r<lanes.length;r++){
+        if(canPlace(lanes[r], colStart, colEnd)){ rowIndex = r; break; }
+      }
+      if(rowIndex === -1){
+        lanes.push(new Array(7).fill(false));
+        rowIndex = lanes.length - 1;
+      }
+      occupy(lanes[rowIndex], colStart, colEnd);
 
       const bar = document.createElement("div");
-      bar.className = "bar";
+      bar.className = "mbar";
+      bar.style.gridColumn = `${colStart+1} / span ${colEnd-colStart+1}`;
+      bar.style.gridRow = `${rowIndex+1}`;
 
-      const userColor = getMemberColor(seg.owner);
+      // 작성자 색상 적용
+      const userColor = (typeof getMemberColor === "function")
+        ? getMemberColor(seg.owner)
+        : "#1f6feb";
+      bar.style.borderColor = userColor;
+      bar.style.background = userColor + "18";
+      bar.style.color = userColor;
 
-// 배경/테두리/글씨에 색상 적용
-bar.style.background = userColor + "22"; // 연한 배경
-bar.style.borderColor = userColor;
-bar.style.color = userColor;
+      // 바 텍스트: 제목만 (원하면 작성자도 추가 가능)
+      bar.textContent = seg.title || "(제목없음)";
 
-
-      bar.style.gridColumn = `${colStart} / span ${span}`;
-
-      // ✅ 칸/바 모두에서 "휴가/작업/공정" 텍스트는 표시하지 않음
-      // 제목 + 작성자만 표시
-      bar.innerHTML = `
-  <span>${seg.title || "(제목없음)"}</span>
-  <span class="sub">${seg.owner || "-"}</span>
-`;
-
-
-      // bar 클릭 → 해당 일정 수정 모달
       bar.addEventListener("click", (e)=>{
         e.stopPropagation();
         openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
@@ -315,16 +381,26 @@ bar.style.color = userColor;
       grid.appendChild(bar);
     });
 
-    barTd.appendChild(grid);
-    barTr.appendChild(barTd);
+    // ✅ 레이어를 "첫 번째 td"에 붙이고, absolute로 주 전체 폭 덮게 함
+    // 테이블 구조상 tr 위에 직접 올리기 어려워서 첫 td에 붙이고 폭을 주 전체로 사용
+    // (td position:relative + layer absolute)
+    const firstTd = tr.children[0];
+    if(firstTd){
+      firstTd.style.position = "relative";
+      // layer가 주 전체 너비를 덮게 하기
+      layer.style.left = "0";
+      layer.style.width = "calc(100% * 7)"; // 7칸 전체
+      layer.style.pointerEvents = "none";
+      // grid 안 바만 pointerEvents=true (CSS에서 처리)
+      firstTd.appendChild(layer);
+    }
 
-    // ✅ 한 주 단위로 (날짜줄 + 바줄) 추가
     tbody.appendChild(tr);
-    tbody.appendChild(barTr);
   }
 
   calTable.appendChild(tbody);
 }
+
 
 function subscribeMembers(){
   onValue(ref(db, "config/members"), (snap)=>{
