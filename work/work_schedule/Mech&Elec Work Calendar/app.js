@@ -53,6 +53,15 @@ function getMemberColor(name){
   return m?.color || "#1f6feb";
 }
 
+function normalizeDate(v){
+  if(!v) return "";
+  const s = String(v).trim().slice(0, 10).replaceAll(".", "-").replaceAll("/", "-");
+  // YYYY-MM-DD만 통과
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+  return s;
+}
+
+
 // ✅ eventsByDate(현재월의 시작일키 구조) → 이벤트 리스트로 평탄화
 function toEventList() {
   const list = [];
@@ -444,16 +453,12 @@ function renderCalendar(){
 
 // -------------------- save/delete --------------------
 saveBtn.addEventListener("click", async ()=>{
-  const dateKey = editing.dateKey;
+  const dateKey = editing.dateKey;   // ✅ 시작일은 무조건 이걸 기준으로
   if(!dateKey) return;
 
-  let endDate = (fEndDate && fEndDate.value) ? fEndDate.value : dateKey;
-  endDate = String(endDate).trim().slice(0,10);
+  const endDateRaw = (fEndDate?.value || dateKey);
+  const endDate = normalizeDate(endDateRaw) || dateKey;
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-    alert("종료일 형식이 올바르지 않습니다. (YYYY-MM-DD)");
-    return;
-  }
   if (endDate < dateKey) {
     alert("종료일은 시작일보다 빠를 수 없습니다.");
     return;
@@ -466,7 +471,7 @@ saveBtn.addEventListener("click", async ()=>{
     owner: selectedName,
     start: (fStart.value || "").trim(),
     end: (fEnd.value || "").trim(),
-    endDate,
+    endDate,                       // ✅ 멀티데이 핵심
     createdAt: serverTimestamp()
   };
 
@@ -492,6 +497,7 @@ saveBtn.addEventListener("click", async ()=>{
     alert("저장 실패: " + (err?.message || err));
   }
 });
+
 
 
 deleteBtn.addEventListener("click", async ()=>{
