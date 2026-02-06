@@ -12,7 +12,9 @@ let members = [];            // active members only
 let membersAll = [];         // includes inactive
 let selectedName = localStorage.getItem(LS_NAME) || "";
 
-let eventsByDate = {};       // { "YYYY-MM-DD": {eventId: eventObj} }
+// ✅ events 원본/필터
+let eventsAll = {};          // { "YYYY-MM-DD": {eventId: evObj} }
+let eventsByDate = {};       // 현재월 필터된 결과
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,10 +41,12 @@ const editHint = $("editHint");
 
 let editing = { dateKey: null, eventId: null };
 
+// -------------------- utils --------------------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){
   return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 }
+
 // 작성자 이름 → 색상 찾기
 function getMemberColor(name){
   const m = membersAll.find(x => x.name === name);
@@ -85,6 +89,16 @@ function splitIntoWeekSegments(ev, weekStartKey, weekEndKey) {
   return { ...ev, segStart, segEnd };
 }
 
+function monthRangeKeys(){
+  const start = new Date(current);
+  start.setDate(1);
+  const end = new Date(current);
+  end.setMonth(end.getMonth()+1);
+  end.setDate(0); // last day
+  return { startKey: ymd(start), endKey: ymd(end) };
+}
+
+// -------------------- modal --------------------
 function openModal({dateKey, eventId=null, event=null}){
   if(!selectedName){
     alert("상단에서 이름을 먼저 선택해 주세요.");
@@ -136,6 +150,7 @@ function closeModal(){
 modalBack.addEventListener("click", (e)=>{ if(e.target === modalBack) closeModal(); });
 closeBtn.addEventListener("click", closeModal);
 
+// -------------------- members --------------------
 function renderMemberButtons(){
   memberBar.innerHTML = "";
   if(selectedNameView) selectedNameView.textContent = selectedName || "-";
@@ -144,29 +159,27 @@ function renderMemberButtons(){
     const btn = document.createElement("button");
     btn.className = "member-btn" + (m.name === selectedName ? " active" : "");
     btn.textContent = m.name;
+
     const color = m.color || "#1f6feb";
-
-btn.style.borderColor = color;
-
-if(m.name === selectedName){
-  btn.style.background = color;
-  btn.style.color = "#fff";
-  btn.style.boxShadow = `0 6px 16px ${color}55`;
-}else{
-  btn.style.background = "#fff";
-  btn.style.color = "#1f2330";
-}
+    btn.style.borderColor = color;
 
     if(m.name === selectedName){
-      btn.style.background = "linear-gradient(180deg, #fff, #f7f8ff)";
-      btn.style.boxShadow = `0 10px 24px rgba(0,0,0,.08)`;
+      btn.style.background = color;
+      btn.style.color = "#fff";
+      btn.style.boxShadow = `0 6px 16px ${color}55`;
+    }else{
+      btn.style.background = "#fff";
+      btn.style.color = "#1f2330";
+      btn.style.boxShadow = "none";
     }
+
     btn.onclick = ()=>{
       selectedName = m.name;
       localStorage.setItem(LS_NAME, selectedName);
       renderMemberButtons();
       if(selectedNameView) selectedNameView.textContent = selectedName;
     };
+
     memberBar.appendChild(btn);
   });
 
@@ -179,15 +192,43 @@ if(m.name === selectedName){
   }
 }
 
-function monthRangeKeys(){
-  const start = new Date(current);
-  start.setDate(1);
-  const end = new Date(current);
-  end.setMonth(end.getMonth()+1);
-  end.setDate(0); // last day
-  return { startKey: ymd(start), endKey: ymd(end) };
+function subscribeMembers(){
+  onValue(ref(db, "config/members"), (snap)=>{
+    const obj = snap.val() || {};
+    const list = Object.entries(obj).map(([id, v])=>({ id, ...v }));
+    list.sort((a,b)=>(a.order ?? 999) - (b.order ?? 999));
+    membersAll = list;
+    members = list.filter(x=>x.active !== false);
+
+    // selectedName이 비활성/삭제되면 자동으로 첫 활성으로
+    if(selectedName && !members.some(m=>m.name === selectedName)){
+      selectedName = members[0]?.name || "";
+      localStorage.setItem(LS_NAME, selectedName);
+    }
+    renderMemberButtons();
+  });
 }
 
+// -------------------- events subscribe/filter --------------------
+function applyMonthFilterAndRender(){
+  const { startKey, endKey } = monthRangeKeys();
+  eventsByDate = {};
+  Object.keys(eventsAll).forEach(dateKey=>{
+    if(dateKey >= startKey && dateKey <= endKey){
+      eventsByDate[dateKey] = eventsAll[dateKey];
+    }
+  });
+  renderCalendar();
+}
+
+function subscribeEvents(){
+  onValue(ref(db, "events"), (snap)=>{
+    eventsAll = snap.val() || {};
+    applyMonthFilterAndRender();
+  });
+}
+
+// -------------------- calendar render --------------------
 function renderCalendar(){
   const y = current.getFullYear();
   const m = current.getMonth();
@@ -217,8 +258,7 @@ function renderCalendar(){
   calTable.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-
-  const allEvents = toEventList(); // {startDate,endDate,eventId,...}
+  const allEvents = toEventList(); // 현재월 기준 이벤트 리스트
 
   let cursor = new Date(start);
   while(cursor <= end){
@@ -264,8 +304,9 @@ function renderCalendar(){
 
       // 날짜 클릭 → 추가
       td.addEventListener("click", (e)=>{
-        if(e.target.closest(".mbar")) return;    // 바 클릭은 바에서 처리
-        if(e.target.closest(".day-item")) return; // day-item 클릭은 item에서 처리
+        if(e.target.closest(".mbar")) return;       // 바 클릭은 바에서 처리
+        if(e.target.closest(".day-item")) return;   // day-item 클릭은 item에서 처리
+        if(e.target.closest(".week-layer")) return; // ✅ 레이어 클릭 가로채기 방지
         openModal({ dateKey });
       });
 
@@ -276,7 +317,6 @@ function renderCalendar(){
     }
 
     // ✅ (1) 하루짜리 일정: 해당 날짜 칸 안에만 표시
-    // - 기준: startDate == endDate 인 이벤트
     for(const ev of allEvents){
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
@@ -292,10 +332,7 @@ function renderCalendar(){
         item.className = "day-item";
         item.textContent = ev.title || "(제목없음)";
 
-        // 작성자 색상(이미 getMemberColor 함수가 있다면 더 좋고, 없으면 기본)
-        const userColor = (typeof getMemberColor === "function")
-          ? getMemberColor(ev.owner)
-          : "#1f6feb";
+        const userColor = getMemberColor(ev.owner);
         item.style.borderColor = userColor;
         item.style.color = userColor;
         item.style.background = userColor + "12";
@@ -309,20 +346,18 @@ function renderCalendar(){
       }
     }
 
-    // ✅ (2) 2일 이상 일정: "칸 안에서 옆칸까지 이어지는 바"로 표시 (중복 없음)
-    // - 이번 주에 걸치는 이벤트를 segStart~segEnd로 잘라서 주 단위로 배치
+    // ✅ (2) 2일 이상 일정: 칸 안에서 옆칸까지 이어지는 바(주 단위 세그먼트)
     const segments = [];
     for(const ev of allEvents){
       const seg = splitIntoWeekSegments(ev, weekStartKey, weekEndKey);
       if(!seg) continue;
 
-      // 멀티데이만 바로 표현
-      if(seg.startDate !== seg.endDate){
+      // ✅ 세그먼트 기준으로 멀티데이만
+      if(seg.segStart !== seg.segEnd){
         segments.push(seg);
       }
     }
 
-    // 정렬(시작이 빠른 것부터)
     segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
 
     // 레인 배치(겹치면 다음 줄)
@@ -335,7 +370,7 @@ function renderCalendar(){
       for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
     }
 
-    // 주 레이어 생성 (tr 전체 위에 1개)
+    // 주 레이어 생성
     const layer = document.createElement("div");
     layer.className = "week-layer";
     const grid = document.createElement("div");
@@ -362,15 +397,11 @@ function renderCalendar(){
       bar.style.gridColumn = `${colStart+1} / span ${colEnd-colStart+1}`;
       bar.style.gridRow = `${rowIndex+1}`;
 
-      // 작성자 색상 적용
-      const userColor = (typeof getMemberColor === "function")
-        ? getMemberColor(seg.owner)
-        : "#1f6feb";
+      const userColor = getMemberColor(seg.owner);
       bar.style.borderColor = userColor;
       bar.style.background = userColor + "18";
       bar.style.color = userColor;
 
-      // 바 텍스트: 제목만 (원하면 작성자도 추가 가능)
       bar.textContent = seg.title || "(제목없음)";
 
       bar.addEventListener("click", (e)=>{
@@ -381,17 +412,13 @@ function renderCalendar(){
       grid.appendChild(bar);
     });
 
-    // ✅ 레이어를 "첫 번째 td"에 붙이고, absolute로 주 전체 폭 덮게 함
-    // 테이블 구조상 tr 위에 직접 올리기 어려워서 첫 td에 붙이고 폭을 주 전체로 사용
-    // (td position:relative + layer absolute)
+    // 레이어를 첫 td에 붙이고 7칸 폭으로 덮기
     const firstTd = tr.children[0];
     if(firstTd){
       firstTd.style.position = "relative";
-      // layer가 주 전체 너비를 덮게 하기
       layer.style.left = "0";
-      layer.style.width = "calc(100% * 7)"; // 7칸 전체
+      layer.style.width = "calc(100% * 7)";
       layer.style.pointerEvents = "none";
-      // grid 안 바만 pointerEvents=true (CSS에서 처리)
       firstTd.appendChild(layer);
     }
 
@@ -401,49 +428,12 @@ function renderCalendar(){
   calTable.appendChild(tbody);
 }
 
-
-function subscribeMembers(){
-  onValue(ref(db, "config/members"), (snap)=>{
-    const obj = snap.val() || {};
-    const list = Object.entries(obj).map(([id, v])=>({ id, ...v }));
-    list.sort((a,b)=>(a.order ?? 999) - (b.order ?? 999));
-    membersAll = list;
-    members = list.filter(x=>x.active !== false);
-
-    // selectedName이 비활성/삭제되면 자동으로 첫 활성으로
-    if(selectedName && !members.some(m=>m.name === selectedName)){
-      selectedName = members[0]?.name || "";
-      localStorage.setItem(LS_NAME, selectedName);
-    }
-    renderMemberButtons();
-  });
-}
-
-function subscribeEventsForCurrentMonth(){
-  const { startKey, endKey } = monthRangeKeys();
-
-  onValue(ref(db, "events"), (snap)=>{
-    const all = snap.val() || {};
-    eventsByDate = {};
-
-    // ✅ 현재월 범위만 추림 (startDate 키 기준)
-    Object.keys(all).forEach(dateKey=>{
-      if(dateKey >= startKey && dateKey <= endKey){
-        eventsByDate[dateKey] = all[dateKey];
-      }
-    });
-
-    renderCalendar();
-  });
-}
-
+// -------------------- save/delete --------------------
 saveBtn.addEventListener("click", async ()=>{
   const dateKey = editing.dateKey;
   if(!dateKey) return;
 
-  // ✅ endDate 계산 (없으면 시작일)
   const endDate = (fEndDate?.value || dateKey).trim() || dateKey;
-
   if (endDate < dateKey) {
     alert("종료일은 시작일보다 빠를 수 없습니다.");
     return;
@@ -456,7 +446,7 @@ saveBtn.addEventListener("click", async ()=>{
     owner: selectedName,
     start: (fStart.value || "").trim(),
     end: (fEnd.value || "").trim(),
-    endDate,                 // ✅ 정상 반영
+    endDate,
     createdAt: serverTimestamp()
   };
 
@@ -465,7 +455,6 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
-  // edit
   if(editing.eventId){
     const ev = eventsByDate?.[dateKey]?.[editing.eventId];
     if(!ev){
@@ -478,7 +467,6 @@ saveBtn.addEventListener("click", async ()=>{
     }
     await update(ref(db, `events/${dateKey}/${editing.eventId}`), payload);
   } else {
-    // new
     const newRef = push(ref(db, `events/${dateKey}`));
     await set(newRef, payload);
   }
@@ -505,30 +493,25 @@ deleteBtn.addEventListener("click", async ()=>{
   closeModal();
 });
 
-// nav buttons
+// -------------------- nav buttons (구독 누적 방지) --------------------
 $("prevBtn").addEventListener("click", ()=>{
   current.setMonth(current.getMonth()-1);
-  // subscribeEventsForCurrentMonth()는 onValue를 다시 걸기 때문에 1차 버전에서는 그대로 두되,
-  // 누적 구독이 걱정되면 'unsubscribe' 구조로 개선 가능
-  subscribeEventsForCurrentMonth();
-  renderCalendar();
+  applyMonthFilterAndRender();
 });
 
 $("nextBtn").addEventListener("click", ()=>{
   current.setMonth(current.getMonth()+1);
-  subscribeEventsForCurrentMonth();
-  renderCalendar();
+  applyMonthFilterAndRender();
 });
 
 $("todayBtn").addEventListener("click", ()=>{
   const t = new Date();
   current = new Date(t.getFullYear(), t.getMonth(), 1);
-  subscribeEventsForCurrentMonth();
-  renderCalendar();
+  applyMonthFilterAndRender();
 });
 
-// start
+// -------------------- start --------------------
 subscribeMembers();
-subscribeEventsForCurrentMonth();
+subscribeEvents();
 renderMemberButtons();
 renderCalendar();

@@ -121,13 +121,21 @@ th{
 }
 
 td{
+  position:relative;         /* ✅ td 안 레이어 */
   vertical-align:top;
   background:#fff;
   border:1px solid var(--bd);
   border-radius:0;           /* ✅ 칸 붙이기 */
   padding:4px;
-  min-height:72px;
   overflow:hidden;
+}
+
+.day-muted{opacity:.45}
+
+/* ===== td 내부 구성 ===== */
+.day-cell{
+  position:relative;
+  min-height:72px;
 }
 
 .day-top{
@@ -136,47 +144,69 @@ td{
   justify-content:flex-start;
   margin-bottom:2px;
 }
+
 .day-num{
+  position:relative;
+  z-index:2;                 /* 날짜 숫자는 위로 */
   font-weight:900;
   font-size:12px;
 }
 
-.day-muted{opacity:.45}
-
-/* ===== Week Bars (multi-day events) ===== */
-.weekbars td{
-  padding:0;
-  border:0;
-  background:transparent;
+.day-items{
+  position:relative;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  margin-top:2px;
 }
 
-.weekbar-grid{
-  display:grid;
-  grid-template-columns:repeat(7, 1fr);
-  grid-auto-rows:minmax(24px, auto); /* ✅ 겹치면 자동 레인(줄) */
-  gap:2px 0;                         /* 세로 간격만 약간 */
-  padding:2px 0 6px 0;
-}
-
-.bar{
+/* 하루짜리 일정(칸 안) */
+.day-item{
   border:1px solid var(--bd);
-  border-radius:10px;
-  padding:3px 6px;
-  margin:0 3px;
-  background:#f7f8ff;
+  border-radius:8px;
+  padding:2px 5px;
   font-size:11px;
   font-weight:900;
+  line-height:1.2;
+  background:#f8f9ff;
   cursor:pointer;
   overflow:hidden;
   white-space:nowrap;
   text-overflow:ellipsis;
 }
 
-.bar .sub{
+/* ===== 멀티데이 바(칸 안에서 옆칸까지 이어짐) ===== */
+.week-layer{
+  position:absolute;
+  left:0;
+  top:22px;                 /* 날짜 숫자 아래부터 바 시작 */
+  bottom:4px;
+  width:calc(100% * 7);     /* ✅ 7칸 덮기(첫 td에 붙일 때 사용) */
+  pointer-events:none;      /* 빈 공간 클릭은 td로 */
+}
+
+.week-layer-grid{
+  display:grid;
+  grid-template-columns:repeat(7, 1fr);
+  grid-auto-rows:22px;      /* 레인 높이 */
+  gap:2px 0;                /* 줄 간격만 */
+  height:100%;
+}
+
+.mbar{
+  pointer-events:auto;      /* 바는 클릭 가능 */
+  margin:0 3px;
+  border:1px solid var(--bd);
+  border-radius:10px;
+  padding:3px 6px;
   font-size:11px;
-  font-weight:800;
-  opacity:0.7;   /* 연하게만 */
-  margin-left:6px;
+  font-weight:900;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  cursor:pointer;
+  background:#f7f8ff;
 }
 
 /* ===== Modal ===== */
@@ -206,11 +236,6 @@ td{
   grid-template-columns:1fr 1fr;
   gap:10px;
 }
-@media (max-width:640px){
-  .grid{grid-template-columns:1fr}
-  td{min-height:64px}
-  .weekbar-grid{grid-auto-rows:minmax(22px, auto)}
-}
 
 input,select,textarea{
   width:100%;
@@ -230,82 +255,20 @@ textarea{min-height:90px;resize:vertical}
 }
 .small{font-size:12px;color:var(--mut)}
 
-/* ===== Mobile UI trimming ===== */
+/* ===== Mobile ===== */
 @media (max-width:640px){
-  .title .sub{display:none;}            /* 영문 부제 숨김 */
-  .actions a.btn.primary{display:none;} /* 모바일에서 관리자 버튼 숨김(원하면) */
-}
+  .title .sub{display:none;}
+  .actions a.btn.primary{display:none;}
 
-/* ===== 칸(td) 안에서 멀티데이 바가 옆칸까지 이어지도록(테이버 느낌) ===== */
-td{ position:relative; } /* ✅ td 안에 레이어 올리기 */
+  .grid{grid-template-columns:1fr}
+  .day-cell{min-height:64px}
 
-.day-cell{
-  position:relative;
-  min-height:72px;
-}
-
-.day-num{ position:relative; z-index:2; } /* 날짜 숫자는 위로 */
-
-.day-items{
-  position:relative;
-  z-index:2;
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  margin-top:2px;
-}
-
-/* 하루짜리 칸 안 표시 */
-.day-item{
-  border:1px solid var(--bd);
-  border-radius:8px;
-  padding:2px 5px;
-  font-size:11px;
-  font-weight:900;
-  line-height:1.2;
-  background:#f8f9ff;
-  cursor:pointer;
-  overflow:hidden;
-  white-space:nowrap;
-  text-overflow:ellipsis;
-}
-
-/* ✅ 주 단위 멀티데이 바 레이어(각 주 1개) */
-.week-layer{
-  position:absolute;
-  left:0; right:0;
-  top:22px;            /* 날짜 숫자 아래부터 바 시작 */
-  bottom:4px;
-  pointer-events:none; /* 빈 공간 클릭은 td로 */
-}
-
-/* 바는 grid로 배치(겹치면 자동 줄) */
-.week-layer-grid{
-  display:grid;
-  grid-template-columns:repeat(7, 1fr);
-  grid-auto-rows:22px;     /* 레인 높이 */
-  gap:2px 0;               /* 줄 간격만 */
-  height:100%;
-}
-
-/* 멀티데이 바 */
-.mbar{
-  pointer-events:auto;     /* 바는 클릭 가능 */
-  margin:0 3px;
-  border:1px solid var(--bd);
-  border-radius:10px;
-  padding:3px 6px;
-  font-size:11px;
-  font-weight:900;
-  overflow:hidden;
-  white-space:nowrap;
-  text-overflow:ellipsis;
-  cursor:pointer;
-  background:#f7f8ff;
-}
-
-@media (max-width:640px){
   .week-layer{ top:20px; }
   .week-layer-grid{ grid-auto-rows:20px; }
   .mbar{ font-size:10.5px; padding:2px 6px; }
 }
+
+/* ✅ 클릭 가로채기 방지(확정) */
+.week-layer{ pointer-events:none !important; }
+.week-layer *{ pointer-events:none !important; }
+.mbar{ pointer-events:auto !important; }
