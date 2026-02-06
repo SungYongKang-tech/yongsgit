@@ -213,13 +213,31 @@ function subscribeMembers(){
 function applyMonthFilterAndRender(){
   const { startKey, endKey } = monthRangeKeys();
   eventsByDate = {};
-  Object.keys(eventsAll).forEach(dateKey=>{
-    if(dateKey >= startKey && dateKey <= endKey){
-      eventsByDate[dateKey] = eventsAll[dateKey];
+
+  // ✅ 시작일 키가 이번달 밖이더라도, 이벤트가 이번달과 "겹치면" 포함
+  Object.entries(eventsAll).forEach(([startDateKey, objs]) => {
+    if (!objs) return;
+
+    let keepAny = false;
+
+    Object.entries(objs).forEach(([eventId, ev]) => {
+      const s = startDateKey;                  // DB 키 = 시작일
+      const e = (ev?.endDate || s).slice(0,10);
+
+      // overlap: (s <= endKey) && (e >= startKey)
+      if (s <= endKey && e >= startKey) {
+        keepAny = true;
+      }
+    });
+
+    if (keepAny) {
+      eventsByDate[startDateKey] = objs;
     }
   });
+
   renderCalendar();
 }
+
 
 function subscribeEvents(){
   onValue(ref(db, "events"), (snap)=>{
@@ -429,7 +447,6 @@ saveBtn.addEventListener("click", async ()=>{
   const dateKey = editing.dateKey;
   if(!dateKey) return;
 
-  // ✅ endDate는 YYYY-MM-DD만 허용 (멀티데이 저장 안정화)
   let endDate = (fEndDate && fEndDate.value) ? fEndDate.value : dateKey;
   endDate = String(endDate).trim().slice(0,10);
 
@@ -458,24 +475,24 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
-  if(editing.eventId){
-    const ev = eventsByDate?.[dateKey]?.[editing.eventId];
-    if(!ev){
-      alert("데이터를 찾을 수 없습니다.");
-      return;
-    }
-    if(ev.owner !== selectedName){
-      alert("작성자 본인만 수정할 수 있습니다.");
-      return;
-    }
-    await update(ref(db, `events/${dateKey}/${editing.eventId}`), payload);
-  } else {
-    const newRef = push(ref(db, `events/${dateKey}`));
-    await set(newRef, payload);
-  }
+  try {
+    if(editing.eventId){
+      const ev = eventsByDate?.[dateKey]?.[editing.eventId];
+      if(!ev) return alert("데이터를 찾을 수 없습니다.");
+      if(ev.owner !== selectedName) return alert("작성자 본인만 수정할 수 있습니다.");
 
-  closeModal();
+      await update(ref(db, `events/${dateKey}/${editing.eventId}`), payload);
+    } else {
+      const newRef = push(ref(db, `events/${dateKey}`));
+      await set(newRef, payload);
+    }
+    closeModal();
+  } catch (err) {
+    console.error(err);
+    alert("저장 실패: " + (err?.message || err));
+  }
 });
+
 
 deleteBtn.addEventListener("click", async ()=>{
   const { dateKey, eventId } = editing;
