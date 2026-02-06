@@ -21,7 +21,7 @@ const calTable = $("calTable");
 
 const modalBack = $("modalBack");
 const modalTitle = $("modalTitle");
-const fDate = $("fDate");         // disabled input (문자열 표시용)
+const fDate = $("fDate");         // 표시용(YYYY-MM-DD)
 const fEndDate = $("fEndDate");   // type="date"
 const fType = $("fType");
 const fStart = $("fStart");
@@ -36,7 +36,7 @@ const editHint = $("editHint");
 
 let editing = { dateKey: null, eventId: null };
 
-// -------------------- utils --------------------
+// ---------- utils ----------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function normalizeDate(s){
@@ -91,10 +91,11 @@ function splitIntoWeekSegment(ev, weekStartKey, weekEndKey){
   if(e < weekStartKey || s > weekEndKey) return null;
   const segStart = (s < weekStartKey) ? weekStartKey : s;
   const segEnd   = (e > weekEndKey)   ? weekEndKey   : e;
+  if(segStart === segEnd) return null;
   return { ...ev, segStart, segEnd };
 }
 
-// -------------------- modal --------------------
+// ---------- modal ----------
 function openModal({dateKey, eventId=null, event=null}){
   if(!selectedName){
     alert("상단에서 이름을 먼저 선택해 주세요.");
@@ -141,7 +142,7 @@ function closeModal(){
 modalBack.addEventListener("click", (e)=>{ if(e.target === modalBack) closeModal(); });
 closeBtn.addEventListener("click", closeModal);
 
-// -------------------- members --------------------
+// ---------- members ----------
 function renderMemberButtons(){
   memberBar.innerHTML = "";
   if(!members.length) return;
@@ -194,15 +195,15 @@ function subscribeMembers(){
   });
 }
 
-// -------------------- events --------------------
+// ---------- events ----------
 function subscribeEvents(){
   onValue(ref(db, "events"), (snap)=>{
     eventsAll = snap.val() || {};
-    renderCalendar(); // 표 다시 그리고, 다음 프레임에 바 배치
+    renderCalendar();
   });
 }
 
-// -------------------- render (1단계: 표) --------------------
+// ---------- render ----------
 function renderCalendar(){
   const y = current.getFullYear();
   const m = current.getMonth();
@@ -213,7 +214,6 @@ function renderCalendar(){
 
   calTable.innerHTML = "";
 
-  // thead
   const days = ["일","월","화","수","목","금","토"];
   const thead = document.createElement("thead");
   const trh = document.createElement("tr");
@@ -232,17 +232,14 @@ function renderCalendar(){
 
   while(cursor <= gridEnd){
     const weekStart = new Date(cursor);
-    const weekEnd = addDays(weekStart, 6);
-
     const weekStartKey = ymd(weekStart);
-    const weekEndKey = ymd(weekEnd);
-
     const tr = document.createElement("tr");
-    tr.dataset.weekStart = weekStartKey; // ✅ 나중에 바 배치용
+    tr.dataset.weekStart = weekStartKey;
 
     for(let i=0;i<7;i++){
       const td = document.createElement("td");
-      td.dataset.dateKey = ymd(cursor);
+      const dateKey = ymd(cursor);
+      td.dataset.dateKey = dateKey;
       td.dataset.col = String(i);
 
       const inMonth = (cursor.getMonth() === m);
@@ -269,10 +266,10 @@ function renderCalendar(){
       cell.appendChild(items);
       td.appendChild(cell);
 
-      td.addEventListener("click", (e)=>{
+      td.addEventListener("click",(e)=>{
         if(e.target.closest(".mbar")) return;
         if(e.target.closest(".day-item")) return;
-        openModal({ dateKey: td.dataset.dateKey });
+        openModal({ dateKey });
       });
 
       tr.appendChild(td);
@@ -281,11 +278,9 @@ function renderCalendar(){
 
     tbody.appendChild(tr);
 
-    // ✅ 하루짜리만 즉시 칸에 표시 (바는 다음 단계에서)
+    // 하루짜리만 즉시 표시
     allEvents.forEach(ev=>{
       if(ev.startDate !== ev.endDate) return;
-      if(ev.startDate < weekStartKey || ev.startDate > weekEndKey) return;
-
       const td = tr.querySelector(`td[data-date-key="${ev.startDate}"]`);
       if(!td) return;
 
@@ -308,17 +303,16 @@ function renderCalendar(){
     });
   }
 
-  // ✅ 2단계: 다음 프레임에 "칸 폭 확정 후" 멀티데이 바 배치
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      layoutMultiDayBars(allEvents);
+  // ✅ 테이블 레이아웃 확정 후 멀티바 배치 (2프레임)
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      layoutMultiBars(allEvents);
     });
   });
 }
 
-// -------------------- render (2단계: 멀티데이 바 배치) --------------------
-function layoutMultiDayBars(allEvents){
-  // 기존 바 제거
+function layoutMultiBars(allEvents){
+  // 기존 bar-wrap 제거
   document.querySelectorAll(".bar-wrap").forEach(el => el.remove());
 
   const rows = calTable.querySelectorAll("tbody tr");
@@ -334,82 +328,80 @@ function layoutMultiDayBars(allEvents){
     const tds = Array.from(tr.querySelectorAll("td"));
     if(tds.length !== 7) return;
 
-    // ✅ 실제 픽셀 폭
-    const colW = tds.map(td => td.getBoundingClientRect().width);
-
-    // 멀티데이 세그먼트 수집
+    // 멀티데이 세그먼트
     const segments = [];
     allEvents.forEach(ev=>{
       if(ev.startDate === ev.endDate) return;
       const seg = splitIntoWeekSegment(ev, weekStartKey, weekEndKey);
-      if(seg && seg.segStart !== seg.segEnd) segments.push(seg);
+      if(seg) segments.push(seg);
     });
     if(!segments.length) return;
 
-    // 레인 배치(겹치면 다음 줄)
+    // td 실제 픽셀 폭
+    const colW = tds.map(td => td.getBoundingClientRect().width);
+    const totalW = colW.reduce((a,b)=>a+b,0);
+    const prefix = (idx) => colW.slice(0, idx).reduce((a,b)=>a+b,0);
+
+    // 레인 배치
     segments.sort((a,b)=> a.segStart.localeCompare(b.segStart));
     const lanes = [];
-    function canPlace(lane, sIdx, eIdx){
+    const placed = [];
+
+    const canPlace = (lane, sIdx, eIdx) => {
       for(let k=sIdx;k<=eIdx;k++) if(lane[k]) return false;
       return true;
-    }
-    function occupy(lane, sIdx, eIdx){
+    };
+    const occupy = (lane, sIdx, eIdx) => {
       for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
-    }
+    };
 
-    const placed = [];
     segments.forEach(seg=>{
-      const colStart = wdays.indexOf(seg.segStart);
-      const colEnd = wdays.indexOf(seg.segEnd);
-      if(colStart < 0 || colEnd < 0) return;
+      const c1 = wdays.indexOf(seg.segStart);
+      const c2 = wdays.indexOf(seg.segEnd);
+      if(c1 < 0 || c2 < 0) return;
 
       let row = -1;
       for(let r=0;r<lanes.length;r++){
-        if(canPlace(lanes[r], colStart, colEnd)){ row = r; break; }
+        if(canPlace(lanes[r], c1, c2)){ row = r; break; }
       }
       if(row === -1){
         lanes.push(new Array(7).fill(false));
         row = lanes.length - 1;
       }
-      occupy(lanes[row], colStart, colEnd);
-      placed.push({ seg, colStart, colEnd, row });
+      occupy(lanes[row], c1, c2);
+      placed.push({ seg, c1, c2, row });
     });
 
-    // ✅ 일요일(0) 칸에 바 컨테이너 생성
+    // ✅ 일요일 칸 slot에 bar-wrap 생성
     const sundayTd = tds[0];
-    const sundaySlot = sundayTd.querySelector(".bar-slot");
-    if(!sundaySlot) return;
+    const slot = sundayTd.querySelector(".bar-slot");
+    if(!slot) return;
 
-    // 바가 다른 칸 위로 올라오도록
-    sundayTd.style.zIndex = "5";
-
-    const barWrap = document.createElement("div");
-    barWrap.className = "bar-wrap";
-    barWrap.style.width = `${colW.reduce((a,b)=>a+b,0)}px`;
-    sundaySlot.appendChild(barWrap);
-
-    // slot 높이 확장(레인 수만큼)
+    // slot 높이를 레인 수만큼 늘려줌
     const isMobile = window.matchMedia("(max-width:640px)").matches;
     const rowH = isMobile ? 20 : 22;
-    sundaySlot.style.height = `${Math.max(1, lanes.length) * (rowH + 2) + 2}px`;
+    slot.style.height = `${Math.max(1, lanes.length) * (rowH + 2)}px`;
 
-    // ✅ px 합산으로 left/width 정확 배치
-    const prefix = (idx) => colW.slice(0, idx).reduce((a,b)=>a+b,0);
+    const wrap = document.createElement("div");
+    wrap.className = "bar-wrap";
+    wrap.style.width = `${totalW}px`;
+    wrap.style.height = "100%";
+    slot.appendChild(wrap);
 
-    placed.forEach(({seg, colStart, colEnd, row})=>{
-      const leftPx = prefix(colStart);
-      const widthPx = prefix(colEnd+1) - prefix(colStart);
+    placed.forEach(({seg, c1, c2, row})=>{
+      const left = prefix(c1) + 2;
+      const width = (prefix(c2+1) - prefix(c1)) - 4;
 
       const bar = document.createElement("div");
       bar.className = "mbar";
 
-      const c = getMemberColor(seg.owner);
-      bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = c;
+      const color = getMemberColor(seg.owner);
+      bar.style.borderColor = color;
+      bar.style.background = color + "18";
+      bar.style.color = color;
 
-      bar.style.left = `${leftPx + 2}px`;
-      bar.style.width = `${Math.max(30, widthPx - 4)}px`;
+      bar.style.left = `${left}px`;
+      bar.style.width = `${Math.max(28, width)}px`;
       bar.style.top = `${row * (rowH + 2)}px`;
 
       bar.textContent = seg.title || "(제목없음)";
@@ -419,12 +411,12 @@ function layoutMultiDayBars(allEvents){
         openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
       });
 
-      barWrap.appendChild(bar);
+      wrap.appendChild(bar);
     });
   });
 }
 
-// -------------------- save/delete --------------------
+// ---------- save/delete ----------
 saveBtn.addEventListener("click", async ()=>{
   const startKey = normalizeDate(fDate.value);
   if(!startKey){
@@ -432,10 +424,8 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
-  const rawEnd = normalizeDate(fEndDate.value);
-  const endDate = rawEnd || startKey;
-
-  if(endDate < startKey){
+  const endKey = normalizeDate(fEndDate.value) || startKey;
+  if(endKey < startKey){
     alert("종료일은 시작일보다 빠를 수 없습니다.");
     return;
   }
@@ -447,7 +437,7 @@ saveBtn.addEventListener("click", async ()=>{
     owner: selectedName,
     start: (fStart.value || "").trim(),
     end: (fEnd.value || "").trim(),
-    endDate,
+    endDate: endKey,
     createdAt: serverTimestamp()
   };
 
@@ -467,8 +457,8 @@ saveBtn.addEventListener("click", async ()=>{
       return;
     }
 
-    // 시작일이 바뀌면(드물지만) 키 이동
     if(startKey !== editing.dateKey){
+      // 시작일이 바뀌면 키 이동
       const newRef = push(ref(db, `events/${startKey}`));
       await set(newRef, payload);
       await remove(ref(db, `events/${editing.dateKey}/${editing.eventId}`));
@@ -502,7 +492,7 @@ deleteBtn.addEventListener("click", async ()=>{
   closeModal();
 });
 
-// -------------------- nav --------------------
+// ---------- nav ----------
 $("prevBtn").addEventListener("click", ()=>{
   current.setMonth(current.getMonth()-1);
   renderCalendar();
@@ -517,12 +507,12 @@ $("todayBtn").addEventListener("click", ()=>{
   renderCalendar();
 });
 
-// 리사이즈 시에도 바 재배치(폭 바뀌면 위치가 달라짐)
+// ✅ 리사이즈 시 재배치(폭이 바뀌면 위치 재계산 필요)
 window.addEventListener("resize", ()=>{
   renderCalendar();
 });
 
-// -------------------- start --------------------
+// ---------- start ----------
 subscribeMembers();
 subscribeEvents();
 renderMemberButtons();
