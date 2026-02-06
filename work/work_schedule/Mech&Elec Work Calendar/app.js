@@ -1,7 +1,6 @@
 import { db } from "./firebase.js";
-import {
-  ref, onValue, push, set, update, remove, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { ref, onValue, push, set, update, remove, serverTimestamp } from
+  "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const LS_NAME = "mecal_selected_name";
 
@@ -37,17 +36,12 @@ const editHint = $("editHint");
 
 let editing = { dateKey: null, eventId: null };
 
-// ---------------- utils ----------------
+// -------- utils --------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function normalizeDate(s){
   const t = (s||"").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : "";
-}
-function parseYmd(s){
-  const [y,m,d] = (s||"").split("-").map(Number);
-  if(!y||!m||!d) return null;
-  return new Date(y, m-1, d);
 }
 function addDays(d, n){
   const x = new Date(d);
@@ -70,7 +64,6 @@ function getVisibleRange(){
   gridEnd.setDate(last.getDate() + (6 - last.getDay())); // Sat
   return { gridStart, gridEnd, gridStartKey: ymd(gridStart), gridEndKey: ymd(gridEnd) };
 }
-
 function weekDates(weekStart){
   const arr = [];
   const d = new Date(weekStart);
@@ -104,7 +97,7 @@ function splitIntoWeekSegment(ev, weekStartKey, weekEndKey){
   return { ...ev, segStart, segEnd };
 }
 
-// ---------------- modal ----------------
+// -------- modal --------
 function openModal({dateKey, eventId=null, event=null}){
   if(!selectedName){
     alert("상단에서 이름을 먼저 선택해 주세요.");
@@ -113,7 +106,6 @@ function openModal({dateKey, eventId=null, event=null}){
   editing = { dateKey, eventId };
 
   modalBack.classList.add("show");
-
   fDate.value = dateKey;
   fOwner.value = selectedName;
 
@@ -137,7 +129,7 @@ function openModal({dateKey, eventId=null, event=null}){
     fEnd.value = "";
     fTitle.value = "";
     fDetail.value = "";
-    fEndDate.value = ""; // ✅ 신규는 종료일 비움(=하루 기본)
+    fEndDate.value = "";
     fEndDate.min = dateKey;
 
     saveBtn.disabled = false;
@@ -152,7 +144,7 @@ function closeModal(){
 modalBack.addEventListener("click", (e)=>{ if(e.target === modalBack) closeModal(); });
 closeBtn.addEventListener("click", closeModal);
 
-// ---------------- members ----------------
+// -------- members --------
 function renderMemberButtons(){
   memberBar.innerHTML = "";
   if(!members.length) return;
@@ -206,7 +198,7 @@ function subscribeMembers(){
   });
 }
 
-// ---------------- events ----------------
+// -------- events --------
 function subscribeEvents(){
   onValue(ref(db, "events"), (snap)=>{
     eventsAll = snap.val() || {};
@@ -214,7 +206,7 @@ function subscribeEvents(){
   });
 }
 
-// ---------------- render ----------------
+// -------- render --------
 function renderCalendar(){
   const y = current.getFullYear();
   const m = current.getMonth();
@@ -248,21 +240,10 @@ function renderCalendar(){
     const weekEndKey = ymd(weekEnd);
     const wdays = weekDates(weekStart);
 
-    // 1) 바 행
-    const trBar = document.createElement("tr");
-    trBar.className = "weekbar-row";
-    const tdBar = document.createElement("td");
-    tdBar.colSpan = 7;
-    const barWrap = document.createElement("div");
-    barWrap.className = "weekbar-cell";
-    tdBar.appendChild(barWrap);
-    trBar.appendChild(tdBar);
-    tbody.appendChild(trBar);
-
-    // 2) 날짜 행
-    const trDay = document.createElement("tr");
+    const tr = document.createElement("tr");
     const tds = [];
 
+    // 7칸 만들기 (칸 내부에 bar-slot 추가)
     for(let i=0;i<7;i++){
       const td = document.createElement("td");
       const inMonth = (cursor.getMonth() === m);
@@ -280,27 +261,34 @@ function renderCalendar(){
       num.textContent = cursor.getDate();
       top.appendChild(num);
 
+      const barSlot = document.createElement("div");
+      barSlot.className = "bar-slot";
+      barSlot.dataset.weekStartKey = weekStartKey; // 디버그용
+
       const items = document.createElement("div");
       items.className = "day-items";
       items.dataset.dateKey = dateKey;
 
       cell.appendChild(top);
+      cell.appendChild(barSlot);
       cell.appendChild(items);
       td.appendChild(cell);
 
       td.addEventListener("click", (e)=>{
+        if(e.target.closest(".mbar")) return;
         if(e.target.closest(".day-item")) return;
         openModal({ dateKey });
       });
 
-      trDay.appendChild(td);
+      tr.appendChild(td);
       tds.push(td);
 
       cursor.setDate(cursor.getDate()+1);
     }
-    tbody.appendChild(trDay);
 
-    // --- 하루짜리(칸 안) ---
+    tbody.appendChild(tr);
+
+    // ---- 하루짜리(칸 안) ----
     for(const ev of allEvents){
       if(ev.startDate !== ev.endDate) continue;
       const s = ev.startDate;
@@ -329,7 +317,10 @@ function renderCalendar(){
       items.appendChild(item);
     }
 
-    // --- 멀티데이(바) ---
+    // ---- 멀티데이(바): “이 주의 첫칸(일요일)” bar-slot에 bar-wrap 올리기 ----
+    const sundaySlot = tds[0].querySelector(".bar-slot");
+    if(!sundaySlot) continue;
+
     const segments = [];
     for(const ev of allEvents){
       if(ev.startDate === ev.endDate) continue;
@@ -347,12 +338,10 @@ function renderCalendar(){
       for(let k=sIdx;k<=eIdx;k++) lane[k] = true;
     }
 
-    // lane 계산 + 실제 bar 배치(absolute)
     const placed = [];
-
     segments.forEach(seg=>{
       const colStart = wdays.indexOf(seg.segStart);
-      const colEnd = wdays.indexOf(seg.segEnd);
+      const colEnd   = wdays.indexOf(seg.segEnd);
       if(colStart < 0 || colEnd < 0) return;
 
       let row = -1;
@@ -368,43 +357,48 @@ function renderCalendar(){
       placed.push({ seg, colStart, colEnd, row });
     });
 
-    // ✅ barWrap 높이 = 레인 수 만큼 확보 (안 하면 다음줄이 잘릴 수 있음)
-    const rowH = window.matchMedia("(max-width:640px)").matches ? 20 : 22;
-    const wrapH = Math.max(1, lanes.length) * (rowH + 2);
-    barWrap.style.height = `${wrapH}px`;
+    // bar-wrap 생성(레인 없으면 만들지 않음)
+    if(placed.length){
+      const barWrap = document.createElement("div");
+      barWrap.className = "bar-wrap";
+      sundaySlot.appendChild(barWrap);
 
-    placed.forEach(({seg, colStart, colEnd, row})=>{
-      const bar = document.createElement("div");
-      bar.className = "mbar";
+      const rowH = window.matchMedia("(max-width:640px)").matches ? 20 : 22;
+      const needH = Math.max(1, lanes.length) * (rowH + 2);
+      sundaySlot.style.height = `${needH + 2}px`; // ✅ slot 높이 확장
 
-      const c = getMemberColor(seg.owner);
-      bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = c;
+      placed.forEach(({seg, colStart, colEnd, row})=>{
+        const bar = document.createElement("div");
+        bar.className = "mbar";
 
-      // ✅ 핵심: 7칸을 100%로 보고 left/width를 %로 계산
-      const leftPct = (colStart * 100) / 7;
-      const widthPct = ((colEnd - colStart + 1) * 100) / 7;
+        const c = getMemberColor(seg.owner);
+        bar.style.borderColor = c;
+        bar.style.background = c + "18";
+        bar.style.color = c;
 
-      bar.style.left = `calc(${leftPct}% + 2px)`;
-      bar.style.width = `calc(${widthPct}% - 4px)`;
-      bar.style.top = `${row * (rowH + 2)}px`;
+        const leftPct = (colStart * 100) / 7;
+        const widthPct = ((colEnd - colStart + 1) * 100) / 7;
 
-      bar.textContent = seg.title || "(제목없음)";
+        bar.style.left = `calc(${leftPct}% + 2px)`;
+        bar.style.width = `calc(${widthPct}% - 4px)`;
+        bar.style.top = `${row * (rowH + 2)}px`;
 
-      bar.addEventListener("click", (e2)=>{
-        e2.stopPropagation();
-        openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
+        bar.textContent = seg.title || "(제목없음)";
+
+        bar.addEventListener("click", (e2)=>{
+          e2.stopPropagation();
+          openModal({ dateKey: seg.startDate, eventId: seg.eventId, event: seg });
+        });
+
+        barWrap.appendChild(bar);
       });
-
-      barWrap.appendChild(bar);
-    });
+    }
   }
 
   calTable.appendChild(tbody);
 }
 
-// ---------------- save/delete ----------------
+// -------- save/delete --------
 saveBtn.addEventListener("click", async ()=>{
   const startKey = normalizeDate(fDate.value);
   if(!startKey){
@@ -436,7 +430,6 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
-  // 수정
   if(editing.eventId){
     const exist = eventsAll?.[editing.dateKey]?.[editing.eventId];
     if(!exist){
@@ -448,16 +441,14 @@ saveBtn.addEventListener("click", async ()=>{
       return;
     }
 
-    // 시작일 변경 시 구조상 이동 필요
     if(startKey !== editing.dateKey){
       const newRef = push(ref(db, `events/${startKey}`));
       await set(newRef, payload);
       await remove(ref(db, `events/${editing.dateKey}/${editing.eventId}`));
-    } else {
+    }else{
       await update(ref(db, `events/${editing.dateKey}/${editing.eventId}`), payload);
     }
-  } else {
-    // 신규
+  }else{
     const newRef = push(ref(db, `events/${startKey}`));
     await set(newRef, payload);
   }
@@ -484,7 +475,7 @@ deleteBtn.addEventListener("click", async ()=>{
   closeModal();
 });
 
-// ---------------- nav ----------------
+// -------- nav --------
 $("prevBtn").addEventListener("click", ()=>{
   current.setMonth(current.getMonth()-1);
   renderCalendar();
@@ -499,7 +490,7 @@ $("todayBtn").addEventListener("click", ()=>{
   renderCalendar();
 });
 
-// ---------------- start ----------------
+// -------- start --------
 subscribeMembers();
 subscribeEvents();
 renderMemberButtons();
