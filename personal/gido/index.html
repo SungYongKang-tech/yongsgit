@@ -1,468 +1,999 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>기도 실적 공유표 (날짜별)</title>
-  <style>
-    :root { --bd:#e5e7eb; --bg:#f6f7fb; --card:#fff; --txt:#111827; --mut:#6b7280; --danger:#b91c1c; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--txt); }
-    .wrap { max-width: 980px; margin: 0 auto; padding: 10px; }
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>기도 체크 달력</title>
 
-    /* ✅ 상단을 아주 얇게 */
-    .topbar {
-      position: sticky; top: 0; z-index: 10;
-      background: rgba(246,247,251,.92); backdrop-filter: blur(8px);
-      padding: 8px 0;
-      border-bottom: 1px solid var(--bd);
-    }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .grow { flex: 1 1 auto; }
+<style>
+:root{
+  --bg1:#f6f7ff;
+  --bg2:#fff7f2;
+  --card:#ffffffcc;
+  --bd:#e7e7f2;
+  --txt:#1f2330;
+  --mut:#6b7280;
+  --gap:4px;
+  --radius:14px;
+  --shadow: 0 10px 30px rgba(20,20,60,.10);
+  --boxPx: 14px; /* 기본값 (JS가 덮어씀) */
+}
 
-    .pill {
-      display:inline-flex; gap:8px; align-items:center;
-      padding:6px 10px; border:1px solid var(--bd); border-radius:999px; background:#fff;
-      font-size:12px; color: var(--mut);
-    }
-    .pill b { color: var(--txt); }
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+  color:var(--txt);
+  background: radial-gradient(1200px 600px at 15% 10%, #e8f0ff 0%, transparent 60%),
+              radial-gradient(900px 500px at 85% 20%, #ffe9f0 0%, transparent 55%),
+              linear-gradient(135deg, var(--bg1), var(--bg2));
+  overflow-y:auto;
+  overflow-x:hidden;
+}
 
-    input, select, button {
-      font: inherit;
-      border:1px solid var(--bd);
-      border-radius: 12px;
-      padding: 10px 12px;
-      background:#fff;
-      outline: none;
-    }
-    button {
-      cursor:pointer;
-      background:#111827;
-      color:#fff;
-      border-color:#111827;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    button.ghost { background:#fff; color:#111827; }
-    button.danger { background:var(--danger); border-color:var(--danger); }
+.wrap{max-width:980px;margin:0 auto;padding:10px}
+.topbar{
+  position:sticky;top:0;z-index:10;
+  background: linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.55));
+  backdrop-filter: blur(10px);
+  border-bottom:1px solid var(--bd);
+}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+.grow{flex:1}
 
-    .card { background:var(--card); border:1px solid var(--bd); border-radius: 14px; padding: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.04); }
-    .label { font-size: 12px; color: var(--mut); margin-bottom: 6px; }
-    .small { font-size:12px; color:var(--mut); }
-    .members { display:flex; gap:8px; flex-wrap:wrap; }
-    .member { display:inline-flex; gap:8px; align-items:center; border:1px solid var(--bd); background:#fff; padding:6px 10px; border-radius:999px; }
-    .member b { font-size: 13px; }
-    .member .x { cursor:pointer; color:var(--danger); font-weight:800; }
+label{display:block; font-size:11px; color:var(--mut); font-weight:800; margin:0 0 6px 0}
+input,button{
+  border:1px solid var(--bd);
+  border-radius:12px;
+  padding:9px 10px;
+  font-size:13px;
+  background:#fff;
+  outline:none;
+}
+button{
+  cursor:pointer;
+  border:none;
+  font-weight:900;
+  color:#fff;
+  background: linear-gradient(135deg, #4f46e5, #ec4899);
+  box-shadow: 0 8px 20px rgba(79,70,229,.20);
+}
+button.ghost{
+  background:#fff; color:var(--txt);
+  border:1px solid var(--bd); box-shadow:none;
+}
+button.small{padding:7px 10px; border-radius:12px; font-size:12px}
 
-    /* ✅ settings 접기 */
-    details.settings {
-      border:1px solid var(--bd);
-      border-radius: 14px;
-      background:#fff;
-      overflow:hidden;
-    }
-    details.settings > summary {
-      list-style:none;
-      cursor:pointer;
-      padding: 10px 12px;
-      display:flex; align-items:center; justify-content:space-between;
-      user-select:none;
-      font-weight:800;
-    }
-    details.settings > summary::-webkit-details-marker { display:none; }
-    .settingsBody { padding: 10px 12px; border-top:1px solid var(--bd); }
+.pill{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:7px 10px;
+  border:1px solid var(--bd);
+  border-radius:999px;
+  background:#fff;
+  color:var(--mut);
+  font-size:12px;
+  font-weight:800;
+}
+.pill b{color:var(--txt)}
 
-    /* ✅ 표 */
-    .tableWrap { overflow:auto; border-radius: 14px; border:1px solid var(--bd); background:#fff; }
-    table { border-collapse: collapse; width: 100%; min-width: 720px; }
-    th, td { border-bottom:1px solid var(--bd); border-right:1px solid var(--bd); padding: 8px; text-align:center; vertical-align: top; }
-    thead th { position: sticky; top: 0; background:#fff; z-index: 3; }
-    th:first-child, td:first-child { position: sticky; left: 0; background:#fff; z-index: 2; }
-    th { font-size: 12px; color: var(--mut); }
-    td:last-child, th:last-child { border-right: none; }
-    tr:last-child td { border-bottom: none; }
+.legend{
+  display:flex; flex-wrap:wrap; gap:6px;
+  padding:8px;
+  margin-top:8px;
+  border:1px solid var(--bd);
+  border-radius:var(--radius);
+  background:var(--card);
+  box-shadow: var(--shadow);
+}
+.tag{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:900;
+  border:1px solid rgba(0,0,0,.06);
+  background:#fff;
+}
+.swatch{
+  width:10px;height:10px;border-radius:4px;
+  box-shadow: 0 1px 6px rgba(0,0,0,.15) inset;
+}
 
-    .dateCell { font-weight: 800; text-align:left; min-width: 110px; }
-    .dow { font-weight: 700; color: var(--mut); font-size:12px; margin-left:6px; }
+/* 멤버 관리 */
+details.settings{
+  margin-top:8px;
+  border:1px solid var(--bd);
+  border-radius:var(--radius);
+  background:var(--card);
+  box-shadow: var(--shadow);
+  overflow:hidden;
+}
+details.settings>summary{
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+  padding:10px 12px;
+  font-weight:900;
+  display:flex; align-items:center; justify-content:space-between;
+}
+details.settings>summary::-webkit-details-marker{display:none}
+.setBody{padding:10px 12px; border-top:1px solid var(--bd)}
+.member{
+  display:flex; gap:8px; align-items:center;
+  padding:8px 10px; border-radius:999px;
+  border:1px solid rgba(0,0,0,.06);
+  background:#fff;
+  margin-top:8px;
+}
+.member b{flex:1; font-size:13px}
+.chip{
+  cursor:pointer;
+  border:1px solid var(--bd);
+  background:#fff;
+  color:var(--txt);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:900;
+}
+.chip.del{ border-color: rgba(239,68,68,.35); color:#ef4444; }
 
-    /* ✅ 셀: 숫자 + 메모 버튼(작게) */
-    .cellBox { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
-    .minInput {
-      width: 100%;
-      padding: 8px 10px;
-      border-radius: 10px;
-      text-align:center;
-    }
-    .cellBtns { display:flex; gap:6px; }
-    .miniBtn {
-      flex:1 1 auto;
-      padding: 6px 8px;
-      border-radius: 10px;
-      border:1px solid var(--bd);
-      background:#fff;
-      color: var(--txt);
-      font-weight:700;
-      font-size: 12px;
-      cursor:pointer;
-    }
-    .miniBtn.noteOn { border-color:#111827; }
+/* 카드(달력) */
+.card{
+  margin-top:10px;
+  border:1px solid var(--bd);
+  border-radius:var(--radius);
+  background:var(--card);
+  box-shadow: var(--shadow);
+  overflow:hidden;
+}
+.cardHead{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 12px;
+  border-bottom:1px solid var(--bd);
+}
+.title{
+  font-weight:1000;
+  font-size:22px;   /* ✅ 년월 크게 */
+  line-height:1.2;
+}
 
-    .footerHint { margin-top:10px; }
 
-    @media (max-width: 520px) {
-      .wrap { padding: 8px; }
-      input, select, button { padding: 9px 10px; border-radius: 12px; }
-      table { min-width: 640px; }
-    }
-  </style>
+/* 요일 & 달력 */
+.grid7{
+  display:grid;
+  grid-template-columns:repeat(7, minmax(0, 1fr)); /* ✅ 동일 규격 */
+  gap:var(--gap);
+}
+.dowRow{ padding:10px 10px 0 10px; }
+.calWrap{ padding:10px; }  /* ✅ 좌우 패딩 동일 */
+.calGrid{ grid-template-rows:repeat(6, auto); }
+
+
+.dow{
+  text-align:center;
+  font-size:11px;
+  font-weight:900;
+  color:var(--mut);
+  padding:4px 0;
+}
+
+
+/* 날짜칸 */
+.day{
+  border:1px solid rgba(0,0,0,.06);
+  border-radius:14px;
+  background: linear-gradient(
+    180deg,
+    #f8faff 0%,
+    #f1f5ff 100%
+  ); /* ✅ 연한 하늘톤 */
+  padding:0px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-height:92px;
+  justify-content:center;
+  align-items:center;
+}
+
+.day:hover{outline:2px solid rgba(79,70,229,.12)}
+.day.muted{
+  background: linear-gradient(
+    180deg,
+    #f9fafb 0%,
+    #f3f4f6 100%
+  );
+  border-style:dashed;
+  opacity:0.7;
+}
+
+.dayTop{display:flex; align-items:center; justify-content:center;}
+.dateNum{font-weight:1000; font-size:13px;text-align:center;}
+
+/* 날짜칸 내부: 네모만 */
+.list{
+  display:grid;
+  grid-template-columns: repeat(2, 1fr); /* ✅ 항상 2개씩 */
+  gap:6px;
+  align-content:start;
+}
+
+.box{
+  width: var(--boxPx);
+  height: var(--boxPx);
+  justify-self:center;    /* ✅ 각 칸 중앙 */
+  border-radius:4px;
+  border:1px solid rgba(0,0,0,.12);
+  background:#fff;
+}
+.box.on{border-color:transparent}
+
+/* 버튼 영역 */
+.actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end}
+
+/* 모달 */
+.modalBack{
+  position:fixed; inset:0;
+  background: rgba(15,23,42,.38);
+  backdrop-filter: blur(6px);
+  display:none;
+  align-items:flex-start;
+  justify-content:center;
+  padding:12px;
+  padding-top:70px;         /* ✅ 상단 여유 (헤더 아래) */
+  z-index:50;
+}
+.modalBack.show{display:flex}
+.modal{
+  width:min(920px, 100%);
+  max-height: 82vh;
+  background:#fff;
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.25);
+  overflow:hidden;
+  display:flex; flex-direction:column;
+}
+.modalHead{
+  padding:12px 14px;
+  border-bottom:1px solid var(--bd);
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  background: linear-gradient(135deg, #eef2ff, #fff1f2);
+}
+.modalTitle{font-weight:1000}
+.modalBody{padding:12px 14px; overflow:auto}
+
+/* 집계표 */
+.table{width:100%; border-collapse:collapse; font-size:13px}
+.table th,.table td{padding:10px 8px; border-bottom:1px solid #f0f1f6}
+.table th{text-align:left; color:var(--mut); font-weight:1000}
+.r{text-align:right; font-variant-numeric: tabular-nums}
+.badge{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(0,0,0,.06);
+  background:#fff;
+  font-weight:900;
+  font-size:12px;
+}
+.badge .swatch{width:10px;height:10px;border-radius:4px}
+
+@media (max-width:420px){
+  :root{ --gap:3px; }
+  .wrap{padding:8px}
+  input,button{padding:8px 9px; font-size:12px}
+  .day{padding:7px}
+}
+
+/* 일요일 */
+.day[data-dow="0"]{
+  background: linear-gradient(
+    180deg,
+    #fff5f5 0%,
+    #ffecec 100%
+  );
+}
+
+/* 토요일 */
+.day[data-dow="6"]{
+  background: linear-gradient(
+    180deg,
+    #f5f8ff 0%,
+    #eef2ff 100%
+  );
+}
+.day.today{
+  outline:2px solid #6366f1;
+  background: linear-gradient(
+    180deg,
+    #eef2ff 0%,
+    #e0e7ff 100%
+  );
+}
+
+</style>
 </head>
 
 <body>
-  <div class="topbar">
+  <div class="topbar" id="topbar">
     <div class="wrap">
-      <!-- ✅ 상단 얇은 줄: 월 선택 + 상태 + 새로고침 -->
       <div class="row">
-        <div class="grow">
-          <div class="label">월 선택</div>
-          <input id="month" type="month" />
-        </div>
-
-        <div class="pill">
-          <span>연결</span>
-          <b id="status">공개 연결됨</b>
-        </div>
-
-        <button class="ghost" id="rebuildBtn">표 새로고침</button>
-      </div>
-
-      <!-- ✅ 설정은 접기/펼치기 (기본은 접힘) -->
-      <details class="settings" id="settings">
-        <summary>
-          <span>설정 / 멤버 관리</span>
-          <span class="small">열기/닫기</span>
-        </summary>
-        <div class="settingsBody">
-          <div class="row">
-            <div class="grow">
-              <div class="label">멤버 추가 (표의 열)</div>
-              <div class="row">
-                <input id="memberName" class="grow" placeholder="예: 성용, 민주, 경민…" />
-                <button id="addMemberBtn">추가</button>
-              </div>
-          
-            </div>
-          </div>
-
-          <div style="margin-top:12px;">
-            <div class="label">현재 멤버</div>
-            <div id="members" class="members"></div>
-          </div>
-        </div>
-      </details>
-    </div>
+  <div class="grow">
+    <input id="month" type="month"/>
   </div>
+
+  <button class="ghost small" id="prev">◀</button>
+  <button class="ghost small" id="next">▶</button>
+
+  <div class="actions">
+    <button class="small" id="openMonthSum">월간 집계표</button>
+    <button class="small" id="openYearSum">연간 집계표</button>
+    <button class="small" id="openMember">멤버관리</button>
+
+  </div>
+</div>
+
+<!-- ✅ 범례는 그대로 두되, 상단을 더 줄이려면 아래처럼 접을 수도 있음 -->
+<div class="legend" id="legend"></div>
+
 
   <div class="wrap">
     <div class="card">
-      <div class="label">기도 실적 표 (날짜별)</div>
-      <div class="tableWrap">
-        <table id="grid"></table>
+      <div class="cardHead">
+        <div class="title" id="calTitle">기도 체크 달력</div>
+       </div>      
+      <div class="dowRow grid7" id="dowRow"></div>
+
+<div class="calWrap">
+  <div class="calGrid grid7" id="grid"></div>
+</div>
+
+    </div>
+  </div>
+
+  <!-- 월간 집계 -->
+  <div class="modalBack" id="monthModalBack" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div class="modalTitle" id="monthModalTitle">월간 집계표</div>
+        <button class="ghost small" id="closeMonthModal">닫기</button>
       </div>
-      <div class="small footerHint">
-        ✅ 저장 방식: 값 변경/포커스 이동 시 자동 저장. (0 + 메모 없음이면 기록 삭제)
+      <div class="modalBody">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>순위</th>
+              <th>이름</th>
+              <th class="r">체크일</th>
+              <th class="r">총일</th>
+              <th class="r">달성률</th>
+            </tr>
+          </thead>
+          <tbody id="monthSumBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  <!-- 연간 집계 -->
+  <div class="modalBack" id="yearModalBack" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div class="modalTitle" id="yearModalTitle">연간 집계표</div>
+        <button class="ghost small" id="closeYearModal">닫기</button>
+      </div>
+      <div class="modalBody">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>순위</th>
+              <th>이름</th>
+              <th class="r">체크일</th>
+              <th class="r">연 총일</th>
+              <th class="r">달성률</th>
+            </tr>
+          </thead>
+          <tbody id="yearSumBody"></tbody>
+        </table>
+        <div style="margin-top:10px; color:var(--mut); font-size:12px; font-weight:800;">
+          * 연간 집계는 DB에서 해당 연도의 체크 데이터를 한 번 조회해 계산합니다.
+        </div>
+      </div>
+    </div>
+  </div>
 
-    // ✅ Firebase 설정 (사용자 값 반영)
-    const firebaseConfig = {
-      apiKey: "AIzaSyCu-IfczmlCaReh_7Onk9a5ey86DnN0fXA",
-      authDomain: "gido-645c1.firebaseapp.com",
-      projectId: "gido-645c1",
-      storageBucket: "gido-645c1.firebasestorage.app",
-      messagingSenderId: "799221874446",
-      appId: "1:799221874446:web:f26238310c99c9a11f615f",
-      databaseURL: "https://gido-645c1-default-rtdb.asia-southeast1.firebasedatabase.app"
+  <!-- 날짜 상세 -->
+  <div class="modalBack" id="dayModalBack" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div class="modalTitle" id="dayModalTitle">날짜 상세</div>
+        <button class="ghost small" id="closeDayModal">닫기</button>
+      </div>
+      <div class="modalBody" id="dayModalBody"></div>
+    </div>
+  </div>
+
+  <!-- ✅ 멤버관리 모달 -->
+<div class="modalBack" id="memberModalBack" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modalHead">
+      <div class="modalTitle">멤버 관리</div>
+      <button class="ghost small" id="closeMemberModal">닫기</button>
+    </div>
+    <div class="modalBody">
+      <div class="row" style="margin-bottom:10px;">
+        <input id="newName" class="grow" placeholder="이름 입력"/>
+        <button class="small" id="addBtn">추가</button>
+      </div>
+      <div id="memberList"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, onValue, set, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+/* Firebase */
+const config={
+  apiKey:"AIzaSyCu-IfczmlCaReh_7Onk9a5ey86DnN0fXA",
+  authDomain:"gido-645c1.firebaseapp.com",
+  projectId:"gido-645c1",
+  storageBucket:"gido-645c1.firebasestorage.app",
+  messagingSenderId:"799221874446",
+  appId:"1:799221874446:web:f26238310c99c9a11f615f",
+  databaseURL:"https://gido-645c1-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+const app=initializeApp(config);
+const db=getDatabase(app);
+
+const $=(id)=>document.getElementById(id);
+const pad=(n)=>String(n).padStart(2,"0");
+const ym=(d)=>`${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+const daysInMonth=(y,m)=>new Date(y,m,0).getDate();
+const firstDow=(y,m)=>new Date(y,m-1,1).getDay(); //0=일
+
+// 성 제거(표시용)
+const disp=(name)=>{
+  const s=(name||"").trim();
+  if(!s) return "";
+  const parts=s.split(/\s+/).filter(Boolean);
+  const last=parts[parts.length-1];
+  return last.length>=2 ? last.slice(1) : last;
+};
+
+// ✅ 요청 7색(기본): 검정, 빨강, 파랑, 초록, 노랑, 주황, 보라
+const BASE7 = ["#111827","#ef4444","#3b82f6","#22c55e","#f59e0b","#f97316","#a855f7"];
+
+// ✅ 멤버가 7명을 넘어가면: 추가색을 HSL로 만들어 “중복 없이”
+function buildPalette(n){
+  if(n <= BASE7.length) return BASE7.slice(0,n);
+  const extra = n - BASE7.length;
+  const more = [];
+  for(let i=0;i<extra;i++){
+    const hue = Math.round((360/extra) * i);
+    more.push(`hsl(${hue} 85% 45%)`);
+  }
+  return [...BASE7, ...more];
+}
+
+const memPath=()=>ref(db,"prayer/members");
+const dayPath=(date)=>ref(db,`prayer/checks/${date}`);
+const cellPath=(date,key)=>ref(db,`prayer/checks/${date}/${key}`);
+const allChecksPath=()=>ref(db,"prayer/checks");
+
+let members=[]; // [{key, full, name, color}]
+let cache={};   // {date: {memberKey:true}}
+let token=0;
+let currentMonth="";
+
+// 요일 렌더
+["일","월","화","수","목","금","토"].forEach(d=>{
+  const el=document.createElement("div");
+  el.className="dow";
+  el.textContent=d;
+  $("dowRow").appendChild(el);
+});
+
+// 기본 월
+$("month").value = ym(new Date());
+
+// 모달 공통
+function openModal(id){ $(id).classList.add("show"); }
+function closeModal(id){ $(id).classList.remove("show"); }
+
+// 월/연 모달
+$("openMonthSum").onclick=()=>{ renderMonthlySummary(); openModal("monthModalBack"); };
+$("closeMonthModal").onclick=()=>closeModal("monthModalBack");
+$("monthModalBack").addEventListener("click",(e)=>{ if(e.target.id==="monthModalBack") closeModal("monthModalBack"); });
+
+$("openYearSum").onclick=async()=>{ await renderYearlySummary(); openModal("yearModalBack"); };
+$("closeYearModal").onclick=()=>closeModal("yearModalBack");
+$("yearModalBack").addEventListener("click",(e)=>{ if(e.target.id==="yearModalBack") closeModal("yearModalBack"); });
+
+// 날짜 모달
+$("closeDayModal").onclick=()=>closeModal("dayModalBack");
+$("dayModalBack").addEventListener("click",(e)=>{ if(e.target.id==="dayModalBack") closeModal("dayModalBack"); });
+
+// 멤버 추가
+$("addBtn").onclick=async()=>{
+  const name=$("newName").value.trim();
+  if(!name) return alert("이름을 입력해 주세요.");
+  const key=name.replace(/\s+/g,"_").replace(/[.#$\[\]\/]/g,"_");
+  await set(ref(db,`prayer/members/${key}`), { name });
+  $("newName").value="";
+};
+
+// 멤버 구독(정렬 → 색 배정 → 렌더)
+onValue(memPath(), (snap)=>{
+  const v = snap.val() || {};
+  const arr = Object.entries(v)
+    .map(([k,val])=>({ key:k, full:(val?.name || k) }))
+    .sort((a,b)=>a.full.localeCompare(b.full,"ko"));
+
+  const palette = buildPalette(arr.length);
+
+  members = arr.map((m,i)=>({
+    key: m.key,
+    full: m.full,
+    name: disp(m.full),
+    color: palette[i]
+  }));
+
+  renderLegendAndMemberList();
+  buildCalendar();
+});
+
+function renderLegendAndMemberList(){
+  const legend=$("legend");
+  legend.innerHTML="";
+  if(members.length===0){
+    legend.innerHTML = `<span style="font-weight:900;color:var(--mut);font-size:12px;">멤버를 먼저 추가해 주세요.</span>`;
+  } else {
+    members.forEach(m=>{
+      const t=document.createElement("div");
+      t.className="tag";
+      t.innerHTML = `<span class="swatch" style="background:${m.color}"></span>${m.full}`;
+      legend.appendChild(t);
+    });
+  }
+
+  const list=$("memberList");
+  list.innerHTML="";
+  members.forEach(m=>{
+    const row=document.createElement("div");
+    row.className="member";
+    row.innerHTML = `<span class="swatch" style="background:${m.color}"></span><b>${m.full}</b>`;
+
+    const edit=document.createElement("button");
+    edit.className="chip";
+    edit.textContent="변경";
+    edit.onclick=async()=>{
+      const next=prompt("새 이름을 입력하세요.", m.full);
+      if(next===null) return;
+      const nn=next.trim();
+      if(!nn) return alert("이름이 비었습니다.");
+      await set(ref(db,`prayer/members/${m.key}`), { name: nn });
     };
 
-    // -------------------- 유틸 --------------------
-    const $ = (id) => document.getElementById(id);
-    const pad2 = (n) => String(n).padStart(2, "0");
-
-    function ymd(d) {
-      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-    }
-    function ym(d) {
-      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
-    }
-    function daysInMonth(year, month1to12) {
-      return new Date(year, month1to12, 0).getDate();
-    }
-    function dowK(d) {
-      const arr = ["일","월","화","수","목","금","토"];
-      return arr[d.getDay()];
-    }
-    function safeKey(name) {
-      return name.trim().replace(/\s+/g, "_").replace(/[.#$\[\]\/]/g, "_");
-    }
-
-    // -------------------- Firebase --------------------
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // ✅ 경로 (날짜별로만 저장)
-    // members: /prayer/members/{memberKey} = { name }
-    // records: /prayer/records/{YYYY-MM-DD}/{memberKey} = { minutes, note, updatedAt }
-    const membersPath = () => ref(db, `prayer/members`);
-    const dayPath = (date) => ref(db, `prayer/records/${date}`);
-    const cellPath = (date, memberKey) => ref(db, `prayer/records/${date}/${memberKey}`);
-
-    // -------------------- 상태 --------------------
-    let members = [];  // [{key, name}]
-    let currentMonth = ""; // "YYYY-MM"
-    let monthUnsubToken = 0; // 구독 구분용
-
-    // 초기 월값: 오늘
-    const now = new Date();
-    $("month").value = ym(now);
-    currentMonth = $("month").value;
-
-    // ✅ 모바일에서 표가 먼저 보이게: 설정은 기본 접힘
-    $("settings").open = false;
-
-    // -------------------- 멤버 렌더 --------------------
-    function renderMembers() {
-      const box = $("members");
-      box.innerHTML = "";
-
-      if (members.length === 0) {
-        const span = document.createElement("div");
-        span.className = "small";
-        span.textContent = "아직 멤버가 없습니다. 위에서 멤버를 추가해 주세요.";
-        box.appendChild(span);
-        return;
-      }
-
-      members.forEach((m) => {
-        const el = document.createElement("div");
-        el.className = "member";
-        el.innerHTML = `<b>${m.name}</b> <span class="x" title="멤버 삭제">×</span>`;
-        el.querySelector(".x").onclick = async () => {
-          if (!confirm(`'${m.name}' 멤버를 삭제하시겠습니까?\n(기존 기록은 남아있지만 표 열에서는 사라집니다.)`)) return;
-          await remove(ref(db, `prayer/members/${m.key}`));
-        };
-        box.appendChild(el);
-      });
-    }
-
-    $("addMemberBtn").onclick = async () => {
-      const name = ($("memberName").value || "").trim();
-      if (!name) return alert("멤버 이름을 입력해 주세요.");
-      const key = safeKey(name);
-      await set(ref(db, `prayer/members/${key}`), { name });
-      $("memberName").value = "";
+    const del=document.createElement("button");
+    del.className="chip del";
+    del.textContent="삭제";
+    del.onclick=async()=>{
+      if(!confirm(`'${m.full}' 멤버를 삭제하시겠습니까?`)) return;
+      await remove(ref(db,`prayer/members/${m.key}`));
     };
 
-    // 멤버 실시간 구독
-    onValue(membersPath(), (snap) => {
-      const v = snap.val() || {};
-      members = Object.entries(v)
-        .map(([key, val]) => ({ key, name: val?.name || key }))
-        .sort((a,b) => a.name.localeCompare(b.name, "ko"));
-      renderMembers();
-      rebuildGrid(); // 멤버 변경 시 표 다시 그림
+    row.append(edit,del);
+    list.appendChild(row);
+  });
+}
+
+// 달력 생성
+// 달력 생성
+function buildCalendar(){
+  const monthStr = $("month").value || ym(new Date());
+  currentMonth = monthStr;
+  cache = {};
+  token++;
+
+  const [Y,M] = monthStr.split("-").map(Number);
+  const last = daysInMonth(Y,M);
+  const start = firstDow(Y,M);
+
+  $("calTitle").textContent = `${monthStr} 기도 체크 달력`;
+
+  const grid=$("grid");
+  grid.innerHTML="";
+
+  const todayStr = ym(new Date()) + "-" + pad(new Date().getDate()); // ✅ 여기서만 계산
+
+  for(let i=0;i<42;i++){
+    const dayNum = i - start + 1;
+    const cell=document.createElement("div");
+
+    if(dayNum<1 || dayNum>last){
+      cell.className="day muted";
+      cell.innerHTML = `<div class="dayTop"><div class="dateNum"></div></div><div class="list"></div>`;
+      grid.appendChild(cell);
+      continue;
+    }
+
+    const date = `${monthStr}-${pad(dayNum)}`;
+    cell.className="day";
+    cell.dataset.date = date;
+
+    // ✅ 주말색 적용용 (CSS가 이 값을 보고 색 바꿈)
+    cell.dataset.dow = new Date(Y, M-1, dayNum).getDay();
+
+    // ✅ 오늘 표시 (반드시 여기!)
+    if(date === todayStr) cell.classList.add("today");
+
+    const top=document.createElement("div");
+    top.className="dayTop";
+    top.innerHTML = `<div class="dateNum">${dayNum}</div>`;
+
+    const list=document.createElement("div");
+    list.className="list";
+
+    members.forEach(m=>{
+      const box=document.createElement("div");
+      box.className="box";
+      box.dataset.key = m.key;
+      list.appendChild(box);
     });
 
-    // -------------------- 표 생성 --------------------
-    function rebuildGrid() {
-      const monthStr = $("month").value || ym(new Date());
-      currentMonth = monthStr;
+    cell.onclick = ()=> openDayModal(date);
 
-      const [Y, M] = monthStr.split("-").map(Number);
-      const last = daysInMonth(Y, M);
+    cell.append(top,list);
+    grid.appendChild(cell);
+  }
 
-      const table = $("grid");
-      table.innerHTML = "";
+  subscribeMonth(monthStr, last);
+}
 
-      // 헤더
-      const thead = document.createElement("thead");
-      const hr = document.createElement("tr");
 
-      const th0 = document.createElement("th");
-      th0.textContent = "날짜";
-      hr.appendChild(th0);
+function setBox(boxEl, on, color){
+  boxEl.classList.toggle("on", on);
+  boxEl.style.background = on ? color : "#fff";
+  boxEl.style.boxShadow = on ? `0 6px 14px ${color}33` : `0 2px 8px rgba(0,0,0,.08)`;
+}
 
-      members.forEach((m) => {
-        const th = document.createElement("th");
-        th.textContent = m.name;
-        hr.appendChild(th);
+// 월 데이터 구독
+function subscribeMonth(monthStr, last){
+  const t=token;
+  for(let d=1; d<=last; d++){
+    const date = `${monthStr}-${pad(d)}`;
+    onValue(dayPath(date), (snap)=>{
+      if(t!==token) return;
+      if(currentMonth!==monthStr) return;
+
+      const data=snap.val()||{};
+      cache[date]=data;
+
+      const cell=document.querySelector(`.day[data-date="${date}"]`);
+      if(!cell) return;
+
+      cell.querySelectorAll(".box").forEach(b=>{
+        const mk=b.dataset.key;
+        const on=!!data[mk];
+        const m=members.find(x=>x.key===mk);
+        setBox(b, on, m?.color || "#111827");
       });
+    });
+  }
+}
 
-      thead.appendChild(hr);
-      table.appendChild(thead);
+// 월 이동
+function shiftMonth(delta){
+  const [Y,M]=($("month").value||ym(new Date())).split("-").map(Number);
+  const dt=new Date(Y, (M-1)+delta, 1);
+  $("month").value = ym(dt);
+  buildCalendar();
+}
+$("prev").onclick=()=>shiftMonth(-1);
+$("next").onclick=()=>shiftMonth(1);
+$("month").onchange = ()=> buildCalendar();
 
-      // 바디
-      const tbody = document.createElement("tbody");
+// 날짜 상세 모달(풀네임 + 토글)
+function openDayModal(date){
+  $("dayModalTitle").textContent = `${date} 체크`;
 
-      for (let day = 1; day <= last; day++) {
-        const d = new Date(Y, M-1, day);
-        const dateStr = ymd(d);
+  const dayData = cache[date] || {};
+  const wrap = document.createElement("div");
+  wrap.style.display = "flex";
+  wrap.style.flexDirection = "column";
+  wrap.style.gap = "10px";
 
-        const tr = document.createElement("tr");
+  members.forEach(m=>{
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.justifyContent = "space-between";
+    row.style.gap = "12px";
+    row.style.padding = "10px 12px";
+    row.style.border = "1px solid #eef0f6";
+    row.style.borderRadius = "14px";
+    row.style.background = "#fff";
 
-        const tdDate = document.createElement("td");
-        tdDate.className = "dateCell";
-        tdDate.innerHTML = `${dateStr} <span class="dow">(${dowK(d)})</span>`;
-        tr.appendChild(tdDate);
+    const left = document.createElement("div");
+    left.style.display = "flex";
+    left.style.alignItems = "center";
+    left.style.gap = "10px";
 
-        members.forEach((m) => {
-          const td = document.createElement("td");
-          td.dataset.date = dateStr;
-          td.dataset.memberKey = m.key;
+    const sw = document.createElement("div");
+    sw.style.width = "12px";
+    sw.style.height = "12px";
+    sw.style.borderRadius = "4px";
+    sw.style.background = m.color;
 
-          const box = document.createElement("div");
-          box.className = "cellBox";
+    const name = document.createElement("div");
+    name.style.fontWeight = "1000";
+    name.style.fontSize = "14px";
+    name.textContent = m.full;
 
-          const inp = document.createElement("input");
-          inp.type = "number";
-          inp.min = "0";
-          inp.step = "5";
-          inp.placeholder = "0";
-          inp.inputMode = "numeric";
-          inp.className = "minInput";
+    left.append(sw, name);
 
-          const btnRow = document.createElement("div");
-          btnRow.className = "cellBtns";
+    const btn = document.createElement("button");
+    btn.className = "ghost";
+    btn.style.display = "inline-flex";
+    btn.style.alignItems = "center";
+    btn.style.gap = "10px";
+    btn.style.padding = "10px 12px";
+    btn.style.borderRadius = "14px";
 
-          const noteBtn = document.createElement("button");
-          noteBtn.type = "button";
-          noteBtn.className = "miniBtn";
-          noteBtn.textContent = "메모";
+    const bigBox = document.createElement("div");
+    bigBox.style.width = "28px";
+    bigBox.style.height = "28px";
+    bigBox.style.borderRadius = "10px";
+    bigBox.style.border = "2px solid #e5e7eb";
+    bigBox.style.background = dayData[m.key] ? m.color : "#fff";
 
-          const clearBtn = document.createElement("button");
-          clearBtn.type = "button";
-          clearBtn.className = "miniBtn";
-          clearBtn.textContent = "지우기";
+    const txt = document.createElement("div");
+    txt.style.fontWeight = "1000";
+    txt.textContent = dayData[m.key] ? "체크됨" : "미체크";
 
-          btnRow.appendChild(noteBtn);
-          btnRow.appendChild(clearBtn);
+    btn.append(bigBox, txt);
 
-          box.appendChild(inp);
-          box.appendChild(btnRow);
-          td.appendChild(box);
-          tr.appendChild(td);
+    btn.onclick = async ()=>{
+      cache[date] = cache[date] || {};
+      const isOn = !!cache[date][m.key];
 
-          // 저장 함수
-          const save = async (noteText = null) => {
-            const minutes = Number(inp.value || 0);
-            const date = dateStr;
-            const mk = m.key;
-
-            // 현재 저장된 note를 유지하려면, 메모 호출 시만 noteText를 바꾸고,
-            // 일반 저장(분 변경)에서는 DB에서 값을 가져오지 않고 "기존 note"를 td에 캐시합니다.
-            const currentNote = td.dataset.note || "";
-
-            const nextNote = (noteText === null) ? currentNote : (noteText || "");
-            td.dataset.note = nextNote;
-
-            // 버튼 스타일
-            if (nextNote.trim()) noteBtn.classList.add("noteOn");
-            else noteBtn.classList.remove("noteOn");
-
-            // 둘 다 비면 삭제
-            if (!minutes && !nextNote.trim()) {
-              await remove(cellPath(date, mk));
-              return;
-            }
-
-            await set(cellPath(date, mk), {
-              minutes,
-              note: nextNote,
-              updatedAt: Date.now()
-            });
-          };
-
-          // 분 변경 저장
-          inp.addEventListener("change", () => save(null));
-          inp.addEventListener("blur", () => save(null));
-
-          // 메모 입력(프롬프트)
-          noteBtn.addEventListener("click", async () => {
-            const prev = td.dataset.note || "";
-            const text = prompt(`[${dateStr}] ${m.name} 메모`, prev);
-            if (text === null) return; // 취소
-            await save(text);
-          });
-
-          // 지우기(분=0, 메모=삭제)
-          clearBtn.addEventListener("click", async () => {
-            if (!confirm("이 칸의 기록(분/메모)을 지우시겠습니까?")) return;
-            inp.value = "";
-            td.dataset.note = "";
-            noteBtn.classList.remove("noteOn");
-            await remove(cellPath(dateStr, m.key));
-          });
-        });
-
-        tbody.appendChild(tr);
+      if(isOn){
+        delete cache[date][m.key];
+        await remove(cellPath(date, m.key));
+      }else{
+        cache[date][m.key] = true;
+        await set(cellPath(date, m.key), true);
       }
 
-      table.appendChild(tbody);
+      // 모달 즉시 갱신 (달력은 구독으로 자동 반영)
+      openDayModal(date);
+    };
 
-      // 월 데이터 구독
-      subscribeMonth(monthStr);
+    row.append(left, btn);
+    wrap.appendChild(row);
+  });
+
+  $("dayModalBody").innerHTML = "";
+  $("dayModalBody").appendChild(wrap);
+  openModal("dayModalBack");
+}
+
+/* 집계표 */
+function renderMonthlySummary(){
+  const monthStr = $("month").value || ym(new Date());
+  const [Y,M]=monthStr.split("-").map(Number);
+  const totalDays = daysInMonth(Y,M);
+
+  // 집계
+  const counts = members.map(m=>({
+    key: m.key,
+    name: m.full,
+    color: m.color,
+    count: 0
+  }));
+
+  for(let d=1; d<=totalDays; d++){
+    const date = `${monthStr}-${pad(d)}`;
+    const dayData = cache[date] || {};
+
+    Object.keys(dayData).forEach(k=>{
+      const row = counts.find(x=>x.key===k);
+      if(row) row.count++;
+    });
+  }
+
+  // ✅ 체크 많은 순 정렬 (내림차순)
+  counts.sort((a,b)=> b.count - a.count);
+
+  $("monthModalTitle").textContent = `${monthStr} 월간 집계표`;
+
+  const body=$("monthSumBody");
+  body.innerHTML="";
+
+  let rank = 1;
+  let prev = null;
+  let realRank = 0;
+
+  counts.forEach((m,i)=>{
+    // 공동순위 처리
+    if(prev !== m.count){
+      realRank = i + 1;
+      prev = m.count;
     }
 
-    $("rebuildBtn").onclick = rebuildGrid;
-    $("month").onchange = rebuildGrid;
+    const pct = totalDays
+      ? Math.round((m.count/totalDays)*100)
+      : 0;
 
-    // -------------------- 월 데이터 구독 --------------------
-    function subscribeMonth(monthStr) {
-      // 이전 구독 콜백 무시용 토큰
-      const token = ++monthUnsubToken;
+    const tr=document.createElement("tr");
+    tr.innerHTML = `
+      <td>${realRank}</td>
+      <td>
+        <span class="badge">
+          <span class="swatch" style="background:${m.color}"></span>
+          ${m.name}
+        </span>
+      </td>
+      <td class="r">${m.count}</td>
+      <td class="r">${totalDays}</td>
+      <td class="r">${pct}%</td>
+    `;
 
-      const [Y, M] = monthStr.split("-").map(Number);
-      const last = daysInMonth(Y, M);
+    body.appendChild(tr);
+  });
+}
 
-      // 월의 모든 날짜를 각각 구독(간단/명확 버전)
-      for (let day = 1; day <= last; day++) {
-        const dateStr = `${monthStr}-${pad2(day)}`;
 
-        onValue(dayPath(dateStr), (snap) => {
-          // 월 바뀌었으면 무시
-          if (token !== monthUnsubToken) return;
+async function renderYearlySummary(){
+  const monthStr = $("month").value || ym(new Date());
+  const year = Number(monthStr.split("-")[0]);
 
-          const dayData = snap.val() || {}; // { memberKey: {minutes, note...} }
+  $("yearModalTitle").textContent = `${year} 연간 집계표`;
 
-          // 해당 날짜 행의 모든 멤버 셀 갱신
-          const tds = document.querySelectorAll(`td[data-date="${dateStr}"]`);
-          tds.forEach((td) => {
-            const mk = td.dataset.memberKey;
-            const data = dayData[mk] || null;
+  const body=$("yearSumBody");
+  body.innerHTML = `<tr><td colspan="5">불러오는 중…</td></tr>`;
 
-            const inp = td.querySelector("input.minInput");
-            const noteBtn = td.querySelector("button.miniBtn");
+  const snap = await get(allChecksPath());
+  const all = snap.val() || {};
 
-            const newMin = data?.minutes ?? "";
-            const newNote = data?.note ?? "";
+  const isLeap =
+    (year%4===0 && year%100!==0) || (year%400===0);
 
-            // 입력 중 튀지 않게
-            if (document.activeElement !== inp) inp.value = newMin;
+  const totalDays = isLeap ? 366 : 365;
 
-            td.dataset.note = newNote;
+  // 집계 구조
+  const counts = members.map(m=>({
+    key: m.key,
+    name: m.full,
+    color: m.color,
+    count: 0
+  }));
 
-            if (newNote.trim()) noteBtn.classList.add("noteOn");
-            else noteBtn.classList.remove("noteOn");
-          });
-        });
-      }
+  for(const dateStr of Object.keys(all)){
+    if(!dateStr.startsWith(`${year}-`)) continue;
+
+    const dayData = all[dateStr] || {};
+
+    Object.keys(dayData).forEach(k=>{
+      const row = counts.find(x=>x.key===k);
+      if(row) row.count++;
+    });
+  }
+
+  // ✅ 내림차순 정렬
+  counts.sort((a,b)=> b.count - a.count);
+
+  body.innerHTML="";
+
+  let prev = null;
+  let realRank = 0;
+
+  counts.forEach((m,i)=>{
+    // 공동순위 처리
+    if(prev !== m.count){
+      realRank = i + 1;
+      prev = m.count;
     }
 
-    // 초기 생성
-    rebuildGrid();
-  </script>
+    const pct = totalDays
+      ? Math.round((m.count/totalDays)*100)
+      : 0;
+
+    const tr=document.createElement("tr");
+    tr.innerHTML = `
+      <td>${realRank}</td>
+      <td>
+        <span class="badge">
+          <span class="swatch" style="background:${m.color}"></span>
+          ${m.name}
+        </span>
+      </td>
+      <td class="r">${m.count}</td>
+      <td class="r">${totalDays}</td>
+      <td class="r">${pct}%</td>
+    `;
+
+    body.appendChild(tr);
+  });
+}
+
+
+function closeSettings(){
+  if (settings && settings.open) settings.open = false;
+}
+
+// 바깥 클릭 시 닫기
+document.addEventListener("click", (e) => {
+  if (!settings || !settings.open) return;
+
+  // details 내부(요약/패널 포함) 클릭은 닫지 않음
+  if (settings.contains(e.target)) return;
+
+  closeSettings();
+});
+
+// ESC 키로 닫기
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeSettings();
+});
+
+// ✅ 멤버관리 모달 열기/닫기
+$("openMember").onclick = ()=> openModal("memberModalBack");
+$("closeMemberModal").onclick = ()=> closeModal("memberModalBack");
+$("memberModalBack").addEventListener("click",(e)=>{
+  if(e.target.id==="memberModalBack") closeModal("memberModalBack");
+});
+
+// ✅ 스와이프(드래그)로 월 이동: 왼쪽=다음달, 오른쪽=이전달
+const swipeArea = document.querySelector(".card"); // 달력 카드 영역
+
+let sx = 0, sy = 0, st = 0;
+const SWIPE_MIN_PX = 45;     // 이 이상 움직이면 스와이프로 인정
+const SWIPE_MAX_MS = 700;    // 너무 느리면 스와이프 무시(스크롤로 판단)
+const VERTICAL_TOL = 60;     // 세로로 너무 움직이면 스와이프 무시
+
+function isInteractiveTarget(el){
+  // 버튼/입력/모달/멤버관리 등 클릭 요소 위에서는 스와이프 무시
+  return !!el.closest("button, input, textarea, select, a, details, summary, .modal, .modalBack");
+}
+
+swipeArea.addEventListener("touchstart", (e)=>{
+  if(e.touches.length !== 1) return;
+  if(isInteractiveTarget(e.target)) return;
+
+  sx = e.touches[0].clientX;
+  sy = e.touches[0].clientY;
+  st = Date.now();
+}, {passive:true});
+
+swipeArea.addEventListener("touchend", (e)=>{
+  const dt = Date.now() - st;
+  if(!st || dt > SWIPE_MAX_MS) return;
+
+  const ex = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : sx;
+  const ey = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY : sy;
+
+  const dx = ex - sx;
+  const dy = ey - sy;
+
+  // 세로 스크롤이 크면 무시
+  if(Math.abs(dy) > VERTICAL_TOL) return;
+
+  // 충분히 가로로 움직였을 때만
+  if(Math.abs(dx) < SWIPE_MIN_PX) return;
+
+  if(dx < 0){
+    // 왼쪽으로 밀기 → 다음달
+    shiftMonth(+1);
+  }else{
+    // 오른쪽으로 밀기 → 이전달
+    shiftMonth(-1);
+  }
+}, {passive:true});
+
+</script>
 </body>
 </html>
