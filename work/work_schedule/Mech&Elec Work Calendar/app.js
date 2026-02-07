@@ -388,8 +388,9 @@ item.style.color = "#111";  // ✅ 글씨 검정 고정
 
       // grid 기준: 7칸 → 100% / 7
       const colW = (100 / 7);
-      bar.style.left = `${sIdx * colW}%`;
-      bar.style.width = `${span * colW}%`;
+      bar.style.left = `calc(${sIdx * colW}% + 2px)`;
+bar.style.width = `calc(${span * colW}% - 4px)`;
+
       bar.style.top = `${row * barRowPx}px`;
 
       const c = getMemberColor(ev.owner);
