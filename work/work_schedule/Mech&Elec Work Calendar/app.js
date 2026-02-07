@@ -41,10 +41,24 @@ let editing = { dateKey: null, eventId: null };
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
+// 작성자 이름 → 고정 색상 매핑
 function getMemberColor(name){
-  const m = membersAll.find(x => x.name === name);
-  return m?.color || "#1f6feb";
+
+  const COLOR_MAP = {
+    "성용": "#55B7FF", // 하늘색
+    "서진": "#FF6FAE", // 분홍
+    "무성": "#67D96E"  // 연두
+  };
+
+  // 등록된 사람이면 해당 색
+  if (COLOR_MAP[name]) {
+    return COLOR_MAP[name];
+  }
+
+  // 혹시 다른 이름 생기면 기본색
+  return "#1f6feb";
 }
+
 
 function monthRangeKeys(){
   const start = new Date(current);
