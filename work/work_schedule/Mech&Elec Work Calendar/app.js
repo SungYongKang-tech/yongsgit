@@ -501,6 +501,109 @@ $("todayBtn").addEventListener("click", ()=>{
   applyMonthFilterAndRender();
 });
 
+
+// ==================== Swipe to change month (mobile + desktop drag) ====================
+(function enableSwipeMonth(){
+  const el = document.getElementById("calGrid"); // 캘린더 전체 영역
+  if(!el) return;
+
+  // 스와이프 기준(가로 이동 px)
+  const THRESHOLD = 60;
+
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
+
+  // 모바일 스크롤(세로)과 충돌 방지용
+  let locked = null; // null | "h" | "v"
+
+  function goPrev(){
+    current = new Date(current.getFullYear(), current.getMonth()-1, 1);
+    applyMonthFilterAndRender();
+  }
+  function goNext(){
+    current = new Date(current.getFullYear(), current.getMonth()+1, 1);
+    applyMonthFilterAndRender();
+  }
+
+  // --- Touch events ---
+  el.addEventListener("touchstart", (e)=>{
+    const t = e.touches[0];
+    startX = t.clientX;
+    startY = t.clientY;
+    dragging = true;
+    locked = null;
+  }, { passive: true });
+
+  el.addEventListener("touchmove", (e)=>{
+    if(!dragging) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+
+    // 방향 잠금(처음 움직임 방향 기준)
+    if(locked === null){
+      locked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+    }
+
+    // 가로 스와이프면 세로 스크롤 방지
+    if(locked === "h"){
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  el.addEventListener("touchend", (e)=>{
+    if(!dragging) return;
+    dragging = false;
+
+    // 터치 종료 시 마지막 이동량 계산
+    // touchend에는 touches가 비어있을 수 있어 changedTouches 사용
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+
+    if(Math.abs(dx) >= THRESHOLD && Math.abs(dx) > Math.abs(dy)){
+      if(dx > 0) goPrev();  // 오른쪽으로 밀기 = 이전달
+      else goNext();        // 왼쪽으로 밀기 = 다음달
+    }
+  });
+
+  // --- Mouse drag (optional, for PC) ---
+  el.addEventListener("mousedown", (e)=>{
+    // 일정 클릭/드래그와 충돌 방지: 바/아이템/모달 트리거는 제외
+    if(e.target.closest(".mbar") || e.target.closest(".day-item")) return;
+
+    startX = e.clientX;
+    startY = e.clientY;
+    dragging = true;
+    locked = null;
+  });
+
+  window.addEventListener("mousemove", (e)=>{
+    if(!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if(locked === null){
+      locked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+    }
+  });
+
+  window.addEventListener("mouseup", (e)=>{
+    if(!dragging) return;
+    dragging = false;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if(Math.abs(dx) >= THRESHOLD && Math.abs(dx) > Math.abs(dy)){
+      if(dx > 0) goPrev();
+      else goNext();
+    }
+  });
+})();
+
+
 /* ===== start ===== */
 subscribeMembers();
 subscribeEvents();
