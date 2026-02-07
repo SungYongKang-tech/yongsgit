@@ -384,20 +384,18 @@ const weekBarHeight = lanesCount ? (lanesCount * barRowPx) : 0;
 weekBars.style.height = `${weekBarHeight}px`; // (선택) 안정적으로 높이 고정
 
 // ✅ 핵심: "각 날짜 칸"별로 실제 필요한 레인 수만 계산
-const perDayRows = new Array(7).fill(0); // 0이면 멀티바 없음
+const perDayRows = new Array(7).fill(0);
 
 placed.forEach(p=>{
-  // p.row: 0부터 시작, 실제 줄수는 row+1
   for(let c=p.sIdx; c<=p.eIdx; c++){
     perDayRows[c] = Math.max(perDayRows[c], p.row + 1);
   }
 });
 
-// 각 날짜 칸에만 barSpaceDay 적용 (멀티바 없는 날은 0px)
 dayEls.forEach((day, i)=>{
-  const px = perDayRows[i] * barRowPx;
-  day.style.setProperty("--barSpaceDay", `${px}px`);
+  day.style.setProperty("--barSpaceDay", `${perDayRows[i] * barRowPx}px`);
 });
+
 
 
     // 바 생성 (absolute)
