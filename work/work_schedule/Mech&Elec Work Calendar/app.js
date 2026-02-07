@@ -284,8 +284,14 @@ function renderCalendar(){
       const dateKey = ymd(cursor);
       dateKeys.push(dateKey);
 
-      const day = document.createElement("div");
-      day.className = "day";
+     // ✅ 오늘 날짜 표시
+const today = new Date();
+const todayKey = ymd(today);
+
+if(dateKey === todayKey){
+  day.classList.add("today");
+}
+
 
       const inMonth = (cursor.getMonth() === m);
       if(!inMonth) day.classList.add("muted");
