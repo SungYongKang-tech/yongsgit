@@ -372,10 +372,26 @@ item.style.color = "#111";  // ✅ 글씨 검정 고정
 
     const { placed, lanesCount } = placeInLanes(segments);
 
-    // ✅ 이 주에 멀티바가 있으면 그 줄수만큼만 공간 확보
-    const barSpace = lanesCount ? (lanesCount * barRowPx) : 0;
-    dayEls.forEach(day => day.style.setProperty("--barSpace", `${barSpace}px`));
-    weekBars.style.setProperty("--barSpace", `${barSpace}px`);
+// ✅ 주 전체 멀티바 영역(week-bars) 높이 확보용 (주 전체 레인 수)
+const weekBarHeight = lanesCount ? (lanesCount * barRowPx) : 0;
+weekBars.style.height = `${weekBarHeight}px`; // (선택) 안정적으로 높이 고정
+
+// ✅ 핵심: "각 날짜 칸"별로 실제 필요한 레인 수만 계산
+const perDayRows = new Array(7).fill(0); // 0이면 멀티바 없음
+
+placed.forEach(p=>{
+  // p.row: 0부터 시작, 실제 줄수는 row+1
+  for(let c=p.sIdx; c<=p.eIdx; c++){
+    perDayRows[c] = Math.max(perDayRows[c], p.row + 1);
+  }
+});
+
+// 각 날짜 칸에만 barSpaceDay 적용 (멀티바 없는 날은 0px)
+dayEls.forEach((day, i)=>{
+  const px = perDayRows[i] * barRowPx;
+  day.style.setProperty("--barSpaceDay", `${px}px`);
+});
+
 
     // 바 생성 (absolute)
     // left/width는 7칸 기준 퍼센트로 계산
