@@ -132,30 +132,43 @@ closeBtn.addEventListener("click", closeModal);
 function renderMemberButtons(){
   memberBar.innerHTML = "";
 
-  // 선택 이름 없으면 첫 멤버 자동
-  if(!selectedName && members.length){
-    selectedName = members[0].name;
-    localStorage.setItem(LS_NAME, selectedName);
-  }
-
   members.forEach(m=>{
     const btn = document.createElement("button");
-    btn.className = "member-btn" + (m.name===selectedName ? " active" : "");
+    btn.className = "member-btn" + (m.name === selectedName ? " active" : "");
     btn.textContent = m.name;
 
-    const c = m.color || "#1f6feb";
-    btn.style.setProperty("--mc", c);
-    btn.style.boxShadow = (m.name===selectedName) ? `0 6px 16px ${c}55` : "none";
+    const color = getMemberColor(m.name);
 
-    btn.addEventListener("click", ()=>{
+    if(m.name === selectedName){
+      // 선택된 사람: 배경을 진하게
+      btn.style.background = color;
+      btn.style.borderColor = color;
+      btn.style.color = "#fff";
+      btn.style.boxShadow = `0 6px 16px ${color}55`;
+    } else {
+      // 미선택: 테두리/글자만 색(배경은 흰색)
+      btn.style.background = "#fff";
+      btn.style.borderColor = color;
+      btn.style.color = color;
+      btn.style.boxShadow = "none";
+    }
+
+    btn.onclick = ()=>{
       selectedName = m.name;
       localStorage.setItem(LS_NAME, selectedName);
       renderMemberButtons();
-    });
+    };
 
     memberBar.appendChild(btn);
   });
+
+  if(!selectedName && members.length){
+    selectedName = members[0].name;
+    localStorage.setItem(LS_NAME, selectedName);
+    renderMemberButtons();
+  }
 }
+
 
 function subscribeMembers(){
   onValue(ref(db, "config/members"), (snap)=>{
@@ -318,8 +331,8 @@ function renderCalendar(){
 
       const c = getMemberColor(ev.owner);
       item.style.borderColor = c;
-      item.style.color = c;
-      item.style.background = c + "12";
+item.style.background = c + "12";
+item.style.color = "#111";  // ✅ 글씨 검정 고정
 
       item.addEventListener("click",(e2)=>{
         e2.stopPropagation();
@@ -383,8 +396,8 @@ function renderCalendar(){
 
       const c = getMemberColor(ev.owner);
       bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = c;
+bar.style.background = c + "18";
+bar.style.color = "#111";   // ✅ 글씨 검정 고정
 
       bar.textContent = ev.title || "(제목없음)";
 
