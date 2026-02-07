@@ -38,6 +38,38 @@ const editHint = $("editHint");
 
 let editing = { dateKey: null, eventId: null };
 
+// ===== 공휴일(대한민국) =====
+let holidayMap = {}; // { "YYYY-MM-DD": { localName, name } }
+const holidayCache = {}; // { "2026": holidayMap... } 메모리 캐시(선택)
+
+async function loadKoreanHolidays(year){
+  if(holidayCache[year]) {
+    holidayMap = holidayCache[year];
+    return;
+  }
+
+    const url = `https://date.nager.at/api/v3/publicholidays/${year}/KR`;
+
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`holiday fetch failed: ${res.status}`);
+    // 예) https://date.nager.at/api/v3/publicholidays/2026/KR
+const arr = await res.json(); // [{date, localName, name, ...}]
+    const map = {};
+    for(const h of (arr || [])){
+      if(!h?.date) continue;
+      map[h.date] = { localName: h.localName || h.name || "공휴일", name: h.name || h.localName || "Holiday" };
+    }
+
+    holidayMap = map;
+    holidayCache[year] = map;
+  }catch(e){
+    console.warn("공휴일 로드 실패:", e);
+    holidayMap = {};
+  }
+}
+
+
 // -------------------- utils --------------------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
@@ -189,7 +221,10 @@ function subscribeEvents(){
   });
 }
 
-function applyMonthFilterAndRender(){
+async function applyMonthFilterAndRender(){
+  // ✅ 공휴일은 해당 연도 기준으로 1번 로드
+  await loadKoreanHolidays(current.getFullYear());
+
   const { startKey, endKey } = monthRangeKeys();
   eventsByDate = {};
   Object.keys(eventsAll).forEach(dateKey=>{
@@ -199,6 +234,7 @@ function applyMonthFilterAndRender(){
   });
   renderCalendar();
 }
+
 
 /* ===== 멀티바 레인 배치(겹침 방지) ===== */
 function placeInLanes(segments){
@@ -278,37 +314,50 @@ function renderCalendar(){
     const dateKeys = [];
 
     // 7일 칸 생성
-    for(let i=0;i<7;i++){
-      const dateKey = ymd(cursor);
-      dateKeys.push(dateKey);
+for(let i=0;i<7;i++){
+  const dateKey = ymd(cursor);
+  dateKeys.push(dateKey);
 
-      const day = document.createElement("div");
-      day.className = "day";
+  const day = document.createElement("div");
+  day.className = "day";
+  day.classList.add(`dow-${i}`);
 
-      if(dateKey === todayKey) day.classList.add("today");
+  if(dateKey === todayKey) day.classList.add("today");
 
-      const inMonth = (cursor.getMonth() === m);
-      if(!inMonth) day.classList.add("muted");
+  const inMonth = (cursor.getMonth() === m);
+  if(!inMonth) day.classList.add("muted");
 
-      const num = document.createElement("div");
-      num.className = "day-num";
-      num.textContent = cursor.getDate();
+  const num = document.createElement("div");
+  num.className = "day-num";
+  num.textContent = cursor.getDate();
 
-      const items = document.createElement("div");
-      items.className = "day-items";
-      day.appendChild(num);
-      day.appendChild(items);
+  const items = document.createElement("div");
+  items.className = "day-items";
 
-      day.addEventListener("click", (e)=>{
-        if(e.target.closest(".mbar") || e.target.closest(".sbar")) return;
-        openModal({ dateKey });
-      });
+  // ✅ 공휴일이면: day에 holiday 클래스 + 라벨(맨 위)
+  const h = holidayMap[dateKey];
+  if(h){
+    day.classList.add("holiday");
+    const badge = document.createElement("div");
+    badge.className = "holiday-badge";
+    badge.textContent = h.localName || "공휴일";
+    items.prepend(badge);
+  }
 
-      weekRow.appendChild(day);
-      dayEls.push(day);
+  day.appendChild(num);
+  day.appendChild(items);
 
-      cursor.setDate(cursor.getDate()+1);
-    }
+  day.addEventListener("click", (e)=>{
+    if(e.target.closest(".mbar") || e.target.closest(".sbar")) return;
+    openModal({ dateKey });
+  });
+
+  weekRow.appendChild(day);
+  dayEls.push(day);
+
+  cursor.setDate(cursor.getDate()+1);
+}
+
 
     // --- 멀티데이 세그먼트 만들기 ---
     const weekStartKey = dateKeys[0];
@@ -610,4 +659,3 @@ $("todayBtn").addEventListener("click", ()=>{
 subscribeMembers();
 subscribeEvents();
 renderMemberButtons();
-renderCalendar();
