@@ -40,7 +40,7 @@ let editing = { dateKey: null, eventId: null };
 
 // ===== 공휴일(대한민국) =====
 let holidayMap = {}; // { "YYYY-MM-DD": { localName, name } }
-const holidayCache = {}; // { "2026": holidayMap... } 메모리 캐시(선택)
+const holidayCache = {}; // { "2026": holidayMap... }
 
 async function loadKoreanHolidays(year){
   if(holidayCache[year]) {
@@ -48,19 +48,20 @@ async function loadKoreanHolidays(year){
     return;
   }
 
-    const url = `https://date.nager.at/api/v3/publicholidays/${year}/KR`;
+  const url = `https://date.nager.at/api/v3/publicholidays/${year}/KR`;
 
   try{
     const res = await fetch(url);
     if(!res.ok) throw new Error(`holiday fetch failed: ${res.status}`);
-    // 예) https://date.nager.at/api/v3/publicholidays/2026/KR
-const arr = await res.json(); // [{date, localName, name, ...}]
+    const arr = await res.json(); // [{date, localName, name, ...}]
     const map = {};
     for(const h of (arr || [])){
       if(!h?.date) continue;
-      map[h.date] = { localName: h.localName || h.name || "공휴일", name: h.name || h.localName || "Holiday" };
+      map[h.date] = {
+        localName: h.localName || h.name || "공휴일",
+        name: h.name || h.localName || "Holiday"
+      };
     }
-
     holidayMap = map;
     holidayCache[year] = map;
   }catch(e){
@@ -69,7 +70,6 @@ const arr = await res.json(); // [{date, localName, name, ...}]
   }
 }
 
-
 // -------------------- utils --------------------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
@@ -77,9 +77,9 @@ function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.get
 // 작성자 이름 → 고정 색상 매핑
 function getMemberColor(name){
   const COLOR_MAP = {
-    "성용": "#55B7FF", // 하늘색
-    "서진": "#FF6FAE", // 분홍
-    "무성": "#67D96E"  // 연두
+    "성용": "#55B7FF",
+    "서진": "#FF6FAE",
+    "무성": "#67D96E"
   };
   return COLOR_MAP[name] || "#1f6feb";
 }
@@ -171,12 +171,12 @@ function renderMemberButtons(){
     if(m.name === selectedName){
       btn.style.background = color;
       btn.style.borderColor = color;
-      btn.style.color = "#111";      // 글씨 검정
+      btn.style.color = "#111";
       btn.style.boxShadow = `0 6px 16px ${color}55`;
     } else {
       btn.style.background = "#fff";
       btn.style.borderColor = color;
-      btn.style.color = "#111";      // 글씨 검정
+      btn.style.color = "#111";
       btn.style.boxShadow = "none";
     }
 
@@ -222,7 +222,6 @@ function subscribeEvents(){
 }
 
 async function applyMonthFilterAndRender(){
-  // ✅ 공휴일은 해당 연도 기준으로 1번 로드
   await loadKoreanHolidays(current.getFullYear());
 
   const { startKey, endKey } = monthRangeKeys();
@@ -235,10 +234,9 @@ async function applyMonthFilterAndRender(){
   renderCalendar();
 }
 
-
 /* ===== 멀티바 레인 배치(겹침 방지) ===== */
 function placeInLanes(segments){
-  const occ = []; // occ[row] = Array(7).fill(false)
+  const occ = [];
 
   function ensureRow(row){
     if(!occ[row]) occ[row] = new Array(7).fill(false);
@@ -253,7 +251,7 @@ function placeInLanes(segments){
     for(let k=sIdx;k<=eIdx;k++) occ[row][k] = true;
   }
 
-  const placed = []; // {row, sIdx, eIdx, ev}
+  const placed = [];
 
   for(const seg of segments){
     let row = 0;
@@ -314,50 +312,49 @@ function renderCalendar(){
     const dateKeys = [];
 
     // 7일 칸 생성
-for(let i=0;i<7;i++){
-  const dateKey = ymd(cursor);
-  dateKeys.push(dateKey);
+    for(let i=0;i<7;i++){
+      const dateKey = ymd(cursor);
+      dateKeys.push(dateKey);
 
-  const day = document.createElement("div");
-  day.className = "day";
-  day.classList.add(`dow-${i}`);
+      const day = document.createElement("div");
+      day.className = "day";
+      day.classList.add(`dow-${i}`);
 
-  if(dateKey === todayKey) day.classList.add("today");
+      if(dateKey === todayKey) day.classList.add("today");
 
-  const inMonth = (cursor.getMonth() === m);
-  if(!inMonth) day.classList.add("muted");
+      const inMonth = (cursor.getMonth() === m);
+      if(!inMonth) day.classList.add("muted");
 
-  const num = document.createElement("div");
-  num.className = "day-num";
-  num.textContent = cursor.getDate();
+      const num = document.createElement("div");
+      num.className = "day-num";
+      num.textContent = cursor.getDate();
 
-  const items = document.createElement("div");
-  items.className = "day-items";
+      const items = document.createElement("div");
+      items.className = "day-items";
 
-  // ✅ 공휴일이면: day에 holiday 클래스 + 라벨(맨 위)
-  const h = holidayMap[dateKey];
-  if(h){
-    day.classList.add("holiday");
-    const badge = document.createElement("div");
-    badge.className = "holiday-badge";
-    badge.textContent = h.localName || "공휴일";
-    items.prepend(badge);
-  }
+      // 공휴일 라벨
+      const h = holidayMap[dateKey];
+      if(h){
+        day.classList.add("holiday");
+        const badge = document.createElement("div");
+        badge.className = "holiday-badge";
+        badge.textContent = h.localName || "공휴일";
+        items.prepend(badge);
+      }
 
-  day.appendChild(num);
-  day.appendChild(items);
+      day.appendChild(num);
+      day.appendChild(items);
 
-  day.addEventListener("click", (e)=>{
-    if(e.target.closest(".mbar") || e.target.closest(".sbar")) return;
-    openModal({ dateKey });
-  });
+      day.addEventListener("click", (e)=>{
+        if(e.target.closest(".mbar") || e.target.closest(".sbar")) return;
+        openModal({ dateKey });
+      });
 
-  weekRow.appendChild(day);
-  dayEls.push(day);
+      weekRow.appendChild(day);
+      dayEls.push(day);
 
-  cursor.setDate(cursor.getDate()+1);
-}
-
+      cursor.setDate(cursor.getDate()+1);
+    }
 
     // --- 멀티데이 세그먼트 만들기 ---
     const weekStartKey = dateKeys[0];
@@ -367,7 +364,7 @@ for(let i=0;i<7;i++){
     for(const ev of allEvents){
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
-      if(s === e) continue; // 멀티만
+      if(s === e) continue;
 
       if(e < weekStartKey || s > weekEndKey) continue;
 
@@ -388,7 +385,7 @@ for(let i=0;i<7;i++){
 
     const { placed, occ } = placeInLanes(segments);
 
-    // --- 싱글(하루)도 레인 점유표(occ)에 넣어서 "빈칸 맨위" 사용 ---
+    // --- 싱글(하루) 레인 점유 ---
     function ensureRow(r){
       if(!occ[r]) occ[r] = new Array(7).fill(false);
     }
@@ -401,63 +398,27 @@ for(let i=0;i<7;i++){
       }
     }
 
-    function truncKorean(str, max){
-  const s = (str || "").trim();
-  if(s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
-}
+    // ✅ 싱글바는 레인을 1칸만 점유(중요!)
+    const singleBars = []; // {row, col, ev}
+    for(const ev of allEvents){
+      const s = ev.startDate;
+      const e = ev.endDate || ev.startDate;
+      if(s !== e) continue;
 
-const singleBars = []; // {row, col, ev, twoLine, text}
+      const col = dateKeys.indexOf(s);
+      if(col < 0) continue;
 
-// 싱글(하루) 일정들을 "위에서부터 빈 레인"에 배치
-for(const ev of allEvents){
-  const s = ev.startDate;
-  const e = ev.endDate || ev.startDate;
-  if(s !== e) continue;
+      const row = firstFreeRow(col);
+      occ[row][col] = true;
 
-  const col = dateKeys.indexOf(s);
-  if(col < 0) continue;
+      singleBars.push({ row, col, ev });
+    }
 
-  let row = firstFreeRow(col);
-
-  // ✅ 제목 길이가 5자 이상이면 2줄 시도
-  const rawTitle = (ev.title || "").trim();
-  const wantTwoLine = rawTitle.length >= 5;
-
-  // row+1이 비어 있으면 2줄로 확장 가능
-  ensureRow(row);
-  ensureRow(row + 1);
-
-  const canTwoLine = wantTwoLine && !occ[row+1][col];
-
-  if(canTwoLine){
-    // 2레인 점유
-    occ[row][col] = true;
-    occ[row+1][col] = true;
-
-    singleBars.push({
-      row, col, ev,
-      twoLine: true,
-      text: truncKorean(rawTitle, 8) // 8자까지, 초과면 7자+…
-    });
-  }else{
-    // 1레인만 점유
-    occ[row][col] = true;
-
-    singleBars.push({
-      row, col, ev,
-      twoLine: false,
-      text: truncKorean(rawTitle, 4) // 4자까지, 초과면 3자+…
-    });
-  }
-}
-
-
-    // --- weekBars 높이 = 최종 레인 수(멀티+싱글) ---
+    // --- weekBars 높이 ---
     const lanesCountFinal = occ.length;
     weekBars.style.height = `${lanesCountFinal * barRowPx}px`;
 
-    // --- 각 날짜칸: 그 날짜에 바가 있는 레인 수만큼만 day-items를 내리기(있으면) ---
+    // --- day-items 내려주기 ---
     const perDayRows = new Array(7).fill(0);
     for(let r=0; r<occ.length; r++){
       for(let c=0; c<7; c++){
@@ -484,15 +445,9 @@ for(const ev of allEvents){
       const c = getMemberColor(ev.owner);
       bar.style.borderColor = c;
       bar.style.background  = c + "18";
-      bar.style.color       = "#111"; // 글씨 검정
-      const title = ev.title || "(제목없음)";
-bar.textContent = title;
+      bar.style.color       = "#111";
 
-/* ✅ 8자 이상이면 2줄 허용 */
-if(title.length >= 8){
-  bar.classList.add("two-line");
-}
-
+      bar.textContent = ev.title || "(제목없음)";
 
       bar.addEventListener("click",(e2)=>{
         e2.stopPropagation();
@@ -502,49 +457,41 @@ if(title.length >= 8){
       weekBars.appendChild(bar);
     });
 
-    // --- 싱글바(1칸짜리) 렌더: 빈 레인(row0) 있으면 위로 들어감 ---
+    // --- 싱글바 렌더(텍스트 규칙 통일) ---
     singleBars.forEach(p=>{
-  const { row, col, ev, twoLine, text } = p;
+      const { row, col, ev } = p;
 
-  const bar = document.createElement("div");
-  bar.className = "sbar" + (twoLine ? " two-line" : "");
+      const bar = document.createElement("div");
+      bar.className = "sbar";
 
-  const colW = (100/7);
-  bar.style.left  = `calc(${col * colW}% + 2px)`;
-  bar.style.width = `calc(${colW}% - 4px)`;
-  bar.style.top   = `${row * barRowPx}px`;
+      const colW = (100/7);
+      bar.style.left  = `calc(${col * colW}% + 2px)`;
+      bar.style.width = `calc(${colW}% - 4px)`;
+      bar.style.top   = `${row * barRowPx}px`;
 
-  const c = getMemberColor(ev.owner);
-  bar.style.borderColor = c;
-  bar.style.background  = c + "12";
-  bar.style.color       = "#111";
+      const c = getMemberColor(ev.owner);
+      bar.style.borderColor = c;
+      bar.style.background  = c + "12";
+      bar.style.color       = "#111";
 
-  // 제목 원본
-const full = (ev.title || "(제목없음)").trim();
+      const full = (ev.title || "(제목없음)").trim();
+      // ✅ 9자 이상이면 7자 + … (총 8글자)
+      const display = (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
+      bar.textContent = display;
 
-// ✅ 9자 이상이면 7자 + …
-const display = (full.length >= 9)
-  ? (full.slice(0, 7) + "…")
-  : full;
+      // ✅ 모바일에서만 2줄 허용하도록 CSS(.sbar.two-line) 사용
+      //    5자 이상이면 2줄 허용 (9자 이상도 포함)
+      if(full.length >= 5){
+        bar.classList.add("two-line");
+      }
 
-bar.textContent = display;
+      bar.addEventListener("click",(e2)=>{
+        e2.stopPropagation();
+        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+      });
 
-// ✅ 5~8자면 모바일에서 2줄 허용
-if(full.length >= 5 && full.length <= 8){
-  bar.classList.add("two-line");
-} else {
-  bar.classList.remove("two-line");
-}
-
-
-  bar.addEventListener("click",(e2)=>{
-    e2.stopPropagation();
-    openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-  });
-
-  weekBars.appendChild(bar);
-});
-
+      weekBars.appendChild(bar);
+    });
 
     calGrid.appendChild(weekRow);
   }
@@ -624,8 +571,7 @@ deleteBtn.addEventListener("click", async ()=>{
   }
 });
 
-// -------------------- nav buttons --------------------
-
+// -------------------- buttons --------------------
 $("todayBtn").addEventListener("click", ()=>{
   const t = new Date();
   current = new Date(t.getFullYear(), t.getMonth(), 1);
@@ -639,7 +585,7 @@ $("todayBtn").addEventListener("click", ()=>{
 
   const THRESHOLD = 60;
   let startX = 0, startY = 0, dragging = false;
-  let locked = null; // null | "h" | "v"
+  let locked = null;
 
   function goPrev(){
     current = new Date(current.getFullYear(), current.getMonth()-1, 1);
@@ -715,3 +661,4 @@ $("todayBtn").addEventListener("click", ()=>{
 subscribeMembers();
 subscribeEvents();
 renderMemberButtons();
+renderCalendar();
