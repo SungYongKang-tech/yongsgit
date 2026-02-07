@@ -485,7 +485,14 @@ for(const ev of allEvents){
       bar.style.borderColor = c;
       bar.style.background  = c + "18";
       bar.style.color       = "#111"; // 글씨 검정
-      bar.textContent = ev.title || "(제목없음)";
+      const title = ev.title || "(제목없음)";
+bar.textContent = title;
+
+/* ✅ 8자 이상이면 2줄 허용 */
+if(title.length >= 8){
+  bar.classList.add("two-line");
+}
+
 
       bar.addEventListener("click",(e2)=>{
         e2.stopPropagation();
