@@ -519,7 +519,23 @@ if(title.length >= 8){
   bar.style.background  = c + "12";
   bar.style.color       = "#111";
 
-  bar.textContent = text || "(제목없음)";
+  // 제목 원본
+const full = (ev.title || "(제목없음)").trim();
+
+// ✅ 9자 이상이면 7자 + …
+const display = (full.length >= 9)
+  ? (full.slice(0, 7) + "…")
+  : full;
+
+bar.textContent = display;
+
+// ✅ 5~8자면 모바일에서 2줄 허용
+if(full.length >= 5 && full.length <= 8){
+  bar.classList.add("two-line");
+} else {
+  bar.classList.remove("two-line");
+}
+
 
   bar.addEventListener("click",(e2)=>{
     e2.stopPropagation();
