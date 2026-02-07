@@ -401,19 +401,57 @@ for(let i=0;i<7;i++){
       }
     }
 
-    const singleBars = []; // {row, col, ev}
-    for(const ev of allEvents){
-      const s = ev.startDate;
-      const e = ev.endDate || ev.startDate;
-      if(s !== e) continue; // 하루짜리만
+    function truncKorean(str, max){
+  const s = (str || "").trim();
+  if(s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
+}
 
-      const col = dateKeys.indexOf(s);
-      if(col < 0) continue;
+const singleBars = []; // {row, col, ev, twoLine, text}
 
-      const row = firstFreeRow(col);
-      occ[row][col] = true;
-      singleBars.push({ row, col, ev });
-    }
+// 싱글(하루) 일정들을 "위에서부터 빈 레인"에 배치
+for(const ev of allEvents){
+  const s = ev.startDate;
+  const e = ev.endDate || ev.startDate;
+  if(s !== e) continue;
+
+  const col = dateKeys.indexOf(s);
+  if(col < 0) continue;
+
+  let row = firstFreeRow(col);
+
+  // ✅ 제목 길이가 5자 이상이면 2줄 시도
+  const rawTitle = (ev.title || "").trim();
+  const wantTwoLine = rawTitle.length >= 5;
+
+  // row+1이 비어 있으면 2줄로 확장 가능
+  ensureRow(row);
+  ensureRow(row + 1);
+
+  const canTwoLine = wantTwoLine && !occ[row+1][col];
+
+  if(canTwoLine){
+    // 2레인 점유
+    occ[row][col] = true;
+    occ[row+1][col] = true;
+
+    singleBars.push({
+      row, col, ev,
+      twoLine: true,
+      text: truncKorean(rawTitle, 8) // 8자까지, 초과면 7자+…
+    });
+  }else{
+    // 1레인만 점유
+    occ[row][col] = true;
+
+    singleBars.push({
+      row, col, ev,
+      twoLine: false,
+      text: truncKorean(rawTitle, 4) // 4자까지, 초과면 3자+…
+    });
+  }
+}
+
 
     // --- weekBars 높이 = 최종 레인 수(멀티+싱글) ---
     const lanesCountFinal = occ.length;
@@ -459,29 +497,31 @@ for(let i=0;i<7;i++){
 
     // --- 싱글바(1칸짜리) 렌더: 빈 레인(row0) 있으면 위로 들어감 ---
     singleBars.forEach(p=>{
-      const { row, col, ev } = p;
+  const { row, col, ev, twoLine, text } = p;
 
-      const bar = document.createElement("div");
-      bar.className = "sbar";
+  const bar = document.createElement("div");
+  bar.className = "sbar" + (twoLine ? " two-line" : "");
 
-      const colW = (100/7);
-      bar.style.left  = `calc(${col * colW}% + 2px)`;
-      bar.style.width = `calc(${colW}% - 4px)`;
-      bar.style.top   = `${row * barRowPx}px`;
+  const colW = (100/7);
+  bar.style.left  = `calc(${col * colW}% + 2px)`;
+  bar.style.width = `calc(${colW}% - 4px)`;
+  bar.style.top   = `${row * barRowPx}px`;
 
-      const c = getMemberColor(ev.owner);
-      bar.style.borderColor = c;
-      bar.style.background  = c + "12";
-      bar.style.color       = "#111";
-      bar.textContent = ev.title || "(제목없음)";
+  const c = getMemberColor(ev.owner);
+  bar.style.borderColor = c;
+  bar.style.background  = c + "12";
+  bar.style.color       = "#111";
 
-      bar.addEventListener("click",(e2)=>{
-        e2.stopPropagation();
-        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-      });
+  bar.textContent = text || "(제목없음)";
 
-      weekBars.appendChild(bar);
-    });
+  bar.addEventListener("click",(e2)=>{
+    e2.stopPropagation();
+    openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+  });
+
+  weekBars.appendChild(bar);
+});
+
 
     calGrid.appendChild(weekRow);
   }
