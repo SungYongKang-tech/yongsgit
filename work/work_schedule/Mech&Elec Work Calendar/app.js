@@ -562,14 +562,7 @@ deleteBtn.addEventListener("click", async ()=>{
 });
 
 // -------------------- nav buttons --------------------
-$("prevBtn").addEventListener("click", ()=>{
-  current = new Date(current.getFullYear(), current.getMonth()-1, 1);
-  applyMonthFilterAndRender();
-});
-$("nextBtn").addEventListener("click", ()=>{
-  current = new Date(current.getFullYear(), current.getMonth()+1, 1);
-  applyMonthFilterAndRender();
-});
+
 $("todayBtn").addEventListener("click", ()=>{
   const t = new Date();
   current = new Date(t.getFullYear(), t.getMonth(), 1);
