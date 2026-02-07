@@ -140,18 +140,16 @@ function renderMemberButtons(){
     const color = getMemberColor(m.name);
 
     if(m.name === selectedName){
-      // 선택된 사람: 배경을 진하게
-      btn.style.background = color;
-      btn.style.borderColor = color;
-      btn.style.color = "#fff";
-      btn.style.boxShadow = `0 6px 16px ${color}55`;
-    } else {
-      // 미선택: 테두리/글자만 색(배경은 흰색)
-      btn.style.background = "#fff";
-      btn.style.borderColor = color;
-      btn.style.color = color;
-      btn.style.boxShadow = "none";
-    }
+  btn.style.background = color;
+  btn.style.borderColor = color;
+  btn.style.color = "#111";   // ✅ 선택돼도 글씨 검정
+  btn.style.boxShadow = `0 6px 16px ${color}55`;
+} else {
+  btn.style.background = "#fff";
+  btn.style.borderColor = color;
+  btn.style.color = "#111";   // ✅ 항상 검정
+  btn.style.boxShadow = "none";
+}
 
     btn.onclick = ()=>{
       selectedName = m.name;
