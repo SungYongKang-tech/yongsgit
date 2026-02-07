@@ -281,43 +281,44 @@ function renderCalendar(){
     const dayEls = [];
     const dateKeys = [];
     for(let i=0;i<7;i++){
-      const dateKey = ymd(cursor);
-      dateKeys.push(dateKey);
+  const dateKey = ymd(cursor);
+  dateKeys.push(dateKey);
 
-     // ✅ 오늘 날짜 표시
-const today = new Date();
-const todayKey = ymd(today);
+  // ✅ day 엘리먼트 생성 (이게 없으면 day is not defined 에러)
+  const day = document.createElement("div");
+  day.className = "day";
 
-if(dateKey === todayKey){
-  day.classList.add("today");
+  // ✅ 오늘 날짜 표시 (day 만든 다음에!)
+  const todayKey = ymd(new Date());
+  if(dateKey === todayKey){
+    day.classList.add("today");
+  }
+
+  const inMonth = (cursor.getMonth() === m);
+  if(!inMonth) day.classList.add("muted");
+
+  const num = document.createElement("div");
+  num.className = "day-num";
+  num.textContent = cursor.getDate();
+
+  const items = document.createElement("div");
+  items.className = "day-items";
+
+  day.appendChild(num);
+  day.appendChild(items);
+
+  day.addEventListener("click", (e)=>{
+    if(e.target.closest(".mbar")) return;
+    if(e.target.closest(".day-item")) return;
+    openModal({ dateKey });
+  });
+
+  weekRow.appendChild(day);
+  dayEls.push(day);
+
+  cursor.setDate(cursor.getDate()+1);
 }
 
-
-      const inMonth = (cursor.getMonth() === m);
-      if(!inMonth) day.classList.add("muted");
-
-      const num = document.createElement("div");
-      num.className = "day-num";
-      num.textContent = cursor.getDate();
-
-      const items = document.createElement("div");
-      items.className = "day-items";
-
-      day.appendChild(num);
-      day.appendChild(items);
-
-      // 날짜 클릭 → 추가
-      day.addEventListener("click", (e)=>{
-        if(e.target.closest(".mbar")) return;
-        if(e.target.closest(".day-item")) return;
-        openModal({ dateKey });
-      });
-
-      weekRow.appendChild(day);
-      dayEls.push(day);
-
-      cursor.setDate(cursor.getDate()+1);
-    }
 
     // ===== (1) 하루짜리 이벤트 (start==end) 각 날짜 칸 안 표시
     for(const ev of allEvents){
