@@ -36,6 +36,14 @@ const editHint = $("editHint");
 
 let editing = { dateKey: null, eventId: null };
 
+// ✅ 작성자별 색상 고정 매핑
+const MEMBER_COLORS = {
+  "성용": "#4da3ff",   // 하늘색
+  "서진": "#ff7eb6",   // 분홍색
+  "무성": "#7ed957"    // 연두색
+};
+
+
 // ---------- utils ----------
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
@@ -54,10 +62,21 @@ function addDays(d, n){
   x.setDate(x.getDate()+n);
   return x;
 }
+
 function getMemberColor(name){
+  // 1순위: 고정 색상표
+  if (MEMBER_COLORS[name]) {
+    return MEMBER_COLORS[name];
+  }
+
+  // 2순위: Firebase 멤버 컬러
   const m = membersAll.find(x => x.name === name);
-  return m?.color || "#1f6feb";
+  if (m?.color) return m.color;
+
+  // 기본색
+  return "#4da3ff";
 }
+
 
 function monthTitleText(){
   return `${current.getFullYear()}.${pad2(current.getMonth()+1)}`;
@@ -314,10 +333,12 @@ function renderCalendar(){
     item.className = "day-item";
     item.textContent = ev.title || "(제목없음)";
 
-    const c = getMemberColor(ev.owner);
-    item.style.borderColor = c;
-    item.style.color = c;
-    item.style.background = c + "12";
+    const userColor = getMemberColor(ev.owner);
+
+item.style.background = userColor;
+item.style.borderColor = userColor;
+item.style.color = "#fff";
+
 
     item.addEventListener("click",(e)=>{
       e.stopPropagation();
@@ -393,10 +414,12 @@ function renderCalendar(){
       bar.style.width = `calc(${widthPct}% - 12px)`;  // 양쪽 패딩 보정
       bar.style.top = `${row * (rowH + gapY)}px`;
 
-      const c = getMemberColor(seg.owner);
-      bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = c;
+      const userColor = getMemberColor(seg.owner);
+
+bar.style.background = userColor;   // 배경색
+bar.style.borderColor = userColor;
+bar.style.color = "#fff";           // 글자 흰색
+
 
       // ✅ 멀티일정은 “한 줄 바”에 텍스트 길게 표시
       bar.textContent = seg.title || "(제목없음)";
