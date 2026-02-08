@@ -80,8 +80,7 @@ function subscribeTypes(){
     // ✅ 선택된 타입 중 삭제된 것 정리
     selectedTypes = new Set([...selectedTypes].filter(t => TYPE_LIST.includes(t)));
     saveSelectedTypes();
-
-    renderTypeButtons();
+    renderTypeSelectOptions();   // ✅ 추가 (핵심)
     renderCalendar();
   });
 }
@@ -142,6 +141,28 @@ function renderTypeButtons(){
     typeBar.appendChild(btn);
   });
 }
+
+function renderTypeSelectOptions(selected = ""){
+  if(!fType) return;
+
+  const prev = selected || fType.value || "";
+
+  fType.innerHTML = "";
+  TYPE_LIST.forEach(t=>{
+    const opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = t;
+    fType.appendChild(opt);
+  });
+
+  // ✅ 기존 선택값이 아직 존재하면 유지, 없으면 첫 항목으로
+  if(TYPE_LIST.includes(prev)){
+    fType.value = prev;
+  } else {
+    fType.value = TYPE_LIST[0] || "";
+  }
+}
+
 
 /* =========================
    Holidays (API + Admin merge)
@@ -288,10 +309,14 @@ function getSingleBarRule(title){
    Modal
 ========================= */
 function openModal({dateKey, eventId=null, event=null}){
+ 
   if(!selectedName){
     alert("상단에서 이름을 먼저 선택해 주세요.");
     return;
   }
+
+ renderTypeSelectOptions(); // ✅ 모달 열 때 최신 TYPE_LIST 반영
+
 
   editing = { dateKey, eventId };
   modalBack.classList.add("show");
@@ -944,5 +969,6 @@ subscribeTypes();
 subscribeAdminHolidays();
 
 renderMemberButtons();
-renderTypeButtons();
+renderTypeButtons();          // ✅ 추가
+renderTypeSelectOptions();     // ✅ OK
 renderCalendar();
