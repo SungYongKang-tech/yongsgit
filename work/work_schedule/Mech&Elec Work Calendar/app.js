@@ -39,6 +39,8 @@ const saveBtn = $("saveBtn");
 const deleteBtn = $("deleteBtn");
 const closeBtn = $("closeBtn");
 const editHint = $("editHint");
+const LS_UNLOCK = "mecal_unlocked_members"; // ✅ PIN 통과한 멤버들
+
 
 // ✅ 종일 체크박스(HTML에 id="allDayChk" 필요)
 const allDayChk = $("allDayChk");
@@ -424,6 +426,44 @@ modalBack?.addEventListener("click", (e) => {
 });
 closeBtn?.addEventListener("click", closeModal);
 
+function loadUnlocked() {
+  try {
+    const raw = localStorage.getItem(LS_UNLOCK);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+let unlockedMembers = loadUnlocked();
+
+function saveUnlocked() {
+  localStorage.setItem(LS_UNLOCK, JSON.stringify([...unlockedMembers]));
+}
+
+// ✅ PIN 확인 (간단 prompt 버전)
+async function ensureMemberUnlocked(member) {
+  // PIN이 없으면 제한 없음
+  console.log("PIN check member=", member); // ✅ 추가
+  const pin = (member?.pin || "").trim();
+  if (!pin) return true;
+
+  // 이미 통과했으면 OK
+  if (unlockedMembers.has(member.id)) return true;
+
+  const input = prompt(`${member.name} 비밀번호(PIN)를 입력해 주세요.`);
+  if (input === null) return false; // 취소
+  if (String(input).trim() !== pin) {
+    alert("비밀번호가 일치하지 않습니다.");
+    return false;
+  }
+
+  unlockedMembers.add(member.id);
+  saveUnlocked();
+  return true;
+}
+
+
 /* =========================
    Members
 ========================= */
@@ -456,7 +496,11 @@ function renderMemberButtons() {
       btn.style.boxShadow = "none";
     }
 
-    btn.onclick = () => {
+    // ✅ 여기만 변경
+    btn.onclick = async () => {
+      const ok = await ensureMemberUnlocked(m);
+      if (!ok) return;
+
       selectedName = m.name;
       localStorage.setItem(LS_NAME, selectedName);
       renderMemberButtons();
@@ -466,10 +510,19 @@ function renderMemberButtons() {
   });
 }
 
+
 function subscribeMembers() {
   onValue(ref(db, "config/members"), (snap) => {
     const obj = snap.val() || {};
-    const list = Object.entries(obj).map(([id, v]) => ({ id, ...v }));
+
+    // ✅ id를 반드시 포함
+    const list = Object.entries(obj).map(([id, v]) => ({
+      id,
+      ...(v || {}),
+      pin: (v?.pin || "").toString().trim(), // ✅ pin 문자열 보정
+      name: (v?.name || "").toString().trim(),
+    }));
+
     list.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
     membersAll = list;
     members = list.filter((x) => x.active !== false);
@@ -478,6 +531,7 @@ function subscribeMembers() {
     renderCalendar();
   });
 }
+
 
 /* =========================
    Events
