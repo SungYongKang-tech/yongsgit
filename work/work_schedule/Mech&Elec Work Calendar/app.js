@@ -465,8 +465,9 @@ function renderCalendar(){
       bar.className = "sbar";
 
       const colW = (100/7);
-      bar.style.left  = `calc(${col * colW}% + 2px)`;
-      bar.style.width = `calc(${colW}% - 4px)`;
+      bar.style.left  = `calc(${col * colW}% + 1px)`;
+bar.style.width = `calc(${colW}% - 2px)`;
+
       bar.style.top   = `${row * barRowPx}px`;
 
       const c = getMemberColor(ev.owner);
@@ -475,15 +476,14 @@ function renderCalendar(){
       bar.style.color       = "#111";
 
       const full = (ev.title || "(제목없음)").trim();
-      // ✅ 9자 이상이면 7자 + … (총 8글자)
-      const display = (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
-      bar.textContent = display;
+const display = (full.length >= 9) ? (full.slice(0,7) + "…") : full;
 
-      // ✅ 모바일에서만 2줄 허용하도록 CSS(.sbar.two-line) 사용
-      //    5자 이상이면 2줄 허용 (9자 이상도 포함)
-      if(full.length >= 5){
-        bar.classList.add("two-line");
-      }
+bar.textContent = display;
+
+// ✅ 5자 이상이면 two-line (모바일에서만 2줄로 보임)
+if(full.length >= 5) bar.classList.add("two-line");
+else bar.classList.remove("two-line");
+
 
       bar.addEventListener("click",(e2)=>{
         e2.stopPropagation();
