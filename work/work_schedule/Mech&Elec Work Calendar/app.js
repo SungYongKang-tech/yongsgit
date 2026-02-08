@@ -79,9 +79,10 @@ function subscribeTypes(){
 
     // ✅ 선택된 타입 중 삭제된 것 정리
     selectedTypes = new Set([...selectedTypes].filter(t => TYPE_LIST.includes(t)));
-    saveSelectedTypes();
-    renderTypeSelectOptions();   // ✅ 추가 (핵심)
-    renderCalendar();
+    renderTypeButtons();
+renderTypeSelectOptions();
+renderCalendar();
+
   });
 }
 
@@ -969,6 +970,6 @@ subscribeTypes();
 subscribeAdminHolidays();
 
 renderMemberButtons();
-renderTypeButtons();          // ✅ 추가
-renderTypeSelectOptions();     // ✅ OK
+renderTypeButtons();          // ✅ 반드시
+renderTypeSelectOptions();    // ✅ 모달 select
 renderCalendar();
