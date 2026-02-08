@@ -282,11 +282,9 @@ function getSingleBarRule(title) {
   const isMobile = isMobileNow();
 
   if (isMobile) {
-    // ✅ 9자 이상이면: 2레인 + 3줄 + 8자+… (마지막에 … 보장)
+    // ✅ 모바일은 5자 이상이면 2레인, 텍스트는 항상 3줄까지 허용
     if (full.length >= 9) return { rows: 2, textClamp: 3, display: full.slice(0, 8) + "…" };
-    // ✅ 5~8자: 2레인 + 2줄
-    if (full.length >= 5) return { rows: 2, textClamp: 2, display: full };
-    // ✅ 1~4자: 1레인 + 1줄
+    if (full.length >= 5) return { rows: 2, textClamp: 3, display: full }; // ✅ 2 → 3
     return { rows: 1, textClamp: 1, display: full };
   }
 
@@ -298,6 +296,7 @@ function getSingleBarRule(title) {
     display: compactTitleSingle(full),
   };
 }
+
 
 /* =========================
    ✅ 종일/시간 입력 UX
@@ -809,7 +808,7 @@ function renderCalendar() {
 
       let cls = "sbar";
       if (!p.isHoliday && p.rows === 2) cls += " two-row";
-      if (!p.isHoliday && p.textClamp === 2) cls += " two-text";
+      // ❌ 삭제: if (!p.isHoliday && p.textClamp === 2) cls += " two-text";
       if (!p.isHoliday && p.textClamp === 3) cls += " three-text";
       bar.className = cls;
 
