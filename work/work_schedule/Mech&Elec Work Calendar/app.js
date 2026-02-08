@@ -4,22 +4,25 @@ import {
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 /* =========================
-   LocalStorage keys / Types
-========================= */
-const LS_NAME = "mecal_selected_name";
-
-const LS_TYPES = "mecal_selected_types";
-const TYPE_LIST = ["근태", "회사일정", "작업일정"];
-
-/* =========================
-   DOM helper (⚠️ 반드시 위에)
+   DOM helper (✅ 반드시 최상단)
 ========================= */
 const $ = (id) => document.getElementById(id);
 
 /* =========================
+   LocalStorage keys / Types
+========================= */
+const LS_NAME  = "mecal_selected_name";
+const LS_TYPES = "mecal_selected_types";
+
+// ✅ 화면/필터에 사용할 최종 분야 3개
+const TYPE_LIST = ["근태", "회사일정", "작업일정"];
+
+/* =========================
    DOM refs
 ========================= */
+// ✅ 기존 “휴가/작업/공정” 버튼이 들어있던 영역(컨테이너) id가 typeBar 라고 가정
 const typeBar   = $("typeBar");
+
 const memberBar = $("memberBar");
 const monthTitle= $("monthTitle");
 const calGrid   = $("calGrid");
@@ -73,33 +76,57 @@ function saveSelectedTypes(){
   localStorage.setItem(LS_TYPES, JSON.stringify([...selectedTypes]));
 }
 
+/* =========================
+   ✅ 기존 버튼 재활용(휴가/작업/공정 버튼)
+   - HTML에 이미 3개의 버튼이 있다고 가정하고 텍스트만 바꿔서 씁니다.
+   - 만약 버튼이 없으면(0개) 자동으로 3개 만들어서 붙입니다.
+========================= */
+function getTypeButtons(){
+  if(!typeBar) return [];
+  // ✅ 기존 버튼이 <button>이라면 이걸로 잡힙니다.
+  // 버튼이 a/div이면 selector를 바꾸셔야 합니다.
+  return Array.from(typeBar.querySelectorAll("button"));
+}
+
 function renderTypeButtons(){
   if(!typeBar) return;
 
-  typeBar.innerHTML = "";
+  let btns = getTypeButtons();
 
-  TYPE_LIST.forEach(type=>{
-    const btn = document.createElement("button");
-    btn.className = "type-btn" + (selectedTypes.has(type) ? " active" : "");
+  // ✅ 기존 버튼이 없으면 fallback: 새로 만들어 붙이기
+  if(btns.length === 0){
+    typeBar.innerHTML = "";
+    TYPE_LIST.forEach(type=>{
+      const btn = document.createElement("button");
+      btn.className = "type-btn";
+      btn.textContent = type;
+      typeBar.appendChild(btn);
+    });
+    btns = getTypeButtons();
+  }
+
+  // ✅ 첫 3개만 사용
+  btns.slice(0, 3).forEach((btn, idx)=>{
+    const type = TYPE_LIST[idx];
     btn.textContent = type;
 
+    // 클래스 정리/부여
+    btn.classList.add("type-btn");
+    btn.classList.toggle("active", selectedTypes.has(type));
+
+    // ✅ 클릭 이벤트 덮어쓰기 (중복 방지)
     btn.onclick = ()=>{
       if(selectedTypes.has(type)) selectedTypes.delete(type);
       else selectedTypes.add(type);
 
       saveSelectedTypes();
       renderTypeButtons();
-      renderCalendar(); // ✅ 즉시 갱신
+      renderCalendar();
     };
-
-    typeBar.appendChild(btn);
   });
 
-  const hint = document.createElement("span");
-  hint.className = "small";
-  hint.style.marginLeft = "6px";
-  hint.textContent = (selectedTypes.size === 0) ? "분야 미선택: 전체 표시" : "선택 분야만 표시";
-  typeBar.appendChild(hint);
+  // ✅ 혹시 기존 버튼이 4개 이상이면 나머지는 숨김(원치 않으면 삭제)
+  btns.slice(3).forEach(btn => { btn.style.display = "none"; });
 }
 
 /* =========================
@@ -143,7 +170,7 @@ async function loadKoreanHolidays(year){
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
-// 작성자 이름 → 고정 색상 매핑 (✅ 색상은 작성자 기준)
+// ✅ 색상은 작성자 기준 (분야와 무관)
 function getMemberColor(name){
   const COLOR_MAP = {
     "성용": "#55B7FF",
@@ -162,7 +189,6 @@ function monthRangeKeys(){
   return { startKey: ymd(start), endKey: ymd(end) };
 }
 
-// eventsByDate(현재월 필터) → 리스트 평탄화
 function toEventList(){
   const list = [];
   Object.entries(eventsByDate || {}).forEach(([startDate, objs])=>{
@@ -175,13 +201,13 @@ function toEventList(){
   return list;
 }
 
-// 멀티(바)용: 9자 이상이면 7자+… (총 8자 표시)
+// 멀티(바)용: 9자 이상이면 7자+… (총 8자)
 function compactTitleMulti(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
 
-// 싱글(1일)용: 16자까지 그대로 / 17자부터 15자 + …
+// 싱글(1일)용: 16자까지 / 17자부터 15자+…
 function compactTitleSingle(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 17) ? (full.slice(0, 15) + "…") : full;
@@ -206,8 +232,11 @@ function openModal({dateKey, eventId=null, event=null}){
   if(event){
     modalTitle.textContent = "일정 수정";
 
-    // ✅ 분야 기본값을 "작업일정"으로 정리 (원하시는 기본값으로)
-    fType.value  = event.type || "작업일정";
+    // ✅ 분야 기본값/호환: 기존 데이터가 휴가/작업/공정일 수도 있으니 매핑
+    const rawType = (event.type || "").trim();
+    const mappedType = mapLegacyType(rawType) || "작업일정";
+
+    fType.value  = mappedType;
     fStart.value = event.start || "";
     fEnd.value   = event.end || "";
     fTitle.value = event.title || "";
@@ -224,7 +253,7 @@ function openModal({dateKey, eventId=null, event=null}){
   }else{
     modalTitle.textContent = "일정 입력";
 
-    fType.value  = "작업일정";  // ✅ 신규 기본 분야
+    fType.value  = "작업일정";
     fStart.value = "";
     fEnd.value   = "";
     fTitle.value = "";
@@ -243,6 +272,20 @@ function closeModal(){
 
 modalBack.addEventListener("click",(e)=>{ if(e.target===modalBack) closeModal(); });
 closeBtn.addEventListener("click", closeModal);
+
+/* =========================
+   ✅ 기존 타입(휴가/작업/공정) → 새 타입 매핑
+   - 과거 데이터가 섞여 있어도 필터/표시가 되게 해줌
+========================= */
+function mapLegacyType(t){
+  if(!t) return "";
+  if(t === "휴가") return "근태";
+  if(t === "작업") return "작업일정";
+  if(t === "공정") return "회사일정";
+  // 이미 새 타입이면 그대로
+  if(TYPE_LIST.includes(t)) return t;
+  return t; // 알 수 없는 값은 그대로 두되, 필터 선택에 없으면 안 보일 수 있음
+}
 
 /* =========================
    Members
@@ -297,6 +340,7 @@ function subscribeMembers(){
       selectedName = members[0]?.name || "";
       localStorage.setItem(LS_NAME, selectedName);
     }
+
     renderMemberButtons();
     renderCalendar();
   });
@@ -322,6 +366,7 @@ async function applyMonthFilterAndRender(){
       eventsByDate[dateKey] = eventsAll[dateKey];
     }
   });
+
   renderCalendar();
 }
 
@@ -375,10 +420,16 @@ function renderCalendar(){
 
   const allEventsRaw = toEventList();
 
-  // ✅ 분야 필터: 선택 0개면 전체, 있으면 선택된 것만
+  // ✅ 필터 적용(과거 타입도 매핑)
+  const allEventsNormalized = allEventsRaw.map(ev=>{
+    const t = mapLegacyType((ev.type || "").trim()) || "작업일정";
+    return { ...ev, type: t };
+  });
+
+  // ✅ 선택 0개면 전체, 있으면 선택된 것만
   const allEvents = (selectedTypes.size === 0)
-    ? allEventsRaw
-    : allEventsRaw.filter(ev => selectedTypes.has(ev.type || "작업일정"));
+    ? allEventsNormalized
+    : allEventsNormalized.filter(ev => selectedTypes.has(ev.type));
 
   calGrid.innerHTML = "";
 
@@ -486,7 +537,6 @@ function renderCalendar(){
       if(!occ[r]) occ[r] = new Array(7).fill(false);
     }
 
-    // ✅ 싱글바 생성 (5자 이상이면 2줄 레인 2칸 점유)
     const singleBars = []; // {row, col, ev, twoLine, display}
 
     for (const ev of allEvents) {
@@ -501,7 +551,6 @@ function renderCalendar(){
       const display = compactTitleSingle(full);
       const wantTwoLine = full.length >= 5;
 
-      // 2줄이면 (row, row+1) 둘 다 비어있는 곳을 찾음
       let row = 0;
       while (true) {
         ensureRow(row);
@@ -515,7 +564,6 @@ function renderCalendar(){
         row++;
       }
 
-      // 점유
       occ[row][col] = true;
       if (wantTwoLine) {
         ensureRow(row + 1);
@@ -612,8 +660,12 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
+  // ✅ 모달에서 넘어오는 타입도 과거값이면 저장 시 새 값으로 정리
+  const rawType = (fType.value || "").trim();
+  const normalizedType = mapLegacyType(rawType) || "작업일정";
+
   const payload = {
-    type: fType.value || "작업일정", // ✅ 분야 저장
+    type: normalizedType,
     title: (fTitle.value || "").trim(),
     detail: (fDetail.value || "").trim(),
     owner: selectedName,
@@ -770,6 +822,7 @@ $("todayBtn")?.addEventListener("click", ()=>{
 ========================= */
 subscribeMembers();
 subscribeEvents();
+
 renderMemberButtons();
-renderTypeButtons(); // ✅ 분야 버튼
+renderTypeButtons();   // ✅ 기존 버튼 3개를 근태/회사일정/작업일정으로 교체 + 필터 토글 연결
 renderCalendar();
