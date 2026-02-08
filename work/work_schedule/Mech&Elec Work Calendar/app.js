@@ -458,40 +458,41 @@ function renderCalendar(){
     });
 
     // --- 싱글바 렌더(텍스트 규칙 통일) ---
-    singleBars.forEach(p=>{
-      const { row, col, ev } = p;
+    // --- 싱글바(1칸짜리) 렌더 ---
+singleBars.forEach(p=>{
+  const { row, col, ev } = p;
 
-      const bar = document.createElement("div");
-      bar.className = "sbar";
+  const bar = document.createElement("div");
+  bar.className = "sbar";
 
-      const colW = (100/7);
-      bar.style.left  = `calc(${col * colW}% + 1px)`;
-bar.style.width = `calc(${colW}% - 2px)`;
+  const colW = (100/7);
+  bar.style.left  = `calc(${col * colW}% + 2px)`;
+  bar.style.width = `calc(${colW}% - 4px)`;
+  bar.style.top   = `${row * barRowPx}px`;
 
-      bar.style.top   = `${row * barRowPx}px`;
+  const c = getMemberColor(ev.owner);
+  bar.style.borderColor = c;
+  bar.style.background  = c + "12";
+  bar.style.color       = "#111";
 
-      const c = getMemberColor(ev.owner);
-      bar.style.borderColor = c;
-      bar.style.background  = c + "12";
-      bar.style.color       = "#111";
+  const full = (ev.title || "(제목없음)").trim();
 
-      const full = (ev.title || "(제목없음)").trim();
-const display = (full.length >= 9) ? (full.slice(0,7) + "…") : full;
+  // ✅ 9자 이상이면 7자 + … (총 8자 보이기)
+  const display = (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
+  bar.textContent = display;
 
-bar.textContent = display;
+  // ✅ 5자 이상이면 모바일에서 2줄 허용
+  if(full.length >= 5) bar.classList.add("two-line");
+  else bar.classList.remove("two-line");
 
-// ✅ 5자 이상이면 two-line (모바일에서만 2줄로 보임)
-if(full.length >= 5) bar.classList.add("two-line");
-else bar.classList.remove("two-line");
+  bar.addEventListener("click",(e2)=>{
+    e2.stopPropagation();
+    openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+  });
 
+  weekBars.appendChild(bar);
+});
 
-      bar.addEventListener("click",(e2)=>{
-        e2.stopPropagation();
-        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-      });
-
-      weekBars.appendChild(bar);
-    });
 
     calGrid.appendChild(weekRow);
   }
