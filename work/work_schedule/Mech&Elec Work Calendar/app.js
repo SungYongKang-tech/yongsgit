@@ -262,19 +262,20 @@ function getSingleBarRule(title){
   const full = (title || "(제목없음)").trim();
   const isMobile = isMobileNow();
 
-  if (isMobile) {
-  if (full.length >= 16) {
-    // ✅ 여기서 '…'를 만들지 않음 (중간 … 방지)
-    return { rows: 2, textClamp: 3, display: full };
+  if(isMobile){
+    // ✅ 9자 이상이면: 2레인 + 3줄 + 8자+… (마지막에 … 보장)
+    if(full.length >= 9){
+      return { rows: 2, textClamp: 3, display: full.slice(0, 8) + "…" };
+    }
+    // ✅ 5~8자: 2레인 + 2줄 (그대로)
+    if(full.length >= 5){
+      return { rows: 2, textClamp: 2, display: full };
+    }
+    // ✅ 1~4자: 1레인 + 1줄
+    return { rows: 1, textClamp: 1, display: full };
   }
-  if (full.length >= 5) {
-    return { rows: 2, textClamp: 2, display: full };
-  }
-  return { rows: 1, textClamp: 1, display: full };
-}
 
-
-  // PC는 기존 느낌 유지
+  // PC는 기존 유지
   const wantTwo = full.length >= 12;
   return {
     rows: wantTwo ? 2 : 1,
