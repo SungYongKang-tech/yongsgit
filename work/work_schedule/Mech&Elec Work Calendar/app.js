@@ -366,11 +366,11 @@ function openModal({ dateKey, eventId = null, event = null }) {
 
   const startKey = (event?.startDate || dateKey);
 
-  editing = {
-    dateKey: startKey,          // ✅ 현재 시작일(변경 가능)
-    eventId,
-    originalDateKey: startKey,  // ✅ 원래 시작일(이동 판단용)
-  };
+editing = {
+  dateKey: startKey,          // 현재(변경될 수 있는) 시작일
+  eventId,
+  originalDateKey: event?.startDate || dateKey, // ✅ 원래 저장 경로(고정)
+};
 
   modalBack?.classList.add("show");
 
@@ -431,6 +431,29 @@ fDate?.addEventListener("change", () => {
   if (fEndDate) {
     if (!fEndDate.value || fEndDate.value < v) fEndDate.value = v;
   }
+});
+
+function syncEndDateMin() {
+  const s = (fDate?.value || "").trim();
+  if (!s || !fEndDate) return;
+
+  // ✅ 종료일 달력에서 시작일 이전 날짜 선택 못하게
+  fEndDate.min = s;
+
+  // ✅ 종료일이 비었거나 시작일보다 빠르면 자동으로 시작일로 맞춤
+  if (!fEndDate.value || fEndDate.value < s) fEndDate.value = s;
+}
+
+fDate?.addEventListener("change", () => {
+  const s = (fDate.value || "").trim();
+  if (!s) return;
+  editing.dateKey = s;        // ✅ 현재 시작일만 바뀜
+  syncEndDateMin();
+});
+
+fEndDate?.addEventListener("change", () => {
+  // 종료일이 시작일보다 빠르면 방지
+  syncEndDateMin();
 });
 
 
@@ -953,24 +976,28 @@ saveBtn?.addEventListener("click", async () => {
 
   try {
     if (editing.eventId) {
-      // ✅ 기존 일정 수정
-      const oldKey = editing.originalDateKey || editing.dateKey;
-      const ev = eventsByDate?.[oldKey]?.[editing.eventId] || eventsAll?.[oldKey]?.[editing.eventId];
-      if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
-      if (ev.owner !== selectedName) { alert("작성자 본인만 수정할 수 있습니다."); return; }
+  const oldKey = editing.originalDateKey;     // ✅ 원래 저장 경로(고정)
+  const newKey = startKey;                    // ✅ 사용자가 바꾼 시작일
 
-      if (startKey !== oldKey) {
-        // ✅ 시작일이 바뀌면: 새 경로에 저장 후, 기존 경로 삭제(=이동)
-        await set(ref(db, `events/${startKey}/${editing.eventId}`), payload);
-        await remove(ref(db, `events/${oldKey}/${editing.eventId}`));
-      } else {
-        await update(ref(db, `events/${oldKey}/${editing.eventId}`), payload);
-      }
-    } else {
-      // ✅ 신규 등록: startKey 경로에 저장
-      const newRef = push(ref(db, `events/${startKey}`));
-      await set(newRef, payload);
-    }
+  const ev = eventsAll?.[oldKey]?.[editing.eventId];
+  if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
+  if (ev.owner !== selectedName) { alert("작성자 본인만 수정할 수 있습니다."); return; }
+
+  if (newKey !== oldKey) {
+    // ✅ 이동 저장: 새 경로 set → 기존 경로 remove
+    await set(ref(db, `events/${newKey}/${editing.eventId}`), payload);
+    await remove(ref(db, `events/${oldKey}/${editing.eventId}`));
+  } else {
+    // ✅ 같은 날짜면 update
+    await update(ref(db, `events/${oldKey}/${editing.eventId}`), payload);
+  }
+
+} else {
+  // 신규
+  const newRef = push(ref(db, `events/${startKey}`));
+  await set(newRef, payload);
+}
+
 
     closeModal();
   } catch (err) {
@@ -981,28 +1008,25 @@ saveBtn?.addEventListener("click", async () => {
 
 
 deleteBtn?.addEventListener("click", async () => {
-  const { dateKey, eventId } = editing;
-  if (!dateKey || !eventId) return;
+  const eventId = editing.eventId;
+  const key = editing.originalDateKey; // ✅ 원래 키로 삭제
 
-  const ev = eventsByDate?.[dateKey]?.[eventId];
-  if (!ev) {
-    alert("데이터를 찾을 수 없습니다.");
-    return;
-  }
-  if (ev.owner !== selectedName) {
-    alert("작성자 본인만 삭제할 수 있습니다.");
-    return;
-  }
+  if (!key || !eventId) return;
+
+  const ev = eventsAll?.[key]?.[eventId];
+  if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
+  if (ev.owner !== selectedName) { alert("작성자 본인만 삭제할 수 있습니다."); return; }
   if (!confirm("삭제하시겠습니까?")) return;
 
   try {
-    await remove(ref(db, `events/${dateKey}/${eventId}`));
+    await remove(ref(db, `events/${key}/${eventId}`));
     closeModal();
   } catch (err) {
     console.error(err);
     alert("삭제 실패: " + (err?.message || err));
   }
 });
+
 
 /* =========================
    Buttons
