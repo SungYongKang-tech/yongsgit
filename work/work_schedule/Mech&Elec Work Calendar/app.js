@@ -221,6 +221,7 @@ function compactTitleMulti(title){
   return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
 
+// ✅ PC(기본) 싱글 표시용: 16자까지 / 17자부터 15자+…
 function compactTitleSingle(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 17) ? (full.slice(0, 15) + "…") : full;
@@ -236,6 +237,37 @@ function mapLegacyType(t){
   if(t === "공정") return "회사일정";
   if(TYPE_LIST.includes(t)) return t;
   return t;
+}
+
+/* =========================
+   ✅ 모바일 싱글바 규칙 (핵심)
+   - 레인 점유는 최대 2칸(rows:1~2)
+   - 글씨 줄수는 최대 3줄(textClamp:1~3)
+   - 모바일:
+     * 5~15자: 2레인 + 2줄
+     * 16자 이상: 2레인 + 3줄 + 15자+…
+========================= */
+function getSingleBarRule(title){
+  const full = (title || "(제목없음)").trim();
+  const isMobile = window.matchMedia("(max-width: 640px)").matches;
+
+  if(isMobile){
+    if(full.length >= 16){
+      return { rows: 2, textClamp: 3, display: full.slice(0, 15) + "…" };
+    }
+    if(full.length >= 5){
+      return { rows: 2, textClamp: 2, display: full };
+    }
+    return { rows: 1, textClamp: 1, display: full };
+  }
+
+  // PC는 기존 느낌 유지 (원하시면 PC도 동일 규칙으로 바꿀 수 있음)
+  const wantTwo = full.length >= 12;
+  return {
+    rows: wantTwo ? 2 : 1,
+    textClamp: wantTwo ? 2 : 1,
+    display: compactTitleSingle(full)
+  };
 }
 
 /* =========================
@@ -277,7 +309,6 @@ function openModal({dateKey, eventId=null, event=null}){
   }else{
     modalTitle.textContent = "일정 입력";
 
-    // ✅ 첫번째 타입 기본값
     fType.value  = TYPE_LIST[0] || "작업일정";
     fStart.value = "";
     fEnd.value   = "";
@@ -426,7 +457,7 @@ function placeInLanes(segments){
 }
 
 /* =========================
-   Render Calendar (✅ 완성본)
+   Render Calendar
 ========================= */
 function renderCalendar(){
   if(!calGrid || !monthTitle) return;
@@ -555,7 +586,8 @@ function renderCalendar(){
       if(!occ[r]) occ[r] = new Array(7).fill(false);
     }
 
-    const singleBars = []; // {row, col, ev, twoLine, display, isHoliday, isFestival, tooltip}
+    // ✅ unified singleBars: rows(점유 1~2), textClamp(표시 1~3)
+    const singleBars = [];
 
     // ✅ 1) 기존 일정(하루짜리)
     for (const ev of allEvents) {
@@ -566,16 +598,17 @@ function renderCalendar(){
       const col = dateKeys.indexOf(s);
       if (col < 0) continue;
 
-      const full = (ev.title || "(제목없음)").trim();
-      const display = compactTitleSingle(full);
-      const wantTwoLine = full.length >= 12;
+      const rule = getSingleBarRule(ev.title || "");
+      const rows = rule.rows;           // 1~2
+      const textClamp = rule.textClamp; // 1~3
+      const display = rule.display;
 
       let row = 0;
       while (true) {
         ensureRow(row);
 
         if (!occ[row][col]) {
-          if (!wantTwoLine) break;
+          if (rows === 1) break;
 
           ensureRow(row + 1);
           if (!occ[row + 1][col]) break;
@@ -584,7 +617,7 @@ function renderCalendar(){
       }
 
       occ[row][col] = true;
-      if (wantTwoLine) {
+      if (rows === 2) {
         ensureRow(row + 1);
         occ[row + 1][col] = true;
       }
@@ -593,13 +626,14 @@ function renderCalendar(){
         row,
         col,
         ev,
-        twoLine: wantTwoLine,
+        rows,
+        textClamp,
         display,
-        isHoliday:false
+        isHoliday: false
       });
     }
 
-    // ✅ 2) 휴무일/명절도 singleBars에 추가 (클릭 금지 + 툴팁)
+    // ✅ 2) 휴무일/명절 (1칸 점유 + 툴팁만, 클릭 금지)
     for(let i=0;i<7;i++){
       const dateKey = dateKeys[i];
       const h = holidayMap[dateKey];
@@ -623,7 +657,8 @@ function renderCalendar(){
         row,
         col: i,
         ev: { title },
-        twoLine: false,
+        rows: 1,
+        textClamp: 1,
         display,
         isHoliday: true,
         isFestival,
@@ -674,17 +709,21 @@ function renderCalendar(){
       weekBars.appendChild(bar);
     });
 
-    // --- 싱글바 렌더 (휴무일은 클릭 막고 툴팁만) ---
+    // --- 싱글바 렌더 ---
     singleBars.forEach(p => {
-      const { row, col, ev, twoLine, display } = p;
-
       const bar = document.createElement("div");
-      bar.className = "sbar" + (twoLine ? " two-line" : "");
+
+      // ✅ 클래스: rows/textClamp에 따라 바뀜 (CSS는 아래에 맞춰 수정 필요)
+      let cls = "sbar";
+      if(!p.isHoliday && p.rows === 2) cls += " two-row";
+      if(!p.isHoliday && p.textClamp === 2) cls += " two-text";
+      if(!p.isHoliday && p.textClamp === 3) cls += " three-text";
+      bar.className = cls;
 
       const colW = (100 / 7);
-      bar.style.left  = `calc(${col * colW}% + 2px)`;
+      bar.style.left  = `calc(${p.col * colW}% + 2px)`;
       bar.style.width = `calc(${colW}% - 4px)`;
-      bar.style.top   = `${row * barRowPx}px`;
+      bar.style.top   = `${p.row * barRowPx}px`;
 
       if(p.isHoliday){
         bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
@@ -692,25 +731,26 @@ function renderCalendar(){
         bar.style.color       = p.isFestival ? "#7f1d1d" : "#991b1b";
         bar.style.fontWeight  = "900";
 
-        bar.title = p.tooltip || ev.title || "휴무일";
+        // ✅ 툴팁만 표시
+        bar.title = p.tooltip || p.ev?.title || "휴무일";
 
+        // ✅ 클릭해도 모달 안 뜨게
         bar.addEventListener("click", (e2) => {
           e2.stopPropagation();
-          // 툴팁만
         });
       } else {
-        const c = getMemberColor(ev.owner);
+        const c = getMemberColor(p.ev.owner);
         bar.style.borderColor = c;
         bar.style.background  = c + "12";
         bar.style.color       = "#111";
 
         bar.addEventListener("click", (e2) => {
           e2.stopPropagation();
-          openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+          openModal({ dateKey: p.ev.startDate, eventId: p.ev.eventId, event: p.ev });
         });
       }
 
-      bar.textContent = display;
+      bar.textContent = p.display;
       weekBars.appendChild(bar);
     });
 
