@@ -58,7 +58,7 @@ let selectedName = localStorage.getItem(LS_NAME) || "";
 let eventsAll = {}; // { "YYYY-MM-DD": {eventId: evObj} }
 let eventsByDate = {}; // 현재월 startDate 기준 필터
 
-let editing = { dateKey: null, eventId: null };
+let editing = { dateKey: null, eventId: null, originalDateKey: null };
 
 /* =========================
    ✅ Types from Admin (config/types)
@@ -362,22 +362,31 @@ function openModal({ dateKey, eventId = null, event = null }) {
     return;
   }
 
-  // ✅ 모달 열 때 최신 TYPE_LIST 반영
   renderTypeSelectOptions();
 
-  editing = { dateKey, eventId };
+  const startKey = (event?.startDate || dateKey);
+
+  editing = {
+    dateKey: startKey,          // ✅ 현재 시작일(변경 가능)
+    eventId,
+    originalDateKey: startKey,  // ✅ 원래 시작일(이동 판단용)
+  };
+
   modalBack?.classList.add("show");
 
-  // ✅ 모달 기본은 종일
   setAllDay(true);
 
-  if (fDate) fDate.value = dateKey;
+  // ✅ 시작일 input을 수정 가능하게
+  if (fDate) {
+    fDate.disabled = false;
+    fDate.value = startKey;
+  }
+
   if (fOwner) fOwner.value = selectedName;
-  if (fEndDate) fEndDate.value = dateKey;
+  if (fEndDate) fEndDate.value = event?.endDate || startKey;
 
   if (event) {
     modalTitle.textContent = "일정 수정";
-
     const rawType = (event.type || "").trim();
     const mappedType = mapLegacyType(rawType) || TYPE_LIST[0] || "작업일정";
 
@@ -386,10 +395,8 @@ function openModal({ dateKey, eventId = null, event = null }) {
     fEnd.value = event.end || "";
     fTitle.value = event.title || "";
     fDetail.value = event.detail || "";
-    if (fEndDate) fEndDate.value = event.endDate || dateKey;
     fOwner.value = event.owner || selectedName;
 
-    // ✅ 수정 모드: 기존 일정에 시간이 있으면 자동으로 "종일 해제"
     if (((event.start || "").trim()) || ((event.end || "").trim())) {
       setAllDay(false);
     }
@@ -403,7 +410,6 @@ function openModal({ dateKey, eventId = null, event = null }) {
         : "작성자 본인만 수정/삭제할 수 있습니다.";
   } else {
     modalTitle.textContent = "일정 입력";
-
     fType.value = TYPE_LIST[0] || "작업일정";
     fStart.value = "";
     fEnd.value = "";
@@ -415,6 +421,18 @@ function openModal({ dateKey, eventId = null, event = null }) {
     if (editHint) editHint.textContent = "";
   }
 }
+
+fDate?.addEventListener("change", () => {
+  const v = (fDate.value || "").trim();
+  if (!v) return;
+  editing.dateKey = v;
+
+  // 종료일이 비어있거나 시작일보다 빠르면 시작일로 맞춤(선택)
+  if (fEndDate) {
+    if (!fEndDate.value || fEndDate.value < v) fEndDate.value = v;
+  }
+});
+
 
 function closeModal() {
   modalBack?.classList.remove("show");
@@ -901,11 +919,11 @@ function renderCalendar() {
    Save / Delete
 ========================= */
 saveBtn?.addEventListener("click", async () => {
-  const dateKey = editing.dateKey;
-  if (!dateKey) return;
+  const startKey = (fDate?.value || editing.dateKey || "").trim();
+  if (!startKey) return;
 
-  const endDate = (fEndDate?.value || dateKey).trim() || dateKey;
-  if (endDate < dateKey) {
+  const endDate = (fEndDate?.value || startKey).trim() || startKey;
+  if (endDate < startKey) {
     alert("종료일은 시작일보다 빠를 수 없습니다.");
     return;
   }
@@ -913,7 +931,6 @@ saveBtn?.addEventListener("click", async () => {
   const rawType = (fType.value || "").trim();
   const normalizedType = mapLegacyType(rawType) || (TYPE_LIST[0] || "작업일정");
 
-  // ✅ 종일이면 start/end 저장값을 비움 (깔끔하게)
   const isAllDay = !!allDayChk?.checked;
   const startVal = isAllDay ? "" : (fStart.value || "").trim();
   const endVal = isAllDay ? "" : (fEnd.value || "").trim();
@@ -936,26 +953,32 @@ saveBtn?.addEventListener("click", async () => {
 
   try {
     if (editing.eventId) {
-      const ev = eventsByDate?.[dateKey]?.[editing.eventId];
-      if (!ev) {
-        alert("데이터를 찾을 수 없습니다.");
-        return;
+      // ✅ 기존 일정 수정
+      const oldKey = editing.originalDateKey || editing.dateKey;
+      const ev = eventsByDate?.[oldKey]?.[editing.eventId] || eventsAll?.[oldKey]?.[editing.eventId];
+      if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
+      if (ev.owner !== selectedName) { alert("작성자 본인만 수정할 수 있습니다."); return; }
+
+      if (startKey !== oldKey) {
+        // ✅ 시작일이 바뀌면: 새 경로에 저장 후, 기존 경로 삭제(=이동)
+        await set(ref(db, `events/${startKey}/${editing.eventId}`), payload);
+        await remove(ref(db, `events/${oldKey}/${editing.eventId}`));
+      } else {
+        await update(ref(db, `events/${oldKey}/${editing.eventId}`), payload);
       }
-      if (ev.owner !== selectedName) {
-        alert("작성자 본인만 수정할 수 있습니다.");
-        return;
-      }
-      await update(ref(db, `events/${dateKey}/${editing.eventId}`), payload);
     } else {
-      const newRef = push(ref(db, `events/${dateKey}`));
+      // ✅ 신규 등록: startKey 경로에 저장
+      const newRef = push(ref(db, `events/${startKey}`));
       await set(newRef, payload);
     }
+
     closeModal();
   } catch (err) {
     console.error(err);
     alert("저장 실패: " + (err?.message || err));
   }
 });
+
 
 deleteBtn?.addEventListener("click", async () => {
   const { dateKey, eventId } = editing;
