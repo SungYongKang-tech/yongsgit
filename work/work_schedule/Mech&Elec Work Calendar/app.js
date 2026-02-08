@@ -108,7 +108,7 @@ function toEventList(){
 }
 
 // ✅ 9자 이상이면 7자+… (총 8자 표시)
-function compactTitle(title){
+function compactTitleMulti(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
@@ -406,7 +406,7 @@ function renderCalendar(){
       if (col < 0) continue;
 
       const full = (ev.title || "(제목없음)").trim();
-      const display = compactTitle(full); // 9자 이상이면 7자+…
+      const display = compactTitleSingle(full); // ✅ 16자까지 / 17자부터 15자+…
       const wantTwoLine = full.length >= 5;
 
       // ✅ 2줄이면 (row, row+1) 둘 다 비어있는 곳을 찾음
@@ -466,7 +466,7 @@ function renderCalendar(){
       bar.style.background  = c + "18";
       bar.style.color       = "#111";
 
-      bar.textContent = compactTitle(ev.title || "(제목없음)");
+      bar.textContent = compactTitleMulti(ev.title || "(제목없음)");
 
       bar.addEventListener("click",(e2)=>{
         e2.stopPropagation();
