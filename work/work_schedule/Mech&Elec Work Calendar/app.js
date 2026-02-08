@@ -5,6 +5,25 @@ import {
 
 const LS_NAME = "mecal_selected_name";
 
+const LS_TYPES = "mecal_selected_types";
+const TYPE_LIST = ["근태", "회사일정", "작업일정"];
+
+const typeBar = $("typeBar");
+
+// 선택된 분야(없으면 전체 표시)
+let selectedTypes = new Set(
+  (() => {
+    try{
+      const raw = localStorage.getItem(LS_TYPES);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    }catch{
+      return [];
+    }
+  })()
+);
+
+
 let current = new Date();
 current = new Date(current.getFullYear(), current.getMonth(), 1);
 
@@ -227,6 +246,40 @@ function subscribeMembers(){
   });
 }
 
+function saveSelectedTypes(){
+  localStorage.setItem(LS_TYPES, JSON.stringify([...selectedTypes]));
+}
+
+function renderTypeButtons(){
+  if(!typeBar) return;
+  typeBar.innerHTML = "";
+
+  TYPE_LIST.forEach(type=>{
+    const btn = document.createElement("button");
+    btn.className = "type-btn" + (selectedTypes.has(type) ? " active" : "");
+    btn.textContent = type;
+
+    btn.onclick = ()=>{
+      // 토글
+      if(selectedTypes.has(type)) selectedTypes.delete(type);
+      else selectedTypes.add(type);
+
+      saveSelectedTypes();
+      renderTypeButtons();
+      renderCalendar(); // ✅ 즉시 갱신
+    };
+
+    typeBar.appendChild(btn);
+  });
+
+  // 안내(선택 0개면 전체 표시) — 원치 않으면 빼셔도 됩니다
+  const hint = document.createElement("span");
+  hint.className = "small";
+  hint.style.marginLeft = "6px";
+  hint.textContent = (selectedTypes.size === 0) ? "분야 미선택: 전체 표시" : "선택 분야만 표시";
+  typeBar.appendChild(hint);
+}
+
 // -------------------- events --------------------
 function subscribeEvents(){
   onValue(ref(db, "events"), (snap)=>{
@@ -294,7 +347,13 @@ function renderCalendar(){
   const end = new Date(last);
   end.setDate(last.getDate() + (6 - last.getDay()));
 
-  const allEvents = toEventList();
+  const allEventsRaw = toEventList();
+
+// ✅ 분야 필터: 선택이 0개면 전체, 있으면 선택된 것만
+const allEvents = (selectedTypes.size === 0)
+  ? allEventsRaw
+  : allEventsRaw.filter(ev => selectedTypes.has(ev.type || "작업"));
+
   calGrid.innerHTML = "";
 
   // 요일 헤더
@@ -678,4 +737,5 @@ $("todayBtn").addEventListener("click", ()=>{
 subscribeMembers();
 subscribeEvents();
 renderMemberButtons();
+renderTypeButtons();   // ✅ 추가
 renderCalendar();
