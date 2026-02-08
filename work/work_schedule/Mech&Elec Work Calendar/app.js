@@ -549,7 +549,7 @@ function renderCalendar(){
 
       const full = (ev.title || "(제목없음)").trim();
       const display = compactTitleSingle(full);
-      const wantTwoLine = full.length >= 12;
+      const wantTwoLine = full.length >= 5;
 
       let row = 0;
       while (true) {
