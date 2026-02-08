@@ -4,6 +4,37 @@ import {
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 /* =========================
+   ✅ 관리자 비밀번호 보호
+========================= */
+const ADMIN_PASS = "771225";
+const ADMIN_KEY = "mecal_admin_auth";
+
+function checkAdminAuth() {
+  const saved = sessionStorage.getItem(ADMIN_KEY);
+  if (saved === "ok") return true;
+
+  const input = prompt("관리자 비밀번호를 입력하세요.");
+  if (input === null) {
+    location.href = "./index.html"; // 취소 → 달력으로 이동
+    return false;
+  }
+
+  if (input !== ADMIN_PASS) {
+    alert("비밀번호가 틀렸습니다.");
+    location.href = "./index.html";
+    return false;
+  }
+
+  sessionStorage.setItem(ADMIN_KEY, "ok");
+  return true;
+}
+
+// ✅ 페이지 시작 시 검사
+if (!checkAdminAuth()) {
+  throw new Error("관리자 인증 실패");
+}
+
+/* =========================
    Helpers
 ========================= */
 const $ = (id) => document.getElementById(id);
@@ -82,7 +113,10 @@ function renderMembers() {
             ${m.pin ? `<span class="chip">PIN</span>` : ``}
             ${m.active === false ? `<span class="chip">비활성</span>` : `<span class="chip">활성</span>`}
           </div>
-          <div class="small">순서: ${m.order ?? "-"}</div>
+         <div class="small">
+  순서: ${m.order ?? "-"} /
+  PIN: ${m.pin ? m.pin : "없음"}
+</div>
         </div>
         <button class="btn" type="button">수정</button>
       </div>
