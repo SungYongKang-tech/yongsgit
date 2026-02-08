@@ -15,7 +15,8 @@ const LS_NAME  = "mecal_selected_name";
 const LS_TYPES = "mecal_selected_types";
 
 // ✅ 화면/필터에 사용할 최종 분야 3개
-const TYPE_LIST = ["근태", "회사일정", "작업일정"];
+let TYPE_LIST = ["근태", "회사일정", "작업일정"]; // 기본값(관리자 설정이 없을 때)
+
 
 /* =========================
    DOM refs
@@ -58,6 +59,52 @@ let eventsByDate = {}; // 현재월 startDate 기준 필터
 let editing = { dateKey: null, eventId: null };
 
 /* =========================
+   ✅ Types from Admin (config/types)
+========================= */
+let typesFromAdmin = []; // ["근태","회사일정",...]
+
+function subscribeTypes(){
+  onValue(ref(db, "config/types"), (snap)=>{
+    const obj = snap.val() || {};
+    const list = Object.entries(obj)
+      .map(([id,v])=>({ id, ...v }))
+      .filter(x => x.active !== false)
+      .sort((a,b)=>(a.order ?? 999)-(b.order ?? 999))
+      .map(x => (x.name || "").trim())
+      .filter(Boolean);
+
+    // 관리자가 하나라도 설정해두면 그걸 우선 사용
+    typesFromAdmin = list;
+    if(typesFromAdmin.length){
+      TYPE_LIST = typesFromAdmin;
+    } else {
+      TYPE_LIST = ["근태", "회사일정", "작업일정"];
+    }
+
+    // ✅ 선택된 타입 중 삭제된 것 정리
+    selectedTypes = new Set([...selectedTypes].filter(t => TYPE_LIST.includes(t)));
+    saveSelectedTypes();
+
+    renderTypeButtons();
+    renderCalendar();
+  });
+}
+
+/* =========================
+   ✅ Admin Holidays (config/holidays)
+========================= */
+let adminHolidayMap = {}; // { "YYYY-MM-DD": {name, note} }
+
+function subscribeAdminHolidays(){
+  onValue(ref(db, "config/holidays"), (snap)=>{
+    adminHolidayMap = snap.val() || {};
+    // 현재 달 다시 렌더(holidayMap merge 포함)
+    applyMonthFilterAndRender();
+  });
+}
+
+
+/* =========================
    Selected Types (필터)
    - 0개면 전체 표시
 ========================= */
@@ -91,30 +138,13 @@ function getTypeButtons(){
 function renderTypeButtons(){
   if(!typeBar) return;
 
-  let btns = getTypeButtons();
-
-  // ✅ 기존 버튼이 없으면 fallback: 새로 만들어 붙이기
-  if(btns.length === 0){
-    typeBar.innerHTML = "";
-    TYPE_LIST.forEach(type=>{
-      const btn = document.createElement("button");
-      btn.className = "type-btn";
-      btn.textContent = type;
-      typeBar.appendChild(btn);
-    });
-    btns = getTypeButtons();
-  }
-
-  // ✅ 첫 3개만 사용
-  btns.slice(0, 3).forEach((btn, idx)=>{
-    const type = TYPE_LIST[idx];
+  typeBar.innerHTML = "";
+  TYPE_LIST.forEach(type=>{
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "type-btn" + (selectedTypes.has(type) ? " active" : "");
     btn.textContent = type;
 
-    // 클래스 정리/부여
-    btn.classList.add("type-btn");
-    btn.classList.toggle("active", selectedTypes.has(type));
-
-    // ✅ 클릭 이벤트 덮어쓰기 (중복 방지)
     btn.onclick = ()=>{
       if(selectedTypes.has(type)) selectedTypes.delete(type);
       else selectedTypes.add(type);
@@ -123,11 +153,11 @@ function renderTypeButtons(){
       renderTypeButtons();
       renderCalendar();
     };
-  });
 
-  // ✅ 혹시 기존 버튼이 4개 이상이면 나머지는 숨김(원치 않으면 삭제)
-  btns.slice(3).forEach(btn => { btn.style.display = "none"; });
+    typeBar.appendChild(btn);
+  });
 }
+
 
 /* =========================
    Holidays
@@ -359,6 +389,15 @@ function subscribeEvents(){
 async function applyMonthFilterAndRender(){
   await loadKoreanHolidays(current.getFullYear());
 
+  // ✅ 관리자 휴무일 merge(관리자 등록이 우선)
+  for(const [dateKey, h] of Object.entries(adminHolidayMap || {})){
+    if(!dateKey) continue;
+    holidayMap[dateKey] = {
+      localName: (h?.name || "휴무일").trim(),
+      name: (h?.name || "Holiday").trim()
+    };
+  }
+
   const { startKey, endKey } = monthRangeKeys();
   eventsByDate = {};
   Object.keys(eventsAll).forEach(dateKey=>{
@@ -369,6 +408,7 @@ async function applyMonthFilterAndRender(){
 
   renderCalendar();
 }
+
 
 /* ===== 멀티바 레인 배치(겹침 방지) ===== */
 function placeInLanes(segments){
@@ -822,7 +862,9 @@ $("todayBtn")?.addEventListener("click", ()=>{
 ========================= */
 subscribeMembers();
 subscribeEvents();
+subscribeTypes();
+subscribeAdminHolidays();
 
 renderMemberButtons();
-renderTypeButtons();   // ✅ 기존 버튼 3개를 근태/회사일정/작업일정으로 교체 + 필터 토글 연결
+renderTypeButtons();
 renderCalendar();
