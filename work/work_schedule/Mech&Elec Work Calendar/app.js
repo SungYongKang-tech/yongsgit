@@ -14,34 +14,31 @@ const $ = (id) => document.getElementById(id);
 const LS_NAME  = "mecal_selected_name";
 const LS_TYPES = "mecal_selected_types";
 
-// ✅ 화면/필터에 사용할 최종 분야 3개
+// ✅ 화면/필터에 사용할 최종 분야(관리자 설정 우선)
 let TYPE_LIST = ["근태", "회사일정", "작업일정"]; // 기본값(관리자 설정이 없을 때)
-
 
 /* =========================
    DOM refs
 ========================= */
-// ✅ 기존 “휴가/작업/공정” 버튼이 들어있던 영역(컨테이너) id가 typeBar 라고 가정
-const typeBar   = $("typeBar");
+const typeBar    = $("typeBar");
+const memberBar  = $("memberBar");
+const monthTitle = $("monthTitle");
+const calGrid    = $("calGrid");
 
-const memberBar = $("memberBar");
-const monthTitle= $("monthTitle");
-const calGrid   = $("calGrid");
-
-const modalBack = $("modalBack");
-const modalTitle= $("modalTitle");
-const fDate     = $("fDate");
-const fEndDate  = $("fEndDate");
-const fType     = $("fType");
-const fStart    = $("fStart");
-const fEnd      = $("fEnd");
-const fOwner    = $("fOwner");
-const fTitle    = $("fTitle");
-const fDetail   = $("fDetail");
-const saveBtn   = $("saveBtn");
-const deleteBtn = $("deleteBtn");
-const closeBtn  = $("closeBtn");
-const editHint  = $("editHint");
+const modalBack  = $("modalBack");
+const modalTitle = $("modalTitle");
+const fDate      = $("fDate");
+const fEndDate   = $("fEndDate");
+const fType      = $("fType");
+const fStart     = $("fStart");
+const fEnd       = $("fEnd");
+const fOwner     = $("fOwner");
+const fTitle     = $("fTitle");
+const fDetail    = $("fDetail");
+const saveBtn    = $("saveBtn");
+const deleteBtn  = $("deleteBtn");
+const closeBtn   = $("closeBtn");
+const editHint   = $("editHint");
 
 /* =========================
    State
@@ -53,8 +50,8 @@ let membersAll = [];
 let members = [];
 let selectedName = localStorage.getItem(LS_NAME) || "";
 
-let eventsAll = {};    // { "YYYY-MM-DD": {eventId: evObj} }
-let eventsByDate = {}; // 현재월 startDate 기준 필터
+let eventsAll = {};     // { "YYYY-MM-DD": {eventId: evObj} }
+let eventsByDate = {};  // 현재월 startDate 기준 필터
 
 let editing = { dateKey: null, eventId: null };
 
@@ -73,7 +70,6 @@ function subscribeTypes(){
       .map(x => (x.name || "").trim())
       .filter(Boolean);
 
-    // 관리자가 하나라도 설정해두면 그걸 우선 사용
     typesFromAdmin = list;
     if(typesFromAdmin.length){
       TYPE_LIST = typesFromAdmin;
@@ -98,11 +94,9 @@ let adminHolidayMap = {}; // { "YYYY-MM-DD": {name, note} }
 function subscribeAdminHolidays(){
   onValue(ref(db, "config/holidays"), (snap)=>{
     adminHolidayMap = snap.val() || {};
-    // 현재 달 다시 렌더(holidayMap merge 포함)
-    applyMonthFilterAndRender();
+    applyMonthFilterAndRender(); // holidayMap merge 포함
   });
 }
-
 
 /* =========================
    Selected Types (필터)
@@ -124,17 +118,8 @@ function saveSelectedTypes(){
 }
 
 /* =========================
-   ✅ 기존 버튼 재활용(휴가/작업/공정 버튼)
-   - HTML에 이미 3개의 버튼이 있다고 가정하고 텍스트만 바꿔서 씁니다.
-   - 만약 버튼이 없으면(0개) 자동으로 3개 만들어서 붙입니다.
+   Type Buttons
 ========================= */
-function getTypeButtons(){
-  if(!typeBar) return [];
-  // ✅ 기존 버튼이 <button>이라면 이걸로 잡힙니다.
-  // 버튼이 a/div이면 selector를 바꾸셔야 합니다.
-  return Array.from(typeBar.querySelectorAll("button"));
-}
-
 function renderTypeButtons(){
   if(!typeBar) return;
 
@@ -158,12 +143,11 @@ function renderTypeButtons(){
   });
 }
 
-
 /* =========================
-   Holidays
+   Holidays (API + Admin merge)
 ========================= */
-let holidayMap = {}; // { "YYYY-MM-DD": { localName, name } }
-const holidayCache = {}; // { "2026": holidayMap... }
+let holidayMap = {};          // { "YYYY-MM-DD": { localName, name, note, source } }
+const holidayCache = {};      // { "2026": holidayMap... }
 
 async function loadKoreanHolidays(year){
   if(holidayCache[year]) {
@@ -183,7 +167,9 @@ async function loadKoreanHolidays(year){
       if(!h?.date) continue;
       map[h.date] = {
         localName: h.localName || h.name || "공휴일",
-        name: h.name || h.localName || "Holiday"
+        name: h.name || h.localName || "Holiday",
+        note: "",
+        source: "api"
       };
     }
     holidayMap = map;
@@ -200,7 +186,6 @@ async function loadKoreanHolidays(year){
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
-// ✅ 색상은 작성자 기준 (분야와 무관)
 function getMemberColor(name){
   const COLOR_MAP = {
     "성용": "#55B7FF",
@@ -231,16 +216,26 @@ function toEventList(){
   return list;
 }
 
-// 멀티(바)용: 9자 이상이면 7자+… (총 8자)
 function compactTitleMulti(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
 
-// 싱글(1일)용: 16자까지 / 17자부터 15자+…
 function compactTitleSingle(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 17) ? (full.slice(0, 15) + "…") : full;
+}
+
+/* =========================
+   Legacy Type Mapping
+========================= */
+function mapLegacyType(t){
+  if(!t) return "";
+  if(t === "휴가") return "근태";
+  if(t === "작업") return "작업일정";
+  if(t === "공정") return "회사일정";
+  if(TYPE_LIST.includes(t)) return t;
+  return t;
 }
 
 /* =========================
@@ -262,9 +257,8 @@ function openModal({dateKey, eventId=null, event=null}){
   if(event){
     modalTitle.textContent = "일정 수정";
 
-    // ✅ 분야 기본값/호환: 기존 데이터가 휴가/작업/공정일 수도 있으니 매핑
     const rawType = (event.type || "").trim();
-    const mappedType = mapLegacyType(rawType) || "작업일정";
+    const mappedType = mapLegacyType(rawType) || TYPE_LIST[0] || "작업일정";
 
     fType.value  = mappedType;
     fStart.value = event.start || "";
@@ -283,7 +277,8 @@ function openModal({dateKey, eventId=null, event=null}){
   }else{
     modalTitle.textContent = "일정 입력";
 
-    fType.value  = "작업일정";
+    // ✅ 첫번째 타입 기본값
+    fType.value  = TYPE_LIST[0] || "작업일정";
     fStart.value = "";
     fEnd.value   = "";
     fTitle.value = "";
@@ -300,27 +295,14 @@ function closeModal(){
   editing = { dateKey:null, eventId:null };
 }
 
-modalBack.addEventListener("click",(e)=>{ if(e.target===modalBack) closeModal(); });
-closeBtn.addEventListener("click", closeModal);
-
-/* =========================
-   ✅ 기존 타입(휴가/작업/공정) → 새 타입 매핑
-   - 과거 데이터가 섞여 있어도 필터/표시가 되게 해줌
-========================= */
-function mapLegacyType(t){
-  if(!t) return "";
-  if(t === "휴가") return "근태";
-  if(t === "작업") return "작업일정";
-  if(t === "공정") return "회사일정";
-  // 이미 새 타입이면 그대로
-  if(TYPE_LIST.includes(t)) return t;
-  return t; // 알 수 없는 값은 그대로 두되, 필터 선택에 없으면 안 보일 수 있음
-}
+modalBack?.addEventListener("click",(e)=>{ if(e.target===modalBack) closeModal(); });
+closeBtn?.addEventListener("click", closeModal);
 
 /* =========================
    Members
 ========================= */
 function renderMemberButtons(){
+  if(!memberBar) return;
   memberBar.innerHTML = "";
 
   members.forEach(m=>{
@@ -389,12 +371,14 @@ function subscribeEvents(){
 async function applyMonthFilterAndRender(){
   await loadKoreanHolidays(current.getFullYear());
 
-  // ✅ 관리자 휴무일 merge(관리자 등록이 우선)
+  // ✅ 관리자 휴무일 merge (우선 적용)
   for(const [dateKey, h] of Object.entries(adminHolidayMap || {})){
     if(!dateKey) continue;
     holidayMap[dateKey] = {
       localName: (h?.name || "휴무일").trim(),
-      name: (h?.name || "Holiday").trim()
+      name: (h?.name || "Holiday").trim(),
+      note: (h?.note || "").trim(),
+      source: "admin"
     };
   }
 
@@ -408,7 +392,6 @@ async function applyMonthFilterAndRender(){
 
   renderCalendar();
 }
-
 
 /* ===== 멀티바 레인 배치(겹침 방지) ===== */
 function placeInLanes(segments){
@@ -443,9 +426,11 @@ function placeInLanes(segments){
 }
 
 /* =========================
-   Render Calendar
+   Render Calendar (✅ 완성본)
 ========================= */
 function renderCalendar(){
+  if(!calGrid || !monthTitle) return;
+
   const y = current.getFullYear();
   const m = current.getMonth();
   monthTitle.textContent = `${y}.${pad2(m+1)}`;
@@ -460,9 +445,9 @@ function renderCalendar(){
 
   const allEventsRaw = toEventList();
 
-  // ✅ 필터 적용(과거 타입도 매핑)
+  // ✅ 타입 정규화(과거 타입 매핑)
   const allEventsNormalized = allEventsRaw.map(ev=>{
-    const t = mapLegacyType((ev.type || "").trim()) || "작업일정";
+    const t = mapLegacyType((ev.type || "").trim()) || (TYPE_LIST[0] || "작업일정");
     return { ...ev, type: t };
   });
 
@@ -507,6 +492,9 @@ function renderCalendar(){
       day.className = "day";
       day.classList.add(`dow-${i}`);
 
+      // ✅ 공휴일 날짜 숫자도 색 반영
+      if(holidayMap[dateKey]) day.classList.add("holiday");
+
       if(dateKey === todayKey) day.classList.add("today");
 
       const inMonth = (cursor.getMonth() === m);
@@ -518,16 +506,6 @@ function renderCalendar(){
 
       const items = document.createElement("div");
       items.className = "day-items";
-
-      // 공휴일 라벨
-      const h = holidayMap[dateKey];
-      if(h){
-        day.classList.add("holiday");
-        const badge = document.createElement("div");
-        badge.className = "holiday-badge";
-        badge.textContent = h.localName || "공휴일";
-        items.prepend(badge);
-      }
 
       day.appendChild(num);
       day.appendChild(items);
@@ -577,8 +555,9 @@ function renderCalendar(){
       if(!occ[r]) occ[r] = new Array(7).fill(false);
     }
 
-    const singleBars = []; // {row, col, ev, twoLine, display}
+    const singleBars = []; // {row, col, ev, twoLine, display, isHoliday, isFestival, tooltip}
 
+    // ✅ 1) 기존 일정(하루짜리)
     for (const ev of allEvents) {
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
@@ -589,7 +568,7 @@ function renderCalendar(){
 
       const full = (ev.title || "(제목없음)").trim();
       const display = compactTitleSingle(full);
-      const wantTwoLine = full.length >= 5;
+      const wantTwoLine = full.length >= 12;
 
       let row = 0;
       while (true) {
@@ -610,14 +589,53 @@ function renderCalendar(){
         occ[row + 1][col] = true;
       }
 
-      singleBars.push({ row, col, ev, twoLine: wantTwoLine, display });
+      singleBars.push({
+        row,
+        col,
+        ev,
+        twoLine: wantTwoLine,
+        display,
+        isHoliday:false
+      });
+    }
+
+    // ✅ 2) 휴무일/명절도 singleBars에 추가 (클릭 금지 + 툴팁)
+    for(let i=0;i<7;i++){
+      const dateKey = dateKeys[i];
+      const h = holidayMap[dateKey];
+      if(!h) continue;
+
+      const title = (h.localName || "휴무일").trim();
+      const tooltip = (h.note ? `${title} - ${h.note}` : title);
+
+      const isFestival = /설날|추석/.test(title) || /연휴/.test(title);
+      const display = compactTitleSingle(title);
+
+      let row = 0;
+      while(true){
+        ensureRow(row);
+        if(!occ[row][i]) break;
+        row++;
+      }
+      occ[row][i] = true;
+
+      singleBars.push({
+        row,
+        col: i,
+        ev: { title },
+        twoLine: false,
+        display,
+        isHoliday: true,
+        isFestival,
+        tooltip
+      });
     }
 
     // --- weekBars 높이 ---
     const lanesCountFinal = occ.length;
     weekBars.style.height = `${lanesCountFinal * barRowPx}px`;
 
-    // --- day-items 내려주기 ---
+    // --- day-items 내려주기 (여백) ---
     const perDayRows = new Array(7).fill(0);
     for(let r=0; r<occ.length; r++){
       for(let c=0; c<7; c++){
@@ -656,7 +674,7 @@ function renderCalendar(){
       weekBars.appendChild(bar);
     });
 
-    // --- 싱글바 렌더 ---
+    // --- 싱글바 렌더 (휴무일은 클릭 막고 툴팁만) ---
     singleBars.forEach(p => {
       const { row, col, ev, twoLine, display } = p;
 
@@ -668,18 +686,31 @@ function renderCalendar(){
       bar.style.width = `calc(${colW}% - 4px)`;
       bar.style.top   = `${row * barRowPx}px`;
 
-      const c = getMemberColor(ev.owner);
-      bar.style.borderColor = c;
-      bar.style.background  = c + "12";
-      bar.style.color       = "#111";
+      if(p.isHoliday){
+        bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
+        bar.style.background  = p.isFestival ? "#fecaca" : "#fee2e2";
+        bar.style.color       = p.isFestival ? "#7f1d1d" : "#991b1b";
+        bar.style.fontWeight  = "900";
+
+        bar.title = p.tooltip || ev.title || "휴무일";
+
+        bar.addEventListener("click", (e2) => {
+          e2.stopPropagation();
+          // 툴팁만
+        });
+      } else {
+        const c = getMemberColor(ev.owner);
+        bar.style.borderColor = c;
+        bar.style.background  = c + "12";
+        bar.style.color       = "#111";
+
+        bar.addEventListener("click", (e2) => {
+          e2.stopPropagation();
+          openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+        });
+      }
 
       bar.textContent = display;
-
-      bar.addEventListener("click", (e2) => {
-        e2.stopPropagation();
-        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-      });
-
       weekBars.appendChild(bar);
     });
 
@@ -690,7 +721,7 @@ function renderCalendar(){
 /* =========================
    Save / Delete
 ========================= */
-saveBtn.addEventListener("click", async ()=>{
+saveBtn?.addEventListener("click", async ()=>{
   const dateKey = editing.dateKey;
   if(!dateKey) return;
 
@@ -700,9 +731,8 @@ saveBtn.addEventListener("click", async ()=>{
     return;
   }
 
-  // ✅ 모달에서 넘어오는 타입도 과거값이면 저장 시 새 값으로 정리
   const rawType = (fType.value || "").trim();
-  const normalizedType = mapLegacyType(rawType) || "작업일정";
+  const normalizedType = mapLegacyType(rawType) || (TYPE_LIST[0] || "작업일정");
 
   const payload = {
     type: normalizedType,
@@ -743,7 +773,7 @@ saveBtn.addEventListener("click", async ()=>{
   }
 });
 
-deleteBtn.addEventListener("click", async ()=>{
+deleteBtn?.addEventListener("click", async ()=>{
   const { dateKey, eventId } = editing;
   if(!dateKey || !eventId) return;
 
