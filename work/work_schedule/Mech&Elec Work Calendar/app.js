@@ -186,6 +186,17 @@ async function loadKoreanHolidays(year){
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
+function isMobileNow(){
+  return window.matchMedia("(max-width: 640px)").matches;
+}
+
+/* ✅ 모바일에서 칸 안 좌우 여백을 더 확보하기 위한 left/width inset */
+function getBarInsetPx(){
+  // 기존: +2px / -4px
+  // 모바일: +1px / -2px (더 넓게)
+  return isMobileNow() ? { sidePad: 1, sideSub: 2 } : { sidePad: 2, sideSub: 4 };
+}
+
 function getMemberColor(name){
   const COLOR_MAP = {
     "성용": "#55B7FF",
@@ -249,7 +260,7 @@ function mapLegacyType(t){
 ========================= */
 function getSingleBarRule(title){
   const full = (title || "(제목없음)").trim();
-  const isMobile = window.matchMedia("(max-width: 640px)").matches;
+  const isMobile = isMobileNow();
 
   if(isMobile){
     if(full.length >= 16){
@@ -261,7 +272,7 @@ function getSingleBarRule(title){
     return { rows: 1, textClamp: 1, display: full };
   }
 
-  // PC는 기존 느낌 유지 (원하시면 PC도 동일 규칙으로 바꿀 수 있음)
+  // PC는 기존 느낌 유지
   const wantTwo = full.length >= 12;
   return {
     rows: wantTwo ? 2 : 1,
@@ -586,7 +597,6 @@ function renderCalendar(){
       if(!occ[r]) occ[r] = new Array(7).fill(false);
     }
 
-    // ✅ unified singleBars: rows(점유 1~2), textClamp(표시 1~3)
     const singleBars = [];
 
     // ✅ 1) 기존 일정(하루짜리)
@@ -599,8 +609,8 @@ function renderCalendar(){
       if (col < 0) continue;
 
       const rule = getSingleBarRule(ev.title || "");
-      const rows = rule.rows;           // 1~2
-      const textClamp = rule.textClamp; // 1~3
+      const rows = rule.rows;
+      const textClamp = rule.textClamp;
       const display = rule.display;
 
       let row = 0;
@@ -681,6 +691,9 @@ function renderCalendar(){
       day.style.setProperty("--barSpaceDay", `${perDayRows[i] * barRowPx}px`);
     });
 
+    const { sidePad, sideSub } = getBarInsetPx();
+    const colW = (100/7);
+
     // --- 멀티바 렌더 ---
     placed.forEach(p=>{
       const { row, sIdx, eIdx, ev } = p;
@@ -689,9 +702,8 @@ function renderCalendar(){
       const bar = document.createElement("div");
       bar.className = "mbar";
 
-      const colW = (100/7);
-      bar.style.left  = `calc(${sIdx * colW}% + 2px)`;
-      bar.style.width = `calc(${span * colW}% - 4px)`;
+      bar.style.left  = `calc(${sIdx * colW}% + ${sidePad}px)`;
+      bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
       bar.style.top   = `${row * barRowPx}px`;
 
       const c = getMemberColor(ev.owner);
@@ -713,16 +725,14 @@ function renderCalendar(){
     singleBars.forEach(p => {
       const bar = document.createElement("div");
 
-      // ✅ 클래스: rows/textClamp에 따라 바뀜 (CSS는 아래에 맞춰 수정 필요)
       let cls = "sbar";
       if(!p.isHoliday && p.rows === 2) cls += " two-row";
       if(!p.isHoliday && p.textClamp === 2) cls += " two-text";
       if(!p.isHoliday && p.textClamp === 3) cls += " three-text";
       bar.className = cls;
 
-      const colW = (100 / 7);
-      bar.style.left  = `calc(${p.col * colW}% + 2px)`;
-      bar.style.width = `calc(${colW}% - 4px)`;
+      bar.style.left  = `calc(${p.col * colW}% + ${sidePad}px)`;
+      bar.style.width = `calc(${colW}% - ${sideSub}px)`;
       bar.style.top   = `${p.row * barRowPx}px`;
 
       if(p.isHoliday){
@@ -731,13 +741,8 @@ function renderCalendar(){
         bar.style.color       = p.isFestival ? "#7f1d1d" : "#991b1b";
         bar.style.fontWeight  = "900";
 
-        // ✅ 툴팁만 표시
         bar.title = p.tooltip || p.ev?.title || "휴무일";
-
-        // ✅ 클릭해도 모달 안 뜨게
-        bar.addEventListener("click", (e2) => {
-          e2.stopPropagation();
-        });
+        bar.addEventListener("click", (e2) => e2.stopPropagation());
       } else {
         const c = getMemberColor(p.ev.owner);
         bar.style.borderColor = c;
