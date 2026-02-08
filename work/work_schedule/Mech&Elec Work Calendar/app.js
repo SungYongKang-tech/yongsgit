@@ -53,7 +53,8 @@ async function loadKoreanHolidays(year){
   try{
     const res = await fetch(url);
     if(!res.ok) throw new Error(`holiday fetch failed: ${res.status}`);
-    const arr = await res.json(); // [{date, localName, name, ...}]
+    const arr = await res.json();
+
     const map = {};
     for(const h of (arr || [])){
       if(!h?.date) continue;
@@ -104,6 +105,12 @@ function toEventList(){
     });
   });
   return list;
+}
+
+// ✅ 9자 이상이면 7자+… (총 8자 표시)
+function compactTitle(title){
+  const full = (title || "(제목없음)").trim();
+  return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
 
 // -------------------- modal --------------------
@@ -252,7 +259,6 @@ function placeInLanes(segments){
   }
 
   const placed = [];
-
   for(const seg of segments){
     let row = 0;
     while(true){
@@ -264,7 +270,6 @@ function placeInLanes(segments){
       row++;
     }
   }
-
   return { placed, occ };
 }
 
@@ -283,7 +288,6 @@ function renderCalendar(){
   end.setDate(last.getDate() + (6 - last.getDay()));
 
   const allEvents = toEventList();
-
   calGrid.innerHTML = "";
 
   // 요일 헤더
@@ -364,7 +368,7 @@ function renderCalendar(){
     for(const ev of allEvents){
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
-      if(s === e) continue;
+      if(s === e) continue; // 멀티만
 
       if(e < weekStartKey || s > weekEndKey) continue;
 
@@ -389,29 +393,44 @@ function renderCalendar(){
     function ensureRow(r){
       if(!occ[r]) occ[r] = new Array(7).fill(false);
     }
-    function firstFreeRow(col){
-      let r = 0;
-      while(true){
-        ensureRow(r);
-        if(!occ[r][col]) return r;
-        r++;
-      }
-    }
 
-    // ✅ 싱글바는 레인을 1칸만 점유(중요!)
-    const singleBars = []; // {row, col, ev}
-    for(const ev of allEvents){
+    // ✅ 싱글바 생성 (5자 이상이면 2줄 레인 2칸 점유)
+    const singleBars = []; // {row, col, ev, twoLine, display}
+
+    for (const ev of allEvents) {
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
-      if(s !== e) continue;
+      if (s !== e) continue;
 
       const col = dateKeys.indexOf(s);
-      if(col < 0) continue;
+      if (col < 0) continue;
 
-      const row = firstFreeRow(col);
+      const full = (ev.title || "(제목없음)").trim();
+      const display = compactTitle(full); // 9자 이상이면 7자+…
+      const wantTwoLine = full.length >= 5;
+
+      // ✅ 2줄이면 (row, row+1) 둘 다 비어있는 곳을 찾음
+      let row = 0;
+      while (true) {
+        ensureRow(row);
+
+        if (!occ[row][col]) {
+          if (!wantTwoLine) break;
+
+          ensureRow(row + 1);
+          if (!occ[row + 1][col]) break;
+        }
+        row++;
+      }
+
+      // 점유
       occ[row][col] = true;
+      if (wantTwoLine) {
+        ensureRow(row + 1);
+        occ[row + 1][col] = true;
+      }
 
-      singleBars.push({ row, col, ev });
+      singleBars.push({ row, col, ev, twoLine: wantTwoLine, display });
     }
 
     // --- weekBars 높이 ---
@@ -447,7 +466,7 @@ function renderCalendar(){
       bar.style.background  = c + "18";
       bar.style.color       = "#111";
 
-      bar.textContent = ev.title || "(제목없음)";
+      bar.textContent = compactTitle(ev.title || "(제목없음)");
 
       bar.addEventListener("click",(e2)=>{
         e2.stopPropagation();
@@ -457,42 +476,32 @@ function renderCalendar(){
       weekBars.appendChild(bar);
     });
 
-    // --- 싱글바 렌더(텍스트 규칙 통일) ---
-    // --- 싱글바(1칸짜리) 렌더 ---
-singleBars.forEach(p=>{
-  const { row, col, ev } = p;
+    // --- 싱글바 렌더 ---
+    singleBars.forEach(p => {
+      const { row, col, ev, twoLine, display } = p;
 
-  const bar = document.createElement("div");
-  bar.className = "sbar";
+      const bar = document.createElement("div");
+      bar.className = "sbar" + (twoLine ? " two-line" : "");
 
-  const colW = (100/7);
-  bar.style.left  = `calc(${col * colW}% + 2px)`;
-  bar.style.width = `calc(${colW}% - 4px)`;
-  bar.style.top   = `${row * barRowPx}px`;
+      const colW = (100 / 7);
+      bar.style.left  = `calc(${col * colW}% + 2px)`;
+      bar.style.width = `calc(${colW}% - 4px)`;
+      bar.style.top   = `${row * barRowPx}px`;
 
-  const c = getMemberColor(ev.owner);
-  bar.style.borderColor = c;
-  bar.style.background  = c + "12";
-  bar.style.color       = "#111";
+      const c = getMemberColor(ev.owner);
+      bar.style.borderColor = c;
+      bar.style.background  = c + "12";
+      bar.style.color       = "#111";
 
-  const full = (ev.title || "(제목없음)").trim();
+      bar.textContent = display;
 
-  // ✅ 9자 이상이면 7자 + … (총 8자 보이기)
-  const display = (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
-  bar.textContent = display;
+      bar.addEventListener("click", (e2) => {
+        e2.stopPropagation();
+        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+      });
 
-  // ✅ 5자 이상이면 모바일에서 2줄 허용
-  if(full.length >= 5) bar.classList.add("two-line");
-  else bar.classList.remove("two-line");
-
-  bar.addEventListener("click",(e2)=>{
-    e2.stopPropagation();
-    openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-  });
-
-  weekBars.appendChild(bar);
-});
-
+      weekBars.appendChild(bar);
+    });
 
     calGrid.appendChild(weekRow);
   }
