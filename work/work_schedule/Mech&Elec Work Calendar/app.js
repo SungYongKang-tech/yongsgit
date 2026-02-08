@@ -282,9 +282,8 @@ function getSingleBarRule(title) {
   const isMobile = isMobileNow();
 
   if (isMobile) {
-    // ✅ 모바일은 5자 이상이면 2레인, 텍스트는 항상 3줄까지 허용
-    if (full.length >= 9) return { rows: 2, textClamp: 3, display: full.slice(0, 8) + "…" };
-    if (full.length >= 5) return { rows: 2, textClamp: 3, display: full }; // ✅ 2 → 3
+    // ✅ 5자 이상이면 2레인 + (최대) 3줄 표시, 제목은 미리 자르지 않음
+    if (full.length >= 5) return { rows: 2, textClamp: 3, display: full };
     return { rows: 1, textClamp: 1, display: full };
   }
 
@@ -296,6 +295,7 @@ function getSingleBarRule(title) {
     display: compactTitleSingle(full),
   };
 }
+
 
 
 /* =========================
