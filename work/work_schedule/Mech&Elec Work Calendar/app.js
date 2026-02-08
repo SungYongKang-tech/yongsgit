@@ -3,27 +3,45 @@ import {
   ref, onValue, push, set, update, remove, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+/* =========================
+   LocalStorage keys / Types
+========================= */
 const LS_NAME = "mecal_selected_name";
 
 const LS_TYPES = "mecal_selected_types";
 const TYPE_LIST = ["근태", "회사일정", "작업일정"];
 
-const typeBar = $("typeBar");
+/* =========================
+   DOM helper (⚠️ 반드시 위에)
+========================= */
+const $ = (id) => document.getElementById(id);
 
-// 선택된 분야(없으면 전체 표시)
-let selectedTypes = new Set(
-  (() => {
-    try{
-      const raw = localStorage.getItem(LS_TYPES);
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
-    }catch{
-      return [];
-    }
-  })()
-);
+/* =========================
+   DOM refs
+========================= */
+const typeBar   = $("typeBar");
+const memberBar = $("memberBar");
+const monthTitle= $("monthTitle");
+const calGrid   = $("calGrid");
 
+const modalBack = $("modalBack");
+const modalTitle= $("modalTitle");
+const fDate     = $("fDate");
+const fEndDate  = $("fEndDate");
+const fType     = $("fType");
+const fStart    = $("fStart");
+const fEnd      = $("fEnd");
+const fOwner    = $("fOwner");
+const fTitle    = $("fTitle");
+const fDetail   = $("fDetail");
+const saveBtn   = $("saveBtn");
+const deleteBtn = $("deleteBtn");
+const closeBtn  = $("closeBtn");
+const editHint  = $("editHint");
 
+/* =========================
+   State
+========================= */
 let current = new Date();
 current = new Date(current.getFullYear(), current.getMonth(), 1);
 
@@ -34,30 +52,59 @@ let selectedName = localStorage.getItem(LS_NAME) || "";
 let eventsAll = {};    // { "YYYY-MM-DD": {eventId: evObj} }
 let eventsByDate = {}; // 현재월 startDate 기준 필터
 
-const $ = (id) => document.getElementById(id);
-
-const memberBar = $("memberBar");
-const monthTitle = $("monthTitle");
-const calGrid = $("calGrid");
-
-const modalBack = $("modalBack");
-const modalTitle = $("modalTitle");
-const fDate = $("fDate");
-const fEndDate = $("fEndDate");
-const fType = $("fType");
-const fStart = $("fStart");
-const fEnd = $("fEnd");
-const fOwner = $("fOwner");
-const fTitle = $("fTitle");
-const fDetail = $("fDetail");
-const saveBtn = $("saveBtn");
-const deleteBtn = $("deleteBtn");
-const closeBtn = $("closeBtn");
-const editHint = $("editHint");
-
 let editing = { dateKey: null, eventId: null };
 
-// ===== 공휴일(대한민국) =====
+/* =========================
+   Selected Types (필터)
+   - 0개면 전체 표시
+========================= */
+function loadSelectedTypes(){
+  try{
+    const raw = localStorage.getItem(LS_TYPES);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  }catch{
+    return new Set();
+  }
+}
+let selectedTypes = loadSelectedTypes();
+
+function saveSelectedTypes(){
+  localStorage.setItem(LS_TYPES, JSON.stringify([...selectedTypes]));
+}
+
+function renderTypeButtons(){
+  if(!typeBar) return;
+
+  typeBar.innerHTML = "";
+
+  TYPE_LIST.forEach(type=>{
+    const btn = document.createElement("button");
+    btn.className = "type-btn" + (selectedTypes.has(type) ? " active" : "");
+    btn.textContent = type;
+
+    btn.onclick = ()=>{
+      if(selectedTypes.has(type)) selectedTypes.delete(type);
+      else selectedTypes.add(type);
+
+      saveSelectedTypes();
+      renderTypeButtons();
+      renderCalendar(); // ✅ 즉시 갱신
+    };
+
+    typeBar.appendChild(btn);
+  });
+
+  const hint = document.createElement("span");
+  hint.className = "small";
+  hint.style.marginLeft = "6px";
+  hint.textContent = (selectedTypes.size === 0) ? "분야 미선택: 전체 표시" : "선택 분야만 표시";
+  typeBar.appendChild(hint);
+}
+
+/* =========================
+   Holidays
+========================= */
 let holidayMap = {}; // { "YYYY-MM-DD": { localName, name } }
 const holidayCache = {}; // { "2026": holidayMap... }
 
@@ -90,11 +137,13 @@ async function loadKoreanHolidays(year){
   }
 }
 
-// -------------------- utils --------------------
+/* =========================
+   Utils
+========================= */
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
-// 작성자 이름 → 고정 색상 매핑
+// 작성자 이름 → 고정 색상 매핑 (✅ 색상은 작성자 기준)
 function getMemberColor(name){
   const COLOR_MAP = {
     "성용": "#55B7FF",
@@ -126,20 +175,21 @@ function toEventList(){
   return list;
 }
 
-// ✅ 9자 이상이면 7자+… (총 8자 표시)
+// 멀티(바)용: 9자 이상이면 7자+… (총 8자 표시)
 function compactTitleMulti(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
 
-// ✅ 싱글(1일 일정)용: 16자까지 그대로 / 17자부터 15자 + …
+// 싱글(1일)용: 16자까지 그대로 / 17자부터 15자 + …
 function compactTitleSingle(title){
   const full = (title || "(제목없음)").trim();
   return (full.length >= 17) ? (full.slice(0, 15) + "…") : full;
 }
 
-
-// -------------------- modal --------------------
+/* =========================
+   Modal
+========================= */
 function openModal({dateKey, eventId=null, event=null}){
   if(!selectedName){
     alert("상단에서 이름을 먼저 선택해 주세요.");
@@ -155,11 +205,13 @@ function openModal({dateKey, eventId=null, event=null}){
 
   if(event){
     modalTitle.textContent = "일정 수정";
-    fType.value = event.type || "작업";
+
+    // ✅ 분야 기본값을 "작업일정"으로 정리 (원하시는 기본값으로)
+    fType.value  = event.type || "작업일정";
     fStart.value = event.start || "";
-    fEnd.value = event.end || "";
+    fEnd.value   = event.end || "";
     fTitle.value = event.title || "";
-    fDetail.value = event.detail || "";
+    fDetail.value= event.detail || "";
     if (fEndDate) fEndDate.value = (event.endDate || dateKey);
     fOwner.value = event.owner || selectedName;
 
@@ -171,11 +223,13 @@ function openModal({dateKey, eventId=null, event=null}){
       : "작성자 본인만 수정/삭제할 수 있습니다.";
   }else{
     modalTitle.textContent = "일정 입력";
-    fType.value = "작업";
+
+    fType.value  = "작업일정";  // ✅ 신규 기본 분야
     fStart.value = "";
-    fEnd.value = "";
+    fEnd.value   = "";
     fTitle.value = "";
-    fDetail.value = "";
+    fDetail.value= "";
+
     saveBtn.disabled = false;
     deleteBtn.style.display = "none";
     editHint.textContent = "";
@@ -190,7 +244,9 @@ function closeModal(){
 modalBack.addEventListener("click",(e)=>{ if(e.target===modalBack) closeModal(); });
 closeBtn.addEventListener("click", closeModal);
 
-// -------------------- members --------------------
+/* =========================
+   Members
+========================= */
 function renderMemberButtons(){
   memberBar.innerHTML = "";
 
@@ -246,41 +302,9 @@ function subscribeMembers(){
   });
 }
 
-function saveSelectedTypes(){
-  localStorage.setItem(LS_TYPES, JSON.stringify([...selectedTypes]));
-}
-
-function renderTypeButtons(){
-  if(!typeBar) return;
-  typeBar.innerHTML = "";
-
-  TYPE_LIST.forEach(type=>{
-    const btn = document.createElement("button");
-    btn.className = "type-btn" + (selectedTypes.has(type) ? " active" : "");
-    btn.textContent = type;
-
-    btn.onclick = ()=>{
-      // 토글
-      if(selectedTypes.has(type)) selectedTypes.delete(type);
-      else selectedTypes.add(type);
-
-      saveSelectedTypes();
-      renderTypeButtons();
-      renderCalendar(); // ✅ 즉시 갱신
-    };
-
-    typeBar.appendChild(btn);
-  });
-
-  // 안내(선택 0개면 전체 표시) — 원치 않으면 빼셔도 됩니다
-  const hint = document.createElement("span");
-  hint.className = "small";
-  hint.style.marginLeft = "6px";
-  hint.textContent = (selectedTypes.size === 0) ? "분야 미선택: 전체 표시" : "선택 분야만 표시";
-  typeBar.appendChild(hint);
-}
-
-// -------------------- events --------------------
+/* =========================
+   Events
+========================= */
 function subscribeEvents(){
   onValue(ref(db, "events"), (snap)=>{
     eventsAll = snap.val() || {};
@@ -333,7 +357,9 @@ function placeInLanes(segments){
   return { placed, occ };
 }
 
-// -------------------- render calendar --------------------
+/* =========================
+   Render Calendar
+========================= */
 function renderCalendar(){
   const y = current.getFullYear();
   const m = current.getMonth();
@@ -349,10 +375,10 @@ function renderCalendar(){
 
   const allEventsRaw = toEventList();
 
-// ✅ 분야 필터: 선택이 0개면 전체, 있으면 선택된 것만
-const allEvents = (selectedTypes.size === 0)
-  ? allEventsRaw
-  : allEventsRaw.filter(ev => selectedTypes.has(ev.type || "작업"));
+  // ✅ 분야 필터: 선택 0개면 전체, 있으면 선택된 것만
+  const allEvents = (selectedTypes.size === 0)
+    ? allEventsRaw
+    : allEventsRaw.filter(ev => selectedTypes.has(ev.type || "작업일정"));
 
   calGrid.innerHTML = "";
 
@@ -472,10 +498,10 @@ const allEvents = (selectedTypes.size === 0)
       if (col < 0) continue;
 
       const full = (ev.title || "(제목없음)").trim();
-      const display = compactTitleSingle(full); // ✅ 16자까지 / 17자부터 15자+…
+      const display = compactTitleSingle(full);
       const wantTwoLine = full.length >= 5;
 
-      // ✅ 2줄이면 (row, row+1) 둘 다 비어있는 곳을 찾음
+      // 2줄이면 (row, row+1) 둘 다 비어있는 곳을 찾음
       let row = 0;
       while (true) {
         ensureRow(row);
@@ -573,7 +599,9 @@ const allEvents = (selectedTypes.size === 0)
   }
 }
 
-// -------------------- save/delete --------------------
+/* =========================
+   Save / Delete
+========================= */
 saveBtn.addEventListener("click", async ()=>{
   const dateKey = editing.dateKey;
   if(!dateKey) return;
@@ -585,7 +613,7 @@ saveBtn.addEventListener("click", async ()=>{
   }
 
   const payload = {
-    type: fType.value,
+    type: fType.value || "작업일정", // ✅ 분야 저장
     title: (fTitle.value || "").trim(),
     detail: (fDetail.value || "").trim(),
     owner: selectedName,
@@ -647,14 +675,18 @@ deleteBtn.addEventListener("click", async ()=>{
   }
 });
 
-// -------------------- buttons --------------------
-$("todayBtn").addEventListener("click", ()=>{
+/* =========================
+   Buttons
+========================= */
+$("todayBtn")?.addEventListener("click", ()=>{
   const t = new Date();
   current = new Date(t.getFullYear(), t.getMonth(), 1);
   applyMonthFilterAndRender();
 });
 
-// -------------------- Swipe to change month --------------------
+/* =========================
+   Swipe month
+========================= */
 (function enableSwipeMonth(){
   const el = document.getElementById("calGrid");
   if(!el) return;
@@ -733,9 +765,11 @@ $("todayBtn").addEventListener("click", ()=>{
   });
 })();
 
-// -------------------- start --------------------
+/* =========================
+   Start
+========================= */
 subscribeMembers();
 subscribeEvents();
 renderMemberButtons();
-renderTypeButtons();   // ✅ 추가
+renderTypeButtons(); // ✅ 분야 버튼
 renderCalendar();
