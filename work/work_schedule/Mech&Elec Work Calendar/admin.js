@@ -19,6 +19,7 @@ const mName = $("mName");
 const mOrder = $("mOrder");
 const mColor = $("mColor");
 const mActive = $("mActive");
+const mPin = $("mPin"); // ✅ 추가
 const saveBtn = $("saveBtn");
 const delBtn = $("delBtn");
 const closeBtn = $("closeBtn");
@@ -35,6 +36,7 @@ function openModal(member = null) {
     mOrder.value = member.order ?? "";
     mColor.value = member.color || "#1f6feb";
     mActive.value = (member.active === false) ? "false" : "true";
+    mPin.value = member.pin || ""; // ✅ 추가
     delBtn.style.display = "inline-block";
   } else {
     modalTitle.textContent = "멤버 추가";
@@ -43,9 +45,11 @@ function openModal(member = null) {
     mOrder.value = "";
     mColor.value = "#1f6feb";
     mActive.value = "true";
+    mPin.value = ""; // ✅ 추가
     delBtn.style.display = "none";
   }
 }
+
 function closeModal() {
   modalBack.classList.remove("show");
   editingId = null;
@@ -63,7 +67,7 @@ function renderMembers() {
     return;
   }
 
-  members.forEach(m => {
+  members.forEach((m) => {
     const row = document.createElement("div");
     row.className = "card";
     row.style.margin = "10px 0";
@@ -72,38 +76,53 @@ function renderMembers() {
     row.innerHTML = `
       <div class="row" style="justify-content:space-between">
         <div>
-          <div style="font-weight:900; display:flex; align-items:center; gap:8px">
+          <div style="font-weight:900; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
             <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${m.color || "#ddd"}"></span>
             ${m.name || "(이름없음)"}
+            ${m.pin ? `<span class="chip">PIN</span>` : ``}
             ${m.active === false ? `<span class="chip">비활성</span>` : `<span class="chip">활성</span>`}
           </div>
           <div class="small">순서: ${m.order ?? "-"}</div>
         </div>
-        <button class="btn">수정</button>
+        <button class="btn" type="button">수정</button>
       </div>
     `;
-    row.querySelector("button").onclick = () => openModal(m);
 
+    row.querySelector("button").onclick = () => openModal(m);
     list.appendChild(row);
   });
 }
 
 onValue(ref(db, "config/members"), (snap) => {
   const obj = snap.val() || {};
-  members = Object.entries(obj).map(([id, v]) => ({ id, ...v }))
+  members = Object.entries(obj)
+    .map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   renderMembers();
 });
 
 saveBtn?.addEventListener("click", async () => {
   const name = (mName.value || "").trim();
-  if (!name) { alert("이름은 필수입니다."); return; }
+  if (!name) {
+    alert("이름은 필수입니다.");
+    return;
+  }
+
+  // ✅ PIN 추가
+  const pin = (mPin?.value || "").trim();
+
+  // ✅ 정책: 빈 값 허용 / 입력했다면 4자 이상 (원하면 숫자만으로 바꿀 수 있음)
+  if (pin && pin.length < 4) {
+    alert("비밀번호(PIN)는 4자 이상으로 입력해 주세요.");
+    return;
+  }
 
   const payload = {
     name,
     order: Number(mOrder.value || 999),
     color: (mColor.value || "").trim() || "#1f6feb",
-    active: (mActive.value === "true")
+    active: mActive.value === "true",
+    pin, // ✅ 저장
   };
 
   try {
@@ -132,6 +151,7 @@ delBtn?.addEventListener("click", async () => {
     alert("삭제 실패: " + (err?.message || err));
   }
 });
+
 
 
 /* =========================
