@@ -113,6 +113,13 @@ function compactTitleMulti(title){
   return (full.length >= 9) ? (full.slice(0, 7) + "…") : full;
 }
 
+// ✅ 싱글(1일 일정)용: 16자까지 그대로 / 17자부터 15자 + …
+function compactTitleSingle(title){
+  const full = (title || "(제목없음)").trim();
+  return (full.length >= 17) ? (full.slice(0, 15) + "…") : full;
+}
+
+
 // -------------------- modal --------------------
 function openModal({dateKey, eventId=null, event=null}){
   if(!selectedName){
