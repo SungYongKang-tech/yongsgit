@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>코엔서비스 업무공유 게시판 (KOEN Service Work Board)</title>
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef; --txt:#1f2330; --mut:#6b7280;
+      --accent:#2563eb; --shadow:0 10px 25px rgba(0,0,0,.06); --r:14px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
+    .wrap{max-width:900px;margin:0 auto;padding:12px}
+    .top{position:sticky;top:0;background:rgba(246,247,251,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);z-index:10}
+    .top .wrap{padding:10px 12px}
+    h1{font-size:18px;margin:0 0 4px}
+    .sub{font-size:12px;color:var(--mut)}
+    .tabs{display:flex;gap:8px;margin-top:10px}
+    .tab{flex:1;border:1px solid var(--bd);background:#fff;border-radius:999px;padding:10px 12px;font-weight:700}
+    .tab.active{border-color:var(--accent); color:var(--accent)}
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--shadow);padding:12px;margin-top:12px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1}
+    .label{font-size:12px;color:var(--mut);margin-bottom:6px}
+    input[type="date"]{width:100%;padding:10px 12px;border:1px solid var(--bd);border-radius:12px;font-size:14px}
+    textarea{width:100%;min-height:260px;padding:12px;border:1px solid var(--bd);border-radius:12px;font-size:14px;line-height:1.5;resize:vertical}
+    .btnbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    button{border:1px solid var(--bd);background:#fff;border-radius:12px;padding:10px 12px;font-weight:700}
+    button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    button.ghost{background:transparent}
+    .mut{color:var(--mut);font-size:12px;margin-top:8px}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#111827;color:#fff;
+      padding:10px 12px;border-radius:12px;font-size:13px;opacity:0;pointer-events:none;transition:.25s}
+    .toast.show{opacity:1}
+    .pinback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:99}
+    .pinbox{width:min(420px,100%);background:#fff;border:1px solid var(--bd);border-radius:16px;box-shadow:var(--shadow);padding:14px}
+    .pinbox h3{margin:0 0 8px;font-size:16px}
+    .pinbox p{margin:0 0 10px;color:var(--mut);font-size:13px;line-height:1.4}
+    .pinrow{display:flex;gap:8px}
+    .pinrow input{flex:1;padding:12px;border:1px solid var(--bd);border-radius:12px;font-size:16px;letter-spacing:4px;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="wrap">
+      <h1>코엔서비스 업무공유 게시판</h1>
+      <div class="sub">KOEN Service Work Board</div>
+      <div class="tabs">
+        <button class="tab active" data-tab="IBS">IBS(방재실)</button>
+        <button class="tab" data-tab="MECH">기계설비</button>
+        <button class="tab" data-tab="ELEC">전기설비</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="label">날짜 <span id="dateLabel" class="mono"></span></div>
+          <input type="date" id="dateInput" />
+          <div class="mut">표시 형식: <span class="mono">26.02.10(화)</span></div>
+        </div>
+        <div>
+          <div class="label">선택 분야</div>
+          <div id="tabTitle" style="font-weight:900;font-size:16px">IBS(방재실)</div>
+          <div class="mut">하루 1개 문서(수정/저장)</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="label">내용(텍스트)</div>
+        <textarea id="textArea" placeholder="여기에 내용을 입력하세요."></textarea>
+        <div class="mut">마지막 수정: <span id="updatedAt">-</span></div>
+      </div>
+
+      <div class="btnbar">
+        <button class="primary" id="saveBtn">저장(수정)</button>
+        <button id="refreshBtn">불러오기</button>
+        <button class="ghost" id="copyBtn">📋 카톡용 복사(기계+전기만)</button>
+        <button class="ghost" id="pinBtn">🔒 PIN 입력</button>
+      </div>
+
+      <div class="mut">
+        ※ PIN은 “쓰기(저장)”에만 필요합니다. 열람은 누구나 가능합니다.<br/>
+        ※ 카톡 복사에는 <b>IBS(방재실)</b> 내용이 포함되지 않습니다.
+      </div>
+    </div>
+  </div>
+
+  <!-- PIN Modal -->
+  <div class="pinback" id="pinBack">
+    <div class="pinbox">
+      <h3>쓰기 PIN 입력</h3>
+      <p>4자리 PIN을 입력하면 이 기기에서는 저장이 가능합니다(브라우저에만 기억).</p>
+      <div class="pinrow">
+        <input id="pinInput" inputmode="numeric" maxlength="4" placeholder="••••" />
+        <button class="primary" id="pinOkBtn" style="flex:0 0 auto">확인</button>
+      </div>
+      <div class="btnbar" style="justify-content:flex-end;margin-top:10px">
+        <button id="pinCancelBtn">닫기</button>
+        <button id="pinClearBtn">PIN 해제</button>
+      </div>
+      <div class="mut">보안이 꼭 필요하면(외부 수정 방지) 다음 단계에서 Firebase Auth로 강화 가능합니다.</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    /* ==========================
+       0) 설정
+    ========================== */
+    // ✅ 여기 PIN만 바꾸시면 됩니다.
+    const WRITE_PIN = "1234";
+
+    // ✅ Firebase 설정은 아래 firebase.js에서 가져옵니다.
+    import { db } from "./firebase.js";
+    import {
+      ref, get, update, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    /* ==========================
+       1) DOM
+    ========================== */
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll(".tab");
+
+    const dateInput  = $("dateInput");
+    const dateLabel  = $("dateLabel");
+    const tabTitle   = $("tabTitle");
+    const textArea   = $("textArea");
+    const updatedAt  = $("updatedAt");
+
+    const saveBtn    = $("saveBtn");
+    const refreshBtn = $("refreshBtn");
+    const copyBtn    = $("copyBtn");
+    const pinBtn     = $("pinBtn");
+
+    const pinBack    = $("pinBack");
+    const pinInput   = $("pinInput");
+    const pinOkBtn   = $("pinOkBtn");
+    const pinCancelBtn = $("pinCancelBtn");
+    const pinClearBtn  = $("pinClearBtn");
+
+    const toastEl = $("toast");
+
+    /* ==========================
+       2) 유틸
+    ========================== */
+    const pad2 = (n) => String(n).padStart(2,"0");
+    const wday = ["일","월","화","수","목","금","토"];
+
+    function isoToday(){
+      const d = new Date();
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    }
+    function isoTomorrow(){
+      const d = new Date();
+      d.setDate(d.getDate()+1);
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    }
+    function fmtKorean(iso){
+      // iso: YYYY-MM-DD -> "26.02.10(화)"
+      const [Y,M,D] = iso.split("-").map(Number);
+      const d = new Date(Y, M-1, D);
+      const yy = String(Y).slice(2);
+      return `${yy}.${pad2(M)}.${pad2(D)}(${wday[d.getDay()]})`;
+    }
+    function showToast(msg){
+      toastEl.textContent = msg;
+      toastEl.classList.add("show");
+      setTimeout(()=>toastEl.classList.remove("show"), 1400);
+    }
+
+    // PIN (기기 로컬 저장 — “쓰기 제한용”)
+    const PIN_KEY = "koen_swboard_pin_ok";
+    function hasWriteAccess(){
+      return localStorage.getItem(PIN_KEY) === "1";
+    }
+    function openPin(){
+      pinBack.style.display = "flex";
+      pinInput.value = "";
+      setTimeout(()=>pinInput.focus(), 30);
+    }
+    function closePin(){
+      pinBack.style.display = "none";
+    }
+    function requirePinOr(fn){
+      if (hasWriteAccess()) return fn();
+      openPin();
+      showToast("쓰기 PIN이 필요합니다");
+    }
+
+    /* ==========================
+       3) 상태 / 경로
+    ========================== */
+    const TAB_NAMES = {
+      IBS:  "IBS(방재실)",
+      MECH: "기계설비",
+      ELEC: "전기설비"
+    };
+
+    let currentTab = "IBS"; // IBS/MECH/ELEC
+
+    function pathFor(tab, iso){
+      // /daily/{TAB}/{YYYY-MM-DD}
+      return `daily/${tab}/${iso}`;
+    }
+
+    function setDefaultDateByTab(){
+      if (currentTab === "IBS") dateInput.value = isoToday();
+      else dateInput.value = isoTomorrow(); // 기계/전기: “내일 일정” 기본
+      dateLabel.textContent = `(${fmtKorean(dateInput.value)})`;
+    }
+
+    function renderHeader(){
+      tabTitle.textContent = TAB_NAMES[currentTab] || currentTab;
+      dateLabel.textContent = `(${fmtKorean(dateInput.value)})`;
+    }
+
+    /* ==========================
+       4) DB 로드/저장
+    ========================== */
+    async function loadDoc(){
+      const iso = dateInput.value;
+      renderHeader();
+
+      const r = ref(db, pathFor(currentTab, iso));
+      const snap = await get(r);
+
+      const data = snap.exists() ? snap.val() : null;
+      textArea.value = (data?.text || "");
+      updatedAt.textContent = data?.updatedAt
+        ? new Date(data.updatedAt).toLocaleString("ko-KR")
+        : "-";
+
+      showToast("불러왔습니다");
+    }
+
+    async function saveDoc(){
+      const iso = dateInput.value;
+      const text = (textArea.value || "").trim();
+
+      const r = ref(db, pathFor(currentTab, iso));
+      await update(r, {
+        text,
+        updatedAt: serverTimestamp()
+      });
+
+      showToast("저장했습니다");
+      await loadDoc(); // 수정시간 갱신
+    }
+
+    async function buildKakaoText(){
+      const iso = dateInput.value; // 현재 선택 날짜 기준(보통 내일)
+      const mech = await get(ref(db, pathFor("MECH", iso)));
+      const elec = await get(ref(db, pathFor("ELEC", iso)));
+
+      const mechText = mech.exists() ? (mech.val()?.text || "").trim() : "";
+      const elecText = elec.exists() ? (elec.val()?.text || "").trim() : "";
+
+      const header = `[${fmtKorean(iso)} 작업내용]`;
+      const parts = [];
+
+      parts.push(header);
+      parts.push("");
+      parts.push("[기계설비]");
+      parts.push(mechText || "- (내용 없음)");
+      parts.push("");
+      parts.push("[전기설비]");
+      parts.push(elecText || "- (내용 없음)");
+
+      return parts.join("\n");
+    }
+
+    async function copyKakao(){
+      const txt = await buildKakaoText();
+      await navigator.clipboard.writeText(txt);
+      showToast("카톡용 문구를 복사했습니다");
+    }
+
+    /* ==========================
+       5) 이벤트
+    ========================== */
+    tabs.forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        tabs.forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+        currentTab = btn.dataset.tab;
+
+        setDefaultDateByTab();
+        renderHeader();
+        await loadDoc();
+      });
+    });
+
+    dateInput.addEventListener("change", async ()=>{
+      renderHeader();
+      await loadDoc();
+    });
+
+    refreshBtn.addEventListener("click", loadDoc);
+
+    saveBtn.addEventListener("click", ()=>{
+      requirePinOr(saveDoc);
+    });
+
+    copyBtn.addEventListener("click", copyKakao);
+
+    pinBtn.addEventListener("click", openPin);
+
+    pinOkBtn.addEventListener("click", ()=>{
+      const v = (pinInput.value || "").trim();
+      if (v === WRITE_PIN){
+        localStorage.setItem(PIN_KEY, "1");
+        closePin();
+        showToast("PIN 확인 완료(쓰기 가능)");
+      } else {
+        showToast("PIN이 틀렸습니다");
+      }
+    });
+
+    pinCancelBtn.addEventListener("click", closePin);
+    pinClearBtn.addEventListener("click", ()=>{
+      localStorage.removeItem(PIN_KEY);
+      showToast("PIN을 해제했습니다");
+    });
+
+    pinBack.addEventListener("click", (e)=>{
+      if (e.target === pinBack) closePin();
+    });
+
+    /* ==========================
+       6) 초기화
+    ========================== */
+    // 초기 탭/날짜: IBS=오늘, 기계/전기=내일(탭 이동 시)
+    dateInput.value = isoToday();
+    renderHeader();
+    loadDoc();
+  </script>
+</body>
+</html>
