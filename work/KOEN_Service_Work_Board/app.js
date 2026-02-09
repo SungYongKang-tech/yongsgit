@@ -16,6 +16,14 @@ function isoYesterday(){
   const d = new Date(); d.setDate(d.getDate()-1);
   return isoFromDate(d);
 }
+function isoTomorrow(){
+  const d = new Date(); d.setDate(d.getDate()+1);
+  return isoFromDate(d);
+}
+function prettyKFromDate(d){
+  return prettyK(isoFromDate(d));
+}
+
 function prettyK(iso){
   const [Y,M,D] = iso.split("-").map(Number);
   const dt = new Date(Y, M-1, D);
@@ -232,6 +240,50 @@ async function rebindAll(forTab){
   if (forTab==="MECH") await bindMECH();
   if (forTab==="ELEC") await bindELEC();
 }
+
+// ✅ 내일 작업사항(기계/전기) 일괄 복사
+async function copyTomorrowPlanToClipboard(){
+  const btn = document.getElementById("copyTomorrowBtn");
+  if (!btn) return;
+
+  // “내일 작업”은 오늘(ISO_TODAY)에 저장된 tomorrowWork 값
+  const mechSnap = await get(ref(db, pathMECH(ISO_TODAY)));
+  const elecSnap = await get(ref(db, pathELEC(ISO_TODAY)));
+
+  const mech = (mechSnap.val()?.tomorrowWork || "").trim();
+  const elec = (elecSnap.val()?.tomorrowWork || "").trim();
+
+  // 표시용 “내일 날짜”
+  const dt = new Date();
+  dt.setDate(dt.getDate()+1);
+  const tomorrowPretty = prettyKFromDate(dt);
+
+  const lines = [];
+  lines.push(`📌 내일 작업사항 (${tomorrowPretty})`);
+  lines.push("");
+
+  lines.push("■ 기계설비");
+  lines.push(mech ? mech : "- (내용 없음)");
+  lines.push("");
+
+  lines.push("■ 전기설비");
+  lines.push(elec ? elec : "- (내용 없음)");
+
+  const text = lines.join("\n");
+
+  // 클립보드 복사(HTTPS에서 동작)
+  try{
+    await navigator.clipboard.writeText(text);
+    const old = btn.textContent;
+    btn.textContent = "복사 완료!";
+    setTimeout(()=> btn.textContent = old, 900);
+  }catch(e){
+    // 일부 환경 대비(권한/브라우저 제한)
+    window.prompt("아래 내용을 복사하세요 (Ctrl+C)", text);
+  }
+}
+
+document.getElementById("copyTomorrowBtn")?.addEventListener("click", copyTomorrowPlanToClipboard);
 
 function startMidnightWatcher(){
   setInterval(async ()=>{
