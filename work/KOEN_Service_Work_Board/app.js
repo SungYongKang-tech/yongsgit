@@ -330,6 +330,8 @@ document.getElementById("copyTomorrowBtn")?.addEventListener("click", copyTomorr
 
 function startMidnightWatcher(){
   setInterval(async ()=>{
+    if (isHistoryMode) return;
+
     const nowToday = isoToday();
     if (nowToday !== ISO_TODAY){
       ISO_TODAY = nowToday;
@@ -339,6 +341,50 @@ function startMidnightWatcher(){
       $("clockLabel").textContent = new Date().toLocaleString("ko-KR");
     }
   }, 10_000);
+}
+
+// ✅ 과거 조회 모드
+let isHistoryMode = false;
+let realISO_TODAY = ISO_TODAY;
+let realISO_YDAY  = ISO_YDAY;
+
+function setHistoryMode(isoSelected){
+  // 선택 날짜를 “오늘”로 취급해서 화면 구성
+  isHistoryMode = true;
+
+  // 원래 오늘/어제를 백업
+  realISO_TODAY = isoToday();
+  realISO_YDAY  = isoYesterday();
+
+  ISO_TODAY = isoSelected;
+
+  const d = new Date(isoSelected);
+  d.setDate(d.getDate()-1);
+  ISO_YDAY = isoFromDate(d);
+
+  refreshDateUI();
+}
+
+function clearHistoryMode(){
+  isHistoryMode = false;
+  ISO_TODAY = isoToday();
+  ISO_YDAY  = isoYesterday();
+  refreshDateUI();
+}
+
+
+const historyInput = document.getElementById("historyDate");
+if (historyInput){
+  // 기본값: 오늘
+  historyInput.value = isoToday();
+
+  historyInput.addEventListener("change", async ()=>{
+    const iso = historyInput.value;
+    if (!iso) return;
+
+    setHistoryMode(iso);
+    await rebindAll(currentTab);
+  });
 }
 
 // ---- init
