@@ -37,11 +37,20 @@
     .status{color:var(--mut);font-size:12px}
     .section{margin-top:10px}
     .label{font-size:12px;color:var(--mut);margin:0 0 6px;font-weight:800}
-    textarea{
-      width:100%;min-height:120px;padding:12px;border:1px solid var(--bd);
-      border-radius:12px;font-size:14px;line-height:1.55;resize:vertical;
-      background:#fff;
-    }
+ textarea{
+  width:100%;
+  min-height:120px;
+  max-height:70vh;          /* 너무 길어지면 화면을 다 먹지 않게 */
+  overflow-y:auto;          /* max-height 넘어가면 스크롤 */
+  padding:12px;
+  border:1px solid var(--bd);
+  border-radius:12px;
+  font-size:14px;
+  line-height:1.55;
+  resize:none;              /* 수동 리사이즈 대신 자동 높이 */
+  background:#fff;
+}
+
     .hint{color:var(--mut);font-size:12px;margin-top:8px;line-height:1.4}
     .pill{
       display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--bd);
@@ -295,6 +304,17 @@
     let ISO_TODAY = isoToday();
     let ISO_YDAY  = isoYesterday();
 
+    // ✅ textarea 자동 높이(내용 줄 수에 따라 늘어남)
+function autoSize(el){
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.70) + "px";
+}
+function autoSizeAll(){
+  document.querySelectorAll("textarea").forEach(autoSize);
+}
+
+
     function refreshDateUI(){
       $("clockLabel").textContent = new Date().toLocaleString("ko-KR");
       $("todayLabel").textContent = `오늘: ${prettyK(ISO_TODAY)}`;
@@ -326,6 +346,7 @@
       const uY = onValue(rY, (snap)=>{
         const v = snap.val() || {};
         $("ibsY_handover").value = v.handover || "";
+        autoSize($("ibsY_handover"));
         $("ibsY_status").value   = v.status || "";
         $("ibsY_special").value  = v.special || "";
         const ts = v.updatedAt || null;
@@ -346,7 +367,8 @@
         const ta = $(areaId);
         const statusEl = which === "Y" ? $("ibsYStatus") : $("ibsTStatus");
         ta.addEventListener("input", ()=>{
-          setSaving(statusEl);
+          autoSize(ta);            // ✅ 추가
+            setSaving(statusEl);
           const iso = which === "Y" ? ISO_YDAY : ISO_TODAY;
           const key = `IBS:${which}:${field}`;
           scheduleSave(key, async ()=>{
@@ -418,7 +440,8 @@
         const ta = $(areaId);
         const statusEl = which === "Y" ? yStatusEl : tStatusEl;
         ta.addEventListener("input", ()=>{
-          setSaving(statusEl);
+        autoSize(ta);            // ✅ 추가
+            setSaving(statusEl);
           const iso = which === "Y" ? ISO_YDAY : ISO_TODAY;
           const key = `${kind}:${which}:${field}:${areaId}`;
           scheduleSave(key, async ()=>{
