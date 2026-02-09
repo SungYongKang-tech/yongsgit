@@ -23,7 +23,6 @@ function isoTomorrow(){
 function prettyKFromDate(d){
   return prettyK(isoFromDate(d));
 }
-
 function prettyK(iso){
   const [Y,M,D] = iso.split("-").map(Number);
   const dt = new Date(Y, M-1, D);
@@ -241,6 +240,46 @@ async function rebindAll(forTab){
   if (forTab==="ELEC") await bindELEC();
 }
 
+/* ==========================
+   ✅ 카톡용: 오늘/내일 작업 복사
+========================== */
+
+// ✅ 오늘 작업사항(기계/전기) 일괄 복사
+async function copyTodayPlanToClipboard(){
+  const btn = document.getElementById("copyTodayBtn");
+  if (!btn) return;
+
+  const mechSnap = await get(ref(db, pathMECH(ISO_TODAY)));
+  const elecSnap = await get(ref(db, pathELEC(ISO_TODAY)));
+
+  const mech = (mechSnap.val()?.todayWork || "").trim();
+  const elec = (elecSnap.val()?.todayWork || "").trim();
+
+  const todayPretty = prettyK(ISO_TODAY);
+
+  const lines = [];
+  lines.push(`📌 오늘 작업사항 (${todayPretty})`);
+  lines.push("");
+
+  lines.push("■ 기계설비");
+  lines.push(mech ? mech : "- (내용 없음)");
+  lines.push("");
+
+  lines.push("■ 전기설비");
+  lines.push(elec ? elec : "- (내용 없음)");
+
+  const text = lines.join("\n");
+
+  try{
+    await navigator.clipboard.writeText(text);
+    const old = btn.textContent;
+    btn.textContent = "복사 완료!";
+    setTimeout(()=> btn.textContent = old, 900);
+  }catch(e){
+    window.prompt("아래 내용을 복사하세요 (Ctrl+C)", text);
+  }
+}
+
 // ✅ 내일 작업사항(기계/전기) 일괄 복사
 async function copyTomorrowPlanToClipboard(){
   const btn = document.getElementById("copyTomorrowBtn");
@@ -271,19 +310,23 @@ async function copyTomorrowPlanToClipboard(){
 
   const text = lines.join("\n");
 
-  // 클립보드 복사(HTTPS에서 동작)
   try{
     await navigator.clipboard.writeText(text);
     const old = btn.textContent;
     btn.textContent = "복사 완료!";
     setTimeout(()=> btn.textContent = old, 900);
   }catch(e){
-    // 일부 환경 대비(권한/브라우저 제한)
     window.prompt("아래 내용을 복사하세요 (Ctrl+C)", text);
   }
 }
 
+// ✅ 버튼 이벤트 연결
+document.getElementById("copyTodayBtn")?.addEventListener("click", copyTodayPlanToClipboard);
 document.getElementById("copyTomorrowBtn")?.addEventListener("click", copyTomorrowPlanToClipboard);
+
+/* ==========================
+   ✅ 날짜 변경 감지
+========================== */
 
 function startMidnightWatcher(){
   setInterval(async ()=>{
