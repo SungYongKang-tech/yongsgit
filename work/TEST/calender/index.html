@@ -1,1508 +1,1686 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>월간 일정 공유 캘린더</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f5f5f5;
-            color: #333;
-            line-height: 1.5;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 16px;
-        }
-
-        /* 헤더 */
-        .header {
-            background: white;
-            padding: 16px;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-            margin-bottom: 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .month-nav {
-            display: flex;
-            gap: 4px;
-        }
-
-        .btn-nav {
-            padding: 6px 10px;
-            font-size: 16px;
-            background: #e2e8f0;
-            color: #4a5568;
-        }
-
-        .btn-nav:hover {
-            background: #cbd5e0;
-        }
-
-        .header h1 {
-            font-size: 20px;
-            font-weight: 600;
-        }
-
-        .header-controls {
-            display: flex;
-            gap: 8px;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            background: #4a5568;
-            color: white;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .btn:hover {
-            background: #2d3748;
-        }
-
-        .btn-icon {
-            padding: 8px 12px;
-            font-size: 18px;
-        }
-
-        /* 달력 */
-        .calendar-wrapper {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-            padding: 16px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .calendar {
-            transition: opacity 0.2s ease;
-        }
-
-        .calendar.transitioning {
-            opacity: 0.5;
-        }
-
-        .weekday-header {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 2px;
-            margin-bottom: 2px;
-            font-weight: 600;
-            font-size: 13px;
-            text-align: center;
-            padding: 8px 0;
-        }
-
-        .weekday-header > div:first-child {
-            color: #e53e3e; /* 일요일 빨강 */
-        }
-
-        .weekday-header > div:last-child {
-            color: #3182ce; /* 토요일 파랑 */
-        }
-
-        .calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 2px;
-            background: #e2e8f0;
-            border: 1px solid #e2e8f0;
-        }
-
-        .day-cell {
-            background: white;
-            min-height: 100px;
-            padding: 6px;
-            position: relative;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .day-cell:hover {
-            background: #f7fafc;
-        }
-
-        .day-cell.other-month {
-            background: #fafafa;
-            color: #cbd5e0;
-        }
-
-        .day-number {
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 4px;
-        }
-
-        /* 일요일 날짜 빨강 */
-        .day-cell.sunday .day-number {
-            color: #e53e3e;
-        }
-
-        /* 토요일 날짜 파랑 */
-        .day-cell.saturday .day-number {
-            color: #3182ce;
-        }
-
-        .day-cell.today .day-number {
-            background: #4299e1;
-            color: white;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .holiday-label {
-            display: inline-block;
-            font-size: 11px;
-            color: #e53e3e;
-            font-weight: 600;
-            margin-left: 4px;
-        }
-
-        .events-container {
-            margin-top: 4px;
-            position: relative;
-            min-height: 60px;
-        }
-
-        .event-bar {
-            position: absolute;
-            height: 20px;
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 11px;
-            color: white;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            cursor: pointer;
-            transition: opacity 0.2s;
-            left: 0;
-            right: 0;
-        }
-
-        .event-bar:hover {
-            opacity: 0.85;
-            z-index: 10;
-        }
-
-        .more-events {
-            position: absolute;
-            bottom: 2px;
-            left: 6px;
-            font-size: 11px;
-            color: #4a5568;
-            cursor: pointer;
-            text-decoration: underline;
-        }
-
-        /* 모달 */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 8px;
-            width: 100%;
-            max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        .modal-header {
-            padding: 16px;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h2 {
-            font-size: 18px;
-            font-weight: 600;
-        }
-
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #718096;
-            padding: 0;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-body {
-            padding: 16px;
-        }
-
-        .event-list {
-            margin-bottom: 16px;
-        }
-
-        .event-item {
-            padding: 12px;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            background: #f7fafc;
-        }
-
-        .event-item-header {
-            font-weight: 600;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .event-color-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        .event-item-details {
-            font-size: 13px;
-            color: #718096;
-            margin-bottom: 8px;
-        }
-
-        .event-item-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .btn-sm {
-            padding: 4px 12px;
-            font-size: 13px;
-            border-radius: 4px;
-        }
-
-        .btn-edit {
-            background: #4299e1;
-        }
-
-        .btn-edit:hover {
-            background: #3182ce;
-        }
-
-        .btn-delete {
-            background: #fc8181;
-        }
-
-        .btn-delete:hover {
-            background: #f56565;
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #4299e1;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 8px;
-        }
-
-        .repeat-options {
-            margin-top: 12px;
-            padding: 12px;
-            background: #f7fafc;
-            border-radius: 6px;
-        }
-
-        .holiday-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .holiday-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        @media (max-width: 640px) {
-            .container {
-                padding: 8px;
-            }
-
-            .header {
-                padding: 12px;
-            }
-
-            .header {
-                flex-direction: column;
-                gap: 12px;
-            }
-
-            .header-left {
-                width: 100%;
-                justify-content: space-between;
-            }
-
-            .header h1 {
-                font-size: 16px;
-            }
-
-            .header-controls {
-                width: 100%;
-                justify-content: flex-end;
-            }
-
-            .day-cell {
-                min-height: 80px;
-                padding: 4px;
-            }
-
-            .day-number {
-                font-size: 13px;
-            }
-
-            .event-bar {
-                font-size: 10px;
-                height: 18px;
-            }
-
-            .form-row {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>월간 일정 캘린더</title>
+  <style>
+    :root{
+      --bg:#f3f5f8;
+      --card:#ffffff;
+      --bd:#e5e8ef;
+      --txt:#1f2430;
+      --mut:#6b7280;
+      --accent:#2563eb;
+      --danger:#dc2626;
+      --sat:#2563eb;
+      --sun:#dc2626;
+      --shadow: 0 10px 24px rgba(0,0,0,.06);
+      --radius:14px;
+
+      /* 멀티바 레인 */
+      --laneH: 22px;
+      --laneGap: 4px;
+      --lanes: 3;
+    }
+
+    *{box-sizing:border-box}
+    html,body{margin:0; background:var(--bg); color:var(--txt); font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;}
+    button, input, select{font:inherit}
+    a{color:inherit; text-decoration:none}
+
+    .wrap{max-width:900px; margin:0 auto; padding:12px;}
+    .topbar{
+      position:sticky; top:0; z-index:50;
+      background:rgba(243,245,248,.92);
+      backdrop-filter: blur(10px);
+      padding:10px 0;
+    }
+    .toprow{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px;
+    }
+    .title{
+      font-weight:800; letter-spacing:-.3px;
+      font-size:18px;
+    }
+    .actions{display:flex; gap:8px; align-items:center;}
+    .btn{
+      border:1px solid var(--bd);
+      background:var(--card);
+      border-radius:12px;
+      padding:9px 12px;
+      box-shadow: 0 1px 0 rgba(0,0,0,.02);
+      cursor:pointer;
+      color:var(--txt);
+      font-weight:650;
+      line-height:1;
+      user-select:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active{transform:translateY(1px)}
+    .btn.primary{border-color: rgba(37,99,235,.25); color:var(--accent)}
+    .btn.icon{width:40px; padding:9px 0; text-align:center}
+
+    .hint{
+      margin-top:8px;
+      color:var(--mut);
+      font-size:12px;
+      display:flex; gap:8px; align-items:center;
+    }
+    .chip{
+      display:inline-flex; gap:6px; align-items:center;
+      padding:6px 10px; border-radius:999px;
+      border:1px solid var(--bd); background:rgba(255,255,255,.7);
+    }
+
+    /* Calendar */
+    .calCard{
+      margin-top:10px;
+      background:var(--card);
+      border:1px solid var(--bd);
+      border-radius:var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      touch-action: pan-y; /* allow vertical scroll, we handle horizontal */
+    }
+    .dow{
+      display:grid;
+      grid-template-columns: repeat(7, 1fr);
+      border-bottom:1px solid var(--bd);
+      background: #fbfcfe;
+    }
+    .dow div{
+      padding:10px 0;
+      text-align:center;
+      font-weight:800;
+      font-size:12px;
+      color:var(--mut);
+      letter-spacing:-.2px;
+    }
+    .dow .sun{color:var(--sun)}
+    .dow .sat{color:var(--sat)}
+
+    .grid{
+      display:flex;
+      flex-direction:column;
+    }
+
+    .week{
+      position:relative;
+      border-bottom:1px solid var(--bd);
+    }
+    .week:last-child{border-bottom:none}
+
+    .days{
+      display:grid;
+      grid-template-columns: repeat(7, 1fr);
+      min-height: 118px;
+    }
+    .day{
+      border-right:1px solid var(--bd);
+      padding:8px 8px 6px;
+      position:relative;
+      background: var(--card);
+    }
+    .day:last-child{border-right:none}
+    .day.out{
+      background: #fafbfe;
+      color: rgba(31,36,48,.45);
+    }
+    .day .dnum{
+      font-weight:900;
+      font-size:13px;
+      letter-spacing:-.2px;
+      width:max-content;
+      padding:2px 0;
+    }
+    .day.sun .dnum{color:var(--sun)}
+    .day.sat .dnum{color:var(--sat)}
+    .day.today{
+      outline: 2px solid rgba(37,99,235,.25);
+      outline-offset:-2px;
+      background: linear-gradient(180deg, rgba(37,99,235,.06), rgba(255,255,255,0));
+    }
+
+    .holidayTag{
+      margin-top:4px;
+      display:inline-block;
+      font-size:11px;
+      font-weight:800;
+      color: var(--danger);
+      border:1px solid rgba(220,38,38,.18);
+      background: rgba(220,38,38,.06);
+      padding:3px 8px;
+      border-radius:999px;
+    }
+
+    /* space reserved for bars */
+    .barSpace{
+      height: calc((var(--laneH) * var(--lanes)) + (var(--laneGap) * (var(--lanes) - 1)) + 10px);
+      margin-top:6px;
+    }
+
+    .more{
+      position:absolute;
+      left:8px;
+      right:8px;
+      bottom:6px;
+      display:flex;
+      justify-content:flex-start;
+    }
+    .moreBtn{
+      border:none;
+      background: rgba(17,24,39,.06);
+      color: rgba(17,24,39,.8);
+      font-weight:800;
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      cursor:pointer;
+    }
+    .moreBtn:active{transform:translateY(1px)}
+
+    /* Bars overlay */
+    .bars{
+      position:absolute;
+      left:0; right:0;
+      top:34px; /* below date row */
+      padding:0 6px;
+      pointer-events:none; /* bars won't block day tap */
+    }
+    .bar{
+      position:absolute;
+      height: var(--laneH);
+      border-radius: 10px;
+      border:1px solid rgba(37,99,235,.18);
+      background: rgba(37,99,235,.12);
+      display:flex;
+      align-items:center;
+      padding:0 8px;
+      overflow:hidden;
+      pointer-events:none;
+    }
+    .bar .t{
+      font-size:12px;
+      font-weight:900;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      color: rgba(31,36,48,.92);
+      max-width:100%;
+      letter-spacing:-.2px;
+    }
+    .bar .time{
+      font-size:11px;
+      font-weight:800;
+      margin-left:6px;
+      color: rgba(31,36,48,.60);
+      flex:0 0 auto;
+    }
+
+    /* subtle animation */
+    .fadeIn{animation:fadeIn .14s ease-out}
+    @keyframes fadeIn{from{opacity:.45}to{opacity:1}}
+
+    /* Modal */
+    .backdrop{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.42);
+      display:none;
+      align-items:flex-end;
+      justify-content:center;
+      z-index:100;
+    }
+    .backdrop.show{display:flex}
+    .sheet{
+      width:100%;
+      max-width:900px;
+      background:var(--card);
+      border-top-left-radius:18px;
+      border-top-right-radius:18px;
+      border:1px solid var(--bd);
+      box-shadow: 0 -18px 50px rgba(0,0,0,.22);
+      max-height: 86vh;
+      overflow:auto;
+    }
+    .sheetHead{
+      position:sticky; top:0;
+      background:rgba(255,255,255,.95);
+      backdrop-filter: blur(10px);
+      border-bottom:1px solid var(--bd);
+      padding:12px 12px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .sheetTitle{
+      font-weight:950;
+      letter-spacing:-.3px;
+      font-size:16px;
+    }
+    .sheetSub{
+      font-size:12px; color:var(--mut); margin-top:2px;
+    }
+    .sheetBody{padding:12px}
+    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    .section{
+      border:1px solid var(--bd);
+      border-radius:14px;
+      padding:12px;
+      background:#fbfcfe;
+      margin-bottom:10px;
+    }
+    .section h3{
+      margin:0 0 8px;
+      font-size:13px; letter-spacing:-.2px;
+    }
+    .list{
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .item{
+      border:1px solid var(--bd);
+      border-radius:14px;
+      padding:10px 10px;
+      background: var(--card);
+      display:flex; gap:10px; align-items:flex-start; justify-content:space-between;
+    }
+    .item .meta{min-width:0}
+    .item .name{
+      font-weight:900;
+      letter-spacing:-.2px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .item .desc{
+      margin-top:3px;
+      color:var(--mut);
+      font-size:12px;
+      line-height:1.25;
+    }
+    .item .btns{display:flex; gap:6px; flex:0 0 auto;}
+    .mini{
+      border:1px solid var(--bd);
+      background:#fff;
+      border-radius:12px;
+      padding:7px 10px;
+      font-weight:850;
+      font-size:12px;
+      cursor:pointer;
+    }
+    .mini.danger{border-color: rgba(220,38,38,.28); color:var(--danger); background: rgba(220,38,38,.04);}
+    .mini.primary{border-color: rgba(37,99,235,.25); color:var(--accent); background: rgba(37,99,235,.04);}
+
+    .formGrid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+    .field{display:flex; flex-direction:column; gap:6px;}
+    label{font-size:12px; color:var(--mut); font-weight:800}
+    input, select{
+      border:1px solid var(--bd);
+      border-radius:12px;
+      padding:10px 10px;
+      background:#fff;
+      outline:none;
+    }
+    input:focus, select:focus{
+      border-color: rgba(37,99,235,.45);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+    }
+    .full{grid-column:1/-1}
+
+    .hr{height:1px; background:var(--bd); margin:10px 0;}
+    .note{color:var(--mut); font-size:12px; line-height:1.35}
+
+    /* admin */
+    .adminList{
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .pill{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border:1px solid var(--bd);
+      border-radius:999px;
+      background:#fff;
+      padding:8px 10px;
+      font-size:12px;
+      font-weight:800;
+    }
+    .pill .date{color:rgba(31,36,48,.92)}
+    .pill .x{
+      border:none; cursor:pointer;
+      background: rgba(220,38,38,.10);
+      color: var(--danger);
+      border-radius:999px;
+      padding:6px 10px;
+      font-weight:950;
+    }
+
+    @media (min-width: 720px){
+      .days{min-height:132px}
+      .wrap{padding:16px}
+      .title{font-size:20px}
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="header-left">
-                <div class="month-nav">
-                    <button class="btn btn-nav" id="prevMonthBtn" aria-label="이전 달">◀</button>
-                    <button class="btn btn-nav" id="nextMonthBtn" aria-label="다음 달">▶</button>
-                </div>
-                <h1 id="monthTitle">2026년 2월</h1>
-            </div>
-            <div class="header-controls">
-                <button class="btn" id="todayBtn" aria-label="오늘로 이동">오늘</button>
-                <button class="btn btn-icon" id="adminBtn" aria-label="관리자 설정">⚙️</button>
-            </div>
+  <div class="topbar">
+    <div class="wrap">
+      <div class="toprow">
+        <div>
+          <div class="title" id="monthTitle">YYYY년 M월</div>
+          <div class="hint">
+            <span class="chip">좌/우 스와이프로 월 이동</span>
+            <span class="chip">일정 입력: 날짜 탭</span>
+          </div>
         </div>
-
-        <div class="calendar-wrapper" id="calendarWrapper">
-            <div class="calendar" id="calendar">
-                <div class="weekday-header">
-                    <div>일</div>
-                    <div>월</div>
-                    <div>화</div>
-                    <div>수</div>
-                    <div>목</div>
-                    <div>금</div>
-                    <div>토</div>
-                </div>
-                <div class="calendar-grid" id="calendarGrid">
-                    <!-- 달력 셀이 여기에 동적으로 생성됨 -->
-                </div>
-            </div>
+        <div class="actions">
+          <button class="btn primary" id="todayBtn" aria-label="오늘로 이동">오늘</button>
+          <button class="btn icon" id="adminBtn" aria-label="관리자(휴일 설정)">⚙️</button>
         </div>
+      </div>
     </div>
+  </div>
 
-    <!-- 일정 상세/추가 모달 -->
-    <div class="modal" id="eventModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modalTitle">일정</h2>
-                <button class="modal-close" id="closeEventModal" aria-label="닫기">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="eventListSection">
-                    <div class="event-list" id="eventList"></div>
-                    <button class="btn" id="addEventBtn" style="width: 100%;">+ 일정 추가</button>
-                </div>
-                <div id="eventFormSection" style="display: none;">
-                    <form id="eventForm">
-                        <input type="hidden" id="eventId">
-                        <div class="form-group">
-                            <label for="eventTitle">제목 *</label>
-                            <input type="text" id="eventTitle" required>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="eventStartDate">시작일 *</label>
-                                <input type="date" id="eventStartDate" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="eventEndDate">종료일 *</label>
-                                <input type="date" id="eventEndDate" required>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="eventStartTime">시작 시간</label>
-                                <input type="time" id="eventStartTime">
-                            </div>
-                            <div class="form-group">
-                                <label for="eventEndTime">종료 시간</label>
-                                <input type="time" id="eventEndTime">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="repeatFreq">반복</label>
-                            <select id="repeatFreq">
-                                <option value="none">반복 안함</option>
-                                <option value="daily">매일</option>
-                                <option value="weekly">매주</option>
-                                <option value="monthly">매월</option>
-                                <option value="yearly">매년</option>
-                            </select>
-                        </div>
-                        <div class="repeat-options" id="repeatOptions" style="display: none;">
-                            <div id="monthlyOptions" style="display: none;">
-                                <div class="form-group">
-                                    <label>매월 반복 방식</label>
-                                    <select id="monthlyBy">
-                                        <option value="date">날짜 기준 (예: 매월 15일)</option>
-                                        <option value="nthWeekday">n번째 요일 (예: 매월 2번째 화요일)</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="repeatUntil">종료일</label>
-                                    <input type="date" id="repeatUntil">
-                                </div>
-                                <div class="form-group">
-                                    <label for="repeatCount">반복 횟수</label>
-                                    <input type="number" id="repeatCount" min="1" placeholder="예: 10">
-                                </div>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 8px; margin-top: 16px;">
-                            <button type="submit" class="btn" style="flex: 1;">저장</button>
-                            <button type="button" class="btn" id="cancelEventBtn" style="flex: 1; background: #cbd5e0; color: #333;">취소</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
+  <div class="wrap">
+    <div class="calCard" id="calCard" aria-label="월간 캘린더">
+      <div class="dow">
+        <div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div>
+      </div>
+      <div class="grid fadeIn" id="grid"></div>
     </div>
+  </div>
 
-    <!-- 관리자 모달 -->
-    <div class="modal" id="adminModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>관리자 설정</h2>
-                <button class="modal-close" id="closeAdminModal" aria-label="닫기">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="holidayDate">휴일 날짜</label>
-                    <input type="date" id="holidayDate">
-                    <button class="btn" id="addHolidayBtn" style="width: 100%; margin-top: 8px;">휴일 추가</button>
-                </div>
-                <div style="margin-top: 24px;">
-                    <h3 style="font-size: 16px; margin-bottom: 12px;">등록된 휴일</h3>
-                    <div class="holiday-list" id="holidayList"></div>
-                </div>
-            </div>
+  <!-- Day Modal -->
+  <div class="backdrop" id="dayModalBack" role="dialog" aria-modal="true" aria-label="일정 상세">
+    <div class="sheet">
+      <div class="sheetHead">
+        <div>
+          <div class="sheetTitle" id="dayModalTitle">YYYY-MM-DD</div>
+          <div class="sheetSub" id="dayModalSub">이 날짜에 포함되는 일정</div>
         </div>
+        <div class="row">
+          <button class="btn" id="dayModalClose" aria-label="닫기">닫기</button>
+        </div>
+      </div>
+      <div class="sheetBody">
+        <div class="section">
+          <div class="row" style="justify-content:space-between">
+            <h3 style="margin:0">일정 목록</h3>
+            <button class="mini primary" id="showAddBtn">+ 일정 추가</button>
+          </div>
+          <div class="list" id="eventList"></div>
+          <div class="note" id="emptyNote" style="display:none; margin-top:8px;">표시할 일정이 없습니다.</div>
+        </div>
+
+        <div class="section" id="formSection" style="display:none;">
+          <div class="row" style="justify-content:space-between">
+            <h3 style="margin:0" id="formTitle">일정 추가</h3>
+            <button class="mini" id="cancelFormBtn">취소</button>
+          </div>
+
+          <div class="hr"></div>
+
+          <form id="eventForm">
+            <input type="hidden" id="editId" value="" />
+
+            <div class="field">
+              <label>제목(필수)</label>
+              <input id="fTitle" type="text" placeholder="예: 설비 점검" required />
+            </div>
+
+            <div class="formGrid" style="margin-top:10px;">
+              <div class="field">
+                <label>시작일</label>
+                <input id="fStart" type="date" required />
+              </div>
+              <div class="field">
+                <label>종료일</label>
+                <input id="fEnd" type="date" required />
+              </div>
+
+              <div class="field">
+                <label>시작시간(선택)</label>
+                <input id="fTStart" type="time" />
+              </div>
+              <div class="field">
+                <label>종료시간(선택)</label>
+                <input id="fTEnd" type="time" />
+              </div>
+
+              <div class="field full">
+                <label>반복</label>
+                <select id="fFreq">
+                  <option value="none">없음</option>
+                  <option value="daily">매일</option>
+                  <option value="weekly">매주</option>
+                  <option value="monthly">매월</option>
+                  <option value="yearly">매년</option>
+                </select>
+              </div>
+
+              <div class="field full" id="monthlyByWrap" style="display:none;">
+                <label>매월 방식</label>
+                <select id="fMonthlyBy">
+                  <option value="date">날짜 기준(매월 같은 날짜)</option>
+                  <option value="nthWeekday">n번째 요일(예: 2번째 화요일)</option>
+                </select>
+              </div>
+
+              <div class="formGrid full" id="nthWrap" style="display:none;">
+                <div class="field">
+                  <label>n번째</label>
+                  <select id="fNth">
+                    <option value="1">1번째</option>
+                    <option value="2">2번째</option>
+                    <option value="3">3번째</option>
+                    <option value="4">4번째</option>
+                    <option value="5">5번째</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>요일</label>
+                  <select id="fWeekday">
+                    <option value="0">일</option>
+                    <option value="1">월</option>
+                    <option value="2">화</option>
+                    <option value="3">수</option>
+                    <option value="4">목</option>
+                    <option value="5">금</option>
+                    <option value="6">토</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="formGrid full">
+                <div class="field">
+                  <label>반복 종료일(선택)</label>
+                  <input id="fUntil" type="date" />
+                </div>
+                <div class="field">
+                  <label>반복 횟수(선택)</label>
+                  <input id="fCount" type="number" min="1" placeholder="예: 10" />
+                </div>
+              </div>
+
+              <div class="field full">
+                <div class="note">
+                  * 종료일과 횟수를 둘 다 입력하면 “먼저 도달하는 조건”으로 종료합니다.<br/>
+                  * 매월 31일 같은 경우 해당 월에 날짜가 없으면 그 달은 발생하지 않도록 처리합니다.
+                </div>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:12px; justify-content:flex-end;">
+              <button type="submit" class="btn primary" id="saveBtn">저장</button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <script>
-        // ============================================
-        // 데이터 관리 (Firebase 연동 준비)
-        // ============================================
-        
-        // TODO: Firebase 연동 시 이 부분을 Firebase Realtime Database로 교체
-        const DB_KEY_EVENTS = 'calendar_events';
-        const DB_KEY_HOLIDAYS = 'calendar_holidays';
+  <!-- Admin Modal -->
+  <div class="backdrop" id="adminBack" role="dialog" aria-modal="true" aria-label="관리자">
+    <div class="sheet">
+      <div class="sheetHead">
+        <div>
+          <div class="sheetTitle">관리자(휴일/휴무일)</div>
+          <div class="sheetSub">휴일로 등록된 날짜는 캘린더에 ‘휴일’ 라벨로 표시됩니다.</div>
+        </div>
+        <button class="btn" id="adminClose" aria-label="닫기">닫기</button>
+      </div>
+      <div class="sheetBody">
+        <div class="section">
+          <h3>휴일 등록</h3>
+          <div class="row">
+            <input type="date" id="hDate" />
+            <button class="btn primary" id="addHolidayBtn">추가</button>
+          </div>
+          <div class="hr"></div>
+          <h3>등록된 휴일</h3>
+          <div class="adminList" id="holidayList"></div>
+          <div class="note" id="holidayEmpty" style="display:none; margin-top:8px;">등록된 휴일이 없습니다.</div>
+        </div>
 
-        // 데이터 로드 (LocalStorage)
-        function loadData() {
-            const events = JSON.parse(localStorage.getItem(DB_KEY_EVENTS) || '[]');
-            const holidays = JSON.parse(localStorage.getItem(DB_KEY_HOLIDAYS) || '[]');
-            return { events, holidays };
+        <div class="section">
+          <h3>Firebase 연결(나중에)</h3>
+          <div class="note">
+            현재는 LocalStorage를 사용합니다.<br/>
+            나중에 Firebase로 바꾸려면 <b>loadData/saveData</b> 및 <b>add/update/delete</b> 함수 내부만 교체하면 되도록 구조화되어 있습니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* =========================
+   Utilities: Date
+========================= */
+const pad2 = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const parseYMD = (s) => {
+  const [y,m,d] = s.split("-").map(Number);
+  return new Date(y, m-1, d, 12, 0, 0, 0); // noon avoids DST edge
+};
+const addDays = (d, days) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+};
+const diffDays = (a, b) => { // b - a in days
+  const A = new Date(a.getFullYear(), a.getMonth(), a.getDate(), 12);
+  const B = new Date(b.getFullYear(), b.getMonth(), b.getDate(), 12);
+  return Math.round((B - A) / (1000*60*60*24));
+};
+const clampDateOrder = (startStr, endStr) => {
+  const s = parseYMD(startStr);
+  const e = parseYMD(endStr);
+  if (e < s) return [startStr, startStr];
+  return [startStr, endStr];
+};
+const sameYMD = (a, b) => ymd(a) === ymd(b);
+
+const dowKo = ["일","월","화","수","목","금","토"];
+
+/* =========================
+   Storage (LocalStorage now)
+   (Firebase later: replace internals)
+========================= */
+const LS_KEY = "mcal_v1_data";
+
+function defaultData(){
+  return { events: [], holidays: {} };
+}
+function loadData(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return defaultData();
+    const obj = JSON.parse(raw);
+    if(!obj || typeof obj !== "object") return defaultData();
+    obj.events = Array.isArray(obj.events) ? obj.events : [];
+    obj.holidays = obj.holidays && typeof obj.holidays === "object" ? obj.holidays : {};
+    return obj;
+  }catch(e){
+    return defaultData();
+  }
+}
+function saveData(){
+  localStorage.setItem(LS_KEY, JSON.stringify(DB));
+}
+function uuid(){
+  return "e_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+}
+
+function addEvent(evt){
+  DB.events.push(evt);
+  saveData();
+}
+function updateEvent(id, patch){
+  const idx = DB.events.findIndex(e => e.id === id);
+  if(idx >= 0){
+    DB.events[idx] = { ...DB.events[idx], ...patch, updatedAt: Date.now() };
+    saveData();
+  }
+}
+function deleteEvent(id){
+  DB.events = DB.events.filter(e => e.id !== id);
+  saveData();
+}
+
+function addHoliday(dateStr){
+  DB.holidays[dateStr] = true;
+  saveData();
+}
+function deleteHoliday(dateStr){
+  delete DB.holidays[dateStr];
+  saveData();
+}
+
+/* =========================
+   Recurrence / Instances
+   - store rule, render instances for current month range
+========================= */
+function normalizeRepeatForSave(freq, monthlyBy, nth, weekday, untilDate, count, startDateStr){
+  // weekly default weekday = startDate weekday if not provided
+  const sd = parseYMD(startDateStr);
+  const baseWeekday = sd.getDay();
+
+  const rep = {
+    freq: freq || "none",
+    monthlyBy: (freq === "monthly") ? (monthlyBy || "date") : "date",
+    nth: (freq === "monthly" && monthlyBy === "nthWeekday") ? Number(nth || 1) : null,
+    weekday: null,
+    untilDate: untilDate || null,
+    count: (count !== "" && count != null) ? Number(count) : null,
+  };
+
+  if(rep.freq === "weekly"){
+    rep.weekday = Number(weekday ?? baseWeekday);
+  } else if(rep.freq === "monthly" && rep.monthlyBy === "nthWeekday"){
+    rep.weekday = Number(weekday ?? baseWeekday);
+    rep.nth = Number(nth || 1);
+  } else if(rep.freq === "daily" || rep.freq === "monthly" || rep.freq === "yearly" || rep.freq === "none"){
+    rep.weekday = null;
+  }
+
+  return rep;
+}
+
+function isAfterYMD(aStr, bStr){ // a > b
+  return parseYMD(aStr).getTime() > parseYMD(bStr).getTime();
+}
+
+/**
+ * Generate occurrences (instances) for a base event within [rangeStart, rangeEnd] inclusive.
+ * Each instance includes:
+ * - baseId
+ * - startDate, endDate (ymd strings)
+ * - title, time
+ */
+function expandEventInstances(base, rangeStart, rangeEnd){
+  const out = [];
+  const freq = base.repeat?.freq || "none";
+
+  const baseStart = parseYMD(base.startDate);
+  const baseEnd = parseYMD(base.endDate);
+  const duration = Math.max(0, diffDays(baseStart, baseEnd)); // inclusive span end = start + duration
+
+  const untilStr = base.repeat?.untilDate || null;
+  const countMax = base.repeat?.count ?? null;
+
+  // safety cap: if no until/count, limit generation window to 1 year from rangeStart
+  const safetyEnd = addDays(parseYMD(rangeStart), 366);
+
+  const hardEndDate = (() => {
+    const rangeEndD = parseYMD(rangeEnd);
+    let end = rangeEndD;
+    if(!untilStr && !countMax){
+      if(end > safetyEnd) end = safetyEnd;
+    }
+    if(untilStr){
+      const u = parseYMD(untilStr);
+      if(u < end) end = u;
+    }
+    return end;
+  })();
+
+  const inRangeOverlap = (sD, eD) => !(eD < parseYMD(rangeStart) || sD > parseYMD(rangeEnd));
+
+  // helpers for monthly nth weekday
+  function nthWeekdayOfMonth(year, monthIndex, weekday, nth){
+    // monthIndex: 0-11
+    const first = new Date(year, monthIndex, 1, 12);
+    const firstDow = first.getDay();
+    const delta = (weekday - firstDow + 7) % 7;
+    const day = 1 + delta + (nth - 1) * 7;
+    const candidate = new Date(year, monthIndex, day, 12);
+    if(candidate.getMonth() !== monthIndex) return null; // overflow
+    return candidate;
+  }
+
+  // compute first occurrence that could possibly overlap rangeStart
+  // We'll iterate forward, but we can start at baseStart and push until hardEndDate
+  let occStart = new Date(baseStart);
+
+  // For weekly, align to weekday.
+  // For monthly, generate per month.
+  // For yearly, per year.
+
+  let generated = 0;
+
+  if(freq === "none"){
+    const sD = baseStart, eD = addDays(baseStart, duration);
+    if(inRangeOverlap(sD, eD)){
+      out.push({ baseId: base.id, startDate: ymd(sD), endDate: ymd(eD), title: base.title, time: base.time });
+    }
+    return out;
+  }
+
+  if(freq === "daily"){
+    // start from max(baseStart, rangeStart - duration) to catch overlaps
+    const startFrom = parseYMD(rangeStart);
+    let cur = baseStart < startFrom ? baseStart : baseStart;
+    // advance until cur >= (rangeStart - duration)
+    const minStart = addDays(startFrom, -duration);
+    if(cur < minStart){
+      cur = new Date(minStart);
+      // ensure daily series alignment: baseStart + k days, so we need k = diffDays(baseStart, cur) rounded
+      const k = Math.max(0, diffDays(baseStart, cur));
+      cur = addDays(baseStart, k);
+      while(cur < minStart) cur = addDays(cur, 1);
+    }
+
+    while(cur <= hardEndDate){
+      const sD = cur;
+      const eD = addDays(cur, duration);
+
+      // stop by count
+      generated++;
+      if(countMax && generated > countMax) break;
+
+      if(inRangeOverlap(sD, eD)){
+        out.push({ baseId: base.id, startDate: ymd(sD), endDate: ymd(eD), title: base.title, time: base.time });
+      }
+      cur = addDays(cur, 1);
+    }
+    return out;
+  }
+
+  if(freq === "weekly"){
+    const w = Number(base.repeat?.weekday ?? baseStart.getDay());
+    // find first occurrence on/after (rangeStart - duration) that matches weekday and is >= baseStart
+    const minStart = addDays(parseYMD(rangeStart), -duration);
+    let cur = new Date(baseStart);
+
+    if(cur < minStart){
+      cur = new Date(minStart);
+    }
+    // align to weekday
+    const delta = (w - cur.getDay() + 7) % 7;
+    cur = addDays(cur, delta);
+    // ensure not before baseStart
+    while(cur < baseStart) cur = addDays(cur, 7);
+
+    while(cur <= hardEndDate){
+      const sD = cur;
+      const eD = addDays(cur, duration);
+
+      generated++;
+      if(countMax && generated > countMax) break;
+
+      if(inRangeOverlap(sD, eD)){
+        out.push({ baseId: base.id, startDate: ymd(sD), endDate: ymd(eD), title: base.title, time: base.time });
+      }
+      cur = addDays(cur, 7);
+    }
+    return out;
+  }
+
+  if(freq === "monthly"){
+    // We generate month-by-month in the displayed range window, but also start a bit earlier to include overlaps
+    const minStart = addDays(parseYMD(rangeStart), -duration);
+    const startYear = minStart.getFullYear();
+    const startMonth = minStart.getMonth();
+
+    const endYear = hardEndDate.getFullYear();
+    const endMonth = hardEndDate.getMonth();
+
+    // derive rule
+    const monthlyBy = base.repeat?.monthlyBy || "date";
+
+    for(let y = startYear, m = startMonth; (y < endYear) || (y === endYear && m <= endMonth); ){
+      let occ = null;
+
+      if(monthlyBy === "date"){
+        const dayOfMonth = parseYMD(base.startDate).getDate();
+        // if that date doesn't exist in this month, skip (do not clamp)
+        const test = new Date(y, m, dayOfMonth, 12);
+        if(test.getMonth() === m) occ = test;
+      }else{
+        const nth = Number(base.repeat?.nth || 1);
+        const weekday = Number(base.repeat?.weekday ?? parseYMD(base.startDate).getDay());
+        occ = nthWeekdayOfMonth(y, m, weekday, nth);
+      }
+
+      if(occ){
+        if(occ >= baseStart){ // don't create before initial start
+          generated++;
+          if(countMax && generated > countMax) break;
+
+          const sD = occ;
+          const eD = addDays(occ, duration);
+          if(inRangeOverlap(sD, eD)){
+            out.push({ baseId: base.id, startDate: ymd(sD), endDate: ymd(eD), title: base.title, time: base.time });
+          }
         }
+      }
 
-        // 데이터 저장 (LocalStorage)
-        function saveData(events, holidays) {
-            localStorage.setItem(DB_KEY_EVENTS, JSON.stringify(events));
-            localStorage.setItem(DB_KEY_HOLIDAYS, JSON.stringify(holidays));
+      // move next month
+      m++;
+      if(m > 11){ m = 0; y++; }
+
+      // if untilDate exists and month start is after it, can stop
+      if(untilStr){
+        const u = parseYMD(untilStr);
+        const monthStart = new Date(y, m, 1, 12);
+        if(monthStart > u) break;
+      }
+    }
+    return out;
+  }
+
+  if(freq === "yearly"){
+    const minStart = addDays(parseYMD(rangeStart), -duration);
+    let y = minStart.getFullYear();
+    const endY = hardEndDate.getFullYear();
+    const baseM = parseYMD(base.startDate).getMonth();
+    const baseD = parseYMD(base.startDate).getDate();
+
+    while(y <= endY){
+      const cand = new Date(y, baseM, baseD, 12);
+      // if base date doesn't exist (Feb 29 on non-leap): skip (do not clamp)
+      if(cand.getMonth() === baseM){
+        if(cand >= baseStart){
+          generated++;
+          if(countMax && generated > countMax) break;
+
+          const sD = cand;
+          const eD = addDays(cand, duration);
+          if(inRangeOverlap(sD, eD)){
+            out.push({ baseId: base.id, startDate: ymd(sD), endDate: ymd(eD), title: base.title, time: base.time });
+          }
         }
+      }
+      y++;
 
-        // 이벤트 추가
-        function addEvent(event) {
-            const { events, holidays } = loadData();
-            events.push({
-                ...event,
-                id: generateUUID(),
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-            });
-            saveData(events, holidays);
-            return events[events.length - 1];
+      if(untilStr){
+        const u = parseYMD(untilStr);
+        const nextYearStart = new Date(y, 0, 1, 12);
+        if(nextYearStart > u) break;
+      }
+    }
+    return out;
+  }
+
+  return out;
+}
+
+/* =========================
+   Rendering: Month Grid + Bars
+========================= */
+const $ = (id) => document.getElementById(id);
+const gridEl = $("grid");
+const monthTitleEl = $("monthTitle");
+const calCard = $("calCard");
+
+let DB = loadData();
+let curMonth = new Date(); // points to some day in current month
+curMonth = new Date(curMonth.getFullYear(), curMonth.getMonth(), 1, 12);
+
+let lastRenderedRange = null; // {startYMD,endYMD, days[]}
+
+function monthLabel(d){
+  return `${d.getFullYear()}년 ${d.getMonth()+1}월`;
+}
+
+function getGridRange(monthDate){
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1, 12);
+  const last = new Date(monthDate.getFullYear(), monthDate.getMonth()+1, 0, 12);
+  // Sunday-start: grid starts on Sunday before/at first
+  const start = addDays(first, -first.getDay());
+  // grid ends on Saturday after/at last
+  const end = addDays(last, (6 - last.getDay()));
+  return { start, end };
+}
+
+function buildDayArray(range){
+  const days = [];
+  let d = new Date(range.start);
+  while(d <= range.end){
+    days.push(new Date(d));
+    d = addDays(d, 1);
+  }
+  return days;
+}
+
+function getAllInstancesForRange(rangeStartStr, rangeEndStr){
+  // Expand all base events into instances intersecting this range
+  const all = [];
+  for(const base of DB.events){
+    const inst = expandEventInstances(base, rangeStartStr, rangeEndStr);
+    for(const i of inst) all.push(i);
+  }
+  // sort by startDate, then duration desc (nice stacking)
+  all.sort((a,b)=>{
+    if(a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+    const ad = diffDays(parseYMD(a.startDate), parseYMD(a.endDate));
+    const bd = diffDays(parseYMD(b.startDate), parseYMD(b.endDate));
+    return bd - ad;
+  });
+  return all;
+}
+
+function render(){
+  monthTitleEl.textContent = monthLabel(curMonth);
+
+  const {start, end} = getGridRange(curMonth);
+  const startStr = ymd(start);
+  const endStr = ymd(end);
+  lastRenderedRange = { startStr, endStr };
+
+  const days = buildDayArray({start, end});
+
+  // Prepare instances for this display range
+  const instances = getAllInstancesForRange(startStr, endStr);
+
+  // Map day -> counts + visible counts (computed after lane assignment)
+  const dayTotalCount = {};   // ymd -> total instances covering that date
+  const dayVisibleCount = {}; // ymd -> visible (lane < 3)
+
+  // total count
+  for(const inst of instances){
+    const s = parseYMD(inst.startDate);
+    const e = parseYMD(inst.endDate);
+    const d0 = new Date(s);
+    while(d0 <= e){
+      const k = ymd(d0);
+      if(k >= startStr && k <= endStr){
+        dayTotalCount[k] = (dayTotalCount[k] || 0) + 1;
+      }
+      d0.setDate(d0.getDate()+1);
+    }
+  }
+
+  // Build weeks
+  gridEl.innerHTML = "";
+  gridEl.classList.remove("fadeIn");
+  void gridEl.offsetWidth;
+  gridEl.classList.add("fadeIn");
+
+  const weeks = [];
+  for(let w=0; w<days.length/7; w++){
+    const weekDays = days.slice(w*7, w*7+7);
+    weeks.push(weekDays);
+  }
+
+  const todayStr = ymd(new Date());
+
+  weeks.forEach((weekDays) => {
+    const weekEl = document.createElement("div");
+    weekEl.className = "week";
+
+    const daysEl = document.createElement("div");
+    daysEl.className = "days";
+
+    // day cells
+    weekDays.forEach((d, idx) => {
+      const cell = document.createElement("div");
+      cell.className = "day";
+
+      const inMonth = d.getMonth() === curMonth.getMonth();
+      if(!inMonth) cell.classList.add("out");
+
+      if(idx === 0) cell.classList.add("sun");
+      if(idx === 6) cell.classList.add("sat");
+
+      const ds = ymd(d);
+      cell.dataset.date = ds;
+
+      if(ds === todayStr) cell.classList.add("today");
+
+      const dnum = document.createElement("div");
+      dnum.className = "dnum";
+      dnum.textContent = String(d.getDate());
+      cell.appendChild(dnum);
+
+      // holiday label (B 방식)
+      if(DB.holidays[ds]){
+        const tag = document.createElement("div");
+        tag.className = "holidayTag";
+        tag.textContent = "휴일";
+        cell.appendChild(tag);
+      }
+
+      // reserved bar space (consistent height)
+      const space = document.createElement("div");
+      space.className = "barSpace";
+      cell.appendChild(space);
+
+      // click handler opens modal
+      cell.addEventListener("click", (ev) => {
+        // ignore if user is scrolling; we keep simple
+        openDayModal(ds);
+      });
+
+      daysEl.appendChild(cell);
+    });
+
+    // bars overlay
+    const barsEl = document.createElement("div");
+    barsEl.className = "bars";
+    barsEl.style.height = `calc((var(--laneH) * var(--lanes)) + (var(--laneGap) * (var(--lanes) - 1)))`;
+
+    weekEl.appendChild(daysEl);
+    weekEl.appendChild(barsEl);
+    gridEl.appendChild(weekEl);
+
+    // Now compute and draw bars for this week
+    drawWeekBars(weekDays, barsEl, instances, dayVisibleCount);
+  });
+
+  // After bars computed, add +N more buttons per day
+  weeks.forEach((weekDays) => {
+    weekDays.forEach((d) => {
+      const ds = ymd(d);
+      const total = dayTotalCount[ds] || 0;
+      const vis = dayVisibleCount[ds] || 0;
+      const extra = total - vis;
+      if(extra > 0){
+        const cell = gridEl.querySelector(`.day[data-date="${ds}"]`);
+        if(cell){
+          const moreWrap = document.createElement("div");
+          moreWrap.className = "more";
+          const btn = document.createElement("button");
+          btn.className = "moreBtn";
+          btn.type = "button";
+          btn.textContent = `+${extra} 더보기`;
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            openDayModal(ds);
+          });
+          moreWrap.appendChild(btn);
+          cell.appendChild(moreWrap);
         }
-
-        // 이벤트 수정
-        function updateEvent(id, updates) {
-            const { events, holidays } = loadData();
-            const index = events.findIndex(e => e.id === id);
-            if (index !== -1) {
-                events[index] = {
-                    ...events[index],
-                    ...updates,
-                    updatedAt: Date.now()
-                };
-                saveData(events, holidays);
-                return events[index];
-            }
-            return null;
-        }
-
-        // 이벤트 삭제
-        function deleteEvent(id) {
-            const { events, holidays } = loadData();
-            const filtered = events.filter(e => e.id !== id);
-            saveData(filtered, holidays);
-        }
-
-        // 휴일 추가
-        function addHoliday(date) {
-            const { events, holidays } = loadData();
-            if (!holidays.includes(date)) {
-                holidays.push(date);
-                holidays.sort();
-                saveData(events, holidays);
-            }
-        }
-
-        // 휴일 삭제
-        function deleteHoliday(date) {
-            const { events, holidays } = loadData();
-            const filtered = holidays.filter(h => h !== date);
-            saveData(events, filtered);
-        }
-
-        // UUID 생성
-        function generateUUID() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        }
-
-        // ============================================
-        // 날짜 유틸리티
-        // ============================================
-
-        function formatDate(date) {
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const d = String(date.getDate()).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-        }
-
-        function parseDate(dateStr) {
-            const [y, m, d] = dateStr.split('-').map(Number);
-            return new Date(y, m - 1, d);
-        }
-
-        function isSameDay(date1, date2) {
-            return date1.getFullYear() === date2.getFullYear() &&
-                   date1.getMonth() === date2.getMonth() &&
-                   date1.getDate() === date2.getDate();
-        }
-
-        // 월의 n번째 요일 계산
-        function getNthWeekdayOfMonth(year, month, nth, weekday) {
-            let count = 0;
-            for (let day = 1; day <= 31; day++) {
-                const date = new Date(year, month, day);
-                if (date.getMonth() !== month) break;
-                if (date.getDay() === weekday) {
-                    count++;
-                    if (count === nth) {
-                        return date;
-                    }
-                }
-            }
-            return null;
-        }
-
-        // ============================================
-        // 반복 일정 계산
-        // ============================================
-
-        function generateRecurringInstances(event, year, month) {
-            if (!event.repeat || event.repeat.freq === 'none') {
-                return [];
-            }
-
-            const instances = [];
-            const startDate = parseDate(event.startDate);
-            const endDate = parseDate(event.endDate);
-            const duration = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24));
-
-            let currentDate = new Date(startDate);
-            let count = 0;
-            const maxCount = event.repeat.count || 1000;
-            const untilDate = event.repeat.untilDate ? parseDate(event.repeat.untilDate) : null;
-
-            // 월의 시작과 끝
-            const monthStart = new Date(year, month, 1);
-            const monthEnd = new Date(year, month + 1, 0);
-
-            while (count < maxCount) {
-                let nextDate = null;
-
-                switch (event.repeat.freq) {
-                    case 'daily':
-                        nextDate = new Date(currentDate);
-                        nextDate.setDate(currentDate.getDate() + (count === 0 ? 0 : 1));
-                        break;
-
-                    case 'weekly':
-                        nextDate = new Date(currentDate);
-                        nextDate.setDate(currentDate.getDate() + (count === 0 ? 0 : 7));
-                        break;
-
-                    case 'monthly':
-                        if (event.repeat.monthlyBy === 'nthWeekday') {
-                            // n번째 요일 방식
-                            const baseWeekday = startDate.getDay();
-                            const baseNth = Math.ceil(startDate.getDate() / 7);
-                            
-                            const testYear = startDate.getFullYear() + Math.floor((startDate.getMonth() + count) / 12);
-                            const testMonth = (startDate.getMonth() + count) % 12;
-                            
-                            nextDate = getNthWeekdayOfMonth(testYear, testMonth, baseNth, baseWeekday);
-                        } else {
-                            // 날짜 기준
-                            const baseDay = startDate.getDate();
-                            const testYear = startDate.getFullYear() + Math.floor((startDate.getMonth() + count) / 12);
-                            const testMonth = (startDate.getMonth() + count) % 12;
-                            
-                            nextDate = new Date(testYear, testMonth, baseDay);
-                            // 해당 월에 그 날짜가 없으면 null (예: 2월 31일)
-                            if (nextDate.getMonth() !== testMonth) {
-                                nextDate = null;
-                            }
-                        }
-                        break;
-
-                    case 'yearly':
-                        nextDate = new Date(currentDate);
-                        nextDate.setFullYear(currentDate.getFullYear() + (count === 0 ? 0 : 1));
-                        break;
-                }
-
-                if (!nextDate) {
-                    count++;
-                    continue;
-                }
-
-                // 종료 조건 체크
-                if (untilDate && nextDate > untilDate) break;
-
-                // 해당 월에 포함되는지 확인
-                const instanceEnd = new Date(nextDate);
-                instanceEnd.setDate(instanceEnd.getDate() + duration);
-
-                if ((nextDate >= monthStart && nextDate <= monthEnd) ||
-                    (instanceEnd >= monthStart && instanceEnd <= monthEnd) ||
-                    (nextDate <= monthStart && instanceEnd >= monthEnd)) {
-                    instances.push({
-                        ...event,
-                        startDate: formatDate(nextDate),
-                        endDate: formatDate(instanceEnd),
-                        isRecurring: true
-                    });
-                }
-
-                currentDate = nextDate;
-                count++;
-
-                // 무한 루프 방지: 현재 날짜가 월 끝을 많이 지나면 중단
-                if (nextDate.getFullYear() > year + 5) break;
-            }
-
-            return instances;
-        }
-
-        // ============================================
-        // 달력 상태
-        // ============================================
-
-        let currentYear = 2026;
-        let currentMonth = 1; // 0-based (1 = 2월)
-        let selectedDate = null;
-
-        // ============================================
-        // 달력 렌더링
-        // ============================================
-
-        function renderCalendar() {
-            const today = new Date();
-            const firstDay = new Date(currentYear, currentMonth, 1);
-            const lastDay = new Date(currentYear, currentMonth + 1, 0);
-            const prevLastDay = new Date(currentYear, currentMonth, 0);
-            
-            const firstDayOfWeek = firstDay.getDay(); // 0 = 일요일
-            const daysInMonth = lastDay.getDate();
-            const daysInPrevMonth = prevLastDay.getDate();
-
-            // 제목 업데이트
-            document.getElementById('monthTitle').textContent = 
-                `${currentYear}년 ${currentMonth + 1}월`;
-
-            // 그리드 초기화
-            const grid = document.getElementById('calendarGrid');
-            grid.innerHTML = '';
-
-            // 이전 달 날짜들
-            for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-                const day = daysInPrevMonth - i;
-                const cell = createDayCell(day, true, currentMonth === 0 ? 11 : currentMonth - 1);
-                grid.appendChild(cell);
-            }
-
-            // 현재 달 날짜들
-            for (let day = 1; day <= daysInMonth; day++) {
-                const cell = createDayCell(day, false, currentMonth);
-                const date = new Date(currentYear, currentMonth, day);
-                
-                // 오늘 표시
-                if (isSameDay(date, today)) {
-                    cell.classList.add('today');
-                }
-
-                // 요일별 클래스 추가
-                const dayOfWeek = date.getDay();
-                if (dayOfWeek === 0) {
-                    cell.classList.add('sunday');
-                } else if (dayOfWeek === 6) {
-                    cell.classList.add('saturday');
-                }
-
-                grid.appendChild(cell);
-            }
-
-            // 다음 달 날짜들 (6주 채우기)
-            const totalCells = grid.children.length;
-            const remainingCells = 42 - totalCells; // 6주 = 42칸
-            for (let day = 1; day <= remainingCells; day++) {
-                const cell = createDayCell(day, true, currentMonth === 11 ? 0 : currentMonth + 1);
-                grid.appendChild(cell);
-            }
-
-            // 일정 렌더링
-            renderEvents();
-        }
-
-        function createDayCell(day, isOtherMonth, month) {
-            const cell = document.createElement('div');
-            cell.className = 'day-cell';
-            if (isOtherMonth) {
-                cell.classList.add('other-month');
-            }
-
-            const dateStr = formatDate(new Date(currentYear, month, day));
-            cell.dataset.date = dateStr;
-
-            const dayNumber = document.createElement('div');
-            dayNumber.className = 'day-number';
-            dayNumber.textContent = day;
-
-            // 휴일 체크
-            const { holidays } = loadData();
-            if (holidays.includes(dateStr)) {
-                const holidayLabel = document.createElement('span');
-                holidayLabel.className = 'holiday-label';
-                holidayLabel.textContent = '휴일';
-                dayNumber.appendChild(holidayLabel);
-            }
-
-            cell.appendChild(dayNumber);
-
-            const eventsContainer = document.createElement('div');
-            eventsContainer.className = 'events-container';
-            cell.appendChild(eventsContainer);
-
-            // 클릭 이벤트
-            cell.addEventListener('click', (e) => {
-                if (e.target.classList.contains('more-events')) {
-                    return; // "+N 더보기" 클릭은 별도 처리
-                }
-                openEventModal(dateStr);
-            });
-
-            return cell;
-        }
-
-        function renderEvents() {
-            const { events } = loadData();
-            const allEvents = [...events];
-
-            // 반복 일정 인스턴스 생성
-            events.forEach(event => {
-                if (event.repeat && event.repeat.freq !== 'none') {
-                    const instances = generateRecurringInstances(event, currentYear, currentMonth);
-                    allEvents.push(...instances);
-                }
-            });
-
-            // 날짜별로 이벤트 그룹화
-            const eventsByWeek = {};
-            const monthStart = new Date(currentYear, currentMonth, 1);
-            const monthEnd = new Date(currentYear, currentMonth + 1, 0);
-
-            allEvents.forEach(event => {
-                const start = parseDate(event.startDate);
-                const end = parseDate(event.endDate);
-
-                // 현재 월에 걸쳐있는지 확인
-                if (end < monthStart || start > monthEnd) {
-                    return;
-                }
-
-                // 주 단위로 분할
-                let currentDate = new Date(Math.max(start, monthStart));
-                const eventEnd = new Date(Math.min(end, monthEnd));
-
-                while (currentDate <= eventEnd) {
-                    const weekStart = new Date(currentDate);
-                    weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // 일요일로
-                    const weekKey = formatDate(weekStart);
-
-                    if (!eventsByWeek[weekKey]) {
-                        eventsByWeek[weekKey] = [];
-                    }
-
-                    const segmentStart = new Date(currentDate);
-                    const weekEnd = new Date(weekStart);
-                    weekEnd.setDate(weekEnd.getDate() + 6); // 토요일
-                    const segmentEnd = new Date(Math.min(eventEnd, weekEnd));
-
-                    eventsByWeek[weekKey].push({
-                        event,
-                        start: segmentStart,
-                        end: segmentEnd,
-                        isStart: isSameDay(segmentStart, start),
-                        isEnd: isSameDay(segmentEnd, end)
-                    });
-
-                    // 다음 주로
-                    currentDate = new Date(weekEnd);
-                    currentDate.setDate(currentDate.getDate() + 1);
-                }
-            });
-
-            // 각 주별로 레인 할당 및 렌더링
-            Object.keys(eventsByWeek).forEach(weekKey => {
-                const segments = eventsByWeek[weekKey];
-                const lanes = assignLanes(segments);
-                
-                lanes.forEach((lane, laneIndex) => {
-                    lane.forEach(segment => {
-                        renderEventBar(segment, laneIndex);
-                    });
-                });
-            });
-
-            // "+N 더보기" 표시
-            document.querySelectorAll('.day-cell').forEach(cell => {
-                const dateStr = cell.dataset.date;
-                const date = parseDate(dateStr);
-                
-                // 해당 날짜의 모든 이벤트 찾기
-                const dayEvents = allEvents.filter(event => {
-                    const start = parseDate(event.startDate);
-                    const end = parseDate(event.endDate);
-                    return date >= start && date <= end;
-                });
-
-                if (dayEvents.length > 3) {
-                    const moreLink = document.createElement('div');
-                    moreLink.className = 'more-events';
-                    moreLink.textContent = `+${dayEvents.length - 3} 더보기`;
-                    moreLink.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openEventModal(dateStr);
-                    });
-                    cell.querySelector('.events-container').appendChild(moreLink);
-                }
-            });
-        }
-
-        function assignLanes(segments) {
-            // 시작일 기준 정렬
-            segments.sort((a, b) => a.start - b.start);
-
-            const lanes = [];
-            segments.forEach(segment => {
-                let placed = false;
-                for (let i = 0; i < lanes.length; i++) {
-                    if (!hasOverlap(lanes[i], segment)) {
-                        lanes[i].push(segment);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (!placed) {
-                    lanes.push([segment]);
-                }
-            });
-
-            return lanes.slice(0, 3); // 최대 3레인만
-        }
-
-        function hasOverlap(lane, newSegment) {
-            return lane.some(seg => {
-                return !(newSegment.end < seg.start || newSegment.start > seg.end);
-            });
-        }
-
-        function renderEventBar(segment, laneIndex) {
-            const { event, start, end } = segment;
-            const startCell = document.querySelector(`[data-date="${formatDate(start)}"]`);
-            
-            if (!startCell || startCell.classList.contains('other-month')) return;
-
-            const bar = document.createElement('div');
-            bar.className = 'event-bar';
-            bar.style.top = `${laneIndex * 22 + 4}px`;
-            bar.style.background = getEventColor(event.id);
-            bar.textContent = event.title;
-            if (event.time && event.time.start) {
-                bar.textContent = `${event.time.start} ${event.title}`;
-            }
-
-            // 바 너비 계산 (같은 주 내에서)
-            const startDay = start.getDay();
-            const endDay = end.getDay();
-            const daySpan = endDay - startDay + 1;
-            
-            const cellWidth = startCell.offsetWidth;
-            bar.style.width = `calc(${daySpan * 100}% + ${(daySpan - 1) * 2}px)`;
-
-            bar.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openEventModal(formatDate(start), event.id);
-            });
-
-            startCell.querySelector('.events-container').appendChild(bar);
-        }
-
-        function getEventColor(id) {
-            const colors = [
-                '#4299e1', '#48bb78', '#ed8936', '#9f7aea',
-                '#f56565', '#38b2ac', '#ed64a6', '#ecc94b'
-            ];
-            let hash = 0;
-            for (let i = 0; i < id.length; i++) {
-                hash = id.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            return colors[Math.abs(hash) % colors.length];
-        }
-
-        // ============================================
-        // 모달 관리
-        // ============================================
-
-        function openEventModal(dateStr, eventId = null) {
-            selectedDate = dateStr;
-            const modal = document.getElementById('eventModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const eventListSection = document.getElementById('eventListSection');
-            const eventFormSection = document.getElementById('eventFormSection');
-
-            modalTitle.textContent = dateStr;
-
-            // 리스트 표시
-            eventListSection.style.display = 'block';
-            eventFormSection.style.display = 'none';
-
-            renderEventList(dateStr);
-
-            modal.classList.add('active');
-
-            // 특정 이벤트 수정 모드
-            if (eventId) {
-                editEvent(eventId);
-            }
-        }
-
-        function closeEventModal() {
-            document.getElementById('eventModal').classList.remove('active');
-            document.getElementById('eventForm').reset();
-            document.getElementById('eventId').value = '';
-        }
-
-        function renderEventList(dateStr) {
-            const date = parseDate(dateStr);
-            const { events } = loadData();
-            const allEvents = [...events];
-
-            // 반복 일정 인스턴스 추가
-            events.forEach(event => {
-                if (event.repeat && event.repeat.freq !== 'none') {
-                    const instances = generateRecurringInstances(event, currentYear, currentMonth);
-                    allEvents.push(...instances);
-                }
-            });
-
-            // 해당 날짜의 이벤트 필터링
-            const dayEvents = allEvents.filter(event => {
-                const start = parseDate(event.startDate);
-                const end = parseDate(event.endDate);
-                return date >= start && date <= end;
-            });
-
-            const listEl = document.getElementById('eventList');
-            listEl.innerHTML = '';
-
-            if (dayEvents.length === 0) {
-                listEl.innerHTML = '<p style="color: #718096;">등록된 일정이 없습니다.</p>';
-                return;
-            }
-
-            dayEvents.forEach(event => {
-                const item = document.createElement('div');
-                item.className = 'event-item';
-
-                const header = document.createElement('div');
-                header.className = 'event-item-header';
-                
-                const colorDot = document.createElement('div');
-                colorDot.className = 'event-color-dot';
-                colorDot.style.background = getEventColor(event.id);
-                
-                const title = document.createElement('span');
-                title.textContent = event.title;
-                
-                header.appendChild(colorDot);
-                header.appendChild(title);
-
-                const details = document.createElement('div');
-                details.className = 'event-item-details';
-                let detailsText = `${event.startDate} ~ ${event.endDate}`;
-                if (event.time && (event.time.start || event.time.end)) {
-                    detailsText += ` | ${event.time.start || ''} ~ ${event.time.end || ''}`;
-                }
-                if (event.repeat && event.repeat.freq !== 'none') {
-                    const freqNames = {
-                        daily: '매일',
-                        weekly: '매주',
-                        monthly: '매월',
-                        yearly: '매년'
-                    };
-                    detailsText += ` | ${freqNames[event.repeat.freq]} 반복`;
-                }
-                details.textContent = detailsText;
-
-                const actions = document.createElement('div');
-                actions.className = 'event-item-actions';
-
-                const editBtn = document.createElement('button');
-                editBtn.className = 'btn btn-sm btn-edit';
-                editBtn.textContent = '수정';
-                editBtn.onclick = () => editEvent(event.id);
-
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'btn btn-sm btn-delete';
-                deleteBtn.textContent = '삭제';
-                deleteBtn.onclick = () => {
-                    if (confirm('이 일정을 삭제하시겠습니까?')) {
-                        deleteEvent(event.id);
-                        closeEventModal();
-                        renderCalendar();
-                    }
-                };
-
-                actions.appendChild(editBtn);
-                actions.appendChild(deleteBtn);
-
-                item.appendChild(header);
-                item.appendChild(details);
-                item.appendChild(actions);
-
-                listEl.appendChild(item);
-            });
-        }
-
-        function showEventForm() {
-            document.getElementById('eventListSection').style.display = 'none';
-            document.getElementById('eventFormSection').style.display = 'block';
-            document.getElementById('eventStartDate').value = selectedDate;
-            document.getElementById('eventEndDate').value = selectedDate;
-        }
-
-        function hideEventForm() {
-            document.getElementById('eventListSection').style.display = 'block';
-            document.getElementById('eventFormSection').style.display = 'none';
-            document.getElementById('eventForm').reset();
-            document.getElementById('eventId').value = '';
-        }
-
-        function editEvent(eventId) {
-            const { events } = loadData();
-            const event = events.find(e => e.id === eventId);
-            if (!event) return;
-
-            showEventForm();
-
-            document.getElementById('eventId').value = event.id;
-            document.getElementById('eventTitle').value = event.title;
-            document.getElementById('eventStartDate').value = event.startDate;
-            document.getElementById('eventEndDate').value = event.endDate;
-            document.getElementById('eventStartTime').value = event.time?.start || '';
-            document.getElementById('eventEndTime').value = event.time?.end || '';
-            document.getElementById('repeatFreq').value = event.repeat?.freq || 'none';
-
-            if (event.repeat && event.repeat.freq !== 'none') {
-                document.getElementById('repeatOptions').style.display = 'block';
-                if (event.repeat.freq === 'monthly') {
-                    document.getElementById('monthlyOptions').style.display = 'block';
-                    document.getElementById('monthlyBy').value = event.repeat.monthlyBy || 'date';
-                }
-                document.getElementById('repeatUntil').value = event.repeat.untilDate || '';
-                document.getElementById('repeatCount').value = event.repeat.count || '';
-            }
-        }
-
-        // ============================================
-        // 관리자 모달
-        // ============================================
-
-        function openAdminModal() {
-            document.getElementById('adminModal').classList.add('active');
-            renderHolidayList();
-        }
-
-        function closeAdminModal() {
-            document.getElementById('adminModal').classList.remove('active');
-        }
-
-        function renderHolidayList() {
-            const { holidays } = loadData();
-            const listEl = document.getElementById('holidayList');
-            listEl.innerHTML = '';
-
-            if (holidays.length === 0) {
-                listEl.innerHTML = '<p style="color: #718096; padding: 8px;">등록된 휴일이 없습니다.</p>';
-                return;
-            }
-
-            holidays.forEach(date => {
-                const item = document.createElement('div');
-                item.className = 'holiday-item';
-
-                const dateSpan = document.createElement('span');
-                dateSpan.textContent = date;
-
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'btn btn-sm btn-delete';
-                deleteBtn.textContent = '삭제';
-                deleteBtn.onclick = () => {
-                    deleteHoliday(date);
-                    renderHolidayList();
-                    renderCalendar();
-                };
-
-                item.appendChild(dateSpan);
-                item.appendChild(deleteBtn);
-                listEl.appendChild(item);
-            });
-        }
-
-        // ============================================
-        // 이벤트 리스너
-        // ============================================
-
-        // 오늘 버튼
-        document.getElementById('todayBtn').addEventListener('click', () => {
-            const today = new Date();
-            currentYear = today.getFullYear();
-            currentMonth = today.getMonth();
-            renderCalendar();
-        });
-
-        // 이전 달 버튼
-        document.getElementById('prevMonthBtn').addEventListener('click', () => {
-            currentMonth--;
-            if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear--;
-            }
-            renderCalendar();
-        });
-
-        // 다음 달 버튼
-        document.getElementById('nextMonthBtn').addEventListener('click', () => {
-            currentMonth++;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear++;
-            }
-            renderCalendar();
-        });
-
-        // 관리자 버튼
-        document.getElementById('adminBtn').addEventListener('click', openAdminModal);
-
-        // 모달 닫기
-        document.getElementById('closeEventModal').addEventListener('click', closeEventModal);
-        document.getElementById('closeAdminModal').addEventListener('click', closeAdminModal);
-
-        // ESC 키로 모달 닫기
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeEventModal();
-                closeAdminModal();
-            }
-        });
-
-        // 모달 배경 클릭 시 닫기
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    modal.classList.remove('active');
-                }
-            });
-        });
-
-        // 일정 추가 버튼
-        document.getElementById('addEventBtn').addEventListener('click', showEventForm);
-
-        // 일정 폼 취소
-        document.getElementById('cancelEventBtn').addEventListener('click', hideEventForm);
-
-        // 반복 옵션 토글
-        document.getElementById('repeatFreq').addEventListener('change', (e) => {
-            const freq = e.target.value;
-            const repeatOptions = document.getElementById('repeatOptions');
-            const monthlyOptions = document.getElementById('monthlyOptions');
-
-            if (freq === 'none') {
-                repeatOptions.style.display = 'none';
-                monthlyOptions.style.display = 'none';
-            } else {
-                repeatOptions.style.display = 'block';
-                monthlyOptions.style.display = freq === 'monthly' ? 'block' : 'none';
-            }
-        });
-
-        // 일정 폼 제출
-        document.getElementById('eventForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-
-            const eventId = document.getElementById('eventId').value;
-            const title = document.getElementById('eventTitle').value.trim();
-            let startDate = document.getElementById('eventStartDate').value;
-            let endDate = document.getElementById('eventEndDate').value;
-
-            if (!title) {
-                alert('제목을 입력해주세요.');
-                return;
-            }
-
-            // 종료일이 시작일보다 빠르면 자동 보정
-            if (endDate < startDate) {
-                endDate = startDate;
-            }
-
-            const eventData = {
-                title,
-                startDate,
-                endDate,
-                time: {
-                    start: document.getElementById('eventStartTime').value || null,
-                    end: document.getElementById('eventEndTime').value || null
-                },
-                repeat: {
-                    freq: document.getElementById('repeatFreq').value,
-                    monthlyBy: document.getElementById('monthlyBy').value,
-                    untilDate: document.getElementById('repeatUntil').value || null,
-                    count: parseInt(document.getElementById('repeatCount').value) || null
-                }
-            };
-
-            // n번째 요일 계산 (매월 반복 시)
-            if (eventData.repeat.freq === 'monthly' && eventData.repeat.monthlyBy === 'nthWeekday') {
-                const start = parseDate(startDate);
-                eventData.repeat.weekday = start.getDay();
-                eventData.repeat.nth = Math.ceil(start.getDate() / 7);
-            }
-
-            if (eventId) {
-                updateEvent(eventId, eventData);
-            } else {
-                addEvent(eventData);
-            }
-
-            closeEventModal();
-            renderCalendar();
-        });
-
-        // 휴일 추가
-        document.getElementById('addHolidayBtn').addEventListener('click', () => {
-            const date = document.getElementById('holidayDate').value;
-            if (!date) {
-                alert('날짜를 선택해주세요.');
-                return;
-            }
-            addHoliday(date);
-            document.getElementById('holidayDate').value = '';
-            renderHolidayList();
-            renderCalendar();
-        });
-
-        // ============================================
-        // 스와이프 월 이동
-        // ============================================
-
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let touchEndX = 0;
-        let touchEndY = 0;
-
-        const calendarWrapper = document.getElementById('calendarWrapper');
-
-        calendarWrapper.addEventListener('touchstart', (e) => {
-            touchStartX = e.changedTouches[0].screenX;
-            touchStartY = e.changedTouches[0].screenY;
-        }, { passive: true });
-
-        calendarWrapper.addEventListener('touchend', (e) => {
-            touchEndX = e.changedTouches[0].screenX;
-            touchEndY = e.changedTouches[0].screenY;
-            handleSwipe();
-        }, { passive: true });
-
-        function handleSwipe() {
-            const deltaX = touchEndX - touchStartX;
-            const deltaY = touchEndY - touchStartY;
-
-            // 세로 스크롤이 더 크면 무시
-            if (Math.abs(deltaY) > Math.abs(deltaX)) {
-                return;
-            }
-
-            // 임계값 체크
-            if (Math.abs(deltaX) < 40) {
-                return;
-            }
-
-            const calendar = document.getElementById('calendar');
-            calendar.classList.add('transitioning');
-
-            if (deltaX > 0) {
-                // 오른쪽 스와이프: 이전 달
-                currentMonth--;
-                if (currentMonth < 0) {
-                    currentMonth = 11;
-                    currentYear--;
-                }
-            } else {
-                // 왼쪽 스와이프: 다음 달
-                currentMonth++;
-                if (currentMonth > 11) {
-                    currentMonth = 0;
-                    currentYear++;
-                }
-            }
-
-            renderCalendar();
-
-            setTimeout(() => {
-                calendar.classList.remove('transitioning');
-            }, 200);
-        }
-
-        // ============================================
-        // 초기화
-        // ============================================
-
-        renderCalendar();
-    </script>
+      }
+    });
+  });
+}
+
+function drawWeekBars(weekDays, barsEl, instances, dayVisibleCount){
+  // Determine segments that overlap this week
+  const wStart = weekDays[0];
+  const wEnd = weekDays[6];
+  const wStartStr = ymd(wStart);
+  const wEndStr = ymd(wEnd);
+
+  const segs = [];
+  for(const inst of instances){
+    // overlap check
+    if(inst.endDate < wStartStr || inst.startDate > wEndStr) continue;
+
+    // segment start/end indexes within this week
+    const s = parseYMD(inst.startDate);
+    const e = parseYMD(inst.endDate);
+
+    const segStart = s < wStart ? wStart : s;
+    const segEnd = e > wEnd ? wEnd : e;
+
+    const startIdx = diffDays(wStart, segStart); // 0..6
+    const endIdx = diffDays(wStart, segEnd);     // 0..6
+
+    segs.push({
+      inst,
+      startIdx,
+      endIdx,
+      // for sorting: earlier start first, longer first
+      sortKey: inst.startDate,
+      len: endIdx - startIdx
+    });
+  }
+
+  segs.sort((a,b)=>{
+    if(a.sortKey !== b.sortKey) return a.sortKey < b.sortKey ? -1 : 1;
+    return b.len - a.len;
+  });
+
+  // Assign lanes avoiding overlaps (simple interval graph coloring)
+  const lanes = []; // each lane is array of placed segments intervals
+  const placed = []; // {seg, lane}
+
+  function overlaps(aStart, aEnd, bStart, bEnd){
+    return !(aEnd < bStart || bEnd < aStart);
+  }
+
+  for(const seg of segs){
+    let lane = 0;
+    while(true){
+      if(!lanes[lane]) lanes[lane] = [];
+      const conflict = lanes[lane].some(p => overlaps(seg.startIdx, seg.endIdx, p.startIdx, p.endIdx));
+      if(!conflict){
+        lanes[lane].push(seg);
+        placed.push({ seg, lane });
+        break;
+      }
+      lane++;
+    }
+  }
+
+  // Render visible lanes only (0..2)
+  const visibleMax = 3;
+  const rowRect = barsEl.getBoundingClientRect();
+  const parentWeek = barsEl.parentElement;
+  const daysRow = parentWeek.querySelector(".days");
+  const daysRect = daysRow.getBoundingClientRect();
+  // width per day based on actual element
+  const dayW = daysRect.width / 7;
+
+  for(const {seg, lane} of placed){
+    if(lane >= visibleMax) continue;
+
+    const left = 6 + (seg.startIdx * dayW); // barsEl padding left approx
+    const width = (seg.endIdx - seg.startIdx + 1) * dayW - 6; // slight inset
+    const top = lane * (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--laneH')) +
+                        parseInt(getComputedStyle(document.documentElement).getPropertyValue('--laneGap')));
+
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    bar.style.left = `${left}px`;
+    bar.style.top = `${top}px`;
+    bar.style.width = `${Math.max(18, width)}px`;
+
+    // text
+    const t = document.createElement("div");
+    t.className = "t";
+    t.textContent = seg.inst.title || "(제목 없음)";
+
+    bar.appendChild(t);
+
+    // time shown only on segment start cell (nice & simple)
+    const time = seg.inst.time || {};
+    if((time.start || time.end) && seg.startIdx === Math.max(0, diffDays(parseYMD(ymd(weekDays[0])), parseYMD(seg.inst.startDate))) ){
+      const tm = document.createElement("div");
+      tm.className = "time";
+      const s = time.start ? time.start : "";
+      const e = time.end ? time.end : "";
+      tm.textContent = (s && e) ? `${s}~${e}` : (s ? s : (e ? e : ""));
+      bar.appendChild(tm);
+    }
+
+    barsEl.appendChild(bar);
+
+    // mark visible count for each day in segment
+    for(let i=seg.startIdx; i<=seg.endIdx; i++){
+      const ds = ymd(weekDays[i]);
+      dayVisibleCount[ds] = (dayVisibleCount[ds] || 0) + 1;
+    }
+  }
+}
+
+/* =========================
+   Day Modal: list + add/edit/delete
+========================= */
+const dayModalBack = $("dayModalBack");
+const dayModalTitle = $("dayModalTitle");
+const dayModalSub = $("dayModalSub");
+const dayModalClose = $("dayModalClose");
+const eventListEl = $("eventList");
+const emptyNoteEl = $("emptyNote");
+const showAddBtn = $("showAddBtn");
+
+const formSection = $("formSection");
+const formTitle = $("formTitle");
+const cancelFormBtn = $("cancelFormBtn");
+
+const eventForm = $("eventForm");
+const editIdEl = $("editId");
+const fTitle = $("fTitle");
+const fStart = $("fStart");
+const fEnd = $("fEnd");
+const fTStart = $("fTStart");
+const fTEnd = $("fTEnd");
+const fFreq = $("fFreq");
+const monthlyByWrap = $("monthlyByWrap");
+const fMonthlyBy = $("fMonthlyBy");
+const nthWrap = $("nthWrap");
+const fNth = $("fNth");
+const fWeekday = $("fWeekday");
+const fUntil = $("fUntil");
+const fCount = $("fCount");
+
+let selectedDateStr = null;
+
+function openDayModal(dateStr){
+  selectedDateStr = dateStr;
+  dayModalTitle.textContent = dateStr;
+  const d = parseYMD(dateStr);
+  dayModalSub.textContent = `${d.getMonth()+1}월 ${d.getDate()}일(${dowKo[d.getDay()]})에 포함되는 일정`;
+
+  // reset form
+  hideForm();
+
+  // render list
+  renderDayList(dateStr);
+
+  dayModalBack.classList.add("show");
+}
+function closeDayModal(){
+  dayModalBack.classList.remove("show");
+  selectedDateStr = null;
+}
+
+function renderDayList(dateStr){
+  const { startStr, endStr } = lastRenderedRange || (() => {
+    const r = getGridRange(curMonth);
+    return { startStr: ymd(r.start), endStr: ymd(r.end) };
+  })();
+
+  // We want list for that date (include repeated instances)
+  const instances = getAllInstancesForRange(startStr, endStr);
+  const list = instances.filter(i => i.startDate <= dateStr && i.endDate >= dateStr);
+
+  // For editing, we show base event references
+  const baseById = new Map(DB.events.map(e => [e.id, e]));
+
+  // Sort: those that start earlier first
+  list.sort((a,b)=>{
+    if(a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+    if(a.endDate !== b.endDate) return a.endDate > b.endDate ? -1 : 1;
+    return (a.title||"").localeCompare(b.title||"");
+  });
+
+  eventListEl.innerHTML = "";
+  emptyNoteEl.style.display = list.length ? "none" : "block";
+
+  for(const inst of list){
+    const base = baseById.get(inst.baseId);
+    if(!base) continue;
+
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = base.title;
+
+    const desc = document.createElement("div");
+    desc.className = "desc";
+
+    const time = base.time || {};
+    const timeText = (time.start || time.end)
+      ? ` · 시간: ${(time.start||"")} ${(time.start && time.end) ? "~" : ""} ${(time.end||"")}`.replace(/\s+/g," ").trim()
+      : "";
+
+    const rep = base.repeat?.freq && base.repeat.freq !== "none"
+      ? ` · 반복: ${repeatLabel(base.repeat, base.startDate)}`
+      : "";
+
+    desc.textContent = `기간: ${base.startDate} ~ ${base.endDate}${timeText}${rep}`;
+
+    meta.appendChild(name);
+    meta.appendChild(desc);
+
+    const btns = document.createElement("div");
+    btns.className = "btns";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "mini primary";
+    editBtn.type = "button";
+    editBtn.textContent = "수정";
+    editBtn.addEventListener("click", (ev)=>{
+      ev.stopPropagation();
+      showFormForEdit(base);
+    });
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "mini danger";
+    delBtn.type = "button";
+    delBtn.textContent = "삭제";
+    delBtn.addEventListener("click", (ev)=>{
+      ev.stopPropagation();
+      if(confirm("이 일정을 삭제할까요? (반복 일정이면 규칙 전체가 삭제됩니다)")){
+        deleteEvent(base.id);
+        render();
+        renderDayList(dateStr);
+      }
+    });
+
+    btns.appendChild(editBtn);
+    btns.appendChild(delBtn);
+
+    item.appendChild(meta);
+    item.appendChild(btns);
+    eventListEl.appendChild(item);
+  }
+}
+
+function repeatLabel(rep, startDateStr){
+  const f = rep.freq;
+  if(f === "daily") return "매일";
+  if(f === "weekly"){
+    const wd = rep.weekday ?? parseYMD(startDateStr).getDay();
+    return `매주(${dowKo[wd]})`;
+  }
+  if(f === "monthly"){
+    if(rep.monthlyBy === "nthWeekday"){
+      return `매월 ${rep.nth}번째 ${dowKo[rep.weekday ?? 0]}`;
+    }
+    return "매월(날짜)";
+  }
+  if(f === "yearly") return "매년";
+  return "없음";
+}
+
+function showForm(){
+  formSection.style.display = "block";
+}
+function hideForm(){
+  formSection.style.display = "none";
+  eventForm.reset();
+  editIdEl.value = "";
+  formTitle.textContent = "일정 추가";
+  monthlyByWrap.style.display = "none";
+  nthWrap.style.display = "none";
+}
+
+function showFormForNew(){
+  hideForm();
+  formTitle.textContent = "일정 추가";
+  editIdEl.value = "";
+
+  // default dates: selected date
+  const ds = selectedDateStr || ymd(new Date());
+  fStart.value = ds;
+  fEnd.value = ds;
+
+  // default: no repeat
+  fFreq.value = "none";
+  monthlyByWrap.style.display = "none";
+  nthWrap.style.display = "none";
+
+  showForm();
+  fTitle.focus();
+}
+function showFormForEdit(base){
+  hideForm();
+  formTitle.textContent = "일정 수정";
+  editIdEl.value = base.id;
+
+  fTitle.value = base.title || "";
+  fStart.value = base.startDate;
+  fEnd.value = base.endDate;
+  fTStart.value = base.time?.start || "";
+  fTEnd.value = base.time?.end || "";
+
+  const rep = base.repeat || { freq:"none" };
+  fFreq.value = rep.freq || "none";
+
+  // Show monthly controls if needed
+  if(fFreq.value === "monthly"){
+    monthlyByWrap.style.display = "block";
+    fMonthlyBy.value = rep.monthlyBy || "date";
+    if(fMonthlyBy.value === "nthWeekday"){
+      nthWrap.style.display = "grid";
+      fNth.value = String(rep.nth || 1);
+      fWeekday.value = String(rep.weekday ?? parseYMD(base.startDate).getDay());
+    }else{
+      nthWrap.style.display = "none";
+      fWeekday.value = String(parseYMD(base.startDate).getDay());
+      fNth.value = "1";
+    }
+  }else{
+    monthlyByWrap.style.display = "none";
+    nthWrap.style.display = "none";
+    // weekly uses weekday
+    if(fFreq.value === "weekly"){
+      fWeekday.value = String(rep.weekday ?? parseYMD(base.startDate).getDay());
+    }else{
+      fWeekday.value = String(parseYMD(base.startDate).getDay());
+    }
+    fNth.value = "1";
+    fMonthlyBy.value = "date";
+  }
+
+  fUntil.value = rep.untilDate || "";
+  fCount.value = (rep.count != null) ? String(rep.count) : "";
+
+  showForm();
+  fTitle.focus();
+}
+
+/* form dynamic controls */
+fFreq.addEventListener("change", ()=>{
+  const v = fFreq.value;
+  if(v === "monthly"){
+    monthlyByWrap.style.display = "block";
+    if(fMonthlyBy.value === "nthWeekday"){
+      nthWrap.style.display = "grid";
+    }else{
+      nthWrap.style.display = "none";
+    }
+  }else{
+    monthlyByWrap.style.display = "none";
+    nthWrap.style.display = "none";
+  }
+});
+fMonthlyBy.addEventListener("change", ()=>{
+  if(fFreq.value === "monthly" && fMonthlyBy.value === "nthWeekday"){
+    nthWrap.style.display = "grid";
+  }else{
+    nthWrap.style.display = "none";
+  }
+});
+
+eventForm.addEventListener("submit", (ev)=>{
+  ev.preventDefault();
+
+  const title = (fTitle.value || "").trim();
+  if(!title){
+    alert("제목을 입력해 주세요.");
+    fTitle.focus();
+    return;
+  }
+
+  const sVal = fStart.value;
+  const eVal = fEnd.value;
+  if(!sVal || !eVal){
+    alert("시작일/종료일을 입력해 주세요.");
+    return;
+  }
+  const [startDate, endDate] = clampDateOrder(sVal, eVal);
+
+  // time optional
+  const time = {
+    start: fTStart.value || null,
+    end: fTEnd.value || null
+  };
+
+  // Repeat rule
+  const freq = fFreq.value;
+  const monthlyBy = fMonthlyBy.value;
+  const nth = fNth.value;
+  const weekday = fWeekday.value;
+  const untilDate = fUntil.value || null;
+  const count = fCount.value;
+
+  const repeat = normalizeRepeatForSave(freq, monthlyBy, nth, weekday, untilDate, count, startDate);
+
+  // If weekly and user didn't manually set weekday, keep startDate weekday.
+  // If monthly nthWeekday: keep selected.
+
+  // Validate untilDate relative to start
+  if(repeat.untilDate && isAfterYMD(startDate, repeat.untilDate)){
+    alert("반복 종료일은 시작일보다 이전일 수 없습니다.");
+    return;
+  }
+
+  const id = editIdEl.value;
+
+  if(!id){
+    const evt = {
+      id: uuid(),
+      title,
+      startDate,
+      endDate,
+      time,
+      repeat,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    addEvent(evt);
+  }else{
+    updateEvent(id, { title, startDate, endDate, time, repeat });
+  }
+
+  render();
+  renderDayList(selectedDateStr);
+  hideForm();
+});
+
+showAddBtn.addEventListener("click", showFormForNew);
+cancelFormBtn.addEventListener("click", hideForm);
+
+dayModalClose.addEventListener("click", closeDayModal);
+dayModalBack.addEventListener("click", (e)=>{
+  if(e.target === dayModalBack) closeDayModal();
+});
+
+document.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape"){
+    if(dayModalBack.classList.contains("show")) closeDayModal();
+    if(adminBack.classList.contains("show")) closeAdmin();
+  }
+});
+
+/* =========================
+   Admin modal (holidays)
+========================= */
+const adminBack = $("adminBack");
+const adminBtn = $("adminBtn");
+const adminClose = $("adminClose");
+const hDate = $("hDate");
+const addHolidayBtn = $("addHolidayBtn");
+const holidayList = $("holidayList");
+const holidayEmpty = $("holidayEmpty");
+
+function openAdmin(){
+  renderHolidayList();
+  adminBack.classList.add("show");
+}
+function closeAdmin(){
+  adminBack.classList.remove("show");
+}
+adminBtn.addEventListener("click", openAdmin);
+adminClose.addEventListener("click", closeAdmin);
+adminBack.addEventListener("click", (e)=>{
+  if(e.target === adminBack) closeAdmin();
+});
+addHolidayBtn.addEventListener("click", ()=>{
+  const ds = hDate.value;
+  if(!ds) return alert("날짜를 선택해 주세요.");
+  addHoliday(ds);
+  renderHolidayList();
+  render();
+});
+function renderHolidayList(){
+  const keys = Object.keys(DB.holidays).sort();
+  holidayList.innerHTML = "";
+  holidayEmpty.style.display = keys.length ? "none" : "block";
+  for(const ds of keys){
+    const pill = document.createElement("div");
+    pill.className = "pill";
+    const left = document.createElement("div");
+    left.className = "date";
+    left.textContent = ds;
+    const x = document.createElement("button");
+    x.className = "x";
+    x.type = "button";
+    x.textContent = "삭제";
+    x.addEventListener("click", ()=>{
+      deleteHoliday(ds);
+      renderHolidayList();
+      render();
+    });
+    pill.appendChild(left);
+    pill.appendChild(x);
+    holidayList.appendChild(pill);
+  }
+}
+
+/* =========================
+   Month navigation (no buttons)
+   - Today button
+   - Swipe left/right
+========================= */
+$("todayBtn").addEventListener("click", ()=>{
+  const t = new Date();
+  curMonth = new Date(t.getFullYear(), t.getMonth(), 1, 12);
+  render();
+});
+
+function shiftMonth(delta){
+  curMonth = new Date(curMonth.getFullYear(), curMonth.getMonth()+delta, 1, 12);
+  render();
+}
+
+// Swipe handling (touch + optional mouse drag)
+let swiping = false;
+let sx=0, sy=0, mx=0, my=0;
+let moved = false;
+
+function onStart(x,y){
+  swiping = true;
+  sx = x; sy = y;
+  mx = x; my = y;
+  moved = false;
+}
+function onMove(x,y){
+  if(!swiping) return;
+  mx = x; my = y;
+  const dx = mx - sx;
+  const dy = my - sy;
+  if(Math.abs(dx) > 6 || Math.abs(dy) > 6) moved = true;
+}
+function onEnd(){
+  if(!swiping) return;
+  swiping = false;
+  if(!moved) return;
+
+  const dx = mx - sx;
+  const dy = my - sy;
+
+  // prevent conflict with vertical scroll: if vertical dominates, ignore
+  if(Math.abs(dy) > Math.abs(dx) * 1.2) return;
+
+  // threshold
+  if(Math.abs(dx) < 40) return;
+
+  if(dx < 0){
+    shiftMonth(1); // left swipe => next
+  }else{
+    shiftMonth(-1); // right swipe => prev
+  }
+}
+
+calCard.addEventListener("touchstart", (e)=>{
+  if(e.touches.length !== 1) return;
+  const t = e.touches[0];
+  onStart(t.clientX, t.clientY);
+}, {passive:true});
+calCard.addEventListener("touchmove", (e)=>{
+  if(!swiping || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  onMove(t.clientX, t.clientY);
+}, {passive:true});
+calCard.addEventListener("touchend", ()=>onEnd(), {passive:true});
+
+// Optional mouse drag on desktop (nice-to-have)
+let mouseDown = false;
+calCard.addEventListener("mousedown", (e)=>{
+  mouseDown = true;
+  onStart(e.clientX, e.clientY);
+});
+window.addEventListener("mousemove", (e)=>{
+  if(!mouseDown) return;
+  onMove(e.clientX, e.clientY);
+});
+window.addEventListener("mouseup", ()=>{
+  if(!mouseDown) return;
+  mouseDown = false;
+  onEnd();
+});
+
+/* =========================
+   Initialize
+========================= */
+render();
+
+/* =========================
+   Notes for Firebase migration
+========================= */
+/*
+Firebase Realtime Database로 바꾸려면:
+- loadData() / saveData() 내부를 Firebase read/write로 교체
+- addEvent/updateEvent/deleteEvent, addHoliday/deleteHoliday 에서 LocalStorage 대신 DB 업데이트
+- 렌더링은 DB(메모리) 갱신 후 render() 호출 구조 유지
+*/
+</script>
 </body>
 </html>
