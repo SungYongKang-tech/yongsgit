@@ -76,7 +76,10 @@ tbody tr:hover{background:#f9fafb}
   <div class="hin">
     <h1 id="pageTitle">📈 월간 리포트</h1>
     <div class="sub" id="subTitle">선수별 성적</div>
+
     <div class="row">
+      <button id="adminBtn" class="btn">⚙ 관리자</button>
+      <button id="todayBtn" class="btn">📊 오늘의 전적</button>
       <a href="index.html" class="btn primary">⬅ 경기 입력</a>
     </div>
   </div>
@@ -107,18 +110,38 @@ tbody tr:hover{background:#f9fafb}
       </thead>
       <tbody id="tbody"></tbody>
     </table>
+
     <div class="small" style="text-align:center;margin-top:10px">
       ※ 승률 → 경기수 → 이름 순으로 정렬합니다.
     </div>
 
-    <!-- ✅ 표 아래쪽(요청하신 위치)에 TOP3 요약 -->
+    <!-- ✅ 표 아래쪽 TOP3 요약 -->
     <div id="summary" class="summary"></div>
   </section>
 </main>
 
+<!-- ✅ 오늘의 전적 팝업 -->
+<div id="todayResults"
+     style="display:none; position:fixed; top:50%; left:50%;
+            transform:translate(-50%,-50%);
+            width:92%; max-width:440px; background:#fff;
+            border-radius:16px; box-shadow:0 8px 28px rgba(0,0,0,0.2);
+            padding:20px 20px 24px; z-index:200;">
+  <button id="closeToday"
+          style="position:absolute; top:10px; right:12px;
+                 background:transparent; border:none;
+                 font-size:22px; color:#9ca3af; cursor:pointer;">✖</button>
+  <h3 style="text-align:center; color:#2563eb; margin-top:0; margin-bottom:12px;">
+    📊 오늘의 전적
+  </h3>
+  <div id="todayList"
+       style="font-size:16px; line-height:1.8; font-weight:900; text-align:center; color:#111;">
+  </div>
+</div>
+
 <script type="module">
 import { db } from "./firebase.js";
-import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { ref, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const $ = (s)=>document.querySelector(s);
 const pad2 = (n)=>String(n).padStart(2,"0");
@@ -133,11 +156,22 @@ const pct = (w,l)=>{
 let PLAYERS = {};
 let GAMES = {};
 
+// ---- title
 onValue(ref(db,"config/title"), s=>{
   const v = s.val() ?? "우리";
   document.title = `📈 ${v} 월간 리포트`;
   $("#pageTitle").textContent = `📈 ${v} 월간 리포트`;
 });
+
+// ---- admin gate
+$("#adminBtn").onclick = async()=>{
+  const snap = await get(ref(db,"config/adminPassword"));
+  const saved = snap.exists()? String(snap.val()):"1234";
+  const input = prompt("관리자 비밀번호를 입력하세요.");
+  if(input===null) return;
+  if(input.trim() !== saved.trim()) return alert("비밀번호가 올바르지 않습니다.");
+  location.href="admin.html";
+};
 
 onValue(ref(db,"players"), snap=>{
   PLAYERS = snap.val() || {};
@@ -221,7 +255,7 @@ function draw(monthKey){
   const totalMatches = games.length;
   $("#metaText").textContent = `${monthKey} / 총 경기 수: ${totalMatches} 경기 / 선수 수: ${rows.length}명`;
 
-  // ✅ TOP3 요약(표 아래쪽)
+  // TOP3 요약
   renderSummary(rows, totalMatches);
 }
 
@@ -233,12 +267,12 @@ function renderSummary(rows, totalMatches){
     return;
   }
 
-  // 최다경기 TOP3 (경기수 t 기준)
+  // 최다경기 TOP3
   const topPlay = rows.slice()
     .sort((a,b)=> b.t - a.t || a.name.localeCompare(b.name,'ko'))
     .slice(0,3);
 
-  // 다승 TOP3 (승 w 기준)
+  // 다승 TOP3
   const topWin = rows.slice()
     .sort((a,b)=> b.w - a.w || (b.r - a.r) || a.name.localeCompare(b.name,'ko'))
     .slice(0,3);
@@ -261,6 +295,102 @@ function renderSummary(rows, totalMatches){
     </div>
   `;
 }
+
+// =========================
+// ✅ 오늘의 전적 (월간리포트 페이지용)
+// =========================
+const kstDateKey = (ts)=>{
+  const d = new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+};
+
+let todayVisible = false;
+
+function buildTodayHtml(){
+  const todayKey = kstDateKey(Date.now());
+  const todayGames = Object.values(GAMES).filter(g => g?.createdAt && kstDateKey(g.createdAt) === todayKey);
+
+  if(!todayGames.length) return "오늘 경기 기록이 없습니다";
+
+  const stats = {};
+  todayGames.forEach(g=>{
+    const aWin = g.winner === "A";
+    (g.playersA || []).forEach(pid=>{
+      if(!stats[pid]) stats[pid] = {win:0, lose:0};
+      if(aWin) stats[pid].win++; else stats[pid].lose++;
+    });
+    (g.playersB || []).forEach(pid=>{
+      if(!stats[pid]) stats[pid] = {win:0, lose:0};
+      if(!aWin) stats[pid].win++; else stats[pid].lose++;
+    });
+  });
+
+  const arr = Object.entries(stats).map(([pid,wl])=>{
+    const name = PLAYERS?.[pid]?.name || `미등록(${pid})`;
+    const win = wl.win, lose = wl.lose;
+    const total = win + lose;
+    const score = win*2 - lose*1;
+    return { pid, name, win, lose, total, score };
+  }).sort((a,b)=>
+    b.score - a.score ||
+    b.win - a.win ||
+    b.total - a.total ||
+    a.name.localeCompare(b.name,'ko')
+  );
+
+  const maxWin = Math.max(...arr.map(x=>x.win));
+  let html = "";
+
+  arr.forEach((p,i)=>{
+    const isTop = p.win === maxWin;
+    const color = p.win >= p.lose ? "#1e40af" : "#111";
+    const text = `${p.name} ${p.win}승${p.lose}패`;
+
+    html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
+      ${isTop ? `<b>${text}</b>` : text}
+    </span>`;
+    if((i+1)%2===0) html += "<br>";
+  });
+
+  html += `<div style="margin-top:10px;color:#64748b;font-size:13px;font-weight:900;">
+    오늘 경기 수: ${todayGames.length} 경기
+  </div>`;
+
+  return html;
+}
+
+document.getElementById("todayBtn").addEventListener("click", ()=>{
+  const box  = document.getElementById("todayResults");
+  const list = document.getElementById("todayList");
+
+  if(todayVisible){
+    box.style.display = "none";
+    todayVisible = false;
+    return;
+  }
+
+  const html = buildTodayHtml();
+  if(html === "오늘 경기 기록이 없습니다"){
+    alert(html);
+    return;
+  }
+
+  list.innerHTML = html;
+  box.style.display = "block";
+  todayVisible = true;
+});
+
+document.getElementById("closeToday").addEventListener("click", ()=>{
+  document.getElementById("todayResults").style.display = "none";
+  todayVisible = false;
+});
+
+window.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape" && todayVisible){
+    document.getElementById("todayResults").style.display = "none";
+    todayVisible = false;
+  }
+});
 </script>
 </body>
 </html>
