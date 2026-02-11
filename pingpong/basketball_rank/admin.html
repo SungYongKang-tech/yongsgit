@@ -53,23 +53,29 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
   </section>
 
   <section class="card">
-    <h3>팀 관리</h3>
+    <h3>선수 관리</h3>
     <div class="row">
-      <input id="teamName" style="flex:1;min-width:220px" placeholder="팀 이름"/>
-      <button id="addTeam" class="btn primary">팀 등록</button>
+      <input id="playerName" style="flex:1;min-width:180px" placeholder="선수 이름"/>
+      <button id="addPlayer" class="btn primary">선수 등록</button>
     </div>
-    <div id="teamList" class="grid"></div>
+    <div class="small">※ 선수는 소속팀 없이 등록하며, 경기 입력 때마다 A/B팀으로 선택합니다.</div>
+    <div id="playerList" class="grid"></div>
   </section>
 
   <section class="card">
-  <h3>선수 관리</h3>
-  <div class="row">
-    <input id="playerName" style="flex:1;min-width:180px" placeholder="선수 이름"/>
-    <button id="addPlayer" class="btn primary">선수 등록</button>
-  </div>
-  <div class="small">※ 선수는 소속팀 없이 등록하며, 경기 입력 때마다 A/B팀으로 선택합니다.</div>
-  <div id="playerList" class="grid"></div>
-</section>
+    <h3>UI 설정</h3>
+    <div class="row" style="justify-content:flex-start">
+      <label style="font-weight:900">모바일 선수버튼 열 수</label>
+      <select id="uiMobileCols" style="min-width:140px">
+        <option value="3">3명</option>
+        <option value="4">4명</option>
+      </select>
+      <button class="btn ok" id="saveUi">저장</button>
+    </div>
+    <div class="small" style="margin-top:6px">
+      ※ 휴대폰 화면에서 선수 선택 버튼이 한 줄에 몇 개 나올지 설정합니다.
+    </div>
+  </section>
 
   <section class="card">
     <h3>설정</h3>
@@ -84,22 +90,6 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
       <button id="saveAdminPassword" class="btn primary">저장</button>
     </div>
   </section>
-
-  
-<section class="card">
-  <h3>UI 설정</h3>
-  <div class="row" style="justify-content:flex-start">
-    <label style="font-weight:900">모바일 선수버튼 열 수</label>
-    <select id="uiMobileCols" style="min-width:140px">
-      <option value="3">3명</option>
-      <option value="4">4명</option>
-    </select>
-    <button class="btn ok" id="saveUi">저장</button>
-  </div>
-  <div class="small" style="margin-top:6px">
-    ※ 휴대폰 화면에서 선수 선택 버튼이 한 줄에 몇 개 나올지 설정합니다.
-  </div>
-</section>
 
   <section class="card">
     <h3>데이터 관리 (이번달)</h3>
@@ -126,25 +116,9 @@ const toast = (m="저장되었습니다")=>{
 const pad2 = (n)=>String(n).padStart(2,"0");
 const monthKey = (d)=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
 
-import { ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-// 현재값 불러오기
-onValue(ref(db,"config/uiMobileCols"), (snap)=>{
-  const v = String(snap.val() ?? "4");
-  const sel = document.getElementById("uiMobileCols");
-  if(sel) sel.value = (v==="3" || v==="4") ? v : "4";
-});
-
-// 저장
-document.getElementById("saveUi").addEventListener("click", async ()=>{
-  const sel = document.getElementById("uiMobileCols");
-  const v = Number(sel.value) || 4;
-  await set(ref(db,"config/uiMobileCols"), v);
-  alert("저장 완료!");
-});
-
-
-// --- title
+// =========================
+// title
+// =========================
 const titleRef = ref(db,"config/title");
 onValue(titleRef, s=>{
   const v = s.val() ?? "Basketball";
@@ -160,58 +134,24 @@ $("#saveTitle").onclick = async()=>{
   toast("제목 저장 완료");
 };
 
-// --- teams
-const teamsRef = ref(db,"teams");
-let TEAMS = {}; // {id:{name}}
-onValue(teamsRef, snap=>{
-  TEAMS = snap.val() || {};
-  renderTeams();
-  renderTeamSelect();
+// =========================
+// UI settings (mobile cols)
+// =========================
+onValue(ref(db,"config/uiMobileCols"), (snap)=>{
+  const v = String(snap.val() ?? "4");
+  const sel = $("#uiMobileCols");
+  if(sel) sel.value = (v==="3" || v==="4") ? v : "4";
 });
 
-function renderTeams(){
-  const box=$("#teamList"); box.innerHTML="";
-  const arr = Object.entries(TEAMS).map(([id,t])=>({id,...t}))
-    .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko'));
-  if(!arr.length){
-    box.innerHTML = `<div class="small">등록된 팀이 없습니다.</div>`;
-    return;
-  }
-  arr.forEach(t=>{
-    const div=document.createElement("div");
-    div.className="item";
-    div.innerHTML = `
-      <div>
-        <div style="font-weight:900">${t.name}</div>
-        <div class="small">teamId: ${t.id}</div>
-      </div>
-      <button class="btn warn" data-del-team="${t.id}">삭제</button>
-    `;
-    div.querySelector("[data-del-team]").onclick = async()=>{
-      if(!confirm(`팀 "${t.name}"을 삭제하시겠습니까?\n(팀에 소속된 선수 설정도 확인 필요)`)) return;
-      await remove(ref(db,`teams/${t.id}`));
-      toast("팀 삭제 완료");
-    };
-    box.appendChild(div);
-  });
-}
+$("#saveUi").addEventListener("click", async ()=>{
+  const v = Number($("#uiMobileCols").value) || 4;
+  await set(ref(db,"config/uiMobileCols"), v);
+  toast("UI 설정 저장 완료");
+});
 
-$("#addTeam").onclick = async()=>{
-  const name = $("#teamName").value.trim();
-  if(!name) return toast("팀 이름을 입력하세요");
-  await push(teamsRef, { name, createdAt: Date.now() });
-  $("#teamName").value="";
-  toast("팀 등록 완료");
-};
-
-function renderTeamSelect(){
-  const sel=$("#playerTeam");
-  const arr = Object.entries(TEAMS).map(([id,t])=>({id,...t}))
-    .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko'));
-  sel.innerHTML = arr.map(t=>`<option value="${t.id}">${t.name}</option>`).join("");
-}
-
-// --- players
+// =========================
+// players
+// =========================
 const playersRef = ref(db,"players");
 let PLAYERS = {}; // {id:{name}}
 
@@ -257,10 +197,9 @@ $("#addPlayer").onclick = async()=>{
   toast("선수 등록 완료");
 };
 
-
-
-
-// --- passwords
+// =========================
+// passwords
+// =========================
 onValue(ref(db,"config/deletePassword"), s=>$("#deletePassword").value = s.val() ?? "7910");
 $("#saveDeletePassword").onclick = async()=>{
   const v = $("#deletePassword").value.trim();
@@ -268,6 +207,7 @@ $("#saveDeletePassword").onclick = async()=>{
   await set(ref(db,"config/deletePassword"), v);
   toast("삭제 비밀번호 저장");
 };
+
 onValue(ref(db,"config/adminPassword"), s=>$("#adminPassword").value = s.val() ?? "1234");
 $("#saveAdminPassword").onclick = async()=>{
   const v = $("#adminPassword").value.trim();
@@ -276,7 +216,9 @@ $("#saveAdminPassword").onclick = async()=>{
   toast("관리자 비밀번호 저장");
 };
 
-// --- delete current month games
+// =========================
+// delete current month games
+// =========================
 $("#deleteCurrentMonth").onclick = async()=>{
   if(!confirm("⚠️ 이번달 경기 기록을 전부 삭제하시겠습니까?\n(복구 불가)")) return;
 
@@ -287,8 +229,7 @@ $("#deleteCurrentMonth").onclick = async()=>{
   if(input === null) return;
   if(input.trim() !== savedPw.trim()) return alert("❌ 비밀번호가 올바르지 않습니다.");
 
-  const now = new Date();
-  const thisMonth = monthKey(now);
+  const thisMonth = monthKey(new Date());
 
   const snap = await get(ref(db,"games"));
   const data = snap.val() || {};
