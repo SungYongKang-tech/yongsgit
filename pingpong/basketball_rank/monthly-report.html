@@ -35,6 +35,40 @@ tbody tr:hover{background:#f9fafb}
 .lose{color:var(--lose);font-weight:900}
 .right{display:flex;justify-content:flex-end}
 .small{color:var(--mut);font-size:13px;font-weight:800}
+
+/* ✅ 요약 카드 영역 */
+.summary{
+  margin-top:14px;
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
+  gap:12px;
+}
+.summary .scard{
+  background:var(--card);
+  border:1px solid var(--bd);
+  border-radius:var(--r);
+  box-shadow:var(--shadow);
+  padding:14px 14px;
+}
+.summary h3{
+  margin:0 0 10px;
+  color:var(--accent);
+  font-size:16px;
+  font-weight:900;
+}
+.summary ul{
+  margin:0;
+  padding-left:18px;
+  line-height:1.55;
+  font-weight:850;
+}
+.summary li{ margin:4px 0; }
+.summary .note{
+  margin-top:8px;
+  color:var(--mut);
+  font-size:12.5px;
+  font-weight:800;
+}
 </style>
 </head>
 <body>
@@ -76,6 +110,9 @@ tbody tr:hover{background:#f9fafb}
     <div class="small" style="text-align:center;margin-top:10px">
       ※ 승률 → 경기수 → 이름 순으로 정렬합니다.
     </div>
+
+    <!-- ✅ 표 아래쪽(요청하신 위치)에 TOP3 요약 -->
+    <div id="summary" class="summary"></div>
   </section>
 </main>
 
@@ -183,6 +220,46 @@ function draw(monthKey){
   // 메타
   const totalMatches = games.length;
   $("#metaText").textContent = `${monthKey} / 총 경기 수: ${totalMatches} 경기 / 선수 수: ${rows.length}명`;
+
+  // ✅ TOP3 요약(표 아래쪽)
+  renderSummary(rows, totalMatches);
+}
+
+function renderSummary(rows, totalMatches){
+  const box = $("#summary");
+
+  if(!rows.length){
+    box.innerHTML = "";
+    return;
+  }
+
+  // 최다경기 TOP3 (경기수 t 기준)
+  const topPlay = rows.slice()
+    .sort((a,b)=> b.t - a.t || a.name.localeCompare(b.name,'ko'))
+    .slice(0,3);
+
+  // 다승 TOP3 (승 w 기준)
+  const topWin = rows.slice()
+    .sort((a,b)=> b.w - a.w || (b.r - a.r) || a.name.localeCompare(b.name,'ko'))
+    .slice(0,3);
+
+  box.innerHTML = `
+    <div class="scard">
+      <h3>🎮 최다경기 TOP3</h3>
+      <ul>
+        ${topPlay.map(p=>`<li>${p.name} (${p.t}경기)</li>`).join("")}
+      </ul>
+      <div class="note">해당 월 총 경기: ${totalMatches} 경기</div>
+    </div>
+
+    <div class="scard">
+      <h3>🏆 다승 TOP3</h3>
+      <ul>
+        ${topWin.map(p=>`<li>${p.name} (${p.w}승)</li>`).join("")}
+      </ul>
+      <div class="note">동률 시 승률/이름 순</div>
+    </div>
+  `;
 }
 </script>
 </body>
