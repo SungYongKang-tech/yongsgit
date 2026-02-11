@@ -460,6 +460,7 @@ $("#saveGame").onclick = async()=>{
 };
 
 // ---- logs
+// ---- logs
 function renderLogs(){
   const box=$("#logs");
   const arr = Object.entries(GAMES).map(([id,g])=>({id,...g}))
@@ -475,17 +476,28 @@ function renderLogs(){
   arr.forEach(g=>{
     const ta = "A팀";
     const tb = "B팀";
-    const aNames = (g.playersA||[]).map(id=>PLAYERS?.[id]?.name).filter(Boolean).join(", ");
-    const bNames = (g.playersB||[]).map(id=>PLAYERS?.[id]?.name).filter(Boolean).join(", ");
+
+    const aArr = (g.playersA || []).map(id=>PLAYERS?.[id]?.name).filter(Boolean);
+    const bArr = (g.playersB || []).map(id=>PLAYERS?.[id]?.name).filter(Boolean);
+
+    const aNames = aArr.join(", ");
+    const bNames = bArr.join(", ");
 
     const winText = g.winner==="A" ? `${ta} 승` : `${tb} 승`;
+
+    // ✅ 한쪽이라도 4명 이상이면 줄바꿈 표시
+    const needBreak = (aArr.length >= 4) || (bArr.length >= 4);
+    const rosterHtml = needBreak
+      ? `A(${aNames || "-"})<br/>B(${bNames || "-"})`
+      : `A(${aNames || "-"}) / B(${bNames || "-"})`;
+
     const div=document.createElement("div");
     div.className="log";
     div.innerHTML = `
       <div class="t">${kstTime(g.createdAt)} / ${winText}</div>
       <div class="m">
         <b>${ta}</b> ${g.scoreA} : ${g.scoreB} <b>${tb}</b><br/>
-        <span class="small">A(${aNames || "-"}) / B(${bNames || "-"})</span>
+        <span class="small">${rosterHtml}</span>
       </div>
       <button class="del" title="삭제" data-del="${g.id}">🗑️</button>
     `;
@@ -493,6 +505,7 @@ function renderLogs(){
     box.appendChild(div);
   });
 }
+
 
 async function deleteGame(id){
   const input = prompt("삭제 비밀번호를 입력하세요.");
