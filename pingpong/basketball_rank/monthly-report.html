@@ -23,18 +23,23 @@ h1{margin:0 0 6px;color:var(--accent);font-weight:900;font-size:22px}
 main{max-width:980px;margin:0 auto;padding:12px}
 
 .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--shadow);padding:14px;margin:10px 0}
-.tools{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
-select{border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font-weight:800;background:#fff}
 
 .table{width:100%;border-collapse:collapse;font-size:14px;overflow:hidden;border-radius:12px}
 .table th,.table td{border-bottom:1px solid #eef2f7;padding:10px 8px;text-align:center;white-space:nowrap}
 .table th{background:#f1f5f9;color:#334155;font-weight:900}
 tbody tr:hover{background:#f9fafb}
-.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#e8f0ff;color:#1e40af;font-weight:900;font-size:12px}
 .win{color:var(--win);font-weight:900}
 .lose{color:var(--lose);font-weight:900}
-.right{display:flex;justify-content:flex-end}
 .small{color:var(--mut);font-size:13px;font-weight:800}
+
+.sectionHead{
+  display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.sectionHead h2{
+  margin:0; font-size:16px; font-weight:950; color:#1e40af;
+}
+.metaLine{color:var(--mut);font-size:13px;font-weight:850}
 
 /* ✅ 요약 카드 영역 */
 .summary{
@@ -86,17 +91,13 @@ tbody tr:hover{background:#f9fafb}
 </header>
 
 <main>
+  <!-- ✅ 이번달 성적(기본 화면) -->
   <section class="card">
-    <div class="tools">
-      <span class="badge">월 선택</span>
-      <select id="monthSel"></select>
+    <div class="sectionHead">
+      <h2 id="thisMonthTitle">이번달 성적</h2>
+      <div class="metaLine" id="thisMeta"></div>
     </div>
-    <div class="right" style="margin-top:10px">
-      <div class="small" id="metaText"></div>
-    </div>
-  </section>
 
-  <section class="card">
     <table class="table">
       <thead>
         <tr>
@@ -108,15 +109,37 @@ tbody tr:hover{background:#f9fafb}
           <th>승률</th>
         </tr>
       </thead>
-      <tbody id="tbody"></tbody>
+      <tbody id="tbodyThis"></tbody>
     </table>
 
     <div class="small" style="text-align:center;margin-top:10px">
       ※ 승률 → 경기수 → 이름 순으로 정렬합니다.
     </div>
+  </section>
 
-    <!-- ✅ 표 아래쪽 TOP3 요약 -->
-    <div id="summary" class="summary"></div>
+  <!-- ✅ 맨 하단: 지난달 성적 + TOP3 -->
+  <section class="card">
+    <div class="sectionHead">
+      <h2 id="lastMonthTitle">지난달 성적</h2>
+      <div class="metaLine" id="lastMeta"></div>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>순위</th>
+          <th>선수</th>
+          <th>승</th>
+          <th>패</th>
+          <th>경기</th>
+          <th>승률</th>
+        </tr>
+      </thead>
+      <tbody id="tbodyLast"></tbody>
+    </table>
+
+    <!-- ✅ 지난달 TOP3 요약 -->
+    <div id="summaryLast" class="summary"></div>
   </section>
 </main>
 
@@ -146,11 +169,19 @@ import { ref, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.2/fir
 const $ = (s)=>document.querySelector(s);
 const pad2 = (n)=>String(n).padStart(2,"0");
 const kstNow = ()=> new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+
 const monthKeyKST = (d=kstNow()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+const prevMonthKeyKST = ()=>{
+  const d = kstNow();
+  d.setDate(1);
+  d.setMonth(d.getMonth()-1);
+  return monthKeyKST(d);
+};
+
 const pct = (w,l)=>{
   const t = w+l;
   if(!t) return 0;
-  return Math.round((w/t*100)*10)/10; // 소수 1자리
+  return Math.round((w/t*100)*10)/10;
 };
 
 let PLAYERS = {};
@@ -175,39 +206,17 @@ $("#adminBtn").onclick = async()=>{
 
 onValue(ref(db,"players"), snap=>{
   PLAYERS = snap.val() || {};
-  render();
+  drawAll();
 });
 
 onValue(ref(db,"games"), snap=>{
   GAMES = snap.val() || {};
-  render();
+  drawAll();
 });
 
-function render(){
-  // 월 목록 만들기 (games 기준, 없으면 현재월)
-  const months = new Set();
-  Object.values(GAMES).forEach(g=>{
-    if(g?.monthKey) months.add(g.monthKey);
-  });
-  if(months.size===0) months.add(monthKeyKST());
-
-  const monthArr = [...months].sort((a,b)=>String(b).localeCompare(String(a))); // 최신월 먼저
-
-  const sel = $("#monthSel");
-  const current = sel.value || monthArr[0];
-
-  sel.innerHTML = monthArr.map(m=>`<option value="${m}">${m}</option>`).join("");
-  sel.value = monthArr.includes(current) ? current : monthArr[0];
-
-  sel.onchange = ()=> draw(sel.value);
-
-  draw(sel.value);
-}
-
-function draw(monthKey){
+function computeRows(monthKey){
   const games = Object.values(GAMES).filter(g=>g?.monthKey===monthKey);
 
-  // 선수 통계: pid -> {w,l}
   const stat = {};
   games.forEach(g=>{
     const aWin = g.winner==="A";
@@ -234,45 +243,38 @@ function draw(monthKey){
     a.name.localeCompare(b.name,'ko')
   );
 
-  // 표시
-  const tb = $("#tbody");
-  if(rows.length===0){
-    tb.innerHTML = `<tr><td colspan="6" class="small" style="text-align:center;padding:16px">이 달에 저장된 경기가 없습니다.</td></tr>`;
-  }else{
-    tb.innerHTML = rows.map((p,idx)=>`
-      <tr>
-        <td>${idx+1}</td>
-        <td style="font-weight:900">${p.name}</td>
-        <td class="win">${p.w}</td>
-        <td class="lose">${p.l}</td>
-        <td>${p.t}</td>
-        <td style="font-weight:900">${p.r}%</td>
-      </tr>
-    `).join("");
-  }
-
-  // 메타
-  const totalMatches = games.length;
-  $("#metaText").textContent = `${monthKey} / 총 경기 수: ${totalMatches} 경기 / 선수 수: ${rows.length}명`;
-
-  // TOP3 요약
-  renderSummary(rows, totalMatches);
+  return { rows, totalMatches: games.length };
 }
 
-function renderSummary(rows, totalMatches){
-  const box = $("#summary");
+function renderTable(tbodySel, rows){
+  const tb = $(tbodySel);
+  if(!rows.length){
+    tb.innerHTML = `<tr><td colspan="6" class="small" style="text-align:center;padding:16px">저장된 경기가 없습니다.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map((p,idx)=>`
+    <tr>
+      <td>${idx+1}</td>
+      <td style="font-weight:900">${p.name}</td>
+      <td class="win">${p.w}</td>
+      <td class="lose">${p.l}</td>
+      <td>${p.t}</td>
+      <td style="font-weight:900">${p.r}%</td>
+    </tr>
+  `).join("");
+}
 
+function renderSummary(boxSel, rows, totalMatches){
+  const box = $(boxSel);
   if(!rows.length){
     box.innerHTML = "";
     return;
   }
 
-  // 최다경기 TOP3
   const topPlay = rows.slice()
     .sort((a,b)=> b.t - a.t || a.name.localeCompare(b.name,'ko'))
     .slice(0,3);
 
-  // 다승 TOP3
   const topWin = rows.slice()
     .sort((a,b)=> b.w - a.w || (b.r - a.r) || a.name.localeCompare(b.name,'ko'))
     .slice(0,3);
@@ -294,6 +296,25 @@ function renderSummary(rows, totalMatches){
       <div class="note">동률 시 승률/이름 순</div>
     </div>
   `;
+}
+
+function drawAll(){
+  const thisKey = monthKeyKST();
+  const lastKey = prevMonthKeyKST();
+
+  $("#thisMonthTitle").textContent = `이번달 성적 (${thisKey})`;
+  $("#lastMonthTitle").textContent = `지난달 성적 (${lastKey})`;
+
+  // 이번달
+  const cur = computeRows(thisKey);
+  renderTable("#tbodyThis", cur.rows);
+  $("#thisMeta").textContent = `총 경기 수: ${cur.totalMatches} 경기 / 선수 수: ${cur.rows.length}명`;
+
+  // 지난달 + TOP3 (맨 하단)
+  const prev = computeRows(lastKey);
+  renderTable("#tbodyLast", prev.rows);
+  $("#lastMeta").textContent = `총 경기 수: ${prev.totalMatches} 경기 / 선수 수: ${prev.rows.length}명`;
+  renderSummary("#summaryLast", prev.rows, prev.totalMatches);
 }
 
 // =========================
