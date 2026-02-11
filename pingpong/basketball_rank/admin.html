@@ -29,18 +29,26 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#111827;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;transition:.25s}
 .toast.show{opacity:1}
 
-/* ✅ 선수 목록: "칩 카드" 그리드로 표시 (기본 3열) */
+/* ✅ 선수 목록: 카드 그리드 (기본 3열) */
 .gridPlayers{
   display:grid;
-  grid-template-columns:repeat(3, minmax(0, 1fr)); /* ✅ 기본 3명/줄 */
+  grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:10px;
   margin-top:10px;
 }
 
-/* 모바일: 3~5명 선택값에 따라 JS가 class를 바꿔줌 */
-.gridPlayers.cols-3{ grid-template-columns:repeat(3, minmax(0,1fr)); }
-.gridPlayers.cols-4{ grid-template-columns:repeat(4, minmax(0,1fr)); }
-.gridPlayers.cols-5{ grid-template-columns:repeat(5, minmax(0,1fr)); }
+/* 아주 작은 화면 보정 */
+@media(max-width:360px){
+  .gridPlayers{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+}
+
+/* ✅ 요청사항: "선수관리 목록"은 모바일에서 2열 */
+@media (max-width: 640px){
+  .gridPlayers{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
 
 .playerCard{
   border:1px solid var(--bd);
@@ -81,12 +89,6 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
   color:#fff;
   background:var(--danger);
 }
-
-/* 화면이 너무 좁은 경우 2열로 자동(보정) */
-@media(max-width:360px){
-  .gridPlayers.cols-5{ grid-template-columns:repeat(4, minmax(0,1fr)); }
-  .gridPlayers.cols-4{ grid-template-columns:repeat(3, minmax(0,1fr)); }
-}
 </style>
 </head>
 <body>
@@ -115,8 +117,8 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
       <input id="playerName" style="flex:1;min-width:180px" placeholder="선수 이름"/>
       <button id="addPlayer" class="btn primary">선수 등록</button>
     </div>
-    <div class="small">※ PlayerId는 내부적으로만 저장되며 화면에는 표시하지 않습니다.</div>
-    <div id="playerList" class="gridPlayers cols-3"></div>
+    <div class="small">※ PlayerId는 내부 저장용이며 화면에는 표시하지 않습니다.</div>
+    <div id="playerList" class="gridPlayers"></div>
   </section>
 
   <section class="card">
@@ -191,7 +193,7 @@ $("#saveTitle").onclick = async()=>{
   toast("제목 저장 완료");
 };
 
-// --- UI cols (3~5)
+// --- UI cols (3~5) : 경기입력 화면에서 사용
 const uiColsRef = ref(db,"config/uiMobileCols");
 onValue(uiColsRef, (snap)=>{
   const v = String(snap.val() ?? "3");
@@ -213,15 +215,8 @@ onValue(playersRef, snap=>{
   renderPlayers();
 });
 
-function getColsClass(){
-  // 관리자 화면은 “보기”만: 기본 3열 유지
-  // (원하면 이 화면도 같이 바꾸고 싶으시면 말해 주세요)
-  return "cols-3";
-}
-
 function renderPlayers(){
   const box=$("#playerList");
-  box.className = `gridPlayers ${getColsClass()}`;
   box.innerHTML="";
 
   const arr = Object.entries(PLAYERS).map(([id,p])=>({id,...p}))
