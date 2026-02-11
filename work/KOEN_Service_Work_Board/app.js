@@ -369,68 +369,86 @@ async function nextTab(dir){
 }
 
 
+
 function attachSwipeToContent(){
-  // 스와이프를 받을 영역: 탭 아래 "콘텐츠 영역" (세 view를 감싸는 부모 wrap)
-  // 현재 구조에서 두 번째 .wrap(본문) 전체에 적용하는게 안전합니다.
-  const wraps = document.querySelectorAll(".wrap");
-  const contentWrap = wraps[1] || wraps[0];
+  // ✅ 본문(작업내용) 영역: body 바로 아래 .wrap (헤더 .wrap 제외)
+  const contentWrap = document.querySelector("body > .wrap");
   if (!contentWrap) return;
 
-  // textarea 내부 스크롤/선택 방해 최소화
+  const MIN_X = 60;   // 가로 스와이프 인정(px)
+  const MAX_Y = 80;   // 세로 흔들림 허용(px)
+
   let sx=0, sy=0, dx=0, dy=0;
-  let down=false, pointerId=null;
-  let startedOnInput=false;
+  let down=false;
 
-  const MIN_X = 60;        // 가로 이동 최소(px)
-  const MAX_Y = 80;        // 세로 흔들림 허용(px)
-  const EDGE_GUARD = 6;    // 화면 가장자리 제스처 충돌 방지(선택)
+  // ✅ 세로 스크롤은 유지, 가로는 우리가 판단
+  contentWrap.style.touchAction = "pan-y";
 
-  // pointer events 사용(터치+마우스 통합)
-  contentWrap.style.touchAction = "pan-y"; // 세로 스크롤은 허용, 가로는 우리가 처리
+  const isEditing = () => {
+    const a = document.activeElement;
+    return a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT" || a.isContentEditable);
+  };
 
+  const start = (x,y)=>{
+    sx=x; sy=y; dx=0; dy=0; down=true;
+  };
+  const move = (x,y)=>{
+    if (!down) return;
+    dx = x - sx;
+    dy = y - sy;
+  };
+  const end = async ()=>{
+    if (!down) return;
+    down=false;
+
+    // ✅ 입력 중(포커스가 textarea에 있음)이면 전환 안 함 (원하시면 이 조건 빼도 됩니다)
+    if (isEditing()) return;
+
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+
+    if (ax >= MIN_X && ay <= MAX_Y){
+      // 왼쪽 스와이프(dx<0) => 다음, 오른쪽(dx>0) => 이전
+      await nextTab(dx < 0 ? +1 : -1);
+    }
+  };
+
+  /* ===== Pointer Events (안드/크롬/PC 대부분) ===== */
   contentWrap.addEventListener("pointerdown", (e)=>{
-    // textarea/inputs에서 시작하면 스와이프 감지 안함(입력 방해 방지)
-    const t = e.target;
-    startedOnInput = !!(t && (t.tagName==="TEXTAREA" || t.tagName==="INPUT" || t.isContentEditable));
-    if (startedOnInput) return;
-
-    // 아주 가장자리에서 시작하는 경우는 무시(뒤로가기 제스처 등)
-    if (e.clientX < EDGE_GUARD || (window.innerWidth - e.clientX) < EDGE_GUARD) return;
-
-    down = true;
-    pointerId = e.pointerId;
-    sx = e.clientX; sy = e.clientY;
-    dx = dy = 0;
-    try{ contentWrap.setPointerCapture(pointerId); }catch(_){}
+    // ✅ textarea 위에서 시작해도, '포커스 중'이 아니면 스와이프 가능하게 함
+    start(e.clientX, e.clientY);
   }, {passive:true});
 
   contentWrap.addEventListener("pointermove", (e)=>{
-    if (!down || startedOnInput) return;
-    dx = e.clientX - sx;
-    dy = e.clientY - sy;
+    move(e.clientX, e.clientY);
   }, {passive:true});
 
-  contentWrap.addEventListener("pointerup", async (e)=>{
-  if (!down) return;
-  down = false;
-
-  if (startedOnInput) { startedOnInput=false; return; }
-
-  const ax = Math.abs(dx);
-  const ay = Math.abs(dy);
-
-  if (ax >= MIN_X && ay <= MAX_Y){
-    await nextTab(dx < 0 ? +1 : -1);
-  }
-
-  startedOnInput=false;
-}, {passive:true});
-
+  contentWrap.addEventListener("pointerup", async ()=>{
+    await end();
+  }, {passive:true});
 
   contentWrap.addEventListener("pointercancel", ()=>{
-    down=false; startedOnInput=false;
+    down=false;
+  }, {passive:true});
+
+  /* ===== Touch Events (iOS 사파리 대응용 보강) ===== */
+  contentWrap.addEventListener("touchstart", (e)=>{
+    const t = e.touches?.[0];
+    if (!t) return;
+    start(t.clientX, t.clientY);
+  }, {passive:true});
+
+  contentWrap.addEventListener("touchmove", (e)=>{
+    const t = e.touches?.[0];
+    if (!t) return;
+    move(t.clientX, t.clientY);
+  }, {passive:true});
+
+  contentWrap.addEventListener("touchend", async ()=>{
+    await end();
   }, {passive:true});
 }
+
 
 
 // ---- init
