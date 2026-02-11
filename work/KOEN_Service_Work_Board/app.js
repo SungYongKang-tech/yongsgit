@@ -352,21 +352,22 @@ if (historyInput){
 const TAB_ORDER = ["IBS","MECH","ELEC"];
 const clamp = (n,min,max)=>Math.max(min, Math.min(max,n));
 
-function selectTab(tab){
+async function selectTab(tab){
   const btn = document.querySelector(`.tab[data-tab="${tab}"]`);
   if (!btn) return;
 
   tabs.forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
   currentTab = tab;
-  rebindAll(currentTab);
+  await rebindAll(currentTab);
 }
 
-function nextTab(dir){ // dir: +1 (왼쪽으로 밀면 다음), -1 (오른쪽으로 밀면 이전)
+async function nextTab(dir){
   const idx = TAB_ORDER.indexOf(currentTab);
   const next = TAB_ORDER[clamp(idx + dir, 0, TAB_ORDER.length-1)];
-  if (next !== currentTab) selectTab(next);
+  if (next !== currentTab) await selectTab(next);
 }
+
 
 function attachSwipeToContent(){
   // 스와이프를 받을 영역: 탭 아래 "콘텐츠 영역" (세 view를 감싸는 부모 wrap)
@@ -409,23 +410,22 @@ function attachSwipeToContent(){
     dy = e.clientY - sy;
   }, {passive:true});
 
-  contentWrap.addEventListener("pointerup", (e)=>{
-    if (!down) return;
-    down = false;
+  contentWrap.addEventListener("pointerup", async (e)=>{
+  if (!down) return;
+  down = false;
 
-    if (startedOnInput) { startedOnInput=false; return; }
+  if (startedOnInput) { startedOnInput=false; return; }
 
-    const ax = Math.abs(dx);
-    const ay = Math.abs(dy);
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
 
-    // 가로 이동 충분 + 세로 흔들림 작으면 탭 전환
-    if (ax >= MIN_X && ay <= MAX_Y){
-      // 왼쪽으로 스와이프(dx<0) => 다음 탭, 오른쪽(dx>0) => 이전 탭
-      nextTab(dx < 0 ? +1 : -1);
-    }
+  if (ax >= MIN_X && ay <= MAX_Y){
+    await nextTab(dx < 0 ? +1 : -1);
+  }
 
-    startedOnInput=false;
-  }, {passive:true});
+  startedOnInput=false;
+}, {passive:true});
+
 
   contentWrap.addEventListener("pointercancel", ()=>{
     down=false; startedOnInput=false;
@@ -441,11 +441,9 @@ attachSwipeToContent();
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", async ()=>{
-    tabs.forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-    currentTab = btn.dataset.tab;
-    await rebindAll(currentTab);
+    await selectTab(btn.dataset.tab);
   });
 });
+
 
 startMidnightWatcher();
