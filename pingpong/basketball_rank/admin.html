@@ -25,11 +25,68 @@ main{max-width:980px;margin:0 auto;padding:12px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--shadow);padding:14px;margin:10px 0}
 h3{margin:0 0 10px}
 input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-weight:650}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px}
-.item{border:1px solid var(--bd);border-radius:10px;padding:10px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}
 .small{color:var(--mut);font-size:13px;font-weight:650}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#111827;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;transition:.25s}
 .toast.show{opacity:1}
+
+/* ✅ 선수 목록: "칩 카드" 그리드로 표시 (기본 3열) */
+.gridPlayers{
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr)); /* ✅ 기본 3명/줄 */
+  gap:10px;
+  margin-top:10px;
+}
+
+/* 모바일: 3~5명 선택값에 따라 JS가 class를 바꿔줌 */
+.gridPlayers.cols-3{ grid-template-columns:repeat(3, minmax(0,1fr)); }
+.gridPlayers.cols-4{ grid-template-columns:repeat(4, minmax(0,1fr)); }
+.gridPlayers.cols-5{ grid-template-columns:repeat(5, minmax(0,1fr)); }
+
+.playerCard{
+  border:1px solid var(--bd);
+  border-radius:12px;
+  padding:10px 10px;
+  background:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  min-width:0;
+}
+
+.playerName{
+  font-weight:900;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;  /* ✅ 길면 ... */
+}
+
+.playerActions{
+  display:flex;
+  gap:6px;
+  flex:0 0 auto;
+}
+
+.iconBtn{
+  border:1px solid #d1d5db;
+  background:#fff;
+  border-radius:10px;
+  padding:6px 8px;
+  cursor:pointer;
+  font-weight:900;
+  line-height:1;
+}
+.iconBtn.warn{
+  border-color:var(--danger);
+  color:#fff;
+  background:var(--danger);
+}
+
+/* 화면이 너무 좁은 경우 2열로 자동(보정) */
+@media(max-width:360px){
+  .gridPlayers.cols-5{ grid-template-columns:repeat(4, minmax(0,1fr)); }
+  .gridPlayers.cols-4{ grid-template-columns:repeat(3, minmax(0,1fr)); }
+}
 </style>
 </head>
 <body>
@@ -58,22 +115,23 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
       <input id="playerName" style="flex:1;min-width:180px" placeholder="선수 이름"/>
       <button id="addPlayer" class="btn primary">선수 등록</button>
     </div>
-    <div class="small">※ 선수는 소속팀 없이 등록하며, 경기 입력 때마다 A/B팀으로 선택합니다.</div>
-    <div id="playerList" class="grid"></div>
+    <div class="small">※ PlayerId는 내부적으로만 저장되며 화면에는 표시하지 않습니다.</div>
+    <div id="playerList" class="gridPlayers cols-3"></div>
   </section>
 
   <section class="card">
     <h3>UI 설정</h3>
     <div class="row" style="justify-content:flex-start">
-      <label style="font-weight:900">모바일 선수버튼 열 수</label>
+      <label class="small" style="font-weight:900">모바일 선수버튼 열 수</label>
       <select id="uiMobileCols" style="min-width:140px">
         <option value="3">3명</option>
         <option value="4">4명</option>
+        <option value="5">5명</option>
       </select>
       <button class="btn ok" id="saveUi">저장</button>
     </div>
     <div class="small" style="margin-top:6px">
-      ※ 휴대폰 화면에서 선수 선택 버튼이 한 줄에 몇 개 나올지 설정합니다.
+      ※ 경기입력 화면의 선수 선택 버튼이 한 줄에 몇 개 나올지 설정합니다(3~5).
     </div>
   </section>
 
@@ -81,12 +139,12 @@ input,select{border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-we
     <h3>설정</h3>
     <div class="row">
       <label class="small">삭제 비밀번호</label>
-      <input id="deletePassword" style="width:120px;text-align:center" placeholder="예: 7910"/>
+      <input id="deletePassword" style="width:140px;text-align:center" placeholder="예: 7910"/>
       <button id="saveDeletePassword" class="btn primary">저장</button>
     </div>
     <div class="row" style="margin-top:8px">
       <label class="small">관리자 비밀번호</label>
-      <input id="adminPassword" style="width:120px;text-align:center" placeholder="예: 1234"/>
+      <input id="adminPassword" style="width:140px;text-align:center" placeholder="예: 1234"/>
       <button id="saveAdminPassword" class="btn primary">저장</button>
     </div>
   </section>
@@ -113,12 +171,11 @@ const toast = (m="저장되었습니다")=>{
   const t=$("#toast"); t.textContent=m; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),1500);
 };
+
 const pad2 = (n)=>String(n).padStart(2,"0");
 const monthKey = (d)=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
 
-// =========================
-// title
-// =========================
+// --- title
 const titleRef = ref(db,"config/title");
 onValue(titleRef, s=>{
   const v = s.val() ?? "Basketball";
@@ -134,54 +191,60 @@ $("#saveTitle").onclick = async()=>{
   toast("제목 저장 완료");
 };
 
-// =========================
-// UI settings (mobile cols)
-// =========================
-onValue(ref(db,"config/uiMobileCols"), (snap)=>{
-  const v = String(snap.val() ?? "4");
+// --- UI cols (3~5)
+const uiColsRef = ref(db,"config/uiMobileCols");
+onValue(uiColsRef, (snap)=>{
+  const v = String(snap.val() ?? "3");
   const sel = $("#uiMobileCols");
-  if(sel) sel.value = (v==="3" || v==="4") ? v : "4";
+  sel.value = (v==="3"||v==="4"||v==="5") ? v : "3";
 });
-
 $("#saveUi").addEventListener("click", async ()=>{
-  const v = Number($("#uiMobileCols").value) || 4;
-  await set(ref(db,"config/uiMobileCols"), v);
-  toast("UI 설정 저장 완료");
+  const v = Number($("#uiMobileCols").value) || 3;
+  await set(uiColsRef, v);
+  toast("UI 저장 완료");
 });
 
-// =========================
-// players
-// =========================
+// --- players
 const playersRef = ref(db,"players");
-let PLAYERS = {}; // {id:{name}}
+let PLAYERS = {};
 
 onValue(playersRef, snap=>{
   PLAYERS = snap.val() || {};
   renderPlayers();
 });
 
+function getColsClass(){
+  // 관리자 화면은 “보기”만: 기본 3열 유지
+  // (원하면 이 화면도 같이 바꾸고 싶으시면 말해 주세요)
+  return "cols-3";
+}
+
 function renderPlayers(){
-  const box=$("#playerList"); box.innerHTML="";
+  const box=$("#playerList");
+  box.className = `gridPlayers ${getColsClass()}`;
+  box.innerHTML="";
+
   const arr = Object.entries(PLAYERS).map(([id,p])=>({id,...p}))
     .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko'));
 
   if(!arr.length){
-    box.innerHTML = `<div class="small">등록된 선수가 없습니다.</div>`;
+    box.innerHTML = `<div class="small" style="grid-column:1/-1;text-align:center;padding:10px">
+      등록된 선수가 없습니다.
+    </div>`;
     return;
   }
 
   arr.forEach(p=>{
     const div=document.createElement("div");
-    div.className="item";
+    div.className="playerCard";
     div.innerHTML = `
-      <div>
-        <div style="font-weight:900">${p.name}</div>
-        <div class="small">playerId: ${p.id}</div>
+      <div class="playerName" title="${p.name}">${p.name}</div>
+      <div class="playerActions">
+        <button class="iconBtn warn" title="삭제" data-del="${p.id}">🗑</button>
       </div>
-      <button class="btn warn" data-del-player="${p.id}">삭제</button>
     `;
-    div.querySelector("[data-del-player]").onclick = async()=>{
-      if(!confirm(`선수 "${p.name}"을 삭제하시겠습니까?`)) return;
+    div.querySelector("[data-del]").onclick = async()=>{
+      if(!confirm(`선수 "${p.name}"을 삭제하시겠습니까?\n(과거 기록에서 이름이 미등록으로 보일 수 있습니다)`)) return;
       await remove(ref(db,`players/${p.id}`));
       toast("선수 삭제 완료");
     };
@@ -197,9 +260,7 @@ $("#addPlayer").onclick = async()=>{
   toast("선수 등록 완료");
 };
 
-// =========================
-// passwords
-// =========================
+// --- passwords
 onValue(ref(db,"config/deletePassword"), s=>$("#deletePassword").value = s.val() ?? "7910");
 $("#saveDeletePassword").onclick = async()=>{
   const v = $("#deletePassword").value.trim();
@@ -207,7 +268,6 @@ $("#saveDeletePassword").onclick = async()=>{
   await set(ref(db,"config/deletePassword"), v);
   toast("삭제 비밀번호 저장");
 };
-
 onValue(ref(db,"config/adminPassword"), s=>$("#adminPassword").value = s.val() ?? "1234");
 $("#saveAdminPassword").onclick = async()=>{
   const v = $("#adminPassword").value.trim();
@@ -216,9 +276,7 @@ $("#saveAdminPassword").onclick = async()=>{
   toast("관리자 비밀번호 저장");
 };
 
-// =========================
-// delete current month games
-// =========================
+// --- delete current month games
 $("#deleteCurrentMonth").onclick = async()=>{
   if(!confirm("⚠️ 이번달 경기 기록을 전부 삭제하시겠습니까?\n(복구 불가)")) return;
 
@@ -229,7 +287,8 @@ $("#deleteCurrentMonth").onclick = async()=>{
   if(input === null) return;
   if(input.trim() !== savedPw.trim()) return alert("❌ 비밀번호가 올바르지 않습니다.");
 
-  const thisMonth = monthKey(new Date());
+  const now = new Date();
+  const thisMonth = monthKey(now);
 
   const snap = await get(ref(db,"games"));
   const data = snap.val() || {};
