@@ -370,52 +370,84 @@ async function nextTab(dir){
 
 
 function attachSwipeToContent(){
-  // ✅ 헤더(.top) 제외한 "본문 wrap"에만 스와이프 적용
+  // ✅ 헤더(.top) 제외, 본문 wrap
   const contentWrap = document.querySelector("body > .wrap");
   if (!contentWrap) return;
 
-  const MIN_X = 70;  // 조금 더 확실히(오작동 줄이기)
+  const MIN_X = 70;
   const MAX_Y = 90;
 
   let sx=0, sy=0, dx=0, dy=0;
   let down=false;
 
-  // 세로 스크롤은 허용, 가로 스와이프만 판단
+  // 세로 스크롤 허용
   contentWrap.style.touchAction = "pan-y";
+
+  const shouldIgnoreStart = (target)=>{
+    if (!target) return false;
+
+    // ✅ 카드/접기(어제) 내부에서 시작하면 스와이프 금지 (제목/뱃지 포함)
+    if (target.closest(".card")) return true;
+    if (target.closest("details.fold")) return true;
+
+    // ✅ 입력 요소는 당연히 금지
+    if (target.closest("textarea, input, [contenteditable='true']")) return true;
+
+    // (선택) 탭/날짜쪽도 혹시 본문에 있다면 금지하고 싶으면 추가 가능
+    return false;
+  };
 
   const start = (x,y)=>{ sx=x; sy=y; dx=0; dy=0; down=true; };
   const move  = (x,y)=>{ if(!down) return; dx = x-sx; dy = y-sy; };
   const end   = async ()=>{
-    if(!down) return; down=false;
+    if(!down) return;
+    down=false;
 
     const ax = Math.abs(dx);
     const ay = Math.abs(dy);
 
-    // ✅ textarea에서 시작하면 스와이프 무시(입력 방해 방지)
-    const a = document.activeElement;
-    const editing = a && (a.tagName==="TEXTAREA" || a.tagName==="INPUT" || a.isContentEditable);
-    if (editing) return;
-
     if(ax >= MIN_X && ay <= MAX_Y){
-      await nextTab(dx < 0 ? +1 : -1); // 좌:다음 / 우:이전
+      await nextTab(dx < 0 ? +1 : -1);
     }
   };
 
-  // pointer (안드/크롬/PC)
-  contentWrap.addEventListener("pointerdown", (e)=> start(e.clientX,e.clientY), {passive:true});
-  contentWrap.addEventListener("pointermove", (e)=> move(e.clientX,e.clientY), {passive:true});
-  contentWrap.addEventListener("pointerup",   async ()=>{ await end(); }, {passive:true});
-  contentWrap.addEventListener("pointercancel", ()=>{ down=false; }, {passive:true});
+  // pointer
+  contentWrap.addEventListener("pointerdown", (e)=>{
+    if (shouldIgnoreStart(e.target)) return;
+    start(e.clientX, e.clientY);
+  }, {passive:true});
 
-  // iOS 보강
+  contentWrap.addEventListener("pointermove", (e)=>{
+    move(e.clientX, e.clientY);
+  }, {passive:true});
+
+  contentWrap.addEventListener("pointerup", async ()=>{
+    await end();
+  }, {passive:true});
+
+  contentWrap.addEventListener("pointercancel", ()=>{
+    down=false;
+  }, {passive:true});
+
+  // iOS touch 보강
   contentWrap.addEventListener("touchstart", (e)=>{
-    const t=e.touches?.[0]; if(!t) return; start(t.clientX,t.clientY);
+    const t = e.touches?.[0];
+    if (!t) return;
+    if (shouldIgnoreStart(e.target)) return;
+    start(t.clientX, t.clientY);
   }, {passive:true});
+
   contentWrap.addEventListener("touchmove", (e)=>{
-    const t=e.touches?.[0]; if(!t) return; move(t.clientX,t.clientY);
+    const t = e.touches?.[0];
+    if (!t) return;
+    move(t.clientX, t.clientY);
   }, {passive:true});
-  contentWrap.addEventListener("touchend", async ()=>{ await end(); }, {passive:true});
+
+  contentWrap.addEventListener("touchend", async ()=>{
+    await end();
+  }, {passive:true});
 }
+
 
 
 
