@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🏓 경기결과 입력</title>
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08);
+}
+body {
+  margin:0;
+  font-family:"Pretendard","Noto Sans KR",sans-serif;
+  font-weight:600;
+  background:var(--bg);
+  color:var(--ink);
+}
+header {
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:10;
+}
+.header-inner {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:12px 0;
+}
+h1 {
+  margin:2px 0 8px;
+  font-size:clamp(20px,4vw,24px);
+  color:var(--accent);
+  font-weight:700;
+}
+.row {
+  display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; justify-content:center;
+}
+.btn {
+  border:1px solid #ccc; border-radius:8px; padding:6px 10px;
+  font-size:14px; cursor:pointer; background:#fff; transition:.2s; font-weight:600;
+}
+.btn.primary {background:var(--accent); color:#fff; border-color:var(--accent);}
+.btn.ok {background:var(--ok); color:#fff; border-color:var(--ok);}
+.btn.danger {background:var(--danger); color:#fff; border-color:var(--danger);}
+.wrap {max-width:960px; margin:0 auto; padding:14px 16px;}
+
+.chip {
+  border:1px solid #ccc;
+  border-radius:8px;
+  padding:4px 6px;       /* ✅ 내부 여백 살짝 증가 */
+  font-size:16px;         /* ✅ 글씨 약간 확대 */
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+  font-weight:600;
+}
+.chip.selected {
+  border:1px solid var(--accent) !important;
+  background:#efef07 !important;
+}
+@media (max-width:640px){
+  .chip {
+    font-size:16px !important;       /* ✅ 모바일에서도 선명하게 */
+    padding:2px 2px !important;
+  }
+}
+
+#logs {
+  margin-top:20px;
+  background:#fff;
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  padding:12px;
+}
+.log-item {
+  border-bottom:1px solid #e5e7eb; padding:10px 4px; position:relative;
+}
+.log-item:last-child {border-bottom:none;}
+.log-time {
+  font-size:15px;  /* ✅ 일시 크기 확대 */
+  color:#334155;
+  display:block;
+  margin-bottom:4px;
+  font-weight:700; /* ✅ 글씨 두껍게 */
+}
+.log-match {font-size:16px; font-weight:600;}
+.log-win {color:#2563eb; font-weight:700;}
+.delete-btn {
+  position:absolute; right:8px; top:6px; font-size:16px; border:none;
+  background:transparent; color:#9ca3af; cursor:pointer; transition:.2s;
+}
+.delete-btn:hover {color:#ef4444; transform:scale(1.1);}
+.toast {
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  background:#111827; color:#fff; padding:9px 14px; border-radius:10px;
+  opacity:0; transition:.25s;
+  font-size:15px; font-weight:600;
+}
+.toast.show {opacity:1;}
+@media (max-width:640px){
+  .chip{font-size:16px; padding:2px 6px;}
+  .btn{font-size:13px; padding:5px 8px;}
+  .log-match{font-size:15px;}
+  .log-time{font-size:14px;}
+}
+
+#teamDisplay {
+  margin-top: 24px;           /* 위쪽 여백 넉넉하게 */
+  margin-bottom: 16px;        /* 아래쪽 여백 추가 */
+  text-align: center;         /* 중앙 정렬 */
+  font-size: 18px;            /* 글씨 살짝 키움 */
+  font-weight: 600;
+  line-height: 1.6;           /* 줄 간격 확보 */
+}
+
+#matchButtons {
+  display: none;
+  text-align: center;         /* 중앙 정렬 */
+  margin-top: 12px;
+  margin-bottom: 22px;        /* 하단 여백 추가 */
+}
+
+#matchButtons .btn {
+  margin: 0 8px;              /* 버튼 간격 */
+  padding: 8px 16px;          /* 버튼 크기 여유롭게 */
+  font-size: 16px;            /* 버튼 글자 키움 */
+}
+
+/* ✅ 사용법 모달창 */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4);
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  max-width: 340px;
+  width: 80%;
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+  max-height: 80vh;      /* 화면 높이의 80%까지만 사용 */
+  overflow-y: auto;      /* 세로 스크롤 가능하게 */
+}
+.modal-content h2 {
+  font-size: 18px;
+  color: #1e3a8a;
+  margin-bottom: 10px;
+  text-align:center;
+}
+.modal-content ul {
+  list-style:none;
+  padding-left:0;
+  margin:0;
+  color:#1f2937;
+  font-size:15px;
+  line-height:1.6;
+}
+.modal-content li::before { content:"• "; color:#2563eb; }
+@media (max-width:640px){
+  .modal-content{font-size:14px;padding:16px;}
+}
+
+
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1 id="pageTitle">🏓 경기결과 입력</h1>
+    <div class="row">
+     <button id="adminBtn" class="btn">⚙ 관리자모드</button>
+      <a href="monthly-report.html" class="btn primary">통합 전적</a>
+      <a href="monthly-report2.html" class="btn primary">단/복식 전적</a>
+     <button id="todayBtn" class="btn primary">오늘의 전적</button>
+     <button id="helpBtn" class="btn">ℹ 사용법</button>
+     <button id="homeBtn" class="btn">📱 바로가기 추가</button>
+     <!-- ✅ 오늘의 전적 팝업 -->
+<div id="todayResults"
+     style="display:none; 
+            position:fixed; top:50%; left:50%; 
+            transform:translate(-50%,-50%);
+            width:90%; max-width:420px; 
+            background:#fff; 
+            border-radius:16px; 
+            box-shadow:0 8px 28px rgba(0,0,0,0.2);
+            padding:20px 20px 24px;
+            z-index:200;">
+  
+  <button id="closeToday"
+          style="position:absolute; top:10px; right:12px;
+                 background:transparent; border:none; 
+                 font-size:22px; color:#9ca3af; 
+                 cursor:pointer; transition:.2s;">✖</button>
+
+  <h3 style="text-align:center; color:#2563eb; margin-top:0; margin-bottom:12px;">📊 오늘의 전적</h3>
+  <div id="todayList" 
+       style="font-size:16px; line-height:1.8; font-weight:600; text-align:center; color:#111;">
+  </div>
+</div>
+
+</header>
+
+<main class="wrap">
+  <div id="chips" class="row" style="margin-top:10px;"></div>
+  <div id="teamDisplay"></div>
+
+  <div id="matchButtons">
+    <button id="winA" class="btn ok">A팀 승</button>
+    <button id="winB" class="btn danger">B팀 승</button>
+  </div>
+
+  <div id="logs"></div>
+</main>
+
+<div id="toast" class="toast">저장되었습니다</div>
+
+<div id="helpModal" class="modal">
+  <div class="modal-content">
+    <h2>📘 경기결과 입력 사용법</h2>
+    <ul>
+      <li>1️⃣ 칩을 눌러 선수 2명(단식) 또는 4명(복식)을 선택합니다.</li>
+
+<li>2️⃣ A팀/B팀 자동 배정이 생성되며, <b>A팀 승</b> 또는 <b>B팀 승</b> 버튼을 눌러 결과를 저장합니다.</li>
+
+<li>3️⃣ 최근 경기결과는 화면 하단에서 확인·삭제할 수 있습니다.</li>
+
+<li>4️⃣ <b>통합 전적</b> : 월별 경기수, 승/패, 승률을 단식+복식 기준으로 한눈에 볼 수 있습니다.</li>
+
+<li>5️⃣ <b>단/복식 전적</b> : 모든 선수 목록이 표시되며, 각 선수의 단식/복식 전적을 따로 볼 수 있습니다.</li>
+
+<li>6️⃣ <b>개인 상세 페이지(선수 클릭)</b> :  
+   ▸ 월별 성적(통합/단식/복식),  
+   ▸ 단식 상대별 전적 TOP 8,  
+   ▸ 복식 파트너별 전적 TOP 8,  
+   ▸ 승률 그래프, 경기수 그래프, 단/복식 비중, 누적 승점 그래프 등이 표시됩니다.</li>
+
+<li>7️⃣ <b>상세 페이지 상단 버튼</b> :  
+   ▸ <b>경기결과 입력</b>  
+   ▸ <b>통합전적</b>  
+   ▸ <b>단/복식 전적</b>  
+   로 이동할 수 있는 빠른 메뉴가 제공됩니다.</li>
+
+<li>8️⃣ <b>상대/파트너 분석</b> :  
+   가장 많이 이긴 상대, 가장 많이 진 상대, 가장 잘 맞는/안 맞는 파트너가 자동 계산되며,  
+   이름을 클릭하면 해당 선수의 상세 페이지로 바로 이동합니다.</li>
+
+<li>9️⃣ <b>그래프</b> :  
+   월별 승률, 경기수, 단/복식 비율, 상대별 승률, 파트너별 승률, 복식 누적 승점이 시각화됩니다.</li>
+
+<li>🔟 <b>월별 통합 기록</b> :  
+   ▸ ’25년 9~10월 → 통합전적만 표시  
+   ▸ ’25년 11월 이후 → 단식/복식 전적을 개별 표시  
+   디자인 개선된 카드로 경기수·승패·승률을 보기 좋게 확인할 수 있습니다.</li>
+
+    </ul>
+    <button id="closeModal" class="btn ok" style="margin-top:10px;">닫기</button>
+  </div>
+</div>
+
+
+
+
+
+
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, onValue, push, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyArRznuWhfuiOA1vFtwlArMCLsAdTz6XHo",
+  authDomain: "pingpongclub-4a5fd.firebaseapp.com",
+  databaseURL: "https://pingpongclub-4a5fd-default-rtdb.firebaseio.com",
+  projectId: "pingpongclub-4a5fd",
+  storageBucket: "pingpongclub-4a5fd.firebasestorage.app",
+  messagingSenderId: "802826774007",
+  appId: "1:802826774007:web:ca4d05be778eeaf1723af2"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const $ = s => document.querySelector(s);
+const toast = (msg="저장되었습니다")=>{
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),1500);
+};
+
+// ===== 제목 캐시 + 실시간 업데이트 =====
+const titleRef = ref(db, 'config/title');
+const cachedTitle = localStorage.getItem('siteTitle');
+if (cachedTitle) {
+  document.title = `🏓 ${cachedTitle} 탁구경기 결과입력`;
+  $('#pageTitle').textContent = `🏓 ${cachedTitle} 탁구경기 결과입력`;
+}
+onValue(titleRef, snap => {
+  const val = snap.val() ?? 'PingPong Club';
+  localStorage.setItem('siteTitle', val);
+  document.title = `🏓 ${val} 탁구경기 결과입력`;
+  $('#pageTitle').textContent = `🏓 ${val} 탁구경기 결과입력`;
+});
+
+// ===== 데이터 참조 =====
+const matchRef = ref(db,'matches');
+const playerRef = ref(db,'players');
+const deletePwRef = ref(db,'config/deletePassword');
+let players=[], sel=[], deletePassword='7910';
+
+// ✅ 삭제 비밀번호 불러오기
+get(deletePwRef).then(s=>{
+  if(s.exists()) deletePassword = s.val();
+});
+
+// ✅ 부수별 색상
+const LEVEL_COLORS = {
+  1: '#ef4444',  // 빨강
+  2: '#f97316',  // 주황
+  3: '#f59e0b',  // 노랑
+  4: '#84cc16',  // 연두
+  5: '#10b981',  // 초록
+  6: '#06b6d4',  // 하늘
+  7: '#8b5cf6',  // 보라
+  8: '#22c55e',  // 청록
+  9: '#3b82f6',  // 파랑
+  10: '#d946ef', // 연보라
+  11: '#ec4899', // 분홍
+  12: '#f43f5e', // 진분홍
+  13: '#a855f7', // 보라핑크
+  14: '#6366f1',  // 남색
+};
+// 기존
+// const shuffledColors = Object.values(LEVEL_COLORS).sort(()=>Math.random()-0.5);
+
+// 수정: 순서를 그대로 사용
+const colorList = Object.values(LEVEL_COLORS);
+
+// ✅ 선수 목록 표시
+onValue(playerRef,snap=>{
+  const data=snap.val()||{};
+  players=Object.values(data)
+    .map(p=>({name:p.name,level:p.level}))
+    .sort((a,b)=>(a.level-b.level)||a.name.localeCompare(b.name,'ko'));
+  renderChips();
+});
+
+// ✅ 칩 렌더링
+function renderChips(){
+  const box = $("#chips");
+  box.innerHTML = "";
+  players.forEach(p=>{
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    const c = colorList[p.level % colorList.length];  // 고정 색상
+    btn.style.borderColor = c;
+    btn.style.background = c + '22';
+    btn.textContent = `${p.name}(${p.level})`;
+    if(sel.some(x=>x.name===p.name)){
+      btn.classList.add('selected');
+      btn.style.background='#fff';
+      btn.style.outline=`2px solid ${c}`;
+    }
+    btn.onclick=()=>{
+      const idx=sel.findIndex(x=>x.name===p.name);
+      if(idx>=0) sel.splice(idx,1);
+      else {
+        if(sel.length>=4){toast("최대 4명까지 선택 가능합니다");return;}
+        sel.push(p);
+      }
+      renderChips(); updateTeams();
+    };
+    box.appendChild(btn);
+  });
+}
+
+// ✅ 팀 업데이트
+function updateTeams(){
+  const disp=$("#teamDisplay");
+  const btns=$("#matchButtons");
+  if(sel.length>0){
+    const half=Math.floor(sel.length/2);
+    const a=sel.slice(0,half).map(p=>p.name).join('/');
+    const b=sel.slice(half).map(p=>p.name).join('/');
+    disp.innerHTML=`<b>A팀:</b> ${a||'-'}　|　<b>B팀:</b> ${b||'-'}`;
+  } else disp.innerHTML='';
+  btns.style.display = (sel.length===2 || sel.length===4) ? 'block' : 'none';
+}
+
+// ✅ 경기 저장
+function getMonthKey(ts=Date.now()){
+  const d=new Date(new Date(ts).toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+$("#winA").onclick=()=>saveMatch('A');
+$("#winB").onclick=()=>saveMatch('B');
+
+function saveMatch(winner){
+  if(!(sel.length===2 || sel.length===4)){toast("2명 또는 4명을 선택하세요");return;}
+  const mode=(sel.length===2)?'single':'double';
+  const a=sel.slice(0,sel.length/2).map(p=>p.name);
+  const b=sel.slice(sel.length/2).map(p=>p.name);
+  const obj={mode,monthKey:getMonthKey(),namesA:a,namesB:b,winnerSide:winner,createdAt:Date.now()};
+  push(matchRef,obj);
+  toast("경기결과 저장 완료");
+  sel=[];renderChips();updateTeams();
+}
+
+// ✅ 경기 로그 표시
+onValue(matchRef,snap=>{
+  const data=snap.val()||{};
+  const arr=Object.entries(data).map(([id,m])=>({...m,id}))
+    .sort((a,b)=>b.createdAt-a.createdAt);
+  renderLogs(arr);
+});
+
+function renderLogs(arr){
+  const logs = $("#logs"); 
+  logs.innerHTML = "";
+
+  if (!arr.length) {
+    logs.innerHTML = '<div style="text-align:center;color:#999">최근 경기 없음</div>';
+    return;
+  }
+
+  arr.forEach(m => {
+    const d = new Date(m.createdAt);
+    const kst = new Date(d.toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
+    const time =
+      `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')} ` +
+      `${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
+
+    const winA = m.winnerSide === 'A';
+    const a = m.namesA.join('/');
+    const b = m.namesB.join('/');
+
+    // ✅ 승자 뒤에만 (승) / (승)은 빨간색 + bold
+    const aHtml = winA
+      ? `<span class="log-win">${a} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+      : `<span>${a}</span>`;
+
+    const bHtml = !winA
+      ? `<span class="log-win">${b} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+      : `<span>${b}</span>`;
+
+    logs.insertAdjacentHTML("beforeend", `
+      <div class="log-item">
+        <span class="log-time">${time} [${m.mode==='double' ? '복식' : '단식'}]</span>
+        <div class="log-match">
+          ${aHtml}  vs  ${bHtml}
+        </div>
+        <button class="delete-btn" onclick="deleteMatch('${m.id}')">🗑️</button>
+      </div>
+    `);
+  });
+}
+
+
+// ✅ 경기 삭제
+window.deleteMatch = async (id) => {
+  const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
+  if (input !== deletePassword) return toast("비밀번호가 올바르지 않습니다");
+  if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
+  await remove(ref(db, 'matches/' + id));
+  toast("경기결과 삭제 완료");
+};
+
+// ✅ 모바일/PC 모두 작동하는 관리자 비밀번호 확인
+window.addEventListener("DOMContentLoaded", () => {
+  const adminBtn = document.getElementById("adminBtn");
+  if (!adminBtn) return;
+
+  adminBtn.addEventListener("click", async () => {
+    try {
+      const adminPwRef = ref(db, "config/adminPassword");
+      const snap = await get(adminPwRef);
+      const savedPw = snap.exists() ? snap.val() : "1234";
+
+      const input = prompt("관리자 비밀번호를 입력하세요.");
+      if (input === null) return; // 취소 시 종료
+      if (input !== savedPw) {
+        alert("비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
+      // ✅ 성공 시 강제 이동
+      window.location.href = "admin.html";
+    } catch (err) {
+      console.error("관리자 비밀번호 확인 오류:", err);
+      alert("비밀번호 확인 중 오류가 발생했습니다.");
+    }
+  });
+});
+
+// ✅ 사용법 버튼 클릭 → 모달 표시
+const helpBtn = document.getElementById("helpBtn");
+const modal = document.getElementById("helpModal");
+const closeModal = document.getElementById("closeModal");
+
+helpBtn.addEventListener("click", () => {
+  modal.style.display = "flex";
+});
+
+closeModal.addEventListener("click", () => {
+  modal.style.display = "none";
+});
+
+// ✅ 모달 외부 클릭 시 닫기
+window.addEventListener("click", (e) => {
+  if (e.target === modal) modal.style.display = "none";
+});
+
+
+// ✅ 오늘의 전적: 토글 + 렌더 하나로 통합
+let todayVisible = false;
+
+async function buildTodayHtml() {
+  const snap = await get(matchRef);
+  if (!snap.exists()) return null;
+
+  const data = Object.values(snap.val());
+  const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+
+  // 오늘 경기만 필터
+  const todayMatches = data.filter(m => {
+    const d = new Date(m.createdAt);
+    const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    return kst.toLocaleDateString("ko-KR") === today;
+  });
+
+  if (!todayMatches.length) return "오늘 경기 기록이 없습니다";
+
+  // 승/패 집계
+  const stats = {};
+  todayMatches.forEach(m => {
+    const winners = m.winnerSide === "A" ? m.namesA : m.namesB;
+    const losers  = m.winnerSide === "A" ? m.namesB : m.namesA;
+    winners.forEach(n => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].win++; });
+    losers.forEach(n  => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].lose++; });
+  });
+
+  // ✅ 승점 계산 + 정렬 (승점 → 부수 낮은 순 → 이름순)
+const sorted = Object.entries(stats)
+  .map(([name, { win, lose }]) => {
+    const p = players.find(v => v.name === name);
+    const level = p ? p.level : 99;
+    const score = win * 2 - lose * 1;   // ✅ 승점 계산
+
+    return { name, win, lose, level, score };
+  })
+  .sort((a, b) =>
+    b.score - a.score ||      // ✅ 승점 높은 순
+    a.level - b.level ||      // ✅ 부수 낮은 순 (숫자 작을수록 고수)
+    a.name.localeCompare(b.name, 'ko')
+  );
+
+  // ✅ 두 줄(2열) 레이아웃 + 승/패 한 줄 표기 + 승이 가장 많은 사람 진하게
+  const maxWin = Math.max(...sorted.map(p => p.win)); // 가장 많은 승리 수
+
+  let html = "";
+  sorted.forEach((p, i) => {
+    const isTop = p.win === maxWin; // 최고 승리자 여부
+    const color = p.win > p.lose ? "#1e40af" : "#111";
+    const text = `${p.name}(${p.level}) ${p.win}승${p.lose}패`;
+    html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
+               ${isTop ? `<b>${text}</b>` : text}
+             </span>`;
+    if ((i + 1) % 2 === 0) html += "<br>";
+  });
+
+  return html;
+
+}
+
+// ✅ 버튼 한 개만 연결 (토글)
+document.getElementById("todayBtn").addEventListener("click", async () => {
+  const box = document.getElementById("todayResults");
+  const list = document.getElementById("todayList");
+
+  // 토글 닫기
+  if (todayVisible) {
+    box.style.display = "none";
+    todayVisible = false;
+    return;
+  }
+
+  const html = await buildTodayHtml();
+  if (html === null) { toast("기록이 없습니다"); return; }
+  if (html === "오늘 경기 기록이 없습니다") { toast(html); box.style.display = "none"; todayVisible = false; return; }
+
+  list.innerHTML = html;
+  box.style.display = "block";
+  todayVisible = true;
+});
+
+// ✅ 닫기 버튼
+document.getElementById("closeToday").addEventListener("click", () => {
+  document.getElementById("todayResults").style.display = "none";
+  todayVisible = false;
+});
+
+// ✅ 홈 화면 추가 안내
+function showHomeInstallGuide() {
+  const url = "https://sensational-tulumba-65e97e.netlify.app/pingpong/pingpong_rank/koen_rank/";
+
+  navigator.clipboard.writeText(url)
+    .then(() => {
+      const ua = navigator.userAgent.toLowerCase();
+
+      if (ua.includes("kakaotalk")) {
+        alert(
+          "✅ 주소가 복사되었습니다.\n\n" +
+          "1️⃣ 오른쪽 위 점 3개(⋮) → ‘기본 브라우저에서 열기’\n" +
+          "2️⃣ Chrome/Safari 에서 주소창 길게 눌러 붙여넣기\n" +
+          "3️⃣ 홈 화면에 추가 실행\n\n" +
+          "📌 복사된 주소:\n" + url
+        );
+        return;
+      }
+
+      if (/iphone|ipad|ipod/.test(ua)) {
+        alert(
+          "✅ 주소가 복사되었습니다!\n\n" +
+          "Safari → 주소창 붙여넣기 → 공유(□↑) → ‘홈 화면에 추가’ 선택\n\n" +
+          "📌 주소:\n" + url
+        );
+        return;
+      }
+
+      if (/android/.test(ua)) {
+        alert(
+          "✅ 주소가 복사되었습니다!\n\n" +
+          "Chrome → 주소창 붙여넣기 → 메뉴(⋮) → ‘홈 화면에 추가’ 선택\n\n" +
+          "📌 주소:\n" + url
+        );
+        return;
+      }
+
+      alert(
+        "✅ 주소가 복사되었습니다.\n" +
+        "모바일 브라우저에서 ‘홈 화면에 추가’ 기능을 사용하세요.\n\n📌 " + url
+      );
+    })
+    .catch(() => {
+      alert("❗ 자동 복사가 되지 않았습니다.\n아래 주소를 직접 복사하세요:\n" + url);
+    });
+}
+
+// ✅ 홈화면 추가 버튼 이벤트 연결
+document.getElementById("homeBtn").addEventListener("click", showHomeInstallGuide);
+
+</script>
+</body>
+</html>
