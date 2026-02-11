@@ -370,7 +370,6 @@ async function nextTab(dir){
 
 
 function attachSwipeToContent(){
-  // ✅ 헤더(.top) 제외, 본문 wrap
   const contentWrap = document.querySelector("body > .wrap");
   if (!contentWrap) return;
 
@@ -380,20 +379,21 @@ function attachSwipeToContent(){
   let sx=0, sy=0, dx=0, dy=0;
   let down=false;
 
-  // 세로 스크롤 허용
   contentWrap.style.touchAction = "pan-y";
 
   const shouldIgnoreStart = (target)=>{
-    if (!target) return false;
+    if (!target) return true;
 
-    // ✅ 카드/접기(어제) 내부에서 시작하면 스와이프 금지 (제목/뱃지 포함)
-    if (target.closest(".card")) return true;
-    if (target.closest("details.fold")) return true;
+    // ✅ 글쓰기/입력 요소는 무조건 금지
+    if (target.closest("textarea, input, select, button, a, label")) return true;
 
-    // ✅ 입력 요소는 당연히 금지
-    if (target.closest("textarea, input, [contenteditable='true']")) return true;
+    // ✅ 어제 접기 summary(제목줄)에서 시작하면 금지
+    if (target.closest("details.fold > summary")) return true;
 
-    // (선택) 탭/날짜쪽도 혹시 본문에 있다면 금지하고 싶으면 추가 가능
+    // ✅ 카드 헤더(제목/상태 줄)에서 시작하면 금지
+    if (target.closest(".cardHead")) return true;
+
+    // ✅ 그 외는 허용 (카드 본문, 카드 여백 등)
     return false;
   };
 
@@ -407,11 +407,11 @@ function attachSwipeToContent(){
     const ay = Math.abs(dy);
 
     if(ax >= MIN_X && ay <= MAX_Y){
-      await nextTab(dx < 0 ? +1 : -1);
+      await nextTab(dx < 0 ? +1 : -1); // 좌:다음 / 우:이전
     }
   };
 
-  // pointer
+  // Pointer (안드/크롬/PC)
   contentWrap.addEventListener("pointerdown", (e)=>{
     if (shouldIgnoreStart(e.target)) return;
     start(e.clientX, e.clientY);
@@ -429,7 +429,7 @@ function attachSwipeToContent(){
     down=false;
   }, {passive:true});
 
-  // iOS touch 보강
+  // iOS Touch 보강
   contentWrap.addEventListener("touchstart", (e)=>{
     const t = e.touches?.[0];
     if (!t) return;
