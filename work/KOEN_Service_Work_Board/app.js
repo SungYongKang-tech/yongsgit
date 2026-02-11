@@ -343,10 +343,101 @@ if (historyInput){
   });
 }
 
+/* ==========================
+   ✅ 작업내용 영역 좌/우 스와이프 탭 전환
+   - 모바일: 터치 스와이프
+   - PC: 마우스 드래그
+========================== */
+
+const TAB_ORDER = ["IBS","MECH","ELEC"];
+const clamp = (n,min,max)=>Math.max(min, Math.min(max,n));
+
+function selectTab(tab){
+  const btn = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if (!btn) return;
+
+  tabs.forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  currentTab = tab;
+  rebindAll(currentTab);
+}
+
+function nextTab(dir){ // dir: +1 (왼쪽으로 밀면 다음), -1 (오른쪽으로 밀면 이전)
+  const idx = TAB_ORDER.indexOf(currentTab);
+  const next = TAB_ORDER[clamp(idx + dir, 0, TAB_ORDER.length-1)];
+  if (next !== currentTab) selectTab(next);
+}
+
+function attachSwipeToContent(){
+  // 스와이프를 받을 영역: 탭 아래 "콘텐츠 영역" (세 view를 감싸는 부모 wrap)
+  // 현재 구조에서 두 번째 .wrap(본문) 전체에 적용하는게 안전합니다.
+  const wraps = document.querySelectorAll(".wrap");
+  const contentWrap = wraps[1] || wraps[0];
+  if (!contentWrap) return;
+
+  // textarea 내부 스크롤/선택 방해 최소화
+  let sx=0, sy=0, dx=0, dy=0;
+  let down=false, pointerId=null;
+  let startedOnInput=false;
+
+  const MIN_X = 60;        // 가로 이동 최소(px)
+  const MAX_Y = 80;        // 세로 흔들림 허용(px)
+  const EDGE_GUARD = 6;    // 화면 가장자리 제스처 충돌 방지(선택)
+
+  // pointer events 사용(터치+마우스 통합)
+  contentWrap.style.touchAction = "pan-y"; // 세로 스크롤은 허용, 가로는 우리가 처리
+
+  contentWrap.addEventListener("pointerdown", (e)=>{
+    // textarea/inputs에서 시작하면 스와이프 감지 안함(입력 방해 방지)
+    const t = e.target;
+    startedOnInput = !!(t && (t.tagName==="TEXTAREA" || t.tagName==="INPUT" || t.isContentEditable));
+    if (startedOnInput) return;
+
+    // 아주 가장자리에서 시작하는 경우는 무시(뒤로가기 제스처 등)
+    if (e.clientX < EDGE_GUARD || (window.innerWidth - e.clientX) < EDGE_GUARD) return;
+
+    down = true;
+    pointerId = e.pointerId;
+    sx = e.clientX; sy = e.clientY;
+    dx = dy = 0;
+    try{ contentWrap.setPointerCapture(pointerId); }catch(_){}
+  }, {passive:true});
+
+  contentWrap.addEventListener("pointermove", (e)=>{
+    if (!down || startedOnInput) return;
+    dx = e.clientX - sx;
+    dy = e.clientY - sy;
+  }, {passive:true});
+
+  contentWrap.addEventListener("pointerup", (e)=>{
+    if (!down) return;
+    down = false;
+
+    if (startedOnInput) { startedOnInput=false; return; }
+
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+
+    // 가로 이동 충분 + 세로 흔들림 작으면 탭 전환
+    if (ax >= MIN_X && ay <= MAX_Y){
+      // 왼쪽으로 스와이프(dx<0) => 다음 탭, 오른쪽(dx>0) => 이전 탭
+      nextTab(dx < 0 ? +1 : -1);
+    }
+
+    startedOnInput=false;
+  }, {passive:true});
+
+  contentWrap.addEventListener("pointercancel", ()=>{
+    down=false; startedOnInput=false;
+  }, {passive:true});
+}
+
+
 // ---- init
 let currentTab = "IBS";
 refreshDateUI();
 rebindAll(currentTab);
+attachSwipeToContent();
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", async ()=>{
