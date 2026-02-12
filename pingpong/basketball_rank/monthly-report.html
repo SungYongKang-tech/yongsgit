@@ -101,19 +101,22 @@ tbody tr:hover{background:#f9fafb}
     <table class="table">
       <thead>
         <tr>
-          <th>순위</th>
-          <th>선수</th>
-          <th>승</th>
-          <th>패</th>
-          <th>경기</th>
-          <th>승률</th>
-        </tr>
+  <th>순위</th>
+  <th>선수</th>
+  <th>점수</th>
+  <th>승</th>
+  <th>무</th>
+  <th>패</th>
+  <th>경기</th>
+  <th>승률</th>
+</tr>
+
       </thead>
       <tbody id="tbodyThis"></tbody>
     </table>
 
     <div class="small" style="text-align:center;margin-top:10px">
-      ※ 승률 → 경기수 → 이름 순으로 정렬합니다.
+      ※ 점수(승2/무1/패0) → 승 → 경기수 → 이름 순으로 정렬합니다.
     </div>
 
     <!-- ✅ 이번달 TOP3 -->
@@ -220,52 +223,83 @@ onValue(ref(db,"games"), snap=>{
 function computeRows(monthKey){
   const games = Object.values(GAMES).filter(g=>g?.monthKey===monthKey);
 
-  const stat = {};
+  const stat = {}; // pid -> {w,l,d}
+
   games.forEach(g=>{
-    const aWin = g.winner==="A";
+    // ✅ winner: "A"|"B"|"D" (예전 데이터 호환)
+    let result = g.winner;
+    if(result !== "A" && result !== "B" && result !== "D"){
+      const a = Number(g.scoreA), b = Number(g.scoreB);
+      if(Number.isFinite(a) && Number.isFinite(b)){
+        if(a > b) result = "A";
+        else if(b > a) result = "B";
+        else result = "D";
+      }else{
+        result = "D";
+      }
+    }
+
+    // A팀 선수들
     (g.playersA||[]).forEach(pid=>{
-      if(!stat[pid]) stat[pid]={w:0,l:0};
-      if(aWin) stat[pid].w++; else stat[pid].l++;
+      if(!stat[pid]) stat[pid]={w:0,l:0,d:0};
+      if(result==="A") stat[pid].w++;
+      else if(result==="B") stat[pid].l++;
+      else stat[pid].d++;
     });
+
+    // B팀 선수들
     (g.playersB||[]).forEach(pid=>{
-      if(!stat[pid]) stat[pid]={w:0,l:0};
-      if(!aWin) stat[pid].w++; else stat[pid].l++;
+      if(!stat[pid]) stat[pid]={w:0,l:0,d:0};
+      if(result==="B") stat[pid].w++;
+      else if(result==="A") stat[pid].l++;
+      else stat[pid].d++;
     });
   });
 
   const rows = Object.entries(stat).map(([pid,wl])=>{
     const name = PLAYERS?.[pid]?.name || `미등록(${pid})`;
-    const w = wl.w, l = wl.l;
-    const t = w+l;
-    const r = pct(w,l);
-    return { pid, name, w, l, t, r };
+    const w = wl.w||0, l = wl.l||0, d = wl.d||0;
+    const t = w + l + d;
+
+    // ✅ 점수(승2/무1/패0)
+    const score = w*2 + d*1;
+
+    // ✅ 승률: (승 + 0.5무) / 경기 * 100
+    const r = t ? Math.round((((w + d*0.5) / t) * 100) * 10) / 10 : 0;
+
+    return { pid, name, w, l, d, t, r, score };
   })
   .sort((a,b)=>
-    b.r - a.r ||
-    b.t - a.t ||
+    b.score - a.score ||       // ✅ 1순위: 점수
+    b.w - a.w ||               // 2순위: 승
+    a.t - b.t ||               // 3순위: 경기수(적은 사람이 위) - 원하시면 반대로 가능
     a.name.localeCompare(b.name,'ko')
   );
 
   return { rows, totalMatches: games.length };
 }
 
+
 function renderTable(tbodySel, rows){
   const tb = $(tbodySel);
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="6" class="small" style="text-align:center;padding:16px">저장된 경기가 없습니다.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="8" class="small" style="text-align:center;padding:16px">저장된 경기가 없습니다.</td></tr>`;
     return;
   }
   tb.innerHTML = rows.map((p,idx)=>`
     <tr>
       <td>${idx+1}</td>
       <td style="font-weight:900">${p.name}</td>
+      <td style="font-weight:950">${p.score}</td>
       <td class="win">${p.w}</td>
+      <td style="font-weight:900">${p.d}</td>
       <td class="lose">${p.l}</td>
       <td>${p.t}</td>
       <td style="font-weight:900">${p.r}%</td>
     </tr>
   `).join("");
 }
+
 
 function renderSummary(boxSel, rows, totalMatches){
   const box = $(boxSel);
@@ -349,29 +383,49 @@ function buildTodayHtml(){
 
   if(!todayGames.length) return "오늘 경기 기록이 없습니다";
 
-  const stats = {};
+  const stats = {}; // pid -> {win, lose, draw}
+
   todayGames.forEach(g=>{
-    const aWin = g.winner === "A";
+    let result = g.winner;
+    if(result !== "A" && result !== "B" && result !== "D"){
+      const a = Number(g.scoreA), b = Number(g.scoreB);
+      if(Number.isFinite(a) && Number.isFinite(b)){
+        if(a > b) result = "A";
+        else if(b > a) result = "B";
+        else result = "D";
+      }else{
+        result = "D";
+      }
+    }
+
     (g.playersA || []).forEach(pid=>{
-      if(!stats[pid]) stats[pid] = {win:0, lose:0};
-      if(aWin) stats[pid].win++; else stats[pid].lose++;
+      if(!stats[pid]) stats[pid] = {win:0, lose:0, draw:0};
+      if(result==="A") stats[pid].win++;
+      else if(result==="B") stats[pid].lose++;
+      else stats[pid].draw++;
     });
+
     (g.playersB || []).forEach(pid=>{
-      if(!stats[pid]) stats[pid] = {win:0, lose:0};
-      if(!aWin) stats[pid].win++; else stats[pid].lose++;
+      if(!stats[pid]) stats[pid] = {win:0, lose:0, draw:0};
+      if(result==="B") stats[pid].win++;
+      else if(result==="A") stats[pid].lose++;
+      else stats[pid].draw++;
     });
   });
 
   const arr = Object.entries(stats).map(([pid,wl])=>{
     const name = PLAYERS?.[pid]?.name || `미등록(${pid})`;
-    const win = wl.win, lose = wl.lose;
-    const total = win + lose;
-    const score = win*2 - lose*1;
-    return { pid, name, win, lose, total, score };
+    const win = wl.win||0, lose = wl.lose||0, draw = wl.draw||0;
+    const total = win + lose + draw;
+
+    // ✅ 오늘도 동일 점수 규칙
+    const score = win*2 + draw*1;
+
+    return { pid, name, win, lose, draw, total, score };
   }).sort((a,b)=>
     b.score - a.score ||
     b.win - a.win ||
-    b.total - a.total ||
+    a.total - b.total ||
     a.name.localeCompare(b.name,'ko')
   );
 
@@ -381,7 +435,7 @@ function buildTodayHtml(){
   arr.forEach((p,i)=>{
     const isTop = p.win === maxWin;
     const color = p.win >= p.lose ? "#1e40af" : "#111";
-    const text = `${p.name} ${p.win}승${p.lose}패`;
+    const text = `${p.name} ${p.win}승${p.lose}패${p.draw ? `${p.draw}무` : ""}`;
 
     html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
       ${isTop ? `<b>${text}</b>` : text}
@@ -395,6 +449,7 @@ function buildTodayHtml(){
 
   return html;
 }
+
 
 document.getElementById("todayBtn").addEventListener("click", ()=>{
   const box  = document.getElementById("todayResults");
