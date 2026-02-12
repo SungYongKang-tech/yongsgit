@@ -133,13 +133,15 @@ tbody tr:hover{background:#f9fafb}
     <table class="table">
       <thead>
         <tr>
-          <th>순위</th>
-          <th>선수</th>
-          <th>승</th>
-          <th>패</th>
-          <th>경기</th>
-          <th>승률</th>
-        </tr>
+  <th>순위</th>
+  <th>선수</th>
+  <th>점수</th>
+  <th>승</th>
+  <th>무</th>
+  <th>패</th>
+  <th>경기</th>
+  <th>승률</th>
+</tr>
       </thead>
       <tbody id="tbodyLast"></tbody>
     </table>
@@ -184,11 +186,6 @@ const prevMonthKeyKST = ()=>{
   return monthKeyKST(d);
 };
 
-const pct = (w,l)=>{
-  const t = w+l;
-  if(!t) return 0;
-  return Math.round((w/t*100)*10)/10;
-};
 
 let PLAYERS = {};
 let GAMES = {};
@@ -210,15 +207,21 @@ $("#adminBtn").onclick = async()=>{
   location.href="admin.html";
 };
 
+let readyPlayers = false;
+let readyGames = false;
+
 onValue(ref(db,"players"), snap=>{
   PLAYERS = snap.val() || {};
-  drawAll();
+  readyPlayers = true;
+  if(readyPlayers && readyGames) drawAll();
 });
 
 onValue(ref(db,"games"), snap=>{
   GAMES = snap.val() || {};
-  drawAll();
+  readyGames = true;
+  if(readyPlayers && readyGames) drawAll();
 });
+
 
 function computeRows(monthKey){
   const games = Object.values(GAMES).filter(g=>g?.monthKey===monthKey);
@@ -269,13 +272,12 @@ function computeRows(monthKey){
 
     return { pid, name, w, l, d, t, r, score };
   })
-  .sort((a,b)=>
-    b.score - a.score ||       // ✅ 1순위: 점수
-    b.w - a.w ||               // 2순위: 승
-    a.t - b.t ||               // 3순위: 경기수(적은 사람이 위) - 원하시면 반대로 가능
-    a.name.localeCompare(b.name,'ko')
-  );
-
+ .sort((a,b)=>
+  b.score - a.score ||     // 점수(승2/무1)
+  b.w - a.w ||             // 승
+  b.t - a.t ||             // 경기수(많은 사람 위) ✅ 수정
+  a.name.localeCompare(b.name,'ko')
+);
   return { rows, totalMatches: games.length };
 }
 
@@ -425,17 +427,18 @@ function buildTodayHtml(){
   }).sort((a,b)=>
     b.score - a.score ||
     b.win - a.win ||
-    a.total - b.total ||
+    b.total - a.total ||
     a.name.localeCompare(b.name,'ko')
   );
 
+  if(!arr.length) return "오늘 경기 기록이 없습니다";
   const maxWin = Math.max(...arr.map(x=>x.win));
   let html = "";
 
   arr.forEach((p,i)=>{
     const isTop = p.win === maxWin;
     const color = p.win >= p.lose ? "#1e40af" : "#111";
-    const text = `${p.name} ${p.win}승${p.lose}패${p.draw ? `${p.draw}무` : ""}`;
+    const text = `${p.name} (${p.score}점) ${p.win}승${p.lose}패${p.draw ? `${p.draw}무` : ""}`;
 
     html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
       ${isTop ? `<b>${text}</b>` : text}

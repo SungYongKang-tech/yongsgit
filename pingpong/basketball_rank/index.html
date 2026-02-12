@@ -325,6 +325,19 @@ onValue(ref(db,"games"), snap=>{
   renderLogs();
 });
 
+function normalizeWinner(g){
+  const w = g?.winner;
+  if(w==="A" || w==="B" || w==="D") return w;
+
+  const a = Number(g?.scoreA), b = Number(g?.scoreB);
+  if(Number.isFinite(a) && Number.isFinite(b)){
+    if(a > b) return "A";
+    if(b > a) return "B";
+    return "D";
+  }
+  return "D";
+}
+
 function playerArr(){
   return Object.entries(PLAYERS).map(([id,p])=>({id,...p}))
     .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko'));
@@ -433,8 +446,13 @@ $("#saveGame").onclick = async()=>{
   const playersB = selectedIds("B");
   if(playersA.length===0 || playersB.length===0) return toast("양 팀 선수는 최소 1명씩 선택하세요");
 
-  const scoreA = Number($("#scoreA").value);
-  const scoreB = Number($("#scoreB").value);
+const vA = $("#scoreA").value.trim();
+const vB = $("#scoreB").value.trim();
+if(vA === "" || vB === "") return toast("득점을 입력하세요");
+
+const scoreA = Number(vA);
+const scoreB = Number(vB);
+
 
   if(!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return toast("득점을 입력하세요");
   if(scoreA < 0 || scoreB < 0) return toast("득점은 0 이상");
@@ -485,10 +503,13 @@ function renderLogs(){
     const aNames = aArr.join(", ");
     const bNames = bArr.join(", ");
 
-    const winText =
-  g.winner === "A" ? `${ta} 승` :
-  g.winner === "B" ? `${tb} 승` :
-  `무승부`;
+    const w = normalizeWinner(g);
+const winText =
+  w === "A" ? `${ta} 승` :
+  w === "B" ? `${tb} 승` :
+  "무승부";
+const sa = Number.isFinite(Number(g.scoreA)) ? g.scoreA : "-";
+const sb = Number.isFinite(Number(g.scoreB)) ? g.scoreB : "-";
 
     // ✅ 한쪽이라도 4명 이상이면 줄바꿈 표시
     const needBreak = (aArr.length >= 4) || (bArr.length >= 4);
@@ -501,7 +522,7 @@ function renderLogs(){
     div.innerHTML = `
       <div class="t">${kstTime(g.createdAt)} / ${winText}</div>
       <div class="m">
-        <b>${ta}</b> ${g.scoreA} : ${g.scoreB} <b>${tb}</b><br/>
+        <b>${ta}</b> ${sa} : ${sb} <b>${tb}</b><br/>
         <span class="small">${rosterHtml}</span>
       </div>
       <button class="del" title="삭제" data-del="${g.id}">🗑️</button>
@@ -534,7 +555,7 @@ function buildTodayHtml(){
 
   const stats = {};
   todayGames.forEach(g=>{
-  const result = g.winner || "D"; // 안전장치
+  const result = normalizeWinner(g);
 
   // A팀 선수들
   (g.playersA || []).forEach(pid=>{
@@ -553,27 +574,32 @@ function buildTodayHtml(){
   });
 });
 
+const arr = Object.entries(stats).map(([pid,wl])=>{
+  const name = PLAYERS?.[pid]?.name || `미등록(${pid})`;
+  const win  = wl.win  || 0;
+  const lose = wl.lose || 0;
+  const draw = wl.draw || 0;
+  const total = win + lose + draw;
+  const score = win*2 + draw*1;
 
-  const arr = Object.entries(stats).map(([pid,wl])=>{
-    const name = PLAYERS?.[pid]?.name || `미등록(${pid})`;
-    const win = wl.win, lose = wl.lose;
-    const total = win + lose + (wl.draw||0);
-    const score = win*2 + (wl.draw||0)*1;
-    return { pid, name, win, lose, total, score };
-  }).sort((a,b)=>
-    b.score - a.score ||
-    b.win - a.win ||
-    b.total - a.total ||
-    a.name.localeCompare(b.name,'ko')
-  );
+  return { pid, name, win, lose, draw, total, score };
+}).sort((a,b)=>
+  b.score - a.score ||
+  b.win - a.win ||
+  b.total - a.total ||
+  a.name.localeCompare(b.name,'ko')
+);
 
-  const maxWin = Math.max(...arr.map(x=>x.win));
+// ✅ 추가(안전장치)
+if(!arr.length) return "오늘 경기 기록이 없습니다";
+
+const maxScore = Math.max(...arr.map(x=>x.score));
   let html = "";
 
   arr.forEach((p,i)=>{
-    const isTop = p.win === maxWin;
+    const isTop = p.score === maxScore;
     const color = p.win >= p.lose ? "#1e40af" : "#111";
-    const text = `${p.name} ${p.win}승${p.lose}패${p.draw ? `${p.draw}무` : ""}`;
+    const text = `${p.name} (${p.score}점) ${p.win}승${p.lose}패${p.draw ? `${p.draw}무` : ""}`;
 
 
     html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
