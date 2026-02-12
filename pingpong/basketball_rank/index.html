@@ -438,9 +438,11 @@ $("#saveGame").onclick = async()=>{
 
   if(!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return toast("득점을 입력하세요");
   if(scoreA < 0 || scoreB < 0) return toast("득점은 0 이상");
-  if(scoreA === scoreB) return toast("동점은 저장할 수 없습니다(연장 후 결과 입력)");
+  // 동점 허용
+let winner = "D"; // Draw
+if(scoreA > scoreB) winner = "A";
+else if(scoreB > scoreA) winner = "B";
 
-  const winner = scoreA > scoreB ? "A" : "B";
 
   // ✅ 월간리포트 호환 유지
   const obj = {
@@ -483,7 +485,10 @@ function renderLogs(){
     const aNames = aArr.join(", ");
     const bNames = bArr.join(", ");
 
-    const winText = g.winner==="A" ? `${ta} 승` : `${tb} 승`;
+    const winText =
+  g.winner === "A" ? `${ta} 승` :
+  g.winner === "B" ? `${tb} 승` :
+  `무승부`;
 
     // ✅ 한쪽이라도 4명 이상이면 줄바꿈 표시
     const needBreak = (aArr.length >= 4) || (bArr.length >= 4);
@@ -529,22 +534,31 @@ function buildTodayHtml(){
 
   const stats = {};
   todayGames.forEach(g=>{
-    const aWin = g.winner === "A";
-    (g.playersA || []).forEach(pid=>{
-      if(!stats[pid]) stats[pid] = {win:0, lose:0};
-      if(aWin) stats[pid].win++; else stats[pid].lose++;
-    });
-    (g.playersB || []).forEach(pid=>{
-      if(!stats[pid]) stats[pid] = {win:0, lose:0};
-      if(!aWin) stats[pid].win++; else stats[pid].lose++;
-    });
+  const result = g.winner || "D"; // 안전장치
+
+  // A팀 선수들
+  (g.playersA || []).forEach(pid=>{
+    if(!stats[pid]) stats[pid] = {win:0, lose:0, draw:0};
+    if(result === "A") stats[pid].win++;
+    else if(result === "B") stats[pid].lose++;
+    else stats[pid].draw++;
   });
+
+  // B팀 선수들
+  (g.playersB || []).forEach(pid=>{
+    if(!stats[pid]) stats[pid] = {win:0, lose:0, draw:0};
+    if(result === "B") stats[pid].win++;
+    else if(result === "A") stats[pid].lose++;
+    else stats[pid].draw++;
+  });
+});
+
 
   const arr = Object.entries(stats).map(([pid,wl])=>{
     const name = PLAYERS?.[pid]?.name || `미등록(${pid})`;
     const win = wl.win, lose = wl.lose;
     const total = win + lose;
-    const score = win*2 - lose*1;
+    const score = win*2 + (wl.draw||0)*1 - lose*1;
     return { pid, name, win, lose, total, score };
   }).sort((a,b)=>
     b.score - a.score ||
@@ -559,7 +573,8 @@ function buildTodayHtml(){
   arr.forEach((p,i)=>{
     const isTop = p.win === maxWin;
     const color = p.win >= p.lose ? "#1e40af" : "#111";
-    const text = `${p.name} ${p.win}승${p.lose}패`;
+    const text = `${p.name} ${p.win}승${p.lose}패${p.draw ? `${p.draw}무` : ""}`;
+
 
     html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
       ${isTop ? `<b>${text}</b>` : text}
