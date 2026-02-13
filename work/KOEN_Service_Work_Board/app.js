@@ -607,6 +607,88 @@ function attachSwipeToContent(){
   }, {passive:true});
 }
 
+/* =========================
+   ✅ Notice Popup (from admin/popup)
+   - admin.html에서 저장한 설정을 읽어서
+     현재 시간이 기간 안이면 팝업 표시
+========================= */
+const POPUP_PATH = "admin/popup"; // { enabled, title, body, startAt, endAt, updatedAt }
+
+function parseKstLocalToMs(v){
+  // v: "2026-02-13T09:00" (datetime-local 값)
+  if (!v) return NaN;
+  // "YYYY-MM-DDTHH:mm" 를 로컬시간(KST)으로 해석해 ms로 변환
+  const d = new Date(v);
+  return d.getTime();
+}
+
+function closeNotice(){
+  const back = document.getElementById("noticeBack");
+  if (!back) return;
+  back.style.display = "none";
+  back.classList.remove("show"); // 스타일에서 show를 쓰는 경우 대비
+}
+
+function openNotice({ title, body, startAt, endAt }){
+  const back = document.getElementById("noticeBack");
+  if (!back) return;
+
+  const tEl = document.getElementById("noticeTitle");
+  const bEl = document.getElementById("noticeBody");
+  const pEl = document.getElementById("noticePeriod");
+
+  if (tEl) tEl.textContent = title || "공지";
+  if (bEl) bEl.textContent = body || "";
+  if (pEl) pEl.textContent = `표시 기간: ${startAt || "-"} ~ ${endAt || "-"}`;
+
+  // 두 방식 다 대응
+  back.style.display = "flex";
+  back.classList.add("show");
+
+  document.getElementById("noticeClose")?.addEventListener("click", closeNotice, { once:true });
+  back.addEventListener("click", (e)=>{
+    if (e.target === back) closeNotice();
+  }, { once:true });
+}
+
+async function checkAndShowPopupOnce(){
+  // DOM 요소가 없으면 조용히 종료
+  const back = document.getElementById("noticeBack");
+  if (!back) return;
+
+  try{
+    const snap = await get(ref(db, POPUP_PATH));
+    const v = snap.val() || {};
+
+    if (!v.enabled) return;
+
+    const title = (v.title || "공지").trim();
+    const body  = (v.body || "").trim();
+    const startAt = (v.startAt || "").trim();
+    const endAt   = (v.endAt || "").trim();
+
+    if (!body || !startAt || !endAt) return;
+
+    const now = Date.now();
+    const sMs = parseKstLocalToMs(startAt);
+    const eMs = parseKstLocalToMs(endAt);
+
+    if (!isFinite(sMs) || !isFinite(eMs)) return;
+
+    if (now >= sMs && now <= eMs){
+      // 같은 세션에서 중복 표시 방지(원하시면 제거 가능)
+      const sessionKey = `notice_shown_${startAt}_${endAt}_${(v.updatedAt||"")}`;
+      if (sessionStorage.getItem(sessionKey) === "1") return;
+      sessionStorage.setItem(sessionKey, "1");
+
+      openNotice({ title, body, startAt, endAt });
+    }
+  }catch(e){
+    // console.warn("popup load fail", e);
+  }
+}
+
+
 /* ==========================
    init
 ========================== */
