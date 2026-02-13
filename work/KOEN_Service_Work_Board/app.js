@@ -27,6 +27,143 @@ function prettyK(iso){
   return `${yy}.${pad2(M)}.${pad2(D)}(${wday[dt.getDay()]})`;
 }
 
+/* ==========================
+   Rich Text (Bold / Red / Blue)
+   - textarea를 숨기고 contenteditable로 대체
+   - 저장은 textarea.value(HTML)로 저장 (기존 로직 유지)
+========================== */
+
+function looksLikeHtml(s){
+  if (!s) return false;
+  return /<\/?[a-z][\s\S]*>/i.test(s);
+}
+function escapeHtml(s){
+  return (s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+function htmlToText(html){
+  const div = document.createElement("div");
+  div.innerHTML = html || "";
+  // 줄바꿈 보강: div/p/br를 개행으로
+  div.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
+  div.querySelectorAll("p,div").forEach(el => {
+    if (el !== div) el.appendChild(document.createTextNode("\n"));
+  });
+  return div.textContent.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function enhanceTextareaToRich(id){
+  const ta = document.getElementById(id);
+  if (!ta) return;
+  if (ta.dataset.rich === "1") return;
+
+  // wrapper
+  const wrap = document.createElement("div");
+  wrap.className = "rtWrap";
+
+  const bar = document.createElement("div");
+  bar.className = "rtBar";
+
+  const btnBold = document.createElement("button");
+  btnBold.type = "button";
+  btnBold.className = "rtBtn";
+  btnBold.textContent = "B";
+
+  const btnRed = document.createElement("button");
+  btnRed.type = "button";
+  btnRed.className = "rtBtn red";
+  btnRed.textContent = "빨강";
+
+  const btnBlue = document.createElement("button");
+  btnBlue.type = "button";
+  btnBlue.className = "rtBtn blue";
+  btnBlue.textContent = "파랑";
+
+  bar.append(btnBold, btnRed, btnBlue);
+
+  const box = document.createElement("div");
+  box.className = "rtBox";
+  box.contentEditable = "true";
+  box.setAttribute("role", "textbox");
+  box.setAttribute("aria-label", "rich editor");
+
+  // 초기값: 기존 textarea의 값이 HTML이면 그대로, 아니면 텍스트로
+  const raw = ta.value || "";
+  box.innerHTML = looksLikeHtml(raw) ? raw : escapeHtml(raw).replaceAll("\n","<br>");
+
+  // textarea 숨김 (저장은 textarea.value로 계속 진행)
+  ta.style.display = "none";
+  ta.dataset.rich = "1";
+  ta._richBox = box;
+
+  // textarea를 wrap으로 교체
+  ta.parentNode.insertBefore(wrap, ta);
+  wrap.appendChild(ta);     // textarea는 wrap 안에 숨김으로 보관
+  wrap.appendChild(bar);
+  wrap.appendChild(box);
+
+  const applyCmd = (cmd, value=null)=>{
+    box.focus();
+    // 선택영역 유지
+    try{
+      document.execCommand(cmd, false, value);
+    }catch(e){}
+    // 변경 반영
+    syncRichToTextarea(ta);
+  };
+
+  btnBold.addEventListener("click", ()=> applyCmd("bold"));
+  btnRed.addEventListener("click",  ()=> applyCmd("foreColor", "#dc2626"));
+  btnBlue.addEventListener("click", ()=> applyCmd("foreColor", "#2563eb"));
+
+  // 입력할 때마다 textarea에 HTML 동기화 + 기존 autosave 트리거
+  box.addEventListener("input", ()=>{
+    syncRichToTextarea(ta);
+  });
+
+  // 붙여넣기: 서식 최소화(텍스트 중심) 원하시면 아래 유지
+  box.addEventListener("paste", (e)=>{
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+    document.execCommand("insertText", false, text);
+    syncRichToTextarea(ta);
+  });
+}
+
+function syncRichToTextarea(ta){
+  if (!ta || !ta._richBox) return;
+  ta.value = ta._richBox.innerHTML;
+
+  // ✅ 기존 로직(autosave)이 textarea의 input을 듣고 있으니 그대로 재사용
+  ta.dispatchEvent(new Event("input", { bubbles:true }));
+
+  // 높이 자동
+  autoSizeRich(ta._richBox);
+}
+
+function setFieldValue(id, v){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = v ?? "";
+  // 리치 박스가 붙어있으면 같이 갱신
+  if (el._richBox){
+    const raw = el.value || "";
+    el._richBox.innerHTML = looksLikeHtml(raw) ? raw : escapeHtml(raw).replaceAll("\n","<br>");
+    autoSizeRich(el._richBox);
+  }
+}
+
+function autoSizeRich(box){
+  if (!box) return;
+  box.style.height = "auto";
+  box.style.height = Math.min(box.scrollHeight, window.innerHeight * 0.70) + "px";
+}
+
+
 // ---- Paths
 const pathIBS  = (iso)=>`daily/IBS/${iso}`;
 const pathMECH = (iso)=>`daily/MECH/${iso}`;
@@ -41,14 +178,26 @@ function scheduleSave(key, fn){
 }
 
 // ✅ textarea 자동 높이
+// ✅ textarea + richBox 자동 높이
 function autoSize(el){
   if (!el) return;
+
+  // 리치박스면
+  if (el.classList && el.classList.contains("rtBox")){
+    autoSizeRich(el);
+    return;
+  }
+
+  // textarea면
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.70) + "px";
 }
 function autoSizeAll(){
+  // textarea(숨겨져 있어도 OK) + rtBox
   document.querySelectorAll("textarea").forEach(autoSize);
+  document.querySelectorAll(".rtBox").forEach(autoSize);
 }
+
 
 // ---- Live date labels + midnight refresh
 let ISO_TODAY = isoToday();
@@ -80,7 +229,7 @@ function bindIBS(){
   const rY = ref(db, pathIBS(ISO_YDAY));
   const uY = onValue(rY, (snap)=>{
     const v = snap.val() || {};
-    $("ibsY_handover").value = v.handover || "";
+    setFieldValue("ibsY_handover", v.handover || "");
     $("ibsY_status").value   = v.status || "";
     $("ibsY_special").value  = v.special || "";
     const ts = v.updatedAt || null;
@@ -249,8 +398,9 @@ async function copyTodayPlanToClipboard(){
   const mechSnap = await get(ref(db, pathMECH(ISO_TODAY)));
   const elecSnap = await get(ref(db, pathELEC(ISO_TODAY)));
 
-  const mech = (mechSnap.val()?.todayWork || "").trim();
-  const elec = (elecSnap.val()?.todayWork || "").trim();
+  const mech = htmlToText((mechSnap.val()?.todayWork || "")).trim();
+const elec = htmlToText((elecSnap.val()?.todayWork || "")).trim();
+
 
   const todayPretty = prettyK(ISO_TODAY);
 
@@ -454,8 +604,13 @@ function attachSwipeToContent(){
 // ---- init
 let currentTab = "IBS";
 refreshDateUI();
+
+// ✅ 모든 textarea를 리치에디터로 변환
+document.querySelectorAll("textarea[id]").forEach(t => enhanceTextareaToRich(t.id));
+
 rebindAll(currentTab);
 attachSwipeToContent();
+
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", async ()=>{
