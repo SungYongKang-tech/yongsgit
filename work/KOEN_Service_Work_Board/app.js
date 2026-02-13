@@ -1,5 +1,7 @@
 import { db } from "./firebase.js";
-import { ref, onValue, update, get, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import {
+  ref, onValue, update, get, set, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 const $ = (id) => document.getElementById(id);
 const tabs = document.querySelectorAll(".tab");
@@ -26,13 +28,34 @@ function prettyK(iso){
   return `${yy}.${pad2(M)}.${pad2(D)}(${wday[dt.getDay()]})`;
 }
 
+/* =========================
+   ✅ Admin PIN (초기 1225) - DB에 없으면 생성
+   - admin.html에서도 동일 경로 사용
+========================= */
+const ADMIN_SETTINGS_PATH = "admin/settings"; // { pin: "1225", updatedAt: ... }
+
+async function ensureAdminPin(){
+  try{
+    const snap = await get(ref(db, ADMIN_SETTINGS_PATH));
+    const v = snap.val();
+    if (!v || !v.pin){
+      await set(ref(db, ADMIN_SETTINGS_PATH), {
+        pin: "1225",
+        updatedAt: serverTimestamp()
+      });
+    }
+  }catch(e){
+    // 운영에 치명적이지 않게 조용히 무시(네트워크 등)
+    // console.warn(e);
+  }
+}
+
 /* ==========================
    Rich Text (Bold / Red / Blue)
    - textarea 숨기고 contenteditable 사용
    - DB에는 HTML로 저장
    - ✅ 상단 고정 툴바(Top Bar) 1개만 사용
 ========================== */
-
 function looksLikeHtml(s){
   if (!s) return false;
   return /<\/?[a-z][\s\S]*>/i.test(s);
@@ -90,7 +113,6 @@ function enhanceTextareaToRich(id){
   if (!ta) return;
   if (ta.dataset.rich === "1") return;
 
-  // wrapper
   const wrap = document.createElement("div");
   wrap.className = "rtWrap";
 
@@ -100,34 +122,27 @@ function enhanceTextareaToRich(id){
   box.setAttribute("role", "textbox");
   box.setAttribute("aria-label", "rich editor");
 
-  // 초기값: textarea의 값이 HTML이면 그대로, 아니면 텍스트로
   const raw = ta.value || "";
   box.innerHTML = looksLikeHtml(raw) ? raw : escapeHtml(raw).replaceAll("\n","<br>");
 
-  // textarea 숨김 (저장은 textarea.value로 계속 진행)
   ta.style.display = "none";
   ta.dataset.rich = "1";
   ta._richBox = box;
 
-  // box <-> textarea 연결
   box._ta = ta;
 
-  // textarea를 wrap으로 감싸고, box 표시
   ta.parentNode.insertBefore(wrap, ta);
   wrap.appendChild(ta);
   wrap.appendChild(box);
 
-  // ✅ 포커스/터치된 에디터 기억
   box.addEventListener("focusin", ()=>{ ACTIVE_RICH_BOX = box; });
   box.addEventListener("pointerdown", ()=>{ ACTIVE_RICH_BOX = box; });
   box.addEventListener("touchstart", ()=>{ ACTIVE_RICH_BOX = box; }, {passive:true});
 
-  // 입력 시 textarea에 HTML 동기화 + autosave 트리거
   box.addEventListener("input", ()=>{
     syncRichToTextarea(ta);
   });
 
-  // 붙여넣기: 텍스트 중심 (서식 제거)
   box.addEventListener("paste", (e)=>{
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData("text/plain");
@@ -135,7 +150,6 @@ function enhanceTextareaToRich(id){
     syncRichToTextarea(ta);
   });
 
-  // 첫 에디터를 ACTIVE로 잡아두기(초기 편의)
   if (!ACTIVE_RICH_BOX) ACTIVE_RICH_BOX = box;
 }
 
@@ -143,10 +157,7 @@ function syncRichToTextarea(ta){
   if (!ta || !ta._richBox) return;
 
   ta.value = ta._richBox.innerHTML;
-
-  // ✅ 기존 autosave(wire)가 textarea input을 듣고 있음
   ta.dispatchEvent(new Event("input", { bubbles:true }));
-
   autoSizeRich(ta._richBox);
 }
 
@@ -156,7 +167,6 @@ function setFieldValue(id, v){
 
   el.value = v ?? "";
 
-  // 리치 박스가 붙어있으면 같이 갱신
   if (el._richBox){
     const raw = el.value || "";
     el._richBox.innerHTML = looksLikeHtml(raw) ? raw : escapeHtml(raw).replaceAll("\n","<br>");
@@ -193,13 +203,11 @@ function scheduleSave(key, fn){
 function autoSize(el){
   if (!el) return;
 
-  // rtBox
   if (el.classList && el.classList.contains("rtBox")){
     autoSizeRich(el);
     return;
   }
 
-  // textarea
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.70) + "px";
 }
@@ -265,9 +273,10 @@ function bindIBS(){
     const ta = $(areaId);
     const statusEl = which === "Y" ? $("ibsYStatus") : $("ibsTStatus");
 
-    // 중복 리스너 방지
-    if (ta.dataset.wired === "1") return;
-    ta.dataset.wired = "1";
+    // ✅ (중요) rebindAll 때마다 input 리스너가 중복으로 붙지 않게 "영역별+which+field" 키로 막기
+    const tag = `wired_${which}_${field}_${areaId}`;
+    if (ta.dataset[tag] === "1") return;
+    ta.dataset[tag] = "1";
 
     ta.addEventListener("input", ()=>{
       autoSize(ta);
@@ -343,10 +352,9 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
     const ta = $(areaId);
     const statusEl = which === "Y" ? yStatusEl : tStatusEl;
 
-    // 중복 리스너 방지
-    const keyTag = `${kind}:${which}:${field}:${areaId}`;
-    if (ta.dataset[keyTag] === "1") return;
-    ta.dataset[keyTag] = "1";
+    const tag = `wired_${kind}_${which}_${field}_${areaId}`;
+    if (ta.dataset[tag] === "1") return;
+    ta.dataset[tag] = "1";
 
     ta.addEventListener("input", ()=>{
       autoSize(ta);
@@ -452,6 +460,13 @@ async function copyTodayPlanToClipboard(){
 document.getElementById("copyTodayBtn")?.addEventListener("click", copyTodayPlanToClipboard);
 
 /* ==========================
+   ✅ 관리자 버튼 → admin.html 이동
+========================== */
+document.getElementById("adminBtn")?.addEventListener("click", ()=>{
+  location.href = "./admin.html";
+});
+
+/* ==========================
    날짜 변경 감지
 ========================== */
 function startMidnightWatcher(){
@@ -536,13 +551,8 @@ function attachSwipeToContent(){
   const shouldIgnoreStart = (target)=>{
     if (!target) return true;
 
-    // ✅ 글쓰기/입력 요소는 무조건 금지
     if (target.closest(".rtBox, textarea, input, select, button, a, label")) return true;
-
-    // ✅ 어제 접기 summary(제목줄)에서 시작하면 금지
     if (target.closest("details.fold > summary")) return true;
-
-    // ✅ 카드 헤더(제목/상태 줄)에서 시작하면 금지
     if (target.closest(".cardHead")) return true;
 
     return false;
@@ -603,10 +613,13 @@ function attachSwipeToContent(){
 let currentTab = "IBS";
 refreshDateUI();
 
+// ✅ admin pin 기본값 보장(없으면 1225 생성)
+ensureAdminPin();
+
 // ✅ 모든 textarea를 리치에디터로 변환
 document.querySelectorAll("textarea[id]").forEach(t => enhanceTextareaToRich(t.id));
 
-// ✅ 상단 고정 툴바 이벤트 연결 (HTML에 #topRtBar 필요)
+// ✅ 상단 고정 툴바 이벤트 연결
 attachTopToolbar();
 
 rebindAll(currentTab);

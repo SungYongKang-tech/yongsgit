@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>관리자 설정</title>
+  <link rel="stylesheet" href="./style.css"/>
+  <style>
+    .adminCard{ max-width:520px; margin:18px auto; }
+    .row{ display:flex; gap:10px; align-items:center; }
+    .row > *{ flex:1; }
+    .input{
+      width:100%;
+      padding:12px 12px;
+      border:1px solid rgba(15,23,42,.14);
+      border-radius:14px;
+      background: rgba(255,255,255,.9);
+      font-size:15px;
+      outline:none;
+      box-shadow: 0 10px 18px rgba(15,23,42,.06);
+    }
+    .btn{
+      border:1px solid rgba(37,99,235,.25);
+      background: linear-gradient(180deg, rgba(37,99,235,.10), rgba(255,255,255,.75));
+      border-radius:14px;
+      padding:12px 12px;
+      font-weight:900;
+      cursor:pointer;
+      box-shadow: 0 10px 22px rgba(37,99,235,.10);
+      white-space:nowrap;
+    }
+    .btn:active{ transform: translateY(1px); }
+    .msg{ margin-top:10px; color:var(--mut); font-weight:800; font-size:13px; }
+    .danger{ color:#dc2626; }
+    .ok{ color:#16a34a; }
+    .hide{ display:none !important; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="wrap">
+      <div class="titleRow">
+        <h1>관리자 설정</h1>
+        <div class="copyGroup">
+          <a class="copyBtn" href="./index.html">돌아가기</a>
+        </div>
+      </div>
+      <div class="sub">비밀번호 및 공지 팝업 설정</div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card adminCard">
+
+      <!-- ✅ 로그인 -->
+      <div id="loginBox">
+        <div class="label">관리자 비밀번호(숫자 4자리)</div>
+        <div class="row">
+          <input id="pwInput" class="input" inputmode="numeric" maxlength="4" placeholder="예: 1225"/>
+          <button id="loginBtn" class="btn" type="button">확인</button>
+        </div>
+        <div id="loginMsg" class="msg"></div>
+        <div class="hint" style="margin-top:12px">
+          ※ 초기 비밀번호는 <b>1225</b> 입니다. (관리자에서 변경 가능)
+        </div>
+      </div>
+
+      <!-- ✅ 설정 화면 -->
+      <div id="adminPanel" class="hide">
+
+        <div class="label">비밀번호 변경</div>
+        <div class="row">
+          <input id="curPw" class="input" inputmode="numeric" maxlength="4" placeholder="현재 비번(4자리)"/>
+          <input id="newPw" class="input" inputmode="numeric" maxlength="4" placeholder="새 비번(4자리)"/>
+        </div>
+        <div style="margin-top:10px" class="row">
+          <button id="changePwBtn" class="btn" type="button">비번 변경</button>
+          <button id="logoutBtn" class="btn" type="button">로그아웃</button>
+        </div>
+        <div id="pwMsg" class="msg"></div>
+
+        <hr style="border:none;border-top:1px dashed rgba(15,23,42,.18);margin:18px 0;"/>
+
+        <!-- (다음 단계) 공지 팝업 설정 UI를 여기에 추가하면 됩니다 -->
+        <div class="label">공지 팝업(준비)</div>
+        <div class="hint">
+          ※ 다음 단계에서 “팝업 내용/시작시간/종료시간” 저장 기능을 여기에 붙이면 됩니다.
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { db } from "./firebase.js";
+    import { ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const $ = (id)=>document.getElementById(id);
+
+    // ✅ 저장 경로
+    const ADMIN_PATH = "admin/settings"; // { pin: "1225" }
+
+    function only4digits(v){
+      return (v || "").replace(/\D/g,"").slice(0,4);
+    }
+
+    async function getPin(){
+      const snap = await get(ref(db, ADMIN_PATH));
+      const v = snap.val();
+      // 없으면 초기값 생성
+      if (!v || !v.pin){
+        await set(ref(db, ADMIN_PATH), { pin: "1225" });
+        return "1225";
+      }
+      return String(v.pin);
+    }
+
+    // 간단 로그인 상태(로컬) : 새로고침 대비
+    const LS_KEY = "koen_admin_ok";
+
+    function setMsg(el, text, cls=""){
+      el.className = "msg " + cls;
+      el.textContent = text || "";
+    }
+
+    // --- Login
+    $("pwInput").addEventListener("input", (e)=>{
+      e.target.value = only4digits(e.target.value);
+    });
+
+    $("loginBtn").addEventListener("click", async ()=>{
+      const input = only4digits($("pwInput").value);
+      const pin = await getPin();
+
+      if (input.length !== 4){
+        setMsg($("loginMsg"), "비밀번호는 숫자 4자리로 입력해 주세요.", "danger");
+        return;
+      }
+      if (input !== pin){
+        setMsg($("loginMsg"), "비밀번호가 틀렸습니다.", "danger");
+        return;
+      }
+
+      localStorage.setItem(LS_KEY, "1");
+      $("loginBox").classList.add("hide");
+      $("adminPanel").classList.remove("hide");
+      setMsg($("loginMsg"), "");
+    });
+
+    // --- Logout
+    $("logoutBtn").addEventListener("click", ()=>{
+      localStorage.removeItem(LS_KEY);
+      $("adminPanel").classList.add("hide");
+      $("loginBox").classList.remove("hide");
+      $("pwInput").value = "";
+      $("curPw").value = "";
+      $("newPw").value = "";
+      setMsg($("pwMsg"), "");
+      setMsg($("loginMsg"), "로그아웃 되었습니다.", "");
+    });
+
+    // --- Change PIN
+    $("curPw").addEventListener("input", (e)=> e.target.value = only4digits(e.target.value));
+    $("newPw").addEventListener("input", (e)=> e.target.value = only4digits(e.target.value));
+
+    $("changePwBtn").addEventListener("click", async ()=>{
+      const cur = only4digits($("curPw").value);
+      const nw  = only4digits($("newPw").value);
+      const pin = await getPin();
+
+      if (cur.length !== 4 || nw.length !== 4){
+        setMsg($("pwMsg"), "현재/새 비번 모두 숫자 4자리로 입력해 주세요.", "danger");
+        return;
+      }
+      if (cur !== pin){
+        setMsg($("pwMsg"), "현재 비밀번호가 맞지 않습니다.", "danger");
+        return;
+      }
+      if (nw === cur){
+        setMsg($("pwMsg"), "새 비밀번호가 현재와 같습니다.", "danger");
+        return;
+      }
+
+      await update(ref(db, ADMIN_PATH), { pin: nw });
+      $("curPw").value = "";
+      $("newPw").value = "";
+      setMsg($("pwMsg"), "비밀번호가 변경되었습니다.", "ok");
+    });
+
+    // --- Auto login restore
+    (async ()=>{
+      const ok = localStorage.getItem(LS_KEY) === "1";
+      if (ok){
+        $("loginBox").classList.add("hide");
+        $("adminPanel").classList.remove("hide");
+      }else{
+        // 최초 접근 시 초기값 보장
+        await getPin();
+      }
+    })();
+  </script>
+</body>
+</html>
