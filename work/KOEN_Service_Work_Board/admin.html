@@ -6,10 +6,10 @@
   <title>관리자 설정</title>
   <link rel="stylesheet" href="./style.css"/>
   <style>
-    .adminCard{ max-width:520px; margin:18px auto; }
+    .adminCard{ max-width:620px; margin:18px auto; }
     .row{ display:flex; gap:10px; align-items:center; }
     .row > *{ flex:1; }
-    .input{
+    .input, .ta{
       width:100%;
       padding:12px 12px;
       border:1px solid rgba(15,23,42,.14);
@@ -19,6 +19,7 @@
       outline:none;
       box-shadow: 0 10px 18px rgba(15,23,42,.06);
     }
+    .ta{ min-height:140px; resize:none; line-height:1.55; }
     .btn{
       border:1px solid rgba(37,99,235,.25);
       background: linear-gradient(180deg, rgba(37,99,235,.10), rgba(255,255,255,.75));
@@ -34,6 +35,70 @@
     .danger{ color:#dc2626; }
     .ok{ color:#16a34a; }
     .hide{ display:none !important; }
+    .hr{ border:none;border-top:1px dashed rgba(15,23,42,.18);margin:18px 0; }
+
+    .switchRow{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:10px 12px; border:1px solid rgba(15,23,42,.10);
+      border-radius:14px; background: rgba(255,255,255,.75);
+    }
+    .switchRow .left{ display:flex; flex-direction:column; gap:4px; }
+    .switchRow .ttl{ font-weight:900; }
+    .switchRow .sub{ font-size:12px; color:var(--mut); font-weight:800; margin:0; }
+    .toggle{
+      width:52px; height:30px; border-radius:999px; position:relative;
+      background: rgba(100,116,139,.28);
+      border:1px solid rgba(15,23,42,.12);
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .toggle::after{
+      content:""; position:absolute; top:50%; left:3px;
+      width:24px; height:24px; border-radius:50%;
+      transform: translateY(-50%);
+      background:#fff;
+      box-shadow: 0 8px 18px rgba(15,23,42,.18);
+      transition: left .18s ease;
+    }
+    .toggle.on{ background: rgba(22,163,74,.35); border-color: rgba(22,163,74,.35); }
+    .toggle.on::after{ left:25px; }
+
+    .mini{ font-size:12px; color:var(--mut); font-weight:800; }
+    .twoCol{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media(max-width:520px){ .twoCol{ grid-template-columns:1fr; } }
+
+    /* 미리보기 모달 */
+    .backdrop{
+      position:fixed; inset:0; background: rgba(0,0,0,.45);
+      display:none; align-items:center; justify-content:center; padding:16px; z-index:9999;
+    }
+    .backdrop.show{ display:flex; }
+    .modal{
+      width:min(560px, 100%);
+      background:#fff;
+      border-radius:18px;
+      border:1px solid rgba(15,23,42,.12);
+      box-shadow: 0 18px 50px rgba(0,0,0,.20);
+      overflow:hidden;
+    }
+    .modalHead{
+      padding:12px 14px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      background: linear-gradient(180deg, rgba(37,99,235,.10), rgba(255,255,255,.85));
+      border-bottom:1px solid rgba(15,23,42,.10);
+      font-weight:900;
+    }
+    .modalBody{ padding:14px; }
+    .modalBody pre{
+      margin:0; white-space:pre-wrap; word-break:break-word;
+      font-family: Pretendard, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
+      font-size:14px; line-height:1.6;
+    }
+    .xBtn{
+      border:1px solid rgba(15,23,42,.12);
+      background:#fff; border-radius:12px;
+      padding:8px 10px; font-weight:900; cursor:pointer;
+    }
   </style>
 </head>
 <body>
@@ -68,23 +133,76 @@
       <!-- ✅ 설정 화면 -->
       <div id="adminPanel" class="hide">
 
-        <div class="label">비밀번호 변경</div>
-        <div class="row">
-          <input id="curPw" class="input" inputmode="numeric" maxlength="4" placeholder="현재 비번(4자리)"/>
-          <input id="newPw" class="input" inputmode="numeric" maxlength="4" placeholder="새 비번(4자리)"/>
-        </div>
+       <div class="label">비밀번호 변경</div>
+
+<div class="row">
+  <!-- 현재 비번 표시 -->
+  <input id="nowPw" class="input" readonly />
+
+  <!-- 새 비번 입력 -->
+  <input id="newPw" class="input"
+         inputmode="numeric"
+         maxlength="4"
+         placeholder="새 비번(4자리)"/>
+</div>
+
+<div style="margin-top:10px" class="row">
+  <button id="changePwBtn" class="btn" type="button">비번 변경</button>
+  <button id="logoutBtn" class="btn" type="button">로그아웃</button>
+</div>
+
+<div id="pwMsg" class="msg"></div>
+
         <div style="margin-top:10px" class="row">
           <button id="changePwBtn" class="btn" type="button">비번 변경</button>
           <button id="logoutBtn" class="btn" type="button">로그아웃</button>
         </div>
         <div id="pwMsg" class="msg"></div>
 
-        <hr style="border:none;border-top:1px dashed rgba(15,23,42,.18);margin:18px 0;"/>
+        <hr class="hr"/>
 
-        <!-- (다음 단계) 공지 팝업 설정 UI를 여기에 추가하면 됩니다 -->
-        <div class="label">공지 팝업(준비)</div>
-        <div class="hint">
-          ※ 다음 단계에서 “팝업 내용/시작시간/종료시간” 저장 기능을 여기에 붙이면 됩니다.
+        <!-- ✅ 공지 팝업 설정 (완성) -->
+        <div class="label">공지 팝업 설정</div>
+
+        <div class="switchRow" style="margin-bottom:10px">
+          <div class="left">
+            <div class="ttl">팝업 사용</div>
+            <div class="sub">ON이면, 지정한 기간 동안 index.html에서 자동으로 팝업이 뜹니다.</div>
+          </div>
+          <div id="popupToggle" class="toggle" role="switch" aria-checked="false" tabindex="0"></div>
+        </div>
+
+        <div class="twoCol">
+          <div>
+            <div class="mini">시작(한국시간)</div>
+            <input id="popStart" class="input" type="datetime-local"/>
+          </div>
+          <div>
+            <div class="mini">종료(한국시간)</div>
+            <input id="popEnd" class="input" type="datetime-local"/>
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="mini">팝업 제목(선택)</div>
+          <input id="popTitle" class="input" placeholder="예: 공지사항"/>
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="mini">팝업 내용</div>
+          <textarea id="popBody" class="ta" placeholder="공지 내용을 입력하세요."></textarea>
+        </div>
+
+        <div style="margin-top:10px" class="row">
+          <button id="savePopupBtn" class="btn" type="button">저장</button>
+          <button id="previewBtn" class="btn" type="button">미리보기</button>
+          <button id="disableBtn" class="btn" type="button">끄기(OFF)</button>
+        </div>
+        <div id="popMsg" class="msg"></div>
+
+        <div class="hint" style="margin-top:10px">
+          ※ 저장 경로: <b>admin/popup</b><br/>
+          ※ index.html 쪽에 “팝업 표시 코드”가 있어야 실제로 뜹니다. (원하시면 index/app.js도 바로 붙여드리겠습니다)
         </div>
 
       </div>
@@ -92,113 +210,191 @@
     </div>
   </div>
 
-  <script type="module">
-    import { db } from "./firebase.js";
-    import { ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  <!-- ✅ 미리보기 모달 -->
+  <div id="pvBack" class="backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div id="pvTitle">공지</div>
+        <button id="pvClose" class="xBtn" type="button">닫기</button>
+      </div>
+      <div class="modalBody">
+        <pre id="pvBody"></pre>
+        <div class="mini" id="pvPeriod" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>
 
-    const $ = (id)=>document.getElementById(id);
+<script type="module">
+  import { db } from "./firebase.js";
+  import { ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // ✅ 저장 경로
-    const ADMIN_PATH = "admin/settings"; // { pin: "1225" }
+  const $ = (id)=>document.getElementById(id);
 
-    function only4digits(v){
-      return (v || "").replace(/\D/g,"").slice(0,4);
+  const ADMIN_PATH = "admin/settings"; // { pin: "1225" }
+  const POPUP_PATH = "admin/popup";    // { enabled, title, body, startAt, endAt, updatedAt }
+  const LS_KEY = "koen_admin_ok";
+
+  function only4digits(v){ return (v || "").replace(/\D/g,"").slice(0,4); }
+  function setMsg(el, text, cls=""){
+    el.className = "msg " + cls;
+    el.textContent = text || "";
+  }
+  function valToIso(v){ return (v || "").trim(); }
+  function isoToVal(iso){ return (iso || "").trim(); }
+
+  async function getPin(){
+    const snap = await get(ref(db, ADMIN_PATH));
+    const v = snap.val();
+    if (!v || !v.pin){
+      await set(ref(db, ADMIN_PATH), { pin: "1225" });
+      return "1225";
+    }
+    return String(v.pin);
+  }
+
+  // ---- Popup toggle
+  function setToggle(on){
+    const t = $("popupToggle");
+    t.classList.toggle("on", !!on);
+    t.setAttribute("aria-checked", on ? "true" : "false");
+    t.dataset.on = on ? "1" : "0";
+  }
+  function getToggle(){ return $("popupToggle").dataset.on === "1"; }
+  function toggleFlip(){ setToggle(!getToggle()); }
+
+  $("popupToggle").addEventListener("click", toggleFlip);
+  $("popupToggle").addEventListener("keydown", (e)=>{
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFlip(); }
+  });
+
+  // ---- Popup load/save
+  async function loadPopup(){
+    const snap = await get(ref(db, POPUP_PATH));
+    const v = snap.val() || {};
+    setToggle(!!v.enabled);
+    $("popTitle").value = v.title || "";
+    $("popBody").value  = v.body  || "";
+    $("popStart").value = isoToVal(v.startAt || "");
+    $("popEnd").value   = isoToVal(v.endAt || "");
+    setMsg($("popMsg"), "현재 저장된 팝업 설정을 불러왔습니다.", "");
+  }
+
+  function validatePopup(){
+    const enabled = getToggle();
+    const title = ($("popTitle").value || "").trim() || "공지";
+    const body  = ($("popBody").value || "").trim();
+    const startAt = valToIso($("popStart").value);
+    const endAt   = valToIso($("popEnd").value);
+
+    if (enabled){
+      if (!body) return { ok:false, msg:"팝업 내용이 비어 있습니다.", cls:"danger" };
+      if (!startAt || !endAt) return { ok:false, msg:"시작/종료 시간을 모두 입력해 주세요.", cls:"danger" };
+      if (startAt >= endAt) return { ok:false, msg:"종료 시간이 시작 시간보다 뒤여야 합니다.", cls:"danger" };
+    }
+    return { ok:true, data:{ enabled, title, body, startAt, endAt } };
+  }
+
+  $("savePopupBtn").addEventListener("click", async ()=>{
+    const v = validatePopup();
+    if (!v.ok){ setMsg($("popMsg"), v.msg, v.cls); return; }
+    const now = new Date().toISOString();
+    await set(ref(db, POPUP_PATH), { ...v.data, updatedAt: now });
+    setMsg($("popMsg"), "팝업 설정이 저장되었습니다.", "ok");
+  });
+
+  $("disableBtn").addEventListener("click", async ()=>{
+    setToggle(false);
+    const now = new Date().toISOString();
+    await update(ref(db, POPUP_PATH), { enabled:false, updatedAt: now });
+    setMsg($("popMsg"), "팝업을 OFF로 변경했습니다.", "ok");
+  });
+
+  // ---- Preview modal
+  function openPreview(){
+    const title = ($("popTitle").value || "").trim() || "공지";
+    const body  = ($("popBody").value || "").trim() || "(내용 없음)";
+    const s = $("popStart").value || "-";
+    const e = $("popEnd").value || "-";
+    $("pvTitle").textContent = title;
+    $("pvBody").textContent = body;
+    $("pvPeriod").textContent = `표시 기간: ${s} ~ ${e}`;
+    $("pvBack").classList.add("show");
+  }
+  function closePreview(){ $("pvBack").classList.remove("show"); }
+
+  $("previewBtn").addEventListener("click", openPreview);
+  $("pvClose").addEventListener("click", closePreview);
+  $("pvBack").addEventListener("click", (e)=>{ if (e.target === $("pvBack")) closePreview(); });
+
+  // ---- Password show/change
+  $("pwInput").addEventListener("input", (e)=>{ e.target.value = only4digits(e.target.value); });
+  $("newPw").addEventListener("input", (e)=>{ e.target.value = only4digits(e.target.value); });
+
+  async function showCurrentPin(){
+    const pin = await getPin();
+    $("nowPw").value = pin;
+  }
+
+  $("changePwBtn").addEventListener("click", async ()=>{
+    const nw = only4digits($("newPw").value);
+    if (nw.length !== 4){
+      setMsg($("pwMsg"), "새 비밀번호는 숫자 4자리여야 합니다.", "danger");
+      return;
+    }
+    await update(ref(db, ADMIN_PATH), { pin: nw });
+    $("newPw").value = "";
+    $("nowPw").value = nw;
+    setMsg($("pwMsg"), "비밀번호가 변경되었습니다.", "ok");
+  });
+
+  // ---- Login / Logout
+  $("loginBtn").addEventListener("click", async ()=>{
+    const input = only4digits($("pwInput").value);
+    const pin = await getPin();
+
+    if (input.length !== 4){
+      setMsg($("loginMsg"), "비밀번호는 숫자 4자리로 입력해 주세요.", "danger");
+      return;
+    }
+    if (input !== pin){
+      setMsg($("loginMsg"), "비밀번호가 틀렸습니다.", "danger");
+      return;
     }
 
-    async function getPin(){
-      const snap = await get(ref(db, ADMIN_PATH));
-      const v = snap.val();
-      // 없으면 초기값 생성
-      if (!v || !v.pin){
-        await set(ref(db, ADMIN_PATH), { pin: "1225" });
-        return "1225";
-      }
-      return String(v.pin);
-    }
+    localStorage.setItem(LS_KEY, "1");
+    $("loginBox").classList.add("hide");
+    $("adminPanel").classList.remove("hide");
+    setMsg($("loginMsg"), "");
+    await loadPopup();
+    await showCurrentPin();
+  });
 
-    // 간단 로그인 상태(로컬) : 새로고침 대비
-    const LS_KEY = "koen_admin_ok";
+  $("logoutBtn").addEventListener("click", ()=>{
+    localStorage.removeItem(LS_KEY);
+    $("adminPanel").classList.add("hide");
+    $("loginBox").classList.remove("hide");
+    $("pwInput").value = "";
+    $("newPw").value = "";
+    $("nowPw").value = "";
+    setMsg($("pwMsg"), "");
+    setMsg($("loginMsg"), "로그아웃 되었습니다.", "");
+  });
 
-    function setMsg(el, text, cls=""){
-      el.className = "msg " + cls;
-      el.textContent = text || "";
-    }
-
-    // --- Login
-    $("pwInput").addEventListener("input", (e)=>{
-      e.target.value = only4digits(e.target.value);
-    });
-
-    $("loginBtn").addEventListener("click", async ()=>{
-      const input = only4digits($("pwInput").value);
-      const pin = await getPin();
-
-      if (input.length !== 4){
-        setMsg($("loginMsg"), "비밀번호는 숫자 4자리로 입력해 주세요.", "danger");
-        return;
-      }
-      if (input !== pin){
-        setMsg($("loginMsg"), "비밀번호가 틀렸습니다.", "danger");
-        return;
-      }
-
-      localStorage.setItem(LS_KEY, "1");
+  // ---- Auto login restore
+  (async ()=>{
+    const ok = localStorage.getItem(LS_KEY) === "1";
+    if (ok){
       $("loginBox").classList.add("hide");
       $("adminPanel").classList.remove("hide");
-      setMsg($("loginMsg"), "");
-    });
+      await getPin();
+      await loadPopup();
+      await showCurrentPin();
+    }else{
+      await getPin();
+      setToggle(false);
+    }
+  })();
+</script>
 
-    // --- Logout
-    $("logoutBtn").addEventListener("click", ()=>{
-      localStorage.removeItem(LS_KEY);
-      $("adminPanel").classList.add("hide");
-      $("loginBox").classList.remove("hide");
-      $("pwInput").value = "";
-      $("curPw").value = "";
-      $("newPw").value = "";
-      setMsg($("pwMsg"), "");
-      setMsg($("loginMsg"), "로그아웃 되었습니다.", "");
-    });
-
-    // --- Change PIN
-    $("curPw").addEventListener("input", (e)=> e.target.value = only4digits(e.target.value));
-    $("newPw").addEventListener("input", (e)=> e.target.value = only4digits(e.target.value));
-
-    $("changePwBtn").addEventListener("click", async ()=>{
-      const cur = only4digits($("curPw").value);
-      const nw  = only4digits($("newPw").value);
-      const pin = await getPin();
-
-      if (cur.length !== 4 || nw.length !== 4){
-        setMsg($("pwMsg"), "현재/새 비번 모두 숫자 4자리로 입력해 주세요.", "danger");
-        return;
-      }
-      if (cur !== pin){
-        setMsg($("pwMsg"), "현재 비밀번호가 맞지 않습니다.", "danger");
-        return;
-      }
-      if (nw === cur){
-        setMsg($("pwMsg"), "새 비밀번호가 현재와 같습니다.", "danger");
-        return;
-      }
-
-      await update(ref(db, ADMIN_PATH), { pin: nw });
-      $("curPw").value = "";
-      $("newPw").value = "";
-      setMsg($("pwMsg"), "비밀번호가 변경되었습니다.", "ok");
-    });
-
-    // --- Auto login restore
-    (async ()=>{
-      const ok = localStorage.getItem(LS_KEY) === "1";
-      if (ok){
-        $("loginBox").classList.add("hide");
-        $("adminPanel").classList.remove("hide");
-      }else{
-        // 최초 접근 시 초기값 보장
-        await getPin();
-      }
-    })();
-  </script>
 </body>
 </html>
