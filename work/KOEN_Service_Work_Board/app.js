@@ -632,3 +632,8 @@ tabs.forEach(btn=>{
 });
 
 startMidnightWatcher();
+
+window.addEventListener("DOMContentLoaded", ()=>{
+  checkAndShowPopupOnce();
+});
+
