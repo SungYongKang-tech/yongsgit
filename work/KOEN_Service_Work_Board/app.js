@@ -230,8 +230,9 @@ function bindIBS(){
   const uY = onValue(rY, (snap)=>{
     const v = snap.val() || {};
     setFieldValue("ibsY_handover", v.handover || "");
-    $("ibsY_status").value   = v.status || "";
-    $("ibsY_special").value  = v.special || "";
+setFieldValue("ibsY_status",   v.status || "");
+setFieldValue("ibsY_special",  v.special || "");
+
     const ts = v.updatedAt || null;
     $("ibsYStatus").textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -240,9 +241,9 @@ function bindIBS(){
   const rT = ref(db, pathIBS(ISO_TODAY));
   const uT = onValue(rT, (snap)=>{
     const v = snap.val() || {};
-    $("ibsT_handover").value = v.handover || "";
-    $("ibsT_status").value   = v.status || "";
-    $("ibsT_special").value  = v.special || "";
+    setFieldValue("ibsT_handover", v.handover || "");
+setFieldValue("ibsT_status",   v.status || "");
+setFieldValue("ibsT_special",  v.special || "");
     const ts = v.updatedAt || null;
     $("ibsTStatus").textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -306,8 +307,8 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
 
   const uY = onValue(yRef, (snap)=>{
     const v = snap.val() || {};
-    $(yTodayId).value    = v.todayWork || "";
-    $(yTomorrowId).value = v.tomorrowWork || "";
+    setFieldValue(yTodayId,    v.todayWork || "");
+setFieldValue(yTomorrowId, v.tomorrowWork || "");
     const ts = v.updatedAt || null;
     yStatusEl.textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -315,8 +316,8 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
 
   const uT = onValue(tRef, (snap)=>{
     const v = snap.val() || {};
-    $(tTodayId).value    = v.todayWork || "";
-    $(tTomorrowId).value = v.tomorrowWork || "";
+    setFieldValue(tTodayId,    v.todayWork || "");
+setFieldValue(tTomorrowId, v.tomorrowWork || "");
     const ts = v.updatedAt || null;
     tStatusEl.textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
