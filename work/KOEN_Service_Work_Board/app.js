@@ -4,7 +4,9 @@ import { ref, onValue, update, get, serverTimestamp } from "https://www.gstatic.
 const $ = (id) => document.getElementById(id);
 const tabs = document.querySelectorAll(".tab");
 
-// ---- Date helpers
+/* =========================
+   Date helpers
+========================= */
 const pad2 = (n)=>String(n).padStart(2,"0");
 const wday = ["일","월","화","수","목","금","토"];
 
@@ -17,9 +19,6 @@ function isoYesterday(){
   return isoFromDate(d);
 }
 
-function prettyKFromDate(d){
-  return prettyK(isoFromDate(d));
-}
 function prettyK(iso){
   const [Y,M,D] = iso.split("-").map(Number);
   const dt = new Date(Y, M-1, D);
@@ -29,8 +28,9 @@ function prettyK(iso){
 
 /* ==========================
    Rich Text (Bold / Red / Blue)
-   - textarea를 숨기고 contenteditable로 대체
-   - 저장은 textarea.value(HTML)로 저장 (기존 로직 유지)
+   - textarea 숨기고 contenteditable 사용
+   - DB에는 HTML로 저장
+   - ✅ 상단 고정 툴바(Top Bar) 1개만 사용
 ========================== */
 
 function looksLikeHtml(s){
@@ -48,12 +48,41 @@ function escapeHtml(s){
 function htmlToText(html){
   const div = document.createElement("div");
   div.innerHTML = html || "";
-  // 줄바꿈 보강: div/p/br를 개행으로
   div.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
   div.querySelectorAll("p,div").forEach(el => {
     if (el !== div) el.appendChild(document.createTextNode("\n"));
   });
   return div.textContent.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/* ✅ 마지막으로 편집/터치한 에디터 기억 */
+let ACTIVE_RICH_BOX = null;
+
+function applyToActiveRich(cmd){
+  const box = ACTIVE_RICH_BOX;
+  if (!box) return;
+
+  box.focus();
+
+  try{
+    if (cmd === "bold") document.execCommand("bold");
+    if (cmd === "red")  document.execCommand("foreColor", false, "#dc2626");
+    if (cmd === "blue") document.execCommand("foreColor", false, "#2563eb");
+  }catch(e){}
+
+  const ta = box._ta;
+  if (ta) syncRichToTextarea(ta);
+}
+
+function attachTopToolbar(){
+  const bar = document.getElementById("topRtBar");
+  if (!bar) return;
+
+  bar.addEventListener("click", (e)=>{
+    const btn = e.target.closest("button[data-cmd]");
+    if (!btn) return;
+    applyToActiveRich(btn.dataset.cmd);
+  });
 }
 
 function enhanceTextareaToRich(id){
@@ -65,33 +94,13 @@ function enhanceTextareaToRich(id){
   const wrap = document.createElement("div");
   wrap.className = "rtWrap";
 
-  const bar = document.createElement("div");
-  bar.className = "rtBar";
-
-  const btnBold = document.createElement("button");
-  btnBold.type = "button";
-  btnBold.className = "rtBtn";
-  btnBold.textContent = "B";
-
-  const btnRed = document.createElement("button");
-  btnRed.type = "button";
-  btnRed.className = "rtBtn red";
-  btnRed.textContent = "빨강";
-
-  const btnBlue = document.createElement("button");
-  btnBlue.type = "button";
-  btnBlue.className = "rtBtn blue";
-  btnBlue.textContent = "파랑";
-
-  bar.append(btnBold, btnRed, btnBlue);
-
   const box = document.createElement("div");
   box.className = "rtBox";
   box.contentEditable = "true";
   box.setAttribute("role", "textbox");
   box.setAttribute("aria-label", "rich editor");
 
-  // 초기값: 기존 textarea의 값이 HTML이면 그대로, 아니면 텍스트로
+  // 초기값: textarea의 값이 HTML이면 그대로, 아니면 텍스트로
   const raw = ta.value || "";
   box.innerHTML = looksLikeHtml(raw) ? raw : escapeHtml(raw).replaceAll("\n","<br>");
 
@@ -100,55 +109,53 @@ function enhanceTextareaToRich(id){
   ta.dataset.rich = "1";
   ta._richBox = box;
 
-  // textarea를 wrap으로 교체
+  // box <-> textarea 연결
+  box._ta = ta;
+
+  // textarea를 wrap으로 감싸고, box 표시
   ta.parentNode.insertBefore(wrap, ta);
-  wrap.appendChild(ta);     // textarea는 wrap 안에 숨김으로 보관
-  wrap.appendChild(bar);
+  wrap.appendChild(ta);
   wrap.appendChild(box);
 
-  const applyCmd = (cmd, value=null)=>{
-    box.focus();
-    // 선택영역 유지
-    try{
-      document.execCommand(cmd, false, value);
-    }catch(e){}
-    // 변경 반영
-    syncRichToTextarea(ta);
-  };
+  // ✅ 포커스/터치된 에디터 기억
+  box.addEventListener("focusin", ()=>{ ACTIVE_RICH_BOX = box; });
+  box.addEventListener("pointerdown", ()=>{ ACTIVE_RICH_BOX = box; });
+  box.addEventListener("touchstart", ()=>{ ACTIVE_RICH_BOX = box; }, {passive:true});
 
-  btnBold.addEventListener("click", ()=> applyCmd("bold"));
-  btnRed.addEventListener("click",  ()=> applyCmd("foreColor", "#dc2626"));
-  btnBlue.addEventListener("click", ()=> applyCmd("foreColor", "#2563eb"));
-
-  // 입력할 때마다 textarea에 HTML 동기화 + 기존 autosave 트리거
+  // 입력 시 textarea에 HTML 동기화 + autosave 트리거
   box.addEventListener("input", ()=>{
     syncRichToTextarea(ta);
   });
 
-  // 붙여넣기: 서식 최소화(텍스트 중심) 원하시면 아래 유지
+  // 붙여넣기: 텍스트 중심 (서식 제거)
   box.addEventListener("paste", (e)=>{
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData("text/plain");
     document.execCommand("insertText", false, text);
     syncRichToTextarea(ta);
   });
+
+  // 첫 에디터를 ACTIVE로 잡아두기(초기 편의)
+  if (!ACTIVE_RICH_BOX) ACTIVE_RICH_BOX = box;
 }
 
 function syncRichToTextarea(ta){
   if (!ta || !ta._richBox) return;
+
   ta.value = ta._richBox.innerHTML;
 
-  // ✅ 기존 로직(autosave)이 textarea의 input을 듣고 있으니 그대로 재사용
+  // ✅ 기존 autosave(wire)가 textarea input을 듣고 있음
   ta.dispatchEvent(new Event("input", { bubbles:true }));
 
-  // 높이 자동
   autoSizeRich(ta._richBox);
 }
 
 function setFieldValue(id, v){
   const el = document.getElementById(id);
   if (!el) return;
+
   el.value = v ?? "";
+
   // 리치 박스가 붙어있으면 같이 갱신
   if (el._richBox){
     const raw = el.value || "";
@@ -163,13 +170,16 @@ function autoSizeRich(box){
   box.style.height = Math.min(box.scrollHeight, window.innerHeight * 0.70) + "px";
 }
 
-
-// ---- Paths
+/* ==========================
+   Paths
+========================== */
 const pathIBS  = (iso)=>`daily/IBS/${iso}`;
 const pathMECH = (iso)=>`daily/MECH/${iso}`;
 const pathELEC = (iso)=>`daily/ELEC/${iso}`;
 
-// ---- Auto-save (debounce)
+/* ==========================
+   Auto-save (debounce)
+========================== */
 const timers = new Map();
 function setSaving(elStatus){ elStatus.textContent = "저장 중…"; }
 function scheduleSave(key, fn){
@@ -177,29 +187,30 @@ function scheduleSave(key, fn){
   timers.set(key, setTimeout(fn, 800));
 }
 
-// ✅ textarea 자동 높이
-// ✅ textarea + richBox 자동 높이
+/* ==========================
+   Auto height (textarea + rtBox)
+========================== */
 function autoSize(el){
   if (!el) return;
 
-  // 리치박스면
+  // rtBox
   if (el.classList && el.classList.contains("rtBox")){
     autoSizeRich(el);
     return;
   }
 
-  // textarea면
+  // textarea
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.70) + "px";
 }
 function autoSizeAll(){
-  // textarea(숨겨져 있어도 OK) + rtBox
   document.querySelectorAll("textarea").forEach(autoSize);
   document.querySelectorAll(".rtBox").forEach(autoSize);
 }
 
-
-// ---- Live date labels + midnight refresh
+/* ==========================
+   Live date labels + midnight refresh
+========================== */
 let ISO_TODAY = isoToday();
 let ISO_YDAY  = isoYesterday();
 
@@ -218,7 +229,9 @@ function refreshDateUI(){
   $("elecYDate").textContent = prettyK(ISO_YDAY);
 }
 
-// ---- Bindings
+/* ==========================
+   Bindings
+========================== */
 let unsubscribers = [];
 function clearListeners(){
   unsubscribers.forEach(u=>{ try{u();}catch(e){} });
@@ -230,9 +243,8 @@ function bindIBS(){
   const uY = onValue(rY, (snap)=>{
     const v = snap.val() || {};
     setFieldValue("ibsY_handover", v.handover || "");
-setFieldValue("ibsY_status",   v.status || "");
-setFieldValue("ibsY_special",  v.special || "");
-
+    setFieldValue("ibsY_status",   v.status || "");
+    setFieldValue("ibsY_special",  v.special || "");
     const ts = v.updatedAt || null;
     $("ibsYStatus").textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -242,8 +254,8 @@ setFieldValue("ibsY_special",  v.special || "");
   const uT = onValue(rT, (snap)=>{
     const v = snap.val() || {};
     setFieldValue("ibsT_handover", v.handover || "");
-setFieldValue("ibsT_status",   v.status || "");
-setFieldValue("ibsT_special",  v.special || "");
+    setFieldValue("ibsT_status",   v.status || "");
+    setFieldValue("ibsT_special",  v.special || "");
     const ts = v.updatedAt || null;
     $("ibsTStatus").textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -252,11 +264,16 @@ setFieldValue("ibsT_special",  v.special || "");
   const wire = (areaId, which, field) => {
     const ta = $(areaId);
     const statusEl = which === "Y" ? $("ibsYStatus") : $("ibsTStatus");
+
+    // 중복 리스너 방지
+    if (ta.dataset.wired === "1") return;
+    ta.dataset.wired = "1";
+
     ta.addEventListener("input", ()=>{
       autoSize(ta);
       setSaving(statusEl);
       const iso = which === "Y" ? ISO_YDAY : ISO_TODAY;
-      const key = `IBS:${which}:${field}`;
+      const key = `IBS:${which}:${field}:${areaId}`;
       scheduleSave(key, async ()=>{
         await update(ref(db, pathIBS(iso)), {
           [field]: ta.value,
@@ -284,12 +301,11 @@ async function ensureCarryOver(areaTodayId, todayPathFn, statusTodayEl){
   const todayVal = todaySnap.val() || {};
   const ydayVal  = ydaySnap.val() || {};
 
-  const todayTA = $(areaTodayId);
   const todayAlready = (todayVal.todayWork || "").trim();
   const fromPlan = (ydayVal.tomorrowWork || "").trim();
 
   if (!todayAlready && fromPlan){
-    todayTA.value = fromPlan;
+    setFieldValue(areaTodayId, fromPlan);
     statusTodayEl.textContent = "자동 반영(어제 내일작업 → 오늘 작업)…";
     await update(todayRef, {
       todayWork: fromPlan,
@@ -308,7 +324,7 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
   const uY = onValue(yRef, (snap)=>{
     const v = snap.val() || {};
     setFieldValue(yTodayId,    v.todayWork || "");
-setFieldValue(yTomorrowId, v.tomorrowWork || "");
+    setFieldValue(yTomorrowId, v.tomorrowWork || "");
     const ts = v.updatedAt || null;
     yStatusEl.textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -317,7 +333,7 @@ setFieldValue(yTomorrowId, v.tomorrowWork || "");
   const uT = onValue(tRef, (snap)=>{
     const v = snap.val() || {};
     setFieldValue(tTodayId,    v.todayWork || "");
-setFieldValue(tTomorrowId, v.tomorrowWork || "");
+    setFieldValue(tTomorrowId, v.tomorrowWork || "");
     const ts = v.updatedAt || null;
     tStatusEl.textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -326,6 +342,12 @@ setFieldValue(tTomorrowId, v.tomorrowWork || "");
   const wire = (areaId, which, field) => {
     const ta = $(areaId);
     const statusEl = which === "Y" ? yStatusEl : tStatusEl;
+
+    // 중복 리스너 방지
+    const keyTag = `${kind}:${which}:${field}:${areaId}`;
+    if (ta.dataset[keyTag] === "1") return;
+    ta.dataset[keyTag] = "1";
+
     ta.addEventListener("input", ()=>{
       autoSize(ta);
       setSaving(statusEl);
@@ -370,7 +392,9 @@ async function bindELEC(){
   await ensureCarryOver("elecT_today", pathELEC, $("elecTStatus"));
 }
 
-// ---- Tab switching
+/* ==========================
+   Tab switching
+========================== */
 function showView(tab){
   $("viewIBS").style.display  = tab==="IBS"  ? "" : "none";
   $("viewMECH").style.display = tab==="MECH" ? "" : "none";
@@ -388,10 +412,8 @@ async function rebindAll(forTab){
 }
 
 /* ==========================
-   ✅ 카톡용: 오늘/내일 작업 복사
+   카톡용: 오늘 작업 복사
 ========================== */
-
-// ✅ 오늘 작업사항(기계/전기) 일괄 복사
 async function copyTodayPlanToClipboard(){
   const btn = document.getElementById("copyTodayBtn");
   if (!btn) return;
@@ -400,8 +422,7 @@ async function copyTodayPlanToClipboard(){
   const elecSnap = await get(ref(db, pathELEC(ISO_TODAY)));
 
   const mech = htmlToText((mechSnap.val()?.todayWork || "")).trim();
-const elec = htmlToText((elecSnap.val()?.todayWork || "")).trim();
-
+  const elec = htmlToText((elecSnap.val()?.todayWork || "")).trim();
 
   const todayPretty = prettyK(ISO_TODAY);
 
@@ -428,13 +449,11 @@ const elec = htmlToText((elecSnap.val()?.todayWork || "")).trim();
   }
 }
 
-// ✅ 버튼 이벤트 연결
 document.getElementById("copyTodayBtn")?.addEventListener("click", copyTodayPlanToClipboard);
 
 /* ==========================
-   ✅ 날짜 변경 감지
+   날짜 변경 감지
 ========================== */
-
 function startMidnightWatcher(){
   setInterval(async ()=>{
     if (isHistoryMode) return;
@@ -450,18 +469,13 @@ function startMidnightWatcher(){
   }, 10_000);
 }
 
-// ✅ 과거 조회 모드
+/* ==========================
+   과거 조회 모드
+========================== */
 let isHistoryMode = false;
-let realISO_TODAY = ISO_TODAY;
-let realISO_YDAY  = ISO_YDAY;
 
 function setHistoryMode(isoSelected){
-  // 선택 날짜를 “오늘”로 취급해서 화면 구성
   isHistoryMode = true;
-
-  // 원래 오늘/어제를 백업
-  realISO_TODAY = isoToday();
-  realISO_YDAY  = isoYesterday();
 
   ISO_TODAY = isoSelected;
 
@@ -472,17 +486,8 @@ function setHistoryMode(isoSelected){
   refreshDateUI();
 }
 
-function clearHistoryMode(){
-  isHistoryMode = false;
-  ISO_TODAY = isoToday();
-  ISO_YDAY  = isoYesterday();
-  refreshDateUI();
-}
-
-
 const historyInput = document.getElementById("historyDate");
 if (historyInput){
-  // 기본값: 오늘
   historyInput.value = isoToday();
 
   historyInput.addEventListener("change", async ()=>{
@@ -495,11 +500,8 @@ if (historyInput){
 }
 
 /* ==========================
-   ✅ 작업내용 영역 좌/우 스와이프 탭 전환
-   - 모바일: 터치 스와이프
-   - PC: 마우스 드래그
+   스와이프 탭 전환
 ========================== */
-
 const TAB_ORDER = ["IBS","MECH","ELEC"];
 const clamp = (n,min,max)=>Math.max(min, Math.min(max,n));
 
@@ -519,7 +521,6 @@ async function nextTab(dir){
   if (next !== currentTab) await selectTab(next);
 }
 
-
 function attachSwipeToContent(){
   const contentWrap = document.querySelector("body > .wrap");
   if (!contentWrap) return;
@@ -536,7 +537,7 @@ function attachSwipeToContent(){
     if (!target) return true;
 
     // ✅ 글쓰기/입력 요소는 무조건 금지
-    if (target.closest("textarea, input, select, button, a, label")) return true;
+    if (target.closest(".rtBox, textarea, input, select, button, a, label")) return true;
 
     // ✅ 어제 접기 summary(제목줄)에서 시작하면 금지
     if (target.closest("details.fold > summary")) return true;
@@ -544,7 +545,6 @@ function attachSwipeToContent(){
     // ✅ 카드 헤더(제목/상태 줄)에서 시작하면 금지
     if (target.closest(".cardHead")) return true;
 
-    // ✅ 그 외는 허용 (카드 본문, 카드 여백 등)
     return false;
   };
 
@@ -558,11 +558,10 @@ function attachSwipeToContent(){
     const ay = Math.abs(dy);
 
     if(ax >= MIN_X && ay <= MAX_Y){
-      await nextTab(dx < 0 ? +1 : -1); // 좌:다음 / 우:이전
+      await nextTab(dx < 0 ? +1 : -1);
     }
   };
 
-  // Pointer (안드/크롬/PC)
   contentWrap.addEventListener("pointerdown", (e)=>{
     if (shouldIgnoreStart(e.target)) return;
     start(e.clientX, e.clientY);
@@ -580,7 +579,6 @@ function attachSwipeToContent(){
     down=false;
   }, {passive:true});
 
-  // iOS Touch 보강
   contentWrap.addEventListener("touchstart", (e)=>{
     const t = e.touches?.[0];
     if (!t) return;
@@ -599,25 +597,25 @@ function attachSwipeToContent(){
   }, {passive:true});
 }
 
-
-
-
-// ---- init
+/* ==========================
+   init
+========================== */
 let currentTab = "IBS";
 refreshDateUI();
 
 // ✅ 모든 textarea를 리치에디터로 변환
 document.querySelectorAll("textarea[id]").forEach(t => enhanceTextareaToRich(t.id));
 
+// ✅ 상단 고정 툴바 이벤트 연결 (HTML에 #topRtBar 필요)
+attachTopToolbar();
+
 rebindAll(currentTab);
 attachSwipeToContent();
-
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", async ()=>{
     await selectTab(btn.dataset.tab);
   });
 });
-
 
 startMidnightWatcher();
