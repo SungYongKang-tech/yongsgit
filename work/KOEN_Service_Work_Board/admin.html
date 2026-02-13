@@ -101,6 +101,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="top">
     <div class="wrap">
@@ -133,35 +134,24 @@
       <!-- ✅ 설정 화면 -->
       <div id="adminPanel" class="hide">
 
-       <div class="label">비밀번호 변경</div>
+        <!-- ✅ 비밀번호 변경 (중복 제거 완료) -->
+        <div class="label">비밀번호 변경</div>
 
-<div class="row">
-  <!-- 현재 비번 표시 -->
-  <input id="nowPw" class="input" readonly />
-
-  <!-- 새 비번 입력 -->
-  <input id="newPw" class="input"
-         inputmode="numeric"
-         maxlength="4"
-         placeholder="새 비번(4자리)"/>
-</div>
-
-<div style="margin-top:10px" class="row">
-  <button id="changePwBtn" class="btn" type="button">비번 변경</button>
-  <button id="logoutBtn" class="btn" type="button">로그아웃</button>
-</div>
-
-<div id="pwMsg" class="msg"></div>
+        <div class="row">
+          <input id="nowPw" class="input" readonly />
+          <input id="newPw" class="input" inputmode="numeric" maxlength="4" placeholder="새 비번(4자리)"/>
+        </div>
 
         <div style="margin-top:10px" class="row">
           <button id="changePwBtn" class="btn" type="button">비번 변경</button>
           <button id="logoutBtn" class="btn" type="button">로그아웃</button>
         </div>
+
         <div id="pwMsg" class="msg"></div>
 
         <hr class="hr"/>
 
-        <!-- ✅ 공지 팝업 설정 (완성) -->
+        <!-- ✅ 공지 팝업 설정 -->
         <div class="label">공지 팝업 설정</div>
 
         <div class="switchRow" style="margin-bottom:10px">
@@ -202,11 +192,10 @@
 
         <div class="hint" style="margin-top:10px">
           ※ 저장 경로: <b>admin/popup</b><br/>
-          ※ index.html 쪽에 “팝업 표시 코드”가 있어야 실제로 뜹니다. (원하시면 index/app.js도 바로 붙여드리겠습니다)
+          ※ index.html 쪽에 “팝업 표시 코드(app.js)”가 있어야 실제로 뜹니다.
         </div>
 
       </div>
-
     </div>
   </div>
 
@@ -224,177 +213,176 @@
     </div>
   </div>
 
-<script type="module">
-  import { db } from "./firebase.js";
-  import { ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  <script type="module">
+    import { db } from "./firebase.js";
+    import { ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  const $ = (id)=>document.getElementById(id);
+    const $ = (id)=>document.getElementById(id);
 
-  const ADMIN_PATH = "admin/settings"; // { pin: "1225" }
-  const POPUP_PATH = "admin/popup";    // { enabled, title, body, startAt, endAt, updatedAt }
-  const LS_KEY = "koen_admin_ok";
+    const ADMIN_PATH = "admin/settings"; // { pin: "1225" }
+    const POPUP_PATH = "admin/popup";    // { enabled, title, body, startAt, endAt, updatedAt }
+    const LS_KEY = "koen_admin_ok";
 
-  function only4digits(v){ return (v || "").replace(/\D/g,"").slice(0,4); }
-  function setMsg(el, text, cls=""){
-    el.className = "msg " + cls;
-    el.textContent = text || "";
-  }
-  function valToIso(v){ return (v || "").trim(); }
-  function isoToVal(iso){ return (iso || "").trim(); }
-
-  async function getPin(){
-    const snap = await get(ref(db, ADMIN_PATH));
-    const v = snap.val();
-    if (!v || !v.pin){
-      await set(ref(db, ADMIN_PATH), { pin: "1225" });
-      return "1225";
+    function only4digits(v){ return (v || "").replace(/\D/g,"").slice(0,4); }
+    function setMsg(el, text, cls=""){
+      el.className = "msg " + cls;
+      el.textContent = text || "";
     }
-    return String(v.pin);
-  }
+    function valToIso(v){ return (v || "").trim(); }
+    function isoToVal(iso){ return (iso || "").trim(); }
 
-  // ---- Popup toggle
-  function setToggle(on){
-    const t = $("popupToggle");
-    t.classList.toggle("on", !!on);
-    t.setAttribute("aria-checked", on ? "true" : "false");
-    t.dataset.on = on ? "1" : "0";
-  }
-  function getToggle(){ return $("popupToggle").dataset.on === "1"; }
-  function toggleFlip(){ setToggle(!getToggle()); }
-
-  $("popupToggle").addEventListener("click", toggleFlip);
-  $("popupToggle").addEventListener("keydown", (e)=>{
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFlip(); }
-  });
-
-  // ---- Popup load/save
-  async function loadPopup(){
-    const snap = await get(ref(db, POPUP_PATH));
-    const v = snap.val() || {};
-    setToggle(!!v.enabled);
-    $("popTitle").value = v.title || "";
-    $("popBody").value  = v.body  || "";
-    $("popStart").value = isoToVal(v.startAt || "");
-    $("popEnd").value   = isoToVal(v.endAt || "");
-    setMsg($("popMsg"), "현재 저장된 팝업 설정을 불러왔습니다.", "");
-  }
-
-  function validatePopup(){
-    const enabled = getToggle();
-    const title = ($("popTitle").value || "").trim() || "공지";
-    const body  = ($("popBody").value || "").trim();
-    const startAt = valToIso($("popStart").value);
-    const endAt   = valToIso($("popEnd").value);
-
-    if (enabled){
-      if (!body) return { ok:false, msg:"팝업 내용이 비어 있습니다.", cls:"danger" };
-      if (!startAt || !endAt) return { ok:false, msg:"시작/종료 시간을 모두 입력해 주세요.", cls:"danger" };
-      if (startAt >= endAt) return { ok:false, msg:"종료 시간이 시작 시간보다 뒤여야 합니다.", cls:"danger" };
-    }
-    return { ok:true, data:{ enabled, title, body, startAt, endAt } };
-  }
-
-  $("savePopupBtn").addEventListener("click", async ()=>{
-    const v = validatePopup();
-    if (!v.ok){ setMsg($("popMsg"), v.msg, v.cls); return; }
-    const now = new Date().toISOString();
-    await set(ref(db, POPUP_PATH), { ...v.data, updatedAt: now });
-    setMsg($("popMsg"), "팝업 설정이 저장되었습니다.", "ok");
-  });
-
-  $("disableBtn").addEventListener("click", async ()=>{
-    setToggle(false);
-    const now = new Date().toISOString();
-    await update(ref(db, POPUP_PATH), { enabled:false, updatedAt: now });
-    setMsg($("popMsg"), "팝업을 OFF로 변경했습니다.", "ok");
-  });
-
-  // ---- Preview modal
-  function openPreview(){
-    const title = ($("popTitle").value || "").trim() || "공지";
-    const body  = ($("popBody").value || "").trim() || "(내용 없음)";
-    const s = $("popStart").value || "-";
-    const e = $("popEnd").value || "-";
-    $("pvTitle").textContent = title;
-    $("pvBody").textContent = body;
-    $("pvPeriod").textContent = `표시 기간: ${s} ~ ${e}`;
-    $("pvBack").classList.add("show");
-  }
-  function closePreview(){ $("pvBack").classList.remove("show"); }
-
-  $("previewBtn").addEventListener("click", openPreview);
-  $("pvClose").addEventListener("click", closePreview);
-  $("pvBack").addEventListener("click", (e)=>{ if (e.target === $("pvBack")) closePreview(); });
-
-  // ---- Password show/change
-  $("pwInput").addEventListener("input", (e)=>{ e.target.value = only4digits(e.target.value); });
-  $("newPw").addEventListener("input", (e)=>{ e.target.value = only4digits(e.target.value); });
-
-  async function showCurrentPin(){
-    const pin = await getPin();
-    $("nowPw").value = pin;
-  }
-
-  $("changePwBtn").addEventListener("click", async ()=>{
-    const nw = only4digits($("newPw").value);
-    if (nw.length !== 4){
-      setMsg($("pwMsg"), "새 비밀번호는 숫자 4자리여야 합니다.", "danger");
-      return;
-    }
-    await update(ref(db, ADMIN_PATH), { pin: nw });
-    $("newPw").value = "";
-    $("nowPw").value = nw;
-    setMsg($("pwMsg"), "비밀번호가 변경되었습니다.", "ok");
-  });
-
-  // ---- Login / Logout
-  $("loginBtn").addEventListener("click", async ()=>{
-    const input = only4digits($("pwInput").value);
-    const pin = await getPin();
-
-    if (input.length !== 4){
-      setMsg($("loginMsg"), "비밀번호는 숫자 4자리로 입력해 주세요.", "danger");
-      return;
-    }
-    if (input !== pin){
-      setMsg($("loginMsg"), "비밀번호가 틀렸습니다.", "danger");
-      return;
+    async function getPin(){
+      const snap = await get(ref(db, ADMIN_PATH));
+      const v = snap.val();
+      if (!v || !v.pin){
+        await set(ref(db, ADMIN_PATH), { pin: "1225" });
+        return "1225";
+      }
+      return String(v.pin);
     }
 
-    localStorage.setItem(LS_KEY, "1");
-    $("loginBox").classList.add("hide");
-    $("adminPanel").classList.remove("hide");
-    setMsg($("loginMsg"), "");
-    await loadPopup();
-    await showCurrentPin();
-  });
+    // ---- Toggle
+    function setToggle(on){
+      const t = $("popupToggle");
+      t.classList.toggle("on", !!on);
+      t.setAttribute("aria-checked", on ? "true" : "false");
+      t.dataset.on = on ? "1" : "0";
+    }
+    function getToggle(){ return $("popupToggle").dataset.on === "1"; }
+    function toggleFlip(){ setToggle(!getToggle()); }
 
-  $("logoutBtn").addEventListener("click", ()=>{
-    localStorage.removeItem(LS_KEY);
-    $("adminPanel").classList.add("hide");
-    $("loginBox").classList.remove("hide");
-    $("pwInput").value = "";
-    $("newPw").value = "";
-    $("nowPw").value = "";
-    setMsg($("pwMsg"), "");
-    setMsg($("loginMsg"), "로그아웃 되었습니다.", "");
-  });
+    $("popupToggle").addEventListener("click", toggleFlip);
+    $("popupToggle").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFlip(); }
+    });
 
-  // ---- Auto login restore
-  (async ()=>{
-    const ok = localStorage.getItem(LS_KEY) === "1";
-    if (ok){
+    // ---- Popup load/save
+    async function loadPopup(){
+      const snap = await get(ref(db, POPUP_PATH));
+      const v = snap.val() || {};
+      setToggle(!!v.enabled);
+      $("popTitle").value = v.title || "";
+      $("popBody").value  = v.body  || "";
+      $("popStart").value = isoToVal(v.startAt || "");
+      $("popEnd").value   = isoToVal(v.endAt || "");
+      setMsg($("popMsg"), "현재 저장된 팝업 설정을 불러왔습니다.", "");
+    }
+
+    function validatePopup(){
+      const enabled = getToggle();
+      const title = ($("popTitle").value || "").trim() || "공지";
+      const body  = ($("popBody").value || "").trim();
+      const startAt = valToIso($("popStart").value);
+      const endAt   = valToIso($("popEnd").value);
+
+      if (enabled){
+        if (!body) return { ok:false, msg:"팝업 내용이 비어 있습니다.", cls:"danger" };
+        if (!startAt || !endAt) return { ok:false, msg:"시작/종료 시간을 모두 입력해 주세요.", cls:"danger" };
+        if (startAt >= endAt) return { ok:false, msg:"종료 시간이 시작 시간보다 뒤여야 합니다.", cls:"danger" };
+      }
+      return { ok:true, data:{ enabled, title, body, startAt, endAt } };
+    }
+
+    $("savePopupBtn").addEventListener("click", async ()=>{
+      const v = validatePopup();
+      if (!v.ok){ setMsg($("popMsg"), v.msg, v.cls); return; }
+      const now = new Date().toISOString();
+      await set(ref(db, POPUP_PATH), { ...v.data, updatedAt: now });
+      setMsg($("popMsg"), "팝업 설정이 저장되었습니다.", "ok");
+    });
+
+    $("disableBtn").addEventListener("click", async ()=>{
+      setToggle(false);
+      const now = new Date().toISOString();
+      await update(ref(db, POPUP_PATH), { enabled:false, updatedAt: now });
+      setMsg($("popMsg"), "팝업을 OFF로 변경했습니다.", "ok");
+    });
+
+    // ---- Preview modal
+    function openPreview(){
+      const title = ($("popTitle").value || "").trim() || "공지";
+      const body  = ($("popBody").value || "").trim() || "(내용 없음)";
+      const s = $("popStart").value || "-";
+      const e = $("popEnd").value || "-";
+      $("pvTitle").textContent = title;
+      $("pvBody").textContent = body;
+      $("pvPeriod").textContent = `표시 기간: ${s} ~ ${e}`;
+      $("pvBack").classList.add("show");
+    }
+    function closePreview(){ $("pvBack").classList.remove("show"); }
+
+    $("previewBtn").addEventListener("click", openPreview);
+    $("pvClose").addEventListener("click", closePreview);
+    $("pvBack").addEventListener("click", (e)=>{ if (e.target === $("pvBack")) closePreview(); });
+
+    // ---- Password show/change
+    $("pwInput").addEventListener("input", (e)=>{ e.target.value = only4digits(e.target.value); });
+    $("newPw").addEventListener("input", (e)=>{ e.target.value = only4digits(e.target.value); });
+
+    async function showCurrentPin(){
+      const pin = await getPin();
+      $("nowPw").value = pin;
+    }
+
+    $("changePwBtn").addEventListener("click", async ()=>{
+      const nw = only4digits($("newPw").value);
+      if (nw.length !== 4){
+        setMsg($("pwMsg"), "새 비밀번호는 숫자 4자리여야 합니다.", "danger");
+        return;
+      }
+      await update(ref(db, ADMIN_PATH), { pin: nw });
+      $("newPw").value = "";
+      $("nowPw").value = nw;
+      setMsg($("pwMsg"), "비밀번호가 변경되었습니다.", "ok");
+    });
+
+    // ---- Login / Logout
+    $("loginBtn").addEventListener("click", async ()=>{
+      const input = only4digits($("pwInput").value);
+      const pin = await getPin();
+
+      if (input.length !== 4){
+        setMsg($("loginMsg"), "비밀번호는 숫자 4자리로 입력해 주세요.", "danger");
+        return;
+      }
+      if (input !== pin){
+        setMsg($("loginMsg"), "비밀번호가 틀렸습니다.", "danger");
+        return;
+      }
+
+      localStorage.setItem(LS_KEY, "1");
       $("loginBox").classList.add("hide");
       $("adminPanel").classList.remove("hide");
-      await getPin();
+      setMsg($("loginMsg"), "");
       await loadPopup();
       await showCurrentPin();
-    }else{
-      await getPin();
-      setToggle(false);
-    }
-  })();
-</script>
+    });
 
+    $("logoutBtn").addEventListener("click", ()=>{
+      localStorage.removeItem(LS_KEY);
+      $("adminPanel").classList.add("hide");
+      $("loginBox").classList.remove("hide");
+      $("pwInput").value = "";
+      $("newPw").value = "";
+      $("nowPw").value = "";
+      setMsg($("pwMsg"), "");
+      setMsg($("loginMsg"), "로그아웃 되었습니다.", "");
+    });
+
+    // ---- Auto login restore
+    (async ()=>{
+      const ok = localStorage.getItem(LS_KEY) === "1";
+      if (ok){
+        $("loginBox").classList.add("hide");
+        $("adminPanel").classList.remove("hide");
+        await getPin();
+        await loadPopup();
+        await showCurrentPin();
+      }else{
+        await getPin();
+        setToggle(false);
+      }
+    })();
+  </script>
 </body>
 </html>
