@@ -3,16 +3,13 @@ import { db, auth } from "../firebase.js";
 import {
   ref,
   onValue,
-  get,
   set,
   update,
   remove,
   push
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-import {
-  signInAnonymously
-} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
 /* =========================
    Helpers
@@ -37,10 +34,6 @@ function simpleHash(s){
   return (h>>>0).toString(16);
 }
 
-function sortYmdDesc(keys){
-  return keys.sort((a,b)=> (a>b ? -1 : a<b ? 1 : 0));
-}
-
 const GRADE_WEIGHT = { A:4, B:3, C:2, D:1 };
 
 /* =========================
@@ -51,9 +44,7 @@ let pinHashOnDB = null;
 
 const PATH = {
   adminPinHash: "config/adminPinHash",
-  holidays: "config/holidays",        // { "YYYY-MM-DD": {title, off, updatedAt, byUid} }
-  categories: "config/categories",    // ["공지","레슨",...]
-  members: "members"                 // {id:{name,grade,weight,...}}
+  members: "members"
 };
 
 function requireUnlock(){
@@ -76,12 +67,8 @@ function setLockUI(){
     pill.textContent = "잠금";
   }
 
-  const lock = !unlocked;
-
-  // 주요 버튼 잠금
-  $("saveHolidayBtn").disabled = lock;
-  $("addCatBtn").disabled = lock;
-  $("addMemberBtn").disabled = lock;
+  // 멤버 추가 버튼 잠금
+  $("addMemberBtn").disabled = !unlocked;
 }
 
 /* =========================
@@ -90,8 +77,6 @@ function setLockUI(){
 const tabButtons = document.querySelectorAll(".tab");
 const tabSections = {
   lock: $("tab-lock"),
-  holidays: $("tab-holidays"),
-  categories: $("tab-categories"),
   members: $("tab-members")
 };
 
@@ -119,7 +104,7 @@ async function initAuth(){
 }
 
 /* =========================
-   PIN load + unlock
+   PIN
 ========================= */
 function bindPin(){
   onValue(ref(db, PATH.adminPinHash), (snap)=>{
@@ -147,9 +132,7 @@ async function setOrChangePin(){
     return;
   }
 
-  const h = simpleHash(p1);
-  await set(ref(db, PATH.adminPinHash), h);
-
+  await set(ref(db, PATH.adminPinHash), simpleHash(p1));
   toast(pinHashOnDB ? "PIN 변경 완료" : "PIN 설정 완료");
 
   // 설정 후 자동 해제(편의)
@@ -159,6 +142,7 @@ async function setOrChangePin(){
 
 function unlock(){
   const p = $("pinInput").value.trim();
+
   if(!pinHashOnDB){
     toast("PIN이 아직 미설정입니다. 먼저 설정하세요.");
     return;
@@ -167,6 +151,7 @@ function unlock(){
     toast("PIN이 올바르지 않습니다.");
     return;
   }
+
   unlocked = true;
   setLockUI();
   toast("잠금 해제됨");
@@ -179,214 +164,7 @@ function lock(){
 }
 
 /* =========================
-   Holidays
-========================= */
-function bindHolidays(){
-  onValue(ref(db, PATH.holidays), (snap)=>{
-    const data = snap.exists() ? snap.val() : {};
-    renderHolidayList(data);
-  });
-}
-
-function renderHolidayList(data){
-  const list = $("holidayList");
-  list.innerHTML = "";
-
-  const keys = sortYmdDesc(Object.keys(data || {}));
-  if(keys.length === 0){
-    const empty = document.createElement("div");
-    empty.className = "hint";
-    empty.textContent = "등록된 휴무일이 없습니다.";
-    list.appendChild(empty);
-    return;
-  }
-
-  keys.forEach(k=>{
-    const v = data[k];
-    const item = document.createElement("div");
-    item.className = "item";
-
-    const left = document.createElement("div");
-    left.className = "meta";
-
-    const title = document.createElement("div");
-    title.className = "k";
-    title.textContent = `${k} · ${v?.title || "(제목 없음)"}`;
-
-    const sub = document.createElement("div");
-    sub.className = "s";
-    sub.textContent =
-      (v?.off ? "휴무(OFF)" : "휴일(표시만)") +
-      (v?.byUid ? ` · by ${v.byUid}` : "");
-
-    left.appendChild(title);
-    left.appendChild(sub);
-
-    const right = document.createElement("div");
-    right.className = "row";
-    right.style.gap = "8px";
-
-    const del = document.createElement("button");
-    del.className = "btn danger";
-    del.textContent = "삭제";
-    del.disabled = !unlocked;
-    del.addEventListener("click", async ()=>{
-      if(!requireUnlock()) return;
-      await remove(ref(db, `${PATH.holidays}/${k}`));
-      toast("삭제 완료");
-    });
-
-    right.appendChild(del);
-    item.appendChild(left);
-    item.appendChild(right);
-    list.appendChild(item);
-  });
-}
-
-async function saveHoliday(){
-  if(!requireUnlock()) return;
-
-  const date = $("hDate").value;
-  const title = $("hTitle").value.trim();
-  const off = $("hOff").checked;
-
-  if(!date){
-    toast("날짜를 선택하세요.");
-    return;
-  }
-  if(!title){
-    toast("제목을 입력하세요.");
-    return;
-  }
-
-  await set(ref(db, `${PATH.holidays}/${date}`), {
-    title,
-    off,
-    updatedAt: Date.now(),
-    byUid: auth.currentUser?.uid || null
-  });
-
-  toast("저장 완료");
-  $("hTitle").value = "";
-}
-
-/* =========================
-   Categories
-========================= */
-function bindCategories(){
-  onValue(ref(db, PATH.categories), (snap)=>{
-    const arr = snap.exists() ? snap.val() : [];
-    const list = Array.isArray(arr) ? arr : [];
-    renderCategoryList(list);
-  });
-}
-
-function renderCategoryList(list){
-  const el = $("catList");
-  el.innerHTML = "";
-
-  if(list.length === 0){
-    const empty = document.createElement("div");
-    empty.className = "hint";
-    empty.textContent = "등록된 분류가 없습니다.";
-    el.appendChild(empty);
-    return;
-  }
-
-  list.forEach((name, idx)=>{
-    const item = document.createElement("div");
-    item.className = "item";
-
-    const left = document.createElement("div");
-    left.className = "meta";
-
-    const k = document.createElement("div");
-    k.className = "k";
-    k.textContent = name;
-
-    const s = document.createElement("div");
-    s.className = "s";
-    s.textContent = `순서: ${idx+1}`;
-
-    left.appendChild(k);
-    left.appendChild(s);
-
-    const right = document.createElement("div");
-    right.className = "row";
-    right.style.gap = "8px";
-    right.style.flexWrap = "nowrap";
-
-    const up = document.createElement("button");
-    up.className = "btn";
-    up.textContent = "▲";
-    up.disabled = !unlocked || idx === 0;
-    up.addEventListener("click", async ()=>{
-      if(!requireUnlock()) return;
-      const newList = [...list];
-      [newList[idx-1], newList[idx]] = [newList[idx], newList[idx-1]];
-      await set(ref(db, PATH.categories), newList);
-      toast("이동 완료");
-    });
-
-    const down = document.createElement("button");
-    down.className = "btn";
-    down.textContent = "▼";
-    down.disabled = !unlocked || idx === list.length - 1;
-    down.addEventListener("click", async ()=>{
-      if(!requireUnlock()) return;
-      const newList = [...list];
-      [newList[idx], newList[idx+1]] = [newList[idx+1], newList[idx]];
-      await set(ref(db, PATH.categories), newList);
-      toast("이동 완료");
-    });
-
-    const del = document.createElement("button");
-    del.className = "btn danger";
-    del.textContent = "삭제";
-    del.disabled = !unlocked;
-    del.addEventListener("click", async ()=>{
-      if(!requireUnlock()) return;
-      const newList = list.filter((_,i)=>i!==idx);
-      await set(ref(db, PATH.categories), newList);
-      toast("삭제 완료");
-    });
-
-    right.appendChild(up);
-    right.appendChild(down);
-    right.appendChild(del);
-
-    item.appendChild(left);
-    item.appendChild(right);
-    el.appendChild(item);
-  });
-}
-
-async function addCategory(){
-  if(!requireUnlock()) return;
-
-  const name = $("catName").value.trim();
-  if(!name){
-    toast("분류 이름을 입력하세요.");
-    return;
-  }
-
-  const snap = await get(ref(db, PATH.categories));
-  const list = snap.exists() && Array.isArray(snap.val()) ? snap.val() : [];
-
-  if(list.includes(name)){
-    toast("이미 존재하는 분류입니다.");
-    return;
-  }
-
-  list.push(name);
-  await set(ref(db, PATH.categories), list);
-
-  $("catName").value = "";
-  toast("추가 완료");
-}
-
-/* =========================
-   Members (name + grade + weight)
+   Members
 ========================= */
 function bindMembers(){
   onValue(ref(db, PATH.members), (snap)=>{
@@ -408,6 +186,7 @@ function renderMemberList(data){
     return;
   }
 
+  // 등급(A→D), 이름 순 정렬
   const order = { A:1, B:2, C:3, D:4 };
   entries.sort((a,b)=>{
     const va = a[1] || {}, vb = b[1] || {};
@@ -430,7 +209,9 @@ function renderMemberList(data){
 
     const sub = document.createElement("div");
     sub.className = "s";
-    sub.textContent = `등급: ${val.grade || "-"} / 점수: ${val.weight ?? (GRADE_WEIGHT[val.grade] ?? "-")}`;
+    const grade = val.grade || "-";
+    const weight = (val.weight ?? (GRADE_WEIGHT[grade] ?? "-"));
+    sub.textContent = `등급: ${grade} / 점수: ${weight}`;
 
     left.appendChild(name);
     left.appendChild(sub);
@@ -440,6 +221,7 @@ function renderMemberList(data){
     right.style.gap = "8px";
     right.style.flexWrap = "nowrap";
 
+    // 등급 변경
     const sel = document.createElement("select");
     sel.className = "select";
     sel.style.maxWidth = "140px";
@@ -447,7 +229,7 @@ function renderMemberList(data){
       const opt = document.createElement("option");
       opt.value = g;
       opt.textContent = g;
-      if((val.grade||"B") === g) opt.selected = true;
+      if((val.grade || "B") === g) opt.selected = true;
       sel.appendChild(opt);
     });
     sel.disabled = !unlocked;
@@ -519,10 +301,6 @@ $("setPinBtn").addEventListener("click", setOrChangePin);
 $("unlockBtn").addEventListener("click", unlock);
 $("lockBtn").addEventListener("click", lock);
 
-$("saveHolidayBtn").addEventListener("click", saveHoliday);
-
-$("addCatBtn").addEventListener("click", addCategory);
-
 $("addMemberBtn").addEventListener("click", addMember);
 
 /* =========================
@@ -532,8 +310,6 @@ $("addMemberBtn").addEventListener("click", addMember);
   try{
     await initAuth();
     bindPin();
-    bindHolidays();
-    bindCategories();
     bindMembers();
     setLockUI();
   }catch(e){
