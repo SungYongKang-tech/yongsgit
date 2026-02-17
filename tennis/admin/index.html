@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KOEN 테니스 · 관리자</title>
+
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
+      --txt:#0f172a; --mut:#64748b;
+      --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+      --shadow: 0 10px 28px rgba(0,0,0,.08);
+      --r:14px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
+    a{color:inherit;text-decoration:none}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    header{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:12px;margin:10px 0 16px;
+    }
+    .title h1{margin:0;font-size:22px;letter-spacing:-.3px}
+    .title .sub{margin-top:4px;color:var(--mut);font-size:13px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .card{
+      background:var(--card);border:1px solid var(--bd);border-radius:var(--r);
+      box-shadow:var(--shadow);padding:14px
+    }
+    .card h2{margin:0 0 10px;font-size:16px}
+    .hint{color:var(--mut);font-size:13px;line-height:1.5}
+    .btn{
+      appearance:none;border:1px solid rgba(37,99,235,.25);
+      background:#fff;color:var(--txt);
+      padding:10px 12px;border-radius:12px;cursor:pointer;
+      font-weight:700;
+    }
+    .btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+    .btn.ok{background:var(--ok);color:#fff;border-color:transparent}
+    .btn.danger{background:var(--danger);color:#fff;border-color:transparent}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .input, .select{
+      width:100%;padding:11px 12px;border-radius:12px;
+      border:1px solid var(--bd);outline:none;background:#fff;
+      font-size:14px;
+    }
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media (max-width:720px){ .grid2{grid-template-columns:1fr} }
+
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+    .tab{
+      padding:10px 12px;border-radius:999px;border:1px solid var(--bd);
+      background:#fff;color:var(--mut);cursor:pointer;font-weight:800
+    }
+    .tab.active{background:rgba(37,99,235,.10);color:var(--accent);border-color:rgba(37,99,235,.25)}
+    .list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    .item{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:10px 12px;border:1px solid var(--bd);border-radius:12px;background:#fff;
+    }
+    .item .meta{display:flex;flex-direction:column;gap:2px}
+    .item .meta .k{font-weight:900}
+    .item .meta .s{font-size:12px;color:var(--mut)}
+    .pill{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;
+      border:1px solid var(--bd);background:#fff;color:var(--mut)
+    }
+    .pill.on{background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.25);color:var(--ok)}
+    .pill.off{background:rgba(239,68,68,.10);border-color:rgba(239,68,68,.25);color:var(--danger)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .top-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .toast{
+      position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+      background:#111827;color:#fff;padding:10px 12px;border-radius:999px;
+      box-shadow:0 10px 28px rgba(0,0,0,.22);
+      opacity:0;pointer-events:none;transition:.18s;
+      font-weight:800;font-size:13px
+    }
+    .toast.show{opacity:1}
+    .hide{display:none !important}
+    .sep{height:1px;background:var(--bd);margin:12px 0}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <h1>🛠️ KOEN 테니스 관리자</h1>
+        <div class="sub">휴무일/분류/설정 관리</div>
+      </div>
+      <div class="top-actions">
+        <a class="btn" href="../index.html">← 메인</a>
+        <button class="btn" id="refreshBtn">새로고침</button>
+      </div>
+    </header>
+
+    <!-- 상태 카드 -->
+    <div class="card">
+      <div class="row" style="align-items:center;justify-content:space-between">
+        <div class="hint">
+          상태: <span id="statusText" class="mono">연결 준비중…</span><br/>
+          UID: <span id="uidText" class="mono">-</span>
+        </div>
+        <span id="lockPill" class="pill off">잠금</span>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="lock">관리자 잠금</button>
+      <button class="tab" data-tab="holidays">휴무일 등록</button>
+      <button class="tab" data-tab="categories">분류 관리</button>
+    </div>
+
+    <!-- TAB: Lock -->
+    <section id="tab-lock" class="card">
+      <h2>🔒 관리자 PIN (간단 잠금)</h2>
+      <div class="hint">
+        - 최초 1회 PIN을 설정하면, 이후 이 페이지는 PIN을 알아야 수정 가능합니다.<br/>
+        - PIN은 DB에 저장됩니다(내부용 간단 잠금).<br/>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="grid2">
+        <div>
+          <label class="hint">PIN 입력</label>
+          <input class="input" id="pinInput" type="password" placeholder="예: 1234" />
+        </div>
+        <div>
+          <label class="hint">PIN 확인</label>
+          <input class="input" id="pinInput2" type="password" placeholder="한번 더 입력" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" id="setPinBtn">PIN 설정/변경</button>
+        <button class="btn ok" id="unlockBtn">잠금 해제</button>
+        <button class="btn" id="lockBtn">다시 잠그기</button>
+      </div>
+
+      <div class="hint" style="margin-top:10px">
+        현재 PIN 설정 여부: <b id="pinSetText">확인중…</b>
+      </div>
+    </section>
+
+    <!-- TAB: Holidays -->
+    <section id="tab-holidays" class="card hide">
+      <h2>📅 휴무일/휴일 등록</h2>
+      <div class="hint">
+        등록된 휴무일은 캘린더/리그 페이지에서 “휴무 표시” 등에 활용할 수 있습니다.
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="grid2">
+        <div>
+          <label class="hint">날짜</label>
+          <input class="input" id="hDate" type="date" />
+        </div>
+        <div>
+          <label class="hint">제목</label>
+          <input class="input" id="hTitle" placeholder="예: 설날 / 코트 휴장" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;align-items:center">
+        <label class="pill" style="cursor:pointer">
+          <input id="hOff" type="checkbox" checked style="margin:0 6px 0 0" />
+          휴무(OFF)
+        </label>
+        <button class="btn primary" id="saveHolidayBtn">저장</button>
+      </div>
+
+      <div class="list" id="holidayList"></div>
+    </section>
+
+    <!-- TAB: Categories -->
+    <section id="tab-categories" class="card hide">
+      <h2>🏷️ 분류(카테고리) 관리</h2>
+      <div class="hint">
+        예: 공지, 레슨, 리그, 단체전, 회비 등. (필요하면 페이지별로 필터 버튼에 사용)
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:1;min-width:240px">
+          <label class="hint">새 분류 이름</label>
+          <input class="input" id="catName" placeholder="예: 레슨" />
+        </div>
+        <button class="btn primary" id="addCatBtn">추가</button>
+      </div>
+
+      <div class="list" id="catList"></div>
+
+      <div class="hint" style="margin-top:10px">
+        * 위/아래 버튼으로 순서 변경 가능합니다.
+      </div>
+    </section>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script type="module" src="./admin.js"></script>
+</body>
+</html>
