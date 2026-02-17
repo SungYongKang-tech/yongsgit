@@ -6,7 +6,8 @@ import {
   get,
   set,
   update,
-  remove
+  remove,
+  push
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
 import {
@@ -26,9 +27,8 @@ function toast(msg){
   toast._t = setTimeout(()=>el.classList.remove("show"), 1600);
 }
 
+// ⚠️ 보안용 해시가 아니라 "간단 잠금"용입니다.
 function simpleHash(s){
-  // ⚠️ 보안용 해시가 아니라 "간단 잠금"용입니다.
-  // (나중에 진짜 보안 강화 가능)
   let h = 2166136261;
   for (let i=0;i<s.length;i++){
     h ^= s.charCodeAt(i);
@@ -37,14 +37,11 @@ function simpleHash(s){
   return (h>>>0).toString(16);
 }
 
-function ymdKey(dateStr){
-  // dateStr = "YYYY-MM-DD"
-  return dateStr;
-}
-
 function sortYmdDesc(keys){
   return keys.sort((a,b)=> (a>b ? -1 : a<b ? 1 : 0));
 }
+
+const GRADE_WEIGHT = { A:4, B:3, C:2, D:1 };
 
 /* =========================
    State
@@ -54,8 +51,9 @@ let pinHashOnDB = null;
 
 const PATH = {
   adminPinHash: "config/adminPinHash",
-  holidays: "config/holidays",       // { "YYYY-MM-DD": {title, off, updatedAt, byUid} }
-  categories: "config/categories"    // ["공지","레슨",...]
+  holidays: "config/holidays",        // { "YYYY-MM-DD": {title, off, updatedAt, byUid} }
+  categories: "config/categories",    // ["공지","레슨",...]
+  members: "members"                 // {id:{name,grade,weight,...}}
 };
 
 function requireUnlock(){
@@ -78,12 +76,12 @@ function setLockUI(){
     pill.textContent = "잠금";
   }
 
-  // 잠금 탭 외에는 잠금이면 조작 제한(버튼 disable 처리)
   const lock = !unlocked;
+
+  // 주요 버튼 잠금
   $("saveHolidayBtn").disabled = lock;
   $("addCatBtn").disabled = lock;
-
-  // 목록의 삭제/이동 버튼들도 렌더링 시점에 반영(그냥 전체 다시 그리면 됩니다)
+  $("addMemberBtn").disabled = lock;
 }
 
 /* =========================
@@ -93,7 +91,8 @@ const tabButtons = document.querySelectorAll(".tab");
 const tabSections = {
   lock: $("tab-lock"),
   holidays: $("tab-holidays"),
-  categories: $("tab-categories")
+  categories: $("tab-categories"),
+  members: $("tab-members")
 };
 
 function showTab(key){
@@ -142,7 +141,7 @@ async function setOrChangePin(){
     return;
   }
 
-  // 잠금이 풀려있거나, 최초 미설정일 때만 허용
+  // 최초 미설정이면 잠금 없이 설정 가능, 설정된 상태에서 변경은 해제 필요
   if(pinHashOnDB && !unlocked){
     toast("변경은 잠금 해제 후 가능합니다.");
     return;
@@ -150,9 +149,10 @@ async function setOrChangePin(){
 
   const h = simpleHash(p1);
   await set(ref(db, PATH.adminPinHash), h);
+
   toast(pinHashOnDB ? "PIN 변경 완료" : "PIN 설정 완료");
 
-  // 설정 후 자동 해제 처리(편의)
+  // 설정 후 자동 해제(편의)
   unlocked = true;
   setLockUI();
 }
@@ -208,12 +208,17 @@ function renderHolidayList(data){
 
     const left = document.createElement("div");
     left.className = "meta";
+
     const title = document.createElement("div");
     title.className = "k";
     title.textContent = `${k} · ${v?.title || "(제목 없음)"}`;
+
     const sub = document.createElement("div");
     sub.className = "s";
-    sub.textContent = (v?.off ? "휴무(OFF)" : "휴일(표시만)") + (v?.byUid ? ` · by ${v.byUid}` : "");
+    sub.textContent =
+      (v?.off ? "휴무(OFF)" : "휴일(표시만)") +
+      (v?.byUid ? ` · by ${v.byUid}` : "");
+
     left.appendChild(title);
     left.appendChild(sub);
 
@@ -254,8 +259,7 @@ async function saveHoliday(){
     return;
   }
 
-  const key = ymdKey(date);
-  await set(ref(db, `${PATH.holidays}/${key}`), {
+  await set(ref(db, `${PATH.holidays}/${date}`), {
     title,
     off,
     updatedAt: Date.now(),
@@ -295,18 +299,22 @@ function renderCategoryList(list){
 
     const left = document.createElement("div");
     left.className = "meta";
+
     const k = document.createElement("div");
     k.className = "k";
     k.textContent = name;
+
     const s = document.createElement("div");
     s.className = "s";
     s.textContent = `순서: ${idx+1}`;
+
     left.appendChild(k);
     left.appendChild(s);
 
     const right = document.createElement("div");
     right.className = "row";
     right.style.gap = "8px";
+    right.style.flexWrap = "nowrap";
 
     const up = document.createElement("button");
     up.className = "btn";
@@ -372,8 +380,134 @@ async function addCategory(){
 
   list.push(name);
   await set(ref(db, PATH.categories), list);
+
   $("catName").value = "";
   toast("추가 완료");
+}
+
+/* =========================
+   Members (name + grade + weight)
+========================= */
+function bindMembers(){
+  onValue(ref(db, PATH.members), (snap)=>{
+    const data = snap.exists() ? snap.val() : {};
+    renderMemberList(data);
+  });
+}
+
+function renderMemberList(data){
+  const el = $("memberList");
+  el.innerHTML = "";
+
+  const entries = Object.entries(data || {});
+  if(entries.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "등록된 멤버가 없습니다.";
+    el.appendChild(empty);
+    return;
+  }
+
+  const order = { A:1, B:2, C:3, D:4 };
+  entries.sort((a,b)=>{
+    const va = a[1] || {}, vb = b[1] || {};
+    const ga = order[va.grade] || 99;
+    const gb = order[vb.grade] || 99;
+    if(ga !== gb) return ga - gb;
+    return (va.name||"").localeCompare(vb.name||"");
+  });
+
+  entries.forEach(([key, val])=>{
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const left = document.createElement("div");
+    left.className = "meta";
+
+    const name = document.createElement("div");
+    name.className = "k";
+    name.textContent = val.name || "(이름없음)";
+
+    const sub = document.createElement("div");
+    sub.className = "s";
+    sub.textContent = `등급: ${val.grade || "-"} / 점수: ${val.weight ?? (GRADE_WEIGHT[val.grade] ?? "-")}`;
+
+    left.appendChild(name);
+    left.appendChild(sub);
+
+    const right = document.createElement("div");
+    right.className = "row";
+    right.style.gap = "8px";
+    right.style.flexWrap = "nowrap";
+
+    const sel = document.createElement("select");
+    sel.className = "select";
+    sel.style.maxWidth = "140px";
+    ["A","B","C","D"].forEach(g=>{
+      const opt = document.createElement("option");
+      opt.value = g;
+      opt.textContent = g;
+      if((val.grade||"B") === g) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.disabled = !unlocked;
+
+    const save = document.createElement("button");
+    save.className = "btn ok";
+    save.textContent = "저장";
+    save.disabled = !unlocked;
+    save.addEventListener("click", async ()=>{
+      if(!requireUnlock()) return;
+      const g = sel.value;
+      await update(ref(db, `${PATH.members}/${key}`), {
+        grade: g,
+        weight: GRADE_WEIGHT[g] ?? 1,
+        updatedAt: Date.now()
+      });
+      toast("등급 저장 완료");
+    });
+
+    const del = document.createElement("button");
+    del.className = "btn danger";
+    del.textContent = "삭제";
+    del.disabled = !unlocked;
+    del.addEventListener("click", async ()=>{
+      if(!requireUnlock()) return;
+      await remove(ref(db, `${PATH.members}/${key}`));
+      toast("삭제 완료");
+    });
+
+    right.appendChild(sel);
+    right.appendChild(save);
+    right.appendChild(del);
+
+    item.appendChild(left);
+    item.appendChild(right);
+    el.appendChild(item);
+  });
+}
+
+async function addMember(){
+  if(!requireUnlock()) return;
+
+  const name = $("mName").value.trim();
+  const grade = $("mGrade").value;
+
+  if(!name){
+    toast("이름을 입력하세요.");
+    return;
+  }
+
+  const memberRef = push(ref(db, PATH.members));
+  await set(memberRef, {
+    name,
+    grade,
+    weight: GRADE_WEIGHT[grade] ?? 1,
+    createdAt: Date.now()
+  });
+
+  $("mName").value = "";
+  toast("멤버 추가 완료");
 }
 
 /* =========================
@@ -386,7 +520,10 @@ $("unlockBtn").addEventListener("click", unlock);
 $("lockBtn").addEventListener("click", lock);
 
 $("saveHolidayBtn").addEventListener("click", saveHoliday);
+
 $("addCatBtn").addEventListener("click", addCategory);
+
+$("addMemberBtn").addEventListener("click", addMember);
 
 /* =========================
    Init
@@ -397,6 +534,7 @@ $("addCatBtn").addEventListener("click", addCategory);
     bindPin();
     bindHolidays();
     bindCategories();
+    bindMembers();
     setLockUI();
   }catch(e){
     console.error(e);
