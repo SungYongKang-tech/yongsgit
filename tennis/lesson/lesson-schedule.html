@@ -74,7 +74,7 @@
       <table aria-label="레슨 주간 시간표">
         <thead>
           <tr>
-            <th style="width:110px;">시간</th>
+            <th style="width:140px;">시간</th>
             <th style="width:160px;">월</th>
             <th style="width:160px;">화</th>
             <th style="width:160px;">수</th>
@@ -92,116 +92,139 @@
   </div>
 
   <script type="module">
-    // ✅ firebase.js 위치에 맞게 경로 수정
-    // 현재 폴더가 tennis/lesson/ 이고 firebase.js가 tennis/firebase.js 라면 ../firebase.js 가 맞습니다.
     import { db, auth } from "../firebase.js";
     import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-    // ✅ 관리자모드가 저장하는 경로와 동일하게!
-    const SCHEDULE_PATH = "lessonSchedule";
+    const PATH = {
+      coaches: "lesson/coaches",
+      schedule: "lesson/schedule",
+    };
 
-    // 월~금만
-    const DAYS = ["월","화","수","목","금"];
-    const dayOrder = Object.fromEntries(DAYS.map((d,i)=>[d,i]));
+    const DAYS = ["mon","tue","wed","thu","fri"];
+    const dayLabel = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금" };
 
     const $ = (id)=>document.getElementById(id);
 
-    const esc = (s)=>String(s??"")
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
-
-    // "19:00" -> 1140 분 (정렬용)
-    function toMin(t){
-      const m = /^(\d{1,2}):(\d{2})$/.exec(t||"");
-      if(!m) return 99999;
-      return Number(m[1])*60 + Number(m[2]);
+    function esc(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
     }
 
-    function slotLabel(s){
-      // start~end가 있으면 "19:00~20:00" 표시, 없으면 "19:00"
-      if(s.start && s.end) return `${s.start}~${s.end}`;
-      return s.start || "";
+    let coaches = {};
+    let schedule = null;
+    let authed = false;
+
+    function coachName(id){
+      if(!id) return "";
+      return (coaches?.[id]?.name || "").trim();
     }
 
-    await signInAnonymously(auth);
+    function normalizeTimes(scheduleObj){
+      const slots = scheduleObj?.slots || {};
+      const all = []
+        .concat(slots.morning || [])
+        .concat(slots.lunch || [])
+        .concat(slots.evening || []);
+      return all.filter(t => (t?.time || "").trim());
+    }
 
-    onValue(
-      ref(db, SCHEDULE_PATH),
-      (snap)=>{
-        const tbody = $("tbody");
-        const status = $("status");
+    function render(){
+      const tbody = $("tbody");
+      const status = $("status");
+      if(!tbody) return;
 
-        if(!snap.exists()){
-          tbody.innerHTML = `<tr><td colspan="6" class="empty">등록된 시간표가 없습니다.</td></tr>`;
-          status.textContent = "※ 관리자모드에 등록된 시간표만 표시됩니다.";
-          return;
-        }
-
-        const raw = snap.val();
-
-        // ✅ push로 저장한 경우: {id:{...}, id2:{...}}
-        const list = Array.isArray(raw)
-          ? raw.filter(Boolean).map((v,i)=>({id:String(i), ...(v||{})}))
-          : Object.entries(raw).map(([id,v])=>({id, ...(v||{})}));
-
-        // ✅ 필요한 필드만: day, start, end(선택), name
-        // 월~금만 필터
-        const filtered = list
-          .filter(x => DAYS.includes(x.day))
-          .filter(x => x.start && x.name); // start와 name 없으면 표에 못 넣음
-
-        // ✅ 시간 슬롯(행) 만들기: start 기준으로 고유값 생성
-        // 같은 start라도 end가 다를 수 있으니 label( start~end )로 행을 만듦
-        const slotsMap = new Map(); // key=label, value={label, startMin}
-        for(const s of filtered){
-          const label = slotLabel(s);
-          if(!label) continue;
-          if(!slotsMap.has(label)){
-            slotsMap.set(label, { label, startMin: toMin(s.start) });
-          }
-        }
-        const slots = Array.from(slotsMap.values()).sort((a,b)=>a.startMin-b.startMin);
-
-        // ✅ 그리드 데이터: grid[label][day] = [names...]
-        const grid = {};
-        for(const slot of slots) grid[slot.label] = Object.fromEntries(DAYS.map(d=>[d, []]));
-
-        for(const s of filtered){
-          const label = slotLabel(s);
-          if(!grid[label]) continue;
-          grid[label][s.day].push(String(s.name));
-        }
-
-        // ✅ 렌더
-        tbody.innerHTML = slots.map(slot=>{
-          const label = slot.label;
-          const tds = DAYS.map(d=>{
-            const names = grid[label][d] || [];
-            if(names.length===0) return `<td class="empty">-</td>`;
-            // 여러 명이면 줄바꿈
-            return `<td class="cell">${names.map(esc).join("<br>")}</td>`;
-          }).join("");
-
-          return `
-            <tr>
-              <td>${esc(label)}</td>
-              ${tds}
-            </tr>
-          `;
-        }).join("") || `<tr><td colspan="6" class="empty">표시할 시간표가 없습니다.</td></tr>`;
-
-        status.textContent = `총 ${filtered.length}건 · 시간 슬롯 ${slots.length}개`;
-      },
-      (err)=>{
-        console.error(err);
-        $("tbody").innerHTML = `<tr><td colspan="6" class="err">불러오기 실패: ${esc(err?.message||err)}</td></tr>`;
-        $("status").textContent = "경로/권한/파일경로(import) 문제일 가능성이 큽니다. 콘솔(F12)을 확인하세요.";
+      if(!authed){
+        tbody.innerHTML = `<tr><td colspan="6" class="empty">로그인 중...</td></tr>`;
+        if(status) status.textContent = "Firebase 익명 로그인 중";
+        return;
       }
-    );
+
+      if(!schedule){
+        tbody.innerHTML = `<tr><td colspan="6" class="mut">시간표가 없습니다.</td></tr>`;
+        if(status) status.textContent = "lesson/schedule 데이터 없음";
+        return;
+      }
+
+      const items = normalizeTimes(schedule);
+      if(items.length === 0){
+        tbody.innerHTML = `<tr><td colspan="6" class="mut">등록된 타임이 없습니다.</td></tr>`;
+        if(status) status.textContent = "타임을 추가하고 저장해 주세요.";
+        return;
+      }
+
+      // ✅ 같은 time 은 한 행으로 합치기
+      const rows = {}; // { "07:00~08:00": {mon:"id",...} }
+      for(const t of items){
+        const time = (t.time || "").trim();
+        if(!time) continue;
+
+        if(!rows[time]) rows[time] = { mon:"", tue:"", wed:"", thu:"", fri:"" };
+
+        DAYS.forEach(d=>{
+          const cid = t.assign?.[d] || "";
+          if(cid) rows[time][d] = cid; // 뒤 값으로 덮어쓰기
+        });
+      }
+
+      const times = Object.keys(rows).sort((a,b)=>a.localeCompare(b));
+
+      tbody.innerHTML = times.map(time=>{
+        const tds = DAYS.map(d=>{
+          const cid = rows[time][d] || "";
+          const nm = coachName(cid);
+          return `<td class="cell">${nm ? esc(nm) : `<span class="empty">-</span>`}</td>`;
+        }).join("");
+
+        return `
+          <tr>
+            <td><b>${esc(time)}</b></td>
+            ${tds}
+          </tr>
+        `;
+      }).join("");
+
+      if(status){
+        const coachCnt = Object.keys(coaches||{}).length;
+        status.textContent = `시간 ${times.length}개 · 레슨자 ${coachCnt}명`;
+      }
+    }
+
+    // ---- Auth + bind
+    (async function init(){
+      try{
+        $("status").textContent = "Firebase 연결 중...";
+        await signInAnonymously(auth);
+        authed = true;
+
+        onValue(ref(db, PATH.coaches), (snap)=>{
+          coaches = snap.exists() ? (snap.val() || {}) : {};
+          render();
+        }, (err)=>{
+          console.error(err);
+          $("status").textContent = "coaches 읽기 실패(콘솔 확인)";
+        });
+
+        onValue(ref(db, PATH.schedule), (snap)=>{
+          schedule = snap.exists() ? (snap.val() || null) : null;
+          render();
+        }, (err)=>{
+          console.error(err);
+          $("tbody").innerHTML = `<tr><td colspan="6" class="err">불러오기 실패: ${esc(err?.message||err)}</td></tr>`;
+          $("status").textContent = "schedule 읽기 실패(콘솔 확인)";
+        });
+
+        render();
+      }catch(e){
+        console.error(e);
+        $("tbody").innerHTML = `<tr><td colspan="6" class="err">연결 오류: ${esc(e?.message||e)}</td></tr>`;
+        $("status").textContent = "Firebase 연결 오류(콘솔 확인)";
+      }
+    })();
   </script>
 </body>
 </html>
