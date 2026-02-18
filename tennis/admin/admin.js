@@ -107,17 +107,28 @@ function renderMembers(){
     btn.style.margin="4px";
     btn.textContent=`${val.name}(${val.grade})`;
 
-    btn.onclick = ()=>{
-      if(!loggedIn) return;
+    btn.onclick = async ()=>{
+  if(!loggedIn) return;
 
-      const newGrade = prompt("등급 수정 (A/B/C/D)",val.grade);
-      if(!newGrade) return;
+  // 1) 이름 수정
+  const newName = prompt("이름 수정", val.name);
+  if(newName === null) return; // 취소
+  const name = newName.trim();
+  if(!name) return alert("이름은 비워둘 수 없습니다.");
 
-      update(ref(db,`members/${key}`),{
-        grade:newGrade,
-        weight:GRADE_WEIGHT[newGrade]
-      });
-    };
+  // 2) 등급 수정
+  const newGradeRaw = prompt("등급 수정 (A/B/C/D)", val.grade);
+  if(newGradeRaw === null) return; // 취소
+  const grade = newGradeRaw.trim().toUpperCase();
+  if(!GRADE_WEIGHT[grade]) return alert("등급은 A/B/C/D 중 하나여야 합니다.");
+
+  // 3) 저장
+  await update(ref(db, `members/${key}`), {
+    name,
+    grade,
+    weight: GRADE_WEIGHT[grade]
+  });
+};
 
     el.appendChild(btn);
   });
