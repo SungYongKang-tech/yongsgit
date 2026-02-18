@@ -1,9 +1,12 @@
 import { db, auth } from "../firebase.js";
 import {
-  ref, onValue, get, set, update, remove
+  ref, onValue, get, set, update, push, remove
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
+/* =========================
+   Helpers
+========================= */
 const $ = (id) => document.getElementById(id);
 
 function toast(msg){
@@ -11,29 +14,41 @@ function toast(msg){
   el.textContent = msg;
   el.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(()=>el.classList.remove("show"), 1400);
+  toast._t = setTimeout(()=> el.classList.remove("show"), 1500);
+}
+
+const days = ()=> (["mon","tue","wed","thu","fri"]);
+const dayLabel = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금" };
+const slotRows = [
+  { key:"morning", label:"아침" },
+  { key:"lunch", label:"점심" },
+  { key:"evening", label:"저녁" }
+];
+
+function nameOnly(v){
+  return (v?.name || "").trim();
 }
 
 /* =========================
-   Firebase paths
+   Paths (✅ 여기만 바꾸면 전체 회원 경로 변경 가능)
 ========================= */
 const PATH = {
-  members: "members",               // 전체 테니스 회원(이미 사용 중)
-  coaches: "lesson/coaches",         // 레슨자(선택된 회원들)
-  guide: "lesson/guide",             // 안내문
-  schedule: "lesson/schedule",       // 시간표(아침/점심/저녁)
-  waiting: "lesson/waiting"          // 대기자
+  allMembers: "members",          // ✅ 전체 테니스 회원 (필요시 tennis/members 등으로 변경)
+  coaches: "lesson/coaches",      // 레슨자(회원 중 선택된 사람)
+  schedule: "lesson/schedule",    // 시간표
+  guide: "lesson/guide",          // 안내문
+  waiting: "lesson/waiting"       // 대기자
 };
 
 /* =========================
-   In-memory caches
+   State
 ========================= */
-let members = {};    // {memberId:{name,grade,...}}
-let coaches = {};    // {memberId:{name,grade}}  (members에서 선택된 것만)
-let schedule = {};   // {morning:{mon:memberId,...}, lunch..., evening...}
+let members = {};   // 전체 회원 (id -> {name, grade?})
+let coaches = {};   // 레슨자 (memberId -> {name})
+let schedule = null;
 
 /* =========================
-   Auth init (rules: auth != null)
+   Auth
 ========================= */
 async function initAuth(){
   $("statusText").textContent = "익명 로그인 중…";
@@ -42,84 +57,67 @@ async function initAuth(){
 }
 
 /* =========================
-   Helpers
+   Bind: members / coaches / schedule / guide / waiting
 ========================= */
-function normGrade(g){
-  const G = (g || "B").toUpperCase();
-  return ["A","B","C","D"].includes(G) ? G : "B";
-}
-function nameWithGrade(obj){
-  const n = (obj?.name || "").trim();
-  const g = normGrade(obj?.grade);
-  return n ? `${n}(${g})` : "(이름없음)";
-}
-function days(){
-  // 월~금
-  return ["mon","tue","wed","thu","fri"];
-}
-function dayLabel(key){
-  return ({mon:"월",tue:"화",wed:"수",thu:"목",fri:"금"})[key] || key;
-}
-
-/* =========================
-   Coaches UI
-   - 선택된 레슨자는 chips로 표시
-   - chip 클릭하면 해제(= coaches에서 제거)
-========================= */
-function renderCoachChips(){
-  const el = $("coachChips");
-  el.innerHTML = "";
-
-  const ids = Object.keys(coaches || {});
-  if(ids.length === 0){
-    el.innerHTML = `<div class="mut">레슨자가 아직 없습니다. [회원에서 선택]으로 지정하세요.</div>`;
-    // 시간표 렌더에서 드롭다운도 갱신
-    renderScheduleTable();
-    return;
-  }
-
-  // A→D, 이름순 정렬
-  const order = {A:1,B:2,C:3,D:4};
-  ids.sort((a,b)=>{
-    const va = coaches[a] || {};
-    const vb = coaches[b] || {};
-    const ga = order[normGrade(va.grade)] || 99;
-    const gb = order[normGrade(vb.grade)] || 99;
-    if(ga !== gb) return ga - gb;
-    return (va.name||"").localeCompare(vb.name||"");
+function bindAllMembers(){
+  onValue(ref(db, PATH.allMembers), (snap)=>{
+    members = snap.exists() ? snap.val() : {};
+    renderMemberGrid();
   });
+}
 
-  ids.forEach((id)=>{
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.textContent = nameWithGrade(coaches[id]);
-    chip.title = "클릭하면 레슨자에서 제외됩니다.";
-    chip.addEventListener("click", async ()=>{
-      // coaches에서 제거
-      await remove(ref(db, `${PATH.coaches}/${id}`));
+function bindCoaches(){
+  onValue(ref(db, PATH.coaches), (snap)=>{
+    coaches = snap.exists() ? snap.val() : {};
+    renderCoachChips();
+    renderScheduleTable(); // 레슨자 목록이 바뀌면 시간표 select도 갱신
+    renderMemberGrid();    // 모달 버튼 on/off 갱신
+  });
+}
 
-      // 시간표에서 이 사람이 설정된 칸은 비우기(데이터 꼬임 방지)
-      const cleared = clearScheduleMember(id);
-      if(cleared) await set(ref(db, PATH.schedule), schedule);
+function ensureScheduleShape(){
+  schedule = schedule || {};
+  schedule.times = schedule.times || { morning:"", lunch:"", evening:"" };
+  schedule.slots = schedule.slots || {
+    morning:{}, lunch:{}, evening:{}
+  };
 
-      toast("레슨자 해제");
+  slotRows.forEach(r=>{
+    schedule.slots[r.key] = schedule.slots[r.key] || {};
+    days().forEach(d=>{
+      if(schedule.slots[r.key][d] === undefined) schedule.slots[r.key][d] = "";
     });
-    el.appendChild(chip);
   });
+}
 
-  // 시간표 드롭다운 갱신
-  renderScheduleTable();
+function bindSchedule(){
+  onValue(ref(db, PATH.schedule), (snap)=>{
+    schedule = snap.exists() ? snap.val() : null;
+    ensureScheduleShape();
+    renderScheduleTable();
+  });
+}
+
+function bindGuide(){
+  onValue(ref(db, PATH.guide), (snap)=>{
+    $("guideText").value = snap.exists() ? (snap.val() || "") : "";
+  });
+}
+
+function bindWaiting(){
+  onValue(ref(db, PATH.waiting), (snap)=>{
+    const data = snap.exists() ? snap.val() : {};
+    renderWaiting(data);
+  });
 }
 
 /* =========================
-   Member picker (modal)
-   - 전체 회원을 버튼으로 표시
-   - 클릭하면 coaches에 등록/해제(토글)
+   Lesson Coaches: select from members
 ========================= */
 function openPicker(){
   $("pickerBack").classList.add("show");
   $("memberSearch").value = "";
-  renderMemberGrid("");
+  renderMemberGrid();
   $("memberSearch").focus();
 }
 function closePicker(){
@@ -127,154 +125,156 @@ function closePicker(){
 }
 
 function isCoach(memberId){
-  return !!(coaches && coaches[memberId]);
+  return !!coaches?.[memberId];
 }
 
 async function toggleCoach(memberId){
-  const m = members[memberId];
+  const m = members?.[memberId];
   if(!m) return;
 
   if(isCoach(memberId)){
+    // 레슨자 해제: coaches에서 제거 + 시간표에 배정된 것도 제거(선택사항)
     await remove(ref(db, `${PATH.coaches}/${memberId}`));
+
+    // 시간표에서 해당 레슨자 들어간 칸 비우기
+    if(schedule){
+      ensureScheduleShape();
+      let changed = false;
+      slotRows.forEach(r=>{
+        days().forEach(d=>{
+          if(schedule.slots[r.key][d] === memberId){
+            schedule.slots[r.key][d] = "";
+            changed = true;
+          }
+        });
+      });
+      if(changed) await set(ref(db, PATH.schedule), schedule);
+    }
+
     toast("레슨자 해제");
-    // 시간표에서도 제거
-    const cleared = clearScheduleMember(memberId);
-    if(cleared) await set(ref(db, PATH.schedule), schedule);
   }else{
-    // coaches는 memberId를 key로 저장하면 중복 방지 깔끔합니다
     await set(ref(db, `${PATH.coaches}/${memberId}`), {
-      name: (m.name || "").trim(),
-      grade: normGrade(m.grade)
+      name: nameOnly(m)
     });
     toast("레슨자 등록");
   }
 }
 
-function renderMemberGrid(q){
-  const grid = $("memberGrid");
-  grid.innerHTML = "";
+/* 칩(레슨자 목록) */
+function renderCoachChips(){
+  const el = $("coachChips");
+  el.innerHTML = "";
 
-  const query = (q || "").trim();
-  const ids = Object.keys(members || {});
+  const ids = Object.keys(coaches || {});
   if(ids.length === 0){
-    grid.innerHTML = `<div class="mut">회원 데이터(members)가 비어있습니다. 먼저 테니스 관리자에서 회원을 등록하세요.</div>`;
+    el.innerHTML = `<div class="mut">아직 레슨자가 없습니다. [회원에서 선택]으로 지정하세요.</div>`;
     return;
   }
 
-  // 필터 + 정렬
-  const order = {A:1,B:2,C:3,D:4};
-  const filtered = ids
-    .filter(id=>{
-      const label = nameWithGrade(members[id]);
-      return !query || label.includes(query);
-    })
-    .sort((a,b)=>{
-      const va = members[a] || {};
-      const vb = members[b] || {};
-      const ga = order[normGrade(va.grade)] || 99;
-      const gb = order[normGrade(vb.grade)] || 99;
-      if(ga !== gb) return ga - gb;
-      return (va.name||"").localeCompare(vb.name||"");
-    });
+  // 이름순
+  ids.sort((a,b)=> (nameOnly(coaches[a]) || "").localeCompare(nameOnly(coaches[b]) || ""));
 
-  filtered.forEach((id)=>{
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "mbtn" + (isCoach(id) ? " on" : "");
-    btn.textContent = nameWithGrade(members[id]);
-    btn.addEventListener("click", async ()=>{
-      await toggleCoach(id);
-      // UI만 갱신(데이터는 onValue로 다시 들어오지만 체감속도 위해 즉시 반영)
-      btn.classList.toggle("on");
-    });
-    grid.appendChild(btn);
+  ids.forEach(id=>{
+    const c = coaches[id] || {};
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.textContent = nameOnly(c) || "(이름없음)";
+    const sm = document.createElement("small");
+    sm.textContent = "해제";
+    chip.appendChild(sm);
+    chip.addEventListener("click", ()=> toggleCoach(id));
+    el.appendChild(chip);
+  });
+}
+
+/* 모달 회원 버튼 */
+function renderMemberGrid(){
+  const grid = $("memberGrid");
+  if(!grid) return;
+  grid.innerHTML = "";
+
+  const q = ($("memberSearch")?.value || "").trim().toLowerCase();
+
+  const entries = Object.entries(members || {})
+    .map(([id,v])=>({id, name:nameOnly(v), raw:v}))
+    .filter(x=> x.name)
+    .filter(x=> !q || x.name.toLowerCase().includes(q))
+    .sort((a,b)=> a.name.localeCompare(b.name));
+
+  if(entries.length === 0){
+    grid.innerHTML = `<div class="mut">표시할 회원이 없습니다.</div>`;
+    return;
+  }
+
+  entries.forEach(x=>{
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mbtn" + (isCoach(x.id) ? " on" : "");
+    b.textContent = x.name; // ✅ 등급 표시 없음
+    b.addEventListener("click", ()=> toggleCoach(x.id));
+    grid.appendChild(b);
   });
 }
 
 /* =========================
-   Schedule (아침/점심/저녁 x 월~금)
-   - 각 칸: 레슨자 memberId 저장
+   Schedule (times + slots)
 ========================= */
-function ensureScheduleShape(){
-  schedule = schedule || {};
-  schedule.morning = schedule.morning || {};
-  schedule.lunch   = schedule.lunch   || {};
-  schedule.evening = schedule.evening || {};
-  days().forEach(d=>{
-    if(schedule.morning[d] === undefined) schedule.morning[d] = "";
-    if(schedule.lunch[d] === undefined)   schedule.lunch[d]   = "";
-    if(schedule.evening[d] === undefined) schedule.evening[d] = "";
-  });
-}
-
-function clearScheduleMember(memberId){
-  let changed = false;
-  ["morning","lunch","evening"].forEach(slot=>{
-    days().forEach(d=>{
-      if(schedule?.[slot]?.[d] === memberId){
-        schedule[slot][d] = "";
-        changed = true;
-      }
-    });
-  });
-  return changed;
-}
-
 function coachOptionsHTML(selectedId){
-  // 첫 번째 옵션: 비우기
   let html = `<option value="">-</option>`;
 
   const ids = Object.keys(coaches || {});
-  // A→D, 이름순
-  const order = {A:1,B:2,C:3,D:4};
   ids.sort((a,b)=>{
-    const va = coaches[a] || {};
-    const vb = coaches[b] || {};
-    const ga = order[normGrade(va.grade)] || 99;
-    const gb = order[normGrade(vb.grade)] || 99;
-    if(ga !== gb) return ga - gb;
-    return (va.name||"").localeCompare(vb.name||"");
+    const na = nameOnly(coaches[a]) || "";
+    const nb = nameOnly(coaches[b]) || "";
+    return na.localeCompare(nb);
   });
 
   ids.forEach(id=>{
-    const label = nameWithGrade(coaches[id]);
+    const label = nameOnly(coaches[id]) || "(이름없음)"; // ✅ 등급 제거
     const sel = (id === selectedId) ? "selected" : "";
     html += `<option value="${id}" ${sel}>${label}</option>`;
   });
+
   return html;
 }
 
 function renderScheduleTable(){
-  ensureScheduleShape();
-
   const tbody = $("scheduleBody");
+  if(!tbody) return;
+
+  ensureScheduleShape();
   tbody.innerHTML = "";
 
-  const rows = [
-    { key:"morning", label:"아침" },
-    { key:"lunch",   label:"점심" },
-    { key:"evening", label:"저녁" }
-  ];
-
-  rows.forEach(r=>{
+  slotRows.forEach(r=>{
     const tr = document.createElement("tr");
 
+    // 구분
     const th = document.createElement("th");
     th.textContent = r.label;
     tr.appendChild(th);
 
+    // ✅ 시간 입력
+    const tdTime = document.createElement("td");
+    const timeInput = document.createElement("input");
+    timeInput.className = "time-input";
+    timeInput.placeholder = "예: 07:00~08:00";
+    timeInput.value = schedule.times?.[r.key] || "";
+    timeInput.addEventListener("input", ()=>{
+      schedule.times[r.key] = timeInput.value;
+    });
+    tdTime.appendChild(timeInput);
+    tr.appendChild(tdTime);
+
+    // 월~금
     days().forEach(d=>{
       const td = document.createElement("td");
       const sel = document.createElement("select");
-      sel.innerHTML = coachOptionsHTML(schedule[r.key][d] || "");
 
-      // 레슨자가 0명이면 선택 자체를 막고 안내
-      if(Object.keys(coaches||{}).length === 0){
-        sel.disabled = true;
-      }
+      sel.innerHTML = coachOptionsHTML(schedule.slots[r.key][d] || "");
+      sel.disabled = (Object.keys(coaches||{}).length === 0);
 
       sel.addEventListener("change", ()=>{
-        schedule[r.key][d] = sel.value || "";
+        schedule.slots[r.key][d] = sel.value || "";
       });
 
       td.appendChild(sel);
@@ -295,13 +295,27 @@ async function saveSchedule(){
    Guide
 ========================= */
 async function saveGuide(){
-  await set(ref(db, PATH.guide), $("guideText").value || "");
+  const txt = ($("guideText").value || "");
+  await set(ref(db, PATH.guide), txt);
   toast("안내문 저장 완료");
 }
 
 /* =========================
    Waiting list
 ========================= */
+async function addWaiting(){
+  const name = ($("waitingName").value || "").trim();
+  if(!name) return toast("이름을 입력하세요.");
+
+  await push(ref(db, PATH.waiting), {
+    name,
+    createdAt: Date.now()
+  });
+
+  $("waitingName").value = "";
+  toast("대기자 추가");
+}
+
 function renderWaiting(data){
   const el = $("waitingList");
   const entries = Object.entries(data || {});
@@ -309,71 +323,50 @@ function renderWaiting(data){
     el.textContent = "현재 대기자가 없습니다.";
     return;
   }
-  // name만 뽑아 보기 좋게 표시
-  const names = entries.map(([_,v])=> (v?.name||"").trim()).filter(Boolean);
-  el.textContent = names.join(" · ");
-}
 
-async function addWaiting(){
-  const name = ($("waitingName").value || "").trim();
-  if(!name) return;
+  // 등록 순서(혹은 이름순 원하면 바꿔도 됨)
+  entries.sort((a,b)=> (a[1]?.createdAt||0) - (b[1]?.createdAt||0));
 
-  // push id 생성은 set으로 간단히 구현
-  const waitingRef = ref(db, PATH.waiting);
-  const snap = await get(waitingRef);
-  const cur = snap.exists() ? (snap.val()||{}) : {};
-  // 새 키 만들기(간단 버전)
-  const key = "w_" + Date.now();
-  cur[key] = { name };
-  await set(waitingRef, cur);
+  // ✅ 공간 덜 차지: 한 줄 텍스트 + (삭제) 작게
+  el.innerHTML = "";
+  entries.forEach(([key, v], idx)=>{
+    const name = (v?.name || "").trim();
+    if(!name) return;
 
-  $("waitingName").value = "";
-  toast("대기자 추가");
-}
+    const span = document.createElement("span");
+    span.textContent = name;
 
-/* =========================
-   Bindings (onValue)
-========================= */
-function bindAll(){
-  // 전체 회원
-  onValue(ref(db, PATH.members), (snap)=>{
-    members = snap.exists() ? snap.val() : {};
-    // 모달이 열려 있으면 즉시 갱신
-    if($("pickerBack").classList.contains("show")){
-      renderMemberGrid($("memberSearch").value);
+    const del = document.createElement("button");
+    del.className = "btn danger";
+    del.style.padding = "4px 8px";
+    del.style.fontSize = "12px";
+    del.style.marginLeft = "6px";
+    del.textContent = "삭제";
+    del.addEventListener("click", async ()=>{
+      await remove(ref(db, `${PATH.waiting}/${key}`));
+      toast("삭제 완료");
+    });
+
+    const wrap = document.createElement("span");
+    wrap.style.display = "inline-flex";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "6px";
+
+    wrap.appendChild(span);
+    wrap.appendChild(del);
+
+    el.appendChild(wrap);
+
+    if(idx !== entries.length - 1){
+      const sep = document.createElement("span");
+      sep.textContent = "  ·  ";
+      el.appendChild(sep);
     }
-  });
-
-  // 레슨자
-  onValue(ref(db, PATH.coaches), (snap)=>{
-    coaches = snap.exists() ? snap.val() : {};
-    renderCoachChips();
-    // 모달이 열려 있으면 버튼 on/off 갱신
-    if($("pickerBack").classList.contains("show")){
-      renderMemberGrid($("memberSearch").value);
-    }
-  });
-
-  // 시간표
-  onValue(ref(db, PATH.schedule), (snap)=>{
-    schedule = snap.exists() ? snap.val() : {};
-    renderScheduleTable();
-  });
-
-  // 안내문
-  onValue(ref(db, PATH.guide), (snap)=>{
-    $("guideText").value = snap.exists() ? (snap.val() || "") : "";
-  });
-
-  // 대기자
-  onValue(ref(db, PATH.waiting), (snap)=>{
-    const data = snap.exists() ? snap.val() : {};
-    renderWaiting(data);
   });
 }
 
 /* =========================
-   Events
+   Wire
 ========================= */
 $("refreshBtn").addEventListener("click", ()=> location.reload());
 
@@ -382,14 +375,15 @@ $("closePickerBtn").addEventListener("click", closePicker);
 $("pickerBack").addEventListener("click", (e)=>{
   if(e.target === $("pickerBack")) closePicker();
 });
-
-$("memberSearch").addEventListener("input", (e)=>{
-  renderMemberGrid(e.target.value);
-});
+$("memberSearch").addEventListener("input", renderMemberGrid);
 
 $("saveScheduleBtn").addEventListener("click", saveSchedule);
 $("saveGuideBtn").addEventListener("click", saveGuide);
+
 $("addWaitingBtn").addEventListener("click", addWaiting);
+$("waitingName").addEventListener("keydown", (e)=>{
+  if(e.key === "Enter") addWaiting();
+});
 
 /* =========================
    Init
@@ -397,11 +391,14 @@ $("addWaitingBtn").addEventListener("click", addWaiting);
 (async function main(){
   try{
     await initAuth();
-    bindAll();
-    renderScheduleTable();
+    bindAllMembers();
+    bindCoaches();
+    bindSchedule();
+    bindGuide();
+    bindWaiting();
   }catch(e){
     console.error(e);
     $("statusText").textContent = "오류(콘솔 확인)";
-    toast("Firebase 오류");
+    toast("연결 오류");
   }
 })();
