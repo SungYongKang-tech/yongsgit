@@ -162,64 +162,92 @@ function renderMemberList(data){
     return a[1].name.localeCompare(b[1].name);
   });
 
+  // 🔥 버튼 래퍼
+  const wrap = document.createElement("div");
+  wrap.style.display = "flex";
+  wrap.style.flexWrap = "wrap";
+  wrap.style.gap = "8px";
+
   entries.forEach(([key,val])=>{
-    const item = document.createElement("div");
-    item.className = "item";
 
-    const left = document.createElement("div");
-    left.className = "meta";
-    left.innerHTML = `
-      <div class="k">${val.name}(${val.grade})</div>
-      <div class="s">점수: ${val.weight}</div>
-    `;
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.style.borderRadius = "20px";
+    btn.style.padding = "8px 12px";
+    btn.style.fontSize = "14px";
+    btn.textContent = `${val.name}(${val.grade})`;
 
-    const right = document.createElement("div");
-    right.className = "row";
-
-    const sel = document.createElement("select");
-    sel.className = "select";
-    ["A","B","C","D"].forEach(g=>{
-      const opt = document.createElement("option");
-      opt.value = g;
-      opt.textContent = g;
-      if(val.grade===g) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    sel.disabled = !unlocked;
-
-    const save = document.createElement("button");
-    save.className="btn ok";
-    save.textContent="수정";
-    save.disabled = !unlocked;
-    save.onclick = async ()=>{
-      if(!unlocked) return;
-      const g = sel.value;
-      await update(ref(db,`members/${key}`),{
-        grade:g,
-        weight:GRADE_WEIGHT[g],
-        updatedAt:Date.now()
-      });
-      toast("수정 완료");
+    // 클릭 시 수정 패널 열기
+    btn.onclick = ()=>{
+      if(!unlocked){
+        toast("잠금 해제 후 수정 가능");
+        return;
+      }
+      openEditPanel(key,val);
     };
 
-    const del = document.createElement("button");
-    del.className="btn danger";
-    del.textContent="삭제";
-    del.disabled = !unlocked;
-    del.onclick = async ()=>{
-      if(!unlocked) return;
-      await remove(ref(db,`members/${key}`));
-      toast("삭제 완료");
-    };
-
-    right.appendChild(sel);
-    right.appendChild(save);
-    right.appendChild(del);
-
-    item.appendChild(left);
-    item.appendChild(right);
-    el.appendChild(item);
+    wrap.appendChild(btn);
   });
+
+  el.appendChild(wrap);
+}
+
+function openEditPanel(key,val){
+
+  // 기존 패널 제거
+  const old = document.getElementById("editPanel");
+  if(old) old.remove();
+
+  const panel = document.createElement("div");
+  panel.id = "editPanel";
+  panel.className = "card";
+  panel.style.marginTop = "12px";
+
+  panel.innerHTML = `
+    <h3>${val.name} (${val.grade})</h3>
+  `;
+
+  const sel = document.createElement("select");
+  sel.className = "select";
+  ["A","B","C","D"].forEach(g=>{
+    const opt = document.createElement("option");
+    opt.value = g;
+    opt.textContent = g;
+    if(val.grade===g) opt.selected = true;
+    sel.appendChild(opt);
+  });
+
+  const save = document.createElement("button");
+  save.className="btn ok";
+  save.textContent="수정";
+  save.style.marginRight="8px";
+  save.onclick = async ()=>{
+    const g = sel.value;
+    await update(ref(db,`members/${key}`),{
+      grade:g,
+      weight:GRADE_WEIGHT[g],
+      updatedAt:Date.now()
+    });
+    toast("수정 완료");
+    panel.remove();
+  };
+
+  const del = document.createElement("button");
+  del.className="btn danger";
+  del.textContent="삭제";
+  del.onclick = async ()=>{
+    await remove(ref(db,`members/${key}`));
+    toast("삭제 완료");
+    panel.remove();
+  };
+
+  panel.appendChild(sel);
+  panel.appendChild(document.createElement("br"));
+  panel.appendChild(document.createElement("br"));
+  panel.appendChild(save);
+  panel.appendChild(del);
+
+  $("memberList").appendChild(panel);
 }
 
 async function addMember(){
