@@ -255,6 +255,33 @@ async function addMember(){
     bindPin();
     bindMembers();
     setLockUI();
+
+    /* =========================
+       Tabs (여기로 이동)
+    ========================== */
+
+    const tabButtons = document.querySelectorAll(".tab");
+    const tabSections = {
+      lock: $("tab-lock"),
+      members: $("tab-members")
+    };
+
+    function showTab(key){
+      tabButtons.forEach(btn=>{
+        btn.classList.toggle("active", btn.dataset.tab === key);
+      });
+
+      Object.entries(tabSections).forEach(([k,sec])=>{
+        sec.classList.toggle("hide", k !== key);
+      });
+    }
+
+    tabButtons.forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        showTab(btn.dataset.tab);
+      });
+    });
+
   }catch(e){
     console.error(e);
     toast("Firebase 오류");
