@@ -5,66 +5,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>레슨 시간표</title>
   <style>
-    :root{
-      --bg:#f6f7fb;
-      --card:#ffffff;
-      --bd:#e6e8ef;
-      --txt:#0f172a;
-      --mut:#64748b;
-      --r:16px;
-    }
+    :root{--bg:#f6f7fb;--card:#fff;--bd:#e6e8ef;--txt:#0f172a;--mut:#64748b;--r:16px;}
     *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
-      background:var(--bg);
-      color:var(--txt);
-    }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
     .wrap{max-width:760px;margin:0 auto;padding:14px}
     h2{margin:4px 0 12px;font-size:16px;font-weight:900}
-
-    .tableWrap{
-      background:var(--card);
-      border:1px solid var(--bd);
-      border-radius:var(--r);
-      overflow:auto; /* 모바일 가로스크롤 */
-    }
-
-    table{
-      width:100%;
-      border-collapse:separate;
-      border-spacing:0;
-      min-width:480px;
-    }
-
-    th,td{
-      padding:14px 12px;
-      border-bottom:1px solid var(--bd);
-      text-align:left;
-      font-size:15px;
-      white-space:nowrap;
-    }
-
-    th{
-      background:#f2f4f8;
-      font-weight:900;
-      position:sticky;
-      top:0;
-    }
-
+    .tableWrap{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);overflow:auto}
+    table{width:100%;border-collapse:separate;border-spacing:0;min-width:480px}
+    th,td{padding:14px 12px;border-bottom:1px solid var(--bd);text-align:left;font-size:15px;white-space:nowrap}
+    th{background:#f2f4f8;font-weight:900;position:sticky;top:0}
     tr:last-child td{border-bottom:none}
-
-    .mut{
-      color:var(--mut);
-      font-weight:700;
-      font-size:13px;
-    }
+    .mut{color:var(--mut);font-weight:700;font-size:13px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h2>🎾 레슨 시간표</h2>
-
     <div class="tableWrap">
       <table>
         <thead>
@@ -75,14 +31,60 @@
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr>
-            <td colspan="3" class="mut">불러오는 중...</td>
-          </tr>
+          <tr><td colspan="3" class="mut">불러오는 중...</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 
-  <script type="module" src="./view.js"></script>
+  <script type="module">
+    import { db, auth } from "../firebase.js"; 
+    // ⬆️ firebase.js 위치에 따라 ./firebase.js 또는 ../../firebase.js 로 바꿔야 할 수 있습니다.
+
+    import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+    const SCHEDULE_PATH = "lessonSchedule"; // 관리자 저장 경로와 반드시 동일
+
+    const dayOrder = { "월":1,"화":2,"수":3,"목":4,"금":5,"토":6,"일":7 };
+
+    const esc = (s)=>String(s??"")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+
+    const timeRange = (s,e)=> (s && e) ? `${s} ~ ${e}` : (s || e || "");
+
+    await signInAnonymously(auth);
+
+    onValue(ref(db, SCHEDULE_PATH), (snap)=>{
+      const tbody = document.getElementById("tbody");
+
+      if(!snap.exists()){
+        tbody.innerHTML = `<tr><td colspan="3" class="mut">등록된 시간표가 없습니다.</td></tr>`;
+        return;
+      }
+
+      const raw = snap.val();
+      const list = Object.entries(raw).map(([id,v])=>({ id, ...(v||{}) }));
+
+      list.sort((a,b)=>{
+        const da = dayOrder[a.day] || 99;
+        const dbb = dayOrder[b.day] || 99;
+        if(da !== dbb) return da - dbb;
+        return (a.start||"").localeCompare(b.start||"");
+      });
+
+      tbody.innerHTML = list.map(s=>`
+        <tr>
+          <td><b>${esc(s.day||"")}</b></td>
+          <td>${esc(timeRange(s.start, s.end))}</td>
+          <td>${esc(s.name||"")}</td>
+        </tr>
+      `).join("");
+    }, (err)=>{
+      console.error(err);
+      document.getElementById("tbody").innerHTML =
+        `<tr><td colspan="3" class="mut">불러오기 실패: ${esc(err?.message||err)}</td></tr>`;
+    });
+  </script>
 </body>
 </html>
