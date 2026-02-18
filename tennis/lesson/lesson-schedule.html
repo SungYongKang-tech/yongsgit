@@ -3,88 +3,205 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>레슨 시간표</title>
+  <title>레슨 주간 시간표</title>
   <style>
-    :root{--bg:#f6f7fb;--card:#fff;--bd:#e6e8ef;--txt:#0f172a;--mut:#64748b;--r:16px;}
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
+      --txt:#0f172a; --mut:#64748b; --r:16px;
+    }
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
-    .wrap{max-width:760px;margin:0 auto;padding:14px}
-    h2{margin:4px 0 12px;font-size:16px;font-weight:900}
-    .tableWrap{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);overflow:auto}
-    table{width:100%;border-collapse:separate;border-spacing:0;min-width:480px}
-    th,td{padding:14px 12px;border-bottom:1px solid var(--bd);text-align:left;font-size:15px;white-space:nowrap}
-    th{background:#f2f4f8;font-weight:900;position:sticky;top:0}
+    .wrap{max-width:980px;margin:0 auto;padding:12px}
+    h2{margin:6px 0 10px;font-size:16px;font-weight:900}
+
+    .tableWrap{
+      background:var(--card);
+      border:1px solid var(--bd);
+      border-radius:var(--r);
+      overflow:auto; /* 모바일 가로스크롤 */
+    }
+    table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      min-width:740px; /* 모바일 가로스크롤 대비 */
+    }
+    th,td{
+      padding:12px 10px;
+      border-bottom:1px solid var(--bd);
+      border-right:1px solid var(--bd);
+      text-align:left;
+      font-size:14px;
+      vertical-align:top;
+      white-space:nowrap;
+    }
+    th{
+      position:sticky; top:0;
+      background:#f2f4f8;
+      font-weight:900;
+      z-index:2;
+    }
+    th:first-child{
+      left:0; z-index:3;
+      position:sticky;
+      background:#eef2ff;
+    }
+    td:first-child{
+      position:sticky; left:0; z-index:1;
+      background:#ffffff;
+      font-weight:900;
+      color:#0f172a;
+    }
     tr:last-child td{border-bottom:none}
-    .mut{color:var(--mut);font-weight:700;font-size:13px}
+    td:last-child, th:last-child{border-right:none}
+
+    .cell{
+      font-weight:850;
+      line-height:1.35;
+      white-space:normal;
+    }
+    .empty{color:rgba(100,116,139,.7); font-weight:700}
+    .mut{color:var(--mut);font-weight:700;font-size:12px;margin-top:8px}
+    .err{color:#b91c1c;font-weight:800}
   </style>
 </head>
+
 <body>
   <div class="wrap">
-    <h2>🎾 레슨 시간표</h2>
+    <h2>🎾 레슨 주간 시간표</h2>
+
     <div class="tableWrap">
-      <table>
+      <table aria-label="레슨 주간 시간표">
         <thead>
           <tr>
-            <th style="width:90px;">요일</th>
-            <th style="width:160px;">시간</th>
-            <th>이름</th>
+            <th style="width:110px;">시간</th>
+            <th style="width:160px;">월</th>
+            <th style="width:160px;">화</th>
+            <th style="width:160px;">수</th>
+            <th style="width:160px;">목</th>
+            <th style="width:160px;">금</th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="3" class="mut">불러오는 중...</td></tr>
+          <tr><td colspan="6" class="empty">불러오는 중...</td></tr>
         </tbody>
       </table>
     </div>
+
+    <div class="mut" id="status"></div>
   </div>
 
   <script type="module">
-    import { db, auth } from "../firebase.js"; 
-    // ⬆️ firebase.js 위치에 따라 ./firebase.js 또는 ../../firebase.js 로 바꿔야 할 수 있습니다.
-
+    // ✅ firebase.js 위치에 맞게 경로 수정
+    // 현재 폴더가 tennis/lesson/ 이고 firebase.js가 tennis/firebase.js 라면 ../firebase.js 가 맞습니다.
+    import { db, auth } from "../firebase.js";
     import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-    const SCHEDULE_PATH = "lessonSchedule"; // 관리자 저장 경로와 반드시 동일
+    // ✅ 관리자모드가 저장하는 경로와 동일하게!
+    const SCHEDULE_PATH = "lessonSchedule";
 
-    const dayOrder = { "월":1,"화":2,"수":3,"목":4,"금":5,"토":6,"일":7 };
+    // 월~금만
+    const DAYS = ["월","화","수","목","금"];
+    const dayOrder = Object.fromEntries(DAYS.map((d,i)=>[d,i]));
+
+    const $ = (id)=>document.getElementById(id);
 
     const esc = (s)=>String(s??"")
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
 
-    const timeRange = (s,e)=> (s && e) ? `${s} ~ ${e}` : (s || e || "");
+    // "19:00" -> 1140 분 (정렬용)
+    function toMin(t){
+      const m = /^(\d{1,2}):(\d{2})$/.exec(t||"");
+      if(!m) return 99999;
+      return Number(m[1])*60 + Number(m[2]);
+    }
+
+    function slotLabel(s){
+      // start~end가 있으면 "19:00~20:00" 표시, 없으면 "19:00"
+      if(s.start && s.end) return `${s.start}~${s.end}`;
+      return s.start || "";
+    }
 
     await signInAnonymously(auth);
 
-    onValue(ref(db, SCHEDULE_PATH), (snap)=>{
-      const tbody = document.getElementById("tbody");
+    onValue(
+      ref(db, SCHEDULE_PATH),
+      (snap)=>{
+        const tbody = $("tbody");
+        const status = $("status");
 
-      if(!snap.exists()){
-        tbody.innerHTML = `<tr><td colspan="3" class="mut">등록된 시간표가 없습니다.</td></tr>`;
-        return;
+        if(!snap.exists()){
+          tbody.innerHTML = `<tr><td colspan="6" class="empty">등록된 시간표가 없습니다.</td></tr>`;
+          status.textContent = "※ 관리자모드에 등록된 시간표만 표시됩니다.";
+          return;
+        }
+
+        const raw = snap.val();
+
+        // ✅ push로 저장한 경우: {id:{...}, id2:{...}}
+        const list = Array.isArray(raw)
+          ? raw.filter(Boolean).map((v,i)=>({id:String(i), ...(v||{})}))
+          : Object.entries(raw).map(([id,v])=>({id, ...(v||{})}));
+
+        // ✅ 필요한 필드만: day, start, end(선택), name
+        // 월~금만 필터
+        const filtered = list
+          .filter(x => DAYS.includes(x.day))
+          .filter(x => x.start && x.name); // start와 name 없으면 표에 못 넣음
+
+        // ✅ 시간 슬롯(행) 만들기: start 기준으로 고유값 생성
+        // 같은 start라도 end가 다를 수 있으니 label( start~end )로 행을 만듦
+        const slotsMap = new Map(); // key=label, value={label, startMin}
+        for(const s of filtered){
+          const label = slotLabel(s);
+          if(!label) continue;
+          if(!slotsMap.has(label)){
+            slotsMap.set(label, { label, startMin: toMin(s.start) });
+          }
+        }
+        const slots = Array.from(slotsMap.values()).sort((a,b)=>a.startMin-b.startMin);
+
+        // ✅ 그리드 데이터: grid[label][day] = [names...]
+        const grid = {};
+        for(const slot of slots) grid[slot.label] = Object.fromEntries(DAYS.map(d=>[d, []]));
+
+        for(const s of filtered){
+          const label = slotLabel(s);
+          if(!grid[label]) continue;
+          grid[label][s.day].push(String(s.name));
+        }
+
+        // ✅ 렌더
+        tbody.innerHTML = slots.map(slot=>{
+          const label = slot.label;
+          const tds = DAYS.map(d=>{
+            const names = grid[label][d] || [];
+            if(names.length===0) return `<td class="empty">-</td>`;
+            // 여러 명이면 줄바꿈
+            return `<td class="cell">${names.map(esc).join("<br>")}</td>`;
+          }).join("");
+
+          return `
+            <tr>
+              <td>${esc(label)}</td>
+              ${tds}
+            </tr>
+          `;
+        }).join("") || `<tr><td colspan="6" class="empty">표시할 시간표가 없습니다.</td></tr>`;
+
+        status.textContent = `총 ${filtered.length}건 · 시간 슬롯 ${slots.length}개`;
+      },
+      (err)=>{
+        console.error(err);
+        $("tbody").innerHTML = `<tr><td colspan="6" class="err">불러오기 실패: ${esc(err?.message||err)}</td></tr>`;
+        $("status").textContent = "경로/권한/파일경로(import) 문제일 가능성이 큽니다. 콘솔(F12)을 확인하세요.";
       }
-
-      const raw = snap.val();
-      const list = Object.entries(raw).map(([id,v])=>({ id, ...(v||{}) }));
-
-      list.sort((a,b)=>{
-        const da = dayOrder[a.day] || 99;
-        const dbb = dayOrder[b.day] || 99;
-        if(da !== dbb) return da - dbb;
-        return (a.start||"").localeCompare(b.start||"");
-      });
-
-      tbody.innerHTML = list.map(s=>`
-        <tr>
-          <td><b>${esc(s.day||"")}</b></td>
-          <td>${esc(timeRange(s.start, s.end))}</td>
-          <td>${esc(s.name||"")}</td>
-        </tr>
-      `).join("");
-    }, (err)=>{
-      console.error(err);
-      document.getElementById("tbody").innerHTML =
-        `<tr><td colspan="3" class="mut">불러오기 실패: ${esc(err?.message||err)}</td></tr>`;
-    });
+    );
   </script>
 </body>
 </html>
