@@ -48,29 +48,25 @@
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     @media (max-width:720px){ .grid2{grid-template-columns:1fr} }
 
-    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
-    .tab{
-      padding:10px 12px;border-radius:999px;border:1px solid var(--bd);
-      background:#fff;color:var(--mut);cursor:pointer;font-weight:900
+    .sep{height:1px;background:var(--bd);margin:12px 0}
+
+    /* ✅ 멤버 버튼 그리드(모바일 공간 절약) */
+    .chipwrap{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{
+      border:1px solid rgba(37,99,235,.22);
+      background:#fff;
+      padding:8px 12px;
+      border-radius:999px;
+      font-weight:900;
+      cursor:pointer;
+      font-size:14px;
+      line-height:1;
+      white-space:nowrap;
     }
-    .tab.active{background:rgba(37,99,235,.10);color:var(--accent);border-color:rgba(37,99,235,.25)}
-    .list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-    .item{
-      display:flex;align-items:center;justify-content:space-between;gap:10px;
-      padding:10px 12px;border:1px solid var(--bd);border-radius:12px;background:#fff;
+    @media (max-width:480px){
+      .chip{font-size:13px;padding:7px 10px}
     }
-    .item .meta{display:flex;flex-direction:column;gap:2px;min-width:0}
-    .item .meta .k{font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .item .meta .s{font-size:12px;color:var(--mut)}
-    .pill{
-      display:inline-flex;align-items:center;gap:6px;
-      padding:6px 10px;border-radius:999px;font-size:12px;font-weight:900;
-      border:1px solid var(--bd);background:#fff;color:var(--mut)
-    }
-    .pill.on{background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.25);color:var(--ok)}
-    .pill.off{background:rgba(239,68,68,.10);border-color:rgba(239,68,68,.25);color:var(--danger)}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-    .top-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
     .toast{
       position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
       background:#111827;color:#fff;padding:10px 12px;border-radius:999px;
@@ -79,100 +75,108 @@
       font-weight:900;font-size:13px
     }
     .toast.show{opacity:1}
-    .hide{display:none !important}
-    .sep{height:1px;background:var(--bd);margin:12px 0}
+
+    /* 로그인 화면 가운데 느낌 */
+    .loginCard{max-width:520px;margin:0 auto}
+    .error{color:var(--danger);font-weight:900;margin-top:8px}
   </style>
 </head>
 
 <body>
   <div class="wrap">
-    <header>
-      <div class="title">
-        <h1>🛠️ KOEN 테니스 관리자</h1>
-        <div class="sub">PIN 잠금 · 멤버(등급) 관리</div>
-      </div>
-      <div class="top-actions">
-        <a class="btn" href="../index.html">← 메인</a>
-        <button class="btn" id="refreshBtn">새로고침</button>
-      </div>
-    </header>
 
-    <!-- 상태 카드 -->
-    <div class="card">
-      <div class="row" style="align-items:center;justify-content:space-between">
+    <!-- ✅ 로그인 전 화면 -->
+    <section id="loginSection" class="card loginCard">
+      <h2>🔐 관리자 로그인</h2>
+      <div class="hint">
+        관리자 페이지는 비밀번호 입력 후 이용 가능합니다.<br/>
+        (최초 1회는 비밀번호를 입력하면 자동으로 “초기 설정”됩니다.)
+      </div>
+      <div class="sep"></div>
+
+      <label class="hint">관리자 비밀번호</label>
+      <input class="input" id="loginPassword" type="password" placeholder="비밀번호 입력" />
+
+      <div class="row" style="margin-top:10px;justify-content:space-between;align-items:center">
+        <a class="btn" href="../index.html">← 메인</a>
+        <button class="btn primary" id="loginBtn">로그인</button>
+      </div>
+
+      <div id="loginError" class="error"></div>
+    </section>
+
+    <!-- ✅ 로그인 후 화면 -->
+    <div id="adminSection" style="display:none;">
+
+      <header>
+        <div class="title">
+          <h1>🛠️ KOEN 테니스 관리자</h1>
+          <div class="sub">멤버(등급) 관리 · 비밀번호 변경</div>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn" id="refreshBtn">새로고침</button>
+          <button class="btn danger" id="logoutBtn">로그아웃</button>
+        </div>
+      </header>
+
+      <!-- 상태 카드 (원하시면 유지) -->
+      <div class="card">
         <div class="hint">
           상태: <span id="statusText" class="mono">연결 준비중…</span><br/>
           UID: <span id="uidText" class="mono">-</span>
         </div>
-        <span id="lockPill" class="pill off">잠금</span>
       </div>
+
+      <!-- 비밀번호 변경 -->
+      <section class="card" style="margin-top:14px">
+        <h2>🔑 관리자 비밀번호 변경</h2>
+        <div class="hint">새 비밀번호를 입력 후 변경하세요.</div>
+        <div class="sep"></div>
+
+        <div class="grid2">
+          <div>
+            <label class="hint">새 비밀번호</label>
+            <input class="input" id="newPass1" type="password" placeholder="4자리 이상 권장" />
+          </div>
+          <div>
+            <label class="hint">새 비밀번호 확인</label>
+            <input class="input" id="newPass2" type="password" placeholder="한번 더 입력" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;justify-content:flex-end">
+          <button class="btn ok" id="changePassBtn">비밀번호 변경</button>
+        </div>
+      </section>
+
+      <!-- 멤버 관리 -->
+      <section class="card" style="margin-top:14px">
+        <h2>👥 멤버 관리</h2>
+        <div class="hint">선수는 버튼 형태로 표시됩니다. 선수 버튼을 누르면 수정/삭제가 가능합니다.</div>
+        <div class="sep"></div>
+
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1;min-width:180px">
+            <label class="hint">이름</label>
+            <input class="input" id="mName" placeholder="예: 강성용" />
+          </div>
+
+          <div style="flex:1;min-width:140px">
+            <label class="hint">등급</label>
+            <select class="select" id="mGrade">
+              <option value="A">A</option>
+              <option value="B" selected>B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+
+          <button class="btn primary" id="addMemberBtn">추가</button>
+        </div>
+
+        <div style="margin-top:12px" id="memberList" class="chipwrap"></div>
+      </section>
     </div>
-
-    <div class="tabs">
-      <button class="tab active" data-tab="lock">관리자 잠금</button>
-      <button class="tab" data-tab="members">멤버</button>
-    </div>
-
-    <!-- TAB: Lock -->
-    <section id="tab-lock" class="card">
-      <h2>🔒 관리자 PIN (간단 잠금)</h2>
-      <div class="hint">
-        - 최초 1회 PIN을 설정하면, 이후 수정 기능은 PIN 잠금 해제 후 사용 가능합니다.<br/>
-        - 내부용 간단 잠금입니다(원하면 관리자 계정 기반으로 강화 가능).
-      </div>
-
-      <div class="sep"></div>
-
-      <div class="grid2">
-        <div>
-          <label class="hint">PIN 입력</label>
-          <input class="input" id="pinInput" type="password" placeholder="예: 1234" />
-        </div>
-        <div>
-          <label class="hint">PIN 확인</label>
-          <input class="input" id="pinInput2" type="password" placeholder="한번 더 입력" />
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px">
-        <button class="btn primary" id="setPinBtn">PIN 설정/변경</button>
-        <button class="btn ok" id="unlockBtn">잠금 해제</button>
-        <button class="btn" id="lockBtn">다시 잠그기</button>
-      </div>
-
-      <div class="hint" style="margin-top:10px">
-        현재 PIN 설정 여부: <b id="pinSetText">확인중…</b>
-      </div>
-    </section>
-
-    <!-- TAB: Members -->
-    <section id="tab-members" class="card hide">
-      <h2>👥 멤버 관리</h2>
-      <div class="hint">이름과 테니스 등급(A/B/C/D)을 등록합니다. 등급 점수(weight)는 팀 밸런싱에 사용됩니다.</div>
-
-      <div class="sep"></div>
-
-      <div class="row" style="align-items:flex-end">
-        <div style="flex:1;min-width:180px">
-          <label class="hint">이름</label>
-          <input class="input" id="mName" placeholder="예: 강성용" />
-        </div>
-
-        <div style="flex:1;min-width:160px">
-          <label class="hint">등급</label>
-          <select class="select" id="mGrade">
-            <option value="A">A (상급)</option>
-            <option value="B" selected>B (중상급)</option>
-            <option value="C">C (중급)</option>
-            <option value="D">D (초급)</option>
-          </select>
-        </div>
-
-        <button class="btn primary" id="addMemberBtn">추가</button>
-      </div>
-
-      <div class="list" id="memberList"></div>
-    </section>
 
     <div class="toast" id="toast"></div>
   </div>
