@@ -17,9 +17,9 @@ function toast(msg){
   toast._t = setTimeout(()=> el.classList.remove("show"), 1500);
 }
 
-const days = ()=> (["mon","tue","wed","thu","fri"]);
+const DAYS = ["mon","tue","wed","thu","fri"];
 const dayLabel = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금" };
-const slotRows = [
+const SLOTS = [
   { key:"morning", label:"아침" },
   { key:"lunch", label:"점심" },
   { key:"evening", label:"저녁" }
@@ -29,23 +29,27 @@ function nameOnly(v){
   return (v?.name || "").trim();
 }
 
+function uid(){
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
 /* =========================
-   Paths (✅ 여기만 바꾸면 전체 회원 경로 변경 가능)
+   Paths (✅ 회원 경로 필요시 여기만 수정)
 ========================= */
 const PATH = {
-  allMembers: "members",          // ✅ 전체 테니스 회원 (필요시 tennis/members 등으로 변경)
-  coaches: "lesson/coaches",      // 레슨자(회원 중 선택된 사람)
-  schedule: "lesson/schedule",    // 시간표
-  guide: "lesson/guide",          // 안내문
-  waiting: "lesson/waiting"       // 대기자
+  allMembers: "members",
+  coaches: "lesson/coaches",
+  schedule: "lesson/schedule",
+  guide: "lesson/guide",
+  waiting: "lesson/waiting"
 };
 
 /* =========================
    State
 ========================= */
-let members = {};   // 전체 회원 (id -> {name, grade?})
-let coaches = {};   // 레슨자 (memberId -> {name})
-let schedule = null;
+let members = {};
+let coaches = {};
+let schedule = null; // { slots: {morning:[{id,time,assign:{mon:coachId..}}], ...} }
 
 /* =========================
    Auth
@@ -70,22 +74,27 @@ function bindCoaches(){
   onValue(ref(db, PATH.coaches), (snap)=>{
     coaches = snap.exists() ? snap.val() : {};
     renderCoachChips();
-    renderScheduleTable(); // 레슨자 목록이 바뀌면 시간표 select도 갱신
-    renderMemberGrid();    // 모달 버튼 on/off 갱신
+    renderScheduleUI();
+    renderMemberGrid();
   });
 }
 
 function ensureScheduleShape(){
-  schedule = schedule || {};
-  schedule.times = schedule.times || { morning:"", lunch:"", evening:"" };
-  schedule.slots = schedule.slots || {
-    morning:{}, lunch:{}, evening:{}
-  };
+  if(!schedule) schedule = {};
+  if(!schedule.slots) schedule.slots = {};
+  SLOTS.forEach(s=>{
+    if(!Array.isArray(schedule.slots[s.key])) schedule.slots[s.key] = [];
+  });
 
-  slotRows.forEach(r=>{
-    schedule.slots[r.key] = schedule.slots[r.key] || {};
-    days().forEach(d=>{
-      if(schedule.slots[r.key][d] === undefined) schedule.slots[r.key][d] = "";
+  // 각 타임의 assign 보정
+  SLOTS.forEach(s=>{
+    schedule.slots[s.key].forEach(t=>{
+      if(!t.id) t.id = uid();
+      if(typeof t.time !== "string") t.time = "";
+      if(!t.assign) t.assign = {};
+      DAYS.forEach(d=>{
+        if(t.assign[d] === undefined) t.assign[d] = "";
+      });
     });
   });
 }
@@ -94,7 +103,7 @@ function bindSchedule(){
   onValue(ref(db, PATH.schedule), (snap)=>{
     schedule = snap.exists() ? snap.val() : null;
     ensureScheduleShape();
-    renderScheduleTable();
+    renderScheduleUI();
   });
 }
 
@@ -112,7 +121,7 @@ function bindWaiting(){
 }
 
 /* =========================
-   Lesson Coaches: select from members
+   Coaches: select from members
 ========================= */
 function openPicker(){
   $("pickerBack").classList.add("show");
@@ -133,19 +142,21 @@ async function toggleCoach(memberId){
   if(!m) return;
 
   if(isCoach(memberId)){
-    // 레슨자 해제: coaches에서 제거 + 시간표에 배정된 것도 제거(선택사항)
+    // 레슨자 해제
     await remove(ref(db, `${PATH.coaches}/${memberId}`));
 
-    // 시간표에서 해당 레슨자 들어간 칸 비우기
+    // 시간표 배정에서 제거
     if(schedule){
       ensureScheduleShape();
       let changed = false;
-      slotRows.forEach(r=>{
-        days().forEach(d=>{
-          if(schedule.slots[r.key][d] === memberId){
-            schedule.slots[r.key][d] = "";
-            changed = true;
-          }
+      SLOTS.forEach(s=>{
+        schedule.slots[s.key].forEach(t=>{
+          DAYS.forEach(d=>{
+            if(t.assign[d] === memberId){
+              t.assign[d] = "";
+              changed = true;
+            }
+          });
         });
       });
       if(changed) await set(ref(db, PATH.schedule), schedule);
@@ -153,9 +164,7 @@ async function toggleCoach(memberId){
 
     toast("레슨자 해제");
   }else{
-    await set(ref(db, `${PATH.coaches}/${memberId}`), {
-      name: nameOnly(m)
-    });
+    await set(ref(db, `${PATH.coaches}/${memberId}`), { name: nameOnly(m) });
     toast("레슨자 등록");
   }
 }
@@ -171,8 +180,7 @@ function renderCoachChips(){
     return;
   }
 
-  // 이름순
-  ids.sort((a,b)=> (nameOnly(coaches[a]) || "").localeCompare(nameOnly(coaches[b]) || ""));
+  ids.sort((a,b)=> (nameOnly(coaches[a])||"").localeCompare(nameOnly(coaches[b])||""));
 
   ids.forEach(id=>{
     const c = coaches[id] || {};
@@ -196,7 +204,7 @@ function renderMemberGrid(){
   const q = ($("memberSearch")?.value || "").trim().toLowerCase();
 
   const entries = Object.entries(members || {})
-    .map(([id,v])=>({id, name:nameOnly(v), raw:v}))
+    .map(([id,v])=>({id, name:nameOnly(v)}))
     .filter(x=> x.name)
     .filter(x=> !q || x.name.toLowerCase().includes(q))
     .sort((a,b)=> a.name.localeCompare(b.name));
@@ -210,83 +218,156 @@ function renderMemberGrid(){
     const b = document.createElement("button");
     b.type = "button";
     b.className = "mbtn" + (isCoach(x.id) ? " on" : "");
-    b.textContent = x.name; // ✅ 등급 표시 없음
+    b.textContent = x.name; // 등급 표시 없음
     b.addEventListener("click", ()=> toggleCoach(x.id));
     grid.appendChild(b);
   });
 }
 
 /* =========================
-   Schedule (times + slots)
+   ✅ Schedule: 멀티 타임 UI
 ========================= */
 function coachOptionsHTML(selectedId){
   let html = `<option value="">-</option>`;
-
   const ids = Object.keys(coaches || {});
   ids.sort((a,b)=>{
     const na = nameOnly(coaches[a]) || "";
     const nb = nameOnly(coaches[b]) || "";
     return na.localeCompare(nb);
   });
-
   ids.forEach(id=>{
-    const label = nameOnly(coaches[id]) || "(이름없음)"; // ✅ 등급 제거
-    const sel = (id === selectedId) ? "selected" : "";
-    html += `<option value="${id}" ${sel}>${label}</option>`;
+    const label = nameOnly(coaches[id]) || "(이름없음)";
+    html += `<option value="${id}" ${id===selectedId?"selected":""}>${label}</option>`;
   });
-
   return html;
 }
 
-function renderScheduleTable(){
-  const tbody = $("scheduleBody");
-  if(!tbody) return;
+function addTime(slotKey){
+  ensureScheduleShape();
+  schedule.slots[slotKey].push({
+    id: uid(),
+    time: "",
+    assign: { mon:"",tue:"",wed:"",thu:"",fri:"" }
+  });
+  renderScheduleUI();
+}
+
+function deleteTime(slotKey, timeId){
+  ensureScheduleShape();
+  schedule.slots[slotKey] = schedule.slots[slotKey].filter(t=> t.id !== timeId);
+  renderScheduleUI();
+}
+
+function renderScheduleUI(){
+  const wrap = $("scheduleWrap");
+  if(!wrap) return;
 
   ensureScheduleShape();
-  tbody.innerHTML = "";
+  wrap.innerHTML = "";
 
-  slotRows.forEach(r=>{
-    const tr = document.createElement("tr");
+  const hasCoach = Object.keys(coaches||{}).length > 0;
 
-    // 구분
-    const th = document.createElement("th");
-    th.textContent = r.label;
-    tr.appendChild(th);
+  SLOTS.forEach(slot=>{
+    const box = document.createElement("div");
+    box.className = "slotCard";
 
-    // ✅ 시간 입력
-    const tdTime = document.createElement("td");
-    const timeInput = document.createElement("input");
-    timeInput.className = "time-input";
-    timeInput.placeholder = "예: 07:00~08:00";
-    timeInput.value = schedule.times?.[r.key] || "";
-    timeInput.addEventListener("input", ()=>{
-      schedule.times[r.key] = timeInput.value;
-    });
-    tdTime.appendChild(timeInput);
-    tr.appendChild(tdTime);
+    const hd = document.createElement("div");
+    hd.className = "slotHd";
+    hd.innerHTML = `
+      <div>
+        <div class="ttl">${slot.label}</div>
+        <div class="mini">타임을 추가한 뒤, 요일별 레슨자를 선택하세요.</div>
+      </div>
+    `;
 
-    // 월~금
-    days().forEach(d=>{
-      const td = document.createElement("td");
-      const sel = document.createElement("select");
+    const addBtn = document.createElement("button");
+    addBtn.className = "btn ok";
+    addBtn.textContent = "+ 타임 추가";
+    addBtn.addEventListener("click", ()=> addTime(slot.key));
+    hd.appendChild(addBtn);
 
-      sel.innerHTML = coachOptionsHTML(schedule.slots[r.key][d] || "");
-      sel.disabled = (Object.keys(coaches||{}).length === 0);
+    box.appendChild(hd);
 
-      sel.addEventListener("change", ()=>{
-        schedule.slots[r.key][d] = sel.value || "";
+    const table = document.createElement("table");
+    table.className = "sTable";
+
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr>
+        <th style="width:140px">시간</th>
+        <th>${dayLabel.mon}</th><th>${dayLabel.tue}</th><th>${dayLabel.wed}</th><th>${dayLabel.thu}</th><th>${dayLabel.fri}</th>
+        <th style="width:84px">삭제</th>
+      </tr>
+    `;
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+
+    const list = schedule.slots[slot.key] || [];
+    if(list.length === 0){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="7" class="mini" style="padding:12px">타임이 없습니다. “+ 타임 추가”를 눌러 추가하세요.</td>`;
+      tbody.appendChild(tr);
+    }else{
+      list.forEach(t=>{
+        const tr = document.createElement("tr");
+
+        // 시간 input
+        const tdTime = document.createElement("td");
+        const inp = document.createElement("input");
+        inp.className = "time-input";
+        inp.placeholder = "예: 07:00~08:00";
+        inp.value = t.time || "";
+        inp.addEventListener("input", ()=>{
+          t.time = inp.value;
+        });
+        tdTime.appendChild(inp);
+        tr.appendChild(tdTime);
+
+        // 월~금 select
+        DAYS.forEach(d=>{
+          const td = document.createElement("td");
+          const sel = document.createElement("select");
+          sel.innerHTML = coachOptionsHTML(t.assign?.[d] || "");
+          sel.disabled = !hasCoach;
+          sel.addEventListener("change", ()=>{
+            t.assign[d] = sel.value || "";
+          });
+          td.appendChild(sel);
+          tr.appendChild(td);
+        });
+
+        // 삭제 버튼
+        const tdDel = document.createElement("td");
+        const del = document.createElement("button");
+        del.className = "del-mini";
+        del.textContent = "삭제";
+        del.addEventListener("click", ()=> deleteTime(slot.key, t.id));
+        tdDel.appendChild(del);
+        tr.appendChild(tdDel);
+
+        tbody.appendChild(tr);
       });
+    }
 
-      td.appendChild(sel);
-      tr.appendChild(td);
-    });
-
-    tbody.appendChild(tr);
+    table.appendChild(tbody);
+    box.appendChild(table);
+    wrap.appendChild(box);
   });
 }
 
 async function saveSchedule(){
   ensureScheduleShape();
+
+  // (선택) 비어있는 타임 정리: 시간도 없고 배정도 하나도 없으면 제거
+  SLOTS.forEach(s=>{
+    schedule.slots[s.key] = (schedule.slots[s.key] || []).filter(t=>{
+      const timeHas = (t.time || "").trim().length > 0;
+      const anyAssign = DAYS.some(d => (t.assign?.[d] || "").trim().length > 0);
+      return timeHas || anyAssign;
+    });
+  });
+
   await set(ref(db, PATH.schedule), schedule);
   toast("시간표 저장 완료");
 }
@@ -295,8 +376,7 @@ async function saveSchedule(){
    Guide
 ========================= */
 async function saveGuide(){
-  const txt = ($("guideText").value || "");
-  await set(ref(db, PATH.guide), txt);
+  await set(ref(db, PATH.guide), ($("guideText").value || ""));
   toast("안내문 저장 완료");
 }
 
@@ -307,11 +387,7 @@ async function addWaiting(){
   const name = ($("waitingName").value || "").trim();
   if(!name) return toast("이름을 입력하세요.");
 
-  await push(ref(db, PATH.waiting), {
-    name,
-    createdAt: Date.now()
-  });
-
+  await push(ref(db, PATH.waiting), { name, createdAt: Date.now() });
   $("waitingName").value = "";
   toast("대기자 추가");
 }
@@ -324,14 +400,17 @@ function renderWaiting(data){
     return;
   }
 
-  // 등록 순서(혹은 이름순 원하면 바꿔도 됨)
   entries.sort((a,b)=> (a[1]?.createdAt||0) - (b[1]?.createdAt||0));
 
-  // ✅ 공간 덜 차지: 한 줄 텍스트 + (삭제) 작게
   el.innerHTML = "";
   entries.forEach(([key, v], idx)=>{
     const name = (v?.name || "").trim();
     if(!name) return;
+
+    const wrap = document.createElement("span");
+    wrap.style.display = "inline-flex";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "6px";
 
     const span = document.createElement("span");
     span.textContent = name;
@@ -340,21 +419,14 @@ function renderWaiting(data){
     del.className = "btn danger";
     del.style.padding = "4px 8px";
     del.style.fontSize = "12px";
-    del.style.marginLeft = "6px";
     del.textContent = "삭제";
     del.addEventListener("click", async ()=>{
       await remove(ref(db, `${PATH.waiting}/${key}`));
       toast("삭제 완료");
     });
 
-    const wrap = document.createElement("span");
-    wrap.style.display = "inline-flex";
-    wrap.style.alignItems = "center";
-    wrap.style.gap = "6px";
-
     wrap.appendChild(span);
     wrap.appendChild(del);
-
     el.appendChild(wrap);
 
     if(idx !== entries.length - 1){
@@ -396,6 +468,7 @@ $("waitingName").addEventListener("keydown", (e)=>{
     bindSchedule();
     bindGuide();
     bindWaiting();
+    renderScheduleUI();
   }catch(e){
     console.error(e);
     $("statusText").textContent = "오류(콘솔 확인)";
