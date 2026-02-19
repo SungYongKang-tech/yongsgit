@@ -285,39 +285,53 @@
       }
     }
 
-    // ✅ 조 편성: 팀들을 균등 분배(지그재그) + 가중치 균형 느낌으로 정렬 후 분배
     function makeGroups(){
-      const mode = $("mode").value;
-      if(mode !== "groups"){
-        alert("진행 방식을 ‘조별 리그전’으로 선택해주세요.");
-        return;
-      }
-      if(!teams.length){
-        alert("먼저 팀을 구성해주세요.");
-        return;
-      }
+  const mode = $("mode").value;
+  if(mode !== "groups"){
+    alert("진행 방식을 ‘조별 리그전’으로 선택해주세요.");
+    return;
+  }
+  if(!teams.length){
+    alert("먼저 팀을 구성해주세요.");
+    return;
+  }
 
-      const gCount = parseInt($("groupCount").value, 10);
-      if(isNaN(gCount) || gCount < 2) return;
+  const gCount = parseInt($("groupCount").value, 10);
+  if(isNaN(gCount) || gCount < 2) return;
 
-      // 팀을 강한 팀부터 정렬 후, 지그재그로 분배하면 조 평균이 비슷해짐
-      const sortedTeams = [...teams].sort((a,b)=>b.sum-a.sum);
+  const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, gCount).split("");
+  const n = teams.length;
 
-      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, gCount).split("");
-      groups = {};
-      labels.forEach(l=>groups[l]=[]);
+  groups = {};
+  labels.forEach(l => groups[l] = []);
 
-      // 지그재그 인덱스: 0..gCount-1..0 반복
-      let dir = 1, idx = 0;
-      for(const t of sortedTeams){
-        groups[labels[idx]].push(t.id);
-        idx += dir;
-        if(idx === gCount-1) dir = -1;
-        if(idx === 0) dir = 1;
-      }
+  const shuffled = shuffle([...teams]); // 팀 랜덤
 
-      renderGroups();
+  // ✅ 케이스 1) 팀이 조보다 적으면: 0팀 조는 어쩔 수 없음 (그대로 순서대로 넣기)
+  if(n < gCount){
+    for(let i=0;i<n;i++){
+      groups[labels[i]].push(shuffled[i].id);
     }
+    renderGroups();
+    return;
+  }
+
+  // ✅ 케이스 2) 팀이 조 이상이면: 팀 수를 최대한 균등(차이 1)으로 분배
+  // -> 이 경우엔 "1팀 조 + 3팀 조" 같은 극단 불균형이 안 생김
+  const base = Math.floor(n / gCount);
+  const rem  = n % gCount; // rem개 조는 base+1
+
+  const cap = labels.map((_,i)=> base + (i < rem ? 1 : 0)); // 정원
+
+  let gi = 0;
+  for(const t of shuffled){
+    while(gi < gCount && groups[labels[gi]].length >= cap[gi]) gi++;
+    if(gi >= gCount) break;
+    groups[labels[gi]].push(t.id);
+  }
+
+  renderGroups();
+}
 
     function groupSum(teamIds){
       const map = new Map(teams.map(t=>[t.id,t]));
