@@ -135,7 +135,7 @@ $("changePassBtn").onclick = async ()=>{
 
   $("newPass1").value = "";
   $("newPass2").value = "";
-  alert("관리자 비밀번호 변경 완료");
+  alert("관리자 비밀번호 저장 완료");
 };
 
 /* =======================
