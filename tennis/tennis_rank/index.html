@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🎾 테니스 경기결과 입력</title>
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08);
+}
+body {
+  margin:0;
+  font-family:"Pretendard","Noto Sans KR",sans-serif;
+  font-weight:600;
+  background:var(--bg);
+  color:var(--ink);
+}
+header {
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:10;
+}
+.header-inner {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:12px 0;
+}
+h1 {
+  margin:2px 0 8px;
+  font-size:clamp(20px,4vw,24px);
+  color:var(--accent);
+  font-weight:700;
+}
+.row {
+  display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; justify-content:center;
+}
+.btn {
+  border:1px solid #ccc; border-radius:8px; padding:6px 10px;
+  font-size:14px; cursor:pointer; background:#fff; transition:.2s; font-weight:600;
+}
+.btn.primary {background:var(--accent); color:#fff; border-color:var(--accent);}
+.btn.ok {background:var(--ok); color:#fff; border-color:var(--ok);}
+.btn.danger {background:var(--danger); color:#fff; border-color:var(--danger);}
+.wrap {max-width:960px; margin:0 auto; padding:14px 16px;}
+
+.chip {
+  border:1px solid #ccc;
+  border-radius:8px;
+  padding:4px 6px;
+  font-size:16px;
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+  font-weight:600;
+}
+.chip.selected {
+  border:1px solid var(--accent) !important;
+  background:#efef07 !important;
+}
+@media (max-width:640px){
+  .chip { font-size:16px !important; padding:2px 2px !important; }
+}
+
+#logs {
+  margin-top:20px;
+  background:#fff;
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  padding:12px;
+}
+.log-item {
+  border-bottom:1px solid #e5e7eb; padding:10px 4px; position:relative;
+}
+.log-item:last-child {border-bottom:none;}
+.log-time {
+  font-size:15px;
+  color:#334155;
+  display:block;
+  margin-bottom:4px;
+  font-weight:700;
+}
+.log-match {font-size:16px; font-weight:600;}
+.log-win {color:#2563eb; font-weight:700;}
+.delete-btn {
+  position:absolute; right:8px; top:6px; font-size:16px; border:none;
+  background:transparent; color:#9ca3af; cursor:pointer; transition:.2s;
+}
+.delete-btn:hover {color:#ef4444; transform:scale(1.1);}
+.toast {
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  background:#111827; color:#fff; padding:9px 14px; border-radius:10px;
+  opacity:0; transition:.25s;
+  font-size:15px; font-weight:600;
+}
+.toast.show {opacity:1;}
+@media (max-width:640px){
+  .chip{font-size:16px; padding:2px 6px;}
+  .btn{font-size:13px; padding:5px 8px;}
+  .log-match{font-size:15px;}
+  .log-time{font-size:14px;}
+}
+
+#teamDisplay {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+#matchButtons {
+  display: none;
+  text-align: center;
+  margin-top: 12px;
+  margin-bottom: 22px;
+}
+
+#matchButtons .btn {
+  margin: 0 8px;
+  padding: 8px 16px;
+  font-size: 16px;
+}
+
+/* ✅ 사용법 모달창 */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4);
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  max-width: 360px;
+  width: 80%;
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-content h2 {
+  font-size: 18px;
+  color: #1e3a8a;
+  margin-bottom: 10px;
+  text-align:center;
+}
+.modal-content ul {
+  list-style:none;
+  padding-left:0;
+  margin:0;
+  color:#1f2937;
+  font-size:15px;
+  line-height:1.6;
+}
+.modal-content li::before { content:"• "; color:#2563eb; }
+@media (max-width:640px){
+  .modal-content{font-size:14px;padding:16px;}
+}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="header-inner">
+    <h1 id="pageTitle">🎾 테니스 경기결과 입력</h1>
+    <div class="row">
+      <button id="adminBtn" class="btn">⚙ 관리자모드</button>
+      <a href="monthly-report.html" class="btn primary">통합 전적</a>
+      <a href="monthly-report2.html" class="btn primary">단/복식 전적</a>
+      <button id="todayBtn" class="btn primary">오늘의 전적</button>
+      <button id="helpBtn" class="btn">ℹ 사용법</button>
+      <button id="homeBtn" class="btn">📱 바로가기 추가</button>
+
+      <!-- ✅ 오늘의 전적 팝업 -->
+      <div id="todayResults"
+        style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+               width:90%; max-width:420px; background:#fff; border-radius:16px;
+               box-shadow:0 8px 28px rgba(0,0,0,0.2); padding:20px 20px 24px; z-index:200;">
+        <button id="closeToday"
+          style="position:absolute; top:10px; right:12px; background:transparent; border:none;
+                 font-size:22px; color:#9ca3af; cursor:pointer; transition:.2s;">✖</button>
+
+        <h3 style="text-align:center; color:#2563eb; margin-top:0; margin-bottom:12px;">📊 오늘의 전적</h3>
+        <div id="todayList" style="font-size:16px; line-height:1.8; font-weight:600; text-align:center; color:#111;"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="chips" class="row" style="margin-top:10px;"></div>
+  <div id="teamDisplay"></div>
+
+  <div id="matchButtons">
+    <button id="winA" class="btn ok">A팀 승</button>
+    <button id="winB" class="btn danger">B팀 승</button>
+  </div>
+
+  <div id="logs"></div>
+</main>
+
+<div id="toast" class="toast">저장되었습니다</div>
+
+<div id="helpModal" class="modal">
+  <div class="modal-content">
+    <h2>📘 테니스 경기결과 입력 사용법</h2>
+    <ul>
+      <li>칩을 눌러 선수 2명(단식) 또는 4명(복식)을 선택합니다.</li>
+      <li>A팀/B팀 자동 배정이 생성되며, <b>A팀 승</b> 또는 <b>B팀 승</b> 버튼을 눌러 결과를 저장합니다.</li>
+      <li>최근 경기결과는 화면 하단에서 확인·삭제할 수 있습니다.</li>
+      <li><b>통합 전적</b> : 월별 경기수, 승/패, 승률을 단식+복식 기준으로 확인합니다.</li>
+      <li><b>단/복식 전적</b> : 모든 선수의 단식/복식 전적을 각각 확인합니다.</li>
+      <li><b>중요</b> : 선수는 <b>관리자 페이지에 등록된 선수만</b> 집계됩니다.</li>
+    </ul>
+    <button id="closeModal" class="btn ok" style="margin-top:10px;">닫기</button>
+  </div>
+</div>
+
+<script type="module">
+  // ✅ firebaseConfig는 tennis_rank/firebase.js 에서 export 한다고 가정
+  import { firebaseConfig } from "./firebase.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import {
+    getDatabase, ref, onValue, get, push, remove
+  } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  const $ = (s) => document.querySelector(s);
+
+  const toast = (msg="저장되었습니다")=>{
+    const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+    setTimeout(()=>t.classList.remove("show"),1500);
+  };
+
+  // ===== 제목 캐시 + 실시간 업데이트 =====
+  const titleRef = ref(db, 'config/title');
+  const cachedTitle = localStorage.getItem('siteTitle');
+  if (cachedTitle) {
+    document.title = `🎾 ${cachedTitle} 테니스 경기결과 입력`;
+    $('#pageTitle').textContent = `🎾 ${cachedTitle} 테니스 경기결과 입력`;
+  }
+  onValue(titleRef, snap => {
+    const val = snap.val() ?? 'Tennis Club';
+    localStorage.setItem('siteTitle', val);
+    document.title = `🎾 ${val} 테니스 경기결과 입력`;
+    $('#pageTitle').textContent = `🎾 ${val} 테니스 경기결과 입력`;
+  });
+
+  // ===== 데이터 참조 =====
+  const matchRef = ref(db,'matches');
+  const playerRef = ref(db,'players');
+  const deletePwRef = ref(db,'config/deletePassword');
+
+  let players = [];          // [{name, level}]
+  let playersSet = new Set(); // 등록 선수 검증용
+  let sel = [];
+  let deletePassword = '7910';
+
+  // ✅ 삭제 비밀번호 불러오기
+  get(deletePwRef).then(s=>{
+    if(s.exists()) deletePassword = s.val();
+  });
+
+  // ✅ 부수별 색상
+  const LEVEL_COLORS = {
+    1: '#ef4444', 2: '#f97316', 3: '#f59e0b', 4: '#84cc16',
+    5: '#10b981', 6: '#06b6d4', 7: '#8b5cf6', 8: '#22c55e',
+    9: '#3b82f6', 10: '#d946ef', 11: '#ec4899', 12: '#f43f5e',
+    13: '#a855f7', 14: '#6366f1',
+  };
+  const colorList = Object.values(LEVEL_COLORS);
+
+  // ✅ 선수 목록 표시 (관리자 등록 선수만)
+  onValue(playerRef, snap=>{
+    const data = snap.val() || {};
+    players = Object.values(data)
+      .map(p => ({ name: p.name, level: p.level }))
+      .filter(p => !!p.name) // 이름 없는 데이터 방지
+      .sort((a,b)=>(a.level-b.level)||a.name.localeCompare(b.name,'ko'));
+
+    playersSet = new Set(players.map(p=>p.name));
+    // 선택된 사람이 삭제된 경우 자동 제거
+    sel = sel.filter(p => playersSet.has(p.name));
+
+    renderChips();
+    updateTeams();
+  });
+
+  // ✅ 칩 렌더링
+  function renderChips(){
+    const box = $("#chips");
+    box.innerHTML = "";
+    players.forEach(p=>{
+      const btn = document.createElement('button');
+      btn.className = 'chip';
+      const c = colorList[p.level % colorList.length];
+      btn.style.borderColor = c;
+      btn.style.background = c + '22';
+      btn.textContent = `${p.name}(${p.level})`;
+
+      if(sel.some(x=>x.name===p.name)){
+        btn.classList.add('selected');
+        btn.style.background='#fff';
+        btn.style.outline=`2px solid ${c}`;
+      }
+
+      btn.onclick=()=>{
+        const idx = sel.findIndex(x=>x.name===p.name);
+        if(idx>=0) sel.splice(idx,1);
+        else{
+          if(sel.length>=4){ toast("최대 4명까지 선택 가능합니다"); return; }
+          sel.push(p);
+        }
+        renderChips();
+        updateTeams();
+      };
+      box.appendChild(btn);
+    });
+  }
+
+  // ✅ 팀 업데이트
+  function updateTeams(){
+    const disp = $("#teamDisplay");
+    const btns = $("#matchButtons");
+
+    if(sel.length>0){
+      const half = Math.floor(sel.length/2);
+      const a = sel.slice(0,half).map(p=>p.name).join('/');
+      const b = sel.slice(half).map(p=>p.name).join('/');
+      disp.innerHTML = `<b>A팀:</b> ${a||'-'}　|　<b>B팀:</b> ${b||'-'}`;
+    } else {
+      disp.innerHTML='';
+    }
+
+    btns.style.display = (sel.length===2 || sel.length===4) ? 'block' : 'none';
+  }
+
+  // ✅ 경기 저장
+  function getMonthKey(ts=Date.now()){
+    const d=new Date(new Date(ts).toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  $("#winA").onclick = ()=>saveMatch('A');
+  $("#winB").onclick = ()=>saveMatch('B');
+
+  function saveMatch(winner){
+    if(!(sel.length===2 || sel.length===4)){
+      toast("2명 또는 4명을 선택하세요");
+      return;
+    }
+
+    // ✅ 안전장치: 관리자 등록 선수만 저장 허용
+    const allNames = sel.map(p=>p.name);
+    const invalid = allNames.filter(n => !playersSet.has(n));
+    if(invalid.length){
+      toast(`등록되지 않은 선수 포함: ${invalid.join(", ")}`);
+      return;
+    }
+
+    const mode = (sel.length===2)?'single':'double';
+    const a = sel.slice(0,sel.length/2).map(p=>p.name);
+    const b = sel.slice(sel.length/2).map(p=>p.name);
+
+    const obj = {
+      mode,
+      monthKey: getMonthKey(),
+      namesA: a,
+      namesB: b,
+      winnerSide: winner,
+      createdAt: Date.now()
+    };
+
+    push(matchRef, obj);
+    toast("경기결과 저장 완료");
+    sel=[]; renderChips(); updateTeams();
+  }
+
+  // ✅ 경기 로그 표시 (등록 선수만 표시되도록 필터)
+  onValue(matchRef, snap=>{
+    const data = snap.val() || {};
+    const arr = Object.entries(data).map(([id,m])=>({...m,id}))
+      .filter(m=>{
+        const names = [...(m.namesA||[]), ...(m.namesB||[])];
+        return names.every(n => playersSet.has(n));
+      })
+      .sort((a,b)=>b.createdAt-a.createdAt);
+    renderLogs(arr);
+  });
+
+  function renderLogs(arr){
+    const logs = $("#logs");
+    logs.innerHTML = "";
+
+    if(!arr.length){
+      logs.innerHTML = '<div style="text-align:center;color:#999">최근 경기 없음</div>';
+      return;
+    }
+
+    arr.forEach(m=>{
+      const d = new Date(m.createdAt);
+      const kst = new Date(d.toLocaleString('en-US', { timeZone:'Asia/Seoul' }));
+      const time =
+        `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')} ` +
+        `${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
+
+      const winA = m.winnerSide === 'A';
+      const a = (m.namesA||[]).join('/');
+      const b = (m.namesB||[]).join('/');
+
+      const aHtml = winA
+        ? `<span class="log-win">${a} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+        : `<span>${a}</span>`;
+
+      const bHtml = !winA
+        ? `<span class="log-win">${b} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+        : `<span>${b}</span>`;
+
+      logs.insertAdjacentHTML("beforeend", `
+        <div class="log-item">
+          <span class="log-time">${time} [${m.mode==='double' ? '복식' : '단식'}]</span>
+          <div class="log-match">
+            ${aHtml}  vs  ${bHtml}
+          </div>
+          <button class="delete-btn" onclick="deleteMatch('${m.id}')">🗑️</button>
+        </div>
+      `);
+    });
+  }
+
+  // ✅ 경기 삭제
+  window.deleteMatch = async (id) => {
+    const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
+    if (input !== deletePassword) return toast("비밀번호가 올바르지 않습니다");
+    if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
+    await remove(ref(db, 'matches/' + id));
+    toast("경기결과 삭제 완료");
+  };
+
+  // ✅ 관리자 비밀번호 확인
+  window.addEventListener("DOMContentLoaded", () => {
+    const adminBtn = document.getElementById("adminBtn");
+    if (!adminBtn) return;
+
+    adminBtn.addEventListener("click", async () => {
+      try {
+        const adminPwRef = ref(db, "config/adminPassword");
+        const snap = await get(adminPwRef);
+        const savedPw = snap.exists() ? snap.val() : "1234";
+
+        const input = prompt("관리자 비밀번호를 입력하세요.");
+        if (input === null) return;
+        if (input !== savedPw) {
+          alert("비밀번호가 올바르지 않습니다.");
+          return;
+        }
+        window.location.href = "admin.html";
+      } catch (err) {
+        console.error("관리자 비밀번호 확인 오류:", err);
+        alert("비밀번호 확인 중 오류가 발생했습니다.");
+      }
+    });
+  });
+
+  // ✅ 사용법 모달
+  const helpBtn = document.getElementById("helpBtn");
+  const modal = document.getElementById("helpModal");
+  const closeModal = document.getElementById("closeModal");
+
+  helpBtn.addEventListener("click", ()=>{ modal.style.display = "flex"; });
+  closeModal.addEventListener("click", ()=>{ modal.style.display = "none"; });
+  window.addEventListener("click", (e)=>{ if(e.target===modal) modal.style.display="none"; });
+
+  // ✅ 오늘의 전적
+  let todayVisible = false;
+
+  async function buildTodayHtml() {
+    // players가 아직 안 불러와졌으면 안내
+    if (!players.length) return "선수 목록을 불러오는 중입니다. 잠시 후 다시 시도하세요.";
+
+    const snap = await get(matchRef);
+    if (!snap.exists()) return null;
+
+    const data = Object.values(snap.val());
+    const today = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+
+    const todayMatches = data
+      .filter(m=>{
+        // 등록 선수만 포함된 경기만 인정
+        const names = [...(m.namesA||[]), ...(m.namesB||[])];
+        if(!names.length) return false;
+        if(!names.every(n=>playersSet.has(n))) return false;
+
+        const d = new Date(m.createdAt);
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        return kst.toLocaleDateString("ko-KR") === today;
+      });
+
+    if (!todayMatches.length) return "오늘 경기 기록이 없습니다";
+
+    const stats = {};
+    todayMatches.forEach(m => {
+      const winners = m.winnerSide === "A" ? (m.namesA||[]) : (m.namesB||[]);
+      const losers  = m.winnerSide === "A" ? (m.namesB||[]) : (m.namesA||[]);
+      winners.forEach(n => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].win++; });
+      losers.forEach(n  => { if (!stats[n]) stats[n] = { win:0, lose:0 }; stats[n].lose++; });
+    });
+
+    const sorted = Object.entries(stats)
+      .map(([name, { win, lose }]) => {
+        const p = players.find(v => v.name === name);
+        const level = p ? p.level : 99;
+        const score = win * 2 - lose * 1;
+        return { name, win, lose, level, score };
+      })
+      .sort((a, b) =>
+        b.score - a.score ||
+        a.level - b.level ||
+        a.name.localeCompare(b.name, 'ko')
+      );
+
+    const maxWin = Math.max(...sorted.map(p => p.win));
+
+    let html = "";
+    sorted.forEach((p, i) => {
+      const isTop = p.win === maxWin;
+      const color = p.win > p.lose ? "#1e40af" : "#111";
+      const text = `${p.name}(${p.level}) ${p.win}승${p.lose}패`;
+      html += `<span style="color:${color}; display:inline-block; width:48%; text-align:center; margin:6px 0;">
+                ${isTop ? `<b>${text}</b>` : text}
+              </span>`;
+      if ((i + 1) % 2 === 0) html += "<br>";
+    });
+
+    return html;
+  }
+
+  document.getElementById("todayBtn").addEventListener("click", async () => {
+    const box = document.getElementById("todayResults");
+    const list = document.getElementById("todayList");
+
+    if (todayVisible) {
+      box.style.display = "none";
+      todayVisible = false;
+      return;
+    }
+
+    const html = await buildTodayHtml();
+    if (html === null) { toast("기록이 없습니다"); return; }
+    if (html === "오늘 경기 기록이 없습니다") { toast(html); box.style.display = "none"; todayVisible = false; return; }
+    if (html.includes("선수 목록을 불러오는 중")) { toast(html); return; }
+
+    list.innerHTML = html;
+    box.style.display = "block";
+    todayVisible = true;
+  });
+
+  document.getElementById("closeToday").addEventListener("click", () => {
+    document.getElementById("todayResults").style.display = "none";
+    todayVisible = false;
+  });
+
+  // ✅ 홈 화면 추가 안내 (경로만 테니스로 교체)
+  function showHomeInstallGuide() {
+    // TODO: 실제 배포 경로에 맞게 수정하세요
+    const url = "https://sensational-tulumba-65e97e.netlify.app/tennis/tennis_rank/";
+
+    navigator.clipboard.writeText(url)
+      .then(() => {
+        const ua = navigator.userAgent.toLowerCase();
+
+        if (ua.includes("kakaotalk")) {
+          alert(
+            "✅ 주소가 복사되었습니다.\n\n" +
+            "1️⃣ 오른쪽 위 점 3개(⋮) → ‘기본 브라우저에서 열기’\n" +
+            "2️⃣ Chrome/Safari 에서 주소창 길게 눌러 붙여넣기\n" +
+            "3️⃣ 홈 화면에 추가 실행\n\n" +
+            "📌 복사된 주소:\n" + url
+          );
+          return;
+        }
+
+        if (/iphone|ipad|ipod/.test(ua)) {
+          alert(
+            "✅ 주소가 복사되었습니다!\n\n" +
+            "Safari → 주소창 붙여넣기 → 공유(□↑) → ‘홈 화면에 추가’ 선택\n\n" +
+            "📌 주소:\n" + url
+          );
+          return;
+        }
+
+        if (/android/.test(ua)) {
+          alert(
+            "✅ 주소가 복사되었습니다!\n\n" +
+            "Chrome → 주소창 붙여넣기 → 메뉴(⋮) → ‘홈 화면에 추가’ 선택\n\n" +
+            "📌 주소:\n" + url
+          );
+          return;
+        }
+
+        alert("✅ 주소가 복사되었습니다.\n모바일 브라우저에서 ‘홈 화면에 추가’ 기능을 사용하세요.\n\n📌 " + url);
+      })
+      .catch(() => {
+        alert("❗ 자동 복사가 되지 않았습니다.\n아래 주소를 직접 복사하세요:\n" + url);
+      });
+  }
+  document.getElementById("homeBtn").addEventListener("click", showHomeInstallGuide);
+
+</script>
+</body>
+</html>
