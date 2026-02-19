@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>🎾 테니스 복식 선수 구성</title>
+  <title>🎾 테니스 복식 자동 배정</title>
   <style>
     :root{
       --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
@@ -14,7 +14,7 @@
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
     .wrap{max-width:980px;margin:0 auto;padding:12px}
-    h2{margin:6px 0 10px;font-size:16px;font-weight:900}
+    h2{margin:6px 0 12px;font-size:16px;font-weight:900;text-align:center}
 
     .card{
       background:var(--card);
@@ -25,23 +25,21 @@
       margin-bottom:12px;
     }
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center}
-    .input{padding:10px 12px;border:1px solid var(--bd);border-radius:12px;background:#fff;font-size:14px}
+    .input{
+      padding:10px 12px;border:1px solid var(--bd);
+      border-radius:12px;background:#fff;font-size:14px
+    }
     .btn{
       padding:10px 14px;border:1px solid rgba(37,99,235,.25);
       background:linear-gradient(180deg,#2b74ff,#2563eb);
       color:#fff;border-radius:12px;cursor:pointer;font-weight:900;
     }
-    .btn.secondary{
-      background:#fff;color:#0f172a;border:1px solid var(--bd);
-    }
-    .btn.danger{
-      background:linear-gradient(180deg,#ff5a5a,#ef4444);
-      border:1px solid rgba(239,68,68,.25);
-    }
+    .btn.secondary{background:#fff;color:#0f172a;border:1px solid var(--bd)}
+    .btn.danger{background:linear-gradient(180deg,#ff5a5a,#ef4444);border:1px solid rgba(239,68,68,.25)}
 
     .mut{color:var(--mut);font-weight:700;font-size:12px;margin-top:8px;text-align:center}
-    .err{color:#b91c1c;font-weight:900}
-    .ok{color:#166534;font-weight:900}
+    .err{color:#b91c1c;font-weight:900;text-align:center}
+    .ok{color:#166534;font-weight:900;text-align:center}
 
     .player-list{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
     .player{
@@ -66,7 +64,7 @@
     .grid{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center}
     .teamBox{
       border:1px solid var(--bd);border-radius:12px;padding:10px;background:#f8fafc;
-      font-weight:850;line-height:1.5;
+      font-weight:850;line-height:1.55;
     }
     .vs{font-weight:1000;color:#ef4444;text-align:center}
     .meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px;color:var(--mut);font-weight:800;font-size:12px}
@@ -79,22 +77,27 @@
 
 <body>
   <div class="wrap">
-    <h2>🎾 테니스 복식 선수 구성</h2>
+    <h2>🎾 테니스 복식 자동 배정</h2>
 
-    <!-- 선수 추가(현장 추가: localStorage) -->
+    <!-- 현장 추가(로컬) -->
     <div class="card">
       <div class="row">
-        <input class="input" id="newName" placeholder="이름" />
-        <input class="input" id="newLevel" type="number" placeholder="레벨" min="1" max="20" style="width:90px" />
+        <input class="input" id="newName" placeholder="이름(현장 추가)" />
+        <select class="input" id="newGrade" style="min-width:90px">
+          <option value="A">A</option>
+          <option value="B" selected>B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
         <button class="btn" id="addBtn">선수 추가</button>
         <button class="btn secondary" id="removeAddedBtn">추가 선수 삭제</button>
       </div>
-      <div class="mut">※ 기본 선수는 Firebase에서 불러오고, 현장 추가 선수는 이 기기(localStorage)에만 저장됩니다.</div>
+      <div class="mut">※ 기본 선수는 Firebase <b>members</b>에서 불러오고, “현장 추가”는 이 기기(localStorage)에만 저장됩니다.</div>
     </div>
 
     <!-- 참석자 목록 -->
     <div class="card">
-      <h2 style="font-size:14px;margin:0 0 10px;text-align:center">참석자 목록</h2>
+      <div style="font-size:14px;font-weight:1000;text-align:center;margin-bottom:10px">참석자 목록</div>
       <div class="player-list" id="playerList">
         <span class="mut">불러오는 중...</span>
       </div>
@@ -112,7 +115,7 @@
 
     <!-- 결과 -->
     <div class="card">
-      <h2 style="font-size:14px;margin:0 0 10px;text-align:center">배정 결과</h2>
+      <div style="font-size:14px;font-weight:1000;text-align:center;margin-bottom:10px">배정 결과</div>
       <div class="courts" id="courts">
         <div class="mut">아직 배정 결과가 없습니다.</div>
       </div>
@@ -124,15 +127,14 @@
     import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-    // ✅ 레슨 시간표 코드 방식 그대로: PATH만 테니스 선수 경로로 맞추면 됩니다.
-    // ⚠️ 관리자 페이지에서 저장하는 경로와 100% 동일해야 합니다.
-    const PATH = {
-      players: "tennis/members"   // <-- 여기만 실제 경로로 바꾸면 기존 선수들이 그대로 뜹니다
-    };
-
-    const LS_KEY = "tennis_addedPlayers";
-
     const $ = (id)=>document.getElementById(id);
+
+    // ✅ 관리자 코드와 동일
+    const PATH = { members: "members" };
+    const GRADE_WEIGHT = { A:4, B:3, C:2, D:1 };
+
+    // 로컬 저장(현장 추가)
+    const LS_KEY = "tennis_addedPlayers";
 
     function esc(s){
       return String(s ?? "")
@@ -143,10 +145,6 @@
         .replaceAll("'","&#039;");
     }
 
-    let authed = false;
-    let allPlayers = [];      // {name, level, new:false/true}
-    let selectedIdx = [];     // 인덱스 선택
-
     function setStatus(msg, cls="mut"){
       const el = $("status");
       if(!el) return;
@@ -155,33 +153,50 @@
     }
 
     function loadLocalAdded(){
-      try{
-        return JSON.parse(localStorage.getItem(LS_KEY) || "[]");
-      }catch{
-        return [];
-      }
+      try{ return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
+      catch{ return []; }
+    }
+    function saveLocalAdded(arr){ localStorage.setItem(LS_KEY, JSON.stringify(arr)); }
+
+    let authed = false;
+    let allPlayers = [];   // {name, grade, weight, new}
+    let selectedIdx = [];  // index 선택
+
+    function weightOf(p){
+      // DB에 weight가 있으면 우선 사용, 없으면 grade로 추정
+      const w = Number(p?.weight);
+      if(!isNaN(w) && w>0) return w;
+      const g = String(p?.grade ?? "").trim().toUpperCase();
+      return GRADE_WEIGHT[g] ?? 1;
     }
 
-    function saveLocalAdded(arr){
-      localStorage.setItem(LS_KEY, JSON.stringify(arr));
-    }
+    function rebuildPlayers(memberCache){
+      // memberCache는 보통 { pushKey: {name, grade, weight}, ... }
+      const baseArr = Object.values(memberCache || {})
+        .filter(v => v && v.name)
+        .map(v => ({
+          name: String(v.name).trim(),
+          grade: String(v.grade ?? "").trim().toUpperCase() || "D",
+          weight: weightOf(v),
+          new: false
+        }));
 
-    function rebuildPlayers(firebasePlayers){
-      // firebasePlayers: [{name, level}, ...]
-      allPlayers = firebasePlayers.map(p=>({
-        name: String(p.name||"").trim(),
-        level: Number(p.level)||1,
-        new: false
-      })).filter(p=>p.name);
+      allPlayers = baseArr;
 
-      // local 신규 선수 병합
+      // 로컬 신규 선수 병합
       const added = loadLocalAdded();
       added.forEach(p=>{
-        if(!p?.name) return;
-        allPlayers.push({ name:String(p.name).trim(), level:Number(p.level)||1, new:true });
+        const name = String(p?.name ?? "").trim();
+        if(!name) return;
+        const grade = String(p?.grade ?? "D").trim().toUpperCase();
+        allPlayers.push({
+          name,
+          grade,
+          weight: GRADE_WEIGHT[grade] ?? 1,
+          new: true
+        });
       });
 
-      // 선택 초기화(인덱스 꼬임 방지)
       selectedIdx = [];
       renderPlayers();
     }
@@ -201,7 +216,7 @@
         el.className = "player";
         if(p.new) el.classList.add("new-player");
         if(selectedIdx.includes(i)) el.classList.add("selected");
-        el.innerHTML = `${esc(p.name)} <small>(${esc(p.level)}레벨)</small>`;
+        el.innerHTML = `${esc(p.name)} <small>(${esc(p.grade)})</small>`;
         el.onclick = ()=>{
           if(selectedIdx.includes(i)) selectedIdx = selectedIdx.filter(v=>v!==i);
           else selectedIdx.push(i);
@@ -213,7 +228,6 @@
       setStatus(`선수 ${allPlayers.length}명 · 선택 ${selectedIdx.length}명`, "mut");
     }
 
-    // ---- 자동 배정(복식 코트 생성)
     function shuffle(arr){
       const a = [...arr];
       for(let i=a.length-1;i>0;i--){
@@ -235,38 +249,38 @@
       const maxCourts = Math.floor(pool.length / 4);
       const input = prompt(`몇 코트로 진행하시겠습니까?\n가능: 1 ~ ${maxCourts} (코트당 4명)\n예) 2`);
       if(input === null) return;
+
       const courtCount = parseInt(input,10);
       if(isNaN(courtCount) || courtCount<1 || courtCount>maxCourts){
         alert(`코트 수는 1 ~ ${maxCourts} 사이로 입력해주세요.`);
         return;
       }
 
-      const need = courtCount*4;
+      const need = courtCount * 4;
 
-      // 레벨 큰 숫자 = 강함 가정
-      // 강/약 페어(상위+하위 묶기)로 2인 팀 만들고,
-      // 강한 팀 vs 약한 팀으로 코트 매칭
-      const picked = [...pool].sort((a,b)=>b.level-a.level).slice(0,need);
+      // ✅ 복식 밸런스: (강+약) 페어 → (강팀 vs 약팀) 매칭
+      // 1) 뽑을 인원: 상위 weight 우선 + 동률이면 랜덤성
+      const picked = shuffle(pool)
+        .sort((a,b)=> (b.weight - a.weight))
+        .slice(0, need);
 
-      // 혹시 같은 레벨이 많을 때 랜덤성 주기
-      const grouped = shuffle(picked);
-
-      // 다시 레벨 기준 정렬 후 strong+weak 페어
-      const sorted = grouped.sort((a,b)=>b.level-a.level);
-
+      // 2) strong+weak 2인 팀 생성
+      const sorted = [...picked].sort((a,b)=>b.weight-a.weight);
       const teams2 = [];
       let tmp = [...sorted];
-      while(tmp.length>=2){
+      while(tmp.length >= 2){
         const top = tmp.shift();
         const bottom = tmp.pop();
-        const sum = (top?.level||0) + (bottom?.level||0);
-        teams2.push({ members:[top,bottom], sum });
+        teams2.push({
+          members:[top,bottom],
+          sum: (top.weight||0) + (bottom.weight||0)
+        });
       }
 
+      // 3) 강팀 vs 약팀으로 코트 구성
       teams2.sort((a,b)=>b.sum-a.sum);
-
       const courts = [];
-      while(teams2.length>=2){
+      while(teams2.length >= 2){
         const strong = teams2.shift();
         const weak = teams2.pop();
         courts.push({
@@ -292,8 +306,12 @@
       courts.forEach((c, idx)=>{
         const div = document.createElement("div");
         div.className = "court";
-        const teamA = c.A.members.map(m=>`${esc(m.name)}(${esc(m.level)})`).join(" · ");
-        const teamB = c.B.members.map(m=>`${esc(m.name)}(${esc(m.level)})`).join(" · ");
+
+        const teamA = c.A.members
+          .map(m=>`${esc(m.name)}(${esc(m.grade)})`).join(" · ");
+        const teamB = c.B.members
+          .map(m=>`${esc(m.name)}(${esc(m.grade)})`).join(" · ");
+
         div.innerHTML = `
           <h3>코트 ${idx+1}</h3>
           <div class="grid">
@@ -308,8 +326,8 @@
             </div>
           </div>
           <div class="meta">
-            <span>A합 ${c.A.sum}</span>
-            <span>B합 ${c.B.sum}</span>
+            <span>A합(가중치) ${c.A.sum}</span>
+            <span>B합(가중치) ${c.B.sum}</span>
             <span>차이 ${c.diff}</span>
           </div>
         `;
@@ -324,33 +342,31 @@
       }
     }
 
-    // ---- 버튼 핸들러
+    // ----- 현장 추가(로컬)
     function addLocalPlayer(){
       const name = $("newName").value.trim();
-      const level = parseInt($("newLevel").value, 10);
+      const grade = $("newGrade").value;
 
-      if(!name || isNaN(level) || level<1 || level>20){
-        alert("이름과 레벨을 올바르게 입력해주세요. (레벨 1~20)");
+      if(!name){
+        alert("이름을 입력해주세요.");
         return;
       }
 
-      const p = { name, level, new:true };
+      const p = { name, grade }; // 로컬은 grade만 저장(계산은 매핑)
       const stored = loadLocalAdded();
       stored.push(p);
       saveLocalAdded(stored);
 
       $("newName").value = "";
-      $("newLevel").value = "";
+      $("newGrade").value = "B";
 
-      // 현재 allPlayers에 즉시 반영
-      allPlayers.push({ name, level, new:true });
+      allPlayers.push({ name, grade, weight: GRADE_WEIGHT[grade] ?? 1, new:true });
       renderPlayers();
     }
 
     function removeLocalPlayers(){
       if(!confirm("추가한 선수들을 모두 삭제하시겠습니까?")) return;
       localStorage.removeItem(LS_KEY);
-      // new:true만 제거
       allPlayers = allPlayers.filter(p=>!p.new);
       selectedIdx = [];
       renderPlayers();
@@ -367,7 +383,7 @@
     $("autoBtn").addEventListener("click", runAutoAssign);
     $("resetBtn").addEventListener("click", resetAll);
 
-    // ---- Auth + Firebase bind (레슨 시간표 코드 방식 그대로)
+    // ----- init (레슨 시간표 방식: 익명 로그인 + onValue 바인딩)
     (async function init(){
       try{
         setStatus("Firebase 연결 중...");
@@ -375,22 +391,19 @@
         authed = true;
         setStatus("Firebase 연결됨. 선수 불러오는 중...");
 
-        onValue(ref(db, PATH.players), (snap)=>{
-          const raw = snap.exists() ? (snap.val() || {}) : null;
+        onValue(ref(db, PATH.members), (snap)=>{
+          const cache = snap.exists() ? (snap.val() || {}) : {};
+          // 🔎 디버그 로그(문제 생기면 콘솔로 바로 확인 가능)
+          console.log("✅ PATH.members =", PATH.members);
+          console.log("✅ members exists =", snap.exists());
+          console.log("✅ members raw =", cache);
 
-          // raw가 배열이든 객체든 처리
-          const arr = raw
-            ? (Array.isArray(raw) ? raw.filter(Boolean) : Object.values(raw))
-            : [];
-
-          // arr 요소가 {name, level} 형태라고 가정
-          rebuildPlayers(arr);
-
-          setStatus(`Firebase 선수 ${arr.length}명 불러옴 · 전체 ${allPlayers.length}명`, "mut");
+          rebuildPlayers(cache);
+          setStatus(`Firebase 선수 ${Object.keys(cache||{}).length}명 불러옴 · 전체 ${allPlayers.length}명`, "mut");
         }, (err)=>{
           console.error(err);
           $("playerList").innerHTML = `<span class="err">선수 불러오기 실패: ${esc(err?.message||err)}</span>`;
-          setStatus("players 읽기 실패(콘솔 확인)", "err");
+          setStatus("members 읽기 실패(콘솔 확인)", "err");
         });
 
       }catch(e){
