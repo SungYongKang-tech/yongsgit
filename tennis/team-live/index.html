@@ -164,14 +164,14 @@
 
   <script type="module">
     import { db, auth } from "../firebase.js";
-    import { ref, onValue, get, set, update, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { ref, onValue, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     const $ = (id)=>document.getElementById(id);
 
     const PATH = {
-      current: "teamLive/current",   // 팀 구성 페이지가 저장한 현재 경기
-      run:     "teamLive/run"        // team-live 진행 상태(대진/점수/설정)
+      current: "teamLive/current",
+      run:     "teamLive/run"
     };
 
     const esc = (s)=>String(s??"")
@@ -182,7 +182,7 @@
 
     // ----- state
     let current = null; // {teams, groups, ...}
-    let run = null;     // {settings, matches, bracket, results ...}
+    let run = null;     // {settings, matches, bracketRounds, ...}
 
     function teamLabel(team){
       const names = (team.players||[]).map(p=>`${p.name}(${p.grade})`).join(" · ");
@@ -207,27 +207,20 @@
       const w = Math.max(a,b);
       const l = Math.min(a,b);
 
-      // 승자 최소 6게임
       if(w < 6) return {ok:false, msg:"승자 6게임 이상"};
 
-      // 타이브레이크 ON이면 7:6 허용
       if(tiebreakOn && w===7 && l===6) return {ok:true};
 
-      // 일반 승리: 2게임 차 + (6~) 허용
       if(w - l >= 2){
-        // 보통 6:0~6:4, 7:5, 8:6, ...
         return {ok:true};
       }
       return {ok:false, msg: tiebreakOn ? "예: 6:4 또는 7:6" : "2게임차 필요(예: 7:5, 8:6)"};
     }
 
-    function matchWinner(a,b){
-      return (a>b) ? "A" : "B";
-    }
+    function matchWinner(a,b){ return (a>b) ? "A" : "B"; }
 
     // ----- schedule generators
     function roundRobin(teamIds){
-      // 전체 풀리그: 모든 조합
       const ms = [];
       for(let i=0;i<teamIds.length;i++){
         for(let j=i+1;j<teamIds.length;j++){
@@ -237,7 +230,7 @@
             group: null,
             A: teamIds[i],
             B: teamIds[j],
-            score: null, // {a,b}
+            score: null,
             done: false
           });
         }
@@ -246,7 +239,6 @@
     }
 
     function groupRoundRobin(groupsObj){
-      // groupsObj: {A:[T1,T2], B:[...]}
       const ms = [];
       for(const [g, ids] of Object.entries(groupsObj||{})){
         const rr = roundRobin(ids);
@@ -256,25 +248,22 @@
       return ms;
     }
 
-    function buildBracketFromSeeds(seedIds){
-      // 단판 토너, byes 포함
-      // returns matches: [{id, round, A, B, score, done, winner}]
-      const ids = [...seedIds];
-      const n = ids.length;
-      const pow2 = 1 << Math.ceil(Math.log2(Math.max(2,n)));
-      const byes = pow2 - n;
+    function shuffle(arr){
+      const a = [...arr];
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
 
-      // 기본 시드 배열: 그대로(이미 정렬된 seedIds가 들어온다고 가정)
-      const seeded = [...ids];
+    function buildBracketFromPositions(seeded){
+      const pow2 = seeded.length;
 
-      // BYE는 null로 채움
-      for(let i=0;i<byes;i++) seeded.push(null);
-
-      // 1라운드 페어링: 앞/뒤 매칭
       const first = [];
-      for(let i=0;i<seeded.length/2;i++){
+      for(let i=0;i<pow2/2;i++){
         const A = seeded[i];
-        const B = seeded[seeded.length-1-i];
+        const B = seeded[pow2-1-i];
         first.push({
           id: nowId(),
           round: 1,
@@ -285,7 +274,7 @@
         });
       }
 
-      // BYE 처리: A만 있거나 B만 있으면 자동 승
+      // BYE 자동승
       first.forEach(m=>{
         if(m.A && !m.B){
           m.done = true; m.winner = m.A; m.score = {a:0,b:0, bye:true};
@@ -294,14 +283,14 @@
         }
       });
 
-      // 이후 라운드는 “슬롯”만 만들고, 승자 채워서 진행
+      // 이후 라운드 슬롯
       const rounds = [first];
       let round = 1;
       let curCount = first.length;
       while(curCount > 1){
         round++;
         curCount = Math.ceil(curCount/2);
-        const r = Array.from({length: curCount}, ()=>({
+        const r = Array.from({length: curCount}, () => ({
           id: nowId(),
           round,
           A: null, B: null,
@@ -316,7 +305,6 @@
     }
 
     function propagateBracket(rounds){
-      // 이전 라운드 winner를 다음 라운드 A/B에 채움
       for(let r=0;r<rounds.length-1;r++){
         const cur = rounds[r];
         const next = rounds[r+1];
@@ -326,14 +314,12 @@
           next[i].A = m1 ? (m1.winner||null) : null;
           next[i].B = m2 ? (m2.winner||null) : null;
 
-          // 다음 라운드도 BYE 자동승 처리
           const m = next[i];
           if(m.A && !m.B){
             m.done = true; m.winner = m.A; m.score = {a:0,b:0, bye:true};
           }else if(!m.A && m.B){
             m.done = true; m.winner = m.B; m.score = {a:0,b:0, bye:true};
           }else{
-            // 둘 다 있으면 기존 결과 유지(없으면 초기화)
             if(!m.done && (!m.score || m.score.bye)) m.score = null;
           }
         }
@@ -342,7 +328,6 @@
 
     // ----- standings
     function computeStandings(matchList, scopedTeamIds){
-      // returns array sorted: [{id, played, win, loss, gw, gl, gd}]
       const map = new Map();
       const ensure = (id)=>{
         if(!map.has(id)){
@@ -369,12 +354,10 @@
         else { B.win++; A.loss++; }
       }
 
-      // gd
       for(const v of map.values()){
         v.gd = v.gw - v.gl;
       }
 
-      // 정렬: 승 > 승률(동일이면 승) > 득실차 > 득게임
       const arr = [...map.values()];
       arr.sort((x,y)=>{
         if(y.win !== x.win) return y.win - x.win;
@@ -385,36 +368,86 @@
       return arr;
     }
 
-    // 조별 진출팀 선정 + “같은 조 1라운드 회피” 간단 처리
     function pickQualifiers(groupsObj, standingsByGroup, advancePerGroup){
       const adv = advancePerGroup|0;
-      const qualifiers = [];
       const meta = []; // {teamId, group, rank}
+
       for(const [g, ids] of Object.entries(groupsObj||{})){
         const st = standingsByGroup[g] || [];
         const take = Math.min(adv, st.length);
         for(let i=0;i<take;i++){
-          qualifiers.push(st[i].id);
           meta.push({ teamId: st[i].id, group: g, rank: i+1 });
         }
       }
 
-      // seed 정렬: 조 1위들 먼저, 그다음 2위들, ...
       meta.sort((a,b)=>{
         if(a.rank !== b.rank) return a.rank - b.rank;
-        return a.group.localeCompare(b.group);
+        return String(a.group).localeCompare(String(b.group));
       });
-      const seeds = meta.map(x=>x.teamId);
 
-      // 1라운드에서 같은 조 매칭을 최대한 피하려고
-      // "앞쪽/뒤쪽" 섞기: rank 기준으로 이미 섞여 있으므로 효과가 꽤 있음
-      const half = Math.ceil(seeds.length/2);
-      const mixed = [];
-      for(let i=0;i<half;i++){
-        if(seeds[i]) mixed.push(seeds[i]);
-        if(seeds[i+half]) mixed.push(seeds[i+half]);
+      return { seeds: meta.map(x=>x.teamId), meta };
+    }
+
+    // ✅ 랜덤 BYE + 같은 조 1R 회피 “포지션 배열” 생성
+    function buildSeedPositions(meta, randomByes=true){
+      const n = meta.length;
+      const pow2 = 1 << Math.ceil(Math.log2(Math.max(2, n)));
+      const byes = pow2 - n;
+
+      const seeded = Array(pow2).fill(null);
+      let pairSlots = Array.from({length: pow2/2}, (_,i)=>i);
+
+      let remain = [...meta].sort((a,b)=>{
+        if(a.rank !== b.rank) return a.rank - b.rank;
+        return String(a.group).localeCompare(String(b.group));
+      });
+
+      if(randomByes && byes > 0){
+        const picked = shuffle(remain).slice(0, byes);
+        const byeSet = new Set(picked.map(x=>x.teamId));
+        remain = remain.filter(x=>!byeSet.has(x.teamId));
+
+        pairSlots = shuffle(pairSlots);
+        picked.forEach((p, k)=>{
+          const ps = pairSlots[k];
+          if(Math.random() < 0.5){
+            seeded[ps] = p.teamId;
+            seeded[pow2-1-ps] = null;
+          }else{
+            seeded[ps] = null;
+            seeded[pow2-1-ps] = p.teamId;
+          }
+        });
+
+        pairSlots = pairSlots.slice(byes);
       }
-      return mixed;
+
+      while(remain.length){
+        const best = remain.shift();
+
+        let oppIndex = -1;
+        for(let k=remain.length-1;k>=0;k--){
+          if(remain[k].group !== best.group){ oppIndex = k; break; }
+        }
+        const opp = (oppIndex>=0) ? remain.splice(oppIndex,1)[0] : (remain.pop() || null);
+
+        const ps = pairSlots.shift();
+        if(ps === undefined) break;
+
+        seeded[ps] = best.teamId;
+        seeded[pow2-1-ps] = opp ? opp.teamId : null;
+      }
+
+      return seeded;
+    }
+
+    function arraysEqual(a,b){
+      if(!a || !b) return false;
+      if(a.length !== b.length) return false;
+      for(let i=0;i<a.length;i++){
+        if(a[i] !== b[i]) return false;
+      }
+      return true;
     }
 
     // ----- rendering
@@ -462,55 +495,6 @@
       }
     }
 
-    function renderStandings(){
-      const box = $("standingsBox");
-      if(!run || !current){
-        box.innerHTML = `<div class="mut">대진 생성 후 점수를 입력하면 자동 반영됩니다.</div>`;
-        return;
-      }
-      const format = run.settings?.format || "league";
-      const matches = run.matches || [];
-      const groupsObj = current.groups || {};
-      const allIds = (current.teams||[]).map(t=>t.id);
-
-      if(format==="league" || format==="tournament"){
-        const st = computeStandings(matches, allIds);
-        box.innerHTML = standingsTable("전체", st);
-        return;
-      }
-
-      // groups_to: 조별 순위
-      const out = [];
-      const standingsByGroup = {};
-      for(const [g, ids] of Object.entries(groupsObj)){
-        const gMatches = matches.filter(m=>m.group===g);
-        const st = computeStandings(gMatches, ids);
-        standingsByGroup[g] = st;
-        out.push(`<div style="margin-bottom:10px">${standingsTable(`${g}조`, st)}</div>`);
-      }
-      box.innerHTML = out.join("") || `<div class="mut">조별 순위 없음</div>`;
-
-      // 토너 진출 미리보기
-      const adv = run.settings?.advancePerGroup|0;
-      if(adv>0){
-        const seeds = pickQualifiers(groupsObj, standingsByGroup, adv);
-        if(seeds.length){
-          box.innerHTML += `
-            <div class="card" style="margin-top:10px;box-shadow:none">
-              <div style="font-weight:1000;text-align:center;margin-bottom:8px">토너 진출(시드)</div>
-              <div style="text-align:center">
-                ${seeds.map(id=>{
-                  const t = teamById(id);
-                  return `<span class="chip">${esc(t ? teamLabel(t) : id)}</span>`;
-                }).join("")}
-              </div>
-              <div class="mut">※ 조별 결과에 따라 토너 시드는 자동 갱신됩니다.</div>
-            </div>
-          `;
-        }
-      }
-    }
-
     function standingsTable(title, st){
       return `
         <div class="box" style="box-shadow:none">
@@ -546,6 +530,56 @@
           </div>
         </div>
       `;
+    }
+
+    function renderStandings(){
+      const box = $("standingsBox");
+      if(!run || !current){
+        box.innerHTML = `<div class="mut">대진 생성 후 점수를 입력하면 자동 반영됩니다.</div>`;
+        return;
+      }
+      const format = run.settings?.format || "league";
+      const matches = run.matches || [];
+      const groupsObj = current.groups || {};
+      const allIds = (current.teams||[]).map(t=>t.id);
+
+      if(format==="league" || format==="tournament"){
+        const st = computeStandings(matches, allIds);
+        box.innerHTML = standingsTable("전체", st);
+        return;
+      }
+
+      // groups_to: 조별 순위
+      const out = [];
+      const standingsByGroup = {};
+      for(const [g, ids] of Object.entries(groupsObj)){
+        const gMatches = matches.filter(m=>m.group===g);
+        const st = computeStandings(gMatches, ids);
+        standingsByGroup[g] = st;
+        out.push(`<div style="margin-bottom:10px">${standingsTable(`${g}조`, st)}</div>`);
+      }
+      box.innerHTML = out.join("") || `<div class="mut">조별 순위 없음</div>`;
+
+      // 토너 진출 미리보기
+      const adv = run.settings?.advancePerGroup|0;
+      if(adv>0){
+        const q = pickQualifiers(groupsObj, standingsByGroup, adv);
+        const seedsArr = q.seeds || [];
+        if(seedsArr.length){
+          box.innerHTML += `
+            <div class="card" style="margin-top:10px;box-shadow:none">
+              <div style="font-weight:1000;text-align:center;margin-bottom:8px">토너 진출(시드)</div>
+              <div style="text-align:center">
+                ${seedsArr.map(id=>{
+                  const t = teamById(id);
+                  return `<span class="chip">${esc(t ? teamLabel(t) : id)}</span>`;
+                }).join("")}
+              </div>
+              <div class="mut">※ 조별 결과에 따라 토너 시드는 자동 갱신됩니다.</div>
+            </div>
+          `;
+        }
+      }
     }
 
     function renderMatches(){
@@ -592,7 +626,6 @@
         `;
       }).join("");
 
-      // bind buttons
       box.querySelectorAll("button[data-mid]").forEach(btn=>{
         btn.addEventListener("click", async ()=>{
           const mid = btn.getAttribute("data-mid");
@@ -670,7 +703,6 @@
         </div>
       `;
 
-      // bind bracket buttons
       box.querySelectorAll("button[data-bsave]").forEach(btn=>{
         btn.addEventListener("click", async ()=>{
           const mid = btn.getAttribute("data-bsave");
@@ -692,17 +724,15 @@
       await set(ref(db, PATH.run), nextRun);
     }
 
+    // ✅ 핵심 수정: groups_to에서 “진출팀 구성원이 같으면” seededPositions(=대진) 유지
     function recalcDerived(nextRun){
-      // 조별+토너: 조별 순위 → 진출팀 → 브라켓 생성/전파
       const format = nextRun.settings?.format || "league";
 
       if(format === "league"){
-        // standings는 렌더 시 계산
         return nextRun;
       }
 
       if(format === "tournament"){
-        // bracketRounds가 있으면 propagate
         if(nextRun.bracketRounds){
           propagateBracket(nextRun.bracketRounds);
         }
@@ -711,22 +741,54 @@
 
       if(format === "groups_to"){
         const groupsObj = current?.groups || {};
-        // 조별 순위 계산
+
+        // 1) 조별 순위 계산
         const standingsByGroup = {};
         for(const [g, ids] of Object.entries(groupsObj)){
           const gMatches = (nextRun.matches||[]).filter(m=>m.group===g);
           standingsByGroup[g] = computeStandings(gMatches, ids);
         }
 
-        // 진출팀
+        // 2) 진출팀 + meta
         const adv = nextRun.settings?.advancePerGroup|0;
-        const seeds = pickQualifiers(groupsObj, standingsByGroup, adv);
+        const { seeds, meta } = pickQualifiers(groupsObj, standingsByGroup, adv);
 
-        // 브라켓 생성 + 전파
+        // 3) ✅ 진출팀 “구성원”이 바뀔 때만 랜덤 시드/부전승 다시 생성
+        const qualifierIds = meta.map(x=>x.teamId).slice().sort();
+        const prevQualifierIds = nextRun.bracketQualifierIds || null;
+
+        const sameQualifiers =
+          Array.isArray(prevQualifierIds) &&
+          prevQualifierIds.length === qualifierIds.length &&
+          prevQualifierIds.every((v,i)=>v === qualifierIds[i]);
+
+        let seededPositions = nextRun.bracketSeededPositions || null;
+
+        if(!sameQualifiers || !seededPositions){
+          seededPositions = buildSeedPositions(meta, true); // 랜덤 BYE + 1R 같은조 회피
+          nextRun.bracketQualifierIds = qualifierIds;       // 구성원만 저장(비교용)
+          nextRun.bracketSeededPositions = seededPositions; // 포지션 저장(대진 고정 핵심)
+        }
+
+        // 표시용
         nextRun.bracketSeeds = seeds;
-        nextRun.bracketRounds = buildBracketFromSeeds(seeds);
-        propagateBracket(nextRun.bracketRounds);
 
+        // 4) seededPositions가 바뀐 경우에만 브라켓 재생성(점수/매치ID 꼬임 방지)
+        const prevPositions = nextRun.bracketSeededPositionsPrev || null;
+        const needRebuild =
+          !nextRun.bracketRounds ||
+          !prevPositions ||
+          !arraysEqual(prevPositions, seededPositions);
+
+        if(needRebuild){
+          nextRun.bracketRounds = buildBracketFromPositions(seededPositions);
+        }
+
+        // 다음 비교용 저장
+        nextRun.bracketSeededPositionsPrev = seededPositions;
+
+        // 5) 승자 전파
+        propagateBracket(nextRun.bracketRounds);
         return nextRun;
       }
 
@@ -747,13 +809,11 @@
       const groupsObj = current.groups || {};
       const hasGroups = Object.keys(groupsObj).length > 0;
 
-      // 조 데이터가 없는데 groups_to를 선택하면 막기
       if(format==="groups_to" && !hasGroups){
         alert("조 데이터가 없습니다. (팀 구성 페이지에서 조 편성 후 저장해야 합니다)");
         return;
       }
 
-      // 조별 진출 인원은 조 팀 수를 넘기지 않도록 UI가 선택되더라도 방어
       if(format==="groups_to"){
         const minSize = Math.min(...Object.values(groupsObj).map(v=>v.length));
         if(advancePerGroup > minSize){
@@ -774,20 +834,30 @@
         },
         matches: [],
         bracketRounds: null,
-        bracketSeeds: []
+        bracketSeeds: [],
+        // 비교/고정용 필드
+        bracketSeededPositions: null,
+        bracketQualifierIds: null,
+        bracketSeededPositionsPrev: null
       };
 
       if(format==="league"){
         nextRun.matches = roundRobin(teamIds);
-      } else if(format==="tournament"){
-        // 토너는 브라켓만
-        nextRun.bracketRounds = buildBracketFromSeeds(teamIds);
+
+      }else if(format==="tournament"){
+        // ✅ 토너도 랜덤 BYE + 랜덤 배치(처음 생성 시에만)
+        const meta = shuffle(teamIds).map(id => ({ teamId: id, group: "X", rank: 1 }));
+        const seededPositions = buildSeedPositions(meta, true);
+        nextRun.bracketSeededPositions = seededPositions;
+        nextRun.bracketSeededPositionsPrev = seededPositions;
+        nextRun.bracketQualifierIds = meta.map(x=>x.teamId).slice().sort();
+
+        nextRun.bracketRounds = buildBracketFromPositions(seededPositions);
         propagateBracket(nextRun.bracketRounds);
-      } else if(format==="groups_to"){
+
+      }else if(format==="groups_to"){
         nextRun.matches = groupRoundRobin(groupsObj);
-        // 조별 결과 기반으로 브라켓 생성(현재는 점수 없으니 일단 “초기 상태”)
-        const tmp = recalcDerived(nextRun);
-        Object.assign(nextRun, tmp);
+        recalcDerived(nextRun);
       }
 
       await writeRun(nextRun);
@@ -816,7 +886,6 @@
         return;
       }
 
-      // 저장
       const nextRun = structuredClone(run);
       nextRun.settings.scoring.noAd = $("noAd").checked;
       nextRun.settings.scoring.tiebreak = $("tiebreak").checked;
@@ -827,15 +896,14 @@
       msg.className = "oktxt";
       msg.textContent = "저장됨";
 
-      // 조별+토너면 브라켓 재계산
       recalcDerived(nextRun);
-
       await writeRun(nextRun);
     }
 
     async function clearMatchScore(matchId){
       const idx = (run?.matches||[]).findIndex(m=>m.id===matchId);
       if(idx < 0) return;
+
       const nextRun = structuredClone(run);
       nextRun.matches[idx].score = null;
       nextRun.matches[idx].done = false;
@@ -888,7 +956,6 @@
       bm.done = true;
       bm.winner = (matchWinner(a,b)==="A") ? bm.A : bm.B;
 
-      // 승자 전파
       propagateBracket(nextRun.bracketRounds);
 
       msg.className = "oktxt";
@@ -904,14 +971,12 @@
       const nextRun = structuredClone(run);
       const bm = nextRun.bracketRounds[pos.r][pos.i];
 
-      // bye 자동승은 지우지 않음
       if(bm.score?.bye) return;
 
       bm.score = null;
       bm.done = false;
       bm.winner = null;
 
-      // 아래 라운드 영향 -> 전파 다시
       propagateBracket(nextRun.bracketRounds);
       await writeRun(nextRun);
     }
@@ -920,7 +985,6 @@
     $("buildBtn").addEventListener("click", buildSchedule);
     $("resetRunBtn").addEventListener("click", resetRun);
 
-    // 조별+토너에서 진출 인원 바꾸면 브라켓 재생성(점수는 유지)
     $("advancePerGroup").addEventListener("change", async ()=>{
       if(!run || run.settings?.format!=="groups_to") return;
       const nextRun = structuredClone(run);
@@ -930,7 +994,6 @@
     });
 
     $("format").addEventListener("change", ()=>{
-      // format 바꿀 때 조별 진출 UI는 그대로 두되, 안내만 갱신
       renderAll();
     });
 
@@ -961,7 +1024,6 @@
         setStatus("Firebase 연결 중...");
         await signInAnonymously(auth);
 
-        // current bind
         onValue(ref(db, PATH.current), (snap)=>{
           current = snap.exists() ? (snap.val() || null) : null;
           if(!current){
@@ -975,11 +1037,9 @@
           setStatus("current 읽기 실패(콘솔 확인)", "err");
         });
 
-        // run bind
         onValue(ref(db, PATH.run), (snap)=>{
           run = snap.exists() ? (snap.val() || null) : null;
 
-          // run이 있으면 설정 UI 반영
           if(run?.settings){
             $("format").value = run.settings.format || "league";
             $("advancePerGroup").value = String(run.settings.advancePerGroup || 2);
