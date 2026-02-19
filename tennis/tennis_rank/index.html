@@ -163,10 +163,11 @@ h1{margin:2px 0 8px;font-size:clamp(20px,4vw,24px);color:var(--accent);font-weig
   let members = [];            // [{name, grade, weight}]
   let memberSet = new Set();   // name set
   let sel = [];
-  let deletePassword = "7910";
+  let deletePassword = null;   // ✅ 관리자에서 설정한 삭제비번 (없으면 null)
 
-  get(deletePwRef).then(s=>{
-    if(s.exists()) deletePassword = s.val();
+  // ✅ 삭제 비밀번호: 항상 최신값 반영 (get 1회 -> onValue)
+  onValue(deletePwRef, (s)=>{
+    deletePassword = s.exists() ? String(s.val()) : null;
   });
 
   // ✅ 선수(테니스) 목록: members에서 로드
@@ -176,7 +177,6 @@ h1{margin:2px 0 8px;font-size:clamp(20px,4vw,24px);color:var(--accent);font-weig
       .map(v=>({ name: v?.name, grade: (v?.grade||"D").toUpperCase(), weight: v?.weight ?? 0 }))
       .filter(v=>v.name)
       .sort((a,b)=>{
-        // A→B→C→D, 그 다음 이름순
         const ga = GRADE_ORDER[a.grade] ?? 99;
         const gb = GRADE_ORDER[b.grade] ?? 99;
         return ga-gb || a.name.localeCompare(b.name,"ko");
@@ -323,10 +323,19 @@ h1{margin:2px 0 8px;font-size:clamp(20px,4vw,24px);color:var(--accent);font-weig
     });
   }
 
+  // ✅ 삭제 비번은 관리자 페이지(config/deletePassword) 값으로만 삭제
   window.deleteMatch = async (id)=>{
+    if(!deletePassword){
+      return toast("삭제 비밀번호가 설정되지 않았습니다(관리자 페이지에서 설정).");
+    }
     const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
-    if(input !== deletePassword) return toast("비밀번호가 올바르지 않습니다");
+    if(input === null) return;
+
+    if(String(input).trim() !== String(deletePassword)){
+      return toast("비밀번호가 올바르지 않습니다");
+    }
     if(!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
+
     await remove(ref(db, `${PATH.matches}/${id}`));
     toast("경기결과 삭제 완료");
   };
@@ -410,7 +419,7 @@ h1{margin:2px 0 8px;font-size:clamp(20px,4vw,24px);color:var(--accent);font-weig
     todayVisible=false;
   });
 
-  // ✅ 바로가기 추가 (원하시는 URL로 수정)
+  // ✅ 바로가기 추가
   function showHomeInstallGuide(){
     const url = location.href.split("#")[0];
     navigator.clipboard.writeText(url).then(()=>{
