@@ -1,358 +1,301 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>테니스 복식 자동 팀 배정기</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; padding: 20px; background:#f0f2f5; }
-    h2 { text-align:center; color:#1a237e; margin: 8px 0 16px; }
-    .section { margin-bottom: 18px; }
-    .section h3 { text-align:center; color:#333; margin: 10px 0; }
-    .player-list { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; }
-    .player { margin: 2px; padding: 6px 10px; font-size: 15px; border-radius: 10px; border: 1px solid #cbd5e1; cursor: pointer; background: #fff; }
-    .player.selected { background:#bbdefb; border: 2px solid #1e88e5; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎾 테니스 복식 자동 배정기</title>
 
-    /* 새로 추가된 선수 강조 */
-    .player.new-player {
-      background: #fff59d !important;
-      border: 2px solid #d1d5db;
-      font-weight: 800;
-      animation: highlightFlash 1.2s ease-in-out infinite alternate;
-      color: #111827;
-    }
-    .player.new-player.selected {
-      background: #fbc02d !important;
-      border-color: #1e88e5;
-      color: #111827 !important;
-    }
-    @keyframes highlightFlash { from { filter: brightness(1.02); } to { filter: brightness(0.92); } }
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f9;margin:0;padding:20px}
+h2{text-align:center;margin:10px 0 20px;color:#0f172a}
 
-    button {
-      padding: 10px 14px; font-size: 15px;
-      background:#1976d2; color:#fff; border:none; border-radius: 10px; cursor:pointer;
-    }
-    button.secondary { background:#64748b; }
-    button.danger { background:#e53935; }
-    button.green { background:#43a047; }
+.section{margin-bottom:20px}
+.section h3{text-align:center;margin-bottom:10px;color:#334155}
 
-    .input-wrap { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom: 12px; }
-    .player-input-pair { display:flex; gap:8px; align-items:center; }
-    .player-input-pair input { padding: 8px 10px; font-size: 14px; border-radius: 10px; border:1px solid #cbd5e1; }
-    #newName { width: 120px; }
-    #newLevel { width: 70px; }
+.player-list{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.player{
+  padding:6px 10px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  cursor:pointer;
+  font-size:14px
+}
+.player.selected{background:#bbdefb;border:2px solid #1e88e5}
+.player.new-player{background:#fff59d;font-weight:bold}
 
-    .action-buttons { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin: 14px 0; }
+.input-wrap{
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:15px
+}
+input{padding:6px 8px;border-radius:8px;border:1px solid #cbd5e1}
 
-    .courts { display:flex; flex-direction:column; gap:12px; max-width: 860px; margin: 0 auto; }
-    .court-card {
-      background:#fff; border:1px solid #e5e7eb; border-radius: 14px;
-      padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.06);
-    }
-    .court-title { font-weight: 900; color:#0f172a; margin-bottom: 8px; }
-    .teams-row { display:grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items:center; }
-    .team-box { border:1px solid #e5e7eb; border-radius:12px; padding:10px; background:#f8fafc; }
-    .vs { font-weight: 900; color:#ef4444; text-align:center; }
-    .meta { margin-top: 8px; color:#475569; font-size: 13px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+button{
+  padding:8px 14px;
+  border:none;
+  border-radius:8px;
+  background:#1976d2;
+  color:#fff;
+  cursor:pointer
+}
+button.secondary{background:#64748b}
+button.danger{background:#e53935}
 
-    @media (max-width: 600px){
-      .teams-row { grid-template-columns: 1fr; }
-      .vs { order: 2; }
-    }
-  </style>
+.action-buttons{
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:15px 0
+}
+
+.courts{
+  max-width:800px;
+  margin:0 auto;
+  display:flex;
+  flex-direction:column;
+  gap:12px
+}
+
+.court-card{
+  background:#fff;
+  border-radius:12px;
+  padding:14px;
+  box-shadow:0 6px 18px rgba(0,0,0,.08)
+}
+
+.court-title{font-weight:900;margin-bottom:8px}
+.team-box{
+  background:#f8fafc;
+  padding:8px;
+  border-radius:8px;
+  border:1px solid #e2e8f0
+}
+.vs{text-align:center;font-weight:900;color:#ef4444;margin:6px 0}
+
+.meta{
+  margin-top:6px;
+  font-size:13px;
+  color:#475569;
+  display:flex;
+  justify-content:space-between
+}
+</style>
 </head>
 <body>
 
-  <h2>🎾 테니스 복식 자동 팀 배정기</h2>
+<h2>🎾 테니스 복식 자동 배정기</h2>
 
-  <!-- ✅ 선수 추가 (탁구와 동일 유지) -->
-  <div class="input-wrap">
-    <div class="player-input-pair">
-      <input type="text" id="newName" placeholder="이름" />
-      <input type="number" id="newLevel" placeholder="레벨" min="1" max="20" />
-    </div>
-    <div class="button-group">
-      <button onclick="addPlayer()">선수 추가</button>
-      <button class="secondary" onclick="removeAddedPlayers()">추가 선수 삭제</button>
-    </div>
-  </div>
+<div class="input-wrap">
+  <input type="text" id="newName" placeholder="이름">
+  <input type="number" id="newLevel" placeholder="레벨" min="1" max="20">
+  <button onclick="addPlayer()">선수 추가</button>
+  <button class="secondary" onclick="removeAddedPlayers()">추가 선수 삭제</button>
+</div>
 
-  <div class="section">
-    <h3>참석자 목록</h3>
-    <div class="player-list" id="playerList"></div>
-  </div>
+<div class="section">
+  <h3>참석자 목록</h3>
+  <div class="player-list" id="playerList"></div>
+</div>
 
-  <div class="action-buttons">
-    <button onclick="openAutoAssignModal()">복식 자동 배정</button>
-    <button class="danger" onclick="resetAll()">전체 초기화</button>
-  </div>
+<div class="action-buttons">
+  <button onclick="openAutoAssign()">복식 자동 배정</button>
+  <button class="danger" onclick="resetAll()">전체 초기화</button>
+</div>
 
-  <div class="section">
-    <h3>배정 결과 (코트별 복식)</h3>
-    <div class="courts" id="courts"></div>
-  </div>
+<div class="section">
+  <h3>배정 결과</h3>
+  <div class="courts" id="courts"></div>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 
 <script>
-  // =========================
-  // 데이터/상태
-  // =========================
-  let allPlayers = [];     // 전체 선수(관리자 등록 + 로컬 추가)
-  let selected = [];       // 참석자 선택(인덱스)
-  let latestCourts = [];   // 결과 저장
 
-  // =========================
-  // 선수 로딩 (관리자 입력 선수 전체 로딩)
-  // - 탁구와 동일하게 members.json에서 불러옴
-  // =========================
-  async function loadPlayers() {
-    try {
-      const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json");
-      const json = await res.json();
-      const basePlayers = Object.values(json);
+// 🔹 Firebase 설정 (기존 그대로 사용)
+const firebaseConfig = {
+  apiKey: "AIzaSyA-tp3iJ8-n0yrrd8lwE1IgOdsmDqyh69k",
+  authDomain: "koen-teamleague.firebaseapp.com",
+  databaseURL: "https://koen-teamleague-default-rtdb.firebaseio.com",
+  projectId: "koen-teamleague"
+};
 
-      allPlayers = basePlayers.map(p => ({
-        name: p.name,
-        level: Number(p.level) || 1,
-        new: false
-      }));
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-      // 로컬 저장된 신규 선수 병합
-      const saved = JSON.parse(localStorage.getItem("tennis_addedPlayers") || "[]");
-      saved.forEach(p => allPlayers.push({ ...p, new: true }));
+firebase.auth().signInAnonymously();
 
-      renderPlayers();
-    } catch (err) {
-      console.error("❌ 선수 목록 로딩 실패:", err);
-      alert("선수 목록 로딩 실패: members.json 경로/형식을 확인해주세요.");
-    }
+// =====================
+// 상태
+// =====================
+let allPlayers = [];
+let selected = [];
+
+// =====================
+// Firebase에서 테니스 멤버 로딩
+// =====================
+function loadPlayersFromFirebase(){
+  const membersRef = db.ref("tennis/members"); // ⚠️ 경로 확인
+
+  membersRef.on("value", snap=>{
+    const data = snap.val() || {};
+    const arr = Array.isArray(data) ? data : Object.values(data);
+
+    allPlayers = arr.map(p=>({
+      name:p.name,
+      level:Number(p.level)||1,
+      new:false
+    }));
+
+    // 로컬 추가 병합
+    const saved = JSON.parse(localStorage.getItem("tennis_addedPlayers")||"[]");
+    saved.forEach(p=>allPlayers.push({...p,new:true}));
+
+    selected=[];
+    renderPlayers();
+  });
+}
+
+loadPlayersFromFirebase();
+
+// =====================
+// UI 렌더
+// =====================
+function renderPlayers(){
+  const list=document.getElementById("playerList");
+  list.innerHTML="";
+  allPlayers.forEach((p,i)=>{
+    const el=document.createElement("div");
+    el.className="player";
+    if(selected.includes(i)) el.classList.add("selected");
+    if(p.new) el.classList.add("new-player");
+    el.textContent=`${p.name} (${p.level})`;
+    el.onclick=()=>toggleSelect(i);
+    list.appendChild(el);
+  });
+}
+
+function toggleSelect(i){
+  if(selected.includes(i)){
+    selected=selected.filter(v=>v!==i);
+  }else{
+    selected.push(i);
+  }
+  renderPlayers();
+}
+
+// =====================
+// 복식 자동 배정
+// =====================
+function openAutoAssign(){
+  const poolIdx = selected.length?selected:allPlayers.map((_,i)=>i);
+  if(poolIdx.length<4){
+    alert("최소 4명 필요합니다.");
+    return;
   }
 
-  loadPlayers();
+  const maxCourt=Math.floor(poolIdx.length/4);
+  const input=prompt(`몇 코트로 진행? (1~${maxCourt})`);
+  if(!input) return;
+  const courtCount=parseInt(input);
+  if(isNaN(courtCount)||courtCount<1||courtCount>maxCourt){
+    alert("코트 수 오류");
+    return;
+  }
 
-  // =========================
-  // UI 렌더
-  // =========================
-  function renderPlayers() {
-    const playerList = document.getElementById("playerList");
-    playerList.innerHTML = "";
+  runAssignment(courtCount,poolIdx);
+}
 
-    allPlayers.forEach((p, i) => {
-      const el = document.createElement("span");
-      el.className = "player";
-      el.innerHTML = `
-        ${p.name}(${p.level})
-        ${p.new ? `<button onclick="removeSingleAddedPlayer(${i})"
-          style="margin-left:6px;font-size:12px;padding:2px 6px;background:#f44336;color:#fff;border:none;border-radius:8px;cursor:pointer;">✖</button>` : ""}
-      `;
+function runAssignment(courtCount,poolIdx){
+  const players=poolIdx.map(i=>allPlayers[i]);
+  const needed=courtCount*4;
 
-      el.onclick = (e) => {
-        if (e.target.tagName === "BUTTON") return;
-        toggleSelect(i, el);
-      };
+  const sorted=[...players].sort((a,b)=>b.level-a.level);
+  const picked=sorted.slice(0,needed);
 
-      if (p.new) el.classList.add("new-player");
-      if (selected.includes(i)) el.classList.add("selected");
+  const teams=[];
+  let temp=[...picked];
+  while(temp.length>=2){
+    const top=temp.shift();
+    const bottom=temp.pop();
+    teams.push({members:[top,bottom],sum:top.level+bottom.level});
+  }
 
-      playerList.appendChild(el);
+  const courts=[];
+  teams.sort((a,b)=>b.sum-a.sum);
+  while(teams.length>=2){
+    const strong=teams.shift();
+    const weak=teams.pop();
+    courts.push({
+      A:strong,
+      B:weak,
+      diff:Math.abs(strong.sum-weak.sum)
     });
   }
 
-  function toggleSelect(i, el) {
-    if (selected.includes(i)) {
-      selected = selected.filter(v => v !== i);
-      el.classList.remove("selected");
-    } else {
-      selected.push(i);
-      el.classList.add("selected");
-    }
-  }
+  renderCourts(courts);
+}
 
-  // =========================
-  // 선수 추가/삭제 (탁구와 동일 유지, 키만 tennis_로 분리)
-  // =========================
-  function addPlayer() {
-    const nameInput = document.getElementById("newName");
-    const levelInput = document.getElementById("newLevel");
+function renderCourts(courts){
+  const wrap=document.getElementById("courts");
+  wrap.innerHTML="";
 
-    const name = nameInput.value.trim();
-    const level = parseInt(levelInput.value, 10);
+  courts.forEach((c,i)=>{
+    const div=document.createElement("div");
+    div.className="court-card";
+    div.innerHTML=`
+      <div class="court-title">코트 ${i+1}</div>
+      <div class="team-box">
+        팀 A: ${c.A.members.map(m=>m.name).join(" & ")}
+      </div>
+      <div class="vs">VS</div>
+      <div class="team-box">
+        팀 B: ${c.B.members.map(m=>m.name).join(" & ")}
+      </div>
+      <div class="meta">
+        <span>A합: ${c.A.sum}</span>
+        <span>B합: ${c.B.sum}</span>
+        <span>차이: ${c.diff}</span>
+      </div>
+    `;
+    wrap.appendChild(div);
+  });
+}
 
-    if (!name || isNaN(level) || level < 1 || level > 20) {
-      alert("이름과 레벨을 올바르게 입력해주세요. (레벨 1~20)");
-      return;
-    }
+// =====================
+function addPlayer(){
+  const name=document.getElementById("newName").value.trim();
+  const level=parseInt(document.getElementById("newLevel").value);
+  if(!name||isNaN(level)){alert("입력 오류");return;}
 
-    const newPlayer = { name, level, new: true };
-    allPlayers.push(newPlayer);
+  const newPlayer={name,level,new:true};
+  allPlayers.push(newPlayer);
 
-    const stored = JSON.parse(localStorage.getItem("tennis_addedPlayers") || "[]");
-    stored.push(newPlayer);
-    localStorage.setItem("tennis_addedPlayers", JSON.stringify(stored));
+  const stored=JSON.parse(localStorage.getItem("tennis_addedPlayers")||"[]");
+  stored.push(newPlayer);
+  localStorage.setItem("tennis_addedPlayers",JSON.stringify(stored));
 
-    nameInput.value = "";
-    levelInput.value = "";
-    renderPlayers();
-  }
+  renderPlayers();
+}
 
-  function removeSingleAddedPlayer(index) {
-    const player = allPlayers[index];
-    if (!player.new) return;
+function removeAddedPlayers(){
+  allPlayers=allPlayers.filter(p=>!p.new);
+  localStorage.removeItem("tennis_addedPlayers");
+  renderPlayers();
+}
 
-    if (!confirm(`${player.name} 선수를 삭제하시겠습니까?`)) return;
+function resetAll(){
+  selected=[];
+  document.getElementById("courts").innerHTML="";
+  renderPlayers();
+}
 
-    allPlayers.splice(index, 1);
-
-    const stored = JSON.parse(localStorage.getItem("tennis_addedPlayers") || "[]");
-    const updated = stored.filter(p => !(p.name === player.name && p.level === player.level));
-    localStorage.setItem("tennis_addedPlayers", JSON.stringify(updated));
-
-    // 선택 인덱스 재정렬(간단 처리: 선택 초기화)
-    selected = [];
-    renderPlayers();
-  }
-
-  function removeAddedPlayers() {
-    if (!confirm("추가한 선수들을 모두 삭제하시겠습니까?")) return;
-    allPlayers = allPlayers.filter(p => !p.new);
-    localStorage.removeItem("tennis_addedPlayers");
-    selected = [];
-    renderPlayers();
-  }
-
-  function resetAll() {
-    selected = [];
-    latestCourts = [];
-    document.getElementById("courts").innerHTML = "";
-    renderPlayers();
-  }
-
-  // =========================
-  // 유틸
-  // =========================
-  function shuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
-
-  // =========================
-  // 테니스 복식 자동 배정
-  // - 코트 수를 입력받고
-  // - 각 코트는 (2인 1팀) vs (2인 1팀)
-  // - 기본 목표: "코트별 4명" 기준으로 레벨 균형
-  // =========================
-  function openAutoAssignModal() {
-    const poolIdx = selected.length ? [...selected] : allPlayers.map((_, i) => i);
-
-    if (poolIdx.length < 4) {
-      alert("복식은 최소 4명이 필요합니다. (참석자 선택이 없으면 전체 명단을 사용합니다)");
-      return;
-    }
-
-    const maxCourts = Math.floor(poolIdx.length / 4);
-    const input = prompt(`몇 코트로 진행하시겠습니까?\n가능: 1 ~ ${maxCourts} (코트당 4명)\n예) 2`);
-    if (input === null) return;
-
-    const courts = parseInt(input, 10);
-    if (isNaN(courts) || courts < 1 || courts > maxCourts) {
-      alert(`코트 수는 1 ~ ${maxCourts} 사이로 입력해주세요.`);
-      return;
-    }
-
-    runDoublesAssignment(courts, poolIdx);
-  }
-
-  function runDoublesAssignment(courtCount, poolIdx) {
-    // 사용할 선수만 추림
-    const pool = poolIdx.map(i => allPlayers[i]);
-
-    // 코트 수 * 4명만 사용 (남는 인원은 대기)
-    const needed = courtCount * 4;
-
-    // 레벨 높은 순으로 섞되, 과도한 편향 줄이기 위해 "정렬 후 블록 셔플"
-    const sorted = [...pool].sort((a, b) => b.level - a.level);
-    const picked = sorted.slice(0, needed);
-
-    // 팀을 만들기 위한 전략:
-    // 1) 레벨 내림차순
-    // 2) strongest와 weakest를 묶어서 2인 팀 만들기(밸런스)
-    // 3) 그렇게 만들어진 2인팀 2개를 한 코트로 매칭
-    const strong = [...picked];
-    const teams2 = [];
-
-    while (strong.length >= 2) {
-      const top = strong.shift();
-      const bottom = strong.pop();
-      teams2.push({
-        members: [top, bottom].filter(Boolean),
-        sum: (top?.level || 0) + (bottom?.level || 0)
-      });
-    }
-
-    // 2인팀들을 섞어서 코트에 배정하되, sum 균형이 되도록 페어링
-    teams2.sort((a, b) => b.sum - a.sum);
-    const courts = [];
-    while (teams2.length >= 2) {
-      const t1 = teams2.shift();      // 강한 팀
-      const t2 = teams2.pop();        // 약한 팀
-      courts.push({
-        teamA: t1,
-        teamB: t2,
-        diff: Math.abs(t1.sum - t2.sum)
-      });
-    }
-
-    // 결과 저장/렌더
-    latestCourts = courts;
-    renderCourts(courts);
-
-    // 남는 인원 안내
-    const waiting = pool.length - needed;
-    if (waiting > 0) {
-      alert(`배정 완료!\n대기 인원: ${waiting}명 (코트당 4명 기준으로 일부만 배정했습니다)`);
-    }
-  }
-
-  function renderCourts(courts) {
-    const wrap = document.getElementById("courts");
-    wrap.innerHTML = "";
-
-    if (!courts.length) {
-      wrap.innerHTML = "<div style='text-align:center;color:#64748b;'>결과가 없습니다.</div>";
-      return;
-    }
-
-    courts.forEach((c, i) => {
-      const card = document.createElement("div");
-      card.className = "court-card";
-      const teamAText = c.teamA.members.map(m => `${m.name}(${m.level})`).join(" · ");
-      const teamBText = c.teamB.members.map(m => `${m.name}(${m.level})`).join(" · ");
-      card.innerHTML = `
-        <div class="court-title">코트 ${i + 1}</div>
-        <div class="teams-row">
-          <div class="team-box">
-            <div style="font-weight:900;margin-bottom:4px;">팀 A</div>
-            <div>${teamAText}</div>
-          </div>
-          <div class="vs">VS</div>
-          <div class="team-box">
-            <div style="font-weight:900;margin-bottom:4px;">팀 B</div>
-            <div>${teamBText}</div>
-          </div>
-        </div>
-        <div class="meta">
-          <div>팀A 합: <b>${c.teamA.sum}</b></div>
-          <div>팀B 합: <b>${c.teamB.sum}</b></div>
-          <div>차이: <b>${c.diff}</b></div>
-        </div>
-      `;
-      wrap.appendChild(card);
-    });
-  }
 </script>
-
 </body>
 </html>
