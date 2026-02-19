@@ -5,6 +5,15 @@ import {
 import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
 /* =========================
+   ✅ Guard (2중 방어)
+   - 인증값 없으면 admin 페이지 사용 불가
+========================= */
+if (localStorage.getItem("koenAdminAuth") !== "ok") {
+  alert("관리자 인증이 필요합니다.");
+  location.href = "./index.html";
+}
+
+/* =========================
    Helpers
 ========================= */
 const $ = (id) => document.getElementById(id);
@@ -438,6 +447,18 @@ function renderWaiting(data){
 }
 
 /* =========================
+   ✅ Logout (admin.html에 #logoutBtn이 있을 때)
+========================= */
+function wireLogout(){
+  const btn = $("logoutBtn");
+  if(!btn) return;
+  btn.addEventListener("click", ()=>{
+    localStorage.removeItem("koenAdminAuth");
+    location.href = "./index.html";
+  });
+}
+
+/* =========================
    Wire
 ========================= */
 $("refreshBtn").addEventListener("click", ()=> location.reload());
@@ -462,6 +483,7 @@ $("waitingName").addEventListener("keydown", (e)=>{
 ========================= */
 (async function main(){
   try{
+    wireLogout(); // ✅ 추가
     await initAuth();
     bindAllMembers();
     bindCoaches();
