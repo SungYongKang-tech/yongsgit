@@ -37,7 +37,7 @@ const PATH = {
 let loggedIn = false;
 let memberCache = {};
 let savedHash = null;
-let deletePassword = null; // DB에서 읽은 값(없으면 null)
+let deletePassword = null;
 
 /* 등급 가중치 */
 const GRADE_WEIGHT = { A:4, B:3, C:2, D:1 };
@@ -66,7 +66,11 @@ const GRADE_WEIGHT = { A:4, B:3, C:2, D:1 };
       }
     });
 
-    bindDeletePasswordUI();
+    // ✅ 입력 제한 바인딩들
+    bindAdminPasswordUI();      // 관리자 변경 비번 input (newPass1)
+    bindLoginPasswordUI();      // (선택) 로그인 input (loginPassword)
+    bindDeletePasswordUI();     // 삭제 비번 input (deletePwInput)
+
     bindMembers();
     bindHeaderButtons();
   }catch(e){
@@ -92,6 +96,9 @@ $("loginBtn").onclick = async ()=>{
   const pw = ($("loginPassword")?.value || "").trim();
   if(!pw) return alert("비밀번호를 입력하세요.");
 
+  // ✅ 관리자 비번을 4자리 숫자로 통일
+  if(!/^\d{4}$/.test(pw)) return alert("관리자 비밀번호는 숫자 4자리로 입력하세요.");
+
   // 최초 1회: adminPassword 없으면 지금 입력한 값으로 저장
   if(!savedHash){
     alert("관리자 비밀번호가 아직 설정되지 않았습니다.\n입력한 비밀번호로 초기 설정합니다.");
@@ -104,9 +111,9 @@ $("loginBtn").onclick = async ()=>{
     loggedIn = true;
     $("loginSection").style.display = "none";
     $("adminSection").style.display = "block";
-    $("loginError").textContent = "";
+    if($("loginError")) $("loginError").textContent = "";
   }else{
-    $("loginError").textContent = "비밀번호가 올바르지 않습니다.";
+    if($("loginError")) $("loginError").textContent = "비밀번호가 올바르지 않습니다.";
   }
 };
 
@@ -114,29 +121,56 @@ $("logoutBtn").onclick = ()=>{
   loggedIn = false;
   $("adminSection").style.display = "none";
   $("loginSection").style.display = "block";
-  $("loginPassword").value = "";
+  if($("loginPassword")) $("loginPassword").value = "";
 };
 
 /* =======================
-   관리자 비밀번호 변경
+   ✅ 관리자 비밀번호 변경 (4자리 숫자 1회 입력)
+   - admin.html: newPass1 + changePassBtn 형태로 변경된 것 반영
 ======================= */
 $("changePassBtn").onclick = async ()=>{
   if(!loggedIn) return alert("로그인 후 변경 가능합니다.");
 
   const p1 = ($("newPass1")?.value || "").trim();
-  const p2 = ($("newPass2")?.value || "").trim();
 
-  if(p1.length < 4) return alert("4자리 이상 입력하세요.");
-  if(p1 !== p2) return alert("비밀번호가 일치하지 않습니다.");
+  if(!/^\d{4}$/.test(p1)) return alert("관리자 비밀번호는 숫자 4자리로 입력하세요.");
 
   const h = simpleHash(p1);
   await set(ref(db, PATH.adminPass), h);
   savedHash = h;
 
-  $("newPass1").value = "";
-  $("newPass2").value = "";
+  if($("newPass1")) $("newPass1").value = "";
   alert("관리자 비밀번호 저장 완료");
 };
+
+/* =======================
+   ✅ 관리자 비번 입력칸(newPass1) 숫자 4자리 제한
+======================= */
+function bindAdminPasswordUI(){
+  const input = $("newPass1");
+  if(!input) return;
+
+  input.addEventListener("input", ()=>{
+    input.value = input.value.replace(/\D/g, "").slice(0,4);
+  });
+}
+
+/* =======================
+   ✅ (선택) 로그인 입력칸(loginPassword)도 숫자 4자리 제한
+   - UI도 통일되고 오타 줄어듭니다.
+======================= */
+function bindLoginPasswordUI(){
+  const input = $("loginPassword");
+  if(!input) return;
+
+  input.setAttribute("inputmode", "numeric");
+  input.setAttribute("pattern", "[0-9]*");
+  input.setAttribute("maxlength", "4");
+
+  input.addEventListener("input", ()=>{
+    input.value = input.value.replace(/\D/g, "").slice(0,4);
+  });
+}
 
 /* =======================
    ✅ 경기 삭제 비밀번호(4자리) 설정
@@ -178,7 +212,7 @@ function renderMembers(){
 
   Object.entries(memberCache).forEach(([key, val])=>{
     const btn = document.createElement("button");
-    btn.className = "chip"; // ✅ admin.html의 chip 스타일 사용
+    btn.className = "chip";
     btn.textContent = `${val.name}(${val.grade})`;
 
     btn.onclick = async ()=>{
