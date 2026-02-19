@@ -11,27 +11,27 @@
   --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
   --accent:#2563eb; --shadow:0 8px 28px rgba(0,0,0,.08); --card:#fff;
 }
-body{ margin:0; font-family:"Pretendard","Noto Sans KR",sans-serif; background:var(--bg); color:var(--ink); font-weight:700; }
-header{ background:#fff; border-bottom:1px solid #e5e7eb; text-align:center; padding:14px 0; position:sticky; top:0; z-index:10; }
-h1{ margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-weight:900; }
-.btn{ border:1px solid #d1d5db; border-radius:8px; padding:6px 10px; font-size:14px; background:#fff; cursor:pointer; font-weight:800; }
-.btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent) }
-.row{ display:flex; justify-content:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
-main{ max-width:900px; margin:0 auto; padding:10px 10px 60px; }
-table{ width:100%; border-collapse:collapse; background:var(--card); box-shadow:var(--shadow); border-radius:12px; overflow:hidden; font-size:15px; }
-thead th{ background:#f1f5f9; border-bottom:1px solid #e2e8f0; padding:10px 6px; text-align:center; color:#334155; font-weight:900; white-space:nowrap; }
-tbody td{ border-bottom:1px solid #f1f5f9; padding:10px 6px; text-align:center; }
-tbody tr:hover{ background:#f9fafb }
-.win{ color:#dc2626; font-weight:900; }
-.lose{ color:#2563eb; font-weight:900; }
-.delta{ font-weight:900; }
-.delta.up{ color:#dc2626; }
-.delta.down{ color:#2563eb; }
-.summary{ margin-top:28px; display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
-.card{ background:var(--card); border-radius:12px; box-shadow:var(--shadow); padding:18px 20px; display:flex; flex-direction:column; gap:8px; }
-.card h3{ margin:0 0 6px; font-size:18px; color:var(--accent); }
-.card ul{ margin:0; padding-left:22px; font-size:16px; line-height:1.5; }
-.total{ grid-column:1 / -1; text-align:center; font-size:19px; font-weight:900; color:var(--ink); background:#e8f0ff; border-radius:12px; padding:12px; }
+body{margin:0;font-family:Pretendard,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink);font-weight:800}
+header{background:#fff;border-bottom:1px solid #e5e7eb;text-align:center;padding:14px 0;position:sticky;top:0;z-index:10}
+h1{margin:4px 0 10px;color:var(--accent);font-size:clamp(18px,4vw,24px);font-weight:950}
+.row{display:flex;justify-content:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.btn{border:1px solid #d1d5db;border-radius:10px;padding:7px 12px;font-size:14px;background:#fff;cursor:pointer;font-weight:900}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{max-width:900px;margin:0 auto;padding:10px 10px 60px}
+table{width:100%;border-collapse:collapse;background:var(--card);box-shadow:var(--shadow);border-radius:12px;overflow:hidden;font-size:15px}
+thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:10px 6px;text-align:center;color:#334155;font-weight:950;white-space:nowrap}
+tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center}
+tbody tr:hover{background:#f9fafb}
+.win{color:#dc2626;font-weight:950}
+.lose{color:#2563eb;font-weight:950}
+.delta{font-weight:950}
+.delta.up{color:#dc2626}
+.delta.down{color:#2563eb}
+.summary{margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:18px 20px;display:flex;flex-direction:column;gap:8px}
+.card h3{margin:0 0 6px;font-size:18px;color:var(--accent)}
+.card ul{margin:0;padding-left:22px;font-size:16px;line-height:1.5}
+.total{grid-column:1 / -1;text-align:center;font-size:19px;font-weight:950;color:var(--ink);background:#e8f0ff;border-radius:12px;padding:12px}
 @media(max-width:640px){
   table{font-size:13px;}
   thead th, tbody td{padding:7px 1px;}
@@ -52,85 +52,101 @@ tbody tr:hover{ background:#f9fafb }
   <table>
     <thead>
       <tr>
-        <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th>
+        <th>순위</th><th>이름(등급)</th><th>경기</th><th>승/패</th>
         <th>이전<br>승률</th><th>이달<br>승률</th><th>증감</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
+
   <div id="summary" class="summary"></div>
 </main>
 
 <script type="module">
-  import { firebaseConfig } from "./firebase.js";
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, onValue, get, set, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { db, auth } from "../firebase.js";
+  import { ref, onValue, get, set, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+  await signInAnonymously(auth);
 
-  const titleRef = ref(db, "config/title");
-  get(titleRef).then(snap=>{
+  const PATH = {
+    title: "config/title",
+    members: "members",
+    matches: "matches",
+    monthlyReports: "monthlyReports"
+  };
+
+  const GRADE_ORDER = { A:1, B:2, C:3, D:4 };
+
+  function formatNum(n){ return (Math.round(n*10)/10).toFixed(1); }
+  function monthKeyByOffset(offset){
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth()+offset, 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  // 제목
+  get(ref(db, PATH.title)).then(snap=>{
     const title = snap.exists()?snap.val():"Tennis Club";
     document.getElementById("pageHeader").textContent = `🎾 ${title} 월간 통합리그`;
     document.title = `🎾 ${title} 월간 통합리그`;
   });
 
-  const matchRef = ref(db, "matches");
-  const playerRef = ref(db, "players");
+  const memberRef = ref(db, PATH.members);
+  const matchRef  = ref(db, PATH.matches);
 
-  let players = {};
-  let cleanedOldMatches = false;
+  let membersObj = {};
   let autoClosed = false;
+  let cleanedOldMatches = false;
 
-  onValue(playerRef, snap=>{ players = snap.val() || {}; });
+  onValue(memberRef, snap=>{
+    membersObj = snap.exists()? snap.val() : {};
+  });
 
-  function formatNum(n){ return (Math.round(n*10)/10).toFixed(1); }
-
-  function monthKeyByOffset(offset){
-    const now = new Date();
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-  }
-
-  async function autoClosePreviousMonth() {
+  async function autoClosePreviousMonth(){
     const prevMonth = monthKeyByOffset(-1);
-    const reportRef = ref(db, `monthlyReports/${prevMonth}/players`);
+    const reportRef = ref(db, `${PATH.monthlyReports}/${prevMonth}/players`);
     const existing = await get(reportRef);
-    if (existing.exists()) return;
+    if(existing.exists()) return;
 
-    const matchSnap = await get(ref(db, 'matches'));
+    const matchSnap = await get(ref(db, PATH.matches));
     const matchData = matchSnap.val() || {};
-    const playerSnap = await get(ref(db, 'players'));
-    const playerData = playerSnap.val() || {};
+    const memberSnap = await get(ref(db, PATH.members));
+    const memberData = memberSnap.val() || {};
+
+    const memberNames = new Set(Object.values(memberData).map(v=>v?.name).filter(Boolean));
 
     const stats = {};
-    Object.values(matchData).forEach(m => {
-      if (m.monthKey !== prevMonth) return;
+    Object.values(matchData).forEach(m=>{
+      if(m.monthKey !== prevMonth) return;
 
       const names = [...(m.namesA||[]), ...(m.namesB||[])];
-      names.forEach(n => { if (!stats[n]) stats[n] = { win: 0, lose: 0 }; });
 
-      if (m.winnerSide === 'A') {
-        (m.namesA || []).forEach(n => stats[n].win++);
-        (m.namesB || []).forEach(n => stats[n].lose++);
-      } else if (m.winnerSide === 'B') {
-        (m.namesB || []).forEach(n => stats[n].win++);
-        (m.namesA || []).forEach(n => stats[n].lose++);
+      // ✅ 등록된 멤버만 포함된 경기만 집계 (오염 데이터 방지)
+      if(names.some(n=>!memberNames.has(n))) return;
+
+      names.forEach(n=>{ if(!stats[n]) stats[n]={win:0,lose:0}; });
+
+      if(m.winnerSide==="A"){
+        (m.namesA||[]).forEach(n=>stats[n].win++);
+        (m.namesB||[]).forEach(n=>stats[n].lose++);
+      }else if(m.winnerSide==="B"){
+        (m.namesB||[]).forEach(n=>stats[n].win++);
+        (m.namesA||[]).forEach(n=>stats[n].lose++);
       }
     });
 
-    const reportArr = Object.entries(playerData).map(([id, p]) => {
-      const d = stats[p.name] || { win: 0, lose: 0 };
-      const total = d.win + d.lose;
-      const rate = total ? (d.win / total * 100) : 0;
-      return { name: p.name, level: p.level, total, win: d.win, lose: d.lose, rate };
-    }).filter(p => p.total > 0);
+    const reportArr = Object.values(memberData).map(p=>{
+      const d = stats[p.name] || {win:0,lose:0};
+      const total = d.win+d.lose;
+      const rate = total ? (d.win/total*100) : 0;
+      return { name:p.name, grade:(p.grade||"D").toUpperCase(), total, win:d.win, lose:d.lose, rate };
+    }).filter(p=>p.total>0);
 
-    if (!reportArr.length) return;
+    if(!reportArr.length) return;
 
     const reportObj = {};
-    reportArr.forEach(p => {
+    reportArr.forEach(p=>{
       const safeKey = p.name.replace(/[.#$\[\]\/]/g, "_");
       reportObj[safeKey] = p;
     });
@@ -138,105 +154,110 @@ tbody tr:hover{ background:#f9fafb }
   }
 
   onValue(matchRef, async (snap)=>{
-    if (!autoClosed) { autoClosed = true; await autoClosePreviousMonth(); }
+    if(!autoClosed){ autoClosed=true; await autoClosePreviousMonth(); }
 
     const data = snap.val() || {};
     const thisMonth = monthKeyByOffset(0);
     const prevMonth = monthKeyByOffset(-1);
     const oldMonth  = monthKeyByOffset(-2);
 
-    if (!cleanedOldMatches) {
-      cleanedOldMatches = true;
-      Object.entries(data).forEach(([id, m]) => {
-        if (m.monthKey && m.monthKey <= oldMonth) remove(ref(db, `matches/${id}`));
+    // ✅ 2개월 이전 데이터 삭제(원하시면 이 기능도 꺼드릴게요)
+    if(!cleanedOldMatches){
+      cleanedOldMatches=true;
+      Object.entries(data).forEach(([id,m])=>{
+        if(m.monthKey && m.monthKey <= oldMonth){
+          remove(ref(db, `${PATH.matches}/${id}`));
+        }
       });
     }
 
+    const memberList = Object.values(membersObj)
+      .map(v=>({ name:v?.name, grade:(v?.grade||"D").toUpperCase() }))
+      .filter(v=>v.name);
+
+    const memberNames = new Set(memberList.map(v=>v.name));
+
+    // 이번달 stats
     const stats = {};
     Object.values(data).forEach(m=>{
       if(m.monthKey !== thisMonth) return;
 
       const names = [...(m.namesA||[]), ...(m.namesB||[])];
+
+      // ✅ 등록 멤버만 포함된 경기만 집계
+      if(names.some(n=>!memberNames.has(n))) return;
+
       names.forEach(n=>{ if(!stats[n]) stats[n]={win:0,lose:0}; });
 
-      if(m.winnerSide==='A'){
+      if(m.winnerSide==="A"){
         (m.namesA||[]).forEach(n=>stats[n].win++);
         (m.namesB||[]).forEach(n=>stats[n].lose++);
-      }else if(m.winnerSide==='B'){
+      }else if(m.winnerSide==="B"){
         (m.namesB||[]).forEach(n=>stats[n].win++);
         (m.namesA||[]).forEach(n=>stats[n].lose++);
       }
     });
 
-    const curArr = Object.entries(players).map(([id,p])=>{
+    const curArr = memberList.map(p=>{
       const d = stats[p.name] || {win:0,lose:0};
       const total = d.win+d.lose;
       const rate = total ? (d.win/total*100) : 0;
-      return {name:p.name, level:p.level, total, win:d.win, lose:d.lose, rate};
+      return { name:p.name, grade:p.grade, total, win:d.win, lose:d.lose, rate };
     }).filter(p=>p.total>0);
 
+    // 지난달 리포트
     const prevArr=[]; const prevMap={};
-    const prevReportRef = ref(db, `monthlyReports/${prevMonth}/players`);
+    const prevReportRef = ref(db, `${PATH.monthlyReports}/${prevMonth}/players`);
     const prevSnap = await get(prevReportRef);
     if(prevSnap.exists()){
       Object.values(prevSnap.val()).forEach(p=>{
-        const win = p.win ?? 0;
-        const lose = p.lose ?? 0;
-        const rate = p.rate ?? 0;
-        const total = p.total ?? (win+lose);
-        prevArr.push({name:p.name, level:p.level, win, lose, total, rate});
-        prevMap[p.name]=rate;
+        prevArr.push({
+          name:p.name,
+          grade:(p.grade||"D").toUpperCase(),
+          total:p.total ?? 0,
+          win:p.win ?? 0,
+          lose:p.lose ?? 0,
+          rate:p.rate ?? 0
+        });
+        prevMap[p.name]=p.rate ?? 0;
       });
     }
 
     const curAug = curArr.map(p=>{
       const prev = (p.name in prevMap) ? prevMap[p.name] : null;
-      const delta = (prev===null)?null:(p.rate - prev);
+      const delta = (prev===null) ? null : (p.rate - prev);
       return {...p, prev, delta};
     });
 
-    render(curAug, thisMonth, prevArr, prevMonth);
-    summary(curAug, prevArr, prevMap);
+    render(curAug, thisMonth);
+    summary(curAug);
   });
 
-  function render(curArr, thisMonth, prevArr, prevMonth){
-    const main = document.querySelector('main');
-    const summaryBox = document.querySelector('#summary');
-
-    main.innerHTML = `
-      <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:900;">
-        🎾 이달의 통합전적 (${thisMonth})
-      </h2>
-      <table id="tableCurrent">
-        <thead>
-          <tr>
-            <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th>
-            <th>이전<br>승률</th><th>이달<br>승률</th><th>증감</th>
-          </tr>
-        </thead>
-        <tbody id="tbodyCurrent"></tbody>
-      </table>
-    `;
-    main.appendChild(summaryBox);
+  function render(curArr, thisMonth){
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
 
     const day = new Date().getDate();
     const minGames = Math.ceil(day/2);
 
-    const qualified = curArr.filter(p=>p.total>=minGames).sort((a,b)=>b.rate-a.rate||b.total-a.total||a.level-b.level);
-    const unqualified = curArr.filter(p=>p.total<minGames).sort((a,b)=>b.rate-a.rate||b.total-a.total||a.level-b.level);
+    const qualified = curArr
+      .filter(p=>p.total>=minGames)
+      .sort((a,b)=> b.rate-a.rate || b.total-a.total || (GRADE_ORDER[a.grade]??99)-(GRADE_ORDER[b.grade]??99) || a.name.localeCompare(b.name,"ko"));
 
-    const tbody = document.querySelector('#tbodyCurrent');
+    const unqualified = curArr
+      .filter(p=>p.total<minGames)
+      .sort((a,b)=> b.rate-a.rate || b.total-a.total || (GRADE_ORDER[a.grade]??99)-(GRADE_ORDER[b.grade]??99) || a.name.localeCompare(b.name,"ko"));
 
-    qualified.forEach((p,i)=>{
-      const cls = p.delta>0?'up':p.delta<0?'down':'';
-      const sign = p.delta>0?'▲':p.delta<0?'▼':'–';
-      const prevText = p.prev!==null ? `${formatNum(p.prev)}%` : '–';
-      const deltaText = p.prev!==null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
+    const drawRow = (p, rankText, bg)=>{
+      const cls = p.delta>0 ? "up" : p.delta<0 ? "down" : "";
+      const sign = p.delta>0 ? "▲" : p.delta<0 ? "▼" : "–";
+      const prevText = p.prev!==null ? `${formatNum(p.prev)}%` : "–";
+      const deltaText = p.prev!==null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : "–";
 
-      tbody.insertAdjacentHTML('beforeend',`
-        <tr style="background:#e0f2fe;">
-          <td>${i+1}</td>
-          <td>${p.name}(${p.level})</td>
+      tbody.insertAdjacentHTML("beforeend", `
+        <tr style="background:${bg};">
+          <td>${rankText}</td>
+          <td>${p.name}(${p.grade})</td>
           <td>${p.total}</td>
           <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
           <td>${prevText}</td>
@@ -244,44 +265,31 @@ tbody tr:hover{ background:#f9fafb }
           <td class="delta ${cls}">${deltaText}</td>
         </tr>
       `);
-    });
+    };
 
-    unqualified.forEach(p=>{
-      const cls = p.delta>0?'up':p.delta<0?'down':'';
-      const sign = p.delta>0?'▲':p.delta<0?'▼':'–';
-      const prevText = p.prev!==null ? `${formatNum(p.prev)}%` : '–';
-      const deltaText = p.prev!==null ? `${sign} ${formatNum(Math.abs(p.delta))}%p` : '–';
+    qualified.forEach((p,i)=> drawRow(p, String(i+1), "#e0f2fe"));
+    unqualified.forEach(p=> drawRow(p, "–", "#f9fafb"));
 
-      tbody.insertAdjacentHTML('beforeend',`
-        <tr style="background:#f9fafb;">
-          <td>–</td>
-          <td>${p.name}(${p.level})</td>
-          <td>${p.total}</td>
-          <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-          <td>${prevText}</td>
-          <td>${formatNum(p.rate)}%</td>
-          <td class="delta ${cls}">${deltaText}</td>
-        </tr>
-      `);
-    });
-
-    document.querySelector('#tableCurrent').insertAdjacentHTML('afterend',`
-      <p style="text-align:center;color:#475569;font-size:12.5px;margin:6px 0 14px;font-weight:650;">
-        ⚠️ 순위 반영 기준: <b>2일에 1경기 이상 (오늘 기준 최소 ${minGames}경기)</b>
+    // 안내문
+    const noteId = "ruleNote";
+    document.getElementById(noteId)?.remove();
+    document.querySelector("table").insertAdjacentHTML("afterend", `
+      <p id="${noteId}" style="text-align:center;color:#475569;font-size:12.5px;margin:6px 0 14px;font-weight:750;">
+        ⚠️ 순위 반영 기준: <b>2일에 1경기 이상 (오늘 기준 최소 ${minGames}경기)</b> / ${thisMonth}
       </p>
     `);
   }
 
-  function summary(arr, prevArr, prevMap){
-    const box = document.querySelector('#summary');
+  function summary(arr){
+    const box = document.getElementById("summary");
     const totalMatches = Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
     const topPlay = arr.slice().sort((a,b)=>b.total-a.total).slice(0,3);
     const topWin  = arr.slice().sort((a,b)=>b.win-a.win).slice(0,3);
 
     box.innerHTML = `
       <div class="total">총 경기 수: ${totalMatches} 경기</div>
-      <div class="card"><h3>🎮 최다경기 TOP3</h3><ul>${topPlay.map(p=>`<li>${p.name} (${p.total}경기)</li>`).join('')}</ul></div>
-      <div class="card"><h3>🏆 다승 TOP3</h3><ul>${topWin.map(p=>`<li>${p.name} (${p.win}승)</li>`).join('')}</ul></div>
+      <div class="card"><h3>🎮 최다경기 TOP3</h3><ul>${topPlay.map(p=>`<li>${p.name} (${p.total}경기)</li>`).join("") || "<li>없음</li>"}</ul></div>
+      <div class="card"><h3>🏆 다승 TOP3</h3><ul>${topWin.map(p=>`<li>${p.name} (${p.win}승)</li>`).join("") || "<li>없음</li>"}</ul></div>
     `;
   }
 </script>
