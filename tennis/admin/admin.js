@@ -205,48 +205,95 @@ function bindMembers(){
   });
 }
 
+let openActionKey = null;
+
+function closeMemberActions(){
+  openActionKey = null;
+  // 열려있는 패널 모두 제거
+  document.querySelectorAll(".chipActions").forEach(x=>x.remove());
+}
+
 function renderMembers(){
   const el = $("memberList");
   if(!el) return;
   el.innerHTML = "";
 
-  Object.entries(memberCache).forEach(([key, val])=>{
-    const btn = document.createElement("button");
-    btn.className = "chip";
-    btn.textContent = `${val.name}(${val.grade})`;
+  // 바깥 클릭하면 닫기
+  el.onclick = (e)=>{
+    // 패널/버튼/칩 내부 클릭은 예외 처리 (각 버튼에서 stopPropagation)
+    if(e.target.closest(".chipWrap")) return;
+    closeMemberActions();
+  };
 
-    btn.onclick = async ()=>{
+  Object.entries(memberCache).forEach(([key, val])=>{
+    const wrap = document.createElement("span");
+    wrap.className = "chipWrap";
+
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.type = "button";
+    chip.textContent = `${val.name}(${val.grade})`;
+
+    chip.onclick = (e)=>{
+      e.stopPropagation();
       if(!loggedIn) return;
 
-      const action = prompt("선택: 1)수정  2)삭제\n숫자 입력", "1");
-      if(action === null) return;
-
-      // 삭제
-      if(action.trim() === "2"){
-        if(!confirm(`${val.name} 선수를 삭제하시겠습니까?`)) return;
-        await remove(ref(db, `${PATH.members}/${key}`));
+      // 같은 칩 다시 누르면 토글로 닫기
+      if(openActionKey === key){
+        closeMemberActions();
         return;
       }
 
-      // 수정
-      const newName = prompt("이름 수정", val.name);
-      if(newName === null) return;
-      const name = newName.trim();
-      if(!name) return alert("이름은 비워둘 수 없습니다.");
+      closeMemberActions();
+      openActionKey = key;
 
-      const newGradeRaw = prompt("등급 수정 (A/B/C/D)", val.grade);
-      if(newGradeRaw === null) return;
-      const grade = newGradeRaw.trim().toUpperCase();
-      if(!GRADE_WEIGHT[grade]) return alert("등급은 A/B/C/D 중 하나여야 합니다.");
+      const panel = document.createElement("div");
+      panel.className = "chipActions";
+      panel.onclick = (ev)=>ev.stopPropagation(); // 패널 클릭은 닫히지 않게
 
-      await update(ref(db, `${PATH.members}/${key}`), {
-        name,
-        grade,
-        weight: GRADE_WEIGHT[grade]
-      });
+      const editBtn = document.createElement("button");
+      editBtn.className = "btnMini primary";
+      editBtn.type = "button";
+      editBtn.textContent = "수정";
+      editBtn.onclick = async ()=>{
+        // --- 수정 로직 (기존 그대로) ---
+        const newName = prompt("이름 수정", val.name);
+        if(newName === null) return;
+        const name = newName.trim();
+        if(!name) return alert("이름은 비워둘 수 없습니다.");
+
+        const newGradeRaw = prompt("등급 수정 (A/B/C/D)", val.grade);
+        if(newGradeRaw === null) return;
+        const grade = newGradeRaw.trim().toUpperCase();
+        if(!GRADE_WEIGHT[grade]) return alert("등급은 A/B/C/D 중 하나여야 합니다.");
+
+        await update(ref(db, `${PATH.members}/${key}`), {
+          name,
+          grade,
+          weight: GRADE_WEIGHT[grade]
+        });
+
+        closeMemberActions();
+      };
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "btnMini danger";
+      delBtn.type = "button";
+      delBtn.textContent = "삭제";
+      delBtn.onclick = async ()=>{
+        if(!confirm(`${val.name} 선수를 삭제하시겠습니까?`)) return;
+        await remove(ref(db, `${PATH.members}/${key}`));
+        closeMemberActions();
+      };
+
+      panel.appendChild(editBtn);
+      panel.appendChild(delBtn);
+      wrap.appendChild(chip);
+      wrap.appendChild(panel);
     };
 
-    el.appendChild(btn);
+    wrap.appendChild(chip);
+    el.appendChild(wrap);
   });
 }
 
