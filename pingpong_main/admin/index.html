@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KOEN 탁구 · 관리자</title>
+
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
+      --txt:#0f172a; --mut:#64748b;
+      --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+      --shadow: 0 10px 28px rgba(0,0,0,.08);
+      --r:14px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
+    a{color:inherit;text-decoration:none}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 16px;}
+    .title h1{margin:0;font-size:22px;letter-spacing:-.3px}
+    .title .sub{margin-top:4px;color:var(--mut);font-size:13px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
+    .card h2{margin:0 0 10px;font-size:16px}
+    .hint{color:var(--mut);font-size:13px;line-height:1.5}
+    .btn{
+      appearance:none;border:1px solid rgba(37,99,235,.25);
+      background:#fff;color:var(--txt);
+      padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:800;
+    }
+    .btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+    .btn.ok{background:var(--ok);color:#fff;border-color:transparent}
+    .btn.danger{background:var(--danger);color:#fff;border-color:transparent}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .input,.select{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--bd);outline:none;background:#fff;font-size:14px}
+    .sep{height:1px;background:var(--bd);margin:12px 0}
+
+    .chipwrap{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{
+      border:1px solid rgba(37,99,235,.22);background:#fff;
+      padding:8px 12px;border-radius:999px;font-weight:900;cursor:pointer;
+      font-size:14px;line-height:1;white-space:nowrap;
+    }
+    @media (max-width:480px){ .chip{font-size:13px;padding:7px 10px} }
+
+    .chipWrap{position:relative;display:inline-flex;align-items:center}
+    .chipActions{
+      position:absolute;left:0;top:calc(100% + 6px);
+      background:#fff;border:1px solid var(--bd);border-radius:12px;
+      box-shadow:var(--shadow);padding:8px;display:flex;gap:8px;z-index:50;
+    }
+    .btnMini{
+      appearance:none;border:1px solid rgba(37,99,235,.25);
+      background:#fff;color:var(--txt);
+      padding:8px 10px;border-radius:10px;cursor:pointer;
+      font-weight:900;font-size:13px;white-space:nowrap;
+    }
+    .btnMini.primary{background:var(--accent);color:#fff;border-color:transparent}
+    .btnMini.danger{background:var(--danger);color:#fff;border-color:transparent}
+
+    .loginCard{max-width:520px;margin:0 auto}
+    .error{color:var(--danger);font-weight:900;margin-top:8px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+
+    <!-- 로그인 전 -->
+    <section id="loginSection" class="card loginCard">
+      <h2>🔐 관리자 로그인</h2>
+      <div class="hint">
+        관리자 페이지는 비밀번호 입력 후 이용 가능합니다.<br/>
+        (최초 1회는 비밀번호를 입력하면 자동으로 “초기 설정”됩니다.)
+      </div>
+      <div class="sep"></div>
+
+      <label class="hint">관리자 비밀번호</label>
+      <input class="input" id="loginPassword" type="password" placeholder="4자리 숫자" />
+
+      <div class="row" style="margin-top:10px;justify-content:space-between;align-items:center">
+        <a class="btn" href="../index.html">← 메인</a>
+        <button class="btn primary" id="loginBtn">로그인</button>
+      </div>
+
+      <div id="loginError" class="error"></div>
+    </section>
+
+    <!-- 로그인 후 -->
+    <div id="adminSection" style="display:none;">
+
+      <header>
+        <div class="title">
+          <h1>🛠️ KOEN 탁구 관리자</h1>
+          <div class="sub">선수(부수) 관리 · 비밀번호 변경</div>
+        </div>
+
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn" id="refreshBtn">새로고침</button>
+          <button class="btn danger" id="logoutBtn">로그아웃</button>
+        </div>
+      </header>
+
+      <!-- 상태 -->
+      <div class="card">
+        <div class="hint">
+          상태: <span id="statusText" class="mono">연결 준비중…</span><br/>
+          UID: <span id="uidText" class="mono">-</span>
+        </div>
+      </div>
+
+      <!-- 관리자 비밀번호 변경 -->
+      <div class="card" style="margin-top:12px;">
+        <h3 style="margin:0 0 10px;font-weight:900;">🔑 관리자 비밀번호 변경</h3>
+        <div class="row" style="gap:10px;align-items:center;">
+          <input id="newPass1" class="input"
+                 type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+                 placeholder="4자리 숫자" />
+          <button id="changePassBtn" class="btn ok">저장</button>
+        </div>
+        <div style="margin-top:8px;color:#64748b;font-weight:800;font-size:13px;">
+          ※ 저장하면 이후 관리자 로그인 시 이 비밀번호로 로그인합니다.
+        </div>
+      </div>
+
+      <!-- 경기 삭제 비밀번호 -->
+      <div class="card" style="margin-top:12px;">
+        <h3 style="margin:0 0 10px;font-weight:900;">🗑️ 경기 삭제 비밀번호 설정</h3>
+        <div class="row" style="gap:10px;align-items:center;">
+          <input id="deletePwInput" class="input"
+                 inputmode="numeric" pattern="[0-9]*" maxlength="4"
+                 placeholder="4자리 숫자" />
+          <button id="saveDeletePwBtn" class="btn ok">저장</button>
+        </div>
+        <div style="margin-top:8px;color:#64748b;font-weight:800;font-size:13px;">
+          ※ 저장하면 경기결과 삭제 시 이 비밀번호로만 삭제됩니다.
+        </div>
+      </div>
+
+      <!-- 선수(부수) 관리 -->
+      <section class="card" style="margin-top:14px">
+        <h2>🏓 선수 관리</h2>
+        <div class="hint">부수는 숫자가 낮을수록 강한 것으로 정렬됩니다. (예: 1부가 최강)</div>
+        <div class="sep"></div>
+
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1;min-width:180px">
+            <label class="hint">이름</label>
+            <input class="input" id="mName" placeholder="예: 강성용" />
+          </div>
+
+          <div style="flex:1;min-width:140px">
+            <label class="hint">부수</label>
+            <select class="select" id="mBu">
+              <option value="1">1부</option><option value="2">2부</option><option value="3">3부</option>
+              <option value="4">4부</option><option value="5">5부</option><option value="6" selected>6부</option>
+              <option value="7">7부</option><option value="8">8부</option><option value="9">9부</option>
+              <option value="10">10부</option><option value="11">11부</option><option value="12">12부</option>
+            </select>
+          </div>
+
+          <button class="btn primary" id="addMemberBtn">추가</button>
+        </div>
+
+        <div style="margin-top:12px" id="memberList" class="chipwrap"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <script type="module" src="./admin.js"></script>
+</body>
+</html>
