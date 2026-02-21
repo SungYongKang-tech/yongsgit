@@ -43,7 +43,7 @@ let savedHash = null;
    부수 규칙
    - 숫자 낮을수록 강함
 ======================= */
-const MAX_BU = 12;
+const MAX_BU = 14;
 function buToStrength(bu){
   const n = Number(bu);
   if(!Number.isFinite(n) || n <= 0) return 0;
@@ -253,8 +253,8 @@ function renderMembers(){
         if(newBuRaw === null) return;
 
         const buNum = Number(String(newBuRaw).trim().replace(/\D/g,""));
-        if(!Number.isFinite(buNum) || buNum <= 0) return alert("부수는 1 이상의 숫자여야 합니다.");
-
+        if(!Number.isFinite(buNum) || buNum < 1 || buNum > 14)
+          return alert("부수는 1~14 사이로 입력하세요.");
         await update(ref(db, `${PATH.members}/${key}`), {
           name: n,
           bu: buNum,
@@ -293,8 +293,8 @@ $("addMemberBtn").onclick = async ()=>{
   const buNum = Number(String($("mBu").value || "").replace(/\D/g,""));
 
   if(!name) return alert("이름을 입력하세요.");
-  if(!Number.isFinite(buNum) || buNum <= 0) return alert("부수를 선택하세요.");
-
+  if(!Number.isFinite(buNum) || buNum < 1 || buNum > 14)
+  return alert("부수는 1~14 사이로 입력하세요.");
   await push(ref(db, PATH.members), {
     name,
     bu: buNum,
