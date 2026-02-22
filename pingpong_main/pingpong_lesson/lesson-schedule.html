@@ -8,11 +8,30 @@
     :root{
       --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
       --txt:#0f172a; --mut:#64748b; --r:16px;
+      --blue:#2563eb; --red:#b91c1c;
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
     .wrap{max-width:980px;margin:0 auto;padding:12px}
     h2{margin:6px 0 10px;font-size:16px;font-weight:900}
+
+    .topbar{
+      display:flex; gap:8px; flex-wrap:wrap;
+      align-items:center; justify-content:flex-start;
+      margin:6px 0 10px;
+    }
+    .btn{
+      appearance:none; border:1px solid rgba(15,23,42,.14);
+      background:#fff; color:var(--txt);
+      padding:9px 10px; border-radius:12px;
+      font-weight:900; font-size:13px;
+      box-shadow: 0 8px 18px rgba(15,23,42,.06);
+      cursor:pointer;
+    }
+    .btn.on{background:var(--blue); color:#fff; border-color:rgba(37,99,235,.35)}
+    .btn.danger{border-color:rgba(185,28,28,.25)}
+    .btn.danger.on{background:var(--red); color:#fff; border-color:rgba(185,28,28,.35)}
+    .hint{font-size:12px;color:var(--mut);font-weight:800}
 
     .tableWrap{
       background:var(--card);
@@ -59,27 +78,87 @@
       font-weight:850;
       line-height:1.35;
       white-space:normal;
+      cursor:default;
+      user-select:none;
     }
+    .admin .cell{ cursor:pointer; }
     .empty{color:rgba(100,116,139,.7); font-weight:700}
     .mut{color:var(--mut);font-weight:700;font-size:12px;margin-top:8px}
-    .err{color:#b91c1c;font-weight:800}
+    .err{color:var(--red);font-weight:800}
+
+    /* ✅ 수정 표시(파란 글씨 + 작은 🔵) */
+    .modifiedText{ color:var(--blue); font-weight:950; }
+    .modIcon{
+      display:inline-block;
+      margin-left:4px;
+      font-size:10px;
+      line-height:1;
+      vertical-align:middle;
+    }
+    .absent{ color:var(--red); font-weight:950; }
+
+    /* ✅ swap 선택 강조 */
+    .swapPick{
+      outline:2px solid rgba(37,99,235,.45);
+      outline-offset:-2px;
+      background:rgba(37,99,235,.06);
+    }
+
+    /* ✅ 간단 모달 */
+    .modalBack{
+      position:fixed; inset:0;
+      background:rgba(15,23,42,.45);
+      display:none;
+      align-items:center; justify-content:center;
+      padding:14px;
+      z-index:999;
+    }
+    .modalBack.show{display:flex}
+    .modal{
+      width:min(520px, 100%);
+      background:#fff;
+      border-radius:16px;
+      border:1px solid rgba(15,23,42,.12);
+      box-shadow:0 20px 60px rgba(0,0,0,.18);
+      padding:12px;
+    }
+    .modal h3{
+      margin:4px 0 10px;
+      font-size:15px;
+      font-weight:950;
+    }
+    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+    select{
+      flex:1;
+      padding:11px 10px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.14);
+      font-weight:850;
+      min-width:220px;
+      background:#fff;
+    }
+    .modal .btn{box-shadow:none}
+    .mini{font-size:12px;color:var(--mut);font-weight:850;margin-top:8px}
   </style>
 </head>
 
 <body>
-  <div class="wrap">
+  <div class="wrap" id="wrap">
     <h2>🎾 레슨 주간 시간표</h2>
+
+    <div class="topbar">
+      <button class="btn" id="btnAdmin">관리자 모드</button>
+      <button class="btn danger" id="btnSwap" disabled>교체(SWAP) 모드</button>
+      <button class="btn" id="btnReset" disabled>이번주 초기화(원래 레슨)</button>
+      <span class="hint" id="hint">보기 모드</span>
+    </div>
 
     <div class="tableWrap">
       <table aria-label="레슨 주간 시간표">
         <thead>
           <tr id="headRow">
             <th>시간</th>
-            <th>월</th>
-            <th>화</th>
-            <th>수</th>
-            <th>목</th>
-            <th>금</th>
+            <th>월</th><th>화</th><th>수</th><th>목</th><th>금</th>
           </tr>
         </thead>
         <tbody id="tbody">
@@ -91,17 +170,44 @@
     <div class="mut" id="status"></div>
   </div>
 
+  <!-- ✅ 편집 모달 -->
+  <div class="modalBack" id="modalBack" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modalTitle">편집</h3>
+      <div class="row" style="margin-bottom:10px;">
+        <select id="studentSelect"></select>
+      </div>
+      <div class="row">
+        <button class="btn on" id="btnAssign">배정</button>
+        <button class="btn danger on" id="btnAbsent">불참</button>
+        <button class="btn" id="btnClear">비우기(기본으로)</button>
+        <button class="btn" id="btnCancel">닫기</button>
+      </div>
+      <div class="mini">
+        • “비우기(기본으로)”는 이번주 수정분만 지웁니다(원래 레슨표로 복귀).<br/>
+        • “교체(SWAP) 모드”에서는 셀 2개를 차례로 누르면 자동으로 자리 교체됩니다.
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { db, auth } from "../firebase.js";
-    import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { ref, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
+    /* =========================
+      경로(기본표 + 이번주 수정분)
+      - 기본 레슨표: lesson/template/assign
+      - 이번주 수정분: lesson/overrides/<weekKey>/...
+      - 수강자 목록: lesson/students
+    ========================= */
     const PATH = {
-      coaches: "lesson/coaches",
-      schedule: "lesson/schedule",
+      students: "lesson/students",
+      templateAssign: "lesson/template/assign",
+      overridesRoot: "lesson/overrides",
     };
 
-    const DAYS = ["mon","tue","wed","thu","fri"];
+    const DAYS_ALL = ["mon","tue","wed","thu","fri"];
     const dayLabel = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금" };
 
     const $ = (id)=>document.getElementById(id);
@@ -115,98 +221,145 @@
         .replaceAll("'","&#039;");
     }
 
-    let coaches = {};
-    let schedule = null;
-    let authed = false;
-
-    function coachName(id){
-      if(!id) return "";
-      return (coaches?.[id]?.name || "").trim();
+    // ISO week (간단/실무용): 월요일 시작
+    function getWeekKey(date = new Date()){
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+      const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,"0")}`;
     }
 
-    function normalizeTimes(scheduleObj){
-      const slots = scheduleObj?.slots || {};
-      const all = []
-        .concat(slots.morning || [])
-        .concat(slots.lunch || [])
-        .concat(slots.evening || []);
-      return all.filter(t => (t?.time || "").trim());
+    const weekKey = getWeekKey();
+
+    let authed = false;
+    let students = {};          // { uid: {name} }
+    let templateAssign = {};    // { "07:00~08:00": {mon:"uid",...} }
+    let overridesWeek = {};     // { "07:00~08:00": {mon:"uid|__absent__",...} }
+
+    let adminMode = false;
+    let swapMode = false;
+    let swapPick = null; // {time, day}
+
+    const wrap = $("wrap");
+    const tbody = $("tbody");
+    const headRow = $("headRow");
+    const status = $("status");
+
+    const btnAdmin = $("btnAdmin");
+    const btnSwap  = $("btnSwap");
+    const btnReset = $("btnReset");
+    const hint = $("hint");
+
+    // modal
+    const modalBack = $("modalBack");
+    const modalTitle = $("modalTitle");
+    const studentSelect = $("studentSelect");
+    const btnAssign = $("btnAssign");
+    const btnAbsent = $("btnAbsent");
+    const btnClear  = $("btnClear");
+    const btnCancel = $("btnCancel");
+
+    let editingCell = null; // {time, day}
+
+    function studentName(uid){
+      return (students?.[uid]?.name || "").trim();
+    }
+
+    function getBaseVal(time, day){
+      return (templateAssign?.[time]?.[day] ?? "");
+    }
+
+    function getOverrideVal(time, day){
+      // override가 "정의되어 있는지"가 중요하므로 ?? "" 쓰면 안됨
+      return (overridesWeek?.[time] && Object.prototype.hasOwnProperty.call(overridesWeek[time], day))
+        ? overridesWeek[time][day]
+        : undefined;
+    }
+
+    function getFinalVal(time, day){
+      const o = getOverrideVal(time, day);
+      if(o !== undefined) return o; // "__absent__" 포함
+      return getBaseVal(time, day);
+    }
+
+    function isModified(time, day){
+      const o = getOverrideVal(time, day);
+      if(o === undefined) return false;
+      const base = getBaseVal(time, day);
+      return o !== base; // base와 동일하면 수정으로 안 봄(원하면 true로 바꿔도 됨)
+    }
+
+    function buildViewDays(times){
+      // ✅ 금요일 열 전체가 전부 "-"이면 금요일 열 숨김
+      const hasFriAny = times.some(time=>{
+        const v = getFinalVal(time, "fri");
+        // 빈칸만 없다고 보고, 불참("__absent__")은 "값이 있다"고 간주(표시 유지)
+        return v !== "" && v !== null && v !== undefined;
+      });
+      return hasFriAny ? DAYS_ALL.slice() : ["mon","tue","wed","thu"];
     }
 
     function setHeader(viewDays){
-      const headRow = $("headRow");
-      if(!headRow) return;
       headRow.innerHTML = `
         <th>시간</th>
         ${viewDays.map(d => `<th>${dayLabel[d]}</th>`).join("")}
       `;
     }
 
-    function renderMessage(tbody, msg, colCount, cls="mut"){
+    function renderMessage(msg, colCount, cls="mut"){
       tbody.innerHTML = `<tr><td colspan="${colCount}" class="${cls}">${msg}</td></tr>`;
     }
 
     function render(){
-      const tbody = $("tbody");
-      const status = $("status");
-      if(!tbody) return;
-
-      // 기본값(처음엔 5일 다 보이게)
-      let viewDays = DAYS.slice();
-      let colCount = 1 + viewDays.length;
-
       if(!authed){
-        setHeader(viewDays);
-        renderMessage(tbody, "로그인 중...", colCount, "empty");
-        if(status) status.textContent = "Firebase 익명 로그인 중";
+        setHeader(DAYS_ALL);
+        renderMessage("로그인 중...", 1 + DAYS_ALL.length, "empty");
+        status.textContent = "Firebase 익명 로그인 중";
         return;
       }
 
-      if(!schedule){
-        setHeader(viewDays);
-        renderMessage(tbody, "시간표가 없습니다.", colCount, "mut");
-        if(status) status.textContent = "lesson/schedule 데이터 없음";
-        return;
-      }
+      const times = Object.keys(templateAssign || {}).sort((a,b)=>a.localeCompare(b));
+      const viewDays = buildViewDays(times);
+      const colCount = 1 + viewDays.length;
 
-      const items = normalizeTimes(schedule);
-      if(items.length === 0){
-        setHeader(viewDays);
-        renderMessage(tbody, "등록된 타임이 없습니다.", colCount, "mut");
-        if(status) status.textContent = "타임을 추가하고 저장해 주세요.";
-        return;
-      }
-
-      // ✅ 같은 time 은 한 행으로 합치기
-      const rows = {}; // { "07:00~08:00": {mon:"id",...} }
-      for(const t of items){
-        const time = (t.time || "").trim();
-        if(!time) continue;
-
-        if(!rows[time]) rows[time] = { mon:"", tue:"", wed:"", thu:"", fri:"" };
-
-        DAYS.forEach(d=>{
-          const cid = t.assign?.[d] || "";
-          if(cid) rows[time][d] = cid; // 뒤 값으로 덮어쓰기
-        });
-      }
-
-      const times = Object.keys(rows).sort((a,b)=>a.localeCompare(b));
-
-      // ✅ 금요일 열 전체가 전부 비었으면 금요일 열 숨김
-      const hasFriAny = times.some(time => !!rows[time]?.fri);
-      viewDays = hasFriAny ? DAYS.slice() : ["mon","tue","wed","thu"];
-      colCount = 1 + viewDays.length;
-
-      // ✅ 헤더 동기화
       setHeader(viewDays);
 
-      // ✅ tbody 렌더
+      if(times.length === 0){
+        renderMessage("기본 레슨표(template)가 없습니다.", colCount, "mut");
+        status.textContent = `week ${weekKey} · template 없음`;
+        return;
+      }
+
+      // admin 클래스
+      wrap.classList.toggle("admin", adminMode);
+
       tbody.innerHTML = times.map(time=>{
-        const tds = viewDays.map(d=>{
-          const cid = rows[time][d] || "";
-          const nm = coachName(cid);
-          return `<td class="cell">${nm ? esc(nm) : `<span class="empty">-</span>`}</td>`;
+        const tds = viewDays.map(day=>{
+          const finalVal = getFinalVal(time, day);
+          const modified = isModified(time, day);
+
+          let inner = "";
+          let cls = "cell";
+          let modIcon = modified ? `<span class="modIcon">🔵</span>` : "";
+
+          if(finalVal === "__absent__"){
+            cls += " absent";
+            inner = `불참${modIcon}`;
+          }else{
+            const nm = studentName(finalVal);
+            if(nm){
+              cls += modified ? " modifiedText" : "";
+              inner = `${esc(nm)}${modIcon}`;
+            }else{
+              // 배정 없음
+              inner = `<span class="empty">-</span>${modIcon}`;
+            }
+          }
+
+          const pickCls = (swapPick && swapPick.time===time && swapPick.day===day) ? " swapPick" : "";
+          return `<td class="${cls}${pickCls}" data-time="${esc(time)}" data-day="${day}">${inner}</td>`;
         }).join("");
 
         return `
@@ -217,41 +370,229 @@
         `;
       }).join("");
 
-      if(status){
-        const coachCnt = Object.keys(coaches||{}).length;
-        status.textContent = `시간 ${times.length}개 · 레슨자 ${coachCnt}명${hasFriAny ? "" : " · 금요일 없음"}`;
+      // 클릭 바인딩(관리자 모드일 때만)
+      if(adminMode) bindCellClicks();
+
+      const studentCnt = Object.keys(students||{}).length;
+      status.textContent = `week ${weekKey} · 시간 ${times.length}개 · 수강자 ${studentCnt}명${viewDays.includes("fri") ? "" : " · 금요일 없음(열 숨김)"}`;
+
+      // 버튼 상태/힌트
+      btnSwap.disabled = !adminMode;
+      btnReset.disabled = !adminMode;
+      btnAdmin.classList.toggle("on", adminMode);
+      btnSwap.classList.toggle("on", swapMode);
+      hint.textContent = !adminMode ? "보기 모드" : (swapMode ? "교체(SWAP) 모드: 셀 2개를 순서대로 누르세요" : "편집 모드: 셀을 눌러 배정/불참/비우기");
+    }
+
+    function bindCellClicks(){
+      document.querySelectorAll("td.cell").forEach(td=>{
+        td.onclick = async ()=>{
+          const time = td.dataset.time;
+          const day = td.dataset.day;
+
+          if(swapMode){
+            await handleSwapClick(time, day);
+            return;
+          }
+          openEditModal(time, day);
+        };
+      });
+    }
+
+    async function handleSwapClick(time, day){
+      // 첫 클릭: 선택
+      if(!swapPick){
+        swapPick = { time, day };
+        render();
+        return;
+      }
+
+      // 같은 칸을 다시 누르면 취소
+      if(swapPick.time === time && swapPick.day === day){
+        swapPick = null;
+        render();
+        return;
+      }
+
+      // 두 번째 클릭: swap 수행
+      const a = { ...swapPick };
+      const b = { time, day };
+
+      const va = getFinalVal(a.time, a.day);
+      const vb = getFinalVal(b.time, b.day);
+
+      // swap 저장은 "이번주 overrides"로만 처리 (기본표는 유지)
+      const updates = {};
+      updates[`${PATH.overridesRoot}/${weekKey}/${a.time}/${a.day}`] = vb;
+      updates[`${PATH.overridesRoot}/${weekKey}/${b.time}/${b.day}`] = va;
+
+      try{
+        await update(ref(db), updates);
+      }catch(e){
+        console.error(e);
+        alert("교체 저장 실패(콘솔 확인)");
+      }finally{
+        swapPick = null;
+        render();
       }
     }
 
-    // ---- Auth + bind
+    function openEditModal(time, day){
+      editingCell = { time, day };
+      const label = `${time} · ${dayLabel[day]}`;
+      modalTitle.textContent = `편집: ${label}`;
+
+      // 드롭다운 채우기
+      const list = Object.entries(students || {})
+        .map(([uid, obj]) => ({ uid, name: (obj?.name || "").trim() }))
+        .filter(x => x.name)
+        .sort((a,b)=>a.name.localeCompare(b.name, "ko"));
+
+      const currentFinal = getFinalVal(time, day);
+
+      studentSelect.innerHTML = `
+        <option value="">(비우기: 선택 안 함)</option>
+        ${list.map(x=>`<option value="${esc(x.uid)}">${esc(x.name)}</option>`).join("")}
+      `;
+
+      // 현재값이 uid면 선택해두기
+      if(currentFinal && currentFinal !== "__absent__"){
+        studentSelect.value = currentFinal;
+      }else{
+        studentSelect.value = "";
+      }
+
+      modalBack.classList.add("show");
+      modalBack.setAttribute("aria-hidden", "false");
+    }
+
+    function closeModal(){
+      modalBack.classList.remove("show");
+      modalBack.setAttribute("aria-hidden", "true");
+      editingCell = null;
+    }
+
+    async function setOverride(time, day, value){
+      const p = `${PATH.overridesRoot}/${weekKey}/${time}/${day}`;
+      const updates = {};
+      updates[p] = value;
+      await update(ref(db), updates);
+    }
+
+    async function clearOverride(time, day){
+      const p = `${PATH.overridesRoot}/${weekKey}/${time}/${day}`;
+      await remove(ref(db, p));
+    }
+
+    async function resetWeek(){
+      if(!confirm("이번주 수정내용을 전부 초기화하고(삭제) 원래 레슨표로 돌아갈까요?")) return;
+      try{
+        await remove(ref(db, `${PATH.overridesRoot}/${weekKey}`));
+      }catch(e){
+        console.error(e);
+        alert("초기화 실패(콘솔 확인)");
+      }
+    }
+
+    // ====== 버튼/모달 이벤트 ======
+    btnAdmin.onclick = ()=>{
+      adminMode = !adminMode;
+      if(!adminMode){
+        swapMode = false;
+        swapPick = null;
+      }
+      render();
+    };
+
+    btnSwap.onclick = ()=>{
+      if(!adminMode) return;
+      swapMode = !swapMode;
+      swapPick = null;
+      render();
+    };
+
+    btnReset.onclick = async ()=>{
+      if(!adminMode) return;
+      await resetWeek();
+    };
+
+    // 모달 버튼
+    btnCancel.onclick = ()=> closeModal();
+
+    modalBack.addEventListener("click", (e)=>{
+      if(e.target === modalBack) closeModal();
+    });
+
+    btnAssign.onclick = async ()=>{
+      if(!editingCell) return;
+      const { time, day } = editingCell;
+      const uid = (studentSelect.value || "").trim();
+
+      try{
+        if(!uid){
+          // 선택 안 함이면 기본으로 복귀(override 삭제)
+          await clearOverride(time, day);
+        }else{
+          await setOverride(time, day, uid);
+        }
+        closeModal();
+      }catch(e){
+        console.error(e);
+        alert("저장 실패(콘솔 확인)");
+      }
+    };
+
+    btnAbsent.onclick = async ()=>{
+      if(!editingCell) return;
+      const { time, day } = editingCell;
+      try{
+        await setOverride(time, day, "__absent__");
+        closeModal();
+      }catch(e){
+        console.error(e);
+        alert("불참 저장 실패(콘솔 확인)");
+      }
+    };
+
+    btnClear.onclick = async ()=>{
+      if(!editingCell) return;
+      const { time, day } = editingCell;
+      try{
+        await clearOverride(time, day);
+        closeModal();
+      }catch(e){
+        console.error(e);
+        alert("비우기 실패(콘솔 확인)");
+      }
+    };
+
+    // ====== Firebase 바인딩 ======
     (async function init(){
       try{
-        $("status").textContent = "Firebase 연결 중...";
+        status.textContent = "Firebase 연결 중...";
         await signInAnonymously(auth);
         authed = true;
 
-        onValue(ref(db, PATH.coaches), (snap)=>{
-          coaches = snap.exists() ? (snap.val() || {}) : {};
+        onValue(ref(db, PATH.students), (snap)=>{
+          students = snap.exists() ? (snap.val() || {}) : {};
           render();
-        }, (err)=>{
-          console.error(err);
-          $("status").textContent = "coaches 읽기 실패(콘솔 확인)";
         });
 
-        onValue(ref(db, PATH.schedule), (snap)=>{
-          schedule = snap.exists() ? (snap.val() || null) : null;
+        onValue(ref(db, PATH.templateAssign), (snap)=>{
+          templateAssign = snap.exists() ? (snap.val() || {}) : {};
           render();
-        }, (err)=>{
-          console.error(err);
-          $("tbody").innerHTML = `<tr><td colspan="6" class="err">불러오기 실패: ${esc(err?.message||err)}</td></tr>`;
-          $("status").textContent = "schedule 읽기 실패(콘솔 확인)";
+        });
+
+        onValue(ref(db, `${PATH.overridesRoot}/${weekKey}`), (snap)=>{
+          overridesWeek = snap.exists() ? (snap.val() || {}) : {};
+          render();
         });
 
         render();
       }catch(e){
         console.error(e);
-        $("tbody").innerHTML = `<tr><td colspan="6" class="err">연결 오류: ${esc(e?.message||e)}</td></tr>`;
-        $("status").textContent = "Firebase 연결 오류(콘솔 확인)";
+        tbody.innerHTML = `<tr><td colspan="6" class="err">연결 오류: ${esc(e?.message||e)}</td></tr>`;
+        status.textContent = "Firebase 연결 오류(콘솔 확인)";
       }
     })();
   </script>
