@@ -1,8 +1,12 @@
+// ✅ pingpong_main/firebase.js 사용 (레슨 폴더에서 ../firebase.js 가 맞음)
 import { db, auth } from "../firebase.js";
+
+// ✅ Firebase SDK 버전 통일: 9.22.2 → 10.12.4
 import {
   ref, onValue, get, set, update, push, remove
-} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
 /* =========================
    ✅ Guard (2중 방어)
@@ -291,6 +295,7 @@ function renderScheduleUI(){
 
     const addBtn = document.createElement("button");
     addBtn.className = "btn ok";
+    addBtn.type = "button";
     addBtn.textContent = "+ 타임 추가";
     addBtn.addEventListener("click", ()=> addTime(slot.key));
     hd.appendChild(addBtn);
@@ -321,7 +326,6 @@ function renderScheduleUI(){
       list.forEach(t=>{
         const tr = document.createElement("tr");
 
-        // 시간 input
         const tdTime = document.createElement("td");
         const inp = document.createElement("input");
         inp.className = "time-input";
@@ -333,7 +337,6 @@ function renderScheduleUI(){
         tdTime.appendChild(inp);
         tr.appendChild(tdTime);
 
-        // 월~금 select
         DAYS.forEach(d=>{
           const td = document.createElement("td");
           const sel = document.createElement("select");
@@ -346,10 +349,10 @@ function renderScheduleUI(){
           tr.appendChild(td);
         });
 
-        // 삭제 버튼
         const tdDel = document.createElement("td");
         const del = document.createElement("button");
         del.className = "del-mini";
+        del.type = "button";
         del.textContent = "삭제";
         del.addEventListener("click", ()=> deleteTime(slot.key, t.id));
         tdDel.appendChild(del);
@@ -368,7 +371,6 @@ function renderScheduleUI(){
 async function saveSchedule(){
   ensureScheduleShape();
 
-  // (선택) 비어있는 타임 정리: 시간도 없고 배정도 하나도 없으면 제거
   SLOTS.forEach(s=>{
     schedule.slots[s.key] = (schedule.slots[s.key] || []).filter(t=>{
       const timeHas = (t.time || "").trim().length > 0;
@@ -426,6 +428,7 @@ function renderWaiting(data){
 
     const del = document.createElement("button");
     del.className = "btn danger";
+    del.type = "button";
     del.style.padding = "4px 8px";
     del.style.fontSize = "12px";
     del.textContent = "삭제";
@@ -483,7 +486,7 @@ $("waitingName").addEventListener("keydown", (e)=>{
 ========================= */
 (async function main(){
   try{
-    wireLogout(); // ✅ 추가
+    wireLogout();
     await initAuth();
     bindAllMembers();
     bindCoaches();
