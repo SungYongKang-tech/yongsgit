@@ -192,18 +192,18 @@
 
   <script type="module">
     import { db, auth } from "../firebase.js";
-    import { ref, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { ref, onValue, update, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 
     /* =========================
-      경로(기본표 + 이번주 수정분)
-      - 기본 레슨표: lesson/template/assign
+      경로(기본표는 기존 lesson/schedule 사용)
+      - 기본 레슨표: lesson/schedule (slots 구조)
       - 이번주 수정분: lesson/overrides/<weekKey>/...
       - 수강자 목록: lesson/students
     ========================= */
     const PATH = {
       students: "lesson/students",
-      templateAssign: "lesson/template/assign",
+      schedule: "lesson/schedule",
       overridesRoot: "lesson/overrides",
     };
 
@@ -221,7 +221,7 @@
         .replaceAll("'","&#039;");
     }
 
-    // ISO week (간단/실무용): 월요일 시작
+    // ISO week (월요일 시작) → "2026-W08"
     function getWeekKey(date = new Date()){
       const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
       const dayNum = d.getUTCDay() || 7;
@@ -230,13 +230,14 @@
       const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
       return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,"0")}`;
     }
-
     const weekKey = getWeekKey();
 
     let authed = false;
+
     let students = {};          // { uid: {name} }
-    let templateAssign = {};    // { "07:00~08:00": {mon:"uid",...} }
-    let overridesWeek = {};     // { "07:00~08:00": {mon:"uid|__absent__",...} }
+    let scheduleObj = null;     // lesson/schedule 원본
+    let templateAssign = {};    // scheduleObj → {time:{mon:uid,...}} 로 변환
+    let overridesWeek = {};     // lesson/overrides/<weekKey>/...
 
     let adminMode = false;
     let swapMode = false;
@@ -267,12 +268,39 @@
       return (students?.[uid]?.name || "").trim();
     }
 
+    function normalizeTimes(scheduleObj){
+      const slots = scheduleObj?.slots || {};
+      const all = []
+        .concat(slots.morning || [])
+        .concat(slots.lunch || [])
+        .concat(slots.evening || []);
+      return all.filter(t => (t?.time || "").trim());
+    }
+
+    // ✅ 기존 lesson/schedule 구조를 templateAssign 형태로 변환
+    function buildTemplateAssignFromSchedule(scheduleObj){
+      const items = normalizeTimes(scheduleObj);
+      const out = {}; // { "07:00~08:00": {mon:"uid",...} }
+      for(const t of items){
+        const time = (t.time || "").trim();
+        if(!time) continue;
+        if(!out[time]) out[time] = { mon:"", tue:"", wed:"", thu:"", fri:"" };
+
+        const a = t.assign || {};
+        out[time].mon = a.mon || "";
+        out[time].tue = a.tue || "";
+        out[time].wed = a.wed || "";
+        out[time].thu = a.thu || "";
+        out[time].fri = a.fri || "";
+      }
+      return out;
+    }
+
     function getBaseVal(time, day){
       return (templateAssign?.[time]?.[day] ?? "");
     }
 
     function getOverrideVal(time, day){
-      // override가 "정의되어 있는지"가 중요하므로 ?? "" 쓰면 안됨
       return (overridesWeek?.[time] && Object.prototype.hasOwnProperty.call(overridesWeek[time], day))
         ? overridesWeek[time][day]
         : undefined;
@@ -288,14 +316,14 @@
       const o = getOverrideVal(time, day);
       if(o === undefined) return false;
       const base = getBaseVal(time, day);
-      return o !== base; // base와 동일하면 수정으로 안 봄(원하면 true로 바꿔도 됨)
+      return o !== base;
     }
 
     function buildViewDays(times){
       // ✅ 금요일 열 전체가 전부 "-"이면 금요일 열 숨김
       const hasFriAny = times.some(time=>{
         const v = getFinalVal(time, "fri");
-        // 빈칸만 없다고 보고, 불참("__absent__")은 "값이 있다"고 간주(표시 유지)
+        // 불참("__absent__")도 값이 있는 것으로 처리(금요일 열 유지)
         return v !== "" && v !== null && v !== undefined;
       });
       return hasFriAny ? DAYS_ALL.slice() : ["mon","tue","wed","thu"];
@@ -327,12 +355,11 @@
       setHeader(viewDays);
 
       if(times.length === 0){
-        renderMessage("기본 레슨표(template)가 없습니다.", colCount, "mut");
-        status.textContent = `week ${weekKey} · template 없음`;
+        renderMessage("기본 레슨표(lesson/schedule)를 못 불러왔습니다.", colCount, "mut");
+        status.textContent = `week ${weekKey} · schedule/template 없음`;
         return;
       }
 
-      // admin 클래스
       wrap.classList.toggle("admin", adminMode);
 
       tbody.innerHTML = times.map(time=>{
@@ -353,7 +380,6 @@
               cls += modified ? " modifiedText" : "";
               inner = `${esc(nm)}${modIcon}`;
             }else{
-              // 배정 없음
               inner = `<span class="empty">-</span>${modIcon}`;
             }
           }
@@ -370,13 +396,11 @@
         `;
       }).join("");
 
-      // 클릭 바인딩(관리자 모드일 때만)
       if(adminMode) bindCellClicks();
 
       const studentCnt = Object.keys(students||{}).length;
       status.textContent = `week ${weekKey} · 시간 ${times.length}개 · 수강자 ${studentCnt}명${viewDays.includes("fri") ? "" : " · 금요일 없음(열 숨김)"}`;
 
-      // 버튼 상태/힌트
       btnSwap.disabled = !adminMode;
       btnReset.disabled = !adminMode;
       btnAdmin.classList.toggle("on", adminMode);
@@ -400,28 +424,24 @@
     }
 
     async function handleSwapClick(time, day){
-      // 첫 클릭: 선택
       if(!swapPick){
         swapPick = { time, day };
         render();
         return;
       }
 
-      // 같은 칸을 다시 누르면 취소
       if(swapPick.time === time && swapPick.day === day){
         swapPick = null;
         render();
         return;
       }
 
-      // 두 번째 클릭: swap 수행
       const a = { ...swapPick };
       const b = { time, day };
 
       const va = getFinalVal(a.time, a.day);
       const vb = getFinalVal(b.time, b.day);
 
-      // swap 저장은 "이번주 overrides"로만 처리 (기본표는 유지)
       const updates = {};
       updates[`${PATH.overridesRoot}/${weekKey}/${a.time}/${a.day}`] = vb;
       updates[`${PATH.overridesRoot}/${weekKey}/${b.time}/${b.day}`] = va;
@@ -439,10 +459,8 @@
 
     function openEditModal(time, day){
       editingCell = { time, day };
-      const label = `${time} · ${dayLabel[day]}`;
-      modalTitle.textContent = `편집: ${label}`;
+      modalTitle.textContent = `편집: ${time} · ${dayLabel[day]}`;
 
-      // 드롭다운 채우기
       const list = Object.entries(students || {})
         .map(([uid, obj]) => ({ uid, name: (obj?.name || "").trim() }))
         .filter(x => x.name)
@@ -451,11 +469,10 @@
       const currentFinal = getFinalVal(time, day);
 
       studentSelect.innerHTML = `
-        <option value="">(비우기: 선택 안 함)</option>
+        <option value="">(선택 안 함)</option>
         ${list.map(x=>`<option value="${esc(x.uid)}">${esc(x.name)}</option>`).join("")}
       `;
 
-      // 현재값이 uid면 선택해두기
       if(currentFinal && currentFinal !== "__absent__"){
         studentSelect.value = currentFinal;
       }else{
@@ -516,7 +533,6 @@
       await resetWeek();
     };
 
-    // 모달 버튼
     btnCancel.onclick = ()=> closeModal();
 
     modalBack.addEventListener("click", (e)=>{
@@ -530,7 +546,7 @@
 
       try{
         if(!uid){
-          // 선택 안 함이면 기본으로 복귀(override 삭제)
+          // 선택 안 함 = 이번주 override 삭제(기본 레슨으로)
           await clearOverride(time, day);
         }else{
           await setOverride(time, day, uid);
@@ -573,16 +589,24 @@
         await signInAnonymously(auth);
         authed = true;
 
+        // 수강자 목록
         onValue(ref(db, PATH.students), (snap)=>{
           students = snap.exists() ? (snap.val() || {}) : {};
           render();
         });
 
-        onValue(ref(db, PATH.templateAssign), (snap)=>{
-          templateAssign = snap.exists() ? (snap.val() || {}) : {};
+        // ✅ 기본 레슨표: 기존 lesson/schedule 읽어서 변환
+        onValue(ref(db, PATH.schedule), (snap)=>{
+          scheduleObj = snap.exists() ? (snap.val() || null) : null;
+          templateAssign = scheduleObj ? buildTemplateAssignFromSchedule(scheduleObj) : {};
+          render();
+        }, (err)=>{
+          console.error(err);
+          templateAssign = {};
           render();
         });
 
+        // 이번주 수정분
         onValue(ref(db, `${PATH.overridesRoot}/${weekKey}`), (snap)=>{
           overridesWeek = snap.exists() ? (snap.val() || {}) : {};
           render();
