@@ -155,9 +155,8 @@
   <script type="module">
     import { db, auth } from "../firebase.js";
     import { ref, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
-import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
-    // ✅ 후보 경로: lesson/students 가 없으면 lesson/coaches 를 사용
     const STUDENT_PATH_CANDIDATES = ["lesson/students", "lesson/coaches"];
 
     const PATH = {
@@ -190,11 +189,11 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
 
     let authed = false;
 
-    let students = {};          // 실제로는 "수강자 명단"
-    let studentSourcePath = ""; // 어떤 경로에서 가져왔는지 표시용
+    let students = {};
+    let studentSourcePath = "";
 
-    let templateAssign = {};    // {time:{mon:uid...}} (lesson/schedule 변환)
-    let overridesWeek = {};     // lesson/overrides/<weekKey>/...
+    let templateAssign = {};
+    let overridesWeek = {};
 
     let adminMode = false;
     let swapMode = false;
@@ -285,6 +284,16 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
       tbody.innerHTML = `<tr><td colspan="${colCount}" class="${cls}">${msg}</td></tr>`;
     }
 
+    /* =========================
+       ✅ 핵심 수정: 경로를 항상 "문자열"로 만들기
+    ========================= */
+    function pathWeek(wk){
+      return `${String(PATH.overridesRoot)}/${String(wk)}`;
+    }
+    function pathCell(wk, time, day){
+      return `${String(PATH.overridesRoot)}/${String(wk)}/${String(time)}/${String(day)}`;
+    }
+
     function render(){
       if(!authed){
         setHeader(DAYS_ALL);
@@ -371,17 +380,18 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
         render();
         return;
       }
+
       const a = { ...swapPick };
       const b = { time, day };
       const va = getFinalVal(a.time, a.day);
       const vb = getFinalVal(b.time, b.day);
 
-      const updates = {};
-      updates[`${PATH.overridesRoot}/${weekKey}/${a.time}/${a.day}`] = vb;
-      updates[`${PATH.overridesRoot}/${weekKey}/${b.time}/${b.day}`] = va;
+      // ✅ 문자열 경로 고정
+      const p1 = pathCell(weekKey, a.time, a.day);
+      const p2 = pathCell(weekKey, b.time, b.day);
 
       try{
-        await update(ref(db), updates);
+        await update(ref(db), { [p1]: vb, [p2]: va });
       }catch(e){
         console.error(e);
         alert("교체 저장 실패(콘솔 확인)");
@@ -421,20 +431,37 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
     }
 
     function closeModal(){
+      // ✅ aria-hidden 경고 방지: 모달 닫기 전 포커스 제거
+      if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+
       modalBack.classList.remove("show");
       modalBack.setAttribute("aria-hidden", "true");
       editingCell = null;
     }
 
     async function setOverride(time, day, value){
-      await update(ref(db), { [`${PATH.overridesRoot}/${weekKey}/${time}/${day}`]: value });
+      const p = pathCell(weekKey, time, day);
+      await update(ref(db), { [p]: value });
     }
+
     async function clearOverride(time, day){
-      await remove(ref(db, `${PATH.overridesRoot}/${weekKey}/${time}/${day}`));
+      const p = pathCell(weekKey, time, day);
+      await remove(ref(db, p));
     }
+
     async function resetWeek(){
       if(!confirm("이번주 수정내용을 전부 초기화하고(삭제) 원래 레슨표로 돌아갈까요?")) return;
-      await remove(ref(db, `${PATH.overridesRoot}/${weekKey}`));
+
+      const p = pathWeek(weekKey);
+      // 디버그(필요하면 켜세요)
+      // console.log("reset path =", p, typeof p);
+
+      try{
+        await remove(ref(db, p));
+      }catch(e){
+        console.error(e);
+        alert("초기화 실패(콘솔 확인)");
+      }
     }
 
     btnAdmin.onclick = ()=>{
@@ -490,7 +517,6 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
     };
 
     async function attachStudentsListener(){
-      // ✅ 후보 경로를 순서대로 get() 해서 실제 데이터 있는 경로를 선택
       for(const p of STUDENT_PATH_CANDIDATES){
         try{
           const snap = await get(ref(db, p));
@@ -507,11 +533,9 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
             return;
           }
         }catch(e){
-          // 권한 문제/경로 문제
           console.warn("학생명단 get 실패:", p, e);
         }
       }
-      // 둘 다 못 찾으면 빈 상태로 진행
       studentSourcePath = "(students/coaches 둘 다 없음 또는 권한없음)";
       students = {};
       render();
@@ -523,7 +547,6 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
         await signInAnonymously(auth);
         authed = true;
 
-        // ✅ 기본 레슨표(시간표)는 기존 lesson/schedule에서 읽기
         onValue(ref(db, PATH.schedule), (snap)=>{
           const scheduleObj = snap.exists() ? (snap.val() || null) : null;
           templateAssign = scheduleObj ? buildTemplateAssignFromSchedule(scheduleObj) : {};
@@ -534,13 +557,11 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
           render();
         });
 
-        // ✅ 이번주 수정분
-        onValue(ref(db, `${PATH.overridesRoot}/${weekKey}`), (snap)=>{
+        onValue(ref(db, pathWeek(weekKey)), (snap)=>{
           overridesWeek = snap.exists() ? (snap.val() || {}) : {};
           render();
         });
 
-        // ✅ 수강자(선수) 명단: students → 없으면 coaches 자동 대체
         await attachStudentsListener();
 
         render();
