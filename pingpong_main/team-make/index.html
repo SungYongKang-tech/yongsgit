@@ -67,7 +67,7 @@
     .radioRow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
     .radioCard{
       border:1px solid var(--bd); border-radius:14px; padding:10px 12px; background:#fff; cursor:pointer;
-      display:flex; gap:10px; align-items:center; min-width:240px; justify-content:space-between;
+      display:flex; gap:10px; align-items:center; min-width:260px; justify-content:space-between;
     }
     .radioCard.on{outline:2px solid rgba(37,99,235,.35); background:#eef2ff}
     .radioCard b{font-size:14px}
@@ -95,14 +95,14 @@
         <div class="radioCard on" data-mode="team">
           <div>
             <b>단체전</b><br>
-            <span>팀 구성만 저장 → 단/복 설정은 team-live에서</span>
+            <span>team-make: 팀 구성만 / 단식·복식(몇단/몇복)은 team-live에서 설정</span>
           </div>
           <input type="radio" name="mode" checked />
         </div>
         <div class="radioCard" data-mode="single">
           <div>
             <b>개인전</b><br>
-            <span>개인전 형식 선택(풀리그/조+토너/토너)</span>
+            <span>개인전 형식(풀리그/조+토너/토너)만 저장 → team-live에서 자동 대진</span>
           </div>
           <input type="radio" name="mode" />
         </div>
@@ -145,14 +145,10 @@
           </select>
         </label>
         <button class="btn ok" id="autoBtn">팀 자동 배정</button>
-        <button class="btn warn" id="manualBtn">팀 수동 배정 시작</button>
+        <button class="btn warn" id="manualBtn">팀 수동 조정 안내</button>
         <button class="btn secondary" id="resetTeamsBtn">팀 초기화</button>
       </div>
-
-      <div class="mut" style="margin-top:10px">
-        ✅ 단체전은 여기서 <b>팀만</b> 구성합니다. <br>
-        ✅ <b>단식/복식(몇단/몇복)</b> 숫자는 <b>team-live</b>에서 결정합니다.
-      </div>
+      <div class="mut">※ 단식/복식(몇단/몇복) 숫자 결정은 team-live에서 합니다.</div>
     </div>
 
     <!-- 개인전: 형식 선택 -->
@@ -207,7 +203,7 @@
           <button class="btn ok" id="saveBtn">Firebase 저장</button>
           <button class="btn secondary" id="openLiveBtn">team-live 열기</button>
         </div>
-        <div class="mut">저장 후 team-live에서 단/복 설정 → 대진 생성 → 경기 진행을 합니다.</div>
+        <div class="mut">저장 후 team-live에서 단식/복식(몇단/몇복) 설정 → 대진 생성 → 경기 진행</div>
       </div>
 
       <!-- 개인전: 저장 미리보기 -->
@@ -239,8 +235,6 @@
     let mode = "team"; // team | single
     let allPlayers = []; // {name, grade, isNew}
     let selected = new Set(); // player index
-
-    // team-mode
     let teams = []; // {id, players:[{name,grade}], sum}
 
     // ====== Utils
@@ -538,7 +532,6 @@
 
     // ====== Save to Firebase
     async function saveToFirebase(){
-      // 참가자(선택 없으면 전체)
       const participants = poolPlayers().map(p=>({ name:p.name, grade:p.grade }));
       if(participants.length < 2){
         alert("참가자가 2명 이상이어야 합니다.");
@@ -565,10 +558,11 @@
         return;
       }
 
-      // ✅ config 구성: 단체전은 "mode만" 저장 (단/복 설정은 team-live에서)
       const config = { mode };
 
-      if(mode==="single"){
+      if(mode==="team"){
+        // ✅ 단체전은 팀 구성만 저장 (몇단/몇복은 team-live에서 설정)
+      }else{
         const fmt = $("singleFormat").value;
         config.single = { format: fmt };
         if(fmt==="group_knockout"){
@@ -594,7 +588,7 @@
       try{
         await set(ref(db, PATH.current), payload);
         setStatus("저장 완료: teamLive/current", "oktxt");
-        alert("✅ 저장 완료! 이제 team-live로 이동해서 단식/복식 설정 → 대진/경기 진행을 하시면 됩니다.");
+        alert("✅ 저장 완료! 이제 team-live로 이동해서 (몇단/몇복) 설정 → 대진 생성 → 경기 진행을 하시면 됩니다.");
       }catch(e){
         console.error(e);
         setStatus("저장 실패(콘솔 확인)", "err");
@@ -646,7 +640,7 @@
     });
 
     $("manualBtn").addEventListener("click", ()=>{
-      alert("수동 배정은 현재(이 버전)에서 ‘이동/삭제’로 조정하는 방식입니다.\n원하시면 ‘참석자→팀 버튼’ 방식으로도 확장해드리겠습니다.");
+      alert("수동 배정은 현재 ‘이동/삭제’로 조정하는 방식입니다.\n원하시면 ‘참석자→팀 버튼’ 방식(클릭으로 배정)도 만들어드리겠습니다.");
       if(!teams.length) buildAutoTeams(Number($("teamCount").value));
     });
 
@@ -662,7 +656,8 @@
       card.addEventListener("click", ()=>{
         $("modePicker").querySelectorAll(".radioCard").forEach(c=>c.classList.remove("on"));
         card.classList.add("on");
-        setMode(card.getAttribute("data-mode"));
+        const next = card.getAttribute("data-mode");
+        setMode(next);
       });
     });
 
