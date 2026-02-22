@@ -64,6 +64,8 @@
     .small{font-size:12px;color:var(--mut);font-weight:800}
 
     .pill{padding:6px 10px;border:1px solid var(--bd);border-radius:999px;background:#f8fafc;font-weight:900}
+
+    .brTableWrap{overflow:auto;border:1px solid var(--bd);border-radius:12px}
   </style>
 </head>
 
@@ -73,13 +75,14 @@
 
     <div class="card">
       <div class="row">
-        <span class="pill">탁구: 세트 스코어만 입력</span>
+        <span class="pill">탁구: 세트 스코어 입력</span>
 
+        <!-- ✅ 개인전 토너는 BO3/BO5만 -->
         <label style="font-weight:950">
-          경기 방식
+          BO(개인전)
           <select id="bestOf" class="input">
-            <option value="5" selected>5판 3선승</option>
-            <option value="3">3판 2선승</option>
+            <option value="5" selected>5판 3선승 (BO5)</option>
+            <option value="3">3판 2선승 (BO3)</option>
           </select>
         </label>
       </div>
@@ -103,7 +106,7 @@
 
     <div class="grid2">
       <div class="box">
-        <h3>현재 팀 구성</h3>
+        <h3 id="leftTitle">현재 팀/참가자</h3>
         <div class="teams" id="teamsBox"><div class="mut">데이터 없음</div></div>
       </div>
       <div class="box">
@@ -123,7 +126,7 @@
           </select>
         </label>
 
-        <label style="font-weight:950">
+        <label style="font-weight:950" id="advLabel">
           조별리그 → 토너 진출(조당)
           <select id="advancePerGroup" class="input">
             <option value="1">1위만</option>
@@ -135,7 +138,7 @@
         <button class="btn ok" id="buildBtn">대진 생성</button>
         <button class="btn secondary" id="resetRunBtn">진행 데이터 초기화</button>
       </div>
-      <div class="mut" id="formatHint">단체전은 현재 “리그전”을 권장합니다. (조별/토너는 개인전 중심)</div>
+      <div class="mut" id="formatHint">데이터에 맞춰(단체/개인) 선택지가 자동 적용됩니다.</div>
     </div>
 
     <div class="card">
@@ -151,7 +154,7 @@
     <div class="card">
       <div style="font-size:14px;font-weight:1000;text-align:center;margin-bottom:10px">토너먼트</div>
       <div id="bracketBox"><div class="mut">토너먼트 선택(또는 조별+토너) 시 표시됩니다.</div></div>
-      <div class="mut">※ 단체전은 “보드표 입력” 중심으로 구현되어 토너 브라켓은 개인전에 맞춰져 있습니다.</div>
+      <div class="mut">개인전 토너는 BO3/BO5 세트 스코어로 끝까지 진행합니다.</div>
     </div>
   </div>
 
@@ -172,6 +175,20 @@
     let current = null;
     let run = null;
 
+    function setStatus(msg, cls="mut"){
+      const el = $("status");
+      el.className = cls;
+      el.textContent = msg;
+    }
+
+    function isTeamMode(){
+      return current?.config?.mode === "team" && Array.isArray(current?.teams);
+    }
+    function isSingleMode(){
+      return current?.config?.mode === "single" && Array.isArray(current?.participants);
+    }
+
+    // ====== helpers: team labels
     function playerTag(p){
       const busu = p?.grade ?? p?.busu ?? p?.level ?? "";
       return `${p?.name ?? ""}${busu ? `(${busu}부)` : ""}`;
@@ -188,38 +205,64 @@
       return (t?.players || []).map(p=>({ name:p.name, grade:p.grade }));
     }
 
-    function setStatus(msg, cls="mut"){
-      const el = $("status");
-      el.className = cls;
-      el.textContent = msg;
+    // ====== 개인전: 참가자
+    function participantById(pid){
+      return (current?.participants||[]).find(p=>p.id===pid) || null;
+    }
+    function pLabel(pid){
+      const p = participantById(pid);
+      if(!p) return pid || "";
+      return `${p.name}(${p.grade}부)`;
+    }
+    function participantIds(){
+      return (current?.participants||[]).map(p=>p.id);
     }
 
-    function isTeamMode(){
-      return current?.config?.mode === "team" && Array.isArray(current?.teams);
-    }
-
+    // ====== UI sync by mode + saved config
     function syncModeUI(){
       const teamCard = $("teamBoardCard");
       const fmt = $("format");
       const hint = $("formatHint");
+      const adv = $("advancePerGroup");
+      const advLabel = $("advLabel");
+      const leftTitle = $("leftTitle");
 
       if(isTeamMode()){
+        leftTitle.textContent = "현재 팀 구성";
         teamCard.style.display = "";
         const s = Math.max(0, parseInt($("teamSingles").value,10) || 0);
         const d = Math.max(0, parseInt($("teamDoubles").value,10) || 0);
         $("boardLabel").textContent = `${s}단 ${d}복 (총 ${s+d}보드)`;
 
+        // 단체전은 리그전만 강제
         fmt.value = "league";
-        fmt.querySelectorAll("option").forEach(op=>{
-          op.disabled = (op.value !== "league");
-        });
-        $("advancePerGroup").disabled = true;
+        fmt.querySelectorAll("option").forEach(op=> op.disabled = (op.value !== "league"));
+        adv.disabled = true;
+        advLabel.style.display = "none";
         hint.textContent = "단체전: 보드표(단식/복식) 입력 방식으로 진행합니다. (리그전)";
-      }else{
-        teamCard.style.display = "none";
-        fmt.querySelectorAll("option").forEach(op=> op.disabled = false);
-        $("advancePerGroup").disabled = false;
-        hint.textContent = "개인전: 리그 / 토너 / 조별+토너 선택 가능";
+
+        return;
+      }
+
+      // 개인전
+      leftTitle.textContent = "현재 참가자";
+      teamCard.style.display = "none";
+      fmt.querySelectorAll("option").forEach(op=> op.disabled = false);
+      adv.disabled = false;
+      advLabel.style.display = "";
+      hint.textContent = "개인전: 리그 / 조별+토너 / 토너 선택 가능 (조는 team-make에서 편성)";
+
+      // ✅ team-make에서 저장된 개인전 형식을 기본값으로 반영
+      const sconf = current?.config?.single;
+      if(sconf?.format){
+        const map = { roundrobin:"league", group_knockout:"groups_to", knockout:"tournament" };
+        const fv = map[sconf.format] || "league";
+        fmt.value = fv;
+
+        // 조별+토너면 조당 진출값도 반영
+        if(sconf.format==="group_knockout" && sconf.advancePerGroup){
+          adv.value = String(sconf.advancePerGroup);
+        }
       }
     }
 
@@ -251,11 +294,11 @@
       return a;
     }
 
-    // ====== set score validation (board is not draw)
+    // ====== scoring (개인전: 무승부 불가, BO3/BO5)
     function validateMatchSets(aSets, bSets, bestOf){
       if(!Number.isInteger(aSets) || !Number.isInteger(bSets)) return {ok:false, msg:"정수로 입력"};
       if(aSets<0 || bSets<0) return {ok:false, msg:"0 이상"};
-      if(aSets===bSets) return {ok:false, msg:"동점 불가"}; // 보드(세트)는 무승부 없음
+      if(aSets===bSets) return {ok:false, msg:"동점 불가"};
       if(aSets>bestOf || bSets>bestOf) return {ok:false, msg:`최대 ${bestOf}세트`};
 
       const need = Math.ceil(bestOf/2);
@@ -268,18 +311,18 @@
     }
     function winnerFromSets(aSets,bSets){ return (aSets>bSets) ? "A" : "B"; }
 
-    // ====== round robin
-    function roundRobin(ids){
+    // ====== round robin generator (ids are teamIds or participantIds)
+    function roundRobin(ids, groupName=null){
       const ms = [];
       for(let i=0;i<ids.length;i++){
         for(let j=i+1;j<ids.length;j++){
-          ms.push({ id: nowId(), type:"match", group:null, A:ids[i], B:ids[j], score:null, done:false });
+          ms.push({ id: nowId(), type:"match", group:groupName, A:ids[i], B:ids[j], score:null, done:false, winner:null });
         }
       }
       return ms;
     }
 
-    // ====== boards
+    // ====== team boards
     function makeBoards(singlesCount, doublesCount){
       const boards = [];
       for(let i=1;i<=singlesCount;i++){
@@ -291,44 +334,35 @@
       return boards;
     }
 
-    // ✅ 핵심: 보드 선수 "골고루" 자동 배치
-    // - 팀별 로스터를 (매치 index 기반) 회전 + seed shuffle 해서 매치마다 다른 조합이 나오게 함
-    // - 단식: 가능한 서로 다른 선수로 채움 (로스터 부족 시 일부 빈칸)
-    // - 복식: 가능한 서로 다른 2명으로 채움 (로스터 2명 미만이면 빈칸)
     function autoFillBoardsForMatch(match, matchIndex, seedBase){
       const A = match.A, B = match.B;
 
       const aRaw = teamPlayers(A);
       const bRaw = teamPlayers(B);
 
-      // 매치마다 약간씩 섞이도록(하지만 완전 랜덤보단 재현 가능)
       const aList = shuffleWithSeed(aRaw, `${seedBase}|${A}|${matchIndex}`);
       const bList = shuffleWithSeed(bRaw, `${seedBase}|${B}|${matchIndex}`);
 
       const aN = aList.length, bN = bList.length;
 
-      // 회전 시작점 (골고루 배치)
       const aStart = aN ? (matchIndex % aN) : 0;
       const bStart = bN ? (matchIndex % bN) : 0;
 
       const pickA = (k)=> aN ? aList[(aStart + k) % aN].name : "";
       const pickB = (k)=> bN ? bList[(bStart + k) % bN].name : "";
 
-      let sIdx = 0; // 단식 pick offset
-      let dIdx = 0; // 복식 pick offset
+      let sIdx = 0;
+      let dIdx = 0;
 
       for(const bd of (match.boards||[])){
         if(bd.kind==="S"){
-          // 단식: 서로 다른 선수로 채우려고 시도 (팀원 수가 1명이면 반복 가능)
           bd.APlayer = pickA(sIdx);
           bd.BPlayer = pickB(sIdx);
           sIdx++;
         }else{
-          // 복식: 2명 필요
           if(aN >= 2){
             const p1 = pickA(dIdx);
             const p2 = pickA(dIdx+1);
-            // 만약 우연히 같으면 한 칸 더
             bd.APlayers = [p1, (p2===p1 && aN>2) ? pickA(dIdx+2) : p2];
           }else{
             bd.APlayers = ["",""];
@@ -346,6 +380,7 @@
       }
     }
 
+    // ====== team match aggregation (단체전은 무승부 허용)
     function computeTeamMatchResult(match){
       const boards = match?.boards || [];
       let aW=0, bW=0, doneBoards=0;
@@ -363,7 +398,7 @@
       if(done){
         if(aW>bW) winner="A";
         else if(bW>aW) winner="B";
-        else winner=null; // ✅ 무승부 허용
+        else winner=null; // 무승부
       }
       return { aW, bW, doneBoards, totalBoards: boards.length, done, winner };
     }
@@ -455,6 +490,86 @@
       `;
     }
 
+    // ====== 개인전 standings (리그/조별)
+    function computeStandingsSingles(matches, ids){
+      const map = new Map();
+      const ensure = (id)=>{
+        if(!map.has(id)){
+          map.set(id, { id, played:0, win:0, loss:0, pts:0, sw:0, sl:0, sd:0 });
+        }
+        return map.get(id);
+      };
+      (ids||[]).forEach(id=>ensure(id));
+
+      for(const m of (matches||[])){
+        if(!m.done || !m.score) continue;
+        if(!m.A || !m.B) continue;
+
+        const A = ensure(m.A);
+        const B = ensure(m.B);
+
+        const aS = m.score.aSets|0;
+        const bS = m.score.bSets|0;
+
+        A.played++; B.played++;
+        A.sw += aS; A.sl += bS;
+        B.sw += bS; B.sl += aS;
+
+        if(m.winner==="A"){
+          A.win++; B.loss++;
+          A.pts += 1;
+        }else if(m.winner==="B"){
+          B.win++; A.loss++;
+          B.pts += 1;
+        }
+      }
+
+      for(const v of map.values()) v.sd = v.sw - v.sl;
+
+      const arr = [...map.values()];
+      arr.sort((x,y)=>{
+        if(y.pts !== x.pts) return y.pts - x.pts;
+        if(y.sd !== x.sd) return y.sd - x.sd;
+        if(y.sw !== x.sw) return y.sw - x.sw;
+        return pLabel(x.id).localeCompare(pLabel(y.id), "ko");
+      });
+      return arr;
+    }
+
+    function standingsTableSingles(st, title="개인전 순위"){
+      return `
+        <div class="box" style="box-shadow:none">
+          <div style="font-weight:1000;margin-bottom:8px">${esc(title)}</div>
+          <div style="overflow:auto;border:1px solid var(--bd);border-radius:12px">
+            <table>
+              <thead>
+                <tr>
+                  <th>순위</th><th>선수</th><th>경기</th><th>승</th><th>패</th><th>승점</th><th>세트득실</th><th>세트승</th><th>세트패</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${st.map((r,i)=>`
+                  <tr>
+                    <td>${i+1}</td>
+                    <td style="text-align:left;font-weight:900">${esc(pLabel(r.id))}</td>
+                    <td>${r.played}</td>
+                    <td>${r.win}</td>
+                    <td>${r.loss}</td>
+                    <td><b>${r.pts}</b></td>
+                    <td>${r.sd}</td>
+                    <td>${r.sw}</td>
+                    <td>${r.sl}</td>
+                  </tr>
+                `).join("") || `<tr><td colspan="9" class="mut">데이터 없음</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+          <div class="small" style="margin-top:8px">정렬: 승점 → 세트득실 → 세트승</div>
+        </div>
+      `;
+    }
+
+    // ====== render current (team/participants)
     function renderCurrent(){
       const teamsBox = $("teamsBox");
       const groupsBox = $("groupsBox");
@@ -465,17 +580,31 @@
         return;
       }
 
-      const teams = current.teams || [];
-      teamsBox.innerHTML = teams.length
-        ? teams.map(t=>`
-          <div class="team">
-            <div class="tline">
-              <div class="name">${esc(teamLabel(t))}</div>
-              <div class="meta">합 ${esc(t.sum ?? "")}</div>
+      if(isTeamMode()){
+        const teams = current.teams || [];
+        teamsBox.innerHTML = teams.length
+          ? teams.map(t=>`
+            <div class="team">
+              <div class="tline">
+                <div class="name">${esc(teamLabel(t))}</div>
+                <div class="meta">합 ${esc(t.sum ?? "")}</div>
+              </div>
             </div>
-          </div>
-        `).join("")
-        : `<div class="mut">팀 데이터 없음</div>`;
+          `).join("")
+          : `<div class="mut">팀 데이터 없음</div>`;
+      }else{
+        const ps = current.participants || [];
+        teamsBox.innerHTML = ps.length
+          ? ps.map(p=>`
+            <div class="team">
+              <div class="tline">
+                <div class="name">${esc(p.name)}(${esc(p.grade)}부)</div>
+                <div class="meta">${esc(p.id||"")}</div>
+              </div>
+            </div>
+          `).join("")
+          : `<div class="mut">참가자 데이터 없음</div>`;
+      }
 
       const groups = current.groups || {};
       const keys = Object.keys(groups);
@@ -489,8 +618,7 @@
               <div style="font-weight:1000;margin-bottom:6px">${esc(g)}조</div>
               <div>
                 ${ids.map(id=>{
-                  const t = teamById(id);
-                  return `<span class="chip">${esc(t ? teamLabel(t) : id)}</span>`;
+                  return `<span class="chip">${esc(isTeamMode() ? (teamLabel(teamById(id)||{id,players:[]}) ) : pLabel(id))}</span>`;
                 }).join("")}
               </div>
             </div>
@@ -499,6 +627,7 @@
       }
     }
 
+    // ====== standings render
     function renderStandings(){
       const box = $("standingsBox");
       if(!run || !current){
@@ -506,16 +635,46 @@
         return;
       }
 
-      const teamIds = (current.teams||[]).map(t=>t.id);
       if(isTeamMode()){
+        const teamIds = (current.teams||[]).map(t=>t.id);
         const st = computeStandingsTeam(run.matches||[], teamIds);
         box.innerHTML = standingsTableTeam(st);
         return;
       }
 
-      box.innerHTML = `<div class="mut">개인전 순위는 현재 버전에서 생략했습니다(단체전 중심).</div>`;
+      // 개인전
+      const fmt = run?.settings?.format || $("format").value;
+
+      if(fmt==="league"){
+        const ids = participantIds();
+        const st = computeStandingsSingles(run.matches||[], ids);
+        box.innerHTML = standingsTableSingles(st, "개인전 리그 순위");
+        return;
+      }
+
+      if(fmt==="groups_to"){
+        const groups = current.groups || {};
+        const keys = Object.keys(groups);
+        if(!keys.length){
+          box.innerHTML = `<div class="err">조별+토너인데 current.groups가 없습니다. (조는 team-make에서 편성 후 저장하세요)</div>`;
+          return;
+        }
+
+        const parts = keys.sort().map(g=>{
+          const ids = groups[g] || [];
+          const ms = (run.matches||[]).filter(m=>m.group===g);
+          const st = computeStandingsSingles(ms, ids);
+          return standingsTableSingles(st, `${g}조 순위`);
+        }).join("");
+
+        box.innerHTML = parts || `<div class="mut">조 순위 표시 불가</div>`;
+        return;
+      }
+
+      box.innerHTML = `<div class="mut">토너먼트는 순위표 대신 브라켓을 확인하세요.</div>`;
     }
 
+    // ====== matches render: team UI (boards) + singles UI
     function optionList(players, selectedName){
       const opts = [`<option value="">선택</option>`];
       for(const p of players){
@@ -632,6 +791,39 @@
       `;
     }
 
+    function renderSinglesMatchUI(m, idx){
+      const bestOf = parseInt($("bestOf").value,10) || 5;
+      const aName = pLabel(m.A);
+      const bName = pLabel(m.B);
+      const scoreTxt = m.score ? `${m.score.aSets}:${m.score.bSets}` : "-";
+      const state = m.done ? (m.winner==="A" ? "A승" : "B승") : "진행중";
+
+      return `
+        <div class="matchCard">
+          <div class="matchTop">
+            <div>#${idx+1} · <b>${esc(state)}</b> ${m.group ? `· (${esc(m.group)}조)` : ""}</div>
+            <div class="small">${m.type==="ko" ? `토너 R${m.round}` : `리그`}</div>
+          </div>
+
+          <div class="matchMid">
+            <div class="side">${esc(aName)}</div>
+            <div class="vs">VS</div>
+            <div class="side">${esc(bName)}</div>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <input class="input scoreInput" type="number" min="0" step="1" style="width:70px" id="sa_${m.id}" value="${m.score? m.score.aSets:""}">
+            <span class="colon">:</span>
+            <input class="input scoreInput" type="number" min="0" step="1" style="width:70px" id="sb_${m.id}" value="${m.score? m.score.bSets:""}">
+            <span class="small">(BO${bestOf})</span>
+            <button class="btn ok" data-ssave="${m.id}">저장</button>
+            <button class="btn secondary" data-sclear="${m.id}">지우기</button>
+            <span class="small">현재 ${esc(scoreTxt)}</span>
+          </div>
+        </div>
+      `;
+    }
+
     function renderMatches(){
       const box = $("matchesBox");
       if(!run || !current || !(run.matches||[]).length){
@@ -678,20 +870,98 @@
         return;
       }
 
-      box.innerHTML = `<div class="mut">개인전 UI는 현재 버전에서 생략했습니다(단체전 중심).</div>`;
+      // 개인전: 리그/조별 리그/토너(ko) 모두 matches에 섞일 수 있으니 다 보여줌
+      const list = ms.filter(m=>m.type!=="ko"); // 리그 파트
+      const kos  = ms.filter(m=>m.type==="ko"); // 토너 파트
+
+      const merged = [...list, ...kos];
+      box.innerHTML = merged.map((m, idx)=> renderSinglesMatchUI(m, idx)).join("");
+
+      box.querySelectorAll("button[data-ssave]").forEach(btn=>{
+        btn.addEventListener("click", async ()=>{
+          const mid = btn.getAttribute("data-ssave");
+          await saveSinglesScore(mid);
+        });
+      });
+      box.querySelectorAll("button[data-sclear]").forEach(btn=>{
+        btn.addEventListener("click", async ()=>{
+          const mid = btn.getAttribute("data-sclear");
+          await clearSinglesScore(mid);
+        });
+      });
     }
 
+    // ====== bracket rendering (개인전)
     function renderBracket(){
-      $("bracketBox").innerHTML = `<div class="mut">현재 버전에서 토너 브라켓 입력은 개인전 중심입니다.</div>`;
+      const box = $("bracketBox");
+
+      if(!run || !current){
+        box.innerHTML = `<div class="mut">토너먼트 선택(또는 조별+토너) 시 표시됩니다.</div>`;
+        return;
+      }
+      if(isTeamMode()){
+        box.innerHTML = `<div class="mut">단체전은 보드표 입력 중심입니다.</div>`;
+        return;
+      }
+
+      const kos = (run.matches||[]).filter(m=>m.type==="ko");
+      if(!kos.length){
+        box.innerHTML = `<div class="mut">토너 대진이 없습니다.</div>`;
+        return;
+      }
+
+      // round별로 묶어서 표로 출력
+      const byRound = new Map();
+      for(const m of kos){
+        const r = m.round || 1;
+        if(!byRound.has(r)) byRound.set(r, []);
+        byRound.get(r).push(m);
+      }
+      const rounds = [...byRound.keys()].sort((a,b)=>a-b);
+
+      const tables = rounds.map(r=>{
+        const ms = byRound.get(r) || [];
+        ms.sort((a,b)=> (a.ord||0)-(b.ord||0));
+        return `
+          <div style="margin-bottom:12px">
+            <div style="font-weight:1000;margin-bottom:6px">토너먼트 R${r}</div>
+            <div class="brTableWrap">
+              <table>
+                <thead>
+                  <tr><th>#</th><th>A</th><th>스코어</th><th>B</th><th>상태</th></tr>
+                </thead>
+                <tbody>
+                  ${ms.map((m,i)=>{
+                    const s = m.score ? `${m.score.aSets}:${m.score.bSets}` : "-";
+                    const st = m.done ? (m.winner==="A" ? "A승" : "B승") : "진행중";
+                    return `
+                      <tr>
+                        <td>${i+1}</td>
+                        <td style="text-align:left;font-weight:900">${esc(pLabel(m.A||""))}</td>
+                        <td><b>${esc(s)}</b></td>
+                        <td style="text-align:left;font-weight:900">${esc(pLabel(m.B||""))}</td>
+                        <td>${esc(st)}</td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      box.innerHTML = tables;
     }
 
+    // ====== write run
     async function writeRun(nextRun){
       nextRun.updatedAt = Date.now();
       nextRun.serverUpdatedAt = serverTimestamp();
       await set(ref(db, PATH.run), nextRun);
     }
 
-    // ====== 보드 저장 로직
+    // ====== team board save logic
     function findMatchIndexById(mid){
       return (run?.matches||[]).findIndex(m=>m.id===mid);
     }
@@ -753,7 +1023,6 @@
 
       const b = m.boards[bi];
 
-      // 선수 선택 체크
       if(b.kind==="S"){
         if(!b.APlayer || !b.BPlayer){
           alert("단식 보드는 양쪽 선수 이름을 먼저 선택하세요.");
@@ -778,7 +1047,7 @@
       const res = computeTeamMatchResult(m);
       m.result = { aW:res.aW, bW:res.bW, totalBoards:res.totalBoards };
       m.done = res.done;
-      m.winner = res.winner; // A/B/null
+      m.winner = res.winner;
 
       await writeRun(nextRun);
     }
@@ -804,24 +1073,278 @@
       await writeRun(nextRun);
     }
 
-    // ====== build schedule
-    async function buildSchedule(){
-      if(!current || !(current.teams||[]).length){
-        alert("teamLive/current 팀 데이터가 없습니다.");
+    // ====== 개인전 점수 저장
+    function recomputeSinglesMeta(m, bestOf){
+      if(!m.score) { m.done=false; m.winner=null; return; }
+      const aS = m.score.aSets|0;
+      const bS = m.score.bSets|0;
+      const v = validateMatchSets(aS,bS,bestOf);
+      if(!v.ok) { m.done=false; m.winner=null; return; }
+      m.done = true;
+      m.winner = winnerFromSets(aS,bS);
+    }
+
+    async function saveSinglesScore(mid){
+      const mi = findMatchIndexById(mid);
+      if(mi<0) return;
+
+      const bestOf = parseInt($("bestOf").value,10) || 5;
+
+      const aEl = document.getElementById(`sa_${mid}`);
+      const bEl = document.getElementById(`sb_${mid}`);
+      const aSets = parseInt(aEl.value,10);
+      const bSets = parseInt(bEl.value,10);
+
+      const v = validateMatchSets(aSets,bSets,bestOf);
+      if(!v.ok){
+        alert(v.msg || "점수 오류");
         return;
       }
 
-      const teamIds = current.teams.map(t=>t.id);
+      const nextRun = structuredClone(run);
+      nextRun.settings = nextRun.settings || {};
+      nextRun.settings.scoring = nextRun.settings.scoring || {};
+      nextRun.settings.scoring.bestOf = bestOf;
+
+      const m = nextRun.matches[mi];
+      m.score = { aSets, bSets };
+      recomputeSinglesMeta(m, bestOf);
+
+      // ✅ 조별+토너면, 조 순위 변화에 따라 토너 참가자 자동 갱신
+      if(nextRun.settings.format==="groups_to"){
+        fillBracketFromGroupStandings(nextRun);
+      }else if(nextRun.settings.format==="tournament"){
+        advanceBracketWinners(nextRun);
+      }else{
+        // league는 아무것도 안함
+      }
+
+      await writeRun(nextRun);
+    }
+
+    async function clearSinglesScore(mid){
+      const mi = findMatchIndexById(mid);
+      if(mi<0) return;
+
+      const nextRun = structuredClone(run);
+      const m = nextRun.matches[mi];
+      m.score = null;
+      m.done = false;
+      m.winner = null;
+
+      if(nextRun.settings.format==="groups_to"){
+        fillBracketFromGroupStandings(nextRun);
+      }else if(nextRun.settings.format==="tournament"){
+        advanceBracketWinners(nextRun);
+      }
+
+      await writeRun(nextRun);
+    }
+
+    // ====== bracket building/advancing (개인전)
+    function nextPowerOfTwo(n){
+      let p = 1;
+      while(p < n) p <<= 1;
+      return p;
+    }
+
+    function buildKO(seeds){
+      // seeds: [pid...] length N
+      const N = seeds.length;
+      const P = nextPowerOfTwo(N);
+      const byes = P - N;
+
+      // simple seeding: 1..N, pair 1 vs P, 2 vs P-1 ...
+      // we implement byes by filling null opponents for top seeds first.
+      const firstRound = [];
+      const list = [...seeds];
+
+      // add nulls for byes at end
+      for(let i=0;i<byes;i++) list.push(null);
+
+      // pairings: (1 vs last), (2 vs second last)...
+      for(let i=0;i<P/2;i++){
+        const A = list[i];
+        const B = list[P-1-i];
+        firstRound.push({
+          id: nowId(), type:"ko", round:1, ord:i+1,
+          A, B,
+          score:null, done:false, winner:null
+        });
+      }
+
+      // build empty next rounds
+      let rounds = [firstRound];
+      let r = 2;
+      let matchesInRound = firstRound.length/2;
+
+      while(matchesInRound >= 1){
+        const arr = [];
+        for(let i=0;i<matchesInRound;i++){
+          arr.push({
+            id: nowId(), type:"ko", round:r, ord:i+1,
+            A:null, B:null,
+            score:null, done:false, winner:null
+          });
+        }
+        rounds.push(arr);
+        r++;
+        matchesInRound = matchesInRound/2;
+      }
+
+      // flatten
+      return rounds.flat();
+    }
+
+    function advanceBracketWinners(nextRun){
+      // KO matches assumed in order of round then ord
+      const kos = (nextRun.matches||[]).filter(m=>m.type==="ko");
+      if(!kos.length) return;
+
+      const ordered = kos.slice().sort((a,b)=>{
+        if((a.round||0)!==(b.round||0)) return (a.round||0)-(b.round||0);
+        return (a.ord||0)-(b.ord||0);
+      });
+
+      // group by round
+      const byR = new Map();
+      for(const m of ordered){
+        const r = m.round||1;
+        if(!byR.has(r)) byR.set(r, []);
+        byR.get(r).push(m);
+      }
+      const rounds = [...byR.keys()].sort((a,b)=>a-b);
+
+      // auto-win on bye (if A exists and B null)
+      const bestOf = nextRun.settings?.scoring?.bestOf || 5;
+      for(const r of rounds){
+        for(const m of byR.get(r)){
+          if(m.A && !m.B){
+            m.done = true; m.winner="A";
+            if(!m.score) m.score = { aSets: Math.ceil(bestOf/2), bSets: 0 };
+          }else if(!m.A && m.B){
+            m.done = true; m.winner="B";
+            if(!m.score) m.score = { aSets: 0, bSets: Math.ceil(bestOf/2) };
+          }
+        }
+      }
+
+      // propagate winners
+      for(let r=1; r<rounds.length; r++){
+        const prev = byR.get(r) || [];
+        const next = byR.get(r+1) || [];
+        if(!next.length) continue;
+
+        for(let i=0;i<next.length;i++){
+          const m1 = prev[i*2];
+          const m2 = prev[i*2+1];
+          const n = next[i];
+
+          const w1 = m1?.done ? (m1.winner==="A" ? m1.A : m1.B) : null;
+          const w2 = m2?.done ? (m2.winner==="A" ? m2.A : m2.B) : null;
+
+          n.A = w1;
+          n.B = w2;
+
+          // 만약 참가자가 바뀌면 점수는 초기화(혼선 방지)
+          if(!n.A || !n.B){
+            n.score = null; n.done=false; n.winner=null;
+          }
+        }
+      }
+    }
+
+    function getGroupStandings(nextRun, groupKey){
+      const ids = (current.groups?.[groupKey]||[]).filter(Boolean);
+      const ms = (nextRun.matches||[]).filter(m=>m.group===groupKey && m.type==="match");
+      return computeStandingsSingles(ms, ids);
+    }
+
+    function fillBracketFromGroupStandings(nextRun){
+      const groups = current.groups || {};
+      const keys = Object.keys(groups).sort();
+      if(!keys.length) return;
+
+      const k = parseInt($("advancePerGroup").value,10) || 2;
+
+      // collect qualifiers: for each group take top k
+      const qualifiers = [];
+      for(const g of keys){
+        const st = getGroupStandings(nextRun, g);
+        st.slice(0, k).forEach((r, idx)=>{
+          qualifiers.push({ group:g, rank:idx+1, pid:r.id });
+        });
+      }
+
+      // seed order: rank1 먼저, 그다음 rank2... 그룹은 섞어서
+      const seedBase = String(nextRun.updatedAt || Date.now());
+      const out = [];
+      for(let rank=1; rank<=k; rank++){
+        const chunk = qualifiers.filter(q=>q.rank===rank).map(q=>q.pid);
+        const mixed = shuffleWithSeed(chunk, `seed|${seedBase}|rank${rank}`);
+        out.push(...mixed);
+      }
+
+      // build KO if not exist OR size changed
+      let kos = (nextRun.matches||[]).filter(m=>m.type==="ko");
+      if(!kos.length){
+        const ko = buildKO(out);
+        nextRun.matches = [...(nextRun.matches||[]), ...ko];
+        kos = ko;
+      }else{
+        // first round만 seed로 재배치하고, 이후 라운드는 초기화
+        const ordered = kos.slice().sort((a,b)=>{
+          if((a.round||0)!==(b.round||0)) return (a.round||0)-(b.round||0);
+          return (a.ord||0)-(b.ord||0);
+        });
+        const r1 = ordered.filter(m=>m.round===1);
+
+        // seeds -> byes 처리 포함하여 r1에 넣기
+        const N = out.length;
+        const P = nextPowerOfTwo(N);
+        const byes = P - N;
+        const list = [...out];
+        for(let i=0;i<byes;i++) list.push(null);
+
+        for(let i=0;i<r1.length;i++){
+          const A = list[i];
+          const B = list[P-1-i];
+          r1[i].A = A;
+          r1[i].B = B;
+          r1[i].score = null; r1[i].done=false; r1[i].winner=null;
+        }
+
+        // reset rounds >=2
+        ordered.filter(m=>m.round>1).forEach(m=>{
+          m.A=null; m.B=null; m.score=null; m.done=false; m.winner=null;
+        });
+      }
+
+      // now propagate auto-byes and winners chain
+      advanceBracketWinners(nextRun);
+    }
+
+    // ====== build schedule (team or singles)
+    async function buildSchedule(){
+      if(!current){
+        alert("teamLive/current 데이터가 없습니다.");
+        return;
+      }
 
       const nextRun = {
         settings: {
-          format: "league",
-          scoring: { kind: isTeamMode() ? "tt_team_boards" : "tt_sets_only", bestOf: parseInt($("bestOf").value,10) || 5 }
+          format: $("format").value,
+          scoring: {
+            kind: isTeamMode() ? "tt_team_boards" : "tt_sets_only",
+            bestOf: parseInt($("bestOf").value,10) || 5
+          }
         },
         matches: []
       };
 
       if(isTeamMode()){
+        const teamIds = current.teams.map(t=>t.id);
+
         const s = Math.max(0, parseInt($("teamSingles").value,10) || 0);
         const d = Math.max(0, parseInt($("teamDoubles").value,10) || 0);
         if(s + d < 1){
@@ -831,14 +1354,12 @@
 
         const base = roundRobin(teamIds);
 
-        // ✅ seedBase: 이번 대진 생성 시 자동배치가 '골고루' 바뀌도록(새로 생성할 때마다 다르게)
         const seedBase = String(Date.now());
 
         base.forEach((m, idx)=>{
           m.kind = "team_match";
           m.boards = makeBoards(s, d);
 
-          // ✅ 여기서 선수 자동 배치!
           autoFillBoardsForMatch(m, idx, seedBase);
 
           m.result = { aW:0, bW:0, totalBoards:(s+d) };
@@ -847,14 +1368,68 @@
           delete m.score;
         });
 
+        nextRun.settings.format = "league";
         nextRun.matches = base;
 
         await writeRun(nextRun);
         return;
       }
 
-      nextRun.matches = roundRobin(teamIds);
-      await writeRun(nextRun);
+      // ====== 개인전
+      const ids = participantIds();
+      if(ids.length < 2){
+        alert("개인전 참가자가 2명 이상이어야 합니다.");
+        return;
+      }
+
+      const fmt = $("format").value;
+
+      if(fmt==="league"){
+        nextRun.matches = roundRobin(ids);
+        await writeRun(nextRun);
+        return;
+      }
+
+      if(fmt==="tournament"){
+        // 토너먼트: 참가자 전체로 KO 생성
+        const seedBase = String(Date.now());
+        const seeds = shuffleWithSeed(ids, `tournament|${seedBase}`);
+        const ko = buildKO(seeds);
+        nextRun.matches = ko;
+        advanceBracketWinners(nextRun);
+        await writeRun(nextRun);
+        return;
+      }
+
+      if(fmt==="groups_to"){
+        // 조별+토너: 조는 team-make에서 편성되어 current.groups에 있어야 함
+        const groups = current.groups || {};
+        const keys = Object.keys(groups).sort();
+        if(!keys.length){
+          alert("조별+토너인데 조 데이터(current.groups)가 없습니다. team-make에서 조를 편성 후 저장하세요.");
+          return;
+        }
+
+        // 조별 리그 매치 생성
+        const all = [];
+        keys.forEach(g=>{
+          const gIds = (groups[g]||[]).filter(Boolean);
+          if(gIds.length >= 2){
+            all.push(...roundRobin(gIds, g));
+          }
+        });
+
+        nextRun.matches = all;
+
+        // 토너는 ‘지금 시점 순위’로 자동 생성 + 계속 갱신
+        // (처음엔 점수 없으니 seed가 다 0점이지만, 입력하면 자동 갱신됨)
+        fillBracketFromGroupStandings(nextRun);
+
+        await writeRun(nextRun);
+        return;
+      }
+
+      alert("알 수 없는 진행 방식입니다.");
     }
 
     async function resetRun(){
@@ -862,7 +1437,7 @@
       await set(ref(db, PATH.run), null);
     }
 
-    // bind
+    // ====== bind
     $("buildBtn").addEventListener("click", buildSchedule);
     $("resetRunBtn").addEventListener("click", resetRun);
 
@@ -878,6 +1453,21 @@
     $("teamSingles").addEventListener("change", syncModeUI);
     $("teamDoubles").addEventListener("change", syncModeUI);
 
+    $("format").addEventListener("change", ()=>{
+      // 개인전에서는 선택 가능. (단, 저장된 config가 있더라도 사용자가 바꾸면 그걸로 생성)
+      renderStandings();
+      renderBracket();
+    });
+
+    $("advancePerGroup").addEventListener("change", ()=>{
+      // 조별+토너 진행 중이면 브라켓 갱신
+      if(run && run.settings?.format==="groups_to"){
+        const nextRun = structuredClone(run);
+        fillBracketFromGroupStandings(nextRun);
+        writeRun(nextRun);
+      }
+    });
+
     function renderAll(){
       syncModeUI();
       renderCurrent();
@@ -886,7 +1476,7 @@
       renderBracket();
     }
 
-    // init
+    // ====== init
     (async function init(){
       try{
         setStatus("Firebase 연결 중...");

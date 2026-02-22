@@ -72,6 +72,16 @@
     .radioCard.on{outline:2px solid rgba(37,99,235,.35); background:#eef2ff}
     .radioCard b{font-size:14px}
     .radioCard span{color:var(--mut);font-weight:800;font-size:12px}
+
+    /* groups UI */
+    .groupsGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    @media (max-width:900px){ .groupsGrid{grid-template-columns:1fr} }
+    .gbox{border:1px solid var(--bd);border-radius:14px;background:#f8fafc;padding:10px}
+    .gtitle{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+    .gtitle b{font-weight:1000}
+    .glist{display:flex;flex-wrap:wrap;gap:6px}
+    .gtag{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--bd);border-radius:999px;background:#fff;padding:6px 10px;font-weight:900}
+    .gtag button{padding:4px 8px;border-radius:10px}
   </style>
 </head>
 
@@ -88,7 +98,7 @@
       <div class="mut" id="status">불러오는 중...</div>
     </div>
 
-    <!-- 0) 먼저: 단체전/개인전 선택 -->
+    <!-- 0) 단체전/개인전 선택 -->
     <div class="card">
       <div style="text-align:center;font-weight:1000;margin-bottom:10px">1️⃣ 경기 형태를 먼저 선택하세요</div>
       <div class="radioRow" id="modePicker">
@@ -102,7 +112,7 @@
         <div class="radioCard" data-mode="single">
           <div>
             <b>개인전</b><br>
-            <span>개인전 형식(풀리그/조+토너/토너)만 저장 → team-live에서 자동 대진</span>
+            <span>개인전(리그/조+토너/토너) + 조 편성은 여기(team-make)에서</span>
           </div>
           <input type="radio" name="mode" />
         </div>
@@ -151,9 +161,10 @@
       <div class="mut">※ 단식/복식(몇단/몇복) 숫자 결정은 team-live에서 합니다.</div>
     </div>
 
-    <!-- 개인전: 형식 선택 -->
+    <!-- 개인전: 형식 + 조편성 -->
     <div class="card hidden" id="singleSection">
-      <div style="text-align:center;font-weight:1000;margin-bottom:10px">2️⃣ 개인전 형식 선택</div>
+      <div style="text-align:center;font-weight:1000;margin-bottom:10px">2️⃣ 개인전 설정</div>
+
       <div class="row">
         <label style="font-weight:950">
           개인전 방식
@@ -184,10 +195,21 @@
             <option value="3">3명</option>
           </select>
         </label>
+        <button class="btn ok" id="autoGroupBtn">조 자동 편성</button>
+        <button class="btn secondary" id="clearGroupsBtn">조 초기화</button>
       </div>
 
       <div class="mut" id="singleHint">
-        “조별리그 + 토너먼트”를 선택하면 조 개수/조당 진출 수가 저장됩니다.
+        “조별리그 + 토너먼트” 선택 시, 조 편성을 여기에서 합니다. (자동 편성 후 이동/삭제로 조정)
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="box" id="groupsEditorWrap" style="box-shadow:none;border-radius:14px;background:#fff;border:1px solid var(--bd)">
+        <div style="font-weight:1000;margin-bottom:8px;text-align:center">개인전 조 편성(조별+토너에서 사용)</div>
+        <div class="mut" id="groupsHint2">아직 조가 없습니다. “조 자동 편성”을 눌러주세요.</div>
+        <div class="groupsGrid" id="groupsGrid"></div>
+        <div class="mut">※ 조 편성 결과는 teamLive/current의 <b>groups</b>로 저장됩니다.</div>
       </div>
     </div>
 
@@ -210,7 +232,7 @@
       <div class="box" id="singlePreviewWrap">
         <h3>개인전 저장 내용 미리보기</h3>
         <div class="mut" id="singlePreview">
-          개인전을 선택하면 참가자/형식 정보가 저장됩니다(팀 구성은 하지 않습니다).
+          개인전을 선택하면 참가자/형식/조(조별+토너인 경우) 정보가 저장됩니다.
         </div>
 
         <div class="divider"></div>
@@ -218,7 +240,7 @@
           <button class="btn ok" id="saveBtn2">Firebase 저장</button>
           <button class="btn secondary" id="openLiveBtn2">team-live 열기</button>
         </div>
-        <div class="mut">저장 후 team-live에서 “풀리그/조+토너/토너”에 맞게 자동 생성합니다.</div>
+        <div class="mut">저장 후 team-live에서 “리그/조+토너/토너”가 자동 적용됩니다.</div>
       </div>
     </div>
   </div>
@@ -236,6 +258,10 @@
     let allPlayers = []; // {name, grade, isNew}
     let selected = new Set(); // player index
     let teams = []; // {id, players:[{name,grade}], sum}
+
+    // 개인전 조 편성: { "A":[pid...], "B":[pid...], ... }
+    let groups = {}; // groupKey -> [participantId]
+    let participantCache = []; // current participants computed from selection
 
     // ====== Utils
     const esc = (s)=>String(s??"")
@@ -270,6 +296,22 @@
       return idxs.map(i=>allPlayers[i]);
     }
 
+    function makePid(name, grade){
+      // 이름 중복 대비: 이름+부수+랜덤짧은값 (한 번 저장되면 current에서 유지)
+      return `P_${String(name).trim()}_${grade}_${Math.random().toString(16).slice(2,8)}_${Date.now().toString(16)}`;
+    }
+
+    function computeParticipants(){
+      // 매번 현재 참가자 목록을 “고정 id” 포함 형태로 만들어둔다
+      const pool = poolPlayers();
+      participantCache = pool.map(p=>({
+        id: makePid(p.name, p.grade),
+        name: p.name,
+        grade: p.grade
+      }));
+      return participantCache;
+    }
+
     function saveAddedToLS(){
       const added = allPlayers.filter(p=>p.isNew).map(p=>({name:p.name, grade:p.grade}));
       localStorage.setItem("pp_addedPlayers", JSON.stringify(added));
@@ -294,6 +336,8 @@
       allPlayers = [];
       selected.clear();
       teams = [];
+      groups = {};
+      participantCache = [];
 
       try{
         const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json", { cache:"no-store" });
@@ -313,6 +357,7 @@
       setStatus(`로드 완료: ${allPlayers.length}명`, "oktxt");
       renderPlayers();
       renderTeams();
+      renderGroupsEditor();
       renderSinglePreview();
     }
 
@@ -336,6 +381,13 @@
         el.addEventListener("click", ()=>{
           if(selected.has(idx)) selected.delete(idx);
           else selected.add(idx);
+
+          // 참가자가 바뀌면 조편성은 무효 처리(혼선 방지)
+          if(mode==="single"){
+            groups = {};
+            renderGroupsEditor();
+          }
+
           renderPlayers();
           renderSinglePreview();
         });
@@ -468,6 +520,154 @@
       });
     }
 
+    // ====== 개인전: 조 자동편성/편집
+    function groupKeys(n){
+      // A,B,C... (최대 8)
+      const letters = "ABCDEFGH".split("");
+      return letters.slice(0, n);
+    }
+
+    function autoMakeGroups(){
+      const fmt = $("singleFormat").value;
+      if(fmt!=="group_knockout"){
+        alert("조 편성은 ‘조별리그 + 토너먼트’에서만 사용합니다.");
+        return;
+      }
+      const participants = computeParticipants();
+      if(participants.length < 2){
+        alert("참가자가 2명 이상이어야 합니다.");
+        return;
+      }
+
+      const gCount = Number($("groupCount").value);
+      const keys = groupKeys(gCount);
+
+      // 부수 높은 순 + 약간 랜덤 섞은 뒤, 지그재그로 분배(밸런스)
+      const mixed = shuffle(participants).sort((a,b)=>b.grade-a.grade);
+      const buckets = Object.fromEntries(keys.map(k=>[k, []]));
+
+      let dir = 1;
+      let idx = 0;
+      for(const p of mixed){
+        const k = keys[idx];
+        buckets[k].push(p.id);
+
+        // 지그재그
+        if(dir===1){
+          if(idx === keys.length-1){ dir=-1; }
+          else idx++;
+        }else{
+          if(idx === 0){ dir=1; }
+          else idx--;
+        }
+      }
+
+      groups = buckets;
+      renderGroupsEditor();
+      renderSinglePreview();
+      setStatus("조 자동 편성 완료", "oktxt");
+    }
+
+    function participantsMap(){
+      const pool = poolPlayers();
+      // 현재 조 표시/이동을 위해, “임시 pid”를 안정적으로 유지해야 하는데,
+      // 조는 저장 직전에 payload에 포함되므로 여기서는 participantCache가 기준이 되도록 합니다.
+      // (조 편성 버튼을 누르면 computeParticipants()가 생성하고 participantCache가 채워짐)
+      const map = new Map();
+      for(const p of participantCache){
+        map.set(p.id, p);
+      }
+      // 혹시 조가 비었고 아직 computeParticipants() 안 했으면:
+      if(map.size===0){
+        const ps = pool.map(p=>({id: makePid(p.name,p.grade), name:p.name, grade:p.grade}));
+        ps.forEach(p=>map.set(p.id,p));
+      }
+      return map;
+    }
+
+    function renderGroupsEditor(){
+      const wrap = $("groupsGrid");
+      const hint = $("groupsHint2");
+
+      wrap.innerHTML = "";
+
+      const fmt = $("singleFormat").value;
+      const show = (mode==="single" && fmt==="group_knockout");
+      $("groupsEditorWrap").classList.toggle("hidden", !show);
+
+      if(!show) return;
+
+      const keys = Object.keys(groups || {});
+      if(!keys.length){
+        hint.classList.remove("hidden");
+        hint.textContent = "아직 조가 없습니다. “조 자동 편성”을 눌러주세요.";
+        return;
+      }
+      hint.classList.add("hidden");
+
+      const pmap = participantsMap();
+
+      wrap.innerHTML = keys.map(k=>{
+        const ids = groups[k] || [];
+        const tags = ids.map((pid, i)=>{
+          const p = pmap.get(pid);
+          const label = p ? `${p.name}(${p.grade}부)` : pid;
+          return `
+            <span class="gtag">
+              ${esc(label)}
+              <button class="btn secondary" style="padding:4px 8px" data-gmove="${k},${pid}">이동</button>
+              <button class="btn danger" style="padding:4px 8px" data-gdel="${k},${pid}">삭제</button>
+            </span>
+          `;
+        }).join("");
+
+        return `
+          <div class="gbox">
+            <div class="gtitle">
+              <b>${esc(k)}조</b>
+              <span class="mut" style="margin:0">인원 ${ids.length}</span>
+            </div>
+            <div class="glist">${tags || `<span class="mut">비어있음</span>`}</div>
+          </div>
+        `;
+      }).join("");
+
+      // bind delete
+      wrap.querySelectorAll("[data-gdel]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const [g, pid] = btn.getAttribute("data-gdel").split(",");
+          groups[g] = (groups[g]||[]).filter(x=>x!==pid);
+          renderGroupsEditor();
+          renderSinglePreview();
+        });
+      });
+
+      // bind move
+      wrap.querySelectorAll("[data-gmove]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const [g, pid] = btn.getAttribute("data-gmove").split(",");
+          const keysNow = Object.keys(groups);
+          const to = prompt(`이동할 조를 입력하세요 (${keysNow.join(",")})`);
+          if(to===null) return;
+          const toKey = to.trim().toUpperCase();
+          if(!groups[toKey]){ alert("없는 조입니다."); return; }
+          if(toKey === g){ alert("같은 조입니다."); return; }
+          groups[g] = (groups[g]||[]).filter(x=>x!==pid);
+          groups[toKey].push(pid);
+          renderGroupsEditor();
+          renderSinglePreview();
+        });
+      });
+    }
+
+    function clearGroups(){
+      if(!confirm("조 편성을 초기화할까요?")) return;
+      groups = {};
+      renderGroupsEditor();
+      renderSinglePreview();
+      setStatus("조 초기화 완료", "oktxt");
+    }
+
     // ====== single-mode preview
     function renderSinglePreview(){
       const box = $("singlePreview");
@@ -476,16 +676,20 @@
         return;
       }
 
-      const participants = poolPlayers().map(p=>({name:p.name, grade:p.grade}));
-      const fmt = $("singleFormat").value;
+      const pool = poolPlayers();
+      const participants = pool.map(p=>({name:p.name, grade:p.grade}));
 
+      const fmt = $("singleFormat").value;
       const fmtLabel = fmt==="roundrobin" ? "개인 풀리그"
                     : fmt==="group_knockout" ? "조별리그 + 토너먼트"
                     : "바로 토너먼트";
 
       let extra = "";
       if(fmt==="group_knockout"){
-        extra = ` / ${$("groupCount").value}조 / 조당 ${$("advancePerGroup").value}명 진출`;
+        const gc = $("groupCount").value;
+        const apg = $("advancePerGroup").value;
+        const gKeys = Object.keys(groups||{});
+        extra = ` / ${gc}조 / 조당 ${apg}명 진출 / 조편성 ${gKeys.length? "있음":"없음"}`;
       }
 
       box.innerHTML = `
@@ -508,6 +712,7 @@
       $("singlePreviewWrap").classList.toggle("hidden", isTeam);
 
       renderTeams();
+      renderGroupsEditor();
       renderSinglePreview();
     }
 
@@ -524,19 +729,32 @@
 
       $("singleHint").textContent =
         fmt==="roundrobin" ? "개인 풀리그로 저장됩니다(조/토너 설정 없음)."
-      : fmt==="group_knockout" ? "조별리그 후 토너먼트로 저장됩니다(조 개수/진출 수 저장)."
+      : fmt==="group_knockout" ? "조별리그 후 토너먼트로 저장됩니다(조 개수/진출 수/조 편성 저장)."
       : "바로 토너먼트로 저장됩니다(조 설정 없음).";
 
+      // 형식 변경 시 조는 초기화
+      if(fmt!=="group_knockout"){
+        groups = {};
+      }
+
+      renderGroupsEditor();
       renderSinglePreview();
     }
 
     // ====== Save to Firebase
     async function saveToFirebase(){
-      const participants = poolPlayers().map(p=>({ name:p.name, grade:p.grade }));
-      if(participants.length < 2){
+      const pool = poolPlayers();
+      if(pool.length < 2){
         alert("참가자가 2명 이상이어야 합니다.");
         return;
       }
+
+      // 참가자: 저장용으로 “안정적인 id”를 만들어 저장
+      // - 조별+토너를 쓰려면, groups가 participant id를 참조해야 하므로
+      // - 조 자동편성을 누르면 participantCache가 채워지고 그 id를 groups가 사용
+      // - 조를 안 누르고 저장할 수도 있으니, 저장 직전에 participantCache를 새로 만들고
+      //   groups가 있다면 “이름기반 매칭”이 아니라, 여기서는 “그대로 저장(단, 빈 조면 경고)”
+      const participants = computeParticipants(); // participantCache 갱신
 
       if(mode==="team"){
         if(!teams.length){
@@ -546,6 +764,25 @@
         const empty = teams.filter(t=>!(t.players||[]).length).length;
         if(empty){
           if(!confirm(`빈 팀이 ${empty}개 있습니다. 그래도 저장할까요?`)) return;
+        }
+      }else{
+        const fmt = $("singleFormat").value;
+        if(fmt==="group_knockout"){
+          const keys = Object.keys(groups||{});
+          if(!keys.length){
+            if(!confirm("조별+토너인데 조 편성이 없습니다. 그래도 저장할까요? (team-live에서 조 진행이 안됩니다)")) return;
+          }else{
+            // participant id가 저장 직전에 바뀌면 안 되므로,
+            // 조가 있을 땐 participantCache를 “조 편성 생성 당시”의 id로 유지해야 합니다.
+            // => 해결: 조 편성 버튼(자동 편성) 누르면 participantCache가 생성되고 groups가 그 id를 참조.
+            // 저장 직전에 computeParticipants()로 id를 새로 만들면 groups가 깨질 수 있어요.
+            // 그래서: 조가 존재하면 participantCache를 재생성하지 않고 그대로 쓰는 방식으로 처리
+            // (participantCache가 비어있으면 경고 후 자동 편성 유도)
+            if(participantCache.length===0){
+              alert("조가 있는데 참가자ID가 없습니다. ‘조 자동 편성’을 먼저 눌러주세요.");
+              return;
+            }
+          }
         }
       }
 
@@ -561,7 +798,7 @@
       const config = { mode };
 
       if(mode==="team"){
-        // ✅ 단체전은 팀 구성만 저장 (몇단/몇복은 team-live에서 설정)
+        // 단체전은 팀 구성만 저장
       }else{
         const fmt = $("singleFormat").value;
         config.single = { format: fmt };
@@ -574,7 +811,7 @@
       const payload = {
         updatedAt: Date.now(),
         config,
-        participants
+        participants: (mode==="single" && participantCache.length) ? participantCache : participants
       };
 
       if(mode==="team"){
@@ -583,12 +820,19 @@
           players: (t.players||[]).map(p=>({ name:p.name, grade:p.grade })),
           sum: teamSum(t.players||[])
         }));
+      }else{
+        // ✅ 개인전 조 편성 저장
+        if(config?.single?.format === "group_knockout" && Object.keys(groups||{}).length){
+          payload.groups = groups; // {A:[pid...], B:[pid...]}
+        }else{
+          payload.groups = null;
+        }
       }
 
       try{
         await set(ref(db, PATH.current), payload);
         setStatus("저장 완료: teamLive/current", "oktxt");
-        alert("✅ 저장 완료! 이제 team-live로 이동해서 (몇단/몇복) 설정 → 대진 생성 → 경기 진행을 하시면 됩니다.");
+        alert("✅ 저장 완료! 이제 team-live로 이동해서 대진 생성 → 경기 진행을 하시면 됩니다.");
       }catch(e){
         console.error(e);
         setStatus("저장 실패(콘솔 확인)", "err");
@@ -618,7 +862,10 @@
       allPlayers = allPlayers.filter(p=>!p.isNew);
       localStorage.removeItem("pp_addedPlayers");
       selected.clear();
+      groups = {};
+      participantCache = [];
       renderPlayers();
+      renderGroupsEditor();
       renderSinglePreview();
       setStatus("추가 선수 삭제 완료", "oktxt");
     }
@@ -630,7 +877,10 @@
 
     $("clearSelectBtn").addEventListener("click", ()=>{
       selected.clear();
+      groups = {};
+      participantCache = [];
       renderPlayers();
+      renderGroupsEditor();
       renderSinglePreview();
       $("selInfo").textContent = "선택 0명";
     });
@@ -651,6 +901,10 @@
       setStatus("팀 초기화 완료", "oktxt");
     });
 
+    // 개인전 조 버튼
+    $("autoGroupBtn").addEventListener("click", autoMakeGroups);
+    $("clearGroupsBtn").addEventListener("click", clearGroups);
+
     // mode picker
     $("modePicker").querySelectorAll(".radioCard").forEach(card=>{
       card.addEventListener("click", ()=>{
@@ -663,7 +917,13 @@
 
     // single format options
     $("singleFormat").addEventListener("change", applySingleOpts);
-    $("groupCount").addEventListener("change", renderSinglePreview);
+    $("groupCount").addEventListener("change", ()=>{
+      // 조 개수가 바뀌면 조 초기화
+      groups = {};
+      participantCache = [];
+      renderGroupsEditor();
+      renderSinglePreview();
+    });
     $("advancePerGroup").addEventListener("change", renderSinglePreview);
 
     // save buttons
