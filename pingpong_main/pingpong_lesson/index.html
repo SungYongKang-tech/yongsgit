@@ -223,18 +223,26 @@
     const waitingRef = ref(db, "lesson/waiting");
 
     onValue(waitingRef, (snap) => {
-      const data = snap.val() || {};
-      const listEl = document.getElementById("waitingTextList");
+  const data = snap.val() || {};
+  const listEl = document.getElementById("waitingTextList");
 
-      const names = Object.values(data).map(v => v?.name).filter(Boolean);
+  // ✅ name 있는 항목만 추출
+  const names = Object.values(data)
+    .map(v => (v?.name || "").trim())
+    .filter(Boolean);
 
-      if (names.length === 0) {
-        listEl.textContent = "현재 대기자가 없습니다.";
-      } else {
-        listEl.textContent = names.join("  ·  ");
-      }
-    });
+  if (names.length === 0) {
+    listEl.textContent = "현재 대기자가 없습니다.";
+    return;
+  }
 
+  // ✅ 한 줄에 한 명 + 번호
+  const lines = names.map((name, idx) => `${idx + 1}. ${name}`);
+
+  // 줄바꿈 유지되도록
+  listEl.textContent = lines.join("\n");
+  listEl.style.whiteSpace = "pre-line";
+});
     /* ==========================
        ✅ 관리자 페이지 진입 보호
        - config/adminPassword (hash) 비교
