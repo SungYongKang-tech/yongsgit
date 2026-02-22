@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>🏓 탁구 팀 구성</title>
+  <title>🏓 KOEN 단체전 팀 구성 (team-make)</title>
   <style>
     :root{
       --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
       --txt:#0f172a; --mut:#64748b; --r:16px;
-      --accent:#2563eb; --danger:#ef4444; --ok:#16a34a;
+      --accent:#2563eb; --ok:#16a34a; --danger:#ef4444; --warn:#f59e0b;
       --shadow:0 10px 28px rgba(0,0,0,.08);
     }
     *{box-sizing:border-box}
@@ -27,436 +27,772 @@
       color:#fff;border-radius:12px;cursor:pointer;font-weight:950;
     }
     .btn.secondary{background:#fff;color:#0f172a;border:1px solid var(--bd)}
-    .btn.danger{background:linear-gradient(180deg,#ff5a5a,#ef4444);border:1px solid rgba(239,68,68,.25)}
     .btn.ok{background:linear-gradient(180deg,#22c55e,#16a34a);border:1px solid rgba(22,163,74,.25)}
+    .btn.danger{background:linear-gradient(180deg,#ff5a5a,#ef4444);border:1px solid rgba(239,68,68,.25)}
+    .btn.warn{background:linear-gradient(180deg,#fbbf24,#f59e0b);border:1px solid rgba(245,158,11,.25)}
 
     .mut{color:var(--mut);font-weight:750;font-size:12px;margin-top:8px;text-align:center}
     .err{color:#b91c1c;font-weight:950;text-align:center}
-
-    .player-list{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
-    .player{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:8px 10px;border:1px solid var(--bd);border-radius:999px;
-      background:#fff;cursor:pointer;font-weight:900;user-select:none;
-    }
-    .player small{color:var(--mut);font-weight:850}
-    .player.selected{border:2px solid var(--accent);background:#e3f2ff}
+    .oktxt{color:#166534;font-weight:950;text-align:center}
 
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     @media (max-width:900px){ .grid2{grid-template-columns:1fr} }
 
-    .box{
-      border:1px solid var(--bd);border-radius:14px;background:#fff;padding:12px;
-    }
+    .box{border:1px solid var(--bd);border-radius:14px;background:#fff;padding:12px}
     .box h3{margin:0 0 10px;font-size:14px;font-weight:1000}
 
-    .teams{display:flex;flex-direction:column;gap:10px}
-    .team{
-      border:1px solid var(--bd);border-radius:14px;padding:10px;background:#f8fafc;
-      display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;
+    .pill{padding:6px 10px;border:1px solid var(--bd);border-radius:999px;background:#f8fafc;font-weight:900}
+    .chip{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:6px 10px;border:1px solid var(--bd);
+      border-radius:999px;background:#f8fafc;margin:4px 6px 0 0;font-weight:900;
+      cursor:pointer;
+      user-select:none;
     }
-    .team .names{font-weight:950;line-height:1.5}
-    .team .meta{color:var(--mut);font-weight:800;font-size:12px}
+    .chip.sel{outline:2px solid rgba(37,99,235,.35); background:#eef2ff}
 
-    .groups{display:flex;flex-direction:column;gap:10px}
-    .group{
-      border:1px solid var(--bd);border-radius:14px;padding:10px;background:#fff;
+    .playerWrap{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+    .player{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:8px 10px;border:1px solid var(--bd);border-radius:999px;background:#fff;
+      font-weight:900; cursor:pointer;
     }
-    .group h4{margin:0 0 8px;font-size:13px;font-weight:1000}
-    .chip{display:inline-flex;align-items:center;padding:6px 10px;border:1px solid var(--bd);border-radius:999px;background:#f8fafc;margin:4px 6px 0 0;font-weight:900}
+    .player small{color:var(--mut);font-weight:800}
+    .player.on{background:#eef2ff;border-color:#c7d2fe}
+
+    .teams{display:flex;flex-direction:column;gap:10px}
+    .team{border:1px solid var(--bd);border-radius:14px;padding:10px;background:#f8fafc}
+    .team .tline{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+    .team .name{font-weight:950}
+    .team .meta{color:var(--mut);font-weight:800;font-size:12px}
+    .team ul{margin:8px 0 0;padding-left:18px}
+    .team li{margin:3px 0;font-weight:900}
+
+    .swap-pending{ outline: 2px dashed #ff6f00; border-radius: 10px; }
+
+    .groupBox{
+      display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;
+    }
+    .gcard{
+      border:1px solid var(--bd);border-radius:14px;background:#fff;padding:10px;min-width:220px;flex:1;
+    }
+    .gtitle{font-weight:1000;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+    .glist{min-height:44px}
+    .glist .chip{background:#f1f5f9}
+    .gdrop{border:2px dashed #cbd5e1;border-radius:12px;padding:10px;background:#f8fafc}
+    .gdrop.on{border-color:#93c5fd;background:#eff6ff}
+
+    .divider{height:1px;background:var(--bd);margin:10px 0}
   </style>
 </head>
 
 <body>
   <div class="wrap">
-    <h2>🏓 탁구 팀 구성 (복식 2인 1팀)</h2>
+    <h2>🏓 KOEN 단체전 팀 구성 (team-make)</h2>
 
-    <!-- 참가자 선택 -->
-    <div class="card">
-      <div style="font-size:14px;font-weight:1000;text-align:center;margin-bottom:10px">참석자 선택</div>
-      <div class="player-list" id="playerList"><span class="mut">불러오는 중...</span></div>
-      <div class="mut" id="status"></div>
-    </div>
-
-    <!-- 팀/조 설정 -->
     <div class="card">
       <div class="row">
-        <button class="btn" id="makeTeamsBtn">✅ 팀 자동 구성(2인 1팀)</button>
-        <button class="btn secondary" id="clearBtn">선택/결과 초기화</button>
+        <span class="pill">부수: 1부 ~ 14부</span>
+        <span class="pill">저장 위치: teamLive/current</span>
+        <button class="btn secondary" id="reloadBtn">선수 새로고침</button>
       </div>
-
-      <div class="row" style="margin-top:10px">
-        <label style="font-weight:900">
-          진행 방식
-          <select id="mode" class="input">
-            <option value="league">리그전(팀 전체 풀리그)</option>
-            <option value="groups">조별 리그전(조 편성)</option>
-          </select>
-        </label>
-
-        <label style="font-weight:900">
-          조 개수(조별일 때)
-          <select id="groupCount" class="input">
-            <option value="2">2조</option>
-            <option value="3">3조</option>
-            <option value="4">4조</option>
-            <option value="5">5조</option>
-            <option value="6">6조</option>
-          </select>
-        </label>
-
-        <button class="btn ok" id="makeGroupsBtn">조 편성</button>
-      </div>
-
-      <div class="mut">
-        • 팀 구성은 선택 인원 기준(선택 없으면 전체).<br/>
-        • 인원이 홀수면 마지막 1명은 대기 처리합니다.<br/>
-        • 부수는 1부(강) ~ 14부(약) 기준으로 자동 밸런싱합니다.
-      </div>
+      <div class="mut" id="status">불러오는 중...</div>
     </div>
 
-    <!-- 결과 -->
+    <!-- 선수 추가 -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between;max-width:900px;margin:0 auto">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input class="input" id="newName" placeholder="이름" style="width:140px" />
+          <input class="input" id="newGrade" type="number" min="1" max="14" placeholder="부수(1~14)" style="width:120px" />
+          <button class="btn" id="addBtn">선수 추가</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn secondary" id="clearAddedBtn">추가 선수 전체 삭제</button>
+          <button class="btn secondary" id="clearSelectBtn">참석자 선택 해제</button>
+        </div>
+      </div>
+      <div class="mut">참석자 선택이 없으면 “전체 명단”으로 팀이 구성됩니다.</div>
+    </div>
+
+    <!-- 참석자 목록 -->
+    <div class="card">
+      <div style="font-size:14px;font-weight:1000;text-align:center;margin-bottom:10px">참석자 목록(클릭해서 선택)</div>
+      <div class="playerWrap" id="playerList"></div>
+      <div class="mut" id="selInfo">선택 0명</div>
+    </div>
+
+    <!-- 팀 생성 -->
+    <div class="card">
+      <div class="row">
+        <label style="font-weight:950">
+          팀 수(2~8)
+          <select id="teamCount" class="input">
+            <option>2</option><option>3</option><option selected>4</option><option>5</option>
+            <option>6</option><option>7</option><option>8</option>
+          </select>
+        </label>
+        <button class="btn ok" id="autoBtn">팀 자동 배정</button>
+        <button class="btn warn" id="manualBtn">팀 수동 배정 시작</button>
+        <button class="btn secondary" id="resetTeamsBtn">팀 초기화</button>
+      </div>
+      <div class="mut">자동/수동으로 팀을 만든 뒤, (선택) 조 편성을 하고 Firebase에 저장하세요.</div>
+    </div>
+
     <div class="grid2">
+      <!-- 팀 구성 -->
       <div class="box">
-        <h3>팀 구성 결과</h3>
-        <div class="teams" id="teams"><div class="mut">아직 팀이 없습니다.</div></div>
+        <h3>현재 팀 구성</h3>
+        <div class="teams" id="teamsBox"><div class="mut">팀이 아직 없습니다.</div></div>
+
+        <div class="divider"></div>
+
+        <div class="row">
+          <button class="btn ok" id="saveBtn">Firebase 저장</button>
+          <button class="btn secondary" id="openLiveBtn">team-live 열기</button>
+        </div>
+        <div class="mut">저장 후 team-live에서 “대진 생성”을 진행하시면 됩니다.</div>
       </div>
 
+      <!-- 조 편성 -->
       <div class="box">
-        <h3>조 편성 결과(조별 리그전)</h3>
-        <div class="groups" id="groups"><div class="mut">조별 리그전을 선택하고 “조 편성”을 누르세요.</div></div>
-      </div>
-    </div>
+        <h3>조 편성(선택)</h3>
+        <div class="row" style="justify-content:space-between">
+          <label style="font-weight:950">
+            조 개수
+            <select id="groupCount" class="input">
+              <option value="0" selected>사용 안 함</option>
+              <option value="2">2조</option>
+              <option value="3">3조</option>
+              <option value="4">4조</option>
+              <option value="5">5조</option>
+              <option value="6">6조</option>
+              <option value="7">7조</option>
+              <option value="8">8조</option>
+            </select>
+          </label>
+          <button class="btn secondary" id="clearGroupsBtn">조 초기화</button>
+        </div>
 
-    <!-- 저장 + 이동 -->
-    <div class="card" style="margin-top:12px">
-      <div class="row">
-        <button class="btn ok" id="saveAndGoBtn">💾 저장 후 경기 진행(team-live)로 이동</button>
+        <div class="mut">팀(칩)을 클릭해서 “선택”한 뒤, 원하는 조 박스에 넣어주세요.</div>
+        <div class="groupBox" id="groupsBox" style="margin-top:10px"></div>
       </div>
-      <div class="mut">경기 진행 로직은 <b>team-live/index.html</b>에서 하도록 연결합니다.</div>
     </div>
   </div>
 
   <script type="module">
-    // team-make/  ─┐
-    // team-live/  ─┤  같은 레벨 폴더
-    // firebase.js  ─┘  (pingpong_main/firebase.js)
     import { db, auth } from "../firebase.js";
-    import { ref, onValue, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import { ref, set } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
     const $ = (id)=>document.getElementById(id);
 
     const PATH = {
-      members: "members",
       current: "teamLive/current"
     };
 
-    function esc(s){
-      return String(s ?? "")
-        .replaceAll("&","&amp;")
-        .replaceAll("<","&lt;")
-        .replaceAll(">","&gt;")
-        .replaceAll('"',"&quot;")
-        .replaceAll("'","&#039;");
-    }
+    // ====== State
+    let allPlayers = []; // {name, grade, isNew}
+    let selected = new Set(); // player index
+    let teams = []; // {id, players:[{name,grade}], sum}
+    let groups = {}; // {A:[teamId], B:[teamId]...}
+    let selectedTeamId = null; // 조 편성용 "선택된 팀"
 
-    // ✅ busu: "5부" 형태 확정
-    function parseBusuString(busuStr){
-      const m = String(busuStr ?? "").match(/\d+/);
-      const n = m ? parseInt(m[0], 10) : NaN;
-      if(!isNaN(n) && n >= 1 && n <= 14) return n;
-      return 14;
-    }
-
-    // 1부(강)~14부(약) => strength는 클수록 강하게 (1부=14점, 14부=1점)
-    function strengthFromBusu(busuNum){
-      return 15 - busuNum;
-    }
-
-    let allPlayers = [];   // {name, busuText, busuNum, strength}
-    let selectedIdx = [];
-
-    let teams = [];   // [{id, players:[{name,busuText,busuNum,strength}], sum}]
-    let groups = {};  // { A:[teamId,...], B:[...], ... }
-    let waiting = [];
+    // ====== Utils
+    const esc = (s)=>String(s??"")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 
     function setStatus(msg, cls="mut"){
       const el = $("status");
-      if(!el) return;
       el.className = cls;
       el.textContent = msg;
+    }
+
+    function clampGrade(n){
+      const x = Number(n);
+      if(!Number.isFinite(x)) return null;
+      return Math.max(1, Math.min(14, Math.floor(x)));
+    }
+
+    function saveAddedToLS(){
+      const added = allPlayers.filter(p=>p.isNew).map(p=>({name:p.name, grade:p.grade}));
+      localStorage.setItem("pp_addedPlayers", JSON.stringify(added));
+    }
+
+    function loadAddedFromLS(){
+      try{
+        const arr = JSON.parse(localStorage.getItem("pp_addedPlayers") || "[]");
+        if(Array.isArray(arr)){
+          arr.forEach(p=>{
+            if(p?.name && p?.grade){
+              const g = clampGrade(p.grade);
+              if(g) allPlayers.push({name:String(p.name), grade:g, isNew:true});
+            }
+          });
+        }
+      }catch(e){}
+    }
+
+    async function loadMembers(){
+      setStatus("선수 불러오는 중...");
+      allPlayers = [];
+      selected.clear();
+      teams = [];
+      groups = {};
+      selectedTeamId = null;
+
+      // 1) members.json (기존 경로 유지)
+      try{
+        const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json", { cache:"no-store" });
+        const json = await res.json();
+        const base = Object.values(json || {}).map(p=>({
+          name: String(p.name ?? ""),
+          grade: clampGrade(p.level ?? p.grade ?? 1),
+          isNew:false
+        })).filter(p=>p.name && p.grade);
+        allPlayers.push(...base);
+      }catch(e){
+        console.error(e);
+        // members.json 실패해도 추가선수만으로라도 동작하게
+      }
+
+      // 2) localStorage 추가 선수
+      loadAddedFromLS();
+
+      setStatus(`로드 완료: ${allPlayers.length}명`, "oktxt");
+      renderPlayers();
+      renderTeams();
+      renderGroupsUI();
     }
 
     function renderPlayers(){
       const box = $("playerList");
       box.innerHTML = "";
 
-      if(allPlayers.length === 0){
-        box.innerHTML = `<span class="mut">선수가 없습니다.</span>`;
+      if(!allPlayers.length){
+        box.innerHTML = `<div class="mut">선수 데이터가 없습니다.</div>`;
+        $("selInfo").textContent = "선택 0명";
         return;
       }
 
-      allPlayers.forEach((p,i)=>{
-        const el = document.createElement("span");
-        el.className = "player";
-        if(selectedIdx.includes(i)) el.classList.add("selected");
-        el.innerHTML = `${esc(p.name)} <small>(${esc(p.busuText)})</small>`;
-        el.onclick = ()=>{
-          if(selectedIdx.includes(i)) selectedIdx = selectedIdx.filter(v=>v!==i);
-          else selectedIdx.push(i);
+      allPlayers.forEach((p, idx)=>{
+        const el = document.createElement("div");
+        el.className = "player" + (selected.has(idx) ? " on" : "");
+        el.innerHTML = `
+          <span>${esc(p.name)}</span>
+          <small>${esc(p.grade)}부${p.isNew ? " · 신규" : ""}</small>
+        `;
+        el.addEventListener("click", ()=>{
+          if(selected.has(idx)) selected.delete(idx);
+          else selected.add(idx);
           renderPlayers();
-          setStatus(`선수 ${allPlayers.length}명 · 선택 ${selectedIdx.length}명`, "mut");
-        };
+        });
         box.appendChild(el);
       });
 
-      setStatus(`선수 ${allPlayers.length}명 · 선택 ${selectedIdx.length}명`, "mut");
+      $("selInfo").textContent = `선택 ${selected.size}명`;
     }
+
+    function teamSum(list){ return (list||[]).reduce((s,p)=>s + (p.grade|0), 0); }
 
     function shuffle(arr){
       const a = [...arr];
       for(let i=a.length-1;i>0;i--){
         const j = Math.floor(Math.random()*(i+1));
-        [a[i],a[j]] = [a[j],a[i]];
+        [a[i], a[j]] = [a[j], a[i]];
       }
       return a;
     }
 
-    function makeTeams(){
-      const pool = (selectedIdx.length ? selectedIdx.map(i=>allPlayers[i]) : allPlayers).filter(Boolean);
-      if(pool.length < 2){
-        alert("최소 2명 이상 필요합니다.");
-        return;
-      }
-
-      teams = [];
-      groups = {};
-      waiting = [];
-
-      // 랜덤 + 실력 반영(강한 순)
-      const picked = shuffle(pool).sort((a,b)=>b.strength-a.strength);
-
-      if(picked.length % 2 === 1){
-        waiting = [ picked.pop() ];
-      }
-
-      const tmp = [...picked];
-      const made = [];
-      while(tmp.length >= 2){
-        const strong = tmp.shift();
-        const weak = tmp.pop();
-        made.push([strong, weak]);
-      }
-
-      teams = made.map((pair, idx)=>({
-        id: `T${idx+1}`,
-        players: pair,
-        sum: pair.reduce((s,p)=>s+p.strength,0)
-      }));
-
-      renderTeams();
-      renderGroups();
+    function poolPlayers(){
+      const idxs = selected.size ? [...selected] : allPlayers.map((_,i)=>i);
+      return idxs.map(i=>allPlayers[i]);
     }
 
+    // ====== Team builders
+    function buildAutoTeams(teamCount){
+      const pool = poolPlayers();
+      if(pool.length < 2){ alert("선수가 2명 이상 있어야 합니다."); return; }
+
+      const tc = Number(teamCount);
+      if(!(tc>=2 && tc<=8)){ alert("팀 수는 2~8"); return; }
+
+      const sorted = shuffle(pool).sort((a,b)=> (b.grade - a.grade)); // 강자 먼저
+      const out = Array.from({length:tc}, (_,i)=>({ id:`T${i+1}`, players:[], sum:0 }));
+
+      // 인원 균등 목표
+      const total = sorted.length;
+      const base = Math.floor(total / tc);
+      const extra = total % tc;
+      const maxPer = out.map((_,i)=> i<extra ? base+1 : base);
+
+      // 평균 낮은 팀에 배치
+      sorted.forEach(p=>{
+        const cand = out
+          .map((t,i)=>({t,i}))
+          .filter(x=> x.t.players.length < maxPer[x.i])
+          .sort((x,y)=>{
+            const ax = x.t.players.length ? x.t.sum/x.t.players.length : 0;
+            const ay = y.t.players.length ? y.t.sum/y.t.players.length : 0;
+            return ax - ay;
+          })[0];
+        cand.t.players.push({ name:p.name, grade:p.grade });
+        cand.t.sum += p.grade;
+      });
+
+      // 약간의 스왑으로 평균 맞추기
+      const avg = (t)=> t.players.length ? (t.sum / t.players.length) : 0;
+      for(let loop=0; loop<30; loop++){
+        const avgs = out.map(avg);
+        const hi = avgs.indexOf(Math.max(...avgs));
+        const lo = avgs.indexOf(Math.min(...avgs));
+        const high = out[hi], low = out[lo];
+        const diffBefore = Math.abs(avg(high) - avg(low));
+        if(diffBefore < 0.35) break;
+
+        let best = null;
+        let bestImprove = 0;
+        for(const hp of high.players){
+          for(const lp of low.players){
+            const newHigh = (high.sum - hp.grade + lp.grade) / high.players.length;
+            const newLow  = (low.sum  - lp.grade + hp.grade) / low.players.length;
+            const diffAfter = Math.abs(newHigh - newLow);
+            const imp = diffBefore - diffAfter;
+            if(imp > bestImprove){
+              bestImprove = imp;
+              best = {hp, lp};
+            }
+          }
+        }
+        if(best && bestImprove > 0){
+          const hiIdx = high.players.indexOf(best.hp);
+          const loIdx = low.players.indexOf(best.lp);
+          high.players[hiIdx] = best.lp;
+          low.players[loIdx]  = best.hp;
+          high.sum = teamSum(high.players);
+          low.sum  = teamSum(low.players);
+        }else{
+          break;
+        }
+      }
+
+      teams = out;
+      // 조 편성은 자동팀이 바뀌면 초기화(혼선 방지)
+      groups = {};
+      selectedTeamId = null;
+      renderTeams();
+      renderGroupsUI();
+    }
+
+    // ====== Manual mode (간단 버전: 팀에 클릭으로 넣기 + 팀원 이동/삭제)
+    let manualMode = false;
+    let manualPick = null; // {playerIdx}
+
+    function startManual(teamCount){
+      const poolIdxs = selected.size ? [...selected] : allPlayers.map((_,i)=>i);
+      if(poolIdxs.length < 2){ alert("선수가 2명 이상 있어야 합니다."); return; }
+
+      const tc = Number(teamCount);
+      if(!(tc>=2 && tc<=8)){ alert("팀 수는 2~8"); return; }
+
+      teams = Array.from({length:tc}, (_,i)=>({ id:`T${i+1}`, players:[], sum:0 }));
+      groups = {};
+      selectedTeamId = null;
+      manualMode = true;
+      manualPick = null;
+
+      // 참석자 목록을 "미배정" 중심으로 재구성
+      // (배정은 playerIdx 기반으로 하려면 _src 저장이 필요하지만, 여기선 간단히 이름/부수로 넣고 미배정은 클릭으로 처리)
+      // => UI: 참석자 클릭 -> 아래 "선택된 사람" 표시 -> 팀 카드의 "추가" 버튼으로 넣기
+      renderTeams();
+      renderGroupsUI();
+      renderPlayersManual(poolIdxs);
+      setStatus("수동 배정 모드: 참석자 클릭 → 팀에 추가", "oktxt");
+    }
+
+    function stopManual(){
+      manualMode = false;
+      manualPick = null;
+      setStatus(`로드 완료: ${allPlayers.length}명`, "oktxt");
+      renderPlayers();
+    }
+
+    function renderPlayersManual(poolIdxs){
+      const box = $("playerList");
+      box.innerHTML = "";
+
+      const assignedNames = new Set();
+      teams.forEach(t=> t.players.forEach(p=>assignedNames.add(`${p.name}__${p.grade}`)));
+
+      poolIdxs.forEach(idx=>{
+        const p = allPlayers[idx];
+        const key = `${p.name}__${p.grade}`;
+        const isAssigned = assignedNames.has(key);
+
+        const el = document.createElement("div");
+        el.className = "player" + ((manualPick?.playerIdx===idx) ? " on" : "");
+        el.style.opacity = isAssigned ? "0.35" : "1";
+        el.style.pointerEvents = isAssigned ? "none" : "auto";
+        el.innerHTML = `<span>${esc(p.name)}</span><small>${esc(p.grade)}부${p.isNew?" · 신규":""}</small>`;
+        el.addEventListener("click", ()=>{
+          manualPick = { playerIdx: idx };
+          renderPlayersManual(poolIdxs);
+          $("selInfo").textContent = `선택: ${p.name}(${p.grade}부)`;
+        });
+        box.appendChild(el);
+      });
+
+      if(!manualPick) $("selInfo").textContent = "선택 0명";
+    }
+
+    function addPickToTeam(teamIdx){
+      if(!manualMode || !manualPick) return;
+      const p = allPlayers[manualPick.playerIdx];
+      teams[teamIdx].players.push({ name:p.name, grade:p.grade });
+      teams[teamIdx].sum = teamSum(teams[teamIdx].players);
+      manualPick = null;
+
+      // 다시 렌더 (pool 재구성이 필요해서 selected 기반으로 재호출)
+      const poolIdxs = selected.size ? [...selected] : allPlayers.map((_,i)=>i);
+      renderTeams();
+      renderPlayersManual(poolIdxs);
+    }
+
+    function removeFromTeam(teamIdx, playerIdx){
+      teams[teamIdx].players.splice(playerIdx, 1);
+      teams[teamIdx].sum = teamSum(teams[teamIdx].players);
+      renderTeams();
+
+      if(manualMode){
+        const poolIdxs = selected.size ? [...selected] : allPlayers.map((_,i)=>i);
+        renderPlayersManual(poolIdxs);
+      }
+    }
+
+    function moveMember(teamIdx, playerIdx){
+      const to = prompt(`이동할 팀 번호(1~${teams.length}) 입력`);
+      if(to===null) return;
+      const toIdx = Number(to) - 1;
+      if(!(toIdx>=0 && toIdx<teams.length)) { alert("잘못된 팀"); return; }
+      if(toIdx === teamIdx) { alert("같은 팀"); return; }
+
+      const p = teams[teamIdx].players[playerIdx];
+      teams[teamIdx].players.splice(playerIdx,1);
+      teams[toIdx].players.push(p);
+
+      teams[teamIdx].sum = teamSum(teams[teamIdx].players);
+      teams[toIdx].sum = teamSum(teams[toIdx].players);
+
+      renderTeams();
+      if(manualMode){
+        const poolIdxs = selected.size ? [...selected] : allPlayers.map((_,i)=>i);
+        renderPlayersManual(poolIdxs);
+      }
+    }
+
+    // ====== Render teams
     function renderTeams(){
-      const box = $("teams");
+      const box = $("teamsBox");
       if(!teams.length){
-        box.innerHTML = `<div class="mut">아직 팀이 없습니다.</div>`;
+        box.innerHTML = `<div class="mut">팀이 아직 없습니다.</div>`;
         return;
       }
 
-      box.innerHTML = teams.map(t=>{
-        const names = t.players.map(p=>`${esc(p.name)}(${esc(p.busuText)})`).join(" · ");
+      box.innerHTML = teams.map((t, ti)=>{
+        const avg = t.players.length ? (t.sum / t.players.length).toFixed(2) : "-";
+        const list = t.players
+          .slice()
+          .sort((a,b)=>a.grade-b.grade)
+          .map((p, pi)=>`
+            <li>
+              ${esc(p.name)}(${esc(p.grade)}부)
+              <span style="display:inline-flex;gap:6px;margin-left:8px;vertical-align:middle">
+                <button class="btn secondary" style="padding:6px 10px;border-radius:10px" data-move="${ti},${pi}">이동</button>
+                <button class="btn danger" style="padding:6px 10px;border-radius:10px" data-del="${ti},${pi}">삭제</button>
+              </span>
+            </li>
+          `).join("");
+
         return `
           <div class="team">
-            <div class="names">${esc(t.id)}: ${names}</div>
-            <div class="meta">강도합 ${t.sum}</div>
+            <div class="tline">
+              <div class="name">
+                <span class="chip ${selectedTeamId===t.id ? "sel":""}" data-teamchip="${esc(t.id)}">
+                  ${esc(t.id)} 팀
+                </span>
+              </div>
+              <div class="meta">부수합 ${esc(t.sum)} / 평균 ${esc(avg)}</div>
+            </div>
+
+            ${manualMode ? `
+              <div class="row" style="justify-content:flex-start;margin-top:8px">
+                <button class="btn ok" style="padding:8px 12px;border-radius:12px" data-addpick="${ti}">
+                  선택된 참석자 → ${esc(t.id)}팀에 추가
+                </button>
+              </div>
+            ` : ``}
+
+            <ul>${list || `<li class="mut" style="list-style:none">팀원이 없습니다.</li>`}</ul>
           </div>
         `;
       }).join("");
 
-      if(waiting.length){
-        const w = waiting[0];
-        box.innerHTML += `
-          <div class="team" style="background:#fff">
-            <div class="names">대기: ${esc(w.name)}(${esc(w.busuText)})</div>
-            <div class="meta">인원 홀수로 1명 대기</div>
-          </div>
-        `;
-      }
+      // 팀칩 선택 (조 편성용)
+      box.querySelectorAll("[data-teamchip]").forEach(el=>{
+        el.addEventListener("click", ()=>{
+          selectedTeamId = el.getAttribute("data-teamchip");
+          renderTeams();
+        });
+      });
+
+      // 이동/삭제
+      box.querySelectorAll("button[data-del]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const [ti,pi] = btn.getAttribute("data-del").split(",").map(Number);
+          removeFromTeam(ti,pi);
+        });
+      });
+      box.querySelectorAll("button[data-move]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const [ti,pi] = btn.getAttribute("data-move").split(",").map(Number);
+          moveMember(ti,pi);
+        });
+      });
+
+      // 수동모드: 선택 인원 팀에 넣기
+      box.querySelectorAll("button[data-addpick]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const ti = Number(btn.getAttribute("data-addpick"));
+          addPickToTeam(ti);
+        });
+      });
     }
 
-    function makeGroups(){
-      const mode = $("mode").value;
-      if(mode !== "groups"){
-        alert("진행 방식을 ‘조별 리그전’으로 선택해주세요.");
-        return;
-      }
-      if(!teams.length){
-        alert("먼저 팀을 구성해주세요.");
-        return;
-      }
+    // ====== Groups UI
+    const GROUP_NAMES = ["A","B","C","D","E","F","G","H"];
 
-      const gCount = parseInt($("groupCount").value, 10);
-      if(isNaN(gCount) || gCount < 2) return;
-
-      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, gCount).split("");
-      const n = teams.length;
-
+    function ensureGroups(count){
       groups = {};
-      labels.forEach(l => groups[l] = []);
-
-      const shuffled = shuffle([...teams]);
-
-      if(n < gCount){
-        for(let i=0;i<n;i++){
-          groups[labels[i]].push(shuffled[i].id);
-        }
-        renderGroups();
-        return;
+      for(let i=0;i<count;i++){
+        groups[GROUP_NAMES[i]] = [];
       }
-
-      const base = Math.floor(n / gCount);
-      const rem  = n % gCount;
-      const cap = labels.map((_,i)=> base + (i < rem ? 1 : 0));
-
-      let gi = 0;
-      for(const t of shuffled){
-        while(gi < gCount && groups[labels[gi]].length >= cap[gi]) gi++;
-        if(gi >= gCount) break;
-        groups[labels[gi]].push(t.id);
-      }
-
-      renderGroups();
     }
 
-    function groupSum(teamIds){
-      const map = new Map(teams.map(t=>[t.id,t]));
-      return teamIds.reduce((s,id)=>s+(map.get(id)?.sum||0),0);
-    }
+    function renderGroupsUI(){
+      const n = Number($("groupCount").value);
+      const box = $("groupsBox");
+      box.innerHTML = "";
 
-    function renderGroups(){
-      const box = $("groups");
-      const mode = $("mode").value;
-
-      if(mode !== "groups"){
-        box.innerHTML = `<div class="mut">진행 방식이 ‘리그전’이면 조 편성을 사용하지 않습니다.</div>`;
-        return;
-      }
       if(!teams.length){
-        box.innerHTML = `<div class="mut">먼저 팀을 구성해주세요.</div>`;
+        box.innerHTML = `<div class="mut">팀 생성 후 조 편성이 가능합니다.</div>`;
         return;
       }
-      if(!Object.keys(groups).length){
-        box.innerHTML = `<div class="mut">“조 편성”을 누르면 조가 생성됩니다.</div>`;
+      if(n === 0){
+        box.innerHTML = `<div class="mut">조 편성 사용 안 함(리그전/토너먼트로 진행 가능)</div>`;
         return;
       }
 
-      const teamText = (teamId)=>{
-        const t = teams.find(x=>x.id===teamId);
-        if(!t) return teamId;
-        const n = t.players.map(p=>`${p.name}(${p.busuText})`).join("·");
-        return `${t.id}:${n}`;
-      };
+      // groups 구조 맞추기
+      const wantKeys = GROUP_NAMES.slice(0,n);
+      const newGroups = {};
+      wantKeys.forEach(k=>{
+        newGroups[k] = Array.isArray(groups?.[k]) ? [...groups[k]] : [];
+      });
+      groups = newGroups;
 
-      box.innerHTML = Object.entries(groups).map(([g, ids])=>{
-        const sum = groupSum(ids);
+      box.innerHTML = wantKeys.map(g=>{
+        const ids = groups[g] || [];
         return `
-          <div class="group">
-            <h4>${g}조 <span style="color:var(--mut);font-weight:800">(팀 ${ids.length} · 강도합 ${sum})</span></h4>
-            <div>
-              ${ids.map(id=>`<span class="chip">${esc(teamText(id))}</span>`).join("")}
+          <div class="gcard">
+            <div class="gtitle">
+              <span>${esc(g)}조</span>
+              <button class="btn secondary" style="padding:6px 10px;border-radius:10px" data-gclear="${esc(g)}">비우기</button>
+            </div>
+            <div class="gdrop" data-gdrop="${esc(g)}">
+              <div class="mut" style="text-align:left;margin:0 0 8px 0">
+                팀을 선택하고(왼쪽 팀칩) → 이 박스를 클릭하면 ${esc(g)}조에 들어갑니다.
+              </div>
+              <div class="glist" id="glist_${esc(g)}">
+                ${ids.length ? ids.map(id=>`
+                  <span class="chip" data-gremove="${esc(g)},${esc(id)}">${esc(id)}</span>
+                `).join("") : `<span class="mut">비어있음</span>`}
+              </div>
             </div>
           </div>
         `;
       }).join("");
+
+      // drop click: add selectedTeamId
+      box.querySelectorAll("[data-gdrop]").forEach(el=>{
+        el.addEventListener("click", ()=>{
+          const g = el.getAttribute("data-gdrop");
+          if(!selectedTeamId){
+            alert("먼저 왼쪽에서 팀칩(T1, T2...)을 클릭해 선택하세요.");
+            return;
+          }
+          // 중복 방지 + 다른 조에 있으면 제거
+          for(const k of Object.keys(groups)){
+            groups[k] = (groups[k] || []).filter(id=>id !== selectedTeamId);
+          }
+          groups[g] = groups[g] || [];
+          if(!groups[g].includes(selectedTeamId)){
+            groups[g].push(selectedTeamId);
+          }
+          renderGroupsUI();
+        });
+      });
+
+      // remove chip
+      box.querySelectorAll("[data-gremove]").forEach(el=>{
+        el.addEventListener("click", ()=>{
+          const [g,id] = el.getAttribute("data-gremove").split(",");
+          groups[g] = (groups[g]||[]).filter(x=>x !== id);
+          renderGroupsUI();
+        });
+      });
+
+      // clear group
+      box.querySelectorAll("[data-gclear]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const g = btn.getAttribute("data-gclear");
+          groups[g] = [];
+          renderGroupsUI();
+        });
+      });
     }
 
-    async function saveAndGo(){
+    function sanitizeGroups(){
+      // 조 편성 OFF면 빈 객체
+      const n = Number($("groupCount").value);
+      if(!n) return {};
+
+      const wantKeys = GROUP_NAMES.slice(0,n);
+      const out = {};
+      wantKeys.forEach(k=>{
+        out[k] = (groups?.[k] || []).filter(Boolean);
+      });
+      return out;
+    }
+
+    // ====== Save to Firebase (teamLive/current)
+    async function saveToFirebase(){
       if(!teams.length){
-        alert("먼저 팀을 구성해주세요.");
+        alert("팀이 없습니다. 팀을 먼저 생성하세요.");
+        return;
+      }
+      // 팀마다 최소 1명 권장(강제는 안 함)
+      const empty = teams.filter(t=>!(t.players||[]).length).length;
+      if(empty){
+        if(!confirm(`빈 팀이 ${empty}개 있습니다. 그래도 저장할까요?`)) return;
+      }
+
+      // 익명 로그인
+      setStatus("Firebase 연결 중...");
+      try{
+        await signInAnonymously(auth);
+      }catch(e){
+        console.error(e);
+        setStatus("익명 로그인 실패(콘솔 확인)", "err");
         return;
       }
 
-      const mode = $("mode").value;
+      // payload: team-live가 읽기 쉬운 형태
       const payload = {
         updatedAt: Date.now(),
-        serverUpdatedAt: serverTimestamp(),
-        mode,
         teams: teams.map(t=>({
           id: t.id,
-          sum: t.sum,
-          players: t.players.map(p=>({
-            name: p.name,
-            busu: p.busuText,     // ✅ 원문 "5부"
-            busuNum: p.busuNum,   // ✅ 숫자 5
-            strength: p.strength  // ✅ 강도 10
-          }))
+          players: (t.players||[]).map(p=>({ name:p.name, grade:p.grade })),
+          sum: teamSum(t.players||[])
         })),
-        waiting: waiting.map(p=>({
-          name: p.name,
-          busu: p.busuText,
-          busuNum: p.busuNum,
-          strength: p.strength
-        })),
-        groups: (mode==="groups") ? groups : {},
+        groups: sanitizeGroups()
       };
 
-      await set(ref(db, PATH.current), payload);
-
-      // ✅ 같은 레벨 폴더(team-make -> team-live)
-      window.location.href = "../team-live/";
-    }
-
-    function clearAll(){
-      selectedIdx = [];
-      teams = [];
-      groups = {};
-      waiting = [];
-      renderPlayers();
-      renderTeams();
-      renderGroups();
-    }
-
-    $("makeTeamsBtn").addEventListener("click", makeTeams);
-    $("makeGroupsBtn").addEventListener("click", makeGroups);
-    $("saveAndGoBtn").addEventListener("click", saveAndGo);
-    $("clearBtn").addEventListener("click", clearAll);
-
-    (async function init(){
       try{
-        setStatus("Firebase 연결 중...");
-        await signInAnonymously(auth);
-
-        onValue(ref(db, PATH.members), (snap)=>{
-          const raw = snap.exists() ? (snap.val() || {}) : {};
-          console.log("✅ members raw =", raw);
-
-          allPlayers = Object.values(raw)
-            .filter(v=>v && v.name)
-            .map(v=>{
-              const name = String(v.name).trim();
-              const busuText = String(v.busu ?? "14부").trim(); // ✅ 여기 확정
-              const busuNum = parseBusuString(busuText);
-              const strength = strengthFromBusu(busuNum);
-              return { name, busuText, busuNum, strength };
-            });
-
-          renderPlayers();
-          setStatus(`Firebase 멤버 ${Object.keys(raw).length}명 불러옴`, "mut");
-        }, (err)=>{
-          console.error(err);
-          $("playerList").innerHTML = `<span class="err">선수 불러오기 실패: ${esc(err?.message||err)}</span>`;
-          setStatus("members 읽기 실패(콘솔 확인)", "err");
-        });
-
+        await set(ref(db, PATH.current), payload);
+        setStatus("저장 완료: teamLive/current", "oktxt");
+        alert("✅ 저장 완료! 이제 team-live에서 대진 생성/경기 진행을 하시면 됩니다.");
       }catch(e){
         console.error(e);
-        $("playerList").innerHTML = `<span class="err">연결 오류: ${esc(e?.message||e)}</span>`;
-        setStatus("Firebase 연결 오류(콘솔 확인)", "err");
+        setStatus("저장 실패(콘솔 확인)", "err");
+        alert("❌ 저장 실패. 콘솔을 확인해주세요.");
       }
-    })();
+    }
+
+    // ====== Player add/remove
+    function addPlayer(){
+      const name = $("newName").value.trim();
+      const g = clampGrade($("newGrade").value);
+      if(!name || !g){
+        alert("이름과 부수(1~14)를 올바르게 입력해주세요.");
+        return;
+      }
+      allPlayers.push({ name, grade:g, isNew:true });
+      saveAddedToLS();
+      $("newName").value = "";
+      $("newGrade").value = "";
+      renderPlayers();
+      setStatus(`선수 추가됨: ${name}(${g}부)`, "oktxt");
+    }
+
+    function clearAdded(){
+      if(!confirm("추가한 선수(로컬 저장) 전체를 삭제할까요?")) return;
+      allPlayers = allPlayers.filter(p=>!p.isNew);
+      localStorage.removeItem("pp_addedPlayers");
+      selected.clear();
+      renderPlayers();
+      setStatus("추가 선수 삭제 완료", "oktxt");
+    }
+
+    // ====== Bind UI
+    $("reloadBtn").addEventListener("click", loadMembers);
+    $("addBtn").addEventListener("click", addPlayer);
+    $("clearAddedBtn").addEventListener("click", clearAdded);
+    $("clearSelectBtn").addEventListener("click", ()=>{
+      selected.clear();
+      renderPlayers();
+      $("selInfo").textContent = "선택 0명";
+    });
+
+    $("autoBtn").addEventListener("click", ()=>{
+      stopManual(); // 자동배정 시작 시 수동모드 해제
+      buildAutoTeams(Number($("teamCount").value));
+    });
+
+    $("manualBtn").addEventListener("click", ()=>{
+      startManual(Number($("teamCount").value));
+    });
+
+    $("resetTeamsBtn").addEventListener("click", ()=>{
+      if(!confirm("팀/조 편성을 초기화할까요?")) return;
+      teams = [];
+      groups = {};
+      selectedTeamId = null;
+      stopManual();
+      renderTeams();
+      renderGroupsUI();
+      setStatus("팀 초기화 완료", "oktxt");
+    });
+
+    $("groupCount").addEventListener("change", ()=>{
+      renderGroupsUI();
+    });
+    $("clearGroupsBtn").addEventListener("click", ()=>{
+      if(!confirm("조 편성을 초기화할까요?")) return;
+      groups = {};
+      selectedTeamId = null;
+      renderGroupsUI();
+    });
+
+    $("saveBtn").addEventListener("click", saveToFirebase);
+
+    $("openLiveBtn").addEventListener("click", ()=>{
+      // team-make -> team-live
+      window.location.href = "../team-live/index.html";
+    });
+
+    // ====== Init
+    loadMembers();
   </script>
 </body>
 </html>
