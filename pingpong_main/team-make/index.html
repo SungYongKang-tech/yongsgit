@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🏓 탁구 팀 구성</title>
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
+      --txt:#0f172a; --mut:#64748b; --r:16px;
+      --accent:#2563eb; --danger:#ef4444; --ok:#16a34a;
+      --shadow:0 10px 28px rgba(0,0,0,.08);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
+    .wrap{max-width:1100px;margin:0 auto;padding:12px}
+    h2{margin:6px 0 12px;font-size:16px;font-weight:950;text-align:center}
+
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--shadow);padding:12px;margin-bottom:12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center}
+    .input, select{
+      padding:10px 12px;border:1px solid var(--bd);border-radius:12px;background:#fff;font-size:14px
+    }
+    .btn{
+      padding:10px 14px;border:1px solid rgba(37,99,235,.25);
+      background:linear-gradient(180deg,#2b74ff,#2563eb);
+      color:#fff;border-radius:12px;cursor:pointer;font-weight:950;
+    }
+    .btn.secondary{background:#fff;color:#0f172a;border:1px solid var(--bd)}
+    .btn.danger{background:linear-gradient(180deg,#ff5a5a,#ef4444);border:1px solid rgba(239,68,68,.25)}
+    .btn.ok{background:linear-gradient(180deg,#22c55e,#16a34a);border:1px solid rgba(22,163,74,.25)}
+
+    .mut{color:var(--mut);font-weight:750;font-size:12px;margin-top:8px;text-align:center}
+    .err{color:#b91c1c;font-weight:950;text-align:center}
+
+    .player-list{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+    .player{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 10px;border:1px solid var(--bd);border-radius:999px;
+      background:#fff;cursor:pointer;font-weight:900;user-select:none;
+    }
+    .player small{color:var(--mut);font-weight:850}
+    .player.selected{border:2px solid var(--accent);background:#e3f2ff}
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:900px){ .grid2{grid-template-columns:1fr} }
+
+    .box{
+      border:1px solid var(--bd);border-radius:14px;background:#fff;padding:12px;
+    }
+    .box h3{margin:0 0 10px;font-size:14px;font-weight:1000}
+
+    .teams{display:flex;flex-direction:column;gap:10px}
+    .team{
+      border:1px solid var(--bd);border-radius:14px;padding:10px;background:#f8fafc;
+      display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;
+    }
+    .team .names{font-weight:950;line-height:1.5}
+    .team .meta{color:var(--mut);font-weight:800;font-size:12px}
+
+    .groups{display:flex;flex-direction:column;gap:10px}
+    .group{
+      border:1px solid var(--bd);border-radius:14px;padding:10px;background:#fff;
+    }
+    .group h4{margin:0 0 8px;font-size:13px;font-weight:1000}
+    .chip{display:inline-flex;align-items:center;padding:6px 10px;border:1px solid var(--bd);border-radius:999px;background:#f8fafc;margin:4px 6px 0 0;font-weight:900}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h2>🏓 탁구 팀 구성 (복식 2인 1팀)</h2>
+
+    <!-- 참가자 선택 -->
+    <div class="card">
+      <div style="font-size:14px;font-weight:1000;text-align:center;margin-bottom:10px">참석자 선택</div>
+      <div class="player-list" id="playerList"><span class="mut">불러오는 중...</span></div>
+      <div class="mut" id="status"></div>
+    </div>
+
+    <!-- 팀/조 설정 -->
+    <div class="card">
+      <div class="row">
+        <button class="btn" id="makeTeamsBtn">✅ 팀 자동 구성(2인 1팀)</button>
+        <button class="btn secondary" id="clearBtn">선택/결과 초기화</button>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <label style="font-weight:900">
+          진행 방식
+          <select id="mode" class="input">
+            <option value="league">리그전(팀 전체 풀리그)</option>
+            <option value="groups">조별 리그전(조 편성)</option>
+          </select>
+        </label>
+
+        <label style="font-weight:900">
+          조 개수(조별일 때)
+          <select id="groupCount" class="input">
+            <option value="2">2조</option>
+            <option value="3">3조</option>
+            <option value="4">4조</option>
+            <option value="5">5조</option>
+            <option value="6">6조</option>
+          </select>
+        </label>
+
+        <button class="btn ok" id="makeGroupsBtn">조 편성</button>
+      </div>
+
+      <div class="mut">
+        • 팀 구성은 선택 인원 기준(선택 없으면 전체).<br/>
+        • 인원이 홀수면 마지막 1명은 대기 처리합니다.<br/>
+        • 부수는 1부(강) ~ 14부(약) 기준으로 자동 밸런싱합니다.
+      </div>
+    </div>
+
+    <!-- 결과 -->
+    <div class="grid2">
+      <div class="box">
+        <h3>팀 구성 결과</h3>
+        <div class="teams" id="teams"><div class="mut">아직 팀이 없습니다.</div></div>
+      </div>
+
+      <div class="box">
+        <h3>조 편성 결과(조별 리그전)</h3>
+        <div class="groups" id="groups"><div class="mut">조별 리그전을 선택하고 “조 편성”을 누르세요.</div></div>
+      </div>
+    </div>
+
+    <!-- 저장 + 이동 -->
+    <div class="card" style="margin-top:12px">
+      <div class="row">
+        <button class="btn ok" id="saveAndGoBtn">💾 저장 후 경기 진행(team-live)로 이동</button>
+      </div>
+      <div class="mut">경기 진행 로직은 <b>team-live/index.html</b>에서 하도록 연결합니다.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // team-make/  ─┐
+    // team-live/  ─┤  같은 레벨 폴더
+    // firebase.js  ─┘  (pingpong_main/firebase.js)
+    import { db, auth } from "../firebase.js";
+    import { ref, onValue, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+    const $ = (id)=>document.getElementById(id);
+
+    const PATH = {
+      members: "members",
+      current: "teamLive/current"
+    };
+
+    function esc(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+    }
+
+    // ✅ busu: "5부" 형태 확정
+    function parseBusuString(busuStr){
+      const m = String(busuStr ?? "").match(/\d+/);
+      const n = m ? parseInt(m[0], 10) : NaN;
+      if(!isNaN(n) && n >= 1 && n <= 14) return n;
+      return 14;
+    }
+
+    // 1부(강)~14부(약) => strength는 클수록 강하게 (1부=14점, 14부=1점)
+    function strengthFromBusu(busuNum){
+      return 15 - busuNum;
+    }
+
+    let allPlayers = [];   // {name, busuText, busuNum, strength}
+    let selectedIdx = [];
+
+    let teams = [];   // [{id, players:[{name,busuText,busuNum,strength}], sum}]
+    let groups = {};  // { A:[teamId,...], B:[...], ... }
+    let waiting = [];
+
+    function setStatus(msg, cls="mut"){
+      const el = $("status");
+      if(!el) return;
+      el.className = cls;
+      el.textContent = msg;
+    }
+
+    function renderPlayers(){
+      const box = $("playerList");
+      box.innerHTML = "";
+
+      if(allPlayers.length === 0){
+        box.innerHTML = `<span class="mut">선수가 없습니다.</span>`;
+        return;
+      }
+
+      allPlayers.forEach((p,i)=>{
+        const el = document.createElement("span");
+        el.className = "player";
+        if(selectedIdx.includes(i)) el.classList.add("selected");
+        el.innerHTML = `${esc(p.name)} <small>(${esc(p.busuText)})</small>`;
+        el.onclick = ()=>{
+          if(selectedIdx.includes(i)) selectedIdx = selectedIdx.filter(v=>v!==i);
+          else selectedIdx.push(i);
+          renderPlayers();
+          setStatus(`선수 ${allPlayers.length}명 · 선택 ${selectedIdx.length}명`, "mut");
+        };
+        box.appendChild(el);
+      });
+
+      setStatus(`선수 ${allPlayers.length}명 · 선택 ${selectedIdx.length}명`, "mut");
+    }
+
+    function shuffle(arr){
+      const a = [...arr];
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i],a[j]] = [a[j],a[i]];
+      }
+      return a;
+    }
+
+    function makeTeams(){
+      const pool = (selectedIdx.length ? selectedIdx.map(i=>allPlayers[i]) : allPlayers).filter(Boolean);
+      if(pool.length < 2){
+        alert("최소 2명 이상 필요합니다.");
+        return;
+      }
+
+      teams = [];
+      groups = {};
+      waiting = [];
+
+      // 랜덤 + 실력 반영(강한 순)
+      const picked = shuffle(pool).sort((a,b)=>b.strength-a.strength);
+
+      if(picked.length % 2 === 1){
+        waiting = [ picked.pop() ];
+      }
+
+      const tmp = [...picked];
+      const made = [];
+      while(tmp.length >= 2){
+        const strong = tmp.shift();
+        const weak = tmp.pop();
+        made.push([strong, weak]);
+      }
+
+      teams = made.map((pair, idx)=>({
+        id: `T${idx+1}`,
+        players: pair,
+        sum: pair.reduce((s,p)=>s+p.strength,0)
+      }));
+
+      renderTeams();
+      renderGroups();
+    }
+
+    function renderTeams(){
+      const box = $("teams");
+      if(!teams.length){
+        box.innerHTML = `<div class="mut">아직 팀이 없습니다.</div>`;
+        return;
+      }
+
+      box.innerHTML = teams.map(t=>{
+        const names = t.players.map(p=>`${esc(p.name)}(${esc(p.busuText)})`).join(" · ");
+        return `
+          <div class="team">
+            <div class="names">${esc(t.id)}: ${names}</div>
+            <div class="meta">강도합 ${t.sum}</div>
+          </div>
+        `;
+      }).join("");
+
+      if(waiting.length){
+        const w = waiting[0];
+        box.innerHTML += `
+          <div class="team" style="background:#fff">
+            <div class="names">대기: ${esc(w.name)}(${esc(w.busuText)})</div>
+            <div class="meta">인원 홀수로 1명 대기</div>
+          </div>
+        `;
+      }
+    }
+
+    function makeGroups(){
+      const mode = $("mode").value;
+      if(mode !== "groups"){
+        alert("진행 방식을 ‘조별 리그전’으로 선택해주세요.");
+        return;
+      }
+      if(!teams.length){
+        alert("먼저 팀을 구성해주세요.");
+        return;
+      }
+
+      const gCount = parseInt($("groupCount").value, 10);
+      if(isNaN(gCount) || gCount < 2) return;
+
+      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, gCount).split("");
+      const n = teams.length;
+
+      groups = {};
+      labels.forEach(l => groups[l] = []);
+
+      const shuffled = shuffle([...teams]);
+
+      if(n < gCount){
+        for(let i=0;i<n;i++){
+          groups[labels[i]].push(shuffled[i].id);
+        }
+        renderGroups();
+        return;
+      }
+
+      const base = Math.floor(n / gCount);
+      const rem  = n % gCount;
+      const cap = labels.map((_,i)=> base + (i < rem ? 1 : 0));
+
+      let gi = 0;
+      for(const t of shuffled){
+        while(gi < gCount && groups[labels[gi]].length >= cap[gi]) gi++;
+        if(gi >= gCount) break;
+        groups[labels[gi]].push(t.id);
+      }
+
+      renderGroups();
+    }
+
+    function groupSum(teamIds){
+      const map = new Map(teams.map(t=>[t.id,t]));
+      return teamIds.reduce((s,id)=>s+(map.get(id)?.sum||0),0);
+    }
+
+    function renderGroups(){
+      const box = $("groups");
+      const mode = $("mode").value;
+
+      if(mode !== "groups"){
+        box.innerHTML = `<div class="mut">진행 방식이 ‘리그전’이면 조 편성을 사용하지 않습니다.</div>`;
+        return;
+      }
+      if(!teams.length){
+        box.innerHTML = `<div class="mut">먼저 팀을 구성해주세요.</div>`;
+        return;
+      }
+      if(!Object.keys(groups).length){
+        box.innerHTML = `<div class="mut">“조 편성”을 누르면 조가 생성됩니다.</div>`;
+        return;
+      }
+
+      const teamText = (teamId)=>{
+        const t = teams.find(x=>x.id===teamId);
+        if(!t) return teamId;
+        const n = t.players.map(p=>`${p.name}(${p.busuText})`).join("·");
+        return `${t.id}:${n}`;
+      };
+
+      box.innerHTML = Object.entries(groups).map(([g, ids])=>{
+        const sum = groupSum(ids);
+        return `
+          <div class="group">
+            <h4>${g}조 <span style="color:var(--mut);font-weight:800">(팀 ${ids.length} · 강도합 ${sum})</span></h4>
+            <div>
+              ${ids.map(id=>`<span class="chip">${esc(teamText(id))}</span>`).join("")}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function saveAndGo(){
+      if(!teams.length){
+        alert("먼저 팀을 구성해주세요.");
+        return;
+      }
+
+      const mode = $("mode").value;
+      const payload = {
+        updatedAt: Date.now(),
+        serverUpdatedAt: serverTimestamp(),
+        mode,
+        teams: teams.map(t=>({
+          id: t.id,
+          sum: t.sum,
+          players: t.players.map(p=>({
+            name: p.name,
+            busu: p.busuText,     // ✅ 원문 "5부"
+            busuNum: p.busuNum,   // ✅ 숫자 5
+            strength: p.strength  // ✅ 강도 10
+          }))
+        })),
+        waiting: waiting.map(p=>({
+          name: p.name,
+          busu: p.busuText,
+          busuNum: p.busuNum,
+          strength: p.strength
+        })),
+        groups: (mode==="groups") ? groups : {},
+      };
+
+      await set(ref(db, PATH.current), payload);
+
+      // ✅ 같은 레벨 폴더(team-make -> team-live)
+      window.location.href = "../team-live/";
+    }
+
+    function clearAll(){
+      selectedIdx = [];
+      teams = [];
+      groups = {};
+      waiting = [];
+      renderPlayers();
+      renderTeams();
+      renderGroups();
+    }
+
+    $("makeTeamsBtn").addEventListener("click", makeTeams);
+    $("makeGroupsBtn").addEventListener("click", makeGroups);
+    $("saveAndGoBtn").addEventListener("click", saveAndGo);
+    $("clearBtn").addEventListener("click", clearAll);
+
+    (async function init(){
+      try{
+        setStatus("Firebase 연결 중...");
+        await signInAnonymously(auth);
+
+        onValue(ref(db, PATH.members), (snap)=>{
+          const raw = snap.exists() ? (snap.val() || {}) : {};
+          console.log("✅ members raw =", raw);
+
+          allPlayers = Object.values(raw)
+            .filter(v=>v && v.name)
+            .map(v=>{
+              const name = String(v.name).trim();
+              const busuText = String(v.busu ?? "14부").trim(); // ✅ 여기 확정
+              const busuNum = parseBusuString(busuText);
+              const strength = strengthFromBusu(busuNum);
+              return { name, busuText, busuNum, strength };
+            });
+
+          renderPlayers();
+          setStatus(`Firebase 멤버 ${Object.keys(raw).length}명 불러옴`, "mut");
+        }, (err)=>{
+          console.error(err);
+          $("playerList").innerHTML = `<span class="err">선수 불러오기 실패: ${esc(err?.message||err)}</span>`;
+          setStatus("members 읽기 실패(콘솔 확인)", "err");
+        });
+
+      }catch(e){
+        console.error(e);
+        $("playerList").innerHTML = `<span class="err">연결 오류: ${esc(e?.message||e)}</span>`;
+        setStatus("Firebase 연결 오류(콘솔 확인)", "err");
+      }
+    })();
+  </script>
+</body>
+</html>
