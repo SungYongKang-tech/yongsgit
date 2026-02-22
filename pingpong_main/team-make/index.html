@@ -61,20 +61,7 @@
     .team ul{margin:8px 0 0;padding-left:18px}
     .team li{margin:3px 0;font-weight:900}
 
-    .chip{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:6px 10px;border:1px solid var(--bd);
-      border-radius:999px;background:#f8fafc;margin:4px 6px 0 0;font-weight:900;
-      cursor:pointer; user-select:none;
-    }
-    .chip.sel{outline:2px solid rgba(37,99,235,.35); background:#eef2ff}
-
-    .groupBox{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
-    .gcard{border:1px solid var(--bd);border-radius:14px;background:#fff;padding:10px;min-width:220px;flex:1}
-    .gtitle{font-weight:1000;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
-    .gdrop{border:2px dashed #cbd5e1;border-radius:12px;padding:10px;background:#f8fafc}
     .divider{height:1px;background:var(--bd);margin:10px 0}
-
     .hidden{display:none !important}
 
     .radioRow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
@@ -108,7 +95,7 @@
         <div class="radioCard on" data-mode="team">
           <div>
             <b>단체전</b><br>
-            <span>팀 구성 → team-live에서 몇단/몇복 설정</span>
+            <span>팀 구성만 저장 → 단/복 설정은 team-live에서</span>
           </div>
           <input type="radio" name="mode" checked />
         </div>
@@ -162,21 +149,10 @@
         <button class="btn secondary" id="resetTeamsBtn">팀 초기화</button>
       </div>
 
-      <div class="divider"></div>
-
-      <!-- 단체전 설정(몇단/몇복) -->
-      <div class="row" style="gap:12px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center">
-          <span class="pill">team-live 표시용 설정</span>
-          <label style="font-weight:950">단식
-            <input class="input" id="teamSingles" type="number" min="0" max="20" value="3" style="width:90px">
-          </label>
-          <label style="font-weight:950">복식
-            <input class="input" id="teamDoubles" type="number" min="0" max="20" value="2" style="width:90px">
-          </label>
-        </div>
+      <div class="mut" style="margin-top:10px">
+        ✅ 단체전은 여기서 <b>팀만</b> 구성합니다. <br>
+        ✅ <b>단식/복식(몇단/몇복)</b> 숫자는 <b>team-live</b>에서 결정합니다.
       </div>
-      <div class="mut">예) 단식 3 / 복식 2 → team-live에서 “3단 2복”으로 표시하도록 저장됩니다.</div>
     </div>
 
     <!-- 개인전: 형식 선택 -->
@@ -231,7 +207,7 @@
           <button class="btn ok" id="saveBtn">Firebase 저장</button>
           <button class="btn secondary" id="openLiveBtn">team-live 열기</button>
         </div>
-        <div class="mut">저장 후 team-live에서 대진 생성/경기 진행을 합니다.</div>
+        <div class="mut">저장 후 team-live에서 단/복 설정 → 대진 생성 → 경기 진행을 합니다.</div>
       </div>
 
       <!-- 개인전: 저장 미리보기 -->
@@ -257,7 +233,6 @@
     import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
     const $ = (id)=>document.getElementById(id);
-
     const PATH = { current: "teamLive/current" };
 
     // ====== State
@@ -544,8 +519,6 @@
 
     function setMode(next){
       mode = next;
-      // 팀/개인 전환 시, 팀은 유지하되 저장 시에만 구분되도록 함
-      // (원하시면 전환 시 teams 초기화로 바꿀 수도 있습니다)
       applyModeUI();
     }
 
@@ -577,7 +550,6 @@
           alert("단체전은 팀을 먼저 구성해야 합니다.");
           return;
         }
-        // 빈 팀 경고
         const empty = teams.filter(t=>!(t.players||[]).length).length;
         if(empty){
           if(!confirm(`빈 팀이 ${empty}개 있습니다. 그래도 저장할까요?`)) return;
@@ -593,18 +565,10 @@
         return;
       }
 
-      // config 구성
+      // ✅ config 구성: 단체전은 "mode만" 저장 (단/복 설정은 team-live에서)
       const config = { mode };
 
-      if(mode==="team"){
-        const singles = Math.max(0, Math.floor(Number($("teamSingles").value || 0)));
-        const doubles = Math.max(0, Math.floor(Number($("teamDoubles").value || 0)));
-        config.team = {
-          singlesCount: singles,
-          doublesCount: doubles,
-          label: `${singles}단 ${doubles}복`
-        };
-      }else{
+      if(mode==="single"){
         const fmt = $("singleFormat").value;
         config.single = { format: fmt };
         if(fmt==="group_knockout"){
@@ -613,14 +577,12 @@
         }
       }
 
-      // payload (team-live가 그대로 읽기 쉬운 형태)
       const payload = {
         updatedAt: Date.now(),
         config,
         participants
       };
 
-      // 단체전이면 teams도 함께 저장
       if(mode==="team"){
         payload.teams = teams.map(t=>({
           id: t.id,
@@ -632,7 +594,7 @@
       try{
         await set(ref(db, PATH.current), payload);
         setStatus("저장 완료: teamLive/current", "oktxt");
-        alert("✅ 저장 완료! 이제 team-live로 이동해서 대진/경기 진행을 하시면 됩니다.");
+        alert("✅ 저장 완료! 이제 team-live로 이동해서 단식/복식 설정 → 대진/경기 진행을 하시면 됩니다.");
       }catch(e){
         console.error(e);
         setStatus("저장 실패(콘솔 확인)", "err");
@@ -685,7 +647,7 @@
 
     $("manualBtn").addEventListener("click", ()=>{
       alert("수동 배정은 현재(이 버전)에서 ‘이동/삭제’로 조정하는 방식입니다.\n원하시면 ‘참석자→팀 버튼’ 방식으로도 확장해드리겠습니다.");
-      if(!teams.length) buildAutoTeams(Number($("teamCount").value)); // 최소 팀 틀 생성
+      if(!teams.length) buildAutoTeams(Number($("teamCount").value));
     });
 
     $("resetTeamsBtn").addEventListener("click", ()=>{
@@ -700,8 +662,7 @@
       card.addEventListener("click", ()=>{
         $("modePicker").querySelectorAll(".radioCard").forEach(c=>c.classList.remove("on"));
         card.classList.add("on");
-        const next = card.getAttribute("data-mode");
-        setMode(next);
+        setMode(card.getAttribute("data-mode"));
       });
     });
 
