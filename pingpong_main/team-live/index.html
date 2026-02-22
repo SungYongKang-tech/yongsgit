@@ -1149,110 +1149,135 @@
     }
 
     function buildKO(seeds){
-      // seeds: [pid...] length N
-      const N = seeds.length;
-      const P = nextPowerOfTwo(N);
-      const byes = P - N;
+  const N = seeds.length;
+  const P = nextPowerOfTwo(N);
+  const byes = P - N;
 
-      // simple seeding: 1..N, pair 1 vs P, 2 vs P-1 ...
-      // we implement byes by filling null opponents for top seeds first.
-      const firstRound = [];
-      const list = [...seeds];
+  const firstRound = [];
+  const list = [...seeds];
 
-      // add nulls for byes at end
-      for(let i=0;i<byes;i++) list.push(null);
+  // null을 넣되, "이 null은 1R BYE 때문"이라는 표시를 남기자
+  for(let i=0;i<byes;i++) list.push(null);
 
-      // pairings: (1 vs last), (2 vs second last)...
-      for(let i=0;i<P/2;i++){
-        const A = list[i];
-        const B = list[P-1-i];
-        firstRound.push({
-          id: nowId(), type:"ko", round:1, ord:i+1,
-          A, B,
-          score:null, done:false, winner:null
-        });
-      }
+  for(let i=0;i<P/2;i++){
+    const A = list[i];
+    const B = list[P-1-i];
 
-      // build empty next rounds
-      let rounds = [firstRound];
-      let r = 2;
-      let matchesInRound = firstRound.length/2;
+    const isBye = (A && !B) || (!A && B); // ✅ 1라운드에만 존재하는 BYE 여부
 
-      while(matchesInRound >= 1){
-        const arr = [];
-        for(let i=0;i<matchesInRound;i++){
-          arr.push({
-            id: nowId(), type:"ko", round:r, ord:i+1,
-            A:null, B:null,
-            score:null, done:false, winner:null
-          });
-        }
-        rounds.push(arr);
-        r++;
-        matchesInRound = matchesInRound/2;
-      }
+    firstRound.push({
+      id: nowId(),
+      type: "ko",
+      round: 1,
+      ord: i+1,
+      A, B,
+      isBye,              // ✅ 추가
+      score: null,
+      done: false,
+      winner: null
+    });
+  }
 
-      // flatten
-      return rounds.flat();
+  // 다음 라운드들은 참가자가 TBD(null)인 상태 = BYE가 아님!
+  let rounds = [firstRound];
+  let r = 2;
+  let matchesInRound = firstRound.length / 2;
+
+  while(matchesInRound >= 1){
+    const arr = [];
+    for(let i=0;i<matchesInRound;i++){
+      arr.push({
+        id: nowId(),
+        type:"ko",
+        round:r,
+        ord:i+1,
+        A:null,
+        B:null,
+        isBye:false,       // ✅ 추가 (기본 false)
+        score:null,
+        done:false,
+        winner:null
+      });
     }
+    rounds.push(arr);
+    r++;
+    matchesInRound = matchesInRound/2;
+  }
+
+  return rounds.flat();
+}
 
     function advanceBracketWinners(nextRun){
-      // KO matches assumed in order of round then ord
-      const kos = (nextRun.matches||[]).filter(m=>m.type==="ko");
-      if(!kos.length) return;
+  const kos = (nextRun.matches||[]).filter(m=>m.type==="ko");
+  if(!kos.length) return;
 
-      const ordered = kos.slice().sort((a,b)=>{
-        if((a.round||0)!==(b.round||0)) return (a.round||0)-(b.round||0);
-        return (a.ord||0)-(b.ord||0);
-      });
+  const ordered = kos.slice().sort((a,b)=>{
+    if((a.round||0)!==(b.round||0)) return (a.round||0)-(b.round||0);
+    return (a.ord||0)-(b.ord||0);
+  });
 
-      // group by round
-      const byR = new Map();
-      for(const m of ordered){
-        const r = m.round||1;
-        if(!byR.has(r)) byR.set(r, []);
-        byR.get(r).push(m);
-      }
-      const rounds = [...byR.keys()].sort((a,b)=>a-b);
+  // group by round
+  const byR = new Map();
+  for(const m of ordered){
+    const r = m.round || 1;
+    if(!byR.has(r)) byR.set(r, []);
+    byR.get(r).push(m);
+  }
+  const rounds = [...byR.keys()].sort((a,b)=>a-b);
 
-      // auto-win on bye (if A exists and B null)
-      const bestOf = nextRun.settings?.scoring?.bestOf || 5;
-      for(const r of rounds){
-        for(const m of byR.get(r)){
-          if(m.A && !m.B){
-            m.done = true; m.winner="A";
-            if(!m.score) m.score = { aSets: Math.ceil(bestOf/2), bSets: 0 };
-          }else if(!m.A && m.B){
-            m.done = true; m.winner="B";
-            if(!m.score) m.score = { aSets: 0, bSets: Math.ceil(bestOf/2) };
-          }
-        }
-      }
+  const bestOf = nextRun.settings?.scoring?.bestOf || 5;
+  const need = Math.ceil(bestOf/2);
 
-      // propagate winners
-      for(let r=1; r<rounds.length; r++){
-        const prev = byR.get(r) || [];
-        const next = byR.get(r+1) || [];
-        if(!next.length) continue;
-
-        for(let i=0;i<next.length;i++){
-          const m1 = prev[i*2];
-          const m2 = prev[i*2+1];
-          const n = next[i];
-
-          const w1 = m1?.done ? (m1.winner==="A" ? m1.A : m1.B) : null;
-          const w2 = m2?.done ? (m2.winner==="A" ? m2.A : m2.B) : null;
-
-          n.A = w1;
-          n.B = w2;
-
-          // 만약 참가자가 바뀌면 점수는 초기화(혼선 방지)
-          if(!n.A || !n.B){
-            n.score = null; n.done=false; n.winner=null;
-          }
-        }
+  // ✅ 핵심 1) BYE 자동승/점수 자동입력은 "1라운드 + isBye=true"인 경우만!
+  const r1 = byR.get(1) || [];
+  for(const m of r1){
+    if(m.isBye){
+      if(m.A && !m.B){
+        m.done = true; m.winner="A";
+        // 점수 자동 입력은 원하면 유지, 싫으면 아래 줄 제거 가능
+        if(!m.score) m.score = { aSets: need, bSets: 0 };
+      }else if(!m.A && m.B){
+        m.done = true; m.winner="B";
+        if(!m.score) m.score = { aSets: 0, bSets: need };
       }
     }
+  }
+
+  // ✅ 핵심 2) 승자 전파 + 참가자 바뀌면 다음 라운드 점수/승패 무조건 초기화
+  for(let r=1; r<rounds.length; r++){
+    const prev = byR.get(r) || [];
+    const next = byR.get(r+1) || [];
+    if(!next.length) continue;
+
+    for(let i=0;i<next.length;i++){
+      const m1 = prev[i*2];
+      const m2 = prev[i*2+1];
+      const n = next[i];
+
+      const w1 = m1?.done ? (m1.winner==="A" ? m1.A : m1.B) : null;
+      const w2 = m2?.done ? (m2.winner==="A" ? m2.A : m2.B) : null;
+
+      const oldA = n.A;
+      const oldB = n.B;
+
+      n.A = w1;
+      n.B = w2;
+
+      // ✅ TBD(null)인 상태는 "아직 경기 안 정해짐"이지 BYE가 아님
+      n.isBye = false;
+
+      // ✅ 참가자 변경(또는 TBD 상태로 변경)되면 점수/승패 리셋
+      const changed = (oldA !== n.A) || (oldB !== n.B);
+      const hasTBD = (!n.A || !n.B);
+
+      if(changed || hasTBD){
+        n.score = null;
+        n.done = false;
+        n.winner = null;
+      }
+    }
+  }
+}
 
     function getGroupStandings(nextRun, groupKey){
       const ids = (current.groups?.[groupKey]||[]).filter(Boolean);
