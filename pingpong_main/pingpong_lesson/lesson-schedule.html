@@ -21,11 +21,11 @@
       overflow:auto; /* 모바일 가로스크롤 */
     }
     table{
-  width:100%;
-  border-collapse:separate;
-  border-spacing:0;
-  table-layout:auto;   /* 자동 너비 */
-}
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      table-layout:auto;   /* 자동 너비 */
+    }
     th,td{
       padding:12px 6px;
       border-bottom:1px solid var(--bd);
@@ -63,8 +63,6 @@
     .empty{color:rgba(100,116,139,.7); font-weight:700}
     .mut{color:var(--mut);font-weight:700;font-size:12px;margin-top:8px}
     .err{color:#b91c1c;font-weight:800}
-
-
   </style>
 </head>
 
@@ -75,13 +73,13 @@
     <div class="tableWrap">
       <table aria-label="레슨 주간 시간표">
         <thead>
-          <tr>
+          <tr id="headRow">
             <th>시간</th>
-<th>월</th>
-<th>화</th>
-<th>수</th>
-<th>목</th>
-<th>금</th>
+            <th>월</th>
+            <th>화</th>
+            <th>수</th>
+            <th>목</th>
+            <th>금</th>
           </tr>
         </thead>
         <tbody id="tbody">
@@ -135,26 +133,46 @@
       return all.filter(t => (t?.time || "").trim());
     }
 
+    function setHeader(viewDays){
+      const headRow = $("headRow");
+      if(!headRow) return;
+      headRow.innerHTML = `
+        <th>시간</th>
+        ${viewDays.map(d => `<th>${dayLabel[d]}</th>`).join("")}
+      `;
+    }
+
+    function renderMessage(tbody, msg, colCount, cls="mut"){
+      tbody.innerHTML = `<tr><td colspan="${colCount}" class="${cls}">${msg}</td></tr>`;
+    }
+
     function render(){
       const tbody = $("tbody");
       const status = $("status");
       if(!tbody) return;
 
+      // 기본값(처음엔 5일 다 보이게)
+      let viewDays = DAYS.slice();
+      let colCount = 1 + viewDays.length;
+
       if(!authed){
-        tbody.innerHTML = `<tr><td colspan="6" class="empty">로그인 중...</td></tr>`;
+        setHeader(viewDays);
+        renderMessage(tbody, "로그인 중...", colCount, "empty");
         if(status) status.textContent = "Firebase 익명 로그인 중";
         return;
       }
 
       if(!schedule){
-        tbody.innerHTML = `<tr><td colspan="6" class="mut">시간표가 없습니다.</td></tr>`;
+        setHeader(viewDays);
+        renderMessage(tbody, "시간표가 없습니다.", colCount, "mut");
         if(status) status.textContent = "lesson/schedule 데이터 없음";
         return;
       }
 
       const items = normalizeTimes(schedule);
       if(items.length === 0){
-        tbody.innerHTML = `<tr><td colspan="6" class="mut">등록된 타임이 없습니다.</td></tr>`;
+        setHeader(viewDays);
+        renderMessage(tbody, "등록된 타임이 없습니다.", colCount, "mut");
         if(status) status.textContent = "타임을 추가하고 저장해 주세요.";
         return;
       }
@@ -175,9 +193,17 @@
 
       const times = Object.keys(rows).sort((a,b)=>a.localeCompare(b));
 
+      // ✅ 금요일 열 전체가 전부 비었으면 금요일 열 숨김
+      const hasFriAny = times.some(time => !!rows[time]?.fri);
+      viewDays = hasFriAny ? DAYS.slice() : ["mon","tue","wed","thu"];
+      colCount = 1 + viewDays.length;
 
+      // ✅ 헤더 동기화
+      setHeader(viewDays);
+
+      // ✅ tbody 렌더
       tbody.innerHTML = times.map(time=>{
-        const tds = DAYS.map(d=>{
+        const tds = viewDays.map(d=>{
           const cid = rows[time][d] || "";
           const nm = coachName(cid);
           return `<td class="cell">${nm ? esc(nm) : `<span class="empty">-</span>`}</td>`;
@@ -193,7 +219,7 @@
 
       if(status){
         const coachCnt = Object.keys(coaches||{}).length;
-        status.textContent = `시간 ${times.length}개 · 레슨자 ${coachCnt}명`;
+        status.textContent = `시간 ${times.length}개 · 레슨자 ${coachCnt}명${hasFriAny ? "" : " · 금요일 없음"}`;
       }
     }
 
