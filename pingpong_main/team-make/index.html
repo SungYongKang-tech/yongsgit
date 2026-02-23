@@ -435,6 +435,15 @@ function shuffle(arr) {
   return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
 }
 
+const MAX_LEVEL = 20;
+const powerOf = (p) => (MAX_LEVEL + 1) - Number(p.level || 0);
+
+function recomputeTeamSums(team){
+  team.sumLevel = team.members.reduce((s, p) => s + Number(p.level || 0), 0);
+  team.sumPower = team.members.reduce((s, p) => s + powerOf(p), 0);
+  team.sum = team.sumLevel; // 렌더용(부수합)
+}
+
 /*********************************************************
  * ✅ 자동 팀 배정
  *********************************************************/
@@ -492,39 +501,65 @@ function confirmTeamCount(teamCount) {
     runTeamAssignment(teamCount, window._assignPool);
   }
 }
-
 function runTeamAssignment(teamCount, pool) {
   if (isNaN(teamCount) || teamCount < 2 || teamCount > 8) {
     alert("2~8 사이의 팀 수를 선택해주세요.");
     return;
   }
 
-  const players = pool.map(i => allPlayers[i]);
-  const mixed = shuffle(players).slice().sort((a, b) => b.level - a.level);
+  const MAX_LEVEL = 20;
+  const powerOf = (p) => (MAX_LEVEL + 1) - Number(p.level || 0);
+
+  // pool 인덱스 -> 선수 객체
+  const players = pool.map(i => allPlayers[i]).filter(Boolean);
+
+  if (players.length < 2) {
+    alert("선수가 2명 이상 있어야 합니다.");
+    return;
+  }
+
+  // ✅ 강한 사람(1부쪽)부터 배치: power 내림차순
+  const mixed = shuffle(players).slice().sort((a, b) => powerOf(b) - powerOf(a));
 
   const teams = Array.from({ length: teamCount }, (_, i) => ({
     name: `${i + 1}팀`,
     members: [],
-    sum: 0
+    sumLevel: 0,  // 표시용(부수합)
+    sumPower: 0   // 밸런싱용(강함합)
   }));
 
+  // ✅ 인원 균등 제한 (기존 방식)
   const total = mixed.length;
   const base = Math.floor(total / teamCount);
   const extra = total % teamCount;
   const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base));
 
+  // ✅ 밸런싱 배치: 평균 power(강함)가 낮은 팀에 강한 선수부터 채우기
   mixed.forEach(p => {
-    const candidates = teams.filter((t, i) => t.members.length < maxPerTeam[i]);
+    const pPower = powerOf(p);
+
+    const candidates = teams
+      .map((t, i) => ({ t, i }))
+      .filter(x => x.t.members.length < maxPerTeam[x.i]);
+
     const target = candidates.reduce((a, b) => {
-      const avgA = a.members.length ? a.sum / a.members.length : 0;
-      const avgB = b.members.length ? b.sum / b.members.length : 0;
+      const avgA = a.t.members.length ? a.t.sumPower / a.t.members.length : 0;
+      const avgB = b.t.members.length ? b.t.sumPower / b.t.members.length : 0;
       return avgA < avgB ? a : b;
-    });
+    }).t;
+
     target.members.push(p);
-    target.sum += p.level;
+    target.sumLevel += Number(p.level || 0);
+    target.sumPower += pPower;
   });
 
+  // ✅ 전역 최신 팀 갱신
   latestTeams = teams;
+
+  // ✅ 렌더 호환용(sum은 부수합)
+  latestTeams.forEach(t => { t.sum = t.sumLevel; });
+
+  // ✅ 화면 렌더
   assignTeamsRender(latestTeams);
 }
 
@@ -589,8 +624,8 @@ function beginAutoSwap(teamIdx, playerIdx) {
   teamA.members[autoSwapBuffer.playerIdx] = b;
   teamB.members[playerIdx] = a;
 
-  teamA.sum = teamA.members.reduce((sum, p) => sum + p.level, 0);
-  teamB.sum = teamB.members.reduce((sum, p) => sum + p.level, 0);
+  recomputeTeamSums(teamA);
+recomputeTeamSums(teamB);
 
   assignTeamsRender(latestTeams);
   autoSwapBuffer = null;
@@ -625,8 +660,7 @@ function removeAutoPlayer(teamIdx, playerIdx) {
   if (!confirm("이 선수를 팀에서 해제하시겠습니까?")) return;
 
   latestTeams[teamIdx].members.splice(playerIdx, 1);
-  latestTeams[teamIdx].sum = latestTeams[teamIdx].members.reduce((sum, p) => sum + p.level, 0);
-
+  recomputeTeamSums(latestTeams[teamIdx]);
   assignTeamsRender(latestTeams);
 }
 
@@ -764,12 +798,23 @@ function confirmExchangeMatch() {
     alert("선수가 2명 이상 있어야 합니다.");
     return;
   }
-  const players = poolIdx.map(i => allPlayers[i]);
+  const players = poolIdx.map(i => allPlayers[i]).filter(Boolean);
+
+  if (players.length < 2) {
+  alert("선수가 2명 이상 있어야 합니다.");
+  return;
+}
 
   // 3) 팀 슬롯 생성 (우리/상대/혼합)
   const teams = [];
-  const makeTeam = (teamName) => ({ teamName, name: teamName, members: [], sum: 0 });
-
+  const makeTeam = (teamName) => ({
+  teamName,
+  name: teamName,
+  members: [],
+  sum: 0,
+  sumLevel: 0,
+  sumPower: 0
+});
   for (let i = 0; i < ourCount; i++) teams.push(makeTeam(`${ourName} ${i + 1}`));
   for (let i = 0; i < oppCount; i++) teams.push(makeTeam(`${oppName} ${i + 1}`));
   for (let i = 0; i < mixedCount; i++) teams.push(makeTeam(`혼합 ${i + 1}`));
@@ -781,23 +826,31 @@ function confirmExchangeMatch() {
   const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base)); // 앞쪽 팀에 1명씩 더
 
   // 5) 밸런싱 배치: 부수 높은 사람부터, 평균 부수(또는 sum/인원)가 낮은 팀에 넣기
-  const mixedSorted = shuffle(players).slice().sort((a, b) => b.level - a.level);
+  const MAX_LEVEL = 20;
+const powerOf = (p) => (MAX_LEVEL + 1) - Number(p.level || 0);
 
-  mixedSorted.forEach(p => {
-    const candidates = teams
-      .map((t, i) => ({ t, i }))
-      .filter(x => x.t.members.length < maxPerTeam[x.i]);
+const mixedSorted = shuffle(players).slice().sort((a, b) => powerOf(b) - powerOf(a));
 
-    // 평균 부수가 가장 낮은 팀 선택
-    const target = candidates.reduce((a, b) => {
-      const avgA = a.t.members.length ? a.t.sum / a.t.members.length : 0;
-      const avgB = b.t.members.length ? b.t.sum / b.t.members.length : 0;
-      return avgA < avgB ? a : b;
-    }).t;
+mixedSorted.forEach(p => {
+  const pPower = powerOf(p);
 
-    target.members.push(p);
-    target.sum += p.level;
-  });
+  const candidates = teams
+    .map((t, i) => ({ t, i }))
+    .filter(x => x.t.members.length < maxPerTeam[x.i]);
+
+  const target = candidates.reduce((a, b) => {
+    const avgA = a.t.members.length ? a.t.sumPower / a.t.members.length : 0;
+    const avgB = b.t.members.length ? b.t.sumPower / b.t.members.length : 0;
+    return avgA < avgB ? a : b;
+  }).t;
+
+  target.members.push(p);
+  target.sumLevel = (target.sumLevel || 0) + Number(p.level || 0);
+  target.sumPower = (target.sumPower || 0) + pPower;
+});
+
+// 렌더 호환
+teams.forEach(t => t.sum = t.sumLevel || t.members.reduce((s, p) => s + Number(p.level||0), 0));
 
   // 6) 렌더 + 최신팀 저장 (업로드/이미지저장 호환)
   latestTeams = teams;
