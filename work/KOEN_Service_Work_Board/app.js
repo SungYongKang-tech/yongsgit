@@ -458,9 +458,11 @@ async function rebindAll(forTab){
   refreshDateUI();
   showView(forTab);
 
-  if (forTab==="IBS") bindIBS();
-  if (forTab==="MECH") await bindMECH();
-  if (forTab==="ELEC") await bindELEC();
+  // ✅ 화면은 선택된 탭만 보여주되,
+  // ✅ 데이터 바인딩/자동반영은 3개 모두 수행
+  bindIBS();
+  await bindMECH();
+  await bindELEC();
 }
 
 /* ==========================
