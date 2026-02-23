@@ -899,6 +899,81 @@ if (SA.length === 4 && SB.length === 4 && need === 4) {
     return res;
   }
 
+  function spread(i,j){ return Math.abs(i-j); }
+
+// mode=0(실력): spread 작은 페어 우선
+// mode=1(조합): spread 큰 페어 우선
+function filterPairsByMode(pairs, n, mode){
+  if (n <= 2) return pairs;
+
+  const maxS = n - 1;
+  // ✅ “확실한 구분”을 위한 1차 임계값(필요하면 숫자만 조정)
+  const smallCut = Math.max(1, Math.floor(maxS * 0.35)); // 실력: 가까운 조합
+  const bigCut   = Math.min(maxS, Math.ceil (maxS * 0.65)); // 조합: 먼 조합
+
+  const pass1 = pairs.filter(p=>{
+    const s = spread(p.i, p.j);
+    return (mode === 0) ? (s <= smallCut) : (s >= bigCut);
+  });
+
+  // 부족하면 2차 완화
+  if (pass1.length >= 1) return pass1;
+
+  const midCut = Math.max(1, Math.floor(maxS * 0.50));
+  const pass2 = pairs.filter(p=>{
+    const s = spread(p.i, p.j);
+    return (mode === 0) ? (s <= midCut) : (s >= midCut);
+  });
+
+  return pass2.length ? pass2 : pairs;
+}
+
+function pickPairsNoPlayerDup_STRICT(pairs, need, historyUsedPairsSet, mode, nPlayers){
+  if (need <= 0) return [];
+
+  // ✅ 모드별 페어 풀 먼저 필터링(핵심)
+  let pool = filterPairsByMode(pairs, nPlayers, mode);
+
+  // ✅ 정렬 우선순위도 모드에 맞게 “강하게”
+  pool = [...pool].sort((a,b)=>{
+    const aHist = historyUsedPairsSet.has(a.key) ? 1 : 0;
+    const bHist = historyUsedPairsSet.has(b.key) ? 1 : 0;
+    if (aHist !== bHist) return aHist - bHist;
+
+    const aS = spread(a.i,a.j);
+    const bS = spread(b.i,b.j);
+
+    // mode=0: spread 작은 게 먼저
+    // mode=1: spread 큰 게 먼저
+    if (aS !== bS) return (mode === 0) ? (aS - bS) : (bS - aS);
+
+    // tie-break: sum 비슷한 쪽이 안정적(선택 편향 줄이기)
+    return a.sum - b.sum;
+  });
+
+  const picked = [];
+  const usedPlayers = new Set();
+
+  // 1차: 선수 중복 없이
+  for (const p of pool) {
+    if (picked.length >= need) break;
+    if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
+    picked.push(p);
+    usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
+  }
+
+  // 2차: 부족하면 중복 허용(단, 동일 페어는 피함)
+  if (picked.length < need) {
+    for (const p of pool) {
+      if (picked.length >= need) break;
+      if (picked.some(x => x.key === p.key)) continue;
+      picked.push(p);
+    }
+  }
+
+  return picked.slice(0, need);
+}
+
   function perms(arr){
     if (arr.length <= 1) return [arr];
     const out = [];
@@ -1069,8 +1144,8 @@ if (need > maxPairsA || need > maxPairsB) {
   const poolA = allTeamPairs(SA);
 const poolB = allTeamPairs(SB);
   // 풀 자체가 너무 작으면(인원이 너무 적으면) 그냥 가능한 만큼만 만들고 나머지는 상위에서 채우게 둔다
-const pickA = pickPairsNoPlayerDup(poolA, need, history.usedPairsA, mode);
-const pickB = pickPairsNoPlayerDup(poolB, need, history.usedPairsB, mode);
+const pickA = pickPairsNoPlayerDup_STRICT(poolA, need, history.usedPairsA, mode, SA.length);
+const pickB = pickPairsNoPlayerDup_STRICT(poolB, need, history.usedPairsB, mode, SB.length);
   if (pickA.length === 0 || pickB.length === 0) return [];
 
   // 길이가 need보다 짧아도 일단 반환(상위에서 placeholder로 채움)
@@ -1214,8 +1289,8 @@ for (let ia = 0; ia < candA.length; ia++) {
     const PB0full = toPairs(SB, candB[ib]).sort((x, y) => x.sum - y.sum);
 
     // ✅ 여기서 "선수 중복 최소"로 need개씩 뽑는다
-   const pickA = pickPairsNoPlayerDup(PA0full, need, history.usedPairsA, mode);
-   const pickB = pickPairsNoPlayerDup(PB0full, need, history.usedPairsB, mode);
+   const pickA = pickPairsNoPlayerDup_STRICT(PA0full, need, history.usedPairsA, mode, SA.length);
+const pickB = pickPairsNoPlayerDup_STRICT(PB0full, need, history.usedPairsB, mode, SB.length);
     if (pickA.length < need || pickB.length < need) continue;
 
     // ✅ 스코어: 실력차 + 과거 중복(페어/대결) + (아주 약한) 모드취향
