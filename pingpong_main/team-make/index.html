@@ -228,7 +228,52 @@
   <!-- 라이브러리 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+  <!-- 교류전 설정 모달 -->
+  <div class="modal-overlay" id="exchangeModal">
+    <div class="modal">
+      <button class="close-btn" onclick="closeExchangeModal()">✖</button>
+      <h2>⚔️ 교류전 설정</h2>
+
+      <div class="modal-section">
+        <h3>1️⃣ 우리팀 선택</h3>
+        <input type="text" id="ourTeamInput" placeholder="우리팀 이름을 입력 (예: 남동발전)" style="width:100%;padding:6px;font-size:14px;">
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="document.getElementById('ourTeamInput').value='남동발전'">남동발전</button>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <h3>2️⃣ 상대팀 선택</h3>
+        <input type="text" id="opponentTeamInput" placeholder="상대팀 이름을 입력" style="width:100%;padding:6px;font-size:14px;">
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="document.getElementById('opponentTeamInput').value='한국토지주택공사'">한국토지주택공사</button>
+          <button onclick="document.getElementById('opponentTeamInput').value='저작권위원회'">저작권위원회</button>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <h3>3️⃣ 팀 수 설정</h3>
+        <p style="margin:4px 0;">각 항목은 클릭 또는 직접 입력 가능합니다.</p>
+        <div>
+          <label>우리팀: <input type="number" id="ourCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
+        </div>
+        <div style="margin-top:10px;">
+          <label>상대팀: <input type="number" id="opponentCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
+        </div>
+        <div style="margin-top:10px;">
+          <label>혼합팀: <input type="number" id="mixedCountInput" value="1" min="0" max="8" style="width:60px;"> 팀</label>
+        </div>
+      </div>
+
+      <div style="text-align:center;margin-top:20px;">
+        <button style="padding:10px 18px;background:#1976d2;color:white;border:none;border-radius:6px;"
+          onclick="confirmExchangeMatch()">✅ 교류전 생성</button>
+      </div>
+    </div>
+  </div>
    
+
+
  <script type="module">
 /*********************************************************
  * ✅ Firebase: 모듈 방식으로 "완전 통일"
@@ -287,15 +332,30 @@ function getExchangeGroup(groupType) {
  *********************************************************/
 async function loadPlayers() {
   try {
-    const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json");
-    const json = await res.json();
-    const basePlayers = Object.values(json);
+    await requireAuth();
 
-    allPlayers = basePlayers.map(p => ({
-      name: p.name,
-      level: p.level,
+    const snap = await get(ref(db, "members")); // ✅ 스샷 경로
+
+    if (!snap.exists()) {
+      alert("members 경로에 선수 데이터가 없습니다.");
+      allPlayers = [];
+      renderPlayers();
+      return;
+    }
+
+    const raw = snap.val(); // { key: { bu, name, strength }, ... }
+
+    // ✅ bu -> level 로 매핑해서 기존 UI/팀배정 로직 그대로 사용
+    const basePlayers = Object.entries(raw).map(([id, p]) => ({
+      id,                                // (선택) 나중에 수정/삭제할 때 유용
+      name: (p?.name ?? "").trim(),
+      level: Number(p?.bu ?? 0),         // 🔥 bu를 level로
+      strength: Number(p?.strength ?? 0),
       new: false
-    }));
+    }))
+    .filter(p => p.name && p.level > 0);
+
+    allPlayers = basePlayers;
 
     // LocalStorage 신규 선수 병합
     const saved = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
@@ -303,8 +363,8 @@ async function loadPlayers() {
 
     renderPlayers();
   } catch (err) {
-    console.error("❌ 선수 목록 로딩 실패:", err);
-    alert("선수 목록 로딩 실패 (members.json 확인)");
+    console.error("❌ Firebase 선수 로딩 실패:", err);
+    alert("Firebase 선수 목록 로딩 실패\n콘솔을 확인하세요.");
   }
 }
 loadPlayers();
@@ -719,51 +779,10 @@ window.closeExchangeModal = closeExchangeModal;
 window.confirmExchangeMatch = confirmExchangeMatch;
 
 window.startManualTeamAssign = startManualTeamAssign;
+
 </script>
 
-  <!-- 교류전 설정 모달 -->
-  <div class="modal-overlay" id="exchangeModal">
-    <div class="modal">
-      <button class="close-btn" onclick="closeExchangeModal()">✖</button>
-      <h2>⚔️ 교류전 설정</h2>
-
-      <div class="modal-section">
-        <h3>1️⃣ 우리팀 선택</h3>
-        <input type="text" id="ourTeamInput" placeholder="우리팀 이름을 입력 (예: 남동발전)" style="width:100%;padding:6px;font-size:14px;">
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button onclick="document.getElementById('ourTeamInput').value='남동발전'">남동발전</button>
-        </div>
-      </div>
-
-      <div class="modal-section">
-        <h3>2️⃣ 상대팀 선택</h3>
-        <input type="text" id="opponentTeamInput" placeholder="상대팀 이름을 입력" style="width:100%;padding:6px;font-size:14px;">
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button onclick="document.getElementById('opponentTeamInput').value='한국토지주택공사'">한국토지주택공사</button>
-          <button onclick="document.getElementById('opponentTeamInput').value='저작권위원회'">저작권위원회</button>
-        </div>
-      </div>
-
-      <div class="modal-section">
-        <h3>3️⃣ 팀 수 설정</h3>
-        <p style="margin:4px 0;">각 항목은 클릭 또는 직접 입력 가능합니다.</p>
-        <div>
-          <label>우리팀: <input type="number" id="ourCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
-        </div>
-        <div style="margin-top:10px;">
-          <label>상대팀: <input type="number" id="opponentCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
-        </div>
-        <div style="margin-top:10px;">
-          <label>혼합팀: <input type="number" id="mixedCountInput" value="1" min="0" max="8" style="width:60px;"> 팀</label>
-        </div>
-      </div>
-
-      <div style="text-align:center;margin-top:20px;">
-        <button style="padding:10px 18px;background:#1976d2;color:white;border:none;border-radius:6px;"
-          onclick="confirmExchangeMatch()">✅ 교류전 생성</button>
-      </div>
-    </div>
-  </div>
+  
 
 </body>
 </html>
