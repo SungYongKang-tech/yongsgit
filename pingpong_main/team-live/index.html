@@ -1027,146 +1027,177 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
         return result;
       }
 
-      // ✅ 일반 케이스
-      if (!window.__pairRounds[keyA]) window.__pairRounds[keyA] = buildDisjointPairRounds(SA.length);
-      if (!window.__pairRounds[keyB]) window.__pairRounds[keyB] = buildDisjointPairRounds(SB.length);
+     // ✅ 일반 케이스
+if (!window.__pairRounds[keyA]) window.__pairRounds[keyA] = buildDisjointPairRounds(SA.length);
+if (!window.__pairRounds[keyB]) window.__pairRounds[keyB] = buildDisjointPairRounds(SB.length);
 
-      if (window.__pairRoundIdx[keyA] == null) window.__pairRoundIdx[keyA] = 0;
-      if (window.__pairRoundIdx[keyB] == null) window.__pairRoundIdx[keyB] = 0;
+if (window.__pairRoundIdx[keyA] == null) window.__pairRoundIdx[keyA] = 0;
+if (window.__pairRoundIdx[keyB] == null) window.__pairRoundIdx[keyB] = 0;
 
-      const roundsA = window.__pairRounds[keyA];
-      const roundsB = window.__pairRounds[keyB];
+const roundsA = window.__pairRounds[keyA];
+const roundsB = window.__pairRounds[keyB];
 
-      const startA = window.__pairRoundIdx[keyA] % roundsA.length;
-      const startB = window.__pairRoundIdx[keyB] % roundsB.length;
+const startA = window.__pairRoundIdx[keyA] % roundsA.length;
+const startB = window.__pairRoundIdx[keyB] % roundsB.length;
 
-      const K = 6;
-      const candA = Array.from({ length: Math.min(K, roundsA.length) }, (_, k) => roundsA[(startA + k) % roundsA.length]);
-      const candB = Array.from({ length: Math.min(K, roundsB.length) }, (_, k) => roundsB[(startB + k) % roundsB.length]);
+const K = 6;
+const candA = Array.from({ length: Math.min(K, roundsA.length) }, (_, k) => roundsA[(startA + k) % roundsA.length]);
+const candB = Array.from({ length: Math.min(K, roundsB.length) }, (_, k) => roundsB[(startB + k) % roundsB.length]);
 
-      let best = null;
-      let bestScore = Infinity;
+let best = null;
+let bestScore = Infinity;
 
-      function toPairs(players, round) {
-        return round.map(([i, j]) => ({
-          p1: players[i], p2: players[j],
-          sum: players[i].level + players[j].level,
-          i, j,
-          key: pairKeySorted(players[i].name, players[j].name),
-        }));
-      }
+function toPairs(players, round) {
+  return round.map(([i, j]) => ({
+    p1: players[i], p2: players[j],
+    sum: players[i].level + players[j].level,
+    i, j,
+    key: pairKeySorted(players[i].name, players[j].name),
+  }));
+}
 
-      for (let ia = 0; ia < candA.length; ia++) {
-        const PA0 = toPairs(SA, candA[ia]).sort((x, y) => x.sum - y.sum);
+// ✅ [추가] 같은 매치 안에서 "선수 중복 출전"을 최소화해서 need개 페어 뽑기
+function pickPairsNoPlayerDup(pairs, need, historyUsedPairsSet) {
+  const picked = [];
+  const usedPlayers = new Set();
 
-        for (let ib = 0; ib < candB.length; ib++) {
-          const PB0 = toPairs(SB, candB[ib]).sort((x, y) => x.sum - y.sum);
+  // 우선순위:
+  // 1) 이번 매치에서 선수 중복 없는 페어
+  // 2) 과거에 안 쓴 페어 우선
+  // 3) 그래도 없으면 중복 허용 (최후)
+  const sorted = [...pairs].sort((a,b)=>{
+    const aHist = historyUsedPairsSet.has(a.key) ? 1 : 0;
+    const bHist = historyUsedPairsSet.has(b.key) ? 1 : 0;
+    if (aHist !== bHist) return aHist - bHist;
+    // 약간 섞이도록 sum이 작은 것부터만 고정하지 말고, i/j 간격도 참고
+    const aSpread = Math.abs(a.i - a.j);
+    const bSpread = Math.abs(b.i - b.j);
+    return aSpread - bSpread;
+  });
 
-          const useA = PA0.slice(0, Math.min(need, PA0.length));
-          const useB = PB0.slice(0, Math.min(need, PB0.length));
-
-          let score = 0;
-
-          if (useA.length < need) score += 500 * (need - useA.length);
-          if (useB.length < need) score += 500 * (need - useB.length);
-
-          const m = Math.min(useA.length, useB.length, need);
-
-          const usedPairsA_local = new Set();
-          const usedPairsB_local = new Set();
-          const usedVersus_local = new Set();
-
-          for (let t = 0; t < m; t++) {
-            const a = useA[t], b = useB[t];
-            const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-
-            if (usedPairsA_local.has(a.key)) score += 999;
-            if (usedPairsB_local.has(b.key)) score += 999;
-            if (usedVersus_local.has(vKey)) score += 1500;
-
-            usedPairsA_local.add(a.key);
-            usedPairsB_local.add(b.key);
-            usedVersus_local.add(vKey);
-
-            score += Math.abs(a.sum - b.sum);
-
-            if (history.usedPairsA.has(a.key)) score += 120;
-            if (history.usedPairsB.has(b.key)) score += 120;
-            if (history.usedVersus.has(vKey)) score += 180;
-
-            if (mode === 0) {
-              score += 0.3 * (Math.abs(a.i - a.j) + Math.abs(b.i - b.j));
-            } else {
-              if (!mixedFilter(a.i, a.j, SA.length)) score += 8;
-              if (!mixedFilter(b.i, b.j, SB.length)) score += 8;
-            }
-          }
-
-          if (score < bestScore) {
-            bestScore = score;
-            best = { ia, ib, useA, useB };
-          }
-        }
-      }
-
-      if (!best) return [];
-
-      window.__pairRoundIdx[keyA] = (startA + best.ia + 1) % roundsA.length;
-      window.__pairRoundIdx[keyB] = (startB + best.ib + 1) % roundsB.length;
-
-      const result = [];
-const usedA_local = new Set();
-const usedB_local = new Set();
-const usedV_local = new Set();
-
-for (let t = 0; t < need; t++) {
-  // ✅ 가능한 한 "서로 다른 페어"를 쓰도록 후보를 찾는다
-  let pickA = null;
-  for (const cand of best.useA) {
-    if (usedA_local.has(cand.key)) continue;
-    if (history.usedPairsA.has(cand.key)) continue; // 이미 예전에 썼던 조합이면 후순위
-    pickA = cand; break;
-  }
-  if (!pickA) {
-    // 그래도 없으면(인원/need상 어쩔 수 없음) 중복 허용하되 최소화
-    pickA = best.useA.find(c => !usedA_local.has(c.key)) || best.useA[0];
+  // 1차: 선수 중복 없이 최대한
+  for (const p of sorted) {
+    if (picked.length >= need) break;
+    if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
+    picked.push(p);
+    usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
   }
 
-  let pickB = null;
-  for (const cand of best.useB) {
-    if (usedB_local.has(cand.key)) continue;
-    if (history.usedPairsB.has(cand.key)) continue;
-    pickB = cand; break;
-  }
-  if (!pickB) {
-    pickB = best.useB.find(c => !usedB_local.has(c.key)) || best.useB[0];
-  }
-
-  // ✅ versus(대결)도 같은 매치 안에서 중복이면 다른 B를 한 번 더 탐색
-  let vKey = versusKey(pickA.p1, pickA.p2, pickB.p1, pickB.p2);
-  if (usedV_local.has(vKey) || history.usedVersus.has(vKey)) {
-    const altB = best.useB.find(c => {
-      if (usedB_local.has(c.key)) return false;
-      const vk = versusKey(pickA.p1, pickA.p2, c.p1, c.p2);
-      return !usedV_local.has(vk) && !history.usedVersus.has(vk);
-    });
-    if (altB) {
-      pickB = altB;
-      vKey = versusKey(pickA.p1, pickA.p2, pickB.p1, pickB.p2);
+  // 2차: need가 남으면(인원이 부족하거나 홀수 등) 중복 허용하되 페어 중복은 피함
+  if (picked.length < need) {
+    for (const p of sorted) {
+      if (picked.length >= need) break;
+      if (picked.some(x => x.key === p.key)) continue; // 동일 페어는 피함
+      picked.push(p);
     }
   }
 
-  result.push({ a1: pickA.p1, a2: pickA.p2, b1: pickB.p1, b2: pickB.p2 });
-
-  usedA_local.add(pickA.key);
-  usedB_local.add(pickB.key);
-  usedV_local.add(vKey);
-
-  history.usedPairsA.add(pickA.key);
-  history.usedPairsB.add(pickB.key);
-  history.usedVersus.add(vKey);
+  return picked.slice(0, need);
 }
-return result;
+
+// ✅ [추가] A페어들을 B페어에 매칭할 때 "대결(versus) 중복"을 줄이면서 섞기
+function matchPairsSmart(pairsA, pairsB, history, mode) {
+  // A는 sum 기준 정렬(강약순)
+  const A_sorted = [...pairsA].sort((x,y)=>x.sum - y.sum);
+
+  // B 후보는 sum 기준 정렬해두되, 각 A에 대해 "가장 가까운 sum"부터 골라보기
+  const B_pool = [...pairsB];
+
+  const usedB = new Set();
+  const out = [];
+
+  for (const a of A_sorted) {
+    // 후보 B들을 (sum 차이 + 중복 페널티) 기준으로 정렬
+    const candB = B_pool
+      .map((b, idx) => {
+        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+        let penalty = Math.abs(a.sum - b.sum);
+
+        // 과거 대결/페어 중복 페널티
+        if (history.usedVersus.has(vKey)) penalty += 300;
+        if (history.usedPairsB.has(b.key)) penalty += 150;
+
+        // 모드 취향 약하게 반영(너무 강하게 넣으면 섞임이 깨짐)
+        if (mode === 0) {
+          penalty += 0.2 * Math.abs(b.i - b.j);
+        } else {
+          if (!mixedFilter(b.i, b.j, SB.length)) penalty += 10;
+        }
+        return { b, idx, vKey, penalty };
+      })
+      .sort((x,y)=>x.penalty - y.penalty);
+
+    let pick = null;
+    for (const c of candB) {
+      if (usedB.has(c.b.key)) continue;
+      pick = c;
+      break;
+    }
+    // 다 썼으면 어쩔 수 없이 가장 좋은 거
+    if (!pick) pick = candB[0];
+
+    usedB.add(pick.b.key);
+
+    out.push({
+      a1: a.p1, a2: a.p2,
+      b1: pick.b.p1, b2: pick.b.p2
+    });
+
+    // history 누적(이 매치에서 확정된 조합)
+    history.usedPairsA.add(a.key);
+    history.usedPairsB.add(pick.b.key);
+    history.usedVersus.add(pick.vKey);
+  }
+
+  return out;
+}
+
+for (let ia = 0; ia < candA.length; ia++) {
+  const PA0full = toPairs(SA, candA[ia]).sort((x, y) => x.sum - y.sum);
+
+  for (let ib = 0; ib < candB.length; ib++) {
+    const PB0full = toPairs(SB, candB[ib]).sort((x, y) => x.sum - y.sum);
+
+    // ✅ 여기서 "선수 중복 최소"로 need개씩 뽑는다
+    const pickA = pickPairsNoPlayerDup(PA0full, need, history.usedPairsA);
+    const pickB = pickPairsNoPlayerDup(PB0full, need, history.usedPairsB);
+
+    if (pickA.length < need || pickB.length < need) continue;
+
+    // ✅ 스코어: 실력차 + 과거 중복(페어/대결) + (아주 약한) 모드취향
+    let score = 0;
+    for (let t=0; t<need; t++) {
+      const a = pickA[t];
+      const b = pickB[t];
+      const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+
+      score += Math.abs(a.sum - b.sum);
+      if (history.usedPairsA.has(a.key)) score += 120;
+      if (history.usedPairsB.has(b.key)) score += 120;
+      if (history.usedVersus.has(vKey)) score += 180;
+
+      if (mode === 0) score += 0.2 * (Math.abs(a.i - a.j) + Math.abs(b.i - b.j));
+      else {
+        if (!mixedFilter(a.i, a.j, SA.length)) score += 8;
+        if (!mixedFilter(b.i, b.j, SB.length)) score += 8;
+      }
+    }
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = { ia, ib, pickA, pickB };
+    }
+  }
+}
+
+if (!best) return [];
+
+// 라운드 포인터 이동
+window.__pairRoundIdx[keyA] = (startA + best.ia + 1) % roundsA.length;
+window.__pairRoundIdx[keyB] = (startB + best.ib + 1) % roundsB.length;
+
+// ✅ 최종 매칭: sum 가까운 것끼리 + 대결중복 피하면서 섞기
+return matchPairsSmart(best.pickA, best.pickB, history, mode);
     }
 
     /* ---------------- 경기 카드 출력 ---------------- */
