@@ -230,491 +230,496 @@
 
    
  <script type="module">
-    /*********************************************************
-     * ✅ Firebase (Compat)로 통일 — import/await 제거
-     *********************************************************/
-    import { db, auth } from "./firebase.js";
+/*********************************************************
+ * ✅ Firebase: 모듈 방식으로 "완전 통일"
+ * - pingpong_main/team-make/index.html
+ * - pingpong_main/firebase.js  => import "../firebase.js"
+ *********************************************************/
+import { db, auth } from "../firebase.js";
 
-import {
-  ref, set, get, update, push, remove
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { ref, set, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
-import {
-  signInAnonymously,
-  onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+/* ---------------- 로그인(익명) ---------------- */
+async function requireAuth() {
+  const u = auth.currentUser;
+  if (u) return u;
 
-await signInAnonymously(auth);
-    const firebaseConfig = {
-      // TODO: 본인 Firebase 웹 설정 붙여넣기
-      // apiKey: "...",
-      // authDomain: "...",
-      // databaseURL: "...",
-      // projectId: "...",
-      // storageBucket: "...",
-      // messagingSenderId: "...",
-      // appId: "..."
+  await signInAnonymously(auth);
+
+  return new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) { unsub(); resolve(user); }
+    });
+  });
+}
+
+// ✅ 시작 시 1회 인증 확보
+await requireAuth();
+
+/*********************************************************
+ * ✅ 전역 상태
+ *********************************************************/
+let exchangeSwapBuffer = null;
+let allPlayers = [];
+let selected = [];
+let latestTeams = [];
+
+let exchangeTeams = {
+  ourTeams: [],
+  opponentTeams: [],
+  mixedTeams: []
+};
+
+const TEAM_COLORS = [
+  "#1976d2","#2e7d32","#ef6c00","#6a1b9a",
+  "#c62828","#00897b","#283593","#f9a825"
+];
+
+function getExchangeGroup(groupType) {
+  if (groupType === "우리팀") return exchangeTeams.ourTeams;
+  if (groupType === "상대팀") return exchangeTeams.opponentTeams;
+  return exchangeTeams.mixedTeams;
+}
+
+/*********************************************************
+ * ✅ 선수 로드
+ *********************************************************/
+async function loadPlayers() {
+  try {
+    const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json");
+    const json = await res.json();
+    const basePlayers = Object.values(json);
+
+    allPlayers = basePlayers.map(p => ({
+      name: p.name,
+      level: p.level,
+      new: false
+    }));
+
+    // LocalStorage 신규 선수 병합
+    const saved = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
+    saved.forEach(p => allPlayers.push({ ...p, new: true }));
+
+    renderPlayers();
+  } catch (err) {
+    console.error("❌ 선수 목록 로딩 실패:", err);
+    alert("선수 목록 로딩 실패 (members.json 확인)");
+  }
+}
+loadPlayers();
+
+/*********************************************************
+ * ✅ 렌더링/선택
+ *********************************************************/
+function toggleSelect(i, el) {
+  if (selected.includes(i)) {
+    selected = selected.filter(v => v !== i);
+    el.classList.remove("selected");
+  } else {
+    selected.push(i);
+    el.classList.add("selected");
+  }
+}
+
+function renderPlayers() {
+  const playerList = document.getElementById("playerList");
+  playerList.innerHTML = "";
+
+  allPlayers.forEach((p, i) => {
+    const el = document.createElement("span");
+    el.className = "player";
+
+    el.innerHTML = `
+      ${p.name}(${p.level}부)
+      ${p.new ? `<button onclick="removeSingleAddedPlayer(${i})"
+        style="margin-left:6px; font-size:12px; padding:2px 5px; background:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">✖</button>` : ''}
+    `;
+
+    el.onclick = (e) => {
+      if (e.target.tagName === 'BUTTON') return;
+      toggleSelect(i, el);
     };
 
-    // 혹시 firebaseConfig를 외부에서 주입하는 구조면,
-    // 위 객체를 지우고 그대로 쓰셔도 됩니다.
-    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    if (p.level <= 6) el.classList.add("lv1to6");
+    else if (p.level <= 9) el.classList.add("lv7to9");
+    else if (p.level <= 12) el.classList.add("lv10to12");
+    else if (p.level <= 15) el.classList.add("lv13to15");
+    else el.classList.add("lv16to20");
 
-    const db = firebase.database(); // ✅ db.ref(...) 사용 가능
+    if (p.new) el.classList.add("new-player");
+    if (selected.includes(i)) el.classList.add("selected");
 
-    // --- 익명 로그인 유틸 ---
-    firebase.auth().onAuthStateChanged((user) => {
-      if (user) {
-        console.log("✅ 익명 로그인됨:", user.uid);
-      } else {
-        firebase.auth().signInAnonymously()
-          .then(() => console.log("✅ 익명 로그인 성공"))
-          .catch(err => console.error("❌ 익명 로그인 실패:", err));
-      }
+    playerList.appendChild(el);
+  });
+}
+
+function removeSingleAddedPlayer(index) {
+  const player = allPlayers[index];
+  if (!player?.new) return;
+  if (!confirm(`${player.name} 선수를 삭제하시겠습니까?`)) return;
+
+  allPlayers.splice(index, 1);
+
+  const stored = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
+  const updated = stored.filter(p => !(p.name === player.name && p.level === player.level));
+  localStorage.setItem("addedPlayers", JSON.stringify(updated));
+
+  // 선택 인덱스도 재정리
+  selected = selected.filter(i => i !== index).map(i => (i > index ? i - 1 : i));
+
+  renderPlayers();
+}
+
+function shuffle(arr) {
+  return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
+}
+
+/*********************************************************
+ * ✅ 자동 팀 배정
+ *********************************************************/
+function assignTeams() {
+  let pool = selected.length ? [...selected] : allPlayers.map((_, i) => i);
+  if (pool.length < 2) {
+    alert("선수가 2명 이상 있어야 합니다.");
+    return;
+  }
+
+  const existingPopup = document.getElementById("teamSelectPopup");
+  if (existingPopup) existingPopup.remove();
+
+  const popup = document.createElement("div");
+  popup.id = "teamSelectPopup";
+  popup.style.position = "fixed";
+  popup.style.top = "0";
+  popup.style.left = "0";
+  popup.style.width = "100%";
+  popup.style.height = "100%";
+  popup.style.background = "rgba(0,0,0,0.6)";
+  popup.style.display = "flex";
+  popup.style.alignItems = "center";
+  popup.style.justifyContent = "center";
+  popup.style.zIndex = "3000";
+
+  popup.innerHTML = `
+    <div style="background:#fff; border-radius:12px; padding:20px; width:320px; text-align:center;">
+      <h3 style="margin-top:0; color:#1976d2;">🏓 팀 자동 배정</h3>
+      <p>팀 수를 선택하세요 (2~8팀)</p>
+      <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:10px;">
+        ${[2,3,4,5,6,7,8].map(n =>
+          `<button style="padding:8px 12px; border-radius:6px; border:1px solid #1976d2; background:#e3f2fd; color:#0d47a1; font-weight:bold; cursor:pointer;"
+            onclick="confirmTeamCount(${n})">${n}팀</button>`
+        ).join("")}
+      </div>
+      <div style="margin-top:16px;">
+        <button onclick="document.body.removeChild(document.getElementById('teamSelectPopup'))"
+                style="padding:8px 16px; background:#999; color:white; border:none; border-radius:6px; cursor:pointer;">
+          취소
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+  window._assignPool = pool;
+}
+
+function confirmTeamCount(teamCount) {
+  const popup = document.getElementById("teamSelectPopup");
+  if (popup) document.body.removeChild(popup);
+
+  if (window._assignPool) {
+    runTeamAssignment(teamCount, window._assignPool);
+  }
+}
+
+function runTeamAssignment(teamCount, pool) {
+  if (isNaN(teamCount) || teamCount < 2 || teamCount > 8) {
+    alert("2~8 사이의 팀 수를 선택해주세요.");
+    return;
+  }
+
+  const players = pool.map(i => allPlayers[i]);
+  const mixed = shuffle(players).slice().sort((a, b) => b.level - a.level);
+
+  const teams = Array.from({ length: teamCount }, (_, i) => ({
+    name: `${i + 1}팀`,
+    members: [],
+    sum: 0
+  }));
+
+  const total = mixed.length;
+  const base = Math.floor(total / teamCount);
+  const extra = total % teamCount;
+  const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base));
+
+  mixed.forEach(p => {
+    const candidates = teams.filter((t, i) => t.members.length < maxPerTeam[i]);
+    const target = candidates.reduce((a, b) => {
+      const avgA = a.members.length ? a.sum / a.members.length : 0;
+      const avgB = b.members.length ? b.sum / b.members.length : 0;
+      return avgA < avgB ? a : b;
+    });
+    target.members.push(p);
+    target.sum += p.level;
+  });
+
+  latestTeams = teams;
+  assignTeamsRender(latestTeams);
+}
+
+function assignTeamsRender(teams) {
+  const teamBox = document.getElementById("teams");
+  teamBox.innerHTML = "";
+
+  teams.forEach((team, teamIdx) => {
+    const div = document.createElement("div");
+    div.className = "team-card";
+    div.id = `auto-team-${teamIdx}`;
+
+    const avg = team.members.length ? (team.sum / team.members.length).toFixed(2) : "-";
+    const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
+
+    div.innerHTML = `
+      <h3>${team.name}</h3>
+      <ul>
+        ${sortedMembers.map(m => {
+          const origIdx = team.members.indexOf(m);
+          return `
+            <li id="auto-${teamIdx}-p${origIdx}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span>${m.name}(${m.level}부)</span>
+              <span style="display:flex;gap:6px;">
+                <button onclick="beginAutoSwap(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
+                <button onclick="moveAutoPlayer(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
+                <button onclick="removeAutoPlayer(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
+              </span>
+            </li>
+          `;
+        }).join('')}
+      </ul>
+      <p><small>부수합: ${team.sum} / 평균: ${avg}</small></p>
+    `;
+    teamBox.appendChild(div);
+  });
+}
+
+let autoSwapBuffer = null;
+function beginAutoSwap(teamIdx, playerIdx) {
+  const liId = `auto-${teamIdx}-p${playerIdx}`;
+  const li = document.getElementById(liId);
+
+  if (!autoSwapBuffer) {
+    autoSwapBuffer = { teamIdx, playerIdx, liId };
+    if (li) li.classList.add('swap-pending');
+    return;
+  }
+
+  if (autoSwapBuffer.teamIdx === teamIdx && autoSwapBuffer.playerIdx === playerIdx) {
+    const prevLi = document.getElementById(autoSwapBuffer.liId);
+    if (prevLi) prevLi.classList.remove('swap-pending');
+    autoSwapBuffer = null;
+    return;
+  }
+
+  const teamA = latestTeams[autoSwapBuffer.teamIdx];
+  const teamB = latestTeams[teamIdx];
+  const a = teamA.members[autoSwapBuffer.playerIdx];
+  const b = teamB.members[playerIdx];
+
+  teamA.members[autoSwapBuffer.playerIdx] = b;
+  teamB.members[playerIdx] = a;
+
+  teamA.sum = teamA.members.reduce((sum, p) => sum + p.level, 0);
+  teamB.sum = teamB.members.reduce((sum, p) => sum + p.level, 0);
+
+  assignTeamsRender(latestTeams);
+  autoSwapBuffer = null;
+}
+
+function moveAutoPlayer(fromTeamIdx, playerIdx) {
+  const player = latestTeams[fromTeamIdx].members[playerIdx];
+  const teamNames = latestTeams.map((t, i) => `${i}: ${t.name}`).join("\n");
+  const choice = prompt(`'${player.name}' 이동할 팀 번호 입력:\n${teamNames}`);
+  if (choice === null) return;
+
+  const toTeamIdx = parseInt(choice, 10);
+  if (isNaN(toTeamIdx) || toTeamIdx < 0 || toTeamIdx >= latestTeams.length) {
+    alert("잘못된 팀 번호입니다.");
+    return;
+  }
+  if (toTeamIdx === fromTeamIdx) {
+    alert("같은 팀으로 이동할 수 없습니다.");
+    return;
+  }
+
+  latestTeams[fromTeamIdx].members.splice(playerIdx, 1);
+  latestTeams[fromTeamIdx].sum = latestTeams[fromTeamIdx].members.reduce((sum, p) => sum + p.level, 0);
+
+  latestTeams[toTeamIdx].members.push(player);
+  latestTeams[toTeamIdx].sum = latestTeams[toTeamIdx].members.reduce((sum, p) => sum + p.level, 0);
+
+  assignTeamsRender(latestTeams);
+}
+
+function removeAutoPlayer(teamIdx, playerIdx) {
+  if (!confirm("이 선수를 팀에서 해제하시겠습니까?")) return;
+
+  latestTeams[teamIdx].members.splice(playerIdx, 1);
+  latestTeams[teamIdx].sum = latestTeams[teamIdx].members.reduce((sum, p) => sum + p.level, 0);
+
+  assignTeamsRender(latestTeams);
+}
+
+/*********************************************************
+ * ✅ 선수 추가 / 삭제
+ *********************************************************/
+function addPlayer() {
+  const nameInput = document.getElementById("newName");
+  const levelInput = document.getElementById("newLevel");
+
+  const name = nameInput.value.trim();
+  const level = parseInt(levelInput.value, 10);
+
+  if (!name || isNaN(level) || level < 1 || level > 20) {
+    alert("이름과 부수를 올바르게 입력해주세요. (부수는 1~20)");
+    return;
+  }
+
+  const newPlayer = { name, level, new: true };
+  allPlayers.push(newPlayer);
+
+  const stored = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
+  stored.push(newPlayer);
+  localStorage.setItem("addedPlayers", JSON.stringify(stored));
+
+  nameInput.value = "";
+  levelInput.value = "";
+  renderPlayers();
+}
+
+function removeAddedPlayers() {
+  if (!confirm("추가한 선수들을 모두 삭제하시겠습니까?")) return;
+  allPlayers = allPlayers.filter(p => !p.new);
+  localStorage.removeItem("addedPlayers");
+  selected = [];
+  renderPlayers();
+}
+
+/*********************************************************
+ * ✅ Firebase 업로드 (모듈 db 사용)
+ * - team-live가 teams를 읽는 구조에 맞춰 저장
+ *********************************************************/
+async function uploadTeamsToFirebase() {
+  try {
+    if (!latestTeams || latestTeams.length === 0) {
+      alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
+      return;
+    }
+
+    await requireAuth();
+
+    // ✅ team-live 코드와 호환되게:
+    // teams/{팀키} = { teamName, players:[{name,level},...] }
+    const firebaseData = {};
+    latestTeams.forEach((team, idx) => {
+      const teamName = team.teamName || team.name || `팀${idx + 1}`;
+      const players = [...team.members].sort((a, b) => a.level - b.level);
+      firebaseData[`team${idx + 1}`] = { teamName, players };
     });
 
-    async function requireAuth() {
-      const current = firebase.auth().currentUser;
-      if (current) return current;
-      await firebase.auth().signInAnonymously();
-      return new Promise((resolve) => {
-        const unsub = firebase.auth().onAuthStateChanged(u => {
-          if (u) { unsub(); resolve(u); }
-        });
-      });
-    }
-
-    /*********************************************************
-     * ✅ 전역 상태
-     *********************************************************/
-    let exchangeSwapBuffer = null;
-    let allPlayers = [];
-    let selected = [];
-    let latestTeams = [];
-
-    let exchangeTeams = {
-      ourTeams: [],
-      opponentTeams: [],
-      mixedTeams: []
-    };
-
-    const TEAM_COLORS = [
-      "#1976d2","#2e7d32","#ef6c00","#6a1b9a",
-      "#c62828","#00897b","#283593","#f9a825"
-    ];
-
-    function getExchangeGroup(groupType) {
-      if (groupType === "우리팀") return exchangeTeams.ourTeams;
-      if (groupType === "상대팀") return exchangeTeams.opponentTeams;
-      return exchangeTeams.mixedTeams;
-    }
-
-    /*********************************************************
-     * ✅ 선수 로드 (중복 로딩 버그 제거)
-     *********************************************************/
-    async function loadPlayers() {
-      try {
-        const res = await fetch("https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json");
-        const json = await res.json();
-        const basePlayers = Object.values(json);
-
-        allPlayers = basePlayers.map(p => ({
-          name: p.name,
-          level: p.level,
-          new: false
-        }));
-
-        // LocalStorage 신규 선수 병합
-        const saved = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
-        saved.forEach(p => allPlayers.push({ ...p, new: true }));
-
-        renderPlayers();
-      } catch (err) {
-        console.error("❌ 선수 목록 로딩 실패:", err);
-      }
-    }
-    loadPlayers();
-
-    /*********************************************************
-     * ✅ 렌더링
-     *********************************************************/
-    function toggleSelect(i, el) {
-      if (selected.includes(i)) {
-        selected = selected.filter(v => v !== i);
-        el.classList.remove("selected");
-      } else {
-        selected.push(i);
-        el.classList.add("selected");
-      }
-    }
-
-    function renderPlayers() {
-      const playerList = document.getElementById("playerList");
-      playerList.innerHTML = "";
-
-      allPlayers.forEach((p, i) => {
-        const el = document.createElement("span");
-        el.className = "player";
-
-        el.innerHTML = `
-          ${p.name}(${p.level}부)
-          ${p.new ? `<button onclick="removeSingleAddedPlayer(${i})"
-            style="margin-left:6px; font-size:12px; padding:2px 5px; background:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">✖</button>` : ''}
-        `;
-
-        el.onclick = (e) => {
-          if (e.target.tagName === 'BUTTON') return;
-          toggleSelect(i, el);
-        };
-
-        if (p.level <= 6) el.classList.add("lv1to6");
-        else if (p.level <= 9) el.classList.add("lv7to9");
-        else if (p.level <= 12) el.classList.add("lv10to12");
-        else if (p.level <= 15) el.classList.add("lv13to15");
-        else el.classList.add("lv16to20");
-
-        if (p.new) el.classList.add("new-player");
-        if (selected.includes(i)) el.classList.add("selected");
-
-        playerList.appendChild(el);
-      });
-    }
-
-    function removeSingleAddedPlayer(index) {
-      const player = allPlayers[index];
-      if (!player.new) return;
-      if (!confirm(`${player.name} 선수를 삭제하시겠습니까?`)) return;
-
-      allPlayers.splice(index, 1);
-
-      const stored = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
-      const updated = stored.filter(p => !(p.name === player.name && p.level === player.level));
-      localStorage.setItem("addedPlayers", JSON.stringify(updated));
-
-      renderPlayers();
-    }
-
-    function shuffle(arr) {
-      return arr.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
-    }
-
-    /*********************************************************
-     * ✅ 자동 팀 배정: 문법 오류(};) 제거 + 정상 동작
-     *********************************************************/
-    function assignTeams() {
-      let pool = selected.length ? [...selected] : allPlayers.map((_, i) => i);
-      if (pool.length < 2) {
-        alert("선수가 2명 이상 있어야 합니다.");
-        return;
-      }
-
-      const existingPopup = document.getElementById("teamSelectPopup");
-      if (existingPopup) existingPopup.remove();
-
-      const popup = document.createElement("div");
-      popup.id = "teamSelectPopup";
-      popup.style.position = "fixed";
-      popup.style.top = "0";
-      popup.style.left = "0";
-      popup.style.width = "100%";
-      popup.style.height = "100%";
-      popup.style.background = "rgba(0,0,0,0.6)";
-      popup.style.display = "flex";
-      popup.style.alignItems = "center";
-      popup.style.justifyContent = "center";
-      popup.style.zIndex = "3000";
-
-      popup.innerHTML = `
-        <div style="background:#fff; border-radius:12px; padding:20px; width:320px; text-align:center;">
-          <h3 style="margin-top:0; color:#1976d2;">🏓 팀 자동 배정</h3>
-          <p>팀 수를 선택하세요 (2~8팀)</p>
-          <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:10px;">
-            ${[2,3,4,5,6,7,8].map(n =>
-              `<button style="padding:8px 12px; border-radius:6px; border:1px solid #1976d2; background:#e3f2fd; color:#0d47a1; font-weight:bold; cursor:pointer;"
-                onclick="confirmTeamCount(${n})">${n}팀</button>`
-            ).join("")}
-          </div>
-          <div style="margin-top:16px;">
-            <button onclick="document.body.removeChild(document.getElementById('teamSelectPopup'))"
-                    style="padding:8px 16px; background:#999; color:white; border:none; border-radius:6px; cursor:pointer;">
-              취소
-            </button>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(popup);
-      window._assignPool = pool; // ✅ 선택한 참가자 풀 저장
-    }
-
-    function confirmTeamCount(teamCount) {
-      const popup = document.getElementById("teamSelectPopup");
-      if (popup) document.body.removeChild(popup);
-
-      if (window._assignPool) {
-        runTeamAssignment(teamCount, window._assignPool);
-      }
-    }
-
-    function runTeamAssignment(teamCount, pool) {
-      if (isNaN(teamCount) || teamCount < 2 || teamCount > 8) {
-        alert("2~8 사이의 팀 수를 선택해주세요.");
-        return;
-      }
-
-      const players = pool.map(i => allPlayers[i]);
-      shuffle(players);
-      players.sort((a, b) => b.level - a.level);
-
-      const teams = Array.from({ length: teamCount }, (_, i) => ({
-        name: `${i + 1}팀`,
-        members: [],
-        sum: 0
-      }));
-
-      const total = players.length;
-      const base = Math.floor(total / teamCount);
-      const extra = total % teamCount;
-      const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base));
-
-      players.forEach(p => {
-        const candidates = teams.filter((t, i) => t.members.length < maxPerTeam[i]);
-        const target = candidates.reduce((a, b) => {
-          const avgA = a.members.length ? a.sum / a.members.length : 0;
-          const avgB = b.members.length ? b.sum / b.members.length : 0;
-          return avgA < avgB ? a : b;
-        });
-        target.members.push(p);
-        target.sum += p.level;
-      });
-
-      latestTeams = teams;
-      assignTeamsRender(latestTeams);
-    }
-
-    function assignTeamsRender(teams) {
-      const teamBox = document.getElementById("teams");
-      teamBox.innerHTML = "";
-
-      teams.forEach((team, teamIdx) => {
-        const div = document.createElement("div");
-        div.className = "team-card";
-        div.id = `auto-team-${teamIdx}`;
-        const avg = team.members.length ? (team.sum / team.members.length).toFixed(2) : "-";
-        const sortedMembers = [...team.members].sort((a, b) => a.level - b.level);
-
-        div.innerHTML = `
-          <h3>${team.name}</h3>
-          <ul>
-            ${sortedMembers.map(m => {
-              const origIdx = team.members.indexOf(m);
-              return `
-                <li id="auto-${teamIdx}-p${origIdx}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                  <span>${m.name}(${m.level}부)</span>
-                  <span style="display:flex;gap:6px;">
-                    <button onclick="beginAutoSwap(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">↔ 교체</button>
-                    <button onclick="moveAutoPlayer(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">→ 이동</button>
-                    <button onclick="removeAutoPlayer(${teamIdx}, ${origIdx})" style="font-size:12px;padding:4px 8px;">✖ 해제</button>
-                  </span>
-                </li>
-              `;
-            }).join('')}
-          </ul>
-          <p><small>부수합: ${team.sum} / 평균: ${avg}</small></p>
-        `;
-        teamBox.appendChild(div);
-      });
-    }
-
-    let autoSwapBuffer = null;
-    function beginAutoSwap(teamIdx, playerIdx) {
-      const liId = `auto-${teamIdx}-p${playerIdx}`;
-      const li = document.getElementById(liId);
-
-      if (!autoSwapBuffer) {
-        autoSwapBuffer = { teamIdx, playerIdx, liId };
-        if (li) li.classList.add('swap-pending');
-        return;
-      }
-
-      if (autoSwapBuffer.teamIdx === teamIdx && autoSwapBuffer.playerIdx === playerIdx) {
-        const prevLi = document.getElementById(autoSwapBuffer.liId);
-        if (prevLi) prevLi.classList.remove('swap-pending');
-        autoSwapBuffer = null;
-        return;
-      }
-
-      const teamA = latestTeams[autoSwapBuffer.teamIdx];
-      const teamB = latestTeams[teamIdx];
-      const a = teamA.members[autoSwapBuffer.playerIdx];
-      const b = teamB.members[playerIdx];
-
-      teamA.members[autoSwapBuffer.playerIdx] = b;
-      teamB.members[playerIdx] = a;
-
-      teamA.sum = teamA.members.reduce((sum, p) => sum + p.level, 0);
-      teamB.sum = teamB.members.reduce((sum, p) => sum + p.level, 0);
-
-      assignTeamsRender(latestTeams);
-      autoSwapBuffer = null;
-    }
-
-    function moveAutoPlayer(fromTeamIdx, playerIdx) {
-      const player = latestTeams[fromTeamIdx].members[playerIdx];
-      const teamNames = latestTeams.map((t, i) => `${i}: ${t.name}`).join("\n");
-      const choice = prompt(`'${player.name}' 이동할 팀 번호 입력:\n${teamNames}`);
-      if (choice === null) return;
-
-      const toTeamIdx = parseInt(choice, 10);
-      if (isNaN(toTeamIdx) || toTeamIdx < 0 || toTeamIdx >= latestTeams.length) {
-        alert("잘못된 팀 번호입니다.");
-        return;
-      }
-      if (toTeamIdx === fromTeamIdx) {
-        alert("같은 팀으로 이동할 수 없습니다.");
-        return;
-      }
-
-      latestTeams[fromTeamIdx].members.splice(playerIdx, 1);
-      latestTeams[fromTeamIdx].sum = latestTeams[fromTeamIdx].members.reduce((sum, p) => sum + p.level, 0);
-
-      latestTeams[toTeamIdx].members.push(player);
-      latestTeams[toTeamIdx].sum = latestTeams[toTeamIdx].members.reduce((sum, p) => sum + p.level, 0);
-
-      assignTeamsRender(latestTeams);
-    }
-
-    function removeAutoPlayer(teamIdx, playerIdx) {
-      if (!confirm("이 선수를 팀에서 해제하시겠습니까?")) return;
-
-      latestTeams[teamIdx].members.splice(playerIdx, 1);
-      latestTeams[teamIdx].sum = latestTeams[teamIdx].members.reduce((sum, p) => sum + p.level, 0);
-
-      assignTeamsRender(latestTeams);
-    }
-
-    /*********************************************************
-     * ✅ 이미지 저장 / 선수 추가 / 삭제
-     *********************************************************/
-    function saveTeamsAsImage() {
-      const teamsArea = document.getElementById("teams");
-      if (!teamsArea || teamsArea.innerHTML.trim() === "") {
-        alert("팀이 먼저 생성되어야 저장할 수 있습니다.");
-        return;
-      }
-      html2canvas(teamsArea).then(canvas => {
-        const link = document.createElement("a");
-        link.download = "탁구_팀_구성.png";
-        link.href = canvas.toDataURL();
-        link.click();
-      });
-    }
-
-    function addPlayer() {
-      const nameInput = document.getElementById("newName");
-      const levelInput = document.getElementById("newLevel");
-
-      const name = nameInput.value.trim();
-      const level = parseInt(levelInput.value, 10);
-
-      if (!name || isNaN(level) || level < 1 || level > 20) {
-        alert("이름과 부수를 올바르게 입력해주세요. (부수는 1~20)");
-        return;
-      }
-
-      const newPlayer = { name, level, new: true };
-      allPlayers.push(newPlayer);
-
-      const stored = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
-      stored.push(newPlayer);
-      localStorage.setItem("addedPlayers", JSON.stringify(stored));
-
-      nameInput.value = "";
-      levelInput.value = "";
-      renderPlayers();
-    }
-
-    function removeAddedPlayers() {
-      if (!confirm("추가한 선수들을 모두 삭제하시겠습니까?")) return;
-      allPlayers = allPlayers.filter(p => !p.new);
-      localStorage.removeItem("addedPlayers");
-      renderPlayers();
-    }
-
-    /*********************************************************
-     * ✅ Firebase 업로드 (db.ref 사용)
-     *********************************************************/
-    async function uploadTeamsToFirebase() {
-      try {
-        if (!latestTeams || latestTeams.length === 0) {
-          alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
-          return;
-        }
-
-        await requireAuth();
-
-        const firebaseData = {};
-        latestTeams.forEach((team, idx) => {
-          const teamName = team.teamName || team.name || `팀${idx + 1}`;
-          const players = [...team.members].sort((a, b) => a.level - b.level);
-          firebaseData[`team${idx + 1}`] = { teamName, players };
-        });
-
-       await set(ref(db, "teams"), firebaseData);
-
-        setTimeout(() => {
-          window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/";
-        }, 500);
-
-      } catch (err) {
-        console.error("❌ 업로드 실패:", err);
-        alert("❌ Firebase 업로드 실패\n자세한 내용은 콘솔을 확인하세요.");
-      }
-    }
-
-    /*********************************************************
-     * ✅ 초기화 / 도움말 모달
-     *********************************************************/
-    function resetAll() {
-      selected = [];
-      document.getElementById("teams").innerHTML = "";
-      document.getElementById("matchSchedule").innerHTML = "";
-      renderPlayers();
-    }
-
-    function openModal() {
-      document.getElementById('helpModal').style.display = 'flex';
-    }
-    function closeModal() {
-      document.getElementById('helpModal').style.display = 'none';
-    }
-    document.addEventListener('keydown', function(event) {
-      if (event.key === 'Escape') closeModal();
-    });
-    document.getElementById('helpModal').addEventListener('click', function(e) {
-      if (e.target === this) closeModal();
-    });
-
-    /*********************************************************
-     * ✅ (아래 기능들: 교류전/수동배정)
-     * - 원문 코드가 길어서, 이번 턴에서는 “실행 에러를 잡는” 데 집중했습니다.
-     * - 교류전/수동배정까지 완전 점검은 다음 단계로 확장 가능합니다.
-     *********************************************************/
-    function createExchangeMatch() {
-      document.getElementById('exchangeModal').style.display = 'flex';
-    }
-    function closeExchangeModal() {
-      document.getElementById('exchangeModal').style.display = 'none';
-    }
-    function confirmExchangeMatch() {
-      alert("교류전 생성 로직은 원문 그대로 유지/점검 단계입니다.\n원하시면 교류전 UI/스왑/이동까지 완전 동작하도록 이어서 정리해드리겠습니다.");
-      closeExchangeModal();
-    }
-
-    function startManualTeamAssign() {
-      alert("수동 배정 로직은 원문 그대로 유지/점검 단계입니다.\n원하시면 수동배정 UI까지 완전 동작하도록 이어서 정리해드리겠습니다.");
-    }
-  </script>
+    await set(ref(db, "teams"), firebaseData);
+
+    setTimeout(() => {
+      // ✅ 선생님 team-live 주소로 이동
+      window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong_main/team-live/";
+    }, 300);
+
+  } catch (err) {
+    console.error("❌ 업로드 실패:", err);
+    alert("❌ Firebase 업로드 실패\n자세한 내용은 콘솔을 확인하세요.");
+  }
+}
+
+/*********************************************************
+ * ✅ 초기화 / 도움말 모달 (기존 그대로)
+ *********************************************************/
+function resetAll() {
+  selected = [];
+  document.getElementById("teams").innerHTML = "";
+  document.getElementById("matchSchedule").innerHTML = "";
+  renderPlayers();
+}
+
+function openModal() {
+  document.getElementById('helpModal').style.display = 'flex';
+}
+function closeModal() {
+  document.getElementById('helpModal').style.display = 'none';
+}
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') closeModal();
+});
+document.getElementById('helpModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+/*********************************************************
+ * ✅ 교류전/수동배정: 현재는 알림만(기존 그대로)
+ *********************************************************/
+function createExchangeMatch() {
+  document.getElementById('exchangeModal').style.display = 'flex';
+}
+function closeExchangeModal() {
+  document.getElementById('exchangeModal').style.display = 'none';
+}
+function confirmExchangeMatch() {
+  alert("교류전 생성 로직은 점검 단계입니다.\n원하시면 교류전까지 완전 동작하도록 이어서 정리해드리겠습니다.");
+  closeExchangeModal();
+}
+function startManualTeamAssign() {
+  alert("수동 배정 로직은 점검 단계입니다.\n원하시면 수동배정 UI까지 완전 동작하도록 이어서 정리해드리겠습니다.");
+}
+
+/*********************************************************
+ * ✅ module 스코프 -> window 노출 (onclick용)
+ *********************************************************/
+window.addPlayer = addPlayer;
+window.removeAddedPlayers = removeAddedPlayers;
+window.removeSingleAddedPlayer = removeSingleAddedPlayer;
+
+window.assignTeams = assignTeams;
+window.confirmTeamCount = confirmTeamCount;
+
+window.beginAutoSwap = beginAutoSwap;
+window.moveAutoPlayer = moveAutoPlayer;
+window.removeAutoPlayer = removeAutoPlayer;
+
+window.saveTeamsAsImage = function saveTeamsAsImage(){
+  const teamsArea = document.getElementById("teams");
+  if (!teamsArea || teamsArea.innerHTML.trim() === "") {
+    alert("팀이 먼저 생성되어야 저장할 수 있습니다.");
+    return;
+  }
+  html2canvas(teamsArea).then(canvas => {
+    const link = document.createElement("a");
+    link.download = "탁구_팀_구성.png";
+    link.href = canvas.toDataURL();
+    link.click();
+  });
+};
+
+window.uploadTeamsToFirebase = uploadTeamsToFirebase;
+
+window.resetAll = resetAll;
+window.openModal = openModal;
+window.closeModal = closeModal;
+
+window.createExchangeMatch = createExchangeMatch;
+window.closeExchangeModal = closeExchangeModal;
+window.confirmExchangeMatch = confirmExchangeMatch;
+
+window.startManualTeamAssign = startManualTeamAssign;
+</script>
 
   <!-- 교류전 설정 모달 -->
   <div class="modal-overlay" id="exchangeModal">
