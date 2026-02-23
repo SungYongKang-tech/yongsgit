@@ -880,108 +880,110 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
 
       if (!need || need <= 0) return [];
 
-      // ✅ 4명 vs 4명, 4복: 완전탐색(원 코드 유지)
-      if (SA.length === 4 && SB.length === 4 && need === 4) {
-        const pairsA_all = allTeamPairs(SA);
-        const pairsB_all = allTeamPairs(SB);
+      // ✅ 4명 vs 4명, need=4: 완전탐색(중괄호 오류 수정본)
+if (SA.length === 4 && SB.length === 4 && need === 4) {
+  const pairsA_all = allTeamPairs(SA);
+  const pairsB_all = allTeamPairs(SB);
 
-        function choose4(pairs){
-          const res = [];
-          for (let i=0;i<pairs.length;i++){
-            for (let j=i+1;j<pairs.length;j++){
-              for (let k=j+1;k<pairs.length;k++){
-                for (let l=k+1;l<pairs.length;l++){
-                  res.push([pairs[i],pairs[j],pairs[k],pairs[l]]);
-                }
-              }
-            }
-          }
-          return res;
-        }
-
-        function perms(arr){
-          if (arr.length <= 1) return [arr];
-          const out = [];
-          for (let i=0;i<arr.length;i++){
-            const rest = arr.slice(0,i).concat(arr.slice(i+1));
-            for (const p of perms(rest)) out.push([arr[i], ...p]);
-          }
-          return out;
-        }
-
-        const combosA = choose4(pairsA_all);
-        const combosB = choose4(pairsB_all);
-        const permIdxs = perms([0,1,2,3]);
-
-        let best = null;
-        let bestScore = Infinity;
-
-        for (const setA of combosA) {
-          const A_sorted = [...setA].sort((x,y)=>x.sum-y.sum);
-
-          let basePenaltyA = 0;
-          for (const a of A_sorted) {
-            const aKey = pairKeySorted(a.p1.name, a.p2.name);
-            if (history.usedPairsA.has(aKey)) basePenaltyA += 120;
-          }
-
-          for (const setB of combosB) {
-            const B_sorted0 = [...setB].sort((x,y)=>x.sum-y.sum);
-
-            let basePenaltyB = 0;
-            for (const b of B_sorted0) {
-              const bKey = pairKeySorted(b.p1.name, b.p2.name);
-              if (history.usedPairsB.has(bKey)) basePenaltyB += 120;
-            }
-
-            for (const pi of permIdxs) {
-              let score = 0;
-              score += basePenaltyA + basePenaltyB;
-
-              for (let t=0; t<4; t++) {
-                const a = A_sorted[t];
-                const b = B_sorted0[pi[t]];
-                const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-
-                score += Math.abs(a.sum - b.sum);
-                if (history.usedVersus.has(vKey)) score += 180;
-
-               const spreadA = Math.abs(a.i - a.j);
-const spreadB = Math.abs(b.i - b.j);
-
-if (mode === 0) {
-  score += 0.3 * (spreadA + spreadB);
-} else {
-  score += 0.3 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
-}
-                }
-              }
-
-              if (score < bestScore) {
-                bestScore = score;
-                best = { A_sorted, B_sorted0, pi };
-              }
-            }
+  function choose4(pairs){
+    const res = [];
+    for (let i=0;i<pairs.length;i++){
+      for (let j=i+1;j<pairs.length;j++){
+        for (let k=j+1;k<pairs.length;k++){
+          for (let l=k+1;l<pairs.length;l++){
+            res.push([pairs[i],pairs[j],pairs[k],pairs[l]]);
           }
         }
+      }
+    }
+    return res;
+  }
 
-        const result = [];
+  function perms(arr){
+    if (arr.length <= 1) return [arr];
+    const out = [];
+    for (let i=0;i<arr.length;i++){
+      const rest = arr.slice(0,i).concat(arr.slice(i+1));
+      for (const p of perms(rest)) out.push([arr[i], ...p]);
+    }
+    return out;
+  }
+
+  const combosA = choose4(pairsA_all);
+  const combosB = choose4(pairsB_all);
+  const permIdxs = perms([0,1,2,3]);
+
+  let best = null;
+  let bestScore = Infinity;
+
+  for (const setA of combosA) {
+    const A_sorted = [...setA].sort((x,y)=>x.sum-y.sum);
+
+    let basePenaltyA = 0;
+    for (const a of A_sorted) {
+      const aKey = pairKeySorted(a.p1.name, a.p2.name);
+      if (history.usedPairsA.has(aKey)) basePenaltyA += 120;
+    }
+
+    for (const setB of combosB) {
+      const B_sorted0 = [...setB].sort((x,y)=>x.sum-y.sum);
+
+      let basePenaltyB = 0;
+      for (const b of B_sorted0) {
+        const bKey = pairKeySorted(b.p1.name, b.p2.name);
+        if (history.usedPairsB.has(bKey)) basePenaltyB += 120;
+      }
+
+      for (const pi of permIdxs) {
+        let score = 0;
+        score += basePenaltyA + basePenaltyB;
+
         for (let t=0; t<4; t++) {
-          const a = best.A_sorted[t];
-          const b = best.B_sorted0[best.pi[t]];
-
-          result.push({ a1: a.p1, a2: a.p2, b1: b.p1, b2: b.p2 });
-
-          const aKey = pairKeySorted(a.p1.name, a.p2.name);
-          const bKey = pairKeySorted(b.p1.name, b.p2.name);
+          const a = A_sorted[t];
+          const b = B_sorted0[pi[t]];
           const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
 
-          history.usedPairsA.add(aKey);
-          history.usedPairsB.add(bKey);
-          history.usedVersus.add(vKey);
+          score += Math.abs(a.sum - b.sum);
+          if (history.usedVersus.has(vKey)) score += 180;
+
+          const spreadA = Math.abs(a.i - a.j);
+          const spreadB = Math.abs(b.i - b.j);
+
+          if (mode === 0) {
+            score += 0.3 * (spreadA + spreadB);
+          } else {
+            score += 0.3 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
+          }
+        } // ✅ (중요) for(t) 닫기만 1번
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = { A_sorted, B_sorted0, pi };
         }
-        return result;
       }
+    }
+  }
+
+  // best가 혹시 null이면 안전장치
+  if (!best) return [];
+
+  const result = [];
+  for (let t=0; t<4; t++) {
+    const a = best.A_sorted[t];
+    const b = best.B_sorted0[best.pi[t]];
+
+    result.push({ a1: a.p1, a2: a.p2, b1: b.p1, b2: b.p2 });
+
+    const aKey = pairKeySorted(a.p1.name, a.p2.name);
+    const bKey = pairKeySorted(b.p1.name, b.p2.name);
+    const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+
+    history.usedPairsA.add(aKey);
+    history.usedPairsB.add(bKey);
+    history.usedVersus.add(vKey);
+  }
+  return result;
+}
 
       // ✅ 전원출전(need*2==인원)
       if (need * 2 === SA.length && need * 2 === SB.length) {
