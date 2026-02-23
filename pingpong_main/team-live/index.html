@@ -250,6 +250,17 @@
       .quick-add-row #addTeamSelect{ min-width: 80px; max-width: 120px; padding: 8px; }
       .quick-add-row .btn-add{ min-width: 52px; padding: 7px 8px; font-size: 14px; }
     }
+
+    /* ✅ 점수 버튼: 5판3승(주황) */
+.btn-score-bo5{
+  font-size: 14px;
+  padding: 6px 10px;
+  margin: 3px;
+  min-width: 40px;
+  background-color: #fb8c00; /* 주황 */
+  color:#fff;
+}
+.btn-score-bo5:hover{ background-color:#ef6c00; }
   </style>
 </head>
 
@@ -352,6 +363,9 @@
     let teamData = {};
 
     let autoMode = -1;
+
+    // ✅ 점수 입력 방식: 1 = 3판2선승(파랑), 2 = 5판3선승(주황)
+window.__scoreMode = window.__scoreMode ?? 1;
 
     // ✅ [추가] 팀별 복식 라운드 캐시/포인터
     if (!window.__pairRounds) window.__pairRounds = {};
@@ -1303,26 +1317,44 @@ return matchPairsSmart(best.pickA, best.pickB, history, mode);
     function closePopup(){ document.getElementById("popup").style.display = "none"; }
 
     /* ---------------- 경기 결과 팝업 ---------------- */
-    function openResultPopup(cell) {
-      const popup = document.getElementById("popup");
-      const playerText = cell.parentElement.children[1].innerText;
-      const scores = ["3:2","3:1","3:0","0:0","0:3","1:3","2:3","2:1","2:0","0:2","1:2"];
+   function openResultPopup(cell) {
+  const popup = document.getElementById("popup");
+  const playerText = cell.parentElement.children[1].innerText;
 
-      const buttons = scores.map(s =>
-        `<button class="btn-save" onclick="setMatchResult('${s}')">${s}</button>`
-      ).join(" ");
+  // ✅ 현재 점수 입력 모드 (기본: 3판2선승)
+  const mode = window.__scoreMode ?? 1;
 
-      popup.innerHTML = `
-        <p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
-        <p style="text-align:center;">${playerText}</p>
-        <div style="text-align:center; margin:10px 0;">${buttons}</div>
-        <div style="text-align:center; margin-top:10px;">
-          <button class="btn-share" onclick="closePopup()">닫기</button>
-        </div>
-      `;
-      popup.targetCell = cell;
-      popup.style.display = "block";
-    }
+  // ✅ 모드별 점수 버튼 구성
+  const scores = (mode === 2)
+    ? ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"]          // 5판3선승
+    : ["2:1","2:0","0:0","0:2","1:2"];                     // 3판2선승
+
+  // ✅ 모드별 버튼 색
+  const btnClass = (mode === 2) ? "btn-score-bo5" : "btn-save";
+
+  const buttons = scores.map(s =>
+    `<button class="${btnClass}" onclick="setMatchResult('${s}')">${s}</button>`
+  ).join(" ");
+
+  popup.innerHTML = `
+    <p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
+
+    <!-- ✅ 모드 토글(원하시면 빼도 됨: 여기서 바로 바꿀 수 있게) -->
+    <div style="text-align:center; margin:6px 0 10px;">
+      <button class="btn-save btn-option ${mode===1?'active':''}" onclick="window.__scoreMode=1; openResultPopup(popup.targetCell)">3판 2선승</button>
+      <button class="btn-score-bo5 btn-option ${mode===2?'active':''}" onclick="window.__scoreMode=2; openResultPopup(popup.targetCell)">5판 3선승</button>
+    </div>
+
+    <p style="text-align:center;">${playerText}</p>
+    <div style="text-align:center; margin:10px 0;">${buttons}</div>
+    <div style="text-align:center; margin-top:10px;">
+      <button class="btn-share" onclick="closePopup()">닫기</button>
+    </div>
+  `;
+
+  popup.targetCell = cell;
+  popup.style.display = "block";
+}
 
     async function setMatchResult(score) {
       await requireAuth();
