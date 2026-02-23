@@ -759,16 +759,17 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
     }
 
     function modePreferenceScore(pairs, n, mode) {
-      if (mode === 0) {
-        return pairs.reduce((sum, [i,j]) => sum + Math.abs(i - j), 0);
-      } else {
-        let bad = 0;
-        for (const [i,j] of pairs) {
-          if (!mixedFilter(i, j, n)) bad += 1;
-        }
-        return bad * 1000;
-      }
-    }
+  // pairs: [ [i,j], [i,j], ... ]
+  // mode=0(실력매칭): "가까운 인덱스" 선호 => abs(i-j) 합이 작을수록 좋음
+  // mode=1(조합매칭): "먼 인덱스" 선호   => abs(i-j) 합이 클수록 좋음
+  const spreads = pairs.reduce((sum,[i,j]) => sum + Math.abs(i-j), 0);
+
+  if (mode === 0) {
+    return spreads;               // 작을수록 좋음(강강/약약)
+  } else {
+    return -spreads;              // 클수록 좋음(강약 섞기)
+  }
+}
 
     function scoreRound(SA, SB, roundA, roundB, history) {
       const pairsA = roundA.map(([i,j]) => {
@@ -945,11 +946,14 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
                 score += Math.abs(a.sum - b.sum);
                 if (history.usedVersus.has(vKey)) score += 180;
 
-                if (mode === 0) {
-                  score += 0.3 * (Math.abs(a.i - a.j) + Math.abs(b.i - b.j));
-                } else {
-                  if (!mixedFilter(a.i, a.j, SA.length)) score += 8;
-                  if (!mixedFilter(b.i, b.j, SB.length)) score += 8;
+               const spreadA = Math.abs(a.i - a.j);
+const spreadB = Math.abs(b.i - b.j);
+
+if (mode === 0) {
+  score += 0.3 * (spreadA + spreadB);
+} else {
+  score += 0.3 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
+}
                 }
               }
 
@@ -1060,13 +1064,11 @@ const maxPairsB = Math.floor(SB.length / 2);
 
 if (need > maxPairsA || need > maxPairsB) {
   // 모드(조합매칭)일 때는 mixedFilter를 약하게 반영
-  const poolA = (mode === 1) ? allTeamPairsFiltered(SA, mixedFilter) : allTeamPairs(SA);
-  const poolB = (mode === 1) ? allTeamPairsFiltered(SB, mixedFilter) : allTeamPairs(SB);
-
+  const poolA = allTeamPairs(SA);
+const poolB = allTeamPairs(SB);
   // 풀 자체가 너무 작으면(인원이 너무 적으면) 그냥 가능한 만큼만 만들고 나머지는 상위에서 채우게 둔다
-  const pickA = pickPairsNoPlayerDup(poolA, need, history.usedPairsA);
-  const pickB = pickPairsNoPlayerDup(poolB, need, history.usedPairsB);
-
+const pickA = pickPairsNoPlayerDup(poolA, need, history.usedPairsA, mode);
+const pickB = pickPairsNoPlayerDup(poolB, need, history.usedPairsB, mode);
   if (pickA.length === 0 || pickB.length === 0) return [];
 
   // 길이가 need보다 짧아도 일단 반환(상위에서 placeholder로 채움)
@@ -1102,7 +1104,7 @@ function toPairs(players, round) {
 }
 
 // ✅ [추가] 같은 매치 안에서 "선수 중복 출전"을 최소화해서 need개 페어 뽑기
-function pickPairsNoPlayerDup(pairs, need, historyUsedPairsSet) {
+function pickPairsNoPlayerDup(pairs, need, historyUsedPairsSet, mode = 0, nPlayers) {
   const picked = [];
   const usedPlayers = new Set();
 
@@ -1116,8 +1118,11 @@ function pickPairsNoPlayerDup(pairs, need, historyUsedPairsSet) {
     if (aHist !== bHist) return aHist - bHist;
     // 약간 섞이도록 sum이 작은 것부터만 고정하지 말고, i/j 간격도 참고
     const aSpread = Math.abs(a.i - a.j);
-    const bSpread = Math.abs(b.i - b.j);
-    return aSpread - bSpread;
+const bSpread = Math.abs(b.i - b.j);
+
+// mode=0: spread 작은 페어 우선(강강/약약)
+// mode=1: spread 큰 페어 우선(강약)
+return (mode === 0) ? (aSpread - bSpread) : (bSpread - aSpread);
   });
 
   // 1차: 선수 중복 없이 최대한
@@ -1163,11 +1168,14 @@ function matchPairsSmart(pairsA, pairsB, history, mode) {
         if (history.usedPairsB.has(b.key)) penalty += 150;
 
         // 모드 취향 약하게 반영(너무 강하게 넣으면 섞임이 깨짐)
-        if (mode === 0) {
-          penalty += 0.2 * Math.abs(b.i - b.j);
-        } else {
-          if (!mixedFilter(b.i, b.j, SB.length)) penalty += 10;
-        }
+        const spreadB = Math.abs(b.i - b.j);
+if (mode === 0) {
+  // 실력매칭: spread 작은 편이 유리
+  penalty += 0.2 * spreadB;
+} else {
+  // 조합매칭: spread 큰 편이 유리 => 작으면 벌점
+  penalty += 0.2 * (SB.length - 1 - spreadB);
+}
         return { b, idx, vKey, penalty };
       })
       .sort((x,y)=>x.penalty - y.penalty);
@@ -1204,9 +1212,8 @@ for (let ia = 0; ia < candA.length; ia++) {
     const PB0full = toPairs(SB, candB[ib]).sort((x, y) => x.sum - y.sum);
 
     // ✅ 여기서 "선수 중복 최소"로 need개씩 뽑는다
-    const pickA = pickPairsNoPlayerDup(PA0full, need, history.usedPairsA);
-    const pickB = pickPairsNoPlayerDup(PB0full, need, history.usedPairsB);
-
+   const pickA = pickPairsNoPlayerDup(PA0full, need, history.usedPairsA, mode);
+   const pickB = pickPairsNoPlayerDup(PB0full, need, history.usedPairsB, mode);
     if (pickA.length < need || pickB.length < need) continue;
 
     // ✅ 스코어: 실력차 + 과거 중복(페어/대결) + (아주 약한) 모드취향
@@ -1221,11 +1228,14 @@ for (let ia = 0; ia < candA.length; ia++) {
       if (history.usedPairsB.has(b.key)) score += 120;
       if (history.usedVersus.has(vKey)) score += 180;
 
-      if (mode === 0) score += 0.2 * (Math.abs(a.i - a.j) + Math.abs(b.i - b.j));
-      else {
-        if (!mixedFilter(a.i, a.j, SA.length)) score += 8;
-        if (!mixedFilter(b.i, b.j, SB.length)) score += 8;
-      }
+      const spreadA = Math.abs(a.i - a.j);
+const spreadB = Math.abs(b.i - b.j);
+
+if (mode === 0) {
+  score += 0.2 * (spreadA + spreadB);
+} else {
+  score += 0.2 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
+}
     }
 
     if (score < bestScore) {
@@ -1372,8 +1382,11 @@ return matchPairsSmart(best.pickA, best.pickB, history, mode);
 
     <!-- ✅ 모드 토글(원하시면 빼도 됨: 여기서 바로 바꿀 수 있게) -->
     <div style="text-align:center; margin:6px 0 10px;">
-      <button class="btn-save btn-option ${mode===1?'active':''}" onclick="window.__scoreMode=1; openResultPopup(popup.targetCell)">3판 2선승</button>
-      <button class="btn-score-bo5 btn-option ${mode===2?'active':''}" onclick="window.__scoreMode=2; openResultPopup(popup.targetCell)">5판 3선승</button>
+      <button class="btn-save btn-option ${mode===1?'active':''}"
+  onclick="window.__scoreMode=1; openResultPopup(document.getElementById('popup').targetCell)">3판 2선승</button>
+
+<button class="btn-score-bo5 btn-option ${mode===2?'active':''}"
+  onclick="window.__scoreMode=2; openResultPopup(document.getElementById('popup').targetCell)">5판 3선승</button>
     </div>
 
     <p style="text-align:center;">${playerText}</p>
