@@ -548,7 +548,15 @@ if (singlesA.length !== singlesB.length) {
 }
 
           const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
-
+          // ✅ 복식이 부족하면 placeholder로 채우기(팀 인원이 적거나 홀수인 경우 대비)
+while (doubles.length < doublesCnt) {
+  doubles.push({
+    a1: { name: "미정", level: "?" },
+    a2: { name: "미정", level: "?" },
+    b1: { name: "미정", level: "?" },
+    b2: { name: "미정", level: "?" }
+  });
+}
           const matchList = [];
           singles.forEach((m, idx) => {
             matchList.push({
@@ -1042,6 +1050,29 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
       }
 
      // ✅ 일반 케이스
+// ----------------------------------------------------
+// ✅ [핵심 버그픽스] need가 "한 라운드에서 만들 수 있는 페어 수(floor(n/2))"보다 크면
+// 라운드 기반으로는 절대 need개를 못 뽑아서 best가 null -> [] 반환 -> 복식이 사라짐.
+// 이 경우에는 전체 조합(allTeamPairs)에서 페어를 뽑는 fallback으로 처리한다.
+// ----------------------------------------------------
+const maxPairsA = Math.floor(SA.length / 2);
+const maxPairsB = Math.floor(SB.length / 2);
+
+if (need > maxPairsA || need > maxPairsB) {
+  // 모드(조합매칭)일 때는 mixedFilter를 약하게 반영
+  const poolA = (mode === 1) ? allTeamPairsFiltered(SA, mixedFilter) : allTeamPairs(SA);
+  const poolB = (mode === 1) ? allTeamPairsFiltered(SB, mixedFilter) : allTeamPairs(SB);
+
+  // 풀 자체가 너무 작으면(인원이 너무 적으면) 그냥 가능한 만큼만 만들고 나머지는 상위에서 채우게 둔다
+  const pickA = pickPairsNoPlayerDup(poolA, need, history.usedPairsA);
+  const pickB = pickPairsNoPlayerDup(poolB, need, history.usedPairsB);
+
+  if (pickA.length === 0 || pickB.length === 0) return [];
+
+  // 길이가 need보다 짧아도 일단 반환(상위에서 placeholder로 채움)
+  return matchPairsSmart(pickA, pickB, history, mode);
+}
+
 if (!window.__pairRounds[keyA]) window.__pairRounds[keyA] = buildDisjointPairRounds(SA.length);
 if (!window.__pairRounds[keyB]) window.__pairRounds[keyB] = buildDisjointPairRounds(SB.length);
 
