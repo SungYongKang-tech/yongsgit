@@ -303,24 +303,68 @@ function bindIBS(){
   unsubscribers.push(uY, uT);
 }
 
+/* ==========================
+   ✅ Carry Over (주말/연휴 포함)
+   - 오늘 todayWork가 비어있으면
+     "오늘보다 이전"에서 가장 최근 tomorrowWork를 찾아
+     오늘 todayWork로 자동 반영
+   - MECH/ELEC 공통 사용
+========================== */
+
+function dateFromIsoLocal(iso){
+  // "YYYY-MM-DD" 를 로컬(KST) 기준 Date로 안전하게 생성
+  const [Y,M,D] = iso.split("-").map(Number);
+  return new Date(Y, M-1, D);
+}
+
+function isoMinusDays(iso, days){
+  const d = dateFromIsoLocal(iso);
+  d.setDate(d.getDate() - days);
+  return isoFromDate(d);
+}
+
+async function findLatestTomorrowWorkBeforeToday(pathFn, maxLookbackDays = 14){
+  // 오늘(ISO_TODAY) 이전 날짜들 중, 가장 최근 tomorrowWork가 있는 날을 찾음
+  for (let i = 1; i <= maxLookbackDays; i++){
+    const iso = isoMinusDays(ISO_TODAY, i);
+    try{
+      const snap = await get(ref(db, pathFn(iso)));
+      const v = snap.val() || {};
+      const plan = (v.tomorrowWork || "").trim();
+      if (plan) return { fromIso: iso, plan };
+    }catch(e){
+      // 네트워크/권한 등 실패해도 다음 날짜로 계속 탐색
+    }
+  }
+  return null;
+}
+
 async function ensureCarryOver(areaTodayId, todayPathFn, statusTodayEl){
+  // 과거조회 모드에서는 자동 반영하지 않음
+  if (isHistoryMode) return;
+
   const todayRef = ref(db, todayPathFn(ISO_TODAY));
-  const ydayRef  = ref(db, todayPathFn(ISO_YDAY));
-  const [todaySnap, ydaySnap] = await Promise.all([get(todayRef), get(ydayRef)]);
+  const todaySnap = await get(todayRef);
   const todayVal = todaySnap.val() || {};
-  const ydayVal  = ydaySnap.val() || {};
 
   const todayAlready = (todayVal.todayWork || "").trim();
-  const fromPlan = (ydayVal.tomorrowWork || "").trim();
+  if (todayAlready) return; // ✅ 오늘칸에 이미 뭔가 있으면 자동 반영 금지
 
-  if (!todayAlready && fromPlan){
-    setFieldValue(areaTodayId, fromPlan);
-    statusTodayEl.textContent = "자동 반영(어제 내일작업 → 오늘 작업)…";
-    await update(todayRef, {
-      todayWork: fromPlan,
-      updatedAt: serverTimestamp()
-    });
-  }
+  // ✅ 추가하면 안전해짐
+if ((todayVal.carriedFrom || "").trim()) return;
+
+  // ✅ 오늘이 비어있으면, "오늘보다 이전"에서 가장 최근 tomorrowWork 탐색
+  const found = await findLatestTomorrowWorkBeforeToday(todayPathFn, 21); // 필요시 21~30 등으로 증가
+  if (!found) return;
+
+  setFieldValue(areaTodayId, found.plan);
+  statusTodayEl.textContent = `자동 반영(${prettyK(found.fromIso)} 내일작업 → 오늘 작업)…`;
+
+  await update(todayRef, {
+    todayWork: found.plan,
+    carriedFrom: found.fromIso,       // (옵션) 어디서 가져왔는지 기록
+    updatedAt: serverTimestamp()
+  });
 }
 
 function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatusId, tStatusId, pathFn){
