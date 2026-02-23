@@ -805,16 +805,127 @@
     /*********************************************************
      * ✅ 교류전 / 수동배정 (현 상태 유지)
      *********************************************************/
-    function createExchangeMatch() {
-      document.getElementById("exchangeModal").style.display = "flex";
+    /*********************************************************
+ * ✅ 교류전 생성 (완전 동작 버전)
+ * - 우리팀/상대팀/혼합팀 개수만큼 팀 생성
+ * - 선택된 선수(없으면 전체)를 팀에 골고루 분배
+ * - 결과를 latestTeams에 넣고 assignTeamsRender()로 출력
+ * - matchSchedule에 간단 매치업 출력(선택)
+ *********************************************************/
+function createExchangeMatch() {
+  document.getElementById("exchangeModal").style.display = "flex";
+}
+
+function closeExchangeModal() {
+  document.getElementById("exchangeModal").style.display = "none";
+}
+
+function confirmExchangeMatch() {
+  // 1) 입력값 읽기
+  const ourName = (document.getElementById("ourTeamInput").value || "우리팀").trim();
+  const oppName = (document.getElementById("opponentTeamInput").value || "상대팀").trim();
+
+  const ourCount = Number(document.getElementById("ourCountInput").value || 0);
+  const oppCount = Number(document.getElementById("opponentCountInput").value || 0);
+  const mixedCount = Number(document.getElementById("mixedCountInput").value || 0);
+
+  if (ourCount < 0 || oppCount < 0 || mixedCount < 0) {
+    alert("팀 수는 0 이상으로 입력해주세요.");
+    return;
+  }
+
+  const totalTeams = ourCount + oppCount + mixedCount;
+  if (totalTeams <= 0) {
+    alert("최소 1팀 이상 만들어야 합니다.");
+    return;
+  }
+
+  // 2) 선수 풀 구성(선택 있으면 선택만, 없으면 전체)
+  const poolIdx = selected.length ? [...selected] : allPlayers.map((_, i) => i);
+  const poolPlayers = poolIdx.map(i => allPlayers[i]).filter(Boolean);
+
+  if (poolPlayers.length < 2) {
+    alert("선수가 2명 이상 있어야 합니다.");
+    return;
+  }
+
+  // 3) 팀 틀 만들기
+  const teams = [];
+
+  for (let i = 0; i < ourCount; i++) {
+    teams.push({ name: `${ourName} ${i + 1}팀`, teamType: "OUR", members: [], sumLevel: 0, sum: 0 });
+  }
+  for (let i = 0; i < oppCount; i++) {
+    teams.push({ name: `${oppName} ${i + 1}팀`, teamType: "OPP", members: [], sumLevel: 0, sum: 0 });
+  }
+  for (let i = 0; i < mixedCount; i++) {
+    teams.push({ name: `혼합 ${i + 1}팀`, teamType: "MIX", members: [], sumLevel: 0, sum: 0 });
+  }
+
+  // 4) 팀에 선수 골고루 분배(강자(낮은 부수)부터 약팀(평균 높은 팀)으로)
+  const mixed = shuffle(poolPlayers).slice().sort((a, b) => a.level - b.level);
+
+  // 팀별 최대 인원(가능한 균등)
+  const total = mixed.length;
+  const base = Math.floor(total / totalTeams);
+  const extra = total % totalTeams;
+  const maxPerTeam = teams.map((_, i) => (i < extra ? base + 1 : base));
+
+  mixed.forEach(p => {
+    const candidates = teams
+      .map((t, i) => ({ t, i }))
+      .filter(x => x.t.members.length < maxPerTeam[x.i]);
+
+    // 평균 부수가 높은(=약한) 팀을 우선 선택
+    const target = candidates.reduce((a, b) => (avgLevel(a.t) > avgLevel(b.t) ? a : b)).t;
+
+    target.members.push(p);
+    target.sumLevel += Number(p.level || 0);
+  });
+
+  teams.forEach(recomputeTeamSums);
+
+  // 5) 결과 저장 + 렌더
+  latestTeams = teams;
+  assignTeamsRender(latestTeams);
+
+  // 6) (선택) 교류전 매치업 출력: 우리팀 vs 상대팀 1:1 매칭(팀 수 다르면 가능한 만큼)
+  const scheduleBox = document.getElementById("matchSchedule");
+  if (scheduleBox) {
+    const ourTeams = teams.filter(t => t.teamType === "OUR");
+    const oppTeams = teams.filter(t => t.teamType === "OPP");
+    const mixTeams = teams.filter(t => t.teamType === "MIX");
+
+    let html = `<div style="text-align:center; font-weight:900; margin:10px 0; color:#0d47a1;">교류전 매치업</div>`;
+
+    const pairCount = Math.min(ourTeams.length, oppTeams.length);
+    if (pairCount > 0) {
+      html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+      for (let i = 0; i < pairCount; i++) {
+        html += `
+          <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:10px;">
+            <b>${ourTeams[i].name}</b> vs <b>${oppTeams[i].name}</b>
+          </div>
+        `;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:10px;">
+                우리팀/상대팀이 모두 있어야 매치업을 만들 수 있습니다. (혼합팀만 생성된 상태일 수 있어요)
+              </div>`;
     }
-    function closeExchangeModal() {
-      document.getElementById("exchangeModal").style.display = "none";
+
+    if (mixTeams.length) {
+      html += `<div style="margin-top:10px; font-size:13px; color:#444;">
+                혼합팀: ${mixTeams.map(t => t.name).join(", ")}
+              </div>`;
     }
-    function confirmExchangeMatch() {
-      alert("교류전 로직은 현재 작성본 그대로 사용 중입니다.\n교류전도 자동배정과 동일한 '스왑 보정'까지 적용 원하시면 말씀해주세요.");
-      closeExchangeModal();
-    }
+
+    scheduleBox.innerHTML = html;
+  }
+
+  closeExchangeModal();
+}
 
     function startManualTeamAssign() {
       alert("수동 배정 로직은 아직 미구현입니다.\n원하시면 '팀 수 입력 → 팀 카드 생성 → 참석자 클릭 배정/해제 → 교체/이동/해제'까지 완전 동작하도록 이어서 붙여드리겠습니다.");
