@@ -526,8 +526,7 @@
           const doublesA = [...A_raw];
           const doublesB = [...B_raw];
 
-          let singles;
-          let singles;
+           let singles;
 if (singlesA.length !== singlesB.length) {
   singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
 } else {
@@ -609,30 +608,53 @@ function _pickLineupNoDup(players, need, rotateKey){
 
 // (A2 vs B2) 단식: 3단 이상일 때도 같은 선수가 같은 매치에서 2번 연속 잡히지 않게 로테이션
 function generateSinglesPairs2v2(A, B, need, teamAName, teamBName){
-  // A,B는 이미 정렬된 걸로 들어온다고 가정
   const key = _matchupKey(teamAName, teamBName) + "__2v2";
-  const combos = [
-    { a: A[0], b: B[0] },
-    { a: A[0], b: B[1] },
-    { a: A[1], b: B[0] },
-    { a: A[1], b: B[1] },
-  ];
-  const start = (window.__singleRoundIdx[key] ?? 0) % combos.length;
-  window.__singleRoundIdx[key] = start + 1;
 
-  const result = [];
-  for (let i=0;i<need;i++){
-    result.push(combos[(start + i) % combos.length]);
+  // 0: 정배치 (A0-B0, A1-B1)
+  // 1: 크로스 (A0-B1, A1-B0)
+  const mode = (window.__singleRoundIdx[key] ?? 0) % 2;
+  window.__singleRoundIdx[key] = (window.__singleRoundIdx[key] ?? 0) + 1;
+
+  const base = (mode === 0)
+    ? [{ a:A[0], b:B[0] }, { a:A[1], b:B[1] }]
+    : [{ a:A[0], b:B[1] }, { a:A[1], b:B[0] }];
+
+  // need=1이면 첫 경기만
+  if (need <= 1) return [base[0]];
+
+  // need>=2이면 첫 2경기는 반드시 서로 다른 선수로
+  const result = [base[0], base[1]];
+
+  // 3번째부터는 4가지 조합을 순환하되, 직전 경기와 완전 동일 매치는 피함
+  const combos = [
+    { a:A[0], b:B[0] },
+    { a:A[0], b:B[1] },
+    { a:A[1], b:B[0] },
+    { a:A[1], b:B[1] },
+  ];
+
+  let rot = (window.__singleRoundIdx[key + "__rot"] ?? 0) % combos.length;
+  for (let i=2; i<need; i++){
+    // 직전 매치와 동일하면 다음 것으로 한 칸 더 이동
+    let pick = combos[rot];
+    const prev = result[result.length - 1];
+    if (pick.a.name === prev.a.name && pick.b.name === prev.b.name) {
+      rot = (rot + 1) % combos.length;
+      pick = combos[rot];
+    }
+    result.push(pick);
+    rot = (rot + 1) % combos.length;
   }
+  window.__singleRoundIdx[key + "__rot"] = rot;
+
   return result;
 }
 
 function generateSinglesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
   if (!need || need <= 0) return [];
 
-  A = [...A].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
-  B = [...B].sort((a,b)=> b.level === a.level ? a.name.localeCompare(b.name) : a.level - b.level);
-
+  A = [...A].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
+B = [...B].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
   if (A.length === 2 && B.length === 2) {
     return generateSinglesPairs2v2(A, B, need, teamAName, teamBName);
   }
