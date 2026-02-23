@@ -527,11 +527,12 @@
           const doublesB = [...B_raw];
 
           let singles;
-          if (singlesA.length !== singlesB.length) {
-            singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt);
-          } else {
-            singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, autoMode);
-          }
+          let singles;
+if (singlesA.length !== singlesB.length) {
+  singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
+} else {
+  singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, autoMode, teamA, teamB);
+}
 
           const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
 
@@ -561,119 +562,116 @@
     /* =========================================================
        ✅ 단식 자동 생성
        ========================================================= */
-    function generateSinglesPairs2v2(A, B, need) {
-      const result = [];
-      const combos = [
-        { a: A[0], b: B[0] },
-        { a: A[0], b: B[1] },
-        { a: A[1], b: B[0] },
-        { a: A[1], b: B[1] },
-      ];
-      if (!window.__single2v2) window.__single2v2 = 0;
-      const start = window.__single2v2 % combos.length;
-      window.__single2v2++;
-      for (let i = 0; i < need; i++) {
-        const idx = (start + i) % combos.length;
-        result.push(combos[idx]);
-      }
-      return result;
+   
+/* =========================================================
+   ✅ 단식 자동 생성 (중복 출전 최소화 버전)
+   - 한 매치(teamA vs teamB) 안에서는 가능한 한 "각 선수 1회" 우선
+   - need가 인원보다 큰 경우에만 라운드 로테이션으로 2회차부터 반복
+   ========================================================= */
+if (!window.__singleRoundIdx) window.__singleRoundIdx = {}; // matchup별 로테이션
+
+function _safeKey(s){
+  return String(s ?? "").trim().replace(/\s+/g, "_").replace(/[^\w가-힣]/g, "");
+}
+function _matchupKey(teamA, teamB){
+  const a = _safeKey(teamA), b = _safeKey(teamB);
+  return [a,b].sort().join("__VS__");
+}
+
+// players(정렬된 배열)에서 need명 "중복 최소"로 뽑기
+function _pickLineupNoDup(players, need, rotateKey){
+  const n = players.length;
+  if (need <= 0) return [];
+  if (n === 0) return [];
+
+  // 1) need <= n : 무조건 중복 없이 선택 (로테이션으로 시작점만 이동)
+  if (need <= n){
+    const start = (window.__singleRoundIdx[rotateKey] ?? 0) % n;
+    const out = [];
+    for (let i=0;i<need;i++){
+      out.push(players[(start + i) % n]);
     }
+    window.__singleRoundIdx[rotateKey] = (start + need) % n;
+    return out;
+  }
 
-    function generateSinglesPairsByMode(A, B, need, mode) {
-      if (A.length === 2 && B.length === 2) {
-        return generateSinglesPairs2v2(A, B, need);
-      }
-      if (A.length !== B.length) {
-        return generateSinglesPairsForDifferentTeamSize(A, B, need);
-      }
+  // 2) need > n : 1라운드(전원 1회) + 2라운드부터 로테이션 반복
+  const out = players.slice(); // 전원 1회
+  let remain = need - n;
 
-      const result = [];
-      A = [...A].sort((a,b)=>a.level - b.level);
-      B = [...B].sort((a,b)=>a.level - b.level);
+  const start = (window.__singleRoundIdx[rotateKey] ?? 0) % n;
+  for (let i=0;i<remain;i++){
+    out.push(players[(start + i) % n]);
+  }
+  window.__singleRoundIdx[rotateKey] = (start + remain) % n;
+  return out;
+}
 
-      for (let i = 0; i < Math.min(A.length, need); i++) {
-        result.push({ a: A[i], b: B[i] });
-      }
+// (A2 vs B2) 단식: 3단 이상일 때도 같은 선수가 같은 매치에서 2번 연속 잡히지 않게 로테이션
+function generateSinglesPairs2v2(A, B, need, teamAName, teamBName){
+  // A,B는 이미 정렬된 걸로 들어온다고 가정
+  const key = _matchupKey(teamAName, teamBName) + "__2v2";
+  const combos = [
+    { a: A[0], b: B[0] },
+    { a: A[0], b: B[1] },
+    { a: A[1], b: B[0] },
+    { a: A[1], b: B[1] },
+  ];
+  const start = (window.__singleRoundIdx[key] ?? 0) % combos.length;
+  window.__singleRoundIdx[key] = start + 1;
 
-      const extraCount = need - A.length;
-      if (extraCount > 0) {
-        const candidatesA = [...A];
-        const candidatesB = [...B];
+  const result = [];
+  for (let i=0;i<need;i++){
+    result.push(combos[(start + i) % combos.length]);
+  }
+  return result;
+}
 
-        if (!window.singlesRotationA) window.singlesRotationA = 0;
-        if (!window.singlesRotationB) window.singlesRotationB = 0;
+function generateSinglesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
+  if (!need || need <= 0) return [];
 
-        for (let i = 0; i < extraCount; i++) {
-          result.push({
-            a: candidatesA[(window.singlesRotationA + i) % candidatesA.length],
-            b: candidatesB[(window.singlesRotationB + i) % candidatesB.length]
-          });
-        }
-        window.singlesRotationA += extraCount;
-        window.singlesRotationB += extraCount;
-      }
+  A = [...A].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
+  B = [...B].sort((a,b)=> b.level === a.level ? a.name.localeCompare(b.name) : a.level - b.level);
 
-      return result.slice(0, need);
-    }
+  if (A.length === 2 && B.length === 2) {
+    return generateSinglesPairs2v2(A, B, need, teamAName, teamBName);
+  }
+  if (A.length !== B.length) {
+    return generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName, teamBName);
+  }
 
-    function generateSinglesPairsForDifferentTeamSize(A, B, need) {
-      const result = [];
-      A = [...A].sort((a,b)=>a.level - b.level);
-      B = [...B].sort((a,b)=>a.level - b.level);
+  // ✅ 핵심: 각 팀에서 "중복 최소 lineup"을 먼저 뽑고, 같은 인덱스끼리 매칭
+  const key = _matchupKey(teamAName, teamBName) + "__EQUAL";
+  const lineupA = _pickLineupNoDup(A, need, key + "__A");
+  const lineupB = _pickLineupNoDup(B, need, key + "__B");
 
-      const sizeA = A.length;
-      const sizeB = B.length;
-      const common = Math.min(sizeA, sizeB);
+  // mode(0/1)는 여기선 “누구를 뽑는가”보다 “복식”에서 영향이 크고,
+  // 단식은 중복 방지가 우선이라 그대로 1:1 매칭
+  const result = [];
+  for (let i=0;i<need;i++){
+    result.push({ a: lineupA[i], b: lineupB[i] });
+  }
+  return result;
+}
 
-      for (let i = 0; i < common; i++) {
-        result.push({ a: A[i], b: B[i] });
-      }
+function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", teamBName="B") {
+  if (!need || need <= 0) return [];
 
-      if (need <= common) return result.slice(0, need);
+  A = [...A].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
+  B = [...B].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
 
-      const extraA = A[common];
-      const Bteam = [...B];
+  const key = _matchupKey(teamAName, teamBName) + "__DIFF";
 
-      let minDiff = Infinity;
-      let candidates = [];
+  // ✅ 팀 인원이 달라도: 각 팀에서 “중복 최소 lineup”을 뽑고 인덱스로 매칭
+  const lineupA = _pickLineupNoDup(A, need, key + "__A");
+  const lineupB = _pickLineupNoDup(B, need, key + "__B");
 
-      for (const p of Bteam) {
-        const diff = Math.abs(extraA.level - p.level);
-        if (diff < minDiff) {
-          minDiff = diff;
-          candidates = [p];
-        } else if (diff === minDiff) {
-          candidates.push(p);
-        }
-      }
-
-      if (!window.singlesRotationExtraB) window.singlesRotationExtraB = 0;
-      const idx = window.singlesRotationExtraB % candidates.length;
-      const selectedB = candidates[idx];
-      window.singlesRotationExtraB++;
-
-      result.push({ a: extraA, b: selectedB });
-
-      let extraCount = need - (common + 1);
-      if (extraCount > 0) {
-        const candidatesA = [...A];
-        const candidatesBrot = [...B];
-
-        if (!window.singlesRotationA2) window.singlesRotationA2 = 0;
-        if (!window.singlesRotationB2) window.singlesRotationB2 = 0;
-
-        for (let i = 0; i < extraCount; i++) {
-          const aSel = candidatesA[(window.singlesRotationA2 + i) % candidatesA.length];
-          const bSel = candidatesBrot[(window.singlesRotationB2 + i) % candidatesBrot.length];
-          result.push({ a: aSel, b: bSel });
-        }
-
-        window.singlesRotationA2 += extraCount;
-        window.singlesRotationB2 += extraCount;
-      }
-
-      return result.slice(0, need);
-    }
+  const result = [];
+  for (let i=0;i<need;i++){
+    result.push({ a: lineupA[i], b: lineupB[i] });
+  }
+  return result;
+}
 
     /* =========================================================
        ✅ 복식 자동 생성 (원 코드 유지 + 모듈화 충돌 제거)
@@ -1095,16 +1093,58 @@
       window.__pairRoundIdx[keyB] = (startB + best.ib + 1) % roundsB.length;
 
       const result = [];
-      for (let t = 0; t < need; t++) {
-        const a = best.useA[t % best.useA.length];
-        const b = best.useB[t % best.useB.length];
-        result.push({ a1: a.p1, a2: a.p2, b1: b.p1, b2: b.p2 });
+const usedA_local = new Set();
+const usedB_local = new Set();
+const usedV_local = new Set();
 
-        history.usedPairsA.add(a.key);
-        history.usedPairsB.add(b.key);
-        history.usedVersus.add(versusKey(a.p1, a.p2, b.p1, b.p2));
-      }
-      return result;
+for (let t = 0; t < need; t++) {
+  // ✅ 가능한 한 "서로 다른 페어"를 쓰도록 후보를 찾는다
+  let pickA = null;
+  for (const cand of best.useA) {
+    if (usedA_local.has(cand.key)) continue;
+    if (history.usedPairsA.has(cand.key)) continue; // 이미 예전에 썼던 조합이면 후순위
+    pickA = cand; break;
+  }
+  if (!pickA) {
+    // 그래도 없으면(인원/need상 어쩔 수 없음) 중복 허용하되 최소화
+    pickA = best.useA.find(c => !usedA_local.has(c.key)) || best.useA[0];
+  }
+
+  let pickB = null;
+  for (const cand of best.useB) {
+    if (usedB_local.has(cand.key)) continue;
+    if (history.usedPairsB.has(cand.key)) continue;
+    pickB = cand; break;
+  }
+  if (!pickB) {
+    pickB = best.useB.find(c => !usedB_local.has(c.key)) || best.useB[0];
+  }
+
+  // ✅ versus(대결)도 같은 매치 안에서 중복이면 다른 B를 한 번 더 탐색
+  let vKey = versusKey(pickA.p1, pickA.p2, pickB.p1, pickB.p2);
+  if (usedV_local.has(vKey) || history.usedVersus.has(vKey)) {
+    const altB = best.useB.find(c => {
+      if (usedB_local.has(c.key)) return false;
+      const vk = versusKey(pickA.p1, pickA.p2, c.p1, c.p2);
+      return !usedV_local.has(vk) && !history.usedVersus.has(vk);
+    });
+    if (altB) {
+      pickB = altB;
+      vKey = versusKey(pickA.p1, pickA.p2, pickB.p1, pickB.p2);
+    }
+  }
+
+  result.push({ a1: pickA.p1, a2: pickA.p2, b1: pickB.p1, b2: pickB.p2 });
+
+  usedA_local.add(pickA.key);
+  usedB_local.add(pickB.key);
+  usedV_local.add(vKey);
+
+  history.usedPairsA.add(pickA.key);
+  history.usedPairsB.add(pickB.key);
+  history.usedVersus.add(vKey);
+}
+return result;
     }
 
     /* ---------------- 경기 카드 출력 ---------------- */
