@@ -252,15 +252,15 @@
     }
 
     /* ✅ 점수 버튼: 5판3승(주황) */
-.btn-score-bo5{
-  font-size: 14px;
-  padding: 6px 10px;
-  margin: 3px;
-  min-width: 40px;
-  background-color: #fb8c00; /* 주황 */
-  color:#fff;
-}
-.btn-score-bo5:hover{ background-color:#ef6c00; }
+    .btn-score-bo5{
+      font-size: 14px;
+      padding: 6px 10px;
+      margin: 3px;
+      min-width: 40px;
+      background-color: #fb8c00; /* 주황 */
+      color:#fff;
+    }
+    .btn-score-bo5:hover{ background-color:#ef6c00; }
   </style>
 </head>
 
@@ -343,17 +343,14 @@
 
   <!-- ✅ Firebase 모듈 방식으로 통일 -->
   <script type="module">
-    // ✅ team-live는 /pingpong_main/firebase.js 사용 (요청 반영)
-    // 현재 파일이 /pingpong_main/team-live/index.html 이라면 "../firebase.js" 가 맞습니다.
+    // ✅ team-live는 /pingpong_main/firebase.js 사용
     import { db, auth } from "../firebase.js";
 
-    import {
-      ref, onValue, get, set, update, remove
-    } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { ref, onValue, get, set, update, remove }
+      from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-    import {
-      signInAnonymously, onAuthStateChanged
-    } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+    import { signInAnonymously, onAuthStateChanged }
+      from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
     /* ---------------- 전역 상태 ---------------- */
     let teamsUnsub = null;
@@ -365,12 +362,13 @@
     let autoMode = -1;
 
     // ✅ 점수 입력 방식: 1 = 3판2선승(파랑), 2 = 5판3선승(주황)
-window.__scoreMode = window.__scoreMode ?? 1;
+    window.__scoreMode = window.__scoreMode ?? 1;
 
-    // ✅ [추가] 팀별 복식 라운드 캐시/포인터
+    // ✅ 팀별 복식 라운드 캐시/포인터
     if (!window.__pairRounds) window.__pairRounds = {};
     if (!window.__pairRoundIdx) window.__pairRoundIdx = {};
     if (!window.__doublesHistoryByMatch) window.__doublesHistoryByMatch = {};
+    if (!window.__singleRoundIdx) window.__singleRoundIdx = {};
 
     /* ---------------- 비밀번호 확인 ---------------- */
     function checkPassword() {
@@ -381,7 +379,7 @@ window.__scoreMode = window.__scoreMode ?? 1;
       return false;
     }
 
-    /* ---------------- 로그인 처리 (모듈 방식) ---------------- */
+    /* ---------------- 로그인 처리 ---------------- */
     async function requireAuth() {
       const u = auth.currentUser;
       if (u) return u;
@@ -400,7 +398,6 @@ window.__scoreMode = window.__scoreMode ?? 1;
 
     /* ---------------- 팀 로드 ---------------- */
     async function loadTeams() {
-      // 기존 리스너 해제(중복 구독 방지)
       if (teamsUnsub) { teamsUnsub(); teamsUnsub = null; }
 
       const teamsRef = ref(db, "teams");
@@ -420,14 +417,13 @@ window.__scoreMode = window.__scoreMode ?? 1;
           }
 
           Object.entries(raw).forEach(([id, team]) => {
-            team._id = id; // ✅ Firebase teams의 실제 key 저장
+            team._id = id;
             teamData[team.teamName] = team;
             teamNames.push(team.teamName);
           });
 
           renderTeamList();
 
-          // 팝업이 열려있다면 닫기(안전)
           const popup = document.getElementById("popup");
           if (popup && popup.style.display === "block" && popup.targetCell) {
             closePopup();
@@ -450,7 +446,6 @@ window.__scoreMode = window.__scoreMode ?? 1;
       html += "</table>";
       document.getElementById("teamListArea").innerHTML = html;
 
-      // 상단 드롭다운 갱신
       const sel = document.getElementById("addTeamSelect");
       if (sel) {
         sel.innerHTML = `<option value="">팀 선택</option>` +
@@ -468,12 +463,12 @@ window.__scoreMode = window.__scoreMode ?? 1;
 
       await requireAuth();
 
-      // 자동 생성 시작할 때 이전 중복 방지 기록 초기화
       window.__doublesHistoryByMatch = {};
       window.__pairRounds = {};
       window.__pairRoundIdx = {};
       window.__rot43 = 0;
       window.__single2v2 = 0;
+      window.__singleRoundIdx = {};
 
       await remove(ref(db, "matches"));
 
@@ -496,259 +491,226 @@ window.__scoreMode = window.__scoreMode ?? 1;
       await update(ref(db), updatesObj);
     }
 
-   /* ---------------- 자동 대진 생성 ---------------- */
-async function autoMatch() {
-  if (autoMode !== 0 && autoMode !== 1) {
-  alert("자동 생성 방식을 먼저 선택해주세요.");
-  return;
-}
+    /* ---------------- 자동 대진 생성 ---------------- */
+    async function autoMatch() {
+      if (autoMode !== 0 && autoMode !== 1) {
+        alert("자동 생성 방식을 먼저 선택해주세요.");
+        return;
+      }
+      if (!checkPassword()) return;
 
-  if (!checkPassword()) return;
+      const ok = await loadTeams();
+      if (!ok || teamNames.length === 0) return;
 
-  const ok = await loadTeams();
-  if (!ok || teamNames.length === 0) return;
+      window.__doublesHistoryByMatch = {};
+      window.__pairRounds = {};
+      window.__pairRoundIdx = {};
+      window.__rot43 = 0;
+      window.__single2v2 = 0;
+      window.__singleRoundIdx = {};
 
-  // ✅ 자동 생성 버튼을 누를 때마다 "완전 새로" 생성되도록 캐시 초기화
-  window.__doublesHistoryByMatch = {};
-  window.__pairRounds = {};
-  window.__pairRoundIdx = {};
-  window.__rot43 = 0;
-  window.__single2v2 = 0;
-  window.__singleRoundIdx = {}; // 단식 로테이션/중복방지 포인터도 초기화
+      const descBox = document.getElementById("modeDesc");
+      const descText = document.getElementById("modeText");
 
-  // ✅ 자동 생성 모드 설명 표시
-  const descBox = document.getElementById("modeDesc");
-  const descText = document.getElementById("modeText");
-
-  if (autoMode === 0) {
-    descText.innerText =
-      "· 고수 선수부터 우선 배정하는 방식\n" +
-      "· 두 팀의 실력이 비슷할 때 가장 공정한 경기 구성\n" +
-      "· 경기력 중심 배정이 필요할 때 적합";
-  } else {
-    descText.innerText =
-      "· 상·하위 조합을 섞어 경기를 구성하는 방식\n" +
-      "· 한 경기에서 실력 차이를 줄여 접전을 만들기 좋음\n" +
-      "· 친선 경기나 다양한 조합을 만들고 싶을 때 유리";
-  }
-  descBox.style.display = "block";
-
-  await requireAuth();
-  await remove(ref(db, "matches"));
-
-  const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
-  const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
-
-  const updatesObj = {};
-  for (let i = 0; i < teamNames.length; i++) {
-    for (let j = i + 1; j < teamNames.length; j++) {
-      const teamA = teamNames[i], teamB = teamNames[j];
-
-      // 완전 깊은 복사
-      const A_raw = JSON.parse(JSON.stringify(teamData[teamA].players || []));
-      const B_raw = JSON.parse(JSON.stringify(teamData[teamB].players || []));
-
-      const singlesA = [...A_raw];
-      const singlesB = [...B_raw];
-      const doublesA = [...A_raw];
-      const doublesB = [...B_raw];
-
-      let singles;
-      if (singlesA.length !== singlesB.length) {
-        singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
+      if (autoMode === 0) {
+        descText.innerText =
+          "· 고수 선수부터 우선 배정하는 방식\n" +
+          "· 두 팀의 실력이 비슷할 때 가장 공정한 경기 구성\n" +
+          "· 경기력 중심 배정이 필요할 때 적합";
       } else {
-        singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, autoMode, teamA, teamB);
+        descText.innerText =
+          "· 상·하위 조합을 섞어 경기를 구성하는 방식\n" +
+          "· 한 경기에서 실력 차이를 줄여 접전을 만들기 좋음\n" +
+          "· 친선 경기나 다양한 조합을 만들고 싶을 때 유리";
+      }
+      descBox.style.display = "block";
+
+      await requireAuth();
+      await remove(ref(db, "matches"));
+
+      const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
+      const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
+
+      const updatesObj = {};
+      for (let i = 0; i < teamNames.length; i++) {
+        for (let j = i + 1; j < teamNames.length; j++) {
+          const teamA = teamNames[i], teamB = teamNames[j];
+
+          const A_raw = JSON.parse(JSON.stringify(teamData[teamA].players || []));
+          const B_raw = JSON.parse(JSON.stringify(teamData[teamB].players || []));
+
+          const singlesA = [...A_raw];
+          const singlesB = [...B_raw];
+          const doublesA = [...A_raw];
+          const doublesB = [...B_raw];
+
+          let singles;
+          if (singlesA.length !== singlesB.length) {
+            singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
+          } else {
+            singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, autoMode, teamA, teamB);
+          }
+
+          const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
+
+          while (doubles.length < doublesCnt) {
+            doubles.push({
+              a1: { name: "미정", level: "?" },
+              a2: { name: "미정", level: "?" },
+              b1: { name: "미정", level: "?" },
+              b2: { name: "미정", level: "?" }
+            });
+          }
+
+          const matchList = [];
+
+          singles.forEach((m, idx) => {
+            matchList.push({
+              label: `${idx + 1}단`,
+              players: `${m.a.name}(${m.a.level}) vs ${m.b.name}(${m.b.level})`,
+              result: "-"
+            });
+          });
+
+          doubles.forEach((m, idx) => {
+            matchList.push({
+              label: `${idx + 1}복`,
+              players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
+              result: "-"
+            });
+          });
+
+          const key = `${teamA}_vs_${teamB}`;
+          updatesObj[`matches/${key}`] = { teamA, teamB, matchList };
+        }
       }
 
-      const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
-
-      // ✅ 복식이 부족하면 placeholder로 채우기
-      while (doubles.length < doublesCnt) {
-        doubles.push({
-          a1: { name: "미정", level: "?" },
-          a2: { name: "미정", level: "?" },
-          b1: { name: "미정", level: "?" },
-          b2: { name: "미정", level: "?" }
-        });
-      }
-
-      const matchList = [];
-
-      singles.forEach((m, idx) => {
-        matchList.push({
-          label: `${idx + 1}단`,
-          players: `${m.a.name}(${m.a.level}) vs ${m.b.name}(${m.b.level})`,
-          result: "-"
-        });
-      });
-
-      doubles.forEach((m, idx) => {
-        matchList.push({
-          label: `${idx + 1}복`,
-          players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
-          result: "-"
-        });
-      });
-
-      const key = `${teamA}_vs_${teamB}`;
-      updatesObj[`matches/${key}`] = { teamA, teamB, matchList };
+      await update(ref(db), updatesObj);
     }
-  }
-
-  await update(ref(db), updatesObj);
-}
 
     /* =========================================================
-       ✅ 단식 자동 생성
+       ✅ 단식 자동 생성 (중복 출전 최소화)
        ========================================================= */
-   
-/* =========================================================
-   ✅ 단식 자동 생성 (중복 출전 최소화 버전)
-   - 한 매치(teamA vs teamB) 안에서는 가능한 한 "각 선수 1회" 우선
-   - need가 인원보다 큰 경우에만 라운드 로테이션으로 2회차부터 반복
-   ========================================================= */
-if (!window.__singleRoundIdx) window.__singleRoundIdx = {}; // matchup별 로테이션
-
-function _safeKey(s){
-  return String(s ?? "").trim().replace(/\s+/g, "_").replace(/[^\w가-힣]/g, "");
-}
-function _matchupKey(teamA, teamB){
-  const a = _safeKey(teamA), b = _safeKey(teamB);
-  return [a,b].sort().join("__VS__");
-}
-
-// players(정렬된 배열)에서 need명 "중복 최소"로 뽑기
-function _pickLineupNoDup(players, need, rotateKey){
-  const n = players.length;
-  if (need <= 0) return [];
-  if (n === 0) return [];
-
-  // 1) need <= n : 무조건 중복 없이 선택 (로테이션으로 시작점만 이동)
-  if (need <= n){
-    const start = (window.__singleRoundIdx[rotateKey] ?? 0) % n;
-    const out = [];
-    for (let i=0;i<need;i++){
-      out.push(players[(start + i) % n]);
+    function _safeKey(s){
+      return String(s ?? "").trim().replace(/\s+/g, "_").replace(/[^\w가-힣]/g, "");
     }
-    window.__singleRoundIdx[rotateKey] = (start + need) % n;
-    return out;
-  }
-
-  // 2) need > n : 1라운드(전원 1회) + 2라운드부터 로테이션 반복
-  const out = players.slice(); // 전원 1회
-  let remain = need - n;
-
-  const start = (window.__singleRoundIdx[rotateKey] ?? 0) % n;
-  for (let i=0;i<remain;i++){
-    out.push(players[(start + i) % n]);
-  }
-  window.__singleRoundIdx[rotateKey] = (start + remain) % n;
-  return out;
-}
-
-// (A2 vs B2) 단식: 3단 이상일 때도 같은 선수가 같은 매치에서 2번 연속 잡히지 않게 로테이션
-function generateSinglesPairs2v2(A, B, need, teamAName, teamBName){
-  const key = _matchupKey(teamAName, teamBName) + "__2v2";
-
-  // 0: 정배치 (A0-B0, A1-B1)
-  // 1: 크로스 (A0-B1, A1-B0)
-  const mode = (window.__singleRoundIdx[key] ?? 0) % 2;
-  window.__singleRoundIdx[key] = (window.__singleRoundIdx[key] ?? 0) + 1;
-
-  const base = (mode === 0)
-    ? [{ a:A[0], b:B[0] }, { a:A[1], b:B[1] }]
-    : [{ a:A[0], b:B[1] }, { a:A[1], b:B[0] }];
-
-  // need=1이면 첫 경기만
-  if (need <= 1) return [base[0]];
-
-  // need>=2이면 첫 2경기는 반드시 서로 다른 선수로
-  const result = [base[0], base[1]];
-
-  // 3번째부터는 4가지 조합을 순환하되, 직전 경기와 완전 동일 매치는 피함
-  const combos = [
-    { a:A[0], b:B[0] },
-    { a:A[0], b:B[1] },
-    { a:A[1], b:B[0] },
-    { a:A[1], b:B[1] },
-  ];
-
-  let rot = (window.__singleRoundIdx[key + "__rot"] ?? 0) % combos.length;
-  for (let i=2; i<need; i++){
-    // 직전 매치와 동일하면 다음 것으로 한 칸 더 이동
-    let pick = combos[rot];
-    const prev = result[result.length - 1];
-    if (pick.a.name === prev.a.name && pick.b.name === prev.b.name) {
-      rot = (rot + 1) % combos.length;
-      pick = combos[rot];
+    function _matchupKey(teamA, teamB){
+      const a = _safeKey(teamA), b = _safeKey(teamB);
+      return [a,b].sort().join("__VS__");
     }
-    result.push(pick);
-    rot = (rot + 1) % combos.length;
-  }
-  window.__singleRoundIdx[key + "__rot"] = rot;
 
-  return result;
-}
+    function _pickLineupNoDup(players, need, rotateKey){
+      const n = players.length;
+      if (need <= 0) return [];
+      if (n === 0) return [];
 
-function generateSinglesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
-  if (!need || need <= 0) return [];
+      if (need <= n){
+        const start = (window.__singleRoundIdx[rotateKey] ?? 0) % n;
+        const out = [];
+        for (let i=0;i<need;i++){
+          out.push(players[(start + i) % n]);
+        }
+        window.__singleRoundIdx[rotateKey] = (start + need) % n;
+        return out;
+      }
 
-  // ✅ 정렬(부수 오름차순 = 숫자 낮을수록 강자)
-  A = [...A].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
-  B = [...B].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
+      const out = players.slice();
+      let remain = need - n;
 
-  // ✅ 2vs2는 기존 로직 유지
-  if (A.length === 2 && B.length === 2) {
-    return generateSinglesPairs2v2(A, B, need, teamAName, teamBName);
-  }
+      const start = (window.__singleRoundIdx[rotateKey] ?? 0) % n;
+      for (let i=0;i<remain;i++){
+        out.push(players[(start + i) % n]);
+      }
+      window.__singleRoundIdx[rotateKey] = (start + remain) % n;
+      return out;
+    }
 
-  // ✅ 인원 다르면 기존 로직 사용
-  if (A.length !== B.length) {
-    return generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName, teamBName);
-  }
+    function generateSinglesPairs2v2(A, B, need, teamAName, teamBName){
+      const key = _matchupKey(teamAName, teamBName) + "__2v2";
 
-  // ✅ 중복 최소 lineup 뽑기 (기존 함수 사용)
-  const key = _matchupKey(teamAName, teamBName) + "__EQUAL";
-  let lineupA = _pickLineupNoDup(A, need, key + "__A");
-  let lineupB = _pickLineupNoDup(B, need, key + "__B");
+      const mode = (window.__singleRoundIdx[key] ?? 0) % 2;
+      window.__singleRoundIdx[key] = (window.__singleRoundIdx[key] ?? 0) + 1;
 
-  // ----------------------------------------------------
-  // ✅ 여기서 mode가 확실히 갈리도록 "상대 매칭 방식"을 다르게
-  // mode=0 실력매칭 : 강자끼리 / 약자끼리 (같은 인덱스)
-  // mode=1 조합매칭 : 강자 vs 약자 (B를 뒤집어서 매칭)
-  // ----------------------------------------------------
-  if (mode === 1) {
-    lineupB = [...lineupB].reverse();
-  }
+      const base = (mode === 0)
+        ? [{ a:A[0], b:B[0] }, { a:A[1], b:B[1] }]
+        : [{ a:A[0], b:B[1] }, { a:A[1], b:B[0] }];
 
-  const result = [];
-  for (let i=0; i<need; i++){
-    result.push({ a: lineupA[i], b: lineupB[i] });
-  }
-  return result;
-}
+      if (need <= 1) return [base[0]];
 
-function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", teamBName="B") {
-  if (!need || need <= 0) return [];
+      const result = [base[0], base[1]];
 
-  A = [...A].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
-  B = [...B].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
+      const combos = [
+        { a:A[0], b:B[0] },
+        { a:A[0], b:B[1] },
+        { a:A[1], b:B[0] },
+        { a:A[1], b:B[1] },
+      ];
 
-  const key = _matchupKey(teamAName, teamBName) + "__DIFF";
+      let rot = (window.__singleRoundIdx[key + "__rot"] ?? 0) % combos.length;
+      for (let i=2; i<need; i++){
+        let pick = combos[rot];
+        const prev = result[result.length - 1];
+        if (pick.a.name === prev.a.name && pick.b.name === prev.b.name) {
+          rot = (rot + 1) % combos.length;
+          pick = combos[rot];
+        }
+        result.push(pick);
+        rot = (rot + 1) % combos.length;
+      }
+      window.__singleRoundIdx[key + "__rot"] = rot;
 
-  // ✅ 팀 인원이 달라도: 각 팀에서 “중복 최소 lineup”을 뽑고 인덱스로 매칭
-  const lineupA = _pickLineupNoDup(A, need, key + "__A");
-  const lineupB = _pickLineupNoDup(B, need, key + "__B");
+      return result;
+    }
 
-  const result = [];
-  for (let i=0;i<need;i++){
-    result.push({ a: lineupA[i], b: lineupB[i] });
-  }
-  return result;
-}
+    function generateSinglesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
+      if (!need || need <= 0) return [];
+
+      A = [...A].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
+      B = [...B].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
+
+      if (A.length === 2 && B.length === 2) {
+        return generateSinglesPairs2v2(A, B, need, teamAName, teamBName);
+      }
+
+      if (A.length !== B.length) {
+        return generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName, teamBName);
+      }
+
+      const key = _matchupKey(teamAName, teamBName) + "__EQUAL";
+      let lineupA = _pickLineupNoDup(A, need, key + "__A");
+      let lineupB = _pickLineupNoDup(B, need, key + "__B");
+
+      if (mode === 1) {
+        lineupB = [...lineupB].reverse();
+      }
+
+      const result = [];
+      for (let i=0; i<need; i++){
+        result.push({ a: lineupA[i], b: lineupB[i] });
+      }
+      return result;
+    }
+
+    function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", teamBName="B") {
+      if (!need || need <= 0) return [];
+
+      A = [...A].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
+      B = [...B].sort((a,b)=> a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level);
+
+      const key = _matchupKey(teamAName, teamBName) + "__DIFF";
+
+      const lineupA = _pickLineupNoDup(A, need, key + "__A");
+      const lineupB = _pickLineupNoDup(B, need, key + "__B");
+
+      const result = [];
+      for (let i=0;i<need;i++){
+        result.push({ a: lineupA[i], b: lineupB[i] });
+      }
+      return result;
+    }
 
     /* =========================================================
-       ✅ 복식 자동 생성 (원 코드 유지 + 모듈화 충돌 제거)
+       ✅ 복식 자동 생성
        ========================================================= */
     function mixedFilter(i, j, n) {
       const mid = Math.floor(n / 2);
@@ -760,29 +722,17 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
     function pairKeySorted(n1, n2) { return [n1, n2].sort().join("/"); }
     function versusKey(a1,a2,b1,b2){ return `${pairKeySorted(a1.name,a2.name)}||${pairKeySorted(b1.name,b2.name)}`; }
 
-    function allTeamPairsFiltered(players, filterFn) {
+    function allTeamPairs(players) {
       const res = [];
       const n = players.length;
       for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
-          if (filterFn && !filterFn(i, j, n)) continue;
           const p1 = players[i], p2 = players[j];
-          res.push({ p1, p2, sum: p1.level + p2.level, i, j });
+          res.push({ p1, p2, sum: p1.level + p2.level, i, j, key: pairKeySorted(p1.name, p2.name) });
         }
       }
       return res;
     }
-    function allTeamPairs(players) {
-  const res = [];
-  const n = players.length;
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const p1 = players[i], p2 = players[j];
-      res.push({ p1, p2, sum: p1.level + p2.level, i, j, key: pairKeySorted(p1.name, p2.name) });
-    }
-  }
-  return res;
-}
 
     function allPerfectMatchings(indices) {
       if (indices.length === 0) return [[]];
@@ -799,64 +749,49 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
     }
 
     function modePreferenceScore(pairs, n, mode) {
-  // pairs: [ [i,j], [i,j], ... ]
-  // mode=0(실력매칭): "가까운 인덱스" 선호 => abs(i-j) 합이 작을수록 좋음
-  // mode=1(조합매칭): "먼 인덱스" 선호   => abs(i-j) 합이 클수록 좋음
-  const spreads = pairs.reduce((sum,[i,j]) => sum + Math.abs(i-j), 0);
-
-  if (mode === 0) {
-    return spreads;               // 작을수록 좋음(강강/약약)
-  } else {
-    return -spreads;              // 클수록 좋음(강약 섞기)
-  }
-}
+      const spreads = pairs.reduce((sum,[i,j]) => sum + Math.abs(i-j), 0);
+      if (mode === 0) return spreads;
+      return -spreads;
+    }
 
     function scoreRound(SA, SB, roundA, roundB, history, mode) {
-  const pairsA = roundA.map(([i,j]) => {
-    const p1 = SA[i], p2 = SA[j];
-    return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name), i, j };
-  }).sort((x,y)=>x.sum - y.sum);
+      const pairsA = roundA.map(([i,j]) => {
+        const p1 = SA[i], p2 = SA[j];
+        return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name), i, j };
+      }).sort((x,y)=>x.sum - y.sum);
 
-  const pairsB = roundB.map(([i,j]) => {
-    const p1 = SB[i], p2 = SB[j];
-    return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name), i, j };
-  }).sort((x,y)=>x.sum - y.sum);
+      const pairsB = roundB.map(([i,j]) => {
+        const p1 = SB[i], p2 = SB[j];
+        return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name), i, j };
+      }).sort((x,y)=>x.sum - y.sum);
 
-  let score = 0;
+      let score = 0;
 
-  // ✅ mode 반영을 "강하게" (실력=가까운 조합, 조합=먼 조합)
-  const maxSpreadA = Math.max(1, SA.length - 1);
-  const maxSpreadB = Math.max(1, SB.length - 1);
+      const maxSpreadA = Math.max(1, SA.length - 1);
+      const maxSpreadB = Math.max(1, SB.length - 1);
+      const W_SPREAD = 35;
 
-  // 가중치: 여기 숫자만 조절하면 체감이 바로 바뀝니다.
-  const W_SPREAD = 35; // ✅ 실력/조합 성향을 결정하는 핵심(20~80 사이로 조절 추천)
+      for (let k=0; k<pairsA.length; k++) {
+        const a = pairsA[k], b = pairsB[k];
 
-  for (let k=0; k<pairsA.length; k++) {
-    const a = pairsA[k], b = pairsB[k];
+        score += Math.abs(a.sum - b.sum);
 
-    // 1) 팀간 밸런스(레벨합 차이)
-    score += Math.abs(a.sum - b.sum);
+        if (history.usedPairsA.has(a.key)) score += 100;
+        if (history.usedPairsB.has(b.key)) score += 100;
+        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+        if (history.usedVersus.has(vKey)) score += 150;
 
-    // 2) 과거 중복 페널티
-    if (history.usedPairsA.has(a.key)) score += 100;
-    if (history.usedPairsB.has(b.key)) score += 100;
-    const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-    if (history.usedVersus.has(vKey)) score += 150;
+        const spreadA = Math.abs(a.i - a.j);
+        const spreadB = Math.abs(b.i - b.j);
 
-    // 3) ✅ mode 페널티(핵심)
-    const spreadA = Math.abs(a.i - a.j);
-    const spreadB = Math.abs(b.i - b.j);
-
-    if (mode === 0) {
-      // 실력매칭: 가까운 인덱스(강강/약약) 선호 => spread가 커질수록 벌점
-      score += W_SPREAD * (spreadA + spreadB);
-    } else {
-      // 조합매칭: 먼 인덱스(강약) 선호 => spread가 작을수록 벌점
-      score += W_SPREAD * ((maxSpreadA - spreadA) + (maxSpreadB - spreadB));
+        if (mode === 0) {
+          score += W_SPREAD * (spreadA + spreadB);
+        } else {
+          score += W_SPREAD * ((maxSpreadA - spreadA) + (maxSpreadB - spreadB));
+        }
+      }
+      return score;
     }
-  }
-  return score;
-}
 
     function pickBestFullParticipationRound(SA, SB, need, mode, history) {
       const n = SA.length;
@@ -917,6 +852,146 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
       }));
     }
 
+    /* =========================================================
+       ✅ [중요 수정] 공용 helper로 빼서 어디서든 사용 가능하게 함
+       - filterPairsByMode / pickPairsNoPlayerDup_STRICT
+       ========================================================= */
+    function spreadIdx(i,j){ return Math.abs(i-j); }
+
+    function filterPairsByMode(pairs, n, mode){
+      if (n <= 2) return pairs;
+
+      const maxS = n - 1;
+      const smallCut = Math.max(1, Math.floor(maxS * 0.35));
+      const bigCut   = Math.min(maxS, Math.ceil (maxS * 0.65));
+
+      const pass1 = pairs.filter(p=>{
+        const s = spreadIdx(p.i, p.j);
+        return (mode === 0) ? (s <= smallCut) : (s >= bigCut);
+      });
+      if (pass1.length) return pass1;
+
+      const midCut = Math.max(1, Math.floor(maxS * 0.50));
+      const pass2 = pairs.filter(p=>{
+        const s = spreadIdx(p.i, p.j);
+        return (mode === 0) ? (s <= midCut) : (s >= midCut);
+      });
+
+      return pass2.length ? pass2 : pairs;
+    }
+
+    // ✅ need개 페어를 뽑되:
+    // 1) 가능하면 선수 중복 없이
+    // 2) 부족하면 선수 중복 허용(단, 같은 페어는 피함)
+    function pickPairsNoPlayerDup_STRICT(pairs, need, historyUsedPairsSet, mode, nPlayers){
+      if (need <= 0) return [];
+
+      let pool = filterPairsByMode(pairs, nPlayers, mode);
+
+      pool = [...pool].sort((a,b)=>{
+        const aHist = historyUsedPairsSet.has(a.key) ? 1 : 0;
+        const bHist = historyUsedPairsSet.has(b.key) ? 1 : 0;
+        if (aHist !== bHist) return aHist - bHist;
+
+        const aS = spreadIdx(a.i,a.j);
+        const bS = spreadIdx(b.i,b.j);
+        if (aS !== bS) return (mode === 0) ? (aS - bS) : (bS - aS);
+
+        return (a.sum ?? 0) - (b.sum ?? 0);
+      });
+
+      const picked = [];
+      const usedPlayers = new Set();
+
+      for (const p of pool) {
+        if (picked.length >= need) break;
+        if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
+        picked.push(p);
+        usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
+      }
+
+      if (picked.length < need) {
+        for (const p of pool) {
+          if (picked.length >= need) break;
+          if (picked.some(x => x.key === p.key)) continue;
+          picked.push(p);
+        }
+      }
+
+      return picked.slice(0, need);
+    }
+
+    // ✅ need가 너무 큰 경우(한 라운드 페어 수 초과) : 3단계 완화
+    function pickPairsRelaxed(pairs, need, historyUsedPairsSet, mode, nPlayers){
+      if (!need || need <= 0) return [];
+      if (!pairs || pairs.length === 0) return [];
+
+      const spread = (p)=>Math.abs(p.i - p.j);
+
+      const sorted = [...pairs].sort((a,b)=>{
+        const aHist = historyUsedPairsSet.has(a.key) ? 1 : 0;
+        const bHist = historyUsedPairsSet.has(b.key) ? 1 : 0;
+        if (aHist !== bHist) return aHist - bHist;
+
+        const aS = spread(a), bS = spread(b);
+        if (aS !== bS) return (mode===0) ? (aS-bS) : (bS-aS);
+
+        return (a.sum ?? 0) - (b.sum ?? 0);
+      });
+
+      const picked = [];
+      const usedPlayers = new Set();
+
+      // 1) 선수 중복 금지 + 같은 페어 금지
+      for (const p of sorted) {
+        if (picked.length >= need) break;
+        if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
+        if (picked.some(x => x.key === p.key)) continue;
+        picked.push(p);
+        usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
+      }
+
+      // 2) 선수 중복 허용 + 같은 페어만 금지
+      if (picked.length < need) {
+        for (const p of sorted) {
+          if (picked.length >= need) break;
+          if (picked.some(x => x.key === p.key)) continue;
+          picked.push(p);
+        }
+      }
+
+      // 3) 완전 중복 허용(같은 페어도 가능)
+      if (picked.length < need) {
+        const strongest = sorted[0];
+        while (picked.length < need) picked.push(strongest);
+      }
+
+      return picked.slice(0, need);
+    }
+
+    // ✅ 페어 강약 순으로 붙이기(부족하면 강강끼리 붙게)
+    function matchPairsByStrength(pairsA, pairsB, history){
+      const A = [...pairsA].sort((x,y)=> (x.sum ?? 0) - (y.sum ?? 0));
+      const B = [...pairsB].sort((x,y)=> (x.sum ?? 0) - (y.sum ?? 0));
+
+      const need = Math.min(A.length, B.length);
+      const out = [];
+
+      for (let i=0; i<need; i++){
+        const a = A[i], b = B[i];
+        out.push({ a1:a.p1, a2:a.p2, b1:b.p1, b2:b.p2 });
+
+        const aKey = a.key;
+        const bKey = b.key;
+        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+
+        history.usedPairsA.add(aKey);
+        history.usedPairsB.add(bKey);
+        history.usedVersus.add(vKey);
+      }
+      return out;
+    }
+
     function generateDoublesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
       const SA = normalizePlayers(A).sort((a,b)=>
         a.level === b.level ? a.name.localeCompare(b.name) : a.level - b.level
@@ -944,185 +1019,101 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
 
       if (!need || need <= 0) return [];
 
-      // ✅ 4명 vs 4명, need=4: 완전탐색(중괄호 오류 수정본)
-if (SA.length === 4 && SB.length === 4 && need === 4) {
-  const pairsA_all = allTeamPairs(SA);
-  const pairsB_all = allTeamPairs(SB);
+      // ✅ 4명 vs 4명, need=4: 완전탐색
+      if (SA.length === 4 && SB.length === 4 && need === 4) {
+        const pairsA_all = allTeamPairs(SA);
+        const pairsB_all = allTeamPairs(SB);
 
-  function choose4(pairs){
-    const res = [];
-    for (let i=0;i<pairs.length;i++){
-      for (let j=i+1;j<pairs.length;j++){
-        for (let k=j+1;k<pairs.length;k++){
-          for (let l=k+1;l<pairs.length;l++){
-            res.push([pairs[i],pairs[j],pairs[k],pairs[l]]);
+        function choose4(pairs){
+          const res = [];
+          for (let i=0;i<pairs.length;i++){
+            for (let j=i+1;j<pairs.length;j++){
+              for (let k=j+1;k<pairs.length;k++){
+                for (let l=k+1;l<pairs.length;l++){
+                  res.push([pairs[i],pairs[j],pairs[k],pairs[l]]);
+                }
+              }
+            }
+          }
+          return res;
+        }
+
+        function perms(arr){
+          if (arr.length <= 1) return [arr];
+          const out = [];
+          for (let i=0;i<arr.length;i++){
+            const rest = arr.slice(0,i).concat(arr.slice(i+1));
+            for (const p of perms(rest)) out.push([arr[i], ...p]);
+          }
+          return out;
+        }
+
+        const combosA = choose4(pairsA_all);
+        const combosB = choose4(pairsB_all);
+        const permIdxs = perms([0,1,2,3]);
+
+        let best = null;
+        let bestScore = Infinity;
+
+        for (const setA of combosA) {
+          const A_sorted = [...setA].sort((x,y)=>x.sum-y.sum);
+
+          let basePenaltyA = 0;
+          for (const a of A_sorted) {
+            if (history.usedPairsA.has(a.key)) basePenaltyA += 120;
+          }
+
+          for (const setB of combosB) {
+            const B_sorted0 = [...setB].sort((x,y)=>x.sum-y.sum);
+
+            let basePenaltyB = 0;
+            for (const b of B_sorted0) {
+              if (history.usedPairsB.has(b.key)) basePenaltyB += 120;
+            }
+
+            for (const pi of permIdxs) {
+              let score = 0;
+              score += basePenaltyA + basePenaltyB;
+
+              for (let t=0; t<4; t++) {
+                const a = A_sorted[t];
+                const b = B_sorted0[pi[t]];
+                const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+
+                score += Math.abs(a.sum - b.sum);
+                if (history.usedVersus.has(vKey)) score += 180;
+
+                const spreadA = Math.abs(a.i - a.j);
+                const spreadB = Math.abs(b.i - b.j);
+
+                if (mode === 0) score += 0.3 * (spreadA + spreadB);
+                else score += 0.3 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
+              }
+
+              if (score < bestScore) {
+                bestScore = score;
+                best = { A_sorted, B_sorted0, pi };
+              }
+            }
           }
         }
-      }
-    }
-    return res;
-  }
 
-  function spread(i,j){ return Math.abs(i-j); }
+        if (!best) return [];
 
-// mode=0(실력): spread 작은 페어 우선
-// mode=1(조합): spread 큰 페어 우선
-function filterPairsByMode(pairs, n, mode){
-  if (n <= 2) return pairs;
-
-  const maxS = n - 1;
-  // ✅ “확실한 구분”을 위한 1차 임계값(필요하면 숫자만 조정)
-  const smallCut = Math.max(1, Math.floor(maxS * 0.35)); // 실력: 가까운 조합
-  const bigCut   = Math.min(maxS, Math.ceil (maxS * 0.65)); // 조합: 먼 조합
-
-  const pass1 = pairs.filter(p=>{
-    const s = spread(p.i, p.j);
-    return (mode === 0) ? (s <= smallCut) : (s >= bigCut);
-  });
-
-  // 부족하면 2차 완화
-  if (pass1.length >= 1) return pass1;
-
-  const midCut = Math.max(1, Math.floor(maxS * 0.50));
-  const pass2 = pairs.filter(p=>{
-    const s = spread(p.i, p.j);
-    return (mode === 0) ? (s <= midCut) : (s >= midCut);
-  });
-
-  return pass2.length ? pass2 : pairs;
-}
-
-function pickPairsNoPlayerDup_STRICT(pairs, need, historyUsedPairsSet, mode, nPlayers){
-  if (need <= 0) return [];
-
-  // ✅ 모드별 페어 풀 먼저 필터링(핵심)
-  let pool = filterPairsByMode(pairs, nPlayers, mode);
-
-  // ✅ 정렬 우선순위도 모드에 맞게 “강하게”
-  pool = [...pool].sort((a,b)=>{
-    const aHist = historyUsedPairsSet.has(a.key) ? 1 : 0;
-    const bHist = historyUsedPairsSet.has(b.key) ? 1 : 0;
-    if (aHist !== bHist) return aHist - bHist;
-
-    const aS = spread(a.i,a.j);
-    const bS = spread(b.i,b.j);
-
-    // mode=0: spread 작은 게 먼저
-    // mode=1: spread 큰 게 먼저
-    if (aS !== bS) return (mode === 0) ? (aS - bS) : (bS - aS);
-
-    // tie-break: sum 비슷한 쪽이 안정적(선택 편향 줄이기)
-    return a.sum - b.sum;
-  });
-
-  const picked = [];
-  const usedPlayers = new Set();
-
-  // 1차: 선수 중복 없이
-  for (const p of pool) {
-    if (picked.length >= need) break;
-    if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
-    picked.push(p);
-    usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
-  }
-
-  // 2차: 부족하면 중복 허용(단, 동일 페어는 피함)
-  if (picked.length < need) {
-    for (const p of pool) {
-      if (picked.length >= need) break;
-      if (picked.some(x => x.key === p.key)) continue;
-      picked.push(p);
-    }
-  }
-
-  return picked.slice(0, need);
-}
-
-  function perms(arr){
-    if (arr.length <= 1) return [arr];
-    const out = [];
-    for (let i=0;i<arr.length;i++){
-      const rest = arr.slice(0,i).concat(arr.slice(i+1));
-      for (const p of perms(rest)) out.push([arr[i], ...p]);
-    }
-    return out;
-  }
-
-  const combosA = choose4(pairsA_all);
-  const combosB = choose4(pairsB_all);
-  const permIdxs = perms([0,1,2,3]);
-
-  let best = null;
-  let bestScore = Infinity;
-
-  for (const setA of combosA) {
-    const A_sorted = [...setA].sort((x,y)=>x.sum-y.sum);
-
-    let basePenaltyA = 0;
-    for (const a of A_sorted) {
-      const aKey = pairKeySorted(a.p1.name, a.p2.name);
-      if (history.usedPairsA.has(aKey)) basePenaltyA += 120;
-    }
-
-    for (const setB of combosB) {
-      const B_sorted0 = [...setB].sort((x,y)=>x.sum-y.sum);
-
-      let basePenaltyB = 0;
-      for (const b of B_sorted0) {
-        const bKey = pairKeySorted(b.p1.name, b.p2.name);
-        if (history.usedPairsB.has(bKey)) basePenaltyB += 120;
-      }
-
-      for (const pi of permIdxs) {
-        let score = 0;
-        score += basePenaltyA + basePenaltyB;
-
+        const result = [];
         for (let t=0; t<4; t++) {
-          const a = A_sorted[t];
-          const b = B_sorted0[pi[t]];
+          const a = best.A_sorted[t];
+          const b = best.B_sorted0[best.pi[t]];
+
+          result.push({ a1: a.p1, a2: a.p2, b1: b.p1, b2: b.p2 });
+
           const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-
-          score += Math.abs(a.sum - b.sum);
-          if (history.usedVersus.has(vKey)) score += 180;
-
-          const spreadA = Math.abs(a.i - a.j);
-          const spreadB = Math.abs(b.i - b.j);
-
-          if (mode === 0) {
-            score += 0.3 * (spreadA + spreadB);
-          } else {
-            score += 0.3 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
-          }
-        } // ✅ (중요) for(t) 닫기만 1번
-
-        if (score < bestScore) {
-          bestScore = score;
-          best = { A_sorted, B_sorted0, pi };
+          history.usedPairsA.add(a.key);
+          history.usedPairsB.add(b.key);
+          history.usedVersus.add(vKey);
         }
+        return result;
       }
-    }
-  }
-
-  // best가 혹시 null이면 안전장치
-  if (!best) return [];
-
-  const result = [];
-  for (let t=0; t<4; t++) {
-    const a = best.A_sorted[t];
-    const b = best.B_sorted0[best.pi[t]];
-
-    result.push({ a1: a.p1, a2: a.p2, b1: b.p1, b2: b.p2 });
-
-    const aKey = pairKeySorted(a.p1.name, a.p2.name);
-    const bKey = pairKeySorted(b.p1.name, b.p2.name);
-    const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-
-    history.usedPairsA.add(aKey);
-    history.usedPairsB.add(bKey);
-    history.usedVersus.add(vKey);
-  }
-  return result;
-}
 
       // ✅ 전원출전(need*2==인원)
       if (need * 2 === SA.length && need * 2 === SB.length) {
@@ -1185,215 +1176,145 @@ function pickPairsNoPlayerDup_STRICT(pairs, need, historyUsedPairsSet, mode, nPl
         result.push({ a1: SA[2], a2: SA[3], b1: SB[choice[1][0]], b2: SB[choice[1][1]] });
 
         for (const m of result) {
-          const aKey = pairKeySorted(m.a1.name, m.a2.name);
-          const bKey = pairKeySorted(m.b1.name, m.b2.name);
-          history.usedPairsA.add(aKey);
-          history.usedPairsB.add(bKey);
+          history.usedPairsA.add(pairKeySorted(m.a1.name, m.a2.name));
+          history.usedPairsB.add(pairKeySorted(m.b1.name, m.b2.name));
           history.usedVersus.add(versusKey(m.a1, m.a2, m.b1, m.b2));
         }
         return result;
       }
 
-     // ✅ 일반 케이스
-// ----------------------------------------------------
-// ✅ [핵심 버그픽스] need가 "한 라운드에서 만들 수 있는 페어 수(floor(n/2))"보다 크면
-// 라운드 기반으로는 절대 need개를 못 뽑아서 best가 null -> [] 반환 -> 복식이 사라짐.
-// 이 경우에는 전체 조합(allTeamPairs)에서 페어를 뽑는 fallback으로 처리한다.
-// ----------------------------------------------------
-const maxPairsA = Math.floor(SA.length / 2);
-const maxPairsB = Math.floor(SB.length / 2);
+      // ✅ 일반 케이스
+      // ----------------------------------------------------
+      // ✅ need가 "한 라운드 페어 수" 초과면: 전체 조합 풀에서 3단계 완화로 반드시 채움
+      // ----------------------------------------------------
+      const maxPairsA = Math.floor(SA.length / 2);
+      const maxPairsB = Math.floor(SB.length / 2);
 
-if (need > maxPairsA || need > maxPairsB) {
-  // 모드(조합매칭)일 때는 mixedFilter를 약하게 반영
-  const poolA = allTeamPairs(SA);
-const poolB = allTeamPairs(SB);
-  // 풀 자체가 너무 작으면(인원이 너무 적으면) 그냥 가능한 만큼만 만들고 나머지는 상위에서 채우게 둔다
-const pickA = pickPairsNoPlayerDup_STRICT(poolA, need, history.usedPairsA, mode, SA.length);
-const pickB = pickPairsNoPlayerDup_STRICT(poolB, need, history.usedPairsB, mode, SB.length);
-  if (pickA.length === 0 || pickB.length === 0) return [];
+      if (need > maxPairsA || need > maxPairsB) {
+        const poolA = allTeamPairs(SA);
+        const poolB = allTeamPairs(SB);
 
-  // 길이가 need보다 짧아도 일단 반환(상위에서 placeholder로 채움)
-  return matchPairsSmart(pickA, pickB, history, mode);
-}
+        const pickA = pickPairsRelaxed(poolA, need, history.usedPairsA, mode, SA.length);
+        const pickB = pickPairsRelaxed(poolB, need, history.usedPairsB, mode, SB.length);
 
-if (!window.__pairRounds[keyA]) window.__pairRounds[keyA] = buildDisjointPairRounds(SA.length);
-if (!window.__pairRounds[keyB]) window.__pairRounds[keyB] = buildDisjointPairRounds(SB.length);
+        return matchPairsByStrength(pickA, pickB, history);
+      }
 
-if (window.__pairRoundIdx[keyA] == null) window.__pairRoundIdx[keyA] = 0;
-if (window.__pairRoundIdx[keyB] == null) window.__pairRoundIdx[keyB] = 0;
+      if (!window.__pairRounds[keyA]) window.__pairRounds[keyA] = buildDisjointPairRounds(SA.length);
+      if (!window.__pairRounds[keyB]) window.__pairRounds[keyB] = buildDisjointPairRounds(SB.length);
 
-const roundsA = window.__pairRounds[keyA];
-const roundsB = window.__pairRounds[keyB];
+      if (window.__pairRoundIdx[keyA] == null) window.__pairRoundIdx[keyA] = 0;
+      if (window.__pairRoundIdx[keyB] == null) window.__pairRoundIdx[keyB] = 0;
 
-const startA = window.__pairRoundIdx[keyA] % roundsA.length;
-const startB = window.__pairRoundIdx[keyB] % roundsB.length;
+      const roundsA = window.__pairRounds[keyA];
+      const roundsB = window.__pairRounds[keyB];
 
-const K = 6;
-const candA = Array.from({ length: Math.min(K, roundsA.length) }, (_, k) => roundsA[(startA + k) % roundsA.length]);
-const candB = Array.from({ length: Math.min(K, roundsB.length) }, (_, k) => roundsB[(startB + k) % roundsB.length]);
+      const startA = window.__pairRoundIdx[keyA] % roundsA.length;
+      const startB = window.__pairRoundIdx[keyB] % roundsB.length;
 
-let best = null;
-let bestScore = Infinity;
+      const K = 6;
+      const candA = Array.from({ length: Math.min(K, roundsA.length) }, (_, k) => roundsA[(startA + k) % roundsA.length]);
+      const candB = Array.from({ length: Math.min(K, roundsB.length) }, (_, k) => roundsB[(startB + k) % roundsB.length]);
 
-function toPairs(players, round) {
-  return round.map(([i, j]) => ({
-    p1: players[i], p2: players[j],
-    sum: players[i].level + players[j].level,
-    i, j,
-    key: pairKeySorted(players[i].name, players[j].name),
-  }));
-}
+      let best = null;
+      let bestScore = Infinity;
 
-// ✅ [추가] 같은 매치 안에서 "선수 중복 출전"을 최소화해서 need개 페어 뽑기
-function pickPairsNoPlayerDup(pairs, need, historyUsedPairsSet, mode = 0, nPlayers) {
-  const picked = [];
-  const usedPlayers = new Set();
+      function toPairs(players, round) {
+        return round.map(([i, j]) => ({
+          p1: players[i], p2: players[j],
+          sum: players[i].level + players[j].level,
+          i, j,
+          key: pairKeySorted(players[i].name, players[j].name),
+        }));
+      }
 
-  // 우선순위:
-  // 1) 이번 매치에서 선수 중복 없는 페어
-  // 2) 과거에 안 쓴 페어 우선
-  // 3) 그래도 없으면 중복 허용 (최후)
-  const sorted = [...pairs].sort((a,b)=>{
-    const aHist = historyUsedPairsSet.has(a.key) ? 1 : 0;
-    const bHist = historyUsedPairsSet.has(b.key) ? 1 : 0;
-    if (aHist !== bHist) return aHist - bHist;
-    // 약간 섞이도록 sum이 작은 것부터만 고정하지 말고, i/j 간격도 참고
-    const aSpread = Math.abs(a.i - a.j);
-const bSpread = Math.abs(b.i - b.j);
+      function matchPairsSmart(pairsA, pairsB, history, mode) {
+        const A_sorted = [...pairsA].sort((x,y)=>x.sum - y.sum);
+        const B_pool = [...pairsB];
+        const usedB = new Set();
+        const out = [];
 
-// mode=0: spread 작은 페어 우선(강강/약약)
-// mode=1: spread 큰 페어 우선(강약)
-return (mode === 0) ? (aSpread - bSpread) : (bSpread - aSpread);
-  });
+        for (const a of A_sorted) {
+          const candB = B_pool
+            .map((b) => {
+              const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+              let penalty = Math.abs(a.sum - b.sum);
 
-  // 1차: 선수 중복 없이 최대한
-  for (const p of sorted) {
-    if (picked.length >= need) break;
-    if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
-    picked.push(p);
-    usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
-  }
+              if (history.usedVersus.has(vKey)) penalty += 300;
+              if (history.usedPairsB.has(b.key)) penalty += 150;
 
-  // 2차: need가 남으면(인원이 부족하거나 홀수 등) 중복 허용하되 페어 중복은 피함
-  if (picked.length < need) {
-    for (const p of sorted) {
-      if (picked.length >= need) break;
-      if (picked.some(x => x.key === p.key)) continue; // 동일 페어는 피함
-      picked.push(p);
-    }
-  }
+              const spreadB = Math.abs(b.i - b.j);
+              if (mode === 0) penalty += 0.2 * spreadB;
+              else penalty += 0.2 * (SB.length - 1 - spreadB);
 
-  return picked.slice(0, need);
-}
+              return { b, vKey, penalty };
+            })
+            .sort((x,y)=>x.penalty - y.penalty);
 
-// ✅ [추가] A페어들을 B페어에 매칭할 때 "대결(versus) 중복"을 줄이면서 섞기
-function matchPairsSmart(pairsA, pairsB, history, mode) {
-  // A는 sum 기준 정렬(강약순)
-  const A_sorted = [...pairsA].sort((x,y)=>x.sum - y.sum);
+          let pick = null;
+          for (const c of candB) {
+            if (usedB.has(c.b.key)) continue;
+            pick = c;
+            break;
+          }
+          if (!pick) pick = candB[0];
 
-  // B 후보는 sum 기준 정렬해두되, 각 A에 대해 "가장 가까운 sum"부터 골라보기
-  const B_pool = [...pairsB];
+          usedB.add(pick.b.key);
 
-  const usedB = new Set();
-  const out = [];
+          out.push({
+            a1: a.p1, a2: a.p2,
+            b1: pick.b.p1, b2: pick.b.p2
+          });
 
-  for (const a of A_sorted) {
-    // 후보 B들을 (sum 차이 + 중복 페널티) 기준으로 정렬
-    const candB = B_pool
-      .map((b, idx) => {
-        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-        let penalty = Math.abs(a.sum - b.sum);
+          history.usedPairsA.add(a.key);
+          history.usedPairsB.add(pick.b.key);
+          history.usedVersus.add(pick.vKey);
+        }
 
-        // 과거 대결/페어 중복 페널티
-        if (history.usedVersus.has(vKey)) penalty += 300;
-        if (history.usedPairsB.has(b.key)) penalty += 150;
+        return out;
+      }
 
-        // 모드 취향 약하게 반영(너무 강하게 넣으면 섞임이 깨짐)
-        const spreadB = Math.abs(b.i - b.j);
-if (mode === 0) {
-  // 실력매칭: spread 작은 편이 유리
-  penalty += 0.2 * spreadB;
-} else {
-  // 조합매칭: spread 큰 편이 유리 => 작으면 벌점
-  penalty += 0.2 * (SB.length - 1 - spreadB);
-}
-        return { b, idx, vKey, penalty };
-      })
-      .sort((x,y)=>x.penalty - y.penalty);
+      for (let ia = 0; ia < candA.length; ia++) {
+        const PA0full = toPairs(SA, candA[ia]).sort((x, y) => x.sum - y.sum);
 
-    let pick = null;
-    for (const c of candB) {
-      if (usedB.has(c.b.key)) continue;
-      pick = c;
-      break;
-    }
-    // 다 썼으면 어쩔 수 없이 가장 좋은 거
-    if (!pick) pick = candB[0];
+        for (let ib = 0; ib < candB.length; ib++) {
+          const PB0full = toPairs(SB, candB[ib]).sort((x, y) => x.sum - y.sum);
 
-    usedB.add(pick.b.key);
+          const pickA = pickPairsNoPlayerDup_STRICT(PA0full, need, history.usedPairsA, mode, SA.length);
+          const pickB = pickPairsNoPlayerDup_STRICT(PB0full, need, history.usedPairsB, mode, SB.length);
+          if (pickA.length < need || pickB.length < need) continue;
 
-    out.push({
-      a1: a.p1, a2: a.p2,
-      b1: pick.b.p1, b2: pick.b.p2
-    });
+          let score = 0;
+          for (let t=0; t<need; t++) {
+            const a = pickA[t];
+            const b = pickB[t];
+            const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
 
-    // history 누적(이 매치에서 확정된 조합)
-    history.usedPairsA.add(a.key);
-    history.usedPairsB.add(pick.b.key);
-    history.usedVersus.add(pick.vKey);
-  }
+            score += Math.abs(a.sum - b.sum);
+            if (history.usedPairsA.has(a.key)) score += 120;
+            if (history.usedPairsB.has(b.key)) score += 120;
+            if (history.usedVersus.has(vKey)) score += 180;
 
-  return out;
-}
+            const spreadA = Math.abs(a.i - a.j);
+            const spreadB = Math.abs(b.i - b.j);
 
-for (let ia = 0; ia < candA.length; ia++) {
-  const PA0full = toPairs(SA, candA[ia]).sort((x, y) => x.sum - y.sum);
+            if (mode === 0) score += 0.2 * (spreadA + spreadB);
+            else score += 0.2 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
+          }
 
-  for (let ib = 0; ib < candB.length; ib++) {
-    const PB0full = toPairs(SB, candB[ib]).sort((x, y) => x.sum - y.sum);
+          if (score < bestScore) {
+            bestScore = score;
+            best = { ia, ib, pickA, pickB };
+          }
+        }
+      }
 
-    // ✅ 여기서 "선수 중복 최소"로 need개씩 뽑는다
-   const pickA = pickPairsNoPlayerDup_STRICT(PA0full, need, history.usedPairsA, mode, SA.length);
-const pickB = pickPairsNoPlayerDup_STRICT(PB0full, need, history.usedPairsB, mode, SB.length);
-    if (pickA.length < need || pickB.length < need) continue;
+      if (!best) return [];
 
-    // ✅ 스코어: 실력차 + 과거 중복(페어/대결) + (아주 약한) 모드취향
-    let score = 0;
-    for (let t=0; t<need; t++) {
-      const a = pickA[t];
-      const b = pickB[t];
-      const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+      window.__pairRoundIdx[keyA] = (startA + best.ia + 1) % roundsA.length;
+      window.__pairRoundIdx[keyB] = (startB + best.ib + 1) % roundsB.length;
 
-      score += Math.abs(a.sum - b.sum);
-      if (history.usedPairsA.has(a.key)) score += 120;
-      if (history.usedPairsB.has(b.key)) score += 120;
-      if (history.usedVersus.has(vKey)) score += 180;
-
-      const spreadA = Math.abs(a.i - a.j);
-const spreadB = Math.abs(b.i - b.j);
-
-if (mode === 0) {
-  score += 0.2 * (spreadA + spreadB);
-} else {
-  score += 0.2 * ((SA.length - 1 - spreadA) + (SB.length - 1 - spreadB));
-}
-    }
-
-    if (score < bestScore) {
-      bestScore = score;
-      best = { ia, ib, pickA, pickB };
-    }
-  }
-}
-
-if (!best) return [];
-
-// 라운드 포인터 이동
-window.__pairRoundIdx[keyA] = (startA + best.ia + 1) % roundsA.length;
-window.__pairRoundIdx[keyB] = (startB + best.ib + 1) % roundsB.length;
-
-// ✅ 최종 매칭: sum 가까운 것끼리 + 대결중복 피하면서 섞기
-return matchPairsSmart(best.pickA, best.pickB, history, mode);
+      return matchPairsSmart(best.pickA, best.pickB, history, mode);
     }
 
     /* ---------------- 경기 카드 출력 ---------------- */
@@ -1499,49 +1420,48 @@ return matchPairsSmart(best.pickA, best.pickB, history, mode);
     function closePopup(){ document.getElementById("popup").style.display = "none"; }
 
     /* ---------------- 경기 결과 팝업 ---------------- */
-  function openResultPopup(cell) {
-  const popup = document.getElementById("popup");
-  const playerText = cell.parentElement.children[1].innerText;
+    function openResultPopup(cell) {
+      const popup = document.getElementById("popup");
+      const playerText = cell.parentElement.children[1].innerText;
 
-  // 현재 점수 입력 모드 (1: 3판2선승, 2: 5판3선승)
-  const mode = window.__scoreMode ?? 1;
+      const mode = window.__scoreMode ?? 1;
 
-  const scores = (mode === 2)
-    ? ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"]   // 5판3선승
-    : ["2:1","2:0","0:0","0:2","1:2"];              // 3판2선승
+      const scores = (mode === 2)
+        ? ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"]
+        : ["2:1","2:0","0:0","0:2","1:2"];
 
-  const btnClass = (mode === 2) ? "btn-score-bo5" : "btn-save";
+      const btnClass = (mode === 2) ? "btn-score-bo5" : "btn-save";
 
-  const buttons = scores.map(s =>
-    `<button class="${btnClass}" onclick="setMatchResult('${s}')">${s}</button>`
-  ).join(" ");
+      const buttons = scores.map(s =>
+        `<button class="${btnClass}" onclick="setMatchResult('${s}')">${s}</button>`
+      ).join(" ");
 
-  popup.innerHTML = `
-    <p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
+      popup.innerHTML = `
+        <p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
 
-    <div style="text-align:center; margin:6px 0 10px;">
-      <button class="btn-save btn-option ${mode===1 ? "active" : ""}"
-        onclick="window.__scoreMode=1; openResultPopup(document.getElementById('popup').targetCell)">
-        3판 2선승
-      </button>
+        <div style="text-align:center; margin:6px 0 10px;">
+          <button class="btn-save btn-option ${mode===1 ? "active" : ""}"
+            onclick="window.__scoreMode=1; openResultPopup(document.getElementById('popup').targetCell)">
+            3판 2선승
+          </button>
 
-      <button class="btn-score-bo5 btn-option ${mode===2 ? "active" : ""}"
-        onclick="window.__scoreMode=2; openResultPopup(document.getElementById('popup').targetCell)">
-        5판 3선승
-      </button>
-    </div>
+          <button class="btn-score-bo5 btn-option ${mode===2 ? "active" : ""}"
+            onclick="window.__scoreMode=2; openResultPopup(document.getElementById('popup').targetCell)">
+            5판 3선승
+          </button>
+        </div>
 
-    <p style="text-align:center;">${playerText}</p>
-    <div style="text-align:center; margin:10px 0;">${buttons}</div>
+        <p style="text-align:center;">${playerText}</p>
+        <div style="text-align:center; margin:10px 0;">${buttons}</div>
 
-    <div style="text-align:center; margin-top:10px;">
-      <button class="btn-share" onclick="closePopup()">닫기</button>
-    </div>
-  `;
+        <div style="text-align:center; margin-top:10px;">
+          <button class="btn-share" onclick="closePopup()">닫기</button>
+        </div>
+      `;
 
-  popup.targetCell = cell;
-  popup.style.display = "block";
-}
+      popup.targetCell = cell;
+      popup.style.display = "block";
+    }
 
     async function setMatchResult(score) {
       await requireAuth();
@@ -1674,7 +1594,7 @@ return matchPairsSmart(best.pickA, best.pickB, history, mode);
     }
 
     function copyLink() {
-     const url = location.href;
+      const url = location.href;
       navigator.clipboard.writeText(url).then(() => {
         alert("📋 링크가 복사되었습니다!\n카톡에 붙여넣기 해주세요.");
       }).catch(err => {
