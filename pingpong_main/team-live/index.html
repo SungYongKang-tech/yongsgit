@@ -811,28 +811,52 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
   }
 }
 
-    function scoreRound(SA, SB, roundA, roundB, history) {
-      const pairsA = roundA.map(([i,j]) => {
-        const p1 = SA[i], p2 = SA[j];
-        return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name) };
-      }).sort((x,y)=>x.sum - y.sum);
+    function scoreRound(SA, SB, roundA, roundB, history, mode) {
+  const pairsA = roundA.map(([i,j]) => {
+    const p1 = SA[i], p2 = SA[j];
+    return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name), i, j };
+  }).sort((x,y)=>x.sum - y.sum);
 
-      const pairsB = roundB.map(([i,j]) => {
-        const p1 = SB[i], p2 = SB[j];
-        return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name) };
-      }).sort((x,y)=>x.sum - y.sum);
+  const pairsB = roundB.map(([i,j]) => {
+    const p1 = SB[i], p2 = SB[j];
+    return { p1, p2, sum: p1.level + p2.level, key: pairKeySorted(p1.name,p2.name), i, j };
+  }).sort((x,y)=>x.sum - y.sum);
 
-      let score = 0;
-      for (let k=0; k<pairsA.length; k++) {
-        const a = pairsA[k], b = pairsB[k];
-        score += Math.abs(a.sum - b.sum);
-        if (history.usedPairsA.has(a.key)) score += 100;
-        if (history.usedPairsB.has(b.key)) score += 100;
-        const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
-        if (history.usedVersus.has(vKey)) score += 150;
-      }
-      return score;
+  let score = 0;
+
+  // ✅ mode 반영을 "강하게" (실력=가까운 조합, 조합=먼 조합)
+  const maxSpreadA = Math.max(1, SA.length - 1);
+  const maxSpreadB = Math.max(1, SB.length - 1);
+
+  // 가중치: 여기 숫자만 조절하면 체감이 바로 바뀝니다.
+  const W_SPREAD = 35; // ✅ 실력/조합 성향을 결정하는 핵심(20~80 사이로 조절 추천)
+
+  for (let k=0; k<pairsA.length; k++) {
+    const a = pairsA[k], b = pairsB[k];
+
+    // 1) 팀간 밸런스(레벨합 차이)
+    score += Math.abs(a.sum - b.sum);
+
+    // 2) 과거 중복 페널티
+    if (history.usedPairsA.has(a.key)) score += 100;
+    if (history.usedPairsB.has(b.key)) score += 100;
+    const vKey = versusKey(a.p1, a.p2, b.p1, b.p2);
+    if (history.usedVersus.has(vKey)) score += 150;
+
+    // 3) ✅ mode 페널티(핵심)
+    const spreadA = Math.abs(a.i - a.j);
+    const spreadB = Math.abs(b.i - b.j);
+
+    if (mode === 0) {
+      // 실력매칭: 가까운 인덱스(강강/약약) 선호 => spread가 커질수록 벌점
+      score += W_SPREAD * (spreadA + spreadB);
+    } else {
+      // 조합매칭: 먼 인덱스(강약) 선호 => spread가 작을수록 벌점
+      score += W_SPREAD * ((maxSpreadA - spreadA) + (maxSpreadB - spreadB));
     }
+  }
+  return score;
+}
 
     function pickBestFullParticipationRound(SA, SB, need, mode, history) {
       const n = SA.length;
@@ -853,7 +877,7 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
 
       for (const ra of candA) {
         for (const rb of candB) {
-          const sc = scoreRound(SA, SB, ra, rb, history);
+          const sc = scoreRound(SA, SB, ra, rb, history, mode);
           if (sc < bestScore) {
             bestScore = sc;
             best = { ra, rb };
