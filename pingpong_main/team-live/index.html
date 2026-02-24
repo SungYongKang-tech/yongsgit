@@ -9,7 +9,7 @@
   <meta property="og:title" content="단체전 진행 페이지">
   <meta property="og:description" content="탁구 단체전 실시간 경기 기록 및 순위 확인">
   <meta property="og:image" content="https://sensational-tulumba-65e97e.netlify.app/pingpong/club/team-match-run/images/sinyubin.png">
-  <meta property="og:url" content="https://sensational-tulumba-65e97e.netlify.app//pingpong_main/team-live/">
+  <meta property="og:url" content="https://sensational-tulumba-65e97e.netlify.app/pingpong_main/team-live/">
 
   <title>단체전 진행</title>
 
@@ -73,11 +73,11 @@
     .btn-generate {
       font-size: 18px;
       padding: 10px 10px;
-      background-color: #e7160f; /* 기본 빨강 */
+      background-color:#e7160f;; /* 기본 빨강 */
       min-width: 90px;
       text-align: center;
     }
-    .btn-generate:hover { background-color: #43a047; }
+   .btn-generate:hover { background-color:#c5140d; }
 
     /* ===== 결과 저장 버튼 (파랑색) ===== */
     .btn-save {
@@ -688,75 +688,36 @@ function generateSinglesPairs2v2(A, B, need, teamAName, teamBName){
 function generateSinglesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
   if (!need || need <= 0) return [];
 
-  // ✅ 모드별 "팀 내부 페어"를 강제로 고정해서 확실히 갈리게 만들기
-function rotateList(list, shift){
-  const n = list.length;
-  if (!n) return list;
-  const s = ((shift % n) + n) % n;
-  return list.slice(s).concat(list.slice(0, s));
-}
-function makePairsByMode(list, mode){
-  const n = list.length;
-  const pairs = [];
-  if (mode === 0){
-    // 실력매칭: 인접끼리 (강강/약약)
-    for (let i=0; i+1<n; i+=2) pairs.push([i, i+1]);
-  } else {
-    // 조합매칭: 양끝끼리 (강약)
-    for (let i=0; i<Math.floor(n/2); i++) pairs.push([i, n-1-i]);
-  }
-  return pairs;
-}
-
-// ✅ 전원출전(need*2==인원)일 때는 이 방식을 우선 적용(모드가 확실히 분리됨)
-if (need * 2 === SA.length && SA.length === SB.length && SA.length >= 2) {
-  const rotKey = histKey + "__STRICTPAIR_ROT";
-  const rot = (window.__pairRoundIdx[rotKey] ?? 0);
-
-  // 2명 단위로 로테이션(매번 같은 조합만 안 나오게)
-  const A2 = rotateList(SA, (rot * 2) % SA.length);
-  const B2 = rotateList(SB, (rot * 2) % SB.length);
-  window.__pairRoundIdx[rotKey] = rot + 1;
-
-  const roundA = makePairsByMode(A2, mode).slice(0, need);
-  const roundB = makePairsByMode(B2, mode).slice(0, need);
-
-  // matchPairsSmart에 넣을 형태로 변환
-  const pairsA = roundA.map(([i,j]) => ({
-    p1: A2[i], p2: A2[j],
-    sum: A2[i].level + A2[j].level,
-    i, j,
-    key: pairKeySorted(A2[i].name, A2[j].name),
-  }));
-  const pairsB = roundB.map(([i,j]) => ({
-    p1: B2[i], p2: B2[j],
-    sum: B2[i].level + B2[j].level,
-    i, j,
-    key: pairKeySorted(B2[i].name, B2[j].name),
-  }));
-
-  // 상대 매칭은 기존 스마트 매칭 사용(대결중복/합 차이 최소화)
-  return matchPairsSmart(pairsA, pairsB, history, mode);
-}
-
+  // ✅ 정렬(부수 오름차순 = 숫자 낮을수록 강자)
   A = [...A].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
-B = [...B].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
+  B = [...B].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
+
+  // ✅ 2vs2는 기존 로직 유지
   if (A.length === 2 && B.length === 2) {
     return generateSinglesPairs2v2(A, B, need, teamAName, teamBName);
   }
+
+  // ✅ 인원 다르면 기존 로직 사용
   if (A.length !== B.length) {
     return generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName, teamBName);
   }
 
-  // ✅ 핵심: 각 팀에서 "중복 최소 lineup"을 먼저 뽑고, 같은 인덱스끼리 매칭
+  // ✅ 중복 최소 lineup 뽑기 (기존 함수 사용)
   const key = _matchupKey(teamAName, teamBName) + "__EQUAL";
-  const lineupA = _pickLineupNoDup(A, need, key + "__A");
-  const lineupB = _pickLineupNoDup(B, need, key + "__B");
+  let lineupA = _pickLineupNoDup(A, need, key + "__A");
+  let lineupB = _pickLineupNoDup(B, need, key + "__B");
 
-  // mode(0/1)는 여기선 “누구를 뽑는가”보다 “복식”에서 영향이 크고,
-  // 단식은 중복 방지가 우선이라 그대로 1:1 매칭
+  // ----------------------------------------------------
+  // ✅ 여기서 mode가 확실히 갈리도록 "상대 매칭 방식"을 다르게
+  // mode=0 실력매칭 : 강자끼리 / 약자끼리 (같은 인덱스)
+  // mode=1 조합매칭 : 강자 vs 약자 (B를 뒤집어서 매칭)
+  // ----------------------------------------------------
+  if (mode === 1) {
+    lineupB = [...lineupB].reverse();
+  }
+
   const result = [];
-  for (let i=0;i<need;i++){
+  for (let i=0; i<need; i++){
     result.push({ a: lineupA[i], b: lineupB[i] });
   }
   return result;
@@ -806,7 +767,17 @@ function generateSinglesPairsForDifferentTeamSize(A, B, need, teamAName="A", tea
       }
       return res;
     }
-    function allTeamPairs(players) { return allTeamPairsFiltered(players, null); }
+    function allTeamPairs(players) {
+  const res = [];
+  const n = players.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const p1 = players[i], p2 = players[j];
+      res.push({ p1, p2, sum: p1.level + p2.level, i, j, key: pairKeySorted(p1.name, p2.name) });
+    }
+  }
+  return res;
+}
 
     function allPerfectMatchings(indices) {
       if (indices.length === 0) return [[]];
@@ -1499,19 +1470,17 @@ return matchPairsSmart(best.pickA, best.pickB, history, mode);
     function closePopup(){ document.getElementById("popup").style.display = "none"; }
 
     /* ---------------- 경기 결과 팝업 ---------------- */
-   function openResultPopup(cell) {
+  function openResultPopup(cell) {
   const popup = document.getElementById("popup");
   const playerText = cell.parentElement.children[1].innerText;
 
-  // ✅ 현재 점수 입력 모드 (기본: 3판2선승)
+  // 현재 점수 입력 모드 (1: 3판2선승, 2: 5판3선승)
   const mode = window.__scoreMode ?? 1;
 
-  // ✅ 모드별 점수 버튼 구성
   const scores = (mode === 2)
-    ? ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"]          // 5판3선승
-    : ["2:1","2:0","0:0","0:2","1:2"];                     // 3판2선승
+    ? ["3:2","3:1","3:0","0:0","0:3","1:3","2:3"]   // 5판3선승
+    : ["2:1","2:0","0:0","0:2","1:2"];              // 3판2선승
 
-  // ✅ 모드별 버튼 색
   const btnClass = (mode === 2) ? "btn-score-bo5" : "btn-save";
 
   const buttons = scores.map(s =>
@@ -1521,17 +1490,21 @@ return matchPairsSmart(best.pickA, best.pickB, history, mode);
   popup.innerHTML = `
     <p style="font-weight:bold; text-align:center;">경기 결과 입력</p>
 
-    <!-- ✅ 모드 토글(원하시면 빼도 됨: 여기서 바로 바꿀 수 있게) -->
     <div style="text-align:center; margin:6px 0 10px;">
-      <button class="btn-save btn-option ${mode===1?'active':''}"
-  onclick="window.__scoreMode=1; openResultPopup(document.getElementById('popup').targetCell)">3판 2선승</button>
+      <button class="btn-save btn-option ${mode===1 ? "active" : ""}"
+        onclick="window.__scoreMode=1; openResultPopup(document.getElementById('popup').targetCell)">
+        3판 2선승
+      </button>
 
-<button class="btn-score-bo5 btn-option ${mode===2?'active':''}"
-  onclick="window.__scoreMode=2; openResultPopup(document.getElementById('popup').targetCell)">5판 3선승</button>
+      <button class="btn-score-bo5 btn-option ${mode===2 ? "active" : ""}"
+        onclick="window.__scoreMode=2; openResultPopup(document.getElementById('popup').targetCell)">
+        5판 3선승
+      </button>
     </div>
 
     <p style="text-align:center;">${playerText}</p>
     <div style="text-align:center; margin:10px 0;">${buttons}</div>
+
     <div style="text-align:center; margin-top:10px;">
       <button class="btn-share" onclick="closePopup()">닫기</button>
     </div>
