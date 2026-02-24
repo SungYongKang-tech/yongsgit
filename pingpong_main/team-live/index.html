@@ -688,6 +688,57 @@ function generateSinglesPairs2v2(A, B, need, teamAName, teamBName){
 function generateSinglesPairsByMode(A, B, need, mode, teamAName="A", teamBName="B") {
   if (!need || need <= 0) return [];
 
+  // ✅ 모드별 "팀 내부 페어"를 강제로 고정해서 확실히 갈리게 만들기
+function rotateList(list, shift){
+  const n = list.length;
+  if (!n) return list;
+  const s = ((shift % n) + n) % n;
+  return list.slice(s).concat(list.slice(0, s));
+}
+function makePairsByMode(list, mode){
+  const n = list.length;
+  const pairs = [];
+  if (mode === 0){
+    // 실력매칭: 인접끼리 (강강/약약)
+    for (let i=0; i+1<n; i+=2) pairs.push([i, i+1]);
+  } else {
+    // 조합매칭: 양끝끼리 (강약)
+    for (let i=0; i<Math.floor(n/2); i++) pairs.push([i, n-1-i]);
+  }
+  return pairs;
+}
+
+// ✅ 전원출전(need*2==인원)일 때는 이 방식을 우선 적용(모드가 확실히 분리됨)
+if (need * 2 === SA.length && SA.length === SB.length && SA.length >= 2) {
+  const rotKey = histKey + "__STRICTPAIR_ROT";
+  const rot = (window.__pairRoundIdx[rotKey] ?? 0);
+
+  // 2명 단위로 로테이션(매번 같은 조합만 안 나오게)
+  const A2 = rotateList(SA, (rot * 2) % SA.length);
+  const B2 = rotateList(SB, (rot * 2) % SB.length);
+  window.__pairRoundIdx[rotKey] = rot + 1;
+
+  const roundA = makePairsByMode(A2, mode).slice(0, need);
+  const roundB = makePairsByMode(B2, mode).slice(0, need);
+
+  // matchPairsSmart에 넣을 형태로 변환
+  const pairsA = roundA.map(([i,j]) => ({
+    p1: A2[i], p2: A2[j],
+    sum: A2[i].level + A2[j].level,
+    i, j,
+    key: pairKeySorted(A2[i].name, A2[j].name),
+  }));
+  const pairsB = roundB.map(([i,j]) => ({
+    p1: B2[i], p2: B2[j],
+    sum: B2[i].level + B2[j].level,
+    i, j,
+    key: pairKeySorted(B2[i].name, B2[j].name),
+  }));
+
+  // 상대 매칭은 기존 스마트 매칭 사용(대결중복/합 차이 최소화)
+  return matchPairsSmart(pairsA, pairsB, history, mode);
+}
+
   A = [...A].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
 B = [...B].sort((x,y)=> x.level === y.level ? x.name.localeCompare(y.name) : x.level - y.level);
   if (A.length === 2 && B.length === 2) {
