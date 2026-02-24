@@ -496,47 +496,22 @@ window.__scoreMode = window.__scoreMode ?? 1;
       await update(ref(db), updatesObj);
     }
 
-    /* ---------------- 자동 대진 생성 ---------------- */
-    async function autoMatch() {
-      if (!checkPassword()) return;
-
-      const ok = await loadTeams();
-      if (!ok || teamNames.length === 0) return;
-
-      // 자동 생성 모드 설명 표시
-      const descBox = document.getElementById("modeDesc");
-      const descText = document.getElementById("modeText");
-
-      if (autoMode === 0) {
-        descText.innerText =
-          "· 고수 선수부터 우선 배정하는 방식\n" +
-          "· 두 팀의 실력이 비슷할 때 가장 공정한 경기 구성\n" +
-          "· 경기력 중심 배정이 필요할 때 적합";
-      } else {
-        descText.innerText =
-          "· 상·하위 조합을 섞어 경기를 구성하는 방식\n" +
-          "· 한 경기에서 실력 차이를 줄여 접전을 만들기 좋음\n" +
-          "· 친선 경기나 다양한 조합을 만들고 싶을 때 유리";
-      }
-      descBox.style.display = "block";
-
-      await requireAuth();
-
-      async function autoMatch() {
+   /* ---------------- 자동 대진 생성 ---------------- */
+async function autoMatch() {
   if (!checkPassword()) return;
 
   const ok = await loadTeams();
   if (!ok || teamNames.length === 0) return;
 
-  // ✅ [추가] 자동 생성 버튼을 누를 때마다 "완전 새로" 생성되도록 캐시 초기화
+  // ✅ 자동 생성 버튼을 누를 때마다 "완전 새로" 생성되도록 캐시 초기화
   window.__doublesHistoryByMatch = {};
   window.__pairRounds = {};
   window.__pairRoundIdx = {};
   window.__rot43 = 0;
   window.__single2v2 = 0;
-  window.__singleRoundIdx = {};   // 단식 로테이션/중복방지 포인터도 초기화
+  window.__singleRoundIdx = {}; // 단식 로테이션/중복방지 포인터도 초기화
 
-  // (기존 코드 계속)
+  // ✅ 자동 생성 모드 설명 표시
   const descBox = document.getElementById("modeDesc");
   const descText = document.getElementById("modeText");
 
@@ -554,66 +529,69 @@ window.__scoreMode = window.__scoreMode ?? 1;
   descBox.style.display = "block";
 
   await requireAuth();
- 
+  await remove(ref(db, "matches"));
 
-      await remove(ref(db, "matches"));
+  const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
+  const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
 
-      const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
-      const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
+  const updatesObj = {};
+  for (let i = 0; i < teamNames.length; i++) {
+    for (let j = i + 1; j < teamNames.length; j++) {
+      const teamA = teamNames[i], teamB = teamNames[j];
 
-      const updatesObj = {};
-      for (let i = 0; i < teamNames.length; i++) {
-        for (let j = i + 1; j < teamNames.length; j++) {
-          const teamA = teamNames[i], teamB = teamNames[j];
+      // 완전 깊은 복사
+      const A_raw = JSON.parse(JSON.stringify(teamData[teamA].players || []));
+      const B_raw = JSON.parse(JSON.stringify(teamData[teamB].players || []));
 
-          // 완전 깊은 복사
-          const A_raw = JSON.parse(JSON.stringify(teamData[teamA].players || []));
-          const B_raw = JSON.parse(JSON.stringify(teamData[teamB].players || []));
+      const singlesA = [...A_raw];
+      const singlesB = [...B_raw];
+      const doublesA = [...A_raw];
+      const doublesB = [...B_raw];
 
-          const singlesA = [...A_raw];
-          const singlesB = [...B_raw];
-          const doublesA = [...A_raw];
-          const doublesB = [...B_raw];
-
-           let singles;
-if (singlesA.length !== singlesB.length) {
-  singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
-} else {
-  singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, autoMode, teamA, teamB);
-}
-
-          const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
-          // ✅ 복식이 부족하면 placeholder로 채우기(팀 인원이 적거나 홀수인 경우 대비)
-while (doubles.length < doublesCnt) {
-  doubles.push({
-    a1: { name: "미정", level: "?" },
-    a2: { name: "미정", level: "?" },
-    b1: { name: "미정", level: "?" },
-    b2: { name: "미정", level: "?" }
-  });
-}
-          const matchList = [];
-          singles.forEach((m, idx) => {
-            matchList.push({
-              label: `${idx + 1}단`,
-              players: `${m.a.name}(${m.a.level}) vs ${m.b.name}(${m.b.level})`,
-              result: "-"
-            });
-          });
-          doubles.forEach((m, idx) => {
-            matchList.push({
-              label: `${idx + 1}복`,
-              players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
-              result: "-"
-            });
-          });
-
-          const key = `${teamA}_vs_${teamB}`;
-          updatesObj[`matches/${key}`] = { teamA, teamB, matchList };
-        }
+      let singles;
+      if (singlesA.length !== singlesB.length) {
+        singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
+      } else {
+        singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, autoMode, teamA, teamB);
       }
-      await update(ref(db), updatesObj);
+
+      const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
+
+      // ✅ 복식이 부족하면 placeholder로 채우기
+      while (doubles.length < doublesCnt) {
+        doubles.push({
+          a1: { name: "미정", level: "?" },
+          a2: { name: "미정", level: "?" },
+          b1: { name: "미정", level: "?" },
+          b2: { name: "미정", level: "?" }
+        });
+      }
+
+      const matchList = [];
+
+      singles.forEach((m, idx) => {
+        matchList.push({
+          label: `${idx + 1}단`,
+          players: `${m.a.name}(${m.a.level}) vs ${m.b.name}(${m.b.level})`,
+          result: "-"
+        });
+      });
+
+      doubles.forEach((m, idx) => {
+        matchList.push({
+          label: `${idx + 1}복`,
+          players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
+          result: "-"
+        });
+      });
+
+      const key = `${teamA}_vs_${teamB}`;
+      updatesObj[`matches/${key}`] = { teamA, teamB, matchList };
     }
+  }
+
+  await update(ref(db), updatesObj);
+}
 
     /* =========================================================
        ✅ 단식 자동 생성
