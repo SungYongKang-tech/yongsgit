@@ -1,4 +1,4 @@
-// /pingpong/firebase.js
+// /pingpong_main/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
 import { getDatabase } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
