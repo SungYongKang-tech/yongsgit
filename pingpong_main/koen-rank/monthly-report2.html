@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏓 월간 단식·복식 리그 리포트</title>
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+:root{
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08); --card:#fff;
+}
+body{
+  margin:0; font-family:"Pretendard","Noto Sans KR",sans-serif;
+  background:var(--bg); color:var(--ink); font-weight:600;
+}
+header{
+  background:#fff;border-bottom:1px solid #e5e7eb;
+  text-align:center;padding:14px 0;position:sticky;top:0;z-index:10;
+}
+h1{margin:4px 0 10px;color:var(--accent);
+  font-size:clamp(18px,4vw,24px);font-weight:700;}
+.btn{border:1px solid #d1d5db;border-radius:8px;padding:6px 10px;
+  font-size:14px;background:#fff;cursor:pointer;font-weight:600;}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{max-width:900px;margin:0 auto;padding:10px 10px 60px;}
+table{width:100%;border-collapse:collapse;background:var(--card);
+  box-shadow:var(--shadow);border-radius:12px;overflow:hidden;font-size:15px;}
+thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;
+  padding:10px 6px;text-align:center;color:#334155;font-weight:700;}
+tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center;}
+tbody tr:hover{background:#f9fafb}
+.win{color:var(--ok);font-weight:700;}
+.lose{color:var(--danger);font-weight:700;}
+.totalNote{
+  text-align:center;margin-top:12px;
+  font-size:17px;font-weight:800;
+  color:#0d47a1;background:#e3f2fd;
+  display:inline-block;padding:6px 14px;
+  border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.08);
+}
+.ruleNote{
+  text-align:center;font-size:14px;color:#475569;
+  margin-top:8px;margin-bottom:20px;
+}
+@media(max-width:640px){
+  table{font-size:13px;} thead th, tbody td{padding:7px 1px;}
+  .totalNote{font-size:15px;padding:5px 10px;}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="pageHeader">🏓 월간 단식·복식 리그 리포트</h1>
+  <div style="display:flex;justify-content:center;gap:8px;">
+    <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
+    <a href="monthly-report.html" class="btn primary">통합 전적</a>
+  </div>
+</header>
+
+<main>
+  <section id="singleSection"></section>
+  <section id="doubleSection"></section>
+</main>
+
+<script type="module">
+import { db } from "../firebase.js";
+import { ref, onValue, remove, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+/* =========================
+   Title (config/title) 동일 적용
+========================= */
+const titleRef = ref(db, "config/title");
+get(titleRef).then(snap=>{
+  const title = snap.exists() ? snap.val() : "우리회사";
+  document.getElementById("pageHeader").textContent = `🏓 ${title} 월간 단·복식 리포트`;
+});
+
+/* =========================
+   Helpers
+========================= */
+function formatNum(n){ return (Math.round(n*10)/10).toFixed(1); }
+function teamKey(arr){ return (arr||[]).slice().sort((a,b)=>a.localeCompare(b)).join(', '); }
+
+/* =========================
+   members -> name:bu 맵핑
+   (통합리포트: members, p.bu)
+========================= */
+let playerLevels = {}; // { "홍길동": 7, ... }
+const memberRef = ref(db, "members");
+onValue(memberRef, (snap)=>{
+  const data = snap.val() || {};
+  const map = {};
+  Object.values(data).forEach(p=>{
+    if (!p || !p.name) return;
+    map[p.name] = Number(p.bu ?? 99);
+  });
+  playerLevels = map;
+});
+
+/* =========================
+   matches 읽어서 단/복식 통계
+   + 2개월 이전 match 정리(1회)
+========================= */
+let cleanedOldMatches = false;
+
+onValue(ref(db,"matches"), async (snap)=>{
+  const data = snap.val() || {};
+
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // ✅ 통합리포트와 동일: "2개월 이전" 제거 기준
+  const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const oldMonth = `${twoMonthsAgo.getFullYear()}-${String(twoMonthsAgo.getMonth()+1).padStart(2,'0')}`;
+
+  if (!cleanedOldMatches) {
+    cleanedOldMatches = true;
+    Object.entries(data).forEach(([id, m]) => {
+      if (m && m.monthKey && m.monthKey <= oldMonth) {
+        remove(ref(db, `matches/${id}`));
+      }
+    });
+  }
+
+  const statsSingle = {}; // {name:{win,lose}}
+  const statsDouble = {}; // {team:{win,lose,points}}
+
+  Object.values(data).forEach(m=>{
+    if(!m || m.monthKey !== thisMonth) return;
+
+    // 단식
+    if(m.mode === "single"){
+      const names = [...(m.namesA||[]), ...(m.namesB||[])];
+      names.forEach(n=>{ if(!statsSingle[n]) statsSingle[n] = {win:0,lose:0}; });
+
+      if(m.winnerSide==='A'){
+        (m.namesA||[]).forEach(n=>statsSingle[n].win++);
+        (m.namesB||[]).forEach(n=>statsSingle[n].lose++);
+      } else if(m.winnerSide==='B'){
+        (m.namesB||[]).forEach(n=>statsSingle[n].win++);
+        (m.namesA||[]).forEach(n=>statsSingle[n].lose++);
+      }
+    }
+
+    // 복식
+    if(m.mode === "double"){
+      const teamA = teamKey(m.namesA||[]);
+      const teamB = teamKey(m.namesB||[]);
+      [teamA, teamB].forEach(t=>{
+        if(!t) return;
+        if(!statsDouble[t]) statsDouble[t] = {win:0,lose:0,points:0};
+      });
+
+      if(!teamA || !teamB) return;
+
+      // 승점: 승리 +2 / 패배 -1
+      if(m.winnerSide==='A'){
+        statsDouble[teamA].win++;  statsDouble[teamA].points += 2;
+        statsDouble[teamB].lose++; statsDouble[teamB].points -= 1;
+      } else if(m.winnerSide==='B'){
+        statsDouble[teamB].win++;  statsDouble[teamB].points += 2;
+        statsDouble[teamA].lose++; statsDouble[teamA].points -= 1;
+      }
+    }
+  });
+
+  const singleArr = Object.entries(statsSingle).map(([name,s])=>{
+    const total = s.win + s.lose;
+    const rate = total ? (s.win/total*100) : 0;
+    return {name, total, win:s.win, lose:s.lose, rate};
+  }).sort((a,b)=>b.rate-a.rate || b.win-a.win || b.total-a.total);
+
+  const doubleArr = Object.entries(statsDouble).map(([team,s])=>{
+    const total = s.win + s.lose;
+    const rate = total ? (s.win/total*100) : 0;
+
+    // 부수합(낮을수록 상위 tie-break)
+    const teamNames = team.split(",").map(n=>n.trim()).filter(Boolean);
+    const levelSum = teamNames.reduce((sum,n)=> sum + (Number(playerLevels[n]) || 99), 0);
+
+    return {team,total,win:s.win,lose:s.lose,rate,points:s.points,levelSum};
+  }).sort((a,b)=>
+    (b.points - a.points) ||
+    (b.rate - a.rate) ||
+    (b.total - a.total) ||
+    (a.levelSum - b.levelSum)
+  );
+
+  renderSingles(singleArr, thisMonth);
+  renderDoubles(doubleArr, thisMonth);
+});
+
+/* =========================
+   Render - Singles
+========================= */
+function renderSingles(arr, month){
+  const sec = document.getElementById("singleSection");
+  const totalMatches = Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
+
+  // ✅ "오늘 날짜" 기준 최소 경기수 (기존 의도 유지)
+  const today = new Date();
+  const day = today.getDate();
+  const minGames = Math.ceil(day / 3);
+
+  const qualified = arr.filter(p=>p.total>=minGames);
+  const unqualified = arr.filter(p=>p.total<minGames);
+
+  sec.innerHTML = `
+    <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
+      🏓 단식 리그 순위 (${month})
+    </h2>
+    <table>
+      <thead>
+        <tr>
+          <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>승률</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${qualified.map((p,i)=>`
+          <tr style="background:#e0f2fe">
+            <td>${i+1}</td>
+            <td>${p.name}(${playerLevels[p.name] ?? '-'})</td>
+            <td>${p.total}</td>
+            <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
+            <td>${formatNum(p.rate)}%</td>
+          </tr>`).join('')}
+        ${unqualified.map(p=>`
+          <tr style="background:#f9fafb">
+            <td>–</td>
+            <td>${p.name}(${playerLevels[p.name] ?? '-'})</td>
+            <td>${p.total}</td>
+            <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
+            <td>${formatNum(p.rate)}%</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
+    <p class="ruleNote">⚖️ 순위 기준: <b>3일에 1경기 이상 (${minGames}경기↑)</b> / 정렬: 승률 → 승수</p>
+  `;
+}
+
+/* =========================
+   Render - Doubles
+========================= */
+function renderDoubles(arr, month) {
+  const sec = document.getElementById("doubleSection");
+  const totalMatches = Math.round(arr.reduce((s, p) => s + p.total, 0) / 2);
+
+  // ✅ "오늘 날짜" 기준 최소 경기수
+  const today = new Date();
+  const day = today.getDate();
+  const minGames = Math.ceil(day / 7);
+
+  const qualified = arr.filter(t => t.total >= minGames);
+  const unqualified = arr.filter(t => t.total < minGames);
+
+  const teamText = (teamStr) => {
+    return teamStr.split(",").map(n=>{
+      const name = n.trim();
+      const lvl = (name && playerLevels[name] != null) ? playerLevels[name] : "-";
+      return `${name}(${lvl})`;
+    }).join(", ");
+  };
+
+  sec.innerHTML = `
+    <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:28px 0 14px;font-weight:800;">
+      👥 복식 리그 순위 (${month})<br/>— 승점( 승리 +2 / 패배 −1 )
+    </h2>
+    <table>
+      <thead>
+        <tr>
+          <th>순위</th><th>팀 구성(부수)</th><th>경기</th><th>승/패</th><th>승률</th><th>승점</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${qualified.map((t,i)=>`
+          <tr style="background:#e0f2fe">
+            <td>${i+1}</td>
+            <td>${teamText(t.team)}</td>
+            <td>${t.total}</td>
+            <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
+            <td>${formatNum(t.rate)}%</td>
+            <td>${t.points}</td>
+          </tr>`).join('')}
+        ${unqualified.map(t=>`
+          <tr style="background:#f9fafb">
+            <td>–</td>
+            <td>${teamText(t.team)}</td>
+            <td>${t.total}</td>
+            <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
+            <td>${formatNum(t.rate)}%</td>
+            <td>${t.points}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></p>
+    <p class="ruleNote">
+      ⚖️ 순위 기준: <b>7일에 1경기 이상 (${minGames}경기↑)</b> /
+      정렬: 승점 → 승률 → 경기수 → 부수합(낮을수록↑) /
+      하늘색: 기준 충족
+    </p>
+  `;
+}
+</script>
+</body>
+</html>
