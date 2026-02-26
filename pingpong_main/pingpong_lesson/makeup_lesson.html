@@ -84,23 +84,16 @@ input{
 
 <header>
   <div>레슨 시간표</div>
-  <div class="right">
-    <span id="fbState" class="small-badge">Firebase: 연결중…</span>
-    <button class="small-btn alt" onclick="toggleEditMode()">시간표 편집</button>
-  </div>
+  
 </header>
 
 <div style="padding:12px;">
   <table>
     <thead>
-      <tr>
-        <th>시간</th>
-        <th>월</th>
-        <th>화</th>
-        <th>수</th>
-        <th>목</th>
-      </tr>
-    </thead>
+  <tr id="headRow">
+    <th>시간</th>
+  </tr>
+</thead>
     <tbody id="lessonBody"></tbody>
   </table>
 
@@ -294,9 +287,21 @@ function renderLessonTable(){
   const times = Object.keys(templateAssign || {}).sort((a,b)=>a.localeCompare(b));
   const viewDays = buildViewDays(times);
 
+  // ✅ 헤더도 viewDays에 맞춰 자동 렌더
+  const headRow = document.getElementById("headRow");
+  if(headRow){
+    headRow.innerHTML = `<th>시간</th>` + viewDays.map(d => `<th>${dayLabel[d] || d}</th>`).join("");
+  }
+
+  // 데이터 없을 때 표시
+  if(times.length === 0){
+    body.innerHTML = `<tr><td colspan="${1 + viewDays.length}" style="color:#64748b;font-weight:800;">시간표 데이터 없음</td></tr>`;
+    return;
+  }
+
   times.forEach(time=>{
     const tr = document.createElement("tr");
-    tr.innerHTML += `<td>${time}</td>`;
+    tr.innerHTML = `<td>${time}</td>`;
 
     viewDays.forEach(day=>{
       const uid = getFinalUid(time, day);
@@ -304,15 +309,27 @@ function renderLessonTable(){
       const td = document.createElement("td");
       td.className = "selectable";
 
+      // 1) 불참
       if(uid === "__absent__"){
         td.innerHTML = `<span style="color:#ef4444;font-weight:900;">불참</span>`;
         td.style.cursor = "not-allowed";
         td.onclick = ()=> alert("불참으로 표시된 칸은 선택할 수 없습니다.");
-      }else{
-        const nm = studentName(uid);
-        td.innerText = nm || "";
-        td.onclick = ()=> toggleSelect(time, day, uid, td);
+        tr.appendChild(td);
+        return;
       }
+
+      // 2) 빈 칸(UID 없음)
+      if(!uid){
+        td.innerHTML = `<span style="color:#94a3b8;font-weight:800;">-</span>`;
+        td.onclick = ()=> alert("빈 칸은 선택할 수 없습니다.");
+        tr.appendChild(td);
+        return;
+      }
+
+      // 3) 정상: UID -> 이름 표시
+      const nm = studentName(uid);
+      td.innerText = nm || "(명단없음)";
+      td.onclick = ()=> toggleSelect(time, day, uid, td);
 
       tr.appendChild(td);
     });
