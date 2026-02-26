@@ -253,25 +253,34 @@ async function loadMembers(){
 /* =========================
    1) 2025-09, 2025-10: monthlyReports(통합)
 ========================= */
-async function loadPastMonths(){
-  const targets = ['2025-09','2025-10'];
-  for (const m of targets){
-    const snap = await get(ref(db, `monthlyReports/${m}/players`));
-    if (!snap.exists()) continue;
-    const arr = Object.values(snap.val() || {});
-    const row = arr.find(r => (r?.name === playerName));
-    if (!row) continue;
+async function loadMonthlyReportsAll(){
+  const snap = await get(ref(db, "monthlyReports"));
+  if (!snap.exists()) return;
 
-    const win = Number(row.wins ?? row.win ?? 0);
+  const reports = snap.val() || {}; // { "2026-01": {players:{...}}, ... }
+
+  Object.keys(reports).forEach((m)=>{
+    // m이 YYYY-MM 형태가 아닐 수도 있으니 방어(원하면 normalizeMonthKey도 적용 가능)
+    if (!/^\d{4}-\d{2}$/.test(m)) return;
+
+    const playersObj = reports[m]?.players || null;
+    if (!playersObj) return;
+
+    const arr = Object.values(playersObj);
+    const row = arr.find(r => r?.name === playerName);
+    if (!row) return;
+
+    const win  = Number(row.wins ?? row.win ?? 0);
     const lose = Number(row.losses ?? row.lose ?? 0);
     const total = Number(row.total ?? (win + lose));
-    const rate = total ? (win/total*100) : 0;
+    const rate  = total ? (win/total*100) : 0;
 
     perMonthAll[m] = { total, win, lose, rate };
     months.push(m);
 
+    // ✅ 전체 누적도 같이 반영
     sumAllTotal += total; sumAllWin += win; sumAllLose += lose;
-  }
+  });
 }
 
 /* =========================
@@ -634,8 +643,8 @@ function buildCharts(){
    Bootstrap
 ========================= */
 await loadMembers();
-await loadPastMonths();
-await loadMatchesFromNov();
+await loadMonthlyReportsAll(); // ✅ 월마감 데이터 전부 읽기
+await loadMatchesFromNov();    // ✅ 11월~ 진행중 데이터(특히 이번달) 보강
 
 months = [...new Set(months)].sort();
 
