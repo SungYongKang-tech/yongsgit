@@ -180,24 +180,42 @@ const shortMonth = (m) => `'${m.slice(2)}`;
 /* =========================
    monthKey 안전 추출
 ========================= */
-function getMonthKey(m){
-  if (m?.monthKey && /^\d{4}-\d{2}$/.test(m.monthKey)) return m.monthKey;
+function normalizeMonthKey(input){
+  if (input == null) return null;
 
-  const dateStr = m?.matchDate || m?.gameDate || m?.date || m?.playedDate || m?.playedAtDate;
-  if (typeof dateStr === "string") {
-    const norm = dateStr.replace(/\//g, "-");
-    if (/^\d{4}-\d{2}-\d{2}/.test(norm)) return norm.slice(0,7);
-    if (/^\d{4}-\d{2}/.test(norm)) return norm.slice(0,7);
+  // 문자열화 + trim + 슬래시 → 하이픈
+  let s = String(input).trim().replace(/\//g, "-");
+
+  // 1) YYYY-M / YYYY-MM / YYYY-MM-DD 모두 처리
+  //    예: 2026-1  / 2026-01 / 2026-01-15
+  const m1 = s.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+  if (m1){
+    const Y = m1[1];
+    const M = String(parseInt(m1[2], 10)).padStart(2,"0");
+    return `${Y}-${M}`;
   }
-
-  const ca = m?.createdAt;
-  if (typeof ca === "number") return yyyymm(KST(ca));
-  if (typeof ca === "string" && !isNaN(Date.parse(ca))) return yyyymm(KST(Date.parse(ca)));
-  if (ca?.seconds) return yyyymm(KST(ca.seconds * 1000));
 
   return null;
 }
 
+function getMonthKey(m){
+  // 1) monthKey 우선(정규화해서 사용)
+  const mk = normalizeMonthKey(m?.monthKey);
+  if (mk) return mk;
+
+  // 2) 날짜 문자열 후보들
+  const dateStr = m?.matchDate || m?.gameDate || m?.date || m?.playedDate || m?.playedAtDate;
+  const mk2 = normalizeMonthKey(dateStr);
+  if (mk2) return mk2;
+
+  // 3) createdAt 타임스탬프 처리 (ms / seconds / ISO string)
+  const ca = m?.createdAt;
+  if (typeof ca === "number") return normalizeMonthKey(yyyymm(KST(ca)));
+  if (typeof ca === "string" && !isNaN(Date.parse(ca))) return normalizeMonthKey(yyyymm(KST(Date.parse(ca))));
+  if (ca?.seconds) return normalizeMonthKey(yyyymm(KST(ca.seconds * 1000)));
+
+  return null;
+}
 /* =========================
    Query Param
 ========================= */
