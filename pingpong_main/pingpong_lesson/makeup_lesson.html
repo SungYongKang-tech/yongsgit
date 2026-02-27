@@ -216,16 +216,28 @@ function mergeStudents(){
 function rebuildStudentAliasMap(){
   studentKeyByAlias = {};
   const obj = students || {};
+
   for (const [key, v] of Object.entries(obj)){
     if(!v) continue;
+
+    // 1) 기본 후보들
     const candidates = [
       key,
-      v.uid, v.id, v.authUid, v.realUid, v.firebaseUid,
+      v.uid, v.id, v.authUid,
       v.code, v.short, v.shortCode, v.shortId, v.memberId
-    ].filter(Boolean);
+    ].filter(Boolean).map(String);
 
+    // 2) ✅ key가 "-OmN..._wIZAr6PoTO" 같은 형태면, 뒤 토큰도 alias로 등록
+    //    (언더스코어로 split)
+    if (typeof key === "string" && key.includes("_")){
+      key.split("_").forEach(part=>{
+        if(part) candidates.push(part);
+      });
+    }
+
+    // 3) alias 등록
     for (const a of candidates){
-      studentKeyByAlias[String(a)] = key;
+      studentKeyByAlias[a] = key;
     }
   }
 }
