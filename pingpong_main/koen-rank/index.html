@@ -179,7 +179,6 @@ h1 {
   <div class="header-inner">
     <h1 id="pageTitle">🏓 경기결과 입력</h1>
     <div class="row">
-     
       <a href="monthly-report.html" class="btn primary">통합 전적</a>
       <a href="monthly-report2.html" class="btn primary">단/복식 전적</a>
       <button id="todayBtn" class="btn primary">오늘의 전적</button>
@@ -246,9 +245,7 @@ h1 {
 </div>
 
 <script type="module">
-  // ✅ pingpong_main/firebase.js 사용 (이 파일이 /pingpong_main/index.html 이면 "./firebase.js")
   import { db } from "../firebase.js";
-
   import { ref, onValue, push, remove, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
   const $ = s => document.querySelector(s);
@@ -272,27 +269,27 @@ h1 {
     $("#pageTitle").textContent = `🏓 ${val} 탁구경기 결과입력`;
   });
 
-  // ===== 데이터 참조 =====
-  const matchRef    = ref(db, "matches");
-  const playerRef   = ref(db, "members");               // members 사용
+  /* =========================================================
+     ✅ [중요] team-live와 충돌 방지: 전용 경로 사용
+     - 기존: matches
+     - 변경: soloMatches
+     ========================================================= */
+  const MATCHES_PATH = "soloMatches";
+  const matchRef    = ref(db, MATCHES_PATH);
+
+  const playerRef   = ref(db, "members");
   const deletePwRef = ref(db, "config/deletePassword");
- 
 
   let players = [];
   let sel = [];
 
   // ✅ 비밀번호는 “항상 Firebase 값”을 기준으로
-  let deletePassword = "";   // 실시간 반영
- 
+  let deletePassword = "";
 
-  // ✅ 삭제 비번 실시간 반영
   onValue(deletePwRef, (s)=>{
     deletePassword = s.exists() ? String(s.val()).trim() : "";
   });
 
- 
-
-  // ✅ 부수별 색상
   const LEVEL_COLORS = {
     1: "#ef4444", 2: "#f97316", 3: "#f59e0b", 4: "#84cc16",
     5: "#10b981", 6: "#06b6d4", 7: "#8b5cf6", 8: "#22c55e",
@@ -304,16 +301,13 @@ h1 {
   // ✅ 선수 목록 표시
   onValue(playerRef, snap => {
     const data = snap.val() || {};
-    // members 구조: {name, bu} 라고 가정(기존 코드 유지)
     players = Object.values(data)
       .map(p => ({ name: p.name, level: Number(p.bu ?? 99) }))
       .filter(p => p.name)
       .sort((a,b)=>(a.level-b.level) || a.name.localeCompare(b.name,"ko"));
-
     renderChips();
   });
 
-  // ✅ 칩 렌더링
   function renderChips(){
     const box = $("#chips");
     box.innerHTML = "";
@@ -345,7 +339,6 @@ h1 {
     });
   }
 
-  // ✅ 팀 업데이트
   function updateTeams(){
     const disp=$("#teamDisplay");
     const btns=$("#matchButtons");
@@ -361,11 +354,11 @@ h1 {
     btns.style.display = (sel.length===2 || sel.length===4) ? "block" : "none";
   }
 
-  // ✅ 경기 저장
   function getMonthKey(ts=Date.now()){
     const d=new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   }
+
   $("#winA").onclick=()=>saveMatch("A");
   $("#winB").onclick=()=>saveMatch("B");
 
@@ -439,7 +432,6 @@ h1 {
 
   // ✅ 경기 삭제 (Firebase의 삭제 비밀번호 기준)
   window.deleteMatch = async (id) => {
-    // 🔒 항상 최신값을 가져와서 확인(“안 바뀌는 듯” 문제 방지)
     const pwSnap = await get(deletePwRef);
     const pw = pwSnap.exists() ? String(pwSnap.val()).trim() : (deletePassword || "");
 
@@ -453,11 +445,11 @@ h1 {
     if (String(input).trim() !== pw) return toast("비밀번호가 올바르지 않습니다");
     if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
 
-    await remove(ref(db, "matches/" + id));
+    // ✅ [중요] soloMatches에서 삭제
+    await remove(ref(db, `${MATCHES_PATH}/${id}`));
     toast("경기결과 삭제 완료");
   };
 
-  
   // ✅ 사용법 모달
   const helpBtn = document.getElementById("helpBtn");
   const modal = document.getElementById("helpModal");
