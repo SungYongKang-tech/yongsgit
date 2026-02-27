@@ -220,8 +220,37 @@ let clickedSchedule = null;
 /* =========================
    학생 이름 표시
 ========================= */
+// ✅ students 안에서 "uid/코드/짧은키"로도 찾을 수 있게 별칭 맵
+let studentKeyByAlias = {}; // alias -> realKey(=students의 실제 key)
+
+function rebuildStudentAliasMap(){
+  studentKeyByAlias = {};
+  const obj = students || {};
+  for (const [key, v] of Object.entries(obj)){
+    if(!v) continue;
+    const candidates = [
+      key,
+      v.uid, v.id, v.authUid,
+      v.code, v.short, v.shortCode, v.shortId, v.memberId
+    ].filter(Boolean);
+
+    for (const a of candidates){
+      studentKeyByAlias[String(a)] = key;
+    }
+  }
+}
+
+// ✅ uid(또는 코드) -> 실제 students key로 정규화
+function normalizeStudentKey(uid){
+  if(!uid) return "";
+  if(students?.[uid]) return uid;
+  return studentKeyByAlias?.[uid] || "";
+}
+
 function studentName(uid){
-  return (students?.[uid]?.name || students?.[uid]?.displayName || students?.[uid]?.nm || "").trim();
+  const key = normalizeStudentKey(uid);
+  const o = key ? (students?.[key] || {}) : {};
+  return (o.name || o.displayName || o.nm || o.fullName || "").trim();
 }
 
 /* UID처럼 보이는 문자열 판단(기 저장된 name이 uid일 때 정리용) */
@@ -388,9 +417,9 @@ window.createMakeupTargets = async ()=>{
   const newGroup = { date, reason, names: [] };
 
   selectedCells.forEach(key=>{
-    const uid = key.substring(key.lastIndexOf("_")+1);
-    // ✅ name은 저장하지 않거나 빈값(화면 표시 시 uid→이름을 다시 계산)
-    newGroup.names.push({ uid, name:"", done:false });
+    const rawUid = key.substring(key.lastIndexOf("_")+1);
+const fixedKey = normalizeStudentKey(rawUid) || rawUid; // ✅ 정규화
+newGroup.names.push({ uid: fixedKey, name:"", done:false });
   });
 
   // 중복 제거
@@ -674,11 +703,13 @@ async function attachStudentsListener(){
 
        onValue(ref(db, p), async (s)=>{
   students = s.exists() ? (s.val() || {}) : {};
-  window.__students = students;   // 🔥 추가
+
+  rebuildStudentAliasMap();     // ✅ 추가 (중요!)
+  await fixStoredMakeupNames(); // ✅ 저장된 uid/코드형 name을 이름으로 정리
+
   renderLessonTable();
   renderMakeupList();
   renderScheduleList();
-  await fixStoredMakeupNames();
 });
 
         return;
