@@ -84,16 +84,15 @@ input{
 
 <header>
   <div>레슨 시간표</div>
-  
 </header>
 
 <div style="padding:12px;">
   <table>
     <thead>
-  <tr id="headRow">
-    <th>시간</th>
-  </tr>
-</thead>
+      <tr id="headRow">
+        <th>시간</th>
+      </tr>
+    </thead>
     <tbody id="lessonBody"></tbody>
   </table>
 
@@ -162,7 +161,7 @@ input{
 
 <script type="module">
 import { db, auth } from "../firebase.js";
-import { ref, onValue, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { ref, onValue, get, set } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
 /* =========================
@@ -193,7 +192,6 @@ function getWeekKey(date = new Date()){
 const weekKey = getWeekKey();
 
 function pathWeek(wk){ return `${PATH.overridesRoot}/${wk}`; }
-function pathCell(wk, time, day){ return `${PATH.overridesRoot}/${wk}/${time}/${day}`; }
 
 function getKoreanDay(dateStr){
   const days=["일","월","화","수","목","금","토"];
@@ -223,9 +221,30 @@ function studentName(uid){
   return (students?.[uid]?.name || students?.[uid]?.displayName || students?.[uid]?.nm || "").trim();
 }
 
+/* UID처럼 보이는 문자열 판단(기 저장된 name이 uid일 때 정리용) */
+function looksLikeUid(s){
+  return typeof s === "string" && /^[A-Za-z0-9_-]{10,30}$/.test(s);
+}
+
+/* DB에 저장된 보강대상 name이 uid로 들어간 경우, students가 로딩된 뒤 자동으로 이름으로 정리 */
+async function fixStoredMakeupNames(){
+  let changed = false;
+
+  (makeupGroups || []).forEach(g=>{
+    (g.names || []).forEach(n=>{
+      const real = studentName(n.uid);
+      if(real && (!n.name || looksLikeUid(n.name))){
+        n.name = real;
+        changed = true;
+      }
+    });
+  });
+
+  if(changed) await saveMakeupGroups();
+}
+
 /* =========================
    lesson/schedule -> templateAssign 만들기
-   (사용자 코드 구조 그대로)
 ========================= */
 function normalizeTimes(scheduleObj){
   const slots = scheduleObj?.slots || {};
@@ -287,13 +306,13 @@ function renderLessonTable(){
   const times = Object.keys(templateAssign || {}).sort((a,b)=>a.localeCompare(b));
   const viewDays = buildViewDays(times);
 
-  // ✅ 헤더도 viewDays에 맞춰 자동 렌더
+  // 헤더 자동 렌더
   const headRow = document.getElementById("headRow");
   if(headRow){
     headRow.innerHTML = `<th>시간</th>` + viewDays.map(d => `<th>${dayLabel[d] || d}</th>`).join("");
   }
 
-  // 데이터 없을 때 표시
+  // 데이터 없을 때
   if(times.length === 0){
     body.innerHTML = `<tr><td colspan="${1 + viewDays.length}" style="color:#64748b;font-weight:800;">시간표 데이터 없음</td></tr>`;
     return;
@@ -318,7 +337,7 @@ function renderLessonTable(){
         return;
       }
 
-      // 2) 빈 칸(UID 없음)
+      // 2) 빈 칸
       if(!uid){
         td.innerHTML = `<span style="color:#94a3b8;font-weight:800;">-</span>`;
         td.onclick = ()=> alert("빈 칸은 선택할 수 없습니다.");
@@ -326,7 +345,7 @@ function renderLessonTable(){
         return;
       }
 
-      // 3) 정상: UID -> 이름 표시
+      // 3) 정상
       const nm = studentName(uid);
       td.innerText = nm || "(명단없음)";
       td.onclick = ()=> toggleSelect(time, day, uid, td);
@@ -367,11 +386,11 @@ window.createMakeupTargets = async ()=>{
 
   selectedCells.forEach(key=>{
     const uid = key.substring(key.lastIndexOf("_")+1);
-    const name = studentName(uid) || uid;
-    newGroup.names.push({ uid, name, done:false });
+    // ✅ name은 저장하지 않거나 빈값(화면 표시 시 uid→이름을 다시 계산)
+    newGroup.names.push({ uid, name:"", done:false });
   });
 
-  // 중복 제거(같은 사람 여러칸 선택 대비)
+  // 중복 제거
   const uniq = new Map();
   newGroup.names.forEach(x=>uniq.set(x.uid, x));
   newGroup.names = Array.from(uniq.values());
@@ -412,7 +431,9 @@ function renderMakeupList() {
       </div>
     `;
 
-    (group.names||[]).forEach((n, i) => {
+    (group.names || []).forEach((n, i) => {
+      const displayName = (studentName(n.uid) || n.name || n.uid);
+
       const state = n.done
         ? "<span style='color:green;font-weight:bold;'>(보강완료)</span>"
         : "<span style='color:#999'>(보강예정)</span>";
@@ -421,7 +442,7 @@ function renderMakeupList() {
 
       html += `
         <div style="margin-bottom:6px;">
-          - <span style="font-weight:${n.done ? 'bold' : 'normal'}">${n.name}</span> 
+          - <span style="font-weight:${n.done ? 'bold' : 'normal'}">${displayName}</span>
             ${state}
           <button onclick="completeWithoutSchedule(${idx}, ${i})"
             style="margin-left:8px;padding:4px 6px;border-radius:6px;border:1px solid #ccc;">
@@ -453,7 +474,7 @@ window.completeWithoutSchedule = async (groupIndex, nameIndex)=>{
 };
 
 /* =========================
-   보강 스케쥴 생성/표시 (기존 로직 유지)
+   보강 스케쥴 생성/표시
 ========================= */
 window.openSchedulePopup = ()=> $("schedulePopup").style.display="block";
 window.closeSchedulePopup = ()=> $("schedulePopup").style.display="none";
@@ -591,14 +612,16 @@ window.openAssignPopupSchedule = (sIdx, slotIdx)=>{
     list.appendChild(title);
 
     (group.names||[]).forEach(n=>{
-      const div = document.createElement("div");
-      div.innerText = n.name;
+      const div = document.createElement("div"); // ✅ 누락되어 있던 div 생성
+      const displayName = (studentName(n.uid) || n.name || n.uid);
+
+      div.innerText = displayName;
       div.style = `
         padding: 2px 0;border: 1px solid #ddd;border-radius: 6px;text-align: center;
         font-size: 0.8rem;background: #fff;cursor: pointer;min-height: 26px;
         display:flex;align-items:center;justify-content:center;
       `;
-      div.onclick = ()=> assignToSchedule(sIdx, slotIdx, n.uid, n.name, group.date);
+      div.onclick = ()=> assignToSchedule(sIdx, slotIdx, n.uid, displayName, group.date);
       list.appendChild(div);
     });
   });
@@ -629,14 +652,15 @@ window.cancelAssign = ()=> $("assignPopup").style.display="none";
 /* 보강 대상자 이름 변경 */
 window.openChangeTargetPopup = async (groupIndex, nameIndex)=>{
   const current = makeupGroups[groupIndex].names[nameIndex];
-  const newName = prompt(`현재 이름: ${current.name}\n새로운 이름을 입력하세요.`, current.name);
+  const currentShown = (studentName(current.uid) || current.name || current.uid);
+  const newName = prompt(`현재 이름: ${currentShown}\n새로운 이름을 입력하세요.`, currentShown);
   if(!newName) return;
   current.name = newName.trim();
   await saveMakeupGroups();
 };
 
 /* =========================
-   학생명단 경로 탐지(사용자 코드 그대로)
+   학생명단 경로 탐지
 ========================= */
 async function attachStudentsListener(){
   for(const p of STUDENT_PATH_CANDIDATES){
@@ -644,10 +668,15 @@ async function attachStudentsListener(){
       const snap = await get(ref(db, p));
       if(snap.exists() && snap.val() && Object.keys(snap.val()).length){
         studentSourcePath = p;
-        onValue(ref(db, p), (s)=>{
+
+        onValue(ref(db, p), async (s)=>{
           students = s.exists() ? (s.val() || {}) : {};
           renderLessonTable();
+          renderMakeupList();
+          renderScheduleList();
+          await fixStoredMakeupNames(); // ✅ 저장된 uid형 name 자동정리
         });
+
         return;
       }
     }catch(e){
