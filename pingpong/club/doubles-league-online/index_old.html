@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KOEN 복식 리그전(실시간)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    .lv4to6 { background-color: #e8f5e9; }
+    .lv7to9 { background-color: #e3f2fd; }
+    .lv10to12 { background-color: #fff3e0; }
+    .lv13to14 { background-color: #ffebee; }
+
+    .new-player {
+      background-color: #fff176 !important;
+      border: 3px solid #f57f17;
+      font-weight: bold;
+      box-shadow: 0 0 10px #f9a825;
+      animation: highlightFlash 1.5s ease-in-out infinite alternate;
+    }
+    @keyframes highlightFlash { from{background:#fff59d;} to{background:#ffe082;} }
+
+    h1, #controlPanel { text-align: center; }
+    .player {
+      margin: 4px; padding: 6px 10px; border: 1px solid #2196f3; border-radius: 6px;
+      display: inline-block; cursor: pointer; font-size: 14px;
+      user-select: none;
+    }
+    .player.selected { background: #1976d2; color: white; }
+
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; background: white; font-size: 14px; }
+    td, th { border: 1px solid #888; padding: 6px 10px; text-align: center; }
+    tr:nth-child(odd) { background: #e3f2fd; }
+    tr:nth-child(even) { background: #fff; }
+    table tr:first-child th, table td:first-child { background: #ffe0b2 !important; }
+
+    .button-group { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+    .button-group button {
+      padding: 10px 20px; font-size: 16px; background: #1976d2; color: white; border: none; border-radius: 6px; cursor: pointer;
+    }
+    .button-group button:hover { background: #1565c0; }
+    @media (max-width: 600px) {
+      .button-group { flex-direction: column; align-items: center; }
+      .button-group button { width: 100%; max-width: 300px; font-size: 14px; }
+    }
+
+    .scroll-table { overflow: auto; max-height: 80vh; max-width: 100%; border: 1px solid #aaa; }
+    .scroll-table table th { position: sticky; top: 0; background: #ffe0b2; z-index: 2; }
+    .scroll-table table th:first-child, .scroll-table table td:first-child {
+      position: sticky; left: 0; background: #ffe0b2; z-index: 1;
+    }
+
+    #popup {
+      display: none; position: fixed; top: 30%; left: 50%; transform: translate(-50%,-50%);
+      background: #fff; border: 2px solid #333; padding: 20px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,.3);
+      width: 90%; max-width: 400px;
+    }
+    #popup button { margin: 5px; padding: 8px 12px; background: #1976d2; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+    #popupText { margin-bottom: 10px; font-weight: bold; }
+
+    #controlPanel input[type="text"] { padding: 10px; font-size: 16px; margin: 5px; width: 200px; max-width: 90%; }
+    #controlPanel button { padding: 10px 16px; font-size: 16px; margin: 5px; }
+
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      table, .scroll-table, #popup { font-size: 13px; width: 100%; overflow-x: auto; }
+      .player { font-size: 13px; padding: 5px 8px; }
+      #controlPanel button { font-size: 14px; padding: 8px 10px; width: 100%; margin-bottom: 10px; }
+      #controlPanel input[type="text"] { width: 100%; font-size: 14px; }
+    }
+
+    .player-list { display: flex; flex-wrap: wrap; justify-content: center; }
+  </style>
+</head>
+<body>
+  <h1>실시간 탁구 복식 리그전</h1>
+
+  <div id="controlPanel">
+    <input type="text" id="playerName" placeholder="선수 이름" />
+    <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
+    <button id="addPlayerBtn">선수 추가</button>
+    <button id="toggleDefaultBtn">기존 선수 숨김</button>
+    <button id="removeAddedBtn">추가 선수 삭제</button>
+  </div>
+
+  <div id="playerList" class="player-list"></div>
+
+  <div class="button-group">
+    <button id="resetBtn">점수 초기화</button>
+    <button id="clearBtn">선수 선택 초기화</button>
+    <button id="saveImageBtn">리그전 이미지 저장</button>
+  </div>
+
+  <div id="schedule" class="scroll-table"></div>
+  <div id="summary" class="scroll-table"></div>
+
+  <div id="popup">
+    <p id="popupText"></p>
+    <div id="scoreButtons"></div>
+    <button onclick="closePopup()">닫기</button>
+  </div>
+
+  <script type="module">
+    async function loadDefaultPlayers() {
+      const url = "https://sensational-tulumba-65e97e.netlify.app/pingpong/club/data/members.json";
+      const res = await fetch(url);
+      const data = await res.json();
+
+      const arr = Object.values(data).map(p => `${p.name}(${p.level})`);
+      arr.sort((a, b) => {
+        const lvA = Number(a.match(/\((\d+)\)/)[1]);
+        const lvB = Number(b.match(/\((\d+)\)/)[1]);
+        return lvA - lvB;
+      });
+      return arr;
+    }
+
+    // ===== Firebase SDK =====
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // ===== Config =====
+    const firebaseConfig = {
+      apiKey: "AIzaSyC5iq3VY0QtBh8FVn70gi_Gsg7GXzkxdu8",
+      authDomain: "koen-pingpong.firebaseapp.com",
+      databaseURL: "https://koen-pingpong-default-rtdb.firebaseio.com",
+      projectId: "koen-pingpong",
+      storageBucket: "koen-pingpong.firebasestorage.app",
+      messagingSenderId: "597358811982",
+      appId: "1:597358811982:web:01cc59a4e9726341321c1f"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // ===== Refs =====
+    const extraPlayersRef = ref(db, "players/koen_takgu/extra");   // 추가 선수
+    const resultsRef      = ref(db, "players/koen_takgu/results"); // 경기 결과 (객체: "i-j":"3-1")
+    const selectedRef     = ref(db, "players/koen_takgu/selected");// ✅ A) 임시 선택: 선수 문자열 배열
+    const teamListRef     = ref(db, "players/koen_takgu/teamList");// 팀 리스트 [{names:[],level:n},...]
+
+    // ===== State =====
+    let hideDefault = false;
+    let currentPlayers = [];
+    let defaultPlayers = [];
+    let extraPlayers = [];
+
+    // ✅ A) index가 아니라 "강성용(5)" 같은 문자열을 저장
+    let tempSelected = [];  // ["강성용(5)","김범일(5)"]
+
+    let teamList = [];
+    let results = {}; // 객체
+
+    // ===== Auth =====
+    async function ensureAnonAuth() {
+      if (auth.currentUser) return auth.currentUser;
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, (u) => { if (u) { unsub(); resolve(u); }});
+        signInAnonymously(auth).catch(reject);
+      });
+    }
+
+    function nameOnly(playerStr) {
+      return playerStr.split("(")[0].trim();
+    }
+    function levelOnly(playerStr) {
+      const m = playerStr.match(/\((\d+)\)/);
+      return m ? Number(m[1]) : 0;
+    }
+
+    // ===== Boot after login =====
+    (async function boot() {
+      try {
+        await ensureAnonAuth();
+
+        // 기본 선수 로딩
+        defaultPlayers = await loadDefaultPlayers();
+        currentPlayers = [...defaultPlayers];
+
+        // 실시간: 추가 선수 로딩
+        onValue(extraPlayersRef, (snapshot) => {
+          extraPlayers = snapshot.val() || [];
+          currentPlayers = [...defaultPlayers, ...extraPlayers];
+          renderPlayerList();
+        });
+
+        // 실시간: 결과
+        onValue(resultsRef, (snapshot) => {
+          results = snapshot.val() || {};
+          if (teamList.length >= 2) createSchedule();
+        });
+
+        // ✅ A) 실시간: 선택(문자열 배열)
+        onValue(selectedRef, (snapshot) => {
+          tempSelected = snapshot.val() || [];
+          renderPlayerList();
+        });
+
+        // 실시간: 팀 리스트
+        onValue(teamListRef, (snapshot) => {
+          teamList = snapshot.val() || [];
+          if (!teamList || teamList.length < 2) {
+            document.getElementById("schedule").innerHTML = "<p>2팀 이상 등록해주세요.</p>";
+            document.getElementById("summary").innerHTML = "";
+            renderPlayerList();
+            return;
+          }
+          createSchedule();
+          renderPlayerList();
+        });
+
+        // 점수 초기화
+        document.getElementById("resetBtn").onclick = async () => {
+          await set(resultsRef, {});
+          results = {};
+          createSchedule();
+        };
+
+        // 선수 선택/팀/결과 초기화
+        document.getElementById("clearBtn").onclick = async () => {
+          tempSelected = [];
+          teamList = [];
+          results = {};
+          await set(teamListRef, []);
+          await set(selectedRef, []);
+          await set(resultsRef, {});
+          document.getElementById("schedule").innerHTML = "<p>2팀 이상 등록해주세요.</p>";
+          document.getElementById("summary").innerHTML = "";
+          renderPlayerList();
+        };
+
+        // 추가 선수 삭제
+        document.getElementById("removeAddedBtn").onclick = async () => {
+          if (!confirm("추가한 선수를 모두 삭제하시겠습니까?")) return;
+          extraPlayers = [];
+          await set(extraPlayersRef, extraPlayers);
+        };
+
+        // 선수 추가
+        document.getElementById("addPlayerBtn").onclick = async () => {
+          const name = document.getElementById("playerName").value.trim();
+          const level = document.getElementById("playerLevel").value.trim();
+          if (!name || !level) return alert("이름과 부수를 입력하세요");
+
+          const newEntry = `${name}(${level})`;
+          if ([...defaultPlayers, ...extraPlayers].includes(newEntry)) {
+            alert("이미 등록된 선수입니다.");
+            return;
+          }
+          extraPlayers.push(newEntry);
+          await set(extraPlayersRef, extraPlayers);
+
+          document.getElementById("playerName").value = "";
+          document.getElementById("playerLevel").value = "";
+        };
+
+        // 이미지 저장
+        document.getElementById("saveImageBtn").onclick = () => {
+          const scheduleDiv = document.getElementById("scheduleTable");
+          if (!scheduleDiv) return alert("저장할 표가 없습니다.");
+
+          const now = new Date(), pad = (n)=>n.toString().padStart(2,'0');
+          const y=now.getFullYear(), m=pad(now.getMonth()+1), d=pad(now.getDate());
+          const w=['일','월','화','수','목','금','토'][now.getDay()];
+          const hh=pad(now.getHours()), mm=pad(now.getMinutes());
+          const filename = `koen_league_result_${y}-${m}-${d}(${w})_${hh}-${mm}.jpg`;
+
+          html2canvas(scheduleDiv).then(canvas => {
+            const link = document.createElement("a");
+            link.download = filename;
+            link.href = canvas.toDataURL("image/jpeg");
+            link.click();
+          });
+        };
+
+        // 기존선수 숨김 토글
+        document.getElementById("toggleDefaultBtn").onclick = () => {
+          hideDefault = !hideDefault;
+          renderPlayerList();
+          document.getElementById("toggleDefaultBtn").innerText = hideDefault ? "기존선수 보이기" : "기존선수 숨김";
+        };
+        document.getElementById("toggleDefaultBtn").innerText = "기존선수 숨김";
+
+      } catch (e) {
+        console.error("익명 로그인 실패:", e);
+        alert("로그인 오류가 발생했습니다. 새로고침 후 다시 시도하세요.");
+      }
+    })();
+
+    // ===== 렌더링 =====
+    function renderPlayerList() {
+      const playerList = document.getElementById("playerList");
+      playerList.innerHTML = "";
+
+      // 기본 선수는 부수로 정렬, 추가 선수는 뒤에
+      const sortedPlayers = [
+        ...[...currentPlayers]
+          .filter(p => defaultPlayers.includes(p))
+          .sort((a,b)=> levelOnly(a) - levelOnly(b)),
+        ...extraPlayers
+      ];
+
+      sortedPlayers.forEach((playerStr) => {
+        if (hideDefault && defaultPlayers.includes(playerStr)) return;
+
+        const div = document.createElement("div");
+        div.className = "player";
+        div.textContent = playerStr;
+
+        const level = levelOnly(playerStr);
+        if (level <= 6) div.classList.add("lv4to6");
+        else if (level <= 9) div.classList.add("lv7to9");
+        else if (level <= 12) div.classList.add("lv10to12");
+        else div.classList.add("lv13to14");
+
+        if (!defaultPlayers.includes(playerStr)) div.classList.add("new-player");
+
+        // ✅ 팀에 이미 포함된 선수는 선택 표시(기존 동작 유지)
+        const nm = nameOnly(playerStr);
+        const isInTeam = teamList.some(team => team.names.includes(nm));
+
+        // ✅ A) 선택 기준: 문자열 배열로 동기화
+        if (tempSelected.includes(playerStr) || isInTeam) div.classList.add("selected");
+
+        div.onclick = () => togglePlayer(playerStr);
+        playerList.appendChild(div);
+      });
+    }
+
+    // ===== ✅ A) 선택/팀 구성 (문자열 기반) =====
+    async function togglePlayer(playerStr) {
+      if (tempSelected.includes(playerStr)) {
+        tempSelected = tempSelected.filter(p => p !== playerStr);
+      } else {
+        tempSelected = [...tempSelected, playerStr];
+
+        // 2명 선택되면 팀 등록
+        if (tempSelected.length === 2) {
+          const players = tempSelected.map(txt => ({
+            name: nameOnly(txt),
+            level: levelOnly(txt)
+          }));
+
+          const newTeam = {
+            names: players.map(p => p.name),
+            level: players[0].level + players[1].level
+          };
+
+          teamList = [...teamList, newTeam];
+          await set(teamListRef, teamList);
+
+          tempSelected = [];
+          renderPlayerList();
+          createSchedule();
+        }
+      }
+
+      // ✅ A) 선택 상태는 문자열 배열로 저장
+      await set(selectedRef, tempSelected);
+    }
+
+    // ===== 리그 표/요약 =====
+    function createSchedule() {
+      const container = document.getElementById("schedule");
+      if (!teamList || teamList.length < 2) {
+        container.innerHTML = "<p>2팀 이상 등록해주세요.</p>";
+        document.getElementById("summary").innerHTML = "";
+        return;
+      }
+
+      let html = "<div id='scheduleTable'><table><tr><th>팀</th>";
+      teamList.forEach(t => { html += `<th>${t.names.join("/")} (${t.level})</th>`; });
+      html += "</tr>";
+
+      teamList.forEach((t1, i) => {
+        html += `<tr><th>${t1.names.join("/")} (${t1.level})</th>`;
+        teamList.forEach((t2, j) => {
+          if (i === j) html += "<td>X</td>";
+          else {
+            const key = `${i}-${j}`;
+            const result = results[key] || "";
+            html += `<td onclick="openPopup('${key}')">${result}</td>`;
+          }
+        });
+        html += "</tr>";
+      });
+      html += "</table></div>";
+      container.innerHTML = html;
+
+      // 요약 표
+      let wins = Array(teamList.length).fill(0);
+      let sets = Array(teamList.length).fill(0);
+
+      for (let i=0;i<teamList.length;i++){
+        for (let j=0;j<teamList.length;j++){
+          if (i===j || i>j) continue;
+          const key = `${i}-${j}`;
+          const score = results[key];
+          if (!score) continue;
+          const [a,b] = score.split("-").map(Number);
+          if (a>b) wins[i]++; else wins[j]++;
+          sets[i]+=a; sets[j]+=b;
+        }
+      }
+
+      const ranking = wins
+        .map((w,i)=>({i,w,s:sets[i]}))
+        .sort((a,b)=> (b.w-a.w) || (b.s-a.s));
+
+      let summaryHtml = "<h3>팀 요약</h3><table><tr><th>팀</th><th>승</th><th>세트</th><th>순위</th></tr>";
+      ranking.forEach((r,rank)=>{
+        const t = teamList[r.i];
+        summaryHtml += `<tr><td>${t.names.join("/")} (${t.level})</td><td>${r.w}</td><td>${r.s}</td><td>${rank+1}</td></tr>`;
+      });
+      summaryHtml += "</table>";
+      document.getElementById("summary").innerHTML = summaryHtml;
+    }
+
+    // ===== 팝업/점수 입력 =====
+    window.openPopup = (matchKey) => {
+      const popup = document.getElementById("popup");
+      const popupText = document.getElementById("popupText");
+      const scoreButtons = document.getElementById("scoreButtons");
+
+      popupText.textContent = "해당 경기의 점수를 선택하세요";
+
+      const scores = ["3-0","3-1","3-2","2-0","2-1"];
+      scoreButtons.innerHTML = "";
+
+      scores.forEach(score => {
+        const btn = document.createElement("button");
+        btn.textContent = score;
+        btn.onclick = async () => {
+          results[matchKey] = score;
+          results[reverseKey(matchKey)] = reverseScore(score);
+          await set(resultsRef, results);
+          popup.style.display = "none";
+          createSchedule();
+        };
+        scoreButtons.appendChild(btn);
+      });
+
+      popup.style.display = "block";
+    };
+
+    window.closePopup = () => document.getElementById("popup").style.display = "none";
+
+    function reverseKey(key) {
+      const [a,b] = key.split("-");
+      return `${b}-${a}`;
+    }
+    function reverseScore(score) {
+      const [a,b] = score.split("-").map(Number);
+      return `${b}-${a}`;
+    }
+  </script>
+</body>
+</html>
