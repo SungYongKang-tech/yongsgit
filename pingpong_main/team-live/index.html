@@ -352,6 +352,14 @@
     import { signInAnonymously, onAuthStateChanged }
       from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
+    /* =========================================================
+       ✅ Firebase 노드명(핵심 수정)
+       - 기존: matches
+       - 변경: team_live_matches
+       ========================================================= */
+    const MATCHES_KEY = "team_live_matches";  // ✅ 여기로 통일
+    const TEAMS_KEY   = "teams";
+
     /* ---------------- 전역 상태 ---------------- */
     let teamsUnsub = null;
     let matchesUnsub = null;
@@ -400,7 +408,7 @@
     async function loadTeams() {
       if (teamsUnsub) { teamsUnsub(); teamsUnsub = null; }
 
-      const teamsRef = ref(db, "teams");
+      const teamsRef = ref(db, TEAMS_KEY);
 
       return new Promise((resolve) => {
         teamsUnsub = onValue(teamsRef, (snap) => {
@@ -470,7 +478,8 @@
       window.__single2v2 = 0;
       window.__singleRoundIdx = {};
 
-      await remove(ref(db, "matches"));
+      // ✅ matches → MATCHES_KEY
+      await remove(ref(db, MATCHES_KEY));
 
       const singles = parseInt(document.getElementById("singlesCnt").value, 10);
       const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
@@ -485,7 +494,8 @@
             matchList.push({ label: `${d + 1}복`, players: "미정/미정 vs 미정/미정", result: "-" });
 
           const key = `${teamNames[i]}_vs_${teamNames[j]}`;
-          updatesObj[`matches/${key}`] = { teamA: teamNames[i], teamB: teamNames[j], matchList };
+          // ✅ matches/${key} → ${MATCHES_KEY}/${key}
+          updatesObj[`${MATCHES_KEY}/${key}`] = { teamA: teamNames[i], teamB: teamNames[j], matchList };
         }
       }
       await update(ref(db), updatesObj);
@@ -526,7 +536,8 @@
       descBox.style.display = "block";
 
       await requireAuth();
-      await remove(ref(db, "matches"));
+      // ✅ matches → MATCHES_KEY
+      await remove(ref(db, MATCHES_KEY));
 
       const singlesCnt = parseInt(document.getElementById("singlesCnt").value, 10);
       const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
@@ -545,13 +556,12 @@
           const doublesB = [...B_raw];
 
           let singles;
-if (singlesA.length !== singlesB.length) {
-  // 인원 다르면 기존대로(정렬 후 순서대로 뽑아서 매칭하므로 강강/약약 성격 유지)
-  singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
-} else {
-  // ✅ 단식은 무조건 실력매칭(강강/약약)
-  singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, 0, teamA, teamB);
-}
+          if (singlesA.length !== singlesB.length) {
+            singles = generateSinglesPairsForDifferentTeamSize(singlesA, singlesB, singlesCnt, teamA, teamB);
+          } else {
+            // ✅ 단식은 무조건 실력매칭(강강/약약)
+            singles = generateSinglesPairsByMode(singlesA, singlesB, singlesCnt, 0, teamA, teamB);
+          }
 
           const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
 
@@ -583,7 +593,8 @@ if (singlesA.length !== singlesB.length) {
           });
 
           const key = `${teamA}_vs_${teamB}`;
-          updatesObj[`matches/${key}`] = { teamA, teamB, matchList };
+          // ✅ matches/${key} → ${MATCHES_KEY}/${key}
+          updatesObj[`${MATCHES_KEY}/${key}`] = { teamA, teamB, matchList };
         }
       }
 
@@ -882,9 +893,6 @@ if (singlesA.length !== singlesB.length) {
       return pass2.length ? pass2 : pairs;
     }
 
-    // ✅ need개 페어를 뽑되:
-    // 1) 가능하면 선수 중복 없이
-    // 2) 부족하면 선수 중복 허용(단, 같은 페어는 피함)
     function pickPairsNoPlayerDup_STRICT(pairs, need, historyUsedPairsSet, mode, nPlayers){
       if (need <= 0) return [];
 
@@ -923,7 +931,6 @@ if (singlesA.length !== singlesB.length) {
       return picked.slice(0, need);
     }
 
-    // ✅ need가 너무 큰 경우(한 라운드 페어 수 초과) : 3단계 완화
     function pickPairsRelaxed(pairs, need, historyUsedPairsSet, mode, nPlayers){
       if (!need || need <= 0) return [];
       if (!pairs || pairs.length === 0) return [];
@@ -944,7 +951,6 @@ if (singlesA.length !== singlesB.length) {
       const picked = [];
       const usedPlayers = new Set();
 
-      // 1) 선수 중복 금지 + 같은 페어 금지
       for (const p of sorted) {
         if (picked.length >= need) break;
         if (usedPlayers.has(p.p1.name) || usedPlayers.has(p.p2.name)) continue;
@@ -953,7 +959,6 @@ if (singlesA.length !== singlesB.length) {
         usedPlayers.add(p.p1.name); usedPlayers.add(p.p2.name);
       }
 
-      // 2) 선수 중복 허용 + 같은 페어만 금지
       if (picked.length < need) {
         for (const p of sorted) {
           if (picked.length >= need) break;
@@ -962,7 +967,6 @@ if (singlesA.length !== singlesB.length) {
         }
       }
 
-      // 3) 완전 중복 허용(같은 페어도 가능)
       if (picked.length < need) {
         const strongest = sorted[0];
         while (picked.length < need) picked.push(strongest);
@@ -971,7 +975,6 @@ if (singlesA.length !== singlesB.length) {
       return picked.slice(0, need);
     }
 
-    // ✅ 페어 강약 순으로 붙이기(부족하면 강강끼리 붙게)
     function matchPairsByStrength(pairsA, pairsB, history){
       const A = [...pairsA].sort((x,y)=> (x.sum ?? 0) - (y.sum ?? 0));
       const B = [...pairsB].sort((x,y)=> (x.sum ?? 0) - (y.sum ?? 0));
@@ -1021,7 +1024,6 @@ if (singlesA.length !== singlesB.length) {
 
       if (!need || need <= 0) return [];
 
-      // ✅ 4명 vs 4명, need=4: 완전탐색
       if (SA.length === 4 && SB.length === 4 && need === 4) {
         const pairsA_all = allTeamPairs(SA);
         const pairsB_all = allTeamPairs(SB);
@@ -1117,7 +1119,6 @@ if (singlesA.length !== singlesB.length) {
         return result;
       }
 
-      // ✅ 전원출전(need*2==인원)
       if (need * 2 === SA.length && need * 2 === SB.length) {
         const picked = pickBestFullParticipationRound(SA, SB, need, mode, history);
 
@@ -1162,7 +1163,6 @@ if (singlesA.length !== singlesB.length) {
         return result;
       }
 
-      // ✅ 4명 vs 3명, need=2
       if (need === 2 && SA.length === 4 && SB.length === 3) {
         const combos = [
           [ [0,1], [1,2] ],
@@ -1185,10 +1185,6 @@ if (singlesA.length !== singlesB.length) {
         return result;
       }
 
-      // ✅ 일반 케이스
-      // ----------------------------------------------------
-      // ✅ need가 "한 라운드 페어 수" 초과면: 전체 조합 풀에서 3단계 완화로 반드시 채움
-      // ----------------------------------------------------
       const maxPairsA = Math.floor(SA.length / 2);
       const maxPairsB = Math.floor(SB.length / 2);
 
@@ -1391,7 +1387,8 @@ if (singlesA.length !== singlesB.length) {
       const teamKey = card.dataset.key;
       const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-      await set(ref(db, `matches/${teamKey}/matchList/${rowIndex}/players`), `${aTxt} vs ${bTxt}`);
+      // ✅ matches → MATCHES_KEY
+      await set(ref(db, `${MATCHES_KEY}/${teamKey}/matchList/${rowIndex}/players`), `${aTxt} vs ${bTxt}`);
       popup.style.display = "none";
     }
 
@@ -1415,7 +1412,8 @@ if (singlesA.length !== singlesB.length) {
       const teamKey = card.dataset.key;
       const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-      await set(ref(db, `matches/${teamKey}/matchList/${rowIndex}/players`), `${aTxt} vs ${bTxt}`);
+      // ✅ matches → MATCHES_KEY
+      await set(ref(db, `${MATCHES_KEY}/${teamKey}/matchList/${rowIndex}/players`), `${aTxt} vs ${bTxt}`);
       popup.style.display = "none";
     }
 
@@ -1488,7 +1486,8 @@ if (singlesA.length !== singlesB.length) {
       const teamKey = card.dataset.key;
       const rowIndex = [...card.querySelectorAll("tbody tr")].indexOf(cell.parentElement);
 
-      await set(ref(db, `matches/${teamKey}/matchList/${rowIndex}/result`), score);
+      // ✅ matches → MATCHES_KEY
+      await set(ref(db, `${MATCHES_KEY}/${teamKey}/matchList/${rowIndex}/result`), score);
 
       popup.style.display = "none";
       calculateTeamResults();
@@ -1498,7 +1497,8 @@ if (singlesA.length !== singlesB.length) {
     function listenToMatchUpdates() {
       if (matchesUnsub) { matchesUnsub(); matchesUnsub = null; }
 
-      const matchesRef = ref(db, "matches");
+      // ✅ matches → MATCHES_KEY
+      const matchesRef = ref(db, MATCHES_KEY);
       matchesUnsub = onValue(matchesRef, (snap) => {
         const matches = snap.val();
         document.getElementById("summaryArea").innerHTML = "";
@@ -1634,7 +1634,8 @@ if (singlesA.length !== singlesB.length) {
       if (!confirm("정말 이 경기를 삭제하시겠습니까?")) return;
 
       try {
-        await remove(ref(db, `matches/${key}`));
+        // ✅ matches → MATCHES_KEY
+        await remove(ref(db, `${MATCHES_KEY}/${key}`));
         alert("해당 경기가 삭제되었습니다.");
         calculateTeamResults();
       } catch (error) {
@@ -1778,7 +1779,7 @@ if (singlesA.length !== singlesB.length) {
 
       await requireAuth();
 
-      const playersRef = ref(db, `teams/${teamId}/players`);
+      const playersRef = ref(db, `${TEAMS_KEY}/${teamId}/players`);
       const snap = await get(playersRef);
       const raw = snap.val();
 
