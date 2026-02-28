@@ -98,12 +98,7 @@ function buToStrength(bu){
   }
 })();
 
-/* =======================
-   Header
-======================= */
-function bindHeaderButtons(){
-  $("refreshBtn").onclick = ()=> location.reload();
-}
+
 
 /* =======================
    로그인
