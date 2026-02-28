@@ -100,7 +100,7 @@ deletePwInput.value = "";
 
 if (hasValidSession()) {
   // 보안상 “자동 진입”은 안 하고 안내만
-  setError("이전에 로그인한 기록이 있습니다. 보안을 위해 비밀번호 입력 후 ‘로그인’을 눌러 주세요.");
+  setError("비밀번호를 입력해주세요.");
 }
 
 // Auth 상태 표시만 해줌(자동 로그인 시도 X)
