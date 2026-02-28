@@ -46,8 +46,8 @@ const addMemberBtn = document.getElementById("addMemberBtn");
 const memberList = document.getElementById("memberList");
 
 // ====== RTDB 경로 ======
-const SECURITY_PATH = "admin/security"; // 필요하면 원하는 경로로 바꿔도 됩니다
-const MEMBERS_PATH = "admin/members";   // 선수 목록 저장용(원하면 기존 경로로 교체)
+const SECURITY_PATH = "admin/config"; // ✅ 기존 admin/config 사용
+const MEMBERS_PATH  = "members";      // ✅ 루트 members 사용
 
 // ====== 세션(비번 저장 X, 로그인 성공 여부만) ======
 const SESSION_KEY = "koen_pingpong_admin_ok";
