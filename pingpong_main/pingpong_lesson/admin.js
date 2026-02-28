@@ -8,24 +8,70 @@ import {
 
 import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
-
 /* =========================
-   ✅ Guard (탁구 관리자와 세션 통일)
-   - admin.js(탁구)에서 로그인 성공 시 localStorage에
-     koen_pingpong_admin_ok = Date.now() 가 저장됨
+   ✅ Lesson Admin Password Gate
+   - 관리자 비밀번호(config/adminPasswordPlain)와 같아야 입장
+   - 6시간 세션 유지
 ========================= */
-const SESSION_KEY = "koen_pingpong_admin_ok";
-const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간 (탁구 관리자와 동일)
+const CONFIG_PATH = "config";
+const ADMIN_PW_FIELD = "adminPasswordPlain";
 
-function hasValidSession(){
-  const t = Number(localStorage.getItem(SESSION_KEY) || 0);
+const LESSON_SESSION_KEY = "koen_lesson_admin_ok_at";
+const LESSON_SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
+
+function only4Digits(v){
+  return (v || "").replace(/\D/g, "").slice(0, 4);
+}
+function saveLessonSessionOK(){
+  localStorage.setItem(LESSON_SESSION_KEY, String(Date.now()));
+}
+function clearLessonSessionOK(){
+  localStorage.removeItem(LESSON_SESSION_KEY);
+}
+function hasValidLessonSession(){
+  const t = Number(localStorage.getItem(LESSON_SESSION_KEY) || 0);
   if(!t) return false;
-  return (Date.now() - t) < SESSION_TTL_MS;
+  const ok = (Date.now() - t) < LESSON_SESSION_TTL_MS;
+  if(!ok) localStorage.removeItem(LESSON_SESSION_KEY);
+  return ok;
 }
 
-if (!hasValidSession()) {
-  alert("관리자 인증이 필요합니다.");
-  location.href = "./index.html";
+async function readAdminPasswordPlain(){
+  const snap = await get(ref(db, CONFIG_PATH));
+  const cfg = snap.exists() ? (snap.val() || {}) : {};
+  return String(cfg?.[ADMIN_PW_FIELD] || "").trim();
+}
+
+async function ensureLessonAdminGate(){
+  // ✅ 이미 세션이 유효하면 바로 통과
+  if(hasValidLessonSession()) return true;
+
+  // ✅ config 읽으려면 익명 로그인 필요(규칙에 따라)
+  await signInAnonymously(auth);
+
+  const realPw = await readAdminPasswordPlain();
+  if(!realPw){
+    alert("관리자 비밀번호가 설정되어 있지 않습니다.\n관리자 페이지에서 먼저 설정해 주세요.");
+    location.href = "./index.html";
+    return false;
+  }
+
+  const input = only4Digits(prompt("레슨 관리자 비밀번호(4자리)를 입력하세요."));
+  if(input.length !== 4){
+    alert("비밀번호는 4자리 숫자여야 합니다.");
+    location.href = "./index.html";
+    return false;
+  }
+
+  if(input !== realPw){
+    alert("비밀번호가 올바르지 않습니다.");
+    location.href = "./index.html";
+    return false;
+  }
+
+  // ✅ 성공 → 6시간 세션 발급
+  saveLessonSessionOK();
+  return true;
 }
 
 /* =========================
@@ -35,6 +81,7 @@ const $ = (id) => document.getElementById(id);
 
 function toast(msg){
   const el = $("toast");
+  if(!el) return;
   el.textContent = msg;
   el.classList.add("show");
   clearTimeout(toast._t);
@@ -461,13 +508,13 @@ function renderWaiting(data){
 }
 
 /* =========================
-   ✅ Logout (admin.html에 #logoutBtn이 있을 때)
+   ✅ Logout
 ========================= */
 function wireLogout(){
   const btn = $("logoutBtn");
   if(!btn) return;
   btn.addEventListener("click", ()=>{
-    localStorage.removeItem("koenAdminAuth");
+    clearLessonSessionOK();   // ✅ 레슨 세션 삭제
     location.href = "./index.html";
   });
 }
@@ -475,20 +522,20 @@ function wireLogout(){
 /* =========================
    Wire
 ========================= */
-$("refreshBtn").addEventListener("click", ()=> location.reload());
+$("refreshBtn")?.addEventListener("click", ()=> location.reload());
 
-$("openPickerBtn").addEventListener("click", openPicker);
-$("closePickerBtn").addEventListener("click", closePicker);
-$("pickerBack").addEventListener("click", (e)=>{
+$("openPickerBtn")?.addEventListener("click", openPicker);
+$("closePickerBtn")?.addEventListener("click", closePicker);
+$("pickerBack")?.addEventListener("click", (e)=>{
   if(e.target === $("pickerBack")) closePicker();
 });
-$("memberSearch").addEventListener("input", renderMemberGrid);
+$("memberSearch")?.addEventListener("input", renderMemberGrid);
 
-$("saveScheduleBtn").addEventListener("click", saveSchedule);
-$("saveGuideBtn").addEventListener("click", saveGuide);
+$("saveScheduleBtn")?.addEventListener("click", saveSchedule);
+$("saveGuideBtn")?.addEventListener("click", saveGuide);
 
-$("addWaitingBtn").addEventListener("click", addWaiting);
-$("waitingName").addEventListener("keydown", (e)=>{
+$("addWaitingBtn")?.addEventListener("click", addWaiting);
+$("waitingName")?.addEventListener("keydown", (e)=>{
   if(e.key === "Enter") addWaiting();
 });
 
@@ -497,6 +544,10 @@ $("waitingName").addEventListener("keydown", (e)=>{
 ========================= */
 (async function main(){
   try{
+    // ✅ 입장 비밀번호 확인(관리자 비번과 동일)
+    const ok = await ensureLessonAdminGate();
+    if(!ok) return;
+
     wireLogout();
     await initAuth();
     bindAllMembers();
