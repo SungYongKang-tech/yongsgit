@@ -28,16 +28,19 @@ function simpleHash(s){
 
 /* =======================
    탁구 전용 DB 경로
+   ✅ adminPass를 hash/plain으로 분리
 ======================= */
 const PATH = {
-  adminPass: "config/adminPassword",     // 관리자 로그인 비번(hash)
-  deletePass: "config/deletePassword",   // 경기 삭제 비번(4자리 원문)
-  members: "members"                    // 선수 목록
+  adminPassHash:  "config/adminPasswordHash",   // 관리자 로그인 비번(hash)
+  adminPassPlain: "config/adminPasswordPlain",  // ✅ 관리자 비번 원문(4자리, 표시용)
+  deletePass:     "config/deletePassword",      // 경기 삭제 비번(4자리 원문)
+  members:        "members"                     // 선수 목록
 };
 
 let loggedIn = false;
 let memberCache = {};
 let savedHash = null;
+let savedPlain = ""; // ✅ 표시용
 
 /* =======================
    부수 규칙
@@ -60,14 +63,24 @@ function buToStrength(bu){
     $("statusText").textContent = "연결됨";
     $("uidText").textContent = auth?.currentUser?.uid || "-";
 
-    // ✅ 분리 확인용 (콘솔에서 projectId 꼭 확인)
     console.log("PINGPONG projectId:", auth?.app?.options?.projectId);
     console.log("PINGPONG databaseURL:", auth?.app?.options?.databaseURL);
 
-    onValue(ref(db, PATH.adminPass), snap=>{
+    // ✅ 관리자 비밀번호(hash)
+    onValue(ref(db, PATH.adminPassHash), snap=>{
       savedHash = snap.exists() ? snap.val() : null;
     });
 
+    // ✅ 관리자 비밀번호(plain) → 입력칸에 표시
+    onValue(ref(db, PATH.adminPassPlain), snap=>{
+      savedPlain = snap.exists() ? String(snap.val()) : "";
+      // 로그인 전 입력칸에 표시
+      $("loginPassword").value = savedPlain || "";
+      // 로그인 후 변경칸에도 표시 (원하시면)
+      $("newPass1").value = savedPlain || "";
+    });
+
+    // ✅ 삭제 비밀번호
     onValue(ref(db, PATH.deletePass), snap=>{
       const v = snap.exists() ? String(snap.val()) : "";
       $("deletePwInput").value = v;
@@ -94,17 +107,21 @@ function bindHeaderButtons(){
 
 /* =======================
    로그인
+   ✅ 최초 1회: hash/plain 둘 다 저장
 ======================= */
 $("loginBtn").onclick = async ()=>{
   const pw = ($("loginPassword").value || "").trim();
   if(!pw) return alert("비밀번호를 입력하세요.");
   if(!/^\d{4}$/.test(pw)) return alert("관리자 비밀번호는 숫자 4자리로 입력하세요.");
 
+  // ✅ 최초 설정: hash/plain 둘 다 저장
   if(!savedHash){
     alert("관리자 비밀번호가 아직 설정되지 않았습니다.\n입력한 비밀번호로 초기 설정합니다.");
     const h = simpleHash(pw);
-    await set(ref(db, PATH.adminPass), h);
+    await set(ref(db, PATH.adminPassHash), h);
+    await set(ref(db, PATH.adminPassPlain), pw);
     savedHash = h;
+    savedPlain = pw;
   }
 
   if(simpleHash(pw) === savedHash){
@@ -121,11 +138,13 @@ $("logoutBtn").onclick = ()=>{
   loggedIn = false;
   $("adminSection").style.display = "none";
   $("loginSection").style.display = "block";
-  $("loginPassword").value = "";
+  // ✅ 로그아웃해도 “현재 비번 표시”는 유지 (원하시는 동작)
+  $("loginPassword").value = savedPlain || "";
 };
 
 /* =======================
    관리자 비밀번호 변경
+   ✅ 저장 시 hash/plain 둘 다 저장
 ======================= */
 $("changePassBtn").onclick = async ()=>{
   if(!loggedIn) return alert("로그인 후 변경 가능합니다.");
@@ -134,10 +153,16 @@ $("changePassBtn").onclick = async ()=>{
   if(!/^\d{4}$/.test(p1)) return alert("관리자 비밀번호는 숫자 4자리로 입력하세요.");
 
   const h = simpleHash(p1);
-  await set(ref(db, PATH.adminPass), h);
-  savedHash = h;
+  await set(ref(db, PATH.adminPassHash), h);
+  await set(ref(db, PATH.adminPassPlain), p1);
 
-  $("newPass1").value = "";
+  savedHash = h;
+  savedPlain = p1;
+
+  // ✅ 입력칸에 현재 비번 유지 표시
+  $("newPass1").value = savedPlain;
+  $("loginPassword").value = savedPlain;
+
   alert("관리자 비밀번호 저장 완료");
 };
 
@@ -210,7 +235,7 @@ function renderMembers(){
     .sort((a,b)=>{
       const abu = Number(a.bu ?? 999);
       const bbu = Number(b.bu ?? 999);
-      if(abu !== bbu) return abu - bbu; // ✅ 낮을수록 강함
+      if(abu !== bbu) return abu - bbu;
       return String(a.name||"").localeCompare(String(b.name||""), "ko");
     });
 
@@ -255,6 +280,7 @@ function renderMembers(){
         const buNum = Number(String(newBuRaw).trim().replace(/\D/g,""));
         if(!Number.isFinite(buNum) || buNum < 1 || buNum > 14)
           return alert("부수는 1~14 사이로 입력하세요.");
+
         await update(ref(db, `${PATH.members}/${key}`), {
           name: n,
           bu: buNum,
@@ -294,7 +320,8 @@ $("addMemberBtn").onclick = async ()=>{
 
   if(!name) return alert("이름을 입력하세요.");
   if(!Number.isFinite(buNum) || buNum < 1 || buNum > 14)
-  return alert("부수는 1~14 사이로 입력하세요.");
+    return alert("부수는 1~14 사이로 입력하세요.");
+
   await push(ref(db, PATH.members), {
     name,
     bu: buNum,
