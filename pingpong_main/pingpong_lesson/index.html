@@ -6,8 +6,7 @@
 
   <meta property="og:title" content="KOEN 탁구 레슨" />
   <meta property="og:description" content="KOEN 탁구 레슨 안내 및 신청 페이지" />
-  <!-- ⚠️ 이미지/URL은 필요 시 탁구용으로 바꿔주세요 -->
-  <meta property="og:image" content=https://sensational-tulumba-65e97e.netlify.app/pingpong_main/pingpong_lesson/sinyubin.jpg />
+  <meta property="og:image" content="https://sensational-tulumba-65e97e.netlify.app/pingpong_main/pingpong_lesson/sinyubin.jpg" />
   <meta property="og:type" content="website" />
 
   <title>KOEN 탁구 레슨</title>
@@ -90,6 +89,7 @@
     .waiting-list{
       line-height:1.7;
       color:#333;
+      white-space: pre-line; /* ✅ 줄바꿈 유지 */
     }
 
     /* ✅ 관리자 비번 모달 */
@@ -162,14 +162,13 @@
 
   <h1>🏓 KOEN 탁구 레슨</h1>
 
-  <img 
+  <img
     src="https://sensational-tulumba-65e97e.netlify.app/pingpong_main/pingpong_lesson/sinyubin.jpg"
     alt="KOEN 탁구 레슨"
     class="thumbnail"
   />
 
   <div class="button-container">
-
     <button class="link-button btn-purple" id="openAdminBtn" type="button">
       🔐 레슨 관리자 페이지
     </button>
@@ -182,15 +181,13 @@
       📅 탁구 레슨 시간표
     </a>
 
-   <a class="link-button btn-orange" href="./lesson-fee.html">
+    <a class="link-button btn-orange" href="./lesson-fee.html">
       💳 레슨비 입금확인
     </a>
 
     <a class="link-button btn-red" href="./makeup_lesson.html">
       🔁 레슨 보강 일정관리
     </a>
-    
-    
   </div>
 
   <!-- 🔽 대기자 목록 텍스트 표시 -->
@@ -209,23 +206,32 @@
   <div class="modalBack" id="adminModalBack" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
       <h3 id="adminModalTitle">🔐 관리자 비밀번호 입력</h3>
+
       <div class="row">
-        <input id="adminPassInput" type="password" placeholder="비밀번호" autocomplete="current-password" />
+        <input
+          id="adminPassInput"
+          type="password"
+          placeholder="4자리 비밀번호"
+          inputmode="numeric"
+          autocomplete="current-password"
+        />
       </div>
+
       <div class="row" style="justify-content:flex-end;">
         <button class="mBtn gray" type="button" id="adminCancelBtn">취소</button>
         <button class="mBtn" type="button" id="adminGoBtn">확인</button>
       </div>
+
       <div class="hint">※ 비밀번호가 맞으면 관리자 페이지로 이동합니다.</div>
     </div>
   </div>
 
   <!-- Firebase 대기자 불러오기 + 관리자 인증 처리 -->
   <script type="module">
-    // ✅ pingpong_main/firebase.js 사용 (현재 폴더 구조에서 이 경로가 맞음)
+    // ✅ pingpong_main/firebase.js 사용
     import { db } from "../firebase.js";
 
-    // ✅ 10.12.4로 통일 (firebase.js 버전과 동일)
+    // ✅ 10.12.4 통일
     import { ref, onValue, get } from
       "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
@@ -235,39 +241,36 @@
     const waitingRef = ref(db, "lesson/waiting");
 
     onValue(waitingRef, (snap) => {
-  const data = snap.val() || {};
-  const listEl = document.getElementById("waitingTextList");
+      const data = snap.val() || {};
+      const listEl = document.getElementById("waitingTextList");
 
-  // ✅ name 있는 항목만 추출
-  const names = Object.values(data)
-    .map(v => (v?.name || "").trim())
-    .filter(Boolean);
+      const names = Object.values(data)
+        .map(v => (v?.name || "").trim())
+        .filter(Boolean);
 
-  if (names.length === 0) {
-    listEl.textContent = "현재 대기자가 없습니다.";
-    return;
-  }
+      if (names.length === 0) {
+        listEl.textContent = "현재 대기자가 없습니다.";
+        return;
+      }
 
-  // ✅ 한 줄에 한 명 + 번호
-  const lines = names.map((name, idx) => `${idx + 1}. ${name}`);
+      const lines = names.map((name, idx) => `${idx + 1}. ${name}`);
+      listEl.textContent = lines.join("\n");
+    });
 
-  // 줄바꿈 유지되도록
-  listEl.textContent = lines.join("\n");
-  listEl.style.whiteSpace = "pre-line";
-});
     /* ==========================
-       ✅ 관리자 페이지 진입 보호
-       - config/adminPassword (hash) 비교
+       ✅ 관리자 페이지 진입 보호 (평문 비교)
+       - admin.js가 저장하는 config/adminPasswordPlain 을 그대로 사용
+       - 성공 시:
+         1) koenAdminAuth="ok" (기존 admin.html guard용)
+         2) koen_pingpong_admin_ok=Date.now() (레슨/통합 세션용)
     ========================== */
     const $ = (id) => document.getElementById(id);
 
-    function simpleHash(s){
-      let h = 2166136261;
-      for (let i=0;i<s.length;i++){
-        h ^= s.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      return (h>>>0).toString(16);
+    const ADMIN_PW_PATH = "config/adminPasswordPlain";
+    const SESSION_KEY = "koen_pingpong_admin_ok";
+
+    function only4Digits(v){
+      return (v || "").replace(/\D/g, "").slice(0, 4);
     }
 
     const adminModalBack = $("adminModalBack");
@@ -276,7 +279,7 @@
     function openModal(){
       adminModalBack.style.display = "flex";
       adminPassInput.value = "";
-      setTimeout(()=>adminPassInput.focus(), 50);
+      setTimeout(() => adminPassInput.focus(), 50);
     }
     function closeModal(){
       adminModalBack.style.display = "none";
@@ -287,45 +290,50 @@
     $("adminCancelBtn").addEventListener("click", closeModal);
 
     adminModalBack.addEventListener("click", (e)=>{
-      if(e.target === adminModalBack) closeModal();
+      if (e.target === adminModalBack) closeModal();
     });
 
     adminPassInput.addEventListener("keydown", (e)=>{
-      if(e.key === "Enter") $("adminGoBtn").click();
-      if(e.key === "Escape") closeModal();
+      if (e.key === "Enter") $("adminGoBtn").click();
+      if (e.key === "Escape") closeModal();
     });
 
     $("adminGoBtn").addEventListener("click", async ()=>{
-      const pass = (adminPassInput.value || "").trim();
-      if(!pass){
-        alert("비밀번호를 입력하세요.");
+      const pass = only4Digits(adminPassInput.value);
+      adminPassInput.value = pass;
+
+      if (pass.length !== 4) {
+        alert("비밀번호는 4자리 숫자여야 합니다.");
         adminPassInput.focus();
         return;
       }
 
       try{
-        const snap = await get(ref(db, "config/adminPassword"));
-        const savedHash = snap.val();
+        const snap = await get(ref(db, ADMIN_PW_PATH));
+        const savedPw = String(snap.val() || "").trim();
 
-        if(!savedHash){
-          alert("관리자 비밀번호가 설정되어 있지 않습니다.");
+        if (!savedPw) {
+          alert("관리자 비밀번호가 설정되어 있지 않습니다.\n관리자 페이지에서 먼저 설정해 주세요.");
           return;
         }
 
-        const inputHash = simpleHash(pass);
-
-        if(inputHash !== savedHash){
+        if (pass !== savedPw) {
           alert("비밀번호가 일치하지 않습니다.");
           adminPassInput.focus();
           return;
         }
 
-        localStorage.setItem("koenAdminAuth","ok");
+        // ✅ 기존 관리자 페이지 guard 호환
+        localStorage.setItem("koenAdminAuth", "ok");
+
+        // ✅ 통합 세션(레슨 관리자/다른 페이지에서 사용 가능)
+        localStorage.setItem(SESSION_KEY, String(Date.now()));
+
         closeModal();
         location.href = "./admin.html";
       }catch(err){
         console.error(err);
-        alert("관리자 인증 중 오류가 발생했습니다.");
+        alert("관리자 인증 중 오류가 발생했습니다. (권한/연결/경로 확인)");
       }
     });
   </script>
