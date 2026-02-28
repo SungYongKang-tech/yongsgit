@@ -8,11 +8,22 @@ import {
 
 import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
+
 /* =========================
-   ✅ Guard (2중 방어)
-   - 인증값 없으면 admin 페이지 사용 불가
+   ✅ Guard (탁구 관리자와 세션 통일)
+   - admin.js(탁구)에서 로그인 성공 시 localStorage에
+     koen_pingpong_admin_ok = Date.now() 가 저장됨
 ========================= */
-if (localStorage.getItem("koenAdminAuth") !== "ok") {
+const SESSION_KEY = "koen_pingpong_admin_ok";
+const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간 (탁구 관리자와 동일)
+
+function hasValidSession(){
+  const t = Number(localStorage.getItem(SESSION_KEY) || 0);
+  if(!t) return false;
+  return (Date.now() - t) < SESSION_TTL_MS;
+}
+
+if (!hasValidSession()) {
   alert("관리자 인증이 필요합니다.");
   location.href = "./index.html";
 }
