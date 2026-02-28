@@ -14,7 +14,7 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
    - 6시간 세션 유지
 ========================= */
 const CONFIG_PATH = "config";
-const ADMIN_PW_FIELD = "adminPassword";
+const ADMIN_PW_FIELD = "adminPasswordPlain";
 
 const LESSON_SESSION_KEY = "koen_lesson_admin_ok_at";
 const LESSON_SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
