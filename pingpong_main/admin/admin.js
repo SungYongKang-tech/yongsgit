@@ -1,18 +1,12 @@
-// admin.js (RTDB 버전, 상태/UID 표시 제거 완료본)
+// admin.js (RTDB 평문 비밀번호 버전)
 
 import { auth, db } from "../firebase.js";
 
-import {
-  signInAnonymously,
-  signOut
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import { signInAnonymously, signOut } from
+  "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
-import {
-  ref,
-  get,
-  set,
-  update
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { ref, get, set, update } from
+  "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
 // ====== DOM ======
 const loginSection = document.getElementById("loginSection");
@@ -36,9 +30,9 @@ const mBu = document.getElementById("mBu");
 const addMemberBtn = document.getElementById("addMemberBtn");
 const memberList = document.getElementById("memberList");
 
-// ====== RTDB 경로 ======
-const SECURITY_PATH = "admin/config"; // ✅ 기존 admin/config 사용
-const MEMBERS_PATH  = "members";      // ✅ 루트 members 사용
+// ====== RTDB 경로 (✅ 요청대로 config에 저장) ======
+const CONFIG_PATH = "config";
+const MEMBERS_PATH = "members";
 
 // ====== 세션(비번 저장 X, 로그인 성공 여부만) ======
 const SESSION_KEY = "koen_pingpong_admin_ok";
@@ -71,13 +65,6 @@ function hasValidSession() {
   return (Date.now() - t) < SESSION_TTL_MS;
 }
 
-// SHA-256 해시
-async function sha256(text) {
-  const enc = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
 // ====== 초기 UI ======
 showLogin();
 
@@ -90,9 +77,9 @@ if (hasValidSession()) {
   setError("비밀번호를 입력해주세요.");
 }
 
-// ====== 보안정보 읽기 ======
-async function readSecurity() {
-  const snap = await get(ref(db, SECURITY_PATH));
+// ====== config 읽기 ======
+async function readConfig() {
+  const snap = await get(ref(db, CONFIG_PATH));
   return snap.exists() ? snap.val() : null;
 }
 
@@ -115,18 +102,18 @@ async function handleLogin() {
     const cred = await signInAnonymously(auth);
     const user = cred.user;
 
-    const inputHash = await sha256(pw);
-    const sec = await readSecurity();
+    const cfg = await readConfig();
 
-    if (!sec || !sec.adminHash) {
-      // ✅ 최초 1회: 입력 비번으로 초기 설정
-      await set(ref(db, SECURITY_PATH), {
-        adminHash: inputHash,
-        deleteHash: sec?.deleteHash ?? null,
+    // ✅ 최초 1회: config에 adminPasswordPlain 없으면 입력값으로 세팅
+    if (!cfg || !cfg.adminPasswordPlain) {
+      await set(ref(db, CONFIG_PATH), {
+        adminPasswordPlain: pw,
+        deletePassword: cfg?.deletePassword ?? "",
         createdAt: Date.now(),
         updatedAt: Date.now(),
         createdBy: user.uid
       });
+
       saveSessionOK();
       showAdmin();
       if (loginPassword) loginPassword.value = "";
@@ -134,7 +121,8 @@ async function handleLogin() {
       return;
     }
 
-    if (sec.adminHash !== inputHash) {
+    // ✅ 평문 비교
+    if (String(cfg.adminPasswordPlain) !== String(pw)) {
       clearSessionOK();
       setError("비밀번호가 올바르지 않습니다.");
       await signOut(auth);
@@ -169,7 +157,7 @@ logoutBtn?.addEventListener("click", async () => {
   try { await signOut(auth); } catch {}
 });
 
-// ====== 관리자 비번 변경 ======
+// ====== 관리자 비번 변경 (평문 저장) ======
 changePassBtn?.addEventListener("click", async () => {
   const pw = only4Digits(newPass1?.value);
   if (newPass1) newPass1.value = pw;
@@ -186,9 +174,8 @@ changePassBtn?.addEventListener("click", async () => {
 
   changePassBtn.disabled = true;
   try {
-    const h = await sha256(pw);
-    await update(ref(db, SECURITY_PATH), {
-      adminHash: h,
+    await update(ref(db, CONFIG_PATH), {
+      adminPasswordPlain: pw,
       updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
@@ -201,7 +188,7 @@ changePassBtn?.addEventListener("click", async () => {
   }
 });
 
-// ====== 경기 삭제 비번 저장 ======
+// ====== 경기 삭제 비번 저장 (평문 저장) ======
 saveDeletePwBtn?.addEventListener("click", async () => {
   const pw = only4Digits(deletePwInput?.value);
   if (deletePwInput) deletePwInput.value = pw;
@@ -218,9 +205,8 @@ saveDeletePwBtn?.addEventListener("click", async () => {
 
   saveDeletePwBtn.disabled = true;
   try {
-    const h = await sha256(pw);
-    await update(ref(db, SECURITY_PATH), {
-      deleteHash: h,
+    await update(ref(db, CONFIG_PATH), {
+      deletePassword: pw,
       updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
