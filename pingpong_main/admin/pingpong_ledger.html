@@ -24,12 +24,47 @@
 body{
   margin:0; background:var(--bg);
   font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif; color:var(--ink);
-  overflow-x:hidden;            /* 좌우 스크롤 방지 */
-  overflow-y:auto;              /* ✅ 페이지(창) 스크롤 */
+  overflow-x:hidden;
+  overflow-y:auto;
 }
+
+/* ✅ NAV HEADER */
 header{
-  background:#fff; padding:16px; font-size:20px; font-weight:800; text-align:center;
-  border-bottom:1px solid #e5e7eb; position:sticky; top:0; z-index:20;
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:50;
+}
+.header-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:12px 12px;
+}
+.header-title{
+  font-size:18px;
+  font-weight:900;
+  text-align:center;
+  flex:1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.navbtn{
+  appearance:none;
+  border:1px solid #e5e7eb;
+  background:#fff;
+  color:var(--ink);
+  padding:8px 10px;
+  border-radius:10px;
+  font-weight:900;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.navbtn.primary{
+  background:var(--accent);
+  color:#fff;
+  border-color:transparent;
 }
 
 /* SUMMARY */
@@ -56,7 +91,10 @@ header{
   font-size:14px;
   padding:10px;
   border-radius:8px;
+  border:1px solid #d8deea;
+  background:#fff;
 }
+.controls button{ cursor:pointer; border-color:transparent; }
 @media (min-width: 600px){
   .controls{ grid-template-columns: repeat(7, 1fr); }
 }
@@ -73,7 +111,7 @@ header{
 }
 
 /* TABLE */
-.wrap{                     /* ✅ 창 스크롤이므로 overflow 제거 */
+.wrap{
   border:1px solid var(--border);
   border-radius:10px;
   background:#fff;
@@ -89,7 +127,7 @@ table{
 thead{
   position: sticky;
   top: var(--stickTop);
-  z-index: 30;
+  z-index: 40;
   background:#f3f5fb;
 }
 thead th{
@@ -150,7 +188,15 @@ tfoot td{ background:#f7fbff; }
 </head>
 
 <body>
-<header>KOEN TT Ledger</header>
+
+<!-- ✅ 네비게이션 헤더 -->
+<header>
+  <div class="header-inner">
+    <button class="navbtn" onclick="location.href='./admin.html'">← 관리자</button>
+    <div class="header-title">KOEN TT Ledger (실시간)</div>
+    <button class="navbtn primary" onclick="location.href='./pingpong_ledger_readonly.html'">읽기전용</button>
+  </div>
+</header>
 
 <!-- SUMMARY -->
 <div class="summary">
@@ -170,11 +216,9 @@ tfoot td{ background:#f7fbff; }
   <button class="red" onclick="deleteAll()">전체 삭제</button>
   <button class="blue" onclick="scrollToBottom()">맨 아래로</button>
 
-
   <!-- ✅ 추가: 원래 보기(초기화) -->
   <button class="gray" onclick="resetView()">원래보기</button>
 </div>
-
 
 <!-- PASTE -->
 <div class="paste" id="pasteBox">
@@ -302,7 +346,7 @@ function addRow(){
     desc: el("in-desc").value.trim(),
     income: toNum(el("in-income").value),
     expense: toNum(el("in-expense").value),
-    createdAt: Date.now()          // 입력순 복원용
+    createdAt: Date.now()
   };
   if(!row.desc){ alert("내역을 입력하세요."); return; }
   db.ref("ledger").push(row);
@@ -324,25 +368,17 @@ function saveCell(key, field, value){
 /* ======================
       ✅ 정렬(화면상)
 ====================== */
-// 정렬 모드: false = 입력순(createdAt), true = 날짜순 정렬
 let sortMode = false;
-
-// 잔액 표시를 원장(전체 데이터 기준)으로 유지
-const useGlobalBalance = true;
 function sortByDate(){ sortMode = true; render(true); }
 
 /* ======================
       ✅ 렌더 + 합계
 ====================== */
 function render(forceTop){
-  // ----- 0) 전체 ledger로 "원장 기준(입력순)" 누적잔액 테이블 준비 -----
   const all = Object.entries(ledger);
 
-  const master = all
-    .slice()
-    .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0)); // 입력순
-
-  // ✅ key별 전역 누적잔액 저장
+  // 입력순(원장기준) 누적잔액
+  const master = all.slice().sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
   let gBal = 0;
   const globalBalByKey = {};
   master.forEach(([k,r])=>{
@@ -350,7 +386,7 @@ function render(forceTop){
     globalBalByKey[k] = gBal;
   });
 
-  // ----- 1) 화면 필터링/검색/정렬 -----
+  // 화면 필터링/검색/정렬
   let arr = all;
 
   const q = el("search").value.trim().toLowerCase();
@@ -372,7 +408,7 @@ function render(forceTop){
     arr.sort((a,b)=> (a[1].createdAt||0)-(b[1].createdAt||0));
   }
 
-  // ----- 2) 합계는 필터된 행 기준, 잔액은 원장 기준 -----
+  // 합계(필터된 기준)
   let totalIn = 0, totalOut = 0;
   arr.forEach(([_,r])=>{
     totalIn  += toNum(r.income);
@@ -381,16 +417,16 @@ function render(forceTop){
   el("sumIn").textContent  = comma(totalIn);
   el("sumOut").textContent = comma(totalOut);
 
-  // ✅ 현재잔액은 마지막 행의 “원장 기준” 잔액
+  // 현재잔액(원장 기준)
   const lastKey = arr.length ? arr[arr.length-1][0] : null;
   el("sumBal").textContent = lastKey ? comma(globalBalByKey[lastKey]) : "0";
 
-  // ----- 3) 행 출력 -----
+  // 행 출력
   let rowsHTML = "";
   arr.forEach(([key,r])=>{
     const inc = toNum(r.income);
     const exp = toNum(r.expense);
-    const showBal = globalBalByKey[key] || 0;   // ✅ 필터가 있어도 원장 기준 잔액
+    const showBal = globalBalByKey[key] || 0;
 
     rowsHTML += `
       <tr>
@@ -416,7 +452,7 @@ function render(forceTop){
   });
   el("ledger-body").innerHTML = rowsHTML;
 
-  // ----- 4) 연/월 select 값 유지 -----
+  // 연/월 select 유지
   const prevY = el("yearFilter").value;
   const prevM = el("monthFilter").value;
 
@@ -432,7 +468,6 @@ function render(forceTop){
     `<option value="">전체 월</option>` +
     months.map(v=>`<option value="${v}">${v}</option>`).join("");
 
-  // ✅ 선택값 복구
   if(prevY && years.includes(prevY)) el("yearFilter").value = prevY;
   if(prevM && months.includes(prevM)) el("monthFilter").value = prevM;
 
@@ -440,7 +475,6 @@ function render(forceTop){
     window.scrollTo({top:0, behavior:'instant'});
   }
 }
-
 
 /* ======================
       ✅ 엑셀 붙여넣기
@@ -511,16 +545,15 @@ function saveImage(){
 render();
 
 function resetView(){
-  sortMode = false;               // 정렬 해제
-  el("search").value = "";        // 검색 초기화
-  el("yearFilter").value = "";    // 연도 초기화
-  el("monthFilter").value = "";   // 월 초기화
+  sortMode = false;
+  el("search").value = "";
+  el("yearFilter").value = "";
+  el("monthFilter").value = "";
   render(true);
 }
 function scrollToBottom(){
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
-
 </script>
 </body>
 </html>

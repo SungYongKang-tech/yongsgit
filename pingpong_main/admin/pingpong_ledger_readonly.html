@@ -20,23 +20,58 @@
   --border:#d0d7e2;
   --stickTop: 56px;
 }
+*{ box-sizing:border-box; }
 body{
   margin:0; background:var(--bg);
   font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif; color:var(--ink);
   overflow-x:hidden;
   overflow-y:auto;
 }
+
+/* ✅ NAV HEADER */
 header{
-  background:#fff; padding:16px; font-size:20px; font-weight:800;
-  text-align:center; border-bottom:1px solid #e5e7eb;
-  position:sticky; top:0; z-index:20;
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:50;
+}
+.header-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:12px 12px;
+}
+.header-title{
+  font-size:18px;
+  font-weight:900;
+  text-align:center;
+  flex:1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.navbtn{
+  appearance:none;
+  border:1px solid #e5e7eb;
+  background:#fff;
+  color:var(--ink);
+  padding:8px 10px;
+  border-radius:10px;
+  font-weight:900;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.navbtn.primary{
+  background:var(--accent);
+  color:#fff;
+  border-color:transparent;
 }
 
 /* SUMMARY */
 .summary{
-  display:flex; 
-  gap:10px; 
-  padding:12px; 
+  display:flex;
+  gap:10px;
+  padding:12px;
   flex-wrap:wrap;
 }
 .card{
@@ -51,12 +86,10 @@ header{
   font-size:14px;
   font-weight:700;
 }
-
 /* ✅ 세 번째 카드는 아래줄 전체 차지 */
 .summary .card:nth-child(3){
   flex-basis: 100%;
 }
-
 
 /* CONTROLS */
 .controls{
@@ -68,8 +101,14 @@ header{
 .controls input,
 .controls select,
 .controls button{
-  width:100%; font-size:14px; padding:10px; border-radius:8px;
+  width:100%;
+  font-size:14px;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid #d8deea;
+  background:#fff;
 }
+.controls button{ cursor:pointer; border-color:transparent; }
 @media (min-width: 600px){
   .controls{ grid-template-columns: repeat(6, 1fr); }
 }
@@ -88,7 +127,7 @@ table{
 thead{
   position: sticky;
   top: var(--stickTop);
-  z-index: 30;
+  z-index: 40;
   background:#f3f5fb;
 }
 thead th{
@@ -123,7 +162,15 @@ tbody td:last-child{ border-right:none; }
 </head>
 
 <body>
-<header>KOEN TT Ledger (Read-Only)</header>
+
+<!-- ✅ 네비게이션 헤더 -->
+<header>
+  <div class="header-inner">
+    <button class="navbtn" onclick="location.href='./admin.html'">← 관리자</button>
+    <div class="header-title">KOEN TT Ledger (읽기전용)</div>
+    <button class="navbtn primary" onclick="location.href='./pingpong_ledger.html'">실시간</button>
+  </div>
+</header>
 
 <!-- SUMMARY -->
 <div class="summary">
@@ -175,6 +222,7 @@ const db = firebase.database();
 /* GLOBAL */
 let ledger = {};
 let sortMode = false;
+
 const el = id => document.getElementById(id);
 const toNum = v => Number(String(v||0).replace(/[^\d.-]/g,""));
 const comma = n => toNum(n).toLocaleString();
@@ -186,12 +234,14 @@ function displayDate(d){
   return `${y.slice(2)}.${m}.${dd}`;
 }
 
+/* ✅ sticky top 계산(네비 헤더 높이 반영) */
 function updateStickyTop(){
-  const h = document.querySelector("header").offsetHeight;
+  const h = document.querySelector("header")?.offsetHeight || 0;
   document.documentElement.style.setProperty("--stickTop", h+"px");
 }
-window.onload = updateStickyTop;
-window.onresize = updateStickyTop;
+window.addEventListener("load", updateStickyTop);
+window.addEventListener("resize", updateStickyTop);
+window.addEventListener("orientationchange", updateStickyTop);
 
 /* Firebase listener (READ ONLY) */
 db.ref("ledger").on("value", snap=>{
@@ -206,7 +256,7 @@ function sortByDate(){ sortMode = true; render(); }
 function render(){
   const all = Object.entries(ledger);
 
-  // 잔액 계산용 원본 순서
+  // 잔액 계산용 원본 순서(입력순)
   const master = all.slice().sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
   let gBal = 0;
   const globalBal = {};
@@ -220,7 +270,8 @@ function render(){
   const q = el("search").value.toLowerCase();
   if(q){
     arr = arr.filter(([k,r])=>{
-      return `${displayDate(r.date)} ${r.desc} ${r.income} ${r.expense}`.toLowerCase().includes(q);
+      return `${displayDate(r.date)} ${r.desc||""} ${r.income||0} ${r.expense||0}`
+        .toLowerCase().includes(q);
     });
   }
 
@@ -236,10 +287,11 @@ function render(){
     arr.sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
   }
 
-  // 합계
+  // 합계(필터 기준)
   let sumIn=0, sumOut=0;
   arr.forEach(([_,r])=>{
-    sumIn+=toNum(r.income); sumOut+=toNum(r.expense);
+    sumIn+=toNum(r.income);
+    sumOut+=toNum(r.expense);
   });
   el("sumIn").textContent = comma(sumIn);
   el("sumOut").textContent = comma(sumOut);
@@ -253,7 +305,7 @@ function render(){
     html += `
       <tr>
         <td class="dateCell">${displayDate(r.date)}</td>
-        <td class="descCell">${r.desc}</td>
+        <td class="descCell">${r.desc||""}</td>
         <td class="numCell">${comma(r.income)}</td>
         <td class="numCell">${comma(r.expense)}</td>
         <td class="numCell">${comma(globalBal[key]||0)}</td>
@@ -281,7 +333,7 @@ function downloadExcel(){
     bal += toNum(r.income) - toNum(r.expense);
     return {
       일자:displayDate(r.date),
-      내역:r.desc,
+      내역:r.desc || "",
       입금:toNum(r.income),
       출금:toNum(r.expense),
       잔액:bal
