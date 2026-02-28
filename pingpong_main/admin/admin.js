@@ -1,40 +1,24 @@
-// admin.js (전체 교체)
-// ✅ 동작 방식
-// - 페이지 로드시 Firebase를 "자동 로그인"하지 않음
-// - 비밀번호 입력 후 [로그인] 클릭할 때만 Firebase 로그인 + 비번 검증
-// - 최초 1회(서버에 비번이 없으면) 입력한 비번을 관리자 비번으로 저장
-// - 비번은 Firestore에 "해시"로 저장(평문 저장 X)
-// - 실패는 alert() 대신 화면 에러 텍스트로만 표시
+// admin.js (Realtime Database 버전)
+// - firebase.js(export: app, db(getDatabase), auth)를 재사용
+// - 자동 로그인/연결 시도 X
+// - 비번 입력 후 [로그인] 클릭 시에만 익명로그인 + 비번검증
+// - 최초 1회: security가 없으면 입력 비번을 관리자 비번으로 초기 설정
+// - 비번은 SHA-256 해시로 저장(평문 저장 X)
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { auth, db } from "../firebase.js";
+
 import {
-  getAuth,
   signInAnonymously,
   signOut,
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
 import {
-  getFirestore,
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-// ✅ 여기에 본인 Firebase 설정 넣기
-const firebaseConfig = {
-  // apiKey: "...",
-  // authDomain: "...",
-  // projectId: "...",
-  // storageBucket: "...",
-  // messagingSenderId: "...",
-  // appId: "..."
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+  ref,
+  get,
+  set,
+  update
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
 // ====== DOM ======
 const loginSection = document.getElementById("loginSection");
@@ -55,12 +39,20 @@ const changePassBtn = document.getElementById("changePassBtn");
 const deletePwInput = document.getElementById("deletePwInput");
 const saveDeletePwBtn = document.getElementById("saveDeletePwBtn");
 
-// ====== 설정 ======
-const SECURITY_DOC = doc(db, "pingpong_admin", "security"); // 필요하면 컬렉션/문서명 바꿔도 됨
-const SESSION_KEY = "koen_pingpong_admin_ok"; // 비번 저장 X, 로그인 성공 여부만 저장
-const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간 유지(원하면 조절)
+// (선수관리까지 연결하려면 여기에 memberList, addMemberBtn 등도 이어붙이면 됩니다)
+const mName = document.getElementById("mName");
+const mBu = document.getElementById("mBu");
+const addMemberBtn = document.getElementById("addMemberBtn");
+const memberList = document.getElementById("memberList");
 
-// ====== 유틸 ======
+// ====== RTDB 경로 ======
+const SECURITY_PATH = "admin/security"; // 필요하면 원하는 경로로 바꿔도 됩니다
+const MEMBERS_PATH = "admin/members";   // 선수 목록 저장용(원하면 기존 경로로 교체)
+
+// ====== 세션(비번 저장 X, 로그인 성공 여부만) ======
+const SESSION_KEY = "koen_pingpong_admin_ok";
+const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
+
 function only4Digits(v) {
   return (v || "").replace(/\D/g, "").slice(0, 4);
 }
@@ -68,7 +60,7 @@ function setError(msg) {
   loginError.textContent = msg || "";
 }
 function setStatus(msg) {
-  statusText.textContent = msg;
+  statusText.textContent = msg || "";
 }
 function showAdmin() {
   loginSection.style.display = "none";
@@ -90,7 +82,7 @@ function hasValidSession() {
   return (Date.now() - t) < SESSION_TTL_MS;
 }
 
-// SHA-256 해시 (브라우저 내장 SubtleCrypto)
+// SHA-256 해시
 async function sha256(text) {
   const enc = new TextEncoder().encode(text);
   const buf = await crypto.subtle.digest("SHA-256", enc);
@@ -102,26 +94,25 @@ setStatus("대기중");
 uidText.textContent = "-";
 showLogin();
 
-// 입력값이 보이지 않도록 항상 정리(자동완성/남아있는 값 방지)
 loginPassword.value = "";
 newPass1.value = "";
 deletePwInput.value = "";
 
-// 페이지 로드시 “자동 로그인/연결” 시도하지 않음
-// 단, 세션이 남아있다면 로그인 버튼 클릭 없이도 바로 들어가게 할 수도 있음.
-// 여기서는 "세션이 있어도 Firebase 연결은 필요"하니, 세션이 있으면 안내만 하고 버튼을 누르게 처리.
 if (hasValidSession()) {
-  setError("이전에 로그인한 기록이 있습니다. 보안을 위해 다시 ‘로그인’을 눌러 연결을 완료해 주세요.");
+  // 보안상 “자동 진입”은 안 하고 안내만
+  setError("이전에 로그인한 기록이 있습니다. 보안을 위해 비밀번호 입력 후 ‘로그인’을 눌러 주세요.");
 }
 
-// ====== Firebase Auth 상태 표시 ======
+// Auth 상태 표시만 해줌(자동 로그인 시도 X)
 onAuthStateChanged(auth, (user) => {
-  if (user) {
-    uidText.textContent = user.uid;
-  } else {
-    uidText.textContent = "-";
-  }
+  uidText.textContent = user ? user.uid : "-";
 });
+
+// ====== 보안정보 읽기 ======
+async function readSecurity() {
+  const snap = await get(ref(db, SECURITY_PATH));
+  return snap.exists() ? snap.val() : null;
+}
 
 // ====== 로그인 처리 ======
 async function handleLogin() {
@@ -136,57 +127,38 @@ async function handleLogin() {
   }
 
   loginBtn.disabled = true;
-  setStatus("Firebase 연결 중…");
+  setStatus("Firebase 로그인 중…");
 
   try {
-    // ✅ 여기서만 Firebase 로그인 시도
+    // ✅ 버튼 클릭 시에만 익명 로그인
     const cred = await signInAnonymously(auth);
     const user = cred.user;
 
-    setStatus("보안정보 확인 중…");
-
-    // 보안 문서 읽기
-    const snap = await getDoc(SECURITY_DOC);
+    setStatus("비밀번호 확인 중…");
     const inputHash = await sha256(pw);
+    const sec = await readSecurity();
 
-    if (!snap.exists()) {
-      // ✅ 최초 1회: 입력 비번을 관리자 비번으로 초기 설정
-      await setDoc(SECURITY_DOC, {
+    if (!sec || !sec.adminHash) {
+      // ✅ 최초 1회: 입력 비번으로 초기 설정
+      await set(ref(db, SECURITY_PATH), {
         adminHash: inputHash,
-        deleteHash: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        deleteHash: sec?.deleteHash ?? null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
         createdBy: user.uid
       });
       saveSessionOK();
       setStatus("초기 설정 완료");
       showAdmin();
       loginPassword.value = "";
+      await loadMembers(); // 선수목록 로딩(선택)
       return;
     }
 
-    const data = snap.data() || {};
-    if (!data.adminHash) {
-      // 문서는 있는데 adminHash가 비어있으면 다시 초기 설정
-      await updateDoc(SECURITY_DOC, {
-        adminHash: inputHash,
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid
-      });
-      saveSessionOK();
-      setStatus("초기 비밀번호 설정 완료");
-      showAdmin();
-      loginPassword.value = "";
-      return;
-    }
-
-    // ✅ 비번 검증
-    if (data.adminHash !== inputHash) {
-      // 실패: 관리자 화면으로 안 들어가게 막기
+    if (sec.adminHash !== inputHash) {
       clearSessionOK();
       setStatus("로그인 실패");
       setError("비밀번호가 올바르지 않습니다.");
-      // 필요시 로그아웃(원하면)
       await signOut(auth);
       return;
     }
@@ -196,11 +168,11 @@ async function handleLogin() {
     setStatus("로그인 성공");
     showAdmin();
     loginPassword.value = "";
+    await loadMembers(); // 선수목록 로딩(선택)
   } catch (e) {
     clearSessionOK();
     setStatus("연결 실패");
-    // ✅ 절대 alert로 pw 띄우지 말고, 에러만 표시
-    setError("Firebase 연결/로그인에 실패했습니다. (네트워크/권한/프로젝트 설정 확인)");
+    setError("Firebase 연결/로그인에 실패했습니다. (네트워크/권한/설정 확인)");
     try { await signOut(auth); } catch {}
   } finally {
     loginBtn.disabled = false;
@@ -232,7 +204,7 @@ changePassBtn?.addEventListener("click", async () => {
     return;
   }
   if (!auth.currentUser) {
-    alert("Firebase에 로그인되어 있지 않습니다. 다시 로그인해 주세요.");
+    alert("로그인이 필요합니다. 다시 로그인해 주세요.");
     showLogin();
     return;
   }
@@ -240,9 +212,9 @@ changePassBtn?.addEventListener("click", async () => {
   changePassBtn.disabled = true;
   try {
     const h = await sha256(pw);
-    await updateDoc(SECURITY_DOC, {
+    await update(ref(db, SECURITY_PATH), {
       adminHash: h,
-      updatedAt: serverTimestamp(),
+      updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
     alert("관리자 비밀번호가 저장되었습니다.");
@@ -264,7 +236,7 @@ saveDeletePwBtn?.addEventListener("click", async () => {
     return;
   }
   if (!auth.currentUser) {
-    alert("Firebase에 로그인되어 있지 않습니다. 다시 로그인해 주세요.");
+    alert("로그인이 필요합니다. 다시 로그인해 주세요.");
     showLogin();
     return;
   }
@@ -272,9 +244,9 @@ saveDeletePwBtn?.addEventListener("click", async () => {
   saveDeletePwBtn.disabled = true;
   try {
     const h = await sha256(pw);
-    await updateDoc(SECURITY_DOC, {
+    await update(ref(db, SECURITY_PATH), {
       deleteHash: h,
-      updatedAt: serverTimestamp(),
+      updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
     alert("경기 삭제 비밀번호가 저장되었습니다.");
@@ -283,5 +255,93 @@ saveDeletePwBtn?.addEventListener("click", async () => {
     alert("저장 실패: Firebase 권한/연결을 확인해 주세요.");
   } finally {
     saveDeletePwBtn.disabled = false;
+  }
+});
+
+// =========================
+// 선수(부수) 관리 - RTDB 예시
+// =========================
+function normalizeName(s) {
+  return (s || "").trim();
+}
+function keyFromName(name) {
+  // RTDB key에 안전하게: 공백 제거 + 일부 문자 치환
+  return name.replace(/\s+/g, "").replace(/[.#$/\[\]]/g, "_");
+}
+
+async function loadMembers() {
+  if (!memberList) return;
+  memberList.innerHTML = "";
+
+  try {
+    const snap = await get(ref(db, MEMBERS_PATH));
+    const data = snap.exists() ? snap.val() : {};
+    const arr = Object.entries(data).map(([k, v]) => ({
+      key: k,
+      name: v?.name || k,
+      bu: Number(v?.bu || 8)
+    }));
+
+    // 낮을수록 강함(1부 최강) → 오름차순
+    arr.sort((a, b) => (a.bu - b.bu) || a.name.localeCompare(b.name));
+
+    arr.forEach(item => {
+      const wrap = document.createElement("span");
+      wrap.className = "chipWrap";
+
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip";
+      chip.textContent = `${item.name} · ${item.bu}부`;
+
+      // 간단 삭제(원하면 수정 메뉴로 확장 가능)
+      chip.addEventListener("click", async () => {
+        const ok = confirm(`${item.name} (${item.bu}부) 삭제할까요?`);
+        if (!ok) return;
+        await update(ref(db), { [`${MEMBERS_PATH}/${item.key}`]: null });
+        await loadMembers();
+      });
+
+      wrap.appendChild(chip);
+      memberList.appendChild(wrap);
+    });
+
+  } catch (e) {
+    // 선수목록 로딩 실패는 로그인과 분리
+    console.warn("loadMembers failed", e);
+  }
+}
+
+addMemberBtn?.addEventListener("click", async () => {
+  const name = normalizeName(mName?.value);
+  const bu = Number(mBu?.value || 8);
+
+  if (!auth.currentUser) {
+    alert("로그인이 필요합니다.");
+    showLogin();
+    return;
+  }
+  if (!name) {
+    alert("이름을 입력해 주세요.");
+    return;
+  }
+  if (!Number.isFinite(bu)) {
+    alert("부수를 선택해 주세요.");
+    return;
+  }
+
+  const key = keyFromName(name);
+
+  try {
+    await set(ref(db, `${MEMBERS_PATH}/${key}`), {
+      name,
+      bu,
+      updatedAt: Date.now(),
+      updatedBy: auth.currentUser.uid
+    });
+    mName.value = "";
+    await loadMembers();
+  } catch (e) {
+    alert("저장 실패: 권한/연결을 확인해 주세요.");
   }
 });
