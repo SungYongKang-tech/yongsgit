@@ -1,16 +1,10 @@
-// admin.js (Realtime Database 버전)
-// - firebase.js(export: app, db(getDatabase), auth)를 재사용
-// - 자동 로그인/연결 시도 X
-// - 비번 입력 후 [로그인] 클릭 시에만 익명로그인 + 비번검증
-// - 최초 1회: security가 없으면 입력 비번을 관리자 비번으로 초기 설정
-// - 비번은 SHA-256 해시로 저장(평문 저장 X)
+// admin.js (RTDB 버전, 상태/UID 표시 제거 완료본)
 
 import { auth, db } from "../firebase.js";
 
 import {
   signInAnonymously,
-  signOut,
-  onAuthStateChanged
+  signOut
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
 import {
@@ -28,9 +22,6 @@ const loginPassword = document.getElementById("loginPassword");
 const loginBtn = document.getElementById("loginBtn");
 const loginError = document.getElementById("loginError");
 
-const statusText = document.getElementById("statusText");
-const uidText = document.getElementById("uidText");
-
 const logoutBtn = document.getElementById("logoutBtn");
 
 const newPass1 = document.getElementById("newPass1");
@@ -39,7 +30,7 @@ const changePassBtn = document.getElementById("changePassBtn");
 const deletePwInput = document.getElementById("deletePwInput");
 const saveDeletePwBtn = document.getElementById("saveDeletePwBtn");
 
-// (선수관리까지 연결하려면 여기에 memberList, addMemberBtn 등도 이어붙이면 됩니다)
+// 선수 관리
 const mName = document.getElementById("mName");
 const mBu = document.getElementById("mBu");
 const addMemberBtn = document.getElementById("addMemberBtn");
@@ -57,18 +48,16 @@ function only4Digits(v) {
   return (v || "").replace(/\D/g, "").slice(0, 4);
 }
 function setError(msg) {
+  if (!loginError) return;
   loginError.textContent = msg || "";
 }
-function setStatus(msg) {
-  statusText.textContent = msg || "";
-}
 function showAdmin() {
-  loginSection.style.display = "none";
-  adminSection.style.display = "block";
+  if (loginSection) loginSection.style.display = "none";
+  if (adminSection) adminSection.style.display = "block";
 }
 function showLogin() {
-  adminSection.style.display = "none";
-  loginSection.style.display = "block";
+  if (adminSection) adminSection.style.display = "none";
+  if (loginSection) loginSection.style.display = "block";
 }
 function saveSessionOK() {
   localStorage.setItem(SESSION_KEY, String(Date.now()));
@@ -90,23 +79,16 @@ async function sha256(text) {
 }
 
 // ====== 초기 UI ======
-setStatus("대기중");
-uidText.textContent = "-";
 showLogin();
 
-loginPassword.value = "";
-newPass1.value = "";
-deletePwInput.value = "";
+if (loginPassword) loginPassword.value = "";
+if (newPass1) newPass1.value = "";
+if (deletePwInput) deletePwInput.value = "";
 
 if (hasValidSession()) {
-  // 보안상 “자동 진입”은 안 하고 안내만
+  // 자동 진입은 안 하고 안내만
   setError("비밀번호를 입력해주세요.");
 }
-
-// Auth 상태 표시만 해줌(자동 로그인 시도 X)
-onAuthStateChanged(auth, (user) => {
-  uidText.textContent = user ? user.uid : "-";
-});
 
 // ====== 보안정보 읽기 ======
 async function readSecurity() {
@@ -118,23 +100,21 @@ async function readSecurity() {
 async function handleLogin() {
   setError("");
 
-  const pw = only4Digits(loginPassword.value);
-  loginPassword.value = pw;
+  const pw = only4Digits(loginPassword?.value);
+  if (loginPassword) loginPassword.value = pw;
 
   if (pw.length !== 4) {
     setError("비밀번호는 4자리 숫자여야 합니다.");
     return;
   }
 
-  loginBtn.disabled = true;
-  setStatus("Firebase 로그인 중…");
+  loginBtn && (loginBtn.disabled = true);
 
   try {
     // ✅ 버튼 클릭 시에만 익명 로그인
     const cred = await signInAnonymously(auth);
     const user = cred.user;
 
-    setStatus("비밀번호 확인 중…");
     const inputHash = await sha256(pw);
     const sec = await readSecurity();
 
@@ -148,16 +128,14 @@ async function handleLogin() {
         createdBy: user.uid
       });
       saveSessionOK();
-      setStatus("초기 설정 완료");
       showAdmin();
-      loginPassword.value = "";
-      await loadMembers(); // 선수목록 로딩(선택)
+      if (loginPassword) loginPassword.value = "";
+      await loadMembers();
       return;
     }
 
     if (sec.adminHash !== inputHash) {
       clearSessionOK();
-      setStatus("로그인 실패");
       setError("비밀번호가 올바르지 않습니다.");
       await signOut(auth);
       return;
@@ -165,39 +143,36 @@ async function handleLogin() {
 
     // 성공
     saveSessionOK();
-    setStatus("로그인 성공");
     showAdmin();
-    loginPassword.value = "";
-    await loadMembers(); // 선수목록 로딩(선택)
+    if (loginPassword) loginPassword.value = "";
+    await loadMembers();
   } catch (e) {
     clearSessionOK();
-    setStatus("연결 실패");
     setError("Firebase 연결/로그인에 실패했습니다. (네트워크/권한/설정 확인)");
     try { await signOut(auth); } catch {}
   } finally {
-    loginBtn.disabled = false;
+    loginBtn && (loginBtn.disabled = false);
   }
 }
 
-loginBtn.addEventListener("click", handleLogin);
-loginPassword.addEventListener("keydown", (e) => {
+loginBtn?.addEventListener("click", handleLogin);
+loginPassword?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") handleLogin();
 });
 
 // ====== 로그아웃 ======
 logoutBtn?.addEventListener("click", async () => {
   clearSessionOK();
-  setStatus("로그아웃");
   setError("");
   showLogin();
-  loginPassword.value = "";
+  if (loginPassword) loginPassword.value = "";
   try { await signOut(auth); } catch {}
 });
 
 // ====== 관리자 비번 변경 ======
 changePassBtn?.addEventListener("click", async () => {
-  const pw = only4Digits(newPass1.value);
-  newPass1.value = pw;
+  const pw = only4Digits(newPass1?.value);
+  if (newPass1) newPass1.value = pw;
 
   if (pw.length !== 4) {
     alert("관리자 비밀번호는 4자리 숫자여야 합니다.");
@@ -218,7 +193,7 @@ changePassBtn?.addEventListener("click", async () => {
       updatedBy: auth.currentUser.uid
     });
     alert("관리자 비밀번호가 저장되었습니다.");
-    newPass1.value = "";
+    if (newPass1) newPass1.value = "";
   } catch (e) {
     alert("저장 실패: Firebase 권한/연결을 확인해 주세요.");
   } finally {
@@ -228,8 +203,8 @@ changePassBtn?.addEventListener("click", async () => {
 
 // ====== 경기 삭제 비번 저장 ======
 saveDeletePwBtn?.addEventListener("click", async () => {
-  const pw = only4Digits(deletePwInput.value);
-  deletePwInput.value = pw;
+  const pw = only4Digits(deletePwInput?.value);
+  if (deletePwInput) deletePwInput.value = pw;
 
   if (pw.length !== 4) {
     alert("삭제 비밀번호는 4자리 숫자여야 합니다.");
@@ -250,7 +225,7 @@ saveDeletePwBtn?.addEventListener("click", async () => {
       updatedBy: auth.currentUser.uid
     });
     alert("경기 삭제 비밀번호가 저장되었습니다.");
-    deletePwInput.value = "";
+    if (deletePwInput) deletePwInput.value = "";
   } catch (e) {
     alert("저장 실패: Firebase 권한/연결을 확인해 주세요.");
   } finally {
@@ -259,13 +234,12 @@ saveDeletePwBtn?.addEventListener("click", async () => {
 });
 
 // =========================
-// 선수(부수) 관리 - RTDB 예시
+// 선수(부수) 관리
 // =========================
 function normalizeName(s) {
   return (s || "").trim();
 }
 function keyFromName(name) {
-  // RTDB key에 안전하게: 공백 제거 + 일부 문자 치환
   return name.replace(/\s+/g, "").replace(/[.#$/\[\]]/g, "_");
 }
 
@@ -276,13 +250,21 @@ async function loadMembers() {
   try {
     const snap = await get(ref(db, MEMBERS_PATH));
     const data = snap.exists() ? snap.val() : {};
-    const arr = Object.entries(data).map(([k, v]) => ({
-      key: k,
-      name: v?.name || k,
-      bu: Number(v?.bu || 8)
-    }));
 
-    // 낮을수록 강함(1부 최강) → 오름차순
+    const arr = Object.entries(data).map(([k, v]) => {
+      if (v && typeof v === "object") {
+        return {
+          key: k,
+          name: v.name || v.fullName || k,
+          bu: Number(v.bu ?? v.level ?? v.rank ?? 8)
+        };
+      }
+      if (typeof v === "number") {
+        return { key: k, name: k, bu: Number(v) };
+      }
+      return { key: k, name: String(v || k), bu: 8 };
+    });
+
     arr.sort((a, b) => (a.bu - b.bu) || a.name.localeCompare(b.name));
 
     arr.forEach(item => {
@@ -294,7 +276,6 @@ async function loadMembers() {
       chip.className = "chip";
       chip.textContent = `${item.name} · ${item.bu}부`;
 
-      // 간단 삭제(원하면 수정 메뉴로 확장 가능)
       chip.addEventListener("click", async () => {
         const ok = confirm(`${item.name} (${item.bu}부) 삭제할까요?`);
         if (!ok) return;
@@ -305,9 +286,7 @@ async function loadMembers() {
       wrap.appendChild(chip);
       memberList.appendChild(wrap);
     });
-
   } catch (e) {
-    // 선수목록 로딩 실패는 로그인과 분리
     console.warn("loadMembers failed", e);
   }
 }
@@ -339,7 +318,7 @@ addMemberBtn?.addEventListener("click", async () => {
       updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
-    mName.value = "";
+    if (mName) mName.value = "";
     await loadMembers();
   } catch (e) {
     alert("저장 실패: 권한/연결을 확인해 주세요.");
