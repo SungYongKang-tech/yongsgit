@@ -10,11 +10,11 @@ import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/fi
 
 /* =========================
    ✅ Lesson Admin Password Gate
-   - 관리자 비밀번호(config/adminPasswordPlain)와 같아야 입장
+   - 관리자 비밀번호(config/adminPassword)와 같아야 입장
    - 6시간 세션 유지
 ========================= */
 const CONFIG_PATH = "config";
-const ADMIN_PW_FIELD = "adminPasswordPlain";
+const ADMIN_PW_FIELD = "adminPassword";
 
 const LESSON_SESSION_KEY = "koen_lesson_admin_ok_at";
 const LESSON_SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
@@ -36,7 +36,7 @@ function hasValidLessonSession(){
   return ok;
 }
 
-async function readAdminPasswordPlain(){
+async function readAdminPassword(){
   const snap = await get(ref(db, CONFIG_PATH));
   const cfg = snap.exists() ? (snap.val() || {}) : {};
   return String(cfg?.[ADMIN_PW_FIELD] || "").trim();
@@ -49,7 +49,7 @@ async function ensureLessonAdminGate(){
   // ✅ config 읽으려면 익명 로그인 필요(규칙에 따라)
   await signInAnonymously(auth);
 
-  const realPw = await readAdminPasswordPlain();
+  const realPw = await readAdminPassword();
   if(!realPw){
     alert("관리자 비밀번호가 설정되어 있지 않습니다.\n관리자 페이지에서 먼저 설정해 주세요.");
     location.href = "./index.html";
