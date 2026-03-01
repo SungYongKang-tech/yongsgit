@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🏓 월간 단식·복식 리그 리포트</title>
+<title>🏓 월간 단식 리그 리포트</title>
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 :root{
@@ -25,6 +25,7 @@ h1{margin:4px 0 10px;color:var(--accent);
   font-size:14px;background:#fff;cursor:pointer;font-weight:600;}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 main{max-width:900px;margin:0 auto;padding:10px 10px 60px;}
+
 table{width:100%;border-collapse:collapse;background:var(--card);
   box-shadow:var(--shadow);border-radius:12px;overflow:hidden;font-size:15px;}
 thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;
@@ -33,6 +34,7 @@ tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center;}
 tbody tr:hover{background:#f9fafb}
 .win{color:var(--ok);font-weight:700;}
 .lose{color:var(--danger);font-weight:700;}
+
 .totalNote{
   text-align:center;margin-top:12px;
   font-size:17px;font-weight:800;
@@ -44,16 +46,10 @@ tbody tr:hover{background:#f9fafb}
   text-align:center;font-size:14px;color:#475569;
   margin-top:8px;margin-bottom:20px;
 }
-.prevWrap{
-  margin-top:16px;
-  display:flex; flex-direction:column; gap:16px;
-}
+
+.prevWrap{ margin-top:16px; display:flex; flex-direction:column; gap:16px; }
 .prevTitle{
-  text-align:center;
-  font-size:16px;
-  color:#334155;
-  font-weight:900;
-  margin:18px 0 10px;
+  text-align:center;font-size:16px;color:#334155;font-weight:900;margin:18px 0 10px;
 }
 .monthCard{
   background:#ffffff;
@@ -70,9 +66,8 @@ tbody tr:hover{background:#f9fafb}
   color:#1e3a8a;
   text-align:center;
 }
-.monthCard .inner{
-  padding:10px 10px 14px;
-}
+.monthCard .inner{ padding:10px 10px 14px; }
+
 @media(max-width:640px){
   table{font-size:13px;} thead th, tbody td{padding:7px 1px;}
   .totalNote{font-size:15px;padding:5px 10px;}
@@ -81,7 +76,7 @@ tbody tr:hover{background:#f9fafb}
 </head>
 <body>
 <header>
-  <h1 id="pageHeader">🏓 월간 단식·복식 리그 리포트</h1>
+  <h1 id="pageHeader">🏓 월간 단식 리그 리포트</h1>
   <div style="display:flex;justify-content:center;gap:8px;">
     <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
     <a href="monthly-report.html" class="btn primary">통합 전적</a>
@@ -90,12 +85,14 @@ tbody tr:hover{background:#f9fafb}
 
 <main>
   <section id="singleSection"></section>
-  <section id="doubleSection"></section>
 </main>
 
 <script type="module">
 import { db } from "../firebase.js";
-import { ref, onValue, remove, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+/* ✅ 화면에 보여줄 개월 수 (DB는 삭제 안 함) */
+const SHOW_MONTHS = 3; // 3이면: 이번달 + 이전2개월 (3,2,1)
 
 /* =========================
    Title (config/title) 동일 적용
@@ -103,14 +100,13 @@ import { ref, onValue, remove, get } from "https://www.gstatic.com/firebasejs/10
 const titleRef = ref(db, "config/title");
 get(titleRef).then(snap=>{
   const title = snap.exists() ? snap.val() : "우리회사";
-  document.getElementById("pageHeader").textContent = `🏓 ${title} 월간 단·복식 리포트`;
+  document.getElementById("pageHeader").textContent = `🏓 ${title} 월간 단식 리포트`;
 });
 
 /* =========================
    Helpers
 ========================= */
 function formatNum(n){ return (Math.round(n*10)/10).toFixed(1); }
-function teamKey(arr){ return (arr||[]).slice().sort((a,b)=>a.localeCompare(b)).join(', '); }
 function monthKeyOf(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
@@ -118,31 +114,24 @@ function daysInMonth(year, monthIndex0){
   return new Date(year, monthIndex0 + 1, 0).getDate();
 }
 function recentMonthKeys(now, count=3){
-  // count=3 => 이번달 + 이전2개월
   const out = [];
   for(let i=0;i<count;i++){
     const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
     out.push(monthKeyOf(d));
   }
-  return out; // [this, prev1, prev2]
+  return out; // [this, prev1, prev2 ...] 최신순
 }
 function minGamesSingleForMonth(monthKey, now){
   const [y,m] = monthKey.split("-").map(Number);
   const isThis = monthKey === monthKeyOf(now);
-  const day = isThis ? now.getDate() : daysInMonth(y, m-1);
+  const day = isThis ? now.getDate() : daysInMonth(y, m-1); // 과거달은 말일 기준
   return Math.ceil(day / 3);
-}
-function minGamesDoubleForMonth(monthKey, now){
-  const [y,m] = monthKey.split("-").map(Number);
-  const isThis = monthKey === monthKeyOf(now);
-  const day = isThis ? now.getDate() : daysInMonth(y, m-1);
-  return Math.ceil(day / 7);
 }
 
 /* =========================
    members -> name:bu 맵핑
 ========================= */
-let playerLevels = {}; // { "홍길동": 7, ... }
+let playerLevels = {};
 const memberRef = ref(db, "members");
 onValue(memberRef, (snap)=>{
   const data = snap.val() || {};
@@ -155,89 +144,42 @@ onValue(memberRef, (snap)=>{
 });
 
 /* =========================
-   matches 읽어서 월별 단/복식 통계
-   + 3개월 이전 match 정리(1회)
+   matches 읽어서 "단식"만 월별 통계
+   ✅ DB 삭제(remove) 없음
 ========================= */
-let cleanedOldMatches = false;
-
-onValue(ref(db,"matches"), async (snap)=>{
+onValue(ref(db,"matches"), (snap)=>{
   const data = snap.val() || {};
   const now = new Date();
 
-  // ✅ 최근 3개월(이번달+이전2개월)만 화면에 표시
-  const keepMonths = recentMonthKeys(now, 3); // [this, prev1, prev2]
+  // ✅ UI에 보여줄 월(최신순)
+  const keepMonths = recentMonthKeys(now, SHOW_MONTHS);
   const thisMonth = keepMonths[0];
+  const prevMonths = keepMonths.slice(1); // 최신달이 앞쪽
 
-  // ✅ DB 정리 기준: "3개월 이전" 삭제 (즉, 이번달+이전2개월 유지)
-  // 예) 3월이면 12월 이하 삭제 (1~3월 유지)
-  const cutoffDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-  const cutoffMonth = monthKeyOf(cutoffDate);
-
-  if (!cleanedOldMatches) {
-    cleanedOldMatches = true;
-    Object.entries(data).forEach(([id, m]) => {
-      if (m && m.monthKey && m.monthKey <= cutoffMonth) {
-        remove(ref(db, `matches/${id}`));
-      }
-    });
-  }
-
-  // 월별 누적용
-  const statsSingleByMonth = {}; // { "2026-03": {name:{win,lose}}, ... }
-  const statsDoubleByMonth = {}; // { "2026-03": {team:{win,lose,points}}, ... }
-
-  // 초기화
-  keepMonths.forEach(mk=>{
-    statsSingleByMonth[mk] = {};
-    statsDoubleByMonth[mk] = {};
-  });
+  // 월별 누적용 (단식만)
+  const statsSingleByMonth = {};
+  keepMonths.forEach(mk=> statsSingleByMonth[mk] = {});
 
   Object.values(data).forEach(m=>{
     if(!m || !m.monthKey) return;
     if(!keepMonths.includes(m.monthKey)) return;
+    if(m.mode !== "single") return;
 
     const mk = m.monthKey;
+    const statsSingle = statsSingleByMonth[mk];
 
-    // 단식
-    if(m.mode === "single"){
-      const statsSingle = statsSingleByMonth[mk];
-      const names = [...(m.namesA||[]), ...(m.namesB||[])];
+    const names = [...(m.namesA||[]), ...(m.namesB||[])];
+    names.forEach(n=>{ if(!statsSingle[n]) statsSingle[n] = {win:0,lose:0}; });
 
-      names.forEach(n=>{ if(!statsSingle[n]) statsSingle[n] = {win:0,lose:0}; });
-
-      if(m.winnerSide==='A'){
-        (m.namesA||[]).forEach(n=>statsSingle[n].win++);
-        (m.namesB||[]).forEach(n=>statsSingle[n].lose++);
-      } else if(m.winnerSide==='B'){
-        (m.namesB||[]).forEach(n=>statsSingle[n].win++);
-        (m.namesA||[]).forEach(n=>statsSingle[n].lose++);
-      }
-    }
-
-    // 복식
-    if(m.mode === "double"){
-      const statsDouble = statsDoubleByMonth[mk];
-      const teamA = teamKey(m.namesA||[]);
-      const teamB = teamKey(m.namesB||[]);
-      [teamA, teamB].forEach(t=>{
-        if(!t) return;
-        if(!statsDouble[t]) statsDouble[t] = {win:0,lose:0,points:0};
-      });
-
-      if(!teamA || !teamB) return;
-
-      // 승점: 승리 +2 / 패배 -1
-      if(m.winnerSide==='A'){
-        statsDouble[teamA].win++;  statsDouble[teamA].points += 2;
-        statsDouble[teamB].lose++; statsDouble[teamB].points -= 1;
-      } else if(m.winnerSide==='B'){
-        statsDouble[teamB].win++;  statsDouble[teamB].points += 2;
-        statsDouble[teamA].lose++; statsDouble[teamA].points -= 1;
-      }
+    if(m.winnerSide==='A'){
+      (m.namesA||[]).forEach(n=>statsSingle[n].win++);
+      (m.namesB||[]).forEach(n=>statsSingle[n].lose++);
+    } else if(m.winnerSide==='B'){
+      (m.namesB||[]).forEach(n=>statsSingle[n].win++);
+      (m.namesA||[]).forEach(n=>statsSingle[n].lose++);
     }
   });
 
-  // 월별 정렬된 배열로 변환
   function buildSingleArr(statsSingle){
     return Object.entries(statsSingle).map(([name,s])=>{
       const total = s.win + s.lose;
@@ -246,34 +188,12 @@ onValue(ref(db,"matches"), async (snap)=>{
     }).sort((a,b)=>b.rate-a.rate || b.win-a.win || b.total-a.total);
   }
 
-  function buildDoubleArr(statsDouble){
-    return Object.entries(statsDouble).map(([team,s])=>{
-      const total = s.win + s.lose;
-      const rate = total ? (s.win/total*100) : 0;
-
-      const teamNames = team.split(",").map(n=>n.trim()).filter(Boolean);
-      const levelSum = teamNames.reduce((sum,n)=> sum + (Number(playerLevels[n]) || 99), 0);
-
-      return {team,total,win:s.win,lose:s.lose,rate,points:s.points,levelSum};
-    }).sort((a,b)=>
-      (b.points - a.points) ||
-      (b.rate - a.rate) ||
-      (b.total - a.total) ||
-      (a.levelSum - b.levelSum)
-    );
-  }
-
   const singleByMonthArr = {};
-  const doubleByMonthArr = {};
   keepMonths.forEach(mk=>{
     singleByMonthArr[mk] = buildSingleArr(statsSingleByMonth[mk] || {});
-    doubleByMonthArr[mk] = buildDoubleArr(statsDoubleByMonth[mk] || {});
   });
 
-  // 렌더: 이번달 + 이전달(최근달이 위)
-  const prevMonths = keepMonths.slice(1); // [prev1, prev2] (이미 최신순)
   renderSinglesMonthStack(singleByMonthArr, thisMonth, prevMonths, now);
-  renderDoublesMonthStack(doubleByMonthArr, thisMonth, prevMonths, now);
 });
 
 /* =========================
@@ -290,7 +210,7 @@ function renderSinglesMonthStack(byMonthArr, thisMonth, prevMonths, now){
   const qualifiedThis = arrThis.filter(p=>p.total>=minGamesThis);
   const unqualifiedThis = arrThis.filter(p=>p.total<minGamesThis);
 
-  // 이전달들(최근달이 맨 위)
+  // 이전달들(최근달이 위)
   const prevHtml = prevMonths.map(mk=>{
     const arr = byMonthArr[mk] || [];
     const totalMatches = Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
@@ -375,132 +295,6 @@ function renderSinglesMonthStack(byMonthArr, thisMonth, prevMonths, now){
     </table>
     <p class="totalNote">🔹 전체 경기 수: <b>${totalMatchesThis} 경기</b></p>
     <p class="ruleNote">⚖️ 순위 기준: <b>3일에 1경기 이상 (${minGamesThis}경기↑)</b> / 정렬: 승률 → 승수</p>
-
-    <div class="prevWrap">
-      <div class="prevTitle">이전달 성적 (최근달이 위)</div>
-      ${prevHtml || `<div style="text-align:center;color:#64748b;">표시할 이전달 기록이 없습니다.</div>`}
-    </div>
-  `;
-}
-
-/* =========================
-   Render - Doubles (이번달 + 이전달들)
-========================= */
-function renderDoublesMonthStack(byMonthArr, thisMonth, prevMonths, now){
-  const sec = document.getElementById("doubleSection");
-
-  const teamText = (teamStr) => {
-    return teamStr.split(",").map(n=>{
-      const name = n.trim();
-      const lvl = (name && playerLevels[name] != null) ? playerLevels[name] : "-";
-      return `${name}(${lvl})`;
-    }).join(", ");
-  };
-
-  // 이번달
-  const arrThis = byMonthArr[thisMonth] || [];
-  const totalMatchesThis = Math.round(arrThis.reduce((s,p)=>s+p.total,0)/2);
-  const minGamesThis = minGamesDoubleForMonth(thisMonth, now);
-
-  const qualifiedThis = arrThis.filter(t => t.total >= minGamesThis);
-  const unqualifiedThis = arrThis.filter(t => t.total < minGamesThis);
-
-  // 이전달들(최근달이 맨 위)
-  const prevHtml = prevMonths.map(mk=>{
-    const arr = byMonthArr[mk] || [];
-    const totalMatches = Math.round(arr.reduce((s,p)=>s+p.total,0)/2);
-    const minGames = minGamesDoubleForMonth(mk, now);
-
-    const qualified = arr.filter(t => t.total >= minGames);
-    const unqualified = arr.filter(t => t.total < minGames);
-
-    return `
-      <div class="monthCard">
-        <div class="bar">📅 ${mk} 복식</div>
-        <div class="inner">
-          <table>
-            <thead>
-              <tr>
-                <th>순위</th><th>팀 구성(부수)</th><th>경기</th><th>승/패</th><th>승률</th><th>승점</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(qualified.length===0 && unqualified.length===0) ? `
-                <tr><td colspan="6" style="padding:14px;color:#64748b;">기록이 없습니다.</td></tr>
-              ` : `
-                ${qualified.map((t,i)=>`
-                  <tr style="background:#e0f2fe">
-                    <td>${i+1}</td>
-                    <td>${teamText(t.team)}</td>
-                    <td>${t.total}</td>
-                    <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-                    <td>${formatNum(t.rate)}%</td>
-                    <td>${t.points}</td>
-                  </tr>`).join('')}
-                ${unqualified.map(t=>`
-                  <tr style="background:#f9fafb">
-                    <td>–</td>
-                    <td>${teamText(t.team)}</td>
-                    <td>${t.total}</td>
-                    <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-                    <td>${formatNum(t.rate)}%</td>
-                    <td>${t.points}</td>
-                  </tr>`).join('')}
-              `}
-            </tbody>
-          </table>
-          <div style="text-align:center;margin-top:10px;">
-            <span class="totalNote">🔹 전체 경기 수: <b>${totalMatches} 경기</b></span>
-          </div>
-          <p class="ruleNote">
-            ⚖️ 기준: <b>7일에 1경기 이상 (${minGames}경기↑)</b> /
-            정렬: 승점 → 승률 → 경기수 → 부수합(낮을수록↑)
-          </p>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  sec.innerHTML = `
-    <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:28px 0 14px;font-weight:800;">
-      👥 복식 리그 순위 (${thisMonth})<br/>— 승점( 승리 +2 / 패배 −1 )
-    </h2>
-    <table>
-      <thead>
-        <tr>
-          <th>순위</th><th>팀 구성(부수)</th><th>경기</th><th>승/패</th><th>승률</th><th>승점</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${qualifiedThis.map((t,i)=>`
-          <tr style="background:#e0f2fe">
-            <td>${i+1}</td>
-            <td>${teamText(t.team)}</td>
-            <td>${t.total}</td>
-            <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-            <td>${formatNum(t.rate)}%</td>
-            <td>${t.points}</td>
-          </tr>`).join('')}
-        ${unqualifiedThis.map(t=>`
-          <tr style="background:#f9fafb">
-            <td>–</td>
-            <td>${teamText(t.team)}</td>
-            <td>${t.total}</td>
-            <td><span class="win">${t.win}</span>/<span class="lose">${t.lose}</span></td>
-            <td>${formatNum(t.rate)}%</td>
-            <td>${t.points}</td>
-          </tr>`).join('')}
-        ${(qualifiedThis.length===0 && unqualifiedThis.length===0) ? `
-          <tr><td colspan="6" style="padding:14px;color:#64748b;">이번달 기록이 없습니다.</td></tr>
-        ` : ``}
-      </tbody>
-    </table>
-    <p class="totalNote">🔹 전체 경기 수: <b>${totalMatchesThis} 경기</b></p>
-    <p class="ruleNote">
-      ⚖️ 순위 기준: <b>7일에 1경기 이상 (${minGamesThis}경기↑)</b> /
-      정렬: 승점 → 승률 → 경기수 → 부수합(낮을수록↑) /
-      하늘색: 기준 충족
-    </p>
 
     <div class="prevWrap">
       <div class="prevTitle">이전달 성적 (최근달이 위)</div>
