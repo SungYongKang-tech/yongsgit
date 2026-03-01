@@ -505,6 +505,61 @@
       await update(ref(db), updatesObj);
     }
 
+    // ✅ 중복 출전 없는 경기(새 선수) 먼저 배치하는 재정렬(그리디)
+// - singles: ["A vs B"]에서 이름 추출
+// - doubles: ["A/A2 vs B/B2"]에서 이름 추출
+function reorderMatchesNoDupFirst(items, getNames){
+  const remain = items.slice();
+  const ordered = [];
+  const used = new Set();
+
+  while (remain.length){
+    let bestIdx = 0;
+    let bestOverlap = Infinity;   // 이미 쓴 이름과 겹치는 수 (낮을수록 좋음)
+    let bestNewCount = -1;        // 새로 등장하는 이름 수 (높을수록 좋음)
+
+    for (let i=0;i<remain.length;i++){
+      const names = getNames(remain[i]);
+      let overlap = 0, newCount = 0;
+      for (const n of names){
+        if (!n) continue;
+        if (used.has(n)) overlap++;
+        else newCount++;
+      }
+
+      // 1) overlap 최소
+      // 2) 새 이름 최대
+      if (overlap < bestOverlap || (overlap === bestOverlap && newCount > bestNewCount)){
+        bestOverlap = overlap;
+        bestNewCount = newCount;
+        bestIdx = i;
+      }
+    }
+
+    const pick = remain.splice(bestIdx, 1)[0];
+    ordered.push(pick);
+
+    for (const n of getNames(pick)){
+      if (n) used.add(n);
+    }
+  }
+
+  return ordered;
+}
+
+// ✅ 단식 매치에서 이름 2명 뽑기
+function namesFromSingle(m){
+  // m: {a:{name}, b:{name}} 형태
+  return [m?.a?.name, m?.b?.name].map(x => String(x||"").trim()).filter(Boolean);
+}
+
+// ✅ 복식 매치에서 이름 4명 뽑기
+function namesFromDouble(m){
+  // m: {a1,a2,b1,b2}
+  return [m?.a1?.name, m?.a2?.name, m?.b1?.name, m?.b2?.name]
+    .map(x => String(x||"").trim()).filter(Boolean);
+}
+
     /* ---------------- 자동 대진 생성 ---------------- */
     async function autoMatch() {
       if (autoMode !== 0 && autoMode !== 1) {
@@ -568,7 +623,9 @@
           }
 
           const doubles = generateDoublesPairsByMode(doublesA, doublesB, doublesCnt, autoMode, teamA, teamB);
-
+          // ✅ (추가) 중복 출전 없는 경기 우선으로 순서 재정렬
+          singles = reorderMatchesNoDupFirst(singles, namesFromSingle);
+          let doublesOrdered = reorderMatchesNoDupFirst(doubles, namesFromDouble);
           while (doubles.length < doublesCnt) {
             doubles.push({
               a1: { name: "미정", level: "?" },
@@ -588,13 +645,13 @@
             });
           });
 
-          doubles.forEach((m, idx) => {
-            matchList.push({
-              label: `${idx + 1}복`,
-              players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
-              result: "-"
-            });
-          });
+         doublesOrdered.forEach((m, idx) => {
+  matchList.push({
+    label: `${idx + 1}복`,
+    players: `${m.a1.name}(${m.a1.level})/${m.a2.name}(${m.a2.level}) vs ${m.b1.name}(${m.b1.level})/${m.b2.name}(${m.b2.level})`,
+    result: "-"
+  });
+});
 
           const key = `${teamA}_vs_${teamB}`;
           // ✅ matches/${key} → ${MATCHES_KEY}/${key}
