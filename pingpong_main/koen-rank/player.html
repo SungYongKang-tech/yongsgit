@@ -245,15 +245,19 @@ async function loadMembersByName(){
 
 async function autoMonthCloseIfNeeded(){
   const now = kstNow();
-  const month = yyyymm(now);
   const today = now.getDate();
   const lastDay = lastDayOfMonthKST(now);
 
-  // 월말(말일) 또는 다음달 1일에만 실행
+  // 월말(말일) 또는 익월 1일에만 실행
   const shouldRun = (today === lastDay) || (today === 1);
   if (!shouldRun) return;
 
-  // 잠금 체크
+  // ✅ targetMonth 결정: 1일이면 "지난달"을 마감해야 함
+  const target = new Date(now);
+  if (today === 1) target.setMonth(target.getMonth() - 1);
+  const month = yyyymm(target);
+
+  // ✅ 잠금 체크도 targetMonth 기준
   const lockSnap = await get(ref(db, `monthlyReports/${month}/meta/closed`));
   if (lockSnap.exists() && lockSnap.val() === true) return;
 
@@ -261,15 +265,28 @@ async function autoMonthCloseIfNeeded(){
   const mSnap = await get(ref(db,'matches'));
   if (!mSnap.exists()) return;
 
-  const matches = Object.values(mSnap.val() || {});
-  if (!matches.length) return;
+  const allMatches = Object.values(mSnap.val() || {});
+  if (!allMatches.length) return;
+
+  // ✅ targetMonth의 경기만 집계 (monthKey가 있으면 그걸 우선 사용)
+  const targetMatches = allMatches.filter(m=>{
+    const mk = String(m?.monthKey || "").trim();
+    if (mk) return mk === month;
+
+    // monthKey가 없다면 playedAt/ts 같은 시간 필드가 있는 경우로 보정(있을 때만)
+    const ts = m?.playedAt ?? m?.ts ?? m?.createdAt ?? null;
+    if (!ts) return true; // (안전 fallback) 기존처럼 전부 집계하되, 가능하면 monthKey를 넣는 걸 추천
+    return yyyymm(KST(ts)) === month;
+  });
+
+  if (!targetMatches.length) return;
 
   const membersByName = await loadMembersByName();
 
   // 선수별 집계
   const agg = {}; // uid -> {uid,name,bu,total,win,lose}
 
-  for (const m of matches){
+  for (const m of targetMatches){
     if (!['A','B'].includes(m?.winnerSide)) continue;
 
     const sideA = (m.namesA || []).map(s=>String(s).trim());
@@ -314,12 +331,13 @@ async function autoMonthCloseIfNeeded(){
     month,
     closed: true,
     closedAt: nowMs,
-    closedDate: ymd(now),
-    source: "matches-auto"
+    closedDate: ymd(now),      // 실행일(1일/말일)
+    source: "matches-auto",
+    matchCount: targetMatches.length // ✅ 디버깅용
   };
 
   await update(ref(db), updates);
-  console.log("[월마감 자동저장 완료]", month, "players:", Object.keys(agg).length, "matches:", matches.length);
+  console.log("[월마감 자동저장 완료]", month, "players:", Object.keys(agg).length, "matches:", targetMatches.length);
 }
 
 /* =========================
