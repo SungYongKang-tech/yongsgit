@@ -348,14 +348,18 @@ async function loadMonthlyReportsThisYear(){
   if (!snap.exists()) return;
 
   const reports = snap.val() || {};
-  const year = String(kstNow().getFullYear()); // KST 기준 올해
+  const now = kstNow();
+  const year = String(now.getFullYear());
+  const curMonth = yyyymm(now);          // ✅ 현재 달(진행중)
 
   months = [];
   perMonthAll = {};
 
   Object.keys(reports).forEach((m)=>{
     if (!/^\d{4}-\d{2}$/.test(m)) return;
-    if (!m.startsWith(year + "-")) return; // 올해만 (원치 않으면 이 줄 삭제)
+    if (!m.startsWith(year + "-")) return;
+
+    if (m === curMonth) return;          // ✅ 진행중인 달은 월마감 목록에서 제외
 
     const playersObj = reports[m]?.players || null;
     if (!playersObj) return;
@@ -373,7 +377,7 @@ async function loadMonthlyReportsThisYear(){
     months.push(m);
   });
 
-  months = [...new Set(months)].sort(); // 월 정렬
+  months = [...new Set(months)].sort(); // 필요하면 .reverse()
 }
 
 /* =========================
