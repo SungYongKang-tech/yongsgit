@@ -156,20 +156,70 @@ h1{margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-
 
 <script type="module">
 /* =========================
-   Firebase
+   화면 디버그/에러 출력
 ========================= */
-import { db } from "../firebase.js";
-import {
-  ref, get, query, orderByChild, equalTo
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+const $ = (s)=>document.querySelector(s);
+function showErr(msg){
+  const box = $("#errBox");
+  if(!box) { alert(msg); return; }
+  box.style.display = "block";
+  box.textContent = msg;
+}
+function log(msg){
+  console.log(msg);
+  const box = $("#errBox");
+  if(box){
+    box.style.display = "block";
+    box.textContent += (box.textContent ? "\n" : "") + msg;
+  }
+}
+
+/* =========================
+   Firebase 모듈: 경로 자동 탐색
+========================= */
+let db;
+let rtdb;
+
+async function loadFirebase(){
+  // ✅ 여기 후보 경로 중 하나가 맞을 겁니다.
+  const candidates = [
+    "./firebase.js",
+    "../firebase.js",
+    "../../firebase.js",
+    "../../../firebase.js",
+  ];
+
+  let lastErr = null;
+  for (const path of candidates){
+    try{
+      const mod = await import(path);
+      if(mod?.db){
+        db = mod.db;
+        log("✅ firebase.js 로드 성공: " + path);
+        break;
+      }
+    }catch(e){
+      lastErr = e;
+    }
+  }
+
+  if(!db){
+    throw new Error(
+      "firebase.js 경로를 찾지 못했습니다.\n" +
+      "player.html 파일 위치 기준으로 firebase.js 경로를 확인하세요.\n" +
+      "마지막 오류: " + (lastErr?.message || String(lastErr))
+    );
+  }
+
+  rtdb = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js");
+  log("✅ firebase-database 모듈 로드 성공");
+}
 
 /* =========================
    Utils
 ========================= */
-const $ = (s)=>document.querySelector(s);
 const pad2 = n => String(n).padStart(2,'0');
 const fmt1 = n => (Math.round(n*10)/10).toFixed(1);
-
 function kstNow(){
   return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
 }
@@ -189,18 +239,12 @@ function monthRange(fromYm, toYm){ // inclusive
     out.push(cur);
     if(cur === toYm) break;
     cur = monthAdd(cur, 1);
-    if(out.length>600) break; // 안전장치
+    if(out.length>600) break;
   }
   return out;
 }
-function safeName(s){ return String(s??"").trim(); }
-function winRate(win, total){ return total ? (win/total*100) : 0; }
-
-function showErr(msg){
-  const box = $("#errBox");
-  box.style.display = "block";
-  box.textContent = msg;
-}
+const safeName = s => String(s??"").trim();
+const winRate = (w,t)=> t ? (w/t*100) : 0;
 
 /* =========================
    Query Param
@@ -209,32 +253,31 @@ const params = new URLSearchParams(location.search);
 const playerName = safeName(params.get("name") || "");
 
 /* =========================
-   Data holders
+   요구사항 기준 데이터
 ========================= */
 const START_MONTH = "2026-01";
 
-let playerLevels = {}; // name -> bu
+// members bu
+let playerLevels = {};
 
-// 1) 전체누적(월마감) : 2026-01~지난달
+// 1) 월마감(지난달까지)
 let allTotal=0, allWin=0, allLose=0;
 
-// 2) 이번달 실시간 : 단식/복식
+// 2) 이번달 실시간
 let tmSglT=0, tmSglW=0, tmSglL=0;
 let tmDblT=0, tmDblW=0, tmDblL=0;
 
-// 3) 상대/파트너 집계
-// 지난달까지(전체)
-let allOppSingles = {};   // opp -> {win,lose}
-let allPartnerDoubles = {}; // partner -> {win,lose}
-// 이번달
+// 3) 상대/파트너 맵
+let allOppSingles = {};
+let allPartnerDoubles = {};
 let tmOppSingles = {};
 let tmPartnerDoubles = {};
 
 /* =========================
-   Load members (bu)
+   Load members
 ========================= */
 async function loadMembers(){
-  const snap = await get(ref(db,"members"));
+  const snap = await rtdb.get(rtdb.ref(db,"members"));
   if(!snap.exists()) return;
   const data = snap.val() || {};
   Object.values(data).forEach(p=>{
@@ -245,7 +288,7 @@ async function loadMembers(){
 }
 
 /* =========================
-   1) monthlyReports에서 2026-01~지난달 합산
+   monthlyReports: 2026-01 ~ 지난달
 ========================= */
 async function loadAllSummaryByMonthlyReports(){
   const now = kstNow();
@@ -257,7 +300,7 @@ async function loadAllSummaryByMonthlyReports(){
     return { curMonth, lastMonth };
   }
 
-  const snap = await get(ref(db,"monthlyReports"));
+  const snap = await rtdb.get(rtdb.ref(db,"monthlyReports"));
   if(!snap.exists()){
     allTotal=allWin=allLose=0;
     return { curMonth, lastMonth };
@@ -271,7 +314,6 @@ async function loadAllSummaryByMonthlyReports(){
   months.forEach(m=>{
     const playersObj = reports[m]?.players;
     if(!playersObj) return;
-
     const row = Object.values(playersObj).find(r=> safeName(r?.name) === playerName);
     if(!row) return;
 
@@ -288,20 +330,20 @@ async function loadAllSummaryByMonthlyReports(){
 }
 
 /* =========================
-   matches 읽기 유틸(월단위)
+   matches: 월별 조회
 ========================= */
 async function fetchMatchesByMonth(monthKey){
-  const q = query(ref(db,"matches"), orderByChild("monthKey"), equalTo(monthKey));
-  const snap = await get(q);
+  const q = rtdb.query(
+    rtdb.ref(db,"matches"),
+    rtdb.orderByChild("monthKey"),
+    rtdb.equalTo(monthKey)
+  );
+  const snap = await rtdb.get(q);
   if(!snap.exists()) return [];
   return Object.values(snap.val() || {});
 }
 
-/* =========================
-   (공통) matches 집계: 상대/파트너 + 이번달 단/복식
-========================= */
 function applyMatchToMaps(m, scope){
-  // scope: "ALL" (지난달까지) or "TM" (이번달)
   if (!m || !["A","B"].includes(m?.winnerSide)) return;
 
   const mode = safeName(m?.mode) || "single";
@@ -319,42 +361,29 @@ function applyMatchToMaps(m, scope){
   const ptnMap = (scope==="ALL") ? allPartnerDoubles : tmPartnerDoubles;
 
   if(mode === "single"){
-    // 이번달 단식 집계도 같이
     if(scope==="TM"){
-      tmSglT++;
-      if(iWon) tmSglW++; else tmSglL++;
+      tmSglT++; if(iWon) tmSglW++; else tmSglL++;
     }
-
     const opp = inA ? (B[0]||"") : (A[0]||"");
     if(!opp) return;
-
     if(!oppMap[opp]) oppMap[opp] = { win:0, lose:0 };
     if(iWon) oppMap[opp].win++; else oppMap[opp].lose++;
-
-  }else if(mode === "double"){
+  } else if(mode === "double"){
     if(scope==="TM"){
-      tmDblT++;
-      if(iWon) tmDblW++; else tmDblL++;
+      tmDblT++; if(iWon) tmDblW++; else tmDblL++;
     }
-
     let partner = "";
     if(inA) partner = A.find(n=>n!==playerName) || "";
     if(inB) partner = B.find(n=>n!==playerName) || "";
     if(!partner) return;
-
     if(!ptnMap[partner]) ptnMap[partner] = { win:0, lose:0 };
     if(iWon) ptnMap[partner].win++; else ptnMap[partner].lose++;
   }
 }
 
-/* =========================
-   3) 지난달까지 상대/파트너 집계 (월별로 필요한 달만)
-========================= */
 async function loadAllOpponentPartnerFromMatches(lastMonth){
-  // 월별로 쿼리해서 누적(전체 matches 통째로 금지)
   allOppSingles = {};
   allPartnerDoubles = {};
-
   if(lastMonth < START_MONTH) return;
 
   const months = monthRange(START_MONTH, lastMonth);
@@ -364,9 +393,6 @@ async function loadAllOpponentPartnerFromMatches(lastMonth){
   }
 }
 
-/* =========================
-   2) 이번달 단/복식 + 이번달 상대/파트너
-========================= */
 async function loadThisMonthRealtime(curMonth){
   tmSglT=tmSglW=tmSglL=0;
   tmDblT=tmDblW=tmDblL=0;
@@ -378,65 +404,56 @@ async function loadThisMonthRealtime(curMonth){
 }
 
 /* =========================
-   Helpers: best/worst extraction
+   Render
 ========================= */
+function linkPlayer(nm, color="#1e40af"){
+  const lvl = playerLevels[nm] ?? "-";
+  return `<a href="player.html?name=${encodeURIComponent(nm)}" style="color:${color};font-weight:900;text-decoration:none;">${nm}(${lvl})</a>`;
+}
 function pickMostWin(mapObj){
-  let best = null;
+  let best=null;
   for(const [name,v] of Object.entries(mapObj)){
     if(!best || v.win > best.win) best = { name, ...v };
   }
   return best;
 }
 function pickMostLose(mapObj){
-  let worst = null;
+  let worst=null;
   for(const [name,v] of Object.entries(mapObj)){
     if(!worst || v.lose > worst.lose) worst = { name, ...v };
   }
   return worst;
 }
 function pickPartnerBest(mapObj){
-  // “가장 잘 맞는 파트너” = 승이 가장 많은 파트너 (동률이면 승률)
-  let best = null;
+  let best=null;
   for(const [name,v] of Object.entries(mapObj)){
-    const total = v.win+v.lose;
-    const rate = total ? v.win/total : 0;
-    if(!best) best = { name, ...v, rate };
+    const t=v.win+v.lose; const r=t? v.win/t : 0;
+    if(!best) best={name,...v,r};
     else{
-      const bTotal = best.win+best.lose;
-      const bRate = bTotal ? best.win/bTotal : 0;
-      if(v.win > best.win || (v.win===best.win && rate>bRate)) best = { name, ...v, rate };
+      const bt=best.win+best.lose; const br=bt? best.win/bt : 0;
+      if(v.win>best.win || (v.win===best.win && r>br)) best={name,...v,r};
     }
   }
   return best;
 }
 function pickPartnerWorst(mapObj){
-  // “가장 안 맞는 파트너” = 패가 가장 많은 파트너 (동률이면 승률 낮은 쪽)
-  let worst = null;
+  let worst=null;
   for(const [name,v] of Object.entries(mapObj)){
-    const total = v.win+v.lose;
-    const rate = total ? v.win/total : 0;
-    if(!worst) worst = { name, ...v, rate };
+    const t=v.win+v.lose; const r=t? v.win/t : 0;
+    if(!worst) worst={name,...v,r};
     else{
-      const wTotal = worst.win+worst.lose;
-      const wRate = wTotal ? worst.win/wTotal : 0;
-      if(v.lose > worst.lose || (v.lose===worst.lose && rate<wRate)) worst = { name, ...v, rate };
+      const wt=worst.win+worst.lose; const wr=wt? worst.win/wt : 0;
+      if(v.lose>worst.lose || (v.lose===worst.lose && r<wr)) worst={name,...v,r};
     }
   }
   return worst;
 }
 
-/* =========================
-   Render
-========================= */
-function renderHeader(){
-  if(!playerName){
-    showErr("URL에 ?name=선수이름 이 없습니다. 예) player.html?name=강성용");
-  }
+function renderBase(){
   const lvl = playerLevels[playerName] ?? "-";
   $("#pf_name").textContent = playerName || "선수";
   $("#pf_meta").textContent = `KOEN · ${lvl}부`;
 }
-
 function renderAllSummary(lastMonth){
   const rate = allTotal ? fmt1(allWin/allTotal*100) : "0.0";
   $("#allSummary").innerHTML = `
@@ -445,7 +462,6 @@ function renderAllSummary(lastMonth){
     <div>✅ 전체 전적 : <b style="font-size:18px;color:#0f172a;">${allWin}승 ${allLose}패</b> (승률 <b>${rate}%</b>)</div>
   `;
 }
-
 function renderThisMonthSummary(curMonth){
   const sRate = tmSglT ? fmt1(tmSglW/tmSglT*100) : "0.0";
   const dRate = tmDblT ? fmt1(tmDblW/tmDblT*100) : "0.0";
@@ -455,114 +471,83 @@ function renderThisMonthSummary(curMonth){
     <div>🫂 복식 : <b style="font-size:18px;color:#0f172a;">${tmDblW}승 ${tmDblL}패</b> (총 ${tmDblT}경기, 승률 <b>${dRate}%</b>)</div>
   `;
 }
-
-function linkPlayer(nm, text, color="#1e40af"){
-  const lvl = playerLevels[nm] ?? "-";
-  return `<a href="player.html?name=${encodeURIComponent(nm)}" style="color:${color}; font-weight:900; text-decoration:none;">${text || (nm+"("+lvl+")")}</a>`;
-}
-
 function renderBestWorst(){
-  // 전체(지난달까지)
+  const fmtLine = (x, good="#0f6a00", bad="#d45500")=>{
+    if(!x) return `<b style="color:#64748b;">-</b>`;
+    const t = x.win + x.lose;
+    const r = fmt1(winRate(x.win,t));
+    const color = (x.win>=x.lose)?good:bad;
+    return `${linkPlayer(x.name,color)} — <b>${x.win}승 ${x.lose}패</b> (${r}%)`;
+  };
+
   const aBestOpp = pickMostWin(allOppSingles);
   const aWorstOpp = pickMostLose(allOppSingles);
   const aBestPtn = pickPartnerBest(allPartnerDoubles);
   const aWorstPtn = pickPartnerWorst(allPartnerDoubles);
 
-  const fmtOpp = (x, goodColor, badColor)=>{
-    if(!x) return `<b style="color:#64748b;">-</b>`;
-    const total = x.win + x.lose;
-    const rate = fmt1(winRate(x.win, total));
-    const color = (x.win >= x.lose) ? goodColor : badColor;
-    return `${linkPlayer(x.name, `${x.name}(${playerLevels[x.name]??"-"})`, color)} — <b>${x.win}승 ${x.lose}패</b> (${rate}%)`;
-  };
-  const fmtPtn = (x, goodColor, badColor)=>{
-    if(!x) return `<b style="color:#64748b;">-</b>`;
-    const total = x.win + x.lose;
-    const rate = fmt1(winRate(x.win, total));
-    const color = (x.win >= x.lose) ? goodColor : badColor;
-    return `${linkPlayer(x.name, `${x.name}(${playerLevels[x.name]??"-"})`, color)} — <b>${x.win}승 ${x.lose}패</b> (${rate}%)`;
-  };
-
   $("#allBestWorst").innerHTML = `
-    <div>🏅 단식 가장 많이 이긴 상대 : ${fmtOpp(aBestOpp, "#0f6a00", "#d45500")}</div>
-    <div>⚠️ 단식 가장 많이 진 상대 : ${fmtOpp(aWorstOpp, "#0f6a00", "#d45500")}</div>
+    <div>🏅 단식 가장 많이 이긴 상대 : ${fmtLine(aBestOpp)}</div>
+    <div>⚠️ 단식 가장 많이 진 상대 : ${fmtLine(aWorstOpp)}</div>
     <div style="height:8px;"></div>
-    <div>🤝 복식 가장 잘 맞는 파트너 : ${fmtPtn(aBestPtn, "#0f6a00", "#d45500")}</div>
-    <div>😅 복식 가장 안 맞는 파트너 : ${fmtPtn(aWorstPtn, "#0f6a00", "#d45500")}</div>
+    <div>🤝 복식 가장 잘 맞는 파트너 : ${fmtLine(aBestPtn)}</div>
+    <div>😅 복식 가장 안 맞는 파트너 : ${fmtLine(aWorstPtn)}</div>
   `;
 
-  // 이번달
   const tBestOpp = pickMostWin(tmOppSingles);
   const tWorstOpp = pickMostLose(tmOppSingles);
   const tBestPtn = pickPartnerBest(tmPartnerDoubles);
   const tWorstPtn = pickPartnerWorst(tmPartnerDoubles);
 
   $("#thisBestWorst").innerHTML = `
-    <div>🏅 단식 가장 많이 이긴 상대 : ${fmtOpp(tBestOpp, "#0f6a00", "#d45500")}</div>
-    <div>⚠️ 단식 가장 많이 진 상대 : ${fmtOpp(tWorstOpp, "#0f6a00", "#d45500")}</div>
+    <div>🏅 단식 가장 많이 이긴 상대 : ${fmtLine(tBestOpp)}</div>
+    <div>⚠️ 단식 가장 많이 진 상대 : ${fmtLine(tWorstOpp)}</div>
     <div style="height:8px;"></div>
-    <div>🤝 복식 가장 잘 맞는 파트너 : ${fmtPtn(tBestPtn, "#0f6a00", "#d45500")}</div>
-    <div>😅 복식 가장 안 맞는 파트너 : ${fmtPtn(tWorstPtn, "#0f6a00", "#d45500")}</div>
+    <div>🤝 복식 가장 잘 맞는 파트너 : ${fmtLine(tBestPtn)}</div>
+    <div>😅 복식 가장 안 맞는 파트너 : ${fmtLine(tWorstPtn)}</div>
   `;
 }
 
 function renderTop10(){
-  // 지난달까지 단식 상대맵으로 TOP10 만들기
   const entries = Object.entries(allOppSingles).map(([name,v])=>{
-    const win = Number(v.win||0), lose = Number(v.lose||0);
-    const total = win+lose;
-    const rate = winRate(win,total);
-    return { name, win, lose, total, rate };
+    const win=Number(v.win||0), lose=Number(v.lose||0);
+    const total=win+lose;
+    return { name, win, lose, total, rate: winRate(win,total) };
   });
 
-  const topWin = entries
-    .slice()
-    .sort((a,b)=> b.win - a.win || b.total - a.total || a.name.localeCompare(b.name,"ko"))
-    .slice(0,10);
-
-  const topLose = entries
-    .slice()
-    .sort((a,b)=> b.lose - a.lose || b.total - a.total || a.name.localeCompare(b.name,"ko"))
-    .slice(0,10);
+  const topWin = entries.slice().sort((a,b)=> b.win-a.win || b.total-a.total).slice(0,10);
+  const topLose = entries.slice().sort((a,b)=> b.lose-a.lose || b.total-a.total).slice(0,10);
 
   const boxW = $("#topWinOpp");
   const boxL = $("#topLoseOpp");
-  boxW.innerHTML = "";
-  boxL.innerHTML = "";
+  boxW.innerHTML = ""; boxL.innerHTML = "";
 
-  if(!topWin.length){
-    boxW.innerHTML = `<div class="dim">데이터가 없습니다.</div>`;
-  }else{
-    topWin.forEach((x, i)=>{
-      const lvl = playerLevels[x.name] ?? "-";
-      boxW.insertAdjacentHTML("beforeend", `
-        <div class="item">
-          <div class="top">
-            <div class="name">${i+1}. ${linkPlayer(x.name, `${x.name}(${lvl})`, "#0f6a00")}</div>
-            <div class="stat">${x.win}승 ${x.lose}패</div>
-          </div>
-          <div class="meta">총 ${x.total}경기 · 승률 ${fmt1(x.rate)}%</div>
+  if(!topWin.length) boxW.innerHTML = `<div class="dim">데이터가 없습니다.</div>`;
+  else topWin.forEach((x,i)=>{
+    const lvl = playerLevels[x.name] ?? "-";
+    boxW.insertAdjacentHTML("beforeend", `
+      <div class="item">
+        <div class="top">
+          <div class="name">${i+1}. ${linkPlayer(x.name,"#0f6a00")}</div>
+          <div class="stat">${x.win}승 ${x.lose}패</div>
         </div>
-      `);
-    });
-  }
+        <div class="meta">총 ${x.total}경기 · 승률 ${fmt1(x.rate)}% · (${lvl}부)</div>
+      </div>
+    `);
+  });
 
-  if(!topLose.length){
-    boxL.innerHTML = `<div class="dim">데이터가 없습니다.</div>`;
-  }else{
-    topLose.forEach((x, i)=>{
-      const lvl = playerLevels[x.name] ?? "-";
-      boxL.insertAdjacentHTML("beforeend", `
-        <div class="item">
-          <div class="top">
-            <div class="name">${i+1}. ${linkPlayer(x.name, `${x.name}(${lvl})`, "#d45500")}</div>
-            <div class="stat">${x.win}승 ${x.lose}패</div>
-          </div>
-          <div class="meta">총 ${x.total}경기 · 승률 ${fmt1(x.rate)}%</div>
+  if(!topLose.length) boxL.innerHTML = `<div class="dim">데이터가 없습니다.</div>`;
+  else topLose.forEach((x,i)=>{
+    const lvl = playerLevels[x.name] ?? "-";
+    boxL.insertAdjacentHTML("beforeend", `
+      <div class="item">
+        <div class="top">
+          <div class="name">${i+1}. ${linkPlayer(x.name,"#d45500")}</div>
+          <div class="stat">${x.win}승 ${x.lose}패</div>
         </div>
-      `);
-    });
-  }
+        <div class="meta">총 ${x.total}경기 · 승률 ${fmt1(x.rate)}% · (${lvl}부)</div>
+      </div>
+    `);
+  });
 }
 
 /* =========================
@@ -570,35 +555,28 @@ function renderTop10(){
 ========================= */
 try{
   if(!playerName){
-    renderHeader();
-    throw new Error("name 파라미터가 없습니다.");
+    throw new Error("URL에 ?name=선수이름 이 없습니다. 예) player.html?name=강성용");
   }
 
+  await loadFirebase();       // ✅ 여기서 경로/권한 문제 잡힘(화면에 출력됨)
   await loadMembers();
-  renderHeader();
+  renderBase();
 
-  // 1) 월마감 기반 전체 누적
   const { curMonth, lastMonth } = await loadAllSummaryByMonthlyReports();
-
-  // 3) 지난달까지 상대/파트너 (matches 월별로 쿼리)
   await loadAllOpponentPartnerFromMatches(lastMonth);
-
-  // 2) 이번달 실시간(단/복식 + 상대/파트너)
   await loadThisMonthRealtime(curMonth);
 
-  // Render
   renderAllSummary(lastMonth);
   renderThisMonthSummary(curMonth);
   renderBestWorst();
   renderTop10();
 
-  // 프로필 상단에 한 줄 요약도 같이
+  // 상단 요약
   const grandRate = allTotal ? fmt1(allWin/allTotal*100) : "0.0";
   $("#pf_stats").innerHTML = `
     <div>✅ 전체 누적(지난달까지): <b style="color:#0f172a;">${allTotal}</b>경기 · <b style="color:#0f172a;">${allWin}승 ${allLose}패</b> (${grandRate}%)</div>
     <div>✅ 이번달: 단식 <b style="color:#0f172a;">${tmSglW}승 ${tmSglL}패</b> · 복식 <b style="color:#0f172a;">${tmDblW}승 ${tmDblL}패</b></div>
   `;
-
 }catch(e){
   showErr("오류: " + (e?.message || String(e)));
   console.log(e);
