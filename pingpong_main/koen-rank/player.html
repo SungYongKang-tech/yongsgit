@@ -9,7 +9,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <style>
-/* (스타일은 원본 그대로) */
 :root{
   --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb; --card:#ffffff;
   --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
@@ -60,10 +59,7 @@ h1{margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-
 .month-card{border-radius: 14px;background: #ffffff;padding: 14px 16px;box-shadow: 0 4px 14px rgba(0,0,0,0.06);border: 1px solid #e5e7eb;}
 .month-head{display:flex;justify-content: space-between;align-items:center;margin-bottom: 10px;}
 .month-head .m{font-size: 18px;font-weight: 900;color:#1e3a8a;}
-.month-badge{font-size: 11px;padding:4px 8px;border-radius: 999px;font-weight: 800;background:#eef2ff;color:#3730a3;}
-.month-badge.sep{background:#e0f2fe;color:#0369a1;}
 .month-row{margin: 6px 0 10px;}
-.month-title{font-weight:800;font-size:15px;margin-bottom:3px;}
 .month-stats{font-size:15px;font-weight:700;color:#0f172a;line-height:1.4;}
 </style>
 </head>
@@ -100,27 +96,44 @@ h1{margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-
 <!-- 월별 카드 -->
 <section class="grid" style="margin-top:12px;">
   <div class="card" style="grid-column: span 12;">
-    <h3>📅 월별 통합 기록 (해당 달)</h3>
+    <h3>📅 월별 통합 기록 (월마감 기준 · 올해)</h3>
     <div id="monthList" class="list"></div>
-    
   </div>
 </section>
 
-<!-- 상세 분석 -->
+<!-- ✅ 누적 상세(2026-01~지난달) -->
 <section class="grid" style="margin-top:12px;">
   <div class="card" style="grid-column: span 12;">
-    <h3>🔎 상세 분석 (이번달)</h3>
+    <h3>🧾 누적 상세 (2026-01 ~ 지난달 · 확정)</h3>
     <div class="grid" style="grid-template-columns:repeat(12,1fr); gap:12px;">
       <div class="card" style="grid-column: span 12;">
-        <div class="block-title">단식 — 상대별 전적</div>
+        <div class="block-title">단식 — 상대별 전적 TOP</div>
+        <div id="opponentClosed" class="list"></div>
+      </div>
+      <div class="card" style="grid-column: span 12;">
+        <div class="block-title">복식 — 파트너별 전적 TOP</div>
+        <div id="partnerClosed" class="list"></div>
+      </div>
+    </div>
+    <div class="note">* 지난달까지는 월마감 시점에 한 번만 계산되어 저장됩니다.</div>
+  </div>
+</section>
+
+<!-- ✅ 이번달 상세 -->
+<section class="grid" style="margin-top:12px;">
+  <div class="card" style="grid-column: span 12;">
+    <h3>🔎 상세 분석 (이번달 · 실시간)</h3>
+    <div class="grid" style="grid-template-columns:repeat(12,1fr); gap:12px;">
+      <div class="card" style="grid-column: span 12;">
+        <div class="block-title">단식 — 상대별 전적 TOP</div>
         <div id="opponentSingles" class="list"></div>
       </div>
       <div class="card" style="grid-column: span 12;">
-        <div class="block-title">복식 — 파트너별 전적</div>
+        <div class="block-title">복식 — 파트너별 전적 TOP</div>
         <div id="partnerDoubles" class="list"></div>
       </div>
     </div>
-    <div class="note">* matches에는 이번달 경기만 남아 있어 상세 분석도 이번달 기준으로 표시됩니다.</div>
+    <div class="note">* 이번달은 matches에서 이번달만 읽어서 계산합니다(삭제/변동 즉시 반영).</div>
   </div>
 </section>
 
@@ -143,8 +156,6 @@ h1{margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-
   </div>
 </section>
 
-
-
 </main>
 
 <script type="module">
@@ -164,7 +175,11 @@ function safeChart(canvasEl, config){
    ✅ Firebase
 ========================= */
 import { db } from "../firebase.js";
-import { ref, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import {
+  ref, get, update,
+  query, orderByChild, equalTo,
+  runTransaction
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
 /* =========================
    Utils
@@ -177,6 +192,20 @@ const yyyymm = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
 const shortMonth = (m) => `'${m.slice(2)}`;
 const POINT_WIN = 2, POINT_LOSE = -1;
 
+function kstNow(){
+  return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+}
+function ymd(d){
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+}
+function lastDayOfMonthKST(d){
+  return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+}
+function monthGE(a, b){
+  // a,b: "YYYY-MM"
+  return a >= b;
+}
+
 /* =========================
    Query Param
 ========================= */
@@ -184,14 +213,27 @@ const params = new URLSearchParams(location.search);
 const playerName = (params.get('name') || '').trim();
 
 /* =========================
+   Config
+========================= */
+const STATS_YEAR = "2026";
+const STATS_START_MONTH = "2026-01"; // ✅ 2026년 1월부터만 누적
+const THIS_MONTH = yyyymm(kstNow());
+
+/* =========================
    Data holders
 ========================= */
 let playerLevels = {};      // {name: bu}
 
-let months = [];            // 올해 월들(월마감 있는 달)
-let perMonthAll = {};       // {YYYY-MM:{total,win,lose,rate}} 월마감
+// 월마감(올해) - 기존 유지
+let months = [];
+let perMonthAll = {};
 
-// 상세(이번달)
+// ✅ 누적 상세(2026-01~지난달) - DB 캐시(statsClosed)
+let closedOpp = {};         // {opp:{win,lose,total}}
+let closedPartner = {};     // {pt:{win,lose,total,points}}
+let closedSummary = { total:0, win:0, lose:0 };
+
+// ✅ 이번달 상세(실시간)
 let oppMapSingle = {};
 let partnerMapDouble = {};
 let thisMonthDoublePoints = 0;
@@ -214,21 +256,44 @@ async function loadMembers(){
 }
 
 /* =========================
-   ✅ (자동) 월마감 저장: 월말/익월1일에 페이지 열리면 자동 저장
-   - matches 읽기만
-   - monthlyReports/YYYY-MM/players/uid 에 저장
-   - monthlyReports/YYYY-MM/meta/closed 로 중복 방지
+   ✅ statsClosed(2026-01~지난달) 읽기
 ========================= */
-function kstNow(){
-  return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
-}
-function ymd(d){
-  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-}
-function lastDayOfMonthKST(d){
-  return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+async function loadClosedStats(){
+  if (!playerName) return;
+
+  const snap = await get(ref(db, `statsClosed/${STATS_YEAR}/all/${playerName}`));
+  if (!snap.exists()){
+    closedOpp = {};
+    closedPartner = {};
+    closedSummary = { total:0, win:0, lose:0 };
+    return;
+  }
+  const v = snap.val() || {};
+  closedSummary = v.summary || { total:0, win:0, lose:0 };
+  closedOpp = v.opponents || {};
+  closedPartner = v.partners || {};
 }
 
+/* =========================
+   ✅ runTransaction 누적 helper
+========================= */
+async function txInc(path, delta){
+  const r = ref(db, path);
+  await runTransaction(r, (cur)=>{
+    cur = cur || {};
+    for (const [k,v] of Object.entries(delta)){
+      cur[k] = Number(cur[k] || 0) + Number(v);
+    }
+    return cur;
+  });
+}
+
+/* =========================
+   ✅ (자동) 월마감 저장 + 지난달 상세 statsClosed 누적
+   - 월말/익월1일에 페이지 열리면 자동 실행
+   - monthlyReports: 기존 로직 유지
+   - statsClosed: 지난달 경기만 집계해서 "2026-01~" 누적
+========================= */
 async function loadMembersByName(){
   const snap = await get(ref(db,'members'));
   const byName = {};
@@ -243,6 +308,80 @@ async function loadMembersByName(){
   return byName;
 }
 
+async function addClosedStatsForMonth(month, targetMatches){
+  // ✅ 2026-01 이전은 누적하지 않음
+  if (!monthGE(month, STATS_START_MONTH)) return;
+
+  // ✅ 월별 1회 적용 잠금 (statsClosed meta)
+  const appliedRef = ref(db, `statsClosed/${STATS_YEAR}/meta/${month}/applied`);
+  const appliedSnap = await get(appliedRef);
+  if (appliedSnap.exists() && appliedSnap.val() === true) return;
+
+  for (const m of targetMatches){
+    const mode = m?.mode || "single";
+    const A = (m.namesA || []).map(s=>String(s).trim()).filter(Boolean);
+    const B = (m.namesB || []).map(s=>String(s).trim()).filter(Boolean);
+    if (!A.length || !B.length) continue;
+
+    const winA = (m.winnerSide === "A");
+    if (!winA && m.winnerSide !== "B") continue;
+
+    const winners = winA ? A : B;
+    const losers  = winA ? B : A;
+
+    // summary
+    for (const n of winners){
+      await txInc(`statsClosed/${STATS_YEAR}/all/${n}/summary`, { total:1, win:1 });
+      await txInc(`statsClosed/${STATS_YEAR}/all/${n}`, { updatedAt: Date.now() }); // 숫자 누적이지만 updatedAt은 아래에서 따로 update 권장
+    }
+    for (const n of losers){
+      await txInc(`statsClosed/${STATS_YEAR}/all/${n}/summary`, { total:1, lose:1 });
+      await txInc(`statsClosed/${STATS_YEAR}/all/${n}`, { updatedAt: Date.now() });
+    }
+
+    // 단식 상대
+    if (mode === "single"){
+      const p1 = A[0], p2 = B[0];
+      if (!p1 || !p2) continue;
+
+      if (winA){
+        await txInc(`statsClosed/${STATS_YEAR}/all/${p1}/opponents/${p2}`, { total:1, win:1 });
+        await txInc(`statsClosed/${STATS_YEAR}/all/${p2}/opponents/${p1}`, { total:1, lose:1 });
+      }else{
+        await txInc(`statsClosed/${STATS_YEAR}/all/${p1}/opponents/${p2}`, { total:1, lose:1 });
+        await txInc(`statsClosed/${STATS_YEAR}/all/${p2}/opponents/${p1}`, { total:1, win:1 });
+      }
+    }
+
+    // 복식 파트너
+    if (mode === "double"){
+      const a1=A[0], a2=A[1], b1=B[0], b2=B[1];
+
+      if (a1 && a2){
+        const pts = winA ? POINT_WIN : POINT_LOSE;
+        await txInc(`statsClosed/${STATS_YEAR}/all/${a1}/partners/${a2}`, { total:1, win: winA?1:0, lose: winA?0:1, points: pts });
+        await txInc(`statsClosed/${STATS_YEAR}/all/${a2}/partners/${a1}`, { total:1, win: winA?1:0, lose: winA?0:1, points: pts });
+      }
+      if (b1 && b2){
+        const bWin = !winA;
+        const pts = bWin ? POINT_WIN : POINT_LOSE;
+        await txInc(`statsClosed/${STATS_YEAR}/all/${b1}/partners/${b2}`, { total:1, win: bWin?1:0, lose: bWin?0:1, points: pts });
+        await txInc(`statsClosed/${STATS_YEAR}/all/${b2}/partners/${b1}`, { total:1, win: bWin?1:0, lose: bWin?0:1, points: pts });
+      }
+    }
+  }
+
+  // ✅ 적용 완료 표시(잠금)
+  await update(ref(db), {
+    [`statsClosed/${STATS_YEAR}/meta/${month}`]: {
+      applied: true,
+      appliedAt: Date.now(),
+      month,
+      matchCount: targetMatches.length
+    }
+  });
+}
+
 async function autoMonthCloseIfNeeded(){
   const now = kstNow();
   const today = now.getDate();
@@ -252,92 +391,93 @@ async function autoMonthCloseIfNeeded(){
   const shouldRun = (today === lastDay) || (today === 1);
   if (!shouldRun) return;
 
-  // ✅ targetMonth 결정: 1일이면 "지난달"을 마감해야 함
+  // ✅ targetMonth 결정: 1일이면 "지난달"을 마감
   const target = new Date(now);
   if (today === 1) target.setMonth(target.getMonth() - 1);
   const month = yyyymm(target);
 
-  // ✅ 잠금 체크도 targetMonth 기준
+  // ✅ monthlyReports 잠금(기존)
   const lockSnap = await get(ref(db, `monthlyReports/${month}/meta/closed`));
-  if (lockSnap.exists() && lockSnap.val() === true) return;
+  const alreadyClosed = lockSnap.exists() && lockSnap.val() === true;
 
-  // matches 가져오기
+  // matches 가져오기(전체에서 targetMonth만 필터링) — 월마감은 월 1회만이라 OK
   const mSnap = await get(ref(db,'matches'));
   if (!mSnap.exists()) return;
-
   const allMatches = Object.values(mSnap.val() || {});
   if (!allMatches.length) return;
 
-  // ✅ targetMonth의 경기만 집계 (monthKey가 있으면 그걸 우선 사용)
   const targetMatches = allMatches.filter(m=>{
     const mk = String(m?.monthKey || "").trim();
     if (mk) return mk === month;
-
-    // monthKey가 없다면 playedAt/ts 같은 시간 필드가 있는 경우로 보정(있을 때만)
     const ts = m?.playedAt ?? m?.ts ?? m?.createdAt ?? null;
-    if (!ts) return true; // (안전 fallback) 기존처럼 전부 집계하되, 가능하면 monthKey를 넣는 걸 추천
+    if (!ts) return false;
     return yyyymm(KST(ts)) === month;
   });
-
   if (!targetMatches.length) return;
 
-  const membersByName = await loadMembersByName();
+  // ✅ 1) monthlyReports 저장(기존 로직 유지) - 이미 closed면 생략
+  if (!alreadyClosed){
+    const membersByName = await loadMembersByName();
 
-  // 선수별 집계
-  const agg = {}; // uid -> {uid,name,bu,total,win,lose}
+    const agg = {}; // uid -> {uid,name,bu,total,win,lose}
+    for (const m of targetMatches){
+      if (!['A','B'].includes(m?.winnerSide)) continue;
+      const sideA = (m.namesA || []).map(s=>String(s).trim());
+      const sideB = (m.namesB || []).map(s=>String(s).trim());
+      const winA  = (m.winnerSide === 'A');
 
-  for (const m of targetMatches){
-    if (!['A','B'].includes(m?.winnerSide)) continue;
-
-    const sideA = (m.namesA || []).map(s=>String(s).trim());
-    const sideB = (m.namesB || []).map(s=>String(s).trim());
-    const winA  = (m.winnerSide === 'A');
-
-    for (const name of sideA){
-      const info = membersByName[name];
-      if(!info) continue;
-      if(!agg[info.uid]) agg[info.uid] = { ...info, total:0, win:0, lose:0 };
-      agg[info.uid].total++;
-      if(winA) agg[info.uid].win++; else agg[info.uid].lose++;
+      for (const name of sideA){
+        const info = membersByName[name];
+        if(!info) continue;
+        if(!agg[info.uid]) agg[info.uid] = { ...info, total:0, win:0, lose:0 };
+        agg[info.uid].total++;
+        if(winA) agg[info.uid].win++; else agg[info.uid].lose++;
+      }
+      for (const name of sideB){
+        const info = membersByName[name];
+        if(!info) continue;
+        if(!agg[info.uid]) agg[info.uid] = { ...info, total:0, win:0, lose:0 };
+        agg[info.uid].total++;
+        if(!winA) agg[info.uid].win++; else agg[info.uid].lose++;
+      }
     }
 
-    for (const name of sideB){
-      const info = membersByName[name];
-      if(!info) continue;
-      if(!agg[info.uid]) agg[info.uid] = { ...info, total:0, win:0, lose:0 };
-      agg[info.uid].total++;
-      if(!winA) agg[info.uid].win++; else agg[info.uid].lose++;
-    }
+    const nowMs = Date.now();
+    const updates = {};
+
+    Object.values(agg).forEach(p=>{
+      const rate = p.total ? Math.round((p.win/p.total)*1000)/10 : 0;
+      updates[`monthlyReports/${month}/players/${p.uid}`] = {
+        uid: p.uid,
+        name: p.name,
+        bu: p.bu,
+        total: p.total,
+        win: p.win,
+        lose: p.lose,
+        rate,
+        updatedAt: nowMs
+      };
+    });
+
+    updates[`monthlyReports/${month}/meta`] = {
+      month,
+      closed: true,
+      closedAt: nowMs,
+      closedDate: ymd(now),
+      source: "matches-auto",
+      matchCount: targetMatches.length
+    };
+
+    await update(ref(db), updates);
+    console.log("[월마감 저장 완료]", month, "players:", Object.keys(agg).length, "matches:", targetMatches.length);
   }
 
-  const nowMs = Date.now();
-  const updates = {};
-
-  Object.values(agg).forEach(p=>{
-    const rate = p.total ? Math.round((p.win/p.total)*1000)/10 : 0;
-    updates[`monthlyReports/${month}/players/${p.uid}`] = {
-      uid: p.uid,
-      name: p.name,
-      bu: p.bu,
-      total: p.total,
-      win: p.win,
-      lose: p.lose,
-      rate,
-      updatedAt: nowMs
-    };
-  });
-
-  updates[`monthlyReports/${month}/meta`] = {
-    month,
-    closed: true,
-    closedAt: nowMs,
-    closedDate: ymd(now),      // 실행일(1일/말일)
-    source: "matches-auto",
-    matchCount: targetMatches.length // ✅ 디버깅용
-  };
-
-  await update(ref(db), updates);
-  console.log("[월마감 자동저장 완료]", month, "players:", Object.keys(agg).length, "matches:", targetMatches.length);
+  // ✅ 2) statsClosed(2026-01~지난달) 누적 반영(월 1회 잠금)
+  try{
+    await addClosedStatsForMonth(month, targetMatches);
+  }catch(e){
+    console.log("addClosedStatsForMonth error:", e);
+  }
 }
 
 /* =========================
@@ -350,7 +490,7 @@ async function loadMonthlyReportsThisYear(){
   const reports = snap.val() || {};
   const now = kstNow();
   const year = String(now.getFullYear());
-  const curMonth = yyyymm(now);          // ✅ 현재 달(진행중)
+  const curMonth = yyyymm(now);
 
   months = [];
   perMonthAll = {};
@@ -358,8 +498,7 @@ async function loadMonthlyReportsThisYear(){
   Object.keys(reports).forEach((m)=>{
     if (!/^\d{4}-\d{2}$/.test(m)) return;
     if (!m.startsWith(year + "-")) return;
-
-    if (m === curMonth) return;          // ✅ 진행중인 달은 월마감 목록에서 제외
+    if (m === curMonth) return; // 진행중 달 제외
 
     const playersObj = reports[m]?.players || null;
     if (!playersObj) return;
@@ -377,27 +516,37 @@ async function loadMonthlyReportsThisYear(){
     months.push(m);
   });
 
-  months = [...new Set(months)].sort(); // 필요하면 .reverse()
+  months = [...new Set(months)].sort();
+
+  // 올해 누적(월마감) 계산
+  sumAllTotal = 0; sumAllWin = 0; sumAllLose = 0;
+  months.forEach(m=>{
+    const a = perMonthAll[m];
+    if(!a) return;
+    sumAllTotal += Number(a.total||0);
+    sumAllWin   += Number(a.win||0);
+    sumAllLose  += Number(a.lose||0);
+  });
 }
 
 /* =========================
-   2) 상세 분석: matches(이번달만 존재) → 이번달 상대/파트너 집계
+   2) 상세 분석(이번달): matches를 "이번달만" 쿼리로 읽어서 계산
 ========================= */
 async function loadMatchesThisMonthDetails(){
-  const snap = await get(ref(db,'matches'));
-  if (!snap.exists()) return;
-  const data = Object.values(snap.val() || {});
-  const curMonth = yyyymm(kstNow());
+  oppMapSingle = {};
+  partnerMapDouble = {};
+  thisMonthDoublePoints = 0;
+  sumSglTotal=0; sumSglWin=0; sumSglLose=0;
+  sumDblTotal=0; sumDblWin=0; sumDblLose=0;
 
+  const qThisMonth = query(ref(db,'matches'), orderByChild("monthKey"), equalTo(THIS_MONTH));
+  const snap = await get(qThisMonth);
+  if (!snap.exists()) return;
+
+  const data = Object.values(snap.val() || {});
   const myMatches = data.filter(m=>{
     const names = [...(m.namesA||[]), ...(m.namesB||[])].map(s=>String(s).trim());
-    if (!names.includes(playerName)) return false;
-
-    // monthKey가 있다면 이번달만
-    const mk = String(m?.monthKey || "").trim();
-    if (mk && mk !== curMonth) return false;
-
-    return true;
+    return names.includes(playerName);
   });
 
   myMatches.forEach(m=>{
@@ -452,44 +601,14 @@ function renderProfile(){
   const sglRate  = sumSglTotal ? fmt1(sumSglWin/sumSglTotal*100) : '0.0';
   const dblRate  = sumDblTotal ? fmt1(sumDblWin/sumDblTotal*100) : '0.0';
 
-  let mostWinOpponentRaw='', mostWinOpponent='-';
-  for (const [op,v] of Object.entries(oppMapSingle)){
-    if (!mostWinOpponentRaw || v.win > (oppMapSingle[mostWinOpponentRaw]?.win ?? -1)){
-      mostWinOpponentRaw = op;
-      mostWinOpponent = `${op} (${v.win}승)`;
-    }
-  }
-
-  let mostLoseOpponentRaw='', mostLoseOpponent='-';
-  for (const [op,v] of Object.entries(oppMapSingle)){
-    if (!mostLoseOpponentRaw || v.lose > (oppMapSingle[mostLoseOpponentRaw]?.lose ?? -1)){
-      mostLoseOpponentRaw = op;
-      mostLoseOpponent = `${op} (${v.lose}패)`;
-    }
-  }
-
-  let bestPartnerRaw='', bestPartner='-';
-  for (const [pt,v] of Object.entries(partnerMapDouble)){
-    if (!bestPartnerRaw || v.win > (partnerMapDouble[bestPartnerRaw]?.win ?? -1)){
-      bestPartnerRaw = pt;
-      bestPartner = `${pt} (${v.win}승)`;
-    }
-  }
-
-  let worstPartnerRaw='', worstPartner='-';
-  for (const [pt,v] of Object.entries(partnerMapDouble)){
-    if (!worstPartnerRaw || v.lose > (partnerMapDouble[worstPartnerRaw]?.lose ?? -1)){
-      worstPartnerRaw = pt;
-      worstPartner = `${pt} (${v.lose}패)`;
-    }
-  }
+  // 지난달까지(확정) summary
+  const cTotal = Number(closedSummary?.total || 0);
+  const cWin   = Number(closedSummary?.win || 0);
+  const cLose  = Number(closedSummary?.lose || 0);
+  const cRate  = cTotal ? fmt1(cWin/cTotal*100) : '0.0';
 
   $('#pf_name').textContent = name || '선수';
   $('#pf_meta').textContent = `${team} · ${lvl}부`;
-
-  const linkOrDash = (raw, text, color) => raw
-    ? `<a href="player.html?name=${encodeURIComponent(raw)}" style="color:${color}; font-weight:900; text-decoration:none;">${text}</a>`
-    : `<b style="color:#475569;">-</b>`;
 
   $('#pf_stats').innerHTML = `
     <div style="font-size:16px; line-height:1.8; margin-bottom:18px;">
@@ -499,26 +618,14 @@ function renderProfile(){
     </div>
 
     <div style="font-size:16px; line-height:1.8; margin-bottom:18px;">
-      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 이번달 단식 / 복식(상세)</div>
-      <div>🎯 단식 전적 : <b style="color:#0f172a; font-size:17px;">${sumSglWin}승 ${sumSglLose}패 (${sglRate}%)</b></div>
-      <div>🫂 복식 전적 : <b style="color:#0f172a; font-size:17px;">${sumDblWin}승 ${sumDblLose}패 (${dblRate}%)</b></div>
+      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 누적 확정(2026-01~지난달)</div>
+      <div>🧾 누적 전적 : <b style="color:#0f172a; font-size:17px;">${cWin}승 ${cLose}패 (총 ${cTotal}경기 · ${cRate}%)</b></div>
     </div>
 
     <div style="font-size:16px; line-height:1.8;">
-      <div style="font-weight:900; color:#1e3a8a; margin-bottom:8px; font-size:18px;">📌 이번달 상대·파트너 분석</div>
-      <div><span style="color:#1e3a8a; font-weight:800;">🏅 단식 가장 많이 이긴 상대 :</span>
-        ${linkOrDash(mostWinOpponentRaw, mostWinOpponent, "#0f6a00")}
-      </div>
-      <div><span style="color:#1e3a8a; font-weight:800;">⚠️ 단식 가장 많이 진 상대 :</span>
-        ${linkOrDash(mostLoseOpponentRaw, mostLoseOpponent, "#d45500")}
-      </div>
-      <div style="height:10px;"></div>
-      <div><span style="color:#1e3a8a; font-weight:800;">🤝 가장 잘 맞는 복식 파트너 :</span>
-        ${linkOrDash(bestPartnerRaw, bestPartner, "#0f6a00")}
-      </div>
-      <div><span style="color:#1e3a8a; font-weight:800;">😅 가장 잘 안 맞는 복식 파트너 :</span>
-        ${linkOrDash(worstPartnerRaw, worstPartner, "#d45500")}
-      </div>
+      <div style="font-weight:900; color:#1e3a8a; margin-bottom:6px; font-size:18px;">📌 이번달(실시간)</div>
+      <div>🎯 단식 전적 : <b style="color:#0f172a; font-size:17px;">${sumSglWin}승 ${sumSglLose}패 (${sglRate}%)</b></div>
+      <div>🫂 복식 전적 : <b style="color:#0f172a; font-size:17px;">${sumDblWin}승 ${sumDblLose}패 (${dblRate}%)</b></div>
     </div>
   `;
 }
@@ -538,7 +645,6 @@ function renderMonthCards(){
 
   sortedMonths.forEach(m=>{
     const a = perMonthAll[m] || { total:0, win:0, lose:0, rate:0 };
-
     box.insertAdjacentHTML('beforeend', `
       <div class="month-card">
         <div class="month-head">
@@ -555,9 +661,81 @@ function renderMonthCards(){
 }
 
 /* =========================
-   Render - Details
+   Render - Details (Closed)
 ========================= */
-function renderDetails(){
+function renderClosedDetails(){
+  const oppBox = $('#opponentClosed');
+  oppBox.innerHTML = '';
+
+  const oppArr = Object.entries(closedOpp || {})
+    .map(([name,v])=>({
+      name,
+      win: Number(v.win||0),
+      lose: Number(v.lose||0),
+      total: Number(v.total || (Number(v.win||0)+Number(v.lose||0))),
+      rate: (Number(v.total || (Number(v.win||0)+Number(v.lose||0))) ? (Number(v.win||0) / Number(v.total || (Number(v.win||0)+Number(v.lose||0))) * 100) : 0)
+    }))
+    .sort((a,b)=> b.total - a.total || b.win - a.win)
+    .slice(0,8);
+
+  if (!oppArr.length){
+    oppBox.innerHTML = `<div class="dim">누적(2026-01~지난달) 단식 기록이 없습니다.</div>`;
+  } else {
+    oppArr.forEach(o=>{
+      const lvl = playerLevels[o.name] ?? '-';
+      oppBox.insertAdjacentHTML('beforeend', `
+        <div class="item item-inline">
+          <span class="tag">상대</span>
+          <span>
+            <a href="player.html?name=${encodeURIComponent(o.name)}" style="color:#1e40af; font-weight:900; text-decoration:none;">
+              ${o.name}(${lvl})
+            </a>
+            &nbsp;&nbsp;&nbsp;${o.win}승 ${o.lose}패&nbsp;&nbsp;&nbsp;${fmt1(o.rate)}%
+          </span>
+        </div>
+      `);
+    });
+  }
+
+  const ptnBox = $('#partnerClosed');
+  ptnBox.innerHTML = '';
+
+  const ptnArr = Object.entries(closedPartner || {})
+    .map(([name,v])=>({
+      name,
+      win: Number(v.win||0),
+      lose: Number(v.lose||0),
+      points: Number(v.points||0),
+      total: Number(v.total || (Number(v.win||0)+Number(v.lose||0))),
+      rate: (Number(v.total || (Number(v.win||0)+Number(v.lose||0))) ? (Number(v.win||0) / Number(v.total || (Number(v.win||0)+Number(v.lose||0))) * 100) : 0)
+    }))
+    .sort((a,b)=> b.total - a.total || b.points - a.points)
+    .slice(0,8);
+
+  if (!ptnArr.length){
+    ptnBox.innerHTML = `<div class="dim">누적(2026-01~지난달) 복식 기록이 없습니다.</div>`;
+  } else {
+    ptnArr.forEach(p=>{
+      const lvl = playerLevels[p.name] ?? '-';
+      ptnBox.insertAdjacentHTML('beforeend', `
+        <div class="item item-inline">
+          <span class="tag">파트너</span>
+          <span>
+            <a href="player.html?name=${encodeURIComponent(p.name)}" style="color:#1e40af; font-weight:900; text-decoration:none;">
+              ${p.name}(${lvl})
+            </a>
+            &nbsp;&nbsp;&nbsp;${p.win}승 ${p.lose}패&nbsp;&nbsp;&nbsp;${fmt1(p.rate)}%
+          </span>
+        </div>
+      `);
+    });
+  }
+}
+
+/* =========================
+   Render - Details (This Month)
+========================= */
+function renderThisMonthDetails(){
   const oppBox = $('#opponentSingles');
   oppBox.innerHTML = '';
   const oppArr = Object.entries(oppMapSingle)
@@ -565,7 +743,7 @@ function renderDetails(){
       name, win:v.win, lose:v.lose, total:(v.win+v.lose),
       rate: (v.win+v.lose) ? (v.win/(v.win+v.lose)*100) : 0
     }))
-    .sort((a,b)=> b.total - a.total)
+    .sort((a,b)=> b.total - a.total || b.win - a.win)
     .slice(0,8);
 
   if (!oppArr.length){
@@ -595,7 +773,7 @@ function renderDetails(){
       points: v.points ?? 0,
       rate: (v.win+v.lose) ? (v.win/(v.win+v.lose)*100) : 0
     }))
-    .sort((a,b)=> b.total - a.total)
+    .sort((a,b)=> b.total - a.total || b.points - a.points)
     .slice(0,8);
 
   if (!ptnArr.length){
@@ -681,18 +859,22 @@ function buildCharts(){
 ========================= */
 await loadMembers();
 
-// ✅ 월말/1일이면 자동 월마감 저장(중복 방지 잠금 포함)
+// ✅ 월말/1일이면 자동 월마감 저장 + 지난달 statsClosed 누적
 try { await autoMonthCloseIfNeeded(); } catch(e){ console.log("autoMonthClose error:", e); }
 
-// ✅ 올해 월마감 데이터로 월별/전체 누적 구성
+// ✅ 올해 월마감 데이터
 await loadMonthlyReportsThisYear();
 
-// ✅ matches(이번달만)로 상세 분석 구성
+// ✅ 지난달까지(2026-01~) 누적 상세 캐시 읽기
+await loadClosedStats();
+
+// ✅ 이번달 상세(실시간) — matches 이번달만 쿼리
 await loadMatchesThisMonthDetails();
 
 renderProfile();
 renderMonthCards();
-renderDetails();
+renderClosedDetails();
+renderThisMonthDetails();
 
 /* =========================
    Buttons
