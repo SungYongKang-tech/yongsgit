@@ -100,9 +100,9 @@ h1{margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-
 <!-- 월별 카드 -->
 <section class="grid" style="margin-top:12px;">
   <div class="card" style="grid-column: span 12;">
-    <h3>📅 월별 통합 기록 (올해 누적)</h3>
+    <h3>📅 월별 통합 기록 (해당 달)</h3>
     <div id="monthList" class="list"></div>
-    <div class="note">* 월별 통합 기록은 monthlyReports(월마감 요약) 기준이며, 새해(1월)부터 자동 리셋처럼 보입니다.</div>
+    
   </div>
 </section>
 
@@ -348,11 +348,14 @@ async function loadMonthlyReportsThisYear(){
   if (!snap.exists()) return;
 
   const reports = snap.val() || {};
-  const year = String(kstNow().getFullYear()); // ✅ KST 기준 연도
+  const year = String(kstNow().getFullYear()); // KST 기준 올해
+
+  months = [];
+  perMonthAll = {};
 
   Object.keys(reports).forEach((m)=>{
     if (!/^\d{4}-\d{2}$/.test(m)) return;
-    if (!m.startsWith(year + "-")) return; // ✅ 올해만
+    if (!m.startsWith(year + "-")) return; // 올해만 (원치 않으면 이 줄 삭제)
 
     const playersObj = reports[m]?.players || null;
     if (!playersObj) return;
@@ -368,11 +371,9 @@ async function loadMonthlyReportsThisYear(){
 
     perMonthAll[m] = { total, win, lose, rate };
     months.push(m);
-
-    sumAllTotal += total; sumAllWin += win; sumAllLose += lose;
   });
 
-  months = [...new Set(months)].sort();
+  months = [...new Set(months)].sort(); // 월 정렬
 }
 
 /* =========================
