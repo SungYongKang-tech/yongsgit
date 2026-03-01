@@ -248,6 +248,10 @@ h1 {
   // ✅ pingpong_main/firebase.js 사용 (이 파일이 /pingpong_main/index.html 이면 "./firebase.js")
   import { db } from "../firebase.js";
 
+  console.log("✅ projectId =", db.app?.options?.projectId);
+console.log("✅ databaseURL =", db.app?.options?.databaseURL);
+console.log("✅ authDomain =", db.app?.options?.authDomain);
+
   import {
     ref, onValue, push, remove, get,
     query, orderByChild, equalTo
@@ -470,15 +474,9 @@ ensureAuthReady();
 
   // ✅ 경기 삭제 (Firebase의 삭제 비밀번호 기준)
   window.deleteMatch = async (id) => {
-    // 🔒 항상 최신값을 가져와서 확인
-    await ensureAuthReady();   // ✅ 추가 (가장 중요)
+  try {
     const pwSnap = await get(deletePwRef);
     const pw = pwSnap.exists() ? String(pwSnap.val()).trim() : (deletePassword || "");
-
-    if(!pw){
-      alert("삭제 비밀번호가 설정되어 있지 않습니다.\n관리자모드에서 config/deletePassword를 설정하세요.");
-      return;
-    }
 
     const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
     if (input === null) return;
@@ -487,7 +485,11 @@ ensureAuthReady();
 
     await remove(ref(db, "matches/" + id));
     toast("경기결과 삭제 완료");
-  };
+  } catch (e) {
+    console.error("❌ deleteMatch error:", e);
+    alert("삭제 실패: " + (e?.message || e));
+  }
+};
 
   // ✅ 사용법 모달
   const helpBtn = document.getElementById("helpBtn");
