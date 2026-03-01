@@ -1,7 +1,7 @@
 // ✅ pingpong_main/firebase.js 사용 (레슨 폴더에서 ../firebase.js 가 맞음)
 import { db, auth } from "../firebase.js";
 
-// ✅ Firebase SDK 버전 통일: 9.22.2 → 10.12.4
+// ✅ Firebase SDK 버전 통일: 10.12.4
 import {
   ref, onValue, get, set, update, push, remove
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
@@ -9,69 +9,40 @@ import {
 import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
 /* =========================
-   ✅ Lesson Admin Password Gate
-   - 관리자 비밀번호(config/adminPassword)와 같아야 입장
-   - 6시간 세션 유지
+   ✅ Lesson Admin Gate (비번 재입력 제거)
+   - index.html에서 발급한 세션키만 검사해서 통과/차단
+   - 세션 유지시간: 6시간 (원하시면 조절)
 ========================= */
-const CONFIG_PATH = "config";
-const ADMIN_PW_FIELD = "adminPasswordPlain";
+const SESSION_KEY = "koen_pingpong_admin_ok";
+const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
 
-const LESSON_SESSION_KEY = "koen_lesson_admin_ok_at";
-const LESSON_SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
+function clearSession(){
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem("koenAdminAuth"); // (구버전 호환 키도 같이 정리)
+}
 
-function only4Digits(v){
-  return (v || "").replace(/\D/g, "").slice(0, 4);
-}
-function saveLessonSessionOK(){
-  localStorage.setItem(LESSON_SESSION_KEY, String(Date.now()));
-}
-function clearLessonSessionOK(){
-  localStorage.removeItem(LESSON_SESSION_KEY);
-}
-function hasValidLessonSession(){
-  const t = Number(localStorage.getItem(LESSON_SESSION_KEY) || 0);
+function hasValidSession(){
+  const t = Number(localStorage.getItem(SESSION_KEY) || 0);
   if(!t) return false;
-  const ok = (Date.now() - t) < LESSON_SESSION_TTL_MS;
-  if(!ok) localStorage.removeItem(LESSON_SESSION_KEY);
+
+  const ok = (Date.now() - t) < SESSION_TTL_MS;
+  if(!ok) localStorage.removeItem(SESSION_KEY);
   return ok;
 }
 
-async function readAdminPassword(){
-  const snap = await get(ref(db, CONFIG_PATH));
-  const cfg = snap.exists() ? (snap.val() || {}) : {};
-  return String(cfg?.[ADMIN_PW_FIELD] || "").trim();
-}
-
 async function ensureLessonAdminGate(){
-  // ✅ 이미 세션이 유효하면 바로 통과
-  if(hasValidLessonSession()) return true;
-
-  // ✅ config 읽으려면 익명 로그인 필요(규칙에 따라)
-  await signInAnonymously(auth);
-
-  const realPw = await readAdminPassword();
-  if(!realPw){
-    alert("관리자 비밀번호가 설정되어 있지 않습니다.\n관리자 페이지에서 먼저 설정해 주세요.");
-    location.href = "./index.html";
-    return false;
+  // ✅ 이미 세션이 유효하면 바로 통과 (여기서 비밀번호 절대 안 받음)
+  if(hasValidSession()){
+    // 다른 페이지/가드가 koenAdminAuth를 볼 수 있으니 호환용으로 유지
+    localStorage.setItem("koenAdminAuth", "ok");
+    return true;
   }
 
-  const input = only4Digits(prompt("레슨 관리자 비밀번호(4자리)를 입력하세요."));
-  if(input.length !== 4){
-    alert("비밀번호는 4자리 숫자여야 합니다.");
-    location.href = "./index.html";
-    return false;
-  }
-
-  if(input !== realPw){
-    alert("비밀번호가 올바르지 않습니다.");
-    location.href = "./index.html";
-    return false;
-  }
-
-  // ✅ 성공 → 6시간 세션 발급
-  saveLessonSessionOK();
-  return true;
+  // ✅ 미인증/만료면 index로
+  clearSession();
+  alert("관리자 인증이 필요합니다. (인증이 만료되었습니다)");
+  location.href = "./index.html";
+  return false;
 }
 
 /* =========================
@@ -514,7 +485,7 @@ function wireLogout(){
   const btn = $("logoutBtn");
   if(!btn) return;
   btn.addEventListener("click", ()=>{
-    clearLessonSessionOK();   // ✅ 레슨 세션 삭제
+    clearSession();              // ✅ 세션 삭제
     location.href = "./index.html";
   });
 }
@@ -544,7 +515,7 @@ $("waitingName")?.addEventListener("keydown", (e)=>{
 ========================= */
 (async function main(){
   try{
-    // ✅ 입장 비밀번호 확인(관리자 비번과 동일)
+    // ✅ 입장 게이트(세션 검사만, 비번 재입력 없음)
     const ok = await ensureLessonAdminGate();
     if(!ok) return;
 
