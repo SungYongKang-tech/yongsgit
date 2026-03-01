@@ -179,7 +179,6 @@ h1 {
   <div class="header-inner">
     <h1 id="pageTitle">🏓 경기결과 입력</h1>
     <div class="row">
-     
       <a href="monthly-report.html" class="btn primary">통합 전적</a>
       <a href="monthly-report2.html" class="btn primary">단/복식 전적</a>
       <button id="todayBtn" class="btn primary">오늘의 전적</button>
@@ -249,7 +248,10 @@ h1 {
   // ✅ pingpong_main/firebase.js 사용 (이 파일이 /pingpong_main/index.html 이면 "./firebase.js")
   import { db } from "../firebase.js";
 
-  import { ref, onValue, push, remove, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+  import {
+    ref, onValue, push, remove, get,
+    query, orderByChild, equalTo
+  } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
   const $ = s => document.querySelector(s);
   const toast = (msg="저장되었습니다")=>{
@@ -257,6 +259,12 @@ h1 {
     clearTimeout(toast._t);
     toast._t=setTimeout(()=>t.classList.remove("show"),1500);
   };
+
+  // ✅ KST 기준 monthKey
+  function getMonthKey(ts=Date.now()){
+    const d=new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
 
   // ===== 제목 캐시 + 실시간 업데이트 =====
   const titleRef = ref(db, "config/title");
@@ -273,24 +281,24 @@ h1 {
   });
 
   // ===== 데이터 참조 =====
-  const matchRef    = ref(db, "matches");
-  const playerRef   = ref(db, "members");               // members 사용
+  const matchRef    = ref(db, "matches");     // ✅ 저장은 계속 전체 누적
+  const playerRef   = ref(db, "members");     // members 사용
   const deletePwRef = ref(db, "config/deletePassword");
- 
+
+  // ✅ "이번달" 읽기/표시 전용 쿼리
+  const THIS_MONTH_KEY = getMonthKey();
+  const monthMatchQ = query(matchRef, orderByChild("monthKey"), equalTo(THIS_MONTH_KEY));
 
   let players = [];
   let sel = [];
 
   // ✅ 비밀번호는 “항상 Firebase 값”을 기준으로
   let deletePassword = "";   // 실시간 반영
- 
 
   // ✅ 삭제 비번 실시간 반영
   onValue(deletePwRef, (s)=>{
     deletePassword = s.exists() ? String(s.val()).trim() : "";
   });
-
- 
 
   // ✅ 부수별 색상
   const LEVEL_COLORS = {
@@ -304,7 +312,6 @@ h1 {
   // ✅ 선수 목록 표시
   onValue(playerRef, snap => {
     const data = snap.val() || {};
-    // members 구조: {name, bu} 라고 가정(기존 코드 유지)
     players = Object.values(data)
       .map(p => ({ name: p.name, level: Number(p.bu ?? 99) }))
       .filter(p => p.name)
@@ -361,11 +368,7 @@ h1 {
     btns.style.display = (sel.length===2 || sel.length===4) ? "block" : "none";
   }
 
-  // ✅ 경기 저장
-  function getMonthKey(ts=Date.now()){
-    const d=new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-  }
+  // ✅ 경기 저장 (저장은 계속 matches 전체 누적)
   $("#winA").onclick=()=>saveMatch("A");
   $("#winB").onclick=()=>saveMatch("B");
 
@@ -377,7 +380,7 @@ h1 {
 
     const obj={
       mode,
-      monthKey:getMonthKey(),
+      monthKey:getMonthKey(),  // ✅ 저장 시 monthKey 포함
       namesA:a,
       namesB:b,
       winnerSide:winner,
@@ -389,8 +392,8 @@ h1 {
     sel=[]; renderChips(); updateTeams();
   }
 
-  // ✅ 경기 로그 표시
-  onValue(matchRef, snap=>{
+  // ✅ 경기 로그 표시 (이번달만 읽기/표시)
+  onValue(monthMatchQ, snap=>{
     const data=snap.val()||{};
     const arr=Object.entries(data).map(([id,m])=>({...m,id}))
       .sort((a,b)=>b.createdAt-a.createdAt);
@@ -402,7 +405,7 @@ h1 {
     logs.innerHTML = "";
 
     if (!arr.length) {
-      logs.innerHTML = '<div style="text-align:center;color:#999">최근 경기 없음</div>';
+      logs.innerHTML = '<div style="text-align:center;color:#999">이번달 최근 경기 없음</div>';
       return;
     }
 
@@ -439,7 +442,7 @@ h1 {
 
   // ✅ 경기 삭제 (Firebase의 삭제 비밀번호 기준)
   window.deleteMatch = async (id) => {
-    // 🔒 항상 최신값을 가져와서 확인(“안 바뀌는 듯” 문제 방지)
+    // 🔒 항상 최신값을 가져와서 확인
     const pwSnap = await get(deletePwRef);
     const pw = pwSnap.exists() ? String(pwSnap.val()).trim() : (deletePassword || "");
 
@@ -457,7 +460,6 @@ h1 {
     toast("경기결과 삭제 완료");
   };
 
-  
   // ✅ 사용법 모달
   const helpBtn = document.getElementById("helpBtn");
   const modal = document.getElementById("helpModal");
@@ -467,11 +469,11 @@ h1 {
   closeModal.addEventListener("click", () => { modal.style.display = "none"; });
   window.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
 
-  // ✅ 오늘의 전적
+  // ✅ 오늘의 전적 (이번달 데이터만 기준으로 집계)
   let todayVisible = false;
 
   async function buildTodayHtml() {
-    const snap = await get(matchRef);
+    const snap = await get(monthMatchQ); // ✅ 이번달만 읽기
     if (!snap.exists()) return null;
 
     const data = Object.values(snap.val());
