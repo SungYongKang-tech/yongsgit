@@ -260,8 +260,12 @@ const START_MONTH = "2026-01";
 // members bu
 let playerLevels = {};
 
-// 1) 월마감(지난달까지)
+// 1) 월마감(지난달까지) 전체(총/승/패)
 let allTotal=0, allWin=0, allLose=0;
+
+// ✅ 전체 누적(2026-01~지난달) 단식/복식
+let allSglT=0, allSglW=0, allSglL=0;
+let allDblT=0, allDblW=0, allDblL=0;
 
 // 2) 이번달 실시간
 let tmSglT=0, tmSglW=0, tmSglL=0;
@@ -289,6 +293,8 @@ async function loadMembers(){
 
 /* =========================
    monthlyReports: 2026-01 ~ 지난달
+   - 여기서는 "총/승/패"만(월마감 기준) 계산
+   - 단식/복식 구분은 monthlyReports에 없으므로 matches로 따로 계산
 ========================= */
 async function loadAllSummaryByMonthlyReports(){
   const now = kstNow();
@@ -330,7 +336,7 @@ async function loadAllSummaryByMonthlyReports(){
 }
 
 /* =========================
-   matches: 월별 조회
+   matches: 월별 조회 (monthKey 인덱스 필요)
 ========================= */
 async function fetchMatchesByMonth(monthKey){
   const q = rtdb.query(
@@ -360,6 +366,15 @@ function applyMatchToMaps(m, scope){
   const oppMap = (scope==="ALL") ? allOppSingles : tmOppSingles;
   const ptnMap = (scope==="ALL") ? allPartnerDoubles : tmPartnerDoubles;
 
+  // ✅ 전체 누적 단식/복식 카운트(2026-01~지난달)
+  if(scope==="ALL"){
+    if(mode === "single"){
+      allSglT++; if(iWon) allSglW++; else allSglL++;
+    }else if(mode === "double"){
+      allDblT++; if(iWon) allDblW++; else allDblL++;
+    }
+  }
+
   if(mode === "single"){
     if(scope==="TM"){
       tmSglT++; if(iWon) tmSglW++; else tmSglL++;
@@ -384,6 +399,9 @@ function applyMatchToMaps(m, scope){
 async function loadAllOpponentPartnerFromMatches(lastMonth){
   allOppSingles = {};
   allPartnerDoubles = {};
+  allSglT=allSglW=allSglL=0;
+  allDblT=allDblW=allDblL=0;
+
   if(lastMonth < START_MONTH) return;
 
   const months = monthRange(START_MONTH, lastMonth);
@@ -454,14 +472,22 @@ function renderBase(){
   $("#pf_name").textContent = playerName || "선수";
   $("#pf_meta").textContent = `KOEN · ${lvl}부`;
 }
+
 function renderAllSummary(lastMonth){
   const rate = allTotal ? fmt1(allWin/allTotal*100) : "0.0";
+  const sRate = allSglT ? fmt1(allSglW/allSglT*100) : "0.0";
+  const dRate = allDblT ? fmt1(allDblW/allDblT*100) : "0.0";
+
   $("#allSummary").innerHTML = `
     <div>🗓️ 기간 : <b>${START_MONTH}</b> ~ <b>${lastMonth}</b></div>
     <div>✅ 총 경기수 : <b style="font-size:18px;color:#0f172a;">${allTotal}</b></div>
     <div>✅ 전체 전적 : <b style="font-size:18px;color:#0f172a;">${allWin}승 ${allLose}패</b> (승률 <b>${rate}%</b>)</div>
+    <div style="height:10px;"></div>
+    <div>🎯 단식 : <b style="color:#0f172a;">${allSglW}승 ${allSglL}패</b> (총 ${allSglT}경기, 승률 <b>${sRate}%</b>)</div>
+    <div>🫂 복식 : <b style="color:#0f172a;">${allDblW}승 ${allDblL}패</b> (총 ${allDblT}경기, 승률 <b>${dRate}%</b>)</div>
   `;
 }
+
 function renderThisMonthSummary(curMonth){
   const sRate = tmSglT ? fmt1(tmSglW/tmSglT*100) : "0.0";
   const dRate = tmDblT ? fmt1(tmDblW/tmDblT*100) : "0.0";
@@ -471,6 +497,7 @@ function renderThisMonthSummary(curMonth){
     <div>🫂 복식 : <b style="font-size:18px;color:#0f172a;">${tmDblW}승 ${tmDblL}패</b> (총 ${tmDblT}경기, 승률 <b>${dRate}%</b>)</div>
   `;
 }
+
 function renderBestWorst(){
   const fmtLine = (x, good="#0f6a00", bad="#d45500")=>{
     if(!x) return `<b style="color:#64748b;">-</b>`;
@@ -550,6 +577,34 @@ function renderTop10(){
   });
 }
 
+function renderTopProfileSummary(curMonth, lastMonth){
+  const grandRate = allTotal ? fmt1(allWin/allTotal*100) : "0.0";
+
+  const allSRate = allSglT ? fmt1(allSglW/allSglT*100) : "0.0";
+  const allDRate = allDblT ? fmt1(allDblW/allDblT*100) : "0.0";
+
+  const tmSRate  = tmSglT ? fmt1(tmSglW/tmSglT*100) : "0.0";
+  const tmDRate  = tmDblT ? fmt1(tmDblW/tmDblT*100) : "0.0";
+
+  $("#pf_stats").innerHTML = `
+    <div style="margin-bottom:10px;">
+      <b style="color:#1e3a8a;">📌 전체 누적</b>
+      <span style="color:#64748b;">(${START_MONTH} ~ ${lastMonth})</span><br>
+      ✅ 총 <b style="color:#0f172a;">${allTotal}</b>경기 ·
+      <b style="color:#0f172a;">${allWin}승 ${allLose}패</b> (${grandRate}%)<br>
+      🎯 단식 <b style="color:#0f172a;">${allSglW}승 ${allSglL}패</b> (총 ${allSglT}경기, ${allSRate}%) ·
+      🫂 복식 <b style="color:#0f172a;">${allDblW}승 ${allDblL}패</b> (총 ${allDblT}경기, ${allDRate}%)
+    </div>
+
+    <div>
+      <b style="color:#1e3a8a;">📌 이번달</b>
+      <span style="color:#64748b;">(${curMonth})</span><br>
+      🎯 단식 <b style="color:#0f172a;">${tmSglW}승 ${tmSglL}패</b> (총 ${tmSglT}경기, ${tmSRate}%) ·
+      🫂 복식 <b style="color:#0f172a;">${tmDblW}승 ${tmDblL}패</b> (총 ${tmDblT}경기, ${tmDRate}%)
+    </div>
+  `;
+}
+
 /* =========================
    Bootstrap
 ========================= */
@@ -563,7 +618,11 @@ try{
   renderBase();
 
   const { curMonth, lastMonth } = await loadAllSummaryByMonthlyReports();
+
+  // ✅ 지난달까지(전체) 상대/파트너 + 전체 단식/복식 카운트(ALL)
   await loadAllOpponentPartnerFromMatches(lastMonth);
+
+  // ✅ 이번달(실시간) 단식/복식 + 상대/파트너(TM)
   await loadThisMonthRealtime(curMonth);
 
   renderAllSummary(lastMonth);
@@ -571,12 +630,9 @@ try{
   renderBestWorst();
   renderTop10();
 
-  // 상단 요약
-  const grandRate = allTotal ? fmt1(allWin/allTotal*100) : "0.0";
-  $("#pf_stats").innerHTML = `
-    <div>✅ 전체 누적(지난달까지): <b style="color:#0f172a;">${allTotal}</b>경기 · <b style="color:#0f172a;">${allWin}승 ${allLose}패</b> (${grandRate}%)</div>
-    <div>✅ 이번달: 단식 <b style="color:#0f172a;">${tmSglW}승 ${tmSglL}패</b> · 복식 <b style="color:#0f172a;">${tmDblW}승 ${tmDblL}패</b></div>
-  `;
+  // ✅ 상단 요약(전체 누적에도 단식/복식 포함)
+  renderTopProfileSummary(curMonth, lastMonth);
+
 }catch(e){
   showErr("오류: " + (e?.message || String(e)));
   console.log(e);
