@@ -7,11 +7,24 @@
 
   <!-- ✅ 관리자 인증 없으면 접근 차단 -->
   <script>
-    if (localStorage.getItem("koenAdminAuth") !== "ok") {
-      alert("관리자 인증이 필요합니다.");
-      location.href = "./index.html";
-    }
-  </script>
+  // ✅ 인증 통일: index.html에서 저장하는 SESSION_KEY 기준
+  const SESSION_KEY = "koen_pingpong_admin_ok";
+  const MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12시간
+
+  const ts = Number(localStorage.getItem(SESSION_KEY) || 0);
+  const ok = ts > 0 && (Date.now() - ts) <= MAX_AGE_MS;
+
+  if (!ok) {
+    // 만료/미인증이면 키 정리 후 이동
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem("koenAdminAuth"); // (구버전 호환 키도 같이 정리)
+    alert("관리자 인증이 필요합니다. (인증이 만료되었습니다)");
+    location.href = "./index.html";
+  } else {
+    // 구버전 호환: 혹시 다른 페이지가 koenAdminAuth를 보면 통과하도록
+    localStorage.setItem("koenAdminAuth", "ok");
+  }
+</script>
 
   <style>
     :root{
@@ -283,10 +296,13 @@
 <!-- ✅ 로그아웃 처리(인증 해제) -->
 <script>
   document.addEventListener("DOMContentLoaded", ()=>{
+    const SESSION_KEY = "koen_pingpong_admin_ok";
+
     const btn = document.getElementById("logoutBtn");
     if(btn){
       btn.addEventListener("click", ()=>{
         localStorage.removeItem("koenAdminAuth");
+        localStorage.removeItem(SESSION_KEY);
         location.href = "./index.html";
       });
     }
