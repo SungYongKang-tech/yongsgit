@@ -97,9 +97,9 @@ let schedule = null; // { slots: {morning:[{id,time,assign:{mon:coachId..}}], ..
    Auth
 ========================= */
 async function initAuth(){
-  $("statusText").textContent = "익명 로그인 중…";
+  
   await signInAnonymously(auth);
-  $("statusText").textContent = "Firebase 연결됨";
+  
 }
 
 /* =========================
@@ -529,7 +529,7 @@ $("waitingName")?.addEventListener("keydown", (e)=>{
     renderScheduleUI();
   }catch(e){
     console.error(e);
-    $("statusText").textContent = "오류(콘솔 확인)";
+    
     toast("연결 오류");
   }
 })();
