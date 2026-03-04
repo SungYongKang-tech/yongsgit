@@ -20,7 +20,6 @@ function isoYesterday(){
   const d = new Date(); d.setDate(d.getDate()-1);
   return isoFromDate(d);
 }
-
 function prettyK(iso){
   const [Y,M,D] = iso.split("-").map(Number);
   const dt = new Date(Y, M-1, D);
@@ -30,7 +29,6 @@ function prettyK(iso){
 
 /* =========================
    ✅ Admin PIN (초기 1225) - DB에 없으면 생성
-   - admin.html에서도 동일 경로 사용
 ========================= */
 const ADMIN_SETTINGS_PATH = "admin/settings"; // { pin: "1225", updatedAt: ... }
 
@@ -45,9 +43,26 @@ async function ensureAdminPin(){
       });
     }
   }catch(e){
-    // 운영에 치명적이지 않게 조용히 무시(네트워크 등)
     // console.warn(e);
   }
+}
+
+/* =========================
+   ✅ 입력 중 저장/리렌더로 커서 튐 방지 (핵심)
+   - onValue가 입력 중인 필드를 setFieldValue로 덮어쓰지 못하게 보호
+   - 한글 IME(composition) 중에는 무조건 보호
+========================= */
+const EDIT_STATE = new Map(); // key: areaId -> { dirty:boolean, lastEdit:number, composing:boolean }
+
+function markEditing(areaId, patch){
+  const cur = EDIT_STATE.get(areaId) || { dirty:false, lastEdit:0, composing:false };
+  EDIT_STATE.set(areaId, { ...cur, ...patch });
+}
+function isEditingNow(areaId, ms=1500){
+  const s = EDIT_STATE.get(areaId);
+  if(!s) return false;
+  if(s.composing) return true;
+  return s.dirty && (Date.now() - s.lastEdit < ms);
 }
 
 /* ==========================
@@ -139,7 +154,16 @@ function enhanceTextareaToRich(id){
   box.addEventListener("pointerdown", ()=>{ ACTIVE_RICH_BOX = box; });
   box.addEventListener("touchstart", ()=>{ ACTIVE_RICH_BOX = box; }, {passive:true});
 
+  // ✅ IME 보호: contenteditable 조합 중에도 보호
+  box.addEventListener("compositionstart", ()=>{
+    markEditing(ta.id, { composing:true, dirty:true, lastEdit: Date.now() });
+  });
+  box.addEventListener("compositionend", ()=>{
+    markEditing(ta.id, { composing:false, dirty:true, lastEdit: Date.now() });
+  });
+
   box.addEventListener("input", ()=>{
+    markEditing(ta.id, { dirty:true, lastEdit: Date.now() });
     syncRichToTextarea(ta);
   });
 
@@ -147,6 +171,7 @@ function enhanceTextareaToRich(id){
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData("text/plain");
     document.execCommand("insertText", false, text);
+    markEditing(ta.id, { dirty:true, lastEdit: Date.now() });
     syncRichToTextarea(ta);
   });
 
@@ -174,6 +199,12 @@ function setFieldValue(id, v){
   }
 }
 
+// ✅ onValue에서 사용할 안전 setter (입력 중이면 덮어쓰기 금지)
+function safeSetFieldValue(id, v){
+  if (isEditingNow(id)) return;
+  setFieldValue(id, v);
+}
+
 function autoSizeRich(box){
   if (!box) return;
   box.style.height = "auto";
@@ -194,7 +225,8 @@ const timers = new Map();
 function setSaving(elStatus){ elStatus.textContent = "저장 중…"; }
 function scheduleSave(key, fn){
   if (timers.has(key)) clearTimeout(timers.get(key));
-  timers.set(key, setTimeout(fn, 800));
+  // ✅ 너무 잦은 저장으로 onValue 반응이 튀는 걸 완화 (1.2s)
+  timers.set(key, setTimeout(fn, 1200));
 }
 
 /* ==========================
@@ -250,9 +282,9 @@ function bindIBS(){
   const rY = ref(db, pathIBS(ISO_YDAY));
   const uY = onValue(rY, (snap)=>{
     const v = snap.val() || {};
-    setFieldValue("ibsY_handover", v.handover || "");
-    setFieldValue("ibsY_status",   v.status || "");
-    setFieldValue("ibsY_special",  v.special || "");
+    safeSetFieldValue("ibsY_handover", v.handover || "");
+    safeSetFieldValue("ibsY_status",   v.status || "");
+    safeSetFieldValue("ibsY_special",  v.special || "");
     const ts = v.updatedAt || null;
     $("ibsYStatus").textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -261,9 +293,9 @@ function bindIBS(){
   const rT = ref(db, pathIBS(ISO_TODAY));
   const uT = onValue(rT, (snap)=>{
     const v = snap.val() || {};
-    setFieldValue("ibsT_handover", v.handover || "");
-    setFieldValue("ibsT_status",   v.status || "");
-    setFieldValue("ibsT_special",  v.special || "");
+    safeSetFieldValue("ibsT_handover", v.handover || "");
+    safeSetFieldValue("ibsT_status",   v.status || "");
+    safeSetFieldValue("ibsT_special",  v.special || "");
     const ts = v.updatedAt || null;
     $("ibsTStatus").textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -272,22 +304,40 @@ function bindIBS(){
   const wire = (areaId, which, field) => {
     const ta = $(areaId);
     const statusEl = which === "Y" ? $("ibsYStatus") : $("ibsTStatus");
+    if (!ta) return;
 
-    // ✅ (중요) rebindAll 때마다 input 리스너가 중복으로 붙지 않게 "영역별+which+field" 키로 막기
+    // ✅ rebindAll 때마다 input 리스너 중복 방지
     const tag = `wired_${which}_${field}_${areaId}`;
     if (ta.dataset[tag] === "1") return;
     ta.dataset[tag] = "1";
 
+    // ✅ 한글 IME 보호 (textarea 자체를 직접 쓰는 경우 대비)
+    ta.addEventListener("compositionstart", ()=>{
+      markEditing(areaId, { composing:true, dirty:true, lastEdit: Date.now() });
+    });
+    ta.addEventListener("compositionend", ()=>{
+      markEditing(areaId, { composing:false, dirty:true, lastEdit: Date.now() });
+    });
+
     ta.addEventListener("input", ()=>{
+      markEditing(areaId, { dirty:true, lastEdit: Date.now() });
+
       autoSize(ta);
       setSaving(statusEl);
       const iso = which === "Y" ? ISO_YDAY : ISO_TODAY;
       const key = `IBS:${which}:${field}:${areaId}`;
+
       scheduleSave(key, async ()=>{
+        // ✅ 조합 중이면 저장을 한 박자 미룸 (다음 input에서 저장됨)
+        if (isEditingNow(areaId) && (EDIT_STATE.get(areaId)?.composing)) return;
+
         await update(ref(db, pathIBS(iso)), {
           [field]: ta.value,
           updatedAt: serverTimestamp()
         });
+
+        // ✅ 저장 완료 → dirty 해제 (이제 onValue 덮어쓰기 허용)
+        markEditing(areaId, { dirty:false });
       });
     });
   };
@@ -305,18 +355,11 @@ function bindIBS(){
 
 /* ==========================
    ✅ Carry Over (주말/연휴 포함)
-   - 오늘 todayWork가 비어있으면
-     "오늘보다 이전"에서 가장 최근 tomorrowWork를 찾아
-     오늘 todayWork로 자동 반영
-   - MECH/ELEC 공통 사용
 ========================== */
-
 function dateFromIsoLocal(iso){
-  // "YYYY-MM-DD" 를 로컬(KST) 기준 Date로 안전하게 생성
   const [Y,M,D] = iso.split("-").map(Number);
   return new Date(Y, M-1, D);
 }
-
 function isoMinusDays(iso, days){
   const d = dateFromIsoLocal(iso);
   d.setDate(d.getDate() - days);
@@ -324,7 +367,6 @@ function isoMinusDays(iso, days){
 }
 
 async function findLatestTomorrowWorkBeforeToday(pathFn, maxLookbackDays = 14){
-  // 오늘(ISO_TODAY) 이전 날짜들 중, 가장 최근 tomorrowWork가 있는 날을 찾음
   for (let i = 1; i <= maxLookbackDays; i++){
     const iso = isoMinusDays(ISO_TODAY, i);
     try{
@@ -332,15 +374,12 @@ async function findLatestTomorrowWorkBeforeToday(pathFn, maxLookbackDays = 14){
       const v = snap.val() || {};
       const plan = (v.tomorrowWork || "").trim();
       if (plan) return { fromIso: iso, plan };
-    }catch(e){
-      // 네트워크/권한 등 실패해도 다음 날짜로 계속 탐색
-    }
+    }catch(e){}
   }
   return null;
 }
 
 async function ensureCarryOver(areaTodayId, todayPathFn, statusTodayEl){
-  // 과거조회 모드에서는 자동 반영하지 않음
   if (isHistoryMode) return;
 
   const todayRef = ref(db, todayPathFn(ISO_TODAY));
@@ -348,21 +387,19 @@ async function ensureCarryOver(areaTodayId, todayPathFn, statusTodayEl){
   const todayVal = todaySnap.val() || {};
 
   const todayAlready = (todayVal.todayWork || "").trim();
-  if (todayAlready) return; // ✅ 오늘칸에 이미 뭔가 있으면 자동 반영 금지
+  if (todayAlready) return;
 
-  // ✅ 추가하면 안전해짐
-if ((todayVal.carriedFrom || "").trim()) return;
+  if ((todayVal.carriedFrom || "").trim()) return;
 
-  // ✅ 오늘이 비어있으면, "오늘보다 이전"에서 가장 최근 tomorrowWork 탐색
-  const found = await findLatestTomorrowWorkBeforeToday(todayPathFn, 21); // 필요시 21~30 등으로 증가
+  const found = await findLatestTomorrowWorkBeforeToday(todayPathFn, 21);
   if (!found) return;
 
-  setFieldValue(areaTodayId, found.plan);
+  safeSetFieldValue(areaTodayId, found.plan);
   statusTodayEl.textContent = `자동 반영(${prettyK(found.fromIso)} 내일작업 → 오늘 작업)…`;
 
   await update(todayRef, {
     todayWork: found.plan,
-    carriedFrom: found.fromIso,       // (옵션) 어디서 가져왔는지 기록
+    carriedFrom: found.fromIso,
     updatedAt: serverTimestamp()
   });
 }
@@ -376,8 +413,8 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
 
   const uY = onValue(yRef, (snap)=>{
     const v = snap.val() || {};
-    setFieldValue(yTodayId,    v.todayWork || "");
-    setFieldValue(yTomorrowId, v.tomorrowWork || "");
+    safeSetFieldValue(yTodayId,    v.todayWork || "");
+    safeSetFieldValue(yTomorrowId, v.tomorrowWork || "");
     const ts = v.updatedAt || null;
     yStatusEl.textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -385,8 +422,8 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
 
   const uT = onValue(tRef, (snap)=>{
     const v = snap.val() || {};
-    setFieldValue(tTodayId,    v.todayWork || "");
-    setFieldValue(tTomorrowId, v.tomorrowWork || "");
+    safeSetFieldValue(tTodayId,    v.todayWork || "");
+    safeSetFieldValue(tTomorrowId, v.tomorrowWork || "");
     const ts = v.updatedAt || null;
     tStatusEl.textContent = ts ? `불러옴 (${new Date(ts).toLocaleString("ko-KR")})` : "불러옴";
     autoSizeAll();
@@ -395,21 +432,36 @@ function bindTwoField(kind, yTodayId, yTomorrowId, tTodayId, tTomorrowId, yStatu
   const wire = (areaId, which, field) => {
     const ta = $(areaId);
     const statusEl = which === "Y" ? yStatusEl : tStatusEl;
+    if (!ta) return;
 
     const tag = `wired_${kind}_${which}_${field}_${areaId}`;
     if (ta.dataset[tag] === "1") return;
     ta.dataset[tag] = "1";
 
+    ta.addEventListener("compositionstart", ()=>{
+      markEditing(areaId, { composing:true, dirty:true, lastEdit: Date.now() });
+    });
+    ta.addEventListener("compositionend", ()=>{
+      markEditing(areaId, { composing:false, dirty:true, lastEdit: Date.now() });
+    });
+
     ta.addEventListener("input", ()=>{
+      markEditing(areaId, { dirty:true, lastEdit: Date.now() });
+
       autoSize(ta);
       setSaving(statusEl);
       const iso = which === "Y" ? ISO_YDAY : ISO_TODAY;
       const key = `${kind}:${which}:${field}:${areaId}`;
+
       scheduleSave(key, async ()=>{
+        if (isEditingNow(areaId) && (EDIT_STATE.get(areaId)?.composing)) return;
+
         await update(ref(db, pathFn(iso)), {
           [field]: ta.value,
           updatedAt: serverTimestamp()
         });
+
+        markEditing(areaId, { dirty:false });
       });
     });
   };
@@ -540,7 +592,8 @@ function setHistoryMode(isoSelected){
 
   ISO_TODAY = isoSelected;
 
-  const d = new Date(isoSelected);
+  // ✅ "YYYY-MM-DD"를 안전하게 로컬 날짜로 처리
+  const d = dateFromIsoLocal(isoSelected);
   d.setDate(d.getDate()-1);
   ISO_YDAY = isoFromDate(d);
 
@@ -596,11 +649,9 @@ function attachSwipeToContent(){
 
   const shouldIgnoreStart = (target)=>{
     if (!target) return true;
-
     if (target.closest(".rtBox, textarea, input, select, button, a, label")) return true;
     if (target.closest("details.fold > summary")) return true;
     if (target.closest(".cardHead")) return true;
-
     return false;
   };
 
@@ -655,16 +706,12 @@ function attachSwipeToContent(){
 
 /* =========================
    ✅ Notice Popup (from admin/popup)
-   - admin.html에서 저장한 설정을 읽어서
-     현재 시간이 기간 안이면 팝업 표시
 ========================= */
 const POPUP_PATH = "admin/popup"; // { enabled, title, body, startAt, endAt, updatedAt }
 
 function parseKstLocalToMs(v){
-  // v: "2026-02-13T09:00" (datetime-local 값)
   if (!v) return NaN;
-  // "YYYY-MM-DDTHH:mm" 를 로컬시간(KST)으로 해석해 ms로 변환
-  const d = new Date(v);
+  const d = new Date(v); // datetime-local 값을 로컬로 해석
   return d.getTime();
 }
 
@@ -672,7 +719,7 @@ function closeNotice(){
   const back = document.getElementById("noticeBack");
   if (!back) return;
   back.style.display = "none";
-  back.classList.remove("show"); // 스타일에서 show를 쓰는 경우 대비
+  back.classList.remove("show");
 }
 
 function openNotice({ title, body, startAt, endAt }){
@@ -687,7 +734,6 @@ function openNotice({ title, body, startAt, endAt }){
   if (bEl) bEl.textContent = body || "";
   if (pEl) pEl.textContent = `표시 기간: ${startAt || "-"} ~ ${endAt || "-"}`;
 
-  // 두 방식 다 대응
   back.style.display = "flex";
   back.classList.add("show");
 
@@ -698,7 +744,6 @@ function openNotice({ title, body, startAt, endAt }){
 }
 
 async function checkAndShowPopupOnce(){
-  // DOM 요소가 없으면 조용히 종료
   const back = document.getElementById("noticeBack");
   if (!back) return;
 
@@ -722,7 +767,6 @@ async function checkAndShowPopupOnce(){
     if (!isFinite(sMs) || !isFinite(eMs)) return;
 
     if (now >= sMs && now <= eMs){
-      // 같은 세션에서 중복 표시 방지(원하시면 제거 가능)
       const sessionKey = `notice_shown_${startAt}_${endAt}_${(v.updatedAt||"")}`;
       if (sessionStorage.getItem(sessionKey) === "1") return;
       sessionStorage.setItem(sessionKey, "1");
@@ -733,7 +777,6 @@ async function checkAndShowPopupOnce(){
     // console.warn("popup load fail", e);
   }
 }
-
 
 /* ==========================
    init
@@ -761,7 +804,9 @@ tabs.forEach(btn=>{
 
 startMidnightWatcher();
 
-window.addEventListener("DOMContentLoaded", ()=>{
+// ✅ DOMContentLoaded 이전/이후 모두 대응
+if (document.readyState === "loading"){
+  window.addEventListener("DOMContentLoaded", ()=>{ checkAndShowPopupOnce(); });
+} else {
   checkAndShowPopupOnce();
-});
-
+}
