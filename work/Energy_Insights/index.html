@@ -130,11 +130,15 @@
     .src-forecast{ color:var(--forecast); font-weight:900; }
 
     td.editable{
-      cursor:pointer;
-      text-decoration: underline;
-      text-decoration-color: rgba(0,0,0,.2);
-      text-underline-offset: 3px;
-    }
+  cursor:pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(0,0,0,.2);
+  text-underline-offset: 3px;
+
+  /* ✅ 모바일 탭 반응 개선 */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 
     /* ✅ 하단 요약 박스 */
     .stack{
@@ -941,16 +945,25 @@ function init(){
   });
 
   // 셀 클릭 수정
-  el("tbody2026").addEventListener("click", (e)=>{
-    const cell = e.target.closest("td.editable");
-    if(!cell) return;
-    openModal(cell.dataset.scope, Number(cell.dataset.month), cell.dataset.field);
-  });
-  el("tbody2025").addEventListener("click", (e)=>{
-    const cell = e.target.closest("td.editable");
-    if(!cell) return;
-    openModal(cell.dataset.scope, Number(cell.dataset.month), cell.dataset.field);
-  });
+  function handleCellTap(e){
+  const cell = e.target.closest("td.editable");
+  if(!cell) return;
+
+  // ✅ 스크롤 중 탭/드래그로 오작동 방지 (필요 시)
+  // e.preventDefault();
+
+  openModal(
+    cell.dataset.scope,
+    Number(cell.dataset.month),
+    cell.dataset.field
+  );
+}
+
+// ✅ 데스크톱/안드/아이폰 모두 안정적으로 잡기: pointerup + click
+["click","pointerup"].forEach(evt=>{
+  el("tbody2026").addEventListener(evt, handleCellTap, { passive: true });
+  el("tbody2025").addEventListener(evt, handleCellTap, { passive: true });
+});
 
   // ✅ 페이지 진입 시 잠금 상태 반영
   applyBaseLockUI();
