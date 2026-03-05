@@ -130,15 +130,16 @@
     .src-forecast{ color:var(--forecast); font-weight:900; }
 
     td.editable{
-  cursor:pointer;
-  text-decoration: underline;
-  text-decoration-color: rgba(0,0,0,.2);
-  text-underline-offset: 3px;
+      cursor:pointer;
+      text-decoration: underline;
+      text-decoration-color: rgba(0,0,0,.2);
+      text-underline-offset: 3px;
 
-  /* ✅ 모바일 탭 반응 개선 */
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
+      /* ✅ 모바일 탭 반응 개선 */
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select:none;
+    }
 
     /* ✅ 하단 요약 박스 */
     .stack{
@@ -244,36 +245,37 @@
       th, td{ padding:8px 6px; font-size:12px; }
       .inlineInput{padding:7px 8px}
     }
+
+    /* ✅ 모바일(세로)에서: 월/출처 줄이고 전기/열 확보 + … 방지 */
     @media (max-width: 600px){
       th, td{ padding:6px 4px; font-size:11px; }
-      .energyTable th:nth-child(6), .energyTable td:nth-child(6){ width:72px; }
       .baseTable th:nth-child(1), .baseTable td:nth-child(1){ width:64px; }
+
+      /* ✅ (중요) colgroup 폭이 먹도록: col class 기반 설정 */
+      .energyTable{ table-layout:fixed; width:100%; }
+      .energyTable col.col-month{ width:34px; }
+      .energyTable col.col-src{   width:44px; }
+      .energyTable col.col-elec{  width:27%; }
+      .energyTable col.col-heat{  width:27%; }
+      .energyTable col.col-toe{   width:12%; }
+      .energyTable col.col-cum{   width:12%; }
+
+      /* ✅ 월/출처 더 타이트 */
+      .energyTable th:nth-child(1), .energyTable td:nth-child(1){
+        padding-left:2px; padding-right:2px;
+      }
+      .energyTable th:nth-child(6), .energyTable td:nth-child(6){
+        font-size:10px;
+        padding-left:2px; padding-right:2px;
+        letter-spacing:-0.4px;
+      }
+
+      /* ✅ 전기/열은 …(ellipsis) 나오지 않게 */
+      .energyTable td:nth-child(2),
+      .energyTable td:nth-child(3){
+        text-overflow:clip;
+      }
     }
-
-    @media (max-width: 600px){
-  /* ✅ 모바일에서 컬럼 폭 재배분 (월↓, 출처↓, 전기/열↑) */
-  .energyTable{ table-layout:fixed; }
-
-  .energyTable .col-month{ width:20px; }   /* 월(60→40) */
-  .energyTable .col-elec{  width:35%; }    /* 전기 늘림 */
-  .energyTable .col-heat{  width:35%; }    /* 열 늘림 */
-  .energyTable .col-toe{   width:16%; }
-  .energyTable .col-cum{   width:16%; }
-  .energyTable .col-src{   width:20px; }   /* 출처(84→48) */
-
-  /* ✅ 모바일에서 월 텍스트/패딩도 살짝 줄이기 */
-  .energyTable th:nth-child(1), .energyTable td:nth-child(1){
-    padding-left:2px; padding-right:2px;
-    font-size:11px;
-  }
-
-  /* ✅ 출처 글자도 더 컴팩트 */
-  .energyTable th:nth-child(6), .energyTable td:nth-child(6){
-    font-size:10.5px;
-    padding-left:2px; padding-right:2px;
-    letter-spacing:-0.2px;
-  }
-}
   </style>
 </head>
 
@@ -300,6 +302,16 @@
 
       <div class="tableWrap">
         <table class="energyTable">
+          <!-- ✅ (중요) colgroup 추가: 모바일 컬럼폭 제어 -->
+          <colgroup>
+            <col class="col-month">
+            <col class="col-elec">
+            <col class="col-heat">
+            <col class="col-toe">
+            <col class="col-cum">
+            <col class="col-src">
+          </colgroup>
+
           <thead>
             <tr>
               <th>월</th>
@@ -418,6 +430,16 @@
         </div>
         <div class="tableWrap" style="max-height:52vh">
           <table class="energyTable">
+            <!-- ✅ 2025 표도 동일 colgroup 추가 -->
+            <colgroup>
+              <col class="col-month">
+              <col class="col-elec">
+              <col class="col-heat">
+              <col class="col-toe">
+              <col class="col-cum">
+              <col class="col-src">
+            </colgroup>
+
             <thead>
               <tr>
                 <th>월</th>
@@ -751,8 +773,8 @@ function render2026(){
     const tr=document.createElement("tr");
     tr.innerHTML=`
       <td>${r.m}</td>
-      <td class="editable ${eCls}" data-scope="2026" data-field="elec" data-month="${r.m}" title="클릭해서 수정">${fmt3(r.elec.value)}</td>
-      <td class="editable ${hCls}" data-scope="2026" data-field="heat" data-month="${r.m}" title="클릭해서 수정">${fmt1(r.heat.value)}</td>
+      <td class="editable ${eCls}" data-scope="2026" data-field="elec" data-month="${r.m}" title="탭해서 수정">${fmt3(r.elec.value)}</td>
+      <td class="editable ${hCls}" data-scope="2026" data-field="heat" data-month="${r.m}" title="탭해서 수정">${fmt1(r.heat.value)}</td>
       <td>${fmt2(r.toe)}</td>
       <td>${fmt2(r.cum_toe)}</td>
       <td class="${srcCls}">${srcLabel(r.src)}</td>
@@ -760,21 +782,17 @@ function render2026(){
     tbody.appendChild(tr);
   });
 
-  // ✅ 2026 표 맨 하단 합계행 채우기
   el("sumElecRow").textContent = fmt3(calc.sumElec);
   el("sumHeatRow").textContent = fmt1(calc.sumHeat);
   el("sumToeRow").textContent  = fmt2(calc.annualToeEst);
   el("sumToeRow2").textContent = fmt2(calc.annualToeEst);
 
-  // 기준 박스(3개년/평균) 표시
   renderBaselineBox();
 
-  // 2026 집계 박스
   el("sumElecTxt").textContent = `${fmt3(calc.sumElec)} MWh`;
   el("sumHeatTxt").textContent = `${fmt1(calc.sumHeat)} Gcal`;
   el("sumToeTxt").textContent  = `${fmt2(calc.annualToeEst)} toe`;
 
-  // 절감율
   if(calc.base<=0){
     el("savingBig").textContent = "기준년도 값 입력 필요";
     el("savingSub").textContent = "2020/2021/2022 연간 전기·열을 입력하면 평균 기준 대비 절감율이 계산됩니다.";
@@ -810,8 +828,8 @@ function render2025(){
     const tr=document.createElement("tr");
     tr.innerHTML=`
       <td>${i+1}</td>
-      <td class="editable ${eCls}" data-scope="2025" data-field="elec" data-month="${i+1}" title="클릭해서 수정">${fmt3(r.elec.value)}</td>
-      <td class="editable ${hCls}" data-scope="2025" data-field="heat" data-month="${i+1}" title="클릭해서 수정">${fmt1(r.heat.value)}</td>
+      <td class="editable ${eCls}" data-scope="2025" data-field="elec" data-month="${i+1}" title="탭해서 수정">${fmt3(r.elec.value)}</td>
+      <td class="editable ${hCls}" data-scope="2025" data-field="heat" data-month="${i+1}" title="탭해서 수정">${fmt1(r.heat.value)}</td>
       <td>${fmt2(monthToe)}</td>
       <td>${fmt2(cum)}</td>
       <td class="${srcCls}">${srcLabel(src)}</td>
@@ -837,9 +855,7 @@ function openModal(scope, month, field){
   el("modalValue").value  = (slot.value==null) ? "" : slot.value;
   el("modalMemo").value   = data[i].memo || "";
 
-  // ✅ 전기/열에 따라 step 자동(전기 0.001, 열 0.1)
   el("modalValue").step = (field==="elec") ? "0.001" : "0.1";
-
   el("modalBack").style.display = "flex";
 }
 function closeModal(){ el("modalBack").style.display = "none"; }
@@ -883,7 +899,6 @@ function deleteModalValue(){
    init
 ========================= */
 function init(){
-  // 기준년도 입력 초기값 표시
   const b = loadBaselineYears();
   el("b2020e").value = b.y2020.elec_mwh || 0;
   el("b2020h").value = b.y2020.heat_gcal || 0;
@@ -892,9 +907,8 @@ function init(){
   el("b2022e").value = b.y2022.elec_mwh || 0;
   el("b2022h").value = b.y2022.heat_gcal || 0;
 
-  // 기준년도 입력 변경 시 저장/갱신 (✅ 잠금이면 무시)
   const onBaseChange = ()=>{
-    if(isBaseLocked()) return; // ✅ 잠금이면 입력 이벤트 무시
+    if(isBaseLocked()) return;
     const next = {
       y2020:{ elec_mwh: Number(el("b2020e").value||0), heat_gcal: Number(el("b2020h").value||0) },
       y2021:{ elec_mwh: Number(el("b2021e").value||0), heat_gcal: Number(el("b2021h").value||0) },
@@ -903,12 +917,10 @@ function init(){
     saveBaselineYears(next);
     render2026();
   };
-
   ["b2020e","b2020h","b2021e","b2021h","b2022e","b2022h"].forEach(id=>{
     el(id).addEventListener("input", onBaseChange);
   });
 
-  // ✅ 기준년도 잠금/해제 버튼
   el("btnBaseLock").addEventListener("click", ()=>{
     if(!confirm("기준년도(2020~2022) 입력을 완료하고 잠글까요?\n잠그면 잠금 해제 전까지 수정할 수 없습니다.")) return;
     setBaseLocked(true);
@@ -920,14 +932,12 @@ function init(){
     applyBaseLockUI();
   });
 
-  // 2026 초기화
   el("btnReset2026").addEventListener("click", ()=>{
     if(!confirm("2026 입력값을 전부 지울까요? (빈 달은 2025값으로 예상 계산됩니다)")) return;
     localStorage.removeItem(LS_2026);
     render2026();
   });
 
-  // 2025 초기값 복원
   el("btnReset2025").addEventListener("click", ()=>{
     if(!confirm("2025 참고값을 초기값으로 되돌릴까요?")) return;
     localStorage.removeItem(LS_2025);
@@ -935,7 +945,6 @@ function init(){
     render2026();
   });
 
-  // modal
   el("modalCancel").addEventListener("click", closeModal);
   el("modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
   el("modalSave").addEventListener("click", saveModal);
@@ -944,30 +953,29 @@ function init(){
     deleteModalValue();
   });
 
-  // 셀 클릭 수정
+  /* ✅ 모바일에서 “스크롤 영역(tableWrap)” 안 탭이 누락되는 케이스 대응:
+     - click + pointerup + touchend 모두 수신
+     - 중복 호출 방지(짧은 시간 1회만)
+  */
+  let lastOpenAt = 0;
   function handleCellTap(e){
-  const cell = e.target.closest("td.editable");
-  if(!cell) return;
+    const now = Date.now();
+    if(now - lastOpenAt < 250) return; // ✅ 더블 트리거 방지
+    const cell = e.target.closest("td.editable");
+    if(!cell) return;
 
-  // ✅ 스크롤 중 탭/드래그로 오작동 방지 (필요 시)
-  // e.preventDefault();
+    lastOpenAt = now;
+    openModal(cell.dataset.scope, Number(cell.dataset.month), cell.dataset.field);
+  }
 
-  openModal(
-    cell.dataset.scope,
-    Number(cell.dataset.month),
-    cell.dataset.field
-  );
-}
+  const tb26 = el("tbody2026");
+  const tb25 = el("tbody2025");
+  ["click","pointerup","touchend"].forEach(evt=>{
+    tb26.addEventListener(evt, handleCellTap, { passive:true });
+    tb25.addEventListener(evt, handleCellTap, { passive:true });
+  });
 
-// ✅ 데스크톱/안드/아이폰 모두 안정적으로 잡기: pointerup + click
-["click","pointerup"].forEach(evt=>{
-  el("tbody2026").addEventListener(evt, handleCellTap, { passive: true });
-  el("tbody2025").addEventListener(evt, handleCellTap, { passive: true });
-});
-
-  // ✅ 페이지 진입 시 잠금 상태 반영
   applyBaseLockUI();
-
   render2025();
   render2026();
 }
