@@ -396,10 +396,16 @@
         </div>
 
         <div class="box">
-          <h2>연말 예상 절감율</h2>
-          <div class="big" id="savingBig">-</div>
-          <div class="note" id="savingSub">-</div>
-        </div>
+  <h2>현재까지 절감율 (고지서 입력 기준)</h2>
+  <div class="big" id="currentSavingBig">-</div>
+  <div class="note" id="currentSavingSub">-</div>
+</div>
+
+<div class="box">
+  <h2>연말 예상 절감율</h2>
+  <div class="big" id="savingBig">-</div>
+  <div class="note" id="savingSub">-</div>
+</div>
       </div>
 
       <details>
@@ -879,9 +885,38 @@ function compute2026(){
   const annualToeEst = withCum.reduce((s,r)=>s+r.toe,0);
 
   const { toeAvg: base } = baselineAverages();
-  const savingPctFinal = (base>0) ? (base - annualToeEst) / base * 100 : null;
 
-  return { withCum, sumElec, sumHeat, annualToeEst, base, savingPctFinal };
+  /* ✅ 현재까지(고지서 입력 기준) */
+  const billRows = withCum.filter(r => r.src === "bill");
+  const currentToe = billRows.reduce((s,r)=>s+r.toe,0);
+
+  const currentMonthCount = billRows.length;
+  const baseMonthlyAvg = base > 0 ? base / 12 : 0;
+  const currentBaseToe = currentMonthCount * baseMonthlyAvg;
+
+  const currentReduction = currentBaseToe - currentToe;
+  const currentSavingPct = (currentBaseToe > 0) ? (currentReduction / currentBaseToe * 100) : null;
+
+  /* ✅ 연말 예상 */
+  const annualReduction = base - annualToeEst;
+  const savingPctFinal = (base > 0) ? (annualReduction / base * 100) : null;
+
+  return {
+    withCum,
+    sumElec,
+    sumHeat,
+    annualToeEst,
+
+    base,
+    annualReduction,
+    savingPctFinal,
+
+    currentMonthCount,
+    currentBaseToe,
+    currentToe,
+    currentReduction,
+    currentSavingPct
+  };
 }
 
 /* =========================
@@ -921,16 +956,30 @@ function render2026(){
   el("sumHeatTxt").textContent = `${fmt1(calc.sumHeat)} Gcal`;
   el("sumToeTxt").textContent  = `${fmt2(calc.annualToeEst)} toe`;
 
-  if(calc.base<=0){
+    if(calc.base<=0){
+    el("currentSavingBig").textContent = "기준년도 값 입력 필요";
+    el("currentSavingSub").textContent = "2020/2021/2022 연간 전기·열을 입력하면 현재까지 절감율이 계산됩니다.";
+
     el("savingBig").textContent = "기준년도 값 입력 필요";
-    el("savingSub").textContent = "2020/2021/2022 연간 전기·열을 입력하면 평균 기준 대비 절감율이 계산됩니다.";
+    el("savingSub").textContent = "2020/2021/2022 연간 전기·열을 입력하면 연말 예상 절감율이 계산됩니다.";
   }else{
+    /* ✅ 현재까지 절감율 */
+    if(calc.currentMonthCount === 0){
+      el("currentSavingBig").textContent = "고지서 입력 없음";
+      el("currentSavingSub").textContent =
+        `기준년 ${fmt3(calc.base)} toe · 현재 고지서 입력 월이 없어 계산할 수 없습니다.`;
+    }else{
+      const currentPass = (calc.currentSavingPct != null && calc.currentSavingPct >= 1.0);
+      el("currentSavingBig").textContent = `${fmtPct(calc.currentSavingPct)}% (${currentPass?"PASS":"FAIL"})`;
+      el("currentSavingSub").textContent =
+        `기준년 ${fmt2(calc.currentBaseToe)} toe · 현재 ${fmt2(calc.currentToe)} toe · 절감량 ${fmt2(calc.currentReduction)} toe · 절감률 ${fmtPct(calc.currentSavingPct)}%`;
+    }
+
+    /* ✅ 연말 예상 절감율 */
     const pass = (calc.savingPctFinal!=null && calc.savingPctFinal>=1.0);
     el("savingBig").textContent = `${fmtPct(calc.savingPctFinal)}% (${pass?"PASS":"FAIL"})`;
-
-    const targ = targetToe();
     el("savingSub").textContent =
-      `기준(20~22 평균) ${fmt3(calc.base)} toe 대비 · 2026 연간 예상 ${fmt2(calc.annualToeEst)} toe · 목표(−1%) ${fmt3(targ)} toe 이하`;
+      `기준년 ${fmt3(calc.base)} toe · 연말예상 ${fmt2(calc.annualToeEst)} toe · 절감량 ${fmt2(calc.annualReduction)} toe · 절감률 ${fmtPct(calc.savingPctFinal)}%`;
   }
 }
 
