@@ -190,6 +190,13 @@
       font-weight:1100;
     }
 
+    /* ✅ 기준년도 잠금 시 시각효과 */
+    .inlineInput:disabled{
+      background:#f3f4f6;
+      color:#6b7280;
+      border-color:#e5e7eb;
+    }
+
     /* 모달 */
     .modalBack{
       position:fixed; inset:0;
@@ -341,8 +348,14 @@
             <div class="k">목표(−1%) TOE</div><div class="v" id="targetToeTxt">-</div>
           </div>
 
-          <div class="note">
-            ※ 2020/2021/2022 값을 각각 입력하면 “평균(20~22)”이 자동 계산되며, 절감율도 즉시 갱신됩니다. (브라우저 저장)
+          <!-- ✅ 잠금/해제 버튼 -->
+          <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn" id="btnBaseLock" type="button">기준년도 입력 완료(잠금)</button>
+            <button class="btn danger" id="btnBaseUnlock" type="button" style="display:none">잠금 해제(수정)</button>
+          </div>
+
+          <div class="note" id="baseLockNote">
+            ※ 2020/2021/2022 값을 입력 후 “입력 완료(잠금)”을 누르면 수정이 잠깁니다.
           </div>
         </div>
 
@@ -444,6 +457,7 @@ const F_HEAT = 0.1;
 const LS_2026 = "energy_2026_inputs_v2";
 const LS_2025 = "energy_2025_reference_v1";
 const LS_BASE = "energy_baseline_2020_22_by_year_v1";
+const LS_BASE_LOCK = "energy_baseline_lock_v1";
 
 /* =========================
    유틸
@@ -471,6 +485,40 @@ function srcLabel(src){
   if(src==="planner") return "플래너";
   if(src==="forecast") return "예상";
   return "자동";
+}
+
+/* =========================
+   기준 잠금 (완료 버튼)
+========================= */
+function isBaseLocked(){
+  return localStorage.getItem(LS_BASE_LOCK) === "1";
+}
+function setBaseLocked(locked){
+  localStorage.setItem(LS_BASE_LOCK, locked ? "1" : "0");
+}
+function applyBaseLockUI(){
+  const locked = isBaseLocked();
+  const ids = ["b2020e","b2020h","b2021e","b2021h","b2022e","b2022h"];
+
+  ids.forEach(id=>{
+    const input = el(id);
+    if(!input) return;
+    input.disabled = locked;
+    input.style.opacity = locked ? "0.85" : "1";
+    input.style.cursor = locked ? "not-allowed" : "text";
+  });
+
+  const lockBtn = el("btnBaseLock");
+  const unlockBtn = el("btnBaseUnlock");
+  if(lockBtn) lockBtn.style.display = locked ? "none" : "inline-block";
+  if(unlockBtn) unlockBtn.style.display = locked ? "inline-block" : "none";
+
+  const note = el("baseLockNote");
+  if(note){
+    note.textContent = locked
+      ? "✅ 기준년도 입력이 잠금 처리되었습니다. (잠금 해제 버튼으로 다시 수정 가능)"
+      : "※ 2020/2021/2022 값을 입력 후 “입력 완료(잠금)”을 누르면 수정이 잠깁니다.";
+  }
 }
 
 /* =========================
@@ -687,7 +735,7 @@ function render2026(){
   el("sumElecRow").textContent = fmt3(calc.sumElec);
   el("sumHeatRow").textContent = fmt1(calc.sumHeat);
   el("sumToeRow").textContent  = fmt2(calc.annualToeEst);
-  el("sumToeRow2").textContent = fmt2(calc.annualToeEst); // 누계 마지막값 = 연간값
+  el("sumToeRow2").textContent = fmt2(calc.annualToeEst);
 
   // 기준 박스(3개년/평균) 표시
   renderBaselineBox();
@@ -815,8 +863,9 @@ function init(){
   el("b2022e").value = b.y2022.elec_mwh || 0;
   el("b2022h").value = b.y2022.heat_gcal || 0;
 
-  // 기준년도 입력 변경 시 저장/갱신
+  // 기준년도 입력 변경 시 저장/갱신 (✅ 잠금이면 무시)
   const onBaseChange = ()=>{
+    if(isBaseLocked()) return; // ✅ 잠금이면 입력 이벤트 무시
     const next = {
       y2020:{ elec_mwh: Number(el("b2020e").value||0), heat_gcal: Number(el("b2020h").value||0) },
       y2021:{ elec_mwh: Number(el("b2021e").value||0), heat_gcal: Number(el("b2021h").value||0) },
@@ -828,6 +877,18 @@ function init(){
 
   ["b2020e","b2020h","b2021e","b2021h","b2022e","b2022h"].forEach(id=>{
     el(id).addEventListener("input", onBaseChange);
+  });
+
+  // ✅ 기준년도 잠금/해제 버튼
+  el("btnBaseLock").addEventListener("click", ()=>{
+    if(!confirm("기준년도(2020~2022) 입력을 완료하고 잠글까요?\n잠그면 잠금 해제 전까지 수정할 수 없습니다.")) return;
+    setBaseLocked(true);
+    applyBaseLockUI();
+  });
+  el("btnBaseUnlock").addEventListener("click", ()=>{
+    if(!confirm("잠금을 해제하고 기준년도 값을 수정할까요?")) return;
+    setBaseLocked(false);
+    applyBaseLockUI();
   });
 
   // 2026 초기화
@@ -865,6 +926,9 @@ function init(){
     if(!cell) return;
     openModal(cell.dataset.scope, Number(cell.dataset.month), cell.dataset.field);
   });
+
+  // ✅ 페이지 진입 시 잠금 상태 반영
+  applyBaseLockUI();
 
   render2025();
   render2026();
