@@ -284,17 +284,16 @@ function getSingleBarRule(title) {
   const isMobile = isMobileNow();
 
   if (isMobile) {
-    // ✅ 5자 이상이면 2레인 + (최대) 3줄 표시, 제목은 미리 자르지 않음
     if (full.length >= 5) return { rows: 2, textClamp: 3, display: full };
     return { rows: 1, textClamp: 1, display: full };
   }
 
-  // PC는 기존 유지
+  // ✅ PC도 미리 자르지 않고 그대로 표시
   const wantTwo = full.length >= 12;
   return {
     rows: wantTwo ? 2 : 1,
     textClamp: wantTwo ? 2 : 1,
-    display: compactTitleSingle(full),
+    display: full, // ✅ compactTitleSingle(full) 제거
   };
 }
 
@@ -932,6 +931,7 @@ function renderCalendar() {
       }
 
       bar.textContent = p.display;
+      bar.title = (p.ev?.title || "").trim(); // ✅ 툴팁
       weekBars.appendChild(bar);
     });
 
