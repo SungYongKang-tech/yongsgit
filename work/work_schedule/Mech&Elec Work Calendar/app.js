@@ -887,7 +887,8 @@ function renderCalendar() {
       bar.style.background = c + "18";
       bar.style.color = "#111";
 
-      bar.textContent = compactTitleMulti(ev.title || "(제목없음)");
+      bar.textContent = (ev.title || "(제목없음)").trim();
+      bar.title = (ev.title || "").trim(); // (선택) 마우스 올리면 전체 제목 툴팁
 
       bar.addEventListener("click", (e2) => {
         e2.stopPropagation();
