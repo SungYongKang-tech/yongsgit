@@ -499,7 +499,37 @@
     </div>
   </div>
 
-<script>
+<script type="module">
+/* =========================
+   Firebase
+========================= */
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDnIJEWMU9G5GvZuBvUqFvGTlM5goy2fyw",
+  authDomain: "work-schedule-b3c4e.firebaseapp.com",
+  databaseURL: "https://work-schedule-b3c4e-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "work-schedule-b3c4e",
+  storageBucket: "work-schedule-b3c4e.firebasestorage.app",
+  messagingSenderId: "823965422017",
+  appId: "1:823965422017:web:05b9bb9fcabf93b2919f40"
+};
+
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+/* ✅ 저장 경로 */
+const DB_ROOT = "energy2026/main";
+
+/* ✅ Firebase 상태 */
+let firebaseReady = false;
+let firebaseBound = false;
+let saveTimer = null;
+let suppressRemoteApply = false;
+
 /* =========================
    고정/저장 키
 ========================= */
@@ -540,6 +570,103 @@ function srcLabel(src){
 }
 
 /* =========================
+   Firebase sync helpers
+========================= */
+function deepClone(v){
+  return JSON.parse(JSON.stringify(v));
+}
+
+function collectAllDataForFirebase(){
+  return {
+    baselineYears: loadBaselineYears(),
+    baselineLock: isBaseLocked(),
+    ref2025: load2025(),
+    input2026: load2026(),
+    updatedAt: Date.now()
+  };
+}
+
+function applyFirebasePayloadToLocal(payload){
+  if(!payload || typeof payload !== "object") return;
+
+  if(payload.baselineYears){
+    localStorage.setItem(LS_BASE, JSON.stringify(payload.baselineYears));
+  }
+  if(typeof payload.baselineLock === "boolean"){
+    localStorage.setItem(LS_BASE_LOCK, payload.baselineLock ? "1" : "0");
+  }
+  if(Array.isArray(payload.ref2025)){
+    localStorage.setItem(LS_2025, JSON.stringify(payload.ref2025));
+  }
+  if(Array.isArray(payload.input2026)){
+    localStorage.setItem(LS_2026, JSON.stringify(payload.input2026));
+  }
+}
+
+function refreshAllUIFromStorage(){
+  const b = loadBaselineYears();
+
+  el("b2020e").value = b.y2020.elec_mwh || 0;
+  el("b2020h").value = b.y2020.heat_gcal || 0;
+  el("b2021e").value = b.y2021.elec_mwh || 0;
+  el("b2021h").value = b.y2021.heat_gcal || 0;
+  el("b2022e").value = b.y2022.elec_mwh || 0;
+  el("b2022h").value = b.y2022.heat_gcal || 0;
+
+  applyBaseLockUI();
+  render2025();
+  render2026();
+}
+
+async function saveAllToFirebaseNow(){
+  if(!firebaseReady) return;
+  const payload = collectAllDataForFirebase();
+  suppressRemoteApply = true;
+  try{
+    await set(ref(db, DB_ROOT), payload);
+  }catch(err){
+    console.error("Firebase 저장 실패:", err);
+  }finally{
+    setTimeout(()=>{ suppressRemoteApply = false; }, 300);
+  }
+}
+
+function queueSaveToFirebase(){
+  if(!firebaseReady) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>{
+    saveAllToFirebaseNow();
+  }, 250);
+}
+
+async function initFirebaseSync(){
+  try{
+    await signInAnonymously(auth);
+    firebaseReady = true;
+
+    const snap = await get(ref(db, DB_ROOT));
+    if(snap.exists()){
+      applyFirebasePayloadToLocal(snap.val());
+    }else{
+      await saveAllToFirebaseNow();
+    }
+
+    if(!firebaseBound){
+      firebaseBound = true;
+      onValue(ref(db, DB_ROOT), (snap2)=>{
+        if(!snap2.exists()) return;
+        if(suppressRemoteApply) return;
+        applyFirebasePayloadToLocal(snap2.val());
+        refreshAllUIFromStorage();
+      });
+    }
+  }catch(err){
+    firebaseReady = false;
+    console.error("Firebase 초기화 실패:", err);
+  }
+}
+
+/* =========================
    기준 잠금 (완료 버튼)
 ========================= */
 function isBaseLocked(){
@@ -547,6 +674,7 @@ function isBaseLocked(){
 }
 function setBaseLocked(locked){
   localStorage.setItem(LS_BASE_LOCK, locked ? "1" : "0");
+  queueSaveToFirebase();
 }
 function applyBaseLockUI(){
   const locked = isBaseLocked();
@@ -603,6 +731,7 @@ function loadBaselineYears(){
 }
 function saveBaselineYears(b){
   localStorage.setItem(LS_BASE, JSON.stringify(b));
+  queueSaveToFirebase();
 }
 function baselineAverages(){
   const b = loadBaselineYears();
@@ -672,7 +801,10 @@ function load2025(){
     return default2025();
   }
 }
-function save2025(d){ localStorage.setItem(LS_2025, JSON.stringify(d)); }
+function save2025(d){
+  localStorage.setItem(LS_2025, JSON.stringify(d));
+  queueSaveToFirebase();
+}
 function getY2025Arrays(){
   const d = load2025();
   const elec = d.map(r=> (r.elec.value==null ? 0 : r.elec.value));
@@ -714,7 +846,10 @@ function load2026(){
     return default2026();
   }
 }
-function save2026(d){ localStorage.setItem(LS_2026, JSON.stringify(d)); }
+function save2026(d){
+  localStorage.setItem(LS_2026, JSON.stringify(d));
+  queueSaveToFirebase();
+}
 
 /* ✅ 2026 빈칸이면 2025 동일월을 “예상”으로 사용 */
 function pickElec2026(d2026, i, y25e){
@@ -899,7 +1034,7 @@ function deleteModalValue(){
 /* =========================
    init
 ========================= */
-function init(){
+async function init(){
   const b = loadBaselineYears();
   el("b2020e").value = b.y2020.elec_mwh || 0;
   el("b2020h").value = b.y2020.heat_gcal || 0;
@@ -936,12 +1071,14 @@ function init(){
   el("btnReset2026").addEventListener("click", ()=>{
     if(!confirm("2026 입력값을 전부 지울까요? (빈 달은 2025값으로 예상 계산됩니다)")) return;
     localStorage.removeItem(LS_2026);
+    queueSaveToFirebase();
     render2026();
   });
 
   el("btnReset2025").addEventListener("click", ()=>{
     if(!confirm("2025 참고값을 초기값으로 되돌릴까요?")) return;
     localStorage.removeItem(LS_2025);
+    queueSaveToFirebase();
     render2025();
     render2026();
   });
@@ -961,7 +1098,7 @@ function init(){
   let lastOpenAt = 0;
   function handleCellTap(e){
     const now = Date.now();
-    if(now - lastOpenAt < 250) return; // ✅ 더블 트리거 방지
+    if(now - lastOpenAt < 250) return;
     const cell = e.target.closest("td.editable");
     if(!cell) return;
 
@@ -979,6 +1116,10 @@ function init(){
   applyBaseLockUI();
   render2025();
   render2026();
+
+  /* ✅ 마지막에 Firebase 연결 */
+  await initFirebaseSync();
+  refreshAllUIFromStorage();
 }
 init();
 </script>
