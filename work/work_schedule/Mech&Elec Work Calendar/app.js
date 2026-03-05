@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
 ========================= */
 const LS_NAME = "mecal_selected_name";
 const LS_TYPES = "mecal_selected_types";
+const LS_UNLOCK = "mecal_unlocked_members"; // ✅ PIN 통과한 멤버들
 
 // ✅ 화면/필터에 사용할 최종 분야(관리자 설정 우선)
 let TYPE_LIST = ["근태", "회사일정", "작업일정"]; // 기본값(관리자 설정이 없을 때)
@@ -39,8 +40,6 @@ const saveBtn = $("saveBtn");
 const deleteBtn = $("deleteBtn");
 const closeBtn = $("closeBtn");
 const editHint = $("editHint");
-const LS_UNLOCK = "mecal_unlocked_members"; // ✅ PIN 통과한 멤버들
-
 
 // ✅ 종일 체크박스(HTML에 id="allDayChk" 필요)
 const allDayChk = $("allDayChk");
@@ -117,7 +116,7 @@ let adminHolidayMap = {}; // { "YYYY-MM-DD": {name, note} }
 function subscribeAdminHolidays() {
   onValue(ref(db, "config/holidays"), (snap) => {
     adminHolidayMap = snap.val() || {};
-    applyMonthFilterAndRender(); // holidayMap merge 포함
+    applyMonthFilterAndRender();
   });
 }
 
@@ -216,6 +215,13 @@ function isMobileNow() {
   return window.matchMedia("(max-width: 640px)").matches;
 }
 
+/* ✅ CSS var -> px 숫자 (calc 대응, 세로/가로 전환 안정화 핵심) */
+function cssPx(varName, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 /* ✅ 모바일에서 칸 안 좌우 여백을 더 확보하기 위한 left/width inset */
 function getBarInsetPx() {
   return isMobileNow() ? { sidePad: 1, sideSub: 2 } : { sidePad: 2, sideSub: 4 };
@@ -249,11 +255,6 @@ function toEventList() {
     });
   });
   return list;
-}
-
-function compactTitleMulti(title) {
-  const full = (title || "(제목없음)").trim();
-  return full.length >= 9 ? full.slice(0, 7) + "…" : full;
 }
 
 // ✅ PC(기본) 싱글 표시용: 16자까지 / 17자부터 15자+…
@@ -293,11 +294,9 @@ function getSingleBarRule(title) {
   return {
     rows: wantTwo ? 2 : 1,
     textClamp: wantTwo ? 2 : 1,
-    display: full, // ✅ compactTitleSingle(full) 제거
+    display: full,
   };
 }
-
-
 
 /* =========================
    ✅ 종일/시간 입력 UX
@@ -355,6 +354,17 @@ document.addEventListener("click", (e) => {
 /* =========================
    Modal
 ========================= */
+function syncEndDateMin() {
+  const s = (fDate?.value || "").trim();
+  if (!s || !fEndDate) return;
+
+  // ✅ 종료일 달력에서 시작일 이전 날짜 선택 못하게
+  fEndDate.min = s;
+
+  // ✅ 종료일이 비었거나 시작일보다 빠르면 자동으로 시작일로 맞춤
+  if (!fEndDate.value || fEndDate.value < s) fEndDate.value = s;
+}
+
 function openModal({ dateKey, eventId = null, event = null }) {
   if (!selectedName) {
     alert("상단에서 이름을 먼저 선택해 주세요.");
@@ -365,11 +375,11 @@ function openModal({ dateKey, eventId = null, event = null }) {
 
   const startKey = (event?.startDate || dateKey);
 
-editing = {
-  dateKey: startKey,          // 현재(변경될 수 있는) 시작일
-  eventId,
-  originalDateKey: event?.startDate || dateKey, // ✅ 원래 저장 경로(고정)
-};
+  editing = {
+    dateKey: startKey, // 현재(변경될 수 있는) 시작일
+    eventId,
+    originalDateKey: event?.startDate || dateKey, // ✅ 원래 저장 경로(고정)
+  };
 
   modalBack?.classList.add("show");
 
@@ -383,6 +393,7 @@ editing = {
 
   if (fOwner) fOwner.value = selectedName;
   if (fEndDate) fEndDate.value = event?.endDate || startKey;
+  syncEndDateMin();
 
   if (event) {
     modalTitle.textContent = "일정 수정";
@@ -422,43 +433,19 @@ editing = {
 }
 
 fDate?.addEventListener("change", () => {
-  const v = (fDate.value || "").trim();
-  if (!v) return;
-  editing.dateKey = v;
-
-  // 종료일이 비어있거나 시작일보다 빠르면 시작일로 맞춤(선택)
-  if (fEndDate) {
-    if (!fEndDate.value || fEndDate.value < v) fEndDate.value = v;
-  }
-});
-
-function syncEndDateMin() {
-  const s = (fDate?.value || "").trim();
-  if (!s || !fEndDate) return;
-
-  // ✅ 종료일 달력에서 시작일 이전 날짜 선택 못하게
-  fEndDate.min = s;
-
-  // ✅ 종료일이 비었거나 시작일보다 빠르면 자동으로 시작일로 맞춤
-  if (!fEndDate.value || fEndDate.value < s) fEndDate.value = s;
-}
-
-fDate?.addEventListener("change", () => {
   const s = (fDate.value || "").trim();
   if (!s) return;
-  editing.dateKey = s;        // ✅ 현재 시작일만 바뀜
+  editing.dateKey = s;
   syncEndDateMin();
 });
 
 fEndDate?.addEventListener("change", () => {
-  // 종료일이 시작일보다 빠르면 방지
   syncEndDateMin();
 });
 
-
 function closeModal() {
   modalBack?.classList.remove("show");
-  editing = { dateKey: null, eventId: null };
+  editing = { dateKey: null, eventId: null, originalDateKey: null };
 }
 
 modalBack?.addEventListener("click", (e) => {
@@ -466,6 +453,9 @@ modalBack?.addEventListener("click", (e) => {
 });
 closeBtn?.addEventListener("click", closeModal);
 
+/* =========================
+   PIN Unlock
+========================= */
 function loadUnlocked() {
   try {
     const raw = localStorage.getItem(LS_UNLOCK);
@@ -483,12 +473,9 @@ function saveUnlocked() {
 
 // ✅ PIN 확인 (간단 prompt 버전)
 async function ensureMemberUnlocked(member) {
-  // PIN이 없으면 제한 없음
-  console.log("PIN check member=", member); // ✅ 추가
   const pin = (member?.pin || "").trim();
   if (!pin) return true;
 
-  // 이미 통과했으면 OK
   if (unlockedMembers.has(member.id)) return true;
 
   const input = prompt(`${member.name} 비밀번호(PIN)를 입력해 주세요.`);
@@ -503,7 +490,6 @@ async function ensureMemberUnlocked(member) {
   return true;
 }
 
-
 /* =========================
    Members
 ========================= */
@@ -511,7 +497,7 @@ function renderMemberButtons() {
   if (!memberBar) return;
   memberBar.innerHTML = "";
 
-  // ✅ 선택 이름이 비어있거나 비활성화되었으면 첫 사람으로 지정(재귀 호출 X)
+  // ✅ 선택 이름이 비어있거나 비활성화되었으면 첫 사람으로 지정
   if ((!selectedName || !members.some((m) => m.name === selectedName)) && members.length) {
     selectedName = members[0].name;
     localStorage.setItem(LS_NAME, selectedName);
@@ -536,7 +522,6 @@ function renderMemberButtons() {
       btn.style.boxShadow = "none";
     }
 
-    // ✅ 여기만 변경
     btn.onclick = async () => {
       const ok = await ensureMemberUnlocked(m);
       if (!ok) return;
@@ -544,22 +529,21 @@ function renderMemberButtons() {
       selectedName = m.name;
       localStorage.setItem(LS_NAME, selectedName);
       renderMemberButtons();
+      renderCalendar(); // ✅ 선택 변경 시 즉시 재배치(세로 여백 체감 개선)
     };
 
     memberBar.appendChild(btn);
   });
 }
 
-
 function subscribeMembers() {
   onValue(ref(db, "config/members"), (snap) => {
     const obj = snap.val() || {};
 
-    // ✅ id를 반드시 포함
     const list = Object.entries(obj).map(([id, v]) => ({
       id,
       ...(v || {}),
-      pin: (v?.pin || "").toString().trim(), // ✅ pin 문자열 보정
+      pin: (v?.pin || "").toString().trim(),
       name: (v?.name || "").toString().trim(),
     }));
 
@@ -571,7 +555,6 @@ function subscribeMembers() {
     renderCalendar();
   });
 }
-
 
 /* =========================
    Events
@@ -684,8 +667,9 @@ function renderCalendar() {
   });
   calGrid.appendChild(dow);
 
-  const barRowPx =
-    parseInt(getComputedStyle(document.documentElement).getPropertyValue("--bar-row")) || 24;
+  // ✅ 핵심: calc/모바일/세로전환에서도 정확히 읽기
+  const barRowPx = cssPx("--bar-row", 24);
+
   const todayKey = ymd(new Date());
 
   let cursor = new Date(start);
@@ -709,9 +693,7 @@ function renderCalendar() {
       day.className = "day";
       day.classList.add(`dow-${i}`);
 
-      // ✅ 공휴일 날짜 숫자도 색 반영
       if (holidayMap[dateKey]) day.classList.add("holiday");
-
       if (dateKey === todayKey) day.classList.add("today");
 
       const inMonth = cursor.getMonth() === m;
@@ -746,7 +728,7 @@ function renderCalendar() {
     for (const ev of allEvents) {
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
-      if (s === e) continue; // 멀티만
+      if (s === e) continue;
 
       if (e < weekStartKey || s > weekEndKey) continue;
 
@@ -887,7 +869,7 @@ function renderCalendar() {
       bar.style.color = "#111";
 
       bar.textContent = (ev.title || "(제목없음)").trim();
-      bar.title = (ev.title || "").trim(); // (선택) 마우스 올리면 전체 제목 툴팁
+      bar.title = (ev.title || "").trim();
 
       bar.addEventListener("click", (e2) => {
         e2.stopPropagation();
@@ -903,13 +885,18 @@ function renderCalendar() {
 
       let cls = "sbar";
       if (!p.isHoliday && p.rows === 2) cls += " two-row";
-      // ❌ 삭제: if (!p.isHoliday && p.textClamp === 2) cls += " two-text";
       if (!p.isHoliday && p.textClamp === 3) cls += " three-text";
       bar.className = cls;
 
       bar.style.left = `calc(${p.col * colW}% + ${sidePad}px)`;
       bar.style.width = `calc(${colW}% - ${sideSub}px)`;
       bar.style.top = `${p.row * barRowPx}px`;
+
+      // ✅ 2칸짜리(모바일)일 때 높이/간격을 CSS 변수 기준으로 "딱" 고정
+      if (!p.isHoliday && p.rows === 2) {
+        bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
+        bar.style.lineHeight = "12px";
+      }
 
       if (p.isHoliday) {
         bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
@@ -931,7 +918,7 @@ function renderCalendar() {
       }
 
       bar.textContent = p.display;
-      bar.title = (p.ev?.title || "").trim(); // ✅ 툴팁
+      bar.title = (p.ev?.title || "").trim();
       weekBars.appendChild(bar);
     });
 
@@ -977,28 +964,23 @@ saveBtn?.addEventListener("click", async () => {
 
   try {
     if (editing.eventId) {
-  const oldKey = editing.originalDateKey;     // ✅ 원래 저장 경로(고정)
-  const newKey = startKey;                    // ✅ 사용자가 바꾼 시작일
+      const oldKey = editing.originalDateKey;
+      const newKey = startKey;
 
-  const ev = eventsAll?.[oldKey]?.[editing.eventId];
-  if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
-  if (ev.owner !== selectedName) { alert("작성자 본인만 수정할 수 있습니다."); return; }
+      const ev = eventsAll?.[oldKey]?.[editing.eventId];
+      if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
+      if (ev.owner !== selectedName) { alert("작성자 본인만 수정할 수 있습니다."); return; }
 
-  if (newKey !== oldKey) {
-    // ✅ 이동 저장: 새 경로 set → 기존 경로 remove
-    await set(ref(db, `events/${newKey}/${editing.eventId}`), payload);
-    await remove(ref(db, `events/${oldKey}/${editing.eventId}`));
-  } else {
-    // ✅ 같은 날짜면 update
-    await update(ref(db, `events/${oldKey}/${editing.eventId}`), payload);
-  }
-
-} else {
-  // 신규
-  const newRef = push(ref(db, `events/${startKey}`));
-  await set(newRef, payload);
-}
-
+      if (newKey !== oldKey) {
+        await set(ref(db, `events/${newKey}/${editing.eventId}`), payload);
+        await remove(ref(db, `events/${oldKey}/${editing.eventId}`));
+      } else {
+        await update(ref(db, `events/${oldKey}/${editing.eventId}`), payload);
+      }
+    } else {
+      const newRef = push(ref(db, `events/${startKey}`));
+      await set(newRef, payload);
+    }
 
     closeModal();
   } catch (err) {
@@ -1007,10 +989,9 @@ saveBtn?.addEventListener("click", async () => {
   }
 });
 
-
 deleteBtn?.addEventListener("click", async () => {
   const eventId = editing.eventId;
-  const key = editing.originalDateKey; // ✅ 원래 키로 삭제
+  const key = editing.originalDateKey;
 
   if (!key || !eventId) return;
 
@@ -1027,7 +1008,6 @@ deleteBtn?.addEventListener("click", async () => {
     alert("삭제 실패: " + (err?.message || err));
   }
 });
-
 
 /* =========================
    Buttons
@@ -1046,9 +1026,7 @@ $("todayBtn")?.addEventListener("click", () => {
   if (!el) return;
 
   const THRESHOLD = 60;
-  let startX = 0,
-    startY = 0,
-    dragging = false;
+  let startX = 0, startY = 0, dragging = false;
   let locked = null;
 
   function goPrev() {
@@ -1060,31 +1038,23 @@ $("todayBtn")?.addEventListener("click", () => {
     applyMonthFilterAndRender();
   }
 
-  el.addEventListener(
-    "touchstart",
-    (e) => {
-      const t = e.touches[0];
-      startX = t.clientX;
-      startY = t.clientY;
-      dragging = true;
-      locked = null;
-    },
-    { passive: true }
-  );
+  el.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    startX = t.clientX;
+    startY = t.clientY;
+    dragging = true;
+    locked = null;
+  }, { passive: true });
 
-  el.addEventListener(
-    "touchmove",
-    (e) => {
-      if (!dragging) return;
-      const t = e.touches[0];
-      const dx = t.clientX - startX;
-      const dy = t.clientY - startY;
+  el.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
 
-      if (locked === null) locked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-      if (locked === "h") e.preventDefault();
-    },
-    { passive: false }
-  );
+    if (locked === null) locked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+    if (locked === "h") e.preventDefault();
+  }, { passive: false });
 
   el.addEventListener("touchend", (e) => {
     if (!dragging) return;
@@ -1127,6 +1097,21 @@ $("todayBtn")?.addEventListener("click", () => {
       else goNext();
     }
   });
+})();
+
+/* =========================
+   ✅ 세로/가로 전환 시 레이아웃 재계산(여백 문제 핵심 해결)
+========================= */
+(function bindRelayout() {
+  let t = null;
+  const relayout = () => {
+    clearTimeout(t);
+    t = setTimeout(() => renderCalendar(), 120);
+  };
+  window.addEventListener("resize", relayout, { passive: true });
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => renderCalendar(), 200);
+  }, { passive: true });
 })();
 
 /* =========================
