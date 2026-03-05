@@ -285,11 +285,20 @@ function getSingleBarRule(title) {
   const isMobile = isMobileNow();
 
   if (isMobile) {
-    if (full.length >= 5) return { rows: 2, textClamp: 3, display: full };
-    return { rows: 1, textClamp: 1, display: full };
+    // ✅ 줄바꿈 가능성이 높은 조건(더 적극적으로 2칸 처리)
+    const hasSpace = /\s/.test(full);
+    const hasPunc = /[()[\]{}·•,./\\\-_:;!?]/.test(full);
+    const longEnough = full.length >= 4;   // 기존 5 → 4로 완화
+
+    const wantTwo = longEnough || hasSpace || hasPunc;
+    return {
+      rows: wantTwo ? 2 : 1,
+      textClamp: wantTwo ? 3 : 1,
+      display: full,
+    };
   }
 
-  // ✅ PC도 미리 자르지 않고 그대로 표시
+  // PC는 그대로
   const wantTwo = full.length >= 12;
   return {
     rows: wantTwo ? 2 : 1,
