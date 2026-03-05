@@ -100,6 +100,22 @@
       font-weight:900;
     }
 
+    /* ✅ 합계행 고정 */
+    tfoot th{
+      position:sticky;
+      bottom:0;
+      z-index:4;
+      background:var(--soft);
+      font-weight:1100;
+      border-top:2px solid var(--line);
+    }
+    tfoot th:nth-child(1){ text-align:center; }
+    tfoot th:nth-child(2),
+    tfoot th:nth-child(3),
+    tfoot th:nth-child(4),
+    tfoot th:nth-child(5){ text-align:right; }
+    tfoot th:nth-child(6){ text-align:center; }
+
     .energyTable th:nth-child(1), .energyTable td:nth-child(1){ text-align:center; width:60px; }
     .energyTable th:nth-child(2), .energyTable td:nth-child(2){ text-align:right; }
     .energyTable th:nth-child(3), .energyTable td:nth-child(3){ text-align:right; }
@@ -258,7 +274,20 @@
               <th>출처</th>
             </tr>
           </thead>
+
           <tbody id="tbody2026"></tbody>
+
+          <!-- ✅ 합계 행 -->
+          <tfoot>
+            <tr>
+              <th>합계</th>
+              <th id="sumElecRow">-</th>
+              <th id="sumHeatRow">-</th>
+              <th id="sumToeRow">-</th>
+              <th id="sumToeRow2">-</th>
+              <th id="sumSrcRow">실적+예상</th>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
@@ -654,10 +683,16 @@ function render2026(){
     tbody.appendChild(tr);
   });
 
+  // ✅ 2026 표 맨 하단 합계행 채우기
+  el("sumElecRow").textContent = fmt3(calc.sumElec);
+  el("sumHeatRow").textContent = fmt1(calc.sumHeat);
+  el("sumToeRow").textContent  = fmt2(calc.annualToeEst);
+  el("sumToeRow2").textContent = fmt2(calc.annualToeEst); // 누계 마지막값 = 연간값
+
   // 기준 박스(3개년/평균) 표시
   renderBaselineBox();
 
-  // 2026 집계
+  // 2026 집계 박스
   el("sumElecTxt").textContent = `${fmt3(calc.sumElec)} MWh`;
   el("sumHeatTxt").textContent = `${fmt1(calc.sumHeat)} Gcal`;
   el("sumToeTxt").textContent  = `${fmt2(calc.annualToeEst)} toe`;
@@ -712,6 +747,7 @@ function render2025(){
    모달(표 셀 클릭 수정)
 ========================= */
 let modalState = { scope:null, month:null, field:null };
+
 function openModal(scope, month, field){
   modalState = { scope, month, field };
   const data = (scope==="2025") ? load2025() : load2026();
@@ -723,6 +759,9 @@ function openModal(scope, month, field){
   el("modalSource").value = slot.source || (scope==="2025" ? "bill" : "forecast");
   el("modalValue").value  = (slot.value==null) ? "" : slot.value;
   el("modalMemo").value   = data[i].memo || "";
+
+  // ✅ 전기/열에 따라 step 자동(전기 0.001, 열 0.1)
+  el("modalValue").step = (field==="elec") ? "0.001" : "0.1";
 
   el("modalBack").style.display = "flex";
 }
