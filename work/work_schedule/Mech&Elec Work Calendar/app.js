@@ -232,6 +232,10 @@ function getMemberColor(name) {
     성용: "#55B7FF",
     서진: "#FF6FAE",
     무성: "#67D96E",
+
+    "에너지 이용량": "#FFA94D",   // 주황
+    "코엔서비스": "#8E7CFF",     // 보라
+    "업무공유": "#4DD4AC",       // 민트
   };
   return COLOR_MAP[name] || "#1f6feb";
 }
