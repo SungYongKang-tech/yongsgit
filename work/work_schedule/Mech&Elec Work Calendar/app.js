@@ -52,6 +52,7 @@ current = new Date(current.getFullYear(), current.getMonth(), 1);
 
 let membersAll = [];
 let members = [];
+let memberColorMap = {}; // ✅ 관리자모드에서 설정한 멤버 색상 맵
 let selectedName = localStorage.getItem(LS_NAME) || "";
 
 let eventsAll = {}; // { "YYYY-MM-DD": {eventId: evObj} }
@@ -224,6 +225,7 @@ async function loadKoreanHolidays(year) {
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
+
 function ymd(d) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
@@ -244,13 +246,10 @@ function getBarInsetPx() {
   return isMobileNow() ? { sidePad: 1, sideSub: 2 } : { sidePad: 2, sideSub: 4 };
 }
 
+/* ✅ 관리자모드(config/members)의 color 값 사용 */
 function getMemberColor(name) {
-  const COLOR_MAP = {
-    "성용": "#55B7FF",
-    "서진": "#FF6FAE",
-    "무성": "#67D96E",
-  };
-  return COLOR_MAP[name] || "#1f6feb";
+  const n = (name || "").trim();
+  return memberColorMap[n] || "#1f6feb";
 }
 
 function getTypeColor(type) {
@@ -265,8 +264,6 @@ function getTypeColor(type) {
   };
   return TYPE_COLOR_MAP[type] || "#1f6feb";
 }
-
-
 
 function monthRangeKeys() {
   const start = new Date(current);
@@ -320,7 +317,7 @@ function getSingleBarRule(title) {
     // ✅ 줄바꿈 가능성이 높은 조건(더 적극적으로 2칸 처리)
     const hasSpace = /\s/.test(full);
     const hasPunc = /[()[\]{}·•,./\\\-_:;!?]/.test(full);
-    const longEnough = full.length >= 4;   // 기존 5 → 4로 완화
+    const longEnough = full.length >= 4;
 
     const wantTwo = longEnough || hasSpace || hasPunc;
     return {
@@ -417,16 +414,15 @@ function openModal({ dateKey, eventId = null, event = null }) {
   const startKey = (event?.startDate || dateKey);
 
   editing = {
-    dateKey: startKey, // 현재(변경될 수 있는) 시작일
+    dateKey: startKey,
     eventId,
-    originalDateKey: event?.startDate || dateKey, // ✅ 원래 저장 경로(고정)
+    originalDateKey: event?.startDate || dateKey,
   };
 
   modalBack?.classList.add("show");
 
   setAllDay(true);
 
-  // ✅ 시작일 input을 수정 가능하게
   if (fDate) {
     fDate.disabled = false;
     fDate.value = startKey;
@@ -455,10 +451,11 @@ function openModal({ dateKey, eventId = null, event = null }) {
     const canEdit = event.owner === selectedName;
     if (saveBtn) saveBtn.disabled = !canEdit;
     if (deleteBtn) deleteBtn.style.display = canEdit ? "inline-block" : "none";
-    if (editHint)
+    if (editHint) {
       editHint.textContent = canEdit
         ? "작성자 본인 일정입니다. 수정/삭제 가능합니다."
         : "작성자 본인만 수정/삭제할 수 있습니다.";
+    }
   } else {
     modalTitle.textContent = "일정 입력";
     fType.value = TYPE_LIST[0] || "작업일정";
@@ -520,7 +517,7 @@ async function ensureMemberUnlocked(member) {
   if (unlockedMembers.has(member.id)) return true;
 
   const input = prompt(`${member.name} 비밀번호(PIN)를 입력해 주세요.`);
-  if (input === null) return false; // 취소
+  if (input === null) return false;
   if (String(input).trim() !== pin) {
     alert("비밀번호가 일치하지 않습니다.");
     return false;
@@ -570,7 +567,7 @@ function renderMemberButtons() {
       selectedName = m.name;
       localStorage.setItem(LS_NAME, selectedName);
       renderMemberButtons();
-      renderCalendar(); // ✅ 선택 변경 시 즉시 재배치(세로 여백 체감 개선)
+      renderCalendar();
     };
 
     memberBar.appendChild(btn);
@@ -586,11 +583,22 @@ function subscribeMembers() {
       ...(v || {}),
       pin: (v?.pin || "").toString().trim(),
       name: (v?.name || "").toString().trim(),
+      color: (v?.color || "").toString().trim(), // ✅ 관리자에서 저장한 색상
     }));
 
     list.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
     membersAll = list;
     members = list.filter((x) => x.active !== false);
+
+    // ✅ 이름 기준 색상 맵 구성
+    memberColorMap = {};
+    membersAll.forEach((m) => {
+      const name = (m.name || "").trim();
+      const color = (m.color || "").trim();
+      if (name) {
+        memberColorMap[name] = color || "#1f6feb";
+      }
+    });
 
     renderMemberButtons();
     renderCalendar();
@@ -639,11 +647,15 @@ function placeInLanes(segments) {
   function ensureRow(row) {
     if (!occ[row]) occ[row] = new Array(7).fill(false);
   }
+
   function canPlace(row, sIdx, eIdx) {
     ensureRow(row);
-    for (let k = sIdx; k <= eIdx; k++) if (occ[row][k]) return false;
+    for (let k = sIdx; k <= eIdx; k++) {
+      if (occ[row][k]) return false;
+    }
     return true;
   }
+
   function occupy(row, sIdx, eIdx) {
     ensureRow(row);
     for (let k = sIdx; k <= eIdx; k++) occ[row][k] = true;
@@ -710,7 +722,6 @@ function renderCalendar() {
 
   // ✅ 핵심: calc/모바일/세로전환에서도 정확히 읽기
   const barRowPx = cssPx("--bar-row", 24);
-
   const todayKey = ymd(new Date());
 
   let cursor = new Date(start);
@@ -841,7 +852,7 @@ function renderCalendar() {
       });
     }
 
-    // ✅ 2) 휴무일/명절 (1칸 점유 + 툴팁만, 클릭 금지)
+    // ✅ 2) 휴무일/명절
     for (let i = 0; i < 7; i++) {
       const dateKey = dateKeys[i];
       const h = holidayMap[dateKey];
@@ -893,76 +904,74 @@ function renderCalendar() {
     const colW = 100 / 7;
 
     // --- 멀티바 렌더 ---
-    // --- 멀티바 렌더 ---
-placed.forEach((p) => {
-  const { row, sIdx, eIdx, ev } = p;
-  const span = eIdx - sIdx + 1;
+    placed.forEach((p) => {
+      const { row, sIdx, eIdx, ev } = p;
+      const span = eIdx - sIdx + 1;
 
-  const bar = document.createElement("div");
-  bar.className = "mbar";
+      const bar = document.createElement("div");
+      bar.className = "mbar";
 
-  bar.style.left = `calc(${sIdx * colW}% + ${sidePad}px)`;
-  bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
-  bar.style.top = `${row * barRowPx}px`;
+      bar.style.left = `calc(${sIdx * colW}% + ${sidePad}px)`;
+      bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
+      bar.style.top = `${row * barRowPx}px`;
 
-  const c = getMemberColor(ev.owner);
-  bar.style.borderColor = c;
-  bar.style.background = c + "18";
-  bar.style.color = "#111";
+      const c = getMemberColor(ev.owner);
+      bar.style.borderColor = c;
+      bar.style.background = c + "18";
+      bar.style.color = "#111";
 
-  bar.textContent = (ev.title || "(제목없음)").trim();
-  bar.title = (ev.title || "").trim();
+      bar.textContent = (ev.title || "(제목없음)").trim();
+      bar.title = (ev.title || "").trim();
 
-  bar.addEventListener("click", (e2) => {
-    e2.stopPropagation();
-    openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-  });
+      bar.addEventListener("click", (e2) => {
+        e2.stopPropagation();
+        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+      });
 
-  weekBars.appendChild(bar);
-});
-
-    // --- 싱글바 렌더 ---
-    // --- 싱글바 렌더 ---
-singleBars.forEach((p) => {
-  const bar = document.createElement("div");
-
-  let cls = "sbar";
-  if (!p.isHoliday && p.rows === 2) cls += " two-row";
-  if (!p.isHoliday && p.textClamp === 3) cls += " three-text";
-  bar.className = cls;
-
-  bar.style.left = `calc(${p.col * colW}% + ${sidePad}px)`;
-  bar.style.width = `calc(${colW}% - ${sideSub}px)`;
-  bar.style.top = `${p.row * barRowPx}px`;
-
-  if (!p.isHoliday && p.rows === 2) {
-    bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
-    bar.style.lineHeight = "12px";
-  }
-
-  if (p.isHoliday) {
-    bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
-    bar.style.background = p.isFestival ? "#fecaca" : "#fee2e2";
-    bar.style.color = p.isFestival ? "#7f1d1d" : "#991b1b";
-    bar.style.fontWeight = "900";
-    bar.title = p.tooltip || p.ev?.title || "휴무일";
-    bar.addEventListener("click", (e2) => e2.stopPropagation());
-  } else {
-    const c = getMemberColor(p.ev.owner);
-    bar.style.borderColor = c;
-    bar.style.background = c + "12";
-    bar.style.color = "#111";
-
-    bar.addEventListener("click", (e2) => {
-      e2.stopPropagation();
-      openModal({ dateKey: p.ev.startDate, eventId: p.ev.eventId, event: p.ev });
+      weekBars.appendChild(bar);
     });
-  }
 
-  bar.textContent = p.display;
-  bar.title = (p.ev?.title || "").trim();
-  weekBars.appendChild(bar);
-});
+    // --- 싱글바 렌더 ---
+    singleBars.forEach((p) => {
+      const bar = document.createElement("div");
+
+      let cls = "sbar";
+      if (!p.isHoliday && p.rows === 2) cls += " two-row";
+      if (!p.isHoliday && p.textClamp === 3) cls += " three-text";
+      bar.className = cls;
+
+      bar.style.left = `calc(${p.col * colW}% + ${sidePad}px)`;
+      bar.style.width = `calc(${colW}% - ${sideSub}px)`;
+      bar.style.top = `${p.row * barRowPx}px`;
+
+      if (!p.isHoliday && p.rows === 2) {
+        bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
+        bar.style.lineHeight = "12px";
+      }
+
+      if (p.isHoliday) {
+        bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
+        bar.style.background = p.isFestival ? "#fecaca" : "#fee2e2";
+        bar.style.color = p.isFestival ? "#7f1d1d" : "#991b1b";
+        bar.style.fontWeight = "900";
+        bar.title = p.tooltip || p.ev?.title || "휴무일";
+        bar.addEventListener("click", (e2) => e2.stopPropagation());
+      } else {
+        const c = getMemberColor(p.ev.owner);
+        bar.style.borderColor = c;
+        bar.style.background = c + "12";
+        bar.style.color = "#111";
+
+        bar.addEventListener("click", (e2) => {
+          e2.stopPropagation();
+          openModal({ dateKey: p.ev.startDate, eventId: p.ev.eventId, event: p.ev });
+        });
+      }
+
+      bar.textContent = p.display;
+      bar.title = (p.ev?.title || "").trim();
+      weekBars.appendChild(bar);
+    });
 
     calGrid.appendChild(weekRow);
   }
@@ -1010,8 +1019,14 @@ saveBtn?.addEventListener("click", async () => {
       const newKey = startKey;
 
       const ev = eventsAll?.[oldKey]?.[editing.eventId];
-      if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
-      if (ev.owner !== selectedName) { alert("작성자 본인만 수정할 수 있습니다."); return; }
+      if (!ev) {
+        alert("데이터를 찾을 수 없습니다.");
+        return;
+      }
+      if (ev.owner !== selectedName) {
+        alert("작성자 본인만 수정할 수 있습니다.");
+        return;
+      }
 
       if (newKey !== oldKey) {
         await set(ref(db, `events/${newKey}/${editing.eventId}`), payload);
@@ -1038,8 +1053,14 @@ deleteBtn?.addEventListener("click", async () => {
   if (!key || !eventId) return;
 
   const ev = eventsAll?.[key]?.[eventId];
-  if (!ev) { alert("데이터를 찾을 수 없습니다."); return; }
-  if (ev.owner !== selectedName) { alert("작성자 본인만 삭제할 수 있습니다."); return; }
+  if (!ev) {
+    alert("데이터를 찾을 수 없습니다.");
+    return;
+  }
+  if (ev.owner !== selectedName) {
+    alert("작성자 본인만 삭제할 수 있습니다.");
+    return;
+  }
   if (!confirm("삭제하시겠습니까?")) return;
 
   try {
@@ -1068,13 +1089,16 @@ $("todayBtn")?.addEventListener("click", () => {
   if (!el) return;
 
   const THRESHOLD = 60;
-  let startX = 0, startY = 0, dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
   let locked = null;
 
   function goPrev() {
     current = new Date(current.getFullYear(), current.getMonth() - 1, 1);
     applyMonthFilterAndRender();
   }
+
   function goNext() {
     current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
     applyMonthFilterAndRender();
@@ -1142,7 +1166,7 @@ $("todayBtn")?.addEventListener("click", () => {
 })();
 
 /* =========================
-   ✅ 세로/가로 전환 시 레이아웃 재계산(여백 문제 핵심 해결)
+   ✅ 세로/가로 전환 시 레이아웃 재계산
 ========================= */
 (function bindRelayout() {
   let t = null;
