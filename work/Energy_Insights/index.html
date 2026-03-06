@@ -1044,15 +1044,17 @@ function pickHeat2026(d2026, i, y25h){
 function compute2026(){
   const d2026 = load2026();
   const { elec:y25e, heat:y25h } = getY2025Arrays();
+  const baseMonthly = loadBaselineMonthly();
 
   const rows = d2026.map((r,i)=>{
     const e = pickElec2026(d2026,i,y25e);
     const h = pickHeat2026(d2026,i,y25h);
     const toe = toeOfMonth(e.value, h.value);
 
-    const src = (d2026[i].elec.value!=null && d2026[i].elec.source) ? d2026[i].elec.source
-              : (d2026[i].heat.value!=null && d2026[i].heat.source) ? d2026[i].heat.source
-              : "forecast";
+    // 2026 해당 월의 최종 출처
+    let src = "forecast";
+    if(d2026[i].elec.value != null && d2026[i].elec.source) src = d2026[i].elec.source;
+    else if(d2026[i].heat.value != null && d2026[i].heat.source) src = d2026[i].heat.source;
 
     return { m:r.m, elec:e, heat:h, toe, src, memo:r.memo||"" };
   });
@@ -1063,19 +1065,20 @@ function compute2026(){
     return { ...r, cum_toe:cum };
   });
 
+  // ✅ 2026 1년 전체(고지서 + 플래너 + 예상 + 빈칸은 2025 자동예상)
   const sumElec = withCum.reduce((s,r)=>s+(r.elec.value||0),0);
   const sumHeat = withCum.reduce((s,r)=>s+(r.heat.value||0),0);
   const annualToeEst = withCum.reduce((s,r)=>s+r.toe,0);
 
-  const { toeAvg: base } = baselineAverages();
+  // ✅ 기준년 1년 전체 = 월별 평균 12개월 합계
+  const annualBaseToe = baseMonthly.reduce((s,r)=>s + monthlyToeFromBaseRow(r), 0);
 
-  /* 현재까지(고지서 입력 기준) */
+  /* =========================
+     현재까지 절감율 (고지서 입력 월만)
+  ========================= */
   const billRows = withCum.filter(r => r.src === "bill");
   const currentToe = billRows.reduce((s,r)=>s+r.toe,0);
 
-  const baseMonthly = loadBaselineMonthly();
-
-  // 고지서 입력된 월의 기준년 월별 평균 TOE 합산
   const currentBaseToe = billRows.reduce((s,r)=>{
     const found = baseMonthly.find(x => x.m === r.m);
     return s + monthlyToeFromBaseRow(found);
@@ -1083,13 +1086,15 @@ function compute2026(){
 
   const currentReduction = currentBaseToe - currentToe;
   const currentSavingPct = (currentBaseToe > 0)
-    ? ((currentReduction / currentBaseToe) * 100)
+    ? (currentReduction / currentBaseToe) * 100
     : null;
 
-  /* 연말 예상 */
-  const annualReduction = base - annualToeEst;
-  const savingPctFinal = (base > 0)
-    ? ((annualReduction / base) * 100)
+  /* =========================
+     연말 예상 절감율 (1년 전체)
+  ========================= */
+  const annualReduction = annualBaseToe - annualToeEst;
+  const savingPctFinal = (annualBaseToe > 0)
+    ? (annualReduction / annualBaseToe) * 100
     : null;
 
   return {
@@ -1098,7 +1103,7 @@ function compute2026(){
     sumHeat,
     annualToeEst,
 
-    base,
+    base: annualBaseToe,
     annualReduction,
     savingPctFinal,
 
@@ -1148,33 +1153,33 @@ function render2026(){
   el("sumHeatTxt").textContent = `${fmt1(calc.sumHeat)} Gcal`;
   el("sumToeTxt").textContent  = `${fmt2(calc.annualToeEst)} toe`;
 
-  if(calc.base<=0){
-    el("currentSavingBig").textContent = "기준년도 값 입력 필요";
-    el("currentSavingSub").textContent = "2020/2021/2022 연간 전기·열을 입력하면 연말 예상 절감율이 계산됩니다. 현재까지 절감율은 월별 평균값도 함께 입력해야 합니다.";
+ if(calc.base<=0){
+  el("currentSavingBig").textContent = "기준값 입력 필요";
+  el("currentSavingSub").textContent = "기준년 월별 평균 전기·열 값을 입력하면 현재까지 절감율이 계산됩니다.";
 
-    el("savingBig").textContent = "기준년도 값 입력 필요";
-    el("savingSub").textContent = "2020/2021/2022 연간 전기·열을 입력하면 연말 예상 절감율이 계산됩니다.";
+  el("savingBig").textContent = "기준값 입력 필요";
+  el("savingSub").textContent = "기준년 월별 평균 전기·열 값을 입력하면 연말 예상 절감율이 계산됩니다.";
+}else{
+  if(calc.currentMonthCount === 0){
+    el("currentSavingBig").textContent = "고지서 입력 없음";
+    el("currentSavingSub").textContent =
+      `고지서 입력 월이 있어야 현재까지 절감율을 계산할 수 있습니다.`;
+  }else if(calc.currentBaseToe <= 0){
+    el("currentSavingBig").textContent = "월별 기준값 입력 필요";
+    el("currentSavingSub").textContent =
+      `고지서 입력된 월의 기준년 월별 평균 전기·열 값을 입력하세요.`;
   }else{
-    if(calc.currentMonthCount === 0){
-      el("currentSavingBig").textContent = "고지서 입력 없음";
-      el("currentSavingSub").textContent =
-        `기준월 누계값과 비교하려면 2026에 고지서 입력이 필요합니다.`;
-    }else if(calc.currentBaseToe <= 0){
-      el("currentSavingBig").textContent = "월별 기준값 입력 필요";
-      el("currentSavingSub").textContent =
-        `고지서 입력 월의 기준년 월별 전기·열 평균값을 입력하면 현재까지 절감율이 계산됩니다.`;
-    }else{
-      const currentPass = (calc.currentSavingPct != null && calc.currentSavingPct >= 1.0);
-      el("currentSavingBig").textContent = `${fmtPct(calc.currentSavingPct)}% (${currentPass?"PASS":"FAIL"})`;
-      el("currentSavingSub").textContent =
-        `기준월누계 ${fmt2(calc.currentBaseToe)} toe · 현재 ${fmt2(calc.currentToe)} toe · 절감량 ${fmt2(calc.currentReduction)} toe · 절감률 ${fmtPct(calc.currentSavingPct)}%`;
-    }
-
-    const pass = (calc.savingPctFinal!=null && calc.savingPctFinal>=1.0);
-    el("savingBig").textContent = `${fmtPct(calc.savingPctFinal)}% (${pass?"PASS":"FAIL"})`;
-    el("savingSub").textContent =
-      `기준년 ${fmt3(calc.base)} toe · 연말예상 ${fmt2(calc.annualToeEst)} toe · 절감량 ${fmt2(calc.annualReduction)} toe · 절감률 ${fmtPct(calc.savingPctFinal)}%`;
+    const currentPass = (calc.currentSavingPct != null && calc.currentSavingPct >= 1.0);
+    el("currentSavingBig").textContent = `${fmtPct(calc.currentSavingPct)}% (${currentPass ? "PASS" : "FAIL"})`;
+    el("currentSavingSub").textContent =
+      `기준월누계 ${fmt2(calc.currentBaseToe)} toe · 현재 ${fmt2(calc.currentToe)} toe · 절감량 ${fmt2(calc.currentReduction)} toe · 절감률 ${fmtPct(calc.currentSavingPct)}%`;
   }
+
+  const pass = (calc.savingPctFinal != null && calc.savingPctFinal >= 1.0);
+  el("savingBig").textContent = `${fmtPct(calc.savingPctFinal)}% (${pass ? "PASS" : "FAIL"})`;
+  el("savingSub").textContent =
+    `기준년전체 ${fmt2(calc.base)} toe · 연말예상 ${fmt2(calc.annualToeEst)} toe · 절감량 ${fmt2(calc.annualReduction)} toe · 절감률 ${fmtPct(calc.savingPctFinal)}%`;
+}
 }
 
 /* =========================
