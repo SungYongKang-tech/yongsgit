@@ -240,6 +240,19 @@ function getMemberColor(name) {
   return COLOR_MAP[name] || "#1f6feb";
 }
 
+function getTypeColor(type) {
+  const TYPE_COLOR_MAP = {
+    "근태": "#55B7FF",
+    "회사일정": "#FF6FAE",
+    "작업일정": "#67D96E",
+
+    "에너지 이용량": "#F59E0B", // 주황
+    "코엔서비스": "#7C3AED",   // 보라
+    "업무공유": "#10B981",     // 초록
+  };
+  return TYPE_COLOR_MAP[type] || "#1f6feb";
+}
+
 function monthRangeKeys() {
   const start = new Date(current);
   start.setDate(1);
