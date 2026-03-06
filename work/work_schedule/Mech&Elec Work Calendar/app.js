@@ -905,9 +905,9 @@ function renderCalendar() {
       bar.style.top = `${row * barRowPx}px`;
 
       const c = getTypeColor(ev.type);
-bar.style.borderColor = c;
-bar.style.background = c + "18";
-bar.style.color = "#111";
+      bar.style.borderColor = c;
+      bar.style.background = c + "18";
+      bar.style.color = "#111";
 
       bar.textContent = (ev.title || "(제목없음)").trim();
       bar.title = (ev.title || "").trim();
@@ -948,9 +948,9 @@ bar.style.color = "#111";
         bar.addEventListener("click", (e2) => e2.stopPropagation());
       } else {
         const c = getTypeColor(p.ev.type);
-bar.style.borderColor = c;
-bar.style.background = c + "12";
-bar.style.color = "#111";
+        bar.style.borderColor = c;
+        bar.style.background = c + "12";
+        bar.style.color = "#111";
 
         bar.addEventListener("click", (e2) => {
           e2.stopPropagation();
