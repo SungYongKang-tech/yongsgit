@@ -235,6 +235,22 @@
     }
     summary{cursor:pointer; font-weight:1000; color:#111}
 
+    .baseMonthlyDetails{
+  margin-top:10px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 12px;
+  background:#fff;
+}
+.baseMonthlyDetails summary{
+  cursor:pointer;
+  font-weight:1000;
+  color:#111;
+}
+.baseMonthlyDetails[open] summary{
+  margin-bottom:2px;
+}
+
     .baseTable{
       table-layout: fixed;
       width:100%;
@@ -413,41 +429,41 @@
             </table>
           </div>
 
-          <div class="box" style="margin-top:10px; padding:12px;">
-            <h2 style="margin-bottom:8px;">현재까지 절감율 계산용 기준년 월별 평균 입력</h2>
+         <details class="baseMonthlyDetails">
+  <summary>현재까지 절감율 계산용 기준년 월별 평균 입력</summary>
 
-            <div class="tableWrap" style="max-height:none">
-              <table class="baseMonthlyTable">
-                <colgroup>
-                  <col class="col-month">
-                  <col class="col-elec">
-                  <col class="col-heat">
-                  <col class="col-toe">
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>월</th>
-                    <th>전기(MWh)</th>
-                    <th>열(Gcal)</th>
-                    <th>월 TOE</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyBaseMonthly"></tbody>
-                <tfoot>
-                  <tr>
-                    <th>합계</th>
-                    <th id="baseMonthlyElecSumRow">-</th>
-                    <th id="baseMonthlyHeatSumRow">-</th>
-                    <th id="baseMonthlyToeSumRow">-</th>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+  <div class="tableWrap" style="max-height:none; margin-top:10px;">
+    <table class="baseMonthlyTable">
+      <colgroup>
+        <col class="col-month">
+        <col class="col-elec">
+        <col class="col-heat">
+        <col class="col-toe">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>월</th>
+          <th>전기(MWh)</th>
+          <th>열(Gcal)</th>
+          <th>월 TOE</th>
+        </tr>
+      </thead>
+      <tbody id="tbodyBaseMonthly"></tbody>
+      <tfoot>
+        <tr>
+          <th>합계</th>
+          <th id="baseMonthlyElecSumRow">-</th>
+          <th id="baseMonthlyHeatSumRow">-</th>
+          <th id="baseMonthlyToeSumRow">-</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 
-            <div class="note">
-              ※ 현재까지 절감율은 여기 입력한 월별 평균값 중, 고지서 입력된 월만 합산하여 계산합니다.
-            </div>
-          </div>
+  <div class="note">
+    ※ 현재까지 절감율은 여기 입력한 월별 평균값 중, 고지서 입력된 월만 합산하여 계산합니다.
+  </div>
+</details>
 
           <div class="kv" style="margin-top:10px">
             <div class="k">목표(−1%) TOE</div><div class="v" id="targetToeTxt">-</div>
@@ -888,7 +904,7 @@ function renderBaselineMonthlyBox(){
           value="${row.heat_gcal || 0}"
         />
       </td>
-      <td style="text-align:right;font-weight:1000">${fmt3(toe)}</td>
+      <td class="baseMonthlyToeCell" data-month="${row.m}" style="text-align:right;font-weight:1000">${fmt3(toe)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -896,6 +912,25 @@ function renderBaselineMonthlyBox(){
   el("baseMonthlyElecSumRow").textContent = fmt3(sumElec);
   el("baseMonthlyHeatSumRow").textContent = fmt1(sumHeat);
   el("baseMonthlyToeSumRow").textContent = fmt3(sumToe);
+}
+
+function updateBaselineMonthlyRowAndSum(month){
+  const arr = loadBaselineMonthly();
+  const row = arr[month - 1];
+  const toe = monthlyToeFromBaseRow(row);
+
+  const toeCell = document.querySelector(`.baseMonthlyToeCell[data-month="${month}"]`);
+  if(toeCell){
+    toeCell.textContent = fmt3(toe);
+  }
+
+  const sumElec = arr.reduce((s,r)=>s + (r.elec_mwh || 0), 0);
+  const sumHeat = arr.reduce((s,r)=>s + (r.heat_gcal || 0), 0);
+  const sumToe  = arr.reduce((s,r)=>s + monthlyToeFromBaseRow(r), 0);
+
+  el("baseMonthlyElecSumRow").textContent = fmt3(sumElec);
+  el("baseMonthlyHeatSumRow").textContent = fmt1(sumHeat);
+  el("baseMonthlyToeSumRow").textContent  = fmt3(sumToe);
 }
 
 /* =========================
@@ -1386,23 +1421,26 @@ async function init(){
     el(id).addEventListener("input", onBaseChange);
   });
 
-  document.addEventListener("input", (e)=>{
-    const target = e.target;
-    if(!target.classList.contains("baseMonthlyInput")) return;
-    if(isBaseLocked()) return;
+ document.addEventListener("input", (e)=>{
+  const target = e.target;
+  if(!target.classList.contains("baseMonthlyInput")) return;
+  if(isBaseLocked()) return;
 
-    const month = Number(target.dataset.month);
-    const field = target.dataset.field;
+  const month = Number(target.dataset.month);
+  const field = target.dataset.field;
 
-    const arr = loadBaselineMonthly();
-    const idx = month - 1;
+  const arr = loadBaselineMonthly();
+  const idx = month - 1;
 
-    arr[idx][field] = Number(target.value || 0);
-    saveBaselineMonthly(arr);
+  arr[idx][field] = Number(target.value || 0);
+  saveBaselineMonthly(arr);
 
-    renderBaselineMonthlyBox();
-    render2026();
-  });
+  // ✅ 해당 월 TOE와 합계 즉시 갱신
+  updateBaselineMonthlyRowAndSum(month);
+
+  // ✅ 현재까지/연말 절감율 다시 계산
+  render2026();
+});
 
   el("btnBaseLock").addEventListener("click", ()=>{
     if(!confirm("기준년도(2020~2022) 및 월별 평균 입력을 완료하고 잠글까요?\n잠그면 잠금 해제 전까지 수정할 수 없습니다.")) return;
