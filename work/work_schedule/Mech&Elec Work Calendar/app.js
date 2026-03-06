@@ -893,75 +893,76 @@ function renderCalendar() {
     const colW = 100 / 7;
 
     // --- 멀티바 렌더 ---
-    placed.forEach((p) => {
-      const { row, sIdx, eIdx, ev } = p;
-      const span = eIdx - sIdx + 1;
+    // --- 멀티바 렌더 ---
+placed.forEach((p) => {
+  const { row, sIdx, eIdx, ev } = p;
+  const span = eIdx - sIdx + 1;
 
-      const bar = document.createElement("div");
-      bar.className = "mbar";
+  const bar = document.createElement("div");
+  bar.className = "mbar";
 
-      bar.style.left = `calc(${sIdx * colW}% + ${sidePad}px)`;
-      bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
-      bar.style.top = `${row * barRowPx}px`;
+  bar.style.left = `calc(${sIdx * colW}% + ${sidePad}px)`;
+  bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
+  bar.style.top = `${row * barRowPx}px`;
 
-      const c = getTypeColor(ev.type);
-      bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = "#111";
+  const c = getMemberColor(ev.owner);
+  bar.style.borderColor = c;
+  bar.style.background = c + "18";
+  bar.style.color = "#111";
 
-      bar.textContent = (ev.title || "(제목없음)").trim();
-      bar.title = (ev.title || "").trim();
+  bar.textContent = (ev.title || "(제목없음)").trim();
+  bar.title = (ev.title || "").trim();
 
-      bar.addEventListener("click", (e2) => {
-        e2.stopPropagation();
-        openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
-      });
+  bar.addEventListener("click", (e2) => {
+    e2.stopPropagation();
+    openModal({ dateKey: ev.startDate, eventId: ev.eventId, event: ev });
+  });
 
-      weekBars.appendChild(bar);
-    });
+  weekBars.appendChild(bar);
+});
 
     // --- 싱글바 렌더 ---
-    singleBars.forEach((p) => {
-      const bar = document.createElement("div");
+    // --- 싱글바 렌더 ---
+singleBars.forEach((p) => {
+  const bar = document.createElement("div");
 
-      let cls = "sbar";
-      if (!p.isHoliday && p.rows === 2) cls += " two-row";
-      if (!p.isHoliday && p.textClamp === 3) cls += " three-text";
-      bar.className = cls;
+  let cls = "sbar";
+  if (!p.isHoliday && p.rows === 2) cls += " two-row";
+  if (!p.isHoliday && p.textClamp === 3) cls += " three-text";
+  bar.className = cls;
 
-      bar.style.left = `calc(${p.col * colW}% + ${sidePad}px)`;
-      bar.style.width = `calc(${colW}% - ${sideSub}px)`;
-      bar.style.top = `${p.row * barRowPx}px`;
+  bar.style.left = `calc(${p.col * colW}% + ${sidePad}px)`;
+  bar.style.width = `calc(${colW}% - ${sideSub}px)`;
+  bar.style.top = `${p.row * barRowPx}px`;
 
-      // ✅ 2칸짜리(모바일)일 때 높이/간격을 CSS 변수 기준으로 "딱" 고정
-      if (!p.isHoliday && p.rows === 2) {
-        bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
-        bar.style.lineHeight = "12px";
-      }
+  if (!p.isHoliday && p.rows === 2) {
+    bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
+    bar.style.lineHeight = "12px";
+  }
 
-      if (p.isHoliday) {
-        bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
-        bar.style.background = p.isFestival ? "#fecaca" : "#fee2e2";
-        bar.style.color = p.isFestival ? "#7f1d1d" : "#991b1b";
-        bar.style.fontWeight = "900";
-        bar.title = p.tooltip || p.ev?.title || "휴무일";
-        bar.addEventListener("click", (e2) => e2.stopPropagation());
-      } else {
-        const c = getTypeColor(p.ev.type);
-        bar.style.borderColor = c;
-        bar.style.background = c + "12";
-        bar.style.color = "#111";
+  if (p.isHoliday) {
+    bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
+    bar.style.background = p.isFestival ? "#fecaca" : "#fee2e2";
+    bar.style.color = p.isFestival ? "#7f1d1d" : "#991b1b";
+    bar.style.fontWeight = "900";
+    bar.title = p.tooltip || p.ev?.title || "휴무일";
+    bar.addEventListener("click", (e2) => e2.stopPropagation());
+  } else {
+    const c = getMemberColor(p.ev.owner);
+    bar.style.borderColor = c;
+    bar.style.background = c + "12";
+    bar.style.color = "#111";
 
-        bar.addEventListener("click", (e2) => {
-          e2.stopPropagation();
-          openModal({ dateKey: p.ev.startDate, eventId: p.ev.eventId, event: p.ev });
-        });
-      }
-
-      bar.textContent = p.display;
-      bar.title = (p.ev?.title || "").trim();
-      weekBars.appendChild(bar);
+    bar.addEventListener("click", (e2) => {
+      e2.stopPropagation();
+      openModal({ dateKey: p.ev.startDate, eventId: p.ev.eventId, event: p.ev });
     });
+  }
+
+  bar.textContent = p.display;
+  bar.title = (p.ev?.title || "").trim();
+  weekBars.appendChild(bar);
+});
 
     calGrid.appendChild(weekRow);
   }
