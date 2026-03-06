@@ -127,11 +127,28 @@ function renderTypeButtons() {
   if (!typeBar) return;
 
   typeBar.innerHTML = "";
+
   TYPE_LIST.forEach((type) => {
     const btn = document.createElement("button");
+    const active = selectedTypes.has(type);
+
     btn.type = "button";
-    btn.className = "type-btn" + (selectedTypes.has(type) ? " active" : "");
+    btn.className = "type-btn" + (active ? " active" : "");
     btn.textContent = type;
+
+    const color = getTypeColor(type);
+
+    if (active) {
+      btn.style.background = color;
+      btn.style.borderColor = color;
+      btn.style.color = "#111";
+      btn.style.boxShadow = `0 6px 16px ${color}55`;
+    } else {
+      btn.style.background = "#fff";
+      btn.style.borderColor = color;
+      btn.style.color = "#111";
+      btn.style.boxShadow = "none";
+    }
 
     btn.onclick = () => {
       if (selectedTypes.has(type)) selectedTypes.delete(type);
@@ -229,13 +246,9 @@ function getBarInsetPx() {
 
 function getMemberColor(name) {
   const COLOR_MAP = {
-    성용: "#55B7FF",
-    서진: "#FF6FAE",
-    무성: "#67D96E",
-
-    "에너지 이용량": "#FFA94D",   // 주황
-    "코엔서비스": "#8E7CFF",     // 보라
-    "업무공유": "#4DD4AC",       // 민트
+    "성용": "#55B7FF",
+    "서진": "#FF6FAE",
+    "무성": "#67D96E",
   };
   return COLOR_MAP[name] || "#1f6feb";
 }
@@ -246,12 +259,14 @@ function getTypeColor(type) {
     "회사일정": "#FF6FAE",
     "작업일정": "#67D96E",
 
-    "에너지 이용량": "#F59E0B", // 주황
-    "코엔서비스": "#7C3AED",   // 보라
-    "업무공유": "#10B981",     // 초록
+    "에너지 이용량": "#F59E0B",
+    "코엔서비스": "#7C3AED",
+    "업무공유": "#10B981",
   };
   return TYPE_COLOR_MAP[type] || "#1f6feb";
 }
+
+
 
 function monthRangeKeys() {
   const start = new Date(current);
@@ -889,10 +904,10 @@ function renderCalendar() {
       bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
       bar.style.top = `${row * barRowPx}px`;
 
-      const c = getMemberColor(ev.owner);
-      bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = "#111";
+      const c = getTypeColor(ev.type);
+bar.style.borderColor = c;
+bar.style.background = c + "18";
+bar.style.color = "#111";
 
       bar.textContent = (ev.title || "(제목없음)").trim();
       bar.title = (ev.title || "").trim();
@@ -932,10 +947,10 @@ function renderCalendar() {
         bar.title = p.tooltip || p.ev?.title || "휴무일";
         bar.addEventListener("click", (e2) => e2.stopPropagation());
       } else {
-        const c = getMemberColor(p.ev.owner);
-        bar.style.borderColor = c;
-        bar.style.background = c + "12";
-        bar.style.color = "#111";
+        const c = getTypeColor(p.ev.type);
+bar.style.borderColor = c;
+bar.style.background = c + "12";
+bar.style.color = "#111";
 
         bar.addEventListener("click", (e2) => {
           e2.stopPropagation();
