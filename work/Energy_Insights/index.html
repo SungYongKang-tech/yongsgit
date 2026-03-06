@@ -751,12 +751,13 @@ function queueSave2026ToFirebase(){
   }, 250);
 }
 
+/* ✅ 기준년도/월별평균은 입력 중 방해되지 않게 저장 지연시간 늘림 */
 function queueSaveBaseToFirebase(){
   if(!firebaseReady) return;
   clearTimeout(saveTimerBase);
   saveTimerBase = setTimeout(()=>{
     saveBaseToFirebaseNow();
-  }, 250);
+  }, 800);
 }
 
 /* =========================
@@ -909,23 +910,18 @@ function renderBaselineMonthlyBox(){
   el("baseMonthlyToeSumRow").textContent = fmt3(sumToe);
 }
 
-function updateBaselineMonthlyRowAndSum(month){
-  const arr = loadBaselineMonthly();
-  const row = arr[month - 1];
+function updateBaselineMonthlyPreview(month, field, value){
+  const arr = loadBaselineMonthly().map(x => ({ ...x }));
+  const idx = month - 1;
+  arr[idx][field] = Number(value || 0);
+
+  const row = arr[idx];
   const toe = monthlyToeFromBaseRow(row);
 
   const toeCell = document.querySelector(`.baseMonthlyToeCell[data-month="${month}"]`);
   if(toeCell){
     toeCell.textContent = fmt3(toe);
   }
-
-  const sumElec = arr.reduce((s,r)=>s + (r.elec_mwh || 0), 0);
-  const sumHeat = arr.reduce((s,r)=>s + (r.heat_gcal || 0), 0);
-  const sumToe  = arr.reduce((s,r)=>s + monthlyToeFromBaseRow(r), 0);
-
-  el("baseMonthlyElecSumRow").textContent = fmt3(sumElec);
-  el("baseMonthlyHeatSumRow").textContent = fmt1(sumHeat);
-  el("baseMonthlyToeSumRow").textContent  = fmt3(sumToe);
 }
 
 /* =========================
@@ -1081,7 +1077,6 @@ function compute2026(){
     const h = pickHeat2026(d2026,i,y25h);
     const toe = toeOfMonth(e.value, h.value);
 
-    // 2026 해당 월의 최종 출처
     let src = "forecast";
     if(d2026[i].elec.value != null && d2026[i].elec.source) src = d2026[i].elec.source;
     else if(d2026[i].heat.value != null && d2026[i].heat.source) src = d2026[i].heat.source;
@@ -1095,17 +1090,12 @@ function compute2026(){
     return { ...r, cum_toe:cum };
   });
 
-  // ✅ 2026 1년 전체(고지서 + 플래너 + 예상 + 빈칸은 2025 자동예상)
   const sumElec = withCum.reduce((s,r)=>s+(r.elec.value||0),0);
   const sumHeat = withCum.reduce((s,r)=>s+(r.heat.value||0),0);
   const annualToeEst = withCum.reduce((s,r)=>s+r.toe,0);
 
-  // ✅ 기준년 1년 전체 = 월별 평균 12개월 합계
   const annualBaseToe = baseMonthly.reduce((s,r)=>s + monthlyToeFromBaseRow(r), 0);
 
-  /* =========================
-     현재까지 절감율 (고지서 입력 월만)
-  ========================= */
   const billRows = withCum.filter(r => r.src === "bill");
   const currentToe = billRows.reduce((s,r)=>s+r.toe,0);
 
@@ -1119,9 +1109,6 @@ function compute2026(){
     ? (currentReduction / currentBaseToe) * 100
     : null;
 
-  /* =========================
-     연말 예상 절감율 (1년 전체)
-  ========================= */
   const annualReduction = annualBaseToe - annualToeEst;
   const savingPctFinal = (annualBaseToe > 0)
     ? (annualReduction / annualBaseToe) * 100
@@ -1132,11 +1119,9 @@ function compute2026(){
     sumElec,
     sumHeat,
     annualToeEst,
-
     base: annualBaseToe,
     annualReduction,
     savingPctFinal,
-
     currentMonthCount: billRows.length,
     currentBaseToe,
     currentToe,
@@ -1183,33 +1168,33 @@ function render2026(){
   el("sumHeatTxt").textContent = `${fmt1(calc.sumHeat)} Gcal`;
   el("sumToeTxt").textContent  = `${fmt2(calc.annualToeEst)} toe`;
 
- if(calc.base<=0){
-  el("currentSavingBig").textContent = "기준값 입력 필요";
-  el("currentSavingSub").textContent = "기준년 월별 평균 전기·열 값을 입력하면 현재까지 절감율이 계산됩니다.";
+  if(calc.base<=0){
+    el("currentSavingBig").textContent = "기준값 입력 필요";
+    el("currentSavingSub").textContent = "기준년 월별 평균 전기·열 값을 입력하면 현재까지 절감율이 계산됩니다.";
 
-  el("savingBig").textContent = "기준값 입력 필요";
-  el("savingSub").textContent = "기준년 월별 평균 전기·열 값을 입력하면 연말 예상 절감율이 계산됩니다.";
-}else{
-  if(calc.currentMonthCount === 0){
-    el("currentSavingBig").textContent = "고지서 입력 없음";
-    el("currentSavingSub").textContent =
-      `고지서 입력 월이 있어야 현재까지 절감율을 계산할 수 있습니다.`;
-  }else if(calc.currentBaseToe <= 0){
-    el("currentSavingBig").textContent = "월별 기준값 입력 필요";
-    el("currentSavingSub").textContent =
-      `고지서 입력된 월의 기준년 월별 평균 전기·열 값을 입력하세요.`;
+    el("savingBig").textContent = "기준값 입력 필요";
+    el("savingSub").textContent = "기준년 월별 평균 전기·열 값을 입력하면 연말 예상 절감율이 계산됩니다.";
   }else{
-    const currentPass = (calc.currentSavingPct != null && calc.currentSavingPct >= 1.0);
-    el("currentSavingBig").textContent = `${fmtPct(calc.currentSavingPct)}% (${currentPass ? "PASS" : "FAIL"})`;
-    el("currentSavingSub").textContent =
-      `기준월누계 ${fmt2(calc.currentBaseToe)} toe · 현재 ${fmt2(calc.currentToe)} toe · 절감량 ${fmt2(calc.currentReduction)} toe · 절감률 ${fmtPct(calc.currentSavingPct)}%`;
-  }
+    if(calc.currentMonthCount === 0){
+      el("currentSavingBig").textContent = "고지서 입력 없음";
+      el("currentSavingSub").textContent =
+        `고지서 입력 월이 있어야 현재까지 절감율을 계산할 수 있습니다.`;
+    }else if(calc.currentBaseToe <= 0){
+      el("currentSavingBig").textContent = "월별 기준값 입력 필요";
+      el("currentSavingSub").textContent =
+        `고지서 입력된 월의 기준년 월별 평균 전기·열 값을 입력하세요.`;
+    }else{
+      const currentPass = (calc.currentSavingPct != null && calc.currentSavingPct >= 1.0);
+      el("currentSavingBig").textContent = `${fmtPct(calc.currentSavingPct)}% (${currentPass ? "PASS" : "FAIL"})`;
+      el("currentSavingSub").textContent =
+        `기준월누계 ${fmt2(calc.currentBaseToe)} toe · 현재 ${fmt2(calc.currentToe)} toe · 절감량 ${fmt2(calc.currentReduction)} toe · 절감률 ${fmtPct(calc.currentSavingPct)}%`;
+    }
 
-  const pass = (calc.savingPctFinal != null && calc.savingPctFinal >= 1.0);
-  el("savingBig").textContent = `${fmtPct(calc.savingPctFinal)}% (${pass ? "PASS" : "FAIL"})`;
-  el("savingSub").textContent =
-    `기준년전체 ${fmt2(calc.base)} toe · 연말예상 ${fmt2(calc.annualToeEst)} toe · 절감량 ${fmt2(calc.annualReduction)} toe · 절감률 ${fmtPct(calc.savingPctFinal)}%`;
-}
+    const pass = (calc.savingPctFinal != null && calc.savingPctFinal >= 1.0);
+    el("savingBig").textContent = `${fmtPct(calc.savingPctFinal)}% (${pass ? "PASS" : "FAIL"})`;
+    el("savingSub").textContent =
+      `기준년전체 ${fmt2(calc.base)} toe · 연말예상 ${fmt2(calc.annualToeEst)} toe · 절감량 ${fmt2(calc.annualReduction)} toe · 절감률 ${fmtPct(calc.savingPctFinal)}%`;
+  }
 }
 
 /* =========================
@@ -1402,54 +1387,78 @@ async function init(){
   el("b2022e").value = b.y2022.elec_mwh || 0;
   el("b2022h").value = b.y2022.heat_gcal || 0;
 
-function saveBaseOnly(){
-  if(isBaseLocked()) return;
+  function collectBaselineYearsFromInputs(){
+    return {
+      y2020:{ elec_mwh: Number(el("b2020e").value || 0), heat_gcal: Number(el("b2020h").value || 0) },
+      y2021:{ elec_mwh: Number(el("b2021e").value || 0), heat_gcal: Number(el("b2021h").value || 0) },
+      y2022:{ elec_mwh: Number(el("b2022e").value || 0), heat_gcal: Number(el("b2022h").value || 0) },
+    };
+  }
 
-  const next = {
-    y2020:{ elec_mwh: Number(el("b2020e").value||0), heat_gcal: Number(el("b2020h").value||0) },
-    y2021:{ elec_mwh: Number(el("b2021e").value||0), heat_gcal: Number(el("b2021h").value||0) },
-    y2022:{ elec_mwh: Number(el("b2022e").value||0), heat_gcal: Number(el("b2022h").value||0) },
-  };
+  ["b2020e","b2020h","b2021e","b2021h","b2022e","b2022h"].forEach(id=>{
+    const input = el(id);
+    if(!input) return;
 
-  saveBaselineYears(next);
-}
+    input.addEventListener("blur", ()=>{
+      if(isBaseLocked()) return;
+      saveBaselineYears(collectBaselineYearsFromInputs());
+      render2026();
+    });
 
-/* ✅ 입력 중엔 저장만 */
-["b2020e","b2020h","b2021e","b2021h","b2022e","b2022h"].forEach(id=>{
-  el(id).addEventListener("input", saveBaseOnly);
+    input.addEventListener("change", ()=>{
+      if(isBaseLocked()) return;
+      saveBaselineYears(collectBaselineYearsFromInputs());
+      render2026();
+    });
+  });
 
-  /* ✅ 입력 끝났을 때만 다시 계산 */
-  el(id).addEventListener("blur", ()=>{
+  // ✅ 월별 평균 입력 중에는 TOE 미리보기만, 저장/렌더는 blur/change 때만
+  document.addEventListener("input", (e)=>{
+    const target = e.target;
+    if(!target.classList.contains("baseMonthlyInput")) return;
+    if(isBaseLocked()) return;
+
+    const month = Number(target.dataset.month);
+    const field = target.dataset.field;
+    updateBaselineMonthlyPreview(month, field, target.value);
+  });
+
+  document.addEventListener("blur", (e)=>{
+    const target = e.target;
+    if(!target.classList.contains("baseMonthlyInput")) return;
+    if(isBaseLocked()) return;
+
+    const month = Number(target.dataset.month);
+    const field = target.dataset.field;
+
+    const arr = loadBaselineMonthly();
+    const idx = month - 1;
+    arr[idx][field] = Number(target.value || 0);
+    saveBaselineMonthly(arr);
+    render2026();
+  }, true);
+
+  document.addEventListener("change", (e)=>{
+    const target = e.target;
+    if(!target.classList.contains("baseMonthlyInput")) return;
+    if(isBaseLocked()) return;
+
+    const month = Number(target.dataset.month);
+    const field = target.dataset.field;
+
+    const arr = loadBaselineMonthly();
+    const idx = month - 1;
+    arr[idx][field] = Number(target.value || 0);
+    saveBaselineMonthly(arr);
     render2026();
   });
-});
-
- document.addEventListener("input", (e)=>{
-  const target = e.target;
-  if(!target.classList.contains("baseMonthlyInput")) return;
-  if(isBaseLocked()) return;
-
-  const month = Number(target.dataset.month);
-  const field = target.dataset.field;
-
-  const arr = loadBaselineMonthly();
-  const idx = month - 1;
-
-  arr[idx][field] = Number(target.value || 0);
-  saveBaselineMonthly(arr);
-
-  // ✅ 해당 월 TOE와 합계 즉시 갱신
-  updateBaselineMonthlyRowAndSum(month);
-
-  // ✅ 현재까지/연말 절감율 다시 계산
-  render2026();
-});
 
   el("btnBaseLock").addEventListener("click", ()=>{
     if(!confirm("기준년도(2020~2022) 및 월별 평균 입력을 완료하고 잠글까요?\n잠그면 잠금 해제 전까지 수정할 수 없습니다.")) return;
     setBaseLocked(true);
     applyBaseLockUI();
   });
+
   el("btnBaseUnlock").addEventListener("click", ()=>{
     if(!confirm("잠금을 해제하고 기준년도 값을 수정할까요?")) return;
     setBaseLocked(false);
