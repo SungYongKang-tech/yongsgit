@@ -40,9 +40,22 @@ const saveBtn = $("saveBtn");
 const deleteBtn = $("deleteBtn");
 const closeBtn = $("closeBtn");
 const editHint = $("editHint");
+const colorPicker = $("colorPicker");
+const fColor = $("fColor");
 
 // ✅ 종일 체크박스(HTML에 id="allDayChk" 필요)
 const allDayChk = $("allDayChk");
+
+const COLOR_PRESETS = [
+  "#dbeafe", // 파랑
+  "#dcfce7", // 초록
+  "#fef3c7", // 노랑
+  "#fee2e2", // 빨강
+  "#fce7f3", // 분홍
+  "#ede9fe", // 보라
+  "#e0f2fe", // 하늘
+  "#f3f4f6"  // 회색
+];
 
 /* =========================
    State
@@ -177,7 +190,6 @@ function renderTypeSelectOptions(selected = "") {
     fType.appendChild(opt);
   });
 
-  // ✅ 기존 선택값이 아직 존재하면 유지, 없으면 첫 항목으로
   if (TYPE_LIST.includes(prev)) fType.value = prev;
   else fType.value = TYPE_LIST[0] || "";
 }
@@ -190,7 +202,7 @@ const holidayCache = {}; // { "2026": holidayMap... }
 
 async function loadKoreanHolidays(year) {
   if (holidayCache[year]) {
-    holidayMap = holidayCache[year];
+    holidayMap = { ...holidayCache[year] };
     return;
   }
 
@@ -211,8 +223,8 @@ async function loadKoreanHolidays(year) {
         source: "api",
       };
     }
-    holidayMap = map;
-    holidayCache[year] = map;
+    holidayMap = { ...map };
+    holidayCache[year] = { ...map };
   } catch (e) {
     console.warn("공휴일 로드 실패:", e);
     holidayMap = {};
@@ -234,14 +246,14 @@ function isMobileNow() {
   return window.matchMedia("(max-width: 640px)").matches;
 }
 
-/* ✅ CSS var -> px 숫자 (calc 대응, 세로/가로 전환 안정화 핵심) */
+/* ✅ CSS var -> px 숫자 */
 function cssPx(varName, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-/* ✅ 모바일에서 칸 안 좌우 여백을 더 확보하기 위한 left/width inset */
+/* ✅ 모바일에서 칸 안 좌우 여백 */
 function getBarInsetPx() {
   return isMobileNow() ? { sidePad: 1, sideSub: 2 } : { sidePad: 2, sideSub: 4 };
 }
@@ -257,7 +269,6 @@ function getTypeColor(type) {
     "근태": "#55B7FF",
     "회사일정": "#FF6FAE",
     "작업일정": "#67D96E",
-
     "에너지 이용량": "#F59E0B",
     "코엔서비스": "#7C3AED",
     "업무공유": "#10B981",
@@ -293,6 +304,76 @@ function compactTitleSingle(title) {
 }
 
 /* =========================
+   일정 색상 유틸
+========================= */
+function getTextColor(bg) {
+  if (!bg) return "#111";
+  const hex = bg.replace("#", "");
+  if (hex.length !== 6) return "#111";
+
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+  return brightness > 160 ? "#111" : "#fff";
+}
+
+function normalizeColor(color) {
+  const c = (color || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
+  return "";
+}
+
+function getEventColor(ev) {
+  const saved = normalizeColor(ev?.color);
+  if (saved) return saved;
+
+  const ownerColor = normalizeColor(getMemberColor(ev?.owner));
+  if (ownerColor) return ownerColor;
+
+  return "#dbeafe";
+}
+
+function applyItemColor(target, ev, alphaHex = "") {
+  if (!target) return;
+
+  const base = getEventColor(ev);
+  const text = getTextColor(base);
+
+  target.style.borderColor = base;
+  target.style.background = alphaHex ? `${base}${alphaHex}` : base;
+  target.style.color = text;
+}
+
+function renderColorPicker(selected = "#dbeafe") {
+  if (!colorPicker || !fColor) return;
+
+  const safeSelected = normalizeColor(selected) || "#dbeafe";
+
+  colorPicker.innerHTML = "";
+  fColor.value = safeSelected;
+
+  COLOR_PRESETS.forEach((color) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "color-chip" + (color === safeSelected ? " active" : "");
+    btn.style.background = color;
+    btn.title = color;
+
+    btn.addEventListener("click", () => {
+      fColor.value = color;
+      [...colorPicker.querySelectorAll(".color-chip")].forEach((el) => {
+        el.classList.remove("active");
+      });
+      btn.classList.add("active");
+    });
+
+    colorPicker.appendChild(btn);
+  });
+}
+
+/* =========================
    Legacy Type Mapping
 ========================= */
 function mapLegacyType(t) {
@@ -305,16 +386,13 @@ function mapLegacyType(t) {
 }
 
 /* =========================
-   ✅ 모바일 싱글바 규칙 (핵심)
-   - 레인 점유는 최대 2칸(rows:1~2)
-   - 글씨 줄수는 최대 3줄(textClamp:1~3)
+   ✅ 모바일 싱글바 규칙
 ========================= */
 function getSingleBarRule(title) {
   const full = (title || "(제목없음)").trim();
   const isMobile = isMobileNow();
 
   if (isMobile) {
-    // ✅ 줄바꿈 가능성이 높은 조건(더 적극적으로 2칸 처리)
     const hasSpace = /\s/.test(full);
     const hasPunc = /[()[\]{}·•,./\\\-_:;!?]/.test(full);
     const longEnough = full.length >= 4;
@@ -327,7 +405,6 @@ function getSingleBarRule(title) {
     };
   }
 
-  // PC는 그대로
   const wantTwo = full.length >= 12;
   return {
     rows: wantTwo ? 2 : 1,
@@ -348,24 +425,20 @@ function setAllDay(isAllDay) {
   if (fStart) fStart.disabled = timeDisabled;
   if (fEnd) fEnd.disabled = timeDisabled;
 
-  // 빠른버튼도 같이 on/off (HTML에 .tbtn 버튼들이 있을 때만)
   document.querySelectorAll(".tbtn").forEach((b) => {
     b.disabled = timeDisabled;
   });
 
-  // 종일이면 시간값 비우기
   if (isAllDay) {
     if (fStart) fStart.value = "";
     if (fEnd) fEnd.value = "";
   }
 }
 
-// ✅ 체크박스 직접 클릭 시
 allDayChk?.addEventListener("change", () => {
   setAllDay(allDayChk.checked);
 });
 
-// ✅ 사용자가 시간을 입력/선택하면 자동으로 "종일 해제(시간사용)"
 function autoEnableTime() {
   if (!allDayChk) return;
   if (allDayChk.checked) setAllDay(false);
@@ -373,7 +446,6 @@ function autoEnableTime() {
 fStart?.addEventListener("input", autoEnableTime);
 fEnd?.addEventListener("input", autoEnableTime);
 
-// ✅ 빠른버튼 클릭 시도 "종일 해제" 후 값 입력
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".tbtn");
   if (!btn) return;
@@ -385,7 +457,6 @@ document.addEventListener("click", (e) => {
   if (fStart) fStart.value = s;
   if (fEnd) fEnd.value = ed;
 
-  // 시간지우기면 다시 종일로 복귀
   if (!s && !ed) setAllDay(true);
 });
 
@@ -396,10 +467,8 @@ function syncEndDateMin() {
   const s = (fDate?.value || "").trim();
   if (!s || !fEndDate) return;
 
-  // ✅ 종료일 달력에서 시작일 이전 날짜 선택 못하게
   fEndDate.min = s;
 
-  // ✅ 종료일이 비었거나 시작일보다 빠르면 자동으로 시작일로 맞춤
   if (!fEndDate.value || fEndDate.value < s) fEndDate.value = s;
 }
 
@@ -411,17 +480,13 @@ function openModal({ dateKey, eventId = null, event = null }) {
 
   renderTypeSelectOptions();
 
-  const startKey = (event?.startDate || dateKey);
+  const startKey = event?.startDate || dateKey;
 
   editing = {
     dateKey: startKey,
     eventId,
     originalDateKey: event?.startDate || dateKey,
   };
-
-  modalBack?.classList.add("show");
-
-  setAllDay(true);
 
   if (fDate) {
     fDate.disabled = false;
@@ -432,21 +497,25 @@ function openModal({ dateKey, eventId = null, event = null }) {
   if (fEndDate) fEndDate.value = event?.endDate || startKey;
   syncEndDateMin();
 
+  setAllDay(true);
+
   if (event) {
     modalTitle.textContent = "일정 수정";
     const rawType = (event.type || "").trim();
     const mappedType = mapLegacyType(rawType) || TYPE_LIST[0] || "작업일정";
 
-    fType.value = mappedType;
-    fStart.value = event.start || "";
-    fEnd.value = event.end || "";
-    fTitle.value = event.title || "";
-    fDetail.value = event.detail || "";
-    fOwner.value = event.owner || selectedName;
+    if (fType) fType.value = mappedType;
+    if (fStart) fStart.value = event.start || "";
+    if (fEnd) fEnd.value = event.end || "";
+    if (fTitle) fTitle.value = event.title || "";
+    if (fDetail) fDetail.value = event.detail || "";
+    if (fOwner) fOwner.value = event.owner || selectedName;
 
     if (((event.start || "").trim()) || ((event.end || "").trim())) {
       setAllDay(false);
     }
+
+    renderColorPicker(getEventColor(event));
 
     const canEdit = event.owner === selectedName;
     if (saveBtn) saveBtn.disabled = !canEdit;
@@ -458,16 +527,19 @@ function openModal({ dateKey, eventId = null, event = null }) {
     }
   } else {
     modalTitle.textContent = "일정 입력";
-    fType.value = TYPE_LIST[0] || "작업일정";
-    fStart.value = "";
-    fEnd.value = "";
-    fTitle.value = "";
-    fDetail.value = "";
+    if (fType) fType.value = TYPE_LIST[0] || "작업일정";
+    if (fStart) fStart.value = "";
+    if (fEnd) fEnd.value = "";
+    if (fTitle) fTitle.value = "";
+    if (fDetail) fDetail.value = "";
+    renderColorPicker("#dbeafe");
 
     if (saveBtn) saveBtn.disabled = false;
     if (deleteBtn) deleteBtn.style.display = "none";
     if (editHint) editHint.textContent = "";
   }
+
+  modalBack?.classList.add("show");
 }
 
 fDate?.addEventListener("change", () => {
@@ -509,7 +581,6 @@ function saveUnlocked() {
   localStorage.setItem(LS_UNLOCK, JSON.stringify([...unlockedMembers]));
 }
 
-// ✅ PIN 확인 (간단 prompt 버전)
 async function ensureMemberUnlocked(member) {
   const pin = (member?.pin || "").trim();
   if (!pin) return true;
@@ -535,7 +606,6 @@ function renderMemberButtons() {
   if (!memberBar) return;
   memberBar.innerHTML = "";
 
-  // ✅ 선택 이름이 비어있거나 비활성화되었으면 첫 사람으로 지정
   if ((!selectedName || !members.some((m) => m.name === selectedName)) && members.length) {
     selectedName = members[0].name;
     localStorage.setItem(LS_NAME, selectedName);
@@ -583,14 +653,13 @@ function subscribeMembers() {
       ...(v || {}),
       pin: (v?.pin || "").toString().trim(),
       name: (v?.name || "").toString().trim(),
-      color: (v?.color || "").toString().trim(), // ✅ 관리자에서 저장한 색상
+      color: (v?.color || "").toString().trim(),
     }));
 
     list.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
     membersAll = list;
     members = list.filter((x) => x.active !== false);
 
-    // ✅ 이름 기준 색상 맵 구성
     memberColorMap = {};
     membersAll.forEach((m) => {
       const name = (m.name || "").trim();
@@ -618,7 +687,6 @@ function subscribeEvents() {
 async function applyMonthFilterAndRender() {
   await loadKoreanHolidays(current.getFullYear());
 
-  // ✅ 관리자 휴무일 merge (우선 적용)
   for (const [dateKey, h] of Object.entries(adminHolidayMap || {})) {
     if (!dateKey) continue;
     holidayMap[dateKey] = {
@@ -696,13 +764,11 @@ function renderCalendar() {
 
   const allEventsRaw = toEventList();
 
-  // ✅ 타입 정규화(과거 타입 매핑)
   const allEventsNormalized = allEventsRaw.map((ev) => {
     const t = mapLegacyType((ev.type || "").trim()) || (TYPE_LIST[0] || "작업일정");
     return { ...ev, type: t };
   });
 
-  // ✅ 선택 0개면 전체, 있으면 선택된 것만
   const allEvents =
     selectedTypes.size === 0
       ? allEventsNormalized
@@ -710,7 +776,6 @@ function renderCalendar() {
 
   calGrid.innerHTML = "";
 
-  // 요일 헤더
   const dow = document.createElement("div");
   dow.className = "dow";
   ["일", "월", "화", "수", "목", "금", "토"].forEach((d) => {
@@ -720,7 +785,6 @@ function renderCalendar() {
   });
   calGrid.appendChild(dow);
 
-  // ✅ 핵심: calc/모바일/세로전환에서도 정확히 읽기
   const barRowPx = cssPx("--bar-row", 24);
   const todayKey = ymd(new Date());
 
@@ -736,7 +800,6 @@ function renderCalendar() {
     const dayEls = [];
     const dateKeys = [];
 
-    // 7일 칸 생성
     for (let i = 0; i < 7; i++) {
       const dateKey = ymd(cursor);
       dateKeys.push(dateKey);
@@ -772,7 +835,6 @@ function renderCalendar() {
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    // --- 멀티데이 세그먼트 만들기 ---
     const weekStartKey = dateKeys[0];
     const weekEndKey = dateKeys[6];
 
@@ -801,14 +863,12 @@ function renderCalendar() {
 
     const { placed, occ } = placeInLanes(segments);
 
-    // --- 싱글(하루) 레인 점유 ---
     function ensureRow(r) {
       if (!occ[r]) occ[r] = new Array(7).fill(false);
     }
 
     const singleBars = [];
 
-    // ✅ 1) 기존 일정(하루짜리)
     for (const ev of allEvents) {
       const s = ev.startDate;
       const e = ev.endDate || ev.startDate;
@@ -852,7 +912,6 @@ function renderCalendar() {
       });
     }
 
-    // ✅ 2) 휴무일/명절
     for (let i = 0; i < 7; i++) {
       const dateKey = dateKeys[i];
       const h = holidayMap[dateKey];
@@ -885,11 +944,9 @@ function renderCalendar() {
       });
     }
 
-    // --- weekBars 높이 ---
     const lanesCountFinal = occ.length;
     weekBars.style.height = `${lanesCountFinal * barRowPx}px`;
 
-    // --- day-items 내려주기 (여백) ---
     const perDayRows = new Array(7).fill(0);
     for (let r = 0; r < occ.length; r++) {
       for (let c = 0; c < 7; c++) {
@@ -915,10 +972,7 @@ function renderCalendar() {
       bar.style.width = `calc(${span * colW}% - ${sideSub}px)`;
       bar.style.top = `${row * barRowPx}px`;
 
-      const c = getMemberColor(ev.owner);
-      bar.style.borderColor = c;
-      bar.style.background = c + "18";
-      bar.style.color = "#111";
+      applyItemColor(bar, ev, "2b");
 
       bar.textContent = (ev.title || "(제목없음)").trim();
       bar.title = (ev.title || "").trim();
@@ -957,10 +1011,7 @@ function renderCalendar() {
         bar.title = p.tooltip || p.ev?.title || "휴무일";
         bar.addEventListener("click", (e2) => e2.stopPropagation());
       } else {
-        const c = getMemberColor(p.ev.owner);
-        bar.style.borderColor = c;
-        bar.style.background = c + "12";
-        bar.style.color = "#111";
+        applyItemColor(bar, p.ev, "1f");
 
         bar.addEventListener("click", (e2) => {
           e2.stopPropagation();
@@ -990,22 +1041,24 @@ saveBtn?.addEventListener("click", async () => {
     return;
   }
 
-  const rawType = (fType.value || "").trim();
+  const rawType = (fType?.value || "").trim();
   const normalizedType = mapLegacyType(rawType) || (TYPE_LIST[0] || "작업일정");
 
   const isAllDay = !!allDayChk?.checked;
-  const startVal = isAllDay ? "" : (fStart.value || "").trim();
-  const endVal = isAllDay ? "" : (fEnd.value || "").trim();
+  const startVal = isAllDay ? "" : (fStart?.value || "").trim();
+  const endVal = isAllDay ? "" : (fEnd?.value || "").trim();
+  const selectedColor = normalizeColor(fColor?.value) || "#dbeafe";
 
   const payload = {
     type: normalizedType,
-    title: (fTitle.value || "").trim(),
-    detail: (fDetail.value || "").trim(),
+    title: (fTitle?.value || "").trim(),
+    detail: (fDetail?.value || "").trim(),
     owner: selectedName,
     start: startVal,
     end: endVal,
     endDate,
-    createdAt: serverTimestamp(),
+    color: selectedColor,
+    updatedAt: serverTimestamp(),
   };
 
   if (!payload.title) {
@@ -1029,14 +1082,20 @@ saveBtn?.addEventListener("click", async () => {
       }
 
       if (newKey !== oldKey) {
-        await set(ref(db, `events/${newKey}/${editing.eventId}`), payload);
+        await set(ref(db, `events/${newKey}/${editing.eventId}`), {
+          ...payload,
+          createdAt: ev.createdAt || serverTimestamp(),
+        });
         await remove(ref(db, `events/${oldKey}/${editing.eventId}`));
       } else {
         await update(ref(db, `events/${oldKey}/${editing.eventId}`), payload);
       }
     } else {
       const newRef = push(ref(db, `events/${startKey}`));
-      await set(newRef, payload);
+      await set(newRef, {
+        ...payload,
+        createdAt: serverTimestamp(),
+      });
     }
 
     closeModal();
@@ -1188,7 +1247,7 @@ subscribeEvents();
 subscribeTypes();
 subscribeAdminHolidays();
 
-// 초기 렌더 (구독 콜백 전에도 화면 기본값)
+// 초기 렌더
 renderMemberButtons();
 renderTypeButtons();
 renderTypeSelectOptions();
