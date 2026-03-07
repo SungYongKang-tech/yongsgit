@@ -47,14 +47,14 @@ const fColor = $("fColor");
 const allDayChk = $("allDayChk");
 
 const COLOR_PRESETS = [
-  "#dbeafe", // 파랑
-  "#dcfce7", // 초록
-  "#fef3c7", // 노랑
-  "#fee2e2", // 빨강
-  "#fce7f3", // 분홍
-  "#ede9fe", // 보라
-  "#e0f2fe", // 하늘
-  "#f3f4f6"  // 회색
+  "#93c5fd", // 파랑
+  "#86efac", // 초록
+  "#fcd34d", // 노랑
+  "#fca5a5", // 빨강
+  "#f9a8d4", // 분홍
+  "#c4b5fd", // 보라
+  "#7dd3fc", // 하늘
+  "#d1d5db"  // 회색
 ];
 
 /* =========================
