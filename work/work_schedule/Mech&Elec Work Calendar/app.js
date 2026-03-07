@@ -494,7 +494,7 @@ function openModal({ dateKey, eventId = null, event = null }) {
   }
 
   const modalOwnerText = document.getElementById("modalOwnerText");
-if (modalOwnerText) modalOwnerText.textContent = selectedName;
+if (modalOwnerText) modalOwnerText.textContent = `작성: ${selectedName}`;
 
   if (fEndDate) fEndDate.value = event?.endDate || startKey;
   syncEndDateMin();
