@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KOEN 단식 리그전(실시간)</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    *{ box-sizing:border-box; }
+    body{
+      font-family:'Segoe UI','Noto Sans KR',sans-serif;
+      padding:20px;
+      margin:0;
+      background:#f7f9fc;
+      color:#222;
+    }
+
+    h1{
+      text-align:center;
+      margin:0 0 18px;
+      font-size:28px;
+      color:#0d47a1;
+    }
+
+    #controlPanel{
+      text-align:center;
+      margin-bottom:14px;
+    }
+
+    #controlPanel input[type="text"]{
+      padding:10px 12px;
+      font-size:16px;
+      margin:5px;
+      width:200px;
+      max-width:90%;
+      border:1px solid #cfd8dc;
+      border-radius:8px;
+      outline:none;
+      background:#fff;
+    }
+
+    #controlPanel button,
+    .button-group button,
+    #popup button{
+      padding:10px 16px;
+      font-size:15px;
+      background:#1976d2;
+      color:#fff;
+      border:none;
+      border-radius:8px;
+      cursor:pointer;
+      transition:.15s;
+    }
+
+    #controlPanel button:hover,
+    .button-group button:hover,
+    #popup button:hover{
+      filter:brightness(0.96);
+    }
+
+    .button-group{
+      display:flex;
+      justify-content:center;
+      flex-wrap:wrap;
+      gap:10px;
+      margin:18px 0;
+    }
+
+    .player-list{
+      text-align:center;
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:center;
+      gap:6px;
+      margin:12px 0 10px;
+    }
+
+    .player{
+      margin:0;
+      padding:6px 10px;
+      border:1px solid #2196f3;
+      border-radius:8px;
+      display:inline-block;
+      cursor:pointer;
+      font-size:14px;
+      background:#fff;
+      user-select:none;
+    }
+
+    .player.selected{
+      background:#1976d2 !important;
+      color:#fff !important;
+      border-color:#1976d2 !important;
+    }
+
+    .lv4to6   { background-color:#e8f5e9; }
+    .lv7to9   { background-color:#e3f2fd; }
+    .lv10to12 { background-color:#fff3e0; }
+    .lv13to14 { background-color:#ffebee; }
+
+    .new-player{
+      background-color:#fff176 !important;
+      border:3px solid #f57f17 !important;
+      font-weight:bold;
+      box-shadow:0 0 10px rgba(249,168,37,.55);
+      animation:highlightFlash 1.5s ease-in-out infinite alternate;
+    }
+
+    .player.new-player.selected{
+      background:#1976d2 !important;
+      color:#fff !important;
+      box-shadow:none !important;
+      animation:none !important;
+      border-color:#1976d2 !important;
+    }
+
+    @keyframes highlightFlash{
+      from{ transform:scale(1); }
+      to{ transform:scale(1.02); }
+    }
+
+    .scroll-table{
+      overflow:auto;
+      max-height:80vh;
+      max-width:100%;
+      border:1px solid #c9d3df;
+      border-radius:10px;
+      background:#fff;
+      box-shadow:0 2px 8px rgba(0,0,0,.04);
+      margin-top:12px;
+    }
+
+    #captureArea{
+      margin-top:10px;
+    }
+
+    table{
+      border-collapse:collapse;
+      width:100%;
+      min-width:720px;
+      background:#fff;
+      font-size:14px;
+    }
+
+    th, td{
+      border:1px solid #90a4ae;
+      padding:7px 10px;
+      text-align:center;
+      white-space:nowrap;
+    }
+
+    tr:nth-child(odd) td{
+      background:#e3f2fd;
+    }
+
+    tr:nth-child(even) td{
+      background:#fff;
+    }
+
+    table tr:first-child th,
+    table td:first-child,
+    table th:first-child{
+      background:#ffe0b2 !important;
+      font-weight:700;
+    }
+
+    td.clickable{
+      cursor:pointer;
+      font-weight:600;
+    }
+
+    td.clickable:hover{
+      background:#bbdefb !important;
+    }
+
+    #popup{
+      display:none;
+      position:fixed;
+      top:30%;
+      left:50%;
+      transform:translate(-50%,-50%);
+      background:#fff;
+      border:2px solid #333;
+      padding:20px;
+      z-index:1000;
+      width:90%;
+      max-width:420px;
+      border-radius:12px;
+      box-shadow:0 12px 24px rgba(0,0,0,.2);
+    }
+
+    #popup p{
+      margin-top:0;
+      font-size:17px;
+      font-weight:700;
+      text-align:center;
+    }
+
+    #scoreButtons{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      gap:8px;
+      margin-top:12px;
+      margin-bottom:10px;
+    }
+
+    #scoreButtons button{
+      width:100%;
+    }
+
+    .empty-box{
+      padding:18px;
+      text-align:center;
+      color:#607d8b;
+      font-weight:600;
+    }
+
+    .notice{
+      margin-top:10px;
+      text-align:center;
+      color:#607d8b;
+      font-size:13px;
+    }
+
+    @media (max-width:640px){
+      body{ padding:14px; }
+      h1{ font-size:24px; }
+      #controlPanel input[type="text"]{
+        width:46%;
+        min-width:130px;
+      }
+      .player{
+        padding:6px 8px;
+        font-size:13px;
+      }
+      th, td{
+        font-size:12px;
+        padding:6px 8px;
+      }
+      #scoreButtons{
+        grid-template-columns:repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>실시간 탁구 단식 리그전</h1>
+
+  <div id="controlPanel">
+    <input type="text" id="playerName" placeholder="선수 이름" />
+    <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
+    <button id="addPlayerBtn">선수 추가</button>
+    <button id="toggleDefaultBtn">기존 선수 숨김</button>
+  </div>
+
+  <div id="playerList" class="player-list"></div>
+
+  <div class="button-group">
+    <button id="resetBtn">점수 초기화</button>
+    <button id="clearBtn">추가선수/선택/결과 삭제</button>
+    <button id="saveImageBtn">리그전 이미지 저장</button>
+  </div>
+
+  <div class="notice">
+    기존 회원은 <b>members</b>에서 읽고, 이 페이지 데이터는 <b>single-matches</b> 아래에만 저장됩니다.
+  </div>
+
+  <div id="captureArea">
+    <div id="schedule" class="scroll-table"></div>
+    <div id="standings" class="scroll-table" style="margin-top:12px;"></div>
+  </div>
+
+  <div id="popup">
+    <p id="popupText"></p>
+    <div id="scoreButtons"></div>
+    <button id="closePopupBtn">닫기</button>
+  </div>
+
+  <script type="module">
+    import { db, auth } from "./firebase.js";
+    import {
+      ref,
+      onValue,
+      set,
+      remove
+    } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+    import {
+      onAuthStateChanged,
+      signInAnonymously
+    } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+    const $ = (id) => document.getElementById(id);
+
+    const playerListEl = $("playerList");
+    const scheduleEl = $("schedule");
+    const standingsEl = $("standings");
+    const popupEl = $("popup");
+    const popupTextEl = $("popupText");
+    const scoreButtonsEl = $("scoreButtons");
+
+    const playerNameEl = $("playerName");
+    const playerLevelEl = $("playerLevel");
+    const addPlayerBtn = $("addPlayerBtn");
+    const toggleDefaultBtn = $("toggleDefaultBtn");
+    const resetBtn = $("resetBtn");
+    const clearBtn = $("clearBtn");
+    const saveImageBtn = $("saveImageBtn");
+    const closePopupBtn = $("closePopupBtn");
+
+    // =========================
+    // Realtime Database 경로
+    // =========================
+    const membersRef = ref(db, "members");
+
+    // 단식 전용 저장 경로
+    const singlesRoot = "single-matches";
+    const customPlayersRef = ref(db, `${singlesRoot}/customPlayers`);
+    const selectedRef = ref(db, `${singlesRoot}/selected`);
+    const resultsRef = ref(db, `${singlesRoot}/results`);
+
+    // =========================
+    // 상태값
+    // =========================
+    let defaultPlayers = [];
+    let customPlayers = [];
+    let currentPlayers = [];
+    let selected = [];
+    let results = {};
+    let hideDefault = false;
+
+    // =========================
+    // 공통 유틸
+    // =========================
+    function escQuote(s){
+      return String(s)
+        .replaceAll("\\", "\\\\")
+        .replaceAll("'", "\\'");
+    }
+
+    function parseLevelFromId(id){
+      const m = String(id).match(/\((\d+)\)$/);
+      return m ? Number(m[1]) : 999;
+    }
+
+    function buildPlayerId(name, level){
+      return `${String(name).trim()}(${String(level).trim()})`;
+    }
+
+    function sortPlayers(list){
+      return [...list].sort((a, b) => {
+        const lvA = parseLevelFromId(a);
+        const lvB = parseLevelFromId(b);
+        if (lvA !== lvB) return lvA - lvB;
+        return a.localeCompare(b, "ko");
+      });
+    }
+
+    function uniquePlayers(list){
+      return [...new Set(list.filter(Boolean))];
+    }
+
+    function mergePlayers(){
+      currentPlayers = sortPlayers(
+        uniquePlayers([...defaultPlayers, ...customPlayers])
+      );
+    }
+
+    function normalizeMembers(raw){
+      const out = [];
+
+      const pushPlayer = (name, level) => {
+        const n = String(name ?? "").trim();
+        const l = String(level ?? "").trim();
+        if (!n || !l) return;
+        if (!/^\d+$/.test(l)) return;
+        out.push(buildPlayerId(n, l));
+      };
+
+      if (!raw) return [];
+
+      if (Array.isArray(raw)) {
+        raw.forEach((item) => {
+          if (typeof item === "string") {
+            const m = item.match(/^(.+)\((\d+)\)$/);
+            if (m) pushPlayer(m[1], m[2]);
+          } else if (item && typeof item === "object") {
+            pushPlayer(item.name, item.level);
+          }
+        });
+      } else if (typeof raw === "object") {
+        Object.entries(raw).forEach(([key, val]) => {
+          if (typeof val === "string") {
+            const m = val.match(/^(.+)\((\d+)\)$/);
+            if (m) pushPlayer(m[1], m[2]);
+            return;
+          }
+
+          if (val && typeof val === "object") {
+            if ("name" in val || "level" in val) {
+              pushPlayer(val.name ?? key, val.level);
+              return;
+            }
+            if ("lv" in val) {
+              pushPlayer(key, val.lv);
+              return;
+            }
+            if ("level" in val) {
+              pushPlayer(key, val.level);
+              return;
+            }
+          }
+        });
+      }
+
+      return sortPlayers(uniquePlayers(out));
+    }
+
+    function getPlayerClassByLevel(level){
+      if (level <= 6) return "lv4to6";
+      if (level <= 9) return "lv7to9";
+      if (level <= 12) return "lv10to12";
+      return "lv13to14";
+    }
+
+    // =========================
+    // 인증
+    // =========================
+    async function ensureAuth() {
+      if (auth.currentUser) return;
+
+      return new Promise((resolve, reject) => {
+        const unsub = onAuthStateChanged(auth, async (user) => {
+          if (user) {
+            unsub();
+            resolve();
+          }
+        });
+
+        signInAnonymously(auth).catch((err) => {
+          try { unsub(); } catch(e) {}
+          reject(err);
+        });
+      });
+    }
+
+    // =========================
+    // 렌더링
+    // =========================
+    function renderPlayers() {
+      playerListEl.innerHTML = "";
+
+      if (!currentPlayers.length) {
+        playerListEl.innerHTML = `<div class="empty-box">표시할 선수가 없습니다.</div>`;
+        return;
+      }
+
+      currentPlayers.forEach((p) => {
+        const isDefault = defaultPlayers.includes(p);
+        if (hideDefault && isDefault) return;
+
+        const div = document.createElement("div");
+        div.className = `player ${getPlayerClassByLevel(parseLevelFromId(p))}`;
+        div.textContent = p;
+
+        if (!isDefault) div.classList.add("new-player");
+        if (selected.includes(p)) div.classList.add("selected");
+
+        div.onclick = () => togglePlayer(p);
+        playerListEl.appendChild(div);
+      });
+
+      toggleDefaultBtn.textContent = hideDefault ? "기존 선수 보이기" : "기존 선수 숨김";
+    }
+
+    function renderSchedule() {
+      const list = selected.filter(x => currentPlayers.includes(x));
+
+      if (list.length < 2) {
+        scheduleEl.innerHTML = `<div class="empty-box">2명 이상 선택하세요</div>`;
+        standingsEl.innerHTML = "";
+        return;
+      }
+
+      let html = "<div id='scheduleTable'><table>";
+      html += "<tr><th>구분</th>";
+
+      list.forEach(p => {
+        html += `<th>${p}</th>`;
+      });
+      html += "</tr>";
+
+      list.forEach((a, i) => {
+        html += `<tr><th>${a}</th>`;
+
+        list.forEach((b, j) => {
+          const isSelf = i === j;
+          const key = `${a}__${b}`;
+          const val = isSelf ? "X" : (results?.[key] || "");
+
+          if (isSelf) {
+            html += `<td>${val}</td>`;
+          } else {
+            html += `<td class="clickable" onclick="openPopup('${escQuote(a)}','${escQuote(b)}')">${val}</td>`;
+          }
+        });
+
+        html += "</tr>";
+      });
+
+      html += "</table></div>";
+      scheduleEl.innerHTML = html;
+
+      renderStandings(list);
+    }
+
+    function computeStandings(list) {
+      const stats = {};
+
+      list.forEach(p => {
+        stats[p] = {
+          p,
+          gp: 0,
+          w: 0,
+          l: 0,
+          setFor: 0,
+          setAgainst: 0
+        };
+      });
+
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i];
+          const b = list[j];
+          const s = results?.[`${a}__${b}`];
+
+          if (!s || s === "0-0") continue;
+
+          const m = String(s).match(/^(\d+)-(\d+)$/);
+          if (!m) continue;
+
+          const x = Number(m[1]);
+          const y = Number(m[2]);
+
+          stats[a].gp++;
+          stats[b].gp++;
+
+          if (x > y) {
+            stats[a].w++;
+            stats[b].l++;
+          } else if (x < y) {
+            stats[b].w++;
+            stats[a].l++;
+          }
+
+          stats[a].setFor += x;
+          stats[a].setAgainst += y;
+          stats[b].setFor += y;
+          stats[b].setAgainst += x;
+        }
+      }
+
+      const rows = Object.values(stats).map(o => ({
+        ...o,
+        diff: o.setFor - o.setAgainst,
+        winRate: o.gp ? (o.w / o.gp) : 0
+      }));
+
+      rows.sort((r1, r2) =>
+        (r2.w - r1.w) ||
+        (r2.diff - r1.diff) ||
+        (r2.setFor - r1.setFor) ||
+        (r1.p.localeCompare(r2.p, "ko"))
+      );
+
+      rows.forEach((r, idx) => {
+        r.rank = idx + 1;
+      });
+
+      return rows;
+    }
+
+    function renderStandings(list){
+      const rows = computeStandings(list);
+
+      if (!rows.length) {
+        standingsEl.innerHTML = `<div class="empty-box">성적표를 표시할 데이터가 없습니다.</div>`;
+        return;
+      }
+
+      let html = "<div id='standingsTable'><table>";
+      html += "<tr><th>순위</th><th>선수</th><th>경기</th><th>승</th><th>패</th><th>승률</th><th>득</th><th>실</th><th>득실</th></tr>";
+
+      rows.forEach(r => {
+        const rate = (r.gp ? (r.w / r.gp * 100) : 0).toFixed(1) + "%";
+        html += `
+          <tr>
+            <td>${r.rank}</td>
+            <td>${r.p}</td>
+            <td>${r.gp}</td>
+            <td>${r.w}</td>
+            <td>${r.l}</td>
+            <td>${rate}</td>
+            <td>${r.setFor}</td>
+            <td>${r.setAgainst}</td>
+            <td>${r.diff}</td>
+          </tr>
+        `;
+      });
+
+      html += "</table></div>";
+      standingsEl.innerHTML = html;
+    }
+
+    // =========================
+    // 동작
+    // =========================
+    function togglePlayer(id) {
+      let arr = Array.isArray(selected) ? [...selected] : [];
+
+      if (arr.includes(id)) {
+        arr = arr.filter(x => x !== id);
+      } else {
+        arr.push(id);
+      }
+
+      selected = arr;
+      set(selectedRef, arr);
+
+      renderPlayers();
+      renderSchedule();
+    }
+
+    async function addPlayer() {
+      const name = playerNameEl.value.trim();
+      const level = playerLevelEl.value.trim();
+
+      if (!name || !level) {
+        alert("이름/부수를 입력하세요.");
+        return;
+      }
+
+      if (!/^\d+$/.test(level)) {
+        alert("부수는 숫자로 입력하세요.");
+        return;
+      }
+
+      const id = buildPlayerId(name, level);
+
+      if (currentPlayers.includes(id)) {
+        alert("이미 존재하는 선수입니다.");
+        return;
+      }
+
+      const next = sortPlayers([...customPlayers, id]);
+      await set(customPlayersRef, next);
+
+      playerNameEl.value = "";
+      playerLevelEl.value = "";
+      playerNameEl.focus();
+    }
+
+    function openPopupInternal(a, b) {
+      popupTextEl.textContent = `${a} vs ${b} 경기결과`;
+
+      const scores = ["3-0","3-1","3-2","2-0","2-1","0-0"];
+      scoreButtonsEl.innerHTML = "";
+
+      scores.forEach(s => {
+        const btn = document.createElement("button");
+        btn.textContent = s;
+        btn.onclick = async () => {
+          const [x, y] = s.split("-").map(Number);
+
+          results[`${a}__${b}`] = s;
+          results[`${b}__${a}`] = `${y}-${x}`;
+
+          await set(resultsRef, results);
+          popupEl.style.display = "none";
+          renderSchedule();
+        };
+        scoreButtonsEl.appendChild(btn);
+      });
+
+      popupEl.style.display = "block";
+    }
+
+    window.openPopup = (a, b) => {
+      openPopupInternal(a, b);
+    };
+
+    window.closePopup = () => {
+      popupEl.style.display = "none";
+    };
+
+    // =========================
+    // 이벤트
+    // =========================
+    addPlayerBtn.onclick = addPlayer;
+
+    playerNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") playerLevelEl.focus();
+    });
+
+    playerLevelEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") addPlayer();
+    });
+
+    toggleDefaultBtn.onclick = () => {
+      hideDefault = !hideDefault;
+      renderPlayers();
+    };
+
+    resetBtn.onclick = async () => {
+      if (!confirm("경기 결과를 초기화할까요?")) return;
+      results = {};
+      await set(resultsRef, {});
+    };
+
+    clearBtn.onclick = async () => {
+      const ok = confirm(
+        "추가 선수, 선택 선수, 경기 결과를 모두 삭제할까요?\n\n기존 members 데이터는 삭제되지 않습니다."
+      );
+      if (!ok) return;
+
+      await Promise.all([
+        remove(customPlayersRef),
+        remove(selectedRef),
+        remove(resultsRef)
+      ]);
+    };
+
+    saveImageBtn.onclick = async () => {
+      const target = $("captureArea");
+      const scheduleTable = $("scheduleTable");
+
+      if (!scheduleTable) {
+        alert("저장할 표가 없습니다. 선수 2명 이상 선택하세요.");
+        return;
+      }
+
+      const canvas = await html2canvas(target, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true
+      });
+
+      const link = document.createElement("a");
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+
+      link.download = `KOEN_단식리그_${yyyy}${mm}${dd}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    };
+
+    closePopupBtn.onclick = () => {
+      popupEl.style.display = "none";
+    };
+
+    // =========================
+    // 부트
+    // =========================
+    (async function boot(){
+      try {
+        await ensureAuth();
+
+        onValue(membersRef, (snap) => {
+          const raw = snap.val();
+          defaultPlayers = normalizeMembers(raw);
+          mergePlayers();
+
+          const validSelected = (selected || []).filter(p => currentPlayers.includes(p));
+          if (JSON.stringify(validSelected) !== JSON.stringify(selected || [])) {
+            selected = validSelected;
+            set(selectedRef, validSelected);
+          }
+
+          renderPlayers();
+          renderSchedule();
+        });
+
+        onValue(customPlayersRef, (snap) => {
+          customPlayers = sortPlayers(snap.val() || []);
+          mergePlayers();
+
+          const validSelected = (selected || []).filter(p => currentPlayers.includes(p));
+          if (JSON.stringify(validSelected) !== JSON.stringify(selected || [])) {
+            selected = validSelected;
+            set(selectedRef, validSelected);
+          }
+
+          renderPlayers();
+          renderSchedule();
+        });
+
+        onValue(selectedRef, (snap) => {
+          selected = snap.val() || [];
+          selected = selected.filter(p => currentPlayers.includes(p));
+          renderPlayers();
+          renderSchedule();
+        });
+
+        onValue(resultsRef, (snap) => {
+          results = snap.val() || {};
+          renderSchedule();
+        });
+
+      } catch (err) {
+        console.error(err);
+        alert("Firebase 연결 중 오류가 발생했습니다. firebase.js 경로 또는 인증 설정을 확인하세요.");
+      }
+    })();
+  </script>
+</body>
+</html>
