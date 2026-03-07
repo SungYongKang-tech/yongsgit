@@ -493,7 +493,9 @@ function openModal({ dateKey, eventId = null, event = null }) {
     fDate.value = startKey;
   }
 
-  if (fOwner) fOwner.value = selectedName;
+  const modalOwnerText = document.getElementById("modalOwnerText");
+if (modalOwnerText) modalOwnerText.textContent = selectedName;
+
   if (fEndDate) fEndDate.value = event?.endDate || startKey;
   syncEndDateMin();
 
