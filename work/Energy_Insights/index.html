@@ -181,6 +181,13 @@
       outline:none;
       text-align:right;
     }
+    .inlineInput:disabled{
+      background:#f3f4f6;
+      color:#6b7280;
+      border-color:#e5e7eb;
+      cursor:not-allowed;
+      opacity:.8;
+    }
 
     .modalBack{
       position:fixed; inset:0;
@@ -309,18 +316,18 @@
 
     <div class="card">
       <div class="titleRow">
-  <div class="pill">
-    <strong>2026년 사용량</strong>
-    <span class="legendDot dotBill"></span>고지서
-    <span class="legendDot dotPlanner"></span>파워플래너
-    <span class="legendDot dotForecast"></span>예상
-  </div>
+        <div class="pill">
+          <strong>2026년 사용량</strong>
+          <span class="legendDot dotBill"></span>고지서
+          <span class="legendDot dotPlanner"></span>파워플래너
+          <span class="legendDot dotForecast"></span>예상
+        </div>
 
-  <div style="display:flex;gap:6px">
-    <button class="btn" id="btnLock2026" type="button">🔒 입력잠금</button>
-    <button class="btn danger" id="btnReset2026" type="button">2026 입력값 초기화</button>
-  </div>
-</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn" id="btnLock2026" type="button">🔒 입력잠금</button>
+          <button class="btn danger" id="btnReset2026" type="button">2026 입력값 초기화</button>
+        </div>
+      </div>
 
       <div class="tableWrap">
         <table class="energyTable">
@@ -595,11 +602,15 @@ function applyLock2026UI(){
     btn.textContent = locked ? "🔒 입력잠금" : "🔓 입력가능";
   }
 
-  // 셀 수정 막기
   document.querySelectorAll("#tbody2026 td.editable").forEach(td=>{
     td.style.pointerEvents = locked ? "none" : "auto";
     td.style.opacity = locked ? ".55" : "1";
     td.style.textDecoration = locked ? "none" : "underline";
+    td.style.cursor = locked ? "default" : "pointer";
+  });
+
+  document.querySelectorAll(".baseMonthlyInput").forEach(input=>{
+    input.disabled = locked;
   });
 }
 
@@ -1016,6 +1027,8 @@ function render2026(){
     el("savingSub").textContent =
       `기준년전체 ${fmt2(calc.base)} toe · 연말예상 ${fmt2(calc.annualToeEst)} toe · 절감량 ${fmt2(calc.annualReduction)} toe · 절감률 ${fmtPct(calc.savingPctFinal)}%`;
   }
+
+  applyLock2026UI();
 }
 
 /* =========================
@@ -1059,6 +1072,7 @@ let modalState = { scope:null, month:null, field:null };
 
 function openModal(scope, month, field){
   if(scope==="2026" && isLocked2026()) return;
+
   modalState = { scope, month, field };
   const data = (scope==="2025") ? load2025() : load2026();
   const i = month-1;
@@ -1198,6 +1212,7 @@ async function init(){
   document.addEventListener("input", (e)=>{
     const target = e.target;
     if(!target.classList.contains("baseMonthlyInput")) return;
+    if(isLocked2026()) return;
 
     const month = Number(target.dataset.month);
     const field = target.dataset.field;
@@ -1207,6 +1222,7 @@ async function init(){
   document.addEventListener("blur", (e)=>{
     const target = e.target;
     if(!target.classList.contains("baseMonthlyInput")) return;
+    if(isLocked2026()) return;
 
     const month = Number(target.dataset.month);
     const field = target.dataset.field;
@@ -1221,6 +1237,7 @@ async function init(){
   document.addEventListener("change", (e)=>{
     const target = e.target;
     if(!target.classList.contains("baseMonthlyInput")) return;
+    if(isLocked2026()) return;
 
     const month = Number(target.dataset.month);
     const field = target.dataset.field;
@@ -1249,16 +1266,16 @@ async function init(){
   });
 
   el("btnLock2026").addEventListener("click", ()=>{
-  const locked = isLocked2026();
+    const locked = isLocked2026();
 
-  if(locked){
-    if(!confirm("입력잠금을 해제하고 수정하시겠습니까?")) return;
-    setLocked2026(false);
-  }else{
-    if(!confirm("입력을 잠그시겠습니까?")) return;
-    setLocked2026(true);
-  }
-});
+    if(locked){
+      if(!confirm("입력잠금을 해제하고 수정하시겠습니까?\n(2026 입력값과 기준년 월별 평균 입력이 함께 열립니다)")) return;
+      setLocked2026(false);
+    }else{
+      if(!confirm("입력을 잠그시겠습니까?\n(2026 입력값과 기준년 월별 평균 입력이 함께 잠깁니다)")) return;
+      setLocked2026(true);
+    }
+  });
 
   el("modalCancel").addEventListener("click", closeModal);
   el("modalBack").addEventListener("click", (e)=>{
