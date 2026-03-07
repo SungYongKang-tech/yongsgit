@@ -309,14 +309,18 @@
 
     <div class="card">
       <div class="titleRow">
-        <div class="pill">
-          <strong>2026년 사용량</strong>
-          <span class="legendDot dotBill"></span>고지서
-          <span class="legendDot dotPlanner"></span>파워플래너
-          <span class="legendDot dotForecast"></span>예상
-        </div>
-        <button class="btn danger" id="btnReset2026" type="button">2026 입력값 초기화</button>
-      </div>
+  <div class="pill">
+    <strong>2026년 사용량</strong>
+    <span class="legendDot dotBill"></span>고지서
+    <span class="legendDot dotPlanner"></span>파워플래너
+    <span class="legendDot dotForecast"></span>예상
+  </div>
+
+  <div style="display:flex;gap:6px">
+    <button class="btn" id="btnLock2026" type="button">🔒 입력잠금</button>
+    <button class="btn danger" id="btnReset2026" type="button">2026 입력값 초기화</button>
+  </div>
+</div>
 
       <div class="tableWrap">
         <table class="energyTable">
@@ -532,6 +536,7 @@ let suppressRemoteApply = false;
 /* =========================
    고정/저장 키
 ========================= */
+const LS_LOCK_2026 = "energy_2026_lock";
 const F_ELEC = 0.229;
 const F_HEAT = 0.1;
 
@@ -571,6 +576,31 @@ function srcLabel(src){
   if(src==="planner") return "플래너";
   if(src==="forecast") return "예상";
   return "자동";
+}
+
+function isLocked2026(){
+  return localStorage.getItem(LS_LOCK_2026) === "1";
+}
+
+function setLocked2026(v){
+  localStorage.setItem(LS_LOCK_2026, v ? "1" : "0");
+  applyLock2026UI();
+}
+
+function applyLock2026UI(){
+  const locked = isLocked2026();
+  const btn = el("btnLock2026");
+
+  if(btn){
+    btn.textContent = locked ? "🔒 입력잠금" : "🔓 입력가능";
+  }
+
+  // 셀 수정 막기
+  document.querySelectorAll("#tbody2026 td.editable").forEach(td=>{
+    td.style.pointerEvents = locked ? "none" : "auto";
+    td.style.opacity = locked ? ".55" : "1";
+    td.style.textDecoration = locked ? "none" : "underline";
+  });
 }
 
 /* =========================
@@ -1028,6 +1058,7 @@ function render2025(){
 let modalState = { scope:null, month:null, field:null };
 
 function openModal(scope, month, field){
+  if(scope==="2026" && isLocked2026()) return;
   modalState = { scope, month, field };
   const data = (scope==="2025") ? load2025() : load2026();
   const i = month-1;
@@ -1217,6 +1248,18 @@ async function init(){
     render2026();
   });
 
+  el("btnLock2026").addEventListener("click", ()=>{
+  const locked = isLocked2026();
+
+  if(locked){
+    if(!confirm("입력잠금을 해제하고 수정하시겠습니까?")) return;
+    setLocked2026(false);
+  }else{
+    if(!confirm("입력을 잠그시겠습니까?")) return;
+    setLocked2026(true);
+  }
+});
+
   el("modalCancel").addEventListener("click", closeModal);
   el("modalBack").addEventListener("click", (e)=>{
     if(e.target.id==="modalBack") closeModal();
@@ -1247,6 +1290,7 @@ async function init(){
 
   render2025();
   render2026();
+  applyLock2026UI();
 
   await initFirebaseSync();
 }
