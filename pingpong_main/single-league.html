@@ -222,6 +222,7 @@
       text-align:center;
       color:#607d8b;
       font-size:13px;
+      line-height:1.5;
     }
 
     @media (max-width:640px){
@@ -266,7 +267,7 @@
   </div>
 
   <div class="notice">
-    기존 회원은 <b>members</b>에서 읽고, 이 페이지 데이터는 <b>single-matches</b> 아래에만 저장됩니다.
+    기존 선수는 <b>members</b>에서 읽기만 하고, 단식 리그전 데이터는 <b>single-matches</b>에만 저장됩니다.
   </div>
 
   <div id="captureArea">
@@ -315,9 +316,7 @@
     // =========================
     // Realtime Database 경로
     // =========================
-    const membersRef = ref(db, "members");
-
-    // 단식 전용 저장 경로
+    const membersRef = ref(db, "members"); // 읽기 전용
     const singlesRoot = "single-matches";
     const customPlayersRef = ref(db, `${singlesRoot}/customPlayers`);
     const selectedRef = ref(db, `${singlesRoot}/selected`);
@@ -334,12 +333,10 @@
     let hideDefault = false;
 
     // =========================
-    // 공통 유틸
+    // 유틸
     // =========================
     function escQuote(s){
-      return String(s)
-        .replaceAll("\\", "\\\\")
-        .replaceAll("'", "\\'");
+      return String(s).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
     }
 
     function parseLevelFromId(id){
@@ -370,52 +367,22 @@
       );
     }
 
+    // members 구조: { pushKey: { name:"김희영", bu:4, strength:11 } }
     function normalizeMembers(raw){
       const out = [];
+      if (!raw || typeof raw !== "object") return out;
 
-      const pushPlayer = (name, level) => {
-        const n = String(name ?? "").trim();
-        const l = String(level ?? "").trim();
-        if (!n || !l) return;
-        if (!/^\d+$/.test(l)) return;
-        out.push(buildPlayerId(n, l));
-      };
+      Object.values(raw).forEach((item) => {
+        if (!item || typeof item !== "object") return;
 
-      if (!raw) return [];
+        const name = String(item.name ?? "").trim();
+        const bu = item.bu;
 
-      if (Array.isArray(raw)) {
-        raw.forEach((item) => {
-          if (typeof item === "string") {
-            const m = item.match(/^(.+)\((\d+)\)$/);
-            if (m) pushPlayer(m[1], m[2]);
-          } else if (item && typeof item === "object") {
-            pushPlayer(item.name, item.level);
-          }
-        });
-      } else if (typeof raw === "object") {
-        Object.entries(raw).forEach(([key, val]) => {
-          if (typeof val === "string") {
-            const m = val.match(/^(.+)\((\d+)\)$/);
-            if (m) pushPlayer(m[1], m[2]);
-            return;
-          }
+        if (!name) return;
+        if (bu === undefined || bu === null || String(bu).trim() === "") return;
 
-          if (val && typeof val === "object") {
-            if ("name" in val || "level" in val) {
-              pushPlayer(val.name ?? key, val.level);
-              return;
-            }
-            if ("lv" in val) {
-              pushPlayer(key, val.lv);
-              return;
-            }
-            if ("level" in val) {
-              pushPlayer(key, val.level);
-              return;
-            }
-          }
-        });
-      }
+        out.push(buildPlayerId(name, bu));
+      });
 
       return sortPlayers(uniquePlayers(out));
     }
@@ -427,14 +394,11 @@
       return "lv13to14";
     }
 
-    // =========================
-    // 인증
-    // =========================
     async function ensureAuth() {
       if (auth.currentUser) return;
 
       return new Promise((resolve, reject) => {
-        const unsub = onAuthStateChanged(auth, async (user) => {
+        const unsub = onAuthStateChanged(auth, (user) => {
           if (user) {
             unsub();
             resolve();
@@ -455,7 +419,7 @@
       playerListEl.innerHTML = "";
 
       if (!currentPlayers.length) {
-        playerListEl.innerHTML = `<div class="empty-box">표시할 선수가 없습니다.</div>`;
+        playerListEl.innerHTML = `<div class="empty-box">members에서 불러온 선수가 없습니다.</div>`;
         return;
       }
 
@@ -566,8 +530,7 @@
 
       const rows = Object.values(stats).map(o => ({
         ...o,
-        diff: o.setFor - o.setAgainst,
-        winRate: o.gp ? (o.w / o.gp) : 0
+        diff: o.setFor - o.setAgainst
       }));
 
       rows.sort((r1, r2) =>
@@ -622,11 +585,8 @@
     function togglePlayer(id) {
       let arr = Array.isArray(selected) ? [...selected] : [];
 
-      if (arr.includes(id)) {
-        arr = arr.filter(x => x !== id);
-      } else {
-        arr.push(id);
-      }
+      if (arr.includes(id)) arr = arr.filter(x => x !== id);
+      else arr.push(id);
 
       selected = arr;
       set(selectedRef, arr);
@@ -722,9 +682,7 @@
     };
 
     clearBtn.onclick = async () => {
-      const ok = confirm(
-        "추가 선수, 선택 선수, 경기 결과를 모두 삭제할까요?\n\n기존 members 데이터는 삭제되지 않습니다."
-      );
+      const ok = confirm("추가 선수, 선택 선수, 경기 결과를 모두 삭제할까요?\n\n기존 members 데이터는 삭제되지 않습니다.");
       if (!ok) return;
 
       await Promise.all([
@@ -771,6 +729,7 @@
       try {
         await ensureAuth();
 
+        // members는 읽기만 함
         onValue(membersRef, (snap) => {
           const raw = snap.val();
           defaultPlayers = normalizeMembers(raw);
