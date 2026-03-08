@@ -49,7 +49,7 @@ const allDayChk = $("allDayChk");
 const COLOR_PRESETS = [
   "#4b5563", // 진회색
   "#7c3aed", // 진보라
-  "#ca8a04"  // 진노랑
+  "#ca8a04",  // 진노랑
   "#ffff00"  // 완전 노랑
 ];
 
