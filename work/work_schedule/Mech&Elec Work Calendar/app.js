@@ -47,14 +47,14 @@ const fColor = $("fColor");
 const allDayChk = $("allDayChk");
 
 const COLOR_PRESETS = [
-  "#93c5fd", // 파랑
-  "#86efac", // 초록
-  "#fcd34d", // 노랑
-  "#fca5a5", // 빨강
-  "#f9a8d4", // 분홍
-  "#c4b5fd", // 보라
-  "#7dd3fc", // 하늘
-  "#d1d5db"  // 회색
+  "#3b82f6", // 진파랑
+  "#16a34a", // 진초록
+  "#ca8a04", // 진노랑(골드톤)
+  "#dc2626", // 진빨강
+  "#db2777", // 진분홍
+  "#7c3aed", // 진보라
+  "#0284c7", // 진하늘
+  "#4b5563"  // 진회색
 ];
 
 /* =========================
@@ -998,7 +998,9 @@ function renderCalendar() {
 
       bar.style.left = `calc(${p.col * colW}% + ${sidePad}px)`;
       bar.style.width = `calc(${colW}% - ${sideSub}px)`;
-      bar.style.top = `${p.row * barRowPx}px`;
+      bar.style.top = `
+      
+      ${p.row * barRowPx}px`;
 
       if (!p.isHoliday && p.rows === 2) {
   bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
