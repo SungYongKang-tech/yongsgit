@@ -395,7 +395,7 @@ function getSingleBarRule(title) {
   if (isMobile) {
     const hasSpace = /\s/.test(full);
     const hasPunc = /[()[\]{}·•,./\\\-_:;!?]/.test(full);
-    const longEnough = full.length > 4;   // ✅ 4자까지는 1줄
+    const longEnough = full.length >= 4;
 
     const wantTwo = longEnough || hasSpace || hasPunc;
     return {
