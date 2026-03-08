@@ -393,11 +393,9 @@ function getSingleBarRule(title) {
   const isMobile = isMobileNow();
 
   if (isMobile) {
-    const hasSpace = /\s/.test(full);
-    const hasPunc = /[()[\]{}·•,./\\\-_:;!?]/.test(full);
-    const longEnough = full.length >= 4;
+    // ✅ 모바일: 4자까지 1줄, 5자부터 2줄
+    const wantTwo = full.length > 4;
 
-    const wantTwo = longEnough || hasSpace || hasPunc;
     return {
       rows: wantTwo ? 2 : 1,
       textClamp: wantTwo ? 3 : 1,
@@ -405,7 +403,9 @@ function getSingleBarRule(title) {
     };
   }
 
+  // ✅ PC: 기존 기준 유지
   const wantTwo = full.length >= 12;
+
   return {
     rows: wantTwo ? 2 : 1,
     textClamp: wantTwo ? 2 : 1,
@@ -1001,10 +1001,9 @@ function renderCalendar() {
       bar.style.top = `${p.row * barRowPx}px`;
 
       if (!p.isHoliday && p.rows === 2) {
-        bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
-        bar.style.lineHeight = "12px";
-      }
-
+  bar.style.height = `calc((var(--bar-h) * 2) + var(--bar-gap))`;
+  bar.style.lineHeight = "1.2";
+}
       if (p.isHoliday) {
         bar.style.borderColor = p.isFestival ? "#b91c1c" : "#ef4444";
         bar.style.background = p.isFestival ? "#fecaca" : "#fee2e2";
