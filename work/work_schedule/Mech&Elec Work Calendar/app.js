@@ -513,7 +513,7 @@ if (modalOwnerText) modalOwnerText.textContent = `작성: ${selectedName}`;
       setAllDay(false);
     }
 
-    renderColorPicker(getEventColor(event));
+    renderColorPicker(normalizeColor(event.color));
 
     const canEdit = event.owner === selectedName;
     if (saveBtn) saveBtn.disabled = !canEdit;
