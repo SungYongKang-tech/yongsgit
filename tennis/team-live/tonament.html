@@ -13,7 +13,6 @@
       --text:#0f172a;
       --muted:#64748b;
       --blue:#2563eb;
-      --blue-soft:#93c5fd;
       --win:#dbeafe;
       --shadow:0 10px 24px rgba(15,23,42,.08);
       --radius:16px;
@@ -339,7 +338,7 @@
     </div>
 
     <div class="legend">
-      <div class="legendItem"><span class="legendLine"></span> 승리로 올라간 경로</div>
+      <div class="legendItem"><span class="legendLine"></span> 직접 입력한 승리 경로</div>
       <div class="legendItem"><span class="legendLine gray"></span> 아직 미정인 경로</div>
     </div>
   </div>
@@ -375,15 +374,21 @@
     }
 
     function shortTeamLabel(team){
-      if(!team) return "-";
+      if(!team) return "";
       const names = (team.players || []).map(p => p.name).join(" / ");
-      return `${team.id}팀 · ${names}`;
+      return names ? `${team.id}팀 · ${names}` : `${team.id}팀`;
     }
 
     function fullTeamLabel(team){
-      if(!team) return "-";
+      if(!team) return "";
       const names = (team.players || []).map(p => `${p.name}(${p.grade})`).join(" · ");
-      return `${team.id}: ${names}`;
+      return names ? `${team.id}: ${names}` : `${team.id}`;
+    }
+
+    function getCssVarPx(name, fallback){
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : fallback;
     }
 
     function getRoundTitle(idx, total){
@@ -404,6 +409,25 @@
       return "-";
     }
 
+    function getRoundMetrics(rounds, rIdx){
+      const baseGap = getCssVarPx("--match-gap", 28);
+      const matchH = getCssVarPx("--match-h", 96);
+
+      const currentCount = rounds[rIdx].length;
+      const prevCount = rIdx > 0 ? rounds[rIdx - 1].length : currentCount;
+
+      let gap = baseGap;
+      if(currentCount === 2) gap = baseGap + matchH * 0.95; // 4강 넓게
+      if(currentCount === 1) gap = 0; // 결승
+
+      const prevTotalHeight = prevCount * matchH + Math.max(0, prevCount - 1) * baseGap;
+      const currentTotalHeight = currentCount * matchH + Math.max(0, currentCount - 1) * gap;
+
+      const offset = Math.max(0, (prevTotalHeight - currentTotalHeight) / 2);
+
+      return { offset, gap };
+    }
+
     function renderChampion(){
       const box = $("championBox");
       const rounds = run?.bracketRounds || [];
@@ -412,35 +436,21 @@
         return;
       }
 
-      const lastRound = rounds[rounds.length - 1];
-      const finalMatch = lastRound?.[0];
+      const finalMatch = rounds[rounds.length - 1]?.[0];
+      const playedFinal = !!(finalMatch?.done && finalMatch?.score && !finalMatch.score.bye);
 
-      if(finalMatch?.winner){
+      if(playedFinal && finalMatch?.winner){
         const winnerTeam = teamById(finalMatch.winner);
         box.innerHTML = `
           <div class="champion">
             🏆 우승
-            <span>${esc(winnerTeam ? fullTeamLabel(winnerTeam) : finalMatch.winner)}</span>
+            <span>${esc(winnerTeam ? fullTeamLabel(winnerTeam) : "")}</span>
           </div>
         `;
       }else{
         box.innerHTML = "";
       }
     }
-
-    function getRoundOffset(rIdx){
-  if(rIdx === 0) return 0;     // 1라운드
-  if(rIdx === 1) return 62;    // 8강/4강 쪽
-  if(rIdx === 2) return 155;   // 결승 쪽
-  return 0;
-}
-
-function getRoundGap(matchCount){
-  if(matchCount <= 1) return 0;    // 결승
-  if(matchCount === 2) return 110; // 4강은 간격 넓게
-  if(matchCount === 4) return 56;  // 8강은 약간 넓게
-  return 28;                       // 기본
-}
 
     function renderBracket(){
       const emptyBox = $("emptyBox");
@@ -475,18 +485,26 @@ function getRoundGap(matchCount){
       board.style.display = "block";
 
       bracket.innerHTML = rounds.map((round, rIdx) => {
+        const metrics = getRoundMetrics(rounds, rIdx);
+
         return `
           <div class="round"
-     data-round="${rIdx}"
-     style="padding-top:${getRoundOffset(rIdx)}px; gap:${getRoundGap(round.length)}px;">
+               data-round="${rIdx}"
+               style="padding-top:${metrics.offset}px; gap:${metrics.gap}px;">
             <div class="roundTitle">${esc(getRoundTitle(rIdx, rounds.length))}</div>
             ${round.map((m, mIdx) => {
               const teamA = m.A ? teamById(m.A) : null;
               const teamB = m.B ? teamById(m.B) : null;
               const scoreText = getScoreText(m);
-              const aWin = !!(m.winner && m.A && m.winner === m.A);
-              const bWin = !!(m.winner && m.B && m.winner === m.B);
+              const playedMatch = !!(m.done && m.score && !m.score.bye);
+              const aWin = !!(playedMatch && m.winner && m.A && m.winner === m.A);
+              const bWin = !!(playedMatch && m.winner && m.B && m.winner === m.B);
               const isBye = !!m.score?.bye;
+
+              const aName = (m.A && teamA) ? shortTeamLabel(teamA) : "";
+              const bName = (m.B && teamB) ? shortTeamLabel(teamB) : "";
+              const winnerTeam = m.winner ? teamById(m.winner) : null;
+              const winnerText = (playedMatch && winnerTeam) ? shortTeamLabel(winnerTeam) : "";
 
               return `
                 <div class="match ${m.done ? "done" : ""} ${isBye ? "bye" : ""}"
@@ -499,16 +517,16 @@ function getRoundGap(matchCount){
                   </div>
 
                   <div class="teamRow ${aWin ? "win" : ""}" data-slot="A">
-                    <div class="teamName">${esc(m.A ? shortTeamLabel(teamA || { id:m.A, players:[] }) : "BYE / 대기")}</div>
+                    <div class="teamName">${esc(aName)}</div>
                     <div class="seed">A</div>
                   </div>
 
                   <div class="teamRow ${bWin ? "win" : ""}" data-slot="B">
-                    <div class="teamName">${esc(m.B ? shortTeamLabel(teamB || { id:m.B, players:[] }) : "BYE / 대기")}</div>
+                    <div class="teamName">${esc(bName)}</div>
                     <div class="seed">B</div>
                   </div>
 
-                  ${m.winner ? `<div class="winnerText">승자: ${esc(shortTeamLabel(teamById(m.winner) || { id:m.winner, players:[] }))}</div>` : ``}
+                  ${winnerText ? `<div class="winnerText">승자: ${esc(winnerText)}</div>` : ``}
                 </div>
               `;
             }).join("")}
@@ -553,85 +571,84 @@ function getRoundGap(matchCount){
     }
 
     function drawConnections(){
-  const svg = $("svgLayer");
-  const board = $("board");
-  const bracket = $("bracket");
-  const rounds = run?.bracketRounds || [];
+      const svg = $("svgLayer");
+      const board = $("board");
+      const bracket = $("bracket");
+      const rounds = run?.bracketRounds || [];
 
-  svg.innerHTML = "";
+      svg.innerHTML = "";
+      if(!rounds.length) return;
 
-  if(!rounds.length) return;
+      const boardRect = board.getBoundingClientRect();
+      const fullWidth = bracket.scrollWidth + 40;
+      const fullHeight = bracket.scrollHeight + 40;
 
-  const boardRect = board.getBoundingClientRect();
-  const fullWidth = bracket.scrollWidth + 40;
-  const fullHeight = bracket.scrollHeight + 40;
+      svg.setAttribute("width", fullWidth);
+      svg.setAttribute("height", fullHeight);
+      svg.setAttribute("viewBox", `0 0 ${fullWidth} ${fullHeight}`);
 
-  svg.setAttribute("width", fullWidth);
-  svg.setAttribute("height", fullHeight);
-  svg.setAttribute("viewBox", `0 0 ${fullWidth} ${fullHeight}`);
+      for(let r = 0; r < rounds.length - 1; r++){
+        const curRound = rounds[r];
+        const nextRound = rounds[r + 1];
 
-  for(let r = 0; r < rounds.length - 1; r++){
-    const curRound = rounds[r];
-    const nextRound = rounds[r + 1];
+        for(let i = 0; i < nextRound.length; i++){
+          const src1 = curRound[i * 2];
+          const src2 = curRound[i * 2 + 1];
+          const dst = nextRound[i];
 
-    for(let i = 0; i < nextRound.length; i++){
-      const src1 = curRound[i * 2];
-      const src2 = curRound[i * 2 + 1];
-      const dst = nextRound[i];
+          const el1 = getMatchEl(r, i * 2);
+          const el2 = getMatchEl(r, i * 2 + 1);
+          const dstEl = getMatchEl(r + 1, i);
 
-      const el1 = getMatchEl(r, i * 2);
-      const el2 = getMatchEl(r, i * 2 + 1);
-      const dstEl = getMatchEl(r + 1, i);
+          if(!dstEl) continue;
 
-      if(!dstEl) continue;
+          const dstRect = getBoxRectWithinBoard(dstEl, boardRect);
+          const dstX = dstRect.left;
+          const dstYA = dstRect.top + dstRect.height * 0.35;
+          const dstYB = dstRect.top + dstRect.height * 0.70;
 
-      const dstRect = getBoxRectWithinBoard(dstEl, boardRect);
-      const dstX = dstRect.left;
-      const dstYA = dstRect.top + dstRect.height * 0.35;
-      const dstYB = dstRect.top + dstRect.height * 0.70;
+          if(el1 && src1){
+            const sRect = getBoxRectWithinBoard(el1, boardRect);
+            const sX = sRect.right;
+            const sY = sRect.top + sRect.height * 0.5;
 
-      if(el1 && src1){
-        const sRect = getBoxRectWithinBoard(el1, boardRect);
-        const sX = sRect.right;
-        const sY = sRect.top + sRect.height * 0.5;
+            let active = false;
+            const played1 = !!(src1.done && src1.score && !src1.score.bye);
+            if(played1 && src1.winner && dst){
+              active = (dst.A === src1.winner || dst.B === src1.winner);
+            }
 
-        let active = false;
-        const played1 = !!(src1.done && src1.score && !src1.score.bye);
-        if(played1 && src1.winner && dst){
-          active = (dst.A === src1.winner || dst.B === src1.winner);
+            addPath(
+              svg,
+              pathD(sX, sY, dstX, dstYA),
+              active ? "#2563eb" : "#cbd5e1",
+              active ? 5 : 2,
+              active ? 1 : 0.95
+            );
+          }
+
+          if(el2 && src2){
+            const sRect = getBoxRectWithinBoard(el2, boardRect);
+            const sX = sRect.right;
+            const sY = sRect.top + sRect.height * 0.5;
+
+            let active = false;
+            const played2 = !!(src2.done && src2.score && !src2.score.bye);
+            if(played2 && src2.winner && dst){
+              active = (dst.A === src2.winner || dst.B === src2.winner);
+            }
+
+            addPath(
+              svg,
+              pathD(sX, sY, dstX, dstYB),
+              active ? "#2563eb" : "#cbd5e1",
+              active ? 5 : 2,
+              active ? 1 : 0.95
+            );
+          }
         }
-
-        addPath(
-          svg,
-          pathD(sX, sY, dstX, dstYA),
-          active ? "#2563eb" : "#cbd5e1",
-          active ? 5 : 2,
-          active ? 1 : 0.95
-        );
-      }
-
-      if(el2 && src2){
-        const sRect = getBoxRectWithinBoard(el2, boardRect);
-        const sX = sRect.right;
-        const sY = sRect.top + sRect.height * 0.5;
-
-        let active = false;
-        const played2 = !!(src2.done && src2.score && !src2.score.bye);
-        if(played2 && src2.winner && dst){
-          active = (dst.A === src2.winner || dst.B === src2.winner);
-        }
-
-        addPath(
-          svg,
-          pathD(sX, sY, dstX, dstYB),
-          active ? "#2563eb" : "#cbd5e1",
-          active ? 5 : 2,
-          active ? 1 : 0.95
-        );
       }
     }
-  }
-}
 
     function renderAll(){
       renderChampion();
