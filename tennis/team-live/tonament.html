@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🎾 토너먼트 대진표</title>
+
+  <style>
+    :root{
+      --bg:#f6f7fb;
+      --card:#ffffff;
+      --line:#dbe2ea;
+      --text:#0f172a;
+      --muted:#64748b;
+      --blue:#2563eb;
+      --blue-soft:#93c5fd;
+      --win:#dbeafe;
+      --shadow:0 10px 24px rgba(15,23,42,.08);
+      --radius:16px;
+      --round-gap:72px;
+      --match-gap:28px;
+      --match-h:96px;
+      --round-w:250px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    .wrap{
+      max-width:100%;
+      padding:14px;
+    }
+
+    .top{
+      max-width:1400px;
+      margin:0 auto 12px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+    }
+
+    .titleBox{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+
+    h1{
+      margin:0;
+      font-size:20px;
+      font-weight:1000;
+    }
+
+    .sub{
+      font-size:13px;
+      color:var(--muted);
+      font-weight:700;
+    }
+
+    .actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .btn{
+      appearance:none;
+      border:1px solid rgba(37,99,235,.18);
+      background:linear-gradient(180deg,#2b74ff,#2563eb);
+      color:#fff;
+      font-weight:900;
+      border-radius:12px;
+      padding:10px 14px;
+      cursor:pointer;
+      text-decoration:none;
+    }
+    .btn.secondary{
+      background:#fff;
+      color:var(--text);
+      border:1px solid var(--line);
+    }
+
+    .statusCard{
+      max-width:1400px;
+      margin:0 auto 12px;
+      background:var(--card);
+      border:1px solid #e6e8ef;
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:12px 14px;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .status{
+      font-size:13px;
+      color:var(--muted);
+      font-weight:800;
+    }
+
+    .champion{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 12px;
+      border-radius:999px;
+      background:#fff7ed;
+      border:1px solid #fed7aa;
+      color:#9a3412;
+      font-size:13px;
+      font-weight:1000;
+    }
+
+    .boardWrap{
+      max-width:1400px;
+      margin:0 auto;
+      background:var(--card);
+      border:1px solid #e6e8ef;
+      border-radius:20px;
+      box-shadow:var(--shadow);
+      overflow:auto;
+      padding:20px;
+      position:relative;
+      min-height:420px;
+    }
+
+    .empty{
+      color:var(--muted);
+      font-weight:800;
+      text-align:center;
+      padding:50px 16px;
+    }
+
+    .board{
+      position:relative;
+      min-width:max-content;
+      padding:8px 8px 16px;
+    }
+
+    .bracket{
+      position:relative;
+      display:flex;
+      align-items:flex-start;
+      gap:var(--round-gap);
+      z-index:2;
+    }
+
+    .round{
+      width:var(--round-w);
+      display:flex;
+      flex-direction:column;
+      gap:var(--match-gap);
+      position:relative;
+    }
+
+    .roundTitle{
+      position:sticky;
+      top:0;
+      z-index:5;
+      margin-bottom:6px;
+      font-size:14px;
+      font-weight:1000;
+      color:#1e3a8a;
+      background:#eff6ff;
+      border:1px solid #bfdbfe;
+      border-radius:999px;
+      padding:8px 12px;
+      text-align:center;
+    }
+
+    .match{
+      height:var(--match-h);
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:16px;
+      box-shadow:0 6px 14px rgba(15,23,42,.05);
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      position:relative;
+    }
+
+    .match.done{
+      border-color:#93c5fd;
+      box-shadow:0 8px 18px rgba(37,99,235,.10);
+    }
+
+    .match.bye{
+      background:#f8fafc;
+    }
+
+    .matchHead{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:8px;
+      font-size:12px;
+      font-weight:900;
+      color:var(--muted);
+    }
+
+    .scoreBadge{
+      padding:4px 8px;
+      border-radius:999px;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      color:#0f172a;
+      font-weight:1000;
+    }
+
+    .teamRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      border-radius:10px;
+      padding:7px 8px;
+      margin-bottom:6px;
+      background:#f8fafc;
+      border:1px solid #edf2f7;
+      min-height:30px;
+    }
+
+    .teamRow:last-child{ margin-bottom:0; }
+
+    .teamRow.win{
+      background:var(--win);
+      border-color:#93c5fd;
+      font-weight:1000;
+    }
+
+    .teamName{
+      font-size:13px;
+      font-weight:900;
+      line-height:1.25;
+      word-break:keep-all;
+    }
+
+    .seed{
+      font-size:11px;
+      color:var(--muted);
+      font-weight:800;
+      flex:0 0 auto;
+    }
+
+    .winnerText{
+      margin-top:8px;
+      text-align:center;
+      font-size:12px;
+      color:#1d4ed8;
+      font-weight:1000;
+    }
+
+    .svgLayer{
+      position:absolute;
+      inset:0;
+      z-index:1;
+      pointer-events:none;
+      overflow:visible;
+    }
+
+    .legend{
+      max-width:1400px;
+      margin:10px auto 0;
+      display:flex;
+      gap:16px;
+      flex-wrap:wrap;
+      align-items:center;
+      color:var(--muted);
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .legendItem{
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    .legendLine{
+      width:34px;
+      height:0;
+      border-top:4px solid var(--blue);
+      border-radius:999px;
+    }
+
+    .legendLine.gray{
+      border-top:2px solid #cbd5e1;
+    }
+
+    @media (max-width:768px){
+      :root{
+        --round-gap:40px;
+        --round-w:220px;
+        --match-h:92px;
+      }
+      .wrap{ padding:10px; }
+      h1{ font-size:18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="titleBox">
+        <h1>🎾 토너먼트 대진표</h1>
+        <div class="sub">조별리그 후 토너먼트 / 단판 토너먼트 공용 화면</div>
+      </div>
+      <div class="actions">
+        <a class="btn secondary" href="./index.html">이전 페이지</a>
+        <button class="btn" id="refreshBtn">새로고침</button>
+      </div>
+    </div>
+
+    <div class="statusCard">
+      <div class="status" id="status">불러오는 중...</div>
+      <div id="championBox"></div>
+    </div>
+
+    <div class="boardWrap">
+      <div id="emptyBox" class="empty">대진 데이터가 없습니다.</div>
+
+      <div id="board" class="board" style="display:none;">
+        <svg id="svgLayer" class="svgLayer"></svg>
+        <div id="bracket" class="bracket"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legendItem"><span class="legendLine"></span> 승리로 올라간 경로</div>
+      <div class="legendItem"><span class="legendLine gray"></span> 아직 미정인 경로</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, auth } from "../firebase.js";
+    import { ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+    const $ = (id)=>document.getElementById(id);
+
+    const PATH = {
+      current: "teamLive/current",
+      run: "teamLive/run"
+    };
+
+    let current = null;
+    let run = null;
+
+    const esc = (s)=>String(s ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+
+    function setStatus(msg){
+      $("status").textContent = msg;
+    }
+
+    function teamById(id){
+      return (current?.teams || []).find(t => t.id === id) || null;
+    }
+
+    function shortTeamLabel(team){
+      if(!team) return "-";
+      const names = (team.players || []).map(p => p.name).join(" / ");
+      return `${team.id}팀 · ${names}`;
+    }
+
+    function fullTeamLabel(team){
+      if(!team) return "-";
+      const names = (team.players || []).map(p => `${p.name}(${p.grade})`).join(" · ");
+      return `${team.id}: ${names}`;
+    }
+
+    function getRoundTitle(idx, total){
+      const remain = Math.pow(2, total - idx - 1);
+      if(total === 1) return "결승";
+      if(remain === 1) return "결승";
+      if(remain === 2) return "4강";
+      if(remain === 4) return "8강";
+      if(remain === 8) return "16강";
+      return `라운드 ${idx + 1}`;
+    }
+
+    function getScoreText(m){
+      if(m?.score?.bye) return "BYE";
+      if(m?.score && Number.isInteger(m.score.a) && Number.isInteger(m.score.b)){
+        return `${m.score.a}:${m.score.b}`;
+      }
+      return "-";
+    }
+
+    function renderChampion(){
+      const box = $("championBox");
+      const rounds = run?.bracketRounds || [];
+      if(!rounds.length){
+        box.innerHTML = "";
+        return;
+      }
+
+      const lastRound = rounds[rounds.length - 1];
+      const finalMatch = lastRound?.[0];
+
+      if(finalMatch?.winner){
+        const winnerTeam = teamById(finalMatch.winner);
+        box.innerHTML = `
+          <div class="champion">
+            🏆 우승
+            <span>${esc(winnerTeam ? fullTeamLabel(winnerTeam) : finalMatch.winner)}</span>
+          </div>
+        `;
+      }else{
+        box.innerHTML = "";
+      }
+    }
+
+    function renderBracket(){
+      const emptyBox = $("emptyBox");
+      const board = $("board");
+      const bracket = $("bracket");
+
+      const format = run?.settings?.format;
+      const rounds = run?.bracketRounds || null;
+
+      if(!current || !run){
+        emptyBox.style.display = "block";
+        emptyBox.textContent = "진행 데이터가 없습니다.";
+        board.style.display = "none";
+        return;
+      }
+
+      if(format !== "tournament" && format !== "groups_to"){
+        emptyBox.style.display = "block";
+        emptyBox.textContent = "현재 진행 방식은 토너먼트가 아닙니다.";
+        board.style.display = "none";
+        return;
+      }
+
+      if(!rounds || !rounds.length){
+        emptyBox.style.display = "block";
+        emptyBox.textContent = "토너먼트 대진이 아직 생성되지 않았습니다.";
+        board.style.display = "none";
+        return;
+      }
+
+      emptyBox.style.display = "none";
+      board.style.display = "block";
+
+      bracket.innerHTML = rounds.map((round, rIdx) => {
+        return `
+          <div class="round" data-round="${rIdx}">
+            <div class="roundTitle">${esc(getRoundTitle(rIdx, rounds.length))}</div>
+            ${round.map((m, mIdx) => {
+              const teamA = m.A ? teamById(m.A) : null;
+              const teamB = m.B ? teamById(m.B) : null;
+              const scoreText = getScoreText(m);
+              const aWin = !!(m.winner && m.A && m.winner === m.A);
+              const bWin = !!(m.winner && m.B && m.winner === m.B);
+              const isBye = !!m.score?.bye;
+
+              return `
+                <div class="match ${m.done ? "done" : ""} ${isBye ? "bye" : ""}"
+                     data-mid="${esc(m.id)}"
+                     data-round="${rIdx}"
+                     data-index="${mIdx}">
+                  <div class="matchHead">
+                    <span>매치 ${mIdx + 1}</span>
+                    <span class="scoreBadge">${esc(scoreText)}</span>
+                  </div>
+
+                  <div class="teamRow ${aWin ? "win" : ""}" data-slot="A">
+                    <div class="teamName">${esc(m.A ? shortTeamLabel(teamA || { id:m.A, players:[] }) : "BYE / 대기")}</div>
+                    <div class="seed">A</div>
+                  </div>
+
+                  <div class="teamRow ${bWin ? "win" : ""}" data-slot="B">
+                    <div class="teamName">${esc(m.B ? shortTeamLabel(teamB || { id:m.B, players:[] }) : "BYE / 대기")}</div>
+                    <div class="seed">B</div>
+                  </div>
+
+                  ${m.winner ? `<div class="winnerText">승자: ${esc(shortTeamLabel(teamById(m.winner) || { id:m.winner, players:[] }))}</div>` : ``}
+                </div>
+              `;
+            }).join("")}
+          </div>
+        `;
+      }).join("");
+
+      requestAnimationFrame(drawConnections);
+    }
+
+    function getMatchEl(roundIdx, matchIdx){
+      return document.querySelector(`.match[data-round="${roundIdx}"][data-index="${matchIdx}"]`);
+    }
+
+    function getBoxRectWithinBoard(el, boardRect){
+      const r = el.getBoundingClientRect();
+      return {
+        left: r.left - boardRect.left + $("board").scrollLeft,
+        top: r.top - boardRect.top + $("board").scrollTop,
+        width: r.width,
+        height: r.height,
+        right: r.right - boardRect.left + $("board").scrollLeft,
+        bottom: r.bottom - boardRect.top + $("board").scrollTop
+      };
+    }
+
+    function pathD(x1, y1, x2, y2){
+      const midX = x1 + (x2 - x1) * 0.5;
+      return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+    }
+
+    function addPath(svg, d, color, width, opacity=1){
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", d);
+      p.setAttribute("fill", "none");
+      p.setAttribute("stroke", color);
+      p.setAttribute("stroke-width", width);
+      p.setAttribute("stroke-linecap", "round");
+      p.setAttribute("stroke-linejoin", "round");
+      p.setAttribute("opacity", opacity);
+      svg.appendChild(p);
+    }
+
+    function drawConnections(){
+      const svg = $("svgLayer");
+      const board = $("board");
+      const bracket = $("bracket");
+      const rounds = run?.bracketRounds || [];
+
+      svg.innerHTML = "";
+
+      if(!rounds.length) return;
+
+      const boardRect = board.getBoundingClientRect();
+      const fullWidth = bracket.scrollWidth + 40;
+      const fullHeight = bracket.scrollHeight + 40;
+
+      svg.setAttribute("width", fullWidth);
+      svg.setAttribute("height", fullHeight);
+      svg.setAttribute("viewBox", `0 0 ${fullWidth} ${fullHeight}`);
+
+      for(let r = 0; r < rounds.length - 1; r++){
+        const curRound = rounds[r];
+        const nextRound = rounds[r + 1];
+
+        for(let i = 0; i < nextRound.length; i++){
+          const src1 = curRound[i * 2];
+          const src2 = curRound[i * 2 + 1];
+          const dst = nextRound[i];
+
+          const el1 = getMatchEl(r, i * 2);
+          const el2 = getMatchEl(r, i * 2 + 1);
+          const dstEl = getMatchEl(r + 1, i);
+
+          if(!dstEl) continue;
+
+          const dstRect = getBoxRectWithinBoard(dstEl, boardRect);
+          const dstX = dstRect.left;
+          const dstYA = dstRect.top + dstRect.height * 0.35;
+          const dstYB = dstRect.top + dstRect.height * 0.70;
+
+          if(el1 && src1){
+            const sRect = getBoxRectWithinBoard(el1, boardRect);
+            const sX = sRect.right;
+            const sY = sRect.top + sRect.height * 0.5;
+
+            let active = false;
+            if(src1.winner && dst){
+              active = (dst.A === src1.winner || dst.B === src1.winner);
+            }
+
+            addPath(
+              svg,
+              pathD(sX, sY, dstX, dstYA),
+              active ? "#2563eb" : "#cbd5e1",
+              active ? 5 : 2,
+              active ? 1 : 0.95
+            );
+          }
+
+          if(el2 && src2){
+            const sRect = getBoxRectWithinBoard(el2, boardRect);
+            const sX = sRect.right;
+            const sY = sRect.top + sRect.height * 0.5;
+
+            let active = false;
+            if(src2.winner && dst){
+              active = (dst.A === src2.winner || dst.B === src2.winner);
+            }
+
+            addPath(
+              svg,
+              pathD(sX, sY, dstX, dstYB),
+              active ? "#2563eb" : "#cbd5e1",
+              active ? 5 : 2,
+              active ? 1 : 0.95
+            );
+          }
+        }
+      }
+    }
+
+    function renderAll(){
+      renderChampion();
+      renderBracket();
+    }
+
+    function updateStatusText(){
+      if(!current){
+        setStatus("teamLive/current 데이터가 없습니다.");
+        return;
+      }
+      if(!run){
+        setStatus("teamLive/run 데이터가 없습니다.");
+        return;
+      }
+
+      const format = run?.settings?.format;
+      if(format === "groups_to"){
+        setStatus("조별리그 후 토너먼트 대진표");
+      }else if(format === "tournament"){
+        setStatus("토너먼트 대진표");
+      }else{
+        setStatus("현재는 토너먼트 방식이 아닙니다.");
+      }
+    }
+
+    $("refreshBtn").addEventListener("click", () => {
+      renderAll();
+      updateStatusText();
+    });
+
+    window.addEventListener("resize", () => {
+      requestAnimationFrame(drawConnections);
+    });
+
+    document.querySelector(".boardWrap").addEventListener("scroll", () => {
+      requestAnimationFrame(drawConnections);
+    });
+
+    (async function init(){
+      try{
+        setStatus("Firebase 연결 중...");
+        await signInAnonymously(auth);
+
+        onValue(ref(db, PATH.current), (snap)=>{
+          current = snap.exists() ? snap.val() : null;
+          updateStatusText();
+          renderAll();
+        }, (err)=>{
+          console.error(err);
+          setStatus("current 읽기 실패");
+        });
+
+        onValue(ref(db, PATH.run), (snap)=>{
+          run = snap.exists() ? snap.val() : null;
+          updateStatusText();
+          renderAll();
+        }, (err)=>{
+          console.error(err);
+          setStatus("run 읽기 실패");
+        });
+
+      }catch(e){
+        console.error(e);
+        setStatus("Firebase 연결 오류");
+      }
+    })();
+  </script>
+</body>
+</html>
