@@ -342,13 +342,13 @@ function applyItemColor(target, ev, alphaHex = "") {
   target.style.color = text;
 }
 
-function renderColorPicker(selected = "#dbeafe") {
+function renderColorPicker(selected = "") {
   if (!colorPicker || !fColor) return;
 
-  const safeSelected = normalizeColor(selected) || "#dbeafe";
+  const safeSelected = normalizeColor(selected);
 
   colorPicker.innerHTML = "";
-  fColor.value = safeSelected;
+  fColor.value = safeSelected || "";
 
   COLOR_PRESETS.forEach((color) => {
     const btn = document.createElement("button");
@@ -530,7 +530,7 @@ if (modalOwnerText) modalOwnerText.textContent = `작성: ${selectedName}`;
     if (fEnd) fEnd.value = "";
     if (fTitle) fTitle.value = "";
     if (fDetail) fDetail.value = "";
-    renderColorPicker("#dbeafe");
+    renderColorPicker("");
 
     if (saveBtn) saveBtn.disabled = false;
     if (deleteBtn) deleteBtn.style.display = "none";
@@ -1046,19 +1046,19 @@ saveBtn?.addEventListener("click", async () => {
   const isAllDay = !!allDayChk?.checked;
   const startVal = isAllDay ? "" : (fStart?.value || "").trim();
   const endVal = isAllDay ? "" : (fEnd?.value || "").trim();
-  const selectedColor = normalizeColor(fColor?.value) || "#dbeafe";
+  const selectedColor = normalizeColor(fColor?.value);
 
   const payload = {
-    type: normalizedType,
-    title: (fTitle?.value || "").trim(),
-    detail: (fDetail?.value || "").trim(),
-    owner: selectedName,
-    start: startVal,
-    end: endVal,
-    endDate,
-    color: selectedColor,
-    updatedAt: serverTimestamp(),
-  };
+  type: normalizedType,
+  title: (fTitle?.value || "").trim(),
+  detail: (fDetail?.value || "").trim(),
+  owner: selectedName,
+  start: startVal,
+  end: endVal,
+  endDate,
+  color: selectedColor || "",
+  updatedAt: serverTimestamp(),
+};
 
   if (!payload.title) {
     alert("제목은 필수입니다.");
