@@ -23,6 +23,7 @@
     }
 
     *{box-sizing:border-box}
+
     body{
       margin:0;
       font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
@@ -80,6 +81,7 @@
       cursor:pointer;
       text-decoration:none;
     }
+
     .btn.secondary{
       background:#fff;
       color:var(--text);
@@ -156,17 +158,16 @@
 
     .round{
       width:var(--round-w);
-      display:flex;
-      flex-direction:column;
-      gap:var(--match-gap);
       position:relative;
+      flex:0 0 var(--round-w);
     }
 
     .roundTitle{
-      position:sticky;
+      position:absolute;
       top:0;
+      left:0;
+      right:0;
       z-index:5;
-      margin-bottom:6px;
       font-size:14px;
       font-weight:1000;
       color:#1e3a8a;
@@ -178,6 +179,9 @@
     }
 
     .match{
+      position:absolute;
+      left:0;
+      width:100%;
       height:var(--match-h);
       background:#fff;
       border:1px solid var(--line);
@@ -187,7 +191,6 @@
       display:flex;
       flex-direction:column;
       justify-content:center;
-      position:relative;
     }
 
     .match.done{
@@ -232,7 +235,9 @@
       min-height:30px;
     }
 
-    .teamRow:last-child{ margin-bottom:0; }
+    .teamRow:last-child{
+      margin-bottom:0;
+    }
 
     .teamRow.win{
       background:var(--win);
@@ -305,8 +310,14 @@
         --round-w:220px;
         --match-h:92px;
       }
-      .wrap{ padding:10px; }
-      h1{ font-size:18px; }
+
+      .wrap{
+        padding:10px;
+      }
+
+      h1{
+        font-size:18px;
+      }
     }
   </style>
 </head>
@@ -409,28 +420,57 @@
       return "-";
     }
 
-    function getRoundMetrics(rounds, rIdx){
-      const baseGap = getCssVarPx("--match-gap", 28);
+    function buildBracketLayout(rounds){
       const matchH = getCssVarPx("--match-h", 96);
+      const baseGap = getCssVarPx("--match-gap", 28);
+      const titleH = 44;
 
-      const currentCount = rounds[rIdx].length;
-      const prevCount = rIdx > 0 ? rounds[rIdx - 1].length : currentCount;
+      const positions = [];
+      let prevCenters = [];
 
-      let gap = baseGap;
-      if(currentCount === 2) gap = baseGap + matchH * 0.95; // 4강 넓게
-      if(currentCount === 1) gap = 0; // 결승
+      for(let r = 0; r < rounds.length; r++){
+        const round = rounds[r];
+        const centers = [];
 
-      const prevTotalHeight = prevCount * matchH + Math.max(0, prevCount - 1) * baseGap;
-      const currentTotalHeight = currentCount * matchH + Math.max(0, currentCount - 1) * gap;
+        if(r === 0){
+          for(let i = 0; i < round.length; i++){
+            centers.push(i * (matchH + baseGap) + matchH / 2);
+          }
+        }else{
+          for(let i = 0; i < round.length; i++){
+            const c1 = prevCenters[i * 2];
+            const c2 = prevCenters[i * 2 + 1];
 
-      const offset = Math.max(0, (prevTotalHeight - currentTotalHeight) / 2);
+            if(c1 != null && c2 != null){
+              centers.push((c1 + c2) / 2);
+            }else if(c1 != null){
+              centers.push(c1);
+            }else if(c2 != null){
+              centers.push(c2);
+            }else{
+              centers.push(matchH / 2);
+            }
+          }
+        }
 
-      return { offset, gap };
+        positions[r] = centers.map(c => ({
+          top: c - matchH / 2 + titleH,
+          center: c + titleH
+        }));
+
+        prevCenters = centers;
+      }
+
+      const allBottoms = positions.flat().map(p => p.top + matchH);
+      const totalHeight = allBottoms.length ? Math.max(...allBottoms) + 20 : 400;
+
+      return { positions, totalHeight };
     }
 
     function renderChampion(){
       const box = $("championBox");
       const rounds = run?.bracketRounds || [];
+
       if(!rounds.length){
         box.innerHTML = "";
         return;
@@ -484,15 +524,17 @@
       emptyBox.style.display = "none";
       board.style.display = "block";
 
+      const layout = buildBracketLayout(rounds);
+      bracket.style.minHeight = `${layout.totalHeight}px`;
+
       bracket.innerHTML = rounds.map((round, rIdx) => {
-        const metrics = getRoundMetrics(rounds, rIdx);
+        const roundHeight = layout.totalHeight;
 
         return `
-          <div class="round"
-               data-round="${rIdx}"
-               style="padding-top:${metrics.offset}px; gap:${metrics.gap}px;">
+          <div class="round" data-round="${rIdx}" style="height:${roundHeight}px;">
             <div class="roundTitle">${esc(getRoundTitle(rIdx, rounds.length))}</div>
             ${round.map((m, mIdx) => {
+              const pos = layout.positions[rIdx][mIdx];
               const teamA = m.A ? teamById(m.A) : null;
               const teamB = m.B ? teamById(m.B) : null;
               const scoreText = getScoreText(m);
@@ -510,7 +552,8 @@
                 <div class="match ${m.done ? "done" : ""} ${isBye ? "bye" : ""}"
                      data-mid="${esc(m.id)}"
                      data-round="${rIdx}"
-                     data-index="${mIdx}">
+                     data-index="${mIdx}"
+                     style="top:${pos.top}px;">
                   <div class="matchHead">
                     <span>매치 ${mIdx + 1}</span>
                     <span class="scoreBadge">${esc(scoreText)}</span>
