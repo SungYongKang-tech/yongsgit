@@ -304,12 +304,20 @@ ensureAuthReady();
     document.title = `🏓 ${cachedTitle} 탁구경기 결과입력`;
     $("#pageTitle").textContent = `🏓 ${cachedTitle} 탁구경기 결과입력`;
   }
-  onValue(titleRef, snap => {
-    const val = snap.val() ?? "KOEN 탁구동호회";
-    localStorage.setItem("siteTitle", val);
-    document.title = `🏓 ${val} 경기 결과입력`;
-    $("#pageTitle").textContent = `🏓 ${val} 경기 결과입력`;
-  });
+ const titleRef = ref(db, "config/title");
+const cachedTitle = localStorage.getItem("siteTitle");
+
+if (cachedTitle) {
+  document.title = `🏓 ${cachedTitle} 경기 결과입력`;
+  $("#pageTitle").textContent = `🏓 ${cachedTitle} 경기 결과입력`;
+}
+
+get(titleRef).then(snap => {
+  const val = snap.val() ?? "KOEN 탁구동호회";
+  localStorage.setItem("siteTitle", val);
+  document.title = `🏓 ${val} 경기 결과입력`;
+  $("#pageTitle").textContent = `🏓 ${val} 경기 결과입력`;
+});
 
   // ===== 데이터 참조 =====
   const matchRef    = ref(db, "matches");     // ✅ 저장은 계속 전체 누적
@@ -323,13 +331,25 @@ ensureAuthReady();
   let players = [];
   let sel = [];
 
-  // ✅ 비밀번호는 “항상 Firebase 값”을 기준으로
-  let deletePassword = "";   // 실시간 반영
+ window.deleteMatch = async (id) => {
+  try {
+    await ensureAuthReady();
 
-  // ✅ 삭제 비번 실시간 반영
-  onValue(deletePwRef, (s)=>{
-    deletePassword = s.exists() ? String(s.val()).trim() : "";
-  });
+    const pwSnap = await get(deletePwRef);
+    const pw = pwSnap.exists() ? String(pwSnap.val()).trim() : "";
+
+    const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
+    if (input === null) return;
+    if (String(input).trim() !== pw) return toast("비밀번호가 올바르지 않습니다");
+    if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
+
+    await remove(ref(db, "matches/" + id));
+    toast("경기결과 삭제 완료");
+  } catch (e) {
+    console.error("❌ deleteMatch error:", e);
+    alert("삭제 실패: " + (e?.message || e));
+  }
+};
 
   // ✅ 부수별 색상
   const LEVEL_COLORS = {
