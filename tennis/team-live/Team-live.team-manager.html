@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🎾 팀 구성 관리 (team-live)</title>
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
+      --txt:#0f172a; --mut:#64748b; --r:16px;
+      --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+      --warn:#d97706;
+      --shadow:0 10px 28px rgba(0,0,0,.08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+      background:var(--bg);
+      color:var(--txt);
+    }
+    .wrap{max-width:1200px;margin:0 auto;padding:12px}
+    h1{margin:6px 0 12px;font-size:18px;font-weight:950;text-align:center}
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--bd);
+      border-radius:var(--r);
+      box-shadow:var(--shadow);
+      padding:12px;
+      margin-bottom:12px;
+    }
+
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .between{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+
+    .input, select{
+      padding:10px 12px;
+      border:1px solid var(--bd);
+      border-radius:12px;
+      background:#fff;
+      font-size:14px;
+      min-width:0;
+    }
+
+    .input.sm{padding:8px 10px;font-size:13px}
+
+    .btn{
+      padding:10px 14px;
+      border:1px solid rgba(37,99,235,.25);
+      background:linear-gradient(180deg,#2b74ff,#2563eb);
+      color:#fff;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:950;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .btn.secondary{background:#fff;color:#0f172a;border:1px solid var(--bd)}
+    .btn.ok{background:linear-gradient(180deg,#22c55e,#16a34a);border:1px solid rgba(22,163,74,.25)}
+    .btn.danger{background:linear-gradient(180deg,#ff5a5a,#ef4444);border:1px solid rgba(239,68,68,.25)}
+    .btn.warn{background:linear-gradient(180deg,#f59e0b,#d97706);border:1px solid rgba(217,119,6,.25)}
+
+    .mut{color:var(--mut);font-weight:750;font-size:12px}
+    .oktxt{color:#166534;font-weight:950}
+    .err{color:#b91c1c;font-weight:950}
+
+    .pill{
+      padding:6px 10px;
+      border:1px solid var(--bd);
+      border-radius:999px;
+      background:#f8fafc;
+      font-weight:900;
+      font-size:12px;
+    }
+
+    .grid{display:grid;grid-template-columns:380px 1fr;gap:12px}
+    @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+
+    .list{display:flex;flex-direction:column;gap:10px}
+
+    .teamCard{
+      border:1px solid var(--bd);
+      border-radius:14px;
+      background:#fff;
+      padding:10px;
+    }
+
+    .teamHead{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:flex-start;
+    }
+
+    .teamName{font-weight:1000;font-size:15px}
+    .teamMeta{color:var(--mut);font-weight:800;font-size:12px;margin-top:4px}
+
+    .players{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+
+    .player{
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+      align-items:center;
+      padding:8px 10px;
+      border:1px solid var(--bd);
+      border-radius:12px;
+      background:#f8fafc;
+      font-weight:900;
+    }
+
+    .groupBox{
+      border:1px solid var(--bd);
+      border-radius:14px;
+      background:#fff;
+      padding:12px;
+      margin-bottom:10px;
+    }
+
+    .groupHead{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-bottom:8px;
+    }
+
+    .dropzone{
+      min-height:56px;
+      border:2px dashed #d6dbe7;
+      border-radius:14px;
+      padding:8px;
+      background:#fbfcfe;
+    }
+
+    .dropzone.over{
+      border-color:#2563eb;
+      background:#eff6ff;
+    }
+
+    .teamChip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:8px 10px;
+      border:1px solid var(--bd);
+      border-radius:999px;
+      background:#fff;
+      font-weight:900;
+      margin:4px;
+      cursor:grab;
+      user-select:none;
+    }
+
+    .teamChip small{
+      color:var(--mut);
+      font-weight:800;
+    }
+
+    .sectionTitle{font-size:14px;font-weight:1000;margin-bottom:10px}
+
+    .modalBack{
+      display:none;
+      position:fixed;
+      inset:0;
+      background:rgba(15,23,42,.45);
+      z-index:1000;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+    }
+
+    .modalCard{
+      width:min(760px,100%);
+      background:#fff;
+      border-radius:18px;
+      padding:16px;
+      box-shadow:0 20px 50px rgba(0,0,0,.2);
+    }
+
+    .playerRow{
+      display:grid;
+      grid-template-columns:1.4fr .9fr auto;
+      gap:8px;
+      align-items:center;
+      margin-bottom:8px;
+    }
+
+    @media (max-width:680px){
+      .playerRow{grid-template-columns:1fr 1fr}
+      .playerRow .full{grid-column:1/-1}
+    }
+
+    .summary{display:flex;gap:8px;flex-wrap:wrap}
+
+    .warning{
+      background:#fff7ed;
+      border:1px solid #fed7aa;
+      color:#9a3412;
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:800;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎾 팀 구성 관리 (team-live)</h1>
+
+    <div class="card">
+      <div class="between">
+        <div class="row">
+          <a class="btn secondary" href="./index.html">경기 진행으로 이동</a>
+          <button class="btn ok" id="newTeamBtn">새 팀 추가</button>
+          <button class="btn warn" id="resetGroupsBtn">조 편성 초기화</button>
+          <button class="btn danger" id="resetCurrentBtn">전체 팀 초기화</button>
+        </div>
+        <div class="summary">
+          <span class="pill" id="teamCountPill">팀 0</span>
+          <span class="pill" id="playerCountPill">선수 0</span>
+          <span class="pill" id="groupCountPill">조 0</span>
+        </div>
+      </div>
+      <div class="mut" id="status" style="margin-top:8px">불러오는 중...</div>
+    </div>
+
+    <div class="warning">
+      팀 구성 변경 후에는 기존 경기 대진과 맞지 않을 수 있습니다. 팀을 수정한 뒤에는 경기 진행 페이지에서 대진을 다시 생성하는 것을 권장합니다.
+    </div>
+
+    <div class="grid" style="margin-top:12px">
+      <div>
+        <div class="card">
+          <div class="sectionTitle">팀 목록</div>
+          <div id="teamsBox" class="list"><div class="mut">데이터 없음</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="between" style="margin-bottom:10px">
+            <div class="sectionTitle" style="margin:0">조 편성</div>
+            <div class="row">
+              <button class="btn secondary" id="addGroupBtn">조 추가</button>
+              <button class="btn ok" id="saveGroupsBtn">조 저장</button>
+            </div>
+          </div>
+          <div class="mut" style="margin-bottom:8px">팀 칩을 끌어서 원하는 조로 옮기세요. 미배정 영역으로 드롭하면 조에서 빠집니다.</div>
+          <div id="groupsBox"></div>
+          <div class="groupBox">
+            <div class="groupHead">
+              <div style="font-weight:1000">미배정 팀</div>
+            </div>
+            <div class="dropzone" id="unassignedZone" data-group-zone=""></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modalBack" id="teamModal">
+    <div class="modalCard">
+      <div class="between" style="margin-bottom:12px">
+        <div style="font-size:16px;font-weight:1000" id="teamModalTitle">팀 추가</div>
+        <button class="btn secondary" id="closeTeamModalBtn">닫기</button>
+      </div>
+
+      <div class="card" style="box-shadow:none;padding:10px">
+        <div class="row">
+          <label style="font-weight:900;display:flex;flex-direction:column;gap:6px;min-width:180px">
+            팀 ID
+            <input id="teamIdInput" class="input" type="text" placeholder="예: T1" />
+          </label>
+          <label style="font-weight:900;display:flex;flex-direction:column;gap:6px;min-width:140px">
+            팀 합계
+            <input id="teamSumInput" class="input" type="number" placeholder="예: 8" />
+          </label>
+        </div>
+      </div>
+
+      <div class="card" style="box-shadow:none;padding:10px">
+        <div class="between" style="margin-bottom:10px">
+          <div style="font-weight:1000">선수 목록</div>
+          <button class="btn ok" id="addPlayerBtn" type="button">선수 추가</button>
+        </div>
+        <div id="playerRows"></div>
+      </div>
+
+      <div class="row" style="justify-content:center">
+        <button class="btn ok" id="saveTeamBtn" type="button">저장</button>
+        <button class="btn danger" id="deleteTeamBtn" type="button">삭제</button>
+      </div>
+      <div id="teamMsg" class="mut" style="margin-top:8px;text-align:center"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, auth } from "../firebase.js";
+    import { ref, onValue, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+    const $ = (id)=>document.getElementById(id);
+
+    const PATH = {
+      current: "teamLive/current",
+      run: "teamLive/run"
+    };
+
+    const esc = (s)=>String(s ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+
+    let current = { teams: [], groups: {} };
+    let editingTeamId = null;
+    let groupDraft = {};
+    let initializedDraft = false;
+
+    function setStatus(msg, cls="mut"){
+      const el = $("status");
+      el.className = cls;
+      el.textContent = msg;
+    }
+
+    function normalizeCurrent(data){
+      return {
+        teams: Array.isArray(data?.teams) ? data.teams : [],
+        groups: (data?.groups && typeof data.groups === "object") ? data.groups : {}
+      };
+    }
+
+    function cloneCurrentGroups(){
+      return structuredClone(normalizeCurrent(current).groups || {});
+    }
+
+    function playerCount(){
+      return (current?.teams || []).reduce((sum, t)=> sum + (t.players?.length || 0), 0);
+    }
+
+    function refreshSummary(){
+      $("teamCountPill").textContent = `팀 ${(current?.teams || []).length}`;
+      $("playerCountPill").textContent = `선수 ${playerCount()}`;
+      $("groupCountPill").textContent = `조 ${Object.keys(groupDraft || {}).length}`;
+    }
+
+    async function saveCurrent(nextCurrent){
+      nextCurrent.updatedAt = Date.now();
+      nextCurrent.serverUpdatedAt = serverTimestamp();
+      await set(ref(db, PATH.current), nextCurrent);
+    }
+
+    async function clearRunIfNeeded(){
+      await set(ref(db, PATH.run), null);
+    }
+
+    function renderTeams(){
+      const box = $("teamsBox");
+      const teams = current?.teams || [];
+
+      if(!teams.length){
+        box.innerHTML = `<div class="mut">팀 데이터 없음</div>`;
+        return;
+      }
+
+      box.innerHTML = teams.map(t=>`
+        <div class="teamCard">
+          <div class="teamHead">
+            <div>
+              <div class="teamName">${esc(t.id)}</div>
+              <div class="teamMeta">합 ${esc(t.sum ?? "-")} · 선수 ${(t.players || []).length}명</div>
+            </div>
+            <div class="row">
+              <button class="btn secondary" data-edit-team="${esc(t.id)}" type="button">편집</button>
+            </div>
+          </div>
+          <div class="players">
+            ${(t.players || []).map(p=>`
+              <div class="player">
+                <span>${esc(p.name)}</span>
+                <small>${esc(p.grade)}</small>
+              </div>
+            `).join("") || `<div class="mut">선수 없음</div>`}
+          </div>
+        </div>
+      `).join("");
+
+      box.querySelectorAll("[data-edit-team]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          openTeamModal(btn.getAttribute("data-edit-team"));
+        });
+      });
+    }
+
+    function getAssignedTeamIds(){
+      const used = new Set();
+      Object.values(groupDraft || {}).forEach(ids=>{
+        (ids || []).forEach(id=> used.add(id));
+      });
+      return used;
+    }
+
+    function teamChipHtml(teamId){
+      const t = (current?.teams || []).find(x=>x.id === teamId);
+      if(!t) return "";
+      const names = (t.players || []).map(p=>p.name).join(", ");
+      return `<span class="teamChip" draggable="true" data-team-id="${esc(teamId)}">${esc(teamId)} <small>${esc(names)}</small></span>`;
+    }
+
+    function renderGroups(){
+      const box = $("groupsBox");
+      const groupNames = Object.keys(groupDraft || {}).sort((a,b)=>a.localeCompare(b, "ko"));
+
+      box.innerHTML = groupNames.map(g=>`
+        <div class="groupBox">
+          <div class="groupHead">
+            <div class="row">
+              <input class="input sm" data-group-name="${esc(g)}" value="${esc(g)}" />
+              <span class="pill">${(groupDraft[g] || []).length}팀</span>
+            </div>
+            <button class="btn danger" data-remove-group="${esc(g)}" type="button">조 삭제</button>
+          </div>
+          <div class="dropzone" data-group-zone="${esc(g)}">
+            ${(groupDraft[g] || []).map(teamChipHtml).join("")}
+          </div>
+        </div>
+      `).join("") || `<div class="mut" style="margin-bottom:10px">조가 없습니다. "조 추가"를 눌러주세요.</div>`;
+
+      const assigned = getAssignedTeamIds();
+      const unassigned = (current?.teams || []).map(t=>t.id).filter(id=>!assigned.has(id));
+      $("unassignedZone").innerHTML = unassigned.map(teamChipHtml).join("") || `<div class="mut">미배정 팀 없음</div>`;
+
+      bindGroupEvents();
+      refreshSummary();
+    }
+
+    function bindGroupEvents(){
+      document.querySelectorAll(".teamChip").forEach(chip=>{
+        chip.addEventListener("dragstart", (e)=>{
+          e.dataTransfer.setData("text/plain", chip.getAttribute("data-team-id"));
+        });
+      });
+
+      document.querySelectorAll(".dropzone").forEach(zone=>{
+        zone.addEventListener("dragover", (e)=>{
+          e.preventDefault();
+          zone.classList.add("over");
+        });
+
+        zone.addEventListener("dragleave", ()=>{
+          zone.classList.remove("over");
+        });
+
+        zone.addEventListener("drop", (e)=>{
+          e.preventDefault();
+          zone.classList.remove("over");
+          const teamId = e.dataTransfer.getData("text/plain");
+          const targetGroup = zone.getAttribute("data-group-zone") || null;
+          moveTeamToZone(teamId, targetGroup);
+        });
+      });
+
+      document.querySelectorAll("[data-remove-group]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const g = btn.getAttribute("data-remove-group");
+          if(!confirm(`${g}조를 삭제할까요? 소속 팀은 미배정으로 이동합니다.`)) return;
+          delete groupDraft[g];
+          renderGroups();
+        });
+      });
+    }
+
+    function moveTeamToZone(teamId, targetGroup){
+      if(!teamId) return;
+
+      for(const g of Object.keys(groupDraft)){
+        groupDraft[g] = (groupDraft[g] || []).filter(id => id !== teamId);
+      }
+
+      if(targetGroup){
+        if(!groupDraft[targetGroup]) groupDraft[targetGroup] = [];
+        if(!groupDraft[targetGroup].includes(teamId)){
+          groupDraft[targetGroup].push(teamId);
+        }
+      }
+
+      renderGroups();
+    }
+
+    function openTeamModal(teamId=null){
+      editingTeamId = teamId;
+      $("teamModal").style.display = "flex";
+      $("teamMsg").className = "mut";
+      $("teamMsg").textContent = "";
+
+      if(teamId){
+        const team = (current?.teams || []).find(t=>t.id===teamId);
+        $("teamModalTitle").textContent = `팀 편집 - ${teamId}`;
+        $("teamIdInput").value = team?.id || "";
+        $("teamIdInput").readOnly = true;
+        $("teamSumInput").value = team?.sum ?? "";
+        renderPlayerRows(team?.players || []);
+        $("deleteTeamBtn").style.display = "inline-flex";
+      }else{
+        $("teamModalTitle").textContent = "새 팀 추가";
+        $("teamIdInput").value = makeNextTeamId();
+        $("teamIdInput").readOnly = false;
+        $("teamSumInput").value = "";
+        renderPlayerRows([{name:"", grade:""}, {name:"", grade:""}]);
+        $("deleteTeamBtn").style.display = "none";
+      }
+    }
+
+    function closeTeamModal(){
+      $("teamModal").style.display = "none";
+    }
+
+    function makeNextTeamId(){
+      const ids = (current?.teams || []).map(t=>String(t.id));
+      let n = 1;
+      while(ids.includes(`T${n}`)) n++;
+      return `T${n}`;
+    }
+
+    function renderPlayerRows(players){
+      const box = $("playerRows");
+      box.innerHTML = (players || []).map((p, idx)=>`
+        <div class="playerRow" data-row="${idx}">
+          <input class="input p-name" type="text" placeholder="이름" value="${esc(p.name ?? "")}" />
+          <input class="input p-grade" type="text" placeholder="부수" value="${esc(p.grade ?? "")}" />
+          <button class="btn danger full" type="button" data-remove-row="${idx}">행 삭제</button>
+        </div>
+      `).join("");
+
+      box.querySelectorAll("[data-remove-row]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          btn.closest(".playerRow")?.remove();
+        });
+      });
+    }
+
+    function addPlayerRow(){
+      const box = $("playerRows");
+      const row = document.createElement("div");
+      row.className = "playerRow";
+      row.innerHTML = `
+        <input class="input p-name" type="text" placeholder="이름" />
+        <input class="input p-grade" type="text" placeholder="부수" />
+        <button class="btn danger full" type="button">행 삭제</button>
+      `;
+      row.querySelector("button").addEventListener("click", ()=> row.remove());
+      box.appendChild(row);
+    }
+
+    function collectPlayers(){
+      return [...document.querySelectorAll("#playerRows .playerRow")]
+        .map(row=>({
+          name: row.querySelector(".p-name")?.value?.trim() || "",
+          grade: row.querySelector(".p-grade")?.value?.trim() || ""
+        }))
+        .filter(p=>p.name);
+    }
+
+    async function saveTeam(){
+      const teamId = $("teamIdInput").value.trim();
+      const sumRaw = $("teamSumInput").value.trim();
+      const players = collectPlayers();
+
+      if(!teamId){
+        $("teamMsg").className = "err";
+        $("teamMsg").textContent = "팀 ID를 입력하세요.";
+        return;
+      }
+
+      if(players.length === 0){
+        $("teamMsg").className = "err";
+        $("teamMsg").textContent = "선수를 1명 이상 입력하세요.";
+        return;
+      }
+
+      const next = structuredClone(normalizeCurrent(current));
+      const sum = sumRaw === "" ? "" : Number(sumRaw);
+
+      if(editingTeamId){
+        const idx = next.teams.findIndex(t=>t.id===editingTeamId);
+        if(idx < 0) return;
+        next.teams[idx].players = players;
+        next.teams[idx].sum = sum;
+      }else{
+        if(next.teams.some(t=>t.id===teamId)){
+          $("teamMsg").className = "err";
+          $("teamMsg").textContent = "이미 존재하는 팀 ID입니다.";
+          return;
+        }
+        next.teams.push({ id: teamId, players, sum });
+      }
+
+      await saveCurrent(next);
+      await clearRunIfNeeded();
+      closeTeamModal();
+
+      initializedDraft = false;
+      setStatus("팀 구성을 저장했습니다. 기존 경기 진행 데이터는 초기화되었습니다.", "oktxt");
+    }
+
+    async function deleteTeam(){
+      if(!editingTeamId) return;
+      if(!confirm(`${editingTeamId} 팀을 삭제할까요?`)) return;
+
+      const next = structuredClone(normalizeCurrent(current));
+      next.teams = next.teams.filter(t=>t.id !== editingTeamId);
+
+      for(const g of Object.keys(next.groups || {})){
+        next.groups[g] = (next.groups[g] || []).filter(id => id !== editingTeamId);
+      }
+
+      await saveCurrent(next);
+      await clearRunIfNeeded();
+      closeTeamModal();
+
+      initializedDraft = false;
+      setStatus("팀을 삭제했습니다. 기존 경기 진행 데이터는 초기화되었습니다.", "oktxt");
+    }
+
+    function addGroup(){
+      let n = 1;
+      while(groupDraft[String(n)]) n++;
+      groupDraft[String(n)] = [];
+      renderGroups();
+    }
+
+    async function saveGroups(){
+      const renamed = {};
+      const seen = new Set();
+      const inputs = [...document.querySelectorAll("[data-group-name]")];
+
+      for(const input of inputs){
+        const oldName = input.getAttribute("data-group-name");
+        const newName = input.value.trim();
+
+        if(!newName){
+          alert("조 이름은 비워둘 수 없습니다.");
+          return;
+        }
+
+        if(seen.has(newName)){
+          alert("조 이름이 중복됩니다.");
+          return;
+        }
+
+        seen.add(newName);
+        renamed[newName] = [...(groupDraft[oldName] || [])];
+      }
+
+      const next = structuredClone(normalizeCurrent(current));
+      next.groups = renamed;
+
+      await saveCurrent(next);
+      await clearRunIfNeeded();
+
+      initializedDraft = false;
+      setStatus("조 편성을 저장했습니다. 기존 경기 진행 데이터는 초기화되었습니다.", "oktxt");
+    }
+
+    async function resetGroups(){
+      if(!confirm("조 편성을 모두 지울까요?")) return;
+
+      const next = structuredClone(normalizeCurrent(current));
+      next.groups = {};
+
+      await saveCurrent(next);
+      await clearRunIfNeeded();
+
+      initializedDraft = false;
+      setStatus("조 편성을 초기화했습니다. 기존 경기 진행 데이터는 초기화되었습니다.", "oktxt");
+    }
+
+    async function resetCurrent(){
+      if(!confirm("전체 팀 구성을 모두 삭제할까요?")) return;
+
+      await saveCurrent({ teams: [], groups: {} });
+      await clearRunIfNeeded();
+
+      initializedDraft = false;
+      setStatus("전체 팀 구성을 초기화했습니다.", "oktxt");
+    }
+
+    function syncDraftFromCurrent(force=false){
+      if(force || !initializedDraft){
+        groupDraft = cloneCurrentGroups();
+        initializedDraft = true;
+      }
+    }
+
+    function renderAll(forceDraftSync=false){
+      syncDraftFromCurrent(forceDraftSync);
+      renderTeams();
+      renderGroups();
+      refreshSummary();
+    }
+
+    $("newTeamBtn").addEventListener("click", ()=> openTeamModal(null));
+    $("closeTeamModalBtn").addEventListener("click", closeTeamModal);
+    $("addPlayerBtn").addEventListener("click", addPlayerRow);
+    $("saveTeamBtn").addEventListener("click", saveTeam);
+    $("deleteTeamBtn").addEventListener("click", deleteTeam);
+    $("addGroupBtn").addEventListener("click", addGroup);
+    $("saveGroupsBtn").addEventListener("click", saveGroups);
+    $("resetGroupsBtn").addEventListener("click", resetGroups);
+    $("resetCurrentBtn").addEventListener("click", resetCurrent);
+
+    $("teamModal").addEventListener("click", (e)=>{
+      if(e.target.id === "teamModal") closeTeamModal();
+    });
+
+    (async function init(){
+      try{
+        setStatus("Firebase 연결 중...");
+        await signInAnonymously(auth);
+
+        onValue(ref(db, PATH.current), (snap)=>{
+          current = snap.exists()
+            ? normalizeCurrent(snap.val() || {})
+            : { teams: [], groups: {} };
+
+          setStatus("데이터 로드 완료", "oktxt");
+          renderAll(true);
+        }, (err)=>{
+          console.error(err);
+          setStatus("current 읽기 실패(콘솔 확인)", "err");
+        });
+
+      }catch(e){
+        console.error(e);
+        setStatus("Firebase 연결 오류(콘솔 확인)", "err");
+      }
+    })();
+  </script>
+</body>
+</html>
