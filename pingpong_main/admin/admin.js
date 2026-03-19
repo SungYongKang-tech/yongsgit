@@ -24,13 +24,20 @@ const changePassBtn = document.getElementById("changePassBtn");
 const deletePwInput = document.getElementById("deletePwInput");
 const saveDeletePwBtn = document.getElementById("saveDeletePwBtn");
 
+// ✅ 현재 비밀번호 표시용 DOM
+const currentAdminPw = document.getElementById("currentAdminPw");
+const toggleAdminPw = document.getElementById("toggleAdminPw");
+
+const currentDeletePw = document.getElementById("currentDeletePw");
+const toggleDeletePw = document.getElementById("toggleDeletePw");
+
 // 선수 관리
 const mName = document.getElementById("mName");
 const mBu = document.getElementById("mBu");
 const addMemberBtn = document.getElementById("addMemberBtn");
 const memberList = document.getElementById("memberList");
 
-// ====== RTDB 경로 (✅ 요청대로 config에 저장) ======
+// ====== RTDB 경로 ======
 const CONFIG_PATH = "config";
 const MEMBERS_PATH = "members";
 
@@ -38,27 +45,39 @@ const MEMBERS_PATH = "members";
 const SESSION_KEY = "koen_pingpong_admin_ok";
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
 
+// ====== 현재 비밀번호 표시 상태 ======
+let adminPwVisible = false;
+let deletePwVisible = false;
+let currentAdminPwValue = "";
+let currentDeletePwValue = "";
+
 function only4Digits(v) {
   return (v || "").replace(/\D/g, "").slice(0, 4);
 }
+
 function setError(msg) {
   if (!loginError) return;
   loginError.textContent = msg || "";
 }
+
 function showAdmin() {
   if (loginSection) loginSection.style.display = "none";
   if (adminSection) adminSection.style.display = "block";
 }
+
 function showLogin() {
   if (adminSection) adminSection.style.display = "none";
   if (loginSection) loginSection.style.display = "block";
 }
+
 function saveSessionOK() {
   localStorage.setItem(SESSION_KEY, String(Date.now()));
 }
+
 function clearSessionOK() {
   localStorage.removeItem(SESSION_KEY);
 }
+
 function hasValidSession() {
   const t = Number(localStorage.getItem(SESSION_KEY) || 0);
   if (!t) return false;
@@ -73,7 +92,6 @@ if (newPass1) newPass1.value = "";
 if (deletePwInput) deletePwInput.value = "";
 
 if (hasValidSession()) {
-  // 자동 진입은 안 하고 안내만
   setError("비밀번호를 입력해주세요.");
 }
 
@@ -81,6 +99,38 @@ if (hasValidSession()) {
 async function readConfig() {
   const snap = await get(ref(db, CONFIG_PATH));
   return snap.exists() ? snap.val() : null;
+}
+
+// ====== 현재 비밀번호 표시 갱신 ======
+async function refreshPasswordDisplay() {
+  try {
+    const cfg = await readConfig();
+
+    currentAdminPwValue = String(cfg?.adminPasswordPlain || "");
+    currentDeletePwValue = String(cfg?.deletePassword || "");
+
+    if (currentAdminPw) {
+      currentAdminPw.textContent = adminPwVisible
+        ? (currentAdminPwValue || "-")
+        : (currentAdminPwValue ? "●●●●" : "-");
+    }
+
+    if (currentDeletePw) {
+      currentDeletePw.textContent = deletePwVisible
+        ? (currentDeletePwValue || "-")
+        : (currentDeletePwValue ? "●●●●" : "-");
+    }
+
+    if (toggleAdminPw) {
+      toggleAdminPw.textContent = adminPwVisible ? "숨기기" : "보기";
+    }
+
+    if (toggleDeletePw) {
+      toggleDeletePw.textContent = deletePwVisible ? "숨기기" : "보기";
+    }
+  } catch (e) {
+    console.warn("refreshPasswordDisplay failed", e);
+  }
 }
 
 // ====== 로그인 처리 ======
@@ -95,16 +145,16 @@ async function handleLogin() {
     return;
   }
 
-  loginBtn && (loginBtn.disabled = true);
+  if (loginBtn) loginBtn.disabled = true;
 
   try {
-    // ✅ 버튼 클릭 시에만 익명 로그인
+    // 버튼 클릭 시에만 익명 로그인
     const cred = await signInAnonymously(auth);
     const user = cred.user;
 
     const cfg = await readConfig();
 
-    // ✅ 최초 1회: config에 adminPasswordPlain 없으면 입력값으로 세팅
+    // 최초 1회: config에 adminPasswordPlain 없으면 입력값으로 세팅
     if (!cfg || !cfg.adminPasswordPlain) {
       await set(ref(db, CONFIG_PATH), {
         adminPasswordPlain: pw,
@@ -117,11 +167,12 @@ async function handleLogin() {
       saveSessionOK();
       showAdmin();
       if (loginPassword) loginPassword.value = "";
+      await refreshPasswordDisplay();
       await loadMembers();
       return;
     }
 
-    // ✅ 평문 비교
+    // 평문 비교
     if (String(cfg.adminPasswordPlain) !== String(pw)) {
       clearSessionOK();
       setError("비밀번호가 올바르지 않습니다.");
@@ -133,25 +184,40 @@ async function handleLogin() {
     saveSessionOK();
     showAdmin();
     if (loginPassword) loginPassword.value = "";
+    await refreshPasswordDisplay();
     await loadMembers();
   } catch (e) {
     clearSessionOK();
     setError("Firebase 연결/로그인에 실패했습니다. (네트워크/권한/설정 확인)");
     try { await signOut(auth); } catch {}
   } finally {
-    loginBtn && (loginBtn.disabled = false);
+    if (loginBtn) loginBtn.disabled = false;
   }
 }
 
 loginBtn?.addEventListener("click", handleLogin);
+
 loginPassword?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") handleLogin();
+});
+
+// ====== 보기/숨기기 버튼 ======
+toggleAdminPw?.addEventListener("click", async () => {
+  adminPwVisible = !adminPwVisible;
+  await refreshPasswordDisplay();
+});
+
+toggleDeletePw?.addEventListener("click", async () => {
+  deletePwVisible = !deletePwVisible;
+  await refreshPasswordDisplay();
 });
 
 // ====== 로그아웃 ======
 logoutBtn?.addEventListener("click", async () => {
   clearSessionOK();
   setError("");
+  adminPwVisible = false;
+  deletePwVisible = false;
   showLogin();
   if (loginPassword) loginPassword.value = "";
   try { await signOut(auth); } catch {}
@@ -173,14 +239,18 @@ changePassBtn?.addEventListener("click", async () => {
   }
 
   changePassBtn.disabled = true;
+
   try {
     await update(ref(db, CONFIG_PATH), {
       adminPasswordPlain: pw,
       updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
+
     alert("관리자 비밀번호가 저장되었습니다.");
     if (newPass1) newPass1.value = "";
+    adminPwVisible = false;
+    await refreshPasswordDisplay();
   } catch (e) {
     alert("저장 실패: Firebase 권한/연결을 확인해 주세요.");
   } finally {
@@ -204,14 +274,18 @@ saveDeletePwBtn?.addEventListener("click", async () => {
   }
 
   saveDeletePwBtn.disabled = true;
+
   try {
     await update(ref(db, CONFIG_PATH), {
       deletePassword: pw,
       updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
+
     alert("경기 삭제 비밀번호가 저장되었습니다.");
     if (deletePwInput) deletePwInput.value = "";
+    deletePwVisible = false;
+    await refreshPasswordDisplay();
   } catch (e) {
     alert("저장 실패: Firebase 권한/연결을 확인해 주세요.");
   } finally {
@@ -225,6 +299,7 @@ saveDeletePwBtn?.addEventListener("click", async () => {
 function normalizeName(s) {
   return (s || "").trim();
 }
+
 function keyFromName(name) {
   return name.replace(/\s+/g, "").replace(/[.#$/\[\]]/g, "_");
 }
@@ -253,7 +328,7 @@ async function loadMembers() {
 
     arr.sort((a, b) => (a.bu - b.bu) || a.name.localeCompare(b.name));
 
-    arr.forEach(item => {
+    arr.forEach((item) => {
       const wrap = document.createElement("span");
       wrap.className = "chipWrap";
 
@@ -304,6 +379,7 @@ addMemberBtn?.addEventListener("click", async () => {
       updatedAt: Date.now(),
       updatedBy: auth.currentUser.uid
     });
+
     if (mName) mName.value = "";
     await loadMembers();
   } catch (e) {
