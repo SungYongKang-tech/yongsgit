@@ -481,14 +481,20 @@ async function verifyEditPassword() {
 
   try {
     const snap = await get(ref(db, ADMIN_PASSWORD_PATH));
-    const savedPw = snap.exists() ? String(snap.val()) : "";
 
-    if (!savedPw) {
-      alert("관리자 비밀번호가 설정되어 있지 않습니다.");
+    if (!snap.exists()) {
+      alert("config/adminPassword 값이 없습니다. Firebase에 먼저 추가해주세요.");
       return false;
     }
 
-    if (String(inputPw) !== savedPw) {
+    const savedPw = String(snap.val() || "").trim();
+
+    if (!savedPw) {
+      alert("관리자 비밀번호가 비어 있습니다.");
+      return false;
+    }
+
+    if (String(inputPw).trim() !== savedPw) {
       alert("비밀번호가 틀렸습니다.");
       return false;
     }
