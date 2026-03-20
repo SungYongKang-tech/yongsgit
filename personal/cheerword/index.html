@@ -102,6 +102,18 @@
       color:#fff;
     }
 
+    .btn.warn{
+      background:#fff7ed;
+      color:#9a3412;
+      border:1px solid #fed7aa;
+    }
+
+    .btn.danger{
+      background:#fef2f2;
+      color:#b91c1c;
+      border:1px solid #fecaca;
+    }
+
     .filters{
       display:flex;
       gap:8px;
@@ -207,7 +219,6 @@
       text-align:center;
     }
 
-    /* viewer */
     .viewer{
       position:fixed;
       inset:0;
@@ -304,6 +315,88 @@
       width:calc(100% - 24px);
     }
 
+    .modal-back{
+      position:fixed;
+      inset:0;
+      background:rgba(15,23,42,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:1000;
+      padding:16px;
+    }
+
+    .modal-back.show{
+      display:flex;
+    }
+
+    .modal{
+      width:min(560px, 100%);
+      background:#fff;
+      border-radius:22px;
+      box-shadow:0 20px 60px rgba(0,0,0,.22);
+      padding:18px;
+    }
+
+    .modal h2{
+      margin:0 0 14px;
+      font-size:20px;
+    }
+
+    .form-grid{
+      display:grid;
+      gap:12px;
+    }
+
+    .field{
+      display:grid;
+      gap:6px;
+    }
+
+    .field label{
+      font-size:14px;
+      font-weight:700;
+      color:#374151;
+    }
+
+    .field input,
+    .field textarea,
+    .field select{
+      width:100%;
+      border:1px solid #d1d5db;
+      border-radius:12px;
+      padding:12px 14px;
+      font-size:15px;
+      font-family:inherit;
+      outline:none;
+      background:#fff;
+    }
+
+    .field textarea{
+      min-height:96px;
+      resize:vertical;
+    }
+
+    .color-row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+    }
+
+    .modal-actions{
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+      margin-top:16px;
+      flex-wrap:wrap;
+    }
+
+    .small-note{
+      color:#6b7280;
+      font-size:12px;
+      line-height:1.45;
+    }
+
     @media (max-width:700px){
       .grid{
         grid-template-columns:1fr;
@@ -345,6 +438,10 @@
         padding:10px 12px;
         font-size:13px;
       }
+
+      .color-row{
+        grid-template-columns:1fr;
+      }
     }
   </style>
 </head>
@@ -362,6 +459,8 @@
         <div class="top-actions">
           <button id="randomBtn" class="btn primary" type="button">랜덤 추천</button>
           <button id="resetBtn" class="btn" type="button">전체 보기</button>
+          <button id="exportBtn" class="btn warn" type="button">JSON 내보내기</button>
+          <button id="clearLocalBtn" class="btn danger" type="button">수정내용 초기화</button>
         </div>
 
         <div id="filterBar" class="filters"></div>
@@ -372,12 +471,15 @@
     <section id="cardGrid" class="grid"></section>
 
     <div class="footer-note">
-      데이터 파일: <b>data/cheers.json</b>
+      데이터 파일: <b>data/cheers.json</b><br>
+      수정/삭제는 브라우저에 저장됩니다. 필요하면 JSON 내보내기로 다시 파일 저장하세요.
     </div>
   </div>
 
   <div id="viewer" class="viewer" aria-hidden="true">
     <div class="viewer-actions">
+      <button id="editBtn" class="viewer-btn" type="button">수정</button>
+      <button id="deleteBtn" class="viewer-btn" type="button">삭제</button>
       <button id="copyBtn" class="viewer-btn" type="button">복사</button>
       <button id="closeViewerBtn" class="viewer-btn" type="button">닫기</button>
     </div>
@@ -398,13 +500,73 @@
     </div>
   </div>
 
+  <div id="editModalBack" class="modal-back">
+    <div class="modal">
+      <h2>건배사 수정</h2>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="editWord">건배사</label>
+          <input id="editWord" type="text" />
+        </div>
+
+        <div class="field">
+          <label for="editPhrase">설명</label>
+          <textarea id="editPhrase"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="editCategory">분류</label>
+          <select id="editCategory">
+            <option value="웃긴형">웃긴형</option>
+            <option value="무난형">무난형</option>
+            <option value="감동형">감동형</option>
+            <option value="직장형">직장형</option>
+            <option value="응원형">응원형</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="editTags">태그 (쉼표로 구분)</label>
+          <input id="editTags" type="text" placeholder="예: 회식, 유머, 팀워크" />
+        </div>
+
+        <div class="color-row">
+          <div class="field">
+            <label for="editHighlightColor">강조 글자 색</label>
+            <input id="editHighlightColor" type="color" value="#ef4444" />
+          </div>
+
+          <div class="field">
+            <label for="editViewerBg">큰화면 배경색</label>
+            <input id="editViewerBg" type="color" value="#111827" />
+          </div>
+        </div>
+
+        <div class="small-note">
+          강조 글자 색은 두문자에 맞는 글자에 적용됩니다. 배경색은 큰화면 보기의 기본 배경색으로 적용됩니다.
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="cancelEditBtn" class="btn" type="button">취소</button>
+        <button id="saveEditBtn" class="btn primary" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    const STORAGE_KEY = 'cheers_app_custom_data_v1';
+
     const searchInput = document.getElementById('searchInput');
     const filterBar = document.getElementById('filterBar');
     const cardGrid = document.getElementById('cardGrid');
     const resultText = document.getElementById('resultText');
     const randomBtn = document.getElementById('randomBtn');
     const resetBtn = document.getElementById('resetBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const clearLocalBtn = document.getElementById('clearLocalBtn');
 
     const viewer = document.getElementById('viewer');
     const viewerWord = document.getElementById('viewerWord');
@@ -414,6 +576,18 @@
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const viewerRandomBtn = document.getElementById('viewerRandomBtn');
+    const editBtn = document.getElementById('editBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+
+    const editModalBack = document.getElementById('editModalBack');
+    const editWord = document.getElementById('editWord');
+    const editPhrase = document.getElementById('editPhrase');
+    const editCategory = document.getElementById('editCategory');
+    const editTags = document.getElementById('editTags');
+    const editHighlightColor = document.getElementById('editHighlightColor');
+    const editViewerBg = document.getElementById('editViewerBg');
+    const cancelEditBtn = document.getElementById('cancelEditBtn');
+    const saveEditBtn = document.getElementById('saveEditBtn');
 
     let allCheers = [];
     let currentCategory = '전체';
@@ -421,21 +595,17 @@
 
     async function loadCheers() {
       try {
-        const res = await fetch('./data/cheers.json');
-        const raw = await res.json();
+        const saved = localStorage.getItem(STORAGE_KEY);
 
-        allCheers = Array.isArray(raw)
-          ? raw
-              .filter(item => item && typeof item === 'object')
-              .map((item, index) => ({
-                id: Number(item.id ?? index + 1),
-                word: item.word ?? '',
-                phrase: item.phrase ?? '',
-                category: item.category ?? '기타',
-                tags: Array.isArray(item.tags) ? item.tags : [],
-                status: item.status ?? 'approved'
-              }))
-          : [];
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          allCheers = normalizeData(parsed);
+        } else {
+          const res = await fetch('./data/cheers.json');
+          const raw = await res.json();
+          allCheers = normalizeData(raw);
+          saveToLocal();
+        }
 
         renderFilters();
         renderCards();
@@ -444,6 +614,27 @@
         resultText.textContent = '데이터를 불러오지 못했습니다.';
         cardGrid.innerHTML = '<div class="empty">data/cheers.json 파일을 확인해주세요.</div>';
       }
+    }
+
+    function normalizeData(raw) {
+      return Array.isArray(raw)
+        ? raw
+            .filter(item => item && typeof item === 'object')
+            .map((item, index) => ({
+              id: Number(item.id ?? index + 1),
+              word: item.word ?? '',
+              phrase: item.phrase ?? '',
+              category: item.category ?? '기타',
+              tags: Array.isArray(item.tags) ? item.tags : [],
+              status: item.status ?? 'approved',
+              highlightColor: item.highlightColor ?? '#ef4444',
+              viewerBg: item.viewerBg ?? '#111827'
+            }))
+        : [];
+    }
+
+    function saveToLocal() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(allCheers, null, 2));
     }
 
     function getCategories() {
@@ -524,24 +715,33 @@
       });
     }
 
-    function renderHighlightedPhrase(word = '', phrase = '') {
+    function renderHighlightedPhrase(word = '', phrase = '', highlightColor = '#ef4444') {
       const targets = [...String(word)];
       let targetIndex = 0;
 
       return [...String(phrase)].map(ch => {
         if (targetIndex < targets.length && ch === targets[targetIndex]) {
           targetIndex++;
-          return `<span class="viewer-initial">${escapeHtml(ch)}</span>`;
+          return `<span class="viewer-initial" style="color:${escapeHtml(highlightColor)}">${escapeHtml(ch)}</span>`;
         }
         return `<span class="viewer-rest">${escapeHtml(ch)}</span>`;
       }).join('');
+    }
+
+    function applyViewerStyle(item) {
+      const bg = item?.viewerBg || '#111827';
+      viewer.style.background = `
+        radial-gradient(circle at top, rgba(59,130,246,.20), transparent 35%),
+        linear-gradient(180deg, ${bg} 0%, #111827 100%)
+      `;
     }
 
     function openViewer(item) {
       if (!item) return;
       currentItem = item;
       viewerWord.textContent = item.word || '';
-      viewerPhrase.innerHTML = renderHighlightedPhrase(item.word, item.phrase);
+      viewerPhrase.innerHTML = renderHighlightedPhrase(item.word, item.phrase, item.highlightColor);
+      applyViewerStyle(item);
       viewer.classList.add('show');
       viewer.setAttribute('aria-hidden', 'false');
     }
@@ -590,6 +790,79 @@
       openViewer(randomItem);
     }
 
+    function openEditModal() {
+      if (!currentItem) return;
+
+      editWord.value = currentItem.word || '';
+      editPhrase.value = currentItem.phrase || '';
+      editCategory.value = currentItem.category || '기타';
+      editTags.value = (currentItem.tags || []).join(', ');
+      editHighlightColor.value = currentItem.highlightColor || '#ef4444';
+      editViewerBg.value = currentItem.viewerBg || '#111827';
+
+      editModalBack.classList.add('show');
+    }
+
+    function closeEditModal() {
+      editModalBack.classList.remove('show');
+    }
+
+    function saveEdit() {
+      if (!currentItem) return;
+
+      const idx = allCheers.findIndex(item => item.id === currentItem.id);
+      if (idx === -1) return;
+
+      allCheers[idx] = {
+        ...allCheers[idx],
+        word: editWord.value.trim(),
+        phrase: editPhrase.value.trim(),
+        category: editCategory.value,
+        tags: editTags.value
+          .split(',')
+          .map(v => v.trim())
+          .filter(Boolean),
+        highlightColor: editHighlightColor.value,
+        viewerBg: editViewerBg.value
+      };
+
+      currentItem = allCheers[idx];
+      saveToLocal();
+      renderFilters();
+      renderCards();
+      closeEditModal();
+      openViewer(currentItem);
+    }
+
+    function deleteCurrentItem() {
+      if (!currentItem) return;
+      const ok = confirm(`"${currentItem.word}" 항목을 삭제하시겠습니까?`);
+      if (!ok) return;
+
+      allCheers = allCheers.filter(item => item.id !== currentItem.id);
+      saveToLocal();
+      closeViewer();
+      renderFilters();
+      renderCards();
+    }
+
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(allCheers, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cheers.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearLocalChanges() {
+      const ok = confirm('브라우저에 저장된 수정/삭제 내용을 모두 지우고 원본 JSON으로 다시 불러오시겠습니까?');
+      if (!ok) return;
+      localStorage.removeItem(STORAGE_KEY);
+      location.reload();
+    }
+
     function escapeHtml(value = '') {
       return String(value)
         .replaceAll('&', '&amp;')
@@ -609,6 +882,8 @@
     viewerRandomBtn.addEventListener('click', showRandomItem);
     prevBtn.addEventListener('click', showPrevItem);
     nextBtn.addEventListener('click', showNextItem);
+    editBtn.addEventListener('click', openEditModal);
+    deleteBtn.addEventListener('click', deleteCurrentItem);
 
     resetBtn.addEventListener('click', () => {
       searchInput.value = '';
@@ -618,13 +893,28 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
+    exportBtn.addEventListener('click', exportJson);
+    clearLocalBtn.addEventListener('click', clearLocalChanges);
+
     closeViewerBtn.addEventListener('click', closeViewer);
 
     viewer.addEventListener('click', (e) => {
       if (e.target === viewer) closeViewer();
     });
 
+    cancelEditBtn.addEventListener('click', closeEditModal);
+    saveEditBtn.addEventListener('click', saveEdit);
+
+    editModalBack.addEventListener('click', (e) => {
+      if (e.target === editModalBack) closeEditModal();
+    });
+
     document.addEventListener('keydown', (e) => {
+      if (editModalBack.classList.contains('show') && e.key === 'Escape') {
+        closeEditModal();
+        return;
+      }
+
       if (!viewer.classList.contains('show')) return;
 
       if (e.key === 'Escape') closeViewer();
