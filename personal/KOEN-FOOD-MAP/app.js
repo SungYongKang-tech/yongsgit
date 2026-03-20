@@ -43,24 +43,19 @@ const editDesc = document.getElementById("editDesc");
 const saveRestaurantBtn = document.getElementById("saveRestaurantBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 
-const TAGS = [
+const BASE_TAGS = [
   "전체",
   "점심",
   "저녁",
   "회식",
-  "가족식사",
-  "데이트",
   "혼밥",
   "해장",
-  "술한잔",
+  "술모임",
   "가성비",
-  "고급",
-  "유명맛집",
-  "진주대표",
-  "부모님추천",
-  "룸있음",
+  "빨리나옴",
   "단체가능",
-  "주차편함"
+  "룸있음",
+  "주차가능"
 ];
 
 const RATING_STORAGE_KEY = "koen_food_user_key";
@@ -443,6 +438,31 @@ function getDisplayRating(restaurant) {
   };
 }
 
+function normalizeTagName(tag) {
+  const t = String(tag || "").trim();
+
+  const map = {
+    "술한잔": "술모임",
+    "주차편함": "주차가능",
+    "주차 가능": "주차가능",
+    "단체 가능": "단체가능"
+  };
+
+  return map[t] || t;
+}
+
+function getAllTags() {
+  const restaurantTags = restaurants.flatMap((r) =>
+    Array.isArray(r.tags) ? r.tags : []
+  );
+
+  const merged = [...BASE_TAGS, ...restaurantTags]
+    .map((tag) => String(tag || "").trim())
+    .filter(Boolean);
+
+  return [...new Set(merged)];
+}
+
 /* =========================
    Firebase 저장
 ========================= */
@@ -544,10 +564,12 @@ async function saveRestaurantInfo() {
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
-  const tags = String(editTags.value || "")
+  const tags = [...new Set(
+  String(editTags.value || "")
     .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
+    .map((v) => normalizeTagName(v))
+    .filter(Boolean)
+    )];
   const description = String(editDesc.value || "").trim();
 
   if (!name) {
@@ -675,7 +697,13 @@ function renderCategories() {
 }
 
 function renderTags() {
-  tagRow.innerHTML = TAGS.map(
+  const tags = getAllTags();
+
+  if (!tags.includes(selectedTag)) {
+    selectedTag = "전체";
+  }
+
+  tagRow.innerHTML = tags.map(
     (t) => `<button class="${t === selectedTag ? "active" : ""}" data="${t}">${t}</button>`
   ).join("");
 
@@ -1012,7 +1040,15 @@ document.addEventListener("keydown", (e) => {
 ========================= */
 onValue(ref(db, "restaurants"), (snapshot) => {
   const data = snapshot.val();
-  restaurants = data ? Object.values(data) : [];
+  restaurants = data
+    ? Object.values(data).map((item) => ({
+        ...item,
+        tags: Array.isArray(item.tags)
+          ? [...new Set(item.tags.map((tag) => normalizeTagName(tag)).filter(Boolean))]
+          : []
+      }))
+    : [];
+
   restaurants.sort((a, b) => Number(a.id) - Number(b.id));
   renderAll();
 });
