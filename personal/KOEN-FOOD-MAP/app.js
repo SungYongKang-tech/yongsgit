@@ -66,7 +66,7 @@ const TAGS = [
 const RATING_STORAGE_KEY = "koen_food_user_key";
 const FAVORITES_STORAGE_KEY = "koen_food_favorites";
 const REVIEW_MAX_LENGTH = 50;
-const RESTAURANT_EDIT_PASSWORD_PATH = "config/restaurantEditPassword";
+const ADMIN_PASSWORD_PATH = "config/adminPassword";
 
 function getUserKey() {
   let key = localStorage.getItem(RATING_STORAGE_KEY);
@@ -354,7 +354,7 @@ function renderModalReviewUi(restaurantId) {
   modalReviewInput.value = myReview ? myReview.text : "";
   updateReviewCounter();
 
-  modalReviewDeleteBtn.style.display = "inline-block";
+  modalReviewDeleteBtn.style.display = myReview ? "inline-block" : "none";
 
   if (!reviews.length) {
     modalReviewList.innerHTML = `
@@ -476,15 +476,15 @@ async function deleteMyRating(restaurantId) {
 }
 
 async function verifyEditPassword() {
-  const inputPw = prompt("수정 비밀번호를 입력하세요.");
+  const inputPw = prompt("관리자 비밀번호를 입력하세요.");
   if (inputPw === null) return false;
 
   try {
-    const snap = await get(ref(db, RESTAURANT_EDIT_PASSWORD_PATH));
+    const snap = await get(ref(db, ADMIN_PASSWORD_PATH));
     const savedPw = snap.exists() ? String(snap.val()) : "";
 
     if (!savedPw) {
-      alert("수정 비밀번호가 설정되어 있지 않습니다.");
+      alert("관리자 비밀번호가 설정되어 있지 않습니다.");
       return false;
     }
 
@@ -560,6 +560,39 @@ async function saveRestaurantInfo() {
       tags,
       description
     });
+
+    // 1. 현재 메모리의 restaurants 배열도 바로 갱신
+    const target = restaurants.find(
+      (item) => Number(item.id) === Number(currentModalRestaurantId)
+    );
+
+    if (target) {
+      target.name = name;
+      target.category = category;
+      target.address = address;
+      target.addressShort = address;
+      target.mainMenus = mainMenus;
+      target.tags = tags;
+      target.description = description;
+    }
+
+    // 2. 상세 모달에 보이는 내용도 바로 갱신
+    modalName.textContent = name || "";
+    modalCategory.textContent = `${category || ""} / ${target?.subCategory || ""}`;
+    modalAddress.textContent = address || "";
+
+    modalMenus.innerHTML = Array.isArray(mainMenus)
+      ? mainMenus.map((m) => `<span class="menu-tag">${m}</span>`).join(" ")
+      : "";
+
+    modalTags.innerHTML = Array.isArray(tags)
+      ? tags.map((t) => `<span class="hash-tag">#${t}</span>`).join(" ")
+      : "";
+
+    modalDesc.textContent = description || target?.menuType || "설명이 아직 없습니다.";
+
+    // 3. 카드 목록도 바로 다시 그림
+    renderCards();
 
     alert("식당 정보가 수정되었습니다.");
     setModalMode("view");
