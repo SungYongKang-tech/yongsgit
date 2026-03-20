@@ -2,11 +2,13 @@ import { db, ref, onValue, set, remove } from "./firebase.js";
 
 let restaurants = [];
 let ratingsByRestaurant = {};
+let reviewsByRestaurant = {};
 let selectedCategory = "전체";
 let selectedTag = "전체";
 let currentModalRestaurantId = null;
 let onlyMyRated = false;
 let onlyFavorites = false;
+let sortMode = "default"; // default | rating | popular
 
 const categoryRow = document.getElementById("categoryRow");
 const tagRow = document.getElementById("tagRow");
@@ -14,6 +16,9 @@ const cardGrid = document.getElementById("cardGrid");
 const searchInput = document.getElementById("searchInput");
 const myRatedBtn = document.getElementById("myRatedBtn");
 const favoriteFilterBtn = document.getElementById("favoriteFilterBtn");
+const sortDefaultBtn = document.getElementById("sortDefaultBtn");
+const sortRatingBtn = document.getElementById("sortRatingBtn");
+const sortPopularBtn = document.getElementById("sortPopularBtn");
 
 const modal = document.getElementById("modal");
 const closeModalBtn = document.getElementById("closeModal");
@@ -48,6 +53,7 @@ const TAGS = [
 
 const RATING_STORAGE_KEY = "koen_food_user_key";
 const FAVORITES_STORAGE_KEY = "koen_food_favorites";
+const REVIEW_MAX_LENGTH = 50;
 
 function getUserKey() {
   let key = localStorage.getItem(RATING_STORAGE_KEY);
@@ -85,8 +91,8 @@ function toggleFavorite(restaurantId) {
   const id = Number(restaurantId);
   const ids = getFavoriteIds();
   const exists = ids.includes(id);
-
   const next = exists ? ids.filter((v) => v !== id) : [...ids, id];
+
   saveFavoriteIds(next);
 
   renderFavoriteFilterButton();
@@ -98,13 +104,103 @@ function toggleFavorite(restaurantId) {
 }
 
 /* =========================
-   모달 별점 UI 동적 생성
+   후기
+========================= */
+function getRestaurantReviewsObject(restaurantId) {
+  return reviewsByRestaurant[String(restaurantId)] || {};
+}
+
+function normalizeReviewItem(value, key) {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    return {
+      userKey: key,
+      text,
+      updatedAt: 0
+    };
+  }
+
+  const text = String(value.text || "").trim();
+  if (!text) return null;
+
+  return {
+    userKey: key,
+    text,
+    updatedAt: Number(value.updatedAt || value.createdAt || 0)
+  };
+}
+
+function getRestaurantReviewsList(restaurantId) {
+  const obj = getRestaurantReviewsObject(restaurantId);
+
+  return Object.entries(obj)
+    .map(([key, value]) => normalizeReviewItem(value, key))
+    .filter(Boolean)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function getMyReview(restaurantId) {
+  const obj = getRestaurantReviewsObject(restaurantId);
+  return normalizeReviewItem(obj[userKey], userKey);
+}
+
+function getLatestReview(restaurantId) {
+  const list = getRestaurantReviewsList(restaurantId);
+  return list.length ? list[0] : null;
+}
+
+async function saveMyReview(restaurantId, text) {
+  const id = String(restaurantId);
+  const clean = String(text || "").trim().slice(0, REVIEW_MAX_LENGTH);
+
+  if (!id) return;
+
+  if (!clean) {
+    alert("후기를 입력해주세요.");
+    return;
+  }
+
+  try {
+    await set(ref(db, `restaurantReviews/${id}/${userKey}`), {
+      text: clean,
+      updatedAt: Date.now()
+    });
+  } catch (error) {
+    console.error(error);
+    alert("후기 저장 중 오류가 발생했습니다.");
+  }
+}
+
+async function deleteMyReview(restaurantId) {
+  const id = String(restaurantId);
+  if (!id) return;
+
+  try {
+    await remove(ref(db, `restaurantReviews/${id}/${userKey}`));
+  } catch (error) {
+    console.error(error);
+    alert("후기 삭제 중 오류가 발생했습니다.");
+  }
+}
+
+/* =========================
+   모달 UI 동적 생성
 ========================= */
 let modalUserRatingSection = null;
 let modalUserRatingStars = null;
 let modalUserRatingText = null;
 let modalUserRatingDeleteBtn = null;
 let modalFavoriteBtn = null;
+
+let modalReviewSection = null;
+let modalReviewInput = null;
+let modalReviewCount = null;
+let modalReviewSaveBtn = null;
+let modalReviewDeleteBtn = null;
+let modalReviewList = null;
 
 function ensureModalRatingUi() {
   if (document.getElementById("modalUserRatingSection")) {
@@ -138,6 +234,7 @@ function ensureModalRatingUi() {
   }
 
   ensureModalFavoriteButton();
+  ensureModalReviewUi();
 }
 
 function ensureModalFavoriteButton() {
@@ -155,6 +252,65 @@ function ensureModalFavoriteButton() {
   modalFavoriteBtn = btn;
 }
 
+function ensureModalReviewUi() {
+  if (document.getElementById("modalReviewSection")) {
+    modalReviewSection = document.getElementById("modalReviewSection");
+    modalReviewInput = document.getElementById("modalReviewInput");
+    modalReviewCount = document.getElementById("modalReviewCount");
+    modalReviewSaveBtn = document.getElementById("modalReviewSaveBtn");
+    modalReviewDeleteBtn = document.getElementById("modalReviewDeleteBtn");
+    modalReviewList = document.getElementById("modalReviewList");
+    return;
+  }
+
+  const section = document.createElement("div");
+  section.id = "modalReviewSection";
+  section.className = "modal-review-section";
+
+  section.innerHTML = `
+    <h4>한줄 후기</h4>
+    <textarea id="modalReviewInput" class="review-textarea" rows="3" placeholder="예: 점심 빨리 나와서 좋음"></textarea>
+    <div id="modalReviewCount" class="review-count">0 / ${REVIEW_MAX_LENGTH}</div>
+    <div class="review-action-row">
+      <button type="button" id="modalReviewSaveBtn" class="review-save-btn">후기 저장</button>
+      <button type="button" id="modalReviewDeleteBtn" class="review-delete-btn">내 후기 삭제</button>
+    </div>
+    <div id="modalReviewList" class="review-list"></div>
+  `;
+
+  modalMapBtn.parentNode.insertBefore(section, modalMapBtn.nextSibling);
+
+  modalReviewSection = document.getElementById("modalReviewSection");
+  modalReviewInput = document.getElementById("modalReviewInput");
+  modalReviewCount = document.getElementById("modalReviewCount");
+  modalReviewSaveBtn = document.getElementById("modalReviewSaveBtn");
+  modalReviewDeleteBtn = document.getElementById("modalReviewDeleteBtn");
+  modalReviewList = document.getElementById("modalReviewList");
+
+  modalReviewInput.addEventListener("input", () => {
+    const clean = modalReviewInput.value.slice(0, REVIEW_MAX_LENGTH);
+    if (modalReviewInput.value !== clean) {
+      modalReviewInput.value = clean;
+    }
+    updateReviewCounter();
+  });
+
+  modalReviewSaveBtn.addEventListener("click", async () => {
+    if (!currentModalRestaurantId) return;
+    await saveMyReview(currentModalRestaurantId, modalReviewInput.value);
+  });
+
+  modalReviewDeleteBtn.addEventListener("click", async () => {
+    if (!currentModalRestaurantId) return;
+    await deleteMyReview(currentModalRestaurantId);
+  });
+}
+
+function updateReviewCounter() {
+  if (!modalReviewInput || !modalReviewCount) return;
+  modalReviewCount.textContent = `${modalReviewInput.value.length} / ${REVIEW_MAX_LENGTH}`;
+}
+
 function renderModalFavoriteButton(restaurantId) {
   ensureModalFavoriteButton();
 
@@ -165,6 +321,37 @@ function renderModalFavoriteButton(restaurantId) {
   modalFavoriteBtn.onclick = () => {
     toggleFavorite(restaurantId);
   };
+}
+
+function renderModalReviewUi(restaurantId) {
+  ensureModalReviewUi();
+
+  const myReview = getMyReview(restaurantId);
+  const reviews = getRestaurantReviewsList(restaurantId);
+
+  modalReviewInput.value = myReview ? myReview.text : "";
+  updateReviewCounter();
+
+  modalReviewDeleteBtn.style.display = myReview ? "inline-block" : "inline-block";
+
+  if (!reviews.length) {
+    modalReviewList.innerHTML = `
+      <div class="review-empty">아직 등록된 후기가 없습니다.</div>
+    `;
+    return;
+  }
+
+  modalReviewList.innerHTML = reviews
+    .map((review) => {
+      const mine = review.userKey === userKey;
+      return `
+        <div class="review-item ${mine ? "mine" : ""}">
+          <div class="review-text">${escapeHtml(review.text)}</div>
+          <div class="review-meta">${mine ? "내 후기" : "익명 후기"}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 /* =========================
@@ -203,6 +390,16 @@ function hasMyRating(restaurantId) {
   return getMyRating(restaurantId) > 0;
 }
 
+function getEffectiveRating(restaurant) {
+  const { avg, count } = getRestaurantRatingStats(restaurant.id);
+  if (count > 0) return avg;
+  return typeof restaurant.baseRating === "number" ? restaurant.baseRating : 0;
+}
+
+function getRatingCount(restaurant) {
+  return getRestaurantRatingStats(restaurant.id).count;
+}
+
 function getDisplayRating(restaurant) {
   const { avg, count } = getRestaurantRatingStats(restaurant.id);
 
@@ -220,7 +417,7 @@ function getDisplayRating(restaurant) {
   return {
     score: base,
     count: 0,
-    label: `⭐ ${base ? base.toFixed(1) : "-"}` 
+    label: `⭐ ${base ? base.toFixed(1) : "-"}`
   };
 }
 
@@ -254,6 +451,48 @@ async function deleteMyRating(restaurantId) {
     console.error(error);
     alert("별점 삭제 중 오류가 발생했습니다.");
   }
+}
+
+/* =========================
+   정렬
+========================= */
+function sortRestaurants(list) {
+  const copied = [...list];
+
+  if (sortMode === "rating") {
+    copied.sort((a, b) => {
+      const diff = getEffectiveRating(b) - getEffectiveRating(a);
+      if (diff !== 0) return diff;
+
+      const countDiff = getRatingCount(b) - getRatingCount(a);
+      if (countDiff !== 0) return countDiff;
+
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+    return copied;
+  }
+
+  if (sortMode === "popular") {
+    copied.sort((a, b) => {
+      const countDiff = getRatingCount(b) - getRatingCount(a);
+      if (countDiff !== 0) return countDiff;
+
+      const ratingDiff = getEffectiveRating(b) - getEffectiveRating(a);
+      if (ratingDiff !== 0) return ratingDiff;
+
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+    return copied;
+  }
+
+  copied.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+  return copied;
+}
+
+function renderSortButtons() {
+  if (sortDefaultBtn) sortDefaultBtn.classList.toggle("active", sortMode === "default");
+  if (sortRatingBtn) sortRatingBtn.classList.toggle("active", sortMode === "rating");
+  if (sortPopularBtn) sortPopularBtn.classList.toggle("active", sortMode === "popular");
 }
 
 /* =========================
@@ -308,7 +547,7 @@ function renderFavoriteFilterButton() {
 function renderCards() {
   const keyword = (searchInput.value || "").trim().toLowerCase();
 
-  const filtered = restaurants.filter((r) => {
+  let filtered = restaurants.filter((r) => {
     const matchCategory =
       selectedCategory === "전체" || r.category === selectedCategory;
 
@@ -342,6 +581,8 @@ function renderCards() {
     return matchCategory && matchTag && matchSearch && matchMyRated && matchFavorite;
   });
 
+  filtered = sortRestaurants(filtered);
+
   if (filtered.length === 0) {
     cardGrid.innerHTML = `
       <div class="card">
@@ -357,6 +598,11 @@ function renderCards() {
       const ratingInfo = getDisplayRating(r);
       const myRating = getMyRating(r.id);
       const favoriteMark = isFavorite(r.id) ? `<div>❤️ 찜함</div>` : "";
+      const ratingCount = getRatingCount(r);
+      const latestReview = getLatestReview(r.id);
+      const reviewPreview = latestReview
+        ? `<div class="card-review-preview">💬 ${escapeHtml(latestReview.text)}</div>`
+        : "";
 
       return `
         <div class="card" data-id="${r.id}">
@@ -364,10 +610,12 @@ function renderCards() {
           <div>${ratingInfo.label}</div>
           ${myRating > 0 ? `<div>내 별점: ${myRating}점</div>` : ""}
           ${favoriteMark}
+          ${sortMode === "popular" ? `<div>평가 참여: ${ratingCount}명</div>` : ""}
           <div>${r.category || ""} / ${r.subCategory || ""}</div>
           <div>${Array.isArray(r.mainMenus) ? r.mainMenus.join(", ") : ""}</div>
           <div>${r.addressShort || r.address || ""}</div>
           <div>${Array.isArray(r.tags) ? r.tags.map((t) => "#" + t).join(" ") : ""}</div>
+          ${reviewPreview}
         </div>
       `;
     })
@@ -454,6 +702,7 @@ function openModal(id) {
 
   renderModalFavoriteButton(id);
   renderModalRatingUi(id);
+  renderModalReviewUi(id);
 
   modal.classList.remove("hidden");
 }
@@ -485,6 +734,7 @@ function renderAll() {
   renderTags();
   renderMyRatedButton();
   renderFavoriteFilterButton();
+  renderSortButtons();
   renderCards();
 
   if (currentModalRestaurantId) {
@@ -495,6 +745,18 @@ function renderAll() {
       openModal(currentModalRestaurantId);
     }
   }
+}
+
+/* =========================
+   유틸
+========================= */
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 /* =========================
@@ -514,6 +776,30 @@ if (favoriteFilterBtn) {
   favoriteFilterBtn.addEventListener("click", () => {
     onlyFavorites = !onlyFavorites;
     renderFavoriteFilterButton();
+    renderCards();
+  });
+}
+
+if (sortDefaultBtn) {
+  sortDefaultBtn.addEventListener("click", () => {
+    sortMode = "default";
+    renderSortButtons();
+    renderCards();
+  });
+}
+
+if (sortRatingBtn) {
+  sortRatingBtn.addEventListener("click", () => {
+    sortMode = "rating";
+    renderSortButtons();
+    renderCards();
+  });
+}
+
+if (sortPopularBtn) {
+  sortPopularBtn.addEventListener("click", () => {
+    sortMode = "popular";
+    renderSortButtons();
     renderCards();
   });
 }
@@ -547,9 +833,15 @@ onValue(ref(db, "restaurantRatings"), (snapshot) => {
   renderAll();
 });
 
+onValue(ref(db, "restaurantReviews"), (snapshot) => {
+  reviewsByRestaurant = snapshot.val() || {};
+  renderAll();
+});
+
 /* =========================
    초기
 ========================= */
 ensureModalRatingUi();
 renderMyRatedButton();
 renderFavoriteFilterButton();
+renderSortButtons();
