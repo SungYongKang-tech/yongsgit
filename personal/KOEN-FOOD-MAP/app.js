@@ -1,4 +1,4 @@
-import { db, ref, onValue, set, remove } from "./firebase.js";
+import { db, ref, onValue, set, remove, get, update } from "./firebase.js";
 
 let restaurants = [];
 let ratingsByRestaurant = {};
@@ -31,6 +31,18 @@ const modalTags = document.getElementById("modalTags");
 const modalDesc = document.getElementById("modalDesc");
 const modalMapBtn = document.getElementById("modalMapBtn");
 
+const editRestaurantBtn = document.getElementById("editRestaurantBtn");
+const viewMode = document.getElementById("viewMode");
+const editMode = document.getElementById("editMode");
+const editName = document.getElementById("editName");
+const editCategory = document.getElementById("editCategory");
+const editAddress = document.getElementById("editAddress");
+const editMenus = document.getElementById("editMenus");
+const editTags = document.getElementById("editTags");
+const editDesc = document.getElementById("editDesc");
+const saveRestaurantBtn = document.getElementById("saveRestaurantBtn");
+const cancelEditBtn = document.getElementById("cancelEditBtn");
+
 const TAGS = [
   "전체",
   "점심",
@@ -54,6 +66,7 @@ const TAGS = [
 const RATING_STORAGE_KEY = "koen_food_user_key";
 const FAVORITES_STORAGE_KEY = "koen_food_favorites";
 const REVIEW_MAX_LENGTH = 50;
+const RESTAURANT_EDIT_PASSWORD_PATH = "config/restaurantEditPassword";
 
 function getUserKey() {
   let key = localStorage.getItem(RATING_STORAGE_KEY);
@@ -202,6 +215,14 @@ let modalReviewSaveBtn = null;
 let modalReviewDeleteBtn = null;
 let modalReviewList = null;
 
+function getModalInsertBase() {
+  return viewMode || modalMapBtn?.parentNode || modal.querySelector(".modal-content");
+}
+
+function getModalInsertTarget() {
+  return modalMapBtn?.parentNode || getModalInsertBase();
+}
+
 function ensureModalRatingUi() {
   if (document.getElementById("modalUserRatingSection")) {
     modalUserRatingSection = document.getElementById("modalUserRatingSection");
@@ -220,7 +241,7 @@ function ensureModalRatingUi() {
       <button type="button" id="modalUserRatingDeleteBtn" class="rating-delete-btn">내 별점 삭제</button>
     `;
 
-    modalMapBtn.parentNode.insertBefore(section, modalMapBtn);
+    getModalInsertTarget().insertBefore(section, modalMapBtn);
 
     modalUserRatingSection = document.getElementById("modalUserRatingSection");
     modalUserRatingStars = document.getElementById("modalUserRatingStars");
@@ -247,7 +268,8 @@ function ensureModalFavoriteButton() {
   btn.type = "button";
   btn.id = "modalFavoriteBtn";
   btn.className = "modal-favorite-btn";
-  modalMapBtn.parentNode.insertBefore(btn, modalMapBtn);
+
+  getModalInsertTarget().insertBefore(btn, modalMapBtn);
 
   modalFavoriteBtn = btn;
 }
@@ -278,7 +300,7 @@ function ensureModalReviewUi() {
     <div id="modalReviewList" class="review-list"></div>
   `;
 
-  modalMapBtn.parentNode.insertBefore(section, modalMapBtn.nextSibling);
+  getModalInsertTarget().insertBefore(section, modalMapBtn.nextSibling);
 
   modalReviewSection = document.getElementById("modalReviewSection");
   modalReviewInput = document.getElementById("modalReviewInput");
@@ -332,7 +354,7 @@ function renderModalReviewUi(restaurantId) {
   modalReviewInput.value = myReview ? myReview.text : "";
   updateReviewCounter();
 
-  modalReviewDeleteBtn.style.display = myReview ? "inline-block" : "inline-block";
+  modalReviewDeleteBtn.style.display = "inline-block";
 
   if (!reviews.length) {
     modalReviewList.innerHTML = `
@@ -450,6 +472,100 @@ async function deleteMyRating(restaurantId) {
   } catch (error) {
     console.error(error);
     alert("별점 삭제 중 오류가 발생했습니다.");
+  }
+}
+
+async function verifyEditPassword() {
+  const inputPw = prompt("수정 비밀번호를 입력하세요.");
+  if (inputPw === null) return false;
+
+  try {
+    const snap = await get(ref(db, RESTAURANT_EDIT_PASSWORD_PATH));
+    const savedPw = snap.exists() ? String(snap.val()) : "";
+
+    if (!savedPw) {
+      alert("수정 비밀번호가 설정되어 있지 않습니다.");
+      return false;
+    }
+
+    if (String(inputPw) !== savedPw) {
+      alert("비밀번호가 틀렸습니다.");
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    alert("비밀번호 확인 중 오류가 발생했습니다.");
+    return false;
+  }
+}
+
+function fillEditForm(restaurant) {
+  if (!restaurant) return;
+
+  editName.value = restaurant.name || "";
+  editCategory.value = restaurant.category || "";
+  editAddress.value = restaurant.address || "";
+  editMenus.value = Array.isArray(restaurant.mainMenus)
+    ? restaurant.mainMenus.join(", ")
+    : "";
+  editTags.value = Array.isArray(restaurant.tags)
+    ? restaurant.tags.join(", ")
+    : "";
+  editDesc.value = restaurant.description || "";
+}
+
+function setModalMode(mode) {
+  const isEdit = mode === "edit";
+
+  if (viewMode) viewMode.classList.toggle("hidden", isEdit);
+  if (editMode) editMode.classList.toggle("hidden", !isEdit);
+
+  if (modalUserRatingSection) modalUserRatingSection.style.display = isEdit ? "none" : "";
+  if (modalFavoriteBtn) modalFavoriteBtn.style.display = isEdit ? "none" : "";
+  if (modalReviewSection) modalReviewSection.style.display = isEdit ? "none" : "";
+}
+
+async function saveRestaurantInfo() {
+  if (!currentModalRestaurantId) return;
+
+  const id = String(currentModalRestaurantId);
+  const name = String(editName.value || "").trim();
+  const category = String(editCategory.value || "").trim();
+  const address = String(editAddress.value || "").trim();
+  const mainMenus = String(editMenus.value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const tags = String(editTags.value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const description = String(editDesc.value || "").trim();
+
+  if (!name) {
+    alert("식당명을 입력해주세요.");
+    editName.focus();
+    return;
+  }
+
+  try {
+    await update(ref(db, `restaurants/${id}`), {
+      name,
+      category,
+      address,
+      addressShort: address,
+      mainMenus,
+      tags,
+      description
+    });
+
+    alert("식당 정보가 수정되었습니다.");
+    setModalMode("view");
+  } catch (error) {
+    console.error(error);
+    alert("식당 정보 저장 중 오류가 발생했습니다.");
   }
 }
 
@@ -700,9 +816,11 @@ function openModal(id) {
 
   modalMapBtn.onclick = () => openMap(r);
 
+  fillEditForm(r);
   renderModalFavoriteButton(id);
   renderModalRatingUi(id);
   renderModalReviewUi(id);
+  setModalMode("view");
 
   modal.classList.remove("hidden");
 }
@@ -727,6 +845,7 @@ function openMap(item) {
 function closeModal() {
   modal.classList.add("hidden");
   currentModalRestaurantId = null;
+  setModalMode("view");
 }
 
 function renderAll() {
@@ -804,6 +923,37 @@ if (sortPopularBtn) {
   });
 }
 
+if (editRestaurantBtn) {
+  editRestaurantBtn.addEventListener("click", async () => {
+    if (!currentModalRestaurantId) return;
+
+    const ok = await verifyEditPassword();
+    if (!ok) return;
+
+    const restaurant = restaurants.find(
+      (item) => Number(item.id) === Number(currentModalRestaurantId)
+    );
+    if (!restaurant) return;
+
+    fillEditForm(restaurant);
+    setModalMode("edit");
+  });
+}
+
+if (saveRestaurantBtn) {
+  saveRestaurantBtn.addEventListener("click", saveRestaurantInfo);
+}
+
+if (cancelEditBtn) {
+  cancelEditBtn.addEventListener("click", () => {
+    const restaurant = restaurants.find(
+      (item) => Number(item.id) === Number(currentModalRestaurantId)
+    );
+    if (restaurant) fillEditForm(restaurant);
+    setModalMode("view");
+  });
+}
+
 closeModalBtn.addEventListener("click", closeModal);
 
 modal.addEventListener("click", (e) => {
@@ -842,6 +992,7 @@ onValue(ref(db, "restaurantReviews"), (snapshot) => {
    초기
 ========================= */
 ensureModalRatingUi();
+setModalMode("view");
 renderMyRatedButton();
 renderFavoriteFilterButton();
 renderSortButtons();
