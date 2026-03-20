@@ -39,6 +39,7 @@ const editCategory = document.getElementById("editCategory");
 const editAddress = document.getElementById("editAddress");
 const editMenus = document.getElementById("editMenus");
 const editTags = document.getElementById("editTags");
+const editTagPicker = document.getElementById("editTagPicker");
 const editDesc = document.getElementById("editDesc");
 const saveRestaurantBtn = document.getElementById("saveRestaurantBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
@@ -464,6 +465,64 @@ function getAllTags() {
 }
 
 /* =========================
+   수정용 태그 선택 UI
+========================= */
+function getSelectableTags() {
+  return getAllTags().filter((tag) => tag !== "전체");
+}
+
+function getSelectedEditTags() {
+  if (!editTagPicker) return [];
+
+  return [...editTagPicker.querySelectorAll(".tag-chip.active")]
+    .map((btn) => normalizeTagName(btn.dataset.tag))
+    .filter(Boolean);
+}
+
+function syncHiddenEditTags() {
+  if (!editTags) return;
+  editTags.value = getSelectedEditTags().join(", ");
+}
+
+function renderEditTagPicker(selectedTags = []) {
+  if (!editTagPicker) return;
+
+  const normalizedSelected = [
+    ...new Set(
+      (selectedTags || [])
+        .map((tag) => normalizeTagName(tag))
+        .filter(Boolean)
+    )
+  ];
+
+  const allTags = getSelectableTags();
+
+  editTagPicker.innerHTML = allTags
+    .map((tag) => {
+      const active = normalizedSelected.includes(tag);
+      return `
+        <button
+          type="button"
+          class="tag-chip ${active ? "active" : ""}"
+          data-tag="${escapeHtml(tag)}"
+        >
+          #${escapeHtml(tag)}
+        </button>
+      `;
+    })
+    .join("");
+
+  editTagPicker.querySelectorAll(".tag-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      syncHiddenEditTags();
+    });
+  });
+
+  syncHiddenEditTags();
+}
+
+/* =========================
    Firebase 저장
 ========================= */
 async function saveMyRating(restaurantId, score) {
@@ -536,9 +595,9 @@ function fillEditForm(restaurant) {
   editMenus.value = Array.isArray(restaurant.mainMenus)
     ? restaurant.mainMenus.join(", ")
     : "";
-  editTags.value = Array.isArray(restaurant.tags)
-    ? restaurant.tags.join(", ")
-    : "";
+
+  renderEditTagPicker(Array.isArray(restaurant.tags) ? restaurant.tags : []);
+
   editDesc.value = restaurant.description || "";
 }
 
@@ -564,12 +623,7 @@ async function saveRestaurantInfo() {
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
-  const tags = [...new Set(
-  String(editTags.value || "")
-    .split(",")
-    .map((v) => normalizeTagName(v))
-    .filter(Boolean)
-    )];
+  const tags = [...new Set(getSelectedEditTags())];
   const description = String(editDesc.value || "").trim();
 
   if (!name) {
@@ -589,7 +643,6 @@ async function saveRestaurantInfo() {
       description
     });
 
-    // 1. 현재 메모리의 restaurants 배열도 바로 갱신
     const target = restaurants.find(
       (item) => Number(item.id) === Number(currentModalRestaurantId)
     );
@@ -604,7 +657,6 @@ async function saveRestaurantInfo() {
       target.description = description;
     }
 
-    // 2. 상세 모달에 보이는 내용도 바로 갱신
     modalName.textContent = name || "";
     modalCategory.textContent = `${category || ""} / ${target?.subCategory || ""}`;
     modalAddress.textContent = address || "";
@@ -619,7 +671,6 @@ async function saveRestaurantInfo() {
 
     modalDesc.textContent = description || target?.menuType || "설명이 아직 없습니다.";
 
-    // 3. 카드 목록도 바로 다시 그림
     renderCards();
 
     alert("식당 정보가 수정되었습니다.");
@@ -703,9 +754,11 @@ function renderTags() {
     selectedTag = "전체";
   }
 
-  tagRow.innerHTML = tags.map(
-    (t) => `<button class="${t === selectedTag ? "active" : ""}" data="${t}">${t}</button>`
-  ).join("");
+  tagRow.innerHTML = tags
+    .map(
+      (t) => `<button class="${t === selectedTag ? "active" : ""}" data="${t}">${t}</button>`
+    )
+    .join("");
 
   tagRow.querySelectorAll("button").forEach((btn) => {
     btn.onclick = () => {
