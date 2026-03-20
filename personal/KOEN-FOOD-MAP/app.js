@@ -77,7 +77,7 @@ function ensureModalRatingUi() {
   section.className = "modal-user-rating-section";
 
   section.innerHTML = `
-    <h4>내 별점</h4>
+    <h4>내 별점(실제 이용자만 등록 가능)</h4>
     <div id="modalUserRatingStars" class="rating-stars"></div>
     <div id="modalUserRatingText" class="rating-help-text">별점을 선택해주세요.</div>
     <button type="button" id="modalUserRatingDeleteBtn" class="rating-delete-btn">내 별점 삭제</button>
