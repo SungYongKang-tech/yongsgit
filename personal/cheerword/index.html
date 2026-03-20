@@ -16,6 +16,7 @@
       --accent-soft:#dbeafe;
       --shadow:0 10px 30px rgba(0,0,0,.08);
       --radius:20px;
+      --red:#ef4444;
     }
 
     *{box-sizing:border-box}
@@ -211,7 +212,9 @@
     .viewer{
       position:fixed;
       inset:0;
-      background:#0f172a;
+      background:
+        radial-gradient(circle at top, rgba(59,130,246,.20), transparent 35%),
+        linear-gradient(180deg, #0b1220 0%, #111827 100%);
       color:#fff;
       display:none;
       z-index:999;
@@ -229,23 +232,51 @@
       justify-content:center;
       align-items:center;
       text-align:center;
-      padding:26px 18px 36px;
-      gap:18px;
+      padding:20px 16px 90px;
+      gap:24px;
     }
 
     .viewer-word{
-      font-size:clamp(50px, 15vw, 120px);
+      font-size:clamp(68px, 20vw, 150px);
       font-weight:900;
-      line-height:1.08;
-      letter-spacing:-0.04em;
+      line-height:1.02;
+      letter-spacing:-0.05em;
       word-break:keep-all;
+      text-shadow:0 6px 20px rgba(0,0,0,.35);
     }
 
     .viewer-phrase{
-      font-size:clamp(24px, 6.5vw, 48px);
-      line-height:1.35;
-      max-width:920px;
+      max-width:980px;
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:center;
+      align-items:center;
+      gap:10px 18px;
+      font-size:clamp(28px, 8vw, 58px);
+      line-height:1.5;
+      font-weight:800;
+      text-shadow:0 4px 14px rgba(0,0,0,.28);
       word-break:keep-all;
+    }
+
+    .viewer-token{
+      display:inline-flex;
+      align-items:baseline;
+      gap:0;
+      white-space:nowrap;
+      background:rgba(255,255,255,.05);
+      padding:4px 8px;
+      border-radius:14px;
+    }
+
+    .viewer-initial{
+      color:var(--red);
+      font-weight:900;
+      margin-right:1px;
+    }
+
+    .viewer-rest{
+      color:#ffffff;
     }
 
     .viewer-actions{
@@ -283,7 +314,7 @@
       left:50%;
       bottom:78px;
       transform:translateX(-50%);
-      color:rgba(255,255,255,.65);
+      color:rgba(255,255,255,.70);
       font-size:13px;
       text-align:center;
       width:calc(100% - 24px);
@@ -306,12 +337,24 @@
         font-size:17px;
       }
 
+      .viewer-inner{
+        padding:18px 12px 96px;
+        gap:20px;
+      }
+
       .viewer-word{
-        font-size:clamp(44px, 15vw, 90px);
+        font-size:clamp(76px, 24vw, 132px);
       }
 
       .viewer-phrase{
-        font-size:clamp(22px, 7vw, 34px);
+        font-size:clamp(34px, 10.5vw, 54px);
+        line-height:1.55;
+        gap:10px 14px;
+      }
+
+      .viewer-token{
+        padding:2px 6px;
+        border-radius:12px;
       }
 
       .viewer-actions{
@@ -404,9 +447,18 @@
         const res = await fetch('./data/cheers.json');
         const raw = await res.json();
 
-        allCheers = Array.isArray(raw) ? raw.filter(item => {
-          return item && typeof item === 'object';
-        }) : [];
+        allCheers = Array.isArray(raw)
+          ? raw
+              .filter(item => item && typeof item === 'object')
+              .map((item, index) => ({
+                id: Number(item.id ?? index + 1),
+                word: item.word ?? '',
+                phrase: item.phrase ?? '',
+                category: item.category ?? '기타',
+                tags: Array.isArray(item.tags) ? item.tags : [],
+                status: item.status ?? 'approved'
+              }))
+          : [];
 
         renderFilters();
         renderCards();
@@ -495,11 +547,26 @@
       });
     }
 
+    function renderHighlightedPhrase(phrase = '') {
+      const words = String(phrase).trim().split(/\s+/).filter(Boolean);
+
+      return words.map(word => {
+        const chars = [...word];
+        const first = chars.shift() || '';
+        const rest = chars.join('');
+        return `
+          <span class="viewer-token">
+            <span class="viewer-initial">${escapeHtml(first)}</span><span class="viewer-rest">${escapeHtml(rest)}</span>
+          </span>
+        `;
+      }).join('');
+    }
+
     function openViewer(item) {
       if (!item) return;
       currentItem = item;
       viewerWord.textContent = item.word || '';
-      viewerPhrase.textContent = item.phrase || '';
+      viewerPhrase.innerHTML = renderHighlightedPhrase(item.phrase || '');
       viewer.classList.add('show');
       viewer.setAttribute('aria-hidden', 'false');
     }
