@@ -15,7 +15,6 @@
       --accent:#2563eb;
       --accent-soft:#dbeafe;
       --shadow:0 10px 30px rgba(0,0,0,.08);
-      --radius:20px;
       --red:#ef4444;
     }
 
@@ -208,7 +207,7 @@
       text-align:center;
     }
 
-    /* 큰글씨 보기 */
+    /* viewer */
     .viewer{
       position:fixed;
       inset:0;
@@ -247,36 +246,21 @@
 
     .viewer-phrase{
       max-width:980px;
-      display:flex;
-      flex-wrap:wrap;
-      justify-content:center;
-      align-items:center;
-      gap:10px 18px;
       font-size:clamp(28px, 8vw, 58px);
       line-height:1.5;
       font-weight:800;
       text-shadow:0 4px 14px rgba(0,0,0,.28);
       word-break:keep-all;
-    }
-
-    .viewer-token{
-      display:inline-flex;
-      align-items:baseline;
-      gap:0;
-      white-space:nowrap;
-      background:rgba(255,255,255,.05);
-      padding:4px 8px;
-      border-radius:14px;
+      white-space:pre-wrap;
     }
 
     .viewer-initial{
       color:var(--red);
       font-weight:900;
-      margin-right:1px;
     }
 
     .viewer-rest{
-      color:#ffffff;
+      color:#fff;
     }
 
     .viewer-actions{
@@ -349,12 +333,6 @@
       .viewer-phrase{
         font-size:clamp(34px, 10.5vw, 54px);
         line-height:1.55;
-        gap:10px 14px;
-      }
-
-      .viewer-token{
-        padding:2px 6px;
-        border-radius:12px;
       }
 
       .viewer-actions{
@@ -398,7 +376,6 @@
     </div>
   </div>
 
-  <!-- 큰 글씨 보기 -->
   <div id="viewer" class="viewer" aria-hidden="true">
     <div class="viewer-actions">
       <button id="copyBtn" class="viewer-btn" type="button">복사</button>
@@ -547,18 +524,16 @@
       });
     }
 
-    function renderHighlightedPhrase(phrase = '') {
-      const words = String(phrase).trim().split(/\s+/).filter(Boolean);
+    function renderHighlightedPhrase(word = '', phrase = '') {
+      const targets = [...String(word)];
+      let targetIndex = 0;
 
-      return words.map(word => {
-        const chars = [...word];
-        const first = chars.shift() || '';
-        const rest = chars.join('');
-        return `
-          <span class="viewer-token">
-            <span class="viewer-initial">${escapeHtml(first)}</span><span class="viewer-rest">${escapeHtml(rest)}</span>
-          </span>
-        `;
+      return [...String(phrase)].map(ch => {
+        if (targetIndex < targets.length && ch === targets[targetIndex]) {
+          targetIndex++;
+          return `<span class="viewer-initial">${escapeHtml(ch)}</span>`;
+        }
+        return `<span class="viewer-rest">${escapeHtml(ch)}</span>`;
       }).join('');
     }
 
@@ -566,7 +541,7 @@
       if (!item) return;
       currentItem = item;
       viewerWord.textContent = item.word || '';
-      viewerPhrase.innerHTML = renderHighlightedPhrase(item.phrase || '');
+      viewerPhrase.innerHTML = renderHighlightedPhrase(item.word, item.phrase);
       viewer.classList.add('show');
       viewer.setAttribute('aria-hidden', 'false');
     }
