@@ -476,7 +476,7 @@ async function deleteMyRating(restaurantId) {
 }
 
 async function verifyEditPassword() {
-  const inputPw = prompt("관리자 비밀번호를 입력하세요.");
+  const inputPw = prompt("비밀번호를 입력하세요.");
   if (inputPw === null) return false;
 
   try {
