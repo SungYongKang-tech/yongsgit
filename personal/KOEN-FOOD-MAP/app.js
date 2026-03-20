@@ -169,13 +169,42 @@ function openModal(id) {
   modal.classList.remove("hidden");
 }
 
+function buildMapQuery(item) {
+  const name = String(item?.name || "").trim();
+  const mapQuery = String(item?.mapQuery || "").trim();
+  const shortAddr = String(item?.addressShort || "").trim();
+  const fullAddr = String(item?.address || "").trim();
+
+  // 1. 관리자에서 직접 입력한 지도 검색어 우선
+  if (mapQuery) return mapQuery;
+
+  // 2. 가게명 + 짧은 주소
+  if (name && shortAddr) return `${name} ${shortAddr}`;
+
+  // 3. 가게명 + 전체 주소
+  if (name && fullAddr) return `${name} ${fullAddr}`;
+
+  // 4. 가게명만
+  if (name) return name;
+
+  // 5. 마지막 fallback
+  if (shortAddr) return shortAddr;
+  if (fullAddr) return fullAddr;
+
+  return "";
+}
+
 function openMap(item) {
-  const query =
-    item.mapQuery || `${item.address || ""} ${item.name || ""}`.trim();
+  const query = buildMapQuery(item);
 
-  if (!query) return;
+  if (!query) {
+    alert("지도 검색어가 없습니다.");
+    return;
+  }
 
-  const url = `https://map.naver.com/v5/search/${encodeURIComponent(query)}`;
+  const encoded = encodeURIComponent(query);
+  const url = `https://map.naver.com/v5/search/${encoded}`;
+
   window.open(url, "_blank");
 }
 
