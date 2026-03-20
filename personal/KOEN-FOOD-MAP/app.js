@@ -504,19 +504,23 @@ function renderEditTagPicker(selectedTags = []) {
         <button
           type="button"
           class="tag-chip ${active ? "active" : ""}"
-          data-tag="${escapeHtml(tag)}"
+          data-tag="${tag}"
         >
-          #${escapeHtml(tag)}
+          ${tag}
         </button>
       `;
     })
     .join("");
 
-  editTagPicker.querySelectorAll(".tag-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
+  const buttons = editTagPicker.querySelectorAll(".tag-chip");
+
+  buttons.forEach((btn) => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       btn.classList.toggle("active");
       syncHiddenEditTags();
-    });
+    };
   });
 
   syncHiddenEditTags();
