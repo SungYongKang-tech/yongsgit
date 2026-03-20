@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>건배사 추천</title>
+
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --card:#ffffff;
+      --text:#111827;
+      --muted:#6b7280;
+      --line:#e5e7eb;
+      --accent:#2563eb;
+      --accent-soft:#dbeafe;
+      --shadow:0 10px 30px rgba(0,0,0,.08);
+      --radius:20px;
+    }
+
+    *{box-sizing:border-box}
+
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+      color:var(--text);
+      background:linear-gradient(180deg,#f7fbff 0%, var(--bg) 100%);
+    }
+
+    .wrap{
+      max-width:900px;
+      margin:0 auto;
+      padding:18px 14px 30px;
+    }
+
+    .hero{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:24px;
+      box-shadow:var(--shadow);
+      padding:18px;
+      margin-bottom:14px;
+    }
+
+    h1{
+      margin:0;
+      font-size:28px;
+      line-height:1.2;
+    }
+
+    .sub{
+      margin-top:8px;
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.5;
+    }
+
+    .toolbar{
+      display:grid;
+      gap:10px;
+      margin-top:14px;
+    }
+
+    .search{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px 16px;
+      font-size:16px;
+      background:#fff;
+    }
+
+    .top-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    button{
+      border:none;
+      cursor:pointer;
+      border-radius:14px;
+      padding:12px 14px;
+      font-size:14px;
+      font-weight:700;
+    }
+
+    .btn{
+      background:#fff;
+      border:1px solid var(--line);
+      color:var(--text);
+    }
+
+    .btn.primary{
+      background:var(--accent);
+      color:#fff;
+    }
+
+    .filters{
+      display:flex;
+      gap:8px;
+      overflow:auto;
+      padding-bottom:2px;
+      -ms-overflow-style:none;
+      scrollbar-width:none;
+    }
+
+    .filters::-webkit-scrollbar{
+      display:none;
+    }
+
+    .chip{
+      white-space:nowrap;
+      background:#fff;
+      border:1px solid var(--line);
+      color:#374151;
+    }
+
+    .chip.active{
+      background:var(--accent-soft);
+      color:#1d4ed8;
+      border-color:#bfdbfe;
+    }
+
+    .result{
+      color:var(--muted);
+      font-size:14px;
+      margin:12px 2px 8px;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:12px;
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:20px;
+      box-shadow:var(--shadow);
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-height:170px;
+      cursor:pointer;
+      transition:transform .15s ease, box-shadow .15s ease;
+    }
+
+    .card:hover{
+      transform:translateY(-2px);
+      box-shadow:0 14px 34px rgba(0,0,0,.10);
+    }
+
+    .word{
+      font-size:28px;
+      font-weight:900;
+      letter-spacing:-0.03em;
+    }
+
+    .phrase{
+      font-size:16px;
+      line-height:1.5;
+      word-break:keep-all;
+      flex:1;
+    }
+
+    .meta{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+
+    .tag{
+      font-size:12px;
+      color:#4b5563;
+      background:#f3f4f6;
+      padding:6px 9px;
+      border-radius:999px;
+    }
+
+    .empty{
+      background:#fff;
+      border:1px dashed #cbd5e1;
+      border-radius:18px;
+      padding:30px 20px;
+      text-align:center;
+      color:var(--muted);
+    }
+
+    /* 큰글씨 보기 */
+    .viewer{
+      position:fixed;
+      inset:0;
+      background:#0f172a;
+      color:#fff;
+      display:none;
+      z-index:999;
+    }
+
+    .viewer.show{
+      display:flex;
+    }
+
+    .viewer-inner{
+      width:100%;
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      text-align:center;
+      padding:20px;
+      gap:18px;
+    }
+
+    .viewer-word{
+      font-size:clamp(52px, 16vw, 120px);
+      font-weight:900;
+      line-height:1.1;
+      letter-spacing:-0.04em;
+      word-break:keep-all;
+    }
+
+    .viewer-phrase{
+      font-size:clamp(26px, 7vw, 52px);
+      line-height:1.35;
+      max-width:900px;
+      word-break:keep-all;
+    }
+
+    .viewer-actions{
+      position:absolute;
+      top:14px;
+      right:14px;
+      display:flex;
+      gap:8px;
+    }
+
+    .viewer-btn{
+      background:rgba(255,255,255,.12);
+      color:#fff;
+      border:1px solid rgba(255,255,255,.16);
+      backdrop-filter: blur(8px);
+    }
+
+    .footer-note{
+      margin-top:16px;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.5;
+      text-align:center;
+    }
+
+    @media (max-width:700px){
+      .grid{
+        grid-template-columns:1fr;
+      }
+
+      h1{
+        font-size:24px;
+      }
+
+      .word{
+        font-size:30px;
+      }
+
+      .phrase{
+        font-size:17px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>🍻 건배사 추천</h1>
+      <div class="sub">
+        원하는 건배사를 고르고, 누르면 큰 글씨로 바로 볼 수 있습니다.
+      </div>
+
+      <div class="toolbar">
+        <input id="searchInput" class="search" type="text" placeholder="건배사, 뜻, 태그 검색" />
+
+        <div class="top-actions">
+          <button id="randomBtn" class="btn primary" type="button">랜덤 추천</button>
+          <button id="resetBtn" class="btn" type="button">전체 보기</button>
+        </div>
+
+        <div id="filterBar" class="filters"></div>
+      </div>
+    </section>
+
+    <div id="resultText" class="result">불러오는 중...</div>
+    <section id="cardGrid" class="grid"></section>
+
+    <div class="footer-note">
+      데이터 파일: <b>data/cheers.json</b>
+    </div>
+  </div>
+
+  <!-- 큰 글씨 보기 -->
+  <div id="viewer" class="viewer" aria-hidden="true">
+    <div class="viewer-actions">
+      <button id="copyBtn" class="viewer-btn" type="button">복사</button>
+      <button id="closeViewerBtn" class="viewer-btn" type="button">닫기</button>
+    </div>
+
+    <div class="viewer-inner">
+      <div id="viewerWord" class="viewer-word"></div>
+      <div id="viewerPhrase" class="viewer-phrase"></div>
+    </div>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('searchInput');
+    const filterBar = document.getElementById('filterBar');
+    const cardGrid = document.getElementById('cardGrid');
+    const resultText = document.getElementById('resultText');
+    const randomBtn = document.getElementById('randomBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const viewer = document.getElementById('viewer');
+    const viewerWord = document.getElementById('viewerWord');
+    const viewerPhrase = document.getElementById('viewerPhrase');
+    const closeViewerBtn = document.getElementById('closeViewerBtn');
+    const copyBtn = document.getElementById('copyBtn');
+
+    let allCheers = [];
+    let currentCategory = '전체';
+    let currentItem = null;
+
+    async function loadCheers() {
+      try {
+        const res = await fetch('./data/cheers.json');
+        allCheers = await res.json();
+        renderFilters();
+        renderCards();
+      } catch (err) {
+        console.error(err);
+        resultText.textContent = '데이터를 불러오지 못했습니다.';
+        cardGrid.innerHTML = '<div class="empty">data/cheers.json 파일을 확인해주세요.</div>';
+      }
+    }
+
+    function getCategories() {
+      const categories = [...new Set(allCheers.map(item => item.category).filter(Boolean))];
+      return ['전체', ...categories];
+    }
+
+    function renderFilters() {
+      filterBar.innerHTML = '';
+
+      getCategories().forEach(category => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'chip' + (currentCategory === category ? ' active' : '');
+        btn.textContent = category;
+
+        btn.addEventListener('click', () => {
+          currentCategory = category;
+          renderFilters();
+          renderCards();
+        });
+
+        filterBar.appendChild(btn);
+      });
+    }
+
+    function getFilteredData() {
+      const keyword = searchInput.value.trim().toLowerCase();
+
+      return allCheers.filter(item => {
+        if (item.status && item.status !== 'approved') return false;
+
+        const inCategory = currentCategory === '전체' || item.category === currentCategory;
+
+        const haystack = [
+          item.word,
+          item.phrase,
+          item.category,
+          ...(item.tags || [])
+        ].join(' ').toLowerCase();
+
+        const inSearch = !keyword || haystack.includes(keyword);
+        return inCategory && inSearch;
+      });
+    }
+
+    function renderCards() {
+      const list = getFilteredData();
+      resultText.textContent = `총 ${list.length}개 표시`;
+
+      if (!list.length) {
+        cardGrid.innerHTML = '<div class="empty">조건에 맞는 건배사가 없습니다.</div>';
+        return;
+      }
+
+      cardGrid.innerHTML = list.map(item => `
+        <article class="card" data-id="${item.id}">
+          <div class="word">${escapeHtml(item.word)}</div>
+          <div class="phrase">${escapeHtml(item.phrase)}</div>
+          <div class="meta">
+            <span class="tag">${escapeHtml(item.category || '기타')}</span>
+            ${(item.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
+          </div>
+        </article>
+      `).join('');
+
+      cardGrid.querySelectorAll('.card').forEach(card => {
+        card.addEventListener('click', () => {
+          const id = Number(card.dataset.id);
+          const item = allCheers.find(x => x.id === id);
+          openViewer(item);
+        });
+      });
+    }
+
+    function openViewer(item) {
+      if (!item) return;
+      currentItem = item;
+      viewerWord.textContent = item.word;
+      viewerPhrase.textContent = item.phrase;
+      viewer.classList.add('show');
+      viewer.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeViewer() {
+      viewer.classList.remove('show');
+      viewer.setAttribute('aria-hidden', 'true');
+    }
+
+    function escapeHtml(value = '') {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    searchInput.addEventListener('input', renderCards);
+
+    randomBtn.addEventListener('click', () => {
+      const list = getFilteredData();
+      if (!list.length) return;
+      const item = list[Math.floor(Math.random() * list.length)];
+      openViewer(item);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      currentCategory = '전체';
+      renderFilters();
+      renderCards();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    closeViewerBtn.addEventListener('click', closeViewer);
+
+    viewer.addEventListener('click', (e) => {
+      if (e.target === viewer) closeViewer();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeViewer();
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      if (!currentItem) return;
+
+      const text = `${currentItem.word}\n${currentItem.phrase}`;
+
+      try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = '복사됨';
+        setTimeout(() => {
+          copyBtn.textContent = '복사';
+        }, 1200);
+      } catch {
+        alert('복사에 실패했습니다.');
+      }
+    });
+
+    loadCheers();
+  </script>
+</body>
+</html>
