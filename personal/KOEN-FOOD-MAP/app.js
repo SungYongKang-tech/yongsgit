@@ -5,11 +5,13 @@ let ratingsByRestaurant = {};
 let selectedCategory = "전체";
 let selectedTag = "전체";
 let currentModalRestaurantId = null;
+let onlyMyRated = false;
 
 const categoryRow = document.getElementById("categoryRow");
 const tagRow = document.getElementById("tagRow");
 const cardGrid = document.getElementById("cardGrid");
 const searchInput = document.getElementById("searchInput");
+const myRatedBtn = document.getElementById("myRatedBtn");
 
 const modal = document.getElementById("modal");
 const closeModalBtn = document.getElementById("closeModal");
@@ -79,7 +81,7 @@ function ensureModalRatingUi() {
   section.innerHTML = `
     <h4>내 별점(실제 이용자만 등록 가능)</h4>
     <div id="modalUserRatingStars" class="rating-stars"></div>
-    <div id="modalUserRatingText" class="rating-help-text">별점을 선택해주세요.</div>
+    <div id="modalUserRatingText" class="rating-help-text">아직 선택한 별점이 없습니다.</div>
     <button type="button" id="modalUserRatingDeleteBtn" class="rating-delete-btn">내 별점 삭제</button>
   `;
 
@@ -126,6 +128,10 @@ function getMyRating(restaurantId) {
   if (typeof mine === "number") return mine;
   if (mine && typeof mine.score === "number") return mine.score;
   return 0;
+}
+
+function hasMyRating(restaurantId) {
+  return getMyRating(restaurantId) > 0;
 }
 
 function getDisplayRating(restaurant) {
@@ -218,6 +224,13 @@ function renderTags() {
   });
 }
 
+function renderMyRatedButton() {
+  if (!myRatedBtn) return;
+
+  myRatedBtn.classList.toggle("active", onlyMyRated);
+  myRatedBtn.textContent = onlyMyRated ? "전체 맛집 보기" : "내가 평가한 맛집";
+}
+
 function renderCards() {
   const keyword = (searchInput.value || "").trim().toLowerCase();
 
@@ -249,14 +262,16 @@ function renderCards() {
       menuTypeText.includes(keyword) ||
       tagText.includes(keyword);
 
-    return matchCategory && matchTag && matchSearch;
+    const matchMyRated = !onlyMyRated || hasMyRating(r.id);
+
+    return matchCategory && matchTag && matchSearch && matchMyRated;
   });
 
   if (filtered.length === 0) {
     cardGrid.innerHTML = `
       <div class="card">
-        <h3>검색 결과가 없습니다</h3>
-        <div>검색어 또는 필터를 바꿔서 다시 확인해보세요.</div>
+        <h3>표시할 맛집이 없습니다</h3>
+        <div>검색어, 필터, 또는 '내가 평가한 맛집' 조건을 다시 확인해보세요.</div>
       </div>
     `;
     return;
@@ -265,11 +280,13 @@ function renderCards() {
   cardGrid.innerHTML = filtered
     .map((r) => {
       const ratingInfo = getDisplayRating(r);
+      const myRating = getMyRating(r.id);
 
       return `
         <div class="card" data-id="${r.id}">
           <h3>${r.name || ""}</h3>
           <div>${ratingInfo.label}</div>
+          ${myRating > 0 ? `<div>내 별점: ${myRating}점</div>` : ""}
           <div>${r.category || ""} / ${r.subCategory || ""}</div>
           <div>${Array.isArray(r.mainMenus) ? r.mainMenus.join(", ") : ""}</div>
           <div>${r.addressShort || r.address || ""}</div>
@@ -316,10 +333,10 @@ function renderModalRatingUi(restaurantId) {
   });
 
   if (myRating > 0) {
-    modalUserRatingText.textContent = `내가 준 별점: ${myRating.toFixed(1)}점`;
+    modalUserRatingText.textContent = `선택한 별점: ${myRating}점`;
     modalUserRatingDeleteBtn.style.display = "inline-block";
   } else {
-    modalUserRatingText.textContent = "별점을 선택해주세요.";
+    modalUserRatingText.textContent = "아직 선택한 별점이 없습니다.";
     modalUserRatingDeleteBtn.style.display = "inline-block";
   }
 
@@ -388,6 +405,7 @@ function closeModal() {
 function renderAll() {
   renderCategories();
   renderTags();
+  renderMyRatedButton();
   renderCards();
 
   if (currentModalRestaurantId) {
@@ -404,6 +422,14 @@ function renderAll() {
    이벤트
 ========================= */
 searchInput.addEventListener("input", renderCards);
+
+if (myRatedBtn) {
+  myRatedBtn.addEventListener("click", () => {
+    onlyMyRated = !onlyMyRated;
+    renderMyRatedButton();
+    renderCards();
+  });
+}
 
 closeModalBtn.addEventListener("click", closeModal);
 
@@ -438,3 +464,4 @@ onValue(ref(db, "restaurantRatings"), (snapshot) => {
    초기
 ========================= */
 ensureModalRatingUi();
+renderMyRatedButton();
