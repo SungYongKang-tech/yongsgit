@@ -170,28 +170,7 @@ function openModal(id) {
 }
 
 function buildMapQuery(item) {
-  const name = String(item?.name || "").trim();
-  const mapQuery = String(item?.mapQuery || "").trim();
-  const shortAddr = String(item?.addressShort || "").trim();
-  const fullAddr = String(item?.address || "").trim();
-
-  // 1. 관리자에서 직접 입력한 지도 검색어 우선
-  if (mapQuery) return mapQuery;
-
-  // 2. 가게명 + 짧은 주소
-  if (name && shortAddr) return `${name} ${shortAddr}`;
-
-  // 3. 가게명 + 전체 주소
-  if (name && fullAddr) return `${name} ${fullAddr}`;
-
-  // 4. 가게명만
-  if (name) return name;
-
-  // 5. 마지막 fallback
-  if (shortAddr) return shortAddr;
-  if (fullAddr) return fullAddr;
-
-  return "";
+  return String(item?.name || "").trim();
 }
 
 function openMap(item) {
