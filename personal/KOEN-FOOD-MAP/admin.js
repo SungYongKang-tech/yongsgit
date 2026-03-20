@@ -5,6 +5,38 @@ const LOGIN_KEY = "koen_food_admin_login";
 
 let restaurants = [];
 let currentId = null;
+let selectedTags = [];
+
+// 기본 선택값
+let categoryOptions = [
+  "고기/구이",
+  "한식/식사",
+  "해산물/회",
+  "면/국수",
+  "양식",
+  "일식",
+  "중식/아시아",
+  "술집/다찌"
+];
+
+let subCategoryMap = {
+  "고기/구이": ["소고기", "돼지고기", "닭", "오리", "닭/오리", "양/특수육"],
+  "한식/식사": ["한정식", "백반/정식", "찌개/탕", "해장", "두부/순두부", "보리밥/청국장"],
+  "해산물/회": ["횟집", "물회", "복어", "장어", "생선구이", "어탕/추어탕", "해산물요리"],
+  "면/국수": ["냉면", "국수/칼국수"],
+  "양식": ["스테이크", "파스타", "피자", "브런치", "돈가스", "파스타/피자", "파스타/스테이크"],
+  "일식": ["초밥", "라멘", "덮밥", "돈카츠", "참치/사시미", "코스요리", "이자카야", "해산물코스"],
+  "중식/아시아": ["중식", "짬뽕", "중식코스", "중식요리", "베트남"],
+  "술집/다찌": ["동동주", "다찌"]
+};
+
+let tagOptions = [
+  "점심", "저녁", "회식", "가족식사", "데이트", "혼밥", "해장",
+  "술한잔", "가성비", "고급", "유명맛집", "진주대표",
+  "부모님추천", "룸있음", "단체가능", "주차편함"
+];
+
+const ratingOptions = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
 const loginSection = document.getElementById("loginSection");
 const adminSection = document.getElementById("adminSection");
@@ -32,6 +64,20 @@ const fAddress = document.getElementById("fAddress");
 const fAddressShort = document.getElementById("fAddressShort");
 const fMapQuery = document.getElementById("fMapQuery");
 const fDescription = document.getElementById("fDescription");
+
+const categorySelectRow = document.getElementById("categorySelectRow");
+const subCategorySelectRow = document.getElementById("subCategorySelectRow");
+const tagSelectRow = document.getElementById("tagSelectRow");
+const ratingSelectRow = document.getElementById("ratingSelectRow");
+const selectedTagsPreview = document.getElementById("selectedTagsPreview");
+
+const fCategoryCustom = document.getElementById("fCategoryCustom");
+const fSubCategoryCustom = document.getElementById("fSubCategoryCustom");
+const fTagCustom = document.getElementById("fTagCustom");
+
+const addCategoryBtn = document.getElementById("addCategoryBtn");
+const addSubCategoryBtn = document.getElementById("addSubCategoryBtn");
+const addTagBtn = document.getElementById("addTagBtn");
 
 function showLogin() {
   loginSection.classList.remove("hidden");
@@ -63,8 +109,89 @@ function nextId() {
   return Math.max(...restaurants.map((r) => Number(r.id) || 0)) + 1;
 }
 
+function ensureOption(list, value) {
+  const v = String(value || "").trim();
+  if (!v) return;
+  if (!list.includes(v)) list.push(v);
+}
+
+function ensureSubCategory(category, subCategory) {
+  const c = String(category || "").trim();
+  const s = String(subCategory || "").trim();
+  if (!c || !s) return;
+  if (!subCategoryMap[c]) subCategoryMap[c] = [];
+  if (!subCategoryMap[c].includes(s)) subCategoryMap[c].push(s);
+}
+
+function renderChoiceButtons(target, items, selectedValue, onClick, multi = false, selectedArray = []) {
+  target.innerHTML = items.map((item) => {
+    const active = multi
+      ? selectedArray.includes(item)
+      : item === selectedValue;
+    return `<button type="button" class="choice-btn ${active ? "active" : ""}" data-value="${item}">${item}</button>`;
+  }).join("");
+
+  target.querySelectorAll(".choice-btn").forEach((btn) => {
+    btn.addEventListener("click", () => onClick(btn.dataset.value));
+  });
+}
+
+function renderCategoryOptions() {
+  renderChoiceButtons(categorySelectRow, categoryOptions, fCategory.value, (value) => {
+    fCategory.value = value;
+    if (!subCategoryMap[value]) subCategoryMap[value] = [];
+    if (!subCategoryMap[value].includes(fSubCategory.value)) {
+      fSubCategory.value = "";
+    }
+    renderSubCategoryOptions();
+  });
+}
+
+function renderSubCategoryOptions() {
+  const category = fCategory.value;
+  const items = category ? (subCategoryMap[category] || []) : [];
+  renderChoiceButtons(subCategorySelectRow, items, fSubCategory.value, (value) => {
+    fSubCategory.value = value;
+    renderSubCategoryOptions();
+  });
+}
+
+function renderTagOptions() {
+  renderChoiceButtons(
+    tagSelectRow,
+    tagOptions,
+    "",
+    (value) => {
+      if (selectedTags.includes(value)) {
+        selectedTags = selectedTags.filter((t) => t !== value);
+      } else {
+        selectedTags.push(value);
+      }
+      fTags.value = selectedTags.join(", ");
+      renderTagOptions();
+      renderSelectedTagsPreview();
+    },
+    true,
+    selectedTags
+  );
+}
+
+function renderSelectedTagsPreview() {
+  selectedTagsPreview.innerHTML = selectedTags.length
+    ? selectedTags.map((tag) => `<span class="selected-chip">#${tag}</span>`).join("")
+    : `<span class="selected-empty">선택된 태그 없음</span>`;
+}
+
+function renderRatingOptions() {
+  renderChoiceButtons(ratingSelectRow, ratingOptions.map(String), String(fBaseRating.value || ""), (value) => {
+    fBaseRating.value = value;
+    renderRatingOptions();
+  });
+}
+
 function resetForm() {
   currentId = null;
+  selectedTags = [];
   fId.value = nextId();
   fName.value = "";
   fCategory.value = "";
@@ -77,6 +204,14 @@ function resetForm() {
   fAddressShort.value = "";
   fMapQuery.value = "";
   fDescription.value = "";
+  fCategoryCustom.value = "";
+  fSubCategoryCustom.value = "";
+  fTagCustom.value = "";
+  renderCategoryOptions();
+  renderSubCategoryOptions();
+  renderTagOptions();
+  renderSelectedTagsPreview();
+  renderRatingOptions();
   saveMsg.textContent = "새 식당 입력 상태입니다.";
 }
 
@@ -86,17 +221,26 @@ function fillForm(item) {
   fName.value = item.name ?? "";
   fCategory.value = item.category ?? "";
   fSubCategory.value = item.subCategory ?? "";
-  fTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
-  fBaseRating.value =
-    typeof item.baseRating === "number" ? item.baseRating : "";
+  selectedTags = Array.isArray(item.tags) ? [...item.tags] : [];
+  fTags.value = selectedTags.join(", ");
+  fBaseRating.value = typeof item.baseRating === "number" ? item.baseRating : "";
   fMenuType.value = item.menuType ?? "";
-  fMainMenus.value = Array.isArray(item.mainMenus)
-    ? item.mainMenus.join(", ")
-    : "";
+  fMainMenus.value = Array.isArray(item.mainMenus) ? item.mainMenus.join(", ") : "";
   fAddress.value = item.address ?? "";
   fAddressShort.value = item.addressShort ?? "";
   fMapQuery.value = item.mapQuery ?? "";
   fDescription.value = item.description ?? "";
+
+  ensureOption(categoryOptions, fCategory.value);
+  ensureSubCategory(fCategory.value, fSubCategory.value);
+  selectedTags.forEach((tag) => ensureOption(tagOptions, tag));
+
+  renderCategoryOptions();
+  renderSubCategoryOptions();
+  renderTagOptions();
+  renderSelectedTagsPreview();
+  renderRatingOptions();
+
   saveMsg.textContent = `선택된 식당: ${item.name}`;
 }
 
@@ -108,17 +252,15 @@ function renderList() {
     return !keyword || text.includes(keyword);
   });
 
-  restaurantList.innerHTML = filtered
-    .map((r) => {
-      const active = Number(r.id) === Number(currentId) ? "active" : "";
-      return `
-        <button type="button" class="admin-list-item ${active}" data-id="${r.id}">
-          <div class="admin-list-name">${r.name || ""}</div>
-          <div class="admin-list-meta">${r.category || ""} / ${r.subCategory || ""}</div>
-        </button>
-      `;
-    })
-    .join("");
+  restaurantList.innerHTML = filtered.map((r) => {
+    const active = Number(r.id) === Number(currentId) ? "active" : "";
+    return `
+      <button type="button" class="admin-list-item ${active}" data-id="${r.id}">
+        <div class="admin-list-name">${r.name || ""}</div>
+        <div class="admin-list-meta">${r.category || ""} / ${r.subCategory || ""}</div>
+      </button>
+    `;
+  }).join("");
 
   restaurantList.querySelectorAll(".admin-list-item").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -133,14 +275,12 @@ function renderList() {
 
 function getFormData() {
   const id = Number(fId.value) || nextId();
-  const name = fName.value.trim();
-
   return {
     id,
-    name,
+    name: fName.value.trim(),
     category: fCategory.value.trim(),
     subCategory: fSubCategory.value.trim(),
-    tags: parseCommaText(fTags.value),
+    tags: [...selectedTags],
     baseRating: Number(fBaseRating.value) || 0,
     userRatingAvg: 0,
     userRatingCount: 0,
@@ -162,27 +302,27 @@ async function saveRestaurant() {
     saveMsg.textContent = "식당명을 입력해주세요.";
     return;
   }
-
   if (!item.category) {
-    saveMsg.textContent = "대분류를 입력해주세요.";
+    saveMsg.textContent = "대분류를 선택하거나 입력해주세요.";
     return;
   }
-
   if (!item.subCategory) {
-    saveMsg.textContent = "중분류를 입력해주세요.";
+    saveMsg.textContent = "중분류를 선택하거나 입력해주세요.";
     return;
   }
 
   try {
     const oldItem = restaurants.find((r) => Number(r.id) === Number(item.id));
-
-    // 기존 사용자 데이터 유지
     if (oldItem) {
       item.userRatingAvg = oldItem.userRatingAvg ?? 0;
       item.userRatingCount = oldItem.userRatingCount ?? 0;
       item.photoUrls = Array.isArray(oldItem.photoUrls) ? oldItem.photoUrls : [];
       item.reviews = Array.isArray(oldItem.reviews) ? oldItem.reviews : [];
     }
+
+    ensureOption(categoryOptions, item.category);
+    ensureSubCategory(item.category, item.subCategory);
+    item.tags.forEach((tag) => ensureOption(tagOptions, tag));
 
     await set(ref(db, `restaurants/${item.id}`), item);
     currentId = item.id;
@@ -249,6 +389,42 @@ function bindEvents() {
   adminSearch.addEventListener("input", renderList);
   saveBtn.addEventListener("click", saveRestaurant);
   deleteBtn.addEventListener("click", deleteRestaurant);
+
+  addCategoryBtn.addEventListener("click", () => {
+    const value = fCategoryCustom.value.trim();
+    if (!value) return;
+    ensureOption(categoryOptions, value);
+    if (!subCategoryMap[value]) subCategoryMap[value] = [];
+    fCategory.value = value;
+    fCategoryCustom.value = "";
+    renderCategoryOptions();
+    renderSubCategoryOptions();
+  });
+
+  addSubCategoryBtn.addEventListener("click", () => {
+    const value = fSubCategoryCustom.value.trim();
+    const category = fCategory.value.trim();
+    if (!category) {
+      saveMsg.textContent = "먼저 대분류를 선택해주세요.";
+      return;
+    }
+    if (!value) return;
+    ensureSubCategory(category, value);
+    fSubCategory.value = value;
+    fSubCategoryCustom.value = "";
+    renderSubCategoryOptions();
+  });
+
+  addTagBtn.addEventListener("click", () => {
+    const value = fTagCustom.value.trim();
+    if (!value) return;
+    ensureOption(tagOptions, value);
+    if (!selectedTags.includes(value)) selectedTags.push(value);
+    fTagCustom.value = "";
+    fTags.value = selectedTags.join(", ");
+    renderTagOptions();
+    renderSelectedTagsPreview();
+  });
 }
 
 function initData() {
@@ -276,6 +452,12 @@ function init() {
   } else {
     showLogin();
   }
+
+  renderCategoryOptions();
+  renderSubCategoryOptions();
+  renderTagOptions();
+  renderSelectedTagsPreview();
+  renderRatingOptions();
 
   initData();
 }
