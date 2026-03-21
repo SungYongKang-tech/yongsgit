@@ -4,7 +4,7 @@ let restaurants = [];
 let ratingsByRestaurant = {};
 let reviewsByRestaurant = {};
 let selectedCategory = "전체";
-let selectedTag = "전체";
+let selectedTags = [];
 let currentModalRestaurantId = null;
 let onlyMyRated = false;
 let onlyFavorites = false;
@@ -460,7 +460,11 @@ function getAllTags() {
     .map((tag) => normalizeTagName(tag))
     .filter(Boolean);
 
-  return [...new Set(restaurantTags)];
+  const baseTags = BASE_TAGS
+    .map((tag) => normalizeTagName(tag))
+    .filter((tag) => tag && tag !== "전체");
+
+  return [...new Set([...baseTags, ...restaurantTags])];
 }
 
 /* =========================
@@ -532,7 +536,7 @@ function addCustomEditTag() {
   const allTags = getAllTags();
   const currentSelected = getSelectedEditTags();
 
-  if (!allTags.includes(value)) {
+  if (!allTags.includes(value) && !BASE_TAGS.includes(value)) {
     BASE_TAGS.push(value);
   }
 
@@ -701,7 +705,7 @@ async function saveRestaurantInfo() {
 
     modalDesc.textContent = description || target?.menuType || "설명이 아직 없습니다.";
 
-    renderCards();
+    renderAll();
 
     alert("식당 정보가 수정되었습니다.");
     setModalMode("view");
@@ -780,8 +784,11 @@ function renderCategories() {
 function renderTags() {
   const tags = getAllTags();
 
+  // 현재 선택된 태그 중, 이제 존재하지 않는 태그는 제거
+  selectedTags = selectedTags.filter((tag) => tags.includes(tag));
+
   if (!tags.length) {
-    selectedTag = "전체";
+    selectedTags = [];
     tagRow.innerHTML = "";
     tagRow.style.display = "none";
     return;
@@ -791,19 +798,29 @@ function renderTags() {
 
   const displayTags = ["전체", ...tags];
 
-  if (!displayTags.includes(selectedTag)) {
-    selectedTag = "전체";
-  }
-
   tagRow.innerHTML = displayTags
-    .map(
-      (t) => `<button class="${t === selectedTag ? "active" : ""}" data="${t}">${t}</button>`
-    )
+    .map((t) => {
+      const isActive =
+        t === "전체" ? selectedTags.length === 0 : selectedTags.includes(t);
+
+      return `<button class="${isActive ? "active" : ""}" data="${t}">${t}</button>`;
+    })
     .join("");
 
   tagRow.querySelectorAll("button").forEach((btn) => {
     btn.onclick = () => {
-      selectedTag = btn.getAttribute("data");
+      const tag = btn.getAttribute("data");
+
+      if (tag === "전체") {
+        selectedTags = [];
+      } else {
+        if (selectedTags.includes(tag)) {
+          selectedTags = selectedTags.filter((t) => t !== tag);
+        } else {
+          selectedTags = [...selectedTags, tag];
+        }
+      }
+
       renderAll();
     };
   });
@@ -828,9 +845,13 @@ function renderCards() {
     const matchCategory =
       selectedCategory === "전체" || r.category === selectedCategory;
 
+    const restaurantTags = Array.isArray(r.tags)
+      ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
+      : [];
+
     const matchTag =
-      selectedTag === "전체" ||
-      (Array.isArray(r.tags) && r.tags.includes(selectedTag));
+      selectedTags.length === 0 ||
+      selectedTags.some((tag) => restaurantTags.includes(tag));
 
     const nameText = (r.name || "").toLowerCase();
     const menuText = Array.isArray(r.mainMenus)
@@ -840,7 +861,7 @@ function renderCards() {
     const addressShortText = (r.addressShort || "").toLowerCase();
     const descText = (r.description || "").toLowerCase();
     const menuTypeText = (r.menuType || "").toLowerCase();
-    const tagText = Array.isArray(r.tags) ? r.tags.join(" ").toLowerCase() : "";
+    const tagText = restaurantTags.join(" ").toLowerCase();
 
     const matchSearch =
       !keyword ||
