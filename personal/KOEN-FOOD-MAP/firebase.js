@@ -7,7 +7,8 @@ import {
   set,
   update,
   remove,
-  get
+  get,
+  push
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
 const firebaseConfig = {
@@ -23,4 +24,4 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-export { db, ref, onValue, set, update, remove, get };
+export { db, ref, onValue, set, update, remove, get, push };
