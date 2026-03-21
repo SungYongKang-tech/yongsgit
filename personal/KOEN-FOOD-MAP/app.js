@@ -455,15 +455,12 @@ function normalizeTagName(tag) {
 }
 
 function getAllTags() {
-  const restaurantTags = restaurants.flatMap((r) =>
-    Array.isArray(r.tags) ? r.tags : []
-  );
-
-  const merged = [...BASE_TAGS, ...restaurantTags]
-    .map((tag) => String(tag || "").trim())
+  const restaurantTags = restaurants
+    .flatMap((r) => Array.isArray(r.tags) ? r.tags : [])
+    .map((tag) => normalizeTagName(tag))
     .filter(Boolean);
 
-  return [...new Set(merged)];
+  return [...new Set(restaurantTags)];
 }
 
 /* =========================
@@ -783,11 +780,22 @@ function renderCategories() {
 function renderTags() {
   const tags = getAllTags();
 
-  if (!tags.includes(selectedTag)) {
+  if (!tags.length) {
+    selectedTag = "전체";
+    tagRow.innerHTML = "";
+    tagRow.style.display = "none";
+    return;
+  }
+
+  tagRow.style.display = "";
+
+  const displayTags = ["전체", ...tags];
+
+  if (!displayTags.includes(selectedTag)) {
     selectedTag = "전체";
   }
 
-  tagRow.innerHTML = tags
+  tagRow.innerHTML = displayTags
     .map(
       (t) => `<button class="${t === selectedTag ? "active" : ""}" data="${t}">${t}</button>`
     )
