@@ -1,4 +1,4 @@
-import { db, ref, onValue, set, remove, get, update, push, serverTimestamp } from "./firebase.js";
+import { db, ref, onValue, set, remove, get, update, push } from "./firebase.js";
 let restaurants = [];
 let ratingsByRestaurant = {};
 let reviewsByRestaurant = {};
@@ -963,12 +963,12 @@ function renderModalRatingUi(restaurantId) {
   });
 
   if (myRating > 0) {
-    modalUserRatingText.textContent = `선택한 별점: ${myRating}점`;
-    modalUserRatingDeleteBtn.style.display = "inline-block";
-  } else {
-    modalUserRatingText.textContent = "아직 선택한 별점이 없습니다.";
-    modalUserRatingDeleteBtn.style.display = "inline-block";
-  }
+  modalUserRatingText.textContent = `선택한 별점: ${myRating}점`;
+  modalUserRatingDeleteBtn.style.display = "inline-block";
+} else {
+  modalUserRatingText.textContent = "아직 선택한 별점이 없습니다.";
+  modalUserRatingDeleteBtn.style.display = "none";
+}
 
   if (count > 0) {
     modalRating.textContent = `사용자 평점 ${avg.toFixed(1)} / 5 (${count}명 참여)`;
