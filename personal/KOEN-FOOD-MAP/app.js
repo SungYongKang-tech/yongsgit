@@ -43,6 +43,8 @@ const editTagPicker = document.getElementById("editTagPicker");
 const editDesc = document.getElementById("editDesc");
 const saveRestaurantBtn = document.getElementById("saveRestaurantBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
+const editTagCustom = document.getElementById("editTagCustom");
+const addEditTagBtn = document.getElementById("addEditTagBtn");
 
 const BASE_TAGS = [
   "전체",
@@ -526,6 +528,29 @@ function renderEditTagPicker(selectedTags = []) {
   syncHiddenEditTags();
 }
 
+function addCustomEditTag() {
+  const value = normalizeTagName(String(editTagCustom?.value || "").trim());
+  if (!value) return;
+
+  const allTags = getAllTags();
+  const currentSelected = getSelectedEditTags();
+
+  if (!allTags.includes(value)) {
+    BASE_TAGS.push(value);
+  }
+
+  if (!currentSelected.includes(value)) {
+    currentSelected.push(value);
+  }
+
+  renderEditTagPicker(currentSelected);
+
+  if (editTagCustom) {
+    editTagCustom.value = "";
+    editTagCustom.focus();
+  }
+}
+
 /* =========================
    Firebase 저장
 ========================= */
@@ -601,6 +626,10 @@ function fillEditForm(restaurant) {
     : "";
 
   renderEditTagPicker(Array.isArray(restaurant.tags) ? restaurant.tags : []);
+
+  if (editTagCustom) {
+    editTagCustom.value = "";
+  }
 
   editDesc.value = restaurant.description || "";
 }
@@ -1075,6 +1104,19 @@ if (cancelEditBtn) {
     );
     if (restaurant) fillEditForm(restaurant);
     setModalMode("view");
+  });
+}
+
+if (addEditTagBtn) {
+  addEditTagBtn.addEventListener("click", addCustomEditTag);
+}
+
+if (editTagCustom) {
+  editTagCustom.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addCustomEditTag();
+    }
   });
 }
 
