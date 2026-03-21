@@ -846,12 +846,12 @@ function renderCards() {
       selectedCategory === "전체" || r.category === selectedCategory;
 
     const restaurantTags = Array.isArray(r.tags)
-      ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
-      : [];
+  ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
+  : [];
 
-    const matchTag =
-      selectedTags.length === 0 ||
-      selectedTags.some((tag) => restaurantTags.includes(tag));
+const matchTag =
+  selectedTags.length === 0 ||
+  selectedTags.every((tag) => restaurantTags.includes(tag));
 
     const nameText = (r.name || "").toLowerCase();
     const menuText = Array.isArray(r.mainMenus)
