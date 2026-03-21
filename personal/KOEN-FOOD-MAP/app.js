@@ -55,6 +55,11 @@ const requestType = document.getElementById("requestType");
 const requestWriter = document.getElementById("requestWriter");
 const requestContent = document.getElementById("requestContent");
 
+const openMyRequestBtn = document.getElementById("openMyRequestBtn");
+const myRequestModal = document.getElementById("myRequestModal");
+const closeMyRequestModalBtn = document.getElementById("closeMyRequestModalBtn");
+const myRequestList = document.getElementById("myRequestList");
+
 const BASE_TAGS = [
   "전체",
   "점심",
@@ -85,6 +90,7 @@ function getUserKey() {
 }
 
 const userKey = getUserKey();
+let editRequestsById = {};
 
 /* =========================
    찜(localStorage)
@@ -1198,6 +1204,11 @@ onValue(ref(db, "restaurantReviews"), (snapshot) => {
   renderAll();
 });
 
+onValue(ref(db, "editRequests"), (snapshot) => {
+  editRequestsById = snapshot.val() || {};
+  renderMyRequests();
+});
+
 function openRequestModal() {
   requestModal.classList.remove("hidden");
 }
@@ -1241,14 +1252,15 @@ async function submitEditRequest() {
     const newRef = push(ref(db, "editRequests"));
 
     await set(newRef, {
-      restaurantName: restaurant,
-      type,
-      writer: writer || "익명",
-      content,
-      status: "대기",
-      adminReply: "",
-      createdAt: Date.now()
-    });
+  restaurantName: restaurant,
+  type,
+  writer: writer || "익명",
+  userKey: userKey,
+  content,
+  status: "대기",
+  adminReply: "",
+  createdAt: Date.now()
+});
 
     alert("수정 요청이 등록되었습니다.");
     closeRequestModal();
@@ -1257,6 +1269,81 @@ async function submitEditRequest() {
     alert("수정 요청 등록 중 오류가 발생했습니다.");
   }
 }
+
+function formatDateTime(ts) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
+function getMyEditRequests() {
+  return Object.entries(editRequestsById || {})
+    .map(([id, item]) => ({ id, ...item }))
+    .filter((item) => item.userKey === userKey)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function renderMyRequests() {
+  if (!myRequestList) return;
+
+  const myItems = getMyEditRequests();
+
+  if (!myItems.length) {
+    myRequestList.innerHTML = `
+      <div class="my-request-empty">
+        아직 등록한 수정 요청이 없습니다.
+      </div>
+    `;
+    return;
+  }
+
+  myRequestList.innerHTML = myItems.map((item) => `
+    <div class="my-request-item">
+      <div class="my-request-head">
+        <div>
+          <strong>${escapeHtml(item.restaurantName || "-")}</strong>
+          <span class="my-request-type">${escapeHtml(item.type || "기타")}</span>
+        </div>
+        <div class="my-request-meta">${formatDateTime(item.createdAt)}</div>
+      </div>
+
+      <div class="my-request-meta">
+        작성자: ${escapeHtml(item.writer || "익명")} / 상태: ${escapeHtml(item.status || "대기")}
+      </div>
+
+      <div class="my-request-content">${escapeHtml(item.content || "")}</div>
+
+      ${
+        item.adminReply
+          ? `<div class="my-request-reply"><strong>관리자 답변</strong><br>${escapeHtml(item.adminReply)}</div>`
+          : `<div class="my-request-reply"><strong>관리자 답변</strong><br>아직 답변이 등록되지 않았습니다.</div>`
+      }
+    </div>
+  `).join("");
+}
+
+function openMyRequestModal() {
+  renderMyRequests();
+  myRequestModal?.classList.remove("hidden");
+}
+
+function closeMyRequestModal() {
+  myRequestModal?.classList.add("hidden");
+}
+
+openMyRequestBtn?.addEventListener("click", openMyRequestModal);
+closeMyRequestModalBtn?.addEventListener("click", closeMyRequestModal);
+
+myRequestModal?.addEventListener("click", (e) => {
+  if (e.target === myRequestModal) {
+    closeMyRequestModal();
+  }
+});
 
 submitRequestBtn?.addEventListener("click", submitEditRequest);
 
