@@ -460,11 +460,7 @@ function getAllTags() {
     .map((tag) => normalizeTagName(tag))
     .filter(Boolean);
 
-  const baseTags = BASE_TAGS
-    .map((tag) => normalizeTagName(tag))
-    .filter((tag) => tag && tag !== "전체");
-
-  return [...new Set([...baseTags, ...restaurantTags])];
+  return [...new Set(restaurantTags)];
 }
 
 /* =========================
@@ -912,7 +908,9 @@ const matchTag =
           <div>${r.category || ""} / ${r.subCategory || ""}</div>
           <div>${Array.isArray(r.mainMenus) ? r.mainMenus.join(", ") : ""}</div>
           <div>${r.addressShort || r.address || ""}</div>
-          <div>${Array.isArray(r.tags) ? r.tags.map((t) => "#" + t).join(" ") : ""}</div>
+          ${Array.isArray(r.tags) && r.tags.length
+  ? `<div>${r.tags.map((t) => "#" + t).join(" ")}</div>`
+  : ""}
           ${reviewPreview}
         </div>
       `;
