@@ -1,4 +1,4 @@
-import { db, ref, onValue, set, remove } from "./firebase.js";
+import { db, ref, onValue, set, remove, update } from "./firebase.js";
 
 const ADMIN_PASSWORD = "koen1234";
 const LOGIN_KEY = "koen_food_admin_login";
