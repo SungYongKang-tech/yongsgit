@@ -1,5 +1,4 @@
-import { db, ref, onValue, set, remove, get, update } from "./firebase.js";
-
+import { db, ref, onValue, set, remove, get, update, push, serverTimestamp } from "./firebase.js";
 let restaurants = [];
 let ratingsByRestaurant = {};
 let reviewsByRestaurant = {};
@@ -45,6 +44,16 @@ const saveRestaurantBtn = document.getElementById("saveRestaurantBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 const editTagCustom = document.getElementById("editTagCustom");
 const addEditTagBtn = document.getElementById("addEditTagBtn");
+
+const openRequestBtn = document.getElementById("openRequestBtn");
+const requestModal = document.getElementById("requestModal");
+const closeRequestModalBtn = document.getElementById("closeRequestModalBtn");
+const submitRequestBtn = document.getElementById("submitRequestBtn");
+
+const requestRestaurant = document.getElementById("requestRestaurant");
+const requestType = document.getElementById("requestType");
+const requestWriter = document.getElementById("requestWriter");
+const requestContent = document.getElementById("requestContent");
 
 const BASE_TAGS = [
   "전체",
@@ -1188,6 +1197,68 @@ onValue(ref(db, "restaurantReviews"), (snapshot) => {
   reviewsByRestaurant = snapshot.val() || {};
   renderAll();
 });
+
+function openRequestModal() {
+  requestModal.classList.remove("hidden");
+}
+
+function closeRequestModal() {
+  requestModal.classList.add("hidden");
+  requestRestaurant.value = "";
+  requestType.value = "정보수정";
+  requestWriter.value = "";
+  requestContent.value = "";
+}
+
+openRequestBtn?.addEventListener("click", openRequestModal);
+closeRequestModalBtn?.addEventListener("click", closeRequestModal);
+
+requestModal?.addEventListener("click", (e) => {
+  if (e.target === requestModal) {
+    closeRequestModal();
+  }
+});
+
+async function submitEditRequest() {
+  const restaurant = requestRestaurant.value.trim();
+  const type = requestType.value;
+  const writer = requestWriter.value.trim();
+  const content = requestContent.value.trim();
+
+  if (!restaurant) {
+    alert("식당명을 입력해주세요.");
+    requestRestaurant.focus();
+    return;
+  }
+
+  if (!content) {
+    alert("요청 내용을 입력해주세요.");
+    requestContent.focus();
+    return;
+  }
+
+  try {
+    const newRef = push(ref(db, "editRequests"));
+
+    await set(newRef, {
+      restaurantName: restaurant,
+      type,
+      writer: writer || "익명",
+      content,
+      status: "대기",
+      adminReply: "",
+      createdAt: Date.now()
+    });
+
+    alert("수정 요청이 등록되었습니다.");
+    closeRequestModal();
+  } catch (err) {
+    console.error(err);
+    alert("수정 요청 등록 중 오류가 발생했습니다.");
+  }
+}
+
+submitRequestBtn?.addEventListener("click", submitEditRequest);
 
 /* =========================
    초기

@@ -2,6 +2,7 @@ import { db, ref, onValue, set, remove } from "./firebase.js";
 
 const ADMIN_PASSWORD = "koen1234";
 const LOGIN_KEY = "koen_food_admin_login";
+const editRequestList = document.getElementById("editRequestList");
 
 let restaurants = [];
 let currentId = null;
@@ -442,6 +443,113 @@ function initData() {
       resetForm();
     }
   });
+}
+
+function formatDateTime(ts) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
+function renderEditRequests(data) {
+  if (!editRequestList) return;
+
+  const entries = Object.entries(data || {}).sort((a, b) => {
+    const aTime = a[1]?.createdAt || 0;
+    const bTime = b[1]?.createdAt || 0;
+    return bTime - aTime;
+  });
+
+  if (!entries.length) {
+    editRequestList.innerHTML = `<div class="empty">등록된 수정 요청이 없습니다.</div>`;
+    return;
+  }
+
+  editRequestList.innerHTML = entries.map(([id, item]) => `
+    <div class="request-item">
+      <div class="request-head">
+        <div>
+          <strong>${escapeHtml(item.restaurantName || "-")}</strong>
+          <span class="request-type">${escapeHtml(item.type || "기타")}</span>
+        </div>
+        <div class="request-meta">${formatDateTime(item.createdAt)}</div>
+      </div>
+
+      <div class="request-meta">
+        작성자: ${escapeHtml(item.writer || "익명")} / 상태: ${escapeHtml(item.status || "대기")}
+      </div>
+
+      <div class="request-content">${escapeHtml(item.content || "")}</div>
+
+      ${
+        item.adminReply
+          ? `<div class="request-answer"><strong>관리자 답변</strong><br>${escapeHtml(item.adminReply)}</div>`
+          : ""
+      }
+
+      <div class="request-actions">
+        <button type="button" class="answer-btn" data-id="${id}">답변</button>
+        <button type="button" class="delete-btn" data-id="${id}">삭제</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+onValue(ref(db, "editRequests"), (snapshot) => {
+  renderEditRequests(snapshot.val() || {});
+});
+
+
+editRequestList?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  const id = btn.dataset.id;
+  if (!id) return;
+
+  if (btn.classList.contains("answer-btn")) {
+    const reply = prompt("관리자 답변을 입력하세요.");
+    if (reply === null) return;
+
+    try {
+      await update(ref(db, `editRequests/${id}`), {
+        adminReply: reply.trim(),
+        status: reply.trim() ? "답변완료" : "대기"
+      });
+      alert("답변이 저장되었습니다.");
+    } catch (err) {
+      console.error(err);
+      alert("답변 저장 중 오류가 발생했습니다.");
+    }
+  }
+
+  if (btn.classList.contains("delete-btn")) {
+    const ok = confirm("이 요청을 삭제하시겠습니까?");
+    if (!ok) return;
+
+    try {
+      await remove(ref(db, `editRequests/${id}`));
+      alert("삭제되었습니다.");
+    } catch (err) {
+      console.error(err);
+      alert("삭제 중 오류가 발생했습니다.");
+    }
+  }
+});
+
+
+function escapeHtml(str = "") {
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function init() {
