@@ -472,6 +472,19 @@ function normalizeTagName(tag) {
   return map[t] || t;
 }
 
+function parseSubCategories(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map(v => String(v || "").trim()).filter(Boolean))];
+  }
+
+  return [...new Set(
+    String(value || "")
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean)
+  )];
+}
+
 function getAllTags() {
   const restaurantTags = restaurants
     .flatMap((r) => Array.isArray(r.tags) ? r.tags : [])
@@ -706,7 +719,9 @@ async function saveRestaurantInfo() {
     }
 
     modalName.textContent = name || "";
-    modalCategory.textContent = `${category || ""} / ${target?.subCategory || ""}`;
+    const savedSubCats = parseSubCategories(target?.subCategory || "");
+modalCategory.textContent = `${category || ""}${savedSubCats.length ? ` / ${savedSubCats.join(", ")}` : ""}`;
+
     modalAddress.textContent = address || "";
 
     modalMenus.innerHTML = Array.isArray(mainMenus)
@@ -806,14 +821,9 @@ function renderCategories() {
 }
 
 function renderSubCategories() {
-  if (!subCategoryRow) {
-    console.log("subCategoryRow 없음");
-    return;
-  }
+  if (!subCategoryRow) return;
 
   const currentCategory = String(selectedCategory || "").trim();
-  console.log("선택 카테고리:", currentCategory);
-  console.log("전체 restaurants:", restaurants);
 
   if (currentCategory === "전체") {
     subCategoryRow.innerHTML = "";
@@ -822,21 +832,16 @@ function renderSubCategories() {
     return;
   }
 
-  const matchedRestaurants = restaurants.filter((r) =>
-    String(r.category || "").trim() === currentCategory
+  const matchedRestaurants = restaurants.filter(
+    (r) => String(r.category || "").trim() === currentCategory
   );
 
   const subCategories = [
     "전체",
     ...new Set(
-      matchedRestaurants
-        .map((r) => String(r.subCategory || "").trim())
-        .filter(Boolean)
+      matchedRestaurants.flatMap((r) => parseSubCategories(r.subCategory))
     )
   ];
-
-  console.log("매칭 식당:", matchedRestaurants);
-  console.log("중분류 목록:", subCategories);
 
   if (subCategories.length <= 1) {
     subCategoryRow.innerHTML = "";
@@ -861,8 +866,6 @@ function renderSubCategories() {
       </button>
     `)
     .join("");
-
-  console.log("subCategoryRow HTML:", subCategoryRow.innerHTML);
 
   subCategoryRow.querySelectorAll(".sub-category-chip").forEach((btn) => {
     btn.onclick = () => {
@@ -936,10 +939,11 @@ function renderCards() {
   selectedCategory === "전체" ||
   String(r.category || "").trim() === String(selectedCategory || "").trim();
 
+const subCategories = parseSubCategories(r.subCategory);
+
 const matchSubCategory =
   selectedSubCategory === "전체" ||
-  String(r.subCategory || "").trim() === String(selectedSubCategory || "").trim();
-
+  subCategories.includes(String(selectedSubCategory || "").trim());
     const restaurantTags = Array.isArray(r.tags)
       ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
       : [];
@@ -1011,7 +1015,14 @@ const matchSubCategory =
           ${myRating > 0 ? `<div>내 별점: ${myRating}점</div>` : ""}
           ${favoriteMark}
           ${sortMode === "popular" ? `<div>평가 참여: ${ratingCount}명</div>` : ""}
-          <div>${r.category || ""}${r.subCategory ? ` / ${r.subCategory}` : ""}</div>
+          <div>
+  ${r.category || ""}${
+    parseSubCategories(r.subCategory).length
+      ? ` / ${parseSubCategories(r.subCategory).join(", ")}`
+      : ""
+  }
+</div>
+
           <div>${Array.isArray(r.mainMenus) ? r.mainMenus.join(", ") : ""}</div>
           <div>${r.addressShort || r.address || ""}</div>
           ${
@@ -1088,7 +1099,9 @@ function openModal(id) {
   currentModalRestaurantId = Number(id);
 
   modalName.textContent = r.name || "";
-  modalCategory.textContent = `${r.category || ""}${r.subCategory ? ` / ${r.subCategory}` : ""}`;
+  const subCats = parseSubCategories(r.subCategory);
+modalCategory.textContent = `${r.category || ""}${subCats.length ? ` / ${subCats.join(", ")}` : ""}`;
+
   modalAddress.textContent = r.address || "";
 
   modalMenus.innerHTML = Array.isArray(r.mainMenus)
@@ -1280,8 +1293,8 @@ onValue(ref(db, "restaurants"), (snapshot) => {
     ? Object.values(data).map((item) => {
         const category = String(item.category || "").trim();
         const subCategory = String(
-          item.subCategory || item.subcategory || item["sub-Categori"] || ""
-        ).trim();
+  item.subCategory || item.subcategory || item["sub-Categori"] || ""
+).trim();
 
         return {
           ...item,
