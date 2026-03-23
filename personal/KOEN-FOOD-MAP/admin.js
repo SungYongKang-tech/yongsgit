@@ -254,7 +254,10 @@ function fillForm(item) {
   fSubCategory.value = item.subCategory ?? "";
   selectedSubCategories = parseCommaText(item.subCategory);
 
-  selectedTags = Array.isArray(item.tags) ? [...item.tags] : [];
+  selectedTags = Array.isArray(item.tags)
+    ? [...item.tags]
+    : parseCommaText(item.tags);
+
   fTags.value = selectedTags.join(", ");
   fBaseRating.value = typeof item.baseRating === "number" ? item.baseRating : "";
   fMenuType.value = item.menuType ?? "";
@@ -478,6 +481,18 @@ function initData() {
     restaurants = data ? Object.values(data) : [];
     restaurants.sort((a, b) => Number(a.id) - Number(b.id));
 
+    // 기존 음식점 전체 기준으로 카테고리 / 중분류 / 태그 옵션 동기화
+    restaurants.forEach((r) => {
+      ensureOption(categoryOptions, r.category);
+      ensureSubCategory(r.category, r.subCategory);
+
+      if (Array.isArray(r.tags)) {
+        r.tags.forEach((tag) => ensureOption(tagOptions, tag));
+      } else {
+        parseCommaText(r.tags).forEach((tag) => ensureOption(tagOptions, tag));
+      }
+    });
+
     renderList();
 
     const selected = restaurants.find((r) => Number(r.id) === Number(currentId));
@@ -485,6 +500,12 @@ function initData() {
       fillForm(selected);
     } else if (!currentId) {
       resetForm();
+    } else {
+      renderCategoryOptions();
+      renderSubCategoryOptions();
+      renderTagOptions();
+      renderSelectedTagsPreview();
+      renderRatingOptions();
     }
   });
 }
