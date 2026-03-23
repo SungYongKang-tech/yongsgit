@@ -777,14 +777,18 @@ function renderSortButtons() {
 function renderCategories() {
   const categories = [
     "전체",
-    ...new Set(restaurants.map((v) => v.category).filter(Boolean))
+    ...new Set(
+      restaurants
+        .map((v) => String(v.category || "").trim())
+        .filter(Boolean)
+    )
   ];
 
   categoryRow.innerHTML = categories
     .map((c) => `
       <button
         type="button"
-        class="category-chip ${c === selectedCategory ? "active" : ""}"
+        class="category-chip ${c === String(selectedCategory || "").trim() ? "active" : ""}"
         data-category="${c}"
       >
         ${c}
@@ -794,7 +798,7 @@ function renderCategories() {
 
   categoryRow.querySelectorAll(".category-chip").forEach((btn) => {
     btn.onclick = () => {
-      selectedCategory = btn.dataset.category;
+      selectedCategory = String(btn.dataset.category || "").trim();
       selectedSubCategory = "전체";
       renderAll();
     };
@@ -802,12 +806,18 @@ function renderCategories() {
 }
 
 function renderSubCategories() {
-  if (!subCategoryRow) return;
+  if (!subCategoryRow) {
+    console.log("subCategoryRow 없음");
+    return;
+  }
 
   const currentCategory = String(selectedCategory || "").trim();
+  console.log("선택 카테고리:", currentCategory);
+  console.log("전체 restaurants:", restaurants);
 
   if (currentCategory === "전체") {
     subCategoryRow.innerHTML = "";
+    subCategoryRow.style.display = "none";
     selectedSubCategory = "전체";
     return;
   }
@@ -825,31 +835,34 @@ function renderSubCategories() {
     )
   ];
 
-  console.log("selectedCategory =", currentCategory);
-console.log("matchedRestaurants =", matchedRestaurants);
-console.log("subCategories =", subCategories);
+  console.log("매칭 식당:", matchedRestaurants);
+  console.log("중분류 목록:", subCategories);
 
   if (subCategories.length <= 1) {
     subCategoryRow.innerHTML = "";
+    subCategoryRow.style.display = "none";
     selectedSubCategory = "전체";
     return;
   }
 
-  if (!subCategories.includes(selectedSubCategory)) {
+  if (!subCategories.includes(String(selectedSubCategory || "").trim())) {
     selectedSubCategory = "전체";
   }
 
+  subCategoryRow.style.display = "flex";
   subCategoryRow.innerHTML = subCategories
     .map((sub) => `
       <button
         type="button"
-        class="sub-category-chip ${selectedSubCategory === sub ? "active" : ""}"
+        class="sub-category-chip ${String(selectedSubCategory || "").trim() === sub ? "active" : ""}"
         data-subcategory="${sub}"
       >
         ${sub}
       </button>
     `)
     .join("");
+
+  console.log("subCategoryRow HTML:", subCategoryRow.innerHTML);
 
   subCategoryRow.querySelectorAll(".sub-category-chip").forEach((btn) => {
     btn.onclick = () => {
