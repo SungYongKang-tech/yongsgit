@@ -585,7 +585,7 @@ editRequestList?.addEventListener("click", async (e) => {
     const snap = await get(pathRef);
     const item = snap.val() || {};
 
-    const reply = prompt("관리자 답변을 입력하세요.", item.adminReply || "");
+    const reply = prompt("관리자 답변을 입력/수정하세요.", item.adminReply || "");
     if (reply === null) return;
 
     await update(pathRef, {
