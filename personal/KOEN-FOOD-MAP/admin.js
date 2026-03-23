@@ -7,6 +7,7 @@ const editRequestList = document.getElementById("editRequestList");
 let restaurants = [];
 let currentId = null;
 let selectedTags = [];
+let selectedSubCategories = [];
 
 // 기본 선택값
 let categoryOptions = [
@@ -118,10 +119,19 @@ function ensureOption(list, value) {
 
 function ensureSubCategory(category, subCategory) {
   const c = String(category || "").trim();
-  const s = String(subCategory || "").trim();
-  if (!c || !s) return;
+  if (!c) return;
+
   if (!subCategoryMap[c]) subCategoryMap[c] = [];
-  if (!subCategoryMap[c].includes(s)) subCategoryMap[c].push(s);
+
+  const items = Array.isArray(subCategory)
+    ? subCategory
+    : parseCommaText(subCategory);
+
+  items.forEach((s) => {
+    const value = String(s || "").trim();
+    if (!value) return;
+    if (!subCategoryMap[c].includes(value)) subCategoryMap[c].push(value);
+  });
 }
 
 function renderChoiceButtons(target, items, selectedValue, onClick, multi = false, selectedArray = []) {
@@ -141,9 +151,11 @@ function renderCategoryOptions() {
   renderChoiceButtons(categorySelectRow, categoryOptions, fCategory.value, (value) => {
     fCategory.value = value;
     if (!subCategoryMap[value]) subCategoryMap[value] = [];
-    if (!subCategoryMap[value].includes(fSubCategory.value)) {
-      fSubCategory.value = "";
-    }
+
+    selectedSubCategories = [];
+    fSubCategory.value = "";
+
+    renderCategoryOptions();
     renderSubCategoryOptions();
   });
 }
@@ -151,10 +163,24 @@ function renderCategoryOptions() {
 function renderSubCategoryOptions() {
   const category = fCategory.value;
   const items = category ? (subCategoryMap[category] || []) : [];
-  renderChoiceButtons(subCategorySelectRow, items, fSubCategory.value, (value) => {
-    fSubCategory.value = value;
-    renderSubCategoryOptions();
-  });
+
+  renderChoiceButtons(
+    subCategorySelectRow,
+    items,
+    "",
+    (value) => {
+      if (selectedSubCategories.includes(value)) {
+        selectedSubCategories = selectedSubCategories.filter((v) => v !== value);
+      } else {
+        selectedSubCategories.push(value);
+      }
+
+      fSubCategory.value = selectedSubCategories.join(", ");
+      renderSubCategoryOptions();
+    },
+    true,
+    selectedSubCategories
+  );
 }
 
 function renderTagOptions() {
@@ -193,6 +219,8 @@ function renderRatingOptions() {
 function resetForm() {
   currentId = null;
   selectedTags = [];
+  selectedSubCategories = [];
+
   fId.value = nextId();
   fName.value = "";
   fCategory.value = "";
@@ -208,11 +236,13 @@ function resetForm() {
   fCategoryCustom.value = "";
   fSubCategoryCustom.value = "";
   fTagCustom.value = "";
+
   renderCategoryOptions();
   renderSubCategoryOptions();
   renderTagOptions();
   renderSelectedTagsPreview();
   renderRatingOptions();
+
   saveMsg.textContent = "새 식당 입력 상태입니다.";
 }
 
@@ -222,6 +252,8 @@ function fillForm(item) {
   fName.value = item.name ?? "";
   fCategory.value = item.category ?? "";
   fSubCategory.value = item.subCategory ?? "";
+  selectedSubCategories = parseCommaText(item.subCategory);
+
   selectedTags = Array.isArray(item.tags) ? [...item.tags] : [];
   fTags.value = selectedTags.join(", ");
   fBaseRating.value = typeof item.baseRating === "number" ? item.baseRating : "";
@@ -233,7 +265,7 @@ function fillForm(item) {
   fDescription.value = item.description ?? "";
 
   ensureOption(categoryOptions, fCategory.value);
-  ensureSubCategory(fCategory.value, fSubCategory.value);
+  ensureSubCategory(fCategory.value, selectedSubCategories);
   selectedTags.forEach((tag) => ensureOption(tagOptions, tag));
 
   renderCategoryOptions();
@@ -280,7 +312,7 @@ function getFormData() {
     id,
     name: fName.value.trim(),
     category: fCategory.value.trim(),
-    subCategory: fSubCategory.value.trim(),
+    subCategory: selectedSubCategories.join(", "),
     tags: [...selectedTags],
     baseRating: Number(fBaseRating.value) || 0,
     userRatingAvg: 0,
@@ -322,7 +354,7 @@ async function saveRestaurant() {
     }
 
     ensureOption(categoryOptions, item.category);
-    ensureSubCategory(item.category, item.subCategory);
+    ensureSubCategory(item.category, selectedSubCategories);
     item.tags.forEach((tag) => ensureOption(tagOptions, tag));
 
     await set(ref(db, `restaurants/${item.id}`), item);
@@ -394,10 +426,15 @@ function bindEvents() {
   addCategoryBtn.addEventListener("click", () => {
     const value = fCategoryCustom.value.trim();
     if (!value) return;
+
     ensureOption(categoryOptions, value);
     if (!subCategoryMap[value]) subCategoryMap[value] = [];
+
     fCategory.value = value;
+    selectedSubCategories = [];
+    fSubCategory.value = "";
     fCategoryCustom.value = "";
+
     renderCategoryOptions();
     renderSubCategoryOptions();
   });
@@ -405,13 +442,20 @@ function bindEvents() {
   addSubCategoryBtn.addEventListener("click", () => {
     const value = fSubCategoryCustom.value.trim();
     const category = fCategory.value.trim();
+
     if (!category) {
       saveMsg.textContent = "먼저 대분류를 선택해주세요.";
       return;
     }
     if (!value) return;
+
     ensureSubCategory(category, value);
-    fSubCategory.value = value;
+
+    if (!selectedSubCategories.includes(value)) {
+      selectedSubCategories.push(value);
+    }
+
+    fSubCategory.value = selectedSubCategories.join(", ");
     fSubCategoryCustom.value = "";
     renderSubCategoryOptions();
   });
@@ -504,7 +548,6 @@ onValue(ref(db, "editRequests"), (snapshot) => {
   renderEditRequests(snapshot.val() || {});
 });
 
-
 editRequestList?.addEventListener("click", async (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
@@ -541,7 +584,6 @@ editRequestList?.addEventListener("click", async (e) => {
     }
   }
 });
-
 
 function escapeHtml(str = "") {
   return str
