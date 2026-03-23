@@ -1,4 +1,4 @@
-import { db, ref, onValue, set, remove, update } from "./firebase.js";
+import { db, ref, onValue, set, remove, update, get } from "./firebase.js";
 
 const ADMIN_PASSWORD = "koen1234";
 const LOGIN_KEY = "koen_food_admin_login";
@@ -259,7 +259,9 @@ function fillForm(item) {
     : parseCommaText(item.tags);
 
   fTags.value = selectedTags.join(", ");
-  fBaseRating.value = typeof item.baseRating === "number" ? item.baseRating : "";
+  fBaseRating.value = item.baseRating !== undefined && item.baseRating !== null
+  ? String(item.baseRating)
+  : "";
   fMenuType.value = item.menuType ?? "";
   fMainMenus.value = Array.isArray(item.mainMenus) ? item.mainMenus.join(", ") : "";
   fAddress.value = item.address ?? "";
@@ -559,6 +561,7 @@ function renderEditRequests(data) {
 
       <div class="request-actions">
         <button type="button" class="answer-btn" data-id="${id}">답변</button>
+        <button type="button" class="edit-btn" data-id="${id}">수정</button>
         <button type="button" class="delete-btn" data-id="${id}">삭제</button>
       </div>
     </div>
@@ -577,20 +580,51 @@ editRequestList?.addEventListener("click", async (e) => {
   if (!id) return;
 
   if (btn.classList.contains("answer-btn")) {
-    const reply = prompt("관리자 답변을 입력하세요.");
+  try {
+    const pathRef = ref(db, `editRequests/${id}`);
+    const snap = await get(pathRef);
+    const item = snap.val() || {};
+
+    const reply = prompt("관리자 답변을 입력하세요.", item.adminReply || "");
     if (reply === null) return;
 
-    try {
-      await update(ref(db, `editRequests/${id}`), {
-        adminReply: reply.trim(),
-        status: reply.trim() ? "답변완료" : "대기"
-      });
-      alert("답변이 저장되었습니다.");
-    } catch (err) {
-      console.error(err);
-      alert("답변 저장 중 오류가 발생했습니다.");
-    }
+    await update(pathRef, {
+      adminReply: reply.trim(),
+      status: reply.trim() ? "답변완료" : "대기"
+    });
+
+    alert("답변이 저장되었습니다.");
+  } catch (err) {
+    console.error(err);
+    alert("답변 저장 중 오류가 발생했습니다.");
   }
+}
+
+  if (btn.classList.contains("edit-btn")) {
+  try {
+    const pathRef = ref(db, `editRequests/${id}`);
+    const snap = await get(pathRef);
+    const item = snap.val() || {};
+
+    const newContent = prompt("수정 요청 내용을 수정하세요.", item.content || "");
+    if (newContent === null) return;
+
+    const trimmed = newContent.trim();
+if (!trimmed) {
+  alert("수정 요청 내용은 비워둘 수 없습니다.");
+  return;
+}
+
+await update(pathRef, {
+  content: trimmed
+});
+
+    alert("수정되었습니다.");
+  } catch (err) {
+    console.error(err);
+    alert("수정 중 오류가 발생했습니다.");
+  }
+}
 
   if (btn.classList.contains("delete-btn")) {
     const ok = confirm("이 요청을 삭제하시겠습니까?");
