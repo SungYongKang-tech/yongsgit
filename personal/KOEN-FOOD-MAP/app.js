@@ -1347,6 +1347,19 @@ myRequestModal?.addEventListener("click", (e) => {
 
 submitRequestBtn?.addEventListener("click", submitEditRequest);
 
+function shouldCountAgain(key, intervalMinutes) {
+  const now = Date.now();
+  const last = Number(localStorage.getItem(key) || 0);
+  const diff = now - last;
+  const limit = intervalMinutes * 60 * 1000;
+
+  if (diff >= limit) {
+    localStorage.setItem(key, String(now));
+    return true;
+  }
+  return false;
+}
+
 function getTodayKey() {
   const d = new Date();
   const y = d.getFullYear();
@@ -1369,61 +1382,52 @@ async function initVisitorStats() {
   const todayKey = getTodayKey();
   const monthKey = getMonthKey();
 
-  let visitorId = localStorage.getItem("koen_food_visitor_id");
-  if (!visitorId) {
-    visitorId = "v_" + Math.random().toString(36).slice(2) + Date.now();
-    localStorage.setItem("koen_food_visitor_id", visitorId);
-  }
+  // ⭐ 핵심: 1시간 기준
+  const shouldCount = shouldCountAgain("koen_food_last_visit_at", 60);
 
-  const todayMarkKey = `koen_food_visited_today_${todayKey}`;
-  const monthMarkKey = `koen_food_visited_month_${monthKey}`;
+  if (shouldCount) {
+    // 누적
+    const totalRef = ref(db, "analytics/totalVisits");
+    const totalSnap = await get(totalRef);
+    const total = totalSnap.exists() ? totalSnap.val() : 0;
+    await set(totalRef, total + 1);
 
-  const alreadyCountedToday = localStorage.getItem(todayMarkKey) === "Y";
-  const alreadyCountedMonth = localStorage.getItem(monthMarkKey) === "Y";
-
-  const totalRef = ref(db, "analytics/totalVisits");
-  const totalSnap = await get(totalRef);
-  const currentTotal = totalSnap.exists() ? totalSnap.val() : 0;
-  await set(totalRef, currentTotal + 1);
-
-  if (!alreadyCountedToday) {
-    const todayRef = ref(db, `analytics/dailyVisits/${todayKey}`);
-    const todaySnap = await get(todayRef);
-    const currentToday = todaySnap.exists() ? todaySnap.val() : 0;
-    await set(todayRef, currentToday + 1);
-    localStorage.setItem(todayMarkKey, "Y");
-  }
-
-  if (!alreadyCountedMonth) {
+    // 이번달
     const monthRef = ref(db, `analytics/monthlyVisits/${monthKey}`);
     const monthSnap = await get(monthRef);
-    const currentMonth = monthSnap.exists() ? monthSnap.val() : 0;
-    await set(monthRef, currentMonth + 1);
-    localStorage.setItem(monthMarkKey, "Y");
+    const month = monthSnap.exists() ? monthSnap.val() : 0;
+    await set(monthRef, month + 1);
+
+    // 오늘
+    const todayRef = ref(db, `analytics/dailyVisits/${todayKey}`);
+    const todaySnap = await get(todayRef);
+    const today = todaySnap.exists() ? todaySnap.val() : 0;
+    await set(todayRef, today + 1);
   }
 
+  // ===== 표시 =====
   let totalValue = 0;
   let monthValue = 0;
   let todayValue = 0;
 
-  function renderVisitorCount() {
+  function render() {
     visitorEl.textContent =
       `${Number(totalValue).toLocaleString()} / ${Number(monthValue).toLocaleString()} / ${Number(todayValue).toLocaleString()}`;
   }
 
   onValue(ref(db, "analytics/totalVisits"), (snap) => {
     totalValue = snap.exists() ? snap.val() : 0;
-    renderVisitorCount();
+    render();
   });
 
   onValue(ref(db, `analytics/monthlyVisits/${monthKey}`), (snap) => {
     monthValue = snap.exists() ? snap.val() : 0;
-    renderVisitorCount();
+    render();
   });
 
   onValue(ref(db, `analytics/dailyVisits/${todayKey}`), (snap) => {
     todayValue = snap.exists() ? snap.val() : 0;
-    renderVisitorCount();
+    render();
   });
 }
 
