@@ -560,10 +560,9 @@ function renderEditRequests(data) {
       }
 
       <div class="request-actions">
-        <button type="button" class="answer-btn" data-id="${id}">답변</button>
-        <button type="button" class="edit-btn" data-id="${id}">수정</button>
-        <button type="button" class="delete-btn" data-id="${id}">삭제</button>
-      </div>
+  <button type="button" class="answer-btn" data-id="${id}">답변/수정</button>
+  <button type="button" class="delete-btn" data-id="${id}">삭제</button>
+</div>
     </div>
   `).join("");
 }
