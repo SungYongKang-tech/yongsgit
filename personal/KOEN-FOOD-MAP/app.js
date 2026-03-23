@@ -1,8 +1,10 @@
 import { db, ref, onValue, set, remove, get, update, push } from "./firebase.js";
+
 let restaurants = [];
 let ratingsByRestaurant = {};
 let reviewsByRestaurant = {};
 let selectedCategory = "전체";
+let selectedSubCategory = "전체";
 let selectedTags = [];
 let currentModalRestaurantId = null;
 let onlyMyRated = false;
@@ -10,6 +12,7 @@ let onlyFavorites = false;
 let sortMode = "default"; // default | rating | popular
 
 const categoryRow = document.getElementById("categoryRow");
+const subCategoryRow = document.getElementById("subCategoryRow");
 const tagRow = document.getElementById("tagRow");
 const cardGrid = document.getElementById("cardGrid");
 const searchInput = document.getElementById("searchInput");
@@ -778,15 +781,70 @@ function renderCategories() {
   ];
 
   categoryRow.innerHTML = categories
-    .map(
-      (c) =>
-        `<button class="${c === selectedCategory ? "active" : ""}" data="${c}">${c}</button>`
-    )
+    .map((c) => `
+      <button
+        type="button"
+        class="category-chip ${c === selectedCategory ? "active" : ""}"
+        data-category="${c}"
+      >
+        ${c}
+      </button>
+    `)
     .join("");
 
-  categoryRow.querySelectorAll("button").forEach((btn) => {
+  categoryRow.querySelectorAll(".category-chip").forEach((btn) => {
     btn.onclick = () => {
-      selectedCategory = btn.getAttribute("data");
+      selectedCategory = btn.dataset.category;
+      selectedSubCategory = "전체";
+      renderAll();
+    };
+  });
+}
+
+function renderSubCategories() {
+  if (!subCategoryRow) return;
+
+  if (selectedCategory === "전체") {
+    subCategoryRow.innerHTML = "";
+    selectedSubCategory = "전체";
+    return;
+  }
+
+  const subCategories = [
+    "전체",
+    ...new Set(
+      restaurants
+        .filter((r) => r.category === selectedCategory && r.subCategory)
+        .map((r) => r.subCategory)
+        .filter(Boolean)
+    )
+  ];
+
+  if (subCategories.length <= 1) {
+    subCategoryRow.innerHTML = "";
+    selectedSubCategory = "전체";
+    return;
+  }
+
+  if (!subCategories.includes(selectedSubCategory)) {
+    selectedSubCategory = "전체";
+  }
+
+  subCategoryRow.innerHTML = subCategories
+    .map((sub) => `
+      <button
+        type="button"
+        class="sub-category-chip ${selectedSubCategory === sub ? "active" : ""}"
+        data-subcategory="${sub}"
+      >
+        ${sub}
+      </button>
+    `)
+    .join("");
+
+  subCategoryRow.querySelectorAll(".sub-category-chip").forEach((btn) => {
+    btn.onclick = () => {
+      selectedSubCategory = btn.dataset.subcategory;
       renderAll();
     };
   });
@@ -795,7 +853,6 @@ function renderCategories() {
 function renderTags() {
   const tags = getAllTags();
 
-  // 현재 선택된 태그 중, 이제 존재하지 않는 태그는 제거
   selectedTags = selectedTags.filter((tag) => tags.includes(tag));
 
   if (!tags.length) {
@@ -856,13 +913,16 @@ function renderCards() {
     const matchCategory =
       selectedCategory === "전체" || r.category === selectedCategory;
 
-    const restaurantTags = Array.isArray(r.tags)
-  ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
-  : [];
+    const matchSubCategory =
+      selectedSubCategory === "전체" || r.subCategory === selectedSubCategory;
 
-const matchTag =
-  selectedTags.length === 0 ||
-  selectedTags.every((tag) => restaurantTags.includes(tag));
+    const restaurantTags = Array.isArray(r.tags)
+      ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
+      : [];
+
+    const matchTag =
+      selectedTags.length === 0 ||
+      selectedTags.every((tag) => restaurantTags.includes(tag));
 
     const nameText = (r.name || "").toLowerCase();
     const menuText = Array.isArray(r.mainMenus)
@@ -887,7 +947,14 @@ const matchTag =
     const matchMyRated = !onlyMyRated || hasMyRating(r.id);
     const matchFavorite = !onlyFavorites || isFavorite(r.id);
 
-    return matchCategory && matchTag && matchSearch && matchMyRated && matchFavorite;
+    return (
+      matchCategory &&
+      matchSubCategory &&
+      matchTag &&
+      matchSearch &&
+      matchMyRated &&
+      matchFavorite
+    );
   });
 
   filtered = sortRestaurants(filtered);
@@ -920,12 +987,14 @@ const matchTag =
           ${myRating > 0 ? `<div>내 별점: ${myRating}점</div>` : ""}
           ${favoriteMark}
           ${sortMode === "popular" ? `<div>평가 참여: ${ratingCount}명</div>` : ""}
-          <div>${r.category || ""} / ${r.subCategory || ""}</div>
+          <div>${r.category || ""}${r.subCategory ? ` / ${r.subCategory}` : ""}</div>
           <div>${Array.isArray(r.mainMenus) ? r.mainMenus.join(", ") : ""}</div>
           <div>${r.addressShort || r.address || ""}</div>
-          ${Array.isArray(r.tags) && r.tags.length
-  ? `<div>${r.tags.map((t) => "#" + t).join(" ")}</div>`
-  : ""}
+          ${
+            Array.isArray(r.tags) && r.tags.length
+              ? `<div>${r.tags.map((t) => "#" + t).join(" ")}</div>`
+              : ""
+          }
           ${reviewPreview}
         </div>
       `;
@@ -969,12 +1038,12 @@ function renderModalRatingUi(restaurantId) {
   });
 
   if (myRating > 0) {
-  modalUserRatingText.textContent = `선택한 별점: ${myRating}점`;
-  modalUserRatingDeleteBtn.style.display = "inline-block";
-} else {
-  modalUserRatingText.textContent = "아직 선택한 별점이 없습니다.";
-  modalUserRatingDeleteBtn.style.display = "none";
-}
+    modalUserRatingText.textContent = `선택한 별점: ${myRating}점`;
+    modalUserRatingDeleteBtn.style.display = "inline-block";
+  } else {
+    modalUserRatingText.textContent = "아직 선택한 별점이 없습니다.";
+    modalUserRatingDeleteBtn.style.display = "none";
+  }
 
   if (count > 0) {
     modalRating.textContent = `사용자 평점 ${avg.toFixed(1)} / 5 (${count}명 참여)`;
@@ -995,7 +1064,7 @@ function openModal(id) {
   currentModalRestaurantId = Number(id);
 
   modalName.textContent = r.name || "";
-  modalCategory.textContent = `${r.category || ""} / ${r.subCategory || ""}`;
+  modalCategory.textContent = `${r.category || ""}${r.subCategory ? ` / ${r.subCategory}` : ""}`;
   modalAddress.textContent = r.address || "";
 
   modalMenus.innerHTML = Array.isArray(r.mainMenus)
@@ -1045,6 +1114,7 @@ function closeModal() {
 
 function renderAll() {
   renderCategories();
+  renderSubCategories();
   renderTags();
   renderMyRatedButton();
   renderFavoriteFilterButton();
@@ -1076,7 +1146,7 @@ function escapeHtml(str) {
 /* =========================
    이벤트
 ========================= */
-searchInput.addEventListener("input", renderCards);
+searchInput?.addEventListener("input", renderCards);
 
 if (myRatedBtn) {
   myRatedBtn.addEventListener("click", () => {
@@ -1162,16 +1232,16 @@ if (editTagCustom) {
   });
 }
 
-closeModalBtn.addEventListener("click", closeModal);
+closeModalBtn?.addEventListener("click", closeModal);
 
-modal.addEventListener("click", (e) => {
+modal?.addEventListener("click", (e) => {
   if (e.target === modal) {
     closeModal();
   }
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+  if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
     closeModal();
   }
 });
@@ -1210,15 +1280,15 @@ onValue(ref(db, "editRequests"), (snapshot) => {
 });
 
 function openRequestModal() {
-  requestModal.classList.remove("hidden");
+  requestModal?.classList.remove("hidden");
 }
 
 function closeRequestModal() {
-  requestModal.classList.add("hidden");
-  requestRestaurant.value = "";
-  requestType.value = "정보수정";
-  requestWriter.value = "";
-  requestContent.value = "";
+  requestModal?.classList.add("hidden");
+  if (requestRestaurant) requestRestaurant.value = "";
+  if (requestType) requestType.value = "정보수정";
+  if (requestWriter) requestWriter.value = "";
+  if (requestContent) requestContent.value = "";
 }
 
 openRequestBtn?.addEventListener("click", openRequestModal);
@@ -1252,15 +1322,15 @@ async function submitEditRequest() {
     const newRef = push(ref(db, "editRequests"));
 
     await set(newRef, {
-  restaurantName: restaurant,
-  type,
-  writer: writer || "익명",
-  userKey: userKey,
-  content,
-  status: "대기",
-  adminReply: "",
-  createdAt: Date.now()
-});
+      restaurantName: restaurant,
+      type,
+      writer: writer || "익명",
+      userKey: userKey,
+      content,
+      status: "대기",
+      adminReply: "",
+      createdAt: Date.now()
+    });
 
     alert("수정 요청이 등록되었습니다.");
     closeRequestModal();
@@ -1382,30 +1452,25 @@ async function initVisitorStats() {
   const todayKey = getTodayKey();
   const monthKey = getMonthKey();
 
-  // ⭐ 핵심: 1시간 기준
   const shouldCount = shouldCountAgain("koen_food_last_visit_at", 60);
 
   if (shouldCount) {
-    // 누적
     const totalRef = ref(db, "analytics/totalVisits");
     const totalSnap = await get(totalRef);
     const total = totalSnap.exists() ? totalSnap.val() : 0;
     await set(totalRef, total + 1);
 
-    // 이번달
     const monthRef = ref(db, `analytics/monthlyVisits/${monthKey}`);
     const monthSnap = await get(monthRef);
     const month = monthSnap.exists() ? monthSnap.val() : 0;
     await set(monthRef, month + 1);
 
-    // 오늘
     const todayRef = ref(db, `analytics/dailyVisits/${todayKey}`);
     const todaySnap = await get(todayRef);
     const today = todaySnap.exists() ? todaySnap.val() : 0;
     await set(todayRef, today + 1);
   }
 
-  // ===== 표시 =====
   let totalValue = 0;
   let monthValue = 0;
   let todayValue = 0;
@@ -1432,8 +1497,6 @@ async function initVisitorStats() {
 }
 
 initVisitorStats();
-
-
 
 /* =========================
    초기
