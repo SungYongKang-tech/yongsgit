@@ -804,21 +804,30 @@ function renderCategories() {
 function renderSubCategories() {
   if (!subCategoryRow) return;
 
-  if (selectedCategory === "전체") {
+  const currentCategory = String(selectedCategory || "").trim();
+
+  if (currentCategory === "전체") {
     subCategoryRow.innerHTML = "";
     selectedSubCategory = "전체";
     return;
   }
 
+  const matchedRestaurants = restaurants.filter((r) =>
+    String(r.category || "").trim() === currentCategory
+  );
+
   const subCategories = [
     "전체",
     ...new Set(
-      restaurants
-        .filter((r) => r.category === selectedCategory && r.subCategory)
-        .map((r) => r.subCategory)
+      matchedRestaurants
+        .map((r) => String(r.subCategory || "").trim())
         .filter(Boolean)
     )
   ];
+
+  console.log("selectedCategory =", currentCategory);
+console.log("matchedRestaurants =", matchedRestaurants);
+console.log("subCategories =", subCategories);
 
   if (subCategories.length <= 1) {
     subCategoryRow.innerHTML = "";
@@ -844,7 +853,7 @@ function renderSubCategories() {
 
   subCategoryRow.querySelectorAll(".sub-category-chip").forEach((btn) => {
     btn.onclick = () => {
-      selectedSubCategory = btn.dataset.subcategory;
+      selectedSubCategory = String(btn.dataset.subcategory || "").trim();
       renderAll();
     };
   });
@@ -911,10 +920,12 @@ function renderCards() {
 
   let filtered = restaurants.filter((r) => {
     const matchCategory =
-      selectedCategory === "전체" || r.category === selectedCategory;
+  selectedCategory === "전체" ||
+  String(r.category || "").trim() === String(selectedCategory || "").trim();
 
-    const matchSubCategory =
-      selectedSubCategory === "전체" || r.subCategory === selectedSubCategory;
+const matchSubCategory =
+  selectedSubCategory === "전체" ||
+  String(r.subCategory || "").trim() === String(selectedSubCategory || "").trim();
 
     const restaurantTags = Array.isArray(r.tags)
       ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
@@ -1251,13 +1262,23 @@ document.addEventListener("keydown", (e) => {
 ========================= */
 onValue(ref(db, "restaurants"), (snapshot) => {
   const data = snapshot.val();
+
   restaurants = data
-    ? Object.values(data).map((item) => ({
-        ...item,
-        tags: Array.isArray(item.tags)
-          ? [...new Set(item.tags.map((tag) => normalizeTagName(tag)).filter(Boolean))]
-          : []
-      }))
+    ? Object.values(data).map((item) => {
+        const category = String(item.category || "").trim();
+        const subCategory = String(
+          item.subCategory || item.subcategory || item["sub-Categori"] || ""
+        ).trim();
+
+        return {
+          ...item,
+          category,
+          subCategory,
+          tags: Array.isArray(item.tags)
+            ? [...new Set(item.tags.map((tag) => normalizeTagName(tag)).filter(Boolean))]
+            : []
+        };
+      })
     : [];
 
   restaurants.sort((a, b) => Number(a.id) - Number(b.id));
