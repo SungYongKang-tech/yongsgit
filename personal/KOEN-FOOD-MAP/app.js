@@ -63,6 +63,9 @@ const myRequestModal = document.getElementById("myRequestModal");
 const closeMyRequestModalBtn = document.getElementById("closeMyRequestModalBtn");
 const myRequestList = document.getElementById("myRequestList");
 
+const editSubCategoryPicker = document.getElementById("editSubCategoryPicker");
+const editSubCategory = document.getElementById("editSubCategory");
+
 const BASE_TAGS = [
   "전체",
   "점심",
@@ -77,6 +80,18 @@ const BASE_TAGS = [
   "룸있음",
   "주차가능"
 ];
+
+const SUB_CATEGORY_MAP = {
+  "고기/구이": ["소고기", "돼지고기", "닭고기", "오리고기", "양꼬치", "갈비", "삼겹살"],
+  "한식/식사": ["국밥", "찌개", "백반", "비빔밥", "칼국수", "냉면", "정식"],
+  "중식": ["짜장면", "짬뽕", "탕수육", "마라", "볶음밥", "양꼬치"],
+  "일식": ["초밥", "돈까스", "라멘", "우동", "덮밥", "회"],
+  "카페/디저트": ["커피", "베이커리", "케이크", "빙수", "와플", "디저트"],
+  "패스트푸드": ["햄버거", "치킨", "피자", "토스트", "샌드위치"],
+  "분식": ["김밥", "떡볶이", "순대", "라면", "튀김"],
+  "해산물": ["횟집", "조개구이", "해물탕", "생선구이"],
+  "술집": ["포차", "호프", "이자카야", "막걸리", "와인바"]
+};
 
 const RATING_STORAGE_KEY = "koen_food_user_key";
 const FAVORITES_STORAGE_KEY = "koen_food_favorites";
@@ -474,20 +489,22 @@ function normalizeTagName(tag) {
 
 function parseSubCategories(value) {
   if (Array.isArray(value)) {
-    return [...new Set(value.map(v => String(v || "").trim()).filter(Boolean))];
+    return [...new Set(value.map((v) => String(v || "").trim()).filter(Boolean))];
   }
 
-  return [...new Set(
-    String(value || "")
-      .split(",")
-      .map(v => v.trim())
-      .filter(Boolean)
-  )];
+  return [
+    ...new Set(
+      String(value || "")
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean)
+    )
+  ];
 }
 
 function getAllTags() {
   const restaurantTags = restaurants
-    .flatMap((r) => Array.isArray(r.tags) ? r.tags : [])
+    .flatMap((r) => (Array.isArray(r.tags) ? r.tags : []))
     .map((tag) => normalizeTagName(tag))
     .filter(Boolean);
 
@@ -514,12 +531,12 @@ function syncHiddenEditTags() {
   editTags.value = getSelectedEditTags().join(", ");
 }
 
-function renderEditTagPicker(selectedTags = []) {
+function renderEditTagPicker(selectedTagsParam = []) {
   if (!editTagPicker) return;
 
   const normalizedSelected = [
     ...new Set(
-      (selectedTags || [])
+      (selectedTagsParam || [])
         .map((tag) => normalizeTagName(tag))
         .filter(Boolean)
     )
@@ -577,6 +594,70 @@ function addCustomEditTag() {
     editTagCustom.value = "";
     editTagCustom.focus();
   }
+}
+
+/* =========================
+   수정용 중분류 선택 UI
+========================= */
+function getSubCategoryOptionsByCategory(category) {
+  const categoryKey = String(category || "").trim();
+  const baseOptions = SUB_CATEGORY_MAP[categoryKey] || [];
+
+  const existingOptions = restaurants
+    .filter((r) => String(r.category || "").trim() === categoryKey)
+    .flatMap((r) => parseSubCategories(r.subCategory));
+
+  return [...new Set([...baseOptions, ...existingOptions])];
+}
+
+function syncHiddenEditSubCategories() {
+  if (!editSubCategoryPicker || !editSubCategory) return;
+
+  const selected = [...editSubCategoryPicker.querySelectorAll(".sub-edit-chip.active")]
+    .map((btn) => String(btn.dataset.value || "").trim())
+    .filter(Boolean);
+
+  editSubCategory.value = selected.join(", ");
+}
+
+function renderEditSubCategoryPicker(category, selectedValues = []) {
+  if (!editSubCategoryPicker) return;
+
+  const options = getSubCategoryOptionsByCategory(category);
+  const selectedSet = new Set(
+    Array.isArray(selectedValues) ? selectedValues : parseSubCategories(selectedValues)
+  );
+
+  if (!options.length) {
+    editSubCategoryPicker.innerHTML = `<div class="muted">선택할 중분류가 없습니다.</div>`;
+    if (editSubCategory) {
+      editSubCategory.value = "";
+    }
+    return;
+  }
+
+  editSubCategoryPicker.innerHTML = options
+    .map((item) => `
+      <button
+        type="button"
+        class="tag-chip sub-edit-chip ${selectedSet.has(item) ? "active" : ""}"
+        data-value="${item}"
+      >
+        ${item}
+      </button>
+    `)
+    .join("");
+
+  editSubCategoryPicker.querySelectorAll(".sub-edit-chip").forEach((btn) => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.toggle("active");
+      syncHiddenEditSubCategories();
+    };
+  });
+
+  syncHiddenEditSubCategories();
 }
 
 /* =========================
@@ -659,6 +740,11 @@ function fillEditForm(restaurant) {
     editTagCustom.value = "";
   }
 
+  renderEditSubCategoryPicker(
+    restaurant.category || "",
+    parseSubCategories(restaurant.subCategory)
+  );
+
   editDesc.value = restaurant.description || "";
 }
 
@@ -677,19 +763,20 @@ async function saveRestaurantInfo() {
   if (!currentModalRestaurantId) return;
 
   const id = String(currentModalRestaurantId);
-  const name = String(editName.value || "").trim();
-  const category = String(editCategory.value || "").trim();
-  const address = String(editAddress.value || "").trim();
-  const mainMenus = String(editMenus.value || "")
+  const name = String(editName?.value || "").trim();
+  const category = String(editCategory?.value || "").trim();
+  const subCategory = parseSubCategories(editSubCategory?.value || "").join(", ");
+  const address = String(editAddress?.value || "").trim();
+  const mainMenus = String(editMenus?.value || "")
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
   const tags = [...new Set(getSelectedEditTags())];
-  const description = String(editDesc.value || "").trim();
+  const description = String(editDesc?.value || "").trim();
 
   if (!name) {
     alert("식당명을 입력해주세요.");
-    editName.focus();
+    editName?.focus();
     return;
   }
 
@@ -697,6 +784,7 @@ async function saveRestaurantInfo() {
     await update(ref(db, `restaurants/${id}`), {
       name,
       category,
+      subCategory,
       address,
       addressShort: address,
       mainMenus,
@@ -711,6 +799,7 @@ async function saveRestaurantInfo() {
     if (target) {
       target.name = name;
       target.category = category;
+      target.subCategory = subCategory;
       target.address = address;
       target.addressShort = address;
       target.mainMenus = mainMenus;
@@ -719,8 +808,8 @@ async function saveRestaurantInfo() {
     }
 
     modalName.textContent = name || "";
-    const savedSubCats = parseSubCategories(target?.subCategory || "");
-modalCategory.textContent = `${category || ""}${savedSubCats.length ? ` / ${savedSubCats.join(", ")}` : ""}`;
+    const savedSubCats = parseSubCategories(subCategory);
+    modalCategory.textContent = `${category || ""}${savedSubCats.length ? ` / ${savedSubCats.join(", ")}` : ""}`;
 
     modalAddress.textContent = address || "";
 
@@ -936,14 +1025,15 @@ function renderCards() {
 
   let filtered = restaurants.filter((r) => {
     const matchCategory =
-  selectedCategory === "전체" ||
-  String(r.category || "").trim() === String(selectedCategory || "").trim();
+      selectedCategory === "전체" ||
+      String(r.category || "").trim() === String(selectedCategory || "").trim();
 
-const subCategories = parseSubCategories(r.subCategory);
+    const subCategories = parseSubCategories(r.subCategory);
 
-const matchSubCategory =
-  selectedSubCategory === "전체" ||
-  subCategories.includes(String(selectedSubCategory || "").trim());
+    const matchSubCategory =
+      selectedSubCategory === "전체" ||
+      subCategories.includes(String(selectedSubCategory || "").trim());
+
     const restaurantTags = Array.isArray(r.tags)
       ? r.tags.map((tag) => normalizeTagName(tag)).filter(Boolean)
       : [];
@@ -1016,13 +1106,12 @@ const matchSubCategory =
           ${favoriteMark}
           ${sortMode === "popular" ? `<div>평가 참여: ${ratingCount}명</div>` : ""}
           <div>
-  ${r.category || ""}${
-    parseSubCategories(r.subCategory).length
-      ? ` / ${parseSubCategories(r.subCategory).join(", ")}`
-      : ""
-  }
-</div>
-
+            ${r.category || ""}${
+              parseSubCategories(r.subCategory).length
+                ? ` / ${parseSubCategories(r.subCategory).join(", ")}`
+                : ""
+            }
+          </div>
           <div>${Array.isArray(r.mainMenus) ? r.mainMenus.join(", ") : ""}</div>
           <div>${r.addressShort || r.address || ""}</div>
           ${
@@ -1100,7 +1189,7 @@ function openModal(id) {
 
   modalName.textContent = r.name || "";
   const subCats = parseSubCategories(r.subCategory);
-modalCategory.textContent = `${r.category || ""}${subCats.length ? ` / ${subCats.join(", ")}` : ""}`;
+  modalCategory.textContent = `${r.category || ""}${subCats.length ? ` / ${subCats.join(", ")}` : ""}`;
 
   modalAddress.textContent = r.address || "";
 
@@ -1225,6 +1314,12 @@ if (sortPopularBtn) {
   });
 }
 
+if (editCategory) {
+  editCategory.addEventListener("change", () => {
+    renderEditSubCategoryPicker(editCategory.value, []);
+  });
+}
+
 if (editRestaurantBtn) {
   editRestaurantBtn.addEventListener("click", async () => {
     if (!currentModalRestaurantId) return;
@@ -1293,8 +1388,8 @@ onValue(ref(db, "restaurants"), (snapshot) => {
     ? Object.values(data).map((item) => {
         const category = String(item.category || "").trim();
         const subCategory = String(
-  item.subCategory || item.subcategory || item["sub-Categori"] || ""
-).trim();
+          item.subCategory || item.subcategory || item["sub-Categori"] || ""
+        ).trim();
 
         return {
           ...item,
