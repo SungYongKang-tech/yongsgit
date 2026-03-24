@@ -30,6 +30,7 @@ const modalCategory = document.getElementById("modalCategory");
 const modalSubCategories = document.getElementById("modalSubCategories");
 const modalAddress = document.getElementById("modalAddress");
 const modalMenus = document.getElementById("modalMenus");
+const modalMenuType = document.getElementById("modalMenuType");
 const modalTags = document.getElementById("modalTags");
 const modalDesc = document.getElementById("modalDesc");
 const modalMapBtn = document.getElementById("modalMapBtn");
@@ -821,16 +822,18 @@ if (modalSubCategories) {
 
 modalAddress.textContent = address || "";
 
-    modalMenus.innerHTML = Array.isArray(mainMenus)
-      ? mainMenus.map((m) => `<span class="menu-tag">${m}</span>`).join(" ")
-      : "";
+ modalMenus.innerHTML = Array.isArray(mainMenus)
+  ? mainMenus.map((m) => `<span class="menu-tag">${escapeHtml(m)}</span>`).join(" ")
+  : "";
 
-    modalTags.innerHTML = Array.isArray(tags)
-      ? tags.map((t) => `<span class="hash-tag">#${t}</span>`).join(" ")
-      : "";
 
-    modalDesc.textContent = description || target?.menuType || "설명이 아직 없습니다.";
+modalMenuType.textContent = target?.menuType || "";
 
+modalTags.innerHTML = Array.isArray(tags)
+  ? tags.map((t) => `<span class="hash-tag">#${escapeHtml(t)}</span>`).join(" ")
+  : "";
+
+modalDesc.textContent = description || "설명이 아직 없습니다.";
     renderAll();
 
     alert("식당 정보가 수정되었습니다.");
@@ -1196,13 +1199,6 @@ function openModal(id) {
   currentModalRestaurantId = Number(id);
 
   modalName.textContent = r.name || "";
-  function openModal(id) {
-  const r = restaurants.find((item) => Number(item.id) === Number(id));
-  if (!r) return;
-
-  currentModalRestaurantId = Number(id);
-
-  modalName.textContent = r.name || "";
 
   const subCats = parseSubCategories(r.subCategory);
   modalCategory.textContent = `${r.category || ""}`;
@@ -1216,38 +1212,16 @@ function openModal(id) {
   modalAddress.textContent = r.address || "";
 
   modalMenus.innerHTML = Array.isArray(r.mainMenus)
-    ? r.mainMenus.map((m) => `<span class="menu-tag">${m}</span>`).join(" ")
+    ? r.mainMenus.map((m) => `<span class="menu-tag">${escapeHtml(m)}</span>`).join(" ")
     : "";
+
+  modalMenuType.textContent = r.menuType || "";
 
   modalTags.innerHTML = Array.isArray(r.tags)
-    ? r.tags.map((t) => `<span class="hash-tag">#${t}</span>`).join(" ")
+    ? r.tags.map((t) => `<span class="hash-tag">#${escapeHtml(t)}</span>`).join(" ")
     : "";
 
-  modalDesc.textContent =
-    r.description || r.menuType || "설명이 아직 없습니다.";
-
-  modalMapBtn.onclick = () => openMap(r);
-
-  fillEditForm(r);
-  renderModalFavoriteButton(id);
-  renderModalRatingUi(id);
-  renderModalReviewUi(id);
-  setModalMode("view");
-
-  modal.classList.remove("hidden");
-}
-  modalAddress.textContent = r.address || "";
-
-  modalMenus.innerHTML = Array.isArray(r.mainMenus)
-    ? r.mainMenus.map((m) => `<span class="menu-tag">${m}</span>`).join(" ")
-    : "";
-
-  modalTags.innerHTML = Array.isArray(r.tags)
-    ? r.tags.map((t) => `<span class="hash-tag">#${t}</span>`).join(" ")
-    : "";
-
-  modalDesc.textContent =
-    r.description || r.menuType || "설명이 아직 없습니다.";
+  modalDesc.textContent = r.description || "설명이 아직 없습니다.";
 
   modalMapBtn.onclick = () => openMap(r);
 
@@ -1282,7 +1256,6 @@ function closeModal() {
   currentModalRestaurantId = null;
   setModalMode("view");
 }
-
 function renderAll() {
   renderCategories();
   renderSubCategories();
