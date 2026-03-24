@@ -13,8 +13,8 @@ import {
 // firebase.js에 있는 app 가져오기
 import { app } from "./firebase.js";
 
-// auth 생성
-const auth = getAuth(app);
+// 🔥 여기 핵심 (app 없이)
+const auth = getAuth();
 
 const reviewContainer = document.getElementById("reviewContainer");
 const refreshBtn = document.getElementById("refreshBtn");
