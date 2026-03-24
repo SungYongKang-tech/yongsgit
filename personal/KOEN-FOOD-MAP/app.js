@@ -27,6 +27,7 @@ const closeModalBtn = document.getElementById("closeModal");
 const modalName = document.getElementById("modalName");
 const modalRating = document.getElementById("modalRating");
 const modalCategory = document.getElementById("modalCategory");
+const modalSubCategories = document.getElementById("modalSubCategories");
 const modalAddress = document.getElementById("modalAddress");
 const modalMenus = document.getElementById("modalMenus");
 const modalTags = document.getElementById("modalTags");
@@ -808,10 +809,17 @@ async function saveRestaurantInfo() {
     }
 
     modalName.textContent = name || "";
-    const savedSubCats = parseSubCategories(subCategory);
-    modalCategory.textContent = `${category || ""}${savedSubCats.length ? ` / ${savedSubCats.join(", ")}` : ""}`;
 
-    modalAddress.textContent = address || "";
+const savedSubCats = parseSubCategories(subCategory);
+modalCategory.textContent = `${category || ""}`;
+
+if (modalSubCategories) {
+  modalSubCategories.innerHTML = savedSubCats.length
+    ? savedSubCats.map((sub) => `<span class="sub-chip">${escapeHtml(sub)}</span>`).join("")
+    : "";
+}
+
+modalAddress.textContent = address || "";
 
     modalMenus.innerHTML = Array.isArray(mainMenus)
       ? mainMenus.map((m) => `<span class="menu-tag">${m}</span>`).join(" ")
@@ -1188,9 +1196,46 @@ function openModal(id) {
   currentModalRestaurantId = Number(id);
 
   modalName.textContent = r.name || "";
-  const subCats = parseSubCategories(r.subCategory);
-  modalCategory.textContent = `${r.category || ""}${subCats.length ? ` / ${subCats.join(", ")}` : ""}`;
+  function openModal(id) {
+  const r = restaurants.find((item) => Number(item.id) === Number(id));
+  if (!r) return;
 
+  currentModalRestaurantId = Number(id);
+
+  modalName.textContent = r.name || "";
+
+  const subCats = parseSubCategories(r.subCategory);
+  modalCategory.textContent = `${r.category || ""}`;
+
+  if (modalSubCategories) {
+    modalSubCategories.innerHTML = subCats.length
+      ? subCats.map((sub) => `<span class="sub-chip">${escapeHtml(sub)}</span>`).join("")
+      : "";
+  }
+
+  modalAddress.textContent = r.address || "";
+
+  modalMenus.innerHTML = Array.isArray(r.mainMenus)
+    ? r.mainMenus.map((m) => `<span class="menu-tag">${m}</span>`).join(" ")
+    : "";
+
+  modalTags.innerHTML = Array.isArray(r.tags)
+    ? r.tags.map((t) => `<span class="hash-tag">#${t}</span>`).join(" ")
+    : "";
+
+  modalDesc.textContent =
+    r.description || r.menuType || "설명이 아직 없습니다.";
+
+  modalMapBtn.onclick = () => openMap(r);
+
+  fillEditForm(r);
+  renderModalFavoriteButton(id);
+  renderModalRatingUi(id);
+  renderModalReviewUi(id);
+  setModalMode("view");
+
+  modal.classList.remove("hidden");
+}
   modalAddress.textContent = r.address || "";
 
   modalMenus.innerHTML = Array.isArray(r.mainMenus)
