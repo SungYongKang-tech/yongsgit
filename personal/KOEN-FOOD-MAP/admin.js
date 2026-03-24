@@ -657,6 +657,14 @@ function init() {
     showLogin();
   }
 
+  const reviewManageBtn = document.getElementById("reviewManageBtn");
+
+if (reviewManageBtn) {
+  reviewManageBtn.addEventListener("click", () => {
+    window.location.href = "./review-admin.html";
+  });
+}
+
   renderCategoryOptions();
   renderSubCategoryOptions();
   renderTagOptions();
