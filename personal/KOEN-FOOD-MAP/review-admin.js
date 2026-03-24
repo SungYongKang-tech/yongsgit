@@ -11,13 +11,16 @@ const reviewContainer = document.getElementById("reviewContainer");
 const refreshBtn = document.getElementById("refreshBtn");
 
 let restaurantsMap = {};
+let activeReviewRoot = "restaurantReviews";
 
+// 익명 로그인 보장
 async function ensureAuth() {
   if (!auth.currentUser) {
     await signInAnonymously(auth);
   }
 }
 
+// 식당명 매핑
 async function loadRestaurantsMap() {
   const snap = await get(ref(db, "restaurants"));
   const data = snap.val() || {};
@@ -26,11 +29,14 @@ async function loadRestaurantsMap() {
   Object.keys(data).forEach((key) => {
     const item = data[key] || {};
     const rid = String(item.id ?? key);
-    restaurantsMap[rid] = item.name || `식당 ${rid}`;
-    restaurantsMap[String(key)] = item.name || `식당 ${rid}`;
+    const name = item.name || `식당 ${rid}`;
+
+    restaurantsMap[rid] = name;
+    restaurantsMap[String(key)] = name;
   });
 }
 
+// HTML 이스케이프
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -40,119 +46,146 @@ function escapeHtml(str = "") {
     .replaceAll("'", "&#39;");
 }
 
-function pickWriterName(reviewObj = {}) {
-  return (
-    reviewObj.name ||
-    reviewObj.nickname ||
-    reviewObj.writer ||
-    reviewObj.writerName ||
-    reviewObj.displayName ||
-    "-"
-  );
-}
-
-function pickReviewText(reviewObj = {}) {
-  return reviewObj.text || reviewObj.review || reviewObj.comment || "";
-}
-
-function pickUpdatedAt(reviewObj = {}) {
-  return reviewObj.updatedAt || reviewObj.createdAt || 0;
-}
-
-async function loadReviews() {
-  reviewContainer.innerHTML = `<div class="empty-box">불러오는 중...</div>`;
-
-  await ensureAuth();
-  await loadRestaurantsMap();
-
-  const reviewSnap = await get(ref(db, "restaurantReviews"));
-  const reviewData = reviewSnap.val() || {};
-
-  const rows = [];
-
-  Object.entries(reviewData).forEach(([restaurantId, reviewUsers]) => {
-    if (!reviewUsers || typeof reviewUsers !== "object") return;
-
-    Object.entries(reviewUsers).forEach(([userKey, reviewObj]) => {
-      if (!reviewObj || typeof reviewObj !== "object") return;
-
-      rows.push({
-        restaurantId,
-        userKey,
-        writerId: userKey,
-        writerName: pickWriterName(reviewObj),
-        restaurantName: restaurantsMap[String(restaurantId)] || `식당 ${restaurantId}`,
-        text: pickReviewText(reviewObj),
-        updatedAt: pickUpdatedAt(reviewObj)
-      });
-    });
-  });
-
-  rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-  if (!rows.length) {
-    reviewContainer.innerHTML = `<div class="empty-box">등록된 한줄후기가 없습니다.</div>`;
-    return;
+// 후기 값 표준화
+function normalizeReviewObj(value, userKey) {
+  // 값이 문자열일 때
+  if (typeof value === "string") {
+    return {
+      writerId: userKey,
+      writerName: "-",
+      text: value,
+      updatedAt: 0,
+      rawType: "string"
+    };
   }
 
+  // 값이 객체일 때
+  if (value && typeof value === "object") {
+    return {
+      writerId: value.id || value.userId || value.writerId || userKey,
+      writerName:
+        value.name ||
+        value.nickname ||
+        value.writer ||
+        value.writerName ||
+        value.displayName ||
+        "-",
+      text:
+        value.text ||
+        value.review ||
+        value.comment ||
+        value.content ||
+        "",
+      updatedAt:
+        value.updatedAt ||
+        value.createdAt ||
+        value.timestamp ||
+        0,
+      rawType: "object"
+    };
+  }
+
+  return null;
+}
+
+// 후기 저장 경로 자동 탐색
+async function detectReviewRoot() {
+  const candidates = ["restaurantReviews", "reviews", "oneLineReviews"];
+
+  for (const path of candidates) {
+    const snap = await get(ref(db, path));
+    const val = snap.val();
+
+    if (val && typeof val === "object" && Object.keys(val).length > 0) {
+      activeReviewRoot = path;
+      return val;
+    }
+  }
+
+  activeReviewRoot = "restaurantReviews";
+  return {};
+}
+
+// 테이블 렌더링
+function renderRows(rows) {
   reviewContainer.innerHTML = `
     <div class="review-table-wrap">
-      <table class="review-table">
-        <thead>
-          <tr>
-            <th style="width:110px;">작성자 ID</th>
-            <th style="width:140px;">이름/별명</th>
-            <th style="width:180px;">음식점</th>
-            <th>한줄후기</th>
-            <th style="width:130px;">관리</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(row => `
-            <tr data-restaurant-id="${escapeHtml(row.restaurantId)}" data-user-key="${escapeHtml(row.userKey)}">
-              <td>${escapeHtml(row.writerId)}</td>
-              <td>${escapeHtml(row.writerName)}</td>
-              <td>${escapeHtml(row.restaurantName)}</td>
-              <td>
-                <textarea class="review-edit-input">${escapeHtml(row.text)}</textarea>
-              </td>
-              <td>
-                <div class="review-row-actions">
-                  <button class="btn-sm btn-edit review-save-btn" type="button">수정</button>
-                  <button class="btn-sm btn-delete review-delete-btn" type="button">삭제</button>
-                </div>
-              </td>
+      <div class="review-table-scroll">
+        <table class="review-table">
+          <thead>
+            <tr>
+              <th style="width:140px;">작성자 ID</th>
+              <th style="width:140px;">이름/별명</th>
+              <th style="width:180px;">음식점</th>
+              <th>한줄후기</th>
+              <th style="width:130px;">관리</th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr
+                data-restaurant-id="${escapeHtml(row.restaurantId)}"
+                data-user-key="${escapeHtml(row.userKey)}"
+                data-raw-type="${escapeHtml(row.rawType)}"
+                data-writer-name="${escapeHtml(row.writerName)}"
+              >
+                <td class="review-id">${escapeHtml(row.writerId)}</td>
+                <td class="review-name">${escapeHtml(row.writerName)}</td>
+                <td class="restaurant-name">${escapeHtml(row.restaurantName)}</td>
+                <td>
+                  <textarea class="review-edit-input">${escapeHtml(row.text)}</textarea>
+                </td>
+                <td>
+                  <div class="review-row-actions">
+                    <button class="row-btn btn-edit review-save-btn" type="button">수정</button>
+                    <button class="row-btn btn-delete review-delete-btn" type="button">삭제</button>
+                  </div>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 
   bindRowEvents();
 }
 
+// 수정/삭제 이벤트 연결
 function bindRowEvents() {
   document.querySelectorAll(".review-save-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const tr = e.target.closest("tr");
       const restaurantId = tr.dataset.restaurantId;
       const userKey = tr.dataset.userKey;
+      const rawType = tr.dataset.rawType;
+      const writerName = tr.dataset.writerName || "-";
       const textarea = tr.querySelector(".review-edit-input");
       const newText = textarea.value.trim();
 
       if (!newText) {
-        alert("한줄후기는 비워둘 수 없습니다.");
+        alert("한줄후기 내용은 비워둘 수 없습니다.");
         textarea.focus();
         return;
       }
 
       try {
-        await update(ref(db, `restaurantReviews/${restaurantId}/${userKey}`), {
-          text: newText,
-          updatedAt: Date.now()
-        });
-        alert("한줄후기를 수정했습니다.");
+        // 문자열 형태로 저장되어 있던 후기
+        if (rawType === "string") {
+          await update(ref(db, `${activeReviewRoot}/${restaurantId}`), {
+            [userKey]: newText
+          });
+        } else {
+          // 객체 형태로 저장되어 있던 후기
+          await update(ref(db, `${activeReviewRoot}/${restaurantId}/${userKey}`), {
+            text: newText,
+            writerName,
+            updatedAt: Date.now()
+          });
+        }
+
+        alert("후기를 수정했습니다.");
       } catch (err) {
         console.error(err);
         alert("수정 중 오류가 발생했습니다.");
@@ -166,15 +199,20 @@ function bindRowEvents() {
       const restaurantId = tr.dataset.restaurantId;
       const userKey = tr.dataset.userKey;
 
-      if (!confirm("이 한줄후기를 삭제하시겠습니까?")) return;
+      if (!confirm("이 후기를 삭제하시겠습니까?")) return;
 
       try {
-        await remove(ref(db, `restaurantReviews/${restaurantId}/${userKey}`));
+        await remove(ref(db, `${activeReviewRoot}/${restaurantId}/${userKey}`));
         tr.remove();
 
         const tbody = document.querySelector(".review-table tbody");
         if (!tbody || !tbody.children.length) {
-          reviewContainer.innerHTML = `<div class="empty-box">등록된 한줄후기가 없습니다.</div>`;
+          reviewContainer.innerHTML = `
+            <div class="empty-box">
+              등록된 한줄후기가 없습니다.<br>
+              <span class="path-badge">읽은 경로: ${escapeHtml(activeReviewRoot)}</span>
+            </div>
+          `;
         }
 
         alert("삭제했습니다.");
@@ -186,6 +224,64 @@ function bindRowEvents() {
   });
 }
 
+// 후기 불러오기
+async function loadReviews() {
+  reviewContainer.innerHTML = `<div class="loading-box">불러오는 중...</div>`;
+
+  try {
+    await ensureAuth();
+    await loadRestaurantsMap();
+
+    const reviewData = await detectReviewRoot();
+    const rows = [];
+
+    Object.entries(reviewData).forEach(([restaurantId, reviewUsers]) => {
+      if (!reviewUsers) return;
+
+      if (typeof reviewUsers === "object" && !Array.isArray(reviewUsers)) {
+        Object.entries(reviewUsers).forEach(([userKey, value]) => {
+          const normalized = normalizeReviewObj(value, userKey);
+          if (!normalized || !normalized.text) return;
+
+          rows.push({
+            restaurantId,
+            userKey,
+            writerId: normalized.writerId,
+            writerName: normalized.writerName,
+            restaurantName: restaurantsMap[String(restaurantId)] || `식당 ${restaurantId}`,
+            text: normalized.text,
+            updatedAt: normalized.updatedAt,
+            rawType: normalized.rawType
+          });
+        });
+      }
+    });
+
+    rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    if (!rows.length) {
+      reviewContainer.innerHTML = `
+        <div class="empty-box">
+          등록된 한줄후기가 없습니다.<br>
+          <span class="path-badge">확인한 경로: ${escapeHtml(activeReviewRoot)}</span>
+        </div>
+      `;
+      return;
+    }
+
+    renderRows(rows);
+  } catch (err) {
+    console.error(err);
+    reviewContainer.innerHTML = `
+      <div class="empty-box">
+        댓글 데이터를 불러오는 중 오류가 발생했습니다.
+      </div>
+    `;
+  }
+}
+
+// 이벤트
 refreshBtn.addEventListener("click", loadReviews);
 
+// 시작
 loadReviews();
