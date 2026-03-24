@@ -732,9 +732,12 @@ function fillEditForm(restaurant) {
   editName.value = restaurant.name || "";
   editCategory.value = restaurant.category || "";
   editAddress.value = restaurant.address || "";
+
   editMenus.value = Array.isArray(restaurant.mainMenus)
     ? restaurant.mainMenus.join(", ")
     : "";
+
+  editMenuType.value = restaurant.menuType || "";
 
   renderEditTagPicker(Array.isArray(restaurant.tags) ? restaurant.tags : []);
 
@@ -773,6 +776,7 @@ async function saveRestaurantInfo() {
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
+  const menuType = String(editMenuType?.value || "").trim();
   const tags = [...new Set(getSelectedEditTags())];
   const description = String(editDesc?.value || "").trim();
 
@@ -784,15 +788,16 @@ async function saveRestaurantInfo() {
 
   try {
     await update(ref(db, `restaurants/${id}`), {
-      name,
-      category,
-      subCategory,
-      address,
-      addressShort: address,
-      mainMenus,
-      tags,
-      description
-    });
+  name,
+  category,
+  subCategory,
+  address,
+  addressShort: address,
+  mainMenus,
+  menuType,
+  tags,
+  description
+  });
 
     const target = restaurants.find(
       (item) => Number(item.id) === Number(currentModalRestaurantId)
@@ -805,6 +810,7 @@ async function saveRestaurantInfo() {
       target.address = address;
       target.addressShort = address;
       target.mainMenus = mainMenus;
+      target.menuType = menuType;
       target.tags = tags;
       target.description = description;
     }
@@ -827,7 +833,7 @@ modalAddress.textContent = address || "";
   : "";
 
 
-modalMenuType.innerHTML = (target?.menuType || "")
+modalMenuType.innerHTML = (menuType || "")
   .split(",")
   .map(m => m.trim())
   .filter(m => m !== "")
