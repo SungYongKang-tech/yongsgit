@@ -148,7 +148,9 @@ function renderRows(rows) {
                 <td class="review-id">${escapeHtml(row.writerId)}</td>
                 <td class="review-name">
                   ${escapeHtml(row.writerName)}
-                  ${row.isMapped ? `<div style="margin-top:4px; font-size:12px; color:#64748b;">ID 매핑 이름</div>` : ``}
+                  ${row.isMapped
+                    ? `<div style="margin-top:4px; font-size:12px; color:#64748b;">ID 매핑 이름</div>`
+                    : ``}
                 </td>
                 <td class="restaurant-name">${escapeHtml(row.restaurantName)}</td>
                 <td>
@@ -311,7 +313,6 @@ async function loadReviews() {
             (userProfileMap[userKey] && userProfileMap[userKey].name) || "";
 
           const reviewObj = typeof value === "object" && value ? value : {};
-
           const finalWriterName = pickWriterName(reviewObj, userKey);
 
           rows.push({
@@ -321,8 +322,10 @@ async function loadReviews() {
             rawWriterName: normalized.rawWriterName,
             writerName: finalWriterName,
             isMapped: !!mappedName,
-            mappedNameInput: mappedName || (finalWriterName !== "-" ? finalWriterName : ""),
-            restaurantName: restaurantsMap[String(restaurantId)] || `식당 ${restaurantId}`,
+            mappedNameInput:
+              mappedName || (finalWriterName !== "-" ? finalWriterName : ""),
+            restaurantName:
+              restaurantsMap[String(restaurantId)] || `식당 ${restaurantId}`,
             text: normalized.text,
             updatedAt: normalized.updatedAt,
             rawType: normalized.rawType
