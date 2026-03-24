@@ -1,5 +1,4 @@
 import { db } from "./firebase.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 import {
   ref,
   get,
@@ -7,20 +6,11 @@ import {
   remove
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-const auth = getAuth();
-
 const reviewContainer = document.getElementById("reviewContainer");
 const refreshBtn = document.getElementById("refreshBtn");
 
 let restaurantsMap = {};
 let activeReviewRoot = "restaurantReviews";
-
-// 익명 로그인 보장
-async function ensureAuth() {
-  if (!auth.currentUser) {
-    await signInAnonymously(auth);
-  }
-}
 
 // 식당명 매핑
 async function loadRestaurantsMap() {
@@ -50,7 +40,6 @@ function escapeHtml(str = "") {
 
 // 후기 값 표준화
 function normalizeReviewObj(value, userKey) {
-  // 값이 문자열일 때
   if (typeof value === "string") {
     return {
       writerId: userKey,
@@ -61,7 +50,6 @@ function normalizeReviewObj(value, userKey) {
     };
   }
 
-  // 값이 객체일 때
   if (value && typeof value === "object") {
     return {
       writerId: value.id || value.userId || value.writerId || userKey,
@@ -173,13 +161,11 @@ function bindRowEvents() {
       }
 
       try {
-        // 문자열 형태로 저장되어 있던 후기
         if (rawType === "string") {
           await update(ref(db, `${activeReviewRoot}/${restaurantId}`), {
             [userKey]: newText
           });
         } else {
-          // 객체 형태로 저장되어 있던 후기
           await update(ref(db, `${activeReviewRoot}/${restaurantId}/${userKey}`), {
             text: newText,
             writerName,
@@ -231,7 +217,6 @@ async function loadReviews() {
   reviewContainer.innerHTML = `<div class="loading-box">불러오는 중...</div>`;
 
   try {
-    await ensureAuth();
     await loadRestaurantsMap();
 
     const reviewData = await detectReviewRoot();
@@ -282,8 +267,5 @@ async function loadReviews() {
   }
 }
 
-// 이벤트
 refreshBtn.addEventListener("click", loadReviews);
-
-// 시작
 loadReviews();
