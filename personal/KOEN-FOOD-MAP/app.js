@@ -827,9 +827,11 @@ modalAddress.textContent = address || "";
   : "";
 
 
-modalMenuType.innerHTML = (r.menuType || "")
+modalMenuType.innerHTML = (target?.menuType || "")
   .split(",")
-  .map(m => `<span class="menu-type-chip">${m.trim()}</span>`)
+  .map(m => m.trim())
+  .filter(m => m !== "")
+  .map(m => `<span class="menu-type-chip">${escapeHtml(m)}</span>`)
   .join("");
 
 modalTags.innerHTML = Array.isArray(tags)
