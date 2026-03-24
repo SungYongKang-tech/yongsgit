@@ -1220,7 +1220,12 @@ function openModal(id) {
     ? r.mainMenus.map((m) => `<span class="menu-tag">${escapeHtml(m)}</span>`).join(" ")
     : "";
 
-  modalMenuType.textContent = r.menuType || "";
+  modalMenuType.innerHTML = (r.menuType || "")
+  .split(",")
+  .map(m => m.trim())
+  .filter(m => m !== "")
+  .map(m => `<span class="menu-type-chip">${escapeHtml(m)}</span>`)
+  .join("");
 
   modalTags.innerHTML = Array.isArray(r.tags)
     ? r.tags.map((t) => `<span class="hash-tag">#${escapeHtml(t)}</span>`).join(" ")
