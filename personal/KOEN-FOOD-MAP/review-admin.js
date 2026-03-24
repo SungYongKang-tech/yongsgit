@@ -3,16 +3,18 @@ import {
   ref,
   get,
   update,
-  remove
+  remove,
+  set
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
 const reviewContainer = document.getElementById("reviewContainer");
 const refreshBtn = document.getElementById("refreshBtn");
 
 let restaurantsMap = {};
+let userProfileMap = {};
 let activeReviewRoot = "restaurantReviews";
 
-// 식당명 매핑
+// 식당명 매핑 불러오기
 async function loadRestaurantsMap() {
   const snap = await get(ref(db, "restaurants"));
   const data = snap.val() || {};
@@ -28,6 +30,13 @@ async function loadRestaurantsMap() {
   });
 }
 
+// 작성자 이름 매핑 불러오기
+async function loadUserProfiles() {
+  const snap = await get(ref(db, "userProfiles"));
+  const data = snap.val() || {};
+  userProfileMap = data;
+}
+
 // HTML 이스케이프
 function escapeHtml(str = "") {
   return String(str)
@@ -38,12 +47,28 @@ function escapeHtml(str = "") {
     .replaceAll("'", "&#39;");
 }
 
+// 작성자 이름 결정
+// 1순위: userProfiles에 저장된 ID 매핑 이름
+// 2순위: 리뷰 자체에 저장된 이름
+// 3순위: "-"
+function pickWriterName(reviewObj = {}, userKey) {
+  return (
+    (userProfileMap[userKey] && userProfileMap[userKey].name) ||
+    reviewObj.name ||
+    reviewObj.nickname ||
+    reviewObj.writer ||
+    reviewObj.writerName ||
+    reviewObj.displayName ||
+    "-"
+  );
+}
+
 // 후기 값 표준화
 function normalizeReviewObj(value, userKey) {
   if (typeof value === "string") {
     return {
       writerId: userKey,
-      writerName: "-",
+      rawWriterName: "-",
       text: value,
       updatedAt: 0,
       rawType: "string"
@@ -53,7 +78,7 @@ function normalizeReviewObj(value, userKey) {
   if (value && typeof value === "object") {
     return {
       writerId: value.id || value.userId || value.writerId || userKey,
-      writerName:
+      rawWriterName:
         value.name ||
         value.nickname ||
         value.writer ||
@@ -96,7 +121,7 @@ async function detectReviewRoot() {
   return {};
 }
 
-// 테이블 렌더링
+// 화면 렌더링
 function renderRows(rows) {
   reviewContainer.innerHTML = `
     <div class="review-table-wrap">
@@ -105,9 +130,10 @@ function renderRows(rows) {
           <thead>
             <tr>
               <th style="width:140px;">작성자 ID</th>
-              <th style="width:140px;">이름/별명</th>
+              <th style="width:170px;">이름/별명</th>
               <th style="width:180px;">음식점</th>
               <th>한줄후기</th>
+              <th style="width:190px;">이름 매핑</th>
               <th style="width:130px;">관리</th>
             </tr>
           </thead>
@@ -117,13 +143,36 @@ function renderRows(rows) {
                 data-restaurant-id="${escapeHtml(row.restaurantId)}"
                 data-user-key="${escapeHtml(row.userKey)}"
                 data-raw-type="${escapeHtml(row.rawType)}"
-                data-writer-name="${escapeHtml(row.writerName)}"
+                data-raw-writer-name="${escapeHtml(row.rawWriterName)}"
               >
                 <td class="review-id">${escapeHtml(row.writerId)}</td>
-                <td class="review-name">${escapeHtml(row.writerName)}</td>
+                <td class="review-name">
+                  ${escapeHtml(row.writerName)}
+                  ${row.isMapped ? `<div style="margin-top:4px; font-size:12px; color:#64748b;">ID 매핑 이름</div>` : ``}
+                </td>
                 <td class="restaurant-name">${escapeHtml(row.restaurantName)}</td>
                 <td>
                   <textarea class="review-edit-input">${escapeHtml(row.text)}</textarea>
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    class="writer-name-input"
+                    placeholder="이 ID의 표시 이름 입력"
+                    value="${escapeHtml(row.mappedNameInput)}"
+                    style="
+                      width:100%;
+                      box-sizing:border-box;
+                      border:1px solid #cbd5e1;
+                      border-radius:10px;
+                      padding:10px;
+                      font-size:14px;
+                      font-family:inherit;
+                    "
+                  />
+                  <div style="margin-top:6px;">
+                    <button class="row-btn btn-edit writer-map-save-btn" type="button">이름저장</button>
+                  </div>
                 </td>
                 <td>
                   <div class="review-row-actions">
@@ -142,15 +191,16 @@ function renderRows(rows) {
   bindRowEvents();
 }
 
-// 수정/삭제 이벤트 연결
+// 이벤트 연결
 function bindRowEvents() {
+  // 후기 수정
   document.querySelectorAll(".review-save-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const tr = e.target.closest("tr");
       const restaurantId = tr.dataset.restaurantId;
       const userKey = tr.dataset.userKey;
       const rawType = tr.dataset.rawType;
-      const writerName = tr.dataset.writerName || "-";
+      const rawWriterName = tr.dataset.rawWriterName || "-";
       const textarea = tr.querySelector(".review-edit-input");
       const newText = textarea.value.trim();
 
@@ -168,7 +218,7 @@ function bindRowEvents() {
         } else {
           await update(ref(db, `${activeReviewRoot}/${restaurantId}/${userKey}`), {
             text: newText,
-            writerName,
+            writerName: rawWriterName,
             updatedAt: Date.now()
           });
         }
@@ -181,6 +231,7 @@ function bindRowEvents() {
     });
   });
 
+  // 후기 삭제
   document.querySelectorAll(".review-delete-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const tr = e.target.closest("tr");
@@ -210,6 +261,31 @@ function bindRowEvents() {
       }
     });
   });
+
+  // 이름 매핑 저장
+  document.querySelectorAll(".writer-map-save-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const tr = e.target.closest("tr");
+      const userKey = tr.dataset.userKey;
+      const input = tr.querySelector(".writer-name-input");
+      const name = input.value.trim();
+
+      try {
+        if (!name) {
+          await remove(ref(db, `userProfiles/${userKey}/name`));
+          alert("이름 매핑을 삭제했습니다.");
+        } else {
+          await set(ref(db, `userProfiles/${userKey}/name`), name);
+          alert("이름 매핑을 저장했습니다.");
+        }
+
+        await loadReviews();
+      } catch (err) {
+        console.error(err);
+        alert("이름 저장 중 오류가 발생했습니다.");
+      }
+    });
+  });
 }
 
 // 후기 불러오기
@@ -218,6 +294,7 @@ async function loadReviews() {
 
   try {
     await loadRestaurantsMap();
+    await loadUserProfiles();
 
     const reviewData = await detectReviewRoot();
     const rows = [];
@@ -230,11 +307,21 @@ async function loadReviews() {
           const normalized = normalizeReviewObj(value, userKey);
           if (!normalized || !normalized.text) return;
 
+          const mappedName =
+            (userProfileMap[userKey] && userProfileMap[userKey].name) || "";
+
+          const reviewObj = typeof value === "object" && value ? value : {};
+
+          const finalWriterName = pickWriterName(reviewObj, userKey);
+
           rows.push({
             restaurantId,
             userKey,
             writerId: normalized.writerId,
-            writerName: normalized.writerName,
+            rawWriterName: normalized.rawWriterName,
+            writerName: finalWriterName,
+            isMapped: !!mappedName,
+            mappedNameInput: mappedName || (finalWriterName !== "-" ? finalWriterName : ""),
             restaurantName: restaurantsMap[String(restaurantId)] || `식당 ${restaurantId}`,
             text: normalized.text,
             updatedAt: normalized.updatedAt,
