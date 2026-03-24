@@ -1,11 +1,20 @@
-import { auth, db } from "./firebase.js";
-import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import { db } from "./firebase.js";
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
 import {
   ref,
   get,
   update,
   remove
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+// firebase.js에 있는 app 가져오기
+import { app } from "./firebase.js";
+
+// auth 생성
+const auth = getAuth(app);
 
 const reviewContainer = document.getElementById("reviewContainer");
 const refreshBtn = document.getElementById("refreshBtn");
