@@ -51,6 +51,7 @@
       color: white;
       background-color: gray;
       transition: 0.2s;
+      cursor: pointer;
     }
 
     button.paid {
@@ -59,6 +60,7 @@
 
     button:disabled {
       opacity: .6;
+      cursor: default;
     }
 
     .timestamp {
@@ -66,6 +68,13 @@
       color: gray;
       min-width: 40px;
       text-align: right;
+    }
+
+    .empty-msg {
+      text-align: center;
+      color: #64748b;
+      padding: 24px 12px;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -75,21 +84,21 @@
   <div id="playerList"></div>
 
   <script type="module">
-    // ✅ 핵심: firebase.js 사용
     import { db, auth } from "../firebase.js";
-    import { ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
     import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+    const playerList = document.getElementById("playerList");
 
     // --- 익명 로그인 ---
     const authReady = new Promise((resolve) => {
-      onAuthStateChanged(auth, (user) => { if (user) resolve(); });
+      onAuthStateChanged(auth, (user) => {
+        if (user) resolve();
+      });
     });
     signInAnonymously(auth);
 
-    // --- 인원 목록 ---
-    const names = ["정승목", "오국환", "이상준", "박나령", "이낭주", "이세란", "조보미", "송은아", "고은선", "임춘근"];
-
-    // 날짜 기준
+    // --- 월 기준 계산 ---
     const today = new Date();
     const y = today.getFullYear();
     const m = today.getMonth();
@@ -98,10 +107,9 @@
     const nextMonth = new Date(y, m + 1);
 
     const getKey = (d) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
     let targetMonth;
-
     if (today.getDate() < 15) {
       targetMonth = thisMonth;
     } else {
@@ -113,35 +121,74 @@
     document.getElementById("pageTitle").innerText =
       `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
 
-    const playerList = document.getElementById("playerList");
+    // --- members에서 선수 명단 읽기 ---
+    async function loadMemberNames() {
+      const snapshot = await get(ref(db, "members"));
+      const data = snapshot.val();
 
-    // DB 읽기
-    onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
-      const data = snapshot.val() || {};
+      if (!data) return [];
+
+      let members = [];
+
+      // members가 객체형일 때
+      if (!Array.isArray(data)) {
+        members = Object.values(data);
+      } else {
+        members = data.filter(Boolean);
+      }
+
+      // active가 false인 사람은 제외
+      // name 필드가 있는 사람만 사용
+      const names = members
+        .filter(member => member && member.name)
+        .filter(member => member.active !== false)
+        .map(member => member.name.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "ko"));
+
+      return names;
+    }
+
+    async function init() {
+      await authReady;
+
+      const names = await loadMemberNames();
+
+      if (!names.length) {
+        playerList.innerHTML = `<div class="empty-msg">선수 명단이 없습니다.</div>`;
+        return;
+      }
+
+      onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
+        const paymentData = snapshot.val() || {};
+        renderList(names, paymentData);
+      });
+    }
+
+    function renderList(names, paymentData) {
       playerList.innerHTML = "";
-      renderList(data);
-    });
 
-    function renderList(data) {
       names.forEach(name => {
-        const entry = data[name] || {};
+        const entry = paymentData[name] || {};
         const isPaid = entry.status === "paid";
         const timestamp = entry.timestamp;
 
         const div = document.createElement("div");
         div.className = "member";
 
-        const displayDate = timestamp ? (() => {
-          const d = new Date(timestamp);
-          return `${d.getMonth() + 1}/${d.getDate()}`;
-        })() : "";
+        const displayDate = timestamp
+          ? (() => {
+              const d = new Date(timestamp);
+              return `${d.getMonth() + 1}/${d.getDate()}`;
+            })()
+          : "";
 
-        const btnId = `btn-${name}`;
+        const btnId = `btn-${name.replace(/\s+/g, "-")}`;
 
         div.innerHTML = `
           <span>${name}</span>
           <div class="actions">
-            <button id="${btnId}" class="${isPaid ? 'paid' : ''}">
+            <button id="${btnId}" class="${isPaid ? "paid" : ""}">
               ${isPaid ? "입금 완료" : "입금 대기"}
             </button>
             <div class="timestamp">${displayDate}</div>
@@ -171,6 +218,8 @@
         };
       });
     }
+
+    init();
   </script>
 </body>
 </html>
