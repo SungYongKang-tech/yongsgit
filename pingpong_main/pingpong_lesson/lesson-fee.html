@@ -4,93 +4,81 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>탁구 레슨비 입금확인</title>
+
   <style>
     body {
-  font-family: 'Segoe UI', sans-serif;
-  margin: 0;
-  padding: 8px;           /* 기존 20px → 8px */
-  background-color: #f2f2f2;
-}
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 8px;
+      background-color: #f2f2f2;
+    }
 
-h2 {
-  text-align: center;
-  color: #0d47a1;
-  margin: 0 0 8px 0;       /* 기존 20px → 8px */
-  font-size: 20px;
-}
+    h2 {
+      text-align: center;
+      color: #0d47a1;
+      margin: 0 0 8px 0;
+      font-size: 20px;
+    }
 
-.member {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: white;
-  padding: 8px 12px;       /* 기존 12px 16px → 8px 12px */
-  border-radius: 6px;      /* 살짝 줄임 */
-  margin-bottom: 6px;      /* 기존 10px → 6px */
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);  /* 얇게 */
-}
+    .member {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
 
-.member span {
-  font-size: 15px;         /* 기존 16px → 15px */
-  font-weight: 500;
-}
+    .member span {
+      font-size: 15px;
+      font-weight: 500;
+    }
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;                /* 기존 8px → 6px */
-}
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
 
-button {
-  padding: 4px 10px;       /* 기존 8px 16px → 반으로 축소 */
-  border: none;
-  border-radius: 5px;
-  font-size: 13px;         /* 기존 14px → 13px */
-  font-weight: bold;
-  color: white;
-  background-color: gray;
-  transition: 0.2s;
-}
+    button {
+      padding: 4px 10px;
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: bold;
+      color: white;
+      background-color: gray;
+      transition: 0.2s;
+    }
 
-button.paid {
-  background-color: green;
-}
+    button.paid {
+      background-color: green;
+    }
 
-button:disabled {
-  opacity: .6;
-}
+    button:disabled {
+      opacity: .6;
+    }
 
-.timestamp {
-  font-size: 12px;         /* 기존 13px → 12px */
-  color: gray;
-  min-width: 40px;         /* 너비 약간 축소 */
-  text-align: right;
-}
-
+    .timestamp {
+      font-size: 12px;
+      color: gray;
+      min-width: 40px;
+      text-align: right;
+    }
   </style>
 </head>
+
 <body>
   <h2 id="pageTitle">🏓 레슨비 입금확인</h2>
   <div id="playerList"></div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-
-    // --- Firebase 초기화 ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyAV47F8u96UQ_2hf9q2KdtGlXqDXYbThyo",
-      authDomain: "lessonswap-26e9b.firebaseapp.com",
-      databaseURL: "https://lessonswap-26e9b-default-rtdb.firebaseio.com",
-      projectId: "lessonswap-26e9b",
-      storageBucket: "lessonswap-26e9b.appspot.com",
-      messagingSenderId: "1068278553187",
-      appId: "1:1068278553187:web:49d0f6e12a072d7c3fb656"
-    };
-    initializeApp(firebaseConfig);
-    const db = getDatabase();
-    const auth = getAuth();
+    // ✅ 핵심: firebase.js 사용
+    import { db, auth } from "../firebase.js";
+    import { ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
     // --- 익명 로그인 ---
     const authReady = new Promise((resolve) => {
@@ -101,21 +89,19 @@ button:disabled {
     // --- 인원 목록 ---
     const names = ["정승목", "오국환", "이상준", "박나령", "이낭주", "이세란", "조보미", "송은아", "고은선", "임춘근"];
 
-    // ✅ 날짜 기반 표시 규칙
+    // 날짜 기준
     const today = new Date();
     const y = today.getFullYear();
     const m = today.getMonth();
 
-    const thisMonth = new Date(y, m);      // 이번달
-    const nextMonth = new Date(y, m + 1);  // 다음달
+    const thisMonth = new Date(y, m);
+    const nextMonth = new Date(y, m + 1);
 
     const getKey = (d) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
     let targetMonth;
 
-    // ✅ 1일~14일 → 이번달
-    // ✅ 15일~말일 → 다음달
     if (today.getDate() < 15) {
       targetMonth = thisMonth;
     } else {
@@ -124,20 +110,18 @@ button:disabled {
 
     const monthKey = getKey(targetMonth);
 
-    // 제목 표시
     document.getElementById("pageTitle").innerText =
       `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
 
     const playerList = document.getElementById("playerList");
 
-    // ✅ DB 불러오기
+    // DB 읽기
     onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
       const data = snapshot.val() || {};
       playerList.innerHTML = "";
       renderList(data);
     });
 
-    // ✅ 리스트 렌더링
     function renderList(data) {
       names.forEach(name => {
         const entry = data[name] || {};
@@ -171,12 +155,14 @@ button:disabled {
         btn.onclick = async () => {
           await authReady;
 
-          // 토글 동작
           if (isPaid) {
-            await set(ref(db, `payments/${monthKey}/${name}`), { status: "pending" });
+            await set(ref(db, `payments/${monthKey}/${name}`), {
+              status: "pending"
+            });
           } else {
             const d = new Date();
             const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
             await set(ref(db, `payments/${monthKey}/${name}`), {
               status: "paid",
               timestamp: dateOnly.toISOString()
