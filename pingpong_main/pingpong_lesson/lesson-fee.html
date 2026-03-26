@@ -83,143 +83,139 @@
   <h2 id="pageTitle">🏓 레슨비 입금확인</h2>
   <div id="playerList"></div>
 
-  <script type="module">
-    import { db, auth } from "../firebase.js";
-    import { ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
-    import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+ <script type="module">
+  import { db, auth } from "../firebase.js";
+  import { ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+  import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
-    const playerList = document.getElementById("playerList");
+  const playerList = document.getElementById("playerList");
 
-    // --- 익명 로그인 ---
-    const authReady = new Promise((resolve) => {
-      onAuthStateChanged(auth, (user) => {
-        if (user) resolve();
-      });
+  const authReady = new Promise((resolve) => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) resolve();
     });
-    signInAnonymously(auth);
+  });
+  signInAnonymously(auth);
 
-    // --- 월 기준 계산 ---
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth();
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth();
 
-    const thisMonth = new Date(y, m);
-    const nextMonth = new Date(y, m + 1);
+  const thisMonth = new Date(y, m);
+  const nextMonth = new Date(y, m + 1);
 
-    const getKey = (d) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const getKey = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
-    let targetMonth;
-    if (today.getDate() < 15) {
-      targetMonth = thisMonth;
-    } else {
-      targetMonth = nextMonth;
+  const targetMonth = today.getDate() < 15 ? thisMonth : nextMonth;
+  const monthKey = getKey(targetMonth);
+
+  document.getElementById("pageTitle").innerText =
+    `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
+
+  async function loadCoachNames() {
+    const snapshot = await get(ref(db, "lesson/coaches"));
+    const data = snapshot.val();
+
+    console.log("lesson/coaches raw:", data);
+
+    if (!data) return [];
+
+    const names = Object.values(data)
+      .filter(item => item && item.name)
+      .map(item => String(item.name).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, "ko"));
+
+    console.log("coach names:", names);
+    return names;
+  }
+
+  function renderList(names, paymentData) {
+    playerList.innerHTML = "";
+
+    if (!names.length) {
+      playerList.innerHTML = `
+        <div style="text-align:center; color:#64748b; padding:24px 12px;">
+          레슨 명단이 없습니다.
+        </div>
+      `;
+      return;
     }
 
-    const monthKey = getKey(targetMonth);
+    names.forEach((name) => {
+      const entry = paymentData[name] || {};
+      const isPaid = entry.status === "paid";
+      const timestamp = entry.timestamp;
 
-    document.getElementById("pageTitle").innerText =
-      `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
+      const div = document.createElement("div");
+      div.className = "member";
 
-    // --- members에서 선수 명단 읽기 ---
-    async function loadMemberNames() {
-      const snapshot = await get(ref(db, "members"));
-      const data = snapshot.val();
+      const displayDate = timestamp
+        ? (() => {
+            const d = new Date(timestamp);
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+          })()
+        : "";
 
-      if (!data) return [];
+      const safeId = name.replace(/[^a-zA-Z0-9가-힣_-]/g, "_");
+      const btnId = `btn-${safeId}`;
 
-      let members = [];
+      div.innerHTML = `
+        <span>${name}</span>
+        <div class="actions">
+          <button id="${btnId}" class="${isPaid ? "paid" : ""}">
+            ${isPaid ? "입금 완료" : "입금 대기"}
+          </button>
+          <div class="timestamp">${displayDate}</div>
+        </div>
+      `;
 
-      // members가 객체형일 때
-      if (!Array.isArray(data)) {
-        members = Object.values(data);
-      } else {
-        members = data.filter(Boolean);
-      }
+      playerList.appendChild(div);
 
-      // active가 false인 사람은 제외
-      // name 필드가 있는 사람만 사용
-      const names = members
-        .filter(member => member && member.name)
-        .filter(member => member.active !== false)
-        .map(member => member.name.trim())
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b, "ko"));
+      const btn = document.getElementById(btnId);
 
-      return names;
-    }
+      btn.onclick = async () => {
+        await authReady;
 
-    async function init() {
+        if (isPaid) {
+          await set(ref(db, `payments/${monthKey}/${name}`), {
+            status: "pending"
+          });
+        } else {
+          const d = new Date();
+          const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+          await set(ref(db, `payments/${monthKey}/${name}`), {
+            status: "paid",
+            timestamp: dateOnly.toISOString()
+          });
+        }
+      };
+    });
+  }
+
+  async function init() {
+    try {
       await authReady;
 
-      const names = await loadMemberNames();
-
-      if (!names.length) {
-        playerList.innerHTML = `<div class="empty-msg">선수 명단이 없습니다.</div>`;
-        return;
-      }
+      const names = await loadCoachNames();
 
       onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
         const paymentData = snapshot.val() || {};
         renderList(names, paymentData);
       });
+    } catch (err) {
+      console.error(err);
+      playerList.innerHTML = `
+        <div style="text-align:center; color:#dc2626; padding:24px 12px;">
+          명단을 불러오지 못했습니다.
+        </div>
+      `;
     }
+  }
 
-    function renderList(names, paymentData) {
-      playerList.innerHTML = "";
-
-      names.forEach(name => {
-        const entry = paymentData[name] || {};
-        const isPaid = entry.status === "paid";
-        const timestamp = entry.timestamp;
-
-        const div = document.createElement("div");
-        div.className = "member";
-
-        const displayDate = timestamp
-          ? (() => {
-              const d = new Date(timestamp);
-              return `${d.getMonth() + 1}/${d.getDate()}`;
-            })()
-          : "";
-
-        const btnId = `btn-${name.replace(/\s+/g, "-")}`;
-
-        div.innerHTML = `
-          <span>${name}</span>
-          <div class="actions">
-            <button id="${btnId}" class="${isPaid ? "paid" : ""}">
-              ${isPaid ? "입금 완료" : "입금 대기"}
-            </button>
-            <div class="timestamp">${displayDate}</div>
-          </div>
-        `;
-
-        playerList.appendChild(div);
-
-        const btn = document.getElementById(btnId);
-
-        btn.onclick = async () => {
-          await authReady;
-
-          if (isPaid) {
-            await set(ref(db, `payments/${monthKey}/${name}`), {
-              status: "pending"
-            });
-          } else {
-            const d = new Date();
-            const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-            await set(ref(db, `payments/${monthKey}/${name}`), {
-              status: "paid",
-              timestamp: dateOnly.toISOString()
-            });
-          }
-        };
-      });
-    }
-
-    init();
-  </script>
+  init();
+</script>
 </body>
 </html>
