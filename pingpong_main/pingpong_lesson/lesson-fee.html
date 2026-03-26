@@ -70,152 +70,173 @@
       text-align: right;
     }
 
-    .empty-msg {
+    .msg {
       text-align: center;
       color: #64748b;
       padding: 24px 12px;
       font-size: 14px;
+    }
+
+    .msg.error {
+      color: #dc2626;
     }
   </style>
 </head>
 
 <body>
   <h2 id="pageTitle">🏓 레슨비 입금확인</h2>
-  <div id="playerList"></div>
+  <div id="playerList"><div class="msg">불러오는 중...</div></div>
 
- <script type="module">
-  import { db, auth } from "../firebase.js";
-  import { ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
-  import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+  <script type="module">
+    import { db, auth } from "../firebase.js";
+    import { ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
-  const playerList = document.getElementById("playerList");
+    console.log("payment page loaded");
+    console.log("firebase imported from ../firebase.js");
 
-  const authReady = new Promise((resolve) => {
-    onAuthStateChanged(auth, (user) => {
-      if (user) resolve();
+    const pageTitle = document.getElementById("pageTitle");
+    const playerList = document.getElementById("playerList");
+
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth();
+
+    const thisMonth = new Date(y, m);
+    const nextMonth = new Date(y, m + 1);
+
+    const getKey = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+    const targetMonth = today.getDate() < 15 ? thisMonth : nextMonth;
+    const monthKey = getKey(targetMonth);
+
+    pageTitle.innerText = `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
+
+    const authReady = new Promise((resolve, reject) => {
+      const unsub = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          console.log("auth ok:", user.uid);
+          unsub();
+          resolve(user);
+        }
+      });
+
+      signInAnonymously(auth).catch((err) => {
+        console.error("익명 로그인 실패:", err);
+        reject(err);
+      });
     });
-  });
-  signInAnonymously(auth);
 
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth();
-
-  const thisMonth = new Date(y, m);
-  const nextMonth = new Date(y, m + 1);
-
-  const getKey = (d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
-  const targetMonth = today.getDate() < 15 ? thisMonth : nextMonth;
-  const monthKey = getKey(targetMonth);
-
-  document.getElementById("pageTitle").innerText =
-    `🏓 ${targetMonth.getMonth() + 1}월 레슨비 입금현황`;
-
-  async function loadCoachNames() {
-    const snapshot = await get(ref(db, "lesson/coaches"));
-    const data = snapshot.val();
-
-    console.log("lesson/coaches raw:", data);
-
-    if (!data) return [];
-
-    const names = Object.values(data)
-      .filter(item => item && item.name)
-      .map(item => String(item.name).trim())
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b, "ko"));
-
-    console.log("coach names:", names);
-    return names;
-  }
-
-  function renderList(names, paymentData) {
-    playerList.innerHTML = "";
-
-    if (!names.length) {
-      playerList.innerHTML = `
-        <div style="text-align:center; color:#64748b; padding:24px 12px;">
-          레슨 명단이 없습니다.
-        </div>
-      `;
-      return;
+    function showMessage(text, isError = false) {
+      playerList.innerHTML = `<div class="msg ${isError ? "error" : ""}">${text}</div>`;
     }
 
-    names.forEach((name) => {
-      const entry = paymentData[name] || {};
-      const isPaid = entry.status === "paid";
-      const timestamp = entry.timestamp;
+    async function loadCoachNames() {
+      const snapshot = await get(ref(db, "lesson/coaches"));
+      const data = snapshot.val();
 
-      const div = document.createElement("div");
-      div.className = "member";
+      console.log("lesson/coaches raw:", data);
 
-      const displayDate = timestamp
-        ? (() => {
-            const d = new Date(timestamp);
-            return `${d.getMonth() + 1}/${d.getDate()}`;
-          })()
-        : "";
+      if (!data) return [];
 
-      const safeId = name.replace(/[^a-zA-Z0-9가-힣_-]/g, "_");
-      const btnId = `btn-${safeId}`;
+      const names = [...new Set(
+        Object.values(data)
+          .filter(item => item && item.name)
+          .map(item => String(item.name).trim())
+          .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b, "ko"));
 
-      div.innerHTML = `
-        <span>${name}</span>
-        <div class="actions">
-          <button id="${btnId}" class="${isPaid ? "paid" : ""}">
-            ${isPaid ? "입금 완료" : "입금 대기"}
-          </button>
-          <div class="timestamp">${displayDate}</div>
-        </div>
-      `;
+      console.log("coach names:", names);
+      return names;
+    }
 
-      playerList.appendChild(div);
+    function renderList(names, paymentData) {
+      playerList.innerHTML = "";
 
-      const btn = document.getElementById(btnId);
+      if (!names.length) {
+        showMessage("레슨 명단이 없습니다.");
+        return;
+      }
 
-      btn.onclick = async () => {
+      names.forEach((name) => {
+        const entry = paymentData[name] || {};
+        const isPaid = entry.status === "paid";
+        const timestamp = entry.timestamp;
+
+        const div = document.createElement("div");
+        div.className = "member";
+
+        const displayDate = timestamp
+          ? (() => {
+              const d = new Date(timestamp);
+              return `${d.getMonth() + 1}/${d.getDate()}`;
+            })()
+          : "";
+
+        const safeId = name.replace(/[^a-zA-Z0-9가-힣_-]/g, "_");
+        const btnId = `btn-${safeId}`;
+
+        div.innerHTML = `
+          <span>${name}</span>
+          <div class="actions">
+            <button id="${btnId}" class="${isPaid ? "paid" : ""}">
+              ${isPaid ? "입금 완료" : "입금 대기"}
+            </button>
+            <div class="timestamp">${displayDate}</div>
+          </div>
+        `;
+
+        playerList.appendChild(div);
+
+        const btn = document.getElementById(btnId);
+
+        btn.onclick = async () => {
+          try {
+            await authReady;
+
+            if (isPaid) {
+              await set(ref(db, `payments/${monthKey}/${name}`), {
+                status: "pending"
+              });
+            } else {
+              const d = new Date();
+              const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+              await set(ref(db, `payments/${monthKey}/${name}`), {
+                status: "paid",
+                timestamp: dateOnly.toISOString()
+              });
+            }
+          } catch (err) {
+            console.error("저장 실패:", err);
+            alert("저장 중 오류가 발생했습니다.");
+          }
+        };
+      });
+    }
+
+    async function init() {
+      try {
         await authReady;
 
-        if (isPaid) {
-          await set(ref(db, `payments/${monthKey}/${name}`), {
-            status: "pending"
-          });
-        } else {
-          const d = new Date();
-          const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const names = await loadCoachNames();
 
-          await set(ref(db, `payments/${monthKey}/${name}`), {
-            status: "paid",
-            timestamp: dateOnly.toISOString()
-          });
-        }
-      };
-    });
-  }
+        onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
+          const paymentData = snapshot.val() || {};
+          renderList(names, paymentData);
+        }, (err) => {
+          console.error("payments 읽기 실패:", err);
+          showMessage("입금 현황을 불러오지 못했습니다.", true);
+        });
 
-  async function init() {
-    try {
-      await authReady;
-
-      const names = await loadCoachNames();
-
-      onValue(ref(db, `payments/${monthKey}`), (snapshot) => {
-        const paymentData = snapshot.val() || {};
-        renderList(names, paymentData);
-      });
-    } catch (err) {
-      console.error(err);
-      playerList.innerHTML = `
-        <div style="text-align:center; color:#dc2626; padding:24px 12px;">
-          명단을 불러오지 못했습니다.
-        </div>
-      `;
+      } catch (err) {
+        console.error("초기화 실패:", err);
+        showMessage("Firebase 연결 또는 로그인에 실패했습니다.", true);
+      }
     }
-  }
 
-  init();
-</script>
+    init();
+  </script>
 </body>
 </html>
