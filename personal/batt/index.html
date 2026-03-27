@@ -3,262 +3,534 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
 <title>배터리 계산기</title>
 
 <style>
-body {
-  margin:0;
-  background:#0f172a;
-  color:white;
-  font-family:Arial;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  height:100vh;
-}
+  * { box-sizing: border-box; }
 
-.app {
-  width:100%;
-  max-width:420px;
-}
+  body {
+    margin: 0;
+    background: #0f172a;
+    color: white;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 12px;
+  }
 
-.screen {
-  background:#111827;
-  padding:20px;
-  border-radius:20px;
-  margin-bottom:10px;
-}
+  .app {
+    width: 100%;
+    max-width: 420px;
+  }
 
-.title {
-  text-align:center;
-  font-size:18px;
-  margin-bottom:10px;
-}
+  .screen {
+    position: relative;
+    background: #111827;
+    padding: 20px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  }
 
-.percent-label {
-  text-align:center;
-  font-size:14px;
-  color:#94a3b8;
-}
+  .topbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 6px;
+  }
 
-.percent {
-  text-align:center;
-  font-size:70px;
-  font-weight:800;
-}
+  .admin-btn {
+    border: none;
+    background: #334155;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
 
-.row {
-  display:flex;
-  justify-content:space-between;
-  margin:10px 0;
-  font-size:18px;
-}
+  .admin-btn:active {
+    transform: translateY(1px);
+  }
 
-.numpad {
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:10px;
-}
+  .title {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
 
-button {
-  height:70px;
-  font-size:24px;
-  border:none;
-  border-radius:15px;
-  color:white;
-  cursor:pointer;
+  .percent-label {
+    text-align: center;
+    font-size: 14px;
+    color: #94a3b8;
+  }
 
-  background:linear-gradient(180deg, #374151, #1f2937);
-  
-  /* 입체감 */
-  box-shadow:
-    0 6px 0 #020617,
-    0 8px 16px rgba(0,0,0,0.4);
+  .percent {
+    text-align: center;
+    font-size: 70px;
+    font-weight: 800;
+    line-height: 1.05;
+    margin-top: 4px;
+    margin-bottom: 14px;
+    transition: color 0.2s ease;
+  }
 
-  transition: all 0.08s ease;
-}
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+    font-size: 17px;
+    align-items: center;
+  }
 
-button:active {
-  transform: translateY(4px) scale(0.97);
-  box-shadow:
-    0 2px 0 #020617,
-    0 4px 8px rgba(0,0,0,0.3);
+  .row .label {
+    color: #cbd5e1;
+    white-space: nowrap;
+  }
 
-  background:linear-gradient(180deg, #1f2937, #111827);
+  .row .value {
+    text-align: right;
+    font-weight: 700;
+    word-break: break-word;
+  }
 
-   
-}
+  .numpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
 
-.clear {
-  background:linear-gradient(180deg, #ef4444, #dc2626);
-}
-.clear:active {
-  transform: translateY(4px);
+  button.key {
+    height: 70px;
+    font-size: 24px;
+    border: none;
+    border-radius: 15px;
+    color: white;
+    cursor: pointer;
+    background: linear-gradient(180deg, #374151, #1f2937);
+    box-shadow:
+      0 6px 0 #020617,
+      0 8px 16px rgba(0,0,0,0.4);
+    transition: all 0.08s ease;
+  }
 
-  box-shadow:
-    0 2px 0 #450a0a,
-    0 4px 8px rgba(0,0,0,0.3);
+  button.key:active {
+    transform: translateY(4px) scale(0.98);
+    box-shadow:
+      0 2px 0 #020617,
+      0 4px 8px rgba(0,0,0,0.3);
+    background: linear-gradient(180deg, #1f2937, #111827);
+  }
 
-  background:linear-gradient(180deg, #dc2626, #b91c1c);
-}
+  .clear {
+    background: linear-gradient(180deg, #ef4444, #dc2626) !important;
+  }
+
+  .clear:active {
+    box-shadow:
+      0 2px 0 #450a0a,
+      0 4px 8px rgba(0,0,0,0.3) !important;
+    background: linear-gradient(180deg, #dc2626, #b91c1c) !important;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1000;
+  }
+
+  .modal-backdrop.show {
+    display: flex;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: 420px;
+    background: #111827;
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  }
+
+  .modal h2 {
+    margin: 0 0 14px;
+    font-size: 18px;
+  }
+
+  .field {
+    margin-bottom: 10px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 13px;
+    color: #cbd5e1;
+    margin-bottom: 6px;
+  }
+
+  .field input {
+    width: 100%;
+    height: 42px;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: #0f172a;
+    color: #fff;
+    padding: 0 12px;
+    font-size: 15px;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .modal-actions button {
+    flex: 1;
+    height: 44px;
+    border: none;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .save-btn {
+    background: #16a34a;
+    color: #fff;
+  }
+
+  .close-btn {
+    background: #334155;
+    color: #fff;
+  }
+
+  .small-note {
+    color: #94a3b8;
+    font-size: 12px;
+    margin-top: 8px;
+    line-height: 1.4;
+  }
 </style>
 </head>
-
 <body>
 
 <div class="app">
-
   <div class="screen">
+    <div class="topbar">
+      <button class="admin-btn" id="openAdminBtn">관리자</button>
+    </div>
+
     <div class="title">배터리 계산기</div>
 
     <div class="percent-label">남은 전력량</div>
     <div class="percent" id="percent">0.0%</div>
 
     <div class="row">
-      <div>현재 전압</div>
-      <div id="voltage">0.0V</div>
+      <div class="label">현재 전압</div>
+      <div class="value" id="voltage">0.0V</div>
     </div>
 
     <div class="row">
-      <div>이동가능 거리</div>
-      <div id="distance">0.0Km</div>
+      <div class="label">이동가능 거리</div>
+      <div class="value" id="distance">0.0Km</div>
     </div>
 
     <div class="row">
-      <div>95% 충전시 소모시간</div>
-      <div id="time">0시간 0분</div>
+      <div class="label" id="timeLabel">95% 충전시 소모시간</div>
+      <div class="value" id="time">0시간 0분</div>
     </div>
 
     <div class="row">
-      <div>충전완료 예상</div>
-      <div id="endTime">--:--</div>
+      <div class="label">충전 완료 예상시간</div>
+      <div class="value" id="endTime">--:--</div>
     </div>
-
   </div>
 
   <div class="numpad">
-    <button data-key="1">1</button>
-    <button data-key="2">2</button>
-    <button data-key="3">3</button>
-    <button data-key="4">4</button>
-    <button data-key="5">5</button>
-    <button data-key="6">6</button>
-    <button data-key="7">7</button>
-    <button data-key="8">8</button>
-    <button data-key="9">9</button>
-    <button class="clear" data-action="clear">C</button>
-    <button data-key="0">0</button>
-    <button data-key=".">.</button>
+    <button class="key" data-key="1">1</button>
+    <button class="key" data-key="2">2</button>
+    <button class="key" data-key="3">3</button>
+    <button class="key" data-key="4">4</button>
+    <button class="key" data-key="5">5</button>
+    <button class="key" data-key="6">6</button>
+    <button class="key" data-key="7">7</button>
+    <button class="key" data-key="8">8</button>
+    <button class="key" data-key="9">9</button>
+    <button class="key clear" data-action="clear">C</button>
+    <button class="key" data-key="0">0</button>
+    <button class="key" data-key=".">.</button>
   </div>
+</div>
 
+<div class="modal-backdrop" id="adminModal">
+  <div class="modal">
+    <h2>관리자 설정</h2>
+
+    <div class="field">
+      <label>최소 전압 (0%)</label>
+      <input type="number" step="0.1" id="minVInput" />
+    </div>
+
+    <div class="field">
+      <label>최대 전압 (100%)</label>
+      <input type="number" step="0.1" id="maxVInput" />
+    </div>
+
+    <div class="field">
+      <label>배터리 용량 (Ah)</label>
+      <input type="number" step="0.1" id="fullAhInput" />
+    </div>
+
+    <div class="field">
+      <label>충전기 전류 (A)</label>
+      <input type="number" step="0.1" id="chargerAInput" />
+    </div>
+
+    <div class="field">
+      <label>목표 충전율 (%)</label>
+      <input type="number" step="1" id="targetPercentInput" />
+    </div>
+
+    <div class="field">
+      <label>1%당 이동 거리 (Km)</label>
+      <input type="number" step="0.1" id="kmPerPercentInput" />
+    </div>
+
+    <div class="small-note">
+      저장하면 다음에 다시 열어도 이 값으로 계산됩니다.
+    </div>
+
+    <div class="modal-actions">
+      <button class="close-btn" id="closeAdminBtn">닫기</button>
+      <button class="save-btn" id="saveAdminBtn">저장</button>
+    </div>
+  </div>
 </div>
 
 <script>
-const MIN_V = 42.0;
-const MAX_V = 54.8;
-const FULL_AH = 20;
-const CHARGER_A = 3;
+  const STORAGE_KEY = "ebike_battery_settings_v2";
 
-// 🔥 95% 기준
-const TARGET_AH = FULL_AH * 0.95;
-
-// 이동거리 (완충 기준)
-const FULL_DISTANCE = 80;
-
-let input = "";
-
-const voltageEl = document.getElementById("voltage");
-const percentEl = document.getElementById("percent");
-const distanceEl = document.getElementById("distance");
-const timeEl = document.getElementById("time");
-const endTimeEl = document.getElementById("endTime");
-
-function formatTime(h) {
-  let min = Math.round(h * 60);
-  let hh = Math.floor(min / 60);
-  let mm = min % 60;
-  return `${hh}시간 ${mm}분`;
-}
-
-function formatClock(date, hours) {
-  let now = new Date();
-
-  let h = date.getHours().toString().padStart(2,"0");
-  let m = date.getMinutes().toString().padStart(2,"0");
-
-  let isTomorrow =
-    date.getDate() !== now.getDate() ||
-    date.getMonth() !== now.getMonth() ||
-    date.getFullYear() !== now.getFullYear();
-
-  let timeText = isTomorrow ? `내일 ${h}:${m}` : `${h}:${m}`;
-
-  return `${timeText} (${formatTime(hours)} 후)`;
-}
-
-function update() {
-  if (input === "") {
-    voltageEl.textContent = "0.0V";
-    percentEl.textContent = "0.0%";
-    distanceEl.textContent = "0.0Km";
-    timeEl.textContent = "0시간 0분";
-    endTimeEl.textContent = "--:--";
-    percentEl.style.color = "white";
-    return;
-  }
-
-  let v = parseFloat(input);
-  if (isNaN(v)) return;
-
-  let percent = ((v - MIN_V) / (MAX_V - MIN_V)) * 100;
-  percent = Math.max(0, Math.min(100, percent));
-
-  let currentAh = FULL_AH * (percent / 100);
-  let needAh = Math.max(0, TARGET_AH - currentAh);
-  let hours = needAh / CHARGER_A;
-
-  let distance = FULL_DISTANCE * (percent / 100);
-
-  // 🔴 잔량 색상
-  if (percent <= 20) {
-    percentEl.style.color = "#ef4444";
-  } else if (percent <= 50) {
-    percentEl.style.color = "#f59e0b";
-  } else {
-    percentEl.style.color = "#22c55e";
-  }
-
-  // ⏰ 종료시간 계산
-  let now = new Date();
-  let end = new Date(now.getTime() + hours * 60 * 60 * 1000);
-
-  voltageEl.textContent = v.toFixed(1) + "V";
-  percentEl.textContent = percent.toFixed(1) + "%";
-  distanceEl.textContent = distance.toFixed(1) + "Km";
-  timeEl.textContent = formatTime(hours);
-  endTimeEl.textContent = formatClock(end, hours);
-}
-
-document.querySelectorAll("button").forEach(btn => {
-  btn.onclick = () => {
-    const key = btn.dataset.key;
-    const action = btn.dataset.action;
-
-    if (key) {
-      if (key === "." && input.includes(".")) return;
-      input += key;
-      update();
-    }
-
-    if (action === "clear") {
-      input = "";
-      update();
-    }
+  const DEFAULT_SETTINGS = {
+    minV: 42.0,
+    maxV: 54.8,
+    fullAh: 20,
+    chargerA: 3,
+    targetPercent: 95,
+    kmPerPercent: 0.8
   };
-});
 
-update();
+  function loadSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      return { ...DEFAULT_SETTINGS, ...saved };
+    } catch (e) {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  function saveSettings(settings) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  }
+
+  let settings = loadSettings();
+  let input = "";
+
+  const voltageEl = document.getElementById("voltage");
+  const percentEl = document.getElementById("percent");
+  const distanceEl = document.getElementById("distance");
+  const timeEl = document.getElementById("time");
+  const endTimeEl = document.getElementById("endTime");
+  const timeLabelEl = document.getElementById("timeLabel");
+
+  const openAdminBtn = document.getElementById("openAdminBtn");
+  const closeAdminBtn = document.getElementById("closeAdminBtn");
+  const saveAdminBtn = document.getElementById("saveAdminBtn");
+  const adminModal = document.getElementById("adminModal");
+
+  const minVInput = document.getElementById("minVInput");
+  const maxVInput = document.getElementById("maxVInput");
+  const fullAhInput = document.getElementById("fullAhInput");
+  const chargerAInput = document.getElementById("chargerAInput");
+  const targetPercentInput = document.getElementById("targetPercentInput");
+  const kmPerPercentInput = document.getElementById("kmPerPercentInput");
+
+  function formatTime(h) {
+    if (!isFinite(h) || h <= 0) return "0시간 0분";
+    const min = Math.round(h * 60);
+    const hh = Math.floor(min / 60);
+    const mm = min % 60;
+    return `${hh}시간 ${mm}분`;
+  }
+
+  function formatEndTime(date, hours) {
+    const now = new Date();
+    const h = String(date.getHours()).padStart(2, "0");
+    const m = String(date.getMinutes()).padStart(2, "0");
+
+    const isTomorrow =
+      date.getFullYear() !== now.getFullYear() ||
+      date.getMonth() !== now.getMonth() ||
+      date.getDate() !== now.getDate();
+
+    const timeText = isTomorrow ? `내일 ${h}:${m}` : `${h}:${m}`;
+    return `${timeText} (${formatTime(hours)} 후)`;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function updateLabels() {
+    timeLabelEl.textContent = `${settings.targetPercent}% 충전시 소모시간`;
+  }
+
+  function update() {
+    updateLabels();
+
+    if (input === "") {
+      voltageEl.textContent = "0.0V";
+      percentEl.textContent = "0.0%";
+      distanceEl.textContent = "0.0Km";
+      timeEl.textContent = "0시간 0분";
+      endTimeEl.textContent = "--:--";
+      percentEl.style.color = "#ffffff";
+      return;
+    }
+
+    const v = parseFloat(input);
+    if (isNaN(v)) return;
+
+    const minV = Number(settings.minV);
+    const maxV = Number(settings.maxV);
+    const fullAh = Number(settings.fullAh);
+    const chargerA = Number(settings.chargerA);
+    const targetPercent = Number(settings.targetPercent);
+    const kmPerPercent = Number(settings.kmPerPercent);
+
+    const rawPercent = ((v - minV) / (maxV - minV)) * 100;
+    const percent = clamp(rawPercent, 0, 100);
+
+    const currentAh = fullAh * (percent / 100);
+    const targetAh = fullAh * (targetPercent / 100);
+    const needAh = Math.max(0, targetAh - currentAh);
+    const hours = chargerA > 0 ? needAh / chargerA : 0;
+
+    const distance = percent * kmPerPercent;
+
+    if (percent <= 20) {
+      percentEl.style.color = "#ef4444";
+    } else if (percent <= 50) {
+      percentEl.style.color = "#f59e0b";
+    } else {
+      percentEl.style.color = "#22c55e";
+    }
+
+    const now = new Date();
+    const end = new Date(now.getTime() + hours * 60 * 60 * 1000);
+
+    voltageEl.textContent = `${v.toFixed(1)}V`;
+    percentEl.textContent = `${percent.toFixed(1)}%`;
+    distanceEl.textContent = `${distance.toFixed(1)}Km`;
+    timeEl.textContent = formatTime(hours);
+    endTimeEl.textContent = formatEndTime(end, hours);
+  }
+
+  function fillAdminInputs() {
+    minVInput.value = settings.minV;
+    maxVInput.value = settings.maxV;
+    fullAhInput.value = settings.fullAh;
+    chargerAInput.value = settings.chargerA;
+    targetPercentInput.value = settings.targetPercent;
+    kmPerPercentInput.value = settings.kmPerPercent;
+  }
+
+  openAdminBtn.addEventListener("click", () => {
+    fillAdminInputs();
+    adminModal.classList.add("show");
+  });
+
+  closeAdminBtn.addEventListener("click", () => {
+    adminModal.classList.remove("show");
+  });
+
+  adminModal.addEventListener("click", (e) => {
+    if (e.target === adminModal) {
+      adminModal.classList.remove("show");
+    }
+  });
+
+  saveAdminBtn.addEventListener("click", () => {
+    const next = {
+      minV: parseFloat(minVInput.value),
+      maxV: parseFloat(maxVInput.value),
+      fullAh: parseFloat(fullAhInput.value),
+      chargerA: parseFloat(chargerAInput.value),
+      targetPercent: parseFloat(targetPercentInput.value),
+      kmPerPercent: parseFloat(kmPerPercentInput.value)
+    };
+
+    if (
+      !isFinite(next.minV) ||
+      !isFinite(next.maxV) ||
+      !isFinite(next.fullAh) ||
+      !isFinite(next.chargerA) ||
+      !isFinite(next.targetPercent) ||
+      !isFinite(next.kmPerPercent)
+    ) {
+      alert("숫자 항목을 다시 확인해주세요.");
+      return;
+    }
+
+    if (next.maxV <= next.minV) {
+      alert("최대 전압은 최소 전압보다 커야 합니다.");
+      return;
+    }
+
+    if (next.fullAh <= 0 || next.chargerA <= 0 || next.kmPerPercent < 0) {
+      alert("배터리 용량, 충전기 전류, 1%당 km 값을 다시 확인해주세요.");
+      return;
+    }
+
+    if (next.targetPercent <= 0 || next.targetPercent > 100) {
+      alert("목표 충전율은 1~100 사이여야 합니다.");
+      return;
+    }
+
+    settings = next;
+    saveSettings(settings);
+    adminModal.classList.remove("show");
+    update();
+    alert("저장되었습니다.");
+  });
+
+  document.querySelectorAll(".key").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.key;
+      const action = btn.dataset.action;
+
+      if (key) {
+        if (key === "." && input.includes(".")) return;
+        input += key;
+        update();
+      }
+
+      if (action === "clear") {
+        input = "";
+        update();
+      }
+    });
+  });
+
+  update();
 </script>
 
 </body>
