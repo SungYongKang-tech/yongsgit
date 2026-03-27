@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>자전거 배터리 충전 계산기</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --line: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #22c55e;
+      --accent-soft: #16a34a;
+      --danger: #ef4444;
+      --shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(34, 197, 94, 0.16), transparent 28%),
+        linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      padding: 16px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .screen {
+      background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.98));
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #dbeafe;
+      margin-bottom: 10px;
+      letter-spacing: -0.3px;
+    }
+
+    .big-display {
+      background: linear-gradient(180deg, #020617, #111827);
+      border: 1px solid #1e293b;
+      border-radius: 22px;
+      padding: 18px 16px;
+      min-height: 130px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .display-label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .display-value {
+      font-size: clamp(42px, 13vw, 72px);
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -2px;
+      word-break: break-all;
+    }
+
+    .display-sub {
+      font-size: 15px;
+      color: #bbf7d0;
+      font-weight: 700;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .info-card {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 18px;
+      padding: 14px 12px;
+    }
+
+    .info-card .k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .info-card .v {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+    }
+
+    .panel {
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 17px;
+      color: #e2e8f0;
+    }
+
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .battery-bar-wrap {
+      margin-top: 14px;
+      background: #0b1220;
+      border-radius: 999px;
+      height: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .battery-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+      transition: width 0.25s ease;
+    }
+
+    .voltage-readout {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      border: none;
+      cursor: pointer;
+      border-radius: 18px;
+      font-weight: 800;
+      font-size: 28px;
+      min-height: 72px;
+      color: var(--text);
+      background: linear-gradient(180deg, #1f2937, #111827);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+      transition: transform 0.08s ease, filter 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:active {
+      transform: scale(0.98);
+      filter: brightness(1.08);
+    }
+
+    .btn-accent {
+      background: linear-gradient(180deg, #16a34a, #15803d);
+    }
+
+    .btn-danger {
+      background: linear-gradient(180deg, #ef4444, #dc2626);
+    }
+
+    .btn-wide {
+      grid-column: span 2;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      padding-bottom: 10px;
+    }
+
+    @media (max-width: 420px) {
+      body { padding: 10px; }
+      .screen, .panel { padding: 14px; border-radius: 22px; }
+      button { min-height: 64px; font-size: 24px; border-radius: 16px; }
+      .info-card .v { font-size: 20px; }
+      .big-display { min-height: 118px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="screen">
+      <div class="title">자전거 배터리 충전 계산기</div>
+
+      <div class="big-display">
+        <div class="display-label">입력 전압</div>
+        <div class="display-value" id="voltageDisplay">54.8V</div>
+        <div class="display-sub" id="statusText">배터리 잔량 100.0%</div>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="k">현재 잔량</div>
+          <div class="v" id="percentDisplay">100.0%</div>
+        </div>
+        <div class="info-card">
+          <div class="k">남은 용량</div>
+          <div class="v" id="ahDisplay">20.00Ah</div>
+        </div>
+        <div class="info-card">
+          <div class="k">100%까지 충전시간</div>
+          <div class="v" id="timeDisplay">0시간 0분</div>
+        </div>
+        <div class="info-card">
+          <div class="k">충전 조건</div>
+          <div class="v">3A / 20Ah</div>
+        </div>
+      </div>
+
+      <div class="battery-bar-wrap">
+        <div class="battery-bar" id="batteryBar"></div>
+      </div>
+      <div class="voltage-readout">
+        <span>0% = 42.0V</span>
+        <span>100% = 54.8V</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>전압 입력</h2>
+      <p>전압을 누르면 바로 잔량(%)과 100%까지 충전 시간을 계산합니다.</p>
+
+      <div class="numpad">
+        <button data-key="1">1</button>
+        <button data-key="2">2</button>
+        <button data-key="3">3</button>
+        <button data-key="4">4</button>
+        <button data-key="5">5</button>
+        <button data-key="6">6</button>
+        <button data-key="7">7</button>
+        <button data-key="8">8</button>
+        <button data-key="9">9</button>
+        <button class="btn-danger" data-action="clear">C</button>
+        <button data-key="0">0</button>
+        <button class="btn-accent" data-key=".">.</button>
+        <button class="btn-wide" data-action="setMin">42.0V</button>
+        <button data-action="back">⌫</button>
+        <button class="btn-wide btn-accent" data-action="setMax">54.8V</button>
+      </div>
+    </section>
+
+    <div class="footer-note">
+      계산식: 잔량(%) = ((현재전압 - 42.0) ÷ 12.8) × 100<br>
+      충전시간 = 부족한 Ah ÷ 3A
+    </div>
+  </div>
+
+  <script>
+    const MIN_V = 42.0;
+    const MAX_V = 54.8;
+    const FULL_AH = 20;
+    const CHARGER_A = 3;
+
+    const voltageDisplay = document.getElementById('voltageDisplay');
+    const percentDisplay = document.getElementById('percentDisplay');
+    const ahDisplay = document.getElementById('ahDisplay');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const statusText = document.getElementById('statusText');
+    const batteryBar = document.getElementById('batteryBar');
+
+    let inputValue = '54.8';
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function formatTime(hoursFloat) {
+      if (hoursFloat <= 0) return '0시간 0분';
+      const totalMinutes = Math.round(hoursFloat * 60);
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+      return `${h}시간 ${m}분`;
+    }
+
+    function calculate(voltage) {
+      const safeVoltage = clamp(voltage, MIN_V, MAX_V);
+      const percent = ((safeVoltage - MIN_V) / (MAX_V - MIN_V)) * 100;
+      const safePercent = clamp(percent, 0, 100);
+      const currentAh = (safePercent / 100) * FULL_AH;
+      const needAh = FULL_AH - currentAh;
+      const chargeHours = needAh / CHARGER_A;
+
+      return {
+        voltage: safeVoltage,
+        percent: safePercent,
+        currentAh,
+        needAh,
+        chargeHours
+      };
+    }
+
+    function render() {
+      let numeric = parseFloat(inputValue);
+      if (Number.isNaN(numeric)) numeric = MAX_V;
+
+      const result = calculate(numeric);
+      const isLow = result.percent <= 20;
+      const isMid = result.percent > 20 && result.percent < 80;
+
+      voltageDisplay.textContent = `${result.voltage.toFixed(1)}V`;
+      percentDisplay.textContent = `${result.percent.toFixed(1)}%`;
+      ahDisplay.textContent = `${result.currentAh.toFixed(2)}Ah`;
+      timeDisplay.textContent = formatTime(result.chargeHours);
+      statusText.textContent = `배터리 잔량 ${result.percent.toFixed(1)}%`;
+      batteryBar.style.width = `${result.percent.toFixed(1)}%`;
+
+      if (isLow) {
+        statusText.style.color = '#fca5a5';
+        batteryBar.style.background = 'linear-gradient(90deg, #ef4444, #f97316)';
+      } else if (isMid) {
+        statusText.style.color = '#fde68a';
+        batteryBar.style.background = 'linear-gradient(90deg, #eab308, #f59e0b)';
+      } else {
+        statusText.style.color = '#bbf7d0';
+        batteryBar.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+      }
+    }
+
+    function appendInput(char) {
+      if (char === '.') {
+        if (inputValue.includes('.')) return;
+        inputValue += '.';
+        render();
+        return;
+      }
+
+      if (inputValue === '0') {
+        inputValue = char;
+      } else {
+        inputValue += char;
+      }
+      render();
+    }
+
+    function clearInput() {
+      inputValue = '';
+      voltageDisplay.textContent = '0.0V';
+      percentDisplay.textContent = '0.0%';
+      ahDisplay.textContent = '0.00Ah';
+      timeDisplay.textContent = formatTime(FULL_AH / CHARGER_A);
+      statusText.textContent = '전압을 입력하세요';
+      statusText.style.color = '#cbd5e1';
+      batteryBar.style.width = '0%';
+      batteryBar.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+    }
+
+    function backspace() {
+      inputValue = inputValue.slice(0, -1);
+      if (!inputValue) {
+        clearInput();
+        return;
+      }
+      render();
+    }
+
+    document.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key;
+        const action = btn.dataset.action;
+
+        if (key) {
+          appendInput(key);
+          return;
+        }
+
+        if (action === 'clear') clearInput();
+        if (action === 'back') backspace();
+        if (action === 'setMin') {
+          inputValue = MIN_V.toFixed(1);
+          render();
+        }
+        if (action === 'setMax') {
+          inputValue = MAX_V.toFixed(1);
+          render();
+        }
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>
