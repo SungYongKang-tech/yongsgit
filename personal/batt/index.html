@@ -73,6 +73,12 @@
       word-break: break-word;
     }
 
+    .top-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
     .admin-btn {
       border: none;
       background: #334155;
@@ -88,6 +94,11 @@
 
     .admin-btn:active {
       transform: translateY(1px);
+    }
+
+    .admin-btn:disabled {
+      opacity: 0.7;
+      cursor: default;
     }
 
     .percent-label {
@@ -254,6 +265,30 @@
       line-height: 1.4;
     }
 
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%) translateY(20px);
+      background: #16a34a;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      z-index: 2000;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
     @media (max-height: 700px) {
       .screen {
         padding: 10px;
@@ -288,9 +323,9 @@
         <div class="title">배터리 계산기</div>
         <div class="model-name" id="modelNameDisplay"></div>
       </div>
-      <div style="display:flex; gap:6px;">
-       <button class="admin-btn" id="saveBtn">저장</button>
-       <button class="admin-btn" id="openAdminBtn">관리자</button>
+      <div class="top-actions">
+        <button class="admin-btn" id="saveBtn">저장</button>
+        <button class="admin-btn" id="openAdminBtn">관리자</button>
       </div>
     </div>
 
@@ -384,6 +419,10 @@
   </div>
 </div>
 
+<div class="toast" id="toast">저장되었습니다</div>
+
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
 <script>
   const STORAGE_KEY = "ebike_battery_settings_v3";
 
@@ -433,6 +472,19 @@
   const chargerAInput = document.getElementById("chargerAInput");
   const targetPercentInput = document.getElementById("targetPercentInput");
   const kmPerPercentInput = document.getElementById("kmPerPercentInput");
+
+  const saveBtn = document.getElementById("saveBtn");
+  const toastEl = document.getElementById("toast");
+  let toastTimer;
+
+  function showToast(message) {
+    toastEl.textContent = message;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.classList.remove("show");
+    }, 1600);
+  }
 
   function formatTime(h) {
     if (!isFinite(h) || h <= 0) return "0시간 0분";
@@ -608,25 +660,38 @@
     });
   });
 
-const saveBtn = document.getElementById("saveBtn");
+  saveBtn.addEventListener("click", async () => {
+    try {
+      saveBtn.disabled = true;
 
-saveBtn.addEventListener("click", () => {
-  html2canvas(document.querySelector(".screen")).then(canvas => {
-    const link = document.createElement("a");
+      const canvas = await html2canvas(document.querySelector(".screen"), {
+        backgroundColor: null,
+        scale: window.devicePixelRatio > 1 ? 2 : 1
+      });
 
-    // 파일명에 시간 넣기
-    const now = new Date();
-    const fileName = `battery_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}.png`;
+      const link = document.createElement("a");
+      const now = new Date();
+      const fileName = `battery_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}.png`;
 
-    link.download = fileName;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+      link.download = fileName;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+
+      showToast("저장되었습니다");
+    } catch (error) {
+      console.error(error);
+      showToast("저장 실패");
+    } finally {
+      saveBtn.disabled = false;
+    }
   });
-});
 
   update();
 </script>
-<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 
 </body>
 </html>
