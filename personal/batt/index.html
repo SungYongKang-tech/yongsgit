@@ -8,17 +8,13 @@
     :root {
       --bg1: #0b1220;
       --bg2: #121c34;
-      --card: rgba(15, 23, 42, 0.9);
-      --card-2: rgba(30, 41, 59, 0.75);
       --line: rgba(255,255,255,0.08);
       --text: #f8fafc;
       --muted: #94a3b8;
-      --blue: #3b82f6;
       --green: #22c55e;
       --amber: #f59e0b;
       --red: #ef4444;
       --shadow: 0 18px 40px rgba(0,0,0,0.34);
-      --radius: 22px;
     }
 
     * { box-sizing: border-box; }
@@ -40,8 +36,7 @@
       font-family: Arial, sans-serif;
       display: flex;
       justify-content: center;
-      padding: calc(18px + env(safe-area-inset-top)) 10px 
-           calc(14px + env(safe-area-inset-bottom));
+      padding: calc(18px + env(safe-area-inset-top)) 10px calc(14px + env(safe-area-inset-bottom));
     }
 
     .app {
@@ -223,14 +218,6 @@
       background: rgba(255,255,255,0.28);
     }
 
-    .battery-text {
-      margin-top: 8px;
-      text-align: center;
-      font-size: 13px;
-      color: #cbd5e1;
-      font-weight: 700;
-    }
-
     .slider-input-wrap {
       margin-bottom: 10px;
       padding: 12px;
@@ -313,6 +300,7 @@
     }
 
     #percentSlider:focus { outline: none; }
+
     #percentSlider::-webkit-slider-runnable-track,
     #percentSlider::-moz-range-track {
       height: 14px;
@@ -371,16 +359,8 @@
     }
 
     .charge-btn.start { background: linear-gradient(180deg, #22c55e, #16a34a); }
+    .charge-btn.start.charging { background: linear-gradient(180deg, #0ea5e9, #2563eb); }
     .charge-btn.stop { background: linear-gradient(180deg, #ef4444, #dc2626); }
-
-    .charging-status {
-      min-height: 20px;
-      text-align: center;
-      font-size: 13px;
-      color: #dbeafe;
-      margin-bottom: 10px;
-      font-weight: 800;
-    }
 
     .stats-grid {
       display: grid;
@@ -591,16 +571,16 @@
     }
 
     @media (max-height: 760px) {
-  body { padding-top: 14px; }
-  .screen { padding: 12px; }
-  .hero-card { padding: 8px 6px; }
-  .percent { font-size: 46px; }
-  .percent-time { font-size: 24px; }
-  .charge-btn { height: 44px; }
-  .stat-card { padding: 8px; }
-  .stat-value { font-size: 19px; }
-  button.key { height: 50px; }
-}
+      body { padding-top: 14px; }
+      .screen { padding: 12px; }
+      .hero-card { padding: 8px 6px; }
+      .percent { font-size: 46px; }
+      .percent-time { font-size: 24px; }
+      .charge-btn { height: 44px; }
+      .stat-card { padding: 8px; }
+      .stat-value { font-size: 19px; }
+      button.key { height: 50px; }
+    }
   </style>
 </head>
 <body>
@@ -651,13 +631,12 @@
         <div class="battery-shell"><div class="battery-fill" id="batteryFill"></div></div>
         <div class="battery-cap"></div>
       </div>
-     </div>
+    </div>
 
     <div class="charge-controls">
       <button class="charge-btn start" id="startChargeBtn">충전 시작</button>
       <button class="charge-btn stop" id="stopChargeBtn" disabled>충전 종료</button>
     </div>
-  
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -777,10 +756,10 @@
 
 <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <script>
-  const STORAGE_KEY = "ebike_battery_settings_v8";
+  const STORAGE_KEY = "ebike_battery_settings_v9";
   const LAST_INPUT_KEY = "ebike_last_voltage";
   const LAST_SLIDER_KEY = "ebike_last_slider_percent";
-  const CHARGING_STATE_KEY = "ebike_charging_state_v2";
+  const CHARGING_STATE_KEY = "ebike_charging_state_v3";
 
   const DEFAULT_SETTINGS = {
     modelName: "전기자전거 모델",
@@ -842,7 +821,9 @@
   function loadChargingState() {
     try {
       const saved = JSON.parse(localStorage.getItem(CHARGING_STATE_KEY) || "null");
-      return saved && typeof saved === "object" ? saved : { isCharging: false, startTs: null, basePercent: null };
+      return saved && typeof saved === "object"
+        ? saved
+        : { isCharging: false, startTs: null, basePercent: null };
     } catch (e) {
       return { isCharging: false, startTs: null, basePercent: null };
     }
@@ -862,7 +843,6 @@
   const modeBadge = document.getElementById("modeBadge");
   const targetBadge = document.getElementById("targetBadge");
   const batteryFill = document.getElementById("batteryFill");
-  const batteryText = document.getElementById("batteryText");
   const voltageEl = document.getElementById("voltage");
   const percentEl = document.getElementById("percent");
   const distanceEl = document.getElementById("distance");
@@ -895,7 +875,6 @@
   const toastEl = document.getElementById("toast");
   const startChargeBtn = document.getElementById("startChargeBtn");
   const stopChargeBtn = document.getElementById("stopChargeBtn");
-  const chargingStatusEl = document.getElementById("chargingStatus");
 
   function showToast(message) {
     toastEl.textContent = message;
@@ -998,7 +977,7 @@
     update();
   }
 
-   function updateLabels() {
+  function updateLabels() {
     modelNameDisplay.textContent = settings.modelName || "전기자전거 모델";
     modeBadge.textContent = settings.inputType === "voltage" ? "전압 입력" : "슬라이드 입력";
     targetBadge.textContent = `목표 ${settings.targetPercent}%`;
@@ -1021,6 +1000,8 @@
   function updateChargingButtons() {
     startChargeBtn.disabled = chargingState.isCharging;
     stopChargeBtn.disabled = !chargingState.isCharging;
+    startChargeBtn.textContent = chargingState.isCharging ? "충전중" : "충전 시작";
+    startChargeBtn.classList.toggle("charging", chargingState.isCharging);
   }
 
   function update() {
@@ -1040,13 +1021,13 @@
         distanceEl.textContent = "0.0Km";
         timeEl.textContent = "0시간 0분";
         endTimeEl.textContent = "--:--";
-        chargingStatusEl.textContent = "대기 중";
         percentEl.style.color = "#ffffff";
         batteryFill.style.width = "0%";
-        batteryText.textContent = "배터리 상태 대기";
         return;
       }
-      if (!chargingState.isCharging && !isNaN(manualV)) v = manualV;
+      if (!chargingState.isCharging && !isNaN(manualV)) {
+        v = manualV;
+      }
     } else {
       sliderPercentValue.textContent = Math.round(percent);
       percentSlider.value = Math.round(percent);
@@ -1063,7 +1044,15 @@
     const hours = chargerA > 0 ? needAh / chargerA : 0;
     const distance = percent * kmPerPercent;
 
-    batteryText.textContent = `${status.text} · ${percent.toFixed(1)}%`;
+    if (percent <= 20) {
+      percentEl.style.color = "#ef4444";
+    } else if (percent <= 50) {
+      percentEl.style.color = "#f59e0b";
+    } else {
+      percentEl.style.color = "#22c55e";
+    }
+
+    batteryFill.style.width = `${percent.toFixed(1)}%`;
 
     const now = new Date();
     const end = new Date(now.getTime() + hours * 60 * 60 * 1000);
@@ -1074,18 +1063,11 @@
     timeEl.textContent = formatTime(hours);
     endTimeEl.textContent = formatDateTime(end);
 
-    if (chargingState.isCharging) {
-      const startText = formatDateTime(new Date(chargingState.startTs));
-      chargingStatusEl.textContent = `충전 중 · 시작 ${startText}`;
-      batteryText.textContent = `충전 중 · ${percent.toFixed(1)}%`;
-      if (percent >= 100) {
-        stopCharging(true);
-        showToast("100% 충전 완료");
-        chargingStatusEl.textContent = "충전 완료";
-        batteryText.textContent = "충전 완료 · 100.0%";
-      }
-    } else {
-      chargingStatusEl.textContent = "대기 중";
+    if (chargingState.isCharging && percent >= 100) {
+      stopCharging(true);
+      showToast("100% 충전 완료");
+      percentEl.textContent = "100.0%";
+      batteryFill.style.width = "100%";
     }
   }
 
@@ -1126,7 +1108,11 @@
     const url = location.href;
     try {
       if (navigator.share) {
-        await navigator.share({ title: document.title || "배터리 계산기", text: "배터리 계산기 웹앱 주소입니다.", url });
+        await navigator.share({
+          title: document.title || "배터리 계산기",
+          text: "배터리 계산기 웹앱 주소입니다.",
+          url
+        });
         showToast("공유창이 열렸습니다");
         return;
       }
@@ -1160,7 +1146,10 @@
     adminModal.classList.add("show");
   });
 
-  closeAdminBtn.addEventListener("click", () => adminModal.classList.remove("show"));
+  closeAdminBtn.addEventListener("click", () => {
+    adminModal.classList.remove("show");
+  });
+
   adminModal.addEventListener("click", (e) => {
     if (e.target === adminModal) adminModal.classList.remove("show");
   });
@@ -1202,18 +1191,28 @@
       kmPerPercent: parseFloat(kmPerPercentInput.value)
     };
 
-    if (!isFinite(next.minV) || !isFinite(next.maxV) || !isFinite(next.fullAh) || !isFinite(next.chargerA) || !isFinite(next.targetPercent) || !isFinite(next.kmPerPercent)) {
+    if (
+      !isFinite(next.minV) ||
+      !isFinite(next.maxV) ||
+      !isFinite(next.fullAh) ||
+      !isFinite(next.chargerA) ||
+      !isFinite(next.targetPercent) ||
+      !isFinite(next.kmPerPercent)
+    ) {
       alert("숫자 항목을 다시 확인해주세요.");
       return;
     }
+
     if (next.maxV <= next.minV) {
       alert("최대 전압은 최소 전압보다 커야 합니다.");
       return;
     }
+
     if (next.fullAh <= 0 || next.chargerA <= 0 || next.kmPerPercent < 0) {
       alert("배터리 용량, 충전기 전류, 1%당 이동 거리 값을 다시 확인해주세요.");
       return;
     }
+
     if (next.targetPercent <= 0 || next.targetPercent > 100) {
       alert("목표 충전율은 1~100 사이여야 합니다.");
       return;
@@ -1248,8 +1247,10 @@
   document.querySelectorAll(".key").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (navigator.vibrate) navigator.vibrate(20);
+
       const key = btn.dataset.key;
       const action = btn.dataset.action;
+
       if (key) {
         if (key === "." && input.includes(".")) return;
         input += key;
@@ -1257,6 +1258,7 @@
         update();
         return;
       }
+
       if (action === "clear") {
         input = "";
         localStorage.removeItem(LAST_INPUT_KEY);
@@ -1272,12 +1274,16 @@
         backgroundColor: null,
         scale: window.devicePixelRatio > 1 ? 2 : 1
       });
+
       const link = document.createElement("a");
       const now = new Date();
-      const fileName = `battery_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}.png`;
+      const fileName =
+        `battery_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}.png`;
+
       link.download = fileName;
       link.href = canvas.toDataURL("image/png");
       link.click();
+
       if (navigator.vibrate) navigator.vibrate(50);
       showToast("저장되었습니다");
     } catch (error) {
