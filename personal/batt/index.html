@@ -145,17 +145,17 @@
     }
 
     .percent-row {
-  display: flex;
-  justify-content: center;
-  align-items: baseline;
-  gap: 10px;
-}
+      display: flex;
+      justify-content: center;
+      align-items: baseline;
+      gap: 10px;
+    }
 
-.percent-time {
-  font-size: 48px;   /* percent랑 동일 크기 */
-  font-weight: 800;
-  color: #22c55e;
-}
+    .percent-time {
+      font-size: 48px;
+      font-weight: 800;
+      color: #22c55e;
+    }
 
     .slider-input-wrap {
       margin-bottom: 12px;
@@ -435,7 +435,8 @@
       margin-bottom: 10px;
     }
 
-    .field input {
+    .field input,
+    .field select {
       width: 100%;
       height: 42px;
       border: 1px solid #334155;
@@ -603,9 +604,9 @@
 
     <div class="percent-label">남은 전력량과 현재 시각</div>
     <div class="percent-row">
-  <div class="percent" id="percent">0.0%</div>
-  <div class="percent-time" id="currentTime">--:--</div>
-</div>
+      <div class="percent" id="percent">0.0%</div>
+      <div class="percent-time" id="currentTime">--:--</div>
+    </div>
 
     <div class="row">
       <div class="label">현재 전압</div>
@@ -649,12 +650,24 @@
     <h2>관리자 설정</h2>
 
     <div class="preset-wrap">
+      <div class="preset-title">모델 선택</div>
+
+      <div class="field" style="margin-bottom:10px;">
+        <label for="presetSelect">전기자전거 모델 선택</label>
+        <select id="presetSelect">
+          <option value="">직접 입력</option>
+          <option value="extron">퀄리 엑스트론</option>
+          <option value="cube500">큐브 컴팩트 500</option>
+          <option value="vectronS10">벡트론 S10</option>
+        </select>
+      </div>
+
       <div class="preset-title">기존 자전거 값 불러오기</div>
-<div class="preset-buttons">
-  <button type="button" class="preset-btn" id="presetExtronBtn">퀄리 엑스트론</button>
-  <button type="button" class="preset-btn" id="presetCubeBtn">큐브 컴팩트 500</button>
-  <button type="button" class="preset-btn" id="presetVectronBtn">벡트론 S10</button> <!-- 추가 -->
-</div>
+      <div class="preset-buttons">
+        <button type="button" class="preset-btn" id="presetExtronBtn">퀄리 엑스트론</button>
+        <button type="button" class="preset-btn" id="presetCubeBtn">큐브 컴팩트 500</button>
+        <button type="button" class="preset-btn" id="presetVectronBtn">벡트론 S10</button>
+      </div>
     </div>
 
     <div class="field">
@@ -693,7 +706,7 @@
     </div>
 
     <div class="small-note">
-      프리셋 버튼으로 값을 불러온 뒤, 필요한 값은 직접 수정해서 저장할 수 있습니다.
+      모델 선택 또는 프리셋 버튼을 누르면 전압과 배터리 값이 바로 반영됩니다. 필요하면 직접 수정 후 저장하시면 됩니다.
     </div>
 
     <div class="modal-actions">
@@ -708,7 +721,8 @@
 <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 
 <script>
-  const STORAGE_KEY = "ebike_battery_settings_v5";
+  const STORAGE_KEY = "ebike_battery_settings_v6";
+  const LAST_INPUT_KEY = "ebike_last_voltage";
 
   const DEFAULT_SETTINGS = {
     modelName: "전기자전거 모델",
@@ -721,34 +735,34 @@
   };
 
   const PRESETS = {
-  extron: {
-    modelName: "퀄리 엑스트론",
-    minV: 42.0,
-    maxV: 54.6,
-    fullAh: 20,
-    chargerA: 3,
-    targetPercent: 95,
-    kmPerPercent: 0.9
-  },
-  cube500: {
-    modelName: "큐브 컴팩트 스포츠 하이브리드 500",
-    minV: 30.0,
-    maxV: 42.0,
-    fullAh: 13.4,
-    chargerA: 2,
-    targetPercent: 95,
-    kmPerPercent: 0.8
-  },
-  vectronS10: {
-    modelName: "벡트론 S10",
-    minV: 42.0,
-    maxV: 54.6,
-    fullAh: 20,
-    chargerA: 3,
-    targetPercent: 95,
-    kmPerPercent: 0.9
-  }
-};
+    extron: {
+      modelName: "퀄리 엑스트론",
+      minV: 42.0,
+      maxV: 54.6,
+      fullAh: 20,
+      chargerA: 3,
+      targetPercent: 95,
+      kmPerPercent: 0.9
+    },
+    cube500: {
+      modelName: "큐브 컴팩트 스포츠 하이브리드 500",
+      minV: 30.0,
+      maxV: 42.0,
+      fullAh: 13.4,
+      chargerA: 2,
+      targetPercent: 95,
+      kmPerPercent: 0.8
+    },
+    vectronS10: {
+      modelName: "벡트론 S10",
+      minV: 30.0,
+      maxV: 42.0,
+      fullAh: 11.0,
+      chargerA: 2,
+      targetPercent: 95,
+      kmPerPercent: 0.8
+    }
+  };
 
   function loadSettings() {
     try {
@@ -764,7 +778,7 @@
   }
 
   let settings = loadSettings();
-  let inputMode = "voltage"; // "voltage" or "slider"
+  let inputMode = "voltage";
   let input = "";
   let sliderPercent = 0;
 
@@ -792,6 +806,7 @@
   const presetExtronBtn = document.getElementById("presetExtronBtn");
   const presetCubeBtn = document.getElementById("presetCubeBtn");
   const presetVectronBtn = document.getElementById("presetVectronBtn");
+  const presetSelect = document.getElementById("presetSelect");
 
   const modelNameInput = document.getElementById("modelNameInput");
   const minVInput = document.getElementById("minVInput");
@@ -801,9 +816,9 @@
   const targetPercentInput = document.getElementById("targetPercentInput");
   const kmPerPercentInput = document.getElementById("kmPerPercentInput");
   const currentTimeEl = document.getElementById("currentTime");
-  const LAST_INPUT_KEY = "ebike_last_voltage";
   const saveBtn = document.getElementById("saveBtn");
   const toastEl = document.getElementById("toast");
+
   let toastTimer;
 
   function showToast(message) {
@@ -858,19 +873,24 @@
     timeLabelEl.textContent = `${settings.targetPercent}% 충전시 소모시간`;
   }
 
+  function updateCurrentTime() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, "0");
+    const m = String(now.getMinutes()).padStart(2, "0");
+    currentTimeEl.textContent = `${h}:${m}`;
+  }
+
   function updateInputModeUI() {
     const isVoltageMode = inputMode === "voltage";
-
     voltageModeBtn.classList.toggle("active", isVoltageMode);
     barModeBtn.classList.toggle("active", !isVoltageMode);
-
     numpad.style.display = isVoltageMode ? "grid" : "none";
     sliderInputWrap.style.display = isVoltageMode ? "none" : "block";
   }
 
   function update() {
-  updateCurrentTime();  // ← 추가
-  updateLabels();
+    updateCurrentTime();
+    updateLabels();
 
     let v = 0;
     let percent = 0;
@@ -911,7 +931,6 @@
     const needAh = Math.max(0, targetAh - currentAh);
     const hours = chargerA > 0 ? needAh / chargerA : 0;
     const distance = percent * kmPerPercent;
-    
 
     if (percent <= 20) {
       percentEl.style.color = "#ef4444";
@@ -951,6 +970,27 @@
     kmPerPercentInput.value = preset.kmPerPercent;
   }
 
+  function applyPreset(presetKey, showMessage = true) {
+    const preset = PRESETS[presetKey];
+    if (!preset) return;
+
+    applyPresetToInputs(preset);
+    settings = { ...preset };
+    saveSettings(settings);
+
+    if (inputMode === "slider") {
+      const currentSlider = clamp(Number(percentSlider.value), 0, 100);
+      sliderPercent = currentSlider;
+      sliderPercentValue.textContent = currentSlider;
+    }
+
+    update();
+
+    if (showMessage) {
+      showToast(`${preset.modelName} 적용`);
+    }
+  }
+
   async function shareAppLink() {
     const url = location.href;
 
@@ -984,14 +1024,18 @@
   }
 
   shareBtn.addEventListener("click", async () => {
-    if (navigator.vibrate) {
-      navigator.vibrate(20);
-    }
+    if (navigator.vibrate) navigator.vibrate(20);
     await shareAppLink();
   });
 
   openAdminBtn.addEventListener("click", () => {
     fillAdminInputs();
+
+    const matchedKey = Object.keys(PRESETS).find(
+      key => PRESETS[key].modelName === settings.modelName
+    );
+    presetSelect.value = matchedKey || "";
+
     adminModal.classList.add("show");
   });
 
@@ -1006,19 +1050,29 @@
   });
 
   presetExtronBtn.addEventListener("click", () => {
-    applyPresetToInputs(PRESETS.extron);
+    applyPreset("extron");
+    presetSelect.value = "extron";
     if (navigator.vibrate) navigator.vibrate(15);
   });
 
   presetCubeBtn.addEventListener("click", () => {
-    applyPresetToInputs(PRESETS.cube500);
+    applyPreset("cube500");
+    presetSelect.value = "cube500";
     if (navigator.vibrate) navigator.vibrate(15);
   });
 
   presetVectronBtn.addEventListener("click", () => {
-  applyPresetToInputs(PRESETS.vectronS10);
-  if (navigator.vibrate) navigator.vibrate(15);
-});
+    applyPreset("vectronS10");
+    presetSelect.value = "vectronS10";
+    if (navigator.vibrate) navigator.vibrate(15);
+  });
+
+  presetSelect.addEventListener("change", (e) => {
+    const value = e.target.value;
+    if (!value) return;
+    applyPreset(value);
+    if (navigator.vibrate) navigator.vibrate(15);
+  });
 
   saveAdminBtn.addEventListener("click", () => {
     const next = {
@@ -1069,7 +1123,7 @@
 
     adminModal.classList.remove("show");
     update();
-    alert("저장되었습니다.");
+    showToast("저장되었습니다");
   });
 
   voltageModeBtn.addEventListener("click", () => {
@@ -1115,17 +1169,16 @@
       if (key) {
         if (key === "." && input.includes(".")) return;
         input += key;
-        localStorage.setItem(LAST_INPUT_KEY, input);  // ← 추가
- 
+        localStorage.setItem(LAST_INPUT_KEY, input);
         update();
         return;
-       }
+      }
 
       if (action === "clear") {
-       input = "";
-       localStorage.removeItem(LAST_INPUT_KEY);  // ← 추가
-       update();
-       }
+        input = "";
+        localStorage.removeItem(LAST_INPUT_KEY);
+        update();
+      }
     });
   });
 
@@ -1140,7 +1193,8 @@
 
       const link = document.createElement("a");
       const now = new Date();
-      const fileName = `battery_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}.png`;
+      const fileName =
+        `battery_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}.png`;
 
       link.download = fileName;
       link.href = canvas.toDataURL("image/png");
@@ -1159,22 +1213,15 @@
     }
   });
 
-  function updateCurrentTime() {
-  const now = new Date();
-  const h = String(now.getHours()).padStart(2, "0");
-  const m = String(now.getMinutes()).padStart(2, "0");
-  currentTimeEl.textContent = `${h}:${m}`;
-}
+  const lastInput = localStorage.getItem(LAST_INPUT_KEY);
+  if (lastInput) {
+    input = lastInput;
+  }
 
-const lastInput = localStorage.getItem(LAST_INPUT_KEY);
-if (lastInput) {
-  input = lastInput;
-}
-
-updateInputModeUI();
-update();
-setInterval(updateCurrentTime, 60000);
-updateCurrentTime();
+  updateInputModeUI();
+  update();
+  setInterval(updateCurrentTime, 60000);
+  updateCurrentTime();
 </script>
 
 </body>
