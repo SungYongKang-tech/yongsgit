@@ -1,352 +1,150 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- OG -->
-  <meta property="og:title" content="KOEN 탁구" />
-  <meta property="og:description" content="남동발전 KOEN 탁구동호회 전용 웹사이트입니다!" />
-  <meta property="og:image" content="https://sensational-tulumba-65e97e.netlify.app/pingpong_main/koen_pingpong.jpg" />
-  <meta property="og:type" content="website" />
-
-  <title>KOEN 탁구</title>
-
-  <style>
-    :root{
-      --bg1:#eef4ff;
-      --bg2:#f8fbff;
-      --card:#ffffff;
-      --text:#14213d;
-      --muted:#5b6475;
-      --line:#e4eaf3;
-      --shadow:0 10px 28px rgba(19,33,68,.10);
-      --radius:22px;
-
-      --teal:#00695c;
-      --blue:#1565c0;
-      --cyan:#00838f;
-      --purple:#6a1b9a;
-      --pink:#ad1457;
-      --orange:#ef6c00;
-    }
-
-    *{ box-sizing:border-box; }
-
-    html,body{
-      margin:0;
-      padding:0;
-      font-family:"Pretendard","Segoe UI","Noto Sans KR",sans-serif;
-      color:var(--text);
-      background:
-        radial-gradient(circle at top left, #dce9ff 0%, transparent 35%),
-        linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%);
-      min-height:100%;
-    }
-
-    body{
-      display:flex;
-      justify-content:center;
-      padding:18px 14px 30px;
-    }
-
-    .app-shell{
-      width:100%;
-      max-width:420px;
-    }
-
-    .hero{
-      position:relative;
-      overflow:hidden;
-      background:linear-gradient(135deg, #0d47a1 0%, #1976d2 55%, #42a5f5 100%);
-      border-radius:28px;
-      padding:22px 18px 18px;
-      color:#fff;
-      box-shadow:0 18px 38px rgba(13,71,161,.22);
-      margin-bottom:16px;
-    }
-
-    .hero::before{
-      content:"";
-      position:absolute;
-      width:180px;
-      height:180px;
-      right:-40px;
-      top:-40px;
-      border-radius:50%;
-      background:rgba(255,255,255,.12);
-    }
-
-    .hero::after{
-      content:"";
-      position:absolute;
-      width:120px;
-      height:120px;
-      left:-28px;
-      bottom:-36px;
-      border-radius:50%;
-      background:rgba(255,255,255,.10);
-    }
-
-    .hero-top{
-      position:relative;
-      z-index:1;
-      display:flex;
-      align-items:center;
-      gap:14px;
-    }
-
-    .logo-badge{
-      flex:0 0 58px;
-      width:58px;
-      height:58px;
-      border-radius:18px;
-      background:rgba(255,255,255,.16);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-size:28px;
-      backdrop-filter: blur(4px);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.14);
-    }
-
-    .hero-text h1{
-      margin:0;
-      font-size:26px;
-      line-height:1.15;
-      font-weight:800;
-      letter-spacing:-0.3px;
-    }
-
-    .hero-text p{
-      margin:6px 0 0;
-      font-size:13px;
-      line-height:1.5;
-      color:rgba(255,255,255,.92);
-    }
-
-    .thumb-card{
-      position:relative;
-      z-index:1;
-      margin-top:16px;
-      background:rgba(255,255,255,.12);
-      border-radius:22px;
-      padding:10px;
-      backdrop-filter: blur(6px);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
-    }
-
-    .thumbnail{
-      display:block;
-      width:100%;
-      border-radius:16px;
-      aspect-ratio: 16 / 10;
-      object-fit:cover;
-      box-shadow:0 8px 18px rgba(0,0,0,.15);
-    }
-
-    .section-title{
-      margin:18px 4px 12px;
-      font-size:15px;
-      font-weight:800;
-      color:#1d2a44;
-    }
-
-    .menu-grid{
-      display:grid;
-      grid-template-columns:1fr;
-      gap:12px;
-    }
-
-    .menu-card{
-      display:flex;
-      align-items:center;
-      gap:14px;
-      text-decoration:none;
-      background:var(--card);
-      border-radius:20px;
-      padding:14px 15px;
-      box-shadow:var(--shadow);
-      border:1px solid var(--line);
-      transition:transform .14s ease, box-shadow .14s ease, filter .14s ease;
-      color:var(--text);
-    }
-
-    .menu-card:hover{
-      transform:translateY(-2px);
-      box-shadow:0 14px 30px rgba(19,33,68,.12);
-      filter:brightness(1.01);
-    }
-
-    .menu-card:active{
-      transform:scale(.985);
-    }
-
-    .menu-card:focus-visible{
-      outline:none;
-      box-shadow:
-        0 0 0 3px rgba(21,101,192,.18),
-        0 12px 28px rgba(19,33,68,.12);
-    }
-
-    .icon-wrap{
-      width:50px;
-      height:50px;
-      border-radius:16px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      color:#fff;
-      font-size:23px;
-      flex-shrink:0;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
-    }
-
-    .menu-text{
-      flex:1;
-      min-width:0;
-    }
-
-    .menu-text strong{
-      display:block;
-      font-size:18px;
-      font-weight:800;
-      margin-bottom:4px;
-      letter-spacing:-0.2px;
-    }
-
-    .menu-text span{
-      display:block;
-      font-size:12.5px;
-      color:var(--muted);
-      line-height:1.45;
-    }
-
-    .arrow{
-      color:#8a94a6;
-      font-size:20px;
-      font-weight:700;
-      flex-shrink:0;
-    }
-
-    .teal{ background:linear-gradient(135deg, #00796b, #00695c); }
-    .blue{ background:linear-gradient(135deg, #1e88e5, #1565c0); }
-    .cyan{ background:linear-gradient(135deg, #0097a7, #00838f); }
-    .purple{ background:linear-gradient(135deg, #7b1fa2, #6a1b9a); }
-    .pink{ background:linear-gradient(135deg, #c2185b, #ad1457); }
-    .orange{ background:linear-gradient(135deg, #fb8c00, #ef6c00); }
-
-    .footer-note{
-      margin-top:16px;
-      text-align:center;
-      font-size:12px;
-      color:#7b8495;
-      padding-bottom:10px;
-    }
-
-    @media (min-width: 700px){
-      .app-shell{
-        max-width:860px;
-      }
-
-      .menu-grid{
-        grid-template-columns:1fr 1fr;
-      }
-    }
-  </style>
-</head>
-
-<body>
-  <main class="app-shell">
-
-    <section class="hero">
-      <div class="hero-top">
-        <div class="logo-badge">🏓</div>
-        <div class="hero-text">
-          <h1>KOEN 탁구(통통회)</h1>
-          <p>남동발전 탁구동호회 전용 앱</p>
-        </div>
-      </div>
-
-      <div class="thumb-card">
-        <img
-          src="/pingpong_main/pingpongmember.jpg"
-          alt="KOEN 탁구 썸네일"
-          class="thumbnail"
-        />
-      </div>
-    </section>
-
-    <div class="section-title">메뉴 바로가기</div>
-
-    <section class="menu-grid">
-
-  <a class="menu-card"
-     href="/pingpong_main/admin/index.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap teal">🛠️</div>
-    <div class="menu-text">
-      <strong>관리자 전용</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
-  <a class="menu-card"
-     href="/pingpong_main/pingpong_lesson/index.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap blue">🎯</div>
-    <div class="menu-text">
-      <strong>레슨자 전용</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
-  <a class="menu-card"
-     href="/pingpong_main/koen-rank/index.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap cyan">📊</div>
-    <div class="menu-text">
-      <strong>KOEN 탁구 리그 & 성적관리</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
-  <a class="menu-card"
-     href="/pingpong_main/team-make/index.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap purple">👥</div>
-    <div class="menu-text">
-      <strong>단체전 선수구성</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
-  <a class="menu-card"
-     href="/pingpong_main/team-live/index.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap pink">🏆</div>
-    <div class="menu-text">
-      <strong>단체전 진행</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
-  <a class="menu-card"
-     href="/pingpong_main/single-league.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap orange">🔥</div>
-    <div class="menu-text">
-      <strong>단식 리그</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
-</section>
-
-    <div class="footer-note">
-      KOEN Ping Pong Club
-    </div>
-
-  </main>
-</body>
-</html>
+window.RULES_DATA = [
+  {
+    id: "game",
+    badge: "기본",
+    title: "경기 방식",
+    keywords: ["11점", "듀스", "매치", "세트", "게임", "몇점", "몇판"],
+    summary: "아마추어 경기에서 가장 기본이 되는 점수 규칙입니다.",
+    items: [
+      "1게임은 11점을 먼저 내면 이깁니다.",
+      "10:10이 되면 듀스이며, 2점 차가 날 때까지 계속합니다.",
+      "매치는 보통 3판 2선승 또는 5판 3선승처럼 홀수 게임으로 진행합니다.",
+      "과반의 게임을 먼저 이기면 매치 승리입니다."
+    ],
+    tips: [
+      "사내 대회나 동호회는 보통 3판 2선승 또는 5판 3선승이 많습니다.",
+      "점수판에 게임 스코어와 현재 점수를 같이 표시하면 헷갈림이 줄어듭니다."
+    ],
+    source: "ITTF 2.11, 2.12"
+  },
+  {
+    id: "service",
+    badge: "핵심",
+    title: "서비스 규정",
+    keywords: ["서브", "서비스", "토스", "16cm", "가리기", "오른쪽", "복식서브"],
+    summary: "서브에서 가장 많이 헷갈리는 내용만 정리했습니다.",
+    items: [
+      "공은 펼친 손바닥 위에 정지된 상태로 올려놓고 시작해야 합니다.",
+      "공은 회전 없이 거의 수직으로 16cm 이상 올려 던져야 합니다.",
+      "공이 떨어질 때 쳐서 자기 코트에 먼저 맞고 상대 코트로 직접 넘어가야 합니다.",
+      "복식은 반드시 서버의 오른쪽 코트 → 리시버의 오른쪽 코트로 들어가야 합니다.",
+      "공을 몸이나 팔, 상체로 가리면 안 됩니다.",
+      "공을 던진 뒤에는 프리핸드와 프리암을 공과 네트 사이에서 치워야 합니다."
+    ],
+    tips: [
+      "동호회에서는 토스 높이와 가리기 동작 때문에 시비가 자주 생깁니다.",
+      "‘짧게 던져 바로 치는 서브’는 상대가 문제 제기하기 쉬운 형태입니다."
+    ],
+    source: "ITTF 2.6"
+  },
+  {
+    id: "return",
+    badge: "기본",
+    title: "리턴 규정",
+    keywords: ["리턴", "리시브", "네트맞고", "넘어가면", "받기"],
+    summary: "상대 코트에 제대로 들어가면 유효입니다.",
+    items: [
+      "서브나 랠리 중 친 공은 상대 코트에 직접 닿아야 합니다.",
+      "공이 네트에 닿더라도 상대 코트에 들어가면 유효입니다."
+    ],
+    tips: [
+      "랠리 중 네트 맞고 넘어간 공은 그대로 인플레이입니다.",
+      "서브에서 네트 맞고 정상 진입한 경우는 렛이지만, 랠리 중 네트 맞고 들어간 공은 그대로 진행입니다."
+    ],
+    source: "ITTF 2.7, 2.9"
+  },
+  {
+    id: "order",
+    badge: "순서",
+    title: "단식 / 복식 경기 순서",
+    keywords: ["단식", "복식", "순서", "누가쳐", "번갈아", "리시브순서"],
+    summary: "복식에서 특히 많이 헷갈리는 부분입니다.",
+    items: [
+      "단식은 서버가 서브하고, 리시버가 받고, 이후 번갈아 칩니다.",
+      "복식은 서버 → 리시버 → 서버의 파트너 → 리시버의 파트너 순으로 쳐야 합니다.",
+      "복식에서는 정해진 차례와 다르게 치면 실점입니다."
+    ],
+    tips: [
+      "복식은 첫 서브와 첫 리시브를 정할 때부터 순서를 명확히 정해두는 것이 좋습니다.",
+      "이름 대신 A1, A2, B1, B2로 적어두면 진행이 편합니다."
+    ],
+    source: "ITTF 2.8, 2.10.1.12"
+  },
+  {
+    id: "let",
+    badge: "판정",
+    title: "렛(다시 하는 경우)",
+    keywords: ["렛", "다시", "네트서브", "준비안됨", "방해", "중단"],
+    summary: "점수가 아니라 다시 하는 랠리입니다.",
+    items: [
+      "서브가 네트에 닿았지만 정상적으로 상대 코트에 들어가면 렛입니다.",
+      "상대가 준비되지 않았는데 서브했고, 상대가 치려는 시도도 하지 않았다면 렛이 될 수 있습니다.",
+      "외부 방해 등으로 정상 진행이 어려우면 렛 또는 경기 중단이 될 수 있습니다."
+    ],
+    tips: [
+      "랠리 중 네트 맞고 들어간 공은 렛이 아닙니다.",
+      "렛은 주로 ‘서브 상황’에서 많이 발생합니다."
+    ],
+    source: "ITTF 2.9"
+  },
+  {
+    id: "point",
+    badge: "판정",
+    title: "점수가 되는 경우",
+    keywords: ["점수", "실점", "반칙", "네트건드림", "두번", "방해", "손짚기"],
+    summary: "실전에서 가장 자주 보는 실점 상황입니다.",
+    items: [
+      "상대가 올바른 서비스를 하지 못하면 내 점수입니다.",
+      "상대가 올바른 리턴을 하지 못하면 내 점수입니다.",
+      "상대가 친 공이 내 코트에 닿지 않고 밖으로 나가면 내 점수입니다.",
+      "상대가 공을 방해하면 내 점수입니다.",
+      "상대가 공을 연속 두 번 치면 내 점수입니다.",
+      "상대의 몸이나 옷, 라켓 외의 것이 네트에 닿으면 내 점수입니다.",
+      "상대의 프리핸드가 탁구대 위 경기 표면에 닿으면 내 점수입니다.",
+      "복식에서 정해진 순서가 아니게 치면 상대 실점입니다."
+    ],
+    tips: [
+      "탁구대에 손을 짚는 것 자체가 모두 반칙은 아닙니다.",
+      "라켓 든 손이 아니라 ‘프리핸드’가 경기 표면에 닿았을 때가 핵심입니다."
+    ],
+    source: "ITTF 2.10"
+  },
+  {
+    id: "change",
+    badge: "진행",
+    title: "서브 / 엔드 변경",
+    keywords: ["서브교대", "엔드변경", "2점", "듀스", "마지막게임", "5점"],
+    summary: "경기 운영할 때 꼭 알아야 하는 교대 규칙입니다.",
+    items: [
+      "기본적으로 2점마다 서브가 바뀝니다.",
+      "10:10 이후에는 1점마다 서브가 바뀝니다.",
+      "한 게임이 끝나면 다음 게임에서 엔드를 바꿉니다.",
+      "마지막 게임에서는 한쪽이 5점에 도달하면 엔드를 바꿉니다.",
+      "복식 마지막 게임에서는 5점 시 리시브 순서도 바뀝니다."
+    ],
+    tips: [
+      "아마추어 경기에서는 5점에서 엔드 변경을 자주 놓칩니다.",
+      "점수판 옆에 ‘엔드 변경 체크’ 표시를 두면 진행이 편합니다."
+    ],
+    source: "ITTF 2.13"
+  },
+  {
+    id: "faq",
+    badge: "FAQ",
+    title: "자주 헷갈리는 판정",
+    keywords: ["에지", "사이드", "옆면", "모서리", "손", "몸", "옷", "방해"],
+    summary: "실전에서 제일 많이 물어보는 질문들입니다.",
+    items: [
+      "에지(탁구대 위쪽 모서리)는 유효입니다.",
+      "사이드(탁구대 옆면, 수직면)는 경기 표면이 아니므로 아웃입니다.",
+      "공이 몸이나 옷에 닿아 방해가 되면 실점입니다.",
+      "라켓을 잡은 손의 손목 아래 부분에 공이 닿은 것은 타격으로 인정됩니다.",
+      "프리핸드가 경기 표면에 닿으면 실점입니다."
+    ],
+    tips: [
+      "‘위에 맞았는지, 옆에 맞았는지’가 에지/사이드 판정의 핵심입니다.",
+      "애매할 때는 소리보다 공의 튀는 방향을 같이 보는 것이 좋습니다."
+    ],
+    source: "ITTF 2.1.2, 2.5.7, 2.5.8, 2.10.1.6, 2.10.1.11"
+  }
+];
