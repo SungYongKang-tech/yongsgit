@@ -341,16 +341,6 @@
     <div class="arrow">›</div>
   </a>
 
-  <a class="menu-card"
-     href="/pingpong_main/rules.html"
-     target="_blank" rel="noopener noreferrer">
-    <div class="icon-wrap orange">🔥</div>
-    <div class="menu-text">
-      <strong>경기 규칙</strong>
-    </div>
-    <div class="arrow">›</div>
-  </a>
-
 </section>
 
     <div class="footer-note">
