@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>주행기록 목록</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg1: #0b1220;
+      --bg2: #121c34;
+      --line: rgba(255,255,255,0.08);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; min-height: 100%; }
+    body {
+      background:
+        radial-gradient(circle at top, rgba(59,130,246,0.18), transparent 34%),
+        linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 100%);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      padding: 12px;
+    }
+    .wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      display: grid;
+      gap: 12px;
+    }
+    .topbar {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      height: 42px;
+      padding: 0 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
+      color: #fff;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(17,24,39,0.96), rgba(15,23,42,0.96));
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 14px;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 900;
+      margin-bottom: 6px;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(30,41,59,0.6);
+      cursor: pointer;
+    }
+    .item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .item-title {
+      font-weight: 900;
+      font-size: 15px;
+    }
+    .item-meta {
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: rgba(30,41,59,0.6);
+      text-align: center;
+    }
+    .label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+    .value {
+      font-size: 16px;
+      font-weight: 900;
+    }
+    #map {
+      width: 100%;
+      height: 420px;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 18px 0;
+    }
+    @media (max-width: 700px) {
+      .detail-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      #map {
+        height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <button class="btn" id="backRideBtn">주행화면</button>
+      <button class="btn" id="backBatteryBtn">배터리 계산기</button>
+      <button class="btn" id="deleteBtn">선택기록 삭제</button>
+    </div>
+
+    <div class="panel">
+      <div class="title">주행기록 목록</div>
+      <div class="sub">저장된 주행기록을 눌러 상세 코스와 기본 정보를 확인합니다</div>
+      <div class="list" id="rideList"></div>
+    </div>
+
+    <div class="panel">
+      <div class="title" id="detailTitle">상세 정보</div>
+      <div class="detail-grid">
+        <div class="card">
+          <div class="label">저장 일시</div>
+          <div class="value" id="savedAtEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">총 거리</div>
+          <div class="value" id="distanceEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">총 시간</div>
+          <div class="value" id="durationEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">평균 속도</div>
+          <div class="value" id="avgSpeedEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">최고 속도</div>
+          <div class="value" id="maxSpeedEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">출발 위치</div>
+          <div class="value" id="startPointEl">-</div>
+        </div>
+      </div>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
+    let selectedRideId = null;
+
+    function loadSavedRides() {
+      try {
+        return JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveSavedRides(rides) {
+      localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
+    }
+
+    function formatDuration(ms) {
+      const totalSec = Math.max(0, Math.floor(ms / 1000));
+      const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+      const ss = String(totalSec % 60).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    }
+
+    function formatDate(iso) {
+      const d = new Date(iso);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${y}-${m}-${day} ${hh}:${mm}`;
+    }
+
+    const map = L.map("map").setView([35.180, 128.107], 13);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let polyline = L.polyline([], {
+      color: "#3b82f6",
+      weight: 6,
+      opacity: 0.9
+    }).addTo(map);
+
+    let startMarker = null;
+    let endMarker = null;
+
+    const rideList = document.getElementById("rideList");
+    const detailTitle = document.getElementById("detailTitle");
+    const savedAtEl = document.getElementById("savedAtEl");
+    const distanceEl = document.getElementById("distanceEl");
+    const durationEl = document.getElementById("durationEl");
+    const avgSpeedEl = document.getElementById("avgSpeedEl");
+    const maxSpeedEl = document.getElementById("maxSpeedEl");
+    const startPointEl = document.getElementById("startPointEl");
+
+    function renderList() {
+      const rides = loadSavedRides();
+      rideList.innerHTML = "";
+
+      if (!rides.length) {
+        rideList.innerHTML = '<div class="empty">저장된 주행기록이 없습니다</div>';
+        return;
+      }
+
+      rides.forEach((ride) => {
+        const item = document.createElement("div");
+        item.className = "item";
+        item.innerHTML = `
+          <div class="item-head">
+            <div class="item-title">${formatDate(ride.savedAt)}</div>
+          </div>
+          <div class="item-meta">
+            <span>거리 ${(ride.totalDistanceM / 1000).toFixed(2)} km</span>
+            <span>시간 ${formatDuration(ride.elapsedMs)}</span>
+            <span>평균 ${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h</span>
+            <span>최고 ${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h</span>
+          </div>
+        `;
+        item.addEventListener("click", () => showRide(ride.id));
+        rideList.appendChild(item);
+      });
+    }
+
+    function showRide(id) {
+      const rides = loadSavedRides();
+      const ride = rides.find(r => r.id === id);
+      if (!ride) return;
+
+      selectedRideId = id;
+      detailTitle.textContent = `상세 정보 · ${formatDate(ride.savedAt)}`;
+      savedAtEl.textContent = formatDate(ride.savedAt);
+      distanceEl.textContent = `${(ride.totalDistanceM / 1000).toFixed(2)} km`;
+      durationEl.textContent = formatDuration(ride.elapsedMs);
+      avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
+      maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
+      startPointEl.textContent = ride.startPoint
+        ? `${ride.startPoint.lat.toFixed(5)}, ${ride.startPoint.lng.toFixed(5)}`
+        : "-";
+
+      polyline.setLatLngs(ride.path || []);
+
+      if (startMarker) map.removeLayer(startMarker);
+      if (endMarker) map.removeLayer(endMarker);
+
+      if (ride.path && ride.path.length) {
+        startMarker = L.marker(ride.path[0]).addTo(map).bindPopup("출발");
+        endMarker = L.marker(ride.path[ride.path.length - 1]).addTo(map).bindPopup("도착");
+        map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
+      }
+    }
+
+    document.getElementById("backRideBtn").addEventListener("click", () => {
+      location.href = "./ride-map.html";
+    });
+
+    document.getElementById("backBatteryBtn").addEventListener("click", () => {
+      location.href = "./index.html";
+    });
+
+    document.getElementById("deleteBtn").addEventListener("click", () => {
+      if (!selectedRideId) {
+        alert("삭제할 기록을 먼저 선택해주세요.");
+        return;
+      }
+
+      if (!confirm("선택한 주행기록을 삭제할까요?")) return;
+
+      const rides = loadSavedRides().filter(r => r.id !== selectedRideId);
+      saveSavedRides(rides);
+      selectedRideId = null;
+      renderList();
+
+      detailTitle.textContent = "상세 정보";
+      savedAtEl.textContent = "-";
+      distanceEl.textContent = "-";
+      durationEl.textContent = "-";
+      avgSpeedEl.textContent = "-";
+      maxSpeedEl.textContent = "-";
+      startPointEl.textContent = "-";
+      polyline.setLatLngs([]);
+      if (startMarker) map.removeLayer(startMarker);
+      if (endMarker) map.removeLayer(endMarker);
+      startMarker = null;
+      endMarker = null;
+      map.setView([35.180, 128.107], 13);
+    });
+
+    renderList();
+    const rides = loadSavedRides();
+    if (rides.length) showRide(rides[0].id);
+  </script>
+</body>
+</html>

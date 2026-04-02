@@ -274,8 +274,7 @@
     @media (max-width: 390px) {
       .title { font-size: 22px; }
       .top-actions { width: 160px; }
-      .summary-value,
-      .speed-value { font-size: 17px; }
+      .summary-value, .speed-value { font-size: 17px; }
       .bottom-value { font-size: 14px; }
       .chip-btn, .width-btn { font-size: 11px; padding: 0 8px; }
     }
@@ -292,8 +291,8 @@
 
         <div class="top-actions">
           <button class="top-btn primary" id="batteryBtn">배터리</button>
+          <button class="top-btn primary" id="historyBtn">기록목록</button>
           <button class="top-btn green" id="startBtn">시작</button>
-          <button class="top-btn amber" id="pauseBtn">일시정지</button>
           <button class="top-btn red" id="endBtn">종료</button>
         </div>
       </div>
@@ -359,7 +358,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const RIDE_STORAGE_KEY = "ebike_ride_tracker_v3";
+    const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
+    const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
     const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
@@ -396,6 +396,35 @@
       localStorage.removeItem(RIDE_STORAGE_KEY);
     }
 
+    function loadSavedRides() {
+      try {
+        return JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveRideSummary() {
+      const elapsedMs = getElapsedMs();
+      const elapsedHours = elapsedMs / 3600000;
+      const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+
+      const rides = loadSavedRides();
+      const item = {
+        id: `ride_${Date.now()}`,
+        savedAt: new Date().toISOString(),
+        totalDistanceM: rideData.totalDistanceM,
+        elapsedMs,
+        avgSpeedKmh: avgSpeed,
+        maxSpeedKmh: rideData.maxSpeedKmh || 0,
+        startPoint: rideData.startPoint,
+        path: rideData.path
+      };
+
+      rides.unshift(item);
+      localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
+    }
+
     let rideData = loadRideData();
     let watchId = null;
     let wakeLock = null;
@@ -414,8 +443,8 @@
     const maxSpeedEl = document.getElementById("maxSpeedEl");
 
     const batteryBtn = document.getElementById("batteryBtn");
+    const historyBtn = document.getElementById("historyBtn");
     const startBtn = document.getElementById("startBtn");
-    const pauseBtn = document.getElementById("pauseBtn");
     const endBtn = document.getElementById("endBtn");
     const followBtn = document.getElementById("followBtn");
     const zoomBtn = document.getElementById("zoomBtn");
@@ -460,9 +489,9 @@
       const dLon = toRad(lon2 - lon1);
 
       const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.sin(dLat / 2) ** 2 +
         Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        Math.sin(dLon / 2) ** 2;
 
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
@@ -609,10 +638,9 @@
       }
 
       lastPointTime = now;
-
       speedKmh = Math.max(0, Math.min(speedKmh, 60));
-      rideData.currentSpeedKmh = speedKmh;
 
+      rideData.currentSpeedKmh = speedKmh;
       if (speedKmh > rideData.maxSpeedKmh) {
         rideData.maxSpeedKmh = speedKmh;
       }
@@ -627,8 +655,8 @@
         if (dist >= 5 && dist <= 300) {
           rideData.totalDistanceM += dist;
           rideData.path.push(point);
-        } else if (dist < 5) {
-          if (currentMarker) currentMarker.setLatLng(point);
+        } else if (dist < 5 && currentMarker) {
+          currentMarker.setLatLng(point);
         }
       }
 
@@ -636,16 +664,10 @@
 
       if (autoZoom) {
         let targetZoom = 16;
-
-        if (speedKmh > 25) {
-          targetZoom = 14;
-        } else if (speedKmh > 15) {
-          targetZoom = 15;
-        } else if (speedKmh > 5) {
-          targetZoom = 16;
-        } else {
-          targetZoom = 17;
-        }
+        if (speedKmh > 25) targetZoom = 14;
+        else if (speedKmh > 15) targetZoom = 15;
+        else if (speedKmh > 5) targetZoom = 16;
+        else targetZoom = 17;
 
         if (map.getZoom() !== targetZoom) {
           map.setZoom(targetZoom);
@@ -669,7 +691,6 @@
         alert("이 기기에서는 위치 기능을 사용할 수 없습니다.");
         return;
       }
-
       if (watchId !== null) return;
 
       watchId = navigator.geolocation.watchPosition(
@@ -718,76 +739,74 @@
     }
 
     function startRide() {
-  const isResume = rideData.started && rideData.paused;
-  const message = isResume
-    ? "일시정지를 해제하고 주행기록을 다시 시작할까요?"
-    : "주행기록을 시작할까요?";
+      const isResume = rideData.started && rideData.paused;
+      const msg = isResume
+        ? "주행기록을 다시 시작할까요?"
+        : "주행기록을 시작할까요?";
 
-  if (!confirm(message)) return;
+      if (!confirm(msg)) return;
 
-  if (!rideData.started) {
-    rideData.started = true;
-    rideData.paused = false;
-    rideData.startTime = Date.now();
-    rideData.pausedAt = null;
-    rideData.pausedMs = 0;
-    rideData.currentSpeedKmh = 0;
-    rideData.maxSpeedKmh = 0;
-    lastPointTime = Date.now();
-  } else if (rideData.paused) {
-    rideData.paused = false;
-    if (rideData.pausedAt) {
-      rideData.pausedMs += Date.now() - rideData.pausedAt;
-    }
-    rideData.pausedAt = null;
-    lastPointTime = Date.now();
-  }
+      if (!rideData.started) {
+        rideData.started = true;
+        rideData.paused = false;
+        rideData.startTime = Date.now();
+        rideData.pausedAt = null;
+        rideData.pausedMs = 0;
+        rideData.currentSpeedKmh = 0;
+        rideData.maxSpeedKmh = 0;
+        lastPointTime = Date.now();
+      } else if (rideData.paused) {
+        rideData.paused = false;
+        if (rideData.pausedAt) {
+          rideData.pausedMs += Date.now() - rideData.pausedAt;
+        }
+        rideData.pausedAt = null;
+        lastPointTime = Date.now();
+      }
 
-  saveRideData();
-  updateStats();
-  startWatching();
-  requestWakeLock();
-}
-
-    function pauseRide() {
-      if (!rideData.started || rideData.paused) return;
-      rideData.paused = true;
-      rideData.pausedAt = Date.now();
-      rideData.currentSpeedKmh = 0;
       saveRideData();
       updateStats();
-      stopWatching();
+      startWatching();
+      requestWakeLock();
     }
 
     function endRide() {
-  if (!confirm("현재 주행기록을 종료하고 기록을 초기화할까요?")) return;
+      if (!rideData.started) return;
 
-  stopWatching();
+      const shouldSave = confirm("현재 주행기록을 저장할까요?");
 
-  if (startMarker) {
-    map.removeLayer(startMarker);
-    startMarker = null;
-  }
+      if (shouldSave && rideData.path.length > 0) {
+        saveRideSummary();
+      }
 
-  if (currentMarker) {
-    map.removeLayer(currentMarker);
-    currentMarker = null;
-  }
+      stopWatching();
 
-  polyline.setLatLngs([]);
-  clearRideData();
-  lastPointTime = null;
-  updateStats();
-  map.setView([35.180, 128.107], 15);
-  requestLocationPermission();
-}
+      if (startMarker) {
+        map.removeLayer(startMarker);
+        startMarker = null;
+      }
+      if (currentMarker) {
+        map.removeLayer(currentMarker);
+        currentMarker = null;
+      }
+
+      polyline.setLatLngs([]);
+      clearRideData();
+      lastPointTime = null;
+      updateStats();
+      map.setView([35.180, 128.107], 15);
+      requestLocationPermission();
+    }
 
     batteryBtn.addEventListener("click", () => {
       location.href = "./index.html";
     });
 
+    historyBtn.addEventListener("click", () => {
+      location.href = "./ride-history.html";
+    });
+
     startBtn.addEventListener("click", startRide);
-    pauseBtn.addEventListener("click", pauseRide);
     endBtn.addEventListener("click", endRide);
 
     followBtn.addEventListener("click", () => {
