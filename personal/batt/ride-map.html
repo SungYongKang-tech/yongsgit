@@ -364,19 +364,27 @@
     const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
 
+    const STOP_SPEED_KMH = 1.5;          // 이 속도 이하면 정지로 판단
+    const AUTO_PAUSE_DELAY_MS = 15000;   // 15초 이상 정지면 자동 일시정지
+    const MIN_MOVE_DISTANCE_M = 8;       // 이 거리 미만은 GPS 흔들림으로 간주
+    const MAX_VALID_SPEED_KMH = 45;      // 자전거 비정상 속도 차단
+
     const initialData = {
-      started: false,
-      paused: false,
-      startTime: null,
-      pausedAt: null,
-      pausedMs: 0,
-      totalDistanceM: 0,
-      path: [],
-      startPoint: null,
-      lastAccuracy: null,
-      currentSpeedKmh: 0,
-      maxSpeedKmh: 0
-    };
+  started: false,
+  paused: false,
+  pausedAt: null,
+  startTime: null,
+  pausedMs: 0,
+  totalDistanceM: 0,
+  path: [],
+  startPoint: null,
+  lastAccuracy: null,
+  currentSpeedKmh: 0,
+  maxSpeedKmh: 0,
+  stopBeganAt: null,
+  lastPoint: null,
+  autoPaused: false
+};
 
     function loadRideData() {
       try {
@@ -550,7 +558,10 @@
       avgSpeedEl.textContent = `${avgSpeed.toFixed(1)} km/h`;
 
       maxSpeedEl.textContent = `${(rideData.maxSpeedKmh || 0).toFixed(1)} km/h`;
-
+      
+      if (rideData.paused && rideData.autoPaused) {
+  durationEl.textContent = formatDuration(getElapsedMs()) + " (일시정지)";
+}
       if (rideData.startPoint) {
         startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
       } else {
@@ -577,7 +588,7 @@
       }
 
       if (rideData.path.length > 0) {
-        const last = rideData.path[rideData.path.length - 1];
+  const last = rideData.lastPoint || rideData.path[rideData.path.length - 1];
 
         if (!currentMarker) {
           currentMarker = L.marker(last, { icon: bikeIcon }).addTo(map);
@@ -654,72 +665,126 @@
     });
 
     function handlePosition(pos) {
-      if (!rideData.started || rideData.paused) return;
+  if (!rideData.started) return;
 
-      const { latitude, longitude, accuracy } = pos.coords;
-      rideData.lastAccuracy = accuracy;
+  const { latitude, longitude, accuracy } = pos.coords;
+  rideData.lastAccuracy = accuracy;
 
-      if (accuracy > 35) {
-        rideData.currentSpeedKmh = 0;
-        updateStats();
-        saveRideData();
-        return;
-      }
+  const point = [latitude, longitude];
+  const now = Date.now();
 
-      const point = [latitude, longitude];
-      const now = Date.now();
-      let speedKmh = 0;
+  if (accuracy > 35) {
+    rideData.currentSpeedKmh = 0;
+    updateStats();
+    saveRideData();
+    return;
+  }
 
-      if (rideData.path.length > 0 && lastPointTime) {
-        const prev = rideData.path[rideData.path.length - 1];
-        const distForSpeed = haversine(prev[0], prev[1], latitude, longitude);
-        const dt = (now - lastPointTime) / 1000;
+  // 첫 위치
+  if (rideData.path.length === 0) {
+  rideData.path.push(point);
+  rideData.startPoint = { lat: latitude, lng: longitude };
+  rideData.lastPoint = point;
+  lastPointTime = now;
+  redrawPath();
+  updateStats();
+  saveRideData();
+  return;
+}
 
-        if (dt > 0) {
-          speedKmh = (distForSpeed / dt) * 3.6;
-        }
-      }
+  const prev = rideData.path[rideData.path.length - 1];
+  const dist = haversine(prev[0], prev[1], latitude, longitude);
+  const dt = lastPointTime ? (now - lastPointTime) / 1000 : 0;
 
-      lastPointTime = now;
-      speedKmh = Math.max(0, Math.min(speedKmh, 60));
+  let rawSpeed = 0;
+  if (dt > 0) {
+    rawSpeed = (dist / dt) * 3.6;
+  }
 
-      rideData.currentSpeedKmh = speedKmh;
-      if (speedKmh > rideData.maxSpeedKmh) {
-        rideData.maxSpeedKmh = speedKmh;
-      }
+  // GPS 튐 제거
+  if (rawSpeed > MAX_VALID_SPEED_KMH || (dist > 100 && dt > 0 && dt < 2)) {
+    rideData.currentSpeedKmh = 0;
+    updateStats();
+    saveRideData();
+    return;
+  }
 
-      if (rideData.path.length === 0) {
-        rideData.path.push(point);
-        rideData.startPoint = { lat: latitude, lng: longitude };
-      } else {
-        const prev = rideData.path[rideData.path.length - 1];
-        const dist = haversine(prev[0], prev[1], latitude, longitude);
+  // 아주 작은 이동 + 저속 = 정지로 처리
+  const isNearlyStopped =
+    dist < MIN_MOVE_DISTANCE_M || rawSpeed < STOP_SPEED_KMH;
 
-        if (dist >= 5 && dist <= 300) {
-          rideData.totalDistanceM += dist;
-          rideData.path.push(point);
-        } else if (dist < 5 && currentMarker) {
-          currentMarker.setLatLng(point);
-        }
-      }
+  if (isNearlyStopped) {
+  rideData.currentSpeedKmh = 0;
+  rideData.lastPoint = point;
 
-      redrawPath();
+  if (!rideData.stopBeganAt) {
+    rideData.stopBeganAt = now;
+  }
 
-      if (autoZoom) {
-        let targetZoom = 16;
-        if (speedKmh > 25) targetZoom = 14;
-        else if (speedKmh > 15) targetZoom = 15;
-        else if (speedKmh > 5) targetZoom = 16;
-        else targetZoom = 17;
-
-        if (map.getZoom() !== targetZoom) {
-          map.setZoom(targetZoom);
-        }
-      }
-
-      updateStats();
-      saveRideData();
+    // 일정 시간 지나면 자동 일시정지
+    if (!rideData.autoPaused && now - rideData.stopBeganAt >= AUTO_PAUSE_DELAY_MS) {
+      rideData.autoPaused = true;
+      rideData.paused = true;
+      rideData.pausedAt = now;
     }
+
+    // 마커 위치는 현재 위치로만 갱신
+    if (currentMarker) {
+      currentMarker.setLatLng(point);
+    } else {
+      currentMarker = L.marker(point, { icon: bikeIcon }).addTo(map);
+      currentMarker.bindPopup("현재 위치");
+    }
+
+    redrawPath();
+    updateStats();
+    saveRideData();
+    return;
+  }
+
+  // 다시 움직이기 시작하면 자동 일시정지 해제
+  rideData.stopBeganAt = null;
+
+  if (rideData.autoPaused && rideData.paused && rideData.pausedAt) {
+    rideData.pausedMs += now - rideData.pausedAt;
+    rideData.pausedAt = null;
+    rideData.paused = false;
+    rideData.autoPaused = false;
+  }
+
+  const speedKmh = Math.max(0, rawSpeed);
+rideData.currentSpeedKmh = speedKmh;
+rideData.lastPoint = point;
+
+  if (speedKmh > rideData.maxSpeedKmh) {
+    rideData.maxSpeedKmh = speedKmh;
+  }
+
+  // 실제 이동으로 인정될 때만 거리 누적
+  if (dist >= MIN_MOVE_DISTANCE_M && dist <= 300) {
+    rideData.totalDistanceM += dist;
+    rideData.path.push(point);
+  }
+
+  lastPointTime = now;
+
+  redrawPath();
+
+  if (autoZoom) {
+    let targetZoom = 16;
+    if (speedKmh > 25) targetZoom = 14;
+    else if (speedKmh > 15) targetZoom = 15;
+    else if (speedKmh > 5) targetZoom = 16;
+    else targetZoom = 17;
+
+    if (map.getZoom() !== targetZoom) {
+      map.setZoom(targetZoom);
+    }
+  }
+
+  updateStats();
+  saveRideData();
+}
 
     function handlePositionError(err) {
       if (err.code === 1) {
@@ -798,14 +863,18 @@
         rideData.currentSpeedKmh = 0;
         rideData.maxSpeedKmh = 0;
         lastPointTime = Date.now();
-      } else if (rideData.paused) {
-        rideData.paused = false;
-        if (rideData.pausedAt) {
-          rideData.pausedMs += Date.now() - rideData.pausedAt;
-        }
-        rideData.pausedAt = null;
-        lastPointTime = Date.now();
-      }
+        rideData.stopBeganAt = null;
+        rideData.autoPaused = false;
+     } else if (rideData.paused) {
+  rideData.paused = false;
+  if (rideData.pausedAt) {
+    rideData.pausedMs += Date.now() - rideData.pausedAt;
+  }
+  rideData.pausedAt = null;
+  rideData.stopBeganAt = null;
+  rideData.autoPaused = false;
+  lastPointTime = Date.now();
+}
 
       saveRideData();
       updateStats();
@@ -830,6 +899,9 @@
       }
 
       stopWatching();
+rideData.stopBeganAt = null;
+rideData.autoPaused = false;
+rideData.lastPoint = null;
       stopWakeLockKeeper();
       await releaseWakeLock();
 
