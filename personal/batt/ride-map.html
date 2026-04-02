@@ -718,29 +718,36 @@
     }
 
     function startRide() {
-      if (!rideData.started) {
-        rideData.started = true;
-        rideData.paused = false;
-        rideData.startTime = Date.now();
-        rideData.pausedAt = null;
-        rideData.pausedMs = 0;
-        rideData.currentSpeedKmh = 0;
-        rideData.maxSpeedKmh = 0;
-        lastPointTime = Date.now();
-      } else if (rideData.paused) {
-        rideData.paused = false;
-        if (rideData.pausedAt) {
-          rideData.pausedMs += Date.now() - rideData.pausedAt;
-        }
-        rideData.pausedAt = null;
-        lastPointTime = Date.now();
-      }
+  const isResume = rideData.started && rideData.paused;
+  const message = isResume
+    ? "일시정지를 해제하고 주행기록을 다시 시작할까요?"
+    : "주행기록을 시작할까요?";
 
-      saveRideData();
-      updateStats();
-      startWatching();
-      requestWakeLock();
+  if (!confirm(message)) return;
+
+  if (!rideData.started) {
+    rideData.started = true;
+    rideData.paused = false;
+    rideData.startTime = Date.now();
+    rideData.pausedAt = null;
+    rideData.pausedMs = 0;
+    rideData.currentSpeedKmh = 0;
+    rideData.maxSpeedKmh = 0;
+    lastPointTime = Date.now();
+  } else if (rideData.paused) {
+    rideData.paused = false;
+    if (rideData.pausedAt) {
+      rideData.pausedMs += Date.now() - rideData.pausedAt;
     }
+    rideData.pausedAt = null;
+    lastPointTime = Date.now();
+  }
+
+  saveRideData();
+  updateStats();
+  startWatching();
+  requestWakeLock();
+}
 
     function pauseRide() {
       if (!rideData.started || rideData.paused) return;
@@ -753,27 +760,27 @@
     }
 
     function endRide() {
-      if (!confirm("현재 주행기록을 종료하고 초기화할까요?")) return;
+  if (!confirm("현재 주행기록을 종료하고 기록을 초기화할까요?")) return;
 
-      stopWatching();
+  stopWatching();
 
-      if (startMarker) {
-        map.removeLayer(startMarker);
-        startMarker = null;
-      }
+  if (startMarker) {
+    map.removeLayer(startMarker);
+    startMarker = null;
+  }
 
-      if (currentMarker) {
-        map.removeLayer(currentMarker);
-        currentMarker = null;
-      }
+  if (currentMarker) {
+    map.removeLayer(currentMarker);
+    currentMarker = null;
+  }
 
-      polyline.setLatLngs([]);
-      clearRideData();
-      lastPointTime = null;
-      updateStats();
-      map.setView([35.180, 128.107], 15);
-      requestLocationPermission();
-    }
+  polyline.setLatLngs([]);
+  clearRideData();
+  lastPointTime = null;
+  updateStats();
+  map.setView([35.180, 128.107], 15);
+  requestLocationPermission();
+}
 
     batteryBtn.addEventListener("click", () => {
       location.href = "./index.html";
