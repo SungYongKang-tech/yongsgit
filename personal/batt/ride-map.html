@@ -64,6 +64,7 @@
 
     .title-row,
     .summary-grid,
+    .speed-grid,
     .bottom-panel,
     .toolbar {
       margin-left: 8px;
@@ -128,13 +129,22 @@
       transform: translateY(1px) scale(0.99);
     }
 
-    .summary-grid {
+    .summary-grid,
+    .speed-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
       gap: 8px;
     }
 
-    .summary-card {
+    .summary-grid {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .speed-grid {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .summary-card,
+    .speed-card {
       background: linear-gradient(180deg, rgba(30,41,59,0.82), rgba(15,23,42,0.76));
       border: 1px solid var(--line);
       border-radius: 16px;
@@ -143,7 +153,8 @@
       text-align: center;
     }
 
-    .summary-label {
+    .summary-label,
+    .speed-label {
       font-size: 11px;
       color: var(--muted);
       margin-bottom: 6px;
@@ -151,7 +162,8 @@
       line-height: 1.3;
     }
 
-    .summary-value {
+    .summary-value,
+    .speed-value {
       font-size: 19px;
       font-weight: 900;
       line-height: 1.1;
@@ -262,7 +274,8 @@
     @media (max-width: 390px) {
       .title { font-size: 22px; }
       .top-actions { width: 160px; }
-      .summary-value { font-size: 17px; }
+      .summary-value,
+      .speed-value { font-size: 17px; }
       .bottom-value { font-size: 14px; }
       .chip-btn, .width-btn { font-size: 11px; padding: 0 8px; }
     }
@@ -278,7 +291,7 @@
         </div>
 
         <div class="top-actions">
-          <button class="top-btn primary" id="backBtn">계산기</button>
+          <button class="top-btn primary" id="batteryBtn">배터리</button>
           <button class="top-btn green" id="startBtn">시작</button>
           <button class="top-btn amber" id="pauseBtn">일시정지</button>
           <button class="top-btn red" id="endBtn">종료</button>
@@ -297,6 +310,21 @@
         <div class="summary-card">
           <div class="summary-label">현재 시각</div>
           <div class="summary-value" id="clockEl">--:--</div>
+        </div>
+      </div>
+
+      <div class="speed-grid">
+        <div class="speed-card">
+          <div class="speed-label">현재 속도</div>
+          <div class="speed-value" id="currentSpeedEl">0.0 km/h</div>
+        </div>
+        <div class="speed-card">
+          <div class="speed-label">평균 속도</div>
+          <div class="speed-value" id="avgSpeedEl">0.0 km/h</div>
+        </div>
+        <div class="speed-card">
+          <div class="speed-label">최고 속도</div>
+          <div class="speed-value" id="maxSpeedEl">0.0 km/h</div>
         </div>
       </div>
 
@@ -331,7 +359,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const RIDE_STORAGE_KEY = "ebike_ride_tracker_v2";
+    const RIDE_STORAGE_KEY = "ebike_ride_tracker_v3";
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
     const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
@@ -345,7 +373,9 @@
       totalDistanceM: 0,
       path: [],
       startPoint: null,
-      lastAccuracy: null
+      lastAccuracy: null,
+      currentSpeedKmh: 0,
+      maxSpeedKmh: 0
     };
 
     function loadRideData() {
@@ -379,8 +409,11 @@
     const clockEl = document.getElementById("clockEl");
     const accuracyEl = document.getElementById("accuracyEl");
     const startInfoEl = document.getElementById("startInfoEl");
+    const currentSpeedEl = document.getElementById("currentSpeedEl");
+    const avgSpeedEl = document.getElementById("avgSpeedEl");
+    const maxSpeedEl = document.getElementById("maxSpeedEl");
 
-    const backBtn = document.getElementById("backBtn");
+    const batteryBtn = document.getElementById("batteryBtn");
     const startBtn = document.getElementById("startBtn");
     const pauseBtn = document.getElementById("pauseBtn");
     const endBtn = document.getElementById("endBtn");
@@ -480,6 +513,14 @@
       durationEl.textContent = formatDuration(getElapsedMs());
       accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
 
+      currentSpeedEl.textContent = `${(rideData.currentSpeedKmh || 0).toFixed(1)} km/h`;
+
+      const elapsedHours = getElapsedMs() / 3600000;
+      const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+      avgSpeedEl.textContent = `${avgSpeed.toFixed(1)} km/h`;
+
+      maxSpeedEl.textContent = `${(rideData.maxSpeedKmh || 0).toFixed(1)} km/h`;
+
       if (rideData.startPoint) {
         startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
       } else {
@@ -547,6 +588,7 @@
       rideData.lastAccuracy = accuracy;
 
       if (accuracy > 35) {
+        rideData.currentSpeedKmh = 0;
         updateStats();
         saveRideData();
         return;
@@ -567,6 +609,13 @@
       }
 
       lastPointTime = now;
+
+      speedKmh = Math.max(0, Math.min(speedKmh, 60));
+      rideData.currentSpeedKmh = speedKmh;
+
+      if (speedKmh > rideData.maxSpeedKmh) {
+        rideData.maxSpeedKmh = speedKmh;
+      }
 
       if (rideData.path.length === 0) {
         rideData.path.push(point);
@@ -675,6 +724,8 @@
         rideData.startTime = Date.now();
         rideData.pausedAt = null;
         rideData.pausedMs = 0;
+        rideData.currentSpeedKmh = 0;
+        rideData.maxSpeedKmh = 0;
         lastPointTime = Date.now();
       } else if (rideData.paused) {
         rideData.paused = false;
@@ -695,6 +746,7 @@
       if (!rideData.started || rideData.paused) return;
       rideData.paused = true;
       rideData.pausedAt = Date.now();
+      rideData.currentSpeedKmh = 0;
       saveRideData();
       updateStats();
       stopWatching();
@@ -723,7 +775,7 @@
       requestLocationPermission();
     }
 
-    backBtn.addEventListener("click", () => {
+    batteryBtn.addEventListener("click", () => {
       location.href = "./index.html";
     });
 
