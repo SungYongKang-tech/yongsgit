@@ -56,6 +56,10 @@
       cursor: pointer;
     }
 
+    .btn.share {
+      background: linear-gradient(180deg, #2563eb, #1d4ed8);
+    }
+
     .panel {
       background: linear-gradient(180deg, rgba(17,24,39,0.96), rgba(15,23,42,0.96));
       border: 1px solid var(--line);
@@ -286,6 +290,7 @@
     <div class="topbar">
       <button class="btn" id="backRideBtn">주행화면</button>
       <button class="btn" id="backBatteryBtn">배터리 계산기</button>
+      <button class="btn share" id="shareBtn">선택기록 공유</button>
       <button class="btn" id="deleteBtn">선택기록 삭제</button>
     </div>
 
@@ -327,6 +332,10 @@
           <div class="label">좌표 개수</div>
           <div class="value" id="pointCountEl">-</div>
         </div>
+        <div class="card">
+          <div class="label">공유 만료</div>
+          <div class="value" id="shareExpireEl">3일</div>
+        </div>
       </div>
 
       <div class="map-wrap">
@@ -336,9 +345,34 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+      authDomain: "personal-51db3.firebaseapp.com",
+      databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+      projectId: "personal-51db3",
+      storageBucket: "personal-51db3.firebasestorage.app",
+      messagingSenderId: "146076749227",
+      appId: "1:146076749227:web:2043208d688e60504816ee"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
     const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
+    const SHARE_EXPIRE_DAYS = 3;
     let selectedRideId = null;
+
+    async function ensureAuth() {
+      if (auth.currentUser) return auth.currentUser;
+      const cred = await signInAnonymously(auth);
+      return cred.user;
+    }
 
     function loadSavedRides() {
       try {
@@ -374,7 +408,7 @@
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: "&copy; OpenStreetMap contributors"
     }).addTo(map);
 
     const polyline = L.polyline([], {
@@ -438,8 +472,8 @@
             <div class="item-title">${formatDate(ride.savedAt)}</div>
           </div>
           <div class="item-meta">
-            <span>거리 ${(ride.totalDistanceM / 1000).toFixed(2)} km</span>
-            <span>시간 ${formatDuration(ride.elapsedMs)}</span>
+            <span>거리 ${(Number(ride.totalDistanceM || 0) / 1000).toFixed(2)} km</span>
+            <span>시간 ${formatDuration(Number(ride.elapsedMs || 0))}</span>
             <span>평균 ${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h</span>
             <span>최고 ${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h</span>
           </div>
@@ -460,8 +494,8 @@
 
       detailTitle.textContent = `상세 정보 · ${formatDate(ride.savedAt)}`;
       savedAtEl.textContent = formatDate(ride.savedAt);
-      distanceEl.textContent = `${(ride.totalDistanceM / 1000).toFixed(2)} km`;
-      durationEl.textContent = formatDuration(ride.elapsedMs);
+      distanceEl.textContent = `${(Number(ride.totalDistanceM || 0) / 1000).toFixed(2)} km`;
+      durationEl.textContent = formatDuration(Number(ride.elapsedMs || 0));
       avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
       maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
       startPointEl.textContent = ride.startPoint
@@ -490,6 +524,66 @@
       }
     }
 
+    async function shareSelectedRide() {
+      if (!selectedRideId) {
+        alert("공유할 기록을 먼저 선택해주세요.");
+        return;
+      }
+
+      const rides = loadSavedRides();
+      const ride = rides.find(r => r.id === selectedRideId);
+
+      if (!ride) {
+        alert("선택한 기록을 찾을 수 없습니다.");
+        return;
+      }
+
+      if (!Array.isArray(ride.path) || ride.path.length < 2) {
+        alert("공유할 경로 데이터가 부족합니다.");
+        return;
+      }
+
+      if (ride.path.length > 5000) {
+        alert("좌표 수가 너무 많아 공유할 수 없습니다.");
+        return;
+      }
+
+      try {
+        await ensureAuth();
+
+        const createdAt = Date.now();
+        const expireAt = createdAt + SHARE_EXPIRE_DAYS * 24 * 60 * 60 * 1000;
+
+        const shareData = {
+          createdAt,
+          expireAt,
+          savedAt: ride.savedAt || new Date().toISOString(),
+          totalDistanceM: Number(ride.totalDistanceM || 0),
+          elapsedMs: Number(ride.elapsedMs || 0),
+          avgSpeedKmh: Number(ride.avgSpeedKmh || 0),
+          maxSpeedKmh: Number(ride.maxSpeedKmh || 0),
+          startPoint: ride.startPoint || null,
+          path: ride.path
+        };
+
+        const newRef = push(ref(db, "sharedRides"));
+        await set(newRef, shareData);
+
+        const shareUrl =
+          `${location.origin}${location.pathname.replace("ride-history.html", "ride-view.html")}?id=${newRef.key}`;
+
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          alert(`공유 링크가 복사되었습니다.\n\n${shareUrl}\n\n${SHARE_EXPIRE_DAYS}일 후 만료됩니다.`);
+        } catch (e) {
+          prompt("아래 링크를 복사해서 보내주세요.", shareUrl);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("공유 링크 생성 중 오류가 발생했습니다.");
+      }
+    }
+
     document.getElementById("backRideBtn").addEventListener("click", () => {
       location.href = "./ride-map.html";
     });
@@ -497,6 +591,8 @@
     document.getElementById("backBatteryBtn").addEventListener("click", () => {
       location.href = "./index.html";
     });
+
+    document.getElementById("shareBtn").addEventListener("click", shareSelectedRide);
 
     document.getElementById("deleteBtn").addEventListener("click", () => {
       if (!selectedRideId) {
@@ -510,6 +606,13 @@
       saveSavedRides(rides);
       selectedRideId = null;
       renderList();
+
+      const remained = loadSavedRides();
+      if (remained.length) {
+        showRide(remained[0].id);
+      } else {
+        clearDetail();
+      }
     });
 
     renderList();

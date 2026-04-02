@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>공유 주행기록 보기</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg1: #0b1220;
+      --bg2: #121c34;
+      --line: rgba(255,255,255,0.08);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at top, rgba(59,130,246,0.18), transparent 34%),
+        linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 100%);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      padding: 10px;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 10px;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(17,24,39,0.96), rgba(15,23,42,0.96));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    .title {
+      font-size: 22px;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 7px 8px;
+      background: rgba(30,41,59,0.6);
+      text-align: center;
+      min-height: 62px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .label {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .value {
+      font-size: 14px;
+      font-weight: 900;
+      word-break: break-word;
+      line-height: 1.25;
+    }
+
+    #map {
+      width: 100%;
+      height: 520px;
+      border-radius: 14px;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 30px 0;
+      font-size: 15px;
+    }
+
+    @media (max-width: 700px) {
+      .detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #map {
+        height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="title">공유 주행기록</div>
+      <div class="sub">링크로 공유된 경로와 기본 정보를 표시합니다</div>
+
+      <div class="detail-grid">
+        <div class="card">
+          <div class="label">저장 일시</div>
+          <div class="value" id="savedAtEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">총 거리</div>
+          <div class="value" id="distanceEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">총 시간</div>
+          <div class="value" id="durationEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">평균 속도</div>
+          <div class="value" id="avgSpeedEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">최고 속도</div>
+          <div class="value" id="maxSpeedEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">출발 위치</div>
+          <div class="value" id="startPointEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">좌표 개수</div>
+          <div class="value" id="pointCountEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">만료 시각</div>
+          <div class="value" id="expireEl">-</div>
+        </div>
+      </div>
+
+      <div id="map"></div>
+      <div class="empty" id="messageEl" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getDatabase, ref, get, remove } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+      authDomain: "personal-51db3.firebaseapp.com",
+      databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+      projectId: "personal-51db3",
+      storageBucket: "personal-51db3.firebasestorage.app",
+      messagingSenderId: "146076749227",
+      appId: "1:146076749227:web:2043208d688e60504816ee"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const savedAtEl = document.getElementById("savedAtEl");
+    const distanceEl = document.getElementById("distanceEl");
+    const durationEl = document.getElementById("durationEl");
+    const avgSpeedEl = document.getElementById("avgSpeedEl");
+    const maxSpeedEl = document.getElementById("maxSpeedEl");
+    const startPointEl = document.getElementById("startPointEl");
+    const pointCountEl = document.getElementById("pointCountEl");
+    const expireEl = document.getElementById("expireEl");
+    const messageEl = document.getElementById("messageEl");
+
+    function formatDuration(ms) {
+      const totalSec = Math.max(0, Math.floor(ms / 1000));
+      const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+      const ss = String(totalSec % 60).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    }
+
+    function formatDate(value) {
+      const d = new Date(value);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${y}-${m}-${day} ${hh}:${mm}`;
+    }
+
+    const map = L.map("map").setView([35.180, 128.107], 13);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const polyline = L.polyline([], {
+      color: "#3b82f6",
+      weight: 6,
+      opacity: 0.9,
+      lineJoin: "round",
+      lineCap: "round"
+    }).addTo(map);
+
+    let startMarker = null;
+    let endMarker = null;
+
+    function showMessage(text) {
+      document.getElementById("map").style.display = "none";
+      messageEl.style.display = "block";
+      messageEl.textContent = text;
+    }
+
+    async function loadSharedRide() {
+      const params = new URLSearchParams(location.search);
+      const id = params.get("id");
+
+      if (!id) {
+        showMessage("공유 ID가 없습니다.");
+        return;
+      }
+
+      try {
+        const snap = await get(ref(db, `sharedRides/${id}`));
+
+        if (!snap.exists()) {
+          showMessage("공유 기록을 찾을 수 없습니다.");
+          return;
+        }
+
+        const ride = snap.val();
+
+        if (ride.expireAt && Date.now() > ride.expireAt) {
+          showMessage("만료된 공유 기록입니다.");
+          try {
+            await remove(ref(db, `sharedRides/${id}`));
+          } catch (e) {}
+          return;
+        }
+
+        if (!Array.isArray(ride.path) || ride.path.length < 2) {
+          showMessage("공유 기록 데이터가 올바르지 않습니다.");
+          return;
+        }
+
+        savedAtEl.textContent = formatDate(ride.savedAt);
+        distanceEl.textContent = `${(Number(ride.totalDistanceM || 0) / 1000).toFixed(2)} km`;
+        durationEl.textContent = formatDuration(Number(ride.elapsedMs || 0));
+        avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
+        maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
+        startPointEl.textContent = ride.startPoint
+          ? `${ride.startPoint.lat.toFixed(5)}, ${ride.startPoint.lng.toFixed(5)}`
+          : "-";
+        pointCountEl.textContent = String(ride.path.length);
+        expireEl.textContent = ride.expireAt ? formatDate(ride.expireAt) : "-";
+
+        polyline.setLatLngs(ride.path);
+
+        startMarker = L.marker(ride.path[0]).addTo(map).bindPopup("출발");
+        endMarker = L.marker(ride.path[ride.path.length - 1]).addTo(map).bindPopup("도착");
+
+        setTimeout(() => {
+          map.invalidateSize();
+          map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
+        }, 100);
+      } catch (err) {
+        console.error(err);
+        showMessage("공유 기록을 불러오는 중 오류가 발생했습니다.");
+      }
+    }
+
+    loadSharedRide();
+
+    window.addEventListener("resize", () => {
+      setTimeout(() => map.invalidateSize(), 80);
+    });
+  </script>
+</body>
+</html>
