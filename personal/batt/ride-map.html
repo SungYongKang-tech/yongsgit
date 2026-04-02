@@ -1,0 +1,99 @@
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<div id="map" style="width:100%;height:100vh;"></div>
+
+const map = L.map("map").setView([35.180, 128.107], 15);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let watchId = null;
+let path = [];
+let totalDistanceM = 0;
+
+const polyline = L.polyline([], {
+  weight: 6
+}).addTo(map);
+
+let startMarker = null;
+let currentMarker = null;
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
+
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function startTracking() {
+  if (!navigator.geolocation) {
+    alert("이 기기에서는 위치 추적을 사용할 수 없습니다.");
+    return;
+  }
+
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      // 오차 큰 좌표는 무시
+      if (accuracy > 30) return;
+
+      const point = [latitude, longitude];
+
+      if (path.length > 0) {
+        const prev = path[path.length - 1];
+        const dist = haversine(prev[0], prev[1], point[0], point[1]);
+
+        // GPS 튐 방지: 너무 작은 값/비정상 점프 필터
+        if (dist >= 5 && dist <= 300) {
+          totalDistanceM += dist;
+          path.push(point);
+        }
+      } else {
+        path.push(point);
+      }
+
+      polyline.setLatLngs(path);
+
+      if (!startMarker && path.length > 0) {
+        startMarker = L.marker(path[0]).addTo(map).bindPopup("출발");
+      }
+
+      if (!currentMarker) {
+        currentMarker = L.marker(point).addTo(map);
+      } else {
+        currentMarker.setLatLng(point);
+      }
+
+      map.panTo(point);
+
+      document.getElementById("distance").textContent =
+        (totalDistanceM / 1000).toFixed(2) + " km";
+    },
+    (err) => {
+      alert("위치 추적 실패: " + err.message);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 1000,
+      timeout: 10000
+    }
+  );
+}
+
+function stopTracking() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+}
