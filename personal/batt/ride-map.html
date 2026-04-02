@@ -18,7 +18,6 @@
       --amber: #f59e0b;
       --red: #ef4444;
       --blue: #3b82f6;
-      --shadow: 0 18px 40px rgba(0,0,0,0.34);
     }
 
     * { box-sizing: border-box; }
@@ -63,13 +62,13 @@
       box-shadow: none;
     }
 
-  .title-row,
-.summary-grid,
-.bottom-panel,
-.toolbar {
-  margin-left: 8px;
-  margin-right: 8px;
-}
+    .title-row,
+    .summary-grid,
+    .bottom-panel,
+    .toolbar {
+      margin-left: 8px;
+      margin-right: 8px;
+    }
 
     .title-row {
       display: flex;
@@ -165,8 +164,6 @@
       justify-content: space-between;
       align-items: center;
       gap: 8px;
-      margin-left: 8px;
-      margin-right: 8px;
     }
 
     .toolbar-group {
@@ -193,8 +190,6 @@
     .width-btn.active {
       background: linear-gradient(180deg, #2563eb, #1d4ed8);
     }
-
-    
 
     .map-wrap {
       flex: 1;
@@ -308,6 +303,7 @@
       <div class="toolbar">
         <div class="toolbar-group">
           <button class="chip-btn active" id="followBtn">중심고정 켜짐</button>
+          <button class="chip-btn" id="zoomBtn">자동줌 꺼짐</button>
         </div>
         <div class="toolbar-group">
           <button class="width-btn" data-width="4">얇게</button>
@@ -315,8 +311,6 @@
           <button class="width-btn" data-width="9">굵게</button>
         </div>
       </div>
-
-   
 
       <div class="map-wrap">
         <div id="map"></div>
@@ -340,6 +334,7 @@
     const RIDE_STORAGE_KEY = "ebike_ride_tracker_v2";
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
     const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
+    const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
 
     const initialData = {
       started: false,
@@ -376,24 +371,24 @@
     let wakeLock = null;
     let followMap = localStorage.getItem(FOLLOW_STORAGE_KEY) !== "off";
     let pathWeight = Number(localStorage.getItem(PATH_WIDTH_STORAGE_KEY) || 6);
+    let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) === "on";
+    let lastPointTime = null;
 
     const distanceEl = document.getElementById("distanceEl");
     const durationEl = document.getElementById("durationEl");
     const clockEl = document.getElementById("clockEl");
     const accuracyEl = document.getElementById("accuracyEl");
     const startInfoEl = document.getElementById("startInfoEl");
-    
 
     const backBtn = document.getElementById("backBtn");
     const startBtn = document.getElementById("startBtn");
     const pauseBtn = document.getElementById("pauseBtn");
     const endBtn = document.getElementById("endBtn");
     const followBtn = document.getElementById("followBtn");
+    const zoomBtn = document.getElementById("zoomBtn");
     const widthButtons = document.querySelectorAll(".width-btn");
 
-    const map = L.map("map", {
-      zoomControl: true
-    }).setView([35.180, 128.107], 15);
+    const map = L.map("map", { zoomControl: true }).setView([35.180, 128.107], 15);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -465,9 +460,14 @@
     }
 
     function updateFollowButton() {
-  followBtn.textContent = followMap ? "중심고정 켜짐" : "중심고정 꺼짐";
-  followBtn.classList.toggle("active", followMap);
-}
+      followBtn.textContent = followMap ? "중심고정 켜짐" : "중심고정 꺼짐";
+      followBtn.classList.toggle("active", followMap);
+    }
+
+    function updateZoomButton() {
+      zoomBtn.textContent = autoZoom ? "자동줌 켜짐" : "자동줌 꺼짐";
+      zoomBtn.classList.toggle("active", autoZoom);
+    }
 
     function updateWidthButtons() {
       widthButtons.forEach(btn => {
@@ -475,23 +475,22 @@
       });
     }
 
+    function updateStats() {
+      distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
+      durationEl.textContent = formatDuration(getElapsedMs());
+      accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
 
-     
-   function updateStats() {
-  distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
-  durationEl.textContent = formatDuration(getElapsedMs());
-  accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
+      if (rideData.startPoint) {
+        startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
+      } else {
+        startInfoEl.textContent = "-";
+      }
 
-  if (rideData.startPoint) {
-    startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
-  } else {
-    startInfoEl.textContent = "-";
-  }
-
-  updateFollowButton();
-  updateWidthButtons();
-  formatClock();
-}
+      updateFollowButton();
+      updateZoomButton();
+      updateWidthButtons();
+      formatClock();
+    }
 
     function redrawPath() {
       polyline.setLatLngs(rideData.path);
@@ -517,7 +516,11 @@
         }
 
         if (followMap) {
-          map.panTo(last, { animate: true, duration: 0.5 });
+          const center = map.getCenter();
+          const distFromCenter = haversine(center.lat, center.lng, last[0], last[1]);
+          if (distFromCenter > 10) {
+            map.panTo(last, { animate: true, duration: 0.5 });
+          }
         }
       }
 
@@ -550,6 +553,20 @@
       }
 
       const point = [latitude, longitude];
+      const now = Date.now();
+      let speedKmh = 0;
+
+      if (rideData.path.length > 0 && lastPointTime) {
+        const prev = rideData.path[rideData.path.length - 1];
+        const distForSpeed = haversine(prev[0], prev[1], latitude, longitude);
+        const dt = (now - lastPointTime) / 1000;
+
+        if (dt > 0) {
+          speedKmh = (distForSpeed / dt) * 3.6;
+        }
+      }
+
+      lastPointTime = now;
 
       if (rideData.path.length === 0) {
         rideData.path.push(point);
@@ -567,15 +584,34 @@
       }
 
       redrawPath();
+
+      if (autoZoom) {
+        let targetZoom = 16;
+
+        if (speedKmh > 25) {
+          targetZoom = 14;
+        } else if (speedKmh > 15) {
+          targetZoom = 15;
+        } else if (speedKmh > 5) {
+          targetZoom = 16;
+        } else {
+          targetZoom = 17;
+        }
+
+        if (map.getZoom() !== targetZoom) {
+          map.setZoom(targetZoom);
+        }
+      }
+
       updateStats();
       saveRideData();
     }
 
     function handlePositionError(err) {
       if (err.code === 1) {
-        statusText.textContent = "위치 권한이 거부되었습니다. 브라우저에서 위치 권한을 허용해주세요";
+        alert("위치 권한을 허용해주세요");
       } else {
-        statusText.textContent = `위치 추적 실패: ${err.message}`;
+        console.log(err.message);
       }
     }
 
@@ -606,10 +642,7 @@
     }
 
     function requestLocationPermission() {
-      if (!navigator.geolocation) {
-        statusText.textContent = "이 기기에서는 위치 기능을 사용할 수 없습니다";
-        return;
-      }
+      if (!navigator.geolocation) return;
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -626,13 +659,7 @@
 
           updateStats();
         },
-        (err) => {
-          if (err.code === 1) {
-            statusText.textContent = "위치 권한을 허용해야 사용 가능합니다";
-          } else {
-            statusText.textContent = `위치 확인 실패: ${err.message}`;
-          }
-        },
+        () => {},
         {
           enableHighAccuracy: true,
           maximumAge: 0,
@@ -648,12 +675,14 @@
         rideData.startTime = Date.now();
         rideData.pausedAt = null;
         rideData.pausedMs = 0;
+        lastPointTime = Date.now();
       } else if (rideData.paused) {
         rideData.paused = false;
         if (rideData.pausedAt) {
           rideData.pausedMs += Date.now() - rideData.pausedAt;
         }
         rideData.pausedAt = null;
+        lastPointTime = Date.now();
       }
 
       saveRideData();
@@ -688,6 +717,7 @@
 
       polyline.setLatLngs([]);
       clearRideData();
+      lastPointTime = null;
       updateStats();
       map.setView([35.180, 128.107], 15);
       requestLocationPermission();
@@ -709,6 +739,12 @@
       if (followMap && rideData.path.length > 0) {
         map.panTo(rideData.path[rideData.path.length - 1], { animate: true, duration: 0.5 });
       }
+    });
+
+    zoomBtn.addEventListener("click", () => {
+      autoZoom = !autoZoom;
+      localStorage.setItem(AUTO_ZOOM_STORAGE_KEY, autoZoom ? "on" : "off");
+      updateZoomButton();
     });
 
     widthButtons.forEach(btn => {
