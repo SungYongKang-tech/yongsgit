@@ -441,6 +441,7 @@
     let pathWeight = Number(localStorage.getItem(PATH_WIDTH_STORAGE_KEY) || 6);
     let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) === "on";
     let lastPointTime = null;
+    let currentAutoZoomLevel = 16;
 
     const distanceEl = document.getElementById("distanceEl");
     const durationEl = document.getElementById("durationEl");
@@ -674,11 +675,13 @@
   const now = Date.now();
 
   if (accuracy > 35) {
-    rideData.currentSpeedKmh = 0;
-    updateStats();
-    saveRideData();
-    return;
-  }
+  rideData.currentSpeedKmh = 0;
+  rideData.lastPoint = point;
+  lastPointTime = now;
+  updateStats();
+  saveRideData();
+  return;
+}
 
   // 첫 위치
   if (rideData.path.length === 0) {
@@ -703,11 +706,13 @@
 
   // GPS 튐 제거
   if (rawSpeed > MAX_VALID_SPEED_KMH || (dist > 100 && dt > 0 && dt < 2)) {
-    rideData.currentSpeedKmh = 0;
-    updateStats();
-    saveRideData();
-    return;
-  }
+  rideData.currentSpeedKmh = 0;
+  rideData.lastPoint = point;
+  lastPointTime = now;
+  updateStats();
+  saveRideData();
+  return;
+}
 
   // 아주 작은 이동 + 저속 = 정지로 처리
   const isNearlyStopped =
@@ -770,17 +775,23 @@ rideData.lastPoint = point;
 
   redrawPath();
 
-  if (autoZoom) {
-    let targetZoom = 16;
-    if (speedKmh > 25) targetZoom = 14;
-    else if (speedKmh > 15) targetZoom = 15;
-    else if (speedKmh > 5) targetZoom = 16;
-    else targetZoom = 17;
-
-    if (map.getZoom() !== targetZoom) {
-      map.setZoom(targetZoom);
-    }
+ if (autoZoom) {
+  if (currentAutoZoomLevel === 17) {
+    if (speedKmh >= 8) currentAutoZoomLevel = 16;
+  } else if (currentAutoZoomLevel === 16) {
+    if (speedKmh >= 23) currentAutoZoomLevel = 15;
+    else if (speedKmh <= 3) currentAutoZoomLevel = 17;
+  } else if (currentAutoZoomLevel === 15) {
+    if (speedKmh >= 30) currentAutoZoomLevel = 14;
+    else if (speedKmh <= 11) currentAutoZoomLevel = 16;
+  } else if (currentAutoZoomLevel === 14) {
+    if (speedKmh <= 24) currentAutoZoomLevel = 15;
   }
+
+  if (map.getZoom() !== currentAutoZoomLevel) {
+    map.setZoom(currentAutoZoomLevel);
+  }
+}
 
   updateStats();
   saveRideData();
@@ -865,7 +876,9 @@ rideData.lastPoint = point;
         lastPointTime = Date.now();
         rideData.stopBeganAt = null;
         rideData.autoPaused = false;
-     } else if (rideData.paused) {
+        rideData.lastPoint = null;
+        currentAutoZoomLevel = 16;
+    } else if (rideData.paused) {
   rideData.paused = false;
   if (rideData.pausedAt) {
     rideData.pausedMs += Date.now() - rideData.pausedAt;
@@ -874,6 +887,7 @@ rideData.lastPoint = point;
   rideData.stopBeganAt = null;
   rideData.autoPaused = false;
   lastPointTime = Date.now();
+  currentAutoZoomLevel = 16;
 }
 
       saveRideData();
@@ -899,9 +913,10 @@ rideData.lastPoint = point;
       }
 
       stopWatching();
-rideData.stopBeganAt = null;
-rideData.autoPaused = false;
-rideData.lastPoint = null;
+      rideData.stopBeganAt = null;
+      rideData.autoPaused = false;
+      rideData.lastPoint = null;
+      currentAutoZoomLevel = 16;
       stopWakeLockKeeper();
       await releaseWakeLock();
 
@@ -938,10 +953,12 @@ rideData.lastPoint = null;
       localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
       updateStats();
 
-      if (followMap && rideData.path.length > 0) {
-        map.panTo(rideData.path[rideData.path.length - 1], { animate: true, duration: 0.5 });
-      }
-    });
+      if (followMap && (rideData.lastPoint || rideData.path.length > 0)) {
+  map.panTo(rideData.lastPoint || rideData.path[rideData.path.length - 1], {
+    animate: true,
+    duration: 0.5
+  });
+}
 
     zoomBtn.addEventListener("click", () => {
       autoZoom = !autoZoom;
