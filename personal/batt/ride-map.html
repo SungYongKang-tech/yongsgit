@@ -132,12 +132,12 @@
     }
 
     .summary-grid {
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
       margin-bottom: 2px;
     }
 
     .speed-grid {
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
     }
 
     .summary-card,
@@ -294,34 +294,48 @@
       </div>
 
       <div class="summary-grid">
-        <div class="summary-card">
-          <div class="summary-label">누적 거리</div>
-          <div class="summary-value" id="distanceEl">0.00 km</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-label">주행 시간</div>
-          <div class="summary-value" id="durationEl">00:00:00</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-label">현재 시각</div>
-          <div class="summary-value" id="clockEl">--:--</div>
-        </div>
-      </div>
+  <div class="summary-card">
+    <div class="summary-label">누적 거리</div>
+    <div class="summary-value" id="distanceEl">0.00 km</div>
+  </div>
+
+  <div class="summary-card">
+    <div class="summary-label">출발 시각</div>
+    <div class="summary-value" id="startTimeEl">--:--</div>
+  </div>
+
+  <div class="summary-card">
+    <div class="summary-label">주행 시간</div>
+    <div class="summary-value" id="durationEl">00:00:00</div>
+  </div>
+
+  <div class="summary-card">
+    <div class="summary-label">휴식 시간</div>
+    <div class="summary-value" id="restTimeEl">00:00:00</div>
+  </div>
+</div>
 
       <div class="speed-grid">
-        <div class="speed-card">
-          <div class="speed-label">현재 속도</div>
-          <div class="speed-value" id="currentSpeedEl">0.0 km/h</div>
-        </div>
-        <div class="speed-card">
-          <div class="speed-label">평균 속도</div>
-          <div class="speed-value" id="avgSpeedEl">0.0 km/h</div>
-        </div>
-        <div class="speed-card">
-          <div class="speed-label">최고 속도</div>
-          <div class="speed-value" id="maxSpeedEl">0.0 km/h</div>
-        </div>
-      </div>
+  <div class="speed-card">
+    <div class="speed-label">현재 시각</div>
+    <div class="speed-value" id="clockEl">--:--</div>
+  </div>
+
+  <div class="speed-card">
+    <div class="speed-label">현재 속도</div>
+    <div class="speed-value" id="currentSpeedEl">0.0 km/h</div>
+  </div>
+
+  <div class="speed-card">
+    <div class="speed-label">평균 속도</div>
+    <div class="speed-value" id="avgSpeedEl">0.0 km/h</div>
+  </div>
+
+  <div class="speed-card">
+    <div class="speed-label">최고 속도</div>
+    <div class="speed-value" id="maxSpeedEl">0.0 km/h</div>
+  </div>
+</div>
 
       <div class="toolbar">
         <div class="toolbar-group">
@@ -447,6 +461,8 @@
     const currentSpeedEl = document.getElementById("currentSpeedEl");
     const avgSpeedEl = document.getElementById("avgSpeedEl");
     const maxSpeedEl = document.getElementById("maxSpeedEl");
+    const startTimeEl = document.getElementById("startTimeEl");
+    const restTimeEl = document.getElementById("restTimeEl");
 
     const batteryBtn = document.getElementById("batteryBtn");
     const historyBtn = document.getElementById("historyBtn");
@@ -544,32 +560,48 @@
     }
 
     function updateStats() {
-      distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
-      durationEl.textContent = formatDuration(getElapsedMs());
-      accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
+  distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
+  durationEl.textContent = formatDuration(getElapsedMs());
+  accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
 
-      currentSpeedEl.textContent = `${(rideData.currentSpeedKmh || 0).toFixed(1)} km/h`;
+  currentSpeedEl.textContent = `${(rideData.currentSpeedKmh || 0).toFixed(1)} km/h`;
 
-      const elapsedHours = getElapsedMs() / 3600000;
-      const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
-      avgSpeedEl.textContent = `${avgSpeed.toFixed(1)} km/h`;
+  const elapsedHours = getElapsedMs() / 3600000;
+  const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+  avgSpeedEl.textContent = `${avgSpeed.toFixed(1)} km/h`;
 
-      maxSpeedEl.textContent = `${(rideData.maxSpeedKmh || 0).toFixed(1)} km/h`;
-      
-      if (rideData.paused && rideData.autoPaused) {
-  durationEl.textContent = formatDuration(getElapsedMs()) + " (일시정지)";
+  maxSpeedEl.textContent = `${(rideData.maxSpeedKmh || 0).toFixed(1)} km/h`;
+
+  if (rideData.paused && rideData.autoPaused) {
+    durationEl.textContent = formatDuration(getElapsedMs()) + " (일시정지)";
+  }
+
+  if (rideData.startPoint) {
+    startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
+  } else {
+    startInfoEl.textContent = "-";
+  }
+
+  if (rideData.startTime) {
+    const d = new Date(rideData.startTime);
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    startTimeEl.textContent = `${h}:${m}`;
+  } else {
+    startTimeEl.textContent = "--:--";
+  }
+
+  let restMs = rideData.pausedMs;
+  if (rideData.paused && rideData.pausedAt) {
+    restMs += Date.now() - rideData.pausedAt;
+  }
+  restTimeEl.textContent = formatDuration(restMs);
+
+  updateFollowButton();
+  updateZoomButton();
+  updateWidthButtons();
+  formatClock();
 }
-      if (rideData.startPoint) {
-        startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
-      } else {
-        startInfoEl.textContent = "-";
-      }
-
-      updateFollowButton();
-      updateZoomButton();
-      updateWidthButtons();
-      formatClock();
-    }
 
     function redrawPath() {
       polyline.setLatLngs(rideData.path);
