@@ -374,9 +374,9 @@
     const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
 
-    const STOP_SPEED_KMH = 1.5;          // 이 속도 이하면 정지로 판단
+    const STOP_SPEED_KMH = 1.0;          // 이 속도 이하면 정지로 판단
     const AUTO_PAUSE_DELAY_MS = 15000;   // 15초 이상 정지면 자동 일시정지
-    const MIN_MOVE_DISTANCE_M = 8;       // 이 거리 미만은 GPS 흔들림으로 간주
+    const MIN_MOVE_DISTANCE_M = 3;       // 이 거리 미만은 GPS 흔들림으로 간주
     const MAX_VALID_SPEED_KMH = 45;      // 자전거 비정상 속도 차단
 
     const initialData = {
@@ -429,11 +429,13 @@
 
       const rides = loadSavedRides();
       const item = {
-  id: `ride_${Date.now()}`,
+ id: `ride_${Date.now()}`,
   savedAt: new Date().toISOString(),
+  startTime: rideData.startTime || null,
+  endTime: Date.now(),
   totalDistanceM: rideData.totalDistanceM,
   elapsedMs,
-  restMs: rideData.pausedMs,   // ✅ 추가
+  restMs: rideData.pausedMs + (rideData.paused && rideData.pausedAt ? Date.now() - rideData.pausedAt : 0),
   avgSpeedKmh: avgSpeed,
   maxSpeedKmh: rideData.maxSpeedKmh || 0,
   startPoint: rideData.startPoint,
@@ -729,12 +731,14 @@
   const dt = lastPointTime ? (now - lastPointTime) / 1000 : 0;
 
   let rawSpeed = 0;
-  if (dt > 0) {
-    rawSpeed = (dist / dt) * 3.6;
-  }
 
-  // GPS 튐 제거
-  if (rawSpeed > MAX_VALID_SPEED_KMH || (dist > 100 && dt > 0 && dt < 2)) {
+if (typeof pos.coords.speed === "number" && pos.coords.speed >= 0) {
+  rawSpeed = pos.coords.speed * 3.6;
+} else if (dt > 0) {
+  rawSpeed = (dist / dt) * 3.6;
+}
+
+if (rawSpeed > MAX_VALID_SPEED_KMH || (dist > 100 && dt > 0 && dt < 2)) {
   rideData.currentSpeedKmh = 0;
   rideData.lastPoint = point;
   lastPointTime = now;
@@ -743,9 +747,8 @@
   return;
 }
 
-  // 아주 작은 이동 + 저속 = 정지로 처리
-  const isNearlyStopped =
-    dist < MIN_MOVE_DISTANCE_M || rawSpeed < STOP_SPEED_KMH;
+const isNearlyStopped =
+  dist < MIN_MOVE_DISTANCE_M && rawSpeed < STOP_SPEED_KMH;
 
   if (isNearlyStopped) {
   rideData.currentSpeedKmh = 0;
