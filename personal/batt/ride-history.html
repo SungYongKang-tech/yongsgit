@@ -306,6 +306,8 @@
 
     let selectedRideId = null;
     let expandedRideId = null;
+    let longPressed = false;
+
     const mapInstances = new Map();
 
     async function ensureAuth() {
@@ -450,7 +452,7 @@
             <div class="item-head-left">
               <div class="item-title-row">
                 <div class="item-date">${formatDate(ride.savedAt)}</div>
-                <div class="ride-name">${rideName}</div>
+                <div class="ride-name" data-id="${ride.id}">${rideName}</div>
               </div>
               <div class="item-meta">
                 <span>거리 ${(Number(ride.totalDistanceM || 0) / 1000).toFixed(2)}km</span>
@@ -466,6 +468,43 @@
           ${isExpanded ? buildDetailHtml(ride) : ""}
         `;
 
+// 🔥 제목 길게 눌러서 수정
+let pressTimer = null;
+let longPressed = false;
+
+const rideNameEl = item.querySelector(".ride-name");
+
+if (rideNameEl) {
+
+  rideNameEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (longPressed) return;
+  });
+
+  const startPress = () => {
+    longPressed = false;
+
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      startTitleEdit(ride.id);
+    }, 600);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer) clearTimeout(pressTimer);
+  };
+
+  rideNameEl.addEventListener("mousedown", startPress);
+  rideNameEl.addEventListener("mouseup", cancelPress);
+  rideNameEl.addEventListener("mouseleave", cancelPress);
+
+  rideNameEl.addEventListener("touchstart", startPress);
+  rideNameEl.addEventListener("touchend", cancelPress);
+  rideNameEl.addEventListener("touchcancel", cancelPress);
+}
+
+
+
         item.addEventListener("click", () => {
           toggleRide(ride.id);
         });
@@ -480,6 +519,8 @@
         }
       }
     }
+
+    
 
     function toggleRide(id) {
       if (expandedRideId === id) {
@@ -498,6 +539,52 @@
       expandedRideId = id;
       renderList();
     }
+
+    function saveRideTitleInline(id, title) {
+  const rides = loadSavedRides();
+  const ride = rides.find(r => r.id === id);
+  if (!ride) return;
+
+  const cleaned = String(title || "").trim().slice(0, 30);
+  ride.title = cleaned || "주행기록";
+  saveSavedRides(rides);
+
+  selectedRideId = id;
+  renderList();
+}
+
+function startTitleEdit(id) {
+  const nameEl = document.querySelector(`.ride-name[data-id="${id}"]`);
+  if (!nameEl) return;
+
+  const oldTitle = nameEl.textContent.trim();
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = oldTitle;
+  input.maxLength = 30;
+  input.className = "title-inline-input";
+  input.setAttribute("data-id", id);
+
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const finish = () => {
+    saveRideTitleInline(id, input.value);
+  };
+
+  input.addEventListener("click", (e) => e.stopPropagation());
+  input.addEventListener("blur", finish, { once: true });
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      input.blur();
+    }
+    if (e.key === "Escape") {
+      renderList();
+    }
+  });
+}
 
     async function shareSelectedRide() {
       if (!selectedRideId) {
@@ -600,6 +687,7 @@
       setTimeout(() => instance.map.invalidateSize(), 80);
     });
 
+    
     renderList();
   </script>
 </body>
