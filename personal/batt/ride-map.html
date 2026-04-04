@@ -2,1924 +2,1403 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>주행기록</title>
-
-  <script id="kakao-map-sdk" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>자전거 경로 플래너</title>
   <style>
     :root {
-      --bg1: #0b1220;
-      --bg2: #121c34;
-      --line: rgba(255,255,255,0.08);
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --green: #22c55e;
-      --amber: #f59e0b;
-      --red: #ef4444;
-      --blue: #3b82f6;
+      --bg: #f4f7fb;
+      --card: rgba(255,255,255,0.96);
+      --line: #d8e0ec;
+      --text: #18324a;
+      --sub: #59708a;
+      --accent: #0d6efd;
+      --accent2: #198754;
+      --warn: #dc3545;
+      --shadow: 0 8px 28px rgba(24, 50, 74, 0.12);
+      --radius: 18px;
+      --chip-radius: 12px;
     }
 
     * { box-sizing: border-box; }
-
     html, body {
       margin: 0;
+      padding: 0;
       width: 100%;
       height: 100%;
-      overscroll-behavior: none;
-      -webkit-tap-highlight-color: transparent;
       overflow: hidden;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
     }
 
     body {
-      background:
-        radial-gradient(circle at top, rgba(59,130,246,0.18), transparent 34%),
-        linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 100%);
-      color: var(--text);
-      font-family: Arial, sans-serif;
-      padding: 0;
+      position: fixed;
+      inset: 0;
     }
 
-    .app {
-      width: 100%;
-      height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: calc(8px + env(safe-area-inset-top)) 0 calc(8px + env(safe-area-inset-bottom));
-    }
-
-    .screen {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 0;
-      background: transparent;
-      border: none;
-      box-shadow: none;
-    }
-
-    .title-row,
-    .summary-grid,
-    .speed-grid,
-    .bottom-panel,
-    .toolbar,
-    .nav-search-row {
-      margin-left: 8px;
-      margin-right: 8px;
-    }
-
-    .title-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .title-wrap {
-      min-width: 0;
-      flex: 0 0 auto;
-      padding: 0 4px;
-    }
-
-    .title {
-      font-size: 22px;
-      font-weight: 900;
-      letter-spacing: -0.4px;
-      margin-bottom: 0;
-      white-space: nowrap;
-    }
-
-    .top-actions {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
-      flex: 1;
-      min-width: 0;
-      width: auto;
-      padding-right: 4px;
-    }
-
-    .top-btn {
-      height: 30px;
-      border: 1px solid rgba(255,255,255,0.08);
-      background: linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
-      color: #fff;
-      font-size: 10px;
-      font-weight: 800;
-      border-radius: 10px;
-      cursor: pointer;
-      box-shadow: 0 6px 14px rgba(0,0,0,0.20);
-      padding: 0 4px;
-      white-space: nowrap;
-    }
-
-    .top-btn.primary { background: linear-gradient(180deg, #2563eb, #1d4ed8); }
-    .top-btn.green { background: linear-gradient(180deg, #22c55e, #16a34a); }
-    .top-btn.amber { background: linear-gradient(180deg, #f59e0b, #d97706); }
-    .top-btn.red { background: linear-gradient(180deg, #ef4444, #dc2626); }
-
-    .top-btn:active,
-    .chip-btn:active,
-    .search-btn:active {
-      transform: translateY(1px) scale(0.99);
-    }
-
-    .summary-grid,
-    .speed-grid {
-      display: grid;
-      gap: 8px;
-    }
-
-    .summary-grid {
-      grid-template-columns: 1fr 1fr 1fr 1fr;
-      margin-bottom: 2px;
-    }
-
-    .speed-grid {
-      grid-template-columns: 1fr 1fr 1fr 1fr;
-    }
-
-    .summary-card,
-    .speed-card {
-      background: linear-gradient(180deg, rgba(30,41,59,0.82), rgba(15,23,42,0.76));
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 6px 4px;
-      min-width: 0;
-      text-align: center;
-    }
-
-    .summary-label,
-    .speed-label {
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 4px;
-      font-weight: 700;
-      line-height: 1.3;
-    }
-
-    .summary-value,
-    .speed-value {
-      font-size: 19px;
-      font-weight: 900;
-      line-height: 1.1;
-      letter-spacing: -0.3px;
-      word-break: break-word;
-    }
-
-    .toolbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    /* 🔥 버튼 전체 스타일 수정 */
-.toolbar-group {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 2px; /* 여백 최소화 */
-}
-
-/* 버튼 스타일 */
-.chip-btn {
-  height: 28px;              /* 더 낮게 */
-  padding: 0 2px;            /* 좌우 여백 최소 */
-  font-size: 9px;            /* 글씨 줄임 */
-  border-radius: 6px;        /* 거의 네모 */
-  white-space: normal;       /* ⭐ 줄바꿈 허용 */
-  overflow: visible;         /* ... 제거 */
-  text-overflow: unset;      /* ... 제거 */
-  line-height: 1.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-/* 버튼 안 글자 2줄 가능하게 */
-.chip-btn span {
-  display: block;
-}
-
-    .chip-btn,
-    .search-btn {
-      height: 34px;
-      padding: 0 2px;
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-      background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.92));
-      color: #fff;
-      font-size: 12px;
-      font-weight: 800;
-      cursor: pointer;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-    }
-
-    .chip-btn.active {
-      background: linear-gradient(180deg, #2563eb, #1d4ed8);
-    }
-
-    .chip-btn.warn {
-      background: linear-gradient(180deg, #334155, #1e293b);
-    }
-
-    .nav-search-row {
-      display: none;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .nav-search-row.show {
-      display: flex;
-    }
-
-    .nav-input {
-      flex: 1;
-      height: 36px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.08);
-      padding: 0 14px;
-      background: rgba(15,23,42,0.92);
-      color: #fff;
-      outline: none;
-      min-width: 0;
-    }
-
-    .nav-status {
-      margin: 0 8px;
-      padding: 6px 10px;
-      font-size: 12px;
-      color: #cbd5e1;
-      min-height: 18px;
-    }
-
-    .nav-guide {
-      margin: 0 8px 6px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: rgba(37, 99, 235, 0.18);
-      border: 1px solid rgba(59,130,246,0.35);
-      color: #e0f2fe;
-      font-size: 14px;
-      font-weight: 800;
-      line-height: 1.35;
-    }
-
-    .map-wrap {
-      flex: 1;
-      min-height: 0;
-      width: 100%;
-      border-radius: 0;
-      overflow: hidden;
-      border-top: 1px solid rgba(255,255,255,0.06);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+    #app {
       position: relative;
-      background: rgba(15,23,42,0.72);
-      touch-action: pan-x pan-y pinch-zoom;
-      pointer-events: auto;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
 
     #map {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
-      touch-action: pan-x pan-y pinch-zoom;
-      pointer-events: auto;
+      background: #dfe8f2;
+    }
+
+    .top-wrap {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .row-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 8px;
+      backdrop-filter: blur(8px);
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .search-row input,
+    .settings-grid input,
+    .settings-grid select {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 12px;
+      font-size: 15px;
+      outline: none;
+      background: #fff;
+      color: var(--text);
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .btn.secondary { background: #6c757d; }
+    .btn.green { background: var(--accent2); }
+    .btn.warn { background: var(--warn); }
+    .btn.light {
+      background: #eef4fb;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .chip-row::-webkit-scrollbar { display: none; }
+
+    .chip {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: var(--chip-radius);
+      padding: 9px 11px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .chip.active {
+      background: #e8f2ff;
+      border-color: #b8d5ff;
+      color: #0b5ed7;
+    }
+
+    .chip.green.active {
+      background: #e8f7ef;
+      border-color: #bde5c8;
+      color: #146c43;
     }
 
     .bottom-panel {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 50vh;
     }
 
-    .bottom-card {
-      background: linear-gradient(180deg, rgba(30,41,59,0.82), rgba(15,23,42,0.76));
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .stat {
+      background: #fff;
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 14px;
+      padding: 8px 9px;
+      min-height: 62px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--sub);
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .action-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .action-row .btn {
+      width: 100%;
+      padding: 12px 8px;
+      font-size: 13px;
+    }
+
+    .list-sheet {
+      overflow: auto;
+      display: none;
+      max-height: 34vh;
+    }
+
+    .list-sheet.show { display: block; }
+
+    .record-item {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 14px;
       padding: 10px;
+      margin-bottom: 8px;
+    }
+
+    .record-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .record-title {
+      font-size: 15px;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .record-sub {
+      font-size: 12px;
+      color: var(--sub);
+      margin-top: 3px;
+    }
+
+    .record-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .record-mini {
+      background: #f7fbff;
+      border: 1px solid #e3edf8;
+      border-radius: 10px;
+      padding: 7px 6px;
       text-align: center;
     }
 
-    .bottom-label {
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 6px;
+    .record-mini b {
+      display: block;
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    .record-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .record-actions .btn {
+      padding: 9px 10px;
+      font-size: 12px;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(8, 20, 34, 0.42);
+      z-index: 40;
+      display: none;
+      align-items: flex-end;
+    }
+
+    .modal-backdrop.show { display: flex; }
+
+    .modal {
+      width: 100%;
+      max-height: 82vh;
+      overflow: auto;
+      background: #fff;
+      border-radius: 22px 22px 0 0;
+      padding: 16px 14px 20px;
+      box-shadow: 0 -10px 40px rgba(10, 27, 49, 0.18);
+    }
+
+    .modal h3 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .settings-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 13px;
+      color: var(--sub);
       font-weight: 700;
     }
 
-    .bottom-value {
-      font-size: 16px;
-      font-weight: 900;
-      line-height: 1.2;
-      word-break: break-word;
+    .field small {
+      color: var(--sub);
+      font-size: 11px;
+      line-height: 1.35;
     }
 
-    .marker-badge {
-      display: flex;
+    .range-wrap {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .range-wrap input[type='range'] {
+      width: 100%;
+    }
+
+    .note-box {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--sub);
+      padding: 10px 12px;
+      background: #f6f9fc;
+      border: 1px solid #e0e8f2;
+      border-radius: 12px;
+    }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 58vh;
+      transform: translateX(-50%);
+      background: rgba(17, 34, 51, 0.92);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      z-index: 50;
+      display: none;
+      max-width: calc(100% - 24px);
+      text-align: center;
+    }
+
+    .toast.show { display: block; }
+
+    .badge-inline {
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: rgba(15,23,42,0.9);
-      color: white;
-      font-size: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-      border: 2px solid rgba(255,255,255,0.25);
+      min-width: 48px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f0f6ff;
+      border: 1px solid #d4e5ff;
+      color: #0b5ed7;
+      font-size: 12px;
+      font-weight: 800;
     }
-    .pause-text {
-  font-size: 11px;     /* ⭐ 작게 */
-  color: #94a3b8;      /* 흐리게 */
-  margin-left: 4px;
-}
 
-    @media (max-width: 390px) {
-      .title { font-size: 20px; }
-      .top-actions { gap: 3px; }
-      .top-btn {
-        font-size: 12px;
-        height: 28px;
-        padding: 0 1px;
-      }
-      .summary-value, .speed-value { font-size: 17px; }
-      .bottom-value { font-size: 14px; }
-      .chip-btn, .search-btn { font-size: 14px; padding: 0 0px; }
-      .pause-text {
-  font-size: 11px;
-  color: #94a3b8;
-  margin-left: 2px;
+    @media (max-width: 420px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .action-row { grid-template-columns: repeat(4, 1fr); }
+      .stat-value { font-size: 14px; }
+      .btn { font-size: 13px; }
+      .search-row { grid-template-columns: 1fr auto; }
+      .search-row .btn:last-child { grid-column: span 2; }
     }
-  }
   </style>
 </head>
 <body>
-  <div class="app">
-    <div class="screen">
-      <div class="title-row">
-        <div class="title-wrap">
-          <div class="title">주행기록</div>
-        </div>
+  <div id="app">
+    <div id="map"></div>
 
-        <div class="top-actions">
-          <button class="top-btn primary" id="batteryBtn">배터리</button>
-          <button class="top-btn primary" id="historyBtn">기록목록</button>
-          <button class="top-btn green" id="startBtn">시작</button>
-          <button class="top-btn red" id="endBtn">종료</button>
+    <div class="top-wrap">
+      <div class="row-card">
+        <div class="search-row">
+          <input id="searchInput" type="text" placeholder="목적지 검색" />
+          <button class="btn" id="searchBtn">검색</button>
+          <button class="btn light" id="settingsBtn">설정</button>
         </div>
       </div>
 
-      <div class="summary-grid">
-        <div class="summary-card">
-          <div class="summary-label">누적 거리</div>
-          <div class="summary-value" id="distanceEl">0.00 km</div>
+      <div class="row-card">
+        <div class="chip-row">
+          <button class="chip active" id="followBtn">중심고정 켜짐</button>
+          <button class="chip" id="autoZoomBtn">자동줌 꺼짐</button>
+          <button class="chip active green" id="bikeOverlayBtn">자전거도로 켜짐</button>
+          <button class="chip" id="mapTypeBtn">일반지도</button>
+          <button class="chip" id="routeAgainBtn">재탐색</button>
+          <button class="chip" id="altRouteBtn">대안경로</button>
+          <button class="chip" id="roundTripBtn">왕복코스</button>
+          <button class="chip" id="fitBtn">전체코스</button>
+          <button class="chip" id="myLocBtn">내위치</button>
+          <button class="chip" id="recordsBtn">기록목록</button>
         </div>
+      </div>
+    </div>
 
-        <div class="summary-card">
-          <div class="summary-label">출발 시각</div>
-          <div class="summary-value" id="startTimeEl">--:--</div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-label">주행 시간</div>
-          <div class="summary-value" id="durationEl">00:00:00</div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-label">휴식 시간</div>
-          <div class="summary-value" id="restTimeEl">00:00:00</div>
+    <div class="bottom-panel">
+      <div class="row-card">
+        <div class="stats-grid">
+          <div class="stat"><div class="stat-label">추천거리</div><div class="stat-value" id="routeDistance">-</div></div>
+          <div class="stat"><div class="stat-label">예상시간</div><div class="stat-value" id="routeTime">-</div></div>
+          <div class="stat"><div class="stat-label">상승고도</div><div class="stat-value" id="routeAscend">-</div></div>
+          <div class="stat"><div class="stat-label">자전거친화</div><div class="stat-value" id="routeBikeScore">-</div></div>
+          <div class="stat"><div class="stat-label">실주행거리</div><div class="stat-value" id="liveDistance">0.00 km</div></div>
+          <div class="stat"><div class="stat-label">주행시간</div><div class="stat-value" id="liveTime">00:00:00</div></div>
+          <div class="stat"><div class="stat-label">현재속도</div><div class="stat-value" id="liveSpeed">0.0 km/h</div></div>
+          <div class="stat"><div class="stat-label">평균속도</div><div class="stat-value" id="liveAvg">0.0 km/h</div></div>
         </div>
       </div>
 
-      <div class="speed-grid">
-        <div class="speed-card">
-          <div class="speed-label">현재 시각</div>
-          <div class="speed-value" id="clockEl">--:--</div>
-        </div>
-
-        <div class="speed-card">
-          <div class="speed-label">현재 속도</div>
-          <div class="speed-value" id="currentSpeedEl">0.0 km/h</div>
-        </div>
-
-        <div class="speed-card">
-          <div class="speed-label">평균 속도</div>
-          <div class="speed-value" id="avgSpeedEl">0.0 km/h</div>
-        </div>
-
-        <div class="speed-card">
-          <div class="speed-label">최고 속도</div>
-          <div class="speed-value" id="maxSpeedEl">0.0 km/h</div>
+      <div class="row-card">
+        <div class="action-row">
+          <button class="btn green" id="startRideBtn">주행시작</button>
+          <button class="btn warn" id="stopRideBtn">주행종료</button>
+          <button class="btn light" id="clearRouteBtn">경로삭제</button>
+          <button class="btn secondary" id="clearRideBtn">실주행삭제</button>
         </div>
       </div>
 
-      <div class="toolbar">
-        <div class="toolbar-group">
-  <button class="chip-btn active" id="followBtn">중심고정</button>
-  <button class="chip-btn" id="zoomBtn">자동줌</button>
-  <button class="chip-btn" id="fitBtn">전체코스</button>
-  <button class="chip-btn" id="destBtn">목적지</button>
-  <button class="chip-btn warn" id="navToggleBtn">안내</button>
-  <button class="chip-btn" id="clearRouteBtn">지우기</button>
-</div>
-      </div>
+      <div class="row-card list-sheet" id="recordsSheet"></div>
+    </div>
 
-      <div class="nav-search-row" id="navSearchBar">
-        <input id="placeKeyword" class="nav-input" type="text" placeholder="목적지를 검색하세요" />
-        <button class="search-btn" id="searchPlaceBtn">검색</button>
-      </div>
-      <div class="nav-status" id="navStatusEl">안내 없음</div>
-      <div class="nav-guide" id="navGuideEl">안내 준비중</div>
+    <div class="toast" id="toast"></div>
 
-      <div class="map-wrap">
-        <div id="map"></div>
-      </div>
+    <div class="modal-backdrop" id="settingsModal">
+      <div class="modal">
+        <h3>설정</h3>
+        <div class="settings-grid">
+          <div class="field">
+            <label for="kakaoKeyInput">카카오 JavaScript 앱 키</label>
+            <input id="kakaoKeyInput" type="text" placeholder="카카오 JavaScript 앱 키" />
+            <small>처음 1회 저장 후 새로고침하면 됩니다.</small>
+          </div>
 
-      <div class="bottom-panel">
-        <div class="bottom-card">
-          <div class="bottom-label">출발 위치</div>
-          <div class="bottom-value" id="startInfoEl">-</div>
-        </div>
-        <div class="bottom-card">
-          <div class="bottom-label">현재 위치 정확도</div>
-          <div class="bottom-value" id="accuracyEl">-</div>
+          <div class="field">
+            <label for="graphKeyInput">GraphHopper API Key</label>
+            <input id="graphKeyInput" type="text" placeholder="GraphHopper API Key" />
+            <small>Routing API 호출에 사용됩니다.</small>
+          </div>
+
+          <div class="field">
+            <label for="preferenceRange">자전거도로 선호도</label>
+            <div class="range-wrap">
+              <input id="preferenceRange" type="range" min="0" max="100" step="5" />
+              <span class="badge-inline" id="preferenceValue">70</span>
+            </div>
+            <small>높을수록 자전거 친화도를 더 우선하고, 낮을수록 짧은 경로를 더 우선합니다.</small>
+          </div>
+
+          <div class="field">
+            <label for="altCountSelect">대안경로 수</label>
+            <select id="altCountSelect">
+              <option value="1">1개</option>
+              <option value="2" selected>2개</option>
+              <option value="3">3개</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="roundTripDistanceInput">왕복코스 거리(km)</label>
+            <input id="roundTripDistanceInput" type="number" min="5" max="80" step="1" />
+          </div>
+
+          <div class="field">
+            <label for="roundTripSeedInput">왕복코스 Seed</label>
+            <input id="roundTripSeedInput" type="number" min="1" step="1" />
+            <small>값을 바꾸면 같은 거리라도 다른 왕복 코스를 받을 수 있습니다.</small>
+          </div>
+
+          <div class="note-box">
+            현재 버전은 음성안내를 넣지 않고, 추천 경로와 실제 주행 경로를 같이 보는 구조입니다. 자전거친화 비율은 GraphHopper 경로 상세정보를 기반으로 계산한 내부 점수입니다.
+          </div>
+
+          <div class="action-row" style="grid-template-columns: 1fr 1fr;">
+            <button class="btn green" id="saveSettingsBtn">저장</button>
+            <button class="btn light" id="closeSettingsBtn">닫기</button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
-    const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
-    const FOLLOW_STORAGE_KEY = "ebike_follow_map";
-    const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
-    const NAV_STATE_STORAGE_KEY = "ebike_nav_state_v1";
-
-    const STOP_SPEED_KMH = 1.0;
-    const AUTO_PAUSE_DELAY_MS = 10000;
-    const MIN_MOVE_DISTANCE_M = 3;
-    const MAX_VALID_SPEED_KMH = 45;
-    const DEFAULT_CENTER = { lat: 35.180, lng: 128.107 };
-    const clearRouteBtn = document.getElementById("clearRouteBtn");
-
-    const initialData = {
-      started: false,
-      paused: false,
-      pausedAt: null,
-      startTime: null,
-      pausedMs: 0,
-      totalDistanceM: 0,
-      path: [],
-      startPoint: null,
-      lastAccuracy: null,
-      currentSpeedKmh: 0,
-      maxSpeedKmh: 0,
-      stopBeganAt: null,
-      lastPoint: null,
-      autoPaused: false
+    const STORAGE_KEYS = {
+      settings: 'bike_route_planner_settings_v1',
+      records: 'bike_route_planner_records_v1'
     };
 
-    const initialNavigationState = {
-      active: false,
-      destination: null,
-      routeOrigin: null,
-      routePath: [],
-      rerouting: false,
-      offRouteThresholdM: 150,
-      lastRerouteAt: 0
+    const DEFAULT_SETTINGS = {
+      kakaoKey: '',
+      graphKey: '',
+      bikePreference: 70,
+      altRouteCount: 2,
+      roundTripDistanceKm: 20,
+      roundTripSeed: 1
     };
 
-    function loadRideData() {
+    let settings = loadSettings();
+
+    // 설정 UI 선반영
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('kakaoKeyInput').value = settings.kakaoKey || '';
+      document.getElementById('graphKeyInput').value = settings.graphKey || '';
+      document.getElementById('preferenceRange').value = settings.bikePreference;
+      document.getElementById('preferenceValue').textContent = settings.bikePreference;
+      document.getElementById('altCountSelect').value = String(settings.altRouteCount);
+      document.getElementById('roundTripDistanceInput').value = settings.roundTripDistanceKm;
+      document.getElementById('roundTripSeedInput').value = settings.roundTripSeed;
+      document.getElementById('preferenceRange').addEventListener('input', (e) => {
+        document.getElementById('preferenceValue').textContent = e.target.value;
+      });
+    });
+
+    if (!settings.kakaoKey) {
+      bootWithoutMap('카카오 JavaScript 앱 키를 먼저 설정해 주세요. 설정 저장 후 새로고침하면 지도가 열립니다.');
+    } else {
+      loadKakaoScript(settings.kakaoKey)
+        .then(() => initializeApp())
+        .catch((err) => {
+          console.error(err);
+          bootWithoutMap('카카오 지도 로딩에 실패했습니다. 앱 키와 도메인 등록을 확인해 주세요.');
+        });
+    }
+
+    function bootWithoutMap(message) {
+      document.getElementById('map').innerHTML = `
+        <div style="height:100%;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:#18324a;">
+          <div style="max-width:420px;background:rgba(255,255,255,.96);border:1px solid #d8e0ec;border-radius:20px;padding:20px;box-shadow:0 8px 28px rgba(24,50,74,.12)">
+            <div style="font-size:20px;font-weight:800;margin-bottom:10px;">자전거 경로 플래너</div>
+            <div style="font-size:14px;line-height:1.6;color:#59708a;">${message}</div>
+          </div>
+        </div>`;
+      bindCommonUI(null);
+    }
+
+    function loadKakaoScript(appKey) {
+      return new Promise((resolve, reject) => {
+        const existing = document.getElementById('kakaoMapSdk');
+        if (existing) {
+          existing.addEventListener('load', () => kakao.maps.load(resolve));
+          existing.addEventListener('error', reject);
+          return;
+        }
+        const script = document.createElement('script');
+        script.id = 'kakaoMapSdk';
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false&libraries=services`;
+        script.onload = () => kakao.maps.load(resolve);
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    function loadSettings() {
       try {
-        const saved = JSON.parse(localStorage.getItem(RIDE_STORAGE_KEY) || "null");
-        return saved ? { ...initialData, ...saved } : { ...initialData };
-      } catch (e) {
-        return { ...initialData };
+        return { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) || '{}')) };
+      } catch {
+        return { ...DEFAULT_SETTINGS };
       }
     }
 
-    function saveRideData() {
-      localStorage.setItem(RIDE_STORAGE_KEY, JSON.stringify(rideData));
+    function saveSettings(next) {
+      settings = { ...settings, ...next };
+      localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
     }
 
-    function clearRideData() {
-      rideData = { ...initialData };
-      localStorage.removeItem(RIDE_STORAGE_KEY);
-    }
-
-    function loadSavedRides() {
+    function loadRecords() {
       try {
-        return JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
-      } catch (e) {
+        return JSON.parse(localStorage.getItem(STORAGE_KEYS.records) || '[]');
+      } catch {
         return [];
       }
     }
 
-    function loadNavigationState() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(NAV_STATE_STORAGE_KEY) || "null");
-        return saved ? { ...initialNavigationState, ...saved } : { ...initialNavigationState };
-      } catch (e) {
-        return { ...initialNavigationState };
+    function saveRecords(records) {
+      localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
+    }
+
+    function initializeApp() {
+      const appState = {
+        map: null,
+        places: null,
+        geocoder: null,
+        mapType: 'roadmap',
+        bikeOverlay: true,
+        followMap: true,
+        autoZoom: false,
+        currentPosition: null,
+        destination: null,
+        routePaths: [],
+        routeMeta: null,
+        livePath: [],
+        liveStats: {
+          distanceM: 0,
+          startedAt: null,
+          elapsedMs: 0,
+          currentSpeedKmh: 0,
+          avgSpeedKmh: 0,
+          pausedMs: 0
+        },
+        rideRecording: false,
+        watchId: null,
+        routeLine: null,
+        altRouteLines: [],
+        liveLine: null,
+        currentMarker: null,
+        startMarker: null,
+        endMarker: null,
+        recordsOpen: false,
+        activeMode: 'route',
+        lastGraphResponse: null
+      };
+
+      appState.map = new kakao.maps.Map(document.getElementById('map'), {
+        center: new kakao.maps.LatLng(35.1801, 128.1076),
+        level: 4
+      });
+      appState.places = new kakao.maps.services.Places();
+      appState.geocoder = new kakao.maps.services.Geocoder();
+      appState.routeLine = new kakao.maps.Polyline({
+        map: appState.map,
+        path: [],
+        strokeWeight: 6,
+        strokeOpacity: 0.92,
+        strokeStyle: 'solid'
+      });
+      appState.liveLine = new kakao.maps.Polyline({
+        map: appState.map,
+        path: [],
+        strokeWeight: 5,
+        strokeOpacity: 0.95,
+        strokeStyle: 'solid'
+      });
+      appState.currentMarker = new kakao.maps.Marker({ map: appState.map });
+      appState.startMarker = new kakao.maps.Marker({ map: null });
+      appState.endMarker = new kakao.maps.Marker({ map: null });
+
+      if (appState.bikeOverlay) {
+        appState.map.addOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
+      }
+
+      bindCommonUI(appState);
+      bindMapEvents(appState);
+      renderRecords(appState);
+      acquireCurrentLocation(appState, true);
+      tickRideTime(appState);
+    }
+
+    function bindCommonUI(appState) {
+      const $ = (id) => document.getElementById(id);
+      const settingsModal = $('settingsModal');
+      const searchInput = $('searchInput');
+
+      $('settingsBtn').onclick = () => settingsModal.classList.add('show');
+      $('closeSettingsBtn').onclick = () => settingsModal.classList.remove('show');
+      $('saveSettingsBtn').onclick = () => {
+        saveSettings({
+          kakaoKey: $('kakaoKeyInput').value.trim(),
+          graphKey: $('graphKeyInput').value.trim(),
+          bikePreference: Number($('preferenceRange').value || 70),
+          altRouteCount: Number($('altCountSelect').value || 2),
+          roundTripDistanceKm: Number($('roundTripDistanceInput').value || 20),
+          roundTripSeed: Number($('roundTripSeedInput').value || 1)
+        });
+        settingsModal.classList.remove('show');
+        showToast('설정을 저장했습니다. 카카오 키를 바꿨다면 새로고침해 주세요.');
+      };
+
+      $('searchBtn').onclick = () => {
+        if (!appState) return showToast('카카오 앱 키 설정 후 새로고침해 주세요.');
+        searchDestination(appState, searchInput.value.trim());
+      };
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('searchBtn').click();
+      });
+
+      $('followBtn').onclick = () => {
+        if (!appState) return;
+        appState.followMap = !appState.followMap;
+        updateChip('followBtn', appState.followMap, '중심고정 켜짐', '중심고정 꺼짐');
+      };
+
+      $('autoZoomBtn').onclick = () => {
+        if (!appState) return;
+        appState.autoZoom = !appState.autoZoom;
+        updateChip('autoZoomBtn', appState.autoZoom, '자동줌 켜짐', '자동줌 꺼짐');
+      };
+
+      $('bikeOverlayBtn').onclick = () => {
+        if (!appState) return;
+        appState.bikeOverlay = !appState.bikeOverlay;
+        if (appState.bikeOverlay) {
+          const type = appState.mapType === 'roadmap'
+            ? kakao.maps.MapTypeId.BICYCLE
+            : kakao.maps.MapTypeId.BICYCLE_HYBRID;
+          appState.map.addOverlayMapTypeId(type);
+        } else {
+          appState.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
+          appState.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE_HYBRID);
+        }
+        document.getElementById('bikeOverlayBtn').classList.toggle('active', appState.bikeOverlay);
+        document.getElementById('bikeOverlayBtn').classList.toggle('green', true);
+        document.getElementById('bikeOverlayBtn').textContent = appState.bikeOverlay ? '자전거도로 켜짐' : '자전거도로 꺼짐';
+      };
+
+      $('mapTypeBtn').onclick = () => {
+        if (!appState) return;
+        appState.mapType = appState.mapType === 'roadmap' ? 'hybrid' : 'roadmap';
+        appState.map.setMapTypeId(
+          appState.mapType === 'roadmap'
+            ? kakao.maps.MapTypeId.ROADMAP
+            : kakao.maps.MapTypeId.HYBRID
+        );
+        $('mapTypeBtn').textContent = appState.mapType === 'roadmap' ? '일반지도' : '위성지도';
+        if (appState.bikeOverlay) {
+          appState.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
+          appState.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE_HYBRID);
+          appState.map.addOverlayMapTypeId(
+            appState.mapType === 'roadmap'
+              ? kakao.maps.MapTypeId.BICYCLE
+              : kakao.maps.MapTypeId.BICYCLE_HYBRID
+          );
+        }
+      };
+
+      $('routeAgainBtn').onclick = () => {
+        if (!appState?.currentPosition || !appState?.destination) {
+          return showToast('현재 위치와 목적지가 있어야 합니다.');
+        }
+        requestGraphRoute(appState, {
+          start: appState.currentPosition,
+          end: appState.destination,
+          alternatives: 0
+        });
+      };
+
+      $('altRouteBtn').onclick = () => {
+        if (!appState?.currentPosition || !appState?.destination) {
+          return showToast('현재 위치와 목적지가 있어야 합니다.');
+        }
+        requestGraphRoute(appState, {
+          start: appState.currentPosition,
+          end: appState.destination,
+          alternatives: Number(settings.altRouteCount || 2)
+        });
+      };
+
+      $('roundTripBtn').onclick = () => {
+        if (!appState?.currentPosition) return showToast('현재 위치를 먼저 잡아 주세요.');
+        requestRoundTrip(appState);
+      };
+
+      $('fitBtn').onclick = () => {
+        if (!appState) return;
+        fitAll(appState);
+      };
+
+      $('myLocBtn').onclick = () => {
+        if (!appState) return;
+        acquireCurrentLocation(appState, true, true);
+      };
+
+      $('startRideBtn').onclick = () => {
+        if (!appState) return;
+        if (appState.rideRecording) return showToast('이미 주행 기록 중입니다.');
+        if (!confirm('주행 기록을 시작할까요?')) return;
+        startRideRecording(appState);
+      };
+
+      $('stopRideBtn').onclick = () => {
+        if (!appState) return;
+        if (!appState.rideRecording) return showToast('현재 기록 중이 아닙니다.');
+        stopRideRecording(appState);
+      };
+
+      $('clearRouteBtn').onclick = () => {
+        if (!appState) return;
+        clearRoute(appState, true);
+      };
+
+      $('clearRideBtn').onclick = () => {
+        if (!appState) return;
+        if (!confirm('실주행 경로만 지울까요?')) return;
+        appState.livePath = [];
+        appState.liveStats = {
+          distanceM: 0,
+          startedAt: null,
+          elapsedMs: 0,
+          currentSpeedKmh: 0,
+          avgSpeedKmh: 0,
+          pausedMs: 0
+        };
+        appState.liveLine.setPath([]);
+        updateLiveStats(appState);
+      };
+
+      $('recordsBtn').onclick = () => {
+        const sheet = $('recordsSheet');
+        sheet.classList.toggle('show');
+        if (appState) {
+          appState.recordsOpen = sheet.classList.contains('show');
+          renderRecords(appState);
+        }
+      };
+    }
+
+    function bindMapEvents(state) {
+      kakao.maps.event.addListener(state.map, 'dragstart', () => {
+        state.followMap = false;
+        updateChip('followBtn', false, '중심고정 켜짐', '중심고정 꺼짐');
+      });
+      kakao.maps.event.addListener(state.map, 'zoom_changed', () => {
+        state.followMap = false;
+        updateChip('followBtn', false, '중심고정 켜짐', '중심고정 꺼짐');
+      });
+    }
+
+    function updateChip(id, active, onText, offText) {
+      const el = document.getElementById(id);
+      el.classList.toggle('active', !!active);
+      el.textContent = active ? onText : offText;
+    }
+
+    function searchDestination(state, keyword) {
+      if (!keyword) return showToast('목적지를 입력해 주세요.');
+      state.places.keywordSearch(keyword, (data, status) => {
+        if (status !== kakao.maps.services.Status.OK || !data.length) {
+          return showToast('검색 결과가 없습니다.');
+        }
+        const best = data[0];
+        const dest = {
+          lat: Number(best.y),
+          lng: Number(best.x),
+          name: best.place_name,
+          address: best.road_address_name || best.address_name || ''
+        };
+        setDestination(state, dest);
+        if (!state.currentPosition) {
+          showToast('목적지는 잡았고, 현재 위치를 기다리는 중입니다.');
+          return;
+        }
+        requestGraphRoute(state, {
+          start: state.currentPosition,
+          end: dest,
+          alternatives: 0
+        });
+      });
+    }
+
+    function setDestination(state, dest) {
+      state.destination = dest;
+      const pos = new kakao.maps.LatLng(dest.lat, dest.lng);
+      state.endMarker.setPosition(pos);
+      state.endMarker.setMap(state.map);
+      state.map.panTo(pos);
+    }
+
+    function acquireCurrentLocation(state, center = false, forceToast = false) {
+      if (!navigator.geolocation) {
+        return showToast('이 기기에서는 위치 정보를 사용할 수 없습니다.');
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const p = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            name: '현재 위치'
+          };
+          updateCurrentPosition(state, p, center);
+          if (forceToast) showToast('현재 위치로 이동했습니다.');
+        },
+        (err) => {
+          console.error(err);
+          showToast('현재 위치를 가져오지 못했습니다. 위치 권한을 확인해 주세요.');
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 3000 }
+      );
+    }
+
+    function updateCurrentPosition(state, p, center = false) {
+      state.currentPosition = p;
+      const latlng = new kakao.maps.LatLng(p.lat, p.lng);
+      state.currentMarker.setPosition(latlng);
+      state.currentMarker.setMap(state.map);
+      if (center || state.followMap) state.map.panTo(latlng);
+
+      if (state.autoZoom) {
+        const level = calcZoomBySpeed(state.liveStats.currentSpeedKmh);
+        state.map.setLevel(level);
       }
     }
 
-    function saveNavigationState() {
-      const toSave = {
-        ...navigationState,
-        rerouting: false
+    function calcZoomBySpeed(kmh) {
+      if (kmh >= 32) return 3;
+      if (kmh >= 22) return 4;
+      if (kmh >= 12) return 5;
+      return 6;
+    }
+
+    async function requestGraphRoute(state, { start, end, alternatives = 0 }) {
+      if (!settings.graphKey) return showToast('GraphHopper API Key를 설정해 주세요.');
+      showToast('경로를 계산 중입니다...', 1200);
+      clearAltRoutes(state);
+
+      const preference = Number(settings.bikePreference || 70);
+      const body = {
+        profile: 'bike',
+        points: [
+          [start.lng, start.lat],
+          [end.lng, end.lat]
+        ],
+        locale: 'ko',
+        elevation: true,
+        instructions: false,
+        calc_points: true,
+        points_encoded: false,
+        details: ['road_class', 'surface'],
+        algorithm: alternatives > 0 ? 'alternative_route' : undefined,
+        'alternative_route.max_paths': alternatives > 0 ? Math.max(2, alternatives + 1) : undefined,
+        'alternative_route.max_weight_factor': alternatives > 0 ? 1.6 : undefined,
+        'alternative_route.max_share_factor': alternatives > 0 ? 0.75 : undefined,
+        custom_model: buildBikeCustomModel(preference)
       };
-      localStorage.setItem(NAV_STATE_STORAGE_KEY, JSON.stringify(toSave));
+
+      try {
+        const res = await fetch(`https://graphhopper.com/api/1/route?key=${encodeURIComponent(settings.graphKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanObject(body))
+        });
+        const data = await res.json();
+        if (!res.ok || !data.paths?.length) {
+          console.error(data);
+          throw new Error(data.message || 'route_failed');
+        }
+        state.lastGraphResponse = data;
+        drawMainRoute(state, data.paths[0]);
+        if (data.paths.length > 1) drawAltRoutes(state, data.paths.slice(1));
+        fitAll(state);
+        showToast(alternatives > 0 ? '대안 경로를 불러왔습니다.' : '경로를 불러왔습니다.');
+      } catch (err) {
+        console.error(err);
+        showToast('경로 계산에 실패했습니다. API 키와 할당량을 확인해 주세요.');
+      }
     }
 
-    function clearNavigationStateStorage() {
-      localStorage.removeItem(NAV_STATE_STORAGE_KEY);
+    async function requestRoundTrip(state) {
+      if (!settings.graphKey) return showToast('GraphHopper API Key를 설정해 주세요.');
+      const p = state.currentPosition;
+      if (!p) return showToast('현재 위치가 없습니다.');
+      showToast('왕복 코스를 계산 중입니다...', 1200);
+      clearAltRoutes(state);
+
+      const body = {
+        profile: 'bike',
+        point: [p.lat, p.lng],
+        locale: 'ko',
+        elevation: true,
+        instructions: false,
+        points_encoded: false,
+        round_trip: {
+          distance: Number(settings.roundTripDistanceKm || 20) * 1000,
+          seed: Number(settings.roundTripSeed || 1)
+        },
+        details: ['road_class', 'surface'],
+        custom_model: buildBikeCustomModel(Number(settings.bikePreference || 70))
+      };
+
+      try {
+        const res = await fetch(`https://graphhopper.com/api/1/route?key=${encodeURIComponent(settings.graphKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanObject(body))
+        });
+        const data = await res.json();
+        if (!res.ok || !data.paths?.length) {
+          console.error(data);
+          throw new Error(data.message || 'round_trip_failed');
+        }
+        state.lastGraphResponse = data;
+        state.destination = null;
+        state.endMarker.setMap(null);
+        drawMainRoute(state, data.paths[0]);
+        fitAll(state);
+        showToast('왕복 코스를 불러왔습니다.');
+      } catch (err) {
+        console.error(err);
+        showToast('왕복 코스 계산에 실패했습니다.');
+      }
     }
 
-    function saveRideSummary() {
-      const elapsedMs = getElapsedMs();
-      const elapsedHours = elapsedMs / 3600000;
-      const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+    function buildBikeCustomModel(preference) {
+      const distanceInfluence = 120 - preference;
+      const strong = Math.max(0.15, 0.30 + (preference / 100) * 0.70).toFixed(2);
+      const medium = Math.max(0.20, 0.40 + (preference / 100) * 0.55).toFixed(2);
+      const avoid = Math.max(0.05, 0.35 - (preference / 100) * 0.20).toFixed(2);
+      return {
+        distance_influence: distanceInfluence,
+        priority: [
+          { if: 'road_class == TRACK || road_class == PATH || road_class == CYCLEWAY', multiply_by: strong },
+          { if: 'road_class == RESIDENTIAL || road_class == LIVING_STREET', multiply_by: medium },
+          { if: 'road_class == PRIMARY || road_class == PRIMARY_LINK || road_class == TRUNK || road_class == TRUNK_LINK', multiply_by: avoid },
+          { if: 'road_class == MOTORWAY || road_class == MOTORWAY_LINK', multiply_by: '0.01' }
+        ]
+      };
+    }
 
-      const rides = loadSavedRides();
-      const item = {
+    function cleanObject(obj) {
+      if (Array.isArray(obj)) return obj.map(cleanObject);
+      if (!obj || typeof obj !== 'object') return obj;
+      return Object.fromEntries(
+        Object.entries(obj)
+          .filter(([, v]) => v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => [k, cleanObject(v)])
+      );
+    }
+
+    function drawMainRoute(state, path) {
+      const coords = extractCoords(path.points);
+      state.routePaths = coords;
+      state.routeLine.setPath(coords.map((p) => new kakao.maps.LatLng(p.lat, p.lng)));
+      state.routeMeta = buildRouteMeta(path);
+      updateRouteStats(state.routeMeta);
+
+      if (coords.length) {
+        state.startMarker.setPosition(new kakao.maps.LatLng(coords[0].lat, coords[0].lng));
+        state.startMarker.setMap(state.map);
+      }
+      if (!state.destination && coords.length) {
+        const last = coords[coords.length - 1];
+        state.endMarker.setPosition(new kakao.maps.LatLng(last.lat, last.lng));
+        state.endMarker.setMap(state.map);
+      }
+    }
+
+    function drawAltRoutes(state, paths) {
+      clearAltRoutes(state);
+      const weights = [0.28, 0.22, 0.18];
+      paths.forEach((path, idx) => {
+        const coords = extractCoords(path.points).map((p) => new kakao.maps.LatLng(p.lat, p.lng));
+        const line = new kakao.maps.Polyline({
+          map: state.map,
+          path: coords,
+          strokeWeight: 4,
+          strokeOpacity: weights[idx] || 0.15,
+          strokeStyle: 'shortdash'
+        });
+        state.altRouteLines.push(line);
+      });
+    }
+
+    function clearAltRoutes(state) {
+      state.altRouteLines.forEach((line) => line.setMap(null));
+      state.altRouteLines = [];
+    }
+
+    function clearRoute(state, includeMarkers) {
+      state.routePaths = [];
+      state.routeMeta = null;
+      state.routeLine.setPath([]);
+      clearAltRoutes(state);
+      updateRouteStats(null);
+      if (includeMarkers) {
+        state.startMarker.setMap(null);
+        if (!state.destination) state.endMarker.setMap(null);
+      }
+      showToast('경로를 지웠습니다.');
+    }
+
+    function extractCoords(points) {
+      if (!points) return [];
+      if (Array.isArray(points.coordinates)) {
+        return points.coordinates.map((c) => ({ lng: c[0], lat: c[1], ele: c[2] || 0 }));
+      }
+      return [];
+    }
+
+    function buildRouteMeta(path) {
+      const ascend = Number(path.ascend || 0);
+      const bikeFriendlyPercent = estimateBikeFriendlyPercent(path);
+      return {
+        distanceKm: (Number(path.distance || 0) / 1000),
+        timeMs: Number(path.time || 0),
+        ascendM: ascend,
+        bikeFriendlyPercent
+      };
+    }
+
+    function estimateBikeFriendlyPercent(path) {
+      const details = path.details || {};
+      const roadClass = details.road_class || [];
+      const totalDist = Number(path.distance || 0);
+      if (!roadClass.length || !totalDist) return 0;
+
+      let scoreDist = 0;
+      roadClass.forEach((seg) => {
+        const [fromIdx, toIdx, value] = seg;
+        const ratio = Math.max(0, toIdx - fromIdx) / Math.max(1, (path.points?.coordinates?.length || 1) - 1);
+        const dist = totalDist * ratio;
+        const v = String(value || '').toUpperCase();
+        if (v.includes('CYCLEWAY') || v.includes('TRACK') || v.includes('PATH')) scoreDist += dist;
+        else if (v.includes('RESIDENTIAL') || v.includes('LIVING_STREET')) scoreDist += dist * 0.7;
+        else if (v.includes('SERVICE') || v.includes('UNCLASSIFIED')) scoreDist += dist * 0.55;
+        else if (v.includes('PRIMARY') || v.includes('TRUNK') || v.includes('MOTORWAY')) scoreDist += dist * 0.05;
+        else scoreDist += dist * 0.35;
+      });
+      return Math.max(0, Math.min(100, Math.round((scoreDist / totalDist) * 100)));
+    }
+
+    function updateRouteStats(meta) {
+      document.getElementById('routeDistance').textContent = meta ? `${meta.distanceKm.toFixed(2)} km` : '-';
+      document.getElementById('routeTime').textContent = meta ? formatDuration(meta.timeMs) : '-';
+      document.getElementById('routeAscend').textContent = meta ? `${Math.round(meta.ascendM).toLocaleString()} m` : '-';
+      document.getElementById('routeBikeScore').textContent = meta ? `${meta.bikeFriendlyPercent}%` : '-';
+    }
+
+    function startRideRecording(state) {
+      state.rideRecording = true;
+      state.livePath = [];
+      state.liveStats.distanceM = 0;
+      state.liveStats.startedAt = Date.now();
+      state.liveStats.elapsedMs = 0;
+      state.liveStats.currentSpeedKmh = 0;
+      state.liveStats.avgSpeedKmh = 0;
+      state.liveStats.pausedMs = 0;
+      state.liveLine.setPath([]);
+
+      state.watchId = navigator.geolocation.watchPosition(
+        (pos) => handleLivePosition(state, pos),
+        (err) => {
+          console.error(err);
+          showToast('주행 중 위치를 읽지 못했습니다.');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 1500 }
+      );
+      showToast('주행 기록을 시작했습니다.');
+    }
+
+    function handleLivePosition(state, pos) {
+      const next = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        speed: Number.isFinite(pos.coords.speed) ? pos.coords.speed * 3.6 : null,
+        ts: pos.timestamp || Date.now()
+      };
+
+      updateCurrentPosition(state, { lat: next.lat, lng: next.lng, name: '현재 위치' }, true);
+
+      if (state.livePath.length) {
+        const prev = state.livePath[state.livePath.length - 1];
+        const delta = calcDistanceMeters(prev.lat, prev.lng, next.lat, next.lng);
+        if (delta >= 2 && delta <= 1500) {
+          state.liveStats.distanceM += delta;
+        }
+      }
+
+      state.livePath.push(next);
+      state.liveLine.setPath(state.livePath.map((p) => new kakao.maps.LatLng(p.lat, p.lng)));
+      state.liveStats.elapsedMs = Date.now() - state.liveStats.startedAt;
+      state.liveStats.currentSpeedKmh = next.speed ?? deriveSpeedFromPath(state.livePath);
+      state.liveStats.avgSpeedKmh = state.liveStats.elapsedMs > 0
+        ? (state.liveStats.distanceM / (state.liveStats.elapsedMs / 1000)) * 3.6
+        : 0;
+      updateLiveStats(state);
+    }
+
+    function stopRideRecording(state) {
+      if (!confirm('주행 기록을 저장할까요?')) return;
+      if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
+      state.watchId = null;
+      state.rideRecording = false;
+      state.liveStats.elapsedMs = Date.now() - state.liveStats.startedAt;
+      updateLiveStats(state);
+
+      const titleBase = state.destination?.name || '주행기록';
+      const title = prompt('기록 제목을 입력해 주세요.', `${titleBase} ${formatNowKoreanShort()}`) || `${titleBase} ${formatNowKoreanShort()}`;
+      const records = loadRecords();
+      records.unshift({
         id: `ride_${Date.now()}`,
+        title,
         savedAt: new Date().toISOString(),
-        startTime: rideData.startTime || null,
-        endTime: Date.now(),
-        totalDistanceM: rideData.totalDistanceM,
-        elapsedMs,
-        restMs: rideData.pausedMs + (rideData.paused && rideData.pausedAt ? Date.now() - rideData.pausedAt : 0),
-        avgSpeedKmh: avgSpeed,
-        maxSpeedKmh: rideData.maxSpeedKmh || 0,
-        startPoint: rideData.startPoint,
-        destination: navigationState.destination,
-        path: rideData.path,
-        guidanceRoute: navigationState.routePath
+        recommended: state.routePaths,
+        recommendedMeta: state.routeMeta,
+        livePath: state.livePath,
+        distanceM: state.liveStats.distanceM,
+        elapsedMs: state.liveStats.elapsedMs,
+        avgSpeedKmh: state.liveStats.avgSpeedKmh,
+        maxSpeedKmh: calcMaxSpeed(state.livePath),
+        destination: state.destination,
+        currentPosition: state.currentPosition
+      });
+      saveRecords(records);
+      renderRecords(state);
+      showToast('주행 기록을 저장했습니다.');
+    }
+
+    function tickRideTime(state) {
+      setInterval(() => {
+        if (state.rideRecording && state.liveStats.startedAt) {
+          state.liveStats.elapsedMs = Date.now() - state.liveStats.startedAt;
+          state.liveStats.avgSpeedKmh = state.liveStats.elapsedMs > 0
+            ? (state.liveStats.distanceM / (state.liveStats.elapsedMs / 1000)) * 3.6
+            : 0;
+          updateLiveStats(state);
+        }
+      }, 1000);
+    }
+
+    function updateLiveStats(state) {
+      document.getElementById('liveDistance').textContent = `${(state.liveStats.distanceM / 1000).toFixed(2)} km`;
+      document.getElementById('liveTime').textContent = formatDuration(state.liveStats.elapsedMs);
+      document.getElementById('liveSpeed').textContent = `${(state.liveStats.currentSpeedKmh || 0).toFixed(1)} km/h`;
+      document.getElementById('liveAvg').textContent = `${(state.liveStats.avgSpeedKmh || 0).toFixed(1)} km/h`;
+    }
+
+    function renderRecords(state) {
+      const wrap = document.getElementById('recordsSheet');
+      const records = loadRecords();
+      if (!records.length) {
+        wrap.innerHTML = '<div class="note-box">저장된 기록이 없습니다.</div>';
+        return;
+      }
+      wrap.innerHTML = records.map((r) => `
+        <div class="record-item">
+          <div class="record-head">
+            <div>
+              <div class="record-title">${escapeHtml(r.title)}</div>
+              <div class="record-sub">${formatSavedAt(r.savedAt)}</div>
+            </div>
+            <span class="badge-inline">${((r.distanceM || 0)/1000).toFixed(1)}km</span>
+          </div>
+          <div class="record-stats">
+            <div class="record-mini">시간<b>${formatDuration(r.elapsedMs || 0)}</b></div>
+            <div class="record-mini">평균<b>${(r.avgSpeedKmh || 0).toFixed(1)}</b></div>
+            <div class="record-mini">최고<b>${(r.maxSpeedKmh || 0).toFixed(1)}</b></div>
+            <div class="record-mini">친화도<b>${r.recommendedMeta?.bikeFriendlyPercent ?? '-'}%</b></div>
+          </div>
+          <div class="record-actions">
+            <button class="btn light" onclick="window.__bikePlanner.viewRecord('${r.id}')">보기</button>
+            <button class="btn" onclick="window.__bikePlanner.renameRecord('${r.id}')">제목수정</button>
+            <button class="btn warn" onclick="window.__bikePlanner.deleteRecord('${r.id}')">삭제</button>
+          </div>
+        </div>
+      `).join('');
+
+      window.__bikePlanner = {
+        viewRecord: (id) => viewRecord(state, id),
+        renameRecord: (id) => renameRecord(state, id),
+        deleteRecord: (id) => deleteRecord(state, id)
       };
-
-      rides.unshift(item);
-      localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
     }
 
-    let rideData = loadRideData();
-    let navigationState = loadNavigationState();
-
-    let watchId = null;
-    let wakeLock = null;
-    let wakeLockTimer = null;
-    let followMap = localStorage.getItem(FOLLOW_STORAGE_KEY) !== "off";
-    let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) !== "off";
-    let lastPointTime = null;
-    let currentAutoZoomLevel = 3;
-    let hasInitialCentered = false;
-
-    let longPressTimer = null;
-    let longPressTriggered = false;
-
-    const distanceEl = document.getElementById("distanceEl");
-    const durationEl = document.getElementById("durationEl");
-    const clockEl = document.getElementById("clockEl");
-    const accuracyEl = document.getElementById("accuracyEl");
-    const startInfoEl = document.getElementById("startInfoEl");
-    const currentSpeedEl = document.getElementById("currentSpeedEl");
-    const avgSpeedEl = document.getElementById("avgSpeedEl");
-    const maxSpeedEl = document.getElementById("maxSpeedEl");
-    const startTimeEl = document.getElementById("startTimeEl");
-    const restTimeEl = document.getElementById("restTimeEl");
-    const navStatusEl = document.getElementById("navStatusEl");
-    const navGuideEl = document.getElementById("navGuideEl");
-
-    const batteryBtn = document.getElementById("batteryBtn");
-    const historyBtn = document.getElementById("historyBtn");
-    const startBtn = document.getElementById("startBtn");
-    const endBtn = document.getElementById("endBtn");
-    const followBtn = document.getElementById("followBtn");
-    const zoomBtn = document.getElementById("zoomBtn");
-    const fitBtn = document.getElementById("fitBtn");
-    const destBtn = document.getElementById("destBtn");
-    const navToggleBtn = document.getElementById("navToggleBtn");
-    const navSearchBar = document.getElementById("navSearchBar");
-    const placeKeyword = document.getElementById("placeKeyword");
-    const searchPlaceBtn = document.getElementById("searchPlaceBtn");
-
-    let map;
-    let places = null;
-    let ridePolyline = null;
-    let recommendedPolyline = null;
-    let currentMarker = null;
-    let startMarker = null;
-    let destinationMarker = null;
-
-    function ensureKakaoLoaded() {
-      return !!(window.kakao && window.kakao.maps && window.kakao.maps.services);
+    function viewRecord(state, id) {
+      const record = loadRecords().find((r) => r.id === id);
+      if (!record) return;
+      clearAltRoutes(state);
+      state.routePaths = record.recommended || [];
+      state.routeMeta = record.recommendedMeta || null;
+      state.livePath = record.livePath || [];
+      state.routeLine.setPath((record.recommended || []).map((p) => new kakao.maps.LatLng(p.lat, p.lng)));
+      state.liveLine.setPath((record.livePath || []).map((p) => new kakao.maps.LatLng(p.lat, p.lng)));
+      if (record.recommended?.length) {
+        const start = record.recommended[0];
+        const end = record.recommended[record.recommended.length - 1];
+        state.startMarker.setPosition(new kakao.maps.LatLng(start.lat, start.lng));
+        state.startMarker.setMap(state.map);
+        state.endMarker.setPosition(new kakao.maps.LatLng(end.lat, end.lng));
+        state.endMarker.setMap(state.map);
+      }
+      updateRouteStats(state.routeMeta);
+      state.liveStats.distanceM = record.distanceM || 0;
+      state.liveStats.elapsedMs = record.elapsedMs || 0;
+      state.liveStats.currentSpeedKmh = 0;
+      state.liveStats.avgSpeedKmh = record.avgSpeedKmh || 0;
+      updateLiveStats(state);
+      fitAll(state);
+      showToast('저장된 기록을 불러왔습니다.');
     }
 
-    function haversine(lat1, lon1, lat2, lon2) {
+    function renameRecord(state, id) {
+      const records = loadRecords();
+      const idx = records.findIndex((r) => r.id === id);
+      if (idx < 0) return;
+      const nextTitle = prompt('새 제목을 입력해 주세요.', records[idx].title);
+      if (!nextTitle) return;
+      records[idx].title = nextTitle.trim();
+      saveRecords(records);
+      renderRecords(state);
+      showToast('제목을 수정했습니다.');
+    }
+
+    function deleteRecord(state, id) {
+      if (!confirm('이 기록을 삭제할까요?')) return;
+      const next = loadRecords().filter((r) => r.id !== id);
+      saveRecords(next);
+      renderRecords(state);
+      showToast('기록을 삭제했습니다.');
+    }
+
+    function fitAll(state) {
+      const bounds = new kakao.maps.LatLngBounds();
+      let hasPoint = false;
+      state.routePaths.forEach((p) => {
+        bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+        hasPoint = true;
+      });
+      state.livePath.forEach((p) => {
+        bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+        hasPoint = true;
+      });
+      if (!hasPoint && state.currentPosition) {
+        bounds.extend(new kakao.maps.LatLng(state.currentPosition.lat, state.currentPosition.lng));
+        hasPoint = true;
+      }
+      if (hasPoint) state.map.setBounds(bounds, 60, 60, 60, 60);
+    }
+
+    function deriveSpeedFromPath(path) {
+      if (path.length < 2) return 0;
+      const a = path[path.length - 2];
+      const b = path[path.length - 1];
+      const dt = (b.ts - a.ts) / 1000;
+      if (dt <= 0) return 0;
+      const dist = calcDistanceMeters(a.lat, a.lng, b.lat, b.lng);
+      return (dist / dt) * 3.6;
+    }
+
+    function calcMaxSpeed(path) {
+      let max = 0;
+      for (let i = 1; i < path.length; i++) {
+        const dt = (path[i].ts - path[i - 1].ts) / 1000;
+        if (dt <= 0) continue;
+        const d = calcDistanceMeters(path[i - 1].lat, path[i - 1].lng, path[i].lat, path[i].lng);
+        max = Math.max(max, (d / dt) * 3.6);
+      }
+      return max;
+    }
+
+    function calcDistanceMeters(lat1, lon1, lat2, lon2) {
       const R = 6371000;
-      const toRad = d => d * Math.PI / 180;
+      const toRad = (d) => d * Math.PI / 180;
       const dLat = toRad(lat2 - lat1);
       const dLon = toRad(lon2 - lon1);
-
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) ** 2;
-
-      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    function formatClock() {
-      const now = new Date();
-      const h = String(now.getHours()).padStart(2, "0");
-      const m = String(now.getMinutes()).padStart(2, "0");
-      clockEl.textContent = `${h}:${m}`;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
     }
 
     function formatDuration(ms) {
       const totalSec = Math.max(0, Math.floor(ms / 1000));
-      const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
-      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
-      const ss = String(totalSec % 60).padStart(2, "0");
-      return `${hh}:${mm}:${ss}`;
+      const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
     }
 
-    function formatDistanceText(m) {
-      if (m == null || !isFinite(m)) return "-";
-      if (m < 1000) return `${Math.round(m)}m`;
-      return `${(m / 1000).toFixed(1)}km`;
+    function formatNowKoreanShort() {
+      const d = new Date();
+      const mm = d.getMonth() + 1;
+      const dd = d.getDate();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mi = String(d.getMinutes()).padStart(2, '0');
+      return `${mm}.${dd} ${hh}:${mi}`;
     }
 
-    function setGuideText(text) {
-      if (navGuideEl) navGuideEl.textContent = text || "안내 준비중";
+    function formatSavedAt(iso) {
+      const d = new Date(iso);
+      if (isNaN(d)) return '-';
+      const weekday = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+      return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}(${weekday}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     }
 
-    function getElapsedMs() {
-      if (!rideData.started || !rideData.startTime) return 0;
-
-      if (rideData.paused && rideData.pausedAt) {
-        return rideData.pausedAt - rideData.startTime - rideData.pausedMs;
-      }
-
-      return Date.now() - rideData.startTime - rideData.pausedMs;
+    function escapeHtml(str) {
+      return String(str || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
-    function toLatLng(lat, lng) {
-      if (!ensureKakaoLoaded()) return null;
-      return new kakao.maps.LatLng(lat, lng);
+    let toastTimer = null;
+    function showToast(msg, ms = 1800) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), ms);
     }
-
-    function getCurrentPositionObject() {
-      if (rideData.lastPoint) {
-        return { lat: rideData.lastPoint[0], lng: rideData.lastPoint[1] };
-      }
-      if (rideData.startPoint) {
-        return { lat: rideData.startPoint.lat, lng: rideData.startPoint.lng };
-      }
-      return null;
-    }
-
-    function updateFollowButton() {
-      followBtn.textContent = followMap ? "📍고정" : "📍해제";
-      followBtn.classList.toggle("active", followMap);
-    }
-
-    function updateZoomButton() {
-      zoomBtn.textContent = autoZoom ? "자동줌 켜짐" : "자동줌 꺼짐";
-      zoomBtn.classList.toggle("active", autoZoom);
-    }
-
-    function updateNavToggleButton() {
-      if (!navToggleBtn) return;
-      navToggleBtn.textContent = navigationState.active ? "안내중지" : "안내시작";
-    }
-
-    function updateNavStatus(extraText = "") {
-      if (!navigationState.destination) {
-        navStatusEl.textContent = "안내 없음";
-        return;
-      }
-
-      if (extraText) {
-        navStatusEl.textContent = extraText;
-        return;
-      }
-
-      if (navigationState.active) {
-        const originLabel = navigationState.routeOrigin
-          ? `${navigationState.routeOrigin.lat.toFixed(5)}, ${navigationState.routeOrigin.lng.toFixed(5)}`
-          : "-";
-
-        navStatusEl.textContent =
-          `목적지: ${navigationState.destination.name || "선택됨"} · 안내출발점: ${originLabel}`;
-      } else if (navigationState.routePath && navigationState.routePath.length > 0) {
-        navStatusEl.textContent =
-          `목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`;
-      } else {
-        navStatusEl.textContent =
-          `목적지: ${navigationState.destination.name || "선택됨"}`;
-      }
-    }
-
-    function updateStats() {
-      distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
-      durationEl.textContent = formatDuration(getElapsedMs());
-      accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
-      currentSpeedEl.textContent = `${(rideData.currentSpeedKmh || 0).toFixed(1)} km/h`;
-
-      const elapsedHours = getElapsedMs() / 3600000;
-      const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
-      avgSpeedEl.textContent = `${avgSpeed.toFixed(1)} km/h`;
-      maxSpeedEl.textContent = `${(rideData.maxSpeedKmh || 0).toFixed(1)} km/h`;
-
-      if (rideData.paused && rideData.autoPaused) {
-        durationEl.innerHTML = `
-  ${formatDuration(getElapsedMs())}
-  <span class="pause-text">(일시정지)</span>
-`;
-      }
-
-      if (rideData.startPoint) {
-        startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
-      } else {
-        startInfoEl.textContent = "-";
-      }
-
-      if (rideData.startTime) {
-        const d = new Date(rideData.startTime);
-        const h = String(d.getHours()).padStart(2, "0");
-        const m = String(d.getMinutes()).padStart(2, "0");
-        startTimeEl.textContent = `${h}:${m}`;
-      } else {
-        startTimeEl.textContent = "--:--";
-      }
-
-      let restMs = rideData.pausedMs;
-      if (rideData.paused && rideData.pausedAt) {
-        restMs += Date.now() - rideData.pausedAt;
-      }
-      restTimeEl.textContent = formatDuration(restMs);
-
-      updateFollowButton();
-      updateZoomButton();
-      updateNavStatus();
-      updateNavToggleButton();
-      formatClock();
-    }
-
-    function buildCurrentMarkerImage() {
-      if (!ensureKakaoLoaded()) return null;
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42">
-          <foreignObject width="42" height="42">
-            <div xmlns="http://www.w3.org/1999/xhtml" class="marker-badge">🚴</div>
-          </foreignObject>
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(42, 42), {
-        offset: new kakao.maps.Point(21, 21)
-      });
-    }
-
-    function buildStartMarkerImage() {
-      if (!ensureKakaoLoaded()) return null;
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
-          <circle cx="10" cy="10" r="7" fill="#22c55e" stroke="#ffffff" stroke-width="4" />
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(20, 20), {
-        offset: new kakao.maps.Point(10, 10)
-      });
-    }
-
-    function buildDestinationMarkerImage() {
-      if (!ensureKakaoLoaded()) return null;
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="40">
-          <path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.268 21.732 0 14 0z" fill="#3b82f6"/>
-          <circle cx="14" cy="14" r="5.5" fill="#ffffff"/>
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(28, 40), {
-        offset: new kakao.maps.Point(14, 40)
-      });
-    }
-
-    function setDestinationFromLatLng(latLng) {
-      if (!latLng) return;
-
-      setDestination({
-        name: "지도 선택",
-        lat: latLng.getLat(),
-        lng: latLng.getLng(),
-        address: ""
-      });
-
-      if (map) map.setCenter(latLng);
-    }
-
-    function initKakaoMap() {
-      if (!ensureKakaoLoaded()) {
-        alert("카카오맵이 로드되지 않았습니다. appkey를 확인해주세요.");
-        return;
-      }
-
-      map = new kakao.maps.Map(document.getElementById("map"), {
-        center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
-        level: 3
-      });
-
-      map.setDraggable(true);
-      map.setZoomable(true);
-
-      kakao.maps.event.addListener(map, "dragstart", function () {
-        followMap = false;
-        localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-        updateFollowButton();
-        clearTimeout(longPressTimer);
-      });
-
-      kakao.maps.event.addListener(map, "drag", function () {
-        followMap = false;
-        localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-        updateFollowButton();
-      });
-
-      kakao.maps.event.addListener(map, "zoom_changed", function () {
-        followMap = false;
-        localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-        updateFollowButton();
-      });
-
-      kakao.maps.event.addListener(map, "tilesloaded", function () {
-        setTimeout(() => {
-          if (map) map.relayout();
-        }, 100);
-      });
-
-      map.addOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
-      places = new kakao.maps.services.Places();
-
-      let longPressLatLng = null;
-
-      kakao.maps.event.addListener(map, "click", function() {
-        if (longPressTriggered) {
-          longPressTriggered = false;
-          return;
-        }
-      });
-
-      kakao.maps.event.addListener(map, "mousedown", function(mouseEvent) {
-        longPressTriggered = false;
-        longPressLatLng = mouseEvent.latLng;
-
-        clearTimeout(longPressTimer);
-        longPressTimer = setTimeout(() => {
-          longPressTriggered = true;
-          if (confirm("이 위치를 목적지로 설정할까요?")) {
-            setDestinationFromLatLng(longPressLatLng);
-          }
-        }, 700);
-      });
-
-      kakao.maps.event.addListener(map, "mouseup", function() {
-        clearTimeout(longPressTimer);
-      });
-
-      ridePolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: 7,
-        strokeColor: "#ef4444",
-        strokeOpacity: 0.95,
-        strokeStyle: "solid"
-      });
-
-      recommendedPolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: 8,
-        strokeColor: "#00e5ff",
-        strokeOpacity: 0.95,
-        strokeStyle: "solid"
-      });
-
-      setTimeout(() => {
-        if (!map) return;
-        map.relayout();
-      }, 300);
-
-      const mapEl = document.getElementById("map");
-
-      if (mapEl) {
-        mapEl.addEventListener("touchstart", (e) => {
-          longPressTriggered = false;
-          clearTimeout(longPressTimer);
-
-          const touch = e.touches[0];
-          if (!touch) return;
-
-          const rect = mapEl.getBoundingClientRect();
-          const startX = touch.clientX - rect.left;
-          const startY = touch.clientY - rect.top;
-
-          longPressTimer = setTimeout(() => {
-            const proj = map.getProjection();
-            if (!proj) return;
-
-            const latLng = proj.coordsFromContainerPoint(
-              new kakao.maps.Point(startX, startY)
-            );
-
-            longPressTriggered = true;
-
-            if (confirm("이 위치를 목적지로 설정할까요?")) {
-              setDestinationFromLatLng(latLng);
-            }
-          }, 700);
-        }, { passive: true });
-
-        mapEl.addEventListener("touchend", () => {
-          clearTimeout(longPressTimer);
-        }, { passive: true });
-
-        mapEl.addEventListener("touchmove", () => {
-          clearTimeout(longPressTimer);
-        }, { passive: true });
-      }
-    }
-
-    function drawCurrentMarker(lat, lng) {
-      if (!map || !ensureKakaoLoaded()) return;
-      const pos = toLatLng(lat, lng);
-      if (!pos) return;
-
-      if (!currentMarker) {
-        currentMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildCurrentMarkerImage()
-        });
-      } else {
-        currentMarker.setPosition(pos);
-      }
-    }
-
-    function drawStartMarker() {
-      if (!rideData.startPoint || !map || !ensureKakaoLoaded()) return;
-      const pos = toLatLng(rideData.startPoint.lat, rideData.startPoint.lng);
-      if (!pos) return;
-      const image = buildStartMarkerImage();
-      if (!image) return;
-
-      if (!startMarker) {
-        startMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image
-        });
-      } else {
-        startMarker.setPosition(pos);
-      }
-    }
-
-    function drawDestinationMarker() {
-      if (!navigationState.destination || !map || !ensureKakaoLoaded()) return;
-      const pos = toLatLng(navigationState.destination.lat, navigationState.destination.lng);
-      if (!pos) return;
-      const image = buildDestinationMarkerImage();
-      if (!image) return;
-
-      if (!destinationMarker) {
-        destinationMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image,
-          title: navigationState.destination.name || "목적지"
-        });
-      } else {
-        destinationMarker.setPosition(pos);
-        destinationMarker.setTitle(navigationState.destination.name || "목적지");
-      }
-    }
-
-    function fitPathToView() {
-      if (!map || !ensureKakaoLoaded()) return;
-
-      let hasAny = false;
-      const bounds = new kakao.maps.LatLngBounds();
-
-      if (rideData.path && rideData.path.length > 0) {
-        rideData.path.forEach(([lat, lng]) => {
-          const ll = toLatLng(lat, lng);
-          if (ll) {
-            bounds.extend(ll);
-            hasAny = true;
-          }
-        });
-      }
-
-      if (navigationState.routePath && navigationState.routePath.length > 0) {
-        navigationState.routePath.forEach((p) => {
-          const ll = toLatLng(p.lat, p.lng);
-          if (ll) {
-            bounds.extend(ll);
-            hasAny = true;
-          }
-        });
-      }
-
-      if (navigationState.destination) {
-        const ll = toLatLng(navigationState.destination.lat, navigationState.destination.lng);
-        if (ll) {
-          bounds.extend(ll);
-          hasAny = true;
-        }
-      }
-
-      if (hasAny) {
-        map.setBounds(bounds);
-      } else {
-        const current = getCurrentPositionObject();
-        if (current) {
-          map.setCenter(toLatLng(current.lat, current.lng));
-          map.setLevel(3);
-        } else {
-          map.setLevel(4);
-          map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-        }
-      }
-    }
-
-    function redrawPath() {
-      if (!map || !ensureKakaoLoaded()) return;
-
-      if (ridePolyline) {
-        const ridePath = rideData.path
-          .map(([lat, lng]) => toLatLng(lat, lng))
-          .filter(Boolean);
-        ridePolyline.setPath(ridePath);
-        ridePolyline.setOptions({ strokeWeight: 7 });
-      }
-
-      if (recommendedPolyline) {
-        const recPath = (navigationState.routePath || [])
-          .map(p => toLatLng(p.lat, p.lng))
-          .filter(Boolean);
-        recommendedPolyline.setPath(recPath);
-      }
-
-      if (rideData.startPoint) drawStartMarker();
-
-      if (rideData.path.length > 0) {
-        const last = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-        drawCurrentMarker(last[0], last[1]);
-
-        if (followMap) {
-          const pos = toLatLng(last[0], last[1]);
-          if (pos) map.panTo(pos);
-        }
-      } else if (rideData.lastPoint) {
-        drawCurrentMarker(rideData.lastPoint[0], rideData.lastPoint[1]);
-      }
-
-      if (navigationState.destination) drawDestinationMarker();
-    }
-
-    async function setDestination(dest) {
-      navigationState.active = false;
-      navigationState.destination = dest;
-      navigationState.routeOrigin = null;
-      navigationState.routePath = [];
-      navigationState.rerouting = false;
-      navigationState.lastRerouteAt = 0;
-
-      updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
-      setGuideText("현재 위치 확인 후 경로 계산 중...");
-      saveNavigationState();
-      redrawPath();
-
-      if (!getCurrentPositionObject()) {
-        requestLocationPermission();
-        return;
-      }
-
-      await requestRouteFromCurrentPosition(false);
-    }
-
-    async function startNavigation() {
-      if (!navigationState.destination) {
-        alert("먼저 목적지를 검색해주세요.");
-        return;
-      }
-
-      if (!getCurrentPositionObject()) {
-        requestLocationPermission();
-        alert("현재 위치를 확인한 뒤 다시 눌러주세요.");
-        return;
-      }
-
-      await requestRouteFromCurrentPosition(true);
-    }
-
-    function stopNavigation() {
-      navigationState.active = false;
-      navigationState.rerouting = false;
-      navigationState.lastRerouteAt = 0;
-
-      updateNavStatus(`목적지: ${navigationState.destination ? navigationState.destination.name : "-"} · 경로 표시 중`);
-      setGuideText("안내가 중지되었습니다.");
-      updateNavToggleButton();
-      saveNavigationState();
-    }
-
-    function clearNavigation() {
-      navigationState = { ...initialNavigationState };
-
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
-
-      if (recommendedPolyline) {
-        recommendedPolyline.setPath([]);
-      }
-
-      clearNavigationStateStorage();
-      updateNavStatus("안내 없음");
-      setGuideText("안내 준비중");
-      redrawPath();
-    }
-
-    function searchPlace(keyword) {
-      if (!places) {
-        alert("카카오 장소검색을 사용할 수 없습니다.");
-        return;
-      }
-
-      const q = (keyword || "").trim();
-      if (!q) {
-        alert("검색어를 입력해주세요.");
-        return;
-      }
-
-      const current = getCurrentPositionObject();
-      const options = { size: 10 };
-
-      if (current) {
-  options.location = new kakao.maps.LatLng(current.lat, current.lng);
-  options.radius = 20000;
-}
-
-      updateNavStatus("목적지 검색 중...");
-      setGuideText("검색 결과 확인 중...");
-
-      places.keywordSearch(q, (data, status) => {
-        if (status !== kakao.maps.services.Status.OK || !data.length) {
-          updateNavStatus("검색 결과 없음");
-          setGuideText("검색 결과가 없습니다");
-          alert("검색 결과가 없습니다.");
-          return;
-        }
-
-        const keywordNormalized = q.replace(/\s+/g, "").trim();
-
-let place =
-  data.find(item => (item.place_name || "").replace(/\s+/g, "").trim() === keywordNormalized) ||
-  data.find(item => (item.place_name || "").replace(/\s+/g, "").includes(keywordNormalized)) ||
-  data[0];
-
-setDestination({
-  name: place.place_name,
-  lat: Number(place.y),
-  lng: Number(place.x),
-  address: place.road_address_name || place.address_name || ""
-});
-
-const pos = toLatLng(Number(place.y), Number(place.x));
-if (pos) map.setCenter(pos);
-      }, options);
-    }
-
-    async function requestRoute(origin, destination) {
-      try {
-        const res = await fetch("/.netlify/functions/route", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ origin, destination })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.path) && data.path.length > 0) {
-            return data.path;
-          }
-        } else {
-          const text = await res.text();
-          console.log("route 함수 응답 오류:", res.status, text);
-        }
-      } catch (e) {
-        console.log("route 함수 호출 실패:", e);
-      }
-
-      return [
-        { lat: origin.lat, lng: origin.lng },
-        {
-          lat: (origin.lat * 2 + destination.lat) / 3,
-          lng: (origin.lng * 2 + destination.lng) / 3
-        },
-        {
-          lat: (origin.lat + destination.lat * 2) / 3,
-          lng: (origin.lng + destination.lng * 2) / 3
-        },
-        { lat: destination.lat, lng: destination.lng }
-      ];
-    }
-
-    async function requestRouteFromCurrentPosition(startGuidance = true) {
-      if (!navigationState.destination) return;
-
-      const current = getCurrentPositionObject();
-      if (!current) {
-        updateNavStatus("현재 위치를 아직 못 받아 경로를 계산하지 못했습니다.");
-        setGuideText("현재 위치를 기다리는 중...");
-        return;
-      }
-
-      navigationState.routeOrigin = current;
-      updateNavStatus(startGuidance ? "안내 경로 계산 중..." : "경로 계산 중...");
-      setGuideText(startGuidance ? "안내 경로를 계산 중입니다." : "경로를 계산 중입니다.");
-
-      try {
-        const route = await requestRoute(current, navigationState.destination);
-        navigationState.routePath = route;
-
-        if (startGuidance) {
-          navigationState.active = true;
-          updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 안내 중`);
-          updateNavigationGuide(current);
-        } else {
-          navigationState.active = false;
-          updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`);
-          setGuideText("안내시작 버튼을 누르면 안내를 시작합니다.");
-        }
-
-        updateNavToggleButton();
-        saveNavigationState();
-        redrawPath();
-      } catch (e) {
-        console.error(e);
-        updateNavStatus("경로 계산 실패");
-        setGuideText("경로 계산 실패");
-      }
-    }
-
-    function getMinDistanceToRoute(current, routePath) {
-      if (!routePath || !routePath.length) return Infinity;
-      let min = Infinity;
-      for (const p of routePath) {
-        const d = haversine(current.lat, current.lng, p.lat, p.lng);
-        if (d < min) min = d;
-      }
-      return min;
-    }
-
-    function isOffRoute(current) {
-      const minDist = getMinDistanceToRoute(current, navigationState.routePath);
-      return minDist > navigationState.offRouteThresholdM;
-    }
-
-    function getClosestRouteIndex(current, routePath) {
-      let min = Infinity;
-      let idx = 0;
-
-      for (let i = 0; i < routePath.length; i++) {
-        const p = routePath[i];
-        const d = haversine(current.lat, current.lng, p.lat, p.lng);
-        if (d < min) {
-          min = d;
-          idx = i;
-        }
-      }
-
-      return idx;
-    }
-
-    function getRemainingRouteDistance(current, routePath, startIdx) {
-      if (!routePath || routePath.length === 0) return 0;
-
-      let total = 0;
-      const first = routePath[startIdx];
-      if (!first) return 0;
-
-      total += haversine(current.lat, current.lng, first.lat, first.lng);
-
-      for (let i = startIdx; i < routePath.length - 1; i++) {
-        total += haversine(
-          routePath[i].lat, routePath[i].lng,
-          routePath[i + 1].lat, routePath[i + 1].lng
-        );
-      }
-
-      return total;
-    }
-
-    function updateNavigationGuide(current) {
-      if (!navigationState.active || !navigationState.destination) {
-        if (navigationState.destination && navigationState.routePath && navigationState.routePath.length > 0) {
-          setGuideText("안내시작 버튼을 누르면 안내를 시작합니다.");
-        } else {
-          setGuideText("안내 준비중");
-        }
-        return;
-      }
-
-      if (!navigationState.routePath || navigationState.routePath.length < 2) {
-        setGuideText("경로 계산 중...");
-        return;
-      }
-
-      const idx = getClosestRouteIndex(current, navigationState.routePath);
-      const nextIdx = Math.min(idx + 1, navigationState.routePath.length - 1);
-      const nextPoint = navigationState.routePath[nextIdx];
-
-      const distToNext = haversine(current.lat, current.lng, nextPoint.lat, nextPoint.lng);
-      const remainToDest = getRemainingRouteDistance(current, navigationState.routePath, idx);
-
-      if (remainToDest < 40) {
-        setGuideText("목적지 부근입니다");
-        return;
-      }
-
-      if (distToNext < 50) {
-        setGuideText(`잠시 후 진행 방향 확인 · 남은 거리 ${formatDistanceText(remainToDest)}`);
-        return;
-      }
-
-      setGuideText(`${formatDistanceText(distToNext)} 앞 경로 따라 이동 · 남은 거리 ${formatDistanceText(remainToDest)}`);
-    }
-
-    async function rerouteFromCurrentPosition(current) {
-      if (!navigationState.active || !navigationState.destination) return;
-      if (navigationState.rerouting) return;
-
-      const now = Date.now();
-      if (now - navigationState.lastRerouteAt < 30000) return;
-
-      navigationState.rerouting = true;
-      navigationState.lastRerouteAt = now;
-      updateNavStatus("경로 이탈 · 재탐색 중...");
-      setGuideText("경로를 벗어나 재탐색 중입니다");
-
-      try {
-        navigationState.routeOrigin = current;
-        const newRoute = await requestRoute(current, navigationState.destination);
-        navigationState.routePath = newRoute;
-        saveNavigationState();
-        redrawPath();
-        updateNavStatus(`재탐색 완료 · 목적지: ${navigationState.destination.name || "선택됨"}`);
-        updateNavigationGuide(current);
-      } catch (e) {
-        console.error("재탐색 실패:", e);
-        updateNavStatus("재탐색 실패");
-        setGuideText("재탐색에 실패했습니다");
-      } finally {
-        navigationState.rerouting = false;
-      }
-    }
-
-    async function requestWakeLockSafe() {
-      try {
-        if (!("wakeLock" in navigator)) return;
-        if (!rideData.started || rideData.paused) return;
-        if (wakeLock && !wakeLock.released) return;
-
-        wakeLock = await navigator.wakeLock.request("screen");
-        wakeLock.addEventListener("release", () => {
-          wakeLock = null;
-        });
-      } catch (e) {
-        wakeLock = null;
-      }
-    }
-
-    function startWakeLockKeeper() {
-      stopWakeLockKeeper();
-      wakeLockTimer = setInterval(() => {
-        requestWakeLockSafe();
-      }, 20000);
-    }
-
-    function stopWakeLockKeeper() {
-      if (wakeLockTimer) {
-        clearInterval(wakeLockTimer);
-        wakeLockTimer = null;
-      }
-    }
-
-    async function releaseWakeLock() {
-      try {
-        if (wakeLock) {
-          await wakeLock.release();
-          wakeLock = null;
-        }
-      } catch (e) {
-        wakeLock = null;
-      }
-    }
-
-    document.addEventListener("visibilitychange", async () => {
-      if (document.visibilityState === "visible" && rideData.started) {
-        startWatching();
-        requestLocationPermission();
-        lastPointTime = Date.now();
-
-        await requestWakeLockSafe();
-
-        if (rideData.autoPaused && rideData.paused) {
-          rideData.stopBeganAt = null;
-          saveRideData();
-          updateStats();
-        }
-
-        setTimeout(() => {
-          redrawPath();
-
-          const current = getCurrentPositionObject();
-          if (current && map) {
-            const pos = toLatLng(current.lat, current.lng);
-
-            if (followMap && pos) {
-              map.setCenter(pos);
-            }
-
-            if (autoZoom) {
-              map.setLevel(currentAutoZoomLevel);
-            }
-          }
-        }, 300);
-      }
-    });
-
-    window.addEventListener("beforeunload", (e) => {
-      if (rideData.started && !rideData.paused) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    });
-
-    function handlePosition(pos) {
-      if (!rideData.started) return;
-
-      const { latitude, longitude, accuracy } = pos.coords;
-      rideData.lastAccuracy = accuracy;
-      const point = [latitude, longitude];
-      const now = Date.now();
-
-      if (accuracy > 35) {
-        rideData.currentSpeedKmh = 0;
-        rideData.lastPoint = point;
-        drawCurrentMarker(latitude, longitude);
-
-        if (followMap && map) {
-          map.panTo(toLatLng(latitude, longitude));
-        }
-
-        const current = { lat: latitude, lng: longitude };
-        if (navigationState.active) {
-          updateNavigationGuide(current);
-        }
-
-        updateStats();
-        saveRideData();
-        return;
-      }
-
-      if (rideData.path.length === 0) {
-        rideData.path.push(point);
-        rideData.startPoint = { lat: latitude, lng: longitude };
-        rideData.lastPoint = point;
-        lastPointTime = now;
-        redrawPath();
-        updateStats();
-        saveRideData();
-
-        if (navigationState.active && navigationState.destination && navigationState.routePath.length === 0) {
-          requestRouteFromCurrentPosition(true);
-        }
-        return;
-      }
-
-      const prev = rideData.path[rideData.path.length - 1];
-      const dist = haversine(prev[0], prev[1], latitude, longitude);
-      const dt = lastPointTime ? (now - lastPointTime) / 1000 : 0;
-
-      let rawSpeed = 0;
-      if (typeof pos.coords.speed === "number" && pos.coords.speed >= 0) {
-        rawSpeed = pos.coords.speed * 3.6;
-      } else if (dt > 0) {
-        rawSpeed = (dist / dt) * 3.6;
-      }
-
-      if (rawSpeed > MAX_VALID_SPEED_KMH || (dist > 100 && dt > 0 && dt < 2)) {
-        rideData.currentSpeedKmh = 0;
-        rideData.lastPoint = point;
-        lastPointTime = now;
-        updateStats();
-        saveRideData();
-        return;
-      }
-
-      const isNearlyStopped = dist < MIN_MOVE_DISTANCE_M && rawSpeed < STOP_SPEED_KMH;
-
-      if (isNearlyStopped) {
-        rideData.currentSpeedKmh = 0;
-        rideData.lastPoint = point;
-
-        if (!rideData.stopBeganAt) {
-          rideData.stopBeganAt = now;
-        }
-
-        if (!rideData.autoPaused && now - rideData.stopBeganAt >= AUTO_PAUSE_DELAY_MS) {
-          rideData.autoPaused = true;
-          rideData.paused = true;
-          rideData.pausedAt = now;
-        }
-
-        const current = { lat: latitude, lng: longitude };
-        if (navigationState.active) {
-          updateNavigationGuide(current);
-        }
-
-        redrawPath();
-        updateStats();
-        saveRideData();
-        return;
-      }
-
-      rideData.stopBeganAt = null;
-
-      if (rideData.autoPaused && rideData.paused && rideData.pausedAt) {
-        rideData.pausedMs += now - rideData.pausedAt;
-        rideData.pausedAt = null;
-        rideData.paused = false;
-        rideData.autoPaused = false;
-        rideData.stopBeganAt = null;
-      }
-
-      const speedKmh = Math.max(0, rawSpeed);
-      rideData.currentSpeedKmh = speedKmh;
-      rideData.lastPoint = point;
-
-      if (speedKmh > rideData.maxSpeedKmh) {
-        rideData.maxSpeedKmh = speedKmh;
-      }
-
-      if (dist >= MIN_MOVE_DISTANCE_M && dist <= 500) {
-        rideData.totalDistanceM += dist;
-        rideData.path.push(point);
-      } else if (dist > 500) {
-        rideData.path.push(point);
-      }
-
-      lastPointTime = now;
-      redrawPath();
-
-      if (autoZoom && map) {
-        if (speedKmh < 8) {
-          currentAutoZoomLevel = 2;
-        } else if (speedKmh < 18) {
-          currentAutoZoomLevel = 3;
-        } else if (speedKmh < 28) {
-          currentAutoZoomLevel = 4;
-        } else {
-          currentAutoZoomLevel = 5;
-        }
-
-        map.setLevel(currentAutoZoomLevel);
-      }
-
-      const current = { lat: latitude, lng: longitude };
-      if (navigationState.active) {
-        updateNavigationGuide(current);
-
-        if (navigationState.routePath.length > 0 && isOffRoute(current)) {
-          rerouteFromCurrentPosition(current);
-        }
-      }
-
-      updateStats();
-      saveRideData();
-    }
-
-    function handlePositionError(err) {
-      if (err.code === 1) {
-        alert("위치 권한을 허용해주세요");
-      } else {
-        console.log(err.message);
-      }
-    }
-
-    function startWatching() {
-      if (!navigator.geolocation) {
-        alert("이 기기에서는 위치 기능을 사용할 수 없습니다.");
-        return;
-      }
-      if (watchId !== null) return;
-
-      watchId = navigator.geolocation.watchPosition(
-        handlePosition,
-        handlePositionError,
-        {
-          enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 10000
-        }
-      );
-    }
-
-    function stopWatching() {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
-    }
-
-    function requestLocationPermission() {
-      if (!navigator.geolocation || !map || !ensureKakaoLoaded()) return;
-
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (!ensureKakaoLoaded() || !map) return;
-
-          const { latitude, longitude, accuracy } = pos.coords;
-          rideData.lastAccuracy = accuracy;
-
-          rideData.lastPoint = [latitude, longitude];
-
-          const center = toLatLng(latitude, longitude);
-          if (center) {
-            if (!hasInitialCentered) {
-              map.setCenter(center);
-              if (autoZoom && map) {
-                map.setLevel(2);
-                currentAutoZoomLevel = 2;
-              }
-              hasInitialCentered = true;
-            } else if (followMap) {
-              map.setCenter(center);
-            }
-
-            drawCurrentMarker(latitude, longitude);
-
-            if (
-              navigationState.destination &&
-              (!navigationState.routePath || navigationState.routePath.length === 0)
-            ) {
-              requestRouteFromCurrentPosition(false);
-            }
-          }
-
-          updateStats();
-          saveRideData();
-        },
-        (err) => {
-          console.log("현재 위치 요청 실패:", err);
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 10000
-        }
-      );
-    }
-
-    async function startRide() {
-      const isResume = rideData.started && rideData.paused;
-      const msg = isResume ? "주행기록을 다시 시작할까요?" : "주행기록을 시작할까요?";
-
-      if (!confirm(msg)) return;
-
-      if (!rideData.started) {
-        rideData.started = true;
-        rideData.paused = false;
-        rideData.startTime = Date.now();
-        rideData.pausedAt = null;
-        rideData.pausedMs = 0;
-        rideData.currentSpeedKmh = 0;
-        rideData.maxSpeedKmh = 0;
-        lastPointTime = Date.now();
-        rideData.stopBeganAt = null;
-        rideData.autoPaused = false;
-        rideData.lastPoint = null;
-        currentAutoZoomLevel = 2;
-      } else if (rideData.paused) {
-        rideData.paused = false;
-        if (rideData.pausedAt) {
-          rideData.pausedMs += Date.now() - rideData.pausedAt;
-        }
-        rideData.pausedAt = null;
-        rideData.stopBeganAt = null;
-        rideData.autoPaused = false;
-        lastPointTime = Date.now();
-        currentAutoZoomLevel = 2;
-      }
-
-      saveRideData();
-      updateStats();
-      startWatching();
-      await requestWakeLockSafe();
-      startWakeLockKeeper();
-
-      if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock("portrait").catch(() => {});
-      }
-    }
-
-    async function endRide() {
-      if (!rideData.started) return;
-      if (!confirm("주행을 종료할까요?")) return;
-
-      const shouldSave = confirm("현재 주행기록을 저장할까요?");
-      if (shouldSave && rideData.path.length > 0) {
-        saveRideSummary();
-      }
-
-      stopWatching();
-      rideData.stopBeganAt = null;
-      rideData.autoPaused = false;
-      rideData.lastPoint = null;
-      currentAutoZoomLevel = 2;
-      stopWakeLockKeeper();
-      await releaseWakeLock();
-
-      if (startMarker) {
-        startMarker.setMap(null);
-        startMarker = null;
-      }
-      if (currentMarker) {
-        currentMarker.setMap(null);
-        currentMarker = null;
-      }
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
-
-      if (ridePolyline) ridePolyline.setPath([]);
-      if (recommendedPolyline) recommendedPolyline.setPath([]);
-
-      clearRideData();
-      clearNavigation();
-      lastPointTime = null;
-      updateStats();
-
-      if (map) {
-        hasInitialCentered = false;
-      }
-      requestLocationPermission();
-    }
-
-    batteryBtn.addEventListener("click", () => {
-      location.href = "./index.html";
-    });
-
-    historyBtn.addEventListener("click", () => {
-      location.href = "./ride-history.html";
-    });
-
-    startBtn.addEventListener("click", startRide);
-    endBtn.addEventListener("click", endRide);
-
-    followBtn.addEventListener("click", () => {
-      followMap = !followMap;
-      localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
-      updateStats();
-
-      if (followMap && map && ensureKakaoLoaded() && (rideData.lastPoint || rideData.path.length > 0)) {
-        const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-        const pos = toLatLng(p[0], p[1]);
-        if (pos) map.panTo(pos);
-      }
-    });
-
-    zoomBtn.addEventListener("click", () => {
-      autoZoom = !autoZoom;
-      localStorage.setItem(AUTO_ZOOM_STORAGE_KEY, autoZoom ? "on" : "off");
-      updateZoomButton();
-    });
-
-    fitBtn.addEventListener("click", () => {
-      followMap = false;
-      localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-      updateFollowButton();
-      fitPathToView();
-    });
-
-    destBtn.addEventListener("click", () => {
-      navSearchBar.classList.toggle("show");
-      if (navSearchBar.classList.contains("show")) {
-        placeKeyword.focus();
-      }
-    });
-
-    navToggleBtn.addEventListener("click", async () => {
-      if (!navigationState.destination) {
-        alert("먼저 목적지를 검색해주세요.");
-        return;
-      }
-
-      if (navigationState.active) {
-        stopNavigation();
-      } else {
-        await startNavigation();
-      }
-    });
-
-    clearRouteBtn.addEventListener("click", () => {
-  if (!navigationState.destination && (!navigationState.routePath || navigationState.routePath.length === 0)) {
-    alert("지울 경로가 없습니다.");
-    return;
-  }
-
-  if (!confirm("경로를 지울까요?")) return;
-
-  clearNavigation();
-
-  if (navSearchBar) navSearchBar.classList.remove("show");
-  if (placeKeyword) placeKeyword.value = "";
-
-  updateStats();
-});
-
-    searchPlaceBtn.addEventListener("click", () => {
-      searchPlace(placeKeyword.value);
-    });
-
-    placeKeyword.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        searchPlace(placeKeyword.value);
-      }
-    });
-
-    async function init() {
-      formatClock();
-
-      let tries = 0;
-      while (!ensureKakaoLoaded() && tries < 30) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        tries += 1;
-      }
-
-      if (!ensureKakaoLoaded()) {
-        updateNavStatus("카카오맵 SDK 로드 실패");
-        alert("카카오맵 SDK가 아직 로드되지 않았습니다. 도메인 등록 또는 SDK 로드를 다시 확인해주세요.");
-        return;
-      }
-
-      initKakaoMap();
-      redrawPath();
-      updateStats();
-      requestLocationPermission();
-
-      if (navigationState.active && navigationState.destination) {
-        redrawPath();
-        updateNavStatus();
-      }
-
-      if (rideData.started && !rideData.paused) {
-        startWatching();
-        await requestWakeLockSafe();
-        startWakeLockKeeper();
-      }
-    }
-
-    window.addEventListener("load", init);
-
-    window.addEventListener("resize", () => {
-      if (!map || !ensureKakaoLoaded()) return;
-      setTimeout(() => {
-        map.relayout();
-      }, 100);
-    });
-
-    window.addEventListener("pageshow", () => {
-      if (!map || !ensureKakaoLoaded()) return;
-      setTimeout(() => {
-        map.relayout();
-        redrawPath();
-      }, 150);
-    });
-
-    setInterval(updateStats, 1000);
-    setInterval(formatClock, 60000);
   </script>
 </body>
 </html>
