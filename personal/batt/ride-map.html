@@ -565,8 +565,8 @@
     let destinationMarker = null;
 
     function ensureKakaoLoaded() {
-      return !!(window.kakao && window.kakao.maps && window.kakao.maps.services);
-    }
+  return !!(window.kakao && window.kakao.maps && window.kakao.maps.services);
+}
 
     function haversine(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -608,8 +608,9 @@
     }
 
     function toLatLng(lat, lng) {
-      return new kakao.maps.LatLng(lat, lng);
-    }
+  if (!ensureKakaoLoaded()) return null;
+  return new kakao.maps.LatLng(lat, lng);
+}
 
     function getCurrentPositionObject() {
       if (rideData.lastPoint) {
@@ -697,6 +698,7 @@
     }
 
     function buildCurrentMarkerImage() {
+      if (!ensureKakaoLoaded()) return null;
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42">
           <foreignObject width="42" height="42">
@@ -710,6 +712,7 @@
     }
 
     function buildStartMarkerImage() {
+      if (!ensureKakaoLoaded()) return null;
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
           <circle cx="10" cy="10" r="7" fill="#22c55e" stroke="#ffffff" stroke-width="4" />
@@ -721,6 +724,7 @@
     }
 
     function buildDestinationMarkerImage() {
+      if (!ensureKakaoLoaded()) return null;
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="40">
           <path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.268 21.732 0 14 0z" fill="#3b82f6"/>
@@ -766,50 +770,66 @@
     }
 
     function drawCurrentMarker(lat, lng) {
-      const pos = toLatLng(lat, lng);
-      if (!currentMarker) {
-        currentMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildCurrentMarkerImage()
-        });
-      } else {
-        currentMarker.setPosition(pos);
-      }
-    }
+  if (!map || !ensureKakaoLoaded()) return;
+
+  const pos = toLatLng(lat, lng);
+  if (!pos) return;
+
+  if (!currentMarker) {
+    currentMarker = new kakao.maps.Marker({
+      map,
+      position: pos,
+      image: buildCurrentMarkerImage()
+    });
+  } else {
+    currentMarker.setPosition(pos);
+  }
+}
 
     function drawStartMarker() {
-      if (!rideData.startPoint || !map) return;
-      const pos = toLatLng(rideData.startPoint.lat, rideData.startPoint.lng);
-      if (!startMarker) {
-        startMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildStartMarkerImage()
-        });
-      } else {
-        startMarker.setPosition(pos);
-      }
-    }
+  if (!rideData.startPoint || !map || !ensureKakaoLoaded()) return;
+
+  const pos = toLatLng(rideData.startPoint.lat, rideData.startPoint.lng);
+  if (!pos) return;
+
+  const image = buildStartMarkerImage();
+  if (!image) return;
+
+  if (!startMarker) {
+    startMarker = new kakao.maps.Marker({
+      map,
+      position: pos,
+      image
+    });
+  } else {
+    startMarker.setPosition(pos);
+  }
+}
 
     function drawDestinationMarker() {
-      if (!navigationState.destination || !map) return;
-      const pos = toLatLng(navigationState.destination.lat, navigationState.destination.lng);
-      if (!destinationMarker) {
-        destinationMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildDestinationMarkerImage(),
-          title: navigationState.destination.name || "목적지"
-        });
-      } else {
-        destinationMarker.setPosition(pos);
-        destinationMarker.setTitle(navigationState.destination.name || "목적지");
-      }
-    }
+  if (!navigationState.destination || !map || !ensureKakaoLoaded()) return;
+
+  const pos = toLatLng(navigationState.destination.lat, navigationState.destination.lng);
+  if (!pos) return;
+
+  const image = buildDestinationMarkerImage();
+  if (!image) return;
+
+  if (!destinationMarker) {
+    destinationMarker = new kakao.maps.Marker({
+      map,
+      position: pos,
+      image,
+      title: navigationState.destination.name || "목적지"
+    });
+  } else {
+    destinationMarker.setPosition(pos);
+    destinationMarker.setTitle(navigationState.destination.name || "목적지");
+  }
+}
 
     function fitPathToView(animated = true) {
-      if (!map) return;
+  if (!map || !ensureKakaoLoaded()) return;
       let hasAny = false;
       const bounds = new kakao.maps.LatLngBounds();
 
@@ -841,43 +861,37 @@
     }
 
     function redrawPath() {
-      if (!map) return;
+  if (!map || !ensureKakaoLoaded()) return;
 
-      if (ridePolyline) {
-        const ridePath = rideData.path.map(([lat, lng]) => toLatLng(lat, lng));
-        ridePolyline.setPath(ridePath);
-        ridePolyline.setOptions({ strokeWeight: pathWeight });
-      }
+  if (ridePolyline) {
+    const ridePath = rideData.path
+      .map(([lat, lng]) => toLatLng(lat, lng))
+      .filter(Boolean);
+    ridePolyline.setPath(ridePath);
+    ridePolyline.setOptions({ strokeWeight: pathWeight });
+  }
 
-      if (recommendedPolyline) {
-        const recPath = (navigationState.routePath || []).map(p => toLatLng(p.lat, p.lng));
-        recommendedPolyline.setPath(recPath);
-      }
+  if (recommendedPolyline) {
+    const recPath = (navigationState.routePath || [])
+      .map(p => toLatLng(p.lat, p.lng))
+      .filter(Boolean);
+    recommendedPolyline.setPath(recPath);
+  }
 
-      if (rideData.startPoint) {
-        drawStartMarker();
-      }
+  if (rideData.startPoint) drawStartMarker();
 
-      if (rideData.path.length > 0) {
-        const last = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-        drawCurrentMarker(last[0], last[1]);
+  if (rideData.path.length > 0) {
+    const last = rideData.lastPoint || rideData.path[rideData.path.length - 1];
+    drawCurrentMarker(last[0], last[1]);
 
-        if (followMap) {
-          map.panTo(toLatLng(last[0], last[1]));
-        }
-      }
-
-      if (navigationState.destination) {
-        drawDestinationMarker();
-      }
-
-      if (rideData.path.length === 1 && !followMap) {
-        map.setCenter(toLatLng(rideData.path[0][0], rideData.path[0][1]));
-        map.setLevel(3);
-      } else if (!followMap && (rideData.path.length > 1 || navigationState.routePath.length > 1)) {
-        fitPathToView(false);
-      }
+    if (followMap) {
+      const pos = toLatLng(last[0], last[1]);
+      if (pos) map.panTo(pos);
     }
+  }
+
+  if (navigationState.destination) drawDestinationMarker();
+}
 
     function setDestination(dest) {
       navigationState.active = true;
@@ -1256,25 +1270,31 @@
     }
 
     function requestLocationPermission() {
-      if (!navigator.geolocation || !map) return;
+  if (!navigator.geolocation || !map || !ensureKakaoLoaded()) return;
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          rideData.lastAccuracy = accuracy;
-          map.setCenter(toLatLng(latitude, longitude));
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      if (!ensureKakaoLoaded() || !map) return;
 
-          drawCurrentMarker(latitude, longitude);
-          updateStats();
-        },
-        () => {},
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 10000
-        }
-      );
+      const { latitude, longitude, accuracy } = pos.coords;
+      rideData.lastAccuracy = accuracy;
+
+      const center = toLatLng(latitude, longitude);
+      if (center) {
+        map.setCenter(center);
+        drawCurrentMarker(latitude, longitude);
+      }
+
+      updateStats();
+    },
+    () => {},
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
     }
+  );
+}
 
     async function startRide() {
       const isResume = rideData.started && rideData.paused;
@@ -1379,10 +1399,11 @@
       localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
       updateStats();
 
-      if (followMap && map && (rideData.lastPoint || rideData.path.length > 0)) {
-        const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-        map.panTo(toLatLng(p[0], p[1]));
-      }
+      if (followMap && map && ensureKakaoLoaded() && (rideData.lastPoint || rideData.path.length > 0)) {
+  const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
+  const pos = toLatLng(p[0], p[1]);
+  if (pos) map.panTo(pos);
+}
     });
 
     zoomBtn.addEventListener("click", () => {
@@ -1431,46 +1452,38 @@
     });
 
     async function init() {
-      formatClock();
+  formatClock();
 
-      let tries = 0;
-      while (!ensureKakaoLoaded() && tries < 30) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        tries += 1;
-      }
+  let tries = 0;
+  while (!ensureKakaoLoaded() && tries < 30) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    tries += 1;
+  }
 
-      if (!ensureKakaoLoaded()) {
-        const sdk = document.getElementById("kakao-map-sdk");
-        const sdkSrc = sdk ? sdk.getAttribute("src") : "(sdk src 없음)";
-        updateNavStatus("카카오맵 SDK 로드 실패");
-        alert(
-          "카카오맵 SDK를 불러오지 못했습니다.\n\n" +
-          "1) JavaScript SDK 도메인 등록 확인\n" +
-          "2) 현재 접속 주소와 등록 도메인 일치 확인\n" +
-          "3) SDK 주소 확인\n\n" +
-          "현재 SDK:\n" + sdkSrc
-        );
-        return;
-      }
+  if (!ensureKakaoLoaded()) {
+    updateNavStatus("카카오맵 SDK 로드 실패");
+    alert("카카오맵 SDK가 아직 로드되지 않았습니다. 도메인 등록 또는 SDK 로드를 다시 확인해주세요.");
+    return;
+  }
 
-      initKakaoMap();
-      redrawPath();
-      updateStats();
-      requestLocationPermission();
+  initKakaoMap();
+  redrawPath();
+  updateStats();
+  requestLocationPermission();
 
-      if (navigationState.active && navigationState.destination) {
-        redrawPath();
-        updateNavStatus();
-      }
+  if (navigationState.active && navigationState.destination) {
+    redrawPath();
+    updateNavStatus();
+  }
 
-      if (rideData.started && !rideData.paused) {
-        startWatching();
-        await requestWakeLockSafe();
-        startWakeLockKeeper();
-      }
-    }
+  if (rideData.started && !rideData.paused) {
+    startWatching();
+    await requestWakeLockSafe();
+    startWakeLockKeeper();
+  }
+}
 
-    window.addEventListener("load", init);
+window.addEventListener("load", init);
     setInterval(updateStats, 1000);
     setInterval(formatClock, 60000);
   </script>
