@@ -72,17 +72,15 @@
     }
 
     .title-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 8px;
-    }
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
     .title-wrap {
-      min-width: 0;
-      flex: 1;
-      padding: 0 4px;
-    }
+  min-width: 0;
+  padding: 0 8px;
+}
 
     .title {
       font-size: 24px;
@@ -92,25 +90,26 @@
     }
 
     .top-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      width: 172px;
-      flex-shrink: 0;
-      padding-right: 4px;
-    }
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  padding-right: 0;
+}
 
     .top-btn {
-      height: 36px;
-      border: 1px solid rgba(255,255,255,0.08);
-      background: linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
-      color: #fff;
-      font-size: 12px;
-      font-weight: 800;
-      border-radius: 12px;
-      cursor: pointer;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.22);
-    }
+  height: 32px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.20);
+  padding: 0;
+}
 
     .top-btn.primary { background: linear-gradient(180deg, #2563eb, #1d4ed8); }
     .top-btn.green { background: linear-gradient(180deg, #22c55e, #16a34a); }
@@ -310,13 +309,14 @@
       border: 2px solid rgba(255,255,255,0.25);
     }
 
-    @media (max-width: 390px) {
-      .title { font-size: 22px; }
-      .top-actions { width: 160px; }
-      .summary-value, .speed-value { font-size: 17px; }
-      .bottom-value { font-size: 14px; }
-      .chip-btn, .width-btn, .search-btn { font-size: 11px; padding: 0 8px; }
-    }
+   @media (max-width: 390px) {
+  .title { font-size: 22px; }
+  .top-actions { width: calc(100% - 16px); }
+  .top-btn { font-size: 10px; height: 30px; }
+  .summary-value, .speed-value { font-size: 17px; }
+  .bottom-value { font-size: 14px; }
+  .chip-btn, .width-btn, .search-btn { font-size: 11px; padding: 0 8px; }
+}
   </style>
 </head>
 <body>
@@ -450,14 +450,14 @@
     };
 
     const initialNavigationState = {
-      active: false,
-      destination: null,
-      routeOrigin: null,
-      routePath: [],
-      rerouting: false,
-      offRouteThresholdM: 40,
-      lastRerouteAt: 0
-    };
+  active: false,
+  destination: null,
+  routeOrigin: null,
+  routePath: [],
+  rerouting: false,
+  offRouteThresholdM: 150,
+  lastRerouteAt: 0
+};
 
     function loadRideData() {
       try {
@@ -540,7 +540,7 @@
     let wakeLockTimer = null;
     let followMap = localStorage.getItem(FOLLOW_STORAGE_KEY) !== "off";
     let pathWeight = Number(localStorage.getItem(PATH_WIDTH_STORAGE_KEY) || 6);
-    let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) === "on";
+    let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) !== "off";
     let lastPointTime = null;
     let currentAutoZoomLevel = 16;
 
@@ -1091,7 +1091,7 @@
         navigationState.routePath = route;
         saveNavigationState();
         redrawPath();
-        fitPathToView();
+        
         updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`);
         updateNavigationGuide(current);
       } catch (e) {
@@ -1187,7 +1187,7 @@
       if (navigationState.rerouting) return;
 
       const now = Date.now();
-      if (now - navigationState.lastRerouteAt < 10000) return;
+      if (now - navigationState.lastRerouteAt < 30000) return;
 
       navigationState.rerouting = true;
       navigationState.lastRerouteAt = now;
@@ -1252,25 +1252,37 @@
     }
 
     document.addEventListener("visibilitychange", async () => {
-      if (document.visibilityState === "visible" && rideData.started) {
-        startWatching();
-        requestLocationPermission();
-        lastPointTime = Date.now();
+  if (document.visibilityState === "visible" && rideData.started) {
+    startWatching();
+    requestLocationPermission();
+    lastPointTime = Date.now();
 
-        await requestWakeLockSafe();
+    await requestWakeLockSafe();
 
-        if (rideData.autoPaused && rideData.paused) {
-          rideData.stopBeganAt = null;
-          saveRideData();
-          updateStats();
+    if (rideData.autoPaused && rideData.paused) {
+      rideData.stopBeganAt = null;
+      saveRideData();
+      updateStats();
+    }
+
+    setTimeout(() => {
+      redrawPath();
+
+      const current = getCurrentPositionObject();
+      if (current && map) {
+        const pos = toLatLng(current.lat, current.lng);
+
+        if (followMap && pos) {
+          map.setCenter(pos);
         }
 
-        setTimeout(() => {
-          redrawPath();
-          if (!followMap) fitPathToView();
-        }, 300);
+        if (autoZoom) {
+          map.setLevel(currentAutoZoomLevel);
+        }
       }
-    });
+    }, 300);
+  }
+});
 
     window.addEventListener("beforeunload", (e) => {
       if (rideData.started && !rideData.paused) {
@@ -1472,12 +1484,17 @@
       rideData.lastPoint = [latitude, longitude];
 
       const center = toLatLng(latitude, longitude);
-      if (center) {
-        if (followMap) {
-          map.setCenter(center);
-        }
-        drawCurrentMarker(latitude, longitude);
-      }
+if (center) {
+  if (followMap) {
+    map.setCenter(center);
+  }
+
+  if (autoZoom && map) {
+    map.setLevel(16);
+  }
+
+  drawCurrentMarker(latitude, longitude);
+}
 
       // ✅ 목적지가 이미 선택된 상태면 바로 경로 계산 시도
       if (navigationState.active && navigationState.destination && (!navigationState.routePath || navigationState.routePath.length === 0)) {
