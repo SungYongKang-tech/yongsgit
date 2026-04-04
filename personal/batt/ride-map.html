@@ -24,7 +24,7 @@
 
     * { box-sizing: border-box; }
 
-    html, body {
+   html, body {
   margin: 0;
   width: 100%;
   height: 100%;
@@ -33,10 +33,25 @@
   overflow: hidden;
 }
 
+.map-wrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border-radius: 0;
+  overflow: hidden;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative;
+  background: rgba(15,23,42,0.72);
+  touch-action: pan-x pan-y pinch-zoom;
+  pointer-events: auto;
+}
+
 #map {
   width: 100%;
   height: 100%;
-  touch-action: auto;
+  touch-action: pan-x pan-y pinch-zoom;
+  pointer-events: auto;
 }
 
     body {
@@ -742,52 +757,58 @@
     }
 
     function initKakaoMap() {
-      if (!ensureKakaoLoaded()) {
-        alert("카카오맵이 로드되지 않았습니다. appkey를 확인해주세요.");
-        return;
-      }
+  if (!ensureKakaoLoaded()) {
+    alert("카카오맵이 로드되지 않았습니다. appkey를 확인해주세요.");
+    return;
+  }
 
-      map = new kakao.maps.Map(document.getElementById("map"), {
-        center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
-        level: 4
-      });
+  map = new kakao.maps.Map(document.getElementById("map"), {
+    center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
+    level: 4
+  });
 
-       map.setDraggable(true);
-       map.setZoomable(true);
+  map.setDraggable(true);
+  map.setZoomable(true);
 
-       kakao.maps.event.addListener(map, 'dragstart', function () {
-  followMap = false;
-  localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-  updateFollowButton();
-});
+  kakao.maps.event.addListener(map, 'dragstart', function () {
+    followMap = false;
+    localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
+    updateFollowButton();
+  });
 
-kakao.maps.event.addListener(map, 'zoom_changed', function () {
-  followMap = false;
-  localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-  updateFollowButton();
-});
+  kakao.maps.event.addListener(map, 'zoom_changed', function () {
+    followMap = false;
+    localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
+    updateFollowButton();
+  });
 
-      map.addOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
-      places = new kakao.maps.services.Places();
+  map.addOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
+  places = new kakao.maps.services.Places();
 
-      ridePolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: pathWeight,
-        strokeColor: "#ef4444",
-        strokeOpacity: 0.95,
-        strokeStyle: "solid"
-      });
+  ridePolyline = new kakao.maps.Polyline({
+    map,
+    path: [],
+    strokeWeight: pathWeight,
+    strokeColor: "#ef4444",
+    strokeOpacity: 0.95,
+    strokeStyle: "solid"
+  });
 
-      recommendedPolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: 5,
-        strokeColor: "#60a5fa",
-        strokeOpacity: 0.95,
-        strokeStyle: "shortdash"
-      });
-    }
+  recommendedPolyline = new kakao.maps.Polyline({
+    map,
+    path: [],
+    strokeWeight: 5,
+    strokeColor: "#60a5fa",
+    strokeOpacity: 0.95,
+    strokeStyle: "shortdash"
+  });
+
+  setTimeout(() => {
+    if (!map) return;
+    map.relayout();
+    map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
+  }, 300);
+}
 
     function drawCurrentMarker(lat, lng) {
   if (!map || !ensureKakaoLoaded()) return;
@@ -1301,7 +1322,9 @@ kakao.maps.event.addListener(map, 'zoom_changed', function () {
 
       const center = toLatLng(latitude, longitude);
       if (center) {
-        map.setCenter(center);
+        if (followMap) {
+          map.setCenter(center);
+        }
         drawCurrentMarker(latitude, longitude);
       }
 
@@ -1504,8 +1527,26 @@ kakao.maps.event.addListener(map, 'zoom_changed', function () {
 }
 
 window.addEventListener("load", init);
-    setInterval(updateStats, 1000);
-    setInterval(formatClock, 60000);
+
+window.addEventListener("resize", () => {
+  if (!map || !ensureKakaoLoaded()) return;
+  setTimeout(() => {
+    map.relayout();
+  }, 100);
+});
+
+window.addEventListener("pageshow", () => {
+  if (!map || !ensureKakaoLoaded()) return;
+  setTimeout(() => {
+    map.relayout();
+    redrawPath();
+  }, 150);
+});
+
+setInterval(updateStats, 1000);
+setInterval(formatClock, 60000);
+
+    
   </script>
 </body>
 </html>
