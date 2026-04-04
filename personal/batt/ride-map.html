@@ -955,15 +955,22 @@
     }
 
     function setDestination(dest) {
-      navigationState.active = true;
-      navigationState.destination = dest;
-      navigationState.routePath = [];
-      updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
-      setGuideText("경로 계산 중...");
-      saveNavigationState();
-      redrawPath();
-      requestRouteFromCurrentPosition();
-    }
+  navigationState.active = true;
+  navigationState.destination = dest;
+  navigationState.routePath = [];
+  updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
+  setGuideText("현재 위치 확인 후 경로 계산 중...");
+  saveNavigationState();
+  redrawPath();
+
+  // 현재 위치가 아직 없으면 먼저 요청
+  if (!getCurrentPositionObject()) {
+    requestLocationPermission();
+    return;
+  }
+
+  requestRouteFromCurrentPosition();
+}
 
     function clearNavigation() {
       navigationState = { ...initialNavigationState };
@@ -1029,24 +1036,27 @@
     }
 
     async function requestRoute(origin, destination) {
-      try {
-        const res = await fetch("/api/route", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ origin, destination })
-        });
+  try {
+    const res = await fetch("/.netlify/functions/route", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ origin, destination })
+    });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.path) && data.path.length > 0) {
-            return data.path;
-          }
-        }
-      } catch (e) {
-        // fallback below
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.path) && data.path.length > 0) {
+        return data.path;
       }
+    } else {
+      const text = await res.text();
+      console.log("route 함수 응답 오류:", res.status, text);
+    }
+  } catch (e) {
+    console.log("route 함수 호출 실패:", e);
+  }
 
       return [
         { lat: origin.lat, lng: origin.lng },
@@ -1449,37 +1459,48 @@
     }
 
     function requestLocationPermission() {
-      if (!navigator.geolocation || !map || !ensureKakaoLoaded()) return;
+  if (!navigator.geolocation || !map || !ensureKakaoLoaded()) return;
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (!ensureKakaoLoaded() || !map) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      if (!ensureKakaoLoaded() || !map) return;
 
-          const { latitude, longitude, accuracy } = pos.coords;
-          rideData.lastAccuracy = accuracy;
+      const { latitude, longitude, accuracy } = pos.coords;
+      rideData.lastAccuracy = accuracy;
 
-          const center = toLatLng(latitude, longitude);
-          if (center) {
-            if (followMap) {
-              map.setCenter(center);
-            }
-            drawCurrentMarker(latitude, longitude);
-          }
+      // ✅ 네비 계산용 현재 위치 저장
+      rideData.lastPoint = [latitude, longitude];
 
-          if (navigationState.active) {
-            updateNavigationGuide({ lat: latitude, lng: longitude });
-          }
-
-          updateStats();
-        },
-        () => {},
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 10000
+      const center = toLatLng(latitude, longitude);
+      if (center) {
+        if (followMap) {
+          map.setCenter(center);
         }
-      );
+        drawCurrentMarker(latitude, longitude);
+      }
+
+      // ✅ 목적지가 이미 선택된 상태면 바로 경로 계산 시도
+      if (navigationState.active && navigationState.destination && (!navigationState.routePath || navigationState.routePath.length === 0)) {
+        requestRouteFromCurrentPosition();
+      }
+
+      if (navigationState.active) {
+        updateNavigationGuide({ lat: latitude, lng: longitude });
+      }
+
+      updateStats();
+      saveRideData();
+    },
+    (err) => {
+      console.log("현재 위치 요청 실패:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
     }
+  );
+}
 
     async function startRide() {
       const isResume = rideData.started && rideData.paused;
