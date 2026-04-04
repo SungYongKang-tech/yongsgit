@@ -777,7 +777,7 @@
 
       map = new kakao.maps.Map(document.getElementById("map"), {
         center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
-        level: 4
+        level: 3
       });
 
       map.setDraggable(true);
@@ -1419,20 +1419,18 @@
       redrawPath();
 
       if (autoZoom && map) {
-        if (currentAutoZoomLevel === 17) {
-          if (speedKmh >= 8) currentAutoZoomLevel = 16;
-        } else if (currentAutoZoomLevel === 16) {
-          if (speedKmh >= 23) currentAutoZoomLevel = 15;
-          else if (speedKmh <= 3) currentAutoZoomLevel = 17;
-        } else if (currentAutoZoomLevel === 15) {
-          if (speedKmh >= 30) currentAutoZoomLevel = 14;
-          else if (speedKmh <= 11) currentAutoZoomLevel = 16;
-        } else if (currentAutoZoomLevel === 14) {
-          if (speedKmh <= 24) currentAutoZoomLevel = 15;
-        }
+  if (speedKmh < 8) {
+    currentAutoZoomLevel = 2;
+  } else if (speedKmh < 18) {
+    currentAutoZoomLevel = 3;
+  } else if (speedKmh < 28) {
+    currentAutoZoomLevel = 4;
+  } else {
+    currentAutoZoomLevel = 5;
+  }
 
-        map.setLevel(currentAutoZoomLevel);
-      }
+  map.setLevel(currentAutoZoomLevel);
+}
 
       const current = { lat: latitude, lng: longitude };
       if (navigationState.active) {
@@ -1495,24 +1493,19 @@
 
       const center = toLatLng(latitude, longitude);
 if (center) {
-  // 처음 실행이면 무조건 내 위치
   if (!hasInitialCentered) {
     map.setCenter(center);
-    map.setLevel(3);   // ← 여기 추가 (핵심)
+    if (autoZoom && map) {
+      map.setLevel(2);
+      currentAutoZoomLevel = 2;
+    }
     hasInitialCentered = true;
   } else if (followMap) {
     map.setCenter(center);
   }
+
+  drawCurrentMarker(latitude, longitude);
 }
-
-      // ✅ 목적지가 이미 선택된 상태면 바로 경로 계산 시도
-      if (navigationState.active && navigationState.destination && (!navigationState.routePath || navigationState.routePath.length === 0)) {
-        requestRouteFromCurrentPosition();
-      }
-
-      if (navigationState.active) {
-        updateNavigationGuide({ lat: latitude, lng: longitude });
-      }
 
       updateStats();
       saveRideData();
@@ -1608,10 +1601,8 @@ if (center) {
       lastPointTime = null;
       updateStats();
 
-      if (map) {
-        map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-        map.setLevel(4);
-      }
+      if (map) {hasInitialCentered = false;}
+     requestLocationPermission();
 
       requestLocationPermission();
     }
