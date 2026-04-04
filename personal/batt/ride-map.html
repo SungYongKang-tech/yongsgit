@@ -391,7 +391,7 @@
           <button class="chip-btn" id="zoomBtn">자동줌 꺼짐</button>
           <button class="chip-btn" id="fitBtn">전체코스</button>
           <button class="chip-btn" id="destBtn">목적지</button>
-          <button class="chip-btn warn" id="navStopBtn">안내중지</button>
+          <button class="chip-btn warn" id="navToggleBtn">안내시작</button>
         </div>
         
       </div>
@@ -567,7 +567,7 @@
     const fitBtn = document.getElementById("fitBtn");
    
     const destBtn = document.getElementById("destBtn");
-    const navStopBtn = document.getElementById("navStopBtn");
+    const navToggleBtn = document.getElementById("navToggleBtn");
     const navSearchBar = document.getElementById("navSearchBar");
     const placeKeyword = document.getElementById("placeKeyword");
     const searchPlaceBtn = document.getElementById("searchPlaceBtn");
@@ -657,20 +657,38 @@
       zoomBtn.textContent = autoZoom ? "자동줌 켜짐" : "자동줌 꺼짐";
       zoomBtn.classList.toggle("active", autoZoom);
     }
+   
+    function updateNavToggleButton() {
+      if (!navToggleBtn) return;
+      navToggleBtn.textContent = navigationState.active ? "안내중지" : "안내시작";
+    }
 
     function updateNavStatus(extraText = "") {
-      if (!navigationState.active || !navigationState.destination) {
-        navStatusEl.textContent = "안내 없음";
-        return;
-      }
+  if (!navigationState.destination) {
+    navStatusEl.textContent = "안내 없음";
+    return;
+  }
 
-      const originLabel = navigationState.routeOrigin
-        ? `${navigationState.routeOrigin.lat.toFixed(5)}, ${navigationState.routeOrigin.lng.toFixed(5)}`
-        : "-";
+  if (extraText) {
+    navStatusEl.textContent = extraText;
+    return;
+  }
 
-      const base = `목적지: ${navigationState.destination.name || `${navigationState.destination.lat.toFixed(5)}, ${navigationState.destination.lng.toFixed(5)}`}`;
-      navStatusEl.textContent = extraText || `${base} · 안내출발점: ${originLabel}`;
-    }
+  if (navigationState.active) {
+    const originLabel = navigationState.routeOrigin
+      ? `${navigationState.routeOrigin.lat.toFixed(5)}, ${navigationState.routeOrigin.lng.toFixed(5)}`
+      : "-";
+
+    navStatusEl.textContent =
+      `목적지: ${navigationState.destination.name || "선택됨"} · 안내출발점: ${originLabel}`;
+  } else if (navigationState.routePath && navigationState.routePath.length > 0) {
+    navStatusEl.textContent =
+      `목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`;
+  } else {
+    navStatusEl.textContent =
+      `목적지: ${navigationState.destination.name || "선택됨"}`;
+  }
+}
 
     function updateStats() {
       distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
@@ -711,6 +729,7 @@
       updateFollowButton();
       updateZoomButton();
       updateNavStatus();
+      updateNavToggleButton();
       formatClock();
     }
 
@@ -813,10 +832,9 @@
 });
 
       setTimeout(() => {
-        if (!map) return;
-        map.relayout();
-        map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-      }, 300);
+  if (!map) return;
+  map.relayout();
+}, 300);
     }
 
     function drawCurrentMarker(lat, lng) {
@@ -948,9 +966,10 @@
       if (navigationState.destination) drawDestinationMarker();
     }
 
-    function setDestination(dest) {
-  navigationState.active = true;
+    async function setDestination(dest) {
+  navigationState.active = false;
   navigationState.destination = dest;
+  navigationState.routeOrigin = null;
   navigationState.routePath = [];
   updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
   setGuideText("현재 위치 확인 후 경로 계산 중...");
@@ -1066,34 +1085,43 @@
       ];
     }
 
-    async function requestRouteFromCurrentPosition() {
-      if (!navigationState.destination) return;
+   async function requestRouteFromCurrentPosition(startGuidance = true) {
+  if (!navigationState.destination) return;
 
-      const current = getCurrentPositionObject();
-      if (!current) {
-        updateNavStatus("현재 위치를 아직 못 받아 목적지 안내를 시작하지 못했습니다.");
-        setGuideText("현재 위치를 기다리는 중...");
-        return;
-      }
+  const current = getCurrentPositionObject();
+  if (!current) {
+    updateNavStatus("현재 위치를 아직 못 받아 경로를 계산하지 못했습니다.");
+    setGuideText("현재 위치를 기다리는 중...");
+    return;
+  }
 
-      navigationState.routeOrigin = current;
-      updateNavStatus("추천 경로 계산 중...");
-      setGuideText("경로 계산 중...");
+  navigationState.routeOrigin = current;
+  updateNavStatus(startGuidance ? "안내 경로 계산 중..." : "경로 계산 중...");
+  setGuideText(startGuidance ? "안내 경로를 계산 중입니다." : "경로를 계산 중입니다.");
 
-      try {
-        const route = await requestRoute(current, navigationState.destination);
-        navigationState.routePath = route;
-        saveNavigationState();
-        redrawPath();
-        
-        updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`);
-        updateNavigationGuide(current);
-      } catch (e) {
-        console.error(e);
-        updateNavStatus("경로 계산 실패");
-        setGuideText("경로 계산 실패");
-      }
+  try {
+    const route = await requestRoute(current, navigationState.destination);
+    navigationState.routePath = route;
+
+    if (startGuidance) {
+      navigationState.active = true;
+      updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 안내 중`);
+      updateNavigationGuide(current);
+    } else {
+      navigationState.active = false;
+      updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`);
+      setGuideText("안내시작 버튼을 누르면 안내를 시작합니다.");
     }
+
+    updateNavToggleButton();
+    saveNavigationState();
+    redrawPath();
+  } catch (e) {
+    console.error(e);
+    updateNavStatus("경로 계산 실패");
+    setGuideText("경로 계산 실패");
+  }
+}
 
     function getMinDistanceToRoute(current, routePath) {
       if (!routePath || !routePath.length) return Infinity;
@@ -1586,9 +1614,10 @@ if (center) {
       updateStats();
 
      if (map) {
-  hasInitialCentered = false;
-}
-requestLocationPermission();
+      hasInitialCentered = false;
+      }
+      requestLocationPermission();
+     }
 
     batteryBtn.addEventListener("click", () => {
       location.href = "./index.html";
@@ -1635,9 +1664,18 @@ requestLocationPermission();
       }
     });
 
-    navStopBtn.addEventListener("click", () => {
-      clearNavigation();
-    });
+    navToggleBtn.addEventListener("click", async () => {
+  if (!navigationState.destination) {
+    alert("먼저 목적지를 검색해주세요.");
+    return;
+  }
+
+  if (navigationState.active) {
+    stopNavigation();
+  } else {
+    await startNavigation();
+  }
+});
 
     searchPlaceBtn.addEventListener("click", () => {
       searchPlace(placeKeyword.value);
