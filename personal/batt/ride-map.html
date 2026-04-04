@@ -7,7 +7,7 @@
   <title>주행기록</title>
 
   <!-- Kakao Maps: 여기에 본인 JavaScript 키를 넣으세요 -->
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
+  <script id="kakao-map-sdk" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
 
   <style>
     :root {
@@ -565,7 +565,7 @@
     let destinationMarker = null;
 
     function ensureKakaoLoaded() {
-      return !!(window.kakao && kakao.maps && kakao.maps.services);
+      return !!(window.kakao && window.kakao.maps && window.kakao.maps.services);
     }
 
     function haversine(lat1, lon1, lat2, lon2) {
@@ -1433,9 +1433,30 @@
     async function init() {
       formatClock();
 
+      let tries = 0;
+      while (!ensureKakaoLoaded() && tries < 30) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        tries += 1;
+      }
+
       if (!ensureKakaoLoaded()) {
-        updateNavStatus("카카오맵 SDK가 로드되지 않았습니다. appkey를 넣어주세요.");
-        alert("head의 YOUR_KAKAO_JAVASCRIPT_KEY를 실제 카카오 JavaScript 키로 바꿔주세요.");
+        const sdk = document.getElementById("kakao-map-sdk");
+        const sdkSrc = sdk ? sdk.getAttribute("src") : "(sdk src 없음)";
+        updateNavStatus("카카오맵 SDK 로드 실패");
+        alert(
+          "카카오맵 SDK를 불러오지 못했습니다.
+
+" +
+          "1) JavaScript SDK 도메인 등록 확인
+" +
+          "2) 현재 접속 주소와 등록 도메인 일치 확인
+" +
+          "3) SDK 주소 확인
+
+" +
+          "현재 SDK:
+" + sdkSrc
+        );
         return;
       }
 
@@ -1456,7 +1477,7 @@
       }
     }
 
-    init();
+    window.addEventListener("load", init);
     setInterval(updateStats, 1000);
     setInterval(formatClock, 60000);
   </script>
