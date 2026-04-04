@@ -966,23 +966,51 @@
       if (navigationState.destination) drawDestinationMarker();
     }
 
-    async function setDestination(dest) {
+   async function setDestination(dest) {
   navigationState.active = false;
   navigationState.destination = dest;
   navigationState.routeOrigin = null;
   navigationState.routePath = [];
+  navigationState.rerouting = false;
+  navigationState.lastRerouteAt = 0;
+
   updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
   setGuideText("현재 위치 확인 후 경로 계산 중...");
   saveNavigationState();
   redrawPath();
 
-  // 현재 위치가 아직 없으면 먼저 요청
   if (!getCurrentPositionObject()) {
     requestLocationPermission();
     return;
   }
 
-  requestRouteFromCurrentPosition();
+  await requestRouteFromCurrentPosition(false);
+}
+
+async function startNavigation() {
+  if (!navigationState.destination) {
+    alert("먼저 목적지를 검색해주세요.");
+    return;
+  }
+
+  if (!getCurrentPositionObject()) {
+    requestLocationPermission();
+    alert("현재 위치를 확인한 뒤 다시 눌러주세요.");
+    return;
+  }
+
+  await requestRouteFromCurrentPosition(true);
+}
+
+function stopNavigation() {
+  navigationState.active = false;
+  navigationState.rerouting = false;
+  navigationState.lastRerouteAt = 0;
+
+  updateNavStatus(`목적지: ${navigationState.destination ? navigationState.destination.name : "-"} · 경로 표시 중`);
+  setGuideText("안내가 중지되었습니다.");
+  updateNavToggleButton();
+  saveNavigationState();
 }
 
     function clearNavigation() {
@@ -1517,6 +1545,14 @@ if (center) {
   }
 
   drawCurrentMarker(latitude, longitude);
+
+  if (
+  navigationState.destination &&
+  (!navigationState.routePath || navigationState.routePath.length === 0)
+) {
+  requestRouteFromCurrentPosition(false);
+}
+
 }
 
       updateStats();
