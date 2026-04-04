@@ -32,7 +32,7 @@ exports.handler = async (event) => {
       origin: `${origin.lng},${origin.lat}`,
       destination: `${destination.lng},${destination.lat}`,
       priority: "DISTANCE",
-      avoid: "motorway,toll"
+      
     });
 
     const url = `https://apis-navi.kakaomobility.com/v1/directions?${params.toString()}`;
