@@ -123,7 +123,6 @@
 
     .top-btn:active,
     .chip-btn:active,
-    .width-btn:active,
     .search-btn:active {
       transform: translateY(1px) scale(0.99);
     }
@@ -186,7 +185,6 @@
     }
 
     .chip-btn,
-    .width-btn,
     .search-btn {
       height: 34px;
       padding: 0 10px;
@@ -200,8 +198,7 @@
       box-shadow: 0 8px 18px rgba(0,0,0,0.18);
     }
 
-    .chip-btn.active,
-    .width-btn.active {
+    .chip-btn.active {
       background: linear-gradient(180deg, #2563eb, #1d4ed8);
     }
 
@@ -324,7 +321,7 @@
   }
   .summary-value, .speed-value { font-size: 17px; }
   .bottom-value { font-size: 14px; }
-  .chip-btn, .width-btn, .search-btn { font-size: 11px; padding: 0 8px; }
+  .chip-btn, .search-btn { font-size: 11px; padding: 0 8px; }
 }
   </style>
 </head>
@@ -396,11 +393,7 @@
           <button class="chip-btn" id="destBtn">목적지</button>
           <button class="chip-btn warn" id="navStopBtn">안내중지</button>
         </div>
-        <div class="toolbar-group">
-          <button class="width-btn" data-width="4">얇게</button>
-          <button class="width-btn active" data-width="6">보통</button>
-          <button class="width-btn" data-width="9">굵게</button>
-        </div>
+        
       </div>
 
       <div class="nav-search-row" id="navSearchBar">
@@ -431,7 +424,6 @@
     const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
     const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
-    const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
     const NAV_STATE_STORAGE_KEY = "ebike_nav_state_v1";
 
@@ -548,7 +540,6 @@
     let wakeLock = null;
     let wakeLockTimer = null;
     let followMap = localStorage.getItem(FOLLOW_STORAGE_KEY) !== "off";
-    let pathWeight = Number(localStorage.getItem(PATH_WIDTH_STORAGE_KEY) || 6);
     let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) !== "off";
     let lastPointTime = null;
     let currentAutoZoomLevel = 16;
@@ -574,7 +565,7 @@
     const followBtn = document.getElementById("followBtn");
     const zoomBtn = document.getElementById("zoomBtn");
     const fitBtn = document.getElementById("fitBtn");
-    const widthButtons = document.querySelectorAll(".width-btn");
+   
     const destBtn = document.getElementById("destBtn");
     const navStopBtn = document.getElementById("navStopBtn");
     const navSearchBar = document.getElementById("navSearchBar");
@@ -667,12 +658,6 @@
       zoomBtn.classList.toggle("active", autoZoom);
     }
 
-    function updateWidthButtons() {
-      widthButtons.forEach(btn => {
-        btn.classList.toggle("active", Number(btn.dataset.width) === pathWeight);
-      });
-    }
-
     function updateNavStatus(extraText = "") {
       if (!navigationState.active || !navigationState.destination) {
         navStatusEl.textContent = "안내 없음";
@@ -725,7 +710,6 @@
 
       updateFollowButton();
       updateZoomButton();
-      updateWidthButtons();
       updateNavStatus();
       formatClock();
     }
@@ -811,22 +795,22 @@
       places = new kakao.maps.services.Places();
 
       ridePolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: pathWeight,
-        strokeColor: "#ef4444",
-        strokeOpacity: 0.95,
-        strokeStyle: "solid"
-      });
+  map,
+  path: [],
+  strokeWeight: 7,
+  strokeColor: "#ef4444",
+  strokeOpacity: 0.95,
+  strokeStyle: "solid"
+});
 
-      recommendedPolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: 5,
-        strokeColor: "#60a5fa",
-        strokeOpacity: 0.95,
-        strokeStyle: "shortdash"
-      });
+     recommendedPolyline = new kakao.maps.Polyline({
+  map,
+  path: [],
+  strokeWeight: 8,
+  strokeColor: "#00e5ff",
+  strokeOpacity: 0.95,
+  strokeStyle: "solid"
+});
 
       setTimeout(() => {
         if (!map) return;
@@ -939,7 +923,7 @@
           .map(([lat, lng]) => toLatLng(lat, lng))
           .filter(Boolean);
         ridePolyline.setPath(ridePath);
-        ridePolyline.setOptions({ strokeWeight: pathWeight });
+        ridePolyline.setOptions({ strokeWeight: 7 });
       }
 
       if (recommendedPolyline) {
@@ -1643,16 +1627,7 @@ if (center) {
       fitPathToView();
     });
 
-    widthButtons.forEach(btn => {
-      btn.addEventListener("click", () => {
-        pathWeight = Number(btn.dataset.width);
-        localStorage.setItem(PATH_WIDTH_STORAGE_KEY, String(pathWeight));
-        if (ridePolyline) {
-          ridePolyline.setOptions({ strokeWeight: pathWeight });
-        }
-        updateWidthButtons();
-      });
-    });
+    
 
     destBtn.addEventListener("click", () => {
       navSearchBar.classList.toggle("show");
