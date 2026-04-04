@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -6,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>주행기록</title>
 
-  <!-- Kakao Maps: 여기에 본인 JavaScript 키를 넣으세요 -->
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
     :root {
@@ -68,8 +66,7 @@
     .summary-grid,
     .speed-grid,
     .bottom-panel,
-    .toolbar,
-    .nav-search-row {
+    .toolbar {
       margin-left: 8px;
       margin-right: 8px;
     }
@@ -122,8 +119,7 @@
 
     .top-btn:active,
     .chip-btn:active,
-    .width-btn:active,
-    .search-btn:active {
+    .width-btn:active {
       transform: translateY(1px) scale(0.99);
     }
 
@@ -175,7 +171,6 @@
       justify-content: space-between;
       align-items: center;
       gap: 8px;
-      flex-wrap: wrap;
     }
 
     .toolbar-group {
@@ -185,8 +180,7 @@
     }
 
     .chip-btn,
-    .width-btn,
-    .search-btn {
+    .width-btn {
       height: 34px;
       padding: 0 10px;
       border: 1px solid rgba(255,255,255,0.08);
@@ -202,40 +196,6 @@
     .chip-btn.active,
     .width-btn.active {
       background: linear-gradient(180deg, #2563eb, #1d4ed8);
-    }
-
-    .chip-btn.warn {
-      background: linear-gradient(180deg, #334155, #1e293b);
-    }
-
-    .nav-search-row {
-      display: none;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .nav-search-row.show {
-      display: flex;
-    }
-
-    .nav-input {
-      flex: 1;
-      height: 36px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.08);
-      padding: 0 14px;
-      background: rgba(15,23,42,0.92);
-      color: #fff;
-      outline: none;
-      min-width: 0;
-    }
-
-    .nav-status {
-      margin: 0 8px;
-      padding: 6px 10px;
-      font-size: 12px;
-      color: #cbd5e1;
-      min-height: 18px;
     }
 
     .map-wrap {
@@ -283,18 +243,27 @@
       word-break: break-word;
     }
 
-    .marker-badge {
+    .leaflet-control-attribution {
+      font-size: 10px !important;
+    }
+
+    .bike-marker {
+      width: 34px;
+      height: 34px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 34px;
-      height: 34px;
+      font-size: 22px;
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));
+    }
+
+    .start-marker {
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
-      background: rgba(15,23,42,0.9);
-      color: white;
-      font-size: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-      border: 2px solid rgba(255,255,255,0.25);
+      background: #22c55e;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 2px rgba(34,197,94,0.22);
     }
 
     @media (max-width: 390px) {
@@ -302,7 +271,7 @@
       .top-actions { width: 160px; }
       .summary-value, .speed-value { font-size: 17px; }
       .bottom-value { font-size: 14px; }
-      .chip-btn, .width-btn, .search-btn { font-size: 11px; padding: 0 8px; }
+      .chip-btn, .width-btn { font-size: 11px; padding: 0 8px; }
     }
   </style>
 </head>
@@ -371,8 +340,6 @@
           <button class="chip-btn active" id="followBtn">중심고정 켜짐</button>
           <button class="chip-btn" id="zoomBtn">자동줌 꺼짐</button>
           <button class="chip-btn" id="fitBtn">전체코스</button>
-          <button class="chip-btn" id="destBtn">목적지</button>
-          <button class="chip-btn warn" id="navStopBtn">안내중지</button>
         </div>
         <div class="toolbar-group">
           <button class="width-btn" data-width="4">얇게</button>
@@ -380,12 +347,6 @@
           <button class="width-btn" data-width="9">굵게</button>
         </div>
       </div>
-
-      <div class="nav-search-row" id="navSearchBar">
-        <input id="placeKeyword" class="nav-input" type="text" placeholder="목적지를 검색하세요" />
-        <button class="search-btn" id="searchPlaceBtn">검색</button>
-      </div>
-      <div class="nav-status" id="navStatusEl">안내 없음</div>
 
       <div class="map-wrap">
         <div id="map"></div>
@@ -404,19 +365,18 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
     const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
     const PATH_WIDTH_STORAGE_KEY = "ebike_path_width";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
-    const NAV_STATE_STORAGE_KEY = "ebike_nav_state_v1";
 
     const STOP_SPEED_KMH = 1.0;
     const AUTO_PAUSE_DELAY_MS = 15000;
     const MIN_MOVE_DISTANCE_M = 3;
     const MAX_VALID_SPEED_KMH = 45;
-    const DEFAULT_CENTER = { lat: 35.180, lng: 128.107 };
 
     const initialData = {
       started: false,
@@ -433,16 +393,6 @@
       stopBeganAt: null,
       lastPoint: null,
       autoPaused: false
-    };
-
-    const initialNavigationState = {
-      active: false,
-      destination: null,
-      routeOrigin: null,
-      routePath: [],
-      rerouting: false,
-      offRouteThresholdM: 40,
-      lastRerouteAt: 0
     };
 
     function loadRideData() {
@@ -471,27 +421,6 @@
       }
     }
 
-    function loadNavigationState() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(NAV_STATE_STORAGE_KEY) || "null");
-        return saved ? { ...initialNavigationState, ...saved } : { ...initialNavigationState };
-      } catch (e) {
-        return { ...initialNavigationState };
-      }
-    }
-
-    function saveNavigationState() {
-      const toSave = {
-        ...navigationState,
-        rerouting: false
-      };
-      localStorage.setItem(NAV_STATE_STORAGE_KEY, JSON.stringify(toSave));
-    }
-
-    function clearNavigationStateStorage() {
-      localStorage.removeItem(NAV_STATE_STORAGE_KEY);
-    }
-
     function saveRideSummary() {
       const elapsedMs = getElapsedMs();
       const elapsedHours = elapsedMs / 3600000;
@@ -509,9 +438,7 @@
         avgSpeedKmh: avgSpeed,
         maxSpeedKmh: rideData.maxSpeedKmh || 0,
         startPoint: rideData.startPoint,
-        destination: navigationState.destination,
-        path: rideData.path,
-        guidanceRoute: navigationState.routePath
+        path: rideData.path
       };
 
       rides.unshift(item);
@@ -519,8 +446,6 @@
     }
 
     let rideData = loadRideData();
-    let navigationState = loadNavigationState();
-
     let watchId = null;
     let wakeLock = null;
     let wakeLockTimer = null;
@@ -540,7 +465,6 @@
     const maxSpeedEl = document.getElementById("maxSpeedEl");
     const startTimeEl = document.getElementById("startTimeEl");
     const restTimeEl = document.getElementById("restTimeEl");
-    const navStatusEl = document.getElementById("navStatusEl");
 
     const batteryBtn = document.getElementById("batteryBtn");
     const historyBtn = document.getElementById("historyBtn");
@@ -550,23 +474,38 @@
     const zoomBtn = document.getElementById("zoomBtn");
     const fitBtn = document.getElementById("fitBtn");
     const widthButtons = document.querySelectorAll(".width-btn");
-    const destBtn = document.getElementById("destBtn");
-    const navStopBtn = document.getElementById("navStopBtn");
-    const navSearchBar = document.getElementById("navSearchBar");
-    const placeKeyword = document.getElementById("placeKeyword");
-    const searchPlaceBtn = document.getElementById("searchPlaceBtn");
 
-    let map;
-    let places = null;
-    let ridePolyline = null;
-    let recommendedPolyline = null;
-    let currentMarker = null;
+    const map = L.map("map", { zoomControl: true }).setView([35.180, 128.107], 15);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const polyline = L.polyline([], {
+      color: "#3b82f6",
+      weight: pathWeight,
+      opacity: 0.9,
+      lineJoin: "round",
+      lineCap: "round"
+    }).addTo(map);
+
+    const bikeIcon = L.divIcon({
+      className: "",
+      html: '<div class="bike-marker">🚴‍♂️</div>',
+      iconSize: [34, 34],
+      iconAnchor: [17, 17]
+    });
+
+    const startIcon = L.divIcon({
+      className: "",
+      html: '<div class="start-marker"></div>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+
     let startMarker = null;
-    let destinationMarker = null;
-
-    function ensureKakaoLoaded() {
-      return !!(window.kakao && kakao.maps && kakao.maps.services);
-    }
+    let currentMarker = null;
 
     function haversine(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -607,20 +546,6 @@
       return Date.now() - rideData.startTime - rideData.pausedMs;
     }
 
-    function toLatLng(lat, lng) {
-      return new kakao.maps.LatLng(lat, lng);
-    }
-
-    function getCurrentPositionObject() {
-      if (rideData.lastPoint) {
-        return { lat: rideData.lastPoint[0], lng: rideData.lastPoint[1] };
-      }
-      if (rideData.startPoint) {
-        return { lat: rideData.startPoint.lat, lng: rideData.startPoint.lng };
-      }
-      return null;
-    }
-
     function updateFollowButton() {
       followBtn.textContent = followMap ? "중심고정 켜짐" : "중심고정 꺼짐";
       followBtn.classList.toggle("active", followMap);
@@ -635,20 +560,6 @@
       widthButtons.forEach(btn => {
         btn.classList.toggle("active", Number(btn.dataset.width) === pathWeight);
       });
-    }
-
-    function updateNavStatus(extraText = "") {
-      if (!navigationState.active || !navigationState.destination) {
-        navStatusEl.textContent = "안내 없음";
-        return;
-      }
-
-      const originLabel = navigationState.routeOrigin
-        ? `${navigationState.routeOrigin.lat.toFixed(5)}, ${navigationState.routeOrigin.lng.toFixed(5)}`
-        : "-";
-
-      const base = `목적지: ${navigationState.destination.name || `${navigationState.destination.lat.toFixed(5)}, ${navigationState.destination.lng.toFixed(5)}`}`;
-      navStatusEl.textContent = extraText || `${base} · 안내출발점: ${originLabel}`;
     }
 
     function updateStats() {
@@ -692,326 +603,61 @@
       updateFollowButton();
       updateZoomButton();
       updateWidthButtons();
-      updateNavStatus();
       formatClock();
     }
 
-    function buildCurrentMarkerImage() {
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42">
-          <foreignObject width="42" height="42">
-            <div xmlns="http://www.w3.org/1999/xhtml" class="marker-badge">🚴</div>
-          </foreignObject>
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(42, 42), {
-        offset: new kakao.maps.Point(21, 21)
-      });
-    }
+    function fitPathToView(animated = true) {
+      if (!rideData.path || rideData.path.length === 0) return;
 
-    function buildStartMarkerImage() {
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
-          <circle cx="10" cy="10" r="7" fill="#22c55e" stroke="#ffffff" stroke-width="4" />
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(20, 20), {
-        offset: new kakao.maps.Point(10, 10)
-      });
-    }
-
-    function buildDestinationMarkerImage() {
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="40">
-          <path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.268 21.732 0 14 0z" fill="#3b82f6"/>
-          <circle cx="14" cy="14" r="5.5" fill="#ffffff"/>
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(28, 40), {
-        offset: new kakao.maps.Point(14, 40)
-      });
-    }
-
-    function initKakaoMap() {
-      if (!ensureKakaoLoaded()) {
-        alert("카카오맵이 로드되지 않았습니다. appkey를 확인해주세요.");
+      if (rideData.path.length === 1) {
+        map.setView(rideData.path[0], 17, { animate: animated });
         return;
       }
 
-      map = new kakao.maps.Map(document.getElementById("map"), {
-        center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
-        level: 4
+      const bounds = L.latLngBounds(rideData.path);
+      map.fitBounds(bounds, {
+        padding: [30, 30],
+        animate: animated,
+        maxZoom: 17
       });
-
-      map.addOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
-      places = new kakao.maps.services.Places();
-
-      ridePolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: pathWeight,
-        strokeColor: "#ef4444",
-        strokeOpacity: 0.95,
-        strokeStyle: "solid"
-      });
-
-      recommendedPolyline = new kakao.maps.Polyline({
-        map,
-        path: [],
-        strokeWeight: 5,
-        strokeColor: "#60a5fa",
-        strokeOpacity: 0.95,
-        strokeStyle: "shortdash"
-      });
-    }
-
-    function drawCurrentMarker(lat, lng) {
-      const pos = toLatLng(lat, lng);
-      if (!currentMarker) {
-        currentMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildCurrentMarkerImage()
-        });
-      } else {
-        currentMarker.setPosition(pos);
-      }
-    }
-
-    function drawStartMarker() {
-      if (!rideData.startPoint || !map) return;
-      const pos = toLatLng(rideData.startPoint.lat, rideData.startPoint.lng);
-      if (!startMarker) {
-        startMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildStartMarkerImage()
-        });
-      } else {
-        startMarker.setPosition(pos);
-      }
-    }
-
-    function drawDestinationMarker() {
-      if (!navigationState.destination || !map) return;
-      const pos = toLatLng(navigationState.destination.lat, navigationState.destination.lng);
-      if (!destinationMarker) {
-        destinationMarker = new kakao.maps.Marker({
-          map,
-          position: pos,
-          image: buildDestinationMarkerImage(),
-          title: navigationState.destination.name || "목적지"
-        });
-      } else {
-        destinationMarker.setPosition(pos);
-        destinationMarker.setTitle(navigationState.destination.name || "목적지");
-      }
-    }
-
-    function fitPathToView(animated = true) {
-      if (!map) return;
-      let hasAny = false;
-      const bounds = new kakao.maps.LatLngBounds();
-
-      if (rideData.path && rideData.path.length > 0) {
-        rideData.path.forEach(([lat, lng]) => {
-          bounds.extend(toLatLng(lat, lng));
-          hasAny = true;
-        });
-      }
-
-      if (navigationState.routePath && navigationState.routePath.length > 0) {
-        navigationState.routePath.forEach((p) => {
-          bounds.extend(toLatLng(p.lat, p.lng));
-          hasAny = true;
-        });
-      }
-
-      if (navigationState.destination) {
-        bounds.extend(toLatLng(navigationState.destination.lat, navigationState.destination.lng));
-        hasAny = true;
-      }
-
-      if (hasAny) {
-        map.setBounds(bounds);
-      } else {
-        map.setLevel(4);
-        map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-      }
     }
 
     function redrawPath() {
-      if (!map) return;
-
-      if (ridePolyline) {
-        const ridePath = rideData.path.map(([lat, lng]) => toLatLng(lat, lng));
-        ridePolyline.setPath(ridePath);
-        ridePolyline.setOptions({ strokeWeight: pathWeight });
-      }
-
-      if (recommendedPolyline) {
-        const recPath = (navigationState.routePath || []).map(p => toLatLng(p.lat, p.lng));
-        recommendedPolyline.setPath(recPath);
-      }
+      polyline.setLatLngs(rideData.path);
+      polyline.setStyle({ weight: pathWeight });
 
       if (rideData.startPoint) {
-        drawStartMarker();
+        if (!startMarker) {
+          startMarker = L.marker([rideData.startPoint.lat, rideData.startPoint.lng], { icon: startIcon }).addTo(map);
+          startMarker.bindPopup("출발 위치");
+        } else {
+          startMarker.setLatLng([rideData.startPoint.lat, rideData.startPoint.lng]);
+        }
       }
 
       if (rideData.path.length > 0) {
         const last = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-        drawCurrentMarker(last[0], last[1]);
+
+        if (!currentMarker) {
+          currentMarker = L.marker(last, { icon: bikeIcon }).addTo(map);
+          currentMarker.bindPopup("현재 위치");
+        } else {
+          currentMarker.setLatLng(last);
+        }
 
         if (followMap) {
-          map.panTo(toLatLng(last[0], last[1]));
+          const center = map.getCenter();
+          const distFromCenter = haversine(center.lat, center.lng, last[0], last[1]);
+          if (distFromCenter > 10) {
+            map.panTo(last, { animate: true, duration: 0.5 });
+          }
         }
       }
 
-      if (navigationState.destination) {
-        drawDestinationMarker();
-      }
-
-      if (rideData.path.length === 1 && !followMap) {
-        map.setCenter(toLatLng(rideData.path[0][0], rideData.path[0][1]));
-        map.setLevel(3);
-      } else if (!followMap && (rideData.path.length > 1 || navigationState.routePath.length > 1)) {
+      if (rideData.path.length === 1) {
+        map.setView(rideData.path[0], 17);
+      } else if (!followMap && rideData.path.length > 1) {
         fitPathToView(false);
-      }
-    }
-
-    function setDestination(dest) {
-      navigationState.active = true;
-      navigationState.destination = dest;
-      updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
-      saveNavigationState();
-      redrawPath();
-      requestRouteFromCurrentPosition();
-    }
-
-    function clearNavigation() {
-      navigationState = { ...initialNavigationState };
-
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
-
-      if (recommendedPolyline) {
-        recommendedPolyline.setPath([]);
-      }
-
-      clearNavigationStateStorage();
-      updateNavStatus("안내 없음");
-      redrawPath();
-    }
-
-    function searchPlace(keyword) {
-      if (!places) {
-        alert("카카오 장소검색을 사용할 수 없습니다.");
-        return;
-      }
-      if (!keyword.trim()) {
-        alert("검색어를 입력해주세요.");
-        return;
-      }
-
-      places.keywordSearch(keyword, (data, status) => {
-        if (status !== kakao.maps.services.Status.OK || !data.length) {
-          alert("검색 결과가 없습니다.");
-          return;
-        }
-
-        const place = data[0];
-        setDestination({
-          name: place.place_name,
-          lat: Number(place.y),
-          lng: Number(place.x)
-        });
-        map.setCenter(toLatLng(Number(place.y), Number(place.x)));
-      });
-    }
-
-    async function requestRoute(origin, destination) {
-      // 실제 자전거 길찾기 API 연결 전 임시 경로 뼈대
-      // origin -> 중간점 -> destination
-      return [
-        { lat: origin.lat, lng: origin.lng },
-        {
-          lat: (origin.lat * 2 + destination.lat) / 3,
-          lng: (origin.lng * 2 + destination.lng) / 3
-        },
-        {
-          lat: (origin.lat + destination.lat * 2) / 3,
-          lng: (origin.lng + destination.lng * 2) / 3
-        },
-        { lat: destination.lat, lng: destination.lng }
-      ];
-    }
-
-    async function requestRouteFromCurrentPosition() {
-      if (!navigationState.destination) return;
-
-      const current = getCurrentPositionObject();
-      if (!current) {
-        updateNavStatus("현재 위치를 아직 못 받아 목적지 안내를 시작하지 못했습니다.");
-        return;
-      }
-
-      navigationState.routeOrigin = current;
-      updateNavStatus("추천 경로 계산 중...");
-
-      try {
-        const route = await requestRoute(current, navigationState.destination);
-        navigationState.routePath = route;
-        saveNavigationState();
-        redrawPath();
-        fitPathToView(true);
-        updateNavStatus(`목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`);
-      } catch (e) {
-        console.error(e);
-        updateNavStatus("경로 계산 실패");
-      }
-    }
-
-    function getMinDistanceToRoute(current, routePath) {
-      if (!routePath || !routePath.length) return Infinity;
-      let min = Infinity;
-      for (const p of routePath) {
-        const d = haversine(current.lat, current.lng, p.lat, p.lng);
-        if (d < min) min = d;
-      }
-      return min;
-    }
-
-    function isOffRoute(current) {
-      const minDist = getMinDistanceToRoute(current, navigationState.routePath);
-      return minDist > navigationState.offRouteThresholdM;
-    }
-
-    async function rerouteFromCurrentPosition(current) {
-      if (!navigationState.active || !navigationState.destination) return;
-      if (navigationState.rerouting) return;
-
-      const now = Date.now();
-      if (now - navigationState.lastRerouteAt < 10000) return;
-
-      navigationState.rerouting = true;
-      navigationState.lastRerouteAt = now;
-      updateNavStatus("경로 이탈 감지 · 재탐색 중...");
-
-      try {
-        // 실제 출발위치 rideData.startPoint는 유지
-        navigationState.routeOrigin = current;
-        const newRoute = await requestRoute(current, navigationState.destination);
-        navigationState.routePath = newRoute;
-        saveNavigationState();
-        redrawPath();
-        updateNavStatus(`재탐색 완료 · 목적지: ${navigationState.destination.name || "선택됨"}`);
-      } catch (e) {
-        console.error("재탐색 실패:", e);
-        updateNavStatus("재탐색 실패");
-      } finally {
-        navigationState.rerouting = false;
       }
     }
 
@@ -1070,6 +716,7 @@
         }
 
         setTimeout(() => {
+          map.invalidateSize();
           redrawPath();
 
           if (!followMap) {
@@ -1098,10 +745,16 @@
       if (accuracy > 35) {
         rideData.currentSpeedKmh = 0;
         rideData.lastPoint = point;
-        drawCurrentMarker(latitude, longitude);
 
-        if (followMap && map) {
-          map.panTo(toLatLng(latitude, longitude));
+        if (currentMarker) {
+          currentMarker.setLatLng(point);
+        } else {
+          currentMarker = L.marker(point, { icon: bikeIcon }).addTo(map);
+          currentMarker.bindPopup("현재 위치");
+        }
+
+        if (followMap) {
+          map.panTo(point, { animate: true, duration: 0.5 });
         }
 
         updateStats();
@@ -1117,10 +770,6 @@
         redrawPath();
         updateStats();
         saveRideData();
-
-        if (navigationState.active && navigationState.destination && navigationState.routePath.length === 0) {
-          requestRouteFromCurrentPosition();
-        }
         return;
       }
 
@@ -1145,7 +794,8 @@
         return;
       }
 
-      const isNearlyStopped = dist < MIN_MOVE_DISTANCE_M && rawSpeed < STOP_SPEED_KMH;
+      const isNearlyStopped =
+        dist < MIN_MOVE_DISTANCE_M && rawSpeed < STOP_SPEED_KMH;
 
       if (isNearlyStopped) {
         rideData.currentSpeedKmh = 0;
@@ -1159,6 +809,13 @@
           rideData.autoPaused = true;
           rideData.paused = true;
           rideData.pausedAt = now;
+        }
+
+        if (currentMarker) {
+          currentMarker.setLatLng(point);
+        } else {
+          currentMarker = L.marker(point, { icon: bikeIcon }).addTo(map);
+          currentMarker.bindPopup("현재 위치");
         }
 
         redrawPath();
@@ -1193,9 +850,10 @@
       }
 
       lastPointTime = now;
+
       redrawPath();
 
-      if (autoZoom && map) {
+      if (autoZoom) {
         if (currentAutoZoomLevel === 17) {
           if (speedKmh >= 8) currentAutoZoomLevel = 16;
         } else if (currentAutoZoomLevel === 16) {
@@ -1208,13 +866,8 @@
           if (speedKmh <= 24) currentAutoZoomLevel = 15;
         }
 
-        map.setLevel(currentAutoZoomLevel);
-      }
-
-      const current = { lat: latitude, lng: longitude };
-      if (navigationState.active && navigationState.routePath.length > 0) {
-        if (isOffRoute(current)) {
-          rerouteFromCurrentPosition(current);
+        if (map.getZoom() !== currentAutoZoomLevel) {
+          map.setZoom(currentAutoZoomLevel);
         }
       }
 
@@ -1256,15 +909,21 @@
     }
 
     function requestLocationPermission() {
-      if (!navigator.geolocation || !map) return;
+      if (!navigator.geolocation) return;
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const { latitude, longitude, accuracy } = pos.coords;
           rideData.lastAccuracy = accuracy;
-          map.setCenter(toLatLng(latitude, longitude));
+          map.setView([latitude, longitude], 16);
 
-          drawCurrentMarker(latitude, longitude);
+          if (!currentMarker) {
+            currentMarker = L.marker([latitude, longitude], { icon: bikeIcon }).addTo(map);
+            currentMarker.bindPopup("현재 위치");
+          } else {
+            currentMarker.setLatLng([latitude, longitude]);
+          }
+
           updateStats();
         },
         () => {},
@@ -1278,7 +937,9 @@
 
     async function startRide() {
       const isResume = rideData.started && rideData.paused;
-      const msg = isResume ? "주행기록을 다시 시작할까요?" : "주행기록을 시작할까요?";
+      const msg = isResume
+        ? "주행기록을 다시 시작할까요?"
+        : "주행기록을 시작할까요?";
 
       if (!confirm(msg)) return;
 
@@ -1324,6 +985,7 @@
       if (!confirm("주행을 종료할까요?")) return;
 
       const shouldSave = confirm("현재 주행기록을 저장할까요?");
+
       if (shouldSave && rideData.path.length > 0) {
         saveRideSummary();
       }
@@ -1337,29 +999,19 @@
       await releaseWakeLock();
 
       if (startMarker) {
-        startMarker.setMap(null);
+        map.removeLayer(startMarker);
         startMarker = null;
       }
       if (currentMarker) {
-        currentMarker.setMap(null);
+        map.removeLayer(currentMarker);
         currentMarker = null;
       }
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
 
-      if (ridePolyline) ridePolyline.setPath([]);
-      if (recommendedPolyline) recommendedPolyline.setPath([]);
-
+      polyline.setLatLngs([]);
       clearRideData();
-      clearNavigation();
       lastPointTime = null;
       updateStats();
-      if (map) {
-        map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-        map.setLevel(4);
-      }
+      map.setView([35.180, 128.107], 15);
       requestLocationPermission();
     }
 
@@ -1379,9 +1031,11 @@
       localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
       updateStats();
 
-      if (followMap && map && (rideData.lastPoint || rideData.path.length > 0)) {
-        const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-        map.panTo(toLatLng(p[0], p[1]));
+      if (followMap && (rideData.lastPoint || rideData.path.length > 0)) {
+        map.panTo(rideData.lastPoint || rideData.path[rideData.path.length - 1], {
+          animate: true,
+          duration: 0.5
+        });
       }
     });
 
@@ -1402,52 +1056,16 @@
       btn.addEventListener("click", () => {
         pathWeight = Number(btn.dataset.width);
         localStorage.setItem(PATH_WIDTH_STORAGE_KEY, String(pathWeight));
-        if (ridePolyline) {
-          ridePolyline.setOptions({ strokeWeight: pathWeight });
-        }
+        polyline.setStyle({ weight: pathWeight });
         updateWidthButtons();
       });
     });
 
-    destBtn.addEventListener("click", () => {
-      navSearchBar.classList.toggle("show");
-      if (navSearchBar.classList.contains("show")) {
-        placeKeyword.focus();
-      }
-    });
-
-    navStopBtn.addEventListener("click", () => {
-      clearNavigation();
-    });
-
-    searchPlaceBtn.addEventListener("click", () => {
-      searchPlace(placeKeyword.value);
-    });
-
-    placeKeyword.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        searchPlace(placeKeyword.value);
-      }
-    });
-
     async function init() {
       formatClock();
-
-      if (!ensureKakaoLoaded()) {
-        updateNavStatus("카카오맵 SDK가 로드되지 않았습니다. appkey를 넣어주세요.");
-        alert("head의 YOUR_KAKAO_JAVASCRIPT_KEY를 실제 카카오 JavaScript 키로 바꿔주세요.");
-        return;
-      }
-
-      initKakaoMap();
       redrawPath();
       updateStats();
       requestLocationPermission();
-
-      if (navigationState.active && navigationState.destination) {
-        redrawPath();
-        updateNavStatus();
-      }
 
       if (rideData.started && !rideData.paused) {
         startWatching();
