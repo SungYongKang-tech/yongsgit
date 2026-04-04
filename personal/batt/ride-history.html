@@ -659,6 +659,9 @@
           avgSpeedKmh: Number(ride.avgSpeedKmh || 0),
           maxSpeedKmh: Number(ride.maxSpeedKmh || 0),
           startPoint: ride.startPoint || null,
+          startTime: ride.startTime || null,
+          endTime: ride.endTime || null,
+          restMs: Number(ride.restMs || 0),
           path: ride.path
         };
 
@@ -668,9 +671,32 @@
         const shareUrl =
           `${location.origin}${location.pathname.replace("ride-history.html", "ride-view.html")}?id=${newRef.key}`;
 
+        const shareTitle = `${getRideName(ride)} 공유`;
+        const shareText =
+          `${getRideName(ride)}\n` +
+          `거리 ${(Number(ride.totalDistanceM || 0) / 1000).toFixed(2)}km\n` +
+          `평균 ${Number(ride.avgSpeedKmh || 0).toFixed(1)}km/h\n` +
+          `최고 ${Number(ride.maxSpeedKmh || 0).toFixed(1)}km/h`;
+
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: shareTitle,
+              text: shareText,
+              url: shareUrl
+            });
+            return;
+          } catch (shareErr) {
+            if (shareErr && shareErr.name === "AbortError") {
+              return;
+            }
+            console.warn("navigator.share 실패, 복사 방식으로 전환:", shareErr);
+          }
+        }
+
         try {
           await navigator.clipboard.writeText(shareUrl);
-          alert(`공유 링크가 복사되었습니다.\n\n${shareUrl}\n\n${SHARE_EXPIRE_DAYS}일 후 만료됩니다.`);
+          alert(`공유 링크가 복사되었습니다.\n\n${shareUrl}`);
         } catch (e) {
           prompt("아래 링크를 복사해서 보내주세요.", shareUrl);
         }
