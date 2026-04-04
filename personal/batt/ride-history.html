@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>주행기록 목록</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951"></script>
   <style>
     :root {
       --bg1: #0b1220;
@@ -183,6 +183,7 @@
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(15,23,42,0.5);
     }
 
     .ride-map {
@@ -194,6 +195,19 @@
       color: var(--muted);
       text-align: center;
       padding: 18px 0;
+    }
+
+    .title-inline-input {
+      font-size: 13px;
+      font-weight: 800;
+      color: #fff;
+      background: rgba(15,23,42,0.95);
+      border: 1px solid rgba(59,130,246,0.45);
+      border-radius: 999px;
+      padding: 4px 10px;
+      min-width: 90px;
+      max-width: 100%;
+      outline: none;
     }
 
     @media (max-width: 700px) {
@@ -241,19 +255,6 @@
       }
     }
 
-    .title-inline-input {
-  font-size: 13px;
-  font-weight: 800;
-  color: #fff;
-  background: rgba(15,23,42,0.95);
-  border: 1px solid rgba(59,130,246,0.45);
-  border-radius: 999px;
-  padding: 4px 10px;
-  min-width: 90px;
-  max-width: 100%;
-  outline: none;
-}
-
     @media (max-width: 420px) {
       .btn {
         height: 38px;
@@ -294,7 +295,6 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
@@ -319,8 +319,6 @@
 
     let selectedRideId = null;
     let expandedRideId = null;
-   
-
     const mapInstances = new Map();
 
     async function ensureAuth() {
@@ -356,20 +354,16 @@
     }
 
     function formatDate(iso) {
-  const d = new Date(iso);
-
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-
-  const week = ["일", "월", "화", "수", "목", "금", "토"];
-  const w = week[d.getDay()];
-
-  return `${y}-${m}-${day}(${w}) ${hh}:${mm}`;
-}
+      const d = new Date(iso);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const week = ["일", "월", "화", "수", "목", "금", "토"];
+      const w = week[d.getDay()];
+      return `${y}-${m}-${day}(${w}) ${hh}:${mm}`;
+    }
 
     function formatTimeOnly(value) {
       if (!value) return "--:--";
@@ -394,51 +388,82 @@
     function destroyMapInstance(rideId) {
       const existing = mapInstances.get(rideId);
       if (!existing) return;
-      existing.map.remove();
+
+      const mapEl = document.getElementById(`map-${rideId}`);
+      if (mapEl) {
+        mapEl.innerHTML = "";
+      }
+
       mapInstances.delete(rideId);
     }
 
     function createMapForRide(ride) {
       const mapEl = document.getElementById(`map-${ride.id}`);
-      if (!mapEl) return;
+      if (!mapEl || !window.kakao || !kakao.maps) return;
 
       destroyMapInstance(ride.id);
 
-      const map = L.map(mapEl).setView([35.180, 128.107], 13);
-
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors"
-      }).addTo(map);
-
       const path = Array.isArray(ride.path) ? ride.path : [];
+      const defaultCenter = new kakao.maps.LatLng(35.180, 128.107);
 
-      const polyline = L.polyline(path, {
-        color: "#3b82f6",
-        weight: 6,
-        opacity: 0.9,
-        lineJoin: "round",
-        lineCap: "round"
-      }).addTo(map);
+      const map = new kakao.maps.Map(mapEl, {
+        center: defaultCenter,
+        level: 5
+      });
 
-      if (path.length > 0) {
-        L.marker(path[0]).addTo(map).bindPopup("출발");
-        L.marker(path[path.length - 1]).addTo(map).bindPopup("도착");
+      const linePath = path
+        .filter(p => Array.isArray(p) && p.length >= 2)
+        .map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
 
-        setTimeout(() => {
-          map.invalidateSize();
-          if (polyline.getBounds().isValid()) {
-            map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
-          }
-        }, 120);
+      let polyline = null;
+      let startMarker = null;
+      let endMarker = null;
+
+      if (linePath.length > 0) {
+        polyline = new kakao.maps.Polyline({
+          map,
+          path: linePath,
+          strokeWeight: 6,
+          strokeColor: "#3b82f6",
+          strokeOpacity: 0.9,
+          strokeStyle: "solid"
+        });
+
+        startMarker = new kakao.maps.Marker({
+          map,
+          position: linePath[0],
+          title: "출발"
+        });
+
+        endMarker = new kakao.maps.Marker({
+          map,
+          position: linePath[linePath.length - 1],
+          title: "도착"
+        });
+
+        const bounds = new kakao.maps.LatLngBounds();
+        linePath.forEach((pos) => bounds.extend(pos));
+        map.setBounds(bounds);
       } else {
-        setTimeout(() => {
-          map.invalidateSize();
-          map.setView([35.180, 128.107], 13);
-        }, 120);
+        map.setCenter(defaultCenter);
+        map.setLevel(5);
       }
 
-      mapInstances.set(ride.id, { map, polyline });
+      mapInstances.set(ride.id, {
+        map,
+        polyline,
+        startMarker,
+        endMarker
+      });
+
+      setTimeout(() => {
+        map.relayout();
+        if (linePath.length > 0) {
+          const bounds = new kakao.maps.LatLngBounds();
+          linePath.forEach((pos) => bounds.extend(pos));
+          map.setBounds(bounds);
+        }
+      }, 120);
     }
 
     function renderList() {
@@ -481,43 +506,39 @@
           ${isExpanded ? buildDetailHtml(ride) : ""}
         `;
 
-// 🔥 제목 길게 눌러서 수정
-let pressTimer = null;
-let longPressed = false;
+        let pressTimer = null;
+        let longPressed = false;
 
-const rideNameEl = item.querySelector(".ride-name");
+        const rideNameEl = item.querySelector(".ride-name");
 
-if (rideNameEl) {
+        if (rideNameEl) {
+          rideNameEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (longPressed) return;
+          });
 
-  rideNameEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (longPressed) return;
-  });
+          const startPress = (e) => {
+            e.stopPropagation();
+            longPressed = false;
 
-  const startPress = (e) => {
-  e.stopPropagation();
-  longPressed = false;
+            pressTimer = setTimeout(() => {
+              longPressed = true;
+              startTitleEdit(ride.id);
+            }, 600);
+          };
 
-  pressTimer = setTimeout(() => {
-    longPressed = true;
-    startTitleEdit(ride.id);
-  }, 600);
-};
+          const cancelPress = () => {
+            if (pressTimer) clearTimeout(pressTimer);
+          };
 
-  const cancelPress = () => {
-    if (pressTimer) clearTimeout(pressTimer);
-  };
+          rideNameEl.addEventListener("mousedown", startPress);
+          rideNameEl.addEventListener("mouseup", cancelPress);
+          rideNameEl.addEventListener("mouseleave", cancelPress);
 
-  rideNameEl.addEventListener("mousedown", startPress);
-  rideNameEl.addEventListener("mouseup", cancelPress);
-  rideNameEl.addEventListener("mouseleave", cancelPress);
-
-  rideNameEl.addEventListener("touchstart", startPress);
-  rideNameEl.addEventListener("touchend", cancelPress);
-  rideNameEl.addEventListener("touchcancel", cancelPress);
-}
-
-
+          rideNameEl.addEventListener("touchstart", startPress);
+          rideNameEl.addEventListener("touchend", cancelPress);
+          rideNameEl.addEventListener("touchcancel", cancelPress);
+        }
 
         item.addEventListener("click", () => {
           toggleRide(ride.id);
@@ -533,8 +554,6 @@ if (rideNameEl) {
         }
       }
     }
-
-    
 
     function toggleRide(id) {
       if (expandedRideId === id) {
@@ -555,50 +574,50 @@ if (rideNameEl) {
     }
 
     function saveRideTitleInline(id, title) {
-  const rides = loadSavedRides();
-  const ride = rides.find(r => r.id === id);
-  if (!ride) return;
+      const rides = loadSavedRides();
+      const ride = rides.find(r => r.id === id);
+      if (!ride) return;
 
-  const cleaned = String(title || "").trim().slice(0, 30);
-  ride.title = cleaned || "주행기록";
-  saveSavedRides(rides);
+      const cleaned = String(title || "").trim().slice(0, 30);
+      ride.title = cleaned || "주행기록";
+      saveSavedRides(rides);
 
-  selectedRideId = id;
-  renderList();
-}
-
-function startTitleEdit(id) {
-  const nameEl = document.querySelector(`.ride-name[data-id="${id}"]`);
-  if (!nameEl) return;
-
-  const oldTitle = nameEl.textContent.trim();
-  const input = document.createElement("input");
-  input.type = "text";
-  input.value = oldTitle;
-  input.maxLength = 30;
-  input.className = "title-inline-input";
-  input.setAttribute("data-id", id);
-
-  nameEl.replaceWith(input);
-  input.focus();
-  input.select();
-
-  const finish = () => {
-    saveRideTitleInline(id, input.value);
-  };
-
-  input.addEventListener("click", (e) => e.stopPropagation());
-  input.addEventListener("blur", finish, { once: true });
-  input.addEventListener("keydown", (e) => {
-    e.stopPropagation();
-    if (e.key === "Enter") {
-      input.blur();
-    }
-    if (e.key === "Escape") {
+      selectedRideId = id;
       renderList();
     }
-  });
-}
+
+    function startTitleEdit(id) {
+      const nameEl = document.querySelector(`.ride-name[data-id="${id}"]`);
+      if (!nameEl) return;
+
+      const oldTitle = nameEl.textContent.trim();
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = oldTitle;
+      input.maxLength = 30;
+      input.className = "title-inline-input";
+      input.setAttribute("data-id", id);
+
+      nameEl.replaceWith(input);
+      input.focus();
+      input.select();
+
+      const finish = () => {
+        saveRideTitleInline(id, input.value);
+      };
+
+      input.addEventListener("click", (e) => e.stopPropagation());
+      input.addEventListener("blur", finish, { once: true });
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          input.blur();
+        }
+        if (e.key === "Escape") {
+          renderList();
+        }
+      });
+    }
 
     async function shareSelectedRide() {
       if (!selectedRideId) {
@@ -698,10 +717,22 @@ function startTitleEdit(id) {
       if (!expandedRideId) return;
       const instance = mapInstances.get(expandedRideId);
       if (!instance) return;
-      setTimeout(() => instance.map.invalidateSize(), 80);
+
+      setTimeout(() => {
+        instance.map.relayout();
+
+        const rides = loadSavedRides();
+        const ride = rides.find(r => r.id === expandedRideId);
+        const path = Array.isArray(ride?.path) ? ride.path : [];
+
+        if (path.length > 0) {
+          const bounds = new kakao.maps.LatLngBounds();
+          path.forEach(([lat, lng]) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
+          instance.map.setBounds(bounds);
+        }
+      }, 80);
     });
 
-    
     renderList();
   </script>
 </body>
