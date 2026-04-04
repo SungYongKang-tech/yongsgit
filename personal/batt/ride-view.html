@@ -120,12 +120,12 @@
   <div class="wrap">
     <div class="panel">
       <div class="title">공유 주행기록</div>
-      <div class="sub">링크로 공유된 경로와 기본 정보를 표시합니다</div>
+      <div class="sub">공유된 주행 경로와 운행 정보를 표시합니다</div>
 
       <div class="detail-grid">
         <div class="card">
-          <div class="label">저장 일시</div>
-          <div class="value" id="savedAtEl">-</div>
+          <div class="label">라이딩 시각</div>
+          <div class="value" id="rideTimeEl">-</div>
         </div>
         <div class="card">
           <div class="label">총 거리</div>
@@ -136,20 +136,16 @@
           <div class="value" id="durationEl">-</div>
         </div>
         <div class="card">
+          <div class="label">휴식 시간</div>
+          <div class="value" id="restEl">-</div>
+        </div>
+        <div class="card">
           <div class="label">평균 속도</div>
           <div class="value" id="avgSpeedEl">-</div>
         </div>
         <div class="card">
           <div class="label">최고 속도</div>
           <div class="value" id="maxSpeedEl">-</div>
-        </div>
-        <div class="card">
-          <div class="label">출발 위치</div>
-          <div class="value" id="startPointEl">-</div>
-        </div>
-        <div class="card">
-          <div class="label">좌표 개수</div>
-          <div class="value" id="pointCountEl">-</div>
         </div>
         <div class="card">
           <div class="label">만료 시각</div>
@@ -180,15 +176,15 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    const savedAtEl = document.getElementById("savedAtEl");
+    const rideTimeEl = document.getElementById("rideTimeEl");
     const distanceEl = document.getElementById("distanceEl");
     const durationEl = document.getElementById("durationEl");
+    const restEl = document.getElementById("restEl");
     const avgSpeedEl = document.getElementById("avgSpeedEl");
     const maxSpeedEl = document.getElementById("maxSpeedEl");
-    const startPointEl = document.getElementById("startPointEl");
-    const pointCountEl = document.getElementById("pointCountEl");
     const expireEl = document.getElementById("expireEl");
     const messageEl = document.getElementById("messageEl");
+    const mapEl = document.getElementById("map");
 
     function formatDuration(ms) {
       const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -206,6 +202,14 @@
       const hh = String(d.getHours()).padStart(2, "0");
       const mm = String(d.getMinutes()).padStart(2, "0");
       return `${y}-${m}-${day} ${hh}:${mm}`;
+    }
+
+    function formatTimeOnly(value) {
+      if (!value) return "--:--";
+      const d = new Date(value);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
     }
 
     const map = L.map("map").setView([35.180, 128.107], 13);
@@ -227,7 +231,7 @@
     let endMarker = null;
 
     function showMessage(text) {
-      document.getElementById("map").style.display = "none";
+      mapEl.style.display = "none";
       messageEl.style.display = "block";
       messageEl.textContent = text;
     }
@@ -252,7 +256,7 @@
         const ride = snap.val();
 
         if (ride.expireAt && Date.now() > ride.expireAt) {
-          showMessage("만료된 공유 기록입니다.");
+          showMessage("만료된 공유 기록입니다. 새로 공유 링크를 받아주세요.");
           try {
             await remove(ref(db, `sharedRides/${id}`));
           } catch (e) {}
@@ -264,15 +268,19 @@
           return;
         }
 
-        savedAtEl.textContent = formatDate(ride.savedAt);
+        const start = ride.startTime;
+        const end = ride.endTime || ride.savedAt;
+
+        rideTimeEl.textContent =
+          start && end
+            ? `${formatTimeOnly(start)} ~ ${formatTimeOnly(end)}`
+            : "-";
+
         distanceEl.textContent = `${(Number(ride.totalDistanceM || 0) / 1000).toFixed(2)} km`;
         durationEl.textContent = formatDuration(Number(ride.elapsedMs || 0));
+        restEl.textContent = formatDuration(Number(ride.restMs || 0));
         avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
         maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
-        startPointEl.textContent = ride.startPoint
-          ? `${ride.startPoint.lat.toFixed(5)}, ${ride.startPoint.lng.toFixed(5)}`
-          : "-";
-        pointCountEl.textContent = String(ride.path.length);
         expireEl.textContent = ride.expireAt ? formatDate(ride.expireAt) : "-";
 
         polyline.setLatLngs(ride.path);
