@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951"></script>
+  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>공유 주행기록 보기</title>
-    <style>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951"></script>
+  <style>
     :root {
       --bg1: #0b1220;
       --bg2: #121c34;
@@ -213,10 +214,24 @@
       return `${hh}:${mm}`;
     }
 
-    const map = new kakao.maps.Map(document.getElementById("map"), {
-  center: new kakao.maps.LatLng(35.180, 128.107),
-  level: 5
-});
+   function createMap() {
+  if (!window.kakao || !window.kakao.maps) {
+    showMessage("카카오맵 SDK가 로드되지 않았습니다.");
+    return null;
+  }
+
+  return new kakao.maps.Map(document.getElementById("map"), {
+    center: new kakao.maps.LatLng(35.180, 128.107),
+    level: 5
+  });
+}
+
+const map = createMap();
+if (!map) {
+  throw new Error("Kakao map SDK not loaded");
+}
+
+
 
 const polyline = new kakao.maps.Polyline({
   map,
@@ -282,7 +297,28 @@ let endMarker = null;
         avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
         maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
 
-       const kakaoPath = ride.path.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
+       const kakaoPath = ride.path.map((point) => {
+  if (Array.isArray(point)) {
+    return new kakao.maps.LatLng(point[0], point[1]);
+  }
+  const kakaoPath = ride.path
+  .map((point) => {
+    if (Array.isArray(point) && point.length >= 2) {
+      return new kakao.maps.LatLng(Number(point[0]), Number(point[1]));
+    }
+    if (point && point.lat != null && point.lng != null) {
+      return new kakao.maps.LatLng(Number(point.lat), Number(point.lng));
+    }
+    return null;
+  })
+  .filter(Boolean);
+
+if (kakaoPath.length < 2) {
+  showMessage("공유 경로 데이터가 올바르지 않습니다.");
+  return;
+}
+});
+
 polyline.setPath(kakaoPath);
 
 if (startMarker) startMarker.setMap(null);
