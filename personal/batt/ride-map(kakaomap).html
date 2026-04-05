@@ -178,35 +178,38 @@
       flex-wrap: wrap;
     }
 
-    /* 🔥 버튼 전체 스타일 수정 */
-.toolbar-group {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 2px; /* 여백 최소화 */
-}
+    .toolbar-group {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 2px;
+      width: 100%;
+    }
 
-/* 버튼 스타일 */
-.chip-btn {
-  height: 28px;              /* 더 낮게 */
-  padding: 0 2px;            /* 좌우 여백 최소 */
-  font-size: 9px;            /* 글씨 줄임 */
-  border-radius: 6px;        /* 거의 네모 */
-  white-space: normal;       /* ⭐ 줄바꿈 허용 */
-  overflow: visible;         /* ... 제거 */
-  text-overflow: unset;      /* ... 제거 */
-  line-height: 1.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
+    .chip-btn {
+      height: 28px;
+      padding: 0 2px;
+      font-size: 9px;
+      border-radius: 6px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+      line-height: 1.1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.92));
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+    }
 
-/* 버튼 안 글자 2줄 가능하게 */
-.chip-btn span {
-  display: block;
-}
+    .chip-btn span {
+      display: block;
+    }
 
-    .chip-btn,
     .search-btn {
       height: 34px;
       padding: 0 2px;
@@ -332,11 +335,12 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.35);
       border: 2px solid rgba(255,255,255,0.25);
     }
+
     .pause-text {
-  font-size: 11px;     /* ⭐ 작게 */
-  color: #94a3b8;      /* 흐리게 */
-  margin-left: 4px;
-}
+      font-size: 11px;
+      color: #94a3b8;
+      margin-left: 4px;
+    }
 
     @media (max-width: 390px) {
       .title { font-size: 20px; }
@@ -350,11 +354,11 @@
       .bottom-value { font-size: 14px; }
       .chip-btn, .search-btn { font-size: 14px; padding: 0 0px; }
       .pause-text {
-  font-size: 11px;
-  color: #94a3b8;
-  margin-left: 2px;
+        font-size: 11px;
+        color: #94a3b8;
+        margin-left: 2px;
+      }
     }
-  }
   </style>
 </head>
 <body>
@@ -419,13 +423,13 @@
 
       <div class="toolbar">
         <div class="toolbar-group">
-  <button class="chip-btn active" id="followBtn">중심고정</button>
-  <button class="chip-btn" id="zoomBtn">자동줌</button>
-  <button class="chip-btn" id="fitBtn">전체코스</button>
-  <button class="chip-btn" id="destBtn">목적지</button>
-  <button class="chip-btn warn" id="navToggleBtn">안내</button>
-  <button class="chip-btn" id="clearRouteBtn">지우기</button>
-</div>
+          <button class="chip-btn active" id="followBtn">중심고정</button>
+          <button class="chip-btn" id="zoomBtn">자동줌</button>
+          <button class="chip-btn" id="fitBtn">전체코스</button>
+          <button class="chip-btn" id="destBtn">목적지</button>
+          <button class="chip-btn warn" id="navToggleBtn">안내</button>
+          <button class="chip-btn" id="clearRouteBtn">지우기</button>
+        </div>
       </div>
 
       <div class="nav-search-row" id="navSearchBar">
@@ -577,6 +581,8 @@
     let lastPointTime = null;
     let currentAutoZoomLevel = 3;
     let hasInitialCentered = false;
+    let lastGpsTime = 0;
+    let gpsReconnectTimer = null;
 
     let longPressTimer = null;
     let longPressTriggered = false;
@@ -738,9 +744,9 @@
 
       if (rideData.paused && rideData.autoPaused) {
         durationEl.innerHTML = `
-  ${formatDuration(getElapsedMs())}
-  <span class="pause-text">(일시정지)</span>
-`;
+          ${formatDuration(getElapsedMs())}
+          <span class="pause-text">(일시정지)</span>
+        `;
       }
 
       if (rideData.startPoint) {
@@ -837,23 +843,18 @@
       map.setDraggable(true);
       map.setZoomable(true);
 
+      // ✅ 운행 중 자동으로 followMap이 풀리지 않도록 처리
+      // dragstart / drag / zoom_changed 에서 중앙고정 해제 로직 제거
       kakao.maps.event.addListener(map, "dragstart", function () {
-        followMap = false;
-        localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-        updateFollowButton();
         clearTimeout(longPressTimer);
       });
 
       kakao.maps.event.addListener(map, "drag", function () {
-        followMap = false;
-        localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-        updateFollowButton();
+        // 사용자가 손으로 움직여도 자동 해제하지 않음
       });
 
       kakao.maps.event.addListener(map, "zoom_changed", function () {
-        followMap = false;
-        localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-        updateFollowButton();
+        // 자동줌/수동줌 모두 followMap 자동 해제하지 않음
       });
 
       kakao.maps.event.addListener(map, "tilesloaded", function () {
@@ -1172,9 +1173,9 @@
       const options = { size: 10 };
 
       if (current) {
-  options.location = new kakao.maps.LatLng(current.lat, current.lng);
-  options.radius = 20000;
-}
+        options.location = new kakao.maps.LatLng(current.lat, current.lng);
+        options.radius = 20000;
+      }
 
       updateNavStatus("목적지 검색 중...");
       setGuideText("검색 결과 확인 중...");
@@ -1189,20 +1190,20 @@
 
         const keywordNormalized = q.replace(/\s+/g, "").trim();
 
-let place =
-  data.find(item => (item.place_name || "").replace(/\s+/g, "").trim() === keywordNormalized) ||
-  data.find(item => (item.place_name || "").replace(/\s+/g, "").includes(keywordNormalized)) ||
-  data[0];
+        let place =
+          data.find(item => (item.place_name || "").replace(/\s+/g, "").trim() === keywordNormalized) ||
+          data.find(item => (item.place_name || "").replace(/\s+/g, "").includes(keywordNormalized)) ||
+          data[0];
 
-setDestination({
-  name: place.place_name,
-  lat: Number(place.y),
-  lng: Number(place.x),
-  address: place.road_address_name || place.address_name || ""
-});
+        setDestination({
+          name: place.place_name,
+          lat: Number(place.y),
+          lng: Number(place.x),
+          address: place.road_address_name || place.address_name || ""
+        });
 
-const pos = toLatLng(Number(place.y), Number(place.x));
-if (pos) map.setCenter(pos);
+        const pos = toLatLng(Number(place.y), Number(place.x));
+        if (pos) map.setCenter(pos);
       }, options);
     }
 
@@ -1437,9 +1438,11 @@ if (pos) map.setCenter(pos);
 
     document.addEventListener("visibilitychange", async () => {
       if (document.visibilityState === "visible" && rideData.started) {
+        stopWatching();
         startWatching();
         requestLocationPermission();
         lastPointTime = Date.now();
+        lastGpsTime = Date.now();
 
         await requestWakeLockSafe();
 
@@ -1478,10 +1481,12 @@ if (pos) map.setCenter(pos);
     function handlePosition(pos) {
       if (!rideData.started) return;
 
+      const now = Date.now();
+      lastGpsTime = now;
+
       const { latitude, longitude, accuracy } = pos.coords;
       rideData.lastAccuracy = accuracy;
       const point = [latitude, longitude];
-      const now = Date.now();
 
       if (accuracy > 35) {
         rideData.currentSpeedKmh = 0;
@@ -1489,7 +1494,8 @@ if (pos) map.setCenter(pos);
         drawCurrentMarker(latitude, longitude);
 
         if (followMap && map) {
-          map.panTo(toLatLng(latitude, longitude));
+          const ll = toLatLng(latitude, longitude);
+          if (ll) map.panTo(ll);
         }
 
         const current = { lat: latitude, lng: longitude };
@@ -1620,11 +1626,21 @@ if (pos) map.setCenter(pos);
     }
 
     function handlePositionError(err) {
+      console.log("GPS 오류:", err);
+
       if (err.code === 1) {
         alert("위치 권한을 허용해주세요");
-      } else {
-        console.log(err.message);
+        return;
       }
+
+      if (!rideData.started) return;
+
+      stopWatching();
+
+      setTimeout(() => {
+        startWatching();
+        requestLocationPermission();
+      }, 1000);
     }
 
     function startWatching() {
@@ -1639,8 +1655,8 @@ if (pos) map.setCenter(pos);
         handlePositionError,
         {
           enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 10000
+          maximumAge: 0,
+          timeout: 5000
         }
       );
     }
@@ -1661,7 +1677,6 @@ if (pos) map.setCenter(pos);
 
           const { latitude, longitude, accuracy } = pos.coords;
           rideData.lastAccuracy = accuracy;
-
           rideData.lastPoint = [latitude, longitude];
 
           const center = toLatLng(latitude, longitude);
@@ -1716,6 +1731,7 @@ if (pos) map.setCenter(pos);
         rideData.currentSpeedKmh = 0;
         rideData.maxSpeedKmh = 0;
         lastPointTime = Date.now();
+        lastGpsTime = Date.now();
         rideData.stopBeganAt = null;
         rideData.autoPaused = false;
         rideData.lastPoint = null;
@@ -1757,6 +1773,8 @@ if (pos) map.setCenter(pos);
       rideData.autoPaused = false;
       rideData.lastPoint = null;
       currentAutoZoomLevel = 2;
+      lastPointTime = null;
+      lastGpsTime = 0;
       stopWakeLockKeeper();
       await releaseWakeLock();
 
@@ -1798,6 +1816,7 @@ if (pos) map.setCenter(pos);
     startBtn.addEventListener("click", startRide);
     endBtn.addEventListener("click", endRide);
 
+    // ✅ 오직 버튼으로만 중앙고정 on/off
     followBtn.addEventListener("click", () => {
       followMap = !followMap;
       localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
@@ -1806,7 +1825,12 @@ if (pos) map.setCenter(pos);
       if (followMap && map && ensureKakaoLoaded() && (rideData.lastPoint || rideData.path.length > 0)) {
         const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
         const pos = toLatLng(p[0], p[1]);
-        if (pos) map.panTo(pos);
+        if (pos) {
+          map.panTo(pos);
+          if (autoZoom) {
+            map.setLevel(currentAutoZoomLevel);
+          }
+        }
       }
     });
 
@@ -1814,12 +1838,19 @@ if (pos) map.setCenter(pos);
       autoZoom = !autoZoom;
       localStorage.setItem(AUTO_ZOOM_STORAGE_KEY, autoZoom ? "on" : "off");
       updateZoomButton();
+
+      if (autoZoom && followMap && map && ensureKakaoLoaded() && (rideData.lastPoint || rideData.path.length > 0)) {
+        const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
+        const pos = toLatLng(p[0], p[1]);
+        if (pos) {
+          map.setLevel(currentAutoZoomLevel);
+          map.panTo(pos);
+        }
+      }
     });
 
+    // ✅ 전체코스도 중앙고정 자동 해제하지 않음
     fitBtn.addEventListener("click", () => {
-      followMap = false;
-      localStorage.setItem(FOLLOW_STORAGE_KEY, "off");
-      updateFollowButton();
       fitPathToView();
     });
 
@@ -1844,20 +1875,20 @@ if (pos) map.setCenter(pos);
     });
 
     clearRouteBtn.addEventListener("click", () => {
-  if (!navigationState.destination && (!navigationState.routePath || navigationState.routePath.length === 0)) {
-    alert("지울 경로가 없습니다.");
-    return;
-  }
+      if (!navigationState.destination && (!navigationState.routePath || navigationState.routePath.length === 0)) {
+        alert("지울 경로가 없습니다.");
+        return;
+      }
 
-  if (!confirm("경로를 지울까요?")) return;
+      if (!confirm("경로를 지울까요?")) return;
 
-  clearNavigation();
+      clearNavigation();
 
-  if (navSearchBar) navSearchBar.classList.remove("show");
-  if (placeKeyword) placeKeyword.value = "";
+      if (navSearchBar) navSearchBar.classList.remove("show");
+      if (placeKeyword) placeKeyword.value = "";
 
-  updateStats();
-});
+      updateStats();
+    });
 
     searchPlaceBtn.addEventListener("click", () => {
       searchPlace(placeKeyword.value);
@@ -1888,6 +1919,7 @@ if (pos) map.setCenter(pos);
       redrawPath();
       updateStats();
       requestLocationPermission();
+      startGpsReconnectMonitor();
 
       if (navigationState.active && navigationState.destination) {
         redrawPath();
@@ -1920,6 +1952,33 @@ if (pos) map.setCenter(pos);
 
     setInterval(updateStats, 1000);
     setInterval(formatClock, 60000);
+
+    function startGpsReconnectMonitor() {
+      if (gpsReconnectTimer) {
+        clearInterval(gpsReconnectTimer);
+      }
+
+      gpsReconnectTimer = setInterval(() => {
+        if (!rideData.started || rideData.paused) return;
+        if (document.visibilityState !== "visible") return;
+
+        const now = Date.now();
+        const diff = now - lastGpsTime;
+
+        if (lastGpsTime > 0 && diff > 10000) {
+          console.log("GPS 수신 지연 → watch 재시작");
+
+          stopWatching();
+
+          setTimeout(() => {
+            startWatching();
+            requestLocationPermission();
+          }, 1000);
+
+          lastGpsTime = now;
+        }
+      }, 3000);
+    }
   </script>
 </body>
 </html>
