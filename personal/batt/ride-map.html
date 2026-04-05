@@ -1241,7 +1241,7 @@ function bindMapEvents(state) {
       clearAltRoutes(state);
 
       const preference = Number(settings.bikePreference || 70);
-      const body = {
+      const baseBody = {
         profile: 'bike',
         points: [
           [start.lng, start.lat],
@@ -1256,30 +1256,41 @@ function bindMapEvents(state) {
         algorithm: alternatives > 0 ? 'alternative_route' : undefined,
         'alternative_route.max_paths': alternatives > 0 ? Math.max(2, alternatives + 1) : undefined,
         'alternative_route.max_weight_factor': alternatives > 0 ? 1.6 : undefined,
-        'alternative_route.max_share_factor': alternatives > 0 ? 0.75 : undefined,
-        custom_model: buildBikeCustomModel(preference)
+        'alternative_route.max_share_factor': alternatives > 0 ? 0.75 : undefined
       };
 
-      try {
-        const res = await fetch(`https://graphhopper.com/api/1/route?key=${encodeURIComponent(settings.graphKey)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanObject(body))
-        });
-        const data = await res.json();
-        if (!res.ok || !data.paths?.length) {
-  console.error('GraphHopper 응답 오류:', data);
-  throw new Error(data.message || JSON.stringify(data) || 'route_failed');
-}
-        state.lastGraphResponse = data;
-        drawMainRoute(state, data.paths[0]);
-        if (data.paths.length > 1) drawAltRoutes(state, data.paths.slice(1));
-        fitAll(state);
-        showToast(alternatives > 0 ? '대안 경로를 불러왔습니다.' : '경로를 불러왔습니다.');
-      } catch (err) {
-  console.error('경로 계산 실패:', err);
-  showToast(`경로 계산 실패: ${err.message}`);
-}
+      const tryBodies = [
+        { ...baseBody, custom_model: buildBikeCustomModel(preference) },
+        { ...baseBody }
+      ];
+
+      let lastError = null;
+
+      for (const body of tryBodies) {
+        try {
+          const res = await fetch(`https://graphhopper.com/api/1/route?key=${encodeURIComponent(settings.graphKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanObject(body))
+          });
+          const data = await res.json();
+          if (!res.ok || !data.paths?.length) {
+            console.error('GraphHopper 응답 오류:', data);
+            throw new Error(data.message || JSON.stringify(data) || 'route_failed');
+          }
+          state.lastGraphResponse = data;
+          drawMainRoute(state, data.paths[0]);
+          if (data.paths.length > 1) drawAltRoutes(state, data.paths.slice(1));
+          fitAll(state);
+          showToast(alternatives > 0 ? '대안 경로를 불러왔습니다.' : '경로를 불러왔습니다.');
+          return;
+        } catch (err) {
+          lastError = err;
+          console.error('경로 계산 실패:', err);
+        }
+      }
+
+      showToast(`경로 계산 실패: ${lastError?.message || '요청 오류'}`);
     }
 
     async function requestRoundTrip(state) {
@@ -1290,9 +1301,9 @@ function bindMapEvents(state) {
       showToast('왕복 코스를 계산 중입니다...', 1200);
       clearAltRoutes(state);
 
-      const body = {
+      const baseBody = {
         profile: 'bike',
-        point: [p.lat, p.lng],
+        point: [p.lng, p.lat],
         locale: 'ko',
         elevation: true,
         instructions: false,
@@ -1301,31 +1312,42 @@ function bindMapEvents(state) {
           distance: Number(settings.roundTripDistanceKm || 20) * 1000,
           seed: Number(settings.roundTripSeed || 1)
         },
-        details: ['road_class', 'surface'],
-        custom_model: buildBikeCustomModel(Number(settings.bikePreference || 70))
+        details: ['road_class', 'surface']
       };
 
-      try {
-        const res = await fetch(`https://graphhopper.com/api/1/route?key=${encodeURIComponent(settings.graphKey)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanObject(body))
-        });
-        const data = await res.json();
-        if (!res.ok || !data.paths?.length) {
-          console.error(data);
-          throw new Error(data.message || 'round_trip_failed');
+      const tryBodies = [
+        { ...baseBody, custom_model: buildBikeCustomModel(Number(settings.bikePreference || 70)) },
+        { ...baseBody }
+      ];
+
+      let lastError = null;
+
+      for (const body of tryBodies) {
+        try {
+          const res = await fetch(`https://graphhopper.com/api/1/route?key=${encodeURIComponent(settings.graphKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanObject(body))
+          });
+          const data = await res.json();
+          if (!res.ok || !data.paths?.length) {
+            console.error('GraphHopper 왕복 응답 오류:', data);
+            throw new Error(data.message || JSON.stringify(data) || 'round_trip_failed');
+          }
+          state.lastGraphResponse = data;
+          state.destination = null;
+          state.endMarker.setMap(null);
+          drawMainRoute(state, data.paths[0]);
+          fitAll(state);
+          showToast('왕복 코스를 불러왔습니다.');
+          return;
+        } catch (err) {
+          lastError = err;
+          console.error('왕복 코스 계산 실패:', err);
         }
-        state.lastGraphResponse = data;
-        state.destination = null;
-        state.endMarker.setMap(null);
-        drawMainRoute(state, data.paths[0]);
-        fitAll(state);
-        showToast('왕복 코스를 불러왔습니다.');
-      } catch (err) {
-        console.error(err);
-        showToast('왕복 코스 계산에 실패했습니다.');
       }
+
+      showToast(`왕복 코스 실패: ${lastError?.message || '요청 오류'}`);
     }
 
     function buildBikeCustomModel(preference) {
