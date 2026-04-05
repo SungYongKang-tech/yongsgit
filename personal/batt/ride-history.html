@@ -351,7 +351,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-    import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { getDatabase, ref, push, set, get, remove } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
     const firebaseConfig = {
@@ -371,6 +371,9 @@
     const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
     const SHARE_EXPIRE_DAYS = 3;
 
+    const PRIVATE_RIDES_PATH = "privateRides";
+    const PASSWORD_HASH_PATH = "config/privateRidePasswordHash";
+
     let selectedRideId = null;
     let expandedRideId = null;
     const mapInstances = new Map();
@@ -380,6 +383,107 @@
       const cred = await signInAnonymously(auth);
       return cred.user;
     }
+
+    async function sha256(text) {
+  const data = new TextEncoder().encode(String(text || ""));
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function getSavedPasswordHash() {
+  await ensureAuth();
+  const snapshot = await get(ref(db, PASSWORD_HASH_PATH));
+  return snapshot.exists() ? String(snapshot.val() || "") : "";
+}
+
+async function verifyPassword(inputPassword) {
+  const savedHash = await getSavedPasswordHash();
+  if (!savedHash) {
+    alert("저장 비밀번호가 아직 설정되지 않았습니다.\n관리자 버튼에서 먼저 비밀번호를 설정하세요.");
+    return false;
+  }
+
+  const inputHash = await sha256(inputPassword);
+  return inputHash === savedHash;
+}
+
+function loadRideById(id) {
+  const rides = loadSavedRides();
+  return rides.find(r => r.id === id);
+}
+
+function updateRideInLocal(updatedRide) {
+  const rides = loadSavedRides();
+  const index = rides.findIndex(r => r.id === updatedRide.id);
+  if (index === -1) return;
+
+  rides[index] = updatedRide;
+  saveSavedRides(rides);
+}
+
+async function openAdminPasswordManager() {
+  try {
+    const existingHash = await getSavedPasswordHash();
+
+    if (!existingHash) {
+      const newPw = prompt("처음 사용할 저장/삭제 비밀번호를 입력하세요.");
+      if (newPw === null) return;
+
+      const cleaned = String(newPw).trim();
+      if (cleaned.length < 4) {
+        alert("비밀번호는 4자리 이상으로 입력하세요.");
+        return;
+      }
+
+      const confirmPw = prompt("새 비밀번호를 다시 입력하세요.");
+      if (confirmPw === null) return;
+
+      if (cleaned !== String(confirmPw).trim()) {
+        alert("비밀번호가 서로 다릅니다.");
+        return;
+      }
+
+      const newHash = await sha256(cleaned);
+      await set(ref(db, PASSWORD_HASH_PATH), newHash);
+      alert("저장/삭제 비밀번호가 설정되었습니다.");
+      return;
+    }
+
+    const currentPw = prompt("현재 비밀번호를 입력하세요.");
+    if (currentPw === null) return;
+
+    const ok = await verifyPassword(currentPw);
+    if (!ok) {
+      alert("현재 비밀번호가 맞지 않습니다.");
+      return;
+    }
+
+    const newPw = prompt("새 비밀번호를 입력하세요.");
+    if (newPw === null) return;
+
+    const cleaned = String(newPw).trim();
+    if (cleaned.length < 4) {
+      alert("비밀번호는 4자리 이상으로 입력하세요.");
+      return;
+    }
+
+    const confirmPw = prompt("새 비밀번호를 다시 입력하세요.");
+    if (confirmPw === null) return;
+
+    if (cleaned !== String(confirmPw).trim()) {
+      alert("비밀번호가 서로 다릅니다.");
+      return;
+    }
+
+    const newHash = await sha256(cleaned);
+    await set(ref(db, PASSWORD_HASH_PATH), newHash);
+    alert("비밀번호가 변경되었습니다.");
+  } catch (err) {
+    console.error(err);
+    alert("비밀번호 변경 중 오류가 발생했습니다.");
+  }
+}
 
     function loadSavedRides() {
       try {
@@ -652,7 +756,8 @@
                 <span>휴식 ${formatDuration(Number(ride.restMs || 0))}</span>
                 <span>평균 ${Number(ride.avgSpeedKmh || 0).toFixed(1)}km/h</span>
                 <span>최고 ${Number(ride.maxSpeedKmh || 0).toFixed(1)}km/h</span>
-              </div>
+                <span>${ride.firebaseSaved ? "Firebase 저장됨" : "로컬 저장"}</span>
+                </div>
             </div>
             <div class="item-toggle">${isExpanded ? "접기 ▲" : "펼치기 ▼"}</div>
           </div>
@@ -862,41 +967,133 @@
       }
     }
 
-    function deleteSelectedRide() {
-      if (!selectedRideId) {
-        alert("삭제할 기록을 먼저 선택해주세요.");
+    async function deleteSelectedRide() {
+  if (!selectedRideId) {
+    alert("삭제할 기록을 먼저 선택해주세요.");
+    return;
+  }
+
+  const ride = loadRideById(selectedRideId);
+  if (!ride) {
+    alert("선택한 기록을 찾을 수 없습니다.");
+    return;
+  }
+
+  if (!confirm("선택한 주행기록을 삭제할까요?")) return;
+
+  try {
+    if (ride.firebaseSaved && ride.firebaseKey) {
+      const pw = prompt("Firebase 저장 기록입니다.\n삭제 비밀번호를 입력하세요.");
+      if (pw === null) return;
+
+      const ok = await verifyPassword(pw);
+      if (!ok) {
+        alert("비밀번호가 맞지 않습니다.");
         return;
       }
 
-      if (!confirm("선택한 주행기록을 삭제할까요?")) return;
-
-      if (expandedRideId) {
-        destroyMapInstance(expandedRideId);
-      }
-
-      const rides = loadSavedRides().filter(r => r.id !== selectedRideId);
-      saveSavedRides(rides);
-
-      if (expandedRideId === selectedRideId) {
-        expandedRideId = null;
-      }
-
-      selectedRideId = null;
-      renderList();
+      await ensureAuth();
+      await remove(ref(db, `${PRIVATE_RIDES_PATH}/${ride.firebaseKey}`));
     }
 
-    function saveSelectedRidePlaceholder() {
-      if (!selectedRideId) {
-        alert("저장할 기록을 먼저 선택해주세요.");
-        return;
-      }
-
-      alert("선택기록 저장 기능은 다음 단계에서 연결합니다.");
+    if (expandedRideId) {
+      destroyMapInstance(expandedRideId);
     }
 
-    function openAdminPlaceholder() {
-      alert("관리자 비밀번호 변경 기능은 다음 단계에서 연결합니다.");
+    const rides = loadSavedRides().filter(r => r.id !== selectedRideId);
+    saveSavedRides(rides);
+
+    if (expandedRideId === selectedRideId) {
+      expandedRideId = null;
     }
+
+    selectedRideId = null;
+    renderList();
+
+    alert("삭제되었습니다.");
+  } catch (err) {
+    console.error(err);
+    alert("삭제 중 오류가 발생했습니다.");
+  }
+}
+
+    async function saveSelectedRideToFirebase() {
+  if (!selectedRideId) {
+    alert("저장할 기록을 먼저 선택해주세요.");
+    return;
+  }
+
+  const ride = loadRideById(selectedRideId);
+  if (!ride) {
+    alert("선택한 기록을 찾을 수 없습니다.");
+    return;
+  }
+
+  if (!Array.isArray(ride.path) || ride.path.length < 2) {
+    alert("저장할 경로 데이터가 부족합니다.");
+    return;
+  }
+
+  const pw = prompt("저장 비밀번호를 입력하세요.");
+  if (pw === null) return;
+
+  try {
+    const ok = await verifyPassword(pw);
+    if (!ok) {
+      alert("비밀번호가 맞지 않습니다.");
+      return;
+    }
+
+    await ensureAuth();
+
+    const payload = {
+      savedAt: ride.savedAt || new Date().toISOString(),
+      title: getRideName(ride),
+      totalDistanceM: Number(ride.totalDistanceM || 0),
+      elapsedMs: Number(ride.elapsedMs || 0),
+      restMs: Number(ride.restMs || 0),
+      avgSpeedKmh: Number(ride.avgSpeedKmh || 0),
+      maxSpeedKmh: Number(ride.maxSpeedKmh || 0),
+      startPoint: ride.startPoint || null,
+      startTime: ride.startTime || null,
+      endTime: ride.endTime || null,
+      path: Array.isArray(ride.path) ? ride.path : [],
+      elevationProfile: Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [],
+      elevationSummary: ride.elevationSummary || null,
+      localRideId: ride.id,
+      updatedAt: Date.now()
+    };
+
+    let firebaseKey = ride.firebaseKey || null;
+
+    if (firebaseKey) {
+      await set(ref(db, `${PRIVATE_RIDES_PATH}/${firebaseKey}`), payload);
+    } else {
+      const newRef = push(ref(db, PRIVATE_RIDES_PATH));
+      firebaseKey = newRef.key;
+      await set(newRef, payload);
+    }
+
+    const updatedRide = {
+      ...ride,
+      firebaseSaved: true,
+      firebaseKey
+    };
+
+    updateRideInLocal(updatedRide);
+    selectedRideId = updatedRide.id;
+    renderList();
+
+    alert("선택한 기록을 Firebase에 저장했습니다.");
+  } catch (err) {
+    console.error(err);
+    alert("Firebase 저장 중 오류가 발생했습니다.");
+  }
+}
+
+    async function openAdminPasswordPrompt() {
+  await openAdminPasswordManager();
+}
 
     document.getElementById("rideBtn").addEventListener("click", () => {
       location.href = "./ride-map(kakaomap).html";
@@ -908,8 +1105,8 @@
 
     document.getElementById("shareBtn").addEventListener("click", shareSelectedRide);
     document.getElementById("deleteBtn").addEventListener("click", deleteSelectedRide);
-    document.getElementById("saveBtn").addEventListener("click", saveSelectedRidePlaceholder);
-    document.getElementById("adminBtn").addEventListener("click", openAdminPlaceholder);
+    document.getElementById("saveBtn").addEventListener("click", saveSelectedRideToFirebase);
+    document.getElementById("adminBtn").addEventListener("click", openAdminPasswordPrompt);
 
     window.addEventListener("resize", () => {
       if (!expandedRideId) return;
