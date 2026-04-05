@@ -462,6 +462,8 @@
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
     const NAV_STATE_STORAGE_KEY = "ebike_nav_state_v1";
+    const OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup";
+    const MAX_ELEVATION_SAMPLES = 120;
 
     const STOP_SPEED_KMH = 1.0;
     const AUTO_PAUSE_DELAY_MS = 10000;
@@ -544,10 +546,125 @@
       localStorage.removeItem(NAV_STATE_STORAGE_KEY);
     }
 
-    function saveRideSummary() {
+    function sampleRidePath(path, maxSamples = MAX_ELEVATION_SAMPLES) {
+      const safePath = Array.isArray(path) ? path : [];
+      if (safePath.length <= maxSamples) return safePath.slice();
+
+      const sampled = [];
+      const lastIndex = safePath.length - 1;
+
+      for (let i = 0; i < maxSamples; i++) {
+        const idx = Math.round((i / (maxSamples - 1)) * lastIndex);
+        sampled.push(safePath[idx]);
+      }
+
+      return sampled;
+    }
+
+    function buildDistanceProfile(points) {
+      const profile = [];
+      let cumulativeM = 0;
+
+      for (let i = 0; i < points.length; i++) {
+        const [lat, lng] = points[i];
+
+        if (i > 0) {
+          const [prevLat, prevLng] = points[i - 1];
+          cumulativeM += haversine(prevLat, prevLng, lat, lng);
+        }
+
+        profile.push({
+          lat,
+          lng,
+          distanceKm: Number((cumulativeM / 1000).toFixed(2))
+        });
+      }
+
+      return profile;
+    }
+
+    async function fetchElevationProfile(path) {
+      const sampledPath = sampleRidePath(path);
+      if (!sampledPath.length) {
+        return { profile: [], summary: null };
+      }
+
+      const distanceProfile = buildDistanceProfile(sampledPath);
+
+      const res = await fetch(OPEN_ELEVATION_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          locations: distanceProfile.map((p) => ({
+            latitude: p.lat,
+            longitude: p.lng
+          }))
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("고도 조회 실패");
+      }
+
+      const data = await res.json();
+      const results = Array.isArray(data.results) ? data.results : [];
+
+      const profile = distanceProfile.map((p, i) => ({
+        distanceKm: p.distanceKm,
+        elevation: Number(results[i]?.elevation ?? 0)
+      }));
+
+      if (!profile.length) {
+        return { profile: [], summary: null };
+      }
+
+      let minElevation = profile[0].elevation;
+      let maxElevation = profile[0].elevation;
+      let gain = 0;
+      let loss = 0;
+
+      for (let i = 1; i < profile.length; i++) {
+        const current = profile[i].elevation;
+        const prev = profile[i - 1].elevation;
+        const diff = current - prev;
+
+        if (current < minElevation) minElevation = current;
+        if (current > maxElevation) maxElevation = current;
+
+        if (diff > 0) gain += diff;
+        if (diff < 0) loss += Math.abs(diff);
+      }
+
+      return {
+        profile,
+        summary: {
+          minElevation: Math.round(minElevation),
+          maxElevation: Math.round(maxElevation),
+          gainM: Math.round(gain),
+          lossM: Math.round(loss)
+        }
+      };
+    }
+
+    async function saveRideSummary() {
       const elapsedMs = getElapsedMs();
       const elapsedHours = elapsedMs / 3600000;
       const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+
+      let elevationProfile = [];
+      let elevationSummary = null;
+
+      try {
+        if (Array.isArray(rideData.path) && rideData.path.length > 1) {
+          const elevationData = await fetchElevationProfile(rideData.path);
+          elevationProfile = elevationData.profile || [];
+          elevationSummary = elevationData.summary || null;
+        }
+      } catch (e) {
+        console.warn("고도 데이터 조회 실패:", e);
+      }
 
       const rides = loadSavedRides();
       const item = {
@@ -563,7 +680,9 @@
         startPoint: rideData.startPoint,
         destination: navigationState.destination,
         path: rideData.path,
-        guidanceRoute: navigationState.routePath
+        guidanceRoute: navigationState.routePath,
+        elevationProfile,
+        elevationSummary
       };
 
       rides.unshift(item);
@@ -843,19 +962,12 @@
       map.setDraggable(true);
       map.setZoomable(true);
 
-      // ✅ 운행 중 자동으로 followMap이 풀리지 않도록 처리
-      // dragstart / drag / zoom_changed 에서 중앙고정 해제 로직 제거
       kakao.maps.event.addListener(map, "dragstart", function () {
         clearTimeout(longPressTimer);
       });
 
-      kakao.maps.event.addListener(map, "drag", function () {
-        // 사용자가 손으로 움직여도 자동 해제하지 않음
-      });
-
-      kakao.maps.event.addListener(map, "zoom_changed", function () {
-        // 자동줌/수동줌 모두 followMap 자동 해제하지 않음
-      });
+      kakao.maps.event.addListener(map, "drag", function () {});
+      kakao.maps.event.addListener(map, "zoom_changed", function () {});
 
       kakao.maps.event.addListener(map, "tilesloaded", function () {
         setTimeout(() => {
@@ -1765,7 +1877,7 @@
 
       const shouldSave = confirm("현재 주행기록을 저장할까요?");
       if (shouldSave && rideData.path.length > 0) {
-        saveRideSummary();
+        await saveRideSummary();
       }
 
       stopWatching();
@@ -1816,7 +1928,6 @@
     startBtn.addEventListener("click", startRide);
     endBtn.addEventListener("click", endRide);
 
-    // ✅ 오직 버튼으로만 중앙고정 on/off
     followBtn.addEventListener("click", () => {
       followMap = !followMap;
       localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
@@ -1849,7 +1960,6 @@
       }
     });
 
-    // ✅ 전체코스도 중앙고정 자동 해제하지 않음
     fitBtn.addEventListener("click", () => {
       fitPathToView();
     });
