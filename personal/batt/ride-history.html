@@ -191,6 +191,44 @@
       height: 420px;
     }
 
+    .elevation-wrap {
+      margin-top: 8px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(15,23,42,0.55);
+      padding: 10px;
+    }
+
+    .elevation-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+    }
+
+    .elevation-canvas {
+      width: 100%;
+      height: 180px;
+      display: block;
+      background: linear-gradient(180deg, rgba(59,130,246,0.10), rgba(15,23,42,0.10));
+      border-radius: 10px;
+    }
+
+    .elevation-meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .elevation-meta span {
+      font-size: 12px;
+      font-weight: 700;
+      color: #cbd5e1;
+      text-align: center;
+    }
+
     .empty {
       color: var(--muted);
       text-align: center;
@@ -252,6 +290,14 @@
 
       .ride-map {
         height: 320px;
+      }
+
+      .elevation-canvas {
+        height: 150px;
+      }
+
+      .elevation-meta {
+        grid-template-columns: repeat(2, 1fr);
       }
     }
 
@@ -375,11 +421,29 @@
     }
 
     function buildDetailHtml(ride) {
+      const es = ride.elevationSummary || {};
+      const hasElevation = Array.isArray(ride.elevationProfile) && ride.elevationProfile.length > 1;
+
       return `
         <div class="detail-wrap">
           <div class="detail-inner">
             <div class="map-wrap">
               <div class="ride-map" id="map-${ride.id}"></div>
+            </div>
+
+            <div class="elevation-wrap">
+              <div class="elevation-title">고도표</div>
+              ${
+                hasElevation
+                  ? `<canvas class="elevation-canvas" id="elevation-${ride.id}"></canvas>
+                     <div class="elevation-meta">
+                       <span>최저 ${Number(es.minElevation || 0)}m</span>
+                       <span>최고 ${Number(es.maxElevation || 0)}m</span>
+                       <span>상승 ${Number(es.gainM || 0)}m</span>
+                       <span>하강 ${Number(es.lossM || 0)}m</span>
+                     </div>`
+                  : `<div class="empty" style="padding:12px 0;">고도 데이터 없음</div>`
+              }
             </div>
           </div>
         </div>
@@ -467,6 +531,87 @@
       }, 120);
     }
 
+    function drawElevationChart(ride) {
+      const canvas = document.getElementById(`elevation-${ride.id}`);
+      if (!canvas) return;
+
+      const profile = Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [];
+      if (profile.length < 2) return;
+
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const cssWidth = canvas.clientWidth || 300;
+      const cssHeight = canvas.clientHeight || 180;
+
+      canvas.width = Math.floor(cssWidth * dpr);
+      canvas.height = Math.floor(cssHeight * dpr);
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+      const padding = { top: 14, right: 12, bottom: 24, left: 40 };
+      const chartW = cssWidth - padding.left - padding.right;
+      const chartH = cssHeight - padding.top - padding.bottom;
+
+      const elevations = profile.map(p => Number(p.elevation || 0));
+      const distances = profile.map(p => Number(p.distanceKm || 0));
+
+      const minE = Math.min(...elevations);
+      const maxE = Math.max(...elevations);
+      const maxD = Math.max(...distances, 0.1);
+
+      let rangeE = maxE - minE;
+      if (rangeE < 10) rangeE = 10;
+
+      const viewMinE = minE - rangeE * 0.15;
+      const viewMaxE = maxE + rangeE * 0.15;
+
+      const x = (d) => padding.left + (d / maxD) * chartW;
+      const y = (e) => padding.top + ((viewMaxE - e) / (viewMaxE - viewMinE)) * chartH;
+
+      ctx.strokeStyle = "rgba(148,163,184,0.25)";
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i < 4; i++) {
+        const gy = padding.top + (chartH / 3) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, gy);
+        ctx.lineTo(padding.left + chartW, gy);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "11px Arial";
+      ctx.textAlign = "right";
+      ctx.fillText(`${Math.round(viewMaxE)}m`, padding.left - 6, padding.top + 4);
+      ctx.fillText(`${Math.round((viewMinE + viewMaxE) / 2)}m`, padding.left - 6, padding.top + chartH / 2 + 4);
+      ctx.fillText(`${Math.round(viewMinE)}m`, padding.left - 6, padding.top + chartH + 4);
+
+      ctx.textAlign = "center";
+      ctx.fillText("0km", padding.left, cssHeight - 6);
+      ctx.fillText(`${maxD.toFixed(1)}km`, padding.left + chartW, cssHeight - 6);
+
+      ctx.beginPath();
+      ctx.moveTo(x(distances[0]), y(elevations[0]));
+      for (let i = 1; i < profile.length; i++) {
+        ctx.lineTo(x(distances[i]), y(elevations[i]));
+      }
+      ctx.strokeStyle = "#60a5fa";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.lineTo(padding.left + chartW, padding.top + chartH);
+      ctx.lineTo(padding.left, padding.top + chartH);
+      ctx.closePath();
+
+      const fill = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+      fill.addColorStop(0, "rgba(96,165,250,0.35)");
+      fill.addColorStop(1, "rgba(96,165,250,0.03)");
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+
     function renderList() {
       const rides = loadSavedRides();
       const rideList = document.getElementById("rideList");
@@ -552,6 +697,7 @@
         const expandedRide = rides.find(r => r.id === expandedRideId);
         if (expandedRide) {
           createMapForRide(expandedRide);
+          setTimeout(() => drawElevationChart(expandedRide), 80);
         }
       }
     }
@@ -663,7 +809,9 @@
           startTime: ride.startTime || null,
           endTime: ride.endTime || null,
           restMs: Number(ride.restMs || 0),
-          path: ride.path
+          path: ride.path,
+          elevationProfile: Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [],
+          elevationSummary: ride.elevationSummary || null
         };
 
         const newRef = push(ref(db, "sharedRides"));
@@ -710,6 +858,7 @@
     document.getElementById("backRideBtn1").addEventListener("click", () => {
       location.href = "./ride-map(kakaomap).html";
     });
+
     document.getElementById("backRideBtn2").addEventListener("click", () => {
       location.href = "./ride-map.html";
     });
@@ -745,20 +894,25 @@
 
     window.addEventListener("resize", () => {
       if (!expandedRideId) return;
+
       const instance = mapInstances.get(expandedRideId);
-      if (!instance) return;
+      const rides = loadSavedRides();
+      const ride = rides.find(r => r.id === expandedRideId);
 
       setTimeout(() => {
-        instance.map.relayout();
+        if (instance) {
+          instance.map.relayout();
 
-        const rides = loadSavedRides();
-        const ride = rides.find(r => r.id === expandedRideId);
-        const path = Array.isArray(ride?.path) ? ride.path : [];
+          const path = Array.isArray(ride?.path) ? ride.path : [];
+          if (path.length > 0) {
+            const bounds = new kakao.maps.LatLngBounds();
+            path.forEach(([lat, lng]) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
+            instance.map.setBounds(bounds);
+          }
+        }
 
-        if (path.length > 0) {
-          const bounds = new kakao.maps.LatLngBounds();
-          path.forEach(([lat, lng]) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
-          instance.map.setBounds(bounds);
+        if (ride) {
+          drawElevationChart(ride);
         }
       }, 80);
     });
