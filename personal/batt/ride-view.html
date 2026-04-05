@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>공유 주행기록 보기</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
+    <style>
     :root {
       --bg1: #0b1220;
       --bg2: #121c34;
@@ -170,7 +170,7 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+ 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, get, remove } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
@@ -213,23 +213,22 @@
       return `${hh}:${mm}`;
     }
 
-    const map = L.map("map").setView([35.180, 128.107], 13);
+    const map = new kakao.maps.Map(document.getElementById("map"), {
+  center: new kakao.maps.LatLng(35.180, 128.107),
+  level: 5
+});
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(map);
+const polyline = new kakao.maps.Polyline({
+  map,
+  path: [],
+  strokeWeight: 6,
+  strokeColor: "#3b82f6",
+  strokeOpacity: 0.9,
+  strokeStyle: "solid"
+});
 
-    const polyline = L.polyline([], {
-      color: "#3b82f6",
-      weight: 6,
-      opacity: 0.9,
-      lineJoin: "round",
-      lineCap: "round"
-    }).addTo(map);
-
-    let startMarker = null;
-    let endMarker = null;
+let startMarker = null;
+let endMarker = null;
 
     function showMessage(text) {
       mapEl.style.display = "none";
@@ -283,15 +282,32 @@
         avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
         maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
 
-        polyline.setLatLngs(ride.path);
+       const kakaoPath = ride.path.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
+polyline.setPath(kakaoPath);
 
-        startMarker = L.marker(ride.path[0]).addTo(map).bindPopup("출발");
-        endMarker = L.marker(ride.path[ride.path.length - 1]).addTo(map).bindPopup("도착");
+if (startMarker) startMarker.setMap(null);
+if (endMarker) endMarker.setMap(null);
 
-        setTimeout(() => {
-          map.invalidateSize();
-          map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
-        }, 100);
+startMarker = new kakao.maps.Marker({
+  map,
+  position: kakaoPath[0],
+  title: "출발"
+});
+
+endMarker = new kakao.maps.Marker({
+  map,
+  position: kakaoPath[kakaoPath.length - 1],
+  title: "도착"
+});
+
+const bounds = new kakao.maps.LatLngBounds();
+kakaoPath.forEach((p) => bounds.extend(p));
+
+setTimeout(() => {
+  map.relayout();
+  map.setBounds(bounds);
+}, 100);
+
       } catch (err) {
         console.error(err);
         showMessage("공유 기록을 불러오는 중 오류가 발생했습니다.");
@@ -301,8 +317,8 @@
     loadSharedRide();
 
     window.addEventListener("resize", () => {
-      setTimeout(() => map.invalidateSize(), 80);
-    });
+  setTimeout(() => map.relayout(), 80);
+});
   </script>
 </body>
 </html>
