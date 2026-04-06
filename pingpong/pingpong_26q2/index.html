@@ -363,8 +363,8 @@
     <div class="vote-wrap">
       <div class="vote-title">📅 탁구대회 시행일 투표</div>
       <div class="vote-desc">
-        이름을 입력하고 가능한 날짜를 선택해 주세요. 같은 이름으로 다시 저장하면 언제든 수정됩니다.
-      </div>
+  이름을 입력하고 날짜를 선택해 주세요. 같은 이름으로도 중복투표가 가능합니다.
+</div>
 
       <div class="deadline-box" id="deadlineInfo">투표 마감 정보 불러오는 중...</div>
 
@@ -428,9 +428,9 @@
       </div>
 
       <div class="small-note">
-        ※ 같은 이름으로 다시 저장하면 기존 투표가 최신 선택으로 변경됩니다.<br>
-        ※ 이름이 완전히 같으면 같은 사람으로 처리됩니다.
-      </div>
+  ※ 같은 이름으로도 여러 번 투표할 수 있습니다.<br>
+  ※ 저장할 때마다 새로운 투표 1건으로 집계됩니다.
+</div>
     </div>
 
     <h2>3. 경기 운영방식</h2>
@@ -542,13 +542,13 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
     import {
-      getDatabase,
-      ref,
-      set,
-      onValue,
-      serverTimestamp
-    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
-
+  getDatabase,
+  ref,
+  set,
+  push,
+  onValue,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
     const firebaseConfig = {
       apiKey: "AIzaSyDzfQ0YgO_YhcYfp92XuJ47btMRQiy2P-Y",
       authDomain: "sabo-51d9e.firebaseapp.com",
@@ -585,10 +585,7 @@
     const card20 = document.getElementById("card20");
     const card21 = document.getElementById("card21");
 
-    function sanitizeNameKey(name) {
-      return name.trim().replace(/[.#$\[\]/]/g, "_");
-    }
-
+  
     function escapeHtml(text) {
       return String(text).replace(/[&<>"']/g, function (m) {
         return {
@@ -645,50 +642,50 @@
     }
 
     async function saveVote() {
-      if (isClosed()) {
-        alert("투표가 마감되었습니다. 결과만 확인 가능합니다.");
-        setVoteInputsDisabled(true);
-        return;
-      }
+  if (isClosed()) {
+    alert("투표가 마감되었습니다. 결과만 확인 가능합니다.");
+    setVoteInputsDisabled(true);
+    return;
+  }
 
-      const rawName = voterNameEl.value.trim();
-      const selectedDate = document.querySelector('input[name="voteDate"]:checked')?.value;
+  const rawName = voterNameEl.value.trim();
+  const selectedDate = document.querySelector('input[name="voteDate"]:checked')?.value;
 
-      if (!rawName) {
-        alert("이름을 입력해 주세요.");
-        voterNameEl.focus();
-        return;
-      }
+  if (!rawName) {
+    alert("이름을 입력해 주세요.");
+    voterNameEl.focus();
+    return;
+  }
 
-      if (!selectedDate) {
-        alert("날짜를 선택해 주세요.");
-        return;
-      }
+  if (!selectedDate) {
+    alert("날짜를 선택해 주세요.");
+    return;
+  }
 
-      const nameKey = sanitizeNameKey(rawName);
-      const voteRef = ref(db, `${VOTE_PATH}/${nameKey}`);
+  const voteListRef = ref(db, VOTE_PATH);
+  const newVoteRef = push(voteListRef);
 
-      saveVoteBtn.disabled = true;
-      saveVoteBtn.textContent = "저장 중...";
+  saveVoteBtn.disabled = true;
+  saveVoteBtn.textContent = "저장 중...";
 
-      try {
-        await set(voteRef, {
-          name: rawName,
-          selectedDate: selectedDate,
-          updatedAt: Date.now(),
-          updatedAtServer: serverTimestamp()
-        });
+  try {
+    await set(newVoteRef, {
+      name: rawName,
+      selectedDate: selectedDate,
+      updatedAt: Date.now(),
+      updatedAtServer: serverTimestamp()
+    });
 
-        voteStatusEl.textContent = `${rawName}님 투표가 저장되었습니다. 같은 이름으로 다시 저장하면 수정됩니다.`;
-        localStorage.setItem("pingpong_vote_name_q2_2026", rawName);
-      } catch (err) {
-        console.error(err);
-        alert("투표 저장 중 오류가 발생했습니다.");
-      } finally {
-        saveVoteBtn.disabled = isClosed();
-        saveVoteBtn.textContent = isClosed() ? "투표 마감" : "투표 저장 / 수정";
-      }
-    }
+    voteStatusEl.textContent = `${rawName}님 투표가 저장되었습니다. 같은 이름으로도 중복투표가 가능합니다.`;
+    localStorage.setItem("pingpong_vote_name_q2_2026", rawName);
+  } catch (err) {
+    console.error(err);
+    alert("투표 저장 중 오류가 발생했습니다.");
+  } finally {
+    saveVoteBtn.disabled = isClosed();
+    saveVoteBtn.textContent = isClosed() ? "투표 마감" : "투표 저장";
+  }
+}
 
     saveVoteBtn.addEventListener("click", saveVote);
 
