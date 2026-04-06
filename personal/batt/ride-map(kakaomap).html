@@ -567,6 +567,81 @@ const MAX_VALID_SPEED_KMH = 45;
       return sampled;
     }
 
+    function getAdaptiveElevationSampleCount(path) {
+  const safePath = Array.isArray(path) ? path : [];
+  if (safePath.length < 2) return 60;
+
+  let totalDistanceM = 0;
+
+  for (let i = 1; i < safePath.length; i++) {
+    totalDistanceM += haversine(
+      safePath[i - 1][0], safePath[i - 1][1],
+      safePath[i][0], safePath[i][1]
+    );
+  }
+
+  const totalKm = totalDistanceM / 1000;
+
+  if (totalKm < 8) return 60;      // 짧은 출퇴근
+  if (totalKm < 20) return 80;     // 일반 출퇴근 / 짧은 라이딩
+  if (totalKm < 50) return 120;    // 중거리 라이딩
+  return 160;                      // 장거리 라이딩
+}
+
+    function cleanPathForElevation(path, minStepM = ELEVATION_MIN_STEP_M) {
+  const safePath = Array.isArray(path) ? path : [];
+  if (safePath.length <= 2) return safePath.slice();
+
+  const cleaned = [safePath[0]];
+  let lastKept = safePath[0];
+
+  for (let i = 1; i < safePath.length; i++) {
+    const curr = safePath[i];
+    const d = haversine(lastKept[0], lastKept[1], curr[0], curr[1]);
+
+    if (d >= minStepM) {
+      cleaned.push(curr);
+      lastKept = curr;
+    }
+  }
+
+  const lastOriginal = safePath[safePath.length - 1];
+  const lastCleaned = cleaned[cleaned.length - 1];
+
+  if (
+    lastOriginal &&
+    lastCleaned &&
+    (lastOriginal[0] !== lastCleaned[0] || lastOriginal[1] !== lastCleaned[1])
+  ) {
+    cleaned.push(lastOriginal);
+  }
+
+  return cleaned;
+}
+
+function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
+  if (!Array.isArray(profile) || profile.length < 3) return profile || [];
+
+  const half = Math.floor(windowSize / 2);
+
+  return profile.map((point, i) => {
+    let sum = 0;
+    let count = 0;
+
+    for (let j = i - half; j <= i + half; j++) {
+      if (profile[j]) {
+        sum += Number(profile[j].elevation || 0);
+        count++;
+      }
+    }
+
+    return {
+      ...point,
+      elevation: Number((sum / count).toFixed(1))
+    };
+  });
+}
+
     function buildDistanceProfile(points) {
       const profile = [];
       let cumulativeM = 0;
@@ -590,8 +665,9 @@ const MAX_VALID_SPEED_KMH = 45;
     }
 
     async function fetchElevationProfile(path) {
-  const cleanedPath = cleanPathForElevation(path, ELEVATION_MIN_STEP_M);
-  const sampledPath = sampleRidePath(cleanedPath);
+     const cleanedPath = cleanPathForElevation(path, ELEVATION_MIN_STEP_M);
+     const adaptiveSampleCount = getAdaptiveElevationSampleCount(cleanedPath);
+     const sampledPath = sampleRidePath(cleanedPath, adaptiveSampleCount);
 
   if (!sampledPath.length) {
     return { profile: [], summary: null };
@@ -1613,9 +1689,9 @@ const MAX_VALID_SPEED_KMH = 45;
       const point = [latitude, longitude];
 
       if (accuracy > MAX_GPS_ACCURACY_M) {
-        rideData.currentSpeedKmh = 0;
-        rideData.lastPoint = point;
-        drawCurrentMarker(latitude, longitude);
+      rideData.currentSpeedKmh = 0;
+      // rideData.lastPoint = point;  // 부정확한 좌표는 기준점으로 쓰지 않음
+      drawCurrentMarker(latitude, longitude);
 
         if (followMap && map) {
           const ll = toLatLng(latitude, longitude);
@@ -1749,59 +1825,7 @@ const MAX_VALID_SPEED_KMH = 45;
       saveRideData();
     }
 
-function cleanPathForElevation(path, minStepM = ELEVATION_MIN_STEP_M) {
-  const safePath = Array.isArray(path) ? path : [];
-  if (safePath.length <= 2) return safePath.slice();
 
-  const cleaned = [safePath[0]];
-  let lastKept = safePath[0];
-
-  for (let i = 1; i < safePath.length; i++) {
-    const curr = safePath[i];
-    const d = haversine(lastKept[0], lastKept[1], curr[0], curr[1]);
-
-    if (d >= minStepM) {
-      cleaned.push(curr);
-      lastKept = curr;
-    }
-  }
-
-  const lastOriginal = safePath[safePath.length - 1];
-  const lastCleaned = cleaned[cleaned.length - 1];
-
-  if (
-    lastOriginal &&
-    lastCleaned &&
-    (lastOriginal[0] !== lastCleaned[0] || lastOriginal[1] !== lastCleaned[1])
-  ) {
-    cleaned.push(lastOriginal);
-  }
-
-  return cleaned;
-}
-
-function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
-  if (!Array.isArray(profile) || profile.length < 3) return profile || [];
-
-  const half = Math.floor(windowSize / 2);
-
-  return profile.map((point, i) => {
-    let sum = 0;
-    let count = 0;
-
-    for (let j = i - half; j <= i + half; j++) {
-      if (profile[j]) {
-        sum += Number(profile[j].elevation || 0);
-        count++;
-      }
-    }
-
-    return {
-      ...point,
-      elevation: Number((sum / count).toFixed(1))
-    };
-  });
-}
 
     function handlePositionError(err) {
       console.log("GPS 오류:", err);
