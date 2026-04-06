@@ -304,6 +304,18 @@ td.clickable:hover{
     grid-template-columns:repeat(2, 1fr);
   }
 }
+.locked-ui{
+  opacity:.55;
+}
+
+#lockBtn.locked{
+  background:#d32f2f !important;
+}
+
+.player.locked{
+  opacity:.55;
+  cursor:not-allowed !important;
+}
   </style>
 </head>
 
@@ -311,12 +323,13 @@ td.clickable:hover{
 
   <h1>KOEN 단식 리그(상위부수)</h1>
 
-  <div id="controlPanel">
-    <input type="text" id="playerName" placeholder="선수 이름" />
-    <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
-    <button id="addPlayerBtn">선수 추가</button>
-    <button id="toggleDefaultBtn">기존 선수 숨김</button>
-  </div>
+<div id="controlPanel">
+  <input type="text" id="playerName" placeholder="선수 이름" />
+  <input type="text" id="playerLevel" placeholder="부수 (예: 5)" />
+  <button id="addPlayerBtn">선수 추가</button>
+  <button id="toggleDefaultBtn">기존 선수 숨김</button>
+  <button id="lockBtn">잠금 켜기</button>
+</div>
 
   <div id="playerList" class="player-list"></div>
 
@@ -366,8 +379,10 @@ td.clickable:hover{
 
     const playerNameEl = $("playerName");
     const playerLevelEl = $("playerLevel");
+
     const addPlayerBtn = $("addPlayerBtn");
     const toggleDefaultBtn = $("toggleDefaultBtn");
+    const lockBtn = $("lockBtn");
     const resetBtn = $("resetBtn");
     const clearBtn = $("clearBtn");
     const saveImageBtn = $("saveImageBtn");
@@ -391,10 +406,30 @@ td.clickable:hover{
     let selected = [];
     let results = {};
     let hideDefault = false;
+    let isLocked = true; // 처음부터 잠금 상태
+    const LOCK_PASSWORD = "7910";
 
     // =========================
     // 유틸
     // =========================
+    function applyLockUI(){
+  addPlayerBtn.disabled = isLocked;
+  resetBtn.disabled = isLocked;
+  clearBtn.disabled = isLocked;
+
+  playerNameEl.disabled = isLocked;
+  playerLevelEl.disabled = isLocked;
+
+  lockBtn.textContent = isLocked ? "잠금 해제" : "잠금 켜기";
+  lockBtn.classList.toggle("locked", isLocked);
+
+  playerListEl.classList.toggle("locked-ui", isLocked);
+
+  document.querySelectorAll(".player").forEach(el => {
+    el.classList.toggle("locked", isLocked);
+  });
+}
+
     function escQuote(s){
       return String(s).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
     }
@@ -494,11 +529,19 @@ td.clickable:hover{
         if (!isDefault) div.classList.add("new-player");
         if (selected.includes(p)) div.classList.add("selected");
 
-        div.onclick = () => togglePlayer(p);
+       div.onclick = () => {
+  if (isLocked) {
+    alert("잠금 상태입니다. 잠금 해제 후 사용하세요.");
+    return;
+  }
+  togglePlayer(p);
+};
+
         playerListEl.appendChild(div);
       });
 
       toggleDefaultBtn.textContent = hideDefault ? "기존 선수 보이기" : "기존 선수 숨김";
+    applyLockUI();
     }
 
     function renderSchedule() {
@@ -720,6 +763,26 @@ td.clickable:hover{
     // =========================
     // 이벤트
     // =========================
+
+    lockBtn.onclick = () => {
+  if (isLocked) {
+    const pw = prompt("비밀번호를 입력하세요");
+    if (pw === LOCK_PASSWORD) {
+      isLocked = false;
+      applyLockUI();
+      alert("잠금이 해제되었습니다.");
+    } else if (pw !== null) {
+      alert("비밀번호가 틀렸습니다.");
+    }
+  } else {
+    isLocked = true;
+    popupEl.style.display = "none";
+    applyLockUI();
+    alert("잠금 상태로 변경되었습니다.");
+  }
+};
+
+
     addPlayerBtn.onclick = addPlayer;
 
     playerNameEl.addEventListener("keydown", (e) => {
@@ -736,21 +799,31 @@ td.clickable:hover{
     };
 
     resetBtn.onclick = async () => {
-      if (!confirm("경기 결과를 초기화할까요?")) return;
-      results = {};
-      await set(resultsRef, {});
-    };
+  if (isLocked) {
+    alert("잠금 상태입니다. 잠금 해제 후 사용하세요.");
+    return;
+  }
+
+  if (!confirm("경기 결과를 초기화할까요?")) return;
+  results = {};
+  await set(resultsRef, {});
+};
 
     clearBtn.onclick = async () => {
-      const ok = confirm("추가 선수, 선택 선수, 경기 결과를 모두 삭제할까요?\n\n기존 members 데이터는 삭제되지 않습니다.");
-      if (!ok) return;
+  if (isLocked) {
+    alert("잠금 상태입니다. 잠금 해제 후 사용하세요.");
+    return;
+  }
 
-      await Promise.all([
-        remove(customPlayersRef),
-        remove(selectedRef),
-        remove(resultsRef)
-      ]);
-    };
+  const ok = confirm("추가 선수, 선택 선수, 경기 결과를 모두 삭제할까요?\n\n기존 members 데이터는 삭제되지 않습니다.");
+  if (!ok) return;
+
+  await Promise.all([
+    remove(customPlayersRef),
+    remove(selectedRef),
+    remove(resultsRef)
+  ]);
+};
 
     saveImageBtn.onclick = async () => {
       const target = $("captureArea");
@@ -830,6 +903,8 @@ td.clickable:hover{
           results = snap.val() || {};
           renderSchedule();
         });
+
+        applyLockUI();
 
       } catch (err) {
         console.error(err);
