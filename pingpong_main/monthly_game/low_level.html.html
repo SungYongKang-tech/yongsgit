@@ -1,37 +1,551 @@
 <!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>하위부수 경기 진행</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #f3f6fb;
+      color: #1f2937;
+      padding: 16px;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      margin-bottom: 16px;
+    }
+    h1, h2, h3, h4 { margin-top: 0; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+    button.gray { background: #64748b; }
+    button.orange { background: #ea580c; }
+    input[type="number"] {
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 10px 12px;
+      width: 100px;
+      font-size: 14px;
+    }
+    .group-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 12px;
+      background: #f8fafc;
+      margin-bottom: 14px;
+    }
+    .player-chip {
+      display: inline-block;
+      background: white;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      padding: 7px 10px;
+      margin: 4px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .match-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .match-head {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .match-body {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .vs { color: #94a3b8; font-size: 12px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: center;
+      font-size: 14px;
+    }
+    th { background: #f1f5f9; }
+    .title-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .winner-box {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 900;
+      color: #b45309;
+      padding: 18px;
+      background: #fff7ed;
+      border-radius: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="title-line">
+        <div>
+          <h1>하위부수 경기 진행</h1>
+          <div>조별리그 후 각 조 같은 순위끼리 토너먼트 진행</div>
+        </div>
+        <div class="row">
+          <label>조 수 <input type="number" id="groupCount" min="2" value="2" /></label>
+          <button onclick="generateTournament()">조 생성</button>
+          <button class="gray" onclick="goBack()">돌아가기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>참가자</h2>
+      <div id="playerPreview"></div>
+    </div>
+
+    <div class="card">
+      <h2>조별리그</h2>
+      <div id="groupsArea"></div>
+    </div>
+
+    <div class="card">
+      <h2>순위별 토너먼트</h2>
+      <div id="rankTournamentArea"></div>
+    </div>
+
+    <div class="card">
+      <h2>최종 우승자</h2>
+      <div id="finalWinnerArea" class="winner-box">아직 결정되지 않음</div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "monthly_game_low_payload";
+    let players = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+
+    let state = {
+      groups: [],
+      rankStages: [],
+      finalStage: []
+    };
+
+    function goBack() {
+      history.back();
+    }
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function renderPreview() {
+      const box = document.getElementById("playerPreview");
+      box.innerHTML = players.map(p => `<span class="player-chip">${p.name}(${p.level})</span>`).join("");
+    }
+
+    function snakeGroups(list, groupCount) {
+      const sorted = [...list].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, "ko"));
+      const groups = Array.from({ length: groupCount }, (_, i) => ({
+        name: String.fromCharCode(65 + i) + "조",
+        players: [],
+        matches: []
+      }));
+
+      let idx = 0;
+      let dir = 1;
+
+      sorted.forEach((p) => {
+        groups[idx].players.push({
+          ...p,
+          id: `${p.name}_${p.level}_${idx}_${Math.random().toString(36).slice(2, 7)}`
+        });
+
+        if (dir === 1) {
+          if (idx === groupCount - 1) dir = -1;
+          else idx++;
+        } else {
+          if (idx === 0) dir = 1;
+          else idx--;
+        }
+      });
+
+      return groups;
+    }
+
+    function buildRoundRobinMatches(group) {
+      const matches = [];
+      for (let i = 0; i < group.players.length; i++) {
+        for (let j = i + 1; j < group.players.length; j++) {
+          matches.push({
+            p1: group.players[i],
+            p2: group.players[j],
+            winnerId: null
+          });
+        }
+      }
+      return matches;
+    }
+
+    function calcTable(group) {
+      const rows = group.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        level: p.level,
+        win: 0,
+        loss: 0,
+        played: 0
+      }));
+
+      group.matches.forEach((m) => {
+        if (!m.winnerId) return;
+
+        const a = rows.find(r => r.id === m.p1.id);
+        const b = rows.find(r => r.id === m.p2.id);
+        if (!a || !b) return;
+
+        a.played++;
+        b.played++;
+
+        if (m.winnerId === m.p1.id) {
+          a.win++;
+          b.loss++;
+        } else {
+          b.win++;
+          a.loss++;
+        }
+      });
+
+      rows.sort((a, b) => {
+        if (b.win !== a.win) return b.win - a.win;
+        if (a.loss !== b.loss) return a.loss - b.loss;
+        if (a.level !== b.level) return a.level - b.level;
+        return a.name.localeCompare(b.name, "ko");
+      });
+
+      return rows;
+    }
+
+    function buildKnockout(playersForRank, title) {
+      const shuffled = shuffle(playersForRank);
+      const rounds = [];
+
+      const firstMatches = [];
+      for (let i = 0; i < shuffled.length; i += 2) {
+        const p1 = shuffled[i] || null;
+        const p2 = shuffled[i + 1] || null;
+        firstMatches.push({
+          p1,
+          p2,
+          winnerId: p1 && !p2 ? p1.id : null
+        });
+      }
+
+      let roundName = "결승";
+      if (shuffled.length > 2 && shuffled.length <= 4) roundName = "준결승";
+      else if (shuffled.length > 4) roundName = "1라운드";
+
+      rounds.push({
+        title: `${title} ${roundName}`,
+        matches: firstMatches
+      });
+
+      return rounds;
+    }
+
+    function proceedStandaloneRounds(rounds, titleBase) {
+      const current = rounds[rounds.length - 1];
+      if (!current) return;
+
+      const allDone = current.matches.every(m => m.winnerId);
+      if (!allDone) return;
+
+      const winners = current.matches
+        .map(m => [m.p1, m.p2].find(p => p && p.id === m.winnerId))
+        .filter(Boolean);
+
+      if (winners.length <= 1) return;
+
+      const nextMatches = [];
+      for (let i = 0; i < winners.length; i += 2) {
+        const p1 = winners[i] || null;
+        const p2 = winners[i + 1] || null;
+        nextMatches.push({
+          p1,
+          p2,
+          winnerId: p1 && !p2 ? p1.id : null
+        });
+      }
+
+      let nextRoundName = "결승";
+      if (winners.length > 2 && winners.length <= 4) nextRoundName = "준결승";
+      else if (winners.length > 4) nextRoundName = "다음 라운드";
+
+      rounds.push({
+        title: `${titleBase} ${nextRoundName}`,
+        matches: nextMatches
+      });
+    }
+
+    function generateTournament() {
+      const groupCount = Math.max(2, Number(document.getElementById("groupCount").value || 2));
+
+      state.groups = snakeGroups(players, groupCount);
+      state.groups.forEach(g => {
+        g.matches = buildRoundRobinMatches(g);
+      });
+
+      state.rankStages = [];
+      state.finalStage = [];
+
+      renderGroups();
+      renderRankTournaments();
+      renderFinalWinner();
+    }
+
+    function setGroupWinner(groupIndex, matchIndex, winnerId) {
+      state.groups[groupIndex].matches[matchIndex].winnerId = winnerId || null;
+      renderGroups();
+      buildRankStagesFromTables();
+    }
+
+    function buildRankStagesFromTables() {
+      const tables = state.groups.map(calcTable);
+      const maxRank = Math.max(...tables.map(t => t.length), 0);
+
+      state.rankStages = [];
+
+      for (let rank = 0; rank < maxRank; rank++) {
+        const sameRankPlayers = [];
+
+        tables.forEach((table, gIdx) => {
+          if (table[rank]) {
+            sameRankPlayers.push({
+              id: table[rank].id,
+              name: table[rank].name,
+              level: table[rank].level,
+              groupName: state.groups[gIdx].name,
+              rank: rank + 1
+            });
+          }
+        });
+
+        if (sameRankPlayers.length >= 2) {
+          state.rankStages.push({
+            rank: rank + 1,
+            rounds: buildKnockout(sameRankPlayers, `${rank + 1}위 토너먼트`)
+          });
+        }
+      }
+
+      regenerateFinalStage();
+      renderRankTournaments();
+      renderFinalWinner();
+    }
+
+    function regenerateFinalStage() {
+      const rankWinners = [];
+
+      state.rankStages.forEach((stage) => {
+        const lastRound = stage.rounds[stage.rounds.length - 1];
+        if (!lastRound || lastRound.matches.length !== 1) return;
+
+        const match = lastRound.matches[0];
+        const winner = [match.p1, match.p2].find(p => p && p.id === match.winnerId);
+        if (winner) rankWinners.push(winner);
+      });
+
+      if (rankWinners.length < 2) {
+        state.finalStage = [];
+        return;
+      }
+
+      state.finalStage = buildKnockout(rankWinners, "최종 우승전");
+    }
+
+    function setRankWinner(stageIndex, roundIndex, matchIndex, winnerId) {
+      const round = state.rankStages[stageIndex]?.rounds?.[roundIndex];
+      if (!round) return;
+
+      round.matches[matchIndex].winnerId = winnerId || null;
+
+      if (roundIndex === state.rankStages[stageIndex].rounds.length - 1) {
+        proceedStandaloneRounds(state.rankStages[stageIndex].rounds, `${state.rankStages[stageIndex].rank}위 토너먼트`);
+      }
+
+      regenerateFinalStage();
+      renderRankTournaments();
+      renderFinalWinner();
+    }
+
+    function setFinalWinner(roundIndex, matchIndex, winnerId) {
+      const round = state.finalStage[roundIndex];
+      if (!round) return;
+
+      round.matches[matchIndex].winnerId = winnerId || null;
+
+      if (roundIndex === state.finalStage.length - 1) {
+        proceedStandaloneRounds(state.finalStage, "최종 우승전");
+      }
+
+      renderRankTournaments();
+      renderFinalWinner();
+    }
+
+    function renderGroups() {
+      const box = document.getElementById("groupsArea");
+
+      if (!state.groups.length) {
+        box.innerHTML = "<div>먼저 조 생성을 눌러주세요.</div>";
+        return;
+      }
+
+      box.innerHTML = state.groups.map((group, gi) => {
+        const table = calcTable(group);
+
+        return `
+          <div class="group-box">
+            <h3>${group.name}</h3>
+            <div>${group.players.map(p => `<span class="player-chip">${p.name}(${p.level})</span>`).join("")}</div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>순위</th>
+                  <th>이름</th>
+                  <th>부수</th>
+                  <th>승</th>
+                  <th>패</th>
+                  <th>경기수</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${table.map((r, idx) => `
+                  <tr>
+                    <td>${idx + 1}</td>
+                    <td>${r.name}</td>
+                    <td>${r.level}</td>
+                    <td>${r.win}</td>
+                    <td>${r.loss}</td>
+                    <td>${r.played}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+
+            <div style="margin-top:12px;">
+              ${group.matches.map((m, mi) => `
+                <div class="match-card">
+                  <div class="match-head">${group.name} ${mi + 1}경기</div>
+                  <div class="match-body">
+                    <span>${m.p1.name}</span>
+                    <span class="vs">VS</span>
+                    <span>${m.p2.name}</span>
+                  </div>
+                  <div class="row">
+                    <button onclick="setGroupWinner(${gi}, ${mi}, '${m.p1.id}')">${m.p1.name} 승</button>
+                    <button class="orange" onclick="setGroupWinner(${gi}, ${mi}, '${m.p2.id}')">${m.p2.name} 승</button>
+                    <button class="gray" onclick="setGroupWinner(${gi}, ${mi}, null)">초기화</button>
+                    <span>현재: ${m.winnerId ? (m.winnerId === m.p1.id ? m.p1.name : m.p2.name) + " 승" : "미입력"}</span>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderRankTournaments() {
+      const box = document.getElementById("rankTournamentArea");
+      let html = "";
+
+      if (!state.rankStages.length) {
+        html += `<div style="margin-bottom:12px;">조별리그 결과가 입력되면 같은 순위끼리 토너먼트가 자동 생성됩니다.</div>`;
+      }
+
+      state.rankStages.forEach((stage, si) => {
+        html += `<div class="group-box"><h3>${stage.rank}위 토너먼트</h3>`;
+
+        stage.rounds.forEach((round, ri) => {
+          html += `<h4>${round.title}</h4>`;
+
+          html += round.matches.map((m, mi) => `
+            <div class="match-card">
+              <div class="match-body">
+                <span>${m.p1 ? `${m.p1.name}(${m.p1.groupName || ""})` : "-"}</span>
+                <span class="vs">VS</span>
+                <span>${m.p2 ? `${m.p2.name}(${m.p2.groupName || ""})` : "-"}</span>
               </div>
               <div class="row">
-                <button ${!m.p1 ? 'disabled' : ''} onclick="setRankWinner(${si}, ${ri}, ${mi}, '${m.p1?.id || ''}')">${m.p1?.name || '-'} 승</button>
-                <button class="orange" ${!m.p2 ? 'disabled' : ''} onclick="setRankWinner(${si}, ${ri}, ${mi}, '${m.p2?.id || ''}')">${m.p2?.name || '-'} 승</button>
+                <button ${!m.p1 ? "disabled" : ""} onclick="setRankWinner(${si}, ${ri}, ${mi}, '${m.p1 ? m.p1.id : ""}')">${m.p1 ? m.p1.name : "-"} 승</button>
+                <button class="orange" ${!m.p2 ? "disabled" : ""} onclick="setRankWinner(${si}, ${ri}, ${mi}, '${m.p2 ? m.p2.id : ""}')">${m.p2 ? m.p2.name : "-"} 승</button>
                 <button class="gray" onclick="setRankWinner(${si}, ${ri}, ${mi}, null)">초기화</button>
-                <span>현재: ${m.winnerId ? ([m.p1, m.p2].find(p => p && p.id === m.winnerId)?.name || '자동진출') : '미입력'}</span>
+                <span>현재: ${m.winnerId ? ([m.p1, m.p2].find(p => p && p.id === m.winnerId)?.name || "자동진출") : "미입력"}</span>
               </div>
             </div>
-          `).join('');
+          `).join("");
         });
+
         html += `</div>`;
       });
 
       if (state.finalStage.length) {
         html += `<div class="group-box"><h3>최종 우승전</h3>`;
+
         state.finalStage.forEach((round, ri) => {
           html += `<h4>${round.title}</h4>`;
+
           html += round.matches.map((m, mi) => `
             <div class="match-card">
               <div class="match-body">
-                <span>${m.p1 ? m.p1.name : '-'}</span>
+                <span>${m.p1 ? m.p1.name : "-"}</span>
                 <span class="vs">VS</span>
-                <span>${m.p2 ? m.p2.name : '-'}</span>
+                <span>${m.p2 ? m.p2.name : "-"}</span>
               </div>
               <div class="row">
-                <button ${!m.p1 ? 'disabled' : ''} onclick="setFinalWinner(${ri}, ${mi}, '${m.p1?.id || ''}')">${m.p1?.name || '-'} 승</button>
-                <button class="orange" ${!m.p2 ? 'disabled' : ''} onclick="setFinalWinner(${ri}, ${mi}, '${m.p2?.id || ''}')">${m.p2?.name || '-'} 승</button>
+                <button ${!m.p1 ? "disabled" : ""} onclick="setFinalWinner(${ri}, ${mi}, '${m.p1 ? m.p1.id : ""}')">${m.p1 ? m.p1.name : "-"} 승</button>
+                <button class="orange" ${!m.p2 ? "disabled" : ""} onclick="setFinalWinner(${ri}, ${mi}, '${m.p2 ? m.p2.id : ""}')">${m.p2 ? m.p2.name : "-"} 승</button>
                 <button class="gray" onclick="setFinalWinner(${ri}, ${mi}, null)">초기화</button>
-                <span>현재: ${m.winnerId ? ([m.p1, m.p2].find(p => p && p.id === m.winnerId)?.name || '자동진출') : '미입력'}</span>
+                <span>현재: ${m.winnerId ? ([m.p1, m.p2].find(p => p && p.id === m.winnerId)?.name || "자동진출") : "미입력"}</span>
               </div>
             </div>
-          `).join('');
+          `).join("");
         });
+
         html += `</div>`;
       }
 
@@ -39,19 +553,22 @@
     }
 
     function renderFinalWinner() {
-      const box = document.getElementById('finalWinnerArea');
+      const box = document.getElementById("finalWinnerArea");
+
       if (!state.finalStage.length) {
-        box.textContent = '아직 결정되지 않음';
+        box.textContent = "아직 결정되지 않음";
         return;
       }
+
       const last = state.finalStage[state.finalStage.length - 1];
       if (!last || last.matches.length !== 1) {
-        box.textContent = '아직 결정되지 않음';
+        box.textContent = "아직 결정되지 않음";
         return;
       }
+
       const m = last.matches[0];
       const winner = [m.p1, m.p2].find(p => p && p.id === m.winnerId);
-      box.textContent = winner ? `🏆 ${winner.name}` : '아직 결정되지 않음';
+      box.textContent = winner ? `🏆 ${winner.name}` : "아직 결정되지 않음";
     }
 
     window.setGroupWinner = setGroupWinner;
