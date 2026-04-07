@@ -741,12 +741,20 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       const elapsedHours = elapsedMs / 3600000;
       const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
 
+      const safePath = Array.isArray(rideData.path) && rideData.path.length > 0
+        ? rideData.path.slice()
+        : rideData.lastPoint
+          ? [rideData.lastPoint]
+          : rideData.startPoint
+            ? [[rideData.startPoint.lat, rideData.startPoint.lng]]
+            : [];
+
       let elevationProfile = [];
       let elevationSummary = null;
 
       try {
-        if (Array.isArray(rideData.path) && rideData.path.length > 1) {
-          const elevationData = await fetchElevationProfile(rideData.path);
+        if (safePath.length > 1) {
+          const elevationData = await fetchElevationProfile(safePath);
           elevationProfile = elevationData.profile || [];
           elevationSummary = elevationData.summary || null;
         }
@@ -767,11 +775,11 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
         maxSpeedKmh: rideData.maxSpeedKmh || 0,
         startPoint: rideData.startPoint,
         destination: navigationState.destination,
-        path: rideData.path,
+        path: safePath,
         guidanceRoute: navigationState.routePath,
         elevationProfile,
         elevationSummary,
-        speedProfile: Array.isArray(speedProfile) ? speedProfile : []
+        speedProfile: Array.isArray(speedProfile) ? speedProfile.slice() : []
       };
 
       rides.unshift(item);
@@ -883,33 +891,6 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       }
 
       return Date.now() - rideData.startTime - rideData.pausedMs;
-    }
-
-
-    function addSpeedSample(totalDistanceM, currentSpeedKmh) {
-      const now = Date.now();
-      const safeDistanceM = Math.max(0, Number(totalDistanceM || 0));
-      const safeSpeedKmh = Math.max(0, Number(currentSpeedKmh || 0));
-
-      if (!Array.isArray(speedProfile)) {
-        speedProfile = [];
-      }
-
-      const timeDiff = now - lastSpeedSampleAt;
-      const distDiff = safeDistanceM - lastSpeedSampleDistanceM;
-
-      if (speedProfile.length > 0 && timeDiff < 3000 && distDiff < 20) {
-        return;
-      }
-
-      speedProfile.push({
-        distanceKm: +(safeDistanceM / 1000).toFixed(3),
-        speedKmh: +safeSpeedKmh.toFixed(1),
-        time: now
-      });
-
-      lastSpeedSampleAt = now;
-      lastSpeedSampleDistanceM = safeDistanceM;
     }
 
     function toLatLng(lat, lng) {
@@ -1709,6 +1690,23 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       }
     });
 
+    function addSpeedSample(totalDistanceM, currentSpeedKmh) {
+      const now = Date.now();
+      const timeDiff = now - lastSpeedSampleAt;
+      const distDiff = totalDistanceM - lastSpeedSampleDistanceM;
+
+      if (timeDiff < 3000 && distDiff < 20) return;
+
+      speedProfile.push({
+        distanceKm: +(totalDistanceM / 1000).toFixed(3),
+        speedKmh: +Math.max(0, currentSpeedKmh || 0).toFixed(1),
+        time: now
+      });
+
+      lastSpeedSampleAt = now;
+      lastSpeedSampleDistanceM = totalDistanceM;
+    }
+
     function handlePosition(pos) {
       if (!rideData.started) return;
 
@@ -1744,6 +1742,9 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
         rideData.startPoint = { lat: latitude, lng: longitude };
         rideData.lastPoint = point;
         lastPointTime = now;
+        if (speedProfile.length === 0) {
+          speedProfile.push({ distanceKm: 0, speedKmh: 0, time: now });
+        }
         redrawPath();
         updateStats();
         saveRideData();
@@ -1822,11 +1823,11 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       if (dist >= MIN_MOVE_DISTANCE_M && dist <= 500) {
         rideData.totalDistanceM += dist;
         rideData.path.push(point);
-        addSpeedSample(rideData.totalDistanceM, speedKmh);
       } else if (dist > 500) {
         rideData.path.push(point);
       }
 
+      addSpeedSample(rideData.totalDistanceM, rideData.currentSpeedKmh);
       lastPointTime = now;
       redrawPath();
 
@@ -1971,7 +1972,7 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
         rideData.lastPoint = null;
         currentAutoZoomLevel = 2;
         speedProfile = [{ distanceKm: 0, speedKmh: 0, time: Date.now() }];
-        lastSpeedSampleAt = Date.now();
+        lastSpeedSampleAt = 0;
         lastSpeedSampleDistanceM = 0;
       } else if (rideData.paused) {
         rideData.paused = false;
@@ -2001,7 +2002,8 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       if (!confirm("주행을 종료할까요?")) return;
 
       const shouldSave = confirm("현재 주행기록을 저장할까요?");
-      if (shouldSave && rideData.path.length > 0) {
+      const canSave = rideData.path.length > 0 || !!rideData.lastPoint || !!rideData.startPoint;
+      if (shouldSave && canSave) {
         await saveRideSummary();
       }
 
@@ -2032,10 +2034,10 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       if (recommendedPolyline) recommendedPolyline.setPath([]);
 
       clearRideData();
-      clearNavigation();
       speedProfile = [];
       lastSpeedSampleAt = 0;
       lastSpeedSampleDistanceM = 0;
+      clearNavigation();
       lastPointTime = null;
       updateStats();
 
