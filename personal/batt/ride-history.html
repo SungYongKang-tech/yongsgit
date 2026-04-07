@@ -550,34 +550,50 @@
   }
 
   function buildDetailHtml(ride) {
-    const es = ride.elevationSummary || {};
-    const hasElevation = Array.isArray(ride.elevationProfile) && ride.elevationProfile.length > 1;
+  const es = ride.elevationSummary || {};
+  const hasElevation = Array.isArray(ride.elevationProfile) && ride.elevationProfile.length > 1;
+  const hasSpeed = Array.isArray(ride.speedProfile) && ride.speedProfile.length > 1;
 
-    return `
-      <div class="detail-wrap">
-        <div class="detail-inner">
-          <div class="map-wrap">
-            <div class="ride-map" id="map-${ride.id}"></div>
-          </div>
+  return `
+    <div class="detail-wrap">
+      <div class="detail-inner">
+        <div class="map-wrap">
+          <div class="ride-map" id="map-${ride.id}"></div>
+        </div>
 
-          <div class="elevation-wrap">
-            <div class="elevation-title">고도표</div>
-            ${
-              hasElevation
-                ? `<canvas class="elevation-canvas" id="elevation-${ride.id}"></canvas>
-                   <div class="elevation-meta">
-                     <span>최저 ${Number(es.minElevation || 0)}m</span>
-                     <span>최고 ${Number(es.maxElevation || 0)}m</span>
-                     <span>상승 ${Number(es.gainM || 0)}m</span>
-                     <span>하강 ${Number(es.lossM || 0)}m</span>
-                   </div>`
-                : `<div class="empty" style="padding:12px 0;">고도 데이터 없음</div>`
-            }
-          </div>
+        <div class="elevation-wrap">
+          <div class="elevation-title">고도표</div>
+          ${
+            hasElevation
+              ? `<canvas class="elevation-canvas" id="elevation-${ride.id}"></canvas>
+                 <div class="elevation-meta">
+                   <span>최저 ${Number(es.minElevation || 0)}m</span>
+                   <span>최고 ${Number(es.maxElevation || 0)}m</span>
+                   <span>상승 ${Number(es.gainM || 0)}m</span>
+                   <span>하강 ${Number(es.lossM || 0)}m</span>
+                 </div>`
+              : `<div class="empty" style="padding:12px 0;">고도 데이터 없음</div>`
+          }
+        </div>
+
+        <div class="elevation-wrap">
+          <div class="elevation-title">속도 그래프</div>
+          ${
+            hasSpeed
+              ? `<canvas class="elevation-canvas" id="speed-${ride.id}"></canvas>
+                 <div class="elevation-meta">
+                   <span>평균 ${Number(ride.avgSpeedKmh || 0).toFixed(1)}km/h</span>
+                   <span>최고 ${Number(ride.maxSpeedKmh || 0).toFixed(1)}km/h</span>
+                   <span>최저 ${Number(Math.min(...ride.speedProfile.map(p => Number(p.speedKmh || 0))) || 0).toFixed(1)}km/h</span>
+                   <span>샘플 ${ride.speedProfile.length}개</span>
+                 </div>`
+              : `<div class="empty" style="padding:12px 0;">속도 데이터 없음</div>`
+          }
         </div>
       </div>
-    `;
-  }
+    </div>
+  `;
+}
 
   function destroyMapInstance(rideId) {
     const existing = mapInstances.get(rideId);
@@ -612,6 +628,9 @@
     let polyline = null;
     let startMarker = null;
     let endMarker = null;
+    let speedProfile = [];
+    let lastSpeedSampleAt = 0;
+    let lastSpeedSampleDistanceM = 0;
 
     if (linePath.length > 0) {
       polyline = new kakao.maps.Polyline({
@@ -659,12 +678,37 @@
       }
     }, 120);
   }
+  function smoothElevation(profile, windowSize = 5) {
+  const result = [];
+
+  for (let i = 0; i < profile.length; i++) {
+    let sum = 0;
+    let count = 0;
+
+    for (let j = -Math.floor(windowSize/2); j <= Math.floor(windowSize/2); j++) {
+      const idx = i + j;
+      if (idx >= 0 && idx < profile.length) {
+        sum += Number(profile[idx].elevation || 0);
+        count++;
+      }
+    }
+
+    result.push({
+      ...profile[i],
+      elevation: sum / count
+    });
+  }
+
+  return result;
+}
 
   function drawElevationChart(ride) {
     const canvas = document.getElementById(`elevation-${ride.id}`);
     if (!canvas) return;
 
-    const profile = Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [];
+    let profile = Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [];
+profile = smoothElevation(profile, 5);
+
     if (profile.length < 2) return;
 
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -737,6 +781,220 @@
     const fill = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
     fill.addColorStop(0, "rgba(96,165,250,0.35)");
     fill.addColorStop(1, "rgba(96,165,250,0.03)");
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  function smoothSpeedProfile(profile, windowSize = 5) {
+  const result = [];
+
+  for (let i = 0; i < profile.length; i++) {
+    let sum = 0;
+    let count = 0;
+
+    for (let j = -Math.floor(windowSize / 2); j <= Math.floor(windowSize / 2); j++) {
+      const idx = i + j;
+      if (idx >= 0 && idx < profile.length) {
+        sum += Number(profile[idx].speedKmh || 0);
+        count++;
+      }
+    }
+
+    result.push({
+      ...profile[i],
+      speedKmh: count ? (sum / count) : 0
+    });
+  }
+
+  return result;
+}
+
+function drawSpeedChart(ride) {
+  const canvas = document.getElementById(`speed-${ride.id}`);
+  if (!canvas) return;
+
+  let profile = Array.isArray(ride.speedProfile) ? ride.speedProfile : [];
+  if (profile.length < 2) return;
+
+  profile = smoothSpeedProfile(profile, 5);
+
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const cssWidth = canvas.clientWidth || 300;
+  const cssHeight = canvas.clientHeight || 180;
+
+  canvas.width = Math.floor(cssWidth * dpr);
+  canvas.height = Math.floor(cssHeight * dpr);
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const padding = { top: 14, right: 12, bottom: 24, left: 40 };
+  const chartW = cssWidth - padding.left - padding.right;
+  const chartH = cssHeight - padding.top - padding.bottom;
+
+  const speeds = profile.map(p => Number(p.speedKmh || 0));
+  const distances = profile.map(p => Number(p.distanceKm || 0));
+
+  const minS = Math.min(...speeds, 0);
+  const maxS = Math.max(...speeds, 10);
+  const maxD = Math.max(...distances, 0.1);
+
+  let rangeS = maxS - minS;
+  if (rangeS < 10) rangeS = 10;
+
+  const viewMinS = Math.max(0, minS - rangeS * 0.15);
+  const viewMaxS = maxS + rangeS * 0.15;
+
+  const x = (d) => padding.left + (d / maxD) * chartW;
+  const y = (s) => padding.top + ((viewMaxS - s) / (viewMaxS - viewMinS)) * chartH;
+
+  ctx.strokeStyle = "rgba(148,163,184,0.25)";
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < 4; i++) {
+    const gy = padding.top + (chartH / 3) * i;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, gy);
+    ctx.lineTo(padding.left + chartW, gy);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "11px Arial";
+  ctx.textAlign = "right";
+  ctx.fillText(`${Math.round(viewMaxS)}km/h`, padding.left - 6, padding.top + 4);
+  ctx.fillText(`${Math.round((viewMinS + viewMaxS) / 2)}km/h`, padding.left - 6, padding.top + chartH / 2 + 4);
+  ctx.fillText(`${Math.round(viewMinS)}km/h`, padding.left - 6, padding.top + chartH + 4);
+
+  ctx.textAlign = "center";
+  ctx.fillText("0km", padding.left, cssHeight - 6);
+  ctx.fillText(`${maxD.toFixed(1)}km`, padding.left + chartW, cssHeight - 6);
+
+  ctx.beginPath();
+  ctx.moveTo(x(distances[0]), y(speeds[0]));
+  for (let i = 1; i < profile.length; i++) {
+    ctx.lineTo(x(distances[i]), y(speeds[i]));
+  }
+  ctx.strokeStyle = "#22c55e";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  ctx.lineTo(padding.left + chartW, padding.top + chartH);
+  ctx.lineTo(padding.left, padding.top + chartH);
+  ctx.closePath();
+
+  const fill = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+  fill.addColorStop(0, "rgba(34,197,94,0.30)");
+  fill.addColorStop(1, "rgba(34,197,94,0.03)");
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+
+  function smoothSpeedProfile(profile, windowSize = 5) {
+    const result = [];
+
+    for (let i = 0; i < profile.length; i++) {
+      let sum = 0;
+      let count = 0;
+
+      for (let j = -Math.floor(windowSize / 2); j <= Math.floor(windowSize / 2); j++) {
+        const idx = i + j;
+        if (idx >= 0 && idx < profile.length) {
+          sum += Number(profile[idx].speedKmh || 0);
+          count++;
+        }
+      }
+
+      result.push({
+        ...profile[i],
+        speedKmh: count ? (sum / count) : Number(profile[i].speedKmh || 0)
+      });
+    }
+
+    return result;
+  }
+
+  function drawSpeedChart(ride) {
+    const canvas = document.getElementById(`speed-${ride.id}`);
+    if (!canvas) return;
+
+    let profile = Array.isArray(ride.speedProfile) ? ride.speedProfile : [];
+    if (profile.length < 2) return;
+
+    profile = smoothSpeedProfile(profile, 5);
+
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const cssWidth = canvas.clientWidth || 300;
+    const cssHeight = canvas.clientHeight || 180;
+
+    canvas.width = Math.floor(cssWidth * dpr);
+    canvas.height = Math.floor(cssHeight * dpr);
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const padding = { top: 14, right: 12, bottom: 24, left: 40 };
+    const chartW = cssWidth - padding.left - padding.right;
+    const chartH = cssHeight - padding.top - padding.bottom;
+
+    const speeds = profile.map((p) => Number(p.speedKmh || 0));
+    const distances = profile.map((p) => Number(p.distanceKm || 0));
+
+    const minS = Math.min(...speeds, 0);
+    const maxS = Math.max(...speeds, 10);
+    const maxD = Math.max(...distances, 0.1);
+
+    let rangeS = maxS - minS;
+    if (rangeS < 10) rangeS = 10;
+
+    const viewMinS = Math.max(0, minS - rangeS * 0.15);
+    const viewMaxS = maxS + rangeS * 0.15;
+
+    const x = (d) => padding.left + (d / maxD) * chartW;
+    const y = (s) => padding.top + ((viewMaxS - s) / (viewMaxS - viewMinS)) * chartH;
+
+    ctx.strokeStyle = "rgba(148,163,184,0.25)";
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i < 4; i++) {
+      const gy = padding.top + (chartH / 3) * i;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, gy);
+      ctx.lineTo(padding.left + chartW, gy);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "11px Arial";
+    ctx.textAlign = "right";
+    ctx.fillText(`${Math.round(viewMaxS)}km/h`, padding.left - 6, padding.top + 4);
+    ctx.fillText(`${Math.round((viewMinS + viewMaxS) / 2)}km/h`, padding.left - 6, padding.top + chartH / 2 + 4);
+    ctx.fillText(`${Math.round(viewMinS)}km/h`, padding.left - 6, padding.top + chartH + 4);
+
+    ctx.textAlign = "center";
+    ctx.fillText("0km", padding.left, cssHeight - 6);
+    ctx.fillText(`${maxD.toFixed(1)}km`, padding.left + chartW, cssHeight - 6);
+
+    ctx.beginPath();
+    ctx.moveTo(x(distances[0]), y(speeds[0]));
+    for (let i = 1; i < profile.length; i++) {
+      ctx.lineTo(x(distances[i]), y(speeds[i]));
+    }
+    ctx.strokeStyle = "#22c55e";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    ctx.lineTo(padding.left + chartW, padding.top + chartH);
+    ctx.lineTo(padding.left, padding.top + chartH);
+    ctx.closePath();
+
+    const fill = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+    fill.addColorStop(0, "rgba(34,197,94,0.30)");
+    fill.addColorStop(1, "rgba(34,197,94,0.03)");
     ctx.fillStyle = fill;
     ctx.fill();
   }
@@ -824,16 +1082,15 @@
     });
 
     if (expandedRideId) {
-      const expandedRide = rides.find(r => r.id === expandedRideId);
-      if (expandedRide) {
-        createMapForRide(expandedRide);
-        setTimeout(() => {
-          drawElevationChart(expandedRide);
-          drawSpeedChart(expandedRide);
-        }, 80);
-      }
-    }
+  const expandedRide = rides.find(r => r.id === expandedRideId);
+  if (expandedRide) {
+    createMapForRide(expandedRide);
+    setTimeout(() => {
+      drawElevationChart(expandedRide);
+      drawSpeedChart(expandedRide);
+    }, 80);
   }
+}
 
   function toggleRide(id) {
     if (expandedRideId === id) {
@@ -939,8 +1196,7 @@
         restMs: Number(ride.restMs || 0),
         path: ride.path,
         elevationProfile: Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [],
-        elevationSummary: ride.elevationSummary || null,
-        speedProfile: Array.isArray(ride.speedProfile) ? ride.speedProfile : []
+        elevationSummary: ride.elevationSummary || null
       };
 
       const newRef = push(ref(db, "sharedRides"));
@@ -1025,7 +1281,6 @@
         path: Array.isArray(ride.path) ? ride.path : [],
         elevationProfile: Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [],
         elevationSummary: ride.elevationSummary || null,
-        speedProfile: Array.isArray(ride.speedProfile) ? ride.speedProfile : [],
         localRideId: ride.id,
         updatedAt: Date.now()
       };
@@ -1219,8 +1474,9 @@
       }
 
       if (ride) {
-        drawElevationChart(ride);
-      }
+  drawElevationChart(ride);
+  drawSpeedChart(ride);
+}
     }, 80);
   });
 
