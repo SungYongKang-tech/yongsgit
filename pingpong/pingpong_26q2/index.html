@@ -363,8 +363,8 @@
     <div class="vote-wrap">
       <div class="vote-title">📅 탁구대회 시행일 투표</div>
       <div class="vote-desc">
-  이름을 입력하고 날짜를 선택해 주세요. 같은 이름으로도 중복투표가 가능합니다.
-</div>
+        이름을 입력하고 가능한 날짜를 선택해 주세요. 4월 20일과 4월 21일은 하나만 선택해도 되고, 둘 다 선택해도 됩니다. 같은 이름으로 다시 저장하면 기존 투표가 수정되며 집계는 1인 1회 기준입니다.
+      </div>
 
       <div class="deadline-box" id="deadlineInfo">투표 마감 정보 불러오는 중...</div>
 
@@ -375,7 +375,7 @@
       <div class="vote-grid">
         <label class="vote-card" id="card20">
           <div>
-            <input type="radio" name="voteDate" value="2026-04-20" />
+            <input type="checkbox" name="voteDate" value="2026-04-20" />
             <strong>4월 20일(월)</strong>
           </div>
           <div class="small-note">이 날 참석 가능</div>
@@ -383,7 +383,7 @@
 
         <label class="vote-card" id="card21">
           <div>
-            <input type="radio" name="voteDate" value="2026-04-21" />
+            <input type="checkbox" name="voteDate" value="2026-04-21" />
             <strong>4월 21일(화)</strong>
           </div>
           <div class="small-note">이 날 참석 가능</div>
@@ -417,7 +417,7 @@
           <thead>
             <tr>
               <th>이름</th>
-              <th>선택일</th>
+              <th>가능일</th>
               <th>수정시각</th>
             </tr>
           </thead>
@@ -428,9 +428,9 @@
       </div>
 
       <div class="small-note">
-  ※ 같은 이름으로도 여러 번 투표할 수 있습니다.<br>
-  ※ 저장할 때마다 새로운 투표 1건으로 집계됩니다.
-</div>
+        ※ 1인 1회 집계되며, 가능한 날짜는 하나 또는 둘 다 선택할 수 있습니다.<br>
+        ※ 같은 이름으로 다시 저장하면 이전 선택이 최신 내용으로 수정됩니다.
+      </div>
     </div>
 
     <h2>3. 경기 운영방식</h2>
@@ -542,13 +542,14 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
     import {
-  getDatabase,
-  ref,
-  set,
-  push,
-  onValue,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+      getDatabase,
+      ref,
+      set,
+      onValue,
+      get,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+
     const firebaseConfig = {
       apiKey: "AIzaSyDzfQ0YgO_YhcYfp92XuJ47btMRQiy2P-Y",
       authDomain: "sabo-51d9e.firebaseapp.com",
@@ -581,11 +582,14 @@
     const badge20El = document.getElementById("badge20");
     const badge21El = document.getElementById("badge21");
     const voterTableBodyEl = document.getElementById("voterTableBody");
-    const radioEls = [...document.querySelectorAll('input[name="voteDate"]')];
+    const voteInputs = [...document.querySelectorAll('input[name="voteDate"]')];
     const card20 = document.getElementById("card20");
     const card21 = document.getElementById("card21");
 
-  
+    function sanitizeNameKey(name) {
+      return name.trim().replace(/[.#$\[\]/]/g, "_");
+    }
+
     function escapeHtml(text) {
       return String(text).replace(/[&<>"']/g, function (m) {
         return {
@@ -613,6 +617,10 @@
       return Date.now() > VOTE_END;
     }
 
+    function getSelectedDates() {
+      return voteInputs.filter(el => el.checked).map(el => el.value);
+    }
+
     function updateDeadlineInfo() {
       if (isClosed()) {
         deadlineInfoEl.innerHTML = `<span class="red">투표가 마감되었습니다.</span> 결과만 확인할 수 있습니다.`;
@@ -625,74 +633,104 @@
     }
 
     function updateCardUI() {
-      const selected = document.querySelector('input[name="voteDate"]:checked')?.value;
-      card20.classList.toggle("active", selected === "2026-04-20");
-      card21.classList.toggle("active", selected === "2026-04-21");
+      const checkedValues = getSelectedDates();
+      card20.classList.toggle("active", checkedValues.includes("2026-04-20"));
+      card21.classList.toggle("active", checkedValues.includes("2026-04-21"));
     }
 
-    radioEls.forEach((el) => {
+    voteInputs.forEach((el) => {
       el.addEventListener("change", updateCardUI);
     });
 
     function setVoteInputsDisabled(disabled) {
       voterNameEl.disabled = disabled;
       saveVoteBtn.disabled = disabled;
-      radioEls.forEach(r => r.disabled = disabled);
+      voteInputs.forEach(r => r.disabled = disabled);
       updateDeadlineInfo();
     }
 
+    async function loadExistingVoteByName(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+
+      const nameKey = sanitizeNameKey(trimmed);
+      const voteRef = ref(db, `${VOTE_PATH}/${nameKey}`);
+
+      try {
+        const snapshot = await get(voteRef);
+        if (!snapshot.exists()) return;
+
+        const data = snapshot.val();
+        const availableDates = Array.isArray(data.availableDates) ? data.availableDates : [];
+
+        voteInputs.forEach(input => {
+          input.checked = availableDates.includes(input.value);
+        });
+
+        updateCardUI();
+      } catch (err) {
+        console.error("기존 투표 불러오기 실패:", err);
+      }
+    }
+
     async function saveVote() {
-  if (isClosed()) {
-    alert("투표가 마감되었습니다. 결과만 확인 가능합니다.");
-    setVoteInputsDisabled(true);
-    return;
-  }
+      if (isClosed()) {
+        alert("투표가 마감되었습니다. 결과만 확인 가능합니다.");
+        setVoteInputsDisabled(true);
+        return;
+      }
 
-  const rawName = voterNameEl.value.trim();
-  const selectedDate = document.querySelector('input[name="voteDate"]:checked')?.value;
+      const rawName = voterNameEl.value.trim();
+      const selectedDates = getSelectedDates();
 
-  if (!rawName) {
-    alert("이름을 입력해 주세요.");
-    voterNameEl.focus();
-    return;
-  }
+      if (!rawName) {
+        alert("이름을 입력해 주세요.");
+        voterNameEl.focus();
+        return;
+      }
 
-  if (!selectedDate) {
-    alert("날짜를 선택해 주세요.");
-    return;
-  }
+      if (selectedDates.length === 0) {
+        alert("가능한 날짜를 하나 이상 선택해 주세요.");
+        return;
+      }
 
-  const voteListRef = ref(db, VOTE_PATH);
-  const newVoteRef = push(voteListRef);
+      const nameKey = sanitizeNameKey(rawName);
+      const voteRef = ref(db, `${VOTE_PATH}/${nameKey}`);
 
-  saveVoteBtn.disabled = true;
-  saveVoteBtn.textContent = "저장 중...";
+      saveVoteBtn.disabled = true;
+      saveVoteBtn.textContent = "저장 중...";
 
-  try {
-    await set(newVoteRef, {
-      name: rawName,
-      selectedDate: selectedDate,
-      updatedAt: Date.now(),
-      updatedAtServer: serverTimestamp()
-    });
+      try {
+        await set(voteRef, {
+          name: rawName,
+          availableDates: selectedDates,
+          updatedAt: Date.now(),
+          updatedAtServer: serverTimestamp()
+        });
 
-    voteStatusEl.textContent = `${rawName}님 투표가 저장되었습니다. 같은 이름으로도 중복투표가 가능합니다.`;
-    localStorage.setItem("pingpong_vote_name_q2_2026", rawName);
-  } catch (err) {
-    console.error(err);
-    alert("투표 저장 중 오류가 발생했습니다.");
-  } finally {
-    saveVoteBtn.disabled = isClosed();
-    saveVoteBtn.textContent = isClosed() ? "투표 마감" : "투표 저장";
-  }
-}
+        voteStatusEl.textContent = `${rawName}님 투표가 저장되었습니다. 다시 저장하면 기존 투표가 수정되며 집계는 1인 1회 기준입니다.`;
+        localStorage.setItem("pingpong_vote_name_q2_2026", rawName);
+      } catch (err) {
+        console.error(err);
+        alert("투표 저장 중 오류가 발생했습니다.");
+      } finally {
+        saveVoteBtn.disabled = isClosed();
+        saveVoteBtn.textContent = isClosed() ? "투표 마감" : "투표 저장 / 수정";
+      }
+    }
 
     saveVoteBtn.addEventListener("click", saveVote);
 
     function renderResults(dataObj) {
       const votes = Object.values(dataObj || {});
-      const day20 = votes.filter(v => v && v.selectedDate === "2026-04-20");
-      const day21 = votes.filter(v => v && v.selectedDate === "2026-04-21");
+
+      const day20 = votes.filter(v =>
+        v && Array.isArray(v.availableDates) && v.availableDates.includes("2026-04-20")
+      );
+
+      const day21 = votes.filter(v =>
+        v && Array.isArray(v.availableDates) && v.availableDates.includes("2026-04-21")
+      );
 
       count20El.textContent = `${day20.length}명`;
       count21El.textContent = `${day21.length}명`;
@@ -723,13 +761,19 @@
         return;
       }
 
-      voterTableBodyEl.innerHTML = sortedVotes.map(v => `
-        <tr>
-          <td>${escapeHtml(v.name || "-")}</td>
-          <td>${escapeHtml(DATE_LABELS[v.selectedDate] || v.selectedDate || "-")}</td>
-          <td>${escapeHtml(formatKST(v.updatedAt))}</td>
-        </tr>
-      `).join("");
+      voterTableBodyEl.innerHTML = sortedVotes.map(v => {
+        const availableText = Array.isArray(v.availableDates) && v.availableDates.length
+          ? v.availableDates.map(d => DATE_LABELS[d] || d).join(", ")
+          : "-";
+
+        return `
+          <tr>
+            <td>${escapeHtml(v.name || "-")}</td>
+            <td>${escapeHtml(availableText)}</td>
+            <td>${escapeHtml(formatKST(v.updatedAt))}</td>
+          </tr>
+        `;
+      }).join("");
     }
 
     function subscribeVotes() {
@@ -748,16 +792,32 @@
       );
     }
 
-    function restoreMyVoteName() {
+    async function restoreMyVoteName() {
       const savedName = localStorage.getItem("pingpong_vote_name_q2_2026");
-      if (savedName) voterNameEl.value = savedName;
+      if (savedName) {
+        voterNameEl.value = savedName;
+        await loadExistingVoteByName(savedName);
+      }
     }
 
-    restoreMyVoteName();
+    voterNameEl.addEventListener("change", async () => {
+      voteInputs.forEach(input => input.checked = false);
+      updateCardUI();
+      await loadExistingVoteByName(voterNameEl.value);
+    });
+
+    voterNameEl.addEventListener("blur", async () => {
+      if (!voterNameEl.value.trim()) return;
+      voteInputs.forEach(input => input.checked = false);
+      updateCardUI();
+      await loadExistingVoteByName(voterNameEl.value);
+    });
+
     updateCardUI();
     updateDeadlineInfo();
     setVoteInputsDisabled(isClosed());
     subscribeVotes();
+    restoreMyVoteName();
   </script>
 </body>
 </html>
