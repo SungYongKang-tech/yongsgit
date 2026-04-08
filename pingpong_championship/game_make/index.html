@@ -62,24 +62,16 @@
       font-weight:700;
     }
     button:hover{background:var(--primary2)}
-    button.secondary{
-      background:#607d8b;
-    }
-    button.green{
-      background:var(--ok);
-    }
-    button.orange{
-      background:var(--warn);
-    }
-    button.red{
-      background:var(--danger);
-    }
+    button.secondary{background:#607d8b}
+    button.green{background:var(--ok)}
+    button.orange{background:var(--warn)}
+    button.red{background:var(--danger)}
     .grid{
       display:grid;
       gap:16px;
     }
     .grid-2{
-      grid-template-columns:1.2fr .8fr;
+      grid-template-columns:1.1fr .9fr;
     }
     .card{
       background:var(--card);
@@ -90,7 +82,7 @@
     }
     .form-grid{
       display:grid;
-      grid-template-columns:repeat(3, minmax(0,1fr));
+      grid-template-columns:repeat(2, minmax(0,1fr));
       gap:12px;
     }
     .field{
@@ -184,12 +176,6 @@
       margin:6px 0;
       font-size:14px;
     }
-    .sub-actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-top:10px;
-    }
     table{
       width:100%;
       border-collapse:collapse;
@@ -205,11 +191,6 @@
     th{
       background:#f7fafc;
       font-weight:700;
-    }
-    .match-table select{
-      min-width:130px;
-      padding:8px;
-      border-radius:10px;
     }
     .status-box{
       margin-top:12px;
@@ -244,7 +225,7 @@
       .group-boxes{grid-template-columns:1fr}
       .wrap{padding:12px}
       button{width:100%}
-      .actions,.footer-actions,.sub-actions{flex-direction:column}
+      .actions,.footer-actions{flex-direction:column}
     }
   </style>
 </head>
@@ -252,12 +233,11 @@
   <div class="wrap">
     <div class="topbar">
       <div class="title-area">
-        <h1>대회 생성 / 조편성 / 대진표 작성</h1>
+        <h1>대회 생성 / 조편성</h1>
         <small>제14회 남동노조위원장기 탁구대회 운영용</small>
       </div>
       <div class="actions">
         <button type="button" class="secondary" id="btnFillSample">샘플 데이터 넣기</button>
-        <button type="button" class="orange" id="btnGenerateDefaultMatches">기본 대진 생성</button>
         <button type="button" class="green" id="btnSaveOnly">저장만 하기</button>
         <button type="button" id="btnStartTournament">경기 시작</button>
       </div>
@@ -275,17 +255,13 @@
             <label for="date">대회일자</label>
             <input id="date" type="date" />
           </div>
-          <div class="field">
-            <label for="adminPassword">관리자 비밀번호</label>
-            <input id="adminPassword" type="text" value="1111" />
-          </div>
         </div>
         <div class="status-box" id="basicInfoSummary">대회 기본정보를 입력해 주세요.</div>
       </section>
 
       <section class="card">
         <h2>2. 조 편성 현황</h2>
-        <div class="hint">각 팀 카드에서 A조 / B조를 선택해 주세요. 각 조는 4팀이어야 합니다.</div>
+        <div class="hint">추첨 결과에 따라 각 팀을 A조 또는 B조에 넣어 주세요. 각 조는 4팀이어야 합니다.</div>
         <div class="group-boxes">
           <div class="group-box">
             <h3>A조 <span class="small" id="countA">(0/4)</span></h3>
@@ -307,16 +283,15 @@
     </section>
 
     <section class="card" style="margin-top:16px;">
-      <h2>4. 조별 리그 대진표</h2>
+      <h2>4. 자동 생성되는 조별 리그 대진표</h2>
       <div class="hint">
-        추첨 결과에 맞게 수동으로 수정하실 수 있습니다.  
-        기본 대진 생성 버튼을 누르면 4팀 풀리그 6경기 기본 형식으로 채워집니다.
+        조 편성만 완료하면 4팀 풀리그 기준으로 각 조 6경기가 자동 생성됩니다.
       </div>
 
       <div class="preview">
         <div>
-          <h3>A조 대진</h3>
-          <table class="match-table">
+          <h3>A조 자동 대진</h3>
+          <table>
             <thead>
               <tr>
                 <th>순서</th>
@@ -329,8 +304,8 @@
         </div>
 
         <div>
-          <h3>B조 대진</h3>
-          <table class="match-table">
+          <h3>B조 자동 대진</h3>
+          <table>
             <thead>
               <tr>
                 <th>순서</th>
@@ -344,7 +319,6 @@
       </div>
 
       <div class="footer-actions">
-        <button type="button" class="orange" id="btnRebuildMatchSelectors">팀 목록 반영 다시 불러오기</button>
         <button type="button" class="green" id="btnSaveBottom">저장만 하기</button>
         <button type="button" id="btnStartBottom">경기 시작</button>
       </div>
@@ -365,7 +339,6 @@
       get
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-    // Firebase 설정
     const firebaseConfig = {
       apiKey: "AIzaSyDpXivPM_KJlY8yN1X0_oQH8P-MpyOwNo8",
       authDomain: "koen-championship.firebaseapp.com",
@@ -387,7 +360,6 @@
     ];
 
     const DEFAULT_TEAM_COUNT = 8;
-    const DEFAULT_MATCH_COUNT_PER_GROUP = 6;
 
     const teamsContainer = document.getElementById("teamsContainer");
     const groupAList = document.getElementById("groupAList");
@@ -402,11 +374,8 @@
 
     const titleInput = document.getElementById("title");
     const dateInput = document.getElementById("date");
-    const adminPasswordInput = document.getElementById("adminPassword");
 
     const btnFillSample = document.getElementById("btnFillSample");
-    const btnGenerateDefaultMatches = document.getElementById("btnGenerateDefaultMatches");
-    const btnRebuildMatchSelectors = document.getElementById("btnRebuildMatchSelectors");
     const btnSaveOnly = document.getElementById("btnSaveOnly");
     const btnSaveBottom = document.getElementById("btnSaveBottom");
     const btnStartTournament = document.getElementById("btnStartTournament");
@@ -419,7 +388,6 @@
       const d = String(now.getDate()).padStart(2, "0");
       return `${y}-${m}-${d}`;
     }
-
     dateInput.value = todayKST();
 
     function safeTrim(v) {
@@ -475,8 +443,8 @@
 
       attachTeamInputEvents();
       renderGroupStatus();
-      renderMatchTables();
       renderBasicInfoSummary();
+      renderAutoMatches();
     }
 
     function attachTeamInputEvents() {
@@ -487,11 +455,13 @@
             updateTeamCountBadge(i);
             renderGroupStatus();
             renderBasicInfoSummary();
+            renderAutoMatches();
           });
           el.addEventListener("change", () => {
             updateTeamCountBadge(i);
             renderGroupStatus();
             renderBasicInfoSummary();
+            renderAutoMatches();
           });
         });
         updateTeamCountBadge(i);
@@ -544,9 +514,8 @@
     function renderBasicInfoSummary() {
       const title = safeTrim(titleInput.value);
       const date = safeTrim(dateInput.value);
-      const pw = safeTrim(adminPasswordInput.value);
       basicInfoSummary.textContent =
-        `대회명: ${title || "-"}\n대회일자: ${date || "-"}\n관리자 비밀번호: ${pw || "-"}`;
+        `대회명: ${title || "-"}\n대회일자: ${date || "-"}`;
     }
 
     function renderGroupStatus() {
@@ -585,51 +554,10 @@
         groupStatus.style.borderColor = "#ffcdd2";
         groupStatus.style.background = "#fff8f8";
       }
-
-      rebuildMatchSelectorsFromCurrentTeams();
     }
 
     function getGroupTeams(groupName) {
-      return getTeamsFromForm()
-        .filter(t => t.name && t.group === groupName);
-    }
-
-    function createEmptyMatchRows(tbodyEl, groupName) {
-      tbodyEl.innerHTML = "";
-      for (let i = 0; i < DEFAULT_MATCH_COUNT_PER_GROUP; i++) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${i + 1}</td>
-          <td><select data-group="${groupName}" data-side="A" data-idx="${i}"></select></td>
-          <td><select data-group="${groupName}" data-side="B" data-idx="${i}"></select></td>
-        `;
-        tbodyEl.appendChild(tr);
-      }
-    }
-
-    function renderMatchTables() {
-      createEmptyMatchRows(matchesA, "A");
-      createEmptyMatchRows(matchesB, "B");
-      rebuildMatchSelectorsFromCurrentTeams();
-    }
-
-    function rebuildMatchSelectorsFromCurrentTeams() {
-      ["A", "B"].forEach(groupName => {
-        const teamOptions = getGroupTeams(groupName);
-        const selects = document.querySelectorAll(`select[data-group="${groupName}"]`);
-
-        selects.forEach(selectEl => {
-          const current = selectEl.value;
-          let html = `<option value="">선택</option>`;
-          teamOptions.forEach(team => {
-            html += `<option value="${team.id}">${team.name}</option>`;
-          });
-          selectEl.innerHTML = html;
-          if ([...selectEl.options].some(opt => opt.value === current)) {
-            selectEl.value = current;
-          }
-        });
-      });
+      return getTeamsFromForm().filter(t => t.name && t.group === groupName);
     }
 
     function generateRoundRobinPairs(teamIds) {
@@ -644,21 +572,40 @@
       ];
     }
 
-    function fillDefaultMatches() {
-      ["A", "B"].forEach(groupName => {
-        const groupTeams = getGroupTeams(groupName);
-        if (groupTeams.length !== 4) return;
+    function renderAutoMatches() {
+      renderGroupAutoMatches("A", matchesA);
+      renderGroupAutoMatches("B", matchesB);
+    }
 
-        const pairs = generateRoundRobinPairs(groupTeams.map(t => t.id));
-        pairs.forEach((pair, idx) => {
-          const selA = document.querySelector(`select[data-group="${groupName}"][data-side="A"][data-idx="${idx}"]`);
-          const selB = document.querySelector(`select[data-group="${groupName}"][data-side="B"][data-idx="${idx}"]`);
-          if (selA) selA.value = pair[0];
-          if (selB) selB.value = pair[1];
-        });
+    function renderGroupAutoMatches(groupName, tbodyEl) {
+      const teams = getGroupTeams(groupName);
+      tbodyEl.innerHTML = "";
+
+      if (teams.length !== 4) {
+        for (let i = 0; i < 6; i++) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${i + 1}</td>
+            <td>-</td>
+            <td>-</td>
+          `;
+          tbodyEl.appendChild(tr);
+        }
+        return;
+      }
+
+      const teamMap = Object.fromEntries(teams.map(t => [t.id, t.name]));
+      const pairs = generateRoundRobinPairs(teams.map(t => t.id));
+
+      pairs.forEach((pair, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${teamMap[pair[0]] || "-"}</td>
+          <td>${teamMap[pair[1]] || "-"}</td>
+        `;
+        tbodyEl.appendChild(tr);
       });
-
-      saveStatus.textContent = "기본 대진이 생성되었습니다. 필요 시 수동 수정 후 저장해 주세요.";
     }
 
     function makeSubMatches() {
@@ -670,54 +617,36 @@
           teamAPlayers: [],
           teamBPlayers: [],
           winner: "",
-          scoreText: ""
+          scoreA: null,
+          scoreB: null,
+          setScoreA: 0,
+          setScoreB: 0
         };
       });
       return result;
     }
 
-    function collectMatchesForGroup(groupName) {
-      const teams = getTeamsFromForm();
+    function collectAutoMatchesForGroup(groupName) {
+      const teams = getGroupTeams(groupName);
+      const pairs = generateRoundRobinPairs(teams.map(t => t.id));
       const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
-      const matches = [];
-      const usedPairKeys = new Set();
 
-      for (let i = 0; i < DEFAULT_MATCH_COUNT_PER_GROUP; i++) {
-        const selA = document.querySelector(`select[data-group="${groupName}"][data-side="A"][data-idx="${i}"]`);
-        const selB = document.querySelector(`select[data-group="${groupName}"][data-side="B"][data-idx="${i}"]`);
-        const teamA = selA?.value || "";
-        const teamB = selB?.value || "";
-
-        if (!teamA || !teamB) {
-          throw new Error(`${groupName}조 ${i + 1}경기 팀 선택이 비어 있습니다.`);
-        }
-        if (teamA === teamB) {
-          throw new Error(`${groupName}조 ${i + 1}경기에서 같은 팀끼리 대진이 잡혀 있습니다.`);
-        }
-
-        const pairKey = [teamA, teamB].sort().join("__");
-        if (usedPairKeys.has(pairKey)) {
-          throw new Error(`${groupName}조 ${i + 1}경기 대진이 중복되었습니다.`);
-        }
-        usedPairKeys.add(pairKey);
-
-        matches.push({
-          id: `${groupName}_${i + 1}`,
-          group: groupName,
-          order: i + 1,
-          teamA,
-          teamB,
-          teamAName: teamMap[teamA]?.name || "",
-          teamBName: teamMap[teamB]?.name || "",
-          status: "ready",
-          teamMatchScoreA: 0,
-          teamMatchScoreB: 0,
-          winnerTeamId: "",
-          matches: makeSubMatches()
-        });
-      }
-
-      return matches;
+      return pairs.map((pair, idx) => ({
+        id: `${groupName}_${idx + 1}`,
+        group: groupName,
+        order: idx + 1,
+        teamA: pair[0],
+        teamB: pair[1],
+        teamAName: teamMap[pair[0]]?.name || "",
+        teamBName: teamMap[pair[1]]?.name || "",
+        status: "ready",
+        teamMatchScoreA: 0,
+        teamMatchScoreB: 0,
+        setDiffA: 0,
+        setDiffB: 0,
+        winnerTeamId: "",
+        matches: makeSubMatches()
+      }));
     }
 
     function validateBeforeSave() {
@@ -750,28 +679,18 @@
         throw new Error("A조 4팀, B조 4팀으로 정확히 편성해 주세요.");
       }
 
-      const aIds = new Set(aTeams.map(t => t.id));
-      const bIds = new Set(bTeams.map(t => t.id));
-      for (const id of aIds) {
-        if (bIds.has(id)) throw new Error("같은 팀이 양쪽 조에 동시에 포함되어 있습니다.");
-      }
-
-      const groupAMatches = collectMatchesForGroup("A");
-      const groupBMatches = collectMatchesForGroup("B");
-
-      return { filledTeams, groupAMatches, groupBMatches };
+      return { filledTeams };
     }
 
     function buildTournamentPayload() {
       const title = safeTrim(titleInput.value);
       const date = safeTrim(dateInput.value);
-      const adminPassword = safeTrim(adminPasswordInput.value);
+      const adminPassword = "1111";
 
       if (!title) throw new Error("대회명을 입력해 주세요.");
       if (!date) throw new Error("대회일자를 입력해 주세요.");
-      if (!adminPassword) throw new Error("관리자 비밀번호를 입력해 주세요.");
 
-      const { filledTeams, groupAMatches, groupBMatches } = validateBeforeSave();
+      const { filledTeams } = validateBeforeSave();
 
       const teamsPayload = {};
       filledTeams.forEach(t => {
@@ -785,6 +704,9 @@
           allPlayers: [...t.men, ...t.women]
         };
       });
+
+      const groupAMatches = collectAutoMatchesForGroup("A");
+      const groupBMatches = collectAutoMatchesForGroup("B");
 
       const groupMatchesPayload = {};
       [...groupAMatches, ...groupBMatches].forEach(match => {
@@ -828,6 +750,8 @@
               status: "pending",
               teamMatchScoreA: 0,
               teamMatchScoreB: 0,
+              setDiffA: 0,
+              setDiffB: 0,
               winnerTeamId: "",
               matches: makeSubMatches()
             },
@@ -841,6 +765,8 @@
               status: "pending",
               teamMatchScoreA: 0,
               teamMatchScoreB: 0,
+              setDiffA: 0,
+              setDiffB: 0,
               winnerTeamId: "",
               matches: makeSubMatches()
             },
@@ -854,6 +780,8 @@
               status: "pending",
               teamMatchScoreA: 0,
               teamMatchScoreB: 0,
+              setDiffA: 0,
+              setDiffB: 0,
               winnerTeamId: "",
               matches: makeSubMatches()
             }
@@ -908,17 +836,11 @@
 
       renderGroupStatus();
       renderBasicInfoSummary();
-      fillDefaultMatches();
+      renderAutoMatches();
       saveStatus.textContent = "샘플 데이터가 입력되었습니다.";
     }
 
     btnFillSample.addEventListener("click", loadSampleData);
-    btnGenerateDefaultMatches.addEventListener("click", fillDefaultMatches);
-    btnRebuildMatchSelectors.addEventListener("click", () => {
-      rebuildMatchSelectorsFromCurrentTeams();
-      saveStatus.textContent = "현재 팀 목록 기준으로 대진 선택 목록을 새로 불러왔습니다.";
-    });
-
     btnSaveOnly.addEventListener("click", () => saveTournament(false));
     btnSaveBottom.addEventListener("click", () => saveTournament(false));
     btnStartTournament.addEventListener("click", () => saveTournament(true));
@@ -926,17 +848,15 @@
 
     titleInput.addEventListener("input", renderBasicInfoSummary);
     dateInput.addEventListener("input", renderBasicInfoSummary);
-    adminPasswordInput.addEventListener("input", renderBasicInfoSummary);
 
     createTeamCards();
 
-    // 참고용: 마지막 활성 대회 확인
     async function checkCurrentTournament() {
       try {
         const snap = await get(ref(db, "currentTournamentId"));
         if (snap.exists()) {
           const id = snap.val();
-          saveStatus.textContent = `현재 활성 대회 ID: ${id}\n새로 저장하면 이 대회로 덮어쓰지 않고 새 대회가 생성됩니다.`;
+          saveStatus.textContent = `현재 활성 대회 ID: ${id}\n새로 저장하면 새 대회가 생성됩니다.`;
         }
       } catch (err) {
         console.warn("현재 대회 확인 실패", err);
