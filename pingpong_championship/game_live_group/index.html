@@ -523,6 +523,19 @@
       return [...(team.men || []), ...(team.women || [])];
     }
 
+    function getSelectablePlayers(teamId, matchTypeName) {
+  const team = getTeam(teamId);
+  if (!team) return [];
+
+  const men = Array.isArray(team.men) ? team.men : [];
+  const women = Array.isArray(team.women) ? team.women : [];
+
+  if (matchTypeName.includes("여자")) return women;
+  if (matchTypeName.includes("남자")) return men;
+
+  return [...men, ...women];
+}
+
     function getGroupMatches(groupName) {
       const all = Object.values(tournamentData?.groupMatches || {});
       return all
@@ -598,20 +611,29 @@
       return cloned;
     }
 
-    function createPlayerSelectHtml(teamId, selectedValue, selectCount, inputNameBase, disabled) {
-      const players = getAllPlayers(teamId);
-      let html = "";
-      for (let i = 0; i < selectCount; i++) {
-        const current = Array.isArray(selectedValue) ? (selectedValue[i] || "") : (i === 0 ? (selectedValue || "") : "");
-        html += `
-          <select name="${inputNameBase}_${i}" ${disabled ? "disabled" : ""}>
-            <option value="">선택</option>
-            ${players.map(p => `<option value="${escapeHtml(p)}" ${current === p ? "selected" : ""}>${escapeHtml(p)}</option>`).join("")}
-          </select>
-        `;
-      }
-      return html;
-    }
+    function createPlayerSelectHtml(teamId, matchTypeName, selectedValue, selectCount, inputNameBase, disabled) {
+  const players = getSelectablePlayers(teamId, matchTypeName);
+  let html = "";
+
+  for (let i = 0; i < selectCount; i++) {
+    const current = Array.isArray(selectedValue)
+      ? (selectedValue[i] || "")
+      : (i === 0 ? (selectedValue || "") : "");
+
+    html += `
+      <select name="${inputNameBase}_${i}" ${disabled ? "disabled" : ""}>
+        <option value="">선택</option>
+        ${players.map(p => `
+          <option value="${escapeHtml(p)}" ${current === p ? "selected" : ""}>
+            ${escapeHtml(p)}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  return html;
+}
 
     function playerText(arr) {
       if (!Array.isArray(arr) || !arr.length) return "-";
@@ -622,9 +644,9 @@
       return `<div class="readonly-text">${escapeHtml(playerText(players))}</div>`;
     }
 
-    function renderEditablePlayerCell(teamId, players, count, baseName) {
-      return createPlayerSelectHtml(teamId, players, count, baseName, false);
-    }
+   function renderEditablePlayerCell(teamId, matchTypeName, players, count, baseName) {
+  return createPlayerSelectHtml(teamId, matchTypeName, players, count, baseName, false);
+}
 
     function renderMatchCard(match) {
       const isOpen = openMatchId === match.id;
@@ -653,12 +675,12 @@
             : "-";
 
         const leftCell = isAdmin
-          ? renderEditablePlayerCell(match.teamA, sub.teamAPlayers || [], def.count, `${match.id}_${def.key}_A`)
-          : renderReadonlyPlayerCell(sub.teamAPlayers || []);
+  ? renderEditablePlayerCell(match.teamA, def.name, sub.teamAPlayers || [], def.count, `${match.id}_${def.key}_A`)
+  : renderReadonlyPlayerCell(sub.teamAPlayers || []);
 
-        const rightCell = isAdmin
-          ? renderEditablePlayerCell(match.teamB, sub.teamBPlayers || [], def.count, `${match.id}_${def.key}_B`)
-          : renderReadonlyPlayerCell(sub.teamBPlayers || []);
+const rightCell = isAdmin
+  ? renderEditablePlayerCell(match.teamB, def.name, sub.teamBPlayers || [], def.count, `${match.id}_${def.key}_B`)
+  : renderReadonlyPlayerCell(sub.teamBPlayers || []);
 
         const scoreCell = isAdmin
           ? `
