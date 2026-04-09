@@ -710,14 +710,7 @@
   white-space:nowrap;
 }
 
-.match-top-line{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:6px;
-  margin-bottom:6px;
-  flex-wrap:nowrap;
-}
+
 
 .match-title-left{
   font-size:15px;
@@ -728,12 +721,31 @@
   flex:1 1 auto;
   min-width:0;
 }
-
-.match-top-right{
+.match-title-row{
   display:flex;
   align-items:center;
+  justify-content:space-between;
   gap:6px;
-  flex:0 0 auto;
+  margin-bottom:6px;
+}
+
+.match-bottom-line{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  margin-top:6px;
+}
+
+@media (max-width:768px){
+  .match-title-row{
+    margin-bottom:4px;
+  }
+
+  .match-bottom-line{
+    gap:4px;
+    margin-top:4px;
+  }
 }
 
 .match-score-right{
@@ -822,6 +834,14 @@
 .submatch-card.unsaved{
   border:2px solid #ef6c00 !important;
   box-shadow:0 0 0 2px rgba(239,108,0,0.15);
+}
+.score-select.unsaved-score,
+.line-score.unsaved-score,
+.match-score-right.unsaved-score{
+  border:2px solid #ef6c00 !important;
+  border-radius:8px;
+  box-shadow:0 0 0 2px rgba(239,108,0,0.12);
+  background:#fff7ed;
 }
 
   </style>
@@ -1298,27 +1318,26 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
     : "";
 
   return `
-    <div class="submatch-card compact"
-     data-submatch-card="${match.id}_${def.key}">
-      <div class="match-top-line">
-        <div class="match-title-left ${teamAWin || teamBWin ? "winner" : ""}">
-          ${escapeHtml(def.name)}(${escapeHtml(match.teamAName)}:${escapeHtml(match.teamBName)})
-        </div>
-
-        <div class="match-top-right">
-          <div class="match-score-right">
-            ${scoreHtml}
-          </div>
-          ${saveBtnHtml}
-        </div>
-      </div>
-
-      <div class="match-player-line">
-        ${teamAPlayersHtml}
-        <span class="compact-divider">:</span>
-        ${teamBPlayersHtml}
-      </div>
+   <div class="submatch-card compact" data-submatch-card="${match.id}_${def.key}">
+  <div class="match-title-row">
+    <div class="match-title-left ${teamAWin || teamBWin ? "winner" : ""}">
+      ${escapeHtml(def.name)}(${escapeHtml(match.teamAName)}:${escapeHtml(match.teamBName)})
     </div>
+  </div>
+
+  <div class="match-player-line">
+    ${teamAPlayersHtml}
+    <span class="compact-divider">:</span>
+    ${teamBPlayersHtml}
+  </div>
+
+  <div class="match-bottom-line">
+    <div class="match-score-right" data-score-box="${match.id}_${def.key}">
+      ${scoreHtml}
+    </div>
+    ${saveBtnHtml}
+  </div>
+</div>
   `;
 }).join("");
 
@@ -1464,9 +1483,10 @@ tournamentData.groupMatches[matchId] = computed;
 
 renderCurrentView();
 
-setTimeout(()=>{
+setTimeout(() => {
   markUnsaved(matchId, defKey);
-},50);
+  markUnsavedScore(matchId, defKey);
+}, 50);
     };
   });
 
@@ -1524,6 +1544,39 @@ function clearUnsaved(matchId, defKey){
     card.classList.remove("unsaved");
   }
 }
+
+function markUnsavedScore(matchId, defKey){
+  const scoreBox = document.querySelector(
+    `[data-score-box="${matchId}_${defKey}"]`
+  );
+  if(scoreBox){
+    scoreBox.classList.add("unsaved-score");
+  }
+
+  const scoreSelect = document.querySelector(
+    `[data-score-select="true"][data-match-id="${matchId}"][data-def-key="${defKey}"]`
+  );
+  if(scoreSelect){
+    scoreSelect.classList.add("unsaved-score");
+  }
+}
+
+function clearUnsavedScore(matchId, defKey){
+  const scoreBox = document.querySelector(
+    `[data-score-box="${matchId}_${defKey}"]`
+  );
+  if(scoreBox){
+    scoreBox.classList.remove("unsaved-score");
+  }
+
+  const scoreSelect = document.querySelector(
+    `[data-score-select="true"][data-match-id="${matchId}"][data-def-key="${defKey}"]`
+  );
+  if(scoreSelect){
+    scoreSelect.classList.remove("unsaved-score");
+  }
+}
+
     
    function readSingleSubMatchInputs(matchId, defKey) {
   const original = tournamentData.groupMatches[matchId];
@@ -1584,6 +1637,7 @@ renderCurrentView();
 
 setTimeout(() => {
   clearUnsaved(matchId, defKey);
+  clearUnsavedScore(matchId, defKey);
 }, 50);
 
 alert("저장되었습니다.");
