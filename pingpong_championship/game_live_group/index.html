@@ -1387,45 +1387,89 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
     }
 
     function bindMatchCardEvents() {
-  document.querySelectorAll("[data-score-select='true']").forEach(sel => {
-  sel.addEventListener("change", () => {
-    if (!isAdmin) return;
+  document.querySelectorAll("[data-open-id]").forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    const matchId = sel.getAttribute("data-match-id");
-    const defKey = sel.getAttribute("data-def-key");
-    const value = sel.value;
+      const id = btn.getAttribute("data-open-id");
+      const panel = document.getElementById(`detail_${id}`);
+      if (!panel) return;
 
-    const target = tournamentData.groupMatches?.[matchId]?.matches?.[defKey];
-    if (!target) return;
+      const isOpen = panel.classList.contains("open");
 
-    // 먼저 현재 화면에서 선택한 선수값을 메모리에 반영
-    syncSubMatchPlayersToMemory(matchId, defKey);
+      document.querySelectorAll(".detail-panel.open").forEach(el => {
+        el.classList.remove("open");
+      });
+      document.querySelectorAll("[data-open-id] .summary-right").forEach(el => {
+        el.textContent = "▼ 펼치기";
+      });
 
-    if (!value) {
-      target.setScoreA = 0;
-      target.setScoreB = 0;
-    } else {
-      const [a, b] = value.split(":").map(Number);
-      target.setScoreA = a;
-      target.setScoreB = b;
-    }
-
-    const computed = computeMatchAggregate(tournamentData.groupMatches[matchId]);
-    tournamentData.groupMatches[matchId] = computed;
-    renderCurrentView();
+      if (!isOpen) {
+        panel.classList.add("open");
+        const right = btn.querySelector(".summary-right");
+        if (right) right.textContent = "▲ 접기";
+        openMatchId = id;
+      } else {
+        openMatchId = null;
+      }
+    };
   });
-});
+
+  document.querySelectorAll(".inline-player-selects select").forEach(sel => {
+    sel.onchange = () => {
+      if (!isAdmin) return;
+
+      const name = sel.getAttribute("name") || "";
+      const m = name.match(/^(.+?)_(m\d)_[AB]_\d+$/);
+      if (!m) return;
+
+      const matchId = m[1];
+      const defKey = m[2];
+      syncSubMatchPlayersToMemory(matchId, defKey);
+    };
+  });
+
+  document.querySelectorAll("[data-score-select='true']").forEach(sel => {
+    sel.onchange = () => {
+      if (!isAdmin) return;
+
+      const matchId = sel.getAttribute("data-match-id");
+      const defKey = sel.getAttribute("data-def-key");
+      const value = sel.value;
+
+      const target = tournamentData.groupMatches?.[matchId]?.matches?.[defKey];
+      if (!target) return;
+
+      syncSubMatchPlayersToMemory(matchId, defKey);
+
+      if (!value) {
+        target.setScoreA = 0;
+        target.setScoreB = 0;
+      } else {
+        const [a, b] = value.split(":").map(Number);
+        target.setScoreA = a;
+        target.setScoreB = b;
+      }
+
+      const computed = computeMatchAggregate(tournamentData.groupMatches[matchId]);
+      tournamentData.groupMatches[matchId] = computed;
+      renderCurrentView();
+    };
+  });
 
   if (isAdmin) {
     document.querySelectorAll("[data-subsave-id]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         const matchId = btn.getAttribute("data-subsave-id");
         const defKey = btn.getAttribute("data-def-key");
         saveSingleSubMatch(matchId, defKey);
-      });
+      };
     });
   }
 }
+
+
 function syncSubMatchPlayersToMemory(matchId, defKey) {
   const match = tournamentData.groupMatches?.[matchId];
   if (!match) return;
