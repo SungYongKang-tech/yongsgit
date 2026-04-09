@@ -1387,39 +1387,34 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
     }
 
     function bindMatchCardEvents() {
-  document.querySelectorAll("[data-open-id]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-open-id");
-      openMatchId = openMatchId === id ? null : id;
-      renderCurrentView();
-    });
-  });
-
   document.querySelectorAll("[data-score-select='true']").forEach(sel => {
-    sel.addEventListener("change", () => {
-      if (!isAdmin) return;
+  sel.addEventListener("change", () => {
+    if (!isAdmin) return;
 
-      const matchId = sel.getAttribute("data-match-id");
-      const defKey = sel.getAttribute("data-def-key");
-      const value = sel.value;
+    const matchId = sel.getAttribute("data-match-id");
+    const defKey = sel.getAttribute("data-def-key");
+    const value = sel.value;
 
-      const target = tournamentData.groupMatches?.[matchId]?.matches?.[defKey];
-      if (!target) return;
+    const target = tournamentData.groupMatches?.[matchId]?.matches?.[defKey];
+    if (!target) return;
 
-      if (!value) {
-        target.setScoreA = 0;
-        target.setScoreB = 0;
-      } else {
-        const [a, b] = value.split(":").map(Number);
-        target.setScoreA = a;
-        target.setScoreB = b;
-      }
+    // 먼저 현재 화면에서 선택한 선수값을 메모리에 반영
+    syncSubMatchPlayersToMemory(matchId, defKey);
 
-      const computed = computeMatchAggregate(tournamentData.groupMatches[matchId]);
-      tournamentData.groupMatches[matchId] = computed;
-      renderCurrentView();
-    });
+    if (!value) {
+      target.setScoreA = 0;
+      target.setScoreB = 0;
+    } else {
+      const [a, b] = value.split(":").map(Number);
+      target.setScoreA = a;
+      target.setScoreB = b;
+    }
+
+    const computed = computeMatchAggregate(tournamentData.groupMatches[matchId]);
+    tournamentData.groupMatches[matchId] = computed;
+    renderCurrentView();
   });
+});
 
   if (isAdmin) {
     document.querySelectorAll("[data-subsave-id]").forEach(btn => {
@@ -1431,7 +1426,30 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
     });
   }
 }
+function syncSubMatchPlayersToMemory(matchId, defKey) {
+  const match = tournamentData.groupMatches?.[matchId];
+  if (!match) return;
 
+  const def = MATCH_TYPES.find(x => x.key === defKey);
+  if (!def) return;
+
+  const sub = match.matches?.[defKey];
+  if (!sub) return;
+
+  const teamAPlayers = [];
+  const teamBPlayers = [];
+
+  for (let i = 0; i < def.count; i++) {
+    const aSel = document.querySelector(`[name="${matchId}_${def.key}_A_${i}"]`);
+    const bSel = document.querySelector(`[name="${matchId}_${def.key}_B_${i}"]`);
+
+    if (aSel && aSel.value) teamAPlayers.push(aSel.value);
+    if (bSel && bSel.value) teamBPlayers.push(bSel.value);
+  }
+
+  sub.teamAPlayers = teamAPlayers;
+  sub.teamBPlayers = teamBPlayers;
+}
     
    function readSingleSubMatchInputs(matchId, defKey) {
   const original = tournamentData.groupMatches[matchId];
