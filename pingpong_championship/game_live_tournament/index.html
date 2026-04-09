@@ -1373,42 +1373,84 @@ if ((selectedMatchId === "final") && (!match.teamA || !match.teamB)) {
     }
 
     function bindDetailEvents() {
-      document.querySelectorAll("[data-score-select='true']").forEach(sel => {
-        sel.addEventListener("change", () => {
-          if (!isAdmin) return;
+  document.querySelectorAll(".inline-player-selects select").forEach(sel => {
+    sel.addEventListener("change", () => {
+      if (!isAdmin) return;
 
-          const matchId = sel.getAttribute("data-match-id");
-          const defKey = sel.getAttribute("data-def-key");
-          const value = sel.value;
+      const name = sel.getAttribute("name") || "";
+      const m = name.match(/^(.+?)_(m\d)_[AB]_\d+$/);
+      if (!m) return;
 
-          const target = tournamentData.tournamentMatches?.[matchId]?.matches?.[defKey];
-          if (!target) return;
+      const matchId = m[1];
+      const defKey = m[2];
 
-          if (!value) {
-            target.setScoreA = 0;
-            target.setScoreB = 0;
-          } else {
-            const [a, b] = value.split(":").map(Number);
-            target.setScoreA = a;
-            target.setScoreB = b;
-          }
+      syncTournamentSubMatchPlayersToMemory(matchId, defKey);
+    });
+  });
 
-          const computed = computeMatchAggregate(tournamentData.tournamentMatches[matchId]);
-          tournamentData.tournamentMatches[matchId] = computed;
-          renderAll();
-        });
-      });
+  document.querySelectorAll("[data-score-select='true']").forEach(sel => {
+    sel.addEventListener("change", () => {
+      if (!isAdmin) return;
 
-      if (isAdmin) {
-        document.querySelectorAll("[data-subsave-id]").forEach(btn => {
-          btn.addEventListener("click", () => {
-            const matchId = btn.getAttribute("data-subsave-id");
-            const defKey = btn.getAttribute("data-def-key");
-            saveSingleSubMatch(matchId, defKey);
-          });
-        });
+      const matchId = sel.getAttribute("data-match-id");
+      const defKey = sel.getAttribute("data-def-key");
+      const value = sel.value;
+
+      const target = tournamentData.tournamentMatches?.[matchId]?.matches?.[defKey];
+      if (!target) return;
+
+      syncTournamentSubMatchPlayersToMemory(matchId, defKey);
+
+      if (!value) {
+        target.setScoreA = 0;
+        target.setScoreB = 0;
+      } else {
+        const [a, b] = value.split(":").map(Number);
+        target.setScoreA = a;
+        target.setScoreB = b;
       }
-    }
+
+      const computed = computeMatchAggregate(tournamentData.tournamentMatches[matchId]);
+      tournamentData.tournamentMatches[matchId] = computed;
+      renderAll();
+    });
+  });
+
+  if (isAdmin) {
+    document.querySelectorAll("[data-subsave-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const matchId = btn.getAttribute("data-subsave-id");
+        const defKey = btn.getAttribute("data-def-key");
+        saveSingleSubMatch(matchId, defKey);
+      });
+    });
+  }
+}
+
+    function syncTournamentSubMatchPlayersToMemory(matchId, defKey) {
+  const match = tournamentData.tournamentMatches?.[matchId];
+  if (!match) return;
+
+  const def = MATCH_TYPES.find(x => x.key === defKey);
+  if (!def) return;
+
+  const sub = match.matches?.[defKey];
+  if (!sub) return;
+
+  const teamAPlayers = [];
+  const teamBPlayers = [];
+
+  for (let i = 0; i < def.count; i++) {
+    const aSel = document.querySelector(`[name="${matchId}_${def.key}_A_${i}"]`);
+    const bSel = document.querySelector(`[name="${matchId}_${def.key}_B_${i}"]`);
+
+    if (aSel && aSel.value) teamAPlayers.push(aSel.value);
+    if (bSel && bSel.value) teamBPlayers.push(bSel.value);
+  }
+
+  sub.teamAPlayers = teamAPlayers;
+  sub.teamBPlayers = teamBPlayers;
+}
 
     function readSingleSubMatchInputs(matchId, defKey) {
       const original = tournamentData.tournamentMatches[matchId];
