@@ -70,7 +70,7 @@
     button.red{background:var(--red)}
     button.ghost{
       background:#edf4ff;
-      color:var(--primary-dark);
+      color:#0d47a1;
       border:1px solid #c8dcff;
     }
     button.disabled-look{
@@ -337,6 +337,7 @@
       <div class="actions">
         <button type="button" class="secondary" id="btnRefresh">새로고침</button>
         <button type="button" class="ghost" id="btnToggleAdmin">관리자 잠금해제</button>
+        <button type="button" class="red" id="btnResetAllResults" style="display:none;">전체 경기결과 초기화</button>
         <button type="button" class="green" id="btnTournamentPage">토너먼트 페이지</button>
       </div>
     </div>
@@ -462,6 +463,7 @@
 
     const btnRefresh = document.getElementById("btnRefresh");
     const btnToggleAdmin = document.getElementById("btnToggleAdmin");
+    const btnResetAllResults = document.getElementById("btnResetAllResults");
     const btnTournamentPage = document.getElementById("btnTournamentPage");
 
     const tabA = document.getElementById("tabA");
@@ -497,9 +499,11 @@
       if (isAdmin) {
         adminStatus.textContent = "관리자 모드입니다. 선수 선택, 점수 입력, 저장이 가능합니다.";
         btnToggleAdmin.textContent = "관리자 잠금해제 해제";
+        btnResetAllResults.style.display = "";
       } else {
         adminStatus.textContent = "관전자 모드입니다. 상세 결과 조회만 가능합니다.";
         btnToggleAdmin.textContent = "관리자 잠금해제";
+        btnResetAllResults.style.display = "none";
       }
     }
 
@@ -524,17 +528,17 @@
     }
 
     function getSelectablePlayers(teamId, matchTypeName) {
-  const team = getTeam(teamId);
-  if (!team) return [];
+      const team = getTeam(teamId);
+      if (!team) return [];
 
-  const men = Array.isArray(team.men) ? team.men : [];
-  const women = Array.isArray(team.women) ? team.women : [];
+      const men = Array.isArray(team.men) ? team.men : [];
+      const women = Array.isArray(team.women) ? team.women : [];
 
-  if (matchTypeName.includes("여자")) return women;
-  if (matchTypeName.includes("남자")) return men;
+      if (matchTypeName.includes("여자")) return women;
+      if (matchTypeName.includes("남자")) return men;
 
-  return [...men, ...women];
-}
+      return [...men, ...women];
+    }
 
     function getGroupMatches(groupName) {
       const all = Object.values(tournamentData?.groupMatches || {});
@@ -546,11 +550,11 @@
     function getSummaryText(match) {
       const scoreA = Number(match.teamMatchScoreA || 0);
       const scoreB = Number(match.teamMatchScoreB || 0);
-      const hasAny = Object.values(match.matches || {}).some(m =>
-        (m.winner && m.winner !== "") ||
-        Number.isFinite(Number(m.setScoreA)) ||
-        Number.isFinite(Number(m.setScoreB))
-      );
+      const hasAny = Object.values(match.matches || {}).some(m => {
+        const a = Number(m.setScoreA || 0);
+        const b = Number(m.setScoreB || 0);
+        return (a > 0 || b > 0) || (m.winner && m.winner !== "");
+      });
 
       let state = "경기전";
       if (hasAny) state = "진행중";
@@ -607,33 +611,35 @@
         return (a > 0 || b > 0) && a !== b;
       });
 
-      cloned.status = allFilled ? "done" : (teamScoreA > 0 || teamScoreB > 0 || setDiffA !== 0 || setDiffB !== 0 ? "playing" : "ready");
+      cloned.status = allFilled
+        ? "done"
+        : (teamScoreA > 0 || teamScoreB > 0 || setDiffA !== 0 || setDiffB !== 0 ? "playing" : "ready");
+
       return cloned;
     }
 
     function createPlayerSelectHtml(teamId, matchTypeName, selectedValue, selectCount, inputNameBase, disabled) {
-  const players = getSelectablePlayers(teamId, matchTypeName);
-  let html = "";
+      const players = getSelectablePlayers(teamId, matchTypeName);
+      let html = "";
 
-  for (let i = 0; i < selectCount; i++) {
-    const current = Array.isArray(selectedValue)
-      ? (selectedValue[i] || "")
-      : (i === 0 ? (selectedValue || "") : "");
+      for (let i = 0; i < selectCount; i++) {
+        const current = Array.isArray(selectedValue)
+          ? (selectedValue[i] || "")
+          : (i === 0 ? (selectedValue || "") : "");
 
-    html += `
-      <select name="${inputNameBase}_${i}" ${disabled ? "disabled" : ""}>
-        <option value="">선택</option>
-        ${players.map(p => `
-          <option value="${escapeHtml(p)}" ${current === p ? "selected" : ""}>
-            ${escapeHtml(p)}
-          </option>
-        `).join("")}
-      </select>
-    `;
-  }
-
-  return html;
-}
+        html += `
+          <select name="${inputNameBase}_${i}" ${disabled ? "disabled" : ""}>
+            <option value="">선택</option>
+            ${players.map(p => `
+              <option value="${escapeHtml(p)}" ${current === p ? "selected" : ""}>
+                ${escapeHtml(p)}
+              </option>
+            `).join("")}
+          </select>
+        `;
+      }
+      return html;
+    }
 
     function playerText(arr) {
       if (!Array.isArray(arr) || !arr.length) return "-";
@@ -644,9 +650,9 @@
       return `<div class="readonly-text">${escapeHtml(playerText(players))}</div>`;
     }
 
-   function renderEditablePlayerCell(teamId, matchTypeName, players, count, baseName) {
-  return createPlayerSelectHtml(teamId, matchTypeName, players, count, baseName, false);
-}
+    function renderEditablePlayerCell(teamId, matchTypeName, players, count, baseName) {
+      return createPlayerSelectHtml(teamId, matchTypeName, players, count, baseName, false);
+    }
 
     function renderMatchCard(match) {
       const isOpen = openMatchId === match.id;
@@ -675,12 +681,12 @@
             : "-";
 
         const leftCell = isAdmin
-  ? renderEditablePlayerCell(match.teamA, def.name, sub.teamAPlayers || [], def.count, `${match.id}_${def.key}_A`)
-  : renderReadonlyPlayerCell(sub.teamAPlayers || []);
+          ? renderEditablePlayerCell(match.teamA, def.name, sub.teamAPlayers || [], def.count, `${match.id}_${def.key}_A`)
+          : renderReadonlyPlayerCell(sub.teamAPlayers || []);
 
-const rightCell = isAdmin
-  ? renderEditablePlayerCell(match.teamB, def.name, sub.teamBPlayers || [], def.count, `${match.id}_${def.key}_B`)
-  : renderReadonlyPlayerCell(sub.teamBPlayers || []);
+        const rightCell = isAdmin
+          ? renderEditablePlayerCell(match.teamB, def.name, sub.teamBPlayers || [], def.count, `${match.id}_${def.key}_B`)
+          : renderReadonlyPlayerCell(sub.teamBPlayers || []);
 
         const scoreCell = isAdmin
           ? `
@@ -867,6 +873,72 @@ const rightCell = isAdmin
       }
     }
 
+    function makeEmptySubMatches() {
+      const result = {};
+
+      MATCH_TYPES.forEach(def => {
+        result[def.key] = {
+          order: Number(def.key.replace("m", "")),
+          type: def.name,
+          teamAPlayers: [],
+          teamBPlayers: [],
+          winner: "",
+          setScoreA: 0,
+          setScoreB: 0
+        };
+      });
+
+      return result;
+    }
+
+    async function resetAllGroupResults() {
+      if (!isAdmin) return;
+
+      const ok = confirm("조별리그 전체 경기결과를 모두 초기화하시겠습니까?");
+      if (!ok) return;
+
+      try {
+        const updates = {};
+        const allMatches = Object.values(tournamentData?.groupMatches || {});
+
+        allMatches.forEach(match => {
+          updates[`tournaments/${tournamentId}/groupMatches/${match.id}`] = {
+            ...match,
+            status: "ready",
+            teamMatchScoreA: 0,
+            teamMatchScoreB: 0,
+            setDiffA: 0,
+            setDiffB: 0,
+            winnerTeamId: "",
+            matches: makeEmptySubMatches()
+          };
+        });
+
+        await update(ref(db), updates);
+
+        Object.keys(tournamentData.groupMatches || {}).forEach(matchId => {
+          const match = tournamentData.groupMatches[matchId];
+          tournamentData.groupMatches[matchId] = {
+            ...match,
+            status: "ready",
+            teamMatchScoreA: 0,
+            teamMatchScoreB: 0,
+            setDiffA: 0,
+            setDiffB: 0,
+            winnerTeamId: "",
+            matches: makeEmptySubMatches()
+          };
+        });
+
+        openMatchId = null;
+        renderCurrentView();
+        alert("전체 경기결과가 초기화되었습니다.");
+      } catch (err) {
+        console.error(err);
+        alert(err.message || "초기화 중 오류가 발생했습니다.");
+      }
+    }
+
     function computeStandings(groupName) {
       const groupTeamIds = tournamentData.groups?.[groupName] || [];
       const matches = getGroupMatches(groupName);
@@ -1011,6 +1083,8 @@ const rightCell = isAdmin
         }
       });
 
+      btnResetAllResults.addEventListener("click", resetAllGroupResults);
+
       btnTournamentPage.addEventListener("click", () => {
         const target = `../game_live_tournament/?tournamentId=${encodeURIComponent(tournamentId)}`;
         location.href = target;
@@ -1069,10 +1143,10 @@ const rightCell = isAdmin
       }
     }
 
-    let unbound = false;
+    let realtimeBound = false;
     function bindRealtime() {
-      if (unbound) return;
-      unbound = true;
+      if (realtimeBound) return;
+      realtimeBound = true;
 
       const dataRef = ref(db, `tournaments/${tournamentId}`);
       onValue(dataRef, snap => {

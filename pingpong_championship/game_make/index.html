@@ -63,6 +63,12 @@
     button:hover{background:var(--primary2)}
     button.secondary{background:#607d8b}
     button.green{background:var(--ok)}
+    button.ghost{
+      background:#edf4ff;
+      color:#0d47a1;
+      border:1px solid #c8dcff;
+    }
+
     .grid{
       display:grid;
       gap:16px;
@@ -234,7 +240,9 @@
         <small>제14회 남동노조위원장기 탁구대회 운영용</small>
       </div>
       <div class="actions">
-        <button type="button" class="secondary" id="btnFillSample">샘플 데이터 넣기</button>
+        <button type="button" class="ghost" id="btnToggleMakeAdmin">관리자 잠금해제</button>
+        <button type="button" class="secondary" id="btnFillSample" style="display:none;">샘플 데이터 넣기</button>
+        <button type="button" class="secondary" id="btnClearSample" style="display:none;">샘플 입력 지우기</button>
         <button type="button" class="green" id="btnSaveOnly">저장만 하기</button>
         <button type="button" id="btnStartTournament">경기 시작</button>
       </div>
@@ -355,6 +363,10 @@
     ];
 
     const DEFAULT_TEAM_COUNT = 8;
+    const MAKE_ADMIN_STORAGE_KEY = "koen_make_admin_unlocked";
+    const MAKE_ADMIN_PASSWORD = "1111";
+
+    let isMakeAdmin = localStorage.getItem(MAKE_ADMIN_STORAGE_KEY) === "true";
 
     const teamsContainer = document.getElementById("teamsContainer");
     const groupAList = document.getElementById("groupAList");
@@ -370,7 +382,9 @@
     const titleInput = document.getElementById("title");
     const dateInput = document.getElementById("date");
 
+    const btnToggleMakeAdmin = document.getElementById("btnToggleMakeAdmin");
     const btnFillSample = document.getElementById("btnFillSample");
+    const btnClearSample = document.getElementById("btnClearSample");
     const btnSaveOnly = document.getElementById("btnSaveOnly");
     const btnSaveBottom = document.getElementById("btnSaveBottom");
     const btnStartTournament = document.getElementById("btnStartTournament");
@@ -395,6 +409,12 @@
         .split("\n")
         .map(v => v.trim())
         .filter(Boolean);
+    }
+
+    function updateMakeAdminUI() {
+      btnFillSample.style.display = isMakeAdmin ? "" : "none";
+      btnClearSample.style.display = isMakeAdmin ? "" : "none";
+      btnToggleMakeAdmin.textContent = isMakeAdmin ? "관리자 잠금해제 해제" : "관리자 잠금해제";
     }
 
     function createTeamCards() {
@@ -537,20 +557,14 @@
 
       const warnings = [];
 
-      if (teams.length !== 8) {
-        warnings.push(`팀명이 입력된 팀 수: ${teams.length}개 (8개 필요)`);
-      }
+      if (teams.length !== 8) warnings.push(`팀명이 입력된 팀 수: ${teams.length}개 (8개 필요)`);
 
       const nameSet = new Set();
       for (const t of teams) {
-        if (nameSet.has(t.name)) {
-          warnings.push(`중복 팀명: ${t.name}`);
-        }
+        if (nameSet.has(t.name)) warnings.push(`중복 팀명: ${t.name}`);
         nameSet.add(t.name);
 
-        if (t.total > 8) {
-          warnings.push(`${t.name}: 팀 인원 ${t.total}명 (8명 초과)`);
-        }
+        if (t.total > 8) warnings.push(`${t.name}: 팀 인원 ${t.total}명 (8명 초과)`);
       }
 
       if (aTeams.length !== 4) warnings.push(`A조 팀 수 ${aTeams.length}개 (4개 필요)`);
@@ -667,25 +681,15 @@
       const teams = getTeamsFromForm();
       const filledTeams = teams.filter(t => t.name);
 
-      if (filledTeams.length !== 8) {
-        throw new Error("팀명 입력이 완료된 팀이 8개여야 합니다.");
-      }
+      if (filledTeams.length !== 8) throw new Error("팀명 입력이 완료된 팀이 8개여야 합니다.");
 
       const teamNameSet = new Set();
-
       for (const t of filledTeams) {
-        if (teamNameSet.has(t.name)) {
-          throw new Error(`중복된 팀명이 있습니다: ${t.name}`);
-        }
+        if (teamNameSet.has(t.name)) throw new Error(`중복된 팀명이 있습니다: ${t.name}`);
         teamNameSet.add(t.name);
 
-        if (t.total === 0) {
-          throw new Error(`${t.name} 팀의 선수 명단이 비어 있습니다.`);
-        }
-
-        if (t.total > 8) {
-          throw new Error(`${t.name} 팀의 총원이 8명을 초과했습니다.`);
-        }
+        if (t.total === 0) throw new Error(`${t.name} 팀의 선수 명단이 비어 있습니다.`);
+        if (t.total > 8) throw new Error(`${t.name} 팀의 총원이 8명을 초과했습니다.`);
       }
 
       const aTeams = filledTeams.filter(t => t.group === "A");
@@ -821,8 +825,8 @@
         localStorage.setItem("currentTournamentId", tournamentId);
 
         if (startAfterSave) {
-  location.href = `../game_live_group/?tournamentId=${encodeURIComponent(tournamentId)}`;
-}
+          location.href = `../game_live_group/?tournamentId=${encodeURIComponent(tournamentId)}`;
+        }
       } catch (err) {
         console.error(err);
         saveStatus.textContent = `저장 실패\n${err.message || err}`;
@@ -868,7 +872,47 @@ ${name} 여2`;
       saveStatus.textContent = "샘플 데이터가 입력되었습니다.";
     }
 
+    function clearSampleData() {
+      for (let i = 0; i < DEFAULT_TEAM_COUNT; i++) {
+        document.getElementById(`teamName${i}`).value = "";
+        document.getElementById(`group${i}`).value = "";
+        document.getElementById(`men${i}`).value = "";
+        document.getElementById(`women${i}`).value = "";
+        updateTeamCountBadge(i);
+      }
+
+      titleInput.value = "제14회 남동노조위원장기 탁구대회";
+      dateInput.value = todayKST();
+
+      renderGroupStatus();
+      renderBasicInfoSummary();
+      renderAutoMatches();
+
+      saveStatus.textContent = "샘플 입력이 모두 지워졌습니다.";
+    }
+
+    btnToggleMakeAdmin.addEventListener("click", () => {
+      if (isMakeAdmin) {
+        isMakeAdmin = false;
+        localStorage.removeItem(MAKE_ADMIN_STORAGE_KEY);
+        updateMakeAdminUI();
+        return;
+      }
+
+      const input = prompt("관리자 비밀번호를 입력하세요.");
+      if (input === null) return;
+
+      if (input === MAKE_ADMIN_PASSWORD) {
+        isMakeAdmin = true;
+        localStorage.setItem(MAKE_ADMIN_STORAGE_KEY, "true");
+        updateMakeAdminUI();
+      } else {
+        alert("비밀번호가 올바르지 않습니다.");
+      }
+    });
+
     btnFillSample.addEventListener("click", loadSampleData);
+    btnClearSample.addEventListener("click", clearSampleData);
     btnSaveOnly.addEventListener("click", () => saveTournament(false));
     btnSaveBottom.addEventListener("click", () => saveTournament(false));
     btnStartTournament.addEventListener("click", () => saveTournament(true));
@@ -878,6 +922,7 @@ ${name} 여2`;
     dateInput.addEventListener("input", renderBasicInfoSummary);
 
     createTeamCards();
+    updateMakeAdminUI();
 
     async function checkCurrentTournament() {
       try {
