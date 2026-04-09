@@ -618,6 +618,124 @@
     min-width:0;
   }
 }
+
+.submatch-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:10px;
+}
+
+.submatch-card{
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#fff;
+  padding:10px;
+}
+
+.submatch-title{
+  font-weight:800;
+  font-size:14px;
+  color:var(--primary-dark);
+  margin-bottom:8px;
+}
+
+.submatch-row{
+  display:grid;
+  grid-template-columns:92px 1fr;
+  gap:8px;
+  align-items:center;
+  margin-bottom:6px;
+}
+
+.submatch-row:last-child{
+  margin-bottom:0;
+}
+
+.submatch-label{
+  font-size:12px;
+  font-weight:700;
+  color:var(--muted);
+}
+
+.submatch-value{
+  font-size:14px;
+  line-height:1.45;
+}
+
+.name-pair,
+.biz-pair,
+.result-pair{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:6px;
+}
+
+.name-pair select{
+  width:auto;
+  min-width:92px;
+  flex:1 1 120px;
+}
+
+.score-inline{
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+
+.score-inline input[type="number"]{
+  width:48px;
+  min-width:48px;
+  text-align:center;
+  padding:6px 4px;
+}
+
+.score-inline .colon{
+  font-weight:700;
+  color:var(--muted);
+}
+
+@media (max-width:768px){
+  .submatch-card{
+    padding:9px;
+    border-radius:10px;
+  }
+
+  .submatch-title{
+    font-size:13px;
+    margin-bottom:6px;
+  }
+
+  .submatch-row{
+    grid-template-columns:72px 1fr;
+    gap:6px;
+    margin-bottom:5px;
+  }
+
+  .submatch-label{
+    font-size:11px;
+  }
+
+  .submatch-value{
+    font-size:13px;
+  }
+
+  .name-pair select{
+    min-width:78px;
+    flex:1 1 90px;
+    font-size:12px;
+    padding:6px 7px;
+  }
+
+  .score-inline input[type="number"]{
+    width:42px;
+    min-width:42px;
+    font-size:12px;
+    padding:5px 4px;
+  }
+}
+
   </style>
 </head>
 <body>
@@ -957,49 +1075,100 @@
       const teamAList = teamAPlayers.map(name => `<li>${escapeHtml(name)}</li>`).join("");
       const teamBList = teamBPlayers.map(name => `<li>${escapeHtml(name)}</li>`).join("");
 
-      const rows = MATCH_TYPES.map(def => {
-        const sub = match.matches?.[def.key] || {
-          type: def.name,
-          teamAPlayers: [],
-          teamBPlayers: [],
-          setScoreA: 0,
-          setScoreB: 0,
-          winner: ""
-        };
+     const rows = MATCH_TYPES.map(def => {
+  const sub = match.matches?.[def.key] || {
+    type: def.name,
+    teamAPlayers: [],
+    teamBPlayers: [],
+    setScoreA: 0,
+    setScoreB: 0,
+    winner: ""
+  };
 
-        const winnerText = sub.winner === "A"
-          ? match.teamAName
-          : sub.winner === "B"
-            ? match.teamBName
-            : "-";
+  const winnerText = sub.winner === "A"
+    ? match.teamAName
+    : sub.winner === "B"
+      ? match.teamBName
+      : "-";
 
-        const leftCell = isAdmin
-          ? renderEditablePlayerCell(match.teamA, def.name, sub.teamAPlayers || [], def.count, `${match.id}_${def.key}_A`)
-          : renderReadonlyPlayerCell(sub.teamAPlayers || []);
+  const teamANameText = Array.isArray(sub.teamAPlayers) && sub.teamAPlayers.length
+    ? sub.teamAPlayers.join(" / ")
+    : "-";
 
-        const rightCell = isAdmin
-          ? renderEditablePlayerCell(match.teamB, def.name, sub.teamBPlayers || [], def.count, `${match.id}_${def.key}_B`)
-          : renderReadonlyPlayerCell(sub.teamBPlayers || []);
+  const teamBNameText = Array.isArray(sub.teamBPlayers) && sub.teamBPlayers.length
+    ? sub.teamBPlayers.join(" / ")
+    : "-";
 
-        const scoreCell = isAdmin
-  ? `
-    <div class="score-inputs">
-      <input type="number" min="0" step="1" name="${match.id}_${def.key}_setA" value="${Number(sub.setScoreA || 0)}" />
-      <span class="score-sep">:</span>
-      <input type="number" min="0" step="1" name="${match.id}_${def.key}_setB" value="${Number(sub.setScoreB || 0)}" />
+  const teamABizText = match.teamAName || "-";
+  const teamBBizText = match.teamBName || "-";
+
+  const nameInputA = isAdmin
+    ? renderEditablePlayerCell(match.teamA, def.name, sub.teamAPlayers || [], def.count, `${match.id}_${def.key}_A`)
+    : `<span>${escapeHtml(teamANameText)}</span>`;
+
+  const nameInputB = isAdmin
+    ? renderEditablePlayerCell(match.teamB, def.name, sub.teamBPlayers || [], def.count, `${match.id}_${def.key}_B`)
+    : `<span>${escapeHtml(teamBNameText)}</span>`;
+
+  const resultInput = isAdmin
+    ? `
+      <div class="result-pair">
+        <span>${escapeHtml(match.teamAName)}</span>
+        <div class="score-inline">
+          <input type="number" min="0" step="1" name="${match.id}_${def.key}_setA" value="${Number(sub.setScoreA || 0)}" />
+          <span class="colon">:</span>
+          <input type="number" min="0" step="1" name="${match.id}_${def.key}_setB" value="${Number(sub.setScoreB || 0)}" />
+        </div>
+        <span>${escapeHtml(match.teamBName)}</span>
+        <span style="margin-left:8px;">승자 :</span>
+        <strong>${escapeHtml(winnerText)}</strong>
+      </div>
+    `
+    : `
+      <div class="result-pair">
+        <span>${escapeHtml(match.teamAName)}</span>
+        <strong>${Number(sub.setScoreA || 0)} : ${Number(sub.setScoreB || 0)}</strong>
+        <span>${escapeHtml(match.teamBName)}</span>
+        <span style="margin-left:8px;">승자 :</span>
+        <strong>${escapeHtml(winnerText)}</strong>
+      </div>
+    `;
+
+  return `
+    <div class="submatch-card">
+      <div class="submatch-title">${def.name}</div>
+
+      <div class="submatch-row">
+        <div class="submatch-label">대진(사업소)</div>
+        <div class="submatch-value">
+          <div class="biz-pair">
+            <span>${escapeHtml(teamABizText)}</span>
+            <span>:</span>
+            <span>${escapeHtml(teamBBizText)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="submatch-row">
+        <div class="submatch-label">대진(이름)</div>
+        <div class="submatch-value">
+          <div class="name-pair">
+            ${nameInputA}
+            <span>:</span>
+            ${nameInputB}
+          </div>
+        </div>
+      </div>
+
+      <div class="submatch-row">
+        <div class="submatch-label">경기결과</div>
+        <div class="submatch-value">
+          ${resultInput}
+        </div>
+      </div>
     </div>
-  `
-  : `<div class="readonly-text">${Number(sub.setScoreA || 0)} : ${Number(sub.setScoreB || 0)}</div>`;
-        return `
-  <tr>
-    <td data-label="종목">${def.name}</td>
-    <td data-label="${escapeHtml(match.teamAName)}">${leftCell}</td>
-    <td data-label="세트 점수">${scoreCell}</td>
-    <td data-label="${escapeHtml(match.teamBName)}">${rightCell}</td>
-    <td data-label="승자">${escapeHtml(winnerText)}</td>
-  </tr>
-`;
-      }).join("");
+  `;
+}).join("");
 
       const card = document.createElement("div");
       card.className = "match-card";
@@ -1023,22 +1192,9 @@
             </div>
           </div>
 
-          <div class="table-wrap">
-            <table class="match-input-table">
-              <thead>
-                <tr>
-                  <th>종목</th>
-                  <th>${escapeHtml(match.teamAName)}</th>
-                  <th>세트 점수</th>
-                  <th>${escapeHtml(match.teamBName)}</th>
-                  <th>승자</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows}
-              </tbody>
-            </table>
-          </div>
+         <div class="submatch-list">
+  ${rows}
+</div>
 
           <div class="result-bar">
             <div class="result-item">
