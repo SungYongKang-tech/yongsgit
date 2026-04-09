@@ -819,7 +819,10 @@
     gap:3px;
   }
 }
-
+.submatch-card.unsaved{
+  border:2px solid #ef6c00 !important;
+  box-shadow:0 0 0 2px rgba(239,108,0,0.15);
+}
 
   </style>
 </head>
@@ -1295,7 +1298,8 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
     : "";
 
   return `
-    <div class="submatch-card compact">
+    <div class="submatch-card compact"
+     data-submatch-card="${match.id}_${def.key}">
       <div class="match-top-line">
         <div class="match-title-left ${teamAWin || teamBWin ? "winner" : ""}">
           ${escapeHtml(def.name)}(${escapeHtml(match.teamAName)}:${escapeHtml(match.teamBName)})
@@ -1417,18 +1421,20 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
   });
 
   document.querySelectorAll(".inline-player-selects select").forEach(sel => {
-    sel.onchange = () => {
-      if (!isAdmin) return;
+  sel.onchange = () => {
+    if (!isAdmin) return;
 
-      const name = sel.getAttribute("name") || "";
-      const m = name.match(/^(.+?)_(m\d)_[AB]_\d+$/);
-      if (!m) return;
+    const name = sel.getAttribute("name") || "";
+    const m = name.match(/^(.+?)_(m\d)_[AB]_\d+$/);
+    if (!m) return;
 
-      const matchId = m[1];
-      const defKey = m[2];
-      syncSubMatchPlayersToMemory(matchId, defKey);
-    };
-  });
+    const matchId = m[1];
+    const defKey = m[2];
+
+    syncSubMatchPlayersToMemory(matchId, defKey);
+    markUnsaved(matchId, defKey);
+  };
+});
 
   document.querySelectorAll("[data-score-select='true']").forEach(sel => {
     sel.onchange = () => {
@@ -1442,6 +1448,7 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
       if (!target) return;
 
       syncSubMatchPlayersToMemory(matchId, defKey);
+      markUnsaved(matchId, defKey);
 
       if (!value) {
         target.setScoreA = 0;
@@ -1453,8 +1460,13 @@ function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, sele
       }
 
       const computed = computeMatchAggregate(tournamentData.groupMatches[matchId]);
-      tournamentData.groupMatches[matchId] = computed;
-      renderCurrentView();
+tournamentData.groupMatches[matchId] = computed;
+
+renderCurrentView();
+
+setTimeout(()=>{
+  markUnsaved(matchId, defKey);
+},50);
     };
   });
 
@@ -1493,6 +1505,24 @@ function syncSubMatchPlayersToMemory(matchId, defKey) {
 
   sub.teamAPlayers = teamAPlayers;
   sub.teamBPlayers = teamBPlayers;
+}
+
+function markUnsaved(matchId, defKey){
+  const card = document.querySelector(
+    `[data-submatch-card="${matchId}_${defKey}"]`
+  );
+  if(card){
+    card.classList.add("unsaved");
+  }
+}
+
+function clearUnsaved(matchId, defKey){
+  const card = document.querySelector(
+    `[data-submatch-card="${matchId}_${defKey}"]`
+  );
+  if(card){
+    card.classList.remove("unsaved");
+  }
 }
     
    function readSingleSubMatchInputs(matchId, defKey) {
@@ -1550,8 +1580,13 @@ if (
     );
 
     tournamentData.groupMatches[matchId] = finalComputed;
-    renderCurrentView();
-    alert("저장되었습니다.");
+renderCurrentView();
+
+setTimeout(() => {
+  clearUnsaved(matchId, defKey);
+}, 50);
+
+alert("저장되었습니다.");
   } catch (err) {
     console.error(err);
     alert(err.message || "저장 중 오류가 발생했습니다.");
