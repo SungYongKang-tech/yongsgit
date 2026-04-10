@@ -215,10 +215,10 @@
     }
 
     .actions{
-      display:grid;
-      grid-template-columns:repeat(3,1fr);
-      gap:4px;
-    }
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:4px;
+}
 
     .empty{
       border:1px dashed var(--line);
@@ -560,22 +560,54 @@ const db = getDatabase(app);
         const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
 
         card.innerHTML = `
-          <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}</div>
-          <div class="meta">
-            ${course.source === "manual" ? "직접등록" : "기록등록"} · ${(course.points || []).length}점 · ${distKm}km
-          </div>
-          <div class="actions">
-            <button class="action-btn primary">보기</button>
-            <button class="action-btn green">안내</button>
-            <button class="action-btn red">삭제</button>
-          </div>
-        `;
+  <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}</div>
+  <div class="meta">
+    ${course.source === "manual" ? "직접등록" : "기록등록"} · ${(course.points || []).length}점 · ${distKm}km
+  </div>
+  <div class="actions">
+    <button class="action-btn primary">보기</button>
+    <button class="action-btn amber">수정</button>
+    <button class="action-btn green">안내</button>
+    <button class="action-btn red">삭제</button>
+  </div>
+`;
 
-        const [previewBtn, startBtn, deleteBtn] = card.querySelectorAll("button");
+        const [previewBtn, editBtn, startBtn, deleteBtn] = card.querySelectorAll("button");
 
         previewBtn.addEventListener("click", () => {
           previewCourse(course);
         });
+
+        editBtn.addEventListener("click", async () => {
+  const newName = prompt("새 코스 이름을 입력하세요.", course.name || "");
+  if (newName === null) return;
+
+  const trimmedName = newName.trim();
+  if (!trimmedName) {
+    alert("코스 이름을 입력하세요.");
+    return;
+  }
+
+  try {
+    await saveCourseToFirebase({
+      id: course.id,
+      name: trimmedName,
+      source: course.source || "manual",
+      points: course.points || [],
+      createdAt: course.createdAt || Date.now()
+    });
+
+    if (selectedCourse?.id === course.id) {
+      selectedCourse.name = trimmedName;
+    }
+
+    await refreshCourses();
+    alert("코스 이름이 수정되었습니다.");
+  } catch (e) {
+    console.error(e);
+    alert("이름 수정 오류");
+  }
+});
 
         startBtn.addEventListener("click", () => {
           openCourseInRideMap(course);
