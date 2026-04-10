@@ -130,6 +130,99 @@
     .btn-group .main{ color:var(--green); }
     .btn-tournament .main{ color:var(--orange); }
 
+    .share-box{
+      margin-top:26px;
+      border-top:1px solid var(--line);
+      padding-top:24px;
+      text-align:center;
+    }
+
+    .share-title{
+      font-size:20px;
+      font-weight:800;
+      margin:0 0 8px;
+      color:var(--primary-dark);
+    }
+
+    .share-desc{
+      margin:0 0 16px;
+      font-size:14px;
+      color:var(--muted);
+      line-height:1.5;
+    }
+
+    .qr-wrap{
+      display:flex;
+      justify-content:center;
+      margin-bottom:16px;
+    }
+
+    .qr-img{
+      width:220px;
+      max-width:100%;
+      border:1px solid var(--line);
+      border-radius:18px;
+      background:#fff;
+      padding:10px;
+      box-shadow:0 6px 18px rgba(15,23,42,.06);
+    }
+
+    .share-actions{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+      margin-top:14px;
+    }
+
+    .share-btn{
+      border:none;
+      border-radius:14px;
+      padding:14px 12px;
+      cursor:pointer;
+      font-size:15px;
+      font-weight:700;
+      transition:.18s ease;
+    }
+
+    .share-btn.primary{
+      background:var(--primary);
+      color:#fff;
+    }
+
+    .share-btn.primary:hover{
+      background:var(--primary-dark);
+    }
+
+    .share-btn.light{
+      background:#f7fafc;
+      color:var(--text);
+      border:1px solid var(--line);
+    }
+
+    .share-btn.light:hover{
+      background:#eef4fb;
+    }
+
+    .share-url{
+      margin-top:12px;
+      padding:12px 14px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#f9fbfe;
+      font-size:13px;
+      color:var(--muted);
+      word-break:break-all;
+      text-align:left;
+    }
+
+    .share-msg{
+      min-height:22px;
+      margin-top:10px;
+      font-size:13px;
+      color:var(--green);
+      font-weight:700;
+    }
+
     @media (max-width: 640px){
       .card{
         padding:22px 16px;
@@ -139,6 +232,12 @@
       }
       .menu-btn .main{
         font-size:18px;
+      }
+      .share-actions{
+        grid-template-columns:1fr;
+      }
+      .qr-img{
+        width:190px;
       }
     }
   </style>
@@ -171,10 +270,44 @@
           </button>
         </a>
       </div>
+
+      <div class="share-box">
+        <div class="share-title">공유하기</div>
+        <p class="share-desc">QR 스캔 또는 링크 공유로 대회 페이지에 바로 접속할 수 있습니다.</p>
+
+        <div class="qr-wrap">
+          <img
+            src="./pingpong_championship_qr_koen.png"
+            alt="남동노조위원장기 탁구대회 QR코드"
+            class="qr-img"
+          />
+        </div>
+
+        <div class="share-actions">
+          <button type="button" class="share-btn primary" onclick="sharePage()">공유하기</button>
+          <button type="button" class="share-btn light" onclick="copyPageUrl()">링크 복사</button>
+        </div>
+
+        <div class="share-url" id="shareUrl">
+          https://sensational-tulumba-65e97e.netlify.app/pingpong_championship/
+        </div>
+
+        <div class="share-msg" id="shareMsg"></div>
+      </div>
     </div>
   </div>
 
   <script>
+    const SHARE_URL = "https://sensational-tulumba-65e97e.netlify.app/pingpong_championship/";
+    const SHARE_TITLE = "제14회 남동노조위원장기 탁구대회";
+    const SHARE_TEXT = "남동노조위원장기 탁구대회 페이지입니다.";
+
+    function showShareMessage(msg, isError = false){
+      const el = document.getElementById("shareMsg");
+      el.textContent = msg;
+      el.style.color = isError ? "#c62828" : "#2e7d32";
+    }
+
     function goGameMake(){
       const pw = prompt("비밀번호를 입력하세요.");
 
@@ -182,6 +315,43 @@
         location.href = "./game_make/";
       } else if (pw !== null) {
         alert("비밀번호가 틀렸습니다.");
+      }
+    }
+
+    async function copyPageUrl(){
+      try{
+        await navigator.clipboard.writeText(SHARE_URL);
+        showShareMessage("링크가 복사되었습니다.");
+      }catch(err){
+        const temp = document.createElement("textarea");
+        temp.value = SHARE_URL;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand("copy");
+        document.body.removeChild(temp);
+        showShareMessage("링크가 복사되었습니다.");
+      }
+    }
+
+    async function sharePage(){
+      try{
+        if (navigator.share) {
+          await navigator.share({
+            title: SHARE_TITLE,
+            text: SHARE_TEXT,
+            url: SHARE_URL
+          });
+          showShareMessage("공유창을 열었습니다.");
+        } else {
+          await copyPageUrl();
+        }
+      }catch(err){
+        if (err && err.name === "AbortError") {
+          showShareMessage("공유가 취소되었습니다.", true);
+          return;
+        }
+        showShareMessage("공유 기능을 사용할 수 없어 링크를 복사합니다.");
+        await copyPageUrl();
       }
     }
   </script>
