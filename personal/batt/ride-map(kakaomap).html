@@ -462,6 +462,7 @@
     const FOLLOW_STORAGE_KEY = "ebike_follow_map";
     const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
     const NAV_STATE_STORAGE_KEY = "ebike_nav_state_v1";
+    const SELECTED_COURSE_KEY = "ebike_selected_course_v1";
     const OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup";
 const MAX_ELEVATION_SAMPLES = 120;
 
@@ -2105,8 +2106,8 @@ if (map) {
     });
 
     courseBtn.addEventListener("click", () => {
-      alert("내 코스 기능 준비중");
-    });
+  location.href = "./my-course.html";
+});
 
     startBtn.addEventListener("click", startRide);
     endBtn.addEventListener("click", endRide);
@@ -2219,6 +2220,7 @@ if (map) {
   }
 
   initKakaoMap();
+  applySelectedCourseIfExists();
   redrawPath();
   updateStats();
   requestLocationPermission();
@@ -2282,6 +2284,32 @@ if (map) {
         }
       }, 3000);
     }
+
+    function applySelectedCourseIfExists() {
+  try {
+    const raw = localStorage.getItem(SELECTED_COURSE_KEY);
+    if (!raw) return;
+
+    const course = JSON.parse(raw);
+    if (!course || !Array.isArray(course.points) || !course.points.length) return;
+
+    navigationState.routePath = course.points.slice();
+    navigationState.destination = course.points.length
+      ? {
+          name: course.name || "내 코스",
+          lat: course.points[course.points.length - 1].lat,
+          lng: course.points[course.points.length - 1].lng
+        }
+      : null;
+    navigationState.active = false;
+
+    saveNavigationState();
+    localStorage.removeItem(SELECTED_COURSE_KEY);
+  } catch (e) {
+    console.error("선택 코스 적용 실패:", e);
+  }
+}
+
   </script>
 </body>
 </html>
