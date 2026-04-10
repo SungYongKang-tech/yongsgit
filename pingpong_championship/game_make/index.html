@@ -353,6 +353,7 @@
       </div>
       <div class="actions">
         <button type="button" class="ghost" id="btnToggleMakeAdmin">관리자 잠금해제</button>
+        <button type="button" class="secondary" id="btnLoadCurrent">현재 대회 불러오기</button>
         <button type="button" class="secondary" id="btnFillSample" style="display:none;">샘플 데이터 넣기</button>
         <button type="button" class="secondary" id="btnClearSample" style="display:none;">샘플 입력 지우기</button>
         <button type="button" class="green" id="btnSaveOnly">저장만 하기</button>
@@ -511,6 +512,7 @@
     const endDateInput = document.getElementById("endDate");
 
     const btnToggleMakeAdmin = document.getElementById("btnToggleMakeAdmin");
+    const btnLoadCurrent = document.getElementById("btnLoadCurrent");
     const btnFillSample = document.getElementById("btnFillSample");
     const btnClearSample = document.getElementById("btnClearSample");
     const btnSaveOnly = document.getElementById("btnSaveOnly");
@@ -1057,6 +1059,7 @@ ${name} 여2`;
     btnSaveBottom.addEventListener("click", () => saveTournament(false));
     btnStartTournament.addEventListener("click", () => saveTournament(true));
     btnStartBottom.addEventListener("click", () => saveTournament(true));
+    btnLoadCurrent.addEventListener("click", loadCurrentTournamentToForm);
 
     titleInput.addEventListener("input", renderBasicInfoSummary);
     startDateInput.addEventListener("input", renderBasicInfoSummary);
@@ -1064,6 +1067,69 @@ ${name} 여2`;
 
     createTeamCards();
     updateMakeAdminUI();
+
+    async function loadCurrentTournamentToForm() {
+  try {
+    const currentSnap = await get(ref(db, "currentTournamentId"));
+    if (!currentSnap.exists()) {
+      alert("현재 활성 대회가 없습니다.");
+      return;
+    }
+
+    const tournamentId = currentSnap.val();
+    const tournamentSnap = await get(ref(db, `tournaments/${tournamentId}`));
+
+    if (!tournamentSnap.exists()) {
+      alert("현재 대회 데이터를 찾을 수 없습니다.");
+      return;
+    }
+
+    const data = tournamentSnap.val();
+    const meta = data.meta || {};
+    const teams = data.teams || {};
+    const groups = data.groups || { A: [], B: [] };
+
+    titleInput.value = meta.title || "";
+    startDateInput.value = meta.startDate || "";
+    endDateInput.value = meta.endDate || "";
+
+    for (let i = 0; i < DEFAULT_TEAM_COUNT; i++) {
+      document.getElementById(`teamName${i}`).value = "";
+      document.getElementById(`group${i}`).value = "";
+      document.getElementById(`men${i}`).value = "";
+      document.getElementById(`women${i}`).value = "";
+    }
+
+    const teamList = Object.values(teams);
+
+    teamList.sort((a, b) => {
+      const n1 = Number(String(a.id || "").replace("team", ""));
+      const n2 = Number(String(b.id || "").replace("team", ""));
+      return n1 - n2;
+    });
+
+    teamList.forEach((team, idx) => {
+      if (idx >= DEFAULT_TEAM_COUNT) return;
+
+      document.getElementById(`teamName${idx}`).value = team.name || "";
+      document.getElementById(`group${idx}`).value = team.group || "";
+      document.getElementById(`men${idx}`).value = Array.isArray(team.men) ? team.men.join("\n") : "";
+      document.getElementById(`women${idx}`).value = Array.isArray(team.women) ? team.women.join("\n") : "";
+
+      updateTeamCountBadge(idx);
+    });
+
+    renderGroupStatus();
+    renderBasicInfoSummary();
+    renderAutoMatches();
+
+    saveStatus.textContent =
+      `현재 활성 대회 불러오기 완료\n대회 ID: ${tournamentId}\n수정 후 다시 저장할 수 있습니다.`;
+  } catch (err) {
+    console.error(err);
+    alert(err.message || "현재 대회 불러오기 중 오류가 발생했습니다.");
+  }
+}
 
     async function checkCurrentTournament() {
       try {
