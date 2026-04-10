@@ -2193,38 +2193,48 @@ if (map) {
       }
     });
 
-    async function init() {
-      formatClock();
+   async function init() {
+  formatClock();
 
-      let tries = 0;
-      while (!ensureKakaoLoaded() && tries < 30) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        tries += 1;
-      }
+  let tries = 0;
+  while (!ensureKakaoLoaded() && tries < 30) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    tries += 1;
+  }
 
-      if (!ensureKakaoLoaded()) {
-        updateNavStatus("카카오맵 SDK 로드 실패");
-        alert("카카오맵 SDK가 아직 로드되지 않았습니다. 도메인 등록 또는 SDK 로드를 다시 확인해주세요.");
-        return;
-      }
+  if (!ensureKakaoLoaded()) {
+    updateNavStatus("카카오맵 SDK 로드 실패");
+    alert("카카오맵 SDK가 아직 로드되지 않았습니다. 도메인 등록 또는 SDK 로드를 다시 확인해주세요.");
+    return;
+  }
 
-      initKakaoMap();
-      redrawPath();
-      updateStats();
-      requestLocationPermission();
-      startGpsReconnectMonitor();
+  if (!rideData.started && rideData.path && rideData.path.length > 0) {
+    rideData.path = [];
+    rideData.totalDistanceM = 0;
+    rideData.startPoint = null;
+    rideData.lastPoint = null;
+    rideData.currentSpeedKmh = 0;
+    rideData.maxSpeedKmh = 0;
+    saveRideData();
+  }
 
-      if (navigationState.active && navigationState.destination) {
-        redrawPath();
-        updateNavStatus();
-      }
+  initKakaoMap();
+  redrawPath();
+  updateStats();
+  requestLocationPermission();
+  startGpsReconnectMonitor();
 
-      if (rideData.started && !rideData.paused) {
-        startWatching();
-        await requestWakeLockSafe();
-        startWakeLockKeeper();
-      }
-    }
+  if (navigationState.active && navigationState.destination) {
+    redrawPath();
+    updateNavStatus();
+  }
+
+  if (rideData.started && !rideData.paused) {
+    startWatching();
+    await requestWakeLockSafe();
+    startWakeLockKeeper();
+  }
+}
 
     window.addEventListener("load", init);
 
