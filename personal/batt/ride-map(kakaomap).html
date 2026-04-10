@@ -497,14 +497,19 @@ const MAX_VALID_SPEED_KMH = 45;
     };
 
     const initialNavigationState = {
-      active: false,
-      destination: null,
-      routeOrigin: null,
-      routePath: [],
-      rerouting: false,
-      offRouteThresholdM: 150,
-      lastRerouteAt: 0
-    };
+  active: false,
+  destination: null,
+  routeOrigin: null,
+  routePath: [],
+  rerouting: false,
+  offRouteThresholdM: 60,
+  lastRerouteAt: 0,
+
+  courseMode: false,
+  courseName: "",
+  nearestRouteIndex: 0,
+  joinThresholdM: 80
+};
 
     function loadRideData() {
       try {
@@ -860,6 +865,78 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    function getClosestRouteIndex(current, routePath) {
+  if (!routePath || !routePath.length) return 0;
+
+  let min = Infinity;
+  let idx = 0;
+
+  for (let i = 0; i < routePath.length; i++) {
+    const p = routePath[i];
+    const d = haversine(current.lat, current.lng, p.lat, p.lng);
+    if (d < min) {
+      min = d;
+      idx = i;
+    }
+  }
+
+  return idx;
+}
+
+function getMinDistanceToRoute(current, routePath) {
+  if (!routePath || !routePath.length) return Infinity;
+
+  let min = Infinity;
+
+  for (const p of routePath) {
+    const d = haversine(current.lat, current.lng, p.lat, p.lng);
+    if (d < min) min = d;
+  }
+
+  return min;
+}
+
+function getRemainingCourseDistance(routePath, startIdx) {
+  if (!routePath || routePath.length < 2) return 0;
+
+  let total = 0;
+  const safeStart = Math.max(0, Math.min(startIdx, routePath.length - 1));
+
+  for (let i = safeStart; i < routePath.length - 1; i++) {
+    total += haversine(
+      routePath[i].lat, routePath[i].lng,
+      routePath[i + 1].lat, routePath[i + 1].lng
+    );
+  }
+
+  return total;
+}
+
+function getCourseGuideText(current) {
+  const routePath = navigationState.routePath || [];
+  if (!routePath.length) return "코스가 없습니다.";
+
+  const idx = getClosestRouteIndex(current, routePath);
+  navigationState.nearestRouteIndex = idx;
+
+  const minDist = getMinDistanceToRoute(current, routePath);
+  const remain = getRemainingCourseDistance(routePath, idx);
+
+  if (idx >= routePath.length - 1 || remain < 30) {
+    return "코스 종료 지점 부근입니다";
+  }
+
+  if (minDist > navigationState.offRouteThresholdM) {
+    return `코스를 벗어났습니다 · ${formatDistanceText(minDist)} 옆 · 파란선으로 복귀하세요`;
+  }
+
+  if (minDist > navigationState.joinThresholdM) {
+    return `코스 합류 전 · ${formatDistanceText(minDist)} 이동 후 파란선에 합류하세요`;
+  }
+
+  return `코스 따라 이동 · 남은 거리 ${formatDistanceText(remain)}`;
+}
+
     function formatClock() {
       const now = new Date();
       const h = String(now.getHours()).padStart(2, "0");
@@ -920,37 +997,51 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       zoomBtn.classList.toggle("active", autoZoom);
     }
 
-    function updateNavToggleButton() {
-      if (!navToggleBtn) return;
-      navToggleBtn.textContent = navigationState.active ? "안내중지" : "안내시작";
-    }
+   function updateNavToggleButton() {
+  if (!navToggleBtn) return;
+
+  if (navigationState.courseMode) {
+    navToggleBtn.textContent = navigationState.active ? "코스중지" : "코스안내";
+    return;
+  }
+
+  navToggleBtn.textContent = navigationState.active ? "안내중지" : "안내시작";
+}
 
     function updateNavStatus(extraText = "") {
-      if (!navigationState.destination) {
-        navStatusEl.textContent = "안내 없음";
-        return;
-      }
+  if (!navigationState.destination && !(navigationState.routePath && navigationState.routePath.length > 0)) {
+    navStatusEl.textContent = "안내 없음";
+    return;
+  }
 
-      if (extraText) {
-        navStatusEl.textContent = extraText;
-        return;
-      }
+  if (extraText) {
+    navStatusEl.textContent = extraText;
+    return;
+  }
 
-      if (navigationState.active) {
-        const originLabel = navigationState.routeOrigin
-          ? `${navigationState.routeOrigin.lat.toFixed(5)}, ${navigationState.routeOrigin.lng.toFixed(5)}`
-          : "-";
+  if (navigationState.courseMode) {
+    const name = navigationState.courseName || navigationState.destination?.name || "내 코스";
+    navStatusEl.textContent = navigationState.active
+      ? `코스안내 중: ${name}`
+      : `코스 표시 중: ${name}`;
+    return;
+  }
 
-        navStatusEl.textContent =
-          `목적지: ${navigationState.destination.name || "선택됨"} · 안내출발점: ${originLabel}`;
-      } else if (navigationState.routePath && navigationState.routePath.length > 0) {
-        navStatusEl.textContent =
-          `목적지: ${navigationState.destination.name || "선택됨"} · 경로 표시 완료`;
-      } else {
-        navStatusEl.textContent =
-          `목적지: ${navigationState.destination.name || "선택됨"}`;
-      }
-    }
+  if (navigationState.active) {
+    const originLabel = navigationState.routeOrigin
+      ? `${navigationState.routeOrigin.lat.toFixed(5)}, ${navigationState.routeOrigin.lng.toFixed(5)}`
+      : "-";
+
+    navStatusEl.textContent =
+      `목적지: ${navigationState.destination?.name || "선택됨"} · 안내출발점: ${originLabel}`;
+  } else if (navigationState.routePath && navigationState.routePath.length > 0) {
+    navStatusEl.textContent =
+      `목적지: ${navigationState.destination?.name || "선택됨"} · 경로 표시 완료`;
+  } else {
+    navStatusEl.textContent =
+      `목적지: ${navigationState.destination?.name || "선택됨"}`;
+  }
+}
 
     function updateStats() {
       distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
@@ -1306,70 +1397,100 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       if (navigationState.destination) drawDestinationMarker();
     }
 
-    async function setDestination(dest) {
-      navigationState.active = false;
-      navigationState.destination = dest;
-      navigationState.routeOrigin = null;
-      navigationState.routePath = [];
-      navigationState.rerouting = false;
-      navigationState.lastRerouteAt = 0;
+   async function setDestination(dest) {
+  navigationState.active = false;
+  navigationState.destination = dest;
+  navigationState.routeOrigin = null;
+  navigationState.routePath = [];
+  navigationState.rerouting = false;
+  navigationState.lastRerouteAt = 0;
 
-      updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
-      setGuideText("현재 위치 확인 후 경로 계산 중...");
-      saveNavigationState();
-      redrawPath();
+  navigationState.courseMode = false;
+  navigationState.courseName = "";
+  navigationState.nearestRouteIndex = 0;
 
-      if (!getCurrentPositionObject()) {
-        requestLocationPermission();
-        return;
-      }
+  updateNavStatus(`목적지 설정: ${dest.name || `${dest.lat.toFixed(5)}, ${dest.lng.toFixed(5)}`}`);
+  setGuideText("현재 위치 확인 후 경로 계산 중...");
+  saveNavigationState();
+  redrawPath();
 
-      await requestRouteFromCurrentPosition(false);
+  if (!getCurrentPositionObject()) {
+    requestLocationPermission();
+    return;
+  }
+
+  await requestRouteFromCurrentPosition(false);
+}
+
+   async function startNavigation() {
+  if (!navigationState.routePath || navigationState.routePath.length === 0) {
+    if (!navigationState.destination) {
+      alert("먼저 목적지를 선택하거나 내 코스를 불러오세요.");
+      return;
     }
 
-    async function startNavigation() {
-      if (!navigationState.destination) {
-        alert("먼저 목적지를 검색해주세요.");
-        return;
-      }
-
-      if (!getCurrentPositionObject()) {
-        requestLocationPermission();
-        alert("현재 위치를 확인한 뒤 다시 눌러주세요.");
-        return;
-      }
-
-      await requestRouteFromCurrentPosition(true);
+    if (!getCurrentPositionObject()) {
+      requestLocationPermission();
+      alert("현재 위치를 확인한 뒤 다시 눌러주세요.");
+      return;
     }
+
+    await requestRouteFromCurrentPosition(true);
+    return;
+  }
+
+  const current = getCurrentPositionObject();
+  if (!current) {
+    requestLocationPermission();
+    alert("현재 위치를 확인한 뒤 다시 눌러주세요.");
+    return;
+  }
+
+  navigationState.active = true;
+  navigationState.routeOrigin = current;
+  navigationState.nearestRouteIndex = getClosestRouteIndex(current, navigationState.routePath);
+
+  updateNavStatus();
+  setGuideText(getCourseGuideText(current));
+  updateNavToggleButton();
+  saveNavigationState();
+  redrawPath();
+}
 
     function stopNavigation() {
-      navigationState.active = false;
-      navigationState.rerouting = false;
-      navigationState.lastRerouteAt = 0;
+  navigationState.active = false;
+  navigationState.rerouting = false;
+  navigationState.lastRerouteAt = 0;
 
-      updateNavStatus(`목적지: ${navigationState.destination ? navigationState.destination.name : "-"} · 경로 표시 중`);
-      setGuideText("안내가 중지되었습니다.");
-      updateNavToggleButton();
-      saveNavigationState();
-    }
+  if (navigationState.courseMode) {
+    updateNavStatus();
+    setGuideText("코스 안내가 중지되었습니다.");
+  } else {
+    updateNavStatus(`목적지: ${navigationState.destination ? navigationState.destination.name : "-"} · 경로 표시 중`);
+    setGuideText("안내가 중지되었습니다.");
+  }
 
-    function clearNavigation() {
-      navigationState = { ...initialNavigationState };
+  updateNavToggleButton();
+  saveNavigationState();
+}
 
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
+   function clearNavigation() {
+  navigationState = { ...initialNavigationState };
 
-      if (recommendedPolyline) {
-        recommendedPolyline.setPath([]);
-      }
+  if (destinationMarker) {
+    destinationMarker.setMap(null);
+    destinationMarker = null;
+  }
 
-      clearNavigationStateStorage();
-      updateNavStatus("안내 없음");
-      setGuideText("안내 준비중");
-      redrawPath();
-    }
+  if (recommendedPolyline) {
+    recommendedPolyline.setPath([]);
+  }
+
+  clearNavigationStateStorage();
+  updateNavStatus("안내 없음");
+  setGuideText("안내 준비중");
+  redrawPath();
+}
 
     function searchPlace(keyword) {
       if (!places) {
@@ -1546,40 +1667,45 @@ function smoothElevationProfile(profile, windowSize = ELEVATION_SMOOTH_WINDOW) {
       return total;
     }
 
-    function updateNavigationGuide(current) {
-      if (!navigationState.active || !navigationState.destination) {
-        if (navigationState.destination && navigationState.routePath && navigationState.routePath.length > 0) {
-          setGuideText("안내시작 버튼을 누르면 안내를 시작합니다.");
-        } else {
-          setGuideText("안내 준비중");
-        }
-        return;
-      }
-
-      if (!navigationState.routePath || navigationState.routePath.length < 2) {
-        setGuideText("경로 계산 중...");
-        return;
-      }
-
-      const idx = getClosestRouteIndex(current, navigationState.routePath);
-      const nextIdx = Math.min(idx + 1, navigationState.routePath.length - 1);
-      const nextPoint = navigationState.routePath[nextIdx];
-
-      const distToNext = haversine(current.lat, current.lng, nextPoint.lat, nextPoint.lng);
-      const remainToDest = getRemainingRouteDistance(current, navigationState.routePath, idx);
-
-      if (remainToDest < 40) {
-        setGuideText("목적지 부근입니다");
-        return;
-      }
-
-      if (distToNext < 50) {
-        setGuideText(`잠시 후 진행 방향 확인 · 남은 거리 ${formatDistanceText(remainToDest)}`);
-        return;
-      }
-
-      setGuideText(`${formatDistanceText(distToNext)} 앞 경로 따라 이동 · 남은 거리 ${formatDistanceText(remainToDest)}`);
+   function updateNavigationGuide(current) {
+  if (!navigationState.active) {
+    if (navigationState.routePath && navigationState.routePath.length > 0) {
+      setGuideText("안내시작 버튼을 누르면 안내를 시작합니다.");
+    } else {
+      setGuideText("안내 준비중");
     }
+    return;
+  }
+
+  if (navigationState.courseMode) {
+    setGuideText(getCourseGuideText(current));
+    return;
+  }
+
+  if (!navigationState.routePath || navigationState.routePath.length < 2) {
+    setGuideText("경로 계산 중...");
+    return;
+  }
+
+  const idx = getClosestRouteIndex(current, navigationState.routePath);
+  const nextIdx = Math.min(idx + 1, navigationState.routePath.length - 1);
+  const nextPoint = navigationState.routePath[nextIdx];
+
+  const distToNext = haversine(current.lat, current.lng, nextPoint.lat, nextPoint.lng);
+  const remainToDest = getRemainingCourseDistance(navigationState.routePath, idx);
+
+  if (remainToDest < 40) {
+    setGuideText("목적지 부근입니다");
+    return;
+  }
+
+  if (distToNext < 50) {
+    setGuideText(`잠시 후 진행 방향 확인 · 남은 거리 ${formatDistanceText(remainToDest)}`);
+    return;
+  }
+
+  setGuideText(`${formatDistanceText(distToNext)} 앞 경로 따라 이동 · 남은 거리 ${formatDistanceText(remainToDest)}`);
+}
 
     async function rerouteFromCurrentPosition(current) {
       if (!navigationState.active || !navigationState.destination) return;
@@ -1856,12 +1982,12 @@ if (map) {
 
       const current = { lat: latitude, lng: longitude };
       if (navigationState.active) {
-        updateNavigationGuide(current);
+  updateNavigationGuide(current);
 
-        if (navigationState.routePath.length > 0 && isOffRoute(current)) {
-          rerouteFromCurrentPosition(current);
-        }
-      }
+  if (!navigationState.courseMode && navigationState.routePath.length > 0 && isOffRoute(current)) {
+    rerouteFromCurrentPosition(current);
+  }
+}
 
       updateStats();
       saveRideData();
@@ -2285,7 +2411,7 @@ if (map) {
       }, 3000);
     }
 
-    function applySelectedCourseIfExists() {
+   function applySelectedCourseIfExists() {
   try {
     const raw = localStorage.getItem(SELECTED_COURSE_KEY);
     if (!raw) return;
@@ -2294,14 +2420,19 @@ if (map) {
     if (!course || !Array.isArray(course.points) || !course.points.length) return;
 
     navigationState.routePath = course.points.slice();
-    navigationState.destination = course.points.length
-      ? {
-          name: course.name || "내 코스",
-          lat: course.points[course.points.length - 1].lat,
-          lng: course.points[course.points.length - 1].lng
-        }
-      : null;
+    navigationState.destination = {
+      name: course.name || "내 코스",
+      lat: course.points[course.points.length - 1].lat,
+      lng: course.points[course.points.length - 1].lng
+    };
+
     navigationState.active = false;
+    navigationState.courseMode = true;
+    navigationState.courseName = course.name || "내 코스";
+    navigationState.routeOrigin = null;
+    navigationState.rerouting = false;
+    navigationState.lastRerouteAt = 0;
+    navigationState.nearestRouteIndex = 0;
 
     saveNavigationState();
     localStorage.removeItem(SELECTED_COURSE_KEY);
