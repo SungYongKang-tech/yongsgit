@@ -457,7 +457,8 @@
       getDatabase,
       ref,
       set,
-      get
+      get,
+      update
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
@@ -495,6 +496,8 @@
     const MAKE_ADMIN_PASSWORD = "1111";
 
     let isMakeAdmin = localStorage.getItem(MAKE_ADMIN_STORAGE_KEY) === "true";
+    let editingTournamentId = null;
+let isEditMode = false;
 
     const teamsContainer = document.getElementById("teamsContainer");
     const groupAList = document.getElementById("groupAList");
@@ -952,28 +955,42 @@ function renderBasicInfoSummary() {
     }
 
     async function saveTournament(startAfterSave = false) {
-      try {
-        saveStatus.textContent = "저장 검증 중입니다...";
+  try {
+    saveStatus.textContent = "저장 검증 중입니다...";
 
-        const { tournamentId, data } = buildTournamentPayload();
+    if (isEditMode && editingTournamentId) {
+      await updateExistingTournament();
 
-        await set(ref(db, `tournaments/${tournamentId}`), data);
-        await set(ref(db, "currentTournamentId"), tournamentId);
+      saveStatus.textContent =
+        `수정 저장 완료\n대회 ID: ${editingTournamentId}\n경기결과는 유지되었습니다.`;
 
-        saveStatus.textContent =
-          `저장 완료\n대회 ID: ${tournamentId}\n현재 대회로 활성화되었습니다.`;
+      localStorage.setItem("currentTournamentId", editingTournamentId);
 
-        localStorage.setItem("currentTournamentId", tournamentId);
-
-        if (startAfterSave) {
-          location.href = `../game_live_group/?tournamentId=${encodeURIComponent(tournamentId)}`;
-        }
-      } catch (err) {
-        console.error(err);
-        saveStatus.textContent = `저장 실패\n${err.message || err}`;
-        alert(err.message || "저장 중 오류가 발생했습니다.");
+      if (startAfterSave) {
+        location.href = `../game_live_group/?tournamentId=${encodeURIComponent(editingTournamentId)}`;
       }
+      return;
     }
+
+    const { tournamentId, data } = buildTournamentPayload();
+
+    await set(ref(db, `tournaments/${tournamentId}`), data);
+    await set(ref(db, "currentTournamentId"), tournamentId);
+
+    saveStatus.textContent =
+      `저장 완료\n대회 ID: ${tournamentId}\n현재 대회로 활성화되었습니다.`;
+
+    localStorage.setItem("currentTournamentId", tournamentId);
+
+    if (startAfterSave) {
+      location.href = `../game_live_group/?tournamentId=${encodeURIComponent(tournamentId)}`;
+    }
+  } catch (err) {
+    console.error(err);
+    saveStatus.textContent = `저장 실패\n${err.message || err}`;
+    alert(err.message || "저장 중 오류가 발생했습니다.");
+  }
+}
 
     function loadSampleData() {
       const teamNames = [
@@ -1142,6 +1159,127 @@ ${name} 여2`;
         console.warn("현재 대회 확인 실패", err);
       }
     }
+function hasAnyGroupResult(groupMatches = {}) {
+  return Object.values(groupMatches).some(match => {
+    if (!match) return false;
+    if (match.status && match.status !== "ready") return true;
+    if (Number(match.teamMatchScoreA || 0) > 0) return true;
+    if (Number(match.teamMatchScoreB || 0) > 0) return true;
+    if (Number(match.setDiffA || 0) !== 0) return true;
+    if (Number(match.setDiffB || 0) !== 0) return true;
+
+    const subs = match.matches || {};
+    return Object.values(subs).some(sub =>
+      Number(sub.setScoreA || 0) > 0 || Number(sub.setScoreB || 0) > 0
+    );
+  });
+}
+
+async function updateExistingTournament() {
+  if (!editingTournamentId) {
+    throw new Error("수정 대상 대회 ID가 없습니다.");
+  }
+
+  const snap = await get(ref(db, `tournaments/${editingTournamentId}`));
+  if (!snap.exists()) {
+    throw new Error("수정할 기존 대회 데이터를 찾을 수 없습니다.");
+  }
+
+  const oldData = snap.val();
+  const oldTeams = oldData.teams || {};
+  const oldGroupMatches = oldData.groupMatches || {};
+  const oldTournamentMatches = oldData.tournamentMatches || oldData.knockout || {};
+
+  const title = safeTrim(titleInput.value);
+  const startDate = safeTrim(startDateInput.value);
+  const endDate = safeTrim(endDateInput.value);
+
+  if (!title) throw new Error("대회명을 입력해 주세요.");
+  if (!startDate || !endDate) throw new Error("대회 시작일/종료일을 입력해 주세요.");
+
+  const teams = getTeamsFromForm();
+  const hasResults = hasAnyGroupResult(oldGroupMatches);
+
+  const filledTeams = teams.filter(t => t.name);
+  if (filledTeams.length !== 8) throw new Error("팀명 입력이 완료된 팀이 8개여야 합니다.");
+
+  const nameSet = new Set();
+  for (const t of filledTeams) {
+    if (nameSet.has(t.name)) throw new Error(`중복된 팀명이 있습니다: ${t.name}`);
+    nameSet.add(t.name);
+    if (t.total === 0) throw new Error(`${t.name} 팀의 선수 명단이 비어 있습니다.`);
+    if (t.total > 8) throw new Error(`${t.name} 팀의 총원이 8명을 초과했습니다.`);
+  }
+
+  const aTeams = filledTeams.filter(t => t.group === "A");
+  const bTeams = filledTeams.filter(t => t.group === "B");
+  if (aTeams.length !== 4 || bTeams.length !== 4) {
+    throw new Error("A조 4팀, B조 4팀으로 정확히 편성해 주세요.");
+  }
+
+  if (hasResults) {
+    for (const t of filledTeams) {
+      const oldTeam = oldTeams[t.id];
+      if (oldTeam && oldTeam.group !== t.group) {
+        throw new Error("이미 경기결과가 있는 대회는 조편성을 변경할 수 없습니다.");
+      }
+    }
+  }
+
+  const teamsPayload = {};
+  filledTeams.forEach(t => {
+    teamsPayload[t.id] = {
+      ...(oldTeams[t.id] || {}),
+      id: t.id,
+      name: t.name,
+      group: t.group,
+      men: t.men,
+      women: t.women,
+      total: t.total,
+      allPlayers: [...t.men, ...t.women]
+    };
+  });
+
+  const groupAPayload = filledTeams.filter(t => t.group === "A").map(t => t.id);
+  const groupBPayload = filledTeams.filter(t => t.group === "B").map(t => t.id);
+
+  const updates = {};
+
+  updates[`tournaments/${editingTournamentId}/meta/title`] = title;
+  updates[`tournaments/${editingTournamentId}/meta/startDate`] = startDate;
+  updates[`tournaments/${editingTournamentId}/meta/endDate`] = endDate;
+  updates[`tournaments/${editingTournamentId}/meta/updatedAt`] = Date.now();
+
+  updates[`tournaments/${editingTournamentId}/teams`] = teamsPayload;
+  updates[`tournaments/${editingTournamentId}/groups/A`] = groupAPayload;
+  updates[`tournaments/${editingTournamentId}/groups/B`] = groupBPayload;
+
+  Object.entries(oldGroupMatches).forEach(([matchId, match]) => {
+    const teamAName = teamsPayload[match.teamA]?.name || match.teamAName || "";
+    const teamBName = teamsPayload[match.teamB]?.name || match.teamBName || "";
+    const groupName = teamsPayload[match.teamA]?.group || match.group || "";
+
+    updates[`tournaments/${editingTournamentId}/groupMatches/${matchId}/teamAName`] = teamAName;
+    updates[`tournaments/${editingTournamentId}/groupMatches/${matchId}/teamBName`] = teamBName;
+    updates[`tournaments/${editingTournamentId}/groupMatches/${matchId}/group`] = groupName;
+  });
+
+  Object.entries(oldTournamentMatches).forEach(([matchId, match]) => {
+    if (!match) return;
+
+    const teamAName = teamsPayload[match.teamA]?.name || match.teamAName || "";
+    const teamBName = teamsPayload[match.teamB]?.name || match.teamBName || "";
+
+    const basePath = oldData.tournamentMatches
+      ? `tournaments/${editingTournamentId}/tournamentMatches/${matchId}`
+      : `tournaments/${editingTournamentId}/knockout/${matchId}`;
+
+    updates[`${basePath}/teamAName`] = teamAName;
+    updates[`${basePath}/teamBName`] = teamBName;
+  });
+
+  await update(ref(db), updates);
+}
 
     checkCurrentTournament();
   </script>
