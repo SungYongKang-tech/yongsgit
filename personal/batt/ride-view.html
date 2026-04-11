@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>공유 주행기록 보기</title>
@@ -55,7 +54,7 @@
 
     .detail-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 4px;
       margin-bottom: 6px;
     }
@@ -91,6 +90,15 @@
       width: 100%;
       height: 600px;
       border-radius: 14px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 180px;
+      background: rgba(15,23,42,0.45);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      display: block;
     }
 
     .empty {
@@ -131,6 +139,10 @@
       #map {
         height: 500px;
       }
+
+      canvas {
+        height: 170px;
+      }
     }
   </style>
 </head>
@@ -164,14 +176,39 @@
           <div class="label">최고 속도</div>
           <div class="value" id="maxSpeedEl">-</div>
         </div>
+        <div class="card">
+          <div class="label">최저 고도</div>
+          <div class="value" id="minElevationEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">최고 고도</div>
+          <div class="value" id="maxElevationInfoEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">총 상승</div>
+          <div class="value" id="gainEl">-</div>
+        </div>
+        <div class="card">
+          <div class="label">총 하강</div>
+          <div class="value" id="lossEl">-</div>
+        </div>
       </div>
 
       <div id="map"></div>
       <div class="empty" id="messageEl" style="display:none;"></div>
     </div>
+
+    <div class="panel">
+      <div class="title">고도 그래프</div>
+      <canvas id="elevationCanvas"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="title">속도 그래프</div>
+      <canvas id="speedCanvas"></canvas>
+    </div>
   </div>
 
- 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, get, remove } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
@@ -195,8 +232,16 @@
     const restEl = document.getElementById("restEl");
     const avgSpeedEl = document.getElementById("avgSpeedEl");
     const maxSpeedEl = document.getElementById("maxSpeedEl");
+    const minElevationEl = document.getElementById("minElevationEl");
+    const maxElevationInfoEl = document.getElementById("maxElevationInfoEl");
+    const gainEl = document.getElementById("gainEl");
+    const lossEl = document.getElementById("lossEl");
+    const elevationCanvas = document.getElementById("elevationCanvas");
+    const speedCanvas = document.getElementById("speedCanvas");
     const messageEl = document.getElementById("messageEl");
     const mapEl = document.getElementById("map");
+
+    let currentRideData = null;
 
     function formatDuration(ms) {
       const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -214,41 +259,131 @@
       return `${hh}:${mm}`;
     }
 
-   function createMap() {
-  if (!window.kakao || !window.kakao.maps) {
-    showMessage("카카오맵 SDK가 로드되지 않았습니다.");
-    return null;
-  }
-
-  return new kakao.maps.Map(document.getElementById("map"), {
-    center: new kakao.maps.LatLng(35.180, 128.107),
-    level: 5
-  });
-}
-
-const map = createMap();
-if (!map) {
-  throw new Error("Kakao map SDK not loaded");
-}
-
-
-
-const polyline = new kakao.maps.Polyline({
-  map,
-  path: [],
-  strokeWeight: 6,
-  strokeColor: "#3b82f6",
-  strokeOpacity: 0.9,
-  strokeStyle: "solid"
-});
-
-let startMarker = null;
-let endMarker = null;
-
     function showMessage(text) {
       mapEl.style.display = "none";
       messageEl.style.display = "block";
       messageEl.textContent = text;
+    }
+
+    function hideMessage() {
+      mapEl.style.display = "block";
+      messageEl.style.display = "none";
+      messageEl.textContent = "";
+    }
+
+    function createMap() {
+      if (!window.kakao || !window.kakao.maps) {
+        showMessage("카카오맵 SDK가 로드되지 않았습니다.");
+        return null;
+      }
+
+      return new kakao.maps.Map(document.getElementById("map"), {
+        center: new kakao.maps.LatLng(35.180, 128.107),
+        level: 5
+      });
+    }
+
+    const map = createMap();
+    if (!map) {
+      throw new Error("Kakao map SDK not loaded");
+    }
+
+    const polyline = new kakao.maps.Polyline({
+      map,
+      path: [],
+      strokeWeight: 6,
+      strokeColor: "#3b82f6",
+      strokeOpacity: 0.9,
+      strokeStyle: "solid"
+    });
+
+    let startMarker = null;
+    let endMarker = null;
+
+    function clearCanvas(canvas) {
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(1, canvas.clientWidth);
+      const height = Math.max(1, canvas.clientHeight);
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawLineChart(canvas, points, valueKey, labelText) {
+      if (!canvas) return;
+
+      if (!Array.isArray(points) || points.length < 2) {
+        clearCanvas(canvas);
+        const ctx = canvas.getContext("2d");
+        const ratio = window.devicePixelRatio || 1;
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = `${12 * ratio}px Arial`;
+        ctx.fillText("데이터 없음", 16 * ratio, 24 * ratio);
+        return;
+      }
+
+      const ctx = canvas.getContext("2d");
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(1, canvas.clientWidth);
+      const height = Math.max(1, canvas.clientHeight);
+
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+
+      const W = canvas.width;
+      const H = canvas.height;
+      const padding = 28 * ratio;
+
+      ctx.clearRect(0, 0, W, H);
+
+      const values = points.map(p => Number(p[valueKey] || 0)).filter(v => Number.isFinite(v));
+      if (!values.length) return;
+
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = Math.max(1, max - min);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 1 * ratio;
+      ctx.beginPath();
+      ctx.moveTo(padding, padding);
+      ctx.lineTo(padding, H - padding);
+      ctx.lineTo(W - padding, H - padding);
+      ctx.stroke();
+
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = `${12 * ratio}px Arial`;
+      ctx.fillText(`${labelText} 최대 ${max.toFixed(1)}`, padding, padding - 8 * ratio);
+      ctx.fillText(`최소 ${min.toFixed(1)}`, padding, H - 8 * ratio);
+
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 2 * ratio;
+      ctx.beginPath();
+
+      points.forEach((p, i) => {
+        const raw = Number(p[valueKey] || 0);
+        const x = padding + ((W - padding * 2) * i / Math.max(1, points.length - 1));
+        const y = H - padding - ((raw - min) / range) * (H - padding * 2);
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+
+      ctx.stroke();
+    }
+
+    function renderGraphs() {
+      const elevationProfile = Array.isArray(currentRideData?.elevationProfile)
+        ? currentRideData.elevationProfile
+        : [];
+      const speedProfile = Array.isArray(currentRideData?.speedProfile)
+        ? currentRideData.speedProfile
+        : [];
+
+      drawLineChart(elevationCanvas, elevationProfile, "elevation", "고도(m)");
+      drawLineChart(speedCanvas, speedProfile, "speedKmh", "속도(km/h)");
     }
 
     async function loadSharedRide() {
@@ -269,6 +404,7 @@ let endMarker = null;
         }
 
         const ride = snap.val();
+        currentRideData = ride;
 
         if (ride.expireAt && Date.now() > ride.expireAt) {
           showMessage("만료된 공유 기록입니다. 새로 공유 링크를 받아주세요.");
@@ -282,6 +418,8 @@ let endMarker = null;
           showMessage("공유 기록 데이터가 올바르지 않습니다.");
           return;
         }
+
+        hideMessage();
 
         const start = ride.startTime;
         const end = ride.endTime || ride.savedAt;
@@ -297,48 +435,61 @@ let endMarker = null;
         avgSpeedEl.textContent = `${Number(ride.avgSpeedKmh || 0).toFixed(1)} km/h`;
         maxSpeedEl.textContent = `${Number(ride.maxSpeedKmh || 0).toFixed(1)} km/h`;
 
-      const kakaoPath = ride.path
-  .map((point) => {
-    if (Array.isArray(point) && point.length >= 2) {
-      return new kakao.maps.LatLng(Number(point[0]), Number(point[1]));
-    }
-    if (point && point.lat != null && point.lng != null) {
-      return new kakao.maps.LatLng(Number(point.lat), Number(point.lng));
-    }
-    return null;
-  })
-  .filter(Boolean);
+        const elevationSummary = ride.elevationSummary || null;
+        if (elevationSummary) {
+          minElevationEl.textContent = `${Number(elevationSummary.minElevation || 0)} m`;
+          maxElevationInfoEl.textContent = `${Number(elevationSummary.maxElevation || 0)} m`;
+          gainEl.textContent = `${Number(elevationSummary.gainM || 0)} m`;
+          lossEl.textContent = `${Number(elevationSummary.lossM || 0)} m`;
+        } else {
+          minElevationEl.textContent = "-";
+          maxElevationInfoEl.textContent = "-";
+          gainEl.textContent = "-";
+          lossEl.textContent = "-";
+        }
 
-if (kakaoPath.length < 2) {
-  showMessage("공유 경로 데이터가 올바르지 않습니다.");
-  return;
-}
+        const kakaoPath = ride.path
+          .map((point) => {
+            if (Array.isArray(point) && point.length >= 2) {
+              return new kakao.maps.LatLng(Number(point[0]), Number(point[1]));
+            }
+            if (point && point.lat != null && point.lng != null) {
+              return new kakao.maps.LatLng(Number(point.lat), Number(point.lng));
+            }
+            return null;
+          })
+          .filter(Boolean);
 
-polyline.setPath(kakaoPath);
+        if (kakaoPath.length < 2) {
+          showMessage("공유 경로 데이터가 올바르지 않습니다.");
+          return;
+        }
 
-if (startMarker) startMarker.setMap(null);
-if (endMarker) endMarker.setMap(null);
+        polyline.setPath(kakaoPath);
 
-startMarker = new kakao.maps.Marker({
-  map,
-  position: kakaoPath[0],
-  title: "출발"
-});
+        if (startMarker) startMarker.setMap(null);
+        if (endMarker) endMarker.setMap(null);
 
-endMarker = new kakao.maps.Marker({
-  map,
-  position: kakaoPath[kakaoPath.length - 1],
-  title: "도착"
-});
+        startMarker = new kakao.maps.Marker({
+          map,
+          position: kakaoPath[0],
+          title: "출발"
+        });
 
-const bounds = new kakao.maps.LatLngBounds();
-kakaoPath.forEach((p) => bounds.extend(p));
+        endMarker = new kakao.maps.Marker({
+          map,
+          position: kakaoPath[kakaoPath.length - 1],
+          title: "도착"
+        });
 
-setTimeout(() => {
-  map.relayout();
-  map.setBounds(bounds);
-}, 100);
+        const bounds = new kakao.maps.LatLngBounds();
+        kakaoPath.forEach((p) => bounds.extend(p));
 
+        setTimeout(() => {
+          map.relayout();
+          map.setBounds(bounds);
+          renderGraphs();
+        }, 100);
       } catch (err) {
         console.error(err);
         showMessage("공유 기록을 불러오는 중 오류가 발생했습니다.");
@@ -348,8 +499,11 @@ setTimeout(() => {
     loadSharedRide();
 
     window.addEventListener("resize", () => {
-  setTimeout(() => map.relayout(), 80);
-});
+      setTimeout(() => {
+        map.relayout();
+        renderGraphs();
+      }, 80);
+    });
   </script>
 </body>
 </html>
