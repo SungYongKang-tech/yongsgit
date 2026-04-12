@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>내 코스 관리</title>
+
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
+
+  <style>
+    :root{
+      --bg1:#0b1220;
+      --bg2:#121c34;
+      --card:rgba(15,23,42,0.82);
+      --card2:rgba(30,41,59,0.86);
+      --line:rgba(255,255,255,0.08);
+      --text:#f8fafc;
+      --muted:#94a3b8;
+      --blue:#2563eb;
+      --blue2:#1d4ed8;
+      --green:#16a34a;
+      --red:#dc2626;
+      --amber:#d97706;
+    }
+
+    *{box-sizing:border-box}
+
+    html,body{
+      margin:0;
+      width:100%;
+      min-height:100%;
+      background:linear-gradient(180deg,var(--bg2) 0%, var(--bg1) 100%);
+      color:var(--text);
+      font-family:Arial, sans-serif;
+      overflow-x:hidden;
+      overflow-y:auto;
+    }
+
+    body{
+      -webkit-tap-highlight-color:transparent;
+    }
+
+    .app{
+      width:100%;
+      min-height:100dvh;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      padding:calc(6px + env(safe-area-inset-top)) 6px calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .topbar{
+      display:grid;
+      grid-template-columns:1fr auto auto;
+      gap:4px;
+      align-items:center;
+    }
+
+    .title{
+      font-size:19px;
+      font-weight:900;
+      letter-spacing:-0.3px;
+      padding-left:4px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .top-btn{
+      height:30px;
+      min-width:58px;
+      border:1px solid var(--line);
+      border-radius:9px;
+      background:linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
+      color:#fff;
+      font-size:11px;
+      font-weight:800;
+      padding:0 8px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .top-btn.primary{background:linear-gradient(180deg,var(--blue),var(--blue2))}
+    .top-btn:active,.chip:active,.action-btn:active{transform:translateY(1px) scale(0.99)}
+
+    .chips{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:4px;
+    }
+
+    .chip{
+      height:32px;
+      border:1px solid var(--line);
+      border-radius:9px;
+      background:linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.92));
+      color:#fff;
+      font-size:11px;
+      font-weight:800;
+      cursor:pointer;
+      padding:0 4px;
+      white-space:nowrap;
+    }
+    .chip.active{background:linear-gradient(180deg,var(--blue),var(--blue2))}
+
+    /* 모바일: 전체 페이지 스크롤 */
+    .desktop-grid{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .map-panel{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:linear-gradient(180deg, var(--card2), var(--card));
+      padding:6px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .map-toolbar{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:4px;
+    }
+
+    .map-toolbar-2{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:4px;
+    }
+
+    .input{
+      width:100%;
+      height:34px;
+      border-radius:9px;
+      border:1px solid var(--line);
+      background:rgba(15,23,42,0.9);
+      color:#fff;
+      padding:0 10px;
+      outline:none;
+      font-size:12px;
+    }
+
+    .action-btn{
+      height:32px;
+      border:1px solid var(--line);
+      border-radius:9px;
+      background:linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
+      color:#fff;
+      font-size:11px;
+      font-weight:800;
+      cursor:pointer;
+      padding:0 6px;
+      white-space:nowrap;
+    }
+    .action-btn.primary{background:linear-gradient(180deg,var(--blue),var(--blue2))}
+    .action-btn.green{background:linear-gradient(180deg,#22c55e,var(--green))}
+    .action-btn.red{background:linear-gradient(180deg,#ef4444,var(--red))}
+    .action-btn.amber{background:linear-gradient(180deg,#f59e0b,var(--amber))}
+
+    .map-wrap{
+      width:100%;
+      height:38dvh;
+      min-height:280px;
+      border-radius:12px;
+      overflow:hidden;
+      border:1px solid var(--line);
+      background:rgba(15,23,42,0.72);
+    }
+
+    #map{
+      width:100%;
+      height:100%;
+    }
+
+    .list-panel{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:linear-gradient(180deg, var(--card2), var(--card));
+      padding:6px;
+      overflow:visible;
+      display:block;
+    }
+
+    .list{
+      overflow:visible;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      padding-right:0;
+    }
+
+    .card{
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:rgba(15,23,42,0.72);
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .card-title{
+      font-size:13px;
+      font-weight:900;
+      line-height:1.3;
+    }
+
+    .meta{
+      font-size:11px;
+      color:var(--muted);
+      line-height:1.35;
+      word-break:break-word;
+    }
+
+    .actions{
+      display:grid;
+      grid-template-columns:repeat(4,1fr);
+      gap:4px;
+    }
+
+    .empty{
+      border:1px dashed var(--line);
+      border-radius:12px;
+      padding:14px 10px;
+      text-align:center;
+      font-size:12px;
+      color:var(--muted);
+      background:rgba(15,23,42,0.55);
+    }
+
+    /* PC */
+    @media (min-width: 901px){
+      .app{
+        gap:8px;
+        padding:calc(8px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));
+      }
+
+      .desktop-grid{
+        flex:1;
+        min-height:0;
+        display:grid;
+        grid-template-columns:1.05fr 0.95fr;
+        gap:8px;
+      }
+
+      .map-panel{
+        min-height:0;
+      }
+
+      .map-wrap{
+        min-height:0;
+        height:100%;
+        flex:1;
+      }
+
+      .list-panel{
+        min-height:0;
+        overflow:auto;
+        display:flex;
+        flex-direction:column;
+      }
+
+      .list{
+        flex:1;
+        min-height:0;
+        overflow:auto;
+        padding-right:2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">내 코스 관리</div>
+      <button class="top-btn" id="backBtn">주행화면</button>
+      <button class="top-btn primary" id="reloadBtn">새로고침</button>
+    </div>
+
+    <div class="chips">
+      <button class="chip active" id="tabCoursesBtn">내코스</button>
+      <button class="chip" id="tabRidesBtn">기록</button>
+      <button class="chip" id="tabManualBtn">직접등록</button>
+    </div>
+
+    <div class="desktop-grid">
+      <div class="map-panel">
+        <input class="input" id="courseNameInput" placeholder="코스 이름" />
+
+        <div class="map-toolbar">
+          <button class="action-btn amber" id="editToggleBtn">편집시작</button>
+          <button class="action-btn" id="undoBtn">점삭제</button>
+          <button class="action-btn red" id="clearManualBtn">전체지우기</button>
+        </div>
+
+        <div class="map-toolbar-2">
+          <button class="action-btn green" id="saveManualBtn">코스저장</button>
+          <button class="action-btn primary" id="fitMapBtn">전체보기</button>
+        </div>
+
+        <div class="map-wrap">
+          <div id="map"></div>
+        </div>
+      </div>
+
+      <div class="list-panel">
+        <div class="list" id="listEl"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import {
+      getDatabase,
+      ref,
+      get,
+      set,
+      remove
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+      authDomain: "personal-51db3.firebaseapp.com",
+      databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+      projectId: "personal-51db3",
+      storageBucket: "personal-51db3.firebasestorage.app",
+      messagingSenderId: "146076749227",
+      appId: "1:146076749227:web:2043208d688e60504816ee"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
+    const SELECTED_COURSE_KEY = "ebike_selected_course_v1";
+    const DEFAULT_CENTER = { lat: 35.180, lng: 128.107 };
+    const COURSE_DELETE_PASSWORD = "1111";
+
+    const backBtn = document.getElementById("backBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const tabCoursesBtn = document.getElementById("tabCoursesBtn");
+    const tabRidesBtn = document.getElementById("tabRidesBtn");
+    const tabManualBtn = document.getElementById("tabManualBtn");
+
+    const listEl = document.getElementById("listEl");
+    const courseNameInput = document.getElementById("courseNameInput");
+    const editToggleBtn = document.getElementById("editToggleBtn");
+    const undoBtn = document.getElementById("undoBtn");
+    const clearManualBtn = document.getElementById("clearManualBtn");
+    const saveManualBtn = document.getElementById("saveManualBtn");
+    const fitMapBtn = document.getElementById("fitMapBtn");
+
+    let currentTab = "courses";
+    let map;
+    let savedCoursePolyline = null;
+    let manualPolyline = null;
+    let manualMarkers = [];
+    let selectedCourse = null;
+    let courses = [];
+    let manualEditMode = false;
+    let manualPoints = [];
+
+    function getOwnerKey() {
+      return "ksy_courses";
+    }
+
+    async function ensureAuth() {
+      if (auth.currentUser) return auth.currentUser;
+      const cred = await signInAnonymously(auth);
+      return cred.user;
+    }
+
+    function ensureKakaoLoaded() {
+      return !!(window.kakao && window.kakao.maps);
+    }
+
+    function toLatLng(lat, lng) {
+      return new kakao.maps.LatLng(lat, lng);
+    }
+
+    function formatDateTime(ts) {
+      const d = new Date(ts);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${y}-${m}-${dd} ${hh}:${mm}`;
+    }
+
+    function formatEstimatedDurationBy20kmh(distanceKm) {
+  const hoursFloat = Number(distanceKm || 0) / 20;
+  const totalMinutes = Math.round(hoursFloat * 60);
+
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+
+  if (hh <= 0) {
+    return `${mm}분`;
+  }
+  return `${hh}시간 ${mm}분`;
+}
+
+    function loadSavedRides() {
+      try {
+        return JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function totalDistanceKmFromPoints(points) {
+      if (!Array.isArray(points) || points.length < 2) return 0;
+      let totalM = 0;
+      for (let i = 1; i < points.length; i++) {
+        totalM += haversine(
+          points[i - 1].lat, points[i - 1].lng,
+          points[i].lat, points[i].lng
+        );
+      }
+      return totalM / 1000;
+    }
+
+    function initMap() {
+      if (!ensureKakaoLoaded()) {
+        alert("카카오맵 로드 실패");
+        return;
+      }
+
+      map = new kakao.maps.Map(document.getElementById("map"), {
+        center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
+        level: 5
+      });
+
+      savedCoursePolyline = new kakao.maps.Polyline({
+        map,
+        path: [],
+        strokeWeight: 7,
+        strokeColor: "#00e5ff",
+        strokeOpacity: 0.95,
+        strokeStyle: "solid"
+      });
+
+      manualPolyline = new kakao.maps.Polyline({
+        map,
+        path: [],
+        strokeWeight: 6,
+        strokeColor: "#ef4444",
+        strokeOpacity: 0.95,
+        strokeStyle: "solid"
+      });
+
+      kakao.maps.event.addListener(map, "click", (mouseEvent) => {
+        if (!manualEditMode) return;
+        const latLng = mouseEvent.latLng;
+        manualPoints.push({
+          lat: latLng.getLat(),
+          lng: latLng.getLng()
+        });
+        redrawManualCourse();
+      });
+
+      setTimeout(() => {
+        kakao.maps.event.trigger(map, "resize");
+      }, 300);
+    }
+
+    function fitMapToPoints(points) {
+      if (!map || !points || !points.length) return;
+
+      if (points.length === 1) {
+        map.setCenter(toLatLng(points[0].lat, points[0].lng));
+        map.setLevel(4);
+        return;
+      }
+
+      const bounds = new kakao.maps.LatLngBounds();
+      points.forEach(p => bounds.extend(toLatLng(p.lat, p.lng)));
+      map.setBounds(bounds);
+    }
+
+    function clearManualMarkers() {
+      manualMarkers.forEach(m => m.setMap(null));
+      manualMarkers = [];
+    }
+
+    function redrawManualCourse() {
+      if (!map || !manualPolyline) return;
+
+      clearManualMarkers();
+
+      const path = manualPoints.map(p => toLatLng(p.lat, p.lng));
+      manualPolyline.setPath(path);
+
+      manualPoints.forEach((p, idx) => {
+        const marker = new kakao.maps.Marker({
+          map,
+          position: toLatLng(p.lat, p.lng),
+          title: `점 ${idx + 1}`
+        });
+        manualMarkers.push(marker);
+      });
+
+      editToggleBtn.textContent = manualEditMode ? `편집중(${manualPoints.length})` : "편집시작";
+    }
+
+    function previewCourse(course) {
+      if (!map || !savedCoursePolyline) return;
+      selectedCourse = course || null;
+      const points = selectedCourse?.points || [];
+      savedCoursePolyline.setPath(points.map(p => toLatLng(p.lat, p.lng)));
+      fitMapToPoints(points);
+      setTimeout(() => kakao.maps.event.trigger(map, "resize"), 100);
+    }
+
+    async function loadCoursesFromFirebase() {
+      const ownerKey = getOwnerKey();
+      const snap = await get(ref(db, `courses/${ownerKey}`));
+      if (!snap.exists()) return [];
+
+      const raw = snap.val();
+      return Object.entries(raw)
+        .map(([id, value]) => ({ id, ...value }))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    }
+
+    async function saveCourseToFirebase(payload) {
+      const ownerKey = getOwnerKey();
+      const courseId = payload.id || `course_${Date.now()}`;
+
+      await set(ref(db, `courses/${ownerKey}/${courseId}`), {
+        name: payload.name,
+        source: payload.source,
+        createdAt: payload.createdAt || Date.now(),
+        updatedAt: payload.updatedAt || Date.now(),
+        points: payload.points
+      });
+
+      return courseId;
+    }
+
+    async function deleteCourseFromFirebase(courseId) {
+      const ownerKey = getOwnerKey();
+      await remove(ref(db, `courses/${ownerKey}/${courseId}`));
+    }
+
+    function openCourseInRideMap(course) {
+      if (!course || !Array.isArray(course.points) || !course.points.length) {
+        alert("코스 데이터가 없습니다.");
+        return;
+      }
+
+      localStorage.setItem(SELECTED_COURSE_KEY, JSON.stringify({
+        id: course.id,
+        name: course.name,
+        points: course.points
+      }));
+
+      location.href = "./ride-map(kakaomap).html";
+    }
+
+    function renderCoursesTab() {
+      listEl.innerHTML = "";
+
+      if (!courses.length) {
+        listEl.innerHTML = `<div class="empty">저장된 코스 없음</div>`;
+        return;
+      }
+
+      courses.forEach(course => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
+        const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
+
+        card.innerHTML = `
+          <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}</div>
+          <div class="meta">
+  ${course.source === "manual" ? "직접등록" : "기록등록"} · ${(course.points || []).length}점 · ${distKm}km · 약 ${estimatedTime}
+</div>
+          <div class="actions">
+            <button class="action-btn primary">보기</button>
+            <button class="action-btn amber">수정</button>
+            <button class="action-btn green">안내</button>
+            <button class="action-btn red">삭제</button>
+          </div>
+        `;
+
+        const [previewBtn, editBtn, startBtn, deleteBtn] = card.querySelectorAll("button");
+
+        previewBtn.addEventListener("click", () => {
+          previewCourse(course);
+        });
+
+        editBtn.addEventListener("click", async () => {
+          const newName = prompt("새 코스 이름을 입력하세요.", course.name || "");
+          if (newName === null) return;
+
+          const trimmedName = newName.trim();
+          if (!trimmedName) {
+            alert("코스 이름을 입력하세요.");
+            return;
+          }
+
+          try {
+            await saveCourseToFirebase({
+              id: course.id,
+              name: trimmedName,
+              source: course.source || "manual",
+              points: course.points || [],
+              createdAt: course.createdAt || Date.now(),
+              updatedAt: course.updatedAt || Date.now()
+            });
+
+            if (selectedCourse?.id === course.id) {
+              selectedCourse.name = trimmedName;
+            }
+
+            await refreshCourses();
+            alert("코스 이름이 수정되었습니다.");
+          } catch (e) {
+            console.error(e);
+            alert("이름 수정 오류");
+          }
+        });
+
+        startBtn.addEventListener("click", () => {
+          openCourseInRideMap(course);
+        });
+
+        deleteBtn.addEventListener("click", async () => {
+          const pw = prompt(`"${course.name}" 삭제 비밀번호를 입력하세요.`);
+          if (pw === null) return;
+
+          if (pw !== COURSE_DELETE_PASSWORD) {
+            alert("비밀번호가 올바르지 않습니다.");
+            return;
+          }
+
+          if (!confirm(`"${course.name}" 코스를 삭제할까요?`)) return;
+
+          try {
+            await deleteCourseFromFirebase(course.id);
+            if (selectedCourse?.id === course.id) {
+              selectedCourse = null;
+              savedCoursePolyline.setPath([]);
+            }
+            await refreshCourses();
+            alert("삭제되었습니다.");
+          } catch (e) {
+            console.error(e);
+            alert("삭제 오류");
+          }
+        });
+
+        listEl.appendChild(card);
+      });
+    }
+
+    function renderRidesTab() {
+      listEl.innerHTML = "";
+      const rides = loadSavedRides();
+
+      if (!rides.length) {
+        listEl.innerHTML = `<div class="empty">저장된 기록 없음</div>`;
+        return;
+      }
+
+      rides.forEach((ride) => {
+        const points = Array.isArray(ride.path) ? ride.path.map(([lat, lng]) => ({ lat, lng })) : [];
+        const distKm = ((ride.totalDistanceM || 0) / 1000).toFixed(1);
+        const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="card-title">${formatDateTime(ride.endTime || Date.now())}</div>
+          <div class="meta">${distKm}km · ${points.length}점 · 약 ${estimatedTime}</div>
+          <div class="actions" style="grid-template-columns:repeat(3,1fr);">
+            <button class="action-btn primary">보기</button>
+            <button class="action-btn green">등록</button>
+            <button class="action-btn">이름넣기</button>
+          </div>
+        `;
+
+        const [previewBtn, saveBtn, fillBtn] = card.querySelectorAll("button");
+
+        previewBtn.addEventListener("click", () => {
+          previewCourse({
+            id: ride.id,
+            name: "기록 미리보기",
+            points
+          });
+        });
+
+        fillBtn.addEventListener("click", () => {
+          courseNameInput.value = `라이딩 ${formatDateTime(ride.endTime || Date.now())}`;
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+
+        saveBtn.addEventListener("click", async () => {
+          if (!points.length) {
+            alert("경로 없음");
+            return;
+          }
+
+          const name = (courseNameInput.value || "").trim() || `라이딩 ${formatDateTime(ride.endTime || Date.now())}`;
+
+          try {
+            await saveCourseToFirebase({
+              name,
+              source: "ride",
+              points,
+              createdAt: Date.now()
+            });
+            currentTab = "courses";
+            activateTabButton();
+            await refreshCourses();
+            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+          } catch (e) {
+            console.error(e);
+            alert("저장 오류");
+          }
+        });
+
+        listEl.appendChild(card);
+      });
+    }
+
+    function renderManualTab() {
+      listEl.innerHTML = `
+        <div class="card">
+          <div class="card-title">직접 코스 만들기</div>
+          <div class="meta">편집시작 후 지도 터치</div>
+        </div>
+        <div class="card">
+          <div class="card-title">현재 점 수</div>
+          <div class="meta">${manualPoints.length}점</div>
+        </div>
+      `;
+    }
+
+    function renderTab() {
+      if (currentTab === "courses") renderCoursesTab();
+      else if (currentTab === "rides") renderRidesTab();
+      else renderManualTab();
+    }
+
+    function activateTabButton() {
+      [tabCoursesBtn, tabRidesBtn, tabManualBtn].forEach(btn => btn.classList.remove("active"));
+
+      if (currentTab === "courses") tabCoursesBtn.classList.add("active");
+      else if (currentTab === "rides") tabRidesBtn.classList.add("active");
+      else tabManualBtn.classList.add("active");
+    }
+
+    async function refreshCourses() {
+      try {
+        courses = await loadCoursesFromFirebase();
+        renderTab();
+      } catch (e) {
+        console.error(e);
+        alert("코스 불러오기 오류");
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    backBtn.addEventListener("click", () => {
+      location.href = "./ride-map(kakaomap).html";
+    });
+
+    reloadBtn.addEventListener("click", async () => {
+      if (currentTab === "courses") await refreshCourses();
+      else renderTab();
+    });
+
+    tabCoursesBtn.addEventListener("click", async () => {
+      currentTab = "courses";
+      activateTabButton();
+      await refreshCourses();
+    });
+
+    tabRidesBtn.addEventListener("click", () => {
+      currentTab = "rides";
+      activateTabButton();
+      renderTab();
+    });
+
+    tabManualBtn.addEventListener("click", () => {
+      currentTab = "manual";
+      activateTabButton();
+      renderTab();
+    });
+
+    editToggleBtn.addEventListener("click", () => {
+      manualEditMode = !manualEditMode;
+      editToggleBtn.className = manualEditMode ? "action-btn red" : "action-btn amber";
+      redrawManualCourse();
+      currentTab = "manual";
+      activateTabButton();
+      renderTab();
+    });
+
+    undoBtn.addEventListener("click", () => {
+      if (!manualPoints.length) {
+        alert("삭제할 점이 없습니다.");
+        return;
+      }
+      manualPoints.pop();
+      redrawManualCourse();
+      renderTab();
+    });
+
+    clearManualBtn.addEventListener("click", () => {
+      if (!manualPoints.length) {
+        alert("지울 점이 없습니다.");
+        return;
+      }
+      if (!confirm("전체 지울까요?")) return;
+      manualPoints = [];
+      redrawManualCourse();
+      renderTab();
+    });
+
+    saveManualBtn.addEventListener("click", async () => {
+      if (manualPoints.length < 2) {
+        alert("최소 2점 필요");
+        return;
+      }
+
+      const name = (courseNameInput.value || "").trim() || `수동코스 ${formatDateTime(Date.now())}`;
+
+      try {
+        await saveCourseToFirebase({
+          name,
+          source: "manual",
+          points: manualPoints.slice(),
+          createdAt: Date.now()
+        });
+
+        manualPoints = [];
+        redrawManualCourse();
+        currentTab = "courses";
+        activateTabButton();
+        await refreshCourses();
+        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      } catch (e) {
+        console.error(e);
+        alert("저장 오류");
+      }
+    });
+
+    fitMapBtn.addEventListener("click", () => {
+      if (manualPoints.length) {
+        fitMapToPoints(manualPoints);
+        return;
+      }
+      if (selectedCourse?.points?.length) {
+        fitMapToPoints(selectedCourse.points);
+        return;
+      }
+      map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
+      map.setLevel(5);
+    });
+
+    async function init() {
+      await ensureAuth();
+      initMap();
+      activateTabButton();
+      await refreshCourses();
+    }
+
+    window.addEventListener("load", init);
+  </script>
+</body>
+</html>

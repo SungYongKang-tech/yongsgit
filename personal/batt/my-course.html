@@ -4,9 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>내 코스 관리</title>
-
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
-
   <style>
     :root{
       --bg1:#0b1220;
@@ -22,253 +20,115 @@
       --red:#dc2626;
       --amber:#d97706;
     }
-
     *{box-sizing:border-box}
-
     html,body{
-      margin:0;
-      width:100%;
-      min-height:100%;
+      margin:0;width:100%;min-height:100%;
       background:linear-gradient(180deg,var(--bg2) 0%, var(--bg1) 100%);
-      color:var(--text);
-      font-family:Arial, sans-serif;
-      overflow-x:hidden;
-      overflow-y:auto;
+      color:var(--text);font-family:Arial,sans-serif;overflow-x:hidden;
     }
-
-    body{
-      -webkit-tap-highlight-color:transparent;
-    }
-
+    body{-webkit-tap-highlight-color:transparent;}
     .app{
-      width:100%;
-      min-height:100dvh;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      padding:calc(6px + env(safe-area-inset-top)) 6px calc(12px + env(safe-area-inset-bottom));
+      width:100%;min-height:100dvh;display:flex;flex-direction:column;gap:6px;
+      padding:calc(6px + env(safe-area-inset-top)) 6px calc(86px + env(safe-area-inset-bottom));
     }
-
-    .topbar{
-      display:grid;
-      grid-template-columns:1fr auto auto;
-      gap:4px;
-      align-items:center;
-    }
-
+    .topbar{display:grid;grid-template-columns:1fr auto auto;gap:4px;align-items:center}
     .title{
-      font-size:19px;
-      font-weight:900;
-      letter-spacing:-0.3px;
-      padding-left:4px;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
+      font-size:19px;font-weight:900;letter-spacing:-0.3px;padding-left:4px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     }
-
+    .top-btn,.chip,.action-btn,.bottom-action{
+      border:1px solid var(--line);color:#fff;font-weight:800;cursor:pointer;
+      background:linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
+    }
     .top-btn{
-      height:30px;
-      min-width:58px;
-      border:1px solid var(--line);
-      border-radius:9px;
-      background:linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
-      color:#fff;
-      font-size:11px;
-      font-weight:800;
-      padding:0 8px;
-      cursor:pointer;
-      white-space:nowrap;
+      height:30px;min-width:58px;border-radius:9px;font-size:11px;padding:0 8px;white-space:nowrap;
     }
-    .top-btn.primary{background:linear-gradient(180deg,var(--blue),var(--blue2))}
-    .top-btn:active,.chip:active,.action-btn:active{transform:translateY(1px) scale(0.99)}
-
-    .chips{
-      display:grid;
-      grid-template-columns:repeat(3,1fr);
-      gap:4px;
+    .top-btn.primary,.chip.active,.action-btn.primary,.bottom-action.primary{
+      background:linear-gradient(180deg,var(--blue),var(--blue2));
     }
+    .action-btn.green,.bottom-action.green{background:linear-gradient(180deg,#22c55e,var(--green))}
+    .action-btn.red,.bottom-action.red{background:linear-gradient(180deg,#ef4444,var(--red))}
+    .action-btn.amber,.bottom-action.amber{background:linear-gradient(180deg,#f59e0b,var(--amber))}
+    .top-btn:active,.chip:active,.action-btn:active,.bottom-action:active{transform:translateY(1px) scale(0.99)}
 
+    .chips,.subchips{display:grid;gap:4px}
+    .chips{grid-template-columns:repeat(2,1fr)}
+    .subchips{grid-template-columns:repeat(2,1fr)}
     .chip{
-      height:32px;
-      border:1px solid var(--line);
-      border-radius:9px;
-      background:linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.92));
-      color:#fff;
-      font-size:11px;
-      font-weight:800;
-      cursor:pointer;
-      padding:0 4px;
-      white-space:nowrap;
-    }
-    .chip.active{background:linear-gradient(180deg,var(--blue),var(--blue2))}
-
-    /* 모바일: 전체 페이지 스크롤 */
-    .desktop-grid{
-      display:flex;
-      flex-direction:column;
-      gap:6px;
+      height:34px;border-radius:10px;font-size:12px;padding:0 4px;white-space:nowrap;
     }
 
-    .map-panel{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:linear-gradient(180deg, var(--card2), var(--card));
-      padding:6px;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
+    .section{
+      border:1px solid var(--line);border-radius:14px;
+      background:linear-gradient(180deg,var(--card2),var(--card));
+      padding:6px;display:flex;flex-direction:column;gap:6px;
     }
 
-    .map-toolbar{
-      display:grid;
-      grid-template-columns:repeat(3,1fr);
-      gap:4px;
-    }
-
-    .map-toolbar-2{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:4px;
-    }
-
+    .desktop-grid{display:flex;flex-direction:column;gap:6px}
+    .map-panel{display:flex;flex-direction:column;gap:6px}
     .input{
-      width:100%;
-      height:34px;
-      border-radius:9px;
-      border:1px solid var(--line);
-      background:rgba(15,23,42,0.9);
-      color:#fff;
-      padding:0 10px;
-      outline:none;
-      font-size:12px;
+      width:100%;height:34px;border-radius:9px;border:1px solid var(--line);
+      background:rgba(15,23,42,0.9);color:#fff;padding:0 10px;outline:none;font-size:12px;
     }
-
+    .map-toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+    .map-toolbar-2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
     .action-btn{
-      height:32px;
-      border:1px solid var(--line);
-      border-radius:9px;
-      background:linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
-      color:#fff;
-      font-size:11px;
-      font-weight:800;
-      cursor:pointer;
-      padding:0 6px;
-      white-space:nowrap;
+      height:32px;border-radius:9px;font-size:11px;padding:0 6px;white-space:nowrap;
     }
-    .action-btn.primary{background:linear-gradient(180deg,var(--blue),var(--blue2))}
-    .action-btn.green{background:linear-gradient(180deg,#22c55e,var(--green))}
-    .action-btn.red{background:linear-gradient(180deg,#ef4444,var(--red))}
-    .action-btn.amber{background:linear-gradient(180deg,#f59e0b,var(--amber))}
 
     .map-wrap{
-      width:100%;
-      height:38dvh;
-      min-height:280px;
-      border-radius:12px;
-      overflow:hidden;
-      border:1px solid var(--line);
-      background:rgba(15,23,42,0.72);
+      width:100%;height:38dvh;min-height:280px;border-radius:12px;overflow:hidden;
+      border:1px solid var(--line);background:rgba(15,23,42,0.72);
     }
+    #map{width:100%;height:100%}
 
-    #map{
-      width:100%;
-      height:100%;
-    }
-
-    .list-panel{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:linear-gradient(180deg, var(--card2), var(--card));
-      padding:6px;
-      overflow:visible;
-      display:block;
-    }
-
-    .list{
-      overflow:visible;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      padding-right:0;
-    }
-
+    .list{display:flex;flex-direction:column;gap:6px}
     .card{
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:rgba(15,23,42,0.72);
-      padding:8px;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
+      border:1px solid var(--line);border-radius:12px;background:rgba(15,23,42,0.72);
+      padding:9px;display:flex;flex-direction:column;gap:6px;
     }
-
-    .card-title{
-      font-size:13px;
-      font-weight:900;
-      line-height:1.3;
+    .card.selected{
+      outline:2px solid rgba(37,99,235,0.65);
+      background:rgba(37,99,235,0.14);
     }
-
-    .meta{
-      font-size:11px;
-      color:var(--muted);
-      line-height:1.35;
-      word-break:break-word;
-    }
-
-    .actions{
-      display:grid;
-      grid-template-columns:repeat(4,1fr);
-      gap:4px;
-    }
-
+    .card-title{font-size:13px;font-weight:900;line-height:1.35}
+    .meta{font-size:11px;color:var(--muted);line-height:1.4;word-break:break-word}
     .empty{
-      border:1px dashed var(--line);
-      border-radius:12px;
-      padding:14px 10px;
-      text-align:center;
-      font-size:12px;
-      color:var(--muted);
-      background:rgba(15,23,42,0.55);
+      border:1px dashed var(--line);border-radius:12px;padding:16px 10px;text-align:center;
+      font-size:12px;color:var(--muted);background:rgba(15,23,42,0.55);
     }
 
-    /* PC */
-    @media (min-width: 901px){
+    .bottom-bar{
+      position:fixed;left:0;right:0;bottom:0;z-index:20;
+      padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+      background:linear-gradient(180deg, rgba(11,18,32,0.2), rgba(11,18,32,0.95));
+      backdrop-filter:blur(8px);
+    }
+    .bottom-bar-inner{
+      border:1px solid var(--line);border-radius:14px;
+      background:linear-gradient(180deg,var(--card2),var(--card));
+      padding:6px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;
+    }
+    .bottom-action{
+      height:38px;border-radius:10px;font-size:12px;padding:0 4px;
+    }
+    .bottom-placeholder{
+      text-align:center;color:var(--muted);font-size:12px;padding:10px 0;
+    }
+
+    .helper{
+      font-size:12px;color:var(--muted);padding:2px 2px 0 2px;
+    }
+
+    @media (min-width:901px){
       .app{
         gap:8px;
-        padding:calc(8px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));
+        padding:calc(8px + env(safe-area-inset-top)) 8px calc(92px + env(safe-area-inset-bottom));
       }
-
       .desktop-grid{
-        flex:1;
-        min-height:0;
-        display:grid;
-        grid-template-columns:1.05fr 0.95fr;
-        gap:8px;
+        display:grid;grid-template-columns:1.05fr 0.95fr;gap:8px;align-items:start;
       }
-
-      .map-panel{
-        min-height:0;
-      }
-
-      .map-wrap{
-        min-height:0;
-        height:100%;
-        flex:1;
-      }
-
-      .list-panel{
-        min-height:0;
-        overflow:auto;
-        display:flex;
-        flex-direction:column;
-      }
-
-      .list{
-        flex:1;
-        min-height:0;
-        overflow:auto;
-        padding-right:2px;
-      }
+      .map-wrap{height:56dvh;min-height:420px}
     }
   </style>
 </head>
@@ -281,24 +141,40 @@
     </div>
 
     <div class="chips">
-      <button class="chip active" id="tabCoursesBtn">내코스</button>
-      <button class="chip" id="tabRidesBtn">기록</button>
-      <button class="chip" id="tabManualBtn">직접등록</button>
+      <button class="chip active" id="tabViewBtn">코스확인</button>
+      <button class="chip" id="tabBuildBtn">코스만들기</button>
     </div>
 
     <div class="desktop-grid">
-      <div class="map-panel">
+      <div class="section map-panel">
         <input class="input" id="courseNameInput" placeholder="코스 이름" />
 
-        <div class="map-toolbar">
-          <button class="action-btn amber" id="editToggleBtn">편집시작</button>
-          <button class="action-btn" id="undoBtn">점삭제</button>
-          <button class="action-btn red" id="clearManualBtn">전체지우기</button>
-        </div>
+        <div id="builderTools">
+          <div class="subchips" style="margin-bottom:4px;">
+            <button class="chip active" id="buildFromRideBtn">기록등록</button>
+            <button class="chip" id="buildManualBtn">직접등록</button>
+          </div>
 
-        <div class="map-toolbar-2">
-          <button class="action-btn green" id="saveManualBtn">코스저장</button>
-          <button class="action-btn primary" id="fitMapBtn">전체보기</button>
+          <div id="manualTools" style="display:none;">
+            <div class="map-toolbar">
+              <button class="action-btn amber" id="editToggleBtn">편집시작</button>
+              <button class="action-btn" id="undoBtn">점삭제</button>
+              <button class="action-btn red" id="clearManualBtn">전체지우기</button>
+            </div>
+            <div class="map-toolbar-2">
+              <button class="action-btn green" id="saveManualBtn">코스저장</button>
+              <button class="action-btn primary" id="fitMapBtn">전체보기</button>
+            </div>
+            <div class="helper">직접등록은 편집시작 후 지도 터치로 점을 추가합니다.</div>
+          </div>
+
+          <div id="rideTools" style="display:block;">
+            <div class="map-toolbar-2">
+              <button class="action-btn primary" id="fitMapBtn2">전체보기</button>
+              <button class="action-btn" id="fillRideNameBtn">이름자동입력</button>
+            </div>
+            <div class="helper">기록등록 탭에서 기록을 선택한 뒤 코스로 저장하세요.</div>
+          </div>
         </div>
 
         <div class="map-wrap">
@@ -306,22 +182,20 @@
         </div>
       </div>
 
-      <div class="list-panel">
+      <div class="section">
         <div class="list" id="listEl"></div>
       </div>
     </div>
   </div>
 
+  <div class="bottom-bar">
+    <div id="bottomBarContent"></div>
+  </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-    import {
-      getDatabase,
-      ref,
-      get,
-      set,
-      remove
-    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+    import { getDatabase, ref, get, set, remove } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
@@ -344,24 +218,33 @@
 
     const backBtn = document.getElementById("backBtn");
     const reloadBtn = document.getElementById("reloadBtn");
-    const tabCoursesBtn = document.getElementById("tabCoursesBtn");
-    const tabRidesBtn = document.getElementById("tabRidesBtn");
-    const tabManualBtn = document.getElementById("tabManualBtn");
+    const tabViewBtn = document.getElementById("tabViewBtn");
+    const tabBuildBtn = document.getElementById("tabBuildBtn");
+    const buildFromRideBtn = document.getElementById("buildFromRideBtn");
+    const buildManualBtn = document.getElementById("buildManualBtn");
 
     const listEl = document.getElementById("listEl");
+    const bottomBarContent = document.getElementById("bottomBarContent");
     const courseNameInput = document.getElementById("courseNameInput");
     const editToggleBtn = document.getElementById("editToggleBtn");
     const undoBtn = document.getElementById("undoBtn");
     const clearManualBtn = document.getElementById("clearManualBtn");
     const saveManualBtn = document.getElementById("saveManualBtn");
     const fitMapBtn = document.getElementById("fitMapBtn");
+    const fitMapBtn2 = document.getElementById("fitMapBtn2");
+    const fillRideNameBtn = document.getElementById("fillRideNameBtn");
+    const manualTools = document.getElementById("manualTools");
+    const rideTools = document.getElementById("rideTools");
+    const builderTools = document.getElementById("builderTools");
 
-    let currentTab = "courses";
+    let mainTab = "view";        // view | build
+    let buildTab = "ride";       // ride | manual
     let map;
     let savedCoursePolyline = null;
     let manualPolyline = null;
     let manualMarkers = [];
     let selectedCourse = null;
+    let selectedRide = null;
     let courses = [];
     let manualEditMode = false;
     let manualPoints = [];
@@ -394,10 +277,19 @@
       return `${y}-${m}-${dd} ${hh}:${mm}`;
     }
 
+    function formatEstimatedDurationBy20kmh(distanceKm) {
+      const totalMinutes = Math.round((Number(distanceKm || 0) / 20) * 60);
+      const hh = Math.floor(totalMinutes / 60);
+      const mm = totalMinutes % 60;
+      if (hh <= 0) return `${mm}분`;
+      return `${hh}시간 ${mm}분`;
+    }
+
     function loadSavedRides() {
       try {
-        return JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
-      } catch (e) {
+        const rides = JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
+        return Array.isArray(rides) ? rides : [];
+      } catch {
         return [];
       }
     }
@@ -417,12 +309,18 @@
       if (!Array.isArray(points) || points.length < 2) return 0;
       let totalM = 0;
       for (let i = 1; i < points.length; i++) {
-        totalM += haversine(
-          points[i - 1].lat, points[i - 1].lng,
-          points[i].lat, points[i].lng
-        );
+        totalM += haversine(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
       }
       return totalM / 1000;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
     }
 
     function initMap() {
@@ -455,13 +353,11 @@
       });
 
       kakao.maps.event.addListener(map, "click", (mouseEvent) => {
-        if (!manualEditMode) return;
+        if (!(mainTab === "build" && buildTab === "manual" && manualEditMode)) return;
         const latLng = mouseEvent.latLng;
-        manualPoints.push({
-          lat: latLng.getLat(),
-          lng: latLng.getLng()
-        });
+        manualPoints.push({ lat: latLng.getLat(), lng: latLng.getLng() });
         redrawManualCourse();
+        renderBottomBar();
       });
 
       setTimeout(() => {
@@ -470,7 +366,7 @@
     }
 
     function fitMapToPoints(points) {
-      if (!map || !points || !points.length) return;
+      if (!map || !Array.isArray(points) || !points.length) return;
 
       if (points.length === 1) {
         map.setCenter(toLatLng(points[0].lat, points[0].lng));
@@ -490,7 +386,6 @@
 
     function redrawManualCourse() {
       if (!map || !manualPolyline) return;
-
       clearManualMarkers();
 
       const path = manualPoints.map(p => toLatLng(p.lat, p.lng));
@@ -509,11 +404,24 @@
     }
 
     function previewCourse(course) {
-      if (!map || !savedCoursePolyline) return;
       selectedCourse = course || null;
+      selectedRide = null;
       const points = selectedCourse?.points || [];
       savedCoursePolyline.setPath(points.map(p => toLatLng(p.lat, p.lng)));
       fitMapToPoints(points);
+      renderList();
+      renderBottomBar();
+      setTimeout(() => kakao.maps.event.trigger(map, "resize"), 100);
+    }
+
+    function previewRide(ride) {
+      selectedRide = ride || null;
+      selectedCourse = null;
+      const points = Array.isArray(ride?.path) ? ride.path.map(([lat, lng]) => ({ lat, lng })) : [];
+      savedCoursePolyline.setPath(points.map(p => toLatLng(p.lat, p.lng)));
+      fitMapToPoints(points);
+      renderList();
+      renderBottomBar();
       setTimeout(() => kakao.maps.event.trigger(map, "resize"), 100);
     }
 
@@ -563,7 +471,7 @@
       location.href = "./ride-map(kakaomap).html";
     }
 
-    function renderCoursesTab() {
+    function renderCoursesList() {
       listEl.innerHTML = "";
 
       if (!courses.length) {
@@ -573,95 +481,25 @@
 
       courses.forEach(course => {
         const card = document.createElement("div");
-        card.className = "card";
+        const isSelected = selectedCourse?.id === course.id;
+        card.className = `card${isSelected ? " selected" : ""}`;
 
         const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
+        const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
 
         card.innerHTML = `
           <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}</div>
           <div class="meta">
-            ${course.source === "manual" ? "직접등록" : "기록등록"} · ${(course.points || []).length}점 · ${distKm}km
-          </div>
-          <div class="actions">
-            <button class="action-btn primary">보기</button>
-            <button class="action-btn amber">수정</button>
-            <button class="action-btn green">안내</button>
-            <button class="action-btn red">삭제</button>
+            ${course.source === "manual" ? "직접등록" : "기록등록"} · ${(course.points || []).length}점 · ${distKm}km · 약 ${estimatedTime}
           </div>
         `;
 
-        const [previewBtn, editBtn, startBtn, deleteBtn] = card.querySelectorAll("button");
-
-        previewBtn.addEventListener("click", () => {
-          previewCourse(course);
-        });
-
-        editBtn.addEventListener("click", async () => {
-          const newName = prompt("새 코스 이름을 입력하세요.", course.name || "");
-          if (newName === null) return;
-
-          const trimmedName = newName.trim();
-          if (!trimmedName) {
-            alert("코스 이름을 입력하세요.");
-            return;
-          }
-
-          try {
-            await saveCourseToFirebase({
-              id: course.id,
-              name: trimmedName,
-              source: course.source || "manual",
-              points: course.points || [],
-              createdAt: course.createdAt || Date.now(),
-              updatedAt: course.updatedAt || Date.now()
-            });
-
-            if (selectedCourse?.id === course.id) {
-              selectedCourse.name = trimmedName;
-            }
-
-            await refreshCourses();
-            alert("코스 이름이 수정되었습니다.");
-          } catch (e) {
-            console.error(e);
-            alert("이름 수정 오류");
-          }
-        });
-
-        startBtn.addEventListener("click", () => {
-          openCourseInRideMap(course);
-        });
-
-        deleteBtn.addEventListener("click", async () => {
-          const pw = prompt(`"${course.name}" 삭제 비밀번호를 입력하세요.`);
-          if (pw === null) return;
-
-          if (pw !== COURSE_DELETE_PASSWORD) {
-            alert("비밀번호가 올바르지 않습니다.");
-            return;
-          }
-
-          if (!confirm(`"${course.name}" 코스를 삭제할까요?`)) return;
-
-          try {
-            await deleteCourseFromFirebase(course.id);
-            if (selectedCourse?.id === course.id) {
-              selectedCourse = null;
-              savedCoursePolyline.setPath([]);
-            }
-            await refreshCourses();
-            alert("삭제되었습니다.");
-          } catch (e) {
-            console.error(e);
-            alert("삭제 오류");
-          }
-        });
-
+        card.addEventListener("click", () => previewCourse(course));
         listEl.appendChild(card);
       });
     }
 
-    function renderRidesTab() {
+    function renderRidesList() {
       listEl.innerHTML = "";
       const rides = loadSavedRides();
 
@@ -673,156 +511,250 @@
       rides.forEach((ride) => {
         const points = Array.isArray(ride.path) ? ride.path.map(([lat, lng]) => ({ lat, lng })) : [];
         const distKm = ((ride.totalDistanceM || 0) / 1000).toFixed(1);
+        const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
+        const isSelected = selectedRide?.id === ride.id;
 
         const card = document.createElement("div");
-        card.className = "card";
+        card.className = `card${isSelected ? " selected" : ""}`;
         card.innerHTML = `
           <div class="card-title">${formatDateTime(ride.endTime || Date.now())}</div>
-          <div class="meta">${distKm}km · ${points.length}점</div>
-          <div class="actions" style="grid-template-columns:repeat(3,1fr);">
-            <button class="action-btn primary">보기</button>
-            <button class="action-btn green">등록</button>
-            <button class="action-btn">이름넣기</button>
+          <div class="meta">기록등록 · ${points.length}점 · ${distKm}km · 약 ${estimatedTime}</div>
+        `;
+
+        card.addEventListener("click", () => previewRide(ride));
+        listEl.appendChild(card);
+      });
+    }
+
+    function renderManualInfo() {
+      listEl.innerHTML = `
+        <div class="card">
+          <div class="card-title">직접 코스 만들기</div>
+          <div class="meta">편집시작 후 지도 터치로 점을 추가하세요.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">현재 코스 정보</div>
+          <div class="meta">현재 ${manualPoints.length}점 · ${totalDistanceKmFromPoints(manualPoints).toFixed(1)}km</div>
+        </div>
+      `;
+    }
+
+    function renderList() {
+      if (mainTab === "view") {
+        renderCoursesList();
+      } else {
+        if (buildTab === "ride") renderRidesList();
+        else renderManualInfo();
+      }
+    }
+
+    function renderBottomBar() {
+      if (mainTab === "view") {
+        if (!selectedCourse) {
+          bottomBarContent.innerHTML = `
+            <div class="section">
+              <div class="bottom-placeholder">코스를 선택하면 보기 · 수정 · 삭제 · 주행열기 버튼이 나타납니다.</div>
+            </div>
+          `;
+          return;
+        }
+
+        bottomBarContent.innerHTML = `
+          <div class="bottom-bar-inner">
+            <button class="bottom-action primary" id="bottomPreviewBtn">보기</button>
+            <button class="bottom-action amber" id="bottomEditBtn">수정</button>
+            <button class="bottom-action red" id="bottomDeleteBtn">삭제</button>
+            <button class="bottom-action green" id="bottomRideBtn">주행열기</button>
           </div>
         `;
 
-        const [previewBtn, saveBtn, fillBtn] = card.querySelectorAll("button");
-
-        previewBtn.addEventListener("click", () => {
-          previewCourse({
-            id: ride.id,
-            name: "기록 미리보기",
-            points
-          });
+        document.getElementById("bottomPreviewBtn").addEventListener("click", () => {
+          previewCourse(selectedCourse);
         });
 
-        fillBtn.addEventListener("click", () => {
-          courseNameInput.value = `라이딩 ${formatDateTime(ride.endTime || Date.now())}`;
+        document.getElementById("bottomEditBtn").addEventListener("click", async () => {
+          const newName = prompt("새 코스 이름을 입력하세요.", selectedCourse.name || "");
+          if (newName === null) return;
+
+          const trimmedName = newName.trim();
+          if (!trimmedName) {
+            alert("코스 이름을 입력하세요.");
+            return;
+          }
+
+          try {
+            await saveCourseToFirebase({
+              id: selectedCourse.id,
+              name: trimmedName,
+              source: selectedCourse.source || "manual",
+              points: selectedCourse.points || [],
+              createdAt: selectedCourse.createdAt || Date.now(),
+              updatedAt: Date.now()
+            });
+            selectedCourse.name = trimmedName;
+            await refreshCourses();
+            previewCourse(courses.find(c => c.id === selectedCourse.id) || selectedCourse);
+            alert("코스 이름이 수정되었습니다.");
+          } catch (e) {
+            console.error(e);
+            alert("이름 수정 오류");
+          }
+        });
+
+        document.getElementById("bottomDeleteBtn").addEventListener("click", async () => {
+          const pw = prompt(`"${selectedCourse.name}" 삭제 비밀번호를 입력하세요.`);
+          if (pw === null) return;
+
+          if (pw !== COURSE_DELETE_PASSWORD) {
+            alert("비밀번호가 올바르지 않습니다.");
+            return;
+          }
+
+          if (!confirm(`"${selectedCourse.name}" 코스를 삭제할까요?`)) return;
+
+          try {
+            await deleteCourseFromFirebase(selectedCourse.id);
+            selectedCourse = null;
+            savedCoursePolyline.setPath([]);
+            await refreshCourses();
+            renderBottomBar();
+            alert("삭제되었습니다.");
+          } catch (e) {
+            console.error(e);
+            alert("삭제 오류");
+          }
+        });
+
+        document.getElementById("bottomRideBtn").addEventListener("click", () => {
+          openCourseInRideMap(selectedCourse);
+        });
+
+        return;
+      }
+
+      if (buildTab === "ride") {
+        if (!selectedRide) {
+          bottomBarContent.innerHTML = `
+            <div class="section">
+              <div class="bottom-placeholder">기록을 선택하면 미리보기 · 이름입력 · 코스저장 버튼이 나타납니다.</div>
+            </div>
+          `;
+          return;
+        }
+
+        bottomBarContent.innerHTML = `
+          <div class="bottom-bar-inner">
+            <button class="bottom-action primary" id="ridePreviewBtn">보기</button>
+            <button class="bottom-action" id="rideNameBtn">이름입력</button>
+            <button class="bottom-action green" id="rideSaveBtn">코스저장</button>
+            <button class="bottom-action" id="rideFitBtn">전체보기</button>
+          </div>
+        `;
+
+        document.getElementById("ridePreviewBtn").addEventListener("click", () => {
+          previewRide(selectedRide);
+        });
+
+        document.getElementById("rideNameBtn").addEventListener("click", () => {
+          courseNameInput.value = `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
           window.scrollTo({ top: 0, behavior: "smooth" });
         });
 
-        saveBtn.addEventListener("click", async () => {
+        document.getElementById("rideSaveBtn").addEventListener("click", async () => {
+          const points = Array.isArray(selectedRide.path) ? selectedRide.path.map(([lat, lng]) => ({ lat, lng })) : [];
           if (!points.length) {
             alert("경로 없음");
             return;
           }
 
-          const name = (courseNameInput.value || "").trim() || `라이딩 ${formatDateTime(ride.endTime || Date.now())}`;
+          const name = (courseNameInput.value || "").trim() || `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
 
           try {
             await saveCourseToFirebase({
               name,
               source: "ride",
               points,
-              createdAt: Date.now()
+              createdAt: Date.now(),
+              updatedAt: Date.now()
             });
-            currentTab = "courses";
-            activateTabButton();
+            alert("코스로 저장되었습니다.");
+            mainTab = "view";
+            selectedRide = null;
+            activateTabs();
             await refreshCourses();
-            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
           } catch (e) {
             console.error(e);
             alert("저장 오류");
           }
         });
 
-        listEl.appendChild(card);
-      });
-    }
+        document.getElementById("rideFitBtn").addEventListener("click", () => {
+          const points = Array.isArray(selectedRide.path) ? selectedRide.path.map(([lat, lng]) => ({ lat, lng })) : [];
+          fitMapToPoints(points);
+        });
 
-    function renderManualTab() {
-      listEl.innerHTML = `
-        <div class="card">
-          <div class="card-title">직접 코스 만들기</div>
-          <div class="meta">편집시작 후 지도 터치</div>
-        </div>
-        <div class="card">
-          <div class="card-title">현재 점 수</div>
-          <div class="meta">${manualPoints.length}점</div>
+        return;
+      }
+
+      bottomBarContent.innerHTML = `
+        <div class="bottom-bar-inner">
+          <button class="bottom-action amber" id="manualEditBottomBtn">${manualEditMode ? `편집중(${manualPoints.length})` : "편집시작"}</button>
+          <button class="bottom-action" id="manualUndoBottomBtn">점삭제</button>
+          <button class="bottom-action red" id="manualClearBottomBtn">전체지우기</button>
+          <button class="bottom-action green" id="manualSaveBottomBtn">코스저장</button>
         </div>
       `;
+
+      document.getElementById("manualEditBottomBtn").addEventListener("click", toggleManualEdit);
+      document.getElementById("manualUndoBottomBtn").addEventListener("click", undoManualPoint);
+      document.getElementById("manualClearBottomBtn").addEventListener("click", clearManualPoints);
+      document.getElementById("manualSaveBottomBtn").addEventListener("click", saveManualCourse);
     }
 
-    function renderTab() {
-      if (currentTab === "courses") renderCoursesTab();
-      else if (currentTab === "rides") renderRidesTab();
-      else renderManualTab();
-    }
+    function activateTabs() {
+      tabViewBtn.classList.toggle("active", mainTab === "view");
+      tabBuildBtn.classList.toggle("active", mainTab === "build");
 
-    function activateTabButton() {
-      [tabCoursesBtn, tabRidesBtn, tabManualBtn].forEach(btn => btn.classList.remove("active"));
+      buildFromRideBtn.classList.toggle("active", buildTab === "ride");
+      buildManualBtn.classList.toggle("active", buildTab === "manual");
 
-      if (currentTab === "courses") tabCoursesBtn.classList.add("active");
-      else if (currentTab === "rides") tabRidesBtn.classList.add("active");
-      else tabManualBtn.classList.add("active");
+      builderTools.style.display = mainTab === "build" ? "block" : "none";
+      rideTools.style.display = (mainTab === "build" && buildTab === "ride") ? "block" : "none";
+      manualTools.style.display = (mainTab === "build" && buildTab === "manual") ? "block" : "none";
+      courseNameInput.style.display = mainTab === "build" ? "block" : "none";
     }
 
     async function refreshCourses() {
       try {
         courses = await loadCoursesFromFirebase();
-        renderTab();
+        renderList();
+        renderBottomBar();
       } catch (e) {
         console.error(e);
         alert("코스 불러오기 오류");
       }
     }
 
-    function escapeHtml(str) {
-      return String(str)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    backBtn.addEventListener("click", () => {
-      location.href = "./ride-map(kakaomap).html";
-    });
-
-    reloadBtn.addEventListener("click", async () => {
-      if (currentTab === "courses") await refreshCourses();
-      else renderTab();
-    });
-
-    tabCoursesBtn.addEventListener("click", async () => {
-      currentTab = "courses";
-      activateTabButton();
-      await refreshCourses();
-    });
-
-    tabRidesBtn.addEventListener("click", () => {
-      currentTab = "rides";
-      activateTabButton();
-      renderTab();
-    });
-
-    tabManualBtn.addEventListener("click", () => {
-      currentTab = "manual";
-      activateTabButton();
-      renderTab();
-    });
-
-    editToggleBtn.addEventListener("click", () => {
+    function toggleManualEdit() {
       manualEditMode = !manualEditMode;
       editToggleBtn.className = manualEditMode ? "action-btn red" : "action-btn amber";
       redrawManualCourse();
-      currentTab = "manual";
-      activateTabButton();
-      renderTab();
-    });
+      renderBottomBar();
+      renderList();
+    }
 
-    undoBtn.addEventListener("click", () => {
+    function undoManualPoint() {
       if (!manualPoints.length) {
         alert("삭제할 점이 없습니다.");
         return;
       }
       manualPoints.pop();
       redrawManualCourse();
-      renderTab();
-    });
+      renderList();
+      renderBottomBar();
+    }
 
-    clearManualBtn.addEventListener("click", () => {
+    function clearManualPoints() {
       if (!manualPoints.length) {
         alert("지울 점이 없습니다.");
         return;
@@ -830,10 +762,11 @@
       if (!confirm("전체 지울까요?")) return;
       manualPoints = [];
       redrawManualCourse();
-      renderTab();
-    });
+      renderList();
+      renderBottomBar();
+    }
 
-    saveManualBtn.addEventListener("click", async () => {
+    async function saveManualCourse() {
       if (manualPoints.length < 2) {
         alert("최소 2점 필요");
         return;
@@ -846,20 +779,70 @@
           name,
           source: "manual",
           points: manualPoints.slice(),
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          updatedAt: Date.now()
         });
 
         manualPoints = [];
         redrawManualCourse();
-        currentTab = "courses";
-        activateTabButton();
+        alert("코스로 저장되었습니다.");
+        mainTab = "view";
+        buildTab = "ride";
+        activateTabs();
         await refreshCourses();
-        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
       } catch (e) {
         console.error(e);
         alert("저장 오류");
       }
+    }
+
+    backBtn.addEventListener("click", () => {
+      location.href = "./ride-map(kakaomap).html";
     });
+
+    reloadBtn.addEventListener("click", async () => {
+      if (mainTab === "view") await refreshCourses();
+      else {
+        renderList();
+        renderBottomBar();
+      }
+    });
+
+    tabViewBtn.addEventListener("click", async () => {
+      mainTab = "view";
+      selectedRide = null;
+      activateTabs();
+      await refreshCourses();
+    });
+
+    tabBuildBtn.addEventListener("click", () => {
+      mainTab = "build";
+      selectedCourse = null;
+      activateTabs();
+      renderList();
+      renderBottomBar();
+    });
+
+    buildFromRideBtn.addEventListener("click", () => {
+      buildTab = "ride";
+      selectedRide = null;
+      activateTabs();
+      renderList();
+      renderBottomBar();
+    });
+
+    buildManualBtn.addEventListener("click", () => {
+      buildTab = "manual";
+      selectedRide = null;
+      activateTabs();
+      renderList();
+      renderBottomBar();
+    });
+
+    editToggleBtn.addEventListener("click", toggleManualEdit);
+    undoBtn.addEventListener("click", undoManualPoint);
+    clearManualBtn.addEventListener("click", clearManualPoints);
+    saveManualBtn.addEventListener("click", saveManualCourse);
 
     fitMapBtn.addEventListener("click", () => {
       if (manualPoints.length) {
@@ -874,10 +857,27 @@
       map.setLevel(5);
     });
 
+    fitMapBtn2.addEventListener("click", () => {
+      if (selectedRide?.path?.length) {
+        fitMapToPoints(selectedRide.path.map(([lat, lng]) => ({ lat, lng })));
+        return;
+      }
+      map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
+      map.setLevel(5);
+    });
+
+    fillRideNameBtn.addEventListener("click", () => {
+      if (!selectedRide) {
+        alert("기록을 먼저 선택하세요.");
+        return;
+      }
+      courseNameInput.value = `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
+    });
+
     async function init() {
       await ensureAuth();
       initMap();
-      activateTabButton();
+      activateTabs();
       await refreshCourses();
     }
 
