@@ -160,39 +160,10 @@
       return cred.user;
     }
 
-    function normalizeRide(ride) {
-      if (!ride || typeof ride !== "object") return null;
-
-      const safePath = Array.isArray(ride.path) ? ride.path.filter(p => Array.isArray(p) && p.length >= 2) : [];
-      const safeElevationProfile = Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [];
-      const safeSpeedProfile = Array.isArray(ride.speedProfile) ? ride.speedProfile : [];
-
-      return {
-        ...ride,
-        id: String(ride.id || `ride_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
-        title: String(ride.title || "").trim() || "주행기록",
-        savedAt: ride.savedAt || new Date().toISOString(),
-        startTime: ride.startTime ?? null,
-        endTime: ride.endTime ?? null,
-        totalDistanceM: Number(ride.totalDistanceM || 0),
-        elapsedMs: Number(ride.elapsedMs || 0),
-        restMs: Number(ride.restMs || 0),
-        avgSpeedKmh: Number(ride.avgSpeedKmh || 0),
-        maxSpeedKmh: Number(ride.maxSpeedKmh || 0),
-        path: safePath,
-        elevationProfile: safeElevationProfile,
-        elevationSummary: ride.elevationSummary || null,
-        speedProfile: safeSpeedProfile,
-        firebaseSaved: !!ride.firebaseSaved,
-        firebaseKey: ride.firebaseKey || null
-      };
-    }
-
     function loadSavedRides() {
       try {
         const rides = JSON.parse(localStorage.getItem(SAVED_RIDES_KEY) || "[]");
-        if (!Array.isArray(rides)) return [];
-        return rides.map(normalizeRide).filter(Boolean);
+        return Array.isArray(rides) ? rides : [];
       } catch (e) {
         console.error("loadSavedRides parse error:", e);
         return [];
@@ -200,8 +171,7 @@
     }
 
     function saveSavedRides(rides) {
-      const safeRides = Array.isArray(rides) ? rides.map(normalizeRide).filter(Boolean) : [];
-      localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(safeRides));
+      localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
     }
 
     function getRideName(ride) {
@@ -217,8 +187,8 @@
       return `${hh}:${mm}:${ss}`;
     }
 
-    function formatDate(value) {
-      const d = new Date(value);
+    function formatDate(iso) {
+      const d = new Date(iso);
       if (Number.isNaN(d.getTime())) return "-";
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -231,7 +201,7 @@
     }
 
     function formatTimeOnly(value) {
-      if (value == null || value === "") return "--:--";
+      if (!value) return "--:--";
       const d = new Date(value);
       if (Number.isNaN(d.getTime())) return "--:--";
       const hh = String(d.getHours()).padStart(2, "0");
@@ -275,25 +245,21 @@
     }
 
     function loadRideById(id) {
-      return loadSavedRides().find(r => r.id === id) || null;
+      return loadSavedRides().find(r => r.id === id);
     }
 
     function updateRideInLocal(updatedRide) {
       const rides = loadSavedRides();
       const idx = rides.findIndex(r => r.id === updatedRide.id);
       if (idx === -1) return;
-      rides[idx] = normalizeRide(updatedRide);
+      rides[idx] = updatedRide;
       saveSavedRides(rides);
     }
 
     function mergeCloudRidesIntoLocal(cloudRides) {
       const localRides = loadSavedRides();
       const byId = new Map(localRides.map(r => [r.id, r]));
-
-      cloudRides.forEach(cloudRideRaw => {
-        const cloudRide = normalizeRide(cloudRideRaw);
-        if (!cloudRide) return;
-
+      cloudRides.forEach(cloudRide => {
         const localId = cloudRide.localRideId || `cloud_${cloudRide.firebaseKey}`;
         byId.set(localId, {
           ...byId.get(localId),
@@ -304,9 +270,8 @@
           firebaseKey: cloudRide.firebaseKey
         });
       });
-
-      const mergedList = Array.from(byId.values()).sort(
-        (a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime()
+      const mergedList = Array.from(byId.values()).sort((a, b) =>
+        new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime()
       );
       saveSavedRides(mergedList);
     }
@@ -320,14 +285,12 @@
           if (showEmptyMessage) alert("Firebase에 저장된 내 기록이 없습니다.");
           return [];
         }
-
         const raw = snapshot.val();
         const cloudRides = Object.entries(raw).map(([firebaseKey, value]) => ({
           ...value,
           firebaseSaved: true,
           firebaseKey
         }));
-
         mergeCloudRidesIntoLocal(cloudRides);
         renderList();
         return cloudRides;
@@ -432,7 +395,6 @@
         });
         startMarker = new kakao.maps.Marker({ map, position: linePath[0], title: "출발" });
         endMarker = new kakao.maps.Marker({ map, position: linePath[linePath.length - 1], title: "도착" });
-
         const bounds = new kakao.maps.LatLngBounds();
         linePath.forEach(pos => bounds.extend(pos));
         map.setBounds(bounds);
@@ -451,27 +413,32 @@
     }
 
     function smoothElevation(profile, windowSize = 5) {
-      const safeProfile = Array.isArray(profile) ? profile : [];
       const result = [];
-
-      for (let i = 0; i < safeProfile.length; i++) {
-        let sum = 0;
-        let count = 0;
+      for (let i = 0; i < profile.length; i++) {
+        let sum = 0, count = 0;
         for (let j = -Math.floor(windowSize / 2); j <= Math.floor(windowSize / 2); j++) {
           const idx = i + j;
-          if (idx >= 0 && idx < safeProfile.length) {
-            sum += Number(safeProfile[idx].elevation || 0);
+          if (idx >= 0 && idx < profile.length) {
+            sum += Number(profile[idx].elevation || 0);
             count++;
           }
         }
-        result.push({ ...safeProfile[i], elevation: count ? (sum / count) : Number(safeProfile[i].elevation || 0) });
+        result.push({ ...profile[i], elevation: sum / count });
       }
       return result;
     }
 
-    function drawChart({ canvasId, profile, valueKey, lineColor, fillTop, fillBottom, unit }) {
+    function drawChart({
+      canvasId,
+      profile,
+      valueKey,
+      lineColor,
+      fillTop,
+      fillBottom,
+      unit
+    }) {
       const canvas = document.getElementById(canvasId);
-      if (!canvas || !Array.isArray(profile) || profile.length < 2) return;
+      if (!canvas || profile.length < 2) return;
 
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const cssWidth = canvas.clientWidth || 300;
@@ -525,9 +492,7 @@
 
       ctx.beginPath();
       ctx.moveTo(x(distances[0]), y(values[0]));
-      for (let i = 1; i < profile.length; i++) {
-        ctx.lineTo(x(distances[i]), y(values[i]));
-      }
+      for (let i = 1; i < profile.length; i++) ctx.lineTo(x(distances[i]), y(values[i]));
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 2.5;
       ctx.stroke();
@@ -558,21 +523,19 @@
     }
 
     function smoothSpeedProfile(profile, windowSize = 5) {
-      const safeProfile = Array.isArray(profile) ? profile : [];
       const result = [];
-      for (let i = 0; i < safeProfile.length; i++) {
-        let sum = 0;
-        let count = 0;
+      for (let i = 0; i < profile.length; i++) {
+        let sum = 0, count = 0;
         for (let j = -Math.floor(windowSize / 2); j <= Math.floor(windowSize / 2); j++) {
           const idx = i + j;
-          if (idx >= 0 && idx < safeProfile.length) {
-            sum += Number(safeProfile[idx].speedKmh || 0);
+          if (idx >= 0 && idx < profile.length) {
+            sum += Number(profile[idx].speedKmh || 0);
             count++;
           }
         }
         result.push({
-          ...safeProfile[i],
-          speedKmh: count ? (sum / count) : Number(safeProfile[i].speedKmh || 0)
+          ...profile[i],
+          speedKmh: count ? (sum / count) : Number(profile[i].speedKmh || 0)
         });
       }
       return result;
@@ -600,14 +563,6 @@
       if (!rides.length) {
         rideList.innerHTML = '<div class="empty">저장된 주행기록이 없습니다</div>';
         return;
-      }
-
-      if (selectedRideId && !rides.some(r => r.id === selectedRideId)) {
-        selectedRideId = null;
-      }
-      if (expandedRideId && !rides.some(r => r.id === expandedRideId)) {
-        destroyMapInstance(expandedRideId);
-        expandedRideId = null;
       }
 
       rides.forEach((ride) => {
@@ -737,100 +692,104 @@
     }
 
     function getPerpendicularDistance(point, lineStart, lineEnd) {
-      const [x, y] = point;
-      const [x1, y1] = lineStart;
-      const [x2, y2] = lineEnd;
+  const [x, y] = point;
+  const [x1, y1] = lineStart;
+  const [x2, y2] = lineEnd;
 
-      const dx = x2 - x1;
-      const dy = y2 - y1;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
 
-      if (dx === 0 && dy === 0) {
-        const ddx = x - x1;
-        const ddy = y - y1;
-        return Math.sqrt(ddx * ddx + ddy * ddy);
-      }
+  if (dx === 0 && dy === 0) {
+    const ddx = x - x1;
+    const ddy = y - y1;
+    return Math.sqrt(ddx * ddx + ddy * ddy);
+  }
 
-      const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
-      const projX = x1 + t * dx;
-      const projY = y1 + t * dy;
+  const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
 
-      const distX = x - projX;
-      const distY = y - projY;
-      return Math.sqrt(distX * distX + distY * distY);
+  const distX = x - projX;
+  const distY = y - projY;
+  return Math.sqrt(distX * distX + distY * distY);
+}
+
+function douglasPeucker(points, epsilon) {
+  if (!Array.isArray(points) || points.length < 3) return points || [];
+
+  let maxDistance = 0;
+  let index = 0;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const distance = getPerpendicularDistance(points[i], points[0], points[points.length - 1]);
+    if (distance > maxDistance) {
+      index = i;
+      maxDistance = distance;
+    }
+  }
+
+  if (maxDistance > epsilon) {
+    const left = douglasPeucker(points.slice(0, index + 1), epsilon);
+    const right = douglasPeucker(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+
+  return [points[0], points[points.length - 1]];
+}
+
+function reduceProfileSimple(profile, maxPoints = 1200) {
+  if (!Array.isArray(profile) || profile.length <= maxPoints) return Array.isArray(profile) ? profile : [];
+
+  const step = Math.ceil(profile.length / maxPoints);
+  const reduced = [];
+
+  for (let i = 0; i < profile.length; i += step) {
+    reduced.push(profile[i]);
+  }
+
+  const last = profile[profile.length - 1];
+  if (reduced[reduced.length - 1] !== last) {
+    reduced.push(last);
+  }
+
+  return reduced;
+}
+
+function reducePathDouglasPeucker(path, options = {}) {
+  const {
+    epsilon = 0.00003,   // 대략 3m 전후
+    maxPoints = 2000
+  } = options;
+
+  if (!Array.isArray(path) || path.length <= 2) return Array.isArray(path) ? path : [];
+
+  let reduced = douglasPeucker(path, epsilon);
+
+  // 혹시 아직도 너무 많으면 마지막에 한 번 더 균등 축소
+  if (reduced.length > maxPoints) {
+    const step = Math.ceil(reduced.length / maxPoints);
+    const trimmed = [];
+
+    for (let i = 0; i < reduced.length; i += step) {
+      trimmed.push(reduced[i]);
     }
 
-    function douglasPeucker(points, epsilon) {
-      if (!Array.isArray(points) || points.length < 3) return Array.isArray(points) ? points : [];
-
-      let maxDistance = 0;
-      let index = 0;
-
-      for (let i = 1; i < points.length - 1; i++) {
-        const distance = getPerpendicularDistance(points[i], points[0], points[points.length - 1]);
-        if (distance > maxDistance) {
-          index = i;
-          maxDistance = distance;
-        }
-      }
-
-      if (maxDistance > epsilon) {
-        const left = douglasPeucker(points.slice(0, index + 1), epsilon);
-        const right = douglasPeucker(points.slice(index), epsilon);
-        return left.slice(0, -1).concat(right);
-      }
-
-      return [points[0], points[points.length - 1]];
+    const last = reduced[reduced.length - 1];
+    if (trimmed[trimmed.length - 1] !== last) {
+      trimmed.push(last);
     }
+    reduced = trimmed;
+  }
 
-    function reduceProfileSimple(profile, maxPoints = 1200) {
-      if (!Array.isArray(profile) || profile.length <= maxPoints) return Array.isArray(profile) ? profile : [];
+  return reduced;
+}
 
-      const step = Math.ceil(profile.length / maxPoints);
-      const reduced = [];
-
-      for (let i = 0; i < profile.length; i += step) {
-        reduced.push(profile[i]);
-      }
-
-      const last = profile[profile.length - 1];
-      if (reduced[reduced.length - 1] !== last) {
-        reduced.push(last);
-      }
-
-      return reduced;
-    }
-
-    function reducePathDouglasPeucker(path, options = {}) {
-      const { epsilon = 0.00003, maxPoints = 2000 } = options;
-
-      if (!Array.isArray(path) || path.length <= 2) return Array.isArray(path) ? path : [];
-
-      let reduced = douglasPeucker(path, epsilon);
-
-      if (reduced.length > maxPoints) {
-        const step = Math.ceil(reduced.length / maxPoints);
-        const trimmed = [];
-
-        for (let i = 0; i < reduced.length; i += step) {
-          trimmed.push(reduced[i]);
-        }
-
-        const last = reduced[reduced.length - 1];
-        if (trimmed[trimmed.length - 1] !== last) {
-          trimmed.push(last);
-        }
-        reduced = trimmed;
-      }
-
-      return reduced;
-    }
 
     async function shareSelectedRide() {
       if (!selectedRideId) {
         alert("공유할 기록을 먼저 선택해주세요.");
         return;
       }
-
       const ride = loadRideById(selectedRideId);
       if (!ride) {
         alert("선택한 기록을 찾을 수 없습니다.");
@@ -840,16 +799,17 @@
         alert("공유할 경로 데이터가 부족합니다.");
         return;
       }
+      const reducedPath = reducePathDouglasPeucker(ride.path, {
+  epsilon: 0.00003,
+  maxPoints: 2000
+});
 
-      const reducedPath = reducePathDouglasPeucker(ride.path, { epsilon: 0.00003, maxPoints: 2000 });
-      if (!Array.isArray(reducedPath) || reducedPath.length < 2) {
-        alert("공유용 경로 축소 처리에 실패했습니다.");
-        return;
-      }
-
+if (!Array.isArray(reducedPath) || reducedPath.length < 2) {
+  alert("공유용 경로 축소 처리에 실패했습니다.");
+  return;
+}
       try {
         await ensureAuth();
-
         const createdAt = Date.now();
         const expireAt = createdAt + SHARE_EXPIRE_DAYS * 24 * 60 * 60 * 1000;
         const shareData = {
@@ -866,9 +826,9 @@
           endTime: ride.endTime || null,
           restMs: Number(ride.restMs || 0),
           path: reducedPath,
-          elevationProfile: reduceProfileSimple(ride.elevationProfile, 1000),
-          elevationSummary: ride.elevationSummary || null,
-          speedProfile: reduceProfileSimple(ride.speedProfile, 1000)
+elevationProfile: reduceProfileSimple(ride.elevationProfile, 1000),
+elevationSummary: ride.elevationSummary || null,
+speedProfile: reduceProfileSimple(ride.speedProfile, 1000)
         };
 
         const newRef = push(ref(db, "sharedRides"));
@@ -909,7 +869,6 @@
         alert("저장할 기록을 먼저 선택해주세요.");
         return;
       }
-
       const ride = loadRideById(selectedRideId);
       if (!ride) {
         alert("선택한 기록을 찾을 수 없습니다.");
@@ -919,7 +878,6 @@
         alert("저장할 경로 데이터가 부족합니다.");
         return;
       }
-
       const pw = prompt("저장 비밀번호를 입력하세요.");
       if (pw === null) return;
 
@@ -929,17 +887,7 @@
           alert("비밀번호가 맞지 않습니다.");
           return;
         }
-
         await ensureAuth();
-
-        const reducedPath = reducePathDouglasPeucker(ride.path, { epsilon: 0.00003, maxPoints: 2000 });
-        if (!Array.isArray(reducedPath) || reducedPath.length < 2) {
-          alert("저장용 경로 축소 처리에 실패했습니다.");
-          return;
-        }
-
-        const reducedElevationProfile = reduceProfileSimple(ride.elevationProfile, 1000);
-        const reducedSpeedProfile = reduceProfileSimple(ride.speedProfile, 1000);
 
         const payload = {
           savedAt: ride.savedAt || new Date().toISOString(),
@@ -952,10 +900,10 @@
           startPoint: ride.startPoint || null,
           startTime: ride.startTime || null,
           endTime: ride.endTime || null,
-          path: reducedPath,
-          elevationProfile: reducedElevationProfile,
+          path: Array.isArray(ride.path) ? ride.path : [],
+          elevationProfile: Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [],
           elevationSummary: ride.elevationSummary || null,
-          speedProfile: reducedSpeedProfile,
+          speedProfile: Array.isArray(ride.speedProfile) ? ride.speedProfile : [],
           localRideId: ride.id,
           updatedAt: Date.now()
         };
@@ -969,20 +917,12 @@
           await set(newRef, payload);
         }
 
-        const updatedRide = {
-          ...ride,
-          path: reducedPath,
-          elevationProfile: reducedElevationProfile,
-          speedProfile: reducedSpeedProfile,
-          firebaseSaved: true,
-          firebaseKey
-        };
-
+        const updatedRide = { ...ride, firebaseSaved: true, firebaseKey };
         updateRideInLocal(updatedRide);
         setLinkedHash(userHash);
         selectedRideId = updatedRide.id;
         await loadMyFirebaseRidesByHash(userHash);
-        alert(`Firebase 저장 완료\n좌표: ${ride.path.length}개 → ${reducedPath.length}개`);
+        alert("선택한 기록을 Firebase에 저장했습니다.");
       } catch (err) {
         console.error(err);
         alert("Firebase 저장 중 오류가 발생했습니다.");
@@ -994,7 +934,6 @@
         alert("삭제할 기록을 먼저 선택해주세요.");
         return;
       }
-
       const ride = loadRideById(selectedRideId);
       if (!ride) {
         alert("선택한 기록을 찾을 수 없습니다.");
@@ -1037,20 +976,17 @@
         if (!existingHash) {
           const newPw = prompt("처음 사용할 저장/삭제 비밀번호를 입력하세요.");
           if (newPw === null) return;
-
           const cleaned = String(newPw).trim();
           if (cleaned.length < 4) {
             alert("비밀번호는 4자리 이상으로 입력하세요.");
             return;
           }
-
           const confirmPw = prompt("새 비밀번호를 다시 입력하세요.");
           if (confirmPw === null) return;
           if (cleaned !== String(confirmPw).trim()) {
             alert("비밀번호가 서로 다릅니다.");
             return;
           }
-
           const newHash = await sha256(cleaned);
           await set(ref(db, PASSWORD_HASH_PATH), newHash);
           setLinkedHash(newHash);
@@ -1061,13 +997,11 @@
 
         const currentPw = prompt("현재 비밀번호를 입력하세요.\n(이 기기를 연결하려면 현재 비밀번호 확인이 필요합니다)");
         if (currentPw === null) return;
-
         const currentHash = await verifyPasswordAndGetHash(currentPw);
         if (!currentHash) {
           alert("현재 비밀번호가 맞지 않습니다.");
           return;
         }
-
         setLinkedHash(currentHash);
         await loadMyFirebaseRidesByHash(currentHash, true);
 
@@ -1079,13 +1013,11 @@
 
         const newPw = prompt("새 비밀번호를 입력하세요.");
         if (newPw === null) return;
-
         const cleaned = String(newPw).trim();
         if (cleaned.length < 4) {
           alert("비밀번호는 4자리 이상으로 입력하세요.");
           return;
         }
-
         const confirmPw = prompt("새 비밀번호를 다시 입력하세요.");
         if (confirmPw === null) return;
         if (cleaned !== String(confirmPw).trim()) {
@@ -1118,7 +1050,6 @@
 
     window.addEventListener("resize", () => {
       if (!expandedRideId) return;
-
       const instance = mapInstances.get(expandedRideId);
       const rides = loadSavedRides();
       const ride = rides.find(r => r.id === expandedRideId);
@@ -1133,7 +1064,6 @@
             instance.map.setBounds(bounds);
           }
         }
-
         if (ride) {
           drawElevationChart(ride);
           drawSpeedChart(ride);

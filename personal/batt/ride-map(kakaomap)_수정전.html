@@ -576,106 +576,6 @@
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  function getPerpendicularDistance(point, lineStart, lineEnd) {
-    const [x, y] = point;
-    const [x1, y1] = lineStart;
-    const [x2, y2] = lineEnd;
-
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-
-    if (dx === 0 && dy === 0) {
-      const ddx = x - x1;
-      const ddy = y - y1;
-      return Math.sqrt(ddx * ddx + ddy * ddy);
-    }
-
-    const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
-    const projX = x1 + t * dx;
-    const projY = y1 + t * dy;
-
-    const distX = x - projX;
-    const distY = y - projY;
-    return Math.sqrt(distX * distX + distY * distY);
-  }
-
-  function douglasPeucker(points, epsilon) {
-    if (!Array.isArray(points) || points.length < 3) {
-      return Array.isArray(points) ? points.slice() : [];
-    }
-
-    let maxDistance = 0;
-    let index = 0;
-
-    for (let i = 1; i < points.length - 1; i++) {
-      const distance = getPerpendicularDistance(points[i], points[0], points[points.length - 1]);
-      if (distance > maxDistance) {
-        maxDistance = distance;
-        index = i;
-      }
-    }
-
-    if (maxDistance > epsilon) {
-      const left = douglasPeucker(points.slice(0, index + 1), epsilon);
-      const right = douglasPeucker(points.slice(index), epsilon);
-      return left.slice(0, -1).concat(right);
-    }
-
-    return [points[0], points[points.length - 1]];
-  }
-
-  function reducePathDouglasPeucker(path, options = {}) {
-    const {
-      epsilon = 0.00003,
-      maxPoints = 2000
-    } = options;
-
-    if (!Array.isArray(path) || path.length <= 2) {
-      return Array.isArray(path) ? path.slice() : [];
-    }
-
-    let reduced = douglasPeucker(path, epsilon);
-
-    if (reduced.length > maxPoints) {
-      const step = Math.ceil(reduced.length / maxPoints);
-      const trimmed = [];
-
-      for (let i = 0; i < reduced.length; i += step) {
-        trimmed.push(reduced[i]);
-      }
-
-      const last = reduced[reduced.length - 1];
-      const finalLast = trimmed[trimmed.length - 1];
-      if (!finalLast || finalLast[0] !== last[0] || finalLast[1] !== last[1]) {
-        trimmed.push(last);
-      }
-
-      reduced = trimmed;
-    }
-
-    return reduced;
-  }
-
-  function reduceProfileSimple(profile, maxPoints = 1000) {
-    if (!Array.isArray(profile) || profile.length <= maxPoints) {
-      return Array.isArray(profile) ? profile.slice() : [];
-    }
-
-    const step = Math.ceil(profile.length / maxPoints);
-    const reduced = [];
-
-    for (let i = 0; i < profile.length; i += step) {
-      reduced.push(profile[i]);
-    }
-
-    const last = profile[profile.length - 1];
-    if (reduced[reduced.length - 1] !== last) {
-      reduced.push(last);
-    }
-
-    return reduced;
-  }
-
   function sampleRidePath(path, maxSamples = MAX_ELEVATION_SAMPLES) {
     const safePath = Array.isArray(path) ? path : [];
     if (safePath.length <= maxSamples) return safePath.slice();
@@ -882,50 +782,29 @@
       console.warn("고도 데이터 조회 실패:", e);
     }
 
-    const reducedPath = reducePathDouglasPeucker(safePath, {
-      epsilon: 0.00003,
-      maxPoints: 2000
-    });
-
-    if (!Array.isArray(reducedPath) || reducedPath.length < 1) {
-      alert("저장할 경로 데이터가 부족합니다.");
-      return;
-    }
-
-    const reducedElevationProfile = reduceProfileSimple(elevationProfile, 1000);
-    const reducedSpeedProfile = reduceProfileSimple(
-      Array.isArray(speedProfile) ? speedProfile.slice() : [],
-      1000
-    );
-    const reducedGuidanceRoute = reduceProfileSimple(
-      Array.isArray(navigationState.routePath) ? navigationState.routePath.slice() : [],
-      1200
-    );
-
     const rides = loadSavedRides();
     const item = {
-      id: `ride_${Date.now()}`,
-      savedAt: new Date().toISOString(),
-      startTime: rideData.startTime || null,
-      endTime: Date.now(),
-      totalDistanceM: rideData.totalDistanceM,
-      elapsedMs,
-      restMs: rideData.pausedMs + (rideData.paused && rideData.pausedAt ? Date.now() - rideData.pausedAt : 0),
-      avgSpeedKmh: avgSpeed,
-      maxSpeedKmh: rideData.maxSpeedKmh || 0,
-      startPoint: rideData.startPoint,
-      destination: navigationState.destination,
-      path: reducedPath,
-      guidanceRoute: reducedGuidanceRoute,
-      elevationProfile: reducedElevationProfile,
-      elevationSummary,
-      speedProfile: reducedSpeedProfile
-    };
+  id: `ride_${Date.now()}`,
+  savedAt: new Date().toISOString(),
+  startTime: rideData.startTime || null,
+  endTime: Date.now(),
+  totalDistanceM: rideData.totalDistanceM,
+  elapsedMs,
+  restMs: rideData.pausedMs + (rideData.paused && rideData.pausedAt ? Date.now() - rideData.pausedAt : 0),
+  avgSpeedKmh: avgSpeed,
+  maxSpeedKmh: rideData.maxSpeedKmh || 0,
+  startPoint: rideData.startPoint,
+  destination: navigationState.destination,
+  path: safePath,
+  guidanceRoute: navigationState.routePath,
+
+  elevationProfile,
+  elevationSummary,
+  speedProfile: Array.isArray(speedProfile) ? speedProfile.slice() : []
+};
 
     rides.unshift(item);
     localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
-    alert(`저장 완료
-좌표: ${safePath.length}개 → ${reducedPath.length}개`);
   }
 
   let rideData = loadRideData();
