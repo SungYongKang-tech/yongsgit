@@ -82,17 +82,53 @@
     }
     #map{width:100%;height:100%}
 
-    .list{display:flex;flex-direction:column;gap:6px}
-    .card{
-      border:1px solid var(--line);border-radius:12px;background:rgba(15,23,42,0.72);
-      padding:9px;display:flex;flex-direction:column;gap:6px;
-    }
-    .card.selected{
-      outline:2px solid rgba(37,99,235,0.65);
-      background:rgba(37,99,235,0.14);
-    }
-    .card-title{font-size:13px;font-weight:900;line-height:1.35}
-    .meta{font-size:11px;color:var(--muted);line-height:1.4;word-break:break-word}
+    .list{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:6px;
+}
+
+.card{
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:rgba(15,23,42,0.72);
+  padding:8px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-height:88px;
+}
+
+.card.selected{
+  outline:2px solid rgba(37,99,235,0.65);
+  background:rgba(37,99,235,0.14);
+}
+
+.card-title{
+  font-size:12px;
+  font-weight:900;
+  line-height:1.3;
+  word-break:keep-all;
+}
+
+.meta{
+  font-size:11px;
+  color:var(--muted);
+  line-height:1.35;
+  white-space:pre-line;
+  word-break:keep-all;
+}
+
+.empty{
+  grid-column:1 / -1;
+  border:1px dashed var(--line);
+  border-radius:12px;
+  padding:16px 10px;
+  text-align:center;
+  font-size:12px;
+  color:var(--muted);
+  background:rgba(15,23,42,0.55);
+}
     .empty{
       border:1px dashed var(--line);border-radius:12px;padding:16px 10px;text-align:center;
       font-size:12px;color:var(--muted);background:rgba(15,23,42,0.55);
@@ -248,6 +284,7 @@
     let courses = [];
     let manualEditMode = false;
     let manualPoints = [];
+    let userLocation = null;
 
     function getOwnerKey() {
       return "ksy_courses";
@@ -322,6 +359,59 @@
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
     }
+
+    function getCourseAnchorPoint(course) {
+  const pts = Array.isArray(course?.points) ? course.points : [];
+  if (!pts.length) return null;
+  return pts[0];
+}
+
+function getDistanceFromUserMeters(course) {
+  if (!userLocation) return Number.MAX_SAFE_INTEGER;
+  const anchor = getCourseAnchorPoint(course);
+  if (!anchor) return Number.MAX_SAFE_INTEGER;
+
+  return haversine(
+    userLocation.lat,
+    userLocation.lng,
+    anchor.lat,
+    anchor.lng
+  );
+}
+
+function formatDistanceFromUser(meters) {
+  if (!isFinite(meters) || meters === Number.MAX_SAFE_INTEGER) return "거리확인중";
+  if (meters < 1000) return `${Math.round(meters)}m`;
+  return `${(meters / 1000).toFixed(1)}km`;
+}
+
+function loadCurrentLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userLocation = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        };
+        resolve(userLocation);
+      },
+      () => {
+        userLocation = null;
+        resolve(null);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 15000
+      }
+    );
+  });
+}
 
     function initMap() {
       if (!ensureKakaoLoaded()) {
@@ -472,32 +562,41 @@
     }
 
     function renderCoursesList() {
-      listEl.innerHTML = "";
+  listEl.innerHTML = "";
 
-      if (!courses.length) {
-        listEl.innerHTML = `<div class="empty">저장된 코스 없음</div>`;
-        return;
-      }
+  if (!courses.length) {
+    listEl.innerHTML = `<div class="empty">저장된 코스 없음</div>`;
+    return;
+  }
 
-      courses.forEach(course => {
-        const card = document.createElement("div");
-        const isSelected = selectedCourse?.id === course.id;
-        card.className = `card${isSelected ? " selected" : ""}`;
+  const sortedCourses = [...courses].sort((a, b) => {
+    const da = getDistanceFromUserMeters(a);
+    const db = getDistanceFromUserMeters(b);
 
-        const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
-        const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
+    if (da !== db) return da - db;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
 
-        card.innerHTML = `
-          <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}</div>
-          <div class="meta">
-            ${course.source === "manual" ? "직접등록" : "기록등록"} · ${(course.points || []).length}점 · ${distKm}km · 약 ${estimatedTime}
-          </div>
-        `;
+  sortedCourses.forEach(course => {
+    const card = document.createElement("div");
+    const isSelected = selectedCourse?.id === course.id;
+    card.className = `card${isSelected ? " selected" : ""}`;
 
-        card.addEventListener("click", () => previewCourse(course));
-        listEl.appendChild(card);
-      });
-    }
+    const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
+    const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
+    const pointsCount = (course.points || []).length;
+    const nearText = formatDistanceFromUser(getDistanceFromUserMeters(course));
+
+    card.innerHTML = `
+      <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}(${distKm}Km, 약${estimatedTime})</div>
+      <div class="meta">- ${course.source === "manual" ? "직접등록" : "기록등록"}, ${pointsCount}점
+- 현재위치 ${nearText}</div>
+    `;
+
+    card.addEventListener("click", () => previewCourse(course));
+    listEl.appendChild(card);
+  });
+}
 
     function renderRidesList() {
       listEl.innerHTML = "";
@@ -725,15 +824,16 @@
     }
 
     async function refreshCourses() {
-      try {
-        courses = await loadCoursesFromFirebase();
-        renderList();
-        renderBottomBar();
-      } catch (e) {
-        console.error(e);
-        alert("코스 불러오기 오류");
-      }
-    }
+  try {
+    await loadCurrentLocation();
+    courses = await loadCoursesFromFirebase();
+    renderList();
+    renderBottomBar();
+  } catch (e) {
+    console.error(e);
+    alert("코스 불러오기 오류");
+  }
+}
 
     function toggleManualEdit() {
       manualEditMode = !manualEditMode;
@@ -875,11 +975,12 @@
     });
 
     async function init() {
-      await ensureAuth();
-      initMap();
-      activateTabs();
-      await refreshCourses();
-    }
+  await ensureAuth();
+  initMap();
+  activateTabs();
+  await loadCurrentLocation();
+  await refreshCourses();
+}
 
     window.addEventListener("load", init);
   </script>
