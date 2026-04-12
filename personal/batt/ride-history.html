@@ -691,6 +691,100 @@
       });
     }
 
+    function getPerpendicularDistance(point, lineStart, lineEnd) {
+  const [x, y] = point;
+  const [x1, y1] = lineStart;
+  const [x2, y2] = lineEnd;
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0 && dy === 0) {
+    const ddx = x - x1;
+    const ddy = y - y1;
+    return Math.sqrt(ddx * ddx + ddy * ddy);
+  }
+
+  const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+
+  const distX = x - projX;
+  const distY = y - projY;
+  return Math.sqrt(distX * distX + distY * distY);
+}
+
+function douglasPeucker(points, epsilon) {
+  if (!Array.isArray(points) || points.length < 3) return points || [];
+
+  let maxDistance = 0;
+  let index = 0;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const distance = getPerpendicularDistance(points[i], points[0], points[points.length - 1]);
+    if (distance > maxDistance) {
+      index = i;
+      maxDistance = distance;
+    }
+  }
+
+  if (maxDistance > epsilon) {
+    const left = douglasPeucker(points.slice(0, index + 1), epsilon);
+    const right = douglasPeucker(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+
+  return [points[0], points[points.length - 1]];
+}
+
+function reduceProfileSimple(profile, maxPoints = 1200) {
+  if (!Array.isArray(profile) || profile.length <= maxPoints) return Array.isArray(profile) ? profile : [];
+
+  const step = Math.ceil(profile.length / maxPoints);
+  const reduced = [];
+
+  for (let i = 0; i < profile.length; i += step) {
+    reduced.push(profile[i]);
+  }
+
+  const last = profile[profile.length - 1];
+  if (reduced[reduced.length - 1] !== last) {
+    reduced.push(last);
+  }
+
+  return reduced;
+}
+
+function reducePathDouglasPeucker(path, options = {}) {
+  const {
+    epsilon = 0.00003,   // 대략 3m 전후
+    maxPoints = 2000
+  } = options;
+
+  if (!Array.isArray(path) || path.length <= 2) return Array.isArray(path) ? path : [];
+
+  let reduced = douglasPeucker(path, epsilon);
+
+  // 혹시 아직도 너무 많으면 마지막에 한 번 더 균등 축소
+  if (reduced.length > maxPoints) {
+    const step = Math.ceil(reduced.length / maxPoints);
+    const trimmed = [];
+
+    for (let i = 0; i < reduced.length; i += step) {
+      trimmed.push(reduced[i]);
+    }
+
+    const last = reduced[reduced.length - 1];
+    if (trimmed[trimmed.length - 1] !== last) {
+      trimmed.push(last);
+    }
+    reduced = trimmed;
+  }
+
+  return reduced;
+}
+
+
     async function shareSelectedRide() {
       if (!selectedRideId) {
         alert("공유할 기록을 먼저 선택해주세요.");
@@ -705,11 +799,15 @@
         alert("공유할 경로 데이터가 부족합니다.");
         return;
       }
-      if (ride.path.length > 5000) {
-        alert("좌표 수가 너무 많아 공유할 수 없습니다.");
-        return;
-      }
+      const reducedPath = reducePathDouglasPeucker(ride.path, {
+  epsilon: 0.00003,
+  maxPoints: 2000
+});
 
+if (!Array.isArray(reducedPath) || reducedPath.length < 2) {
+  alert("공유용 경로 축소 처리에 실패했습니다.");
+  return;
+}
       try {
         await ensureAuth();
         const createdAt = Date.now();
@@ -727,10 +825,10 @@
           startTime: ride.startTime || null,
           endTime: ride.endTime || null,
           restMs: Number(ride.restMs || 0),
-          path: ride.path,
-          elevationProfile: Array.isArray(ride.elevationProfile) ? ride.elevationProfile : [],
-          elevationSummary: ride.elevationSummary || null,
-          speedProfile: Array.isArray(ride.speedProfile) ? ride.speedProfile : []
+          path: reducedPath,
+elevationProfile: reduceProfileSimple(ride.elevationProfile, 1000),
+elevationSummary: ride.elevationSummary || null,
+speedProfile: reduceProfileSimple(ride.speedProfile, 1000)
         };
 
         const newRef = push(ref(db, "sharedRides"));
