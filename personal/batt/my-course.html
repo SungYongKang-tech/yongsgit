@@ -360,58 +360,7 @@
         .replaceAll("'", "&#39;");
     }
 
-    function getCourseAnchorPoint(course) {
-  const pts = Array.isArray(course?.points) ? course.points : [];
-  if (!pts.length) return null;
-  return pts[0];
-}
-
-function getDistanceFromUserMeters(course) {
-  if (!userLocation) return Number.MAX_SAFE_INTEGER;
-  const anchor = getCourseAnchorPoint(course);
-  if (!anchor) return Number.MAX_SAFE_INTEGER;
-
-  return haversine(
-    userLocation.lat,
-    userLocation.lng,
-    anchor.lat,
-    anchor.lng
-  );
-}
-
-function formatDistanceFromUser(meters) {
-  if (!isFinite(meters) || meters === Number.MAX_SAFE_INTEGER) return "거리확인중";
-  if (meters < 1000) return `${Math.round(meters)}m`;
-  return `${(meters / 1000).toFixed(1)}km`;
-}
-
-function loadCurrentLocation() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        userLocation = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
-        };
-        resolve(userLocation);
-      },
-      () => {
-        userLocation = null;
-        resolve(null);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 15000
-      }
-    );
-  });
-}
+    
 
     function initMap() {
       if (!ensureKakaoLoaded()) {
@@ -570,10 +519,6 @@ function loadCurrentLocation() {
   }
 
   const sortedCourses = [...courses].sort((a, b) => {
-    const da = getDistanceFromUserMeters(a);
-    const db = getDistanceFromUserMeters(b);
-
-    if (da !== db) return da - db;
     return (b.updatedAt || 0) - (a.updatedAt || 0);
   });
 
@@ -585,12 +530,11 @@ function loadCurrentLocation() {
     const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
     const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
     const pointsCount = (course.points || []).length;
-    const nearText = formatDistanceFromUser(getDistanceFromUserMeters(course));
+    const sourceText = course.source === "manual" ? "직접등록" : "기록등록";
 
     card.innerHTML = `
-      <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}(${distKm}Km, 약${estimatedTime})</div>
-      <div class="meta">- ${course.source === "manual" ? "직접등록" : "기록등록"}, ${pointsCount}점
-- 현재위치 ${nearText}</div>
+      <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}(${sourceText}, ${pointsCount}점)</div>
+      <div class="meta">- ${distKm}Km, 약 ${estimatedTime}</div>
     `;
 
     card.addEventListener("click", () => previewCourse(course));
@@ -825,7 +769,6 @@ function loadCurrentLocation() {
 
     async function refreshCourses() {
   try {
-    await loadCurrentLocation();
     courses = await loadCoursesFromFirebase();
     renderList();
     renderBottomBar();
@@ -834,7 +777,6 @@ function loadCurrentLocation() {
     alert("코스 불러오기 오류");
   }
 }
-
     function toggleManualEdit() {
       manualEditMode = !manualEditMode;
       editToggleBtn.className = manualEditMode ? "action-btn red" : "action-btn amber";
@@ -978,7 +920,6 @@ function loadCurrentLocation() {
   await ensureAuth();
   initMap();
   activateTabs();
-  await loadCurrentLocation();
   await refreshCourses();
 }
 
