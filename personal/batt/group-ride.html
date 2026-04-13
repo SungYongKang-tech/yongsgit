@@ -410,7 +410,7 @@ button{
       <div class="row-4">
         <button id="shareBtn">내 위치공유 시작</button>
         <button id="fitBtn">전체 보기</button>
-        <button id="followBtn">내 위치고정</button>
+        <button id="followBtn">전체중심</button>
         <button id="backBtn">주행기록으로</button>
       </div>
 
@@ -504,6 +504,8 @@ import {
     const memberMarkers = new Map();
     const memberPolylines = new Map();
     let destinationMarker = null;
+    const memberLabels = new Map();
+let autoFitAllMembers = true;
 
     async function ensureAuth() {
   try {
@@ -601,6 +603,48 @@ import {
         offset: new kakao.maps.Point(17, 17)
       });
     }
+
+    function createMemberLabel(uid, name, color, lat, lng) {
+  if (!map) return;
+
+  const safeName = name || "이름없음";
+  const content = document.createElement("div");
+  content.style.background = "rgba(15,23,42,0.88)";
+  content.style.color = "#fff";
+  content.style.padding = "2px 7px";
+  content.style.borderRadius = "999px";
+  content.style.fontSize = "11px";
+  content.style.fontWeight = "800";
+  content.style.whiteSpace = "nowrap";
+  content.style.border = `1px solid ${color}`;
+  content.style.boxShadow = "0 2px 8px rgba(0,0,0,.25)";
+  content.textContent = safeName;
+
+  const overlay = new kakao.maps.CustomOverlay({
+    position: toLatLng(lat, lng),
+    content,
+    yAnchor: 2.2
+  });
+
+  overlay.setMap(map);
+  memberLabels.set(uid, overlay);
+}
+
+function updateMemberLabel(uid, name, color, lat, lng) {
+  const overlay = memberLabels.get(uid);
+  if (!overlay) {
+    createMemberLabel(uid, name, color, lat, lng);
+    return;
+  }
+
+  overlay.setPosition(toLatLng(lat, lng));
+  const el = overlay.getContent();
+  if (el) {
+    el.textContent = name || "이름없음";
+    el.style.border = `1px solid ${color}`;
+  }
+  overlay.setMap(map);
+}
 
     async function createRoom() {
   try {
@@ -781,49 +825,51 @@ async function joinCurrentRoom(isHost) {
     const hasLocation = typeof m.lat === "number" && typeof m.lng === "number";
 
     if (hasLocation) {
-      activeIds.add(uid);
+  activeIds.add(uid);
 
-      const latlng = toLatLng(m.lat, m.lng);
+  const latlng = toLatLng(m.lat, m.lng);
 
-      let marker = memberMarkers.get(uid);
-      if (!marker) {
-        marker = new kakao.maps.Marker({
-          map,
-          position: latlng,
-          image: buildMarkerImage(color, uid === myId)
-        });
-        memberMarkers.set(uid, marker);
-      } else {
-        marker.setPosition(latlng);
-        marker.setImage(buildMarkerImage(color, uid === myId));
-        marker.setMap(map);
-      }
+  let marker = memberMarkers.get(uid);
+  if (!marker) {
+    marker = new kakao.maps.Marker({
+      map,
+      position: latlng,
+      image: buildMarkerImage(color, uid === myId)
+    });
+    memberMarkers.set(uid, marker);
+  } else {
+    marker.setPosition(latlng);
+    marker.setImage(buildMarkerImage(color, uid === myId));
+    marker.setMap(map);
+  }
 
-      const trace = Array.isArray(m.trace) ? m.trace : [];
-      const path = trace
-        .filter(p => typeof p.lat === "number" && typeof p.lng === "number")
-        .map(p => toLatLng(p.lat, p.lng));
+  updateMemberLabel(uid, m.name, color, m.lat, m.lng);
 
-      let poly = memberPolylines.get(uid);
-      if (!poly) {
-        poly = new kakao.maps.Polyline({
-          map,
-          path,
-          strokeWeight: uid === myId ? 7 : 5,
-          strokeColor: color,
-          strokeOpacity: 0.9,
-          strokeStyle: "solid"
-        });
-        memberPolylines.set(uid, poly);
-      } else {
-        poly.setPath(path);
-        poly.setOptions({
-          strokeWeight: uid === myId ? 7 : 5,
-          strokeColor: color
-        });
-        poly.setMap(map);
-      }
-    }
+  const trace = Array.isArray(m.trace) ? m.trace : [];
+  const path = trace
+    .filter(p => typeof p.lat === "number" && typeof p.lng === "number")
+    .map(p => toLatLng(p.lat, p.lng));
+
+  let poly = memberPolylines.get(uid);
+  if (!poly) {
+    poly = new kakao.maps.Polyline({
+      map,
+      path,
+      strokeWeight: uid === myId ? 7 : 5,
+      strokeColor: color,
+      strokeOpacity: 0.9,
+      strokeStyle: "solid"
+    });
+    memberPolylines.set(uid, poly);
+  } else {
+    poly.setPath(path);
+    poly.setOptions({
+      strokeWeight: uid === myId ? 7 : 5,
+      strokeColor: color
+    });
+    poly.setMap(map);
+  }
+}
 
     let distText = "위치없음";
     if (hasLocation && destination?.lat && destination?.lng) {
@@ -853,13 +899,26 @@ async function joinCurrentRoom(isHost) {
     }
   }
 
-  for (const [uid, poly] of memberPolylines.entries()) {
-    if (!activeIds.has(uid)) {
-      poly.setMap(null);
-      memberPolylines.delete(uid);
-    }
+  for (const [uid, marker] of memberMarkers.entries()) {
+  if (!activeIds.has(uid)) {
+    marker.setMap(null);
+    memberMarkers.delete(uid);
   }
+}
 
+for (const [uid, poly] of memberPolylines.entries()) {
+  if (!activeIds.has(uid)) {
+    poly.setMap(null);
+    memberPolylines.delete(uid);
+  }
+}
+
+for (const [uid, label] of memberLabels.entries()) {
+  if (!activeIds.has(uid)) {
+    label.setMap(null);
+    memberLabels.delete(uid);
+  }
+}
   memberList.innerHTML = listHtml.length
     ? listHtml.join("")
     : `<div class="info-line">아직 표시할 참가자가 없습니다.</div>`;
@@ -869,26 +928,42 @@ async function joinCurrentRoom(isHost) {
     `내 상태: ${sharing ? "위치공유중" : "대기중"}`,
     `참가 인원: ${memberCount}명`
   ]);
+
+  if (autoFitAllMembers) {
+  fitMembersAndDestination();
+}
 }
 
-    function fitAll() {
-      const bounds = new kakao.maps.LatLngBounds();
-      let has = false;
+function fitMembersAndDestination() {
+  if (!map || !window.kakao || !kakao.maps) return;
 
-      for (const marker of memberMarkers.values()) {
-        bounds.extend(marker.getPosition());
-        has = true;
-      }
+  const bounds = new kakao.maps.LatLngBounds();
+  let count = 0;
 
-      if (destinationMarker) {
-        bounds.extend(destinationMarker.getPosition());
-        has = true;
-      }
+  for (const marker of memberMarkers.values()) {
+    bounds.extend(marker.getPosition());
+    count++;
+  }
 
-      if (has) {
-        map.setBounds(bounds);
-      }
-    }
+  if (destinationMarker) {
+    bounds.extend(destinationMarker.getPosition());
+    count++;
+  }
+
+  if (count === 0) return;
+
+  if (count === 1) {
+    map.setCenter(bounds.getSouthWest());
+    map.setLevel(4);
+    return;
+  }
+
+  map.setBounds(bounds);
+}
+
+   function fitAll() {
+  fitMembersAndDestination();
+}
 
     async function setDestinationByMapClick() {
       if (!currentRoomId) {
@@ -976,9 +1051,11 @@ async function joinCurrentRoom(isHost) {
         trace
       });
 
-      if (followMe) {
-        map.panTo(toLatLng(latitude, longitude));
-      }
+      if (autoFitAllMembers) {
+  fitMembersAndDestination();
+} else if (followMe) {
+  map.panTo(toLatLng(latitude, longitude));
+}
     }
 
     async function startSharing() {
@@ -1049,16 +1126,19 @@ async function joinCurrentRoom(isHost) {
     }
 
     function clearMapObjects() {
-      for (const marker of memberMarkers.values()) marker.setMap(null);
-      for (const poly of memberPolylines.values()) poly.setMap(null);
-      memberMarkers.clear();
-      memberPolylines.clear();
+  for (const marker of memberMarkers.values()) marker.setMap(null);
+  for (const poly of memberPolylines.values()) poly.setMap(null);
+  for (const label of memberLabels.values()) label.setMap(null);
 
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
-    }
+  memberMarkers.clear();
+  memberPolylines.clear();
+  memberLabels.clear();
+
+  if (destinationMarker) {
+    destinationMarker.setMap(null);
+    destinationMarker = null;
+  }
+}
 
     async function leavePresence() {
       if (currentRoomId && myId) {
@@ -1086,9 +1166,15 @@ async function joinCurrentRoom(isHost) {
     fitBtn.addEventListener("click", fitAll);
 
     followBtn.addEventListener("click", () => {
-      followMe = !followMe;
-      followBtn.textContent = followMe ? "내 위치고정" : "고정해제";
-    });
+  autoFitAllMembers = !autoFitAllMembers;
+
+  if (autoFitAllMembers) {
+    followBtn.textContent = "전체중심";
+    fitMembersAndDestination();
+  } else {
+    followBtn.textContent = "내위치중심";
+  }
+});
 
     backBtn.addEventListener("click", () => {
       location.href = "./ride-map(kakaomap).html";
