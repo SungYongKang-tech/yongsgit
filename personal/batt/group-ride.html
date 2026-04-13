@@ -476,10 +476,18 @@
     let roomUnsubscribe = null;
     let destinationMarker = null;
     let autoFitAllMembers = true;
+    let isSettingDestination = false;
+let suspendAutoCenterUntil = 0;
 
     const memberMarkers = new Map();
     const memberPolylines = new Map();
     const memberLabels = new Map();
+    
+    function isAutoCenterAllowed() {
+  if (isSettingDestination) return false;
+  if (Date.now() < suspendAutoCenterUntil) return false;
+  return true;
+}
 
     function getOrCreateDeviceId() {
       let saved = localStorage.getItem(DEVICE_ID_KEY);
@@ -562,11 +570,20 @@
       kakao.maps.event.addListener(map, "tilesloaded", function () {
         setTimeout(() => map.relayout(), 80);
       });
+
+      kakao.maps.event.addListener(map, "dragstart", function () {
+  suspendAutoCenterUntil = Date.now() + 15000;
+});
+
+kakao.maps.event.addListener(map, "zoom_changed", function () {
+  suspendAutoCenterUntil = Date.now() + 15000;
+});
+
     }
 
     function buildMarkerImage(color, isMe = false) {
       const label = isMe ? "🚴" : "👤";
-      const size = isMe ? 42 : 34;
+      const size = isMe ? 30 : 26;
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
           <foreignObject width="${size}" height="${size}">
@@ -574,8 +591,8 @@
                  style="
                   width:${size}px;height:${size}px;border-radius:50%;
                   display:flex;align-items:center;justify-content:center;
-                  background:${color};color:white;font-size:${isMe ? 20 : 16}px;
-                  font-weight:900;border:3px solid rgba(255,255,255,.88);
+                  background:${color};color:white;font-size:${isMe ? 16 : 13}px;
+                  font-weight:900;border:2px solid rgba(255,255,255,.88);
                   box-shadow:0 4px 12px rgba(0,0,0,.35);">${label}</div>
           </foreignObject>
         </svg>`;
@@ -594,7 +611,7 @@
                   width:34px;height:34px;border-radius:50%;
                   display:flex;align-items:center;justify-content:center;
                   background:#f97316;color:white;font-size:18px;font-weight:900;
-                  border:3px solid rgba(255,255,255,.88);
+                  border:2px solid rgba(255,255,255,.88);
                   box-shadow:0 4px 12px rgba(0,0,0,.35);">🎯</div>
           </foreignObject>
         </svg>`;
@@ -998,18 +1015,21 @@
         `참가 인원: ${memberCount}명`
       ]);
 
-      if (autoFitAllMembers) {
-        fitMembersAndDestination();
-      }
+     if (autoFitAllMembers && isAutoCenterAllowed()) {
+  fitMembersAndDestination();
+}
     }
 
     async function setDestinationByMapClick() {
-      if (!currentRoomId) {
-        alert("먼저 방을 만들거나 참가해주세요.");
-        return;
-      }
+  if (!currentRoomId) {
+    alert("먼저 방을 만들거나 참가해주세요.");
+    return;
+  }
 
-      alert("지도에서 목적지 위치를 한 번 터치하세요.");
+  isSettingDestination = true;
+  suspendAutoCenterUntil = Date.now() + 60000;
+
+  alert("지도에서 목적지 위치를 한 번 터치하세요.");
 
       const handler = async function(mouseEvent) {
         kakao.maps.event.removeListener(map, "click", handler);
@@ -1017,6 +1037,8 @@
         const latlng = mouseEvent.latLng;
         const lat = latlng.getLat();
         const lng = latlng.getLng();
+        isSettingDestination = false;
+        suspendAutoCenterUntil = Date.now() + 2000;
 
         let name = "목적지";
         try {
@@ -1089,12 +1111,13 @@
         trace
       });
 
-      if (autoFitAllMembers) {
-        fitMembersAndDestination();
-      } else {
-        map.panTo(toLatLng(latitude, longitude));
-      }
-    }
+      if (isAutoCenterAllowed()) {
+  if (autoFitAllMembers) {
+    fitMembersAndDestination();
+  } else {
+    map.panTo(toLatLng(latitude, longitude));
+  }
+}}
 
     async function startSharing(silent = false) {
       await ensureAuth();
