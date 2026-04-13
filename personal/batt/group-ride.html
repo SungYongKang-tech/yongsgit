@@ -674,12 +674,12 @@ async function joinRoom() {
 }
 
    
- async function joinCurrentRoom(isHost) {
+async function joinCurrentRoom(isHost) {
+  if (!currentRoomId) return;
+
+  const myRef = ref(db, `rideRooms/${currentRoomId}/members/${myId}`);
+
   try {
-    if (!currentRoomId) return;
-
-    const myRef = ref(db, `rideRooms/${currentRoomId}/members/${myId}`);
-
     await update(myRef, {
       name: myName,
       color: myColor,
@@ -699,22 +699,29 @@ async function joinRoom() {
   } catch (e) {
     console.error("방 입장 처리 실패:", e);
     alert("방 입장 처리 실패: " + (e?.message || e));
+    return;
   }
 
   if (navigator.geolocation) {
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    try {
-      await update(myRef, {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: Math.round(pos.coords.accuracy || 0),
-        updatedAt: Date.now()
-      });
-    } catch (e) {
-      console.log("초기 위치 저장 실패:", e);
-    }
-  });
-}
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await update(myRef, {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: Math.round(pos.coords.accuracy || 0),
+            updatedAt: Date.now()
+          });
+        } catch (e) {
+          console.log("초기 위치 저장 실패:", e);
+        }
+      },
+      (err) => {
+        console.log("초기 위치 요청 실패:", err);
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+  }
 }
 
     function subscribeRoom() {
@@ -752,169 +759,117 @@ async function joinRoom() {
       });
     }
 
-    function renderMembers(members) {
-      const now = Date.now();
-      const activeIds = new Set();
-      const listHtml = [];
+   function renderMembers(members) {
+  const now = Date.now();
+  const activeIds = new Set();
+  const listHtml = [];
 
-      let memberCount = 0;
-      let destText = destination?.name
-        ? destination.name
-        : destination ? `${destination.lat.toFixed(5)}, ${destination.lng.toFixed(5)}` : "-";
+  let memberCount = 0;
+  let destText = destination?.name
+    ? destination.name
+    : destination
+      ? `${destination.lat.toFixed(5)}, ${destination.lng.toFixed(5)}`
+      : "-";
 
-     for (const [uid, m] of Object.entries(members)) {
-  const isFresh = m.updatedAt && (now - m.updatedAt <= MEMBER_TIMEOUT_MS);
-  const isOnline = !!m.online && isFresh;
+  for (const [uid, m] of Object.entries(members || {})) {
+    const isFresh = m.updatedAt && (now - m.updatedAt <= MEMBER_TIMEOUT_MS);
+    const isOnline = !!m.online && isFresh;
 
-  memberCount++;
+    memberCount++;
 
-  const color = m.color || "#3b82f6";
-  const hasLocation = typeof m.lat === "number" && typeof m.lng === "number";
+    const color = m.color || "#3b82f6";
+    const hasLocation = typeof m.lat === "number" && typeof m.lng === "number";
 
-  if (hasLocation) {
-    activeIds.add(uid);
+    if (hasLocation) {
+      activeIds.add(uid);
 
-    const latlng = toLatLng(m.lat, m.lng);
+      const latlng = toLatLng(m.lat, m.lng);
 
-    let marker = memberMarkers.get(uid);
-    if (!marker) {
-      marker = new kakao.maps.Marker({
-        map,
-        position: latlng,
-        image: buildMarkerImage(color, uid === myId)
-      });
-      memberMarkers.set(uid, marker);
-    } else {
-      marker.setPosition(latlng);
-      marker.setImage(buildMarkerImage(color, uid === myId));
-      marker.setMap(map);
+      let marker = memberMarkers.get(uid);
+      if (!marker) {
+        marker = new kakao.maps.Marker({
+          map,
+          position: latlng,
+          image: buildMarkerImage(color, uid === myId)
+        });
+        memberMarkers.set(uid, marker);
+      } else {
+        marker.setPosition(latlng);
+        marker.setImage(buildMarkerImage(color, uid === myId));
+        marker.setMap(map);
+      }
+
+      const trace = Array.isArray(m.trace) ? m.trace : [];
+      const path = trace
+        .filter(p => typeof p.lat === "number" && typeof p.lng === "number")
+        .map(p => toLatLng(p.lat, p.lng));
+
+      let poly = memberPolylines.get(uid);
+      if (!poly) {
+        poly = new kakao.maps.Polyline({
+          map,
+          path,
+          strokeWeight: uid === myId ? 7 : 5,
+          strokeColor: color,
+          strokeOpacity: 0.9,
+          strokeStyle: "solid"
+        });
+        memberPolylines.set(uid, poly);
+      } else {
+        poly.setPath(path);
+        poly.setOptions({
+          strokeWeight: uid === myId ? 7 : 5,
+          strokeColor: color
+        });
+        poly.setMap(map);
+      }
     }
 
-    const trace = Array.isArray(m.trace) ? m.trace : [];
-    let poly = memberPolylines.get(uid);
-    const path = trace.map(p => toLatLng(p.lat, p.lng));
+    let distText = "위치없음";
+    if (hasLocation && destination?.lat && destination?.lng) {
+      const d = haversine(m.lat, m.lng, destination.lat, destination.lng);
+      distText = d < 1000 ? `${Math.round(d)}m` : `${(d / 1000).toFixed(2)}km`;
+    } else if (hasLocation) {
+      distText = "위치확인";
+    }
 
-    if (!poly) {
-      poly = new kakao.maps.Polyline({
-        map,
-        path,
-        strokeWeight: uid === myId ? 7 : 5,
-        strokeColor: color,
-        strokeOpacity: 0.9,
-        strokeStyle: "solid"
-      });
-      memberPolylines.set(uid, poly);
-    } else {
-      poly.setPath(path);
-      poly.setOptions({
-        strokeWeight: uid === myId ? 7 : 5,
-        strokeColor: color
-      });
-      poly.setMap(map);
+    const nameHtml = uid === myId
+      ? `${m.name || "이름없음"} <span class="me-badge">나</span>`
+      : (m.name || "이름없음");
+
+    listHtml.push(`
+      <div class="member-item">
+        <div class="dot" style="background:${color}"></div>
+        <div class="member-name">${nameHtml}</div>
+        <div class="member-meta">${isOnline ? "온라인" : "대기"} · ${distText}</div>
+      </div>
+    `);
+  }
+
+  for (const [uid, marker] of memberMarkers.entries()) {
+    if (!activeIds.has(uid)) {
+      marker.setMap(null);
+      memberMarkers.delete(uid);
     }
   }
 
-  let distText = "위치없음";
-  if (hasLocation && destination?.lat && destination?.lng) {
-    const d = haversine(m.lat, m.lng, destination.lat, destination.lng);
-    distText = d < 1000 ? `${Math.round(d)}m` : `${(d / 1000).toFixed(2)}km`;
-  } else if (hasLocation) {
-    distText = "위치확인";
+  for (const [uid, poly] of memberPolylines.entries()) {
+    if (!activeIds.has(uid)) {
+      poly.setMap(null);
+      memberPolylines.delete(uid);
+    }
   }
 
-  const nameHtml = uid === myId
-    ? `${m.name || "이름없음"} <span class="me-badge">나</span>`
-    : (m.name || "이름없음");
+  memberList.innerHTML = listHtml.length
+    ? listHtml.join("")
+    : `<div class="info-line">아직 표시할 참가자가 없습니다.</div>`;
 
-  listHtml.push(`
-    <div class="member-item">
-      <div class="dot" style="background:${color}"></div>
-      <div class="member-name">${nameHtml}</div>
-      <div class="member-meta">${isOnline ? "온라인" : "대기"} · ${distText}</div>
-    </div>
-  `);
+  setInfo([
+    `목적지: ${destText}`,
+    `내 상태: ${sharing ? "위치공유중" : "대기중"}`,
+    `참가 인원: ${memberCount}명`
+  ]);
 }
-
-        let marker = memberMarkers.get(uid);
-        if (!marker) {
-          marker = new kakao.maps.Marker({
-            map,
-            position: latlng,
-            image: buildMarkerImage(color, uid === myId)
-          });
-          memberMarkers.set(uid, marker);
-        } else {
-          marker.setPosition(latlng);
-          marker.setImage(buildMarkerImage(color, uid === myId));
-          marker.setMap(map);
-        }
-
-        const trace = Array.isArray(m.trace) ? m.trace : [];
-        let poly = memberPolylines.get(uid);
-        const path = trace.map(p => toLatLng(p.lat, p.lng));
-
-        if (!poly) {
-          poly = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeWeight: uid === myId ? 7 : 5,
-            strokeColor: color,
-            strokeOpacity: 0.9,
-            strokeStyle: "solid"
-          });
-          memberPolylines.set(uid, poly);
-        } else {
-          poly.setPath(path);
-          poly.setOptions({
-            strokeWeight: uid === myId ? 7 : 5,
-            strokeColor: color
-          });
-          poly.setMap(map);
-        }
-
-        let distText = "-";
-        if (destination?.lat && destination?.lng) {
-          const d = haversine(m.lat, m.lng, destination.lat, destination.lng);
-          distText = d < 1000 ? `${Math.round(d)}m` : `${(d / 1000).toFixed(2)}km`;
-        }
-
-        const nameHtml = uid === myId
-          ? `${m.name || "이름없음"} <span class="me-badge">나</span>`
-          : (m.name || "이름없음");
-
-        listHtml.push(`
-          <div class="member-item">
-            <div class="dot" style="background:${color}"></div>
-            <div class="member-name">${nameHtml}</div>
-            <div class="member-meta">${isOnline ? "온라인" : "대기"} · ${distText}</div>
-          </div>
-        `);
-      }
-
-      for (const [uid, marker] of memberMarkers.entries()) {
-        if (!activeIds.has(uid)) {
-          marker.setMap(null);
-          memberMarkers.delete(uid);
-        }
-      }
-
-      for (const [uid, poly] of memberPolylines.entries()) {
-        if (!activeIds.has(uid)) {
-          poly.setMap(null);
-          memberPolylines.delete(uid);
-        }
-      }
-
-      memberList.innerHTML = listHtml.length
-        ? listHtml.join("")
-        : `<div class="info-line">아직 표시할 참가자가 없습니다.</div>`;
-
-      setInfo([
-        `목적지: ${destText}`,
-        `내 상태: ${sharing ? "위치공유중" : "대기중"}`,
-        `참가 인원: ${memberCount}명`
-      ]);
-    }
 
     function fitAll() {
       const bounds = new kakao.maps.LatLngBounds();
