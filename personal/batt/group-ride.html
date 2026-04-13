@@ -149,8 +149,9 @@ button{
 }
 
 .map-wrap{
-  flex:1;
-  min-height:0;
+  flex:1 1 auto;
+  min-height:220px;
+  max-height:calc(100dvh - 250px);
   overflow:hidden;
   border-radius:14px;
   border:1px solid rgba(255,255,255,.06);
@@ -167,8 +168,9 @@ button{
   display:grid;
   grid-template-columns:1.2fr .8fr;
   gap:4px;
-  min-height:92px;
-  max-height:120px;
+  flex:0 0 130px;
+  min-height:130px;
+  max-height:130px;
 }
 
 .panel-card{
@@ -270,11 +272,17 @@ button{
     grid-template-columns:repeat(4, 1fr);
   }
 
-  .bottom{
+    .bottom{
     grid-template-columns:1fr;
-    min-height:84px;
-    max-height:110px;
+    flex:0 0 140px;
+    min-height:140px;
+    max-height:140px;
   }
+
+   .map-wrap{
+  min-height:140px;
+  max-height:calc(100dvh - 320px);
+}
 
   .title{
     font-size:16px;
@@ -342,10 +350,16 @@ button{
     padding:3px 6px;
   }
 
-  .bottom{
-    min-height:78px;
-    max-height:100px;
+    .bottom{
+    flex:0 0 132px;
+    min-height:132px;
+    max-height:132px;
   }
+
+  .map-wrap{
+  min-height:120px;
+  max-height:calc(100dvh - 305px);
+}
 
   .panel-card{
     padding:5px;
@@ -426,9 +440,12 @@ button{
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getDatabase, ref, set, update, get, onValue, onDisconnect, remove, push
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import {
+  getDatabase, ref, set, update, get, onValue, onDisconnect, remove
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import {
+  getAuth, signInAnonymously
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
@@ -442,6 +459,7 @@ button{
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const auth = getAuth(app);
 
     const DEFAULT_CENTER = { lat: 35.180, lng: 128.107 };
     const MAX_GPS_ACCURACY_M = 40;
@@ -484,6 +502,18 @@ button{
     const memberMarkers = new Map();
     const memberPolylines = new Map();
     let destinationMarker = null;
+
+    async function ensureAuth() {
+  try {
+    if (auth.currentUser) return auth.currentUser;
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  } catch (e) {
+    console.error("익명 로그인 실패:", e);
+    alert("Firebase 인증 실패: " + (e?.message || e));
+    throw e;
+  }
+}
 
     function ensureKakaoLoaded() {
       return !!(window.kakao && window.kakao.maps);
@@ -571,82 +601,104 @@ button{
     }
 
     async function createRoom() {
-      myName = (nameInput.value || "").trim();
-      if (!myName) {
-        alert("이름을 입력해주세요.");
-        return;
-      }
+  try {
+    await ensureAuth();
 
-      let roomId = (roomInput.value || "").trim().toUpperCase();
-      if (!roomId) roomId = randomRoomCode();
-
-      const roomRef = ref(db, `rideRooms/${roomId}`);
-      const snap = await get(roomRef);
-
-      if (!snap.exists()) {
-        await set(roomRef, {
-          meta: {
-            createdAt: Date.now(),
-            createdBy: myId,
-            title: "그룹라이딩",
-            status: "active"
-          }
-        });
-      }
-
-      currentRoomId = roomId;
-      roomInput.value = roomId;
-      updateRoomBadge();
-      await joinCurrentRoom(true);
+    myName = (nameInput.value || "").trim();
+    if (!myName) {
+      alert("이름을 입력해주세요.");
+      return;
     }
 
-    async function joinRoom() {
-      myName = (nameInput.value || "").trim();
-      if (!myName) {
-        alert("이름을 입력해주세요.");
-        return;
-      }
+    let roomId = (roomInput.value || "").trim().toUpperCase();
+    if (!roomId) roomId = randomRoomCode();
 
-      const roomId = (roomInput.value || "").trim().toUpperCase();
-      if (!roomId) {
-        alert("방 코드를 입력해주세요.");
-        return;
-      }
+    const roomRef = ref(db, `rideRooms/${roomId}`);
+    const snap = await get(roomRef);
 
-      const roomRef = ref(db, `rideRooms/${roomId}`);
-      const snap = await get(roomRef);
-      if (!snap.exists()) {
-        alert("해당 방이 없습니다.");
-        return;
-      }
-
-      currentRoomId = roomId;
-      updateRoomBadge();
-      await joinCurrentRoom(false);
-    }
-
-    async function joinCurrentRoom(isHost) {
-      if (!currentRoomId) return;
-
-      const myRef = ref(db, `rideRooms/${currentRoomId}/members/${myId}`);
-
-      await update(myRef, {
-        name: myName,
-        color: myColor,
-        online: true,
-        joinedAt: Date.now(),
-        updatedAt: Date.now(),
-        isHost: !!isHost
+    if (!snap.exists()) {
+      await set(roomRef, {
+        meta: {
+          createdAt: Date.now(),
+          createdBy: myId,
+          title: "그룹라이딩",
+          status: "active"
+        }
       });
-
-      onDisconnect(myRef).update({
-        online: false,
-        updatedAt: Date.now()
-      });
-
-      subscribeRoom();
-      alert(isHost ? `방 생성 완료: ${currentRoomId}` : `방 참가 완료: ${currentRoomId}`);
     }
+
+    currentRoomId = roomId;
+    roomInput.value = roomId;
+    updateRoomBadge();
+    await joinCurrentRoom(true);
+  } catch (e) {
+    console.error("방 만들기 실패:", e);
+    alert("방 만들기 실패: " + (e?.message || e));
+  }
+}
+
+async function joinRoom() {
+  try {
+    await ensureAuth();
+
+    myName = (nameInput.value || "").trim();
+    if (!myName) {
+      alert("이름을 입력해주세요.");
+      return;
+    }
+
+    const roomId = (roomInput.value || "").trim().toUpperCase();
+    if (!roomId) {
+      alert("방 코드를 입력해주세요.");
+      return;
+    }
+
+    const roomRef = ref(db, `rideRooms/${roomId}`);
+    const snap = await get(roomRef);
+
+    if (!snap.exists()) {
+      alert("해당 방이 없습니다.");
+      return;
+    }
+
+    currentRoomId = roomId;
+    roomInput.value = roomId;
+    updateRoomBadge();
+    await joinCurrentRoom(false);
+  } catch (e) {
+    console.error("방 참가 실패:", e);
+    alert("방 참가 실패: " + (e?.message || e));
+  }
+}
+
+   
+ async function joinCurrentRoom(isHost) {
+  try {
+    if (!currentRoomId) return;
+
+    const myRef = ref(db, `rideRooms/${currentRoomId}/members/${myId}`);
+
+    await update(myRef, {
+      name: myName,
+      color: myColor,
+      online: true,
+      joinedAt: Date.now(),
+      updatedAt: Date.now(),
+      isHost: !!isHost
+    });
+
+    onDisconnect(myRef).update({
+      online: false,
+      updatedAt: Date.now()
+    });
+
+    subscribeRoom();
+    alert(isHost ? `방 생성 완료: ${currentRoomId}` : `방 참가 완료: ${currentRoomId}`);
+  } catch (e) {
+    console.error("방 입장 처리 실패:", e);
+    alert("방 입장 처리 실패: " + (e?.message || e));
+  }
+}
 
     function subscribeRoom() {
       if (!currentRoomId) return;
@@ -895,7 +947,8 @@ button{
       }
     }
 
-    function startSharing() {
+    async function startSharing() {
+      await ensureAuth();
       if (!currentRoomId) {
         alert("먼저 방을 만들거나 참가해주세요.");
         return;
@@ -1024,6 +1077,7 @@ button{
         return;
       }
 
+      await ensureAuth();
       initMap();
       updateRoomBadge();
       setInfo([
