@@ -1,1310 +1,218 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>그룹라이딩</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>그룹라이딩 설정</title>
 
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
 
-  <style>
-    :root{
-      --bg1:#0b1220;
-      --bg2:#121c34;
-      --line:rgba(255,255,255,0.08);
-      --text:#f8fafc;
-      --muted:#94a3b8;
-      --blue:#2563eb;
-      --green:#16a34a;
-      --red:#dc2626;
-      --orange:#ea580c;
-      --card:linear-gradient(180deg, rgba(30,41,59,.90), rgba(15,23,42,.86));
-    }
+<style>
+body {
+  margin:0;
+  background:#0f172a;
+  color:#fff;
+  font-family:Arial;
+}
 
-    *{ box-sizing:border-box; }
+.wrap {
+  padding:10px;
+}
 
-    html, body{
-      margin:0;
-      width:100%;
-      height:100%;
-      overflow:hidden;
-      background:linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 100%);
-      color:var(--text);
-      font-family:Arial, sans-serif;
-      -webkit-tap-highlight-color:transparent;
-    }
+input, button {
+  width:100%;
+  height:40px;
+  margin:4px 0;
+  border-radius:10px;
+  border:none;
+  font-size:14px;
+}
 
-    .app{
-      width:100%;
-      height:100dvh;
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-      padding:calc(4px + env(safe-area-inset-top)) 4px calc(4px + env(safe-area-inset-bottom));
-    }
+input {
+  padding:0 10px;
+}
 
-    .top-card,
-    .panel-card{
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:12px;
-      box-shadow:0 6px 16px rgba(0,0,0,.18);
-    }
+button {
+  background:#2563eb;
+  color:#fff;
+  font-weight:bold;
+}
 
-    .top-card{
-      padding:6px;
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-    }
+.row {
+  display:flex;
+  gap:6px;
+}
 
-    .title-row{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:6px;
-    }
-
-    .title{
-      font-size:17px;
-      font-weight:900;
-      line-height:1.1;
-      white-space:nowrap;
-    }
-
-    .room-badge{
-      font-size:11px;
-      color:#fff;
-      background:rgba(37,99,235,.9);
-      padding:4px 8px;
-      border-radius:999px;
-      font-weight:800;
-      white-space:nowrap;
-      flex:0 0 auto;
-    }
-
-    .controls{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:4px;
-    }
-
-    .row-4{
-      display:grid;
-      grid-template-columns:repeat(4, 1fr);
-      gap:4px;
-    }
-
-    input,
-    button{
-      border:none;
-      outline:none;
-      border-radius:10px;
-      font-size:12px;
-      min-height:32px;
-    }
-
-    input{
-      padding:0 10px;
-      background:rgba(255,255,255,.96);
-      color:#111827;
-      font-weight:700;
-    }
-
-    button{
-      color:#fff;
-      font-weight:800;
-      cursor:pointer;
-      background:linear-gradient(180deg, rgba(51,65,85,.98), rgba(30,41,59,.98));
-      border:1px solid rgba(255,255,255,0.08);
-      padding:0 4px;
-      line-height:1.1;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-
-    .blue{ background:linear-gradient(180deg, #2563eb, #1d4ed8); }
-    .green{ background:linear-gradient(180deg, #22c55e, #16a34a); }
-    .red{ background:linear-gradient(180deg, #ef4444, #dc2626); }
-    .orange{ background:linear-gradient(180deg, #f97316, #ea580c); }
-
-    .map-wrap{
-      flex:1 1 auto;
-      min-height:140px;
-      max-height:calc(100dvh - 330px);
-      overflow:hidden;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,.06);
-      background:#0f172a;
-      position:relative;
-    }
-
-    #map{
-      width:100%;
-      height:100%;
-    }
-
-    .bottom{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:4px;
-      flex:0 0 150px;
-      min-height:150px;
-      max-height:150px;
-    }
-
-    .panel-card{
-      padding:6px;
-      display:flex;
-      flex-direction:column;
-      min-height:0;
-    }
-
-    .panel-title{
-      font-size:11px;
-      font-weight:900;
-      color:#cbd5e1;
-      margin-bottom:4px;
-    }
-
-    .member-list{
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-      overflow:auto;
-      min-height:0;
-    }
-
-    .member-item{
-      display:grid;
-      grid-template-columns:auto 1fr;
-      gap:4px;
-      align-items:center;
-      padding:4px 5px;
-      border-radius:10px;
-      background:rgba(255,255,255,.05);
-      border:1px solid rgba(255,255,255,.06);
-    }
-
-    .dot{
-      width:10px;
-      height:10px;
-      border-radius:50%;
-      border:2px solid rgba(255,255,255,.8);
-    }
-
-    .member-name{
-      font-size:12px;
-      font-weight:800;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-
-    .member-meta{
-      grid-column:2 / 3;
-      font-size:9px;
-      color:#cbd5e1;
-      font-weight:700;
-      white-space:nowrap;
-    }
-
-    .info-box{
-      display:grid;
-      gap:4px;
-      overflow:auto;
-      min-height:0;
-    }
-
-    .info-line{
-      font-size:11px;
-      font-weight:700;
-      color:#e2e8f0;
-      line-height:1.25;
-      padding:6px 8px;
-      border-radius:10px;
-      background:rgba(255,255,255,.05);
-    }
-
-    .hint{
-      display:none;
-    }
-
-    .me-badge{
-      font-size:9px;
-      color:#fff;
-      background:#0f766e;
-      padding:1px 5px;
-      border-radius:999px;
-      margin-left:4px;
-      vertical-align:middle;
-    }
-
-    @media (max-width: 520px){
-      .controls{
-        grid-template-columns:1fr 1fr;
-      }
-
-      .row-4{
-        grid-template-columns:repeat(4, 1fr);
-      }
-
-      .bottom{
-        grid-template-columns:1fr 1fr;
-        flex:0 0 160px;
-        min-height:160px;
-        max-height:160px;
-      }
-
-      .map-wrap{
-        min-height:120px;
-        max-height:calc(100dvh - 350px);
-      }
-
-      .title{
-        font-size:16px;
-      }
-
-      input,
-      button{
-        min-height:30px;
-        font-size:11px;
-      }
-
-      .room-badge{
-        font-size:10px;
-        padding:3px 7px;
-      }
-
-      .panel-title{
-        font-size:11px;
-      }
-
-      .member-name{
-        font-size:11px;
-      }
-
-      .member-meta{
-        font-size:9px;
-      }
-
-      .info-line{
-        font-size:10px;
-        padding:5px 7px;
-      }
-    }
-
-    @media (max-width: 390px){
-      .app{
-        gap:3px;
-        padding:calc(3px + env(safe-area-inset-top)) 3px calc(3px + env(safe-area-inset-bottom));
-      }
-
-      .top-card{
-        padding:5px;
-        gap:3px;
-      }
-
-      .controls,
-      .row-4{
-        gap:3px;
-      }
-
-      input,
-      button{
-        min-height:28px;
-        font-size:10px;
-        border-radius:9px;
-      }
-
-      .title{
-        font-size:15px;
-      }
-
-      .room-badge{
-        font-size:9px;
-        padding:3px 6px;
-      }
-
-      .bottom{
-        grid-template-columns:1fr 1fr;
-        flex:0 0 150px;
-        min-height:150px;
-        max-height:150px;
-      }
-
-      .map-wrap{
-        min-height:100px;
-        max-height:calc(100dvh - 335px);
-      }
-
-      .panel-card{
-        padding:5px;
-      }
-
-      .panel-title{
-        margin-bottom:3px;
-      }
-
-      .member-item{
-        padding:4px 5px;
-        gap:5px;
-      }
-
-      .dot{
-        width:9px;
-        height:9px;
-      }
-
-      .info-line{
-        padding:5px 6px;
-      }
-    }
-  </style>
+.map {
+  width:100%;
+  height:300px;
+  margin-top:10px;
+}
+</style>
 </head>
+
 <body>
-  <div class="app">
-    <div class="top-card">
-      <div class="title-row">
-        <div class="title">그룹라이딩</div>
-        <div class="room-badge" id="roomBadge">방 없음</div>
-      </div>
+<div class="wrap">
 
-      <div class="controls">
-        <input id="nameInput" type="text" placeholder="내 이름 또는 닉네임" />
-        <input id="roomInput" type="text" placeholder="방 코드 입력 또는 자동 생성" />
-      </div>
+<h2>그룹라이딩 설정</h2>
 
-      <div class="row-4">
-        <button class="blue" id="createRoomBtn">방 만들기</button>
-        <button class="green" id="joinRoomBtn">방 참가</button>
-        <button class="orange" id="setDestBtn">목적지 지정</button>
-        <button class="red" id="endRoomBtn">방 종료</button>
-      </div>
+<input id="nameInput" placeholder="내 이름" />
+<input id="roomInput" placeholder="방 코드 입력 (없으면 자동 생성)" />
 
-      <div class="row-4">
-        <button id="shareBtn">내 위치공유 시작</button>
-        <button id="fitBtn">전체 보기</button>
-        <button id="followBtn">전체중심</button>
-        <button id="backBtn">주행기록으로</button>
-      </div>
-    </div>
+<div class="row">
+  <button id="createRoomBtn">방 만들기</button>
+  <button id="joinRoomBtn">방 참가</button>
+</div>
 
-    <div class="map-wrap">
-      <div id="map"></div>
-    </div>
+<div class="row">
+  <button id="setDestBtn">목적지 지정</button>
+  <button id="clearDestBtn">목적지 지우기</button>
+</div>
 
-    <div class="bottom">
-      <div class="panel-card">
-        <div class="panel-title">참가자</div>
-        <div class="member-list" id="memberList"></div>
-      </div>
+<div class="row">
+  <button id="moveRideBtn">🚴 주행기록으로 이동</button>
+</div>
 
-      <div class="panel-card">
-        <div class="panel-title">방 정보</div>
-        <div class="info-box" id="infoBox">
-          <div class="info-line">목적지: -</div>
-          <div class="info-line">내 상태: 대기중</div>
-          <div class="info-line">참가 인원: 0명</div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div id="map" class="map"></div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getDatabase, ref, set, update, get, onValue, onDisconnect, remove
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-    import {
-      getAuth, signInAnonymously
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+</div>
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
-      authDomain: "personal-51db3.firebaseapp.com",
-      databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
-      projectId: "personal-51db3",
-      storageBucket: "personal-51db3.firebasestorage.app",
-      messagingSenderId: "146076749227",
-      appId: "1:146076749227:web:2043208d688e60504816ee"
-    };
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, update, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    const DEVICE_ID_KEY = "groupRide_deviceId_v1";
-    const LAST_ROOM_KEY = "groupRide_lastRoom_v1";
-    const LAST_NAME_KEY = "groupRide_lastName_v1";
+const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "personal-51db3.firebaseapp.com",
+  databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+  projectId: "personal-51db3"
+};
 
-    const DEFAULT_CENTER = { lat: 35.180, lng: 128.107 };
-    const MAX_GPS_ACCURACY_M = 40;
-    const TRACE_MIN_DISTANCE_M = 10;
-    const MEMBER_TIMEOUT_MS = 15000;
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
 
-    const COLORS = [
-      "#ef4444", "#22c55e", "#3b82f6", "#f59e0b",
-      "#a855f7", "#06b6d4", "#ec4899", "#84cc16"
-    ];
+let map;
+let currentRoomId = "";
+let isSettingDest = false;
+let destMarker = null;
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const auth = getAuth(app);
+function initMap(){
+  map = new kakao.maps.Map(document.getElementById("map"), {
+    center: new kakao.maps.LatLng(35.18,128.10),
+    level:4
+  });
 
-    const nameInput = document.getElementById("nameInput");
-    const roomInput = document.getElementById("roomInput");
-    const roomBadge = document.getElementById("roomBadge");
-    const memberList = document.getElementById("memberList");
-    const infoBox = document.getElementById("infoBox");
+  kakao.maps.event.addListener(map, "click", async function(mouseEvent){
+    if(!isSettingDest) return;
 
-    const createRoomBtn = document.getElementById("createRoomBtn");
-    const joinRoomBtn = document.getElementById("joinRoomBtn");
-    const setDestBtn = document.getElementById("setDestBtn");
-    const endRoomBtn = document.getElementById("endRoomBtn");
-    const shareBtn = document.getElementById("shareBtn");
-    const fitBtn = document.getElementById("fitBtn");
-    const followBtn = document.getElementById("followBtn");
-    const backBtn = document.getElementById("backBtn");
+    const latlng = mouseEvent.latLng;
+    const lat = latlng.getLat();
+    const lng = latlng.getLng();
 
-    let map;
-    let geocoder;
-    let currentRoomId = "";
-    let myName = "";
-    let myColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-    let watchId = null;
-    let sharing = false;
-    let myLastPoint = null;
-    let destination = null;
-    let roomUnsubscribe = null;
-    let destinationMarker = null;
-    let autoFitAllMembers = true;
-    let isSettingDestination = false;
-let suspendAutoCenterUntil = 0;
+    if(!currentRoomId){
+      alert("방 먼저 참가하세요");
+      return;
+    }
 
-    const memberMarkers = new Map();
-    const memberPolylines = new Map();
-    const memberLabels = new Map();
-    
-    function isAutoCenterAllowed() {
-  if (isSettingDestination) return false;
-  if (Date.now() < suspendAutoCenterUntil) return false;
-  return true;
+    await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+      destination:{ lat, lng }
+    });
+
+    drawDest(lat,lng);
+    isSettingDest = false;
+  });
 }
 
-    function getOrCreateDeviceId() {
-      let saved = localStorage.getItem(DEVICE_ID_KEY);
-      if (saved) return saved;
-      saved = "u_" + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem(DEVICE_ID_KEY, saved);
-      return saved;
-    }
-
-    let myId = getOrCreateDeviceId();
-
-    function saveLastSession() {
-      if (myName) localStorage.setItem(LAST_NAME_KEY, myName);
-      if (currentRoomId) localStorage.setItem(LAST_ROOM_KEY, currentRoomId);
-    }
-
-    function clearLastSession() {
-      localStorage.removeItem(LAST_ROOM_KEY);
-    }
-
-    function restoreLastInputs() {
-      const savedName = localStorage.getItem(LAST_NAME_KEY) || "";
-      const savedRoom = localStorage.getItem(LAST_ROOM_KEY) || "";
-      if (savedName) nameInput.value = savedName;
-      if (savedRoom) roomInput.value = savedRoom;
-    }
-
-    async function ensureAuth() {
-      try {
-        if (auth.currentUser) return auth.currentUser;
-        const cred = await signInAnonymously(auth);
-        return cred.user;
-      } catch (e) {
-        console.error("익명 로그인 실패:", e);
-        alert("Firebase 인증 실패: " + (e?.message || e));
-        throw e;
-      }
-    }
-
-    function ensureKakaoLoaded() {
-      return !!(window.kakao && window.kakao.maps);
-    }
-
-    function toLatLng(lat, lng) {
-      return new kakao.maps.LatLng(lat, lng);
-    }
-
-    function haversine(lat1, lon1, lat2, lon2) {
-      const R = 6371000;
-      const toRad = d => d * Math.PI / 180;
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    function randomRoomCode() {
-      return "RIDE-" + Math.random().toString(36).slice(2, 6).toUpperCase();
-    }
-
-    function updateRoomBadge() {
-      roomBadge.textContent = currentRoomId ? currentRoomId : "방 없음";
-    }
-
-    function setInfo(lines) {
-      infoBox.innerHTML = lines.map(v => `<div class="info-line">${v}</div>`).join("");
-    }
-
-    function initMap() {
-      map = new kakao.maps.Map(document.getElementById("map"), {
-        center: toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
-        level: 4
-      });
-
-      geocoder = new kakao.maps.services.Geocoder();
-      map.addOverlayMapTypeId(kakao.maps.MapTypeId.BICYCLE);
-
-      kakao.maps.event.addListener(map, "tilesloaded", function () {
-        setTimeout(() => map.relayout(), 80);
-      });
-
-      kakao.maps.event.addListener(map, "dragstart", function () {
-  suspendAutoCenterUntil = Date.now() + 15000;
-});
-
-kakao.maps.event.addListener(map, "zoom_changed", function () {
-  suspendAutoCenterUntil = Date.now() + 15000;
-});
-
-    }
-
-    function buildMarkerImage(color, isMe = false) {
-      const label = isMe ? "🚴" : "👤";
-      const size = isMe ? 30 : 26;
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-          <foreignObject width="${size}" height="${size}">
-            <div xmlns="http://www.w3.org/1999/xhtml"
-                 style="
-                  width:${size}px;height:${size}px;border-radius:50%;
-                  display:flex;align-items:center;justify-content:center;
-                  background:${color};color:white;font-size:${isMe ? 16 : 13}px;
-                  font-weight:900;border:2px solid rgba(255,255,255,.88);
-                  box-shadow:0 4px 12px rgba(0,0,0,.35);">${label}</div>
-          </foreignObject>
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(size, size), {
-        offset: new kakao.maps.Point(size / 2, size / 2)
-      });
-    }
-
-    function buildDestinationImage() {
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34">
-          <foreignObject width="34" height="34">
-            <div xmlns="http://www.w3.org/1999/xhtml"
-                 style="
-                  width:34px;height:34px;border-radius:50%;
-                  display:flex;align-items:center;justify-content:center;
-                  background:#f97316;color:white;font-size:18px;font-weight:900;
-                  border:2px solid rgba(255,255,255,.88);
-                  box-shadow:0 4px 12px rgba(0,0,0,.35);">🎯</div>
-          </foreignObject>
-        </svg>`;
-      const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-      return new kakao.maps.MarkerImage(src, new kakao.maps.Size(34, 34), {
-        offset: new kakao.maps.Point(17, 17)
-      });
-    }
-
-    function createMemberLabel(uid, name, color, lat, lng) {
-      if (!map) return;
-
-      const safeName = name || "이름없음";
-      const content = document.createElement("div");
-      content.style.background = "rgba(15,23,42,0.88)";
-      content.style.color = "#fff";
-      content.style.padding = "2px 7px";
-      content.style.borderRadius = "999px";
-      content.style.fontSize = "11px";
-      content.style.fontWeight = "800";
-      content.style.whiteSpace = "nowrap";
-      content.style.border = `1px solid ${color}`;
-      content.style.boxShadow = "0 2px 8px rgba(0,0,0,.25)";
-      content.textContent = safeName;
-
-      const overlay = new kakao.maps.CustomOverlay({
-        position: toLatLng(lat, lng),
-        content,
-        yAnchor: 2.2
-      });
-
-      overlay.setMap(map);
-      memberLabels.set(uid, overlay);
-    }
-
-    function updateMemberLabel(uid, name, color, lat, lng) {
-      const overlay = memberLabels.get(uid);
-      if (!overlay) {
-        createMemberLabel(uid, name, color, lat, lng);
-        return;
-      }
-
-      overlay.setPosition(toLatLng(lat, lng));
-      const el = overlay.getContent();
-      if (el) {
-        el.textContent = name || "이름없음";
-        el.style.border = `1px solid ${color}`;
-      }
-      overlay.setMap(map);
-    }
-
-    function fitMembersAndDestination() {
-      if (!map || !window.kakao || !kakao.maps) return;
-
-      const bounds = new kakao.maps.LatLngBounds();
-      let count = 0;
-
-      for (const marker of memberMarkers.values()) {
-        bounds.extend(marker.getPosition());
-        count++;
-      }
-
-      if (destinationMarker) {
-        bounds.extend(destinationMarker.getPosition());
-        count++;
-      }
-
-      if (count === 0) return;
-
-      if (count === 1) {
-        map.setCenter(bounds.getSouthWest());
-        map.setLevel(4);
-        return;
-      }
-
-      map.setBounds(bounds);
-    }
-
-    function fitAll() {
-      fitMembersAndDestination();
-    }
-
-    async function createRoom() {
-      try {
-        await ensureAuth();
-
-        myName = (nameInput.value || "").trim();
-        if (!myName) {
-          alert("이름을 입력해주세요.");
-          return;
-        }
-
-        let roomId = (roomInput.value || "").trim().toUpperCase();
-        if (!roomId) roomId = randomRoomCode();
-
-        const roomRef = ref(db, `rideRooms/${roomId}`);
-        const snap = await get(roomRef);
-
-        if (!snap.exists()) {
-          await set(roomRef, {
-            meta: {
-              createdAt: Date.now(),
-              createdBy: myId,
-              title: "그룹라이딩",
-              status: "active"
-            }
-          });
-        }
-
-        currentRoomId = roomId;
-        roomInput.value = roomId;
-        updateRoomBadge();
-        saveLastSession();
-        await joinCurrentRoom(true, false);
-      } catch (e) {
-        console.error("방 만들기 실패:", e);
-        alert("방 만들기 실패: " + (e?.message || e));
-      }
-    }
-
-    async function joinRoom() {
-      try {
-        await ensureAuth();
-
-        myName = (nameInput.value || "").trim();
-        if (!myName) {
-          alert("이름을 입력해주세요.");
-          return;
-        }
-
-        const roomId = (roomInput.value || "").trim().toUpperCase();
-        if (!roomId) {
-          alert("방 코드를 입력해주세요.");
-          return;
-        }
-
-        const roomRef = ref(db, `rideRooms/${roomId}`);
-        const snap = await get(roomRef);
-
-        if (!snap.exists()) {
-          alert("해당 방이 없습니다.");
-          return;
-        }
-
-        const members = snap.val()?.members || {};
-        const sameNameExists = Object.entries(members).some(([uid, m]) =>
-          uid !== myId && (m.name || "").trim() === myName
-        );
-
-        if (sameNameExists) {
-          alert("이미 같은 이름의 참가자가 있습니다. 다른 이름을 입력해주세요.");
-          return;
-        }
-
-        currentRoomId = roomId;
-        roomInput.value = roomId;
-        updateRoomBadge();
-        saveLastSession();
-        await joinCurrentRoom(false, false);
-      } catch (e) {
-        console.error("방 참가 실패:", e);
-        alert("방 참가 실패: " + (e?.message || e));
-      }
-    }
-
-    async function joinCurrentRoom(isHost, silent = false) {
-      if (!currentRoomId) return;
-
-      const myRef = ref(db, `rideRooms/${currentRoomId}/members/${myId}`);
-
-      try {
-        await update(myRef, {
-          name: myName,
-          color: myColor,
-          online: true,
-          joinedAt: Date.now(),
-          updatedAt: Date.now(),
-          isHost: !!isHost
-        });
-
-        onDisconnect(myRef).update({
-          online: false,
-          updatedAt: Date.now()
-        });
-
-        subscribeRoom();
-
-        if (!silent) {
-          alert(isHost ? `방 생성 완료: ${currentRoomId}` : `방 참가 완료: ${currentRoomId}`);
-        }
-      } catch (e) {
-        console.error("방 입장 처리 실패:", e);
-        alert("방 입장 처리 실패: " + (e?.message || e));
-        return;
-      }
-
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            try {
-              await update(myRef, {
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy: Math.round(pos.coords.accuracy || 0),
-                updatedAt: Date.now()
-              });
-            } catch (e) {
-              console.log("초기 위치 저장 실패:", e);
-            }
-          },
-          (err) => {
-            console.log("초기 위치 요청 실패:", err);
-          },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-        );
-      }
-    }
-
-    async function autoRejoinLastRoom() {
-      const savedName = (localStorage.getItem(LAST_NAME_KEY) || "").trim();
-      const savedRoom = (localStorage.getItem(LAST_ROOM_KEY) || "").trim().toUpperCase();
-
-      if (!savedName || !savedRoom) return;
-
-      try {
-        await ensureAuth();
-
-        const roomRef = ref(db, `rideRooms/${savedRoom}`);
-        const snap = await get(roomRef);
-
-        if (!snap.exists()) {
-          clearLastSession();
-          return;
-        }
-
-        myName = savedName;
-        currentRoomId = savedRoom;
-        nameInput.value = savedName;
-        roomInput.value = savedRoom;
-        updateRoomBadge();
-
-        await joinCurrentRoom(false, true);
-        await startSharing(true);
-      } catch (e) {
-        console.error("자동 재참가 실패:", e);
-      }
-    }
-
-    function subscribeRoom() {
-      if (!currentRoomId) return;
-      if (roomUnsubscribe) roomUnsubscribe();
-
-      const roomRef = ref(db, `rideRooms/${currentRoomId}`);
-      roomUnsubscribe = onValue(roomRef, (snap) => {
-        const data = snap.val() || {};
-        renderRoom(data);
-      });
-    }
-
-    function renderRoom(data) {
-      const meta = data.meta || {};
-      const members = data.members || {};
-      destination = meta.destination || null;
-
-      renderDestination(destination);
-      renderMembers(members);
-    }
-
-    function renderDestination(dest) {
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
-
-      if (!dest || !dest.lat || !dest.lng) return;
-
-      destinationMarker = new kakao.maps.Marker({
-        map,
-        position: toLatLng(dest.lat, dest.lng),
-        image: buildDestinationImage()
-      });
-    }
-
-    function renderMembers(members) {
-      const now = Date.now();
-      const activeIds = new Set();
-      const listHtml = [];
-
-      let memberCount = 0;
-      let destText = destination?.name
-        ? destination.name
-        : destination
-          ? `${destination.lat.toFixed(5)}, ${destination.lng.toFixed(5)}`
-          : "-";
-
-      for (const [uid, m] of Object.entries(members || {})) {
-        const isFresh = m.updatedAt && (now - m.updatedAt <= MEMBER_TIMEOUT_MS);
-        const isOnline = !!m.online && isFresh;
-
-        memberCount++;
-
-        const color = m.color || "#3b82f6";
-        const hasLocation = typeof m.lat === "number" && typeof m.lng === "number";
-
-        if (hasLocation) {
-          activeIds.add(uid);
-
-          const latlng = toLatLng(m.lat, m.lng);
-
-          let marker = memberMarkers.get(uid);
-          if (!marker) {
-            marker = new kakao.maps.Marker({
-              map,
-              position: latlng,
-              image: buildMarkerImage(color, uid === myId)
-            });
-            memberMarkers.set(uid, marker);
-          } else {
-            marker.setPosition(latlng);
-            marker.setImage(buildMarkerImage(color, uid === myId));
-            marker.setMap(map);
-          }
-
-          updateMemberLabel(uid, m.name, color, m.lat, m.lng);
-
-          const trace = Array.isArray(m.trace) ? m.trace : [];
-          const path = trace
-            .filter(p => typeof p.lat === "number" && typeof p.lng === "number")
-            .map(p => toLatLng(p.lat, p.lng));
-
-          let poly = memberPolylines.get(uid);
-          if (!poly) {
-            poly = new kakao.maps.Polyline({
-              map,
-              path,
-              strokeWeight: uid === myId ? 7 : 5,
-              strokeColor: color,
-              strokeOpacity: 0.9,
-              strokeStyle: "solid"
-            });
-            memberPolylines.set(uid, poly);
-          } else {
-            poly.setPath(path);
-            poly.setOptions({
-              strokeWeight: uid === myId ? 7 : 5,
-              strokeColor: color
-            });
-            poly.setMap(map);
-          }
-        }
-
-        let distText = "위치없음";
-        if (hasLocation && destination?.lat && destination?.lng) {
-          const d = haversine(m.lat, m.lng, destination.lat, destination.lng);
-          distText = d < 1000 ? `${Math.round(d)}m` : `${(d / 1000).toFixed(2)}km`;
-        } else if (hasLocation) {
-          distText = "위치확인";
-        }
-
-        const nameHtml = uid === myId
-          ? `${m.name || "이름없음"} <span class="me-badge">나</span>`
-          : (m.name || "이름없음");
-
-        listHtml.push(`
-          <div class="member-item">
-            <div class="dot" style="background:${color}"></div>
-            <div class="member-name">${nameHtml}</div>
-            <div class="member-meta">${isOnline ? "온라인" : "대기"} · ${distText}</div>
-          </div>
-        `);
-      }
-
-      for (const [uid, marker] of memberMarkers.entries()) {
-        if (!activeIds.has(uid)) {
-          marker.setMap(null);
-          memberMarkers.delete(uid);
-        }
-      }
-
-      for (const [uid, poly] of memberPolylines.entries()) {
-        if (!activeIds.has(uid)) {
-          poly.setMap(null);
-          memberPolylines.delete(uid);
-        }
-      }
-
-      for (const [uid, label] of memberLabels.entries()) {
-        if (!activeIds.has(uid)) {
-          label.setMap(null);
-          memberLabels.delete(uid);
-        }
-      }
-
-      memberList.innerHTML = listHtml.length
-        ? listHtml.join("")
-        : `<div class="info-line">아직 표시할 참가자가 없습니다.</div>`;
-
-      setInfo([
-        `목적지: ${destText}`,
-        `내 상태: ${sharing ? "위치공유중" : "대기중"}`,
-        `참가 인원: ${memberCount}명`
-      ]);
-
-     if (autoFitAllMembers && isAutoCenterAllowed()) {
-  fitMembersAndDestination();
+function drawDest(lat,lng){
+  if(destMarker) destMarker.setMap(null);
+
+  destMarker = new kakao.maps.Marker({
+    map,
+    position: new kakao.maps.LatLng(lat,lng)
+  });
 }
-    }
 
-    async function setDestinationByMapClick() {
-  if (!currentRoomId) {
-    alert("먼저 방을 만들거나 참가해주세요.");
-    return;
-  }
+async function ensureAuth(){
+  if(auth.currentUser) return;
+  await signInAnonymously(auth);
+}
 
-  isSettingDestination = true;
-  suspendAutoCenterUntil = Date.now() + 60000;
+function randomRoom(){
+  return "RIDE-"+Math.random().toString(36).slice(2,6).toUpperCase();
+}
 
-  alert("지도에서 목적지 위치를 한 번 터치하세요.");
+// 방 만들기
+document.getElementById("createRoomBtn").onclick = async ()=>{
+  await ensureAuth();
 
-      const handler = async function(mouseEvent) {
-        kakao.maps.event.removeListener(map, "click", handler);
+  const name = nameInput.value.trim();
+  if(!name) return alert("이름 입력");
 
-        const latlng = mouseEvent.latLng;
-        const lat = latlng.getLat();
-        const lng = latlng.getLng();
-        isSettingDestination = false;
-        suspendAutoCenterUntil = Date.now() + 2000;
+  let room = roomInput.value.trim();
+  if(!room) room = randomRoom();
 
-        let name = "목적지";
-        try {
-          geocoder.coord2Address(lng, lat, (result, status) => {
-            let finalName = "목적지";
-            if (status === kakao.maps.services.Status.OK && result[0]?.road_address?.address_name) {
-              finalName = result[0].road_address.address_name;
-            } else if (status === kakao.maps.services.Status.OK && result[0]?.address?.address_name) {
-              finalName = result[0].address.address_name;
-            }
+  await set(ref(db, `rideRooms/${room}`), {
+    meta:{ createdAt:Date.now() }
+  });
 
-            update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-              destination: {
-                lat, lng, name: finalName, setAt: Date.now(), setBy: myId
-              }
-            });
-          });
-        } catch {
-          await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-            destination: {
-              lat, lng, name, setAt: Date.now(), setBy: myId
-            }
-          });
-        }
-      };
+  currentRoomId = room;
+  roomInput.value = room;
 
-      kakao.maps.event.addListener(map, "click", handler);
-    }
+  alert("방 생성 완료");
+};
 
-    async function updateMyLocation(pos) {
-      if (!currentRoomId) return;
+// 방 참가
+document.getElementById("joinRoomBtn").onclick = async ()=>{
+  await ensureAuth();
 
-      const { latitude, longitude, accuracy, speed } = pos.coords;
-      if (accuracy > MAX_GPS_ACCURACY_M) return;
+  const name = nameInput.value.trim();
+  const room = roomInput.value.trim();
 
-      const now = Date.now();
-      const point = { lat: latitude, lng: longitude, t: now };
-      let trace = [];
+  if(!name) return alert("이름 입력");
+  if(!room) return alert("방 코드 입력");
 
-      const myRef = ref(db, `rideRooms/${currentRoomId}/members/${myId}`);
-      const snap = await get(myRef);
-      const old = snap.val() || {};
+  currentRoomId = room;
 
-      if (Array.isArray(old.trace)) {
-        trace = old.trace.slice(-199);
-      }
+  alert("방 참가 완료");
+};
 
-      let shouldPushTrace = false;
-      if (!myLastPoint) {
-        shouldPushTrace = true;
-      } else {
-        const d = haversine(myLastPoint.lat, myLastPoint.lng, latitude, longitude);
-        if (d >= TRACE_MIN_DISTANCE_M) shouldPushTrace = true;
-      }
+// 목적지 지정
+document.getElementById("setDestBtn").onclick = ()=>{
+  isSettingDest = true;
+  alert("지도 클릭해서 목적지 지정하세요");
+};
 
-      if (shouldPushTrace) {
-        trace.push(point);
-        myLastPoint = point;
-      }
+// 목적지 삭제
+document.getElementById("clearDestBtn").onclick = async ()=>{
+  if(!currentRoomId) return alert("방 없음");
 
-      await update(myRef, {
-        name: myName,
-        color: myColor,
-        lat: latitude,
-        lng: longitude,
-        accuracy: Math.round(accuracy),
-        speed: typeof speed === "number" && speed >= 0 ? +(speed * 3.6).toFixed(1) : 0,
-        online: true,
-        updatedAt: now,
-        trace
-      });
+  await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+    destination:null
+  });
 
-          if (isAutoCenterAllowed()) {
-        if (autoFitAllMembers) {
-          fitMembersAndDestination();
-        } else {
-          map.panTo(toLatLng(latitude, longitude));
-        }
-      }
-    }
+  if(destMarker) destMarker.setMap(null);
 
-    async function startSharing(silent = false) {
-      await ensureAuth();
+  alert("목적지 삭제됨");
+};
 
-      if (!currentRoomId) {
-        if (!silent) alert("먼저 방을 만들거나 참가해주세요.");
-        return;
-      }
+// 주행기록 이동
+document.getElementById("moveRideBtn").onclick = ()=>{
+  const name = nameInput.value.trim();
+  const room = roomInput.value.trim();
 
-      if (!navigator.geolocation) {
-        if (!silent) alert("이 기기에서는 위치공유를 사용할 수 없습니다.");
-        return;
-      }
+  if(!name || !room) return alert("정보 부족");
 
-      if (watchId !== null) return;
+  localStorage.setItem("ride_group_name", name);
+  localStorage.setItem("ride_group_room_id", room);
+  localStorage.setItem("ride_group_enabled","on");
 
-      watchId = navigator.geolocation.watchPosition(
-        updateMyLocation,
-        (err) => {
-          console.log("위치 오류:", err);
-          if (err.code === 1 && !silent) alert("위치 권한을 허용해주세요.");
-        },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-      );
+  location.href="ride-map(kakaomap).html";
+};
 
-      sharing = true;
-      shareBtn.textContent = "위치공유 중지";
-      setInfo([
-        `목적지: ${destination?.name || "-"}`,
-        `내 상태: 위치공유중`,
-        `참가 인원: 확인중`
-      ]);
-    }
+initMap();
+</script>
 
-    async function stopSharing() {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
-
-      sharing = false;
-      shareBtn.textContent = "내 위치공유 시작";
-
-      if (currentRoomId) {
-        await update(ref(db, `rideRooms/${currentRoomId}/members/${myId}`), {
-          online: false,
-          updatedAt: Date.now()
-        });
-      }
-    }
-
-    async function endRoom() {
-      if (!currentRoomId) {
-        alert("현재 방이 없습니다.");
-        return;
-      }
-
-      if (!confirm("이 방의 위치공유 데이터를 전부 삭제하고 종료할까요?")) return;
-
-      await remove(ref(db, `rideRooms/${currentRoomId}`));
-      currentRoomId = "";
-      clearLastSession();
-      updateRoomBadge();
-      await stopSharing();
-      clearMapObjects();
-      memberList.innerHTML = "";
-      setInfo([
-        "목적지: -",
-        "내 상태: 대기중",
-        "참가 인원: 0명"
-      ]);
-      alert("방이 종료되었습니다.");
-    }
-
-    function clearMapObjects() {
-      for (const marker of memberMarkers.values()) marker.setMap(null);
-      for (const poly of memberPolylines.values()) poly.setMap(null);
-      for (const label of memberLabels.values()) label.setMap(null);
-
-      memberMarkers.clear();
-      memberPolylines.clear();
-      memberLabels.clear();
-
-      if (destinationMarker) {
-        destinationMarker.setMap(null);
-        destinationMarker = null;
-      }
-    }
-
-    async function leavePresence() {
-      if (currentRoomId && myId) {
-        try {
-          await update(ref(db, `rideRooms/${currentRoomId}/members/${myId}`), {
-            online: false,
-            updatedAt: Date.now()
-          });
-        } catch (e) {
-          console.log(e);
-        }
-      }
-    }
-
-    createRoomBtn.addEventListener("click", createRoom);
-    joinRoomBtn.addEventListener("click", joinRoom);
-    setDestBtn.addEventListener("click", setDestinationByMapClick);
-    endRoomBtn.addEventListener("click", endRoom);
-
-    shareBtn.addEventListener("click", async () => {
-      if (!sharing) await startSharing(false);
-      else await stopSharing();
-    });
-
-    fitBtn.addEventListener("click", fitAll);
-
-    followBtn.addEventListener("click", () => {
-      autoFitAllMembers = !autoFitAllMembers;
-
-      if (autoFitAllMembers) {
-        followBtn.textContent = "전체중심";
-        fitMembersAndDestination();
-      } else {
-        followBtn.textContent = "내위치중심";
-      }
-    });
-
-    backBtn.addEventListener("click", () => {
-      location.href = "./ride-map(kakaomap).html";
-    });
-
-    window.addEventListener("beforeunload", leavePresence);
-    document.addEventListener("visibilitychange", async () => {
-  if (document.visibilityState === "hidden") {
-    leavePresence();
-  } else if (document.visibilityState === "visible") {
-    await enableWakeLock();
-  }
-});
-
-    async function init() {
-      let tries = 0;
-      while (!ensureKakaoLoaded() && tries < 30) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        tries++;
-      }
-
-      if (!ensureKakaoLoaded()) {
-        alert("카카오맵 SDK 로드 실패");
-        return;
-      }
-
-      await ensureAuth();
-      initMap();
-      restoreLastInputs();
-      updateRoomBadge();
-      setInfo([
-        "목적지: -",
-        "내 상태: 대기중",
-        "참가 인원: 0명"
-      ]);
-
-      await autoRejoinLastRoom();
-      await enableWakeLock();
-    }
-
-   let wakeLock = null;
-
-async function enableWakeLock() {
-  try {
-    if ('wakeLock' in navigator) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      console.log("슬립 방지 활성화");
-
-      wakeLock.addEventListener('release', () => {
-        console.log('슬립 방지 해제됨');
-      });
-    }
-  } catch (err) {
-    console.log("WakeLock 실패:", err);
-  }
-} 
-
-    window.addEventListener("load", init);
-    window.addEventListener("resize", () => {
-      if (!map) return;
-      setTimeout(() => map.relayout(), 100);
-    });
-  </script>
 </body>
 </html>
