@@ -146,13 +146,13 @@
     .summary-value,
     .speed-value {
       font-size: 16px;
-  font-weight: 900;
-  line-height: 1.05;
-  letter-spacing: -0.5px;
-  white-space: nowrap;
-  word-break: keep-all;
-  overflow: hidden;
-  text-overflow: ellipsis;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.5px;
+      white-space: nowrap;
+      word-break: keep-all;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .toolbar-group {
@@ -230,6 +230,47 @@
       border: 2px solid rgba(255,255,255,0.25);
     }
 
+    .group-badge {
+      width: 42px;
+      min-width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+
+    .group-label {
+      display: inline-block;
+      max-width: 30px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dest-badge {
+      min-width: 64px;
+      max-width: 100px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(239,68,68,0.95);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .pause-text {
       font-size: 11px;
       color: #94a3b8;
@@ -237,11 +278,11 @@
     }
 
     @media (max-width: 390px) {
-     .title { font-size: 20px; }
-  .top-btn { font-size: 11px; height: 28px; }
-  .summary-value, .speed-value { font-size: 14px; }
-  .bottom-value { font-size: 14px; }
-  .chip-btn { font-size: 12px; }
+      .title { font-size: 20px; }
+      .top-btn { font-size: 11px; height: 28px; }
+      .summary-value, .speed-value { font-size: 14px; }
+      .bottom-value { font-size: 14px; }
+      .chip-btn { font-size: 12px; }
     }
   </style>
 </head>
@@ -301,12 +342,12 @@
 
       <div class="toolbar">
         <div class="toolbar-group">
-  <button class="chip-btn active" id="followBtn">중심고정</button>
-  <button class="chip-btn" id="zoomBtn">자동줌</button>
-  <button class="chip-btn" id="fitBtn">전체코스</button>
-  <button class="chip-btn" id="clearRouteBtn">지우기</button>
-  <button class="chip-btn" id="groupRideBtn">그룹라이딩</button>
-</div>
+          <button class="chip-btn active" id="followBtn">중심고정</button>
+          <button class="chip-btn" id="zoomBtn">자동줌</button>
+          <button class="chip-btn" id="fitBtn">전체코스</button>
+          <button class="chip-btn" id="clearRouteBtn">지우기</button>
+          <button class="chip-btn" id="groupRideBtn">그룹라이딩</button>
+        </div>
       </div>
 
       <div class="map-wrap">
@@ -326,7 +367,139 @@
     </div>
   </div>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue, update, get, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+  authDomain: "personal-51db3.firebaseapp.com",
+  databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+  projectId: "personal-51db3",
+  storageBucket: "personal-51db3.firebasestorage.app",
+  messagingSenderId: "146076749227",
+  appId: "1:146076749227:web:2043208d688e60504816ee"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+let currentRoomId = localStorage.getItem("ride_group_room_id") || "";
+let myGroupName = localStorage.getItem("ride_group_name") || "";
+let groupEnabled = localStorage.getItem("ride_group_enabled") === "on";
+
+let groupMembers = {};
+let groupDestination = null;
+let groupMarkers = {};
+let groupDestinationMarker = null;
+let myMemberColor = localStorage.getItem("ride_group_color") || "";
+
+async function ensureAuth(){
+  if (auth.currentUser) return;
+  await signInAnonymously(auth);
+}
+
+function getStableColorFromName(name = "") {
+  const colors = [
+    "#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c",
+    "#0891b2", "#ca8a04", "#db2777", "#4f46e5", "#059669"
+  ];
+  let hash = 0;
+  const safe = String(name || "라이더");
+  for (let i = 0; i < safe.length; i++) {
+    hash = ((hash << 5) - hash) + safe.charCodeAt(i);
+    hash |= 0;
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function getMyMemberColor() {
+  if (!myMemberColor) {
+    myMemberColor = getStableColorFromName(myGroupName || "나");
+    localStorage.setItem("ride_group_color", myMemberColor);
+  }
+  return myMemberColor;
+}
+
+function getMyMemberRef() {
+  if (!groupEnabled || !currentRoomId || !auth.currentUser) return null;
+  return ref(db, `rideRooms/${currentRoomId}/members/${auth.currentUser.uid}`);
+}
+
+async function ensureGroupMember() {
+  if (!groupEnabled || !currentRoomId || !auth.currentUser) return;
+  const memberRef = getMyMemberRef();
+  if (!memberRef) return;
+
+  const snap = await get(memberRef);
+  const baseData = {
+    name: myGroupName || "라이더",
+    color: getMyMemberColor(),
+    online: true,
+    updatedAt: Date.now()
+  };
+
+  if (!snap.exists()) {
+    await update(memberRef, {
+      ...baseData,
+      joinedAt: Date.now(),
+      isHost: false
+    });
+  } else {
+    await update(memberRef, baseData);
+  }
+
+  try {
+    await onDisconnect(memberRef).update({
+      online: false,
+      updatedAt: Date.now()
+    });
+  } catch (e) {
+    console.log("onDisconnect 설정 실패:", e);
+  }
+}
+
+async function updateMyGroupLocation(lat, lng, accuracy, speedKmh) {
+  if (!groupEnabled || !currentRoomId || !auth.currentUser) return;
+
+  const memberRef = getMyMemberRef();
+  if (!memberRef) return;
+
+  try {
+    await update(memberRef, {
+      name: myGroupName || "라이더",
+      color: getMyMemberColor(),
+      online: true,
+      updatedAt: Date.now(),
+      lat,
+      lng,
+      accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+      speed: Number.isFinite(speedKmh) ? speedKmh : 0
+    });
+  } catch (e) {
+    console.log("그룹 위치 업로드 실패:", e);
+  }
+}
+
+async function setMyGroupOffline() {
+  if (!groupEnabled || !currentRoomId || !auth.currentUser) return;
+  const memberRef = getMyMemberRef();
+  if (!memberRef) return;
+
+  try {
+    await update(memberRef, {
+      name: myGroupName || "라이더",
+      color: getMyMemberColor(),
+      online: false,
+      updatedAt: Date.now()
+    });
+  } catch (e) {
+    console.log("오프라인 처리 실패:", e);
+  }
+}
+
 const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
 const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
 const FOLLOW_STORAGE_KEY = "ebike_follow_map";
@@ -681,9 +854,9 @@ async function saveRideSummary() {
       elevationSummary = elevationData.summary || null;
     }
   } catch (e) {
-  console.error("고도 데이터 조회 실패:", e);
-  alert("고도 데이터 조회 실패\n네트워크 또는 고도 서버 응답 문제일 수 있습니다.");
-}
+    console.error("고도 데이터 조회 실패:", e);
+    alert("고도 데이터 조회 실패\n네트워크 또는 고도 서버 응답 문제일 수 있습니다.");
+  }
 
   const reducedPath = reducePathDouglasPeucker(safePath, {
     epsilon: 0.00003,
@@ -718,9 +891,7 @@ async function saveRideSummary() {
 
   rides.unshift(item);
   localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
-  alert(
-  `저장 완료\n좌표: ${safePath.length}개 → ${reducedPath.length}개\n고도: ${reducedElevationProfile.length}개`
-);
+  alert(`저장 완료\n좌표: ${safePath.length}개 → ${reducedPath.length}개\n고도: ${reducedElevationProfile.length}개`);
 }
 
 let rideData = loadRideData();
@@ -877,6 +1048,42 @@ function buildStartMarkerImage() {
   });
 }
 
+function buildGroupMarkerImage(name = "?", color = "#2563eb") {
+  if (!ensureKakaoLoaded()) return null;
+  const safeLabel = String(name || "?").slice(0, 2);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42">
+      <foreignObject width="42" height="42">
+        <div xmlns="http://www.w3.org/1999/xhtml"
+             style="width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${color};color:#fff;font-size:12px;font-weight:900;border:2px solid rgba(255,255,255,0.95);box-shadow:0 4px 12px rgba(0,0,0,.35);overflow:hidden;">
+          <span style="max-width:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeLabel}</span>
+        </div>
+      </foreignObject>
+    </svg>`;
+  const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(42, 42), {
+    offset: new kakao.maps.Point(21, 21)
+  });
+}
+
+function buildDestinationMarkerImage(name = "목적지") {
+  if (!ensureKakaoLoaded()) return null;
+  const safeLabel = String(name || "목적지").slice(0, 8);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="90" height="38">
+      <foreignObject width="90" height="38">
+        <div xmlns="http://www.w3.org/1999/xhtml"
+             style="display:inline-flex;align-items:center;justify-content:center;min-width:64px;max-width:90px;height:38px;padding:0 10px;border-radius:999px;background:rgba(239,68,68,.95);color:#fff;font-size:12px;font-weight:900;border:2px solid rgba(255,255,255,.95);box-shadow:0 4px 12px rgba(0,0,0,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          ${safeLabel}
+        </div>
+      </foreignObject>
+    </svg>`;
+  const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(90, 38), {
+    offset: new kakao.maps.Point(45, 19)
+  });
+}
+
 function initKakaoMap() {
   if (!ensureKakaoLoaded()) {
     alert("카카오맵이 로드되지 않았습니다.");
@@ -950,6 +1157,87 @@ function drawStartMarker() {
   }
 }
 
+function renderGroupMarkers() {
+  if (!map || !ensureKakaoLoaded()) return;
+
+  const myUid = auth.currentUser?.uid || null;
+  const validIds = new Set();
+
+  Object.entries(groupMembers || {}).forEach(([memberId, member]) => {
+    if (!member || memberId === myUid) return;
+    if (!member.online) return;
+    if (typeof member.lat !== "number" || typeof member.lng !== "number") return;
+
+    validIds.add(memberId);
+    const pos = toLatLng(member.lat, member.lng);
+    if (!pos) return;
+
+    if (!groupMarkers[memberId]) {
+      groupMarkers[memberId] = new kakao.maps.Marker({
+        map,
+        position: pos,
+        image: buildGroupMarkerImage(member.name || "?", member.color || "#2563eb"),
+        title: `${member.name || "라이더"}`
+      });
+    } else {
+      groupMarkers[memberId].setPosition(pos);
+      groupMarkers[memberId].setMap(map);
+      groupMarkers[memberId].setImage(buildGroupMarkerImage(member.name || "?", member.color || "#2563eb"));
+    }
+  });
+
+  Object.keys(groupMarkers).forEach((memberId) => {
+    if (!validIds.has(memberId)) {
+      groupMarkers[memberId].setMap(null);
+      delete groupMarkers[memberId];
+    }
+  });
+}
+
+function renderGroupDestination() {
+  if (!map || !ensureKakaoLoaded()) return;
+
+  if (groupDestination && typeof groupDestination.lat === "number" && typeof groupDestination.lng === "number") {
+    const pos = toLatLng(groupDestination.lat, groupDestination.lng);
+    if (!pos) return;
+
+    if (!groupDestinationMarker) {
+      groupDestinationMarker = new kakao.maps.Marker({
+        map,
+        position: pos,
+        image: buildDestinationMarkerImage(groupDestination.name || "목적지"),
+        title: groupDestination.name || "목적지"
+      });
+    } else {
+      groupDestinationMarker.setPosition(pos);
+      groupDestinationMarker.setMap(map);
+      groupDestinationMarker.setImage(buildDestinationMarkerImage(groupDestination.name || "목적지"));
+    }
+  } else if (groupDestinationMarker) {
+    groupDestinationMarker.setMap(null);
+    groupDestinationMarker = null;
+  }
+}
+
+function subscribeGroupData() {
+  if (!groupEnabled || !currentRoomId) {
+    console.log("그룹 없음");
+    return;
+  }
+
+  const roomRef = ref(db, `rideRooms/${currentRoomId}`);
+
+  onValue(roomRef, (snap) => {
+    const data = snap.val() || {};
+
+    groupMembers = data.members || {};
+    groupDestination = data.meta?.destination || null;
+
+    renderGroupMarkers();
+    renderGroupDestination();
+  });
+}
+
 function fitPathToView() {
   if (!map || !ensureKakaoLoaded()) return;
 
@@ -974,6 +1262,24 @@ function fitPathToView() {
         hasAny = true;
       }
     });
+  }
+
+  Object.values(groupMembers || {}).forEach((member) => {
+    if (!member || !member.online) return;
+    if (typeof member.lat !== "number" || typeof member.lng !== "number") return;
+    const ll = toLatLng(member.lat, member.lng);
+    if (ll) {
+      bounds.extend(ll);
+      hasAny = true;
+    }
+  });
+
+  if (groupDestination && typeof groupDestination.lat === "number" && typeof groupDestination.lng === "number") {
+    const ll = toLatLng(groupDestination.lat, groupDestination.lng);
+    if (ll) {
+      bounds.extend(ll);
+      hasAny = true;
+    }
   }
 
   if (hasAny) {
@@ -1025,6 +1331,9 @@ function redrawPath() {
   } else if (rideData.lastPoint) {
     drawCurrentMarker(rideData.lastPoint[0], rideData.lastPoint[1]);
   }
+
+  renderGroupMarkers();
+  renderGroupDestination();
 }
 
 function clearNavigation() {
@@ -1102,11 +1411,12 @@ document.addEventListener("visibilitychange", async () => {
   }
 });
 
-window.addEventListener("beforeunload", (e) => {
-  if (rideData.started && !rideData.paused) {
-    e.preventDefault();
-    e.returnValue = "";
-  }
+window.addEventListener("beforeunload", () => {
+  setMyGroupOffline();
+});
+
+window.addEventListener("pagehide", () => {
+  setMyGroupOffline();
 });
 
 function addSpeedSample(totalDistanceM, currentSpeedKmh) {
@@ -1125,7 +1435,7 @@ function addSpeedSample(totalDistanceM, currentSpeedKmh) {
   lastSpeedSampleDistanceM = totalDistanceM;
 }
 
-function handlePosition(pos) {
+async function handlePosition(pos) {
   if (!rideData.started) return;
 
   const now = Date.now();
@@ -1138,6 +1448,8 @@ function handlePosition(pos) {
   if (accuracy > MAX_GPS_ACCURACY_M) {
     rideData.currentSpeedKmh = 0;
     drawCurrentMarker(latitude, longitude);
+
+    await updateMyGroupLocation(latitude, longitude, accuracy, 0);
 
     if (followMap && map) {
       const ll = toLatLng(latitude, longitude);
@@ -1159,6 +1471,7 @@ function handlePosition(pos) {
       speedProfile.push({ distanceKm: 0, speedKmh: 0, time: now });
     }
 
+    await updateMyGroupLocation(latitude, longitude, accuracy, 0);
     redrawPath();
     updateStats();
     saveRideData();
@@ -1180,6 +1493,7 @@ function handlePosition(pos) {
     rideData.currentSpeedKmh = 0;
     rideData.lastPoint = point;
     lastPointTime = now;
+    await updateMyGroupLocation(latitude, longitude, accuracy, 0);
     updateStats();
     saveRideData();
     return;
@@ -1199,6 +1513,7 @@ function handlePosition(pos) {
       rideData.pausedAt = now;
     }
 
+    await updateMyGroupLocation(latitude, longitude, accuracy, 0);
     redrawPath();
     updateStats();
     saveRideData();
@@ -1230,6 +1545,9 @@ function handlePosition(pos) {
 
   addSpeedSample(rideData.totalDistanceM, rideData.currentSpeedKmh);
   lastPointTime = now;
+
+  await updateMyGroupLocation(latitude, longitude, accuracy, speedKmh);
+
   redrawPath();
 
   if (map) {
@@ -1242,8 +1560,8 @@ function handlePosition(pos) {
     }
 
     if (followMap) {
-      const pos = toLatLng(latitude, longitude);
-      if (pos) map.panTo(pos);
+      const pos2 = toLatLng(latitude, longitude);
+      if (pos2) map.panTo(pos2);
     }
   }
 
@@ -1291,7 +1609,7 @@ function requestLocationPermission() {
   if (!navigator.geolocation || !map || !ensureKakaoLoaded()) return;
 
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
+    async (pos) => {
       if (!ensureKakaoLoaded() || !map) return;
 
       const { latitude, longitude, accuracy } = pos.coords;
@@ -1312,6 +1630,8 @@ function requestLocationPermission() {
         }
         drawCurrentMarker(latitude, longitude);
       }
+
+      await updateMyGroupLocation(latitude, longitude, accuracy, rideData.currentSpeedKmh || 0);
 
       updateStats();
       saveRideData();
@@ -1367,6 +1687,10 @@ async function startRide() {
   await requestWakeLockSafe();
   startWakeLockKeeper();
 
+  if (groupEnabled && currentRoomId) {
+    await ensureGroupMember();
+  }
+
   if (screen.orientation && screen.orientation.lock) {
     screen.orientation.lock("portrait").catch(() => {});
   }
@@ -1391,6 +1715,7 @@ async function endRide() {
   lastGpsTime = 0;
   stopWakeLockKeeper();
   await releaseWakeLock();
+  await setMyGroupOffline();
 
   if (startMarker) { startMarker.setMap(null); startMarker = null; }
   if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
@@ -1544,6 +1869,13 @@ async function init() {
   updateStats();
   requestLocationPermission();
   startGpsReconnectMonitor();
+
+  await ensureAuth();
+
+  if (groupEnabled && currentRoomId) {
+    await ensureGroupMember();
+    subscribeGroupData();
+  }
 
   if (rideData.started && !rideData.paused) {
     startWatching();
