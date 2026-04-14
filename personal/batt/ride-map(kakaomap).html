@@ -299,7 +299,19 @@
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
 }
-
+.dest-strip {
+  margin: 0 8px 6px 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(30,41,59,0.82), rgba(15,23,42,0.76));
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  font-weight: 800;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
   </style>
 </head>
 <body>
@@ -371,15 +383,17 @@
       </div>
 
       <div class="bottom-panel">
-        <div class="bottom-card">
-          <div class="bottom-label">출발 위치</div>
-          <div class="bottom-value" id="startInfoEl">-</div>
-        </div>
-        <div class="bottom-card">
-          <div class="bottom-label">현재 위치 정확도</div>
-          <div class="bottom-value" id="accuracyEl">-</div>
-        </div>
-      </div>
+  <div class="bottom-card">
+    <div class="bottom-label">출발 위치</div>
+    <div class="bottom-value" id="startInfoEl">-</div>
+  </div>
+  <div class="bottom-card">
+    <div class="bottom-label">현재 위치 정확도</div>
+    <div class="bottom-value" id="accuracyEl">-</div>
+  </div>
+</div>
+
+<div class="dest-strip" id="destStrip">목적지 없음</div>
       <div class="friend-strip" id="friendStrip">그룹 인원 없음</div>
     </div>
   </div>
@@ -405,6 +419,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 const friendStrip = document.getElementById("friendStrip");
+
 
 let currentRoomId = localStorage.getItem("ride_group_room_id") || "";
 let myGroupName = localStorage.getItem("ride_group_name") || "";
@@ -936,6 +951,7 @@ const durationEl = document.getElementById("durationEl");
 const clockEl = document.getElementById("clockEl");
 const accuracyEl = document.getElementById("accuracyEl");
 const startInfoEl = document.getElementById("startInfoEl");
+const destStrip = document.getElementById("destStrip");
 const currentSpeedEl = document.getElementById("currentSpeedEl");
 const avgSpeedEl = document.getElementById("avgSpeedEl");
 const maxSpeedEl = document.getElementById("maxSpeedEl");
@@ -1086,21 +1102,25 @@ function buildGroupMarkerImage(name = "?", color = "#2563eb") {
   });
 }
 
-function buildDestinationMarkerImage(name = "목적지") {
+function buildDestinationMarkerImage() {
   if (!ensureKakaoLoaded()) return null;
-  const safeLabel = String(name || "목적지").slice(0, 8);
+
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="90" height="38">
-      <foreignObject width="90" height="38">
-        <div xmlns="http://www.w3.org/1999/xhtml"
-             style="display:inline-flex;align-items:center;justify-content:center;min-width:64px;max-width:90px;height:38px;padding:0 10px;border-radius:999px;background:rgba(239,68,68,.95);color:#fff;font-size:12px;font-weight:900;border:2px solid rgba(255,255,255,.95);box-shadow:0 4px 12px rgba(0,0,0,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${safeLabel}
-        </div>
-      </foreignObject>
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+      <path d="M14 1
+               C7 1 2 6 2 13
+               C2 22 14 35 14 35
+               C14 35 26 22 26 13
+               C26 6 21 1 14 1 Z"
+            fill="#ef4444"
+            stroke="#ffffff"
+            stroke-width="2"/>
+      <circle cx="14" cy="13" r="4" fill="#ffffff"/>
     </svg>`;
   const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(90, 38), {
-    offset: new kakao.maps.Point(45, 19)
+
+  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(28, 36), {
+    offset: new kakao.maps.Point(14, 36)
   });
 }
 
@@ -1239,7 +1259,9 @@ function renderFriendStrip() {
   if (!friendStrip) return;
 
   const members = Object.entries(groupMembers || {})
-    .filter(([_, member]) => member && member.online)
+  const myUid = auth.currentUser?.uid; 
+
+    .filter(([id, member]) => member && member.online && id !== myUid)
     .map(([memberId, member]) => {
       const name = member.name || "이름없음";
       const distText = getDistanceToDestinationText(member);
@@ -1265,18 +1287,48 @@ function renderGroupDestination() {
       groupDestinationMarker = new kakao.maps.Marker({
         map,
         position: pos,
-        image: buildDestinationMarkerImage(groupDestination.name || "목적지"),
+        image: buildDestinationMarkerImage(),
         title: groupDestination.name || "목적지"
       });
     } else {
       groupDestinationMarker.setPosition(pos);
       groupDestinationMarker.setMap(map);
-      groupDestinationMarker.setImage(buildDestinationMarkerImage(groupDestination.name || "목적지"));
+      groupDestinationMarker.setImage(buildDestinationMarkerImage());
     }
   } else if (groupDestinationMarker) {
     groupDestinationMarker.setMap(null);
     groupDestinationMarker = null;
   }
+}
+function renderDestinationStrip() {
+  if (!destStrip) return;
+
+  if (
+    !groupDestination ||
+    typeof groupDestination.lat !== "number" ||
+    typeof groupDestination.lng !== "number"
+  ) {
+    destStrip.textContent = "목적지 없음";
+    return;
+  }
+
+  const myPos = getCurrentPositionObject();
+  let distText = "-";
+
+  if (myPos) {
+    const distM = haversine(
+      myPos.lat,
+      myPos.lng,
+      groupDestination.lat,
+      groupDestination.lng
+    );
+
+    distText = distM >= 1000
+      ? `${(distM / 1000).toFixed(1)}km`
+      : `${Math.round(distM)}m`;
+  }
+
+  destStrip.textContent = `목적지: ${groupDestination.name || "목적지"} (${distText})`;
 }
 
 function subscribeGroupData() {
@@ -1295,7 +1347,8 @@ function subscribeGroupData() {
 
     renderGroupMarkers();
     renderGroupDestination();
-     renderFriendStrip();
+    renderFriendStrip();
+    renderDestinationStrip();
   });
 }
 
@@ -1519,6 +1572,7 @@ async function handlePosition(pos) {
 
     updateStats();
     saveRideData();
+    renderDestinationStrip();
     return;
   }
 
@@ -1533,10 +1587,11 @@ async function handlePosition(pos) {
     }
 
     await updateMyGroupLocation(latitude, longitude, accuracy, 0);
-    redrawPath();
-    updateStats();
-    saveRideData();
-    return;
+redrawPath();
+updateStats();
+renderDestinationStrip();   // ⭐ 추가
+saveRideData();
+return;
   }
 
   const prev = rideData.path[rideData.path.length - 1];
@@ -1555,9 +1610,10 @@ async function handlePosition(pos) {
     rideData.lastPoint = point;
     lastPointTime = now;
     await updateMyGroupLocation(latitude, longitude, accuracy, 0);
-    updateStats();
-    saveRideData();
-    return;
+updateStats();
+renderDestinationStrip();   // ⭐ 추가
+saveRideData();
+return;
   }
 
   const isNearlyStopped = dist < MIN_MOVE_DISTANCE_M && rawSpeed < STOP_SPEED_KMH;
@@ -1575,10 +1631,12 @@ async function handlePosition(pos) {
     }
 
     await updateMyGroupLocation(latitude, longitude, accuracy, 0);
-    redrawPath();
-    updateStats();
-    saveRideData();
-    return;
+await updateMyGroupLocation(latitude, longitude, accuracy, 0);
+redrawPath();
+updateStats();
+renderDestinationStrip();   // ⭐ 추가
+saveRideData();
+return;
   }
 
   rideData.stopBeganAt = null;
@@ -1626,8 +1684,9 @@ async function handlePosition(pos) {
     }
   }
 
-  updateStats();
-  saveRideData();
+ updateStats();
+renderDestinationStrip();   // ⭐ 추가
+saveRideData();
 }
 
 function handlePositionError(err) {
@@ -1694,7 +1753,8 @@ function requestLocationPermission() {
 
       await updateMyGroupLocation(latitude, longitude, accuracy, rideData.currentSpeedKmh || 0);
 
-      updateStats();
+       updateStats();
+      renderDestinationStrip();
       saveRideData();
     },
     (err) => {
