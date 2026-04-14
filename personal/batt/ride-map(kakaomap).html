@@ -944,9 +944,7 @@ let lastGroupPosition = null;
 const distanceEl = document.getElementById("distanceEl");
 const durationEl = document.getElementById("durationEl");
 const clockEl = document.getElementById("clockEl");
-const accuracyEl = document.getElementById("accuracyEl");
-const startInfoEl = document.getElementById("startInfoEl");
-const destStrip = document.getElementById("destStrip");
+
 const currentSpeedEl = document.getElementById("currentSpeedEl");
 const avgSpeedEl = document.getElementById("avgSpeedEl");
 const maxSpeedEl = document.getElementById("maxSpeedEl");
@@ -1017,7 +1015,6 @@ function updateZoomButton() {
 function updateStats() {
   distanceEl.textContent = `${(rideData.totalDistanceM / 1000).toFixed(2)} km`;
   durationEl.textContent = formatDuration(getElapsedMs());
-  accuracyEl.textContent = rideData.lastAccuracy != null ? `±${Math.round(rideData.lastAccuracy)}m` : "-";
   currentSpeedEl.textContent = `${(rideData.currentSpeedKmh || 0).toFixed(1)} km/h`;
 
   const elapsedHours = getElapsedMs() / 3600000;
@@ -1027,12 +1024,6 @@ function updateStats() {
 
   if (rideData.paused && rideData.autoPaused) {
     durationEl.innerHTML = `${formatDuration(getElapsedMs())}<span class="pause-text">(일시정지)</span>`;
-  }
-
-  if (rideData.startPoint) {
-    startInfoEl.textContent = `${rideData.startPoint.lat.toFixed(5)}, ${rideData.startPoint.lng.toFixed(5)}`;
-  } else {
-    startInfoEl.textContent = "-";
   }
 
   if (rideData.startTime) {
@@ -1313,36 +1304,6 @@ function renderGroupDestination() {
     groupDestinationMarker = null;
   }
 }
-function renderDestinationStrip() {
-  if (!destStrip) return;
-
-  if (
-    !groupDestination ||
-    typeof groupDestination.lat !== "number" ||
-    typeof groupDestination.lng !== "number"
-  ) {
-    destStrip.textContent = "목적지 없음";
-    return;
-  }
-
-  const myPos = getCurrentPositionObject();
-  let distText = "-";
-
-  if (myPos) {
-    const distM = haversine(
-      myPos.lat,
-      myPos.lng,
-      groupDestination.lat,
-      groupDestination.lng
-    );
-
-    distText = distM >= 1000
-      ? `${(distM / 1000).toFixed(1)}km`
-      : `${Math.round(distM)}m`;
-  }
-
-  destStrip.textContent = `목적지: ${groupDestination.name || "목적지"} (${distText})`;
-}
 
 function subscribeGroupData() {
   if (!groupEnabled || !currentRoomId) {
@@ -1361,7 +1322,6 @@ function subscribeGroupData() {
     renderGroupMarkers();
     renderGroupDestination();
     renderFriendStrip();
-    renderDestinationStrip();
   });
 }
 
@@ -1586,7 +1546,6 @@ async function handlePosition(pos) {
   }
 
   updateStats();
-  renderDestinationStrip();
   saveRideData();
   return;
 }
@@ -1604,7 +1563,6 @@ async function handlePosition(pos) {
     
 redrawPath();
 updateStats();
-renderDestinationStrip();   // ⭐ 추가
 saveRideData();
 return;
   }
@@ -1626,7 +1584,6 @@ return;
     lastPointTime = now;
     await updateMyGroupLocation(latitude, longitude, accuracy, 0);
 updateStats();
-renderDestinationStrip();   // ⭐ 추가
 saveRideData();
 return;
   }
@@ -1649,7 +1606,6 @@ return;
 await updateMyGroupLocation(latitude, longitude, accuracy, 0);
 redrawPath();
 updateStats();
-renderDestinationStrip();   // ⭐ 추가
 saveRideData();
 return;
   }
@@ -1700,7 +1656,6 @@ return;
   }
 
  updateStats();
-renderDestinationStrip();   // ⭐ 추가
 saveRideData();
 }
 
@@ -1805,7 +1760,6 @@ function requestLocationPermission() {
 
      
        updateStats();
-      renderDestinationStrip();
       saveRideData();
     },
     (err) => {
