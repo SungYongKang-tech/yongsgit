@@ -382,19 +382,12 @@
         <div id="map"></div>
       </div>
 
-      <div class="bottom-panel">
-  <div class="bottom-card">
-    <div class="bottom-label">출발 위치</div>
-    <div class="bottom-value" id="startInfoEl">-</div>
-  </div>
-  <div class="bottom-card">
-    <div class="bottom-label">현재 위치 정확도</div>
-    <div class="bottom-value" id="accuracyEl">-</div>
+    <div class="bottom-panel">
+  <div class="bottom-card" style="grid-column:1 / -1;">
+    <div class="bottom-label">참여 인원</div>
+    <div class="bottom-value" id="friendStrip">그룹 인원 없음</div>
   </div>
 </div>
-
-<div class="dest-strip" id="destStrip">목적지 없음</div>
-      <div class="friend-strip" id="friendStrip">그룹 인원 없음</div>
     </div>
   </div>
 
@@ -1258,15 +1251,35 @@ function getDistanceToDestinationText(member) {
 function renderFriendStrip() {
   if (!friendStrip) return;
 
-  const myUid = auth.currentUser?.uid;
-
   const members = Object.entries(groupMembers || {})
-    .filter(([id, member]) => member && member.online)
+    .filter(([id, member]) => member)
     .map(([memberId, member]) => {
       const name = member.name || "이름없음";
-      const distText = getDistanceToDestinationText(member);
-      const label = memberId === myUid ? `내위치:${name}` : name;
-      return `${label}(${distText})`;
+
+      const hasDestination =
+        groupDestination &&
+        typeof groupDestination.lat === "number" &&
+        typeof groupDestination.lng === "number" &&
+        typeof member.lat === "number" &&
+        typeof member.lng === "number";
+
+      if (!hasDestination) {
+        return name;
+      }
+
+      const distM = haversine(
+        member.lat,
+        member.lng,
+        groupDestination.lat,
+        groupDestination.lng
+      );
+
+      const distText =
+        distM >= 1000
+          ? `${(distM / 1000).toFixed(1)}km`
+          : `${Math.round(distM)}m`;
+
+      return `${name}(${distText})`;
     });
 
   if (!members.length) {
