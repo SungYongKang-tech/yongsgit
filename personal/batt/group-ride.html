@@ -192,11 +192,11 @@
 
   <div class="panel">
     <div class="btn-row-4">
-      <button id="createRoomBtn" class="btn blue">방만들기</button>
-      <button id="joinRoomBtn" class="btn green">방참가</button>
-      <button id="setDestBtn" class="btn dark">목적지</button>
-      <button id="clearDestBtn" class="btn red">삭제</button>
-    </div>
+  <button id="createRoomBtn" class="btn blue">방만들기</button>
+  <button id="joinRoomBtn" class="btn green">방참가</button>
+  <button id="leaveRoomBtn" class="btn red">방나가기</button>
+  <button id="setDestBtn" class="btn dark">목적지</button>
+</div>
   </div>
 
   <div class="panel">
@@ -204,6 +204,7 @@
       <button id="moveRideBtn" class="btn sky">주행기록 이동</button>
       <button id="fitMapBtn" class="btn dark">지도중심</button>
       <button id="myLocBtn" class="btn dark">내위치</button>
+      <button id="clearDestBtn" class="btn dark">목적지삭제</button>
     </div>
   </div>
 
@@ -423,6 +424,49 @@ document.getElementById("createRoomBtn").onclick = async () => {
   } catch (err) {
     console.error(err);
     alert("방 생성 오류");
+  }
+};
+
+document.getElementById("leaveRoomBtn").onclick = async () => {
+  if (!currentRoomId) {
+    alert("참가 중인 방이 없습니다");
+    return;
+  }
+
+  if (!confirm("현재 방에서 나갈까요?")) return;
+
+  try {
+    const uid = auth.currentUser?.uid;
+
+    // 방 멤버 정보 삭제 또는 오프라인 처리
+    if (uid) {
+      await update(ref(db, `rideRooms/${currentRoomId}/members/${uid}`), {
+        online: false,
+        updatedAt: Date.now()
+      });
+    }
+
+    currentRoomId = "";
+    roomInput.value = "";
+
+    localStorage.removeItem("ride_group_room_id");
+    localStorage.removeItem("ride_group_enabled");
+    // 이름은 남겨두고 싶으면 지우지 말기
+    // localStorage.removeItem("ride_group_name");
+
+    updateRoomStatus();
+
+    if (destMarker) {
+      destMarker.setMap(null);
+      destMarker = null;
+    }
+
+    isSettingDest = false;
+
+    alert("방에서 나갔습니다");
+  } catch (err) {
+    console.error(err);
+    alert("방나가기 실패");
   }
 };
 
