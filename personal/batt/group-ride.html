@@ -9,44 +9,44 @@
 
 <style>
 body {
-  margin:0;
-  background:#0f172a;
-  color:#fff;
-  font-family:Arial;
+  margin: 0;
+  background: #0f172a;
+  color: #fff;
+  font-family: Arial, sans-serif;
 }
 
 .wrap {
-  padding:10px;
+  padding: 10px;
 }
 
 input, button {
-  width:100%;
-  height:40px;
-  margin:4px 0;
-  border-radius:10px;
-  border:none;
-  font-size:14px;
+  width: 100%;
+  height: 40px;
+  margin: 4px 0;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
 }
 
 input {
-  padding:0 10px;
+  padding: 0 10px;
 }
 
 button {
-  background:#2563eb;
-  color:#fff;
-  font-weight:bold;
+  background: #2563eb;
+  color: #fff;
+  font-weight: bold;
 }
 
 .row {
-  display:flex;
-  gap:6px;
+  display: flex;
+  gap: 6px;
 }
 
 .map {
-  width:100%;
-  height:300px;
-  margin-top:10px;
+  width: 100%;
+  height: 300px;
+  margin-top: 10px;
 }
 </style>
 </head>
@@ -54,26 +54,26 @@ button {
 <body>
 <div class="wrap">
 
-<h2>그룹라이딩 설정</h2>
+  <h2>그룹라이딩 설정</h2>
 
-<input id="nameInput" placeholder="내 이름" />
-<input id="roomInput" placeholder="방 코드 입력 (없으면 자동 생성)" />
+  <input id="nameInput" placeholder="내 이름" />
+  <input id="roomInput" placeholder="방 코드 입력 (없으면 자동 생성)" />
 
-<div class="row">
-  <button id="createRoomBtn">방 만들기</button>
-  <button id="joinRoomBtn">방 참가</button>
-</div>
+  <div class="row">
+    <button id="createRoomBtn">방 만들기</button>
+    <button id="joinRoomBtn">방 참가</button>
+  </div>
 
-<div class="row">
-  <button id="setDestBtn">목적지 지정</button>
-  <button id="clearDestBtn">목적지 지우기</button>
-</div>
+  <div class="row">
+    <button id="setDestBtn">목적지 지정</button>
+    <button id="clearDestBtn">목적지 지우기</button>
+  </div>
 
-<div class="row">
-  <button id="moveRideBtn">🚴 주행기록으로 이동</button>
-</div>
+  <div class="row">
+    <button id="moveRideBtn">🚴 주행기록으로 이동</button>
+  </div>
 
-<div id="map" class="map"></div>
+  <div id="map" class="map"></div>
 
 </div>
 
@@ -104,70 +104,71 @@ let currentRoomId = "";
 let isSettingDest = false;
 let destMarker = null;
 
-function initMap(){
+function initMap() {
   map = new kakao.maps.Map(document.getElementById("map"), {
-    center: new kakao.maps.LatLng(35.18,128.10),
-    level:4
+    center: new kakao.maps.LatLng(35.18, 128.10),
+    level: 4
   });
 
-  kakao.maps.event.addListener(map, "click", async function(mouseEvent){
-  if(!isSettingDest) return;
+  kakao.maps.event.addListener(map, "click", async function(mouseEvent) {
+    if (!isSettingDest) return;
 
-  const latlng = mouseEvent.latLng;
-  const lat = latlng.getLat();
-  const lng = latlng.getLng();
+    const latlng = mouseEvent.latLng;
+    const lat = latlng.getLat();
+    const lng = latlng.getLng();
 
-  if(!currentRoomId){
-    alert("방 먼저 참가하세요");
-    return;
-  }
+    if (!currentRoomId) {
+      alert("방 먼저 참가하세요");
+      return;
+    }
 
-  try{
-    await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-      destination: {
-        lat,
-        lng,
-        name: "목적지",
-        setAt: Date.now(),
-        setBy: auth.currentUser ? auth.currentUser.uid : ""
-      }
-    });
+    try {
+      await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+        destination: {
+          lat,
+          lng,
+          name: "목적지",
+          setAt: Date.now(),
+          setBy: auth.currentUser ? auth.currentUser.uid : ""
+        }
+      });
 
-    drawDest(lat,lng);
-    isSettingDest = false;
-  }catch(err){
-    console.error(err);
-    alert("목적지 저장 실패");
-  }
-});
+      drawDest(lat, lng);
+      isSettingDest = false;
+    } catch (err) {
+      console.error(err);
+      alert("목적지 저장 실패");
+    }
+  });
+}
 
-function drawDest(lat,lng){
-  if(destMarker) destMarker.setMap(null);
+function drawDest(lat, lng) {
+  if (destMarker) destMarker.setMap(null);
 
   destMarker = new kakao.maps.Marker({
     map,
-    position: new kakao.maps.LatLng(lat,lng)
+    position: new kakao.maps.LatLng(lat, lng)
   });
 }
 
-async function ensureAuth(){
-  if(auth.currentUser) return;
+async function ensureAuth() {
+  if (auth.currentUser) return;
   await signInAnonymously(auth);
 }
 
-function randomRoom(){
-  return "RIDE-"+Math.random().toString(36).slice(2,6).toUpperCase();
+function randomRoom() {
+  return "RIDE-" + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
-document.getElementById("createRoomBtn").onclick = async ()=>{
-  try{
+document.getElementById("createRoomBtn").onclick = async () => {
+  try {
     await ensureAuth();
 
     const name = nameInput.value.trim();
-    if(!name) return alert("이름 입력");
+    if (!name) return alert("이름 입력");
 
     let room = roomInput.value.trim();
-    if(!room) room = randomRoom();
+    if (!room) room = randomRoom();
 
     await set(ref(db, `rideRooms/${room}`), {
       meta: {
@@ -182,67 +183,67 @@ document.getElementById("createRoomBtn").onclick = async ()=>{
     roomInput.value = room;
 
     alert("방 생성 완료");
-  }catch(err){
+  } catch (err) {
     console.error(err);
     alert("방 생성 중 오류 발생");
   }
 };
 
-document.getElementById("joinRoomBtn").onclick = async ()=>{
-  try{
+document.getElementById("joinRoomBtn").onclick = async () => {
+  try {
     await ensureAuth();
 
     const name = nameInput.value.trim();
     const room = roomInput.value.trim();
 
-    if(!name) return alert("이름 입력");
-    if(!room) return alert("방 코드 입력");
+    if (!name) return alert("이름 입력");
+    if (!room) return alert("방 코드 입력");
 
     currentRoomId = room;
 
     alert("방 참가 완료");
-  }catch(err){
+  } catch (err) {
     console.error(err);
     alert("방 참가 중 오류 발생");
   }
 };
 
-document.getElementById("setDestBtn").onclick = ()=>{
+document.getElementById("setDestBtn").onclick = () => {
   isSettingDest = true;
   alert("지도 클릭해서 목적지 지정하세요");
 };
 
-document.getElementById("clearDestBtn").onclick = async ()=>{
-  if(!currentRoomId) return alert("방 없음");
+document.getElementById("clearDestBtn").onclick = async () => {
+  if (!currentRoomId) return alert("방 없음");
 
-  try{
+  try {
     await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-      destination:null
+      destination: null
     });
 
-    if(destMarker){
+    if (destMarker) {
       destMarker.setMap(null);
       destMarker = null;
     }
 
     alert("목적지 삭제됨");
-  }catch(err){
+  } catch (err) {
     console.error(err);
     alert("목적지 삭제 실패");
   }
 };
 
-document.getElementById("moveRideBtn").onclick = ()=>{
+document.getElementById("moveRideBtn").onclick = () => {
   const name = nameInput.value.trim();
   const room = roomInput.value.trim();
 
-  if(!name || !room) return alert("정보 부족");
+  if (!name || !room) return alert("정보 부족");
 
   localStorage.setItem("ride_group_name", name);
   localStorage.setItem("ride_group_room_id", room);
-  localStorage.setItem("ride_group_enabled","on");
+  localStorage.setItem("ride_group_enabled", "on");
 
-  location.href="ride-map(kakaomap).html";
+  location.href = "ride-map(kakaomap).html";
 };
 
 initMap();
