@@ -458,34 +458,32 @@ function getMyMemberRef() {
 
 async function ensureGroupMember() {
   if (!groupEnabled || !currentRoomId || !auth.currentUser) return;
-  const memberRef = getMyMemberRef();
-  if (!memberRef) return;
 
-  const snap = await get(memberRef);
+  const memberRef = ref(db, `rideRooms/${currentRoomId}/members/${auth.currentUser.uid}`);
+
   const baseData = {
     name: myGroupName || "라이더",
     color: getMyMemberColor(),
     online: true,
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    joinedAt: Date.now(),
+    isHost: false
   };
 
-  if (!snap.exists()) {
-    await update(memberRef, {
-      ...baseData,
-      joinedAt: Date.now(),
-      isHost: false
-    });
-  } else {
-    await update(memberRef, baseData);
-  }
-
   try {
-    await onDisconnect(memberRef).update({
-      online: false,
-      updatedAt: Date.now()
-    });
+    await update(memberRef, baseData);
+    console.log("멤버 등록 완료:", currentRoomId, auth.currentUser.uid, baseData);
+
+    try {
+      await onDisconnect(memberRef).update({
+        online: false,
+        updatedAt: Date.now()
+      });
+    } catch (e) {
+      console.log("onDisconnect 설정 실패:", e);
+    }
   } catch (e) {
-    console.log("onDisconnect 설정 실패:", e);
+    console.error("멤버 등록 실패:", e);
   }
 }
 
@@ -1690,6 +1688,7 @@ function startGroupWatching() {
           : 0;
 
       await updateMyGroupLocation(latitude, longitude, accuracy, speedKmh);
+      console.log("그룹 위치 업로드:", latitude, longitude);
 
       renderFriendStrip();
     },
@@ -2001,6 +2000,7 @@ async function init() {
  if (groupEnabled && currentRoomId) {
   await ensureGroupMember();
   subscribeGroupData();
+  renderFriendStrip();
   startGroupWatching();
 }
 
