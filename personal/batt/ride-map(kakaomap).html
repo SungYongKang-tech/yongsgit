@@ -284,6 +284,22 @@
       .bottom-value { font-size: 14px; }
       .chip-btn { font-size: 12px; }
     }
+
+    .friend-strip {
+  margin: 0 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(30,41,59,0.82), rgba(15,23,42,0.76));
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
   </style>
 </head>
 <body>
@@ -364,8 +380,11 @@
           <div class="bottom-value" id="accuracyEl">-</div>
         </div>
       </div>
+      <div class="friend-strip" id="friendStrip">그룹 인원 없음</div>
     </div>
   </div>
+
+  
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -385,6 +404,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
+const friendStrip = document.getElementById("friendStrip");
 
 let currentRoomId = localStorage.getItem("ride_group_room_id") || "";
 let myGroupName = localStorage.getItem("ride_group_name") || "";
@@ -1193,6 +1213,46 @@ function renderGroupMarkers() {
     }
   });
 }
+function getDistanceToDestinationText(member) {
+  if (
+    !groupDestination ||
+    typeof groupDestination.lat !== "number" ||
+    typeof groupDestination.lng !== "number" ||
+    typeof member.lat !== "number" ||
+    typeof member.lng !== "number"
+  ) {
+    return "-";
+  }
+
+  const distM = haversine(
+    member.lat,
+    member.lng,
+    groupDestination.lat,
+    groupDestination.lng
+  );
+
+  if (distM >= 1000) return `${(distM / 1000).toFixed(1)}km`;
+  return `${Math.round(distM)}m`;
+}
+
+function renderFriendStrip() {
+  if (!friendStrip) return;
+
+  const members = Object.entries(groupMembers || {})
+    .filter(([_, member]) => member && member.online)
+    .map(([memberId, member]) => {
+      const name = member.name || "이름없음";
+      const distText = getDistanceToDestinationText(member);
+      return `${name}(${distText})`;
+    });
+
+  if (!members.length) {
+    friendStrip.textContent = "그룹 인원 없음";
+    return;
+  }
+
+  friendStrip.textContent = members.join("  |  ");
+}
 
 function renderGroupDestination() {
   if (!map || !ensureKakaoLoaded()) return;
@@ -1235,6 +1295,7 @@ function subscribeGroupData() {
 
     renderGroupMarkers();
     renderGroupDestination();
+     renderFriendStrip();
   });
 }
 
