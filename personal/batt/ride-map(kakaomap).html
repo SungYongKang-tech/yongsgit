@@ -938,6 +938,8 @@ let currentAutoZoomLevel = 3;
 let hasInitialCentered = false;
 let lastGpsTime = 0;
 let gpsReconnectTimer = null;
+let groupWatchId = null;
+let lastGroupPosition = null;
 
 const distanceEl = document.getElementById("distanceEl");
 const durationEl = document.getElementById("durationEl");
@@ -1252,7 +1254,7 @@ function renderFriendStrip() {
   if (!friendStrip) return;
 
   const members = Object.entries(groupMembers || {})
-    .filter(([id, member]) => member)
+    .filter(([_, member]) => member)
     .map(([memberId, member]) => {
       const name = member.name || "이름없음";
 
@@ -1263,9 +1265,7 @@ function renderFriendStrip() {
         typeof member.lat === "number" &&
         typeof member.lng === "number";
 
-      if (!hasDestination) {
-        return name;
-      }
+      if (!hasDestination) return name;
 
       const distM = haversine(
         member.lat,
@@ -1282,13 +1282,12 @@ function renderFriendStrip() {
       return `${name}(${distText})`;
     });
 
-  if (!members.length) {
-    friendStrip.textContent = "그룹 인원 없음";
-    return;
-  }
-
-  friendStrip.textContent = members.join("  |  ");
+  friendStrip.textContent = members.length
+    ? members.join("  |  ")
+    : "그룹 인원 없음";
 }
+
+ 
 
 function renderGroupDestination() {
   if (!map || !ensureKakaoLoaded()) return;
@@ -1540,10 +1539,12 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 window.addEventListener("beforeunload", () => {
+  stopGroupWatching();
   setMyGroupOffline();
 });
 
 window.addEventListener("pagehide", () => {
+  stopGroupWatching();
   setMyGroupOffline();
 });
 
@@ -1577,7 +1578,7 @@ async function handlePosition(pos) {
   rideData.currentSpeedKmh = 0;
   drawCurrentMarker(latitude, longitude);
 
-  await updateMyGroupLocation(latitude, longitude, accuracy, 0);
+ 
 
   if (followMap && map) {
     const ll = toLatLng(latitude, longitude);
@@ -1600,7 +1601,7 @@ async function handlePosition(pos) {
       speedProfile.push({ distanceKm: 0, speedKmh: 0, time: now });
     }
 
-    await updateMyGroupLocation(latitude, longitude, accuracy, 0);
+    
 redrawPath();
 updateStats();
 renderDestinationStrip();   // ⭐ 추가
@@ -1717,6 +1718,43 @@ function handlePositionError(err) {
     requestLocationPermission();
   }, 1000);
 }
+function startGroupWatching() {
+  if (!navigator.geolocation) return;
+  if (!groupEnabled || !currentRoomId) return;
+  if (groupWatchId !== null) return;
+
+  groupWatchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const { latitude, longitude, accuracy, speed } = pos.coords;
+
+      lastGroupPosition = [latitude, longitude];
+
+      const speedKmh =
+        typeof speed === "number" && speed >= 0
+          ? speed * 3.6
+          : 0;
+
+      await updateMyGroupLocation(latitude, longitude, accuracy, speedKmh);
+
+      renderFriendStrip();
+    },
+    (err) => {
+      console.log("그룹 위치 watch 오류:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 3000,
+      timeout: 10000
+    }
+  );
+}
+
+function stopGroupWatching() {
+  if (groupWatchId !== null) {
+    navigator.geolocation.clearWatch(groupWatchId);
+    groupWatchId = null;
+  }
+}
 
 function startWatching() {
   if (!navigator.geolocation) {
@@ -1765,8 +1803,7 @@ function requestLocationPermission() {
         drawCurrentMarker(latitude, longitude);
       }
 
-      await updateMyGroupLocation(latitude, longitude, accuracy, rideData.currentSpeedKmh || 0);
-
+     
        updateStats();
       renderDestinationStrip();
       saveRideData();
@@ -2007,10 +2044,11 @@ async function init() {
 
   await ensureAuth();
 
-  if (groupEnabled && currentRoomId) {
-    await ensureGroupMember();
-    subscribeGroupData();
-  }
+ if (groupEnabled && currentRoomId) {
+  await ensureGroupMember();
+  subscribeGroupData();
+  startGroupWatching();
+}
 
   if (rideData.started && !rideData.paused) {
     startWatching();
