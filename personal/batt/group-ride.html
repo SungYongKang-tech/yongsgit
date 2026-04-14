@@ -122,12 +122,17 @@ function initMap(){
       return;
     }
 
-    await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-      destination:{ lat, lng }
-    });
+    try{
+      await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+        destination:{ lat, lng }
+      });
 
-    drawDest(lat,lng);
-    isSettingDest = false;
+      drawDest(lat,lng);
+      isSettingDest = false;
+    }catch(err){
+      console.error(err);
+      alert("목적지 저장 실패");
+    }
   });
 }
 
@@ -149,61 +154,74 @@ function randomRoom(){
   return "RIDE-"+Math.random().toString(36).slice(2,6).toUpperCase();
 }
 
-// 방 만들기
 document.getElementById("createRoomBtn").onclick = async ()=>{
-  await ensureAuth();
+  try{
+    await ensureAuth();
 
-  const name = nameInput.value.trim();
-  if(!name) return alert("이름 입력");
+    const name = nameInput.value.trim();
+    if(!name) return alert("이름 입력");
 
-  let room = roomInput.value.trim();
-  if(!room) room = randomRoom();
+    let room = roomInput.value.trim();
+    if(!room) room = randomRoom();
 
-  await set(ref(db, `rideRooms/${room}`), {
-    meta:{ createdAt:Date.now() }
-  });
+    await set(ref(db, `rideRooms/${room}`), {
+      meta:{ createdAt:Date.now() }
+    });
 
-  currentRoomId = room;
-  roomInput.value = room;
+    currentRoomId = room;
+    roomInput.value = room;
 
-  alert("방 생성 완료");
+    alert("방 생성 완료");
+  }catch(err){
+    console.error(err);
+    alert("방 생성 중 오류 발생");
+  }
 };
 
-// 방 참가
 document.getElementById("joinRoomBtn").onclick = async ()=>{
-  await ensureAuth();
+  try{
+    await ensureAuth();
 
-  const name = nameInput.value.trim();
-  const room = roomInput.value.trim();
+    const name = nameInput.value.trim();
+    const room = roomInput.value.trim();
 
-  if(!name) return alert("이름 입력");
-  if(!room) return alert("방 코드 입력");
+    if(!name) return alert("이름 입력");
+    if(!room) return alert("방 코드 입력");
 
-  currentRoomId = room;
+    currentRoomId = room;
 
-  alert("방 참가 완료");
+    alert("방 참가 완료");
+  }catch(err){
+    console.error(err);
+    alert("방 참가 중 오류 발생");
+  }
 };
 
-// 목적지 지정
 document.getElementById("setDestBtn").onclick = ()=>{
   isSettingDest = true;
   alert("지도 클릭해서 목적지 지정하세요");
 };
 
-// 목적지 삭제
 document.getElementById("clearDestBtn").onclick = async ()=>{
   if(!currentRoomId) return alert("방 없음");
 
-  await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-    destination:null
-  });
+  try{
+    await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+      destination:null
+    });
 
-  if(destMarker) destMarker.setMap(null);
+    if(destMarker){
+      destMarker.setMap(null);
+      destMarker = null;
+    }
 
-  alert("목적지 삭제됨");
+    alert("목적지 삭제됨");
+  }catch(err){
+    console.error(err);
+    alert("목적지 삭제 실패");
+  }
 };
 
-// 주행기록 이동
 document.getElementById("moveRideBtn").onclick = ()=>{
   const name = nameInput.value.trim();
   const room = roomInput.value.trim();
