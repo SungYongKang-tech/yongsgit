@@ -425,6 +425,7 @@ let groupMembers = {};
 let groupDestination = null;
 let groupMarkers = {};
 let groupDestinationMarker = null;
+let groupLines = {};
 let myMemberColor = localStorage.getItem("ride_group_color") || "";
 
 async function ensureAuth(){
@@ -1222,6 +1223,61 @@ function drawStartMarker() {
   }
 }
 
+function renderGroupLines() {
+  if (!map || !ensureKakaoLoaded()) return;
+
+  const myUid = auth.currentUser?.uid || null;
+  const validIds = new Set();
+
+  // 목적지가 없으면 기존 선 전부 제거
+  if (
+    !groupDestination ||
+    typeof groupDestination.lat !== "number" ||
+    typeof groupDestination.lng !== "number"
+  ) {
+    Object.keys(groupLines).forEach((memberId) => {
+      groupLines[memberId].setMap(null);
+      delete groupLines[memberId];
+    });
+    return;
+  }
+
+  Object.entries(groupMembers || {}).forEach(([memberId, member]) => {
+    if (!member || !member.online) return;
+    if (typeof member.lat !== "number" || typeof member.lng !== "number") return;
+
+    validIds.add(memberId);
+
+    const path = [
+      toLatLng(member.lat, member.lng),
+      toLatLng(groupDestination.lat, groupDestination.lng)
+    ].filter(Boolean);
+
+    if (path.length < 2) return;
+
+    if (!groupLines[memberId]) {
+      groupLines[memberId] = new kakao.maps.Polyline({
+        map,
+        path,
+        strokeWeight: 2,
+        strokeColor: "#111111",
+        strokeOpacity: 0.85,
+        strokeStyle: "solid"
+      });
+    } else {
+      groupLines[memberId].setPath(path);
+      groupLines[memberId].setMap(map);
+    }
+  });
+
+  Object.keys(groupLines).forEach((memberId) => {
+    if (!validIds.has(memberId)) {
+      groupLines[memberId].setMap(null);
+      delete groupLines[memberId];
+    }
+  });
+}
+
 function renderGroupMarkers() {
   if (!map || !ensureKakaoLoaded()) return;
 
@@ -1365,6 +1421,7 @@ function subscribeGroupData() {
 
     renderGroupMarkers();
     renderGroupDestination();
+    renderGroupLines();
     renderFriendStrip();
   });
 }
@@ -1465,6 +1522,7 @@ function redrawPath() {
 
   renderGroupMarkers();
   renderGroupDestination();
+  renderGroupLines();
 }
 
 function clearNavigation() {
