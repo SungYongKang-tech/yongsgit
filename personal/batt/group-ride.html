@@ -111,30 +111,35 @@ function initMap(){
   });
 
   kakao.maps.event.addListener(map, "click", async function(mouseEvent){
-    if(!isSettingDest) return;
+  if(!isSettingDest) return;
 
-    const latlng = mouseEvent.latLng;
-    const lat = latlng.getLat();
-    const lng = latlng.getLng();
+  const latlng = mouseEvent.latLng;
+  const lat = latlng.getLat();
+  const lng = latlng.getLng();
 
-    if(!currentRoomId){
-      alert("방 먼저 참가하세요");
-      return;
-    }
+  if(!currentRoomId){
+    alert("방 먼저 참가하세요");
+    return;
+  }
 
-    try{
-      await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
-        destination:{ lat, lng }
-      });
+  try{
+    await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+      destination: {
+        lat,
+        lng,
+        name: "목적지",
+        setAt: Date.now(),
+        setBy: auth.currentUser ? auth.currentUser.uid : ""
+      }
+    });
 
-      drawDest(lat,lng);
-      isSettingDest = false;
-    }catch(err){
-      console.error(err);
-      alert("목적지 저장 실패");
-    }
-  });
-}
+    drawDest(lat,lng);
+    isSettingDest = false;
+  }catch(err){
+    console.error(err);
+    alert("목적지 저장 실패");
+  }
+});
 
 function drawDest(lat,lng){
   if(destMarker) destMarker.setMap(null);
@@ -165,7 +170,12 @@ document.getElementById("createRoomBtn").onclick = async ()=>{
     if(!room) room = randomRoom();
 
     await set(ref(db, `rideRooms/${room}`), {
-      meta:{ createdAt:Date.now() }
+      meta: {
+        createdAt: Date.now(),
+        createdBy: auth.currentUser.uid,
+        title: `${name}의 그룹라이딩`,
+        status: "open"
+      }
     });
 
     currentRoomId = room;
