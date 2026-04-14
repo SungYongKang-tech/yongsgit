@@ -39,21 +39,23 @@
     }
 
     .app {
-      width: 100%;
-      height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: calc(8px + env(safe-area-inset-top)) 0 calc(8px + env(safe-area-inset-bottom));
-    }
+  width: 100%;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 0 calc(8px + env(safe-area-inset-bottom));
+  overflow: hidden;
+}
 
-    .screen {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
+ .screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
 
     .title-row,
     .summary-grid,
@@ -185,16 +187,16 @@
     }
 
     .map-wrap {
-      flex: 1;
-      min-height: 0;
-      width: 100%;
-      overflow: hidden;
-      border-top: 1px solid rgba(255,255,255,0.06);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      position: relative;
-      background: rgba(15,23,42,0.72);
-      touch-action: pan-x pan-y pinch-zoom;
-    }
+  flex: 1 1 auto;
+  min-height: 160px;
+  width: 100%;
+  overflow: hidden;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative;
+  background: rgba(15,23,42,0.72);
+  touch-action: pan-x pan-y pinch-zoom;
+}
 
     #map {
       width: 100%;
@@ -203,11 +205,12 @@
     }
 
     .bottom-panel {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding-bottom: 4px;
+}
     .bottom-card { padding: 10px; }
     .bottom-value {
       font-size: 16px;
@@ -459,7 +462,8 @@ function getMyMemberRef() {
 async function ensureGroupMember() {
   if (!groupEnabled || !currentRoomId || !auth.currentUser) return;
 
-  const memberRef = ref(db, `rideRooms/${currentRoomId}/members/${auth.currentUser.uid}`);
+  const uid = auth.currentUser.uid;
+  const memberRef = ref(db, `rideRooms/${currentRoomId}/members/${uid}`);
 
   const baseData = {
     name: myGroupName || "라이더",
@@ -472,7 +476,15 @@ async function ensureGroupMember() {
 
   try {
     await update(memberRef, baseData);
-    console.log("멤버 등록 완료:", currentRoomId, auth.currentUser.uid, baseData);
+
+    // 화면에는 먼저 바로 반영
+    groupMembers[uid] = {
+      ...(groupMembers[uid] || {}),
+      ...baseData
+    };
+    renderFriendStrip();
+
+    console.log("멤버 등록 완료:", currentRoomId, uid, baseData);
 
     try {
       await onDisconnect(memberRef).update({
@@ -1242,8 +1254,8 @@ function getDistanceToDestinationText(member) {
 function renderFriendStrip() {
   if (!friendStrip) return;
 
-  const members = Object.entries(groupMembers || {})
-    .filter(([_, member]) => member)
+  let members = Object.entries(groupMembers || {})
+    .filter(([_, member]) => member && member.name)
     .map(([memberId, member]) => {
       const name = member.name || "이름없음";
 
@@ -1270,6 +1282,11 @@ function renderFriendStrip() {
 
       return `${name}(${distText})`;
     });
+
+  // Firebase 응답 전이어도 내 이름은 먼저 보이게
+  if (!members.length && myGroupName) {
+    members = [myGroupName];
+  }
 
   friendStrip.textContent = members.length
     ? members.join("  |  ")
@@ -1997,11 +2014,11 @@ async function init() {
 
   await ensureAuth();
 
- if (groupEnabled && currentRoomId) {
-  await ensureGroupMember();
-  subscribeGroupData();
-  renderFriendStrip();
-  startGroupWatching();
+if (groupEnabled && currentRoomId) {
+  renderFriendStrip();        // 먼저 내 이름이라도 즉시 표시
+  await ensureGroupMember();  // DB 등록
+  subscribeGroupData();       // 실시간 구독
+  startGroupWatching();       // 위치 업로드
 }
 
   if (rideData.started && !rideData.paused) {
