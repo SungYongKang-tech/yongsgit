@@ -242,6 +242,8 @@ let currentRoomId = "";
 let isSettingDest = false;
 let destMarker = null;
 let myMarker = null;
+let groupWatchId = null;
+let myMemberColor = localStorage.getItem("ride_group_color") || "";
 
 function updateRoomStatus() {
   roomStatusEl.textContent = currentRoomId ? `방 ${currentRoomId}` : "방 없음";
@@ -385,6 +387,167 @@ async function ensureAuth() {
   await signInAnonymously(auth);
 }
 
+function getStableColorFromName(name = "") {
+  const colors = [
+    "#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c",
+    "#0891b2", "#ca8a04", "#db2777", "#4f46e5", "#059669"
+  ];
+
+  let hash = 0;
+  const safe = String(name || "라이더");
+  for (let i = 0; i < safe.length; i++) {
+    hash = ((hash << 5) - hash) + safe.charCodeAt(i);
+    hash |= 0;
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function getMyMemberColor() {
+  const currentName = nameInput.value.trim() || localStorage.getItem("ride_group_name") || "라이더";
+  if (!myMemberColor) {
+    myMemberColor = getStableColorFromName(currentName);
+    localStorage.setItem("ride_group_color", myMemberColor);
+  }
+  return myMemberColor;
+}
+
+function getMyMemberRef() {
+  if (!currentRoomId || !auth.currentUser) return null;
+  return ref(db, `rideRooms/${currentRoomId}/members/${auth.currentUser.uid}`);
+}
+
+async function ensureGroupMember() {
+  if (!currentRoomId || !auth.currentUser) return;
+
+  const memberRef = getMyMemberRef();
+  if (!memberRef) return;
+
+  const name = nameInput.value.trim() || localStorage.getItem("ride_group_name") || "라이더";
+
+  await update(memberRef, {
+    name,
+    color: getMyMemberColor(),
+    online: true,
+    updatedAt: Date.now(),
+    joinedAt: Date.now()
+  });
+}
+
+async function updateMyGroupLocation(lat, lng, accuracy = 0) {
+  if (!currentRoomId || !auth.currentUser) return;
+
+  const memberRef = getMyMemberRef();
+  if (!memberRef) return;
+
+  const name = nameInput.value.trim() || localStorage.getItem("ride_group_name") || "라이더";
+
+  await update(memberRef, {
+    name,
+    color: getMyMemberColor(),
+    online: true,
+    updatedAt: Date.now(),
+    lat,
+    lng,
+    accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+    speed: 0
+  });
+}
+
+async function setMyGroupOffline() {
+  if (!currentRoomId || !auth.currentUser) return;
+
+  const memberRef = getMyMemberRef();
+  if (!memberRef) return;
+
+  await update(memberRef, {
+    online: false,
+    updatedAt: Date.now()
+  });
+}
+
+function startGroupWatching() {
+  if (!navigator.geolocation) return;
+  if (!currentRoomId) return;
+  if (groupWatchId !== null) return;
+
+  groupWatchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      try {
+        await updateMyGroupLocation(latitude, longitude, accuracy);
+      } catch (err) {
+        console.log("그룹 위치 업로드 실패:", err);
+      }
+
+      const ll = new kakao.maps.LatLng(latitude, longitude);
+
+      if (!myMarker) {
+        myMarker = new kakao.maps.Marker({
+          map,
+          position: ll,
+          image: buildMyMarkerImage()
+        });
+      } else {
+        myMarker.setPosition(ll);
+        myMarker.setMap(map);
+      }
+    },
+    (err) => {
+      console.log("그룹 위치 watch 오류:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 3000,
+      timeout: 10000
+    }
+  );
+}
+
+function stopGroupWatching() {
+  if (groupWatchId !== null) {
+    navigator.geolocation.clearWatch(groupWatchId);
+    groupWatchId = null;
+  }
+}
+
+async function uploadCurrentLocationOnce() {
+  if (!navigator.geolocation || !currentRoomId) return;
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      try {
+        await updateMyGroupLocation(latitude, longitude, accuracy);
+      } catch (err) {
+        console.log("초기 위치 업로드 실패:", err);
+      }
+
+      const ll = new kakao.maps.LatLng(latitude, longitude);
+
+      if (!myMarker) {
+        myMarker = new kakao.maps.Marker({
+          map,
+          position: ll,
+          image: buildMyMarkerImage()
+        });
+      } else {
+        myMarker.setPosition(ll);
+        myMarker.setMap(map);
+      }
+    },
+    (err) => {
+      console.log("초기 위치 확인 실패:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
+    }
+  );
+}
+
 function randomRoom() {
   return "RIDE-" + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
@@ -414,16 +577,17 @@ document.getElementById("createRoomBtn").onclick = async () => {
       }
     });
 
-    currentRoomId = room;
-    roomInput.value = room;
-    saveLocalInfo(name, room);
-    updateRoomStatus();
-    await loadExistingDestination(room);
+   currentRoomId = room;
+roomInput.value = room;
+saveLocalInfo(name, room);
+updateRoomStatus();
 
-    alert(`방 생성 완료\n${room}`);
-  } catch (err) {
-    console.error(err);
-    alert("방 생성 오류");
+await ensureGroupMember();
+await loadExistingDestination(room);
+await uploadCurrentLocationOnce();
+startGroupWatching();
+
+alert(`방 생성 완료\n${room}`);
   }
 };
 
@@ -436,29 +600,26 @@ document.getElementById("leaveRoomBtn").onclick = async () => {
   if (!confirm("현재 방에서 나갈까요?")) return;
 
   try {
-    const uid = auth.currentUser?.uid;
-
-    // 방 멤버 정보 삭제 또는 오프라인 처리
-    if (uid) {
-      await update(ref(db, `rideRooms/${currentRoomId}/members/${uid}`), {
-        online: false,
-        updatedAt: Date.now()
-      });
-    }
+    await ensureAuth();
+    await setMyGroupOffline();
+    stopGroupWatching();
 
     currentRoomId = "";
     roomInput.value = "";
 
     localStorage.removeItem("ride_group_room_id");
     localStorage.removeItem("ride_group_enabled");
-    // 이름은 남겨두고 싶으면 지우지 말기
-    // localStorage.removeItem("ride_group_name");
 
     updateRoomStatus();
 
     if (destMarker) {
       destMarker.setMap(null);
       destMarker = null;
+    }
+
+    if (myMarker) {
+      myMarker.setMap(null);
+      myMarker = null;
     }
 
     isSettingDest = false;
@@ -481,11 +642,15 @@ document.getElementById("joinRoomBtn").onclick = async () => {
     if (!room) return alert("방번호 입력");
 
     currentRoomId = room;
-    saveLocalInfo(name, room);
-    updateRoomStatus();
-    await loadExistingDestination(room);
+saveLocalInfo(name, room);
+updateRoomStatus();
 
-    alert("방 참가 완료");
+await ensureGroupMember();
+await loadExistingDestination(room);
+await uploadCurrentLocationOnce();
+startGroupWatching();
+
+alert("방 참가 완료");
   } catch (err) {
     console.error(err);
     alert("방 참가 오류");
@@ -590,6 +755,20 @@ window.addEventListener("pageshow", () => {
 
 loadSavedGroupInfo();
 initMap();
+
+window.addEventListener("load", async () => {
+  if (!currentRoomId) return;
+
+  try {
+    await ensureAuth();
+    await ensureGroupMember();
+    await loadExistingDestination(currentRoomId);
+    await uploadCurrentLocationOnce();
+    startGroupWatching();
+  } catch (err) {
+    console.log("자동 그룹 복구 실패:", err);
+  }
+});
 
 if (currentRoomId) {
   loadExistingDestination(currentRoomId);
