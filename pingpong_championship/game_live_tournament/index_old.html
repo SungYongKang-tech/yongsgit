@@ -1309,32 +1309,6 @@
       return cloned;
     }
 
-    function compareStandingRows(x, y) {
-      if (y.win !== x.win) return y.win - x.win;
-      if (y.setDiff !== x.setDiff) return y.setDiff - x.setDiff;
-      const hh = x.headToHead?.[y.teamId] || 0;
-      if (hh !== 0) return hh === 1 ? -1 : 1;
-      return x.teamName.localeCompare(y.teamName, "ko");
-    }
-
-    function isSameStandingCriteria(a, b) {
-      if (!a || !b) return false;
-      return compareStandingRows(a, b) === 0 && compareStandingRows(b, a) === 0;
-    }
-
-    function applyDisplayRanks(rows) {
-      let displayRank = 0;
-      rows.forEach((row, idx) => {
-        if (idx === 0) {
-          displayRank = 1;
-        } else if (!isSameStandingCriteria(rows[idx - 1], row)) {
-          displayRank = idx + 1;
-        }
-        row.displayRank = displayRank;
-      });
-      return rows;
-    }
-
     function computeStandings(groupName) {
       const groupTeamIds = tournamentData.groups?.[groupName] || [];
       const matches = Object.values(tournamentData?.groupMatches || {})
@@ -1383,40 +1357,14 @@
       });
 
       const arr = Object.values(stats);
-      arr.sort(compareStandingRows);
-      return applyDisplayRanks(arr);
-    }
-
-    function getResolvedAdvancers(groupName) {
-      const rows = computeStandings(groupName);
-      if (rows.length < 2) {
-        throw new Error(`${groupName}조 순위 데이터가 부족합니다.`);
-      }
-
-      const needsManual = rows[0].displayRank === rows[1].displayRank;
-      if (!needsManual) {
-        return {
-          firstTeamId: rows[0].teamId,
-          secondTeamId: rows[1].teamId
-        };
-      }
-
-      const saved = tournamentData?.groupAdvancers?.[groupName] || {};
-      const firstTeamId = saved.firstTeamId || "";
-      const secondTeamId = saved.secondTeamId || "";
-      const candidates = rows.filter(row => row.displayRank <= 2).map(row => row.teamId);
-
-      if (!firstTeamId || !secondTeamId) {
-        throw new Error(`${groupName}조는 공동순위입니다. 예선리그전 페이지 조순위 탭에서 본선 1위와 2위를 먼저 선택해 주세요.`);
-      }
-      if (firstTeamId === secondTeamId) {
-        throw new Error(`${groupName}조 본선 진출팀 설정이 올바르지 않습니다.`);
-      }
-      if (!candidates.includes(firstTeamId) || !candidates.includes(secondTeamId)) {
-        throw new Error(`${groupName}조 본선 진출팀 설정이 현재 조순위와 맞지 않습니다. 예선리그전 페이지에서 다시 선택해 주세요.`);
-      }
-
-      return { firstTeamId, secondTeamId };
+      arr.sort((x, y) => {
+        if (y.win !== x.win) return y.win - x.win;
+        if (y.setDiff !== x.setDiff) return y.setDiff - x.setDiff;
+        const hh = x.headToHead?.[y.teamId] || 0;
+        if (hh !== 0) return hh === 1 ? -1 : 1;
+        return x.teamName.localeCompare(y.teamName, "ko");
+      });
+      return arr;
     }
 
     function getTournamentMatch(id) {
@@ -1854,13 +1802,17 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
       }
 
       try {
-        const advA = getResolvedAdvancers("A");
-        const advB = getResolvedAdvancers("B");
+        const standingA = computeStandings("A");
+        const standingB = computeStandings("B");
 
-        const a1 = advA.firstTeamId;
-        const a2 = advA.secondTeamId;
-        const b1 = advB.firstTeamId;
-        const b2 = advB.secondTeamId;
+        if (standingA.length < 2 || standingB.length < 2) {
+          throw new Error("조별리그 순위 데이터가 부족합니다.");
+        }
+
+        const a1 = standingA[0].teamId;
+        const a2 = standingA[1].teamId;
+        const b1 = standingB[0].teamId;
+        const b2 = standingB[1].teamId;
 
         const tournamentMatches = {
           semifinal1: buildTournamentMatchData("semifinal1", "4강 1경기", a1, b2),

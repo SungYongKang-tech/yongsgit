@@ -434,97 +434,6 @@
       background:#fff;
     }
 
-
-    .advancer-wrap{
-      margin-top:14px;
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:14px;
-    }
-
-    .advancer-card{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:#fff;
-      padding:12px;
-    }
-
-    .advancer-card h4{
-      margin:0 0 8px;
-      font-size:16px;
-    }
-
-    .advancer-desc{
-      font-size:12px;
-      color:var(--muted);
-      line-height:1.45;
-      margin-bottom:10px;
-      white-space:pre-line;
-    }
-
-    .advancer-line{
-      margin-bottom:10px;
-    }
-
-    .advancer-label{
-      font-size:13px;
-      font-weight:800;
-      margin-bottom:6px;
-      color:var(--primary-dark);
-    }
-
-    .team-pick-row{
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-    }
-
-    .team-pick{
-      border:1px solid #cfd8e3;
-      background:#fff;
-      color:#334e68;
-      padding:7px 10px;
-      border-radius:999px;
-      font-size:12px;
-      font-weight:800;
-      cursor:pointer;
-    }
-
-    .team-pick.active{
-      background:#e8f1ff;
-      border-color:#b6d0ff;
-      color:#0d47a1;
-    }
-
-    .team-pick:disabled{
-      opacity:.45;
-      cursor:not-allowed;
-    }
-
-    .advancer-actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      align-items:center;
-      margin-top:10px;
-    }
-
-    .advancer-save{
-      background:var(--green);
-    }
-
-    .advancer-save:hover{
-      background:#256b2a;
-    }
-
-    .advancer-current{
-      font-size:12px;
-      color:var(--muted);
-      line-height:1.45;
-      margin-top:8px;
-      white-space:pre-line;
-    }
-
     .footer-note{
       color:var(--muted);
       font-size:12px;
@@ -733,37 +642,6 @@
       }
 
       .hint,
-
-      .advancer-wrap{
-        grid-template-columns:1fr;
-        gap:10px;
-        margin-top:10px;
-      }
-
-      .advancer-card{
-        padding:10px;
-        border-radius:10px;
-      }
-
-      .advancer-card h4{
-        font-size:15px;
-        margin-bottom:6px;
-      }
-
-      .advancer-desc,
-      .advancer-current{
-        font-size:11px;
-      }
-
-      .advancer-label{
-        font-size:12px;
-      }
-
-      .team-pick{
-        padding:6px 9px;
-        font-size:11px;
-      }
-
       .footer-note{
         font-size:11px;
       }
@@ -1054,8 +932,7 @@
           </div>
         </div>
       </div>
-      <div id="advancerArea" class="advancer-wrap"></div>
-      <div class="footer-note">공동순위가 발생한 조는 여기에서 본선 1, 2위 팀을 직접 선택한 뒤 토너먼트 페이지에서 4강을 생성합니다.</div>
+      <div class="footer-note">토너먼트 페이지에서는 각 조 1, 2위를 읽어 4강 대진을 생성하면 됩니다.</div>
     </section>
   </div>
 
@@ -1128,7 +1005,6 @@
 
     const standingA = document.getElementById("standingA");
     const standingB = document.getElementById("standingB");
-    const advancerArea = document.getElementById("advancerArea");
 
   
 
@@ -1801,8 +1677,6 @@ alert("저장되었습니다.");
           };
         });
 
-        updates[`tournaments/${tournamentId}/groupAdvancers`] = null;
-
         await update(ref(db), updates);
 
         Object.keys(tournamentData.groupMatches || {}).forEach(matchId => {
@@ -1819,7 +1693,6 @@ alert("저장되었습니다.");
           };
         });
 
-        tournamentData.groupAdvancers = {};
         openMatchId = null;
         renderCurrentView();
         alert("전체 경기결과가 초기화되었습니다.");
@@ -1827,34 +1700,6 @@ alert("저장되었습니다.");
         console.error(err);
         alert(err.message || "초기화 중 오류가 발생했습니다.");
       }
-    }
-
-    function compareStandingRows(x, y) {
-      if (y.win !== x.win) return y.win - x.win;
-      if (y.setDiff !== x.setDiff) return y.setDiff - x.setDiff;
-
-      const hh = x.headToHead?.[y.teamId] || 0;
-      if (hh !== 0) return hh === 1 ? -1 : 1;
-
-      return x.teamName.localeCompare(y.teamName, "ko");
-    }
-
-    function isSameStandingCriteria(a, b) {
-      if (!a || !b) return false;
-      return compareStandingRows(a, b) === 0 && compareStandingRows(b, a) === 0;
-    }
-
-    function applyDisplayRanks(rows) {
-      let displayRank = 0;
-      rows.forEach((row, idx) => {
-        if (idx === 0) {
-          displayRank = 1;
-        } else if (!isSameStandingCriteria(rows[idx - 1], row)) {
-          displayRank = idx + 1;
-        }
-        row.displayRank = displayRank;
-      });
-      return rows;
     }
 
     function computeStandings(groupName) {
@@ -1910,117 +1755,23 @@ alert("저장되었습니다.");
       });
 
       const arr = Object.values(stats);
-      arr.sort(compareStandingRows);
-      return applyDisplayRanks(arr);
-    }
 
-    function getManualSelection(groupName) {
-      return tournamentData?.groupAdvancers?.[groupName] || {};
-    }
+      arr.sort((x, y) => {
+        if (y.win !== x.win) return y.win - x.win;
+        if (y.setDiff !== x.setDiff) return y.setDiff - x.setDiff;
 
-    function needsManualAdvancerSelection(rows) {
-      if (!rows || rows.length < 2) return false;
-      return rows[0].displayRank === rows[1].displayRank;
-    }
+        const hh = x.headToHead?.[y.teamId] || 0;
+        if (hh !== 0) return hh === 1 ? -1 : 1;
 
-    function getManualCandidates(rows) {
-      if (!rows || !rows.length) return [];
-      return rows.filter(row => row.displayRank <= 2);
-    }
-
-    function renderAdvancerControls() {
-      const groups = ["A", "B"];
-      const cards = [];
-
-      groups.forEach(groupName => {
-        const rows = computeStandings(groupName);
-        if (!needsManualAdvancerSelection(rows)) return;
-
-        const candidates = getManualCandidates(rows);
-        const saved = getManualSelection(groupName);
-
-        cards.push(`
-          <div class="advancer-card">
-            <h4>${groupName}조 본선 진출팀 확정</h4>
-            <div class="advancer-desc">오프라인 추첨을 마친 뒤 1위와 2위를 차례로 선택해 주세요.
-예선 표시는 공동순위 그대로 유지되고, 여기서 선택한 결과만 4강 생성에 반영됩니다.</div>
-
-            <div class="advancer-line">
-              <div class="advancer-label">1위 선택</div>
-              <div class="team-pick-row">
-                ${candidates.map(row => `
-                  <button type="button" class="team-pick ${saved.firstTeamId === row.teamId ? "active" : ""}" data-adv-group="${groupName}" data-adv-rank="first" data-team-id="${row.teamId}">${escapeHtml(row.teamName)}</button>
-                `).join("")}
-              </div>
-            </div>
-
-            <div class="advancer-line">
-              <div class="advancer-label">2위 선택</div>
-              <div class="team-pick-row">
-                ${candidates.map(row => `
-                  <button type="button" class="team-pick ${saved.secondTeamId === row.teamId ? "active" : ""}" data-adv-group="${groupName}" data-adv-rank="second" data-team-id="${row.teamId}" ${saved.firstTeamId === row.teamId ? "disabled" : ""}>${escapeHtml(row.teamName)}</button>
-                `).join("")}
-              </div>
-            </div>
-
-            <div class="advancer-actions">
-              <button type="button" class="advancer-save" data-save-advancers="${groupName}">저장</button>
-            </div>
-
-            <div class="advancer-current">현재 저장값
-1위: ${escapeHtml(getTeam(saved.firstTeamId)?.name || "-")}
-2위: ${escapeHtml(getTeam(saved.secondTeamId)?.name || "-")}</div>
-          </div>
-        `);
+        return x.teamName.localeCompare(y.teamName, "ko");
       });
 
-      advancerArea.innerHTML = cards.length
-        ? cards.join("")
-        : `<div class="empty" style="grid-column:1 / -1;">현재는 공동순위로 인해 별도 추첨 입력이 필요한 조가 없습니다.</div>`;
-    }
-
-    async function saveGroupAdvancers(groupName) {
-      if (!isAdmin) {
-        alert("관리자만 저장할 수 있습니다.");
-        return;
-      }
-
-      const wrap = advancerArea.querySelector(`.advancer-card button[data-save-advancers="${groupName}"]`)?.closest('.advancer-card') || advancerArea;
-      const firstBtn = wrap.querySelector(`.team-pick[data-adv-group="${groupName}"][data-adv-rank="first"].active`);
-      const secondBtn = wrap.querySelector(`.team-pick[data-adv-group="${groupName}"][data-adv-rank="second"].active`);
-
-      const firstTeamId = firstBtn?.getAttribute('data-team-id') || "";
-      const secondTeamId = secondBtn?.getAttribute('data-team-id') || "";
-
-      if (!firstTeamId || !secondTeamId) {
-        alert(`${groupName}조 1위와 2위를 모두 선택해 주세요.`);
-        return;
-      }
-      if (firstTeamId === secondTeamId) {
-        alert("같은 팀을 1위와 2위로 동시에 선택할 수 없습니다.");
-        return;
-      }
-
-      try {
-        await update(ref(db, `tournaments/${tournamentId}/groupAdvancers/${groupName}`), {
-          firstTeamId,
-          secondTeamId
-        });
-
-        tournamentData.groupAdvancers = tournamentData.groupAdvancers || {};
-        tournamentData.groupAdvancers[groupName] = { firstTeamId, secondTeamId };
-        renderStandings();
-        alert(`${groupName}조 본선 진출팀이 저장되었습니다.`);
-      } catch (err) {
-        console.error(err);
-        alert(err.message || "본선 진출팀 저장 중 오류가 발생했습니다.");
-      }
+      return arr;
     }
 
     function renderStandings() {
       renderStandingTable("A", standingA);
       renderStandingTable("B", standingB);
-      renderAdvancerControls();
     }
 
     function renderStandingTable(groupName, tbody) {
@@ -2032,10 +1783,10 @@ alert("저장되었습니다.");
         return;
       }
 
-      rows.forEach((row) => {
+      rows.forEach((row, idx) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-  <td>${row.displayRank}</td>
+  <td>${idx + 1}</td>
   <td>${escapeHtml(row.teamName)}</td>
   <td>${row.win}</td>
   <td>${row.lose}</td>
@@ -2133,40 +1884,6 @@ alert("저장되었습니다.");
   metaStatus.textContent =
     `대회명: ${meta.title || "-"}\n대회일자: ${dateText}\n대회 ID: ${tournamentId}`;
 }
-
-    advancerArea.addEventListener("click", (event) => {
-      const pickBtn = event.target.closest(".team-pick");
-      if (pickBtn) {
-        if (!isAdmin) {
-          alert("관리자만 선택할 수 있습니다.");
-          return;
-        }
-        if (pickBtn.disabled) return;
-
-        const groupName = pickBtn.getAttribute("data-adv-group");
-        const rankType = pickBtn.getAttribute("data-adv-rank");
-        const card = pickBtn.closest(".advancer-card");
-
-        card.querySelectorAll(`.team-pick[data-adv-group="${groupName}"][data-adv-rank="${rankType}"]`).forEach(btn => {
-          btn.classList.toggle("active", btn === pickBtn);
-        });
-
-        const firstActive = card.querySelector(`.team-pick[data-adv-group="${groupName}"][data-adv-rank="first"].active`);
-        const firstTeamId = firstActive?.getAttribute("data-team-id") || "";
-
-        card.querySelectorAll(`.team-pick[data-adv-group="${groupName}"][data-adv-rank="second"]`).forEach(btn => {
-          const disabled = !!firstTeamId && btn.getAttribute("data-team-id") === firstTeamId;
-          btn.disabled = disabled;
-          if (disabled) btn.classList.remove("active");
-        });
-        return;
-      }
-
-      const saveBtn = event.target.closest("[data-save-advancers]");
-      if (saveBtn) {
-        saveGroupAdvancers(saveBtn.getAttribute("data-save-advancers"));
-      }
-    });
 
     async function loadTournament() {
       try {
