@@ -1027,7 +1027,12 @@
     const db = getDatabase(app, "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app");
 
     const ADMIN_STORAGE_KEY = "koen_tournament_admin_unlocked";
-    const ADMIN_PASSWORD = "1111";
+    const DEFAULT_ADMIN_PASSWORD = "1111";
+    const DEFAULT_COMMON_PASSWORD = "0000";
+    const STORAGE_KEYS = {
+      common: "koen_pingpong_pw_common",
+      admin: "koen_pingpong_pw_admin"
+    };
 
     const MATCH_TYPES = [
   { key: "m1", name: "여자복식", count: 2 },
@@ -1073,7 +1078,14 @@
     const bracketArea = document.getElementById("bracketArea");
     const detailArea = document.getElementById("detailArea");
 
-   
+       function getPasswordConfig() {
+      return {
+        common: localStorage.getItem(STORAGE_KEYS.common) || DEFAULT_COMMON_PASSWORD,
+        admin: localStorage.getItem(STORAGE_KEYS.admin) || DEFAULT_ADMIN_PASSWORD
+      };
+    }
+
+
 
     async function resolveTournamentId() {
   return "current_tournament";
@@ -1918,6 +1930,14 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
     async function resetTournament() {
       if (!isAdmin) return;
 
+      const { common } = getPasswordConfig();
+      const pw = prompt("전체 토너먼트 초기화를 위해 비밀번호를 입력하세요.");
+      if (pw === null) return;
+      if (pw !== common) {
+        alert("비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
       const ok = confirm("토너먼트 전체 경기결과를 모두 초기화하시겠습니까?");
       if (!ok) return;
 
@@ -1984,7 +2004,8 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
         const input = prompt("관리자 비밀번호를 입력하세요.");
         if (input === null) return;
 
-        if (input === ADMIN_PASSWORD) {
+        const { admin } = getPasswordConfig();
+        if (input === admin) {
           isAdmin = true;
           localStorage.setItem(ADMIN_STORAGE_KEY, "true");
           renderAll();
