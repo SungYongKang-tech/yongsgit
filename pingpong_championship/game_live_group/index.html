@@ -1057,6 +1057,17 @@
       <div id="advancerArea" class="advancer-wrap"></div>
       <div class="footer-note">공동순위가 발생한 조는 여기에서 본선 1, 2위 팀을 직접 선택한 뒤 토너먼트 페이지에서 4강을 생성합니다.</div>
     </section>
+    <section class="card">
+  <h2>조별 한줄 응원</h2>
+
+  <div style="display:flex; gap:6px; margin-bottom:10px;">
+    <input id="cheerName" placeholder="닉네임" style="flex:1; padding:8px;">
+    <input id="cheerMsg" placeholder="응원 한마디" style="flex:2; padding:8px;">
+    <button onclick="addCheer()">등록</button>
+  </div>
+
+  <div id="cheerList"></div>
+</section>
   </div>
 
   <script type="module">
@@ -2283,6 +2294,60 @@ function buildTieGroups(rows) {
         }
       });
     }
+
+    const cheerRef = ref(db, "cheers/group");
+
+function addCheer(){
+  const name = document.getElementById("cheerName").value.trim();
+  const msg = document.getElementById("cheerMsg").value.trim();
+
+  if(!name || !msg){
+    alert("닉네임 / 내용을 입력하세요");
+    return;
+  }
+
+  push(cheerRef, {
+    name,
+    msg,
+    time: Date.now()
+  });
+
+  document.getElementById("cheerMsg").value = "";
+}
+
+onValue(cheerRef, snap => {
+  const list = document.getElementById("cheerList");
+  list.innerHTML = "";
+
+  const data = snap.val();
+  if(!data) return;
+
+  Object.entries(data)
+    .sort((a,b)=> b[1].time - a[1].time)
+    .forEach(([key,val])=>{
+      const div = document.createElement("div");
+      div.style.padding="6px";
+      div.style.borderBottom="1px solid #eee";
+
+      let adminBtn = "";
+      if(isAdmin){
+        adminBtn = `<span style="color:red; cursor:pointer;" onclick="delCheer('${key}')">삭제</span>`;
+      }
+
+      div.innerHTML = `
+        <b>${val.name}</b> : ${val.msg}
+        ${adminBtn}
+      `;
+
+      list.appendChild(div);
+    });
+});
+
+function delCheer(key){
+  if(confirm("삭제할까요?")){
+    remove(ref(db, "cheers/group/"+key));
+  }
+}
 
     bindTopEvents();
     loadTournament();
