@@ -1830,32 +1830,64 @@ alert("저장되었습니다.");
     }
 
     function compareStandingRows(x, y) {
-      if (y.win !== x.win) return y.win - x.win;
-      if (y.setDiff !== x.setDiff) return y.setDiff - x.setDiff;
+  if (y.win !== x.win) return y.win - x.win;
+  if (y.setDiff !== x.setDiff) return y.setDiff - x.setDiff;
 
-      const hh = x.headToHead?.[y.teamId] || 0;
-      if (hh !== 0) return hh === 1 ? -1 : 1;
+  // 2팀 비교에서만 승자승 적용
+  const hh = x.headToHead?.[y.teamId] || 0;
+  if (hh !== 0) return hh === 1 ? -1 : 1;
 
-      return x.teamName.localeCompare(y.teamName, "ko");
+  // 여기서 팀명으로 강제로 순위를 갈라버리면 안 됨
+  return 0;
+}
+
+    function getTieKey(row) {
+  return `${row.win}|${row.setDiff}`;
+}
+
+function buildTieGroups(rows) {
+  const groups = [];
+  let current = [];
+
+  rows.forEach((row, idx) => {
+    if (idx === 0) {
+      current = [row];
+      return;
     }
 
-    function isSameStandingCriteria(a, b) {
-      if (!a || !b) return false;
-      return compareStandingRows(a, b) === 0 && compareStandingRows(b, a) === 0;
+    const prev = rows[idx - 1];
+    if (getTieKey(prev) === getTieKey(row)) {
+      current.push(row);
+    } else {
+      groups.push(current);
+      current = [row];
+    }
+  });
+
+  if (current.length) groups.push(current);
+  return groups;
+}
+
+   function applyDisplayRanks(rows) {
+  let currentRank = 1;
+
+  rows.forEach((row, idx) => {
+    if (idx === 0) {
+      row.displayRank = 1;
+      return;
     }
 
-    function applyDisplayRanks(rows) {
-      let displayRank = 0;
-      rows.forEach((row, idx) => {
-        if (idx === 0) {
-          displayRank = 1;
-        } else if (!isSameStandingCriteria(rows[idx - 1], row)) {
-          displayRank = idx + 1;
-        }
-        row.displayRank = displayRank;
-      });
-      return rows;
+    const prev = rows[idx - 1];
+    if (getTieKey(prev) === getTieKey(row)) {
+      row.displayRank = currentRank;
+    } else {
+      currentRank = idx + 1;
+      row.displayRank = currentRank;
     }
+  });
+
+  return rows;
+}
 
     function computeStandings(groupName) {
       const groupTeamIds = tournamentData.groups?.[groupName] || [];
@@ -1919,14 +1951,34 @@ alert("저장되었습니다.");
     }
 
     function needsManualAdvancerSelection(rows) {
-      if (!rows || rows.length < 2) return false;
-      return rows[0].displayRank === rows[1].displayRank;
-    }
+  if (!rows || rows.length < 2) return false;
+
+  // 1위가 2팀 이상 공동이면 수동 선택 필요
+  if (rows[0].displayRank === rows[1].displayRank) return true;
+
+  // 2위가 공동이면 역시 수동 선택 필요
+  if (rows.length >= 3 && rows[1].displayRank === rows[2].displayRank) return true;
+
+  return false;
+}
 
     function getManualCandidates(rows) {
-      if (!rows || !rows.length) return [];
-      return rows.filter(row => row.displayRank <= 2);
+  if (!rows || !rows.length) return [];
+
+  const candidates = [];
+  const firstRank = rows[0].displayRank;
+
+  rows.forEach(row => {
+    if (row.displayRank === firstRank || row.displayRank === 2) {
+      candidates.push(row);
     }
+  });
+
+  // 중복 제거
+  return candidates.filter((row, idx, arr) =>
+    arr.findIndex(x => x.teamId === row.teamId) === idx
+  );
+}
 
     function renderAdvancerControls() {
       const groups = ["A", "B"];
