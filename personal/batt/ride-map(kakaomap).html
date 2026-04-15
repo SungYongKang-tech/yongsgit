@@ -398,7 +398,8 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, onValue, update, get, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, onValue, update, get, onDisconnect, remove, off } 
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
@@ -427,6 +428,8 @@ let groupMarkers = {};
 let groupDestinationMarker = null;
 let groupLines = {};
 let myMemberColor = localStorage.getItem("ride_group_color") || "";
+let roomRefForSubscription = null;
+let roomValueCallback = null;
 
 async function ensureAuth(){
   if (auth.currentUser) return;
@@ -488,13 +491,10 @@ async function ensureGroupMember() {
     console.log("멤버 등록 완료:", currentRoomId, uid, baseData);
 
     try {
-      await onDisconnect(memberRef).update({
-        online: false,
-        updatedAt: Date.now()
-      });
-    } catch (e) {
-      console.log("onDisconnect 설정 실패:", e);
-    }
+  await onDisconnect(memberRef).remove();
+} catch (e) {
+  console.log("onDisconnect 설정 실패:", e);
+}
   } catch (e) {
     console.error("멤버 등록 실패:", e);
   }
@@ -1338,7 +1338,7 @@ function renderFriendStrip() {
   if (!friendStrip) return;
 
   let members = Object.entries(groupMembers || {})
-    .filter(([_, member]) => member && member.name)
+    .filter(([_, member]) => member && member.name && member.online === true)
     .map(([memberId, member]) => {
       const name = member.name || "이름없음";
 
@@ -1366,17 +1366,38 @@ function renderFriendStrip() {
       return `${name}(${distText})`;
     });
 
-  // Firebase 응답 전이어도 내 이름은 먼저 보이게
-  if (!members.length && myGroupName) {
-    members = [myGroupName];
-  }
-
   friendStrip.textContent = members.length
     ? members.join("  |  ")
     : "그룹 인원 없음";
 }
 
- 
+ async function leaveGroupRoom() {
+  try {
+    stopGroupWatching();
+
+    if (auth.currentUser && currentRoomId) {
+      const memberRef = ref(db, `rideRooms/${currentRoomId}/members/${auth.currentUser.uid}`);
+      await remove(memberRef);
+    }
+
+    if (roomRefForSubscription && roomValueCallback) {
+      off(roomRefForSubscription, "value", roomValueCallback);
+    }
+
+    groupMembers = {};
+    renderGroupMarkers();
+    renderGroupLines();
+    renderFriendStrip();
+
+    localStorage.removeItem("ride_group_room_id");
+    localStorage.removeItem("ride_group_enabled");
+
+    currentRoomId = "";
+    groupEnabled = false;
+  } catch (e) {
+    console.error("그룹 나가기 실패:", e);
+  }
+}
 
 function renderGroupDestination() {
   if (!map || !ensureKakaoLoaded()) return;
@@ -1409,19 +1430,36 @@ function subscribeGroupData() {
     return;
   }
 
-  const roomRef = ref(db, `rideRooms/${currentRoomId}`);
+  roomRefForSubscription = ref(db, `rideRooms/${currentRoomId}`);
 
-  onValue(roomRef, (snap) => {
+  roomValueCallback = (snap) => {
     const data = snap.val() || {};
+    const rawMembers = data.members || {};
+    const now = Date.now();
 
-    groupMembers = data.members || {};
+    // online=true 이고, 최근 갱신된 사람만 표시
+    groupMembers = Object.fromEntries(
+      Object.entries(rawMembers).filter(([_, member]) => {
+        if (!member || !member.name) return false;
+        if (member.online !== true) return false;
+
+        // 혹시 onDisconnect가 늦거나 실패해도 15초 이상 갱신 없으면 제외
+        const updatedAt = Number(member.updatedAt || 0);
+        if (updatedAt && now - updatedAt > 15000) return false;
+
+        return true;
+      })
+    );
+
     groupDestination = data.meta?.destination || null;
 
     renderGroupMarkers();
     renderGroupDestination();
     renderGroupLines();
     renderFriendStrip();
-  });
+  };
+
+  onValue(roomRefForSubscription, roomValueCallback);
 }
 
 function fitPathToView() {
@@ -1600,12 +1638,10 @@ document.addEventListener("visibilitychange", async () => {
 
 window.addEventListener("beforeunload", () => {
   stopGroupWatching();
-  setMyGroupOffline();
 });
 
 window.addEventListener("pagehide", () => {
   stopGroupWatching();
-  setMyGroupOffline();
 });
 
 function addSpeedSample(totalDistanceM, currentSpeedKmh) {
@@ -1971,7 +2007,10 @@ courseBtn.addEventListener("click", () => {
   location.href = "./my-course.html";
 });
 
-groupRideBtn.addEventListener("click", () => {
+groupRideBtn.addEventListener("click", async () => {
+  if (groupEnabled && currentRoomId) {
+    await leaveGroupRoom();
+  }
   location.href = "./group-ride.html";
 });
 
