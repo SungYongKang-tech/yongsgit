@@ -342,6 +342,31 @@
     font-size:11px;
   }
 }
+.section-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:6px;
+}
+.icon-ghost{
+  border:none;
+  background:transparent;
+  color:#90a4ae;
+  font-size:12px;
+  font-weight:700;
+  padding:2px 6px;
+  border-radius:8px;
+  cursor:pointer;
+  line-height:1.2;
+  opacity:.58;
+}
+.icon-ghost:hover{
+  background:#eef4ff;
+  color:#1565c0;
+  opacity:1;
+}
+
   </style>
 </head>
 <body>
@@ -399,11 +424,14 @@
       </section>
     </div>
 
-    <section class="card" style="margin-top:16px;">
-      <h2>3. 팀 / 선수 등록</h2>
-      <div class="hint">남자, 여자 명단은 줄바꿈으로 입력해 주세요. 공백 줄은 자동 제거됩니다. 팀별 총원은 최대 8명입니다.</div>
-      <div class="teams" id="teamsContainer"></div>
-    </section>
+   <section class="card" style="margin-top:16px;">
+  <div class="section-head">
+    <h2>3. 팀 / 선수 등록</h2>
+    <button type="button" id="btnPhotoManager" class="icon-ghost" style="display:none;" title="사진관리">사진</button>
+  </div>
+  <div class="hint">남자, 여자 명단은 줄바꿈으로 입력해 주세요. 공백 줄은 자동 제거됩니다. 팀별 총원은 최대 8명입니다.</div>
+  <div class="teams" id="teamsContainer"></div>
+</section>
 
     <section class="card" style="margin-top:16px;">
       <h2>4. 자동 생성되는 조별 리그 대진표</h2>
@@ -522,6 +550,36 @@
     const btnSaveBottom = document.getElementById("btnSaveBottom");
     const btnStartTournament = document.getElementById("btnStartTournament");
     const btnStartBottom = document.getElementById("btnStartBottom");
+
+   const PHOTO_SUPERADMIN_STORAGE_KEY = "koen_photo_superadmin_unlocked";
+const PHOTO_SUPERADMIN_PASSWORD = "771225"; // 원하는 비밀번호로 변경
+let isPhotoSuperAdmin = localStorage.getItem(PHOTO_SUPERADMIN_STORAGE_KEY) === "true";
+
+const btnPhotoManager = document.getElementById("btnPhotoManager");
+function updatePhotoManagerUI() {
+  const canShow = isEditMode && !!editingTournamentId;
+  btnPhotoManager.style.display = canShow ? "inline-flex" : "none";
+}
+
+btnPhotoManager.addEventListener("click", () => {
+  if (!isEditMode || !editingTournamentId) {
+    alert("먼저 현재 대회를 불러와 주세요.");
+    return;
+  }
+
+  const input = prompt("최종 관리자 비밀번호를 입력하세요.");
+  if (input === null) return;
+  if (input !== PHOTO_SUPERADMIN_PASSWORD) {
+    alert("비밀번호가 올바르지 않습니다.");
+    return;
+  }
+
+  isPhotoSuperAdmin = true;
+  localStorage.setItem(PHOTO_SUPERADMIN_STORAGE_KEY, "true");
+
+  location.href = `./photo-manager.html?tournamentId=${encodeURIComponent(editingTournamentId)}`;
+});
+
 
     function todayKST() {
       const now = new Date();
@@ -1053,6 +1111,27 @@ ${name} 여2`;
       updateButtonLabels();
     }
 
+    btnPhotoManager.addEventListener("click", () => {
+  if (!isEditMode || !editingTournamentId) {
+    alert("먼저 현재 대회를 불러와 주세요.");
+    return;
+  }
+
+  if (!isPhotoSuperAdmin) {
+    const pw = prompt("최종 관리자 비밀번호를 입력하세요.");
+    if (pw === null) return;
+    if (pw !== PHOTO_SUPERADMIN_PASSWORD) {
+      alert("비밀번호가 올바르지 않습니다.");
+      return;
+    }
+    isPhotoSuperAdmin = true;
+    localStorage.setItem(PHOTO_SUPERADMIN_STORAGE_KEY, "true");
+  }
+
+  const url = `./photo-manager.html?tournamentId=${encodeURIComponent(editingTournamentId)}`;
+  window.open(url, "_blank");
+});
+
     btnToggleMakeAdmin.addEventListener("click", () => {
       if (isMakeAdmin) {
         isMakeAdmin = false;
@@ -1153,6 +1232,7 @@ updateButtonLabels();
     console.error(err);
     alert(err.message || "현재 대회 불러오기 중 오류가 발생했습니다.");
   }
+  updatePhotoManagerUI();
 }
 
     async function checkCurrentTournament() {
@@ -1301,6 +1381,7 @@ function updateButtonLabels() {
     btnStartTournament.textContent = "경기 시작";
     btnStartBottom.textContent = "경기 시작";
   }
+  updatePhotoManagerUI();
 }
 
 
