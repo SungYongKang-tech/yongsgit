@@ -1375,8 +1375,6 @@ function openPhotoModal({ teamName, playerName, imageUrl }) {
 function closePhotoModal() {
   const modal = document.getElementById("photoModal");
   if (modal) modal.classList.remove("open");
-  ignorePhotoClickUntil = Date.now() + 300;
-
 }
 
 async function openPlayerPhoto(teamId, playerName) {
@@ -1389,12 +1387,10 @@ async function openPlayerPhoto(teamId, playerName) {
   if (!teamName || !cleanPlayerName) return;
 
   try {
-    const snap = await get(
-      ref(
-        db,
-        `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`
-      )
-    );
+    const photoPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`;
+console.log("photoPath =", photoPath);
+
+const snap = await get(ref(db, photoPath));
 
     const data = snap.exists() ? snap.val() : null;
     openPhotoModal({
@@ -1449,9 +1445,12 @@ function bindRosterPhotoClicks(root = document) {
 
 
 
-    async function resolveTournamentId() {
+   async function resolveTournamentId() {
+  const snap = await get(ref(db, "currentTournamentId"));
+  if (snap.exists()) return snap.val();
   return "current_tournament";
 }
+
     function setAdminStatusText() {
       if (isAdmin) {
         adminStatus.textContent = "관리자 모드입니다. 선수 선택, 점수 입력, 저장이 가능합니다.";
