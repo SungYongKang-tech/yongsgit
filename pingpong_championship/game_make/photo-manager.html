@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" />
   <title>대회 사진 관리</title>
   <style>
     :root{
@@ -256,8 +257,9 @@
                 <input type="file" id="teamPhotoFile" accept="image/*" />
               </div>
               <div class="row">
-                <button type="button" class="green" id="btnUploadTeamPhoto">전체사진 저장</button>
-              </div>
+  <button type="button" class="green" id="btnUploadTeamPhoto">전체사진 저장</button>
+  <button type="button" class="danger" id="btnDeleteTeamPhoto">전체사진 삭제</button>
+</div>
               <div class="hint">휴대폰에서는 촬영 또는 앨범에서 선택 가능합니다.</div>
             </div>
 
@@ -281,6 +283,21 @@
       </section>
     </div>
   </div>
+
+  <div id="cropModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+  <div style="background:#fff; width:min(92vw, 720px); border-radius:16px; padding:12px;">
+    <div style="font-weight:800; margin-bottom:10px;">선수 사진 자르기</div>
+    <div style="width:100%; max-height:70vh; overflow:auto; text-align:center; background:#f3f6fa; border-radius:12px; padding:8px;">
+      <img id="cropImage" style="max-width:100%; display:block; margin:0 auto;" />
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end; flex-wrap:wrap;">
+      <button type="button" class="secondary" id="btnCropCancel">취소</button>
+      <button type="button" class="green" id="btnCropConfirm">자른 사진 사용</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -369,9 +386,9 @@
     }
 
     function makeTeamThumbUrl(url) {
-      if (!url) return "";
-      return url.replace("/upload/", "/upload/w_900,h_560,c_fill/");
-    }
+  if (!url) return "";
+  return url.replace("/upload/", "/upload/w_900,h_560,c_fit/");
+}
 
     function renderPreview(el, url, altText) {
       if (!url) {
@@ -612,7 +629,11 @@
     }
 
     const originalFile = fileInput.files?.[0];
-    const file = await resizeImage(originalFile, 800, 800, 0.8);
+const file = await openCropperModal(originalFile, {
+  aspectRatio: 1,
+  outputSize: 800,
+  quality: 0.85
+});
 
     const cleanPlayerName = safeTrim(playerName);
     const folderPath = `${ROOT_FOLDER}/${selectedTeamFolder}`;
@@ -745,6 +766,122 @@
     reader.readAsDataURL(file);
   });
 }
+
+let cropper = null;
+
+async function openCropperModal(file, options = {}) {
+  const {
+    aspectRatio = 1,
+    outputSize = 800,
+    quality = 0.85
+  } = options;
+
+  if (!file) {
+    throw new Error("사진 파일을 선택해 주세요.");
+  }
+
+  const cropModal = document.getElementById("cropModal");
+  const cropImage = document.getElementById("cropImage");
+  const btnCropCancel = document.getElementById("btnCropCancel");
+  const btnCropConfirm = document.getElementById("btnCropConfirm");
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    const cleanup = () => {
+      if (cropper) {
+        cropper.destroy();
+        cropper = null;
+      }
+      cropImage.src = "";
+      cropModal.style.display = "none";
+      btnCropCancel.onclick = null;
+      btnCropConfirm.onclick = null;
+    };
+
+    reader.onload = () => {
+      cropImage.src = reader.result;
+      cropModal.style.display = "flex";
+
+      cropImage.onload = () => {
+        if (cropper) cropper.destroy();
+
+        cropper = new Cropper(cropImage, {
+          aspectRatio,
+          viewMode: 1,
+          dragMode: "move",
+          autoCropArea: 1,
+          responsive: true,
+          background: false
+        });
+      };
+    };
+
+    btnCropCancel.onclick = () => {
+      cleanup();
+      reject(new Error("사진 자르기가 취소되었습니다."));
+    };
+
+    btnCropConfirm.onclick = () => {
+      try {
+        const canvas = cropper.getCroppedCanvas({
+          width: outputSize,
+          height: outputSize,
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: "high"
+        });
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            cleanup();
+            reject(new Error("잘라낸 이미지 생성에 실패했습니다."));
+            return;
+          }
+
+          const croppedFile = new File(
+            [blob],
+            (file.name || "player-photo").replace(/\.\w+$/, "") + "-crop.jpg",
+            { type: "image/jpeg" }
+          );
+
+          cleanup();
+          resolve(croppedFile);
+        }, "image/jpeg", quality);
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    };
+
+    reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
+    reader.readAsDataURL(file);
+  });
+}
+
+const btnDeleteTeamPhoto = document.getElementById("btnDeleteTeamPhoto");
+
+btnDeleteTeamPhoto.addEventListener("click", async () => {
+  try {
+    if (!selectedTeamName) {
+      throw new Error("사업소를 먼저 선택해 주세요.");
+    }
+
+    if (!confirm(`${selectedTeamName} 전체사진을 삭제할까요?`)) return;
+
+    await remove(ref(db, `tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(selectedTeamName)}`));
+    teamPhotoFile.value = "";
+    await renderSelectedTeam();
+    leftStatus.textContent = `${selectedTeamName} 전체사진 삭제 완료`;
+  } catch (err) {
+    alert(err.message || String(err));
+  }
+});
+
+
+
+
   </script>
+
+  
 </body>
 </html>
