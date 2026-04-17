@@ -1402,12 +1402,20 @@ async function openPlayerPhoto(teamId, playerName) {
   const team = getTeam(teamId);
   const teamName = safeTrim(team?.name || "");
   const cleanPlayerName = safeTrim(playerName);
+  const slotKey = getPlayerSlotKey(teamId, cleanPlayerName);
 
-  if (!teamName || !cleanPlayerName) return;
+  if (!teamName || !cleanPlayerName || !slotKey) {
+    openPhotoModal({
+      teamName,
+      playerName: cleanPlayerName || "선수 사진",
+      imageUrl: ""
+    });
+    return;
+  }
 
   try {
-    const photoPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`;
-    console.log("teamName =", teamName, "playerName =", cleanPlayerName, "tournamentId =", tournamentId);
+    const photoPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(slotKey)}`;
+    console.log("teamName =", teamName, "playerName =", cleanPlayerName, "slotKey =", slotKey, "tournamentId =", tournamentId);
     console.log("photoPath =", photoPath);
 
     const snap = await get(ref(db, photoPath));
@@ -1417,7 +1425,7 @@ async function openPlayerPhoto(teamId, playerName) {
 
     openPhotoModal({
       teamName,
-      playerName: cleanPlayerName,
+      playerName: data?.displayName || cleanPlayerName,
       imageUrl: data?.secureUrl || data?.thumbUrl || ""
     });
   } catch (err) {
@@ -1429,7 +1437,6 @@ async function openPlayerPhoto(teamId, playerName) {
     });
   }
 }
-
 
 function bindRosterPhotoClicks(root = document) {
   root.querySelectorAll("[data-roster-photo]").forEach(el => {
@@ -1501,6 +1508,23 @@ function bindRosterPhotoClicks(root = document) {
     function getTeam(teamId) {
       return tournamentData?.teams?.[teamId] || null;
     }
+
+    function getPlayerSlotKey(teamId, playerName) {
+  const team = getTeam(teamId);
+  if (!team) return "";
+
+  const cleanName = safeTrim(playerName);
+  const men = Array.isArray(team.men) ? team.men : [];
+  const women = Array.isArray(team.women) ? team.women : [];
+
+  const menIndex = men.findIndex(name => safeTrim(name) === cleanName);
+  if (menIndex >= 0) return `men_${menIndex}`;
+
+  const womenIndex = women.findIndex(name => safeTrim(name) === cleanName);
+  if (womenIndex >= 0) return `women_${womenIndex}`;
+
+  return "";
+}
 
     function getAllPlayers(teamId) {
       const team = getTeam(teamId);
@@ -1823,7 +1847,7 @@ const teamBPlayersHtml = isAdmin
     </span>
   `
   : renderCompactPlayers(match.teamB, sub.teamBPlayers || [], teamBWin);
-  
+
   const scoreHtml = isAdmin
     ? getScoreSelectHtml(match.id, def.key, sub)
     : `<span class="line-score">${Number(sub.setScoreA || 0)}:${Number(sub.setScoreB || 0)}</span>`;
