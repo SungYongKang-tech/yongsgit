@@ -984,7 +984,111 @@
 .compact-side.winner .player-pill.female{
   color:#1565c0 !important;
 }
+.photo-modal{
+  position:fixed;
+  inset:0;
+  background:rgba(15,23,42,.62);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+  padding:16px;
+}
 
+.photo-modal.open{
+  display:flex;
+}
+
+.photo-modal-card{
+  width:min(92vw, 420px);
+  background:#fff;
+  border-radius:18px;
+  overflow:hidden;
+  box-shadow:0 18px 48px rgba(15,23,42,.28);
+}
+
+.photo-modal-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:12px 14px;
+  border-bottom:1px solid #e5e7eb;
+}
+
+.photo-modal-title{
+  font-size:16px;
+  font-weight:800;
+}
+
+.photo-modal-close{
+  border:none;
+  background:#eef2f7;
+  color:#334e68;
+  width:34px;
+  height:34px;
+  border-radius:999px;
+  cursor:pointer;
+  font-size:18px;
+  font-weight:800;
+}
+
+.photo-modal-body{
+  padding:14px;
+}
+
+.photo-modal-team{
+  font-size:13px;
+  color:#52606d;
+  margin-bottom:10px;
+  font-weight:700;
+}
+
+.photo-modal-image{
+  width:100%;
+  aspect-ratio:1/1;
+  border-radius:16px;
+  overflow:hidden;
+  background:#eef2f7;
+  border:1px solid #d9e2ec;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.photo-modal-image img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+
+.photo-modal-empty{
+  color:#7b8794;
+  font-size:14px;
+  text-align:center;
+  padding:24px 16px;
+  line-height:1.5;
+}
+
+.roster-photo-btn{
+  border:none;
+  background:transparent;
+  padding:0;
+  margin:0;
+  width:100%;
+  color:inherit;
+  font:inherit;
+  font-weight:700;
+  cursor:pointer;
+  text-align:center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.roster-photo-btn:focus{
+  outline:none;
+}
   </style>
 </head>
 <body>
@@ -1087,6 +1191,140 @@
     let selectedMatchId = "semifinal1";
     let isAdmin = localStorage.getItem(ADMIN_STORAGE_KEY) === "true";
     let realtimeBound = false;
+    let photoModalReady = false;
+
+function sanitizeKey(v) {
+  return String(v || "").trim().replace(/[.#$/[\]]/g, "_");
+}
+
+function safeTrim(v) {
+  return (v || "").trim();
+}
+
+function ensurePhotoModal() {
+  if (photoModalReady) return;
+
+  const modal = document.createElement("div");
+  modal.className = "photo-modal";
+  modal.id = "photoModal";
+  modal.innerHTML = `
+    <div class="photo-modal-card">
+      <div class="photo-modal-head">
+        <div class="photo-modal-title" id="photoModalTitle">선수 사진</div>
+        <button type="button" class="photo-modal-close" id="photoModalClose">×</button>
+      </div>
+      <div class="photo-modal-body">
+        <div class="photo-modal-team" id="photoModalTeam">-</div>
+        <div class="photo-modal-image" id="photoModalImage">
+          <div class="photo-modal-empty">사진 없음</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const modalCard = modal.querySelector(".photo-modal-card");
+  modalCard.addEventListener("pointerup", (e) => {
+    e.stopPropagation();
+  }, { passive: false });
+
+  const closeBtn = document.getElementById("photoModalClose");
+  closeBtn.addEventListener("pointerup", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closePhotoModal();
+  }, { passive: false });
+
+  closeBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, { passive: false });
+
+  photoModalReady = true;
+}
+
+function openPhotoModal({ teamName, playerName, imageUrl }) {
+  ensurePhotoModal();
+
+  document.getElementById("photoModalTitle").textContent = playerName || "선수 사진";
+  document.getElementById("photoModalTeam").textContent = teamName || "-";
+
+  const imageBox = document.getElementById("photoModalImage");
+  if (imageUrl) {
+    imageBox.innerHTML = `<img src="${imageUrl}" alt="${escapeHtml(playerName || "선수 사진")}" />`;
+  } else {
+    imageBox.innerHTML = `<div class="photo-modal-empty">등록된 사진이 없습니다.</div>`;
+  }
+
+  document.getElementById("photoModal").classList.add("open");
+}
+
+function closePhotoModal() {
+  const modal = document.getElementById("photoModal");
+  if (modal) modal.classList.remove("open");
+}
+
+async function openPlayerPhoto(teamId, playerName) {
+  if (!isAdmin) return;
+
+  const team = getTeam(teamId);
+  const teamName = safeTrim(team?.name || "");
+  const cleanPlayerName = safeTrim(playerName);
+
+  if (!teamName || !cleanPlayerName) return;
+
+  try {
+    const photoPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`;
+    console.log("photoPath =", photoPath);
+
+    const snap = await get(ref(db, photoPath));
+    console.log("photoSnap exists =", snap.exists(), snap.exists() ? snap.val() : null);
+
+    const data = snap.exists() ? snap.val() : null;
+
+    openPhotoModal({
+      teamName,
+      playerName: cleanPlayerName,
+      imageUrl: data?.secureUrl || data?.thumbUrl || ""
+    });
+  } catch (err) {
+    console.error("openPlayerPhoto error:", err);
+    openPhotoModal({
+      teamName,
+      playerName: cleanPlayerName,
+      imageUrl: ""
+    });
+  }
+}
+
+function bindRosterPhotoClicks(root = document) {
+  root.querySelectorAll("[data-roster-photo]").forEach(el => {
+    if (el.dataset.rosterPhotoBound === "true") return;
+    el.dataset.rosterPhotoBound = "true";
+
+    el.addEventListener("pointerup", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+
+      if (!isAdmin) return;
+
+      const teamId = el.dataset.teamId || "";
+      const playerName = el.dataset.playerName || "";
+      openPlayerPhoto(teamId, playerName);
+    }, { passive: false });
+
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+    }, { passive: false });
+  });
+}
 
     const pageTitle = document.getElementById("pageTitle");
     const pageSub = document.getElementById("pageSub");
@@ -1113,6 +1351,8 @@
 
 
     async function resolveTournamentId() {
+  const snap = await get(ref(db, "currentTournamentId"));
+  if (snap.exists()) return snap.val();
   return "current_tournament";
 }
 
@@ -1191,18 +1431,35 @@
     }
 
     function renderPlayerList(teamId) {
-      const team = getTeam(teamId);
-      if (!team) return "";
+  const team = getTeam(teamId);
+  if (!team) return "";
 
-      const men = Array.isArray(team.men) ? team.men : [];
-      const women = Array.isArray(team.women) ? team.women : [];
-      const all = [...men, ...women];
+  const men = Array.isArray(team.men) ? team.men : [];
+  const women = Array.isArray(team.women) ? team.women : [];
+  const all = [...men, ...women];
 
-      return all.map(name => {
-        const cls = men.includes(name) ? "player-male" : "player-female";
-        return `<li class="${cls}">${escapeHtml(name)}</li>`;
-      }).join("");
+  return all.map(name => {
+    const cls = men.includes(name) ? "player-male" : "player-female";
+
+    if (!isAdmin) {
+      return `<li class="${cls}">${escapeHtml(name)}</li>`;
     }
+
+    return `
+      <li class="${cls}">
+        <button
+          type="button"
+          class="roster-photo-btn"
+          data-roster-photo="true"
+          data-team-id="${escapeHtml(teamId)}"
+          data-player-name="${escapeHtml(name)}"
+        >
+          ${escapeHtml(name)}
+        </button>
+      </li>
+    `;
+  }).join("");
+}
 
     function createInlinePlayerSelectHtml(teamId, matchTypeName, selectedValue, selectCount, inputNameBase, disabled) {
       const players = getSelectablePlayers(teamId, matchTypeName);
@@ -1715,6 +1972,7 @@ if ((selectedMatchId === "final") && (!match.teamA || !match.teamB)) {
       `;
 
       bindDetailEvents();
+bindRosterPhotoClicks(detailArea);
     }
 
     function bindDetailEvents() {
@@ -2104,7 +2362,8 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
     }
 
     bindTopEvents();
-    loadTournament();
+ensurePhotoModal();
+loadTournament();
   </script>
 </body>
 </html>
