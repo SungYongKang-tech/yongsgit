@@ -1118,6 +1118,25 @@
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
+
+.roster-photo-btn{
+  border:none;
+  background:transparent;
+  padding:0;
+  margin:0;
+  width:100%;
+  color:inherit;
+  font:inherit;
+  font-weight:700;
+  cursor:pointer;
+  text-align:center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.roster-photo-btn:focus{
+  outline:none;
+}
   </style>
 </head>
 <body>
@@ -1393,7 +1412,34 @@ async function openPlayerPhoto(teamId, playerName) {
     });
   }
 }
+function bindRosterPhotoClicks(root = document) {
+  root.querySelectorAll("[data-roster-photo]").forEach(el => {
+    if (el.dataset.rosterPhotoBound === "true") return;
+    el.dataset.rosterPhotoBound = "true";
 
+    el.addEventListener("pointerup", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+
+      if (!isAdmin) return;
+
+      const teamId = el.dataset.teamId || "";
+      const playerName = el.dataset.playerName || "";
+      openPlayerPhoto(teamId, playerName);
+    }, { passive: false });
+
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+    }, { passive: false });
+  });
+}
 function bindPhotoClicks(root = document) {
   root.querySelectorAll("[data-photo-player]").forEach(el => {
     if (el.dataset.photoBound === "true") return;
@@ -1562,18 +1608,35 @@ function bindPhotoClicks(root = document) {
 }
 
     function renderPlayerList(teamId) {
-      const team = getTeam(teamId);
-      if (!team) return "";
+  const team = getTeam(teamId);
+  if (!team) return "";
 
-      const men = Array.isArray(team.men) ? team.men : [];
-      const women = Array.isArray(team.women) ? team.women : [];
-      const all = [...men, ...women];
+  const men = Array.isArray(team.men) ? team.men : [];
+  const women = Array.isArray(team.women) ? team.women : [];
+  const all = [...men, ...women];
 
-      return all.map(name => {
-        const cls = men.includes(name) ? "player-male" : "player-female";
-        return `<li class="${cls}">${escapeHtml(name)}</li>`;
-      }).join("");
+  return all.map(name => {
+    const cls = men.includes(name) ? "player-male" : "player-female";
+
+    if (!isAdmin) {
+      return `<li class="${cls}">${escapeHtml(name)}</li>`;
     }
+
+    return `
+      <li class="${cls}">
+        <button
+          type="button"
+          class="roster-photo-btn"
+          data-roster-photo="true"
+          data-team-id="${escapeHtml(teamId)}"
+          data-player-name="${escapeHtml(name)}"
+        >
+          ${escapeHtml(name)}
+        </button>
+      </li>
+    `;
+  }).join("");
+}
 
     function getGroupMatches(groupName) {
       const all = Object.values(tournamentData?.groupMatches || {});
@@ -1717,21 +1780,7 @@ function renderCompactPlayers(teamId, players, isWinner) {
 
   const html = players.map(name => {
     const cls = getPlayerGenderClass(teamId, name);
-    const pillHtml = `<span class="player-pill ${cls}">${escapeHtml(name)}</span>`;
-
-    if (!isAdmin) return pillHtml;
-
-    return `
-      <button
-        type="button"
-        class="photo-player-btn"
-        data-photo-player="true"
-        data-team-id="${escapeHtml(teamId)}"
-        data-player-name="${escapeHtml(name)}"
-      >
-        ${pillHtml}
-      </button>
-    `;
+    return `<span class="player-pill ${cls}">${escapeHtml(name)}</span>`;
   }).join(' <span>/</span> ');
 
   return `<span class="compact-side ${isWinner ? "winner" : ""}">${html}</span>`;
@@ -1908,7 +1957,7 @@ const teamBPlayersHtml = isAdmin
       });
 
       bindMatchCardEvents();
-      bindPhotoClicks(matchList);
+      bindRosterPhotoClicks(matchList);
     }
 
     function bindMatchCardEvents() {
