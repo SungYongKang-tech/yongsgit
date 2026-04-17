@@ -1114,7 +1114,10 @@
   padding:24px 16px;
   line-height:1.5;
 }
-
+.photo-player-btn{
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
   </style>
 </head>
 <body>
@@ -1280,7 +1283,8 @@
     const advancerArea = document.getElementById("advancerArea");
 
     let photoModalReady = false;
-    let photoModalOpenedAt = 0;
+    let photoOpenLock = false;
+    let ignorePhotoClickUntil = 0;
 
 function sanitizeKey(v) {
   return String(v || "").trim().replace(/[.#$/[\]]/g, "_");
@@ -1313,16 +1317,22 @@ function ensurePhotoModal() {
   document.body.appendChild(modal);
 
   const modalCard = modal.querySelector(".photo-modal-card");
-  modalCard.addEventListener("click", (e) => {
+  modalCard.addEventListener("pointerup", (e) => {
     e.stopPropagation();
-  });
+  }, { passive: false });
 
   const closeBtn = document.getElementById("photoModalClose");
-  closeBtn.addEventListener("click", (e) => {
+  closeBtn.addEventListener("pointerup", (e) => {
     e.preventDefault();
     e.stopPropagation();
     closePhotoModal();
-  });
+  }, { passive: false });
+
+  // X 버튼 뒤따라오는 click도 막기
+  closeBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, { passive: false });
 
   photoModalReady = true;
 }
@@ -1347,6 +1357,8 @@ function openPhotoModal({ teamName, playerName, imageUrl }) {
 function closePhotoModal() {
   const modal = document.getElementById("photoModal");
   if (modal) modal.classList.remove("open");
+  ignorePhotoClickUntil = Date.now() + 300;
+
 }
 
 async function openPlayerPhoto(teamId, playerName) {
@@ -1387,7 +1399,7 @@ function bindPhotoClicks(root = document) {
     if (el.dataset.photoBound === "true") return;
     el.dataset.photoBound = "true";
 
-    el.addEventListener("click", (e) => {
+    const openHandler = (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === "function") {
@@ -1395,14 +1407,37 @@ function bindPhotoClicks(root = document) {
       }
 
       if (!isAdmin) return;
+      if (photoOpenLock) return;
+
+      const now = Date.now();
+      photoOpenLock = true;
+      ignorePhotoClickUntil = now + 700;
 
       const teamId = el.dataset.teamId || "";
       const playerName = el.dataset.playerName || "";
 
+      openPlayerPhoto(teamId, playerName);
+
       setTimeout(() => {
-  openPlayerPhoto(teamId, playerName);
-}, 30);
-    });
+        photoOpenLock = false;
+      }, 400);
+    };
+
+    // 모바일/터치 우선
+    el.addEventListener("pointerup", openHandler, { passive: false });
+
+    // 뒤따라 들어오는 click 무시
+    el.addEventListener("click", (e) => {
+      const now = Date.now();
+      if (now < ignorePhotoClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") {
+          e.stopImmediatePropagation();
+        }
+        return;
+      }
+    }, { passive: false });
   });
 }
 
