@@ -609,7 +609,12 @@
               throw new Error("사업소를 먼저 선택해 주세요.");
             }
 
-            const file = fileInput.files?.[0];
+            const originalFile = fileInput.files?.[0];
+            const file = await resizeImage(originalFile);
+            
+            const originalFile = teamPhotoFile.files?.[0];
+            const file = await resizeImage(originalFile, 1200, 800);
+
             const cleanPlayerName = safeTrim(playerName);
             const folderPath = `${ROOT_FOLDER}/${selectedTeamFolder}`;
             const publicId = `${cleanPlayerName}_${Date.now()}`;
@@ -684,6 +689,46 @@
         alert(err.message || String(err));
       }
     })();
+
+    async function resizeImage(file, maxWidth = 800, maxHeight = 800, quality = 0.8) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      img.src = e.target.result;
+    };
+
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      // 비율 유지하면서 축소
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width *= ratio;
+        height *= ratio;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          resolve(new File([blob], file.name, { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        quality
+      );
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
   </script>
 </body>
 </html>
