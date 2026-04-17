@@ -300,587 +300,612 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getDatabase,
-      ref,
-      get,
-      update,
-      remove
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    get,
+    update,
+    remove
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyDpXivPM_KJlY8yN1X0_oQH8P-MpyOwNo8",
-      authDomain: "koen-championship.firebaseapp.com",
-      projectId: "koen-championship",
-      storageBucket: "koen-championship.firebasestorage.app",
-      messagingSenderId: "652507559896",
-      appId: "1:652507559896:web:9bf6bf5c97f4b4dbb024ad"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyDpXivPM_KJlY8yN1X0_oQH8P-MpyOwNo8",
+    authDomain: "koen-championship.firebaseapp.com",
+    projectId: "koen-championship",
+    storageBucket: "koen-championship.firebasestorage.app",
+    messagingSenderId: "652507559896",
+    appId: "1:652507559896:web:9bf6bf5c97f4b4dbb024ad"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app, "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app");
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app, "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app");
 
-    // 여기를 실제 값으로 바꾸세요
-    const CLOUD_NAME = "dqpcvlakz";
-    const UPLOAD_PRESET = "koen_photo_unsigned";
+  const CLOUD_NAME = "dqpcvlakz";
+  const UPLOAD_PRESET = "koen_photo_unsigned";
+  const PHOTO_SUPERADMIN_PASSWORD = "771225";
 
-    // make 페이지와 같은 비밀번호로 맞추세요
-    const PHOTO_SUPERADMIN_PASSWORD = "771225";
+  const ROOT_FOLDER = "26 pingpong championship";
 
-    const ROOT_FOLDER = "26 pingpong championship";
+  const TEAM_FOLDER_MAP = {
+    "영흥": "younghung",
+    "여수": "yeosoo",
+    "삼천포": "samchunpo",
+    "강릉": "gangnung",
+    "영동": "youngdong",
+    "본사": "main-office",
+    "분당": "bundang",
+    "고성": "gosung"
+  };
 
-    const TEAM_FOLDER_MAP = {
-      "영흥": "younghung",
-      "여수": "yeosoo",
-      "삼천포": "samchunpo",
-      "강릉": "gangnung",
-      "영동": "youngdong",
-      "본사": "main-office",
-      "분당": "bundang",
-      "고성": "gosung"
-    };
+  const TEAM_DISPLAY_ORDER = [
+    "영흥", "여수", "삼천포", "강릉",
+    "영동", "본사", "분당", "고성"
+  ];
 
-    const TEAM_DISPLAY_ORDER = [
-      "영흥", "여수", "삼천포", "강릉",
-      "영동", "본사", "분당", "고성"
-    ];
+  let tournamentId = "";
+  let tournamentData = null;
+  let selectedTeamName = "";
+  let selectedTeamFolder = "";
 
-    let tournamentId = "";
-    let tournamentData = null;
-    let selectedTeamName = "";
-    let selectedTeamFolder = "";
+  const pageSummary = document.getElementById("pageSummary");
+  const teamButtons = document.getElementById("teamButtons");
+  const leftStatus = document.getElementById("leftStatus");
+  const teamPhotoTitle = document.getElementById("teamPhotoTitle");
+  const teamPhotoPreview = document.getElementById("teamPhotoPreview");
+  const teamPhotoFile = document.getElementById("teamPhotoFile");
+  const btnUploadTeamPhoto = document.getElementById("btnUploadTeamPhoto");
+  const playersTitle = document.getElementById("playersTitle");
+  const playersGrid = document.getElementById("playersGrid");
+  const btnReload = document.getElementById("btnReload");
+  const btnBack = document.getElementById("btnBack");
+  const btnDeleteTeamPhoto = document.getElementById("btnDeleteTeamPhoto");
 
-    const pageSummary = document.getElementById("pageSummary");
-    const teamButtons = document.getElementById("teamButtons");
-    const leftStatus = document.getElementById("leftStatus");
-    const teamPhotoTitle = document.getElementById("teamPhotoTitle");
-    const teamPhotoPreview = document.getElementById("teamPhotoPreview");
-    const teamPhotoFile = document.getElementById("teamPhotoFile");
-    const btnUploadTeamPhoto = document.getElementById("btnUploadTeamPhoto");
-    const playersTitle = document.getElementById("playersTitle");
-    const playersGrid = document.getElementById("playersGrid");
-    const btnReload = document.getElementById("btnReload");
-    const btnBack = document.getElementById("btnBack");
+  function safeTrim(v) {
+    return (v || "").trim();
+  }
 
-    function safeTrim(v) {
-      return (v || "").trim();
+  function sanitizeKey(v) {
+    return String(v || "").trim().replace(/[.#$/[\]]/g, "_");
+  }
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function makeThumbUrl(url) {
+    if (!url) return "";
+    return url.replace("/upload/", "/upload/w_300,h_300,c_fill,g_face,r_max/");
+  }
+
+  function makeTeamThumbUrl(url) {
+    if (!url) return "";
+    return url.replace("/upload/", "/upload/w_900,h_560,c_fit/");
+  }
+
+  function renderPreview(el, url, altText) {
+    if (!url) {
+      el.textContent = "사진 없음";
+      return;
+    }
+    el.innerHTML = `<img src="${url}" alt="${escapeHtml(altText)}" />`;
+  }
+
+  async function resolveTournamentId() {
+    const params = new URLSearchParams(location.search);
+    const fromQuery = params.get("tournamentId");
+    if (fromQuery) return fromQuery;
+
+    const snap = await get(ref(db, "currentTournamentId"));
+    if (snap.exists()) return snap.val();
+
+    return "current_tournament";
+  }
+
+  async function verifyAccess() {
+    const input = prompt("최종 관리자 비밀번호를 입력하세요.");
+    if (input === null) {
+      alert("접근이 취소되었습니다.");
+      history.back();
+      return false;
+    }
+    if (input !== PHOTO_SUPERADMIN_PASSWORD) {
+      alert("비밀번호가 올바르지 않습니다.");
+      history.back();
+      return false;
+    }
+    return true;
+  }
+
+  async function loadTournament() {
+    const snap = await get(ref(db, `tournaments/${tournamentId}`));
+    if (!snap.exists()) {
+      throw new Error("대회 데이터를 찾을 수 없습니다.");
     }
 
-    function sanitizeKey(v) {
-      return String(v || "").trim().replace(/[.#$/[\]]/g, "_");
-    }
+    tournamentData = snap.val();
+    const title = tournamentData?.meta?.title || "대회";
+    pageSummary.textContent = `${title} / 선수 사진 및 사업소 사진 관리`;
+  }
 
-    function escapeHtml(str) {
-      return String(str || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
+  function getTeamListFromTournament() {
+    const teamsObj = tournamentData?.teams || {};
+    const list = Object.values(teamsObj);
 
-    function makeThumbUrl(url) {
-      if (!url) return "";
-      return url.replace("/upload/", "/upload/w_300,h_300,c_fill,g_face,r_max/");
-    }
+    list.sort((a, b) => {
+      const n1 = Number(String(a.id || "").replace("team", ""));
+      const n2 = Number(String(b.id || "").replace("team", ""));
+      return n1 - n2;
+    });
 
-    function makeTeamThumbUrl(url) {
-  if (!url) return "";
-  return url.replace("/upload/", "/upload/w_900,h_560,c_fit/");
-}
+    return list;
+  }
 
-    function renderPreview(el, url, altText) {
-      if (!url) {
-        el.textContent = "사진 없음";
-        return;
-      }
-      el.innerHTML = `<img src="${url}" alt="${escapeHtml(altText)}" />`;
-    }
+  function getTeamByName(teamName) {
+    return getTeamListFromTournament().find(t => t.name === teamName) || null;
+  }
 
-    async function resolveTournamentId() {
-      const params = new URLSearchParams(location.search);
-      const fromQuery = params.get("tournamentId");
-      if (fromQuery) return fromQuery;
+  // 이름 대신 고정 슬롯 구조 반환
+  function getPlayerSlotsOfTeam(teamName) {
+    const team = getTeamByName(teamName);
+    if (!team) return [];
 
-      const snap = await get(ref(db, "currentTournamentId"));
-      if (snap.exists()) return snap.val();
+    const men = Array.isArray(team.men) ? team.men : [];
+    const women = Array.isArray(team.women) ? team.women : [];
 
-      return "current_tournament";
-    }
+    const slots = [];
 
-    async function verifyAccess() {
-      const input = prompt("최종 관리자 비밀번호를 입력하세요.");
-      if (input === null) {
-        alert("접근이 취소되었습니다.");
-        history.back();
-        return false;
-      }
-      if (input !== PHOTO_SUPERADMIN_PASSWORD) {
-        alert("비밀번호가 올바르지 않습니다.");
-        history.back();
-        return false;
-      }
-      return true;
-    }
-
-    async function loadTournament() {
-      const snap = await get(ref(db, `tournaments/${tournamentId}`));
-      if (!snap.exists()) {
-        throw new Error("대회 데이터를 찾을 수 없습니다.");
-      }
-
-      tournamentData = snap.val();
-      const title = tournamentData?.meta?.title || "대회";
-      pageSummary.textContent = `${title} / 선수 사진 및 사업소 사진 관리`;
-    }
-
-    function getTeamListFromTournament() {
-      const teamsObj = tournamentData?.teams || {};
-      const list = Object.values(teamsObj);
-
-      list.sort((a, b) => {
-        const n1 = Number(String(a.id || "").replace("team", ""));
-        const n2 = Number(String(b.id || "").replace("team", ""));
-        return n1 - n2;
+    men.forEach((name, idx) => {
+      slots.push({
+        slotKey: `men_${idx}`,
+        playerName: safeTrim(name),
+        gender: "men",
+        index: idx,
+        label: `남자 ${idx + 1}`
       });
+    });
 
-      return list;
-    }
-
-    function getTeamByName(teamName) {
-      return getTeamListFromTournament().find(t => t.name === teamName) || null;
-    }
-
-    function getPlayersOfTeam(teamName) {
-      const team = getTeamByName(teamName);
-      if (!team) return [];
-      return [
-        ...(Array.isArray(team.men) ? team.men : []),
-        ...(Array.isArray(team.women) ? team.women : [])
-      ].map(v => safeTrim(v)).filter(Boolean);
-    }
-
-    function renderTeamButtons() {
-      const existingNames = getTeamListFromTournament().map(t => t.name).filter(Boolean);
-      const orderedTeams = TEAM_DISPLAY_ORDER.filter(name => existingNames.includes(name));
-
-      teamButtons.innerHTML = orderedTeams.map(name => `
-        <button
-          type="button"
-          class="team-btn ${selectedTeamName === name ? "active" : ""}"
-          data-team="${escapeHtml(name)}"
-        >${escapeHtml(name)}</button>
-      `).join("");
-
-      teamButtons.querySelectorAll(".team-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          selectedTeamName = btn.dataset.team;
-          selectedTeamFolder = TEAM_FOLDER_MAP[selectedTeamName] || "";
-          renderTeamButtons();
-          await renderSelectedTeam();
-        });
+    women.forEach((name, idx) => {
+      slots.push({
+        slotKey: `women_${idx}`,
+        playerName: safeTrim(name),
+        gender: "women",
+        index: idx,
+        label: `여자 ${idx + 1}`
       });
+    });
 
-      if (!selectedTeamName && orderedTeams.length) {
-        selectedTeamName = orderedTeams[0];
+    return slots;
+  }
+
+  function renderTeamButtons() {
+    const existingNames = getTeamListFromTournament().map(t => t.name).filter(Boolean);
+    const orderedTeams = TEAM_DISPLAY_ORDER.filter(name => existingNames.includes(name));
+
+    teamButtons.innerHTML = orderedTeams.map(name => `
+      <button
+        type="button"
+        class="team-btn ${selectedTeamName === name ? "active" : ""}"
+        data-team="${escapeHtml(name)}"
+      >${escapeHtml(name)}</button>
+    `).join("");
+
+    teamButtons.querySelectorAll(".team-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        selectedTeamName = btn.dataset.team;
         selectedTeamFolder = TEAM_FOLDER_MAP[selectedTeamName] || "";
         renderTeamButtons();
-      }
-    }
-
-    async function loadTeamPhoto(teamName) {
-      const snap = await get(ref(db, `tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(teamName)}`));
-      return snap.exists() ? snap.val() : null;
-    }
-
-    async function loadPlayerPhoto(teamName, playerName) {
-      const snap = await get(ref(db, `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(playerName)}`));
-      return snap.exists() ? snap.val() : null;
-    }
-
-    async function renderSelectedTeam() {
-      if (!selectedTeamName) return;
-
-      teamPhotoTitle.textContent = `${selectedTeamName} 사업소 전체사진`;
-      playersTitle.textContent = `${selectedTeamName} 선수 사진`;
-      leftStatus.textContent = `${selectedTeamName} 정보를 불러오는 중입니다.`;
-
-      const teamPhoto = await loadTeamPhoto(selectedTeamName);
-      renderPreview(
-        teamPhotoPreview,
-        teamPhoto?.thumbUrl || teamPhoto?.secureUrl || "",
-        `${selectedTeamName} 전체사진`
-      );
-
-      const players = getPlayersOfTeam(selectedTeamName);
-
-      if (!players.length) {
-        playersGrid.innerHTML = `<div class="empty">등록된 선수가 없습니다.</div>`;
-        leftStatus.textContent = `${selectedTeamName} / 선수 0명`;
-        return;
-      }
-
-      const cards = [];
-      for (const playerName of players) {
-        const photo = await loadPlayerPhoto(selectedTeamName, playerName);
-
-        cards.push(`
-          <div class="player-card" data-player="${escapeHtml(playerName)}">
-            <div class="player-name">${escapeHtml(playerName)}</div>
-            <div class="player-meta">${escapeHtml(selectedTeamName)} / 폴더: ${escapeHtml(selectedTeamFolder)}</div>
-            <div class="image-preview">
-              ${
-                photo?.thumbUrl || photo?.secureUrl
-                  ? `<img src="${photo.thumbUrl || photo.secureUrl}" alt="${escapeHtml(playerName)}" />`
-                  : `사진 없음`
-              }
-            </div>
-            <div class="field">
-              <label>${escapeHtml(playerName)} 사진 업로드</label>
-              <input type="file" class="player-file" accept="image/*" />
-            </div>
-            <div class="row">
-              <button type="button" class="green btn-save-player">저장</button>
-              <button type="button" class="danger btn-hide-player">표시삭제</button>
-            </div>
-          </div>
-        `);
-      }
-
-      playersGrid.innerHTML = cards.join("");
-      bindPlayerButtons();
-
-      leftStatus.textContent = `${selectedTeamName} / 선수 ${players.length}명 / Cloudinary 폴더: ${ROOT_FOLDER}/${selectedTeamFolder}`;
-    }
-
-    async function uploadToCloudinary(file, folderPath, publicId) {
-      if (!file) {
-        throw new Error("사진 파일을 선택해 주세요.");
-      }
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("upload_preset", UPLOAD_PRESET);
-      formData.append("folder", folderPath);
-      formData.append("public_id", publicId);
-
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error?.message || "Cloudinary 업로드 실패");
-      }
-
-      return data;
-    }
-
-    btnUploadTeamPhoto.addEventListener("click", async () => {
-  try {
-    if (!selectedTeamName || !selectedTeamFolder) {
-      throw new Error("사업소를 먼저 선택해 주세요.");
-    }
-
-    const originalFile = teamPhotoFile.files?.[0];
-    const file = await resizeImage(originalFile, 1200, 800, 0.85);
-
-    const folderPath = `${ROOT_FOLDER}/${selectedTeamFolder}`;
-    const publicId = `${selectedTeamFolder}_group_${Date.now()}`;
-
-    leftStatus.textContent = `${selectedTeamName} 전체사진 업로드 중입니다...`;
-
-    const result = await uploadToCloudinary(file, folderPath, publicId);
-
-    const payload = {
-      teamName: selectedTeamName,
-      folderName: selectedTeamFolder,
-      publicId: result.public_id,
-      secureUrl: result.secure_url,
-      thumbUrl: makeTeamThumbUrl(result.secure_url),
-      updatedAt: Date.now()
-    };
-
-    await update(ref(db), {
-      [`tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(selectedTeamName)}`]: payload
-    });
-
-    teamPhotoFile.value = "";
-    await renderSelectedTeam();
-    leftStatus.textContent = `${selectedTeamName} 전체사진 저장 완료`;
-  } catch (err) {
-    alert(err.message || String(err));
-  }
-});
-
-    function bindPlayerButtons() {
-      document.querySelectorAll(".player-card").forEach(card => {
-        const playerName = card.dataset.player;
-        const fileInput = card.querySelector(".player-file");
-        const btnSave = card.querySelector(".btn-save-player");
-        const btnHide = card.querySelector(".btn-hide-player");
-
-        btnSave.addEventListener("click", async () => {
-  try {
-    if (!selectedTeamName || !selectedTeamFolder) {
-      throw new Error("사업소를 먼저 선택해 주세요.");
-    }
-
-    const originalFile = fileInput.files?.[0];
-const file = await openCropperModal(originalFile, {
-  aspectRatio: 1,
-  outputSize: 800,
-  quality: 0.85
-});
-
-    const cleanPlayerName = safeTrim(playerName);
-    const folderPath = `${ROOT_FOLDER}/${selectedTeamFolder}`;
-    const publicId = `${cleanPlayerName}_${Date.now()}`;
-
-    leftStatus.textContent = `${selectedTeamName} / ${cleanPlayerName} 사진 업로드 중입니다...`;
-
-    const result = await uploadToCloudinary(file, folderPath, publicId);
-
-    const payload = {
-      teamName: selectedTeamName,
-      folderName: selectedTeamFolder,
-      playerName: cleanPlayerName,
-      publicId: result.public_id,
-      secureUrl: result.secure_url,
-      thumbUrl: makeThumbUrl(result.secure_url),
-      updatedAt: Date.now(),
-      hidden: false
-    };
-
-    await update(ref(db), {
-      [`tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(selectedTeamName)}/${sanitizeKey(cleanPlayerName)}`]: payload
-    });
-
-    await renderSelectedTeam();
-    leftStatus.textContent = `${selectedTeamName} / ${cleanPlayerName} 사진 저장 완료`;
-  } catch (err) {
-    alert(err.message || String(err));
-  }
-});
-
-        btnHide.addEventListener("click", async () => {
-          try {
-            const cleanPlayerName = safeTrim(playerName);
-            if (!confirm(`${cleanPlayerName} 선수 사진을 화면에서 숨길까요?`)) return;
-
-            await remove(ref(db, `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(selectedTeamName)}/${sanitizeKey(cleanPlayerName)}`));
-            await renderSelectedTeam();
-            leftStatus.textContent = `${selectedTeamName} / ${cleanPlayerName} 사진 표시 삭제 완료`;
-          } catch (err) {
-            alert(err.message || String(err));
-          }
-        });
-      });
-    }
-
-    btnReload.addEventListener("click", async () => {
-      try {
-        await loadTournament();
-        renderTeamButtons();
-        if (selectedTeamName) {
-          await renderSelectedTeam();
-        }
-      } catch (err) {
-        alert(err.message || String(err));
-      }
-    });
-
-    btnBack.addEventListener("click", () => {
-      history.back();
-    });
-
-    (async function init() {
-      try {
-        const ok = await verifyAccess();
-        if (!ok) return;
-
-        tournamentId = await resolveTournamentId();
-        await loadTournament();
-        renderTeamButtons();
         await renderSelectedTeam();
-      } catch (err) {
-        alert(err.message || String(err));
-      }
-    })();
+      });
+    });
 
-    async function resizeImage(file, maxWidth = 800, maxHeight = 800, quality = 0.8) {
-  if (!file) {
-    throw new Error("사진 파일을 선택해 주세요.");
+    if (!selectedTeamName && orderedTeams.length) {
+      selectedTeamName = orderedTeams[0];
+      selectedTeamFolder = TEAM_FOLDER_MAP[selectedTeamName] || "";
+      renderTeamButtons();
+    }
   }
 
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      img.src = e.target.result;
-    };
-
-    reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
-    img.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
-
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-
-      if (width > maxWidth || height > maxHeight) {
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error("이미지 변환에 실패했습니다."));
-            return;
-          }
-
-          resolve(
-            new File(
-              [blob],
-              (file.name || "team-photo").replace(/\.\w+$/, "") + ".jpg",
-              { type: "image/jpeg" }
-            )
-          );
-        },
-        "image/jpeg",
-        quality
-      );
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
-
-let cropper = null;
-
-async function openCropperModal(file, options = {}) {
-  const {
-    aspectRatio = 1,
-    outputSize = 800,
-    quality = 0.85
-  } = options;
-
-  if (!file) {
-    throw new Error("사진 파일을 선택해 주세요.");
+  async function loadTeamPhoto(teamName) {
+    const snap = await get(ref(db, `tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(teamName)}`));
+    return snap.exists() ? snap.val() : null;
   }
 
-  const cropModal = document.getElementById("cropModal");
-  const cropImage = document.getElementById("cropImage");
-  const btnCropCancel = document.getElementById("btnCropCancel");
-  const btnCropConfirm = document.getElementById("btnCropConfirm");
+  // playerName 대신 slotKey로 조회
+  async function loadPlayerPhoto(teamName, slotKey) {
+    const snap = await get(ref(db, `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(slotKey)}`));
+    return snap.exists() ? snap.val() : null;
+  }
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+  async function renderSelectedTeam() {
+    if (!selectedTeamName) return;
 
-    const cleanup = () => {
-      if (cropper) {
-        cropper.destroy();
-        cropper = null;
-      }
-      cropImage.src = "";
-      cropModal.style.display = "none";
-      btnCropCancel.onclick = null;
-      btnCropConfirm.onclick = null;
-    };
+    teamPhotoTitle.textContent = `${selectedTeamName} 사업소 전체사진`;
+    playersTitle.textContent = `${selectedTeamName} 선수 사진`;
+    leftStatus.textContent = `${selectedTeamName} 정보를 불러오는 중입니다.`;
 
-    reader.onload = () => {
-      cropImage.src = reader.result;
-      cropModal.style.display = "flex";
+    const teamPhoto = await loadTeamPhoto(selectedTeamName);
+    renderPreview(
+      teamPhotoPreview,
+      teamPhoto?.thumbUrl || teamPhoto?.secureUrl || "",
+      `${selectedTeamName} 전체사진`
+    );
 
-      cropImage.onload = () => {
-        if (cropper) cropper.destroy();
+    const playerSlots = getPlayerSlotsOfTeam(selectedTeamName);
 
-        cropper = new Cropper(cropImage, {
-          aspectRatio,
-          viewMode: 1,
-          dragMode: "move",
-          autoCropArea: 1,
-          responsive: true,
-          background: false
-        });
-      };
-    };
-
-    btnCropCancel.onclick = () => {
-      cleanup();
-      reject(new Error("사진 자르기가 취소되었습니다."));
-    };
-
-    btnCropConfirm.onclick = () => {
-      try {
-        const canvas = cropper.getCroppedCanvas({
-          width: outputSize,
-          height: outputSize,
-          imageSmoothingEnabled: true,
-          imageSmoothingQuality: "high"
-        });
-
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            cleanup();
-            reject(new Error("잘라낸 이미지 생성에 실패했습니다."));
-            return;
-          }
-
-          const croppedFile = new File(
-            [blob],
-            (file.name || "player-photo").replace(/\.\w+$/, "") + "-crop.jpg",
-            { type: "image/jpeg" }
-          );
-
-          cleanup();
-          resolve(croppedFile);
-        }, "image/jpeg", quality);
-      } catch (err) {
-        cleanup();
-        reject(err);
-      }
-    };
-
-    reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
-    reader.readAsDataURL(file);
-  });
-}
-
-const btnDeleteTeamPhoto = document.getElementById("btnDeleteTeamPhoto");
-
-btnDeleteTeamPhoto.addEventListener("click", async () => {
-  try {
-    if (!selectedTeamName) {
-      throw new Error("사업소를 먼저 선택해 주세요.");
+    if (!playerSlots.length) {
+      playersGrid.innerHTML = `<div class="empty">등록된 선수가 없습니다.</div>`;
+      leftStatus.textContent = `${selectedTeamName} / 선수 0명`;
+      return;
     }
 
-    if (!confirm(`${selectedTeamName} 전체사진을 삭제할까요?`)) return;
+    const cards = [];
+    for (const slot of playerSlots) {
+      const photo = await loadPlayerPhoto(selectedTeamName, slot.slotKey);
+      const displayName = slot.playerName || "(이름 미입력)";
 
-    await remove(ref(db, `tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(selectedTeamName)}`));
-    teamPhotoFile.value = "";
-    await renderSelectedTeam();
-    leftStatus.textContent = `${selectedTeamName} 전체사진 삭제 완료`;
-  } catch (err) {
-    alert(err.message || String(err));
+      cards.push(`
+        <div class="player-card" data-slot-key="${escapeHtml(slot.slotKey)}" data-player="${escapeHtml(displayName)}">
+          <div class="player-name">${escapeHtml(displayName)}</div>
+          <div class="player-meta">
+            ${escapeHtml(selectedTeamName)} / ${escapeHtml(slot.label)} / 슬롯: ${escapeHtml(slot.slotKey)}
+          </div>
+          <div class="image-preview">
+            ${
+              photo?.thumbUrl || photo?.secureUrl
+                ? `<img src="${photo.thumbUrl || photo.secureUrl}" alt="${escapeHtml(displayName)}" />`
+                : `사진 없음`
+            }
+          </div>
+          <div class="field">
+            <label>${escapeHtml(displayName)} 사진 업로드</label>
+            <input type="file" class="player-file" accept="image/*" />
+          </div>
+          <div class="row">
+            <button type="button" class="green btn-save-player">저장</button>
+            <button type="button" class="danger btn-hide-player">표시삭제</button>
+          </div>
+        </div>
+      `);
+    }
+
+    playersGrid.innerHTML = cards.join("");
+    bindPlayerButtons(playerSlots);
+
+    leftStatus.textContent = `${selectedTeamName} / 선수 ${playerSlots.length}명 / Cloudinary 폴더: ${ROOT_FOLDER}/${selectedTeamFolder}`;
   }
-});
 
+  async function uploadToCloudinary(file, folderPath, publicId) {
+    if (!file) {
+      throw new Error("사진 파일을 선택해 주세요.");
+    }
 
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", UPLOAD_PRESET);
+    formData.append("folder", folderPath);
+    formData.append("public_id", publicId);
 
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+      method: "POST",
+      body: formData
+    });
 
-  </script>
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data?.error?.message || "Cloudinary 업로드 실패");
+    }
+
+    return data;
+  }
+
+  btnUploadTeamPhoto.addEventListener("click", async () => {
+    try {
+      if (!selectedTeamName || !selectedTeamFolder) {
+        throw new Error("사업소를 먼저 선택해 주세요.");
+      }
+
+      const originalFile = teamPhotoFile.files?.[0];
+      const file = await resizeImage(originalFile, 1200, 800, 0.85);
+
+      const folderPath = `${ROOT_FOLDER}/${selectedTeamFolder}`;
+      const publicId = `${selectedTeamFolder}_group_${Date.now()}`;
+
+      leftStatus.textContent = `${selectedTeamName} 전체사진 업로드 중입니다...`;
+
+      const result = await uploadToCloudinary(file, folderPath, publicId);
+
+      const payload = {
+        teamName: selectedTeamName,
+        folderName: selectedTeamFolder,
+        publicId: result.public_id,
+        secureUrl: result.secure_url,
+        thumbUrl: makeTeamThumbUrl(result.secure_url),
+        updatedAt: Date.now()
+      };
+
+      await update(ref(db), {
+        [`tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(selectedTeamName)}`]: payload
+      });
+
+      teamPhotoFile.value = "";
+      await renderSelectedTeam();
+      leftStatus.textContent = `${selectedTeamName} 전체사진 저장 완료`;
+    } catch (err) {
+      alert(err.message || String(err));
+    }
+  });
+
+  function bindPlayerButtons(playerSlots) {
+    document.querySelectorAll(".player-card").forEach(card => {
+      const slotKey = card.dataset.slotKey;
+      const fileInput = card.querySelector(".player-file");
+      const btnSave = card.querySelector(".btn-save-player");
+      const btnHide = card.querySelector(".btn-hide-player");
+
+      const slotInfo = playerSlots.find(v => v.slotKey === slotKey);
+      const cleanPlayerName = safeTrim(slotInfo?.playerName || "");
+      const displayName = cleanPlayerName || "(이름 미입력)";
+
+      btnSave.addEventListener("click", async () => {
+        try {
+          if (!selectedTeamName || !selectedTeamFolder) {
+            throw new Error("사업소를 먼저 선택해 주세요.");
+          }
+
+          const originalFile = fileInput.files?.[0];
+          const file = await openCropperModal(originalFile, {
+            aspectRatio: 1,
+            outputSize: 800,
+            quality: 0.85
+          });
+
+          const folderPath = `${ROOT_FOLDER}/${selectedTeamFolder}`;
+          // Cloudinary 파일명도 슬롯 기준으로 통일
+          const publicId = `${selectedTeamFolder}_${slotKey}_${Date.now()}`;
+
+          leftStatus.textContent = `${selectedTeamName} / ${displayName} 사진 업로드 중입니다...`;
+
+          const result = await uploadToCloudinary(file, folderPath, publicId);
+
+          const payload = {
+            teamName: selectedTeamName,
+            folderName: selectedTeamFolder,
+            slotKey,
+            playerName: cleanPlayerName,
+            displayName,
+            publicId: result.public_id,
+            secureUrl: result.secure_url,
+            thumbUrl: makeThumbUrl(result.secure_url),
+            updatedAt: Date.now(),
+            hidden: false
+          };
+
+          await update(ref(db), {
+            [`tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(selectedTeamName)}/${sanitizeKey(slotKey)}`]: payload
+          });
+
+          await renderSelectedTeam();
+          leftStatus.textContent = `${selectedTeamName} / ${displayName} 사진 저장 완료`;
+        } catch (err) {
+          alert(err.message || String(err));
+        }
+      });
+
+      btnHide.addEventListener("click", async () => {
+        try {
+          if (!confirm(`${displayName} 선수 사진을 화면에서 숨길까요?`)) return;
+
+          await remove(ref(db, `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(selectedTeamName)}/${sanitizeKey(slotKey)}`));
+          await renderSelectedTeam();
+          leftStatus.textContent = `${selectedTeamName} / ${displayName} 사진 표시 삭제 완료`;
+        } catch (err) {
+          alert(err.message || String(err));
+        }
+      });
+    });
+  }
+
+  btnReload.addEventListener("click", async () => {
+    try {
+      await loadTournament();
+      renderTeamButtons();
+      if (selectedTeamName) {
+        await renderSelectedTeam();
+      }
+    } catch (err) {
+      alert(err.message || String(err));
+    }
+  });
+
+  btnBack.addEventListener("click", () => {
+    history.back();
+  });
+
+  (async function init() {
+    try {
+      const ok = await verifyAccess();
+      if (!ok) return;
+
+      tournamentId = await resolveTournamentId();
+      await loadTournament();
+      renderTeamButtons();
+      await renderSelectedTeam();
+    } catch (err) {
+      alert(err.message || String(err));
+    }
+  })();
+
+  async function resizeImage(file, maxWidth = 800, maxHeight = 800, quality = 0.8) {
+    if (!file) {
+      throw new Error("사진 파일을 선택해 주세요.");
+    }
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        img.src = e.target.result;
+      };
+
+      reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
+      img.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
+
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error("이미지 변환에 실패했습니다."));
+              return;
+            }
+
+            resolve(
+              new File(
+                [blob],
+                (file.name || "team-photo").replace(/\.\w+$/, "") + ".jpg",
+                { type: "image/jpeg" }
+              )
+            );
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }
+
+  let cropper = null;
+
+  async function openCropperModal(file, options = {}) {
+    const {
+      aspectRatio = 1,
+      outputSize = 800,
+      quality = 0.85
+    } = options;
+
+    if (!file) {
+      throw new Error("사진 파일을 선택해 주세요.");
+    }
+
+    const cropModal = document.getElementById("cropModal");
+    const cropImage = document.getElementById("cropImage");
+    const btnCropCancel = document.getElementById("btnCropCancel");
+    const btnCropConfirm = document.getElementById("btnCropConfirm");
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      const cleanup = () => {
+        if (cropper) {
+          cropper.destroy();
+          cropper = null;
+        }
+        cropImage.src = "";
+        cropModal.style.display = "none";
+        btnCropCancel.onclick = null;
+        btnCropConfirm.onclick = null;
+      };
+
+      reader.onload = () => {
+        cropImage.src = reader.result;
+        cropModal.style.display = "flex";
+
+        cropImage.onload = () => {
+          if (cropper) cropper.destroy();
+
+          cropper = new Cropper(cropImage, {
+            aspectRatio,
+            viewMode: 1,
+            dragMode: "move",
+            autoCropArea: 1,
+            responsive: true,
+            background: false
+          });
+        };
+      };
+
+      btnCropCancel.onclick = () => {
+        cleanup();
+        reject(new Error("사진 자르기가 취소되었습니다."));
+      };
+
+      btnCropConfirm.onclick = () => {
+        try {
+          const canvas = cropper.getCroppedCanvas({
+            width: outputSize,
+            height: outputSize,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: "high"
+          });
+
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              cleanup();
+              reject(new Error("잘라낸 이미지 생성에 실패했습니다."));
+              return;
+            }
+
+            const croppedFile = new File(
+              [blob],
+              (file.name || "player-photo").replace(/\.\w+$/, "") + "-crop.jpg",
+              { type: "image/jpeg" }
+            );
+
+            cleanup();
+            resolve(croppedFile);
+          }, "image/jpeg", quality);
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      };
+
+      reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  btnDeleteTeamPhoto.addEventListener("click", async () => {
+    try {
+      if (!selectedTeamName) {
+        throw new Error("사업소를 먼저 선택해 주세요.");
+      }
+
+      if (!confirm(`${selectedTeamName} 전체사진을 삭제할까요?`)) return;
+
+      await remove(ref(db, `tournaments/${tournamentId}/photoAssets/teamPhotos/${sanitizeKey(selectedTeamName)}`));
+      teamPhotoFile.value = "";
+      await renderSelectedTeam();
+      leftStatus.textContent = `${selectedTeamName} 전체사진 삭제 완료`;
+    } catch (err) {
+      alert(err.message || String(err));
+    }
+  });
+</script>
 
   
 </body>
