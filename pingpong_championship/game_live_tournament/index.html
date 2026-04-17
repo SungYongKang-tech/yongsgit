@@ -1259,21 +1259,40 @@ async function openPlayerPhoto(teamId, playerName) {
   const team = getTeam(teamId);
   const teamName = safeTrim(team?.name || "");
   const cleanPlayerName = safeTrim(playerName);
+  const slotKey = getPlayerSlotKey(teamId, cleanPlayerName);
 
-  if (!teamName || !cleanPlayerName) return;
+  if (!teamName || !cleanPlayerName) {
+    return;
+  }
 
   try {
-    const photoPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`;
-    console.log("photoPath =", photoPath);
+    let data = null;
 
-    const snap = await get(ref(db, photoPath));
-    console.log("photoSnap exists =", snap.exists(), snap.exists() ? snap.val() : null);
+    // 1순위: slotKey 방식 조회
+    if (slotKey) {
+      const slotPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(slotKey)}`;
+      console.log("slotPath =", slotPath);
 
-    const data = snap.exists() ? snap.val() : null;
+      const slotSnap = await get(ref(db, slotPath));
+      if (slotSnap.exists()) {
+        data = slotSnap.val();
+      }
+    }
+
+    // 2순위: 예전 이름 저장 방식도 호환 조회
+    if (!data) {
+      const legacyPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`;
+      console.log("legacyPath =", legacyPath);
+
+      const legacySnap = await get(ref(db, legacyPath));
+      if (legacySnap.exists()) {
+        data = legacySnap.val();
+      }
+    }
 
     openPhotoModal({
       teamName,
-      playerName: cleanPlayerName,
+      playerName: data?.displayName || data?.playerName || cleanPlayerName,
       imageUrl: data?.secureUrl || data?.thumbUrl || ""
     });
   } catch (err) {
@@ -1390,6 +1409,23 @@ function bindRosterPhotoClicks(root = document) {
     function getTeam(teamId) {
       return tournamentData?.teams?.[teamId] || null;
     }
+
+    function getPlayerSlotKey(teamId, playerName) {
+  const team = getTeam(teamId);
+  if (!team) return "";
+
+  const cleanName = safeTrim(playerName);
+  const men = Array.isArray(team.men) ? team.men : [];
+  const women = Array.isArray(team.women) ? team.women : [];
+
+  const menIndex = men.findIndex(name => safeTrim(name) === cleanName);
+  if (menIndex >= 0) return `men_${menIndex}`;
+
+  const womenIndex = women.findIndex(name => safeTrim(name) === cleanName);
+  if (womenIndex >= 0) return `women_${womenIndex}`;
+
+  return "";
+}
 
     function getSelectablePlayers(teamId, matchTypeName) {
       const team = getTeam(teamId);
