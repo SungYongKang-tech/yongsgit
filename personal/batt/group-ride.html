@@ -128,7 +128,8 @@
   gap:4px;
   width:100%;
 }
-  .btn{
+
+.btn{
   height:34px;
   min-width:0;
   border:none;
@@ -145,6 +146,7 @@
   padding:0 2px;
   letter-spacing:-0.4px;
 }
+
 
   .btn.blue{ background:linear-gradient(180deg, var(--blue1), var(--blue2)); }
   .btn.green{ background:linear-gradient(180deg, var(--green1), var(--green2)); }
@@ -660,65 +662,22 @@ async function joinCurrentRoomAndMove() {
 async function shareInvite() {
   const room = roomInput.value.trim() || currentRoomId;
   if (!room) {
-    alert("방 먼저 만들기 또는 참가하세요");
+    alert("방 먼저 만드세요");
     return;
   }
 
   const inviteUrl = buildInviteUrl();
-  const shareTitle = "그룹라이딩 초대";
-  const shareText =
-    `같이 라이딩해요!\n` +
-    `방번호: ${room}\n` +
-    `링크를 열고 이름(성 제외) 또는 닉네임만 입력하면 바로 참가할 수 있어요.`;
 
   try {
-    if (window.Kakao && window.Kakao.Share) {
-      window.Kakao.Share.sendDefault({
-        objectType: "feed",
-        content: {
-          title: shareTitle,
-          description: `방번호 ${room} · 링크 열고 이름/닉네임 입력 후 바로 참가`,
-          imageUrl: "https://developers.kakao.com/tool/resource/static/img/button/kakaotalksharing/kakaotalk_sharing_btn_small.png",
-          link: {
-            mobileWebUrl: inviteUrl,
-            webUrl: inviteUrl
-          }
-        },
-        buttons: [
-          {
-            title: "그룹라이딩 참가",
-            link: {
-              mobileWebUrl: inviteUrl,
-              webUrl: inviteUrl
-            }
-          }
-        ]
-      });
-      return;
-    }
+    await navigator.share({
+      title: "그룹라이딩 초대",
+      text: `방번호: ${room}\n이름 입력하고 바로 참가하세요`,
+      url: inviteUrl
+    });
   } catch (err) {
-    console.log("카카오 공유 실패:", err);
-  }
-
-  try {
-    if (navigator.share) {
-      await navigator.share({
-        title: shareTitle,
-        text: shareText,
-        url: inviteUrl
-      });
-      return;
-    }
-  } catch (err) {
-    console.log("일반 공유 취소 또는 실패:", err);
-  }
-
-  try {
-    await navigator.clipboard.writeText(`${shareText}\n${inviteUrl}`);
-    alert("초대 문구와 링크를 복사했습니다.\n카톡에 붙여넣기 하세요.");
-  } catch (err) {
-    console.log("클립보드 복사 실패:", err);
-    prompt("아래 내용을 복사해서 공유하세요.", `${shareText}\n${inviteUrl}`);
+    // fallback
+    navigator.clipboard.writeText(inviteUrl);
+    alert("링크 복사됨");
   }
 }
 
