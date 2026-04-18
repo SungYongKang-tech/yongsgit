@@ -6,6 +6,7 @@
 <title>그룹라이딩 설정</title>
 
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=90120eccb060eed4b76790684d641951&libraries=services"></script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.5/kakao.min.js"></script>
 
 <style>
   :root{
@@ -74,7 +75,7 @@
 
   .status-pill{
     flex:0 0 auto;
-    max-width:48%;
+    max-width:52%;
     padding:6px 10px;
     border-radius:999px;
     border:1px solid var(--line);
@@ -98,7 +99,7 @@
 
   .input-row{
     display:grid;
-    grid-template-columns:1fr 1fr;
+    grid-template-columns:1.2fr 1fr;
     gap:6px;
   }
 
@@ -124,12 +125,6 @@
   .btn-row-4{
     display:grid;
     grid-template-columns:repeat(4, 1fr);
-    gap:6px;
-  }
-
-  .btn-row-3{
-    display:grid;
-    grid-template-columns:repeat(3, 1fr);
     gap:6px;
   }
 
@@ -185,25 +180,31 @@
 
   <div class="panel">
     <div class="input-row">
-      <input id="nameInput" class="input" placeholder="이름" />
+      <input id="nameInput" class="input" placeholder="이름(성 제외) 또는 닉네임" />
       <input id="roomInput" class="input" placeholder="방번호" />
     </div>
   </div>
 
   <div class="panel">
     <div class="btn-row-4">
-  <button id="createRoomBtn" class="btn blue">방만들기</button>
-  <button id="joinRoomBtn" class="btn green">방참가</button>
-  <button id="leaveRoomBtn" class="btn red">방나가기</button>
-  <button id="setDestBtn" class="btn dark">목적지</button>
-</div>
+      <button id="createRoomBtn" class="btn blue">방만들기</button>
+      <button id="joinRoomBtn" class="btn green">방참가</button>
+      <button id="leaveRoomBtn" class="btn red">방나가기</button>
+      <button id="setDestBtn" class="btn dark">목적지</button>
+    </div>
   </div>
 
   <div class="panel">
     <div class="btn-row-4">
+      <button id="inviteBtn" class="btn sky">초대하기</button>
       <button id="moveRideBtn" class="btn sky">주행기록 이동</button>
       <button id="fitMapBtn" class="btn dark">지도중심</button>
       <button id="myLocBtn" class="btn dark">내위치</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="btn-row-4">
       <button id="clearDestBtn" class="btn dark">목적지삭제</button>
     </div>
   </div>
@@ -233,6 +234,14 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
+if (window.Kakao && !window.Kakao.isInitialized()) {
+  try {
+    window.Kakao.init("90120eccb060eed4b76790684d641951");
+  } catch (e) {
+    console.log("Kakao init 실패:", e);
+  }
+}
+
 const nameInput = document.getElementById("nameInput");
 const roomInput = document.getElementById("roomInput");
 const roomStatusEl = document.getElementById("roomStatusEl");
@@ -244,9 +253,38 @@ let destMarker = null;
 let myMarker = null;
 let groupWatchId = null;
 let myMemberColor = localStorage.getItem("ride_group_color") || "";
+let autoJoinMode = false;
 
 function updateRoomStatus() {
   roomStatusEl.textContent = currentRoomId ? `방 ${currentRoomId}` : "방 없음";
+}
+
+function normalizeDisplayName(raw = "") {
+  return String(raw || "").trim().replace(/\s+/g, " ");
+}
+
+function validateDisplayName(name) {
+  const n = normalizeDisplayName(name);
+
+  if (!n) {
+    alert("이름(성 제외) 또는 닉네임을 입력하세요");
+    nameInput.focus();
+    return false;
+  }
+
+  if (n.length < 2) {
+    alert("이름 또는 닉네임은 2자 이상 입력하세요");
+    nameInput.focus();
+    return false;
+  }
+
+  if (n.length > 12) {
+    alert("이름 또는 닉네임은 12자 이하로 입력하세요");
+    nameInput.focus();
+    return false;
+  }
+
+  return true;
 }
 
 function loadSavedGroupInfo() {
@@ -265,6 +303,20 @@ function loadSavedGroupInfo() {
     currentRoomId = savedRoomId;
   }
 
+  updateRoomStatus();
+}
+
+function loadFromURL() {
+  const params = new URLSearchParams(location.search);
+  const room = (params.get("room") || "").trim();
+  const auto = (params.get("auto") || "").trim();
+
+  if (room) {
+    roomInput.value = room;
+    currentRoomId = room;
+  }
+
+  autoJoinMode = auto === "1";
   updateRoomStatus();
 }
 
@@ -404,10 +456,13 @@ function getStableColorFromName(name = "") {
 
 function getMyMemberColor() {
   const currentName = nameInput.value.trim() || localStorage.getItem("ride_group_name") || "라이더";
-  if (!myMemberColor) {
-    myMemberColor = getStableColorFromName(currentName);
+  const desiredColor = getStableColorFromName(currentName);
+
+  if (myMemberColor !== desiredColor) {
+    myMemberColor = desiredColor;
     localStorage.setItem("ride_group_color", myMemberColor);
   }
+
   return myMemberColor;
 }
 
@@ -422,7 +477,7 @@ async function ensureGroupMember() {
   const memberRef = getMyMemberRef();
   if (!memberRef) return;
 
-  const name = nameInput.value.trim() || localStorage.getItem("ride_group_name") || "라이더";
+  const name = normalizeDisplayName(nameInput.value || localStorage.getItem("ride_group_name") || "라이더");
 
   await update(memberRef, {
     name,
@@ -439,7 +494,7 @@ async function updateMyGroupLocation(lat, lng, accuracy = 0) {
   const memberRef = getMyMemberRef();
   if (!memberRef) return;
 
-  const name = nameInput.value.trim() || localStorage.getItem("ride_group_name") || "라이더";
+  const name = normalizeDisplayName(nameInput.value || localStorage.getItem("ride_group_name") || "라이더");
 
   await update(memberRef, {
     name,
@@ -558,12 +613,112 @@ function saveLocalInfo(name, room) {
   localStorage.setItem("ride_group_enabled", "on");
 }
 
+function buildInviteUrl() {
+  const room = roomInput.value.trim() || currentRoomId;
+  if (!room) return "";
+  const base = `${location.origin}${location.pathname}`;
+  return `${base}?room=${encodeURIComponent(room)}&auto=1`;
+}
+
+async function joinCurrentRoomAndMove() {
+  try {
+    await ensureAuth();
+
+    const name = normalizeDisplayName(nameInput.value);
+    const room = roomInput.value.trim();
+
+    if (!validateDisplayName(name)) return;
+    if (!room) return alert("방번호 입력");
+
+    nameInput.value = name;
+    currentRoomId = room;
+
+    saveLocalInfo(name, room);
+    updateRoomStatus();
+
+    await ensureGroupMember();
+    await loadExistingDestination(room);
+    await uploadCurrentLocationOnce();
+    startGroupWatching();
+
+    location.href = "ride-map(kakaomap).html";
+  } catch (err) {
+    console.error(err);
+    alert("방 참가 오류");
+  }
+}
+
+async function shareInvite() {
+  const room = roomInput.value.trim() || currentRoomId;
+  if (!room) {
+    alert("방 먼저 만들기 또는 참가하세요");
+    return;
+  }
+
+  const inviteUrl = buildInviteUrl();
+  const shareTitle = "그룹라이딩 초대";
+  const shareText =
+    `같이 라이딩해요!\n` +
+    `방번호: ${room}\n` +
+    `링크를 열고 이름(성 제외) 또는 닉네임만 입력하면 바로 참가할 수 있어요.`;
+
+  try {
+    if (window.Kakao && window.Kakao.Share) {
+      window.Kakao.Share.sendDefault({
+        objectType: "feed",
+        content: {
+          title: shareTitle,
+          description: `방번호 ${room} · 링크 열고 이름/닉네임 입력 후 바로 참가`,
+          imageUrl: "https://developers.kakao.com/tool/resource/static/img/button/kakaotalksharing/kakaotalk_sharing_btn_small.png",
+          link: {
+            mobileWebUrl: inviteUrl,
+            webUrl: inviteUrl
+          }
+        },
+        buttons: [
+          {
+            title: "그룹라이딩 참가",
+            link: {
+              mobileWebUrl: inviteUrl,
+              webUrl: inviteUrl
+            }
+          }
+        ]
+      });
+      return;
+    }
+  } catch (err) {
+    console.log("카카오 공유 실패:", err);
+  }
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: shareTitle,
+        text: shareText,
+        url: inviteUrl
+      });
+      return;
+    }
+  } catch (err) {
+    console.log("일반 공유 취소 또는 실패:", err);
+  }
+
+  try {
+    await navigator.clipboard.writeText(`${shareText}\n${inviteUrl}`);
+    alert("초대 문구와 링크를 복사했습니다.\n카톡에 붙여넣기 하세요.");
+  } catch (err) {
+    console.log("클립보드 복사 실패:", err);
+    prompt("아래 내용을 복사해서 공유하세요.", `${shareText}\n${inviteUrl}`);
+  }
+}
+
 document.getElementById("createRoomBtn").onclick = async () => {
   try {
     await ensureAuth();
 
-    const name = nameInput.value.trim();
-    if (!name) return alert("이름 입력");
+    const rawName = normalizeDisplayName(nameInput.value);
+    if (!validateDisplayName(rawName)) return;
 
     let room = roomInput.value.trim();
     if (!room) room = randomRoom();
@@ -572,14 +727,16 @@ document.getElementById("createRoomBtn").onclick = async () => {
       meta: {
         createdAt: Date.now(),
         createdBy: auth.currentUser.uid,
-        title: `${name}의 그룹라이딩`,
+        title: `${rawName}의 그룹라이딩`,
         status: "open"
       }
     });
 
     currentRoomId = room;
     roomInput.value = room;
-    saveLocalInfo(name, room);
+    nameInput.value = rawName;
+
+    saveLocalInfo(rawName, room);
     updateRoomStatus();
 
     await ensureGroupMember();
@@ -592,6 +749,10 @@ document.getElementById("createRoomBtn").onclick = async () => {
     console.error(err);
     alert("방 생성 오류");
   }
+};
+
+document.getElementById("joinRoomBtn").onclick = async () => {
+  await joinCurrentRoomAndMove();
 };
 
 document.getElementById("leaveRoomBtn").onclick = async () => {
@@ -608,13 +769,7 @@ document.getElementById("leaveRoomBtn").onclick = async () => {
     stopGroupWatching();
 
     currentRoomId = "";
-
-// 방번호 입력칸은 남겨둠
-// roomInput.value = "";
-
-localStorage.removeItem("ride_group_enabled");
-// 마지막 참가 방번호는 남겨두기 위해 삭제하지 않음
-// localStorage.removeItem("ride_group_room_id");
+    localStorage.removeItem("ride_group_enabled");
 
     updateRoomStatus();
 
@@ -634,33 +789,6 @@ localStorage.removeItem("ride_group_enabled");
   } catch (err) {
     console.error(err);
     alert("방나가기 실패");
-  }
-};
-
-document.getElementById("joinRoomBtn").onclick = async () => {
-  try {
-    await ensureAuth();
-
-    const name = nameInput.value.trim();
-    const room = roomInput.value.trim();
-
-    if (!name) return alert("이름 입력");
-    if (!room) return alert("방번호 입력");
-
-    currentRoomId = room;
-saveLocalInfo(name, room);
-updateRoomStatus();
-
-await ensureGroupMember();
-await loadExistingDestination(room);
-await uploadCurrentLocationOnce();
-startGroupWatching();
-
-// 방참가 후 바로 주행기록 화면으로 이동
-location.href = "ride-map(kakaomap).html";
-  } catch (err) {
-    console.error(err);
-    alert("방 참가 오류");
   }
 };
 
@@ -697,12 +825,18 @@ document.getElementById("clearDestBtn").onclick = async () => {
   }
 };
 
-document.getElementById("moveRideBtn").onclick = () => {
-  const name = nameInput.value.trim();
+document.getElementById("inviteBtn").onclick = async () => {
+  await shareInvite();
+};
+
+document.getElementById("moveRideBtn").onclick = async () => {
+  const name = normalizeDisplayName(nameInput.value);
   const room = roomInput.value.trim() || currentRoomId;
 
-  if (!name || !room) return alert("이름/방번호 확인");
+  if (!validateDisplayName(name)) return;
+  if (!room) return alert("방번호 확인");
 
+  nameInput.value = name;
   saveLocalInfo(name, room);
   location.href = "ride-map(kakaomap).html";
 };
@@ -750,6 +884,13 @@ document.getElementById("myLocBtn").onclick = () => {
   );
 };
 
+nameInput.addEventListener("keydown", async (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    await joinCurrentRoomAndMove();
+  }
+});
+
 window.addEventListener("resize", () => {
   if (!map) return;
   setTimeout(() => map.relayout(), 100);
@@ -761,6 +902,7 @@ window.addEventListener("pageshow", () => {
 });
 
 loadSavedGroupInfo();
+loadFromURL();
 initMap();
 
 window.addEventListener("load", async () => {
@@ -768,8 +910,16 @@ window.addEventListener("load", async () => {
 
   try {
     await ensureAuth();
-    await ensureGroupMember();
     await loadExistingDestination(currentRoomId);
+
+    if (autoJoinMode) {
+      setTimeout(() => {
+        nameInput.focus();
+      }, 200);
+      return;
+    }
+
+    await ensureGroupMember();
     await uploadCurrentLocationOnce();
     startGroupWatching();
   } catch (err) {
