@@ -111,7 +111,15 @@
     .top-btn.primary { background: linear-gradient(180deg, #2563eb, #1d4ed8); }
     .top-btn.green { background: linear-gradient(180deg, #22c55e, #16a34a); }
     .top-btn.red { background: linear-gradient(180deg, #ef4444, #dc2626); }
+    .voice-tool-row {
+  grid-template-columns: 1fr 1fr auto auto;
+}
 
+@media (max-width: 520px) {
+  .voice-tool-row {
+    grid-template-columns: 1fr;
+  }
+}
     .data-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -946,15 +954,20 @@
             <button type="button" class="message-action-btn" id="messageAddBtn">추가</button>
             <button type="button" class="message-action-btn secondary" id="messageCancelEditBtn" style="display:none;">취소</button>
           </div>
-          <div class="message-tool-row">
-            <select class="message-size-select" id="messageFontSizeSelect">
-              <option value="medium">목록 글씨 보통</option>
-              <option value="large">목록 글씨 크게</option>
-              <option value="xlarge">목록 글씨 아주 크게</option>
-            </select>
-            <button type="button" class="message-action-btn secondary" id="messageSaveSettingsBtn">설정 저장</button>
-            <button type="button" class="message-action-btn secondary" id="messageResetBtn">기본복원</button>
-          </div>
+          <div class="message-tool-row voice-tool-row">
+  <select class="message-size-select" id="messageFontSizeSelect">
+    <option value="medium">목록 글씨 보통</option>
+    <option value="large">목록 글씨 크게</option>
+    <option value="xlarge">목록 글씨 아주 크게</option>
+  </select>
+
+  <select class="message-size-select" id="voiceSelect">
+    <option value="">한국어 음성 불러오는 중...</option>
+  </select>
+
+  <button type="button" class="message-action-btn secondary" id="messageSaveSettingsBtn">설정 저장</button>
+  <button type="button" class="message-action-btn secondary" id="messageResetBtn">기본복원</button>
+</div>
         </div>
         <div class="message-list-wrap">
           <div class="message-list" id="messageList"></div>
@@ -1184,6 +1197,7 @@ const SELECTED_COURSE_KEY = "ebike_selected_course_v1";
 const DISPLAY_SETTINGS_KEY = "ebike_display_settings_v1";
 const GROUP_MESSAGE_SETTINGS_KEY = "ebike_group_message_settings_v1";
 const LAST_GROUP_MESSAGE_KEY = "ebike_last_group_message_v1";
+const TTS_VOICE_STORAGE_KEY = "ride_tts_voice_name_v1";
 const OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup";
 const MAX_ELEVATION_SAMPLES = 120;
 
@@ -1801,6 +1815,7 @@ const messageInput = document.getElementById("messageInput");
 const messageAddBtn = document.getElementById("messageAddBtn");
 const messageCancelEditBtn = document.getElementById("messageCancelEditBtn");
 const messageFontSizeSelect = document.getElementById("messageFontSizeSelect");
+const voiceSelect = document.getElementById("voiceSelect");
 const messageSaveSettingsBtn = document.getElementById("messageSaveSettingsBtn");
 const messageResetBtn = document.getElementById("messageResetBtn");
 const broadcastOverlay = document.getElementById("broadcastOverlay");
@@ -1830,6 +1845,14 @@ function getGroupMemberCount() {
   return Object.keys(groupMembers || {}).length;
 }
 
+function getSavedVoiceName() {
+  return localStorage.getItem(TTS_VOICE_STORAGE_KEY) || "";
+}
+
+function saveSelectedVoiceName(name) {
+  localStorage.setItem(TTS_VOICE_STORAGE_KEY, name || "");
+}
+
 function getBroadcastFontSizeValue() {
   return "clamp(42px, 9vw, 88px)";
 }
@@ -1842,6 +1865,45 @@ function getMessageCardFontSizeValue(sizeKey = groupMessageSettings?.fontSize) {
     default:
       return "17px";
   }
+}
+
+function populateVoiceSelect() {
+  if (!voiceSelect || !("speechSynthesis" in window)) return;
+
+  const voices = window.speechSynthesis.getVoices?.() || [];
+  const koreanVoices = voices.filter(v =>
+    String(v.lang || "").toLowerCase().startsWith("ko")
+  );
+
+  const savedVoiceName = getSavedVoiceName();
+
+  if (!koreanVoices.length) {
+    voiceSelect.innerHTML = `<option value="">한국어 음성 없음</option>`;
+    return;
+  }
+
+  voiceSelect.innerHTML = koreanVoices.map(v => `
+    <option value="${escapeHtml(v.name)}">${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>
+  `).join("");
+
+  const matched = koreanVoices.find(v => v.name === savedVoiceName);
+  voiceSelect.value = matched ? matched.name : koreanVoices[0].name;
+}
+
+function getPreferredKoreanVoice() {
+  if (!("speechSynthesis" in window)) return null;
+
+  const voices = window.speechSynthesis.getVoices?.() || [];
+  const koreanVoices = voices.filter(v =>
+    String(v.lang || "").toLowerCase().startsWith("ko")
+  );
+
+  if (!koreanVoices.length) return null;
+
+  const selectedName = voiceSelect?.value || getSavedVoiceName();
+  const selectedVoice = koreanVoices.find(v => v.name === selectedName);
+
+  return selectedVoice || koreanVoices[0];
 }
 
 function applyGroupMessageSettings(save = false) {
@@ -1917,9 +1979,8 @@ const utter = new SpeechSynthesisUtterance(speechText);
     utter.lang = "ko-KR";
     utter.rate = 1;
     utter.pitch = 1;
-    const voices = window.speechSynthesis.getVoices?.() || [];
-    const koVoice = voices.find((v) => String(v.lang || "").toLowerCase().startsWith("ko"));
-    if (koVoice) utter.voice = koVoice;
+    const selectedVoice = getPreferredKoreanVoice();
+if (selectedVoice) utter.voice = selectedVoice;
     window.speechSynthesis.speak(utter);
   } catch (e) {
     console.log("음성 읽기 실패:", e);
@@ -3215,17 +3276,23 @@ messageCancelEditBtn.addEventListener("click", () => {
 
 messageSaveSettingsBtn.addEventListener("click", () => {
   groupMessageSettings.fontSize = messageFontSizeSelect?.value || "xlarge";
+  saveSelectedVoiceName(voiceSelect?.value || "");
   applyGroupMessageSettings(true);
-  alert("목록 글씨 크기 설정을 저장했습니다.");
+  alert("목록 글씨 크기와 음성 설정을 저장했습니다.");
 });
 
 messageResetBtn.addEventListener("click", () => {
   if (!confirm("메시지 목록과 글씨 크기를 기본값으로 되돌릴까요?")) return;
   groupMessageSettings = { ...initialGroupMessageSettings, messages: DEFAULT_GROUP_MESSAGES.slice() };
-  applyGroupMessageSettings(true);
+  localStorage.removeItem(TTS_VOICE_STORAGE_KEY);
+  applyGroupMessageSettings(false);
   renderMessageList();
   setMessageEditMode(-1);
+  populateVoiceSelect();
 });
+
+
+
 
 messageList.addEventListener("click", async (e) => {
   const target = e.target.closest("[data-action]");
@@ -3450,11 +3517,23 @@ async function init() {
   }
 
   renderMessageList();
+
   if ("speechSynthesis" in window) {
-    try { window.speechSynthesis.getVoices(); } catch (e) {}
+    try {
+      window.speechSynthesis.getVoices();
+    } catch (e) {}
+
+    populateVoiceSelect();
+
+    window.speechSynthesis.onvoiceschanged = () => {
+      populateVoiceSelect();
+    };
   }
+
   displaySettings.mode = displaySettings.defaultMode || displaySettings.mode || "map";
   applyDisplaySettings(false);
+  applyGroupMessageSettings(false);
+
   initKakaoMap();
   applySelectedCourseIfExists();
   redrawPath();
@@ -3463,6 +3542,32 @@ async function init() {
   startGpsReconnectMonitor();
 
   await ensureAuth();
+
+  if (groupEnabled && currentRoomId) {
+    renderFriendStrip();
+    await ensureGroupMember();
+    subscribeGroupData();
+    startGroupWatching();
+  }
+
+  if (rideData.started && !rideData.paused) {
+    startWatching();
+    await requestWakeLockSafe();
+    startWakeLockKeeper();
+  }
+}
+
+applyDisplaySettings(false);
+applyGroupMessageSettings(false);
+renderMessageList();
+
+if ("speechSynthesis" in window) {
+  populateVoiceSelect();
+
+  window.speechSynthesis.onvoiceschanged = () => {
+    populateVoiceSelect();
+  };
+}
 
 if (groupEnabled && currentRoomId) {
   renderFriendStrip();        // 먼저 내 이름이라도 즉시 표시
