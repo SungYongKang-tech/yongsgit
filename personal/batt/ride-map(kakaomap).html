@@ -1875,19 +1875,28 @@ function populateVoiceSelect() {
     String(v.lang || "").toLowerCase().startsWith("ko")
   );
 
+  const uniqueMap = new Map();
+  koreanVoices.forEach(v => {
+    const key = `${v.name}__${v.voiceURI}__${v.lang}`;
+    if (!uniqueMap.has(key)) uniqueMap.set(key, v);
+  });
+
+  const uniqueVoices = [...uniqueMap.values()];
   const savedVoiceName = getSavedVoiceName();
 
-  if (!koreanVoices.length) {
+  if (!uniqueVoices.length) {
     voiceSelect.innerHTML = `<option value="">한국어 음성 없음</option>`;
     return;
   }
 
-  voiceSelect.innerHTML = koreanVoices.map(v => `
-    <option value="${escapeHtml(v.name)}">${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>
+  voiceSelect.innerHTML = uniqueVoices.map(v => `
+    <option value="${escapeHtml(v.name)}">
+      ${escapeHtml(v.name)} | ${escapeHtml(v.voiceURI || "")} | ${escapeHtml(v.lang)}
+    </option>
   `).join("");
 
-  const matched = koreanVoices.find(v => v.name === savedVoiceName);
-  voiceSelect.value = matched ? matched.name : koreanVoices[0].name;
+  const matched = uniqueVoices.find(v => v.name === savedVoiceName);
+  voiceSelect.value = matched ? matched.name : uniqueVoices[0].name;
 }
 
 function getPreferredKoreanVoice() {
