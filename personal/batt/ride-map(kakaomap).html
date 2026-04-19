@@ -1826,6 +1826,10 @@ function escapeHtml(value = "") {
     .replace(/'/g, "&#39;");
 }
 
+function getGroupMemberCount() {
+  return Object.keys(groupMembers || {}).length;
+}
+
 function getBroadcastFontSizeValue() {
   return "clamp(42px, 9vw, 88px)";
 }
@@ -1900,7 +1904,16 @@ function speakBroadcastMessage(senderName, messageText) {
   try {
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(`${senderName}. ${messageText}`);
+    
+   const memberCount = getGroupMemberCount();
+
+const speechText = memberCount <= 2
+  ? messageText
+  : `${senderName}. ${messageText}`;
+
+const utter = new SpeechSynthesisUtterance(speechText);
+
+
     utter.lang = "ko-KR";
     utter.rate = 1;
     utter.pitch = 1;
@@ -1926,7 +1939,16 @@ function showBroadcastMessage(senderName, messageText) {
   if (!broadcastOverlay || !broadcastSender || !broadcastText) return;
   if (broadcastHideTimer) clearTimeout(broadcastHideTimer);
   applyGroupMessageSettings(false);
+  
+const memberCount = getGroupMemberCount();
+
+if (memberCount <= 2) {
+  broadcastSender.style.display = "none";
+} else {
+  broadcastSender.style.display = "";
   broadcastSender.textContent = senderName || "이름없음";
+}
+
   broadcastText.textContent = messageText || "";
   broadcastOverlay.classList.add("show");
   speakBroadcastMessage(senderName || "이름없음", messageText || "");
