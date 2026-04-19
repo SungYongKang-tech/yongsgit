@@ -863,6 +863,16 @@
       }
     }
 
+    .message-card-actions{
+  display:flex;
+  gap:6px;
+  justify-content:flex-end;
+}
+
+.message-item:not(:has(.message-card-actions)) {
+  gap: 0;
+}
+
   </style>
 </head>
 <body>
@@ -1729,6 +1739,7 @@ let groupMessageSettings = loadGroupMessageSettings();
 let speedProfile = loadSpeedProfile();
 let isSavingRide = false;
 let editingMessageIndex = -1;
+let isMessageManageMode = false;
 let lastSpeedSampleAt = 0;
 let lastSpeedSampleDistanceM = 0;
 
@@ -1844,17 +1855,28 @@ function setMessageEditMode(index = -1) {
 
 function renderMessageList() {
   if (!messageList) return;
+
   const messages = normalizeMessageList(groupMessageSettings.messages);
   groupMessageSettings.messages = messages;
+
   messageList.innerHTML = messages.map((msg, idx) => `
     <div class="message-item">
-      <button type="button" class="message-card-btn" data-action="send" data-index="${idx}" data-message="${escapeHtml(msg)}">
+      <button
+        type="button"
+        class="message-card-btn"
+        data-action="send"
+        data-index="${idx}"
+        data-message="${escapeHtml(msg)}"
+      >
         ${idx + 1}. ${escapeHtml(msg)}
       </button>
-      <div class="message-card-actions">
-        <button type="button" class="message-mini-btn" data-action="edit" data-index="${idx}">수정</button>
-        <button type="button" class="message-mini-btn danger" data-action="delete" data-index="${idx}">삭제</button>
-      </div>
+
+      ${isMessageManageMode ? `
+        <div class="message-card-actions">
+          <button type="button" class="message-mini-btn" data-action="edit" data-index="${idx}">수정</button>
+          <button type="button" class="message-mini-btn danger" data-action="delete" data-index="${idx}">삭제</button>
+        </div>
+      ` : ``}
     </div>
   `).join("");
 }
@@ -3051,23 +3073,34 @@ displaySettingsBtn.addEventListener("click", () => {
 
 
 messageBtn.addEventListener("click", () => {
-  if (!groupEnabled || !currentRoomId) {
-    alert("그룹라이딩 참여 중일 때만 메시지를 사용할 수 있습니다.");
-    return;
-  }
-  displayPanel.classList.remove("open");
   const willOpen = !messagePanel.classList.contains("open");
-  messagePanel.classList.toggle("open");
+
+  displayPanel.classList.remove("open");
+
   if (willOpen) {
+    isMessageManageMode = false;
+    messageTools.style.display = "none";
+    messageManageBtn.textContent = "메시지 설정";
+    setMessageEditMode(-1);
     renderMessageList();
-    applyGroupMessageSettings(false);
   }
+
+  messagePanel.classList.toggle("open");
 });
 
 messageManageBtn.addEventListener("click", () => {
-  const willOpen = messageTools.style.display === "none";
-  messageTools.style.display = willOpen ? "grid" : "none";
-  if (!willOpen) setMessageEditMode(-1);
+  isMessageManageMode = !isMessageManageMode;
+
+  if (isMessageManageMode) {
+    messageTools.style.display = "";
+    messageManageBtn.textContent = "전송 화면";
+  } else {
+    messageTools.style.display = "none";
+    messageManageBtn.textContent = "메시지 설정";
+    setMessageEditMode(-1);
+  }
+
+  renderMessageList();
 });
 
 messageAddBtn.addEventListener("click", () => {
