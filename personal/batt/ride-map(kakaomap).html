@@ -1845,12 +1845,12 @@ function getGroupMemberCount() {
   return Object.keys(groupMembers || {}).length;
 }
 
-function getSavedVoiceName() {
+function getSavedVoiceId() {
   return localStorage.getItem(TTS_VOICE_STORAGE_KEY) || "";
 }
 
-function saveSelectedVoiceName(name) {
-  localStorage.setItem(TTS_VOICE_STORAGE_KEY, name || "");
+function saveSelectedVoiceId(id) {
+  localStorage.setItem(TTS_VOICE_STORAGE_KEY, id || "");
 }
 
 function getBroadcastFontSizeValue() {
@@ -1877,26 +1877,29 @@ function populateVoiceSelect() {
 
   const uniqueMap = new Map();
   koreanVoices.forEach(v => {
-    const key = `${v.name}__${v.voiceURI}__${v.lang}`;
-    if (!uniqueMap.has(key)) uniqueMap.set(key, v);
+    const id = v.voiceURI || v.name;
+    if (!uniqueMap.has(id)) uniqueMap.set(id, v);
   });
 
   const uniqueVoices = [...uniqueMap.values()];
-  const savedVoiceName = getSavedVoiceName();
+  const savedVoiceId = getSavedVoiceId();
 
   if (!uniqueVoices.length) {
     voiceSelect.innerHTML = `<option value="">한국어 음성 없음</option>`;
     return;
   }
 
-  voiceSelect.innerHTML = uniqueVoices.map(v => `
-    <option value="${escapeHtml(v.name)}">
-      ${escapeHtml(v.name)} | ${escapeHtml(v.voiceURI || "")} | ${escapeHtml(v.lang)}
-    </option>
-  `).join("");
+  voiceSelect.innerHTML = uniqueVoices.map(v => {
+    const id = v.voiceURI || v.name;
+    return `
+      <option value="${escapeHtml(id)}">
+        ${escapeHtml(v.name)} | ${escapeHtml(v.voiceURI || "")} | ${escapeHtml(v.lang)}
+      </option>
+    `;
+  }).join("");
 
-  const matched = uniqueVoices.find(v => v.name === savedVoiceName);
-  voiceSelect.value = matched ? matched.name : uniqueVoices[0].name;
+  const matched = uniqueVoices.find(v => (v.voiceURI || v.name) === savedVoiceId);
+  voiceSelect.value = matched ? (matched.voiceURI || matched.name) : (uniqueVoices[0].voiceURI || uniqueVoices[0].name);
 }
 
 function getPreferredKoreanVoice() {
@@ -1909,8 +1912,8 @@ function getPreferredKoreanVoice() {
 
   if (!koreanVoices.length) return null;
 
-  const selectedName = voiceSelect?.value || getSavedVoiceName();
-  const selectedVoice = koreanVoices.find(v => v.name === selectedName);
+  const selectedId = voiceSelect?.value || getSavedVoiceId();
+  const selectedVoice = koreanVoices.find(v => (v.voiceURI || v.name) === selectedId);
 
   return selectedVoice || koreanVoices[0];
 }
@@ -3285,7 +3288,7 @@ messageCancelEditBtn.addEventListener("click", () => {
 
 messageSaveSettingsBtn.addEventListener("click", () => {
   groupMessageSettings.fontSize = messageFontSizeSelect?.value || "xlarge";
-  saveSelectedVoiceName(voiceSelect?.value || "");
+ saveSelectedVoiceId(voiceSelect?.value || "");
   applyGroupMessageSettings(true);
   alert("목록 글씨 크기와 음성 설정을 저장했습니다.");
 });
