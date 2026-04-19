@@ -541,6 +541,8 @@ async function setMyGroupOffline() {
 
 const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
 const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
+const SPEED_PROFILE_STORAGE_KEY = "ebike_speed_profile_v1";
+const PENDING_RIDE_SAVE_KEY = "ebike_pending_ride_save_v1";
 const FOLLOW_STORAGE_KEY = "ebike_follow_map";
 const AUTO_ZOOM_STORAGE_KEY = "ebike_auto_zoom";
 const NAV_STATE_STORAGE_KEY = "ebike_nav_state_v1";
@@ -598,6 +600,95 @@ function saveRideData() {
 function clearRideData() {
   rideData = { ...initialData };
   localStorage.removeItem(RIDE_STORAGE_KEY);
+}
+
+function loadSpeedProfile() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SPEED_PROFILE_STORAGE_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSpeedProfile() {
+  localStorage.setItem(SPEED_PROFILE_STORAGE_KEY, JSON.stringify(Array.isArray(speedProfile) ? speedProfile : []));
+}
+
+function clearSpeedProfile() {
+  speedProfile = [];
+  localStorage.removeItem(SPEED_PROFILE_STORAGE_KEY);
+}
+
+function savePendingRideSave(payload) {
+  localStorage.setItem(PENDING_RIDE_SAVE_KEY, JSON.stringify(payload));
+}
+
+function loadPendingRideSave() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PENDING_RIDE_SAVE_KEY) || "null");
+    return saved && typeof saved === "object" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingRideSave() {
+  localStorage.removeItem(PENDING_RIDE_SAVE_KEY);
+}
+
+function buildRideSaveSnapshot() {
+  const elapsedMs = getElapsedMs();
+  const elapsedHours = elapsedMs / 3600000;
+  const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+
+  const safePath = Array.isArray(rideData.path) && rideData.path.length > 0
+    ? rideData.path.slice()
+    : rideData.lastPoint
+      ? [rideData.lastPoint]
+      : rideData.startPoint
+        ? [[rideData.startPoint.lat, rideData.startPoint.lng]]
+        : [];
+
+  return {
+    id: `ride_${Date.now()}`,
+    savedAt: new Date().toISOString(),
+    startTime: rideData.startTime || null,
+    endTime: Date.now(),
+    totalDistanceM: rideData.totalDistanceM,
+    elapsedMs,
+    restMs: rideData.pausedMs + (rideData.paused && rideData.pausedAt ? Date.now() - rideData.pausedAt : 0),
+    avgSpeedKmh: avgSpeed,
+    maxSpeedKmh: rideData.maxSpeedKmh || 0,
+    startPoint: rideData.startPoint,
+    path: safePath,
+    speedProfile: Array.isArray(speedProfile) ? speedProfile.slice() : []
+  };
+}
+
+async function fetchElevationProfileWithTimeout(path, timeoutMs = 25000) {
+  return await Promise.race([
+    fetchElevationProfile(path),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("고도 조회 시간 초과")), timeoutMs))
+  ]);
+}
+
+function setSavingUi(isSaving, message = "") {
+  isSavingRide = isSaving;
+  const buttons = [batteryBtn, historyBtn, courseBtn, startBtn, endBtn, followBtn, zoomBtn, fitBtn, clearRouteBtn, groupRideBtn]
+    .filter(Boolean);
+
+  buttons.forEach((btn) => {
+    btn.disabled = isSaving;
+    btn.style.opacity = isSaving ? "0.65" : "";
+    btn.style.pointerEvents = isSaving ? "none" : "";
+  });
+
+  endBtn.textContent = isSaving ? "저장중" : "종료";
+  endBtn.classList.toggle("green", false);
+  if (isSaving && message) {
+    distanceEl.textContent = message;
+  }
 }
 
 function loadSavedRides() {
@@ -871,30 +962,42 @@ async function fetchElevationProfile(path) {
 }
 
 async function saveRideSummary() {
-  const elapsedMs = getElapsedMs();
-  const elapsedHours = elapsedMs / 3600000;
-  const avgSpeed = elapsedHours > 0 ? (rideData.totalDistanceM / 1000) / elapsedHours : 0;
+  const snapshot = buildRideSaveSnapshot();
+  const safePath = Array.isArray(snapshot.path) ? snapshot.path.slice() : [];
 
-  const safePath = Array.isArray(rideData.path) && rideData.path.length > 0
-    ? rideData.path.slice()
-    : rideData.lastPoint
-      ? [rideData.lastPoint]
-      : rideData.startPoint
-        ? [[rideData.startPoint.lat, rideData.startPoint.lng]]
-        : [];
+  if (!Array.isArray(safePath) || safePath.length < 1) {
+    alert("저장할 경로 데이터가 부족합니다.");
+    return false;
+  }
+
+  savePendingRideSave(snapshot);
+  saveSpeedProfile();
+  setSavingUi(true, "고도 계산 중...");
 
   let elevationProfile = [];
   let elevationSummary = null;
+  let elevationReady = safePath.length <= 1;
 
   try {
     if (safePath.length > 1) {
-      const elevationData = await fetchElevationProfile(safePath);
+      const elevationData = await fetchElevationProfileWithTimeout(safePath, 25000);
       elevationProfile = elevationData.profile || [];
       elevationSummary = elevationData.summary || null;
     }
+    elevationReady = true;
   } catch (e) {
     console.error("고도 데이터 조회 실패:", e);
-    alert("고도 데이터 조회 실패\n네트워크 또는 고도 서버 응답 문제일 수 있습니다.");
+    const retry = confirm("고도 데이터를 아직 받지 못했습니다.\n다시 시도할까요?\n취소하면 종료도 취소됩니다.");
+    setSavingUi(false);
+    if (retry) {
+      return await saveRideSummary();
+    }
+    return false;
+  }
+
+  if (!elevationReady) {
+    setSavingUi(false);
+    return false;
   }
 
   const reducedPath = reducePathDouglasPeucker(safePath, {
@@ -903,25 +1006,26 @@ async function saveRideSummary() {
   });
 
   if (!Array.isArray(reducedPath) || reducedPath.length < 1) {
+    setSavingUi(false);
     alert("저장할 경로 데이터가 부족합니다.");
-    return;
+    return false;
   }
 
   const reducedElevationProfile = reduceProfileSimple(elevationProfile, 1000);
-  const reducedSpeedProfile = reduceProfileSimple(Array.isArray(speedProfile) ? speedProfile.slice() : [], 1000);
+  const reducedSpeedProfile = reduceProfileSimple(Array.isArray(snapshot.speedProfile) ? snapshot.speedProfile.slice() : [], 1000);
 
   const rides = loadSavedRides();
   const item = {
-    id: `ride_${Date.now()}`,
-    savedAt: new Date().toISOString(),
-    startTime: rideData.startTime || null,
-    endTime: Date.now(),
-    totalDistanceM: rideData.totalDistanceM,
-    elapsedMs,
-    restMs: rideData.pausedMs + (rideData.paused && rideData.pausedAt ? Date.now() - rideData.pausedAt : 0),
-    avgSpeedKmh: avgSpeed,
-    maxSpeedKmh: rideData.maxSpeedKmh || 0,
-    startPoint: rideData.startPoint,
+    id: snapshot.id,
+    savedAt: snapshot.savedAt,
+    startTime: snapshot.startTime,
+    endTime: snapshot.endTime,
+    totalDistanceM: snapshot.totalDistanceM,
+    elapsedMs: snapshot.elapsedMs,
+    restMs: snapshot.restMs,
+    avgSpeedKmh: snapshot.avgSpeedKmh,
+    maxSpeedKmh: snapshot.maxSpeedKmh || 0,
+    startPoint: snapshot.startPoint,
     path: reducedPath,
     elevationProfile: reducedElevationProfile,
     elevationSummary,
@@ -930,12 +1034,16 @@ async function saveRideSummary() {
 
   rides.unshift(item);
   localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
-  alert(`저장 완료\n좌표: ${safePath.length}개 → ${reducedPath.length}개\n고도: ${reducedElevationProfile.length}개`);
+  clearPendingRideSave();
+  setSavingUi(false);
+  alert(`저장 완료\n좌표: ${safePath.length}개 → ${reducedPath.length}개\n속도: ${reducedSpeedProfile.length}개\n고도: ${reducedElevationProfile.length}개`);
+  return true;
 }
 
 let rideData = loadRideData();
 let navigationState = loadNavigationState();
-let speedProfile = [];
+let speedProfile = loadSpeedProfile();
+let isSavingRide = false;
 let lastSpeedSampleAt = 0;
 let lastSpeedSampleDistanceM = 0;
 
@@ -1657,6 +1765,8 @@ function addSpeedSample(totalDistanceM, currentSpeedKmh) {
     time: now
   });
 
+  saveSpeedProfile();
+
   lastSpeedSampleAt = now;
   lastSpeedSampleDistanceM = totalDistanceM;
 }
@@ -1695,6 +1805,7 @@ async function handlePosition(pos) {
 
     if (speedProfile.length === 0) {
       speedProfile.push({ distanceKm: 0, speedKmh: 0, time: now });
+      saveSpeedProfile();
     }
 
     
@@ -1908,6 +2019,7 @@ function requestLocationPermission() {
 }
 
 async function startRide() {
+  if (isSavingRide) return;
   const isResume = rideData.started && rideData.paused;
   const msg = isResume ? "주행기록을 다시 시작할까요?" : "주행기록을 시작할까요?";
   if (!confirm(msg)) return;
@@ -1921,6 +2033,8 @@ async function startRide() {
     };
 
     speedProfile = [{ distanceKm: 0, speedKmh: 0, time: Date.now() }];
+    saveSpeedProfile();
+    clearPendingRideSave();
     lastSpeedSampleAt = 0;
     lastSpeedSampleDistanceM = 0;
     lastPointTime = Date.now();
@@ -1961,13 +2075,15 @@ async function startRide() {
 }
 
 async function endRide() {
+  if (isSavingRide) return;
   if (!rideData.started) return;
   if (!confirm("주행을 종료할까요?")) return;
 
   const shouldSave = confirm("현재 주행기록을 저장할까요?");
   const canSave = rideData.path.length > 0 || !!rideData.lastPoint || !!rideData.startPoint;
   if (shouldSave && canSave) {
-    await saveRideSummary();
+    const saved = await saveRideSummary();
+    if (!saved) return;
   }
 
   stopWatching();
@@ -1986,7 +2102,8 @@ async function endRide() {
   if (ridePolyline) ridePolyline.setPath([]);
 
   clearRideData();
-  speedProfile = [];
+  clearSpeedProfile();
+  clearPendingRideSave();
   lastSpeedSampleAt = 0;
   lastSpeedSampleDistanceM = 0;
   clearNavigation();
