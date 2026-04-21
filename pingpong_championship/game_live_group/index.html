@@ -1157,6 +1157,9 @@ select{
     min-width:36px;
   }
 }
+body.photo-modal-open{
+  overflow:hidden;
+}
   </style>
 </head>
 <body>
@@ -1355,22 +1358,45 @@ function ensurePhotoModal() {
   document.body.appendChild(modal);
 
   const modalCard = modal.querySelector(".photo-modal-card");
-  modalCard.addEventListener("pointerup", (e) => {
-    e.stopPropagation();
-  }, { passive: false });
-
   const closeBtn = document.getElementById("photoModalClose");
-  closeBtn.addEventListener("pointerup", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    closePhotoModal();
+
+  // 배경 누르면 닫기
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+      closePhotoModal();
+    }
   }, { passive: false });
 
-  // X 버튼 뒤따라오는 click도 막기
-  closeBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, { passive: false });
+  // 모달 카드 내부 클릭/터치가 뒤로 전달되지 않도록 차단
+  ["pointerdown", "pointerup", "click"].forEach(type => {
+    modalCard.addEventListener(type, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+    }, { passive: false });
+  });
+
+  // 닫기 버튼도 down/up/click 모두 차단
+  ["pointerdown", "pointerup", "click"].forEach(type => {
+    closeBtn.addEventListener(type, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+
+      if (type === "pointerup" || type === "click") {
+        closePhotoModal();
+      }
+    }, { passive: false });
+  });
 
   photoModalReady = true;
 }
@@ -1388,14 +1414,16 @@ function openPhotoModal({ teamName, playerName, imageUrl }) {
     imageBox.innerHTML = `<div class="photo-modal-empty">등록된 사진이 없습니다.</div>`;
   }
 
- 
+  document.body.classList.add("photo-modal-open");
   document.getElementById("photoModal").classList.add("open");
 }
 
 function closePhotoModal() {
   const modal = document.getElementById("photoModal");
   if (modal) modal.classList.remove("open");
+  document.body.classList.remove("photo-modal-open");
 }
+
 
 async function openPlayerPhoto(teamId, playerName) {
   if (!isAdmin) return;
@@ -1424,11 +1452,12 @@ async function openPlayerPhoto(teamId, playerName) {
 
     const data = snap.exists() ? snap.val() : null;
 
-    openPhotoModal({
-      teamName,
-      playerName: data?.displayName || cleanPlayerName,
-      imageUrl: data?.secureUrl || data?.thumbUrl || ""
-    });
+   openPhotoModal({
+  teamName,
+  playerName: cleanPlayerName || data?.displayName || data?.playerName || "선수 사진",
+  imageUrl: data?.secureUrl || data?.thumbUrl || ""
+});
+
   } catch (err) {
     console.error("openPlayerPhoto error:", err);
     openPhotoModal({
@@ -1963,12 +1992,15 @@ const teamBPlayersHtml = isAdmin
     function bindMatchCardEvents() {
   document.querySelectorAll("[data-open-id]").forEach(btn => {
     btn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
 
-      const id = btn.getAttribute("data-open-id");
-      const panel = document.getElementById(`detail_${id}`);
-      if (!panel) return;
+  const photoModal = document.getElementById("photoModal");
+  if (photoModal && photoModal.classList.contains("open")) return;
+
+  const id = btn.getAttribute("data-open-id");
+  const panel = document.getElementById(`detail_${id}`);
+  if (!panel) return;
 
       const isOpen = panel.classList.contains("open");
 
