@@ -279,7 +279,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, update, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, set, update, get, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
@@ -533,13 +533,17 @@ async function ensureGroupMember() {
 
   const name = normalizeDisplayName(nameInput.value || localStorage.getItem("ride_group_name") || "라이더");
 
-  await update(memberRef, {
-    name,
-    color: getMyMemberColor(),
-    online: true,
-    updatedAt: Date.now(),
-    joinedAt: Date.now()
-  });
+  const now = Date.now();
+await update(memberRef, {
+  name,
+  color: getMyMemberColor(),
+  online: true,
+  state: "active",
+  updatedAt: now,
+  lastSeen: now,
+  heartbeatAt: now,
+  joinedAt: now
+});
 }
 
 async function updateMyGroupLocation(lat, lng, accuracy = 0) {
@@ -550,27 +554,38 @@ async function updateMyGroupLocation(lat, lng, accuracy = 0) {
 
   const name = normalizeDisplayName(nameInput.value || localStorage.getItem("ride_group_name") || "라이더");
 
-  await update(memberRef, {
-    name,
-    color: getMyMemberColor(),
-    online: true,
-    updatedAt: Date.now(),
-    lat,
-    lng,
-    accuracy: Number.isFinite(accuracy) ? accuracy : 0,
-    speed: 0
-  });
+  const now = Date.now();
+await update(memberRef, {
+  name,
+  color: getMyMemberColor(),
+  online: true,
+  state: document.hidden ? "background" : "active",
+  updatedAt: now,
+  lastSeen: now,
+  heartbeatAt: now,
+  lat,
+  lng,
+  accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+  speed: 0
+});
 }
 
-async function setMyGroupOffline() {
+async function setMyGroupOffline(reason = "offline") {
   if (!currentRoomId || !auth.currentUser) return;
 
   const memberRef = getMyMemberRef();
   if (!memberRef) return;
 
+  const name = normalizeDisplayName(nameInput.value || localStorage.getItem("ride_group_name") || "라이더");
+  const now = Date.now();
+
   await update(memberRef, {
+    name,
+    color: getMyMemberColor(),
     online: false,
-    updatedAt: Date.now()
+    state: reason,
+    updatedAt: now,
+    lastSeen: now
   });
 }
 
@@ -786,11 +801,19 @@ document.getElementById("leaveRoomBtn").onclick = async () => {
 
   try {
     await ensureAuth();
-    await setMyGroupOffline();
+
+    const memberRef = getMyMemberRef();
+
+    if (memberRef) {
+      await setMyGroupOffline("left");
+      await remove(memberRef);
+    }
+
     stopGroupWatching();
 
     currentRoomId = "";
     localStorage.removeItem("ride_group_enabled");
+    localStorage.removeItem("ride_group_room_id");
 
     updateRoomStatus();
 
