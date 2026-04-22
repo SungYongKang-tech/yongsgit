@@ -378,6 +378,7 @@
       </div>
       <div class="actions">
         <button type="button" class="ghost" id="btnToggleMakeAdmin">관리자 잠금해제</button>
+        <button type="button" class="secondary" id="btnChangePhotoPassword" style="display:none;">사진 비밀번호 변경</button>
         <button type="button" class="secondary" id="btnLoadCurrent">현재 대회 불러오기</button>
         <button type="button" class="secondary" id="btnFillSample" style="display:none;">샘플 데이터 넣기</button>
         <button type="button" class="secondary" id="btnClearSample" style="display:none;">샘플 입력 지우기</button>
@@ -521,7 +522,20 @@
   "고성"
 ];
     const MAKE_ADMIN_STORAGE_KEY = "koen_make_admin_unlocked";
-    const MAKE_ADMIN_PASSWORD = "1111";
+const PHOTO_SUPERADMIN_STORAGE_KEY = "koen_photo_superadmin_unlocked";
+
+const DEFAULT_COMMON_PASSWORD = "0000";
+const DEFAULT_ADMIN_PASSWORD = "1111";
+const DEFAULT_PHOTO_PASSWORD = "771225";
+
+const STORAGE_KEYS = {
+  common: "koen_pingpong_pw_common",
+  admin: "koen_pingpong_pw_admin",
+  photo: "koen_pingpong_pw_photo"
+};
+
+let isMakeAdmin = localStorage.getItem(MAKE_ADMIN_STORAGE_KEY) === "true";
+let isPhotoSuperAdmin = localStorage.getItem(PHOTO_SUPERADMIN_STORAGE_KEY) === "true";
 
     let isMakeAdmin = localStorage.getItem(MAKE_ADMIN_STORAGE_KEY) === "true";
     let editingTournamentId = null;
@@ -550,8 +564,9 @@
     const btnSaveBottom = document.getElementById("btnSaveBottom");
     const btnStartTournament = document.getElementById("btnStartTournament");
     const btnStartBottom = document.getElementById("btnStartBottom");
-
-   const PHOTO_SUPERADMIN_STORAGE_KEY = "koen_photo_superadmin_unlocked";
+    const btnChangePhotoPassword = document.getElementById("btnChangePhotoPassword");
+   
+    const PHOTO_SUPERADMIN_STORAGE_KEY = "koen_photo_superadmin_unlocked";
 const PHOTO_SUPERADMIN_PASSWORD = "771225"; // 원하는 비밀번호로 변경
 let isPhotoSuperAdmin = localStorage.getItem(PHOTO_SUPERADMIN_STORAGE_KEY) === "true";
 
@@ -576,6 +591,14 @@ endDateInput.value = todayKST();
       return (v || "").trim();
     }
 
+    function getPasswordConfig() {
+  return {
+    common: localStorage.getItem(STORAGE_KEYS.common) || DEFAULT_COMMON_PASSWORD,
+    admin: localStorage.getItem(STORAGE_KEYS.admin) || DEFAULT_ADMIN_PASSWORD,
+    photo: localStorage.getItem(STORAGE_KEYS.photo) || DEFAULT_PHOTO_PASSWORD
+  };
+}
+
     function splitLines(text) {
       return (text || "")
         .split("\n")
@@ -584,11 +607,11 @@ endDateInput.value = todayKST();
     }
 
     function updateMakeAdminUI() {
-      btnFillSample.style.display = isMakeAdmin ? "" : "none";
-      btnClearSample.style.display = isMakeAdmin ? "" : "none";
-      btnToggleMakeAdmin.textContent = isMakeAdmin ? "관리자 잠금해제 해제" : "관리자 잠금해제";
-    }
-
+  btnFillSample.style.display = isMakeAdmin ? "" : "none";
+  btnClearSample.style.display = isMakeAdmin ? "" : "none";
+  btnChangePhotoPassword.style.display = isMakeAdmin ? "" : "none";
+  btnToggleMakeAdmin.textContent = isMakeAdmin ? "관리자 잠금해제 해제" : "관리자 잠금해제";
+}
     function createTeamCards() {
       teamsContainer.innerHTML = "";
 
@@ -1091,6 +1114,37 @@ ${name} 여2`;
       updateButtonLabels();
     }
 
+    btnChangePhotoPassword.addEventListener("click", () => {
+  if (!isMakeAdmin) {
+    alert("관리자 잠금해제 후 변경할 수 있습니다.");
+    return;
+  }
+
+  const { admin, photo } = getPasswordConfig();
+
+  const adminPw = prompt("관리자 비밀번호를 다시 입력하세요.");
+  if (adminPw === null) return;
+  if (adminPw !== admin) {
+    alert("관리자 비밀번호가 올바르지 않습니다.");
+    return;
+  }
+
+  const nextPw = prompt(`새 사진 수정 비밀번호를 입력하세요.\n현재값: ${photo}`);
+  if (nextPw === null) return;
+
+  const clean = nextPw.trim();
+  if (!clean) {
+    alert("비밀번호를 비워둘 수 없습니다.");
+    return;
+  }
+
+  localStorage.setItem(STORAGE_KEYS.photo, clean);
+  localStorage.removeItem(PHOTO_SUPERADMIN_STORAGE_KEY);
+  isPhotoSuperAdmin = false;
+
+  alert("사진 수정 비밀번호가 변경되었습니다.");
+});
+
     btnPhotoManager.addEventListener("click", () => {
   if (!isEditMode || !editingTournamentId) {
     alert("먼저 현재 대회를 불러와 주세요.");
@@ -1098,12 +1152,16 @@ ${name} 여2`;
   }
 
   if (!isPhotoSuperAdmin) {
-    const pw = prompt("최종 관리자 비밀번호를 입력하세요.");
+    const pw = prompt("사진 수정 비밀번호를 입력하세요.");
     if (pw === null) return;
-    if (pw !== PHOTO_SUPERADMIN_PASSWORD) {
+
+    const { photo } = getPasswordConfig();
+
+    if (pw !== photo) {
       alert("비밀번호가 올바르지 않습니다.");
       return;
     }
+
     isPhotoSuperAdmin = true;
     localStorage.setItem(PHOTO_SUPERADMIN_STORAGE_KEY, "true");
   }
@@ -1113,24 +1171,26 @@ ${name} 여2`;
 });
 
     btnToggleMakeAdmin.addEventListener("click", () => {
-      if (isMakeAdmin) {
-        isMakeAdmin = false;
-        localStorage.removeItem(MAKE_ADMIN_STORAGE_KEY);
-        updateMakeAdminUI();
-        return;
-      }
+  if (isMakeAdmin) {
+    isMakeAdmin = false;
+    localStorage.removeItem(MAKE_ADMIN_STORAGE_KEY);
+    updateMakeAdminUI();
+    return;
+  }
 
-      const input = prompt("관리자 비밀번호를 입력하세요.");
-      if (input === null) return;
+  const input = prompt("관리자 비밀번호를 입력하세요.");
+  if (input === null) return;
 
-      if (input === MAKE_ADMIN_PASSWORD) {
-        isMakeAdmin = true;
-        localStorage.setItem(MAKE_ADMIN_STORAGE_KEY, "true");
-        updateMakeAdminUI();
-      } else {
-        alert("비밀번호가 올바르지 않습니다.");
-      }
-    });
+  const { admin } = getPasswordConfig();
+
+  if (input === admin) {
+    isMakeAdmin = true;
+    localStorage.setItem(MAKE_ADMIN_STORAGE_KEY, "true");
+    updateMakeAdminUI();
+  } else {
+    alert("비밀번호가 올바르지 않습니다.");
+  }
+});
 
     btnFillSample.addEventListener("click", loadSampleData);
     btnClearSample.addEventListener("click", clearSampleData);
