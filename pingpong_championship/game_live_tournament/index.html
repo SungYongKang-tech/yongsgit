@@ -1137,10 +1137,15 @@ function closePhotoModal() {
 }
 
 async function openPlayerPhoto(teamId, playerName) {
+  console.log("사진 클릭됨:", teamId, playerName);
+
   const team = getTeam(teamId);
   const teamName = safeTrim(team?.name || "");
   const cleanPlayerName = safeTrim(playerName);
   const slotKey = getPlayerSlotKey(teamId, cleanPlayerName);
+
+  console.log("teamName =", teamName);
+  console.log("slotKey =", slotKey);
 
   if (!teamName || !cleanPlayerName) {
     return;
@@ -1149,7 +1154,6 @@ async function openPlayerPhoto(teamId, playerName) {
   try {
     let data = null;
 
-    // 1순위: slotKey 방식 조회
     if (slotKey) {
       const slotPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(slotKey)}`;
       console.log("slotPath =", slotPath);
@@ -1160,7 +1164,6 @@ async function openPlayerPhoto(teamId, playerName) {
       }
     }
 
-    // 2순위: 예전 이름 저장 방식도 호환 조회
     if (!data) {
       const legacyPath = `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}/${sanitizeKey(cleanPlayerName)}`;
       console.log("legacyPath =", legacyPath);
@@ -1171,11 +1174,13 @@ async function openPlayerPhoto(teamId, playerName) {
       }
     }
 
-   openPhotoModal({
-  teamName,
-  playerName: cleanPlayerName || data?.displayName || data?.playerName || "선수 사진",
-  imageUrl: data?.secureUrl || data?.thumbUrl || ""
-});
+    console.log("photo data =", data);
+
+    openPhotoModal({
+      teamName,
+      playerName: cleanPlayerName || data?.displayName || data?.playerName || "선수 사진",
+      imageUrl: data?.secureUrl || data?.thumbUrl || ""
+    });
   } catch (err) {
     console.error("openPlayerPhoto error:", err);
     openPhotoModal({
@@ -1187,18 +1192,19 @@ async function openPlayerPhoto(teamId, playerName) {
 }
 
 function bindRosterPhotoClicks(root = document) {
-  root.querySelectorAll("[data-roster-photo]").forEach(el => {
-    if (el.dataset.rosterPhotoBound === "true") return;
-    el.dataset.rosterPhotoBound = "true";
+  if (root.dataset.rosterDelegateBound === "true") return;
+  root.dataset.rosterDelegateBound = "true";
 
-    el.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+  root.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-roster-photo]");
+    if (!btn) return;
 
-      const teamId = el.dataset.teamId || "";
-      const playerName = el.dataset.playerName || "";
-      openPlayerPhoto(teamId, playerName);
-    });
+    e.preventDefault();
+    e.stopPropagation();
+
+    const teamId = btn.dataset.teamId || "";
+    const playerName = btn.dataset.playerName || "";
+    openPlayerPhoto(teamId, playerName);
   });
 }
 
