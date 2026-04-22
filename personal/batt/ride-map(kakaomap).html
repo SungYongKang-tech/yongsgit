@@ -885,6 +885,190 @@
   background: linear-gradient(180deg, #ef4444, #dc2626);
 }
 
+.member-card{
+  text-align:left;
+  padding:8px 10px;
+}
+
+.member-card-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:6px;
+}
+
+.member-count{
+  flex:0 0 auto;
+  font-size:11px;
+  font-weight:800;
+  color:#cbd5e1;
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:999px;
+  padding:3px 8px;
+}
+
+.friend-strip.friend-strip-chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  white-space:normal;
+  overflow-x:hidden;
+  overflow-y:auto;
+  max-height:92px;
+  padding:0;
+  margin:0;
+  background:transparent;
+  border:none;
+}
+
+.member-empty{
+  width:100%;
+  font-size:12px;
+  color:#94a3b8;
+  font-weight:700;
+  padding:4px 2px;
+}
+
+.member-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  max-width:100%;
+  padding:5px 8px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:linear-gradient(180deg, rgba(51,65,85,0.82), rgba(15,23,42,0.86));
+  color:#f8fafc;
+}
+
+.member-chip.online{
+  opacity:1;
+}
+
+.member-chip.stale{
+  opacity:0.82;
+  background:linear-gradient(180deg, rgba(71,85,105,0.70), rgba(30,41,59,0.78));
+}
+
+.member-chip.offline{
+  opacity:0.62;
+  background:linear-gradient(180deg, rgba(51,65,85,0.45), rgba(15,23,42,0.56));
+}
+
+.member-chip.left{
+  opacity:0.45;
+}
+
+.member-chip-color{
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  flex:0 0 auto;
+  border:1px solid rgba(255,255,255,0.7);
+}
+
+.member-chip-main{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+}
+
+.member-chip-name{
+  min-width:0;
+  max-width:92px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:-0.2px;
+}
+
+.member-chip.online .member-chip-name{
+  font-size:12px;
+}
+
+.member-chip.stale .member-chip-name,
+.member-chip.offline .member-chip-name{
+  font-size:11px;
+  font-weight:700;
+}
+
+.member-chip-meta{
+  flex:0 0 auto;
+  font-size:10px;
+  font-weight:700;
+  color:#cbd5e1;
+  white-space:nowrap;
+}
+
+.member-chip-badge{
+  flex:0 0 auto;
+  font-size:9px;
+  font-weight:900;
+  color:#fff;
+  background:#0f766e;
+  border-radius:999px;
+  padding:2px 5px;
+  line-height:1;
+}
+
+.member-remove-btn{
+  flex:0 0 auto;
+  width:18px;
+  height:18px;
+  border:none;
+  border-radius:50%;
+  background:rgba(239,68,68,0.18);
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  line-height:18px;
+  text-align:center;
+  padding:0;
+  cursor:pointer;
+}
+
+.member-remove-btn:active{
+  transform:scale(0.96);
+}
+
+@media (max-width: 520px){
+  .friend-strip.friend-strip-chips{
+    max-height:88px;
+    gap:5px;
+  }
+
+  .member-chip{
+    padding:4px 7px;
+    gap:5px;
+  }
+
+  .member-chip-name{
+    max-width:70px;
+    font-size:11px;
+  }
+
+  .member-chip.stale .member-chip-name,
+  .member-chip.offline .member-chip-name{
+    font-size:10px;
+  }
+
+  .member-chip-meta{
+    font-size:9px;
+  }
+
+  .member-count{
+    font-size:10px;
+    padding:2px 7px;
+  }
+}
+
+
   </style>
 </head>
 <body>
@@ -1024,10 +1208,16 @@
         <div id="map"></div>
       </div>
 
-    <div class="bottom-panel">
-  <div class="bottom-card" style="grid-column:1 / -1;">
-    <div class="bottom-label">참여 인원</div>
-    <div class="bottom-value" id="friendStrip">그룹 인원 없음</div>
+   <div class="bottom-panel">
+  <div class="bottom-card member-card" style="grid-column:1 / -1;">
+    <div class="member-card-head">
+      <div class="bottom-label">그룹 참여자</div>
+      <div class="member-count" id="memberCountEl">0명</div>
+    </div>
+
+    <div class="friend-strip friend-strip-chips" id="friendStrip">
+      <div class="member-empty">그룹 인원 없음</div>
+    </div>
   </div>
 </div>
     </div>
@@ -1063,6 +1253,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 const friendStrip = document.getElementById("friendStrip");
+const memberCountEl = document.getElementById("memberCountEl");
 
 
 let currentRoomId = localStorage.getItem("ride_group_room_id") || "";
@@ -1511,6 +1702,17 @@ function getMemberPresence(member) {
   if (diff <= GROUP_STALE_MS) return "online";
   if (diff <= GROUP_OFFLINE_MS) return "stale";
   return "offline";
+}
+
+function getPresenceLabel(presence, member) {
+  if (presence === "online") {
+    if (member?.state === "background") return "백그라운드";
+    return "참여중";
+  }
+  if (presence === "stale") return "잠시끊김";
+  if (presence === "offline") return "오프라인";
+  if (presence === "left") return "나감";
+  return "";
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -2568,58 +2770,89 @@ function getDistanceToDestinationText(member) {
 function renderFriendStrip() {
   if (!friendStrip) return;
 
-  const members = Object.entries(groupMembers || {})
-    .map(([memberId, member]) => ({
-      memberId,
-      ...(member || {}),
-      presence: getMemberPresence(member)
-    }))
-    .filter(member => member && member.name && member.presence !== "left")
+  const entries = Object.entries(groupMembers || {})
+    .filter(([memberId, member]) => member && member.name)
+    .map(([memberId, member]) => {
+      const presence = getMemberPresence(member);
+      const statusText = getPresenceLabel(presence, member);
+      const isMe = auth.currentUser && memberId === auth.currentUser.uid;
+      const color = member.color || "#2563eb";
+
+      let metaText = statusText;
+
+      const distText = getDistanceToDestinationText(member);
+      if (presence === "online" && distText && distText !== "-") {
+        metaText = `${statusText} · ${distText}`;
+      }
+
+      return {
+        memberId,
+        name: member.name || "이름없음",
+        presence,
+        metaText,
+        color,
+        isMe,
+        updatedAt: Number(member?.updatedAt || member?.lastSeen || 0)
+      };
+    })
     .sort((a, b) => {
-      const aSeen = Number(a.lastSeen || a.updatedAt || 0);
-      const bSeen = Number(b.lastSeen || b.updatedAt || 0);
-      return bSeen - aSeen;
+      const rank = { online: 0, stale: 1, offline: 2, left: 3 };
+      const byPresence = (rank[a.presence] ?? 9) - (rank[b.presence] ?? 9);
+      if (byPresence !== 0) return byPresence;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
     });
 
-  if (!members.length) {
-    friendStrip.textContent = "그룹 인원 없음";
+  if (memberCountEl) {
+    memberCountEl.textContent = `${entries.length}명`;
+  }
+
+  if (!entries.length) {
+    friendStrip.innerHTML = `<div class="member-empty">그룹 인원 없음</div>`;
     return;
   }
 
-  const texts = members.map((member) => {
-    const name = member.name || "이름없음";
+  friendStrip.innerHTML = entries.map(item => `
+    <div class="member-chip ${item.presence}">
+      <span class="member-chip-color" style="background:${escapeHtml(item.color)};"></span>
 
-    const hasDestination =
-      groupDestination &&
-      typeof groupDestination.lat === "number" &&
-      typeof groupDestination.lng === "number" &&
-      typeof member.lat === "number" &&
-      typeof member.lng === "number";
+      <div class="member-chip-main">
+        <span class="member-chip-name">${escapeHtml(item.name)}</span>
+        ${item.isMe ? `<span class="member-chip-badge">나</span>` : ``}
+      </div>
 
-    let suffix = "";
+      <span class="member-chip-meta">${escapeHtml(item.metaText)}</span>
 
-    if (member.presence === "stale") {
-      suffix += "·잠시끊김";
-    } else if (member.presence === "offline") {
-      suffix += "·오프라인";
+      <button
+        type="button"
+        class="member-remove-btn"
+        data-member-id="${escapeHtml(item.memberId)}"
+        data-member-name="${escapeHtml(item.name)}"
+        title="내보내기"
+      >×</button>
+    </div>
+  `).join("");
+}
+
+async function kickGroupMember(memberId, memberName = "") {
+  if (!currentRoomId || !memberId) return;
+
+  const ok = confirm(`${memberName || "이 멤버"} 을(를) 목록에서 내보낼까요?`);
+  if (!ok) return;
+
+  try {
+    await remove(ref(db, `rideRooms/${currentRoomId}/members/${memberId}`));
+
+    if (groupMembers && groupMembers[memberId]) {
+      delete groupMembers[memberId];
     }
 
-    if (hasDestination) {
-      const distM = haversine(
-        member.lat,
-        member.lng,
-        groupDestination.lat,
-        groupDestination.lng
-      );
-
-      const distText = formatDistanceText(distM);
-      return `${name}(${distText}${suffix ? " " + suffix : ""})`;
-    }
-
-    return `${name}${suffix ? "(" + suffix.replace(/^·/, "") + ")" : ""}`;
-  });
-
-  friendStrip.textContent = texts.join("  |  ");
+    renderFriendStrip();
+    renderGroupMarkers();
+    renderGroupLines();
+  } catch (e) {
+    console.error("멤버 내보내기 실패:", e);
+    alert("멤버 내보내기 중 오류가 발생했습니다.");
+  }
 }
 
 async function leaveGroupRoom() {
@@ -3292,6 +3525,18 @@ viewModeBtn.addEventListener("click", () => {
   displaySettings.mode = displaySettings.mode === "data" ? "map" : "data";
   applyDisplaySettings(true);
 });
+
+if (friendStrip) {
+  friendStrip.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".member-remove-btn");
+    if (!btn) return;
+
+    const memberId = btn.dataset.memberId || "";
+    const memberName = btn.dataset.memberName || "";
+
+    await kickGroupMember(memberId, memberName);
+  });
+}
 
 displaySettingsBtn.addEventListener("click", () => {
   if (messagePanel) messagePanel.classList.remove("open");
