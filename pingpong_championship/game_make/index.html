@@ -398,10 +398,11 @@ button:disabled{
         <small>제14회 남동노조위원장기 탁구대회 운영용</small>
       </div>
       <div class="actions">
-        <button type="button" class="green" id="btnSaveOnly">저장</button>
-<button type="button" id="btnStartTournament">경기페이지 이동</button>
-<button type="button" class="secondary" id="btnPhotoManager">사진 수정</button>
-      </div>
+  <button type="button" class="green" id="btnSaveOnly">저장</button>
+  <button type="button" class="ghost" id="btnRandomGroups">랜덤 조편성</button>
+  <button type="button" id="btnStartTournament">경기페이지 이동</button>
+  <button type="button" class="secondary" id="btnPhotoManager">사진 수정</button>
+</div>
     </div>
 
     <div class="grid grid-2">
@@ -573,12 +574,11 @@ let isEditMode = false;
     
     
     const btnSaveOnly = document.getElementById("btnSaveOnly");
-    const btnSaveBottom = document.getElementById("btnSaveBottom");
-    const btnStartTournament = document.getElementById("btnStartTournament");
-    const btnStartBottom = document.getElementById("btnStartBottom");
-    
-    
-    const btnPhotoManager = document.getElementById("btnPhotoManager");
+const btnSaveBottom = document.getElementById("btnSaveBottom");
+const btnStartTournament = document.getElementById("btnStartTournament");
+const btnStartBottom = document.getElementById("btnStartBottom");
+const btnRandomGroups = document.getElementById("btnRandomGroups");
+const btnPhotoManager = document.getElementById("btnPhotoManager");
 
     function updatePhotoManagerUI() {
      btnPhotoManager.style.display = "";
@@ -615,7 +615,38 @@ endDateInput.value = todayKST();
         .filter(Boolean);
     }
 
-  
+    function shuffleArray(arr) {
+  const cloned = [...arr];
+  for (let i = cloned.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cloned[i], cloned[j]] = [cloned[j], cloned[i]];
+  }
+  return cloned;
+}
+
+function applyRandomGroups() {
+  const teams = getTeamsFromForm().filter(t => t.name);
+
+  if (teams.length !== 8) {
+    alert("팀명이 입력된 8개 팀이 있어야 랜덤 조편성이 가능합니다.");
+    return;
+  }
+
+  const shuffled = shuffleArray(teams);
+
+  shuffled.forEach((team, idx) => {
+    const groupEl = document.getElementById(`group${team.localIndex}`);
+    if (!groupEl) return;
+    groupEl.value = idx < 4 ? "A" : "B";
+  });
+
+  renderGroupStatus();
+  renderBasicInfoSummary();
+  renderAutoMatches();
+
+  saveStatus.textContent = "랜덤 조편성이 적용되었습니다.";
+}
+
     function createTeamCards() {
       teamsContainer.innerHTML = "";
 
@@ -1181,7 +1212,7 @@ ${name} 여2`;
     btnStartTournament.addEventListener("click", () => saveTournament(true));
     btnStartBottom.addEventListener("click", () => saveTournament(true));
     
-
+    btnRandomGroups.addEventListener("click", applyRandomGroups);
     titleInput.addEventListener("input", renderBasicInfoSummary);
     startDateInput.addEventListener("input", renderBasicInfoSummary);
     endDateInput.addEventListener("input", renderBasicInfoSummary);
