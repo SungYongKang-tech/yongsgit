@@ -1297,7 +1297,6 @@ async function updateExistingTournament() {
   const oldData = snap.val();
   const oldTeams = oldData.teams || {};
   const oldGroupMatches = oldData.groupMatches || {};
-  const oldTournamentMatches = oldData.tournamentMatches || oldData.knockout || {};
 
   const title = safeTrim(titleInput.value);
   const startDate = safeTrim(startDateInput.value);
@@ -1307,31 +1306,54 @@ async function updateExistingTournament() {
   if (!startDate || !endDate) throw new Error("대회 시작일/종료일을 입력해 주세요.");
 
   const teams = getTeamsFromForm();
-  const hasResults = hasAnyGroupResult(oldGroupMatches);
-
   const filledTeams = teams.filter(t => t.name);
-  if (filledTeams.length !== 8) throw new Error("팀명 입력이 완료된 팀이 8개여야 합니다.");
+
+  if (filledTeams.length !== 8) {
+    throw new Error("팀명 입력이 완료된 팀이 8개여야 합니다.");
+  }
 
   const nameSet = new Set();
   for (const t of filledTeams) {
-    if (nameSet.has(t.name)) throw new Error(`중복된 팀명이 있습니다: ${t.name}`);
+    if (nameSet.has(t.name)) {
+      throw new Error(`중복된 팀명이 있습니다: ${t.name}`);
+    }
     nameSet.add(t.name);
-    if (t.total === 0) throw new Error(`${t.name} 팀의 선수 명단이 비어 있습니다.`);
-    if (t.total > 8) throw new Error(`${t.name} 팀의 총원이 8명을 초과했습니다.`);
+
+    if (t.total === 0) {
+      throw new Error(`${t.name} 팀의 선수 명단이 비어 있습니다.`);
+    }
+    if (t.total > 8) {
+      throw new Error(`${t.name} 팀의 총원이 8명을 초과했습니다.`);
+    }
   }
 
   const aTeams = filledTeams.filter(t => t.group === "A");
   const bTeams = filledTeams.filter(t => t.group === "B");
+
   if (aTeams.length !== 4 || bTeams.length !== 4) {
     throw new Error("A조 4팀, B조 4팀으로 정확히 편성해 주세요.");
   }
 
-  if (hasResults) {
-    for (const t of filledTeams) {
-      const oldTeam = oldTeams[t.id];
-      if (oldTeam && oldTeam.group !== t.group) {
-        throw new Error("이미 경기결과가 있는 대회는 조편성을 변경할 수 없습니다.");
-      }
+  // 기존 경기결과 있는지 확인
+  const hasResults = hasAnyGroupResult(oldGroupMatches);
+
+  // 조 변경 여부 확인
+  let groupChanged = false;
+  for (const t of filledTeams) {
+    const oldTeam = oldTeams[t.id];
+    if (oldTeam && oldTeam.group !== t.group) {
+      groupChanged = true;
+      break;
+    }
+  }
+
+  // ⚠️ 경고창
+  if (groupChanged && hasResults) {
+    const ok = confirm(
+      "조를 변경하면 기존 조별리그 결과와 조순위, 본선진출, 4강/결승이 모두 초기화됩니다.\n계속하시겠습니까?"
+    );
+    if (!ok) {
+      throw new Error("조 변경이 취소되었습니다.");
     }
   }
 
@@ -1349,8 +1371,8 @@ async function updateExistingTournament() {
     };
   });
 
-  const groupAPayload = filledTeams.filter(t => t.group === "A").map(t => t.id);
-  const groupBPayload = filledTeams.filter(t => t.group === "B").map(t => t.id);
+  const groupAPayload = aTeams.map(t => t.id);
+  const groupBPayload = bTeams.map(t => t.id);
 
   const updates = {};
 
@@ -1358,37 +1380,79 @@ async function updateExistingTournament() {
   updates[`tournaments/${editingTournamentId}/meta/startDate`] = startDate;
   updates[`tournaments/${editingTournamentId}/meta/endDate`] = endDate;
   updates[`tournaments/${editingTournamentId}/meta/updatedAt`] = Date.now();
+  updates[`tournaments/${editingTournamentId}/meta/status`] = "group";
 
   updates[`tournaments/${editingTournamentId}/teams`] = teamsPayload;
   updates[`tournaments/${editingTournamentId}/groups/A`] = groupAPayload;
   updates[`tournaments/${editingTournamentId}/groups/B`] = groupBPayload;
 
-  Object.entries(oldGroupMatches).forEach(([matchId, match]) => {
-    const teamAName = teamsPayload[match.teamA]?.name || match.teamAName || "";
-    const teamBName = teamsPayload[match.teamB]?.name || match.teamBName || "";
-    const groupName = teamsPayload[match.teamA]?.group || match.group || "";
+  // 🔥 조 변경 시 → 전체 초기화 + 새 대진 생성
+  if (groupChanged) {
+    const newGroupAMatches = collectAutoMatchesForGroup("A");
+    const newGroupBMatches = collectAutoMatchesForGroup("B");
 
-    updates[`tournaments/${editingTournamentId}/groupMatches/${matchId}/teamAName`] = teamAName;
-    updates[`tournaments/${editingTournamentId}/groupMatches/${matchId}/teamBName`] = teamBName;
-    updates[`tournaments/${editingTournamentId}/groupMatches/${matchId}/group`] = groupName;
-  });
+    const newGroupMatches = {};
+    [...newGroupAMatches, ...newGroupBMatches].forEach(match => {
+      newGroupMatches[match.id] = match;
+    });
 
-  Object.entries(oldTournamentMatches).forEach(([matchId, match]) => {
-    if (!match) return;
+    updates[`tournaments/${editingTournamentId}/groupMatches`] = newGroupMatches;
+    updates[`tournaments/${editingTournamentId}/standings`] = { A: {}, B: {} };
+    updates[`tournaments/${editingTournamentId}/groupAdvancers`] = null;
 
-    const teamAName = teamsPayload[match.teamA]?.name || match.teamAName || "";
-    const teamBName = teamsPayload[match.teamB]?.name || match.teamBName || "";
-
-    const basePath = oldData.tournamentMatches
-      ? `tournaments/${editingTournamentId}/tournamentMatches/${matchId}`
-      : `tournaments/${editingTournamentId}/knockout/${matchId}`;
-
-    updates[`${basePath}/teamAName`] = teamAName;
-    updates[`${basePath}/teamBName`] = teamBName;
-  });
+    // 토너먼트 초기화
+    updates[`tournaments/${editingTournamentId}/knockout`] = {
+      semi1: {
+        id: "semi1",
+        name: "4강 1경기",
+        teamA: "",
+        teamB: "",
+        teamAName: "",
+        teamBName: "",
+        status: "pending",
+        teamMatchScoreA: 0,
+        teamMatchScoreB: 0,
+        setDiffA: 0,
+        setDiffB: 0,
+        winnerTeamId: "",
+        matches: makeSubMatches()
+      },
+      semi2: {
+        id: "semi2",
+        name: "4강 2경기",
+        teamA: "",
+        teamB: "",
+        teamAName: "",
+        teamBName: "",
+        status: "pending",
+        teamMatchScoreA: 0,
+        teamMatchScoreB: 0,
+        setDiffA: 0,
+        setDiffB: 0,
+        winnerTeamId: "",
+        matches: makeSubMatches()
+      },
+      final: {
+        id: "final",
+        name: "결승",
+        teamA: "",
+        teamB: "",
+        teamAName: "",
+        teamBName: "",
+        status: "pending",
+        teamMatchScoreA: 0,
+        teamMatchScoreB: 0,
+        setDiffA: 0,
+        setDiffB: 0,
+        winnerTeamId: "",
+        matches: makeSubMatches()
+      }
+    };
+  }
 
   await update(ref(db), updates);
 }
+
 function updateButtonLabels() {
   btnSaveOnly.textContent = "저장";
   btnSaveBottom.textContent = "저장";
