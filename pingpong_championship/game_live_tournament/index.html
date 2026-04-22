@@ -1072,21 +1072,44 @@ function ensurePhotoModal() {
   document.body.appendChild(modal);
 
   const modalCard = modal.querySelector(".photo-modal-card");
-  modalCard.addEventListener("pointerup", (e) => {
-    e.stopPropagation();
-  }, { passive: false });
-
   const closeBtn = document.getElementById("photoModalClose");
-  closeBtn.addEventListener("pointerup", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    closePhotoModal();
+
+  // 배경 클릭 시 닫기
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      e.preventDefault();
+      e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+      closePhotoModal();
+    }
   }, { passive: false });
 
-  closeBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, { passive: false });
+  // 모달 내부 클릭/터치가 뒤로 전달되지 않게 차단
+  ["pointerdown", "pointerup", "click"].forEach(type => {
+    modalCard.addEventListener(type, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+    }, { passive: false });
+  });
+
+  // 닫기 버튼도 down/up/click 모두 차단
+  ["pointerdown", "pointerup", "click"].forEach(type => {
+    closeBtn.addEventListener(type, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+
+      if (type === "pointerup" || type === "click") {
+        closePhotoModal();
+      }
+    }, { passive: false });
+  });
 
   photoModalReady = true;
 }
@@ -1149,11 +1172,11 @@ async function openPlayerPhoto(teamId, playerName) {
       }
     }
 
-    openPhotoModal({
-      teamName,
-      playerName: data?.displayName || data?.playerName || cleanPlayerName,
-      imageUrl: data?.secureUrl || data?.thumbUrl || ""
-    });
+   openPhotoModal({
+  teamName,
+  playerName: cleanPlayerName || data?.displayName || data?.playerName || "선수 사진",
+  imageUrl: data?.secureUrl || data?.thumbUrl || ""
+});
   } catch (err) {
     console.error("openPlayerPhoto error:", err);
     openPhotoModal({
