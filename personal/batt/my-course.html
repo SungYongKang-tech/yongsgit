@@ -239,6 +239,41 @@
       word-break:keep-all;
     }
 
+    .card-actions{
+  display:flex;
+  gap:4px;
+  margin-top:5px;
+}
+
+.card-mini-btn{
+  flex:1;
+  height:26px;
+  border-radius:8px;
+  border:1px solid var(--line);
+  color:#fff;
+  font-size:11px;
+  font-weight:800;
+  cursor:pointer;
+  background:linear-gradient(180deg, rgba(51,65,85,0.98), rgba(30,41,59,0.98));
+}
+
+.card-mini-btn.primary{
+  background:linear-gradient(180deg,var(--blue),var(--blue2));
+}
+
+.card-mini-btn.amber{
+  background:linear-gradient(180deg,#f59e0b,var(--amber));
+}
+
+.card-mini-btn.green{
+  background:linear-gradient(180deg,#22c55e,var(--green));
+}
+
+.card-mini-btn:active{
+  transform:translateY(1px) scale(0.99);
+}
+
+
     .empty{
       grid-column:1 / -1;
       border:1px dashed var(--line);
@@ -794,12 +829,45 @@ function startModifyManualCourse(course) {
         const sourceText = course.source === "manual" ? "직접등록" : "기록등록";
 
         card.innerHTML = `
-          <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}(${sourceText}, ${pointsCount}점)</div>
-          <div class="meta">- ${distKm}Km, 약 ${estimatedTime}</div>
-        `;
+  <div class="card-title">${escapeHtml(course.name || "이름 없는 코스")}(${sourceText}, ${pointsCount}점)</div>
+  <div class="meta">- ${distKm}Km, 약 ${estimatedTime}</div>
 
-        card.addEventListener("click", () => previewCourse(course));
-        listEl.appendChild(card);
+  <div class="card-actions">
+    <button class="card-mini-btn primary" type="button">보기</button>
+    ${
+      course.source === "manual"
+        ? `<button class="card-mini-btn amber" type="button">코스수정</button>`
+        : `<button class="card-mini-btn" type="button" disabled style="opacity:.45;cursor:not-allowed;">수정불가</button>`
+    }
+    <button class="card-mini-btn green" type="button">주행열기</button>
+  </div>
+`;
+
+const cardButtons = card.querySelectorAll(".card-mini-btn");
+
+cardButtons[0].addEventListener("click", (e) => {
+  e.stopPropagation();
+  previewCourse(course);
+});
+
+cardButtons[1].addEventListener("click", (e) => {
+  e.stopPropagation();
+
+  if (course.source !== "manual") {
+    alert("직접등록 코스만 수정해서 이어 만들 수 있습니다.");
+    return;
+  }
+
+  startModifyManualCourse(course);
+});
+
+cardButtons[2].addEventListener("click", (e) => {
+  e.stopPropagation();
+  openCourseInRideMap(course);
+});
+
+card.addEventListener("click", () => previewCourse(course));
+listEl.appendChild(card);
       });
     }
 
@@ -1114,17 +1182,28 @@ function startModifyManualCourse(course) {
       await refreshCourses();
     });
 
-    tabBuildBtn.addEventListener("click", () => {
+   tabBuildBtn.addEventListener("click", () => {
   mainTab = "build";
   selectedCourse = null;
   selectedRide = null;
+  manualEditMode = false;
+  manualPoints = [];
 
   if (savedCoursePolyline) {
     savedCoursePolyline.setPath([]);
   }
 
+  if (manualPolyline) {
+    manualPolyline.setPath([]);
+  }
+
+  clearManualMarkers();
+
+  courseNameInput.value = "";
+
   activateTabs();
   updateMapOverlayByTab();
+  redrawManualCourse();
   renderList();
   renderBottomBar();
 
@@ -1146,6 +1225,15 @@ function startModifyManualCourse(course) {
   buildTab = "manual";
   selectedRide = null;
   selectedCourse = null;
+  manualEditMode = false;
+manualPoints = [];
+
+if (manualPolyline) {
+  manualPolyline.setPath([]);
+}
+
+clearManualMarkers();
+courseNameInput.value = "";
 
   if (savedCoursePolyline) {
     savedCoursePolyline.setPath([]);
