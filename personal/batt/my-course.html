@@ -262,14 +262,14 @@
     }
 
     .bottom-bar-inner{
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:linear-gradient(180deg,var(--card2),var(--card));
-      padding:3px;
-      display:grid;
-      grid-template-columns:repeat(4,1fr);
-      gap:4px;
-    }
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:linear-gradient(180deg,var(--card2),var(--card));
+  padding:3px;
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:4px;
+}
 
     .bottom-action{
       height:30px;
@@ -676,6 +676,53 @@
       setTimeout(() => kakao.maps.event.trigger(map, "resize"), 100);
     }
 
+    function clearPreviewCourseLine() {
+  selectedCourse = null;
+  selectedRide = null;
+
+  if (savedCoursePolyline) {
+    savedCoursePolyline.setPath([]);
+  }
+}
+
+function startModifyManualCourse(course) {
+  if (!course) return;
+
+  if (course.source !== "manual") {
+    alert("직접등록 코스만 수정해서 이어 만들 수 있습니다.");
+    return;
+  }
+
+  if (!Array.isArray(course.points) || course.points.length < 2) {
+    alert("수정할 코스 점 데이터가 없습니다.");
+    return;
+  }
+
+  mainTab = "build";
+  buildTab = "manual";
+  selectedCourse = null;
+  selectedRide = null;
+  manualEditMode = false;
+
+  savedCoursePolyline.setPath([]);
+
+  manualPoints = course.points.map(p => ({
+    lat: Number(p.lat),
+    lng: Number(p.lng)
+  }));
+
+  courseNameInput.value = `${course.name || "기존코스"} 추가코스`;
+
+  activateTabs();
+  updateMapOverlayByTab();
+  redrawManualCourse();
+  renderList();
+  renderBottomBar();
+  fitMapToPoints(manualPoints);
+
+  alert("기존 직접등록 코스를 불러왔습니다. 편집시작을 누르고 이어서 점을 추가하세요.");
+}
+
     async function loadCoursesFromFirebase() {
       const ownerKey = getOwnerKey();
       const snap = await get(ref(db, `courses/${ownerKey}`));
@@ -825,15 +872,19 @@
 
     bottomBar.style.display = "block";
     bottomBarContent.innerHTML = `
-      <div class="bottom-bar-inner">
-        <button class="bottom-action primary" id="bottomPreviewBtn">보기</button>
-        <button class="bottom-action amber" id="bottomEditBtn">수정</button>
-        <button class="bottom-action red" id="bottomDeleteBtn">삭제</button>
-        <button class="bottom-action green" id="bottomRideBtn">주행열기</button>
-      </div>
-    `;
+  <div class="bottom-bar-inner">
+    <button class="bottom-action primary" id="bottomPreviewBtn">보기</button>
+    <button class="bottom-action amber" id="bottomEditBtn">이름수정</button>
+    <button class="bottom-action" id="bottomCourseModifyBtn">코스수정</button>
+    <button class="bottom-action red" id="bottomDeleteBtn">삭제</button>
+    <button class="bottom-action green" id="bottomRideBtn">주행열기</button>
+  </div>
+`;
 
         document.getElementById("bottomPreviewBtn").addEventListener("click", () => previewCourse(selectedCourse));
+        document.getElementById("bottomCourseModifyBtn").addEventListener("click", () => {
+  startModifyManualCourse(selectedCourse);
+});
         document.getElementById("bottomEditBtn").addEventListener("click", async () => {
           const newName = prompt("새 코스 이름을 입력하세요.", selectedCourse.name || "");
           if (newName === null) return;
@@ -1064,13 +1115,23 @@
     });
 
     tabBuildBtn.addEventListener("click", () => {
-      mainTab = "build";
-      selectedCourse = null;
-      activateTabs();
-      updateMapOverlayByTab();
-      renderList();
-      renderBottomBar();
-    });
+  mainTab = "build";
+  selectedCourse = null;
+  selectedRide = null;
+
+  if (savedCoursePolyline) {
+    savedCoursePolyline.setPath([]);
+  }
+
+  activateTabs();
+  updateMapOverlayByTab();
+  renderList();
+  renderBottomBar();
+
+  setTimeout(() => {
+    if (map) kakao.maps.event.trigger(map, "resize");
+  }, 80);
+});
 
     buildFromRideBtn.addEventListener("click", () => {
       buildTab = "ride";
@@ -1082,13 +1143,19 @@
     });
 
     buildManualBtn.addEventListener("click", () => {
-      buildTab = "manual";
-      selectedRide = null;
-      activateTabs();
-      renderList();
-      renderBottomBar();
-      setTimeout(() => kakao.maps.event.trigger(map, "resize"), 80);
-    });
+  buildTab = "manual";
+  selectedRide = null;
+  selectedCourse = null;
+
+  if (savedCoursePolyline) {
+    savedCoursePolyline.setPath([]);
+  }
+
+  activateTabs();
+  renderList();
+  renderBottomBar();
+  setTimeout(() => kakao.maps.event.trigger(map, "resize"), 80);
+});
 
     editToggleBtn.addEventListener("click", toggleManualEdit);
     undoBtn.addEventListener("click", undoManualPoint);
