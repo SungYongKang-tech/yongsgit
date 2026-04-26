@@ -244,6 +244,11 @@
   gap:4px;
   margin-top:5px;
 }
+@media (max-width:900px){
+  .card-actions{
+    display:none;
+  }
+}
 
 .card-mini-btn{
   flex:1;
@@ -690,15 +695,18 @@
     }
 
     function previewCourse(course) {
-      selectedCourse = course || null;
-      selectedRide = null;
-      const points = selectedCourse?.points || [];
-      savedCoursePolyline.setPath(points.map(p => toLatLng(p.lat, p.lng)));
-      fitMapToPoints(points);
-      renderList();
-      renderBottomBar();
-      setTimeout(() => kakao.maps.event.trigger(map, "resize"), 100);
-    }
+  selectedCourse = course || null;
+  selectedRide = null;
+
+  const points = selectedCourse?.points || [];
+  savedCoursePolyline.setPath(points.map(p => toLatLng(p.lat, p.lng)));
+  fitMapToPoints(points);
+
+  if (window.innerWidth >= 901) return;
+
+  renderList();
+  renderBottomBar();
+}
 
     function previewRide(ride) {
       selectedRide = ride || null;
@@ -820,8 +828,8 @@ function startModifyManualCourse(course) {
 
       sortedCourses.forEach(course => {
         const card = document.createElement("div");
-        const isSelected = selectedCourse?.id === course.id;
-        card.className = `card${isSelected ? " selected" : ""}`;
+        const isSelected = window.innerWidth < 901 && selectedCourse?.id === course.id;
+card.className = `card${isSelected ? " selected" : ""}`;
 
         const distKm = totalDistanceKmFromPoints(course.points || []).toFixed(1);
         const estimatedTime = formatEstimatedDurationBy20kmh(Number(distKm));
@@ -866,7 +874,17 @@ cardButtons[2].addEventListener("click", (e) => {
   openCourseInRideMap(course);
 });
 
-card.addEventListener("click", () => previewCourse(course));
+card.addEventListener("click", () => {
+  if (window.innerWidth >= 901) {
+    // PC에서는 선택 안함 → 그냥 미리보기만
+    const points = course.points || [];
+    savedCoursePolyline.setPath(points.map(p => toLatLng(p.lat, p.lng)));
+    fitMapToPoints(points);
+  } else {
+    previewCourse(course);
+  }
+});
+
 listEl.appendChild(card);
       });
     }
