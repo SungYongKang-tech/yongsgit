@@ -274,6 +274,10 @@
   background:linear-gradient(180deg,#22c55e,var(--green));
 }
 
+.card-mini-btn.red{
+  background:linear-gradient(180deg,#ef4444,var(--red));
+}
+
 .card-mini-btn:active{
   transform:translateY(1px) scale(0.99);
 }
@@ -408,6 +412,7 @@
     display:none !important;
   }
 }
+
   </style>
 </head>
 <body>
@@ -841,14 +846,15 @@ card.className = `card${isSelected ? " selected" : ""}`;
   <div class="meta">- ${distKm}Km, 약 ${estimatedTime}</div>
 
   <div class="card-actions">
-    <button class="card-mini-btn primary" type="button">보기</button>
-    ${
-      course.source === "manual"
-        ? `<button class="card-mini-btn amber" type="button">코스수정</button>`
-        : `<button class="card-mini-btn" type="button" disabled style="opacity:.45;cursor:not-allowed;">수정불가</button>`
-    }
-    <button class="card-mini-btn green" type="button">주행열기</button>
-  </div>
+  <button class="card-mini-btn primary" type="button">보기</button>
+  <button class="card-mini-btn amber" type="button">이름수정</button>
+  ${
+    course.source === "manual"
+      ? `<button class="card-mini-btn" type="button">코스수정</button>`
+      : `<button class="card-mini-btn" type="button" disabled style="opacity:.45;cursor:not-allowed;">수정불가</button>`
+  }
+  <button class="card-mini-btn red" type="button">삭제</button>
+</div>
 `;
 
 const cardButtons = card.querySelectorAll(".card-mini-btn");
@@ -858,7 +864,37 @@ cardButtons[0].addEventListener("click", (e) => {
   previewCourse(course);
 });
 
-cardButtons[1].addEventListener("click", (e) => {
+cardButtons[1].addEventListener("click", async (e) => {
+  e.stopPropagation();
+
+  const newName = prompt("새 코스 이름을 입력하세요.", course.name || "");
+  if (newName === null) return;
+
+  const trimmedName = newName.trim();
+  if (!trimmedName) {
+    alert("코스 이름을 입력하세요.");
+    return;
+  }
+
+  try {
+    await saveCourseToFirebase({
+      id: course.id,
+      name: trimmedName,
+      source: course.source || "manual",
+      points: course.points || [],
+      createdAt: course.createdAt || Date.now(),
+      updatedAt: Date.now()
+    });
+
+    await refreshCourses();
+    alert("코스 이름이 수정되었습니다.");
+  } catch (e) {
+    console.error(e);
+    alert("이름 수정 오류");
+  }
+});
+
+cardButtons[2].addEventListener("click", (e) => {
   e.stopPropagation();
 
   if (course.source !== "manual") {
@@ -869,9 +905,33 @@ cardButtons[1].addEventListener("click", (e) => {
   startModifyManualCourse(course);
 });
 
-cardButtons[2].addEventListener("click", (e) => {
+cardButtons[3].addEventListener("click", async (e) => {
   e.stopPropagation();
-  openCourseInRideMap(course);
+
+  const pw = prompt(`"${course.name}" 삭제 비밀번호를 입력하세요.`);
+  if (pw === null) return;
+
+  if (pw !== COURSE_DELETE_PASSWORD) {
+    alert("비밀번호가 올바르지 않습니다.");
+    return;
+  }
+
+  if (!confirm(`"${course.name}" 코스를 삭제할까요?`)) return;
+
+  try {
+    await deleteCourseFromFirebase(course.id);
+
+    if (selectedCourse?.id === course.id) {
+      selectedCourse = null;
+      if (savedCoursePolyline) savedCoursePolyline.setPath([]);
+    }
+
+    await refreshCourses();
+    alert("삭제되었습니다.");
+  } catch (e) {
+    console.error(e);
+    alert("삭제 오류");
+  }
 });
 
 card.addEventListener("click", () => {
