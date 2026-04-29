@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>선수현황 | 남동노조위원장기 탁구대회</title>
+
+  <style>
+    :root{
+      --bg1:#e9f4ff;
+      --bg2:#fff7ec;
+      --card:#ffffff;
+      --text:#16202a;
+      --muted:#64748b;
+      --line:#d8e4ef;
+      --shadow:0 10px 28px rgba(15,23,42,.10);
+      --blue:#1565c0;
+      --cyan:#26c6da;
+    }
+
+    *{box-sizing:border-box;}
+
+    body{
+      margin:0;
+      min-height:100vh;
+      font-family:Arial, "Malgun Gothic", sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at top left, #fef3c7 0%, transparent 28%),
+        radial-gradient(circle at top right, #dbeafe 0%, transparent 30%),
+        linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%);
+      padding:10px;
+    }
+
+    .wrap{
+      width:100%;
+      max-width:780px;
+      margin:0 auto;
+    }
+
+    .top{
+      background:rgba(255,255,255,.95);
+      border:1px solid rgba(255,255,255,.7);
+      border-radius:24px;
+      padding:14px;
+      box-shadow:var(--shadow);
+      margin-bottom:12px;
+    }
+
+    .top-row{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+    }
+
+    h1{
+      margin:0;
+      font-size:26px;
+      font-weight:900;
+      letter-spacing:-.4px;
+    }
+
+    .back-btn{
+      border:none;
+      border-radius:14px;
+      padding:9px 12px;
+      background:linear-gradient(135deg,#37474f,#607d8b);
+      color:#fff;
+      font-size:13px;
+      font-weight:900;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+
+    .desc{
+      margin:8px 0 0;
+      font-size:13px;
+      color:var(--muted);
+      font-weight:700;
+      line-height:1.4;
+    }
+
+    .team-card{
+      background:rgba(255,255,255,.96);
+      border:1px solid rgba(255,255,255,.75);
+      border-radius:24px;
+      padding:14px;
+      box-shadow:var(--shadow);
+      margin-bottom:12px;
+    }
+
+    .team-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:10px;
+    }
+
+    .team-name{
+      font-size:24px;
+      font-weight:900;
+      color:#0f172a;
+      letter-spacing:-.3px;
+    }
+
+    .team-count{
+      font-size:13px;
+      font-weight:900;
+      color:#1565c0;
+      background:#e3f2fd;
+      padding:6px 10px;
+      border-radius:999px;
+      white-space:nowrap;
+    }
+
+    .team-photo{
+      width:100%;
+      border-radius:20px;
+      overflow:hidden;
+      border:1px solid var(--line);
+      background:#f8fafc;
+      margin-bottom:12px;
+      min-height:130px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .team-photo img{
+      width:100%;
+      display:block;
+      max-height:260px;
+      object-fit:cover;
+    }
+
+    .no-photo{
+      color:#94a3b8;
+      font-size:14px;
+      font-weight:800;
+      padding:34px 10px;
+      text-align:center;
+    }
+
+    .players-grid{
+      display:grid;
+      grid-template-columns:repeat(2, 1fr);
+      gap:10px;
+    }
+
+    .player-card{
+      border:1px solid var(--line);
+      border-radius:18px;
+      background:linear-gradient(135deg,#ffffff,#f8fbff);
+      padding:10px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      min-height:86px;
+    }
+
+    .player-photo{
+      width:58px;
+      height:58px;
+      border-radius:16px;
+      overflow:hidden;
+      background:#e2e8f0;
+      border:1px solid #dbe4ee;
+      flex:0 0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .player-photo img{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+
+    .player-placeholder{
+      font-size:22px;
+      font-weight:900;
+      color:#64748b;
+    }
+
+    .player-info{
+      min-width:0;
+      flex:1;
+    }
+
+    .player-name{
+      font-size:18px;
+      font-weight:900;
+      line-height:1.2;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .player-meta{
+      margin-top:5px;
+      display:flex;
+      gap:5px;
+      flex-wrap:wrap;
+    }
+
+    .badge{
+      font-size:11px;
+      font-weight:900;
+      padding:4px 7px;
+      border-radius:999px;
+      background:#eef2ff;
+      color:#3730a3;
+    }
+
+    .badge.female{
+      background:#ffe4e6;
+      color:#be123c;
+    }
+
+    .badge.male{
+      background:#dbeafe;
+      color:#1d4ed8;
+    }
+
+    .loading,
+    .empty{
+      text-align:center;
+      padding:30px 10px;
+      color:#64748b;
+      font-weight:900;
+    }
+
+    .photo-modal{
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:9999;
+      background:rgba(0,0,0,.78);
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+
+    .photo-modal.show{
+      display:flex;
+    }
+
+    .modal-box{
+      width:100%;
+      max-width:520px;
+      background:#fff;
+      border-radius:22px;
+      padding:14px;
+      text-align:center;
+    }
+
+    .modal-title{
+      font-size:18px;
+      font-weight:900;
+      margin-bottom:10px;
+    }
+
+    .modal-img{
+      width:100%;
+      max-height:72vh;
+      object-fit:contain;
+      border-radius:16px;
+      background:#f1f5f9;
+    }
+
+    .modal-tip{
+      margin-top:10px;
+      font-size:13px;
+      font-weight:800;
+      color:#64748b;
+    }
+
+    @media (max-width:520px){
+      body{
+        padding:8px;
+      }
+
+      h1{
+        font-size:24px;
+      }
+
+      .team-card{
+        padding:12px;
+        border-radius:22px;
+      }
+
+      .team-name{
+        font-size:22px;
+      }
+
+      .players-grid{
+        grid-template-columns:1fr;
+      }
+
+      .player-card{
+        min-height:78px;
+      }
+
+      .player-photo{
+        width:54px;
+        height:54px;
+      }
+
+      .player-name{
+        font-size:17px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="top-row">
+        <h1>선수현황</h1>
+        <button class="back-btn" onclick="location.href='./'">← 메인</button>
+      </div>
+      <p class="desc">
+        경기생성에서 수정한 팀명·선수명과 사진수정에서 등록한 단체사진·선수사진을 불러와 표시합니다.
+      </p>
+    </div>
+
+    <div id="content">
+      <div class="loading">선수 정보를 불러오는 중입니다...</div>
+    </div>
+  </div>
+
+  <div id="photoModal" class="photo-modal" onclick="closePhotoModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div id="modalTitle" class="modal-title"></div>
+      <img id="modalImg" class="modal-img" src="" alt="사진">
+      <div class="modal-tip">바깥 영역을 누르면 닫힙니다</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getDatabase,
+      ref,
+      get
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+    // TODO: 기존 game_make 또는 사진수정 HTML에 있는 firebaseConfig를 그대로 복사해서 넣으세요.
+    const firebaseConfig = {
+      apiKey: "AIzaSyDpXivPM_KJlY8yN1X0_oQH8P-MpyOwNo8",
+      authDomain: "koen-championship.firebaseapp.com",
+      projectId: "koen-championship",
+      storageBucket: "koen-championship.firebasestorage.app",
+      messagingSenderId: "652507559896",
+      appId: "1:652507559896:web:9bf6bf5c97f4b4dbb024ad"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app, "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app");
+
+
+    const DEFAULT_TOURNAMENT_ID = "current_tournament";
+
+    const contentEl = document.getElementById("content");
+
+    async function loadTournament(){
+      try{
+        const tournamentId = getTournamentId();
+
+        const snap = await get(ref(db, `tournaments/${tournamentId}`));
+
+        if(!snap.exists()){
+          contentEl.innerHTML = `<div class="empty">대회 데이터가 없습니다.</div>`;
+          return;
+        }
+
+        const tournament = snap.val();
+        renderTeams(tournament);
+
+      }catch(err){
+        console.error(err);
+        contentEl.innerHTML = `<div class="empty">선수 정보를 불러오지 못했습니다.</div>`;
+      }
+    }
+
+    function getTournamentId(){
+      const params = new URLSearchParams(location.search);
+      return params.get("tid") || params.get("tournamentId") || DEFAULT_TOURNAMENT_ID;
+    }
+
+    function renderTeams(tournament){
+      const teams = normalizeTeams(tournament);
+      const photoAssets = tournament.photoAssets || {};
+      const teamPhotos = photoAssets.teamPhotos || {};
+      const playerPhotos = photoAssets.playerPhotos || {};
+
+      if(!teams.length){
+        contentEl.innerHTML = `<div class="empty">등록된 팀 또는 선수가 없습니다.</div>`;
+        return;
+      }
+
+      contentEl.innerHTML = teams.map(team => {
+        const teamName = team.name;
+        const teamKey = safeKey(teamName);
+        const players = team.players || [];
+
+        const teamPhotoUrl =
+          getPhotoUrl(teamPhotos?.[teamKey]) ||
+          getPhotoUrl(teamPhotos?.[teamName]) ||
+          "";
+
+        return `
+          <section class="team-card">
+            <div class="team-head">
+              <div class="team-name">${escapeHtml(teamName)}</div>
+              <div class="team-count">${players.length}명</div>
+            </div>
+
+            <div class="team-photo" onclick="${teamPhotoUrl ? `openPhotoModal('${escapeAttr(teamName)} 단체사진','${escapeAttr(teamPhotoUrl)}')` : ""}">
+              ${
+                teamPhotoUrl
+                ? `<img src="${escapeAttr(teamPhotoUrl)}" alt="${escapeAttr(teamName)} 단체사진">`
+                : `<div class="no-photo">단체사진 미등록</div>`
+              }
+            </div>
+
+            <div class="players-grid">
+              ${
+                players.map((player, index) => {
+                  const playerName = getPlayerName(player, index);
+                  const playerKey = safeKey(playerName);
+
+                  const playerPhotoUrl =
+                    getPhotoUrl(playerPhotos?.[teamKey]?.[playerKey]) ||
+                    getPhotoUrl(playerPhotos?.[teamName]?.[playerName]) ||
+                    getPhotoUrl(player.photo) ||
+                    getPhotoUrl(player.photoUrl) ||
+                    "";
+
+                  const gender = getGender(player, index);
+
+                  return `
+                    <div class="player-card" onclick="${playerPhotoUrl ? `openPhotoModal('${escapeAttr(teamName)} ${escapeAttr(playerName)}','${escapeAttr(playerPhotoUrl)}')` : ""}">
+                      <div class="player-photo">
+                        ${
+                          playerPhotoUrl
+                          ? `<img src="${escapeAttr(playerPhotoUrl)}" alt="${escapeAttr(playerName)} 사진">`
+                          : `<div class="player-placeholder">${escapeHtml(playerName.slice(0,1) || "?")}</div>`
+                        }
+                      </div>
+
+                      <div class="player-info">
+                        <div class="player-name">${escapeHtml(playerName)}</div>
+                        <div class="player-meta">
+                          <span class="badge">${index + 1}번</span>
+                          ${
+                            gender
+                            ? `<span class="badge ${gender === "여" ? "female" : "male"}">${gender}</span>`
+                            : ""
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join("")
+              }
+            </div>
+          </section>
+        `;
+      }).join("");
+    }
+
+    function normalizeTeams(tournament){
+      let rawTeams =
+        tournament.teams ||
+        tournament.teamList ||
+        tournament.basicInfo?.teams ||
+        [];
+
+      if(Array.isArray(rawTeams)){
+        return rawTeams.map((team, idx) => normalizeTeam(team, idx)).filter(Boolean);
+      }
+
+      if(typeof rawTeams === "object"){
+        return Object.entries(rawTeams)
+          .map(([key, value], idx) => normalizeTeam(value, idx, key))
+          .filter(Boolean);
+      }
+
+      return [];
+    }
+
+    function normalizeTeam(team, index, fallbackName){
+      if(!team) return null;
+
+      if(typeof team === "string"){
+        return {
+          name: team,
+          players: []
+        };
+      }
+
+      const name =
+        team.name ||
+        team.teamName ||
+        team.title ||
+        fallbackName ||
+        `팀${index + 1}`;
+
+      let players =
+        team.players ||
+        team.members ||
+        team.roster ||
+        [];
+
+      if(!Array.isArray(players) && typeof players === "object"){
+        players = Object.values(players);
+      }
+
+      if(!Array.isArray(players)){
+        players = [];
+      }
+
+      return {
+        name,
+        players
+      };
+    }
+
+    function getPlayerName(player, index){
+      if(typeof player === "string") return player;
+
+      return (
+        player?.name ||
+        player?.playerName ||
+        player?.displayName ||
+        player?.nickname ||
+        `선수${index + 1}`
+      );
+    }
+
+    function getGender(player, index){
+      if(typeof player === "string"){
+        return "";
+      }
+
+      const raw =
+        player?.gender ||
+        player?.sex ||
+        player?.type ||
+        "";
+
+      if(raw === "female" || raw === "F" || raw === "여자" || raw === "여") return "여";
+      if(raw === "male" || raw === "M" || raw === "남자" || raw === "남") return "남";
+
+      // 기존 샘플이 여자1, 남자1 같은 순서라면 이름에서 추정
+      const name = getPlayerName(player, index);
+      if(name.includes("여")) return "여";
+      if(name.includes("남")) return "남";
+
+      return "";
+    }
+
+    function getPhotoUrl(value){
+      if(!value) return "";
+
+      if(typeof value === "string") return value;
+
+      return (
+        value.url ||
+        value.secure_url ||
+        value.photoUrl ||
+        value.imageUrl ||
+        ""
+      );
+    }
+
+    function safeKey(text){
+      return String(text || "")
+        .trim()
+        .replace(/[.#$\[\]/]/g, "_");
+    }
+
+    function escapeHtml(value){
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttr(value){
+      return escapeHtml(value).replaceAll("`", "&#096;");
+    }
+
+    window.openPhotoModal = function(title, url){
+      document.getElementById("modalTitle").textContent = title;
+      document.getElementById("modalImg").src = url;
+      document.getElementById("photoModal").classList.add("show");
+    }
+
+    window.closePhotoModal = function(){
+      document.getElementById("photoModal").classList.remove("show");
+      document.getElementById("modalImg").src = "";
+    }
+
+    loadTournament();
+  </script>
+</body>
+</html>
