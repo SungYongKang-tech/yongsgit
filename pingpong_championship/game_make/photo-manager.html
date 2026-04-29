@@ -412,56 +412,66 @@ const ROOT_FOLDER = "26 pingpong championship";
 
 async function verifyAccess() {
   try {
-    // 현재 대회 ID 가져오기
     const params = new URLSearchParams(location.search);
     const tournamentIdFromQuery = params.get("tournamentId");
 
-    let tournamentId = tournamentIdFromQuery;
+    let targetTournamentId = tournamentIdFromQuery;
 
-    if (!tournamentId) {
+    // 현재 대회 ID 가져오기
+    if (!targetTournamentId) {
       const snap = await get(ref(db, "currentTournamentId"));
       if (snap.exists()) {
-        tournamentId = snap.val();
+        targetTournamentId = snap.val();
       }
     }
 
-    if (!tournamentId) {
+    if (!targetTournamentId) {
       alert("대회 정보를 찾을 수 없습니다.");
       location.replace("../");
       return false;
     }
 
-    // 대회 데이터 가져오기
-    const tournamentSnap = await get(ref(db, `tournaments/${tournamentId}`));
+    // 🔥 players에서 넘어온 경우 (비번 이미 통과)
+    const accessOk = sessionStorage.getItem("koen_photo_access_ok") === "true";
+    const accessTournamentId = sessionStorage.getItem("koen_photo_access_tournamentId");
 
-    if (!tournamentSnap.exists()) {
-      alert("대회 데이터를 찾을 수 없습니다.");
+    if (accessOk && accessTournamentId === targetTournamentId) {
+      return true;
+    }
+
+    // 🔥 직접 접근 시만 비밀번호 입력
+    const pw = prompt("경기 입력 비밀번호를 입력하세요.");
+    if (pw === null) {
+      alert("접근이 취소되었습니다.");
       location.replace("../");
       return false;
     }
 
-    const data = tournamentSnap.val();
-    const adminPassword = data?.meta?.adminPassword || "";
+    const pwSnap = await get(ref(db, `tournaments/${targetTournamentId}/meta/adminPassword`));
 
-    // 비밀번호 입력
-    const input = prompt("비밀번호를 입력하세요.");
-    if (input === null) {
+    if (!pwSnap.exists()) {
+      alert("비밀번호 정보를 찾을 수 없습니다.");
       location.replace("../");
       return false;
     }
 
-    // 비교
-    if (input !== adminPassword) {
+    const scorePassword = pwSnap.val();
+
+    if (pw !== scorePassword) {
       alert("비밀번호가 올바르지 않습니다.");
       location.replace("../");
       return false;
     }
 
+    // 🔥 성공하면 세션 저장 (다음부터 안 물음)
+    sessionStorage.setItem("koen_photo_access_ok", "true");
+    sessionStorage.setItem("koen_photo_access_tournamentId", targetTournamentId);
+
     return true;
 
   } catch (err) {
     console.error(err);
-    alert("접근 확인 중 오류 발생");
+    alert("접근 확인 중 오류가 발생했습니다.");
     location.replace("../");
     return false;
   }
