@@ -418,16 +418,7 @@
     let tournamentId = "";
     let tournamentData = null;
 
-    const DEFAULT_COMMON_PASSWORD = "0000";
-
-const STORAGE_KEYS = {
-  common: "koen_pingpong_pw_common"
-};
-
-function getCommonPassword(){
-  return localStorage.getItem(STORAGE_KEYS.common) || DEFAULT_COMMON_PASSWORD;
-}
-
+   
     function sanitizeKey(v) {
       return String(v || "").trim().replace(/[.#$/[\]]/g, "_");
     }
@@ -651,22 +642,36 @@ function getCommonPassword(){
       document.getElementById("modalImg").src = "";
     };
 
-    window.goPhotoManager = function(){
-  const pw = prompt("일반 비밀번호를 입력하세요.");
-  if (pw === null) return;
+   window.goPhotoManager = async function(){
+  try {
+    const pw = prompt("점수 입력 비밀번호를 입력하세요.");
+    if (pw === null) return;
 
-  const commonPw = getCommonPassword();
+    const tid = tournamentId || await resolveTournamentId();
 
-  if (pw !== commonPw) {
-    alert("비밀번호가 올바르지 않습니다.");
-    return;
+    const pwSnap = await get(ref(db, `tournaments/${tid}/meta/adminPassword`));
+
+    if (!pwSnap.exists()) {
+      alert("점수 입력 비밀번호 정보를 찾을 수 없습니다.");
+      return;
+    }
+
+    const scorePassword = pwSnap.val();
+
+    if (pw !== scorePassword) {
+      alert("비밀번호가 올바르지 않습니다.");
+      return;
+    }
+
+    sessionStorage.setItem("koen_photo_access_ok", "true");
+    sessionStorage.setItem("koen_photo_access_tournamentId", tid);
+
+    location.href = `./game_make/photo-manager.html?tournamentId=${encodeURIComponent(tid)}`;
+
+  } catch (err) {
+    console.error(err);
+    alert("비밀번호 확인 중 오류가 발생했습니다.");
   }
-
-  sessionStorage.setItem("koen_photo_access_ok", "true");
-  sessionStorage.setItem("koen_photo_access_tournamentId", tournamentId);
-
-  const url = `./game_make/photo-manager.html?tournamentId=${encodeURIComponent(tournamentId)}`;
-  location.href = url;
 };
 
     async function init() {
