@@ -489,12 +489,12 @@
           <div class="sub">팀 등록, 조 편성, 자동 대진 생성(관리자 전용)</div>
         </button>
 
-        <a href="./game_live_group/">
-          <button type="button" class="big-btn btn-group">
-            <div class="main">예선리그전</div>
-            <div class="sub">조별 경기 진행, 결과 입력, 순위 확인</div>
-          </button>
-        </a>
+        <a href="./group-game.html">
+  <button type="button" class="big-btn btn-group">
+    <div class="main">예선리그전</div>
+    <div class="sub">조별 경기 진행, 결과 입력, 순위 확인</div>
+  </button>
+</a>
 
         <a href="./players.html">
   <button type="button" class="big-btn btn-players">
@@ -503,7 +503,7 @@
   </button>
 </a>
 
-        <a href="./game_live_tournament/">
+        <a href="./tournament-game.html">
           <button type="button" class="big-btn btn-tournament">
             <div class="main">본선 토너먼트</div>
             <div class="sub">4강, 결승 진행 및 본선 대진 관리</div>
@@ -558,67 +558,107 @@
   <div class="modal-backdrop" id="helpModalBackdrop">
 </div>
 
-  <script>
+  <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    get,
+    update
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDpXivPM_KJlY8yN1X0_oQH8P-MpyOwNo8",
+    authDomain: "koen-championship.firebaseapp.com",
+    projectId: "koen-championship",
+    storageBucket: "koen-championship.firebasestorage.app",
+    messagingSenderId: "652507559896",
+    appId: "1:652507559896:web:9bf6bf5c97f4b4dbb024ad"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(
+    app,
+    "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app"
+  );
+
     const SHARE_URL = "https://sensational-tulumba-65e97e.netlify.app/pingpong_championship/";
     const MASTER_ADMIN_PASSWORD = "771225";
-    const STORAGE_KEYS = {
-  common: "koen_pingpong_pw_common",
-  admin: "koen_pingpong_pw_admin",
-  photo: "koen_pingpong_pw_photo"
-};
+    
+    async function getPasswordConfig() {
+  const snap = await get(ref(db, "passwordConfig"));
 
-    function getPasswordConfig() {
+  if (!snap.exists()) {
+    return {
+      mainPassword: "",
+      normalPassword: ""
+    };
+  }
+
+  const data = snap.val();
+
   return {
-    common: localStorage.getItem(STORAGE_KEYS.common) || "0000",
-    admin: localStorage.getItem(STORAGE_KEYS.admin) || "1111",
-    photo: localStorage.getItem(STORAGE_KEYS.photo) || "771225"
+    mainPassword: data.mainPassword || "",
+    normalPassword: data.normalPassword || ""
   };
 }
 
-    function savePasswordConfig({ common, admin, photo }) {
-  localStorage.setItem(STORAGE_KEYS.common, common);
-  localStorage.setItem(STORAGE_KEYS.admin, admin);
-  localStorage.setItem(STORAGE_KEYS.photo, photo);
-}
-   function openAdmin(){
-  const masterPw = prompt("관리 비밀번호를 입력하세요.");
+  window.openAdmin = async function(){
+  const masterPw = prompt("관리 설정 비밀번호를 입력하세요.");
   if (masterPw === null) return;
+
   if (masterPw !== MASTER_ADMIN_PASSWORD) {
-    alert("관리 비밀번호가 올바르지 않습니다.");
+    alert("비밀번호가 올바르지 않습니다.");
     return;
   }
 
-  const config = getPasswordConfig();
+  const config = await getPasswordConfig();
 
-  const common = prompt("경기생성 / 전체 삭제 비밀번호", config.common);
-  if (common === null) return;
+  const mainPassword = prompt(
+    "메인 비밀번호\n- 경기생성 입장\n- 전체 초기화",
+    config.mainPassword
+  );
+  if (mainPassword === null) return;
 
-  const admin = prompt("관리자 잠금해제 비밀번호", config.admin);
-  if (admin === null) return;
+  const normalPassword = prompt(
+    "일반 비밀번호\n- 스코어 입력\n- 사진 수정",
+    config.normalPassword
+  );
+  if (normalPassword === null) return;
 
-  const photo = prompt("사진입력 비밀번호", config.photo);
-  if (photo === null) return;
+  if (!mainPassword.trim() || !normalPassword.trim()) {
+    alert("둘 다 입력해야 합니다.");
+    return;
+  }
 
-  savePasswordConfig({
-    common: common.trim() || config.common,
-    admin: admin.trim() || config.admin,
-    photo: photo.trim() || config.photo
+  await update(ref(db, "passwordConfig"), {
+    mainPassword: mainPassword.trim(),
+    normalPassword: normalPassword.trim(),
+    updatedAt: Date.now()
   });
 
-  alert("비밀번호 설정이 저장되었습니다.");
+  alert("비밀번호 저장 완료");
 }
 
-    function goGameMake(){
-      const { common } = getPasswordConfig();
-      const pw = prompt("비밀번호를 입력하세요.");
-      if (pw === common) {
-        location.href = "./game_make/";
-      } else if (pw !== null) {
-        alert("비밀번호가 틀렸습니다.");
-      }
-    }
+  window.goGameMake = async function(){
+  const config = await getPasswordConfig();
 
-    async function copyPageUrl(){
+  if (!config.mainPassword) {
+    alert("먼저 관리 버튼에서 메인 비밀번호를 설정하세요.");
+    return;
+  }
+
+  const pw = prompt("메인 비밀번호를 입력하세요.");
+  if (pw === null) return;
+
+  if (pw === config.mainPassword) {
+    location.href = "./game-make.html";
+  } else {
+    alert("비밀번호가 틀렸습니다.");
+  }
+}
+
+   window.copyPageUrl = async function(){
       try{
         await navigator.clipboard.writeText(SHARE_URL);
         alert("링크가 복사되었습니다.");
@@ -633,7 +673,7 @@
       }
     }
 
-    async function sharePage(){
+    window.sharePage = async function(){
       try{
         if (navigator.share) {
           await navigator.share({
@@ -642,18 +682,18 @@
             url: SHARE_URL
           });
         } else {
-          await copyPageUrl();
+          await window.copyPageUrl();
         }
       }catch(err){
         // 공유창 닫기 등은 조용히 무시
       }
     }
 
-    function openQrModal(){
+    window.openQrModal = function(){
       document.getElementById("qrModal").classList.add("show");
     }
 
-    function closeQrModal(){
+    window.closeQrModal = function(){
       document.getElementById("qrModal").classList.remove("show");
     }
   </script>
