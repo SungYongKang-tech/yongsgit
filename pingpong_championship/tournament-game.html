@@ -966,7 +966,7 @@ body.photo-modal-open{
         <small id="pageSub">대회 정보를 불러오는 중입니다.</small>
       </div>
       <div class="actions">
-        <button type="button" class="ghost" id="btnToggleAdmin">관리자 잠금해제</button>
+        <button type="button" class="ghost" id="btnToggleAdmin">입력 잠금해제</button>
         <button type="button" class="orange" id="btnCreateBracket">4강 대진 생성</button>
         <button type="button" class="red" id="btnResetTournament" style="display:none;">전체 토너먼트 초기화</button>
         <button type="button" class="green" id="btnGroupPage">조별리그 페이지</button>
@@ -1023,12 +1023,7 @@ body.photo-modal-open{
     const db = getDatabase(app, "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app");
 
     const ADMIN_STORAGE_KEY = "koen_tournament_admin_unlocked";
-    const DEFAULT_ADMIN_PASSWORD = "1111";
-    const DEFAULT_COMMON_PASSWORD = "0000";
-    const STORAGE_KEYS = {
-      common: "koen_pingpong_pw_common",
-      admin: "koen_pingpong_pw_admin"
-    };
+    
 
     const MATCH_TYPES = [
   { key: "m1", name: "여자복식", count: 2 },
@@ -1229,12 +1224,23 @@ function bindRosterPhotoClicks(root = document) {
     const bracketArea = document.getElementById("bracketArea");
     const detailArea = document.getElementById("detailArea");
 
-       function getPasswordConfig() {
-      return {
-        common: localStorage.getItem(STORAGE_KEYS.common) || DEFAULT_COMMON_PASSWORD,
-        admin: localStorage.getItem(STORAGE_KEYS.admin) || DEFAULT_ADMIN_PASSWORD
-      };
-    }
+      async function getPasswordConfig() {
+  const snap = await get(ref(db, "passwordConfig"));
+
+  if (!snap.exists()) {
+    return {
+      mainPassword: "",
+      normalPassword: ""
+    };
+  }
+
+  const data = snap.val();
+
+  return {
+    mainPassword: data.mainPassword || "",
+    normalPassword: data.normalPassword || ""
+  };
+}
 
 
 
@@ -1255,12 +1261,12 @@ function bindRosterPhotoClicks(root = document) {
 
     function setAdminStatusText() {
       if (isAdmin) {
-        adminStatus.textContent = "관리자 모드입니다. 점수 선택, 선수 선택, 저장이 가능합니다.";
-        btnToggleAdmin.textContent = "관리자 잠금해제 해제";
+        adminStatus.textContent = "입력 모드입니다. 점수 선택, 선수 선택, 저장이 가능합니다.";
+        btnToggleAdmin.textContent = "입력 잠금해제 해제";
         btnResetTournament.style.display = "";
       } else {
         adminStatus.textContent = "관전자 모드입니다. 브라켓과 상세 결과를 조회할 수 있습니다.";
-        btnToggleAdmin.textContent = "관리자 잠금해제";
+        btnToggleAdmin.textContent = "입력 잠금해제";
         btnResetTournament.style.display = "none";
       }
     }
@@ -2066,7 +2072,7 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
 
     async function createBracketFromGroups() {
       if (!isAdmin) {
-        alert("관리자만 생성할 수 있습니다.");
+        alert("입력 잠금해제 후 생성할 수 있습니다.");
         return;
       }
 
@@ -2137,14 +2143,20 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
     async function resetTournament() {
       if (!isAdmin) return;
 
-      const { common } = getPasswordConfig();
-      const pw = prompt("전체 토너먼트 초기화를 위해 비밀번호를 입력하세요.");
-      if (pw === null) return;
-      if (pw !== common) {
-        alert("비밀번호가 올바르지 않습니다.");
-        return;
-      }
+      const passwordConfig = await getPasswordConfig();
 
+if (!passwordConfig.mainPassword) {
+  alert("메인 비밀번호가 설정되어 있지 않습니다.");
+  return;
+}
+
+const pw = prompt("전체 토너먼트 초기화를 위해 메인 비밀번호를 입력하세요.");
+if (pw === null) return;
+
+if (pw !== passwordConfig.mainPassword) {
+  alert("비밀번호가 올바르지 않습니다.");
+  return;
+}
       const ok = confirm("토너먼트 전체 경기결과를 모두 초기화하시겠습니까?");
       if (!ok) return;
 
@@ -2198,37 +2210,40 @@ if (new Set(teamBPlayers).size !== teamBPlayers.length) {
     }
 
     function bindTopEvents() {
-     
-
-      btnToggleAdmin.addEventListener("click", () => {
-        if (isAdmin) {
-          isAdmin = false;
-          localStorage.removeItem(ADMIN_STORAGE_KEY);
-          renderAll();
-          return;
-        }
-
-        const input = prompt("관리자 비밀번호를 입력하세요.");
-        if (input === null) return;
-
-        const { admin } = getPasswordConfig();
-        if (input === admin) {
-          isAdmin = true;
-          localStorage.setItem(ADMIN_STORAGE_KEY, "true");
-          renderAll();
-        } else {
-          alert("비밀번호가 올바르지 않습니다.");
-        }
-      });
-
-      btnCreateBracket.addEventListener("click", createBracketFromGroups);
-      btnResetTournament.addEventListener("click", resetTournament);
-
-      btnGroupPage.addEventListener("click", () => {
-  const target = `../game_live_group/`;
-  location.href = target;
-});
+  btnToggleAdmin.addEventListener("click", async () => {
+    if (isAdmin) {
+      isAdmin = false;
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+      renderAll();
+      return;
     }
+
+    const passwordConfig = await getPasswordConfig();
+
+    if (!passwordConfig.normalPassword) {
+      alert("일반 비밀번호가 설정되어 있지 않습니다.");
+      return;
+    }
+
+    const input = prompt("일반 비밀번호를 입력하세요.");
+    if (input === null) return;
+
+    if (input === passwordConfig.normalPassword) {
+      isAdmin = true;
+      localStorage.setItem(ADMIN_STORAGE_KEY, "true");
+      renderAll();
+    } else {
+      alert("비밀번호가 올바르지 않습니다.");
+    }
+  });
+
+  btnCreateBracket.addEventListener("click", createBracketFromGroups);
+  btnResetTournament.addEventListener("click", resetTournament);
+
+  btnGroupPage.addEventListener("click", () => {
+    location.href = "./group-game.html";
+  });
+}
 
     async function loadTournament() {
       try {
