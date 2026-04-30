@@ -437,7 +437,10 @@ button:disabled{
       </section>
 
       <section class="card">
-        <h2>2. 조 편성 현황</h2>
+        <div class="section-head">
+  <h2>2. 조 편성 현황</h2>
+  <button type="button" class="secondary" id="btnGroupLock">조 고정</button>
+</div>
         <div class="hint">추첨 결과에 따라 각 팀을 A조 또는 B조에 넣어 주세요. 각 조는 4팀이어야 합니다.</div>
         <div class="group-boxes">
           <div class="group-box">
@@ -555,6 +558,7 @@ let isPhotoSuperAdmin = localStorage.getItem(PHOTO_SUPERADMIN_STORAGE_KEY) === "
 
 let editingTournamentId = null;
 let isEditMode = false;
+let isGroupLocked = false;
     const teamsContainer = document.getElementById("teamsContainer");
     const groupAList = document.getElementById("groupAList");
     const groupBList = document.getElementById("groupBList");
@@ -578,11 +582,25 @@ const btnStartTournament = document.getElementById("btnStartTournament");
 const btnStartBottom = document.getElementById("btnStartBottom");
 const btnRandomGroups = document.getElementById("btnRandomGroups");
 const btnPhotoManager = document.getElementById("btnPhotoManager");
+const btnGroupLock = document.getElementById("btnGroupLock");
 
     function updatePhotoManagerUI() {
      btnPhotoManager.style.display = "";
      btnPhotoManager.textContent = "사진 수정";
      }
+
+function applyGroupLockUI() {
+  for (let i = 0; i < DEFAULT_TEAM_COUNT; i++) {
+    const groupEl = document.getElementById(`group${i}`);
+    if (groupEl) groupEl.disabled = isGroupLocked;
+  }
+
+  btnRandomGroups.disabled = isGroupLocked;
+  btnRandomGroups.textContent = isGroupLocked ? "조 고정 상태" : "랜덤 조편성";
+  btnGroupLock.textContent = isGroupLocked ? "조 고정 해제" : "조 고정";
+
+  btnGroupLock.style.background = isGroupLocked ? "#c62828" : "#64748b";
+}
 
     function todayKST() {
       const now = new Date();
@@ -605,7 +623,8 @@ endDateInput.value = todayKST();
   if (!snap.exists()) {
     return {
       mainPassword: "",
-      normalPassword: ""
+      normalPassword: "",
+      groupLockPassword: ""
     };
   }
 
@@ -613,7 +632,8 @@ endDateInput.value = todayKST();
 
   return {
     mainPassword: data.mainPassword || "",
-    normalPassword: data.normalPassword || ""
+    normalPassword: data.normalPassword || "",
+    groupLockPassword: data.groupLockPassword || ""
   };
 }
 
@@ -634,6 +654,11 @@ endDateInput.value = todayKST();
 }
 
 function applyRandomGroups() {
+  if (isGroupLocked) {
+    alert("조가 고정되어 있습니다.\n조 고정 해제 후 다시 추첨할 수 있습니다.");
+    return;
+  }
+
   const teams = getTeamsFromForm().filter(t => t.name);
 
   if (teams.length !== 8) {
@@ -996,14 +1021,15 @@ const adminPassword = passwordConfig.normalPassword;
     tournamentId,
     data: {
       meta: {
-        title,
-        startDate,
-        endDate,
-        adminPassword,
-        status: "group",
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      },
+  title,
+  startDate,
+  endDate,
+  adminPassword,
+  status: "group",
+  groupLocked: isGroupLocked,
+  createdAt: Date.now(),
+  updatedAt: Date.now()
+},
       teams: teamsPayload,
       groups: {
         A: aTeamIds,
@@ -1129,6 +1155,11 @@ if (startAfterSave) {
   saveStatus.textContent = `저장 실패\n${err.message || err}`;
   alert(err.message || "저장 중 오류가 발생했습니다.");
 }
+
+if (isGroupLocked) {
+  saveStatus.textContent += "\n※ 현재 조는 고정 상태입니다.";
+}
+
 }
 
     function loadSampleData() {
@@ -1234,8 +1265,69 @@ ${name} 여2`;
     endDateInput.addEventListener("input", renderBasicInfoSummary);
 
     createTeamCards();
+    updateButtonLabels();
+    applyGroupLockUI();
 
-updateButtonLabels();
+btnGroupLock.addEventListener("click", async () => {
+  try {
+    if (!editingTournamentId) {
+      alert("먼저 저장을 해주세요.");
+      return;
+    }
+
+    const passwordConfig = await getPasswordConfig();
+
+    if (!passwordConfig.groupLockPassword) {
+      alert("조 고정 비밀번호가 설정되어 있지 않습니다.\n메인 화면의 관리 설정에서 먼저 설정하세요.");
+      return;
+    }
+
+    const pw = prompt(
+      isGroupLocked
+        ? "조 고정 해제 비밀번호를 입력하세요."
+        : "조 고정 비밀번호를 입력하세요."
+    );
+
+    if (pw === null) return;
+
+    if (pw !== passwordConfig.groupLockPassword) {
+      alert("비밀번호가 올바르지 않습니다.");
+      return;
+    }
+
+    if (!isGroupLocked) {
+      if (!confirm("현재 조 편성을 고정하시겠습니까?")) return;
+
+      isGroupLocked = true;
+
+      await update(ref(db, `tournaments/${editingTournamentId}/meta`), {
+        groupLocked: true,
+        groupLockedAt: Date.now()
+      });
+
+      applyGroupLockUI();
+      saveStatus.textContent = "조 편성이 고정되었습니다.";
+      alert("조 편성이 고정되었습니다.");
+      return;
+    }
+
+    if (!confirm("조 고정을 해제하시겠습니까?\n해제 후에는 조 변경과 랜덤 조편성이 가능합니다.")) return;
+
+    isGroupLocked = false;
+
+    await update(ref(db, `tournaments/${editingTournamentId}/meta`), {
+      groupLocked: false,
+      groupUnlockedAt: Date.now()
+    });
+
+    applyGroupLockUI();
+    saveStatus.textContent = "조 고정이 해제되었습니다.";
+    alert("조 고정이 해제되었습니다.");
+  } catch (err) {
+    console.error(err);
+    alert(err.message || "조 고정 처리 중 오류가 발생했습니다.");
+  }
+});
 
     async function loadCurrentTournamentToForm() {
   try {
@@ -1289,7 +1381,9 @@ updateButtonLabels();
 
     editingTournamentId = tournamentId;
     isEditMode = true;
+    isGroupLocked = meta.groupLocked === true;
     updateButtonLabels();
+    applyGroupLockUI();
 
     renderGroupStatus();
     renderBasicInfoSummary();
@@ -1386,6 +1480,17 @@ async function updateExistingTournament() {
 
   // 조 변경 여부 확인
   let groupChanged = false;
+
+  // 조가 변경되면 강제로 조 고정 해제
+if (groupChanged && isGroupLocked) {
+  isGroupLocked = false;
+
+  updates[`tournaments/${editingTournamentId}/meta/groupLocked`] = false;
+  updates[`tournaments/${editingTournamentId}/meta/groupUnlockedAt`] = Date.now();
+
+  alert("조가 변경되어 조 고정이 자동 해제되었습니다.");
+}
+
   for (const t of filledTeams) {
     const oldTeam = oldTeams[t.id];
     if (oldTeam && oldTeam.group !== t.group) {
@@ -1428,6 +1533,7 @@ async function updateExistingTournament() {
   updates[`tournaments/${editingTournamentId}/meta/endDate`] = endDate;
   updates[`tournaments/${editingTournamentId}/meta/updatedAt`] = Date.now();
   updates[`tournaments/${editingTournamentId}/meta/status`] = "group";
+  updates[`tournaments/${editingTournamentId}/meta/groupLocked`] = isGroupLocked;
 
 const passwordConfig = await getPasswordConfig();
 
