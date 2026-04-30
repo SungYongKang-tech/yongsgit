@@ -645,21 +645,27 @@
 
    window.goPhotoManager = async function(){
   try {
-    const pw = prompt("비밀번호를 입력하세요.");
-    if (pw === null) return;
-
     const tid = tournamentId || await resolveTournamentId();
 
-    const pwSnap = await get(ref(db, `tournaments/${tid}/meta/adminPassword`));
+    const configSnap = await get(ref(db, "passwordConfig"));
 
-    if (!pwSnap.exists()) {
-      alert("비밀번호 정보를 찾을 수 없습니다.");
+    if (!configSnap.exists()) {
+      alert("관리 비밀번호가 아직 설정되지 않았습니다.");
       return;
     }
 
-    const scorePassword = pwSnap.val();
+    const config = configSnap.val();
+    const normalPassword = config.normalPassword || "";
 
-    if (pw !== scorePassword) {
+    if (!normalPassword) {
+      alert("사진 수정용 비밀번호가 설정되지 않았습니다.");
+      return;
+    }
+
+    const pw = prompt("사진 수정 비밀번호를 입력하세요.");
+    if (pw === null) return;
+
+    if (pw !== normalPassword) {
       alert("비밀번호가 올바르지 않습니다.");
       return;
     }
