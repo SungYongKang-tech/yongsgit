@@ -1170,7 +1170,7 @@ body.photo-modal-open{
         <small id="pageSub">대회 정보를 불러오는 중입니다.</small>
       </div>
       <div class="actions">
-        <button type="button" class="ghost" id="btnToggleAdmin">관리자 잠금해제</button>
+        <button type="button" class="ghost" id="btnToggleAdmin">입력 잠금해제</button>
         <button type="button" class="red" id="btnResetAllResults" style="display:none;">전체 경기결과 초기화</button>
         <button type="button" class="green" id="btnTournamentPage">토너먼트 페이지</button>
       </div>
@@ -1271,12 +1271,7 @@ body.photo-modal-open{
     const db = getDatabase(app, "https://koen-championship-default-rtdb.asia-southeast1.firebasedatabase.app");
 
     const ADMIN_STORAGE_KEY = "koen_group_admin_unlocked";
-    const DEFAULT_ADMIN_PASSWORD = "1111";
-    const DEFAULT_COMMON_PASSWORD = "0000";
-    const STORAGE_KEYS = {
-      common: "koen_pingpong_pw_common",
-      admin: "koen_pingpong_pw_admin"
-    };
+   
 
     const MATCH_TYPES = [
   { key: "m1", name: "여자복식", count: 2 },
@@ -1483,14 +1478,23 @@ function bindRosterPhotoClicks(root = document) {
   });
 }
 
-      function getPasswordConfig() {
-      return {
-        common: localStorage.getItem(STORAGE_KEYS.common) || DEFAULT_COMMON_PASSWORD,
-        admin: localStorage.getItem(STORAGE_KEYS.admin) || DEFAULT_ADMIN_PASSWORD
-      };
-    }
+async function getPasswordConfig() {
+  const snap = await get(ref(db, "passwordConfig"));
 
+  if (!snap.exists()) {
+    return {
+      mainPassword: "",
+      normalPassword: ""
+    };
+  }
 
+  const data = snap.val();
+
+  return {
+    mainPassword: data.mainPassword || "",
+    normalPassword: data.normalPassword || ""
+  };
+}
 
    async function resolveTournamentId() {
   const snap = await get(ref(db, "currentTournamentId"));
@@ -1500,12 +1504,12 @@ function bindRosterPhotoClicks(root = document) {
 
     function setAdminStatusText() {
       if (isAdmin) {
-        adminStatus.textContent = "관리자 모드입니다. 선수 선택, 점수 입력, 저장이 가능합니다.";
-        btnToggleAdmin.textContent = "관리자 잠금해제 해제";
+        adminStatus.textContent = "입력 모드입니다. 선수 선택, 점수 입력, 저장이 가능합니다.";
+        btnToggleAdmin.textContent = "입력 잠금해제 해제";
         btnResetAllResults.style.display = "";
       } else {
         adminStatus.textContent = "관전자 모드입니다. 상세 결과 조회만 가능합니다.";
-        btnToggleAdmin.textContent = "관리자 잠금해제";
+        btnToggleAdmin.textContent = "입력 잠금해제";
         btnResetAllResults.style.display = "none";
       }
     }
@@ -2230,13 +2234,20 @@ alert("저장되었습니다.");
     async function resetAllGroupResults() {
       if (!isAdmin) return;
 
-      const { common } = getPasswordConfig();
-      const pw = prompt("전체 경기결과 초기화를 위해 비밀번호를 입력하세요.");
-      if (pw === null) return;
-      if (pw !== common) {
-        alert("비밀번호가 올바르지 않습니다.");
-        return;
-      }
+      const passwordConfig = await getPasswordConfig();
+
+if (!passwordConfig.mainPassword) {
+  alert("메인 비밀번호가 설정되어 있지 않습니다.");
+  return;
+}
+
+const pw = prompt("전체 경기결과 초기화를 위해 메인 비밀번호를 입력하세요.");
+if (pw === null) return;
+
+if (pw !== passwordConfig.mainPassword) {
+  alert("비밀번호가 올바르지 않습니다.");
+  return;
+}
 
       const ok = confirm("조별리그 전체 경기결과를 모두 초기화하시겠습니까?");
       if (!ok) return;
@@ -2247,15 +2258,15 @@ alert("저장되었습니다.");
 
         allMatches.forEach(match => {
           updates[`tournaments/${tournamentId}/groupMatches/${match.id}`] = {
-            ...match,
-            status: "ready",
-            teamMatchScoreA: 0,
-            teamMatchScoreB: 0,
-            setDiffA: 0,
-            setDiffB: 0,
-            winnerTeamId: "",
-            matches: makeEmptySubMatches()
-          };
+  ...match,
+  status: "ready",
+  teamMatchScoreA: 0,
+  teamMatchScoreB: 0,
+  setDiffA: 0,
+  setDiffB: 0,
+  winnerTeamId: "",
+  matches: makeEmptySubMatches()
+};
         });
 
         updates[`tournaments/${tournamentId}/groupAdvancers`] = null;
@@ -2265,15 +2276,15 @@ alert("저장되었습니다.");
         Object.keys(tournamentData.groupMatches || {}).forEach(matchId => {
           const match = tournamentData.groupMatches[matchId];
           tournamentData.groupMatches[matchId] = {
-            ...match,
-            status: "ready",
-            teamMatchScoreA: 0,
-            teamMatchScoreB: 0,
-            setDiffA: 0,
-            setDiffB: 0,
-            winnerTeamId: "",
-            matches: makeEmptySubMatches()
-          };
+  ...match,
+  status: "ready",
+  teamMatchScoreA: 0,
+  teamMatchScoreB: 0,
+  setDiffA: 0,
+  setDiffB: 0,
+  winnerTeamId: "",
+  matches: makeEmptySubMatches()
+};
         });
 
         tournamentData.groupAdvancers = {};
@@ -2484,7 +2495,7 @@ function buildTieGroups(rows) {
 
     async function saveGroupAdvancers(groupName) {
       if (!isAdmin) {
-        alert("관리자만 저장할 수 있습니다.");
+       alert("입력 잠금해제 후 저장할 수 있습니다.");
         return;
       }
 
@@ -2573,51 +2584,54 @@ function buildTieGroups(rows) {
     }
 
     function bindTopEvents() {
-     
-
-      btnToggleAdmin.addEventListener("click", () => {
-        if (isAdmin) {
-          isAdmin = false;
-          localStorage.removeItem(ADMIN_STORAGE_KEY);
-          openMatchId = null;
-          renderCurrentView();
-          return;
-        }
-
-        const input = prompt("관리자 비밀번호를 입력하세요.");
-        if (input === null) return;
-
-        const { admin } = getPasswordConfig();
-        if (input === admin) {
-          isAdmin = true;
-          localStorage.setItem(ADMIN_STORAGE_KEY, "true");
-          renderCurrentView();
-        } else {
-          alert("비밀번호가 올바르지 않습니다.");
-        }
-      });
-
-      btnResetAllResults.addEventListener("click", resetAllGroupResults);
-
-      btnTournamentPage.addEventListener("click", () => {
-        const target = `../game_live_tournament/`;
-        location.href = target;
-      });
-
-      tabA.addEventListener("click", () => {
-        currentGroup = "A";
-        renderCurrentView();
-      });
-
-      tabB.addEventListener("click", () => {
-        currentGroup = "B";
-        renderCurrentView();
-      });
-
-      tabStandings.addEventListener("click", () => {
-        showStandingsView();
-      });
+  btnToggleAdmin.addEventListener("click", async () => {
+    if (isAdmin) {
+      isAdmin = false;
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+      openMatchId = null;
+      renderCurrentView();
+      return;
     }
+
+    const passwordConfig = await getPasswordConfig();
+
+    if (!passwordConfig.normalPassword) {
+      alert("일반 비밀번호가 설정되어 있지 않습니다.");
+      return;
+    }
+
+    const input = prompt("일반 비밀번호를 입력하세요.");
+    if (input === null) return;
+
+    if (input === passwordConfig.normalPassword) {
+      isAdmin = true;
+      localStorage.setItem(ADMIN_STORAGE_KEY, "true");
+      renderCurrentView();
+    } else {
+      alert("비밀번호가 올바르지 않습니다.");
+    }
+  });
+
+  btnResetAllResults.addEventListener("click", resetAllGroupResults);
+
+  btnTournamentPage.addEventListener("click", () => {
+    location.href = "./tournament-game.html";
+  });
+
+  tabA.addEventListener("click", () => {
+    currentGroup = "A";
+    openMatchId = null;
+    renderCurrentView();
+  });
+
+  tabB.addEventListener("click", () => {
+    currentGroup = "B";
+    openMatchId = null;
+    renderCurrentView();
+  });
+
+  tabStandings.addEventListener("click", showStandingsView);
+}
 
     function applyMeta() {
   const meta = tournamentData?.meta || {};
