@@ -551,17 +551,6 @@ button:disabled{
    
 const PHOTO_SUPERADMIN_STORAGE_KEY = "koen_photo_superadmin_unlocked";
 
-const DEFAULT_COMMON_PASSWORD = "0000";
-const DEFAULT_ADMIN_PASSWORD = "1111";
-const DEFAULT_PHOTO_PASSWORD = "771225";
-
-const STORAGE_KEYS = {
-  common: "koen_pingpong_pw_common",
-  admin: "koen_pingpong_pw_admin",
-  photo: "koen_pingpong_pw_photo"
-};
-
-
 let isPhotoSuperAdmin = localStorage.getItem(PHOTO_SUPERADMIN_STORAGE_KEY) === "true";
 
 let editingTournamentId = null;
@@ -610,11 +599,21 @@ endDateInput.value = todayKST();
       return (v || "").trim();
     }
 
-    function getPasswordConfig() {
+    async function getPasswordConfig() {
+  const snap = await get(ref(db, "passwordConfig"));
+
+  if (!snap.exists()) {
+    return {
+      mainPassword: "",
+      normalPassword: ""
+    };
+  }
+
+  const data = snap.val();
+
   return {
-    common: localStorage.getItem(STORAGE_KEYS.common) || DEFAULT_COMMON_PASSWORD,
-    admin: localStorage.getItem(STORAGE_KEYS.admin) || DEFAULT_ADMIN_PASSWORD,
-    photo: localStorage.getItem(STORAGE_KEYS.photo) || DEFAULT_PHOTO_PASSWORD
+    mainPassword: data.mainPassword || "",
+    normalPassword: data.normalPassword || ""
   };
 }
 
@@ -948,12 +947,17 @@ function renderBasicInfoSummary() {
       return { filledTeams };
     }
 
-    function buildTournamentPayload() {
+    async function buildTournamentPayload() {
   const title = safeTrim(titleInput.value);
   const startDate = safeTrim(startDateInput.value);
   const endDate = safeTrim(endDateInput.value);
-  const { admin } = getPasswordConfig();
-  const adminPassword = admin;
+  const passwordConfig = await getPasswordConfig();
+
+if (!passwordConfig.normalPassword) {
+  throw new Error("일반 비밀번호가 설정되어 있지 않습니다. 메인 화면의 관리 버튼에서 먼저 설정하세요.");
+}
+
+const adminPassword = passwordConfig.normalPassword;
 
   if (!title) throw new Error("대회명을 입력해 주세요.");
   if (!startDate || !endDate) {
@@ -1081,8 +1085,7 @@ function renderBasicInfoSummary() {
   saveStatus.textContent =
     `✔ 저장 완료!\n대회 ID: ${editingTournamentId}\n경기결과는 유지되었습니다.`;
 
-  localStorage.setItem("currentTournamentId", editingTournamentId);
-
+ 
   btnSaveOnly.disabled = false;
   btnSaveBottom.disabled = false;
   btnStartTournament.disabled = false;
@@ -1090,12 +1093,12 @@ function renderBasicInfoSummary() {
   updateButtonLabels();
 
   if (startAfterSave) {
-    location.href = `../game_live_group/`;
+    location.href = `./group-game.html`;
   }
   return;
 }
 
-    const { tournamentId, data } = buildTournamentPayload();
+    const { tournamentId, data } = await buildTournamentPayload();
 
    await set(ref(db, `tournaments/${tournamentId}`), data);
 await set(ref(db, "currentTournamentId"), tournamentId);
@@ -1103,7 +1106,7 @@ await set(ref(db, "currentTournamentId"), tournamentId);
 saveStatus.textContent =
   `✔ 저장 완료!\n대회 ID: ${tournamentId}\n현재 대회로 활성화되었습니다.`;
 
-localStorage.setItem("currentTournamentId", tournamentId);
+
 
 btnSaveOnly.disabled = false;
 btnSaveBottom.disabled = false;
@@ -1112,7 +1115,7 @@ btnStartBottom.disabled = false;
 updateButtonLabels();
 
 if (startAfterSave) {
-  location.href = `../game_live_group/`;
+  location.href = `./group-game.html`;
 }
  } catch (err) {
   console.error(err);
@@ -1190,27 +1193,28 @@ ${name} 여2`;
     }
 
    
-    btnPhotoManager.addEventListener("click", () => {
-  if (!isEditMode || !editingTournamentId) {
-    alert("먼저 현재 대회를 불러와 주세요.");
-    return;
-  }
+   btnPhotoManager.addEventListener("click", async () => {
 
   if (!isPhotoSuperAdmin) {
     const pw = prompt("일반 비밀번호를 입력하세요.");
     if (pw === null) return;
 
-    const { admin } = getPasswordConfig();
+    const passwordConfig = await getPasswordConfig();
 
-    if (pw !== admin) {
+    if (!passwordConfig.normalPassword) {
+      alert("일반 비밀번호가 설정되어 있지 않습니다.");
+      return;
+    }
+
+    if (pw !== passwordConfig.normalPassword) {
       alert("비밀번호가 올바르지 않습니다.");
       return;
     }
 
     isPhotoSuperAdmin = true;
-    localStorage.setItem(PHOTO_SUPERADMIN_STORAGE_KEY, "true");
   }
 
+  // ✅ 여기만 남김
   sessionStorage.setItem("koen_photo_access_ok", "true");
   sessionStorage.setItem("koen_photo_access_tournamentId", editingTournamentId);
 
@@ -1424,6 +1428,14 @@ async function updateExistingTournament() {
   updates[`tournaments/${editingTournamentId}/meta/endDate`] = endDate;
   updates[`tournaments/${editingTournamentId}/meta/updatedAt`] = Date.now();
   updates[`tournaments/${editingTournamentId}/meta/status`] = "group";
+
+const passwordConfig = await getPasswordConfig();
+
+if (!passwordConfig.normalPassword) {
+  throw new Error("일반 비밀번호가 설정되어 있지 않습니다. 메인 화면의 관리 버튼에서 먼저 설정하세요.");
+}
+
+updates[`tournaments/${editingTournamentId}/meta/adminPassword`] = passwordConfig.normalPassword;
 
   updates[`tournaments/${editingTournamentId}/teams`] = teamsPayload;
   updates[`tournaments/${editingTournamentId}/groups/A`] = groupAPayload;
