@@ -1507,11 +1507,11 @@ const GROUP_MESSAGE_SETTINGS_KEY = "ebike_group_message_settings_v1";
 const LAST_GROUP_MESSAGE_KEY = "ebike_last_group_message_v1";
 const TTS_VOICE_STORAGE_KEY = "ride_tts_voice_name_v1";
 const OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup";
-const MAX_ELEVATION_SAMPLES = 120;
+const MAX_ELEVATION_SAMPLES = 50;
 
-const ELEVATION_MIN_STEP_M = 15;
-const ELEVATION_SMOOTH_WINDOW = 5;
-const ELEVATION_DIFF_THRESHOLD_M = 3;
+const ELEVATION_MIN_STEP_M = 50;
+const ELEVATION_SMOOTH_WINDOW = 3;
+const ELEVATION_DIFF_THRESHOLD_M = 5;
 const MAX_GPS_ACCURACY_M = 40;
 
 const STOP_SPEED_KMH = 1.0;
@@ -2012,6 +2012,55 @@ async function fetchElevationProfile(path) {
   };
 }
 
+function updateSavedRideElevation(rideId, elevationProfile, elevationSummary) {
+  const rides = loadSavedRides();
+  const index = rides.findIndex(r => r.id === rideId);
+  if (index < 0) return false;
+
+  const reducedElevationProfile = reduceProfileSimple(elevationProfile || [], 500);
+
+  rides[index] = {
+    ...rides[index],
+    elevationProfile: reducedElevationProfile,
+    elevationSummary: elevationSummary || null,
+    elevationStatus: "ready",
+    elevationUpdatedAt: new Date().toISOString()
+  };
+
+  localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
+  return true;
+}
+
+async function fetchAndAttachElevationLater(rideId, path) {
+  try {
+    if (!Array.isArray(path) || path.length < 2) return;
+
+    const elevationData = await fetchElevationProfileWithTimeout(path, 15000);
+
+    updateSavedRideElevation(
+      rideId,
+      elevationData.profile || [],
+      elevationData.summary || null
+    );
+
+    console.log("고도 데이터 자동 업데이트 완료:", rideId);
+  } catch (e) {
+    console.warn("고도 데이터 자동 업데이트 실패:", e);
+
+    const rides = loadSavedRides();
+    const index = rides.findIndex(r => r.id === rideId);
+
+    if (index >= 0) {
+      rides[index] = {
+        ...rides[index],
+        elevationStatus: "failed",
+        elevationFailedAt: new Date().toISOString()
+      };
+      localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
+    }
+  }
+}
+
 async function saveRideSummary() {
   const snapshot = buildRideSaveSnapshot();
   const safePath = Array.isArray(snapshot.path) ? snapshot.path.slice() : [];
@@ -2023,37 +2072,11 @@ async function saveRideSummary() {
 
   savePendingRideSave(snapshot);
   saveSpeedProfile();
-  setSavingUi(true, "고도 계산 중...");
-
-  let elevationProfile = [];
-  let elevationSummary = null;
-  let elevationReady = safePath.length <= 1;
-
-  try {
-    if (safePath.length > 1) {
-      const elevationData = await fetchElevationProfileWithTimeout(safePath, 25000);
-      elevationProfile = elevationData.profile || [];
-      elevationSummary = elevationData.summary || null;
-    }
-    elevationReady = true;
-  } catch (e) {
-    console.error("고도 데이터 조회 실패:", e);
-    const retry = confirm("고도 데이터를 아직 받지 못했습니다.\n다시 시도할까요?\n취소하면 종료도 취소됩니다.");
-    setSavingUi(false);
-    if (retry) {
-      return await saveRideSummary();
-    }
-    return false;
-  }
-
-  if (!elevationReady) {
-    setSavingUi(false);
-    return false;
-  }
+  setSavingUi(true, "기록 저장 중...");
 
   const reducedPath = reducePathDouglasPeucker(safePath, {
-    epsilon: 0.00003,
-    maxPoints: 2000
+    epsilon: 0.00005,
+    maxPoints: 1500
   });
 
   if (!Array.isArray(reducedPath) || reducedPath.length < 1) {
@@ -2062,10 +2085,13 @@ async function saveRideSummary() {
     return false;
   }
 
-  const reducedElevationProfile = reduceProfileSimple(elevationProfile, 1000);
-  const reducedSpeedProfile = reduceProfileSimple(Array.isArray(snapshot.speedProfile) ? snapshot.speedProfile.slice() : [], 1000);
+  const reducedSpeedProfile = reduceProfileSimple(
+    Array.isArray(snapshot.speedProfile) ? snapshot.speedProfile.slice() : [],
+    1000
+  );
 
   const rides = loadSavedRides();
+
   const item = {
     id: snapshot.id,
     savedAt: snapshot.savedAt,
@@ -2078,18 +2104,34 @@ async function saveRideSummary() {
     maxSpeedKmh: snapshot.maxSpeedKmh || 0,
     startPoint: snapshot.startPoint,
     path: reducedPath,
-    elevationProfile: reducedElevationProfile,
-    elevationSummary,
+
+    elevationProfile: [],
+    elevationSummary: null,
+    elevationStatus: "pending",
+
     speedProfile: reducedSpeedProfile
   };
 
   rides.unshift(item);
   localStorage.setItem(SAVED_RIDES_KEY, JSON.stringify(rides));
+
   clearPendingRideSave();
   setSavingUi(false);
-  alert(`저장 완료\n좌표: ${safePath.length}개 → ${reducedPath.length}개\n속도: ${reducedSpeedProfile.length}개\n고도: ${reducedElevationProfile.length}개`);
+
+  alert(
+    `저장 완료\n` +
+    `좌표: ${safePath.length}개 → ${reducedPath.length}개\n` +
+    `속도: ${reducedSpeedProfile.length}개\n` +
+    `고도: 자동으로 받는 중`
+  );
+
+  setTimeout(() => {
+    fetchAndAttachElevationLater(item.id, reducedPath);
+  }, 1000);
+
   return true;
 }
+
 
 let rideData = loadRideData();
 let navigationState = loadNavigationState();
