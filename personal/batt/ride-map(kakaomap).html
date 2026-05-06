@@ -1518,6 +1518,8 @@ const STOP_SPEED_KMH = 1.0;
 const AUTO_PAUSE_DELAY_MS = 10000;
 const MIN_MOVE_DISTANCE_M = 3;
 const MAX_VALID_SPEED_KMH = 150;
+const GPS_RECONNECT_GAP_MS = 15000;      // 15초 이상 끊기면 재연결로 판단
+const GPS_RECONNECT_SKIP_DISTANCE_M = 30; // 재연결 후 30m 이상 튀면 거리 제외
 const DEFAULT_CENTER = { lat: 35.180, lng: 128.107 };
 const GROUP_HEARTBEAT_INTERVAL_MS = 15000;   // 15초마다 heartbeat
 const GROUP_STALE_MS = 30000;                // 30초 지나면 잠시끊김
@@ -2153,6 +2155,8 @@ let lastPointTime = null;
 let currentAutoZoomLevel = 3;
 let hasInitialCentered = false;
 let lastGpsTime = 0;
+let gpsGapStartedAt = 0;
+let skipNextDistanceAfterReconnect = false;
 let gpsReconnectTimer = null;
 let groupWatchId = null;
 let lastGroupPosition = null;
@@ -3206,6 +3210,10 @@ async function releaseWakeLock() {
 
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState === "hidden") {
+    if (rideData.started && !rideData.paused) {
+  gpsGapStartedAt = Date.now();
+  skipNextDistanceAfterReconnect = true;
+}
     if (groupEnabled && currentRoomId && !isLeavingGroupRoom) {
       await setMyGroupOffline("background");
       stopBroadcastSpeech();
@@ -3220,6 +3228,17 @@ document.addEventListener("visibilitychange", async () => {
       requestLocationPermission();
       lastPointTime = Date.now();
       lastGpsTime = Date.now();
+      if (gpsGapStartedAt && !rideData.paused) {
+  const gapMs = Date.now() - gpsGapStartedAt;
+
+  if (gapMs >= GPS_RECONNECT_GAP_MS) {
+    rideData.pausedMs += gapMs;
+    skipNextDistanceAfterReconnect = true;
+  }
+
+  gpsGapStartedAt = 0;
+}
+
 
       await requestWakeLockSafe();
 
@@ -3282,12 +3301,18 @@ function addSpeedSample(totalDistanceM, currentSpeedKmh) {
 async function handlePosition(pos) {
   if (!rideData.started) return;
 
-  const now = Date.now();
-  lastGpsTime = now;
+const now = Date.now();
+const gpsGapMs = lastGpsTime ? now - lastGpsTime : 0;
+const isGpsReconnect = gpsGapMs >= GPS_RECONNECT_GAP_MS || skipNextDistanceAfterReconnect;
+lastGpsTime = now;
 
-  const { latitude, longitude, accuracy } = pos.coords;
-  rideData.lastAccuracy = accuracy;
-  const point = [latitude, longitude];
+const { latitude, longitude, accuracy } = pos.coords;
+rideData.lastAccuracy = accuracy;
+const point = [latitude, longitude];
+
+
+  const gpsGapMs = lastGpsTime ? now - lastGpsTime : 0;
+const isGpsReconnect = gpsGapMs >= GPS_RECONNECT_GAP_MS || skipNextDistanceAfterReconnect;
 
   if (accuracy > MAX_GPS_ACCURACY_M) {
   rideData.currentSpeedKmh = 0;
@@ -3326,6 +3351,22 @@ return;
   const prev = rideData.path[rideData.path.length - 1];
   const dist = haversine(prev[0], prev[1], latitude, longitude);
   const dt = lastPointTime ? (now - lastPointTime) / 1000 : 0;
+
+  if (isGpsReconnect && dist >= GPS_RECONNECT_SKIP_DISTANCE_M) {
+  rideData.currentSpeedKmh = 0;
+  rideData.lastPoint = point;
+  lastPointTime = now;
+  skipNextDistanceAfterReconnect = false;
+
+  // 기준점만 새로 잡고, 거리는 더하지 않음
+  rideData.path.push(point);
+
+  await updateMyGroupLocation(latitude, longitude, accuracy, 0);
+  redrawPath();
+  updateStats();
+  saveRideData();
+  return;
+}
 
   let rawSpeed = 0;
   if (typeof pos.coords.speed === "number" && pos.coords.speed >= 0) {
