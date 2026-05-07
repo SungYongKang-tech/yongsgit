@@ -2749,54 +2749,82 @@ function buildTieGroups(rows) {
       }
     });
 
-    async function loadTournament() {
-      try {
-        if (!tournamentId) {
-          tournamentId = await resolveTournamentId();
-        }
-
-        if (!tournamentId) {
-          metaStatus.textContent = "불러올 대회 ID가 없습니다.";
-          matchList.innerHTML = `<div class="empty">대회 데이터를 찾을 수 없습니다.</div>`;
-          return;
-        }
-
-        const snap = await get(ref(db, `tournaments/${tournamentId}`));
-        if (!snap.exists()) {
-          metaStatus.textContent = `대회 데이터를 찾을 수 없습니다.\nID: ${tournamentId}`;
-          matchList.innerHTML = `<div class="empty">대회 데이터가 존재하지 않습니다.</div>`;
-          return;
-        }
-
-        tournamentData = snap.val();
-       
-        applyMeta();
-        renderCurrentView();
-        bindRealtime();
-      } catch (err) {
-        console.error(err);
-        metaStatus.textContent = `불러오기 실패\n${err.message || err}`;
-      }
+   async function loadTournament() {
+  try {
+    if (!tournamentId) {
+      tournamentId = await resolveTournamentId();
     }
+
+    if (!tournamentId) {
+      metaStatus.textContent = "불러올 대회 ID가 없습니다.";
+      matchList.innerHTML = `<div class="empty">대회 데이터를 찾을 수 없습니다.</div>`;
+      return;
+    }
+
+    const basePath = `tournaments/${tournamentId}`;
+
+    const [
+      infoSnap,
+      teamsSnap,
+      groupsSnap,
+      matchesSnap,
+      advancersSnap
+    ] = await Promise.all([
+      get(ref(db, `${basePath}/info`)),
+      get(ref(db, `${basePath}/teams`)),
+      get(ref(db, `${basePath}/groups`)),
+      get(ref(db, `${basePath}/groupMatches`)),
+      get(ref(db, `${basePath}/groupAdvancers`))
+    ]);
+
+    tournamentData = {
+      info: infoSnap.exists() ? infoSnap.val() : {},
+      teams: teamsSnap.exists() ? teamsSnap.val() : {},
+      groups: groupsSnap.exists() ? groupsSnap.val() : {},
+      groupMatches: matchesSnap.exists() ? matchesSnap.val() : {},
+      groupAdvancers: advancersSnap.exists() ? advancersSnap.val() : {}
+    };
+
+    if (!Object.keys(tournamentData.groupMatches || {}).length) {
+      metaStatus.textContent = `조별리그 경기 데이터를 찾을 수 없습니다.\nID: ${tournamentId}`;
+      matchList.innerHTML = `<div class="empty">조별리그 경기 데이터가 없습니다.</div>`;
+      return;
+    }
+
+    applyMeta();
+    renderCurrentView();
+    bindRealtime();
+
+  } catch (err) {
+    console.error(err);
+    metaStatus.textContent = `불러오기 실패\n${err.message || err}`;
+  }
+}
 
     let realtimeBound = false;
-    function bindRealtime() {
-      if (realtimeBound) return;
-      realtimeBound = true;
 
-      const dataRef = ref(db, `tournaments/${tournamentId}`);
-      onValue(dataRef, snap => {
-        if (!snap.exists()) return;
-        tournamentData = snap.val();
-        applyMeta();
+function bindRealtime() {
+  if (realtimeBound) return;
+  realtimeBound = true;
 
-        if (tabStandings.classList.contains("active")) {
-          showStandingsView();
-        } else {
-          renderCurrentView();
-        }
-      });
+  const matchesRef = ref(db, `tournaments/${tournamentId}/groupMatches`);
+
+  onValue(matchesRef, snap => {
+    tournamentData.groupMatches = snap.exists() ? snap.val() : {};
+
+    if (tabStandings.classList.contains("active")) {
+      showStandingsView();
+    } else {
+      renderCurrentView();
     }
+  });
+
+  const advancersRef = ref(db, `tournaments/${tournamentId}/groupAdvancers`);
+
+  onValue(advancersRef, snap => {
+    tournamentData.groupAdvancers = snap.exists() ? snap.val() : {};
+  });
+}
 
     bindTopEvents();
 ensurePhotoModal();
