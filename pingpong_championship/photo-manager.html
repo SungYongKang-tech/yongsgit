@@ -223,7 +223,7 @@
     }
   </style>
 </head>
-<body style="display:none;">
+<body>
   <div class="wrap">
     <div class="topbar">
       <div class="title-area">
@@ -577,7 +577,7 @@ async function verifyAccess() {
   async function renderSelectedTeam() {
   if (!selectedTeamName) return;
 
-  await loadTournament(); // 최신 선수 이름 다시 읽기
+  //await loadTournament(); // 최신 선수 이름 다시 읽기
 
     teamPhotoTitle.textContent = `${selectedTeamName} 사업소 전체사진`;
     playersTitle.textContent = `${selectedTeamName} 선수 사진`;
@@ -598,9 +598,12 @@ async function verifyAccess() {
       return;
     }
 
-    const cards = [];
-    for (const slot of playerSlots) {
-      const photo = await loadPlayerPhoto(selectedTeamName, slot.slotKey);
+    const playerPhotos = await loadPlayerPhotosOfTeam(selectedTeamName);
+
+const cards = [];
+for (const slot of playerSlots) {
+  const photo = playerPhotos?.[sanitizeKey(slot.slotKey)] || null;
+
       const displayName = slot.playerName || slot.label || "(이름 미입력)";
 
       cards.push(`
@@ -790,7 +793,7 @@ async function verifyAccess() {
     const ok = await verifyAccess();
     if (!ok) return;
 
-    document.body.style.display = "";
+    // document.body.style.display = "";
     tournamentId = await resolveTournamentId();
     await loadTournament();
     renderTeamButtons();
@@ -965,6 +968,14 @@ async function verifyAccess() {
       alert(err.message || String(err));
     }
   });
+
+  async function loadPlayerPhotosOfTeam(teamName) {
+  const snap = await get(ref(
+    db,
+    `tournaments/${tournamentId}/photoAssets/playerPhotos/${sanitizeKey(teamName)}`
+  ));
+  return snap.exists() ? snap.val() : {};
+}
 </script>
 
   
