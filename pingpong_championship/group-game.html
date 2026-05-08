@@ -1241,6 +1241,9 @@ body.photo-modal-open{
         <div>
           <h2>현재 상태</h2>
           <div class="status-box" id="adminStatus">관전자 모드입니다.</div>
+          <div class="status-box" id="onlineStatus" style="margin-top:8px;">
+  오늘 방문자: 확인 중...
+</div>
           <div class="chip-row" style="margin-top:12px;">
             <button type="button" class="chip active" id="tabA">A조</button>
             <button type="button" class="chip" id="tabB">B조</button>
@@ -1307,12 +1310,12 @@ body.photo-modal-open{
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getDatabase,
-      ref,
-      get,
-      update,
-      onValue
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  getDatabase,
+  ref,
+  get,
+  update,
+  onValue
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDpXivPM_KJlY8yN1X0_oQH8P-MpyOwNo8",
@@ -1585,6 +1588,59 @@ async function getPasswordConfig() {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
     }
+
+    function getTodayKey() {
+  const d = new Date();
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${y}${m}${day}`;
+}
+
+function setupDailyVisitors() {
+  if (!tournamentId) return;
+
+  let userId = localStorage.getItem("koen_daily_visit_id");
+
+  if (!userId) {
+    userId =
+      "u_" +
+      Date.now() +
+      "_" +
+      Math.random().toString(36).slice(2);
+
+    localStorage.setItem("koen_daily_visit_id", userId);
+  }
+
+  const todayKey = getTodayKey();
+
+  const visitRef = ref(
+    db,
+    `tournaments/${tournamentId}/dailyVisits/${todayKey}/${userId}`
+  );
+
+  const listRef = ref(
+    db,
+    `tournaments/${tournamentId}/dailyVisits/${todayKey}`
+  );
+
+  update(visitRef, {
+    visitedAt: Date.now()
+  });
+
+  onValue(listRef, (snap) => {
+    const data = snap.exists() ? snap.val() : {};
+    const count = Object.keys(data).length;
+
+    const el = document.getElementById("onlineStatus");
+
+    if (el) {
+      el.textContent = `오늘 방문자: ${count}명`;
+    }
+  });
+}
 
     function getTeam(teamId) {
       return tournamentData?.teams?.[teamId] || null;
@@ -2753,6 +2809,7 @@ function buildTieGroups(rows) {
   try {
     if (!tournamentId) {
       tournamentId = await resolveTournamentId();
+      setupDailyVisitors();
     }
 
     if (!tournamentId) {
