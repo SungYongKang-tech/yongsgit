@@ -1,10 +1,10 @@
-const CACHE_NAME = "ebike-battery-v1";
+const CACHE_NAME = "ebike-battery-v2";
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./192icon.png",
-  "./512icon.png"
+  "./192vicon.png",
+  "./512vicon.png"
 ];
 
 self.addEventListener("install", (event) => {
