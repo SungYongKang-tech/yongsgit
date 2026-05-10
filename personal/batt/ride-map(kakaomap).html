@@ -1281,6 +1281,10 @@
           <div class="speed-label">최고 속도</div>
           <div class="speed-value" id="maxSpeedEl">0.0 km/h</div>
         </div>
+        <div class="speed-card">
+          <div class="speed-label" id="rideBatteryLabel">배터리</div>
+          <div class="speed-value" id="rideBatteryEl">--%</div>
+        </div>
       </div>
 
       <div class="toolbar">
@@ -1530,6 +1534,9 @@ function stopGroupHeartbeat() {
 
 const RIDE_STORAGE_KEY = "ebike_ride_tracker_v4";
 const SAVED_RIDES_KEY = "ebike_saved_rides_v1";
+const BATTERY_SETTINGS_KEY = "ebike_battery_settings_v9";
+const BATTERY_LAST_VOLTAGE_KEY = "ebike_last_voltage";
+const BATTERY_LAST_SLIDER_KEY = "ebike_last_slider_percent";
 const SPEED_PROFILE_STORAGE_KEY = "ebike_speed_profile_v1";
 const PENDING_RIDE_SAVE_KEY = "ebike_pending_ride_save_v1";
 const FOLLOW_STORAGE_KEY = "ebike_follow_map";
@@ -2203,6 +2210,8 @@ let isLeavingGroupRoom = false;
 const distanceEl = document.getElementById("distanceEl");
 const durationEl = document.getElementById("durationEl");
 const clockEl = document.getElementById("clockEl");
+const rideBatteryLabel = document.getElementById("rideBatteryLabel");
+const rideBatteryEl = document.getElementById("rideBatteryEl");
 
 const currentSpeedEl = document.getElementById("currentSpeedEl");
 const avgSpeedEl = document.getElementById("avgSpeedEl");
@@ -2642,6 +2651,76 @@ function updateRideButtons() {
   endBtn.classList.add("red");
 }
 
+function loadBatterySettingsForRide() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BATTERY_SETTINGS_KEY) || "null");
+    return saved && typeof saved === "object" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function getShortBikeName(modelName = "") {
+  const name = String(modelName || "");
+
+  if (name.includes("미니")) return "미니맥스";
+  if (name.includes("프로")) return "프로맥스";
+  if (name.includes("큐브")) return "큐브500";
+  if (name.includes("벡트론")) return "벡트론";
+
+  return "배터리";
+}
+
+function getBatteryStartPercentForRide(settings) {
+  if (!settings) return null;
+
+  if (settings.inputType === "slider") {
+    const p = Number(localStorage.getItem(BATTERY_LAST_SLIDER_KEY));
+    return Number.isFinite(p) ? Math.max(0, Math.min(100, p)) : null;
+  }
+
+  const voltage = Number(localStorage.getItem(BATTERY_LAST_VOLTAGE_KEY));
+  if (!Number.isFinite(voltage)) return null;
+
+  const minV = Number(settings.minV);
+  const maxV = Number(settings.maxV);
+
+  if (!Number.isFinite(minV) || !Number.isFinite(maxV) || maxV <= minV) {
+    return null;
+  }
+
+  const percent = ((voltage - minV) / (maxV - minV)) * 100;
+  return Math.max(0, Math.min(100, percent));
+}
+
+function updateRideBatteryCard() {
+  if (!rideBatteryLabel || !rideBatteryEl) return;
+
+  const settings = loadBatterySettingsForRide();
+
+  if (!settings) {
+    rideBatteryLabel.textContent = "배터리";
+    rideBatteryEl.textContent = "--%";
+    return;
+  }
+
+  const startPercent = getBatteryStartPercentForRide(settings);
+  const kmPerPercent = Number(settings.kmPerPercent || 1);
+  const distanceKm = (rideData.totalDistanceM || 0) / 1000;
+
+  rideBatteryLabel.textContent = getShortBikeName(settings.modelName);
+
+  if (startPercent === null) {
+    rideBatteryEl.textContent = "입력필요";
+    return;
+  }
+
+  const usedPercent = kmPerPercent > 0 ? distanceKm / kmPerPercent : 0;
+  const remainPercent = Math.max(0, startPercent - usedPercent);
+
+  rideBatteryEl.textContent = `${Math.round(remainPercent)}%`;
+}
+
 function updateStats() {
   setMetricText(distanceEl, (rideData.totalDistanceM / 1000).toFixed(2), "km");
   setMetricText(durationEl, formatDuration(getElapsedMs()));
@@ -2671,9 +2750,10 @@ function updateStats() {
   setMetricText(restTimeEl, formatDuration(restMs));
 
   updateFollowButton();
-  updateZoomButton();
-  updateRideButtons();
-  formatClock();
+updateZoomButton();
+updateRideButtons();
+updateRideBatteryCard();
+formatClock();
 }
 
 
