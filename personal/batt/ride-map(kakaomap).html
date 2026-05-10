@@ -349,6 +349,12 @@
       font-weight: 900;
     }
 
+    .top-btn.rest-btn {
+  background: linear-gradient(180deg, #14b8a6, #0f766e);
+  color: #fff;
+  font-weight: 900;
+}
+
     .metric-main {
       display: inline-flex;
       align-items: baseline;
@@ -1130,10 +1136,9 @@
   <div class="app">
     <div class="screen">
       <div class="title-row">
-        <div class="title-wrap">
-          <div class="title">라이딩</div>
-        </div>
+
         <div class="top-actions">
+          <button class="top-btn rest-btn" id="manualRestBtn">휴식</button>
           <button class="top-btn primary" id="batteryBtn">배터리</button>
           <button class="top-btn primary" id="historyBtn">기록목록</button>
           <button class="top-btn primary" id="courseBtn">내코스</button>
@@ -2186,6 +2191,7 @@ const defaultViewSelect = document.getElementById("defaultViewSelect");
 const fontSizeSelect = document.getElementById("fontSizeSelect");
 const contrastSelect = document.getElementById("contrastSelect");
 const startBtn = document.getElementById("startBtn");
+const manualRestBtn = document.getElementById("manualRestBtn");
 const endBtn = document.getElementById("endBtn");
 const followBtn = document.getElementById("followBtn");
 const zoomBtn = document.getElementById("zoomBtn");
@@ -2571,9 +2577,15 @@ function updateStats() {
   setMetricText(avgSpeedEl, avgSpeed.toFixed(1), "km/h");
   setMetricText(maxSpeedEl, (rideData.maxSpeedKmh || 0).toFixed(1), "km/h");
 
-  if (rideData.paused && rideData.autoPaused) {
-    durationEl.innerHTML = `${formatMetric(formatDuration(getElapsedMs()))}<span class="pause-text">(일시정지)</span>`;
-  }
+  if (rideData.paused) {
+  const label = rideData.autoPaused ? "자동휴식" : "휴식중";
+  durationEl.innerHTML = `${formatMetric(formatDuration(getElapsedMs()))}<span class="pause-text">(${label})</span>`;
+}
+
+startBtn.textContent = rideData.started && rideData.paused ? "재시작" : "시작";
+manualRestBtn.textContent = rideData.paused ? "휴식중" : "휴식";
+manualRestBtn.disabled = !rideData.started || rideData.paused;
+manualRestBtn.style.opacity = manualRestBtn.disabled ? "0.55" : "";
 
   if (rideData.startTime) {
     const d = new Date(rideData.startTime);
@@ -3564,6 +3576,31 @@ function requestLocationPermission() {
   );
 }
 
+function manualRestRide() {
+  if (isSavingRide) return;
+
+  if (!rideData.started) {
+    alert("먼저 주행을 시작해주세요.");
+    return;
+  }
+
+  if (rideData.paused) {
+    alert("이미 휴식 중입니다. 다시 출발하려면 시작 버튼을 누르세요.");
+    return;
+  }
+
+  if (!confirm("휴식으로 전환할까요?")) return;
+
+  rideData.paused = true;
+  rideData.pausedAt = Date.now();
+  rideData.autoPaused = false;
+  rideData.stopBeganAt = null;
+  rideData.currentSpeedKmh = 0;
+
+  saveRideData();
+  updateStats();
+}
+
 async function startRide() {
   if (isSavingRide) return;
   const isResume = rideData.started && rideData.paused;
@@ -3947,6 +3984,7 @@ groupRideBtn.addEventListener("click", () => {
 });
 
 startBtn.addEventListener("click", startRide);
+manualRestBtn.addEventListener("click", manualRestRide);
 endBtn.addEventListener("click", endRide);
 
 followBtn.addEventListener("click", () => {
