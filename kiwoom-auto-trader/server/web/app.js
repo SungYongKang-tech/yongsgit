@@ -445,6 +445,10 @@ const tradeLogList = document.getElementById("tradeLogList");
 const TRADE_LOG_KEY = "kiwoom_virtual_trade_logs";
 let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
 
+const DAILY_TRADE_LIMIT = 20;
+const DAILY_TRADE_LIMIT_PER_CODE = 3;
+const TRADE_COOLDOWN_MINUTES = 3;
+
 const HOLD_STORAGE_KEY = "kiwoom_holdings";
 
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
@@ -489,6 +493,55 @@ function renderTradeLogs() {
     .join("");
 }
 
+function getTodayTradeCount() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  return tradeLogs.filter((log) => {
+    return log.date === todayKey;
+  }).length;
+}
+
+function hasTodayTradeForCode(code) {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  return tradeLogs.some((log) => {
+    return log.date === todayKey && log.code === code;
+  });
+}
+
+function isInCooldown(code) {
+  const latestLog = tradeLogs
+    .filter((log) => log.code === code)
+    .sort((a, b) => new Date(b.time) - new Date(a.time))[0];
+
+  if (!latestLog) return false;
+
+  const lastTime = new Date(latestLog.time).getTime();
+  const nowTime = Date.now();
+
+  const diffMinutes = (nowTime - lastTime) / 1000 / 60;
+
+  return diffMinutes < TRADE_COOLDOWN_MINUTES;
+}
+
+function isMarketOpenNow() {
+  const now = new Date();
+  const day = now.getDay(); // 0 일요일, 6 토요일
+
+  if (day === 0 || day === 6) {
+    return false;
+  }
+
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const currentMinutes = hour * 60 + minute;
+
+  const marketOpen = 9 * 60;       // 09:00
+  const marketClose = 15 * 60 + 30; // 15:30
+
+  return currentMinutes >= marketOpen && currentMinutes <= marketClose;
+}
+
 function addTradeLog({ type, code, name, price, reason }) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -501,8 +554,27 @@ function addTradeLog({ type, code, name, price, reason }) {
     );
   });
 
-  if (alreadyLogged) return;
+if (alreadyLogged) return;
 
+if (!isMarketOpenNow()) {
+  console.warn("장 운영시간이 아니므로 거래 신호를 기록하지 않습니다.");
+  return;
+}
+
+if (hasTodayTradeForCode(code)) {
+  console.warn("오늘 이미 거래 신호가 발생한 종목입니다:", code);
+  return;
+}
+
+if (isInCooldown(code)) {
+  console.warn("쿨타임 중인 종목입니다:", code);
+  return;
+}
+
+if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
+  console.warn("1일 거래 제한 도달");
+  return;
+}
   tradeLogs.push({
     type,
     code,
@@ -516,6 +588,25 @@ function addTradeLog({ type, code, name, price, reason }) {
   saveTradeLogs();
   renderTradeLogs();
 }
+
+function executeVirtualSell(code) {
+  holdings = holdings.map((item) => {
+    if (item.code === code) {
+      return {
+        ...item,
+        qty: 0,
+        autoTrade: false
+      };
+    }
+
+    return item;
+  });
+
+  holdings = holdings.filter((item) => item.qty > 0);
+
+  saveHoldings();
+}
+
 
 async function fetchStockPrice(code) {
   const res = await fetch(`${API_BASE}/price/${code}`);
@@ -692,6 +783,8 @@ if (item.autoTrade && isTargetHit) {
     price: item.currentPrice,
     reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
   });
+
+  executeVirtualSell(item.code);
 }
 
 if (item.autoTrade && isStopLossHit) {
@@ -702,6 +795,8 @@ if (item.autoTrade && isStopLossHit) {
     price: item.currentPrice,
     reason: `자동매매ON · 손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
   });
+
+  executeVirtualSell(item.code);
 }
 
       const weightRate =
