@@ -432,6 +432,7 @@ stockCodeInput.addEventListener("input", () => {
 const holdCodeInput = document.getElementById("holdCode");
 const buyPriceInput = document.getElementById("buyPrice");
 const holdQtyInput = document.getElementById("holdQty");
+const targetPriceInput = document.getElementById("targetPrice");
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
 
@@ -622,6 +623,17 @@ calculatedHoldings.push({
             <strong>${weightRate.toFixed(1)}%</strong>
           </div>
 
+          ${item.targetPrice ? `
+  <div class="hold-row">
+    <span>목표가 ${formatNumber(item.targetPrice)}원</span>
+    <strong class="${item.currentPrice >= item.targetPrice ? "up" : ""}">
+      ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
+    </strong>
+  </div>
+` : ""}
+
+
+
           <div class="hold-action-row">
   <button class="hold-edit" data-hold-code="${item.code}">
     수정
@@ -684,8 +696,9 @@ calculatedHoldings.push({
     holdCodeInput.value = item.code;
     buyPriceInput.value = item.buyPrice;
     holdQtyInput.value = item.qty;
+    targetPriceInput.value = item.targetPrice || "";
 
-    holdCodeInput.focus();
+holdCodeInput.focus();
   });
 });
 
@@ -700,6 +713,7 @@ calculatedHoldings.push({
 }
 
 function addHolding() {
+  const targetPrice = Number(targetPriceInput.value) || 0;
   const stock = findStockByInput(holdCodeInput.value.trim());
   const code = stock?.code;
   const buyPrice = Number(buyPriceInput.value);
@@ -723,16 +737,18 @@ function addHolding() {
   holdings = holdings.filter((item) => item.code !== code);
 
   holdings.push({
-    code,
-    buyPrice,
-    qty
-  });
+  code,
+  buyPrice,
+  qty,
+  targetPrice
+});
 
   saveHoldings();
 
   holdCodeInput.value = "";
   buyPriceInput.value = "";
   holdQtyInput.value = "";
+  targetPriceInput.value = "";
 
   renderHoldings();
 }
