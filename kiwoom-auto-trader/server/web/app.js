@@ -444,7 +444,9 @@ async function fetchStockPrice(code) {
   const res = await fetch(`${API_BASE}/price/${code}`);
   const data = await res.json();
 
-  if (!res.ok) {
+console.log("보유종목 현재가 응답:", code, data);
+  
+if (!res.ok) {
     throw new Error(data.message || "현재가 조회 실패");
   }
 
@@ -490,12 +492,12 @@ async function renderHoldings() {
 
       calculatedHoldings.push({
         ...item,
-        name: data.name,
-        currentPrice: data.currentPrice,
-        buyAmount,
-        evalAmount,
-        profit,
-        profitRate
+         name: data.name || masterStock?.name || item.code,
+         currentPrice: Number(data.currentPrice) || 0,
+         buyAmount,
+         evalAmount,
+         profit,
+         profitRate
       });
     }
 
