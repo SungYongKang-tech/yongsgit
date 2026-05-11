@@ -683,23 +683,23 @@ const isStopLossHit =
  item.stopLossPrice &&
  item.currentPrice <= item.stopLossPrice;
 
-if (isTargetHit) {
+if (item.autoTrade && isTargetHit) {
   addTradeLog({
     type: "SELL",
     code: item.code,
     name: item.name,
     price: item.currentPrice,
-    reason: `목표가 ${formatNumber(item.targetPrice)}원 도달`
+    reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
   });
 }
 
-if (isStopLossHit) {
+if (item.autoTrade && isStopLossHit) {
   addTradeLog({
     type: "STOP_LOSS",
     code: item.code,
     name: item.name,
     price: item.currentPrice,
-    reason: `손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
+    reason: `자동매매ON · 손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
   });
 }
 
@@ -757,7 +757,18 @@ ${item.stopLossPrice ? `
   </div>
 ` : ""}
 
-          <div class="hold-action-row">
+<div class="hold-row">
+  <span>자동매매</span>
+  <strong class="${item.autoTrade ? "up" : ""}">
+    ${item.autoTrade ? "ON" : "OFF"}
+  </strong>
+</div>
+
+
+   <div class="hold-action-row">
+  <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
+    ${item.autoTrade ? "자동ON" : "자동OFF"}
+  </button>
   <button class="hold-edit" data-hold-code="${item.code}">
     수정
   </button>
@@ -808,6 +819,25 @@ ${item.stopLossPrice ? `
         renderHoldings();
       });
     });
+
+    document.querySelectorAll(".hold-auto").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const code = btn.dataset.holdCode;
+
+    holdings = holdings.map((item) => {
+      if (item.code === code) {
+        return {
+          ...item,
+          autoTrade: !item.autoTrade
+        };
+      }
+      return item;
+    });
+
+    saveHoldings();
+    renderHoldings();
+  });
+});
 
     document.querySelectorAll(".hold-edit").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -866,7 +896,8 @@ function addHolding() {
   buyPrice,
   qty,
   targetPrice,
-  stopLossPrice
+  stopLossPrice,
+  autoTrade: false
 });
 
   saveHoldings();
