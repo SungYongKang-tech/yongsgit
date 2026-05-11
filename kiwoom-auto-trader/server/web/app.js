@@ -438,6 +438,7 @@ const targetPriceInput = document.getElementById("targetPrice");
 const stopLossPriceInput = document.getElementById("stopLossPrice");
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
+const emergencyStopBtn = document.getElementById("emergencyStopBtn");
 
 const tradeLogList = document.getElementById("tradeLogList");
 
@@ -968,3 +969,21 @@ holdSortButtons.forEach((btn) => {
     renderHoldings();
   });
 });
+
+if (emergencyStopBtn) {
+  emergencyStopBtn.addEventListener("click", () => {
+    const ok = confirm("자동매매를 전부 중지할까요?");
+
+    if (!ok) return;
+
+    holdings = holdings.map((item) => ({
+      ...item,
+      autoTrade: false
+    }));
+
+    saveHoldings();
+    renderHoldings();
+
+    alert("전체 종목 자동매매가 중지되었습니다.");
+  });
+}
