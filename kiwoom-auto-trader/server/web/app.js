@@ -9,6 +9,7 @@ const alertRateInput = document.getElementById("alertRateInput");
 const saveAlertRateBtn = document.getElementById("saveAlertRateBtn");
 const alertBox = document.getElementById("alertBox");
 
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -182,6 +183,7 @@ const addStockBtn = document.getElementById("addStockBtn");
 const WATCH_STORAGE_KEY = "kiwoom_watch_codes";
 
 const holdSummary = document.getElementById("holdSummary");
+const holdRankBox = document.getElementById("holdRankBox");
 
 let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "005930",
@@ -453,6 +455,36 @@ if (!res.ok) {
   return data;
 }
 
+function renderHoldRankBox(items) {
+  if (!holdRankBox) return;
+
+  if (items.length === 0) {
+    holdRankBox.innerHTML = `<div class="empty">보유종목 수익/손실 요약이 없습니다.</div>`;
+    return;
+  }
+
+  const topProfit = [...items].sort((a, b) => b.profit - a.profit)[0];
+  const topLoss = [...items].sort((a, b) => a.profit - b.profit)[0];
+
+  holdRankBox.innerHTML = `
+    <div class="hold-rank-title">수익/손실 요약</div>
+
+    <div class="hold-rank-row">
+      <span>수익 TOP</span>
+      <strong class="${topProfit.profit >= 0 ? "up" : "down"}">
+        ${topProfit.name} ${topProfit.profit >= 0 ? "+" : ""}${formatNumber(topProfit.profit)}원
+      </strong>
+    </div>
+
+    <div class="hold-rank-row">
+      <span>손실 TOP</span>
+      <strong class="${topLoss.profit >= 0 ? "up" : "down"}">
+        ${topLoss.name} ${topLoss.profit >= 0 ? "+" : ""}${formatNumber(topLoss.profit)}원
+      </strong>
+    </div>
+  `;
+}
+
 async function renderHoldings() {
   if (holdings.length === 0) {
     holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
@@ -524,6 +556,7 @@ calculatedHoldings.push({
 
     if (currentHoldSortType === "eval") {
       calculatedHoldings.sort((a, b) => b.evalAmount - a.evalAmount);
+      renderHoldRankBox(calculatedHoldings);
     }
 
     let totalBuyAmount = 0;
