@@ -562,9 +562,14 @@ calculatedHoldings.push({
             <span>평가금액 ${formatNumber(item.evalAmount)}원</span>
           </div>
 
-          <button class="hold-remove" data-hold-code="${item.code}">
-            보유종목 삭제
-          </button>
+          <div class="hold-action-row">
+  <button class="hold-edit" data-hold-code="${item.code}">
+    수정
+  </button>
+  <button class="hold-remove" data-hold-code="${item.code}">
+    삭제
+  </button>
+</div>
         </div>
       `;
     });
@@ -608,6 +613,22 @@ calculatedHoldings.push({
         renderHoldings();
       });
     });
+
+    document.querySelectorAll(".hold-edit").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const code = btn.dataset.holdCode;
+    const item = holdings.find((stock) => stock.code === code);
+
+    if (!item) return;
+
+    holdCodeInput.value = item.code;
+    buyPriceInput.value = item.buyPrice;
+    holdQtyInput.value = item.qty;
+
+    holdCodeInput.focus();
+  });
+});
+
   } catch (error) {
     holdList.innerHTML = `
       <div class="error">
