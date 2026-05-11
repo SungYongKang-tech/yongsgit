@@ -64,6 +64,57 @@ app.get("/price/:code", async (req, res) => {
   }
 });
 
+app.post("/prices", async (req, res) => {
+  try {
+    const token = getSavedToken();
+    const codes = req.body.codes || [];
+
+    if (!Array.isArray(codes) || codes.length === 0) {
+      return res.status(400).json({
+        message: "종목코드 목록이 필요합니다.",
+      });
+    }
+
+    const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
+
+    const results = [];
+
+    for (const code of codes) {
+      const result = await axios.post(
+        url,
+        { stk_cd: code },
+        {
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10001",
+          },
+        }
+      );
+
+      const data = result.data;
+
+      results.push({
+        code: data.stk_cd,
+        name: data.stk_nm,
+        currentPrice: Number(cleanNumber(data.cur_prc)),
+        changeRate: data.flu_rt,
+        volume: Number(cleanNumber(data.trde_qty)),
+        open: Number(cleanNumber(data.open_pric)),
+        high: Number(cleanNumber(data.high_pric)),
+        low: Number(cleanNumber(data.low_pric)),
+      });
+    }
+
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({
+      message: "여러 종목 조회 실패",
+      error: error.response?.data || error.message,
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
 });

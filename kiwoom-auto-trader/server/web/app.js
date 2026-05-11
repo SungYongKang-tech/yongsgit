@@ -83,3 +83,87 @@ stockCodeInput.addEventListener("keydown", (e) => {
     searchStock();
   }
 });
+
+const loadWatchBtn = document.getElementById("loadWatchBtn");
+const watchList = document.getElementById("watchList");
+
+const watchCodes = [
+  "005930", // 삼성전자
+  "000660", // SK하이닉스
+  "005380", // 현대차
+  "035420", // NAVER
+  "035720"  // 카카오
+];
+
+function renderWatchItem(item) {
+  const rateClass = getRateClass(item.changeRate);
+
+  return `
+    <div class="watch-item" data-code="${item.code}">
+      <div class="watch-item-top">
+        <div>
+          <div class="watch-name">${item.name}</div>
+          <div class="watch-code">${item.code}</div>
+        </div>
+        <div>
+          <div class="watch-price ${rateClass}">
+            ${formatNumber(item.currentPrice)}원
+          </div>
+          <div class="rate ${rateClass}" style="text-align:right;font-size:15px;">
+            ${item.changeRate}
+          </div>
+        </div>
+      </div>
+
+      <div class="watch-bottom">
+        <span>고가 ${formatNumber(item.high)}</span>
+        <span>거래량 ${formatNumber(item.volume)}</span>
+      </div>
+    </div>
+  `;
+}
+
+async function loadWatchList() {
+  watchList.innerHTML = `<div class="loading">관심종목 조회 중...</div>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/prices`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        codes: watchCodes
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "관심종목 조회 실패");
+    }
+
+    watchList.innerHTML = data.map(renderWatchItem).join("");
+
+    document.querySelectorAll(".watch-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        stockCodeInput.value = el.dataset.code;
+        searchStock();
+        window.scrollTo({
+          top: 0,
+          behavior: "smooth"
+        });
+      });
+    });
+
+  } catch (error) {
+    watchList.innerHTML = `
+      <div class="error">
+        관심종목 조회 실패<br />
+        ${error.message}
+      </div>
+    `;
+  }
+}
+
+loadWatchBtn.addEventListener("click", loadWatchList);
