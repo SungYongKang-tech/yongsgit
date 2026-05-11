@@ -177,6 +177,8 @@ const addStockBtn = document.getElementById("addStockBtn");
 
 const WATCH_STORAGE_KEY = "kiwoom_watch_codes";
 
+const holdSummary = document.getElementById("holdSummary");
+
 let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "005930",
   "000660",
@@ -412,6 +414,7 @@ async function fetchStockPrice(code) {
 }
 
 async function renderHoldings() {
+    
   if (holdings.length === 0) {
     holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
     return;
@@ -421,6 +424,8 @@ async function renderHoldings() {
 
   try {
     const rendered = [];
+    let totalBuyAmount = 0;
+    let totalEvalAmount = 0;
 
     for (const item of holdings) {
       const data = await fetchStockPrice(item.code);
@@ -428,6 +433,8 @@ async function renderHoldings() {
       const buyAmount = item.buyPrice * item.qty;
       const evalAmount = data.currentPrice * item.qty;
       const profit = evalAmount - buyAmount;
+      totalBuyAmount += buyAmount;
+      totalEvalAmount += evalAmount;
       const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
       const profitClass = profit >= 0 ? "up" : "down";
 
@@ -464,6 +471,35 @@ async function renderHoldings() {
         </div>
       `);
     }
+
+    const totalProfit = totalEvalAmount - totalBuyAmount;
+const totalRate =
+  totalBuyAmount > 0 ? (totalProfit / totalBuyAmount) * 100 : 0;
+
+const totalClass = totalProfit >= 0 ? "up" : "down";
+
+holdSummary.innerHTML = `
+  <div>
+    <span>총 매수금액</span>
+    <strong>${formatNumber(totalBuyAmount)}원</strong>
+  </div>
+  <div>
+    <span>총 평가금액</span>
+    <strong>${formatNumber(totalEvalAmount)}원</strong>
+  </div>
+  <div>
+    <span>총 손익</span>
+    <strong class="${totalClass}">
+      ${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원
+    </strong>
+  </div>
+  <div>
+    <span>총 수익률</span>
+    <strong class="${totalClass}">
+      ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
+    </strong>
+  </div>
+`;
 
     holdList.innerHTML = rendered.join("");
 
