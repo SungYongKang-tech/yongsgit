@@ -501,12 +501,12 @@ function getTodayTradeCount() {
   }).length;
 }
 
-function hasTodayTradeForCode(code) {
+function getTodayTradeCountForCode(code) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
-  return tradeLogs.some((log) => {
+  return tradeLogs.filter((log) => {
     return log.date === todayKey && log.code === code;
-  });
+  }).length;
 }
 
 function isInCooldown(code) {
@@ -561,8 +561,8 @@ if (!isMarketOpenNow()) {
   return;
 }
 
-if (hasTodayTradeForCode(code)) {
-  console.warn("오늘 이미 거래 신호가 발생한 종목입니다:", code);
+if (getTodayTradeCountForCode(code) >= DAILY_TRADE_LIMIT_PER_CODE) {
+  console.warn("종목별 1일 거래 제한 도달:", code);
   return;
 }
 
