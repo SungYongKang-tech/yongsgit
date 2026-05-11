@@ -197,6 +197,7 @@ let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 alertRateInput.value = alertRate;
 
 let currentSortType = "default";
+let currentHoldSortType = "default";
 
 let previousPrices = {};
 
@@ -359,10 +360,12 @@ function startAutoRefresh() {
   autoRefreshBtn.classList.add("active");
 
   loadWatchList();
+renderHoldings();
 
-  autoRefreshTimer = setInterval(() => {
-    loadWatchList();
-  }, 5000);
+autoRefreshTimer = setInterval(() => {
+  loadWatchList();
+  renderHoldings();
+}, 5000);
 }
 
 function stopAutoRefresh() {
@@ -376,7 +379,10 @@ function stopAutoRefresh() {
   }
 }
 
-loadWatchBtn.addEventListener("click", loadWatchList);
+loadWatchBtn.addEventListener("click", () => {
+  loadWatchList();
+  renderHoldings();
+});
 
 autoRefreshBtn.addEventListener("click", () => {
   if (isAutoRefresh) {
@@ -446,18 +452,33 @@ async function fetchStockPrice(code) {
 }
 
 async function renderHoldings() {
-    
   if (holdings.length === 0) {
     holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
+    holdSummary.innerHTML = `
+      <div>
+        <span>총 매수금액</span>
+        <strong>0원</strong>
+      </div>
+      <div>
+        <span>총 평가금액</span>
+        <strong>0원</strong>
+      </div>
+      <div>
+        <span>총 손익</span>
+        <strong>0원</strong>
+      </div>
+      <div>
+        <span>총 수익률</span>
+        <strong>0.00%</strong>
+      </div>
+    `;
     return;
   }
 
   holdList.innerHTML = `<div class="loading">보유종목 계산 중...</div>`;
 
   try {
-    const rendered = [];
-    let totalBuyAmount = 0;
-    let totalEvalAmount = 0;
+    const calculatedHoldings = [];
 
     for (const item of holdings) {
       const data = await fetchStockPrice(item.code);
@@ -465,73 +486,102 @@ async function renderHoldings() {
       const buyAmount = item.buyPrice * item.qty;
       const evalAmount = data.currentPrice * item.qty;
       const profit = evalAmount - buyAmount;
-      totalBuyAmount += buyAmount;
-      totalEvalAmount += evalAmount;
       const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
-      const profitClass = profit >= 0 ? "up" : "down";
 
-      rendered.push(`
+      calculatedHoldings.push({
+        ...item,
+        name: data.name,
+        currentPrice: data.currentPrice,
+        buyAmount,
+        evalAmount,
+        profit,
+        profitRate
+      });
+    }
+
+    if (currentHoldSortType === "profit") {
+      calculatedHoldings.sort((a, b) => b.profit - a.profit);
+    }
+
+    if (currentHoldSortType === "rate") {
+      calculatedHoldings.sort((a, b) => b.profitRate - a.profitRate);
+    }
+
+    if (currentHoldSortType === "eval") {
+      calculatedHoldings.sort((a, b) => b.evalAmount - a.evalAmount);
+    }
+
+    let totalBuyAmount = 0;
+    let totalEvalAmount = 0;
+
+    const rendered = calculatedHoldings.map((item) => {
+      totalBuyAmount += item.buyAmount;
+      totalEvalAmount += item.evalAmount;
+
+      const profitClass = item.profit >= 0 ? "up" : "down";
+
+      return `
         <div class="hold-item">
           <div class="hold-top">
             <div>
-              <div class="hold-name">${data.name}</div>
+              <div class="hold-name">${item.name}</div>
               <div class="hold-code">${item.code}</div>
             </div>
             <div>
               <div class="hold-profit ${profitClass}">
-                ${profit >= 0 ? "+" : ""}${formatNumber(profit)}원
+                ${item.profit >= 0 ? "+" : ""}${formatNumber(item.profit)}원
               </div>
               <div class="${profitClass}" style="text-align:right;font-weight:800;">
-                ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
+                ${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%
               </div>
             </div>
           </div>
 
           <div class="hold-row">
             <span>매수가 ${formatNumber(item.buyPrice)}</span>
-            <span>현재가 ${formatNumber(data.currentPrice)}</span>
+            <span>현재가 ${formatNumber(item.currentPrice)}</span>
           </div>
 
           <div class="hold-row">
             <span>수량 ${formatNumber(item.qty)}주</span>
-            <span>평가금액 ${formatNumber(evalAmount)}원</span>
+            <span>평가금액 ${formatNumber(item.evalAmount)}원</span>
           </div>
 
           <button class="hold-remove" data-hold-code="${item.code}">
             보유종목 삭제
           </button>
         </div>
-      `);
-    }
+      `;
+    });
 
     const totalProfit = totalEvalAmount - totalBuyAmount;
-const totalRate =
-  totalBuyAmount > 0 ? (totalProfit / totalBuyAmount) * 100 : 0;
+    const totalRate =
+      totalBuyAmount > 0 ? (totalProfit / totalBuyAmount) * 100 : 0;
 
-const totalClass = totalProfit >= 0 ? "up" : "down";
+    const totalClass = totalProfit >= 0 ? "up" : "down";
 
-holdSummary.innerHTML = `
-  <div>
-    <span>총 매수금액</span>
-    <strong>${formatNumber(totalBuyAmount)}원</strong>
-  </div>
-  <div>
-    <span>총 평가금액</span>
-    <strong>${formatNumber(totalEvalAmount)}원</strong>
-  </div>
-  <div>
-    <span>총 손익</span>
-    <strong class="${totalClass}">
-      ${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원
-    </strong>
-  </div>
-  <div>
-    <span>총 수익률</span>
-    <strong class="${totalClass}">
-      ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
-    </strong>
-  </div>
-`;
+    holdSummary.innerHTML = `
+      <div>
+        <span>총 매수금액</span>
+        <strong>${formatNumber(totalBuyAmount)}원</strong>
+      </div>
+      <div>
+        <span>총 평가금액</span>
+        <strong>${formatNumber(totalEvalAmount)}원</strong>
+      </div>
+      <div>
+        <span>총 손익</span>
+        <strong class="${totalClass}">
+          ${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원
+        </strong>
+      </div>
+      <div>
+        <span>총 수익률</span>
+        <strong class="${totalClass}">
+          ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
+        </strong>
+      </div>
+    `;
 
     holdList.innerHTML = rendered.join("");
 
@@ -543,7 +593,6 @@ holdSummary.innerHTML = `
         renderHoldings();
       });
     });
-
   } catch (error) {
     holdList.innerHTML = `
       <div class="error">
@@ -631,4 +680,20 @@ saveAlertRateBtn.addEventListener("click", () => {
   localStorage.setItem(ALERT_RATE_KEY, String(alertRate));
 
   loadWatchList();
+});
+
+const holdSortButtons = document.querySelectorAll(".hold-sort-btn");
+
+holdSortButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    holdSortButtons.forEach((item) => {
+      item.classList.remove("active");
+    });
+
+    btn.classList.add("active");
+
+    currentHoldSortType = btn.dataset.holdSort;
+
+    renderHoldings();
+  });
 });
