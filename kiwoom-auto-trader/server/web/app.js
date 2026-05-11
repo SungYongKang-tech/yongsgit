@@ -3,6 +3,28 @@ const API_BASE = "http://localhost:3000";
 const stockCodeInput = document.getElementById("stockCode");
 const searchBtn = document.getElementById("searchBtn");
 const resultCard = document.getElementById("resultCard");
+const suggestList = document.getElementById("suggestList");
+
+const STOCK_MASTER = [
+  { code: "005930", name: "삼성전자" },
+  { code: "000660", name: "SK하이닉스" },
+  { code: "005380", name: "현대차" },
+  { code: "035420", name: "NAVER" },
+  { code: "035720", name: "카카오" },
+  { code: "051910", name: "LG화학" },
+  { code: "006400", name: "삼성SDI" },
+  { code: "005490", name: "POSCO홀딩스" },
+  { code: "068270", name: "셀트리온" },
+  { code: "105560", name: "KB금융" },
+  { code: "055550", name: "신한지주" },
+  { code: "012330", name: "현대모비스" },
+  { code: "028260", name: "삼성물산" },
+  { code: "066570", name: "LG전자" },
+  { code: "096770", name: "SK이노베이션" },
+  { code: "003670", name: "포스코퓨처엠" },
+  { code: "247540", name: "에코프로비엠" },
+  { code: "086520", name: "에코프로" }
+];
 
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
@@ -15,13 +37,76 @@ function getRateClass(rateText) {
   return "up";
 }
 
-async function searchStock() {
-  const code = stockCodeInput.value.trim();
+function findStockByInput(input) {
+  const keyword = input.trim();
 
-  if (!code) {
-    resultCard.innerHTML = `<div class="error">종목코드를 입력하세요.</div>`;
+  if (!keyword) return null;
+
+  if (/^\d{6}$/.test(keyword)) {
+    return {
+      code: keyword,
+      name: ""
+    };
+  }
+
+  return STOCK_MASTER.find((item) =>
+    item.name.includes(keyword) ||
+    item.code.includes(keyword)
+  );
+}
+
+function renderSuggestions(keyword) {
+  const value = keyword.trim();
+
+  if (!value) {
+    suggestList.innerHTML = "";
     return;
   }
+
+  const matched = STOCK_MASTER
+    .filter((item) =>
+      item.name.includes(value) ||
+      item.code.includes(value)
+    )
+    .slice(0, 6);
+
+  if (matched.length === 0) {
+    suggestList.innerHTML = "";
+    return;
+  }
+
+  suggestList.innerHTML = matched.map((item) => `
+    <div class="suggest-item" data-code="${item.code}">
+      <span class="suggest-name">${item.name}</span>
+      <span class="suggest-code">${item.code}</span>
+    </div>
+  `).join("");
+
+  document.querySelectorAll(".suggest-item").forEach((el) => {
+  el.addEventListener("click", () => {
+
+    const selected = STOCK_MASTER.find(
+      (item) => item.code === el.dataset.code
+    );
+
+    stockCodeInput.value =
+      selected?.name || el.dataset.code;
+
+    suggestList.innerHTML = "";
+    searchStock();
+  });
+});
+}
+
+async function searchStock() {
+  const inputValue = stockCodeInput.value.trim();
+const stock = findStockByInput(inputValue);
+const code = stock?.code;
+
+if (!code) {
+  resultCard.innerHTML = `<div class="error">종목명 또는 종목코드를 입력하세요.</div>`;
+  return;
+}
 
   resultCard.innerHTML = `<div class="loading">조회 중...</div>`;
 
@@ -234,17 +319,14 @@ autoRefreshBtn.addEventListener("click", () => {
 });
 
 function addWatchCode() {
-  const code = addStockCodeInput.value.trim();
+  const inputValue = addStockCodeInput.value.trim();
+const stock = findStockByInput(inputValue);
+const code = stock?.code;
 
-  if (!code) {
-    alert("종목코드를 입력하세요.");
-    return;
-  }
-
-  if (!/^\d{6}$/.test(code)) {
-    alert("종목코드는 6자리 숫자로 입력하세요.");
-    return;
-  }
+if (!code) {
+  alert("종목명 또는 종목코드를 입력하세요.");
+  return;
+}
 
   if (watchCodes.includes(code)) {
     alert("이미 등록된 종목입니다.");
@@ -264,4 +346,8 @@ addStockCodeInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     addWatchCode();
   }
+});
+
+stockCodeInput.addEventListener("input", () => {
+  renderSuggestions(stockCodeInput.value);
 });
