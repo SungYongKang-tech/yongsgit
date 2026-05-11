@@ -185,6 +185,8 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "035720"
 ];
 
+let previousPrices = {};
+
 function saveWatchCodes() {
   localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watchCodes));
 }
@@ -192,8 +194,21 @@ function saveWatchCodes() {
 function renderWatchItem(item) {
   const rateClass = getRateClass(item.changeRate);
 
+  const prevPrice = previousPrices[item.code];
+  let flashClass = "";
+
+  if (prevPrice !== undefined) {
+    if (item.currentPrice > prevPrice) {
+      flashClass = "flash-up";
+    } else if (item.currentPrice < prevPrice) {
+      flashClass = "flash-down";
+    }
+  }
+
+  previousPrices[item.code] = item.currentPrice;
+
   return `
-    <div class="watch-item" data-code="${item.code}">
+    <div class="watch-item ${flashClass}" data-code="${item.code}">
       <div class="watch-item-top">
         <div>
           <div class="watch-name">${item.name}</div>
