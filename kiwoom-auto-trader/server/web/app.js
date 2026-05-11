@@ -202,6 +202,7 @@ let currentSortType = "default";
 let currentHoldSortType = "default";
 
 let previousPrices = {};
+let previousHoldPrices = {};
 
 function saveWatchCodes() {
   localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watchCodes));
@@ -535,6 +536,20 @@ const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
   (stock) => stock.code === item.code
 );
 
+const prevHoldPrice = previousHoldPrices[item.code];
+
+let holdFlashClass = "";
+
+if (prevHoldPrice !== undefined) {
+  if (currentPrice > prevHoldPrice) {
+    holdFlashClass = "flash-up";
+  } else if (currentPrice < prevHoldPrice) {
+    holdFlashClass = "flash-down";
+  }
+}
+
+previousHoldPrices[item.code] = currentPrice;
+
 calculatedHoldings.push({
   ...item,
   name: data.name || masterStock?.name || item.code,
@@ -542,7 +557,8 @@ calculatedHoldings.push({
   buyAmount,
   evalAmount,
   profit,
-  profitRate
+  profitRate,
+  holdFlashClass
 });
     }
 
@@ -575,7 +591,7 @@ calculatedHoldings.push({
 
 
       return `
-        <div class="hold-item">
+        <div class="hold-item ${item.holdFlashClass}">
           <div class="hold-top">
             <div>
               <div class="hold-name">${item.name}</div>
