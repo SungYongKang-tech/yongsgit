@@ -5,6 +5,10 @@ const searchBtn = document.getElementById("searchBtn");
 const resultCard = document.getElementById("resultCard");
 const suggestList = document.getElementById("suggestList");
 
+const alertRateInput = document.getElementById("alertRateInput");
+const saveAlertRateBtn = document.getElementById("saveAlertRateBtn");
+const alertBox = document.getElementById("alertBox");
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -187,12 +191,39 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "035720"
 ];
 
+const ALERT_RATE_KEY = "kiwoom_alert_rate";
+
+let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
+alertRateInput.value = alertRate;
+
 let currentSortType = "default";
 
 let previousPrices = {};
 
 function saveWatchCodes() {
   localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watchCodes));
+}
+
+function renderAlertBox(items) {
+  const alertItems = items.filter((item) => {
+    const rate = parseFloat(item.changeRate);
+    return !isNaN(rate) && rate >= alertRate;
+  });
+
+  if (alertItems.length === 0) {
+    alertBox.innerHTML = `<div class="empty">알림 조건에 맞는 종목이 없습니다.</div>`;
+    return;
+  }
+
+  alertBox.innerHTML = `
+    <div class="alert-title">🚨 상승률 ${alertRate}% 이상 종목</div>
+    ${alertItems.map((item) => `
+      <div class="alert-item">
+        <strong>${item.name}</strong>
+        <span class="up">${item.changeRate}</span>
+      </div>
+    `).join("")}
+  `;
 }
 
 function renderWatchItem(item) {
@@ -261,6 +292,7 @@ async function loadWatchList() {
     }
 
     let sortedData = [...data];
+    renderAlertBox(data);
 
 if (currentSortType === "rate") {
   sortedData.sort((a, b) =>
@@ -585,4 +617,18 @@ sortButtons.forEach((btn) => {
 
     loadWatchList();
   });
+});
+
+saveAlertRateBtn.addEventListener("click", () => {
+  const value = Number(alertRateInput.value);
+
+  if (isNaN(value) || value <= 0) {
+    alert("알림 기준 상승률을 입력하세요.");
+    return;
+  }
+
+  alertRate = value;
+  localStorage.setItem(ALERT_RATE_KEY, String(alertRate));
+
+  loadWatchList();
 });
