@@ -366,3 +366,151 @@ addStockCodeInput.addEventListener("keydown", (e) => {
 stockCodeInput.addEventListener("input", () => {
   renderSuggestions(stockCodeInput.value);
 });
+
+const holdCodeInput = document.getElementById("holdCode");
+const buyPriceInput = document.getElementById("buyPrice");
+const holdQtyInput = document.getElementById("holdQty");
+const addHoldBtn = document.getElementById("addHoldBtn");
+const holdList = document.getElementById("holdList");
+
+const HOLD_STORAGE_KEY = "kiwoom_holdings";
+
+let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
+
+function saveHoldings() {
+  localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(holdings));
+}
+
+async function fetchStockPrice(code) {
+  const res = await fetch(`${API_BASE}/price/${code}`);
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.message || "현재가 조회 실패");
+  }
+
+  return data;
+}
+
+async function renderHoldings() {
+  if (holdings.length === 0) {
+    holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
+    return;
+  }
+
+  holdList.innerHTML = `<div class="loading">보유종목 계산 중...</div>`;
+
+  try {
+    const rendered = [];
+
+    for (const item of holdings) {
+      const data = await fetchStockPrice(item.code);
+
+      const buyAmount = item.buyPrice * item.qty;
+      const evalAmount = data.currentPrice * item.qty;
+      const profit = evalAmount - buyAmount;
+      const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+      const profitClass = profit >= 0 ? "up" : "down";
+
+      rendered.push(`
+        <div class="hold-item">
+          <div class="hold-top">
+            <div>
+              <div class="hold-name">${data.name}</div>
+              <div class="hold-code">${item.code}</div>
+            </div>
+            <div>
+              <div class="hold-profit ${profitClass}">
+                ${profit >= 0 ? "+" : ""}${formatNumber(profit)}원
+              </div>
+              <div class="${profitClass}" style="text-align:right;font-weight:800;">
+                ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
+              </div>
+            </div>
+          </div>
+
+          <div class="hold-row">
+            <span>매수가 ${formatNumber(item.buyPrice)}</span>
+            <span>현재가 ${formatNumber(data.currentPrice)}</span>
+          </div>
+
+          <div class="hold-row">
+            <span>수량 ${formatNumber(item.qty)}주</span>
+            <span>평가금액 ${formatNumber(evalAmount)}원</span>
+          </div>
+
+          <button class="hold-remove" data-hold-code="${item.code}">
+            보유종목 삭제
+          </button>
+        </div>
+      `);
+    }
+
+    holdList.innerHTML = rendered.join("");
+
+    document.querySelectorAll(".hold-remove").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const code = btn.dataset.holdCode;
+        holdings = holdings.filter((item) => item.code !== code);
+        saveHoldings();
+        renderHoldings();
+      });
+    });
+
+  } catch (error) {
+    holdList.innerHTML = `
+      <div class="error">
+        보유종목 계산 실패<br />
+        ${error.message}
+      </div>
+    `;
+  }
+}
+
+function addHolding() {
+  const stock = findStockByInput(holdCodeInput.value.trim());
+  const code = stock?.code;
+  const buyPrice = Number(buyPriceInput.value);
+  const qty = Number(holdQtyInput.value);
+
+  if (!code) {
+    alert("종목명 또는 종목코드를 입력하세요.");
+    return;
+  }
+
+  if (!buyPrice || buyPrice <= 0) {
+    alert("매수가를 입력하세요.");
+    return;
+  }
+
+  if (!qty || qty <= 0) {
+    alert("수량을 입력하세요.");
+    return;
+  }
+
+  holdings = holdings.filter((item) => item.code !== code);
+
+  holdings.push({
+    code,
+    buyPrice,
+    qty
+  });
+
+  saveHoldings();
+
+  holdCodeInput.value = "";
+  buyPriceInput.value = "";
+  holdQtyInput.value = "";
+
+  renderHoldings();
+}
+
+addHoldBtn.addEventListener("click", addHolding);
+
+holdQtyInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    addHolding();
+  }
+});
+
+renderHoldings();
