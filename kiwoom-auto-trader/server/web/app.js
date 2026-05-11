@@ -490,15 +490,19 @@ async function renderHoldings() {
       const profit = evalAmount - buyAmount;
       const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
 
-      calculatedHoldings.push({
-        ...item,
-         name: data.name || masterStock?.name || item.code,
-         currentPrice: Number(data.currentPrice) || 0,
-         buyAmount,
-         evalAmount,
-         profit,
-         profitRate
-      });
+     const masterStock = STOCK_MASTER.find(
+  (stock) => stock.code === item.code
+);
+
+calculatedHoldings.push({
+  ...item,
+  name: data.name || masterStock?.name || item.code,
+  currentPrice: Number(data.currentPrice) || 0,
+  buyAmount,
+  evalAmount,
+  profit,
+  profitRate
+});
     }
 
     if (currentHoldSortType === "profit") {
