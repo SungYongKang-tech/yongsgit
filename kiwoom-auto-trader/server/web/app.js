@@ -485,10 +485,19 @@ async function renderHoldings() {
     for (const item of holdings) {
       const data = await fetchStockPrice(item.code);
 
-      const buyAmount = item.buyPrice * item.qty;
-      const evalAmount = data.currentPrice * item.qty;
-      const profit = evalAmount - buyAmount;
-      const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+      const currentPrice = Number(
+  data.currentPrice ||
+  data.price ||
+  data.curPrice ||
+  data.stck_prpr ||
+  data.output?.stck_prpr ||
+  0
+);
+
+const buyAmount = item.buyPrice * item.qty;
+const evalAmount = currentPrice * item.qty;
+const profit = evalAmount - buyAmount;
+const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
 
      const masterStock = STOCK_MASTER.find(
   (stock) => stock.code === item.code
@@ -497,7 +506,7 @@ async function renderHoldings() {
 calculatedHoldings.push({
   ...item,
   name: data.name || masterStock?.name || item.code,
-  currentPrice: Number(data.currentPrice) || 0,
+  currentPrice,
   buyAmount,
   evalAmount,
   profit,
