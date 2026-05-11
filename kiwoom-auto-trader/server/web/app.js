@@ -436,12 +436,75 @@ const targetPriceInput = document.getElementById("targetPrice");
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
 
+const tradeLogList = document.getElementById("tradeLogList");
+
+const TRADE_LOG_KEY = "kiwoom_virtual_trade_logs";
+let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
+
 const HOLD_STORAGE_KEY = "kiwoom_holdings";
 
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
 
 function saveHoldings() {
   localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(holdings));
+}
+
+function saveTradeLogs() {
+  localStorage.setItem(TRADE_LOG_KEY, JSON.stringify(tradeLogs));
+}
+
+function renderTradeLogs() {
+  if (!tradeLogList) return;
+
+  if (tradeLogs.length === 0) {
+    tradeLogList.innerHTML = `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
+    return;
+  }
+
+  tradeLogList.innerHTML = tradeLogs
+    .slice()
+    .reverse()
+    .map((log) => `
+      <div class="trade-log-item">
+        <strong class="${log.type === "SELL" ? "up" : "down"}">
+          ${log.type === "SELL" ? "가상매도" : "가상매수"}
+        </strong>
+        ${log.name} / ${formatNumber(log.price)}원
+
+        <div class="trade-log-time">
+          ${log.reason} · ${log.time}
+        </div>
+      </div>
+    `)
+    .join("");
+}
+
+function addTradeLog({ type, code, name, price, reason }) {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  const alreadyLogged = tradeLogs.some((log) => {
+    return (
+      log.date === todayKey &&
+      log.type === type &&
+      log.code === code &&
+      log.reason === reason
+    );
+  });
+
+  if (alreadyLogged) return;
+
+  tradeLogs.push({
+    type,
+    code,
+    name,
+    price,
+    reason,
+    date: todayKey,
+    time: new Date().toLocaleString("ko-KR")
+  });
+
+  saveTradeLogs();
+  renderTradeLogs();
 }
 
 async function fetchStockPrice(code) {
@@ -468,23 +531,36 @@ function renderHoldRankBox(items) {
   const topProfit = [...items].sort((a, b) => b.profit - a.profit)[0];
   const topLoss = [...items].sort((a, b) => a.profit - b.profit)[0];
 
+  const targetReachedItems = items.filter((item) => {
+  return item.targetPrice && item.currentPrice >= item.targetPrice;
+});
+
   holdRankBox.innerHTML = `
-    <div class="hold-rank-title">수익/손실 요약</div>
+  <div class="hold-rank-title">수익/손실 요약</div>
 
+  <div class="hold-rank-row">
+    <span>수익 TOP</span>
+    <strong class="${topProfit.profit >= 0 ? "up" : "down"}">
+      ${topProfit.name} ${topProfit.profit >= 0 ? "+" : ""}${formatNumber(topProfit.profit)}원
+    </strong>
+  </div>
+
+  <div class="hold-rank-row">
+    <span>손실 TOP</span>
+    <strong class="${topLoss.profit >= 0 ? "up" : "down"}">
+      ${topLoss.name} ${topLoss.profit >= 0 ? "+" : ""}${formatNumber(topLoss.profit)}원
+    </strong>
+  </div>
+
+  ${targetReachedItems.length > 0 ? `
     <div class="hold-rank-row">
-      <span>수익 TOP</span>
-      <strong class="${topProfit.profit >= 0 ? "up" : "down"}">
-        ${topProfit.name} ${topProfit.profit >= 0 ? "+" : ""}${formatNumber(topProfit.profit)}원
+      <span>목표도달</span>
+      <strong class="up">
+        ${targetReachedItems.map((item) => item.name).join(", ")}
       </strong>
     </div>
-
-    <div class="hold-rank-row">
-      <span>손실 TOP</span>
-      <strong class="${topLoss.profit >= 0 ? "up" : "down"}">
-        ${topLoss.name} ${topLoss.profit >= 0 ? "+" : ""}${formatNumber(topLoss.profit)}원
-      </strong>
-    </div>
-  `;
+  ` : ""}
+`;
 }
 
 async function renderHoldings() {
@@ -573,8 +649,10 @@ calculatedHoldings.push({
 
     if (currentHoldSortType === "eval") {
       calculatedHoldings.sort((a, b) => b.evalAmount - a.evalAmount);
-      renderHoldRankBox(calculatedHoldings);
+      
     }
+      renderHoldRankBox(calculatedHoldings);
+
 
     let totalBuyAmount = 0;
     let totalEvalAmount = 0;
@@ -587,12 +665,26 @@ calculatedHoldings.push({
       totalEvalAmount += item.evalAmount;
 
       const profitClass = item.profit >= 0 ? "up" : "down";
+      const isTargetHit =
+       item.targetPrice &&
+       item.currentPrice >= item.targetPrice;
+
+      if (isTargetHit) {
+        addTradeLog({
+        type: "SELL",
+        code: item.code,
+        name: item.name,
+        price: item.currentPrice,
+        reason: `목표가 ${formatNumber(item.targetPrice)}원 도달`
+        });
+    }
+
       const weightRate =
       totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
 
 
       return `
-        <div class="hold-item ${item.holdFlashClass}">
+        <div class="hold-item ${item.holdFlashClass} ${isTargetHit ? "target-hit" : ""}">
           <div class="hold-top">
             <div>
               <div class="hold-name">${item.name}</div>
@@ -762,6 +854,7 @@ holdQtyInput.addEventListener("keydown", (e) => {
 });
 
 renderHoldings();
+renderTradeLogs();
 
 const sortButtons = document.querySelectorAll(".sort-btn");
 
