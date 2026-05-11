@@ -87,13 +87,22 @@ stockCodeInput.addEventListener("keydown", (e) => {
 const loadWatchBtn = document.getElementById("loadWatchBtn");
 const watchList = document.getElementById("watchList");
 
-const watchCodes = [
-  "005930", // 삼성전자
-  "000660", // SK하이닉스
-  "005380", // 현대차
-  "035420", // NAVER
-  "035720"  // 카카오
+const addStockCodeInput = document.getElementById("addStockCode");
+const addStockBtn = document.getElementById("addStockBtn");
+
+const WATCH_STORAGE_KEY = "kiwoom_watch_codes";
+
+let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
+  "005930",
+  "000660",
+  "005380",
+  "035420",
+  "035720"
 ];
+
+function saveWatchCodes() {
+  localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watchCodes));
+}
 
 function renderWatchItem(item) {
   const rateClass = getRateClass(item.changeRate);
@@ -119,6 +128,10 @@ function renderWatchItem(item) {
         <span>고가 ${formatNumber(item.high)}</span>
         <span>거래량 ${formatNumber(item.volume)}</span>
       </div>
+
+      <button class="watch-remove" data-remove-code="${item.code}">
+        관심종목 삭제
+      </button>
     </div>
   `;
 }
@@ -146,15 +159,26 @@ async function loadWatchList() {
     watchList.innerHTML = data.map(renderWatchItem).join("");
 
     document.querySelectorAll(".watch-item").forEach((el) => {
-      el.addEventListener("click", () => {
-        stockCodeInput.value = el.dataset.code;
-        searchStock();
-        window.scrollTo({
-          top: 0,
-          behavior: "smooth"
-        });
-      });
+  el.addEventListener("click", () => {
+    stockCodeInput.value = el.dataset.code;
+    searchStock();
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
     });
+  });
+});
+
+document.querySelectorAll(".watch-remove").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+
+    const code = btn.dataset.removeCode;
+    watchCodes = watchCodes.filter((item) => item !== code);
+    saveWatchCodes();
+    loadWatchList();
+  });
+});
 
   } catch (error) {
     watchList.innerHTML = `
@@ -166,7 +190,6 @@ async function loadWatchList() {
   }
 }
 
-loadWatchBtn.addEventListener("click", loadWatchList);
 
 const autoRefreshBtn = document.getElementById("autoRefreshBtn");
 
@@ -207,5 +230,38 @@ autoRefreshBtn.addEventListener("click", () => {
     stopAutoRefresh();
   } else {
     startAutoRefresh();
+  }
+});
+
+function addWatchCode() {
+  const code = addStockCodeInput.value.trim();
+
+  if (!code) {
+    alert("종목코드를 입력하세요.");
+    return;
+  }
+
+  if (!/^\d{6}$/.test(code)) {
+    alert("종목코드는 6자리 숫자로 입력하세요.");
+    return;
+  }
+
+  if (watchCodes.includes(code)) {
+    alert("이미 등록된 종목입니다.");
+    return;
+  }
+
+  watchCodes.push(code);
+  saveWatchCodes();
+
+  addStockCodeInput.value = "";
+  loadWatchList();
+}
+
+addStockBtn.addEventListener("click", addWatchCode);
+
+addStockCodeInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    addWatchCode();
   }
 });
