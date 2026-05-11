@@ -185,6 +185,8 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "035720"
 ];
 
+let currentSortType = "default";
+
 let previousPrices = {};
 
 function saveWatchCodes() {
@@ -256,7 +258,24 @@ async function loadWatchList() {
       throw new Error(data.message || "관심종목 조회 실패");
     }
 
-    watchList.innerHTML = data.map(renderWatchItem).join("");
+    let sortedData = [...data];
+
+if (currentSortType === "rate") {
+  sortedData.sort((a, b) =>
+    parseFloat(b.changeRate) - parseFloat(a.changeRate)
+  );
+}
+
+if (currentSortType === "volume") {
+  sortedData.sort((a, b) => b.volume - a.volume);
+}
+
+if (currentSortType === "price") {
+  sortedData.sort((a, b) => b.currentPrice - a.currentPrice);
+}
+
+watchList.innerHTML =
+  sortedData.map(renderWatchItem).join("");
 
     document.querySelectorAll(".watch-item").forEach((el) => {
   el.addEventListener("click", () => {
@@ -514,3 +533,20 @@ holdQtyInput.addEventListener("keydown", (e) => {
 });
 
 renderHoldings();
+
+const sortButtons = document.querySelectorAll(".sort-btn");
+
+sortButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+
+    sortButtons.forEach((item) => {
+      item.classList.remove("active");
+    });
+
+    btn.classList.add("active");
+
+    currentSortType = btn.dataset.sort;
+
+    loadWatchList();
+  });
+});
