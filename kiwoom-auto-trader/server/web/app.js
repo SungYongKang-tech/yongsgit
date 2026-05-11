@@ -353,7 +353,7 @@ const autoRefreshBtn = document.getElementById("autoRefreshBtn");
 let autoRefreshTimer = null;
 let isAutoRefresh = false;
 
-function startAutoRefresh() {
+async function startAutoRefresh() {
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
   }
@@ -362,12 +362,14 @@ function startAutoRefresh() {
   autoRefreshBtn.textContent = "자동ON";
   autoRefreshBtn.classList.add("active");
 
-  loadWatchList();
-renderHoldings();
+  await loadWatchList();
+  await renderHoldings();
+  renderTradeLogs();
 
-autoRefreshTimer = setInterval(() => {
-  loadWatchList();
-  renderHoldings();
+autoRefreshTimer = setInterval(async () => {
+  await loadWatchList();
+  await renderHoldings();
+  renderTradeLogs();
 }, 5000);
 }
 
@@ -433,6 +435,7 @@ const holdCodeInput = document.getElementById("holdCode");
 const buyPriceInput = document.getElementById("buyPrice");
 const holdQtyInput = document.getElementById("holdQty");
 const targetPriceInput = document.getElementById("targetPrice");
+const stopLossPriceInput = document.getElementById("stopLossPrice");
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
 
@@ -467,7 +470,13 @@ function renderTradeLogs() {
     .map((log) => `
       <div class="trade-log-item">
         <strong class="${log.type === "SELL" ? "up" : "down"}">
-          ${log.type === "SELL" ? "가상매도" : "가상매수"}
+          ${
+  log.type === "SELL"
+    ? "가상매도"
+    : log.type === "STOP_LOSS"
+    ? "가상손절"
+    : "가상매수"
+}
         </strong>
         ${log.name} / ${formatNumber(log.price)}원
 
@@ -665,26 +674,41 @@ calculatedHoldings.push({
       totalEvalAmount += item.evalAmount;
 
       const profitClass = item.profit >= 0 ? "up" : "down";
-      const isTargetHit =
-       item.targetPrice &&
-       item.currentPrice >= item.targetPrice;
 
-      if (isTargetHit) {
-        addTradeLog({
-        type: "SELL",
-        code: item.code,
-        name: item.name,
-        price: item.currentPrice,
-        reason: `목표가 ${formatNumber(item.targetPrice)}원 도달`
-        });
-    }
+      const isTargetHit =
+ item.targetPrice &&
+ item.currentPrice >= item.targetPrice;
+
+const isStopLossHit =
+ item.stopLossPrice &&
+ item.currentPrice <= item.stopLossPrice;
+
+if (isTargetHit) {
+  addTradeLog({
+    type: "SELL",
+    code: item.code,
+    name: item.name,
+    price: item.currentPrice,
+    reason: `목표가 ${formatNumber(item.targetPrice)}원 도달`
+  });
+}
+
+if (isStopLossHit) {
+  addTradeLog({
+    type: "STOP_LOSS",
+    code: item.code,
+    name: item.name,
+    price: item.currentPrice,
+    reason: `손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
+  });
+}
 
       const weightRate =
       totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
 
 
       return `
-        <div class="hold-item ${item.holdFlashClass} ${isTargetHit ? "target-hit" : ""}">
+        <div class="hold-item ${item.holdFlashClass} ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}">
           <div class="hold-top">
             <div>
               <div class="hold-name">${item.name}</div>
@@ -724,7 +748,14 @@ calculatedHoldings.push({
   </div>
 ` : ""}
 
-
+${item.stopLossPrice ? `
+  <div class="hold-row">
+    <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
+    <strong class="${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
+      ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
+    </strong>
+  </div>
+` : ""}
 
           <div class="hold-action-row">
   <button class="hold-edit" data-hold-code="${item.code}">
@@ -789,6 +820,7 @@ calculatedHoldings.push({
     buyPriceInput.value = item.buyPrice;
     holdQtyInput.value = item.qty;
     targetPriceInput.value = item.targetPrice || "";
+    stopLossPriceInput.value = item.stopLossPrice || "";
 
 holdCodeInput.focus();
   });
@@ -806,6 +838,7 @@ holdCodeInput.focus();
 
 function addHolding() {
   const targetPrice = Number(targetPriceInput.value) || 0;
+  const stopLossPrice = Number(stopLossPriceInput.value) || 0;
   const stock = findStockByInput(holdCodeInput.value.trim());
   const code = stock?.code;
   const buyPrice = Number(buyPriceInput.value);
@@ -832,7 +865,8 @@ function addHolding() {
   code,
   buyPrice,
   qty,
-  targetPrice
+  targetPrice,
+  stopLossPrice
 });
 
   saveHoldings();
@@ -841,6 +875,7 @@ function addHolding() {
   buyPriceInput.value = "";
   holdQtyInput.value = "";
   targetPriceInput.value = "";
+  stopLossPriceInput.value = "";
 
   renderHoldings();
 }
