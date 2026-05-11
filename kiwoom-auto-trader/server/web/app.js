@@ -167,3 +167,45 @@ async function loadWatchList() {
 }
 
 loadWatchBtn.addEventListener("click", loadWatchList);
+
+const autoRefreshBtn = document.getElementById("autoRefreshBtn");
+
+let autoRefreshTimer = null;
+let isAutoRefresh = false;
+
+function startAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+  }
+
+  isAutoRefresh = true;
+  autoRefreshBtn.textContent = "자동ON";
+  autoRefreshBtn.classList.add("active");
+
+  loadWatchList();
+
+  autoRefreshTimer = setInterval(() => {
+    loadWatchList();
+  }, 5000);
+}
+
+function stopAutoRefresh() {
+  isAutoRefresh = false;
+  autoRefreshBtn.textContent = "자동OFF";
+  autoRefreshBtn.classList.remove("active");
+
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+}
+
+loadWatchBtn.addEventListener("click", loadWatchList);
+
+autoRefreshBtn.addEventListener("click", () => {
+  if (isAutoRefresh) {
+    stopAutoRefresh();
+  } else {
+    startAutoRefresh();
+  }
+});
