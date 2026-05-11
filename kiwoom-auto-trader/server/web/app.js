@@ -528,12 +528,18 @@ calculatedHoldings.push({
 
     let totalBuyAmount = 0;
     let totalEvalAmount = 0;
+    const totalEvalForWeight = calculatedHoldings.reduce((sum, item) => {
+     return sum + item.evalAmount;
+     }, 0);
 
     const rendered = calculatedHoldings.map((item) => {
       totalBuyAmount += item.buyAmount;
       totalEvalAmount += item.evalAmount;
 
       const profitClass = item.profit >= 0 ? "up" : "down";
+      const weightRate =
+      totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
+
 
       return `
         <div class="hold-item">
@@ -560,6 +566,11 @@ calculatedHoldings.push({
           <div class="hold-row">
             <span>수량 ${formatNumber(item.qty)}주</span>
             <span>평가금액 ${formatNumber(item.evalAmount)}원</span>
+          </div>
+          
+          <div class="hold-row">
+            <span>보유비중</span>
+            <strong>${weightRate.toFixed(1)}%</strong>
           </div>
 
           <div class="hold-action-row">
