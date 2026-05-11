@@ -15,6 +15,11 @@ function getSavedToken() {
   return fs.readFileSync("token.txt", "utf8").trim();
 }
 
+function cleanNumber(value) {
+  if (!value) return "";
+  return String(value).replace("+", "").replace("-", "");
+}
+
 app.get("/", (req, res) => {
   res.send("Kiwoom Auto Trader Server is running");
 });
@@ -38,7 +43,19 @@ app.get("/price/:code", async (req, res) => {
       }
     );
 
-    res.json(result.data);
+    const data = result.data;
+
+    res.json({
+      code: data.stk_cd,
+      name: data.stk_nm,
+      currentPrice: Number(cleanNumber(data.cur_prc)),
+      changeRate: data.flu_rt,
+      volume: Number(cleanNumber(data.trde_qty)),
+      open: Number(cleanNumber(data.open_pric)),
+      high: Number(cleanNumber(data.high_pric)),
+      low: Number(cleanNumber(data.low_pric)),
+      raw: data,
+    });
   } catch (error) {
     res.status(500).json({
       message: "현재가 조회 실패",
