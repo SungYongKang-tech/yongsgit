@@ -1301,6 +1301,7 @@ function updateHoldingItemOnly(item) {
   const currentPriceEl = card.querySelector(".hold-current-price");
   const evalAmountEl = card.querySelector(".hold-eval-amount");
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
+  const autoStatusEl = card.querySelector(".hold-auto-status");
   const lastSignalTimeEl = card.querySelector(".hold-last-signal-time");
   const lastSignalRowEl = card.querySelector(".hold-last-signal-row");
   const lastSignalPriceEl = card.querySelector(".hold-last-signal-price");
@@ -1338,6 +1339,11 @@ card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
 
   currentPriceEl.textContent = formatNumber(item.currentPrice);
   evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
+  if (autoStatusEl) {
+  autoStatusEl.className = `hold-auto-status ${item.autoTrade ? "up" : ""}`;
+  autoStatusEl.textContent = item.autoTrade ? "ON" : "OFF";
+}
+
   const targetStatusEl = card.querySelector(".hold-target-status");
 const secondTargetStatusEl = card.querySelector(".hold-second-target-status");
 const highestPriceEl = card.querySelector(".hold-highest-price");
@@ -1657,9 +1663,9 @@ ${item.trailingStopRate ? `
 
           <div class="hold-row">
             <span>자동매매</span>
-            <strong class="${item.autoTrade ? "up" : ""}">
-              ${item.autoTrade ? "ON" : "OFF"}
-            </strong>
+            <strong class="hold-auto-status ${item.autoTrade ? "up" : ""}">
+  ${item.autoTrade ? "ON" : "OFF"}
+</strong>
           </div>
 
           <div class="hold-row">
