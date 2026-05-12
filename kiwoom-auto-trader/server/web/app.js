@@ -1306,6 +1306,8 @@ function updateHoldingItemOnly(item) {
   const lastSignalPriceEl = card.querySelector(".hold-last-signal-price");
   const lastSignalPriceRowEl = card.querySelector(".hold-last-signal-price-row");
   const partialSellRowEl = card.querySelector(".hold-partial-sell-row");
+  const partialSellValueEl = card.querySelector(".hold-partial-sell-value");
+
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
@@ -1336,6 +1338,33 @@ card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
 
   currentPriceEl.textContent = formatNumber(item.currentPrice);
   evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
+  const targetStatusEl = card.querySelector(".hold-target-status");
+const secondTargetStatusEl = card.querySelector(".hold-second-target-status");
+const highestPriceEl = card.querySelector(".hold-highest-price");
+const stopLossStatusEl = card.querySelector(".hold-stoploss-status");
+
+if (targetStatusEl && item.targetPrice) {
+  const hit = item.currentPrice >= item.targetPrice;
+  targetStatusEl.className = `hold-target-status ${hit ? "up" : ""}`;
+  targetStatusEl.textContent = hit ? "목표도달" : "대기중";
+}
+
+if (secondTargetStatusEl && item.secondTargetPrice) {
+  const hit = item.currentPrice >= item.secondTargetPrice;
+  secondTargetStatusEl.className = `hold-second-target-status ${hit ? "up" : ""}`;
+  secondTargetStatusEl.textContent = hit ? "2차도달" : "대기중";
+}
+
+if (highestPriceEl) {
+  highestPriceEl.textContent =
+    `최고가 ${formatNumber(item.highestPrice || item.currentPrice)}`;
+}
+
+if (stopLossStatusEl && item.stopLossPrice) {
+  const hit = item.currentPrice <= item.stopLossPrice;
+  stopLossStatusEl.className = `hold-stoploss-status ${hit ? "down" : ""}`;
+  stopLossStatusEl.textContent = hit ? "손절신호" : "대기중";
+}
 
   const state = getStrategyState(item.code);
   const strategyStatusText = getStrategyStatusText(state.status);
@@ -1376,6 +1405,11 @@ if (lastSignalPriceEl && state.lastSignalPrice) {
   }
 }
 
+if (partialSellValueEl && state.lastSoldQty) {
+  partialSellValueEl.textContent =
+    `${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주`;
+}
+
 if (!partialSellRowEl && state.lastSoldQty) {
   const priceRow = card.querySelector(".hold-last-signal-price-row");
 
@@ -1383,9 +1417,9 @@ if (!partialSellRowEl && state.lastSoldQty) {
     priceRow.insertAdjacentHTML("afterend", `
       <div class="hold-row hold-partial-sell-row">
         <span>분할매도</span>
-        <strong>
-          ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
-        </strong>
+        <strong class="hold-partial-sell-value">
+  ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
+</strong>
       </div>
     `);
   }
@@ -1588,7 +1622,7 @@ async function renderHoldings(silent = false) {
           ${item.targetPrice ? `
             <div class="hold-row">
               <span>목표가 ${formatNumber(item.targetPrice)}원</span>
-              <strong class="${item.currentPrice >= item.targetPrice ? "up" : ""}">
+              <strong class="hold-target-status ${item.currentPrice >= item.targetPrice ? "up" : ""}">
                 ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
               </strong>
             </div>
@@ -1597,7 +1631,7 @@ async function renderHoldings(silent = false) {
           ${item.secondTargetPrice ? `
   <div class="hold-row">
     <span>2차 목표가 ${formatNumber(item.secondTargetPrice)}원</span>
-    <strong class="${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
+    <strong class="hold-second-target-status ${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
       ${item.currentPrice >= item.secondTargetPrice ? "2차도달" : "대기중"}
     </strong>
   </div>
@@ -1606,16 +1640,16 @@ async function renderHoldings(silent = false) {
 ${item.trailingStopRate ? `
   <div class="hold-row">
     <span>트레일링 ${item.trailingStopRate}%</span>
-    <strong>
-      최고가 ${formatNumber(item.highestPrice || item.currentPrice)}
-    </strong>
+    <strong class="hold-highest-price">
+  최고가 ${formatNumber(item.highestPrice || item.currentPrice)}
+</strong>
   </div>
 ` : ""}
 
           ${item.stopLossPrice ? `
             <div class="hold-row">
               <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
-              <strong class="${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
+              <strong class="hold-stoploss-status ${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
                 ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
               </strong>
             </div>
