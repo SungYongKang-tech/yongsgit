@@ -735,6 +735,38 @@ function renderHoldRankBox(items) {
 `;
 }
 
+function updateHoldingItemOnly(item) {
+  const card = document.querySelector(`.hold-item[data-code="${item.code}"]`);
+
+  if (!card) return false;
+
+  const profitEl = card.querySelector(".hold-profit-value");
+  const rateEl = card.querySelector(".hold-profit-rate");
+  const currentPriceEl = card.querySelector(".hold-current-price");
+  const evalAmountEl = card.querySelector(".hold-eval-amount");
+
+  if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
+    return false;
+  }
+
+  const profitClass = item.profit >= 0 ? "up" : "down";
+
+  profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
+  profitEl.textContent =
+    `${item.profit >= 0 ? "+" : ""}${formatNumber(item.profit)}원`;
+
+  rateEl.className = `hold-profit-rate ${profitClass}`;
+  rateEl.style.textAlign = "right";
+  rateEl.style.fontWeight = "800";
+  rateEl.textContent =
+    `${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%`;
+
+  currentPriceEl.textContent = formatNumber(item.currentPrice);
+  evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
+
+  return true;
+}
+
 async function renderHoldings(silent = false) {
   if (holdings.length === 0) {
     holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
