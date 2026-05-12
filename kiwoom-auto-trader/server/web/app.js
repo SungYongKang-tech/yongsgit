@@ -883,10 +883,10 @@ if (item.autoTrade && isStopLossHit) {
               <div class="hold-code">${item.code}</div>
             </div>
             <div>
-              <div class="hold-profit ${profitClass}">
+              <div class="hold-profit hold-profit-value ${profitClass}">
                 ${item.profit >= 0 ? "+" : ""}${formatNumber(item.profit)}원
               </div>
-              <div class="${profitClass}" style="text-align:right;font-weight:800;">
+              <div class="hold-profit-rate ${profitClass}" style="text-align:right;font-weight:800;">
                 ${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%
               </div>
             </div>
@@ -894,12 +894,12 @@ if (item.autoTrade && isStopLossHit) {
 
           <div class="hold-row">
             <span>매수가 ${formatNumber(item.buyPrice)}</span>
-            <span>현재가 ${formatNumber(item.currentPrice)}</span>
+            <span>현재가 <strong class="hold-current-price">${formatNumber(item.currentPrice)}</strong></span>
           </div>
 
           <div class="hold-row">
             <span>수량 ${formatNumber(item.qty)}주</span>
-            <span>평가금액 ${formatNumber(item.evalAmount)}원</span>
+            <span>평가금액 <strong class="hold-eval-amount">${formatNumber(item.evalAmount)}원</strong></span>
           </div>
           
           <div class="hold-row">
