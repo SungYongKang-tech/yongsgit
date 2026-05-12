@@ -275,6 +275,26 @@ function renderWatchItem(item) {
   `;
 }
 
+function bindWatchItemEvents() {
+  document.querySelectorAll(".watch-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      stockCodeInput.value = el.dataset.code;
+      searchStock();
+    });
+  });
+
+  document.querySelectorAll(".watch-remove").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      const code = btn.dataset.removeCode;
+      watchCodes = watchCodes.filter((item) => item !== code);
+      saveWatchCodes();
+      loadWatchList();
+    });
+  });
+}
+
 function updateWatchItemOnly(item) {
   const card = document.querySelector(`.watch-item[data-code="${item.code}"]`);
 
@@ -287,7 +307,8 @@ function updateWatchItemOnly(item) {
   if (!priceEl || !rateEl) {
     return false;
   }
-  
+
+  const rateClass = getRateClass(item.changeRate);
   const prevPrice = previousPrices[item.code];
 
   card.classList.remove("flash-up", "flash-down");
@@ -1066,6 +1087,7 @@ holdQtyInput.addEventListener("keydown", (e) => {
   }
 });
 
+loadWatchList();
 renderHoldings();
 renderTradeLogs();
 
