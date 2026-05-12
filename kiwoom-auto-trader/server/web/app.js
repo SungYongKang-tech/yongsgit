@@ -876,7 +876,7 @@ if (item.autoTrade && isStopLossHit) {
 
 
       return `
-        <div class="hold-item ${item.holdFlashClass} ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}">
+        <div class="hold-item ${item.holdFlashClass} ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}" data-code="${item.code}">
           <div class="hold-top">
             <div>
               <div class="hold-name">${item.name}</div>
