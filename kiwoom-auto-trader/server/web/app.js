@@ -1392,56 +1392,7 @@ if (stopLossStatusEl && item.stopLossPrice) {
     strategyStatusEl.textContent = strategyStatusText;
   }
 
- if (lastSignalTimeEl && state.lastSignalTime) {
-  lastSignalTimeEl.textContent = state.lastSignalTime;
-} else if (!lastSignalRowEl && state.lastSignalTime) {
-  const statusRow = card.querySelector(".hold-strategy-status")?.closest(".hold-row");
-
-  if (statusRow) {
-    statusRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-last-signal-row">
-        <span>최근신호</span>
-        <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
-      </div>
-    `);
-  }
-}
-
-if (lastSignalPriceEl && state.lastSignalPrice) {
-  lastSignalPriceEl.textContent = `${formatNumber(state.lastSignalPrice)}원`;
-} else if (!lastSignalPriceRowEl && state.lastSignalPrice) {
-  const signalRow = card.querySelector(".hold-last-signal-row");
-
-  if (signalRow) {
-    signalRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-last-signal-price-row">
-        <span>신호가격</span>
-        <strong class="hold-last-signal-price">${formatNumber(state.lastSignalPrice)}원</strong>
-      </div>
-    `);
-  }
-}
-
-if (partialSellValueEl && state.lastSoldQty) {
-  partialSellValueEl.textContent =
-    `${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주`;
-}
-
-if (!partialSellRowEl && state.lastSoldQty) {
-  const priceRow = card.querySelector(".hold-last-signal-price-row");
-
-  if (priceRow) {
-    priceRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-partial-sell-row">
-        <span>분할매도</span>
-       <strong class="hold-partial-sell-value">
-  ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
-</strong>
-      </div>
-    `);
-  }
-}
-
+  
 const lastActionText =
   state.lastAction === "SELL"
     ? "1차매도"
@@ -1475,6 +1426,63 @@ if (lastActionValueEl && state.lastAction && state.lastAction !== "NONE") {
     `);
   }
 }
+
+ if (lastSignalTimeEl && state.lastSignalTime) {
+  lastSignalTimeEl.textContent = state.lastSignalTime;
+} else if (!lastSignalRowEl && state.lastSignalTime) {
+  const actionRow =
+  card.querySelector(".hold-last-action-row") ||
+  card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+
+  if (actionRow) {
+  actionRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-last-signal-row">
+        <span>최근신호</span>
+        <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
+      </div>
+    `);
+  }
+}
+
+if (lastSignalPriceEl && state.lastSignalPrice) {
+  lastSignalPriceEl.textContent = `${formatNumber(state.lastSignalPrice)}원`;
+} else if (!lastSignalPriceRowEl && state.lastSignalPrice) {
+  const signalRow = card.querySelector(".hold-last-signal-row");
+
+  if (signalRow) {
+    signalRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-last-signal-price-row">
+        <span>신호가격</span>
+        <strong class="hold-last-signal-price">${formatNumber(state.lastSignalPrice)}원</strong>
+      </div>
+    `);
+  }
+}
+
+if (partialSellValueEl && state.lastSoldQty) {
+  partialSellValueEl.textContent =
+    `${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주`;
+}
+
+if (!partialSellRowEl && state.lastSoldQty) {
+  const baseRow =
+    card.querySelector(".hold-last-signal-price-row") ||
+    card.querySelector(".hold-last-signal-row") ||
+    card.querySelector(".hold-last-action-row") ||
+    card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+
+  if (baseRow) {
+    baseRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-partial-sell-row">
+        <span>분할매도</span>
+        <strong class="hold-partial-sell-value">
+          ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
+        </strong>
+      </div>
+    `);
+  }
+}
+
 
   return true;
 }
@@ -1762,7 +1770,7 @@ ${item.trailingStopRate ? `
           ${state.lastAction && state.lastAction !== "NONE" ? `
   <div class="hold-row hold-last-action-row">
     <span>최근액션</span>
-    <strong class="${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
+    <strong class="hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
       ${
         state.lastAction === "SELL"
           ? "1차매도"
