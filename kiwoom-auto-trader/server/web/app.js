@@ -725,6 +725,7 @@ const holdList = document.getElementById("holdList");
 const emergencyStopBtn = document.getElementById("emergencyStopBtn");
 
 const tradeLogList = document.getElementById("tradeLogList");
+const clearTradeLogBtn = document.getElementById("clearTradeLogBtn");
 
 const TRADE_LOG_KEY = "kiwoom_virtual_trade_logs";
 let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
@@ -1428,7 +1429,7 @@ if (!partialSellRowEl && state.lastSoldQty) {
     priceRow.insertAdjacentHTML("afterend", `
       <div class="hold-row hold-partial-sell-row">
         <span>분할매도</span>
-        <strong class="hold-partial-sell-value">
+       <strong class="hold-partial-sell-value">
   ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
 </strong>
       </div>
@@ -1459,6 +1460,34 @@ function bindHoldItemEvents() {
       holdings = holdings.map((item) => {
         if (item.code === code) {
   const nextAutoTrade = !item.autoTrade;
+
+  if (nextAutoTrade) {
+  if (
+    !item.targetPrice &&
+    !item.secondTargetPrice &&
+    !item.stopLossPrice &&
+    !item.trailingStopRate
+  ) {
+    alert(
+      "자동매매 조건이 없습니다.\n\n목표가, 2차 목표가, 손절가, 트레일링스탑 중 하나 이상을 입력하세요."
+    );
+
+    return item;
+  }
+
+  const ok = confirm(
+    `${item.code} 자동매매를 켤까요?\n\n` +
+    `조건 도달 시 가상매도가 실행됩니다.\n\n` +
+    `${item.targetPrice ? `목표가: ${formatNumber(item.targetPrice)}원\n` : ""}` +
+    `${item.secondTargetPrice ? `2차 목표가: ${formatNumber(item.secondTargetPrice)}원\n` : ""}` +
+    `${item.stopLossPrice ? `손절가: ${formatNumber(item.stopLossPrice)}원\n` : ""}` +
+    `${item.trailingStopRate ? `트레일링스탑: ${item.trailingStopRate}%\n` : ""}`
+  );
+
+  if (!ok) {
+    return item;
+  }
+}
 
   strategyStates[code] = {
   status: "WAITING",
@@ -1944,5 +1973,21 @@ saveHoldings();
 renderHoldings();
 
     alert("전체 종목 자동매매가 중지되었습니다.");
+  });
+}
+
+if (clearTradeLogBtn) {
+  clearTradeLogBtn.addEventListener("click", () => {
+    const ok = confirm(
+      "매매 신호 로그를 모두 삭제할까요?\n\n보유종목은 삭제되지 않습니다."
+    );
+
+    if (!ok) return;
+
+    tradeLogs = [];
+    saveTradeLogs();
+    renderTradeLogs();
+
+    alert("매매 신호 로그가 삭제되었습니다.");
   });
 }
