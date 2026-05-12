@@ -275,6 +275,54 @@ function renderWatchItem(item) {
   `;
 }
 
+function updateWatchItemOnly(item) {
+  const card = document.querySelector(`.watch-item[data-code="${item.code}"]`);
+
+  if (!card) return false;
+
+  const rateClass = getRateClass(item.changeRate);
+
+  const priceEl = card.querySelector(".watch-price");
+  const rateEl = card.querySelector(".rate");
+  const bottomEls = card.querySelectorAll(".watch-bottom span");
+
+  const prevPrice = previousPrices[item.code];
+
+  card.classList.remove("flash-up", "flash-down");
+
+  if (prevPrice !== undefined) {
+    if (item.currentPrice > prevPrice) {
+      card.classList.add("flash-up");
+    } else if (item.currentPrice < prevPrice) {
+      card.classList.add("flash-down");
+    }
+  }
+
+  previousPrices[item.code] = item.currentPrice;
+
+  priceEl.className = `watch-price ${rateClass}`;
+  priceEl.textContent = `${formatNumber(item.currentPrice)}원`;
+
+  rateEl.className = `rate ${rateClass}`;
+  rateEl.style.textAlign = "right";
+  rateEl.style.fontSize = "15px";
+  rateEl.textContent = item.changeRate;
+
+  if (bottomEls[0]) {
+    bottomEls[0].textContent = `고가 ${formatNumber(item.high)}`;
+  }
+
+  if (bottomEls[1]) {
+    bottomEls[1].textContent = `거래량 ${formatNumber(item.volume)}`;
+  }
+
+  setTimeout(() => {
+    card.classList.remove("flash-up", "flash-down");
+  }, 700);
+
+  return true;
+}
+
 async function loadWatchList(silent = false) {
   if (!silent) {
     watchList.innerHTML = `<div class="loading">관심종목 조회 중...</div>`;
@@ -313,27 +361,16 @@ if (currentSortType === "price") {
   sortedData.sort((a, b) => b.currentPrice - a.currentPrice);
 }
 
-watchList.innerHTML =
-  sortedData.map(renderWatchItem).join("");
+const hasCards = document.querySelectorAll(".watch-item").length > 0;
 
-    document.querySelectorAll(".watch-item").forEach((el) => {
-  el.addEventListener("click", () => {
-    stockCodeInput.value = el.dataset.code;
-    searchStock();
-    
+if (silent && hasCards && currentSortType === "default") {
+  sortedData.forEach((item) => {
+    updateWatchItemOnly(item);
   });
-});
-
-document.querySelectorAll(".watch-remove").forEach((btn) => {
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-
-    const code = btn.dataset.removeCode;
-    watchCodes = watchCodes.filter((item) => item !== code);
-    saveWatchCodes();
-    loadWatchList();
-  });
-});
+} else {
+  watchList.innerHTML = sortedData.map(renderWatchItem).join("");
+  bindWatchItemEvents();
+}
 
   } catch (error) {
     watchList.innerHTML = `
