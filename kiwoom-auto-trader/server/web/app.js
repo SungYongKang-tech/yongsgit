@@ -280,12 +280,14 @@ function updateWatchItemOnly(item) {
 
   if (!card) return false;
 
-  const rateClass = getRateClass(item.changeRate);
-
   const priceEl = card.querySelector(".watch-price");
   const rateEl = card.querySelector(".rate");
   const bottomEls = card.querySelectorAll(".watch-bottom span");
 
+  if (!priceEl || !rateEl) {
+    return false;
+  }
+  
   const prevPrice = previousPrices[item.code];
 
   card.classList.remove("flash-up", "flash-down");
@@ -364,9 +366,20 @@ if (currentSortType === "price") {
 const hasCards = document.querySelectorAll(".watch-item").length > 0;
 
 if (silent && hasCards && currentSortType === "default") {
+  let updateSuccess = true;
+
   sortedData.forEach((item) => {
-    updateWatchItemOnly(item);
+    const ok = updateWatchItemOnly(item);
+
+    if (!ok) {
+      updateSuccess = false;
+    }
   });
+
+  if (!updateSuccess) {
+    watchList.innerHTML = sortedData.map(renderWatchItem).join("");
+    bindWatchItemEvents();
+  }
 } else {
   watchList.innerHTML = sortedData.map(renderWatchItem).join("");
   bindWatchItemEvents();
