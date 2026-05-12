@@ -441,18 +441,24 @@ async function refreshWithoutJump() {
 
 async function startAutoRefresh() {
   if (autoRefreshTimer) {
-    clearInterval(autoRefreshTimer);
+    clearTimeout(autoRefreshTimer);
   }
 
   isAutoRefresh = true;
   autoRefreshBtn.textContent = "자동ON";
   autoRefreshBtn.classList.add("active");
 
-  await refreshWithoutJump();
+  async function runRefreshLoop() {
+    if (!isAutoRefresh) return;
 
-autoRefreshTimer = setInterval(async () => {
-  await refreshWithoutJump();
-}, 5000);
+    await refreshWithoutJump();
+
+    autoRefreshTimer = setTimeout(() => {
+      runRefreshLoop();
+    }, getRefreshInterval());
+  }
+
+  runRefreshLoop();
 }
 
 function stopAutoRefresh() {
@@ -461,7 +467,7 @@ function stopAutoRefresh() {
   autoRefreshBtn.classList.remove("active");
 
   if (autoRefreshTimer) {
-    clearInterval(autoRefreshTimer);
+    clearTimeout(autoRefreshTimer);
     autoRefreshTimer = null;
   }
 }
@@ -622,6 +628,14 @@ function isMarketOpenNow() {
   const marketClose = 15 * 60 + 30; // 15:30
 
   return currentMinutes >= marketOpen && currentMinutes <= marketClose;
+}
+
+function getRefreshInterval() {
+  if (isMarketOpenNow()) {
+    return 5000; // 장중: 5초
+  }
+
+  return 30000; // 장외/휴장: 30초
 }
 
 function addTradeLog({ type, code, name, price, reason }) {
