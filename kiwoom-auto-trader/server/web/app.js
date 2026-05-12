@@ -208,11 +208,14 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
 ];
 
 const ALERT_RATE_KEY = "kiwoom_alert_rate";
+const TEST_MODE_KEY = "kiwoom_test_mode";
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 alertRateInput.value = alertRate;
 
 let currentSortType = "default";
+let isTestMode =
+  localStorage.getItem(TEST_MODE_KEY) === "true";
 let currentHoldSortType = "default";
 
 let previousPrices = {};
@@ -429,6 +432,7 @@ if (silent && hasCards && currentSortType === "default") {
 
 
 const autoRefreshBtn = document.getElementById("autoRefreshBtn");
+const testModeBtn = document.getElementById("testModeBtn");
 
 let autoRefreshTimer = null;
 let isAutoRefresh = false;
@@ -500,6 +504,14 @@ function stopAutoRefresh() {
     autoRefreshTimer = null;
   }
 }
+function updateTestModeUI() {
+  if (!testModeBtn) return;
+
+  testModeBtn.textContent =
+    isTestMode ? "테스트ON" : "테스트OFF";
+
+  testModeBtn.classList.toggle("active", isTestMode);
+}
 
 loadWatchBtn.addEventListener("click", () => {
   manualRefresh();
@@ -512,6 +524,25 @@ autoRefreshBtn.addEventListener("click", () => {
     startAutoRefresh();
   }
 });
+
+if (testModeBtn) {
+  testModeBtn.addEventListener("click", () => {
+    isTestMode = !isTestMode;
+
+    localStorage.setItem(
+      TEST_MODE_KEY,
+      String(isTestMode)
+    );
+
+    updateTestModeUI();
+
+    alert(
+      isTestMode
+        ? "테스트모드 ON (장외 자동매매 허용)"
+        : "테스트모드 OFF"
+    );
+  });
+}
 
 function addWatchCode() {
   const inputValue = addStockCodeInput.value.trim();
@@ -837,10 +868,10 @@ function processStrategyResult(item, strategyResult) {
   return;
 }
 
-  if (!isMarketOpenNow()) {
-    console.warn("장 운영시간이 아니므로 매매 실행을 하지 않습니다.");
-    return;
-  }
+if (!isMarketOpenNow() && !isTestMode) {
+  console.warn("장 운영시간이 아니므로 매매 실행을 하지 않습니다.");
+  return;
+}
 
   updateStrategySignalState(
   item.code,
@@ -873,7 +904,7 @@ function addTradeLog({ type, code, name, price, reason }) {
 
 if (alreadyLogged) return;
 
-if (!isMarketOpenNow()) {
+if (!isMarketOpenNow() && !isTestMode) {
   console.warn("장 운영시간이 아니므로 거래 신호를 기록하지 않습니다.");
   return;
 }
@@ -1483,6 +1514,7 @@ holdQtyInput.addEventListener("keydown", (e) => {
 loadWatchList();
 renderHoldings();
 renderTradeLogs();
+updateTestModeUI();
 
 const sortButtons = document.querySelectorAll(".sort-btn");
 
