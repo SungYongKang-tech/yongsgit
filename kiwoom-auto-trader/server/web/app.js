@@ -1302,6 +1302,7 @@ function updateHoldingItemOnly(item) {
   const evalAmountEl = card.querySelector(".hold-eval-amount");
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
   const autoStatusEl = card.querySelector(".hold-auto-status");
+  const autoBtnEl = card.querySelector(".hold-auto");
   const lastSignalTimeEl = card.querySelector(".hold-last-signal-time");
   const lastSignalRowEl = card.querySelector(".hold-last-signal-row");
   const lastSignalPriceEl = card.querySelector(".hold-last-signal-price");
@@ -1342,6 +1343,10 @@ card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
   if (autoStatusEl) {
   autoStatusEl.className = `hold-auto-status ${item.autoTrade ? "up" : ""}`;
   autoStatusEl.textContent = item.autoTrade ? "ON" : "OFF";
+}
+if (autoBtnEl) {
+  autoBtnEl.classList.toggle("active", Boolean(item.autoTrade));
+  autoBtnEl.textContent = item.autoTrade ? "자동ON" : "자동OFF";
 }
 
   const targetStatusEl = card.querySelector(".hold-target-status");
@@ -1569,7 +1574,8 @@ async function renderHoldings(silent = false) {
     const totalEvalForWeight = calculatedHoldings.reduce((sum, item) => {
       return sum + item.evalAmount;
     }, 0);
-
+    
+    let needFullRender = false;
     const rendered = calculatedHoldings.map((item) => {
       totalBuyAmount += item.buyAmount;
       totalEvalAmount += item.evalAmount;
@@ -1585,7 +1591,17 @@ async function renderHoldings(silent = false) {
   item.currentPrice <= item.stopLossPrice;
      updateHighestPrice(item);
       const strategyResult = evaluateStrategy(item);
-      processStrategyResult(item, strategyResult);
+
+if (
+  strategyResult.action === "SELL" ||
+  strategyResult.action === "SELL_ALL" ||
+  strategyResult.action === "SELL_TRAILING" ||
+  strategyResult.action === "STOP_LOSS"
+) {
+  needFullRender = true;
+}
+
+processStrategyResult(item, strategyResult);
 
       const state = getStrategyState(item.code);
       const strategyStatusText = getStrategyStatusText(state.status);
@@ -1728,7 +1744,7 @@ ${state.lastSoldQty ? `
 
     const hasHoldCards = document.querySelectorAll(".hold-item").length > 0;
 
-    if (silent && hasHoldCards && currentHoldSortType === "default") {
+    if (silent && hasHoldCards && currentHoldSortType === "default" && !needFullRender) {
       let updateSuccess = true;
 
       calculatedHoldings.forEach((item) => {
