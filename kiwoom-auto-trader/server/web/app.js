@@ -1314,6 +1314,8 @@ function updateHoldingItemOnly(item) {
   const partialSellValueEl = card.querySelector(".hold-partial-sell-value");
   const lastActionRowEl =
   card.querySelector(".hold-last-action-row");
+  const lastActionValueEl =
+  card.querySelector(".hold-last-action-value");
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
@@ -1440,7 +1442,25 @@ if (!partialSellRowEl && state.lastSoldQty) {
   }
 }
 
-if (!lastActionRowEl && state.lastAction && state.lastAction !== "NONE") {
+const lastActionText =
+  state.lastAction === "SELL"
+    ? "1차매도"
+    : state.lastAction === "SELL_ALL"
+    ? "2차매도"
+    : state.lastAction === "SELL_TRAILING"
+    ? "트레일링매도"
+    : state.lastAction === "STOP_LOSS"
+    ? "손절매도"
+    : state.lastAction;
+
+if (lastActionValueEl && state.lastAction && state.lastAction !== "NONE") {
+  lastActionValueEl.className =
+    `hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}`;
+
+  lastActionValueEl.textContent = lastActionText;
+
+} else if (!lastActionRowEl && state.lastAction && state.lastAction !== "NONE") {
+
   const strategyRow =
     card.querySelector(".hold-strategy-status")?.closest(".hold-row");
 
@@ -1448,18 +1468,8 @@ if (!lastActionRowEl && state.lastAction && state.lastAction !== "NONE") {
     strategyRow.insertAdjacentHTML("afterend", `
       <div class="hold-row hold-last-action-row">
         <span>최근액션</span>
-        <strong class="${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
-          ${
-            state.lastAction === "SELL"
-              ? "1차매도"
-              : state.lastAction === "SELL_ALL"
-              ? "2차매도"
-              : state.lastAction === "SELL_TRAILING"
-              ? "트레일링매도"
-              : state.lastAction === "STOP_LOSS"
-              ? "손절매도"
-              : state.lastAction
-          }
+        <strong class="hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
+          ${lastActionText}
         </strong>
       </div>
     `);
@@ -1785,9 +1795,9 @@ ${state.lastSignalPrice ? `
 ${state.lastSoldQty ? `
   <div class="hold-row hold-partial-sell-row">
     <span>분할매도</span>
-    <strong>
-      ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
-    </strong>
+    <strong class="hold-partial-sell-value">
+  ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
+</strong>
   </div>
 ` : ""}
 
