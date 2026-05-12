@@ -36,6 +36,20 @@ function formatNumber(value) {
   return Number(value).toLocaleString("ko-KR");
 }
 
+function flashValue(el, type) {
+  if (!el) return;
+
+  el.classList.remove("value-flash-up", "value-flash-down");
+
+  void el.offsetWidth;
+
+  el.classList.add(type === "up" ? "value-flash-up" : "value-flash-down");
+
+  setTimeout(() => {
+    el.classList.remove("value-flash-up", "value-flash-down");
+  }, 700);
+}
+
 function getRateClass(rateText) {
   if (!rateText) return "";
   if (String(rateText).startsWith("-")) return "down";
@@ -311,15 +325,15 @@ function updateWatchItemOnly(item) {
   const rateClass = getRateClass(item.changeRate);
   const prevPrice = previousPrices[item.code];
 
-  card.classList.remove("flash-up", "flash-down");
+  
 
   if (prevPrice !== undefined) {
-    if (item.currentPrice > prevPrice) {
-      card.classList.add("flash-up");
-    } else if (item.currentPrice < prevPrice) {
-      card.classList.add("flash-down");
-    }
+  if (item.currentPrice > prevPrice) {
+    flashValue(priceEl, "up");
+  } else if (item.currentPrice < prevPrice) {
+    flashValue(priceEl, "down");
   }
+}
 
   previousPrices[item.code] = item.currentPrice;
 
@@ -339,10 +353,7 @@ function updateWatchItemOnly(item) {
     bottomEls[1].textContent = `거래량 ${formatNumber(item.volume)}`;
   }
 
-  setTimeout(() => {
-    card.classList.remove("flash-up", "flash-down");
-  }, 700);
-
+ 
   return true;
 }
 
@@ -736,6 +747,7 @@ function renderHoldRankBox(items) {
 }
 
 function updateHoldingItemOnly(item) {
+ 
   const card = document.querySelector(`.hold-item[data-code="${item.code}"]`);
 
   if (!card) return false;
@@ -748,6 +760,20 @@ function updateHoldingItemOnly(item) {
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
   }
+
+  const prevPrice = previousHoldPrices[item.code];
+
+if (prevPrice !== undefined) {
+  if (item.currentPrice > prevPrice) {
+    flashValue(currentPriceEl, "up");
+    flashValue(profitEl, "up");
+    flashValue(rateEl, "up");
+  } else if (item.currentPrice < prevPrice) {
+    flashValue(currentPriceEl, "down");
+    flashValue(profitEl, "down");
+    flashValue(rateEl, "down");
+  }
+}
 
   const profitClass = item.profit >= 0 ? "up" : "down";
 
