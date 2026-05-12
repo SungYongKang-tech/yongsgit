@@ -567,6 +567,15 @@ const TRADE_COOLDOWN_MINUTES = 3;
 
 const HOLD_STORAGE_KEY = "kiwoom_holdings";
 
+const STRATEGY_STATE_KEY = "kiwoom_strategy_states";
+
+let strategyStates =
+  JSON.parse(localStorage.getItem(STRATEGY_STATE_KEY)) || {};
+
+function saveStrategyStates() {
+  localStorage.setItem(STRATEGY_STATE_KEY, JSON.stringify(strategyStates));
+}
+
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
 
 function saveHoldings() {
@@ -666,6 +675,62 @@ function getRefreshInterval() {
   return 30000; // 장외/휴장: 30초
 }
 
+function getStrategyState(code) {
+  if (!strategyStates[code]) {
+    strategyStates[code] = {
+      status: "WAITING",
+      lastAction: "NONE",
+      lastSignalTime: null
+    };
+  }
+
+  return strategyStates[code];
+}
+
+function evaluateStrategy(item) {
+  const state = getStrategyState(item.code);
+  const isTargetHit =
+    item.targetPrice &&
+    item.currentPrice >= item.targetPrice;
+
+  const isStopLossHit =
+    item.stopLossPrice &&
+    item.currentPrice <= item.stopLossPrice;
+
+    if (state.status === "SOLD") {
+  return {
+    action: "NONE",
+    reason: "이미 매도 완료"
+  };
+}
+
+  if (!item.autoTrade) {
+    return {
+      action: "NONE",
+      reason: "자동매매 OFF"
+    };
+  }
+
+  if (isTargetHit) {
+    return {
+      action: "SELL",
+      reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
+    };
+  }
+
+  if (isStopLossHit) {
+    return {
+      action: "STOP_LOSS",
+      reason: `자동매매ON · 손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
+    };
+  }
+
+  return {
+    action: "HOLD",
+    reason: "조건 미충족"
+  };
+}
+
 function addTradeLog({ type, code, name, price, reason }) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -729,6 +794,14 @@ function executeVirtualSell(code) {
   holdings = holdings.filter((item) => item.qty > 0);
 
   saveHoldings();
+
+  strategyStates[code] = {
+    status: "SOLD",
+    lastAction: "SELL",
+    lastSignalTime: new Date().toLocaleString("ko-KR")
+  };
+
+  saveStrategyStates();
 }
 
 
@@ -981,25 +1054,27 @@ const isStopLossHit =
  item.stopLossPrice &&
  item.currentPrice <= item.stopLossPrice;
 
-if (item.autoTrade && isTargetHit) {
+const strategyResult = evaluateStrategy(item);
+
+if (strategyResult.action === "SELL") {
   addTradeLog({
     type: "SELL",
     code: item.code,
     name: item.name,
     price: item.currentPrice,
-    reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
+    reason: strategyResult.reason
   });
 
   executeVirtualSell(item.code);
 }
 
-if (item.autoTrade && isStopLossHit) {
+if (strategyResult.action === "STOP_LOSS") {
   addTradeLog({
     type: "STOP_LOSS",
     code: item.code,
     name: item.name,
     price: item.currentPrice,
-    reason: `자동매매ON · 손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
+    reason: strategyResult.reason
   });
 
   executeVirtualSell(item.code);
