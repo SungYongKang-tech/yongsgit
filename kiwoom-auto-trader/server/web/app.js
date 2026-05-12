@@ -1303,6 +1303,9 @@ function updateHoldingItemOnly(item) {
   const rateEl = card.querySelector(".hold-profit-rate");
   const currentPriceEl = card.querySelector(".hold-current-price");
   const evalAmountEl = card.querySelector(".hold-eval-amount");
+  const buyAmountEl = card.querySelector(".hold-buy-amount");
+  const qtyEl = card.querySelector(".hold-qty");
+  const weightRateEl = card.querySelector(".hold-weight-rate");
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
   const autoStatusEl = card.querySelector(".hold-auto-status");
   const autoBtnEl = card.querySelector(".hold-auto");
@@ -1346,6 +1349,15 @@ card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
 
   currentPriceEl.textContent = formatNumber(item.currentPrice);
   evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
+  if (buyAmountEl) {
+  buyAmountEl.textContent = `${formatNumber(item.buyAmount)}원`;
+}
+  if (qtyEl) {
+  qtyEl.textContent = `${formatNumber(item.qty)}주`;
+}
+if (weightRateEl && item.weightRate !== undefined) {
+  weightRateEl.textContent = `${item.weightRate.toFixed(1)}%`;
+}
   if (autoStatusEl) {
   autoStatusEl.className = `hold-auto-status ${item.autoTrade ? "up" : ""}`;
   autoStatusEl.textContent = item.autoTrade ? "ON" : "OFF";
@@ -1684,7 +1696,7 @@ processStrategyResult(item, strategyResult);
 
       const weightRate =
         totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
-
+       item.weightRate = weightRate;
       return `
         <div class="hold-item ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}" data-code="${item.code}">
           <div class="hold-top">
@@ -1708,13 +1720,19 @@ processStrategyResult(item, strategyResult);
           </div>
 
           <div class="hold-row">
-            <span>수량 ${formatNumber(item.qty)}주</span>
+            <span>수량 <strong class="hold-qty">${formatNumber(item.qty)}주</strong></span>
             <span>평가금액 <strong class="hold-eval-amount">${formatNumber(item.evalAmount)}원</strong></span>
           </div>
 
           <div class="hold-row">
+  <span>매수금액</span>
+  <strong class="hold-buy-amount">${formatNumber(item.buyAmount)}원</strong>
+</div>
+
+
+          <div class="hold-row">
             <span>보유비중</span>
-            <strong>${weightRate.toFixed(1)}%</strong>
+            <strong class="hold-weight-rate">${weightRate.toFixed(1)}%</strong>
           </div>
 
           ${item.targetPrice ? `
