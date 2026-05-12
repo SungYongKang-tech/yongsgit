@@ -634,12 +634,14 @@ function renderTradeLogs() {
     .reverse()
     .map((log) => `
       <div class="trade-log-item">
-        <strong class="${log.type === "SELL" || log.type === "SELL_ALL" ? "up" : "down"}">
+        <strong class="${log.type === "SELL" || log.type === "SELL_ALL" || log.type === "SELL_TRAILING" ? "up" : "down"}">
           ${
   log.type === "SELL"
   ? "1차매도"
   : log.type === "SELL_ALL"
   ? "2차매도"
+  : log.type === "SELL_TRAILING"
+  ? "트레일링매도"
     : log.type === "STOP_LOSS"
     ? "가상손절"
     : "가상매수"
@@ -768,7 +770,7 @@ function checkSecondTargetSell(item) {
     item.currentPrice >= item.secondTargetPrice
   ) {
     return {
-      action: "SELL_ALL",
+      action: "SELL_TRAILING",
       reason: `자동매매ON · 2차 목표가 ${formatNumber(item.secondTargetPrice)}원 도달`
     };
   }
@@ -893,6 +895,15 @@ function updateStrategySignalState(code, action, price) {
   };
 }
 
+if (action === "SELL_TRAILING") {
+  strategyStates[code] = {
+    status: "SELL_SIGNAL",
+    lastAction: "SELL_TRAILING",
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: price
+  };
+}
+
   if (action === "STOP_LOSS") {
     strategyStates[code] = {
       status: "STOP_SIGNAL",
@@ -909,6 +920,7 @@ function processStrategyResult(item, strategyResult) {
  if (
   strategyResult.action !== "SELL" &&
   strategyResult.action !== "SELL_ALL" &&
+  strategyResult.action !== "SELL_TRAILING" &&
   strategyResult.action !== "STOP_LOSS"
 ) {
   return;
@@ -1004,7 +1016,11 @@ function executeVirtualSell(code, actionType = "SELL") {
     }
 
     // 손절은 전량매도
-    if (actionType === "STOP_LOSS" || actionType === "SELL_ALL") {
+    if (
+  actionType === "STOP_LOSS" ||
+  actionType === "SELL_ALL" ||
+  actionType === "SELL_TRAILING"
+) {
       soldQty = item.qty;
       remainQty = 0;
 
