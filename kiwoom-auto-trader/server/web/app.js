@@ -25,6 +25,12 @@ const saveTradeTimeBtn =
 
 const TRADE_TIME_KEY = "kiwoom_trade_time";
 
+const volumeThresholdInput =
+  document.getElementById("volumeThresholdInput");
+
+const saveVolumeThresholdBtn =
+  document.getElementById("saveVolumeThresholdBtn");
+
 
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
@@ -76,6 +82,38 @@ if (tradeEndTimeInput) {
     );
 
     alert("자동매매 가능 시간이 저장되었습니다.");
+  });
+}
+
+const VOLUME_THRESHOLD_KEY =
+  "kiwoom_volume_threshold";
+
+  let volumeThreshold =
+  Number(localStorage.getItem(VOLUME_THRESHOLD_KEY)) || 1000000;
+
+if (volumeThresholdInput) {
+  volumeThresholdInput.value = volumeThreshold;
+}
+
+if (saveVolumeThresholdBtn) {
+  saveVolumeThresholdBtn.addEventListener("click", () => {
+
+    const value =
+      Number(volumeThresholdInput.value);
+
+    if (isNaN(value) || value <= 0) {
+      alert("거래량 기준을 입력하세요.");
+      return;
+    }
+
+    volumeThreshold = value;
+
+    localStorage.setItem(
+      VOLUME_THRESHOLD_KEY,
+      String(volumeThreshold)
+    );
+
+    loadWatchList();
   });
 }
 
@@ -260,7 +298,9 @@ const TEST_MODE_KEY = "kiwoom_test_mode";
 const ENTRY_RATE_KEY = "kiwoom_entry_rate";
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
-alertRateInput.value = alertRate;
+if (alertRateInput) {
+  alertRateInput.value = alertRate;
+}
 
 let entryRate = Number(localStorage.getItem(ENTRY_RATE_KEY)) || 3;
 
@@ -328,6 +368,11 @@ function renderEntryBox(items) {
 
 function renderWatchItem(item) {
   const rateClass = getRateClass(item.changeRate);
+  const rateValue = parseFloat(item.changeRate);
+  const isEntryCandidate =
+  !isNaN(rateValue) && rateValue >= entryRate;
+  const isVolumeHot =
+  Number(item.volume) >= volumeThreshold;
 
   const prevPrice = previousPrices[item.code];
   let flashClass = "";
@@ -346,8 +391,12 @@ function renderWatchItem(item) {
     <div class="watch-item ${flashClass}" data-code="${item.code}">
       <div class="watch-item-top">
         <div>
-          <div class="watch-name">${item.name}</div>
-          <div class="watch-code">${item.code}</div>
+          <div class="watch-name">
+  ${item.name}
+  ${isEntryCandidate ? `<span class="entry-badge">진입후보</span>` : ""}
+  ${isVolumeHot ? `<span class="volume-badge">거래량급증</span>` : ""}
+  </div>
+<div class="watch-code">${item.code}</div>
         </div>
         <div>
           <div class="watch-price ${rateClass}">
