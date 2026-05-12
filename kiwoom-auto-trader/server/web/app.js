@@ -11,6 +11,17 @@ const alertBox = document.getElementById("alertBox");
 
 const testModeBanner = document.getElementById("testModeBanner");
 
+const tradeStartTimeInput =
+  document.getElementById("tradeStartTime");
+
+const tradeEndTimeInput =
+  document.getElementById("tradeEndTime");
+
+const saveTradeTimeBtn =
+  document.getElementById("saveTradeTimeBtn");
+
+const TRADE_TIME_KEY = "kiwoom_trade_time";
+
 
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
@@ -32,6 +43,38 @@ const STOCK_MASTER = [
   { code: "247540", name: "에코프로비엠" },
   { code: "086520", name: "에코프로" }
 ];
+
+let tradeTimeSetting =
+  JSON.parse(localStorage.getItem(TRADE_TIME_KEY)) || {
+    start: "09:00",
+    end: "15:30"
+  };
+
+if (tradeStartTimeInput) {
+  tradeStartTimeInput.value =
+    tradeTimeSetting.start;
+}
+
+if (tradeEndTimeInput) {
+  tradeEndTimeInput.value =
+    tradeTimeSetting.end;
+}
+
+  if (saveTradeTimeBtn) {
+  saveTradeTimeBtn.addEventListener("click", () => {
+    tradeTimeSetting = {
+      start: tradeStartTimeInput.value,
+      end: tradeEndTimeInput.value
+    };
+
+    localStorage.setItem(
+      TRADE_TIME_KEY,
+      JSON.stringify(tradeTimeSetting)
+    );
+
+    alert("자동매매 가능 시간이 저장되었습니다.");
+  });
+}
 
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
@@ -709,8 +752,17 @@ function isMarketOpenNow() {
   const minute = now.getMinutes();
   const currentMinutes = hour * 60 + minute;
 
-  const marketOpen = 9 * 60;       // 09:00
-  const marketClose = 15 * 60 + 30; // 15:30
+ const [startHour, startMinute] =
+  tradeTimeSetting.start.split(":").map(Number);
+
+const [endHour, endMinute] =
+  tradeTimeSetting.end.split(":").map(Number);
+
+const marketOpen =
+  startHour * 60 + startMinute;
+
+const marketClose =
+  endHour * 60 + endMinute;
 
   return currentMinutes >= marketOpen && currentMinutes <= marketClose;
 }
