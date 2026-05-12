@@ -8,6 +8,9 @@ const suggestList = document.getElementById("suggestList");
 const alertRateInput = document.getElementById("alertRateInput");
 const saveAlertRateBtn = document.getElementById("saveAlertRateBtn");
 const alertBox = document.getElementById("alertBox");
+const entryRateInput = document.getElementById("entryRateInput");
+const saveEntryRateBtn = document.getElementById("saveEntryRateBtn");
+const entryBox = document.getElementById("entryBox");
 
 const testModeBanner = document.getElementById("testModeBanner");
 
@@ -254,9 +257,16 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
 
 const ALERT_RATE_KEY = "kiwoom_alert_rate";
 const TEST_MODE_KEY = "kiwoom_test_mode";
+const ENTRY_RATE_KEY = "kiwoom_entry_rate";
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 alertRateInput.value = alertRate;
+
+let entryRate = Number(localStorage.getItem(ENTRY_RATE_KEY)) || 3;
+
+if (entryRateInput) {
+  entryRateInput.value = entryRate;
+}
 
 let currentSortType = "default";
 let isTestMode =
@@ -285,6 +295,30 @@ function renderAlertBox(items) {
     <div class="alert-title">🚨 상승률 ${alertRate}% 이상 종목</div>
     ${alertItems.map((item) => `
       <div class="alert-item">
+        <strong>${item.name}</strong>
+        <span class="up">${item.changeRate}</span>
+      </div>
+    `).join("")}
+  `;
+}
+
+function renderEntryBox(items) {
+  if (!entryBox) return;
+
+  const entryItems = items.filter((item) => {
+    const rate = parseFloat(item.changeRate);
+    return !isNaN(rate) && rate >= entryRate;
+  });
+
+  if (entryItems.length === 0) {
+    entryBox.innerHTML = `<div class="empty">진입후보 종목이 없습니다.</div>`;
+    return;
+  }
+
+  entryBox.innerHTML = `
+    <div class="entry-title">🚀 진입후보 ${entryRate}% 이상</div>
+    ${entryItems.map((item) => `
+      <div class="entry-item">
         <strong>${item.name}</strong>
         <span class="up">${item.changeRate}</span>
       </div>
@@ -428,6 +462,7 @@ async function loadWatchList(silent = false) {
 
     let sortedData = [...data];
     renderAlertBox(data);
+    renderEntryBox(data);
 
 if (currentSortType === "rate") {
   sortedData.sort((a, b) =>
@@ -1684,6 +1719,22 @@ saveAlertRateBtn.addEventListener("click", () => {
 
   loadWatchList();
 });
+
+if (saveEntryRateBtn) {
+  saveEntryRateBtn.addEventListener("click", () => {
+    const value = Number(entryRateInput.value);
+
+    if (isNaN(value) || value <= 0) {
+      alert("진입후보 기준 상승률을 입력하세요.");
+      return;
+    }
+
+    entryRate = value;
+    localStorage.setItem(ENTRY_RATE_KEY, String(entryRate));
+
+    loadWatchList();
+  });
+}
 
 const holdSortButtons = document.querySelectorAll(".hold-sort-btn");
 
