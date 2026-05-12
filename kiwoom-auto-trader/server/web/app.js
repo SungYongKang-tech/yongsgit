@@ -723,6 +723,8 @@ const trailingStopRateInput =
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
 const emergencyStopBtn = document.getElementById("emergencyStopBtn");
+const resetHoldingsBtn = document.getElementById("resetHoldingsBtn");
+
 
 const tradeLogList = document.getElementById("tradeLogList");
 const clearTradeLogBtn = document.getElementById("clearTradeLogBtn");
@@ -1989,5 +1991,24 @@ if (clearTradeLogBtn) {
     renderTradeLogs();
 
     alert("매매 신호 로그가 삭제되었습니다.");
+  });
+}
+
+if (resetHoldingsBtn) {
+  resetHoldingsBtn.addEventListener("click", () => {
+    const ok = confirm(
+      "보유종목과 전략상태를 모두 초기화할까요?\n\n매매 로그는 삭제되지 않습니다."
+    );
+
+    if (!ok) return;
+
+    holdings = [];
+    strategyStates = {};
+
+    saveHoldings();
+    saveStrategyStates();
+    renderHoldings();
+
+    alert("보유종목과 전략상태가 초기화되었습니다.");
   });
 }
