@@ -1089,11 +1089,24 @@ if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
   return;
 }
 
+if (
+  isAlreadyLoggedToday({
+    type: strategyResult.action,
+    code: item.code,
+    reason: strategyResult.reason
+  })
+) {
+  console.warn("이미 오늘 기록된 신호입니다.");
+  return;
+}
+
   updateStrategySignalState(
   item.code,
   strategyResult.action,
   item.currentPrice
 );
+
+
 
   executeVirtualSell(item.code, strategyResult.action);
 
@@ -1104,6 +1117,19 @@ addTradeLog({
   price: item.currentPrice,
   reason: strategyResult.reason
 });
+}
+
+function isAlreadyLoggedToday({ type, code, reason }) {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  return tradeLogs.some((log) => {
+    return (
+      log.date === todayKey &&
+      log.type === type &&
+      log.code === code &&
+      log.reason === reason
+    );
+  });
 }
 
 function addTradeLog({ type, code, name, price, reason }) {
@@ -1286,6 +1312,17 @@ function updateHoldingItemOnly(item) {
   }
 
   const profitClass = item.profit >= 0 ? "up" : "down";
+
+  const isTargetHit =
+  item.targetPrice &&
+  item.currentPrice >= item.targetPrice;
+
+const isStopLossHit =
+  item.stopLossPrice &&
+  item.currentPrice <= item.stopLossPrice;
+
+card.classList.toggle("target-hit", Boolean(isTargetHit));
+card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
   profitEl.textContent =
