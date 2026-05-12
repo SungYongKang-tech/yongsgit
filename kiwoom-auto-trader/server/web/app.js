@@ -584,6 +584,8 @@ const holdQtyInput = document.getElementById("holdQty");
 const targetPriceInput = document.getElementById("targetPrice");
 const stopLossPriceInput = document.getElementById("stopLossPrice");
 const secondTargetPriceInput = document.getElementById("secondTargetPrice");
+const trailingStopRateInput =
+  document.getElementById("trailingStopRate");
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
 const emergencyStopBtn = document.getElementById("emergencyStopBtn");
@@ -774,6 +776,49 @@ function checkSecondTargetSell(item) {
   return null;
 }
 
+function updateHighestPrice(item) {
+  if (!item.trailingStopRate) return;
+
+  const currentHighest = Number(item.highestPrice || 0);
+
+  if (!currentHighest || item.currentPrice > currentHighest) {
+    holdings = holdings.map((hold) => {
+      if (hold.code !== item.code) return hold;
+
+      return {
+        ...hold,
+        highestPrice: item.currentPrice
+      };
+    });
+
+    item.highestPrice = item.currentPrice;
+    saveHoldings();
+  }
+}
+
+function checkTrailingStop(item) {
+  if (
+    !item.trailingStopRate ||
+    !item.highestPrice
+  ) {
+    return null;
+  }
+
+  const dropRate =
+    ((item.highestPrice - item.currentPrice)
+      / item.highestPrice) * 100;
+
+  if (dropRate >= item.trailingStopRate) {
+    return {
+      action: "SELL_ALL",
+      reason:
+        `트레일링스탑 ${item.trailingStopRate}% 발동`
+    };
+  }
+
+  return null;
+}
+
 function checkStopLoss(item) {
   if (
     item.stopLossPrice &&
@@ -791,9 +836,10 @@ function checkStopLoss(item) {
 // 전략 실행 순서가 우선순위입니다.
 // 위에 있는 전략이 먼저 실행됩니다.
 const STRATEGIES = [
-  checkStopLoss,          // 손절은 항상 최우선
-  checkSecondTargetSell,  // 2차 목표가 전량매도
-  checkTargetSell         // 1차 목표가 분할매도
+  checkStopLoss,
+  checkTrailingStop,
+  checkSecondTargetSell,
+  checkTargetSell
 ];
 
 function evaluateStrategy(item) {
@@ -1190,8 +1236,10 @@ function bindHoldItemEvents() {
       buyPriceInput.value = item.buyPrice;
       holdQtyInput.value = item.qty;
       targetPriceInput.value = item.targetPrice || "";
-      secondTargetPriceInput.value = item.secondTargetPrice || "";
-      stopLossPriceInput.value = item.stopLossPrice || "";
+secondTargetPriceInput.value = item.secondTargetPrice || "";
+trailingStopRateInput.value =
+  item.trailingStopRate || "";
+stopLossPriceInput.value = item.stopLossPrice || "";
 
       holdCodeInput.focus();
     });
@@ -1281,7 +1329,7 @@ async function renderHoldings(silent = false) {
     const isStopLossHit =
   item.stopLossPrice &&
   item.currentPrice <= item.stopLossPrice;
-
+     updateHighestPrice(item);
       const strategyResult = evaluateStrategy(item);
       processStrategyResult(item, strategyResult);
 
@@ -1337,6 +1385,15 @@ async function renderHoldings(silent = false) {
     <span>2차 목표가 ${formatNumber(item.secondTargetPrice)}원</span>
     <strong class="${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
       ${item.currentPrice >= item.secondTargetPrice ? "2차도달" : "대기중"}
+    </strong>
+  </div>
+` : ""}
+
+${item.trailingStopRate ? `
+  <div class="hold-row">
+    <span>트레일링 ${item.trailingStopRate}%</span>
+    <strong>
+      최고가 ${formatNumber(item.highestPrice || item.currentPrice)}
     </strong>
   </div>
 ` : ""}
@@ -1452,6 +1509,9 @@ function addHolding() {
   const buyPrice = Number(buyPriceInput.value);
   const qty = Number(holdQtyInput.value);
   const secondTargetPrice = Number(secondTargetPriceInput.value) || 0;
+  const trailingStopRate =
+  Number(trailingStopRateInput.value) || 0;
+
 
   if (!code) {
     alert("종목명 또는 종목코드를 입력하세요.");
@@ -1470,12 +1530,14 @@ function addHolding() {
 
   holdings = holdings.filter((item) => item.code !== code);
 
-  holdings.push({
+ holdings.push({
   code,
   buyPrice,
   qty,
   targetPrice,
   secondTargetPrice,
+  trailingStopRate,
+  highestPrice: 0,
   stopLossPrice,
   autoTrade: false
 });
@@ -1493,12 +1555,13 @@ saveStrategyStates();
 
 saveHoldings();
 
-  holdCodeInput.value = "";
-  buyPriceInput.value = "";
-  holdQtyInput.value = "";
-  targetPriceInput.value = "";
-  stopLossPriceInput.value = "";
-  secondTargetPriceInput.value = "";
+holdCodeInput.value = "";
+buyPriceInput.value = "";
+holdQtyInput.value = "";
+targetPriceInput.value = "";
+stopLossPriceInput.value = "";
+secondTargetPriceInput.value = "";
+trailingStopRateInput.value = "";
 
   renderHoldings();
 }
