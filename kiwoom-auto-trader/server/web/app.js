@@ -564,6 +564,7 @@ let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
 const DAILY_TRADE_LIMIT = 20;
 const DAILY_TRADE_LIMIT_PER_CODE = 3;
 const TRADE_COOLDOWN_MINUTES = 3;
+const PARTIAL_SELL_RATE = 0.5; // 50% 분할매도
 
 const HOLD_STORAGE_KEY = "kiwoom_holdings";
 
@@ -609,6 +610,8 @@ function renderTradeLogs() {
 }
         </strong>
         ${log.name} / ${formatNumber(log.price)}원
+        ${log.sellQty ? ` / 매도 ${formatNumber(log.sellQty)}주` : ""}
+        ${log.remainQty ? ` / 잔여 ${formatNumber(log.remainQty)}주` : ""}
 
         <div class="trade-log-time">
           ${log.reason} · ${log.time}
@@ -678,10 +681,13 @@ function getRefreshInterval() {
 function getStrategyState(code) {
   if (!strategyStates[code]) {
     strategyStates[code] = {
-      status: "WAITING",
-      lastAction: "NONE",
-      lastSignalTime: null
-    };
+  status: "WAITING",
+  lastAction: "NONE",
+  lastSignalTime: null,
+  lastSignalPrice: null,
+  lastSoldQty: 0,
+  remainQty: 0
+};
   }
 
   return strategyStates[code];
@@ -689,6 +695,7 @@ function getStrategyState(code) {
 
 function getStrategyStatusText(status) {
   if (status === "WAITING") return "대기중";
+  if (status === "PARTIAL_SOLD") return "1차매도완료";
   if (status === "SOLD") return "매도완료";
   if (status === "SELL_SIGNAL") return "매도신호";
   if (status === "STOP_SIGNAL") return "손절신호";
@@ -723,9 +730,11 @@ function checkStopLoss(item) {
   return null;
 }
 
+// 전략 실행 순서가 우선순위입니다.
+// 위에 있는 전략이 먼저 실행됩니다.
 const STRATEGIES = [
-  checkTargetSell,
-  checkStopLoss
+  checkTargetSell, // 1순위: 목표가 매도
+  checkStopLoss    // 2순위: 손절 매도
 ];
 
 function evaluateStrategy(item) {
@@ -737,6 +746,13 @@ function evaluateStrategy(item) {
       reason: "이미 매도 완료"
     };
   }
+
+  if (state.status === "PARTIAL_SOLD") {
+  return {
+    action: "NONE",
+    reason: "1차 분할매도 완료"
+  };
+}
 
   if (!item.autoTrade) {
     return {
@@ -759,12 +775,13 @@ function evaluateStrategy(item) {
   };
 }
 
-function updateStrategySignalState(code, action) {
+function updateStrategySignalState(code, action, price) {
   if (action === "SELL") {
     strategyStates[code] = {
       status: "SELL_SIGNAL",
       lastAction: "SELL",
-      lastSignalTime: new Date().toLocaleString("ko-KR")
+      lastSignalTime: new Date().toLocaleString("ko-KR"),
+      lastSignalPrice: price
     };
   }
 
@@ -772,7 +789,8 @@ function updateStrategySignalState(code, action) {
     strategyStates[code] = {
       status: "STOP_SIGNAL",
       lastAction: "STOP_LOSS",
-      lastSignalTime: new Date().toLocaleString("ko-KR")
+      lastSignalTime: new Date().toLocaleString("ko-KR"),
+      lastSignalPrice: price
     };
   }
 
@@ -789,7 +807,11 @@ function processStrategyResult(item, strategyResult) {
     return;
   }
 
-  updateStrategySignalState(item.code, strategyResult.action);
+  updateStrategySignalState(
+  item.code,
+  strategyResult.action,
+  item.currentPrice
+);
 
   addTradeLog({
     type: strategyResult.action,
@@ -835,23 +857,45 @@ if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
   console.warn("1일 거래 제한 도달");
   return;
 }
-  tradeLogs.push({
-    type,
-    code,
-    name,
-    price,
-    reason,
-    date: todayKey,
-    time: new Date().toLocaleString("ko-KR")
-  });
+ tradeLogs.push({
+  type,
+  code,
+  name,
+  price,
+  reason,
+  sellQty: strategyStates[code]?.lastSoldQty || 0,
+  remainQty: strategyStates[code]?.remainQty || 0,
+  date: todayKey,
+  time: new Date().toLocaleString("ko-KR")
+});
 
   saveTradeLogs();
   renderTradeLogs();
 }
 
 function executeVirtualSell(code, actionType = "SELL") {
+  let soldQty = 0;
+  let remainQty = 0;
+
   holdings = holdings.map((item) => {
-    if (item.code === code) {
+    if (item.code !== code) return item;
+
+    if (actionType === "SELL") {
+      soldQty = Math.ceil(item.qty * PARTIAL_SELL_RATE);
+      remainQty = item.qty - soldQty;
+
+      return {
+        ...item,
+        qty: remainQty,
+        autoTrade: remainQty > 0 ? item.autoTrade : false
+      };
+    }
+
+    // 손절은 전량매도
+    if (actionType === "STOP_LOSS") {
+      soldQty = item.qty;
+      remainQty = 0;
+
       return {
         ...item,
         qty: 0,
@@ -867,10 +911,13 @@ function executeVirtualSell(code, actionType = "SELL") {
   saveHoldings();
 
   strategyStates[code] = {
-  status: "SOLD",
-  lastAction: actionType,
-  lastSignalTime: new Date().toLocaleString("ko-KR")
-};
+   status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
+    lastAction: actionType,
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: strategyStates[code]?.lastSignalPrice || null,
+    lastSoldQty: soldQty,
+    remainQty: remainQty
+  };
 
   saveStrategyStates();
 }
@@ -944,6 +991,9 @@ function updateHoldingItemOnly(item) {
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
   const lastSignalTimeEl = card.querySelector(".hold-last-signal-time");
   const lastSignalRowEl = card.querySelector(".hold-last-signal-row");
+  const lastSignalPriceEl = card.querySelector(".hold-last-signal-price");
+  const lastSignalPriceRowEl = card.querySelector(".hold-last-signal-price-row");
+  const partialSellRowEl = card.querySelector(".hold-partial-sell-row");
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
@@ -986,6 +1036,33 @@ function updateHoldingItemOnly(item) {
       </div>
     `);
   }
+  if (lastSignalPriceEl && state.lastSignalPrice) {
+  lastSignalPriceEl.textContent = `${formatNumber(state.lastSignalPrice)}원`;
+} else if (!lastSignalPriceRowEl && state.lastSignalPrice) {
+  const signalRow = card.querySelector(".hold-last-signal-row");
+
+  if (signalRow) {
+    signalRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-last-signal-price-row">
+        <span>신호가격</span>
+        <strong class="hold-last-signal-price">${formatNumber(state.lastSignalPrice)}원</strong>
+      </div>
+    `);
+  }
+}
+}if (!partialSellRowEl && state.lastSoldQty) {
+  const priceRow = card.querySelector(".hold-last-signal-price-row");
+
+  if (priceRow) {
+    priceRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-partial-sell-row">
+        <span>분할매도</span>
+        <strong>
+          ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
+        </strong>
+      </div>
+    `);
+  }
 }
 
   return true;
@@ -996,6 +1073,9 @@ function bindHoldItemEvents() {
     btn.addEventListener("click", () => {
       const code = btn.dataset.holdCode;
       holdings = holdings.filter((item) => item.code !== code);
+      delete strategyStates[code];
+      saveStrategyStates();
+      
       saveHoldings();
       renderHoldings();
     });
@@ -1007,11 +1087,22 @@ function bindHoldItemEvents() {
 
       holdings = holdings.map((item) => {
         if (item.code === code) {
-          return {
-            ...item,
-            autoTrade: !item.autoTrade
-          };
-        }
+  const nextAutoTrade = !item.autoTrade;
+
+  strategyStates[code] = {
+    status: "WAITING",
+    lastAction: "NONE",
+    lastSignalTime: null,
+    lastSignalPrice: null
+  };
+
+  saveStrategyStates();
+
+  return {
+    ...item,
+    autoTrade: nextAutoTrade
+  };
+}
         return item;
       });
 
@@ -1197,10 +1288,26 @@ async function renderHoldings(silent = false) {
 
           ${state.lastSignalTime ? `
   <div class="hold-row hold-last-signal-row">
-              <span>최근신호</span>
-              <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
-            </div>
-          ` : ""}
+    <span>최근신호</span>
+    <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
+  </div>
+` : ""}
+
+${state.lastSignalPrice ? `
+  <div class="hold-row hold-last-signal-price-row">
+    <span>신호가격</span>
+    <strong class="hold-last-signal-price">${formatNumber(state.lastSignalPrice)}원</strong>
+  </div>
+` : ""}
+
+${state.lastSoldQty ? `
+  <div class="hold-row hold-partial-sell-row">
+    <span>분할매도</span>
+    <strong>
+      ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
+    </strong>
+  </div>
+` : ""}
 
           <div class="hold-action-row">
             <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
@@ -1296,7 +1403,10 @@ function addHolding() {
 strategyStates[code] = {
   status: "WAITING",
   lastAction: "NONE",
-  lastSignalTime: null
+  lastSignalTime: null,
+  lastSignalPrice: null,
+  lastSoldQty: 0,
+  remainQty: 0
 };
 
 saveStrategyStates();
@@ -1377,13 +1487,25 @@ if (emergencyStopBtn) {
 
     if (!ok) return;
 
-    holdings = holdings.map((item) => ({
-      ...item,
-      autoTrade: false
-    }));
+    holdings = holdings.map((item) => {
+ strategyStates[item.code] = {
+  status: "WAITING",
+  lastAction: "NONE",
+  lastSignalTime: null,
+  lastSignalPrice: null,
+  lastSoldQty: 0,
+  remainQty: 0
+};
 
-    saveHoldings();
-    renderHoldings();
+  return {
+    ...item,
+    autoTrade: false
+  };
+});
+
+saveStrategyStates();
+saveHoldings();
+renderHoldings();
 
     alert("전체 종목 자동매매가 중지되었습니다.");
   });
