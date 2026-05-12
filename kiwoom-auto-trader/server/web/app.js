@@ -275,9 +275,10 @@ function renderWatchItem(item) {
   `;
 }
 
-async function loadWatchList() {
-  watchList.innerHTML = `<div class="loading">관심종목 조회 중...</div>`;
-
+async function loadWatchList(silent = false) {
+  if (!silent) {
+    watchList.innerHTML = `<div class="loading">관심종목 조회 중...</div>`;
+  }
   try {
     const res = await fetch(`${API_BASE}/prices`, {
       method: "POST",
@@ -351,16 +352,9 @@ let autoRefreshTimer = null;
 let isAutoRefresh = false;
 
 async function refreshWithoutJump() {
-  const scrollY = window.scrollY;
-
-  await loadWatchList();
-  await renderHoldings();
+  await loadWatchList(true);
+  await renderHoldings(true);
   renderTradeLogs();
-
-  window.scrollTo({
-    top: scrollY,
-    behavior: "auto"
-  });
 }
 
 async function startAutoRefresh() {
@@ -670,7 +664,7 @@ function renderHoldRankBox(items) {
 `;
 }
 
-async function renderHoldings() {
+async function renderHoldings(silent = false) {
   if (holdings.length === 0) {
     holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
     holdSummary.innerHTML = `
@@ -694,8 +688,9 @@ async function renderHoldings() {
     return;
   }
 
+  if (!silent) {
   holdList.innerHTML = `<div class="loading">보유종목 계산 중...</div>`;
-
+}
   try {
     const calculatedHoldings = [];
 
