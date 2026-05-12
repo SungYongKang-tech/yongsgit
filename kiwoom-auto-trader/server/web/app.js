@@ -1312,7 +1312,8 @@ function updateHoldingItemOnly(item) {
   const lastSignalPriceRowEl = card.querySelector(".hold-last-signal-price-row");
   const partialSellRowEl = card.querySelector(".hold-partial-sell-row");
   const partialSellValueEl = card.querySelector(".hold-partial-sell-value");
-
+  const lastActionRowEl =
+  card.querySelector(".hold-last-action-row");
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
@@ -1434,6 +1435,32 @@ if (!partialSellRowEl && state.lastSoldQty) {
        <strong class="hold-partial-sell-value">
   ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
 </strong>
+      </div>
+    `);
+  }
+}
+
+if (!lastActionRowEl && state.lastAction && state.lastAction !== "NONE") {
+  const strategyRow =
+    card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+
+  if (strategyRow) {
+    strategyRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-last-action-row">
+        <span>최근액션</span>
+        <strong class="${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
+          ${
+            state.lastAction === "SELL"
+              ? "1차매도"
+              : state.lastAction === "SELL_ALL"
+              ? "2차매도"
+              : state.lastAction === "SELL_TRAILING"
+              ? "트레일링매도"
+              : state.lastAction === "STOP_LOSS"
+              ? "손절매도"
+              : state.lastAction
+          }
+        </strong>
       </div>
     `);
   }
@@ -1721,6 +1748,25 @@ ${item.trailingStopRate ? `
   ${strategyStatusText}
 </strong>
           </div>
+
+          ${state.lastAction && state.lastAction !== "NONE" ? `
+  <div class="hold-row hold-last-action-row">
+    <span>최근액션</span>
+    <strong class="${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
+      ${
+        state.lastAction === "SELL"
+          ? "1차매도"
+          : state.lastAction === "SELL_ALL"
+          ? "2차매도"
+          : state.lastAction === "SELL_TRAILING"
+          ? "트레일링매도"
+          : state.lastAction === "STOP_LOSS"
+          ? "손절매도"
+          : state.lastAction
+      }
+    </strong>
+  </div>
+` : ""}
 
           ${state.lastSignalTime ? `
   <div class="hold-row hold-last-signal-row">
