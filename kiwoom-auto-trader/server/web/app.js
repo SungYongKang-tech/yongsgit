@@ -552,6 +552,7 @@ const buyPriceInput = document.getElementById("buyPrice");
 const holdQtyInput = document.getElementById("holdQty");
 const targetPriceInput = document.getElementById("targetPrice");
 const stopLossPriceInput = document.getElementById("stopLossPrice");
+const secondTargetPriceInput = document.getElementById("secondTargetPrice");
 const addHoldBtn = document.getElementById("addHoldBtn");
 const holdList = document.getElementById("holdList");
 const emergencyStopBtn = document.getElementById("emergencyStopBtn");
@@ -600,10 +601,12 @@ function renderTradeLogs() {
     .reverse()
     .map((log) => `
       <div class="trade-log-item">
-        <strong class="${log.type === "SELL" ? "up" : "down"}">
+        <strong class="${log.type === "SELL" || log.type === "SELL_ALL" ? "up" : "down"}">
           ${
   log.type === "SELL"
-    ? "가상매도"
+  ? "1차매도"
+  : log.type === "SELL_ALL"
+  ? "2차매도"
     : log.type === "STOP_LOSS"
     ? "가상손절"
     : "가상매수"
@@ -697,12 +700,19 @@ function getStrategyStatusText(status) {
   if (status === "WAITING") return "대기중";
   if (status === "PARTIAL_SOLD") return "1차매도완료";
   if (status === "SOLD") return "매도완료";
+  if (status === "SELL_ALL") return "2차매도완료";
   if (status === "SELL_SIGNAL") return "매도신호";
   if (status === "STOP_SIGNAL") return "손절신호";
   return "대기중";
 }
 
 function checkTargetSell(item) {
+  const state = getStrategyState(item.code);
+
+  if (state.status === "PARTIAL_SOLD") {
+    return null;
+  }
+
   if (
     item.targetPrice &&
     item.currentPrice >= item.targetPrice
@@ -710,6 +720,23 @@ function checkTargetSell(item) {
     return {
       action: "SELL",
       reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
+    };
+  }
+
+  return null;
+}
+
+function checkSecondTargetSell(item) {
+  const state = getStrategyState(item.code);
+
+  if (
+    state.status === "PARTIAL_SOLD" &&
+    item.secondTargetPrice &&
+    item.currentPrice >= item.secondTargetPrice
+  ) {
+    return {
+      action: "SELL_ALL",
+      reason: `자동매매ON · 2차 목표가 ${formatNumber(item.secondTargetPrice)}원 도달`
     };
   }
 
@@ -733,8 +760,9 @@ function checkStopLoss(item) {
 // 전략 실행 순서가 우선순위입니다.
 // 위에 있는 전략이 먼저 실행됩니다.
 const STRATEGIES = [
-  checkTargetSell, // 1순위: 목표가 매도
-  checkStopLoss    // 2순위: 손절 매도
+  checkStopLoss,          // 손절은 항상 최우선
+  checkSecondTargetSell,  // 2차 목표가 전량매도
+  checkTargetSell         // 1차 목표가 분할매도
 ];
 
 function evaluateStrategy(item) {
@@ -747,13 +775,7 @@ function evaluateStrategy(item) {
     };
   }
 
-  if (state.status === "PARTIAL_SOLD") {
-  return {
-    action: "NONE",
-    reason: "1차 분할매도 완료"
-  };
-}
-
+  
   if (!item.autoTrade) {
     return {
       action: "NONE",
@@ -785,6 +807,15 @@ function updateStrategySignalState(code, action, price) {
     };
   }
 
+  if (action === "SELL_ALL") {
+  strategyStates[code] = {
+    status: "SELL_SIGNAL",
+    lastAction: "SELL_ALL",
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: price
+  };
+}
+
   if (action === "STOP_LOSS") {
     strategyStates[code] = {
       status: "STOP_SIGNAL",
@@ -798,9 +829,13 @@ function updateStrategySignalState(code, action, price) {
 }
 
 function processStrategyResult(item, strategyResult) {
-  if (strategyResult.action !== "SELL" && strategyResult.action !== "STOP_LOSS") {
-    return;
-  }
+ if (
+  strategyResult.action !== "SELL" &&
+  strategyResult.action !== "SELL_ALL" &&
+  strategyResult.action !== "STOP_LOSS"
+) {
+  return;
+}
 
   if (!isMarketOpenNow()) {
     console.warn("장 운영시간이 아니므로 매매 실행을 하지 않습니다.");
@@ -892,7 +927,7 @@ function executeVirtualSell(code, actionType = "SELL") {
     }
 
     // 손절은 전량매도
-    if (actionType === "STOP_LOSS") {
+    if (actionType === "STOP_LOSS" || actionType === "SELL_ALL") {
       soldQty = item.qty;
       remainQty = 0;
 
@@ -910,14 +945,14 @@ function executeVirtualSell(code, actionType = "SELL") {
 
   saveHoldings();
 
-  strategyStates[code] = {
-   status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
-    lastAction: actionType,
-    lastSignalTime: new Date().toLocaleString("ko-KR"),
-    lastSignalPrice: strategyStates[code]?.lastSignalPrice || null,
-    lastSoldQty: soldQty,
-    remainQty: remainQty
-  };
+ strategyStates[code] = {
+  status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
+  lastAction: actionType,
+  lastSignalTime: new Date().toLocaleString("ko-KR"),
+  lastSignalPrice: strategyStates[code]?.lastSignalPrice || null,
+  lastSoldQty: soldQty,
+  remainQty: remainQty
+};
 
   saveStrategyStates();
 }
@@ -1124,6 +1159,7 @@ function bindHoldItemEvents() {
       buyPriceInput.value = item.buyPrice;
       holdQtyInput.value = item.qty;
       targetPriceInput.value = item.targetPrice || "";
+      secondTargetPriceInput.value = item.secondTargetPrice || "";
       stopLossPriceInput.value = item.stopLossPrice || "";
 
       holdCodeInput.focus();
@@ -1265,6 +1301,15 @@ async function renderHoldings(silent = false) {
             </div>
           ` : ""}
 
+          ${item.secondTargetPrice ? `
+  <div class="hold-row">
+    <span>2차 목표가 ${formatNumber(item.secondTargetPrice)}원</span>
+    <strong class="${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
+      ${item.currentPrice >= item.secondTargetPrice ? "2차도달" : "대기중"}
+    </strong>
+  </div>
+` : ""}
+
           ${item.stopLossPrice ? `
             <div class="hold-row">
               <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
@@ -1375,6 +1420,7 @@ function addHolding() {
   const code = stock?.code;
   const buyPrice = Number(buyPriceInput.value);
   const qty = Number(holdQtyInput.value);
+  const secondTargetPrice = Number(secondTargetPriceInput.value) || 0;
 
   if (!code) {
     alert("종목명 또는 종목코드를 입력하세요.");
@@ -1398,6 +1444,7 @@ function addHolding() {
   buyPrice,
   qty,
   targetPrice,
+  secondTargetPrice,
   stopLossPrice,
   autoTrade: false
 });
@@ -1420,6 +1467,7 @@ saveHoldings();
   holdQtyInput.value = "";
   targetPriceInput.value = "";
   stopLossPriceInput.value = "";
+  secondTargetPriceInput.value = "";
 
   renderHoldings();
 }
