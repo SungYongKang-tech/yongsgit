@@ -432,11 +432,40 @@ const autoRefreshBtn = document.getElementById("autoRefreshBtn");
 
 let autoRefreshTimer = null;
 let isAutoRefresh = false;
+let isRefreshing = false;
 
 async function refreshWithoutJump() {
-  await loadWatchList(true);
-  await renderHoldings(true);
-  renderTradeLogs();
+  if (isRefreshing) {
+    console.log("이전 갱신이 아직 끝나지 않아 이번 갱신은 건너뜁니다.");
+    return;
+  }
+
+  isRefreshing = true;
+
+  try {
+    await loadWatchList(true);
+    await renderHoldings(true);
+    renderTradeLogs();
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+async function manualRefresh() {
+  if (isRefreshing) {
+    console.log("자동갱신 중이라 수동 조회를 건너뜁니다.");
+    return;
+  }
+
+  isRefreshing = true;
+
+  try {
+    await loadWatchList();
+    await renderHoldings();
+    renderTradeLogs();
+  } finally {
+    isRefreshing = false;
+  }
 }
 
 async function startAutoRefresh() {
@@ -473,8 +502,7 @@ function stopAutoRefresh() {
 }
 
 loadWatchBtn.addEventListener("click", () => {
-  loadWatchList();
-  renderHoldings();
+  manualRefresh();
 });
 
 autoRefreshBtn.addEventListener("click", () => {
