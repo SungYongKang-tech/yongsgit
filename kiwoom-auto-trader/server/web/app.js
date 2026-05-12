@@ -687,6 +687,14 @@ function getStrategyState(code) {
   return strategyStates[code];
 }
 
+function getStrategyStatusText(status) {
+  if (status === "WAITING") return "대기중";
+  if (status === "SOLD") return "매도완료";
+  if (status === "SELL_SIGNAL") return "매도신호";
+  if (status === "STOP_SIGNAL") return "손절신호";
+  return "대기중";
+}
+
 function evaluateStrategy(item) {
   const state = getStrategyState(item.code);
   const isTargetHit =
@@ -878,6 +886,9 @@ function updateHoldingItemOnly(item) {
 
   
   const profitClass = item.profit >= 0 ? "up" : "down";
+
+  const state = getStrategyState(item.code);
+  const strategyStatusText = getStrategyStatusText(state.status);
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
   profitEl.textContent =
@@ -1141,6 +1152,19 @@ ${item.stopLossPrice ? `
   </strong>
 </div>
 
+<div class="hold-row">
+  <span>전략상태</span>
+  <strong class="${state.status === "SOLD" ? "down" : "up"}">
+    ${strategyStatusText}
+  </strong>
+</div>
+
+${state.lastSignalTime ? `
+  <div class="hold-row">
+    <span>최근신호</span>
+    <strong>${state.lastSignalTime}</strong>
+  </div>
+` : ""}
 
    <div class="hold-action-row">
   <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
@@ -1253,7 +1277,15 @@ function addHolding() {
   autoTrade: false
 });
 
-  saveHoldings();
+strategyStates[code] = {
+  status: "WAITING",
+  lastAction: "NONE",
+  lastSignalTime: null
+};
+
+saveStrategyStates();
+
+saveHoldings();
 
   holdCodeInput.value = "";
   buyPriceInput.value = "";
