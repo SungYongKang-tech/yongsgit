@@ -9,6 +9,8 @@ const alertRateInput = document.getElementById("alertRateInput");
 const saveAlertRateBtn = document.getElementById("saveAlertRateBtn");
 const alertBox = document.getElementById("alertBox");
 
+const testModeBanner = document.getElementById("testModeBanner");
+
 
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
@@ -505,6 +507,11 @@ function stopAutoRefresh() {
   }
 }
 function updateTestModeUI() {
+
+    if (testModeBanner) {
+  testModeBanner.style.display = isTestMode ? "block" : "none";
+}
+
   if (!testModeBtn) return;
 
   testModeBtn.textContent =
