@@ -770,7 +770,7 @@ function checkSecondTargetSell(item) {
     item.currentPrice >= item.secondTargetPrice
   ) {
     return {
-      action: "SELL_TRAILING",
+     action: "SELL_ALL",
       reason: `자동매매ON · 2차 목표가 ${formatNumber(item.secondTargetPrice)}원 도달`
     };
   }
@@ -812,7 +812,7 @@ function checkTrailingStop(item) {
 
   if (dropRate >= item.trailingStopRate) {
     return {
-      action: "SELL_ALL",
+      action: "SELL_TRAILING",
       reason:
         `트레일링스탑 ${item.trailingStopRate}% 발동`
     };
