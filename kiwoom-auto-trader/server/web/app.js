@@ -1009,7 +1009,25 @@ ${item.stopLossPrice ? `
       </div>
     `;
 
+    const hasHoldCards = document.querySelectorAll(".hold-item").length > 0;
+
+if (silent && hasHoldCards && currentHoldSortType === "default") {
+  let updateSuccess = true;
+
+  calculatedHoldings.forEach((item) => {
+    const ok = updateHoldingItemOnly(item);
+
+    if (!ok) {
+      updateSuccess = false;
+    }
+  });
+
+  if (!updateSuccess) {
     holdList.innerHTML = rendered.join("");
+  }
+} else {
+  holdList.innerHTML = rendered.join("");
+}
 
     document.querySelectorAll(".hold-remove").forEach((btn) => {
       btn.addEventListener("click", () => {
