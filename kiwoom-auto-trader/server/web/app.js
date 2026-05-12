@@ -319,10 +319,7 @@ watchList.innerHTML =
   el.addEventListener("click", () => {
     stockCodeInput.value = el.dataset.code;
     searchStock();
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth"
-    });
+    
   });
 });
 
@@ -353,6 +350,19 @@ const autoRefreshBtn = document.getElementById("autoRefreshBtn");
 let autoRefreshTimer = null;
 let isAutoRefresh = false;
 
+async function refreshWithoutJump() {
+  const scrollY = window.scrollY;
+
+  await loadWatchList();
+  await renderHoldings();
+  renderTradeLogs();
+
+  window.scrollTo({
+    top: scrollY,
+    behavior: "auto"
+  });
+}
+
 async function startAutoRefresh() {
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
@@ -362,14 +372,10 @@ async function startAutoRefresh() {
   autoRefreshBtn.textContent = "자동ON";
   autoRefreshBtn.classList.add("active");
 
-  await loadWatchList();
-  await renderHoldings();
-  renderTradeLogs();
+  await refreshWithoutJump();
 
 autoRefreshTimer = setInterval(async () => {
-  await loadWatchList();
-  await renderHoldings();
-  renderTradeLogs();
+  await refreshWithoutJump();
 }, 5000);
 }
 
