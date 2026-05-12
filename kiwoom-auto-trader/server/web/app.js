@@ -739,6 +739,27 @@ function evaluateStrategy(item) {
   };
 }
 
+function processStrategyResult(item, strategyResult) {
+  if (strategyResult.action !== "SELL" && strategyResult.action !== "STOP_LOSS") {
+    return;
+  }
+
+  if (!isMarketOpenNow()) {
+    console.warn("장 운영시간이 아니므로 매매 실행을 하지 않습니다.");
+    return;
+  }
+
+  addTradeLog({
+    type: strategyResult.action,
+    code: item.code,
+    name: item.name,
+    price: item.currentPrice,
+    reason: strategyResult.reason
+  });
+
+  executeVirtualSell(item.code, strategyResult.action);
+}
+
 function addTradeLog({ type, code, name, price, reason }) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -786,7 +807,7 @@ if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
   renderTradeLogs();
 }
 
-function executeVirtualSell(code) {
+function executeVirtualSell(code, actionType = "SELL") {
   holdings = holdings.map((item) => {
     if (item.code === code) {
       return {
@@ -804,10 +825,10 @@ function executeVirtualSell(code) {
   saveHoldings();
 
   strategyStates[code] = {
-    status: "SOLD",
-    lastAction: "SELL",
-    lastSignalTime: new Date().toLocaleString("ko-KR")
-  };
+  status: "SOLD",
+  lastAction: actionType,
+  lastSignalTime: new Date().toLocaleString("ko-KR")
+};
 
   saveStrategyStates();
 }
@@ -887,8 +908,8 @@ function updateHoldingItemOnly(item) {
   
   const profitClass = item.profit >= 0 ? "up" : "down";
 
-  const state = getStrategyState(item.code);
-  const strategyStatusText = getStrategyStatusText(state.status);
+ const state = getStrategyState(item.code);
+const strategyStatusText = getStrategyStatusText(state.status);
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
   profitEl.textContent =
@@ -957,29 +978,18 @@ async function renderHoldings(silent = false) {
   if (holdings.length === 0) {
     holdList.innerHTML = `<div class="empty">보유종목을 추가하세요.</div>`;
     holdSummary.innerHTML = `
-      <div>
-        <span>총 매수금액</span>
-        <strong>0원</strong>
-      </div>
-      <div>
-        <span>총 평가금액</span>
-        <strong>0원</strong>
-      </div>
-      <div>
-        <span>총 손익</span>
-        <strong>0원</strong>
-      </div>
-      <div>
-        <span>총 수익률</span>
-        <strong>0.00%</strong>
-      </div>
+      <div><span>총 매수금액</span><strong>0원</strong></div>
+      <div><span>총 평가금액</span><strong>0원</strong></div>
+      <div><span>총 손익</span><strong>0원</strong></div>
+      <div><span>총 수익률</span><strong>0.00%</strong></div>
     `;
     return;
   }
 
   if (!silent) {
-  holdList.innerHTML = `<div class="loading">보유종목 계산 중...</div>`;
-}
+    holdList.innerHTML = `<div class="loading">보유종목 계산 중...</div>`;
+  }
+
   try {
     const calculatedHoldings = [];
 
@@ -987,47 +997,30 @@ async function renderHoldings(silent = false) {
       const data = await fetchStockPrice(item.code);
 
       const currentPrice = Number(
-  data.currentPrice ||
-  data.price ||
-  data.curPrice ||
-  data.stck_prpr ||
-  data.output?.stck_prpr ||
-  0
-);
+        data.currentPrice ||
+        data.price ||
+        data.curPrice ||
+        data.stck_prpr ||
+        data.output?.stck_prpr ||
+        0
+      );
 
-const buyAmount = item.buyPrice * item.qty;
-const evalAmount = currentPrice * item.qty;
-const profit = evalAmount - buyAmount;
-const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+      const buyAmount = item.buyPrice * item.qty;
+      const evalAmount = currentPrice * item.qty;
+      const profit = evalAmount - buyAmount;
+      const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
 
-     const masterStock = STOCK_MASTER.find(
-  (stock) => stock.code === item.code
-);
+      const masterStock = STOCK_MASTER.find((stock) => stock.code === item.code);
 
-const prevHoldPrice = previousHoldPrices[item.code];
-
-let holdFlashClass = "";
-
-if (prevHoldPrice !== undefined) {
-  if (currentPrice > prevHoldPrice) {
-    holdFlashClass = "flash-up";
-  } else if (currentPrice < prevHoldPrice) {
-    holdFlashClass = "flash-down";
-  }
-}
-
-previousHoldPrices[item.code] = currentPrice;
-
-calculatedHoldings.push({
-  ...item,
-  name: data.name || masterStock?.name || item.code,
-  currentPrice,
-  buyAmount,
-  evalAmount,
-  profit,
-  profitRate,
-  holdFlashClass
-});
+      calculatedHoldings.push({
+        ...item,
+        name: data.name || masterStock?.name || item.code,
+        currentPrice,
+        buyAmount,
+        evalAmount,
+        profit,
+        profitRate
+      });
     }
 
     if (currentHoldSortType === "profit") {
@@ -1040,16 +1033,16 @@ calculatedHoldings.push({
 
     if (currentHoldSortType === "eval") {
       calculatedHoldings.sort((a, b) => b.evalAmount - a.evalAmount);
-      
     }
-      renderHoldRankBox(calculatedHoldings);
 
+    renderHoldRankBox(calculatedHoldings);
 
     let totalBuyAmount = 0;
     let totalEvalAmount = 0;
+
     const totalEvalForWeight = calculatedHoldings.reduce((sum, item) => {
-     return sum + item.evalAmount;
-     }, 0);
+      return sum + item.evalAmount;
+    }, 0);
 
     const rendered = calculatedHoldings.map((item) => {
       totalBuyAmount += item.buyAmount;
@@ -1058,45 +1051,24 @@ calculatedHoldings.push({
       const profitClass = item.profit >= 0 ? "up" : "down";
 
       const isTargetHit =
- item.targetPrice &&
- item.currentPrice >= item.targetPrice;
+        item.targetPrice &&
+        item.currentPrice >= item.targetPrice;
 
-const isStopLossHit =
- item.stopLossPrice &&
- item.currentPrice <= item.stopLossPrice;
+      const isStopLossHit =
+        item.stopLossPrice &&
+        item.currentPrice <= item.stopLossPrice;
 
-const strategyResult = evaluateStrategy(item);
+      const strategyResult = evaluateStrategy(item);
+      processStrategyResult(item, strategyResult);
 
-if (strategyResult.action === "SELL") {
-  addTradeLog({
-    type: "SELL",
-    code: item.code,
-    name: item.name,
-    price: item.currentPrice,
-    reason: strategyResult.reason
-  });
-
-  executeVirtualSell(item.code);
-}
-
-if (strategyResult.action === "STOP_LOSS") {
-  addTradeLog({
-    type: "STOP_LOSS",
-    code: item.code,
-    name: item.name,
-    price: item.currentPrice,
-    reason: strategyResult.reason
-  });
-
-  executeVirtualSell(item.code);
-}
+      const state = getStrategyState(item.code);
+      const strategyStatusText = getStrategyStatusText(state.status);
 
       const weightRate =
-      totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
-
+        totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
 
       return `
-        <div class="hold-item ${item.holdFlashClass} ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}" data-code="${item.code}">
+        <div class="hold-item ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}" data-code="${item.code}">
           <div class="hold-top">
             <div>
               <div class="hold-name">${item.name}</div>
@@ -1121,118 +1093,98 @@ if (strategyResult.action === "STOP_LOSS") {
             <span>수량 ${formatNumber(item.qty)}주</span>
             <span>평가금액 <strong class="hold-eval-amount">${formatNumber(item.evalAmount)}원</strong></span>
           </div>
-          
+
           <div class="hold-row">
             <span>보유비중</span>
             <strong>${weightRate.toFixed(1)}%</strong>
           </div>
 
           ${item.targetPrice ? `
-  <div class="hold-row">
-    <span>목표가 ${formatNumber(item.targetPrice)}원</span>
-    <strong class="${item.currentPrice >= item.targetPrice ? "up" : ""}">
-      ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
-    </strong>
-  </div>
-` : ""}
+            <div class="hold-row">
+              <span>목표가 ${formatNumber(item.targetPrice)}원</span>
+              <strong class="${item.currentPrice >= item.targetPrice ? "up" : ""}">
+                ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
+              </strong>
+            </div>
+          ` : ""}
 
-${item.stopLossPrice ? `
-  <div class="hold-row">
-    <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
-    <strong class="${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
-      ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
-    </strong>
-  </div>
-` : ""}
+          ${item.stopLossPrice ? `
+            <div class="hold-row">
+              <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
+              <strong class="${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
+                ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
+              </strong>
+            </div>
+          ` : ""}
 
-<div class="hold-row">
-  <span>자동매매</span>
-  <strong class="${item.autoTrade ? "up" : ""}">
-    ${item.autoTrade ? "ON" : "OFF"}
-  </strong>
-</div>
+          <div class="hold-row">
+            <span>자동매매</span>
+            <strong class="${item.autoTrade ? "up" : ""}">
+              ${item.autoTrade ? "ON" : "OFF"}
+            </strong>
+          </div>
 
-<div class="hold-row">
-  <span>전략상태</span>
-  <strong class="${state.status === "SOLD" ? "down" : "up"}">
-    ${strategyStatusText}
-  </strong>
-</div>
+          <div class="hold-row">
+            <span>전략상태</span>
+            <strong class="${state.status === "SOLD" ? "down" : "up"}">
+              ${strategyStatusText}
+            </strong>
+          </div>
 
-${state.lastSignalTime ? `
-  <div class="hold-row">
-    <span>최근신호</span>
-    <strong>${state.lastSignalTime}</strong>
-  </div>
-` : ""}
+          ${state.lastSignalTime ? `
+            <div class="hold-row">
+              <span>최근신호</span>
+              <strong>${state.lastSignalTime}</strong>
+            </div>
+          ` : ""}
 
-   <div class="hold-action-row">
-  <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
-    ${item.autoTrade ? "자동ON" : "자동OFF"}
-  </button>
-  <button class="hold-edit" data-hold-code="${item.code}">
-    수정
-  </button>
-  <button class="hold-remove" data-hold-code="${item.code}">
-    삭제
-  </button>
-</div>
+          <div class="hold-action-row">
+            <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
+              ${item.autoTrade ? "자동ON" : "자동OFF"}
+            </button>
+            <button class="hold-edit" data-hold-code="${item.code}">수정</button>
+            <button class="hold-remove" data-hold-code="${item.code}">삭제</button>
+          </div>
         </div>
       `;
     });
 
     const totalProfit = totalEvalAmount - totalBuyAmount;
-    const totalRate =
-      totalBuyAmount > 0 ? (totalProfit / totalBuyAmount) * 100 : 0;
-
+    const totalRate = totalBuyAmount > 0 ? (totalProfit / totalBuyAmount) * 100 : 0;
     const totalClass = totalProfit >= 0 ? "up" : "down";
 
     holdSummary.innerHTML = `
-      <div>
-        <span>총 매수금액</span>
-        <strong>${formatNumber(totalBuyAmount)}원</strong>
-      </div>
-      <div>
-        <span>총 평가금액</span>
-        <strong>${formatNumber(totalEvalAmount)}원</strong>
-      </div>
+      <div><span>총 매수금액</span><strong>${formatNumber(totalBuyAmount)}원</strong></div>
+      <div><span>총 평가금액</span><strong>${formatNumber(totalEvalAmount)}원</strong></div>
       <div>
         <span>총 손익</span>
-        <strong class="${totalClass}">
-          ${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원
-        </strong>
+        <strong class="${totalClass}">${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원</strong>
       </div>
       <div>
         <span>총 수익률</span>
-        <strong class="${totalClass}">
-          ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
-        </strong>
+        <strong class="${totalClass}">${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%</strong>
       </div>
     `;
 
     const hasHoldCards = document.querySelectorAll(".hold-item").length > 0;
 
-if (silent && hasHoldCards && currentHoldSortType === "default") {
-  let updateSuccess = true;
+    if (silent && hasHoldCards && currentHoldSortType === "default") {
+      let updateSuccess = true;
 
-  calculatedHoldings.forEach((item) => {
-    const ok = updateHoldingItemOnly(item);
+      calculatedHoldings.forEach((item) => {
+        const ok = updateHoldingItemOnly(item);
+        if (!ok) updateSuccess = false;
+      });
 
-    if (!ok) {
-      updateSuccess = false;
+      if (!updateSuccess) {
+        holdList.innerHTML = rendered.join("");
+        bindHoldItemEvents();
+      }
+    } else {
+      holdList.innerHTML = rendered.join("");
+      bindHoldItemEvents();
     }
-  });
 
-  if (!updateSuccess) {
-  holdList.innerHTML = rendered.join("");
-  bindHoldItemEvents();
-}
-} else {
-  holdList.innerHTML = rendered.join("");
-  bindHoldItemEvents();
-}
-
-  
   } catch (error) {
     holdList.innerHTML = `
       <div class="error">
