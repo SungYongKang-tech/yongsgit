@@ -813,15 +813,15 @@ function processStrategyResult(item, strategyResult) {
   item.currentPrice
 );
 
-  addTradeLog({
-    type: strategyResult.action,
-    code: item.code,
-    name: item.name,
-    price: item.currentPrice,
-    reason: strategyResult.reason
-  });
-
   executeVirtualSell(item.code, strategyResult.action);
+
+addTradeLog({
+  type: strategyResult.action,
+  code: item.code,
+  name: item.name,
+  price: item.currentPrice,
+  reason: strategyResult.reason
+});
 }
 
 function addTradeLog({ type, code, name, price, reason }) {
@@ -1090,11 +1090,13 @@ function bindHoldItemEvents() {
   const nextAutoTrade = !item.autoTrade;
 
   strategyStates[code] = {
-    status: "WAITING",
-    lastAction: "NONE",
-    lastSignalTime: null,
-    lastSignalPrice: null
-  };
+  status: "WAITING",
+  lastAction: "NONE",
+  lastSignalTime: null,
+  lastSignalPrice: null,
+  lastSoldQty: 0,
+  remainQty: 0
+};
 
   saveStrategyStates();
 
