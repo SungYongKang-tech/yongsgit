@@ -709,20 +709,34 @@ function checkTargetSell(item) {
   return null;
 }
 
+function checkStopLoss(item) {
+  if (
+    item.stopLossPrice &&
+    item.currentPrice <= item.stopLossPrice
+  ) {
+    return {
+      action: "STOP_LOSS",
+      reason: `자동매매ON · 손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
+    };
+  }
+
+  return null;
+}
+
+const STRATEGIES = [
+  checkTargetSell,
+  checkStopLoss
+];
+
 function evaluateStrategy(item) {
   const state = getStrategyState(item.code);
-  
 
-  const isStopLossHit =
-    item.stopLossPrice &&
-    item.currentPrice <= item.stopLossPrice;
-
-    if (state.status === "SOLD") {
-  return {
-    action: "NONE",
-    reason: "이미 매도 완료"
-  };
-}
+  if (state.status === "SOLD") {
+    return {
+      action: "NONE",
+      reason: "이미 매도 완료"
+    };
+  }
 
   if (!item.autoTrade) {
     return {
@@ -731,23 +745,38 @@ function evaluateStrategy(item) {
     };
   }
 
-  const targetResult = checkTargetSell(item);
+  for (const strategy of STRATEGIES) {
+    const result = strategy(item);
 
-if (targetResult) {
-  return targetResult;
-}
-
-  if (isStopLossHit) {
-    return {
-      action: "STOP_LOSS",
-      reason: `자동매매ON · 손절가 ${formatNumber(item.stopLossPrice)}원 이탈`
-    };
+    if (result) {
+      return result;
+    }
   }
 
   return {
     action: "HOLD",
     reason: "조건 미충족"
   };
+}
+
+function updateStrategySignalState(code, action) {
+  if (action === "SELL") {
+    strategyStates[code] = {
+      status: "SELL_SIGNAL",
+      lastAction: "SELL",
+      lastSignalTime: new Date().toLocaleString("ko-KR")
+    };
+  }
+
+  if (action === "STOP_LOSS") {
+    strategyStates[code] = {
+      status: "STOP_SIGNAL",
+      lastAction: "STOP_LOSS",
+      lastSignalTime: new Date().toLocaleString("ko-KR")
+    };
+  }
+
+  saveStrategyStates();
 }
 
 function processStrategyResult(item, strategyResult) {
@@ -759,6 +788,8 @@ function processStrategyResult(item, strategyResult) {
     console.warn("장 운영시간이 아니므로 매매 실행을 하지 않습니다.");
     return;
   }
+
+  updateStrategySignalState(item.code, strategyResult.action);
 
   addTradeLog({
     type: strategyResult.action,
@@ -902,7 +933,6 @@ function renderHoldRankBox(items) {
 }
 
 function updateHoldingItemOnly(item) {
- 
   const card = document.querySelector(`.hold-item[data-code="${item.code}"]`);
 
   if (!card) return false;
@@ -911,15 +941,14 @@ function updateHoldingItemOnly(item) {
   const rateEl = card.querySelector(".hold-profit-rate");
   const currentPriceEl = card.querySelector(".hold-current-price");
   const evalAmountEl = card.querySelector(".hold-eval-amount");
+  const strategyStatusEl = card.querySelector(".hold-strategy-status");
+  const lastSignalTimeEl = card.querySelector(".hold-last-signal-time");
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
   }
 
-  
   const profitClass = item.profit >= 0 ? "up" : "down";
-
-
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
   profitEl.textContent =
@@ -933,6 +962,19 @@ function updateHoldingItemOnly(item) {
 
   currentPriceEl.textContent = formatNumber(item.currentPrice);
   evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
+
+  const state = getStrategyState(item.code);
+  const strategyStatusText = getStrategyStatusText(state.status);
+
+  if (strategyStatusEl) {
+    strategyStatusEl.className =
+      `hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}`;
+    strategyStatusEl.textContent = strategyStatusText;
+  }
+
+  if (lastSignalTimeEl && state.lastSignalTime) {
+    lastSignalTimeEl.textContent = state.lastSignalTime;
+  }
 
   return true;
 }
@@ -1064,9 +1106,9 @@ async function renderHoldings(silent = false) {
         item.targetPrice &&
         item.currentPrice >= item.targetPrice;
 
-      const isStopLossHit =
-        item.stopLossPrice &&
-        item.currentPrice <= item.stopLossPrice;
+    const isStopLossHit =
+  item.stopLossPrice &&
+  item.currentPrice <= item.stopLossPrice;
 
       const strategyResult = evaluateStrategy(item);
       processStrategyResult(item, strategyResult);
@@ -1136,15 +1178,15 @@ async function renderHoldings(silent = false) {
 
           <div class="hold-row">
             <span>전략상태</span>
-            <strong class="${state.status === "SOLD" ? "down" : "up"}">
-              ${strategyStatusText}
-            </strong>
+            <strong class="hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}">
+  ${strategyStatusText}
+</strong>
           </div>
 
           ${state.lastSignalTime ? `
             <div class="hold-row">
               <span>최근신호</span>
-              <strong>${state.lastSignalTime}</strong>
+              <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
             </div>
           ` : ""}
 
