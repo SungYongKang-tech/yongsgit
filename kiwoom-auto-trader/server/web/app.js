@@ -1074,6 +1074,21 @@ if (!isMarketOpenNow() && !isTestMode) {
   return;
 }
 
+if (getTodayTradeCountForCode(item.code) >= DAILY_TRADE_LIMIT_PER_CODE) {
+  console.warn("종목별 거래 제한");
+  return;
+}
+
+if (isInCooldown(item.code)) {
+  console.warn("쿨타임 중");
+  return;
+}
+
+if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
+  console.warn("1일 거래 제한");
+  return;
+}
+
   updateStrategySignalState(
   item.code,
   strategyResult.action,
@@ -1294,7 +1309,7 @@ function updateHoldingItemOnly(item) {
     strategyStatusEl.textContent = strategyStatusText;
   }
 
-  if (lastSignalTimeEl && state.lastSignalTime) {
+ if (lastSignalTimeEl && state.lastSignalTime) {
   lastSignalTimeEl.textContent = state.lastSignalTime;
 } else if (!lastSignalRowEl && state.lastSignalTime) {
   const statusRow = card.querySelector(".hold-strategy-status")?.closest(".hold-row");
@@ -1307,7 +1322,9 @@ function updateHoldingItemOnly(item) {
       </div>
     `);
   }
-  if (lastSignalPriceEl && state.lastSignalPrice) {
+}
+
+if (lastSignalPriceEl && state.lastSignalPrice) {
   lastSignalPriceEl.textContent = `${formatNumber(state.lastSignalPrice)}원`;
 } else if (!lastSignalPriceRowEl && state.lastSignalPrice) {
   const signalRow = card.querySelector(".hold-last-signal-row");
