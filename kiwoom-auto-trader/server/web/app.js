@@ -775,20 +775,7 @@ function updateHoldingItemOnly(item) {
     return false;
   }
 
-  const prevPrice = previousHoldPrices[item.code];
-
-if (prevPrice !== undefined) {
-  if (item.currentPrice > prevPrice) {
-    flashValue(currentPriceEl, "up");
-    flashValue(profitEl, "up");
-    flashValue(rateEl, "up");
-  } else if (item.currentPrice < prevPrice) {
-    flashValue(currentPriceEl, "down");
-    flashValue(profitEl, "down");
-    flashValue(rateEl, "down");
-  }
-}
-
+  
   const profitClass = item.profit >= 0 ? "up" : "down";
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
