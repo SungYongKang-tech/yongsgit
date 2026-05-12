@@ -768,27 +768,50 @@ function updateHoldingItemOnly(item) {
 }
 
 function bindHoldItemEvents() {
-  const hasHoldCards = document.querySelectorAll(".hold-item").length > 0;
-
-if (silent && hasHoldCards && currentHoldSortType === "default") {
-  let updateSuccess = true;
-
-  calculatedHoldings.forEach((item) => {
-    const ok = updateHoldingItemOnly(item);
-
-    if (!ok) {
-      updateSuccess = false;
-    }
+  document.querySelectorAll(".hold-remove").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = btn.dataset.holdCode;
+      holdings = holdings.filter((item) => item.code !== code);
+      saveHoldings();
+      renderHoldings();
+    });
   });
 
-  if (!updateSuccess) {
-    holdList.innerHTML = rendered.join("");
-    bindHoldItemEvents();
-  }
-} else {
-  holdList.innerHTML = rendered.join("");
-  bindHoldItemEvents();
-}
+  document.querySelectorAll(".hold-auto").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = btn.dataset.holdCode;
+
+      holdings = holdings.map((item) => {
+        if (item.code === code) {
+          return {
+            ...item,
+            autoTrade: !item.autoTrade
+          };
+        }
+        return item;
+      });
+
+      saveHoldings();
+      renderHoldings();
+    });
+  });
+
+  document.querySelectorAll(".hold-edit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = btn.dataset.holdCode;
+      const item = holdings.find((stock) => stock.code === code);
+
+      if (!item) return;
+
+      holdCodeInput.value = item.code;
+      buyPriceInput.value = item.buyPrice;
+      holdQtyInput.value = item.qty;
+      targetPriceInput.value = item.targetPrice || "";
+      stopLossPriceInput.value = item.stopLossPrice || "";
+
+      holdCodeInput.focus();
+    });
+  });
 }
 
 async function renderHoldings(silent = false) {
@@ -1047,57 +1070,15 @@ if (silent && hasHoldCards && currentHoldSortType === "default") {
   });
 
   if (!updateSuccess) {
-    holdList.innerHTML = rendered.join("");
-  }
+  holdList.innerHTML = rendered.join("");
+  bindHoldItemEvents();
+}
 } else {
   holdList.innerHTML = rendered.join("");
+  bindHoldItemEvents();
 }
 
-    document.querySelectorAll(".hold-remove").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const code = btn.dataset.holdCode;
-        holdings = holdings.filter((item) => item.code !== code);
-        saveHoldings();
-        renderHoldings();
-      });
-    });
-
-    document.querySelectorAll(".hold-auto").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const code = btn.dataset.holdCode;
-
-    holdings = holdings.map((item) => {
-      if (item.code === code) {
-        return {
-          ...item,
-          autoTrade: !item.autoTrade
-        };
-      }
-      return item;
-    });
-
-    saveHoldings();
-    renderHoldings();
-  });
-});
-
-    document.querySelectorAll(".hold-edit").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const code = btn.dataset.holdCode;
-    const item = holdings.find((stock) => stock.code === code);
-
-    if (!item) return;
-
-    holdCodeInput.value = item.code;
-    buyPriceInput.value = item.buyPrice;
-    holdQtyInput.value = item.qty;
-    targetPriceInput.value = item.targetPrice || "";
-    stopLossPriceInput.value = item.stopLossPrice || "";
-
-holdCodeInput.focus();
-  });
-});
-
+  
   } catch (error) {
     holdList.innerHTML = `
       <div class="error">
