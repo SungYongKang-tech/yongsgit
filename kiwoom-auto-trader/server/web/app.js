@@ -1742,6 +1742,11 @@ ${state.lastSoldQty ? `
       </div>
     `;
 
+    if (needFullRender && silent) {
+  await renderHoldings(false);
+  return;
+}
+
     const hasHoldCards = document.querySelectorAll(".hold-item").length > 0;
 
     if (silent && hasHoldCards && currentHoldSortType === "default" && !needFullRender) {
