@@ -943,6 +943,7 @@ function updateHoldingItemOnly(item) {
   const evalAmountEl = card.querySelector(".hold-eval-amount");
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
   const lastSignalTimeEl = card.querySelector(".hold-last-signal-time");
+  const lastSignalRowEl = card.querySelector(".hold-last-signal-row");
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
@@ -973,8 +974,19 @@ function updateHoldingItemOnly(item) {
   }
 
   if (lastSignalTimeEl && state.lastSignalTime) {
-    lastSignalTimeEl.textContent = state.lastSignalTime;
+  lastSignalTimeEl.textContent = state.lastSignalTime;
+} else if (!lastSignalRowEl && state.lastSignalTime) {
+  const statusRow = card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+
+  if (statusRow) {
+    statusRow.insertAdjacentHTML("afterend", `
+      <div class="hold-row hold-last-signal-row">
+        <span>최근신호</span>
+        <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
+      </div>
+    `);
   }
+}
 
   return true;
 }
@@ -1184,7 +1196,7 @@ async function renderHoldings(silent = false) {
           </div>
 
           ${state.lastSignalTime ? `
-            <div class="hold-row">
+  <div class="hold-row hold-last-signal-row">
               <span>최근신호</span>
               <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
             </div>
