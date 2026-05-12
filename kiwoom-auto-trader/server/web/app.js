@@ -1338,7 +1338,8 @@ if (lastSignalPriceEl && state.lastSignalPrice) {
     `);
   }
 }
-}if (!partialSellRowEl && state.lastSoldQty) {
+
+if (!partialSellRowEl && state.lastSoldQty) {
   const priceRow = card.querySelector(".hold-last-signal-price-row");
 
   if (priceRow) {
