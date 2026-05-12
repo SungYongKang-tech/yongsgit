@@ -1304,6 +1304,7 @@ function updateHoldingItemOnly(item) {
   const currentPriceEl = card.querySelector(".hold-current-price");
   const evalAmountEl = card.querySelector(".hold-eval-amount");
   const buyAmountEl = card.querySelector(".hold-buy-amount");
+  const buyPriceEl = card.querySelector(".hold-buy-price");
   const qtyEl = card.querySelector(".hold-qty");
   const weightRateEl = card.querySelector(".hold-weight-rate");
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
@@ -1348,6 +1349,10 @@ card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
     `${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%`;
 
   currentPriceEl.textContent = formatNumber(item.currentPrice);
+  if (buyPriceEl) {
+  buyPriceEl.textContent = formatNumber(item.buyPrice);
+}
+
   evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
   if (buyAmountEl) {
   buyAmountEl.textContent = `${formatNumber(item.buyAmount)}원`;
@@ -1715,7 +1720,8 @@ processStrategyResult(item, strategyResult);
           </div>
 
           <div class="hold-row">
-            <span>매수가 ${formatNumber(item.buyPrice)}</span>
+           
+            <span>매수가 <strong class="hold-buy-price">${formatNumber(item.buyPrice)}</strong></span>
             <span>현재가 <strong class="hold-current-price">${formatNumber(item.currentPrice)}</strong></span>
           </div>
 
