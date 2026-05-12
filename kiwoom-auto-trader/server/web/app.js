@@ -695,11 +695,23 @@ function getStrategyStatusText(status) {
   return "대기중";
 }
 
+function checkTargetSell(item) {
+  if (
+    item.targetPrice &&
+    item.currentPrice >= item.targetPrice
+  ) {
+    return {
+      action: "SELL",
+      reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
+    };
+  }
+
+  return null;
+}
+
 function evaluateStrategy(item) {
   const state = getStrategyState(item.code);
-  const isTargetHit =
-    item.targetPrice &&
-    item.currentPrice >= item.targetPrice;
+  
 
   const isStopLossHit =
     item.stopLossPrice &&
@@ -719,12 +731,11 @@ function evaluateStrategy(item) {
     };
   }
 
-  if (isTargetHit) {
-    return {
-      action: "SELL",
-      reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
-    };
-  }
+  const targetResult = checkTargetSell(item);
+
+if (targetResult) {
+  return targetResult;
+}
 
   if (isStopLossHit) {
     return {
@@ -908,8 +919,7 @@ function updateHoldingItemOnly(item) {
   
   const profitClass = item.profit >= 0 ? "up" : "down";
 
- const state = getStrategyState(item.code);
-const strategyStatusText = getStrategyStatusText(state.status);
+
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
   profitEl.textContent =
