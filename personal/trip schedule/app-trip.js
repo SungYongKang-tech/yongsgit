@@ -300,6 +300,21 @@ function openModal(open) {
     $("mStatus") && ($("mStatus").textContent = "");
   }
 }
+function bindModalKeyboardScroll() {
+  const modal = $("modalBack");
+  if (!modal) return;
+
+  modal.querySelectorAll("input, textarea, select").forEach((el) => {
+    el.addEventListener("focus", () => {
+      setTimeout(() => {
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }, 300);
+    });
+  });
+}
 
 $("closeModal")?.addEventListener("click", () => openModal(false));
 $("modalBack")?.addEventListener("click", (e) => {
@@ -325,6 +340,11 @@ async function openEdit(id, item) {
   $("mNote").value = item.note || "";
 
   openModal(true);
+bindModalKeyboardScroll();
+
+setTimeout(() => {
+  $("mTitle")?.focus();
+}, 200);
 }
 
 $("saveModal")?.addEventListener("click", async () => {
