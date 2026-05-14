@@ -1762,6 +1762,7 @@ async function fetchDailyPrices(code, days) {
 
 function applyBacktestPreset(type) {
   if (type === "trend") {
+    // 추세형: 강한 상승은 살리고, 위험 신호만 제외
     backtestTargetRateInput.value = 0;
     backtestStopRateInput.value = 3;
     backtestTrailingRateInput.value = 7;
@@ -1770,9 +1771,15 @@ function applyBacktestPreset(type) {
     strategyVolumeUpInput.checked = true;
     strategyCloseBreakInput.checked = true;
     strategyHighBreakInput.checked = true;
+
+    filterOverHeatInput.checked = false;
+    filter3DayUpInput.checked = false;
+    filterLowVolumeInput.checked = true;
+    filterWeakCandleInput.checked = true;
   }
 
   if (type === "short") {
+    // 단타형: 급등 추격 방지, 빠른 익절/손절
     backtestTargetRateInput.value = 5;
     backtestStopRateInput.value = 2;
     backtestTrailingRateInput.value = 3;
@@ -1781,9 +1788,15 @@ function applyBacktestPreset(type) {
     strategyVolumeUpInput.checked = true;
     strategyCloseBreakInput.checked = true;
     strategyHighBreakInput.checked = false;
+
+    filterOverHeatInput.checked = true;
+    filter3DayUpInput.checked = true;
+    filterLowVolumeInput.checked = true;
+    filterWeakCandleInput.checked = true;
   }
 
   if (type === "safe") {
+    // 안정형: 너무 과열은 피하되 추세는 일부 허용
     backtestTargetRateInput.value = 4;
     backtestStopRateInput.value = 2;
     backtestTrailingRateInput.value = 5;
@@ -1792,6 +1805,11 @@ function applyBacktestPreset(type) {
     strategyVolumeUpInput.checked = false;
     strategyCloseBreakInput.checked = true;
     strategyHighBreakInput.checked = true;
+
+    filterOverHeatInput.checked = false;
+    filter3DayUpInput.checked = true;
+    filterLowVolumeInput.checked = true;
+    filterWeakCandleInput.checked = true;
   }
 }
 
