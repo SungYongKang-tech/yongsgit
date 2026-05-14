@@ -303,6 +303,9 @@ const backtestTargetRateInput =
 const backtestStopRateInput =
   document.getElementById("backtestStopRate");
 
+const backtestInitialCashInput =
+  document.getElementById("backtestInitialCash");
+
 const runBacktestBtn =
   document.getElementById("runBacktestBtn");
 
@@ -1743,6 +1746,13 @@ async function runBacktest() {
   const targetRate = Number(backtestTargetRateInput.value);
   const stopRate = Number(backtestStopRateInput.value);
 
+  const initialCash =
+  Number(backtestInitialCashInput?.value) || 10000000;
+
+let cash = initialCash;
+const feeRate = 0.00015; // 매수/매도 수수료 0.015%
+const taxRate = 0.0018;  // 매도세 0.18%
+
   backtestResult.innerHTML =
     `<div class="loading">백테스트 실행 중...</div>`;
 
@@ -1758,6 +1768,8 @@ async function runBacktest() {
     let tradeCount = 0;
     let targetCount = 0;
     let stopCount = 0;
+    let totalProfit = 0;
+    let tradeDetails = [];
 
     for (let i = 1; i < prices.length; i++) {
       const buyPrice = Number(prices[i - 1].close);
@@ -1770,31 +1782,153 @@ async function runBacktest() {
       const stopPrice =
         buyPrice * (1 - stopRate / 100);
 
-      if (lowPrice <= stopPrice) {
-        tradeCount++;
-        stopCount++;
-        continue;
-      }
+      const qty = Math.floor(cash / buyPrice);
 
-      if (highPrice >= targetPrice) {
-        tradeCount++;
-        targetCount++;
-      }
+if (qty <= 0) continue;
+
+const buyAmount = qty * buyPrice;
+
+let sellPrice = null;
+let profit = 0;
+
+if (lowPrice <= stopPrice) {
+  sellPrice = stopPrice;
+
+  const sellAmount = sellPrice * qty;
+
+const buyFee = buyAmount * feeRate;
+const sellFee = sellAmount * feeRate;
+const sellTax = sellAmount * taxRate;
+
+profit =
+  sellAmount - sellFee - sellTax - buyAmount - buyFee;
+
+cash =
+  sellAmount - sellFee - sellTax;
+
+  tradeCount++;
+  stopCount++;
+  totalProfit += profit;
+  tradeDetails.push({
+  type: "손절",
+  buyPrice,
+  sellPrice,
+  qty,
+  profit,
+  profitRate: (profit / buyAmount) * 100,
+  cash
+});
+  continue;
+}
+
+if (highPrice >= targetPrice) {
+  sellPrice = targetPrice;
+
+  const sellAmount = sellPrice * qty;
+
+const buyFee = buyAmount * feeRate;
+const sellFee = sellAmount * feeRate;
+const sellTax = sellAmount * taxRate;
+
+profit =
+  sellAmount - sellFee - sellTax - buyAmount - buyFee;
+
+cash =
+  sellAmount - sellFee - sellTax;
+
+  tradeCount++;
+  targetCount++;
+  totalProfit += profit;
+  tradeDetails.push({
+  type: "목표도달",
+  buyPrice,
+  sellPrice,
+  qty,
+  profit,
+  profitRate: (profit / buyAmount) * 100,
+  cash
+});
+}
     }
 
     const winRate =
       tradeCount > 0
         ? (targetCount / tradeCount) * 100
         : 0;
+const tradeDetailHtml = tradeDetails
+  .map((trade, index) => `
+    <div class="backtest-detail-item">
+      <strong>${index + 1}. ${trade.type}</strong>
+      <div>
+        매수 ${formatNumber(Math.round(trade.buyPrice))}원 →
+        매도 ${formatNumber(Math.round(trade.sellPrice))}원
+      </div>
+      <div>
+        수량 ${formatNumber(trade.qty)}주 /
+        손익 ${trade.profit >= 0 ? "+" : ""}${formatNumber(Math.round(trade.profit))}원
+      </div>
+      <div>
+        수익률 ${trade.profitRate >= 0 ? "+" : ""}${trade.profitRate.toFixed(2)}% /
+        잔고 ${formatNumber(Math.round(trade.cash))}원
+      </div>
+    </div>
+  `)
+  .join("");
 
     backtestResult.innerHTML = `
-      <div class="backtest-result-grid">
-        <div><span>총 신호</span><strong>${tradeCount}회</strong></div>
-        <div><span>목표 도달</span><strong class="up">${targetCount}회</strong></div>
-        <div><span>손절 발생</span><strong class="down">${stopCount}회</strong></div>
-        <div><span>승률</span><strong>${winRate.toFixed(1)}%</strong></div>
-      </div>
-    `;
+  <div class="backtest-result-grid">
+    <div>
+      <span>초기자금</span>
+      <strong>${formatNumber(initialCash)}원</strong>
+    </div>
+
+    <div>
+      <span>최종자산</span>
+      <strong class="${cash >= initialCash ? "up" : "down"}">
+        ${formatNumber(Math.round(cash))}원
+      </strong>
+    </div>
+
+    <div>
+      <span>총손익</span>
+      <strong class="${totalProfit >= 0 ? "up" : "down"}">
+        ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
+      </strong>
+    </div>
+
+    <div>
+      <span>총수익률</span>
+      <strong class="${cash >= initialCash ? "up" : "down"}">
+        ${cash >= initialCash ? "+" : ""}${(((cash - initialCash) / initialCash) * 100).toFixed(2)}%
+      </strong>
+    </div>
+
+    <div>
+      <span>총 신호</span>
+      <strong>${tradeCount}회</strong>
+    </div>
+
+    <div>
+      <span>목표 도달</span>
+      <strong class="up">${targetCount}회</strong>
+    </div>
+
+    <div>
+      <span>손절 발생</span>
+      <strong class="down">${stopCount}회</strong>
+    </div>
+
+    <div>
+      <span>승률</span>
+      <strong>${winRate.toFixed(1)}%</strong>
+    </div>
+  </div>
+
+  <div class="backtest-detail-box">
+    <div class="backtest-detail-title">거래 상세내역</div>
+    ${tradeDetailHtml || `<div class="empty">거래 내역이 없습니다.</div>`}
+  </div>
+`;
   } catch (error) {
     backtestResult.innerHTML =
       `<div class="error">${error.message}</div>`;
