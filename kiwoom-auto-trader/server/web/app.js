@@ -303,6 +303,9 @@ const backtestTargetRateInput =
 const backtestStopRateInput =
   document.getElementById("backtestStopRate");
 
+  const backtestTrailingRateInput =
+  document.getElementById("backtestTrailingRate");
+
 const backtestInitialCashInput =
   document.getElementById("backtestInitialCash");
 
@@ -1757,6 +1760,8 @@ async function runBacktest() {
   const days = Number(backtestPeriodSelect.value);
   const targetRate = Number(backtestTargetRateInput.value);
   const stopRate = Number(backtestStopRateInput.value);
+  const trailingRate =
+  Number(backtestTrailingRateInput?.value) || 3;
 
   const initialCash =
   Number(backtestInitialCashInput?.value) || 10000000;
@@ -1850,10 +1855,51 @@ const remainCash =
 let sellPrice = null;
 let profit = 0;
 
-if (lowPrice <= stopPrice) {
+const targetHit = highPrice >= targetPrice;
+const stopHit = lowPrice <= stopPrice;
+
+let resultType = null;
+
+if (stopHit) {
   sellPrice = stopPrice;
+  resultType = "손절";
+} else if (targetHit) {
+  let highestPrice = highPrice;
+  let trailingSellPrice =
+    highestPrice * (1 - trailingRate / 100);
 
-  const sellAmount = sellPrice * qty;
+  sellPrice = null;
+
+  for (let j = i + 1; j < prices.length; j++) {
+    const futureHigh = Number(prices[j].high);
+    const futureLow = Number(prices[j].low);
+    const futureClose = Number(prices[j].close);
+
+    if (futureHigh > highestPrice) {
+      highestPrice = futureHigh;
+      trailingSellPrice =
+        highestPrice * (1 - trailingRate / 100);
+    }
+
+    if (futureLow <= trailingSellPrice) {
+      sellPrice = trailingSellPrice;
+      resultType = "트레일링";
+      i = j - 1;
+break;
+    }
+
+    if (j === prices.length - 1) {
+      sellPrice = futureClose;
+      resultType = "기간종료";
+      i = j - 1;
+break;
+    }
+  }
+}
+
+if (!sellPrice) continue;
+
+const sellAmount = sellPrice * qty;
 
 const sellFee = sellAmount * feeRate;
 const sellTax = sellAmount * taxRate;
@@ -1863,39 +1909,18 @@ profit = netSellAmount - buyAmount - buyFee;
 
 cash = remainCash + netSellAmount;
 
-  tradeCount++;
+tradeCount++;
+
+if (resultType === "손절") {
   stopCount++;
-  totalProfit += profit;
-  tradeDetails.push({
-  type: "손절",
-  buyPrice,
-  sellPrice,
-  qty,
-  profit,
-  profitRate: (profit / buyAmount) * 100,
-  cash
-});
-  continue;
-}
-
-if (highPrice >= targetPrice) {
-  sellPrice = targetPrice;
-
-  const sellAmount = sellPrice * qty;
-
-const sellFee = sellAmount * feeRate;
-const sellTax = sellAmount * taxRate;
-const netSellAmount = sellAmount - sellFee - sellTax;
-
-profit = netSellAmount - buyAmount - buyFee;
-
-cash = remainCash + netSellAmount;
-
-  tradeCount++;
+} else {
   targetCount++;
-  totalProfit += profit;
-  tradeDetails.push({
-  type: "목표도달",
+}
+
+totalProfit += profit;
+
+tradeDetails.push({
+  type: resultType,
   buyPrice,
   sellPrice,
   qty,
@@ -1903,7 +1928,6 @@ cash = remainCash + netSellAmount;
   profitRate: (profit / buyAmount) * 100,
   cash
 });
-}
     }
 
     const winRate =
