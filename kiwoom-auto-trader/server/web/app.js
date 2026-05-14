@@ -1841,6 +1841,7 @@ const taxRate = 0.0018;  // 매도세 0.18%
 if (qty <= 0) continue;
 
 const buyAmount = qty * buyPrice;
+const remainCash = cash - buyAmount - buyFee;
 
 let sellPrice = null;
 let profit = 0;
@@ -1850,15 +1851,13 @@ if (lowPrice <= stopPrice) {
 
   const sellAmount = sellPrice * qty;
 
-const buyFee = buyAmount * feeRate;
 const sellFee = sellAmount * feeRate;
 const sellTax = sellAmount * taxRate;
+const netSellAmount = sellAmount - sellFee - sellTax;
 
-profit =
-  sellAmount - sellFee - sellTax - buyAmount - buyFee;
+profit = netSellAmount - buyAmount - buyFee;
 
-cash =
-  sellAmount - sellFee - sellTax;
+cash = remainCash + netSellAmount;
 
   tradeCount++;
   stopCount++;
@@ -1880,15 +1879,13 @@ if (highPrice >= targetPrice) {
 
   const sellAmount = sellPrice * qty;
 
-const buyFee = buyAmount * feeRate;
 const sellFee = sellAmount * feeRate;
 const sellTax = sellAmount * taxRate;
+const netSellAmount = sellAmount - sellFee - sellTax;
 
-profit =
-  sellAmount - sellFee - sellTax - buyAmount - buyFee;
+profit = netSellAmount - buyAmount - buyFee;
 
-cash =
-  sellAmount - sellFee - sellTax;
+cash = remainCash + netSellAmount;
 
   tradeCount++;
   targetCount++;
@@ -1909,6 +1906,11 @@ cash =
       tradeCount > 0
         ? (targetCount / tradeCount) * 100
         : 0;
+
+const finalProfit = cash - initialCash;
+const finalProfitRate =
+  initialCash > 0 ? (finalProfit / initialCash) * 100 : 0;
+
 const tradeDetailHtml = tradeDetails
   .map((trade, index) => `
     <div class="backtest-detail-item">
@@ -1944,18 +1946,18 @@ const tradeDetailHtml = tradeDetails
     </div>
 
     <div>
-      <span>총손익</span>
-      <strong class="${totalProfit >= 0 ? "up" : "down"}">
-        ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
-      </strong>
-    </div>
+  <span>총손익</span>
+  <strong class="${finalProfit >= 0 ? "up" : "down"}">
+    ${finalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(finalProfit))}원
+  </strong>
+</div>
 
     <div>
-      <span>총수익률</span>
-      <strong class="${cash >= initialCash ? "up" : "down"}">
-        ${cash >= initialCash ? "+" : ""}${(((cash - initialCash) / initialCash) * 100).toFixed(2)}%
-      </strong>
-    </div>
+  <span>총수익률</span>
+  <strong class="${finalProfitRate >= 0 ? "up" : "down"}">
+    ${finalProfitRate >= 0 ? "+" : ""}${finalProfitRate.toFixed(2)}%
+  </strong>
+</div>
 
     <div>
       <span>총 신호</span>
