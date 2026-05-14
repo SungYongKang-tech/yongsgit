@@ -216,14 +216,9 @@ if (!code) {
   resultCard.innerHTML = `<div class="loading">조회 중...</div>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/price?code=${code}`);
-    const data = await res.json();
+    const data = await fetchStockPrice(code);
 
-    if (!res.ok) {
-      throw new Error(data.message || "조회 실패");
-    }
-
-    const rateClass = getRateClass(data.changeRate);
+const rateClass = getRateClass(data.changeRate);
 
     resultCard.innerHTML = `
       <div class="stock-name">${data.name}</div>
@@ -1242,39 +1237,25 @@ async function fetchStockPrice(code) {
   const res = await fetch(`${API_BASE}/api/price?code=${code}`);
   const data = await res.json();
 
-  const currentPrice =
-    Number(String(data.cur_prc || "0").replace(/[+-]/g, ""));
+  if (!res.ok) {
+    throw new Error(data.message || data.return_msg || "현재가 조회 실패");
+  }
+
+  const currentPrice = Number(
+    String(data.cur_prc || "0").replace(/[+-]/g, "")
+  );
 
   return {
     code: data.stk_cd,
     name: data.stk_nm,
-
-    // 기존 코드 호환용
-    currentPrice: currentPrice,
-
-    // 일부 다른 코드 호환용
+    currentPrice,
     price: currentPrice,
-
-    change: Number(
-      String(data.pred_pre || "0").replace(/[+-]/g, "")
-    ),
-
+    change: Number(String(data.pred_pre || "0").replace(/[+-]/g, "")),
     changeRate: data.flu_rt || "0",
-
     volume: Number(data.trde_qty || 0),
-
-    high: Number(
-      String(data.high_pric || "0").replace(/[+-]/g, "")
-    ),
-
-    low: Number(
-      String(data.low_pric || "0").replace(/[+-]/g, "")
-    ),
-
-    open: Number(
-      String(data.open_pric || "0").replace(/[+-]/g, "")
-    ),
-
+    open: Number(String(data.open_pric || "0").replace(/[+-]/g, "")),
+    high: Number(String(data.high_pric || "0").replace(/[+-]/g, "")),
+    low: Number(String(data.low_pric || "0").replace(/[+-]/g, "")),
     raw: data
   };
 }
