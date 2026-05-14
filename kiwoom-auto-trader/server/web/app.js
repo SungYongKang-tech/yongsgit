@@ -488,21 +488,9 @@ async function loadWatchList(silent = false) {
     watchList.innerHTML = `<div class="loading">관심종목 조회 중...</div>`;
   }
   try {
-    const res = await fetch(`${API_BASE}/prices`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        codes: watchCodes
-      })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || "관심종목 조회 실패");
-    }
+    const data = await Promise.all(
+  watchCodes.map((code) => fetchStockPrice(code))
+);
 
     let sortedData = [...data];
     renderAlertBox(data);
