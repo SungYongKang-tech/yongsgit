@@ -115,6 +115,83 @@ app.post("/prices", async (req, res) => {
   }
 });
 
+app.get("/api/daily", async (req, res) => {
+  try {
+    const code = String(req.query.code || "").trim();
+    const days = Number(req.query.days || 30);
+
+    if (!code) {
+      return res.status(400).json({
+        error: "종목코드가 없습니다."
+      });
+    }
+
+    const today = new Date();
+    const baseDate =
+      today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, "0") +
+      String(today.getDate()).padStart(2, "0");
+
+    const token = await getAccessToken();
+
+    const response = await fetch(
+      "https://api.kiwoom.com/api/dostk/chart",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json;charset=UTF-8",
+          "authorization": `Bearer ${token}`,
+          "api-id": "ka10081"
+        },
+        body: JSON.stringify({
+          stk_cd: code,
+          base_dt: baseDate,
+          upd_stkpc_tp: "1"
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+
+    const rawItems =
+      data.stk_dt_pole_chart_qry ||
+      data.output ||
+      data.items ||
+      [];
+
+    const items = rawItems
+      .slice(0, days)
+      .map((item) => ({
+        date: item.dt || item.date || item.stk_bsop_date,
+        open: Number(String(item.open_pric || item.open || 0).replace(/[+-]/g, "")),
+        high: Number(String(item.high_pric || item.high || 0).replace(/[+-]/g, "")),
+        low: Number(String(item.low_pric || item.low || 0).replace(/[+-]/g, "")),
+        close: Number(String(item.cur_prc || item.close_pric || item.close || 0).replace(/[+-]/g, "")),
+        volume: Number(String(item.trde_qty || item.volume || 0).replace(/[+-]/g, ""))
+      }))
+      .filter((item) => item.close > 0)
+      .reverse();
+
+    res.json({
+      code,
+      days,
+      count: items.length,
+      items
+    });
+  } catch (error) {
+    console.error("일봉 조회 오류:", error);
+
+    res.status(500).json({
+      error: "일봉 조회 실패",
+      message: error.message
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
 });
