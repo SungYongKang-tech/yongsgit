@@ -291,6 +291,24 @@ const holdRankBox = document.getElementById("holdRankBox");
 const tradeStatBox =
   document.getElementById("tradeStatBox");
 
+  const backtestCodeInput =
+  document.getElementById("backtestCode");
+
+const backtestPeriodSelect =
+  document.getElementById("backtestPeriod");
+
+const backtestTargetRateInput =
+  document.getElementById("backtestTargetRate");
+
+const backtestStopRateInput =
+  document.getElementById("backtestStopRate");
+
+const runBacktestBtn =
+  document.getElementById("runBacktestBtn");
+
+const backtestResult =
+  document.getElementById("backtestResult");
+
 let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "005930",
   "000660",
@@ -1692,6 +1710,97 @@ const result = {
   return result;
 }
 
+async function fetchDailyPrices(code, days) {
+  const res = await fetch(
+    `${API_BASE}/api/daily?code=${code}&days=${days}`
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      "일봉 데이터 조회 실패"
+    );
+  }
+
+  return data.items || data;
+}
+
+async function runBacktest() {
+  if (!backtestResult) return;
+
+  const stock = findStockByInput(backtestCodeInput.value);
+  const code = stock?.code;
+
+  if (!code) {
+    alert("백테스트할 종목명 또는 코드를 입력하세요.");
+    return;
+  }
+
+  const days = Number(backtestPeriodSelect.value);
+  const targetRate = Number(backtestTargetRateInput.value);
+  const stopRate = Number(backtestStopRateInput.value);
+
+  backtestResult.innerHTML =
+    `<div class="loading">백테스트 실행 중...</div>`;
+
+  try {
+    const prices = await fetchDailyPrices(code, days);
+
+    if (!prices || prices.length < 2) {
+      backtestResult.innerHTML =
+        `<div class="error">일봉 데이터가 부족합니다.</div>`;
+      return;
+    }
+
+    let tradeCount = 0;
+    let targetCount = 0;
+    let stopCount = 0;
+
+    for (let i = 1; i < prices.length; i++) {
+      const buyPrice = Number(prices[i - 1].close);
+      const highPrice = Number(prices[i].high);
+      const lowPrice = Number(prices[i].low);
+
+      const targetPrice =
+        buyPrice * (1 + targetRate / 100);
+
+      const stopPrice =
+        buyPrice * (1 - stopRate / 100);
+
+      if (lowPrice <= stopPrice) {
+        tradeCount++;
+        stopCount++;
+        continue;
+      }
+
+      if (highPrice >= targetPrice) {
+        tradeCount++;
+        targetCount++;
+      }
+    }
+
+    const winRate =
+      tradeCount > 0
+        ? (targetCount / tradeCount) * 100
+        : 0;
+
+    backtestResult.innerHTML = `
+      <div class="backtest-result-grid">
+        <div><span>총 신호</span><strong>${tradeCount}회</strong></div>
+        <div><span>목표 도달</span><strong class="up">${targetCount}회</strong></div>
+        <div><span>손절 발생</span><strong class="down">${stopCount}회</strong></div>
+        <div><span>승률</span><strong>${winRate.toFixed(1)}%</strong></div>
+      </div>
+    `;
+  } catch (error) {
+    backtestResult.innerHTML =
+      `<div class="error">${error.message}</div>`;
+  }
+}
+
 function renderHoldRankBox(items) {
   if (!holdRankBox) return;
 
@@ -2644,4 +2753,8 @@ if (resetHoldingsBtn) {
 
     alert("보유종목과 전략상태가 초기화되었습니다.");
   });
+}
+
+if (runBacktestBtn) {
+  runBacktestBtn.addEventListener("click", runBacktest);
 }
