@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://sytrader.duckdns.org";
 
 const stockCodeInput = document.getElementById("stockCode");
 const searchBtn = document.getElementById("searchBtn");
@@ -216,7 +216,7 @@ if (!code) {
   resultCard.innerHTML = `<div class="loading">조회 중...</div>`;
 
   try {
-    const res = await fetch(`${API_BASE}/price/${code}`);
+    const res = await fetch(`${API_BASE}/api/price?code=${code}`);
     const data = await res.json();
 
     if (!res.ok) {
@@ -1239,16 +1239,44 @@ function executeVirtualSell(code, actionType = "SELL") {
 
 
 async function fetchStockPrice(code) {
-  const res = await fetch(`${API_BASE}/price/${code}`);
+  const res = await fetch(`${API_BASE}/api/price?code=${code}`);
   const data = await res.json();
 
-console.log("보유종목 현재가 응답:", code, data);
-  
-if (!res.ok) {
-    throw new Error(data.message || "현재가 조회 실패");
-  }
+  const currentPrice =
+    Number(String(data.cur_prc || "0").replace(/[+-]/g, ""));
 
-  return data;
+  return {
+    code: data.stk_cd,
+    name: data.stk_nm,
+
+    // 기존 코드 호환용
+    currentPrice: currentPrice,
+
+    // 일부 다른 코드 호환용
+    price: currentPrice,
+
+    change: Number(
+      String(data.pred_pre || "0").replace(/[+-]/g, "")
+    ),
+
+    changeRate: data.flu_rt || "0",
+
+    volume: Number(data.trde_qty || 0),
+
+    high: Number(
+      String(data.high_pric || "0").replace(/[+-]/g, "")
+    ),
+
+    low: Number(
+      String(data.low_pric || "0").replace(/[+-]/g, "")
+    ),
+
+    open: Number(
+      String(data.open_pric || "0").replace(/[+-]/g, "")
+    ),
+
+    raw: data
+  };
 }
 
 function renderHoldRankBox(items) {
@@ -1861,7 +1889,7 @@ ${state.lastSoldQty ? `
       </div>
     `;
 
-    if (needFullRender && silent) {
+    if (needFullRender) {
   await renderHoldings(false);
   return;
 }
