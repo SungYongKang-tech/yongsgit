@@ -31,6 +31,11 @@ const volumeThresholdInput =
 const saveVolumeThresholdBtn =
   document.getElementById("saveVolumeThresholdBtn");
 
+const apiStatusBar =
+  document.getElementById("apiStatusBar");
+
+const apiWarningBanner =
+  document.getElementById("apiWarningBanner");
 
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
@@ -559,9 +564,38 @@ async function refreshWithoutJump() {
   isRefreshing = true;
 
   try {
+    const holdCodes = holdings.map((item) => item.code);
+
+    const uniqueCodes = [
+      ...new Set([...watchCodes, ...holdCodes])
+    ];
+
+    const refreshStartTime = performance.now();
+    updateApiStatus(
+      `자동조회중 · ${uniqueCodes.length}개 종목`
+    );
+
+    await Promise.all(
+      uniqueCodes.map((code) => fetchStockPrice(code))
+    );
+
     await loadWatchList(true);
     await renderHoldings(true);
     renderTradeLogs();
+
+    const elapsed =
+  Math.round(performance.now() - refreshStartTime);
+
+updateApiStatus(
+  `자동조회 정상 · ${elapsed}ms`
+);
+
+  } catch (error) {
+    updateApiStatus(
+      `자동조회 실패 · ${error.message}`,
+      true
+    );
+
   } finally {
     isRefreshing = false;
   }
@@ -576,15 +610,49 @@ async function manualRefresh() {
   isRefreshing = true;
 
   try {
+    const holdCodes = holdings.map((item) => item.code);
+
+    const uniqueCodes = [
+      ...new Set([...watchCodes, ...holdCodes])
+    ];
+
+    const refreshStartTime = performance.now();
+
+    updateApiStatus(
+      `수동조회중 · ${uniqueCodes.length}개 종목`
+    );
+
+    await Promise.all(
+      uniqueCodes.map((code) => fetchStockPrice(code))
+    );
+
     await loadWatchList();
     await renderHoldings();
     renderTradeLogs();
+
+    const elapsed =
+  Math.round(performance.now() - refreshStartTime);
+
+updateApiStatus(
+  `수동조회 정상 · ${elapsed}ms`
+);
+
+  } catch (error) {
+    updateApiStatus(
+      `조회 실패 · ${error.message}`,
+      true
+    );
+
   } finally {
     isRefreshing = false;
   }
 }
 
 async function startAutoRefresh() {
+  if (apiWarningBanner) {
+  apiWarningBanner.style.display = "none";
+}
+
   if (autoRefreshTimer) {
     clearTimeout(autoRefreshTimer);
   }
@@ -602,7 +670,7 @@ async function startAutoRefresh() {
       runRefreshLoop();
     }, getRefreshInterval());
   }
-
+  updateApiStatus("자동갱신 시작");
   runRefreshLoop();
 }
 
@@ -1234,13 +1302,73 @@ function executeVirtualSell(code, actionType = "SELL") {
   saveStrategyStates();
 }
 
+const PRICE_CACHE = {};
+const PRICE_CACHE_TTL = 14500; // 14.5초 캐시
+
+const LAST_PRICE_KEY = "kiwoom_last_price_data";
+
+let lastPriceData =
+  JSON.parse(localStorage.getItem(LAST_PRICE_KEY)) || {};
+
+function updateApiStatus(text, isError = false) {
+  if (!apiStatusBar) return;
+
+  apiStatusBar.textContent = text;
+
+  apiStatusBar.style.background =
+    isError ? "#fee2e2" : "#eff6ff";
+
+  apiStatusBar.style.color =
+    isError ? "#b91c1c" : "#1d4ed8";
+}
+
+function saveLastPriceData(code, data) {
+  lastPriceData[code] = {
+    ...data,
+    savedAt: new Date().toLocaleString("ko-KR")
+  };
+
+  localStorage.setItem(
+    LAST_PRICE_KEY,
+    JSON.stringify(lastPriceData)
+  );
+}
+
 
 async function fetchStockPrice(code) {
+  const now = Date.now();
+  const cached = PRICE_CACHE[code];
+
+  if (cached && now - cached.time < PRICE_CACHE_TTL) {
+    return cached.data;
+  }
+
   const res = await fetch(`${API_BASE}/api/price?code=${code}`);
   const data = await res.json();
 
   if (!res.ok) {
   console.error("현재가 조회 API 오류:", data);
+
+  if (res.status === 429) {
+  stopAutoRefresh();
+
+  if (apiWarningBanner) {
+    apiWarningBanner.style.display = "block";
+  }
+
+  updateApiStatus(
+    "API 요청 제한 발생",
+    true
+  );
+
+  if (lastPriceData[code]) {
+  return lastPriceData[code];
+}
+
+  throw new Error(
+    "요청이 너무 많아 자동갱신을 중지했습니다. 1~3분 후 다시 조회하세요."
+  );
+}
 
   throw new Error(
     data.message ||
@@ -1254,7 +1382,7 @@ async function fetchStockPrice(code) {
     String(data.cur_prc || "0").replace(/[+-]/g, "")
   );
 
-  return {
+  const result = {
     code: data.stk_cd,
     name: data.stk_nm,
     currentPrice,
@@ -1267,6 +1395,15 @@ async function fetchStockPrice(code) {
     low: Number(String(data.low_pric || "0").replace(/[+-]/g, "")),
     raw: data
   };
+
+  PRICE_CACHE[code] = {
+    time: now,
+    data: result
+  };
+
+  saveLastPriceData(code, result);
+
+  return result;
 }
 
 function renderHoldRankBox(items) {
@@ -2074,10 +2211,13 @@ holdQtyInput.addEventListener("keydown", (e) => {
   }
 });
 
+updateTestModeUI();
+updateApiStatus("API 대기중");
+
 loadWatchList();
 renderHoldings();
 renderTradeLogs();
-updateTestModeUI();
+
 
 const sortButtons = document.querySelectorAll(".sort-btn");
 
