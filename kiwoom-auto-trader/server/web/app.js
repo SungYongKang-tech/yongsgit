@@ -853,10 +853,10 @@ const marketClose =
 
 function getRefreshInterval() {
   if (isMarketOpenNow()) {
-    return 5000; // 장중: 5초
+    return 15000; // 장중: 15초
   }
 
-  return 30000; // 장외/휴장: 30초
+  return 60000; // 장외/휴장: 60초
 }
 
 function getStrategyState(code) {
