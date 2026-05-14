@@ -1350,6 +1350,11 @@ function updateHoldingItemOnly(item) {
       ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
       : 0;
 
+      const trailingGap =
+  trailingSellPrice
+    ? item.currentPrice - trailingSellPrice
+    : 0;
+
   const isTargetHit =
     item.targetPrice &&
     item.currentPrice >= item.targetPrice;
@@ -1754,6 +1759,11 @@ const trailingSellPrice =
     ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
     : 0;
 
+    const trailingGap =
+  trailingSellPrice
+    ? item.currentPrice - trailingSellPrice
+    : 0;
+
       const weightRate =
         totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
        item.weightRate = weightRate;
@@ -1831,7 +1841,7 @@ ${item.trailingStopRate ? `
     <strong class="hold-highest-price">
       ${
         item.highestPrice
-          ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원`
+          ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원 / ${formatNumber(item.currentPrice - trailingSellPrice)}원 여유`
           : "자동ON 후 최고가 추적"
       }
     </strong>
