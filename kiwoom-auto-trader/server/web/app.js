@@ -306,6 +306,18 @@ const backtestStopRateInput =
 const backtestInitialCashInput =
   document.getElementById("backtestInitialCash");
 
+  const strategyUpCandleInput =
+  document.getElementById("strategyUpCandle");
+
+const strategyVolumeUpInput =
+  document.getElementById("strategyVolumeUp");
+
+const strategyCloseBreakInput =
+  document.getElementById("strategyCloseBreak");
+
+const strategyHighBreakInput =
+  document.getElementById("strategyHighBreak");
+
 const runBacktestBtn =
   document.getElementById("runBacktestBtn");
 
@@ -1771,10 +1783,52 @@ const taxRate = 0.0018;  // 매도세 0.18%
     let totalProfit = 0;
     let tradeDetails = [];
 
-    for (let i = 1; i < prices.length; i++) {
-      const buyPrice = Number(prices[i - 1].close);
-      const highPrice = Number(prices[i].high);
-      const lowPrice = Number(prices[i].low);
+    for (let i = 1; i < prices.length - 1; i++) {
+  const prev = prices[i - 1];
+  const today = prices[i];
+  const next = prices[i + 1];
+
+  const prevClose = Number(prev.close);
+  const prevHigh = Number(prev.high);
+  const prevVolume = Number(prev.volume);
+
+  const todayOpen = Number(today.open);
+  const todayClose = Number(today.close);
+  const todayHigh = Number(today.high);
+  const todayVolume = Number(today.volume);
+
+  const useUpCandle = strategyUpCandleInput?.checked;
+  const useVolumeUp = strategyVolumeUpInput?.checked;
+  const useCloseBreak = strategyCloseBreakInput?.checked;
+  const useHighBreak = strategyHighBreakInput?.checked;
+
+  const strategyResults = [];
+
+  if (useUpCandle) {
+    strategyResults.push(todayClose > todayOpen);
+  }
+
+  if (useVolumeUp) {
+    strategyResults.push(todayVolume > prevVolume);
+  }
+
+  if (useCloseBreak) {
+    strategyResults.push(todayClose > prevClose);
+  }
+
+  if (useHighBreak) {
+    strategyResults.push(todayHigh > prevHigh);
+  }
+
+  const isBuySignal =
+    strategyResults.length > 0 &&
+    strategyResults.every(Boolean);
+
+  if (!isBuySignal) continue;
+
+  const buyPrice = todayClose;
+  const highPrice = Number(next.high);
+  const lowPrice = Number(next.low);
 
       const targetPrice =
         buyPrice * (1 + targetRate / 100);
