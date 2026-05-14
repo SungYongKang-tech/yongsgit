@@ -37,6 +37,9 @@ const apiStatusBar =
 const apiWarningBanner =
   document.getElementById("apiWarningBanner");
 
+const tradeToast = document.getElementById("tradeToast");
+let lastTradeAlertKey = null;
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -285,6 +288,9 @@ const WATCH_STORAGE_KEY = "kiwoom_watch_codes";
 const holdSummary = document.getElementById("holdSummary");
 const holdRankBox = document.getElementById("holdRankBox");
 
+const tradeStatBox =
+  document.getElementById("tradeStatBox");
+
 let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "005930",
   "000660",
@@ -388,11 +394,12 @@ function renderWatchItem(item) {
   previousPrices[item.code] = item.currentPrice;
 
   return `
-    <div class="watch-item ${flashClass}" data-code="${item.code}">
+    <div class="watch-item ${flashClass} ${item.isFallback ? "fallback-card" : ""}" data-code="${item.code}">
       <div class="watch-item-top">
         <div>
           <div class="watch-name">
   ${item.name}
+  ${item.isFallback ? `<span class="fallback-badge">저장가</span>` : ""}
   ${isEntryCandidate ? `<span class="entry-badge">진입후보</span>` : ""}
   ${isVolumeHot ? `<span class="volume-badge">거래량급증</span>` : ""}
   </div>
@@ -670,7 +677,9 @@ async function startAutoRefresh() {
       runRefreshLoop();
     }, getRefreshInterval());
   }
-  updateApiStatus("자동갱신 시작");
+  updateApiStatus(
+  `자동갱신 시작 · ${getRefreshInterval() / 1000}초 주기`
+);
   runRefreshLoop();
 }
 
@@ -813,10 +822,12 @@ function renderTradeLogs() {
   if (!tradeLogList) return;
 
   if (tradeLogs.length === 0) {
-    tradeLogList.innerHTML =
-      `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
-    return;
-  }
+  tradeLogList.innerHTML =
+    `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
+
+  renderTradeStats();
+  return;
+}
 
   tradeLogList.innerHTML = tradeLogs
     .slice()
@@ -859,6 +870,55 @@ function renderTradeLogs() {
       `;
     })
     .join("");
+    renderTradeStats();
+}
+
+function renderTradeStats() {
+  if (!tradeStatBox) return;
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayLogs = tradeLogs.filter((log) => log.date === todayKey);
+
+  const sellLogs = todayLogs.filter((log) =>
+    log.type === "SELL" ||
+    log.type === "SELL_ALL" ||
+    log.type === "SELL_TRAILING" ||
+    log.type === "STOP_LOSS"
+  );
+
+  const profitLogs = sellLogs.filter((log) => log.type !== "STOP_LOSS");
+  const lossLogs = sellLogs.filter((log) => log.type === "STOP_LOSS");
+
+  const winRate =
+    sellLogs.length > 0
+      ? (profitLogs.length / sellLogs.length) * 100
+      : 0;
+
+  tradeStatBox.innerHTML = `
+    <div class="trade-stat-title">자동매매 통계</div>
+
+    <div class="trade-stat-grid">
+      <div>
+        <span>오늘 매매</span>
+        <strong>${formatNumber(sellLogs.length)}회</strong>
+      </div>
+
+      <div>
+        <span>수익 신호</span>
+        <strong class="up">${formatNumber(profitLogs.length)}회</strong>
+      </div>
+
+      <div>
+        <span>손실 신호</span>
+        <strong class="down">${formatNumber(lossLogs.length)}회</strong>
+      </div>
+
+      <div>
+        <span>승률</span>
+        <strong>${winRate.toFixed(1)}%</strong>
+      </div>
+    </div>
+  `;
 }
 
 function getTodayTradeCount() {
@@ -1046,6 +1106,94 @@ function checkStopLoss(item) {
   return null;
 }
 
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function getTradeProgressHtml(item) {
+  const rows = [];
+
+  if (item.targetPrice) {
+    const percent = clampPercent((item.currentPrice / item.targetPrice) * 100);
+    const gap = item.targetPrice - item.currentPrice;
+
+    rows.push(`
+      <div class="trade-progress-row">
+        <div class="trade-progress-top">
+          <span>목표가까지</span>
+          <strong>${gap <= 0 ? "도달" : `+${formatNumber(gap)}원`}</strong>
+        </div>
+        <div class="trade-progress-bar">
+          <div class="trade-progress-fill up" style="width:${percent}%"></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (item.secondTargetPrice) {
+    const percent = clampPercent((item.currentPrice / item.secondTargetPrice) * 100);
+    const gap = item.secondTargetPrice - item.currentPrice;
+
+    rows.push(`
+      <div class="trade-progress-row">
+        <div class="trade-progress-top">
+          <span>2차 목표가까지</span>
+          <strong>${gap <= 0 ? "도달" : `+${formatNumber(gap)}원`}</strong>
+        </div>
+        <div class="trade-progress-bar">
+          <div class="trade-progress-fill up" style="width:${percent}%"></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (item.stopLossPrice) {
+    const range = item.currentPrice - item.stopLossPrice;
+    const percent = clampPercent((range / item.currentPrice) * 100);
+
+    rows.push(`
+      <div class="trade-progress-row">
+        <div class="trade-progress-top">
+          <span>손절가까지</span>
+          <strong>${range <= 0 ? "이탈" : `-${formatNumber(range)}원`}</strong>
+        </div>
+        <div class="trade-progress-bar">
+          <div class="trade-progress-fill down" style="width:${percent}%"></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (item.trailingStopRate && item.highestPrice) {
+    const trailingSellPrice =
+      Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100));
+
+    const gap = item.currentPrice - trailingSellPrice;
+    const percent = clampPercent((gap / item.currentPrice) * 100);
+
+    rows.push(`
+      <div class="trade-progress-row">
+        <div class="trade-progress-top">
+          <span>트레일링 발동까지</span>
+          <strong>${gap <= 0 ? "발동" : `${formatNumber(gap)}원`}</strong>
+        </div>
+        <div class="trade-progress-bar">
+          <div class="trade-progress-fill trailing" style="width:${percent}%"></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (rows.length === 0) return "";
+
+  return `
+    <div class="trade-progress-box">
+      <div class="trade-progress-title">자동매매 진행률</div>
+      ${rows.join("")}
+    </div>
+  `;
+}
+
 // 전략 실행 순서가 우선순위입니다.
 // 위에 있는 전략이 먼저 실행됩니다.
 const STRATEGIES = [
@@ -1072,6 +1220,13 @@ function evaluateStrategy(item) {
       reason: "자동매매 OFF"
     };
   }
+
+  if (item.isFallback) {
+  return {
+    action: "NONE",
+    reason: "저장가 사용 중 · 자동매매 보류"
+  };
+}
 
   for (const strategy of STRATEGIES) {
     const result = strategy(item);
@@ -1177,6 +1332,8 @@ if (
 
 
   executeVirtualSell(item.code, strategyResult.action);
+
+notifyTradeSignal(item, strategyResult);
 
 addTradeLog({
   type: strategyResult.action,
@@ -1322,6 +1479,110 @@ function updateApiStatus(text, isError = false) {
     isError ? "#b91c1c" : "#1d4ed8";
 }
 
+function getTradeAlertText(action) {
+  if (action === "SELL") return "목표가 도달";
+  if (action === "SELL_ALL") return "2차 목표가 도달";
+  if (action === "SELL_TRAILING") return "트레일링 발동";
+  if (action === "STOP_LOSS") return "손절 발생";
+  return "자동매매 신호";
+}
+
+function playTradeAlertSound() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.value = 880;
+
+    gainNode.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(
+      0.001,
+      audioCtx.currentTime + 0.35
+    );
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.35);
+  } catch (error) {
+    console.warn("알림음 재생 실패:", error);
+  }
+}
+
+function vibrateTradeAlert() {
+  if (navigator.vibrate) {
+    navigator.vibrate([200, 100, 200]);
+  }
+}
+
+function showTradeToast({ title, message, type }) {
+  if (!tradeToast) return;
+
+  tradeToast.className = `trade-toast ${type === "down" ? "down" : "up"}`;
+  tradeToast.innerHTML = `
+    <strong>${title}</strong>
+    <span>${message}</span>
+  `;
+
+  tradeToast.style.display = "block";
+
+  clearTimeout(showTradeToast.timer);
+  showTradeToast.timer = setTimeout(() => {
+    tradeToast.style.display = "none";
+  }, 5000);
+}
+
+function showBrowserNotification(title, message) {
+  if (!("Notification" in window)) return;
+
+  if (Notification.permission === "granted") {
+    new Notification(title, {
+      body: message
+    });
+    return;
+  }
+
+  if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        new Notification(title, {
+          body: message
+        });
+      }
+    });
+  }
+}
+
+function notifyTradeSignal(item, strategyResult) {
+  const alertKey =
+    `${item.code}_${strategyResult.action}_${strategyResult.reason}`;
+
+  if (lastTradeAlertKey === alertKey) return;
+  lastTradeAlertKey = alertKey;
+
+  const title = getTradeAlertText(strategyResult.action);
+  const message =
+    `${item.name} ${formatNumber(item.currentPrice)}원 · ${strategyResult.reason}`;
+
+  const type =
+    strategyResult.action === "STOP_LOSS" ? "down" : "up";
+
+  showTradeToast({
+    title,
+    message,
+    type
+  });
+
+  playTradeAlertSound();
+  vibrateTradeAlert();
+  showBrowserNotification(title, message);
+}
+
 function saveLastPriceData(code, data) {
   lastPriceData[code] = {
     ...data,
@@ -1349,42 +1610,63 @@ async function fetchStockPrice(code) {
   if (!res.ok) {
   console.error("현재가 조회 API 오류:", data);
 
-  if (res.status === 429) {
+ if (res.status === 429) {
   stopAutoRefresh();
 
   if (apiWarningBanner) {
     apiWarningBanner.style.display = "block";
   }
 
-  updateApiStatus(
-    "API 요청 제한 발생",
-    true
-  );
-
   if (lastPriceData[code]) {
-  return lastPriceData[code];
-}
+    updateApiStatus(
+      `API 요청 제한 · 마지막 정상가 사용 (${lastPriceData[code].savedAt})`,
+      true
+    );
+
+    return {
+  ...lastPriceData[code],
+  isFallback: true
+};
+  }
+
+updateApiStatus(
+  "API 요청 제한 발생 · 자동갱신 OFF",
+  true
+);
 
   throw new Error(
     "요청이 너무 많아 자동갱신을 중지했습니다. 1~3분 후 다시 조회하세요."
   );
 }
 
-  throw new Error(
-    data.message ||
-    data.return_msg ||
-    data.error ||
-    `현재가 조회 실패 (${res.status})`
+if (lastPriceData[code]) {
+  updateApiStatus(
+    `API 실패 · 마지막 정상가 사용 (${lastPriceData[code].savedAt})`,
+    true
   );
+
+  return {
+  ...lastPriceData[code],
+  isFallback: true
+};
+}
+
+throw new Error(
+  data.message ||
+  data.return_msg ||
+  data.error ||
+  `현재가 조회 실패 (${res.status})`
+);
 }
 
   const currentPrice = Number(
     String(data.cur_prc || "0").replace(/[+-]/g, "")
   );
 
-  const result = {
-    code: data.stk_cd,
-    name: data.stk_nm,
+const result = {
+  code: data.stk_cd,
+  name: data.stk_nm,
+  isFallback: false,
     currentPrice,
     price: currentPrice,
     change: Number(String(data.pred_pre || "0").replace(/[+-]/g, "")),
@@ -1395,6 +1677,10 @@ async function fetchStockPrice(code) {
     low: Number(String(data.low_pric || "0").replace(/[+-]/g, "")),
     raw: data
   };
+
+  if (apiWarningBanner) {
+  apiWarningBanner.style.display = "none";
+}
 
   PRICE_CACHE[code] = {
     time: now,
@@ -1449,10 +1735,13 @@ function renderHoldRankBox(items) {
 `;
 }
 
+
 function updateHoldingItemOnly(item) {
   const card = document.querySelector(`.hold-item[data-code="${item.code}"]`);
 
   if (!card) return false;
+
+  const progressAreaEl = card.querySelector(".hold-progress-area");
 
   const profitEl = card.querySelector(".hold-profit-value");
   const rateEl = card.querySelector(".hold-profit-rate");
@@ -1926,10 +2215,13 @@ const trailingSellPrice =
         totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
        item.weightRate = weightRate;
       return `
-        <div class="hold-item ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""}" data-code="${item.code}">
+        <div class="hold-item ${isTargetHit ? "target-hit" : ""} ${isStopLossHit ? "stop-loss-hit" : ""} ${item.isFallback ? "fallback-card" : ""}" data-code="${item.code}">
           <div class="hold-top">
             <div>
-              <div class="hold-name">${item.name}</div>
+              <div class="hold-name">
+  ${item.name}
+  ${item.isFallback ? `<span class="fallback-badge">저장가</span>` : ""}
+</div>
               <div class="hold-code">${item.code}</div>
             </div>
             <div>
@@ -1945,7 +2237,11 @@ const trailingSellPrice =
           <div class="hold-row">
            
             <span>매수가 <strong class="hold-buy-price">${formatNumber(item.buyPrice)}</strong></span>
-            <span>현재가 <strong class="hold-current-price">${formatNumber(item.currentPrice)}</strong></span>
+            <span>
+  현재가
+  <strong class="hold-current-price">${formatNumber(item.currentPrice)}</strong>
+  ${item.isFallback ? `<em class="fallback-text">저장가</em>` : ""}
+</span>
           </div>
 
           <div class="hold-row">
@@ -2027,11 +2323,11 @@ ${item.stopLossPrice ? `
   </div>
 
   <div class="hold-row">
-    <span>전략상태</span>
-    <strong class="hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}">
-      ${strategyStatusText}
-    </strong>
-  </div>
+  <span>전략상태</span>
+  <strong class="hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}">
+    ${item.isFallback ? "저장가 · 매매보류" : strategyStatusText}
+  </strong>
+</div>
 </div>
 
           ${state.lastAction && state.lastAction !== "NONE" ? `
@@ -2076,6 +2372,9 @@ ${state.lastSoldQty ? `
   </div>
 ` : ""}
 
+         <div class="hold-progress-area">
+  ${getTradeProgressHtml(item)}
+</div>
           <div class="hold-action-row">
             <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
               ${item.autoTrade ? "자동ON" : "자동OFF"}
