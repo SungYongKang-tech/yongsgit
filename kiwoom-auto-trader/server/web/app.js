@@ -1841,7 +1841,11 @@ const taxRate = 0.0018;  // 매도세 0.18%
 if (qty <= 0) continue;
 
 const buyAmount = qty * buyPrice;
-const remainCash = cash - buyAmount - buyFee;
+
+const buyFee = buyAmount * feeRate;
+
+const remainCash =
+  cash - buyAmount - buyFee;
 
 let sellPrice = null;
 let profit = 0;
