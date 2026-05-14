@@ -40,6 +40,18 @@ const apiWarningBanner =
 const tradeToast = document.getElementById("tradeToast");
 let lastTradeAlertKey = null;
 
+const filterOverHeatInput =
+  document.getElementById("filterOverHeat");
+
+const filter3DayUpInput =
+  document.getElementById("filter3DayUp");
+
+const filterLowVolumeInput =
+  document.getElementById("filterLowVolume");
+
+const filterWeakCandleInput =
+  document.getElementById("filterWeakCandle");
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -320,6 +332,8 @@ const strategyCloseBreakInput =
 
 const strategyHighBreakInput =
   document.getElementById("strategyHighBreak");
+
+
 
 const runBacktestBtn =
   document.getElementById("runBacktestBtn");
@@ -1866,9 +1880,56 @@ const taxRate = 0.0018;  // 매도세 0.18%
     strategyResults.push(todayHigh > prevHigh);
   }
 
-  const isBuySignal =
-    strategyResults.length > 0 &&
-    strategyResults.every(Boolean);
+  const filterResults = [];
+
+const todayChangeRate =
+  ((todayClose - prevClose) / prevClose) * 100;
+
+const yesterdayClose =
+  i >= 2 ? Number(prices[i - 2].close) : prevClose;
+
+const threeDayUp =
+  todayClose > prevClose &&
+  prevClose > yesterdayClose;
+
+const volumeWeak =
+  todayVolume < prevVolume * 0.5;
+
+const upperTail =
+  todayHigh - todayClose;
+
+const candleBody =
+  Math.abs(todayClose - todayOpen);
+
+const weakCandle =
+  upperTail > candleBody * 2 &&
+  todayClose < todayOpen;
+
+if (filterOverHeatInput?.checked) {
+  filterResults.push(todayChangeRate < 7);
+}
+
+if (filter3DayUpInput?.checked) {
+  filterResults.push(!threeDayUp);
+}
+
+if (filterLowVolumeInput?.checked) {
+  filterResults.push(!volumeWeak);
+}
+
+if (filterWeakCandleInput?.checked) {
+  filterResults.push(!weakCandle);
+}
+
+  const strategyPass =
+  strategyResults.length > 0 &&
+  strategyResults.every(Boolean);
+
+const filterPass =
+  filterResults.every(Boolean);
+
+const isBuySignal =
+  strategyPass && filterPass;
 
   if (!isBuySignal) continue;
 
