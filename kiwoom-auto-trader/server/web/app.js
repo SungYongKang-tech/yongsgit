@@ -1746,6 +1746,47 @@ async function fetchDailyPrices(code, days) {
   return data.items || data;
 }
 
+function applyBacktestPreset(type) {
+  if (type === "trend") {
+    backtestTargetRateInput.value = 0;
+    backtestStopRateInput.value = 3;
+    backtestTrailingRateInput.value = 7;
+
+    strategyUpCandleInput.checked = true;
+    strategyVolumeUpInput.checked = true;
+    strategyCloseBreakInput.checked = true;
+    strategyHighBreakInput.checked = true;
+  }
+
+  if (type === "short") {
+    backtestTargetRateInput.value = 5;
+    backtestStopRateInput.value = 2;
+    backtestTrailingRateInput.value = 3;
+
+    strategyUpCandleInput.checked = true;
+    strategyVolumeUpInput.checked = true;
+    strategyCloseBreakInput.checked = true;
+    strategyHighBreakInput.checked = false;
+  }
+
+  if (type === "safe") {
+    backtestTargetRateInput.value = 4;
+    backtestStopRateInput.value = 2;
+    backtestTrailingRateInput.value = 5;
+
+    strategyUpCandleInput.checked = true;
+    strategyVolumeUpInput.checked = false;
+    strategyCloseBreakInput.checked = true;
+    strategyHighBreakInput.checked = true;
+  }
+}
+
+document.querySelectorAll(".preset-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    applyBacktestPreset(btn.dataset.preset);
+  });
+});
+
 async function runBacktest() {
   if (!backtestResult) return;
 
