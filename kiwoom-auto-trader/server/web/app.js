@@ -1362,7 +1362,9 @@ if (weightRateEl && item.weightRate !== undefined) {
 }
   if (autoStatusEl) {
   autoStatusEl.className = `hold-auto-status ${item.autoTrade ? "up" : ""}`;
-  autoStatusEl.textContent = item.autoTrade ? "ON" : "OFF";
+  autoStatusEl.textContent = item.autoTrade
+  ? "ON · 감시중"
+  : "OFF · 조건확인";
 }
 if (autoBtnEl) {
   autoBtnEl.classList.toggle("active", Boolean(item.autoTrade));
@@ -1377,28 +1379,69 @@ const stopLossStatusEl = card.querySelector(".hold-stoploss-status");
 if (targetStatusEl && item.targetPrice) {
   const hit = item.currentPrice >= item.targetPrice;
   targetStatusEl.className = `hold-target-status ${hit ? "up" : ""}`;
-  targetStatusEl.textContent = hit ? "목표도달" : "대기중";
+  targetStatusEl.textContent = hit
+  ? "목표도달"
+  : `+${formatNumber(targetGap)}원 남음`;
 }
 
 if (secondTargetStatusEl && item.secondTargetPrice) {
   const hit = item.currentPrice >= item.secondTargetPrice;
   secondTargetStatusEl.className = `hold-second-target-status ${hit ? "up" : ""}`;
-  secondTargetStatusEl.textContent = hit ? "2차도달" : "대기중";
+  secondTargetStatusEl.textContent = hit
+  ? "2차도달"
+  : `+${formatNumber(secondTargetGap)}원 남음`;
 }
 
 if (highestPriceEl) {
-  highestPriceEl.textContent =
-    `최고가 ${formatNumber(item.highestPrice || item.currentPrice)}`;
+  highestPriceEl.textContent = item.highestPrice
+  ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원`
+  : "자동ON 후 최고가 추적";
 }
 
 if (stopLossStatusEl && item.stopLossPrice) {
   const hit = item.currentPrice <= item.stopLossPrice;
   stopLossStatusEl.className = `hold-stoploss-status ${hit ? "down" : ""}`;
-  stopLossStatusEl.textContent = hit ? "손절신호" : "대기중";
+  stopLossStatusEl.textContent = hit
+  ? "손절신호"
+  : `${formatNumber(stopLossGap)}원 여유`;
 }
 
   const state = getStrategyState(item.code);
   const strategyStatusText = getStrategyStatusText(state.status);
+
+  const targetGap = item.targetPrice
+  ? item.targetPrice - item.currentPrice
+  : 0;
+
+const secondTargetGap = item.secondTargetPrice
+  ? item.secondTargetPrice - item.currentPrice
+  : 0;
+
+const stopLossGap = item.stopLossPrice
+  ? item.currentPrice - item.stopLossPrice
+  : 0;
+
+const trailingSellPrice =
+  item.trailingStopRate && item.highestPrice
+    ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
+    : 0;
+
+  const targetGap = item.targetPrice
+  ? item.targetPrice - item.currentPrice
+  : 0;
+
+const secondTargetGap = item.secondTargetPrice
+  ? item.secondTargetPrice - item.currentPrice
+  : 0;
+
+const stopLossGap = item.stopLossPrice
+  ? item.currentPrice - item.stopLossPrice
+  : 0;
+
+const trailingSellPrice =
+  item.trailingStopRate && item.highestPrice
+    ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
+    : 0;
 
   if (strategyStatusEl) {
     strategyStatusEl.className =
@@ -1742,45 +1785,61 @@ processStrategyResult(item, strategyResult);
   <div class="hold-strategy-title">자동매매 상태판</div>
 
   ${item.targetPrice ? `
-    <div class="hold-row">
-      <span>목표가 ${formatNumber(item.targetPrice)}원</span>
-      <strong class="hold-target-status ${item.currentPrice >= item.targetPrice ? "up" : ""}">
-        ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
-      </strong>
-    </div>
-  ` : ""}
+  <div class="hold-row">
+    <span>1차 목표 ${formatNumber(item.targetPrice)}원</span>
+    <strong class="hold-target-status ${item.currentPrice >= item.targetPrice ? "up" : ""}">
+      ${
+        item.currentPrice >= item.targetPrice
+          ? "목표도달"
+          : `+${formatNumber(targetGap)}원 남음`
+      }
+    </strong>
+  </div>
+` : ""}
 
-  ${item.secondTargetPrice ? `
-    <div class="hold-row">
-      <span>2차 목표가 ${formatNumber(item.secondTargetPrice)}원</span>
-      <strong class="hold-second-target-status ${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
-        ${item.currentPrice >= item.secondTargetPrice ? "2차도달" : "대기중"}
-      </strong>
-    </div>
-  ` : ""}
+${item.secondTargetPrice ? `
+  <div class="hold-row">
+    <span>2차 목표 ${formatNumber(item.secondTargetPrice)}원</span>
+    <strong class="hold-second-target-status ${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
+      ${
+        item.currentPrice >= item.secondTargetPrice
+          ? "2차도달"
+          : `+${formatNumber(secondTargetGap)}원 남음`
+      }
+    </strong>
+  </div>
+` : ""}
 
-  ${item.trailingStopRate ? `
-    <div class="hold-row">
-      <span>트레일링 ${item.trailingStopRate}%</span>
-      <strong class="hold-highest-price">
-        최고가 ${formatNumber(item.highestPrice || item.currentPrice)}
-      </strong>
-    </div>
-  ` : ""}
+${item.trailingStopRate ? `
+  <div class="hold-row">
+    <span>트레일링 ${item.trailingStopRate}%</span>
+    <strong class="hold-highest-price">
+      ${
+        item.highestPrice
+          ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원`
+          : "자동ON 후 최고가 추적"
+      }
+    </strong>
+  </div>
+` : ""}
 
-  ${item.stopLossPrice ? `
-    <div class="hold-row">
-      <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
-      <strong class="hold-stoploss-status ${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
-        ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
-      </strong>
-    </div>
-  ` : ""}
+${item.stopLossPrice ? `
+  <div class="hold-row">
+    <span>손절 ${formatNumber(item.stopLossPrice)}원</span>
+    <strong class="hold-stoploss-status ${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
+      ${
+        item.currentPrice <= item.stopLossPrice
+          ? "손절신호"
+          : `${formatNumber(stopLossGap)}원 여유`
+      }
+    </strong>
+  </div>
+` : ""}
 
   <div class="hold-row">
     <span>자동매매</span>
     <strong class="hold-auto-status ${item.autoTrade ? "up" : ""}">
-      ${item.autoTrade ? "ON" : "OFF"}
+      ${item.autoTrade ? "ON · 감시중" : "OFF · 조건확인"}
     </strong>
   </div>
 
