@@ -745,37 +745,51 @@ function renderTradeLogs() {
   if (!tradeLogList) return;
 
   if (tradeLogs.length === 0) {
-    tradeLogList.innerHTML = `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
+    tradeLogList.innerHTML =
+      `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
     return;
   }
 
   tradeLogList.innerHTML = tradeLogs
     .slice()
     .reverse()
-    .map((log) => `
-      <div class="trade-log-item">
-        <strong class="${log.type === "SELL" || log.type === "SELL_ALL" || log.type === "SELL_TRAILING" ? "up" : "down"}">
-          ${
-  log.type === "SELL"
-  ? "1차매도"
-  : log.type === "SELL_ALL"
-  ? "2차매도"
-  : log.type === "SELL_TRAILING"
-  ? "트레일링매도"
-    : log.type === "STOP_LOSS"
-    ? "가상손절"
-    : "가상매수"
-}
-        </strong>
-        ${log.name} / ${formatNumber(log.price)}원
-        ${log.sellQty ? ` / 매도 ${formatNumber(log.sellQty)}주` : ""}
-        ${log.remainQty ? ` / 잔여 ${formatNumber(log.remainQty)}주` : ""}
+    .map((log) => {
+      const typeText =
+        log.type === "SELL"
+          ? "1차매도"
+          : log.type === "SELL_ALL"
+          ? "2차매도"
+          : log.type === "SELL_TRAILING"
+          ? "트레일링매도"
+          : log.type === "STOP_LOSS"
+          ? "손절매도"
+          : "가상매수";
 
-        <div class="trade-log-time">
-          ${log.reason} · ${log.time}
+      const typeClass =
+        log.type === "STOP_LOSS" ? "down" : "up";
+
+      return `
+        <div class="trade-log-item">
+          <div class="trade-log-main">
+            <strong class="${typeClass}">[${typeText}] ${log.name}</strong>
+            <span>${formatNumber(log.price)}원</span>
+          </div>
+
+          <div class="trade-log-detail">
+            ${log.sellQty ? `매도 ${formatNumber(log.sellQty)}주` : ""}
+            ${log.remainQty ? ` / 잔여 ${formatNumber(log.remainQty)}주` : ""}
+          </div>
+
+          <div class="trade-log-reason">
+            사유: ${log.reason}
+          </div>
+
+          <div class="trade-log-time">
+            시간: ${log.time}
+          </div>
         </div>
-      </div>
-    `)
+      `;
+    })
     .join("");
 }
 
@@ -1430,7 +1444,7 @@ function updateHoldingItemOnly(item) {
 
   if (highestPriceEl) {
     highestPriceEl.textContent = item.highestPrice
-      ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원`
+      ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원 / ${formatNumber(trailingGap)}원 여유`
       : "자동ON 후 최고가 추적";
   }
 
