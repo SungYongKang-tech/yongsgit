@@ -1240,8 +1240,15 @@ async function fetchStockPrice(code) {
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error(data.message || data.return_msg || "현재가 조회 실패");
-  }
+  console.error("현재가 조회 API 오류:", data);
+
+  throw new Error(
+    data.message ||
+    data.return_msg ||
+    data.error ||
+    `현재가 조회 실패 (${res.status})`
+  );
+}
 
   const currentPrice = Number(
     String(data.cur_prc || "0").replace(/[+-]/g, "")
