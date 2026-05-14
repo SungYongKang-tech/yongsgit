@@ -1307,33 +1307,59 @@ function updateHoldingItemOnly(item) {
   const strategyStatusEl = card.querySelector(".hold-strategy-status");
   const autoStatusEl = card.querySelector(".hold-auto-status");
   const autoBtnEl = card.querySelector(".hold-auto");
+
   const lastSignalTimeEl = card.querySelector(".hold-last-signal-time");
   const lastSignalRowEl = card.querySelector(".hold-last-signal-row");
   const lastSignalPriceEl = card.querySelector(".hold-last-signal-price");
   const lastSignalPriceRowEl = card.querySelector(".hold-last-signal-price-row");
+
   const partialSellRowEl = card.querySelector(".hold-partial-sell-row");
   const partialSellValueEl = card.querySelector(".hold-partial-sell-value");
-  const lastActionRowEl =
-  card.querySelector(".hold-last-action-row");
-  const lastActionValueEl =
-  card.querySelector(".hold-last-action-value");
+
+  const lastActionRowEl = card.querySelector(".hold-last-action-row");
+  const lastActionValueEl = card.querySelector(".hold-last-action-value");
+
+  const targetStatusEl = card.querySelector(".hold-target-status");
+  const secondTargetStatusEl = card.querySelector(".hold-second-target-status");
+  const highestPriceEl = card.querySelector(".hold-highest-price");
+  const stopLossStatusEl = card.querySelector(".hold-stoploss-status");
 
   if (!profitEl || !rateEl || !currentPriceEl || !evalAmountEl) {
     return false;
   }
 
+  const state = getStrategyState(item.code);
+  const strategyStatusText = getStrategyStatusText(state.status);
+
   const profitClass = item.profit >= 0 ? "up" : "down";
 
+  const targetGap = item.targetPrice
+    ? item.targetPrice - item.currentPrice
+    : 0;
+
+  const secondTargetGap = item.secondTargetPrice
+    ? item.secondTargetPrice - item.currentPrice
+    : 0;
+
+  const stopLossGap = item.stopLossPrice
+    ? item.currentPrice - item.stopLossPrice
+    : 0;
+
+  const trailingSellPrice =
+    item.trailingStopRate && item.highestPrice
+      ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
+      : 0;
+
   const isTargetHit =
-  item.targetPrice &&
-  item.currentPrice >= item.targetPrice;
+    item.targetPrice &&
+    item.currentPrice >= item.targetPrice;
 
-const isStopLossHit =
-  item.stopLossPrice &&
-  item.currentPrice <= item.stopLossPrice;
+  const isStopLossHit =
+    item.stopLossPrice &&
+    item.currentPrice <= item.stopLossPrice;
 
-card.classList.toggle("target-hit", Boolean(isTargetHit));
-card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
+  card.classList.toggle("target-hit", Boolean(isTargetHit));
+  card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
 
   profitEl.className = `hold-profit hold-profit-value ${profitClass}`;
   profitEl.textContent =
@@ -1346,200 +1372,172 @@ card.classList.toggle("stop-loss-hit", Boolean(isStopLossHit));
     `${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%`;
 
   currentPriceEl.textContent = formatNumber(item.currentPrice);
+
   if (buyPriceEl) {
-  buyPriceEl.textContent = formatNumber(item.buyPrice);
-}
+    buyPriceEl.textContent = formatNumber(item.buyPrice);
+  }
 
   evalAmountEl.textContent = `${formatNumber(item.evalAmount)}원`;
+
   if (buyAmountEl) {
-  buyAmountEl.textContent = `${formatNumber(item.buyAmount)}원`;
-}
+    buyAmountEl.textContent = `${formatNumber(item.buyAmount)}원`;
+  }
+
   if (qtyEl) {
-  qtyEl.textContent = `${formatNumber(item.qty)}주`;
-}
-if (weightRateEl && item.weightRate !== undefined) {
-  weightRateEl.textContent = `${item.weightRate.toFixed(1)}%`;
-}
+    qtyEl.textContent = `${formatNumber(item.qty)}주`;
+  }
+
+  if (weightRateEl && item.weightRate !== undefined) {
+    weightRateEl.textContent = `${item.weightRate.toFixed(1)}%`;
+  }
+
   if (autoStatusEl) {
-  autoStatusEl.className = `hold-auto-status ${item.autoTrade ? "up" : ""}`;
-  autoStatusEl.textContent = item.autoTrade
-  ? "ON · 감시중"
-  : "OFF · 조건확인";
-}
-if (autoBtnEl) {
-  autoBtnEl.classList.toggle("active", Boolean(item.autoTrade));
-  autoBtnEl.textContent = item.autoTrade ? "자동ON" : "자동OFF";
-}
+    autoStatusEl.className = `hold-auto-status ${item.autoTrade ? "up" : ""}`;
+    autoStatusEl.textContent = item.autoTrade
+      ? "ON · 감시중"
+      : "OFF · 조건확인";
+  }
 
-  const targetStatusEl = card.querySelector(".hold-target-status");
-const secondTargetStatusEl = card.querySelector(".hold-second-target-status");
-const highestPriceEl = card.querySelector(".hold-highest-price");
-const stopLossStatusEl = card.querySelector(".hold-stoploss-status");
+  if (autoBtnEl) {
+    autoBtnEl.classList.toggle("active", Boolean(item.autoTrade));
+    autoBtnEl.textContent = item.autoTrade ? "자동ON" : "자동OFF";
+  }
 
-if (targetStatusEl && item.targetPrice) {
-  const hit = item.currentPrice >= item.targetPrice;
-  targetStatusEl.className = `hold-target-status ${hit ? "up" : ""}`;
-  targetStatusEl.textContent = hit
-  ? "목표도달"
-  : `+${formatNumber(targetGap)}원 남음`;
-}
+  if (targetStatusEl && item.targetPrice) {
+    const hit = item.currentPrice >= item.targetPrice;
 
-if (secondTargetStatusEl && item.secondTargetPrice) {
-  const hit = item.currentPrice >= item.secondTargetPrice;
-  secondTargetStatusEl.className = `hold-second-target-status ${hit ? "up" : ""}`;
-  secondTargetStatusEl.textContent = hit
-  ? "2차도달"
-  : `+${formatNumber(secondTargetGap)}원 남음`;
-}
+    targetStatusEl.className = `hold-target-status ${hit ? "up" : ""}`;
+    targetStatusEl.textContent = hit
+      ? "목표도달"
+      : `+${formatNumber(targetGap)}원 남음`;
+  }
 
-if (highestPriceEl) {
-  highestPriceEl.textContent = item.highestPrice
-  ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원`
-  : "자동ON 후 최고가 추적";
-}
+  if (secondTargetStatusEl && item.secondTargetPrice) {
+    const hit = item.currentPrice >= item.secondTargetPrice;
 
-if (stopLossStatusEl && item.stopLossPrice) {
-  const hit = item.currentPrice <= item.stopLossPrice;
-  stopLossStatusEl.className = `hold-stoploss-status ${hit ? "down" : ""}`;
-  stopLossStatusEl.textContent = hit
-  ? "손절신호"
-  : `${formatNumber(stopLossGap)}원 여유`;
-}
+    secondTargetStatusEl.className =
+      `hold-second-target-status ${hit ? "up" : ""}`;
 
-  const state = getStrategyState(item.code);
-  const strategyStatusText = getStrategyStatusText(state.status);
+    secondTargetStatusEl.textContent = hit
+      ? "2차도달"
+      : `+${formatNumber(secondTargetGap)}원 남음`;
+  }
 
-  const targetGap = item.targetPrice
-  ? item.targetPrice - item.currentPrice
-  : 0;
+  if (highestPriceEl) {
+    highestPriceEl.textContent = item.highestPrice
+      ? `최고 ${formatNumber(item.highestPrice)}원 / 발동 ${formatNumber(trailingSellPrice)}원`
+      : "자동ON 후 최고가 추적";
+  }
 
-const secondTargetGap = item.secondTargetPrice
-  ? item.secondTargetPrice - item.currentPrice
-  : 0;
+  if (stopLossStatusEl && item.stopLossPrice) {
+    const hit = item.currentPrice <= item.stopLossPrice;
 
-const stopLossGap = item.stopLossPrice
-  ? item.currentPrice - item.stopLossPrice
-  : 0;
-
-const trailingSellPrice =
-  item.trailingStopRate && item.highestPrice
-    ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
-    : 0;
-
-  const targetGap = item.targetPrice
-  ? item.targetPrice - item.currentPrice
-  : 0;
-
-const secondTargetGap = item.secondTargetPrice
-  ? item.secondTargetPrice - item.currentPrice
-  : 0;
-
-const stopLossGap = item.stopLossPrice
-  ? item.currentPrice - item.stopLossPrice
-  : 0;
-
-const trailingSellPrice =
-  item.trailingStopRate && item.highestPrice
-    ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
-    : 0;
+    stopLossStatusEl.className = `hold-stoploss-status ${hit ? "down" : ""}`;
+    stopLossStatusEl.textContent = hit
+      ? "손절신호"
+      : `${formatNumber(stopLossGap)}원 여유`;
+  }
 
   if (strategyStatusEl) {
     strategyStatusEl.className =
       `hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}`;
+
     strategyStatusEl.textContent = strategyStatusText;
   }
 
-  
-const lastActionText =
-  state.lastAction === "SELL"
-    ? "1차매도"
-    : state.lastAction === "SELL_ALL"
-    ? "2차매도"
-    : state.lastAction === "SELL_TRAILING"
-    ? "트레일링매도"
-    : state.lastAction === "STOP_LOSS"
-    ? "손절매도"
-    : state.lastAction;
+  const lastActionText =
+    state.lastAction === "SELL"
+      ? "1차매도"
+      : state.lastAction === "SELL_ALL"
+      ? "2차매도"
+      : state.lastAction === "SELL_TRAILING"
+      ? "트레일링매도"
+      : state.lastAction === "STOP_LOSS"
+      ? "손절매도"
+      : state.lastAction;
 
-if (lastActionValueEl && state.lastAction && state.lastAction !== "NONE") {
-  lastActionValueEl.className =
-    `hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}`;
+  if (lastActionValueEl && state.lastAction && state.lastAction !== "NONE") {
+    lastActionValueEl.className =
+      `hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}`;
 
-  lastActionValueEl.textContent = lastActionText;
+    lastActionValueEl.textContent = lastActionText;
 
-} else if (!lastActionRowEl && state.lastAction && state.lastAction !== "NONE") {
+  } else if (!lastActionRowEl && state.lastAction && state.lastAction !== "NONE") {
+    const strategyRow =
+      card.querySelector(".hold-strategy-status")?.closest(".hold-row");
 
-  const strategyRow =
-    card.querySelector(".hold-strategy-status")?.closest(".hold-row");
-
-  if (strategyRow) {
-    strategyRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-last-action-row">
-        <span>최근액션</span>
-        <strong class="hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
-          ${lastActionText}
-        </strong>
-      </div>
-    `);
+    if (strategyRow) {
+      strategyRow.insertAdjacentHTML("afterend", `
+        <div class="hold-row hold-last-action-row">
+          <span>최근액션</span>
+          <strong class="hold-last-action-value ${state.lastAction === "STOP_LOSS" ? "down" : "up"}">
+            ${lastActionText}
+          </strong>
+        </div>
+      `);
+    }
   }
-}
 
- if (lastSignalTimeEl && state.lastSignalTime) {
-  lastSignalTimeEl.textContent = state.lastSignalTime;
-} else if (!lastSignalRowEl && state.lastSignalTime) {
-  const actionRow =
-  card.querySelector(".hold-last-action-row") ||
-  card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+  if (lastSignalTimeEl && state.lastSignalTime) {
+    lastSignalTimeEl.textContent = state.lastSignalTime;
 
-  if (actionRow) {
-  actionRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-last-signal-row">
-        <span>최근신호</span>
-        <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
-      </div>
-    `);
+  } else if (!lastSignalRowEl && state.lastSignalTime) {
+    const actionRow =
+      card.querySelector(".hold-last-action-row") ||
+      card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+
+    if (actionRow) {
+      actionRow.insertAdjacentHTML("afterend", `
+        <div class="hold-row hold-last-signal-row">
+          <span>최근신호</span>
+          <strong class="hold-last-signal-time">${state.lastSignalTime}</strong>
+        </div>
+      `);
+    }
   }
-}
 
-if (lastSignalPriceEl && state.lastSignalPrice) {
-  lastSignalPriceEl.textContent = `${formatNumber(state.lastSignalPrice)}원`;
-} else if (!lastSignalPriceRowEl && state.lastSignalPrice) {
-  const signalRow = card.querySelector(".hold-last-signal-row");
+  if (lastSignalPriceEl && state.lastSignalPrice) {
+    lastSignalPriceEl.textContent =
+      `${formatNumber(state.lastSignalPrice)}원`;
 
-  if (signalRow) {
-    signalRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-last-signal-price-row">
-        <span>신호가격</span>
-        <strong class="hold-last-signal-price">${formatNumber(state.lastSignalPrice)}원</strong>
-      </div>
-    `);
+  } else if (!lastSignalPriceRowEl && state.lastSignalPrice) {
+    const signalRow = card.querySelector(".hold-last-signal-row");
+
+    if (signalRow) {
+      signalRow.insertAdjacentHTML("afterend", `
+        <div class="hold-row hold-last-signal-price-row">
+          <span>신호가격</span>
+          <strong class="hold-last-signal-price">
+            ${formatNumber(state.lastSignalPrice)}원
+          </strong>
+        </div>
+      `);
+    }
   }
-}
 
-if (partialSellValueEl && state.lastSoldQty) {
-  partialSellValueEl.textContent =
-    `${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주`;
-}
-
-if (!partialSellRowEl && state.lastSoldQty) {
-  const baseRow =
-    card.querySelector(".hold-last-signal-price-row") ||
-    card.querySelector(".hold-last-signal-row") ||
-    card.querySelector(".hold-last-action-row") ||
-    card.querySelector(".hold-strategy-status")?.closest(".hold-row");
-
-  if (baseRow) {
-    baseRow.insertAdjacentHTML("afterend", `
-      <div class="hold-row hold-partial-sell-row">
-        <span>분할매도</span>
-        <strong class="hold-partial-sell-value">
-          ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
-        </strong>
-      </div>
-    `);
+  if (partialSellValueEl && state.lastSoldQty) {
+    partialSellValueEl.textContent =
+      `${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주`;
   }
-}
 
+  if (!partialSellRowEl && state.lastSoldQty) {
+    const baseRow =
+      card.querySelector(".hold-last-signal-price-row") ||
+      card.querySelector(".hold-last-signal-row") ||
+      card.querySelector(".hold-last-action-row") ||
+      card.querySelector(".hold-strategy-status")?.closest(".hold-row");
+
+    if (baseRow) {
+      baseRow.insertAdjacentHTML("afterend", `
+        <div class="hold-row hold-partial-sell-row">
+          <span>분할매도</span>
+          <strong class="hold-partial-sell-value">
+            ${formatNumber(state.lastSoldQty)}주 매도 / 잔여 ${formatNumber(state.remainQty || 0)}주
+          </strong>
+        </div>
+      `);
+    }
+  }
 
   return true;
 }
@@ -1738,6 +1736,23 @@ processStrategyResult(item, strategyResult);
 
       const state = getStrategyState(item.code);
       const strategyStatusText = getStrategyStatusText(state.status);
+
+      const targetGap = item.targetPrice
+  ? item.targetPrice - item.currentPrice
+  : 0;
+
+const secondTargetGap = item.secondTargetPrice
+  ? item.secondTargetPrice - item.currentPrice
+  : 0;
+
+const stopLossGap = item.stopLossPrice
+  ? item.currentPrice - item.stopLossPrice
+  : 0;
+
+const trailingSellPrice =
+  item.trailingStopRate && item.highestPrice
+    ? Math.floor(item.highestPrice * (1 - item.trailingStopRate / 100))
+    : 0;
 
       const weightRate =
         totalEvalForWeight > 0 ? (item.evalAmount / totalEvalForWeight) * 100 : 0;
