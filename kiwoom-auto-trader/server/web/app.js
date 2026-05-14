@@ -1738,55 +1738,59 @@ processStrategyResult(item, strategyResult);
             <strong class="hold-weight-rate">${weightRate.toFixed(1)}%</strong>
           </div>
 
-          ${item.targetPrice ? `
-            <div class="hold-row">
-              <span>목표가 ${formatNumber(item.targetPrice)}원</span>
-              <strong class="hold-target-status ${item.currentPrice >= item.targetPrice ? "up" : ""}">
-                ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
-              </strong>
-            </div>
-          ` : ""}
+<div class="hold-strategy-panel">
+  <div class="hold-strategy-title">자동매매 상태판</div>
 
-          ${item.secondTargetPrice ? `
+  ${item.targetPrice ? `
+    <div class="hold-row">
+      <span>목표가 ${formatNumber(item.targetPrice)}원</span>
+      <strong class="hold-target-status ${item.currentPrice >= item.targetPrice ? "up" : ""}">
+        ${item.currentPrice >= item.targetPrice ? "목표도달" : "대기중"}
+      </strong>
+    </div>
+  ` : ""}
+
+  ${item.secondTargetPrice ? `
+    <div class="hold-row">
+      <span>2차 목표가 ${formatNumber(item.secondTargetPrice)}원</span>
+      <strong class="hold-second-target-status ${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
+        ${item.currentPrice >= item.secondTargetPrice ? "2차도달" : "대기중"}
+      </strong>
+    </div>
+  ` : ""}
+
+  ${item.trailingStopRate ? `
+    <div class="hold-row">
+      <span>트레일링 ${item.trailingStopRate}%</span>
+      <strong class="hold-highest-price">
+        최고가 ${formatNumber(item.highestPrice || item.currentPrice)}
+      </strong>
+    </div>
+  ` : ""}
+
+  ${item.stopLossPrice ? `
+    <div class="hold-row">
+      <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
+      <strong class="hold-stoploss-status ${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
+        ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
+      </strong>
+    </div>
+  ` : ""}
+
   <div class="hold-row">
-    <span>2차 목표가 ${formatNumber(item.secondTargetPrice)}원</span>
-    <strong class="hold-second-target-status ${item.currentPrice >= item.secondTargetPrice ? "up" : ""}">
-      ${item.currentPrice >= item.secondTargetPrice ? "2차도달" : "대기중"}
+    <span>자동매매</span>
+    <strong class="hold-auto-status ${item.autoTrade ? "up" : ""}">
+      ${item.autoTrade ? "ON" : "OFF"}
     </strong>
   </div>
-` : ""}
 
-${item.trailingStopRate ? `
   <div class="hold-row">
-    <span>트레일링 ${item.trailingStopRate}%</span>
-    <strong class="hold-highest-price">
-  최고가 ${formatNumber(item.highestPrice || item.currentPrice)}
-</strong>
+    <span>전략상태</span>
+    <strong class="hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}">
+      ${strategyStatusText}
+    </strong>
   </div>
-` : ""}
-
-          ${item.stopLossPrice ? `
-            <div class="hold-row">
-              <span>손절가 ${formatNumber(item.stopLossPrice)}원</span>
-              <strong class="hold-stoploss-status ${item.currentPrice <= item.stopLossPrice ? "down" : ""}">
-                ${item.currentPrice <= item.stopLossPrice ? "손절신호" : "대기중"}
-              </strong>
-            </div>
-          ` : ""}
-
-          <div class="hold-row">
-            <span>자동매매</span>
-            <strong class="hold-auto-status ${item.autoTrade ? "up" : ""}">
-  ${item.autoTrade ? "ON" : "OFF"}
-</strong>
-          </div>
-
-          <div class="hold-row">
-            <span>전략상태</span>
-            <strong class="hold-strategy-status ${state.status === "SOLD" ? "down" : "up"}">
-  ${strategyStatusText}
-</strong>
-          </div>
+</div>
 
           ${state.lastAction && state.lastAction !== "NONE" ? `
   <div class="hold-row hold-last-action-row">
