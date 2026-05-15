@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const PORT = 3000;
@@ -11,17 +12,107 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
+const stocksPath = path.join(__dirname, "stocks.json");
+
+let STOCK_MASTER = [];
+
+try {
+  STOCK_MASTER = JSON.parse(fs.readFileSync(stocksPath, "utf-8"));
+  console.log("종목 목록 로드 완료:", STOCK_MASTER.length);
+} catch (error) {
+  console.error("stocks.json 로드 실패:", error.message);
+}
+
 function getSavedToken() {
   return fs.readFileSync("token.txt", "utf8").trim();
 }
 
 function cleanNumber(value) {
   if (!value) return "";
-  return String(value).replace("+", "").replace("-", "");
+  return String(value).replace(/[+-]/g, "");
 }
 
 app.get("/", (req, res) => {
   res.send("Kiwoom Auto Trader Server is running");
+});
+
+app.get("/api/search", (req, res) => {
+  try {
+    const keyword = String(req.query.keyword || "").trim();
+
+    if (!keyword) {
+      return res.json({ items: [] });
+    }
+
+    const normalizedKeyword = keyword.replace(/\s/g, "").toLowerCase();
+
+    const matched = STOCK_MASTER
+      .filter((item) => {
+        const name = String(item.name || "")
+          .replace(/\s/g, "")
+          .toLowerCase();
+
+        const code = String(item.code || "");
+
+        return (
+          name.includes(normalizedKeyword) ||
+          code.includes(normalizedKeyword)
+        );
+      })
+      .slice(0, 30);
+
+    return res.json({ items: matched });
+  } catch (error) {
+    console.error("/api/search 오류:", error);
+    return res.status(500).json({
+      message: "종목 검색 실패",
+      error: error.message
+    });
+  }
+});
+
+app.get("/api/price", async (req, res) => {
+  try {
+    const token = getSavedToken();
+    const code = String(req.query.code || "").trim();
+
+    if (!code) {
+      return res.status(400).json({ message: "종목코드가 없습니다." });
+    }
+
+    const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
+
+    const result = await axios.post(
+      url,
+      { stk_cd: code },
+      {
+        headers: {
+          "Content-Type": "application/json;charset=UTF-8",
+          authorization: `Bearer ${token}`,
+          "api-id": "ka10001"
+        }
+      }
+    );
+
+    const data = result.data;
+
+    res.json({
+      code: data.stk_cd,
+      name: data.stk_nm,
+      currentPrice: Number(cleanNumber(data.cur_prc)),
+      changeRate: data.flu_rt,
+      volume: Number(cleanNumber(data.trde_qty)),
+      open: Number(cleanNumber(data.open_pric)),
+      high: Number(cleanNumber(data.high_pric)),
+      low: Number(cleanNumber(data.low_pric)),
+      raw: data
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "현재가 조회 실패",
+      error: error.response?.data || error.message
+    });
+  }
 });
 
 app.get("/price/:code", async (req, res) => {
@@ -38,8 +129,8 @@ app.get("/price/:code", async (req, res) => {
         headers: {
           "Content-Type": "application/json;charset=UTF-8",
           authorization: `Bearer ${token}`,
-          "api-id": "ka10001",
-        },
+          "api-id": "ka10001"
+        }
       }
     );
 
@@ -54,63 +145,12 @@ app.get("/price/:code", async (req, res) => {
       open: Number(cleanNumber(data.open_pric)),
       high: Number(cleanNumber(data.high_pric)),
       low: Number(cleanNumber(data.low_pric)),
-      raw: data,
+      raw: data
     });
   } catch (error) {
     res.status(500).json({
       message: "현재가 조회 실패",
-      error: error.response?.data || error.message,
-    });
-  }
-});
-
-app.post("/prices", async (req, res) => {
-  try {
-    const token = getSavedToken();
-    const codes = req.body.codes || [];
-
-    if (!Array.isArray(codes) || codes.length === 0) {
-      return res.status(400).json({
-        message: "종목코드 목록이 필요합니다.",
-      });
-    }
-
-    const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
-
-    const results = [];
-
-    for (const code of codes) {
-      const result = await axios.post(
-        url,
-        { stk_cd: code },
-        {
-          headers: {
-            "Content-Type": "application/json;charset=UTF-8",
-            authorization: `Bearer ${token}`,
-            "api-id": "ka10001",
-          },
-        }
-      );
-
-      const data = result.data;
-
-      results.push({
-        code: data.stk_cd,
-        name: data.stk_nm,
-        currentPrice: Number(cleanNumber(data.cur_prc)),
-        changeRate: data.flu_rt,
-        volume: Number(cleanNumber(data.trde_qty)),
-        open: Number(cleanNumber(data.open_pric)),
-        high: Number(cleanNumber(data.high_pric)),
-        low: Number(cleanNumber(data.low_pric)),
-      });
-    }
-
-    res.json(results);
-  } catch (error) {
-    res.status(500).json({
-      message: "여러 종목 조회 실패",
-      error: error.response?.data || error.message,
+      error: error.response?.data || error.message
     });
   }
 });
@@ -132,15 +172,15 @@ app.get("/api/daily", async (req, res) => {
       String(today.getMonth() + 1).padStart(2, "0") +
       String(today.getDate()).padStart(2, "0");
 
-    const token = await getAccessToken();
+    const token = getSavedToken();
 
     const response = await fetch(
-      "https://api.kiwoom.com/api/dostk/chart",
+      `${process.env.KIWOOM_BASE_URL}/api/dostk/chart`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json;charset=UTF-8",
-          "authorization": `Bearer ${token}`,
+          authorization: `Bearer ${token}`,
           "api-id": "ka10081"
         },
         body: JSON.stringify({
