@@ -4,6 +4,11 @@ const stockCodeInput = document.getElementById("stockCode");
 const searchBtn = document.getElementById("searchBtn");
 const resultCard = document.getElementById("resultCard");
 const suggestList = document.getElementById("suggestList");
+const addStockSuggestList = document.getElementById("addStockSuggestList");
+const holdSuggestList = document.getElementById("holdSuggestList");
+const backtestSuggestList = document.getElementById("backtestSuggestList");
+
+const selectedStockCodes = {};
 
 const alertRateInput = document.getElementById("alertRateInput");
 const saveAlertRateBtn = document.getElementById("saveAlertRateBtn");
@@ -180,53 +185,123 @@ function findStockByInput(input) {
   );
 }
 
-function renderSuggestions(keyword) {
+function normalizeText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/\s/g, "");
+}
+
+function searchStockMaster(keyword) {
+  const value = normalizeText(keyword);
+
+  if (!value) return [];
+
+  return STOCK_MASTER
+    .filter((item) => {
+      const name = normalizeText(item.name);
+      const code = normalizeText(item.code);
+
+      return (
+        name.includes(value) ||
+        code.includes(value)
+      );
+    })
+    .slice(0, 20);
+}
+
+async function searchStockFromServer(keyword) {
   const value = keyword.trim();
 
-  if (!value) {
-    suggestList.innerHTML = "";
+  if (!value) return [];
+
+  try {
+    const res = await fetch(
+      `${API_BASE}/search?keyword=${encodeURIComponent(value)}`
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "종목 검색 실패");
+    }
+
+    return data.items || [];
+  } catch (error) {
+    console.warn("서버 종목검색 실패:", error);
+    return [];
+  }
+}
+
+async function renderStockSuggestions(inputEl, listEl, key, onSelect) {
+  if (!inputEl || !listEl) return;
+
+  const value = inputEl.value.trim();
+
+selectedStockCodes[key] = "";
+
+if (!value) {
+    listEl.innerHTML = "";
+    selectedStockCodes[key] = "";
     return;
   }
 
-  const matched = STOCK_MASTER
-    .filter((item) =>
-      item.name.includes(value) ||
-      item.code.includes(value)
-    )
-    .slice(0, 6);
+  let matched = searchStockMaster(value);
 
-  if (matched.length === 0) {
-    suggestList.innerHTML = "";
-    return;
-  }
+if (matched.length === 0) {
+  matched = await searchStockFromServer(value);
+}
 
-  suggestList.innerHTML = matched.map((item) => `
-    <div class="suggest-item" data-code="${item.code}">
+if (matched.length === 0) {
+  listEl.innerHTML = `
+    <div class="suggest-item">
+      <span class="suggest-name">검색 결과 없음</span>
+    </div>
+  `;
+  return;
+}
+
+  listEl.innerHTML = matched.map((item) => `
+    <div class="suggest-item" data-code="${item.code}" data-name="${item.name}">
       <span class="suggest-name">${item.name}</span>
       <span class="suggest-code">${item.code}</span>
     </div>
   `).join("");
 
-  document.querySelectorAll(".suggest-item").forEach((el) => {
-  el.addEventListener("click", () => {
+  listEl.querySelectorAll(".suggest-item[data-code]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const code = el.dataset.code;
+      const name = el.dataset.name;
 
-    const selected = STOCK_MASTER.find(
-      (item) => item.code === el.dataset.code
-    );
+      inputEl.value = name;
+      selectedStockCodes[key] = code;
+      listEl.innerHTML = "";
 
-    stockCodeInput.value =
-      selected?.name || el.dataset.code;
-
-    suggestList.innerHTML = "";
-    searchStock();
+      if (typeof onSelect === "function") {
+        onSelect({ code, name });
+      }
+    });
   });
-});
+}
+
+function getSelectedStockCode(inputEl, key) {
+  const value = inputEl.value.trim();
+
+  if (/^\d{6}$/.test(value)) {
+    return value;
+  }
+
+  const savedCode = selectedStockCodes[key];
+
+  if (savedCode) return savedCode;
+
+  const stock = findStockByInput(value);
+
+  return stock?.code || "";
 }
 
 async function searchStock() {
   const inputValue = stockCodeInput.value.trim();
-const stock = findStockByInput(inputValue);
-const code = stock?.code;
+const code = getSelectedStockCode(stockCodeInput, "search");
 
 if (!code) {
   resultCard.innerHTML = `<div class="error">종목명 또는 종목코드를 입력하세요.</div>`;
@@ -481,7 +556,8 @@ function bindWatchItemEvents() {
   document.querySelectorAll(".watch-item").forEach((el) => {
     el.addEventListener("click", () => {
       stockCodeInput.value = el.dataset.code;
-      searchStock();
+selectedStockCodes.search = el.dataset.code;
+searchStock();
     });
   });
 
@@ -790,8 +866,7 @@ if (testModeBtn) {
 
 function addWatchCode() {
   const inputValue = addStockCodeInput.value.trim();
-const stock = findStockByInput(inputValue);
-const code = stock?.code;
+const code = getSelectedStockCode(addStockCodeInput, "watch");
 
 if (!code) {
   alert("종목명 또는 종목코드를 입력하세요.");
@@ -818,9 +893,7 @@ addStockCodeInput.addEventListener("keydown", (e) => {
   }
 });
 
-stockCodeInput.addEventListener("input", () => {
-  renderSuggestions(stockCodeInput.value);
-});
+
 
 const holdCodeInput = document.getElementById("holdCode");
 const buyPriceInput = document.getElementById("buyPrice");
@@ -859,6 +932,42 @@ function saveStrategyStates() {
 }
 
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
+
+stockCodeInput.addEventListener("input", () => {
+  renderStockSuggestions(
+    stockCodeInput,
+    suggestList,
+    "search",
+    () => {}
+  );
+});
+
+addStockCodeInput.addEventListener("input", () => {
+  renderStockSuggestions(
+    addStockCodeInput,
+    addStockSuggestList,
+    "watch",
+    () => {}
+  );
+});
+
+holdCodeInput.addEventListener("input", () => {
+  renderStockSuggestions(
+    holdCodeInput,
+    holdSuggestList,
+    "hold",
+    () => {}
+  );
+});
+
+backtestCodeInput.addEventListener("input", () => {
+  renderStockSuggestions(
+    backtestCodeInput,
+    backtestSuggestList,
+    "backtest",
+    () => {}
+  );
+});
 
 function saveHoldings() {
   localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(holdings));
@@ -1822,8 +1931,9 @@ document.querySelectorAll(".preset-btn").forEach((btn) => {
 async function runBacktest() {
   if (!backtestResult) return;
 
-  const stock = findStockByInput(backtestCodeInput.value);
-  const code = stock?.code;
+ const code = getSelectedStockCode(backtestCodeInput, "backtest");
+const stock = STOCK_MASTER.find((item) => item.code === code);
+const name = stock?.name || backtestCodeInput.value.trim();
 
   if (!code) {
     alert("백테스트할 종목명 또는 코드를 입력하세요.");
