@@ -216,8 +216,8 @@ async function searchStockFromServer(keyword) {
 
   try {
     const res = await fetch(
-      `${API_BASE}/search?keyword=${encodeURIComponent(value)}`
-    );
+  `${API_BASE}/api/search?keyword=${encodeURIComponent(value)}`
+);
 
     const data = await res.json();
 
