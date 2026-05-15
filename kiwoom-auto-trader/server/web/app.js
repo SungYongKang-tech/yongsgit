@@ -3278,19 +3278,27 @@ renderHoldings();
 
 if (clearTradeLogBtn) {
   clearTradeLogBtn.addEventListener("click", () => {
+
     const ok = confirm(
-      "매매 신호 로그를 모두 삭제할까요?\n\n보유종목은 삭제되지 않습니다."
+      "매매 로그와 오늘 모의투자 결과를 모두 삭제할까요?\n\n보유종목은 유지됩니다."
     );
 
     if (!ok) return;
 
     tradeLogs = [];
-    saveTradeLogs();
-    renderTradeLogs();
+    virtualResults = [];
 
-    alert("매매 신호 로그가 삭제되었습니다.");
+    saveTradeLogs();
+    saveVirtualResults();
+
+    renderTradeLogs();
+    renderVirtualResults();
+
+    alert("모의투자 결과가 초기화되었습니다.");
   });
 }
+
+
 
 if (resetHoldingsBtn) {
   resetHoldingsBtn.addEventListener("click", () => {
