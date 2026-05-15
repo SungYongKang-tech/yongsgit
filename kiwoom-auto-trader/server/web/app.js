@@ -378,6 +378,9 @@ const holdRankBox = document.getElementById("holdRankBox");
 const tradeStatBox =
   document.getElementById("tradeStatBox");
 
+const virtualResultBox =
+  document.getElementById("virtualResultBox");
+
   const backtestCodeInput =
   document.getElementById("backtestCode");
 
@@ -922,6 +925,76 @@ const PARTIAL_SELL_RATE = 0.5; // 50% 분할매도
 
 const HOLD_STORAGE_KEY = "kiwoom_holdings";
 
+const VIRTUAL_RESULT_KEY = "kiwoom_virtual_results";
+
+let virtualResults =
+  JSON.parse(localStorage.getItem(VIRTUAL_RESULT_KEY)) || [];
+
+function saveVirtualResults() {
+  localStorage.setItem(
+    VIRTUAL_RESULT_KEY,
+    JSON.stringify(virtualResults)
+  );
+}
+
+function renderVirtualResults() {
+  if (!virtualResultBox) return;
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayResults = virtualResults.filter((item) => item.date === todayKey);
+
+  if (todayResults.length === 0) {
+    virtualResultBox.innerHTML =
+      `<div class="empty">오늘 완료된 모의투자 결과가 없습니다.</div>`;
+    return;
+  }
+
+  const totalBuy = todayResults.reduce((sum, item) => sum + item.buyAmount, 0);
+  const totalSell = todayResults.reduce((sum, item) => sum + item.sellAmount, 0);
+  const totalProfit = todayResults.reduce((sum, item) => sum + item.profit, 0);
+  const totalRate = totalBuy > 0 ? (totalProfit / totalBuy) * 100 : 0;
+
+  virtualResultBox.innerHTML = `
+    <div class="trade-stat-title">오늘 모의투자 결과</div>
+
+    <div class="trade-stat-grid">
+      <div><span>총 매수</span><strong>${formatNumber(Math.round(totalBuy))}원</strong></div>
+      <div><span>총 매도</span><strong>${formatNumber(Math.round(totalSell))}원</strong></div>
+      <div>
+        <span>총 손익</span>
+        <strong class="${totalProfit >= 0 ? "up" : "down"}">
+          ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
+        </strong>
+      </div>
+      <div>
+        <span>총 수익률</span>
+        <strong class="${totalRate >= 0 ? "up" : "down"}">
+          ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
+        </strong>
+      </div>
+    </div>
+
+    ${todayResults.slice().reverse().map((item) => `
+      <div class="trade-log-item">
+        <div class="trade-log-main">
+          <strong class="${item.profit >= 0 ? "up" : "down"}">${item.name}</strong>
+          <span>${item.resultText}</span>
+        </div>
+        <div class="trade-log-detail">
+          매수 ${formatNumber(item.buyPrice)}원 →
+          매도 ${formatNumber(item.sellPrice)}원 /
+          ${formatNumber(item.qty)}주
+        </div>
+        <div class="trade-log-reason">
+          손익 ${item.profit >= 0 ? "+" : ""}${formatNumber(Math.round(item.profit))}원
+          (${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%)
+        </div>
+        <div class="trade-log-time">시간: ${item.time}</div>
+      </div>
+    `).join("")}
+  `;
+}
+
 const STRATEGY_STATE_KEY = "kiwoom_strategy_states";
 
 let strategyStates =
@@ -985,7 +1058,8 @@ function renderTradeLogs() {
     `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
 
   renderTradeStats();
-  return;
+renderVirtualResults();
+return;
 }
 
   tradeLogList.innerHTML = tradeLogs
@@ -1030,6 +1104,7 @@ function renderTradeLogs() {
     })
     .join("");
     renderTradeStats();
+renderVirtualResults();
 }
 
 function renderTradeStats() {
@@ -1568,54 +1643,89 @@ if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
 function executeVirtualSell(code, actionType = "SELL") {
   let soldQty = 0;
   let remainQty = 0;
+  let soldResult = null;
 
   holdings = holdings.map((item) => {
     if (item.code !== code) return item;
 
+    const sellPrice =
+      item.currentPrice ||
+      strategyStates[code]?.lastSignalPrice ||
+      item.buyPrice;
+
+    const resultText =
+      actionType === "SELL"
+        ? "1차매도"
+        : actionType === "SELL_ALL"
+        ? "2차매도"
+        : actionType === "SELL_TRAILING"
+        ? "트레일링매도"
+        : actionType === "STOP_LOSS"
+        ? "손절매도"
+        : "매도";
+
     if (actionType === "SELL") {
       soldQty = Math.ceil(item.qty * PARTIAL_SELL_RATE);
       remainQty = item.qty - soldQty;
-
-      return {
-        ...item,
-        qty: remainQty,
-        autoTrade: remainQty > 0 ? item.autoTrade : false
-      };
     }
 
-    // 손절은 전량매도
     if (
-  actionType === "STOP_LOSS" ||
-  actionType === "SELL_ALL" ||
-  actionType === "SELL_TRAILING"
-) {
+      actionType === "STOP_LOSS" ||
+      actionType === "SELL_ALL" ||
+      actionType === "SELL_TRAILING"
+    ) {
       soldQty = item.qty;
       remainQty = 0;
+    }
 
-      return {
-        ...item,
-        qty: 0,
-        autoTrade: false
+    if (soldQty > 0) {
+      const buyAmount = item.buyPrice * soldQty;
+      const sellAmount = sellPrice * soldQty;
+      const profit = sellAmount - buyAmount;
+      const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+
+      soldResult = {
+        code: item.code,
+        name: item.name,
+        resultText,
+        buyPrice: item.buyPrice,
+        sellPrice,
+        qty: soldQty,
+        buyAmount,
+        sellAmount,
+        profit,
+        profitRate,
+        date: new Date().toISOString().slice(0, 10),
+        time: new Date().toLocaleString("ko-KR")
       };
     }
 
-    return item;
+    return {
+      ...item,
+      qty: remainQty,
+      autoTrade: remainQty > 0 ? item.autoTrade : false
+    };
   });
 
-  holdings = holdings.filter((item) => item.qty > 0);
+  if (soldResult) {
+    virtualResults.push(soldResult);
+    saveVirtualResults();
+  }
 
+  holdings = holdings.filter((item) => item.qty > 0);
   saveHoldings();
 
- strategyStates[code] = {
-  status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
-  lastAction: actionType,
-  lastSignalTime: new Date().toLocaleString("ko-KR"),
-  lastSignalPrice: strategyStates[code]?.lastSignalPrice || null,
-  lastSoldQty: soldQty,
-  remainQty: remainQty
-};
+  strategyStates[code] = {
+    status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
+    lastAction: actionType,
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: strategyStates[code]?.lastSignalPrice || null,
+    lastSoldQty: soldQty,
+    remainQty: remainQty
+  };
 
   saveStrategyStates();
+  renderVirtualResults();
 }
 
 const PRICE_CACHE = {};
@@ -1818,22 +1928,20 @@ throw new Error(
 );
 }
 
-  const currentPrice = Number(
-    String(data.cur_prc || "0").replace(/[+-]/g, "")
-  );
+const currentPrice = Number(data.currentPrice || 0);
 
 const result = {
-  code: data.stk_cd,
-  name: data.stk_nm,
+  code: data.code,
+  name: data.name,
   isFallback: false,
     currentPrice,
     price: currentPrice,
     change: Number(String(data.pred_pre || "0").replace(/[+-]/g, "")),
-    changeRate: data.flu_rt || "0",
-    volume: Number(data.trde_qty || 0),
-    open: Number(String(data.open_pric || "0").replace(/[+-]/g, "")),
-    high: Number(String(data.high_pric || "0").replace(/[+-]/g, "")),
-    low: Number(String(data.low_pric || "0").replace(/[+-]/g, "")),
+    changeRate: data.changeRate || "0",
+    volume: Number(data.volume || 0),
+    open: Number(data.open || 0),
+    high: Number(data.high || 0),
+    low: Number(data.low || 0),
     raw: data
   };
 
