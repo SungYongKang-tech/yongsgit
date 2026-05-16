@@ -630,6 +630,15 @@ return {
   관심추가
 </button>
 
+<button
+  class="prepare-buy-btn"
+  data-code="${item.code}"
+  data-name="${item.name}"
+  data-price="${item.currentPrice}"
+>
+  매수후보
+</button>
+
   </div>
 
 </div>
@@ -710,6 +719,55 @@ document
 
       alert("관심종목에 추가되었습니다.");
     };
+  });
+
+ document
+  .querySelectorAll(".prepare-buy-btn")
+  .forEach((btn) => {
+
+    btn.onclick = () => {
+
+      const code = btn.dataset.code;
+      const name = btn.dataset.name;
+      const price = Number(btn.dataset.price || 0);
+
+      holdCodeInput.value = name;
+      selectedStockCodes.hold = code;
+
+      buyPriceInput.value = price;
+
+      targetPriceInput.value =
+        Math.round(price * 1.05);
+
+      secondTargetPriceInput.value =
+        Math.round(price * 1.08);
+
+      trailingStopRateInput.value = 3;
+
+      stopLossPriceInput.value =
+        Math.round(price * 0.97);
+
+      const defaultBuyAmount = 1000000;
+
+      const qty =
+        price > 0
+          ? Math.floor(defaultBuyAmount / price)
+          : 0;
+
+      holdQtyInput.value = qty;
+
+      const shouldAddHold = confirm(
+        "이 종목을 매수후보로 보유목록에 추가할까요?"
+      );
+
+      if (shouldAddHold) {
+        addHoldBtn.click();
+      } else {
+        alert("매수 후보 입력칸에만 반영되었습니다.");
+      }
+
+    };
+
   });
 
 }
