@@ -516,10 +516,11 @@ function renderStrongStockBox(items) {
       const rate = parseFloat(item.changeRate);
       const volume = Number(item.volume || 0);
       const high = Number(item.high || 0);
-      const currentPrice = Number(item.currentPrice || 0);
+const low = Number(item.low || 0);
+const currentPrice = Number(item.currentPrice || 0);
 
-      let score = 0;
-      const reasons = [];
+let score = 0;
+const reasons = [];
 
       if (!isNaN(rate) && rate >= entryRate) {
         score += 2;
@@ -536,6 +537,25 @@ function renderStrongStockBox(items) {
         reasons.push("고가 근접");
       }
 
+      if (low > 0) {
+  const recoveryRate =
+    ((currentPrice - low) / low) * 100;
+
+  if (recoveryRate >= 5) {
+    score += 2;
+    reasons.push("저가대비 강한 회복");
+  } else if (recoveryRate >= 3) {
+    score += 1;
+    reasons.push("저가대비 회복");
+  }
+}
+let candidateGrade = "관찰";
+
+if (score >= 7) {
+  candidateGrade = "강력";
+} else if (score >= 5) {
+  candidateGrade = "관심";
+}
       let recommendType = "관망";
 
 if (!isNaN(rate) && rate >= 5 && volume >= volumeThreshold) {
@@ -551,11 +571,12 @@ if (
   recommendType = "추세형";
 }
 
-  return {
+return {
   ...item,
   strongScore: score,
   strongReasons: reasons,
-  recommendType
+  recommendType,
+  candidateGrade
 };
     })
     .filter((item) => item.strongScore >= 2)
@@ -577,14 +598,46 @@ if (
         <div style="text-align:right;">
           <span class="${getRateClass(item.changeRate)}">${item.changeRate}</span>
           <div style="font-size:11px;color:#6b7280;margin-top:3px;">
+          <div style="margin-top:6px;">
+  <button
+    class="apply-stock-strategy-btn"
+    data-strategy="${item.recommendType === "추세형" ? "trend" : "short"}"
+  >
+    추천 전략 적용
+  </button>
+</div>
           <span class="entry-badge">${item.recommendType}</span>
-            ${item.strongReasons.join(" · ")}
+          <span class="entry-badge">${item.candidateGrade}</span>
+            점수 ${item.strongScore}점 · ${item.strongReasons.join(" · ")}
           </div>
         </div>
       </div>
     `).join("")}
   `;
 }
+
+setTimeout(() => {
+  document
+    .querySelectorAll(".apply-stock-strategy-btn")
+    .forEach((btn) => {
+      btn.onclick = () => {
+        const preset = btn.dataset.strategy;
+
+        applyBacktestPreset(preset);
+
+        document
+          .querySelectorAll(".preset-btn")
+          .forEach((item) => {
+            item.classList.toggle(
+              "active",
+              item.dataset.preset === preset
+            );
+          });
+
+        alert("추천 전략이 적용되었습니다.");
+      };
+    });
+}, 0);
 
 function renderWatchItem(item) {
   const rateClass = getRateClass(item.changeRate);
