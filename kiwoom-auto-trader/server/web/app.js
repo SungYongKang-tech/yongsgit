@@ -685,15 +685,15 @@ if (
 
 return {
   ...item,
-  strongScore: score,
-  strongReasons: reasons,
+  strongScore: item.discoverScore || score,
+  strongReasons: item.discoverReasons || reasons,
   recommendType,
   candidateGrade
 };
     })
     .filter((item) => item.strongScore >= 2)
     .sort((a, b) => b.strongScore - a.strongScore)
-    .slice(0, 5);
+    .slice(0, 10);
 
   if (strongItems.length === 0) {
     strongStockBox.innerHTML =
@@ -716,7 +716,8 @@ return {
   <span class="entry-badge">${item.candidateGrade}</span>
 
   점수 ${item.strongScore}점 ·
-  ${item.strongReasons.join(" · ")}
+${item.volumePower ? `거래량 ${item.volumePower.toFixed(1)}배 · ` : ""}
+${item.strongReasons.join(" · ")}
 
   <div style="margin-top:6px;">
     <button
@@ -2558,6 +2559,55 @@ const result = {
   return result;
 }
 
+async function getVolumePower(code) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/daily?code=${code}&days=20`
+    );
+
+    const data = await response.json();
+
+    const items = data.items || [];
+
+    if (items.length < 5) {
+      return {
+        avgVolume: 0,
+        volumePower: 0
+      };
+    }
+
+    const today = items[items.length - 1];
+
+    const prevItems = items.slice(0, -1);
+
+    const avgVolume =
+      prevItems.reduce((sum, item) => {
+        return sum + Number(item.volume || 0);
+      }, 0) / prevItems.length;
+
+    const todayVolume = Number(today.volume || 0);
+
+    const volumePower =
+      avgVolume > 0
+        ? todayVolume / avgVolume
+        : 0;
+
+    return {
+      avgVolume,
+      todayVolume,
+      volumePower
+    };
+  } catch (error) {
+    console.warn("거래량 분석 실패:", code);
+
+    return {
+      avgVolume: 0,
+      todayVolume: 0,
+      volumePower: 0
+    };
+  }
+}
+
 async function fetchDailyPrices(code, days) {
   const res = await fetch(
     `${API_BASE}/api/daily?code=${code}&days=${days}`
@@ -4174,11 +4224,138 @@ async function fetchAllStocksForDiscover() {
   }
 }
 
+async function runInBatches(items, batchSize, worker, onProgress) {
+  const results = [];
+  let doneCount = 0;
+
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+
+    const batchResults = await Promise.all(
+      batch.map(worker)
+    );
+
+    results.push(...batchResults);
+
+    doneCount += batch.length;
+
+    if (typeof onProgress === "function") {
+      onProgress(doneCount, items.length);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+
+  return results;
+}
+function isOverheatedStock(item) {
+  const rate = parseFloat(item.changeRate);
+  const open = Number(item.open || 0);
+  const high = Number(item.high || 0);
+  const low = Number(item.low || 0);
+  const price = Number(item.currentPrice || 0);
+
+  if (isNaN(rate) || price <= 0) return true;
+
+  // 당일 너무 많이 오른 종목은 추격매수 위험
+  if (rate >= 12) {
+    return true;
+  }
+
+  // 저가 대비 너무 많이 튄 종목 제외
+  if (low > 0) {
+    const fromLowRate = ((price - low) / low) * 100;
+
+    if (fromLowRate >= 15) {
+      return true;
+    }
+  }
+
+  // 장중 변동폭이 너무 큰 종목 제외
+  if (low > 0 && high > 0) {
+    const rangeRate = ((high - low) / low) * 100;
+
+    if (rangeRate >= 18) {
+      return true;
+    }
+  }
+
+  // 시가 대비 너무 멀어진 종목 제외
+  if (open > 0) {
+    const fromOpenRate = ((price - open) / open) * 100;
+
+    if (fromOpenRate >= 10) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getDiscoverScore(item) {
+  const rate = parseFloat(item.changeRate);
+  const volume = Number(item.volume || 0);
+  const price = Number(item.currentPrice || 0);
+
+
+  const open = Number(item.open || 0);
+  const high = Number(item.high || 0);
+  const low = Number(item.low || 0);
+
+  let score = 0;
+  const reasons = [];
+
+  if (!isNaN(rate) && rate >= entryRate) {
+    score += 2;
+    reasons.push(`상승률 ${item.changeRate}`);
+  }
+
+  if (volume >= volumeThreshold) {
+    score += 2;
+    reasons.push("거래량 기준 통과");
+  }
+
+  if (item.volumePower >= 3) {
+  score += 3;
+  reasons.push(`거래량 ${item.volumePower.toFixed(1)}배 급증`);
+} else if (item.volumePower >= 2) {
+  score += 2;
+  reasons.push(`거래량 ${item.volumePower.toFixed(1)}배 증가`);
+}
+
+  if (open > 0 && price > open) {
+    score += 1;
+    reasons.push("시가 위 유지");
+  }
+
+  if (high > 0 && price >= high * 0.98) {
+    score += 2;
+    reasons.push("고가 근접");
+  }
+
+  if (low > 0) {
+    const recoveryRate = ((price - low) / low) * 100;
+
+    if (recoveryRate >= 5) {
+      score += 2;
+      reasons.push("저가대비 강한 회복");
+    } else if (recoveryRate >= 3) {
+      score += 1;
+      reasons.push("저가대비 회복");
+    }
+  }
+
+  return {
+    score,
+    reasons
+  };
+}
+
 async function runAutoDiscover() {
   if (!strongStockBox) return;
 
   strongStockBox.innerHTML =
-    `<div class="loading">자동발굴 중입니다...</div>`;
+    `<div class="loading">자동발굴 중입니다.</div>`;
 
   try {
     const allStocks = await fetchAllStocksForDiscover();
@@ -4187,30 +4364,52 @@ async function runAutoDiscover() {
   .filter((item) => item.code)
   .filter((item) => !item.name.includes("스팩"))
   .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
-  .slice(0, 80);
+  .slice(0, 300);
 
-    const results = [];
+    const results = (await runInBatches(
+      targetStocks,
+      5,    async (stock) => {
+        try {
+          const item = await fetchStockPrice(stock.code);
 
-    for (const stock of targetStocks) {
-      try {
-        const item = await fetchStockPrice(stock.code);
+          const volumeInfo = await getVolumePower(stock.code);
 
-        const rate = parseFloat(item.changeRate);
-        const volume = Number(item.volume || 0);
-        const price = Number(item.currentPrice || 0);
+item.volumePower = volumeInfo.volumePower;
+item.avgVolume = volumeInfo.avgVolume;
 
-        if (
-          !isNaN(rate) &&
-          price > 0 &&
-          rate >= entryRate &&
-          volume >= volumeThreshold
-        ) {
-          results.push(item);
+          const rate = parseFloat(item.changeRate);
+          const volume = Number(item.volume || 0);
+          const price = Number(item.currentPrice || 0);
+
+          if (isOverheatedStock(item)) {
+  return null;
+}
+
+          const discover = getDiscoverScore(item);
+
+if (price > 0 && discover.score >= 5) {
+  return {
+    ...item,
+    discoverScore: discover.score,
+    discoverReasons: discover.reasons
+  };
+}
+
+          return null;
+        } catch (error) {
+          console.warn("자동발굴 종목 조회 실패:", stock.code);
+          return null;
         }
-      } catch (error) {
-        console.warn("자동발굴 종목 조회 실패:", stock.code, error);
+      },
+      (done, total) => {
+        strongStockBox.innerHTML =
+          `<div class="loading">전체시장 1차 스캔 중... ${done}/${total}개 확인</div>`;
       }
-    }
+    ))
+      .filter(Boolean)
+      .sort((a, b) => {
+  return b.discoverScore - a.discoverScore;
+});
 
     if (results.length === 0) {
       strongStockBox.innerHTML =
