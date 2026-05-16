@@ -32,7 +32,9 @@ const strongStockBox =
 const autoDiscoverBtn =
   document.getElementById("autoDiscoverBtn");
 
-  const discoverLimitInput =
+const DISCOVER_SETTING_KEY = "kiwoom_discover_settings";
+
+const discoverLimitInput =
   document.getElementById("discoverLimitInput");
 
 const discoverMinScoreInput =
@@ -570,8 +572,7 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
 const ALERT_RATE_KEY = "kiwoom_alert_rate";
 const TEST_MODE_KEY = "kiwoom_test_mode";
 const ENTRY_RATE_KEY = "kiwoom_entry_rate";
-const DISCOVER_SETTING_KEY =
-  "kiwoom_discover_settings";
+
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 if (alertRateInput) {
