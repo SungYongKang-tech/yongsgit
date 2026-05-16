@@ -32,6 +32,26 @@ const strongStockBox =
 const autoDiscoverBtn =
   document.getElementById("autoDiscoverBtn");
 
+  const discoverLimitInput =
+  document.getElementById("discoverLimitInput");
+
+const discoverMinScoreInput =
+  document.getElementById("discoverMinScoreInput");
+
+  const discoverSettings =
+  JSON.parse(localStorage.getItem(DISCOVER_SETTING_KEY)) || {
+    limit: 300,
+    minScore: 5
+  };
+
+if (discoverLimitInput) {
+  discoverLimitInput.value = discoverSettings.limit;
+}
+
+if (discoverMinScoreInput) {
+  discoverMinScoreInput.value = discoverSettings.minScore;
+}
+
 const testModeBanner = document.getElementById("testModeBanner");
 
 const tradeStartTimeInput =
@@ -550,6 +570,8 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
 const ALERT_RATE_KEY = "kiwoom_alert_rate";
 const TEST_MODE_KEY = "kiwoom_test_mode";
 const ENTRY_RATE_KEY = "kiwoom_entry_rate";
+const DISCOVER_SETTING_KEY =
+  "kiwoom_discover_settings";
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 if (alertRateInput) {
@@ -620,7 +642,7 @@ function renderEntryBox(items) {
   `;
 }
 
-function renderStrongStockBox(items) {
+function renderStrongStockBox(items, title = "🔥 오늘 강한 종목") {
   if (!strongStockBox) return;
 
   const strongItems = items
@@ -702,7 +724,7 @@ return {
   }
 
   strongStockBox.innerHTML = `
-    <div class="entry-title">🔥 오늘 강한 종목</div>
+    <div class="entry-title">${title}</div>
 
     ${strongItems.map((item) => `
       <div class="entry-item">
@@ -814,6 +836,19 @@ ${item.strongReasons.join(" · ")}
       };
     });
 }, 0);
+
+document
+  .querySelectorAll(".discover-preset-btn")
+  .forEach((btn) => {
+    btn.addEventListener("click", () => {
+      discoverLimitInput.value = btn.dataset.limit;
+      discoverMinScoreInput.value = btn.dataset.score;
+
+      saveDiscoverSettings();
+
+      alert(`${btn.textContent.trim()} 자동발굴 설정이 적용되었습니다.`);
+    });
+  });
 
 document
   .querySelectorAll(".add-strong-watch-btn")
@@ -1092,6 +1127,7 @@ const testModeBtn = document.getElementById("testModeBtn");
 let autoRefreshTimer = null;
 let isAutoRefresh = false;
 let isRefreshing = false;
+let isAutoDiscovering = false;
 
 async function refreshWithoutJump() {
   if (isRefreshing) {
@@ -4354,6 +4390,20 @@ function getDiscoverScore(item) {
 async function runAutoDiscover() {
   if (!strongStockBox) return;
 
+   saveDiscoverSettings();
+
+  if (isAutoDiscovering) {
+    alert("이미 자동발굴이 진행 중입니다.");
+    return;
+  }
+
+  isAutoDiscovering = true;
+
+  if (autoDiscoverBtn) {
+    autoDiscoverBtn.disabled = true;
+    autoDiscoverBtn.textContent = "발굴중";
+  }
+
   strongStockBox.innerHTML =
     `<div class="loading">자동발굴 중입니다.</div>`;
 
@@ -4364,7 +4414,7 @@ async function runAutoDiscover() {
   .filter((item) => item.code)
   .filter((item) => !item.name.includes("스팩"))
   .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
-  .slice(0, 300);
+  .slice(0, Number(discoverLimitInput?.value || 300));
 
     const results = (await runInBatches(
       targetStocks,
@@ -4387,7 +4437,9 @@ item.avgVolume = volumeInfo.avgVolume;
 
           const discover = getDiscoverScore(item);
 
-if (price > 0 && discover.score >= 5) {
+const minScore = Number(discoverMinScoreInput?.value || 5);
+
+if (price > 0 && discover.score >= minScore) {
   return {
     ...item,
     discoverScore: discover.score,
@@ -4417,9 +4469,39 @@ if (price > 0 && discover.score >= 5) {
       return;
     }
 
-    renderStrongStockBox(results);
-  } catch (error) {
+   renderStrongStockBox(results, "🤖 자동발굴 후보");
+
+const summaryEl = document.createElement("div");
+summaryEl.className = "discover-summary";
+summaryEl.innerHTML = `
+  전체 ${targetStocks.length}개 스캔 /
+  조건통과 ${results.length}개 /
+  표시 ${Math.min(results.length, 10)}개
+`;
+
+strongStockBox.prepend(summaryEl);
+
+    } catch (error) {
     strongStockBox.innerHTML =
       `<div class="error">자동발굴 실패<br />${error.message}</div>`;
+  } finally {
+    isAutoDiscovering = false;
+
+    if (autoDiscoverBtn) {
+      autoDiscoverBtn.disabled = false;
+      autoDiscoverBtn.textContent = "자동발굴";
+    }
   }
+}
+
+function saveDiscoverSettings() {
+  const settings = {
+    limit: Number(discoverLimitInput?.value || 300),
+    minScore: Number(discoverMinScoreInput?.value || 5)
+  };
+
+  localStorage.setItem(
+    DISCOVER_SETTING_KEY,
+    JSON.stringify(settings)
+  );
 }
