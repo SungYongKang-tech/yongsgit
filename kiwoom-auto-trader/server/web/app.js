@@ -16,6 +16,8 @@ const alertBox = document.getElementById("alertBox");
 const entryRateInput = document.getElementById("entryRateInput");
 const saveEntryRateBtn = document.getElementById("saveEntryRateBtn");
 const entryBox = document.getElementById("entryBox");
+const strongStockBox =
+  document.getElementById("strongStockBox");
 
 const testModeBanner = document.getElementById("testModeBanner");
 
@@ -500,6 +502,84 @@ function renderEntryBox(items) {
   `;
 }
 
+function renderStrongStockBox(items) {
+  if (!strongStockBox) return;
+
+  const strongItems = items
+    .map((item) => {
+      const rate = parseFloat(item.changeRate);
+      const volume = Number(item.volume || 0);
+      const high = Number(item.high || 0);
+      const currentPrice = Number(item.currentPrice || 0);
+
+      let score = 0;
+      const reasons = [];
+
+      if (!isNaN(rate) && rate >= entryRate) {
+        score += 2;
+        reasons.push(`상승률 ${item.changeRate}`);
+      }
+
+      if (volume >= volumeThreshold) {
+        score += 2;
+        reasons.push("거래량 강함");
+      }
+
+      if (high > 0 && currentPrice >= high * 0.98) {
+        score += 1;
+        reasons.push("고가 근접");
+      }
+
+      let recommendType = "관망";
+
+if (!isNaN(rate) && rate >= 5 && volume >= volumeThreshold) {
+  recommendType = "단타형";
+}
+
+if (
+  !isNaN(rate) &&
+  rate >= entryRate &&
+  high > 0 &&
+  currentPrice >= high * 0.98
+) {
+  recommendType = "추세형";
+}
+
+  return {
+  ...item,
+  strongScore: score,
+  strongReasons: reasons,
+  recommendType
+};
+    })
+    .filter((item) => item.strongScore >= 2)
+    .sort((a, b) => b.strongScore - a.strongScore)
+    .slice(0, 5);
+
+  if (strongItems.length === 0) {
+    strongStockBox.innerHTML =
+      `<div class="empty">오늘 강한 종목이 없습니다.</div>`;
+    return;
+  }
+
+  strongStockBox.innerHTML = `
+    <div class="entry-title">🔥 오늘 강한 종목</div>
+
+    ${strongItems.map((item) => `
+      <div class="entry-item">
+        <strong>${item.name}</strong>
+        <div style="text-align:right;">
+          <span class="${getRateClass(item.changeRate)}">${item.changeRate}</span>
+          <div style="font-size:11px;color:#6b7280;margin-top:3px;">
+          <span class="entry-badge">${item.recommendType}</span>
+            ${item.strongReasons.join(" · ")}
+          </div>
+        </div>
+      </div>
+    `).join("")}
+  `;
+}
+
 function renderWatchItem(item) {
   const rateClass = getRateClass(item.changeRate);
   const rateValue = parseFloat(item.changeRate);
@@ -507,6 +587,8 @@ function renderWatchItem(item) {
   !isNaN(rateValue) && rateValue >= entryRate;
   const isVolumeHot =
   Number(item.volume) >= volumeThreshold;
+  const isStrongStock =
+  isEntryCandidate || isVolumeHot;
 
   const prevPrice = previousPrices[item.code];
   let flashClass = "";
@@ -522,7 +604,7 @@ function renderWatchItem(item) {
   previousPrices[item.code] = item.currentPrice;
 
   return `
-    <div class="watch-item ${flashClass} ${item.isFallback ? "fallback-card" : ""}" data-code="${item.code}">
+    <div class="watch-item ${flashClass} ${item.isFallback ? "fallback-card" : ""} ${isStrongStock ? "strong-watch-item" : ""}" data-code="${item.code}">
       <div class="watch-item-top">
         <div>
           <div class="watch-name">
@@ -636,6 +718,7 @@ async function loadWatchList(silent = false) {
     let sortedData = [...data];
     renderAlertBox(data);
     renderEntryBox(data);
+    renderStrongStockBox(data);
 
 if (currentSortType === "rate") {
   sortedData.sort((a, b) =>
@@ -953,45 +1036,127 @@ function renderVirtualResults() {
   const totalSell = todayResults.reduce((sum, item) => sum + item.sellAmount, 0);
   const totalProfit = todayResults.reduce((sum, item) => sum + item.profit, 0);
   const totalRate = totalBuy > 0 ? (totalProfit / totalBuy) * 100 : 0;
+  const groupedResults = {};
 
+todayResults.forEach((item) => {
+  if (!groupedResults[item.code]) {
+    groupedResults[item.code] = {
+      name: item.name,
+      buyAmount: 0,
+      sellAmount: 0,
+      profit: 0,
+      qty: 0
+    };
+  }
+
+  groupedResults[item.code].buyAmount += item.buyAmount;
+  groupedResults[item.code].sellAmount += item.sellAmount;
+  groupedResults[item.code].profit += item.profit;
+  groupedResults[item.code].qty += item.qty;
+});
+
+const groupedHtml = Object.values(groupedResults)
+  .map((item) => {
+    const rate =
+      item.buyAmount > 0 ? (item.profit / item.buyAmount) * 100 : 0;
+
+    return `
+      <div class="virtual-result-item">
+        <div class="virtual-result-top">
+          <div class="virtual-result-name">${item.name} 누적</div>
+          <div class="virtual-result-badge ${item.profit >= 0 ? "" : "loss"}">
+            ${item.profit >= 0 ? "수익" : "손실"}
+          </div>
+        </div>
+
+        <div class="virtual-result-detail">
+          <div>
+            총수량 ${formatNumber(item.qty)}주 /
+            총매수 ${formatNumber(Math.round(item.buyAmount))}원 →
+            총매도 ${formatNumber(Math.round(item.sellAmount))}원
+          </div>
+
+          <div>
+            누적손익
+            <strong class="${item.profit >= 0 ? "up" : "down"}">
+              ${item.profit >= 0 ? "+" : ""}${formatNumber(Math.round(item.profit))}원
+              (${item.profit >= 0 ? "+" : ""}${rate.toFixed(2)}%)
+            </strong>
+          </div>
+        </div>
+      </div>
+    `;
+  })
+  .join("");
   virtualResultBox.innerHTML = `
     <div class="trade-stat-title">오늘 모의투자 결과</div>
 
-    <div class="trade-stat-grid">
-      <div><span>총 매수</span><strong>${formatNumber(Math.round(totalBuy))}원</strong></div>
-      <div><span>총 매도</span><strong>${formatNumber(Math.round(totalSell))}원</strong></div>
+    <div class="virtual-result-summary">
       <div>
-        <span>총 손익</span>
+        <span>총 매수</span>
+        <strong>${formatNumber(Math.round(totalBuy))}원</strong>
+      </div>
+
+      <div>
+        <span>총 매도</span>
+        <strong>${formatNumber(Math.round(totalSell))}원</strong>
+      </div>
+
+      <div>
+        <span>실현손익</span>
         <strong class="${totalProfit >= 0 ? "up" : "down"}">
           ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
         </strong>
       </div>
+
       <div>
-        <span>총 수익률</span>
+        <span>수익률</span>
         <strong class="${totalRate >= 0 ? "up" : "down"}">
           ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
         </strong>
       </div>
     </div>
+    <div class="trade-stat-title">종목별 누적 결과</div>
+${groupedHtml}
+    <div class="trade-stat-title">개별 매도 내역</div>
+    ${todayResults.slice().reverse().map((item) => {
+      const isProfit = item.profit >= 0;
 
-    ${todayResults.slice().reverse().map((item) => `
-      <div class="trade-log-item">
-        <div class="trade-log-main">
-          <strong class="${item.profit >= 0 ? "up" : "down"}">${item.name}</strong>
-          <span>${item.resultText}</span>
+      return `
+        <div class="virtual-result-item">
+          <div class="virtual-result-top">
+            <div class="virtual-result-name">${item.name}</div>
+            <div class="virtual-result-badge ${isProfit ? "" : "loss"}">
+              ${isProfit ? "수익" : "손실"}
+            </div>
+          </div>
+
+          <div class="virtual-result-detail">
+            <div>
+              ${item.resultText} · 
+              매수 ${formatNumber(Math.round(item.buyPrice))}원 →
+              매도 ${formatNumber(Math.round(item.sellPrice))}원
+            </div>
+
+            <div>
+              수량 ${formatNumber(item.qty)}주 /
+              실현손익 
+              <strong class="${isProfit ? "up" : "down"}">
+                ${isProfit ? "+" : ""}${formatNumber(Math.round(item.profit))}원
+              </strong>
+            </div>
+
+            <div>
+              수익률 
+              <strong class="${isProfit ? "up" : "down"}">
+                ${isProfit ? "+" : ""}${item.profitRate.toFixed(2)}%
+              </strong>
+              · ${item.time}
+            </div>
+          </div>
         </div>
-        <div class="trade-log-detail">
-          매수 ${formatNumber(item.buyPrice)}원 →
-          매도 ${formatNumber(item.sellPrice)}원 /
-          ${formatNumber(item.qty)}주
-        </div>
-        <div class="trade-log-reason">
-          손익 ${item.profit >= 0 ? "+" : ""}${formatNumber(Math.round(item.profit))}원
-          (${item.profitRate >= 0 ? "+" : ""}${item.profitRate.toFixed(2)}%)
-        </div>
-        <div class="trade-log-time">시간: ${item.time}</div>
-      </div>
-    `).join("")}
+      `;
+    }).join("")}
   `;
 }
 
@@ -2032,6 +2197,12 @@ function applyBacktestPreset(type) {
 
 document.querySelectorAll(".preset-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
+    document.querySelectorAll(".preset-btn").forEach((item) => {
+      item.classList.remove("active");
+    });
+
+    btn.classList.add("active");
+
     applyBacktestPreset(btn.dataset.preset);
   });
 });
@@ -2053,13 +2224,23 @@ const name = stock?.name || backtestCodeInput.value.trim();
   const stopRate = Number(backtestStopRateInput.value);
   const trailingRate =
   Number(backtestTrailingRateInput?.value) || 3;
+  const activeStrategies = [];
+const activeFilters = [];
+
+if (strategyUpCandleInput?.checked) activeStrategies.push("상승양봉");
+if (strategyVolumeUpInput?.checked) activeStrategies.push("거래량증가");
+if (strategyCloseBreakInput?.checked) activeStrategies.push("전일종가돌파");
+if (strategyHighBreakInput?.checked) activeStrategies.push("전일고가돌파");
+
+if (filterOverHeatInput?.checked) activeFilters.push("급등 제외");
+if (filter3DayUpInput?.checked) activeFilters.push("3일 연속상승 제외");
+if (filterLowVolumeInput?.checked) activeFilters.push("거래량 급감 제외");
+if (filterWeakCandleInput?.checked) activeFilters.push("약한 캔들 제외");
 
   const initialCash =
   Number(backtestInitialCashInput?.value) || 10000000;
 
 let cash = initialCash;
-const feeRate = 0.00015; // 매수/매도 수수료 0.015%
-const taxRate = 0.0018;  // 매도세 0.18%
 
   backtestResult.innerHTML =
     `<div class="loading">백테스트 실행 중...</div>`;
@@ -2184,11 +2365,7 @@ const isBuySignal =
 if (qty <= 0) continue;
 
 const buyAmount = qty * buyPrice;
-
-const buyFee = buyAmount * feeRate;
-
-const remainCash =
-  cash - buyAmount - buyFee;
+const remainCash = cash - buyAmount;
 
 let sellPrice = null;
 let profit = 0;
@@ -2239,13 +2416,9 @@ if (!sellPrice) continue;
 
 const sellAmount = sellPrice * qty;
 
-const sellFee = sellAmount * feeRate;
-const sellTax = sellAmount * taxRate;
-const netSellAmount = sellAmount - sellFee - sellTax;
+profit = sellAmount - buyAmount;
 
-profit = netSellAmount - buyAmount - buyFee;
-
-cash = remainCash + netSellAmount;
+cash = remainCash + sellAmount;
 
 tradeCount++;
 
@@ -2297,7 +2470,16 @@ const tradeDetailHtml = tradeDetails
   `)
   .join("");
 
-    backtestResult.innerHTML = `
+   backtestResult.innerHTML = `
+  <div class="backtest-summary-note">
+    <strong>적용 전략</strong>
+    <div>매수조건: ${activeStrategies.join(" + ") || "없음"}</div>
+    <div>제외필터: ${activeFilters.join(" + ") || "없음"}</div>
+    <div>
+      목표수익률 ${targetRate}% / 트레일링 ${trailingRate}% / 손절률 ${stopRate}%
+    </div>
+  </div>
+
   <div class="backtest-result-grid">
     <div>
       <span>초기자금</span>
