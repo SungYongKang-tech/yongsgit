@@ -2375,6 +2375,9 @@ const stopHit = lowPrice <= stopPrice;
 
 let resultType = null;
 
+let sellDate =
+  next.date || next.dt || next.tradingDate || "";
+
 if (stopHit) {
   sellPrice = stopPrice;
   resultType = "손절";
@@ -2397,18 +2400,32 @@ if (stopHit) {
     }
 
     if (futureLow <= trailingSellPrice) {
-      sellPrice = trailingSellPrice;
-      resultType = "트레일링";
-      i = j - 1;
-break;
-    }
+  sellPrice = trailingSellPrice;
+  resultType = "트레일링";
+
+  sellDate =
+    prices[j].date ||
+    prices[j].dt ||
+    prices[j].tradingDate ||
+    "";
+
+  i = j - 1;
+  break;
+}
 
     if (j === prices.length - 1) {
-      sellPrice = futureClose;
-      resultType = "기간종료";
-      i = j - 1;
-break;
-    }
+  sellPrice = futureClose;
+  resultType = "기간종료";
+
+  sellDate =
+    prices[j].date ||
+    prices[j].dt ||
+    prices[j].tradingDate ||
+    "";
+
+  i = j - 1;
+  break;
+}
   }
 }
 
@@ -2432,6 +2449,8 @@ totalProfit += profit;
 
 tradeDetails.push({
   type: resultType,
+  buyDate: today.date || today.dt || today.tradingDate || "",
+  sellDate,
   buyPrice,
   sellPrice,
   qty,
@@ -2450,10 +2469,32 @@ const finalProfit = cash - initialCash;
 const finalProfitRate =
   initialCash > 0 ? (finalProfit / initialCash) * 100 : 0;
 
+  const averageProfitRate =
+  tradeCount > 0
+    ? tradeDetails.reduce((sum, item) => sum + item.profitRate, 0) / tradeCount
+    : 0;
+
+    const bestTrade =
+  tradeDetails.length > 0
+    ? tradeDetails.reduce((best, item) =>
+        item.profitRate > best.profitRate ? item : best
+      )
+    : null;
+
+const worstTrade =
+  tradeDetails.length > 0
+    ? tradeDetails.reduce((worst, item) =>
+        item.profitRate < worst.profitRate ? item : worst
+      )
+    : null;
+
 const tradeDetailHtml = tradeDetails
   .map((trade, index) => `
     <div class="backtest-detail-item">
       <strong>${index + 1}. ${trade.type}</strong>
+      <div>
+  매수일 ${trade.buyDate || "-"} / 매도일 ${trade.sellDate || "-"}
+</div>
       <div>
         매수 ${formatNumber(Math.round(trade.buyPrice))}원 →
         매도 ${formatNumber(Math.round(trade.sellPrice))}원
@@ -2526,7 +2567,26 @@ const tradeDetailHtml = tradeDetails
       <span>승률</span>
       <strong>${winRate.toFixed(1)}%</strong>
     </div>
+    <div>
+  <span>평균 수익률</span>
+  <strong class="${averageProfitRate >= 0 ? "up" : "down"}">
+    ${averageProfitRate >= 0 ? "+" : ""}${averageProfitRate.toFixed(2)}%
+  </strong>
+</div>
   </div>
+<div>
+  <span>최고 수익</span>
+  <strong class="up">
+    ${bestTrade ? "+" + bestTrade.profitRate.toFixed(2) + "%" : "-"}
+  </strong>
+</div>
+
+<div>
+  <span>최대 손실</span>
+  <strong class="down">
+    ${worstTrade ? worstTrade.profitRate.toFixed(2) + "%" : "-"}
+  </strong>
+</div>
 
   <div class="backtest-detail-box">
     <div class="backtest-detail-title">거래 상세내역</div>
