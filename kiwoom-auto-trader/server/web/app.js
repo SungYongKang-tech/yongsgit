@@ -7,7 +7,8 @@ const suggestList = document.getElementById("suggestList");
 const addStockSuggestList = document.getElementById("addStockSuggestList");
 const holdSuggestList = document.getElementById("holdSuggestList");
 const backtestSuggestList = document.getElementById("backtestSuggestList");
-
+const resumeAutoTradeBtn =
+  document.getElementById("resumeAutoTradeBtn");
 const selectedStockCodes = {};
 const dailyMaxLossInput =
   document.getElementById("dailyMaxLossInput");
@@ -28,6 +29,8 @@ const saveEntryRateBtn = document.getElementById("saveEntryRateBtn");
 const entryBox = document.getElementById("entryBox");
 const strongStockBox =
   document.getElementById("strongStockBox");
+const autoDiscoverBtn =
+  document.getElementById("autoDiscoverBtn");
 
 const testModeBanner = document.getElementById("testModeBanner");
 
@@ -1279,8 +1282,11 @@ if (testModeBtn) {
   });
 }
 
+if (resumeAutoTradeBtn) {
+  resumeAutoTradeBtn.addEventListener("click", resumeAllAutoTrade);
+}
+
 function addWatchCode() {
-  const inputValue = addStockCodeInput.value.trim();
 const code = getSelectedStockCode(addStockCodeInput, "watch");
 
 if (!code) {
@@ -1703,14 +1709,6 @@ function getTodayTradeCount() {
   return tradeLogs.filter((log) => {
     return log.date === todayKey;
   }).length;
-}
-
-function getTodayRealizedProfit() {
-  const todayKey = new Date().toISOString().slice(0, 10);
-
-  return virtualResults
-    .filter((item) => item.date === todayKey)
-    .reduce((sum, item) => sum + item.profit, 0);
 }
 
 function getConsecutiveLossCount() {
@@ -4129,4 +4127,100 @@ if (compareBacktestBtn) {
 
 if (applyBestStrategyBtn) {
   applyBestStrategyBtn.addEventListener("click", applyBestStrategy);
+}
+
+if (autoDiscoverBtn) {
+  autoDiscoverBtn.addEventListener("click", runAutoDiscover);
+}
+
+function resumeAllAutoTrade() {
+  if (holdings.length === 0) {
+    alert("보유종목이 없습니다.");
+    return;
+  }
+
+  const ok = confirm(
+    "모든 보유종목의 자동매매를 다시 켤까요?"
+  );
+
+  if (!ok) return;
+
+  holdings = holdings.map((item) => ({
+    ...item,
+    autoTrade: true
+  }));
+
+  saveHoldings();
+  renderHoldings();
+
+  alert("모든 보유종목의 자동매매를 다시 켰습니다.");
+}
+
+async function fetchAllStocksForDiscover() {
+  try {
+    const res = await fetch(`${API_BASE}/api/stocks`);
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "전체 종목 조회 실패");
+    }
+
+    return data.items || data || [];
+  } catch (error) {
+    console.warn("전체 종목 조회 실패:", error);
+
+    return STOCK_MASTER;
+  }
+}
+
+async function runAutoDiscover() {
+  if (!strongStockBox) return;
+
+  strongStockBox.innerHTML =
+    `<div class="loading">자동발굴 중입니다...</div>`;
+
+  try {
+    const allStocks = await fetchAllStocksForDiscover();
+
+    const targetStocks = allStocks
+  .filter((item) => item.code)
+  .filter((item) => !item.name.includes("스팩"))
+  .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
+  .slice(0, 80);
+
+    const results = [];
+
+    for (const stock of targetStocks) {
+      try {
+        const item = await fetchStockPrice(stock.code);
+
+        const rate = parseFloat(item.changeRate);
+        const volume = Number(item.volume || 0);
+        const price = Number(item.currentPrice || 0);
+
+        if (
+          !isNaN(rate) &&
+          price > 0 &&
+          rate >= entryRate &&
+          volume >= volumeThreshold
+        ) {
+          results.push(item);
+        }
+      } catch (error) {
+        console.warn("자동발굴 종목 조회 실패:", stock.code, error);
+      }
+    }
+
+    if (results.length === 0) {
+      strongStockBox.innerHTML =
+        `<div class="empty">자동발굴 조건에 맞는 종목이 없습니다.</div>`;
+      return;
+    }
+
+    renderStrongStockBox(results);
+  } catch (error) {
+    strongStockBox.innerHTML =
+      `<div class="error">자동발굴 실패<br />${error.message}</div>`;
+  }
 }
