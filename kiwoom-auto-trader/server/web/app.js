@@ -80,6 +80,8 @@ const STOCK_MASTER = [
   { code: "086520", name: "에코프로" }
 ];
 
+let lastBestStrategyKey = null;
+
 let tradeTimeSetting =
   JSON.parse(localStorage.getItem(TRADE_TIME_KEY)) || {
     start: "09:00",
@@ -418,6 +420,9 @@ const runBacktestBtn =
 
 const compareBacktestBtn =
   document.getElementById("compareBacktestBtn");
+
+  const applyBestStrategyBtn =
+  document.getElementById("applyBestStrategyBtn");
 
 const backtestResult =
   document.getElementById("backtestResult");
@@ -2648,12 +2653,13 @@ async function runBacktestCompare() {
     const tradeCount =
       summaryItems.find((item) => item.label === "총 신호")?.value || "-";
     results.push({
-      name: preset.name,
-      profitRate,
-      winRate,
-      tradeCount,
-      html: backtestResult.innerHTML
-      });
+  key: preset.key,
+  name: preset.name,
+  profitRate,
+  winRate,
+  tradeCount,
+  html: backtestResult.innerHTML
+});
        }
 
        const bestStrategy = results
@@ -2662,6 +2668,7 @@ async function runBacktestCompare() {
     parseFloat(b.profitRate.replace("%", "")) -
     parseFloat(a.profitRate.replace("%", ""))
   )[0];
+  lastBestStrategyKey = bestStrategy?.key || null;
 
 backtestResult.innerHTML = `
   <div class="backtest-summary-note">
@@ -2700,6 +2707,24 @@ ${results.map((item) => `
     </div>
   `).join("")}
 `;
+}
+
+function applyBestStrategy() {
+  if (!lastBestStrategyKey) {
+    alert("먼저 전략 비교를 실행하세요.");
+    return;
+  }
+
+  applyBacktestPreset(lastBestStrategyKey);
+
+  document.querySelectorAll(".preset-btn").forEach((btn) => {
+    btn.classList.toggle(
+      "active",
+      btn.dataset.preset === lastBestStrategyKey
+    );
+  });
+
+  alert("추천 전략이 적용되었습니다.");
 }
 
 function renderHoldRankBox(items) {
@@ -3670,4 +3695,8 @@ if (runBacktestBtn) {
 
 if (compareBacktestBtn) {
   compareBacktestBtn.addEventListener("click", runBacktestCompare);
+}
+
+if (applyBestStrategyBtn) {
+  applyBestStrategyBtn.addEventListener("click", applyBestStrategy);
 }
