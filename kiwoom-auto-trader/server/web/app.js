@@ -597,26 +597,33 @@ return {
         <strong>${item.name}</strong>
         <div style="text-align:right;">
           <span class="${getRateClass(item.changeRate)}">${item.changeRate}</span>
+          
           <div style="font-size:11px;color:#6b7280;margin-top:3px;">
-          <div style="margin-top:6px;">
-  <button
-    class="apply-stock-strategy-btn"
-    data-strategy="${item.recommendType === "추세형" ? "trend" : "short"}"
-  >
-    추천 전략 적용
-  </button>
+
+  <span class="entry-badge">${item.recommendType}</span>
+  <span class="entry-badge">${item.candidateGrade}</span>
+
+  점수 ${item.strongScore}점 ·
+  ${item.strongReasons.join(" · ")}
+
+  <div style="margin-top:6px;">
+    <button
+      class="apply-stock-strategy-btn"
+      data-strategy="${item.recommendType === "추세형" ? "trend" : "short"}"
+    >
+      추천 전략 적용
+    </button>
+  </div>
+
 </div>
-          <span class="entry-badge">${item.recommendType}</span>
-          <span class="entry-badge">${item.candidateGrade}</span>
-            점수 ${item.strongScore}점 · ${item.strongReasons.join(" · ")}
+          
           </div>
         </div>
       </div>
     `).join("")}
   `;
-}
 
-setTimeout(() => {
+  setTimeout(() => {
   document
     .querySelectorAll(".apply-stock-strategy-btn")
     .forEach((btn) => {
@@ -638,6 +645,9 @@ setTimeout(() => {
       };
     });
 }, 0);
+}
+
+
 
 function renderWatchItem(item) {
   const rateClass = getRateClass(item.changeRate);
