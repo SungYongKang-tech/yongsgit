@@ -2570,7 +2570,6 @@ const tradeDetailHtml = tradeDetails
       <span>승률</span>
       <strong>${winRate.toFixed(1)}%</strong>
     </div>
-    <div>
   <div>
   <span>평균 수익률</span>
   <strong class="${averageProfitRate >= 0 ? "up" : "down"}">
@@ -2635,28 +2634,72 @@ async function runBacktestCompare() {
 
     await runBacktest();
 
+    const resultGrid = backtestResult.querySelector(".backtest-result-grid");
+    const summaryItems = resultGrid
+     ? Array.from(resultGrid.querySelectorAll("div")).map((box) => ({
+      label: box.querySelector("span")?.textContent.trim(),
+      value: box.querySelector("strong")?.textContent.trim()
+      }))
+      : [];
+    const profitRate =
+      summaryItems.find((item) => item.label === "총수익률")?.value || "-";
+    const winRate =
+      summaryItems.find((item) => item.label === "승률")?.value || "-";
+    const tradeCount =
+      summaryItems.find((item) => item.label === "총 신호")?.value || "-";
     results.push({
       name: preset.name,
+      profitRate,
+      winRate,
+      tradeCount,
       html: backtestResult.innerHTML
-    });
-  }
+      });
+       }
 
-  backtestResult.innerHTML = `
-    <div class="backtest-summary-note">
-      <strong>전략 비교 결과</strong>
-      <div>종목: ${name} (${code})</div>
+       const bestStrategy = results
+  .filter((item) => item.profitRate !== "-")
+  .sort((a, b) =>
+    parseFloat(b.profitRate.replace("%", "")) -
+    parseFloat(a.profitRate.replace("%", ""))
+  )[0];
+
+backtestResult.innerHTML = `
+  <div class="backtest-summary-note">
+  <strong>전략 비교 결과</strong>
+  <div>종목: ${name} (${code})</div>
+  <div>
+    추천 전략:
+    <strong class="up">
+      ${bestStrategy ? bestStrategy.name : "판단 불가"}
+    </strong>
+  </div>
+</div>
+
+  <div class="backtest-compare-summary">
+    <div class="backtest-compare-summary-title">
+      전략별 결과 요약
     </div>
 
-    ${results.map((item) => `
-      <div class="backtest-compare-box">
-        <div class="backtest-compare-title">
-          ${item.name}
-        </div>
+${results.map((item) => `
+  <div class="backtest-compare-summary-row">
+    <strong>${item.name}</strong>
+    <span>수익률 ${item.profitRate}</span>
+    <span>승률 ${item.winRate}</span>
+    <span>신호 ${item.tradeCount}</span>
+  </div>
+`).join("")}
+  </div>
 
-        ${item.html}
+  ${results.map((item) => `
+    <div class="backtest-compare-box">
+      <div class="backtest-compare-title">
+        ${item.name}
       </div>
-    `).join("")}
-  `;
+
+      ${item.html}
+    </div>
+  `).join("")}
+`;
 }
 
 function renderHoldRankBox(items) {
