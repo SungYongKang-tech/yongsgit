@@ -9,7 +9,17 @@ const holdSuggestList = document.getElementById("holdSuggestList");
 const backtestSuggestList = document.getElementById("backtestSuggestList");
 
 const selectedStockCodes = {};
+const dailyMaxLossInput =
+  document.getElementById("dailyMaxLossInput");
 
+  const maxConsecutiveLossInput =
+  document.getElementById("maxConsecutiveLossInput");
+
+const saveMaxConsecutiveLossBtn =
+  document.getElementById("saveMaxConsecutiveLossBtn");
+
+const saveDailyMaxLossBtn =
+  document.getElementById("saveDailyMaxLossBtn");
 const alertRateInput = document.getElementById("alertRateInput");
 const saveAlertRateBtn = document.getElementById("saveAlertRateBtn");
 const alertBox = document.getElementById("alertBox");
@@ -34,6 +44,12 @@ const TRADE_TIME_KEY = "kiwoom_trade_time";
 
 const volumeThresholdInput =
   document.getElementById("volumeThresholdInput");
+
+  const defaultBuyAmountInput =
+  document.getElementById("defaultBuyAmountInput");
+
+const saveDefaultBuyAmountBtn =
+  document.getElementById("saveDefaultBuyAmountBtn");
 
 const saveVolumeThresholdBtn =
   document.getElementById("saveVolumeThresholdBtn");
@@ -113,6 +129,96 @@ if (tradeEndTimeInput) {
     alert("자동매매 가능 시간이 저장되었습니다.");
   });
 }
+
+const MAX_CONSECUTIVE_LOSS_KEY =
+  "kiwoom_max_consecutive_loss";
+
+let maxConsecutiveLoss =
+  Number(localStorage.getItem(MAX_CONSECUTIVE_LOSS_KEY)) || 2;
+
+if (maxConsecutiveLossInput) {
+  maxConsecutiveLossInput.value = maxConsecutiveLoss;
+}
+
+if (saveMaxConsecutiveLossBtn) {
+  saveMaxConsecutiveLossBtn.addEventListener("click", () => {
+    const value = Number(maxConsecutiveLossInput.value);
+
+    if (isNaN(value) || value <= 0) {
+      alert("연속 손절 제한 횟수를 입력하세요.");
+      return;
+    }
+
+    maxConsecutiveLoss = value;
+
+    localStorage.setItem(
+      MAX_CONSECUTIVE_LOSS_KEY,
+      String(maxConsecutiveLoss)
+    );
+
+    alert("연속 손절 제한이 저장되었습니다.");
+  });
+}
+const DAILY_MAX_LOSS_KEY =
+  "kiwoom_daily_max_loss";
+
+let dailyMaxLoss =
+  Number(localStorage.getItem(DAILY_MAX_LOSS_KEY)) || 30000;
+
+if (dailyMaxLossInput) {
+  dailyMaxLossInput.value = dailyMaxLoss;
+}
+
+if (saveDailyMaxLossBtn) {
+  saveDailyMaxLossBtn.addEventListener("click", () => {
+    const value = Number(dailyMaxLossInput.value);
+
+    if (isNaN(value) || value <= 0) {
+      alert("하루 최대 손실금을 입력하세요.");
+      return;
+    }
+
+    dailyMaxLoss = value;
+
+    localStorage.setItem(
+      DAILY_MAX_LOSS_KEY,
+      String(dailyMaxLoss)
+    );
+
+    alert("하루 최대 손실 제한이 저장되었습니다.");
+  });
+}
+
+const DEFAULT_BUY_AMOUNT_KEY =
+  "kiwoom_default_buy_amount";
+
+let defaultBuyAmount =
+  Number(localStorage.getItem(DEFAULT_BUY_AMOUNT_KEY)) || 1000000;
+
+if (defaultBuyAmountInput) {
+  defaultBuyAmountInput.value = defaultBuyAmount;
+}
+
+if (saveDefaultBuyAmountBtn) {
+  saveDefaultBuyAmountBtn.addEventListener("click", () => {
+    const value = Number(defaultBuyAmountInput.value);
+
+    if (isNaN(value) || value <= 0) {
+      alert("종목당 매수금액을 입력하세요.");
+      return;
+    }
+
+    defaultBuyAmount = value;
+
+    localStorage.setItem(
+      DEFAULT_BUY_AMOUNT_KEY,
+      String(defaultBuyAmount)
+    );
+
+    alert("종목당 매수금액이 저장되었습니다.");
+  });
+}
+
 
 const VOLUME_THRESHOLD_KEY =
   "kiwoom_volume_threshold";
@@ -381,6 +487,9 @@ const holdRankBox = document.getElementById("holdRankBox");
 
 const tradeStatBox =
   document.getElementById("tradeStatBox");
+
+const riskStatusBox =
+  document.getElementById("riskStatusBox");
 
 const virtualResultBox =
   document.getElementById("virtualResultBox");
@@ -747,7 +856,7 @@ document
       stopLossPriceInput.value =
         Math.round(price * 0.97);
 
-      const defaultBuyAmount = 1000000;
+      
 
       const qty =
         price > 0
@@ -756,9 +865,21 @@ document
 
       holdQtyInput.value = qty;
 
-      const shouldAddHold = confirm(
-        "이 종목을 매수후보로 보유목록에 추가할까요?"
-      );
+      const buyAmount =
+  price * qty;
+
+const shouldAddHold = confirm(
+  `[매수후보 확인]\n\n` +
+  `종목: ${name}\n` +
+  `매수가: ${formatNumber(price)}원\n` +
+  `수량: ${formatNumber(qty)}주\n` +
+  `투자금: ${formatNumber(buyAmount)}원\n\n` +
+  `목표가: ${formatNumber(Math.round(price * 1.05))}원\n` +
+  `2차목표가: ${formatNumber(Math.round(price * 1.08))}원\n` +
+  `손절가: ${formatNumber(Math.round(price * 0.97))}원\n` +
+  `트레일링: 3%\n\n` +
+  `보유목록에 추가할까요?`
+);
 
       if (shouldAddHold) {
         addHoldBtn.click();
@@ -1099,6 +1220,20 @@ function stopAutoRefresh() {
     autoRefreshTimer = null;
   }
 }
+function stopAllAutoTradeByRisk(reason) {
+  stopAutoRefresh();
+
+  holdings = holdings.map((item) => ({
+    ...item,
+    autoTrade: false
+  }));
+
+  saveHoldings();
+  renderHoldings();
+
+  alert(reason);
+}
+
 function updateTestModeUI() {
 
     if (testModeBanner) {
@@ -1197,6 +1332,8 @@ let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
 
 const DAILY_TRADE_LIMIT = 20;
 const DAILY_TRADE_LIMIT_PER_CODE = 3;
+
+
 const TRADE_COOLDOWN_MINUTES = 3;
 const PARTIAL_SELL_RATE = 0.5; // 50% 분할매도
 
@@ -1417,6 +1554,7 @@ function renderTradeLogs() {
     `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
 
   renderTradeStats();
+renderRiskStatus();
 renderVirtualResults();
 return;
 }
@@ -1463,6 +1601,7 @@ return;
     })
     .join("");
     renderTradeStats();
+renderRiskStatus();
 renderVirtualResults();
 }
 
@@ -1514,12 +1653,93 @@ function renderTradeStats() {
   `;
 }
 
+function renderRiskStatus() {
+  if (!riskStatusBox) return;
+
+  const profit = getTodayRealizedProfit();
+  const lossCount = getConsecutiveLossCount();
+
+  const isLossLimit = profit <= -dailyMaxLoss;
+  const isConsecutiveLimit = lossCount >= maxConsecutiveLoss;
+
+  const statusText =
+    isLossLimit || isConsecutiveLimit ? "자동매매 중지 필요" : "정상";
+
+  const statusClass =
+    isLossLimit || isConsecutiveLimit ? "down" : "up";
+
+  riskStatusBox.innerHTML = `
+    <div class="trade-stat-title">리스크 상태</div>
+
+    <div class="trade-stat-grid">
+      <div>
+        <span>오늘 실현손익</span>
+        <strong class="${profit >= 0 ? "up" : "down"}">
+          ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+        </strong>
+      </div>
+
+      <div>
+        <span>손실 제한</span>
+        <strong>${formatNumber(dailyMaxLoss)}원</strong>
+      </div>
+
+      <div>
+        <span>연속 손절</span>
+        <strong>${lossCount} / ${maxConsecutiveLoss}회</strong>
+      </div>
+
+      <div>
+        <span>상태</span>
+        <strong class="${statusClass}">${statusText}</strong>
+      </div>
+    </div>
+  `;
+}
+
 function getTodayTradeCount() {
   const todayKey = new Date().toISOString().slice(0, 10);
 
   return tradeLogs.filter((log) => {
     return log.date === todayKey;
   }).length;
+}
+
+function getTodayRealizedProfit() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  return virtualResults
+    .filter((item) => item.date === todayKey)
+    .reduce((sum, item) => sum + item.profit, 0);
+}
+
+function getConsecutiveLossCount() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  const todayResults = virtualResults
+    .filter((item) => item.date === todayKey)
+    .slice()
+    .reverse();
+
+  let count = 0;
+
+  for (const item of todayResults) {
+    if (item.profit < 0) {
+      count++;
+    } else {
+      break;
+    }
+  }
+
+  return count;
+}
+
+function getTodayRealizedProfit() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  return virtualResults
+    .filter((item) => item.date === todayKey)
+    .reduce((sum, item) => sum + item.profit, 0);
 }
 
 function getTodayTradeCountForCode(code) {
@@ -1902,6 +2122,28 @@ if (isInCooldown(item.code)) {
 
 if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
   console.warn("1일 거래 제한");
+  return;
+}
+
+
+
+if (getTodayRealizedProfit() <= -dailyMaxLoss) {
+  console.warn("하루 최대 손실 제한 도달");
+
+  stopAllAutoTradeByRisk(
+    "하루 최대 손실 제한에 도달하여 모든 자동매매를 중지했습니다."
+  );
+
+  return;
+}
+
+if (getConsecutiveLossCount() >= maxConsecutiveLoss) {
+  console.warn("연속 손절 제한 도달");
+
+  stopAllAutoTradeByRisk(
+    "연속 손절 제한에 도달하여 모든 자동매매를 중지했습니다."
+  );
+
   return;
 }
 
@@ -3698,7 +3940,7 @@ function addHolding() {
   trailingStopRate,
   highestPrice: 0,
   stopLossPrice,
-  autoTrade: false
+  autoTrade: true
 });
 
 strategyStates[code] = {
