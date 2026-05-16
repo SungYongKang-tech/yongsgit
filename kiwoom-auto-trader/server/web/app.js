@@ -613,6 +613,23 @@ return {
     >
       추천 전략 적용
     </button>
+
+    <button
+  class="run-stock-backtest-btn"
+  data-code="${item.code}"
+  data-name="${item.name}"
+  data-strategy="${item.recommendType === "추세형" ? "trend" : "short"}"
+>
+  바로 백테스트
+</button>
+
+<button
+  class="add-strong-watch-btn"
+  data-code="${item.code}"
+>
+  관심추가
+</button>
+
   </div>
 
 </div>
@@ -675,6 +692,26 @@ return {
       };
     });
 }, 0);
+
+document
+  .querySelectorAll(".add-strong-watch-btn")
+  .forEach((btn) => {
+    btn.onclick = () => {
+      const code = btn.dataset.code;
+
+      if (watchCodes.includes(code)) {
+        alert("이미 관심종목에 있습니다.");
+        return;
+      }
+
+      watchCodes.push(code);
+      saveWatchCodes();
+      loadWatchList();
+
+      alert("관심종목에 추가되었습니다.");
+    };
+  });
+
 }
 
 
