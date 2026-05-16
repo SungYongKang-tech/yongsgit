@@ -644,6 +644,36 @@ return {
         alert("추천 전략이 적용되었습니다.");
       };
     });
+
+  document
+    .querySelectorAll(".run-stock-backtest-btn")
+    .forEach((btn) => {
+      btn.onclick = async () => {
+        const preset = btn.dataset.strategy;
+        const code = btn.dataset.code;
+        const name = btn.dataset.name;
+
+        backtestCodeInput.value = name;
+        selectedStockCodes.backtest = code;
+
+        applyBacktestPreset(preset);
+
+        document
+          .querySelectorAll(".preset-btn")
+          .forEach((item) => {
+            item.classList.toggle(
+              "active",
+              item.dataset.preset === preset
+            );
+          });
+
+        await runBacktest();
+
+        backtestResult.scrollIntoView({
+          behavior: "smooth"
+        });
+      };
+    });
 }, 0);
 }
 
