@@ -413,10 +413,11 @@ const strategyCloseBreakInput =
 const strategyHighBreakInput =
   document.getElementById("strategyHighBreak");
 
-
-
 const runBacktestBtn =
   document.getElementById("runBacktestBtn");
+
+const compareBacktestBtn =
+  document.getElementById("compareBacktestBtn");
 
 const backtestResult =
   document.getElementById("backtestResult");
@@ -2513,7 +2514,9 @@ const tradeDetailHtml = tradeDetails
 
    backtestResult.innerHTML = `
   <div class="backtest-summary-note">
-    <strong>적용 전략</strong>
+  <strong>백테스트 조건</strong>
+  <div>종목: ${name} (${code})</div>
+  <div>기간: 최근 ${days}일</div>
     <div>매수조건: ${activeStrategies.join(" + ") || "없음"}</div>
     <div>제외필터: ${activeFilters.join(" + ") || "없음"}</div>
     <div>
@@ -2568,12 +2571,13 @@ const tradeDetailHtml = tradeDetails
       <strong>${winRate.toFixed(1)}%</strong>
     </div>
     <div>
+  <div>
   <span>평균 수익률</span>
   <strong class="${averageProfitRate >= 0 ? "up" : "down"}">
     ${averageProfitRate >= 0 ? "+" : ""}${averageProfitRate.toFixed(2)}%
   </strong>
 </div>
-  </div>
+
 <div>
   <span>최고 수익</span>
   <strong class="up">
@@ -2587,6 +2591,7 @@ const tradeDetailHtml = tradeDetails
     ${worstTrade ? worstTrade.profitRate.toFixed(2) + "%" : "-"}
   </strong>
 </div>
+</div>
 
   <div class="backtest-detail-box">
     <div class="backtest-detail-title">거래 상세내역</div>
@@ -2597,6 +2602,61 @@ const tradeDetailHtml = tradeDetails
     backtestResult.innerHTML =
       `<div class="error">${error.message}</div>`;
   }
+}
+
+
+async function runBacktestCompare() {
+  if (!backtestResult) return;
+
+  const code =
+    getSelectedStockCode(backtestCodeInput, "backtest");
+
+  const stock =
+    STOCK_MASTER.find((item) => item.code === code);
+
+  const name =
+    stock?.name || backtestCodeInput.value.trim();
+
+  if (!code) {
+    alert("백테스트할 종목명 또는 코드를 입력하세요.");
+    return;
+  }
+
+  const presets = [
+    { key: "trend", name: "추세형" },
+    { key: "short", name: "단타형" },
+    { key: "safe", name: "안정형" }
+  ];
+
+  const results = [];
+
+  for (const preset of presets) {
+    applyBacktestPreset(preset.key);
+
+    await runBacktest();
+
+    results.push({
+      name: preset.name,
+      html: backtestResult.innerHTML
+    });
+  }
+
+  backtestResult.innerHTML = `
+    <div class="backtest-summary-note">
+      <strong>전략 비교 결과</strong>
+      <div>종목: ${name} (${code})</div>
+    </div>
+
+    ${results.map((item) => `
+      <div class="backtest-compare-box">
+        <div class="backtest-compare-title">
+          ${item.name}
+        </div>
+
+        ${item.html}
+      </div>
+    `).join("")}
+  `;
 }
 
 function renderHoldRankBox(items) {
@@ -3563,4 +3623,8 @@ if (resetHoldingsBtn) {
 
 if (runBacktestBtn) {
   runBacktestBtn.addEventListener("click", runBacktest);
+}
+
+if (compareBacktestBtn) {
+  compareBacktestBtn.addEventListener("click", runBacktestCompare);
 }
