@@ -38,7 +38,7 @@ const autoDiscoverAutoBtn =
 let autoDiscoverTimer = null;
 const AUTO_DISCOVER_AUTO_KEY =
   "kiwoom_auto_discover_auto";
-  
+
 let isAutoDiscoverAuto =
   localStorage.getItem(AUTO_DISCOVER_AUTO_KEY) === "true";
 
@@ -1072,6 +1072,7 @@ let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
 
 const ALERT_RATE_KEY = "kiwoom_alert_rate";
 const TEST_MODE_KEY = "kiwoom_test_mode";
+const AUTO_REFRESH_KEY = "kiwoom_auto_refresh";
 const ENTRY_RATE_KEY = "kiwoom_entry_rate";
 
 
@@ -1872,7 +1873,8 @@ const autoRefreshBtn = document.getElementById("autoRefreshBtn");
 const testModeBtn = document.getElementById("testModeBtn");
 
 let autoRefreshTimer = null;
-let isAutoRefresh = false;
+let isAutoRefresh =
+  localStorage.getItem(AUTO_REFRESH_KEY) === "true";
 let isRefreshing = false;
 let isAutoDiscovering = false;
 
@@ -1979,6 +1981,10 @@ async function startAutoRefresh() {
   }
 
   isAutoRefresh = true;
+  localStorage.setItem(
+  AUTO_REFRESH_KEY,
+  "true"
+);
   autoRefreshBtn.textContent = "자동ON";
   autoRefreshBtn.classList.add("active");
 
@@ -2002,6 +2008,10 @@ async function runRefreshLoop() {
 
 function stopAutoRefresh() {
   isAutoRefresh = false;
+  localStorage.setItem(
+  AUTO_REFRESH_KEY,
+  "false"
+);
   autoRefreshBtn.textContent = "자동OFF";
   autoRefreshBtn.classList.remove("active");
 
@@ -2130,6 +2140,10 @@ autoRefreshBtn.addEventListener("click", () => {
     startAutoRefresh();
   }
 });
+
+if (isAutoRefresh) {
+  startAutoRefresh();
+}
 
 if (autoDiscoverAutoBtn) {
   autoDiscoverAutoBtn.addEventListener("click", () => {
