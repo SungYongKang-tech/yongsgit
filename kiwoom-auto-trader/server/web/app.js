@@ -2007,15 +2007,33 @@ function stopAutoRefresh() {
 }
 
 function updateAutoDiscoverAutoUi() {
-  if (!autoDiscoverAutoBtn) return;
+  if (autoDiscoverAutoBtn) {
+    autoDiscoverAutoBtn.textContent =
+      isAutoDiscoverAuto ? "자동ON" : "자동OFF";
 
-  autoDiscoverAutoBtn.textContent =
-    isAutoDiscoverAuto ? "자동ON" : "자동OFF";
+    autoDiscoverAutoBtn.classList.toggle(
+      "active",
+      isAutoDiscoverAuto
+    );
+  }
 
-  autoDiscoverAutoBtn.classList.toggle(
-    "active",
-    isAutoDiscoverAuto
-  );
+  const autoDiscoverState =
+    document.getElementById("autoDiscoverState");
+
+  if (autoDiscoverState) {
+    autoDiscoverState.textContent =
+      isAutoDiscoverAuto ? "ON" : "OFF";
+
+    autoDiscoverState.classList.toggle(
+      "on",
+      isAutoDiscoverAuto
+    );
+
+    autoDiscoverState.classList.toggle(
+      "off",
+      !isAutoDiscoverAuto
+    );
+  }
 }
 
 async function startAutoDiscoverAuto() {
