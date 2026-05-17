@@ -2005,6 +2005,56 @@ function stopAutoRefresh() {
     autoRefreshTimer = null;
   }
 }
+
+function updateAutoDiscoverAutoUi() {
+  if (!autoDiscoverAutoBtn) return;
+
+  autoDiscoverAutoBtn.textContent =
+    isAutoDiscoverAuto ? "자동ON" : "자동OFF";
+
+  autoDiscoverAutoBtn.classList.toggle(
+    "active",
+    isAutoDiscoverAuto
+  );
+}
+
+async function startAutoDiscoverAuto() {
+  if (autoDiscoverTimer) {
+    clearTimeout(autoDiscoverTimer);
+  }
+
+  isAutoDiscoverAuto = true;
+
+  updateAutoDiscoverAutoUi();
+
+  async function loop() {
+    if (!isAutoDiscoverAuto) return;
+
+    try {
+      await runAutoDiscover();
+    } catch (error) {
+      console.error("자동발굴 실패:", error);
+    }
+
+    autoDiscoverTimer = setTimeout(() => {
+      loop();
+    }, 60000);
+  }
+
+  loop();
+}
+
+function stopAutoDiscoverAuto() {
+  isAutoDiscoverAuto = false;
+
+  if (autoDiscoverTimer) {
+    clearTimeout(autoDiscoverTimer);
+    autoDiscoverTimer = null;
+  }
+
+  updateAutoDiscoverAutoUi();
+}
+
 function stopAllAutoTradeByRisk(reason) {
   stopAutoRefresh();
 
@@ -2044,6 +2094,18 @@ autoRefreshBtn.addEventListener("click", () => {
     startAutoRefresh();
   }
 });
+
+if (autoDiscoverAutoBtn) {
+  autoDiscoverAutoBtn.addEventListener("click", () => {
+    if (isAutoDiscoverAuto) {
+      stopAutoDiscoverAuto();
+    } else {
+      startAutoDiscoverAuto();
+    }
+  });
+}
+
+updateAutoDiscoverAutoUi();
 
 if (testModeBtn) {
   testModeBtn.addEventListener("click", () => {
