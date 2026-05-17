@@ -76,6 +76,9 @@ const volumeThresholdInput =
 const saveDefaultBuyAmountBtn =
   document.getElementById("saveDefaultBuyAmountBtn");
 
+  const maxHoldingCountInput =
+  document.getElementById("maxHoldingCountInput");
+
 const saveVolumeThresholdBtn =
   document.getElementById("saveVolumeThresholdBtn");
 
@@ -378,7 +381,10 @@ function getStockSummaryHtml() {
         const recommended =
           getRecommendedStrategyForCode(item.code);
 
-        return `
+        const backtestStatus =
+         getBacktestStatusText(item.code);
+
+       return `
           <div class="virtual-result-item">
 
             <div class="virtual-result-top">
@@ -433,16 +439,18 @@ function getStockSummaryHtml() {
 
 function getRecommendedStrategyForCode(code) {
   const rows = backtestHistory.filter(
-    (item) => item.code === code
-  );
+  (item) => item.code === code
+);
 
-  if (rows.length === 0) {
-    return null;
-  }
+const passedRows = rows.filter(isBacktestPassed);
+
+if (passedRows.length === 0) {
+  return null;
+}
 
   const strategyMap = {};
 
-  rows.forEach((item) => {
+  passedRows.forEach((item) => {
     const strategies =
       item.strategies && item.strategies.length > 0
         ? item.strategies
@@ -619,32 +627,82 @@ if (saveDailyMaxLossBtn) {
 }
 
 const DEFAULT_BUY_AMOUNT_KEY =
-  "kiwoom_default_buy_amount";
+  "kiwoom_total_virtual_cash";
+
+const MAX_HOLDING_COUNT_KEY =
+  "kiwoom_max_holding_count";
 
 let defaultBuyAmount =
-  Number(localStorage.getItem(DEFAULT_BUY_AMOUNT_KEY)) || 1000000;
+  Number(localStorage.getItem(DEFAULT_BUY_AMOUNT_KEY)) || 10000000;
+
+let maxHoldingCount =
+  Number(localStorage.getItem(MAX_HOLDING_COUNT_KEY)) || 5;
 
 if (defaultBuyAmountInput) {
   defaultBuyAmountInput.value = defaultBuyAmount;
 }
 
+if (maxHoldingCountInput) {
+  maxHoldingCountInput.value = maxHoldingCount;
+}
+
+function getPerBuyAmount() {
+  const totalCash =
+    Number(defaultBuyAmountInput?.value) || defaultBuyAmount || 10000000;
+
+  const count =
+    Number(maxHoldingCountInput?.value) || maxHoldingCount || 5;
+
+  return Math.floor(totalCash / count);
+}
+
+function getTotalHoldingBuyAmount() {
+  return holdings.reduce((sum, item) => {
+    return sum + Number(item.buyPrice || 0) * Number(item.qty || 0);
+  }, 0);
+}
+
+function getAvailableVirtualCash() {
+  const totalCash =
+    Number(defaultBuyAmountInput?.value) || defaultBuyAmount || 10000000;
+
+  return Math.max(0, totalCash - getTotalHoldingBuyAmount());
+}
+
 if (saveDefaultBuyAmountBtn) {
   saveDefaultBuyAmountBtn.addEventListener("click", () => {
-    const value = Number(defaultBuyAmountInput.value);
+    const totalCash = Number(defaultBuyAmountInput.value);
+    const count = Number(maxHoldingCountInput.value);
 
-    if (isNaN(value) || value <= 0) {
-      alert("종목당 매수금액을 입력하세요.");
+    if (isNaN(totalCash) || totalCash <= 0) {
+      alert("전체 모의투자금을 입력하세요.");
       return;
     }
 
-    defaultBuyAmount = value;
+    if (isNaN(count) || count <= 0) {
+      alert("최대 보유종목 수를 입력하세요.");
+      return;
+    }
+
+    defaultBuyAmount = totalCash;
+    maxHoldingCount = count;
 
     localStorage.setItem(
       DEFAULT_BUY_AMOUNT_KEY,
       String(defaultBuyAmount)
     );
 
-    alert("종목당 매수금액이 저장되었습니다.");
+    localStorage.setItem(
+      MAX_HOLDING_COUNT_KEY,
+      String(maxHoldingCount)
+    );
+
+    alert(
+      "투자설정이 저장되었습니다.\n\n" +
+      `전체 모의투자금: ${formatNumber(defaultBuyAmount)}원\n` +
+      `최대 보유종목: ${maxHoldingCount}개\n` +
+      `종목당 기준금액: ${formatNumber(getPerBuyAmount())}원`
+    );
   });
 }
 
@@ -1263,7 +1321,7 @@ if (historyRows.length >= 2) {
 
       return Number(b.volume || 0) - Number(a.volume || 0);
     })
-    .slice(0, Math.min(getCurrentDiscoverSettings().limit, 50));
+    .slice(0, 15);
 
   latestStrongItems = strongItems;
 
@@ -1315,6 +1373,10 @@ if (historyRows.length >= 2) {
               <span class="entry-badge">${rankBadge}</span>
               <span class="entry-badge">${item.historyGrade}</span>
 
+              <span class="entry-badge ${backtestStatus.className}">
+  ${backtestStatus.text}
+</span>
+
               ${
                 item.riskReasons && item.riskReasons.length > 0
                   ? `<span class="entry-badge danger">위험주의</span>`
@@ -1362,7 +1424,7 @@ data-name="${item.name}"
 data-price="${item.currentPrice}"
 data-strategy="${strategyPreset}"
                 >
-                  매수후보
+                  가상매수 준비
                 </button>
               </div>
             </div>
@@ -1450,6 +1512,31 @@ data-strategy="${strategyPreset}"
           const code = btn.dataset.code;
           const name = btn.dataset.name;
           const price = Number(btn.dataset.price || 0);
+          const latestBacktest = backtestHistory
+  .filter((row) => row.code === code)
+  .slice()
+  .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt))[0];
+
+if (!isBacktestPassed(latestBacktest)) {
+  alert(
+    "백테스트 통과 기록이 없어 가상매수 준비를 중단합니다.\n\n" +
+    "먼저 바로 백테스트를 실행하고, 통과한 종목만 모의투자하세요."
+  );
+  return;
+}
+
+if (isAlreadyHolding(code)) {
+  alert("이미 보유 중인 종목입니다. 중복 매수는 막았습니다.");
+  return;
+}
+if (getAvailableBuySlots() <= 0) {
+  alert(
+    "최대 보유종목 수에 도달했습니다.\n\n" +
+    "기존 보유종목이 매도된 후 신규 가상매수를 진행하세요."
+  );
+  return;
+}
+
           const strategyPreset =
   btn.dataset.strategy || "safe";
   const strategyName =
@@ -1492,16 +1579,17 @@ trailingStopRateInput.value = trailingRate;
 stopLossPriceInput.value =
   Math.round(price * stopLossRate);
 
-          let recommendAmount = defaultBuyAmount;
+          const perBuyAmount = getPerBuyAmount();
+
+let recommendAmount = perBuyAmount;
 
 if (strategyPreset === "trend") {
   recommendAmount =
-    Math.round(defaultBuyAmount * 1.2);
+    Math.round(perBuyAmount * 1.2);
 } else if (strategyPreset === "short") {
   recommendAmount =
-    Math.round(defaultBuyAmount * 0.7);
+    Math.round(perBuyAmount * 0.7);
 }
-
 const qty =
   price > 0
     ? Math.floor(recommendAmount / price)
@@ -1511,14 +1599,28 @@ const qty =
 
           const buyAmount = price * qty;
 
+          const availableCash = getAvailableVirtualCash();
+
+if (buyAmount > availableCash) {
+  alert(
+    "남은 모의투자금이 부족합니다.\n\n" +
+    `남은 현금: ${formatNumber(availableCash)}원\n` +
+    `필요 금액: ${formatNumber(buyAmount)}원`
+  );
+  return;
+}
+
           const shouldAddHold = confirm(
             `[매수후보 확인]\n\n` +
             `종목: ${name}\n` +
             `적용전략: ${strategyName}\n` +
             `매수가: ${formatNumber(price)}원\n` +
             `수량: ${formatNumber(qty)}주\n` +
-            `추천투자금: ${formatNumber(recommendAmount)}원\n` +
-`실제투자금: ${formatNumber(buyAmount)}원\n\n` +
+           `전체 모의투자금: ${formatNumber(defaultBuyAmount)}원\n` +
+`종목당 기준금액: ${formatNumber(perBuyAmount)}원\n` +
+`추천투자금: ${formatNumber(recommendAmount)}원\n` +
+`실제투자금: ${formatNumber(buyAmount)}원\n` +
+`남은 모의현금: ${formatNumber(availableCash)}원\n\n` +
             `목표가: ${formatNumber(Math.round(price * targetRate))}원\n` +
 `2차목표가: ${formatNumber(Math.round(price * secondTargetRate))}원\n` +
 `손절가: ${formatNumber(Math.round(price * stopLossRate))}원\n` +
@@ -2171,6 +2273,21 @@ function saveStrategyStates() {
 }
 
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
+
+function getCurrentHoldingCount() {
+  return holdings.length;
+}
+
+function getAvailableBuySlots() {
+  const count =
+    Number(maxHoldingCountInput?.value) || maxHoldingCount || 5;
+
+  return Math.max(0, count - holdings.length);
+}
+
+function isAlreadyHolding(code) {
+  return holdings.some((item) => item.code === code);
+}
 
 stockCodeInput.addEventListener("input", () => {
   renderStockSuggestions(
@@ -3222,6 +3339,21 @@ const result = {
   return result;
 }
 
+function getCurrentHoldingCount() {
+  return holdings.length;
+}
+
+function getAvailableBuySlots() {
+  const count =
+    Number(maxHoldingCountInput?.value) || maxHoldingCount || 5;
+
+  return Math.max(0, count - holdings.length);
+}
+
+function isAlreadyHolding(code) {
+  return holdings.some((item) => item.code === code);
+}
+
 async function getVolumePower(code) {
   try {
     const response = await fetch(
@@ -3819,12 +3951,26 @@ async function runAllDiscoveredBacktests() {
     return;
   }
 
+  const availableSlots = getAvailableBuySlots();
+
+  const targetItems = latestStrongItems
+    .filter((item) => !isAlreadyHolding(item.code))
+    .slice(0, Math.max(1, availableSlots));
+
+  if (targetItems.length === 0) {
+    alert(
+      "자동 백테스트할 후보가 없습니다.\n\n" +
+      "보유종목 수가 한도에 도달했거나 자동발굴 후보가 없습니다."
+    );
+    return;
+  }
+
   const originalCode = backtestCodeInput.value;
   const originalSelectedCode = selectedStockCodes.backtest;
 
   let completed = 0;
 
-  for (const item of latestStrongItems) {
+  for (const item of targetItems) {
     const recommended =
       getRecommendedStrategyForCode(item.code);
 
@@ -3841,7 +3987,7 @@ async function runAllDiscoveredBacktests() {
         : "safe";
 
     updateApiStatus(
-      `전체 자동 백테스트 진행중 · ${completed + 1}/${latestStrongItems.length} · ${item.name}`
+      `전체 자동 백테스트 진행중 · ${completed + 1}/${targetItems.length} · ${item.name}`
     );
 
     backtestCodeInput.value = item.name;
@@ -3862,11 +4008,7 @@ async function runAllDiscoveredBacktests() {
       await runBacktest();
       completed += 1;
     } catch (error) {
-      console.error(
-        "자동 백테스트 실패",
-        item.code,
-        error
-      );
+      console.error("자동 백테스트 실패", item.code, error);
     }
 
     await new Promise((resolve) =>
@@ -4700,18 +4842,48 @@ ${state.lastSoldQty ? `
     const totalRate = totalBuyAmount > 0 ? (totalProfit / totalBuyAmount) * 100 : 0;
     const totalClass = totalProfit >= 0 ? "up" : "down";
 
-    holdSummary.innerHTML = `
-      <div><span>총 매수금액</span><strong>${formatNumber(totalBuyAmount)}원</strong></div>
-      <div><span>총 평가금액</span><strong>${formatNumber(totalEvalAmount)}원</strong></div>
-      <div>
-        <span>총 손익</span>
-        <strong class="${totalClass}">${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원</strong>
-      </div>
-      <div>
-        <span>총 수익률</span>
-        <strong class="${totalClass}">${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%</strong>
-      </div>
-    `;
+    const totalVirtualCash =
+  Number(defaultBuyAmountInput?.value) || defaultBuyAmount || 10000000;
+
+const usedBuyAmount = getTotalHoldingBuyAmount();
+
+const availableCash = getAvailableVirtualCash();
+
+holdSummary.innerHTML = `
+  <div>
+    <span>전체 모의투자금</span>
+    <strong>${formatNumber(totalVirtualCash)}원</strong>
+  </div>
+
+  <div>
+    <span>사용 매수금액</span>
+    <strong>${formatNumber(usedBuyAmount)}원</strong>
+  </div>
+
+  <div>
+    <span>남은 모의현금</span>
+    <strong>${formatNumber(availableCash)}원</strong>
+  </div>
+
+  <div>
+    <span>총 평가금액</span>
+    <strong>${formatNumber(totalEvalAmount)}원</strong>
+  </div>
+
+  <div>
+    <span>총 손익</span>
+    <strong class="${totalClass}">
+      ${totalProfit >= 0 ? "+" : ""}${formatNumber(totalProfit)}원
+    </strong>
+  </div>
+
+  <div>
+    <span>총 수익률</span>
+    <strong class="${totalClass}">
+      ${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%
+    </strong>
+  </div>
+`;
 
     if (needFullRender) {
   await renderHoldings(false);
@@ -4752,12 +4924,12 @@ function addHolding() {
   const stopLossPrice = Number(stopLossPriceInput.value) || 0;
   const stock = findStockByInput(holdCodeInput.value.trim());
   const code = stock?.code;
+  const name = stock?.name || holdCodeInput.value.trim();
   const buyPrice = Number(buyPriceInput.value);
   const qty = Number(holdQtyInput.value);
   const secondTargetPrice = Number(secondTargetPriceInput.value) || 0;
   const trailingStopRate =
-  Number(trailingStopRateInput.value) || 0;
-
+    Number(trailingStopRateInput.value) || 0;
 
   if (!code) {
     alert("종목명 또는 종목코드를 입력하세요.");
@@ -4774,43 +4946,83 @@ function addHolding() {
     return;
   }
 
-  holdings = holdings.filter((item) => item.code !== code);
+  if (isAlreadyHolding(code)) {
+    alert("이미 보유 중인 종목입니다.");
+    return;
+  }
 
- holdings.push({
-  code,
-  buyPrice,
-  qty,
-  targetPrice,
-  secondTargetPrice,
-  trailingStopRate,
-  highestPrice: 0,
-  stopLossPrice,
-  autoTrade: true
-});
+  if (getAvailableBuySlots() <= 0) {
+    alert(
+      "최대 보유종목 수에 도달했습니다.\n\n" +
+      "기존 보유종목이 매도된 후 신규 가상매수를 진행하세요."
+    );
+    return;
+  }
 
-strategyStates[code] = {
-  status: "WAITING",
-  lastAction: "NONE",
-  lastSignalTime: null,
-  lastSignalPrice: null,
-  lastSoldQty: 0,
-  remainQty: 0
-};
+  const buyAmount = buyPrice * qty;
+  const availableCash = getAvailableVirtualCash();
 
-saveStrategyStates();
+  if (buyAmount > availableCash) {
+    alert(
+      "남은 모의투자금이 부족합니다.\n\n" +
+      `남은 현금: ${formatNumber(availableCash)}원\n` +
+      `필요 금액: ${formatNumber(buyAmount)}원`
+    );
+    return;
+  }
 
-saveHoldings();
+  const newHolding = {
+    code,
+    name,
+    buyPrice,
+    qty,
+    targetPrice,
+    secondTargetPrice,
+    trailingStopRate,
+    highestPrice: 0,
+    stopLossPrice,
+    autoTrade: true
+  };
 
-holdCodeInput.value = "";
-buyPriceInput.value = "";
-holdQtyInput.value = "";
-targetPriceInput.value = "";
-stopLossPriceInput.value = "";
-secondTargetPriceInput.value = "";
-trailingStopRateInput.value = "";
+  holdings.push(newHolding);
+
+  strategyStates[code] = {
+    status: "WAITING",
+    lastAction: "NONE",
+    lastSignalTime: null,
+    lastSignalPrice: null,
+    lastSoldQty: 0,
+    remainQty: 0
+  };
+
+  addTradeLog({
+    type: "BUY",
+    code: newHolding.code,
+    name: newHolding.name,
+    price: newHolding.buyPrice,
+    reason: "가상매수 등록",
+    sellQty: 0,
+    remainQty: newHolding.qty
+  });
+
+  saveStrategyStates();
+  saveHoldings();
+
+  holdCodeInput.value = "";
+  buyPriceInput.value = "";
+  holdQtyInput.value = "";
+  targetPriceInput.value = "";
+  stopLossPriceInput.value = "";
+  secondTargetPriceInput.value = "";
+  trailingStopRateInput.value = "";
 
   renderHoldings();
+  renderTradeLogs();
 }
+
+
+
+
 
 addHoldBtn.addEventListener("click", addHolding);
 
@@ -4826,6 +5038,16 @@ updateApiStatus("API 대기중");
 loadWatchList();
 renderHoldings();
 renderTradeLogs();
+
+addTradeLog({
+  type: "BUY",
+  code: newHolding.code,
+  name: newHolding.name,
+  price: newHolding.buyPrice,
+  reason: "가상매수 등록",
+  sellQty: 0,
+  remainQty: newHolding.qty
+});
 
 
 const sortButtons = document.querySelectorAll(".sort-btn");
@@ -5280,19 +5502,25 @@ if (price > 0 && discover.score >= minScore) {
           return null;
         }
       },
+
+
       (done, total) => {
-        strongStockBox.innerHTML = `
-  <div class="loading">
-    전체시장 1차 스캔 중. ${done}/${total}개 확인
-    <br />
-    <small>
-      현재 확인: ${stock.name} (${stock.code})
-    </small>
-  </div>
-`;      }
+  strongStockBox.innerHTML = `
+    <div class="loading">
+      전체시장 1차 스캔 중. ${done}/${total}개 확인
+      <br />
+      <small>
+        API 과부하 방지를 위해 순차 확인 중입니다.
+      </small>
+    </div>
+  `;
+}
+
+
     ))
       .filter(Boolean)
-      .sort((a, b) => {
+.filter((item) => !isAlreadyHolding(item.code))
+.sort((a, b) => {
   return b.discoverScore - a.discoverScore;
 });
 
@@ -5302,14 +5530,29 @@ if (price > 0 && discover.score >= minScore) {
       return;
     }
 
-   renderStrongStockBox(results, "🤖 자동발굴 후보");
+   const availableSlots = getAvailableBuySlots();
+
+if (availableSlots <= 0) {
+  strongStockBox.innerHTML = `
+    <div class="empty">
+      최대 보유종목 수에 도달했습니다.<br />
+      기존 보유종목이 매도된 후 신규 후보를 선정하세요.
+    </div>
+  `;
+  return;
+}
+
+renderStrongStockBox(
+  results.slice(0, availableSlots),
+  `🤖 자동발굴 후보 · 신규 가능 ${availableSlots}개`
+);
 
 const summaryEl = document.createElement("div");
 summaryEl.className = "discover-summary";
 summaryEl.innerHTML = `
   전체 ${targetStocks.length}개 스캔 /
   조건통과 ${results.length}개 /
-  표시 ${Math.min(results.length, getCurrentDiscoverSettings().limit, 50)}개
+  표시 ${Math.min(results.length, availableSlots)}개
 `;
 
 strongStockBox.prepend(summaryEl);
@@ -5325,6 +5568,59 @@ strongStockBox.prepend(summaryEl);
       autoDiscoverBtn.textContent = "자동발굴";
     }
   }
+}
+
+function isBacktestPassed(record) {
+  if (!record) return false;
+
+  const finalProfitRate =
+    Number(record.finalProfitRate || 0);
+
+  const winRate =
+    Number(record.winRate || 0);
+
+  const tradeCount =
+    Number(record.tradeCount || 0);
+
+  const worstTradeRate =
+    Number(record.worstTradeRate || 0);
+
+  if (tradeCount < 2) return false;
+  if (finalProfitRate <= 0) return false;
+  if (winRate < 50) return false;
+  if (worstTradeRate <= -5) return false;
+
+  return true;
+}
+
+function getLatestBacktestForCode(code) {
+  return backtestHistory
+    .filter((row) => row.code === code)
+    .slice()
+    .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt))[0];
+}
+
+function getBacktestStatusText(code) {
+  const latest = getLatestBacktestForCode(code);
+
+  if (!latest) {
+    return {
+      text: "백테스트 미검증",
+      className: "neutral"
+    };
+  }
+
+  if (isBacktestPassed(latest)) {
+    return {
+      text: "백테스트 통과",
+      className: "pass"
+    };
+  }
+
+  return {
+    text: "백테스트 실패",
+    className: "fail"
+  };
 }
 
 function saveDiscoverSettings() {
