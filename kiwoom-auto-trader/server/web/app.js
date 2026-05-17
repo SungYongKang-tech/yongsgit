@@ -36,7 +36,8 @@ const autoDiscoverAutoBtn =
   document.getElementById("autoDiscoverAutoBtn");
 
 let autoDiscoverTimer = null;
-let isAutoDiscoverAuto = false;
+let isAutoDiscoverAuto =
+  localStorage.getItem(AUTO_DISCOVER_AUTO_KEY) === "true";
 
 const DISCOVER_SETTING_KEY = "kiwoom_discover_settings";
 
@@ -1070,6 +1071,8 @@ const ALERT_RATE_KEY = "kiwoom_alert_rate";
 const TEST_MODE_KEY = "kiwoom_test_mode";
 const ENTRY_RATE_KEY = "kiwoom_entry_rate";
 
+const AUTO_DISCOVER_AUTO_KEY =
+  "kiwoom_auto_discover_auto";
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 if (alertRateInput) {
@@ -2043,7 +2046,12 @@ async function startAutoDiscoverAuto() {
 
   isAutoDiscoverAuto = true;
 
-  updateAutoDiscoverAutoUi();
+localStorage.setItem(
+  AUTO_DISCOVER_AUTO_KEY,
+  "true"
+);
+
+updateAutoDiscoverAutoUi();
 
   async function loop() {
     if (!isAutoDiscoverAuto) return;
@@ -2065,12 +2073,20 @@ async function startAutoDiscoverAuto() {
 function stopAutoDiscoverAuto() {
   isAutoDiscoverAuto = false;
 
+localStorage.setItem(
+  AUTO_DISCOVER_AUTO_KEY,
+  "false"
+);
+
   if (autoDiscoverTimer) {
     clearTimeout(autoDiscoverTimer);
     autoDiscoverTimer = null;
   }
 
   updateAutoDiscoverAutoUi();
+  if (isAutoDiscoverAuto) {
+  startAutoDiscoverAuto();
+}
 }
 
 function stopAllAutoTradeByRisk(reason) {
