@@ -613,7 +613,8 @@ if (dailyMaxLossInput) {
 
 if (saveDailyMaxLossBtn) {
   saveDailyMaxLossBtn.addEventListener("click", () => {
-    const value = Number(dailyMaxLossInput.value);
+    const value =
+  Number(dailyMaxLossInput.value.replace(/,/g, ""));
 
     if (isNaN(value) || value <= 0) {
       alert("하루 최대 손실금을 입력하세요.");
@@ -644,7 +645,7 @@ let maxHoldingCount =
   Number(localStorage.getItem(MAX_HOLDING_COUNT_KEY)) || 5;
 
 if (defaultBuyAmountInput) {
-  defaultBuyAmountInput.value = defaultBuyAmount;
+  defaultBuyAmountInput.value = formatNumber(defaultBuyAmount);
 }
 
 if (maxHoldingCountInput) {
@@ -653,10 +654,10 @@ if (maxHoldingCountInput) {
 
 function getPerBuyAmount() {
   const totalCash =
-    Number(defaultBuyAmountInput?.value) || defaultBuyAmount || 10000000;
+    getInputNumber(defaultBuyAmountInput, defaultBuyAmount || 10000000);
 
   const count =
-    Number(maxHoldingCountInput?.value) || maxHoldingCount || 5;
+    getInputNumber(maxHoldingCountInput, maxHoldingCount || 5);
 
   return Math.floor(totalCash / count);
 }
@@ -668,48 +669,6 @@ function getTotalHoldingBuyAmount() {
 }
 
 function getAvailableVirtualCash() {
-  const totalCash =
-    Number(defaultBuyAmountInput?.value) || defaultBuyAmount || 10000000;
-
-  return Math.max(0, totalCash - getTotalHoldingBuyAmount());
-}
-
-if (saveDefaultBuyAmountBtn) {
-  saveDefaultBuyAmountBtn.addEventListener("click", () => {
-    const totalCash = Number(defaultBuyAmountInput.value);
-    const count = Number(maxHoldingCountInput.value);
-
-    if (isNaN(totalCash) || totalCash <= 0) {
-      alert("전체 모의투자금을 입력하세요.");
-      return;
-    }
-
-    if (isNaN(count) || count <= 0) {
-      alert("최대 보유종목 수를 입력하세요.");
-      return;
-    }
-
-    defaultBuyAmount = totalCash;
-    maxHoldingCount = count;
-
-    localStorage.setItem(
-      DEFAULT_BUY_AMOUNT_KEY,
-      String(defaultBuyAmount)
-    );
-
-    localStorage.setItem(
-      MAX_HOLDING_COUNT_KEY,
-      String(maxHoldingCount)
-    );
-
-    alert(
-      "투자설정이 저장되었습니다.\n\n" +
-      `전체 모의투자금: ${formatNumber(defaultBuyAmount)}원\n` +
-      `최대 보유종목: ${maxHoldingCount}개\n` +
-      `종목당 기준금액: ${formatNumber(getPerBuyAmount())}원`
-    );
-  });
-}
 
 
 const VOLUME_THRESHOLD_KEY =
@@ -726,7 +685,7 @@ if (saveVolumeThresholdBtn) {
   saveVolumeThresholdBtn.addEventListener("click", () => {
 
     const value =
-      Number(volumeThresholdInput.value);
+  Number(volumeThresholdInput.value.replace(/,/g, ""));
 
     if (isNaN(value) || value <= 0) {
       alert("거래량 기준을 입력하세요.");
@@ -742,6 +701,16 @@ if (saveVolumeThresholdBtn) {
 
     loadWatchList();
   });
+}
+
+function getInputNumber(input, fallback = 0) {
+  if (!input) return fallback;
+
+  const value = String(input.value || "")
+    .replace(/,/g, "")
+    .trim();
+
+  return Number(value) || fallback;
 }
 
 function formatNumber(value) {
@@ -5816,3 +5785,21 @@ function saveDiscoverSettings() {
     JSON.stringify(settings)
   );
 }
+
+function formatNumberInput(input) {
+  input.addEventListener("input", () => {
+    const value = input.value.replace(/,/g, "").replace(/\D/g, "");
+
+    if (!value) {
+      input.value = "";
+      return;
+    }
+
+    input.value = Number(value).toLocaleString();
+  });
+}
+
+formatNumberInput(volumeThresholdInput);
+formatNumberInput(defaultBuyAmountInput);
+formatNumberInput(dailyMaxLossInput);
+
