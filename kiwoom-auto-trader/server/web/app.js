@@ -100,6 +100,222 @@ const filterLowVolumeInput =
 const filterWeakCandleInput =
   document.getElementById("filterWeakCandle");
 
+const BACKTEST_HISTORY_KEY = "kiwoom_backtest_history";
+
+let backtestHistory =
+  JSON.parse(localStorage.getItem(BACKTEST_HISTORY_KEY)) || [];
+
+function saveBacktestHistory() {
+  localStorage.setItem(
+    BACKTEST_HISTORY_KEY,
+    JSON.stringify(backtestHistory)
+  );
+}
+
+function getBacktestHistoryHtml(limit = 5) {
+  if (!backtestHistory || backtestHistory.length === 0) {
+    return `
+      <div class="backtest-detail-box">
+        <div class="backtest-detail-title">최근 백테스트 기록</div>
+        <div class="empty">저장된 백테스트 기록이 없습니다.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="backtest-detail-box">
+      <div class="backtest-detail-title">최근 백테스트 기록</div>
+
+      ${backtestHistory.slice(0, limit).map((item) => `
+        <div class="virtual-result-item">
+          <div class="virtual-result-top">
+            <div class="virtual-result-name">
+              ${item.name} (${item.code})
+            </div>
+            <div class="virtual-result-badge ${item.finalProfitRate >= 0 ? "" : "loss"}">
+              ${item.finalProfitRate >= 0 ? "수익" : "손실"}
+            </div>
+          </div>
+
+          <div class="virtual-result-detail">
+            <div>
+              기간 ${item.days}일 /
+              신호 ${item.tradeCount}회 /
+              승률 ${Number(item.winRate || 0).toFixed(1)}%
+            </div>
+
+            <div>
+              수익률
+              <strong class="${item.finalProfitRate >= 0 ? "up" : "down"}">
+                ${item.finalProfitRate >= 0 ? "+" : ""}${Number(item.finalProfitRate || 0).toFixed(2)}%
+              </strong>
+              · 손익
+              <strong class="${item.finalProfit >= 0 ? "up" : "down"}">
+                ${item.finalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(item.finalProfit || 0))}원
+              </strong>
+            </div>
+
+            <div>
+              전략: ${(item.strategies || []).join(", ") || "-"}
+              / 필터: ${(item.filters || []).join(", ") || "-"}
+            </div>
+
+            <div>${item.savedAt}</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getBacktestSummaryHtml() {
+  if (!backtestHistory || backtestHistory.length === 0) {
+    return "";
+  }
+
+  const totalCount = backtestHistory.length;
+
+  const avgProfitRate =
+    backtestHistory.reduce(
+      (sum, item) => sum + Number(item.finalProfitRate || 0),
+      0
+    ) / totalCount;
+
+  const winCount = backtestHistory.filter(
+    (item) => Number(item.finalProfitRate || 0) > 0
+  ).length;
+
+  const winRate = (winCount / totalCount) * 100;
+
+  const best = backtestHistory
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(b.finalProfitRate || 0) -
+        Number(a.finalProfitRate || 0)
+    )[0];
+
+  return `
+    <div class="backtest-detail-box">
+      <div class="backtest-detail-title">백테스트 누적 요약</div>
+
+      <div class="trade-stat-grid">
+        <div>
+          <span>저장 기록</span>
+          <strong>${formatNumber(totalCount)}회</strong>
+        </div>
+
+        <div>
+          <span>평균 수익률</span>
+          <strong class="${avgProfitRate >= 0 ? "up" : "down"}">
+            ${avgProfitRate >= 0 ? "+" : ""}${avgProfitRate.toFixed(2)}%
+          </strong>
+        </div>
+
+        <div>
+          <span>수익 비율</span>
+          <strong>${winRate.toFixed(1)}%</strong>
+        </div>
+
+        <div>
+          <span>최고 결과</span>
+          <strong class="${Number(best.finalProfitRate || 0) >= 0 ? "up" : "down"}">
+            ${best.name} ${Number(best.finalProfitRate || 0).toFixed(2)}%
+          </strong>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getStrategySummaryHtml() {
+  if (!backtestHistory || backtestHistory.length === 0) {
+    return "";
+  }
+
+  const strategyMap = {};
+
+  backtestHistory.forEach((item) => {
+    const strategies =
+      item.strategies && item.strategies.length > 0
+        ? item.strategies
+        : ["기본"];
+
+    strategies.forEach((strategy) => {
+      if (!strategyMap[strategy]) {
+        strategyMap[strategy] = {
+          name: strategy,
+          count: 0,
+          totalProfitRate: 0,
+          winCount: 0,
+          bestRate: -999
+        };
+      }
+
+      const rate = Number(item.finalProfitRate || 0);
+
+      strategyMap[strategy].count += 1;
+      strategyMap[strategy].totalProfitRate += rate;
+
+      if (rate > 0) {
+        strategyMap[strategy].winCount += 1;
+      }
+
+      if (rate > strategyMap[strategy].bestRate) {
+        strategyMap[strategy].bestRate = rate;
+      }
+    });
+  });
+
+  const rows = Object.values(strategyMap)
+    .map((item) => {
+      const avgRate = item.totalProfitRate / item.count;
+      const winRate = (item.winCount / item.count) * 100;
+
+      return {
+        ...item,
+        avgRate,
+        winRate
+      };
+    })
+    .sort((a, b) => b.avgRate - a.avgRate);
+
+  return `
+    <div class="backtest-detail-box">
+      <div class="backtest-detail-title">전략별 백테스트 성적</div>
+
+      ${rows.map((item) => `
+        <div class="virtual-result-item">
+          <div class="virtual-result-top">
+            <div class="virtual-result-name">${item.name}</div>
+            <div class="virtual-result-badge ${item.avgRate >= 0 ? "" : "loss"}">
+              ${item.avgRate >= 0 ? "우수" : "주의"}
+            </div>
+          </div>
+
+          <div class="virtual-result-detail">
+            <div>
+              실행 ${formatNumber(item.count)}회 /
+              승률 ${item.winRate.toFixed(1)}%
+            </div>
+
+            <div>
+              평균 수익률
+              <strong class="${item.avgRate >= 0 ? "up" : "down"}">
+                ${item.avgRate >= 0 ? "+" : ""}${item.avgRate.toFixed(2)}%
+              </strong>
+              · 최고
+              <strong class="${item.bestRate >= 0 ? "up" : "down"}">
+                ${item.bestRate >= 0 ? "+" : ""}${item.bestRate.toFixed(2)}%
+              </strong>
+            </div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -560,6 +776,21 @@ const compareBacktestBtn =
 
 const backtestResult =
   document.getElementById("backtestResult");
+
+const backtestResult =
+  document.getElementById("backtestResult");
+
+const BACKTEST_HISTORY_KEY = "kiwoom_backtest_history";
+
+let backtestHistory =
+  JSON.parse(localStorage.getItem(BACKTEST_HISTORY_KEY)) || [];
+
+function saveBacktestHistory() {
+  localStorage.setItem(
+    BACKTEST_HISTORY_KEY,
+    JSON.stringify(backtestHistory)
+  );
+}
 
 let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "005930",
@@ -3032,7 +3263,37 @@ const tradeDetailHtml = tradeDetails
   `)
   .join("");
 
-   backtestResult.innerHTML = `
+  const backtestRecord = {
+  id: `${code}_${Date.now()}`,
+  code,
+  name,
+  days,
+  targetRate,
+  stopRate,
+  trailingRate,
+  strategies: activeStrategies,
+  filters: activeFilters,
+  initialCash,
+  finalCash: cash,
+  finalProfit,
+  finalProfitRate,
+  tradeCount,
+  targetCount,
+  stopCount,
+  winRate,
+  averageProfitRate,
+  bestTradeRate: bestTrade ? bestTrade.profitRate : null,
+  worstTradeRate: worstTrade ? worstTrade.profitRate : null,
+  savedAt: new Date().toLocaleString("ko-KR")
+};
+
+backtestHistory.unshift(backtestRecord);
+
+backtestHistory = backtestHistory.slice(0, 50);
+
+saveBacktestHistory();
+
+backtestResult.innerHTML = `
   <div class="backtest-summary-note">
   <strong>백테스트 조건</strong>
   <div>종목: ${name} (${code})</div>
@@ -3112,11 +3373,17 @@ const tradeDetailHtml = tradeDetails
 </div>
 </div>
 
-  <div class="backtest-detail-box">
+    <div class="backtest-detail-box">
     <div class="backtest-detail-title">거래 상세내역</div>
     ${tradeDetailHtml || `<div class="empty">거래 내역이 없습니다.</div>`}
   </div>
+
+  ${getBacktestSummaryHtml()}
+${getStrategySummaryHtml()}
+${getBacktestHistoryHtml()}
 `;
+
+
   } catch (error) {
     backtestResult.innerHTML =
       `<div class="error">${error.message}</div>`;
