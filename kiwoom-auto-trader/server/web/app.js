@@ -5868,44 +5868,6 @@ strongStockBox.prepend(summaryEl);
   }
 }
 
-function startAutoDiscoverAuto() {
-  if (autoDiscoverTimer) {
-    clearTimeout(autoDiscoverTimer);
-  }
-
-  isAutoDiscoverAuto = true;
-
-  if (autoDiscoverAutoBtn) {
-    autoDiscoverAutoBtn.textContent = "자동ON";
-    autoDiscoverAutoBtn.classList.add("active");
-  }
-
-  async function loop() {
-    if (!isAutoDiscoverAuto) return;
-
-    await runAutoDiscover();
-
-    autoDiscoverTimer = setTimeout(() => {
-      loop();
-    }, 60 * 1000);
-  }
-
-  loop();
-}
-
-function stopAutoDiscoverAuto() {
-  isAutoDiscoverAuto = false;
-
-  if (autoDiscoverTimer) {
-    clearTimeout(autoDiscoverTimer);
-    autoDiscoverTimer = null;
-  }
-
-  if (autoDiscoverAutoBtn) {
-    autoDiscoverAutoBtn.textContent = "자동OFF";
-    autoDiscoverAutoBtn.classList.remove("active");
-  }
-}
 
 function isBacktestPassed(record) {
   if (!record) return false;
