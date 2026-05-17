@@ -105,6 +105,11 @@ const filterWeakCandleInput =
 
 const BACKTEST_HISTORY_KEY = "kiwoom_backtest_history";
 
+const MORNING_AUTO_RUN_KEY =
+  "kiwoom_morning_auto_run_date";
+
+let isMorningAutoFlowRunning = false;
+
 let backtestHistory =
   JSON.parse(localStorage.getItem(BACKTEST_HISTORY_KEY)) || [];
 
@@ -1941,15 +1946,18 @@ async function startAutoRefresh() {
   autoRefreshBtn.textContent = "자동ON";
   autoRefreshBtn.classList.add("active");
 
-  async function runRefreshLoop() {
-    if (!isAutoRefresh) return;
+async function runRefreshLoop() {
+  if (!isAutoRefresh) return;
 
-    await refreshWithoutJump();
+  await refreshWithoutJump();
 
-    autoRefreshTimer = setTimeout(() => {
-      runRefreshLoop();
-    }, getRefreshInterval());
-  }
+  await runMorningAutoFlow();
+
+  autoRefreshTimer = setTimeout(() => {
+    runRefreshLoop();
+  }, getRefreshInterval());
+}
+
   updateApiStatus(
   `자동갱신 시작 · ${getRefreshInterval() / 1000}초 주기`
 );
@@ -2548,9 +2556,9 @@ function isMarketOpenNow() {
   const now = new Date();
   const day = now.getDay(); // 0 일요일, 6 토요일
 
-  if (day === 0 || day === 6) {
-    return false;
-  }
+  //if (day === 0 || day === 6) {
+  //  return false;
+  //}
 
   const hour = now.getHours();
   const minute = now.getMinutes();
@@ -4019,11 +4027,100 @@ async function runAllDiscoveredBacktests() {
   backtestCodeInput.value = originalCode;
   selectedStockCodes.backtest = originalSelectedCode;
 
-  updateApiStatus(
-    `전체 자동 백테스트 완료 · ${completed}개`
-  );
+let autoBuyCount = 0;
 
-  alert(`전체 자동 백테스트 완료 (${completed}개)`);
+for (const item of targetItems) {
+  if (getAvailableBuySlots() <= 0) break;
+
+  const ok = autoAddVirtualHolding(item);
+
+  if (ok) {
+    autoBuyCount += 1;
+  }
+}
+
+updateApiStatus(
+  `전체 자동 백테스트 완료 · ${completed}개 / 자동 모의매수 ${autoBuyCount}개`
+);
+
+alert(
+  `전체 자동 백테스트 완료 (${completed}개)\n\n` +
+  `자동 모의매수 등록: ${autoBuyCount}개`
+);
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function canRunMorningAutoFlow() {
+  const now = new Date();
+  const day = now.getDay();
+
+  if (day === 0 || day === 6) {
+    return false;
+  }
+
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+
+  if (hour < 9) return false;
+  if (hour === 9 && minute < 5) return false;
+  if (hour > 15) return false;
+
+  if (!isAutoRefresh) return false;
+  if (isMorningAutoFlowRunning) return false;
+
+  const lastRunDate =
+    localStorage.getItem(MORNING_AUTO_RUN_KEY);
+
+  if (lastRunDate === getTodayKey()) {
+    return false;
+  }
+
+  if (getAvailableBuySlots() <= 0) {
+    return false;
+  }
+
+  return true;
+}
+
+async function runMorningAutoFlow() {
+  if (!canRunMorningAutoFlow()) return;
+
+  isMorningAutoFlowRunning = true;
+
+  try {
+    updateApiStatus(
+      "장시작 자동흐름 실행중 · 자동발굴 시작"
+    );
+
+    await runAutoDiscover();
+
+    updateApiStatus(
+      "장시작 자동흐름 실행중 · 자동 백테스트 시작"
+    );
+
+    await runAllDiscoveredBacktests();
+
+    localStorage.setItem(
+      MORNING_AUTO_RUN_KEY,
+      getTodayKey()
+    );
+
+    updateApiStatus(
+      "장시작 자동흐름 완료 · 자동발굴/백테스트/모의매수 완료"
+    );
+  } catch (error) {
+    console.error("장시작 자동흐름 실패:", error);
+
+    updateApiStatus(
+      `장시작 자동흐름 실패 · ${error.message}`,
+      true
+    );
+  } finally {
+    isMorningAutoFlowRunning = false;
+  }
 }
 
 async function runBacktestCompare() {
@@ -4995,16 +5092,7 @@ function addHolding() {
     remainQty: 0
   };
 
-  addTradeLog({
-    type: "BUY",
-    code: newHolding.code,
-    name: newHolding.name,
-    price: newHolding.buyPrice,
-    reason: "가상매수 등록",
-    sellQty: 0,
-    remainQty: newHolding.qty
-  });
-
+ 
   saveStrategyStates();
   saveHoldings();
 
@@ -5020,7 +5108,110 @@ function addHolding() {
   renderTradeLogs();
 }
 
+function autoAddVirtualHolding(item) {
+  if (!item || !item.code) return false;
 
+  if (isAlreadyHolding(item.code)) return false;
+  if (getAvailableBuySlots() <= 0) return false;
+
+  const latestBacktest = getLatestBacktestForCode(item.code);
+
+  if (!isBacktestPassed(latestBacktest)) {
+    return false;
+  }
+
+  const price = Number(item.currentPrice || 0);
+  if (price <= 0) return false;
+
+  const recommended = getRecommendedStrategyForCode(item.code);
+
+  const strategyText = recommended
+    ? recommended.name
+    : item.recommendType;
+
+  const strategyPreset =
+    strategyText.includes("추세")
+      ? "trend"
+      : strategyText.includes("단타")
+      ? "short"
+      : "safe";
+
+  let targetRate = 1.04;
+  let secondTargetRate = 1.06;
+  let stopLossRate = 0.97;
+  let trailingRate = 3;
+
+  if (strategyPreset === "trend") {
+    targetRate = 1.07;
+    secondTargetRate = 1.12;
+    stopLossRate = 0.96;
+    trailingRate = 4;
+  } else if (strategyPreset === "short") {
+    targetRate = 1.03;
+    secondTargetRate = 1.05;
+    stopLossRate = 0.98;
+    trailingRate = 2;
+  }
+
+  const perBuyAmount = getPerBuyAmount();
+
+  let recommendAmount = perBuyAmount;
+
+  if (strategyPreset === "trend") {
+    recommendAmount = Math.round(perBuyAmount * 1.2);
+  } else if (strategyPreset === "short") {
+    recommendAmount = Math.round(perBuyAmount * 0.7);
+  }
+
+  const qty = Math.floor(recommendAmount / price);
+  if (qty <= 0) return false;
+
+  const buyAmount = price * qty;
+  const availableCash = getAvailableVirtualCash();
+
+  if (buyAmount > availableCash) return false;
+
+  const newHolding = {
+    code: item.code,
+    name: item.name,
+    buyPrice: price,
+    qty,
+    targetPrice: Math.round(price * targetRate),
+    secondTargetPrice: Math.round(price * secondTargetRate),
+    trailingStopRate: trailingRate,
+    highestPrice: 0,
+    stopLossPrice: Math.round(price * stopLossRate),
+    autoTrade: true
+  };
+
+  holdings.push(newHolding);
+
+  strategyStates[item.code] = {
+    status: "WAITING",
+    lastAction: "NONE",
+    lastSignalTime: null,
+    lastSignalPrice: null,
+    lastSoldQty: 0,
+    remainQty: 0
+  };
+
+  addTradeLog({
+    type: "BUY",
+    code: newHolding.code,
+    name: newHolding.name,
+    price: newHolding.buyPrice,
+    reason: `자동 모의매수 등록 · ${strategyText}`,
+    sellQty: 0,
+    remainQty: newHolding.qty
+  });
+
+  saveStrategyStates();
+  saveHoldings();
+  renderHoldings();
+  renderTradeLogs();
+
+  return true;
+}
 
 
 
