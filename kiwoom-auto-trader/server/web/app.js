@@ -32,6 +32,12 @@ const strongStockBox =
 const autoDiscoverBtn =
   document.getElementById("autoDiscoverBtn");
 
+const autoDiscoverAutoBtn =
+  document.getElementById("autoDiscoverAutoBtn");
+
+let autoDiscoverTimer = null;
+let isAutoDiscoverAuto = false;
+
 const DISCOVER_SETTING_KEY = "kiwoom_discover_settings";
 
 const discoverLimitInput =
@@ -2159,8 +2165,7 @@ function saveVirtualResults() {
 function renderVirtualResults() {
   if (!virtualResultBox) return;
 
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const todayResults = virtualResults.filter((item) => item.date === todayKey);
+  const todayResults = virtualResults;
 
   if (todayResults.length === 0) {
     virtualResultBox.innerHTML =
@@ -2225,7 +2230,7 @@ const groupedHtml = Object.values(groupedResults)
   })
   .join("");
   virtualResultBox.innerHTML = `
-    <div class="trade-stat-title">오늘 모의투자 결과</div>
+    <div class="trade-stat-title">누적 모의투자 결과</div>
 
     <div class="virtual-result-summary">
       <div>
@@ -5774,6 +5779,45 @@ strongStockBox.prepend(summaryEl);
       autoDiscoverBtn.disabled = false;
       autoDiscoverBtn.textContent = "자동발굴";
     }
+  }
+}
+
+function startAutoDiscoverAuto() {
+  if (autoDiscoverTimer) {
+    clearTimeout(autoDiscoverTimer);
+  }
+
+  isAutoDiscoverAuto = true;
+
+  if (autoDiscoverAutoBtn) {
+    autoDiscoverAutoBtn.textContent = "자동ON";
+    autoDiscoverAutoBtn.classList.add("active");
+  }
+
+  async function loop() {
+    if (!isAutoDiscoverAuto) return;
+
+    await runAutoDiscover();
+
+    autoDiscoverTimer = setTimeout(() => {
+      loop();
+    }, 60 * 1000);
+  }
+
+  loop();
+}
+
+function stopAutoDiscoverAuto() {
+  isAutoDiscoverAuto = false;
+
+  if (autoDiscoverTimer) {
+    clearTimeout(autoDiscoverTimer);
+    autoDiscoverTimer = null;
+  }
+
+  if (autoDiscoverAutoBtn) {
+    autoDiscoverAutoBtn.textContent = "자동OFF";
+    autoDiscoverAutoBtn.classList.remove("active");
   }
 }
 
