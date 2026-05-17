@@ -5230,15 +5230,6 @@ loadWatchList();
 renderHoldings();
 renderTradeLogs();
 
-addTradeLog({
-  type: "BUY",
-  code: newHolding.code,
-  name: newHolding.name,
-  price: newHolding.buyPrice,
-  reason: "가상매수 등록",
-  sellQty: 0,
-  remainQty: newHolding.qty
-});
 
 
 const sortButtons = document.querySelectorAll(".sort-btn");
