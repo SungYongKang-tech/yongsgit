@@ -316,6 +316,192 @@ function getStrategySummaryHtml() {
   `;
 }
 
+function getStockSummaryHtml() {
+  if (!backtestHistory || backtestHistory.length === 0) {
+    return "";
+  }
+
+  const stockMap = {};
+
+  backtestHistory.forEach((item) => {
+    const key = item.code;
+
+    if (!stockMap[key]) {
+      stockMap[key] = {
+        code: item.code,
+        name: item.name,
+        count: 0,
+        totalProfitRate: 0,
+        winCount: 0,
+        bestRate: -999,
+        worstRate: 999
+      };
+    }
+
+    const rate = Number(item.finalProfitRate || 0);
+
+    stockMap[key].count += 1;
+    stockMap[key].totalProfitRate += rate;
+
+    if (rate > 0) {
+      stockMap[key].winCount += 1;
+    }
+
+    stockMap[key].bestRate = Math.max(
+      stockMap[key].bestRate,
+      rate
+    );
+
+    stockMap[key].worstRate = Math.min(
+      stockMap[key].worstRate,
+      rate
+    );
+  });
+
+  const rows = Object.values(stockMap)
+    .map((item) => ({
+      ...item,
+      avgRate: item.totalProfitRate / item.count,
+      winRate: (item.winCount / item.count) * 100
+    }))
+    .sort((a, b) => b.avgRate - a.avgRate)
+    .slice(0, 10);
+
+  return `
+    <div class="backtest-detail-box">
+      <div class="backtest-detail-title">
+        종목별 백테스트 성적
+      </div>
+
+      ${rows.map((item) => {
+
+        const recommended =
+          getRecommendedStrategyForCode(item.code);
+
+        return `
+          <div class="virtual-result-item">
+
+            <div class="virtual-result-top">
+              <div class="virtual-result-name">
+                ${item.name} (${item.code})
+              </div>
+
+              <div class="virtual-result-badge ${item.avgRate >= 0 ? "" : "loss"}">
+                ${item.avgRate >= 0 ? "양호" : "주의"}
+              </div>
+            </div>
+
+            <div class="virtual-result-detail">
+
+              <div>
+                실행 ${formatNumber(item.count)}회 /
+                승률 ${item.winRate.toFixed(1)}%
+              </div>
+
+              <div>
+                추천전략:
+                <strong>
+                  ${recommended ? recommended.name : "-"}
+                </strong>
+
+                ${
+                  recommended
+                    ? `(평균 ${recommended.avgRate.toFixed(2)}%)`
+                    : ""
+                }
+              </div>
+
+              <div>
+                평균
+                <strong class="${item.avgRate >= 0 ? "up" : "down"}">
+                  ${item.avgRate >= 0 ? "+" : ""}
+                  ${item.avgRate.toFixed(2)}%
+                </strong>
+
+                · 최고 ${item.bestRate.toFixed(2)}%
+                · 최저 ${item.worstRate.toFixed(2)}%
+              </div>
+
+            </div>
+
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function getRecommendedStrategyForCode(code) {
+  const rows = backtestHistory.filter(
+    (item) => item.code === code
+  );
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const strategyMap = {};
+
+  rows.forEach((item) => {
+    const strategies =
+      item.strategies && item.strategies.length > 0
+        ? item.strategies
+        : ["기본"];
+
+    strategies.forEach((strategy) => {
+      if (!strategyMap[strategy]) {
+        strategyMap[strategy] = {
+          count: 0,
+          totalProfitRate: 0
+        };
+      }
+
+      strategyMap[strategy].count += 1;
+      strategyMap[strategy].totalProfitRate +=
+        Number(item.finalProfitRate || 0);
+    });
+  });
+
+  const result = Object.entries(strategyMap)
+    .map(([name, info]) => ({
+      name,
+      avgRate:
+        info.totalProfitRate / info.count,
+      count: info.count
+    }))
+    .sort((a, b) => b.avgRate - a.avgRate);
+
+  return result[0] || null;
+}
+
+function clearBacktestHistory() {
+  const ok = confirm(
+    "저장된 백테스트 기록을 모두 삭제할까요?\n\n" +
+    "누적 요약, 전략별 성적, 종목별 성적도 함께 초기화됩니다."
+  );
+
+  if (!ok) return;
+
+  backtestHistory = [];
+  saveBacktestHistory();
+
+  if (backtestResult) {
+    backtestResult.innerHTML = `
+      <div class="backtest-detail-box">
+        <div class="backtest-detail-title">백테스트 기록</div>
+        <div class="empty">백테스트 기록이 초기화되었습니다.</div>
+      </div>
+
+      ${getBacktestSummaryHtml()}
+      ${getStrategySummaryHtml()}
+      ${getStockSummaryHtml()}
+      ${getBacktestHistoryHtml()}
+    `;
+  }
+
+  alert("백테스트 기록이 삭제되었습니다.");
+}
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -338,6 +524,8 @@ const STOCK_MASTER = [
 ];
 
 let lastBestStrategyKey = null;
+
+let latestStrongItems = [];
 
 let tradeTimeSetting =
   JSON.parse(localStorage.getItem(TRADE_TIME_KEY)) || {
@@ -777,20 +965,7 @@ const compareBacktestBtn =
 const backtestResult =
   document.getElementById("backtestResult");
 
-const backtestResult =
-  document.getElementById("backtestResult");
 
-const BACKTEST_HISTORY_KEY = "kiwoom_backtest_history";
-
-let backtestHistory =
-  JSON.parse(localStorage.getItem(BACKTEST_HISTORY_KEY)) || [];
-
-function saveBacktestHistory() {
-  localStorage.setItem(
-    BACKTEST_HISTORY_KEY,
-    JSON.stringify(backtestHistory)
-  );
-}
 
 let watchCodes = JSON.parse(localStorage.getItem(WATCH_STORAGE_KEY)) || [
   "005930",
@@ -826,6 +1001,13 @@ let previousHoldPrices = {};
 
 function saveWatchCodes() {
   localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watchCodes));
+}
+
+function getCurrentDiscoverSettings() {
+  return {
+    limit: Number(discoverLimitInput?.value) || 300,
+    minScore: Number(discoverMinScoreInput?.value) || 5
+  };
 }
 
 function renderAlertBox(items) {
@@ -882,72 +1064,208 @@ function renderStrongStockBox(items, title = "🔥 오늘 강한 종목") {
       const rate = parseFloat(item.changeRate);
       const volume = Number(item.volume || 0);
       const high = Number(item.high || 0);
-const low = Number(item.low || 0);
-const currentPrice = Number(item.currentPrice || 0);
+      const low = Number(item.low || 0);
+      const currentPrice = Number(item.currentPrice || 0);
 
-let score = 0;
-const reasons = [];
+      let score = 0;
+      const reasons = [];
 
-      if (!isNaN(rate) && rate >= entryRate) {
-        score += 2;
-        reasons.push(`상승률 ${item.changeRate}`);
+      const candleRange = high - low;
+      const closePosition =
+        candleRange > 0
+          ? ((currentPrice - low) / candleRange) * 100
+          : 0;
+
+      const volumePower =
+        volumeThreshold > 0
+          ? volume / volumeThreshold
+          : 0;
+
+      if (!isNaN(rate)) {
+        if (rate >= 7) {
+          score += 3;
+          reasons.push(`강한 상승률 ${item.changeRate}`);
+        } else if (rate >= entryRate) {
+          score += 2;
+          reasons.push(`상승률 ${item.changeRate}`);
+        } else if (rate >= 1.5) {
+          score += 1;
+          reasons.push(`소폭 상승 ${item.changeRate}`);
+        }
       }
 
-      if (volume >= volumeThreshold) {
+      if (volumePower >= 3) {
+        score += 3;
+        reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
+      } else if (volumePower >= 1.5) {
         score += 2;
-        reasons.push("거래량 강함");
+        reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
+      } else if (volume >= volumeThreshold) {
+        score += 1;
+        reasons.push("거래량 기준 통과");
       }
 
       if (high > 0 && currentPrice >= high * 0.98) {
-        score += 1;
+        score += 2;
         reasons.push("고가 근접");
+      } else if (high > 0 && currentPrice >= high * 0.95) {
+        score += 1;
+        reasons.push("고가권 유지");
+      }
+
+      if (closePosition >= 80) {
+        score += 2;
+        reasons.push("종가 상단");
+      } else if (closePosition >= 60) {
+        score += 1;
+        reasons.push("종가 중상단");
       }
 
       if (low > 0) {
-  const recoveryRate =
-    ((currentPrice - low) / low) * 100;
+        const recoveryRate =
+          ((currentPrice - low) / low) * 100;
 
-  if (recoveryRate >= 5) {
-    score += 2;
-    reasons.push("저가대비 강한 회복");
-  } else if (recoveryRate >= 3) {
-    score += 1;
-    reasons.push("저가대비 회복");
-  }
-}
-let candidateGrade = "관찰";
+        if (recoveryRate >= 5) {
+          score += 2;
+          reasons.push("저가대비 강한 회복");
+        } else if (recoveryRate >= 3) {
+          score += 1;
+          reasons.push("저가대비 회복");
+        }
+      }
 
-if (score >= 7) {
-  candidateGrade = "강력";
-} else if (score >= 5) {
-  candidateGrade = "관심";
-}
+      if (!isNaN(rate) && rate >= 12) {
+        score -= 2;
+        reasons.push("급등 과열 주의");
+      }
+
+      if (high > 0 && candleRange > 0) {
+        const upperTailRate =
+          ((high - currentPrice) / candleRange) * 100;
+
+        if (upperTailRate >= 45) {
+          score -= 2;
+          reasons.push("윗꼬리 큼");
+        } else if (upperTailRate >= 30) {
+          score -= 1;
+          reasons.push("윗꼬리 주의");
+        }
+      }
+
+      let candidateGrade = "관찰";
+
+      if (score >= 10) {
+        candidateGrade = "최우선";
+      } else if (score >= 8) {
+        candidateGrade = "강력";
+      } else if (score >= 5) {
+        candidateGrade = "관심";
+      } else if (score >= 3) {
+        candidateGrade = "관찰";
+      } else {
+        candidateGrade = "제외";
+      }
+
       let recommendType = "관망";
 
-if (!isNaN(rate) && rate >= 5 && volume >= volumeThreshold) {
-  recommendType = "단타형";
+      if (!isNaN(rate) && rate >= 5 && volume >= volumeThreshold) {
+        recommendType = "단타형";
+      }
+
+      if (
+        !isNaN(rate) &&
+        rate >= entryRate &&
+        high > 0 &&
+        currentPrice >= high * 0.98
+      ) {
+        recommendType = "추세형";
+      }
+
+      const historyRows = backtestHistory.filter(
+  (row) => row.code === item.code
+);
+
+if (historyRows.length >= 2) {
+  const avgHistoryRate =
+    historyRows.reduce(
+      (sum, row) =>
+        sum + Number(row.finalProfitRate || 0),
+      0
+    ) / historyRows.length;
+
+  if (avgHistoryRate >= 8) {
+    score += 3;
+    reasons.push("백테스트 강력우수");
+  } else if (avgHistoryRate >= 4) {
+    score += 2;
+    reasons.push("백테스트 우수");
+  } else if (avgHistoryRate >= 1) {
+    score += 1;
+    reasons.push("백테스트 양호");
+  } else if (avgHistoryRate <= -3) {
+    score -= 2;
+    reasons.push("백테스트 부진");
+  }
+}
+let historyGrade = "신규";
+
+if (historyRows.length >= 2) {
+  const avgHistoryRate =
+    historyRows.reduce(
+      (sum, row) =>
+        sum + Number(row.finalProfitRate || 0),
+      0
+    ) / historyRows.length;
+
+  if (avgHistoryRate >= 8) {
+    historyGrade = "검증우수";
+  } else if (avgHistoryRate >= 4) {
+    historyGrade = "검증양호";
+  } else if (avgHistoryRate >= 1) {
+    historyGrade = "검증보통";
+  } else if (avgHistoryRate <= -3) {
+    historyGrade = "검증부진";
+  }
 }
 
-if (
-  !isNaN(rate) &&
-  rate >= entryRate &&
-  high > 0 &&
-  currentPrice >= high * 0.98
-) {
-  recommendType = "추세형";
-}
+      const riskReasons = reasons.filter((reason) =>
+        reason.includes("과열") ||
+        reason.includes("윗꼬리") ||
+        reason.includes("주의")
+      );
 
-return {
+      return {
   ...item,
-  strongScore: item.discoverScore || score,
+  strongScore: Math.max(0, item.discoverScore || score),
+  volumePower,
   strongReasons: item.discoverReasons || reasons,
+  riskReasons,
   recommendType,
-  candidateGrade
+  candidateGrade,
+  historyGrade
 };
     })
-    .filter((item) => item.strongScore >= 2)
-    .sort((a, b) => b.strongScore - a.strongScore)
-    .slice(0, 10);
+    .filter((item) => {
+  const currentSettings = getCurrentDiscoverSettings();
+  return item.strongScore >= currentSettings.minScore;
+})
+    .sort((a, b) => {
+      if (b.strongScore !== a.strongScore) {
+        return b.strongScore - a.strongScore;
+      }
+
+      const aRate = parseFloat(a.changeRate);
+      const bRate = parseFloat(b.changeRate);
+
+      if (!isNaN(bRate) && !isNaN(aRate) && bRate !== aRate) {
+        return bRate - aRate;
+      }
+
+      return Number(b.volume || 0) - Number(a.volume || 0);
+    })
+    .slice(0, Math.min(getCurrentDiscoverSettings().limit, 50));
+
+  latestStrongItems = strongItems;
 
   if (strongItems.length === 0) {
     strongStockBox.innerHTML =
@@ -958,210 +1276,264 @@ return {
   strongStockBox.innerHTML = `
     <div class="entry-title">${title}</div>
 
-    ${strongItems.map((item) => `
-      <div class="entry-item">
-        <strong>${item.name}</strong>
-        <div style="text-align:right;">
-          <span class="${getRateClass(item.changeRate)}">${item.changeRate}</span>
-          
-          <div style="font-size:11px;color:#6b7280;margin-top:3px;">
+    ${strongItems.map((item, index) => {
+      const recommended =
+        getRecommendedStrategyForCode(item.code);
 
-  <span class="entry-badge">${item.recommendType}</span>
-  <span class="entry-badge">${item.candidateGrade}</span>
+      const strategyText =
+        recommended
+          ? `${recommended.name} 추천`
+          : item.recommendType;
 
-  점수 ${item.strongScore}점 ·
-${item.volumePower ? `거래량 ${item.volumePower.toFixed(1)}배 · ` : ""}
-${item.strongReasons.join(" · ")}
+      const strategyPreset =
+  strategyText.includes("추세")
+    ? "trend"
+    : strategyText.includes("단타")
+    ? "short"
+    : "safe";
 
-  <div style="margin-top:6px;">
-    <button
-      class="apply-stock-strategy-btn"
-      data-strategy="${item.recommendType === "추세형" ? "trend" : "short"}"
-    >
-      추천 전략 적용
-    </button>
+      const rankBadge =
+        index === 0
+          ? "TOP1"
+          : index === 1
+          ? "TOP2"
+          : index === 2
+          ? "TOP3"
+          : item.candidateGrade;
 
-    <button
-  class="run-stock-backtest-btn"
-  data-code="${item.code}"
-  data-name="${item.name}"
-  data-strategy="${item.recommendType === "추세형" ? "trend" : "short"}"
->
-  바로 백테스트
-</button>
+      return `
+        <div class="entry-item">
+          <strong>${index + 1}위 · ${item.name}</strong>
 
-<button
-  class="add-strong-watch-btn"
-  data-code="${item.code}"
->
-  관심추가
-</button>
+          <div style="text-align:right;">
+            <span class="${getRateClass(item.changeRate)}">
+              ${item.changeRate}
+            </span>
 
-<button
-  class="prepare-buy-btn"
-  data-code="${item.code}"
-  data-name="${item.name}"
-  data-price="${item.currentPrice}"
->
-  매수후보
-</button>
+            <div style="font-size:11px;color:#6b7280;margin-top:3px;">
+              <span class="entry-badge">${strategyText}</span>
+              <span class="entry-badge">${rankBadge}</span>
+              <span class="entry-badge">${item.historyGrade}</span>
 
-  </div>
+              ${
+                item.riskReasons && item.riskReasons.length > 0
+                  ? `<span class="entry-badge danger">위험주의</span>`
+                  : ""
+              }
 
-</div>
-          
+              <div>
+                점수 ${item.strongScore}점 ·
+                ${
+                  item.volumePower
+                    ? `거래량 ${item.volumePower.toFixed(1)}배 · `
+                    : ""
+                }
+                ${item.strongReasons.join(" · ")}
+              </div>
+
+              <div style="margin-top:6px;">
+                <button
+                  class="apply-stock-strategy-btn"
+                  data-strategy="${strategyPreset}"
+                >
+                  추천 전략 적용
+                </button>
+
+                <button
+                  class="run-stock-backtest-btn"
+                  data-code="${item.code}"
+                  data-name="${item.name}"
+                  data-strategy="${strategyPreset}"
+                >
+                  바로 백테스트
+                </button>
+
+                <button
+                  class="add-strong-watch-btn"
+                  data-code="${item.code}"
+                >
+                  관심추가
+                </button>
+
+                <button
+                  class="prepare-buy-btn"
+data-code="${item.code}"
+data-name="${item.name}"
+data-price="${item.currentPrice}"
+data-strategy="${strategyPreset}"
+                >
+                  매수후보
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    `).join("")}
+      `;
+    }).join("")}
   `;
 
   setTimeout(() => {
-  document
-    .querySelectorAll(".apply-stock-strategy-btn")
-    .forEach((btn) => {
-      btn.onclick = () => {
-        const preset = btn.dataset.strategy;
+    document
+      .querySelectorAll(".apply-stock-strategy-btn")
+      .forEach((btn) => {
+        btn.onclick = () => {
+          const preset = btn.dataset.strategy;
 
-        applyBacktestPreset(preset);
+          applyBacktestPreset(preset);
 
-        document
-          .querySelectorAll(".preset-btn")
-          .forEach((item) => {
-            item.classList.toggle(
-              "active",
-              item.dataset.preset === preset
-            );
+          document
+            .querySelectorAll(".preset-btn")
+            .forEach((item) => {
+              item.classList.toggle(
+                "active",
+                item.dataset.preset === preset
+              );
+            });
+
+          alert("추천 전략이 적용되었습니다.");
+        };
+      });
+
+    document
+      .querySelectorAll(".run-stock-backtest-btn")
+      .forEach((btn) => {
+        btn.onclick = async () => {
+          const preset = btn.dataset.strategy;
+          const code = btn.dataset.code;
+          const name = btn.dataset.name;
+
+          backtestCodeInput.value = name;
+          selectedStockCodes.backtest = code;
+
+          applyBacktestPreset(preset);
+
+          document
+            .querySelectorAll(".preset-btn")
+            .forEach((item) => {
+              item.classList.toggle(
+                "active",
+                item.dataset.preset === preset
+              );
+            });
+
+          await runBacktest();
+
+          backtestResult.scrollIntoView({
+            behavior: "smooth"
           });
+        };
+      });
 
-        alert("추천 전략이 적용되었습니다.");
-      };
-    });
+    document
+      .querySelectorAll(".add-strong-watch-btn")
+      .forEach((btn) => {
+        btn.onclick = () => {
+          const code = btn.dataset.code;
 
-  document
-    .querySelectorAll(".run-stock-backtest-btn")
-    .forEach((btn) => {
-      btn.onclick = async () => {
-        const preset = btn.dataset.strategy;
-        const code = btn.dataset.code;
-        const name = btn.dataset.name;
+          if (watchCodes.includes(code)) {
+            alert("이미 관심종목에 있습니다.");
+            return;
+          }
 
-        backtestCodeInput.value = name;
-        selectedStockCodes.backtest = code;
+          watchCodes.push(code);
+          saveWatchCodes();
+          loadWatchList();
 
-        applyBacktestPreset(preset);
+          alert("관심종목에 추가되었습니다.");
+        };
+      });
 
-        document
-          .querySelectorAll(".preset-btn")
-          .forEach((item) => {
-            item.classList.toggle(
-              "active",
-              item.dataset.preset === preset
-            );
-          });
+    document
+      .querySelectorAll(".prepare-buy-btn")
+      .forEach((btn) => {
+        btn.onclick = () => {
+          const code = btn.dataset.code;
+          const name = btn.dataset.name;
+          const price = Number(btn.dataset.price || 0);
+          const strategyPreset =
+  btn.dataset.strategy || "safe";
+  const strategyName =
+  strategyPreset === "trend"
+    ? "추세형"
+    : strategyPreset === "short"
+    ? "단타형"
+    : "안정형";
 
-        await runBacktest();
+          holdCodeInput.value = name;
+          selectedStockCodes.hold = code;
 
-        backtestResult.scrollIntoView({
-          behavior: "smooth"
-        });
-      };
-    });
-}, 0);
+          buyPriceInput.value = price;
 
-document
-  .querySelectorAll(".discover-preset-btn")
-  .forEach((btn) => {
-    btn.addEventListener("click", () => {
-      discoverLimitInput.value = btn.dataset.limit;
-      discoverMinScoreInput.value = btn.dataset.score;
+         let targetRate = 1.04;
+let secondTargetRate = 1.06;
+let stopLossRate = 0.97;
+let trailingRate = 3;
 
-      saveDiscoverSettings();
+if (strategyPreset === "trend") {
+  targetRate = 1.07;
+  secondTargetRate = 1.12;
+  stopLossRate = 0.96;
+  trailingRate = 4;
+} else if (strategyPreset === "short") {
+  targetRate = 1.03;
+  secondTargetRate = 1.05;
+  stopLossRate = 0.98;
+  trailingRate = 2;
+}
 
-      alert(`${btn.textContent.trim()} 자동발굴 설정이 적용되었습니다.`);
-    });
-  });
+targetPriceInput.value =
+  Math.round(price * targetRate);
 
-document
-  .querySelectorAll(".add-strong-watch-btn")
-  .forEach((btn) => {
-    btn.onclick = () => {
-      const code = btn.dataset.code;
+secondTargetPriceInput.value =
+  Math.round(price * secondTargetRate);
 
-      if (watchCodes.includes(code)) {
-        alert("이미 관심종목에 있습니다.");
-        return;
-      }
+trailingStopRateInput.value = trailingRate;
 
-      watchCodes.push(code);
-      saveWatchCodes();
-      loadWatchList();
+stopLossPriceInput.value =
+  Math.round(price * stopLossRate);
 
-      alert("관심종목에 추가되었습니다.");
-    };
-  });
+          let recommendAmount = defaultBuyAmount;
 
- document
-  .querySelectorAll(".prepare-buy-btn")
-  .forEach((btn) => {
+if (strategyPreset === "trend") {
+  recommendAmount =
+    Math.round(defaultBuyAmount * 1.2);
+} else if (strategyPreset === "short") {
+  recommendAmount =
+    Math.round(defaultBuyAmount * 0.7);
+}
 
-    btn.onclick = () => {
+const qty =
+  price > 0
+    ? Math.floor(recommendAmount / price)
+    : 0;
 
-      const code = btn.dataset.code;
-      const name = btn.dataset.name;
-      const price = Number(btn.dataset.price || 0);
+          holdQtyInput.value = qty;
 
-      holdCodeInput.value = name;
-      selectedStockCodes.hold = code;
+          const buyAmount = price * qty;
 
-      buyPriceInput.value = price;
+          const shouldAddHold = confirm(
+            `[매수후보 확인]\n\n` +
+            `종목: ${name}\n` +
+            `적용전략: ${strategyName}\n` +
+            `매수가: ${formatNumber(price)}원\n` +
+            `수량: ${formatNumber(qty)}주\n` +
+            `추천투자금: ${formatNumber(recommendAmount)}원\n` +
+`실제투자금: ${formatNumber(buyAmount)}원\n\n` +
+            `목표가: ${formatNumber(Math.round(price * targetRate))}원\n` +
+`2차목표가: ${formatNumber(Math.round(price * secondTargetRate))}원\n` +
+`손절가: ${formatNumber(Math.round(price * stopLossRate))}원\n` +
+`트레일링: ${trailingRate}%\n\n` +
+            `보유목록에 추가할까요?`
+          );
 
-      targetPriceInput.value =
-        Math.round(price * 1.05);
-
-      secondTargetPriceInput.value =
-        Math.round(price * 1.08);
-
-      trailingStopRateInput.value = 3;
-
-      stopLossPriceInput.value =
-        Math.round(price * 0.97);
-
-      
-
-      const qty =
-        price > 0
-          ? Math.floor(defaultBuyAmount / price)
-          : 0;
-
-      holdQtyInput.value = qty;
-
-      const buyAmount =
-  price * qty;
-
-const shouldAddHold = confirm(
-  `[매수후보 확인]\n\n` +
-  `종목: ${name}\n` +
-  `매수가: ${formatNumber(price)}원\n` +
-  `수량: ${formatNumber(qty)}주\n` +
-  `투자금: ${formatNumber(buyAmount)}원\n\n` +
-  `목표가: ${formatNumber(Math.round(price * 1.05))}원\n` +
-  `2차목표가: ${formatNumber(Math.round(price * 1.08))}원\n` +
-  `손절가: ${formatNumber(Math.round(price * 0.97))}원\n` +
-  `트레일링: 3%\n\n` +
-  `보유목록에 추가할까요?`
-);
-
-      if (shouldAddHold) {
-        addHoldBtn.click();
-      } else {
-        alert("매수 후보 입력칸에만 반영되었습니다.");
-      }
-
-    };
-
-  });
-
+          if (shouldAddHold) {
+            addHoldBtn.click();
+          } else {
+            alert("매수 후보 입력칸에만 반영되었습니다.");
+          }
+        };
+      });
+  }, 0);
 }
 
 
@@ -1554,6 +1926,29 @@ if (testModeBtn) {
 if (resumeAutoTradeBtn) {
   resumeAutoTradeBtn.addEventListener("click", resumeAllAutoTrade);
 }
+
+const runAllBacktestBtn =
+  document.getElementById("runAllBacktestBtn");
+
+if (runAllBacktestBtn) {
+  runAllBacktestBtn.addEventListener(
+    "click",
+    runAllDiscoveredBacktests
+  );
+}
+
+document
+  .querySelectorAll(".discover-preset-btn")
+  .forEach((btn) => {
+    btn.addEventListener("click", () => {
+      discoverLimitInput.value = btn.dataset.limit;
+      discoverMinScoreInput.value = btn.dataset.score;
+
+      saveDiscoverSettings();
+
+      alert(`${btn.textContent.trim()} 자동발굴 설정이 적용되었습니다.`);
+    });
+  });
 
 function addWatchCode() {
 const code = getSelectedStockCode(addStockCodeInput, "watch");
@@ -3287,6 +3682,18 @@ const tradeDetailHtml = tradeDetails
   savedAt: new Date().toLocaleString("ko-KR")
 };
 
+backtestHistory = backtestHistory.filter((item) => {
+  return !(
+    item.code === backtestRecord.code &&
+    item.days === backtestRecord.days &&
+    item.targetRate === backtestRecord.targetRate &&
+    item.stopRate === backtestRecord.stopRate &&
+    item.trailingRate === backtestRecord.trailingRate &&
+    JSON.stringify(item.strategies || []) === JSON.stringify(backtestRecord.strategies || []) &&
+    JSON.stringify(item.filters || []) === JSON.stringify(backtestRecord.filters || [])
+  );
+});
+
 backtestHistory.unshift(backtestRecord);
 
 backtestHistory = backtestHistory.slice(0, 50);
@@ -3378,11 +3785,27 @@ backtestResult.innerHTML = `
     ${tradeDetailHtml || `<div class="empty">거래 내역이 없습니다.</div>`}
   </div>
 
-  ${getBacktestSummaryHtml()}
+${getBacktestSummaryHtml()}
 ${getStrategySummaryHtml()}
+${getStockSummaryHtml()}
 ${getBacktestHistoryHtml()}
+
+<div style="margin-top:12px;">
+  <button id="clearBacktestHistoryBtn" class="danger-btn">
+    백테스트 기록 전체 삭제
+  </button>
+</div>
 `;
 
+const clearBacktestHistoryBtn =
+  document.getElementById("clearBacktestHistoryBtn");
+
+if (clearBacktestHistoryBtn) {
+  clearBacktestHistoryBtn.addEventListener(
+    "click",
+    clearBacktestHistory
+  );
+}
 
   } catch (error) {
     backtestResult.innerHTML =
@@ -3390,6 +3813,76 @@ ${getBacktestHistoryHtml()}
   }
 }
 
+async function runAllDiscoveredBacktests() {
+  if (!latestStrongItems || latestStrongItems.length === 0) {
+    alert("자동발굴 종목이 없습니다.");
+    return;
+  }
+
+  const originalCode = backtestCodeInput.value;
+  const originalSelectedCode = selectedStockCodes.backtest;
+
+  let completed = 0;
+
+  for (const item of latestStrongItems) {
+    const recommended =
+      getRecommendedStrategyForCode(item.code);
+
+    const strategyText =
+      recommended
+        ? recommended.name
+        : item.recommendType;
+
+    const preset =
+      strategyText.includes("추세")
+        ? "trend"
+        : strategyText.includes("단타")
+        ? "short"
+        : "safe";
+
+    updateApiStatus(
+      `전체 자동 백테스트 진행중 · ${completed + 1}/${latestStrongItems.length} · ${item.name}`
+    );
+
+    backtestCodeInput.value = item.name;
+    selectedStockCodes.backtest = item.code;
+
+    applyBacktestPreset(preset);
+
+    document
+      .querySelectorAll(".preset-btn")
+      .forEach((btn) => {
+        btn.classList.toggle(
+          "active",
+          btn.dataset.preset === preset
+        );
+      });
+
+    try {
+      await runBacktest();
+      completed += 1;
+    } catch (error) {
+      console.error(
+        "자동 백테스트 실패",
+        item.code,
+        error
+      );
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 1200)
+    );
+  }
+
+  backtestCodeInput.value = originalCode;
+  selectedStockCodes.backtest = originalSelectedCode;
+
+  updateApiStatus(
+    `전체 자동 백테스트 완료 · ${completed}개`
+  );
+
+  alert(`전체 자동 백테스트 완료 (${completed}개)`);
+}
 
 async function runBacktestCompare() {
   if (!backtestResult) return;
@@ -4606,48 +5099,98 @@ function getDiscoverScore(item) {
   const high = Number(item.high || 0);
   const low = Number(item.low || 0);
 
-  let score = 0;
-  const reasons = [];
+ let score = 0;
+const reasons = [];
 
-  if (!isNaN(rate) && rate >= entryRate) {
+const candleRange = high - low;
+const closePosition =
+  candleRange > 0
+    ? ((currentPrice - low) / candleRange) * 100
+    : 0;
+
+const dayRate = parseFloat(item.changeRate);
+const volumePower =
+  volumeThreshold > 0
+    ? volume / volumeThreshold
+    : 0;
+
+// 1. 상승률 점수
+if (!isNaN(dayRate)) {
+  if (dayRate >= 7) {
+    score += 3;
+    reasons.push(`강한 상승률 ${item.changeRate}`);
+  } else if (dayRate >= entryRate) {
     score += 2;
     reasons.push(`상승률 ${item.changeRate}`);
+  } else if (dayRate >= 1.5) {
+    score += 1;
+    reasons.push(`소폭 상승 ${item.changeRate}`);
   }
-
-  if (volume >= volumeThreshold) {
-    score += 2;
-    reasons.push("거래량 기준 통과");
-  }
-
-  if (item.volumePower >= 3) {
-  score += 3;
-  reasons.push(`거래량 ${item.volumePower.toFixed(1)}배 급증`);
-} else if (item.volumePower >= 2) {
-  score += 2;
-  reasons.push(`거래량 ${item.volumePower.toFixed(1)}배 증가`);
 }
 
-  if (open > 0 && price > open) {
-    score += 1;
-    reasons.push("시가 위 유지");
-  }
+// 2. 거래량 점수
+if (volumePower >= 3) {
+  score += 3;
+  reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
+} else if (volumePower >= 1.5) {
+  score += 2;
+  reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
+} else if (volume >= volumeThreshold) {
+  score += 1;
+  reasons.push("거래량 기준 통과");
+}
 
-  if (high > 0 && price >= high * 0.98) {
+// 3. 고가 근접 점수
+if (high > 0 && currentPrice >= high * 0.98) {
+  score += 2;
+  reasons.push("고가 근접");
+} else if (high > 0 && currentPrice >= high * 0.95) {
+  score += 1;
+  reasons.push("고가권 유지");
+}
+
+// 4. 종가 위치 점수
+if (closePosition >= 80) {
+  score += 2;
+  reasons.push("종가 상단 마감");
+} else if (closePosition >= 60) {
+  score += 1;
+  reasons.push("종가 중상단");
+}
+
+// 5. 저가 대비 회복 점수
+if (low > 0) {
+  const recoveryRate =
+    ((currentPrice - low) / low) * 100;
+
+  if (recoveryRate >= 5) {
     score += 2;
-    reasons.push("고가 근접");
+    reasons.push("저가대비 강한 회복");
+  } else if (recoveryRate >= 3) {
+    score += 1;
+    reasons.push("저가대비 회복");
   }
+}
 
-  if (low > 0) {
-    const recoveryRate = ((price - low) / low) * 100;
+// 6. 과열 감점
+if (!isNaN(dayRate) && dayRate >= 12) {
+  score -= 2;
+  reasons.push("급등 과열 주의");
+}
 
-    if (recoveryRate >= 5) {
-      score += 2;
-      reasons.push("저가대비 강한 회복");
-    } else if (recoveryRate >= 3) {
-      score += 1;
-      reasons.push("저가대비 회복");
-    }
+// 7. 윗꼬리 감점
+if (high > 0 && candleRange > 0) {
+  const upperTailRate =
+    ((high - currentPrice) / candleRange) * 100;
+
+  if (upperTailRate >= 45) {
+    score -= 2;
+    reasons.push("윗꼬리 큼");
+  } else if (upperTailRate >= 30) {
+    score -= 1;
+    reasons.push("윗꼬리 주의");
   }
+}
 
   return {
     score,
@@ -4678,9 +5221,25 @@ async function runAutoDiscover() {
   try {
     const allStocks = await fetchAllStocksForDiscover();
 
-    const targetStocks = allStocks
+   const targetStocks = allStocks
   .filter((item) => item.code)
-  .filter((item) => !item.name.includes("스팩"))
+  .filter((item) => {
+    const name = String(item.name || "");
+
+    if (name.includes("스팩")) return false;
+    if (name.includes("ETF")) return false;
+    if (name.includes("ETN")) return false;
+    if (name.includes("KODEX")) return false;
+    if (name.includes("TIGER")) return false;
+    if (name.includes("ACE")) return false;
+    if (name.includes("SOL")) return false;
+
+    if (name.endsWith("우")) return false;
+    if (name.includes("우B")) return false;
+    if (name.includes("우선주")) return false;
+
+    return true;
+  })
   .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
   .slice(0, Number(discoverLimitInput?.value || 300));
 
@@ -4722,9 +5281,15 @@ if (price > 0 && discover.score >= minScore) {
         }
       },
       (done, total) => {
-        strongStockBox.innerHTML =
-          `<div class="loading">전체시장 1차 스캔 중... ${done}/${total}개 확인</div>`;
-      }
+        strongStockBox.innerHTML = `
+  <div class="loading">
+    전체시장 1차 스캔 중. ${done}/${total}개 확인
+    <br />
+    <small>
+      현재 확인: ${stock.name} (${stock.code})
+    </small>
+  </div>
+`;      }
     ))
       .filter(Boolean)
       .sort((a, b) => {
@@ -4744,7 +5309,7 @@ summaryEl.className = "discover-summary";
 summaryEl.innerHTML = `
   전체 ${targetStocks.length}개 스캔 /
   조건통과 ${results.length}개 /
-  표시 ${Math.min(results.length, 10)}개
+  표시 ${Math.min(results.length, getCurrentDiscoverSettings().limit, 50)}개
 `;
 
 strongStockBox.prepend(summaryEl);
