@@ -5439,18 +5439,24 @@ function resumeAllAutoTrade() {
 
 async function fetchAllStocksForDiscover() {
   try {
-    const res = await fetch(`${API_BASE}/api/stocks`);
+    const res = await fetch(`${API_BASE}/api/search?keyword=`);
 
-    const data = await res.json();
+    const text = await res.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error("전체 종목 API 응답이 JSON이 아닙니다.");
+    }
 
     if (!res.ok) {
       throw new Error(data.message || "전체 종목 조회 실패");
     }
 
-    return data.items || data || [];
+    return data.items || data || STOCK_MASTER;
   } catch (error) {
     console.warn("전체 종목 조회 실패:", error);
-
     return STOCK_MASTER;
   }
 }
