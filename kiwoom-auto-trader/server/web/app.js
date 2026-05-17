@@ -36,6 +36,9 @@ const autoDiscoverAutoBtn =
   document.getElementById("autoDiscoverAutoBtn");
 
 let autoDiscoverTimer = null;
+const AUTO_DISCOVER_AUTO_KEY =
+  "kiwoom_auto_discover_auto";
+  
 let isAutoDiscoverAuto =
   localStorage.getItem(AUTO_DISCOVER_AUTO_KEY) === "true";
 
@@ -1071,8 +1074,7 @@ const ALERT_RATE_KEY = "kiwoom_alert_rate";
 const TEST_MODE_KEY = "kiwoom_test_mode";
 const ENTRY_RATE_KEY = "kiwoom_entry_rate";
 
-const AUTO_DISCOVER_AUTO_KEY =
-  "kiwoom_auto_discover_auto";
+
 
 let alertRate = Number(localStorage.getItem(ALERT_RATE_KEY)) || 5;
 if (alertRateInput) {
