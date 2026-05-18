@@ -5793,7 +5793,7 @@ async function runAutoDiscover() {
     return true;
   })
   .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
-  .slice(0, Number(discoverLimitInput?.value || 300));
+  .slice(0, 1200);
 
     const results = (await runInBatches(
       targetStocks,
