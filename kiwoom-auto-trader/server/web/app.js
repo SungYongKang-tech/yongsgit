@@ -3268,6 +3268,121 @@ function executeVirtualSell(code, actionType = "SELL") {
   renderVirtualResults();
 }
 
+function executeManualSell(code) {
+  const item = holdings.find((stock) => stock.code === code);
+
+  if (!item) return;
+
+  const currentPrice =
+    Number(item.currentPrice || item.buyPrice || 0);
+
+  const reason = prompt(
+    "매도 사유를 선택하세요.\n\n1: 수익실현\n2: 손절\n3: 일반매도",
+    item.profit >= 0 ? "1" : "2"
+  );
+
+  if (reason === null) return;
+
+  const resultText =
+    reason === "1"
+      ? "수동 수익실현"
+      : reason === "2"
+      ? "수동 손절"
+      : "수동 매도";
+
+  const qty = Number(
+    prompt(
+      `매도 수량을 입력하세요.\n\n현재 보유수량: ${formatNumber(item.qty)}주`,
+      item.qty
+    )
+  );
+
+  if (!qty || qty <= 0 || qty > item.qty) {
+    alert("매도 수량이 올바르지 않습니다.");
+    return;
+  }
+
+  const sellPrice = Number(
+    prompt(
+      "매도 단가를 입력하세요.",
+      currentPrice
+    )
+  );
+
+  if (!sellPrice || sellPrice <= 0) {
+    alert("매도 단가가 올바르지 않습니다.");
+    return;
+  }
+
+  const buyAmount = item.buyPrice * qty;
+  const sellAmount = sellPrice * qty;
+  const profit = sellAmount - buyAmount;
+  const profitRate =
+    buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+
+  const ok = confirm(
+    `[${resultText} 확인]\n\n` +
+    `종목: ${cleanStockName(item.name)}\n` +
+    `매수가: ${formatNumber(item.buyPrice)}원\n` +
+    `매도가: ${formatNumber(sellPrice)}원\n` +
+    `수량: ${formatNumber(qty)}주\n` +
+    `실현손익: ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원\n` +
+    `수익률: ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%\n\n` +
+    `매도 처리할까요?`
+  );
+
+  if (!ok) return;
+
+  virtualResults.push({
+    code: item.code,
+    name: item.name,
+    resultText,
+    buyPrice: item.buyPrice,
+    sellPrice,
+    qty,
+    buyAmount,
+    sellAmount,
+    profit,
+    profitRate,
+    date: new Date().toISOString().slice(0, 10),
+    time: new Date().toLocaleString("ko-KR")
+  });
+
+  saveVirtualResults();
+
+  const remainQty = item.qty - qty;
+
+  holdings = holdings
+    .map((stock) => {
+      if (stock.code !== code) return stock;
+
+      return {
+        ...stock,
+        qty: remainQty,
+        autoTrade: remainQty > 0 ? stock.autoTrade : false
+      };
+    })
+    .filter((stock) => stock.qty > 0);
+
+  strategyStates[code] = {
+    ...(strategyStates[code] || {}),
+    status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
+    lastAction: resultText,
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: sellPrice,
+    lastSoldQty: qty,
+    remainQty
+  };
+
+  saveStrategyStates();
+  saveHoldings();
+
+  renderVirtualResults();
+  renderHoldings();
+
+  alert(`${resultText} 처리되었습니다.`);
+}
+
 const PRICE_CACHE = {};
 const PRICE_CACHE_TTL = 14500; // 14.5초 캐시
 
@@ -5181,13 +5296,23 @@ ${state.lastSoldQty ? `
          <div class="hold-progress-area">
   ${getTradeProgressHtml(item)}
 </div>
-          <div class="hold-action-row">
-            <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
-              ${item.autoTrade ? "자동ON" : "자동OFF"}
-            </button>
-            <button class="hold-edit" data-hold-code="${item.code}">수정</button>
-            <button class="hold-remove" data-hold-code="${item.code}">삭제</button>
-          </div>
+         <div class="hold-action-row">
+  <button class="hold-auto ${item.autoTrade ? "active" : ""}" data-hold-code="${item.code}">
+    ${item.autoTrade ? "자동ON" : "자동OFF"}
+  </button>
+
+  <button class="hold-manual-sell" data-hold-code="${item.code}">
+    수동매도
+  </button>
+
+  <button class="hold-edit" data-hold-code="${item.code}">
+    수정
+  </button>
+
+  <button class="hold-remove" data-hold-code="${item.code}">
+    삭제
+  </button>
+</div>
         </div>
       `;
     });
