@@ -4427,9 +4427,7 @@ function canRunMorningAutoFlow() {
   const now = new Date();
   const day = now.getDay();
 
-  if (day === 0 || day === 6) {
-    return false;
-  }
+  if (day === 0 || day === 6) return false;
 
   const hour = now.getHours();
   const minute = now.getMinutes();
@@ -4441,14 +4439,16 @@ function canRunMorningAutoFlow() {
   if (!isAutoRefresh) return false;
   if (isMorningAutoFlowRunning) return false;
 
-  const lastRunDate =
-    localStorage.getItem(MORNING_AUTO_RUN_KEY);
-
-  if (lastRunDate === getTodayKey()) {
+  if (getAvailableBuySlots() <= 0) {
     return false;
   }
 
-  if (getAvailableBuySlots() <= 0) {
+  const lastRunTime =
+    Number(localStorage.getItem(MORNING_AUTO_RUN_KEY) || 0);
+
+  const oneHour = 60 * 60 * 1000;
+
+  if (lastRunTime && now.getTime() - lastRunTime < oneHour) {
     return false;
   }
 
@@ -4474,9 +4474,9 @@ async function runMorningAutoFlow() {
    await autoBacktestAndBuyDiscoveredItems();
 
     localStorage.setItem(
-      MORNING_AUTO_RUN_KEY,
-      getTodayKey()
-    );
+  MORNING_AUTO_RUN_KEY,
+  String(Date.now())
+);
 
     updateApiStatus(
       "장시작 자동흐름 완료 · 자동발굴/백테스트/모의매수 완료"
