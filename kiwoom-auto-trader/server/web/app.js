@@ -1820,7 +1820,7 @@ async function loadWatchList(silent = false) {
     let sortedData = [...data];
     renderAlertBox(data);
     renderEntryBox(data);
-    renderStrongStockBox(data);
+   // renderStrongStockBox(data);
 
 if (currentSortType === "rate") {
   sortedData.sort((a, b) =>
@@ -5551,22 +5551,15 @@ function resumeAllAutoTrade() {
 
 async function fetchAllStocksForDiscover() {
   try {
-    const res = await fetch(`${API_BASE}/api/search?keyword=`);
+    const res = await fetch(`${API_BASE}/api/stocks`);
 
-    const text = await res.text();
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error("전체 종목 API 응답이 JSON이 아닙니다.");
-    }
+    const data = await res.json();
 
     if (!res.ok) {
       throw new Error(data.message || "전체 종목 조회 실패");
     }
 
-    return data.items || data || STOCK_MASTER;
+    return data.items || [];
   } catch (error) {
     console.warn("전체 종목 조회 실패:", error);
     return STOCK_MASTER;
@@ -5828,9 +5821,14 @@ if (price > 0 && discover.score >= minScore) {
 
           return null;
         } catch (error) {
-          console.warn("자동발굴 종목 조회 실패:", stock.code);
-          return null;
-        }
+  console.warn(
+    "자동발굴 종목 조회 실패:",
+    stock.code,
+    stock.name,
+    error.message
+  );
+  return null;
+}
       },
 
 
@@ -5854,6 +5852,9 @@ if (price > 0 && discover.score >= minScore) {
   return b.discoverScore - a.discoverScore;
 });
 
+console.log("자동발굴 조건통과 results:", results);
+console.log("자동발굴 조건통과 개수:", results.length);
+
     if (results.length === 0) {
       strongStockBox.innerHTML =
         `<div class="empty">자동발굴 조건에 맞는 종목이 없습니다.</div>`;
@@ -5873,8 +5874,8 @@ if (availableSlots <= 0) {
 }
 
 renderStrongStockBox(
-  results.slice(0, availableSlots),
-  `🤖 자동발굴 후보 · 신규 가능 ${availableSlots}개`
+  results.slice(0, 15),
+  `🤖 자동발굴 후보 · 조건통과 ${results.length}개`
 );
 
 const summaryEl = document.createElement("div");
@@ -5882,7 +5883,7 @@ summaryEl.className = "discover-summary";
 summaryEl.innerHTML = `
   전체 ${targetStocks.length}개 스캔 /
   조건통과 ${results.length}개 /
-  표시 ${Math.min(results.length, availableSlots)}개
+  표시 ${Math.min(results.length, 15)}개
 `;
 
 strongStockBox.prepend(summaryEl);
