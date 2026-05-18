@@ -904,7 +904,7 @@ if (matched.length === 0) {
   listEl.innerHTML = matched.map((item) => `
     <div class="suggest-item" data-code="${item.code}" data-name="${cleanStockName(item.name)}">
       <span class="suggest-name">${cleanStockName(item.name)}</span>
-      <span class="suggest-code">${cleanStockName(item.name)}</span>
+      <span class="suggest-code">${item.code}</span>
     </div>
   `).join("");
 
@@ -2752,13 +2752,16 @@ function getStrategyState(code) {
 }
 
 function getStrategyStatusText(status) {
-  if (status === "WAITING") return "대기중";
+  if (status === "BUY") return "매수완료";
+  if (status === "WAITING") return "감시중";
   if (status === "PARTIAL_SOLD") return "1차매도완료";
   if (status === "SOLD") return "매도완료";
   if (status === "SELL_ALL") return "2차매도완료";
   if (status === "SELL_SIGNAL") return "매도신호";
   if (status === "STOP_SIGNAL") return "손절신호";
-  return "대기중";
+  if (status === "STOP_LOSS") return "손절완료";
+  if (status === "SELL_TRAILING") return "트레일링매도";
+  return "감시중";
 }
 
 function checkTargetSell(item) {
@@ -4843,13 +4846,16 @@ function bindHoldItemEvents() {
   }
 }
 
-  strategyStates[code] = {
-  status: "WAITING",
-  lastAction: "NONE",
-  lastSignalTime: null,
-  lastSignalPrice: null,
+strategyStates[code] = {
+  status: "BUY",
+  statusText: "매수완료",
+  lastAction: "BUY",
+  lastSignalTime: new Date().toLocaleString("ko-KR"),
+  lastSignalPrice: buyPrice,
   lastSoldQty: 0,
-  remainQty: 0
+  remainQty: qty,
+  strategyPreset,
+  strategyName
 };
 
   saveStrategyStates();
@@ -5452,14 +5458,16 @@ function autoAddVirtualHolding(item) {
 
   holdings.push(newHolding);
 
-  strategyStates[item.code] = {
-    status: "WAITING",
-    lastAction: "NONE",
-    lastSignalTime: null,
-    lastSignalPrice: null,
-    lastSoldQty: 0,
-    remainQty: 0
-  };
+ strategyStates[item.code] = {
+  status: "BUY",
+  lastAction: "BUY",
+  lastSignalTime: new Date().toLocaleString("ko-KR"),
+  lastSignalPrice: price,
+  lastSoldQty: 0,
+  remainQty: qty,
+  strategyPreset,
+  strategyName
+};
 
   addTradeLog({
     type: "BUY",
@@ -5569,12 +5577,14 @@ if (emergencyStopBtn) {
 
     holdings = holdings.map((item) => {
  strategyStates[item.code] = {
-  status: "WAITING",
-  lastAction: "NONE",
-  lastSignalTime: null,
-  lastSignalPrice: null,
+  status: "BUY",
+  lastAction: "BUY",
+  lastSignalTime: new Date().toLocaleString("ko-KR"),
+  lastSignalPrice: price,
   lastSoldQty: 0,
-  remainQty: 0
+  remainQty: qty,
+  strategyPreset,
+  strategyName
 };
 
   return {
