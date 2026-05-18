@@ -148,7 +148,7 @@ function getBacktestHistoryHtml(limit = 5) {
         <div class="virtual-result-item">
           <div class="virtual-result-top">
             <div class="virtual-result-name">
-              ${item.name} (${item.code})
+              ${cleanStockName(item.name)} (${item.code})
             </div>
             <div class="virtual-result-badge ${item.finalProfitRate >= 0 ? "" : "loss"}">
               ${item.finalProfitRate >= 0 ? "수익" : "손실"}
@@ -305,7 +305,7 @@ function getStrategySummaryHtml() {
       ${rows.map((item) => `
         <div class="virtual-result-item">
           <div class="virtual-result-top">
-            <div class="virtual-result-name">${item.name}</div>
+            <div class="virtual-result-name">${cleanStockName(item.name)}</div>
             <div class="virtual-result-badge ${item.avgRate >= 0 ? "" : "loss"}">
               ${item.avgRate >= 0 ? "우수" : "주의"}
             </div>
@@ -404,7 +404,7 @@ function getStockSummaryHtml() {
 
             <div class="virtual-result-top">
               <div class="virtual-result-name">
-                ${item.name} (${item.code})
+                ${cleanStockName(item.name)} (${item.code})
               </div>
 
               <div class="virtual-result-badge ${item.avgRate >= 0 ? "" : "loss"}">
@@ -776,6 +776,13 @@ function getInputNumber(input, fallback = 0) {
   return Number(value) || fallback;
 }
 
+function cleanStockName(name) {
+  return String(name || "")
+    .replace(/ðŸ”¥/g, "")
+    .replace(/🔥/g, "")
+    .trim();
+}
+
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number(value).toLocaleString("ko-KR");
@@ -895,9 +902,9 @@ if (matched.length === 0) {
 }
 
   listEl.innerHTML = matched.map((item) => `
-    <div class="suggest-item" data-code="${item.code}" data-name="${item.name}">
-      <span class="suggest-name">${item.name}</span>
-      <span class="suggest-code">${item.code}</span>
+    <div class="suggest-item" data-code="${item.code}" data-name="${cleanStockName(item.name)}">
+      <span class="suggest-name">${cleanStockName(item.name)}</span>
+      <span class="suggest-code">${cleanStockName(item.name)}</span>
     </div>
   `).join("");
 
@@ -1122,7 +1129,7 @@ function renderAlertBox(items) {
     <div class="alert-title">🚨 상승률 ${alertRate}% 이상 종목</div>
     ${alertItems.map((item) => `
       <div class="alert-item">
-        <strong>${item.name}</strong>
+        <strong>${cleanStockName(item.name)}</strong>
         <span class="up">${item.changeRate}</span>
       </div>
     `).join("")}
@@ -1146,7 +1153,7 @@ function renderEntryBox(items) {
     <div class="entry-title">🚀 진입후보 ${entryRate}% 이상</div>
     ${entryItems.map((item) => `
       <div class="entry-item">
-        <strong>${item.name}</strong>
+        <strong>${cleanStockName(item.name)}</strong>
         <span class="up">${item.changeRate}</span>
       </div>
     `).join("")}
@@ -1403,7 +1410,7 @@ if (historyRows.length >= 2) {
 
       return `
         <div class="entry-item">
-          <strong>${index + 1}위 · ${item.name}</strong>
+          <strong>${index + 1}위 · ${cleanStockName(item.name)}</strong>
 
           <div style="text-align:right;">
             <span class="${getRateClass(item.changeRate)}">
@@ -1446,7 +1453,7 @@ if (historyRows.length >= 2) {
                 <button
                   class="run-stock-backtest-btn"
                   data-code="${item.code}"
-                  data-name="${item.name}"
+                  data-name="${cleanStockName(item.name)}"
                   data-strategy="${strategyPreset}"
                 >
                   바로 백테스트
@@ -1462,7 +1469,7 @@ if (historyRows.length >= 2) {
                 <button
                   class="prepare-buy-btn"
 data-code="${item.code}"
-data-name="${item.name}"
+data-name="${cleanStockName(item.name)}"
 data-price="${item.currentPrice}"
 data-strategy="${strategyPreset}"
                 >
@@ -1710,7 +1717,7 @@ function renderWatchItem(item) {
       <div class="watch-item-top">
         <div>
           <div class="watch-name">
-  ${item.name}
+  ${cleanStockName(item.name)}
   ${item.isFallback ? `<span class="fallback-badge">저장가</span>` : ""}
   ${isEntryCandidate ? `<span class="entry-badge">진입후보</span>` : ""}
   ${isVolumeHot ? `<span class="volume-badge">거래량급증</span>` : ""}
@@ -2316,7 +2323,7 @@ const groupedHtml = Object.values(groupedResults)
     return `
       <div class="virtual-result-item">
         <div class="virtual-result-top">
-          <div class="virtual-result-name">${item.name} 누적</div>
+          <div class="virtual-result-name">${cleanStockName(item.name)} 누적</div>
           <div class="virtual-result-badge ${item.profit >= 0 ? "" : "loss"}">
             ${item.profit >= 0 ? "수익" : "손실"}
           </div>
@@ -2378,7 +2385,7 @@ ${groupedHtml}
       return `
         <div class="virtual-result-item">
           <div class="virtual-result-top">
-            <div class="virtual-result-name">${item.name}</div>
+            <div class="virtual-result-name">${cleanStockName(item.name)}</div>
             <div class="virtual-result-badge ${isProfit ? "" : "loss"}">
               ${isProfit ? "수익" : "손실"}
             </div>
@@ -3366,7 +3373,7 @@ function notifyTradeSignal(item, strategyResult) {
 
   const title = getTradeAlertText(strategyResult.action);
   const message =
-    `${item.name} ${formatNumber(item.currentPrice)}원 · ${strategyResult.reason}`;
+    `${cleanStockName(item.name)} ${formatNumber(item.currentPrice)}원 · ${strategyResult.reason}`;
 
   const type =
     strategyResult.action === "STOP_LOSS" ? "down" : "up";
@@ -4137,7 +4144,7 @@ async function runAllDiscoveredBacktests() {
         : "safe";
 
     updateApiStatus(
-      `전체 자동 백테스트 진행중 · ${completed + 1}/${targetItems.length} · ${item.name}`
+      `전체 자동 백테스트 진행중 · ${completed + 1}/${targetItems.length} · ${cleanStockName(item.name)}`
     );
 
     backtestCodeInput.value = item.name;
@@ -4447,7 +4454,7 @@ backtestResult.innerHTML = `
 
 ${results.map((item) => `
   <div class="backtest-compare-summary-row">
-    <strong>${item.name}</strong>
+    <strong>${cleanStockName(item.name)}</strong>
     <span>수익률 ${item.profitRate}</span>
     <span>승률 ${item.winRate}</span>
     <span>신호 ${item.tradeCount}</span>
@@ -4458,7 +4465,7 @@ ${results.map((item) => `
   ${results.map((item) => `
     <div class="backtest-compare-box">
       <div class="backtest-compare-title">
-        ${item.name}
+        ${cleanStockName(item.name)}
       </div>
 
       ${item.html}
@@ -5012,7 +5019,7 @@ const trailingSellPrice =
           <div class="hold-top">
             <div>
               <div class="hold-name">
-  ${item.name}
+  ${cleanStockName(item.name)}
   ${item.isFallback ? `<span class="fallback-badge">저장가</span>` : ""}
 </div>
               <div class="hold-code">${item.code}</div>
