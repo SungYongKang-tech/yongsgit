@@ -5794,6 +5794,7 @@ async function runAutoDiscover() {
       5,    async (stock) => {
         try {
           const item = await fetchStockPrice(stock.code);
+          console.log("가격조회 성공:", stock.code, stock.name, item);
 
           const volumeInfo = await getVolumePower(stock.code);
 
@@ -5809,7 +5810,7 @@ item.avgVolume = volumeInfo.avgVolume;
 }
 
 const discover = getDiscoverScore(item);
-
+console.log("점수계산:", stock.code, stock.name, discover);
 const minScore = Number(discoverMinScoreInput?.value || 5);
 
 console.log(
