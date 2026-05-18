@@ -4288,6 +4288,8 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "safe") {
 
   holdQtyInput.value = qty;
 
+  holdCodeInput.dataset.strategyPreset = strategyPreset;
+
   addHoldBtn.click();
 }
 
@@ -5310,29 +5312,43 @@ function addHolding() {
     return;
   }
 
-  const newHolding = {
-    code,
-    name,
-    buyPrice,
-    qty,
-    targetPrice,
-    secondTargetPrice,
-    trailingStopRate,
-    highestPrice: 0,
-    stopLossPrice,
-    autoTrade: true
-  };
+  const strategyPreset =
+  holdCodeInput.dataset.strategyPreset || "safe";
+
+const strategyName =
+  strategyPreset === "trend"
+    ? "추세형"
+    : strategyPreset === "short"
+    ? "단타형"
+    : "안정형";
+
+const newHolding = {
+  code,
+  name,
+  buyPrice,
+  qty,
+  targetPrice,
+  secondTargetPrice,
+  trailingStopRate,
+  highestPrice: 0,
+  stopLossPrice,
+  autoTrade: true,
+  strategyPreset,
+  strategyName
+};
 
   holdings.push(newHolding);
 
-  strategyStates[code] = {
-    status: "WAITING",
-    lastAction: "NONE",
-    lastSignalTime: null,
-    lastSignalPrice: null,
-    lastSoldQty: 0,
-    remainQty: 0
-  };
+ strategyStates[code] = {
+  status: "BUY",
+  lastAction: "BUY",
+  lastSignalTime: new Date().toLocaleString("ko-KR"),
+  lastSignalPrice: buyPrice,
+  lastSoldQty: 0,
+  remainQty: qty,
+  strategyPreset,
+  strategyName
+};
 
  
   saveStrategyStates();
