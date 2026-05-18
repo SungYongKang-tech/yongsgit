@@ -2001,6 +2001,7 @@ async function runRefreshLoop() {
   await refreshWithoutJump();
 
   await runMorningAutoFlow();
+  await runClosingProfitSell();
 
   autoRefreshTimer = setTimeout(() => {
     runRefreshLoop();
@@ -4591,6 +4592,69 @@ ${results.map((item) => `
     </div>
   `).join("")}
 `;
+}
+
+const CLOSING_PROFIT_SELL_KEY = "kiwoom_closing_profit_sell_time";
+
+async function runClosingProfitSell() {
+  const now = new Date();
+  const todayKey = getTodayKey();
+
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+
+  // 15:10 이후, 15:30 전까지만 실행
+  if (hour !== 15 || minute < 10 || minute > 30) return;
+
+  // 하루 1번만 실행
+  if (localStorage.getItem(CLOSING_PROFIT_SELL_KEY) === todayKey) return;
+
+  if (!holdings || holdings.length === 0) return;
+
+  let sellCount = 0;
+
+  for (const item of holdings) {
+    const currentPrice = Number(item.currentPrice || 0);
+    const buyPrice = Number(item.buyPrice || 0);
+
+    if (!currentPrice || !buyPrice) continue;
+
+    const profitRate =
+      ((currentPrice - buyPrice) / buyPrice) * 100;
+
+    // 수익이 1% 미만이면 유지
+    if (profitRate < 1) continue;
+
+    if (item.strategyPreset === "short") {
+      executeVirtualSell(item.code, "SELL_ALL");
+      addTradeLog({
+        type: "SELL_ALL",
+        code: item.code,
+        name: item.name,
+        price: currentPrice,
+        reason: "장 종료 전 단타형 수익 종목 전량 정리"
+      });
+      sellCount++;
+    } else if (item.strategyPreset === "trend") {
+      executeVirtualSell(item.code, "SELL");
+      addTradeLog({
+        type: "SELL",
+        code: item.code,
+        name: item.name,
+        price: currentPrice,
+        reason: "장 종료 전 추세형 수익 종목 50% 익절"
+      });
+      sellCount++;
+    }
+  }
+
+  if (sellCount > 0) {
+    localStorage.setItem(CLOSING_PROFIT_SELL_KEY, todayKey);
+    saveHoldings();
+    renderHoldings();
+    renderTradeLogs();
+    updateApiStatus(`장 종료 전 수익 종목 정리 완료 · ${sellCount}건`);
+  }
 }
 
 function applyBestStrategy() {
