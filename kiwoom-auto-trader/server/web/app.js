@@ -5263,6 +5263,7 @@ function autoAddVirtualHolding(item) {
   }
 
   const price = Number(item.currentPrice || 0);
+  const currentPrice = price;
   if (price <= 0) return false;
 
   const recommended = getRecommendedStrategyForCode(item.code);
@@ -5786,7 +5787,7 @@ async function runAutoDiscover() {
     return true;
   })
   .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
-  .slice(0, 300);
+  .slice(0, Number(discoverLimitInput?.value || 1200));
 
     const results = (await runInBatches(
       targetStocks,
@@ -5807,9 +5808,20 @@ item.avgVolume = volumeInfo.avgVolume;
   return null;
 }
 
-          const discover = getDiscoverScore(item);
+const discover = getDiscoverScore(item);
 
 const minScore = Number(discoverMinScoreInput?.value || 5);
+
+console.log(
+  "발굴점검:",
+  stock.code,
+  stock.name,
+  "현재가", price,
+  "등락률", item.changeRate,
+  "거래량", item.volume,
+  "점수", discover.score,
+  "사유", discover.reasons
+);
 
 if (price > 0 && discover.score >= minScore) {
   return {
@@ -5819,7 +5831,10 @@ if (price > 0 && discover.score >= minScore) {
   };
 }
 
-          return null;
+return null;
+
+
+
         } catch (error) {
   console.warn(
     "자동발굴 종목 조회 실패:",
