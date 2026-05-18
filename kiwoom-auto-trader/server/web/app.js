@@ -3303,10 +3303,7 @@ function executeManualSell(code) {
   }
 
   const sellPrice = Number(
-    prompt(
-      "매도 단가를 입력하세요.",
-      currentPrice
-    )
+    prompt("매도 단가를 입력하세요.", currentPrice)
   );
 
   if (!sellPrice || sellPrice <= 0) {
@@ -3366,7 +3363,7 @@ function executeManualSell(code) {
 
   strategyStates[code] = {
     ...(strategyStates[code] || {}),
-    status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
+    status: remainQty > 0 ? "MANUAL_PARTIAL_SOLD" : "MANUAL_SOLD",
     lastAction: resultText,
     lastSignalTime: new Date().toLocaleString("ko-KR"),
     lastSignalPrice: sellPrice,
@@ -3377,11 +3374,15 @@ function executeManualSell(code) {
   saveStrategyStates();
   saveHoldings();
 
-  renderVirtualResults();
   renderHoldings();
+  renderVirtualResults();
 
   alert(`${resultText} 처리되었습니다.`);
 }
+
+
+
+
 
 const PRICE_CACHE = {};
 const PRICE_CACHE_TTL = 14500; // 14.5초 캐시
@@ -4913,6 +4914,15 @@ function updateHoldingItemOnly(item) {
 }
 
 function bindHoldItemEvents() {
+
+  document.querySelectorAll(".hold-manual-sell").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const code = btn.dataset.holdCode;
+    executeManualSell(code);
+  });
+});
+
+
   document.querySelectorAll(".hold-remove").forEach((btn) => {
     btn.addEventListener("click", () => {
       const code = btn.dataset.holdCode;
@@ -4932,6 +4942,8 @@ function bindHoldItemEvents() {
       holdings = holdings.map((item) => {
         if (item.code === code) {
   const nextAutoTrade = !item.autoTrade;
+
+  
 
   if (nextAutoTrade) {
   if (
