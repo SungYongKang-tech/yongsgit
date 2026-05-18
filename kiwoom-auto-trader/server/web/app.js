@@ -116,7 +116,7 @@ const filterWeakCandleInput =
 const BACKTEST_HISTORY_KEY = "kiwoom_backtest_history";
 
 const MORNING_AUTO_RUN_KEY =
-  "kiwoom_morning_auto_run_date";
+  "kiwoom_morning_auto_run_time";
 
 let isMorningAutoFlowRunning = false;
 
@@ -5848,19 +5848,26 @@ if (clearTradeLogBtn) {
 if (resetHoldingsBtn) {
   resetHoldingsBtn.addEventListener("click", () => {
     const ok = confirm(
-      "보유종목과 전략상태를 모두 초기화할까요?\n\n매매 로그는 삭제되지 않습니다."
+      "보유종목, 전략상태, 수익/손실 요약을 모두 초기화할까요?\n\n매매 로그와 모의투자 결과도 함께 삭제됩니다."
     );
 
     if (!ok) return;
 
     holdings = [];
     strategyStates = {};
+    tradeLogs = [];
+    virtualResults = [];
 
     saveHoldings();
     saveStrategyStates();
-    renderHoldings();
+    saveTradeLogs();
+    saveVirtualResults();
 
-    alert("보유종목과 전략상태가 초기화되었습니다.");
+    renderHoldings();
+    renderTradeLogs();
+    renderVirtualResults();
+
+    alert("보유종목과 수익/손실 요약이 모두 초기화되었습니다.");
   });
 }
 
