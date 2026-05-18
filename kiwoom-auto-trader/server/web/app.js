@@ -5639,6 +5639,7 @@ function getDiscoverScore(item) {
   const rate = parseFloat(item.changeRate);
   const volume = Number(item.volume || 0);
   const price = Number(item.currentPrice || 0);
+  const currentPrice = price; // 이 줄 추가
 
 
   const open = Number(item.open || 0);
