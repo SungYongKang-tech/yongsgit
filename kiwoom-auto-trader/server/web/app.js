@@ -660,6 +660,10 @@ if (defaultBuyAmountInput) {
   defaultBuyAmountInput.value = formatNumber(defaultBuyAmount);
 }
 
+setupCommaInput(defaultBuyAmountInput);
+setupCommaInput(volumeThresholdInput);
+setupCommaInput(dailyMaxLossInput);
+
 if (maxHoldingCountInput) {
   maxHoldingCountInput.value = maxHoldingCount;
 }
@@ -2012,6 +2016,21 @@ async function runRefreshLoop() {
   `자동갱신 시작 · ${getRefreshInterval() / 1000}초 주기`
 );
   runRefreshLoop();
+}
+
+function setupCommaInput(inputEl) {
+  if (!inputEl) return;
+
+  inputEl.addEventListener("input", () => {
+    const value = inputEl.value.replace(/,/g, "").replace(/[^\d]/g, "");
+
+    if (!value) {
+      inputEl.value = "";
+      return;
+    }
+
+    inputEl.value = Number(value).toLocaleString("ko-KR");
+  });
 }
 
 function stopAutoRefresh() {
