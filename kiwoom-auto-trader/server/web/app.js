@@ -1342,10 +1342,10 @@ if (historyRows.length >= 2) {
   historyGrade
 };
     })
-    .filter((item) => {
-  const currentSettings = getCurrentDiscoverSettings();
-  return item.strongScore >= currentSettings.minScore;
-})
+//    .filter((item) => {
+//  const currentSettings = getCurrentDiscoverSettings();
+//  return item.strongScore >= currentSettings.minScore;
+//})
     .sort((a, b) => {
       if (b.strongScore !== a.strongScore) {
         return b.strongScore - a.strongScore;
@@ -4191,6 +4191,106 @@ alert(
 );
 }
 
+async function autoBacktestAndBuyDiscoveredItems() {
+  if (!latestStrongItems || latestStrongItems.length === 0) {
+    alert("자동발굴 후보가 없습니다.");
+    return;
+  }
+
+  const maxCount = getAvailableBuySlots();
+  if (maxCount <= 0) {
+    alert("최대 보유종목 수에 도달했습니다.");
+    return;
+  }
+
+  const targets = latestStrongItems.slice(0, maxCount);
+
+  for (const item of targets) {
+    if (isAlreadyHolding(item.code)) continue;
+
+    if (!watchCodes.includes(item.code)) {
+      watchCodes.push(item.code);
+      saveWatchCodes();
+    }
+
+    const preset =
+      item.recommendType === "추세형"
+        ? "trend"
+        : item.recommendType === "단타형"
+        ? "short"
+        : "safe";
+
+    applyBacktestPreset(preset);
+
+    backtestCodeInput.value = item.name;
+    selectedStockCodes.backtest = item.code;
+
+    await runBacktest();
+
+    const latestBacktest = getLatestBacktestForCode(item.code);
+
+    if (!isBacktestPassed(latestBacktest)) {
+      console.log("백테스트 미통과:", item.name, latestBacktest);
+      continue;
+    }
+
+    prepareAndAddVirtualBuy(item, preset);
+  }
+
+  saveWatchCodes();
+  await loadWatchList(true);
+  await renderHoldings(true);
+  renderTradeLogs();
+}
+
+function prepareAndAddVirtualBuy(item, strategyPreset = "safe") {
+  const price = Number(item.currentPrice || item.price || 0);
+
+  if (!price || price <= 0) {
+    console.warn("가상매수 실패: 현재가 없음", item);
+    return;
+  }
+
+  if (isAlreadyHolding(item.code)) return;
+  if (getAvailableBuySlots() <= 0) return;
+
+  holdCodeInput.value = item.name;
+  selectedStockCodes.hold = item.code;
+
+  buyPriceInput.value = price;
+
+  let targetRate = 1.04;
+  let secondTargetRate = 1.06;
+  let stopLossRate = 0.97;
+  let trailingRate = 3;
+
+  if (strategyPreset === "trend") {
+    targetRate = 1.07;
+    secondTargetRate = 1.12;
+    stopLossRate = 0.96;
+    trailingRate = 4;
+  } else if (strategyPreset === "short") {
+    targetRate = 1.03;
+    secondTargetRate = 1.05;
+    stopLossRate = 0.98;
+    trailingRate = 2;
+  }
+
+  targetPriceInput.value = Math.round(price * targetRate);
+  secondTargetPriceInput.value = Math.round(price * secondTargetRate);
+  stopLossPriceInput.value = Math.round(price * stopLossRate);
+  trailingStopRateInput.value = trailingRate;
+
+  const perBuyAmount = getPerBuyAmount();
+
+  const qty = Math.floor(perBuyAmount / price);
+  if (qty <= 0) return;
+
+  holdQtyInput.value = qty;
+
+  addHoldBtn.click();
+}
+
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -4243,7 +4343,7 @@ async function runMorningAutoFlow() {
       "장시작 자동흐름 실행중 · 자동 백테스트 시작"
     );
 
-    await runAllDiscoveredBacktests();
+   await autoBacktestAndBuyDiscoveredItems();
 
     localStorage.setItem(
       MORNING_AUTO_RUN_KEY,
@@ -5922,22 +6022,11 @@ strongStockBox.prepend(summaryEl);
 function isBacktestPassed(record) {
   if (!record) return false;
 
-  const finalProfitRate =
-    Number(record.finalProfitRate || 0);
+  const finalProfitRate = Number(record.finalProfitRate || 0);
+  const tradeCount = Number(record.tradeCount || 0);
 
-  const winRate =
-    Number(record.winRate || 0);
-
-  const tradeCount =
-    Number(record.tradeCount || 0);
-
-  const worstTradeRate =
-    Number(record.worstTradeRate || 0);
-
-  if (tradeCount < 2) return false;
-  if (finalProfitRate <= 0) return false;
-  if (winRate < 50) return false;
-  if (worstTradeRate <= -5) return false;
+  if (tradeCount < 1) return false;
+  if (finalProfitRate < -3) return false;
 
   return true;
 }
