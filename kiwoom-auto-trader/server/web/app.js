@@ -990,6 +990,13 @@ const rateClass = getRateClass(data.changeRate);
       </div>
     `;
   } catch (error) {
+    console.error(
+  "API 조회 실패",
+  code,
+  error?.message,
+  error
+);
+
     resultCard.innerHTML = `
       <div class="error">
         조회 실패<br />
@@ -1907,9 +1914,18 @@ async function refreshWithoutJump() {
       `자동조회중 · ${uniqueCodes.length}개 종목`
     );
 
-    await Promise.all(
-      uniqueCodes.map((code) => fetchStockPrice(code))
+    for (const code of uniqueCodes) {
+  try {
+    await fetchStockPrice(code);
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 120)
     );
+
+  } catch (error) {
+    console.error("순차조회 실패", code, error);
+  }
+}
 
     await loadWatchList(true);
     await renderHoldings(true);
@@ -3466,6 +3482,15 @@ async function fetchStockPrice(code) {
   if (!res.ok) {
   console.error("현재가 조회 API 오류:", data);
 
+  console.error(
+  "API 조회 실패 상세",
+  code,
+  "status:",
+  res.status,
+  "data:",
+  data
+);
+
  if (res.status === 429) {
   stopAutoRefresh();
 
@@ -3496,15 +3521,21 @@ updateApiStatus(
 }
 
 if (lastPriceData[code]) {
+  console.warn(
+    "마지막 정상가 사용",
+    code,
+    lastPriceData[code]
+  );
+
   updateApiStatus(
     `API 실패 · 마지막 정상가 사용 (${lastPriceData[code].savedAt})`,
     true
   );
 
   return {
-  ...lastPriceData[code],
-  isFallback: true
-};
+    ...lastPriceData[code],
+    isFallback: true
+  };
 }
 
 throw new Error(
@@ -4307,6 +4338,18 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "safe") {
     console.warn("가상매수 실패: 현재가 없음", item);
     return;
   }
+
+  const earlySignal = getEarlyRiseSignal(item);
+
+if (!earlySignal.pass) {
+  console.log(
+    "가상매수 제외: 초기상승 신호 부족",
+    item.name,
+    earlySignal.score,
+    earlySignal.reasons
+  );
+  return;
+}
 
   if (isAlreadyHolding(item.code)) return;
   if (getAvailableBuySlots() <= 0) return;
@@ -5537,6 +5580,19 @@ function autoAddVirtualHolding(item) {
   const price = Number(item.currentPrice || 0);
   const currentPrice = price;
   if (price <= 0) return false;
+
+  const earlySignal = getEarlyRiseSignal(item);
+
+if (!earlySignal.pass) {
+  console.log(
+    "자동매수 제외: 초기상승 신호 부족",
+    item.name,
+    earlySignal.score,
+    earlySignal.reasons
+  );
+  return false;
+}
+
   if (isBadBuyTiming(item)) {
   return false;
 }
@@ -6223,6 +6279,60 @@ function isBacktestPassed(record) {
   if (winRate < 45) return false;
 
   return true;
+}
+
+function getEarlyRiseSignal(item) {
+  const price = Number(item.currentPrice || item.price || 0);
+  const open = Number(item.open || 0);
+  const high = Number(item.high || 0);
+  const low = Number(item.low || 0);
+  const volume = Number(item.volume || 0);
+  const rate = parseFloat(item.changeRate);
+
+  if (!price || !open || !high || !low) {
+    return { pass: false, score: 0, reasons: ["가격 데이터 부족"] };
+  }
+
+  let score = 0;
+  const reasons = [];
+
+  if (!isNaN(rate) && rate >= 5) {
+    return { pass: false, score: 0, reasons: ["이미 급등"] };
+  }
+
+  if (price > open) {
+    score += 2;
+    reasons.push("시가 위 유지");
+  }
+
+  const range = high - low;
+  const position = range > 0 ? ((price - low) / range) * 100 : 0;
+
+  if (position >= 45 && position <= 75) {
+    score += 2;
+    reasons.push("당일 중상단");
+  }
+
+  if (position > 85) {
+    score -= 2;
+    reasons.push("고가권 추격위험");
+  }
+
+  if (volumeThreshold > 0 && volume >= volumeThreshold) {
+    score += 2;
+    reasons.push("거래량 기준 통과");
+  }
+
+  if (!isNaN(rate) && rate >= 1 && rate <= 3.5) {
+    score += 2;
+    reasons.push("초기 상승구간");
+  }
+
+  return {
+    pass: score >= 6,
+    score,
+    reasons
+  };
 }
 
 function isBadBuyTiming(item) {
