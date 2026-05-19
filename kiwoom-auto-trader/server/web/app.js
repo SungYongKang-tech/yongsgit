@@ -121,6 +121,11 @@ const MORNING_AUTO_RUN_KEY =
 
 let isMorningAutoFlowRunning = false;
 
+const AUTO_BUY_BLOCK_KEY = "kiwoom_auto_buy_blocked";
+
+let isAutoBuyBlocked =
+  localStorage.getItem(AUTO_BUY_BLOCK_KEY) === "true";
+
 
 let backtestHistory =
   JSON.parse(localStorage.getItem(BACKTEST_HISTORY_KEY)) || [];
@@ -2113,15 +2118,20 @@ function stopAutoRefresh() {
 
   
 function stopAllAutoTradeByRisk(reason) {
-  stopAutoRefresh();
+  isAutoBuyBlocked = true;
 
-  holdings = holdings.map((item) => ({
-    ...item,
-    autoTrade: false
-  }));
+  localStorage.setItem(
+    AUTO_BUY_BLOCK_KEY,
+    "true"
+  );
 
-  saveHoldings();
+  updateApiStatus(
+    "하루 최대 손실 도달 · 신규 자동매수 중지 · 기존 보유 감시 유지",
+    true
+  );
+
   renderHoldings();
+  renderTradeLogs();
 
   alert(reason);
 }
@@ -4379,6 +4389,11 @@ async function autoBacktestAndBuyDiscoveredItems() {
 }
 
 function prepareAndAddVirtualBuy(item, strategyPreset = "safe") {
+   if (isAutoBuyBlocked) {
+    console.warn("신규 가상매수 차단 상태입니다.");
+    return;
+  }
+  
   const price = Number(item.currentPrice || item.price || 0);
 
   if (!price || price <= 0) {
@@ -4459,6 +4474,14 @@ function canRunMorningAutoFlow() {
 
   if (!isAutoRefresh) return false;
   if (isMorningAutoFlowRunning) return false;
+
+  if (isAutoBuyBlocked) {
+  updateApiStatus(
+    "신규 자동매수 차단중 · 기존 보유종목 감시중",
+    true
+  );
+  return false;
+}
 
   if (getAvailableBuySlots() <= 0) {
     return false;
@@ -5613,6 +5636,10 @@ const newHolding = {
 }
 
 function autoAddVirtualHolding(item) {
+   if (isAutoBuyBlocked) {
+    console.warn("신규 자동매수 차단 상태입니다.");
+    return false;
+  }
   if (!item || !item.code) return false;
 
   if (isAlreadyHolding(item.code)) return false;
