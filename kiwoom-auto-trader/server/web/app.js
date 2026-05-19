@@ -32,15 +32,12 @@ const strongStockBox =
 const autoDiscoverBtn =
   document.getElementById("autoDiscoverBtn");
 
-const autoDiscoverAutoBtn =
-  document.getElementById("autoDiscoverAutoBtn");
 
-let autoDiscoverTimer = null;
-const AUTO_DISCOVER_AUTO_KEY =
-  "kiwoom_auto_discover_auto";
+  const resetMorningAutoBtn =
+  document.getElementById("resetMorningAutoBtn");
 
-let isAutoDiscoverAuto =
-  localStorage.getItem(AUTO_DISCOVER_AUTO_KEY) === "true";
+
+
 
 const DISCOVER_SETTING_KEY = "kiwoom_discover_settings";
 
@@ -119,6 +116,7 @@ const MORNING_AUTO_RUN_KEY =
   "kiwoom_morning_auto_run_time";
 
 let isMorningAutoFlowRunning = false;
+
 
 let backtestHistory =
   JSON.parse(localStorage.getItem(BACKTEST_HISTORY_KEY)) || [];
@@ -2048,86 +2046,9 @@ function stopAutoRefresh() {
   }
 }
 
-function updateAutoDiscoverAutoUi() {
-  if (autoDiscoverAutoBtn) {
-    autoDiscoverAutoBtn.textContent =
-      isAutoDiscoverAuto ? "자동ON" : "자동OFF";
 
-    autoDiscoverAutoBtn.classList.toggle(
-      "active",
-      isAutoDiscoverAuto
-    );
-  }
 
-  const autoDiscoverState =
-    document.getElementById("autoDiscoverState");
-
-  if (autoDiscoverState) {
-    autoDiscoverState.textContent =
-      isAutoDiscoverAuto ? "ON" : "OFF";
-
-    autoDiscoverState.classList.toggle(
-      "on",
-      isAutoDiscoverAuto
-    );
-
-    autoDiscoverState.classList.toggle(
-      "off",
-      !isAutoDiscoverAuto
-    );
-  }
-}
-
-async function startAutoDiscoverAuto() {
-  if (autoDiscoverTimer) {
-    clearTimeout(autoDiscoverTimer);
-  }
-
-  isAutoDiscoverAuto = true;
-
-localStorage.setItem(
-  AUTO_DISCOVER_AUTO_KEY,
-  "true"
-);
-
-updateAutoDiscoverAutoUi();
-
-  async function loop() {
-    if (!isAutoDiscoverAuto) return;
-
-    try {
-      await runAutoDiscover();
-    } catch (error) {
-      console.error("자동발굴 실패:", error);
-    }
-
-    autoDiscoverTimer = setTimeout(() => {
-      loop();
-    }, 60000);
-  }
-
-  loop();
-}
-
-function stopAutoDiscoverAuto() {
-  isAutoDiscoverAuto = false;
-
-localStorage.setItem(
-  AUTO_DISCOVER_AUTO_KEY,
-  "false"
-);
-
-  if (autoDiscoverTimer) {
-    clearTimeout(autoDiscoverTimer);
-    autoDiscoverTimer = null;
-  }
-
-  updateAutoDiscoverAutoUi();
-  if (isAutoDiscoverAuto) {
-  startAutoDiscoverAuto();
-}
-}
-
+  
 function stopAllAutoTradeByRisk(reason) {
   stopAutoRefresh();
 
@@ -2172,17 +2093,7 @@ if (isAutoRefresh) {
   startAutoRefresh();
 }
 
-if (autoDiscoverAutoBtn) {
-  autoDiscoverAutoBtn.addEventListener("click", () => {
-    if (isAutoDiscoverAuto) {
-      stopAutoDiscoverAuto();
-    } else {
-      startAutoDiscoverAuto();
-    }
-  });
-}
 
-updateAutoDiscoverAutoUi();
 
 if (testModeBtn) {
   testModeBtn.addEventListener("click", () => {
@@ -5496,9 +5407,21 @@ holdSummary.innerHTML = `
 function addHolding() {
   const targetPrice = Number(targetPriceInput.value) || 0;
   const stopLossPrice = Number(stopLossPriceInput.value) || 0;
-  const stock = findStockByInput(holdCodeInput.value.trim());
-  const code = stock?.code;
-  const name = stock?.name || holdCodeInput.value.trim();
+  const inputName = holdCodeInput.value.trim();
+
+const code =
+  getSelectedStockCode(holdCodeInput, "hold") ||
+  selectedStockCodes.hold ||
+  "";
+
+const stock =
+  STOCK_MASTER.find((item) => item.code === code) ||
+  findStockByInput(inputName);
+
+const name =
+  stock?.name ||
+  inputName ||
+  code;
   const buyPrice = Number(buyPriceInput.value);
   const qty = Number(holdQtyInput.value);
   const secondTargetPrice = Number(secondTargetPriceInput.value) || 0;
@@ -5614,6 +5537,9 @@ function autoAddVirtualHolding(item) {
   const price = Number(item.currentPrice || 0);
   const currentPrice = price;
   if (price <= 0) return false;
+  if (isBadBuyTiming(item)) {
+  return false;
+}
 
   const recommended = getRecommendedStrategyForCode(item.code);
 
@@ -6279,16 +6205,68 @@ strongStockBox.prepend(summaryEl);
 }
 
 
+
 function isBacktestPassed(record) {
   if (!record) return false;
 
   const finalProfitRate = Number(record.finalProfitRate || 0);
   const tradeCount = Number(record.tradeCount || 0);
+  const winRate = Number(record.winRate || 0);
 
-  if (tradeCount < 1) return false;
-  if (finalProfitRate < -3) return false;
+  // 신호가 너무 적으면 우연일 가능성이 큼
+  if (tradeCount < 2) return false;
+
+  // 손실 또는 겨우 본전 수준은 통과 금지
+  if (finalProfitRate < 1) return false;
+
+  // 승률도 최소 기준 적용
+  if (winRate < 45) return false;
 
   return true;
+}
+
+function isBadBuyTiming(item) {
+  const price = Number(item.currentPrice || item.price || 0);
+  const rate = parseFloat(item.changeRate);
+  const high = Number(item.high || 0);
+  const low = Number(item.low || 0);
+  const volume = Number(item.volume || 0);
+
+  if (!price || price <= 0) return true;
+
+  // 당일 급등 추격매수 방지
+  if (!isNaN(rate) && rate >= 5) {
+    console.log("매수 제외: 당일 급등", item.name, rate);
+    return true;
+  }
+
+  // 고가 너무 근처에서 매수 금지
+  if (high > 0) {
+    const highGapRate = ((high - price) / high) * 100;
+
+    if (highGapRate < 1.5) {
+      console.log("매수 제외: 고가 근처", item.name, highGapRate);
+      return true;
+    }
+  }
+
+  // 저가 대비 너무 많이 올라온 상태면 추격매수 가능성
+  if (low > 0) {
+    const reboundRate = ((price - low) / low) * 100;
+
+    if (reboundRate >= 6) {
+      console.log("매수 제외: 저가 대비 과상승", item.name, reboundRate);
+      return true;
+    }
+  }
+
+  // 거래량이 너무 없으면 제외
+  if (volumeThreshold > 0 && volume < volumeThreshold) {
+    console.log("매수 제외: 거래량 부족", item.name, volume);
+    return true;
+  }
+
+  return false;
 }
 
 function getLatestBacktestForCode(code) {
