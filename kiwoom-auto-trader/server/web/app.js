@@ -6507,21 +6507,3 @@ function saveDiscoverSettings() {
     JSON.stringify(settings)
   );
 }
-
-function formatNumberInput(input) {
-  input.addEventListener("input", () => {
-    const value = input.value.replace(/,/g, "").replace(/\D/g, "");
-
-    if (!value) {
-      input.value = "";
-      return;
-    }
-
-    input.value = Number(value).toLocaleString();
-  });
-}
-
-formatNumberInput(volumeThresholdInput);
-formatNumberInput(defaultBuyAmountInput);
-formatNumberInput(dailyMaxLossInput);
-
