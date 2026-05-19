@@ -2498,14 +2498,14 @@ function renderTradeLogs() {
   if (!tradeLogList) return;
 
   if (tradeLogs.length === 0) {
-  tradeLogList.innerHTML =
-    `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
+    tradeLogList.innerHTML =
+      `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
 
-  renderTradeStats();
-renderRiskStatus();
-renderVirtualResults();
-return;
-}
+    renderTradeStats();
+    renderRiskStatus();
+    renderVirtualResults();
+    return;
+  }
 
   tradeLogList.innerHTML = tradeLogs
     .slice()
@@ -2526,6 +2526,9 @@ return;
         log.type === "STOP_LOSS" ? "down" : "up";
 
       return `
+        
+
+
         <div class="trade-log-item">
           <div class="trade-log-main">
             <strong class="${typeClass}">[${typeText}] ${log.name}</strong>
@@ -4393,7 +4396,7 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "safe") {
     console.warn("신규 가상매수 차단 상태입니다.");
     return;
   }
-  
+
   const price = Number(item.currentPrice || item.price || 0);
 
   if (!price || price <= 0) {
@@ -5934,6 +5937,8 @@ if (resetHoldingsBtn) {
     "보유종목, 수익/손실 요약, 거래로그가 초기화되었습니다."
   );
 });
+
+}
 
 if (runBacktestBtn) {
   runBacktestBtn.addEventListener("click", runBacktest);
