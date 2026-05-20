@@ -4391,53 +4391,58 @@ async function autoBacktestAndBuyDiscoveredItems() {
   renderTradeLogs();
 }
 
-function prepareAndAddVirtualBuy(item, strategyPreset = "safe") {
-   if (isAutoBuyBlocked) {
+function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
+  if (isAutoBuyBlocked) {
     console.warn("신규 가상매수 차단 상태입니다.");
-    return;
+    return false;
   }
 
   const price = Number(item.currentPrice || item.price || 0);
 
   if (!price || price <= 0) {
     console.warn("가상매수 실패: 현재가 없음", item);
-    return;
+    return false;
   }
+
+  if (isAlreadyHolding(item.code)) return false;
+  if (getAvailableBuySlots() <= 0) return false;
 
   const earlySignal = getEarlyRiseSignal(item);
 
-if (!earlySignal.pass) {
-  console.log(
-    "가상매수 제외: 초기상승 신호 부족",
-    item.name,
-    earlySignal.score,
-    earlySignal.reasons
-  );
-  return;
-}
-
-  if (isAlreadyHolding(item.code)) return;
-  if (getAvailableBuySlots() <= 0) return;
+  if (!earlySignal.pass) {
+    console.log(
+      "가상매수 제외: 빠른진입 조건 미통과",
+      item.name,
+      earlySignal.score,
+      earlySignal.reasons
+    );
+    return false;
+  }
 
   holdCodeInput.value = item.name;
   selectedStockCodes.hold = item.code;
 
   buyPriceInput.value = price;
 
-  let targetRate = 1.04;
-  let secondTargetRate = 1.06;
-  let stopLossRate = 0.97;
-  let trailingRate = 3;
+  // 빠른 진입형 기본값
+  let targetRate = 1.025;
+  let secondTargetRate = 1.045;
+  let stopLossRate = 0.985;
+  let trailingRate = 1.5;
 
+  // 추세형이면 조금 더 길게
   if (strategyPreset === "trend") {
-    targetRate = 1.07;
-    secondTargetRate = 1.12;
-    stopLossRate = 0.96;
-    trailingRate = 4;
-  } else if (strategyPreset === "short") {
+    targetRate = 1.04;
+    secondTargetRate = 1.07;
+    stopLossRate = 0.975;
+    trailingRate = 2.5;
+  }
+
+  // 안정형도 너무 느리지 않게
+  if (strategyPreset === "safe") {
     targetRate = 1.03;
     secondTargetRate = 1.05;
-    stopLossRate = 0.98;
+    stopLossRate = 0.982;
     trailingRate = 2;
   }
 
@@ -4448,14 +4453,33 @@ if (!earlySignal.pass) {
 
   const perBuyAmount = getPerBuyAmount();
 
-  const qty = Math.floor(perBuyAmount / price);
-  if (qty <= 0) return;
+  // 빠른 진입은 1종목당 금액을 조금 줄임
+  const buyAmount =
+    strategyPreset === "short"
+      ? Math.round(perBuyAmount * 0.7)
+      : perBuyAmount;
+
+  const qty = Math.floor(buyAmount / price);
+
+  if (qty <= 0) {
+    console.warn("가상매수 실패: 수량 0", item.name);
+    return false;
+  }
 
   holdQtyInput.value = qty;
-
   holdCodeInput.dataset.strategyPreset = strategyPreset;
 
   addHoldBtn.click();
+
+  console.log(
+    "자동 가상매수 등록",
+    item.name,
+    price,
+    qty,
+    earlySignal.reasons
+  );
+
+  return true;
 }
 
 function getTodayKey() {
@@ -6356,14 +6380,14 @@ function isBacktestPassed(record) {
   const tradeCount = Number(record.tradeCount || 0);
   const winRate = Number(record.winRate || 0);
 
-  // 신호가 너무 적으면 우연일 가능성이 큼
-  if (tradeCount < 2) return false;
+  // 최소 한 번이라도 매매 신호가 있었으면 인정
+  if (tradeCount < 1) return false;
 
-  // 손실 또는 겨우 본전 수준은 통과 금지
-  if (finalProfitRate < 1) return false;
+  // 하락장 대응: 큰 손실 전략만 제외
+  if (finalProfitRate < -1.5) return false;
 
-  // 승률도 최소 기준 적용
-  if (winRate < 45) return false;
+  // 거래가 2번 이상인데 승률이 너무 낮으면 제외
+  if (tradeCount >= 2 && winRate < 30) return false;
 
   return true;
 }
@@ -6377,46 +6401,54 @@ function getEarlyRiseSignal(item) {
   const rate = parseFloat(item.changeRate);
 
   if (!price || !open || !high || !low) {
-    return { pass: false, score: 0, reasons: ["가격 데이터 부족"] };
+    return {
+      pass: false,
+      score: 0,
+      reasons: ["가격 데이터 부족"]
+    };
   }
 
   let score = 0;
   const reasons = [];
 
-  if (!isNaN(rate) && rate >= 5) {
-    return { pass: false, score: 0, reasons: ["이미 급등"] };
+  // 1. 완전 급등만 제외
+  if (!isNaN(rate) && rate >= 12) {
+    return {
+      pass: false,
+      score: 0,
+      reasons: ["12% 이상 급등 과열"]
+    };
   }
 
-  if (price > open) {
+  // 2. 하락장에서 반등 시작도 허용
+  if (!isNaN(rate) && rate >= -2 && rate <= 8) {
     score += 2;
-    reasons.push("시가 위 유지");
+    reasons.push("매수 가능 등락률");
   }
 
+  // 3. 시가 회복 또는 시가 근처
+  if (price >= open * 0.99) {
+    score += 2;
+    reasons.push("시가 회복/근접");
+  }
+
+  // 4. 당일 위치
   const range = high - low;
-  const position = range > 0 ? ((price - low) / range) * 100 : 0;
+  const position = range > 0 ? ((price - low) / range) * 100 : 50;
 
-  if (position >= 45 && position <= 75) {
+  if (position >= 25 && position <= 90) {
     score += 2;
-    reasons.push("당일 중상단");
+    reasons.push("당일 위치 양호");
   }
 
-  if (position > 85) {
-    score -= 2;
-    reasons.push("고가권 추격위험");
-  }
-
-  if (volumeThreshold > 0 && volume >= volumeThreshold) {
+  // 5. 거래량 완화
+  if (volumeThreshold > 0 && volume >= volumeThreshold * 0.4) {
     score += 2;
-    reasons.push("거래량 기준 통과");
-  }
-
-  if (!isNaN(rate) && rate >= 1 && rate <= 3.5) {
-    score += 2;
-    reasons.push("초기 상승구간");
+    reasons.push("거래량 최소 통과");
   }
 
   return {
-    pass: score >= 6,
+    pass: score >= 4,
     score,
     reasons
   };
