@@ -235,3 +235,23 @@ app.get("/api/daily", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
 });
+
+const {
+  startServerAutoTrader,
+  runServerAutoBuyOnce,
+  loadState
+} = require("./auto-trader");
+
+startServerAutoTrader();
+
+app.get("/api/paper-state", (req, res) => {
+  res.json(loadState());
+});
+
+app.post("/api/server-auto-buy-once", async (req, res) => {
+  await runServerAutoBuyOnce();
+  res.json({
+    ok: true,
+    message: "서버 자동 모의매수를 1회 실행했습니다."
+  });
+});
