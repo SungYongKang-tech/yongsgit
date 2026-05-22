@@ -4567,14 +4567,7 @@ async function runMorningAutoFlow() {
 async function runBacktestCompare() {
   if (!backtestResult) return;
 
-  const code =
-    getSelectedStockCode(backtestCodeInput, "backtest");
-
-  const stock =
-    STOCK_MASTER.find((item) => item.code === code);
-
-  const name =
-    stock?.name || backtestCodeInput.value.trim();
+  const code = getSelectedStockCode(backtestCodeInput, "backtest");
 
   if (!code) {
     alert("백테스트할 종목명 또는 코드를 입력하세요.");
@@ -4589,79 +4582,116 @@ async function runBacktestCompare() {
 
   const results = [];
 
+  backtestResult.innerHTML = `
+    <div class="loading">
+      전략 비교 실행중입니다...<br>
+      추세형 / 단타형 / 안정형을 차례대로 백테스트합니다.
+    </div>
+  `;
+
   for (const preset of presets) {
     applyBacktestPreset(preset.key);
 
+    document.querySelectorAll(".preset-btn").forEach((btn) => {
+      btn.classList.toggle(
+        "active",
+        btn.dataset.preset === preset.key
+      );
+    });
+
     await runBacktest();
 
-    const resultGrid = backtestResult.querySelector(".backtest-result-grid");
+    const resultGrid =
+      backtestResult.querySelector(".backtest-result-grid");
+
     const summaryItems = resultGrid
-     ? Array.from(resultGrid.querySelectorAll("div")).map((box) => ({
-      label: box.querySelector("span")?.textContent.trim(),
-      value: box.querySelector("strong")?.textContent.trim()
-      }))
+      ? Array.from(resultGrid.querySelectorAll("div")).map((box) => ({
+          label: box.querySelector("span")?.textContent.trim(),
+          value: box.querySelector("strong")?.textContent.trim()
+        }))
       : [];
+
     const profitRate =
       summaryItems.find((item) => item.label === "총수익률")?.value || "-";
+
     const winRate =
       summaryItems.find((item) => item.label === "승률")?.value || "-";
+
     const tradeCount =
       summaryItems.find((item) => item.label === "총 신호")?.value || "-";
+
     results.push({
-  key: preset.key,
-  name: preset.name,
-  profitRate,
-  winRate,
-  tradeCount,
-  html: backtestResult.innerHTML
-});
-       }
+      key: preset.key,
+      name: preset.name,
+      profitRate,
+      winRate,
+      tradeCount,
+      html: backtestResult.innerHTML
+    });
+  }
 
-       const bestStrategy = results
-  .filter((item) => item.profitRate !== "-")
-  .sort((a, b) =>
-    parseFloat(b.profitRate.replace("%", "")) -
-    parseFloat(a.profitRate.replace("%", ""))
-  )[0];
-  lastBestStrategyKey = bestStrategy?.key || null;
+  const bestStrategy = results
+    .filter((item) => item.profitRate !== "-")
+    .sort((a, b) => {
+      const aRate = parseFloat(
+        String(a.profitRate).replace("%", "").replace("+", "")
+      );
 
-backtestResult.innerHTML = `
-  <div class="backtest-summary-note">
-  <strong>전략 비교 결과</strong>
-  <div>종목: ${name} (${code})</div>
-  <div>
-    추천 전략:
-    <strong class="up">
-      ${bestStrategy ? bestStrategy.name : "판단 불가"}
-    </strong>
-  </div>
-</div>
+      const bRate = parseFloat(
+        String(b.profitRate).replace("%", "").replace("+", "")
+      );
 
-  <div class="backtest-compare-summary">
-    <div class="backtest-compare-summary-title">
-      전략별 결과 요약
+      return bRate - aRate;
+    })[0];
+
+  if (!bestStrategy) {
+    backtestResult.innerHTML = `
+      <div class="error">
+        전략 비교 결과를 계산하지 못했습니다.
+      </div>
+    `;
+    return;
+  }
+
+  lastBestStrategyKey = bestStrategy.key;
+
+  applyBacktestPreset(lastBestStrategyKey);
+
+  document.querySelectorAll(".preset-btn").forEach((btn) => {
+    btn.classList.toggle(
+      "active",
+      btn.dataset.preset === lastBestStrategyKey
+    );
+  });
+
+  await runBacktest();
+
+  const finalHtml = backtestResult.innerHTML;
+
+  backtestResult.innerHTML = `
+    <div class="backtest-summary-note">
+      <strong>자동 전략 비교 완료</strong>
+      가장 좋은 전략은 <b>${bestStrategy.name}</b> 입니다.<br>
+      비교 기준: 총수익률 ${bestStrategy.profitRate}
     </div>
 
-${results.map((item) => `
-  <div class="backtest-compare-summary-row">
-    <strong>${cleanStockName(item.name)}</strong>
-    <span>수익률 ${item.profitRate}</span>
-    <span>승률 ${item.winRate}</span>
-    <span>신호 ${item.tradeCount}</span>
-  </div>
-`).join("")}
-  </div>
-
-  ${results.map((item) => `
-    <div class="backtest-compare-box">
-      <div class="backtest-compare-title">
-        ${cleanStockName(item.name)}
+    <div class="backtest-compare-summary">
+      <div class="backtest-compare-summary-title">
+        전략 비교 결과
       </div>
 
-      ${item.html}
+      ${results.map((item) => `
+        <div class="backtest-compare-summary-row">
+          <strong>${item.name}</strong>
+          <span>수익률 ${item.profitRate}</span>
+          <span>승률 ${item.winRate}</span>
+          <span>신호 ${item.tradeCount}</span>
+        </div>
+      `).join("")}
     </div>
-  `).join("")}
-`;
+
+    ${finalHtml}
+  `;
 }
 
 const CLOSING_PROFIT_SELL_KEY = "kiwoom_closing_profit_sell_time";
