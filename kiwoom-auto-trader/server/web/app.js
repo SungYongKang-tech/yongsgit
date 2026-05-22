@@ -32,6 +32,12 @@ const strongStockBox =
 const autoDiscoverBtn =
   document.getElementById("autoDiscoverBtn");
 
+const toggleServerAutoBtn =
+  document.getElementById("toggleServerAutoBtn");
+
+const serverAutoStateText =
+  document.getElementById("serverAutoStateText");
+
 
   const resetMorningAutoBtn =
   document.getElementById("resetMorningAutoBtn");
@@ -6602,12 +6608,108 @@ async function loadServerPaperState() {
   }
 }
 
+async function loadServerAutoStatus() {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/server-auto-status`
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "상태 조회 실패");
+    }
+
+    updateServerAutoStatusUi(data);
+  } catch (error) {
+    console.error("서버 자동매매 상태 조회 실패:", error);
+  }
+}
+
+function updateServerAutoStatusUi(data) {
+  const enabled = data.serverAutoEnabled === true;
+
+  if (toggleServerAutoBtn) {
+    toggleServerAutoBtn.textContent = enabled
+      ? "서버 자동매매 OFF"
+      : "서버 자동매매 ON";
+
+    toggleServerAutoBtn.classList.toggle(
+      "danger",
+      enabled
+    );
+  }
+
+  if (serverAutoStateText) {
+    serverAutoStateText.innerHTML = enabled
+      ? `
+        <span class="up">
+          ● 서버 자동매매 실행중
+        </span>
+      `
+      : `
+        <span class="down">
+          ● 서버 자동매매 중지됨
+        </span>
+      `;
+  }
+}
+
+async function toggleServerAutoTrade() {
+  try {
+    const statusRes = await fetch(
+      `${API_BASE}/api/server-auto-status`
+    );
+
+    const statusData = await statusRes.json();
+
+    const nextEnabled =
+      !(statusData.serverAutoEnabled === true);
+
+    const res = await fetch(
+      `${API_BASE}/api/server-auto-toggle?enabled=${nextEnabled}`
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "변경 실패");
+    }
+
+    updateServerAutoStatusUi(data);
+
+    await loadServerPaperState();
+  } catch (error) {
+    alert(`서버 자동매매 상태 변경 실패\n${error.message}`);
+  }
+}
+
 function renderServerPaperState(data) {
   if (!serverPaperBox) return;
 
   const holdings = data.holdings || [];
   const tradeLogs = data.tradeLogs || [];
   const virtualResults = data.virtualResults || [];
+
+  const totalProfit = virtualResults.reduce(
+  (sum, item) => sum + Number(item.profit || 0),
+  0
+);
+
+const winCount = virtualResults.filter(
+  (item) => Number(item.profit || 0) > 0
+).length;
+
+const winRate =
+  virtualResults.length > 0
+    ? (winCount / virtualResults.length) * 100
+    : 0;
+
+const today = new Date().toISOString().slice(0, 10);
+
+const todayProfit = virtualResults
+  .filter((item) => item.date === today)
+  .reduce((sum, item) => sum + Number(item.profit || 0), 0);
 
   serverPaperBox.innerHTML = `
     <div class="server-paper-summary">
@@ -6628,6 +6730,32 @@ function renderServerPaperState(data) {
         <strong>${data.lastSellCheckAt || "-"}</strong>
       </div>
     </div>
+
+    <div class="server-profit-summary">
+  <div>
+    <span>누적 손익</span>
+    <strong class="${totalProfit >= 0 ? "up" : "down"}">
+      ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
+    </strong>
+  </div>
+
+  <div>
+    <span>오늘 손익</span>
+    <strong class="${todayProfit >= 0 ? "up" : "down"}">
+      ${todayProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayProfit))}원
+    </strong>
+  </div>
+
+  <div>
+    <span>완료 거래</span>
+    <strong>${formatNumber(virtualResults.length)}건</strong>
+  </div>
+
+  <div>
+    <span>승률</span>
+    <strong>${winRate.toFixed(1)}%</strong>
+  </div>
+</div>
 
     <div class="server-paper-section-title">서버 보유종목</div>
     ${
@@ -6793,6 +6921,19 @@ document.addEventListener("DOMContentLoaded", () => {
   if (loadServerPaperBtn) {
     loadServerPaperBtn.addEventListener("click", loadServerPaperState);
   }
+
+  if (toggleServerAutoBtn) {
+  toggleServerAutoBtn.addEventListener(
+    "click",
+    toggleServerAutoTrade
+  );
+}
+
+  loadServerAutoStatus();
+
+  setInterval(() => {
+  loadServerAutoStatus();
+}, 30000);
 
   loadServerPaperState();
 
