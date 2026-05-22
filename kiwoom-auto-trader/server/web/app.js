@@ -6773,23 +6773,46 @@ const todayProfit = virtualResults
     ${
       holdings.length === 0
         ? `<div class="empty">서버 보유종목이 없습니다.</div>`
-        : holdings.map((item) => `
-          <div class="server-paper-item">
-            <div class="server-paper-item-top">
-              <strong>${cleanStockName(item.name)} (${item.code})</strong>
-              <span>${item.strategyName || "-"}</span>
-            </div>
-            <div class="server-paper-detail">
-              매수가 ${formatNumber(item.buyPrice)}원 /
-              현재가 ${formatNumber(item.currentPrice)}원 /
-              수량 ${formatNumber(item.qty)}주
-            </div>
-            <div class="server-paper-detail">
-              최고가 ${formatNumber(item.highestPrice)}원 /
-              매수시각 ${item.buyTime || "-"}
-            </div>
-          </div>
-        `).join("")
+        : holdings.map((item) => {
+    const buyPrice = Number(item.buyPrice || 0);
+    const currentPrice = Number(item.currentPrice || buyPrice || 0);
+    const qty = Number(item.qty || 0);
+
+    const buyAmount = buyPrice * qty;
+    const evalAmount = currentPrice * qty;
+    const profit = evalAmount - buyAmount;
+    const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+    const profitClass = profit >= 0 ? "up" : "down";
+
+    return `
+      <div class="server-paper-item">
+        <div class="server-paper-item-top">
+          <strong>${cleanStockName(item.name)} (${item.code})</strong>
+          <span>${item.strategyName || "-"}</span>
+        </div>
+
+        <div class="server-paper-detail">
+          매수가 ${formatNumber(buyPrice)}원 /
+          현재가 ${formatNumber(currentPrice)}원 /
+          수량 ${formatNumber(qty)}주
+        </div>
+
+        <div class="server-paper-detail">
+          평가금액 ${formatNumber(evalAmount)}원 /
+          손익
+          <span class="${profitClass}">
+            ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+            (${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%)
+          </span>
+        </div>
+
+        <div class="server-paper-detail">
+          최고가 ${formatNumber(item.highestPrice || currentPrice)}원 /
+          매수시각 ${item.buyTime || "-"}
+        </div>
+      </div>
+    `;
+  }).join("")
     }
 
     <div class="server-paper-section-title">최근 서버 매매로그</div>
@@ -6867,6 +6890,20 @@ function syncServerHoldingsToLocal(data) {
     };
   });
 
+  if (Array.isArray(data.tradeLogs)) {
+  tradeLogs = data.tradeLogs.map((log) => ({
+    type: log.type || "SERVER",
+    code: log.code,
+    name: cleanStockName(log.name),
+    price: Number(log.price || 0),
+    qty: Number(log.qty || 0),
+    reason: `[서버] ${log.reason || "-"}`,
+    time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+  }));
+
+  saveTradeLogs();
+}
+
   saveStrategyStates();
 
   renderHoldings();
@@ -6887,6 +6924,7 @@ async function loadServerPaperState() {
       throw new Error(data.message || "서버 상태 조회 실패");
     }
 
+    syncServerHoldingsToLocal(data);
     renderServerPaperState(data);
   } catch (error) {
     serverPaperBox.innerHTML = `
@@ -6898,72 +6936,7 @@ async function loadServerPaperState() {
   }
 }
 
-function renderServerPaperState(data) {
-  if (!serverPaperBox) return;
 
-  const holdings = data.holdings || [];
-  const tradeLogs = data.tradeLogs || [];
-  const virtualResults = data.virtualResults || [];
-
-  serverPaperBox.innerHTML = `
-    <div class="server-paper-summary">
-      <div>
-        <span>보유종목</span>
-        <strong>${holdings.length}개</strong>
-      </div>
-
-      <div>
-        <span>매매로그</span>
-        <strong>${tradeLogs.length}건</strong>
-      </div>
-
-      <div>
-        <span>완료결과</span>
-        <strong>${virtualResults.length}건</strong>
-      </div>
-
-      <div>
-        <span>최근 감시</span>
-        <strong>${data.lastSellCheckAt || "-"}</strong>
-      </div>
-    </div>
-
-    <div class="server-paper-section-title">
-      서버 보유종목
-    </div>
-
-    ${
-      holdings.length === 0
-        ? `<div class="empty">서버 보유종목이 없습니다.</div>`
-        : holdings.map((item) => `
-          <div class="server-paper-item">
-
-            <div class="server-paper-item-top">
-              <strong>
-                ${cleanStockName(item.name)}
-                (${item.code})
-              </strong>
-
-              <span>
-                ${item.strategyName || "-"}
-              </span>
-            </div>
-
-            <div class="server-paper-detail">
-              매수가 ${formatNumber(item.buyPrice)}원 /
-              현재가 ${formatNumber(item.currentPrice)}원 /
-              수량 ${formatNumber(item.qty)}주
-            </div>
-
-            <div class="server-paper-detail">
-              최고가 ${formatNumber(item.highestPrice)}원
-            </div>
-
-          </div>
-        `).join("")
-    }
-  `;
-}
 
 document.addEventListener("DOMContentLoaded", () => {
   const loadServerPaperBtn =
