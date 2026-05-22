@@ -42,6 +42,12 @@ const toggleBacktestPanelBtn =
 const backtestPanel =
   document.getElementById("backtestPanel");
 
+  const loadServerPaperBtn =
+  document.getElementById("loadServerPaperBtn");
+
+const serverPaperBox =
+  document.getElementById("serverPaperBox");
+
 
 const DISCOVER_SETTING_KEY = "kiwoom_discover_settings";
 
@@ -709,6 +715,14 @@ function getAvailableVirtualCash() {
 
   return Math.max(0, totalCash - getTotalHoldingBuyAmount());
 }
+
+if (loadServerPaperBtn) {
+  loadServerPaperBtn.addEventListener("click", loadServerPaperState);
+}
+
+setInterval(() => {
+  loadServerPaperState();
+}, 30000);
 
 if (saveDefaultBuyAmountBtn) {
   saveDefaultBuyAmountBtn.addEventListener("click", () => {
@@ -6568,4 +6582,121 @@ function saveDiscoverSettings() {
     DISCOVER_SETTING_KEY,
     JSON.stringify(settings)
   );
+}
+
+async function loadServerPaperState() {
+  if (!serverPaperBox) return;
+
+  serverPaperBox.innerHTML =
+    `<div class="loading">서버 모의매매 상태 조회중...</div>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/paper-state`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "서버 상태 조회 실패");
+    }
+
+    renderServerPaperState(data);
+  } catch (error) {
+    serverPaperBox.innerHTML = `
+      <div class="error">
+        서버 모의매매 상태 조회 실패<br>
+        ${error.message}
+      </div>
+    `;
+  }
+}
+
+function renderServerPaperState(data) {
+  if (!serverPaperBox) return;
+
+  const holdings = data.holdings || [];
+  const tradeLogs = data.tradeLogs || [];
+  const virtualResults = data.virtualResults || [];
+
+  serverPaperBox.innerHTML = `
+    <div class="server-paper-summary">
+      <div>
+        <span>보유종목</span>
+        <strong>${holdings.length}개</strong>
+      </div>
+      <div>
+        <span>매매로그</span>
+        <strong>${tradeLogs.length}건</strong>
+      </div>
+      <div>
+        <span>완료결과</span>
+        <strong>${virtualResults.length}건</strong>
+      </div>
+      <div>
+        <span>최근 감시</span>
+        <strong>${data.lastSellCheckAt || "-"}</strong>
+      </div>
+    </div>
+
+    <div class="server-paper-section-title">서버 보유종목</div>
+    ${
+      holdings.length === 0
+        ? `<div class="empty">서버 보유종목이 없습니다.</div>`
+        : holdings.map((item) => `
+          <div class="server-paper-item">
+            <div class="server-paper-item-top">
+              <strong>${cleanStockName(item.name)} (${item.code})</strong>
+              <span>${item.strategyName || "-"}</span>
+            </div>
+            <div class="server-paper-detail">
+              매수가 ${formatNumber(item.buyPrice)}원 /
+              현재가 ${formatNumber(item.currentPrice)}원 /
+              수량 ${formatNumber(item.qty)}주
+            </div>
+            <div class="server-paper-detail">
+              최고가 ${formatNumber(item.highestPrice)}원 /
+              매수시각 ${item.buyTime || "-"}
+            </div>
+          </div>
+        `).join("")
+    }
+
+    <div class="server-paper-section-title">최근 서버 매매로그</div>
+    ${
+      tradeLogs.length === 0
+        ? `<div class="empty">서버 매매로그가 없습니다.</div>`
+        : tradeLogs.slice().reverse().slice(0, 10).map((log) => `
+          <div class="server-paper-log">
+            <strong>${log.type}</strong>
+            ${cleanStockName(log.name)} (${log.code}) /
+            ${formatNumber(log.price)}원 /
+            ${formatNumber(log.qty)}주
+            <div class="server-paper-detail">
+              ${log.reason || "-"} · ${log.time || "-"}
+            </div>
+          </div>
+        `).join("")
+    }
+
+    <div class="server-paper-section-title">완료된 모의투자 결과</div>
+    ${
+      virtualResults.length === 0
+        ? `<div class="empty">완료된 서버 모의투자 결과가 없습니다.</div>`
+        : virtualResults.slice().reverse().slice(0, 10).map((item) => `
+          <div class="server-paper-result">
+            <strong>${cleanStockName(item.name)} (${item.code})</strong>
+            <div class="server-paper-detail">
+              매수 ${formatNumber(item.buyPrice)}원 →
+              매도 ${formatNumber(item.sellPrice)}원 /
+              수익률
+              <span class="${Number(item.profitRate || 0) >= 0 ? "up" : "down"}">
+                ${Number(item.profitRate || 0).toFixed(2)}%
+              </span>
+            </div>
+            <div class="server-paper-detail">
+              손익 ${formatNumber(Math.round(item.profit || 0))}원 /
+              ${item.reason || "-"}
+            </div>
+          </div>
+        `).join("")
+    }
+  `;
 }
