@@ -6890,21 +6890,40 @@ function syncServerHoldingsToLocal(data) {
     };
   });
 
-  if (Array.isArray(data.tradeLogs)) {
-  tradeLogs = data.tradeLogs.map((log) => ({
-    type: log.type || "SERVER",
-    code: log.code,
-    name: cleanStockName(log.name),
-    price: Number(log.price || 0),
-    qty: Number(log.qty || 0),
-    reason: `[서버] ${log.reason || "-"}`,
-    time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
-  }));
-
-  saveTradeLogs();
-}
-
   saveStrategyStates();
+
+  if (Array.isArray(data.tradeLogs)) {
+    tradeLogs = data.tradeLogs.map((log) => ({
+      type: log.type || "SERVER",
+      code: log.code,
+      name: cleanStockName(log.name),
+      price: Number(log.price || 0),
+      qty: Number(log.qty || 0),
+      reason: `[서버] ${log.reason || "-"}`,
+      time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+    }));
+
+    saveTradeLogs();
+  }
+
+  if (Array.isArray(data.virtualResults)) {
+    virtualResults = data.virtualResults.map((item) => ({
+      code: item.code,
+      name: cleanStockName(item.name),
+      buyPrice: Number(item.buyPrice || 0),
+      sellPrice: Number(item.sellPrice || 0),
+      qty: Number(item.qty || 0),
+      buyAmount: Number(item.buyAmount || 0),
+      sellAmount: Number(item.sellAmount || 0),
+      profit: Number(item.profit || 0),
+      profitRate: Number(item.profitRate || 0),
+      resultText: `[서버] ${item.reason || "매도완료"}`,
+      reason: item.reason || "-",
+      time: item.time || item.sellTime || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+    }));
+
+    saveVirtualResults();
+  }
 
   renderHoldings();
   renderTradeLogs();
@@ -6959,9 +6978,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadServerAutoStatus();
 }, 30000);
 
-  loadServerPaperState();
+ loadServerPaperState();
 
-  setInterval(() => {
+setInterval(() => {
+  if (serverAutoStateText?.textContent.includes("ON")) {
     loadServerPaperState();
-  }, 30000);
-});
+  }
+}, 30000);
