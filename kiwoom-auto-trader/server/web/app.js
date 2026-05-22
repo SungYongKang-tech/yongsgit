@@ -716,13 +716,6 @@ function getAvailableVirtualCash() {
   return Math.max(0, totalCash - getTotalHoldingBuyAmount());
 }
 
-if (loadServerPaperBtn) {
-  loadServerPaperBtn.addEventListener("click", loadServerPaperState);
-}
-
-setInterval(() => {
-  loadServerPaperState();
-}, 30000);
 
 if (saveDefaultBuyAmountBtn) {
   saveDefaultBuyAmountBtn.addEventListener("click", () => {
@@ -6792,3 +6785,18 @@ function renderServerPaperState(data) {
     }
   `;
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  const loadServerPaperBtn =
+    document.getElementById("loadServerPaperBtn");
+
+  if (loadServerPaperBtn) {
+    loadServerPaperBtn.addEventListener("click", loadServerPaperState);
+  }
+
+  loadServerPaperState();
+
+  setInterval(() => {
+    loadServerPaperState();
+  }, 30000);
+});
