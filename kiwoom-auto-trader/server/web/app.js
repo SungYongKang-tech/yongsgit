@@ -6700,3 +6700,95 @@ function renderServerPaperState(data) {
     }
   `;
 }
+
+async function loadServerPaperState() {
+  if (!serverPaperBox) return;
+
+  serverPaperBox.innerHTML =
+    `<div class="loading">서버 모의매매 상태 조회중...</div>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/paper-state`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "서버 상태 조회 실패");
+    }
+
+    renderServerPaperState(data);
+  } catch (error) {
+    serverPaperBox.innerHTML = `
+      <div class="error">
+        서버 모의매매 상태 조회 실패<br>
+        ${error.message}
+      </div>
+    `;
+  }
+}
+
+function renderServerPaperState(data) {
+  if (!serverPaperBox) return;
+
+  const holdings = data.holdings || [];
+  const tradeLogs = data.tradeLogs || [];
+  const virtualResults = data.virtualResults || [];
+
+  serverPaperBox.innerHTML = `
+    <div class="server-paper-summary">
+      <div>
+        <span>보유종목</span>
+        <strong>${holdings.length}개</strong>
+      </div>
+
+      <div>
+        <span>매매로그</span>
+        <strong>${tradeLogs.length}건</strong>
+      </div>
+
+      <div>
+        <span>완료결과</span>
+        <strong>${virtualResults.length}건</strong>
+      </div>
+
+      <div>
+        <span>최근 감시</span>
+        <strong>${data.lastSellCheckAt || "-"}</strong>
+      </div>
+    </div>
+
+    <div class="server-paper-section-title">
+      서버 보유종목
+    </div>
+
+    ${
+      holdings.length === 0
+        ? `<div class="empty">서버 보유종목이 없습니다.</div>`
+        : holdings.map((item) => `
+          <div class="server-paper-item">
+
+            <div class="server-paper-item-top">
+              <strong>
+                ${cleanStockName(item.name)}
+                (${item.code})
+              </strong>
+
+              <span>
+                ${item.strategyName || "-"}
+              </span>
+            </div>
+
+            <div class="server-paper-detail">
+              매수가 ${formatNumber(item.buyPrice)}원 /
+              현재가 ${formatNumber(item.currentPrice)}원 /
+              수량 ${formatNumber(item.qty)}주
+            </div>
+
+            <div class="server-paper-detail">
+              최고가 ${formatNumber(item.highestPrice)}원
+            </div>
+
+          </div>
+        `).join("")
+    }
+  `;
+}
