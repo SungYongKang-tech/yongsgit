@@ -248,7 +248,7 @@ app.get("/api/paper-state", (req, res) => {
   res.json(loadState());
 });
 
-app.post("/api/server-auto-buy-once", async (req, res) => {
+app.get("/api/server-auto-buy-once", async (req, res) => {
   await runServerAutoBuyOnce();
   res.json({
     ok: true,
