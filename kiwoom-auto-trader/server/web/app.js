@@ -6607,7 +6607,9 @@ async function loadServerPaperState() {
       throw new Error(data.message || "서버 상태 조회 실패");
     }
 
-    renderServerPaperState(data);
+syncServerHoldingsToLocal(data);
+renderServerPaperState(data);
+
   } catch (error) {
     serverPaperBox.innerHTML = `
       <div class="error">
@@ -6830,6 +6832,45 @@ const todayProfit = virtualResults
         `).join("")
     }
   `;
+}
+
+function syncServerHoldingsToLocal(data) {
+  const serverHoldings = data.holdings || [];
+
+  holdings = serverHoldings.map((item) => ({
+    code: item.code,
+    name: cleanStockName(item.name),
+    buyPrice: Number(item.buyPrice || item.currentPrice || 0),
+    qty: Number(item.qty || 0),
+    targetPrice: Number(item.targetPrice || 0),
+    secondTargetPrice: Number(item.secondTargetPrice || 0),
+    trailingStopRate: Number(item.trailingStopRate || 0),
+    highestPrice: Number(item.highestPrice || item.currentPrice || 0),
+    stopLossPrice: Number(item.stopLossPrice || 0),
+    autoTrade: true,
+    strategyPreset: item.strategyPreset || "trend",
+    strategyName: item.strategyName || "추세형"
+  }));
+
+  saveHoldings();
+
+  serverHoldings.forEach((item) => {
+    strategyStates[item.code] = {
+      status: "BUY",
+      lastAction: "BUY",
+      lastSignalTime: data.lastSellCheckAt || new Date().toLocaleString("ko-KR"),
+      lastSignalPrice: Number(item.currentPrice || item.buyPrice || 0),
+      lastSoldQty: 0,
+      remainQty: Number(item.qty || 0),
+      strategyPreset: item.strategyPreset || "trend",
+      strategyName: item.strategyName || "추세형"
+    };
+  });
+
+  saveStrategyStates();
+
+  renderHoldings();
+  renderTradeLogs();
 }
 
 async function loadServerPaperState() {
