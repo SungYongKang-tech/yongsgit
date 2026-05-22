@@ -5569,22 +5569,32 @@ holdSummary.innerHTML = `
       });
 
       if (!updateSuccess) {
-        holdList.innerHTML = rendered.join("");
-        bindHoldItemEvents();
-      }
-    } else {
-      holdList.innerHTML = rendered.join("");
-      bindHoldItemEvents();
-    }
+  holdList.innerHTML =
+    rendered.length > 0
+      ? rendered.join("")
+      : `<div class="empty">보유종목을 추가하세요.</div>`;
 
-  } catch (error) {
-    holdList.innerHTML = `
-      <div class="error">
-        보유종목 계산 실패<br />
-        ${error.message}
-      </div>
-    `;
-  }
+  bindHoldItemEvents();
+}
+} else {
+  holdList.innerHTML =
+    rendered.length > 0
+      ? rendered.join("")
+      : `<div class="empty">보유종목을 추가하세요.</div>`;
+
+  bindHoldItemEvents();
+}
+
+} catch (error) {
+  if (!holdList) return;
+
+  holdList.innerHTML = `
+    <div class="error">
+      보유종목 계산 실패<br />
+      ${error.message}
+    </div>
+  `;
+}
 }
 
 function addHolding() {
