@@ -4424,8 +4424,17 @@ async function autoBacktestAndBuyDiscoveredItems() {
     const ok = prepareAndAddVirtualBuy(item, preset);
 
     if (ok) {
-      buyCount += 1;
-    }
+  buyCount += 1;
+  console.log("[자동매수 성공]", item.name);
+} else {
+  console.log("[자동매수 제외]", item.name, {
+    alreadyHolding: isAlreadyHolding(item.code),
+    availableSlots: getAvailableBuySlots(),
+    earlySignal: getEarlyRiseSignal(item),
+    badTiming: isBadBuyTiming(item),
+    autoBlocked: isAutoBuyBlocked
+  });
+}
 
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
@@ -5796,16 +5805,18 @@ if (!earlySignal.pass) {
 
   const recommended = getRecommendedStrategyForCode(item.code);
 
-  const strategyText = recommended
-    ? recommended.name
-    : item.recommendType;
+const strategyText =
+  recommended?.name ||
+  item.recommendType ||
+  item.strategy ||
+  "안정형";
 
-  const strategyPreset =
-    strategyText.includes("추세")
-      ? "trend"
-      : strategyText.includes("단타")
-      ? "short"
-      : "safe";
+const preset =
+  String(strategyText).includes("추세")
+    ? "trend"
+    : String(strategyText).includes("단타")
+    ? "short"
+    : "safe";
 
   let targetRate = 1.04;
   let secondTargetRate = 1.06;
