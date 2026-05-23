@@ -4354,17 +4354,22 @@ alert(
 
 async function autoBacktestAndBuyDiscoveredItems() {
   if (!latestStrongItems || latestStrongItems.length === 0) {
-    alert("자동발굴 후보가 없습니다.");
+    updateApiStatus("자동매수 중단 · 자동발굴 후보 없음", true);
     return;
   }
 
   const maxCount = getAvailableBuySlots();
+
   if (maxCount <= 0) {
-    alert("최대 보유종목 수에 도달했습니다.");
+    updateApiStatus("자동매수 중단 · 최대 보유종목 수 도달", true);
     return;
   }
 
   const targets = latestStrongItems.slice(0, maxCount);
+
+  let backtestCount = 0;
+  let passedCount = 0;
+  let buyCount = 0;
 
   for (const item of targets) {
     if (isAlreadyHolding(item.code)) continue;
@@ -4381,12 +4386,17 @@ async function autoBacktestAndBuyDiscoveredItems() {
         ? "short"
         : "safe";
 
+    updateApiStatus(
+      `자동 백테스트 진행중 · ${cleanStockName(item.name)}`
+    );
+
     applyBacktestPreset(preset);
 
     backtestCodeInput.value = item.name;
     selectedStockCodes.backtest = item.code;
 
     await runBacktest();
+    backtestCount += 1;
 
     const latestBacktest = getLatestBacktestForCode(item.code);
 
@@ -4395,13 +4405,32 @@ async function autoBacktestAndBuyDiscoveredItems() {
       continue;
     }
 
-    prepareAndAddVirtualBuy(item, preset);
+    passedCount += 1;
+
+    const ok = prepareAndAddVirtualBuy(item, preset);
+
+    if (ok) {
+      buyCount += 1;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1200));
   }
 
   saveWatchCodes();
+
   await loadWatchList(true);
   await renderHoldings(true);
   renderTradeLogs();
+
+  updateApiStatus(
+    `자동흐름 완료 · 백테스트 ${backtestCount}개 · 통과 ${passedCount}개 · 매수 ${buyCount}개`
+  );
+
+  console.log("[자동흐름 완료]", {
+    backtestCount,
+    passedCount,
+    buyCount
+  });
 }
 
 function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
@@ -6333,10 +6362,10 @@ console.log(
 
 if (price > 0 && discover.score >= minScore) {
   return {
-    ...item,
-    discoverScore: discover.score,
-    discoverReasons: discover.reasons
-  };
+  ...item,
+  discoverScore: discover.score,
+  discoverReasons: discover.reasons
+};
 }
 
 return null;
@@ -6399,6 +6428,15 @@ if (availableSlots <= 0) {
 renderStrongStockBox(
   results.slice(0, 15),
   `🤖 자동발굴 후보 · 조건통과 ${results.length}개`
+);
+
+latestStrongItems = results.slice(0, 15);
+
+console.log(
+  "[자동발굴 완료]",
+  "후보수:",
+  latestStrongItems.length,
+  latestStrongItems.map((item) => item.name)
 );
 
 const summaryEl = document.createElement("div");
