@@ -1430,16 +1430,16 @@ function renderStrongStockBox(items, title = "🔥 오늘 강한 종목") {
         getBacktestStatusText(item.code);
 
       const strategyText =
-        recommended
-          ? `${recommended.name} 추천`
-          : item.recommendType;
+  recommended?.name
+    ? `${recommended.name} 추천`
+    : item.recommendType || "안정형";
 
-      const strategyPreset =
-        strategyText.includes("추세")
-          ? "trend"
-          : strategyText.includes("단타")
-          ? "short"
-          : "safe";
+const strategyPreset =
+  String(strategyText).includes("추세")
+    ? "trend"
+    : String(strategyText).includes("단타")
+    ? "short"
+    : "safe";
 
       const rankBadge =
         index === 0
@@ -4262,6 +4262,12 @@ async function runAllDiscoveredBacktests() {
     return;
   }
 
+  let failNoEarlySignal = 0;
+  let failBadTiming = 0;
+  let failAlreadyHolding = 0;
+  let failNoSlot = 0;
+  let failAutoBlocked = 0;
+
   const availableSlots = getAvailableBuySlots();
 
   const targetItems = latestStrongItems
@@ -4280,20 +4286,21 @@ async function runAllDiscoveredBacktests() {
   const originalSelectedCode = selectedStockCodes.backtest;
 
   let completed = 0;
+  let autoBuyCount = 0;
 
   for (const item of targetItems) {
-    const recommended =
-      getRecommendedStrategyForCode(item.code);
+    const recommended = getRecommendedStrategyForCode(item.code);
 
     const strategyText =
-      recommended
-        ? recommended.name
-        : item.recommendType;
+      recommended?.name ||
+      item.recommendType ||
+      item.strategy ||
+      "안정형";
 
     const preset =
-      strategyText.includes("추세")
+      String(strategyText).includes("추세")
         ? "trend"
-        : strategyText.includes("단타")
+        : String(strategyText).includes("단타")
         ? "short"
         : "safe";
 
@@ -4320,6 +4327,40 @@ async function runAllDiscoveredBacktests() {
       completed += 1;
     } catch (error) {
       console.error("자동 백테스트 실패", item.code, error);
+      continue;
+    }
+
+    const latestBacktest = getLatestBacktestForCode(item.code);
+
+    if (!isBacktestPassed(latestBacktest)) {
+      console.log("[자동매수 제외] 백테스트 미통과", item.name, latestBacktest);
+      continue;
+    }
+
+    const ok = prepareAndAddVirtualBuy(item, preset);
+
+    if (ok) {
+      autoBuyCount += 1;
+      console.log("[자동매수 성공]", item.name);
+    } else {
+      const earlySignal = getEarlyRiseSignal(item);
+      const badTiming = isBadBuyTiming(item);
+      const alreadyHolding = isAlreadyHolding(item.code);
+      const noSlot = getAvailableBuySlots() <= 0;
+
+      if (!earlySignal.pass) failNoEarlySignal += 1;
+      if (badTiming) failBadTiming += 1;
+      if (alreadyHolding) failAlreadyHolding += 1;
+      if (noSlot) failNoSlot += 1;
+      if (isAutoBuyBlocked) failAutoBlocked += 1;
+
+      console.log("[자동매수 제외]", item.name, {
+        earlySignal,
+        badTiming,
+        alreadyHolding,
+        availableSlots: getAvailableBuySlots(),
+        autoBlocked: isAutoBuyBlocked
+      });
     }
 
     await new Promise((resolve) =>
@@ -4330,40 +4371,20 @@ async function runAllDiscoveredBacktests() {
   backtestCodeInput.value = originalCode;
   selectedStockCodes.backtest = originalSelectedCode;
 
-let autoBuyCount = 0;
+  updateApiStatus(
+    `전체 자동 백테스트 완료 · ${completed}개 / 자동 모의매수 ${autoBuyCount}개`
+  );
 
-for (const item of targetItems) {
-  if (getAvailableBuySlots() <= 0) break;
-
-  const recommended = getRecommendedStrategyForCode(item.code);
-
-const strategyText =
-  recommended
-    ? recommended.name
-    : item.recommendType;
-
-const preset =
-  strategyText.includes("추세")
-    ? "trend"
-    : strategyText.includes("단타")
-    ? "short"
-    : "safe";
-
-const ok = prepareAndAddVirtualBuy(item, preset);
-
-  if (ok) {
-    autoBuyCount += 1;
-  }
-}
-
-updateApiStatus(
-  `전체 자동 백테스트 완료 · ${completed}개 / 자동 모의매수 ${autoBuyCount}개`
-);
-
-alert(
-  `전체 자동 백테스트 완료 (${completed}개)\n\n` +
-  `자동 모의매수 등록: ${autoBuyCount}개`
-);
+  alert(
+    `전체 자동 백테스트 완료 (${completed}개)\n\n` +
+    `자동 모의매수 등록: ${autoBuyCount}개\n\n` +
+    `제외 사유\n` +
+    `- 빠른진입 조건 미통과: ${failNoEarlySignal}개\n` +
+    `- 추격매수 위험: ${failBadTiming}개\n` +
+    `- 이미 보유중: ${failAlreadyHolding}개\n` +
+    `- 보유한도 초과: ${failNoSlot}개\n` +
+    `- 자동매수 차단: ${failAutoBlocked}개`
+  );
 }
 
 async function autoBacktestAndBuyDiscoveredItems() {
@@ -4423,15 +4444,21 @@ async function autoBacktestAndBuyDiscoveredItems() {
 
     const ok = prepareAndAddVirtualBuy(item, preset);
 
-    if (ok) {
+  if (ok) {
   buyCount += 1;
   console.log("[자동매수 성공]", item.name);
 } else {
+  const earlySignal = getEarlyRiseSignal(item);
+  const badTiming = isBadBuyTiming(item);
+  const alreadyHolding = isAlreadyHolding(item.code);
+  const noSlot = getAvailableBuySlots() <= 0;
+
+ 
   console.log("[자동매수 제외]", item.name, {
-    alreadyHolding: isAlreadyHolding(item.code),
+    earlySignal,
+    badTiming,
+    alreadyHolding,
     availableSlots: getAvailableBuySlots(),
-    earlySignal: getEarlyRiseSignal(item),
-    badTiming: isBadBuyTiming(item),
     autoBlocked: isAutoBuyBlocked
   });
 }
