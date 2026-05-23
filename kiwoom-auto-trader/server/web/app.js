@@ -6704,24 +6704,24 @@ function renderServerPaperState(data) {
   const virtualResults = data.virtualResults || [];
 
   const totalProfit = virtualResults.reduce(
-  (sum, item) => sum + Number(item.profit || 0),
-  0
-);
+    (sum, item) => sum + Number(item.profit || 0),
+    0
+  );
 
-const winCount = virtualResults.filter(
-  (item) => Number(item.profit || 0) > 0
-).length;
+  const winCount = virtualResults.filter(
+    (item) => Number(item.profit || 0) > 0
+  ).length;
 
-const winRate =
-  virtualResults.length > 0
-    ? (winCount / virtualResults.length) * 100
-    : 0;
+  const winRate =
+    virtualResults.length > 0
+      ? (winCount / virtualResults.length) * 100
+      : 0;
 
-const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
 
-const todayProfit = virtualResults
-  .filter((item) => item.date === today)
-  .reduce((sum, item) => sum + Number(item.profit || 0), 0);
+  const todayProfit = virtualResults
+    .filter((item) => item.date === today)
+    .reduce((sum, item) => sum + Number(item.profit || 0), 0);
 
   serverPaperBox.innerHTML = `
     <div class="server-paper-summary">
@@ -6729,132 +6729,200 @@ const todayProfit = virtualResults
         <span>보유종목</span>
         <strong>${holdings.length}개</strong>
       </div>
+
       <div>
         <span>매매로그</span>
         <strong>${tradeLogs.length}건</strong>
       </div>
+
       <div>
         <span>완료결과</span>
         <strong>${virtualResults.length}건</strong>
       </div>
+
       <div>
         <span>최근 감시</span>
         <strong>${data.lastSellCheckAt || "-"}</strong>
       </div>
+
+      <div>
+  <span>가격갱신</span>
+  <strong>${data.lastPriceRefreshAt || "-"}</strong>
+</div>
+
+      <div>
+        <span>자동매매</span>
+        <strong class="${data.serverAutoEnabled ? "up" : "down"}">
+          ${data.serverAutoEnabled ? "ON" : "OFF"}
+        </strong>
+      </div>
     </div>
 
     <div class="server-profit-summary">
-  <div>
-    <span>누적 손익</span>
-    <strong class="${totalProfit >= 0 ? "up" : "down"}">
-      ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
-    </strong>
-  </div>
+      <div>
+        <span>누적 손익</span>
+        <strong class="${totalProfit >= 0 ? "up" : "down"}">
+          ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
+        </strong>
+      </div>
 
-  <div>
-    <span>오늘 손익</span>
-    <strong class="${todayProfit >= 0 ? "up" : "down"}">
-      ${todayProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayProfit))}원
-    </strong>
-  </div>
+      <div>
+        <span>오늘 손익</span>
+        <strong class="${todayProfit >= 0 ? "up" : "down"}">
+          ${todayProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayProfit))}원
+        </strong>
+      </div>
 
-  <div>
-    <span>완료 거래</span>
-    <strong>${formatNumber(virtualResults.length)}건</strong>
-  </div>
+      <div>
+        <span>완료 거래</span>
+        <strong>${formatNumber(virtualResults.length)}건</strong>
+      </div>
 
-  <div>
-    <span>승률</span>
-    <strong>${winRate.toFixed(1)}%</strong>
-  </div>
-</div>
+      <div>
+        <span>승률</span>
+        <strong>${winRate.toFixed(1)}%</strong>
+      </div>
+    </div>
 
     <div class="server-paper-section-title">서버 보유종목</div>
+
     ${
       holdings.length === 0
         ? `<div class="empty">서버 보유종목이 없습니다.</div>`
         : holdings.map((item) => {
-    const buyPrice = Number(item.buyPrice || 0);
-    const currentPrice = Number(item.currentPrice || buyPrice || 0);
-    const qty = Number(item.qty || 0);
+            const buyPrice = Number(item.buyPrice || 0);
+            const currentPrice = Number(item.currentPrice || buyPrice || 0);
+            const qty = Number(item.qty || 0);
 
-    const buyAmount = buyPrice * qty;
-    const evalAmount = currentPrice * qty;
-    const profit = evalAmount - buyAmount;
-    const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
-    const profitClass = profit >= 0 ? "up" : "down";
+            const buyAmount = buyPrice * qty;
+            const evalAmount = currentPrice * qty;
+            const profit = evalAmount - buyAmount;
+            const profitRate =
+              buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+            const profitClass = profit >= 0 ? "up" : "down";
 
-    return `
-      <div class="server-paper-item">
-        <div class="server-paper-item-top">
-          <strong>${cleanStockName(item.name)} (${item.code})</strong>
-          <span>${item.strategyName || "-"}</span>
-        </div>
+            return `
+              <div class="server-paper-item">
+                <div class="server-paper-item-top">
+                  <strong>${cleanStockName(item.name)} (${item.code})</strong>
+                  <span>${item.strategyName || "-"}</span>
+                </div>
 
-        <div class="server-paper-detail">
-          매수가 ${formatNumber(buyPrice)}원 /
-          현재가 ${formatNumber(currentPrice)}원 /
-          수량 ${formatNumber(qty)}주
-        </div>
+                <div class="server-paper-detail">
+                  매수가 ${formatNumber(buyPrice)}원 /
+                  현재가 ${formatNumber(currentPrice)}원 /
+                  수량 ${formatNumber(qty)}주
+                </div>
 
-        <div class="server-paper-detail">
-          평가금액 ${formatNumber(evalAmount)}원 /
-          손익
-          <span class="${profitClass}">
-            ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
-            (${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%)
-          </span>
-        </div>
+                <div class="server-paper-detail">
+                  평가금액 ${formatNumber(evalAmount)}원 /
+                  손익
+                  <span class="${profitClass}">
+                    ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+                    (${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%)
+                  </span>
+                </div>
 
-        <div class="server-paper-detail">
-          최고가 ${formatNumber(item.highestPrice || currentPrice)}원 /
-          매수시각 ${item.buyTime || "-"}
-        </div>
-      </div>
-    `;
-  }).join("")
+                <div class="server-paper-detail">
+                  최고가 ${formatNumber(item.highestPrice || currentPrice)}원 /
+                  매수시각 ${item.buyTime || "-"}
+                </div>
+
+                <div class="server-paper-actions">
+                  <button
+                    class="server-sell-all-btn"
+                    data-code="${item.code}"
+                    data-name="${cleanStockName(item.name)}"
+                  >
+                    서버 수동매도
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join("")
     }
 
     <div class="server-paper-section-title">최근 서버 매매로그</div>
+
     ${
       tradeLogs.length === 0
         ? `<div class="empty">서버 매매로그가 없습니다.</div>`
         : tradeLogs.slice().reverse().slice(0, 10).map((log) => `
-          <div class="server-paper-log">
-            <strong>${log.type}</strong>
-            ${cleanStockName(log.name)} (${log.code}) /
-            ${formatNumber(log.price)}원 /
-            ${formatNumber(log.qty)}주
-            <div class="server-paper-detail">
-              ${log.reason || "-"} · ${log.time || "-"}
+            <div class="server-paper-log">
+              <strong>${log.type}</strong>
+              ${cleanStockName(log.name)} (${log.code}) /
+              ${formatNumber(log.price)}원 /
+              ${formatNumber(log.qty)}주
+              <div class="server-paper-detail">
+                ${log.reason || "-"} · ${log.time || "-"}
+              </div>
             </div>
-          </div>
-        `).join("")
+          `).join("")
     }
 
     <div class="server-paper-section-title">완료된 모의투자 결과</div>
+
     ${
       virtualResults.length === 0
         ? `<div class="empty">완료된 서버 모의투자 결과가 없습니다.</div>`
         : virtualResults.slice().reverse().slice(0, 10).map((item) => `
-          <div class="server-paper-result">
-            <strong>${cleanStockName(item.name)} (${item.code})</strong>
-            <div class="server-paper-detail">
-              매수 ${formatNumber(item.buyPrice)}원 →
-              매도 ${formatNumber(item.sellPrice)}원 /
-              수익률
-              <span class="${Number(item.profitRate || 0) >= 0 ? "up" : "down"}">
-                ${Number(item.profitRate || 0).toFixed(2)}%
-              </span>
+            <div class="server-paper-result">
+              <strong>${cleanStockName(item.name)} (${item.code})</strong>
+
+              <div class="server-paper-detail">
+                매수 ${formatNumber(item.buyPrice)}원 →
+                매도 ${formatNumber(item.sellPrice)}원 /
+                수익률
+                <span class="${Number(item.profitRate || 0) >= 0 ? "up" : "down"}">
+                  ${Number(item.profitRate || 0).toFixed(2)}%
+                </span>
+              </div>
+
+              <div class="server-paper-detail">
+                손익 ${formatNumber(Math.round(item.profit || 0))}원 /
+                ${item.reason || "-"}
+              </div>
             </div>
-            <div class="server-paper-detail">
-              손익 ${formatNumber(Math.round(item.profit || 0))}원 /
-              ${item.reason || "-"}
-            </div>
-          </div>
-        `).join("")
+          `).join("")
     }
   `;
+
+  serverPaperBox
+    .querySelectorAll(".server-sell-all-btn")
+    .forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const code = btn.dataset.code;
+        const name = btn.dataset.name;
+
+        const ok = confirm(
+          `${name} (${code}) 서버 보유종목을 수동매도할까요?`
+        );
+
+        if (!ok) return;
+
+        await serverSellAllHolding(code);
+      });
+    });
+}
+
+async function serverSellAllHolding(code) {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/paper-sell-all?code=${encodeURIComponent(code)}`
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "서버 수동매도 실패");
+    }
+
+    alert("서버 수동매도 요청이 완료되었습니다.");
+
+    await loadServerPaperState();
+  } catch (error) {
+    alert(`서버 수동매도 실패\n${error.message}`);
+  }
 }
 
 function syncServerHoldingsToLocal(data) {
