@@ -7053,3 +7053,5 @@ setInterval(() => {
     loadServerPaperState();
   }
 }, 30000);
+
+});
