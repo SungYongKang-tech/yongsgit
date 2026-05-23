@@ -7034,24 +7034,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (toggleServerAutoBtn) {
-  toggleServerAutoBtn.addEventListener(
-    "click",
-    toggleServerAutoTrade
-  );
-}
+    toggleServerAutoBtn.addEventListener("click", toggleServerAutoTrade);
+  }
 
   loadServerAutoStatus();
 
   setInterval(() => {
-  loadServerAutoStatus();
-}, 30000);
+    loadServerAutoStatus();
+  }, 30000);
 
- loadServerPaperState();
+  loadServerPaperState();
 
-setInterval(() => {
-  if (serverAutoStateText?.textContent.includes("ON")) {
-    loadServerPaperState();
-  }
-}, 30000);
-
+  setInterval(() => {
+    if (serverAutoStateText?.textContent.includes("ON")) {
+      loadServerPaperState();
+    }
+  }, 30000);
 });
