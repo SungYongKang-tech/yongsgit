@@ -4335,7 +4335,21 @@ let autoBuyCount = 0;
 for (const item of targetItems) {
   if (getAvailableBuySlots() <= 0) break;
 
-  const ok = autoAddVirtualHolding(item);
+  const recommended = getRecommendedStrategyForCode(item.code);
+
+const strategyText =
+  recommended
+    ? recommended.name
+    : item.recommendType;
+
+const preset =
+  strategyText.includes("추세")
+    ? "trend"
+    : strategyText.includes("단타")
+    ? "short"
+    : "safe";
+
+const ok = prepareAndAddVirtualBuy(item, preset);
 
   if (ok) {
     autoBuyCount += 1;
