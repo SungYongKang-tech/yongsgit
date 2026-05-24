@@ -1979,20 +1979,16 @@ async function refreshWithoutJump() {
       `자동조회중 · ${uniqueCodes.length}개 종목`
     );
 
-    for (const code of uniqueCodes) {
-  try {
-    await fetchStockPrice(code);
+    await Promise.all(
+  uniqueCodes.map((code) =>
+    fetchStockPrice(code).catch((error) => {
+      console.error("조회 실패", code, error);
+      return null;
+    })
+  )
+);
 
-    await new Promise((resolve) =>
-      setTimeout(resolve, 120)
-    );
-
-  } catch (error) {
-    console.error("순차조회 실패", code, error);
-  }
-}
-
-    await loadWatchList(true);
+    
     await renderHoldings(true);
     renderTradeLogs();
 
@@ -2036,8 +2032,13 @@ async function manualRefresh() {
     );
 
     await Promise.all(
-      uniqueCodes.map((code) => fetchStockPrice(code))
-    );
+  uniqueCodes.map((code) =>
+    fetchStockPrice(code).catch((error) => {
+      console.error("조회 실패", code, error);
+      return null;
+    })
+  )
+);
 
     await loadWatchList();
     await renderHoldings();
@@ -3068,7 +3069,10 @@ function processStrategyResult(item, strategyResult) {
 }
 
 if (!isMarketOpenNow() && !isTestMode) {
+  if (!window.lastMarketClosedWarnAt || Date.now() - window.lastMarketClosedWarnAt > 60000) {
   console.warn("장 운영시간이 아니므로 매매 실행을 하지 않습니다.");
+  window.lastMarketClosedWarnAt = Date.now();
+}
   return;
 }
 
@@ -3169,7 +3173,13 @@ function addTradeLog({ type, code, name, price, reason }) {
 if (alreadyLogged) return;
 
 if (!isMarketOpenNow() && !isTestMode) {
+  if (
+  !window.lastTradeLogMarketClosedWarnAt ||
+  Date.now() - window.lastTradeLogMarketClosedWarnAt > 60000
+) {
   console.warn("장 운영시간이 아니므로 거래 신호를 기록하지 않습니다.");
+  window.lastTradeLogMarketClosedWarnAt = Date.now();
+}
   return;
 }
 
