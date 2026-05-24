@@ -3664,7 +3664,6 @@ function getAvailableBuySlots() {
   return Math.max(0, count - holdings.length);
 }
 
-let serverHoldings = [];
 
 function isAlreadyHolding(code) {
   return holdings.some((item) => item.code === code);
