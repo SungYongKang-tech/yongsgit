@@ -1752,10 +1752,28 @@ const strategyPreset =
           );
 
           if (shouldAddHold) {
-            addHoldBtn.click();
-          } else {
-            alert("매수 후보 입력칸에만 반영되었습니다.");
-          }
+  registerServerPaperBuy({
+    code,
+    name: cleanStockName(name),
+    buyPrice: price,
+    qty,
+    targetPrice: Math.round(price * targetRate),
+    secondTargetPrice: Math.round(price * secondTargetRate),
+    stopLossPrice: Math.round(price * stopLossRate),
+    trailingStopRate: trailingRate,
+    strategy: strategyPreset,
+    strategyPreset,
+    strategyName
+  })
+    .then(() => {
+      alert("서버 모의매수로 등록되었습니다.");
+    })
+    .catch((error) => {
+      alert("서버 모의매수 등록 실패\n\n" + error.message);
+    });
+} else {
+  alert("매수 후보 입력칸에만 반영되었습니다.");
+}
         };
       });
   }, 0);
@@ -3058,7 +3076,7 @@ if (action === "SELL_TRAILING") {
   saveStrategyStates();
 }
 
-function processStrategyResult(item, strategyResult) {
+async function processStrategyResult(item, strategyResult) {
  if (
   strategyResult.action !== "SELL" &&
   strategyResult.action !== "SELL_ALL" &&
@@ -3132,7 +3150,7 @@ if (
 
 
 
-  executeVirtualSell(item.code, strategyResult.action);
+  await executeVirtualSell(item.code, strategyResult.action);
 
 notifyTradeSignal(item, strategyResult);
 
@@ -3213,95 +3231,93 @@ if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
   renderTradeLogs();
 }
 
-function executeVirtualSell(code, actionType = "SELL") {
+async function executeVirtualSell(code, actionType = "SELL") {
+  const item = holdings.find((stock) => stock.code === code);
+
+  if (!item) return;
+
+  const sellPrice =
+    Number(item.currentPrice || strategyStates[code]?.lastSignalPrice || item.buyPrice || 0);
+
+  const resultText =
+    actionType === "SELL"
+      ? "1차매도"
+      : actionType === "SELL_ALL"
+      ? "2차매도"
+      : actionType === "SELL_TRAILING"
+      ? "트레일링매도"
+      : actionType === "STOP_LOSS"
+      ? "손절매도"
+      : "매도";
+
   let soldQty = 0;
-  let remainQty = 0;
-  let soldResult = null;
 
-  holdings = holdings.map((item) => {
-    if (item.code !== code) return item;
-
-    const sellPrice =
-      item.currentPrice ||
-      strategyStates[code]?.lastSignalPrice ||
-      item.buyPrice;
-
-    const resultText =
-      actionType === "SELL"
-        ? "1차매도"
-        : actionType === "SELL_ALL"
-        ? "2차매도"
-        : actionType === "SELL_TRAILING"
-        ? "트레일링매도"
-        : actionType === "STOP_LOSS"
-        ? "손절매도"
-        : "매도";
-
-    if (actionType === "SELL") {
-      soldQty = Math.ceil(item.qty * PARTIAL_SELL_RATE);
-      remainQty = item.qty - soldQty;
-    }
-
-    if (
-      actionType === "STOP_LOSS" ||
-      actionType === "SELL_ALL" ||
-      actionType === "SELL_TRAILING"
-    ) {
-      soldQty = item.qty;
-      remainQty = 0;
-    }
-
-    if (soldQty > 0) {
-      const buyAmount = item.buyPrice * soldQty;
-      const sellAmount = sellPrice * soldQty;
-      const profit = sellAmount - buyAmount;
-      const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
-
-      soldResult = {
-        code: item.code,
-        name: item.name,
-        resultText,
-        buyPrice: item.buyPrice,
-        sellPrice,
-        qty: soldQty,
-        buyAmount,
-        sellAmount,
-        profit,
-        profitRate,
-        date: new Date().toISOString().slice(0, 10),
-        time: new Date().toLocaleString("ko-KR")
-      };
-    }
-
-    return {
-      ...item,
-      qty: remainQty,
-      autoTrade: remainQty > 0 ? item.autoTrade : false
-    };
-  });
-
-  if (soldResult) {
-    virtualResults.push(soldResult);
-    saveVirtualResults();
+  if (actionType === "SELL") {
+    soldQty = Math.ceil(Number(item.qty || 0) * PARTIAL_SELL_RATE);
   }
 
-  holdings = holdings.filter((item) => item.qty > 0);
-  saveHoldings();
+  if (
+    actionType === "STOP_LOSS" ||
+    actionType === "SELL_ALL" ||
+    actionType === "SELL_TRAILING"
+  ) {
+    soldQty = Number(item.qty || 0);
+  }
 
-  strategyStates[code] = {
-    status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
-    lastAction: actionType,
-    lastSignalTime: new Date().toLocaleString("ko-KR"),
-    lastSignalPrice: strategyStates[code]?.lastSignalPrice || null,
-    lastSoldQty: soldQty,
-    remainQty: remainQty
-  };
+  if (!soldQty || soldQty <= 0) return;
 
-  saveStrategyStates();
-  renderVirtualResults();
+  try {
+    const res = await fetch(`${API_BASE}/api/paper-sell`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        code,
+        qty: soldQty,
+        sellPrice,
+        reason: resultText,
+        actionType
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.message || "서버 자동매도 실패");
+    }
+
+    const remainQty =
+      Math.max(0, Number(item.qty || 0) - soldQty);
+
+    strategyStates[code] = {
+      ...(strategyStates[code] || {}),
+      status: remainQty > 0 ? "PARTIAL_SOLD" : "SOLD",
+      lastAction: actionType,
+      lastSignalTime: new Date().toLocaleString("ko-KR"),
+      lastSignalPrice: sellPrice,
+      lastSoldQty: soldQty,
+      remainQty
+    };
+
+    saveStrategyStates();
+
+    await loadServerPaperState();
+
+    renderVirtualResults();
+    renderHoldings();
+    renderTradeLogs();
+
+  } catch (error) {
+    console.error("서버 자동매도 실패:", error);
+    updateApiStatus(
+      `서버 자동매도 실패 · ${code} · ${error.message}`,
+      true
+    );
+  }
 }
 
-function executeManualSell(code) {
+async function executeManualSell(code) {
   const item = holdings.find((stock) => stock.code === code);
 
   if (!item) return;
@@ -3358,59 +3374,53 @@ function executeManualSell(code) {
     `수량: ${formatNumber(qty)}주\n` +
     `실현손익: ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원\n` +
     `수익률: ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%\n\n` +
-    `매도 처리할까요?`
+    `서버 매도 처리할까요?`
   );
 
   if (!ok) return;
 
-  virtualResults.push({
-    code: item.code,
-    name: item.name,
-    resultText,
-    buyPrice: item.buyPrice,
-    sellPrice,
-    qty,
-    buyAmount,
-    sellAmount,
-    profit,
-    profitRate,
-    date: new Date().toISOString().slice(0, 10),
-    time: new Date().toLocaleString("ko-KR")
-  });
+  try {
+    const res = await fetch(`${API_BASE}/api/paper-sell`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        code,
+        qty,
+        sellPrice,
+        reason: resultText
+      })
+    });
 
-  saveVirtualResults();
+    const data = await res.json();
 
-  const remainQty = item.qty - qty;
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.message || "서버 매도 실패");
+    }
 
-  holdings = holdings
-    .map((stock) => {
-      if (stock.code !== code) return stock;
+    strategyStates[code] = {
+      ...(strategyStates[code] || {}),
+      status: qty < item.qty ? "MANUAL_PARTIAL_SOLD" : "MANUAL_SOLD",
+      lastAction: resultText,
+      lastSignalTime: new Date().toLocaleString("ko-KR"),
+      lastSignalPrice: sellPrice,
+      lastSoldQty: qty,
+      remainQty: Math.max(0, item.qty - qty)
+    };
 
-      return {
-        ...stock,
-        qty: remainQty,
-        autoTrade: remainQty > 0 ? stock.autoTrade : false
-      };
-    })
-    .filter((stock) => stock.qty > 0);
+    saveStrategyStates();
 
-  strategyStates[code] = {
-    ...(strategyStates[code] || {}),
-    status: remainQty > 0 ? "MANUAL_PARTIAL_SOLD" : "MANUAL_SOLD",
-    lastAction: resultText,
-    lastSignalTime: new Date().toLocaleString("ko-KR"),
-    lastSignalPrice: sellPrice,
-    lastSoldQty: qty,
-    remainQty
-  };
+    await loadServerPaperState();
 
-  saveStrategyStates();
-  saveHoldings();
+    renderHoldings();
+    renderVirtualResults();
+    renderTradeLogs();
 
-  renderHoldings();
-  renderVirtualResults();
-
-  alert(`${resultText} 처리되었습니다.`);
+    alert(`${resultText} 서버 처리되었습니다.`);
+  } catch (error) {
+    alert("서버 매도 처리 실패\n\n" + error.message);
+  }
 }
 
 
@@ -4871,7 +4881,7 @@ async function runClosingProfitSell() {
     if (profitRate < 1) continue;
 
     if (item.strategyPreset === "short") {
-      executeVirtualSell(item.code, "SELL_ALL");
+      await executeVirtualSell(item.code, "SELL_ALL");
       addTradeLog({
         type: "SELL_ALL",
         code: item.code,
@@ -4881,7 +4891,7 @@ async function runClosingProfitSell() {
       });
       sellCount++;
     } else if (item.strategyPreset === "trend") {
-      executeVirtualSell(item.code, "SELL");
+      await executeVirtualSell(item.code, "SELL");
       addTradeLog({
         type: "SELL",
         code: item.code,
@@ -5729,27 +5739,29 @@ holdSummary.innerHTML = `
 }
 }
 
-function addHolding() {
+async function addHolding() {
   const targetPrice = Number(targetPriceInput.value) || 0;
   const stopLossPrice = Number(stopLossPriceInput.value) || 0;
   const inputName = holdCodeInput.value.trim();
 
-const code =
-  getSelectedStockCode(holdCodeInput, "hold") ||
-  selectedStockCodes.hold ||
-  "";
+  const code =
+    getSelectedStockCode(holdCodeInput, "hold") ||
+    selectedStockCodes.hold ||
+    "";
 
-const stock =
-  STOCK_MASTER.find((item) => item.code === code) ||
-  findStockByInput(inputName);
+  const stock =
+    STOCK_MASTER.find((item) => item.code === code) ||
+    findStockByInput(inputName);
 
-const name =
-  stock?.name ||
-  inputName ||
-  code;
+  const name =
+    stock?.name ||
+    inputName ||
+    code;
+
   const buyPrice = Number(buyPriceInput.value);
   const qty = Number(holdQtyInput.value);
-  const secondTargetPrice = Number(secondTargetPriceInput.value) || 0;
+  const secondTargetPrice =
+    Number(secondTargetPriceInput.value) || 0;
   const trailingStopRate =
     Number(trailingStopRateInput.value) || 0;
 
@@ -5794,57 +5806,60 @@ const name =
   }
 
   const strategyPreset =
-  holdCodeInput.dataset.strategyPreset || "safe";
+    holdCodeInput.dataset.strategyPreset || "safe";
 
-const strategyName =
-  strategyPreset === "trend"
-    ? "추세형"
-    : strategyPreset === "short"
-    ? "단타형"
-    : "안정형";
+  const strategyName =
+    strategyPreset === "trend"
+      ? "추세형"
+      : strategyPreset === "short"
+      ? "단타형"
+      : "안정형";
 
-const newHolding = {
-  code,
-  name,
-  buyPrice,
-  qty,
-  targetPrice,
-  secondTargetPrice,
-  trailingStopRate,
-  highestPrice: 0,
-  stopLossPrice,
-  autoTrade: true,
-  strategyPreset,
-  strategyName
-};
+  try {
+    await registerServerPaperBuy({
+      code,
+      name: cleanStockName(name),
+      buyPrice,
+      qty,
+      targetPrice,
+      secondTargetPrice,
+      stopLossPrice,
+      trailingStopRate,
+      strategy: strategyPreset,
+      strategyPreset,
+      strategyName
+    });
 
-  holdings.push(newHolding);
+    strategyStates[code] = {
+      status: "BUY",
+      lastAction: "BUY",
+      lastSignalTime: new Date().toLocaleString("ko-KR"),
+      lastSignalPrice: buyPrice,
+      lastSoldQty: 0,
+      remainQty: qty,
+      strategyPreset,
+      strategyName
+    };
 
- strategyStates[code] = {
-  status: "BUY",
-  lastAction: "BUY",
-  lastSignalTime: new Date().toLocaleString("ko-KR"),
-  lastSignalPrice: buyPrice,
-  lastSoldQty: 0,
-  remainQty: qty,
-  strategyPreset,
-  strategyName
-};
+    saveStrategyStates();
 
- 
-  saveStrategyStates();
-  saveHoldings();
+    holdCodeInput.value = "";
+    buyPriceInput.value = "";
+    holdQtyInput.value = "";
+    targetPriceInput.value = "";
+    stopLossPriceInput.value = "";
+    secondTargetPriceInput.value = "";
+    trailingStopRateInput.value = "";
 
-  holdCodeInput.value = "";
-  buyPriceInput.value = "";
-  holdQtyInput.value = "";
-  targetPriceInput.value = "";
-  stopLossPriceInput.value = "";
-  secondTargetPriceInput.value = "";
-  trailingStopRateInput.value = "";
+    await loadServerPaperState();
 
-  renderHoldings();
-  renderTradeLogs();
+    renderHoldings();
+    renderTradeLogs();
+
+    alert("서버 모의매수로 등록되었습니다.");
+  } catch (error) {
+    alert("서버 모의매수 등록 실패\n\n" + error.message);
+  }
 }
 
 function autoAddVirtualHolding(item) {
@@ -6659,35 +6674,35 @@ function isBadBuyTiming(item) {
 
   if (!price || price <= 0) return true;
 
-  // 당일 급등 추격매수 방지
-  if (!isNaN(rate) && rate >= 5) {
-    console.log("매수 제외: 당일 급등", item.name, rate);
+  // 기존 5%는 너무 빡셈. 8% 이상만 급등 제외
+  if (!isNaN(rate) && rate >= 8) {
+    console.log("매수 제외: 당일 과급등", item.name, rate);
     return true;
   }
 
-  // 고가 너무 근처에서 매수 금지
+  // 고가 0.5% 이내만 제외
   if (high > 0) {
     const highGapRate = ((high - price) / high) * 100;
 
-    if (highGapRate < 1.5) {
-      console.log("매수 제외: 고가 근처", item.name, highGapRate);
+    if (highGapRate < 0.5) {
+      console.log("매수 제외: 고가 너무 근처", item.name, highGapRate);
       return true;
     }
   }
 
-  // 저가 대비 너무 많이 올라온 상태면 추격매수 가능성
+  // 저가 대비 12% 이상만 제외
   if (low > 0) {
     const reboundRate = ((price - low) / low) * 100;
 
-    if (reboundRate >= 6) {
+    if (reboundRate >= 12) {
       console.log("매수 제외: 저가 대비 과상승", item.name, reboundRate);
       return true;
     }
   }
 
-  // 거래량이 너무 없으면 제외
-  if (volumeThreshold > 0 && volume < volumeThreshold) {
-    console.log("매수 제외: 거래량 부족", item.name, volume);
+  // 거래량은 완전 부족할 때만 제외
+  if (volumeThreshold > 0 && volume < volumeThreshold * 0.2) {
+    console.log("매수 제외: 거래량 심각 부족", item.name, volume);
     return true;
   }
 
