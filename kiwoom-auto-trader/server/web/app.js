@@ -3674,19 +3674,24 @@ const result = {
 }
 
 function getCurrentHoldingCount() {
-  return holdings.length;
+  return serverHoldings.length || holdings.length;
 }
 
 function getAvailableBuySlots() {
   const count =
-    Number(maxHoldingCountInput?.value) || maxHoldingCount || 5;
+    getInputNumber(maxHoldingCountInput, maxHoldingCount || 5);
 
-  return Math.max(0, count - holdings.length);
+  const holdingCount =
+    serverHoldings.length || holdings.length;
+
+  return Math.max(0, count - holdingCount);
 }
 
-
 function isAlreadyHolding(code) {
-  return holdings.some((item) => item.code === code);
+  return (
+    serverHoldings.some((item) => item.code === code) ||
+    holdings.some((item) => item.code === code)
+  );
 }
 
 async function getVolumePower(code) {
@@ -4432,7 +4437,20 @@ async function autoBacktestAndBuyDiscoveredItems() {
     return;
   }
 
-  const targets = latestStrongItems.slice(0, maxCount);
+  const targets = latestStrongItems
+  .map((item) => {
+    const fast = getFastEntryScore(item);
+
+    return {
+      ...item,
+      fastEntryScore: fast.score,
+      fastEntryReasons: fast.reasons,
+      fastEntryPass: fast.pass
+    };
+  })
+  .filter((item) => item.fastEntryPass)
+  .sort((a, b) => b.fastEntryScore - a.fastEntryScore)
+  .slice(0, maxCount);
 
   let backtestCount = 0;
   let passedCount = 0;
@@ -4551,6 +4569,17 @@ async function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
   if (isAlreadyHolding(item.code)) return false;
   if (getAvailableBuySlots() <= 0) return false;
 
+  const fastEntry = getFastEntryScore(item);
+
+if (!fastEntry.pass) {
+  console.log(
+    "가상매수 제외: 빠른진입 점수 부족",
+    item.name,
+    fastEntry.score,
+    fastEntry.reasons
+  );
+  return false;
+}
   const earlySignal = getEarlyRiseSignal(item);
 
   if (!earlySignal.pass) {
@@ -4563,24 +4592,24 @@ async function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
     return false;
   }
 
-  let targetRate = 1.025;
-  let secondTargetRate = 1.045;
-  let stopLossRate = 0.985;
-  let trailingRate = 1.5;
+  let targetRate = 1.03;
+  let secondTargetRate = 1.055;
+  let stopLossRate = 0.982;
+  let trailingRate = 1.8;
 
   if (strategyPreset === "trend") {
-    targetRate = 1.04;
-    secondTargetRate = 1.07;
-    stopLossRate = 0.975;
-    trailingRate = 2.5;
-  }
+  targetRate = 1.05;
+  secondTargetRate = 1.09;
+  stopLossRate = 0.975;
+  trailingRate = 2.5;
+}
 
   if (strategyPreset === "safe") {
-    targetRate = 1.03;
-    secondTargetRate = 1.05;
-    stopLossRate = 0.982;
-    trailingRate = 2;
-  }
+  targetRate = 1.025;
+  secondTargetRate = 1.045;
+  stopLossRate = 0.985;
+  trailingRate = 1.8;
+}
 
   const perBuyAmount = getPerBuyAmount();
 
@@ -4619,12 +4648,15 @@ async function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
     });
 
     console.log(
-      "[서버 자동매수 등록 성공]",
-      item.name,
-      price,
-      qty,
-      earlySignal.reasons
-    );
+  "[서버 자동매수 등록 성공]",
+  item.name,
+  {
+    price,
+    qty,
+    fastEntry,
+    earlySignal
+  }
+);
 
     return true;
   } catch (error) {
@@ -5884,12 +5916,14 @@ function autoAddVirtualHolding(item) {
 
   const earlySignal = getEarlyRiseSignal(item);
 
-if (!earlySignal.pass) {
+if (!earlySignal.pass && fastEntry.score < 8) {
   console.log(
-    "자동매수 제외: 초기상승 신호 부족",
+    "가상매수 제외: 빠른진입 조건 미통과",
     item.name,
-    earlySignal.score,
-    earlySignal.reasons
+    {
+      fastEntry,
+      earlySignal
+    }
   );
   return false;
 }
@@ -5913,22 +5947,22 @@ const preset =
     ? "short"
     : "safe";
 
-  let targetRate = 1.04;
-  let secondTargetRate = 1.06;
-  let stopLossRate = 0.97;
-  let trailingRate = 3;
+let targetRate = 1.025;
+let secondTargetRate = 1.045;
+let stopLossRate = 0.985;
+let trailingRate = 1.8;
 
-  if (strategyPreset === "trend") {
-    targetRate = 1.07;
-    secondTargetRate = 1.12;
-    stopLossRate = 0.96;
-    trailingRate = 4;
-  } else if (strategyPreset === "short") {
-    targetRate = 1.03;
-    secondTargetRate = 1.05;
-    stopLossRate = 0.98;
-    trailingRate = 2;
-  }
+if (strategyPreset === "trend") {
+  targetRate = 1.05;
+  secondTargetRate = 1.09;
+  stopLossRate = 0.975;
+  trailingRate = 2.5;
+} else if (strategyPreset === "short") {
+  targetRate = 1.03;
+  secondTargetRate = 1.055;
+  stopLossRate = 0.982;
+  trailingRate = 1.8;
+}
 
   const perBuyAmount = getPerBuyAmount();
 
@@ -6665,6 +6699,79 @@ function getEarlyRiseSignal(item) {
   };
 }
 
+function getFastEntryScore(item) {
+  const rate = parseFloat(item.changeRate);
+  const volume = Number(item.volume || 0);
+  const high = Number(item.high || 0);
+  const low = Number(item.low || 0);
+  const price = Number(item.currentPrice || item.price || 0);
+
+  let score = 0;
+  const reasons = [];
+
+  if (!price || price <= 0) {
+    return { pass: false, score: -999, reasons: ["현재가 없음"] };
+  }
+
+  if (!isNaN(rate)) {
+    if (rate >= 1.2 && rate <= 4.8) {
+      score += 4;
+      reasons.push("초기상승 구간");
+    } else if (rate > 4.8 && rate <= 7.5) {
+      score += 1;
+      reasons.push("상승 강함");
+    } else if (rate > 7.5) {
+      score -= 5;
+      reasons.push("과급등 위험");
+    }
+  }
+
+  if (volumeThreshold > 0) {
+    const volumePower = volume / volumeThreshold;
+
+    if (volumePower >= 2.5) {
+      score += 4;
+      reasons.push("거래량 강함");
+    } else if (volumePower >= 1) {
+      score += 2;
+      reasons.push("거래량 기준 통과");
+    } else if (volumePower < 0.3) {
+      score -= 3;
+      reasons.push("거래량 부족");
+    }
+  }
+
+  if (high > 0) {
+    const highGapRate = ((high - price) / high) * 100;
+
+    if (highGapRate >= 0.5 && highGapRate <= 3) {
+      score += 3;
+      reasons.push("고가 재돌파 근처");
+    } else if (highGapRate < 0.3) {
+      score -= 2;
+      reasons.push("고가 너무 근접");
+    }
+  }
+
+  if (low > 0) {
+    const reboundRate = ((price - low) / low) * 100;
+
+    if (reboundRate >= 2 && reboundRate <= 8) {
+      score += 2;
+      reasons.push("저가대비 회복 양호");
+    } else if (reboundRate > 12) {
+      score -= 3;
+      reasons.push("저가대비 과상승");
+    }
+  }
+
+  return {
+    pass: score >= 5,
+    score,
+    reasons
+  };
+}
+
 function isBadBuyTiming(item) {
   const price = Number(item.currentPrice || item.price || 0);
   const rate = parseFloat(item.changeRate);
@@ -6749,33 +6856,6 @@ function saveDiscoverSettings() {
     DISCOVER_SETTING_KEY,
     JSON.stringify(settings)
   );
-}
-
-async function loadServerPaperState() {
-  if (!serverPaperBox) return;
-
-  serverPaperBox.innerHTML =
-    `<div class="loading">서버 모의매매 상태 조회중...</div>`;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/paper-state`);
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || "서버 상태 조회 실패");
-    }
-
-    syncServerHoldingsToLocal(data);
-    renderServerPaperState(data);
-
-  } catch (error) {
-    serverPaperBox.innerHTML = `
-      <div class="error">
-        서버 모의매매 상태 조회 실패<br>
-        ${error.message}
-      </div>
-    `;
-  }
 }
 
 async function loadServerAutoStatus() {
