@@ -2447,6 +2447,7 @@ function saveStrategyStates() {
 }
 
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
+let serverHoldings = [];
 
 function getCurrentHoldingCount() {
   return holdings.length;
@@ -2460,7 +2461,9 @@ function getAvailableBuySlots() {
 }
 
 function isAlreadyHolding(code) {
-  return holdings.some((item) => item.code === code);
+  return serverHoldings.some(
+    (item) => item.code === code
+  );
 }
 
 stockCodeInput.addEventListener("input", () => {
@@ -3660,6 +3663,8 @@ function getAvailableBuySlots() {
 
   return Math.max(0, count - holdings.length);
 }
+
+let serverHoldings = [];
 
 function isAlreadyHolding(code) {
   return holdings.some((item) => item.code === code);
@@ -6736,8 +6741,8 @@ async function loadServerPaperState() {
       throw new Error(data.message || "서버 상태 조회 실패");
     }
 
-syncServerHoldingsToLocal(data);
-renderServerPaperState(data);
+    syncServerHoldingsToLocal(data);
+    renderServerPaperState(data);
 
   } catch (error) {
     serverPaperBox.innerHTML = `
@@ -7055,7 +7060,9 @@ async function serverSellAllHolding(code) {
 }
 
 function syncServerHoldingsToLocal(data) {
-  const serverHoldings = data.holdings || [];
+  serverHoldings = Array.isArray(data.holdings)
+  ? data.holdings
+  : [];
 
   holdings = serverHoldings.map((item) => ({
     code: item.code,
