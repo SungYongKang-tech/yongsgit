@@ -4268,11 +4268,13 @@ async function runAllDiscoveredBacktests() {
   let failNoSlot = 0;
   let failAutoBlocked = 0;
 
-  const availableSlots = getAvailableBuySlots();
+const availableSlots = getAvailableBuySlots();
 
-  const targetItems = latestStrongItems
-    .filter((item) => !isAlreadyHolding(item.code))
-    .slice(0, Math.max(1, availableSlots));
+const BACKTEST_TARGET_COUNT = 5;
+
+const targetItems = latestStrongItems
+  .filter((item) => !isAlreadyHolding(item.code))
+  .slice(0, BACKTEST_TARGET_COUNT);
 
   if (targetItems.length === 0) {
     alert(
@@ -4337,7 +4339,13 @@ async function runAllDiscoveredBacktests() {
       continue;
     }
 
-    const ok = prepareAndAddVirtualBuy(item, preset);
+    if (getAvailableBuySlots() <= 0) {
+  failNoSlot += 1;
+  console.log("[자동매수 제외] 보유한도 초과", item.name);
+  continue;
+}
+
+   const ok = await prepareAndAddVirtualBuy(item, preset);
 
     if (ok) {
       autoBuyCount += 1;
@@ -4442,7 +4450,7 @@ async function autoBacktestAndBuyDiscoveredItems() {
 
     passedCount += 1;
 
-    const ok = prepareAndAddVirtualBuy(item, preset);
+    const ok = await prepareAndAddVirtualBuy(item, preset);
 
   if (ok) {
   buyCount += 1;
@@ -4483,7 +4491,27 @@ async function autoBacktestAndBuyDiscoveredItems() {
   });
 }
 
-function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
+async function registerServerPaperBuy(payload) {
+  const res = await fetch(`${API_BASE}/api/paper-buy`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+
+  if (!res.ok || data.ok === false) {
+    throw new Error(data.message || "서버 모의매수 등록 실패");
+  }
+
+  await loadServerPaperState();
+
+  return data;
+}
+
+async function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
   if (isAutoBuyBlocked) {
     console.warn("신규 가상매수 차단 상태입니다.");
     return false;
@@ -4511,18 +4539,11 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
     return false;
   }
 
-  holdCodeInput.value = item.name;
-  selectedStockCodes.hold = item.code;
-
-  buyPriceInput.value = price;
-
-  // 빠른 진입형 기본값
   let targetRate = 1.025;
   let secondTargetRate = 1.045;
   let stopLossRate = 0.985;
   let trailingRate = 1.5;
 
-  // 추세형이면 조금 더 길게
   if (strategyPreset === "trend") {
     targetRate = 1.04;
     secondTargetRate = 1.07;
@@ -4530,7 +4551,6 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
     trailingRate = 2.5;
   }
 
-  // 안정형도 너무 느리지 않게
   if (strategyPreset === "safe") {
     targetRate = 1.03;
     secondTargetRate = 1.05;
@@ -4538,14 +4558,8 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
     trailingRate = 2;
   }
 
-  targetPriceInput.value = Math.round(price * targetRate);
-  secondTargetPriceInput.value = Math.round(price * secondTargetRate);
-  stopLossPriceInput.value = Math.round(price * stopLossRate);
-  trailingStopRateInput.value = trailingRate;
-
   const perBuyAmount = getPerBuyAmount();
 
-  // 빠른 진입은 1종목당 금액을 조금 줄임
   const buyAmount =
     strategyPreset === "short"
       ? Math.round(perBuyAmount * 0.7)
@@ -4558,20 +4572,45 @@ function prepareAndAddVirtualBuy(item, strategyPreset = "short") {
     return false;
   }
 
-  holdQtyInput.value = qty;
-  holdCodeInput.dataset.strategyPreset = strategyPreset;
+  const strategyName =
+    strategyPreset === "trend"
+      ? "추세형"
+      : strategyPreset === "short"
+      ? "단타형"
+      : "안정형";
 
-  addHoldBtn.click();
+  try {
+    await registerServerPaperBuy({
+      code: item.code,
+      name: cleanStockName(item.name),
+      buyPrice: price,
+      qty,
+      targetPrice: Math.round(price * targetRate),
+      secondTargetPrice: Math.round(price * secondTargetRate),
+      stopLossPrice: Math.round(price * stopLossRate),
+      trailingStopRate: trailingRate,
+      strategy: strategyPreset,
+      strategyPreset,
+      strategyName
+    });
 
-  console.log(
-    "자동 가상매수 등록",
-    item.name,
-    price,
-    qty,
-    earlySignal.reasons
-  );
+    console.log(
+      "[서버 자동매수 등록 성공]",
+      item.name,
+      price,
+      qty,
+      earlySignal.reasons
+    );
 
-  return true;
+    return true;
+  } catch (error) {
+    console.error("[서버 자동매수 등록 실패]", item.name, error);
+    updateApiStatus(
+      `서버 자동매수 실패 · ${cleanStockName(item.name)} · ${error.message}`,
+      true
+    );
+    return false;
+  }
 }
 
 function getTodayKey() {
