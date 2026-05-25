@@ -1767,18 +1767,20 @@ const trailingRate = rule.trailingRate;
 
           if (shouldAddHold) {
   registerServerPaperBuy({
-    code,
-    name: cleanStockName(name),
-    buyPrice: price,
-    qty,
-    targetPrice: Math.round(price * targetRate),
-    secondTargetPrice: Math.round(price * secondTargetRate),
-    stopLossPrice: Math.round(price * stopLossRate),
-    trailingStopRate: trailingRate,
-    strategy: strategyPreset,
-    strategyPreset,
-    strategyName
-  })
+  code,
+  name: cleanStockName(name),
+  buyPrice: price,
+  qty,
+  targetPrice: Math.round(price * targetRate),
+  secondTargetPrice: Math.round(price * secondTargetRate),
+  stopLossPrice: Math.round(price * stopLossRate),
+  trailingStopRate: trailingRate,
+  strategy: strategyPreset,
+  strategyPreset,
+  strategyName,
+  protectMinutes: 3,
+  breakEvenAfterPartial: true
+})
     .then(() => {
       alert("서버 모의매수로 등록되었습니다.");
     })
@@ -7007,6 +7009,18 @@ function renderServerPaperState(data) {
   const tradeLogs = data.tradeLogs || [];
   const virtualResults = data.virtualResults || [];
 
+  const lastBuy = tradeLogs
+  .slice()
+  .reverse()
+  .find((item) => item.type === "BUY");
+
+const lastSell = tradeLogs
+  .slice()
+  .reverse()
+  .find((item) => item.type !== "BUY");
+
+const holdingCountText = `${holdings.length} / 5`;
+
   const totalProfit = virtualResults.reduce(
     (sum, item) => sum + Number(item.profit || 0),
     0
@@ -7026,6 +7040,16 @@ function renderServerPaperState(data) {
   const todayProfit = virtualResults
     .filter((item) => item.date === today)
     .reduce((sum, item) => sum + Number(item.profit || 0), 0);
+
+    const lastBuy = tradeLogs
+  .slice()
+  .reverse()
+  .find((item) => item.type === "BUY");
+
+const lastSell = tradeLogs
+  .slice()
+  .reverse()
+  .find((item) => item.type !== "BUY");
 
   serverPaperBox.innerHTML = `
     <div class="server-paper-summary">
@@ -7065,15 +7089,19 @@ function renderServerPaperState(data) {
         </strong>
       </div>
 
-      <div>
-        <span>완료 거래</span>
-        <strong>${formatNumber(virtualResults.length)}건</strong>
-      </div>
+     <div>
+  <span>최근 매수</span>
+  <strong>
+    ${lastBuy ? cleanStockName(lastBuy.name) : "-"}
+  </strong>
+</div>
 
-      <div>
-        <span>승률</span>
-        <strong>${winRate.toFixed(1)}%</strong>
-      </div>
+<div>
+  <span>최근 매도</span>
+  <strong>
+    ${lastSell ? cleanStockName(lastSell.name) : "-"}
+  </strong>
+</div>
     </div>
 
     <div class="server-paper-section-title">서버 보유종목</div>
