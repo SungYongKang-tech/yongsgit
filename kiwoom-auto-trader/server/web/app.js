@@ -723,7 +723,6 @@ if (defaultBuyAmountInput) {
 }
 
 setupCommaInput(defaultBuyAmountInput);
-setupCommaInput(volumeThresholdInput);
 setupCommaInput(dailyMaxLossInput);
 
 if (maxHoldingCountInput) {
@@ -1253,10 +1252,16 @@ function renderStrongStockBox(items, title = "🔥 오늘 강한 종목") {
           ? ((currentPrice - low) / candleRange) * 100
           : 0;
 
-      const volumePower =
-        volumeThreshold > 0
-          ? volume / volumeThreshold
-          : 0;
+      const tradeValue =
+  currentPrice * volume;
+
+const tradeValueThreshold =
+  volumeThreshold * 100000000;
+
+const volumePower =
+  tradeValueThreshold > 0
+    ? tradeValue / tradeValueThreshold
+    : 0;
 
       if (!isNaN(rate)) {
         if (rate >= 5) {
@@ -1277,10 +1282,10 @@ function renderStrongStockBox(items, title = "🔥 오늘 강한 종목") {
       } else if (volumePower >= 1.5) {
         score += 2;
         reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
-      } else if (volume >= volumeThreshold) {
-        score += 1;
-        reasons.push("거래량 기준 통과");
-      }
+      } else if (tradeValue >= tradeValueThreshold) {
+  score += 1;
+  reasons.push("거래대금 기준 통과");
+}
 
       if (high > 0 && currentPrice >= high * 0.98) {
         score -= 2;
