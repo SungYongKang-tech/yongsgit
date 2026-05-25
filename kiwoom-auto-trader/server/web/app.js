@@ -6204,17 +6204,20 @@ if (emergencyStopBtn) {
 
     if (!ok) return;
 
-    holdings = holdings.map((item) => {
- strategyStates[item.code] = {
-  status: "BUY",
-  lastAction: "BUY",
-  lastSignalTime: new Date().toLocaleString("ko-KR"),
-  lastSignalPrice: price,
-  lastSoldQty: 0,
-  remainQty: qty,
-  strategyPreset,
-  strategyName
-};
+   holdings = holdings.map((item) => {
+  const code = item.code;
+
+  strategyStates[code] = {
+    ...(strategyStates[code] || {}),
+    status: "BUY",
+    lastAction: "EMERGENCY_STOP",
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: Number(item.currentPrice || item.buyPrice || 0),
+    lastSoldQty: Number(strategyStates[code]?.lastSoldQty || 0),
+    remainQty: Number(item.qty || 0),
+    strategyPreset: item.strategyPreset || strategyStates[code]?.strategyPreset || "safe",
+    strategyName: item.strategyName || strategyStates[code]?.strategyName || "안정형"
+  };
 
   return {
     ...item,
@@ -7059,7 +7062,7 @@ const lastSell = tradeLogs
   .reverse()
   .find((item) => item.type !== "BUY");
 
-const holdingCountText = `${holdings.length} / 5`;
+
 
   const totalProfit = virtualResults.reduce(
     (sum, item) => sum + Number(item.profit || 0),
@@ -7081,10 +7084,6 @@ const holdingCountText = `${holdings.length} / 5`;
     .filter((item) => item.date === today)
     .reduce((sum, item) => sum + Number(item.profit || 0), 0);
 
-    const lastBuy = tradeLogs
-  .slice()
-  .reverse()
-  .find((item) => item.type === "BUY");
 
 const lastSell = tradeLogs
   .slice()
@@ -7094,7 +7093,6 @@ const lastSell = tradeLogs
   serverPaperBox.innerHTML = `
     <div class="server-paper-summary">
       <div>
-        <span>보유종목</span>
         <span>보유종목</span>
 <strong>${holdings.length} / ${maxHoldingCount}개</strong>
       </div>
