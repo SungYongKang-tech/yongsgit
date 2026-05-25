@@ -800,10 +800,10 @@ if (saveDefaultBuyAmountBtn) {
   });
 }
 const VOLUME_THRESHOLD_KEY =
-  "kiwoom_volume_threshold";
+  "kiwoom_trade_value_threshold";
 
-  let volumeThreshold =
-  Number(localStorage.getItem(VOLUME_THRESHOLD_KEY)) || 1000000;
+let volumeThreshold =
+  Number(localStorage.getItem(VOLUME_THRESHOLD_KEY)) || 5000000000;
 
 if (volumeThresholdInput) {
   volumeThresholdInput.value = formatNumber(volumeThreshold);
@@ -815,7 +815,7 @@ if (saveVolumeThresholdBtn) {
       Number(volumeThresholdInput.value.replace(/,/g, ""));
 
     if (isNaN(value) || value <= 0) {
-      alert("거래량 기준을 입력하세요.");
+      alert("거래대금 기준을 입력하세요.");
       return;
     }
 
@@ -1802,8 +1802,12 @@ function renderWatchItem(item) {
   const rateValue = parseFloat(item.changeRate);
   const isEntryCandidate =
   !isNaN(rateValue) && rateValue >= entryRate;
-  const isVolumeHot =
-  Number(item.volume) >= volumeThreshold;
+  const tradeValue =
+  Number(item.currentPrice || item.price || 0) *
+  Number(item.volume || 0);
+
+const isVolumeHot =
+  tradeValue >= volumeThreshold;
   const isStrongStock =
   isEntryCandidate || isVolumeHot;
 
@@ -1828,7 +1832,7 @@ function renderWatchItem(item) {
   ${cleanStockName(item.name)}
   ${item.isFallback ? `<span class="fallback-badge">저장가</span>` : ""}
   ${isEntryCandidate ? `<span class="entry-badge">진입후보</span>` : ""}
-  ${isVolumeHot ? `<span class="volume-badge">거래량급증</span>` : ""}
+  ${isVolumeHot ? `<span class="volume-badge">거래대금충족</span>` : ""}
   </div>
 <div class="watch-code">${item.code}</div>
         </div>
@@ -6456,11 +6460,13 @@ const closePosition =
     : 0;
 
 const dayRate = parseFloat(item.changeRate);
+const tradeValue =
+  currentPrice * volume;
+
 const volumePower =
   volumeThreshold > 0
-    ? volume / volumeThreshold
+    ? tradeValue / volumeThreshold
     : 0;
-
 // 1. 상승률 점수
 if (!isNaN(dayRate)) {
   if (dayRate >= 7) {
@@ -6482,9 +6488,9 @@ if (volumePower >= 3) {
 } else if (volumePower >= 1.5) {
   score += 2;
   reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
-} else if (volume >= volumeThreshold) {
+} else if (tradeValue >= volumeThreshold) {
   score += 1;
-  reasons.push("거래량 기준 통과");
+  reasons.push("거래대금 기준 통과");
 }
 
 // 3. 고가 근접 점수
@@ -7085,10 +7091,7 @@ const lastSell = tradeLogs
     .reduce((sum, item) => sum + Number(item.profit || 0), 0);
 
 
-const lastSell = tradeLogs
-  .slice()
-  .reverse()
-  .find((item) => item.type !== "BUY");
+
 
   serverPaperBox.innerHTML = `
     <div class="server-paper-summary">
