@@ -544,6 +544,37 @@ function clearBacktestHistory() {
   alert("백테스트 기록이 삭제되었습니다.");
 }
 
+const STRATEGY_PRESET_RULES = {
+  short: {
+    name: "단타형",
+    targetRate: 1.03,
+    secondTargetRate: 1.055,
+    stopLossRate: 0.982,
+    trailingRate: 1.8,
+    amountRate: 0.7
+  },
+  trend: {
+    name: "추세형",
+    targetRate: 1.05,
+    secondTargetRate: 1.09,
+    stopLossRate: 0.975,
+    trailingRate: 2.5,
+    amountRate: 1.0
+  },
+  safe: {
+    name: "안정형",
+    targetRate: 1.025,
+    secondTargetRate: 1.045,
+    stopLossRate: 0.985,
+    trailingRate: 1.8,
+    amountRate: 1.0
+  }
+};
+
+function getStrategyRule(preset = "safe") {
+  return STRATEGY_PRESET_RULES[preset] || STRATEGY_PRESET_RULES.safe;
+}
+
 const STOCK_MASTER = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
@@ -1674,22 +1705,12 @@ const strategyPreset =
 
           buyPriceInput.value = price;
 
-          let targetRate = 1.04;
-          let secondTargetRate = 1.06;
-          let stopLossRate = 0.97;
-          let trailingRate = 3;
+          const rule = getStrategyRule(strategyPreset);
 
-          if (strategyPreset === "trend") {
-            targetRate = 1.07;
-            secondTargetRate = 1.12;
-            stopLossRate = 0.96;
-            trailingRate = 4;
-          } else if (strategyPreset === "short") {
-            targetRate = 1.03;
-            secondTargetRate = 1.05;
-            stopLossRate = 0.98;
-            trailingRate = 2;
-          }
+const targetRate = rule.targetRate;
+const secondTargetRate = rule.secondTargetRate;
+const stopLossRate = rule.stopLossRate;
+const trailingRate = rule.trailingRate;
 
           targetPriceInput.value =
             Math.round(price * targetRate);
@@ -1704,15 +1725,8 @@ const strategyPreset =
 
           const perBuyAmount = getPerBuyAmount();
 
-          let recommendAmount = perBuyAmount;
-
-          if (strategyPreset === "trend") {
-            recommendAmount =
-              Math.round(perBuyAmount * 1.2);
-          } else if (strategyPreset === "short") {
-            recommendAmount =
-              Math.round(perBuyAmount * 0.7);
-          }
+         const recommendAmount =
+  Math.round(perBuyAmount * rule.amountRate);
 
           const qty =
             price > 0
@@ -2384,6 +2398,48 @@ const groupedHtml = Object.values(groupedResults)
     `;
   })
   .join("");
+  
+
+
+  const detailHtml = todayResults.slice().reverse().map((item) => {
+    const isProfit = item.profit >= 0;
+
+    return `
+      <div class="virtual-result-item">
+        <div class="virtual-result-top">
+          <div class="virtual-result-name">${cleanStockName(item.name)}</div>
+          <div class="virtual-result-badge ${isProfit ? "" : "loss"}">
+            ${isProfit ? "수익" : "손실"}
+          </div>
+        </div>
+
+        <div class="virtual-result-detail">
+          <div>
+            ${item.resultText} ·
+            매수 ${formatNumber(Math.round(item.buyPrice))}원 →
+            매도 ${formatNumber(Math.round(item.sellPrice))}원
+          </div>
+
+          <div>
+            수량 ${formatNumber(item.qty)}주 /
+            실현손익
+            <strong class="${isProfit ? "up" : "down"}">
+              ${isProfit ? "+" : ""}${formatNumber(Math.round(item.profit))}원
+            </strong>
+          </div>
+
+          <div>
+            수익률
+            <strong class="${isProfit ? "up" : "down"}">
+              ${isProfit ? "+" : ""}${item.profitRate.toFixed(2)}%
+            </strong>
+            · ${item.time}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
   virtualResultBox.innerHTML = `
     <div class="trade-stat-title">누적 모의투자 결과</div>
 
@@ -2412,49 +2468,34 @@ const groupedHtml = Object.values(groupedResults)
         </strong>
       </div>
     </div>
-    <div class="trade-stat-title">종목별 누적 결과</div>
-${groupedHtml}
-    <div class="trade-stat-title">개별 매도 내역</div>
-    ${todayResults.slice().reverse().map((item) => {
-      const isProfit = item.profit >= 0;
 
-      return `
-        <div class="virtual-result-item">
-          <div class="virtual-result-top">
-            <div class="virtual-result-name">${cleanStockName(item.name)}</div>
-            <div class="virtual-result-badge ${isProfit ? "" : "loss"}">
-              ${isProfit ? "수익" : "손실"}
-            </div>
-          </div>
+    <button class="small-btn" onclick="toggleResultSection('groupedResultSection')">
+      종목별 누적 결과 펼치기/접기
+    </button>
+    <div id="groupedResultSection" style="display:none;">
+      ${groupedHtml}
+    </div>
 
-          <div class="virtual-result-detail">
-            <div>
-              ${item.resultText} · 
-              매수 ${formatNumber(Math.round(item.buyPrice))}원 →
-              매도 ${formatNumber(Math.round(item.sellPrice))}원
-            </div>
-
-            <div>
-              수량 ${formatNumber(item.qty)}주 /
-              실현손익 
-              <strong class="${isProfit ? "up" : "down"}">
-                ${isProfit ? "+" : ""}${formatNumber(Math.round(item.profit))}원
-              </strong>
-            </div>
-
-            <div>
-              수익률 
-              <strong class="${isProfit ? "up" : "down"}">
-                ${isProfit ? "+" : ""}${item.profitRate.toFixed(2)}%
-              </strong>
-              · ${item.time}
-            </div>
-          </div>
-        </div>
-      `;
-    }).join("")}
+    <button class="small-btn" onclick="toggleResultSection('detailResultSection')">
+      개별 매도 내역 펼치기/접기
+    </button>
+    <div id="detailResultSection" style="display:none;">
+      ${detailHtml}
+    </div>
   `;
 }
+
+function toggleResultSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  el.style.display =
+    el.style.display === "none" ? "block" : "none";
+}
+
+
+
+
 
 const STRATEGY_STATE_KEY = "kiwoom_strategy_states";
 
@@ -2468,22 +2509,6 @@ function saveStrategyStates() {
 let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
 let serverHoldings = [];
 
-function getCurrentHoldingCount() {
-  return holdings.length;
-}
-
-function getAvailableBuySlots() {
-  const count =
-    getInputNumber(maxHoldingCountInput, maxHoldingCount || 5);
-
-  return Math.max(0, count - holdings.length);
-}
-
-function isAlreadyHolding(code) {
-  return serverHoldings.some(
-    (item) => item.code === code
-  );
-}
 
 stockCodeInput.addEventListener("input", () => {
   renderStockSuggestions(
@@ -4592,31 +4617,17 @@ if (!fastEntry.pass) {
     return false;
   }
 
-  let targetRate = 1.03;
-  let secondTargetRate = 1.055;
-  let stopLossRate = 0.982;
-  let trailingRate = 1.8;
+const rule = getStrategyRule(strategyPreset);
 
-  if (strategyPreset === "trend") {
-  targetRate = 1.05;
-  secondTargetRate = 1.09;
-  stopLossRate = 0.975;
-  trailingRate = 2.5;
-}
-
-  if (strategyPreset === "safe") {
-  targetRate = 1.025;
-  secondTargetRate = 1.045;
-  stopLossRate = 0.985;
-  trailingRate = 1.8;
-}
+const targetRate = rule.targetRate;
+const secondTargetRate = rule.secondTargetRate;
+const stopLossRate = rule.stopLossRate;
+const trailingRate = rule.trailingRate;
 
   const perBuyAmount = getPerBuyAmount();
 
   const buyAmount =
-    strategyPreset === "short"
-      ? Math.round(perBuyAmount * 0.7)
-      : perBuyAmount;
+  Math.round(perBuyAmount * rule.amountRate);
 
   const qty = Math.floor(buyAmount / price);
 
@@ -5895,10 +5906,11 @@ async function addHolding() {
 }
 
 function autoAddVirtualHolding(item) {
-   if (isAutoBuyBlocked) {
+  if (isAutoBuyBlocked) {
     console.warn("신규 자동매수 차단 상태입니다.");
     return false;
   }
+
   if (!item || !item.code) return false;
 
   if (isAlreadyHolding(item.code)) return false;
@@ -5910,71 +5922,56 @@ function autoAddVirtualHolding(item) {
     return false;
   }
 
-  const price = Number(item.currentPrice || 0);
-  const currentPrice = price;
+  const price = Number(item.currentPrice || item.price || 0);
+
   if (price <= 0) return false;
 
+  const fastEntry = getFastEntryScore(item);
   const earlySignal = getEarlyRiseSignal(item);
 
-if (!earlySignal.pass && fastEntry.score < 8) {
-  console.log(
-    "가상매수 제외: 빠른진입 조건 미통과",
-    item.name,
-    {
-      fastEntry,
-      earlySignal
-    }
-  );
-  return false;
-}
+  if (!earlySignal.pass && fastEntry.score < 8) {
+    console.log(
+      "가상매수 제외: 빠른진입 조건 미통과",
+      item.name,
+      { fastEntry, earlySignal }
+    );
+    return false;
+  }
 
   if (isBadBuyTiming(item)) {
-  return false;
-}
+    return false;
+  }
 
   const recommended = getRecommendedStrategyForCode(item.code);
 
-const strategyText =
-  recommended?.name ||
-  item.recommendType ||
-  item.strategy ||
-  "안정형";
+  const strategyText =
+    recommended?.name ||
+    item.recommendType ||
+    item.strategy ||
+    "안정형";
 
-const preset =
-  String(strategyText).includes("추세")
-    ? "trend"
-    : String(strategyText).includes("단타")
-    ? "short"
-    : "safe";
+  const strategyPreset =
+    String(strategyText).includes("추세")
+      ? "trend"
+      : String(strategyText).includes("단타")
+      ? "short"
+      : "safe";
 
-let targetRate = 1.025;
-let secondTargetRate = 1.045;
-let stopLossRate = 0.985;
-let trailingRate = 1.8;
+  const rule = getStrategyRule(strategyPreset);
 
-if (strategyPreset === "trend") {
-  targetRate = 1.05;
-  secondTargetRate = 1.09;
-  stopLossRate = 0.975;
-  trailingRate = 2.5;
-} else if (strategyPreset === "short") {
-  targetRate = 1.03;
-  secondTargetRate = 1.055;
-  stopLossRate = 0.982;
-  trailingRate = 1.8;
-}
+  const targetRate = rule.targetRate;
+  const secondTargetRate = rule.secondTargetRate;
+  const stopLossRate = rule.stopLossRate;
+  const trailingRate = rule.trailingRate;
+  const strategyName = rule.name;
 
   const perBuyAmount = getPerBuyAmount();
 
-  let recommendAmount = perBuyAmount;
-
-  if (strategyPreset === "trend") {
-    recommendAmount = Math.round(perBuyAmount * 1.2);
-  } else if (strategyPreset === "short") {
-    recommendAmount = Math.round(perBuyAmount * 0.7);
-  }
+  const recommendAmount =
+    Math.round(perBuyAmount * rule.amountRate);
 
   const qty = Math.floor(recommendAmount / price);
+
   if (qty <= 0) return false;
 
   const buyAmount = price * qty;
@@ -5984,42 +5981,44 @@ if (strategyPreset === "trend") {
 
   const newHolding = {
     code: item.code,
-    name: item.name,
+    name: cleanStockName(item.name),
     buyPrice: price,
     qty,
     targetPrice: Math.round(price * targetRate),
     secondTargetPrice: Math.round(price * secondTargetRate),
     trailingStopRate: trailingRate,
-    highestPrice: 0,
+    highestPrice: price,
     stopLossPrice: Math.round(price * stopLossRate),
-    autoTrade: true
+    autoTrade: true,
+    strategyPreset,
+    strategyName
   };
 
   holdings.push(newHolding);
+  saveHoldings();
 
- strategyStates[item.code] = {
-  status: "BUY",
-  lastAction: "BUY",
-  lastSignalTime: new Date().toLocaleString("ko-KR"),
-  lastSignalPrice: price,
-  lastSoldQty: 0,
-  remainQty: qty,
-  strategyPreset,
-  strategyName
-};
+  strategyStates[item.code] = {
+    status: "BUY",
+    lastAction: "BUY",
+    lastSignalTime: new Date().toLocaleString("ko-KR"),
+    lastSignalPrice: price,
+    lastSoldQty: 0,
+    remainQty: qty,
+    strategyPreset,
+    strategyName
+  };
+
+  saveStrategyStates();
 
   addTradeLog({
     type: "BUY",
-    code: newHolding.code,
-    name: newHolding.name,
-    price: newHolding.buyPrice,
-    reason: `자동 모의매수 등록 · ${strategyText}`,
-    sellQty: 0,
-    remainQty: newHolding.qty
+    code: item.code,
+    name: cleanStockName(item.name),
+    price,
+    qty,
+    reason: `자동매수 · ${strategyName}`
   });
 
-  saveStrategyStates();
-  saveHoldings();
   renderHoldings();
   renderTradeLogs();
 
