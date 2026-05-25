@@ -2002,11 +2002,21 @@ async function refreshWithoutJump() {
   isRefreshing = true;
 
   try {
-    const holdCodes = holdings.map((item) => item.code);
+    const holdCodes = Array.isArray(holdings)
+  ? holdings.map((item) => item.code).filter(Boolean)
+  : [];
 
-    const uniqueCodes = [
-      ...new Set([...watchCodes, ...holdCodes])
-    ];
+const uniqueCodes = [
+  ...new Set([
+    ...watchCodes.filter(Boolean),
+    ...holdCodes
+  ])
+];
+
+if (uniqueCodes.length === 0) {
+  updateApiStatus("조회할 종목이 없습니다.");
+  return;
+}
 
     const refreshStartTime = performance.now();
     updateApiStatus(
@@ -2053,11 +2063,21 @@ async function manualRefresh() {
   isRefreshing = true;
 
   try {
-    const holdCodes = holdings.map((item) => item.code);
+    const holdCodes = Array.isArray(holdings)
+  ? holdings.map((item) => item.code).filter(Boolean)
+  : [];
 
-    const uniqueCodes = [
-      ...new Set([...watchCodes, ...holdCodes])
-    ];
+const uniqueCodes = [
+  ...new Set([
+    ...watchCodes.filter(Boolean),
+    ...holdCodes
+  ])
+];
+
+if (uniqueCodes.length === 0) {
+  updateApiStatus("조회할 종목이 없습니다.");
+  return;
+}
 
     const refreshStartTime = performance.now();
 
@@ -4696,18 +4716,20 @@ const trailingRate = rule.trailingRate;
 
   try {
     await registerServerPaperBuy({
-      code: item.code,
-      name: cleanStockName(item.name),
-      buyPrice: price,
-      qty,
-      targetPrice: Math.round(price * targetRate),
-      secondTargetPrice: Math.round(price * secondTargetRate),
-      stopLossPrice: Math.round(price * stopLossRate),
-      trailingStopRate: trailingRate,
-      strategy: strategyPreset,
-      strategyPreset,
-      strategyName
-    });
+  code: item.code,
+  name: cleanStockName(item.name),
+  buyPrice: price,
+  qty,
+  targetPrice: Math.round(price * targetRate),
+  secondTargetPrice: Math.round(price * secondTargetRate),
+  stopLossPrice: Math.round(price * stopLossRate),
+  trailingStopRate: trailingRate,
+  strategy: strategyPreset,
+  strategyPreset,
+  strategyName,
+  protectMinutes: 3,
+  breakEvenAfterPartial: true
+});
 
     console.log(
   "[서버 자동매수 등록 성공]",
@@ -4733,6 +4755,23 @@ const trailingRate = rule.trailingRate;
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getNextMorningAutoRunText() {
+  const lastRunTime =
+    Number(localStorage.getItem(MORNING_AUTO_RUN_KEY) || 0);
+
+  if (!lastRunTime) {
+    return "자동발굴 대기중 · 아직 실행 기록 없음";
+  }
+
+  const oneHour = 60 * 60 * 1000;
+  const nextTime = new Date(lastRunTime + oneHour);
+
+  return `다음 자동발굴 가능: ${nextTime.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  })}`;
 }
 
 function canRunMorningAutoFlow() {
@@ -4769,8 +4808,9 @@ function canRunMorningAutoFlow() {
   const oneHour = 60 * 60 * 1000;
 
   if (lastRunTime && now.getTime() - lastRunTime < oneHour) {
-    return false;
-  }
+  updateApiStatus(getNextMorningAutoRunText());
+  return false;
+}
 
   return true;
 }
