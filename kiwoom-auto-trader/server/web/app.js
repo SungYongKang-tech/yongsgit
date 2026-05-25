@@ -2308,6 +2308,17 @@ const tradeLogList = document.getElementById("tradeLogList");
 const clearTradeLogBtn = document.getElementById("clearTradeLogBtn");
 
 const TRADE_LOG_KEY = "kiwoom_virtual_trade_logs";
+
+const SERVER_TRADE_LOG_DELETED_COUNT_KEY =
+  "kiwoom_server_trade_log_deleted_count";
+
+const SERVER_RESULT_DELETED_COUNT_KEY =
+  "kiwoom_server_result_deleted_count";
+
+let showAllTradeLogs = false;
+let showAllVirtualResults = false;
+let showAllServerTradeLogs = false;
+
 let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
 
 const DAILY_TRADE_LIMIT = 20;
@@ -2338,7 +2349,7 @@ function renderVirtualResults() {
 
   if (todayResults.length === 0) {
     virtualResultBox.innerHTML =
-      `<div class="empty">오늘 완료된 모의투자 결과가 없습니다.</div>`;
+      `<div class="empty">완료된 모의투자 결과가 없습니다.</div>`;
     return;
   }
 
@@ -2346,62 +2357,66 @@ function renderVirtualResults() {
   const totalSell = todayResults.reduce((sum, item) => sum + item.sellAmount, 0);
   const totalProfit = todayResults.reduce((sum, item) => sum + item.profit, 0);
   const totalRate = totalBuy > 0 ? (totalProfit / totalBuy) * 100 : 0;
+
   const groupedResults = {};
 
-todayResults.forEach((item) => {
-  if (!groupedResults[item.code]) {
-    groupedResults[item.code] = {
-      name: item.name,
-      buyAmount: 0,
-      sellAmount: 0,
-      profit: 0,
-      qty: 0
-    };
-  }
+  todayResults.forEach((item) => {
+    if (!groupedResults[item.code]) {
+      groupedResults[item.code] = {
+        name: item.name,
+        buyAmount: 0,
+        sellAmount: 0,
+        profit: 0,
+        qty: 0
+      };
+    }
 
-  groupedResults[item.code].buyAmount += item.buyAmount;
-  groupedResults[item.code].sellAmount += item.sellAmount;
-  groupedResults[item.code].profit += item.profit;
-  groupedResults[item.code].qty += item.qty;
-});
+    groupedResults[item.code].buyAmount += item.buyAmount;
+    groupedResults[item.code].sellAmount += item.sellAmount;
+    groupedResults[item.code].profit += item.profit;
+    groupedResults[item.code].qty += item.qty;
+  });
 
-const groupedHtml = Object.values(groupedResults)
-  .map((item) => {
-    const rate =
-      item.buyAmount > 0 ? (item.profit / item.buyAmount) * 100 : 0;
+  const groupedHtml = Object.values(groupedResults)
+    .map((item) => {
+      const rate =
+        item.buyAmount > 0 ? (item.profit / item.buyAmount) * 100 : 0;
 
-    return `
-      <div class="virtual-result-item">
-        <div class="virtual-result-top">
-          <div class="virtual-result-name">${cleanStockName(item.name)} 누적</div>
-          <div class="virtual-result-badge ${item.profit >= 0 ? "" : "loss"}">
-            ${item.profit >= 0 ? "수익" : "손실"}
+      return `
+        <div class="virtual-result-item">
+          <div class="virtual-result-top">
+            <div class="virtual-result-name">${cleanStockName(item.name)} 누적</div>
+            <div class="virtual-result-badge ${item.profit >= 0 ? "" : "loss"}">
+              ${item.profit >= 0 ? "수익" : "손실"}
+            </div>
+          </div>
+
+          <div class="virtual-result-detail">
+            <div>
+              총수량 ${formatNumber(item.qty)}주 /
+              총매수 ${formatNumber(Math.round(item.buyAmount))}원 →
+              총매도 ${formatNumber(Math.round(item.sellAmount))}원
+            </div>
+
+            <div>
+              누적손익
+              <strong class="${item.profit >= 0 ? "up" : "down"}">
+                ${item.profit >= 0 ? "+" : ""}${formatNumber(Math.round(item.profit))}원
+                (${item.profit >= 0 ? "+" : ""}${rate.toFixed(2)}%)
+              </strong>
+            </div>
           </div>
         </div>
+      `;
+    })
+    .join("");
 
-        <div class="virtual-result-detail">
-          <div>
-            총수량 ${formatNumber(item.qty)}주 /
-            총매수 ${formatNumber(Math.round(item.buyAmount))}원 →
-            총매도 ${formatNumber(Math.round(item.sellAmount))}원
-          </div>
+  const detailRows = todayResults.slice().reverse();
 
-          <div>
-            누적손익
-            <strong class="${item.profit >= 0 ? "up" : "down"}">
-              ${item.profit >= 0 ? "+" : ""}${formatNumber(Math.round(item.profit))}원
-              (${item.profit >= 0 ? "+" : ""}${rate.toFixed(2)}%)
-            </strong>
-          </div>
-        </div>
-      </div>
-    `;
-  })
-  .join("");
-  
+  const visibleDetailRows =
+    showAllVirtualResults ? detailRows : detailRows.slice(0, 5);
 
-
-  const detailHtml = todayResults.slice().reverse().map((item) => {
+  const detailHtml = visibleDetailRows.map((item) => {
     const isProfit = item.profit >= 0;
 
     return `
@@ -2441,7 +2456,7 @@ const groupedHtml = Object.values(groupedResults)
   }).join("");
 
   virtualResultBox.innerHTML = `
-    <div class="trade-stat-title">누적 모의투자 결과</div>
+    <div class="trade-stat-title">완료된 모의투자 결과</div>
 
     <div class="virtual-result-summary">
       <div>
@@ -2472,6 +2487,7 @@ const groupedHtml = Object.values(groupedResults)
     <button class="small-btn" onclick="toggleResultSection('groupedResultSection')">
       종목별 누적 결과 펼치기/접기
     </button>
+
     <div id="groupedResultSection" style="display:none;">
       ${groupedHtml}
     </div>
@@ -2479,8 +2495,19 @@ const groupedHtml = Object.values(groupedResults)
     <button class="small-btn" onclick="toggleResultSection('detailResultSection')">
       개별 매도 내역 펼치기/접기
     </button>
+
     <div id="detailResultSection" style="display:none;">
       ${detailHtml}
+
+      ${
+        detailRows.length > 5
+          ? `
+            <button class="small-btn" onclick="toggleVirtualResultView()">
+              ${showAllVirtualResults ? "개별 매도내역 5개만 보기" : `개별 매도내역 전체보기 (${detailRows.length}건)`}
+            </button>
+          `
+          : ""
+      }
     </div>
   `;
 }
@@ -2493,6 +2520,10 @@ function toggleResultSection(id) {
     el.style.display === "none" ? "block" : "none";
 }
 
+function toggleVirtualResultView() {
+  showAllVirtualResults = !showAllVirtualResults;
+  renderVirtualResults();
+}
 
 
 
@@ -2557,7 +2588,10 @@ function saveTradeLogs() {
 function renderTradeLogs() {
   if (!tradeLogList) return;
 
-  if (tradeLogs.length === 0) {
+  const logs = tradeLogs.slice().reverse();
+  const visibleLogs = showAllTradeLogs ? logs : logs.slice(0, 5);
+
+  if (logs.length === 0) {
     tradeLogList.innerHTML =
       `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
 
@@ -2567,10 +2601,8 @@ function renderTradeLogs() {
     return;
   }
 
-  tradeLogList.innerHTML = tradeLogs
-    .slice()
-    .reverse()
-    .map((log) => {
+  tradeLogList.innerHTML = `
+    ${visibleLogs.map((log) => {
       const typeText =
         log.type === "SELL"
           ? "1차매도"
@@ -2580,15 +2612,14 @@ function renderTradeLogs() {
           ? "트레일링매도"
           : log.type === "STOP_LOSS"
           ? "손절매도"
+          : log.type === "SERVER"
+          ? "서버로그"
           : "가상매수";
 
       const typeClass =
         log.type === "STOP_LOSS" ? "down" : "up";
 
       return `
-        
-
-
         <div class="trade-log-item">
           <div class="trade-log-main">
             <strong class="${typeClass}">[${typeText}] ${log.name}</strong>
@@ -2609,11 +2640,27 @@ function renderTradeLogs() {
           </div>
         </div>
       `;
-    })
-    .join("");
-    renderTradeStats();
-renderRiskStatus();
-renderVirtualResults();
+    }).join("")}
+
+    ${
+      logs.length > 5
+        ? `
+          <button class="small-btn" onclick="toggleTradeLogView()">
+            ${showAllTradeLogs ? "가상매매 로그 5개만 보기" : `가상매매 로그 전체보기 (${logs.length}건)`}
+          </button>
+        `
+        : ""
+    }
+  `;
+
+  renderTradeStats();
+  renderRiskStatus();
+  renderVirtualResults();
+}
+
+function toggleTradeLogView() {
+  showAllTradeLogs = !showAllTradeLogs;
+  renderTradeLogs();
 }
 
 function renderTradeStats() {
@@ -6141,12 +6188,30 @@ renderHoldings();
 
 if (clearTradeLogBtn) {
   clearTradeLogBtn.addEventListener("click", () => {
-
     const ok = confirm(
-      "매매 로그와 오늘 모의투자 결과를 모두 삭제할까요?\n\n보유종목은 유지됩니다."
+      "가상매매 로그와 완료된 모의투자 결과를 화면에서 삭제할까요?\n\n" +
+      "보유종목은 유지됩니다."
     );
 
     if (!ok) return;
+
+    const serverLogCount = tradeLogs.filter(
+      (log) => log.type === "SERVER" || String(log.reason || "").includes("[서버]")
+    ).length;
+
+    const serverResultCount = virtualResults.filter(
+      (item) => String(item.resultText || "").includes("[서버]")
+    ).length;
+
+    localStorage.setItem(
+      SERVER_TRADE_LOG_DELETED_COUNT_KEY,
+      String(serverLogCount)
+    );
+
+    localStorage.setItem(
+      SERVER_RESULT_DELETED_COUNT_KEY,
+      String(serverResultCount)
+    );
 
     tradeLogs = [];
     virtualResults = [];
@@ -6154,10 +6219,13 @@ if (clearTradeLogBtn) {
     saveTradeLogs();
     saveVirtualResults();
 
+    showAllTradeLogs = false;
+    showAllVirtualResults = false;
+
     renderTradeLogs();
     renderVirtualResults();
 
-    alert("모의투자 결과가 초기화되었습니다.");
+    alert("가상매매 로그와 완료된 모의투자 결과가 정리되었습니다.");
   });
 }
 
@@ -7200,37 +7268,47 @@ function syncServerHoldingsToLocal(data) {
   saveStrategyStates();
 
   if (Array.isArray(data.tradeLogs)) {
-    tradeLogs = data.tradeLogs.map((log) => ({
-      type: log.type || "SERVER",
-      code: log.code,
-      name: cleanStockName(log.name),
-      price: Number(log.price || 0),
-      qty: Number(log.qty || 0),
-      reason: `[서버] ${log.reason || "-"}`,
-      time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
-    }));
+  const deletedCount =
+    Number(localStorage.getItem(SERVER_TRADE_LOG_DELETED_COUNT_KEY)) || 0;
 
-    saveTradeLogs();
-  }
+  const serverLogs = data.tradeLogs.slice(deletedCount);
+
+  tradeLogs = serverLogs.map((log) => ({
+    type: log.type || "SERVER",
+    code: log.code,
+    name: cleanStockName(log.name),
+    price: Number(log.price || 0),
+    qty: Number(log.qty || 0),
+    reason: `[서버] ${log.reason || "-"}`,
+    time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+  }));
+
+  saveTradeLogs();
+}
 
   if (Array.isArray(data.virtualResults)) {
-    virtualResults = data.virtualResults.map((item) => ({
-      code: item.code,
-      name: cleanStockName(item.name),
-      buyPrice: Number(item.buyPrice || 0),
-      sellPrice: Number(item.sellPrice || 0),
-      qty: Number(item.qty || 0),
-      buyAmount: Number(item.buyAmount || 0),
-      sellAmount: Number(item.sellAmount || 0),
-      profit: Number(item.profit || 0),
-      profitRate: Number(item.profitRate || 0),
-      resultText: `[서버] ${item.reason || "매도완료"}`,
-      reason: item.reason || "-",
-      time: item.time || item.sellTime || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
-    }));
+  const deletedCount =
+    Number(localStorage.getItem(SERVER_RESULT_DELETED_COUNT_KEY)) || 0;
 
-    saveVirtualResults();
-  }
+  const serverResults = data.virtualResults.slice(deletedCount);
+
+  virtualResults = serverResults.map((item) => ({
+    code: item.code,
+    name: cleanStockName(item.name),
+    buyPrice: Number(item.buyPrice || 0),
+    sellPrice: Number(item.sellPrice || 0),
+    qty: Number(item.qty || 0),
+    buyAmount: Number(item.buyAmount || 0),
+    sellAmount: Number(item.sellAmount || 0),
+    profit: Number(item.profit || 0),
+    profitRate: Number(item.profitRate || 0),
+    resultText: `[서버] ${item.reason || "매도완료"}`,
+    reason: item.reason || "-",
+    time: item.time || item.sellTime || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+  }));
+
+  saveVirtualResults();
+}
 
   renderHoldings();
   renderTradeLogs();
