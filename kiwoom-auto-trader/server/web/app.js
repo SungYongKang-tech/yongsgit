@@ -7055,7 +7055,8 @@ const lastSell = tradeLogs
     <div class="server-paper-summary">
       <div>
         <span>보유종목</span>
-        <strong>${holdings.length}개</strong>
+        <span>보유종목</span>
+<strong>${holdings.length} / ${maxHoldingCount}개</strong>
       </div>
 
       <div>
