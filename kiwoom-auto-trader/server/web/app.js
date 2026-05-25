@@ -803,16 +803,16 @@ const VOLUME_THRESHOLD_KEY =
   "kiwoom_trade_value_threshold";
 
 let volumeThreshold =
-  Number(localStorage.getItem(VOLUME_THRESHOLD_KEY)) || 5000000000;
+  Number(localStorage.getItem(VOLUME_THRESHOLD_KEY)) || 50;
 
 if (volumeThresholdInput) {
-  volumeThresholdInput.value = formatNumber(volumeThreshold);
+  volumeThresholdInput.value = volumeThreshold;
 }
 
 if (saveVolumeThresholdBtn) {
   saveVolumeThresholdBtn.addEventListener("click", () => {
     const value =
-      Number(volumeThresholdInput.value.replace(/,/g, ""));
+  Number(volumeThresholdInput.value);
 
     if (isNaN(value) || value <= 0) {
       alert("거래대금 기준을 입력하세요.");
@@ -821,8 +821,7 @@ if (saveVolumeThresholdBtn) {
 
     volumeThreshold = value;
 
-    volumeThresholdInput.value =
-      formatNumber(volumeThreshold);
+    volumeThresholdInput.value = volumeThreshold;
 
     localStorage.setItem(
       VOLUME_THRESHOLD_KEY,
@@ -1330,9 +1329,9 @@ function renderStrongStockBox(items, title = "🔥 오늘 강한 종목") {
 
       let recommendType = "관망";
 
-      if (!isNaN(rate) && rate >= 1 && rate <= 3.5 && volume >= volumeThreshold) {
-        recommendType = "초기상승형";
-      }
+      if (!isNaN(rate) && rate >= 1 && rate <= 3.5 && tradeValue >= tradeValueThreshold) {
+  recommendType = "초기상승형";
+}
 
       if (
         !isNaN(rate) &&
@@ -1806,8 +1805,11 @@ function renderWatchItem(item) {
   Number(item.currentPrice || item.price || 0) *
   Number(item.volume || 0);
 
+const tradeValueThreshold =
+  volumeThreshold * 100000000;
+
 const isVolumeHot =
-  tradeValue >= volumeThreshold;
+  tradeValue >= tradeValueThreshold;
   const isStrongStock =
   isEntryCandidate || isVolumeHot;
 
@@ -6463,10 +6465,14 @@ const dayRate = parseFloat(item.changeRate);
 const tradeValue =
   currentPrice * volume;
 
+const tradeValueThreshold =
+  volumeThreshold * 100000000;
+
 const volumePower =
-  volumeThreshold > 0
-    ? tradeValue / volumeThreshold
+  tradeValueThreshold > 0
+    ? tradeValue / tradeValueThreshold
     : 0;
+
 // 1. 상승률 점수
 if (!isNaN(dayRate)) {
   if (dayRate >= 7) {
@@ -6488,7 +6494,7 @@ if (volumePower >= 3) {
 } else if (volumePower >= 1.5) {
   score += 2;
   reasons.push(`거래량 ${volumePower.toFixed(1)}배`);
-} else if (tradeValue >= volumeThreshold) {
+} else if (tradeValue >= tradeValueThreshold) {
   score += 1;
   reasons.push("거래대금 기준 통과");
 }
