@@ -2306,6 +2306,8 @@ const resetHoldingsBtn = document.getElementById("resetHoldingsBtn");
 
 const tradeLogList = document.getElementById("tradeLogList");
 const clearTradeLogBtn = document.getElementById("clearTradeLogBtn");
+const clearVirtualResultBtn =
+  document.getElementById("clearVirtualResultBtn");
 
 const TRADE_LOG_KEY = "kiwoom_virtual_trade_logs";
 
@@ -6188,48 +6190,45 @@ renderHoldings();
 
 if (clearTradeLogBtn) {
   clearTradeLogBtn.addEventListener("click", () => {
-    const ok = confirm(
-      "가상매매 로그와 완료된 모의투자 결과를 화면에서 삭제할까요?\n\n" +
-      "보유종목은 유지됩니다."
-    );
+    const ok = confirm("최근 서버 매매로그를 삭제할까요?");
 
     if (!ok) return;
 
-    const serverLogCount = tradeLogs.filter(
-      (log) => log.type === "SERVER" || String(log.reason || "").includes("[서버]")
-    ).length;
-
-    const serverResultCount = virtualResults.filter(
-      (item) => String(item.resultText || "").includes("[서버]")
-    ).length;
-
     localStorage.setItem(
       SERVER_TRADE_LOG_DELETED_COUNT_KEY,
-      String(serverLogCount)
-    );
-
-    localStorage.setItem(
-      SERVER_RESULT_DELETED_COUNT_KEY,
-      String(serverResultCount)
+      String(tradeLogs.length)
     );
 
     tradeLogs = [];
-    virtualResults = [];
-
     saveTradeLogs();
-    saveVirtualResults();
 
     showAllTradeLogs = false;
-    showAllVirtualResults = false;
-
     renderTradeLogs();
-    renderVirtualResults();
 
-    alert("가상매매 로그와 완료된 모의투자 결과가 정리되었습니다.");
+    alert("최근 서버 매매로그가 삭제되었습니다.");
   });
 }
 
+if (clearVirtualResultBtn) {
+  clearVirtualResultBtn.addEventListener("click", () => {
+    const ok = confirm("완료된 모의투자 결과를 삭제할까요?");
 
+    if (!ok) return;
+
+    localStorage.setItem(
+      SERVER_RESULT_DELETED_COUNT_KEY,
+      String(virtualResults.length)
+    );
+
+    virtualResults = [];
+    saveVirtualResults();
+
+    showAllVirtualResults = false;
+    renderVirtualResults();
+
+    alert("완료된 모의투자 결과가 삭제되었습니다.");
+  });
+}
 
 if (resetHoldingsBtn) {
   resetHoldingsBtn.addEventListener("click", () => {
