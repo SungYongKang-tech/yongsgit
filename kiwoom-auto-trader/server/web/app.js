@@ -7048,18 +7048,6 @@ function renderServerPaperState(data) {
         <span>최근 감시</span>
         <strong>${data.lastSellCheckAt || "-"}</strong>
       </div>
-
-      <div>
-  <span>가격갱신</span>
-  <strong>${data.lastPriceRefreshAt || "-"}</strong>
-</div>
-
-      <div>
-        <span>자동매매</span>
-        <strong class="${data.serverAutoEnabled ? "up" : "down"}">
-          ${data.serverAutoEnabled ? "ON" : "OFF"}
-        </strong>
-      </div>
     </div>
 
     <div class="server-profit-summary">
@@ -7089,124 +7077,30 @@ function renderServerPaperState(data) {
     </div>
 
     <div class="server-paper-section-title">서버 보유종목</div>
-
     ${
       holdings.length === 0
         ? `<div class="empty">서버 보유종목이 없습니다.</div>`
-        : holdings.map((item) => {
-            const buyPrice = Number(item.buyPrice || 0);
-            const currentPrice = Number(item.currentPrice || buyPrice || 0);
-            const qty = Number(item.qty || 0);
-
-            const buyAmount = buyPrice * qty;
-            const evalAmount = currentPrice * qty;
-            const profit = evalAmount - buyAmount;
-            const profitRate =
-              buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
-            const profitClass = profit >= 0 ? "up" : "down";
-
-            return `
-              <div class="server-paper-item">
-                <div class="server-paper-item-top">
-                  <strong>${cleanStockName(item.name)} (${item.code})</strong>
-                  <span>${item.strategyName || "-"}</span>
-                </div>
-
-                <div class="server-paper-detail">
-                  매수가 ${formatNumber(buyPrice)}원 /
-                  현재가 ${formatNumber(currentPrice)}원 /
-                  수량 ${formatNumber(qty)}주
-                </div>
-
-                <div class="server-paper-detail">
-                  평가금액 ${formatNumber(evalAmount)}원 /
-                  손익
-                  <span class="${profitClass}">
-                    ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
-                    (${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%)
-                  </span>
-                </div>
-
-                <div class="server-paper-detail">
-                  최고가 ${formatNumber(item.highestPrice || currentPrice)}원 /
-                  매수시각 ${item.buyTime || "-"}
-                </div>
-
-                <div class="server-paper-actions">
-                  <button
-                    class="server-sell-all-btn"
-                    data-code="${item.code}"
-                    data-name="${cleanStockName(item.name)}"
-                  >
-                    서버 수동매도
-                  </button>
-                </div>
+        : holdings.map((item) => `
+            <div class="server-paper-item">
+              <div class="server-paper-item-top">
+                <strong>${cleanStockName(item.name)}</strong>
+                <span>${formatNumber(item.currentPrice || item.buyPrice)}원</span>
               </div>
-            `;
-          }).join("")
-    }
 
-    <div class="server-paper-section-title">최근 서버 매매로그</div>
-
-    ${
-      tradeLogs.length === 0
-        ? `<div class="empty">서버 매매로그가 없습니다.</div>`
-        : tradeLogs.slice().reverse().slice(0, 10).map((log) => `
-            <div class="server-paper-log">
-              <strong>${log.type}</strong>
-              ${cleanStockName(log.name)} (${log.code}) /
-              ${formatNumber(log.price)}원 /
-              ${formatNumber(log.qty)}주
               <div class="server-paper-detail">
-                ${log.reason || "-"} · ${log.time || "-"}
+                매수가 ${formatNumber(item.buyPrice)}원 /
+                수량 ${formatNumber(item.qty)}주 /
+                목표 ${formatNumber(item.targetPrice)}원 /
+                손절 ${formatNumber(item.stopLossPrice)}원
               </div>
             </div>
           `).join("")
     }
 
-    <div class="server-paper-section-title">완료된 모의투자 결과</div>
-
-    ${
-      virtualResults.length === 0
-        ? `<div class="empty">완료된 서버 모의투자 결과가 없습니다.</div>`
-        : virtualResults.slice().reverse().slice(0, 10).map((item) => `
-            <div class="server-paper-result">
-              <strong>${cleanStockName(item.name)} (${item.code})</strong>
-
-              <div class="server-paper-detail">
-                매수 ${formatNumber(item.buyPrice)}원 →
-                매도 ${formatNumber(item.sellPrice)}원 /
-                수익률
-                <span class="${Number(item.profitRate || 0) >= 0 ? "up" : "down"}">
-                  ${Number(item.profitRate || 0).toFixed(2)}%
-                </span>
-              </div>
-
-              <div class="server-paper-detail">
-                손익 ${formatNumber(Math.round(item.profit || 0))}원 /
-                ${item.reason || "-"}
-              </div>
-            </div>
-          `).join("")
-    }
+    <div class="server-paper-detail" style="margin-top:10px;">
+      ※ 최근 서버 매매로그와 완료된 모의투자 결과는 아래 전용 영역에서 확인합니다.
+    </div>
   `;
-
-  serverPaperBox
-    .querySelectorAll(".server-sell-all-btn")
-    .forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const code = btn.dataset.code;
-        const name = btn.dataset.name;
-
-        const ok = confirm(
-          `${name} (${code}) 서버 보유종목을 수동매도할까요?`
-        );
-
-        if (!ok) return;
-
-        await serverSellAllHolding(code);
-      });
-    });
 }
 
 async function serverSellAllHolding(code) {
