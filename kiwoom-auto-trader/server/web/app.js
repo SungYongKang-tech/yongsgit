@@ -568,6 +568,15 @@ const STRATEGY_PRESET_RULES = {
     stopLossRate: 0.985,
     trailingRate: 1.8,
     amountRate: 1.0
+   },
+
+  scalp: {
+    name: "선제단타형",
+    targetRate: 1.018,
+    secondTargetRate: 1.035,
+    stopLossRate: 0.988,
+    trailingRate: 1.5,
+    amountRate: 0.35
   }
 };
 
@@ -4562,6 +4571,28 @@ async function autoBacktestAndBuyDiscoveredItems() {
   let backtestCount = 0;
   let passedCount = 0;
   let buyCount = 0;
+
+  let scalpBuyCount = 0;
+
+for (const item of targets) {
+
+  if (getAvailableBuySlots() <= 0) break;
+
+  if (isAlreadyHolding(item.code)) continue;
+
+  const scalpOk =
+    await prepareAndAddScalpBuy(item);
+
+  if (scalpOk) {
+
+    scalpBuyCount += 1;
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 800)
+    );
+  }
+}
+
 
   for (const item of targets) {
     if (isAlreadyHolding(item.code)) continue;
