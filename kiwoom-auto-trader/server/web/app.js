@@ -4661,14 +4661,15 @@ for (const item of targets) {
   renderTradeLogs();
 
   updateApiStatus(
-    `자동흐름 완료 · 백테스트 ${backtestCount}개 · 통과 ${passedCount}개 · 매수 ${buyCount}개`
+    `자동흐름 완료 · 선제단타 ${scalpBuyCount}개 · 백테스트 ${backtestCount}개 · 통과 ${passedCount}개 · 매수 ${buyCount}개`
   );
 
   console.log("[자동흐름 완료]", {
-    backtestCount,
-    passedCount,
-    buyCount
-  });
+  scalpBuyCount,
+  backtestCount,
+  passedCount,
+  buyCount
+});
 }
 
 async function registerServerPaperBuy(payload) {
