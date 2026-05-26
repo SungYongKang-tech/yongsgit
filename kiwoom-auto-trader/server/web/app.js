@@ -6859,6 +6859,168 @@ function getEarlyRiseSignal(item) {
   };
 }
 
+function getScalpEntrySignal(item) {
+  const price = Number(item.currentPrice || item.price || 0);
+  const open = Number(item.open || 0);
+  const high = Number(item.high || 0);
+  const low = Number(item.low || 0);
+  const volume = Number(item.volume || 0);
+  const rate = parseFloat(item.changeRate);
+
+  let score = 0;
+  const reasons = [];
+
+  if (!price || price <= 0) {
+    return { pass: false, score: 0, reasons: ["현재가 없음"] };
+  }
+
+  if (!isNaN(rate) && rate >= 0.8 && rate <= 3.5) {
+    score += 3;
+    reasons.push("초기 상승 구간");
+  }
+
+  if (open > 0 && price > open) {
+    score += 2;
+    reasons.push("시가 위");
+  }
+
+  if (high > 0 && price < high * 0.985) {
+    score += 2;
+    reasons.push("고가 추격 아님");
+  }
+
+  if (low > 0) {
+    const recoveryRate = ((price - low) / low) * 100;
+
+    if (recoveryRate >= 1 && recoveryRate <= 5) {
+      score += 2;
+      reasons.push("저가 대비 회복");
+    }
+
+    if (recoveryRate > 7) {
+      score -= 2;
+      reasons.push("저가 대비 과상승");
+    }
+  }
+
+  const tradeValue = price * volume;
+  const tradeValueThreshold = volumeThreshold * 100000000;
+
+  if (tradeValue >= tradeValueThreshold) {
+    score += 3;
+    reasons.push("거래대금 통과");
+  }
+
+  const candleRange = high - low;
+
+  if (candleRange > 0) {
+    const upperTailRate =
+      ((high - price) / candleRange) * 100;
+
+    if (upperTailRate <= 35) {
+      score += 1;
+      reasons.push("윗꼬리 부담 작음");
+    } else {
+      score -= 2;
+      reasons.push("윗꼬리 큼");
+    }
+  }
+
+  return {
+    pass: score >= 8,
+    score,
+    reasons
+  };
+}
+
+async function prepareAndAddScalpBuy(item) {
+
+  if (isAutoBuyBlocked) {
+    return false;
+  }
+
+  const price =
+    Number(item.currentPrice || item.price || 0);
+
+  if (!price || price <= 0) return false;
+
+  if (isAlreadyHolding(item.code)) return false;
+
+  if (getAvailableBuySlots() <= 0) return false;
+
+  const scalpSignal =
+    getScalpEntrySignal(item);
+
+  if (!scalpSignal.pass) {
+
+    console.log(
+      "선제단타 제외:",
+      item.name,
+      scalpSignal.score,
+      scalpSignal.reasons
+    );
+
+    return false;
+  }
+
+  if (isBadBuyTiming(item)) {
+
+    console.log(
+      "선제단타 제외: 추격매수 위험",
+      item.name
+    );
+
+    return false;
+  }
+
+  const rule = getStrategyRule("scalp");
+
+  const perBuyAmount = getPerBuyAmount();
+
+  const buyAmount =
+    Math.round(perBuyAmount * rule.amountRate);
+
+  const qty = Math.floor(buyAmount / price);
+
+  if (qty <= 0) return false;
+
+  await registerServerPaperBuy({
+    code: item.code,
+    name: cleanStockName(item.name),
+    buyPrice: price,
+    qty,
+    targetPrice:
+      Math.round(price * rule.targetRate),
+
+    secondTargetPrice:
+      Math.round(price * rule.secondTargetRate),
+
+    stopLossPrice:
+      Math.round(price * rule.stopLossRate),
+
+    trailingStopRate:
+      rule.trailingRate,
+
+    strategy: "scalp",
+    strategyPreset: "scalp",
+    strategyName: "선제단타형",
+
+    protectMinutes: 2,
+
+    breakEvenAfterPartial: true
+  });
+
+  console.log(
+    "[선제단타 매수]",
+    item.name,
+    price,
+    qty,
+    scalpSignal.reasons
+  );
+
+  return true;
+}
+
 function getFastEntryScore(item) {
   const rate = parseFloat(item.changeRate);
   const volume = Number(item.volume || 0);
