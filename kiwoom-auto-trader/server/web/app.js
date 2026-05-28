@@ -2361,6 +2361,8 @@ const SERVER_RESULT_DELETED_COUNT_KEY =
 
 let showAllTradeLogs = false;
 let showAllVirtualResults = false;
+let isGroupedResultOpen = false;
+let isDetailResultOpen = false;
 let showAllServerTradeLogs = false;
 
 let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
@@ -2532,7 +2534,7 @@ function renderVirtualResults() {
       종목별 누적 결과 펼치기/접기
     </button>
 
-    <div id="groupedResultSection" style="display:none;">
+    <div id="groupedResultSection" style="display:${isGroupedResultOpen ? "block" : "none"};">
       ${groupedHtml}
     </div>
 
@@ -2540,7 +2542,7 @@ function renderVirtualResults() {
       개별 매도 내역 펼치기/접기
     </button>
 
-    <div id="detailResultSection" style="display:none;">
+    <div id="detailResultSection" style="display:${isDetailResultOpen ? "block" : "none"};">
       ${detailHtml}
 
       ${
@@ -2557,11 +2559,15 @@ function renderVirtualResults() {
 }
 
 function toggleResultSection(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
+  if (id === "groupedResultSection") {
+    isGroupedResultOpen = !isGroupedResultOpen;
+  }
 
-  el.style.display =
-    el.style.display === "none" ? "block" : "none";
+  if (id === "detailResultSection") {
+    isDetailResultOpen = !isDetailResultOpen;
+  }
+
+  renderVirtualResults();
 }
 
 function toggleVirtualResultView() {
