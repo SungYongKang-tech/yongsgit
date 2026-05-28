@@ -2056,7 +2056,9 @@ if (uniqueCodes.length === 0) {
 
     
     await renderHoldings(true);
-    renderTradeLogs();
+renderTradeLogs();
+
+await loadWatchList(true);
 
     const elapsed =
   Math.round(performance.now() - refreshStartTime);
@@ -2152,7 +2154,7 @@ async function startAutoRefresh() {
   AUTO_REFRESH_KEY,
   "true"
 );
-  autoRefreshBtn.textContent = "자동ON";
+  autoRefreshBtn.textContent = "자동중";
   autoRefreshBtn.classList.add("active");
 
 async function runRefreshLoop() {
@@ -2195,7 +2197,7 @@ function stopAutoRefresh() {
   AUTO_REFRESH_KEY,
   "false"
 );
-  autoRefreshBtn.textContent = "자동OFF";
+  autoRefreshBtn.textContent = "자동대기";
   autoRefreshBtn.classList.remove("active");
 
   if (autoRefreshTimer) {
@@ -2207,7 +2209,7 @@ function stopAutoRefresh() {
 
 
   
-function stopAllAutoTradeByRisk(reason) {
+async function stopAllAutoTradeByRisk(reason) {
   isAutoBuyBlocked = true;
 
   localStorage.setItem(
@@ -2215,13 +2217,26 @@ function stopAllAutoTradeByRisk(reason) {
     "true"
   );
 
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/server-auto-toggle?enabled=false`
+    );
+
+    const data = await res.json();
+
+    if (res.ok) {
+      updateServerAutoStatusUi(data);
+    }
+  } catch (error) {
+    console.error("서버 자동매매 중지 실패:", error);
+  }
+
   updateApiStatus(
-    "하루 최대 손실 도달 · 신규 자동매수 중지 · 기존 보유 감시 유지",
+    "하루 최대 손실 도달 · 서버 자동매매 중지",
     true
   );
 
-  renderHoldings();
-  renderTradeLogs();
+  await loadServerPaperState();
 
   alert(reason);
 }
@@ -2235,7 +2250,7 @@ function updateTestModeUI() {
   if (!testModeBtn) return;
 
   testModeBtn.textContent =
-    isTestMode ? "테스트ON" : "테스트OFF";
+  isTestMode ? "테스트중" : "테스트대기";
 
   testModeBtn.classList.toggle("active", isTestMode);
 }
@@ -2486,44 +2501,58 @@ function renderVirtualResults() {
   const visibleDetailRows =
     showAllVirtualResults ? detailRows : detailRows.slice(0, 5);
 
-  const detailHtml = visibleDetailRows.map((item) => {
-    const isProfit = item.profit >= 0;
+ const detailHtml = visibleDetailRows.map((item) => {
+  const isProfit = Number(item.profit || 0) >= 0;
+  const profitRate = Number(item.profitRate || 0);
 
-    return `
-      <div class="virtual-result-item">
-        <div class="virtual-result-top">
-          <div class="virtual-result-name">${cleanStockName(item.name)}</div>
-          <div class="virtual-result-badge ${isProfit ? "" : "loss"}">
-            ${isProfit ? "수익" : "손실"}
-          </div>
+  const resultText =
+    item.resultText ||
+    item.reason ||
+    item.type ||
+    "-";
+
+  return `
+    <div class="virtual-result-item server-result-item">
+      <div class="virtual-result-top">
+        <div class="virtual-result-name">
+          ${cleanStockName(item.name)} ${item.code ? `(${item.code})` : ""}
         </div>
 
-        <div class="virtual-result-detail">
-          <div>
-            ${item.resultText} ·
-            매수 ${formatNumber(Math.round(item.buyPrice))}원 →
-            매도 ${formatNumber(Math.round(item.sellPrice))}원
-          </div>
-
-          <div>
-            수량 ${formatNumber(item.qty)}주 /
-            실현손익
-            <strong class="${isProfit ? "up" : "down"}">
-              ${isProfit ? "+" : ""}${formatNumber(Math.round(item.profit))}원
-            </strong>
-          </div>
-
-          <div>
-            수익률
-            <strong class="${isProfit ? "up" : "down"}">
-              ${isProfit ? "+" : ""}${item.profitRate.toFixed(2)}%
-            </strong>
-            · ${item.time}
-          </div>
+        <div class="virtual-result-badge ${isProfit ? "" : "loss"}">
+          ${isProfit ? "수익" : "손실"}
         </div>
       </div>
-    `;
-  }).join("");
+
+      <div class="virtual-result-detail">
+        <div>
+          실현손익
+          <strong class="${isProfit ? "up" : "down"}">
+            ${isProfit ? "+" : ""}${formatNumber(Math.round(item.profit || 0))}원
+            (${isProfit ? "+" : ""}${profitRate.toFixed(2)}%)
+          </strong>
+        </div>
+
+        <div>
+          매수 ${formatNumber(Math.round(item.buyPrice || 0))}원 →
+          매도 ${formatNumber(Math.round(item.sellPrice || 0))}원
+        </div>
+
+        <div>
+          수량 ${formatNumber(item.qty || item.sellQty || 0)}주
+          ${item.strategyName ? ` / 전략 ${item.strategyName}` : ""}
+        </div>
+
+        <div>
+          매도사유: ${resultText}
+        </div>
+
+        <div class="trade-log-time">
+          ${item.time || "-"}
+        </div>
+      </div>
+    </div>
+  `;
+}).join("");
 
   virtualResultBox.innerHTML = `
     <div class="trade-stat-title">완료된 모의투자 결과</div>
@@ -2605,7 +2634,7 @@ function saveStrategyStates() {
   localStorage.setItem(STRATEGY_STATE_KEY, JSON.stringify(strategyStates));
 }
 
-let holdings = JSON.parse(localStorage.getItem(HOLD_STORAGE_KEY)) || [];
+let holdings = [];
 let serverHoldings = [];
 
 
@@ -2648,7 +2677,7 @@ backtestCodeInput.addEventListener("input", () => {
 });
 
 function saveHoldings() {
-  localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(holdings));
+  // 서버 paper-state.json을 사용하므로 로컬 저장하지 않음
 }
 
 function saveTradeLogs() {
@@ -2659,11 +2688,11 @@ function renderTradeLogs() {
   if (!tradeLogList) return;
 
   const logs = tradeLogs.slice().reverse();
-  const visibleLogs = showAllTradeLogs ? logs : logs.slice(0, 5);
+  const visibleLogs = showAllTradeLogs ? logs : logs.slice(0, 8);
 
   if (logs.length === 0) {
     tradeLogList.innerHTML =
-      `<div class="empty">아직 발생한 매매 신호가 없습니다.</div>`;
+      `<div class="empty">아직 발생한 서버 매매 신호가 없습니다.</div>`;
 
     renderTradeStats();
     renderRiskStatus();
@@ -2673,50 +2702,71 @@ function renderTradeLogs() {
 
   tradeLogList.innerHTML = `
     ${visibleLogs.map((log) => {
-      const typeText =
-        log.type === "SELL"
-          ? "1차매도"
-          : log.type === "SELL_ALL"
-          ? "2차매도"
-          : log.type === "SELL_TRAILING"
-          ? "트레일링매도"
-          : log.type === "STOP_LOSS"
-          ? "손절매도"
-          : log.type === "SERVER"
-          ? "서버로그"
-          : "가상매수";
+      const type = String(log.type || "").toUpperCase();
 
-      const typeClass =
-        log.type === "STOP_LOSS" ? "down" : "up";
+      const typeText =
+        type === "BUY"
+          ? "서버매수"
+          : type === "SELL"
+          ? "서버매도"
+          : type === "SELL_ALL"
+          ? "전량매도"
+          : type === "SELL_TRAILING" || type === "TRAILING_STOP"
+          ? "트레일링매도"
+          : type === "STOP_LOSS"
+          ? "손절매도"
+          : type === "TAKE_PROFIT"
+          ? "목표수익"
+          : type === "END_PROFIT_SELL"
+          ? "장마감수익매도"
+          : type === "SERVER"
+          ? "서버로그"
+          : type || "서버로그";
+
+      const isBad =
+        type === "STOP_LOSS";
+
+      const isBuy =
+        type === "BUY";
+
+      const typeClass = isBad ? "down" : "up";
 
       return `
-        <div class="trade-log-item">
+        <div class="trade-log-item server-log-item">
           <div class="trade-log-main">
-            <strong class="${typeClass}">[${typeText}] ${log.name}</strong>
-            <span>${formatNumber(log.price)}원</span>
+            <strong class="${typeClass}">
+              [${typeText}] ${cleanStockName(log.name)}
+            </strong>
+
+            <span>
+              ${formatNumber(log.price)}원
+            </span>
           </div>
 
           <div class="trade-log-detail">
-            ${log.sellQty ? `매도 ${formatNumber(log.sellQty)}주` : ""}
+            ${log.code ? `코드 ${log.code}` : ""}
+            ${log.qty ? ` / 수량 ${formatNumber(log.qty)}주` : ""}
+            ${log.sellQty ? ` / 매도 ${formatNumber(log.sellQty)}주` : ""}
             ${log.remainQty ? ` / 잔여 ${formatNumber(log.remainQty)}주` : ""}
           </div>
 
           <div class="trade-log-reason">
-            사유: ${log.reason}
+            ${isBuy ? "매수사유" : "처리사유"}:
+            ${log.reason || "-"}
           </div>
 
           <div class="trade-log-time">
-            시간: ${log.time}
+            ${log.time || "-"}
           </div>
         </div>
       `;
     }).join("")}
 
     ${
-      logs.length > 5
+      logs.length > 8
         ? `
           <button class="small-btn" onclick="toggleTradeLogView()">
-            ${showAllTradeLogs ? "가상매매 로그 5개만 보기" : `가상매매 로그 전체보기 (${logs.length}건)`}
+            ${showAllTradeLogs ? "서버 매매로그 8개만 보기" : `서버 매매로그 전체보기 (${logs.length}건)`}
           </button>
         `
         : ""
@@ -3446,9 +3496,7 @@ async function executeVirtualSell(code, actionType = "SELL") {
 
     await loadServerPaperState();
 
-    renderVirtualResults();
-    renderHoldings();
-    renderTradeLogs();
+renderVirtualResults();
 
   } catch (error) {
     console.error("서버 자동매도 실패:", error);
@@ -6052,12 +6100,10 @@ async function addHolding() {
     secondTargetPriceInput.value = "";
     trailingStopRateInput.value = "";
 
-    await loadServerPaperState();
+ await renderHoldings(true);
+renderTradeLogs();
 
-    renderHoldings();
-    renderTradeLogs();
-
-    alert("서버 모의매수로 등록되었습니다.");
+alert("서버 모의매수로 등록되었습니다.");
   } catch (error) {
     alert("서버 모의매수 등록 실패\n\n" + error.message);
   }
@@ -6271,37 +6317,40 @@ holdSortButtons.forEach((btn) => {
 });
 
 if (emergencyStopBtn) {
-  emergencyStopBtn.addEventListener("click", () => {
-    const ok = confirm("자동매매를 전부 중지할까요?");
+  emergencyStopBtn.addEventListener("click", async () => {
+    const ok = confirm(
+      "서버 자동매매를 즉시 중지할까요?\n\n" +
+      "보유종목은 유지하고 신규 자동매수/자동매도를 멈춥니다."
+    );
 
     if (!ok) return;
 
-   holdings = holdings.map((item) => {
-  const code = item.code;
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/server-auto-toggle?enabled=false`
+      );
 
-  strategyStates[code] = {
-    ...(strategyStates[code] || {}),
-    status: "BUY",
-    lastAction: "EMERGENCY_STOP",
-    lastSignalTime: new Date().toLocaleString("ko-KR"),
-    lastSignalPrice: Number(item.currentPrice || item.buyPrice || 0),
-    lastSoldQty: Number(strategyStates[code]?.lastSoldQty || 0),
-    remainQty: Number(item.qty || 0),
-    strategyPreset: item.strategyPreset || strategyStates[code]?.strategyPreset || "safe",
-    strategyName: item.strategyName || strategyStates[code]?.strategyName || "안정형"
-  };
+      const data = await res.json();
 
-  return {
-    ...item,
-    autoTrade: false
-  };
-});
+      if (!res.ok) {
+        throw new Error(data.message || "서버 자동매매 중지 실패");
+      }
 
-saveStrategyStates();
-saveHoldings();
-renderHoldings();
+      isAutoBuyBlocked = true;
 
-    alert("전체 종목 자동매매가 중지되었습니다.");
+      localStorage.setItem(
+        AUTO_BUY_BLOCK_KEY,
+        "true"
+      );
+
+      updateServerAutoStatusUi(data);
+
+      await loadServerPaperState();
+
+      alert("서버 자동매매가 중지되었습니다.");
+    } catch (error) {
+      alert("비상정지 실패\n\n" + error.message);
+    }
   });
 }
 
@@ -6348,39 +6397,39 @@ if (clearVirtualResultBtn) {
 }
 
 if (resetHoldingsBtn) {
-  resetHoldingsBtn.addEventListener("click", () => {
-  const ok = confirm(
-    "보유종목과 수익/손실 요약을 모두 초기화할까요?"
-  );
+  resetHoldingsBtn.addEventListener("click", async () => {
+    const ok = confirm(
+      "서버 보유종목과 수익/손실 요약을 모두 초기화할까요?"
+    );
 
-  if (!ok) return;
+    if (!ok) return;
 
-  // 보유종목 초기화
-  holdings = [];
-  saveHoldings();
+    try {
+      const res = await fetch(`${API_BASE}/api/paper-sell-all`);
+      const data = await res.json();
 
-  // 전략 상태 초기화
-  strategyStates = {};
-  saveStrategyStates();
+      if (!res.ok) {
+        throw new Error(data.message || "서버 보유종목 초기화 실패");
+      }
 
-  // 실현손익 결과 초기화
-  virtualResults = [];
-  saveVirtualResults();
+      holdings = [];
+      strategyStates = {};
+      virtualResults = [];
+      tradeLogs = [];
 
-  // 거래로그 초기화
-  tradeLogs = [];
-  saveTradeLogs();
+      saveStrategyStates();
 
-  // 화면 갱신
-  renderHoldings();
-  renderTradeLogs();
-  renderVirtualResults();
+      renderHoldings();
+      renderTradeLogs();
+      renderVirtualResults();
 
-  alert(
-    "보유종목, 수익/손실 요약, 거래로그가 초기화되었습니다."
-  );
-});
+      await loadServerPaperState();
 
+      alert("서버 보유종목 초기화가 완료되었습니다.");
+    } catch (error) {
+      alert("초기화 실패\n\n" + error.message);
+    }
+  });
 }
 
 if (runBacktestBtn) {
@@ -6399,27 +6448,39 @@ if (autoDiscoverBtn) {
   autoDiscoverBtn.addEventListener("click", runAutoDiscover);
 }
 
-function resumeAllAutoTrade() {
-  if (holdings.length === 0) {
-    alert("보유종목이 없습니다.");
-    return;
-  }
-
+async function resumeAllAutoTrade() {
   const ok = confirm(
-    "모든 보유종목의 자동매매를 다시 켤까요?"
+    "서버 자동매매를 다시 ON으로 변경할까요?"
   );
 
   if (!ok) return;
 
-  holdings = holdings.map((item) => ({
-    ...item,
-    autoTrade: true
-  }));
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/server-auto-toggle?enabled=true`
+    );
 
-  saveHoldings();
-  renderHoldings();
+    const data = await res.json();
 
-  alert("모든 보유종목의 자동매매를 다시 켰습니다.");
+    if (!res.ok) {
+      throw new Error(data.message || "서버 자동매매 ON 실패");
+    }
+
+    isAutoBuyBlocked = false;
+
+    localStorage.setItem(
+      AUTO_BUY_BLOCK_KEY,
+      "false"
+    );
+
+    updateServerAutoStatusUi(data);
+
+    await loadServerPaperState();
+
+    alert("서버 자동매매가 다시 ON 되었습니다.");
+  } catch (error) {
+    alert("서버 자동매매 재개 실패\n\n" + error.message);
+  }
 }
 
 async function fetchAllStocksForDiscover() {
@@ -7384,21 +7445,74 @@ const lastSell = tradeLogs
     ${
       holdings.length === 0
         ? `<div class="empty">서버 보유종목이 없습니다.</div>`
-        : holdings.map((item) => `
-            <div class="server-paper-item">
-              <div class="server-paper-item-top">
-                <strong>${cleanStockName(item.name)}</strong>
-                <span>${formatNumber(item.currentPrice || item.buyPrice)}원</span>
-              </div>
+      : holdings.map((item) => {
+    const buyPrice = Number(item.buyPrice || 0);
+    const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
+    const highestPrice = Number(item.highestPrice || currentPrice || buyPrice || 0);
+    const qty = Number(item.qty || 0);
 
-              <div class="server-paper-detail">
-                매수가 ${formatNumber(item.buyPrice)}원 /
-                수량 ${formatNumber(item.qty)}주 /
-                목표 ${formatNumber(item.targetPrice)}원 /
-                손절 ${formatNumber(item.stopLossPrice)}원
-              </div>
-            </div>
-          `).join("")
+    const profit = (currentPrice - buyPrice) * qty;
+
+    const profitRate =
+      buyPrice > 0
+        ? ((currentPrice - buyPrice) / buyPrice) * 100
+        : 0;
+
+    const highestProfitRate =
+      buyPrice > 0
+        ? ((highestPrice - buyPrice) / buyPrice) * 100
+        : 0;
+
+    const isRunnerCandidate =
+      Number(item.discoverScore || 0) >= 10;
+
+    return `
+      <div class="server-paper-item">
+        <div class="server-paper-item-top">
+          <div>
+            <strong>${cleanStockName(item.name)}</strong>
+            <div class="server-paper-code">${item.code || ""}</div>
+          </div>
+
+          <div class="server-hold-profit ${profitRate >= 0 ? "up" : "down"}">
+            ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
+          </div>
+        </div>
+
+        <div class="server-hold-money ${profit >= 0 ? "up" : "down"}">
+          ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+        </div>
+
+        <div class="server-paper-detail">
+          매수가 ${formatNumber(buyPrice)}원 /
+          현재가 ${formatNumber(currentPrice)}원 /
+          수량 ${formatNumber(qty)}주
+        </div>
+
+        <div class="server-paper-detail">
+          최고가 ${formatNumber(highestPrice)}원 /
+          최고수익 ${highestProfitRate >= 0 ? "+" : ""}${highestProfitRate.toFixed(2)}%
+        </div>
+
+        <div class="server-paper-detail">
+          목표 ${formatNumber(item.targetPrice)}원 /
+          손절 ${formatNumber(item.stopLossPrice)}원 /
+          트레일링 ${item.trailingStopRate || "-"}%
+        </div>
+
+        <div class="server-paper-detail">
+          전략 ${item.strategyName || item.strategyPreset || "-"} /
+          점수 ${item.discoverScore || 0}
+        </div>
+
+        ${
+          isRunnerCandidate
+            ? `<div class="runner-badge">러너 후보 · 목표수익 즉시매도 제외</div>`
+            : ""
+        }
+      </div>
+    `;
+  }).join("")
     }
 
     <div class="server-paper-detail" style="margin-top:10px;">
@@ -7447,7 +7561,7 @@ function syncServerHoldingsToLocal(data) {
     strategyName: item.strategyName || "추세형"
   }));
 
-  saveHoldings();
+  serverHoldings.forEach((item) => {
 
   serverHoldings.forEach((item) => {
     strategyStates[item.code] = {
@@ -7471,14 +7585,21 @@ function syncServerHoldingsToLocal(data) {
   const serverLogs = data.tradeLogs.slice(deletedCount);
 
   tradeLogs = serverLogs.map((log) => ({
-    type: log.type || "SERVER",
-    code: log.code,
-    name: cleanStockName(log.name),
-    price: Number(log.price || 0),
-    qty: Number(log.qty || 0),
-    reason: `[서버] ${log.reason || "-"}`,
-    time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
-  }));
+  type: log.type || "SERVER",
+  code: log.code,
+  name: cleanStockName(log.name),
+  price: Number(log.price || log.sellPrice || log.buyPrice || 0),
+  buyPrice: Number(log.buyPrice || 0),
+  sellPrice: Number(log.sellPrice || 0),
+  qty: Number(log.qty || 0),
+  sellQty: Number(log.sellQty || 0),
+  remainQty: Number(log.remainQty || 0),
+  profit: Number(log.profit || 0),
+  profitRate: Number(log.profitRate || 0),
+  reason: `[서버] ${log.reason || "-"}`,
+  strategyName: log.strategyName || log.strategyPreset || "",
+  time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+}));
 
   saveTradeLogs();
 }
@@ -7490,19 +7611,21 @@ function syncServerHoldingsToLocal(data) {
   const serverResults = data.virtualResults.slice(deletedCount);
 
   virtualResults = serverResults.map((item) => ({
-    code: item.code,
-    name: cleanStockName(item.name),
-    buyPrice: Number(item.buyPrice || 0),
-    sellPrice: Number(item.sellPrice || 0),
-    qty: Number(item.qty || 0),
-    buyAmount: Number(item.buyAmount || 0),
-    sellAmount: Number(item.sellAmount || 0),
-    profit: Number(item.profit || 0),
-    profitRate: Number(item.profitRate || 0),
-    resultText: `[서버] ${item.reason || "매도완료"}`,
-    reason: item.reason || "-",
-    time: item.time || item.sellTime || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
-  }));
+  code: item.code,
+  name: cleanStockName(item.name),
+  buyPrice: Number(item.buyPrice || 0),
+  sellPrice: Number(item.sellPrice || item.price || 0),
+  qty: Number(item.qty || item.sellQty || 0),
+  buyAmount: Number(item.buyAmount || 0),
+  sellAmount: Number(item.sellAmount || 0),
+  profit: Number(item.profit || 0),
+  profitRate: Number(item.profitRate || 0),
+  resultText: item.resultText || item.reason || item.type || "-",
+  reason: item.reason || "",
+  type: item.type || "",
+  strategyName: item.strategyName || item.strategyPreset || "",
+  time: item.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
+}));
 
   saveVirtualResults();
 }
