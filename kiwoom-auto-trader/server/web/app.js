@@ -6189,11 +6189,14 @@ if (addHoldBtn) {
   addHoldBtn.addEventListener("click", addHolding);
 }
 
-holdQtyInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    addHolding();
-  }
-});
+if (holdQtyInput) {
+  holdQtyInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      addHolding();
+    }
+  });
+}
+
 
 updateTestModeUI();
 updateApiStatus("API 대기중");
