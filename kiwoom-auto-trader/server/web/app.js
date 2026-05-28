@@ -7561,7 +7561,7 @@ function syncServerHoldingsToLocal(data) {
     strategyName: item.strategyName || "추세형"
   }));
 
-  serverHoldings.forEach((item) => {
+ 
 
   serverHoldings.forEach((item) => {
     strategyStates[item.code] = {
