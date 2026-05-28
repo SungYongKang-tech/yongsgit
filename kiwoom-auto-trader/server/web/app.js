@@ -2361,8 +2361,22 @@ const SERVER_RESULT_DELETED_COUNT_KEY =
 
 let showAllTradeLogs = false;
 let showAllVirtualResults = false;
-let isGroupedResultOpen = false;
-let isDetailResultOpen = false;
+
+const RESULT_OPEN_STATE_KEY = "kiwoom_result_open_state";
+
+let resultOpenState =
+  JSON.parse(localStorage.getItem(RESULT_OPEN_STATE_KEY)) || {
+    groupedResultSection: false,
+    detailResultSection: false
+  };
+
+function saveResultOpenState() {
+  localStorage.setItem(
+    RESULT_OPEN_STATE_KEY,
+    JSON.stringify(resultOpenState)
+  );
+}
+
 let showAllServerTradeLogs = false;
 
 let tradeLogs = JSON.parse(localStorage.getItem(TRADE_LOG_KEY)) || [];
@@ -2534,7 +2548,7 @@ function renderVirtualResults() {
       종목별 누적 결과 펼치기/접기
     </button>
 
-    <div id="groupedResultSection" style="display:${isGroupedResultOpen ? "block" : "none"};">
+    <div id="groupedResultSection" style="display:${resultOpenState.groupedResultSection ? "block" : "none"};">
       ${groupedHtml}
     </div>
 
@@ -2542,7 +2556,7 @@ function renderVirtualResults() {
       개별 매도 내역 펼치기/접기
     </button>
 
-    <div id="detailResultSection" style="display:${isDetailResultOpen ? "block" : "none"};">
+    <div id="detailResultSection" style="display:${resultOpenState.detailResultSection ? "block" : "none"};">
       ${detailHtml}
 
       ${
@@ -2559,14 +2573,8 @@ function renderVirtualResults() {
 }
 
 function toggleResultSection(id) {
-  if (id === "groupedResultSection") {
-    isGroupedResultOpen = !isGroupedResultOpen;
-  }
-
-  if (id === "detailResultSection") {
-    isDetailResultOpen = !isDetailResultOpen;
-  }
-
+  resultOpenState[id] = !resultOpenState[id];
+  saveResultOpenState();
   renderVirtualResults();
 }
 
