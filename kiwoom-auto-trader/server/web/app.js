@@ -1,4 +1,6 @@
 const API_BASE = "https://sytrader.duckdns.org";
+const PRICE_CACHE = {};
+const PRICE_CACHE_TTL = 14500; // 14.5초 캐시
 
 const stockCodeInput = document.getElementById("stockCode");
 const searchBtn = document.getElementById("searchBtn");
@@ -2238,17 +2240,21 @@ function updateTestModeUI() {
   testModeBtn.classList.toggle("active", isTestMode);
 }
 
-loadWatchBtn.addEventListener("click", () => {
-  manualRefresh();
-});
+if (loadWatchBtn) {
+  loadWatchBtn.addEventListener("click", () => {
+    manualRefresh();
+  });
+}
 
-autoRefreshBtn.addEventListener("click", () => {
-  if (isAutoRefresh) {
-    stopAutoRefresh();
-  } else {
-    startAutoRefresh();
-  }
-});
+if (autoRefreshBtn) {
+  autoRefreshBtn.addEventListener("click", () => {
+    if (isAutoRefresh) {
+      stopAutoRefresh();
+    } else {
+      startAutoRefresh();
+    }
+  });
+}
 
 if (isAutoRefresh) {
   startAutoRefresh();
@@ -2322,13 +2328,17 @@ if (!code) {
   loadWatchList();
 }
 
-addStockBtn.addEventListener("click", addWatchCode);
+if (addStockBtn) {
+  addStockBtn.addEventListener("click", addWatchCode);
+}
 
-addStockCodeInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    addWatchCode();
-  }
-});
+if (addStockCodeInput) {
+  addStockCodeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      addWatchCode();
+    }
+  });
+}
 
 
 
@@ -2617,14 +2627,16 @@ addStockCodeInput.addEventListener("input", () => {
   );
 });
 
-holdCodeInput.addEventListener("input", () => {
-  renderStockSuggestions(
-    holdCodeInput,
-    holdSuggestList,
-    "hold",
-    () => {}
-  );
-});
+if (holdCodeInput && holdSuggestList) {
+  holdCodeInput.addEventListener("input", () => {
+    renderStockSuggestions(
+      holdCodeInput,
+      holdSuggestList,
+      "hold",
+      () => {}
+    );
+  });
+}
 
 backtestCodeInput.addEventListener("input", () => {
   renderStockSuggestions(
@@ -3557,8 +3569,6 @@ async function executeManualSell(code) {
 
 
 
-const PRICE_CACHE = {};
-const PRICE_CACHE_TTL = 14500; // 14.5초 캐시
 
 const LAST_PRICE_KEY = "kiwoom_last_price_data";
 
@@ -6175,7 +6185,9 @@ function autoAddVirtualHolding(item) {
 
 
 
-addHoldBtn.addEventListener("click", addHolding);
+if (addHoldBtn) {
+  addHoldBtn.addEventListener("click", addHolding);
+}
 
 holdQtyInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
