@@ -65,10 +65,13 @@ const discoverLimitInput =
 const discoverMinScoreInput =
   document.getElementById("discoverMinScoreInput");
 
-  const discoverSettings =
+  const SERVER_DISCOVER_LIMIT = 100;
+const SERVER_DISCOVER_MIN_SCORE = 8;
+
+const discoverSettings =
   JSON.parse(localStorage.getItem(DISCOVER_SETTING_KEY)) || {
-    limit: 300,
-    minScore: 5
+    limit: SERVER_DISCOVER_LIMIT,
+    minScore: SERVER_DISCOVER_MIN_SCORE
   };
 
 if (discoverLimitInput) {
@@ -1192,8 +1195,8 @@ function saveWatchCodes() {
 
 function getCurrentDiscoverSettings() {
   return {
-    limit: Number(discoverLimitInput?.value) || 300,
-    minScore: Number(discoverMinScoreInput?.value) || 5
+    limit: Number(discoverLimitInput?.value) || SERVER_DISCOVER_LIMIT,
+minScore: Number(discoverMinScoreInput?.value) || SERVER_DISCOVER_MIN_SCORE
   };
 }
 
@@ -6727,7 +6730,7 @@ async function runAutoDiscover() {
     return true;
   })
   .filter((item) => item.market === "KOSPI" || item.market === "KOSDAQ")
-  .slice(0, Number(discoverLimitInput?.value || 1200));
+  .slice(0, Number(discoverLimitInput?.value || SERVER_DISCOVER_LIMIT));
 
     const results = (await runInBatches(
       targetStocks,
@@ -6751,7 +6754,7 @@ item.avgVolume = volumeInfo.avgVolume;
 
 const discover = getDiscoverScore(item);
 console.log("점수계산:", stock.code, stock.name, discover);
-const minScore = Number(discoverMinScoreInput?.value || 5);
+const minScore = Number(discoverMinScoreInput?.value || SERVER_DISCOVER_MIN_SCORE);
 
 console.log(
   "발굴점검:",
@@ -7260,9 +7263,8 @@ function getBacktestStatusText(code) {
 
 function saveDiscoverSettings() {
   const settings = {
-    limit: Number(discoverLimitInput?.value || 300),
-    minScore: Number(discoverMinScoreInput?.value || 5)
-  };
+    limit: Number(discoverLimitInput?.value || SERVER_DISCOVER_LIMIT),
+minScore: Number(discoverMinScoreInput?.value || SERVER_DISCOVER_MIN_SCORE)
 
   localStorage.setItem(
     DISCOVER_SETTING_KEY,
