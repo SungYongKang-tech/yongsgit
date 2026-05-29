@@ -7452,6 +7452,8 @@ const lastSell = tradeLogs
     const qty = Number(item.qty || 0);
 
     const profit = (currentPrice - buyPrice) * qty;
+    const buyAmount = buyPrice * qty;
+const evalAmount = currentPrice * qty;
 
     const profitRate =
       buyPrice > 0
@@ -7488,6 +7490,11 @@ const lastSell = tradeLogs
           현재가 ${formatNumber(currentPrice)}원 /
           수량 ${formatNumber(qty)}주
         </div>
+
+        <div class="server-paper-detail">
+  매수금액 ${formatNumber(buyAmount)}원 /
+  평가금액 ${formatNumber(evalAmount)}원
+</div>
 
         <div class="server-paper-detail">
           최고가 ${formatNumber(highestPrice)}원 /
@@ -7641,6 +7648,8 @@ async function loadServerPaperState() {
     `<div class="loading">서버 모의매매 상태 조회중...</div>`;
 
   try {
+    await fetch(`${API_BASE}/api/refresh-holding-prices`);
+
     const res = await fetch(`${API_BASE}/api/paper-state`);
     const data = await res.json();
 
@@ -7683,8 +7692,9 @@ document.addEventListener("DOMContentLoaded", () => {
   loadServerPaperState();
 
   setInterval(() => {
-    if (serverAutoStateText?.textContent.includes("ON")) {
-      loadServerPaperState();
+    if (serverAutoStateText?.textContent.includes("실행중")) {
+  loadServerPaperState();
+}
     }
   }, 30000);
 });
