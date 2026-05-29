@@ -7695,6 +7695,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (serverAutoStateText?.textContent.includes("실행중")) {
   loadServerPaperState();
 }
-    }
+    
   }, 30000);
 });
