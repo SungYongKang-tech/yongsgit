@@ -7264,7 +7264,8 @@ function getBacktestStatusText(code) {
 function saveDiscoverSettings() {
   const settings = {
     limit: Number(discoverLimitInput?.value || SERVER_DISCOVER_LIMIT),
-minScore: Number(discoverMinScoreInput?.value || SERVER_DISCOVER_MIN_SCORE)
+    minScore: Number(discoverMinScoreInput?.value || SERVER_DISCOVER_MIN_SCORE)
+  };
 
   localStorage.setItem(
     DISCOVER_SETTING_KEY,
