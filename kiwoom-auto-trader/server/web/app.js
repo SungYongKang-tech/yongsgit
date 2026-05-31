@@ -5549,11 +5549,11 @@ strategyStates[code] = {
   statusText: "매수완료",
   lastAction: "BUY",
   lastSignalTime: new Date().toLocaleString("ko-KR"),
-  lastSignalPrice: buyPrice,
+  lastSignalPrice: item.buyPrice,
   lastSoldQty: 0,
-  remainQty: qty,
-  strategyPreset,
-  strategyName
+  remainQty: item.qty,
+  strategyPreset: item.strategyPreset,
+  strategyName: item.strategyName
 };
 
   saveStrategyStates();
@@ -6083,15 +6083,16 @@ async function addHolding() {
     });
 
     strategyStates[code] = {
-      status: "BUY",
-      lastAction: "BUY",
-      lastSignalTime: new Date().toLocaleString("ko-KR"),
-      lastSignalPrice: buyPrice,
-      lastSoldQty: 0,
-      remainQty: qty,
-      strategyPreset,
-      strategyName
-    };
+  status: "BUY",
+  statusText: "매수완료",
+  lastAction: "BUY",
+  lastSignalTime: new Date().toLocaleString("ko-KR"),
+  lastSignalPrice: item.buyPrice,
+  lastSoldQty: 0,
+  remainQty: item.qty,
+  strategyPreset: item.strategyPreset,
+  strategyName: item.strategyName
+};
 
     saveStrategyStates();
 
@@ -7142,7 +7143,13 @@ function getFastEntryScore(item) {
   }
 
   if (volumeThreshold > 0) {
-    const volumePower = volume / volumeThreshold;
+    const tradeValue = price * volume;
+const tradeValueThreshold = volumeThreshold * 100000000;
+
+const volumePower =
+  tradeValueThreshold > 0
+    ? tradeValue / tradeValueThreshold
+    : 0;
 
     if (volumePower >= 2.5) {
       score += 4;
