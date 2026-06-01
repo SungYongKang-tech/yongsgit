@@ -2165,8 +2165,8 @@ async function runRefreshLoop() {
 
   await refreshWithoutJump();
 
-  await runMorningAutoFlow();
-  await runClosingProfitSell();
+ // await runMorningAutoFlow();
+ // await runClosingProfitSell();
 
   autoRefreshTimer = setTimeout(() => {
     runRefreshLoop();
@@ -3447,6 +3447,11 @@ async function executeVirtualSell(code, actionType = "SELL") {
 
   let soldQty = 0;
 
+  if (actionType === "SELL" && item.partialSold) {
+  console.warn("이미 1차매도 완료된 종목입니다:", code);
+  return;
+}
+
   if (actionType === "SELL") {
     soldQty = Math.ceil(Number(item.qty || 0) * PARTIAL_SELL_RATE);
   }
@@ -3484,6 +3489,10 @@ async function executeVirtualSell(code, actionType = "SELL") {
 
     const remainQty =
       Math.max(0, Number(item.qty || 0) - soldQty);
+
+    if (actionType === "SELL") {
+  item.partialSold = true;
+}
 
     strategyStates[code] = {
       ...(strategyStates[code] || {}),
