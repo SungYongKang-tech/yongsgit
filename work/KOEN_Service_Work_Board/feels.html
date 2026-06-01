@@ -303,8 +303,6 @@
 const tempInput = document.getElementById("tempInput");
 const humiInput = document.getElementById("humiInput");
 const resultTemp = document.getElementById("resultTemp");
-const resultLevel = document.getElementById("resultLevel");
-const detailText = document.getElementById("detailText");
 
 function calculateFeelsLike(t, h) {
   return -8.784695
@@ -318,63 +316,40 @@ function calculateFeelsLike(t, h) {
     - 0.000003582 * t * t * h * h;
 }
 
-function getLevel(value) {
-  if (value >= 38) return { text: "위험", className: "level-danger" };
-  if (value >= 35) return { text: "경고", className: "level-warning" };
-  if (value >= 33) return { text: "주의", className: "level-caution" };
-  if (value >= 31) return { text: "관심", className: "level-interest" };
-  return { text: "보통", className: "level-normal" };
-}
-
-function showError(message) {
-  resultTemp.textContent = "-";
-  resultLevel.textContent = "확인";
-  resultLevel.className = "result-level level-danger";
-  detailText.textContent = message;
-}
-
 function calcFeelsTemp() {
   const temp = Number(tempInput.value);
   const humi = Number(humiInput.value);
 
   if (!tempInput.value || !humiInput.value) {
-    showError("온도와 습도를 모두 입력하세요.");
+    resultTemp.textContent = "-";
     return;
   }
 
-  if (temp < 20 || temp > 45) {
-    showError("온도는 20~45℃ 범위에서 입력하세요.");
-    return;
-  }
-
-  if (humi < 0 || humi > 100) {
-    showError("습도는 0~100% 범위에서 입력하세요.");
+  if (temp < 20 || temp > 45 || humi < 0 || humi > 100) {
+    resultTemp.textContent = "범위 확인";
     return;
   }
 
   const feels = calculateFeelsLike(temp, humi);
-  const level = getLevel(feels);
-
   resultTemp.textContent = `${feels.toFixed(1)}℃`;
-  resultLevel.textContent = level.text;
-  resultLevel.className = `result-level ${level.className}`;
-  detailText.textContent = `입력값 ${temp}℃ / ${humi}% 기준`;
 }
 
-document.getElementById("calcBtn").addEventListener("click", calcFeelsTemp);
-
 [tempInput, humiInput].forEach((input) => {
-  input.addEventListener("input", () => {
-    if (tempInput.value && humiInput.value) {
-      calcFeelsTemp();
-    }
-  });
+  input.addEventListener("input", calcFeelsTemp);
 
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       calcFeelsTemp();
       input.blur();
     }
+  });
+});
+
+document.querySelectorAll(".sample-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    tempInput.value = btn.dataset.temp;
+    humiInput.value = btn.dataset.humi;
+    calcFeelsTemp();
   });
 });
 </script>
