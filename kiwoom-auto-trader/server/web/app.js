@@ -6372,23 +6372,30 @@ if (emergencyStopBtn) {
 }
 
 if (clearTradeLogBtn) {
-  clearTradeLogBtn.addEventListener("click", () => {
-    const ok = confirm("최근 서버 매매로그를 삭제할까요?");
+  clearTradeLogBtn.addEventListener("click", async () => {
+    if (!confirm("서버 로그를 삭제할까요?")) return;
 
-    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/server-log-clear`, {
+        method: "POST"
+      });
 
-    localStorage.setItem(
-      SERVER_TRADE_LOG_DELETED_COUNT_KEY,
-      String(tradeLogs.length)
-    );
+      const data = await res.json();
 
-    tradeLogs = [];
-    saveTradeLogs();
+      if (!data.ok) {
+        alert(data.message || "서버 로그 삭제 실패");
+        return;
+      }
 
-    showAllTradeLogs = false;
-    renderTradeLogs();
+      alert("서버 로그를 삭제했습니다.");
 
-    alert("최근 서버 매매로그가 삭제되었습니다.");
+      if (typeof loadServerPaperState === "function") {
+        await loadServerPaperState();
+      }
+    } catch (error) {
+      console.error("서버 로그 삭제 실패:", error);
+      alert("서버 로그 삭제 중 오류가 발생했습니다.");
+    }
   });
 }
 
