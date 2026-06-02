@@ -3002,7 +3002,7 @@ function getStrategyStatusText(status) {
 }
 
 function checkTargetSell(item) {
-  const state = getStrategyState(item.code);
+  /* const state = getStrategyState(item.code);
 
   if (state.status === "PARTIAL_SOLD") {
     return null;
@@ -3016,7 +3016,7 @@ function checkTargetSell(item) {
       action: "SELL",
       reason: `자동매매ON · 목표가 ${formatNumber(item.targetPrice)}원 도달`
     };
-  }
+  } */
 
   return null;
 }
