@@ -2376,6 +2376,8 @@ const resetHoldingsBtn = document.getElementById("resetHoldingsBtn");
 
 const tradeLogList = document.getElementById("tradeLogList");
 const clearTradeLogBtn = document.getElementById("clearTradeLogBtn");
+const clearServerResultBtn =
+  document.getElementById("clearServerResultBtn");
 const clearVirtualResultBtn =
   document.getElementById("clearVirtualResultBtn");
 
@@ -7728,3 +7730,31 @@ document.addEventListener("DOMContentLoaded", () => {
     
   }, 30000);
 });
+
+if (clearServerResultBtn) {
+  clearServerResultBtn.addEventListener("click", async () => {
+    if (!confirm("완료결과와 누적손익을 삭제할까요?")) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/server-result-clear`, {
+        method: "POST"
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        alert(data.message || "완료결과 삭제 실패");
+        return;
+      }
+
+      alert("완료결과를 삭제했습니다.");
+
+      if (typeof loadServerPaperState === "function") {
+        await loadServerPaperState();
+      }
+    } catch (error) {
+      console.error("완료결과 삭제 실패:", error);
+      alert("완료결과 삭제 중 오류가 발생했습니다.");
+    }
+  });
+}
