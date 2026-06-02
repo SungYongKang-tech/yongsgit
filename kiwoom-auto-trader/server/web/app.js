@@ -7543,11 +7543,11 @@ const evalAmount = currentPrice * qty;
           </div>
         </div>
 
-        <div class="server-hold-money ${profit >= 0 ? "up" : "down"}">
-          ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
-        </div>
+       <div class="server-hold-money ${profit >= 0 ? "up" : "down"}">
+  ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+</div>
 
-        <div class="server-paper-detail">
+<div class="server-paper-detail">
   수량 ${formatNumber(qty)}주 /
   매수가 ${formatNumber(buyPrice)}원 /
   현재가 ${formatNumber(currentPrice)}원
@@ -7570,41 +7570,38 @@ const evalAmount = currentPrice * qty;
   </strong>
 </div>
 
-        <div class="server-paper-detail">
-  매수금액 ${formatNumber(buyAmount)}원 /
-  평가금액 ${formatNumber(evalAmount)}원
+<div class="server-paper-detail">
+  최고가 ${formatNumber(highestPrice)}원 /
+  최고수익 ${highestProfitRate >= 0 ? "+" : ""}${highestProfitRate.toFixed(2)}%
 </div>
 
-        <div class="server-paper-detail">
-          최고가 ${formatNumber(highestPrice)}원 /
-          최고수익 ${highestProfitRate >= 0 ? "+" : ""}${highestProfitRate.toFixed(2)}%
-        </div>
+<div class="server-paper-detail">
+  목표 ${
+    Number(item.targetPrice || 0) > 0
+      ? `${formatNumber(item.targetPrice)}원`
+      : "-"
+  } /
+  손절 ${
+    Number(item.stopLossPrice || 0) > 0
+      ? `${formatNumber(item.stopLossPrice)}원`
+      : "-"
+  } /
+  트레일링 ${
+    Number(item.trailingStopRate || 0) > 0
+      ? `${item.trailingStopRate}%`
+      : "-"
+  }
+</div>
 
-        <div class="server-paper-detail">
-          목표 ${formatNumber(item.targetPrice)}원 /
-          손절 ${formatNumber(item.stopLossPrice)}원 /
-          트레일링 ${item.trailingStopRate || "-"}%
-        </div>
+<div class="server-paper-detail">
+  전략 ${item.strategyName || item.strategyPreset || "-"} /
+  점수 ${item.discoverScore || 0}
+</div>
 
-        <div class="server-paper-detail">
-          전략 ${item.strategyName || item.strategyPreset || "-"} /
-          점수 ${item.discoverScore || 0}
-        </div>
-
-        ${
-          isRunnerCandidate
-            ? `<div class="runner-badge">러너 후보 · 목표수익 즉시매도 제외</div>`
-            : ""
-        }
-      </div>
-    `;
-  }).join("")
-    }
-
-    <div class="server-paper-detail" style="margin-top:10px;">
-      ※ 최근 서버 매매로그와 완료된 모의투자 결과는 아래 전용 영역에서 확인합니다.
-    </div>
-  `;
+${
+  isRunnerCandidate
+    ? `<div class="runner-badge">러너 후보 · 목표수익 즉시매도 제외</div>`
+    : ""
 }
 
 async function serverSellAllHolding(code) {
