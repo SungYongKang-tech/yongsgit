@@ -7417,7 +7417,24 @@ const lastSell = tradeLogs
     .filter((item) => item.date === today)
     .reduce((sum, item) => sum + Number(item.profit || 0), 0);
 
+const totalBuyAmount = holdings.reduce((sum, item) => {
+  const buyPrice = Number(item.buyPrice || 0);
+  const qty = Number(item.qty || 0);
+  return sum + buyPrice * qty;
+}, 0);
 
+const totalEvalAmount = holdings.reduce((sum, item) => {
+  const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
+  const qty = Number(item.qty || 0);
+  return sum + currentPrice * qty;
+}, 0);
+
+const totalEvalProfit = totalEvalAmount - totalBuyAmount;
+
+const totalEvalRate =
+  totalBuyAmount > 0
+    ? (totalEvalProfit / totalBuyAmount) * 100
+    : 0;
 
 
   serverPaperBox.innerHTML = `
@@ -7457,6 +7474,19 @@ const lastSell = tradeLogs
           ${todayProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayProfit))}원
         </strong>
       </div>
+
+      <div>
+  <span>총 평가금액</span>
+  <strong>${formatNumber(Math.round(totalEvalAmount))}원</strong>
+</div>
+
+<div>
+  <span>총 평가손익</span>
+  <strong class="${totalEvalProfit >= 0 ? "up" : "down"}">
+    ${totalEvalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalEvalProfit))}원
+    (${totalEvalProfit >= 0 ? "+" : ""}${totalEvalRate.toFixed(2)}%)
+  </strong>
+</div>
 
      <div>
   <span>최근 매수</span>
@@ -7518,10 +7548,27 @@ const evalAmount = currentPrice * qty;
         </div>
 
         <div class="server-paper-detail">
-          매수가 ${formatNumber(buyPrice)}원 /
-          현재가 ${formatNumber(currentPrice)}원 /
-          수량 ${formatNumber(qty)}주
-        </div>
+  수량 ${formatNumber(qty)}주 /
+  매수가 ${formatNumber(buyPrice)}원 /
+  현재가 ${formatNumber(currentPrice)}원
+</div>
+
+<div class="server-paper-detail">
+  매수금액 ${formatNumber(Math.round(buyAmount))}원 /
+  평가금액 ${formatNumber(Math.round(evalAmount))}원
+</div>
+
+<div class="server-paper-detail">
+  평가손익
+  <strong class="${profit >= 0 ? "up" : "down"}">
+    ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+  </strong>
+  /
+  수익률
+  <strong class="${profitRate >= 0 ? "up" : "down"}">
+    ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
+  </strong>
+</div>
 
         <div class="server-paper-detail">
   매수금액 ${formatNumber(buyAmount)}원 /
