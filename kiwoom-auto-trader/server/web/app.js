@@ -7558,17 +7558,6 @@ const evalAmount = currentPrice * qty;
   평가금액 ${formatNumber(Math.round(evalAmount))}원
 </div>
 
-<div class="server-paper-detail">
-  평가손익
-  <strong class="${profit >= 0 ? "up" : "down"}">
-    ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
-  </strong>
-  /
-  수익률
-  <strong class="${profitRate >= 0 ? "up" : "down"}">
-    ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
-  </strong>
-</div>
 
 <div class="server-paper-detail">
   최고가 ${formatNumber(highestPrice)}원 /
