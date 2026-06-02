@@ -6376,9 +6376,9 @@ if (clearTradeLogBtn) {
     if (!confirm("서버 로그를 삭제할까요?")) return;
 
     try {
-      const res = await fetch(`${API_BASE}/api/server-log-clear`, {
-        method: "POST"
-      });
+      const res = await fetch(`${API_BASE}/api/server-trade-log-clear`, {
+  method: "POST"
+});
 
       const data = await res.json();
 
