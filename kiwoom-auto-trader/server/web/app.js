@@ -7604,6 +7604,17 @@ ${
     : ""
 }
 
+      </div>
+    `;
+  }).join("")
+    }
+
+    <div class="server-paper-detail" style="margin-top:10px;">
+      ※ 최근 서버 매매로그와 완료된 모의투자 결과는 아래 전용 영역에서 확인합니다.
+    </div>
+  `;
+}
+
 async function serverSellAllHolding(code) {
   try {
     const res = await fetch(
