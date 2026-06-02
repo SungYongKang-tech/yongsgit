@@ -1,6 +1,6 @@
 const API_BASE = "https://sytrader.duckdns.org";
 const PRICE_CACHE = {};
-const PRICE_CACHE_TTL = 14500; // 14.5초 캐시
+const PRICE_CACHE_TTL = 60000; // 60초 캐시
 
 const stockCodeInput = document.getElementById("stockCode");
 const searchBtn = document.getElementById("searchBtn");
@@ -2967,7 +2967,7 @@ const marketClose =
 
 function getRefreshInterval() {
   if (isMarketOpenNow()) {
-    return 15000; // 장중: 15초
+    return 60000; // 장중: 15초
   }
 
   return 60000; // 장외/휴장: 60초
@@ -3427,6 +3427,10 @@ if (getTodayTradeCount() >= DAILY_TRADE_LIMIT) {
 }
 
 async function executeVirtualSell(code, actionType = "SELL") {
+  if (actionType === "SELL") {
+    console.warn("목표가/1차매도는 비활성화 상태입니다:", code);
+    return;
+  }
   const item = holdings.find((stock) => stock.code === code);
 
   if (!item) return;
