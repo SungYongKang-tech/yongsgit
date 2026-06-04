@@ -2422,20 +2422,18 @@ const HOLD_STORAGE_KEY = "kiwoom_holdings";
 
 const VIRTUAL_RESULT_KEY = "kiwoom_virtual_results";
 
-let virtualResults =
-  JSON.parse(localStorage.getItem(VIRTUAL_RESULT_KEY)) || [];
+let virtualResults = [];
 
 function saveVirtualResults() {
-  localStorage.setItem(
-    VIRTUAL_RESULT_KEY,
-    JSON.stringify(virtualResults)
-  );
+  // 서버 기준으로 통일하므로 localStorage 저장은 사용하지 않음
 }
 
-function renderVirtualResults() {
+function renderVirtualResults(resultsFromServer) {
   if (!virtualResultBox) return;
 
-  const todayResults = virtualResults;
+  const todayResults = Array.isArray(resultsFromServer)
+    ? resultsFromServer
+    : virtualResults;
 
   if (todayResults.length === 0) {
     virtualResultBox.innerHTML =
@@ -7732,6 +7730,9 @@ async function loadServerPaperState() {
     if (!res.ok) {
       throw new Error(data.message || "서버 상태 조회 실패");
     }
+
+    virtualResults = Array.isArray(data.results) ? data.results : [];
+    renderVirtualResults(virtualResults);
 
     syncServerHoldingsToLocal(data);
     renderServerPaperState(data);
