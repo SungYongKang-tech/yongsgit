@@ -177,6 +177,8 @@
   </div>
 
   <div class="section">
+     <h2>현재 보유 종목</h2>
+    <div id="holdingBox" class="empty">보유 종목 불러오는 중...</div>
     <h2>최근 매도 내역</h2>
     <div id="recentSellsBox" class="empty">데이터 불러오는 중...</div>
   </div>
@@ -208,6 +210,73 @@
         if (num < 0) el.classList.add("minus");
       }
     }
+
+    function renderHoldings(list) {
+  const box = document.getElementById("holdingBox");
+
+  if (!box) return;
+
+  if (!Array.isArray(list) || list.length === 0) {
+    box.className = "empty";
+    box.innerHTML = "현재 보유 종목이 없습니다.";
+    return;
+  }
+
+  box.className = "";
+  box.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>종목</th>
+          <th>매수가</th>
+          <th>현재가</th>
+          <th>수익률</th>
+          <th>평가손익</th>
+          <th>트레일링</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(item => {
+          const profitRate = Number(item.profitRate || 0);
+          const profit = Number(item.profit || 0);
+          const drawdownFromHigh = Number(item.drawdownFromHigh || 0);
+          const highestProfitRate = Number(item.highestProfitRate || 0);
+
+          const trailingText = item.trailingActive
+            ? `작동중<br><small>고점대비 ${formatRate(drawdownFromHigh)}</small>`
+            : `대기중<br><small>최고수익 ${formatRate(highestProfitRate)}</small>`;
+
+          return `
+            <tr>
+              <td>
+                ${item.name || "-"}<br>
+                <small>${item.code || ""}</small><br>
+                <small>${item.strategyName || item.strategyPreset || "-"} / 점수 ${item.discoverScore || "-"}</small>
+              </td>
+
+              <td>${Number(item.buyPrice || 0).toLocaleString()}원</td>
+
+              <td>${Number(item.currentPrice || 0).toLocaleString()}원</td>
+
+              <td class="${profitRate >= 0 ? "plus" : "minus"}">
+                ${formatRate(profitRate)}
+              </td>
+
+              <td class="${profit >= 0 ? "plus" : "minus"}">
+                ${formatWon(profit)}
+              </td>
+
+              <td>
+                ${trailingText}<br>
+                <small>기준 ${item.trailingStopRate || 0}%</small>
+              </td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
 
     function renderRecentSells(list) {
       const box = document.getElementById("recentSellsBox");
@@ -271,6 +340,7 @@
         setValue("holdingCount", `${s.holdingCount || 0}개`);
         setValue("holdingProfit", formatWon(s.holdingProfit), "money");
 
+        renderHoldings(data.holdings || []);
         renderRecentSells(data.recentSells || []);
       } catch (err) {
         console.error(err);
