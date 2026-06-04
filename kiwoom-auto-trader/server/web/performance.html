@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>성과분석 대시보드</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: Arial, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .card {
+      background: #1f2937;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    }
+
+    .label {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 8px;
+    }
+
+    .value {
+      font-size: 22px;
+      font-weight: bold;
+    }
+
+    .plus {
+      color: #f87171;
+    }
+
+    .minus {
+      color: #60a5fa;
+    }
+
+    .section {
+      margin-top: 18px;
+    }
+
+    .section h2 {
+      font-size: 18px;
+      margin: 0 0 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #1f2937;
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #374151;
+      text-align: center;
+    }
+
+    th {
+      color: #d1d5db;
+      background: #111827;
+    }
+
+    .empty {
+      color: #9ca3af;
+      padding: 20px;
+      text-align: center;
+      background: #1f2937;
+      border-radius: 12px;
+    }
+
+    @media (max-width: 600px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 19px;
+      }
+
+      .value {
+        font-size: 20px;
+      }
+
+      table {
+        font-size: 12px;
+      }
+
+      th, td {
+        padding: 8px 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📊 성과분석 대시보드</h1>
+    <button onclick="location.href='/'">← 메인</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">총 매도 거래수</div>
+      <div class="value" id="totalTrades">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">승률</div>
+      <div class="value" id="winRate">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">누적 손익</div>
+      <div class="value" id="totalProfit">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">평균 수익률</div>
+      <div class="value" id="avgProfitRate">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">평균 수익 거래</div>
+      <div class="value" id="avgWinRate">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">평균 손실 거래</div>
+      <div class="value" id="avgLossRate">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">현재 보유 종목 수</div>
+      <div class="value" id="holdingCount">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">보유 평가손익</div>
+      <div class="value" id="holdingProfit">-</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>최근 매도 내역</h2>
+    <div id="recentSellsBox" class="empty">데이터 불러오는 중...</div>
+  </div>
+
+  <script>
+    function formatWon(value) {
+      const num = Number(value || 0);
+      const sign = num > 0 ? "+" : "";
+      return sign + num.toLocaleString() + "원";
+    }
+
+    function formatRate(value) {
+      const num = Number(value || 0);
+      const sign = num > 0 ? "+" : "";
+      return sign + num.toFixed(2) + "%";
+    }
+
+    function setValue(id, value, type) {
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      el.textContent = value;
+
+      const num = Number(String(value).replace(/[^0-9.-]/g, ""));
+      el.classList.remove("plus", "minus");
+
+      if (type === "money" || type === "rate") {
+        if (num > 0) el.classList.add("plus");
+        if (num < 0) el.classList.add("minus");
+      }
+    }
+
+    function renderRecentSells(list) {
+      const box = document.getElementById("recentSellsBox");
+
+      if (!Array.isArray(list) || list.length === 0) {
+        box.className = "empty";
+        box.innerHTML = "아직 매도 거래 내역이 없습니다.";
+        return;
+      }
+
+      box.className = "";
+      box.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>일자</th>
+              <th>종목</th>
+              <th>전략</th>
+              <th>수익률</th>
+              <th>손익</th>
+              <th>사유</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map(item => `
+              <tr>
+                <td>${item.date || "-"}</td>
+                <td>${item.name || "-"}<br><small>${item.code || ""}</small></td>
+                <td>${item.strategyName || item.strategyPreset || "-"}</td>
+                <td class="${Number(item.profitRate || 0) >= 0 ? "plus" : "minus"}">
+                  ${formatRate(item.profitRate)}
+                </td>
+                <td class="${Number(item.profit || 0) >= 0 ? "plus" : "minus"}">
+                  ${formatWon(item.profit)}
+                </td>
+                <td>${item.reason || item.type || "-"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadPerformanceSummary() {
+      try {
+        const res = await fetch("/api/performance-summary");
+        const data = await res.json();
+
+        if (!data.ok) {
+          throw new Error(data.message || "성과 데이터를 불러오지 못했습니다.");
+        }
+
+        const s = data.summary || {};
+
+        setValue("totalTrades", `${s.totalTrades || 0}건`);
+        setValue("winRate", formatRate(s.winRate), "rate");
+        setValue("totalProfit", formatWon(s.totalProfit), "money");
+        setValue("avgProfitRate", formatRate(s.avgProfitRate), "rate");
+        setValue("avgWinRate", formatRate(s.avgWinRate), "rate");
+        setValue("avgLossRate", formatRate(s.avgLossRate), "rate");
+        setValue("holdingCount", `${s.holdingCount || 0}개`);
+        setValue("holdingProfit", formatWon(s.holdingProfit), "money");
+
+        renderRecentSells(data.recentSells || []);
+      } catch (err) {
+        console.error(err);
+        document.getElementById("recentSellsBox").innerHTML =
+          "성과분석 데이터를 불러오지 못했습니다.";
+      }
+    }
+
+    loadPerformanceSummary();
+    setInterval(loadPerformanceSummary, 30000);
+  </script>
+</body>
+</html>
