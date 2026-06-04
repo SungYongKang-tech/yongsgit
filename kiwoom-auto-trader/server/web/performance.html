@@ -126,6 +126,126 @@
         padding: 8px 6px;
       }
     }
+
+    .tab-row {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 12px;
+  position: sticky;
+  top: 0;
+  background: #111827;
+  padding: 8px 0;
+  z-index: 10;
+}
+
+.tab-btn {
+  flex: 1;
+  background: #374151;
+  color: #d1d5db;
+  border-radius: 12px;
+  padding: 12px 8px;
+  font-size: 14px;
+}
+
+.tab-btn.active {
+  background: #2563eb;
+  color: white;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stock-card {
+  background: #1f2937;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+}
+
+.stock-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.stock-name {
+  font-size: 17px;
+  font-weight: bold;
+}
+
+.stock-sub {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 3px;
+}
+
+.stock-rate {
+  font-size: 20px;
+  font-weight: bold;
+  text-align: right;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.info-box {
+  background: #111827;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.info-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 5px;
+}
+
+.info-value {
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.status-pill {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: bold;
+  background: #374151;
+}
+
+.status-on {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+.status-wait {
+  background: #1e3a8a;
+  color: #bfdbfe;
+}
+
+@media (min-width: 800px) {
+  .tab-row {
+    max-width: 720px;
+  }
+}
   </style>
 </head>
 <body>
@@ -176,12 +296,29 @@
     </div>
   </div>
 
+  <div class="tab-row">
+  <button class="tab-btn active" onclick="showTab('summary')">요약</button>
+  <button class="tab-btn" onclick="showTab('holdings')">보유종목</button>
+  <button class="tab-btn" onclick="showTab('sells')">매도내역</button>
+</div>
+
+<div id="summaryTab" class="tab-panel active">
+  <div class="empty">상단 요약 카드를 확인하세요.</div>
+</div>
+
+<div id="holdingsTab" class="tab-panel">
   <div class="section">
-     <h2>현재 보유 종목</h2>
+    <h2>현재 보유 종목</h2>
     <div id="holdingBox" class="empty">보유 종목 불러오는 중...</div>
+  </div>
+</div>
+
+<div id="sellsTab" class="tab-panel">
+  <div class="section">
     <h2>최근 매도 내역</h2>
     <div id="recentSellsBox" class="empty">데이터 불러오는 중...</div>
   </div>
+</div>
 
   <script>
     function formatWon(value) {
@@ -195,6 +332,31 @@
       const sign = num > 0 ? "+" : "";
       return sign + num.toFixed(2) + "%";
     }
+
+    function showTab(name) {
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.classList.remove("active");
+  });
+
+  document.querySelectorAll(".tab-panel").forEach(panel => {
+    panel.classList.remove("active");
+  });
+
+  if (name === "summary") {
+    document.querySelector(".tab-btn:nth-child(1)")?.classList.add("active");
+    document.getElementById("summaryTab")?.classList.add("active");
+  }
+
+  if (name === "holdings") {
+    document.querySelector(".tab-btn:nth-child(2)")?.classList.add("active");
+    document.getElementById("holdingsTab")?.classList.add("active");
+  }
+
+  if (name === "sells") {
+    document.querySelector(".tab-btn:nth-child(3)")?.classList.add("active");
+    document.getElementById("sellsTab")?.classList.add("active");
+  }
+}
 
     function setValue(id, value, type) {
       const el = document.getElementById(id);
@@ -222,103 +384,118 @@
     return;
   }
 
-  box.className = "";
-  box.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>종목</th>
-          <th>매수가</th>
-          <th>현재가</th>
-          <th>수익률</th>
-          <th>평가손익</th>
-          <th>트레일링</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${list.map(item => {
-          const profitRate = Number(item.profitRate || 0);
-          const profit = Number(item.profit || 0);
-          const drawdownFromHigh = Number(item.drawdownFromHigh || 0);
-          const highestProfitRate = Number(item.highestProfitRate || 0);
+  box.className = "mobile-card-list";
 
-          const trailingText = item.trailingActive
-            ? `작동중<br><small>고점대비 ${formatRate(drawdownFromHigh)}</small>`
-            : `대기중<br><small>최고수익 ${formatRate(highestProfitRate)}</small>`;
+  box.innerHTML = list.map(item => {
+    const profitRate = Number(item.profitRate || 0);
+    const profit = Number(item.profit || 0);
+    const drawdownFromHigh = Number(item.drawdownFromHigh || 0);
+    const highestProfitRate = Number(item.highestProfitRate || 0);
 
-          return `
-            <tr>
-              <td>
-                ${item.name || "-"}<br>
-                <small>${item.code || ""}</small><br>
-                <small>${item.strategyName || item.strategyPreset || "-"} / 점수 ${item.discoverScore || "-"}</small>
-              </td>
+    const trailingClass = item.trailingActive ? "status-on" : "status-wait";
+    const trailingTitle = item.trailingActive ? "트레일링 작동중" : "트레일링 대기중";
+    const trailingDetail = item.trailingActive
+      ? `고점대비 ${formatRate(drawdownFromHigh)}`
+      : `최고수익 ${formatRate(highestProfitRate)}`;
 
-              <td>${Number(item.buyPrice || 0).toLocaleString()}원</td>
+    return `
+      <div class="stock-card">
+        <div class="stock-card-header">
+          <div>
+            <div class="stock-name">${item.name || "-"}</div>
+            <div class="stock-sub">${item.code || ""}</div>
+            <div class="stock-sub">${item.strategyName || item.strategyPreset || "-"} / 점수 ${item.discoverScore || "-"}</div>
+          </div>
 
-              <td>${Number(item.currentPrice || 0).toLocaleString()}원</td>
+          <div class="stock-rate ${profitRate >= 0 ? "plus" : "minus"}">
+            ${formatRate(profitRate)}
+          </div>
+        </div>
 
-              <td class="${profitRate >= 0 ? "plus" : "minus"}">
-                ${formatRate(profitRate)}
-              </td>
+        <div class="info-grid">
+          <div class="info-box">
+            <div class="info-label">매수가</div>
+            <div class="info-value">${Number(item.buyPrice || 0).toLocaleString()}원</div>
+          </div>
 
-              <td class="${profit >= 0 ? "plus" : "minus"}">
-                ${formatWon(profit)}
-              </td>
+          <div class="info-box">
+            <div class="info-label">현재가</div>
+            <div class="info-value">${Number(item.currentPrice || 0).toLocaleString()}원</div>
+          </div>
 
-              <td>
-                ${trailingText}<br>
-                <small>기준 ${item.trailingStopRate || 0}%</small>
-              </td>
-            </tr>
-          `;
-        }).join("")}
-      </tbody>
-    </table>
-  `;
+          <div class="info-box">
+            <div class="info-label">평가손익</div>
+            <div class="info-value ${profit >= 0 ? "plus" : "minus"}">${formatWon(profit)}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">최고수익률</div>
+            <div class="info-value ${highestProfitRate >= 0 ? "plus" : "minus"}">${formatRate(highestProfitRate)}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">보유수량</div>
+            <div class="info-value">${Number(item.qty || 0).toLocaleString()}주</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">트레일링 기준</div>
+            <div class="info-value">${item.trailingStopRate || 0}%</div>
+          </div>
+        </div>
+
+        <div class="status-pill ${trailingClass}">
+          ${trailingTitle} · ${trailingDetail}
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
     function renderRecentSells(list) {
-      const box = document.getElementById("recentSellsBox");
+  const box = document.getElementById("recentSellsBox");
 
-      if (!Array.isArray(list) || list.length === 0) {
-        box.className = "empty";
-        box.innerHTML = "아직 매도 거래 내역이 없습니다.";
-        return;
-      }
+  if (!Array.isArray(list) || list.length === 0) {
+    box.className = "empty";
+    box.innerHTML = "아직 매도 거래 내역이 없습니다.";
+    return;
+  }
 
-      box.className = "";
-      box.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>일자</th>
-              <th>종목</th>
-              <th>전략</th>
-              <th>수익률</th>
-              <th>손익</th>
-              <th>사유</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${list.map(item => `
-              <tr>
-                <td>${item.date || "-"}</td>
-                <td>${item.name || "-"}<br><small>${item.code || ""}</small></td>
-                <td>${item.strategyName || item.strategyPreset || "-"}</td>
-                <td class="${Number(item.profitRate || 0) >= 0 ? "plus" : "minus"}">
-                  ${formatRate(item.profitRate)}
-                </td>
-                <td class="${Number(item.profit || 0) >= 0 ? "plus" : "minus"}">
-                  ${formatWon(item.profit)}
-                </td>
-                <td>${item.reason || item.type || "-"}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      `;
-    }
+  box.className = "mobile-card-list";
+
+  box.innerHTML = list.map(item => {
+    const profitRate = Number(item.profitRate || 0);
+    const profit = Number(item.profit || 0);
+
+    return `
+      <div class="stock-card">
+        <div class="stock-card-header">
+          <div>
+            <div class="stock-name">${item.name || "-"}</div>
+            <div class="stock-sub">${item.code || ""}</div>
+            <div class="stock-sub">${item.date || "-"} / ${item.strategyName || item.strategyPreset || "-"}</div>
+          </div>
+
+          <div class="stock-rate ${profitRate >= 0 ? "plus" : "minus"}">
+            ${formatRate(profitRate)}
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-box">
+            <div class="info-label">실현손익</div>
+            <div class="info-value ${profit >= 0 ? "plus" : "minus"}">${formatWon(profit)}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">매도사유</div>
+            <div class="info-value">${item.reason || item.type || "-"}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
 
     async function loadPerformanceSummary() {
       try {
