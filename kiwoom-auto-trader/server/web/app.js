@@ -3512,7 +3512,7 @@ async function executeVirtualSell(code, actionType = "SELL") {
 
     await loadServerPaperState();
 
-renderVirtualResults();
+//renderVirtualResults();
 
   } catch (error) {
     console.error("서버 자동매도 실패:", error);
