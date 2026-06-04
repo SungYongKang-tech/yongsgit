@@ -2431,9 +2431,13 @@ function saveVirtualResults() {
 function renderVirtualResults(resultsFromServer) {
   if (!virtualResultBox) return;
 
-  const todayResults = Array.isArray(resultsFromServer)
-    ? resultsFromServer
-    : virtualResults;
+  if (!Array.isArray(resultsFromServer)) {
+    virtualResultBox.innerHTML =
+      `<div class="empty">서버 상태 조회 후 완료된 모의투자 결과가 표시됩니다.</div>`;
+    return;
+  }
+
+  const todayResults = resultsFromServer;
 
   if (todayResults.length === 0) {
     virtualResultBox.innerHTML =
@@ -2617,12 +2621,12 @@ function renderVirtualResults(resultsFromServer) {
 function toggleResultSection(id) {
   resultOpenState[id] = !resultOpenState[id];
   saveResultOpenState();
-  renderVirtualResults();
+  renderVirtualResults(virtualResults);
 }
 
 function toggleVirtualResultView() {
   showAllVirtualResults = !showAllVirtualResults;
-  renderVirtualResults();
+  renderVirtualResults(virtualResults);
 }
 
 
