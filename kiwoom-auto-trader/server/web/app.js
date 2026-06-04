@@ -7735,11 +7735,11 @@ async function loadServerPaperState() {
       throw new Error(data.message || "서버 상태 조회 실패");
     }
 
-    virtualResults = Array.isArray(data.results) ? data.results : [];
-    renderVirtualResults(virtualResults);
-
     syncServerHoldingsToLocal(data);
     renderServerPaperState(data);
+
+    virtualResults = Array.isArray(data.results) ? data.results : [];
+    renderVirtualResults(virtualResults);
   } catch (error) {
     serverPaperBox.innerHTML = `
       <div class="error">
@@ -7749,7 +7749,6 @@ async function loadServerPaperState() {
     `;
   }
 }
-
 
 
 document.addEventListener("DOMContentLoaded", () => {
