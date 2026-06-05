@@ -350,6 +350,13 @@
   </div>
 </div>
 
+<div class="section">
+  <h2>전략별 성과</h2>
+  <div id="strategyStatsBox" class="mobile-card-list">
+    <div class="empty">데이터 불러오는 중...</div>
+  </div>
+</div>
+
 
     </div>
   </div>
@@ -581,6 +588,51 @@
       }).join("");
     }
 
+    function renderStrategyStats(list) {
+  const box = document.getElementById("strategyStatsBox");
+
+  if (!Array.isArray(list) || list.length === 0) {
+    box.innerHTML = "<div class='empty'>전략별 매도 데이터가 없습니다.</div>";
+    return;
+  }
+
+  box.innerHTML = list.map(item => {
+    const profit = Number(item.totalProfit || 0);
+    const avgRate = Number(item.avgProfitRate || 0);
+
+    return `
+      <div class="stock-card">
+        <div class="stock-card-header">
+          <div>
+            <div class="stock-name">${item.strategyName || "-"}</div>
+            <div class="stock-sub">
+              거래 ${item.trades || 0}건 / 승 ${item.wins || 0} / 패 ${item.losses || 0}
+            </div>
+          </div>
+
+          <div class="stock-rate ${profit >= 0 ? "plus" : "minus"}">
+            ${formatRate(avgRate)}
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-box">
+            <div class="info-label">실현손익</div>
+            <div class="info-value ${profit >= 0 ? "plus" : "minus"}">
+              ${formatWon(profit)}
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">승률</div>
+            <div class="info-value">${formatRate(item.winRate || 0)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
     async function loadPerformanceSummary() {
       try {
         const res = await fetch("/api/performance-summary");
@@ -610,6 +662,7 @@
 
         renderHoldings(data.holdings || []);
         renderRecent7Days(data.recent7Days || []);
+        renderStrategyStats(data.strategyStats || []);
         renderRecentSells(data.recentSells || []);
       } catch (err) {
         console.error(err);
