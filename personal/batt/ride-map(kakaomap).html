@@ -2761,18 +2761,75 @@ formatClock();
 }
 
 
-function buildCurrentMarkerImage() {
+function buildCurrentMarkerImage(heading = 0) {
   if (!ensureKakaoLoaded()) return null;
+
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42">
-      <foreignObject width="42" height="42">
-        <div xmlns="http://www.w3.org/1999/xhtml" class="marker-badge">🚴</div>
-      </foreignObject>
+    <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
+      <circle cx="26" cy="26" r="22" fill="#2563eb" stroke="#ffffff" stroke-width="4"/>
+      <path
+        d="M26 7 L39 34 L26 28 L13 34 Z"
+        fill="#ffffff"
+        transform="rotate(${heading} 26 26)"
+      />
+      <circle cx="26" cy="26" r="4" fill="#93c5fd"/>
     </svg>`;
+
   const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
-  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(42, 42), {
-    offset: new kakao.maps.Point(21, 21)
+
+  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(52, 52), {
+    offset: new kakao.maps.Point(26, 26)
   });
+}
+
+let lastHeadingDeg = 0;
+
+function getHeadingFromGpsOrPath(pos, prevPoint, lat, lng, speedKmh) {
+  const gpsHeading = Number(pos.coords.heading);
+
+  if (Number.isFinite(gpsHeading) && gpsHeading >= 0 && speedKmh >= 3) {
+    lastHeadingDeg = gpsHeading;
+    return gpsHeading;
+  }
+
+  if (prevPoint && speedKmh >= 3) {
+    const heading = getBearing(prevPoint[0], prevPoint[1], lat, lng);
+    lastHeadingDeg = heading;
+    return heading;
+  }
+
+  return lastHeadingDeg;
+}
+
+function getBearing(lat1, lng1, lat2, lng2) {
+  const toRad = d => d * Math.PI / 180;
+  const toDeg = r => r * 180 / Math.PI;
+
+  const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
+
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function moveMapAhead(lat, lng, heading) {
+  if (!map || !ensureKakaoLoaded()) return;
+
+  const pos = toLatLng(lat, lng);
+  if (!pos) return;
+
+  const proj = map.getProjection();
+  const point = proj.containerPointFromCoords(pos);
+
+  const offset = 120; // 앞길 확보 정도. 90~160 사이 조정 가능
+  const rad = heading * Math.PI / 180;
+
+  point.x += Math.sin(rad) * offset;
+  point.y -= Math.cos(rad) * offset;
+
+  const newCenter = proj.coordsFromContainerPoint(point);
+  map.panTo(newCenter);
 }
 
 function buildStartMarkerImage() {
@@ -2899,19 +2956,23 @@ function initKakaoMap() {
   }, 300);
 }
 
-function drawCurrentMarker(lat, lng) {
+function drawCurrentMarker(lat, lng, heading = 0) {
   if (!map || !ensureKakaoLoaded()) return;
+
   const pos = toLatLng(lat, lng);
   if (!pos) return;
+
+  const image = buildCurrentMarkerImage(heading);
 
   if (!currentMarker) {
     currentMarker = new kakao.maps.Marker({
       map,
       position: pos,
-      image: buildCurrentMarkerImage()
+      image
     });
   } else {
     currentMarker.setPosition(pos);
+    currentMarker.setImage(image);
   }
 }
 
@@ -3611,10 +3672,13 @@ return;
       map.setLevel(currentAutoZoomLevel);
     }
 
-    if (followMap) {
-      const pos2 = toLatLng(latitude, longitude);
-      if (pos2) map.panTo(pos2);
-    }
+   const heading = getHeadingFromGpsOrPath(pos, prev, latitude, longitude, speedKmh);
+
+drawCurrentMarker(latitude, longitude, heading);
+
+if (followMap) {
+  moveMapAhead(latitude, longitude, heading);
+}
   }
 
  updateStats();
@@ -3718,7 +3782,7 @@ function requestLocationPermission() {
         } else if (followMap) {
           map.setCenter(center);
         }
-        drawCurrentMarker(latitude, longitude);
+       drawCurrentMarker(latitude, longitude, lastHeadingDeg);
       }
 
      
