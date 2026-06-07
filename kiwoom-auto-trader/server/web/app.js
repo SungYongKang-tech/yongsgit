@@ -7806,3 +7806,31 @@ if (clearServerResultBtn) {
     }
   });
 }
+
+const reissueTokenBtn = document.getElementById("reissueTokenBtn");
+
+if (reissueTokenBtn) {
+  reissueTokenBtn.addEventListener("click", async () => {
+    const ok = confirm("토큰을 신규발급하고 서버를 재시작할까요?");
+    if (!ok) return;
+
+    reissueTokenBtn.disabled = true;
+    reissueTokenBtn.textContent = "발급중...";
+
+    try {
+      const res = await fetch("/api/token/reissue", {
+        method: "POST"
+      });
+
+      const data = await res.json();
+
+      alert(data.message || "처리 완료");
+    } catch (err) {
+      alert("토큰 신규발급 중 오류가 발생했습니다.");
+      console.error(err);
+    } finally {
+      reissueTokenBtn.disabled = false;
+      reissueTokenBtn.textContent = "토큰 신규발급";
+    }
+  });
+}
