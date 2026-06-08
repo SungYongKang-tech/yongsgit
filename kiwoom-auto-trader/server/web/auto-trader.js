@@ -824,9 +824,9 @@ function isPullbackReboundCandidate(item) {
   const pass =
     firstRiseRate >= 2.5 &&
     firstRiseRate <= 12 &&
-    pullbackRate >= 0.7 &&
-    pullbackRate <= 3.5 &&
-    reboundFromLowRate >= 0.7 &&
+    pullbackRate >= 1.0 &&
+    pullbackRate <= 3.0 &&
+    reboundFromLowRate >= 1.0 &&
     currentPrice > openPrice;
 
   return {
@@ -1009,7 +1009,7 @@ if (Number(bestStrategy.tradeCount || 0) < 2) {
 
 if (
   bestStrategy.key === "trend" &&
-  Number(item.discoverScore || 0) < 8
+  Number(item.discoverScore || 0) < 9
 ) {
   console.log(
     `[매수제외] ${item.name} ${item.code} / 추세형 점수 부족 ${item.discoverScore}`
