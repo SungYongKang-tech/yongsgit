@@ -7,6 +7,13 @@ const API_BASE = "http://localhost:3000";
 
 
 const settings = {
+
+  buyStartTime: "09:15",
+  buyEndTime: "14:40",
+  safeMinScore: 9,
+  trendMinScore: 9,
+  blockStoppedToday: true,
+
   totalCash: 100000000,
   maxHoldingCount: 8,
 
@@ -41,6 +48,16 @@ const settings = {
 
 
 let isRunning = false;
+
+function isBetweenTime(start, end) {
+  const now = new Date();
+  const hhmm =
+    String(now.getHours()).padStart(2, "0") +
+    ":" +
+    String(now.getMinutes()).padStart(2, "0");
+
+  return hhmm >= start && hhmm <= end;
+}
 
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
@@ -844,6 +861,16 @@ function isPullbackReboundCandidate(item) {
 
 
 async function runServerAutoBuyOnce() {
+  if (!isBetweenTime(settings.buyStartTime, settings.buyEndTime)) {
+  console.log(
+    `신규매수 시간 아님: ${settings.buyStartTime}~${settings.buyEndTime}`
+  );
+  return {
+    ok: false,
+    message: "신규매수 가능 시간이 아닙니다.",
+  };
+}
+
   if (isRunning) return;
 
   if (!isTradeTime()) {
@@ -1006,18 +1033,26 @@ if (Number(bestStrategy.tradeCount || 0) < 2) {
   continue;
 }
 
+const strategyPreset = bestStrategy.key;
+const discoverScore = Number(item.discoverScore || 0);
 
-if (
-  bestStrategy.key === "trend" &&
-  Number(item.discoverScore || 0) < 9
-) {
+if (strategyPreset === "safe" && discoverScore < settings.safeMinScore) {
   console.log(
-    `[매수제외] ${item.name} ${item.code} / 추세형 점수 부족 ${item.discoverScore}`
+    `[매수제외] ${item.name} ${item.code} / 안정형 점수 부족 ${discoverScore}`
   );
   continue;
 }
 
-if (wasStoppedToday(state, item.code)) {
+if (strategyPreset === "trend" && discoverScore < settings.trendMinScore) {
+  console.log(
+    `[매수제외] ${item.name} ${item.code} / 추세형 점수 부족 ${discoverScore}`
+  );
+  continue;
+}
+
+
+
+if (settings.blockStoppedToday && wasStoppedToday(state, item.code)) {
   console.log(
     `[매수제외] ${item.name} ${item.code} / 오늘 손절 또는 손실 이력 있음`
   );
@@ -1041,7 +1076,7 @@ const changeRate = Number(
 
 
 const maxAllowedChangeRate =
-  (item.strategyPreset === "trend" || item.strategy === "trend") &&
+  bestStrategy.key === "trend" &&
   Number(item.discoverScore || 0) >= 10
     ? 7
     : 5;
