@@ -15,7 +15,7 @@ const settings = {
   blockStoppedToday: true,
 
   totalCash: 100000000,
-  maxHoldingCount: 8,
+  maxHoldingCount: 10,
 
   perBuyAmount: 10000000,
   dailyMaxLoss: 5000000,
@@ -281,13 +281,35 @@ async function findBestStrategy(code) {
     }
   }
 
-  const passedResults = results
-    .filter((item) => item.passed)
-    .sort((a, b) => b.profitRate - a.profitRate);
+  const valid = results.filter(item =>
+  item.passed &&
+  item.tradeCount >= 2 &&
+  item.profitRate > 0
+);
 
-  return passedResults[0] || null;
+// 1순위 : 단타형
+const short = valid.find(item =>
+  item.key === "short" &&
+  item.winRate >= 50
+);
+
+if (short) {
+  return short;
 }
 
+// 2순위 : 추세형
+const trend = valid.find(item =>
+  item.key === "trend" &&
+  item.winRate >= 40
+);
+
+if (trend) {
+  return trend;
+}
+
+// 안정형은 당분간 제외
+return null;
+}
 
 function wasStoppedToday(state, code) {
   const today = todayKey();
