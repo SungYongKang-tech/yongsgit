@@ -785,7 +785,48 @@ if (
   continue;
 }
 
+// 고수익 구간 정체 매도
+if (profitRate >= 5) {
+  if (!holding.highProfitReachedAt) {
+    holding.highProfitReachedAt = Date.now();
+    holding.highProfitBaseRate = maxProfitRate;
+    holding.highProfitBasePrice = currentPrice;
+  }
 
+  // 최고수익률을 0.5%p 이상 새로 갱신하면 정체 타이머 리셋
+  if (maxProfitRate >= Number(holding.highProfitBaseRate || 0) + 0.5) {
+    holding.highProfitReachedAt = Date.now();
+    holding.highProfitBaseRate = maxProfitRate;
+    holding.highProfitBasePrice = currentPrice;
+  }
+
+  const stagnantMinutes =
+    (Date.now() - Number(holding.highProfitReachedAt || 0)) / 1000 / 60;
+
+  const baseRate = Number(holding.highProfitBaseRate || maxProfitRate || 0);
+
+  const stillHighProfit =
+    baseRate > 0 && profitRate >= baseRate * 0.9;
+
+  const noStrongNewHigh =
+    maxProfitRate < baseRate + 0.5;
+
+  if (
+    stagnantMinutes >= 15 &&
+    stillHighProfit &&
+    noStrongNewHigh &&
+    !isProtected
+  ) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `고수익 정체 매도 · 최고수익 ${baseRate.toFixed(2)}% 부근 ${stagnantMinutes.toFixed(0)}분 정체 / 현재 ${profitRate.toFixed(2)}%`,
+      "HIGH_PROFIT_STAGNANT_SELL"
+    );
+    continue;
+  }
+}
 
 let dynamicTrailingRate = settings.trailingStopRate;
 
