@@ -1003,24 +1003,33 @@ console.log(
         continue;
       }
 
-const pullbackCheck = isPullbackReboundCandidate({
-  ...item,
-  currentPrice
-});
+const isMorningEntry = isBetweenTime("09:15", "10:00");
 
-if (!pullbackCheck.pass) {
+if (!isMorningEntry) {
+  const pullbackCheck = isPullbackReboundCandidate({
+    ...item,
+    currentPrice
+  });
+
+  if (!pullbackCheck.pass) {
+    console.log(
+      `[매수제외] ${item.name} ${item.code} / ${pullbackCheck.reason}`
+    );
+    continue;
+  }
+
   console.log(
-    `[매수제외] ${item.name} ${item.code} / ${pullbackCheck.reason}`
+    `[눌림목 통과] ${item.name} ${item.code} / ` +
+    `1차상승 ${pullbackCheck.firstRiseRate.toFixed(2)}% / ` +
+    `고점대비 ${pullbackCheck.pullbackRate.toFixed(2)}% / ` +
+    `저점반등 ${pullbackCheck.reboundFromLowRate.toFixed(2)}%`
   );
-  continue;
+} else {
+  console.log(
+    `[장초반 매수모드] ${item.name} ${item.code} / 눌림목 조건 생략`
+  );
 }
 
-console.log(
-  `[눌림목 통과] ${item.name} ${item.code} / ` +
-  `1차상승 ${pullbackCheck.firstRiseRate.toFixed(2)}% / ` +
-  `고점대비 ${pullbackCheck.pullbackRate.toFixed(2)}% / ` +
-  `저점반등 ${pullbackCheck.reboundFromLowRate.toFixed(2)}%`
-);
 
       let bestStrategy = null;
 
