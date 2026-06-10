@@ -1091,6 +1091,8 @@ if (changeRate >= maxAllowedChangeRate) {
 function startServerAutoTrader() {
   console.log("서버 자동 모의매매 시작");
 
+  runServerAutoBuyOnce();
+
   setInterval(() => {
     runServerAutoBuyOnce();
   }, 10 * 60 * 1000);
