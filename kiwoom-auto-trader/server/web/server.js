@@ -821,16 +821,17 @@ app.post("/api/paper-state/reset", (req, res) => {
     const PAPER_STATE_FILE = path.join(__dirname, "paper-state.json");
 
     const resetState = {
-      holdings: [],
-      tradeLogs: [],
-      virtualResults: [],
-      serverAutoEnabled: false,
-      serverAutoChangedAt: new Date().toLocaleString("ko-KR"),
-      lastRunAt: null,
-      lastBuyCheckAt: null,
-      lastSellCheckAt: null,
-      lastPriceRefreshAt: null
-    };
+  holdings: [],
+  tradeLogs: [],
+  virtualResults: [],
+  totalCash: 100000000,
+  serverAutoEnabled: false,
+  serverAutoChangedAt: new Date().toLocaleString("ko-KR"),
+  lastRunAt: null,
+  lastBuyCheckAt: null,
+  lastSellCheckAt: null,
+  lastPriceRefreshAt: null
+};
 
     fs.writeFileSync(
       PAPER_STATE_FILE,
