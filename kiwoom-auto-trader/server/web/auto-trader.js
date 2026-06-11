@@ -59,20 +59,6 @@ function isBetweenTime(start, end) {
   return hhmm >= start && hhmm <= end;
 }
 
-function getRealizedProfitTotal(state) {
-  const logs = [
-    ...(state.virtualResults || []),
-    ...(state.results || []),
-    ...(state.tradeLogs || []).filter((item) =>
-      item.type !== "BUY" &&
-      typeof item.profit !== "undefined"
-    )
-  ];
-
-  return logs.reduce((sum, item) => {
-    return sum + Number(item.profit || 0);
-  }, 0);
-}
 
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
@@ -106,8 +92,8 @@ function loadState() {
   }
 
   if (typeof state.totalCash === "undefined") {
-    state.totalCash = settings.totalCash + getRealizedProfitTotal(state);
-  }
+    state.totalCash = settings.totalCash;
+}
 
   return state;
 }
