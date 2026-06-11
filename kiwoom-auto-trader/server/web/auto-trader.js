@@ -401,7 +401,7 @@ function getSafeStockName(item, priceData = {}) {
   return code;
 }
 
-function paperBuy(state, item, strategy) {
+function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount) {
   if (!isTradeTime()) {
     console.log("[모의매수 차단] 거래 가능 시간이 아닙니다.", item?.name);
     return false;
@@ -437,8 +437,9 @@ const remainSlots = Math.max(
 );
 
 // 종목당 투자금
-const buyAmount = Math.floor(
-  availableCash / remainSlots
+const buyAmount = Math.min(
+  buyAmountLimit,
+  Math.floor(availableCash / remainSlots)
 );
 
 // 실제 수량
@@ -1370,19 +1371,19 @@ if (changeRate >= maxAllowedChangeRate) {
 
 
       const bought = paperBuy(
-        state,
-        {
-          ...item,
-          currentPrice,
-          price: currentPrice,
-          
-          name:
-          priceData.name && priceData.name !== item.code
-           ? priceData.name
-           : item.name
-        },
-        bestStrategy
-      );
+  state,
+  {
+    ...item,
+    currentPrice,
+    price: currentPrice,
+    name:
+    priceData.name && priceData.name !== item.code
+     ? priceData.name
+     : item.name
+  },
+  bestStrategy,
+  buyRules.perBuyAmount
+);
 
       if (bought) {
         console.log(
