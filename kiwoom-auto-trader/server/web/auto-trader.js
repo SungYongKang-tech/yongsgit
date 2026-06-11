@@ -394,18 +394,32 @@ function paperBuy(state, item, strategy) {
     return false;
   }
 
-  const price = Number(item.currentPrice || item.price || 0);
-  if (!price || price <= 0) return false;
+const price = Number(item.currentPrice || item.price || 0);
+if (!price || price <= 0) return false;
 
-  const qty = Math.floor(settings.perBuyAmount / price);
+// 현재 남은 현금
+const availableCash = Number(state.totalCash || settings.totalCash || 0);
 
-  if (qty <= 0) return false;
+// 남은 매수 가능 슬롯
+const remainSlots = Math.max(
+  1,
+  settings.maxHoldingCount - state.holdings.length
+);
+
+// 남은 현금을 남은 슬롯 수로 나눠서 종목당 매수금액 결정
+const buyAmount = Math.floor(availableCash / remainSlots);
+
+// 실제 매수 수량
+const qty = Math.floor(buyAmount / price);
+
+if (qty <= 0) return false;
 
   const holding = {
     code: item.code,
     name: item.name && item.name !== item.code ? item.name : (item.stockName || item.korName || item.code),
     buyPrice: price,
     qty,
+    buyAmount,
     currentPrice: price,
     highestPrice: price,
     autoTrade: true,
@@ -427,6 +441,7 @@ function paperBuy(state, item, strategy) {
   };
 
   state.holdings.push(holding);
+  state.totalCash = availableCash - price * qty;
 
   state.tradeLogs.push({
     type: "BUY",
