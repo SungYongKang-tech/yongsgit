@@ -476,17 +476,26 @@ if (qty <= 0) return false;
   state.totalCash = availableCash - price * qty;
 
   state.tradeLogs.push({
-    type: "BUY",
-    code: item.code,
-    name: item.name,
-    price,
-    qty,
-    strategyPreset: strategy.key,
-    strategyName: strategy.name,
-    reason: `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
-    date: todayKey(),
-    time: nowText()
-  });
+  type: "BUY",
+  code: item.code,
+  name: item.name,
+  price,
+  qty,
+
+  buyAmount: price * qty,
+  plannedBuyAmount: buyAmount,
+  remainCashAfterBuy: state.totalCash,
+  remainSlotsAfterBuy: Math.max(
+    0,
+    settings.maxHoldingCount - state.holdings.length
+  ),
+
+  strategyPreset: strategy.key,
+  strategyName: strategy.name,
+  reason: `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
+  date: todayKey(),
+  time: nowText()
+});
 
   return true;
 }
