@@ -59,25 +59,57 @@ function isBetweenTime(start, end) {
   return hhmm >= start && hhmm <= end;
 }
 
+function getRealizedProfitTotal(state) {
+  const logs = [
+    ...(state.virtualResults || []),
+    ...(state.results || []),
+    ...(state.tradeLogs || []).filter((item) =>
+      item.type !== "BUY" &&
+      typeof item.profit !== "undefined"
+    )
+  ];
+
+  return logs.reduce((sum, item) => {
+    return sum + Number(item.profit || 0);
+  }, 0);
+}
+
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
     return {
-  holdings: [],
-  tradeLogs: [],
-  virtualResults: [],
-  lastRunAt: null,
-  lastSellCheckAt: null,
-  serverAutoEnabled: true
-};
+      holdings: [],
+      tradeLogs: [],
+      virtualResults: [],
+      lastRunAt: null,
+      lastSellCheckAt: null,
+      serverAutoEnabled: true,
+      totalCash: settings.totalCash
+    };
   }
 
   const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
 
-if (state.serverAutoEnabled === undefined) {
-  state.serverAutoEnabled = true;
-}
+  if (state.serverAutoEnabled === undefined) {
+    state.serverAutoEnabled = true;
+  }
 
-return state;
+  if (!Array.isArray(state.holdings)) {
+    state.holdings = [];
+  }
+
+  if (!Array.isArray(state.tradeLogs)) {
+    state.tradeLogs = [];
+  }
+
+  if (!Array.isArray(state.virtualResults)) {
+    state.virtualResults = [];
+  }
+
+  if (typeof state.totalCash === "undefined") {
+    state.totalCash = settings.totalCash + getRealizedProfitTotal(state);
+  }
+
+  return state;
 }
 
 function saveState(state) {
