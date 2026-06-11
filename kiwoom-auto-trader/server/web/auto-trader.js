@@ -1173,19 +1173,24 @@ if (marketTemperature.level === "DANGER") {
   };
 }
 
+const buyRules = {
+  minScore: Number(settings.minScore || 9),
+  perBuyAmount: Number(settings.perBuyAmount || 10000000),
+  maxHoldingCount: Number(settings.maxHoldingCount || 8)
+};
+
 if (marketTemperature.level === "CAUTION") {
-  settings.minScore = Math.max(Number(settings.minScore || 0), 10);
-  settings.perBuyAmount = Math.floor(Number(settings.perBuyAmount || 0) * 0.5);
-  settings.maxHoldingCount = Math.min(Number(settings.maxHoldingCount || 5), 5);
+  buyRules.minScore = Math.max(buyRules.minScore, 10);
+  buyRules.perBuyAmount = Math.floor(buyRules.perBuyAmount * 0.5);
+  buyRules.maxHoldingCount = Math.min(buyRules.maxHoldingCount, 5);
 
   console.log(
     `[시장온도 주의] 매수조건 강화: ` +
-    `minScore=${settings.minScore}, ` +
-    `perBuyAmount=${settings.perBuyAmount}, ` +
-    `maxHoldingCount=${settings.maxHoldingCount}`
+    `minScore=${buyRules.minScore}, ` +
+    `perBuyAmount=${buyRules.perBuyAmount}, ` +
+    `maxHoldingCount=${buyRules.maxHoldingCount}`
   );
 }
-
     if (!candidates || candidates.length === 0) {
       console.log("자동매수 후보가 없습니다.");
       return;
