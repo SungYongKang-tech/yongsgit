@@ -984,7 +984,101 @@ function isPullbackReboundCandidate(item) {
   };
 }
 
+function calculateMarketTemperature(candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [];
 
+  const valid = list.filter((item) => {
+    const rate = Number(
+      item.changeRate ??
+      item.changeRatePercent ??
+      item.fluctuationRate ??
+      item.rate ??
+      0
+    );
+
+    return Number.isFinite(rate);
+  });
+
+  const total = valid.length;
+
+  if (total === 0) {
+    return {
+      level: "NORMAL",
+      label: "보통",
+      advanceRatio: 0,
+      upCount: 0,
+      total: 0,
+      reason: "시장온도 계산 데이터 없음"
+    };
+  }
+
+  const upCount = valid.filter((item) => {
+    const rate = Number(
+      item.changeRate ??
+      item.changeRatePercent ??
+      item.fluctuationRate ??
+      item.rate ??
+      0
+    );
+
+    return rate > 0;
+  }).length;
+
+  const advanceRatio = (upCount / total) * 100;
+
+  if (advanceRatio >= 70) {
+    return {
+      level: "HOT",
+      label: "매우 좋음",
+      advanceRatio: Number(advanceRatio.toFixed(1)),
+      upCount,
+      total,
+      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+    };
+  }
+
+  if (advanceRatio >= 55) {
+    return {
+      level: "GOOD",
+      label: "양호",
+      advanceRatio: Number(advanceRatio.toFixed(1)),
+      upCount,
+      total,
+      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+    };
+  }
+
+  if (advanceRatio >= 45) {
+    return {
+      level: "NORMAL",
+      label: "보통",
+      advanceRatio: Number(advanceRatio.toFixed(1)),
+      upCount,
+      total,
+      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+    };
+  }
+
+  if (advanceRatio >= 30) {
+    return {
+      level: "CAUTION",
+      label: "주의",
+      advanceRatio: Number(advanceRatio.toFixed(1)),
+      upCount,
+      total,
+      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+    };
+  }
+
+  return {
+    level: "DANGER",
+    label: "위험",
+    advanceRatio: Number(advanceRatio.toFixed(1)),
+    upCount,
+    total,
+    reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+  };
+}
 
 async function runServerAutoBuyOnce() {
   if (!isBetweenTime(settings.buyStartTime, settings.buyEndTime)) {
@@ -1055,6 +1149,42 @@ if (isDailyLossLimitReached(state)) {
     }
 
     const candidates = await discoverCandidates();
+
+    const marketTemperature = calculateMarketTemperature(candidates);
+
+state.marketTemperature = {
+  ...marketTemperature,
+  checkedAt: new Date().toLocaleString("ko-KR")
+};
+
+console.log(
+  `[시장온도] ${marketTemperature.label} / ` +
+  `${marketTemperature.reason} / ` +
+  `대상 ${marketTemperature.total}개`
+);
+
+if (marketTemperature.level === "DANGER") {
+  saveState(state);
+
+  return {
+    ok: false,
+    message: "시장온도 위험으로 신규매수 중단",
+    marketTemperature
+  };
+}
+
+if (marketTemperature.level === "CAUTION") {
+  settings.minScore = Math.max(Number(settings.minScore || 0), 10);
+  settings.perBuyAmount = Math.floor(Number(settings.perBuyAmount || 0) * 0.5);
+  settings.maxHoldingCount = Math.min(Number(settings.maxHoldingCount || 5), 5);
+
+  console.log(
+    `[시장온도 주의] 매수조건 강화: ` +
+    `minScore=${settings.minScore}, ` +
+    `perBuyAmount=${settings.perBuyAmount}, ` +
+    `maxHoldingCount=${settings.maxHoldingCount}`
+  );
+}
 
     if (!candidates || candidates.length === 0) {
       console.log("자동매수 후보가 없습니다.");
