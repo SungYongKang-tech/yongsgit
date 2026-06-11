@@ -11,7 +11,7 @@ const settings = {
   buyStartTime: "09:15",
   buyEndTime: "14:40",
   safeMinScore: 9,
-  trendMinScore: 9,
+  trendMinScore: 10,
   blockStoppedToday: true,
 
   totalCash: 100000000,
@@ -416,7 +416,7 @@ function paperBuy(state, item, strategy) {
       ? item.discoverReasons
       : [],
     discoverScoreDetails: item.discoverScoreDetails || {},
-    protectMinutes: 5,
+    protectMinutes: 3,
     buyTime: nowText(),
     buyTimeMs: Date.now(),
     buyAt: new Date().toISOString(),
@@ -1198,11 +1198,23 @@ if (changeRate >= maxAllowedChangeRate) {
 function startServerAutoTrader() {
   console.log("서버 자동 모의매매 시작");
 
-  runServerAutoBuyOnce();
 
-  setInterval(() => {
+
+setInterval(() => {
+  const isMorningBuyTime = isBetweenTime("09:15", "10:00");
+
+  if (isMorningBuyTime) {
     runServerAutoBuyOnce();
-  }, 10 * 60 * 1000);
+    return;
+  }
+
+  const now = new Date();
+  const minute = now.getMinutes();
+
+  if (minute % 10 === 0) {
+    runServerAutoBuyOnce();
+  }
+}, 5 * 60 * 1000);
 
   setInterval(() => {
     checkServerAutoSellOnce();
