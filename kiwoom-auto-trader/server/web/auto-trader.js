@@ -429,22 +429,42 @@ function paperBuy(state, item, strategy) {
 const price = Number(item.currentPrice || item.price || 0);
 if (!price || price <= 0) return false;
 
-// 현재 남은 현금
-const availableCash = Number(state.totalCash || settings.totalCash || 0);
-
-// 남은 매수 가능 슬롯
-const remainSlots = Math.max(
-  1,
-  settings.maxHoldingCount - state.holdings.length
+const availableCash = Number(
+  state.totalCash || settings.totalCash || 0
 );
 
-// 남은 현금을 남은 슬롯 수로 나눠서 종목당 매수금액 결정
-const buyAmount = Math.floor(availableCash / remainSlots);
+// 현재 자산으로 가능한 최대 종목 수
+const dynamicMaxHolding = Math.min(
+  settings.maxHoldingCount,
+  Math.max(
+    1,
+    Math.floor(
+      availableCash / settings.minBuyAmount
+    )
+  )
+);
 
-// 실제 매수 수량
-const qty = Math.floor(buyAmount / price);
+// 남은 슬롯
+const remainSlots = Math.max(
+  1,
+  dynamicMaxHolding - state.holdings.length
+);
 
-if (qty <= 0) return false;
+// 종목당 투자금
+const buyAmount = Math.floor(
+  availableCash / remainSlots
+);
+
+// 실제 수량
+const qty = Math.floor(
+  buyAmount / price
+);
+
+if (qty <= 0) {
+  return false;
+}
+
+
 
   const holding = {
     code: item.code,
@@ -485,10 +505,11 @@ if (qty <= 0) return false;
   buyAmount: price * qty,
   plannedBuyAmount: buyAmount,
   remainCashAfterBuy: state.totalCash,
+  dynamicMaxHolding,
   remainSlotsAfterBuy: Math.max(
-    0,
-    settings.maxHoldingCount - state.holdings.length
-  ),
+  0,
+  dynamicMaxHolding - state.holdings.length
+),
 
   strategyPreset: strategy.key,
   strategyName: strategy.name,
