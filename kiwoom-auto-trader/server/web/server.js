@@ -1149,7 +1149,9 @@ return {
      holdings: holdingDetails,
      recent7Days,    
      strategyStats,
-     recentSells: sellLogs.slice(-20).reverse()
+     recentSells: sellLogs.slice(-20).reverse(),
+
+     marketTemperature: state.marketTemperature || null
     });
   } catch (err) {
     console.error("성과분석 API 오류:", err);
