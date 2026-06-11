@@ -1148,7 +1148,7 @@ if (isDailyLossLimitReached(state)) {
       return;
     }
 
-    const candidates = await discoverCandidates();
+    let candidates = await discoverCandidates();
 
     const marketTemperature = calculateMarketTemperature(candidates);
 
@@ -1184,11 +1184,18 @@ if (marketTemperature.level === "CAUTION") {
   buyRules.perBuyAmount = Math.floor(buyRules.perBuyAmount * 0.5);
   buyRules.maxHoldingCount = Math.min(buyRules.maxHoldingCount, 5);
 
+  const beforeCount = candidates.length;
+
+  candidates = candidates.filter((item) => {
+    return Number(item.discoverScore || 0) >= buyRules.minScore;
+  });
+
   console.log(
     `[시장온도 주의] 매수조건 강화: ` +
     `minScore=${buyRules.minScore}, ` +
     `perBuyAmount=${buyRules.perBuyAmount}, ` +
-    `maxHoldingCount=${buyRules.maxHoldingCount}`
+    `maxHoldingCount=${buyRules.maxHoldingCount} / ` +
+    `후보 ${beforeCount}개 → ${candidates.length}개`
   );
 }
     if (!candidates || candidates.length === 0) {
@@ -1197,7 +1204,10 @@ if (marketTemperature.level === "CAUTION") {
     }
 
     for (const item of candidates) {
-      if (getAvailableSlots(state) <= 0) break;
+      if (state.holdings.length >= buyRules.maxHoldingCount) {
+  console.log(`[시장온도 기준] 최대 보유 ${buyRules.maxHoldingCount}개 도달`);
+  break;
+}
 
 
 if (isAlreadyHolding(state, item.code)) {
