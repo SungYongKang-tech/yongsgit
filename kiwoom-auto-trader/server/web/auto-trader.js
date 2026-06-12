@@ -19,7 +19,7 @@ const settings = {
 
   perBuyAmount: 10000000,
   minBuyAmount: 10000000,
-  dailyMaxLoss: 5000000,
+  dailyLossLimitRate: 0.01, // 당일 시작 총자산의 1%
   maxConsecutiveLoss: 3,
 
   discoverLimit: 300,
@@ -116,25 +116,51 @@ function todayKey() {
 }
 
 
+function getCurrentTotalAsset(state) {
+  const holdingsValue = (state.holdings || []).reduce((sum, holding) => {
+    return sum + Number(holding.currentPrice || holding.buyPrice || 0) * Number(holding.qty || 0);
+  }, 0);
+
+  return Number(state.totalCash || 0) + holdingsValue;
+}
+
+function initDailyLossLimitIfNeeded(state) {
+  const today = todayKey();
+
+  if (state.dailyLossDate !== today) {
+    state.dailyLossDate = today;
+    state.dailyBuyStopped = false;
+    state.dailyStartAsset = getCurrentTotalAsset(state);
+    state.dailyLossLimit = Math.floor(
+      state.dailyStartAsset * settings.dailyLossLimitRate
+    );
+
+    console.log(
+      `[일일 손실한도 초기화] 시작총자산 ${state.dailyStartAsset.toLocaleString()}원 / 한도 ${state.dailyLossLimit.toLocaleString()}원`
+    );
+  }
+}
+
 function getTodayRealizedProfit(state) {
   const today = todayKey();
 
-  const results = [
-    ...(state.virtualResults || []),
-    ...(state.results || [])
-  ];
-
-  return results
-    .filter((item) => item.date === today)
-    .reduce((sum, item) => {
-      return sum + Number(item.profit || 0);
-    }, 0);
+  return (state.tradeLogs || [])
+    .filter((log) =>
+      log.date === today &&
+      typeof log.profit !== "undefined"
+    )
+    .reduce((sum, log) => sum + Number(log.profit || 0), 0);
 }
 
 function isDailyLossLimitReached(state) {
-  const todayProfit = getTodayRealizedProfit(state);
+  initDailyLossLimitIfNeeded(state);
 
-  return todayProfit <= -Math.abs(settings.dailyMaxLoss);
+  const todayProfit = getTodayRealizedProfit(state);
+  const limit = Number(state.dailyLossLimit || 0);
+
+  if (limit <= 0) return false;
+
+  return todayProfit <= -Math.abs(limit);
 }
 
 function getConsecutiveLossCount(state) {
@@ -585,8 +611,8 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     reason: reason || "서버 매도",
     strategyPreset: holding.strategyPreset,
     strategyName: holding.strategyName,
-    date: new Date().toISOString().slice(0, 10),
-    time: new Date().toLocaleString("ko-KR")
+    date: todayKey(),
+    time: nowText()
   });
 
   state.totalCash = Number(state.totalCash || 0) + sellAmount;
@@ -1135,14 +1161,32 @@ state.lastBuyCheckAt = nowText();
 saveState(state);
 
 
+initDailyLossLimitIfNeeded(state);
+saveState(state);
+
 if (isDailyLossLimitReached(state)) {
+  state.dailyBuyStopped = true;
+  saveState(state);
 
+  const todayProfit = getTodayRealizedProfit(state);
 
-      console.log(
-        `[일일 손실 제한] 오늘 손실이 ${settings.dailyMaxLoss}원 이상입니다. 자동매수를 중단합니다.`
-      );
-      return;
-    }
+  console.log(
+    `[일일 손실 제한] 오늘 실현손익 ${todayProfit.toLocaleString()}원 / 손실한도 ${Number(state.dailyLossLimit || 0).toLocaleString()}원 도달. 신규매수를 중단합니다.`
+  );
+
+  return {
+    ok: false,
+    message: "일일 손실한도 도달로 신규매수 중단"
+  };
+}
+
+if (state.dailyBuyStopped) {
+  console.log("[일일 손실 제한] 오늘 신규매수 중단 상태입니다.");
+  return {
+    ok: false,
+    message: "일일 손실한도 도달로 신규매수 중단 상태"
+  };
+}
 
     if (isConsecutiveLossLimitReached(state)) {
       console.log(
