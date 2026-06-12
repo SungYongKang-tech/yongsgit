@@ -436,18 +436,32 @@ const remainSlots = Math.max(
   dynamicMaxHolding - state.holdings.length
 );
 
+// 매수금액 제한값 안전 처리
+const safeBuyAmountLimit = Number(
+  buyAmountLimit || settings.perBuyAmount || settings.minBuyAmount || 10000000
+);
+
 // 종목당 투자금
 const buyAmount = Math.min(
-  buyAmountLimit,
+  safeBuyAmountLimit,
   Math.floor(availableCash / remainSlots)
 );
 
 // 실제 수량
-const qty = Math.floor(
-  buyAmount / price
-);
+const qty = Math.floor(buyAmount / price);
 
-if (qty <= 0) {
+// 수량 계산 오류 방지
+if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qty <= 0) {
+  console.log("[모의매수 차단] 수량 계산 오류", {
+    name: item.name,
+    code: item.code,
+    price,
+    buyAmount,
+    buyAmountLimit,
+    safeBuyAmountLimit,
+    availableCash,
+    remainSlots
+  });
   return false;
 }
 
@@ -458,8 +472,9 @@ if (qty <= 0) {
     name: item.name && item.name !== item.code ? item.name : (item.stockName || item.korName || item.code),
     buyPrice: price,
     qty,
-    buyAmount,
-    currentPrice: price,
+    buyAmount: price * qty,
+plannedBuyAmount: buyAmount,
+currentPrice: price,
     highestPrice: price,
     autoTrade: true,
     strategyPreset: strategy.key,
