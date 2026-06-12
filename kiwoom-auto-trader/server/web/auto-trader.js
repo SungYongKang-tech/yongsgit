@@ -1557,7 +1557,7 @@ function setServerAutoEnabled(enabled) {
   const state = loadState();
 
   state.serverAutoEnabled = !!enabled;
-  state.serverAutoChangedAt = new Date().toLocaleString("ko-KR");
+  state.serverAutoChangedAt = nowText();
 
   saveState(state);
 
