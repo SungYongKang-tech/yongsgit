@@ -18,6 +18,7 @@ const settings = {
   maxHoldingCount: 10,
 
   perBuyAmount: 10000000,
+  minBuyAmount: 10000000,
   dailyMaxLoss: 5000000,
   maxConsecutiveLoss: 3,
 
