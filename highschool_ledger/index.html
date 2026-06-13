@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>고등 동기회 모임 내역서</title>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -39,16 +40,18 @@ h1 {
   font-weight: bold;
 }
 
-.input-area {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-bottom: 10px;
+.excel-upload {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
 }
 
-.input-area input {
-  padding: 10px;
-  font-size: 15px;
+.excel-upload input {
+  flex: 1;
+  background: white;
+  border: 1px solid #aaa;
+  padding: 12px;
+  font-size: 16px;
 }
 
 button {
@@ -57,11 +60,6 @@ button {
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
-}
-
-.addBtn {
-  background: #2563eb;
-  color: white;
 }
 
 .deleteBtn {
@@ -100,27 +98,15 @@ td[contenteditable="true"] {
 
 @media (max-width: 700px) {
   h1 { font-size: 24px; }
-  .input-area {
-    grid-template-columns: repeat(2, 1fr);
-  }
+
   th, td {
     font-size: 12px;
     padding: 4px;
   }
-}
 
-.excel-upload {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-
-.excel-upload input {
-  flex: 1;
-  background: white;
-  border: 1px solid #aaa;
-  padding: 12px;
-  font-size: 16px;
+  .excel-upload {
+    flex-direction: column;
+  }
 }
 </style>
 </head>
@@ -139,8 +125,6 @@ td[contenteditable="true"] {
   <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel(event)">
   <button class="deleteBtn" onclick="deleteAll()">전체 삭제</button>
 </div>
-
-<br><br>
 
 <table>
   <thead>
@@ -189,33 +173,68 @@ function comma(n) {
   return toNum(n).toLocaleString();
 }
 
+function excelDateToText(v) {
+  if (!v) return "";
+
+  if (typeof v === "number") {
+    const date = XLSX.SSF.parse_date_code(v);
+    if (!date) return "";
+
+    const yy = String(date.y).slice(2);
+    const mm = String(date.m).padStart(2, "0");
+    const dd = String(date.d).padStart(2, "0");
+
+    return `${yy}.${mm}.${dd}`;
+  }
+
+  return String(v).trim();
+}
+
+db.ref(refPath).on("value", snap => {
+  data = snap.val() || {};
+  render();
+});
+
 function uploadExcel(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  const replace = confirm("기존 데이터를 삭제하고 엑셀 데이터로 새로 불러올까요?\n\n확인: 기존 데이터 삭제 후 업로드\n취소: 기존 데이터에 추가");
+
   const reader = new FileReader();
 
-  reader.onload = function(e) {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: "array" });
+  reader.onload = async function(e) {
+    const excelData = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(excelData, { type: "array" });
 
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
     const rows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
-      defval: ""
+      defval: "",
+      raw: true
     });
 
     const ref = db.ref(refPath);
 
-    rows.forEach((row, index) => {
-      if (index < 2) return;
+    if (replace) {
+      await ref.remove();
+    }
 
-      const date = String(row[0] || "").trim();
+    let count = 0;
+
+    rows.forEach((row, index) => {
+      // 사진 기준: 1~3행은 제목/헤더, 4행부터 실제 데이터
+      if (index < 3) return;
+
+      const date = excelDateToText(row[0]);
       const category = String(row[1] || "").trim();
+
       const income = toNum(row[2]);
       const expense = toNum(row[3]);
+
+      // row[4] 잔액은 화면에서 자동 계산하므로 사용 안 함
       const unpaidDongho = toNum(row[5]);
       const unpaidGiyoung = toNum(row[6]);
       const unpaidHeegeun = toNum(row[7]);
@@ -234,9 +253,11 @@ function uploadExcel(event) {
         fee,
         createdAt: Date.now() + index
       });
+
+      count++;
     });
 
-    alert("엑셀 데이터 업로드 완료!");
+    alert(count + "건 업로드 완료!");
     event.target.value = "";
   };
 
@@ -268,7 +289,7 @@ function render() {
       <td contenteditable="true" onblur="updateCell('${key}', 'date', this.innerText)">${row.date || ""}</td>
       <td contenteditable="true" onblur="updateCell('${key}', 'category', this.innerText)">${row.category || ""}</td>
 
-      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'income', this.innerText)">${comma(income)}</td>
+      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'income', this.innerText)">${income ? comma(income) : ""}</td>
       <td class="num" contenteditable="true" onblur="updateCell('${key}', 'expense', this.innerText)">${expense ? comma(expense) : ""}</td>
       <td class="num">${comma(balance)}</td>
 
