@@ -7818,7 +7818,7 @@ if (reissueTokenBtn) {
     reissueTokenBtn.textContent = "발급중...";
 
     try {
-      const res = await fetch("/api/token/reissue", {
+      const res = await fetch("https://sytrader.duckdns.org/api/token/reissue", {
         method: "POST"
       });
 
