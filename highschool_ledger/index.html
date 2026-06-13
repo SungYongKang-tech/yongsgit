@@ -145,6 +145,58 @@ td.locked {
     flex-direction: column;
   }
 }
+
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 21;
+}
+
+.sub-head th {
+  position: sticky;
+  top: 31px;
+  z-index: 22;
+}
+
+.action-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.bottomBtn {
+  background: #2563eb;
+  color: white;
+}
+
+.add-area {
+  display: none;
+  margin-top: 15px;
+  padding: 12px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+
+.add-area input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 8px;
+  font-size: 15px;
+  box-sizing: border-box;
+}
+
+.addBtn {
+  background: #16a34a;
+  color: white;
+  width: 100%;
+}
 </style>
 </head>
 
@@ -160,8 +212,10 @@ td.locked {
 
 <div id="app">
 
+  <div class="action-bar">
   <button class="editBtn" onclick="checkEditPassword()">수정모드</button>
-
+  <button class="bottomBtn" onclick="scrollToBottom()">맨 하단으로</button>
+</div>
   <div class="summary">
     <div>총수입<br><span id="sumIncome">0</span>원</div>
     <div>총지출<br><span id="sumExpense">0</span>원</div>
@@ -193,6 +247,20 @@ td.locked {
     </thead>
     <tbody id="tbody"></tbody>
   </table>
+  <div class="add-area" id="addArea">
+  <h3>내용 추가</h3>
+
+  <input id="addDate" placeholder="날짜 예: 08.08.15">
+  <input id="addCategory" placeholder="구분">
+  <input id="addIncome" placeholder="수입">
+  <input id="addExpense" placeholder="지출">
+  <input id="addDongho" placeholder="미수금 동호">
+  <input id="addGiyoung" placeholder="미수금 기영">
+  <input id="addHeegeun" placeholder="미수금 희근">
+  <input id="addFee" placeholder="회비">
+
+  <button class="addBtn" onclick="addRow()">추가</button>
+</div>
 
 </div>
 
@@ -261,6 +329,7 @@ function checkEditPassword() {
     if (passwordMatch(inputPw, snap.val())) {
       isEditor = true;
       el("excelUploadBox").style.display = "flex";
+      el("addArea").style.display = "block";
       alert("수정모드가 활성화되었습니다.");
       render();
     } else {
@@ -457,6 +526,51 @@ function deleteAll() {
   if (!confirm("전체 삭제할까요?")) return;
   db.ref(refPath).remove();
 }
+
+function scrollToBottom() {
+  window.scrollTo({
+    top: document.body.scrollHeight,
+    behavior: "smooth"
+  });
+}
+
+function addRow() {
+  if (!isEditor) {
+    alert("수정모드에서만 추가할 수 있습니다.");
+    return;
+  }
+
+  const row = {
+    date: el("addDate").value.trim(),
+    category: el("addCategory").value.trim(),
+    income: toNum(el("addIncome").value),
+    expense: toNum(el("addExpense").value),
+    unpaidDongho: toNum(el("addDongho").value),
+    unpaidGiyoung: toNum(el("addGiyoung").value),
+    unpaidHeegeun: toNum(el("addHeegeun").value),
+    fee: toNum(el("addFee").value),
+    createdAt: Date.now()
+  };
+
+  if (!row.date || !row.category) {
+    alert("날짜와 구분은 입력해야 합니다.");
+    return;
+  }
+
+  db.ref(refPath).push(row);
+
+  [
+    "addDate",
+    "addCategory",
+    "addIncome",
+    "addExpense",
+    "addDongho",
+    "addGiyoung",
+    "addHeegeun",
+    "addFee"
+  ].forEach(id => el(id).value = "");
+}
+
 </script>
 
 </body>
