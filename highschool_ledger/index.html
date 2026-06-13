@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고등 동기회 모임 내역서</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<style>
+body {
+  margin: 0;
+  padding: 12px;
+  font-family: "Noto Sans KR", sans-serif;
+  background: #f5f7fb;
+}
+
+h1 {
+  text-align: center;
+  font-size: 34px;
+  margin: 20px 0 28px;
+}
+
+.summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.summary div {
+  flex: 1;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.input-area {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.input-area input {
+  padding: 10px;
+  font-size: 15px;
+}
+
+button {
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.addBtn {
+  background: #2563eb;
+  color: white;
+}
+
+.deleteBtn {
+  background: #ef4444;
+  color: white;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+th, td {
+  border: 1px solid #222;
+  padding: 6px;
+  text-align: center;
+  font-size: 14px;
+}
+
+thead th {
+  background: #ffff99;
+}
+
+.sub-head th {
+  background: #ffff00;
+}
+
+td[contenteditable="true"] {
+  background: #fff;
+}
+
+.num {
+  text-align: right;
+}
+
+@media (max-width: 700px) {
+  h1 { font-size: 24px; }
+  .input-area {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  th, td {
+    font-size: 12px;
+    padding: 4px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<h1>고등 동기회 모임 내역서</h1>
+
+<div class="summary">
+  <div>총수입<br><span id="sumIncome">0</span>원</div>
+  <div>총지출<br><span id="sumExpense">0</span>원</div>
+  <div>잔액<br><span id="sumBalance">0</span>원</div>
+</div>
+
+<div class="input-area">
+  <input id="date" placeholder="일자 예: 08.08.15">
+  <input id="category" placeholder="구분 예: 0808회비(희,성)">
+  <input id="income" placeholder="수입">
+  <input id="expense" placeholder="지출">
+  <input id="unpaidDongho" placeholder="미수금 동호">
+  <input id="unpaidGiyoung" placeholder="미수금 기영">
+  <input id="unpaidHeegeun" placeholder="미수금 희근">
+  <input id="fee" placeholder="회비">
+</div>
+
+<button class="addBtn" onclick="addRow()">추가</button>
+<button class="deleteBtn" onclick="deleteAll()">전체 삭제</button>
+
+<br><br>
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">날짜</th>
+      <th rowspan="2">구분</th>
+      <th rowspan="2">수입</th>
+      <th rowspan="2">지출</th>
+      <th rowspan="2">잔액</th>
+      <th colspan="3">미수금</th>
+      <th rowspan="2">회비</th>
+      <th rowspan="2">삭제</th>
+    </tr>
+    <tr class="sub-head">
+      <th>동호</th>
+      <th>기영</th>
+      <th>희근</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
+  authDomain: "ionic6-3b7b2.firebaseapp.com",
+  databaseURL: "https://ionic6-3b7b2-default-rtdb.firebaseio.com",
+  projectId: "ionic6-3b7b2",
+  storageBucket: "ionic6-3b7b2.appspot.com",
+  messagingSenderId: "306251113324",
+  appId: "1:306251113324:web:5c34044f4a7679b1c18949"
+});
+
+const db = firebase.database();
+const refPath = "highschoolMeetingLedger";
+
+let data = {};
+
+const el = id => document.getElementById(id);
+
+function toNum(v) {
+  return Number(String(v || 0).replace(/[^\d.-]/g, "")) || 0;
+}
+
+function comma(n) {
+  return toNum(n).toLocaleString();
+}
+
+function addRow() {
+  const row = {
+    date: el("date").value.trim(),
+    category: el("category").value.trim(),
+    income: toNum(el("income").value),
+    expense: toNum(el("expense").value),
+    unpaidDongho: toNum(el("unpaidDongho").value),
+    unpaidGiyoung: toNum(el("unpaidGiyoung").value),
+    unpaidHeegeun: toNum(el("unpaidHeegeun").value),
+    fee: toNum(el("fee").value),
+    createdAt: Date.now()
+  };
+
+  if (!row.date || !row.category) {
+    alert("날짜와 구분을 입력하세요.");
+    return;
+  }
+
+  db.ref(refPath).push(row);
+
+  ["date","category","income","expense","unpaidDongho","unpaidGiyoung","unpaidHeegeun","fee"]
+    .forEach(id => el(id).value = "");
+}
+
+db.ref(refPath).on("value", snap => {
+  data = snap.val() || {};
+  render();
+});
+
+function render() {
+  const tbody = el("tbody");
+  tbody.innerHTML = "";
+
+  const rows = Object.entries(data)
+    .sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+
+  let balance = 0;
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  rows.forEach(([key, row], index) => {
+    const income = toNum(row.income);
+    const expense = toNum(row.expense);
+
+    totalIncome += income;
+    totalExpense += expense;
+    balance += income - expense;
+
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+      <td contenteditable="true" onblur="updateCell('${key}', 'date', this.innerText)">${row.date || ""}</td>
+      <td contenteditable="true" onblur="updateCell('${key}', 'category', this.innerText)">${row.category || ""}</td>
+
+      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'income', this.innerText)">${comma(income)}</td>
+      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'expense', this.innerText)">${expense ? comma(expense) : ""}</td>
+      <td class="num">${comma(balance)}</td>
+
+      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'unpaidDongho', this.innerText)">${row.unpaidDongho ? comma(row.unpaidDongho) : ""}</td>
+      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'unpaidGiyoung', this.innerText)">${row.unpaidGiyoung ? comma(row.unpaidGiyoung) : ""}</td>
+      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'unpaidHeegeun', this.innerText)">${row.unpaidHeegeun ? comma(row.unpaidHeegeun) : ""}</td>
+
+      <td>${row.fee || index + 1}</td>
+      <td><button class="deleteBtn" onclick="deleteRow('${key}')">X</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  el("sumIncome").textContent = comma(totalIncome);
+  el("sumExpense").textContent = comma(totalExpense);
+  el("sumBalance").textContent = comma(balance);
+}
+
+function updateCell(key, field, value) {
+  const patch = {};
+
+  if (
+    field === "income" ||
+    field === "expense" ||
+    field === "unpaidDongho" ||
+    field === "unpaidGiyoung" ||
+    field === "unpaidHeegeun" ||
+    field === "fee"
+  ) {
+    patch[field] = toNum(value);
+  } else {
+    patch[field] = value.trim();
+  }
+
+  db.ref(`${refPath}/${key}`).update(patch);
+}
+
+function deleteRow(key) {
+  if (!confirm("삭제할까요?")) return;
+  db.ref(`${refPath}/${key}`).remove();
+}
+
+function deleteAll() {
+  if (!confirm("전체 삭제할까요?")) return;
+  db.ref(refPath).remove();
+}
+</script>
+
+</body>
+</html>
