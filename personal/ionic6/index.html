@@ -4,28 +4,17 @@
   <div class="container">
     <h2>전기차 충전 할인 계산기</h2>
 
-    <!-- 로그인 -->
-    <div class="auth-panel">
-      <input type="email" id="email" placeholder="관리자 이메일"/>
-      <input type="password" id="password" placeholder="비밀번호"/>
-      <button id="loginBtn" class="btn green">로그인</button>
-      <button id="logoutBtn" class="btn gray">로그아웃</button>
-    </div>
-
-    <!-- 충전금액 입력 -->
-    <input type="number" id="amount" placeholder="충전금액 입력 (₩)" disabled />
-    <button id="saveBtn" class="btn blue" disabled>저장</button>
+    <input type="number" id="amount" placeholder="충전금액 입력 (₩)" />
+    <button id="saveBtn" class="btn blue">저장</button>
 
     <div class="description">
       환경부카드는 월 최대 <b>30,000원</b>까지 할인됩니다.<br/>
       아래 카드에서 충전 내역을 확인하세요.
     </div>
 
-    <!-- 카드 리스트 -->
     <div class="card-list"></div>
   </div>
 
-  <!-- ================= CSS ================= -->
   <style>
     body {
       margin: 0;
@@ -42,19 +31,14 @@
       font-size: 5rem;
     }
 
-    /* 로그인 UI */
-    .auth-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .auth-panel input {
+    #amount {
+      width: 100%;
       padding: 16px;
       border-radius: 12px;
-      border: 1px solid #b0bec5;
+      border: 1px solid #aaa;
       font-size: 3rem;
+      margin-bottom: 20px;
+      box-sizing: border-box;
     }
 
     .btn {
@@ -65,28 +49,23 @@
       cursor: pointer;
     }
 
-    .btn.green { background: #4caf50; color: white; }
-    .btn.gray  { background: #757575; color: white; }
-
-    #loginBtn, #logoutBtn { display: none; }
-
-    #amount {
+    .btn.blue {
+      background: #0288d1;
+      color: white;
       width: 100%;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid #aaa;
+      margin-top: 10px;
+      padding: 18px;
       font-size: 3rem;
-      margin-bottom: 20px;
+      border-radius: 12px;
     }
 
     .description {
       text-align: center;
-      margin-bottom: 20px;
+      margin: 20px 0;
       font-size: 2.7rem;
       color: #37474f;
     }
 
-    /* ================= 카드 UI ================= */
     .card {
       background: white;
       border-radius: 18px;
@@ -100,9 +79,6 @@
       font-weight: 700;
       color: #0277bd;
       margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
 
     .row {
@@ -125,30 +101,16 @@
       padding: 18px;
       font-size: 3rem;
       border-radius: 12px;
-    }
-
-    /* 저장 버튼 파란색 */
-    .btn.blue {
-      background: #0288d1;
-      color: white;
-      width: 100%;
-      margin-top: 10px;
-      padding: 18px;
-      font-size: 3rem;
-      border-radius: 12px;
+      cursor: pointer;
     }
   </style>
 
-  <!-- ================= JS ================= -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, push, onValue, remove, get, child } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     import {
-      getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
-      setPersistence, browserLocalPersistence
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+      getDatabase, ref, push, onValue, remove
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    /* Firebase 설정 */
     const firebaseConfig = {
       apiKey: "AIzaSyBmVXt2ze1iJmmA_YI-sgH3tJmSvZomkOo",
       authDomain: "ionic6-3b7b2.firebaseapp.com",
@@ -161,58 +123,21 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
-    const auth = getAuth(app);
 
-    /* 상수 */
     const MAX_DISCOUNT = 30000;
-    const RATE        = 0.7;
-    const PRICE_KWH   = 341;
-    const BATTERY     = 77.4;
+    const RATE = 0.7;
+    const PRICE_KWH = 341;
+    const BATTERY = 77.4;
 
-    /* 엘리먼트 */
     const amountInput = document.getElementById("amount");
-    const saveBtn     = document.getElementById("saveBtn");
-    const loginBtn    = document.getElementById("loginBtn");
-    const logoutBtn   = document.getElementById("logoutBtn");
-    const emailInput  = document.getElementById("email");
-    const pwInput     = document.getElementById("password");
-    const cardList    = document.querySelector(".card-list");
+    const saveBtn = document.getElementById("saveBtn");
+    const cardList = document.querySelector(".card-list");
 
-    let currentMonth   = new Date().toISOString().substring(0,7);
-    let totalDiscount  = 0;
-    let isAdmin        = false;
+    const currentMonth = new Date().toISOString().substring(0, 7);
+    let totalDiscount = 0;
 
-    /* -------- 로그인 ---------- */
-    loginBtn.onclick = () => {
-      setPersistence(auth, browserLocalPersistence)
-      .then(() => signInWithEmailAndPassword(auth, emailInput.value, pwInput.value))
-      .catch(err => alert("로그인 실패: " + err.message));
-    };
+    startApp();
 
-    logoutBtn.onclick = () => signOut(auth);
-
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        loginBtn.style.display  = "none";
-        logoutBtn.style.display = "block";
-
-        const snap = await get(child(ref(db), `admins/${user.uid}`));
-        isAdmin = snap.exists() && snap.val() === true;
-
-        amountInput.disabled = !isAdmin;
-        saveBtn.disabled     = !isAdmin;
-
-        startApp();
-      } else {
-        loginBtn.style.display  = "block";
-        logoutBtn.style.display = "none";
-        amountInput.disabled    = true;
-        saveBtn.disabled        = true;
-        cardList.innerHTML      = "";
-      }
-    });
-
-    /* -------- 데이터 읽기 -------- */
     function startApp() {
       const logRef = ref(db, `chargingLogs/${currentMonth}`);
 
@@ -221,17 +146,18 @@
         totalDiscount = 0;
 
         if (data) {
-          Object.values(data).forEach(v => totalDiscount += v.discount);
+          Object.values(data).forEach(v => {
+            totalDiscount += Number(v.discount || 0);
+          });
         }
+
         renderCards(data);
       });
     }
 
-    /* -------- 저장 버튼 -------- */
     saveBtn.onclick = () => {
-      if (!isAdmin) return alert("관리자만 입력 가능합니다.");
-
       const amount = Number(amountInput.value);
+
       if (!amount || amount <= 0) {
         alert("충전금액을 입력하세요.");
         return;
@@ -239,12 +165,12 @@
 
       const timestamp = new Date().toISOString();
       const remainCap = Math.max(0, MAX_DISCOUNT - totalDiscount);
-      const discount  = Math.min(amount * RATE, remainCap);
+      const discount = Math.min(amount * RATE, remainCap);
       const remaining = Math.max(0, MAX_DISCOUNT - (totalDiscount + discount));
 
       const moreCharge = remaining / RATE;
-      const moreKwh    = moreCharge / PRICE_KWH;
-      const pct        = (moreKwh / BATTERY) * 100;
+      const moreKwh = moreCharge / PRICE_KWH;
+      const pct = (moreKwh / BATTERY) * 100;
 
       const log = {
         timestamp,
@@ -260,19 +186,18 @@
       amountInput.value = "";
     };
 
-    /* -------- 카드 렌더링 -------- */
     function renderCards(data) {
       cardList.innerHTML = "";
 
       const entries = Object.entries(data || {})
-        .sort((a,b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+        .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
 
       entries.forEach(([key, log]) => {
         const div = document.createElement("div");
         div.className = "card";
 
         div.innerHTML = `
-          <div class="card-date">📅 ${log.timestamp.substring(5,10)}</div>
+          <div class="card-date">📅 ${log.timestamp.substring(5, 10)}</div>
 
           <div class="row"><label>💰 충전금액</label><span>${log.amount.toLocaleString()}원</span></div>
           <div class="row"><label>💸 할인적용</label><span>${log.discount.toLocaleString()}원</span></div>
@@ -284,11 +209,7 @@
           <div class="row"><label>🔋 추가 kWh</label><span>${log.moreKwh} kWh</span></div>
           <div class="row"><label>📈 충전 가능%</label><span>${log.batteryPercent}%</span></div>
 
-          ${
-            isAdmin
-            ? `<div class="card-delete" data-key="${key}">삭제</div>`
-            : ""
-          }
+          <div class="card-delete" data-key="${key}">삭제</div>
         `;
 
         cardList.appendChild(div);
