@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>고등 동기회 모임 내역서</title>
@@ -107,6 +108,20 @@ td[contenteditable="true"] {
     padding: 4px;
   }
 }
+
+.excel-upload {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.excel-upload input {
+  flex: 1;
+  background: white;
+  border: 1px solid #aaa;
+  padding: 12px;
+  font-size: 16px;
+}
 </style>
 </head>
 
@@ -120,19 +135,10 @@ td[contenteditable="true"] {
   <div>잔액<br><span id="sumBalance">0</span>원</div>
 </div>
 
-<div class="input-area">
-  <input id="date" placeholder="일자 예: 08.08.15">
-  <input id="category" placeholder="구분 예: 0808회비(희,성)">
-  <input id="income" placeholder="수입">
-  <input id="expense" placeholder="지출">
-  <input id="unpaidDongho" placeholder="미수금 동호">
-  <input id="unpaidGiyoung" placeholder="미수금 기영">
-  <input id="unpaidHeegeun" placeholder="미수금 희근">
-  <input id="fee" placeholder="회비">
+<div class="excel-upload">
+  <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel(event)">
+  <button class="deleteBtn" onclick="deleteAll()">전체 삭제</button>
 </div>
-
-<button class="addBtn" onclick="addRow()">추가</button>
-<button class="deleteBtn" onclick="deleteAll()">전체 삭제</button>
 
 <br><br>
 
@@ -183,34 +189,59 @@ function comma(n) {
   return toNum(n).toLocaleString();
 }
 
-function addRow() {
-  const row = {
-    date: el("date").value.trim(),
-    category: el("category").value.trim(),
-    income: toNum(el("income").value),
-    expense: toNum(el("expense").value),
-    unpaidDongho: toNum(el("unpaidDongho").value),
-    unpaidGiyoung: toNum(el("unpaidGiyoung").value),
-    unpaidHeegeun: toNum(el("unpaidHeegeun").value),
-    fee: toNum(el("fee").value),
-    createdAt: Date.now()
+function uploadExcel(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function(e) {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: ""
+    });
+
+    const ref = db.ref(refPath);
+
+    rows.forEach((row, index) => {
+      if (index < 2) return;
+
+      const date = String(row[0] || "").trim();
+      const category = String(row[1] || "").trim();
+      const income = toNum(row[2]);
+      const expense = toNum(row[3]);
+      const unpaidDongho = toNum(row[5]);
+      const unpaidGiyoung = toNum(row[6]);
+      const unpaidHeegeun = toNum(row[7]);
+      const fee = toNum(row[8]);
+
+      if (!date || !category) return;
+
+      ref.push({
+        date,
+        category,
+        income,
+        expense,
+        unpaidDongho,
+        unpaidGiyoung,
+        unpaidHeegeun,
+        fee,
+        createdAt: Date.now() + index
+      });
+    });
+
+    alert("엑셀 데이터 업로드 완료!");
+    event.target.value = "";
   };
 
-  if (!row.date || !row.category) {
-    alert("날짜와 구분을 입력하세요.");
-    return;
-  }
-
-  db.ref(refPath).push(row);
-
-  ["date","category","income","expense","unpaidDongho","unpaidGiyoung","unpaidHeegeun","fee"]
-    .forEach(id => el(id).value = "");
+  reader.readAsArrayBuffer(file);
 }
-
-db.ref(refPath).on("value", snap => {
-  data = snap.val() || {};
-  render();
-});
 
 function render() {
   const tbody = el("tbody");
