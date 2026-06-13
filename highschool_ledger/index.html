@@ -188,6 +188,7 @@ tfoot input {
 .action-bar button {
   flex: 1;
 }
+}
 
 @media (max-width: 700px) {
   body {
@@ -265,10 +266,20 @@ thead th {
   </div>
 
   <div class="summary">
-    <div>총수입<br><span id="sumIncome">0</span>원</div>
-    <div>총지출<br><span id="sumExpense">0</span>원</div>
-    <div>잔액<br><span id="sumBalance">0</span>원</div>
+  <div>총수입<br><span id="sumIncome">0</span>원</div>
+  <div>총지출<br><span id="sumExpense">0</span>원</div>
+  <div>잔액<br><span id="sumBalance">0</span>원</div>
+
+  <div>
+    미수금<br>
+    <span id="sumUnpaid">0</span>원
+    <small style="display:block;">
+      동:<span id="sumDongho">0</span>
+      기:<span id="sumGiyoung">0</span>
+      희:<span id="sumHeegeun">0</span>
+    </small>
   </div>
+</div>
 
   
 <!--
@@ -338,6 +349,7 @@ const refPath = "고등동기회/회비내역";
 let data = {};
 let canView = false;
 let isEditor = false;
+
 
 const el = id => document.getElementById(id);
 
@@ -464,15 +476,15 @@ function uploadExcel(event) {
       if (!date || !category) return;
 
       ref.push({
-  date,
-  category,
-  income,
-  expense,
-  unpaidDongho,
-  unpaidGiyoung,
-  unpaidHeegeun,
-  createdAt: Date.now() + index
-});
+       date,
+       category,
+       income,
+       expense,
+       unpaidDongho,
+       unpaidGiyoung,
+       unpaidHeegeun,
+       createdAt: Date.now() + index
+       });
 
       count++;
     });
@@ -494,6 +506,9 @@ function render() {
   let balance = 0;
   let totalIncome = 0;
   let totalExpense = 0;
+  let totalDongho = 0;
+let totalGiyoung = 0;
+let totalHeegeun = 0;
 
   rows.forEach(([key, row], index) => {
     const income = toNum(row.income);
@@ -502,6 +517,9 @@ function render() {
     totalIncome += income;
     totalExpense += expense;
     balance += income - expense;
+    totalDongho += toNum(row.unpaidDongho);
+    totalGiyoung += toNum(row.unpaidGiyoung); 
+    totalHeegeun += toNum(row.unpaidHeegeun);
 
     const editableAttr = isEditor ? `contenteditable="true"` : "";
     const editableClass = isEditor ? "editable" : "locked";
@@ -534,6 +552,16 @@ function render() {
   el("sumIncome").textContent = comma(totalIncome);
   el("sumExpense").textContent = comma(totalExpense);
   el("sumBalance").textContent = comma(balance);
+  const totalUnpaid =
+    totalDongho +
+    totalGiyoung +
+    totalHeegeun;
+
+el("sumUnpaid").textContent = comma(totalUnpaid);
+
+el("sumDongho").textContent = comma(totalDongho);
+el("sumGiyoung").textContent = comma(totalGiyoung);
+el("sumHeegeun").textContent = comma(totalHeegeun);
 }
 
 function updateCell(key, field, value) {
