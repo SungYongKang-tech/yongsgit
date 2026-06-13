@@ -6,7 +6,6 @@
 <title>고등 동기회 모임 내역서</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
@@ -22,6 +21,34 @@ h1 {
   text-align: center;
   font-size: 34px;
   margin: 20px 0 28px;
+}
+
+.login-box {
+  max-width: 420px;
+  margin: 40px auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+
+.login-box input {
+  width: 100%;
+  padding: 14px;
+  font-size: 18px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+
+.login-box button {
+  width: 100%;
+  background: #2563eb;
+  color: white;
+}
+
+#app {
+  display: none;
 }
 
 .summary {
@@ -41,7 +68,7 @@ h1 {
 }
 
 .excel-upload {
-  display: flex;
+  display: none;
   gap: 10px;
   margin-bottom: 15px;
 }
@@ -60,6 +87,12 @@ button {
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
+}
+
+.editBtn {
+  background: #16a34a;
+  color: white;
+  margin-bottom: 10px;
 }
 
 .deleteBtn {
@@ -88,8 +121,12 @@ thead th {
   background: #ffff00;
 }
 
-td[contenteditable="true"] {
+td.editable {
   background: #fff;
+}
+
+td.locked {
+  background: #f5f5f5;
 }
 
 .num {
@@ -115,37 +152,49 @@ td[contenteditable="true"] {
 
 <h1>고등 동기회 모임 내역서</h1>
 
-<div class="summary">
-  <div>총수입<br><span id="sumIncome">0</span>원</div>
-  <div>총지출<br><span id="sumExpense">0</span>원</div>
-  <div>잔액<br><span id="sumBalance">0</span>원</div>
+<div id="viewLogin" class="login-box">
+  <h2>조회 비밀번호</h2>
+  <input type="password" id="viewPwInput" placeholder="보기 비밀번호 입력">
+  <button onclick="checkViewPassword()">장부 보기</button>
 </div>
 
-<div class="excel-upload">
-  <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel(event)">
-  <button class="deleteBtn" onclick="deleteAll()">전체 삭제</button>
-</div>
+<div id="app">
 
-<table>
-  <thead>
-    <tr>
-      <th rowspan="2">날짜</th>
-      <th rowspan="2">구분</th>
-      <th rowspan="2">수입</th>
-      <th rowspan="2">지출</th>
-      <th rowspan="2">잔액</th>
-      <th colspan="3">미수금</th>
-      <th rowspan="2">회비</th>
-      <th rowspan="2">삭제</th>
-    </tr>
-    <tr class="sub-head">
-      <th>동호</th>
-      <th>기영</th>
-      <th>희근</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
+  <button class="editBtn" onclick="checkEditPassword()">수정모드</button>
+
+  <div class="summary">
+    <div>총수입<br><span id="sumIncome">0</span>원</div>
+    <div>총지출<br><span id="sumExpense">0</span>원</div>
+    <div>잔액<br><span id="sumBalance">0</span>원</div>
+  </div>
+
+  <div class="excel-upload" id="excelUploadBox">
+    <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel(event)">
+    <button class="deleteBtn" onclick="deleteAll()">전체 삭제</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2">날짜</th>
+        <th rowspan="2">구분</th>
+        <th rowspan="2">수입</th>
+        <th rowspan="2">지출</th>
+        <th rowspan="2">잔액</th>
+        <th colspan="3">미수금</th>
+        <th rowspan="2">회비</th>
+        <th rowspan="2" class="editOnly">삭제</th>
+      </tr>
+      <tr class="sub-head">
+        <th>동호</th>
+        <th>기영</th>
+        <th>희근</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+</div>
 
 <script>
 firebase.initializeApp({
@@ -162,6 +211,8 @@ const db = firebase.database();
 const refPath = "고등동기회/회비내역";
 
 let data = {};
+let canView = false;
+let isEditor = false;
 
 const el = id => document.getElementById(id);
 
@@ -171,6 +222,56 @@ function toNum(v) {
 
 function comma(n) {
   return toNum(n).toLocaleString();
+}
+
+function passwordMatch(input, saved) {
+  input = String(input || "").trim();
+  saved = String(saved || "").trim();
+
+  if (input === saved) return true;
+
+  // Firebase에서 04140625가 숫자로 저장된 경우 대응
+  if (String(Number(input)) === saved) return true;
+
+  return false;
+}
+
+function checkViewPassword() {
+  const inputPw = el("viewPwInput").value.trim();
+
+  db.ref("settings/viewPassword").once("value").then(snap => {
+    if (passwordMatch(inputPw, snap.val())) {
+      canView = true;
+      el("viewLogin").style.display = "none";
+      el("app").style.display = "block";
+      startListen();
+    } else {
+      alert("보기 비밀번호가 틀렸습니다.");
+    }
+  });
+}
+
+function checkEditPassword() {
+  const inputPw = prompt("수정 비밀번호를 입력하세요.");
+  if (!inputPw) return;
+
+  db.ref("settings/editPassword").once("value").then(snap => {
+    if (passwordMatch(inputPw, snap.val())) {
+      isEditor = true;
+      el("excelUploadBox").style.display = "flex";
+      alert("수정모드가 활성화되었습니다.");
+      render();
+    } else {
+      alert("수정 비밀번호가 틀렸습니다.");
+    }
+  });
+}
+
+function startListen() {
+  db.ref(refPath).on("value", snap => {
+    data = snap.val() || {};
+    render();
+  });
 }
 
 function excelDateToText(v) {
@@ -190,12 +291,12 @@ function excelDateToText(v) {
   return String(v).trim();
 }
 
-db.ref(refPath).on("value", snap => {
-  data = snap.val() || {};
-  render();
-});
-
 function uploadExcel(event) {
+  if (!isEditor) {
+    alert("수정모드에서만 업로드할 수 있습니다.");
+    return;
+  }
+
   const file = event.target.files[0];
   if (!file) return;
 
@@ -225,7 +326,6 @@ function uploadExcel(event) {
     let count = 0;
 
     rows.forEach((row, index) => {
-      // 사진 기준: 1~3행은 제목/헤더, 4행부터 실제 데이터
       if (index < 3) return;
 
       const date = excelDateToText(row[0]);
@@ -234,7 +334,6 @@ function uploadExcel(event) {
       const income = toNum(row[2]);
       const expense = toNum(row[3]);
 
-      // row[4] 잔액은 화면에서 자동 계산하므로 사용 안 함
       const unpaidDongho = toNum(row[5]);
       const unpaidGiyoung = toNum(row[6]);
       const unpaidHeegeun = toNum(row[7]);
@@ -283,22 +382,29 @@ function render() {
     totalExpense += expense;
     balance += income - expense;
 
+    const editableAttr = isEditor ? `contenteditable="true"` : "";
+    const editableClass = isEditor ? "editable" : "locked";
+
+    const deleteCell = isEditor
+      ? `<td><button class="deleteBtn" onclick="deleteRow('${key}')">X</button></td>`
+      : `<td></td>`;
+
     const tr = document.createElement("tr");
 
     tr.innerHTML = `
-      <td contenteditable="true" onblur="updateCell('${key}', 'date', this.innerText)">${row.date || ""}</td>
-      <td contenteditable="true" onblur="updateCell('${key}', 'category', this.innerText)">${row.category || ""}</td>
+      <td class="${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'date', this.innerText)">${row.date || ""}</td>
+      <td class="${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'category', this.innerText)">${row.category || ""}</td>
 
-      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'income', this.innerText)">${income ? comma(income) : ""}</td>
-      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'expense', this.innerText)">${expense ? comma(expense) : ""}</td>
+      <td class="num ${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'income', this.innerText)">${income ? comma(income) : ""}</td>
+      <td class="num ${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'expense', this.innerText)">${expense ? comma(expense) : ""}</td>
       <td class="num">${comma(balance)}</td>
 
-      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'unpaidDongho', this.innerText)">${row.unpaidDongho ? comma(row.unpaidDongho) : ""}</td>
-      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'unpaidGiyoung', this.innerText)">${row.unpaidGiyoung ? comma(row.unpaidGiyoung) : ""}</td>
-      <td class="num" contenteditable="true" onblur="updateCell('${key}', 'unpaidHeegeun', this.innerText)">${row.unpaidHeegeun ? comma(row.unpaidHeegeun) : ""}</td>
+      <td class="num ${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'unpaidDongho', this.innerText)">${row.unpaidDongho ? comma(row.unpaidDongho) : ""}</td>
+      <td class="num ${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'unpaidGiyoung', this.innerText)">${row.unpaidGiyoung ? comma(row.unpaidGiyoung) : ""}</td>
+      <td class="num ${editableClass}" ${editableAttr} onblur="updateCell('${key}', 'unpaidHeegeun', this.innerText)">${row.unpaidHeegeun ? comma(row.unpaidHeegeun) : ""}</td>
 
       <td>${row.fee || index + 1}</td>
-      <td><button class="deleteBtn" onclick="deleteRow('${key}')">X</button></td>
+      ${deleteCell}
     `;
 
     tbody.appendChild(tr);
@@ -310,6 +416,8 @@ function render() {
 }
 
 function updateCell(key, field, value) {
+  if (!isEditor) return;
+
   const patch = {};
 
   if (
@@ -329,11 +437,21 @@ function updateCell(key, field, value) {
 }
 
 function deleteRow(key) {
+  if (!isEditor) {
+    alert("수정모드에서만 삭제할 수 있습니다.");
+    return;
+  }
+
   if (!confirm("삭제할까요?")) return;
   db.ref(`${refPath}/${key}`).remove();
 }
 
 function deleteAll() {
+  if (!isEditor) {
+    alert("수정모드에서만 삭제할 수 있습니다.");
+    return;
+  }
+
   if (!confirm("전체 삭제할까요?")) return;
   db.ref(refPath).remove();
 }
