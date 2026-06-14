@@ -261,7 +261,7 @@ thead th {
 <div id="app">
 
   <div class="action-bar">
-    <button class="editBtn" onclick="checkEditPassword()">수정모드</button>
+    <button id="editBtn" class="editBtn" onclick="toggleEditMode()">수정모드</button>
     <button class="bottomBtn" onclick="scrollToBottom()">맨 하단으로</button>
   </div>
 
@@ -391,24 +391,49 @@ function checkViewPassword() {
   });
 }
 
-function checkEditPassword() {
+function toggleEditMode() {
+
+  // 이미 수정모드면 읽기전용으로 변경
+  if (isEditor) {
+    isEditor = false;
+
+    el("addRowFoot").style.display = "none";
+    el("editBtn").textContent = "수정모드";
+
+    alert("읽기전용모드로 변경되었습니다.");
+
+    render();
+    return;
+  }
+
+  // 읽기전용이면 비밀번호 확인
   const inputPw = prompt("수정 비밀번호를 입력하세요.");
   if (!inputPw) return;
 
   db.ref("settings/editPassword").once("value").then(snap => {
+
     if (passwordMatch(inputPw, snap.val())) {
+
       isEditor = true;
-      // el("excelUploadBox").style.display = "flex";
+
       el("addRowFoot").style.display = "table-footer-group";
+      el("editBtn").textContent = "읽기전용모드";
+
       alert("수정모드가 활성화되었습니다.");
+
       render();
+
     } else {
       alert("수정 비밀번호가 틀렸습니다.");
     }
+
   });
 }
 
 function startListen() {
+
+  el("addRowFoot").style.display = "none";
+
   db.ref(refPath).on("value", snap => {
     data = snap.val() || {};
     render();
