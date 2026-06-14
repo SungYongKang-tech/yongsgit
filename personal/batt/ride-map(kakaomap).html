@@ -2194,7 +2194,14 @@ let lastSpeedSampleDistanceM = 0;
 let watchId = null;
 let wakeLock = null;
 let wakeLockTimer = null;
-let followMap = localStorage.getItem(FOLLOW_STORAGE_KEY) !== "off";
+let followMode = localStorage.getItem(FOLLOW_STORAGE_KEY) || "me";
+// me: 고정1 - 내 위치 중심
+// meGroup: 고정2 - 내 위치 중심 + 그룹원 다 보이게
+// off: 해제 - 자유 이동
+// group: 그룹 - 그룹원 전체 중심 기준
+
+let followMap = followMode === "me" || followMode === "meGroup";
+let lastGroupFitAt = 0;
 let autoZoom = localStorage.getItem(AUTO_ZOOM_STORAGE_KEY) !== "off";
 let lastPointTime = null;
 let currentAutoZoomLevel = 3;
@@ -2608,8 +2615,112 @@ function getCurrentPositionObject() {
 }
 
 function updateFollowButton() {
-  followBtn.textContent = followMap ? "📍고정" : "📍해제";
-  followBtn.classList.toggle("active", followMap);
+  followBtn.classList.remove("active");
+
+  if (followMode === "me") {
+    followBtn.textContent = "고정1";
+    followBtn.classList.add("active");
+  } else if (followMode === "meGroup") {
+    followBtn.textContent = "고정2";
+    followBtn.classList.add("active");
+  } else if (followMode === "off") {
+    followBtn.textContent = "해제";
+  } else {
+    followBtn.textContent = "그룹";
+    followBtn.classList.add("active");
+  }
+
+  followMap = followMode === "me" || followMode === "meGroup";
+}
+
+function getGroupMemberPositions(includeMe = false) {
+  const positions = [];
+
+  Object.values(groupMembers || {}).forEach((member) => {
+    if (!member) return;
+    if (typeof member.lat !== "number" || typeof member.lng !== "number") return;
+    positions.push({ lat: member.lat, lng: member.lng });
+  });
+
+  if (includeMe) {
+    const me = getCurrentPositionObject();
+    if (me && typeof me.lat === "number" && typeof me.lng === "number") {
+      positions.push(me);
+    }
+  }
+
+  return positions;
+}
+
+function fitPositionsToView(positions) {
+  if (!map || !ensureKakaoLoaded() || !positions.length) return;
+
+  const bounds = new kakao.maps.LatLngBounds();
+
+  positions.forEach((p) => {
+    bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+  });
+
+  map.setBounds(bounds);
+}
+
+function fitMeCenterWithGroup(lat, lng) {
+  if (!map || !ensureKakaoLoaded()) return;
+
+  const me = { lat, lng };
+  const positions = getGroupMemberPositions(false);
+
+  if (!positions.length) {
+    map.setCenter(new kakao.maps.LatLng(lat, lng));
+    return;
+  }
+
+  const bounds = new kakao.maps.LatLngBounds();
+
+  positions.forEach((p) => {
+    bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+
+    // 내 위치가 화면 중심이 되도록 반대편 가상점 추가
+    const mirrorLat = (me.lat * 2) - p.lat;
+    const mirrorLng = (me.lng * 2) - p.lng;
+    bounds.extend(new kakao.maps.LatLng(mirrorLat, mirrorLng));
+  });
+
+  bounds.extend(new kakao.maps.LatLng(me.lat, me.lng));
+
+  map.setBounds(bounds);
+  setTimeout(() => {
+    map.setCenter(new kakao.maps.LatLng(me.lat, me.lng));
+  }, 80);
+}
+
+function applyFollowMode(lat, lng) {
+  if (!map || !ensureKakaoLoaded()) return;
+
+  const now = Date.now();
+  const mePos = new kakao.maps.LatLng(lat, lng);
+
+  if (followMode === "me") {
+    map.setCenter(mePos);
+    return;
+  }
+
+  if (followMode === "meGroup") {
+    if (now - lastGroupFitAt > 3000) {
+      lastGroupFitAt = now;
+      fitMeCenterWithGroup(lat, lng);
+    } else {
+      map.setCenter(mePos);
+    }
+    return;
+  }
+
+  if (followMode === "group") {
+    if (now - lastGroupFitAt > 3000) {
+      lastGroupFitAt = now;
+      fitPositionsToView(getGroupMemberPositions(false));
+    }
+  }
 }
 
 function updateZoomButton() {
@@ -3377,10 +3488,8 @@ function redrawPath() {
     const last = rideData.lastPoint || rideData.path[rideData.path.length - 1];
     drawCurrentMarker(last[0], last[1], lastHeadingDeg);
 
-    if (followMap) {
-      const pos = toLatLng(last[0], last[1]);
-      if (pos) map.panTo(pos);
-    }
+    applyFollowMode(last[0], last[1]);
+
   } else if (rideData.lastPoint) {
     drawCurrentMarker(rideData.lastPoint[0], rideData.lastPoint[1]);
   }
@@ -3482,7 +3591,7 @@ document.addEventListener("visibilitychange", async () => {
         const current = getCurrentPositionObject();
         if (current && map) {
           const pos = toLatLng(current.lat, current.lng);
-          if (followMap && pos) map.setCenter(pos);
+          applyFollowMode(current.lat, current.lng);
           if (autoZoom) map.setLevel(currentAutoZoomLevel);
         }
       }, 300);
@@ -3544,9 +3653,7 @@ const point = [latitude, longitude];
   rideData.currentSpeedKmh = 0;
 drawCurrentMarker(latitude, longitude, lastHeadingDeg);
 
-if (followMap) {
-  moveMapAhead(latitude, longitude, lastHeadingDeg);
-}
+applyFollowMode(latitude, longitude);
 
   updateStats();
   saveRideData();
@@ -3673,9 +3780,8 @@ return;
 
 drawCurrentMarker(latitude, longitude, heading);
 
-if (followMap) {
-  moveMapAhead(latitude, longitude, heading);
-}
+applyFollowMode(latitude, longitude);
+
   }
 
  updateStats();
@@ -3776,9 +3882,9 @@ function requestLocationPermission() {
             currentAutoZoomLevel = 2;
           }
           hasInitialCentered = true;
-        } else if (followMap) {
-          map.setCenter(center);
-        }
+        } else {
+  applyFollowMode(latitude, longitude);
+}
        drawCurrentMarker(latitude, longitude, lastHeadingDeg);
       }
 
@@ -4208,17 +4314,25 @@ manualRestBtn.addEventListener("click", manualRestRide);
 endBtn.addEventListener("click", endRide);
 
 followBtn.addEventListener("click", () => {
-  followMap = !followMap;
-  localStorage.setItem(FOLLOW_STORAGE_KEY, followMap ? "on" : "off");
-  updateStats();
+  if (followMode === "me") {
+    followMode = "meGroup";
+  } else if (followMode === "meGroup") {
+    followMode = "off";
+  } else if (followMode === "off") {
+    followMode = "group";
+  } else {
+    followMode = "me";
+  }
 
-  if (followMap && map && ensureKakaoLoaded() && (rideData.lastPoint || rideData.path.length > 0)) {
-    const p = rideData.lastPoint || rideData.path[rideData.path.length - 1];
-    const pos = toLatLng(p[0], p[1]);
-    if (pos) {
-      map.panTo(pos);
-      if (autoZoom) map.setLevel(currentAutoZoomLevel);
-    }
+  localStorage.setItem(FOLLOW_STORAGE_KEY, followMode);
+  updateFollowButton();
+
+  const me = getCurrentPositionObject();
+
+  if (me) {
+    applyFollowMode(me.lat, me.lng);
+  } else if (followMode === "group") {
+    fitPositionsToView(getGroupMemberPositions(false));
   }
 });
 
