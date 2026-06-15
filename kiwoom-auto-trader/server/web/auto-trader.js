@@ -8,9 +8,9 @@ const API_BASE = "http://localhost:3000";
 
 const settings = {
 
-  buyStartTime: "09:15",
+  buyStartTime: "09:20",
   buyEndTime: "14:40",
-  safeMinScore: 9,
+  safeMinScore: 10,
   trendMinScore: 10,
   blockStoppedToday: true,
 
@@ -23,7 +23,7 @@ const settings = {
   maxConsecutiveLoss: 3,
 
   discoverLimit: 300,
-  minScore: 7,
+  minScore: 10,
   buyCooldownMinutes: 10,
 
   tradeStart: "09:05",
@@ -256,14 +256,29 @@ function isRecentlySold(state, code) {
 
 
 
+function getTimeBasedMaxHolding() {
+  const now = new Date();
+  const hhmm =
+    String(now.getHours()).padStart(2, "0") +
+    ":" +
+    String(now.getMinutes()).padStart(2, "0");
 
+  if (hhmm < "09:20") return 0;
+  if (hhmm < "09:40") return 3;
+  if (hhmm < "10:00") return 5;
+  if (hhmm < "13:00") return 7;
+
+  return settings.maxHoldingCount;
+}
 
 
 
 
 
 function getAvailableSlots(state) {
-  return Math.max(0, settings.maxHoldingCount - state.holdings.length);
+  const timeMaxHolding = getTimeBasedMaxHolding();
+
+  return Math.max(0, timeMaxHolding - state.holdings.length);
 }
 
 async function fetchJson(url) {
@@ -449,6 +464,7 @@ const availableCash = Number(
 // 현재 자산으로 가능한 최대 종목 수
 const dynamicMaxHolding = Math.min(
   settings.maxHoldingCount,
+  getTimeBasedMaxHolding(),
   Math.max(
     1,
     Math.floor(
@@ -1235,9 +1251,12 @@ if (marketTemperature.level === "DANGER") {
 }
 
 const buyRules = {
-  minScore: Number(settings.minScore || 9),
+  minScore: Number(settings.minScore || 10),
   perBuyAmount: Number(settings.perBuyAmount || 10000000),
-  maxHoldingCount: Number(settings.maxHoldingCount || 8)
+  maxHoldingCount: Math.min(
+    Number(settings.maxHoldingCount || 10),
+    getTimeBasedMaxHolding()
+  )
 };
 
 if (marketTemperature.level === "CAUTION") {
@@ -1313,7 +1332,7 @@ console.log(
         continue;
       }
 
-const isMorningEntry = isBetweenTime("09:15", "10:00");
+const isMorningEntry = isBetweenTime("09:20", "09:40");
 
 if (!isMorningEntry) {
   const pullbackCheck = isPullbackReboundCandidate({
@@ -1470,7 +1489,7 @@ function startServerAutoTrader() {
 
 
 setInterval(() => {
-  const isMorningBuyTime = isBetweenTime("09:15", "10:00");
+  const isMorningBuyTime = isBetweenTime("09:20", "10:00");
 
   if (isMorningBuyTime) {
     runServerAutoBuyOnce();
