@@ -527,7 +527,7 @@ currentPrice: price,
       ? item.discoverReasons
       : [],
     discoverScoreDetails: item.discoverScoreDetails || {},
-    protectMinutes: 3,
+    protectMinutes: 5,
     buyTime: nowText(),
     buyTimeMs: Date.now(),
     buyAt: new Date().toISOString(),
