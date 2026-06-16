@@ -805,6 +805,7 @@ if (!response.ok) {
 const {
   startServerAutoTrader,
   runServerAutoBuyOnce,
+  runTurboAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
   runClosingProfitSell,
@@ -872,14 +873,21 @@ app.get("/api/performance-summary", (req, res) => {
       ? state.tradeLogs
       : [];
 
-    const sellLogs = tradeLogs.filter((log) =>
+   const sellLogs = tradeLogs.filter((log) =>
   [
     "SELL",
     "SELL_ALL",
     "STOP_LOSS",
     "TRAILING_STOP",
     "END_PROFIT_SELL",
-    "FIRST_TAKE_PROFIT"
+    "FIRST_TAKE_PROFIT",
+    "BREAK_EVEN_PROTECT",
+    "TAKE_PROFIT",
+    "HIGH_PROFIT_STAGNANT_SELL",
+    "TURBO_STOP_LOSS",
+    "TURBO_TAKE_PROFIT",
+    "TURBO_TRAILING_STOP",
+    "TURBO_TIME_EXIT"
   ].includes(log.type)
 );
 
@@ -1201,6 +1209,22 @@ app.get("/api/server-auto-buy-once", async (req, res) => {
     ok: true,
     message: "서버 자동 모의매수를 1회 실행했습니다."
   });
+});
+
+app.get("/api/server-turbo-buy-once", async (req, res) => {
+  try {
+    await runTurboAutoBuyOnce();
+
+    res.json({
+      ok: true,
+      message: "Turbo 모의매수를 1회 실행했습니다."
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
 });
 
 app.get("/api/server-auto-sell-once", async (req, res) => {

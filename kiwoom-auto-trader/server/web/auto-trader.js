@@ -44,6 +44,22 @@ const settings = {
 
   endProfitSellTime: "15:10",
   endProfitSellOnlyPositive: true,
+
+  turboEnabled: true,
+turboStartTime: "09:00",
+turboEndTime: "09:10",
+turboForceSellTime: "09:40",
+turboTotalCash: 20000000,
+turboPerBuyAmount: 10000000,
+turboMaxHoldingCount: 2,
+turboMinScore: 10,
+turboMinOneMinuteRiseRate: 0.5,
+turboMaxDayRiseRate: 5,
+turboStopLossRate: -1.0,
+turboTakeProfitRate: 3.0,
+turboTrailingStartRate: 2.0,
+turboTrailingStopRate: 0.7,
+
 };
 
 
@@ -94,6 +110,14 @@ function loadState() {
 
   if (typeof state.totalCash === "undefined") {
     state.totalCash = settings.totalCash;
+}
+
+if (typeof state.turboCash === "undefined") {
+  state.turboCash = settings.turboTotalCash;
+}
+
+if (!state.turboSnapshots) {
+  state.turboSnapshots = {};
 }
 
   return state;
@@ -231,6 +255,11 @@ function isAlreadyHolding(state, code) {
   return state.holdings.some((item) => item.code === code);
 }
 
+function getCoreHoldingCount(state) {
+  return (state.holdings || []).filter(
+    (item) => item.strategyGroup !== "TURBO"
+  ).length;
+}
 
 
 
@@ -272,13 +301,10 @@ function getTimeBasedMaxHolding() {
 }
 
 
-
-
-
 function getAvailableSlots(state) {
   const timeMaxHolding = getTimeBasedMaxHolding();
 
-  return Math.max(0, timeMaxHolding - state.holdings.length);
+  return Math.max(0, timeMaxHolding - getCoreHoldingCount(state));
 }
 
 async function fetchJson(url) {
@@ -473,10 +499,10 @@ const dynamicMaxHolding = Math.min(
   )
 );
 
-// 남은 슬롯
+// 남은 슬롯(Core 기준, Turbo 보유종목 제외)
 const remainSlots = Math.max(
   1,
-  dynamicMaxHolding - state.holdings.length
+  dynamicMaxHolding - getCoreHoldingCount(state)
 );
 
 // 매수금액 제한값 안전 처리
@@ -511,37 +537,39 @@ if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qt
 
 
   const holding = {
-    code: item.code,
-    name: item.name && item.name !== item.code ? item.name : (item.stockName || item.korName || item.code),
-    buyPrice: price,
-    qty,
-    buyAmount: price * qty,
-plannedBuyAmount: buyAmount,
-currentPrice: price,
-    highestPrice: price,
-    autoTrade: true,
-    strategyPreset: strategy.key,
-    strategyName: strategy.name,
-    discoverScore: Number(item.discoverScore || 0),
-    discoverReasons: Array.isArray(item.discoverReasons)
-      ? item.discoverReasons
-      : [],
-    discoverScoreDetails: item.discoverScoreDetails || {},
-    protectMinutes: 5,
-    buyTime: nowText(),
-    buyTimeMs: Date.now(),
-    buyAt: new Date().toISOString(),
-    date: todayKey()
+  code: item.code,
+  name: item.name && item.name !== item.code ? item.name : (item.stockName || item.korName || item.code),
+  buyPrice: price,
+  qty,
+  buyAmount: price * qty,
+  plannedBuyAmount: buyAmount,
+  currentPrice: price,
+  highestPrice: price,
+  autoTrade: true,
 
+  strategyGroup: "CORE",
 
-
-  };
+  strategyPreset: strategy.key,
+  strategyName: strategy.name,
+  discoverScore: Number(item.discoverScore || 0),
+  discoverReasons: Array.isArray(item.discoverReasons)
+    ? item.discoverReasons
+    : [],
+  discoverScoreDetails: item.discoverScoreDetails || {},
+  protectMinutes: 5,
+  buyTime: nowText(),
+  buyTimeMs: Date.now(),
+  buyAt: new Date().toISOString(),
+  date: todayKey()
+};
 
   state.holdings.push(holding);
   state.totalCash = availableCash - price * qty;
 
   state.tradeLogs.push({
   type: "BUY",
+  strategyGroup: "CORE",
+
   code: item.code,
   name: item.name,
   price,
@@ -552,10 +580,11 @@ currentPrice: price,
   remainCashAfterBuy: state.totalCash,
   dynamicMaxHolding,
   remainSlotsAfterBuy: Math.max(
-  0,
-  dynamicMaxHolding - state.holdings.length
-),
+    0,
+    dynamicMaxHolding - getCoreHoldingCount(state)
+  ),
 
+  discoverScore: Number(item.discoverScore || 0),
   strategyPreset: strategy.key,
   strategyName: strategy.name,
   reason: `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
@@ -563,10 +592,106 @@ currentPrice: price,
   time: nowText()
 });
 
+  
+
   return true;
 }
 
+function getTurboHoldingCount(state) {
+  return (state.holdings || []).filter(
+    (item) => item.strategyGroup === "TURBO"
+  ).length;
+}
 
+function wasTurboBoughtToday(state, code) {
+  return (state.tradeLogs || []).some((log) =>
+    log.code === code &&
+    log.date === todayKey() &&
+    log.type === "TURBO_BUY"
+  );
+}
+
+function isViLikeItem(item) {
+  const rawText = JSON.stringify(item.raw || item || "");
+  return rawText.includes("VI");
+}
+
+function paperTurboBuy(state, item, currentPrice) {
+  if (!settings.turboEnabled) return false;
+
+  if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
+    console.log("[TURBO 매수제외] 최대 보유종목 도달");
+    return false;
+  }
+
+  if (isAlreadyHolding(state, item.code)) {
+    console.log("[TURBO 매수제외] 이미 보유중", item.name);
+    return false;
+  }
+
+  if (wasTurboBoughtToday(state, item.code)) {
+    console.log("[TURBO 매수제외] 오늘 이미 Turbo 매수", item.name);
+    return false;
+  }
+
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) return false;
+
+  const availableCash = Number(state.turboCash || 0);
+  const buyAmount = Math.min(settings.turboPerBuyAmount, availableCash);
+  const qty = Math.floor(buyAmount / price);
+
+  if (qty <= 0) {
+    console.log("[TURBO 매수제외] Turbo 현금 부족");
+    return false;
+  }
+
+  const holding = {
+    code: item.code,
+    name: item.name || item.stockName || item.korName || item.code,
+    buyPrice: price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    currentPrice: price,
+    highestPrice: price,
+    autoTrade: true,
+    strategyGroup: "TURBO",
+    strategyPreset: "turbo",
+    strategyName: "터보형",
+    discoverScore: Number(item.discoverScore || 0),
+    discoverReasons: Array.isArray(item.discoverReasons) ? item.discoverReasons : [],
+    buyTime: nowText(),
+    buyTimeMs: Date.now(),
+    buyAt: new Date().toISOString(),
+    date: todayKey()
+  };
+
+  state.holdings.push(holding);
+  state.turboCash = availableCash - price * qty;
+
+  state.tradeLogs.push({
+    type: "TURBO_BUY",
+    strategyGroup: "TURBO",
+    code: item.code,
+    name: holding.name,
+    price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    remainTurboCashAfterBuy: state.turboCash,
+    discoverScore: Number(item.discoverScore || 0),
+    reason: "Turbo 조건 충족 자동 모의매수",
+    date: todayKey(),
+    time: nowText()
+  });
+
+  console.log(
+    `[TURBO 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
+  );
+
+  return true;
+}
 
 
 
@@ -627,11 +752,16 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     reason: reason || "서버 매도",
     strategyPreset: holding.strategyPreset,
     strategyName: holding.strategyName,
+    strategyGroup: holding.strategyGroup || "CORE",
     date: todayKey(),
     time: nowText()
   });
 
+  if (holding.strategyGroup === "TURBO") {
+  state.turboCash = Number(state.turboCash || 0) + sellAmount;
+} else {
   state.totalCash = Number(state.totalCash || 0) + sellAmount;
+}
 
   if (sellQty < holdingQty) {
     holding.qty = holdingQty - sellQty;
@@ -770,6 +900,71 @@ const maxProfitRate =
   buyPrice > 0
     ? ((Number(holding.highestPrice || currentPrice) - buyPrice) / buyPrice) * 100
     : 0;
+
+    if (holding.strategyGroup === "TURBO") {
+  if (
+    maxProfitRate >= settings.turboTrailingStartRate &&
+    !holding.turboTrailingActive
+  ) {
+    holding.turboTrailingActive = true;
+    holding.turboTrailingStartPrice = currentPrice;
+
+    console.log(
+      `[TURBO 트레일링 시작] ${holding.name} / 최고수익 ${maxProfitRate.toFixed(2)}%`
+    );
+  }
+
+  if (profitRate <= settings.turboStopLossRate) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `Turbo 손절 ${profitRate.toFixed(2)}%`,
+      "TURBO_STOP_LOSS"
+    );
+    continue;
+  }
+
+  if (profitRate >= settings.turboTakeProfitRate) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `Turbo 익절 ${profitRate.toFixed(2)}%`,
+      "TURBO_TAKE_PROFIT"
+    );
+    continue;
+  }
+
+  if (
+    holding.turboTrailingActive &&
+    trailingDropRate <= -settings.turboTrailingStopRate &&
+    profitRate > 0
+  ) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `Turbo 트레일링 매도 · 최고가 대비 ${settings.turboTrailingStopRate}% 하락`,
+      "TURBO_TRAILING_STOP"
+    );
+    continue;
+  }
+
+  if (isBetweenTime(settings.turboForceSellTime, "15:20")) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `Turbo 시간청산 ${settings.turboForceSellTime}`,
+      "TURBO_TIME_EXIT"
+    );
+    continue;
+  }
+
+  remainHoldings.push(holding);
+  continue;
+}
 
 if (maxProfitRate >= settings.breakEvenTriggerRate) {
   holding.breakEvenActivated = true;
@@ -1284,10 +1479,10 @@ if (marketTemperature.level === "CAUTION") {
     }
 
     for (const item of candidates) {
-      if (state.holdings.length >= buyRules.maxHoldingCount) {
-  console.log(`[시장온도 기준] 최대 보유 ${buyRules.maxHoldingCount}개 도달`);
-  break;
-}
+  if (getCoreHoldingCount(state) >= buyRules.maxHoldingCount) {
+    console.log(`[시장온도 기준] Core 최대 보유 ${buyRules.maxHoldingCount}개 도달`);
+    break;
+  }
 
 
 if (isAlreadyHolding(state, item.code)) {
@@ -1480,12 +1675,135 @@ if (changeRate >= maxAllowedChangeRate) {
   }
 }
 
+async function runTurboAutoBuyOnce() {
+  if (!settings.turboEnabled) return;
 
+  if (!isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
+    return;
+  }
+
+  const state = loadState();
+
+  if (!state.serverAutoEnabled) {
+    console.log("[TURBO] 서버 자동매매 OFF");
+    return;
+  }
+
+  state.lastTurboCheckAt = nowText();
+
+  let candidates = [];
+
+  try {
+    candidates = await discoverCandidates();
+  } catch (err) {
+    console.warn("[TURBO] 후보 발굴 실패:", err.message);
+    saveState(state);
+    return;
+  }
+
+  for (const item of candidates) {
+    if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
+      break;
+    }
+
+    const discoverScore = Number(item.discoverScore || 0);
+    const dayRiseRate = Number(
+      item.changeRate ||
+      item.fluctuationRate ||
+      item.riseRate ||
+      item.rate ||
+      0
+    );
+
+    if (discoverScore < settings.turboMinScore) continue;
+    if (dayRiseRate > settings.turboMaxDayRiseRate) continue;
+    if (isViLikeItem(item)) continue;
+    if (isAlreadyHolding(state, item.code)) continue;
+    if (wasTurboBoughtToday(state, item.code)) continue;
+
+    let priceData = null;
+
+    try {
+      priceData = await fetchPrice(item.code);
+    } catch (err) {
+      console.log("[TURBO] 현재가 조회 실패", item.code);
+      continue;
+    }
+
+    const currentPrice = Number(priceData.currentPrice || 0);
+    const currentVolume = Number(priceData.volume || item.volume || 0);
+
+    if (!currentPrice || currentPrice <= 0) continue;
+
+    const prev = state.turboSnapshots[item.code];
+
+    state.turboSnapshots[item.code] = {
+      price: currentPrice,
+      volume: currentVolume,
+      checkedAt: Date.now()
+    };
+
+    if (!prev) {
+      continue;
+    }
+
+    const prevPrice = Number(prev.price || 0);
+    const prevVolume = Number(prev.volume || 0);
+
+    if (!prevPrice || prevPrice <= 0) continue;
+
+    const oneMinuteRiseRate =
+      ((currentPrice - prevPrice) / prevPrice) * 100;
+
+    const volumeDelta = currentVolume - prevVolume;
+    const prevVolumeDelta = Number(prev.volumeDelta || 0);
+
+    const volumeSurge =
+      volumeDelta >= 50000 ||
+      (prevVolumeDelta > 0 && volumeDelta >= prevVolumeDelta * 2);
+
+    state.turboSnapshots[item.code].volumeDelta = volumeDelta;
+
+    if (oneMinuteRiseRate < settings.turboMinOneMinuteRiseRate) {
+      continue;
+    }
+
+    if (!volumeSurge) {
+      continue;
+    }
+
+    console.log(
+      `[TURBO 후보] ${priceData.name || item.name} ${item.code} / ` +
+      `1분상승 ${oneMinuteRiseRate.toFixed(2)}% / ` +
+      `당일상승 ${dayRiseRate.toFixed(2)}% / ` +
+      `점수 ${discoverScore} / ` +
+      `거래량증가 ${volumeDelta.toLocaleString()}`
+    );
+
+    paperTurboBuy(
+      state,
+      {
+        ...item,
+        name: priceData.name || item.name,
+        currentPrice,
+        volume: currentVolume
+      },
+      currentPrice
+    );
+  }
+
+  saveState(state);
+}
 
 
 function startServerAutoTrader() {
   console.log("서버 자동 모의매매 시작");
 
+  setInterval(() => {
+  if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
+    runTurboAutoBuyOnce();
+  }
+}, 60 * 1000);
 
 
 setInterval(() => {
@@ -1563,13 +1881,13 @@ async function runClosingProfitSell() {
 
 module.exports = {
   startServerAutoTrader,
-  setServerAutoEnabled,  
+  setServerAutoEnabled,
   runServerAutoBuyOnce,
+  runTurboAutoBuyOnce,
   checkServerAutoSellOnce,
   runClosingProfitSell,
   loadState
 };
-
 
 
 function setServerAutoEnabled(enabled) {
