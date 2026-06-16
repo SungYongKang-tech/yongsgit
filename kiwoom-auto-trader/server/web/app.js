@@ -2450,58 +2450,8 @@ function renderVirtualResults(resultsFromServer) {
   const totalProfit = todayResults.reduce((sum, item) => sum + item.profit, 0);
   const totalRate = totalBuy > 0 ? (totalProfit / totalBuy) * 100 : 0;
 
-  const groupedResults = {};
-
-  todayResults.forEach((item) => {
-    if (!groupedResults[item.code]) {
-      groupedResults[item.code] = {
-        name: item.name,
-        buyAmount: 0,
-        sellAmount: 0,
-        profit: 0,
-        qty: 0
-      };
-    }
-
-    groupedResults[item.code].buyAmount += item.buyAmount;
-    groupedResults[item.code].sellAmount += item.sellAmount;
-    groupedResults[item.code].profit += item.profit;
-    groupedResults[item.code].qty += item.qty;
-  });
-
-  const groupedHtml = Object.values(groupedResults)
-    .map((item) => {
-      const rate =
-        item.buyAmount > 0 ? (item.profit / item.buyAmount) * 100 : 0;
-
-      return `
-        <div class="virtual-result-item">
-          <div class="virtual-result-top">
-            <div class="virtual-result-name">${cleanStockName(item.name)} 누적</div>
-            <div class="virtual-result-badge ${item.profit >= 0 ? "" : "loss"}">
-              ${item.profit >= 0 ? "수익" : "손실"}
-            </div>
-          </div>
-
-          <div class="virtual-result-detail">
-            <div>
-              총수량 ${formatNumber(item.qty)}주 /
-              총매수 ${formatNumber(Math.round(item.buyAmount))}원 →
-              총매도 ${formatNumber(Math.round(item.sellAmount))}원
-            </div>
-
-            <div>
-              누적손익
-              <strong class="${item.profit >= 0 ? "up" : "down"}">
-                ${item.profit >= 0 ? "+" : ""}${formatNumber(Math.round(item.profit))}원
-                (${item.profit >= 0 ? "+" : ""}${rate.toFixed(2)}%)
-              </strong>
-            </div>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
+  // 종목별 누적 요약은 서버 모의매매 상태창과 중복되어 숨김
+const groupedHtml = "";
 
   const detailRows = todayResults.slice().reverse();
 
