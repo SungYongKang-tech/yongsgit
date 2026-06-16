@@ -116,7 +116,7 @@ function loadState() {
   }
 
   if (typeof state.totalCash === "undefined") {
-    state.totalCash = settings.totalCash;
+  state.totalCash = settings.totalCash;
 }
 
 if (typeof state.turboCash === "undefined") {
@@ -124,8 +124,24 @@ if (typeof state.turboCash === "undefined") {
 }
 
 if (!state.budgetInitialized) {
-  state.totalCash = Math.floor(settings.totalCash * settings.coreRatio);
-  state.turboCash = Math.floor(settings.totalCash * settings.turboRatio);
+  const holdingsValue = (state.holdings || []).reduce((sum, holding) => {
+    return sum +
+      Number(holding.currentPrice || holding.buyPrice || 0) *
+      Number(holding.qty || 0);
+  }, 0);
+
+  const existingTotalAsset =
+    Number(state.totalCash || 0) +
+    Number(state.turboCash || 0) +
+    holdingsValue;
+
+  const baseAsset =
+    existingTotalAsset > 0
+      ? existingTotalAsset
+      : settings.totalCash;
+
+  state.totalCash = Math.floor(baseAsset * settings.coreRatio);
+  state.turboCash = Math.floor(baseAsset * settings.turboRatio);
   state.budgetInitialized = true;
 }
 
