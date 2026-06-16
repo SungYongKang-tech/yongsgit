@@ -826,6 +826,10 @@ app.post("/api/paper-state/reset", (req, res) => {
   tradeLogs: [],
   virtualResults: [],
   totalCash: 100000000,
+
+  turboCash: 20000000,
+  turboSnapshots: {},
+
   serverAutoEnabled: false,
   serverAutoChangedAt: new Date().toLocaleString("ko-KR"),
   lastRunAt: null,
@@ -986,11 +990,19 @@ const recent7Days = [];
 const strategyMap = {};
 
 sellLogs.forEach((log) => {
-  const key = log.strategyName || log.strategyPreset || "기타";
+  const group = log.strategyGroup || "CORE";
+
+const strategy =
+  log.strategyName ||
+  log.strategyPreset ||
+  "기타";
+
+const key = `${group} / ${strategy}`;
 
   if (!strategyMap[key]) {
     strategyMap[key] = {
-      strategyName: key,
+  strategyGroup: group,
+  strategyName: strategy,
       trades: 0,
       wins: 0,
       losses: 0,
@@ -1128,6 +1140,7 @@ return {
     trailingStartPrice: Number(h.trailingStartPrice || 0),
     trailingStopRate,
     stopLossPrice: Number(h.stopLossPrice || 0),
+    strategyGroup: h.strategyGroup || "CORE",
     strategyName: h.strategyName || "",
     strategyPreset: h.strategyPreset || "",
     discoverScore: Number(h.discoverScore || 0),
@@ -1517,6 +1530,7 @@ state.tradeLogs.push({
   reason: reason || "서버 매도",
   strategyPreset: holding.strategyPreset,
   strategyName: holding.strategyName,
+  strategyGroup: holding.strategyGroup || "CORE",
   date: now.toISOString().slice(0, 10),
   time: now.toLocaleString("ko-KR")
 });
