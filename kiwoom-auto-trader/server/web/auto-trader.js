@@ -116,7 +116,9 @@ function loadState() {
   }
 
   if (typeof state.totalCash === "undefined") {
-  state.totalCash = settings.totalCash;
+  state.totalCash = Math.floor(
+    settings.totalCash * settings.coreRatio
+  );
 }
 
 if (typeof state.turboCash === "undefined") {
