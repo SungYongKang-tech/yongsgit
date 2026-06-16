@@ -873,7 +873,14 @@ app.get("/api/performance-summary", (req, res) => {
       : [];
 
     const sellLogs = tradeLogs.filter((log) =>
-  ["SELL", "STOP_LOSS", "TRAILING_STOP", "END_PROFIT_SELL"].includes(log.type)
+  [
+    "SELL",
+    "SELL_ALL",
+    "STOP_LOSS",
+    "TRAILING_STOP",
+    "END_PROFIT_SELL",
+    "FIRST_TAKE_PROFIT"
+  ].includes(log.type)
 );
 
     const totalTrades = sellLogs.length;
