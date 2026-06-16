@@ -7,7 +7,6 @@ const API_BASE = "http://localhost:3000";
 
 
 const settings = {
-
   buyStartTime: "09:20",
   buyEndTime: "14:40",
   safeMinScore: 10,
@@ -15,11 +14,18 @@ const settings = {
   blockStoppedToday: true,
 
   totalCash: 100000000,
-  maxHoldingCount: 10,
+
+  coreRatio: 0.8,
+  turboRatio: 0.2,
+
+  maxHoldingCount: 8,
+  coreMaxHoldingCount: 8,
+  turboMaxHoldingCount: 4,
 
   perBuyAmount: 10000000,
   minBuyAmount: 10000000,
-  dailyLossLimitRate: 0.01, // 당일 시작 총자산의 1%
+
+  dailyLossLimitRate: 0.01,
   maxConsecutiveLoss: 3,
 
   discoverLimit: 300,
@@ -46,20 +52,18 @@ const settings = {
   endProfitSellOnlyPositive: true,
 
   turboEnabled: true,
-turboStartTime: "09:00",
-turboEndTime: "09:10",
-turboForceSellTime: "09:40",
-turboTotalCash: 20000000,
-turboPerBuyAmount: 10000000,
-turboMaxHoldingCount: 2,
-turboMinScore: 10,
-turboMinOneMinuteRiseRate: 0.5,
-turboMaxDayRiseRate: 5,
-turboStopLossRate: -1.0,
-turboTakeProfitRate: 3.0,
-turboTrailingStartRate: 2.0,
-turboTrailingStopRate: 0.7,
+  turboStartTime: "09:00",
+  turboEndTime: "09:10",
+  turboForceSellTime: "09:40",
 
+  turboMinScore: 10,
+  turboMinOneMinuteRiseRate: 0.5,
+  turboMaxDayRiseRate: 5,
+
+  turboStopLossRate: -1.0,
+  turboTakeProfitRate: 3.0,
+  turboTrailingStartRate: 2.0,
+  turboTrailingStopRate: 0.7,
 };
 
 
@@ -80,14 +84,17 @@ function isBetweenTime(start, end) {
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
     return {
-      holdings: [],
-      tradeLogs: [],
-      virtualResults: [],
-      lastRunAt: null,
-      lastSellCheckAt: null,
-      serverAutoEnabled: true,
-      totalCash: settings.totalCash
-    };
+  holdings: [],
+  tradeLogs: [],
+  virtualResults: [],
+  lastRunAt: null,
+  lastSellCheckAt: null,
+  serverAutoEnabled: true,
+  totalCash: Math.floor(settings.totalCash * settings.coreRatio),
+  turboCash: Math.floor(settings.totalCash * settings.turboRatio),
+  budgetInitialized: true,
+  turboSnapshots: {}
+};
   }
 
   const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -113,7 +120,13 @@ function loadState() {
 }
 
 if (typeof state.turboCash === "undefined") {
-  state.turboCash = settings.turboTotalCash;
+  state.turboCash = Math.floor(settings.totalCash * settings.turboRatio);
+}
+
+if (!state.budgetInitialized) {
+  state.totalCash = Math.floor(settings.totalCash * settings.coreRatio);
+  state.turboCash = Math.floor(settings.totalCash * settings.turboRatio);
+  state.budgetInitialized = true;
 }
 
 if (!state.turboSnapshots) {
@@ -121,6 +134,33 @@ if (!state.turboSnapshots) {
 }
 
   return state;
+}
+
+function getBudgetInfo(state) {
+  const holdingsValue = (state.holdings || []).reduce((sum, holding) => {
+    return sum +
+      Number(holding.currentPrice || holding.buyPrice || 0) *
+      Number(holding.qty || 0);
+  }, 0);
+
+  const totalAsset =
+    Number(state.totalCash || 0) +
+    Number(state.turboCash || 0) +
+    holdingsValue;
+
+  const coreBudget = Math.floor(totalAsset * settings.coreRatio);
+  const turboBudget = Math.floor(totalAsset * settings.turboRatio);
+
+  const corePerBuyAmount = Math.floor(coreBudget / settings.coreMaxHoldingCount);
+  const turboPerBuyAmount = Math.floor(turboBudget / settings.turboMaxHoldingCount);
+
+  return {
+    totalAsset,
+    coreBudget,
+    turboBudget,
+    corePerBuyAmount,
+    turboPerBuyAmount,
+  };
 }
 
 function saveState(state) {
@@ -145,7 +185,7 @@ function getCurrentTotalAsset(state) {
     return sum + Number(holding.currentPrice || holding.buyPrice || 0) * Number(holding.qty || 0);
   }, 0);
 
-  return Number(state.totalCash || 0) + holdingsValue;
+  return Number(state.totalCash || 0) + Number(state.turboCash || 0) + holdingsValue;
 }
 
 function initDailyLossLimitIfNeeded(state) {
@@ -505,9 +545,10 @@ const remainSlots = Math.max(
   dynamicMaxHolding - getCoreHoldingCount(state)
 );
 
-// 매수금액 제한값 안전 처리
+const budget = getBudgetInfo(state);
+
 const safeBuyAmountLimit = Number(
-  buyAmountLimit || settings.perBuyAmount || settings.minBuyAmount || 10000000
+  buyAmountLimit || budget.corePerBuyAmount || settings.minBuyAmount || 10000000
 );
 
 // 종목당 투자금
@@ -637,8 +678,10 @@ function paperTurboBuy(state, item, currentPrice) {
   const price = Number(currentPrice || item.currentPrice || item.price || 0);
   if (!price || price <= 0) return false;
 
-  const availableCash = Number(state.turboCash || 0);
-  const buyAmount = Math.min(settings.turboPerBuyAmount, availableCash);
+  const budget = getBudgetInfo(state);
+
+const availableCash = Number(state.turboCash || 0);
+const buyAmount = Math.min(budget.turboPerBuyAmount, availableCash);
   const qty = Math.floor(buyAmount / price);
 
   if (qty <= 0) {
@@ -1445,11 +1488,13 @@ if (marketTemperature.level === "DANGER") {
   };
 }
 
+const budget = getBudgetInfo(state);
+
 const buyRules = {
   minScore: Number(settings.minScore || 10),
-  perBuyAmount: Number(settings.perBuyAmount || 10000000),
+  perBuyAmount: Number(budget.corePerBuyAmount || 10000000),
   maxHoldingCount: Math.min(
-    Number(settings.maxHoldingCount || 10),
+    Number(settings.coreMaxHoldingCount || 8),
     getTimeBasedMaxHolding()
   )
 };
@@ -1644,16 +1689,16 @@ if (changeRate >= maxAllowedChangeRate) {
 }
 
 
-      const bought = paperBuy(
+  const bought = paperBuy(
   state,
   {
     ...item,
     currentPrice,
     price: currentPrice,
     name:
-    priceData.name && priceData.name !== item.code
-     ? priceData.name
-     : item.name
+      priceData.name && priceData.name !== item.code
+        ? priceData.name
+        : item.name
   },
   bestStrategy,
   buyRules.perBuyAmount
