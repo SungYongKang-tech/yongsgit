@@ -7383,8 +7383,10 @@ async function toggleServerAutoTrade() {
 function renderServerPaperState(data) {
   if (!serverPaperBox) return;
 
-  const holdings = data.holdings || [];
-  const tradeLogs = data.tradeLogs || [];
+  const holdings = Array.isArray(data.holdings) ? data.holdings : [];
+  const tradeLogs = Array.isArray(data.tradeLogs) ? data.tradeLogs : [];
+
+  const initialCapital = Number(data.initialCapital || data.dailyStartAsset || 100000000);
 
   const sellTypes = [
     "SELL",
@@ -7395,23 +7397,51 @@ function renderServerPaperState(data) {
     "FIRST_TAKE_PROFIT"
   ];
 
-  const sellLogs = tradeLogs.filter((log) =>
-    sellTypes.includes(log.type)
-  );
+  const buyLogs = tradeLogs.filter((log) => log.type === "BUY");
+  const sellLogs = tradeLogs.filter((log) => sellTypes.includes(log.type));
 
-  const lastBuy = tradeLogs
-    .slice()
-    .reverse()
-    .find((item) => item.type === "BUY");
+  const lastBuy = buyLogs.slice().reverse()[0];
+  const lastSell = sellLogs.slice().reverse()[0];
 
-  const lastSell = sellLogs
-    .slice()
-    .reverse()[0];
-
-  const totalProfit = sellLogs.reduce(
+  const realizedProfit = sellLogs.reduce(
     (sum, item) => sum + Number(item.profit || 0),
     0
   );
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const todayRealizedProfit = sellLogs
+    .filter((item) => String(item.date || "").includes(today))
+    .reduce((sum, item) => sum + Number(item.profit || 0), 0);
+
+  const holdingBuyAmount = holdings.reduce((sum, item) => {
+    const buyPrice = Number(item.buyPrice || 0);
+    const qty = Number(item.qty || 0);
+    return sum + buyPrice * qty;
+  }, 0);
+
+  const holdingEvalAmount = holdings.reduce((sum, item) => {
+    const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
+    const qty = Number(item.qty || 0);
+    return sum + currentPrice * qty;
+  }, 0);
+
+  const holdingProfit = holdingEvalAmount - holdingBuyAmount;
+
+  const holdingProfitRate =
+    holdingBuyAmount > 0
+      ? (holdingProfit / holdingBuyAmount) * 100
+      : 0;
+
+  const totalProfit = realizedProfit + holdingProfit;
+  const currentAsset = initialCapital + totalProfit;
+
+  const totalProfitRate =
+    initialCapital > 0
+      ? (totalProfit / initialCapital) * 100
+      : 0;
+
+  const todayTotalProfit = todayRealizedProfit + holdingProfit;
 
   const winCount = sellLogs.filter(
     (item) => Number(item.profit || 0) > 0
@@ -7422,80 +7452,114 @@ function renderServerPaperState(data) {
       ? (winCount / sellLogs.length) * 100
       : 0;
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  const todayProfit = sellLogs
-    .filter((item) => String(item.date || "").includes(today))
-    .reduce((sum, item) => sum + Number(item.profit || 0), 0);
-
-  const totalBuyAmount = holdings.reduce((sum, item) => {
-    const buyPrice = Number(item.buyPrice || 0);
-    const qty = Number(item.qty || 0);
-    return sum + buyPrice * qty;
-  }, 0);
-
-  const totalEvalAmount = holdings.reduce((sum, item) => {
-    const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
-    const qty = Number(item.qty || 0);
-    return sum + currentPrice * qty;
-  }, 0);
-
-  const totalEvalProfit = totalEvalAmount - totalBuyAmount;
-
-  const totalEvalRate =
-    totalBuyAmount > 0
-      ? (totalEvalProfit / totalBuyAmount) * 100
-      : 0;
-
   serverPaperBox.innerHTML = `
+    <div class="server-paper-section-title">계좌 요약</div>
+
     <div class="server-paper-summary">
       <div>
-        <span>보유종목</span>
-        <strong>${holdings.length} / ${maxHoldingCount}개</strong>
+        <span>시작자산</span>
+        <strong>${formatNumber(Math.round(initialCapital))}원</strong>
       </div>
 
       <div>
-        <span>매매로그</span>
-        <strong>${tradeLogs.length}건</strong>
+        <span>현재총자산</span>
+        <strong>${formatNumber(Math.round(currentAsset))}원</strong>
       </div>
 
       <div>
-        <span>완료결과</span>
-        <strong>${sellLogs.length}건</strong>
-      </div>
-
-      <div>
-        <span>최근 감시</span>
-        <strong>${data.lastSellCheckAt || "-"}</strong>
-      </div>
-    </div>
-
-    <div class="server-profit-summary">
-      <div>
-        <span>누적 손익</span>
+        <span>총손익</span>
         <strong class="${totalProfit >= 0 ? "up" : "down"}">
           ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
         </strong>
       </div>
 
       <div>
-        <span>오늘 손익</span>
-        <strong class="${todayProfit >= 0 ? "up" : "down"}">
-          ${todayProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayProfit))}원
+        <span>총수익률</span>
+        <strong class="${totalProfitRate >= 0 ? "up" : "down"}">
+          ${totalProfitRate >= 0 ? "+" : ""}${totalProfitRate.toFixed(2)}%
+        </strong>
+      </div>
+    </div>
+
+    <div class="server-paper-section-title">손익 구분</div>
+
+    <div class="server-profit-summary">
+      <div>
+        <span>실현손익</span>
+        <strong class="${realizedProfit >= 0 ? "up" : "down"}">
+          ${realizedProfit >= 0 ? "+" : ""}${formatNumber(Math.round(realizedProfit))}원
         </strong>
       </div>
 
       <div>
-        <span>총 평가금액</span>
-        <strong>${formatNumber(Math.round(totalEvalAmount))}원</strong>
+        <span>보유손익</span>
+        <strong class="${holdingProfit >= 0 ? "up" : "down"}">
+          ${holdingProfit >= 0 ? "+" : ""}${formatNumber(Math.round(holdingProfit))}원
+        </strong>
       </div>
 
       <div>
-        <span>총 평가손익</span>
-        <strong class="${totalEvalProfit >= 0 ? "up" : "down"}">
-          ${totalEvalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalEvalProfit))}원
-          (${totalEvalProfit >= 0 ? "+" : ""}${totalEvalRate.toFixed(2)}%)
+        <span>오늘 총손익</span>
+        <strong class="${todayTotalProfit >= 0 ? "up" : "down"}">
+          ${todayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayTotalProfit))}원
         </strong>
+      </div>
+
+      <div>
+        <span>오늘 실현손익</span>
+        <strong class="${todayRealizedProfit >= 0 ? "up" : "down"}">
+          ${todayRealizedProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayRealizedProfit))}원
+        </strong>
+      </div>
+    </div>
+
+    <div class="server-paper-section-title">보유 현황</div>
+
+    <div class="server-profit-summary">
+      <div>
+        <span>보유종목</span>
+        <strong>${holdings.length} / ${maxHoldingCount}개</strong>
+      </div>
+
+      <div>
+        <span>보유매수금액</span>
+        <strong>${formatNumber(Math.round(holdingBuyAmount))}원</strong>
+      </div>
+
+      <div>
+        <span>보유평가금액</span>
+        <strong>${formatNumber(Math.round(holdingEvalAmount))}원</strong>
+      </div>
+
+      <div>
+        <span>보유수익률</span>
+        <strong class="${holdingProfit >= 0 ? "up" : "down"}">
+          ${holdingProfit >= 0 ? "+" : ""}${holdingProfitRate.toFixed(2)}%
+        </strong>
+      </div>
+    </div>
+
+    <div class="server-paper-section-title">거래 현황</div>
+
+    <div class="server-paper-summary">
+      <div>
+        <span>전체 로그</span>
+        <strong>${tradeLogs.length}건</strong>
+      </div>
+
+      <div>
+        <span>매수</span>
+        <strong>${buyLogs.length}건</strong>
+      </div>
+
+      <div>
+        <span>매도완료</span>
+        <strong>${sellLogs.length}건</strong>
+      </div>
+
+      <div>
+        <span>승률</span>
+        <strong>${winRate.toFixed(1)}%</strong>
       </div>
 
       <div>
@@ -7507,9 +7571,15 @@ function renderServerPaperState(data) {
         <span>최근 매도</span>
         <strong>${lastSell ? cleanStockName(lastSell.name) : "-"}</strong>
       </div>
+
+      <div>
+        <span>최근 감시</span>
+        <strong>${data.lastSellCheckAt || "-"}</strong>
+      </div>
     </div>
 
     <div class="server-paper-section-title">서버 보유종목</div>
+
     ${
       holdings.length === 0
         ? `<div class="empty">서버 보유종목이 없습니다.</div>`
@@ -7533,8 +7603,7 @@ function renderServerPaperState(data) {
                 ? ((highestPrice - buyPrice) / buyPrice) * 100
                 : 0;
 
-            const isRunnerCandidate =
-              Number(item.discoverScore || 0) >= 10;
+            const isRunnerCandidate = Number(item.discoverScore || 0) >= 10;
 
             return `
               <div class="server-paper-item">
@@ -7570,24 +7639,6 @@ function renderServerPaperState(data) {
                 </div>
 
                 <div class="server-paper-detail">
-                  목표 ${
-                    Number(item.targetPrice || 0) > 0
-                      ? `${formatNumber(item.targetPrice)}원`
-                      : "-"
-                  } /
-                  손절 ${
-                    Number(item.stopLossPrice || 0) > 0
-                      ? `${formatNumber(item.stopLossPrice)}원`
-                      : "-"
-                  } /
-                  트레일링 ${
-                    Number(item.trailingStopRate || 0) > 0
-                      ? `${item.trailingStopRate}%`
-                      : "-"
-                  }
-                </div>
-
-                <div class="server-paper-detail">
                   전략 ${item.strategyName || item.strategyPreset || "-"} /
                   점수 ${item.discoverScore || 0}
                 </div>
@@ -7601,10 +7652,6 @@ function renderServerPaperState(data) {
             `;
           }).join("")
     }
-
-    <div class="server-paper-detail" style="margin-top:10px;">
-      ※ 누적/오늘 손익은 tradeLogs의 실제 매도 로그 기준으로 계산합니다.
-    </div>
   `;
 }
 
