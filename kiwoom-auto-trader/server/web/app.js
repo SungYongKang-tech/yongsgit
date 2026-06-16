@@ -7385,65 +7385,73 @@ function renderServerPaperState(data) {
 
   const holdings = data.holdings || [];
   const tradeLogs = data.tradeLogs || [];
-  const virtualResults = data.virtualResults || [];
+
+  const sellTypes = [
+    "SELL",
+    "SELL_ALL",
+    "STOP_LOSS",
+    "TRAILING_STOP",
+    "END_PROFIT_SELL",
+    "FIRST_TAKE_PROFIT"
+  ];
+
+  const sellLogs = tradeLogs.filter((log) =>
+    sellTypes.includes(log.type)
+  );
 
   const lastBuy = tradeLogs
-  .slice()
-  .reverse()
-  .find((item) => item.type === "BUY");
+    .slice()
+    .reverse()
+    .find((item) => item.type === "BUY");
 
-const lastSell = tradeLogs
-  .slice()
-  .reverse()
-  .find((item) => item.type !== "BUY");
+  const lastSell = sellLogs
+    .slice()
+    .reverse()[0];
 
-
-
-  const totalProfit = virtualResults.reduce(
+  const totalProfit = sellLogs.reduce(
     (sum, item) => sum + Number(item.profit || 0),
     0
   );
 
-  const winCount = virtualResults.filter(
+  const winCount = sellLogs.filter(
     (item) => Number(item.profit || 0) > 0
   ).length;
 
   const winRate =
-    virtualResults.length > 0
-      ? (winCount / virtualResults.length) * 100
+    sellLogs.length > 0
+      ? (winCount / sellLogs.length) * 100
       : 0;
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const todayProfit = virtualResults
-    .filter((item) => item.date === today)
+  const todayProfit = sellLogs
+    .filter((item) => String(item.date || "").includes(today))
     .reduce((sum, item) => sum + Number(item.profit || 0), 0);
 
-const totalBuyAmount = holdings.reduce((sum, item) => {
-  const buyPrice = Number(item.buyPrice || 0);
-  const qty = Number(item.qty || 0);
-  return sum + buyPrice * qty;
-}, 0);
+  const totalBuyAmount = holdings.reduce((sum, item) => {
+    const buyPrice = Number(item.buyPrice || 0);
+    const qty = Number(item.qty || 0);
+    return sum + buyPrice * qty;
+  }, 0);
 
-const totalEvalAmount = holdings.reduce((sum, item) => {
-  const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
-  const qty = Number(item.qty || 0);
-  return sum + currentPrice * qty;
-}, 0);
+  const totalEvalAmount = holdings.reduce((sum, item) => {
+    const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
+    const qty = Number(item.qty || 0);
+    return sum + currentPrice * qty;
+  }, 0);
 
-const totalEvalProfit = totalEvalAmount - totalBuyAmount;
+  const totalEvalProfit = totalEvalAmount - totalBuyAmount;
 
-const totalEvalRate =
-  totalBuyAmount > 0
-    ? (totalEvalProfit / totalBuyAmount) * 100
-    : 0;
-
+  const totalEvalRate =
+    totalBuyAmount > 0
+      ? (totalEvalProfit / totalBuyAmount) * 100
+      : 0;
 
   serverPaperBox.innerHTML = `
     <div class="server-paper-summary">
       <div>
         <span>보유종목</span>
-<strong>${holdings.length} / ${maxHoldingCount}개</strong>
+        <strong>${holdings.length} / ${maxHoldingCount}개</strong>
       </div>
 
       <div>
@@ -7453,7 +7461,7 @@ const totalEvalRate =
 
       <div>
         <span>완료결과</span>
-        <strong>${virtualResults.length}건</strong>
+        <strong>${sellLogs.length}건</strong>
       </div>
 
       <div>
@@ -7478,133 +7486,128 @@ const totalEvalRate =
       </div>
 
       <div>
-  <span>총 평가금액</span>
-  <strong>${formatNumber(Math.round(totalEvalAmount))}원</strong>
-</div>
+        <span>총 평가금액</span>
+        <strong>${formatNumber(Math.round(totalEvalAmount))}원</strong>
+      </div>
 
-<div>
-  <span>총 평가손익</span>
-  <strong class="${totalEvalProfit >= 0 ? "up" : "down"}">
-    ${totalEvalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalEvalProfit))}원
-    (${totalEvalProfit >= 0 ? "+" : ""}${totalEvalRate.toFixed(2)}%)
-  </strong>
-</div>
+      <div>
+        <span>총 평가손익</span>
+        <strong class="${totalEvalProfit >= 0 ? "up" : "down"}">
+          ${totalEvalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalEvalProfit))}원
+          (${totalEvalProfit >= 0 ? "+" : ""}${totalEvalRate.toFixed(2)}%)
+        </strong>
+      </div>
 
-     <div>
-  <span>최근 매수</span>
-  <strong>
-    ${lastBuy ? cleanStockName(lastBuy.name) : "-"}
-  </strong>
-</div>
+      <div>
+        <span>최근 매수</span>
+        <strong>${lastBuy ? cleanStockName(lastBuy.name) : "-"}</strong>
+      </div>
 
-<div>
-  <span>최근 매도</span>
-  <strong>
-    ${lastSell ? cleanStockName(lastSell.name) : "-"}
-  </strong>
-</div>
+      <div>
+        <span>최근 매도</span>
+        <strong>${lastSell ? cleanStockName(lastSell.name) : "-"}</strong>
+      </div>
     </div>
 
     <div class="server-paper-section-title">서버 보유종목</div>
     ${
       holdings.length === 0
         ? `<div class="empty">서버 보유종목이 없습니다.</div>`
-      : holdings.map((item) => {
-    const buyPrice = Number(item.buyPrice || 0);
-    const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
-    const highestPrice = Number(item.highestPrice || currentPrice || buyPrice || 0);
-    const qty = Number(item.qty || 0);
+        : holdings.map((item) => {
+            const buyPrice = Number(item.buyPrice || 0);
+            const currentPrice = Number(item.currentPrice || item.buyPrice || 0);
+            const highestPrice = Number(item.highestPrice || currentPrice || buyPrice || 0);
+            const qty = Number(item.qty || 0);
 
-    const profit = (currentPrice - buyPrice) * qty;
-    const buyAmount = buyPrice * qty;
-const evalAmount = currentPrice * qty;
+            const profit = (currentPrice - buyPrice) * qty;
+            const buyAmount = buyPrice * qty;
+            const evalAmount = currentPrice * qty;
 
-    const profitRate =
-      buyPrice > 0
-        ? ((currentPrice - buyPrice) / buyPrice) * 100
-        : 0;
+            const profitRate =
+              buyPrice > 0
+                ? ((currentPrice - buyPrice) / buyPrice) * 100
+                : 0;
 
-    const highestProfitRate =
-      buyPrice > 0
-        ? ((highestPrice - buyPrice) / buyPrice) * 100
-        : 0;
+            const highestProfitRate =
+              buyPrice > 0
+                ? ((highestPrice - buyPrice) / buyPrice) * 100
+                : 0;
 
-    const isRunnerCandidate =
-      Number(item.discoverScore || 0) >= 10;
+            const isRunnerCandidate =
+              Number(item.discoverScore || 0) >= 10;
 
-    return `
-      <div class="server-paper-item">
-        <div class="server-paper-item-top">
-          <div>
-            <strong>${cleanStockName(item.name)}</strong>
-            <div class="server-paper-code">${item.code || ""}</div>
-          </div>
+            return `
+              <div class="server-paper-item">
+                <div class="server-paper-item-top">
+                  <div>
+                    <strong>${cleanStockName(item.name)}</strong>
+                    <div class="server-paper-code">${item.code || ""}</div>
+                  </div>
 
-          <div class="server-hold-profit ${profitRate >= 0 ? "up" : "down"}">
-            ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
-          </div>
-        </div>
+                  <div class="server-hold-profit ${profitRate >= 0 ? "up" : "down"}">
+                    ${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}%
+                  </div>
+                </div>
 
-       <div class="server-hold-money ${profit >= 0 ? "up" : "down"}">
-  ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
-</div>
+                <div class="server-hold-money ${profit >= 0 ? "up" : "down"}">
+                  ${profit >= 0 ? "+" : ""}${formatNumber(Math.round(profit))}원
+                </div>
 
-<div class="server-paper-detail">
-  수량 ${formatNumber(qty)}주 /
-  매수가 ${formatNumber(buyPrice)}원 /
-  현재가 ${formatNumber(currentPrice)}원
-</div>
+                <div class="server-paper-detail">
+                  수량 ${formatNumber(qty)}주 /
+                  매수가 ${formatNumber(buyPrice)}원 /
+                  현재가 ${formatNumber(currentPrice)}원
+                </div>
 
-<div class="server-paper-detail">
-  매수금액 ${formatNumber(Math.round(buyAmount))}원 /
-  평가금액 ${formatNumber(Math.round(evalAmount))}원
-</div>
+                <div class="server-paper-detail">
+                  매수금액 ${formatNumber(Math.round(buyAmount))}원 /
+                  평가금액 ${formatNumber(Math.round(evalAmount))}원
+                </div>
 
+                <div class="server-paper-detail">
+                  최고가 ${formatNumber(highestPrice)}원 /
+                  최고수익 ${highestProfitRate >= 0 ? "+" : ""}${highestProfitRate.toFixed(2)}%
+                </div>
 
-<div class="server-paper-detail">
-  최고가 ${formatNumber(highestPrice)}원 /
-  최고수익 ${highestProfitRate >= 0 ? "+" : ""}${highestProfitRate.toFixed(2)}%
-</div>
+                <div class="server-paper-detail">
+                  목표 ${
+                    Number(item.targetPrice || 0) > 0
+                      ? `${formatNumber(item.targetPrice)}원`
+                      : "-"
+                  } /
+                  손절 ${
+                    Number(item.stopLossPrice || 0) > 0
+                      ? `${formatNumber(item.stopLossPrice)}원`
+                      : "-"
+                  } /
+                  트레일링 ${
+                    Number(item.trailingStopRate || 0) > 0
+                      ? `${item.trailingStopRate}%`
+                      : "-"
+                  }
+                </div>
 
-<div class="server-paper-detail">
-  목표 ${
-    Number(item.targetPrice || 0) > 0
-      ? `${formatNumber(item.targetPrice)}원`
-      : "-"
-  } /
-  손절 ${
-    Number(item.stopLossPrice || 0) > 0
-      ? `${formatNumber(item.stopLossPrice)}원`
-      : "-"
-  } /
-  트레일링 ${
-    Number(item.trailingStopRate || 0) > 0
-      ? `${item.trailingStopRate}%`
-      : "-"
-  }
-</div>
+                <div class="server-paper-detail">
+                  전략 ${item.strategyName || item.strategyPreset || "-"} /
+                  점수 ${item.discoverScore || 0}
+                </div>
 
-<div class="server-paper-detail">
-  전략 ${item.strategyName || item.strategyPreset || "-"} /
-  점수 ${item.discoverScore || 0}
-</div>
-
-${
-  isRunnerCandidate
-    ? `<div class="runner-badge">러너 후보 · 목표수익 즉시매도 제외</div>`
-    : ""
-}
-
-      </div>
-    `;
-  }).join("")
+                ${
+                  isRunnerCandidate
+                    ? `<div class="runner-badge">러너 후보 · 목표수익 즉시매도 제외</div>`
+                    : ""
+                }
+              </div>
+            `;
+          }).join("")
     }
 
     <div class="server-paper-detail" style="margin-top:10px;">
-      ※ 최근 서버 매매로그와 완료된 모의투자 결과는 아래 전용 영역에서 확인합니다.
+      ※ 누적/오늘 손익은 tradeLogs의 실제 매도 로그 기준으로 계산합니다.
     </div>
   `;
 }
+
 
 async function serverSellAllHolding(code) {
   try {
@@ -7738,8 +7741,20 @@ async function loadServerPaperState() {
     syncServerHoldingsToLocal(data);
     renderServerPaperState(data);
 
-    virtualResults = Array.isArray(data.results) ? data.results : [];
-    renderVirtualResults(virtualResults);
+    const sellTypes = [
+  "SELL",
+  "SELL_ALL",
+  "STOP_LOSS",
+  "TRAILING_STOP",
+  "END_PROFIT_SELL",
+  "FIRST_TAKE_PROFIT"
+];
+
+virtualResults = Array.isArray(data.tradeLogs)
+  ? data.tradeLogs.filter((log) => sellTypes.includes(log.type))
+  : [];
+
+renderVirtualResults(virtualResults);
   } catch (error) {
     serverPaperBox.innerHTML = `
       <div class="error">
