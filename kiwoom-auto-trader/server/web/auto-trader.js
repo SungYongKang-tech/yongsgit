@@ -1755,12 +1755,19 @@ async function runTurboAutoBuyOnce() {
     const oneMinuteRiseRate =
       ((currentPrice - prevPrice) / prevPrice) * 100;
 
-    const volumeDelta = currentVolume - prevVolume;
-    const prevVolumeDelta = Number(prev.volumeDelta || 0);
+    
+    
+    
+const volumeDelta = Math.max(0, currentVolume - prevVolume);
+const prevVolumeDelta = Number(prev.volumeDelta || 0);
 
-    const volumeSurge =
-      volumeDelta >= 50000 ||
-      (prevVolumeDelta > 0 && volumeDelta >= prevVolumeDelta * 2);
+const volumeSurge =
+  prevVolumeDelta > 0 &&
+  volumeDelta >= prevVolumeDelta * 2;
+
+
+
+
 
     state.turboSnapshots[item.code].volumeDelta = volumeDelta;
 
