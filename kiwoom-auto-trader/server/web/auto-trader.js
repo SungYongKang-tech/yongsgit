@@ -115,14 +115,8 @@ function loadState() {
     state.virtualResults = [];
   }
 
-  if (typeof state.totalCash === "undefined") {
-  state.totalCash = Math.floor(
-    settings.totalCash * settings.coreRatio
-  );
-}
-
-if (typeof state.turboCash === "undefined") {
-  state.turboCash = Math.floor(settings.totalCash * settings.turboRatio);
+ if (typeof state.totalCash === "undefined") {
+  state.totalCash = settings.totalCash;
 }
 
 if (!state.budgetInitialized) {
@@ -145,6 +139,10 @@ if (!state.budgetInitialized) {
   state.totalCash = Math.floor(baseAsset * settings.coreRatio);
   state.turboCash = Math.floor(baseAsset * settings.turboRatio);
   state.budgetInitialized = true;
+}
+
+if (typeof state.turboCash === "undefined") {
+  state.turboCash = 0;
 }
 
 if (!state.turboSnapshots) {
@@ -201,6 +199,7 @@ function rebalanceCashIfNoHoldings(state, reason = "자동 재배분") {
 
   state.totalCash = coreCash;
   state.turboCash = turboCash;
+  state.budgetInitialized = true;
   state.lastRebalancedAt = nowText();
   state.lastRebalanceReason = reason;
 
