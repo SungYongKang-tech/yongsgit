@@ -181,6 +181,37 @@ function getBudgetInfo(state) {
   };
 }
 
+function rebalanceCashIfNoHoldings(state, reason = "자동 재배분") {
+  const holdings = state.holdings || [];
+
+  if (holdings.length > 0) {
+    return false;
+  }
+
+  const totalAsset =
+    Number(state.totalCash || 0) +
+    Number(state.turboCash || 0);
+
+  if (!Number.isFinite(totalAsset) || totalAsset <= 0) {
+    return false;
+  }
+
+  const coreCash = Math.floor(totalAsset * settings.coreRatio);
+  const turboCash = totalAsset - coreCash;
+
+  state.totalCash = coreCash;
+  state.turboCash = turboCash;
+  state.lastRebalancedAt = nowText();
+  state.lastRebalanceReason = reason;
+
+  console.log(
+    `[자금 재배분] ${reason} / 총자산 ${totalAsset.toLocaleString()}원 ` +
+    `/ CORE ${coreCash.toLocaleString()}원 / TURBO ${turboCash.toLocaleString()}원`
+  );
+
+  return true;
+}
+
 function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
@@ -844,11 +875,16 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
 
   state.holdings = state.holdings.filter((item) => item.code !== holding.code);
 
-  console.log(
-    `[매도완료] ${holding.name} ${sellQty}주 / ${price}원 / 수익률 ${profitRate.toFixed(2)}% / ${actionType}`
-  );
+rebalanceCashIfNoHoldings(
+  state,
+  `전량매도 후 자동 8:2 재배분 · ${actionType}`
+);
 
-  return true;
+console.log(
+  `[매도완료] ${holding.name} ${sellQty}주 / ${price}원 / 수익률 ${profitRate.toFixed(2)}% / ${actionType}`
+);
+
+return true;
 }
 
 
@@ -1939,10 +1975,15 @@ async function runClosingProfitSell() {
     }
   }
 
-  saveState(state);
+  rebalanceCashIfNoHoldings(
+  state,
+  "장마감 수익매도 후 자동 8:2 재배분"
+);
 
-  console.log(`[장마감 수익매도] ${sold.length}개 종목 매도`);
-  return {
+saveState(state);
+
+console.log(`[장마감 수익매도] ${sold.length}개 종목 매도`);
+return {
     ok: true,
     soldCount: sold.length,
     sold
