@@ -75,6 +75,25 @@ turboTrailingStopRate: 1.2,
 turboMaxDailyBuyCount: 6,
 turboMaxConsecutiveLoss: 3,
 turboMinOneMinuteRiseRate: 0.25,
+
+waveEnabled: true,
+waveStartTime: "11:00",
+waveEndTime: "14:30",
+waveForceSellTime: "14:30",
+
+waveMaxHoldingCount: 3,
+waveMaxDailyBuyCount: 4,
+
+waveMinMorningRiseRate: 5.0,
+waveMinPullbackRate: 2.0,
+waveMaxPullbackRate: 6.0,
+waveMinReboundRate: 0.8,
+
+waveStopLossRate: -1.5,
+waveTakeProfitRate: 4.0,
+waveTakeProfitSellRatio: 0.5,
+waveTrailingStartRate: 3.0,
+waveTrailingStopRate: 1.5,
 };
 
 
@@ -158,6 +177,14 @@ if (typeof state.turboCash === "undefined") {
 
 if (!state.turboSnapshots) {
   state.turboSnapshots = {};
+}
+
+if (!state.waveCandidates) {
+  state.waveCandidates = {};
+}
+
+if (!state.waveSnapshots) {
+  state.waveSnapshots = {};
 }
 
   return state;
@@ -815,6 +842,178 @@ function paperTurboBuy(state, item, currentPrice) {
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
   console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
   return false;
+}
+
+function getWaveHoldingCount(state) {
+  return (state.holdings || []).filter(
+    (item) => item.strategyGroup === "WAVE"
+  ).length;
+}
+
+function getTodayWaveBuyCount(state) {
+  return (state.tradeLogs || []).filter((log) =>
+    log.date === todayKey() &&
+    log.type === "WAVE_BUY"
+  ).length;
+}
+
+function wasWaveBoughtToday(state, code) {
+  return (state.tradeLogs || []).some((log) =>
+    log.code === code &&
+    log.date === todayKey() &&
+    log.type === "WAVE_BUY"
+  );
+}
+
+function rememberWaveCandidate(state, item, priceData, currentPrice) {
+  if (!state.waveCandidates) state.waveCandidates = {};
+
+  const highPrice = Number(priceData.high || item.high || 0);
+  const openPrice = Number(priceData.open || item.open || 0);
+  const dayRiseRate = Number(
+    priceData.changeRate ||
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  if (dayRiseRate < settings.waveMinMorningRiseRate) return;
+
+  const prev = state.waveCandidates[item.code] || {};
+
+  state.waveCandidates[item.code] = {
+    code: item.code,
+    name: priceData.name || item.name || item.code,
+    morningHigh: Math.max(Number(prev.morningHigh || 0), highPrice, currentPrice),
+    morningRiseRate: Math.max(Number(prev.morningRiseRate || 0), dayRiseRate),
+    openPrice,
+    detectedAt: prev.detectedAt || nowText(),
+    lastSeenAt: nowText()
+  };
+}
+
+function checkWaveCandidate(candidate, priceData) {
+  const currentPrice = Number(priceData.currentPrice || 0);
+  const highPrice = Number(candidate.morningHigh || 0);
+  const lowPrice = Number(priceData.low || 0);
+
+  if (!currentPrice || !highPrice || !lowPrice) {
+    return { pass: false, reason: "가격 데이터 부족" };
+  }
+
+  const pullbackRate = ((highPrice - currentPrice) / highPrice) * 100;
+  const reboundRate = ((currentPrice - lowPrice) / lowPrice) * 100;
+
+  if (Number(candidate.morningRiseRate || 0) < settings.waveMinMorningRiseRate) {
+    return { pass: false, reason: "오전 강세 부족" };
+  }
+
+  if (
+    pullbackRate < settings.waveMinPullbackRate ||
+    pullbackRate > settings.waveMaxPullbackRate
+  ) {
+    return {
+      pass: false,
+      reason: `눌림 범위 미충족 ${pullbackRate.toFixed(2)}%`
+    };
+  }
+
+  if (reboundRate < settings.waveMinReboundRate) {
+    return {
+      pass: false,
+      reason: `저점 반등 부족 ${reboundRate.toFixed(2)}%`
+    };
+  }
+
+  return {
+    pass: true,
+    pullbackRate,
+    reboundRate,
+    reason: `WAVE 조건 통과 · 눌림 ${pullbackRate.toFixed(2)}% / 반등 ${reboundRate.toFixed(2)}%`
+  };
+}
+
+function paperWaveBuy(state, candidate, currentPrice) {
+  if (!settings.waveEnabled) return false;
+
+  if (getWaveHoldingCount(state) >= settings.waveMaxHoldingCount) {
+    console.log("[WAVE 매수제외] 최대 보유종목 도달");
+    return false;
+  }
+
+  if (getTodayWaveBuyCount(state) >= settings.waveMaxDailyBuyCount) {
+    console.log("[WAVE 매수제외] 하루 최대 진입 횟수 도달");
+    return false;
+  }
+
+  if (isAlreadyHolding(state, candidate.code)) {
+    console.log("[WAVE 매수제외] 이미 보유중", candidate.name);
+    return false;
+  }
+
+  if (wasWaveBoughtToday(state, candidate.code)) {
+    console.log("[WAVE 매수제외] 오늘 이미 WAVE 매수", candidate.name);
+    return false;
+  }
+
+  const price = Number(currentPrice || 0);
+  const availableCash = Number(state.turboCash || 0);
+  const buyAmount = Math.min(
+    Math.floor(availableCash / Math.max(1, settings.waveMaxHoldingCount - getWaveHoldingCount(state))),
+    availableCash
+  );
+
+  const qty = Math.floor(buyAmount / price);
+
+  if (!price || qty <= 0) {
+    console.log("[WAVE 매수제외] 현금 또는 수량 부족");
+    return false;
+  }
+
+  const holding = {
+    code: candidate.code,
+    name: candidate.name || candidate.code,
+    buyPrice: price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    currentPrice: price,
+    highestPrice: price,
+    autoTrade: true,
+    strategyGroup: "WAVE",
+    strategyPreset: "wave",
+    strategyName: "웨이브형",
+    morningHigh: Number(candidate.morningHigh || 0),
+    morningRiseRate: Number(candidate.morningRiseRate || 0),
+    buyTime: nowText(),
+    buyTimeMs: Date.now(),
+    buyAt: new Date().toISOString(),
+    date: todayKey()
+  };
+
+  state.holdings.push(holding);
+  state.turboCash = availableCash - price * qty;
+
+  state.tradeLogs.push({
+    type: "WAVE_BUY",
+    strategyGroup: "WAVE",
+    code: holding.code,
+    name: holding.name,
+    price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    remainTurboCashAfterBuy: state.turboCash,
+    reason: "오전 대장주 2차 파동 WAVE 매수",
+    date: todayKey(),
+    time: nowText()
+  });
+
+  console.log(`[WAVE 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`);
+
+  return true;
 }
 
 if (getTurboConsecutiveLossCount(state) >= settings.turboMaxConsecutiveLoss) {
@@ -1976,6 +2175,8 @@ if (!leaderCheck.pass) {
   continue;
 }
 
+rememberWaveCandidate(state, item, priceData, currentPrice);
+
     const prev = state.turboSnapshots[item.code];
 
     state.turboSnapshots[item.code] = {
@@ -2044,6 +2245,59 @@ const volumeSurge =
   saveState(state);
 }
 
+async function runWaveAutoBuyOnce() {
+  if (!settings.waveEnabled) return;
+
+  if (!isBetweenTime(settings.waveStartTime, settings.waveEndTime)) {
+    return;
+  }
+
+  const state = loadState();
+
+  if (!state.serverAutoEnabled) {
+    console.log("[WAVE] 서버 자동매매 OFF");
+    return;
+  }
+
+  const candidates = Object.values(state.waveCandidates || {});
+
+  if (candidates.length === 0) {
+    return;
+  }
+
+  for (const candidate of candidates) {
+    if (getWaveHoldingCount(state) >= settings.waveMaxHoldingCount) break;
+    if (getTodayWaveBuyCount(state) >= settings.waveMaxDailyBuyCount) break;
+    if (isAlreadyHolding(state, candidate.code)) continue;
+    if (wasWaveBoughtToday(state, candidate.code)) continue;
+
+    let priceData = null;
+
+    try {
+      priceData = await fetchPrice(candidate.code);
+    } catch (err) {
+      console.log("[WAVE] 현재가 조회 실패", candidate.code);
+      continue;
+    }
+
+    const currentPrice = Number(priceData.currentPrice || 0);
+    if (!currentPrice || currentPrice <= 0) continue;
+
+    const check = checkWaveCandidate(candidate, priceData);
+
+    if (!check.pass) {
+      console.log(`[WAVE 제외] ${candidate.name} ${candidate.code} / ${check.reason}`);
+      continue;
+    }
+
+    console.log(`[WAVE 후보] ${candidate.name} ${candidate.code} / ${check.reason}`);
+
+    paperWaveBuy(state, candidate, currentPrice);
+  }
+
+  state.lastWaveCheckAt = nowText();
+  saveState(state);
+}
 
 function startServerAutoTrader() {
   console.log("서버 자동 모의매매 시작");
@@ -2074,6 +2328,12 @@ setInterval(() => {
   setInterval(() => {
     checkServerAutoSellOnce();
   }, 30 * 1000);
+
+  setInterval(() => {
+  if (isBetweenTime(settings.waveStartTime, settings.waveEndTime)) {
+    runWaveAutoBuyOnce();
+  }
+}, 60 * 1000);
 }
 
 
@@ -2140,6 +2400,7 @@ module.exports = {
   runTurboAutoBuyOnce,
   checkServerAutoSellOnce,
   runClosingProfitSell,
+  runWaveAutoBuyOnce,
   loadState
 };
 

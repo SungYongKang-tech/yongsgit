@@ -806,6 +806,7 @@ const {
   startServerAutoTrader,
   runServerAutoBuyOnce,
   runTurboAutoBuyOnce,
+  runWaveAutoBuyOnce,     // ← 여기 추가
   checkServerAutoSellOnce,
   setServerAutoEnabled,
   runClosingProfitSell,
@@ -829,6 +830,9 @@ app.post("/api/paper-state/reset", (req, res) => {
 
   turboCash: 20000000,
   turboSnapshots: {},
+  waveCandidates: {},
+  waveSnapshots: {},
+
 
   serverAutoEnabled: false,
   serverAutoChangedAt: new Date().toLocaleString("ko-KR"),
@@ -892,7 +896,12 @@ app.get("/api/performance-summary", (req, res) => {
     "TURBO_FIRST_TAKE_PROFIT",
     "TURBO_TAKE_PROFIT",
     "TURBO_TRAILING_STOP",
-    "TURBO_TIME_EXIT"
+    "TURBO_TIME_EXIT",
+    "WAVE_STOP_LOSS",
+    "WAVE_FIRST_TAKE_PROFIT",
+    "WAVE_TAKE_PROFIT",
+    "WAVE_TRAILING_STOP",
+    "WAVE_TIME_EXIT",
   ].includes(log.type)
 );
 
@@ -1232,6 +1241,22 @@ app.get("/api/server-turbo-buy-once", async (req, res) => {
     res.json({
       ok: true,
       message: "Turbo 모의매수를 1회 실행했습니다."
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
+});
+
+app.get("/api/server-wave-buy-once", async (req, res) => {
+  try {
+    await runWaveAutoBuyOnce();
+
+    res.json({
+      ok: true,
+      message: "WAVE 모의매수를 1회 실행했습니다."
     });
   } catch (error) {
     res.status(500).json({
