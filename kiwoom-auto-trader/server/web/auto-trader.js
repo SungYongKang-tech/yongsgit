@@ -52,18 +52,23 @@ const settings = {
   endProfitSellOnlyPositive: true,
 
   turboEnabled: true,
-  turboStartTime: "09:00",
-  turboEndTime: "09:10",
-  turboForceSellTime: "09:40",
+turboStartTime: "09:00",
+turboEndTime: "11:00",
+turboForceSellTime: "11:00",
 
-  turboMinScore: 10,
-  turboMinOneMinuteRiseRate: 0.5,
-  turboMaxDayRiseRate: 5,
+turboMinScore: 10,
+turboWatchMinDayRiseRate: 1.0,
+turboBuyMinDayRiseRate: 2.0,
+turboBuyMaxDayRiseRate: 4.0,
 
-  turboStopLossRate: -1.0,
-  turboTakeProfitRate: 3.0,
-  turboTrailingStartRate: 2.0,
-  turboTrailingStopRate: 0.7,
+turboMaxDailyBuyCount: 6,
+turboMaxConsecutiveLoss: 3,
+
+turboStopLossRate: -1.0,
+turboTakeProfitRate: 3.0,
+turboTakeProfitSellRatio: 0.5,
+turboTrailingStartRate: 2.0,
+turboTrailingStopRate: 0.7,
 };
 
 
@@ -700,6 +705,41 @@ function wasTurboBoughtToday(state, code) {
   );
 }
 
+function getTodayTurboBuyCount(state) {
+  return (state.tradeLogs || []).filter((log) =>
+    log.date === todayKey() &&
+    log.type === "TURBO_BUY"
+  ).length;
+}
+
+function getTurboConsecutiveLossCount(state) {
+  const turboSells = (state.tradeLogs || [])
+    .filter((log) =>
+      log.strategyGroup === "TURBO" &&
+      log.date === todayKey() &&
+      [
+        "TURBO_STOP_LOSS",
+        "TURBO_TAKE_PROFIT",
+        "TURBO_TRAILING_STOP",
+        "TURBO_TIME_EXIT",
+        "TURBO_FIRST_TAKE_PROFIT"
+      ].includes(log.type)
+    )
+    .sort((a, b) => new Date(b.time) - new Date(a.time));
+
+  let count = 0;
+
+  for (const log of turboSells) {
+    if (Number(log.profit || 0) < 0) {
+      count++;
+    } else {
+      break;
+    }
+  }
+
+  return count;
+}
+
 function isViLikeItem(item) {
   const rawText = JSON.stringify(item.raw || item || "");
   return rawText.includes("VI");
@@ -707,6 +747,16 @@ function isViLikeItem(item) {
 
 function paperTurboBuy(state, item, currentPrice) {
   if (!settings.turboEnabled) return false;
+
+  if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
+  console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
+  return false;
+}
+
+if (getTurboConsecutiveLossCount(state) >= settings.turboMaxConsecutiveLoss) {
+  console.log("[TURBO 매수제외] 연속 손절 제한 도달");
+  return false;
+}
 
   if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
     console.log("[TURBO 매수제외] 최대 보유종목 도달");
@@ -1021,16 +1071,31 @@ const maxProfitRate =
     continue;
   }
 
-  if (profitRate >= settings.turboTakeProfitRate) {
+  if (
+  !holding.turboFirstTakeProfitDone &&
+  profitRate >= settings.turboTakeProfitRate &&
+  Number(holding.qty || 0) >= 2
+) {
+  const sellQty = Math.floor(
+    Number(holding.qty || 0) * settings.turboTakeProfitSellRatio
+  );
+
+  if (sellQty >= 1) {
     paperSell(
       state,
       holding,
       currentPrice,
-      `Turbo 익절 ${profitRate.toFixed(2)}%`,
-      "TURBO_TAKE_PROFIT"
+      `Turbo 1차 익절 ${profitRate.toFixed(2)}% · ${sellQty}주 매도`,
+      "TURBO_FIRST_TAKE_PROFIT",
+      sellQty
     );
+
+    holding.turboFirstTakeProfitDone = true;
+    holding.turboTrailingActive = true;
+    remainHoldings.push(holding);
     continue;
   }
+}
 
   if (
     holding.turboTrailingActive &&

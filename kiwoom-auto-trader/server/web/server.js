@@ -889,6 +889,7 @@ app.get("/api/performance-summary", (req, res) => {
     "TAKE_PROFIT",
     "HIGH_PROFIT_STAGNANT_SELL",
     "TURBO_STOP_LOSS",
+    "TURBO_FIRST_TAKE_PROFIT",
     "TURBO_TAKE_PROFIT",
     "TURBO_TRAILING_STOP",
     "TURBO_TIME_EXIT"
