@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SY Quant 일일 분석</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: Arial, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin: 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+
+    .card {
+      background: #1f2937;
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .label {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 4px;
+    }
+
+    .value {
+      font-size: 18px;
+      font-weight: bold;
+      text-align: right;
+    }
+
+    .plus { color: #f87171; }
+    .minus { color: #60a5fa; }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: #1f2937;
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 880px;
+    }
+
+    th, td {
+      padding: 10px 8px;
+      border-bottom: 1px solid #374151;
+      text-align: right;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+
+    th {
+      color: #d1d5db;
+      background: #111827;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      background: #1f2937;
+      z-index: 2;
+    }
+
+    th:first-child {
+      background: #111827;
+      z-index: 3;
+    }
+
+    .empty {
+      color: #9ca3af;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .small {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 6px;
+    }
+
+    @media (min-width: 800px) {
+      body {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>📈 SY Quant 일일 분석</h1>
+    <button onclick="location.href='performance.html'">← 대시보드</button>
+  </div>
+
+  <div class="summary-grid">
+    <div class="card">
+      <div class="label">최근일 총손익</div>
+      <div class="value" id="latestTotalProfit">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">최근일 실현손익</div>
+      <div class="value" id="latestRealizedProfit">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">최근일 평가손익</div>
+      <div class="value" id="latestHoldingProfit">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">최근일 승률</div>
+      <div class="value" id="latestWinRate">-</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">설명</div>
+    <div class="small">
+      실현손익은 매도 완료된 손익, 평가손익은 현재 보유종목 손익입니다.
+      총손익은 오늘 기준 실현손익 + 평가손익입니다.
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>날짜</th>
+          <th>시장온도</th>
+          <th>매수</th>
+          <th>매도</th>
+          <th>승률</th>
+          <th>CORE</th>
+          <th>TURBO</th>
+          <th>WAVE</th>
+          <th>실현손익</th>
+          <th>평가손익</th>
+          <th>총손익</th>
+        </tr>
+      </thead>
+      <tbody id="summaryBody">
+        <tr>
+          <td colspan="11" class="empty">일일 분석 데이터를 불러오는 중...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    function formatWon(value) {
+      const num = Number(value || 0);
+      const sign = num > 0 ? "+" : "";
+      return sign + num.toLocaleString() + "원";
+    }
+
+    function formatRate(value) {
+      const num = Number(value || 0);
+      return num.toFixed(1) + "%";
+    }
+
+    function moneyClass(value) {
+      const num = Number(value || 0);
+      if (num > 0) return "plus";
+      if (num < 0) return "minus";
+      return "";
+    }
+
+    function setMoney(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      el.textContent = formatWon(value);
+      el.className = "value " + moneyClass(value);
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = value;
+    }
+
+    function marketText(mt) {
+      if (!mt) return "-";
+      if (typeof mt === "string") return mt;
+
+      const label = mt.label || mt.level || "-";
+      const rate = Number(mt.advanceRatio || 0);
+
+      if (rate > 0) {
+        return `${label} ${rate.toFixed(1)}%`;
+      }
+
+      return label;
+    }
+
+    async function loadDailySummary() {
+      try {
+        const res = await fetch("/api/daily-summary");
+        const data = await res.json();
+
+        if (!data.ok) {
+          throw new Error(data.message || "일일 분석 데이터를 불러오지 못했습니다.");
+        }
+
+        const rows = data.rows || [];
+        const body = document.getElementById("summaryBody");
+
+        if (!rows.length) {
+          body.innerHTML = `
+            <tr>
+              <td colspan="11" class="empty">일일 분석 데이터가 없습니다.</td>
+            </tr>
+          `;
+          return;
+        }
+
+        const latest = rows[0];
+
+        setMoney("latestTotalProfit", latest.totalProfit);
+        setMoney("latestRealizedProfit", latest.realizedProfit);
+        setMoney("latestHoldingProfit", latest.holdingProfit);
+        setText("latestWinRate", formatRate(latest.winRate));
+
+        body.innerHTML = rows.map(row => {
+          return `
+            <tr>
+              <td>${row.date || "-"}</td>
+              <td>${marketText(row.marketTemperature)}</td>
+              <td>${row.buyCount || 0}</td>
+              <td>${row.sellCount || 0}</td>
+              <td>${formatRate(row.winRate)}</td>
+              <td class="${moneyClass(row.coreProfit)}">${formatWon(row.coreProfit)}</td>
+              <td class="${moneyClass(row.turboProfit)}">${formatWon(row.turboProfit)}</td>
+              <td class="${moneyClass(row.waveProfit)}">${formatWon(row.waveProfit)}</td>
+              <td class="${moneyClass(row.realizedProfit)}">${formatWon(row.realizedProfit)}</td>
+              <td class="${moneyClass(row.holdingProfit)}">${formatWon(row.holdingProfit)}</td>
+              <td class="${moneyClass(row.totalProfit)}"><b>${formatWon(row.totalProfit)}</b></td>
+            </tr>
+          `;
+        }).join("");
+      } catch (err) {
+        console.error(err);
+
+        document.getElementById("summaryBody").innerHTML = `
+          <tr>
+            <td colspan="11" class="empty">일일 분석 데이터를 불러오지 못했습니다.</td>
+          </tr>
+        `;
+      }
+    }
+
+    loadDailySummary();
+    setInterval(loadDailySummary, 30000);
+  </script>
+</body>
+</html>
