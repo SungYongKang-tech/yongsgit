@@ -58,17 +58,23 @@ turboForceSellTime: "11:00",
 
 turboMinScore: 10,
 turboWatchMinDayRiseRate: 1.0,
-turboBuyMinDayRiseRate: 2.0,
-turboBuyMaxDayRiseRate: 4.0,
 
-turboMaxDailyBuyCount: 6,
-turboMaxConsecutiveLoss: 3,
+
+turboBuyMinDayRiseRate: 2.0,
+turboBuyMaxDayRiseRate: 4.5,
+
+turboMinVolume: 300000,
+turboMinOpenPositionRate: 1.5,
 
 turboStopLossRate: -1.0,
 turboTakeProfitRate: 3.0,
 turboTakeProfitSellRatio: 0.5,
 turboTrailingStartRate: 2.0,
-turboTrailingStopRate: 0.7,
+turboTrailingStopRate: 1.2,
+
+turboMaxDailyBuyCount: 6,
+turboMaxConsecutiveLoss: 3,
+turboMinOneMinuteRiseRate: 0.25,
 };
 
 
@@ -725,7 +731,7 @@ function getTurboConsecutiveLossCount(state) {
         "TURBO_FIRST_TAKE_PROFIT"
       ].includes(log.type)
     )
-    .sort((a, b) => new Date(b.time) - new Date(a.time));
+    .reverse();
 
   let count = 0;
 
@@ -743,6 +749,64 @@ function getTurboConsecutiveLossCount(state) {
 function isViLikeItem(item) {
   const rawText = JSON.stringify(item.raw || item || "");
   return rawText.includes("VI");
+}
+
+function checkTurboLeaderCandidate(item, currentPrice) {
+  const dayRiseRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const openPrice = Number(item.open || item.openPrice || 0);
+  const highPrice = Number(item.high || item.highPrice || 0);
+  const lowPrice = Number(item.low || item.lowPrice || 0);
+  const volume = Number(item.volume || 0);
+
+  if (dayRiseRate < settings.turboBuyMinDayRiseRate) {
+    return { pass: false, reason: `상승률 부족 ${dayRiseRate.toFixed(2)}%` };
+  }
+
+  if (dayRiseRate > settings.turboBuyMaxDayRiseRate) {
+    return { pass: false, reason: `상승률 과다 ${dayRiseRate.toFixed(2)}%` };
+  }
+
+  if (volume < settings.turboMinVolume) {
+    return { pass: false, reason: `거래량 부족 ${volume.toLocaleString()}` };
+  }
+
+  if (openPrice > 0) {
+    const openPositionRate = ((currentPrice - openPrice) / openPrice) * 100;
+
+    if (openPositionRate < settings.turboMinOpenPositionRate) {
+      return {
+        pass: false,
+        reason: `시가대비 힘 부족 ${openPositionRate.toFixed(2)}%`
+      };
+    }
+  }
+
+  if (highPrice > 0 && lowPrice > 0 && currentPrice > 0) {
+    const range = highPrice - lowPrice;
+
+    if (range > 0) {
+      const position = ((currentPrice - lowPrice) / range) * 100;
+
+      if (position < 55) {
+        return {
+          pass: false,
+          reason: `당일 위치 약함 ${position.toFixed(1)}%`
+        };
+      }
+    }
+  }
+
+  return {
+    pass: true,
+    reason: `대장주 선점 조건 통과 · 상승률 ${dayRiseRate.toFixed(2)}%`
+  };
 }
 
 function paperTurboBuy(state, item, currentPrice) {
@@ -1879,7 +1943,6 @@ async function runTurboAutoBuyOnce() {
     );
 
     if (discoverScore < settings.turboMinScore) continue;
-    if (dayRiseRate > settings.turboMaxDayRiseRate) continue;
     if (isViLikeItem(item)) continue;
     if (isAlreadyHolding(state, item.code)) continue;
     if (wasTurboBoughtToday(state, item.code)) continue;
@@ -1897,6 +1960,21 @@ async function runTurboAutoBuyOnce() {
     const currentVolume = Number(priceData.volume || item.volume || 0);
 
     if (!currentPrice || currentPrice <= 0) continue;
+
+    const leaderCheck = checkTurboLeaderCandidate(
+  {
+    ...item,
+    ...priceData
+  },
+  currentPrice
+);
+
+if (!leaderCheck.pass) {
+  console.log(
+    `[TURBO 제외] ${priceData.name || item.name} ${item.code} / ${leaderCheck.reason}`
+  );
+  continue;
+}
 
     const prev = state.turboSnapshots[item.code];
 
@@ -1925,8 +2003,9 @@ const volumeDelta = Math.max(0, currentVolume - prevVolume);
 const prevVolumeDelta = Number(prev.volumeDelta || 0);
 
 const volumeSurge =
-  prevVolumeDelta > 0 &&
-  volumeDelta >= prevVolumeDelta * 2;
+  prevVolumeDelta > 0
+    ? volumeDelta >= prevVolumeDelta * 1.2
+    : volumeDelta > 0;
 
 
 
