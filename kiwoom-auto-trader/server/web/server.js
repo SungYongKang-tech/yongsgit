@@ -1086,15 +1086,21 @@ for (let i = 6; i >= 0; i--) {
 
   const trades = daySellLogs.length;
 
-  const profitRate =
-    initialCapital > 0 ? (realizedProfit / initialCapital) * 100 : 0;
+const isToday = dateKey === today;
 
-  recent7Days.push({
-    date: dateKey,
-    realizedProfit,
-    profitRate,
-    trades
-  });
+const dayTotalProfit = isToday
+  ? realizedProfit + holdingProfit
+  : realizedProfit;
+
+const profitRate =
+  initialCapital > 0 ? (dayTotalProfit / initialCapital) * 100 : 0;
+
+recent7Days.push({
+  date: dateKey,
+  realizedProfit: dayTotalProfit,
+  profitRate,
+  trades
+});
 }
 
 const todayTotalProfitRate =
