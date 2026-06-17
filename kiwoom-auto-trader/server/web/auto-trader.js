@@ -693,17 +693,31 @@ if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qt
   state.holdings.push(holding);
   state.totalCash = availableCash - price * qty;
 
-  state.tradeLogs.push({
+ state.tradeLogs.push({
   type: "BUY",
   strategyGroup: "CORE",
 
   code: item.code,
   name: item.name,
   price,
+  buyPrice: price,      // 추가
   qty,
 
   buyAmount: price * qty,
   plannedBuyAmount: buyAmount,
+
+  changeRate: Number(   // 추가
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  ),
+
+  volume: Number(item.volume || 0),   // 추가
+
+  marketTemperature: state.marketTemperature || null, // 추가
+
   remainCashAfterBuy: state.totalCash,
   dynamicMaxHolding,
   remainSlotsAfterBuy: Math.max(
@@ -997,19 +1011,35 @@ function paperWaveBuy(state, candidate, currentPrice) {
   state.turboCash = availableCash - price * qty;
 
   state.tradeLogs.push({
-    type: "WAVE_BUY",
-    strategyGroup: "WAVE",
-    code: holding.code,
-    name: holding.name,
-    price,
-    qty,
-    buyAmount: price * qty,
-    plannedBuyAmount: buyAmount,
-    remainTurboCashAfterBuy: state.turboCash,
-    reason: "오전 대장주 2차 파동 WAVE 매수",
-    date: todayKey(),
-    time: nowText()
-  });
+  type: "WAVE_BUY",
+  strategyGroup: "WAVE",
+
+  code: holding.code,
+  name: holding.name,
+
+  price,
+  buyPrice: price,   // 추가
+
+  qty,
+
+  buyAmount: price * qty,
+  plannedBuyAmount: buyAmount,
+
+  volume: Number(candidate.volume || 0), // 있으면
+
+  morningRiseRate: Number(candidate.morningRiseRate || 0), // 있으면
+
+  marketTemperature: state.marketTemperature || null,
+
+  remainTurboCashAfterBuy: state.turboCash,
+
+  discoverScore: Number(candidate.discoverScore || 0),
+
+  reason: "오전 대장주 2차 파동 WAVE 매수",
+
+  date: todayKey(),
+  time: nowText()
+});
 
   console.log(`[WAVE 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`);
 
@@ -1075,20 +1105,41 @@ const buyAmount = Math.min(budget.turboPerBuyAmount, availableCash);
   state.turboCash = availableCash - price * qty;
 
   state.tradeLogs.push({
-    type: "TURBO_BUY",
-    strategyGroup: "TURBO",
-    code: item.code,
-    name: holding.name,
-    price,
-    qty,
-    buyAmount: price * qty,
-    plannedBuyAmount: buyAmount,
-    remainTurboCashAfterBuy: state.turboCash,
-    discoverScore: Number(item.discoverScore || 0),
-    reason: "Turbo 조건 충족 자동 모의매수",
-    date: todayKey(),
-    time: nowText()
-  });
+  type: "TURBO_BUY",
+  strategyGroup: "TURBO",
+
+  code: item.code,
+  name: holding.name,
+
+  price,
+  buyPrice: price,   // 추가
+
+  qty,
+
+  buyAmount: price * qty,
+  plannedBuyAmount: buyAmount,
+
+  changeRate: Number(   // 추가
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  ),
+
+  volume: Number(item.volume || 0),   // 추가
+
+  marketTemperature: state.marketTemperature || null, // 추가
+
+  remainTurboCashAfterBuy: state.turboCash,
+
+  discoverScore: Number(item.discoverScore || 0),
+
+  reason: "Turbo 조건 충족 자동 모의매수",
+
+  date: todayKey(),
+  time: nowText()
+});
 
   console.log(
     `[TURBO 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
