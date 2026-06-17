@@ -1876,15 +1876,27 @@ app.get("/api/paper-sell-all", async (req, res) => {
     );
 
     paperState.tradeLogs.push({
-      type: "SELL_ALL",
-      code: holding.code,
-      name: holding.name,
-      price: sellPrice,
-      qty,
-      reason: "사용자 서버 수동매도",
-      time: new Date().toLocaleString("ko-KR"),
-      date: new Date().toISOString().slice(0, 10)
-    });
+  type: "SELL_ALL",
+  code: holding.code,
+  name: holding.name,
+  price: sellPrice,
+  qty,
+
+  buyPrice,
+  sellPrice,
+  buyAmount,
+  sellAmount,
+  profit,
+  profitRate,
+
+  strategyGroup: holding.strategyGroup || "CORE",
+  strategyPreset: holding.strategyPreset || "",
+  strategyName: holding.strategyName || "",
+
+  reason: "사용자 서버 수동매도",
+  time: new Date().toLocaleString("ko-KR"),
+  date: new Date().toISOString().slice(0, 10)
+});
 
     paperState.virtualResults.push({
       code: holding.code,
