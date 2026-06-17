@@ -1206,6 +1206,123 @@ return {
   }
 });
 
+app.get("/api/daily-summary", (req, res) => {
+  try {
+    const state = loadState();
+    const tradeLogs = Array.isArray(state.tradeLogs) ? state.tradeLogs : [];
+    const holdings = Array.isArray(state.holdings) ? state.holdings : [];
+
+    const sellTypes = [
+      "SELL",
+      "SELL_ALL",
+      "STOP_LOSS",
+      "TRAILING_STOP",
+      "END_PROFIT_SELL",
+      "FIRST_TAKE_PROFIT",
+      "BREAK_EVEN_PROTECT",
+      "TAKE_PROFIT",
+      "HIGH_PROFIT_STAGNANT_SELL",
+      "TURBO_STOP_LOSS",
+      "TURBO_FIRST_TAKE_PROFIT",
+      "TURBO_TAKE_PROFIT",
+      "TURBO_TRAILING_STOP",
+      "TURBO_TIME_EXIT",
+      "WAVE_STOP_LOSS",
+      "WAVE_FIRST_TAKE_PROFIT",
+      "WAVE_TAKE_PROFIT",
+      "WAVE_TRAILING_STOP",
+      "WAVE_TIME_EXIT"
+    ];
+
+    const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY"];
+
+    const dateMap = {};
+
+    for (const log of tradeLogs) {
+      const date = String(log.date || "").slice(0, 10);
+      if (!date) continue;
+
+      if (!dateMap[date]) {
+        dateMap[date] = {
+          date,
+          buyCount: 0,
+          sellCount: 0,
+          winCount: 0,
+          lossCount: 0,
+          coreProfit: 0,
+          turboProfit: 0,
+          waveProfit: 0,
+          realizedProfit: 0,
+          marketTemperature: null
+        };
+      }
+
+      const row = dateMap[date];
+
+      if (buyTypes.includes(log.type)) {
+        row.buyCount += 1;
+
+        if (!row.marketTemperature && log.marketTemperature) {
+          row.marketTemperature = log.marketTemperature;
+        }
+      }
+
+      if (sellTypes.includes(log.type)) {
+        const profit = Number(log.profit || 0);
+        row.sellCount += 1;
+        row.realizedProfit += profit;
+
+        if (profit > 0) row.winCount += 1;
+        if (profit < 0) row.lossCount += 1;
+
+        const group = log.strategyGroup || "CORE";
+
+        if (group === "TURBO") row.turboProfit += profit;
+        else if (group === "WAVE") row.waveProfit += profit;
+        else row.coreProfit += profit;
+      }
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    const holdingProfit = holdings.reduce((sum, h) => {
+      const buyPrice = Number(h.buyPrice || 0);
+      const currentPrice = Number(h.currentPrice || buyPrice || 0);
+      const qty = Number(h.qty || 0);
+      return sum + (currentPrice - buyPrice) * qty;
+    }, 0);
+
+    if (dateMap[today]) {
+      dateMap[today].holdingProfit = holdingProfit;
+      dateMap[today].totalProfit =
+        Number(dateMap[today].realizedProfit || 0) + holdingProfit;
+    }
+
+    const rows = Object.values(dateMap)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((row) => ({
+        ...row,
+        holdingProfit: Number(row.holdingProfit || 0),
+        totalProfit:
+          typeof row.totalProfit !== "undefined"
+            ? row.totalProfit
+            : row.realizedProfit,
+        winRate:
+          row.sellCount > 0 ? (row.winCount / row.sellCount) * 100 : 0
+      }));
+
+    res.json({
+      ok: true,
+      rows
+    });
+  } catch (err) {
+    console.error("일일 분석 API 오류:", err);
+    res.status(500).json({
+      ok: false,
+      message: "일일 분석 데이터를 불러오지 못했습니다."
+    });
+  }
+});
 
 app.get("/api/server-auto-toggle", (req, res) => {
   const enabled =
