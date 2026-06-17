@@ -1242,20 +1242,37 @@ app.get("/api/daily-summary", (req, res) => {
       const date = String(log.date || "").slice(0, 10);
       if (!date) continue;
 
-      if (!dateMap[date]) {
-        dateMap[date] = {
-          date,
-          buyCount: 0,
-          sellCount: 0,
-          winCount: 0,
-          lossCount: 0,
-          coreProfit: 0,
-          turboProfit: 0,
-          waveProfit: 0,
-          realizedProfit: 0,
-          marketTemperature: null
-        };
-      }
+     if (!dateMap[date]) {
+  dateMap[date] = {
+    date,
+
+    buyCount: 0,
+    sellCount: 0,
+
+    winCount: 0,
+    lossCount: 0,
+
+    coreProfit: 0,
+    turboProfit: 0,
+    waveProfit: 0,
+
+    realizedProfit: 0,
+
+    marketTemperature: null,
+
+    coreWins: 0,
+    coreTrades: 0,
+
+    turboWins: 0,
+    turboTrades: 0,
+
+    waveWins: 0,
+    waveTrades: 0,
+
+    bestTrade: null,
+    worstTrade: null
+  };
+}
 
       const row = dateMap[date];
 
@@ -1267,20 +1284,59 @@ app.get("/api/daily-summary", (req, res) => {
         }
       }
 
-      if (sellTypes.includes(log.type)) {
-        const profit = Number(log.profit || 0);
-        row.sellCount += 1;
-        row.realizedProfit += profit;
+     if (sellTypes.includes(log.type)) {
+  const profit = Number(log.profit || 0);
+  const group = log.strategyGroup || "CORE";
 
-        if (profit > 0) row.winCount += 1;
-        if (profit < 0) row.lossCount += 1;
+  row.sellCount += 1;
+  row.realizedProfit += profit;
 
-        const group = log.strategyGroup || "CORE";
+  if (profit > 0) row.winCount += 1;
+  if (profit < 0) row.lossCount += 1;
 
-        if (group === "TURBO") row.turboProfit += profit;
-        else if (group === "WAVE") row.waveProfit += profit;
-        else row.coreProfit += profit;
-      }
+  if (group === "CORE") {
+    row.coreTrades += 1;
+    if (profit > 0) row.coreWins += 1;
+  }
+
+  if (group === "TURBO") {
+    row.turboTrades += 1;
+    if (profit > 0) row.turboWins += 1;
+  }
+
+  if (group === "WAVE") {
+    row.waveTrades += 1;
+    if (profit > 0) row.waveWins += 1;
+  }
+
+  if (group === "TURBO") {
+    row.turboProfit += profit;
+  } else if (group === "WAVE") {
+    row.waveProfit += profit;
+  } else {
+    row.coreProfit += profit;
+  }
+
+  if (!row.bestTrade || profit > row.bestTrade.profit) {
+    row.bestTrade = {
+      name: log.name,
+      code: log.code,
+      strategyGroup: group,
+      profit,
+      profitRate: Number(log.profitRate || 0)
+    };
+  }
+
+  if (!row.worstTrade || profit < row.worstTrade.profit) {
+    row.worstTrade = {
+      name: log.name,
+      code: log.code,
+      strategyGroup: group,
+      profit,
+      profitRate: Number(log.profitRate || 0)
+    };
+  }
+}
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -1298,18 +1354,41 @@ app.get("/api/daily-summary", (req, res) => {
         Number(dateMap[today].realizedProfit || 0) + holdingProfit;
     }
 
-    const rows = Object.values(dateMap)
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .map((row) => ({
-        ...row,
-        holdingProfit: Number(row.holdingProfit || 0),
-        totalProfit:
-          typeof row.totalProfit !== "undefined"
-            ? row.totalProfit
-            : row.realizedProfit,
-        winRate:
-          row.sellCount > 0 ? (row.winCount / row.sellCount) * 100 : 0
-      }));
+   const rows = Object.values(dateMap)
+  .sort((a, b) => b.date.localeCompare(a.date))
+  .map((row) => ({
+    ...row,
+
+    holdingProfit: Number(row.holdingProfit || 0),
+
+    totalProfit:
+      typeof row.totalProfit !== "undefined"
+        ? row.totalProfit
+        : row.realizedProfit,
+
+    winRate:
+      row.sellCount > 0
+        ? (row.winCount / row.sellCount) * 100
+        : 0,
+
+    coreWinRate:
+      row.coreTrades > 0
+        ? (row.coreWins / row.coreTrades) * 100
+        : 0,
+
+    turboWinRate:
+      row.turboTrades > 0
+        ? (row.turboWins / row.turboTrades) * 100
+        : 0,
+
+    waveWinRate:
+      row.waveTrades > 0
+        ? (row.waveWins / row.waveTrades) * 100
+        : 0,
+
+    bestTrade: row.bestTrade,
+    worstTrade: row.worstTrade
+  }));
 
     res.json({
       ok: true,
