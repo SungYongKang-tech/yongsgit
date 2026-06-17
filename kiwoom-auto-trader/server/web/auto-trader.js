@@ -854,8 +854,110 @@ function paperTurboBuy(state, item, currentPrice) {
   if (!settings.turboEnabled) return false;
 
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
-  console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
-  return false;
+    console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
+    return false;
+  }
+
+  if (getTurboConsecutiveLossCount(state) >= settings.turboMaxConsecutiveLoss) {
+    console.log("[TURBO 매수제외] 연속 손절 제한 도달");
+    return false;
+  }
+
+  if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
+    console.log("[TURBO 매수제외] 최대 보유종목 도달");
+    return false;
+  }
+
+  if (isAlreadyHolding(state, item.code)) {
+    console.log("[TURBO 매수제외] 이미 보유중", item.name);
+    return false;
+  }
+
+  if (wasTurboBoughtToday(state, item.code)) {
+    console.log("[TURBO 매수제외] 오늘 이미 Turbo 매수", item.name);
+    return false;
+  }
+
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) return false;
+
+  const budget = getBudgetInfo(state);
+  const availableCash = Number(state.turboCash || 0);
+  const buyAmount = Math.min(budget.turboPerBuyAmount, availableCash);
+  const qty = Math.floor(buyAmount / price);
+
+  if (qty <= 0) {
+    console.log("[TURBO 매수제외] Turbo 현금 부족");
+    return false;
+  }
+
+  const holding = {
+    code: item.code,
+    name: item.name || item.stockName || item.korName || item.code,
+    buyPrice: price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    currentPrice: price,
+    highestPrice: price,
+    autoTrade: true,
+    strategyGroup: "TURBO",
+    strategyPreset: "turbo",
+    strategyName: "터보형",
+    discoverScore: Number(item.discoverScore || 0),
+    discoverReasons: Array.isArray(item.discoverReasons)
+      ? item.discoverReasons
+      : [],
+    buyTime: nowText(),
+    buyTimeMs: Date.now(),
+    buyAt: new Date().toISOString(),
+    date: todayKey()
+  };
+
+  state.holdings.push(holding);
+  state.turboCash = availableCash - price * qty;
+
+  state.tradeLogs.push({
+    type: "TURBO_BUY",
+    strategyGroup: "TURBO",
+
+    code: item.code,
+    name: holding.name,
+
+    price,
+    buyPrice: price,
+    qty,
+
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+
+    changeRate: Number(
+      item.changeRate ||
+      item.fluctuationRate ||
+      item.riseRate ||
+      item.rate ||
+      0
+    ),
+
+    volume: Number(item.volume || 0),
+
+    marketTemperature: state.marketTemperature || null,
+
+    remainTurboCashAfterBuy: state.turboCash,
+
+    discoverScore: Number(item.discoverScore || 0),
+
+    reason: "Turbo 조건 충족 자동 모의매수",
+
+    date: todayKey(),
+    time: nowText()
+  });
+
+  console.log(
+    `[TURBO 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
+  );
+
+  return true;
 }
 
 function getWaveHoldingCount(state) {
@@ -900,9 +1002,18 @@ function rememberWaveCandidate(state, item, priceData, currentPrice) {
   state.waveCandidates[item.code] = {
     code: item.code,
     name: priceData.name || item.name || item.code,
-    morningHigh: Math.max(Number(prev.morningHigh || 0), highPrice, currentPrice),
-    morningRiseRate: Math.max(Number(prev.morningRiseRate || 0), dayRiseRate),
+    morningHigh: Math.max(
+      Number(prev.morningHigh || 0),
+      highPrice,
+      currentPrice
+    ),
+    morningRiseRate: Math.max(
+      Number(prev.morningRiseRate || 0),
+      dayRiseRate
+    ),
     openPrice,
+    volume: Number(priceData.volume || item.volume || 0),
+    discoverScore: Number(item.discoverScore || 0),
     detectedAt: prev.detectedAt || nowText(),
     lastSeenAt: nowText()
   };
@@ -974,8 +1085,12 @@ function paperWaveBuy(state, candidate, currentPrice) {
 
   const price = Number(currentPrice || 0);
   const availableCash = Number(state.turboCash || 0);
+
   const buyAmount = Math.min(
-    Math.floor(availableCash / Math.max(1, settings.waveMaxHoldingCount - getWaveHoldingCount(state))),
+    Math.floor(
+      availableCash /
+        Math.max(1, settings.waveMaxHoldingCount - getWaveHoldingCount(state))
+    ),
     availableCash
   );
 
@@ -1001,6 +1116,7 @@ function paperWaveBuy(state, candidate, currentPrice) {
     strategyName: "웨이브형",
     morningHigh: Number(candidate.morningHigh || 0),
     morningRiseRate: Number(candidate.morningRiseRate || 0),
+    discoverScore: Number(candidate.discoverScore || 0),
     buyTime: nowText(),
     buyTimeMs: Date.now(),
     buyAt: new Date().toISOString(),
@@ -1011,143 +1127,41 @@ function paperWaveBuy(state, candidate, currentPrice) {
   state.turboCash = availableCash - price * qty;
 
   state.tradeLogs.push({
-  type: "WAVE_BUY",
-  strategyGroup: "WAVE",
+    type: "WAVE_BUY",
+    strategyGroup: "WAVE",
 
-  code: holding.code,
-  name: holding.name,
+    code: holding.code,
+    name: holding.name,
 
-  price,
-  buyPrice: price,   // 추가
-
-  qty,
-
-  buyAmount: price * qty,
-  plannedBuyAmount: buyAmount,
-
-  volume: Number(candidate.volume || 0), // 있으면
-
-  morningRiseRate: Number(candidate.morningRiseRate || 0), // 있으면
-
-  marketTemperature: state.marketTemperature || null,
-
-  remainTurboCashAfterBuy: state.turboCash,
-
-  discoverScore: Number(candidate.discoverScore || 0),
-
-  reason: "오전 대장주 2차 파동 WAVE 매수",
-
-  date: todayKey(),
-  time: nowText()
-});
-
-  console.log(`[WAVE 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`);
-
-  return true;
-}
-
-if (getTurboConsecutiveLossCount(state) >= settings.turboMaxConsecutiveLoss) {
-  console.log("[TURBO 매수제외] 연속 손절 제한 도달");
-  return false;
-}
-
-  if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
-    console.log("[TURBO 매수제외] 최대 보유종목 도달");
-    return false;
-  }
-
-  if (isAlreadyHolding(state, item.code)) {
-    console.log("[TURBO 매수제외] 이미 보유중", item.name);
-    return false;
-  }
-
-  if (wasTurboBoughtToday(state, item.code)) {
-    console.log("[TURBO 매수제외] 오늘 이미 Turbo 매수", item.name);
-    return false;
-  }
-
-  const price = Number(currentPrice || item.currentPrice || item.price || 0);
-  if (!price || price <= 0) return false;
-
-  const budget = getBudgetInfo(state);
-
-const availableCash = Number(state.turboCash || 0);
-const buyAmount = Math.min(budget.turboPerBuyAmount, availableCash);
-  const qty = Math.floor(buyAmount / price);
-
-  if (qty <= 0) {
-    console.log("[TURBO 매수제외] Turbo 현금 부족");
-    return false;
-  }
-
-  const holding = {
-    code: item.code,
-    name: item.name || item.stockName || item.korName || item.code,
+    price,
     buyPrice: price,
     qty,
+
     buyAmount: price * qty,
     plannedBuyAmount: buyAmount,
-    currentPrice: price,
-    highestPrice: price,
-    autoTrade: true,
-    strategyGroup: "TURBO",
-    strategyPreset: "turbo",
-    strategyName: "터보형",
-    discoverScore: Number(item.discoverScore || 0),
-    discoverReasons: Array.isArray(item.discoverReasons) ? item.discoverReasons : [],
-    buyTime: nowText(),
-    buyTimeMs: Date.now(),
-    buyAt: new Date().toISOString(),
-    date: todayKey()
-  };
 
-  state.holdings.push(holding);
-  state.turboCash = availableCash - price * qty;
+    volume: Number(candidate.volume || 0),
+    morningHigh: Number(candidate.morningHigh || 0),
+    morningRiseRate: Number(candidate.morningRiseRate || 0),
 
-  state.tradeLogs.push({
-  type: "TURBO_BUY",
-  strategyGroup: "TURBO",
+    marketTemperature: state.marketTemperature || null,
 
-  code: item.code,
-  name: holding.name,
+    remainTurboCashAfterBuy: state.turboCash,
 
-  price,
-  buyPrice: price,   // 추가
+    discoverScore: Number(candidate.discoverScore || 0),
 
-  qty,
+    reason: "오전 대장주 2차 파동 WAVE 매수",
 
-  buyAmount: price * qty,
-  plannedBuyAmount: buyAmount,
-
-  changeRate: Number(   // 추가
-    item.changeRate ||
-    item.fluctuationRate ||
-    item.riseRate ||
-    item.rate ||
-    0
-  ),
-
-  volume: Number(item.volume || 0),   // 추가
-
-  marketTemperature: state.marketTemperature || null, // 추가
-
-  remainTurboCashAfterBuy: state.turboCash,
-
-  discoverScore: Number(item.discoverScore || 0),
-
-  reason: "Turbo 조건 충족 자동 모의매수",
-
-  date: todayKey(),
-  time: nowText()
-});
+    date: todayKey(),
+    time: nowText()
+  });
 
   console.log(
-    `[TURBO 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
+    `[WAVE 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
   );
 
   return true;
 }
-
 
 
 
@@ -1212,7 +1226,7 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     time: nowText()
   });
 
-  if (holding.strategyGroup === "TURBO") {
+if (holding.strategyGroup === "TURBO" || holding.strategyGroup === "WAVE") {
   state.turboCash = Number(state.turboCash || 0) + sellAmount;
 } else {
   state.totalCash = Number(state.totalCash || 0) + sellAmount;
