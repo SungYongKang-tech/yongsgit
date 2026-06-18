@@ -29,7 +29,7 @@ const settings = {
   maxConsecutiveLoss: 3,
 
   discoverLimit: 300,
-  minScore: 10,
+  minScore: 9,
   buyCooldownMinutes: 10,
 
   tradeStart: "09:05",
