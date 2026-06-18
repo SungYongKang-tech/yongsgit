@@ -2227,7 +2227,9 @@ async function runTurboAutoBuyOnce() {
 
     if (!currentPrice || currentPrice <= 0) continue;
 
-    const leaderCheck = checkTurboLeaderCandidate(
+rememberWaveCandidate(state, item, priceData, currentPrice);
+
+const leaderCheck = checkTurboLeaderCandidate(
   {
     ...item,
     ...priceData
@@ -2241,8 +2243,6 @@ if (!leaderCheck.pass) {
   );
   continue;
 }
-
-rememberWaveCandidate(state, item, priceData, currentPrice);
 
     const prev = state.turboSnapshots[item.code];
 
