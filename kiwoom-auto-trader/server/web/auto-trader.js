@@ -2009,9 +2009,11 @@ console.log(
           0
         );
       } catch (err) {
-       console.log(`[현재가 조회 실패 - 건너뜀] ${item.name} ${item.code}`);
-        continue;
-      }
+  console.log(
+    `[현재가 조회 실패 - 건너뜀] ${item.name} ${item.code} / ${err.message}`
+  );
+  continue;
+}
 
       if (!currentPrice || currentPrice <= 0) {
         console.log(`[매수제외] ${item.name} ${item.code} / 현재가 없음`);
@@ -2216,7 +2218,7 @@ async function runTurboAutoBuyOnce() {
     try {
       priceData = await fetchPrice(item.code);
     } catch (err) {
-      console.log("[TURBO] 현재가 조회 실패", item.code);
+      console.log("[TURBO] 현재가 조회 실패", item.code, err.message);
       continue;
     }
 
@@ -2341,9 +2343,13 @@ async function runWaveAutoBuyOnce() {
     try {
       priceData = await fetchPrice(candidate.code);
     } catch (err) {
-      console.log("[WAVE] 현재가 조회 실패", candidate.code);
-      continue;
-    }
+  console.log(
+    "[WAVE] 현재가 조회 실패",
+    candidate.code,
+    err.message
+  );
+  continue;
+}
 
     const currentPrice = Number(priceData.currentPrice || 0);
     if (!currentPrice || currentPrice <= 0) continue;
