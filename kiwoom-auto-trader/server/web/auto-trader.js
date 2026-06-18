@@ -1613,7 +1613,7 @@ if (
     state,
     holding,
     currentPrice,
-    `장종료 전 약세종목 정리 · 현재 ${profitRate.toFixed(2)}% / 최고 ${maxProfitRate.toFixed(2)}%`,
+    `장종료 전 손실종목 정리 · 현재 ${profitRate.toFixed(2)}% / 최고 ${maxProfitRate.toFixed(2)}%`,
     "END_WEAK_SELL"
   );
   continue;
