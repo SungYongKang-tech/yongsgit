@@ -826,9 +826,12 @@ app.post("/api/paper-state/reset", (req, res) => {
   holdings: [],
   tradeLogs: [],
   virtualResults: [],
-  totalCash: 100000000,
-
+  
+  totalCash: 80000000,
   turboCash: 20000000,
+  initialCapital: 100000000,
+  budgetInitialized: true,
+  
   turboSnapshots: {},
   waveCandidates: {},
   waveSnapshots: {},
@@ -892,6 +895,8 @@ app.get("/api/performance-summary", (req, res) => {
     "BREAK_EVEN_PROTECT",
     "TAKE_PROFIT",
     "HIGH_PROFIT_STAGNANT_SELL",
+    "END_WEAK_SELL",
+    "SELL_CLOSING_PROFIT",
     "TURBO_STOP_LOSS",
     "TURBO_FIRST_TAKE_PROFIT",
     "TURBO_TAKE_PROFIT",
@@ -1232,6 +1237,7 @@ app.get("/api/daily-summary", (req, res) => {
       "WAVE_TAKE_PROFIT",
       "WAVE_TRAILING_STOP",
       "WAVE_TIME_EXIT",
+      "SELL_CLOSING_PROFIT",
       "END_WEAK_SELL",
     ];
 
@@ -1764,6 +1770,12 @@ state.tradeLogs.push({
   time: now.toLocaleString("ko-KR")
 });
 
+if (holding.strategyGroup === "TURBO" || holding.strategyGroup === "WAVE") {
+  paperState.turboCash = Number(paperState.turboCash || 0) + sellAmount;
+} else {
+  paperState.totalCash = Number(paperState.totalCash || 0) + sellAmount;
+}
+
     state.virtualResults.push({
       code: holding.code,
       name: holding.name,
@@ -1898,6 +1910,12 @@ app.get("/api/paper-sell-all", async (req, res) => {
   time: new Date().toLocaleString("ko-KR"),
   date: new Date().toISOString().slice(0, 10)
 });
+
+if (holding.strategyGroup === "TURBO" || holding.strategyGroup === "WAVE") {
+  state.turboCash = Number(state.turboCash || 0) + sellAmount;
+} else {
+  state.totalCash = Number(state.totalCash || 0) + sellAmount;
+}
 
     paperState.virtualResults.push({
       code: holding.code,
