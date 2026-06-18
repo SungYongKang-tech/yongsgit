@@ -1520,6 +1520,38 @@ if (
   continue;
 }
 
+if (
+  isTradeTime() &&
+  isAfterEndProfitSellTime() &&
+  profitRate < 0 &&
+  maxProfitRate < 2
+) {
+  paperSell(
+    state,
+    holding,
+    currentPrice,
+    `장종료 전 약세종목 정리 · 현재 ${profitRate.toFixed(2)}% / 최고 ${maxProfitRate.toFixed(2)}%`,
+    "END_WEAK_SELL"
+  );
+  continue;
+}
+
+if (
+  isTradeTime() &&
+  isAfterEndProfitSellTime() &&
+  profitRate < 0 &&
+  maxProfitRate < 2
+) {
+  paperSell(
+    state,
+    holding,
+    currentPrice,
+    `장종료 전 약세종목 정리 · 현재 ${profitRate.toFixed(2)}% / 최고 ${maxProfitRate.toFixed(2)}%`,
+    "END_WEAK_SELL"
+  );
+  continue;
+}
+
 
       if (
         profitRate >= settings.trailingStartRate && 

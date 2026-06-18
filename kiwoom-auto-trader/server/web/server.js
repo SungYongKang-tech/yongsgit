@@ -1231,7 +1231,8 @@ app.get("/api/daily-summary", (req, res) => {
       "WAVE_FIRST_TAKE_PROFIT",
       "WAVE_TAKE_PROFIT",
       "WAVE_TRAILING_STOP",
-      "WAVE_TIME_EXIT"
+      "WAVE_TIME_EXIT",
+      "END_WEAK_SELL",
     ];
 
     const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY"];
