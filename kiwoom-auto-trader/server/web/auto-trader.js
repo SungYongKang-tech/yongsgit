@@ -70,7 +70,7 @@ turboStopLossRate: -1.0,
 turboTakeProfitRate: 3.0,
 turboTakeProfitSellRatio: 0.5,
 turboTrailingStartRate: 2.0,
-turboTrailingStopRate: 1.2,
+turboTrailingStopRate: 0.7,
 
 turboMaxDailyBuyCount: 6,
 turboMaxConsecutiveLoss: 3,
@@ -1173,7 +1173,10 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     state.sellKeys = {};
   }
 
-  const isPartialSell = actionType === "FIRST_TAKE_PROFIT";
+  const isPartialSell =
+  actionType === "FIRST_TAKE_PROFIT" ||
+  actionType === "TURBO_FIRST_TAKE_PROFIT" ||
+  actionType === "WAVE_FIRST_TAKE_PROFIT";
 
   const sellKey = `${todayKey()}_${holding.code}_${actionType}`;
 
@@ -1455,6 +1458,86 @@ const maxProfitRate =
   continue;
 }
 
+if (holding.strategyGroup === "WAVE") {
+  if (
+    maxProfitRate >= settings.waveTrailingStartRate &&
+    !holding.waveTrailingActive
+  ) {
+    holding.waveTrailingActive = true;
+    holding.waveTrailingStartPrice = currentPrice;
+
+    console.log(
+      `[WAVE 트레일링 시작] ${holding.name} / 최고수익 ${maxProfitRate.toFixed(2)}%`
+    );
+  }
+
+  if (profitRate <= settings.waveStopLossRate) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `WAVE 손절 ${profitRate.toFixed(2)}%`,
+      "WAVE_STOP_LOSS"
+    );
+    continue;
+  }
+
+  if (
+    !holding.waveFirstTakeProfitDone &&
+    profitRate >= settings.waveTakeProfitRate &&
+    Number(holding.qty || 0) >= 2
+  ) {
+    const sellQty = Math.floor(
+      Number(holding.qty || 0) * settings.waveTakeProfitSellRatio
+    );
+
+    if (sellQty >= 1) {
+      paperSell(
+        state,
+        holding,
+        currentPrice,
+        `WAVE 1차 익절 ${profitRate.toFixed(2)}% · ${sellQty}주 매도`,
+        "WAVE_FIRST_TAKE_PROFIT",
+        sellQty
+      );
+
+      holding.waveFirstTakeProfitDone = true;
+      holding.waveTrailingActive = true;
+      remainHoldings.push(holding);
+      continue;
+    }
+  }
+
+  if (
+    holding.waveTrailingActive &&
+    trailingDropRate <= -settings.waveTrailingStopRate &&
+    profitRate > 0
+  ) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `WAVE 트레일링 매도 · 최고가 대비 ${settings.waveTrailingStopRate}% 하락`,
+      "WAVE_TRAILING_STOP"
+    );
+    continue;
+  }
+
+  if (isBetweenTime(settings.waveForceSellTime, "15:20")) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `WAVE 시간청산 ${settings.waveForceSellTime}`,
+      "WAVE_TIME_EXIT"
+    );
+    continue;
+  }
+
+  remainHoldings.push(holding);
+  continue;
+}
+
 if (maxProfitRate >= settings.breakEvenTriggerRate) {
   holding.breakEvenActivated = true;
 }
@@ -1536,21 +1619,6 @@ if (
   continue;
 }
 
-if (
-  isTradeTime() &&
-  isAfterEndProfitSellTime() &&
-  profitRate < 0 &&
-  maxProfitRate < 2
-) {
-  paperSell(
-    state,
-    holding,
-    currentPrice,
-    `장종료 전 약세종목 정리 · 현재 ${profitRate.toFixed(2)}% / 최고 ${maxProfitRate.toFixed(2)}%`,
-    "END_WEAK_SELL"
-  );
-  continue;
-}
 
 
       if (
@@ -1996,6 +2064,25 @@ if (marketTemperature.level === "CAUTION") {
     `후보 ${beforeCount}개 → ${candidates.length}개`
   );
 }
+
+if (marketTemperature.level === "HOT") {
+  buyRules.minScore = Math.min(buyRules.minScore, 8);
+  buyRules.maxHoldingCount = Math.max(buyRules.maxHoldingCount, 8);
+
+  const beforeCount = candidates.length;
+
+  candidates = candidates.filter((item) => {
+    return Number(item.discoverScore || 0) >= buyRules.minScore;
+  });
+
+  console.log(
+    `[시장온도 HOT] 매수조건 완화: ` +
+    `minScore=${buyRules.minScore}, ` +
+    `maxHoldingCount=${buyRules.maxHoldingCount} / ` +
+    `후보 ${beforeCount}개 → ${candidates.length}개`
+  );
+}
+
     if (!candidates || candidates.length === 0) {
       console.log("자동매수 후보가 없습니다.");
       return;
