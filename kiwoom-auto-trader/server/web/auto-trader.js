@@ -84,7 +84,7 @@ waveForceSellTime: "14:30",
 waveMaxHoldingCount: 3,
 waveMaxDailyBuyCount: 4,
 
-waveMinMorningRiseRate: 5.0,
+waveMinMorningRiseRate: 3.0,
 waveMinPullbackRate: 2.0,
 waveMaxPullbackRate: 6.0,
 waveMinReboundRate: 0.8,
