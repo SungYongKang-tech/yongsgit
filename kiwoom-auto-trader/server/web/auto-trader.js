@@ -23,7 +23,7 @@ const settings = {
   turboMaxHoldingCount: 4,
 
   perBuyAmount: 10000000,
-  minBuyAmount: 10000000,
+  minBuyAmount: 3000000,
 
   dailyLossLimitRate: 0.01,
   maxConsecutiveLoss: 3,
