@@ -94,6 +94,19 @@ waveTakeProfitRate: 4.0,
 waveTakeProfitSellRatio: 0.5,
 waveTrailingStartRate: 3.0,
 waveTrailingStopRate: 1.5,
+
+leaderCoreEnabled: true,
+
+leaderCoreMinScore: 10,
+leaderCoreMinChangeRate: 1.5,
+leaderCoreMaxChangeRate: 7.0,
+
+leaderCoreMinVolume: 300000,
+leaderCoreMinTradeValue: 2000000000, // 20억
+
+leaderCoreMaxHoldingCount: 8,
+
+
 };
 
 
@@ -257,6 +270,32 @@ function nowText() {
   return new Date().toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul"
   });
+}
+
+function isLeaderCoreCandidate(item, marketTemperature) {
+  const score = Number(item.discoverScore || 0);
+  const changeRate = Number(item.changeRate || 0);
+  const volume = Number(item.volume || 0);
+  const currentPrice = Number(item.currentPrice || item.price || 0);
+
+  const tradeValue = currentPrice * volume;
+
+  if (score < settings.leaderCoreMinScore) return false;
+
+  if (changeRate < settings.leaderCoreMinChangeRate) return false;
+  if (changeRate > settings.leaderCoreMaxChangeRate) return false;
+
+  if (volume < settings.leaderCoreMinVolume) return false;
+  if (tradeValue < settings.leaderCoreMinTradeValue) return false;
+
+  if (
+    marketTemperature &&
+    (marketTemperature.level === "COLD" || marketTemperature.level === "CAUTION")
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function todayKey() {
@@ -677,7 +716,9 @@ if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qt
   strategyGroup: "CORE",
 
   strategyPreset: strategy.key,
-  strategyName: strategy.name,
+  strategyName: settings.leaderCoreEnabled
+  ? `Leader Core-${strategy.name}`
+  : strategy.name,
   discoverScore: Number(item.discoverScore || 0),
   discoverReasons: Array.isArray(item.discoverReasons)
     ? item.discoverReasons
@@ -727,8 +768,12 @@ if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qt
 
   discoverScore: Number(item.discoverScore || 0),
   strategyPreset: strategy.key,
-  strategyName: strategy.name,
-  reason: `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
+  strategyName: settings.leaderCoreEnabled
+  ? `Leader Core-${strategy.name}`
+  : strategy.name,
+  reason: settings.leaderCoreEnabled
+  ? `Leader Core 대장주 조건 통과 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`
+  : `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
   date: todayKey(),
   time: nowText()
 });
@@ -2090,6 +2135,75 @@ if (marketTemperature.level === "HOT") {
     `후보 ${beforeCount}개 → ${candidates.length}개`
   );
 }
+
+if (settings.leaderCoreEnabled) {
+  const beforeLeaderCoreCount = candidates.length;
+
+  const isLeaderCoreTime = isBetweenTime("09:20", "10:30");
+
+  const leaderCandidates = candidates.filter((item) =>
+    isLeaderCoreCandidate(item, marketTemperature)
+  );
+
+  if (isLeaderCoreTime) {
+    candidates = leaderCandidates;
+
+    buyRules.minScore = Math.max(
+      buyRules.minScore,
+      settings.leaderCoreMinScore
+    );
+
+    buyRules.maxHoldingCount = Math.min(
+      buyRules.maxHoldingCount,
+      settings.leaderCoreMaxHoldingCount
+    );
+
+    buyRules.perBuyAmount =
+  budget.corePerBuyAmount;
+
+    state.currentCoreMode = "LEADER_CORE_ONLY";
+
+    console.log(
+      `[LEADER CORE 전용시간] 09:20~10:30 / ` +
+      `minScore=${buyRules.minScore}, ` +
+      `perBuyAmount=${buyRules.perBuyAmount}, ` +
+      `maxHoldingCount=${buyRules.maxHoldingCount} / ` +
+      `후보 ${beforeLeaderCoreCount}개 → ${candidates.length}개`
+    );
+  } else if (leaderCandidates.length > 0) {
+    candidates = leaderCandidates;
+
+    buyRules.minScore = Math.max(
+      buyRules.minScore,
+      settings.leaderCoreMinScore
+    );
+
+    buyRules.maxHoldingCount = Math.min(
+      buyRules.maxHoldingCount,
+      settings.leaderCoreMaxHoldingCount
+    );
+
+    buyRules.perBuyAmount = budget.corePerBuyAmount;
+
+    state.currentCoreMode = "LEADER_CORE";
+
+    console.log(
+      `[LEADER CORE 우선] 10:30 이후에도 대장주 후보 존재 / ` +
+      `후보 ${beforeLeaderCoreCount}개 → ${candidates.length}개`
+    );
+  } else {
+    buyRules.minScore = Math.max(buyRules.minScore, 10);
+
+    state.currentCoreMode = "CORE_BACKUP";
+
+    console.log(
+      `[CORE 백업모드] 10:30 이후 Leader Core 후보 없음 / ` +
+      `일반 Core 점수 ${buyRules.minScore} 이상으로 진행 / ` +
+      `후보 ${beforeLeaderCoreCount}개 유지`
+    );
+  }
+}
+
 
     if (!candidates || candidates.length === 0) {
       console.log("자동매수 후보가 없습니다.");
