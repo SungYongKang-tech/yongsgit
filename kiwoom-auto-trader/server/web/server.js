@@ -1423,6 +1423,153 @@ app.get("/api/server-auto-toggle", (req, res) => {
   });
 });
 
+app.get("/api/today-trade-analysis", (req, res) => {
+  try {
+    const state = loadState();
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    const trades = state.tradeLogs || [];
+
+    const todayLogs = trades.filter(log => {
+      return String(log.time || log.createdAt || "").startsWith(today);
+    });
+
+    const buys = todayLogs.filter(log =>
+      ["BUY", "TURBO_BUY", "WAVE_BUY"].includes(log.type)
+    );
+
+    const sells = todayLogs.filter(log =>
+      [
+        "SELL",
+        "SELL_ALL",
+        "STOP_LOSS",
+        "TRAILING_STOP",
+        "END_PROFIT_SELL",
+        "FIRST_TAKE_PROFIT",
+        "BREAK_EVEN_PROTECT",
+        "TAKE_PROFIT",
+        "HIGH_PROFIT_STAGNANT_SELL",
+        "TURBO_STOP_LOSS",
+        "TURBO_FIRST_TAKE_PROFIT",
+        "TURBO_TAKE_PROFIT",
+        "TURBO_TRAILING_STOP",
+        "TURBO_TIME_EXIT",
+        "WAVE_STOP_LOSS",
+        "WAVE_FIRST_TAKE_PROFIT",
+        "WAVE_TAKE_PROFIT",
+        "WAVE_TRAILING_STOP",
+        "WAVE_TIME_EXIT"
+      ].includes(log.type)
+    );
+
+    const realizedProfit = sells.reduce((sum, log) => {
+      return sum + Number(log.profit || 0);
+    }, 0);
+
+    const wins = sells.filter(log => Number(log.profit || 0) > 0);
+    const losses = sells.filter(log => Number(log.profit || 0) < 0);
+
+    const sellTypeCounts = {};
+    sells.forEach(log => {
+      sellTypeCounts[log.type] = (sellTypeCounts[log.type] || 0) + 1;
+    });
+
+    const byStrategy = {};
+
+    sells.forEach(log => {
+      const strategy =
+        log.strategyGroup ||
+        log.group ||
+        (String(log.type).startsWith("TURBO") ? "TURBO" :
+         String(log.type).startsWith("WAVE") ? "WAVE" : "CORE");
+
+      if (!byStrategy[strategy]) {
+        byStrategy[strategy] = {
+          trades: 0,
+          wins: 0,
+          losses: 0,
+          profit: 0,
+          maxProfit: null,
+          maxLoss: null
+        };
+      }
+
+      const profit = Number(log.profit || 0);
+
+      byStrategy[strategy].trades += 1;
+      byStrategy[strategy].profit += profit;
+
+      if (profit > 0) byStrategy[strategy].wins += 1;
+      if (profit < 0) byStrategy[strategy].losses += 1;
+
+      if (byStrategy[strategy].maxProfit === null || profit > byStrategy[strategy].maxProfit) {
+        byStrategy[strategy].maxProfit = profit;
+      }
+
+      if (byStrategy[strategy].maxLoss === null || profit < byStrategy[strategy].maxLoss) {
+        byStrategy[strategy].maxLoss = profit;
+      }
+    });
+
+    Object.keys(byStrategy).forEach(key => {
+      const s = byStrategy[key];
+
+      s.winRate = s.trades > 0 ? (s.wins / s.trades) * 100 : 0;
+      s.avgProfit = s.wins > 0
+        ? sells
+            .filter(log => {
+              const strategy =
+                log.strategyGroup ||
+                log.group ||
+                (String(log.type).startsWith("TURBO") ? "TURBO" :
+                 String(log.type).startsWith("WAVE") ? "WAVE" : "CORE");
+
+              return strategy === key && Number(log.profit || 0) > 0;
+            })
+            .reduce((sum, log) => sum + Number(log.profit || 0), 0) / s.wins
+        : 0;
+
+      s.avgLoss = s.losses > 0
+        ? sells
+            .filter(log => {
+              const strategy =
+                log.strategyGroup ||
+                log.group ||
+                (String(log.type).startsWith("TURBO") ? "TURBO" :
+                 String(log.type).startsWith("WAVE") ? "WAVE" : "CORE");
+
+              return strategy === key && Number(log.profit || 0) < 0;
+            })
+            .reduce((sum, log) => sum + Number(log.profit || 0), 0) / s.losses
+        : 0;
+    });
+
+    res.json({
+      ok: true,
+      date: today,
+      summary: {
+        buyCount: buys.length,
+        sellCount: sells.length,
+        winCount: wins.length,
+        lossCount: losses.length,
+        winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
+        realizedProfit
+      },
+      byStrategy,
+      sellTypeCounts,
+      buys,
+      sells
+    });
+  } catch (err) {
+    console.error(err);
+    res.json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
+
 app.get("/api/server-auto-on", (req, res) => {
   const state = setServerAutoEnabled(true);
 

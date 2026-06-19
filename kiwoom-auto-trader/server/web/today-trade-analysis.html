@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SY Quant 오늘 거래 분석</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: Arial, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin: 0;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 0 0 10px 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+
+    .card {
+      background: #1f2937;
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .label {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 4px;
+    }
+
+    .value {
+      font-size: 18px;
+      font-weight: bold;
+      text-align: right;
+    }
+
+    .plus { color: #f87171; }
+    .minus { color: #60a5fa; }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: #1f2937;
+      border-radius: 14px;
+      margin-bottom: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+    }
+
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid #374151;
+      text-align: right;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    th {
+      color: #d1d5db;
+      background: #111827;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      border-radius: 12px;
+      border: 1px solid #374151;
+      background: #111827;
+      color: #f9fafb;
+      padding: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .empty {
+      color: #9ca3af;
+      text-align: center;
+      padding: 20px;
+    }
+
+    @media (min-width: 800px) {
+      body {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+
+      .grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>📊 오늘 거래 분석</h1>
+    <button onclick="location.href='performance.html'">← 대시보드</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">실현손익</div>
+      <div class="value" id="realizedProfit">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">매수 / 매도</div>
+      <div class="value" id="tradeCount">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">승 / 패</div>
+      <div class="value" id="winLoss">-</div>
+    </div>
+
+    <div class="card">
+      <div class="label">승률</div>
+      <div class="value" id="winRate">-</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>전략별 결과</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>전략</th>
+            <th>거래수</th>
+            <th>승</th>
+            <th>패</th>
+            <th>승률</th>
+            <th>총손익</th>
+            <th>평균수익</th>
+            <th>평균손실</th>
+            <th>최대수익</th>
+            <th>최대손실</th>
+          </tr>
+        </thead>
+        <tbody id="strategyBody">
+          <tr><td colspan="10" class="empty">불러오는 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>매도 사유 분석</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>매도사유</th>
+            <th>건수</th>
+          </tr>
+        </thead>
+        <tbody id="sellTypeBody">
+          <tr><td colspan="2" class="empty">불러오는 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>오늘 매도 상세</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>종목</th>
+            <th>코드</th>
+            <th>전략</th>
+            <th>매도사유</th>
+            <th>수량</th>
+            <th>매수가</th>
+            <th>매도가</th>
+            <th>손익</th>
+            <th>수익률</th>
+            <th>시간</th>
+          </tr>
+        </thead>
+        <tbody id="sellBody">
+          <tr><td colspan="10" class="empty">불러오는 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>AI 분석용 복사 자료</h2>
+    <button onclick="copyAiText()">AI 분석용 복사</button>
+    <br><br>
+    <textarea id="aiText" readonly></textarea>
+  </div>
+
+  <script>
+    let latestAiText = "";
+
+    function formatWon(value) {
+      const num = Number(value || 0);
+      const sign = num > 0 ? "+" : "";
+      return sign + num.toLocaleString() + "원";
+    }
+
+    function formatRate(value) {
+      const num = Number(value || 0);
+      return num.toFixed(2) + "%";
+    }
+
+    function formatPrice(value) {
+      const num = Number(value || 0);
+      return num ? num.toLocaleString() : "-";
+    }
+
+    function moneyClass(value) {
+      const num = Number(value || 0);
+      if (num > 0) return "plus";
+      if (num < 0) return "minus";
+      return "";
+    }
+
+    function getStrategy(log) {
+      if (log.strategyGroup) return log.strategyGroup;
+      if (log.group) return log.group;
+      if (String(log.type || "").startsWith("TURBO")) return "TURBO";
+      if (String(log.type || "").startsWith("WAVE")) return "WAVE";
+      return "CORE";
+    }
+
+    function getName(log) {
+      return log.name || log.stockName || log.itemName || "-";
+    }
+
+    function getCode(log) {
+      return log.code || log.stockCode || "-";
+    }
+
+    function getProfitRate(log) {
+      return Number(log.profitRate || log.rate || log.returnRate || 0);
+    }
+
+    function getBuyPrice(log) {
+      return log.buyPrice || log.avgBuyPrice || log.entryPrice || 0;
+    }
+
+    function getSellPrice(log) {
+      return log.sellPrice || log.price || log.currentPrice || 0;
+    }
+
+    async function loadAnalysis() {
+      try {
+        const res = await fetch("/api/today-trade-analysis");
+        const data = await res.json();
+
+        if (!data.ok) throw new Error(data.message || "분석 데이터 오류");
+
+        const summary = data.summary || {};
+        const byStrategy = data.byStrategy || {};
+        const sellTypeCounts = data.sellTypeCounts || {};
+        const sells = data.sells || [];
+        const buys = data.buys || [];
+
+        document.getElementById("realizedProfit").textContent = formatWon(summary.realizedProfit);
+        document.getElementById("realizedProfit").className = "value " + moneyClass(summary.realizedProfit);
+
+        document.getElementById("tradeCount").textContent =
+          `${summary.buyCount || 0} / ${summary.sellCount || 0}`;
+
+        document.getElementById("winLoss").textContent =
+          `${summary.winCount || 0} / ${summary.lossCount || 0}`;
+
+        document.getElementById("winRate").textContent =
+          formatRate(summary.winRate);
+
+        const strategyBody = document.getElementById("strategyBody");
+
+        const strategyRows = Object.keys(byStrategy).map(key => {
+          const s = byStrategy[key];
+
+          return `
+            <tr>
+              <td>${key}</td>
+              <td>${s.trades || 0}</td>
+              <td>${s.wins || 0}</td>
+              <td>${s.losses || 0}</td>
+              <td>${formatRate(s.winRate)}</td>
+              <td class="${moneyClass(s.profit)}">${formatWon(s.profit)}</td>
+              <td class="${moneyClass(s.avgProfit)}">${formatWon(s.avgProfit)}</td>
+              <td class="${moneyClass(s.avgLoss)}">${formatWon(s.avgLoss)}</td>
+              <td class="${moneyClass(s.maxProfit)}">${formatWon(s.maxProfit)}</td>
+              <td class="${moneyClass(s.maxLoss)}">${formatWon(s.maxLoss)}</td>
+            </tr>
+          `;
+        }).join("");
+
+        strategyBody.innerHTML = strategyRows || `
+          <tr><td colspan="10" class="empty">전략별 데이터가 없습니다.</td></tr>
+        `;
+
+        const sellTypeBody = document.getElementById("sellTypeBody");
+
+        const sellTypeRows = Object.keys(sellTypeCounts).map(type => {
+          return `
+            <tr>
+              <td>${type}</td>
+              <td>${sellTypeCounts[type]}</td>
+            </tr>
+          `;
+        }).join("");
+
+        sellTypeBody.innerHTML = sellTypeRows || `
+          <tr><td colspan="2" class="empty">매도 데이터가 없습니다.</td></tr>
+        `;
+
+        const sellBody = document.getElementById("sellBody");
+
+        sellBody.innerHTML = sells.map(log => {
+          const profit = Number(log.profit || 0);
+
+          return `
+            <tr>
+              <td>${getName(log)}</td>
+              <td>${getCode(log)}</td>
+              <td>${getStrategy(log)}</td>
+              <td>${log.type || "-"}</td>
+              <td>${log.qty || log.quantity || "-"}</td>
+              <td>${formatPrice(getBuyPrice(log))}</td>
+              <td>${formatPrice(getSellPrice(log))}</td>
+              <td class="${moneyClass(profit)}">${formatWon(profit)}</td>
+              <td class="${moneyClass(getProfitRate(log))}">${formatRate(getProfitRate(log))}</td>
+              <td>${log.time || log.createdAt || "-"}</td>
+            </tr>
+          `;
+        }).join("") || `
+          <tr><td colspan="10" class="empty">오늘 매도 내역이 없습니다.</td></tr>
+        `;
+
+        latestAiText = makeAiText(data);
+        document.getElementById("aiText").value = latestAiText;
+
+      } catch (err) {
+        console.error(err);
+        document.getElementById("strategyBody").innerHTML =
+          `<tr><td colspan="10" class="empty">데이터를 불러오지 못했습니다.</td></tr>`;
+      }
+    }
+
+    function makeAiText(data) {
+      const summary = data.summary || {};
+      const byStrategy = data.byStrategy || {};
+      const sellTypeCounts = data.sellTypeCounts || {};
+      const buys = data.buys || [];
+      const sells = data.sells || [];
+
+      let text = "";
+
+      text += `${data.date} SY Quant 오늘 거래 분석 자료\n\n`;
+
+      text += `[오늘 요약]\n`;
+      text += `매수건수: ${summary.buyCount || 0}\n`;
+      text += `매도건수: ${summary.sellCount || 0}\n`;
+      text += `승리: ${summary.winCount || 0}\n`;
+      text += `패배: ${summary.lossCount || 0}\n`;
+      text += `승률: ${formatRate(summary.winRate)}\n`;
+      text += `실현손익: ${formatWon(summary.realizedProfit)}\n\n`;
+
+      text += `[전략별 결과]\n`;
+      Object.keys(byStrategy).forEach(key => {
+        const s = byStrategy[key];
+        text += `${key}: 거래 ${s.trades || 0}건 / 승 ${s.wins || 0} / 패 ${s.losses || 0} / 승률 ${formatRate(s.winRate)} / 손익 ${formatWon(s.profit)} / 평균수익 ${formatWon(s.avgProfit)} / 평균손실 ${formatWon(s.avgLoss)}\n`;
+      });
+
+      text += `\n[매도 사유]\n`;
+      Object.keys(sellTypeCounts).forEach(type => {
+        text += `${type}: ${sellTypeCounts[type]}건\n`;
+      });
+
+      text += `\n[오늘 매수 내역]\n`;
+      buys.forEach((log, idx) => {
+        text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / 매수가 ${formatPrice(getBuyPrice(log) || log.price)} / 수량 ${log.qty || log.quantity || "-"} / 점수 ${log.discoverScore || "-"} / 등락률 ${log.changeRate || "-"} / 시간 ${log.time || log.createdAt || "-"}\n`;
+      });
+
+      text += `\n[오늘 매도 내역]\n`;
+      sells.forEach((log, idx) => {
+        text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / ${log.type || "-"} / 매수가 ${formatPrice(getBuyPrice(log))} / 매도가 ${formatPrice(getSellPrice(log))} / 손익 ${formatWon(log.profit)} / 수익률 ${formatRate(getProfitRate(log))} / 시간 ${log.time || log.createdAt || "-"}\n`;
+      });
+
+      return text;
+    }
+
+    function copyAiText() {
+      const textarea = document.getElementById("aiText");
+      textarea.select();
+      document.execCommand("copy");
+      alert("AI 분석용 자료를 복사했습니다.");
+    }
+
+    loadAnalysis();
+    setInterval(loadAnalysis, 30000);
+  </script>
+</body>
+</html>
