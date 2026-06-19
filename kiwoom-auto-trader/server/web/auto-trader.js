@@ -712,6 +712,9 @@ if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qt
   currentPrice: price,
   highestPrice: price,
   autoTrade: true,
+  lowestPrice: price,
+maxProfitRate: 0,
+maxLossRate: 0,
 
   strategyGroup: "CORE",
 
@@ -946,6 +949,9 @@ function paperTurboBuy(state, item, currentPrice) {
     currentPrice: price,
     highestPrice: price,
     autoTrade: true,
+    lowestPrice: price,
+maxProfitRate: 0,
+maxLossRate: 0,
     strategyGroup: "TURBO",
     strategyPreset: "turbo",
     strategyName: "터보형",
@@ -1156,6 +1162,9 @@ function paperWaveBuy(state, candidate, currentPrice) {
     currentPrice: price,
     highestPrice: price,
     autoTrade: true,
+    lowestPrice: price,
+maxProfitRate: 0,
+maxLossRate: 0,
     strategyGroup: "WAVE",
     strategyPreset: "wave",
     strategyName: "웨이브형",
@@ -1266,6 +1275,17 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     sellAmount,
     profit,
     profitRate,
+
+    highestPrice: Number(holding.highestPrice || buyPrice || 0),
+lowestPrice: Number(holding.lowestPrice || buyPrice || 0),
+maxProfitRate: Number(holding.maxProfitRate || 0),
+maxLossRate: Number(holding.maxLossRate || 0),
+holdingMinutes: holding.buyTimeMs
+  ? Math.round((Date.now() - Number(holding.buyTimeMs)) / 1000 / 60)
+  : 0,
+buyTimeText: holding.buyTime || holding.buyTimeText || "",
+sellTimeText: nowText(),
+
     reason: reason || "서버 매도",
     strategyPreset: holding.strategyPreset,
     strategyName: holding.strategyName,
@@ -1353,17 +1373,44 @@ async function checkServerAutoSellOnce() {
 
       holding.currentPrice = currentPrice;
 
-      holding.highestPrice = Math.max(
-        Number(holding.highestPrice || holding.buyPrice || 0),
-        currentPrice
-      );
+holding.highestPrice = Math.max(
+  Number(holding.highestPrice || holding.buyPrice || currentPrice || 0),
+  currentPrice
+);
 
-      const buyPrice = Number(holding.buyPrice || 0);
+holding.lowestPrice = Math.min(
+  Number(holding.lowestPrice || holding.buyPrice || currentPrice || 0),
+  currentPrice
+);
 
-      const profitRate =
-        buyPrice > 0
-          ? ((currentPrice - buyPrice) / buyPrice) * 100
-          : 0;
+const buyPrice = Number(holding.buyPrice || 0);
+
+const profitRate =
+  buyPrice > 0
+    ? ((currentPrice - buyPrice) / buyPrice) * 100
+    : 0;
+
+const currentMaxProfitRate =
+  buyPrice > 0
+    ? ((Number(holding.highestPrice || currentPrice) - buyPrice) / buyPrice) * 100
+    : 0;
+
+const currentMaxLossRate =
+  buyPrice > 0
+    ? ((Number(holding.lowestPrice || currentPrice) - buyPrice) / buyPrice) * 100
+    : 0;
+
+holding.maxProfitRate = Math.max(
+  Number(holding.maxProfitRate || 0),
+  currentMaxProfitRate
+);
+
+holding.maxLossRate = Math.min(
+  Number(holding.maxLossRate || 0),
+  currentMaxLossRate
+);
+
+
 
 const abnormalPrice =
   buyPrice > 0 &&
