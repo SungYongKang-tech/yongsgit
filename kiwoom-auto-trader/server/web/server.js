@@ -1427,45 +1427,51 @@ app.get("/api/today-trade-analysis", (req, res) => {
   try {
     const state = loadState();
 
-    const today = new Date().toISOString().slice(0, 10);
+    function todayKstText() {
+      const now = new Date();
+      const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+      return kst.toISOString().slice(0, 10);
+    }
 
-    const trades = state.tradeLogs || [];
+    const today = todayKstText();
+
+    const trades = Array.isArray(state.tradeLogs) ? state.tradeLogs : [];
 
     const todayLogs = trades.filter(log => {
-      return String(log.time || log.createdAt || "").startsWith(today);
+      return String(log.date || "").trim() === today;
     });
 
-    const buys = todayLogs.filter(log =>
-      ["BUY", "TURBO_BUY", "WAVE_BUY"].includes(log.type)
-    );
+    const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY"];
 
-    const sells = todayLogs.filter(log =>
-      [
-        "SELL",
-        "SELL_ALL",
-        "STOP_LOSS",
-        "TRAILING_STOP",
-        "END_PROFIT_SELL",
-        "FIRST_TAKE_PROFIT",
-        "BREAK_EVEN_PROTECT",
-        "TAKE_PROFIT",
-        "HIGH_PROFIT_STAGNANT_SELL",
-        "TURBO_STOP_LOSS",
-        "TURBO_FIRST_TAKE_PROFIT",
-        "TURBO_TAKE_PROFIT",
-        "TURBO_TRAILING_STOP",
-        "TURBO_TIME_EXIT",
-        "WAVE_STOP_LOSS",
-        "WAVE_FIRST_TAKE_PROFIT",
-        "WAVE_TAKE_PROFIT",
-        "WAVE_TRAILING_STOP",
-        "WAVE_TIME_EXIT"
-      ].includes(log.type)
-    );
+    const sellTypes = [
+      "SELL",
+      "SELL_ALL",
+      "STOP_LOSS",
+      "TRAILING_STOP",
+      "END_PROFIT_SELL",
+      "FIRST_TAKE_PROFIT",
+      "BREAK_EVEN_PROTECT",
+      "TAKE_PROFIT",
+      "HIGH_PROFIT_STAGNANT_SELL",
+      "TURBO_STOP_LOSS",
+      "TURBO_FIRST_TAKE_PROFIT",
+      "TURBO_TAKE_PROFIT",
+      "TURBO_TRAILING_STOP",
+      "TURBO_TIME_EXIT",
+      "WAVE_STOP_LOSS",
+      "WAVE_FIRST_TAKE_PROFIT",
+      "WAVE_TAKE_PROFIT",
+      "WAVE_TRAILING_STOP",
+      "WAVE_TIME_EXIT"
+    ];
 
-    const realizedProfit = sells.reduce((sum, log) => {
-      return sum + Number(log.profit || 0);
-    }, 0);
+    const buys = todayLogs.filter(log => buyTypes.includes(log.type));
+    const sells = todayLogs.filter(log => sellTypes.includes(log.type));
+
+    const realizedProfit = sells.reduce(
+      (sum, log) => sum + Number(log.profit || 0),
+      0
+    );
 
     const wins = sells.filter(log => Number(log.profit || 0) > 0);
     const losses = sells.filter(log => Number(log.profit || 0) < 0);
@@ -1475,14 +1481,23 @@ app.get("/api/today-trade-analysis", (req, res) => {
       sellTypeCounts[log.type] = (sellTypeCounts[log.type] || 0) + 1;
     });
 
+    function getStrategy(log) {
+      return (
+        log.strategyGroup ||
+        log.group ||
+        (String(log.type || "").startsWith("TURBO")
+          ? "TURBO"
+          : String(log.type || "").startsWith("WAVE")
+          ? "WAVE"
+          : "CORE")
+      );
+    }
+
     const byStrategy = {};
 
     sells.forEach(log => {
-      const strategy =
-        log.strategyGroup ||
-        log.group ||
-        (String(log.type).startsWith("TURBO") ? "TURBO" :
-         String(log.type).startsWith("WAVE") ? "WAVE" : "CORE");
+      const strategy = getStrategy(log);
+      const profit = Number(log.profit || 0);
 
       if (!byStrategy[strategy]) {
         byStrategy[strategy] = {
@@ -1490,25 +1505,34 @@ app.get("/api/today-trade-analysis", (req, res) => {
           wins: 0,
           losses: 0,
           profit: 0,
+          winProfitSum: 0,
+          lossProfitSum: 0,
           maxProfit: null,
           maxLoss: null
         };
       }
 
-      const profit = Number(log.profit || 0);
+      const s = byStrategy[strategy];
 
-      byStrategy[strategy].trades += 1;
-      byStrategy[strategy].profit += profit;
+      s.trades += 1;
+      s.profit += profit;
 
-      if (profit > 0) byStrategy[strategy].wins += 1;
-      if (profit < 0) byStrategy[strategy].losses += 1;
-
-      if (byStrategy[strategy].maxProfit === null || profit > byStrategy[strategy].maxProfit) {
-        byStrategy[strategy].maxProfit = profit;
+      if (profit > 0) {
+        s.wins += 1;
+        s.winProfitSum += profit;
       }
 
-      if (byStrategy[strategy].maxLoss === null || profit < byStrategy[strategy].maxLoss) {
-        byStrategy[strategy].maxLoss = profit;
+      if (profit < 0) {
+        s.losses += 1;
+        s.lossProfitSum += profit;
+      }
+
+      if (s.maxProfit === null || profit > s.maxProfit) {
+        s.maxProfit = profit;
+      }
+
+      if (s.maxLoss === null || profit < s.maxLoss) {
+        s.maxLoss = profit;
       }
     });
 
@@ -1516,33 +1540,8 @@ app.get("/api/today-trade-analysis", (req, res) => {
       const s = byStrategy[key];
 
       s.winRate = s.trades > 0 ? (s.wins / s.trades) * 100 : 0;
-      s.avgProfit = s.wins > 0
-        ? sells
-            .filter(log => {
-              const strategy =
-                log.strategyGroup ||
-                log.group ||
-                (String(log.type).startsWith("TURBO") ? "TURBO" :
-                 String(log.type).startsWith("WAVE") ? "WAVE" : "CORE");
-
-              return strategy === key && Number(log.profit || 0) > 0;
-            })
-            .reduce((sum, log) => sum + Number(log.profit || 0), 0) / s.wins
-        : 0;
-
-      s.avgLoss = s.losses > 0
-        ? sells
-            .filter(log => {
-              const strategy =
-                log.strategyGroup ||
-                log.group ||
-                (String(log.type).startsWith("TURBO") ? "TURBO" :
-                 String(log.type).startsWith("WAVE") ? "WAVE" : "CORE");
-
-              return strategy === key && Number(log.profit || 0) < 0;
-            })
-            .reduce((sum, log) => sum + Number(log.profit || 0), 0) / s.losses
-        : 0;
+      s.avgProfit = s.wins > 0 ? s.winProfitSum / s.wins : 0;
+      s.avgLoss = s.losses > 0 ? s.lossProfitSum / s.losses : 0;
     });
 
     res.json({
