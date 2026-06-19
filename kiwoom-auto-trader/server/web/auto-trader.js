@@ -82,7 +82,7 @@ waveEndTime: "14:30",
 waveForceSellTime: "14:30",
 
 waveMaxHoldingCount: 3,
-waveMaxDailyBuyCount: 4,
+waveMaxDailyBuyCount: 2,
 
 waveMinMorningRiseRate: 3.0,
 waveMinPullbackRate: 2.0,
@@ -1545,6 +1545,7 @@ if (maxProfitRate >= settings.breakEvenTriggerRate) {
 if (
   holding.breakEvenActivated &&
   profitRate <= settings.breakEvenSellRate &&
+  profitRate >= 0 &&
   !isProtected
 ) {
   paperSell(
@@ -2013,6 +2014,13 @@ if (state.dailyBuyStopped) {
 
     const marketTemperature = calculateMarketTemperature(candidates);
 
+    if (marketTemperature.total < 20) {
+  marketTemperature.level = "NORMAL";
+  marketTemperature.label = "보통";
+  marketTemperature.reason =
+    `${marketTemperature.reason} / 표본 ${marketTemperature.total}개로 부족하여 NORMAL 처리`;
+}
+
 state.marketTemperature = {
   ...marketTemperature,
   checkedAt: new Date().toLocaleString("ko-KR")
@@ -2241,6 +2249,13 @@ const changeRate = Number(
   0
 );
 
+if (changeRate < 1.0) {
+  console.log(
+    `[매수제외] ${item.name} ${item.code} / 상승률 약함 ${changeRate.toFixed(2)}%`
+  );
+  continue;
+}
+
 
 const maxAllowedChangeRate =
   bestStrategy.key === "trend" &&
@@ -2331,6 +2346,11 @@ async function runTurboAutoBuyOnce() {
     if (isViLikeItem(item)) continue;
     if (isAlreadyHolding(state, item.code)) continue;
     if (wasTurboBoughtToday(state, item.code)) continue;
+
+    if (wasStoppedToday(state, item.code)) {
+  console.log("[TURBO 매수제외] 오늘 손절 또는 손실 이력 있음", item.name);
+  continue;
+}
 
     let priceData = null;
 
@@ -2456,6 +2476,11 @@ async function runWaveAutoBuyOnce() {
     if (getTodayWaveBuyCount(state) >= settings.waveMaxDailyBuyCount) break;
     if (isAlreadyHolding(state, candidate.code)) continue;
     if (wasWaveBoughtToday(state, candidate.code)) continue;
+
+    if (wasStoppedToday(state, candidate.code)) {
+  console.log("[WAVE 매수제외] 오늘 손절 또는 손실 이력 있음", candidate.name);
+  continue;
+}
 
     let priceData = null;
 
