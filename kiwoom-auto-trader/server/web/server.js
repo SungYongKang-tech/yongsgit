@@ -1462,7 +1462,12 @@ app.get("/api/today-trade-analysis", (req, res) => {
       "WAVE_FIRST_TAKE_PROFIT",
       "WAVE_TAKE_PROFIT",
       "WAVE_TRAILING_STOP",
-      "WAVE_TIME_EXIT"
+      "WAVE_TIME_EXIT",
+      "EARLY_STOP_LOSS",
+      "EARLY_FIRST_TAKE_PROFIT",
+      "EARLY_TAKE_PROFIT",
+      "EARLY_TRAILING_STOP",
+      "EARLY_TIME_EXIT",
     ];
 
     const buys = todayLogs.filter(log => buyTypes.includes(log.type));

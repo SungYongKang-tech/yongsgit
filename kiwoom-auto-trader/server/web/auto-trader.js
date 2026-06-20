@@ -15,8 +15,10 @@ const settings = {
 
   totalCash: 100000000,
 
-  coreRatio: 0.8,
-  turboRatio: 0.2,
+  coreRatio: 0.6,
+  turboRatio: 0.4,
+  earlyMaxHoldingCount: 3,
+  earlyMaxDailyBuyCount: 4,
 
   maxHoldingCount: 8,
   coreMaxHoldingCount: 8,
@@ -75,6 +77,22 @@ turboTrailingStopRate: 0.7,
 turboMaxDailyBuyCount: 6,
 turboMaxConsecutiveLoss: 3,
 turboMinOneMinuteRiseRate: 0.25,
+
+earlyEnabled: true,
+earlyStartTime: "09:05",
+earlyEndTime: "10:30",
+
+earlyMinScore: 6,
+earlyMinChangeRate: 0.3,
+earlyMaxChangeRate: 2.0,
+earlyMinTradeVolumeRatio: 150,
+earlyMinDayPositionRate: 60,
+
+earlyStopLossRate: -1.0,
+earlyTakeProfitRate: 3.0,
+earlyTakeProfitSellRatio: 0.5,
+earlyTrailingStartRate: 2.0,
+earlyTrailingStopRate: 0.7,
 
 waveEnabled: true,
 waveStartTime: "11:00",
@@ -256,7 +274,7 @@ function rebalanceCashIfNoHoldings(state, reason = "자동 재배분") {
 
   console.log(
     `[자금 재배분] ${reason} / 총자산 ${totalAsset.toLocaleString()}원 ` +
-    `/ CORE ${coreCash.toLocaleString()}원 / TURBO ${turboCash.toLocaleString()}원`
+    `/ CORE ${coreCash.toLocaleString()}원 / ATTACK ${turboCash.toLocaleString()}원`
   );
 
   return true;
@@ -792,6 +810,27 @@ function getTurboHoldingCount(state) {
   ).length;
 }
 
+function getEarlyHoldingCount(state) {
+  return (state.holdings || []).filter(
+    (item) => item.strategyGroup === "EARLY"
+  ).length;
+}
+
+function getTodayEarlyBuyCount(state) {
+  return (state.tradeLogs || []).filter((log) =>
+    log.date === todayKey() &&
+    log.type === "EARLY_BUY"
+  ).length;
+}
+
+function wasEarlyBoughtToday(state, code) {
+  return (state.tradeLogs || []).some((log) =>
+    log.code === code &&
+    log.date === todayKey() &&
+    log.type === "EARLY_BUY"
+  );
+}
+
 function wasTurboBoughtToday(state, code) {
   return (state.tradeLogs || []).some((log) =>
     log.code === code &&
@@ -838,6 +877,101 @@ function getTurboConsecutiveLossCount(state) {
 function isViLikeItem(item) {
   const rawText = JSON.stringify(item.raw || item || "");
   return rawText.includes("VI");
+}
+
+function getTradeVolumeRatio(item) {
+  const raw = item.raw || {};
+
+  const value = String(
+    raw.trde_pre ||
+    item.trde_pre ||
+    item.tradeVolumeRatio ||
+    ""
+  ).replace(/[+,]/g, "");
+
+  return Number(value || 0);
+}
+
+function getDayPositionRate(item, currentPrice) {
+  const high = Math.abs(Number(
+    item.high ||
+    item.highPrice ||
+    item.raw?.high_pric ||
+    0
+  ));
+
+  const low = Math.abs(Number(
+    item.low ||
+    item.lowPrice ||
+    item.raw?.low_pric ||
+    0
+  ));
+
+  if (!high || !low || high <= low || !currentPrice) return 0;
+
+  return ((currentPrice - low) / (high - low)) * 100;
+}
+
+function isEarlyLeaderCandidate(item, currentPrice) {
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    item.raw?.flu_rt ||
+    0
+  );
+
+  const openPrice = Math.abs(Number(
+    item.open ||
+    item.openPrice ||
+    item.raw?.open_pric ||
+    0
+  ));
+
+  const score = Number(item.discoverScore || 0);
+  const volumeRatio = getTradeVolumeRatio(item);
+  const positionRate = getDayPositionRate(item, currentPrice);
+
+  if (score < settings.earlyMinScore) {
+    return { pass: false, reason: `점수 부족 ${score}` };
+  }
+
+  if (
+    changeRate < settings.earlyMinChangeRate ||
+    changeRate > settings.earlyMaxChangeRate
+  ) {
+    return {
+      pass: false,
+      reason: `초기 상승 구간 아님 ${changeRate.toFixed(2)}%`
+    };
+  }
+
+  if (volumeRatio < settings.earlyMinTradeVolumeRatio) {
+    return {
+      pass: false,
+      reason: `거래량 증가 부족 ${volumeRatio.toFixed(1)}%`
+    };
+  }
+
+  if (openPrice > 0 && currentPrice <= openPrice) {
+    return { pass: false, reason: "시가 위 안착 실패" };
+  }
+
+  if (positionRate < settings.earlyMinDayPositionRate) {
+    return {
+      pass: false,
+      reason: `당일 위치 약함 ${positionRate.toFixed(1)}%`
+    };
+  }
+
+  return {
+    pass: true,
+    changeRate,
+    volumeRatio,
+    positionRate,
+    reason: `EARLY 초기 수급 포착 · 상승 ${changeRate.toFixed(2)}% / 거래량 ${volumeRatio.toFixed(1)}% / 위치 ${positionRate.toFixed(1)}%`
+  };
 }
 
 function checkTurboLeaderCandidate(item, currentPrice) {
@@ -896,6 +1030,117 @@ function checkTurboLeaderCandidate(item, currentPrice) {
     pass: true,
     reason: `대장주 선점 조건 통과 · 상승률 ${dayRiseRate.toFixed(2)}%`
   };
+}
+
+function paperEarlyBuy(state, item, currentPrice) {
+  if (!settings.earlyEnabled) return false;
+
+  if (getTodayEarlyBuyCount(state) >= settings.earlyMaxDailyBuyCount) {
+    console.log("[EARLY 매수제외] 하루 최대 진입 횟수 도달");
+    return false;
+  }
+
+  if (getEarlyHoldingCount(state) >= settings.earlyMaxHoldingCount) {
+    console.log("[EARLY 매수제외] 최대 보유종목 도달");
+    return false;
+  }
+
+  if (isAlreadyHolding(state, item.code)) {
+    console.log("[EARLY 매수제외] 이미 보유중", item.name);
+    return false;
+  }
+
+  if (wasEarlyBoughtToday(state, item.code)) {
+    console.log("[EARLY 매수제외] 오늘 이미 EARLY 매수", item.name);
+    return false;
+  }
+
+  if (wasStoppedToday(state, item.code)) {
+    console.log("[EARLY 매수제외] 오늘 손절 또는 손실 이력 있음", item.name);
+    return false;
+  }
+
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) return false;
+
+  const availableCash = Number(state.turboCash || 0);
+
+  const buyAmount = Math.min(
+    Math.floor(availableCash / Math.max(1, settings.earlyMaxHoldingCount - getEarlyHoldingCount(state))),
+    availableCash
+  );
+
+  const qty = Math.floor(buyAmount / price);
+
+  if (qty <= 0) {
+    console.log("[EARLY 매수제외] 공격자금 부족");
+    return false;
+  }
+
+  const holding = {
+    code: item.code,
+    name: item.name || item.stockName || item.korName || item.code,
+    buyPrice: price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    currentPrice: price,
+    highestPrice: price,
+    lowestPrice: price,
+    maxProfitRate: 0,
+    maxLossRate: 0,
+    autoTrade: true,
+
+    strategyGroup: "EARLY",
+    strategyPreset: "early",
+    strategyName: "초기수급형",
+
+    discoverScore: Number(item.discoverScore || 0),
+    changeRate: Number(item.changeRate || item.raw?.flu_rt || 0),
+    tradeVolumeRatio: getTradeVolumeRatio(item),
+
+    buyTime: nowText(),
+    buyTimeMs: Date.now(),
+    buyAt: new Date().toISOString(),
+    date: todayKey()
+  };
+
+  state.holdings.push(holding);
+  state.turboCash = availableCash - price * qty;
+
+  state.tradeLogs.push({
+    type: "EARLY_BUY",
+    strategyGroup: "EARLY",
+
+    code: holding.code,
+    name: holding.name,
+
+    price,
+    buyPrice: price,
+    qty,
+
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+
+    changeRate: holding.changeRate,
+    tradeVolumeRatio: holding.tradeVolumeRatio,
+    volume: Number(item.volume || item.raw?.trde_qty || 0),
+
+    marketTemperature: state.marketTemperature || null,
+    remainAttackCashAfterBuy: state.turboCash,
+
+    discoverScore: Number(item.discoverScore || 0),
+    reason: "EARLY 초기 수급 포착 자동 모의매수",
+
+    date: todayKey(),
+    time: nowText()
+  });
+
+  console.log(
+    `[EARLY 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주 / 거래량 ${holding.tradeVolumeRatio.toFixed(1)}%`
+  );
+
+  return true;
 }
 
 function paperTurboBuy(state, item, currentPrice) {
@@ -1230,7 +1475,8 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
   const isPartialSell =
   actionType === "FIRST_TAKE_PROFIT" ||
   actionType === "TURBO_FIRST_TAKE_PROFIT" ||
-  actionType === "WAVE_FIRST_TAKE_PROFIT";
+  actionType === "WAVE_FIRST_TAKE_PROFIT" ||
+  actionType === "EARLY_FIRST_TAKE_PROFIT";
 
   const sellKey = `${todayKey()}_${holding.code}_${actionType}`;
 
@@ -1294,7 +1540,11 @@ sellTimeText: nowText(),
     time: nowText()
   });
 
-if (holding.strategyGroup === "TURBO" || holding.strategyGroup === "WAVE") {
+if (
+  holding.strategyGroup === "TURBO" ||
+  holding.strategyGroup === "WAVE" ||
+  holding.strategyGroup === "EARLY"
+) {
   state.turboCash = Number(state.turboCash || 0) + sellAmount;
 } else {
   state.totalCash = Number(state.totalCash || 0) + sellAmount;
@@ -1469,6 +1719,75 @@ const maxProfitRate =
   buyPrice > 0
     ? ((Number(holding.highestPrice || currentPrice) - buyPrice) / buyPrice) * 100
     : 0;
+
+    if (holding.strategyGroup === "EARLY") {
+  if (
+    maxProfitRate >= settings.earlyTrailingStartRate &&
+    !holding.earlyTrailingActive
+  ) {
+    holding.earlyTrailingActive = true;
+    holding.earlyTrailingStartPrice = currentPrice;
+
+    console.log(
+      `[EARLY 트레일링 시작] ${holding.name} / 최고수익 ${maxProfitRate.toFixed(2)}%`
+    );
+  }
+
+  if (profitRate <= settings.earlyStopLossRate) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `EARLY 손절 ${profitRate.toFixed(2)}%`,
+      "EARLY_STOP_LOSS"
+    );
+    continue;
+  }
+
+  if (
+    !holding.earlyFirstTakeProfitDone &&
+    profitRate >= settings.earlyTakeProfitRate &&
+    Number(holding.qty || 0) >= 2
+  ) {
+    const sellQty = Math.floor(
+      Number(holding.qty || 0) * settings.earlyTakeProfitSellRatio
+    );
+
+    if (sellQty >= 1) {
+      paperSell(
+        state,
+        holding,
+        currentPrice,
+        `EARLY 1차 익절 ${profitRate.toFixed(2)}% · ${sellQty}주 매도`,
+        "EARLY_FIRST_TAKE_PROFIT",
+        sellQty
+      );
+
+      holding.earlyFirstTakeProfitDone = true;
+      holding.earlyTrailingActive = true;
+      remainHoldings.push(holding);
+      continue;
+    }
+  }
+
+  if (
+    holding.earlyTrailingActive &&
+    trailingDropRate <= -settings.earlyTrailingStopRate &&
+    profitRate > 0
+  ) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `EARLY 트레일링 매도 · 최고가 대비 ${settings.earlyTrailingStopRate}% 하락`,
+      "EARLY_TRAILING_STOP"
+    );
+    continue;
+  }
+
+  remainHoldings.push(holding);
+  continue;
+}
 
     if (holding.strategyGroup === "TURBO") {
   if (
@@ -2463,6 +2782,83 @@ if (changeRate >= maxAllowedChangeRate) {
   }
 }
 
+async function runEarlyAutoBuyOnce() {
+  if (!settings.earlyEnabled) return;
+
+  if (!isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)) {
+    return;
+  }
+
+  const state = loadState();
+
+  if (!state.serverAutoEnabled) {
+    console.log("[EARLY] 서버 자동매매 OFF");
+    return;
+  }
+
+  let candidates = [];
+
+  try {
+    candidates = await discoverCandidates();
+  } catch (err) {
+    console.warn("[EARLY] 후보 발굴 실패:", err.message);
+    saveState(state);
+    return;
+  }
+
+  for (const item of candidates) {
+    if (getEarlyHoldingCount(state) >= settings.earlyMaxHoldingCount) break;
+    if (getTodayEarlyBuyCount(state) >= settings.earlyMaxDailyBuyCount) break;
+
+    if (isAlreadyHolding(state, item.code)) continue;
+    if (wasEarlyBoughtToday(state, item.code)) continue;
+    if (wasStoppedToday(state, item.code)) continue;
+
+    let priceData = null;
+
+    try {
+      priceData = await fetchPrice(item.code);
+    } catch (err) {
+      console.log("[EARLY] 현재가 조회 실패", item.code, err.message);
+      continue;
+    }
+
+    const currentPrice = Number(priceData.currentPrice || item.currentPrice || 0);
+    if (!currentPrice || currentPrice <= 0) continue;
+
+    const mergedItem = {
+      ...item,
+      ...priceData,
+      raw: {
+        ...(item.raw || {}),
+        ...(priceData.raw || {})
+      }
+    };
+
+    const earlyCheck = isEarlyLeaderCandidate(mergedItem, currentPrice);
+
+    if (!earlyCheck.pass) continue;
+
+    console.log(
+      `[EARLY 후보] ${priceData.name || item.name} ${item.code} / ${earlyCheck.reason}`
+    );
+
+    paperEarlyBuy(
+      state,
+      {
+        ...mergedItem,
+        name: priceData.name || item.name,
+        currentPrice,
+        tradeVolumeRatio: earlyCheck.volumeRatio
+      },
+      currentPrice
+    );
+  }
+
+  state.lastEarlyCheckAt = nowText();
+  saveState(state);
+}
+
 async function runTurboAutoBuyOnce() {
   if (!settings.turboEnabled) return;
 
@@ -2684,6 +3080,12 @@ function startServerAutoTrader() {
   }
 }, 60 * 1000);
 
+setInterval(() => {
+  if (isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)) {
+    runEarlyAutoBuyOnce();
+  }
+}, 60 * 1000);
+
 
 setInterval(() => {
   const isMorningBuyTime = isBetweenTime("09:20", "10:00");
@@ -2774,6 +3176,7 @@ module.exports = {
   setServerAutoEnabled,
   runServerAutoBuyOnce,
   runTurboAutoBuyOnce,
+  runEarlyAutoBuyOnce,
   checkServerAutoSellOnce,
   runClosingProfitSell,
   runWaveAutoBuyOnce,
