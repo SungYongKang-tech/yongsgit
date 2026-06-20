@@ -787,9 +787,12 @@ maxLossRate: 0,
     0
   ),
 
-  volume: Number(item.volume || 0),   // 추가
+  volume: Number(item.volume || 0),
 
-  marketTemperature: state.marketTemperature || null, // 추가
+tradeVolumeRatio: getTradeVolumeRatio(item),
+dayPositionRate: getDayPositionRate(item, price),
+
+marketTemperature: state.marketTemperature || null,
 
   remainCashAfterBuy: state.totalCash,
   dynamicMaxHolding,
@@ -1247,7 +1250,8 @@ maxLossRate: 0,
     ),
 
     volume: Number(item.volume || 0),
-
+    tradeVolumeRatio: getTradeVolumeRatio(item),
+    dayPositionRate: getDayPositionRate(item, price),
     marketTemperature: state.marketTemperature || null,
 
     remainTurboCashAfterBuy: state.turboCash,
@@ -1419,13 +1423,15 @@ function paperWaveBuy(state, candidate, currentPrice) {
     highestPrice: price,
     autoTrade: true,
     lowestPrice: price,
-maxProfitRate: 0,
-maxLossRate: 0,
+    maxProfitRate: 0,
+    maxLossRate: 0,
     strategyGroup: "WAVE",
     strategyPreset: "wave",
     strategyName: "웨이브형",
     morningHigh: Number(candidate.morningHigh || 0),
     morningRiseRate: Number(candidate.morningRiseRate || 0),
+    pullbackRate: Number(candidate.pullbackRate || 0),
+    reboundRate: Number(candidate.reboundRate || 0),
     discoverScore: Number(candidate.discoverScore || 0),
     buyTime: nowText(),
     buyTimeMs: Date.now(),
@@ -3068,14 +3074,17 @@ async function runWaveAutoBuyOnce() {
 
     const check = checkWaveCandidate(candidate, priceData);
 
-    if (!check.pass) {
-      console.log(`[WAVE 제외] ${candidate.name} ${candidate.code} / ${check.reason}`);
-      continue;
-    }
+if (!check.pass) {
+  console.log(`[WAVE 제외] ${candidate.name} ${candidate.code} / ${check.reason}`);
+  continue;
+}
 
-    console.log(`[WAVE 후보] ${candidate.name} ${candidate.code} / ${check.reason}`);
+candidate.pullbackRate = check.pullbackRate;
+candidate.reboundRate = check.reboundRate;
 
-    paperWaveBuy(state, candidate, currentPrice);
+console.log(`[WAVE 후보] ${candidate.name} ${candidate.code} / ${check.reason}`);
+
+paperWaveBuy(state, candidate, currentPrice);
   }
 
   state.lastWaveCheckAt = nowText();
