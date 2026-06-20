@@ -1538,17 +1538,22 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     sellAmount,
     profit,
     profitRate,
-
+    buyChangeRate: Number(holding.changeRate || 0),
+    buyTradeVolumeRatio: Number(holding.tradeVolumeRatio || 0),
+    buyDayPositionRate: Number(holding.dayPositionRate || 0),
+    morningHigh: Number(holding.morningHigh || 0),
+    morningRiseRate: Number(holding.morningRiseRate || 0),
+    pullbackRate: Number(holding.pullbackRate || 0),
+    reboundRate: Number(holding.reboundRate || 0),
     highestPrice: Number(holding.highestPrice || buyPrice || 0),
-lowestPrice: Number(holding.lowestPrice || buyPrice || 0),
-maxProfitRate: Number(holding.maxProfitRate || 0),
-maxLossRate: Number(holding.maxLossRate || 0),
-holdingMinutes: holding.buyTimeMs
-  ? Math.round((Date.now() - Number(holding.buyTimeMs)) / 1000 / 60)
-  : 0,
-buyTimeText: holding.buyTime || holding.buyTimeText || "",
-sellTimeText: nowText(),
-
+    lowestPrice: Number(holding.lowestPrice || buyPrice || 0),
+    maxProfitRate: Number(holding.maxProfitRate || 0),
+    maxLossRate: Number(holding.maxLossRate || 0),
+    holdingMinutes: holding.buyTimeMs
+    ? Math.round((Date.now() - Number(holding.buyTimeMs)) / 1000 / 60)
+    : 0,
+    buyTimeText: holding.buyTime || holding.buyTimeText || "",
+    sellTimeText: nowText(),
     reason: reason || "서버 매도",
     strategyPreset: holding.strategyPreset,
     strategyName: holding.strategyName,
