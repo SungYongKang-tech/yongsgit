@@ -440,7 +440,10 @@ function isAlreadyHolding(state, code) {
 
 function getCoreHoldingCount(state) {
   return (state.holdings || []).filter(
-    (item) => item.strategyGroup !== "TURBO"
+    (item) =>
+      item.strategyGroup !== "TURBO" &&
+      item.strategyGroup !== "WAVE" &&
+      item.strategyGroup !== "EARLY"
   ).length;
 }
 
@@ -513,8 +516,16 @@ async function discoverCandidates() {
   const items = data.items || [];
 
   return items
-    .filter((item) => Number(item.discoverScore || 0) >= settings.minScore)
-    .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
+  .filter((item) =>
+    Number(item.discoverScore || 0) >= Math.min(
+      settings.minScore,
+      settings.earlyMinScore
+    )
+  )
+  .sort((a, b) =>
+    Number(b.discoverScore || 0) -
+    Number(a.discoverScore || 0)
+  );
 }
 
 async function runBacktestWithPreset(code, preset) {
@@ -1572,7 +1583,7 @@ if (
 
 rebalanceCashIfNoHoldings(
   state,
-  `전량매도 후 자동 8:2 재배분 · ${actionType}`
+  `전량매도 후 자동 6:4 재배분 · ${actionType}`
 );
 
 console.log(
@@ -3158,7 +3169,7 @@ async function runClosingProfitSell() {
 
   rebalanceCashIfNoHoldings(
   state,
-  "장마감 수익매도 후 자동 8:2 재배분"
+  "장마감 수익매도 후 자동 6:4 재배분"
 );
 
 saveState(state);

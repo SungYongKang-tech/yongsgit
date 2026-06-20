@@ -907,6 +907,11 @@ app.get("/api/performance-summary", (req, res) => {
     "WAVE_TAKE_PROFIT",
     "WAVE_TRAILING_STOP",
     "WAVE_TIME_EXIT",
+    "EARLY_STOP_LOSS",
+    "EARLY_FIRST_TAKE_PROFIT",
+    "EARLY_TAKE_PROFIT",
+    "EARLY_TRAILING_STOP",
+    "EARLY_TIME_EXIT",
   ].includes(log.type)
 );
 
@@ -1239,9 +1244,19 @@ app.get("/api/daily-summary", (req, res) => {
       "WAVE_TIME_EXIT",
       "SELL_CLOSING_PROFIT",
       "END_WEAK_SELL",
+      "EARLY_STOP_LOSS",
+      "EARLY_FIRST_TAKE_PROFIT",
+      "EARLY_TAKE_PROFIT",
+      "EARLY_TRAILING_STOP",
+      "EARLY_TIME_EXIT",
     ];
 
-    const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY"];
+    const buyTypes = [
+  "BUY",
+  "TURBO_BUY",
+  "WAVE_BUY",
+  "EARLY_BUY"
+];
 
     const dateMap = {};
 
@@ -1262,6 +1277,7 @@ app.get("/api/daily-summary", (req, res) => {
     coreProfit: 0,
     turboProfit: 0,
     waveProfit: 0,
+    earlyProfit: 0,
 
     realizedProfit: 0,
 
@@ -1275,6 +1291,8 @@ app.get("/api/daily-summary", (req, res) => {
 
     waveWins: 0,
     waveTrades: 0,
+    earlyWins: 0,
+    earlyTrades: 0,
 
     bestTrade: null,
     worstTrade: null
@@ -1316,13 +1334,20 @@ app.get("/api/daily-summary", (req, res) => {
     if (profit > 0) row.waveWins += 1;
   }
 
+  if (group === "EARLY") {
+  row.earlyTrades += 1;
+  if (profit > 0) row.earlyWins += 1;
+}
+
   if (group === "TURBO") {
-    row.turboProfit += profit;
-  } else if (group === "WAVE") {
-    row.waveProfit += profit;
-  } else {
-    row.coreProfit += profit;
-  }
+  row.turboProfit += profit;
+} else if (group === "WAVE") {
+  row.waveProfit += profit;
+} else if (group === "EARLY") {
+  row.earlyProfit += profit;
+} else {
+  row.coreProfit += profit;
+}
 
   if (!row.bestTrade || profit > row.bestTrade.profit) {
     row.bestTrade = {
@@ -1392,6 +1417,11 @@ app.get("/api/daily-summary", (req, res) => {
       row.waveTrades > 0
         ? (row.waveWins / row.waveTrades) * 100
         : 0,
+      
+    earlyWinRate:
+    row.earlyTrades > 0
+    ? (row.earlyWins / row.earlyTrades) * 100
+    : 0,
 
     bestTrade: row.bestTrade,
     worstTrade: row.worstTrade
@@ -1441,7 +1471,7 @@ app.get("/api/today-trade-analysis", (req, res) => {
       return String(log.date || "").trim() === today;
     });
 
-    const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY"];
+    const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY", "EARLY_BUY"];
 
     const sellTypes = [
       "SELL",
