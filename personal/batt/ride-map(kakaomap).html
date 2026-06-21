@@ -4304,7 +4304,187 @@ destSearchToggleBtn.addEventListener("click", () => {
 
 const places = new kakao.maps.services.Places();
 
-function searchDestination() {
+function getOwnerKey() {
+  return "ksy_courses";
+}
+
+async function loadGuideCoursesFromFirebase() {
+  const snap = await get(ref(db, `courses/${getOwnerKey()}`));
+  if (!snap.exists()) return [];
+
+  return Object.entries(snap.val())
+    .map(([id, value]) => ({
+      id,
+      ...value
+    }))
+    .filter(course =>
+      Array.isArray(course.points) &&
+      course.points.length >= 2
+    );
+}
+
+function findNearestPointIndex(points, target) {
+  let bestIndex = 0;
+  let bestDist = Infinity;
+
+  points.forEach((p, index) => {
+    const d = haversine(
+      Number(p.lat),
+      Number(p.lng),
+      Number(target.lat),
+      Number(target.lng)
+    );
+
+    if (d < bestDist) {
+      bestDist = d;
+      bestIndex = index;
+    }
+  });
+
+  return {
+    index: bestIndex,
+    distM: bestDist
+  };
+}
+
+function sliceCoursePoints(points, fromIndex, toIndex) {
+  if (fromIndex <= toIndex) {
+    return points.slice(fromIndex, toIndex + 1);
+  }
+
+  return points
+    .slice(toIndex, fromIndex + 1)
+    .reverse();
+}
+
+function calcRouteDistanceM(points) {
+  let total = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    total += haversine(
+      points[i - 1].lat,
+      points[i - 1].lng,
+      points[i].lat,
+      points[i].lng
+    );
+  }
+
+  return total;
+}
+
+function buildBestCourseRoute(current, target, courses) {
+  let best = null;
+
+  courses.forEach(course => {
+    const points = course.points
+      .map(p => ({
+        lat: Number(p.lat),
+        lng: Number(p.lng)
+      }))
+      .filter(p =>
+        Number.isFinite(p.lat) &&
+        Number.isFinite(p.lng)
+      );
+
+    if (points.length < 2) return;
+
+    const startNear = findNearestPointIndex(points, current);
+    const endNear = findNearestPointIndex(points, target);
+
+    const segment = sliceCoursePoints(
+      points,
+      startNear.index,
+      endNear.index
+    );
+
+    if (segment.length < 2) return;
+
+    const segmentDistance = calcRouteDistanceM(segment);
+
+    const score =
+      startNear.distM +
+      endNear.distM +
+      segmentDistance * 0.15;
+
+    if (!best || score < best.score) {
+      best = {
+        score,
+        courseName: course.name || "내 코스",
+        routePath: segment,
+        startDistanceM: startNear.distM,
+        endDistanceM: endNear.distM,
+        segmentDistanceM: segmentDistance
+      };
+    }
+  });
+
+  return best;
+}
+
+function fitRouteToMap(points) {
+  if (!map || !Array.isArray(points) || !points.length) return;
+
+  const bounds = new kakao.maps.LatLngBounds();
+
+  points.forEach(p => {
+    bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+  });
+
+  map.setBounds(bounds);
+}
+
+async function startSmartCourseGuide(target) {
+  const current = getCurrentPositionObject();
+
+  if (!current) {
+    alert("현재 위치를 먼저 확인해야 합니다.");
+    requestLocationPermission();
+    return;
+  }
+
+  const courses = await loadGuideCoursesFromFirebase();
+
+  if (!courses.length) {
+    alert("저장된 내 코스가 없습니다.");
+    return;
+  }
+
+  const result = buildBestCourseRoute(
+    current,
+    target,
+    courses
+  );
+
+  if (!result || !result.routePath.length) {
+    alert("목적지까지 연결할 내 코스를 찾지 못했습니다.");
+    return;
+  }
+
+  navigationState = {
+    ...navigationState,
+    active: true,
+    mode: "smartCourse",
+    courseName: result.courseName,
+    destination: target,
+    routePath: result.routePath
+  };
+
+  if (typeof saveNavigationState === "function") {
+    saveNavigationState();
+  }
+
+  redrawPath();
+  fitRouteToMap(result.routePath);
+
+  alert(
+    `내 코스 안내 시작\n` +
+    `사용 코스: ${result.courseName}\n` +
+    `코스 진입까지: ${(result.startDistanceM / 1000).toFixed(1)}km\n` +
+    `목적지 근처까지: ${(result.endDistanceM / 1000).toFixed(1)}km`
+  );
+}
+
+async function searchDestination() {
   const keyword = String(destSearchInput.value || "").trim();
 
   if (!keyword) {
@@ -4322,10 +4502,14 @@ function searchDestination() {
     const lat = Number(place.y);
     const lng = Number(place.x);
 
-    map.setCenter(new kakao.maps.LatLng(lat, lng));
-    map.setLevel(4);
+await startSmartCourseGuide({
+  lat,
+  lng,
+  name: place.place_name
+});
 
-    alert(`${place.place_name} 위치를 찾았습니다.\n이제 내 코스 조합 안내를 붙이면 됩니다.`);
+
+
   });
 }
 
