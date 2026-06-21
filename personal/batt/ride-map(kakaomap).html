@@ -1219,6 +1219,43 @@
 
 }
 
+.dest-search-panel {
+  display: none;
+  grid-template-columns: 1fr 64px;
+  gap: 6px;
+  margin: 0 8px;
+}
+
+.dest-search-panel.open {
+  display: grid;
+}
+
+#destSearchInput {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(15,23,42,0.95);
+  color: #fff;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#destSearchInput::placeholder {
+  color: #94a3b8;
+}
+
+#destSearchBtn {
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+
   </style>
 </head>
 <body>
@@ -1234,12 +1271,26 @@
           <button class="top-btn view-btn" id="viewModeBtn">데이터모드</button>
           <button class="top-btn green" id="startBtn">시작</button>
           <button class="top-btn red" id="endBtn">종료</button>
+          
+          <!-- 
           <button class="top-btn settings-btn" id="displaySettingsBtn">설정</button>
+           -->
+
+          <button class="top-btn settings-btn" id="destSearchToggleBtn">검색</button>
           <button class="top-btn green" id="groupRideBtnTop">그룹</button>
           <button class="top-btn message-btn" id="messageBtn">메시지</button>
           
         </div>
       </div>
+
+      <div class="dest-search-panel" id="destSearchPanel">
+  <input
+    id="destSearchInput"
+    type="text"
+    placeholder="목적지 검색 예: 진양호, 남강댐"
+  />
+  <button id="destSearchBtn">찾기</button>
+</div>
 
       <div class="display-panel" id="displayPanel">
         <div class="display-title">화면 표시 설정</div>
@@ -2406,7 +2457,12 @@ const batteryBtn = document.getElementById("batteryBtn");
 const historyBtn = document.getElementById("historyBtn");
 const courseBtn = document.getElementById("courseBtn");
 const viewModeBtn = document.getElementById("viewModeBtn");
-const displaySettingsBtn = document.getElementById("displaySettingsBtn");
+//const displaySettingsBtn = document.getElementById("displaySettingsBtn");
+const destSearchToggleBtn = document.getElementById("destSearchToggleBtn");
+const destSearchPanel = document.getElementById("destSearchPanel");
+const destSearchInput = document.getElementById("destSearchInput");
+const destSearchBtn = document.getElementById("destSearchBtn");
+
 const displayPanel = document.getElementById("displayPanel");
 const defaultViewSelect = document.getElementById("defaultViewSelect");
 const fontSizeSelect = document.getElementById("fontSizeSelect");
@@ -4235,9 +4291,50 @@ if (friendStrip) {
   });
 }
 
-displaySettingsBtn.addEventListener("click", () => {
+destSearchToggleBtn.addEventListener("click", () => {
   if (messagePanel) messagePanel.classList.remove("open");
-  displayPanel.classList.toggle("open");
+  if (displayPanel) displayPanel.classList.remove("open");
+
+  destSearchPanel.classList.toggle("open");
+
+  if (destSearchPanel.classList.contains("open")) {
+    setTimeout(() => destSearchInput.focus(), 100);
+  }
+});
+
+const places = new kakao.maps.services.Places();
+
+function searchDestination() {
+  const keyword = String(destSearchInput.value || "").trim();
+
+  if (!keyword) {
+    alert("목적지를 입력하세요.");
+    return;
+  }
+
+  places.keywordSearch(keyword, (data, status) => {
+    if (status !== kakao.maps.services.Status.OK || !data.length) {
+      alert("검색 결과가 없습니다.");
+      return;
+    }
+
+    const place = data[0];
+    const lat = Number(place.y);
+    const lng = Number(place.x);
+
+    map.setCenter(new kakao.maps.LatLng(lat, lng));
+    map.setLevel(4);
+
+    alert(`${place.place_name} 위치를 찾았습니다.\n이제 내 코스 조합 안내를 붙이면 됩니다.`);
+  });
+}
+
+destSearchBtn.addEventListener("click", searchDestination);
+
+destSearchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    searchDestination();
+  }
 });
 
 messageAddBtn.addEventListener("click", () => {
