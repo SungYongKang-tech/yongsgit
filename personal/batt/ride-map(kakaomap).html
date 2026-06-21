@@ -1222,9 +1222,26 @@
   </div>
 </div>
         <div class="message-quick-row">
-          <input type="text" class="quick-message-input" id="quickMessageInput" maxlength="40" placeholder="임시 메시지를 입력해서 바로 전체 전달" />
-          <button type="button" class="message-action-btn" id="quickMessageSendBtn">즉시전달</button>
-        </div>
+  <input type="text"
+         class="quick-message-input"
+         id="quickMessageInput"
+         maxlength="40"
+         placeholder="임시 메시지를 입력해서 바로 전체 전달" />
+
+  <button type="button"
+          class="message-action-btn secondary"
+          id="voiceInputBtn">
+    🎤 말하기
+  </button>
+
+  <button type="button"
+          class="message-action-btn"
+          id="quickMessageSendBtn">
+    즉시전달
+  </button>
+</div>
+
+
         <div class="message-tools" id="messageTools" style="display:none;">
           <div class="message-tool-row">
             <input type="text" class="message-input" id="messageInput" maxlength="40" placeholder="목록 메시지 추가 또는 수정" />
@@ -1613,10 +1630,53 @@ const DEFAULT_GROUP_MESSAGES = [
 "목적지 근처야."
 ];
 
+const voiceInputBtn =
+  document.getElementById("voiceInputBtn");
+
 const initialGroupMessageSettings = {
   fontSize: "xlarge",
   messages: DEFAULT_GROUP_MESSAGES.slice()
 };
+
+function startVoiceInput() {
+
+  const SpeechRecognition =
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    alert("이 브라우저는 음성인식을 지원하지 않습니다.");
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+
+  recognition.lang = "ko-KR";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  voiceInputBtn.textContent = "듣는중...";
+
+  recognition.start();
+
+  recognition.onresult = (event) => {
+
+    const text =
+      event.results[0][0].transcript;
+
+    quickMessageInput.value = text;
+
+    voiceInputBtn.textContent = "🎤 말하기";
+  };
+
+  recognition.onerror = () => {
+    voiceInputBtn.textContent = "🎤 말하기";
+  };
+
+  recognition.onend = () => {
+    voiceInputBtn.textContent = "🎤 말하기";
+  };
+}
 
 function loadDisplaySettings() {
   try {
@@ -4290,6 +4350,11 @@ quickMessageSendBtn.addEventListener("click", async () => {
   await sendPresetGroupMessage(value);
   if (quickMessageInput) quickMessageInput.value = "";
 });
+
+voiceInputBtn?.addEventListener(
+  "click",
+  startVoiceInput
+);
 
 quickMessageInput?.addEventListener("keydown", async (e) => {
   if (e.key !== "Enter") return;
