@@ -1,4 +1,12 @@
 exports.handler = async function (event) {
+  if (event.httpMethod !== "GET" && event.httpMethod !== "POST") {
+    return json(405, {
+      error: "Method Not Allowed",
+      method: event.httpMethod,
+      points: []
+    });
+  }
+
   const key = process.env.KAKAO_REST_API_KEY;
 
   if (!key) {
