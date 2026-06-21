@@ -2537,30 +2537,41 @@ if (memberCount <= 2) {
 
 async function sendPresetGroupMessage(messageText) {
   const cleanText = String(messageText || "").trim();
-  if (!cleanText) return;
+  if (!cleanText) return false;
+
   if (!groupEnabled || !currentRoomId) {
     alert("그룹라이딩 참여 중일 때만 메시지를 보낼 수 있습니다.");
-    return;
+    return false;
   }
-  await ensureAuth();
-  const senderName = (myGroupName || auth.currentUser?.displayName || "라이더").trim() || "라이더";
-  const senderUid = auth.currentUser?.uid || "unknown";
-  const payload = {
-    id: `msg_${Date.now()}_${senderUid.slice(0, 8)}`,
-    text: cleanText,
-    senderName,
-    senderUid,
-    sentAt: Date.now()
-  };
 
   try {
+    await ensureAuth();
+    await ensureGroupMember();
+
+    const senderName =
+      (myGroupName || auth.currentUser?.displayName || "라이더").trim() || "라이더";
+
+    const senderUid = auth.currentUser?.uid || "unknown";
+
+    const payload = {
+      id: `msg_${Date.now()}_${senderUid.slice(0, 8)}`,
+      text: cleanText,
+      senderName,
+      senderUid,
+      sentAt: Date.now()
+    };
+
     await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
       broadcastMessage: payload
     });
+
     if (messagePanel) messagePanel.classList.remove("open");
+    return true;
+
   } catch (e) {
     console.error("그룹 메시지 전송 실패:", e);
-    alert("메시지 전송에 실패했습니다.");
+    alert(`메시지 전송 실패: ${e.code || e.message || "알 수 없는 오류"}`);
+    return false;
   }
 }
 
