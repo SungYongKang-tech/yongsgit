@@ -1163,6 +1163,27 @@
   text-shadow: 0 0 6px rgba(250,204,21,0.35);
 }
 
+.broadcast-reply-row {
+  position: absolute;
+  bottom: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.broadcast-reply-btn {
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #22c55e, #16a34a);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+  white-space: nowrap;
+}
+
   </style>
 </head>
 <body>
@@ -1342,6 +1363,11 @@
       <div class="broadcast-sender" id="broadcastSender">보낸 사람</div>
       <button class="broadcast-close" id="broadcastCloseBtn" type="button" aria-label="닫기">×</button>
       <div class="broadcast-text" id="broadcastText">쉬었다 가자.</div>
+      <div class="broadcast-reply-row">
+  <button type="button" class="broadcast-reply-btn" id="broadcastVoiceReplyBtn">
+    🎤 말해서 즉시보내기
+  </button>
+</div>
       <div class="broadcast-hint">화면을 누르거나 ×를 눌러 닫기</div>
     </div>
   </div>
@@ -1675,6 +1701,48 @@ function startVoiceInput() {
 
   recognition.onend = () => {
     voiceInputBtn.textContent = "🎤 말하기";
+  };
+}
+
+function startBroadcastVoiceReply() {
+  const SpeechRecognition =
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    alert("이 브라우저는 음성인식을 지원하지 않습니다.");
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+
+  recognition.lang = "ko-KR";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  broadcastVoiceReplyBtn.textContent = "듣는중...";
+
+  recognition.start();
+
+  recognition.onresult = async (event) => {
+    const text = event.results[0][0].transcript.trim();
+
+    broadcastVoiceReplyBtn.textContent = "전송중...";
+
+    if (text) {
+      await sendPresetGroupMessage(text);
+      hideBroadcastMessage();
+    }
+
+    broadcastVoiceReplyBtn.textContent = "🎤 말해서 즉시보내기";
+  };
+
+  recognition.onerror = () => {
+    broadcastVoiceReplyBtn.textContent = "🎤 말해서 즉시보내기";
+  };
+
+  recognition.onend = () => {
+    broadcastVoiceReplyBtn.textContent = "🎤 말해서 즉시보내기";
   };
 }
 
@@ -2325,6 +2393,11 @@ const broadcastOverlay = document.getElementById("broadcastOverlay");
 const broadcastSender = document.getElementById("broadcastSender");
 const broadcastText = document.getElementById("broadcastText");
 const broadcastCloseBtn = document.getElementById("broadcastCloseBtn");
+
+const broadcastVoiceReplyBtn =
+  document.getElementById("broadcastVoiceReplyBtn");
+
+  
 
 let map;
 let ridePolyline = null;
@@ -4239,6 +4312,12 @@ messageCloseBtn.addEventListener("click", () => {
   messageManageBtn.textContent = "메시지 설정";
   setMessageEditMode(-1);
 });
+
+broadcastVoiceReplyBtn?.addEventListener(
+  "click",
+  startBroadcastVoiceReply
+);
+
 
 messageAddBtn.addEventListener("click", () => {
   const value = String(messageInput?.value || "").trim();
