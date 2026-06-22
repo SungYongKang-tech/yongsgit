@@ -21,7 +21,7 @@ const settings = {
   earlyMaxDailyBuyCount: 4,
 
   maxHoldingCount: 8,
-  coreMaxHoldingCount: 8,
+  coreMaxHoldingCount: 6,
   turboMaxHoldingCount: 4,
 
   perBuyAmount: 10000000,
