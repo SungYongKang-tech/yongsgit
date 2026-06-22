@@ -4828,21 +4828,44 @@ async function searchDestination() {
     return;
   }
 
-  places.keywordSearch(keyword, async (data, status) => {
+  places.keywordSearch(keyword, (data, status) => {
     if (status !== kakao.maps.services.Status.OK || !data.length) {
       alert("검색 결과가 없습니다.");
       return;
     }
 
     const place = data[0];
-    const lat = Number(place.y);
-    const lng = Number(place.x);
 
-    await startSmartCourseGuide({
-      lat,
-      lng,
+    const target = {
+      lat: Number(place.y),
+      lng: Number(place.x),
       name: place.place_name
-    });
+    };
+
+    clearManualRoutePoints();
+
+    setManualEndPoint(target);
+    manualRouteMode = "start";
+
+    if (recommendedPolyline) {
+      recommendedPolyline.setPath([]);
+    }
+
+    navigationState = {
+      ...navigationState,
+      active: false,
+      mode: "",
+      courseMode: false,
+      courseName: "",
+      destination: target,
+      routePath: []
+    };
+
+    saveNavigationState();
+
+    map.panTo(new kakao.maps.LatLng(target.lat, target.lng));
+
+    alert(`${target.name} 위치를 표시했습니다.\n안내시작을 누르면 경로가 생성됩니다.`);
   });
 }
 
