@@ -218,6 +218,46 @@ function monthRange(fromYm, toYm){ // inclusive
 const safeName = s => String(s??"").trim();
 const winRate = (w,t)=> t ? (w/t*100) : 0;
 
+function getMatchMonthKey(m){
+  const mk = safeName(m?.monthKey);
+
+  if (/^\d{4}-\d{2}$/.test(mk)) return mk;
+
+  if (/^\d{4}-\d{1}$/.test(mk)) {
+    const [y, mo] = mk.split("-");
+    return `${y}-${pad2(mo)}`;
+  }
+
+  const raw = safeName(
+    m?.date ||
+    m?.matchDate ||
+    m?.createdAt ||
+    m?.time ||
+    m?.timestamp ||
+    ""
+  );
+
+  const found = raw.match(/(\d{4})[-./년\s]*(\d{1,2})/);
+  if (!found) return "";
+
+  return `${found[1]}-${pad2(found[2])}`;
+}
+
+function getMatchMode(m){
+  const mode = safeName(m?.mode);
+
+  if (["single", "singles", "단식"].includes(mode)) return "single";
+  if (["double", "doubles", "복식"].includes(mode)) return "double";
+
+  const A = Array.isArray(m?.namesA) ? m.namesA : [];
+  const B = Array.isArray(m?.namesB) ? m.namesB : [];
+
+  if (A.length === 1 && B.length === 1) return "single";
+  if (A.length === 2 && B.length === 2) return "double";
+
+  return "single";
+}
+
 /* =========================
    Query Param
 ========================= */
@@ -311,32 +351,20 @@ async function loadAllSummaryByMonthlyReports(){
    matches: 월별 조회 (monthKey 인덱스 필요)
 ========================= */
 async function fetchMatchesByMonth(monthKey){
-  const snap = await rtdb.get(rtdb.ref(db, "matches"));
+  const q = rtdb.query(
+    rtdb.ref(db,"matches"),
+    rtdb.orderByChild("monthKey"),
+    rtdb.equalTo(monthKey)
+  );
+  const snap = await rtdb.get(q);
   if(!snap.exists()) return [];
-
-  const data = Object.values(snap.val() || {});
-
-  return data.filter(m => {
-    const mk = safeName(m?.monthKey);
-    if(mk === monthKey) return true;
-
-    const dateText = safeName(
-      m?.date ||
-      m?.matchDate ||
-      m?.createdAt ||
-      m?.time ||
-      m?.timestamp ||
-      ""
-    );
-
-    return dateText.startsWith(monthKey);
-  });
+  return Object.values(snap.val() || {});
 }
 
 function applyMatchToMaps(m, scope){
   if (!m || !["A","B"].includes(m?.winnerSide)) return;
 
-  const mode = safeName(m?.mode) || "single";
+  const mode = getMatchMode(m);
   const A = (m.namesA || []).map(safeName).filter(Boolean);
   const B = (m.namesB || []).map(safeName).filter(Boolean);
 
