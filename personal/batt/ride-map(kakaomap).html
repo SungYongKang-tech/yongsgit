@@ -4482,7 +4482,13 @@ async function requestRoadRoute(from, to) {
 
     const data = await res.json();
 
-    if (!Array.isArray(data.points) || data.points.length < 2) {
+    console.log("[길찾기 응답]", data.source, data.points?.length, data);
+
+    if (data.fallback || data.source === "fallback") {
+      return [];
+    }
+
+    if (!Array.isArray(data.points) || data.points.length < 3) {
       return [];
     }
 
@@ -4514,9 +4520,12 @@ async function startSmartCourseGuide(target) {
   if (!result || !result.routePath || result.routePath.length < 2) {
   const directRoute = await requestRoadRoute(current, target);
 
-  const finalRoute = directRoute.length
-    ? directRoute
-    : [current, target];
+  if (!directRoute.length) {
+  alert("카카오 자전거 길찾기에 실패했습니다. 직선 연결은 표시하지 않습니다.");
+  return;
+}
+
+const finalRoute = directRoute;
 
   navigationState = {
     ...navigationState,
@@ -4542,11 +4551,21 @@ async function startSmartCourseGuide(target) {
   const enterRoute = await requestRoadRoute(current, courseStart);
   const exitRoute = await requestRoadRoute(courseEnd, target);
 
-  const finalRoute = mergeRouteParts(
-    enterRoute.length ? enterRoute : [current, courseStart],
-    result.routePath,
-    exitRoute.length ? exitRoute : [courseEnd, target]
-  );
+  if (!enterRoute.length) {
+  alert("현재 위치에서 내 코스 진입점까지 자전거 길찾기에 실패했습니다.");
+  return;
+}
+
+if (!exitRoute.length) {
+  alert("내 코스 끝점에서 목적지까지 자전거 길찾기에 실패했습니다.");
+  return;
+}
+
+const finalRoute = mergeRouteParts(
+  enterRoute,
+  result.routePath,
+  exitRoute
+);
 
   navigationState = {
     ...navigationState,

@@ -85,10 +85,11 @@ exports.handler = async function (event) {
   }
 
   return json(200, {
-    source: "fallback",
-    points: [from, to]
-  });
-};
+  source: "fallback",
+  fallback: true,
+  error: "카카오 길찾기 실패",
+  points: []
+});
 
 function buildBikeUrl(from, to, priority) {
   const params = new URLSearchParams({
