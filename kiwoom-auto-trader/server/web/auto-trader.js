@@ -2805,6 +2805,14 @@ if (changeRate >= maxAllowedChangeRate) {
 }
 
 async function runEarlyAutoBuyOnce() {
+  if (isRunning) {
+    console.log("[EARLY] 다른 매수 로직 실행중이라 건너뜀");
+    return;
+  }
+
+  isRunning = true;
+
+  try {
   if (!settings.earlyEnabled) return;
 
   if (!isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)) {
@@ -2878,10 +2886,21 @@ async function runEarlyAutoBuyOnce() {
   }
 
   state.lastEarlyCheckAt = nowText();
-  saveState(state);
+    saveState(state);
+  } finally {
+    isRunning = false;
+  }
 }
 
 async function runTurboAutoBuyOnce() {
+  if (isRunning) {
+    console.log("[TURBO] 다른 매수 로직 실행중이라 건너뜀");
+    return;
+  }
+
+  isRunning = true;
+
+  try {
   if (!settings.turboEnabled) return;
 
   if (!isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
@@ -3027,7 +3046,10 @@ const volumeSurge =
     );
   }
 
-  saveState(state);
+    saveState(state);
+  } finally {
+    isRunning = false;
+  }
 }
 
 async function runWaveAutoBuyOnce() {
