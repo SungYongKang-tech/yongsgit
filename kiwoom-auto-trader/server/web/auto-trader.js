@@ -94,7 +94,7 @@ earlyTakeProfitSellRatio: 0.5,
 earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
-waveEnabled: true,
+waveEnabled: false,
 waveStartTime: "11:00",
 waveEndTime: "14:30",
 waveForceSellTime: "14:30",
@@ -130,6 +130,7 @@ leaderCoreMaxHoldingCount: 8,
 
 
 let isRunning = false;
+let isSellRunning = false;
 
 function isBetweenTime(start, end) {
   const now = new Date();
@@ -433,6 +434,22 @@ function isAfterEndProfitSellTime() {
   return current >= settings.endProfitSellTime;
 }
 
+function isExcludedStock(item = {}) {
+  const name = String(item.name || item.stockName || item.korName || "").trim();
+  const code = String(item.code || "").trim();
+
+  if (
+    /KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|ETF|ETN|레버리지|인버스|스팩|SPAC/i.test(name)
+  ) {
+    return true;
+  }
+
+  // 우선주 간단 제외
+  if (name.endsWith("우")) return true;
+
+  return false;
+}
+
 
 function isAlreadyHolding(state, code) {
   return state.holdings.some((item) => item.code === code);
@@ -516,12 +533,13 @@ async function discoverCandidates() {
   const items = data.items || [];
 
   return items
-    .filter((item) =>
-      Number(item.discoverScore || 0) >= Math.min(
-        settings.minScore,
-        settings.earlyMinScore
-      )
+  .filter((item) => !isExcludedStock(item))
+  .filter((item) =>
+    Number(item.discoverScore || 0) >= Math.min(
+      settings.minScore,
+      settings.earlyMinScore
     )
+  )
     .sort((a, b) =>
       Number(b.discoverScore || 0) -
       Number(a.discoverScore || 0)
@@ -1614,12 +1632,19 @@ return true;
 
 
 async function checkServerAutoSellOnce() {
-
-  if (!isTradeTime()) {
+  if (isSellRunning) {
+    console.log("[SELL] 다른 매도 로직 실행중이라 건너뜀");
     return;
   }
 
-  const state = loadState();
+  isSellRunning = true;
+
+  try {
+    if (!isTradeTime()) {
+      return;
+    }
+
+    const state = loadState();
 
 
   if (!state.serverAutoEnabled) {
@@ -2210,10 +2235,13 @@ if (
     }
   }
 
-  state.holdings = remainHoldings;
-  state.lastSellCheckAt = nowText();
+     state.holdings = remainHoldings;
+    state.lastSellCheckAt = nowText();
 
-  saveState(state);
+    saveState(state);
+  } finally {
+    isSellRunning = false;
+  }
 }
 
 function isPullbackReboundCandidate(item) {
