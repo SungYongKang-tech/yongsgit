@@ -656,6 +656,19 @@ function wasBoughtToday(state, code) {
   );
 }
 
+function wasAnyBoughtToday(state, code) {
+  return (state.tradeLogs || []).some((log) =>
+    log.code === code &&
+    log.date === todayKey() &&
+    [
+      "BUY",
+      "TURBO_BUY",
+      "WAVE_BUY",
+      "EARLY_BUY"
+    ].includes(log.type)
+  );
+}
+
 function getSafeStockName(item, priceData = {}) {
   const code = String(item.code || priceData.code || "").trim();
 
@@ -684,6 +697,11 @@ function getSafeStockName(item, priceData = {}) {
 function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount) {
   if (!isTradeTime()) {
     console.log("[모의매수 차단] 거래 가능 시간이 아닙니다.", item?.name);
+    return false;
+  }
+
+  if (isExcludedStock(item)) {
+    console.log("[CORE 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
     return false;
   }
 
@@ -1067,6 +1085,11 @@ function checkTurboLeaderCandidate(item, currentPrice) {
 function paperEarlyBuy(state, item, currentPrice) {
   if (!settings.earlyEnabled) return false;
 
+  if (isExcludedStock(item)) {
+    console.log("[EARLY 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
+    return false;
+  }
+
   if (getTodayEarlyBuyCount(state) >= settings.earlyMaxDailyBuyCount) {
     console.log("[EARLY 매수제외] 하루 최대 진입 횟수 도달");
     return false;
@@ -1177,6 +1200,11 @@ function paperEarlyBuy(state, item, currentPrice) {
 
 function paperTurboBuy(state, item, currentPrice) {
   if (!settings.turboEnabled) return false;
+
+  if (isExcludedStock(item)) {
+    console.log("[TURBO 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
+    return false;
+  }
 
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
     console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
