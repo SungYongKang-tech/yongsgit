@@ -288,7 +288,12 @@ app.get("/api/discover", async (req, res) => {
   try {
     const limit = Number(req.query.limit || 300);
 
-    const targets = STOCK_MASTER.slice(0, limit);
+    const scanLimit = Number(req.query.scanLimit || STOCK_MASTER.length);
+const resultLimit = Number(req.query.limit || 300);
+
+const targets = STOCK_MASTER.slice(0, scanLimit);
+
+
     const items = [];
 
     for (const stock of targets) {
@@ -318,7 +323,7 @@ app.get("/api/discover", async (req, res) => {
 
     res.json({
       count: sorted.length,
-      items: sorted
+      items: sorted.slice(0, resultLimit)
     });
   } catch (error) {
     console.error("/api/discover 오류:", error);

@@ -510,22 +510,22 @@ async function fetchPrice(code) {
 
 async function discoverCandidates() {
   const data = await fetchJson(
-    `${API_BASE}/api/discover?limit=${settings.discoverLimit}`
+    `${API_BASE}/api/discover?scanLimit=1000&limit=${settings.discoverLimit}`
   );
 
   const items = data.items || [];
 
   return items
-  .filter((item) =>
-    Number(item.discoverScore || 0) >= Math.min(
-      settings.minScore,
-      settings.earlyMinScore
+    .filter((item) =>
+      Number(item.discoverScore || 0) >= Math.min(
+        settings.minScore,
+        settings.earlyMinScore
+      )
     )
-  )
-  .sort((a, b) =>
-    Number(b.discoverScore || 0) -
-    Number(a.discoverScore || 0)
-  );
+    .sort((a, b) =>
+      Number(b.discoverScore || 0) -
+      Number(a.discoverScore || 0)
+    );
 }
 
 async function runBacktestWithPreset(code, preset) {
