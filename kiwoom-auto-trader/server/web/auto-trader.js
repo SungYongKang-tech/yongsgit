@@ -617,14 +617,19 @@ function wasStoppedToday(state, code) {
     ...(state.tradeLogs || [])
   ];
 
+  const stopLossTypes = [
+    "STOP_LOSS",
+    "TURBO_STOP_LOSS",
+    "EARLY_STOP_LOSS",
+    "WAVE_STOP_LOSS"
+  ];
+
   return logs.some((item) =>
     item.code === code &&
     item.date === today &&
     (
-      item.type === "STOP_LOSS" ||
-      item.actionType === "STOP_LOSS" ||
-      String(item.reason || "").includes("손절") ||
-      Number(item.profit || 0) < 0
+      stopLossTypes.includes(item.type) ||
+      stopLossTypes.includes(item.actionType)
     )
   );
 }
@@ -701,9 +706,14 @@ function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount)
   }
 
   if (isExcludedStock(item)) {
-    console.log("[CORE 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
-    return false;
-  }
+  console.log("[CORE 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
+  return false;
+}
+
+if (wasStoppedToday(state, item.code)) {
+  console.log("[CORE 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
+  return false;
+}
 
   if (state.holdings.some((h) => h.code === item.code)) {
     console.log("[모의매수 제외] 이미 보유중", item.name);
@@ -1201,10 +1211,15 @@ function paperEarlyBuy(state, item, currentPrice) {
 function paperTurboBuy(state, item, currentPrice) {
   if (!settings.turboEnabled) return false;
 
-  if (isExcludedStock(item)) {
-    console.log("[TURBO 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
-    return false;
-  }
+if (isExcludedStock(item)) {
+  console.log("[TURBO 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
+  return false;
+}
+
+if (wasStoppedToday(state, item.code)) {
+  console.log("[TURBO 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
+  return false;
+}
 
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
     console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
@@ -1419,6 +1434,11 @@ function checkWaveCandidate(candidate, priceData) {
 
 function paperWaveBuy(state, candidate, currentPrice) {
   if (!settings.waveEnabled) return false;
+
+  if (isExcludedStock(candidate)) {
+    console.log("[WAVE 매수제외] 제외종목", candidate.name || candidate.code);
+    return false;
+  }
 
   if (getWaveHoldingCount(state) >= settings.waveMaxHoldingCount) {
     console.log("[WAVE 매수제외] 최대 보유종목 도달");
