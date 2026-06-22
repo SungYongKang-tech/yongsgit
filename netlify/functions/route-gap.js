@@ -1,4 +1,13 @@
 exports.handler = async function (event) {
+  exports.handler = async function (event) {
+  // 브라우저가 사전 확인 요청을 보낼 때 대비
+  if (event.httpMethod === "OPTIONS") {
+    return json(200, {
+      ok: true,
+      points: []
+    });
+  }
+
   if (event.httpMethod !== "GET" && event.httpMethod !== "POST") {
     return json(405, {
       error: "Method Not Allowed",
@@ -170,7 +179,9 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*"
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
     },
     body: JSON.stringify(body)
   };
