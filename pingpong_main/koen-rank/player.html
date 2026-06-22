@@ -94,7 +94,12 @@ h1{margin:4px 0 10px; color:var(--accent); font-size:clamp(18px,4vw,24px); font-
   </div>
 </section>
 
-
+<section class="grid" style="margin-top:12px;">
+  <div class="card" style="grid-column:span 12;">
+    <h3>🏆 올해 누적 성적</h3>
+    <div id="yearSummary" class="big"></div>
+  </div>
+</section>
 
 <!-- 2) 이번달 단식/복식 -->
 <section class="grid" style="margin-top:12px;">
@@ -225,6 +230,10 @@ const playerName = safeName(params.get("name") || "");
 // members bu
 let playerLevels = {};
 
+let yearTotal = 0;
+let yearWin = 0;
+let yearLose = 0;
+
 
 
 // 2) 이번달 실시간
@@ -250,6 +259,49 @@ async function loadMembers(){
   });
 }
 
+async function loadYearSummary(){
+  const snap = await rtdb.get(rtdb.ref(db,"monthlyReports"));
+
+  if(!snap.exists()) return;
+
+  const reports = snap.val() || {};
+
+  yearTotal = 0;
+  yearWin = 0;
+  yearLose = 0;
+
+  Object.entries(reports).forEach(([month,data]) => {
+
+    if (!month.startsWith("2026-")) return;
+
+    const players = data?.players || {};
+
+    const row = Object.values(players)
+      .find(x => safeName(x?.name) === playerName);
+
+    if (!row) return;
+
+    const w = Number(row.win ?? row.wins ?? 0);
+    const l = Number(row.lose ?? row.losses ?? 0);
+
+    yearWin += w;
+    yearLose += l;
+    yearTotal += (w + l);
+  });
+}
+
+function renderYearSummary(){
+
+  const rate = yearTotal
+    ? fmt1(yearWin / yearTotal * 100)
+    : "0.0";
+
+  $("#yearSummary").innerHTML = `
+    <div>🏓 총 경기 : <b>${yearTotal}</b></div>
+    <div>✅ 전적 : <b>${yearWin}승 ${yearLose}패</b></div>
+    <div>📈 승률 : <b>${rate}%</b></div>
+  `;
+}
 
 async function fetchMatchesByMonth(monthKey){
   const q = rtdb.query(
@@ -421,6 +473,13 @@ try{
   }
 
 await loadFirebase();
+await loadMembers();
+
+await loadYearSummary();
+
+renderBase();
+
+renderYearSummary();
 await loadMembers();
 renderBase();
 
