@@ -1270,6 +1270,41 @@ body.data-mode #rideBatteryEl .metric-unit {
   font-size: 10px;
 }
 
+.dest-result-list {
+  display: none;
+  margin: 0 8px 6px 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: rgba(15,23,42,0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.dest-result-list.open {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+}
+
+.dest-result-item {
+  text-align: left;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dest-result-addr {
+  display: block;
+  margin-top: 3px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+}
+
   </style>
 </head>
 <body>
@@ -1305,6 +1340,8 @@ body.data-mode #rideBatteryEl .metric-unit {
   />
   <button id="destSearchBtn">찾기</button>
 </div>
+
+<div id="destResultList" class="dest-result-list"></div>
 
       <div class="display-panel" id="displayPanel">
         <div class="display-title">화면 표시 설정</div>
@@ -4820,15 +4857,61 @@ const finalRoute = mergeRouteParts(
   );
 }
 
+const destResultList = document.getElementById("destResultList");
+let destSearchResults = [];
+
+function renderDestSearchResults(results) {
+  destSearchResults = results.slice(0, 5);
+
+  destResultList.innerHTML = destSearchResults.map((place, index) => `
+    <button type="button" class="dest-result-item" data-index="${index}">
+      ${place.place_name}
+      <span class="dest-result-addr">
+        ${place.road_address_name || place.address_name || ""}
+      </span>
+    </button>
+  `).join("");
+
+  destResultList.classList.add("open");
+}
+
+function selectDestinationPlace(place) {
+  const target = {
+    lat: Number(place.y),
+    lng: Number(place.x),
+    name: place.place_name
+  };
+
+  clearManualRoutePoints();
+  setManualEndPoint(target);
+  manualRouteMode = "start";
+
+  if (recommendedPolyline) {
+    recommendedPolyline.setPath([]);
+  }
+
+  navigationState = {
+    ...navigationState,
+    active: false,
+    mode: "",
+    courseMode: false,
+    courseName: "",
+    destination: target,
+    routePath: []
+  };
+
+  saveNavigationState();
+
+  destResultList.classList.remove("open");
+  destSearchPanel.classList.remove("open");
+
+  map.panTo(new kakao.maps.LatLng(target.lat, target.lng));
+
+  alert(`${target.name} 선택됨\n안내시작을 누르면 경로가 생성됩니다.`);
+}
+
 async function searchDestination() {
   const keyword = String(destSearchInput.value || "").trim();
-
-  destSearchInput.blur();
-  document.activeElement?.blur?.();
-
-  if (destSearchPanel) {
-    destSearchPanel.classList.remove("open");
-  }
 
   if (!keyword) {
     alert("목적지를 입력하세요.");
@@ -4841,41 +4924,21 @@ async function searchDestination() {
       return;
     }
 
-    const place = data[0];
-
-    const target = {
-      lat: Number(place.y),
-      lng: Number(place.x),
-      name: place.place_name
-    };
-
-    clearManualRoutePoints();
-
-    setManualEndPoint(target);
-    manualRouteMode = "start";
-
-    if (recommendedPolyline) {
-      recommendedPolyline.setPath([]);
-    }
-
-    navigationState = {
-      ...navigationState,
-      active: false,
-      mode: "",
-      courseMode: false,
-      courseName: "",
-      destination: target,
-      routePath: []
-    };
-
-    saveNavigationState();
-
-    map.panTo(new kakao.maps.LatLng(target.lat, target.lng));
-
-    alert(`${target.name} 위치를 표시했습니다.\n안내시작을 누르면 경로가 생성됩니다.`);
+    renderDestSearchResults(data);
   });
 }
 
+destResultList.addEventListener("click", (e) => {
+  const btn = e.target.closest(".dest-result-item");
+  if (!btn) return;
+
+  const index = Number(btn.dataset.index);
+  const place = destSearchResults[index];
+
+  if (!place) return;
+
+  selectDestinationPlace(place);
+});
 destSearchBtn.addEventListener("click", (e) => {
   e.preventDefault();
   searchDestination();
