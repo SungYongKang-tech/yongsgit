@@ -7402,32 +7402,42 @@ function renderServerPaperState(data) {
       ? (winCount / sellLogs.length) * 100
       : 0;
 
+  const ps = data.performanceSummary || {};
+
+const displayInitialCapital = 100000000;
+const displayCurrentAsset = Number(ps.currentAsset ?? currentAsset ?? 0);
+const displayTotalProfit = Number(ps.totalAssetProfit ?? totalProfit ?? 0);
+const displayTotalProfitRate = Number(ps.totalAssetProfitRate ?? totalProfitRate ?? 0);
+const displayRealizedProfit = Number(ps.totalRealizedProfit ?? realizedProfit ?? 0);
+const displayHoldingProfit = Number(ps.holdingProfit ?? holdingProfit ?? 0);
+const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
+
   serverPaperBox.innerHTML = `
     <div class="server-paper-section-title">계좌 요약</div>
 
     <div class="server-paper-summary">
       <div>
         <span>시작자산</span>
-        <strong>${formatNumber(Math.round(initialCapital))}원</strong>
+        <strong>${formatNumber(Math.round(displayInitialCapital))}원${formatNumber(Math.round(initialCapital))}원</strong>
       </div>
 
       <div>
         <span>현재총자산</span>
-        <strong>${formatNumber(Math.round(currentAsset))}원</strong>
+        <strong>${formatNumber(Math.round(displayCurrentAsset))}원</strong>
       </div>
 
       <div>
         <span>총손익</span>
-        <strong class="${totalProfit >= 0 ? "up" : "down"}">
-          ${totalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(totalProfit))}원
-        </strong>
+        <strong class="${displayTotalProfit >= 0 ? "up" : "down"}">
+  ${displayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayTotalProfit))}원
+</strong>
       </div>
 
       <div>
         <span>총수익률</span>
-        <strong class="${totalProfitRate >= 0 ? "up" : "down"}">
-          ${totalProfitRate >= 0 ? "+" : ""}${totalProfitRate.toFixed(2)}%
-        </strong>
+        <strong class="${displayTotalProfitRate >= 0 ? "up" : "down"}">
+  ${displayTotalProfitRate >= 0 ? "+" : ""}${displayTotalProfitRate.toFixed(2)}%
+</strong>
       </div>
     </div>
 
@@ -7436,23 +7446,23 @@ function renderServerPaperState(data) {
     <div class="server-profit-summary">
       <div>
         <span>실현손익</span>
-        <strong class="${realizedProfit >= 0 ? "up" : "down"}">
-          ${realizedProfit >= 0 ? "+" : ""}${formatNumber(Math.round(realizedProfit))}원
-        </strong>
+        <strong class="${displayRealizedProfit >= 0 ? "up" : "down"}">
+  ${displayRealizedProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayRealizedProfit))}원
+</strong>
       </div>
 
       <div>
         <span>보유손익</span>
-        <strong class="${holdingProfit >= 0 ? "up" : "down"}">
-          ${holdingProfit >= 0 ? "+" : ""}${formatNumber(Math.round(holdingProfit))}원
-        </strong>
+        <strong class="${displayHoldingProfit >= 0 ? "up" : "down"}">
+  ${displayHoldingProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayHoldingProfit))}원
+</strong>
       </div>
 
       <div>
         <span>오늘 총손익</span>
-        <strong class="${todayTotalProfit >= 0 ? "up" : "down"}">
-          ${todayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(todayTotalProfit))}원
-        </strong>
+        <strong class="${displayTodayTotalProfit >= 0 ? "up" : "down"}">
+  ${displayTodayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayTodayTotalProfit))}원
+</strong>
       </div>
 
       <div>
@@ -7729,14 +7739,23 @@ async function loadServerPaperState() {
     await fetch(`${API_BASE}/api/refresh-holding-prices`);
 
     const res = await fetch(`${API_BASE}/api/paper-state`);
-    const data = await res.json();
+const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.message || "서버 상태 조회 실패");
-    }
+if (!res.ok) {
+  throw new Error(data.message || "서버 상태 조회 실패");
+}
 
-    syncServerHoldingsToLocal(data);
-    renderServerPaperState(data);
+const summaryRes = await fetch(`${API_BASE}/api/performance-summary`);
+const summaryData = await summaryRes.json();
+
+if (!summaryRes.ok || !summaryData.ok) {
+  throw new Error(summaryData.message || "성과 요약 조회 실패");
+}
+
+data.performanceSummary = summaryData.summary || {};
+
+syncServerHoldingsToLocal(data);
+renderServerPaperState(data);
 
     const sellTypes = [
   "SELL",
