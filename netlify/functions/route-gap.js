@@ -33,6 +33,8 @@ exports.handler = async function (event) {
     return json(400, { error: "좌표 오류", points: [] });
   }
 
+  let lastError = null;
+
   const attempts = [
     {
       name: "자전거도로 우선",
@@ -59,10 +61,16 @@ exports.handler = async function (event) {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        console.log(attempt.name, res.status, data);
-        continue;
-      }
+     if (!res.ok) {
+  lastError = {
+    source: attempt.name,
+    status: res.status,
+    data
+  };
+
+  console.log(attempt.name, res.status, data);
+  continue;
+}
 
       const points = extractPoints(data);
 
@@ -72,18 +80,31 @@ exports.handler = async function (event) {
           points
         });
       }
+      lastError = {
+  source: attempt.name,
+  status: res.status,
+  message: "응답은 성공했지만 길 좌표가 부족함",
+  pointCount: points.length,
+  data
+};
+
     } catch (e) {
-      console.log(attempt.name, e.message);
-    }
+  lastError = {
+    source: attempt.name,
+    message: e.message
+  };
+
+  console.log(attempt.name, e.message);
+}
   }
 
   return json(200, {
-    source: "fallback",
-    fallback: true,
-    error: "카카오 길찾기 실패",
-    points: []
-  });
-};
+  source: "fallback",
+  fallback: true,
+  error: "카카오 길찾기 실패",
+  lastError,
+  points: []
+});
 
 function buildBikeUrl(from, to, priority) {
   const params = new URLSearchParams({
