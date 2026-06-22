@@ -7418,7 +7418,7 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
     <div class="server-paper-summary">
       <div>
         <span>시작자산</span>
-        <strong>${formatNumber(Math.round(displayInitialCapital))}원${formatNumber(Math.round(initialCapital))}원</strong>
+        <strong>${formatNumber(Math.round(displayInitialCapital))}원</strong>
       </div>
 
       <div>
