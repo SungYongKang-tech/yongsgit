@@ -1,11 +1,6 @@
 exports.handler = async function (event) {
-  exports.handler = async function (event) {
-  // 브라우저가 사전 확인 요청을 보낼 때 대비
   if (event.httpMethod === "OPTIONS") {
-    return json(200, {
-      ok: true,
-      points: []
-    });
+    return json(200, { ok: true, points: [] });
   }
 
   if (event.httpMethod !== "GET" && event.httpMethod !== "POST") {
@@ -58,9 +53,7 @@ exports.handler = async function (event) {
       const res = await fetch(attempt.url, {
         headers: {
           Authorization: `KakaoAK ${key}`,
-          service: "ride-map",
-          accept: "application/json",
-          "Content-Type": "application/json"
+          Accept: "application/json"
         }
       });
 
@@ -73,7 +66,7 @@ exports.handler = async function (event) {
 
       const points = extractPoints(data);
 
-      if (points.length >= 2) {
+      if (points.length >= 3) {
         return json(200, {
           source: attempt.name,
           points
@@ -85,11 +78,12 @@ exports.handler = async function (event) {
   }
 
   return json(200, {
-  source: "fallback",
-  fallback: true,
-  error: "카카오 길찾기 실패",
-  points: []
-});
+    source: "fallback",
+    fallback: true,
+    error: "카카오 길찾기 실패",
+    points: []
+  });
+};
 
 function buildBikeUrl(from, to, priority) {
   const params = new URLSearchParams({
@@ -120,13 +114,13 @@ function extractPoints(data) {
 
   const routes = Array.isArray(data.routes) ? data.routes : [];
 
-  routes.forEach(route => {
+  routes.forEach((route) => {
     const sections = Array.isArray(route.sections) ? route.sections : [];
 
-    sections.forEach(section => {
+    sections.forEach((section) => {
       const roads = Array.isArray(section.roads) ? section.roads : [];
 
-      roads.forEach(road => {
+      roads.forEach((road) => {
         const vertexes = Array.isArray(road.vertexes) ? road.vertexes : [];
 
         for (let i = 0; i < vertexes.length - 1; i += 2) {
@@ -147,7 +141,7 @@ function extractPoints(data) {
 function removeDuplicatePoints(points) {
   const result = [];
 
-  points.forEach(p => {
+  points.forEach((p) => {
     const last = result[result.length - 1];
 
     if (
@@ -187,5 +181,3 @@ function json(statusCode, body) {
     body: JSON.stringify(body)
   };
 }
-  }
-  
