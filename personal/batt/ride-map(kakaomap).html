@@ -4518,6 +4518,30 @@ async function requestRoadRoute(from, to) {
   }
 }
 
+async function findBestExitRouteToTarget(routePath, target) {
+  if (!Array.isArray(routePath) || routePath.length < 2) {
+    return null;
+  }
+
+  const step = Math.max(1, Math.floor(routePath.length / 20));
+
+  for (let i = routePath.length - 1; i >= 0; i -= step) {
+    const candidate = routePath[i];
+
+    const exit = await requestRoadRoute(candidate, target);
+
+    if (exit.ok && exit.points && exit.points.length >= 3) {
+      return {
+        exitIndex: i,
+        exitPoint: candidate,
+        exitRoute: exit.points
+      };
+    }
+  }
+
+  return null;
+}
+
 async function startSmartCourseGuide(target) {
   const current = getCurrentPositionObject();
 
@@ -4565,33 +4589,31 @@ async function startSmartCourseGuide(target) {
   }
 
   const courseStart = result.routePath[0];
-  const courseEnd = result.routePath[result.routePath.length - 1];
 
-  const enter = await requestRoadRoute(current, courseStart);
+const enter = await requestRoadRoute(current, courseStart);
 
-  if (!enter.ok) {
-    alert(
-      "현재 위치에서 내 코스 진입점까지 자전거 도로 안내를 만들지 못했습니다.\n\n" +
-      "사유: " + enter.reason
-    );
-    return;
-  }
-
-  const exit = await requestRoadRoute(courseEnd, target);
-
-  if (!exit.ok) {
-    alert(
-      "내 코스 끝점에서 목적지까지 자전거 도로 안내를 만들지 못했습니다.\n\n" +
-      "사유: " + exit.reason
-    );
-    return;
-  }
-
-  const finalRoute = mergeRouteParts(
-    enter.points,
-    result.routePath,
-    exit.points
+if (!enter.ok) {
+  alert(
+    "현재 위치에서 내 코스 진입점까지 도로 안내를 만들지 못했습니다.\n\n" +
+    "사유: " + enter.reason
   );
+  return;
+}
+
+const bestExit = await findBestExitRouteToTarget(result.routePath, target);
+
+if (!bestExit) {
+  alert("내 코스에서 목적지까지 연결 가능한 도로를 찾지 못했습니다.");
+  return;
+}
+
+const usableCoursePath = result.routePath.slice(0, bestExit.exitIndex + 1);
+
+const finalRoute = mergeRouteParts(
+  enter.points,
+  usableCoursePath,
+  bestExit.exitRoute
+);
 
   navigationState = {
     ...navigationState,
@@ -4611,7 +4633,7 @@ async function startSmartCourseGuide(target) {
     `내 코스 안내 시작\n` +
     `사용 코스: ${result.courseName}\n` +
     `코스 진입까지: ${(result.startDistanceM / 1000).toFixed(1)}km\n` +
-    `목적지 연결까지: ${(result.endDistanceM / 1000).toFixed(1)}km`
+    `코스 이탈점: ${bestExit.exitIndex}/${result.routePath.length - 1}`
   );
 }
 
