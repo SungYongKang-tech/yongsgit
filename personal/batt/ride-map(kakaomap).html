@@ -2412,6 +2412,14 @@ let groupMessageSettings = loadGroupMessageSettings();
 let speedProfile = loadSpeedProfile();
 let isSavingRide = false;
 let editingMessageIndex = -1;
+
+let manualRouteStart = null;
+let manualRouteEnd = null;
+let manualStartMarker = null;
+let manualEndMarker = null;
+let mapLongPressTimer = null;
+let mapLongPressMoved = false;
+
 let isMessageManageMode = false;
 let lastSpeedSampleAt = 0;
 let lastSpeedSampleDistanceM = 0;
@@ -3307,10 +3315,160 @@ function initKakaoMap() {
     strokeStyle: "solid"
   });
 
+    kakao.maps.event.addListener(map, "mousedown", function (mouseEvent) {
+    mapLongPressMoved = false;
+
+    if (mapLongPressTimer) {
+      clearTimeout(mapLongPressTimer);
+      mapLongPressTimer = null;
+    }
+
+    mapLongPressTimer = setTimeout(() => {
+      if (mapLongPressMoved) return;
+      handleManualMapLongPress(mouseEvent.latLng);
+    }, 800);
+  });
+
+  kakao.maps.event.addListener(map, "mouseup", function () {
+    if (mapLongPressTimer) {
+      clearTimeout(mapLongPressTimer);
+      mapLongPressTimer = null;
+    }
+  });
+
+  kakao.maps.event.addListener(map, "dragstart", function () {
+    mapLongPressMoved = true;
+
+    if (mapLongPressTimer) {
+      clearTimeout(mapLongPressTimer);
+      mapLongPressTimer = null;
+    }
+  });
+
   setTimeout(() => {
     if (!map) return;
     map.relayout();
   }, 300);
+}
+
+function buildManualMarkerImage(label, color) {
+  if (!ensureKakaoLoaded()) return null;
+
+  const safeLabel = String(label || "").slice(0, 4);
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="58" height="50">
+      <foreignObject width="58" height="50">
+        <div xmlns="http://www.w3.org/1999/xhtml"
+             style="display:flex;flex-direction:column;align-items:center;">
+          <div style="
+            background:${color};
+            color:#fff;
+            padding:3px 7px;
+            border-radius:8px;
+            font-size:12px;
+            font-weight:900;
+            margin-bottom:3px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.35);
+            white-space:nowrap;">
+            ${safeLabel}
+          </div>
+          <div style="
+            width:14px;
+            height:14px;
+            background:${color};
+            border-radius:50%;
+            border:2px solid #fff;
+            box-shadow:0 2px 6px rgba(0,0,0,0.35);">
+          </div>
+        </div>
+      </foreignObject>
+    </svg>`;
+
+  const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+
+  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(58, 50), {
+    offset: new kakao.maps.Point(29, 42)
+  });
+}
+
+function setManualStartPoint(point) {
+  manualRouteStart = point;
+
+  if (manualStartMarker) {
+    manualStartMarker.setMap(null);
+  }
+
+  const image = buildManualMarkerImage("출발", "#22c55e");
+
+  manualStartMarker = new kakao.maps.Marker({
+    map,
+    position: new kakao.maps.LatLng(point.lat, point.lng),
+    image
+  });
+}
+
+function setManualEndPoint(point) {
+  manualRouteEnd = point;
+
+  if (manualEndMarker) {
+    manualEndMarker.setMap(null);
+  }
+
+  const image = buildManualMarkerImage("도착", "#ef4444");
+
+  manualEndMarker = new kakao.maps.Marker({
+    map,
+    position: new kakao.maps.LatLng(point.lat, point.lng),
+    image
+  });
+}
+
+function clearManualRoutePoints() {
+  manualRouteStart = null;
+  manualRouteEnd = null;
+
+  if (manualStartMarker) {
+    manualStartMarker.setMap(null);
+    manualStartMarker = null;
+  }
+
+  if (manualEndMarker) {
+    manualEndMarker.setMap(null);
+    manualEndMarker = null;
+  }
+}
+
+async function handleManualMapLongPress(latLng) {
+  const point = {
+    lat: latLng.getLat(),
+    lng: latLng.getLng()
+  };
+
+  if (!manualRouteStart) {
+    setManualStartPoint(point);
+    alert("출발지를 선택했습니다.\n도착지를 지도에서 길게 눌러주세요.");
+    return;
+  }
+
+  if (!manualRouteEnd) {
+    setManualEndPoint(point);
+    await startManualPointGuide();
+    return;
+  }
+
+  clearManualRoutePoints();
+  setManualStartPoint(point);
+  alert("기존 출발/도착을 지우고 새 출발지를 선택했습니다.");
+}
+
+async function startManualPointGuide() {
+  if (!manualRouteStart || !manualRouteEnd) {
+    alert("출발지와 도착지를 먼저 선택하세요.");
+    return;
+  }
+
+  await startSmartCourseGuide(manualRouteEnd, manualRouteStart);
 }
 
 function drawCurrentMarker(lat, lng, heading = 0) {
@@ -4542,8 +4700,8 @@ async function findBestExitRouteToTarget(routePath, target) {
   return null;
 }
 
-async function startSmartCourseGuide(target) {
-  const current = getCurrentPositionObject();
+async function startSmartCourseGuide(target, customStart = null) {
+  const current = customStart || getCurrentPositionObject();
 
   if (!current) {
     alert("현재 위치를 먼저 확인해야 합니다.");
