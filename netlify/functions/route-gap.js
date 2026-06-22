@@ -11,12 +11,6 @@ exports.handler = async function (event) {
     });
   }
 
-  const key = process.env.KAKAO_REST_API_KEY;
-
-  if (!key) {
-    return json(500, { error: "KAKAO_REST_API_KEY 없음", points: [] });
-  }
-
   const q = event.queryStringParameters || {};
 
   const from = {
@@ -33,151 +27,55 @@ exports.handler = async function (event) {
     return json(400, { error: "좌표 오류", points: [] });
   }
 
-  let lastError = null;
+  try {
+    const points = await requestOsrmRoute(from, to);
 
-  const attempts = [
-    {
-      name: "자전거도로 우선",
-      url: buildBikeUrl(from, to, "BIKE_ROAD")
-    },
-    {
-      name: "자전거 최단/겸용도로",
-      url: buildBikeUrl(from, to, "DISTANCE")
-    },
-    {
-      name: "자동차 겸용도로",
-      url: buildCarUrl(from, to)
-    }
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const res = await fetch(attempt.url, {
-        headers: {
-          Authorization: `KakaoAK ${key}`,
-          Accept: "application/json"
-        }
+    if (points.length >= 3) {
+      return json(200, {
+        source: "OSRM 도로 경로",
+        points
       });
+    }
 
-      const data = await res.json();
-
-     if (!res.ok) {
-  lastError = {
-    source: attempt.name,
-    status: res.status,
-    data
-  };
-
-  console.log(attempt.name, res.status, data);
-  continue;
-}
-
-      const points = extractPoints(data);
-
-      if (points.length >= 3) {
-        return json(200, {
-          source: attempt.name,
-          points
-        });
-      }
-      lastError = {
-  source: attempt.name,
-  status: res.status,
-  message: "응답은 성공했지만 길 좌표가 부족함",
-  pointCount: points.length,
-  data
+    return json(200, {
+      source: "fallback",
+      fallback: true,
+      error: "OSRM 경로 좌표 부족",
+      points: []
+    });
+  } catch (e) {
+    return json(200, {
+      source: "fallback",
+      fallback: true,
+      error: "OSRM 길찾기 실패",
+      detail: e.message,
+      points: []
+    });
+  }
 };
 
-    } catch (e) {
-  lastError = {
-    source: attempt.name,
-    message: e.message
-  };
+async function requestOsrmRoute(from, to) {
+  const url =
+    "https://router.project-osrm.org/route/v1/driving/" +
+    `${from.lng},${from.lat};${to.lng},${to.lat}` +
+    "?overview=full&geometries=geojson";
 
-  console.log(attempt.name, e.message);
-}
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.message || "OSRM 응답 실패");
   }
 
-  return json(200, {
-  source: "fallback",
-  fallback: true,
-  error: "카카오 길찾기 실패",
-  lastError,
-  points: []
-});
-};
+  const coords = data.routes?.[0]?.geometry?.coordinates;
 
-function buildBikeUrl(from, to, priority) {
-  const params = new URLSearchParams({
-    origin: `${from.lng},${from.lat}`,
-    destination: `${to.lng},${to.lat}`,
-    waypoints: "",
-    radius: "5000",
-    priority,
-    summary: "false"
-  });
+  if (!Array.isArray(coords)) {
+    throw new Error("OSRM 경로 없음");
+  }
 
-  return `https://apis-navi.kakaomobility.com/affiliate/bicycle/v1/directions?${params.toString()}`;
-}
-
-function buildCarUrl(from, to) {
-  const params = new URLSearchParams({
-    origin: `${from.lng},${from.lat}`,
-    destination: `${to.lng},${to.lat}`,
-    priority: "RECOMMEND",
-    summary: "false"
-  });
-
-  return `https://apis-navi.kakaomobility.com/affiliate/v1/directions?${params.toString()}`;
-}
-
-function extractPoints(data) {
-  const points = [];
-
-  const routes = Array.isArray(data.routes) ? data.routes : [];
-
-  routes.forEach((route) => {
-    const sections = Array.isArray(route.sections) ? route.sections : [];
-
-    sections.forEach((section) => {
-      const roads = Array.isArray(section.roads) ? section.roads : [];
-
-      roads.forEach((road) => {
-        const vertexes = Array.isArray(road.vertexes) ? road.vertexes : [];
-
-        for (let i = 0; i < vertexes.length - 1; i += 2) {
-          const lng = Number(vertexes[i]);
-          const lat = Number(vertexes[i + 1]);
-
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            points.push({ lat, lng });
-          }
-        }
-      });
-    });
-  });
-
-  return removeDuplicatePoints(points);
-}
-
-function removeDuplicatePoints(points) {
-  const result = [];
-
-  points.forEach((p) => {
-    const last = result[result.length - 1];
-
-    if (
-      last &&
-      Math.abs(last.lat - p.lat) < 0.000001 &&
-      Math.abs(last.lng - p.lng) < 0.000001
-    ) {
-      return;
-    }
-
-    result.push(p);
-  });
-
-  return result;
+  return coords
+    .map(([lng, lat]) => ({ lat, lng }))
+    .filter(validPoint);
 }
 
 function validPoint(p) {
