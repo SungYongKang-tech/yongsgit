@@ -1430,7 +1430,7 @@
           <button class="chip-btn" id="zoomBtn">자동줌</button>
           <button class="chip-btn" id="fitBtn">전체코스</button>
           <button class="chip-btn" id="clearRouteBtn">지우기</button>
-          
+          <button class="chip-btn" id="guideStartBtn">안내시작</button>
         </div>
       </div>
 
@@ -2485,6 +2485,7 @@ const followBtn = document.getElementById("followBtn");
 const zoomBtn = document.getElementById("zoomBtn");
 const fitBtn = document.getElementById("fitBtn");
 const clearRouteBtn = document.getElementById("clearRouteBtn");
+const guideStartBtn = document.getElementById("guideStartBtn");
 const groupRideBtn = document.getElementById("groupRideBtn");
 const messageBtn = document.getElementById("messageBtn");
 const messagePanel = document.getElementById("messagePanel");
@@ -3431,31 +3432,41 @@ async function handleManualMapLongPress(latLng) {
     lng: latLng.getLng()
   };
 
-  if (manualRouteMode === "start") {
-    clearManualRoutePoints();
+  if (!manualRouteStart && !manualRouteEnd) {
     setManualStartPoint(point);
     manualRouteMode = "end";
 
-    alert("출발지를 선택했습니다.\n이제 도착지를 길게 눌러주세요.");
+    alert("지점을 선택했습니다.\n안내시작을 누르면 현재위치에서 이 지점까지 안내합니다.\n도착지를 따로 정하려면 한 번 더 길게 누르세요.");
     return;
   }
 
-  if (manualRouteMode === "end") {
+  if (manualRouteStart && !manualRouteEnd) {
     setManualEndPoint(point);
-    manualRouteMode = "start";
+    manualRouteMode = "ready";
 
-    await startManualPointGuide();
+    alert("도착지를 선택했습니다.\n안내시작 버튼을 누르세요.");
     return;
   }
+
+  clearManualRoutePoints();
+  setManualStartPoint(point);
+  manualRouteMode = "end";
+
+  alert("기존 선택을 지우고 새 지점을 선택했습니다.");
 }
 
 async function startManualPointGuide() {
-  if (!manualRouteStart || !manualRouteEnd) {
-    alert("출발지와 도착지를 먼저 선택하세요.");
+  if (manualRouteStart && manualRouteEnd) {
+    await startSmartCourseGuide(manualRouteEnd, manualRouteStart);
     return;
   }
 
-  await startSmartCourseGuide(manualRouteEnd, manualRouteStart);
+  if (manualRouteStart && !manualRouteEnd) {
+    await startSmartCourseGuide(manualRouteStart);
+    return;
+  }
+
+  alert("지도에서 지점을 먼저 길게 눌러주세요.");
 }
 
 function drawCurrentMarker(lat, lng, heading = 0) {
@@ -4437,6 +4448,11 @@ if (friendStrip) {
     await kickGroupMember(memberId, memberName);
   });
 }
+
+guideStartBtn.addEventListener("click", async (e) => {
+  e.preventDefault();
+  await startManualPointGuide();
+});
 
 destSearchToggleBtn.addEventListener("click", () => {
   if (messagePanel) messagePanel.classList.remove("open");
