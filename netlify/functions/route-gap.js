@@ -105,6 +105,7 @@ exports.handler = async function (event) {
   lastError,
   points: []
 });
+};
 
 function buildBikeUrl(from, to, priority) {
   const params = new URLSearchParams({
