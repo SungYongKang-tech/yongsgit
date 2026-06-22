@@ -2598,7 +2598,7 @@ if (settings.leaderCoreEnabled) {
       return;
     }
 
-    for (const item of candidates) {
+    for (const item of candidates.slice(0, 30)) {
   if (getCoreHoldingCount(state) >= buyRules.maxHoldingCount) {
     console.log(`[시장온도 기준] Core 최대 보유 ${buyRules.maxHoldingCount}개 도달`);
     break;
@@ -2836,7 +2836,7 @@ async function runEarlyAutoBuyOnce() {
     return;
   }
 
-  for (const item of candidates) {
+  for (const item of candidates.slice(0, 15)) {
     if (getEarlyHoldingCount(state) >= settings.earlyMaxHoldingCount) break;
     if (getTodayEarlyBuyCount(state) >= settings.earlyMaxDailyBuyCount) break;
 
@@ -2926,7 +2926,7 @@ async function runTurboAutoBuyOnce() {
     return;
   }
 
-  for (const item of candidates) {
+  for (const item of candidates.slice(0, 15)) {
     if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
       break;
     }
