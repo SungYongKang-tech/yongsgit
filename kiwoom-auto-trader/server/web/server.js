@@ -322,9 +322,10 @@ const targets = STOCK_MASTER.slice(0, scanLimit);
       .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
 
     res.json({
-      count: sorted.length,
-      items: sorted.slice(0, resultLimit)
-    });
+  scanCount: targets.length,
+  count: sorted.length,
+  items: sorted.slice(0, resultLimit)
+});
   } catch (error) {
     console.error("/api/discover 오류:", error);
 
