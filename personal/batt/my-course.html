@@ -453,8 +453,7 @@
 
           <div id="rideTools" style="display:block;">
             <div class="toolbar-single-row">
-              <button class="action-btn primary" id="fitMapBtn2">전체보기</button>
-              <button class="action-btn" id="fillRideNameBtn">이름자동입력</button>
+            <button class="action-btn green" id="saveRideBtn">코스저장</button>  
             </div>
             <div class="helper">기록등록 탭에서 기록을 선택한 뒤 코스로 저장하세요.</div>
           </div>
@@ -515,8 +514,7 @@
     const clearManualBtn = document.getElementById("clearManualBtn");
     const saveManualBtn = document.getElementById("saveManualBtn");
     const fitMapBtn = document.getElementById("fitMapBtn");
-    const fitMapBtn2 = document.getElementById("fitMapBtn2");
-    const fillRideNameBtn = document.getElementById("fillRideNameBtn");
+    const saveRideBtn = document.getElementById("saveRideBtn");
     const manualTools = document.getElementById("manualTools");
     const rideTools = document.getElementById("rideTools");
     const builderTools = document.getElementById("builderTools");
@@ -1206,66 +1204,7 @@ listEl.appendChild(card);
         return;
       }
 
-      if (buildTab === "ride") {
-        if (!selectedRide) {
-          bottomBarContent.innerHTML = `
-            <div class="section">
-              <div class="bottom-placeholder">기록을 선택하면 미리보기 · 이름입력 · 코스저장 버튼이 나타납니다.</div>
-            </div>
-          `;
-          return;
-        }
-
-        bottomBarContent.innerHTML = `
-          <div class="bottom-bar-inner">
-            <button class="bottom-action primary" id="ridePreviewBtn">보기</button>
-            <button class="bottom-action" id="rideNameBtn">이름입력</button>
-            <button class="bottom-action green" id="rideSaveBtn">코스저장</button>
-            <button class="bottom-action" id="rideFitBtn">전체보기</button>
-          </div>
-        `;
-
-        document.getElementById("ridePreviewBtn").addEventListener("click", () => previewRide(selectedRide));
-        document.getElementById("rideNameBtn").addEventListener("click", () => {
-          courseNameInput.value = `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
-        });
-        document.getElementById("rideSaveBtn").addEventListener("click", async () => {
-          const points = Array.isArray(selectedRide.path) ? selectedRide.path.map(([lat, lng]) => ({ lat, lng })) : [];
-          if (!points.length) {
-            alert("경로 없음");
-            return;
-          }
-
-          const name = (courseNameInput.value || "").trim() || `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
-
-          try {
-            const region = (courseRegionInput.value || "").trim() || selectedRegion || "진주시";
-
-await saveCourseToFirebase({
-  name,
-  region,
-  source: "ride",
-  points,
-  createdAt: Date.now(),
-  updatedAt: Date.now()
-});
-            alert("코스로 저장되었습니다.");
-            mainTab = "view";
-            selectedRide = null;
-            activateTabs();
-            await refreshCourses();
-          } catch (e) {
-            console.error(e);
-            alert("저장 오류");
-          }
-        });
-
-        document.getElementById("rideFitBtn").addEventListener("click", () => {
-          const points = Array.isArray(selectedRide.path) ? selectedRide.path.map(([lat, lng]) => ({ lat, lng })) : [];
-          fitMapToPoints(points);
-        });
-        return;
-      }
+      
 
      if (buildTab === "manual") {
   bottomBar.style.display = "none";
@@ -1334,13 +1273,65 @@ await saveCourseToFirebase({
       renderBottomBar();
     }
 
+    async function saveRideCourse() {
+  if (!selectedRide) {
+    alert("저장할 기록을 먼저 선택하세요.");
+    return;
+  }
+
+  const points = Array.isArray(selectedRide.path)
+    ? selectedRide.path.map(([lat, lng]) => ({ lat, lng }))
+    : [];
+
+  if (!points.length) {
+    alert("경로 없음");
+    return;
+  }
+
+  const name = (courseNameInput.value || "").trim();
+
+  if (!name) {
+    alert("코스 이름을 입력하세요.");
+    courseNameInput.focus();
+    return;
+  }
+
+  const region = (courseRegionInput.value || "").trim() || selectedRegion || "진주시";
+
+  try {
+    await saveCourseToFirebase({
+      name,
+      region,
+      source: "ride",
+      points,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    alert("코스로 저장되었습니다.");
+    mainTab = "view";
+    selectedRide = null;
+    activateTabs();
+    await refreshCourses();
+  } catch (e) {
+    console.error(e);
+    alert("저장 오류");
+  }
+}
+
     async function saveManualCourse() {
       if (manualPoints.length < 2) {
         alert("최소 2점 필요");
         return;
       }
 
-      const name = (courseNameInput.value || "").trim() || `수동코스 ${formatDateTime(Date.now())}`;
+      const name = (courseNameInput.value || "").trim();
+
+if (!name) {
+  alert("코스 이름을 입력하세요.");
+  courseNameInput.focus();
+  return;
+}
       const region = (courseRegionInput.value || "").trim() || selectedRegion || "진주시";
 
       try {
@@ -1456,6 +1447,7 @@ courseRegionInput.value = selectedRegion || "진주시";
     undoBtn.addEventListener("click", undoManualPoint);
     clearManualBtn.addEventListener("click", clearManualPoints);
     saveManualBtn.addEventListener("click", saveManualCourse);
+    saveRideBtn.addEventListener("click", saveRideCourse);
 
     fitMapBtn.addEventListener("click", () => {
       if (manualPoints.length) {
@@ -1470,22 +1462,8 @@ courseRegionInput.value = selectedRegion || "진주시";
       map.setLevel(5);
     });
 
-    fitMapBtn2.addEventListener("click", () => {
-      if (selectedRide?.path?.length) {
-        fitMapToPoints(selectedRide.path.map(([lat, lng]) => ({ lat, lng })));
-        return;
-      }
-      map.setCenter(toLatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-      map.setLevel(5);
-    });
-
-    fillRideNameBtn.addEventListener("click", () => {
-      if (!selectedRide) {
-        alert("기록을 먼저 선택하세요.");
-        return;
-      }
-      courseNameInput.value = `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
-    });
+    
+    
 
     async function init() {
       await ensureAuth();
