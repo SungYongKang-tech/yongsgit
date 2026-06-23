@@ -2813,6 +2813,31 @@ async function sendPresetGroupMessage(messageText) {
   }
 }
 
+async function publishGroupRoute(routePath, destination, mode = "direct", courseName = "") {
+  if (!groupEnabled || !currentRoomId) return;
+  if (!Array.isArray(routePath) || routePath.length < 2) return;
+
+  await ensureAuth();
+  await ensureGroupMember();
+
+  const senderUid = auth.currentUser?.uid || "unknown";
+  const senderName = myGroupName || "라이더";
+
+  await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
+    groupRoute: {
+      id: `route_${Date.now()}_${senderUid.slice(0, 8)}`,
+      senderUid,
+      senderName,
+      sentAt: Date.now(),
+      mode,
+      courseName: courseName || "",
+      destination: destination || null,
+      routePath
+    },
+    destination: destination || null
+  });
+}
+
 function handleIncomingGroupMessage(message) {
   if (!message || !message.id || !message.text) return;
 
@@ -3854,6 +3879,29 @@ function subscribeGroupData() {
     groupDestination = data.meta?.destination || null;
     handleIncomingGroupMessage(data.meta?.broadcastMessage || null);
 
+    const groupRoute = data.meta?.groupRoute || null;
+
+if (
+  groupRoute &&
+  Array.isArray(groupRoute.routePath) &&
+  groupRoute.routePath.length >= 2 &&
+  groupRoute.id !== navigationState.groupRouteId
+) {
+  navigationState = {
+    ...navigationState,
+    active: true,
+    mode: groupRoute.mode || "groupRoute",
+    courseMode: groupRoute.mode === "smartCourse",
+    courseName: groupRoute.courseName || "",
+    destination: groupRoute.destination || null,
+    routePath: groupRoute.routePath,
+    groupRouteId: groupRoute.id
+  };
+
+  saveNavigationState();
+  redrawPath();
+}
+
     renderGroupMarkers();
 renderGroupDestination();
 renderGroupLines();
@@ -3967,9 +4015,27 @@ function redrawPath() {
   renderGroupLines();
 }
 
-function clearNavigation() {
+async function clearNavigation() {
   navigationState = { ...initialNavigationState };
-  if (recommendedPolyline) recommendedPolyline.setPath([]);
+
+  if (recommendedPolyline) {
+    recommendedPolyline.setPath([]);
+  }
+
+  if (groupEnabled && currentRoomId) {
+    try {
+      await update(
+        ref(db, `rideRooms/${currentRoomId}/meta`),
+        {
+          groupRoute: null,
+          destination: null
+        }
+      );
+    } catch (e) {
+      console.error("그룹 경로 삭제 실패:", e);
+    }
+  }
+
   clearNavigationStateStorage();
   redrawPath();
 }
@@ -4803,6 +4869,7 @@ async function startSmartCourseGuide(target, customStart = null) {
     saveNavigationState();
     redrawPath();
     fitRouteToMap(finalRoute);
+    await publishGroupRoute(finalRoute, target, "direct", "");
 
     alert("내 코스가 없어 자전거도로 대신 일반 도로 경로를 안내합니다.");
     return;
@@ -4848,6 +4915,7 @@ const finalRoute = mergeRouteParts(
   saveNavigationState();
   redrawPath();
   fitRouteToMap(finalRoute);
+  await publishGroupRoute(finalRoute, target, "smartCourse", result.courseName);
 
   alert(
     `내 코스 안내 시작\n` +
