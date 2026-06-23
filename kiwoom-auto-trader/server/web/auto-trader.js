@@ -323,6 +323,36 @@ function todayKey() {
   });
 }
 
+function isTodayMarketTemperature(temp) {
+  if (!temp || !temp.checkedAt) return false;
+
+  const checkedDate = new Date(temp.checkedAt);
+  if (Number.isNaN(checkedDate.getTime())) return false;
+
+  const checkedKey = checkedDate.toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Seoul"
+  });
+
+  return checkedKey === todayKey();
+}
+
+function normalizeMarketTemperature(temp, reason = "시장온도 미갱신") {
+  if (isTodayMarketTemperature(temp)) {
+    return temp;
+  }
+
+  return {
+    level: "NORMAL",
+    label: "보통",
+    advanceRatio: 0,
+    upCount: 0,
+    total: 0,
+    reason,
+    checkedAt: nowText(),
+    stale: true
+  };
+}
+
 
 function getCurrentTotalAsset(state) {
   const holdingsValue = (state.holdings || []).reduce((sum, holding) => {
@@ -2381,13 +2411,14 @@ function calculateMarketTemperature(candidates = []) {
 
   if (advanceRatio >= 70) {
     return {
-      level: "HOT",
-      label: "매우 좋음",
-      advanceRatio: Number(advanceRatio.toFixed(1)),
-      upCount,
-      total,
-      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
-    };
+  level: "HOT",
+  label: "매우 좋음",
+  advanceRatio: Number(advanceRatio.toFixed(1)),
+  upCount,
+  total,
+  reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`,
+  checkedAt: nowText()
+};
   }
 
   if (advanceRatio >= 55) {
@@ -2521,7 +2552,11 @@ if (state.dailyBuyStopped) {
 
     let candidates = await discoverCandidates();
 
-    const marketTemperature = calculateMarketTemperature(candidates);
+    let marketTemperature = calculateMarketTemperature(candidates);
+marketTemperature = normalizeMarketTemperature(
+  marketTemperature,
+  "시장온도 계산값이 오늘 데이터가 아니어서 NORMAL 처리"
+);
 
     if (marketTemperature.total < 20) {
   marketTemperature.level = "NORMAL";
@@ -2532,7 +2567,7 @@ if (state.dailyBuyStopped) {
 
 state.marketTemperature = {
   ...marketTemperature,
-  checkedAt: new Date().toLocaleString("ko-KR")
+  checkedAt: marketTemperature.checkedAt || nowText()
 };
 
 console.log(
