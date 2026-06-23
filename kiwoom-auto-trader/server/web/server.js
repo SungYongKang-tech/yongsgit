@@ -1124,6 +1124,13 @@ const todayTotalProfitRate =
     ? (todayProfit / initialCapital) * 100
     : 0;
 
+const latestMarketTemperature =
+  state.marketTemperature ||
+  [...tradeLogs]
+    .reverse()
+    .find((log) => log.marketTemperature)?.marketTemperature ||
+  null;
+
 const holdingDetails = holdings.map((h) => {
   const buyPrice = Number(h.buyPrice || 0);
   const currentPrice = Number(h.currentPrice || buyPrice || 0);
@@ -1211,7 +1218,7 @@ return {
      strategyStats,
      recentSells: sellLogs.slice(-20).reverse(),
 
-     marketTemperature: state.marketTemperature || null
+     marketTemperature: latestMarketTemperature
     });
   } catch (err) {
     console.error("성과분석 API 오류:", err);
