@@ -835,15 +835,80 @@ function startModifyManualCourse(course) {
       location.href = "./ride-map(kakaomap).html";
     }
 
+    function getCourseRegion(course) {
+  return (course.region || "진주시").trim() || "진주시";
+}
+
+function getRegionsFromCourses() {
+  const set = new Set();
+
+  courses.forEach(course => {
+    set.add(getCourseRegion(course));
+  });
+
+  return [...set].sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function renderRegionList() {
+  listEl.innerHTML = "";
+
+  const regions = getRegionsFromCourses();
+
+  if (!regions.length) {
+    listEl.innerHTML = `<div class="empty">저장된 지역 없음</div>`;
+    return;
+  }
+
+  regions.forEach(region => {
+    const count = courses.filter(c => getCourseRegion(c) === region).length;
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-title">${escapeHtml(region)}</div>
+      <div class="meta">저장 코스 ${count}개</div>
+    `;
+
+    card.addEventListener("click", () => {
+      selectedRegion = region;
+      renderList();
+      renderBottomBar();
+    });
+
+    listEl.appendChild(card);
+  });
+}
+
     function renderCoursesList() {
+      if (!selectedRegion) {
+  renderRegionList();
+  return;
+}
       listEl.innerHTML = "";
+
+      const regionHeader = document.createElement("div");
+regionHeader.className = "card selected";
+regionHeader.innerHTML = `
+  <div class="card-title">${escapeHtml(selectedRegion)} 코스</div>
+  <div class="meta">클릭하면 코스를 확인합니다.</div>
+`;
+regionHeader.addEventListener("click", () => {
+  selectedRegion = null;
+  selectedCourse = null;
+  if (savedCoursePolyline) savedCoursePolyline.setPath([]);
+  renderList();
+  renderBottomBar();
+});
+listEl.appendChild(regionHeader);
 
       if (!courses.length) {
         listEl.innerHTML = `<div class="empty">저장된 코스 없음</div>`;
         return;
       }
 
-      const sortedCourses = [...courses].sort((a, b) => {
+      const sortedCourses = courses
+  .filter(course => getCourseRegion(course) === selectedRegion)
+  .sort((a, b) => {
         const distA = totalDistanceKmFromPoints(a.points || []);
         const distB = totalDistanceKmFromPoints(b.points || []);
         return distA - distB;
@@ -1271,12 +1336,13 @@ listEl.appendChild(card);
     });
 
     tabViewBtn.addEventListener("click", async () => {
-      mainTab = "view";
-      selectedRide = null;
-      activateTabs();
-      updateMapOverlayByTab();
-      await refreshCourses();
-    });
+  mainTab = "view";
+  selectedRegion = null;
+  selectedRide = null;
+  activateTabs();
+  updateMapOverlayByTab();
+  await refreshCourses();
+});
 
    tabBuildBtn.addEventListener("click", () => {
   mainTab = "build";
