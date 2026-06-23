@@ -7,7 +7,7 @@ const API_BASE = "http://localhost:3000";
 
 
 const settings = {
-  buyStartTime: "09:20",
+  buyStartTime: "10:00",
   buyEndTime: "14:40",
   safeMinScore: 10,
   trendMinScore: 10,
@@ -22,7 +22,7 @@ const settings = {
 
   maxHoldingCount: 8,
   coreMaxHoldingCount: 6,
-  turboMaxHoldingCount: 4,
+  turboMaxHoldingCount: 2,
 
   perBuyAmount: 10000000,
   minBuyAmount: 3000000,
@@ -62,8 +62,8 @@ turboMinScore: 10,
 turboWatchMinDayRiseRate: 1.0,
 
 
-turboBuyMinDayRiseRate: 2.0,
-turboBuyMaxDayRiseRate: 4.5,
+turboBuyMinDayRiseRate: 1.2,
+turboBuyMaxDayRiseRate: 3.2,
 
 turboMinVolume: 300000,
 turboMinOpenPositionRate: 1.5,
@@ -74,7 +74,7 @@ turboTakeProfitSellRatio: 0.5,
 turboTrailingStartRate: 2.0,
 turboTrailingStopRate: 0.7,
 
-turboMaxDailyBuyCount: 6,
+turboMaxDailyBuyCount: 3,
 turboMaxConsecutiveLoss: 3,
 turboMinOneMinuteRiseRate: 0.25,
 
@@ -94,13 +94,13 @@ earlyTakeProfitSellRatio: 0.5,
 earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
-waveEnabled: false,
-waveStartTime: "11:00",
-waveEndTime: "14:30",
-waveForceSellTime: "14:30",
+waveEnabled: true,
+waveStartTime: "10:30",
+waveEndTime: "14:00",
+waveForceSellTime: "14:00",
 
-waveMaxHoldingCount: 3,
-waveMaxDailyBuyCount: 2,
+waveMaxHoldingCount: 1,
+waveMaxDailyBuyCount: 1,
 
 waveMinMorningRiseRate: 4.0,
 waveMinPullbackRate: 1.5,
@@ -366,9 +366,14 @@ function initDailyLossLimitIfNeeded(state) {
   const today = todayKey();
 
   if (state.dailyLossDate !== today) {
-    state.dailyLossDate = today;
-    state.dailyBuyStopped = false;
-    state.dailyStartAsset = getCurrentTotalAsset(state);
+  state.dailyLossDate = today;
+  state.dailyBuyStopped = false;
+
+  state.waveOnlyMode = false;
+  state.waveOnlyModeAt = null;
+  state.waveOnlyModeReason = null;
+
+  state.dailyStartAsset = getCurrentTotalAsset(state);
     state.dailyLossLimit = Math.floor(
       state.dailyStartAsset * settings.dailyLossLimitRate
     );
@@ -1693,6 +1698,45 @@ rebalanceCashIfNoHoldings(
   `전량매도 후 자동 6:4 재배분 · ${actionType}`
 );
 
+
+if (
+  actionType === "TURBO_STOP_LOSS" &&
+  getTurboConsecutiveLossCount(state) >= 2
+) {
+  state.waveOnlyMode = true;
+  state.waveOnlyModeAt = nowText();
+  state.waveOnlyModeReason = "Turbo 연속손절 2회 이상 → WAVE 1회만 허용";
+
+  state.dailyBuyStopped = true;
+  state.dailyBuyStoppedAt = nowText();
+  state.dailyBuyStoppedReason =
+    "Turbo 연속손절 2회 이상 → Core/Turbo 신규매수 중단, WAVE 1회만 허용";
+
+  console.log(
+    "[방어모드] Turbo 연속손절 2회 이상 → Core/Turbo 중단, WAVE 1회만 허용"
+  );
+}
+
+initDailyLossLimitIfNeeded(state);
+
+const todayProfitAfterSell = getTodayRealizedProfit(state);
+const dailyLossLimit = Math.abs(Number(state.dailyLossLimit || 0));
+
+if (
+  dailyLossLimit > 0 &&
+  todayProfitAfterSell <= -dailyLossLimit
+) {
+  state.dailyBuyStopped = true;
+  state.dailyBuyStoppedAt = nowText();
+  state.dailyBuyStoppedReason =
+    `일일 손실한도 도달: ${todayProfitAfterSell.toLocaleString()}원 / 한도 ${dailyLossLimit.toLocaleString()}원`;
+
+  console.log(
+    `[일일 손실한도 도달] 오늘 실현손익 ${todayProfitAfterSell.toLocaleString()}원 ` +
+    `/ 손실한도 ${dailyLossLimit.toLocaleString()}원 → 신규매수 중단`
+  );
+}
+
 console.log(
   `[매도완료] ${holding.name} ${sellQty}주 / ${price}원 / 수익률 ${profitRate.toFixed(2)}% / ${actionType}`
 );
@@ -2493,6 +2537,13 @@ async function runServerAutoBuyOnce() {
 
 const state = loadState();
 
+if (state.waveOnlyMode) {
+  console.log(
+    "[CORE 매수중단] 방어모드 활성화 → Core 신규매수 금지"
+  );
+  return;
+}
+
 if (!state.serverAutoEnabled) {
   console.log("서버 자동매매 OFF 상태입니다. 자동매수를 실행하지 않습니다.");
   return;
@@ -2549,6 +2600,20 @@ if (state.dailyBuyStopped) {
       console.log("보유 가능 종목 수 초과");
       return;
     }
+
+    if (getTurboConsecutiveLossCount(state) >= 2) {
+  console.log(
+    "[CORE 매수중단] Turbo 연속손절 2회 이상 발생 → 오늘 Core 신규매수 중단"
+  );
+
+  state.dailyBuyStopped = true;
+  saveState(state);
+
+  return {
+    ok: false,
+    message: "Turbo 연속손절로 Core 신규매수 중단"
+  };
+}
 
     let candidates = await discoverCandidates();
 
@@ -3172,10 +3237,22 @@ async function runWaveAutoBuyOnce() {
 
   const state = loadState();
 
+  if (state.waveOnlyMode) {
+  console.log(
+    "[TURBO 매수중단] 방어모드 활성화 → Turbo 신규매수 금지"
+  );
+  return;
+}
+
   if (!state.serverAutoEnabled) {
     console.log("[WAVE] 서버 자동매매 OFF");
     return;
   }
+
+  if (!state.waveOnlyMode) {
+  console.log("[WAVE] 방어모드 아님 → WAVE 매수 대기");
+  return;
+}
 
   const candidates = Object.values(state.waveCandidates || {});
 
