@@ -433,7 +433,7 @@
         <div id="builderTools">
           <div class="build-top-row">
             <input class="input" id="courseNameInput" placeholder="코스 이름" />
-
+            <input class="input" id="courseRegionInput" placeholder="지역 이름 예: 진주시" />
             <div class="build-mode-row">
               <button class="chip active" id="buildFromRideBtn">기록등록</button>
               <button class="chip" id="buildManualBtn">직접등록</button>
@@ -509,6 +509,7 @@
     const listEl = document.getElementById("listEl");
     const bottomBarContent = document.getElementById("bottomBarContent");
     const courseNameInput = document.getElementById("courseNameInput");
+    const courseRegionInput = document.getElementById("courseRegionInput");
     const editToggleBtn = document.getElementById("editToggleBtn");
     const undoBtn = document.getElementById("undoBtn");
     const clearManualBtn = document.getElementById("clearManualBtn");
@@ -930,7 +931,7 @@ card.className = `card${isSelected ? " selected" : ""}`;
 
   <div class="card-actions">
   <button class="card-mini-btn primary" type="button">보기</button>
-  <button class="card-mini-btn amber" type="button">이름수정</button>
+  <button class="card-mini-btn amber" type="button">정보수정</button>
   ${
     course.source === "manual"
       ? `<button class="card-mini-btn" type="button">코스수정</button>`
@@ -951,6 +952,11 @@ cardButtons[1].addEventListener("click", async (e) => {
   e.stopPropagation();
 
   const newName = prompt("새 코스 이름을 입력하세요.", course.name || "");
+  const newRegion = prompt("지역 이름을 입력하세요.", getCourseRegion(course));
+if (newRegion === null) return;
+
+const trimmedRegion = newRegion.trim() || "진주시";
+
   if (newName === null) return;
 
   const trimmedName = newName.trim();
@@ -961,13 +967,14 @@ cardButtons[1].addEventListener("click", async (e) => {
 
   try {
     await saveCourseToFirebase({
-      id: course.id,
-      name: trimmedName,
-      source: course.source || "manual",
-      points: course.points || [],
-      createdAt: course.createdAt || Date.now(),
-      updatedAt: Date.now()
-    });
+  id: course.id,
+  name: trimmedName,
+  region: trimmedRegion,
+  source: course.source || "manual",
+  points: course.points || [],
+  createdAt: course.createdAt || Date.now(),
+  updatedAt: Date.now()
+});
 
     await refreshCourses();
     alert("코스 이름이 수정되었습니다.");
@@ -1103,7 +1110,7 @@ listEl.appendChild(card);
     bottomBarContent.innerHTML = `
   <div class="bottom-bar-inner">
     <button class="bottom-action primary" id="bottomPreviewBtn">보기</button>
-    <button class="bottom-action amber" id="bottomEditBtn">이름수정</button>
+    <button class="bottom-action amber" id="bottomEditBtn">정보수정</button>
     <button class="bottom-action" id="bottomCourseModifyBtn">코스수정</button>
     <button class="bottom-action red" id="bottomDeleteBtn">삭제</button>
     <button class="bottom-action green" id="bottomRideBtn">주행열기</button>
@@ -1114,33 +1121,53 @@ listEl.appendChild(card);
         document.getElementById("bottomCourseModifyBtn").addEventListener("click", () => {
   startModifyManualCourse(selectedCourse);
 });
-        document.getElementById("bottomEditBtn").addEventListener("click", async () => {
-          const newName = prompt("새 코스 이름을 입력하세요.", selectedCourse.name || "");
-          if (newName === null) return;
-          const trimmedName = newName.trim();
-          if (!trimmedName) {
-            alert("코스 이름을 입력하세요.");
-            return;
-          }
+      document.getElementById("bottomEditBtn").addEventListener("click", async () => {
+  const newName = prompt("새 코스 이름을 입력하세요.", selectedCourse.name || "");
+  if (newName === null) return;
 
-          try {
-            await saveCourseToFirebase({
-              id: selectedCourse.id,
-              name: trimmedName,
-              source: selectedCourse.source || "manual",
-              points: selectedCourse.points || [],
-              createdAt: selectedCourse.createdAt || Date.now(),
-              updatedAt: Date.now()
-            });
-            selectedCourse.name = trimmedName;
-            await refreshCourses();
-            previewCourse(courses.find(c => c.id === selectedCourse.id) || selectedCourse);
-            alert("코스 이름이 수정되었습니다.");
-          } catch (e) {
-            console.error(e);
-            alert("이름 수정 오류");
-          }
-        });
+  const trimmedName = newName.trim();
+  if (!trimmedName) {
+    alert("코스 이름을 입력하세요.");
+    return;
+  }
+
+  const newRegion = prompt("지역 이름을 입력하세요.", getCourseRegion(selectedCourse));
+  if (newRegion === null) return;
+
+  const trimmedRegion = newRegion.trim() || "진주시";
+
+  try {
+    await saveCourseToFirebase({
+      id: selectedCourse.id,
+      name: trimmedName,
+      region: trimmedRegion,
+      source: selectedCourse.source || "manual",
+      points: selectedCourse.points || [],
+      createdAt: selectedCourse.createdAt || Date.now(),
+      updatedAt: Date.now()
+    });
+
+    selectedCourse.name = trimmedName;
+    selectedCourse.region = trimmedRegion;
+
+    await refreshCourses();
+
+    const updatedCourse = courses.find(c => c.id === selectedCourse.id);
+
+    if (updatedCourse) {
+      selectedCourse = updatedCourse;
+      selectedRegion = getCourseRegion(updatedCourse);
+      previewCourse(updatedCourse);
+    } else {
+      renderBottomBar();
+    }
+
+    alert("코스 정보가 수정되었습니다.");
+  } catch (e) {
+    console.error(e);
+    alert("정보 수정 오류");
+  }
+});
 
         document.getElementById("bottomDeleteBtn").addEventListener("click", async () => {
           const pw = prompt(`"${selectedCourse.name}" 삭제 비밀번호를 입력하세요.`);
@@ -1201,13 +1228,16 @@ listEl.appendChild(card);
           const name = (courseNameInput.value || "").trim() || `라이딩 ${formatDateTime(selectedRide.endTime || Date.now())}`;
 
           try {
-            await saveCourseToFirebase({
-              name,
-              source: "ride",
-              points,
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            });
+            const region = (courseRegionInput.value || "").trim() || selectedRegion || "진주시";
+
+await saveCourseToFirebase({
+  name,
+  region,
+  source: "ride",
+  points,
+  createdAt: Date.now(),
+  updatedAt: Date.now()
+});
             alert("코스로 저장되었습니다.");
             mainTab = "view";
             selectedRide = null;
@@ -1244,7 +1274,7 @@ listEl.appendChild(card);
   rideTools.style.display = (mainTab === "build" && buildTab === "ride") ? "block" : "none";
   manualTools.style.display = (mainTab === "build" && buildTab === "manual") ? "block" : "none";
   courseNameInput.style.display = mainTab === "build" ? "block" : "none";
-
+  courseRegionInput.style.display = mainTab === "build" ? "block" : "none";
   desktopGrid.classList.toggle("build-mode", mainTab === "build");
 
   setTimeout(() => {
@@ -1300,15 +1330,17 @@ listEl.appendChild(card);
       }
 
       const name = (courseNameInput.value || "").trim() || `수동코스 ${formatDateTime(Date.now())}`;
+      const region = (courseRegionInput.value || "").trim() || selectedRegion || "진주시";
 
       try {
         await saveCourseToFirebase({
-          name,
-          source: "manual",
-          points: manualPoints.slice(),
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        });
+  name,
+  region,
+  source: "manual",
+  points: manualPoints.slice(),
+  createdAt: Date.now(),
+  updatedAt: Date.now()
+});
 
         manualPoints = [];
         redrawManualCourse();
@@ -1362,6 +1394,7 @@ listEl.appendChild(card);
   clearManualMarkers();
 
   courseNameInput.value = "";
+  courseRegionInput.value = selectedRegion || "진주시";
 
   activateTabs();
   updateMapOverlayByTab();
@@ -1396,6 +1429,7 @@ if (manualPolyline) {
 
 clearManualMarkers();
 courseNameInput.value = "";
+courseRegionInput.value = selectedRegion || "진주시";
 
   if (savedCoursePolyline) {
     savedCoursePolyline.setPath([]);
