@@ -833,6 +833,15 @@ maxLossRate: 0,
   ? `Leader Core-${strategy.name}`
   : strategy.name,
   discoverScore: Number(item.discoverScore || 0),
+  changeRate: Number(
+  item.changeRate ||
+  item.fluctuationRate ||
+  item.riseRate ||
+  item.rate ||
+  0
+),
+tradeVolumeRatio: getTradeVolumeRatio(item),
+dayPositionRate: getDayPositionRate(item, price),
   discoverReasons: Array.isArray(item.discoverReasons)
     ? item.discoverReasons
     : [],
@@ -1311,6 +1320,15 @@ maxLossRate: 0,
     strategyPreset: "turbo",
     strategyName: "터보형",
     discoverScore: Number(item.discoverScore || 0),
+    changeRate: Number(
+  item.changeRate ||
+  item.fluctuationRate ||
+  item.riseRate ||
+  item.rate ||
+  0
+),
+tradeVolumeRatio: getTradeVolumeRatio(item),
+dayPositionRate: getDayPositionRate(item, price),
     discoverReasons: Array.isArray(item.discoverReasons)
       ? item.discoverReasons
       : [],
@@ -1560,6 +1578,8 @@ function paperWaveBuy(state, candidate, currentPrice) {
     volume: Number(candidate.volume || 0),
     morningHigh: Number(candidate.morningHigh || 0),
     morningRiseRate: Number(candidate.morningRiseRate || 0),
+    pullbackRate: Number(candidate.pullbackRate || 0),
+    reboundRate: Number(candidate.reboundRate || 0),
 
     marketTemperature: state.marketTemperature || null,
 
@@ -2420,14 +2440,13 @@ function calculateMarketTemperature(candidates = []) {
         item.changeRate ??
         item.changeRatePercent ??
         item.fluctuationRate ??
+        item.riseRate ??
         item.rate ??
+        item.raw?.flu_rt ??
         0
       );
 
-      return {
-        ...item,
-        rate
-      };
+      return { ...item, rate };
     })
     .filter((item) => Number.isFinite(item.rate));
 
@@ -2440,8 +2459,10 @@ function calculateMarketTemperature(candidates = []) {
       advanceRatio: 0,
       avgChangeRate: 0,
       strongRatio: 0,
+      dangerRatio: 0,
       upCount: 0,
       strongCount: 0,
+      dangerCount: 0,
       total: 0,
       reason: "시장온도 계산 데이터 없음",
       checkedAt: nowText()
@@ -2454,7 +2475,7 @@ function calculateMarketTemperature(candidates = []) {
 
   const advanceRatio = (upCount / total) * 100;
   const strongRatio = (strongCount / total) * 100;
-
+  const dangerRatio = (dangerCount / total) * 100;
   const avgChangeRate =
     valid.reduce((sum, item) => sum + item.rate, 0) / total;
 
@@ -2462,14 +2483,13 @@ function calculateMarketTemperature(candidates = []) {
     `상승 ${advanceRatio.toFixed(1)}% / ` +
     `평균 ${avgChangeRate.toFixed(2)}% / ` +
     `강한종목 ${strongRatio.toFixed(1)}% / ` +
-    `약세종목 ${dangerCount}개`;
+    `약세 ${dangerRatio.toFixed(1)}%`;
 
-  // 상승 종목은 많지만 평균 상승이 약하면 HOT 금지
   if (
     advanceRatio >= 75 &&
     avgChangeRate >= 1.2 &&
     strongRatio >= 20 &&
-    dangerCount <= Math.floor(total * 0.15)
+    dangerRatio <= 15
   ) {
     return {
       level: "HOT",
@@ -2477,6 +2497,7 @@ function calculateMarketTemperature(candidates = []) {
       advanceRatio: Number(advanceRatio.toFixed(1)),
       avgChangeRate: Number(avgChangeRate.toFixed(2)),
       strongRatio: Number(strongRatio.toFixed(1)),
+      dangerRatio: Number(dangerRatio.toFixed(1)),
       upCount,
       strongCount,
       dangerCount,
@@ -2487,28 +2508,10 @@ function calculateMarketTemperature(candidates = []) {
   }
 
   if (
-    advanceRatio >= 65 &&
-    avgChangeRate >= 0.7 &&
-    strongRatio >= 12
-  ) {
-    return {
-      level: "GOOD",
-      label: "양호",
-      advanceRatio: Number(advanceRatio.toFixed(1)),
-      avgChangeRate: Number(avgChangeRate.toFixed(2)),
-      strongRatio: Number(strongRatio.toFixed(1)),
-      upCount,
-      strongCount,
-      dangerCount,
-      total,
-      reason,
-      checkedAt: nowText()
-    };
-  }
-
-  if (
-    advanceRatio >= 50 &&
-    avgChangeRate >= 0.2
+    advanceRatio >= 60 &&
+    avgChangeRate >= 0.5 &&
+    strongRatio >= 10 &&
+    dangerRatio <= 25
   ) {
     return {
       level: "NORMAL",
@@ -2516,6 +2519,7 @@ function calculateMarketTemperature(candidates = []) {
       advanceRatio: Number(advanceRatio.toFixed(1)),
       avgChangeRate: Number(avgChangeRate.toFixed(2)),
       strongRatio: Number(strongRatio.toFixed(1)),
+      dangerRatio: Number(dangerRatio.toFixed(1)),
       upCount,
       strongCount,
       dangerCount,
@@ -2526,15 +2530,17 @@ function calculateMarketTemperature(candidates = []) {
   }
 
   if (
-    advanceRatio >= 35 ||
-    avgChangeRate > -0.5
+    advanceRatio < 45 ||
+    avgChangeRate < 0 ||
+    dangerRatio >= 30
   ) {
     return {
-      level: "CAUTION",
-      label: "주의",
+      level: "DANGER",
+      label: "위험",
       advanceRatio: Number(advanceRatio.toFixed(1)),
       avgChangeRate: Number(avgChangeRate.toFixed(2)),
       strongRatio: Number(strongRatio.toFixed(1)),
+      dangerRatio: Number(dangerRatio.toFixed(1)),
       upCount,
       strongCount,
       dangerCount,
@@ -2545,11 +2551,12 @@ function calculateMarketTemperature(candidates = []) {
   }
 
   return {
-    level: "DANGER",
-    label: "위험",
+    level: "CAUTION",
+    label: "주의",
     advanceRatio: Number(advanceRatio.toFixed(1)),
     avgChangeRate: Number(avgChangeRate.toFixed(2)),
     strongRatio: Number(strongRatio.toFixed(1)),
+    dangerRatio: Number(dangerRatio.toFixed(1)),
     upCount,
     strongCount,
     dangerCount,
@@ -2557,6 +2564,27 @@ function calculateMarketTemperature(candidates = []) {
     reason,
     checkedAt: nowText()
   };
+}
+
+function isAttackBuyBlockedByMarket(marketTemperature) {
+  if (!marketTemperature) return true;
+
+  if (
+    marketTemperature.level === "DANGER" ||
+    marketTemperature.level === "COLD" ||
+    marketTemperature.level === "CAUTION"
+  ) {
+    return true;
+  }
+
+  if (
+    Number(marketTemperature.avgChangeRate || 0) < 1.0 ||
+    Number(marketTemperature.strongRatio || 0) < 15
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 async function runServerAutoBuyOnce() {
@@ -3057,6 +3085,17 @@ async function runEarlyAutoBuyOnce() {
 
   try {
     candidates = await discoverCandidates();
+    const marketTemperature = calculateMarketTemperature(candidates);
+state.marketTemperature = marketTemperature;
+
+if (isAttackBuyBlockedByMarket(marketTemperature)) {
+  console.log(
+    `[EARLY 매수보류] 장초 시장 약함 / ${marketTemperature.level} / ${marketTemperature.reason}`
+  );
+  saveState(state);
+  return;
+}
+
   } catch (err) {
     console.warn("[EARLY] 후보 발굴 실패:", err.message);
     saveState(state);
@@ -3147,6 +3186,16 @@ async function runTurboAutoBuyOnce() {
 
   try {
     candidates = await discoverCandidates();
+    const marketTemperature = calculateMarketTemperature(candidates);
+state.marketTemperature = marketTemperature;
+
+if (isAttackBuyBlockedByMarket(marketTemperature)) {
+  console.log(
+    `[TURBO 매수보류] 장초 시장 약함 / ${marketTemperature.level} / ${marketTemperature.reason}`
+  );
+  saveState(state);
+  return;
+}
   } catch (err) {
     console.warn("[TURBO] 후보 발굴 실패:", err.message);
     saveState(state);
