@@ -2414,17 +2414,22 @@ function isPullbackReboundCandidate(item) {
 function calculateMarketTemperature(candidates = []) {
   const list = Array.isArray(candidates) ? candidates : [];
 
-  const valid = list.filter((item) => {
-    const rate = Number(
-      item.changeRate ??
-      item.changeRatePercent ??
-      item.fluctuationRate ??
-      item.rate ??
-      0
-    );
+  const valid = list
+    .map((item) => {
+      const rate = Number(
+        item.changeRate ??
+        item.changeRatePercent ??
+        item.fluctuationRate ??
+        item.rate ??
+        0
+      );
 
-    return Number.isFinite(rate);
-  });
+      return {
+        ...item,
+        rate
+      };
+    })
+    .filter((item) => Number.isFinite(item.rate));
 
   const total = valid.length;
 
@@ -2433,68 +2438,109 @@ function calculateMarketTemperature(candidates = []) {
       level: "NORMAL",
       label: "보통",
       advanceRatio: 0,
+      avgChangeRate: 0,
+      strongRatio: 0,
       upCount: 0,
+      strongCount: 0,
       total: 0,
-      reason: "시장온도 계산 데이터 없음"
+      reason: "시장온도 계산 데이터 없음",
+      checkedAt: nowText()
     };
   }
 
-  const upCount = valid.filter((item) => {
-    const rate = Number(
-      item.changeRate ??
-      item.changeRatePercent ??
-      item.fluctuationRate ??
-      item.rate ??
-      0
-    );
-
-    return rate > 0;
-  }).length;
+  const upCount = valid.filter((item) => item.rate > 0).length;
+  const strongCount = valid.filter((item) => item.rate >= 2.0).length;
+  const dangerCount = valid.filter((item) => item.rate <= -2.0).length;
 
   const advanceRatio = (upCount / total) * 100;
+  const strongRatio = (strongCount / total) * 100;
 
-  if (advanceRatio >= 70) {
+  const avgChangeRate =
+    valid.reduce((sum, item) => sum + item.rate, 0) / total;
+
+  const reason =
+    `상승 ${advanceRatio.toFixed(1)}% / ` +
+    `평균 ${avgChangeRate.toFixed(2)}% / ` +
+    `강한종목 ${strongRatio.toFixed(1)}% / ` +
+    `약세종목 ${dangerCount}개`;
+
+  // 상승 종목은 많지만 평균 상승이 약하면 HOT 금지
+  if (
+    advanceRatio >= 75 &&
+    avgChangeRate >= 1.2 &&
+    strongRatio >= 20 &&
+    dangerCount <= Math.floor(total * 0.15)
+  ) {
     return {
-  level: "HOT",
-  label: "매우 좋음",
-  advanceRatio: Number(advanceRatio.toFixed(1)),
-  upCount,
-  total,
-  reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`,
-  checkedAt: nowText()
-};
+      level: "HOT",
+      label: "매우 좋음",
+      advanceRatio: Number(advanceRatio.toFixed(1)),
+      avgChangeRate: Number(avgChangeRate.toFixed(2)),
+      strongRatio: Number(strongRatio.toFixed(1)),
+      upCount,
+      strongCount,
+      dangerCount,
+      total,
+      reason,
+      checkedAt: nowText()
+    };
   }
 
-  if (advanceRatio >= 55) {
+  if (
+    advanceRatio >= 65 &&
+    avgChangeRate >= 0.7 &&
+    strongRatio >= 12
+  ) {
     return {
       level: "GOOD",
       label: "양호",
       advanceRatio: Number(advanceRatio.toFixed(1)),
+      avgChangeRate: Number(avgChangeRate.toFixed(2)),
+      strongRatio: Number(strongRatio.toFixed(1)),
       upCount,
+      strongCount,
+      dangerCount,
       total,
-      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+      reason,
+      checkedAt: nowText()
     };
   }
 
-  if (advanceRatio >= 45) {
+  if (
+    advanceRatio >= 50 &&
+    avgChangeRate >= 0.2
+  ) {
     return {
       level: "NORMAL",
       label: "보통",
       advanceRatio: Number(advanceRatio.toFixed(1)),
+      avgChangeRate: Number(avgChangeRate.toFixed(2)),
+      strongRatio: Number(strongRatio.toFixed(1)),
       upCount,
+      strongCount,
+      dangerCount,
       total,
-      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+      reason,
+      checkedAt: nowText()
     };
   }
 
-  if (advanceRatio >= 30) {
+  if (
+    advanceRatio >= 35 ||
+    avgChangeRate > -0.5
+  ) {
     return {
       level: "CAUTION",
       label: "주의",
       advanceRatio: Number(advanceRatio.toFixed(1)),
+      avgChangeRate: Number(avgChangeRate.toFixed(2)),
+      strongRatio: Number(strongRatio.toFixed(1)),
       upCount,
+      strongCount,
+      dangerCount,
       total,
-      reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+      reason,
+      checkedAt: nowText()
     };
   }
 
@@ -2502,9 +2548,14 @@ function calculateMarketTemperature(candidates = []) {
     level: "DANGER",
     label: "위험",
     advanceRatio: Number(advanceRatio.toFixed(1)),
+    avgChangeRate: Number(avgChangeRate.toFixed(2)),
+    strongRatio: Number(strongRatio.toFixed(1)),
     upCount,
+    strongCount,
+    dangerCount,
     total,
-    reason: `상승종목비율 ${advanceRatio.toFixed(1)}%`
+    reason,
+    checkedAt: nowText()
   };
 }
 
