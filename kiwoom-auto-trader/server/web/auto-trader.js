@@ -54,7 +54,7 @@ const settings = {
   endProfitSellOnlyPositive: true,
 
   turboEnabled: true,
-turboStartTime: "09:00",
+turboStartTime: "09:05",
 turboEndTime: "11:00",
 turboForceSellTime: "11:00",
 
@@ -67,6 +67,7 @@ turboBuyMaxDayRiseRate: 3.2,
 
 turboMinVolume: 300000,
 turboMinOpenPositionRate: 1.5,
+turboMinDayPositionRate: 60,
 
 turboStopLossRate: -1.0,
 turboTakeProfitRate: 3.0,
@@ -1127,7 +1128,7 @@ function checkTurboLeaderCandidate(item, currentPrice) {
     if (range > 0) {
       const position = ((currentPrice - lowPrice) / range) * 100;
 
-      if (position < 55) {
+      if (position < settings.turboMinDayPositionRate) {
         return {
           pass: false,
           reason: `당일 위치 약함 ${position.toFixed(1)}%`
