@@ -369,6 +369,10 @@ function initDailyLossLimitIfNeeded(state) {
   state.dailyLossDate = today;
   state.dailyBuyStopped = false;
 
+  state.turboBuyStopped = false;
+  state.turboBuyStoppedAt = null;
+  state.turboBuyStoppedReason = null;
+
   state.waveOnlyMode = false;
   state.waveOnlyModeAt = null;
   state.waveOnlyModeReason = null;
@@ -1723,17 +1727,13 @@ if (
   actionType === "TURBO_STOP_LOSS" &&
   getTurboConsecutiveLossCount(state) >= 2
 ) {
-  state.waveOnlyMode = true;
-  state.waveOnlyModeAt = nowText();
-  state.waveOnlyModeReason = "Turbo 연속손절 2회 이상 → WAVE 1회만 허용";
-
-  state.dailyBuyStopped = true;
-  state.dailyBuyStoppedAt = nowText();
-  state.dailyBuyStoppedReason =
-    "Turbo 연속손절 2회 이상 → Core/Turbo 신규매수 중단, WAVE 1회만 허용";
+  state.turboBuyStopped = true;
+  state.turboBuyStoppedAt = nowText();
+  state.turboBuyStoppedReason =
+    "Turbo 연속손절 2회 이상 → Turbo 신규매수만 중단";
 
   console.log(
-    "[방어모드] Turbo 연속손절 2회 이상 → Core/Turbo 중단, WAVE 1회만 허용"
+    "[TURBO 매수중단] Turbo 연속손절 2회 이상 → Turbo만 중단, Core는 계속"
   );
 }
 
@@ -2616,12 +2616,6 @@ async function runServerAutoBuyOnce() {
 
 const state = loadState();
 
-if (state.waveOnlyMode) {
-  console.log(
-    "[CORE 매수중단] 방어모드 활성화 → Core 신규매수 금지"
-  );
-  return;
-}
 
 if (!state.serverAutoEnabled) {
   console.log("서버 자동매매 OFF 상태입니다. 자동매수를 실행하지 않습니다.");
@@ -3155,11 +3149,6 @@ if (isAttackBuyBlockedByMarket(marketTemperature)) {
 }
 
 async function runTurboAutoBuyOnce() {
-  if (state.turboBuyStopped) {
-  console.log("[TURBO] 오늘 Turbo 매수중단 상태");
-  return;
-}
-
   if (isRunning) {
     console.log("[TURBO] 다른 매수 로직 실행중이라 건너뜀");
     return;
@@ -3168,161 +3157,89 @@ async function runTurboAutoBuyOnce() {
   isRunning = true;
 
   try {
-  if (!settings.turboEnabled) return;
+    if (!settings.turboEnabled) return;
 
-  if (!isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
-    return;
-  }
-
-  const state = loadState();
-
-  if (!state.serverAutoEnabled) {
-    console.log("[TURBO] 서버 자동매매 OFF");
-    return;
-  }
-
-  state.lastTurboCheckAt = nowText();
-
-  let candidates = [];
-
-  try {
-    candidates = await discoverCandidates();
-    const marketTemperature = calculateMarketTemperature(candidates);
-state.marketTemperature = marketTemperature;
-
-if (isAttackBuyBlockedByMarket(marketTemperature)) {
-  console.log(
-    `[TURBO 매수보류] 장초 시장 약함 / ${marketTemperature.level} / ${marketTemperature.reason}`
-  );
-  saveState(state);
-  return;
-}
-  } catch (err) {
-    console.warn("[TURBO] 후보 발굴 실패:", err.message);
-    saveState(state);
-    return;
-  }
-
-  for (const item of candidates.slice(0, 15)) {
-    if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
-      break;
+    if (!isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
+      return;
     }
 
-    const discoverScore = Number(item.discoverScore || 0);
-    const dayRiseRate = Number(
-      item.changeRate ||
-      item.fluctuationRate ||
-      item.riseRate ||
-      item.rate ||
-      0
-    );
+    const state = loadState();
 
-    if (discoverScore < settings.turboMinScore) continue;
-    if (isViLikeItem(item)) continue;
-    if (isAlreadyHolding(state, item.code)) continue;
-    if (wasTurboBoughtToday(state, item.code)) continue;
+    if (state.turboBuyStopped) {
+      console.log("[TURBO] 오늘 Turbo 매수중단 상태");
+      return;
+    }
 
-    if (wasStoppedToday(state, item.code)) {
-  console.log("[TURBO 매수제외] 오늘 손절 또는 손실 이력 있음", item.name);
-  continue;
-}
+    if (!state.serverAutoEnabled) {
+      console.log("[TURBO] 서버 자동매매 OFF");
+      return;
+    }
 
-    let priceData = null;
+    let candidates = [];
 
     try {
-      priceData = await fetchPrice(item.code);
+      candidates = await discoverCandidates();
     } catch (err) {
-      console.log("[TURBO] 현재가 조회 실패", item.code, err.message);
-      continue;
+      console.warn("[TURBO] 후보 발굴 실패:", err.message);
+      saveState(state);
+      return;
     }
 
-    const currentPrice = Number(priceData.currentPrice || 0);
-    const currentVolume = Number(priceData.volume || item.volume || 0);
+    for (const item of candidates.slice(0, 20)) {
+      if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) break;
+      if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) break;
 
-    if (!currentPrice || currentPrice <= 0) continue;
+      if (isAlreadyHolding(state, item.code)) continue;
+      if (wasTurboBoughtToday(state, item.code)) continue;
+      if (wasStoppedToday(state, item.code)) continue;
 
-rememberWaveCandidate(state, item, priceData, currentPrice);
+      if (Number(item.discoverScore || 0) < settings.turboMinScore) {
+        continue;
+      }
 
-const leaderCheck = checkTurboLeaderCandidate(
-  {
-    ...item,
-    ...priceData
-  },
-  currentPrice
-);
+      let priceData = null;
 
-if (!leaderCheck.pass) {
-  console.log(
-    `[TURBO 제외] ${priceData.name || item.name} ${item.code} / ${leaderCheck.reason}`
-  );
-  continue;
-}
+      try {
+        priceData = await fetchPrice(item.code);
+      } catch (err) {
+        console.log("[TURBO] 현재가 조회 실패", item.code, err.message);
+        continue;
+      }
 
-    const prev = state.turboSnapshots[item.code];
+      const currentPrice = Number(priceData.currentPrice || item.currentPrice || 0);
+      if (!currentPrice || currentPrice <= 0) continue;
 
-    state.turboSnapshots[item.code] = {
-      price: currentPrice,
-      volume: currentVolume,
-      checkedAt: Date.now()
-    };
-
-    if (!prev) {
-      continue;
-    }
-
-    const prevPrice = Number(prev.price || 0);
-    const prevVolume = Number(prev.volume || 0);
-
-    if (!prevPrice || prevPrice <= 0) continue;
-
-    const oneMinuteRiseRate =
-      ((currentPrice - prevPrice) / prevPrice) * 100;
-
-    
-    
-    
-const volumeDelta = Math.max(0, currentVolume - prevVolume);
-const prevVolumeDelta = Number(prev.volumeDelta || 0);
-
-const volumeSurge =
-  prevVolumeDelta > 0
-    ? volumeDelta >= prevVolumeDelta * 1.2
-    : volumeDelta > 0;
-
-
-
-
-
-    state.turboSnapshots[item.code].volumeDelta = volumeDelta;
-
-    if (oneMinuteRiseRate < settings.turboMinOneMinuteRiseRate) {
-      continue;
-    }
-
-    if (!volumeSurge) {
-      continue;
-    }
-
-    console.log(
-      `[TURBO 후보] ${priceData.name || item.name} ${item.code} / ` +
-      `1분상승 ${oneMinuteRiseRate.toFixed(2)}% / ` +
-      `당일상승 ${dayRiseRate.toFixed(2)}% / ` +
-      `점수 ${discoverScore} / ` +
-      `거래량증가 ${volumeDelta.toLocaleString()}`
-    );
-
-    paperTurboBuy(
-      state,
-      {
+      const mergedItem = {
         ...item,
-        name: priceData.name || item.name,
-        currentPrice,
-        volume: currentVolume
-      },
-      currentPrice
-    );
-  }
+        ...priceData,
+        raw: {
+          ...(item.raw || {}),
+          ...(priceData.raw || {})
+        }
+      };
 
+      const turboCheck = checkTurboLeaderCandidate(mergedItem, currentPrice);
+
+      if (!turboCheck.pass) {
+        continue;
+      }
+
+      console.log(
+        `[TURBO 후보] ${priceData.name || item.name} ${item.code} / ${turboCheck.reason}`
+      );
+
+      paperTurboBuy(
+        state,
+        {
+          ...mergedItem,
+          name: priceData.name || item.name,
+          currentPrice
+        },
+        currentPrice
+      );
+    }
+
+    state.lastTurboCheckAt = nowText();
     saveState(state);
   } finally {
     isRunning = false;
@@ -3338,22 +3255,13 @@ async function runWaveAutoBuyOnce() {
 
   const state = loadState();
 
-  if (state.waveOnlyMode) {
-  console.log(
-    "[TURBO 매수중단] 방어모드 활성화 → Turbo 신규매수 금지"
-  );
-  return;
-}
+  
 
   if (!state.serverAutoEnabled) {
     console.log("[WAVE] 서버 자동매매 OFF");
     return;
   }
 
-  if (!state.waveOnlyMode) {
-  console.log("[WAVE] 방어모드 아님 → WAVE 매수 대기");
-  return;
-}
 
   const candidates = Object.values(state.waveCandidates || {});
 
