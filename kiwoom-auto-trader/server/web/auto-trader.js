@@ -16,7 +16,8 @@ const settings = {
   totalCash: 100000000,
 
   coreRatio: 0.6,
-  turboRatio: 0.4,
+turboRatio: 0.2,
+leaderRatio: 0.2,
   earlyMaxHoldingCount: 3,
   earlyMaxDailyBuyCount: 4,
 
@@ -79,7 +80,7 @@ turboMaxDailyBuyCount: 3,
 turboMaxConsecutiveLoss: 3,
 turboMinOneMinuteRiseRate: 0.25,
 
-earlyEnabled: true,
+earlyEnabled: false,
 earlyStartTime: "09:05",
 earlyEndTime: "10:30",
 
@@ -95,24 +96,21 @@ earlyTakeProfitSellRatio: 0.5,
 earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
-waveEnabled: true,
-waveStartTime: "10:30",
-waveEndTime: "14:00",
-waveForceSellTime: "14:00",
+leaderEnabled: true,
+leaderStartTime: "10:30",
+leaderEndTime: "14:00",
 
-waveMaxHoldingCount: 1,
-waveMaxDailyBuyCount: 1,
+leaderMaxHoldingCount: 2,
+leaderMaxDailyBuyCount: 2,
 
-waveMinMorningRiseRate: 4.0,
-waveMinPullbackRate: 1.5,
-waveMaxPullbackRate: 5.0,
-waveMinReboundRate: 1.5,
+leaderStopLossRate: -3.0,
+leaderTakeProfitRate: 15.0,
+leaderTrailingStartRate: 10.0,
+leaderTrailingStopRate: 4.0,
 
-waveStopLossRate: -1.0,
-waveTakeProfitRate: 4.0,
-waveTakeProfitSellRatio: 0.5,
-waveTrailingStartRate: 3.0,
-waveTrailingStopRate: 1.5,
+leaderMinHoldDays: 2,
+leaderMaxHoldDays: 10,
+
 
 leaderCoreEnabled: true,
 
@@ -147,17 +145,20 @@ function isBetweenTime(start, end) {
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
     return {
-  holdings: [],
-  tradeLogs: [],
-  virtualResults: [],
-  lastRunAt: null,
-  lastSellCheckAt: null,
-  serverAutoEnabled: true,
-  totalCash: Math.floor(settings.totalCash * settings.coreRatio),
-  turboCash: Math.floor(settings.totalCash * settings.turboRatio),
-  budgetInitialized: true,
-  turboSnapshots: {}
-};
+      holdings: [],
+      tradeLogs: [],
+      virtualResults: [],
+      lastRunAt: null,
+      lastSellCheckAt: null,
+      serverAutoEnabled: true,
+
+      totalCash: Math.floor(settings.totalCash * settings.coreRatio),
+      turboCash: Math.floor(settings.totalCash * settings.turboRatio),
+      leaderCash: Math.floor(settings.totalCash * settings.leaderRatio),
+
+      budgetInitialized: true,
+      turboSnapshots: {}
+    };
   }
 
   const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -178,47 +179,50 @@ function loadState() {
     state.virtualResults = [];
   }
 
- if (typeof state.totalCash === "undefined") {
-  state.totalCash = settings.totalCash;
-}
+  if (!state.turboSnapshots) {
+    state.turboSnapshots = {};
+  }
 
-if (!state.budgetInitialized) {
-  const holdingsValue = (state.holdings || []).reduce((sum, holding) => {
-    return sum +
-      Number(holding.currentPrice || holding.buyPrice || 0) *
-      Number(holding.qty || 0);
-  }, 0);
+  // 기존 paper-state.json에 leaderCash가 없는 경우 20/60/20으로 재분배
+  if (!state.budgetInitialized || typeof state.leaderCash === "undefined") {
+    const holdingsValue = (state.holdings || []).reduce((sum, holding) => {
+      return sum +
+        Number(holding.currentPrice || holding.buyPrice || 0) *
+        Number(holding.qty || 0);
+    }, 0);
 
-  const existingTotalAsset =
-    Number(state.totalCash || 0) +
-    Number(state.turboCash || 0) +
-    holdingsValue;
+    const existingTotalAsset =
+      Number(state.totalCash || 0) +
+      Number(state.turboCash || 0) +
+      Number(state.leaderCash || 0) +
+      holdingsValue;
 
-  const baseAsset =
-    existingTotalAsset > 0
-      ? existingTotalAsset
-      : settings.totalCash;
+    const baseAsset =
+      existingTotalAsset > 0
+        ? existingTotalAsset
+        : settings.totalCash;
 
-  state.totalCash = Math.floor(baseAsset * settings.coreRatio);
-  state.turboCash = Math.floor(baseAsset * settings.turboRatio);
-  state.budgetInitialized = true;
-}
+    state.totalCash = Math.floor(baseAsset * settings.coreRatio);
+    state.turboCash = Math.floor(baseAsset * settings.turboRatio);
+    state.leaderCash =
+      baseAsset - state.totalCash - state.turboCash;
 
-if (typeof state.turboCash === "undefined") {
-  state.turboCash = 0;
-}
+    state.budgetInitialized = true;
+    state.budgetRebalancedAt = nowText();
+    state.budgetRebalanceReason = "20/60/20 자금 구조 초기화";
+  }
 
-if (!state.turboSnapshots) {
-  state.turboSnapshots = {};
-}
+  if (typeof state.totalCash === "undefined") {
+    state.totalCash = Math.floor(settings.totalCash * settings.coreRatio);
+  }
 
-if (!state.waveCandidates) {
-  state.waveCandidates = {};
-}
+  if (typeof state.turboCash === "undefined") {
+    state.turboCash = Math.floor(settings.totalCash * settings.turboRatio);
+  }
 
-if (!state.waveSnapshots) {
-  state.waveSnapshots = {};
-}
+  if (typeof state.leaderCash === "undefined") {
+    state.leaderCash = Math.floor(settings.totalCash * settings.leaderRatio);
+  }
 
   return state;
 }
@@ -233,20 +237,37 @@ function getBudgetInfo(state) {
   const totalAsset =
     Number(state.totalCash || 0) +
     Number(state.turboCash || 0) +
+    Number(state.leaderCash || 0) +
     holdingsValue;
 
-  const coreBudget = Math.floor(totalAsset * settings.coreRatio);
-  const turboBudget = Math.floor(totalAsset * settings.turboRatio);
+  const coreBudget =
+    Math.floor(totalAsset * settings.coreRatio);
 
-  const corePerBuyAmount = Math.floor(coreBudget / settings.coreMaxHoldingCount);
-  const turboPerBuyAmount = Math.floor(turboBudget / settings.turboMaxHoldingCount);
+  const turboBudget =
+    Math.floor(totalAsset * settings.turboRatio);
+
+  const leaderBudget =
+    Math.floor(totalAsset * settings.leaderRatio);
+
+  const corePerBuyAmount =
+    Math.floor(coreBudget / settings.coreMaxHoldingCount);
+
+  const turboPerBuyAmount =
+    Math.floor(turboBudget / settings.turboMaxHoldingCount);
+
+  const leaderPerBuyAmount =
+    Math.floor(leaderBudget / settings.leaderMaxHoldingCount);
 
   return {
     totalAsset,
+
     coreBudget,
     turboBudget,
+    leaderBudget,
+
     corePerBuyAmount,
     turboPerBuyAmount,
+    leaderPerBuyAmount,
   };
 }
 
@@ -259,24 +280,35 @@ function rebalanceCashIfNoHoldings(state, reason = "자동 재배분") {
 
   const totalAsset =
     Number(state.totalCash || 0) +
-    Number(state.turboCash || 0);
+    Number(state.turboCash || 0) +
+    Number(state.leaderCash || 0);
 
   if (!Number.isFinite(totalAsset) || totalAsset <= 0) {
     return false;
   }
 
-  const coreCash = Math.floor(totalAsset * settings.coreRatio);
-  const turboCash = totalAsset - coreCash;
+  const coreCash =
+    Math.floor(totalAsset * settings.coreRatio);
+
+  const turboCash =
+    Math.floor(totalAsset * settings.turboRatio);
+
+  const leaderCash =
+    totalAsset - coreCash - turboCash;
 
   state.totalCash = coreCash;
   state.turboCash = turboCash;
+  state.leaderCash = leaderCash;
+
   state.budgetInitialized = true;
   state.lastRebalancedAt = nowText();
   state.lastRebalanceReason = reason;
 
   console.log(
     `[자금 재배분] ${reason} / 총자산 ${totalAsset.toLocaleString()}원 ` +
-    `/ CORE ${coreCash.toLocaleString()}원 / ATTACK ${turboCash.toLocaleString()}원`
+    `/ CORE ${coreCash.toLocaleString()}원` +
+    ` / TURBO ${turboCash.toLocaleString()}원` +
+    ` / LEADER ${leaderCash.toLocaleString()}원`
   );
 
   return true;
@@ -362,7 +394,10 @@ function getCurrentTotalAsset(state) {
     return sum + Number(holding.currentPrice || holding.buyPrice || 0) * Number(holding.qty || 0);
   }, 0);
 
-  return Number(state.totalCash || 0) + Number(state.turboCash || 0) + holdingsValue;
+  return Number(state.totalCash || 0) +
+  Number(state.turboCash || 0) +
+  Number(state.leaderCash || 0) +
+  holdingsValue;
 }
 
 function initDailyLossLimitIfNeeded(state) {
@@ -376,9 +411,7 @@ function initDailyLossLimitIfNeeded(state) {
   state.turboBuyStoppedAt = null;
   state.turboBuyStoppedReason = null;
 
-  state.waveOnlyMode = false;
-  state.waveOnlyModeAt = null;
-  state.waveOnlyModeReason = null;
+ 
 
   state.dailyStartAsset = getCurrentTotalAsset(state);
     state.dailyLossLimit = Math.floor(
@@ -501,8 +534,8 @@ function getCoreHoldingCount(state) {
   return (state.holdings || []).filter(
     (item) =>
       item.strategyGroup !== "TURBO" &&
-      item.strategyGroup !== "WAVE" &&
-      item.strategyGroup !== "EARLY"
+item.strategyGroup !== "LEADER" &&
+item.strategyGroup !== "EARLY"
   ).length;
 }
 
@@ -663,7 +696,7 @@ function wasStoppedToday(state, code) {
     "STOP_LOSS",
     "TURBO_STOP_LOSS",
     "EARLY_STOP_LOSS",
-    "WAVE_STOP_LOSS"
+    "LEADER_STOP_LOSS"
   ];
 
   return logs.some((item) =>
@@ -710,7 +743,7 @@ function wasAnyBoughtToday(state, code) {
     [
       "BUY",
       "TURBO_BUY",
-      "WAVE_BUY",
+      "LEADER_BUY",
       "EARLY_BUY"
     ].includes(log.type)
   );
@@ -1402,173 +1435,123 @@ buyDayPositionRate,
   return true;
 }
 
-function getWaveHoldingCount(state) {
+function getLeaderHoldingCount(state) {
   return (state.holdings || []).filter(
-    (item) => item.strategyGroup === "WAVE"
+    (item) => item.strategyGroup === "LEADER"
   ).length;
 }
 
-function getTodayWaveBuyCount(state) {
+function getTodayLeaderBuyCount(state) {
   return (state.tradeLogs || []).filter((log) =>
     log.date === todayKey() &&
-    log.type === "WAVE_BUY"
+    log.type === "LEADER_BUY"
   ).length;
 }
 
-function wasWaveBoughtToday(state, code) {
+function wasLeaderBoughtToday(state, code) {
   return (state.tradeLogs || []).some((log) =>
     log.code === code &&
     log.date === todayKey() &&
-    log.type === "WAVE_BUY"
+    log.type === "LEADER_BUY"
   );
 }
 
-function rememberWaveCandidate(state, item, priceData, currentPrice) {
-  if (!state.waveCandidates) state.waveCandidates = {};
 
-  const highPrice = Number(priceData.high || item.high || 0);
-  const openPrice = Number(priceData.open || item.open || 0);
-  const dayRiseRate = Number(
-    priceData.changeRate ||
-    item.changeRate ||
-    item.fluctuationRate ||
-    item.riseRate ||
-    item.rate ||
-    0
+function paperLeaderBuy(state, item, currentPrice) {
+  if (!settings.leaderEnabled) return false;
+
+  if (isExcludedStock(item)) {
+    console.log("[LEADER 매수제외] 제외종목", item.name || item.code);
+    return false;
+  }
+
+  if (getLeaderHoldingCount(state) >= settings.leaderMaxHoldingCount) {
+    console.log("[LEADER 매수제외] 최대 보유종목 도달");
+    return false;
+  }
+
+  if (getTodayLeaderBuyCount(state) >= settings.leaderMaxDailyBuyCount) {
+    console.log("[LEADER 매수제외] 하루 최대 진입 횟수 도달");
+    return false;
+  }
+
+  if (isAlreadyHolding(state, item.code)) {
+    console.log("[LEADER 매수제외] 이미 보유중", item.name);
+    return false;
+  }
+
+  if (wasLeaderBoughtToday(state, item.code)) {
+    console.log("[LEADER 매수제외] 오늘 이미 LEADER 매수", item.name);
+    return false;
+  }
+
+  if (wasStoppedToday(state, item.code)) {
+    console.log("[LEADER 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
+    return false;
+  }
+
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) return false;
+
+  const availableCash = Number(state.leaderCash || 0);
+
+  const remainSlots = Math.max(
+    1,
+    settings.leaderMaxHoldingCount - getLeaderHoldingCount(state)
   );
 
-  if (dayRiseRate < settings.waveMinMorningRiseRate) return;
-
-  const prev = state.waveCandidates[item.code] || {};
-
-  state.waveCandidates[item.code] = {
-    code: item.code,
-    name: priceData.name || item.name || item.code,
-    morningHigh: Math.max(
-      Number(prev.morningHigh || 0),
-      highPrice,
-      currentPrice
-    ),
-    morningRiseRate: Math.max(
-      Number(prev.morningRiseRate || 0),
-      dayRiseRate
-    ),
-    openPrice,
-    volume: Number(priceData.volume || item.volume || 0),
-    discoverScore: Number(item.discoverScore || 0),
-    detectedAt: prev.detectedAt || nowText(),
-    lastSeenAt: nowText()
-  };
-}
-
-function checkWaveCandidate(candidate, priceData) {
-  const currentPrice = Number(priceData.currentPrice || 0);
-  const highPrice = Number(candidate.morningHigh || 0);
-  const lowPrice = Number(priceData.low || 0);
-
-  if (!currentPrice || !highPrice || !lowPrice) {
-    return { pass: false, reason: "가격 데이터 부족" };
-  }
-
-  const pullbackRate = ((highPrice - currentPrice) / highPrice) * 100;
-  const reboundRate = ((currentPrice - lowPrice) / lowPrice) * 100;
-
-  if (Number(candidate.morningRiseRate || 0) < settings.waveMinMorningRiseRate) {
-    return { pass: false, reason: "오전 강세 부족" };
-  }
-
-  if (
-    pullbackRate < settings.waveMinPullbackRate ||
-    pullbackRate > settings.waveMaxPullbackRate
-  ) {
-    return {
-      pass: false,
-      reason: `눌림 범위 미충족 ${pullbackRate.toFixed(2)}%`
-    };
-  }
-
-  if (reboundRate < settings.waveMinReboundRate) {
-    return {
-      pass: false,
-      reason: `저점 반등 부족 ${reboundRate.toFixed(2)}%`
-    };
-  }
-
-  return {
-    pass: true,
-    pullbackRate,
-    reboundRate,
-    reason: `WAVE 조건 통과 · 눌림 ${pullbackRate.toFixed(2)}% / 반등 ${reboundRate.toFixed(2)}%`
-  };
-}
-
-function paperWaveBuy(state, candidate, currentPrice) {
-  if (!settings.waveEnabled) return false;
-
-  if (isExcludedStock(candidate)) {
-    console.log("[WAVE 매수제외] 제외종목", candidate.name || candidate.code);
-    return false;
-  }
-
-  if (getWaveHoldingCount(state) >= settings.waveMaxHoldingCount) {
-    console.log("[WAVE 매수제외] 최대 보유종목 도달");
-    return false;
-  }
-
-  if (getTodayWaveBuyCount(state) >= settings.waveMaxDailyBuyCount) {
-    console.log("[WAVE 매수제외] 하루 최대 진입 횟수 도달");
-    return false;
-  }
-
-  if (isAlreadyHolding(state, candidate.code)) {
-    console.log("[WAVE 매수제외] 이미 보유중", candidate.name);
-    return false;
-  }
-
-  if (wasWaveBoughtToday(state, candidate.code)) {
-    console.log("[WAVE 매수제외] 오늘 이미 WAVE 매수", candidate.name);
-    return false;
-  }
-
-  const price = Number(currentPrice || 0);
-  const availableCash = Number(state.turboCash || 0);
+  const budget = getBudgetInfo(state);
 
   const buyAmount = Math.min(
-    Math.floor(
-      availableCash /
-        Math.max(1, settings.waveMaxHoldingCount - getWaveHoldingCount(state))
-    ),
+    budget.leaderPerBuyAmount,
+    Math.floor(availableCash / remainSlots),
     availableCash
   );
 
   const qty = Math.floor(buyAmount / price);
 
-  if (!price || qty <= 0) {
-    console.log("[WAVE 매수제외] 현금 또는 수량 부족");
+  if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qty <= 0) {
+    console.log("[LEADER 매수제외] 현금 또는 수량 부족", {
+      name: item.name,
+      code: item.code,
+      price,
+      buyAmount,
+      availableCash,
+      remainSlots,
+      leaderPerBuyAmount: budget.leaderPerBuyAmount
+    });
     return false;
   }
 
   const holding = {
-    code: candidate.code,
-    name: candidate.name || candidate.code,
+    code: item.code,
+    name: item.name || item.stockName || item.korName || item.code,
     buyPrice: price,
     qty,
     buyAmount: price * qty,
     plannedBuyAmount: buyAmount,
     currentPrice: price,
     highestPrice: price,
-    autoTrade: true,
     lowestPrice: price,
     maxProfitRate: 0,
     maxLossRate: 0,
-    strategyGroup: "WAVE",
-    strategyPreset: "wave",
-    strategyName: "웨이브형",
-    morningHigh: Number(candidate.morningHigh || 0),
-    morningRiseRate: Number(candidate.morningRiseRate || 0),
-    pullbackRate: Number(candidate.pullbackRate || 0),
-    reboundRate: Number(candidate.reboundRate || 0),
-    discoverScore: Number(candidate.discoverScore || 0),
+    autoTrade: true,
+
+    strategyGroup: "LEADER",
+    strategyPreset: "leader",
+    strategyName: "리더형",
+
+    discoverScore: Number(item.discoverScore || 0),
+    changeRate: Number(
+      item.changeRate ||
+      item.fluctuationRate ||
+      item.riseRate ||
+      item.rate ||
+      0
+    ),
+    tradeVolumeRatio: getTradeVolumeRatio(item),
+    dayPositionRate: getDayPositionRate(item, price),
+
     buyTime: nowText(),
     buyTimeMs: Date.now(),
     buyAt: new Date().toISOString(),
@@ -1576,11 +1559,11 @@ function paperWaveBuy(state, candidate, currentPrice) {
   };
 
   state.holdings.push(holding);
-  state.turboCash = availableCash - price * qty;
+  state.leaderCash = availableCash - price * qty;
 
   state.tradeLogs.push({
-    type: "WAVE_BUY",
-    strategyGroup: "WAVE",
+    type: "LEADER_BUY",
+    strategyGroup: "LEADER",
 
     code: holding.code,
     name: holding.name,
@@ -1592,32 +1575,28 @@ function paperWaveBuy(state, candidate, currentPrice) {
     buyAmount: price * qty,
     plannedBuyAmount: buyAmount,
 
-    volume: Number(candidate.volume || 0),
-    morningHigh: Number(candidate.morningHigh || 0),
-    morningRiseRate: Number(candidate.morningRiseRate || 0),
-    pullbackRate: Number(candidate.pullbackRate || 0),
-    reboundRate: Number(candidate.reboundRate || 0),
+    changeRate: holding.changeRate,
+    tradeVolumeRatio: holding.tradeVolumeRatio,
+    dayPositionRate: holding.dayPositionRate,
+    volume: Number(item.volume || 0),
 
     marketTemperature: state.marketTemperature || null,
+    remainLeaderCashAfterBuy: state.leaderCash,
 
-    remainTurboCashAfterBuy: state.turboCash,
+    discoverScore: Number(item.discoverScore || 0),
 
-    discoverScore: Number(candidate.discoverScore || 0),
-
-    reason: "오전 대장주 2차 파동 WAVE 매수",
+    reason: "LEADER 주도주 스윙 자동 모의매수",
 
     date: todayKey(),
     time: nowText()
   });
 
   console.log(
-    `[WAVE 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
+    `[LEADER 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주 / 예정 ${buyAmount.toLocaleString()}원`
   );
 
   return true;
 }
-
-
 
 
 function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQtyInput = null) {
@@ -1630,7 +1609,6 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
   const isPartialSell =
   actionType === "FIRST_TAKE_PROFIT" ||
   actionType === "TURBO_FIRST_TAKE_PROFIT" ||
-  actionType === "WAVE_FIRST_TAKE_PROFIT" ||
   actionType === "EARLY_FIRST_TAKE_PROFIT";
 
   const sellKey = `${todayKey()}_${holding.code}_${actionType}`;
@@ -1679,10 +1657,7 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     buyChangeRate: Number(holding.changeRate || 0),
     buyTradeVolumeRatio: Number(holding.tradeVolumeRatio || 0),
     buyDayPositionRate: Number(holding.dayPositionRate || 0),
-    morningHigh: Number(holding.morningHigh || 0),
-    morningRiseRate: Number(holding.morningRiseRate || 0),
-    pullbackRate: Number(holding.pullbackRate || 0),
-    reboundRate: Number(holding.reboundRate || 0),
+    
     highestPrice: Number(holding.highestPrice || buyPrice || 0),
     lowestPrice: Number(holding.lowestPrice || buyPrice || 0),
     maxProfitRate: Number(holding.maxProfitRate || 0),
@@ -1700,14 +1675,17 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     time: nowText()
   });
 
-if (
-  holding.strategyGroup === "TURBO" ||
-  holding.strategyGroup === "WAVE" ||
-  holding.strategyGroup === "EARLY"
-) {
-  state.turboCash = Number(state.turboCash || 0) + sellAmount;
+if (holding.strategyGroup === "TURBO") {
+  state.turboCash =
+    Number(state.turboCash || 0) + sellAmount;
+
+} else if (holding.strategyGroup === "LEADER") {
+  state.leaderCash =
+    Number(state.leaderCash || 0) + sellAmount;
+
 } else {
-  state.totalCash = Number(state.totalCash || 0) + sellAmount;
+  state.totalCash =
+    Number(state.totalCash || 0) + sellAmount;
 }
 
   if (sellQty < holdingQty) {
@@ -1732,7 +1710,7 @@ if (
 
 rebalanceCashIfNoHoldings(
   state,
-  `전량매도 후 자동 6:4 재배분 · ${actionType}`
+  `전량매도 후 자동 60:20:20 재배분 · ${actionType}`
 );
 
 
@@ -2071,78 +2049,60 @@ const maxProfitRate =
   continue;
 }
 
-if (holding.strategyGroup === "WAVE") {
-  if (
-    maxProfitRate >= settings.waveTrailingStartRate &&
-    !holding.waveTrailingActive
-  ) {
-    holding.waveTrailingActive = true;
-    holding.waveTrailingStartPrice = currentPrice;
+if (holding.strategyGroup === "LEADER") {
+  const holdDays = Math.floor(
+    (Date.now() - Number(holding.buyTimeMs || 0)) / 1000 / 60 / 60 / 24
+  );
 
-    console.log(
-      `[WAVE 트레일링 시작] ${holding.name} / 최고수익 ${maxProfitRate.toFixed(2)}%`
-    );
-  }
-
-  if (profitRate <= settings.waveStopLossRate) {
+  if (profitRate <= settings.leaderStopLossRate) {
     paperSell(
       state,
       holding,
       currentPrice,
-      `WAVE 손절 ${profitRate.toFixed(2)}%`,
-      "WAVE_STOP_LOSS"
+      `LEADER 손절 ${profitRate.toFixed(2)}%`,
+      "LEADER_STOP_LOSS"
+    );
+    continue;
+  }
+
+  if (holdDays < settings.leaderMinHoldDays) {
+    remainHoldings.push(holding);
+    continue;
+  }
+
+  if (profitRate >= settings.leaderTakeProfitRate) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `LEADER 목표수익 ${profitRate.toFixed(2)}%`,
+      "LEADER_TAKE_PROFIT"
     );
     continue;
   }
 
   if (
-    !holding.waveFirstTakeProfitDone &&
-    profitRate >= settings.waveTakeProfitRate &&
-    Number(holding.qty || 0) >= 2
-  ) {
-    const sellQty = Math.floor(
-      Number(holding.qty || 0) * settings.waveTakeProfitSellRatio
-    );
-
-    if (sellQty >= 1) {
-      paperSell(
-        state,
-        holding,
-        currentPrice,
-        `WAVE 1차 익절 ${profitRate.toFixed(2)}% · ${sellQty}주 매도`,
-        "WAVE_FIRST_TAKE_PROFIT",
-        sellQty
-      );
-
-      holding.waveFirstTakeProfitDone = true;
-      holding.waveTrailingActive = true;
-      remainHoldings.push(holding);
-      continue;
-    }
-  }
-
-  if (
-    holding.waveTrailingActive &&
-    trailingDropRate <= -settings.waveTrailingStopRate &&
+    maxProfitRate >= settings.leaderTrailingStartRate &&
+    trailingDropRate <= -settings.leaderTrailingStopRate &&
     profitRate > 0
   ) {
     paperSell(
       state,
       holding,
       currentPrice,
-      `WAVE 트레일링 매도 · 최고가 대비 ${settings.waveTrailingStopRate}% 하락`,
-      "WAVE_TRAILING_STOP"
+      `LEADER 트레일링 매도 · 최고가 대비 ${settings.leaderTrailingStopRate}% 하락`,
+      "LEADER_TRAILING_STOP"
     );
     continue;
   }
 
-  if (isBetweenTime(settings.waveForceSellTime, "15:20")) {
+  if (holdDays >= settings.leaderMaxHoldDays && profitRate > 0) {
     paperSell(
       state,
       holding,
       currentPrice,
-      `WAVE 시간청산 ${settings.waveForceSellTime}`,
-      "WAVE_TIME_EXIT"
+      `LEADER 최대보유 ${settings.leaderMaxHoldDays}일 수익 정리`,
+      "LEADER_TIME_EXIT"
     );
     continue;
   }
@@ -3264,72 +3224,88 @@ async function runTurboAutoBuyOnce() {
   }
 }
 
-async function runWaveAutoBuyOnce() {
-  if (!settings.waveEnabled) return;
+async function runLeaderAutoBuyOnce() {
+  if (!settings.leaderEnabled) return;
 
-  if (!isBetweenTime(settings.waveStartTime, settings.waveEndTime)) {
+  if (!isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
     return;
   }
 
   const state = loadState();
 
-  
-
   if (!state.serverAutoEnabled) {
-    console.log("[WAVE] 서버 자동매매 OFF");
+    console.log("[LEADER] 서버 자동매매 OFF");
     return;
   }
 
-
-  const candidates = Object.values(state.waveCandidates || {});
-
-  if (candidates.length === 0) {
+  if (state.dailyBuyStopped) {
+    console.log("[LEADER] 일일 손실한도 도달로 신규매수 중단");
     return;
   }
 
-  for (const candidate of candidates) {
-    if (getWaveHoldingCount(state) >= settings.waveMaxHoldingCount) break;
-    if (getTodayWaveBuyCount(state) >= settings.waveMaxDailyBuyCount) break;
-    if (isAlreadyHolding(state, candidate.code)) continue;
-    if (wasWaveBoughtToday(state, candidate.code)) continue;
+  let candidates = [];
 
-    if (wasStoppedToday(state, candidate.code)) {
-  console.log("[WAVE 매수제외] 오늘 손절 또는 손실 이력 있음", candidate.name);
-  continue;
-}
+  try {
+    candidates = await discoverCandidates();
+  } catch (err) {
+    console.warn("[LEADER] 후보 발굴 실패:", err.message);
+    saveState(state);
+    return;
+  }
+
+  const marketTemperature = normalizeMarketTemperature(
+    calculateMarketTemperature(candidates),
+    "LEADER 시장온도 계산"
+  );
+
+  state.marketTemperature = marketTemperature;
+
+  const leaderCandidates = candidates
+    .filter((item) => isLeaderCoreCandidate(item, marketTemperature))
+    .sort((a, b) =>
+      Number(b.discoverScore || 0) - Number(a.discoverScore || 0)
+    );
+
+  if (leaderCandidates.length === 0) {
+    console.log("[LEADER] 후보 없음");
+    state.lastLeaderCheckAt = nowText();
+    saveState(state);
+    return;
+  }
+
+  for (const item of leaderCandidates.slice(0, 20)) {
+    if (getLeaderHoldingCount(state) >= settings.leaderMaxHoldingCount) break;
+    if (getTodayLeaderBuyCount(state) >= settings.leaderMaxDailyBuyCount) break;
+    if (isAlreadyHolding(state, item.code)) continue;
+    if (wasLeaderBoughtToday(state, item.code)) continue;
 
     let priceData = null;
 
     try {
-      priceData = await fetchPrice(candidate.code);
+      priceData = await fetchPrice(item.code);
     } catch (err) {
-  console.log(
-    "[WAVE] 현재가 조회 실패",
-    candidate.code,
-    err.message
-  );
-  continue;
-}
+      console.log("[LEADER] 현재가 조회 실패", item.code, err.message);
+      continue;
+    }
 
-    const currentPrice = Number(priceData.currentPrice || 0);
+    const currentPrice = Number(priceData.currentPrice || item.currentPrice || item.price || 0);
     if (!currentPrice || currentPrice <= 0) continue;
 
-    const check = checkWaveCandidate(candidate, priceData);
+    const mergedItem = {
+      ...item,
+      ...priceData,
+      name: priceData.name || item.name || item.stockName || item.korName || item.code,
+      currentPrice
+    };
 
-if (!check.pass) {
-  console.log(`[WAVE 제외] ${candidate.name} ${candidate.code} / ${check.reason}`);
-  continue;
-}
+    if (!isLeaderCoreCandidate(mergedItem, marketTemperature)) {
+      continue;
+    }
 
-candidate.pullbackRate = check.pullbackRate;
-candidate.reboundRate = check.reboundRate;
-
-console.log(`[WAVE 후보] ${candidate.name} ${candidate.code} / ${check.reason}`);
-
-paperWaveBuy(state, candidate, currentPrice);
+    paperLeaderBuy(state, mergedItem, currentPrice);
   }
 
-  state.lastWaveCheckAt = nowText();
+  state.lastLeaderCheckAt = nowText();
   saveState(state);
 }
 
@@ -3369,9 +3345,9 @@ setInterval(() => {
     checkServerAutoSellOnce();
   }, 30 * 1000);
 
-  setInterval(() => {
-  if (isBetweenTime(settings.waveStartTime, settings.waveEndTime)) {
-    runWaveAutoBuyOnce();
+ setInterval(() => {
+  if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
+    runLeaderAutoBuyOnce();
   }
 }, 60 * 1000);
 }
@@ -3441,7 +3417,7 @@ module.exports = {
   runEarlyAutoBuyOnce,
   checkServerAutoSellOnce,
   runClosingProfitSell,
-  runWaveAutoBuyOnce,
+  runLeaderAutoBuyOnce,
   loadState
 };
 
