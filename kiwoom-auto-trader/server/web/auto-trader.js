@@ -1299,6 +1299,17 @@ if (wasStoppedToday(state, item.code)) {
   const price = Number(currentPrice || item.currentPrice || item.price || 0);
   if (!price || price <= 0) return false;
 
+  const buyChangeRate = Number(
+  item.changeRate ||
+  item.fluctuationRate ||
+  item.riseRate ||
+  item.rate ||
+  0
+);
+
+const buyTradeVolumeRatio = getTradeVolumeRatio(item);
+const buyDayPositionRate = getDayPositionRate(item, price);
+
   const budget = getBudgetInfo(state);
   const availableCash = Number(state.turboCash || 0);
   const buyAmount = Math.min(budget.turboPerBuyAmount, availableCash);
@@ -1326,15 +1337,15 @@ maxLossRate: 0,
     strategyPreset: "turbo",
     strategyName: "터보형",
     discoverScore: Number(item.discoverScore || 0),
-    changeRate: Number(
-  item.changeRate ||
-  item.fluctuationRate ||
-  item.riseRate ||
-  item.rate ||
-  0
-),
-tradeVolumeRatio: getTradeVolumeRatio(item),
-dayPositionRate: getDayPositionRate(item, price),
+   
+   changeRate: buyChangeRate,
+tradeVolumeRatio: buyTradeVolumeRatio,
+dayPositionRate: buyDayPositionRate,
+
+buyChangeRate,
+buyTradeVolumeRatio,
+buyDayPositionRate,
+
     discoverReasons: Array.isArray(item.discoverReasons)
       ? item.discoverReasons
       : [],
@@ -1361,17 +1372,16 @@ dayPositionRate: getDayPositionRate(item, price),
     buyAmount: price * qty,
     plannedBuyAmount: buyAmount,
 
-    changeRate: Number(
-      item.changeRate ||
-      item.fluctuationRate ||
-      item.riseRate ||
-      item.rate ||
-      0
-    ),
+    changeRate: buyChangeRate,
 
-    volume: Number(item.volume || 0),
-    tradeVolumeRatio: getTradeVolumeRatio(item),
-    dayPositionRate: getDayPositionRate(item, price),
+buyChangeRate,
+volume: Number(item.volume || 0),
+tradeVolumeRatio: buyTradeVolumeRatio,
+dayPositionRate: buyDayPositionRate,
+buyTradeVolumeRatio,
+buyDayPositionRate,
+
+
     marketTemperature: state.marketTemperature || null,
 
     remainTurboCashAfterBuy: state.turboCash,
