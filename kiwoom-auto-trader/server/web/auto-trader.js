@@ -2680,19 +2680,15 @@ if (state.dailyBuyStopped) {
       return;
     }
 
-    if (getTurboConsecutiveLossCount(state) >= 2) {
+   if (getTurboConsecutiveLossCount(state) >= 2) {
   console.log(
-    "[CORE 매수중단] Turbo 연속손절 2회 이상 발생 → 오늘 Core 신규매수 중단"
+    "[TURBO 매수중단] Turbo 연속손절 2회 이상 발생 → 오늘 Turbo 신규매수만 중단"
   );
 
-  state.dailyBuyStopped = true;
+  state.turboBuyStopped = true;
   saveState(state);
-
-  return {
-    ok: false,
-    message: "Turbo 연속손절로 Core 신규매수 중단"
-  };
 }
+
 
     let candidates = await discoverCandidates();
 
@@ -3159,6 +3155,11 @@ if (isAttackBuyBlockedByMarket(marketTemperature)) {
 }
 
 async function runTurboAutoBuyOnce() {
+  if (state.turboBuyStopped) {
+  console.log("[TURBO] 오늘 Turbo 매수중단 상태");
+  return;
+}
+
   if (isRunning) {
     console.log("[TURBO] 다른 매수 로직 실행중이라 건너뜀");
     return;
