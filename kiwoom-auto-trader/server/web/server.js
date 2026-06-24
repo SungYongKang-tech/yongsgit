@@ -812,7 +812,7 @@ const {
   startServerAutoTrader,
   runServerAutoBuyOnce,
   runTurboAutoBuyOnce,
-  runWaveAutoBuyOnce,     // ← 여기 추가
+  runLeaderAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
   runClosingProfitSell,
@@ -833,14 +833,15 @@ app.post("/api/paper-state/reset", (req, res) => {
   tradeLogs: [],
   virtualResults: [],
   
-  totalCash: 80000000,
-  turboCash: 20000000,
-  initialCapital: 100000000,
+  totalCash: 60000000,
+turboCash: 20000000,
+leaderCash: 20000000,
+initialCapital: 100000000,
   budgetInitialized: true,
   
   turboSnapshots: {},
-  waveCandidates: {},
-  waveSnapshots: {},
+  leaderSnapshots: {},
+  
 
 
   serverAutoEnabled: false,
@@ -909,11 +910,10 @@ app.get("/api/performance-summary", (req, res) => {
     "TURBO_TAKE_PROFIT",
     "TURBO_TRAILING_STOP",
     "TURBO_TIME_EXIT",
-    "WAVE_STOP_LOSS",
-    "WAVE_FIRST_TAKE_PROFIT",
-    "WAVE_TAKE_PROFIT",
-    "WAVE_TRAILING_STOP",
-    "WAVE_TIME_EXIT",
+    "LEADER_STOP_LOSS",
+"LEADER_TAKE_PROFIT",
+"LEADER_TRAILING_STOP",
+"LEADER_TIME_EXIT",
     "EARLY_STOP_LOSS",
     "EARLY_FIRST_TAKE_PROFIT",
     "EARLY_TAKE_PROFIT",
@@ -1251,11 +1251,11 @@ app.get("/api/daily-summary", (req, res) => {
       "TURBO_TAKE_PROFIT",
       "TURBO_TRAILING_STOP",
       "TURBO_TIME_EXIT",
-      "WAVE_STOP_LOSS",
-      "WAVE_FIRST_TAKE_PROFIT",
-      "WAVE_TAKE_PROFIT",
-      "WAVE_TRAILING_STOP",
-      "WAVE_TIME_EXIT",
+      "LEADER_STOP_LOSS",
+      "LEADER_FIRST_TAKE_PROFIT",
+      "LEADER_TAKE_PROFIT",
+      "LEADER_TRAILING_STOP",
+      "LEADER_TIME_EXIT",
       "SELL_CLOSING_PROFIT",
       "END_WEAK_SELL",
       "EARLY_STOP_LOSS",
@@ -1268,7 +1268,7 @@ app.get("/api/daily-summary", (req, res) => {
     const buyTypes = [
   "BUY",
   "TURBO_BUY",
-  "WAVE_BUY",
+  "LEADER_BUY",
   "EARLY_BUY"
 ];
 
@@ -1290,7 +1290,7 @@ app.get("/api/daily-summary", (req, res) => {
 
     coreProfit: 0,
     turboProfit: 0,
-    waveProfit: 0,
+    leaderProfit: 0,
     earlyProfit: 0,
 
     realizedProfit: 0,
@@ -1303,8 +1303,8 @@ app.get("/api/daily-summary", (req, res) => {
     turboWins: 0,
     turboTrades: 0,
 
-    waveWins: 0,
-    waveTrades: 0,
+    leaderWins: 0,
+    leaderTrades: 0,
     earlyWins: 0,
     earlyTrades: 0,
 
@@ -1343,9 +1343,9 @@ app.get("/api/daily-summary", (req, res) => {
     if (profit > 0) row.turboWins += 1;
   }
 
-  if (group === "WAVE") {
-    row.waveTrades += 1;
-    if (profit > 0) row.waveWins += 1;
+  if (group === "LEADER") {
+    row.leaderTrades += 1;
+    if (profit > 0) row.leaderWins += 1;
   }
 
   if (group === "EARLY") {
@@ -1355,8 +1355,8 @@ app.get("/api/daily-summary", (req, res) => {
 
   if (group === "TURBO") {
   row.turboProfit += profit;
-} else if (group === "WAVE") {
-  row.waveProfit += profit;
+} else if (group === "LEADER") {
+  row.leaderProfit += profit;
 } else if (group === "EARLY") {
   row.earlyProfit += profit;
 } else {
@@ -1438,9 +1438,9 @@ if (dateMap[today] && latestMarketTemperature) {
         ? (row.turboWins / row.turboTrades) * 100
         : 0,
 
-    waveWinRate:
-      row.waveTrades > 0
-        ? (row.waveWins / row.waveTrades) * 100
+    leaderWinRate:
+      row.leaderTrades > 0
+        ? (row.leaderWins / row.leaderTrades) * 100
         : 0,
       
     earlyWinRate:
@@ -1496,7 +1496,7 @@ app.get("/api/today-trade-analysis", (req, res) => {
       return String(log.date || "").trim() === today;
     });
 
-    const buyTypes = ["BUY", "TURBO_BUY", "WAVE_BUY", "EARLY_BUY"];
+    const buyTypes = ["BUY", "TURBO_BUY", "LEADER_BUY", "EARLY_BUY"];
 
     const sellTypes = [
       "SELL",
@@ -1514,11 +1514,11 @@ app.get("/api/today-trade-analysis", (req, res) => {
       "TURBO_TAKE_PROFIT",
       "TURBO_TRAILING_STOP",
       "TURBO_TIME_EXIT",
-      "WAVE_STOP_LOSS",
-      "WAVE_FIRST_TAKE_PROFIT",
-      "WAVE_TAKE_PROFIT",
-      "WAVE_TRAILING_STOP",
-      "WAVE_TIME_EXIT",
+      "LEADER_STOP_LOSS",
+      "LEADER_FIRST_TAKE_PROFIT",
+      "LEADER_TAKE_PROFIT",
+      "LEADER_TRAILING_STOP",
+      "LEADER_TIME_EXIT",
       "EARLY_STOP_LOSS",
       "EARLY_FIRST_TAKE_PROFIT",
       "EARLY_TAKE_PROFIT",
@@ -1548,8 +1548,8 @@ app.get("/api/today-trade-analysis", (req, res) => {
         log.group ||
         (String(log.type || "").startsWith("TURBO")
           ? "TURBO"
-          : String(log.type || "").startsWith("WAVE")
-          ? "WAVE"
+          : String(log.type || "").startsWith("LEADER")
+          ? "LEADER"
           : "CORE")
       );
     }
@@ -1666,13 +1666,13 @@ app.get("/api/server-turbo-buy-once", async (req, res) => {
   }
 });
 
-app.get("/api/server-wave-buy-once", async (req, res) => {
+app.get("/api/server-LEADER-buy-once", async (req, res) => {
   try {
-    await runWaveAutoBuyOnce();
+    await runLeaderAutoBuyOnce();
 
     res.json({
       ok: true,
-      message: "WAVE 모의매수를 1회 실행했습니다."
+      message: "LEADER 모의매수를 1회 실행했습니다."
     });
   } catch (error) {
     res.status(500).json({
@@ -1977,10 +1977,12 @@ state.tradeLogs.push({
   time: now.toLocaleString("ko-KR")
 });
 
-if (holding.strategyGroup === "TURBO" || holding.strategyGroup === "WAVE") {
-  paperState.turboCash = Number(paperState.turboCash || 0) + sellAmount;
+if (holding.strategyGroup === "TURBO") {
+  state.turboCash = Number(state.turboCash || 0) + sellAmount;
+} else if (holding.strategyGroup === "LEADER") {
+  state.leaderCash = Number(state.leaderCash || 0) + sellAmount;
 } else {
-  paperState.totalCash = Number(paperState.totalCash || 0) + sellAmount;
+  state.totalCash = Number(state.totalCash || 0) + sellAmount;
 }
 
     state.virtualResults.push({
@@ -2118,10 +2120,12 @@ app.get("/api/paper-sell-all", async (req, res) => {
   date: new Date().toISOString().slice(0, 10)
 });
 
-if (holding.strategyGroup === "TURBO" || holding.strategyGroup === "WAVE") {
-  state.turboCash = Number(state.turboCash || 0) + sellAmount;
+if (holding.strategyGroup === "TURBO") {
+  paperState.turboCash = Number(paperState.turboCash || 0) + sellAmount;
+} else if (holding.strategyGroup === "LEADER") {
+  paperState.leaderCash = Number(paperState.leaderCash || 0) + sellAmount;
 } else {
-  state.totalCash = Number(state.totalCash || 0) + sellAmount;
+  paperState.totalCash = Number(paperState.totalCash || 0) + sellAmount;
 }
 
     paperState.virtualResults.push({
