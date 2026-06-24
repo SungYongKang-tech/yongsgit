@@ -3079,7 +3079,11 @@ async function runEarlyAutoBuyOnce() {
   try {
     candidates = await discoverCandidates();
     const marketTemperature = calculateMarketTemperature(candidates);
-state.marketTemperature = marketTemperature;
+state.marketTemperature = {
+  ...marketTemperature,
+  checkedAt: marketTemperature.checkedAt || nowText(),
+  checkedDate: todayKey()
+};
 
 if (isAttackBuyBlockedByMarket(marketTemperature)) {
   console.log(
