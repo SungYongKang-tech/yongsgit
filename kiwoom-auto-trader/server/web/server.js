@@ -1399,6 +1399,17 @@ app.get("/api/daily-summary", (req, res) => {
         Number(dateMap[today].realizedProfit || 0) + holdingProfit;
     }
 
+    const latestMarketTemperature =
+  state.marketTemperature ||
+  [...tradeLogs]
+    .reverse()
+    .find((log) => log.marketTemperature)?.marketTemperature ||
+  null;
+
+if (dateMap[today] && latestMarketTemperature) {
+  dateMap[today].marketTemperature = latestMarketTemperature;
+}
+
    const rows = Object.values(dateMap)
   .sort((a, b) => b.date.localeCompare(a.date))
   .map((row) => ({
