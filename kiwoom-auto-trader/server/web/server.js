@@ -897,6 +897,7 @@ app.get("/api/performance-summary", (req, res) => {
     "STOP_LOSS",
     "TRAILING_STOP",
     "END_PROFIT_SELL",
+    "END_WEAK_SELL",
     "FIRST_TAKE_PROFIT",
     "BREAK_EVEN_PROTECT",
     "TAKE_PROFIT",
