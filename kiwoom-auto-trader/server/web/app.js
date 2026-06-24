@@ -867,6 +867,24 @@ function formatNumber(value) {
   return Number(value).toLocaleString("ko-KR");
 }
 
+function getStrategyGroupText(group) {
+  const value = String(group || "CORE").toUpperCase();
+
+  if (value === "TURBO") return "TURBO";
+  if (value === "LEADER") return "LEADER";
+  if (value === "EARLY") return "EARLY";
+  return "CORE";
+}
+
+function getStrategyGroupClass(group) {
+  const value = String(group || "CORE").toUpperCase();
+
+  if (value === "TURBO") return "strategy-turbo";
+  if (value === "LEADER") return "strategy-leader";
+  if (value === "EARLY") return "strategy-early";
+  return "strategy-core";
+}
+
 function flashValue(el, type) {
   if (!el) return;
 
@@ -7336,6 +7354,31 @@ function renderServerPaperState(data) {
   const holdings = Array.isArray(data.holdings) ? data.holdings : [];
   const tradeLogs = Array.isArray(data.tradeLogs) ? data.tradeLogs : [];
 
+  const coreHoldings = holdings.filter((h) =>
+    getStrategyGroupText(h.strategyGroup) === "CORE"
+  );
+
+  const turboHoldings = holdings.filter((h) =>
+    getStrategyGroupText(h.strategyGroup) === "TURBO"
+  );
+
+  const leaderHoldings = holdings.filter((h) =>
+    getStrategyGroupText(h.strategyGroup) === "LEADER"
+  );
+
+  const coreCash = Number(data.totalCash || 0);
+  const turboCash = Number(data.turboCash || 0);
+  const leaderCash = Number(data.leaderCash || 0);
+
+  const holdingsValue = holdings.reduce((sum, h) => {
+    return sum +
+      Number(h.currentPrice || h.buyPrice || 0) *
+      Number(h.qty || 0);
+  }, 0);
+
+  const cashTotal = coreCash + turboCash + leaderCash;
+  const totalAssetByCash = cashTotal + holdingsValue;
+
   const initialCapital = Number(data.initialCapital || data.dailyStartAsset || 100000000);
 
   const sellTypes = [
@@ -7344,10 +7387,31 @@ function renderServerPaperState(data) {
     "STOP_LOSS",
     "TRAILING_STOP",
     "END_PROFIT_SELL",
-    "FIRST_TAKE_PROFIT"
+    "END_WEAK_SELL",
+    "FIRST_TAKE_PROFIT",
+    "BREAK_EVEN_PROTECT",
+    "TAKE_PROFIT",
+    "HIGH_PROFIT_STAGNANT_SELL",
+
+    "TURBO_STOP_LOSS",
+    "TURBO_FIRST_TAKE_PROFIT",
+    "TURBO_TAKE_PROFIT",
+    "TURBO_TRAILING_STOP",
+    "TURBO_TIME_EXIT",
+
+    "LEADER_STOP_LOSS",
+    "LEADER_TAKE_PROFIT",
+    "LEADER_TRAILING_STOP",
+    "LEADER_TIME_EXIT"
   ];
 
-  const buyLogs = tradeLogs.filter((log) => log.type === "BUY");
+  const buyTypes = [
+    "BUY",
+    "TURBO_BUY",
+    "LEADER_BUY"
+  ];
+
+  const buyLogs = tradeLogs.filter((log) => buyTypes.includes(log.type));
   const sellLogs = tradeLogs.filter((log) => sellTypes.includes(log.type));
 
   const lastBuy = buyLogs.slice().reverse()[0];
@@ -7404,13 +7468,13 @@ function renderServerPaperState(data) {
 
   const ps = data.performanceSummary || {};
 
-const displayInitialCapital = 100000000;
-const displayCurrentAsset = Number(ps.currentAsset ?? currentAsset ?? 0);
-const displayTotalProfit = Number(ps.totalAssetProfit ?? totalProfit ?? 0);
-const displayTotalProfitRate = Number(ps.totalAssetProfitRate ?? totalProfitRate ?? 0);
-const displayRealizedProfit = Number(ps.totalRealizedProfit ?? realizedProfit ?? 0);
-const displayHoldingProfit = Number(ps.holdingProfit ?? holdingProfit ?? 0);
-const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
+  const displayInitialCapital = 100000000;
+  const displayCurrentAsset = Number(ps.currentAsset ?? currentAsset ?? totalAssetByCash ?? 0);
+  const displayTotalProfit = Number(ps.totalAssetProfit ?? totalProfit ?? 0);
+  const displayTotalProfitRate = Number(ps.totalAssetProfitRate ?? totalProfitRate ?? 0);
+  const displayRealizedProfit = Number(ps.totalRealizedProfit ?? realizedProfit ?? 0);
+  const displayHoldingProfit = Number(ps.holdingProfit ?? holdingProfit ?? 0);
+  const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
 
   serverPaperBox.innerHTML = `
     <div class="server-paper-section-title">계좌 요약</div>
@@ -7429,17 +7493,95 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
       <div>
         <span>총손익</span>
         <strong class="${displayTotalProfit >= 0 ? "up" : "down"}">
-  ${displayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayTotalProfit))}원
-</strong>
+          ${displayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayTotalProfit))}원
+        </strong>
       </div>
 
       <div>
         <span>총수익률</span>
         <strong class="${displayTotalProfitRate >= 0 ? "up" : "down"}">
-  ${displayTotalProfitRate >= 0 ? "+" : ""}${displayTotalProfitRate.toFixed(2)}%
-</strong>
+          ${displayTotalProfitRate >= 0 ? "+" : ""}${displayTotalProfitRate.toFixed(2)}%
+        </strong>
       </div>
     </div>
+
+    <div class="server-paper-section-title">자금 배분</div>
+
+    <div class="server-profit-summary">
+      <div>
+        <span>CORE 현금</span>
+        <strong>${formatNumber(Math.round(coreCash))}원</strong>
+      </div>
+
+      <div>
+        <span>TURBO 현금</span>
+        <strong>${formatNumber(Math.round(turboCash))}원</strong>
+      </div>
+
+      <div>
+        <span>LEADER 현금</span>
+        <strong>${formatNumber(Math.round(leaderCash))}원</strong>
+      </div>
+
+      <div>
+        <span>현금합계</span>
+        <strong>${formatNumber(Math.round(cashTotal))}원</strong>
+      </div>
+
+      <div>
+        <span>평가자산 포함</span>
+        <strong>${formatNumber(Math.round(totalAssetByCash))}원</strong>
+      </div>
+
+      <div>
+        <span>CORE 보유</span>
+        <strong>${coreHoldings.length} / 6</strong>
+      </div>
+
+      <div>
+        <span>TURBO 보유</span>
+        <strong>${turboHoldings.length} / 2</strong>
+      </div>
+
+      <div>
+        <span>LEADER 보유</span>
+        <strong>${leaderHoldings.length} / 2</strong>
+      </div>
+    </div>
+
+    <div class="server-paper-section-title">자금 배분</div>
+
+<div class="server-profit-summary">
+  <div>
+    <span>CORE 현금</span>
+    <strong>${formatNumber(Math.round(coreCash))}원</strong>
+  </div>
+
+  <div>
+    <span>TURBO 현금</span>
+    <strong>${formatNumber(Math.round(turboCash))}원</strong>
+  </div>
+
+  <div>
+    <span>LEADER 현금</span>
+    <strong>${formatNumber(Math.round(leaderCash))}원</strong>
+  </div>
+
+  <div>
+    <span>CORE 보유</span>
+    <strong>${coreHoldings.length} / 6</strong>
+  </div>
+
+  <div>
+    <span>TURBO 보유</span>
+    <strong>${turboHoldings.length} / 2</strong>
+  </div>
+
+  <div>
+    <span>LEADER 보유</span>
+    <strong>${leaderHoldings.length} / 2</strong>
+  </div>
+</div>
 
     <div class="server-paper-section-title">손익 구분</div>
 
@@ -7447,22 +7589,22 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
       <div>
         <span>실현손익</span>
         <strong class="${displayRealizedProfit >= 0 ? "up" : "down"}">
-  ${displayRealizedProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayRealizedProfit))}원
-</strong>
+          ${displayRealizedProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayRealizedProfit))}원
+        </strong>
       </div>
 
       <div>
         <span>보유손익</span>
         <strong class="${displayHoldingProfit >= 0 ? "up" : "down"}">
-  ${displayHoldingProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayHoldingProfit))}원
-</strong>
+          ${displayHoldingProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayHoldingProfit))}원
+        </strong>
       </div>
 
       <div>
         <span>오늘 총손익</span>
         <strong class="${displayTodayTotalProfit >= 0 ? "up" : "down"}">
-  ${displayTodayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayTodayTotalProfit))}원
-</strong>
+          ${displayTodayTotalProfit >= 0 ? "+" : ""}${formatNumber(Math.round(displayTodayTotalProfit))}원
+        </strong>
       </div>
 
       <div>
@@ -7478,7 +7620,7 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
     <div class="server-profit-summary">
       <div>
         <span>보유종목</span>
-        <strong>${holdings.length} / ${maxHoldingCount}개</strong>
+        <strong>${holdings.length}개</strong>
       </div>
 
       <div>
@@ -7564,12 +7706,17 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
                 : 0;
 
             const isRunnerCandidate = Number(item.discoverScore || 0) >= 10;
+            const groupText = getStrategyGroupText(item.strategyGroup);
+            const groupClass = getStrategyGroupClass(item.strategyGroup);
 
             return `
               <div class="server-paper-item">
                 <div class="server-paper-item-top">
                   <div>
-                    <strong>${cleanStockName(item.name)}</strong>
+                    <strong>
+                      ${cleanStockName(item.name)}
+                      <span class="entry-badge ${groupClass}">${groupText}</span>
+                    </strong>
                     <div class="server-paper-code">${item.code || ""}</div>
                   </div>
 
@@ -7604,7 +7751,7 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
                 </div>
 
                 ${
-                  isRunnerCandidate
+                  isRunnerCandidate && groupText === "CORE"
                     ? `<div class="runner-badge">러너 후보 · 목표수익 즉시매도 제외</div>`
                     : ""
                 }
@@ -7614,7 +7761,6 @@ const displayTodayTotalProfit = Number(ps.todayProfit ?? todayTotalProfit ?? 0);
     }
   `;
 }
-
 
 async function serverSellAllHolding(code) {
   try {
@@ -7763,7 +7909,22 @@ renderServerPaperState(data);
   "STOP_LOSS",
   "TRAILING_STOP",
   "END_PROFIT_SELL",
-  "FIRST_TAKE_PROFIT"
+  "END_WEAK_SELL",
+  "FIRST_TAKE_PROFIT",
+  "BREAK_EVEN_PROTECT",
+  "TAKE_PROFIT",
+  "HIGH_PROFIT_STAGNANT_SELL",
+
+  "TURBO_STOP_LOSS",
+  "TURBO_FIRST_TAKE_PROFIT",
+  "TURBO_TAKE_PROFIT",
+  "TURBO_TRAILING_STOP",
+  "TURBO_TIME_EXIT",
+
+  "LEADER_STOP_LOSS",
+  "LEADER_TAKE_PROFIT",
+  "LEADER_TRAILING_STOP",
+  "LEADER_TIME_EXIT"
 ];
 
 virtualResults = Array.isArray(data.tradeLogs)

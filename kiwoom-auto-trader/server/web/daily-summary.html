@@ -24,6 +24,13 @@
       margin-bottom: 12px;
     }
 
+    .header > div {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
     h1 {
       font-size: 20px;
       margin: 0;
@@ -134,29 +141,23 @@
         grid-template-columns: repeat(4, 1fr);
       }
     }
-    .header > div {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
   </style>
 </head>
 
 <body>
   <div class="header">
-  <h1>📈 SY Quant 일일 분석</h1>
+    <h1>📈 SY Quant 일일 분석 · CORE / TURBO / LEADER</h1>
 
-  <div style="display:flex; gap:8px;">
-    <button onclick="location.href='today-trade-analysis.html'">
-      📊 오늘 상세
-    </button>
+    <div>
+      <button onclick="location.href='today-trade-analysis.html'">
+        📊 오늘 상세
+      </button>
 
-    <button onclick="location.href='performance.html'">
-      ← 대시보드
-    </button>
+      <button onclick="location.href='performance.html'">
+        ← 대시보드
+      </button>
+    </div>
   </div>
-</div>
 
   <div class="summary-grid">
     <div class="card">
@@ -199,11 +200,11 @@
           <th>승률</th>
           <th>CORE승률</th>
           <th>TURBO승률</th>
-          <th>WAVE승률</th>
+          <th>LEADER승률</th>
           <th>EARLY승률</th>
           <th>CORE</th>
           <th>TURBO</th>
-          <th>WAVE</th>
+          <th>LEADER</th>
           <th>EARLY</th>
           <th>최고수익</th>
           <th>최대손실</th>
@@ -267,6 +268,14 @@
       return label;
     }
 
+    function getLeaderWinRate(row) {
+      return Number(row.leaderWinRate ?? row.waveWinRate ?? 0);
+    }
+
+    function getLeaderProfit(row) {
+      return Number(row.leaderProfit ?? row.waveProfit ?? 0);
+    }
+
     async function loadDailySummary() {
       try {
         const res = await fetch("https://sytrader.duckdns.org/api/daily-summary");
@@ -296,52 +305,54 @@
         setText("latestWinRate", formatRate(latest.winRate));
 
         body.innerHTML = rows.map(row => {
-  return `
-    <tr>
-      <td>${row.date || "-"}</td>
-      <td>${marketText(row.marketTemperature)}</td>
-      <td>${row.buyCount || 0}</td>
-      <td>${row.sellCount || 0}</td>
-      <td>${formatRate(row.winRate)}</td>
+          const leaderProfit = getLeaderProfit(row);
 
-      <td>${formatRate(row.coreWinRate)}</td>
-      <td>${formatRate(row.turboWinRate)}</td>
-      <td>${formatRate(row.waveWinRate)}</td>
-      <td>${formatRate(row.earlyWinRate)}</td>
+          return `
+            <tr>
+              <td>${row.date || "-"}</td>
+              <td>${marketText(row.marketTemperature)}</td>
+              <td>${row.buyCount || 0}</td>
+              <td>${row.sellCount || 0}</td>
+              <td>${formatRate(row.winRate)}</td>
 
-      <td class="${moneyClass(row.coreProfit)}">${formatWon(row.coreProfit)}</td>
-<td class="${moneyClass(row.turboProfit)}">${formatWon(row.turboProfit)}</td>
-<td class="${moneyClass(row.waveProfit)}">${formatWon(row.waveProfit)}</td>
-<td class="${moneyClass(row.earlyProfit)}">${formatWon(row.earlyProfit)}</td>
+              <td>${formatRate(row.coreWinRate)}</td>
+              <td>${formatRate(row.turboWinRate)}</td>
+              <td>${formatRate(getLeaderWinRate(row))}</td>
+              <td>${formatRate(row.earlyWinRate)}</td>
 
-      <td>
-        ${
-          row.bestTrade
-            ? `${row.bestTrade.name}<br>
-               <small class="${moneyClass(row.bestTrade.profit)}">
-                 ${formatWon(row.bestTrade.profit)}
-               </small>`
-            : "-"
-        }
-      </td>
+              <td class="${moneyClass(row.coreProfit)}">${formatWon(row.coreProfit)}</td>
+              <td class="${moneyClass(row.turboProfit)}">${formatWon(row.turboProfit)}</td>
+              <td class="${moneyClass(leaderProfit)}">${formatWon(leaderProfit)}</td>
+              <td class="${moneyClass(row.earlyProfit)}">${formatWon(row.earlyProfit)}</td>
 
-      <td>
-        ${
-          row.worstTrade
-            ? `${row.worstTrade.name}<br>
-               <small class="${moneyClass(row.worstTrade.profit)}">
-                 ${formatWon(row.worstTrade.profit)}
-               </small>`
-            : "-"
-        }
-      </td>
+              <td>
+                ${
+                  row.bestTrade
+                    ? `${row.bestTrade.name}<br>
+                       <small class="${moneyClass(row.bestTrade.profit)}">
+                         ${formatWon(row.bestTrade.profit)}
+                       </small>`
+                    : "-"
+                }
+              </td>
 
-      <td class="${moneyClass(row.realizedProfit)}">${formatWon(row.realizedProfit)}</td>
-      <td class="${moneyClass(row.holdingProfit)}">${formatWon(row.holdingProfit)}</td>
-      <td class="${moneyClass(row.totalProfit)}"><b>${formatWon(row.totalProfit)}</b></td>
-    </tr>
-  `;
-}).join("");
+              <td>
+                ${
+                  row.worstTrade
+                    ? `${row.worstTrade.name}<br>
+                       <small class="${moneyClass(row.worstTrade.profit)}">
+                         ${formatWon(row.worstTrade.profit)}
+                       </small>`
+                    : "-"
+                }
+              </td>
+
+              <td class="${moneyClass(row.realizedProfit)}">${formatWon(row.realizedProfit)}</td>
+              <td class="${moneyClass(row.holdingProfit)}">${formatWon(row.holdingProfit)}</td>
+              <td class="${moneyClass(row.totalProfit)}"><b>${formatWon(row.totalProfit)}</b></td>
+            </tr>
+          `;
+        }).join("");
       } catch (err) {
         console.error(err);
 
