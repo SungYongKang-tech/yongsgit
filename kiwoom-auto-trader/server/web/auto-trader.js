@@ -324,16 +324,18 @@ function todayKey() {
 }
 
 function isTodayMarketTemperature(temp) {
-  if (!temp || !temp.checkedAt) return false;
+  if (!temp) return false;
 
-  const checkedDate = new Date(temp.checkedAt);
-  if (Number.isNaN(checkedDate.getTime())) return false;
+  if (temp.checkedDate) {
+    return temp.checkedDate === todayKey();
+  }
 
-  const checkedKey = checkedDate.toLocaleDateString("sv-SE", {
+  const checkedText = String(temp.checkedAt || "");
+  const todayKo = new Date().toLocaleDateString("ko-KR", {
     timeZone: "Asia/Seoul"
   });
 
-  return checkedKey === todayKey();
+  return checkedText.includes(todayKo);
 }
 
 function normalizeMarketTemperature(temp, reason = "시장온도 미갱신") {
@@ -2701,7 +2703,8 @@ marketTemperature = normalizeMarketTemperature(
 
 state.marketTemperature = {
   ...marketTemperature,
-  checkedAt: marketTemperature.checkedAt || nowText()
+  checkedAt: marketTemperature.checkedAt || nowText(),
+  checkedDate: todayKey()
 };
 
 console.log(
