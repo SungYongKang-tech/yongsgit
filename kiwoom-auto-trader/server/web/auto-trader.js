@@ -70,6 +70,14 @@ turboMinVolume: 300000,
 turboMinOpenPositionRate: 1.5,
 turboMinDayPositionRate: 60,
 
+turboMaxDayPositionRate: 75,
+turboMinTradeVolumeRatio: -10,
+
+coreMaxChangeRate: 3.5,
+coreMinTradeVolumeRatio: -20,
+coreMinDayPositionRate: 45,
+coreMaxDayPositionRate: 75,
+
 turboStopLossRate: -1.0,
 turboTakeProfitRate: 3.0,
 turboTakeProfitSellRatio: 0.5,
@@ -798,6 +806,35 @@ if (wasStoppedToday(state, item.code)) {
 const price = Number(item.currentPrice || item.price || 0);
 if (!price || price <= 0) return false;
 
+const coreChangeRate = Number(
+  item.changeRate ||
+  item.fluctuationRate ||
+  item.riseRate ||
+  item.rate ||
+  0
+);
+
+const coreTradeVolumeRatio = getTradeVolumeRatio(item);
+const coreDayPositionRate = getDayPositionRate(item, price);
+
+if (coreChangeRate > settings.coreMaxChangeRate) {
+  console.log("[CORE 매수제외] 상승률 과다", item.name, coreChangeRate.toFixed(2));
+  return false;
+}
+
+if (coreTradeVolumeRatio < settings.coreMinTradeVolumeRatio) {
+  console.log("[CORE 매수제외] 거래량비율 약함", item.name, coreTradeVolumeRatio.toFixed(1));
+  return false;
+}
+
+if (
+  coreDayPositionRate < settings.coreMinDayPositionRate ||
+  coreDayPositionRate > settings.coreMaxDayPositionRate
+) {
+  console.log("[CORE 매수제외] 당일위치 부적합", item.name, coreDayPositionRate.toFixed(1));
+  return false;
+}
+
 const availableCash = Number(
   state.totalCash || settings.totalCash || 0
 );
@@ -1132,6 +1169,9 @@ function checkTurboLeaderCandidate(item, currentPrice) {
   const lowPrice = Number(item.low || item.lowPrice || 0);
   const volume = Number(item.volume || 0);
 
+  const tradeVolumeRatio = getTradeVolumeRatio(item);
+  const dayPositionRate = getDayPositionRate(item, currentPrice);
+
   if (dayRiseRate < settings.turboBuyMinDayRiseRate) {
     return { pass: false, reason: `상승률 부족 ${dayRiseRate.toFixed(2)}%` };
   }
@@ -1142,6 +1182,13 @@ function checkTurboLeaderCandidate(item, currentPrice) {
 
   if (volume < settings.turboMinVolume) {
     return { pass: false, reason: `거래량 부족 ${volume.toLocaleString()}` };
+  }
+
+  if (tradeVolumeRatio < settings.turboMinTradeVolumeRatio) {
+    return {
+      pass: false,
+      reason: `거래량비율 약함 ${tradeVolumeRatio.toFixed(1)}%`
+    };
   }
 
   if (openPrice > 0) {
@@ -1155,24 +1202,36 @@ function checkTurboLeaderCandidate(item, currentPrice) {
     }
   }
 
-  if (highPrice > 0 && lowPrice > 0 && currentPrice > 0) {
-    const range = highPrice - lowPrice;
+  if (
+    dayPositionRate > 0 &&
+    dayPositionRate < settings.turboMinDayPositionRate
+  ) {
+    return {
+      pass: false,
+      reason: `당일 위치 약함 ${dayPositionRate.toFixed(1)}%`
+    };
+  }
 
-    if (range > 0) {
-      const position = ((currentPrice - lowPrice) / range) * 100;
-
-      if (position < settings.turboMinDayPositionRate) {
-        return {
-          pass: false,
-          reason: `당일 위치 약함 ${position.toFixed(1)}%`
-        };
-      }
-    }
+  if (
+    dayPositionRate > 0 &&
+    dayPositionRate > settings.turboMaxDayPositionRate
+  ) {
+    return {
+      pass: false,
+      reason: `당일 위치 과열 ${dayPositionRate.toFixed(1)}%`
+    };
   }
 
   return {
     pass: true,
-    reason: `대장주 선점 조건 통과 · 상승률 ${dayRiseRate.toFixed(2)}%`
+    dayRiseRate,
+    tradeVolumeRatio,
+    dayPositionRate,
+    reason:
+      `대장주 선점 조건 통과 · ` +
+      `상승률 ${dayRiseRate.toFixed(2)}% / ` +
+      `거래량비율 ${tradeVolumeRatio.toFixed(1)}% / ` +
+      `당일위치 ${dayPositionRate.toFixed(1)}%`
   };
 }
 
