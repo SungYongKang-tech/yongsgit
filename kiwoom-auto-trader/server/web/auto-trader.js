@@ -151,6 +151,10 @@ sectorFlowTopCount: 3,
 sectorFlowMinCandidateCount: 2,
 sectorFlowMinAvgScore: 2.5,
 
+turboRecheckEnabled: true,
+turboRecheckDelayMinutes: 3,
+turboRecheckMaxAgeMinutes: 15,
+
 };
 
 
@@ -1791,6 +1795,130 @@ function paperEarlyBuy(state, item, currentPrice) {
   return true;
 }
 
+function getTurboPendingKey(item) {
+  return String(item.code || "");
+}
+
+function registerTurboRecheckCandidate(state, item, currentPrice, reason = "") {
+  if (!state.turboRecheckCandidates) {
+    state.turboRecheckCandidates = {};
+  }
+
+  const code = getTurboPendingKey(item);
+  if (!code) return;
+
+  if (state.turboRecheckCandidates[code]) {
+    return;
+  }
+
+  state.turboRecheckCandidates[code] = {
+    code,
+    name: item.name || item.stockName || item.korName || code,
+    firstPrice: Number(currentPrice || 0),
+    firstScore: Number(item.discoverScore || 0),
+    firstTradeVolumeRatio: getTradeVolumeRatio(item),
+    firstDayPositionRate: getDayPositionRate(item, currentPrice),
+    firstAt: Date.now(),
+    firstAtText: nowText(),
+    reason
+  };
+
+  console.log(
+    `[TURBO 재확인 등록] ${item.name || code} / ${reason}`
+  );
+}
+
+function checkTurboRecheckCandidate(state, item, currentPrice) {
+  if (!settings.turboRecheckEnabled) {
+    return { pass: true, reason: "재확인 OFF" };
+  }
+
+  if (!state.turboRecheckCandidates) {
+    state.turboRecheckCandidates = {};
+  }
+
+  const code = getTurboPendingKey(item);
+  const saved = state.turboRecheckCandidates[code];
+
+  if (!saved) {
+    registerTurboRecheckCandidate(
+      state,
+      item,
+      currentPrice,
+      "첫 조건 통과 → 재확인 대기"
+    );
+
+    return {
+      pass: false,
+      waiting: true,
+      reason: "첫 조건 통과, 재확인 대기"
+    };
+  }
+
+  const elapsedMinutes =
+    (Date.now() - Number(saved.firstAt || 0)) / 1000 / 60;
+
+  if (elapsedMinutes < settings.turboRecheckDelayMinutes) {
+    return {
+      pass: false,
+      waiting: true,
+      reason: `재확인 대기중 ${elapsedMinutes.toFixed(1)}분`
+    };
+  }
+
+  if (elapsedMinutes > settings.turboRecheckMaxAgeMinutes) {
+    delete state.turboRecheckCandidates[code];
+
+    return {
+      pass: false,
+      reason: "재확인 후보 만료"
+    };
+  }
+
+  const nowScore = Number(item.discoverScore || 0);
+  const nowTradeVolumeRatio = getTradeVolumeRatio(item);
+  const nowPrice = Number(currentPrice || item.currentPrice || item.price || 0);
+
+  const priceOk = nowPrice >= Number(saved.firstPrice || 0) * 0.995;
+  const scoreOk = nowScore >= Number(saved.firstScore || 0);
+  const volumeOk =
+    nowTradeVolumeRatio >= Number(saved.firstTradeVolumeRatio || 0);
+
+  if (!priceOk) {
+    delete state.turboRecheckCandidates[code];
+    return {
+      pass: false,
+      reason: "재확인 실패 · 가격 약화"
+    };
+  }
+
+  if (!scoreOk) {
+    delete state.turboRecheckCandidates[code];
+    return {
+      pass: false,
+      reason: "재확인 실패 · 점수 약화"
+    };
+  }
+
+  if (!volumeOk) {
+    delete state.turboRecheckCandidates[code];
+    return {
+      pass: false,
+      reason: "재확인 실패 · 거래량비율 약화"
+    };
+  }
+
+  delete state.turboRecheckCandidates[code];
+
+  return {
+    pass: true,
+    reason:
+      `재확인 통과 · ${elapsedMinutes.toFixed(1)}분 경과 / ` +
+      `점수 ${saved.firstScore}→${nowScore} / ` +
+      `거래량 ${Number(saved.firstTradeVolumeRatio || 0).toFixed(1)}→${nowTradeVolumeRatio.toFixed(1)}%`
+  };
+}
+
 function judgeTurboBuy(state, item, currentPrice) {
   if (!settings.turboEnabled) {
     return { pass: false, reason: "TURBO 비활성화" };
@@ -1806,7 +1934,10 @@ function judgeTurboBuy(state, item, currentPrice) {
 
   const sectorCheck = isStrongSectorCandidate(item);
   if (!sectorCheck.pass) {
-    return { pass: false, reason: `섹터점수 미충족 / ${sectorCheck.reason}` };
+    return {
+      pass: false,
+      reason: `섹터점수 미충족 / ${sectorCheck.reason}`
+    };
   }
 
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
@@ -1836,12 +1967,23 @@ function judgeTurboBuy(state, item, currentPrice) {
 
   const rankCheck = isCandidateGettingStronger(state, item, price);
   if (!rankCheck.pass) {
-    return { pass: false, reason: `후보 강화 미충족 / ${rankCheck.reason}` };
+    return {
+      pass: false,
+      reason: `후보 강화 미충족 / ${rankCheck.reason}`
+    };
+  }
+
+  const recheck = checkTurboRecheckCandidate(state, item, price);
+  if (!recheck.pass) {
+    return {
+      pass: false,
+      reason: recheck.reason
+    };
   }
 
   return {
     pass: true,
-    reason: "TURBO 판단 통과"
+    reason: `TURBO 판단 통과 / ${sectorCheck.reason} / ${rankCheck.reason} / ${recheck.reason}`
   };
 }
 
@@ -1850,15 +1992,7 @@ function paperTurboBuy(state, item, currentPrice) {
   const price = Number(currentPrice || item.currentPrice || item.price || 0);
   if (!price || price <= 0) return false;
 
-  const rankCheck = isCandidateGettingStronger(state, item, price);
-
-if (!rankCheck.pass) {
-  console.log(
-    `[TURBO 매수제외] 후보 강화 미충족 ${item.name || item.code} / ${rankCheck.reason}`
-  );
-  return false;
-}
-
+  
   const buyChangeRate = Number(
   item.changeRate ||
   item.fluctuationRate ||
