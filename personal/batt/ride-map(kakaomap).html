@@ -1819,6 +1819,105 @@ async function sendGroupPushRequest(payload) {
   }
 }
 
+let radioMessageRef = null;
+let radioMessageCallback = null;
+let lastRadioMessageId =
+  localStorage.getItem(LAST_RADIO_MESSAGE_KEY) || "";
+
+function playRadioAlert(senderName, text) {
+  try {
+    if (navigator.vibrate) {
+      navigator.vibrate([250, 120, 250]);
+    }
+  } catch (e) {}
+
+  try {
+    window.speechSynthesis.cancel();
+
+    const utter = new SpeechSynthesisUtterance(
+      `${senderName}님. ${text}`
+    );
+
+    utter.lang = "ko-KR";
+    utter.rate = 1;
+    utter.pitch = 1;
+
+    window.speechSynthesis.speak(utter);
+  } catch (e) {
+    console.log("TTS 실패:", e);
+  }
+
+  showBroadcastMessage({
+    senderName,
+    text
+  });
+}
+
+function startRadioListener() {
+  if (!groupEnabled || !currentRoomId) return;
+
+  if (radioMessageRef && radioMessageCallback) {
+    off(radioMessageRef, "value", radioMessageCallback);
+  }
+
+  radioMessageRef = ref(
+    db,
+    `rideRooms/${currentRoomId}/radio/lastMessage`
+  );
+
+  radioMessageCallback = (snap) => {
+    const msg = snap.val();
+
+    if (!msg || !msg.id || !msg.text) return;
+
+    if (msg.senderUid && auth.currentUser?.uid === msg.senderUid) {
+      lastRadioMessageId = msg.id;
+      localStorage.setItem(LAST_RADIO_MESSAGE_KEY, msg.id);
+      return;
+    }
+
+    if (msg.id === lastRadioMessageId) return;
+
+    lastRadioMessageId = msg.id;
+    localStorage.setItem(LAST_RADIO_MESSAGE_KEY, msg.id);
+
+    playRadioAlert(
+      msg.senderName || "라이더",
+      msg.text
+    );
+  };
+
+  onValue(radioMessageRef, radioMessageCallback);
+
+  console.log("무전 실시간 수신 시작:", currentRoomId);
+}
+
+async function publishRadioMessage(text) {
+  if (!groupEnabled || !currentRoomId) {
+    alert("그룹에 먼저 입장해야 합니다.");
+    return;
+  }
+
+  await ensureAuth();
+
+  const cleanText = String(text || "").trim();
+  if (!cleanText) return;
+
+  const payload = {
+    id: `radio_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    senderUid: auth.currentUser?.uid || "",
+    senderName: myGroupName || "라이더",
+    text: cleanText,
+    createdAt: Date.now()
+  };
+
+  await update(ref(db, `rideRooms/${currentRoomId}/radio`), {
+    lastMessage: payload
+  });
+
+  sendGroupPushRequest(payload);
+}
+
 async function updateMyGroupLocation(lat, lng, accuracy, speedKmh) {
   if (!groupEnabled || !currentRoomId || !auth.currentUser) return;
 
@@ -1924,6 +2023,7 @@ const SELECTED_COURSE_KEY = "ebike_selected_course_v1";
 const DISPLAY_SETTINGS_KEY = "ebike_display_settings_v1";
 const GROUP_MESSAGE_SETTINGS_KEY = "ebike_group_message_settings_v1";
 const LAST_GROUP_MESSAGE_KEY = "ebike_last_group_message_v1";
+const LAST_RADIO_MESSAGE_KEY = "ride_last_radio_message_v1";
 const TTS_VOICE_STORAGE_KEY = "ride_tts_voice_name_v1";
 const OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup";
 const MAX_ELEVATION_SAMPLES = 50;
@@ -2983,11 +3083,16 @@ async function sendPresetGroupMessage(messageText) {
       text: cleanText,
       senderName,
       senderUid,
-      sentAt: Date.now()
+      sentAt: Date.now(),
+      createdAt: Date.now()
     };
 
     await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
       broadcastMessage: payload
+    });
+
+    await update(ref(db, `rideRooms/${currentRoomId}/radio`), {
+      lastMessage: payload
     });
 
     sendGroupPushRequest(payload);
