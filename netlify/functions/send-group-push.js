@@ -89,23 +89,33 @@ exports.handler = async function (event) {
       });
     }
 
-    const messages = uniqueTokens.map((token) => ({
+   const messages = uniqueTokens.map((token) => ({
   token,
+
   data: {
+    type: "groupMessage",
     roomId,
     senderName,
     text,
-    type: "groupMessage",
     title: `${senderName}님의 그룹 메시지`,
-    body: text
+    body: text,
+    url: `/personal/batt/ride-map(kakaomap).html?roomId=${encodeURIComponent(roomId)}`
   },
+
   webpush: {
+    headers: {
+      Urgency: "high",
+      TTL: "60"
+    },
     notification: {
       title: `${senderName}님의 그룹 메시지`,
       body: text,
       icon: "/personal/batt/192icon.png",
       badge: "/personal/batt/192icon.png",
-      requireInteraction: true
+      tag: `group-${roomId}`,
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [200, 100, 200]
     },
     fcmOptions: {
       link: `/personal/batt/ride-map(kakaomap).html?roomId=${encodeURIComponent(roomId)}`

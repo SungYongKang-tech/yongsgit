@@ -65,11 +65,15 @@ const body =
   "";
 
   self.registration.showNotification(title, {
-    body,
-    icon: new URL("./192icon.png", self.registration.scope).href,
-    badge: new URL("./192icon.png", self.registration.scope).href,
-    data: payload.data || {}
-  });
+  body,
+  icon: new URL("./192icon.png", self.registration.scope).href,
+  badge: new URL("./192icon.png", self.registration.scope).href,
+  tag: `group-${payload.data?.roomId || "message"}`,
+  renotify: true,
+  requireInteraction: true,
+  vibrate: [200, 100, 200],
+  data: payload.data || {}
+});
 
 });
 
