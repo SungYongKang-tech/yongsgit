@@ -212,6 +212,68 @@
       color: #bfdbfe;
     }
 
+
+
+    .strategy-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .strategy-summary-card {
+      background: #1f2937;
+      border-radius: 12px;
+      padding: 8px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    }
+
+    .strategy-summary-title {
+      font-size: 13px;
+      color: #d1d5db;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .strategy-summary-value {
+      font-size: 15px;
+      font-weight: bold;
+      text-align: right;
+    }
+
+    .strategy-group-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #e5e7eb;
+      margin: 12px 2px 6px;
+      padding: 7px 8px;
+      background: #111827;
+      border-left: 4px solid #2563eb;
+      border-radius: 8px;
+    }
+
+    .score-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 7px;
+    }
+
+    .score-chip {
+      display: inline-block;
+      background: #111827;
+      color: #d1d5db;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .market-hot { color: #f87171; }
+    .market-normal { color: #facc15; }
+    .market-caution { color: #fb923c; }
+    .market-cold { color: #60a5fa; }
+
     @media (min-width: 800px) {
       body {
         max-width: 760px;
@@ -342,6 +404,7 @@
   <div id="holdingsTab" class="tab-panel active">
     <div class="section">
       <h2>현재 보유 종목</h2>
+      <div id="strategyHoldingSummaryBox" class="strategy-summary-grid"></div>
       <div id="holdingBox" class="empty">보유 종목 불러오는 중...</div>
     </div>
   </div>
@@ -442,6 +505,83 @@
   return "🛡️ Core";
 }
 
+function strategyOrder(group) {
+  if (group === "LEADER") return 1;
+  if (group === "TURBO") return 2;
+  return 3;
+}
+
+function normalizeStrategyGroup(group) {
+  if (group === "TURBO" || group === "LEADER") return group;
+  return "CORE";
+}
+
+function formatShortTime(value) {
+  if (!value) return "-";
+
+  const text = String(value);
+  const match = text.match(/(오전|오후)?\s*(\d{1,2}):(\d{2})/);
+
+  if (!match) return text.slice(0, 16);
+
+  let hour = Number(match[2]);
+  const minute = match[3];
+
+  if (match[1] === "오후" && hour < 12) hour += 12;
+  if (match[1] === "오전" && hour === 12) hour = 0;
+
+  return `${String(hour).padStart(2, "0")}:${minute}`;
+}
+
+function renderStrategyHoldingSummary(list) {
+  const box = document.getElementById("strategyHoldingSummaryBox");
+  if (!box) return;
+
+  const groups = ["CORE", "TURBO", "LEADER"];
+
+  box.innerHTML = groups.map(group => {
+    const rows = (list || []).filter(item => normalizeStrategyGroup(item.strategyGroup) === group);
+    const profit = rows.reduce((sum, item) => sum + Number(item.profit || 0), 0);
+    const evalAmount = rows.reduce((sum, item) => sum + Number(item.evalAmount || 0), 0);
+
+    return `
+      <div class="strategy-summary-card">
+        <div class="strategy-summary-title">${strategyLabel(group)} ${rows.length}개</div>
+        <div class="strategy-summary-value ${profit >= 0 ? "plus" : "minus"}">${formatWon(profit)}</div>
+        <div style="font-size:12px; color:#9ca3af; text-align:right; margin-top:4px;">
+          평가 ${formatPlainWon(evalAmount)}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function setMarketTemperature(mt = {}) {
+  const el = document.getElementById("marketTemperature");
+  if (!el) return;
+
+  const level = String(mt.level || "").toUpperCase();
+  const label = mt.label || "-";
+  const advance = Number(mt.advanceRatio || 0).toFixed(1);
+  const checked = mt.checkedAt || "";
+
+  const icon =
+    level === "HOT" ? "🟢" :
+    level === "NORMAL" ? "🟡" :
+    level === "CAUTION" ? "🟠" :
+    level === "COLD" || level === "DANGER" ? "🔴" : "⚪";
+
+  const className =
+    level === "HOT" ? "market-hot" :
+    level === "NORMAL" ? "market-normal" :
+    level === "CAUTION" ? "market-caution" :
+    level === "COLD" || level === "DANGER" ? "market-cold" : "";
+
+  el.classList.remove("market-hot", "market-normal", "market-caution", "market-cold");
+  if (className) el.classList.add(className);
+  el.textContent = mt.label ? `${icon} ${label} ${advance}% / ${checked}` : "-";
+}
+
     function showTab(name) {
       const buttons = document.querySelectorAll(".tab-btn");
 
@@ -487,6 +627,8 @@
 
       if (!box) return;
 
+      renderStrategyHoldingSummary(list || []);
+
       if (!Array.isArray(list) || list.length === 0) {
         box.className = "empty";
         box.innerHTML = "현재 보유 종목이 없습니다.";
@@ -495,11 +637,19 @@
 
       box.className = "mobile-card-list";
 
-      const sortedList = [...list].sort(
-        (a, b) => Number(b.profitRate || 0) - Number(a.profitRate || 0)
-      );
+      const sortedList = [...list].sort((a, b) => {
+        const groupDiff = strategyOrder(normalizeStrategyGroup(a.strategyGroup)) - strategyOrder(normalizeStrategyGroup(b.strategyGroup));
+        if (groupDiff !== 0) return groupDiff;
+        return Number(b.profitRate || 0) - Number(a.profitRate || 0);
+      });
+
+      let lastGroup = "";
 
       box.innerHTML = sortedList.map((item, index) => {
+        const group = normalizeStrategyGroup(item.strategyGroup);
+        const showGroupTitle = group !== lastGroup;
+        lastGroup = group;
+
         const profitRate = Number(item.profitRate || 0);
         const profit = Number(item.profit || 0);
         const drawdownFromHigh = Number(item.drawdownFromHigh || 0);
@@ -514,22 +664,38 @@
         const openScore = Number(scoreDetails.openStrength || 0);
         const positionScore = Number(scoreDetails.dayPosition || 0);
 
+        const finalBuyScore = Number(item.finalBuyScore || 0);
+        const marketScore = Number(item.marketScore?.score || item.marketScore || 0);
+        const leaderStrengthScore = Number(item.leaderStrengthScore || 0);
+        const sectorPowerScore = Number(item.sectorPowerScore || 0);
+
         const trailingClass = item.trailingActive ? "status-on" : "status-wait";
-        const trailingTitle = item.trailingActive ? "트레일링 작동중" : "트레일링 대기중";
+        const trailingTitle = item.trailingActive ? "🟢 익절보호 ON" : "⏳ 트레일링 대기";
         const trailingDetail = item.trailingActive
           ? `고점대비 ${formatRate(drawdownFromHigh)}`
           : `최고수익 ${formatRate(highestProfitRate)}`;
 
         return `
+          ${showGroupTitle ? `<div class="strategy-group-title">${strategyLabel(group)} 보유 ${sortedList.filter(row => normalizeStrategyGroup(row.strategyGroup) === group).length}개</div>` : ""}
+
           <div class="stock-card">
             <div class="stock-card-header">
               <div>
                 <div class="stock-name">#${index + 1} ${item.name || "-"}</div>
                 <div class="stock-sub">${item.code || ""}</div>
                 <div class="stock-sub">
- ${strategyLabel(item.strategyGroup)} /
-  ${item.strategyName || item.strategyPreset || "-"} / 점수 ${item.discoverScore || "-"}
-</div>
+                  ${strategyLabel(group)} /
+                  ${item.strategyName || item.strategyPreset || "-"} /
+                  발견점수 ${item.discoverScore || "-"} /
+                  매수 ${formatShortTime(item.buyTime || item.buyAt)}
+                </div>
+
+                <div class="score-chip-row">
+                  <span class="score-chip">최종 ${finalBuyScore || "-"}</span>
+                  <span class="score-chip">시장 ${marketScore || "-"}</span>
+                  <span class="score-chip">섹터 ${sectorPowerScore || "-"}</span>
+                  <span class="score-chip">수급 ${leaderStrengthScore || "-"}</span>
+                </div>
               </div>
 
               <div class="stock-rate ${profitRate >= 0 ? "plus" : "minus"}">
@@ -582,40 +748,39 @@
                 <div class="info-label">트레일링 기준</div>
                 <div class="info-value">${item.trailingStopRate || 0}%</div>
               </div>
+
+              <div class="info-box">
+                <div class="info-label">매수시각</div>
+                <div class="info-value">${formatShortTime(item.buyTime || item.buyAt)}</div>
+              </div>
             </div>
 
-       <div class="status-pill ${trailingClass}">
-  ${trailingTitle} · ${trailingDetail}
-</div>
+            <div class="status-pill ${trailingClass}">
+              ${trailingTitle} · ${trailingDetail}
+            </div>
 
-${item.discoverScoreDetails
-  ? `
-    <div style="margin-top:8px; padding:8px; background:#111827; border-radius:10px;">
-      <div style="font-size:12px; color:#9ca3af; margin-bottom:5px;">점수상세</div>
-      <div style="font-size:13px; line-height:1.6;">
-        상승률 ${rateScore >= 0 ? "+" : ""}${rateScore}<br>
-        거래량 ${volumeScore >= 0 ? "+" : ""}${volumeScore}<br>
-        시가강세 ${openScore >= 0 ? "+" : ""}${openScore}<br>
-        당일위치 ${positionScore >= 0 ? "+" : ""}${positionScore}
-      </div>
-    </div>
-  `
-  : ""
-}
+            <div style="margin-top:8px; padding:8px; background:#111827; border-radius:10px;">
+              <div style="font-size:12px; color:#9ca3af; margin-bottom:5px;">점수상세</div>
+              <div style="font-size:13px; line-height:1.6;">
+                상승률 ${rateScore >= 0 ? "+" : ""}${rateScore}<br>
+                거래량 ${volumeScore >= 0 ? "+" : ""}${volumeScore}<br>
+                시가강세 ${openScore >= 0 ? "+" : ""}${openScore}<br>
+                당일위치 ${positionScore >= 0 ? "+" : ""}${positionScore}<br>
+                최종점수 ${finalBuyScore || "-"} / 시장점수 ${marketScore || "-"} / 섹터점수 ${sectorPowerScore || "-"} / 수급강도 ${leaderStrengthScore || "-"}
+              </div>
+            </div>
 
-${Array.isArray(item.discoverReasons) && item.discoverReasons.length > 0
-  ? `
-    <div style="margin-top:8px; padding:8px; background:#111827; border-radius:10px;">
-      <div style="font-size:12px; color:#9ca3af; margin-bottom:5px;">매수사유</div>
-      <div style="font-size:13px; line-height:1.5;">
-        ${item.discoverReasons.map(reason => `• ${reason}`).join("<br>")}
-      </div>
-    </div>
-  `
-  : ""
-}
-
-
+            ${Array.isArray(item.discoverReasons) && item.discoverReasons.length > 0
+              ? `
+                <div style="margin-top:8px; padding:8px; background:#111827; border-radius:10px;">
+                  <div style="font-size:12px; color:#9ca3af; margin-bottom:5px;">매수사유</div>
+                  <div style="font-size:13px; line-height:1.5;">
+                    ${item.discoverReasons.map(reason => `• ${reason}`).join("<br>")}
+                  </div>
+                </div>
+              `
+              : ""
+            }
           </div>
         `;
       }).join("");
@@ -797,12 +962,7 @@ const mt =
   s.marketTemperature ||
   {};
 
-setValue(
-  "marketTemperature",
-  mt.label
-    ? `${mt.label} ${Number(mt.advanceRatio || 0).toFixed(1)}% / ${mt.checkedAt || ""}`
-    : "-"
-);
+setMarketTemperature(mt);
 
         
 
@@ -825,7 +985,7 @@ const leaderCount = holdings.filter(h => h.strategyGroup === "LEADER").length;
 setValue("coreHoldingCount", `${coreCount}개`);
 setValue("turboHoldingCount", `${turboCount}개`);
 setValue("leaderHoldingCount", `${leaderCount}개`);
-setValue("strategyMix", `${coreCount}/${turboCount}/${leaderCount}`);
+setValue("strategyMix", `CORE ${coreCount} / TURBO ${turboCount} / LEADER ${leaderCount}`);
 
         renderHoldings(data.holdings || []);
         renderRecent7Days(data.recent7Days || []);
