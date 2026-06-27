@@ -17,8 +17,8 @@ const FILES_TO_CACHE = [
   "./",
   "./index.html",
   "./manifest.json",
-"./192icon.png",
-"./512icon.png"
+  "./192icon.png",
+  "./512icon.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -64,8 +64,8 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(title, {
     body,
-    icon: "/192icon.png",
-    badge: "/192icon.png",
+    icon: new URL("./192icon.png", self.registration.scope).href,
+    badge: new URL("./192icon.png", self.registration.scope).href,
     data: payload.data || {}
   });
 
@@ -95,14 +95,18 @@ self.addEventListener("notificationclick", (event) => {
 
       if (clients.openWindow) {
 
-        return clients.openWindow(
-          roomId
-            ? `/ride-map(kakaomap).html?roomId=${encodeURIComponent(roomId)}`
-            : "/ride-map(kakaomap).html"
-        );
+  const appUrl = new URL(
+    "./ride-map(kakaomap).html",
+    self.registration.scope
+  ).href;
 
-      }
+  return clients.openWindow(
+    roomId
+      ? `${appUrl}?roomId=${encodeURIComponent(roomId)}`
+      : appUrl
+  );
 
+}
     })
 
   );
