@@ -14,13 +14,25 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || "그룹 메시지";
-  const body = payload.notification?.body || payload.data?.text || "";
+  const title =
+    payload.data?.title ||
+    payload.notification?.title ||
+    "그룹 메시지";
+
+  const body =
+    payload.data?.body ||
+    payload.notification?.body ||
+    payload.data?.text ||
+    "";
 
   self.registration.showNotification(title, {
     body,
-    icon: "/favicon.ico",
-    badge: "/favicon.ico",
+    icon: "/personal/batt/192icon.png",
+    badge: "/personal/batt/192icon.png",
+    tag: `group-${payload.data?.roomId || "message"}`,
+    renotify: true,
+    requireInteraction: true,
+    vibrate: [200, 100, 200],
     data: payload.data || {}
   });
 });
@@ -30,8 +42,8 @@ self.addEventListener("notificationclick", (event) => {
 
   const roomId = event.notification?.data?.roomId || "";
   const url = roomId
-    ? `/?roomId=${encodeURIComponent(roomId)}`
-    : "/";
+    ? `/personal/batt/ride-map(kakaomap).html?roomId=${encodeURIComponent(roomId)}`
+    : "/personal/batt/ride-map(kakaomap).html";
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
