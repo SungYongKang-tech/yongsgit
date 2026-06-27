@@ -1564,6 +1564,7 @@ body.data-mode #rideBatteryEl .metric-unit {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 import { getDatabase, ref, onValue, update, get, onDisconnect, remove, off } 
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -1581,6 +1582,25 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
+
+let messaging = null;
+
+const FCM_VAPID_KEY = "BHEw2viTSrGTdL8NOspFJt_-jylwy4fkWwK_KAShsM1PTkq_YDnyC0X41v0lhNdv2-d6BYGRDJcdZUDnytqAruE";
+const PUSH_DEVICE_ID_KEY = "ride_push_device_id_v1";
+
+async function initMessaging() {
+  if (messaging) return messaging;
+
+  const supported = await isSupported();
+  if (!supported) {
+    console.log("이 브라우저는 FCM 푸시를 지원하지 않습니다.");
+    return null;
+  }
+
+  messaging = getMessaging(app);
+  return messaging;
+}
+
 const friendStrip = document.getElementById("friendStrip");
 const memberCountEl = document.getElementById("memberCountEl");
 
@@ -1662,6 +1682,8 @@ async function ensureGroupMember() {
 
     console.log("멤버 등록 완료:", currentRoomId, uid, baseData);
 
+    saveMyPushToken();
+
     try {
       await onDisconnect(memberRef).update({
         online: false,
@@ -1674,6 +1696,92 @@ async function ensureGroupMember() {
     }
   } catch (e) {
     console.error("멤버 등록 실패:", e);
+  }
+}
+
+function safeFirebaseKey(value) {
+  return String(value || "라이더")
+    .trim()
+    .replace(/[.#$/\[\]]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 40) || "라이더";
+}
+
+function getPushDeviceId() {
+  let id = localStorage.getItem(PUSH_DEVICE_ID_KEY);
+
+  if (!id) {
+    id = `device_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(PUSH_DEVICE_ID_KEY, id);
+  }
+
+  return id;
+}
+
+async function saveMyPushToken() {
+  if (!groupEnabled || !currentRoomId) return null;
+
+  try {
+    await ensureAuth();
+
+    if (!("Notification" in window)) {
+      console.log("알림 기능 없음");
+      return null;
+    }
+
+    const permission = await Notification.requestPermission();
+
+    if (permission !== "granted") {
+      console.log("알림 권한 거부됨");
+      return null;
+    }
+
+    const msg = await initMessaging();
+    if (!msg) return null;
+
+    const token = await getToken(msg, {
+      vapidKey: FCM_VAPID_KEY
+    });
+
+    if (!token) return null;
+
+    const nameKey = safeFirebaseKey(myGroupName || "라이더");
+    const deviceId = getPushDeviceId();
+
+    await update(ref(db, `rideRooms/${currentRoomId}/pushUsers/${nameKey}/${deviceId}`), {
+      name: myGroupName || "라이더",
+      fcmToken: token,
+      deviceId,
+      updatedAt: Date.now(),
+      userAgent: navigator.userAgent || ""
+    });
+
+    console.log("푸시 토큰 저장 완료:", nameKey, deviceId);
+    return token;
+
+  } catch (e) {
+    console.log("푸시 토큰 저장 실패:", e);
+    return null;
+  }
+}
+
+async function sendGroupPushRequest(payload) {
+  try {
+    await fetch("/.netlify/functions/send-group-push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        roomId: currentRoomId,
+        senderName: payload.senderName,
+        senderUid: payload.senderUid,
+        messageId: payload.id,
+        text: payload.text
+      })
+    });
+  } catch (e) {
+    console.log("푸시 서버 호출 실패:", e);
   }
 }
 
@@ -2847,6 +2955,8 @@ async function sendPresetGroupMessage(messageText) {
     await update(ref(db, `rideRooms/${currentRoomId}/meta`), {
       broadcastMessage: payload
     });
+
+    sendGroupPushRequest(payload);
 
     if (messagePanel) messagePanel.classList.remove("open");
     return true;
