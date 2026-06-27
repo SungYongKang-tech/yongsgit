@@ -1601,6 +1601,33 @@ async function initMessaging() {
   return messaging;
 }
 
+let appServiceWorkerRegistration = null;
+
+async function registerAppServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    console.log("서비스워커 미지원 브라우저");
+    return null;
+  }
+
+  if (appServiceWorkerRegistration) {
+    return appServiceWorkerRegistration;
+  }
+
+  try {
+    appServiceWorkerRegistration =
+      await navigator.serviceWorker.register("/service-worker.js");
+
+    console.log("서비스워커 등록 완료:", appServiceWorkerRegistration.scope);
+    return appServiceWorkerRegistration;
+
+  } catch (e) {
+    console.log("서비스워커 등록 실패:", e);
+    return null;
+  }
+}
+
+registerAppServiceWorker();
+
 const friendStrip = document.getElementById("friendStrip");
 const memberCountEl = document.getElementById("memberCountEl");
 
@@ -1739,9 +1766,12 @@ async function saveMyPushToken() {
     const msg = await initMessaging();
     if (!msg) return null;
 
-    const token = await getToken(msg, {
-      vapidKey: FCM_VAPID_KEY
-    });
+    const swRegistration = await registerAppServiceWorker();
+
+const token = await getToken(msg, {
+  vapidKey: FCM_VAPID_KEY,
+  serviceWorkerRegistration: swRegistration || undefined
+});
 
     if (!token) return null;
 
