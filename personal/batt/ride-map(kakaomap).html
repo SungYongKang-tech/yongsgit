@@ -1836,20 +1836,25 @@ function playRadioAlert(senderName, text) {
   
 
   try {
-    window.speechSynthesis.cancel();
+  window.speechSynthesis.cancel();
 
-    const utter = new SpeechSynthesisUtterance(
-      `${senderName}님. ${text}`
-    );
+  playBeep();
 
-    utter.lang = "ko-KR";
-    utter.rate = 1;
-    utter.pitch = 1;
+  const utter = new SpeechSynthesisUtterance(
+    `${senderName}님. ${text}`
+  );
 
+  utter.lang = "ko-KR";
+  utter.rate = 1;
+  utter.pitch = 1;
+
+  setTimeout(() => {
     window.speechSynthesis.speak(utter);
-  } catch (e) {
-    console.log("TTS 실패:", e);
-  }
+  }, 220);
+
+} catch (e) {
+  console.log("TTS 실패:", e);
+}
 
  showBroadcastMessage(senderName, text);
 }
@@ -2108,6 +2113,33 @@ const initialGroupMessageSettings = {
 let lastRadioMessageId =
   localStorage.getItem(LAST_RADIO_MESSAGE_KEY) || "";
 
+function playBeep() {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = 1200; // 무전기 느낌
+
+    gain.gain.value = 0.08;
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+
+    setTimeout(() => {
+      osc.stop();
+      audioCtx.close();
+    }, 120);
+  } catch (e) {
+    console.log("삐 소리 실패:", e);
+  }
+}
+
+
 function recognizeOnce({
   button = null,
   listeningText = "듣는중...",
@@ -2131,7 +2163,11 @@ function recognizeOnce({
 
   if (button) button.textContent = listeningText;
 
+  playBeep();
+
+setTimeout(() => {
   recognition.start();
+}, 180);
 
   recognition.onresult = async (event) => {
     const text = event.results[0][0].transcript.trim();
@@ -2170,10 +2206,13 @@ function startBroadcastVoiceReply() {
     listeningText: "듣는중...",
     doneText: "🎤 말로 답장하기",
     onResult: async (text) => {
-      if (text) {
-        await sendPresetGroupMessage(text);
-        hideBroadcastMessage();
-      }
+
+      text = (text || "").trim();
+      if (!text) return;
+
+      await sendPresetGroupMessage(text);
+
+      hideBroadcastMessage();
     }
   });
 }
