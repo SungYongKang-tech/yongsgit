@@ -155,6 +155,11 @@ turboRecheckEnabled: true,
 turboRecheckDelayMinutes: 3,
 turboRecheckMaxAgeMinutes: 15,
 
+marketScoreEnabled: true,
+turboMinMarketScore: 55,
+coreMinMarketScore: 45,
+leaderMinMarketScore: 60,
+
 };
 
 
@@ -3214,6 +3219,66 @@ function calculateMarketTemperature(candidates = []) {
   };
 }
 
+function calculateMarketScore(candidates = [], leadingSectors = []) {
+  const temp = calculateMarketTemperature(candidates);
+
+  let score = 0;
+
+  const advanceRatio = Number(temp.advanceRatio || 0);
+  const avgChangeRate = Number(temp.avgChangeRate || 0);
+  const strongRatio = Number(temp.strongRatio || 0);
+  const dangerRatio = Number(temp.dangerRatio || 0);
+
+  // 상승종목비율
+  if (advanceRatio >= 75) score += 25;
+  else if (advanceRatio >= 60) score += 18;
+  else if (advanceRatio >= 45) score += 10;
+  else score += 0;
+
+  // 평균등락률
+  if (avgChangeRate >= 1.2) score += 25;
+  else if (avgChangeRate >= 0.5) score += 18;
+  else if (avgChangeRate >= 0) score += 10;
+  else score -= 10;
+
+  // 강한 종목 비율
+  if (strongRatio >= 20) score += 20;
+  else if (strongRatio >= 10) score += 12;
+  else if (strongRatio >= 5) score += 6;
+
+  // 위험 종목 비율
+  if (dangerRatio <= 10) score += 15;
+  else if (dangerRatio <= 20) score += 8;
+  else if (dangerRatio >= 30) score -= 15;
+
+  // 주도섹터 존재 여부
+  if (leadingSectors.length >= 3) score += 15;
+  else if (leadingSectors.length >= 2) score += 10;
+  else if (leadingSectors.length >= 1) score += 5;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  let level = "NORMAL";
+  if (score >= 75) level = "HOT";
+  else if (score >= 55) level = "NORMAL";
+  else if (score >= 40) level = "CAUTION";
+  else level = "DANGER";
+
+  return {
+    score,
+    level,
+    marketTemperature: temp,
+    leadingSectors,
+    reason:
+      `MarketScore ${score} / ` +
+      `상승 ${advanceRatio.toFixed(1)}% / ` +
+      `평균 ${avgChangeRate.toFixed(2)}% / ` +
+      `강한종목 ${strongRatio.toFixed(1)}% / ` +
+      `약세 ${dangerRatio.toFixed(1)}% / ` +
+      `주도섹터 ${leadingSectors.join(", ") || "없음"}`
+  };
+}
+
 function isAttackBuyBlockedByMarket(marketTemperature) {
   if (!marketTemperature) return true;
 
@@ -3840,6 +3905,24 @@ async function runTurboAutoBuyOnce() {
     }
 
     const leadingSectors = getLeadingSectors(candidates);
+    const marketScore = calculateMarketScore(candidates, leadingSectors);
+state.marketScore = marketScore;
+state.marketTemperature = marketScore.marketTemperature;
+
+console.log(`[시장점수] ${marketScore.reason}`);
+
+if (
+  settings.marketScoreEnabled &&
+  marketScore.score < settings.turboMinMarketScore
+) {
+  console.log(
+    `[TURBO 중단] 시장점수 부족 ${marketScore.score} / 기준 ${settings.turboMinMarketScore}`
+  );
+
+  state.lastTurboCheckAt = nowText();
+  saveState(state);
+  return;
+}
 
 console.log(
   `[섹터 자금쏠림] 주도섹터: ${
