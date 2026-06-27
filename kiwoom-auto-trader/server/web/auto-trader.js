@@ -71,7 +71,7 @@ turboMinOpenPositionRate: 2.0, // 시가 대비 +2% 이상
 turboMinDayPositionRate: 60,
 
 turboMaxDayPositionRate: 75,
-turboMinTradeVolumeRatio: -80,
+turboMinTradeVolumeRatio: 80,
 
 coreMaxChangeRate: 3.5,
 coreMinTradeVolumeRatio: -20,
@@ -138,6 +138,18 @@ leaderStrengthMinScore: 75,      // 수급강도 최소점수
 
 leaderCoreMaxHoldingCount: 6,
 
+candidateRankEnabled: false,
+candidateRankMinHistoryCount: 2,
+candidateRankMinScoreUp: 1,
+candidateRankMaxAgeMinutes: 40,
+
+sectorFilterEnabled: true,
+sectorMinScore: 2,
+
+sectorFlowEnabled: true,
+sectorFlowTopCount: 3,
+sectorFlowMinCandidateCount: 2,
+sectorFlowMinAvgScore: 2.5,
 
 };
 
@@ -661,6 +673,200 @@ function isExcludedStock(item = {}) {
   return false;
 }
 
+function getSectorTags(item = {}) {
+  const name = String(item.name || item.stockName || item.korName || "");
+
+  const sectors = [];
+
+  if (/조선|오션|중공업|해양|엔진/i.test(name)) {
+    sectors.push("조선");
+  }
+
+  if (/방산|항공|우주|한화에어로|현대로템|LIG|풍산/i.test(name)) {
+    sectors.push("방산");
+  }
+
+  if (/원전|전력|한전|두산에너빌리티|한전기술|일진파워/i.test(name)) {
+    sectors.push("원전");
+  }
+
+  if (/반도체|하이닉스|삼성전자|DB하이텍|원익|테스|ISC|리노공업/i.test(name)) {
+    sectors.push("반도체");
+  }
+
+  if (/2차전지|배터리|에코프로|포스코퓨처|엘앤에프|천보|엔켐/i.test(name)) {
+    sectors.push("2차전지");
+  }
+
+  if (/AI|로봇|데이터|클라우드|솔트룩스|마음AI|로보/i.test(name)) {
+    sectors.push("AI/로봇");
+  }
+
+  return sectors;
+}
+
+function getSectorPowerScore(item = {}) {
+  const sectors = getSectorTags(item);
+
+  if (sectors.length === 0) {
+    return {
+      score: 0,
+      sectors: [],
+      reason: "섹터 태그 없음"
+    };
+  }
+
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    item.raw?.flu_rt ||
+    0
+  );
+
+  const tradeVolumeRatio = getTradeVolumeRatio(item);
+
+  let score = 0;
+
+  if (changeRate >= 1.5) score += 1;
+  if (changeRate >= 3.0) score += 1;
+
+  if (tradeVolumeRatio >= 80) score += 1;
+  if (tradeVolumeRatio >= 150) score += 1;
+
+  if (sectors.length >= 1) score += 1;
+
+  return {
+    score,
+    sectors,
+    reason:
+      `${sectors.join(", ")} / ` +
+      `상승률 ${changeRate.toFixed(2)}% / ` +
+      `거래량비율 ${tradeVolumeRatio.toFixed(1)}% / ` +
+      `섹터점수 ${score}`
+  };
+}
+
+function isStrongSectorCandidate(item = {}) {
+  if (!settings.sectorFilterEnabled) {
+    return {
+      pass: true,
+      reason: "섹터필터 OFF"
+    };
+  }
+
+  const sectorPower = getSectorPowerScore(item);
+
+  if (sectorPower.score < settings.sectorMinScore) {
+    return {
+      pass: false,
+      reason: sectorPower.reason
+    };
+  }
+
+  item.sectorTags = sectorPower.sectors;
+  item.sectorPowerScore = sectorPower.score;
+
+  return {
+    pass: true,
+    reason: sectorPower.reason
+  };
+}
+
+function analyzeSectorMoneyFlow(candidates = []) {
+  const map = {};
+
+  for (const item of candidates) {
+    const power = getSectorPowerScore(item);
+
+    for (const sector of power.sectors) {
+      if (!map[sector]) {
+        map[sector] = {
+          sector,
+          count: 0,
+          totalScore: 0,
+          totalChangeRate: 0,
+          totalVolumeRatio: 0
+        };
+      }
+
+      const changeRate = Number(
+        item.changeRate ||
+        item.fluctuationRate ||
+        item.riseRate ||
+        item.rate ||
+        item.raw?.flu_rt ||
+        0
+      );
+
+      const volumeRatio = getTradeVolumeRatio(item);
+
+      map[sector].count += 1;
+      map[sector].totalScore += power.score;
+      map[sector].totalChangeRate += changeRate;
+      map[sector].totalVolumeRatio += volumeRatio;
+    }
+  }
+
+  return Object.values(map)
+    .map((row) => ({
+      ...row,
+      avgScore: row.totalScore / row.count,
+      avgChangeRate: row.totalChangeRate / row.count,
+      avgVolumeRatio: row.totalVolumeRatio / row.count
+    }))
+    .filter((row) =>
+      row.count >= settings.sectorFlowMinCandidateCount &&
+      row.avgScore >= settings.sectorFlowMinAvgScore
+    )
+    .sort((a, b) =>
+      b.avgScore - a.avgScore ||
+      b.avgVolumeRatio - a.avgVolumeRatio ||
+      b.avgChangeRate - a.avgChangeRate
+    );
+}
+
+function getLeadingSectors(candidates = []) {
+  if (!settings.sectorFlowEnabled) return [];
+
+  return analyzeSectorMoneyFlow(candidates)
+    .slice(0, settings.sectorFlowTopCount)
+    .map((row) => row.sector);
+}
+
+function isInLeadingSector(item, leadingSectors = []) {
+  if (!settings.sectorFlowEnabled) {
+    return {
+      pass: true,
+      reason: "섹터 자금쏠림 OFF"
+    };
+  }
+
+  if (!leadingSectors || leadingSectors.length === 0) {
+    return {
+      pass: true,
+      reason: "주도섹터 없음 → 필터 미적용"
+    };
+  }
+
+  const tags = getSectorTags(item);
+  const matched = tags.filter((tag) => leadingSectors.includes(tag));
+
+  if (matched.length === 0) {
+    return {
+      pass: false,
+      reason: `주도섹터 아님 / 종목섹터=${tags.join(",") || "없음"} / 주도섹터=${leadingSectors.join(",")}`
+    };
+  }
+
+  item.leadingSectorMatched = matched;
+
+  return {
+    pass: true,
+    reason: `주도섹터 통과 / ${matched.join(",")}`
+  };
+}
 
 function isAlreadyHolding(state, code) {
   return state.holdings.some((item) => item.code === code);
@@ -1221,6 +1427,98 @@ function getDayPositionRate(item, currentPrice) {
   return ((currentPrice - low) / (high - low)) * 100;
 }
 
+function updateCandidateRankHistory(state, item, currentPrice) {
+  if (!state.candidateRanks) {
+    state.candidateRanks = {};
+  }
+
+  const code = String(item.code || "");
+  if (!code) return null;
+
+  const now = Date.now();
+
+  const score = Number(item.discoverScore || 0);
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const tradeVolumeRatio = getTradeVolumeRatio(item);
+  const dayPositionRate = getDayPositionRate(item, currentPrice);
+
+  if (!state.candidateRanks[code]) {
+    state.candidateRanks[code] = [];
+  }
+
+  state.candidateRanks[code].push({
+    time: now,
+    score,
+    changeRate,
+    tradeVolumeRatio,
+    dayPositionRate,
+    price: Number(currentPrice || item.currentPrice || item.price || 0)
+  });
+
+  const maxAgeMs = settings.candidateRankMaxAgeMinutes * 60 * 1000;
+
+  state.candidateRanks[code] = state.candidateRanks[code].filter(
+    (row) => now - Number(row.time || 0) <= maxAgeMs
+  );
+
+  return state.candidateRanks[code];
+}
+
+function isCandidateGettingStronger(state, item, currentPrice) {
+  if (!settings.candidateRankEnabled) return true;
+
+  const history = updateCandidateRankHistory(state, item, currentPrice);
+
+  if (!history || history.length < settings.candidateRankMinHistoryCount) {
+    return {
+      pass: false,
+      reason: "후보 이력 부족"
+    };
+  }
+
+  const first = history[0];
+  const last = history[history.length - 1];
+
+  const scoreUp = Number(last.score || 0) - Number(first.score || 0);
+  const volumeUp =
+    Number(last.tradeVolumeRatio || 0) >= Number(first.tradeVolumeRatio || 0);
+  const priceUp =
+    Number(last.price || 0) >= Number(first.price || 0);
+
+  if (scoreUp < settings.candidateRankMinScoreUp) {
+    return {
+      pass: false,
+      reason: `후보 점수 상승 부족 ${scoreUp.toFixed(1)}`
+    };
+  }
+
+  if (!volumeUp) {
+    return {
+      pass: false,
+      reason: "거래량비율 약화"
+    };
+  }
+
+  if (!priceUp) {
+    return {
+      pass: false,
+      reason: "가격 흐름 약화"
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `후보 강화 통과 · 점수상승 ${scoreUp.toFixed(1)}`
+  };
+}
+
 function isEarlyLeaderCandidate(item, currentPrice) {
   const changeRate = Number(
     item.changeRate ||
@@ -1493,46 +1791,73 @@ function paperEarlyBuy(state, item, currentPrice) {
   return true;
 }
 
-function paperTurboBuy(state, item, currentPrice) {
-  if (!settings.turboEnabled) return false;
+function judgeTurboBuy(state, item, currentPrice) {
+  if (!settings.turboEnabled) {
+    return { pass: false, reason: "TURBO 비활성화" };
+  }
 
-if (isExcludedStock(item)) {
-  console.log("[TURBO 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
-  return false;
-}
+  if (isExcludedStock(item)) {
+    return { pass: false, reason: "제외종목" };
+  }
 
-if (wasStoppedToday(state, item.code)) {
-  console.log("[TURBO 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
-  return false;
-}
+  if (wasStoppedToday(state, item.code)) {
+    return { pass: false, reason: "오늘 손절 또는 손실 이력 있음" };
+  }
+
+  const sectorCheck = isStrongSectorCandidate(item);
+  if (!sectorCheck.pass) {
+    return { pass: false, reason: `섹터점수 미충족 / ${sectorCheck.reason}` };
+  }
 
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
-    console.log("[TURBO 매수제외] 하루 최대 진입 횟수 도달");
-    return false;
+    return { pass: false, reason: "하루 최대 진입 횟수 도달" };
   }
 
   if (getTurboConsecutiveLossCount(state) >= settings.turboMaxConsecutiveLoss) {
-    console.log("[TURBO 매수제외] 연속 손절 제한 도달");
-    return false;
+    return { pass: false, reason: "연속 손절 제한 도달" };
   }
 
   if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) {
-    console.log("[TURBO 매수제외] 최대 보유종목 도달");
-    return false;
+    return { pass: false, reason: "최대 보유종목 도달" };
   }
 
   if (isAlreadyHolding(state, item.code)) {
-    console.log("[TURBO 매수제외] 이미 보유중", item.name);
-    return false;
+    return { pass: false, reason: "이미 보유중" };
   }
 
   if (wasTurboBoughtToday(state, item.code)) {
-    console.log("[TURBO 매수제외] 오늘 이미 Turbo 매수", item.name);
-    return false;
+    return { pass: false, reason: "오늘 이미 TURBO 매수" };
   }
 
   const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) {
+    return { pass: false, reason: "현재가 오류" };
+  }
+
+  const rankCheck = isCandidateGettingStronger(state, item, price);
+  if (!rankCheck.pass) {
+    return { pass: false, reason: `후보 강화 미충족 / ${rankCheck.reason}` };
+  }
+
+  return {
+    pass: true,
+    reason: "TURBO 판단 통과"
+  };
+}
+
+function paperTurboBuy(state, item, currentPrice) {
+ 
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
   if (!price || price <= 0) return false;
+
+  const rankCheck = isCandidateGettingStronger(state, item, price);
+
+if (!rankCheck.pass) {
+  console.log(
+    `[TURBO 매수제외] 후보 강화 미충족 ${item.name || item.code} / ${rankCheck.reason}`
+  );
+  return false;
+}
 
   const buyChangeRate = Number(
   item.changeRate ||
@@ -1566,11 +1891,13 @@ const buyDayPositionRate = getDayPositionRate(item, price);
     highestPrice: price,
     autoTrade: true,
     lowestPrice: price,
-maxProfitRate: 0,
-maxLossRate: 0,
+    maxProfitRate: 0,
+    maxLossRate: 0,
     strategyGroup: "TURBO",
     strategyPreset: "turbo",
     strategyName: "터보형",
+    sectorTags: item.sectorTags || [],
+    sectorPowerScore: Number(item.sectorPowerScore || 0),
     discoverScore: Number(item.discoverScore || 0),
    
    changeRate: buyChangeRate,
@@ -1596,6 +1923,8 @@ buyDayPositionRate,
   state.tradeLogs.push({
     type: "TURBO_BUY",
     strategyGroup: "TURBO",
+    sectorTags: item.sectorTags || [],
+    sectorPowerScore: Number(item.sectorPowerScore || 0),
 
     code: item.code,
     name: holding.name,
@@ -1878,6 +2207,8 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     strategyPreset: holding.strategyPreset,
     strategyName: holding.strategyName,
     strategyGroup: holding.strategyGroup || "CORE",
+    sectorTags: holding.sectorTags || [],
+    sectorPowerScore: Number(holding.sectorPowerScore || 0),
 
     leaderStrengthScore: Number(holding.leaderStrengthScore || 0),
 
@@ -3367,11 +3698,20 @@ async function runTurboAutoBuyOnce() {
 
     try {
       candidates = await discoverCandidates();
+      
     } catch (err) {
       console.warn("[TURBO] 후보 발굴 실패:", err.message);
       saveState(state);
       return;
     }
+
+    const leadingSectors = getLeadingSectors(candidates);
+
+console.log(
+  `[섹터 자금쏠림] 주도섹터: ${
+    leadingSectors.length > 0 ? leadingSectors.join(", ") : "없음"
+  }`
+);
 
     for (const item of candidates.slice(0, 20)) {
       if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) break;
@@ -3384,6 +3724,15 @@ async function runTurboAutoBuyOnce() {
       if (Number(item.discoverScore || 0) < settings.turboMinScore) {
         continue;
       }
+
+      const sectorFlowCheck = isInLeadingSector(item, leadingSectors);
+
+if (!sectorFlowCheck.pass) {
+  console.log(
+    `[TURBO 매수제외] ${item.name || item.code} / ${sectorFlowCheck.reason}`
+  );
+  continue;
+}
 
       let priceData = null;
 
@@ -3408,24 +3757,32 @@ async function runTurboAutoBuyOnce() {
 
       const turboCheck = checkTurboLeaderCandidate(mergedItem, currentPrice);
 
-      if (!turboCheck.pass) {
-        continue;
-      }
+if (!turboCheck.pass) {
+  continue;
+}
 
-      console.log(
-        `[TURBO 후보] ${priceData.name || item.name} ${item.code} / ${turboCheck.reason}`
-      );
+const judge = judgeTurboBuy(state, mergedItem, currentPrice);
 
-      paperTurboBuy(
-        state,
-        {
-          ...mergedItem,
-          name: priceData.name || item.name,
-          currentPrice
-        },
-        currentPrice
-      );
-    }
+if (!judge.pass) {
+  console.log(
+    `[TURBO 매수제외] ${priceData.name || item.name || item.code} / ${judge.reason}`
+  );
+  continue;
+}
+
+console.log(
+  `[TURBO 후보] ${priceData.name || item.name} ${item.code} / ${turboCheck.reason} / ${judge.reason}`
+);
+
+paperTurboBuy(
+  state,
+  {
+    ...mergedItem,
+    name: priceData.name || item.name,
+    currentPrice
+  },
+  currentPrice
+);
 
     state.lastTurboCheckAt = nowText();
     saveState(state);
