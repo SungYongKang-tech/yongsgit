@@ -21,7 +21,7 @@ leaderRatio: 0.2,
   earlyMaxHoldingCount: 3,
   earlyMaxDailyBuyCount: 4,
 
-  maxHoldingCount: 8,
+  maxHoldingCount: 6,
   coreMaxHoldingCount: 6,
   turboMaxHoldingCount: 2,
 
@@ -63,22 +63,22 @@ turboMinScore: 10,
 turboWatchMinDayRiseRate: 1.0,
 
 
-turboBuyMinDayRiseRate: 1.2,
-turboBuyMaxDayRiseRate: 3.2,
+turboBuyMinDayRiseRate: 0.5,   // 당일 상승률은 보조조건
+turboBuyMaxDayRiseRate: 7.0,   // 너무 오른 종목만 제외
 
 turboMinVolume: 300000,
-turboMinOpenPositionRate: 1.5,
+turboMinOpenPositionRate: 2.0, // 시가 대비 +2% 이상
 turboMinDayPositionRate: 60,
 
 turboMaxDayPositionRate: 75,
-turboMinTradeVolumeRatio: -10,
+turboMinTradeVolumeRatio: -80,
 
 coreMaxChangeRate: 3.5,
 coreMinTradeVolumeRatio: -20,
 coreMinDayPositionRate: 45,
 coreMaxDayPositionRate: 75,
 
-turboStopLossRate: -1.0,
+turboStopLossRate: -2.0,
 turboTakeProfitRate: 3.0,
 turboTakeProfitSellRatio: 0.5,
 turboTrailingStartRate: 2.0,
@@ -105,8 +105,8 @@ earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
 leaderEnabled: true,
-leaderStartTime: "10:30",
-leaderEndTime: "14:00",
+leaderStartTime: "11:00",
+leaderEndTime: "13:30",
 
 leaderMaxHoldingCount: 2,
 leaderMaxDailyBuyCount: 2,
@@ -136,7 +136,7 @@ leaderMinOpenPositionRate: 1.0,  // 시가 대비 +1% 이상
 
 leaderStrengthMinScore: 75,      // 수급강도 최소점수
 
-leaderCoreMaxHoldingCount: 8,
+leaderCoreMaxHoldingCount: 6,
 
 
 };
@@ -1292,44 +1292,57 @@ function checkTurboLeaderCandidate(item, currentPrice) {
     0
   );
 
-  const openPrice = Number(item.open || item.openPrice || 0);
-  const highPrice = Number(item.high || item.highPrice || 0);
-  const lowPrice = Number(item.low || item.lowPrice || 0);
-  const volume = Number(item.volume || 0);
+  const openPrice = Math.abs(Number(item.open || item.openPrice || item.raw?.open_pric || 0));
+  const volume = Number(item.volume || item.raw?.trde_qty || 0);
 
   const tradeVolumeRatio = getTradeVolumeRatio(item);
   const dayPositionRate = getDayPositionRate(item, currentPrice);
 
-  if (dayRiseRate < settings.turboBuyMinDayRiseRate) {
-    return { pass: false, reason: `상승률 부족 ${dayRiseRate.toFixed(2)}%` };
-  }
+  const openPositionRate =
+    openPrice > 0 && currentPrice > 0
+      ? ((currentPrice - openPrice) / openPrice) * 100
+      : 0;
 
-  if (dayRiseRate > settings.turboBuyMaxDayRiseRate) {
-    return { pass: false, reason: `상승률 과다 ${dayRiseRate.toFixed(2)}%` };
-  }
-
-  if (volume < settings.turboMinVolume) {
-    return { pass: false, reason: `거래량 부족 ${volume.toLocaleString()}` };
-  }
-
-  if (tradeVolumeRatio < settings.turboMinTradeVolumeRatio) {
+  // 1. 시가 대비 힘이 핵심
+  if (openPositionRate < settings.turboMinOpenPositionRate) {
     return {
       pass: false,
-      reason: `거래량비율 약함 ${tradeVolumeRatio.toFixed(1)}%`
+      reason: `시가대비 힘 부족 ${openPositionRate.toFixed(2)}%`
     };
   }
 
-  if (openPrice > 0) {
-    const openPositionRate = ((currentPrice - openPrice) / openPrice) * 100;
-
-    if (openPositionRate < settings.turboMinOpenPositionRate) {
-      return {
-        pass: false,
-        reason: `시가대비 힘 부족 ${openPositionRate.toFixed(2)}%`
-      };
-    }
+  // 2. 거래량비율이 핵심
+  if (tradeVolumeRatio < settings.turboMinTradeVolumeRatio) {
+    return {
+      pass: false,
+      reason: `거래량비율 부족 ${tradeVolumeRatio.toFixed(1)}%`
+    };
   }
 
+  // 3. 기본 거래량
+  if (volume < settings.turboMinVolume) {
+    return {
+      pass: false,
+      reason: `거래량 부족 ${volume.toLocaleString()}`
+    };
+  }
+
+  // 4. 당일 상승률은 보조조건
+  if (dayRiseRate < settings.turboBuyMinDayRiseRate) {
+    return {
+      pass: false,
+      reason: `당일 상승률 부족 ${dayRiseRate.toFixed(2)}%`
+    };
+  }
+
+  if (dayRiseRate > settings.turboBuyMaxDayRiseRate) {
+    return {
+      pass: false,
+      reason: `당일 상승률 과열 ${dayRiseRate.toFixed(2)}%`
+    };
+  }
+
+  // 5. 당일 위치: 너무 낮으면 힘 없음, 너무 높으면 추격
   if (
     dayPositionRate > 0 &&
     dayPositionRate < settings.turboMinDayPositionRate
@@ -1353,16 +1366,17 @@ function checkTurboLeaderCandidate(item, currentPrice) {
   return {
     pass: true,
     dayRiseRate,
+    openPositionRate,
     tradeVolumeRatio,
     dayPositionRate,
     reason:
-      `대장주 선점 조건 통과 · ` +
+      `TURBO 시가돌파 조건 통과 · ` +
+      `시가대비 ${openPositionRate.toFixed(2)}% / ` +
       `상승률 ${dayRiseRate.toFixed(2)}% / ` +
       `거래량비율 ${tradeVolumeRatio.toFixed(1)}% / ` +
       `당일위치 ${dayPositionRate.toFixed(1)}%`
   };
 }
-
 function paperEarlyBuy(state, item, currentPrice) {
   if (!settings.earlyEnabled) return false;
 
@@ -2896,7 +2910,7 @@ const buyRules = {
   minScore: Number(settings.minScore || 10),
   perBuyAmount: Number(budget.corePerBuyAmount || 10000000),
   maxHoldingCount: Math.min(
-    Number(settings.coreMaxHoldingCount || 8),
+    Number(settings.coreMaxHoldingCount || 6),
     getTimeBasedMaxHolding()
   )
 };
@@ -2923,7 +2937,7 @@ if (marketTemperature.level === "CAUTION") {
 
 if (marketTemperature.level === "HOT") {
   buyRules.minScore = Math.min(buyRules.minScore, 8);
-  buyRules.maxHoldingCount = Math.max(buyRules.maxHoldingCount, 8);
+  buyRules.maxHoldingCount = Math.max(buyRules.maxHoldingCount, 6);
 
   const beforeCount = candidates.length;
 
