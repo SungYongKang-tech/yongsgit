@@ -2519,6 +2519,10 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     sectorTags: holding.sectorTags || [],
     sectorPowerScore: Number(holding.sectorPowerScore || 0),
 
+    finalBuyScore: Number(holding.finalBuyScore || 0),
+    finalBuyScoreDetail: holding.finalBuyScoreDetail || null,
+    marketScore: holding.marketScore || null,
+
     leaderStrengthScore: Number(holding.leaderStrengthScore || 0),
 
     date: todayKey(),
