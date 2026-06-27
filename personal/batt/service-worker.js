@@ -114,3 +114,36 @@ self.addEventListener("notificationclick", (event) => {
   );
 
 });
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (e) {
+    payload = {};
+  }
+
+  const data = payload.data || {};
+  const notification = payload.notification || {};
+
+  const title =
+    data.title ||
+    notification.title ||
+    "그룹 메시지";
+
+  const body =
+    data.body ||
+    notification.body ||
+    data.text ||
+    "";
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: new URL("./192icon.png", self.registration.scope).href,
+      badge: new URL("./192icon.png", self.registration.scope).href,
+      data
+    })
+  );
+});
