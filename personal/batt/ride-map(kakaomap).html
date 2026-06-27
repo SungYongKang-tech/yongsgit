@@ -2108,8 +2108,12 @@ const initialGroupMessageSettings = {
 let lastRadioMessageId =
   localStorage.getItem(LAST_RADIO_MESSAGE_KEY) || "";
 
-function startVoiceInput() {
-
+function recognizeOnce({
+  button = null,
+  listeningText = "듣는중...",
+  doneText = "🎤 말하기",
+  onResult = null
+} = {}) {
   const SpeechRecognition =
     window.SpeechRecognition ||
     window.webkitSpeechRecognition;
@@ -2125,69 +2129,53 @@ function startVoiceInput() {
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
-  voiceInputBtn.textContent = "듣는중...";
-
-  recognition.start();
-
-  recognition.onresult = (event) => {
-
-    const text =
-      event.results[0][0].transcript;
-
-    quickMessageInput.value = text;
-
-    voiceInputBtn.textContent = "🎤 말하기";
-  };
-
-  recognition.onerror = () => {
-    voiceInputBtn.textContent = "🎤 말하기";
-  };
-
-  recognition.onend = () => {
-    voiceInputBtn.textContent = "🎤 말하기";
-  };
-}
-
-function startBroadcastVoiceReply() {
-  const SpeechRecognition =
-    window.SpeechRecognition ||
-    window.webkitSpeechRecognition;
-
-  if (!SpeechRecognition) {
-    alert("이 브라우저는 음성인식을 지원하지 않습니다.");
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-
-  recognition.lang = "ko-KR";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-
-  broadcastVoiceReplyBtn.textContent = "듣는중...";
+  if (button) button.textContent = listeningText;
 
   recognition.start();
 
   recognition.onresult = async (event) => {
     const text = event.results[0][0].transcript.trim();
 
-    broadcastVoiceReplyBtn.textContent = "전송중...";
-
-    if (text) {
-      await sendPresetGroupMessage(text);
-      hideBroadcastMessage();
+    if (typeof onResult === "function") {
+      await onResult(text);
     }
 
-    broadcastVoiceReplyBtn.textContent = "🎤 말해서 즉시보내기";
+    if (button) button.textContent = doneText;
   };
 
   recognition.onerror = () => {
-    broadcastVoiceReplyBtn.textContent = "🎤 말해서 즉시보내기";
+    if (button) button.textContent = doneText;
   };
 
   recognition.onend = () => {
-    broadcastVoiceReplyBtn.textContent = "🎤 말해서 즉시보내기";
+    if (button) button.textContent = doneText;
   };
+}
+
+function startVoiceInput() {
+  recognizeOnce({
+    button: voiceInputBtn,
+    listeningText: "듣는중...",
+    doneText: "🎤 말하기",
+    onResult: (text) => {
+      quickMessageInput.value = text;
+    }
+  });
+}
+
+
+function startBroadcastVoiceReply() {
+  recognizeOnce({
+    button: broadcastVoiceReplyBtn,
+    listeningText: "듣는중...",
+    doneText: "🎤 말로 답장하기",
+    onResult: async (text) => {
+      if (text) {
+        await sendPresetGroupMessage(text);
+        hideBroadcastMessage();
+      }
+    }
+  });
 }
 
 function loadDisplaySettings() {
