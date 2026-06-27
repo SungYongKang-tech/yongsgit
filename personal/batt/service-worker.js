@@ -54,13 +54,15 @@ messaging.onBackgroundMessage((payload) => {
   console.log("백그라운드 푸시", payload);
 
   const title =
-    payload.notification?.title ||
-    "그룹 메시지";
+  payload.data?.title ||
+  payload.notification?.title ||
+  "그룹 메시지";
 
-  const body =
-    payload.notification?.body ||
-    payload.data?.text ||
-    "";
+const body =
+  payload.data?.body ||
+  payload.notification?.body ||
+  payload.data?.text ||
+  "";
 
   self.registration.showNotification(title, {
     body,

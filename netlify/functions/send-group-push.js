@@ -90,26 +90,28 @@ exports.handler = async function (event) {
     }
 
     const messages = uniqueTokens.map((token) => ({
-      token,
-      notification: {
-        title: `${senderName}님의 그룹 메시지`,
-        body: text
-      },
-      data: {
-        roomId,
-        senderName,
-        text,
-        type: "groupMessage"
-      },
-      webpush: {
-        notification: {
-          title: `${senderName}님의 그룹 메시지`,
-          body: text,
-          icon: "/192icon.png",
-          badge: "/192icon.png"
-        }
-      }
-    }));
+  token,
+  data: {
+    roomId,
+    senderName,
+    text,
+    type: "groupMessage",
+    title: `${senderName}님의 그룹 메시지`,
+    body: text
+  },
+  webpush: {
+    notification: {
+      title: `${senderName}님의 그룹 메시지`,
+      body: text,
+      icon: "/personal/batt/192icon.png",
+      badge: "/personal/batt/192icon.png",
+      requireInteraction: true
+    },
+    fcmOptions: {
+      link: `/personal/batt/ride-map(kakaomap).html?roomId=${encodeURIComponent(roomId)}`
+    }
+  }
+}));
 
     const result = await admin.messaging().sendEach(messages);
 
