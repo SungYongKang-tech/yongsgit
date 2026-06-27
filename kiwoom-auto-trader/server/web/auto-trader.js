@@ -1129,6 +1129,90 @@ function getSafeStockName(item, priceData = {}) {
   return code;
 }
 
+function judgeCoreBuy(state, item, currentPrice, strategy, marketScore = null) {
+  if (!isTradeTime()) {
+    return { pass: false, reason: "거래 가능 시간이 아님" };
+  }
+
+  if (isExcludedStock(item)) {
+    return { pass: false, reason: "제외종목" };
+  }
+
+  if (wasStoppedToday(state, item.code)) {
+    return { pass: false, reason: "오늘 손절 또는 손실 이력 있음" };
+  }
+
+  if (isAlreadyHolding(state, item.code)) {
+    return { pass: false, reason: "이미 보유중" };
+  }
+
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) {
+    return { pass: false, reason: "현재가 오류" };
+  }
+
+  if (
+    settings.marketScoreEnabled &&
+    marketScore &&
+    Number(marketScore.score || 0) < settings.coreMinMarketScore
+  ) {
+    return {
+      pass: false,
+      reason: `CORE 시장점수 부족 ${marketScore.score} / 기준 ${settings.coreMinMarketScore}`
+    };
+  }
+
+  const finalScore = calculateFinalBuyScore(item, price, marketScore);
+
+  if (finalScore.score < settings.coreMinFinalBuyScore) {
+    return {
+      pass: false,
+      reason: finalScore.reason
+    };
+  }
+
+  const coreChangeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const coreTradeVolumeRatio = getTradeVolumeRatio(item);
+  const coreDayPositionRate = getDayPositionRate(item, price);
+
+  if (coreChangeRate > settings.coreMaxChangeRate) {
+    return {
+      pass: false,
+      reason: `상승률 과다 ${coreChangeRate.toFixed(2)}%`
+    };
+  }
+
+  if (coreTradeVolumeRatio < settings.coreMinTradeVolumeRatio) {
+    return {
+      pass: false,
+      reason: `거래량비율 약함 ${coreTradeVolumeRatio.toFixed(1)}%`
+    };
+  }
+
+  if (
+    coreDayPositionRate < settings.coreMinDayPositionRate ||
+    coreDayPositionRate > settings.coreMaxDayPositionRate
+  ) {
+    return {
+      pass: false,
+      reason: `당일위치 부적합 ${coreDayPositionRate.toFixed(1)}%`
+    };
+  }
+
+  return {
+    pass: true,
+    finalScore,
+    reason: `CORE 판단 통과 / ${finalScore.reason}`
+  };
+}
+
 function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount) {
   if (!isTradeTime()) {
     console.log("[모의매수 차단] 거래 가능 시간이 아닙니다.", item?.name);
@@ -1136,198 +1220,189 @@ function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount)
   }
 
   if (isExcludedStock(item)) {
-  console.log("[CORE 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
-  return false;
-}
+    console.log("[CORE 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
+    return false;
+  }
 
-if (wasStoppedToday(state, item.code)) {
-  console.log("[CORE 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
-  return false;
-}
+  if (wasStoppedToday(state, item.code)) {
+    console.log("[CORE 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
+    return false;
+  }
 
   if (state.holdings.some((h) => h.code === item.code)) {
     console.log("[모의매수 제외] 이미 보유중", item.name);
     return false;
   }
 
-const price = Number(item.currentPrice || item.price || 0);
-if (!price || price <= 0) return false;
+  const price = Number(item.currentPrice || item.price || 0);
+  if (!price || price <= 0) return false;
 
-const coreChangeRate = Number(
-  item.changeRate ||
-  item.fluctuationRate ||
-  item.riseRate ||
-  item.rate ||
-  0
-);
-
-const coreTradeVolumeRatio = getTradeVolumeRatio(item);
-const coreDayPositionRate = getDayPositionRate(item, price);
-
-if (coreChangeRate > settings.coreMaxChangeRate) {
-  console.log("[CORE 매수제외] 상승률 과다", item.name, coreChangeRate.toFixed(2));
-  return false;
-}
-
-if (coreTradeVolumeRatio < settings.coreMinTradeVolumeRatio) {
-  console.log("[CORE 매수제외] 거래량비율 약함", item.name, coreTradeVolumeRatio.toFixed(1));
-  return false;
-}
-
-if (
-  coreDayPositionRate < settings.coreMinDayPositionRate ||
-  coreDayPositionRate > settings.coreMaxDayPositionRate
-) {
-  console.log("[CORE 매수제외] 당일위치 부적합", item.name, coreDayPositionRate.toFixed(1));
-  return false;
-}
-
-const availableCash = Number(
-  state.totalCash || settings.totalCash || 0
-);
-
-// 현재 자산으로 가능한 최대 종목 수
-const dynamicMaxHolding = Math.min(
-  settings.maxHoldingCount,
-  getTimeBasedMaxHolding(),
-  Math.max(
-    1,
-    Math.floor(
-      availableCash / settings.minBuyAmount
-    )
-  )
-);
-
-// 남은 슬롯(Core 기준, Turbo 보유종목 제외)
-const remainSlots = Math.max(
-  1,
-  dynamicMaxHolding - getCoreHoldingCount(state)
-);
-
-const budget = getBudgetInfo(state);
-
-const safeBuyAmountLimit = Number(
-  buyAmountLimit || budget.corePerBuyAmount || settings.minBuyAmount || 10000000
-);
-
-// 종목당 투자금
-const buyAmount = Math.min(
-  safeBuyAmountLimit,
-  Math.floor(availableCash / remainSlots)
-);
-
-// 실제 수량
-const qty = Math.floor(buyAmount / price);
-
-// 수량 계산 오류 방지
-if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qty <= 0) {
-  console.log("[모의매수 차단] 수량 계산 오류", {
-    name: item.name,
-    code: item.code,
-    price,
-    buyAmount,
-    buyAmountLimit,
-    safeBuyAmountLimit,
-    availableCash,
-    remainSlots
-  });
-  return false;
-}
-
-
-
-  const holding = {
-  code: item.code,
-  name: item.name && item.name !== item.code ? item.name : (item.stockName || item.korName || item.code),
-  buyPrice: price,
-  qty,
-  buyAmount: price * qty,
-  plannedBuyAmount: buyAmount,
-  currentPrice: price,
-  highestPrice: price,
-  autoTrade: true,
-  lowestPrice: price,
-maxProfitRate: 0,
-maxLossRate: 0,
-
-  strategyGroup: "CORE",
-
-  strategyPreset: strategy.key,
-  strategyName: settings.leaderCoreEnabled
-  ? `Leader Core-${strategy.name}`
-  : strategy.name,
-  discoverScore: Number(item.discoverScore || 0),
-  changeRate: Number(
-  item.changeRate ||
-  item.fluctuationRate ||
-  item.riseRate ||
-  item.rate ||
-  0
-),
-tradeVolumeRatio: getTradeVolumeRatio(item),
-dayPositionRate: getDayPositionRate(item, price),
-  discoverReasons: Array.isArray(item.discoverReasons)
-    ? item.discoverReasons
-    : [],
-  discoverScoreDetails: item.discoverScoreDetails || {},
-  protectMinutes: 5,
-  buyTime: nowText(),
-  buyTimeMs: Date.now(),
-  buyAt: new Date().toISOString(),
-  date: todayKey()
-};
-
-  state.holdings.push(holding);
-  state.totalCash = availableCash - price * qty;
-
- state.tradeLogs.push({
-  type: "BUY",
-  strategyGroup: "CORE",
-
-  code: item.code,
-  name: item.name,
-  price,
-  buyPrice: price,      // 추가
-  qty,
-
-  buyAmount: price * qty,
-  plannedBuyAmount: buyAmount,
-
-  changeRate: Number(   // 추가
+  const coreChangeRate = Number(
     item.changeRate ||
     item.fluctuationRate ||
     item.riseRate ||
     item.rate ||
     0
-  ),
+  );
 
-  volume: Number(item.volume || 0),
+  const coreTradeVolumeRatio = getTradeVolumeRatio(item);
+  const coreDayPositionRate = getDayPositionRate(item, price);
 
-tradeVolumeRatio: getTradeVolumeRatio(item),
-dayPositionRate: getDayPositionRate(item, price),
+  if (coreChangeRate > settings.coreMaxChangeRate) {
+    console.log("[CORE 매수제외] 상승률 과다", item.name, coreChangeRate.toFixed(2));
+    return false;
+  }
 
-marketTemperature: state.marketTemperature || null,
+  if (coreTradeVolumeRatio < settings.coreMinTradeVolumeRatio) {
+    console.log("[CORE 매수제외] 거래량비율 약함", item.name, coreTradeVolumeRatio.toFixed(1));
+    return false;
+  }
 
-  remainCashAfterBuy: state.totalCash,
-  dynamicMaxHolding,
-  remainSlotsAfterBuy: Math.max(
-    0,
+  if (
+    coreDayPositionRate < settings.coreMinDayPositionRate ||
+    coreDayPositionRate > settings.coreMaxDayPositionRate
+  ) {
+    console.log("[CORE 매수제외] 당일위치 부적합", item.name, coreDayPositionRate.toFixed(1));
+    return false;
+  }
+
+  const availableCash = Number(state.totalCash || settings.totalCash || 0);
+
+  const dynamicMaxHolding = Math.min(
+    settings.maxHoldingCount,
+    getTimeBasedMaxHolding(),
+    Math.max(1, Math.floor(availableCash / settings.minBuyAmount))
+  );
+
+  const remainSlots = Math.max(
+    1,
     dynamicMaxHolding - getCoreHoldingCount(state)
-  ),
+  );
 
-  discoverScore: Number(item.discoverScore || 0),
-  strategyPreset: strategy.key,
-  strategyName: settings.leaderCoreEnabled
-  ? `Leader Core-${strategy.name}`
-  : strategy.name,
-  reason: settings.leaderCoreEnabled
-  ? `Leader Core 대장주 조건 통과 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`
-  : `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
-  date: todayKey(),
-  time: nowText()
-});
+  const budget = getBudgetInfo(state);
 
-  
+  const safeBuyAmountLimit = Number(
+    buyAmountLimit ||
+    budget.corePerBuyAmount ||
+    settings.minBuyAmount ||
+    10000000
+  );
+
+  const buyAmount = Math.min(
+    safeBuyAmountLimit,
+    Math.floor(availableCash / remainSlots)
+  );
+
+  const qty = Math.floor(buyAmount / price);
+
+  if (!Number.isFinite(buyAmount) || buyAmount <= 0 || !Number.isFinite(qty) || qty <= 0) {
+    console.log("[모의매수 차단] 수량 계산 오류", {
+      name: item.name,
+      code: item.code,
+      price,
+      buyAmount,
+      buyAmountLimit,
+      safeBuyAmountLimit,
+      availableCash,
+      remainSlots
+    });
+    return false;
+  }
+
+  const finalBuyScore = Number(item.finalBuyScore || 0);
+  const finalBuyScoreDetail = item.finalBuyScoreDetail || null;
+
+  const holding = {
+    code: item.code,
+    name: item.name && item.name !== item.code
+      ? item.name
+      : (item.stockName || item.korName || item.code),
+
+    buyPrice: price,
+    qty,
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+    currentPrice: price,
+    highestPrice: price,
+    autoTrade: true,
+    lowestPrice: price,
+    maxProfitRate: 0,
+    maxLossRate: 0,
+
+    strategyGroup: "CORE",
+    strategyPreset: strategy.key,
+    strategyName: settings.leaderCoreEnabled
+      ? `Leader Core-${strategy.name}`
+      : strategy.name,
+
+    discoverScore: Number(item.discoverScore || 0),
+    finalBuyScore,
+    finalBuyScoreDetail,
+
+    changeRate: coreChangeRate,
+    tradeVolumeRatio: coreTradeVolumeRatio,
+    dayPositionRate: coreDayPositionRate,
+
+    discoverReasons: Array.isArray(item.discoverReasons)
+      ? item.discoverReasons
+      : [],
+    discoverScoreDetails: item.discoverScoreDetails || {},
+
+    protectMinutes: 5,
+    buyTime: nowText(),
+    buyTimeMs: Date.now(),
+    buyAt: new Date().toISOString(),
+    date: todayKey()
+  };
+
+  state.holdings.push(holding);
+  state.totalCash = availableCash - price * qty;
+
+  state.tradeLogs.push({
+    type: "BUY",
+    strategyGroup: "CORE",
+
+    code: item.code,
+    name: holding.name,
+
+    price,
+    buyPrice: price,
+    qty,
+
+    buyAmount: price * qty,
+    plannedBuyAmount: buyAmount,
+
+    changeRate: coreChangeRate,
+    volume: Number(item.volume || 0),
+    tradeVolumeRatio: coreTradeVolumeRatio,
+    dayPositionRate: coreDayPositionRate,
+
+    marketTemperature: state.marketTemperature || null,
+    marketScore: state.marketScore || null,
+
+    finalBuyScore,
+    finalBuyScoreDetail,
+
+    remainCashAfterBuy: state.totalCash,
+    dynamicMaxHolding,
+    remainSlotsAfterBuy: Math.max(
+      0,
+      dynamicMaxHolding - getCoreHoldingCount(state)
+    ),
+
+    discoverScore: Number(item.discoverScore || 0),
+    strategyPreset: strategy.key,
+    strategyName: settings.leaderCoreEnabled
+      ? `Leader Core-${strategy.name}`
+      : strategy.name,
+
+    reason: settings.leaderCoreEnabled
+      ? `Leader Core 대장주 조건 통과 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`
+      : `서버 자동 모의매수 / 최고전략 ${strategy.name} / 백테스트 수익률 ${strategy.profitRate.toFixed(2)}%`,
+
+    date: todayKey(),
+    time: nowText()
+  });
 
   return true;
 }
@@ -3813,21 +3888,42 @@ if (changeRate >= maxAllowedChangeRate) {
   continue;
 }
 
+const coreItemForBuy = {
+  ...item,
+  currentPrice,
+  price: currentPrice,
+  name:
+    priceData.name && priceData.name !== item.code
+      ? priceData.name
+      : item.name
+};
 
-  const bought = paperBuy(
+
+const coreJudge = judgeCoreBuy(
   state,
-  {
-    ...item,
-    currentPrice,
-    price: currentPrice,
-    name:
-      priceData.name && priceData.name !== item.code
-        ? priceData.name
-        : item.name
-  },
+  coreItemForBuy,
+  currentPrice,
+  bestStrategy,
+  state.marketScore
+);
+
+if (!coreJudge.pass) {
+  console.log(
+    `[CORE 매수제외] ${coreItemForBuy.name} ${coreItemForBuy.code} / ${coreJudge.reason}`
+  );
+  continue;
+}
+
+coreItemForBuy.finalBuyScore = coreJudge.finalScore.score;
+coreItemForBuy.finalBuyScoreDetail = coreJudge.finalScore;
+
+const bought = paperBuy(
+  state,
+  coreItemForBuy,
   bestStrategy,
   buyRules.perBuyAmount
 );
+
 
       if (bought) {
         console.log(
