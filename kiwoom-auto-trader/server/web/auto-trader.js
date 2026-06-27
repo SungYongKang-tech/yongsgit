@@ -3918,6 +3918,7 @@ paperTurboBuy(
   currentPrice
 );
 
+}
     state.lastTurboCheckAt = nowText();
     saveState(state);
   } finally {
