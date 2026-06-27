@@ -2209,6 +2209,84 @@ function wasLeaderBoughtToday(state, code) {
   );
 }
 
+function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
+  if (!settings.leaderEnabled) {
+    return { pass: false, reason: "LEADER 비활성화" };
+  }
+
+  if (isExcludedStock(item)) {
+    return { pass: false, reason: "제외종목" };
+  }
+
+  if (getLeaderHoldingCount(state) >= settings.leaderMaxHoldingCount) {
+    return { pass: false, reason: "최대 보유종목 도달" };
+  }
+
+  if (getTodayLeaderBuyCount(state) >= settings.leaderMaxDailyBuyCount) {
+    return { pass: false, reason: "하루 최대 진입 횟수 도달" };
+  }
+
+  if (isAlreadyHolding(state, item.code)) {
+    return { pass: false, reason: "이미 보유중" };
+  }
+
+  if (wasLeaderBoughtToday(state, item.code)) {
+    return { pass: false, reason: "오늘 이미 LEADER 매수" };
+  }
+
+  if (wasStoppedToday(state, item.code)) {
+    return { pass: false, reason: "오늘 손절 또는 손실 이력 있음" };
+  }
+
+  const price = Number(currentPrice || item.currentPrice || item.price || 0);
+  if (!price || price <= 0) {
+    return { pass: false, reason: "현재가 오류" };
+  }
+
+  if (
+    settings.marketScoreEnabled &&
+    marketScore &&
+    Number(marketScore.score || 0) < settings.leaderMinMarketScore
+  ) {
+    return {
+      pass: false,
+      reason: `LEADER 시장점수 부족 ${marketScore.score} / 기준 ${settings.leaderMinMarketScore}`
+    };
+  }
+
+  const finalScore = calculateFinalBuyScore(item, price, marketScore);
+
+  if (finalScore.score < settings.leaderMinFinalBuyScore) {
+    return {
+      pass: false,
+      reason: finalScore.reason
+    };
+  }
+
+  const leaderStrengthScore = Number(
+    item.leaderStrengthScore || getLeaderStrengthScore(item, price)
+  );
+
+  if (leaderStrengthScore < settings.leaderStrengthMinScore) {
+    return {
+      pass: false,
+      reason: `수급강도 부족 ${leaderStrengthScore}`
+    };
+  }
+
+  item.leaderStrengthScore = leaderStrengthScore;
+
+  return {
+    pass: true,
+    finalScore,
+    leaderStrengthScore,
+    reason:
+      `LEADER 판단 통과 / ` +
+      `${finalScore.reason} / ` +
+      `수급강도 ${leaderStrengthScore}`
+  };
+}
+
 function paperLeaderBuy(state, item, currentPrice) {
   if (!settings.leaderEnabled) return false;
 
@@ -2298,6 +2376,10 @@ function paperLeaderBuy(state, item, currentPrice) {
     leaderStrengthScore,
     discoverScore: Number(item.discoverScore || 0),
 
+    finalBuyScore: Number(item.finalBuyScore || 0),
+    finalBuyScoreDetail: item.finalBuyScoreDetail || null,
+    marketScore: state.marketScore || null,
+
     changeRate: Number(
       item.changeRate ||
       item.fluctuationRate ||
@@ -2338,6 +2420,10 @@ function paperLeaderBuy(state, item, currentPrice) {
 
     marketTemperature: state.marketTemperature || null,
     remainLeaderCashAfterBuy: state.leaderCash,
+
+    finalBuyScore: Number(item.finalBuyScore || 0),
+    finalBuyScoreDetail: item.finalBuyScoreDetail || null,
+    marketScore: state.marketScore || null,
 
     discoverScore: Number(item.discoverScore || 0),
     leaderStrengthScore,
@@ -4238,6 +4324,13 @@ async function runLeaderAutoBuyOnce() {
 
   state.marketTemperature = marketTemperature;
 
+  const leadingSectors = getLeadingSectors(candidates);
+const marketScore = calculateMarketScore(candidates, leadingSectors);
+
+state.marketScore = marketScore;
+
+console.log(`[LEADER 시장점수] ${marketScore.reason}`);
+
     const leaderCandidates = candidates
     .filter((item) => isLeaderCoreCandidate(item, marketTemperature))
     .sort((a, b) =>
@@ -4280,8 +4373,28 @@ async function runLeaderAutoBuyOnce() {
       continue;
     }
 
+    const leaderJudge = judgeLeaderBuy(
+  state,
+  mergedItem,
+  currentPrice,
+  state.marketScore
+);
+
+if (!leaderJudge.pass) {
+  console.log(
+    `[LEADER 매수제외] ${priceData.name || item.name || item.code} / ${leaderJudge.reason}`
+  );
+  continue;
+}
+
+mergedItem.finalBuyScore = leaderJudge.finalScore.score;
+mergedItem.finalBuyScoreDetail = leaderJudge.finalScore;
+mergedItem.leaderStrengthScore = leaderJudge.leaderStrengthScore;
+
     paperLeaderBuy(state, mergedItem, currentPrice);
   }
+
+  
 
   state.lastLeaderCheckAt = nowText();
   saveState(state);
