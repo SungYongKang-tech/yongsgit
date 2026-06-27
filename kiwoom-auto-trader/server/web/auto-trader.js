@@ -160,6 +160,10 @@ turboMinMarketScore: 55,
 coreMinMarketScore: 45,
 leaderMinMarketScore: 60,
 
+turboMinFinalBuyScore: 75,
+coreMinFinalBuyScore: 65,
+leaderMinFinalBuyScore: 80,
+
 };
 
 
@@ -2038,6 +2042,8 @@ const buyDayPositionRate = getDayPositionRate(item, price);
     sectorTags: item.sectorTags || [],
     sectorPowerScore: Number(item.sectorPowerScore || 0),
     discoverScore: Number(item.discoverScore || 0),
+    finalBuyScore: Number(item.finalBuyScore || 0),
+finalBuyScoreDetail: item.finalBuyScoreDetail || null,
    
    changeRate: buyChangeRate,
 tradeVolumeRatio: buyTradeVolumeRatio,
@@ -2077,13 +2083,16 @@ buyDayPositionRate,
 
     changeRate: buyChangeRate,
 
-buyChangeRate,
-volume: Number(item.volume || 0),
-tradeVolumeRatio: buyTradeVolumeRatio,
-dayPositionRate: buyDayPositionRate,
-buyTradeVolumeRatio,
-buyDayPositionRate,
-
+    buyChangeRate,
+    volume: Number(item.volume || 0),
+    tradeVolumeRatio: buyTradeVolumeRatio,
+    dayPositionRate: buyDayPositionRate,
+    buyTradeVolumeRatio,
+    buyDayPositionRate,
+    
+    finalBuyScore: Number(item.finalBuyScore || 0),
+    finalBuyScoreDetail: item.finalBuyScoreDetail || null,
+    marketScore: state.marketScore || null,
 
     marketTemperature: state.marketTemperature || null,
 
@@ -3279,6 +3288,79 @@ function calculateMarketScore(candidates = [], leadingSectors = []) {
   };
 }
 
+function calculateFinalBuyScore(item = {}, currentPrice = 0, marketScore = null) {
+  const discoverScore = Number(item.discoverScore || 0);
+  const sectorPowerScore = Number(item.sectorPowerScore || getSectorPowerScore(item).score || 0);
+
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    item.raw?.flu_rt ||
+    0
+  );
+
+  const tradeVolumeRatio = getTradeVolumeRatio(item);
+  const dayPositionRate = getDayPositionRate(item, currentPrice);
+
+  const openPrice = Math.abs(Number(
+    item.open ||
+    item.openPrice ||
+    item.raw?.open_pric ||
+    0
+  ));
+
+  const openPositionRate =
+    openPrice > 0 && currentPrice > 0
+      ? ((currentPrice - openPrice) / openPrice) * 100
+      : 0;
+
+  let score = 0;
+
+  score += Math.min(30, discoverScore * 2);
+
+  if (openPositionRate >= 3) score += 15;
+  else if (openPositionRate >= 2) score += 12;
+  else if (openPositionRate >= 1) score += 6;
+
+  if (tradeVolumeRatio >= 200) score += 20;
+  else if (tradeVolumeRatio >= 120) score += 15;
+  else if (tradeVolumeRatio >= 80) score += 10;
+
+  if (dayPositionRate >= 60 && dayPositionRate <= 75) score += 15;
+  else if (dayPositionRate >= 50 && dayPositionRate <= 85) score += 8;
+
+  if (sectorPowerScore >= 4) score += 10;
+  else if (sectorPowerScore >= 2) score += 6;
+
+  if (marketScore && Number(marketScore.score || 0) >= 75) score += 10;
+  else if (marketScore && Number(marketScore.score || 0) >= 55) score += 6;
+  else if (marketScore && Number(marketScore.score || 0) < 40) score -= 10;
+
+  if (changeRate > 7) score -= 10;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  return {
+    score,
+    discoverScore,
+    openPositionRate,
+    tradeVolumeRatio,
+    dayPositionRate,
+    sectorPowerScore,
+    marketScore: marketScore ? Number(marketScore.score || 0) : 0,
+    reason:
+      `FinalScore ${score} / ` +
+      `발견 ${discoverScore} / ` +
+      `시가대비 ${openPositionRate.toFixed(2)}% / ` +
+      `거래량 ${tradeVolumeRatio.toFixed(1)}% / ` +
+      `당일위치 ${dayPositionRate.toFixed(1)}% / ` +
+      `섹터 ${sectorPowerScore} / ` +
+      `시장 ${marketScore ? marketScore.score : 0}`
+  };
+}
+
 function isAttackBuyBlockedByMarket(marketTemperature) {
   if (!marketTemperature) return true;
 
@@ -3975,6 +4057,21 @@ if (!sectorFlowCheck.pass) {
       const turboCheck = checkTurboLeaderCandidate(mergedItem, currentPrice);
 
 if (!turboCheck.pass) {
+  continue;
+}
+const finalScore = calculateFinalBuyScore(
+  mergedItem,
+  currentPrice,
+  state.marketScore
+);
+
+mergedItem.finalBuyScore = finalScore.score;
+mergedItem.finalBuyScoreDetail = finalScore;
+
+if (finalScore.score < settings.turboMinFinalBuyScore) {
+  console.log(
+    `[TURBO 매수제외] ${priceData.name || item.name || item.code} / ${finalScore.reason}`
+  );
   continue;
 }
 
