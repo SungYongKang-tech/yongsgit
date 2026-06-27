@@ -3453,6 +3453,53 @@ function calculateMarketScore(candidates = [], leadingSectors = []) {
   };
 }
 
+function makeBuyDiagnosis(strategy, item, detail = {}) {
+  const parts = [];
+
+  parts.push(`${strategy}`);
+  parts.push(item.name || item.stockName || item.korName || item.code);
+  parts.push(item.code || "");
+
+  if (typeof detail.finalBuyScore !== "undefined") {
+    parts.push(`Final ${detail.finalBuyScore}`);
+  }
+
+  if (detail.marketScore) {
+    parts.push(`Market ${detail.marketScore.score}`);
+  }
+
+  if (item.sectorTags && item.sectorTags.length > 0) {
+    parts.push(`Sector ${item.sectorTags.join(",")}`);
+  }
+
+  if (typeof item.sectorPowerScore !== "undefined") {
+    parts.push(`SectorScore ${item.sectorPowerScore}`);
+  }
+
+  if (typeof item.leaderStrengthScore !== "undefined") {
+    parts.push(`LeaderStrength ${item.leaderStrengthScore}`);
+  }
+
+  if (detail.reason) {
+    parts.push(detail.reason);
+  }
+
+  return parts.filter(Boolean).join(" / ");
+}
+
+function logBuyPass(strategy, item, detail = {}) {
+  console.log(`[${strategy} 매수통과] ${makeBuyDiagnosis(strategy, item, detail)}`);
+}
+
+function logBuyReject(strategy, item, reason, detail = {}) {
+  console.log(
+    `[${strategy} 매수제외] ${makeBuyDiagnosis(strategy, item, {
+      ...detail,
+      reason
+    })}`
+  );
+}
+
 function calculateFinalBuyScore(item = {}, currentPrice = 0, marketScore = null) {
   const discoverScore = Number(item.discoverScore || 0);
   const sectorPowerScore = Number(item.sectorPowerScore || getSectorPowerScore(item).score || 0);
@@ -3998,9 +4045,10 @@ const coreJudge = judgeCoreBuy(
 );
 
 if (!coreJudge.pass) {
-  console.log(
-    `[CORE 매수제외] ${coreItemForBuy.name} ${coreItemForBuy.code} / ${coreJudge.reason}`
-  );
+  logBuyReject("CORE", coreItemForBuy, coreJudge.reason, {
+  finalBuyScore: coreJudge.finalScore?.score,
+  marketScore: state.marketScore
+});
   continue;
 }
 
@@ -4255,24 +4303,28 @@ mergedItem.finalBuyScore = finalScore.score;
 mergedItem.finalBuyScoreDetail = finalScore;
 
 if (finalScore.score < settings.turboMinFinalBuyScore) {
-  console.log(
-    `[TURBO 매수제외] ${priceData.name || item.name || item.code} / ${finalScore.reason}`
-  );
+  logBuyReject("TURBO", mergedItem, finalScore.reason, {
+  finalBuyScore: finalScore.score,
+  marketScore: state.marketScore
+});
   continue;
 }
 
 const judge = judgeTurboBuy(state, mergedItem, currentPrice);
 
 if (!judge.pass) {
-  console.log(
-    `[TURBO 매수제외] ${priceData.name || item.name || item.code} / ${judge.reason}`
-  );
+  logBuyReject("TURBO", mergedItem, judge.reason, {
+  finalBuyScore: mergedItem.finalBuyScore,
+  marketScore: state.marketScore
+});
   continue;
 }
 
-console.log(
-  `[TURBO 후보] ${priceData.name || item.name} ${item.code} / ${turboCheck.reason} / ${judge.reason}`
-);
+logBuyPass("TURBO", mergedItem, {
+  finalBuyScore: mergedItem.finalBuyScore,
+  marketScore: state.marketScore,
+  reason: `${turboCheck.reason} / ${judge.reason}`
+});
 
 paperTurboBuy(
   state,
@@ -4385,15 +4437,22 @@ console.log(`[LEADER 시장점수] ${marketScore.reason}`);
 );
 
 if (!leaderJudge.pass) {
-  console.log(
-    `[LEADER 매수제외] ${priceData.name || item.name || item.code} / ${leaderJudge.reason}`
-  );
+  logBuyReject("LEADER", mergedItem, leaderJudge.reason, {
+  finalBuyScore: leaderJudge.finalScore?.score,
+  marketScore: state.marketScore
+});
   continue;
 }
 
 mergedItem.finalBuyScore = leaderJudge.finalScore.score;
 mergedItem.finalBuyScoreDetail = leaderJudge.finalScore;
 mergedItem.leaderStrengthScore = leaderJudge.leaderStrengthScore;
+
+logBuyPass("LEADER", mergedItem, {
+  finalBuyScore: mergedItem.finalBuyScore,
+  marketScore: state.marketScore,
+  reason: leaderJudge.reason
+});
 
     paperLeaderBuy(state, mergedItem, currentPrice);
   }
