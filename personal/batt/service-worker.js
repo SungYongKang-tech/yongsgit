@@ -143,11 +143,15 @@ self.addEventListener("push", (event) => {
     "";
 
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: new URL("./192icon.png", self.registration.scope).href,
-      badge: new URL("./192icon.png", self.registration.scope).href,
-      data
-    })
-  );
+  self.registration.showNotification(title, {
+    body,
+    icon: new URL("./192icon.png", self.registration.scope).href,
+    badge: new URL("./192icon.png", self.registration.scope).href,
+    tag: `group-${data.roomId || "message"}`,
+    renotify: true,
+    requireInteraction: true,
+    vibrate: [200, 100, 200],
+    data
+  })
+);
 });
