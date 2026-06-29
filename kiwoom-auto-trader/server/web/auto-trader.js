@@ -164,6 +164,11 @@ turboMinFinalBuyScore: 75,
 coreMinFinalBuyScore: 65,
 leaderMinFinalBuyScore: 80,
 
+leaderRankBuyEnabled: true,
+leaderRankMinScoreHot: 65,
+leaderRankMinScoreNormal: 75,
+leaderRankMaxBuyPerRun: 2,
+
 };
 
 
@@ -311,7 +316,7 @@ function getBudgetInfo(state) {
   };
 }
 
-function isLeaderCoreCandidate(item, marketTemperature) {
+function isLeaderCoreCandidate(item, marketTemperature, marketScore = null) {
   const score = Number(item.discoverScore || 0);
 
   const changeRate = Number(
@@ -323,106 +328,39 @@ function isLeaderCoreCandidate(item, marketTemperature) {
     0
   );
 
-  const volume = Number(
-    item.volume ||
-    item.raw?.trde_qty ||
-    0
-  );
-
+  const volume = Number(item.volume || item.raw?.trde_qty || 0);
   const currentPrice = Number(item.currentPrice || item.price || 0);
-
-  const openPrice = Math.abs(Number(
-    item.open ||
-    item.openPrice ||
-    item.raw?.open_pric ||
-    0
-  ));
-
-  const tradeValue = currentPrice * volume;
-  const tradeVolumeRatio = getTradeVolumeRatio(item);
-  const dayPositionRate = getDayPositionRate(item, currentPrice);
-
-  const openPositionRate =
-    openPrice > 0 && currentPrice > 0
-      ? ((currentPrice - openPrice) / openPrice) * 100
-      : 0;
 
   if (score < settings.leaderCoreMinScore) return false;
 
   if (
     changeRate < settings.leaderCoreMinChangeRate ||
-    changeRate > settings.leaderCoreMaxChangeRate
+    changeRate > 12.0
   ) {
     return false;
   }
 
   if (volume < settings.leaderCoreMinVolume) return false;
-  if (tradeValue < settings.leaderCoreMinTradeValue) return false;
 
-  const dynamicLeaderMinTradeVolumeRatio =
-  marketTemperature && marketTemperature.level === "HOT"
-    ? -50
-    : settings.leaderMinTradeVolumeRatio;
-const isHotMarket =
-  marketTemperature && marketTemperature.level === "HOT";
+  const rank = calculateLeaderRankScore(item, currentPrice, marketScore);
 
-const dynamicLeaderMinDayPositionRate =
-  isHotMarket ? 45 : settings.leaderMinDayPositionRate;
+  const isHotMarket =
+    marketTemperature && marketTemperature.level === "HOT";
 
-const dynamicLeaderMaxDayPositionRate =
-  isHotMarket ? 98 : settings.leaderMaxDayPositionRate;
+  const minRankScore = isHotMarket
+    ? settings.leaderRankMinScoreHot
+    : settings.leaderRankMinScoreNormal;
 
-const dynamicLeaderMinOpenPositionRate =
-  isHotMarket ? 0.3 : settings.leaderMinOpenPositionRate;
-
-const dynamicLeaderStrengthMinScore =
-  isHotMarket ? 60 : settings.leaderStrengthMinScore;
-
-
-  if (tradeVolumeRatio < dynamicLeaderMinTradeVolumeRatio) {
+  if (rank.score < minRankScore) {
     console.log(
-      `[LEADER 제외] 거래량비율 부족 ${item.name || item.code} / ${tradeVolumeRatio.toFixed(1)}%`
+      `[LEADER 랭킹제외] ${item.name || item.code} / Rank ${rank.score} / 기준 ${minRankScore} / ${rank.detail}`
     );
     return false;
   }
 
-  if (
-    dayPositionRate > 0 &&
-    (
-      dayPositionRate < dynamicLeaderMinDayPositionRate ||
-      dayPositionRate > dynamicLeaderMaxDayPositionRate
-    )
-  ) {
-    console.log(
-      `[LEADER 제외] 당일위치 부적합 ${item.name || item.code} / ${dayPositionRate.toFixed(1)}%`
-    );
-    return false;
-  }
-
- if (openPositionRate < dynamicLeaderMinOpenPositionRate) {
-    console.log(
-      `[LEADER 제외] 시가대비 힘 부족 ${item.name || item.code} / ${openPositionRate.toFixed(2)}%`
-    );
-    return false;
-  }
-
-  const leaderStrengthScore = getLeaderStrengthScore(item, currentPrice);
-
-  if (leaderStrengthScore < dynamicLeaderStrengthMinScore) {
-    console.log(
-      `[LEADER 제외] 수급강도 부족 ${item.name || item.code} / strength=${leaderStrengthScore}`
-    );
-    return false;
-  }
-
-  if (
-    marketTemperature &&
-    (marketTemperature.level === "COLD" || marketTemperature.level === "CAUTION")
-  ) {
-    return false;
-  }
-
-  item.leaderStrengthScore = leaderStrengthScore;
+  console.log(
+    `[LEADER 랭킹통과] ${item.name || item.code} / Rank ${rank.score} / ${rank.detail}`
+  );
 
   return true;
 }
@@ -529,6 +467,128 @@ function getLeaderStrengthScore(item, currentPriceInput = null) {
   }
 
   return Math.round(score);
+}
+
+function calculateLeaderRankScore(item, currentPrice, marketScore = null) {
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    item.raw?.flu_rt ||
+    0
+  );
+
+  const tradeVolumeRatio = getTradeVolumeRatio(item);
+  const dayPositionRate = getDayPositionRate(item, currentPrice);
+
+  const openPrice = Math.abs(Number(
+    item.open ||
+    item.openPrice ||
+    item.raw?.open_pric ||
+    0
+  ));
+
+  const openPositionRate =
+    openPrice > 0 && currentPrice > 0
+      ? ((currentPrice - openPrice) / openPrice) * 100
+      : 0;
+
+  const sectorBonus = Number(item.leadingSectorBonus || 0);
+  const leaderStrengthScore = getLeaderStrengthScore(item, currentPrice);
+
+  let score = 0;
+  const details = [];
+
+  // 시장 점수
+  const marketValue = Number(marketScore?.score || 0);
+  if (marketValue >= 95) {
+    score += 15;
+    details.push("시장HOT+15");
+  } else if (marketValue >= 80) {
+    score += 10;
+    details.push("시장GOOD+10");
+  }
+
+  // 발견 점수
+  const discoverScore = Number(item.discoverScore || 0);
+  score += Math.min(20, discoverScore * 2);
+  details.push(`발견${discoverScore}`);
+
+  // 주도섹터
+  if (sectorBonus > 0) {
+    score += 10;
+    details.push(`주도섹터+10`);
+  }
+
+  // 상승률
+  if (changeRate >= 1.5 && changeRate <= 7.0) {
+    score += 15;
+    details.push(`상승률적정+15`);
+  } else if (changeRate > 7.0 && changeRate <= 12.0) {
+    score += 6;
+    details.push(`상승률과열주의+6`);
+  }
+
+  // 거래량비율: 탈락 아님, 점수화
+  if (tradeVolumeRatio >= 80) {
+    score += 15;
+    details.push(`거래량강함+15`);
+  } else if (tradeVolumeRatio >= -30) {
+    score += 10;
+    details.push(`거래량보통+10`);
+  } else if (tradeVolumeRatio >= -70) {
+    score += 5;
+    details.push(`거래량약함+5`);
+  } else {
+    score -= 5;
+    details.push(`거래량매우약함-5`);
+  }
+
+  // 당일위치
+  if (dayPositionRate >= 45 && dayPositionRate <= 90) {
+    score += 15;
+    details.push(`당일위치양호+15`);
+  } else if (dayPositionRate > 90 && dayPositionRate <= 98) {
+    score += 5;
+    details.push(`고점근접+5`);
+  } else {
+    score -= 5;
+    details.push(`당일위치불리-5`);
+  }
+
+  // 시가대비
+  if (openPositionRate >= 2.0) {
+    score += 12;
+    details.push(`시가위강함+12`);
+  } else if (openPositionRate >= 0.3) {
+    score += 6;
+    details.push(`시가위유지+6`);
+  } else {
+    score -= 10;
+    details.push(`시가아래-10`);
+  }
+
+  // 수급강도
+  if (leaderStrengthScore >= 75) {
+    score += 15;
+    details.push(`수급강함+15`);
+  } else if (leaderStrengthScore >= 50) {
+    score += 8;
+    details.push(`수급보통+8`);
+  } else {
+    score -= 5;
+    details.push(`수급약함-5`);
+  }
+
+  item.leaderRankScore = Math.round(score);
+  item.leaderRankScoreDetail = details.join(" / ");
+  item.leaderStrengthScore = leaderStrengthScore;
+
+  return {
+    score: Math.round(score),
+    detail: details.join(" / ")
+  };
 }
 
 function todayKey() {
@@ -2440,26 +2500,49 @@ function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
     };
   }
 
-  const finalScore = calculateFinalBuyScore(item, price, marketScore);
+ const finalScore = calculateFinalBuyScore(item, price, marketScore);
 
-  if (finalScore.score < settings.leaderMinFinalBuyScore) {
-    return {
-      pass: false,
-      reason: finalScore.reason
-    };
-  }
+const marketValue = Number(marketScore?.score || 0);
 
-  const leaderStrengthScore = Number(
-    item.leaderStrengthScore || getLeaderStrengthScore(item, price)
-  );
+let dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
+let dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
 
-  if (leaderStrengthScore < settings.leaderStrengthMinScore) {
-    return {
-      pass: false,
-      reason: `수급강도 부족 ${leaderStrengthScore}`
-    };
-  }
+if (marketValue >= 90) {
+  // HOT장: 빠르게 진입
+  dynamicLeaderMinFinalBuyScore = 65;
+  dynamicLeaderStrengthMinScore = 50;
+} else if (marketValue >= 60) {
+  // NORMAL장: 기존 유지
+  dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
+  dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
+} else {
+  // CAUTION/DANGER장: 더 엄격
+  dynamicLeaderMinFinalBuyScore = 90;
+  dynamicLeaderStrengthMinScore = 85;
+}
 
+if (finalScore.score < dynamicLeaderMinFinalBuyScore) {
+  return {
+    pass: false,
+    finalScore,
+    reason:
+      `LEADER 최종점수 부족 ${finalScore.score} / 기준 ${dynamicLeaderMinFinalBuyScore} / ` +
+      finalScore.reason
+  };
+}
+
+const leaderStrengthScore = Number(
+  item.leaderStrengthScore || getLeaderStrengthScore(item, price)
+);
+
+if (leaderStrengthScore < dynamicLeaderStrengthMinScore) {
+  return {
+    pass: false,
+    finalScore,
+    reason:
+      `수급강도 부족 ${leaderStrengthScore} / 기준 ${dynamicLeaderStrengthMinScore}`
+  };
+}
   item.leaderStrengthScore = leaderStrengthScore;
 
   return {
@@ -4583,8 +4666,7 @@ state.marketScore = marketScore;
 console.log(`[LEADER 시장점수] ${marketScore.reason}`);
 
     const leaderCandidates = candidates
-    .filter((item) => isLeaderCoreCandidate(item, marketTemperature))
-    .sort((a, b) =>
+    .filter((item) => isLeaderCoreCandidate(item, marketTemperature, marketScore))    .sort((a, b) =>
       Number(b.leaderStrengthScore || 0) - Number(a.leaderStrengthScore || 0)
     );
 
@@ -4620,9 +4702,9 @@ console.log(`[LEADER 시장점수] ${marketScore.reason}`);
       currentPrice
     };
 
-    if (!isLeaderCoreCandidate(mergedItem, marketTemperature)) {
-      continue;
-    }
+    if (!isLeaderCoreCandidate(mergedItem, marketTemperature, state.marketScore)) {
+  continue;
+}
 
     const leaderJudge = judgeLeaderBuy(
   state,
