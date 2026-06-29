@@ -848,6 +848,32 @@ function getLeadingSectorScores(candidates = []) {
     .sort((a, b) => b.sectorPowerScore - a.sectorPowerScore);
 }
 
+async function calculateMarketLeadingSectors() {
+  const data = await fetchJson(
+    `${API_BASE}/api/discover?scanLimit=4050&limit=4050`
+  );
+
+  const items = data.items || [];
+
+  const scored = getLeadingSectorScores(
+    items.filter(item => !isExcludedStock(item))
+  );
+
+  const leadingSectors = scored
+    .slice(0, settings.sectorFlowTopCount)
+    .map(row => row.sector);
+
+  console.log(
+    "[시장전체 주도섹터]",
+    scored.slice(0, settings.sectorFlowTopCount).map(row =>
+      `${row.sector} 점수 ${row.sectorPowerScore} / 종목 ${row.count}개 / 평균상승 ${row.avgChangeRate.toFixed(2)}% / 거래량 ${row.avgVolumeRatio.toFixed(1)}%`
+    ).join(" | ")
+  );
+
+  return leadingSectors;
+}
+
+
 function applyLeadingSectorBonus(candidates = []) {
   const leadingSectors = getLeadingSectorScores(candidates)
     .slice(0, settings.sectorFlowTopCount);
@@ -1058,6 +1084,8 @@ async function fetchPrice(code) {
 }
 
 async function discoverCandidates() {
+  const marketLeadingSectors = await calculateMarketLeadingSectors();
+
   const data = await fetchJson(
     `${API_BASE}/api/discover?scanLimit=1000&limit=${settings.discoverLimit}`
   );
@@ -1073,12 +1101,31 @@ async function discoverCandidates() {
       )
     );
 
-  const withSectorBonus = applyLeadingSectorBonus(filtered);
+  return filtered
+    .map(item => {
+      const sectorTags = getSectorTags(item);
+      const matched = sectorTags.filter(sector =>
+        marketLeadingSectors.includes(sector)
+      );
 
-  return withSectorBonus.sort((a, b) =>
-    Number(b.discoverScore || 0) -
-    Number(a.discoverScore || 0)
-  );
+      const bonus =
+        matched.length > 0
+          ? 8
+          : 0;
+
+      return {
+        ...item,
+        sectorTags,
+        leadingSectorMatched: matched,
+        leadingSectorBonus: bonus,
+        originalDiscoverScore: Number(item.discoverScore || 0),
+        discoverScore: Number(item.discoverScore || 0) + bonus
+      };
+    })
+    .sort((a, b) =>
+      Number(b.discoverScore || 0) -
+      Number(a.discoverScore || 0)
+    );
 }
 
 async function runBacktestWithPreset(code, preset) {
