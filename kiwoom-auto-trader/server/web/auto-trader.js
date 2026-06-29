@@ -105,7 +105,7 @@ earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
 leaderEnabled: true,
-leaderStartTime: "10:50",
+leaderStartTime: "09:40",
 leaderEndTime: "13:40",
 
 leaderMaxHoldingCount: 2,
@@ -363,6 +363,20 @@ function isLeaderCoreCandidate(item, marketTemperature) {
   marketTemperature && marketTemperature.level === "HOT"
     ? -50
     : settings.leaderMinTradeVolumeRatio;
+const isHotMarket =
+  marketTemperature && marketTemperature.level === "HOT";
+
+const dynamicLeaderMinDayPositionRate =
+  isHotMarket ? 45 : settings.leaderMinDayPositionRate;
+
+const dynamicLeaderMaxDayPositionRate =
+  isHotMarket ? 98 : settings.leaderMaxDayPositionRate;
+
+const dynamicLeaderMinOpenPositionRate =
+  isHotMarket ? 0.3 : settings.leaderMinOpenPositionRate;
+
+const dynamicLeaderStrengthMinScore =
+  isHotMarket ? 60 : settings.leaderStrengthMinScore;
 
 
   if (tradeVolumeRatio < dynamicLeaderMinTradeVolumeRatio) {
@@ -375,8 +389,8 @@ function isLeaderCoreCandidate(item, marketTemperature) {
   if (
     dayPositionRate > 0 &&
     (
-      dayPositionRate < settings.leaderMinDayPositionRate ||
-      dayPositionRate > settings.leaderMaxDayPositionRate
+      dayPositionRate < dynamicLeaderMinDayPositionRate ||
+      dayPositionRate > dynamicLeaderMaxDayPositionRate
     )
   ) {
     console.log(
@@ -385,7 +399,7 @@ function isLeaderCoreCandidate(item, marketTemperature) {
     return false;
   }
 
-  if (openPositionRate < settings.leaderMinOpenPositionRate) {
+ if (openPositionRate < dynamicLeaderMinOpenPositionRate) {
     console.log(
       `[LEADER 제외] 시가대비 힘 부족 ${item.name || item.code} / ${openPositionRate.toFixed(2)}%`
     );
@@ -394,7 +408,7 @@ function isLeaderCoreCandidate(item, marketTemperature) {
 
   const leaderStrengthScore = getLeaderStrengthScore(item, currentPrice);
 
-  if (leaderStrengthScore < settings.leaderStrengthMinScore) {
+  if (leaderStrengthScore < dynamicLeaderStrengthMinScore) {
     console.log(
       `[LEADER 제외] 수급강도 부족 ${item.name || item.code} / strength=${leaderStrengthScore}`
     );
