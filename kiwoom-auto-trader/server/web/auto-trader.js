@@ -787,6 +787,108 @@ function isStrongSectorCandidate(item = {}) {
   };
 }
 
+function getLeadingSectorScores(candidates = []) {
+  const sectorMap = {};
+
+  for (const item of candidates) {
+    const sectors = getSectorTags(item);
+    if (sectors.length === 0) continue;
+
+    const changeRate = Number(
+      item.changeRate ||
+      item.fluctuationRate ||
+      item.riseRate ||
+      item.rate ||
+      item.raw?.flu_rt ||
+      0
+    );
+
+    const volumeRatio = getTradeVolumeRatio(item);
+    const score = Number(item.discoverScore || 0);
+
+    for (const sector of sectors) {
+      if (!sectorMap[sector]) {
+        sectorMap[sector] = {
+          sector,
+          count: 0,
+          totalChangeRate: 0,
+          totalVolumeRatio: 0,
+          totalScore: 0
+        };
+      }
+
+      sectorMap[sector].count += 1;
+      sectorMap[sector].totalChangeRate += changeRate;
+      sectorMap[sector].totalVolumeRatio += volumeRatio;
+      sectorMap[sector].totalScore += score;
+    }
+  }
+
+  return Object.values(sectorMap)
+    .map(row => {
+      const avgChangeRate = row.totalChangeRate / row.count;
+      const avgVolumeRatio = row.totalVolumeRatio / row.count;
+      const avgScore = row.totalScore / row.count;
+
+      const sectorPowerScore =
+        row.count * 5 +
+        avgChangeRate * 5 +
+        avgVolumeRatio * 0.05 +
+        avgScore * 2;
+
+      return {
+        ...row,
+        avgChangeRate,
+        avgVolumeRatio,
+        avgScore,
+        sectorPowerScore: Math.round(sectorPowerScore)
+      };
+    })
+    .filter(row => row.count >= settings.sectorFlowMinCandidateCount)
+    .sort((a, b) => b.sectorPowerScore - a.sectorPowerScore);
+}
+
+function applyLeadingSectorBonus(candidates = []) {
+  const leadingSectors = getLeadingSectorScores(candidates)
+    .slice(0, settings.sectorFlowTopCount);
+
+  const leadingSectorNames = leadingSectors.map(row => row.sector);
+
+  console.log(
+    "[주도섹터]",
+    leadingSectors.map(row =>
+      `${row.sector} 점수 ${row.sectorPowerScore} / 종목 ${row.count}개 / 평균상승 ${row.avgChangeRate.toFixed(2)}% / 거래량 ${row.avgVolumeRatio.toFixed(1)}%`
+    ).join(" | ")
+  );
+
+  return candidates.map(item => {
+    const sectors = getSectorTags(item);
+    const matched = sectors.filter(sector =>
+      leadingSectorNames.includes(sector)
+    );
+
+    let bonus = 0;
+
+    if (matched.length > 0) {
+      const bestSector = leadingSectors.find(row =>
+        matched.includes(row.sector)
+      );
+
+      bonus = Math.min(15, Math.floor(bestSector.sectorPowerScore / 10));
+    }
+
+    return {
+      ...item,
+      sectorTags: sectors,
+      leadingSectorMatched: matched,
+      leadingSectorBonus: bonus,
+      originalDiscoverScore: Number(item.discoverScore || 0),
+      discoverScore:
+        Number(item.discoverScore || 0) + bonus
+    };
+  });
+}
+
 function analyzeSectorMoneyFlow(candidates = []) {
   const map = {};
 
@@ -962,18 +1064,21 @@ async function discoverCandidates() {
 
   const items = data.items || [];
 
-  return items
-  .filter((item) => !isExcludedStock(item))
-  .filter((item) =>
-    Number(item.discoverScore || 0) >= Math.min(
-      settings.minScore,
-      settings.earlyMinScore
-    )
-  )
-    .sort((a, b) =>
-      Number(b.discoverScore || 0) -
-      Number(a.discoverScore || 0)
+  const filtered = items
+    .filter((item) => !isExcludedStock(item))
+    .filter((item) =>
+      Number(item.discoverScore || 0) >= Math.min(
+        settings.minScore,
+        settings.earlyMinScore
+      )
     );
+
+  const withSectorBonus = applyLeadingSectorBonus(filtered);
+
+  return withSectorBonus.sort((a, b) =>
+    Number(b.discoverScore || 0) -
+    Number(a.discoverScore || 0)
+  );
 }
 
 async function runBacktestWithPreset(code, preset) {
@@ -2016,14 +2121,7 @@ function judgeTurboBuy(state, item, currentPrice) {
     return { pass: false, reason: "오늘 손절 또는 손실 이력 있음" };
   }
 
-  const sectorCheck = isStrongSectorCandidate(item);
-  if (!sectorCheck.pass) {
-    return {
-      pass: false,
-      reason: `섹터점수 미충족 / ${sectorCheck.reason}`
-    };
-  }
-
+  
   if (getTodayTurboBuyCount(state) >= settings.turboMaxDailyBuyCount) {
     return { pass: false, reason: "하루 최대 진입 횟수 도달" };
   }
@@ -2065,10 +2163,14 @@ function judgeTurboBuy(state, item, currentPrice) {
     };
   }
 
-  return {
-    pass: true,
-    reason: `TURBO 판단 통과 / ${sectorCheck.reason} / ${rankCheck.reason} / ${recheck.reason}`
-  };
+return {
+  pass: true,
+  reason:
+    `TURBO 판단 통과 / ` +
+    `주도섹터=${item.leadingSectorMatched?.join(",") || "아님"} / ` +
+    `섹터보너스=${item.leadingSectorBonus || 0} / ` +
+    `${rankCheck.reason} / ${recheck.reason}`
+};
 }
 
 function paperTurboBuy(state, item, currentPrice) {
@@ -2099,43 +2201,53 @@ const buyDayPositionRate = getDayPositionRate(item, price);
   }
 
   const holding = {
-    code: item.code,
-    name: item.name || item.stockName || item.korName || item.code,
-    buyPrice: price,
-    qty,
-    buyAmount: price * qty,
-    plannedBuyAmount: buyAmount,
-    currentPrice: price,
-    highestPrice: price,
-    autoTrade: true,
-    lowestPrice: price,
-    maxProfitRate: 0,
-    maxLossRate: 0,
-    strategyGroup: "TURBO",
-    strategyPreset: "turbo",
-    strategyName: "터보형",
-    sectorTags: item.sectorTags || [],
-    sectorPowerScore: Number(item.sectorPowerScore || 0),
-    discoverScore: Number(item.discoverScore || 0),
-    finalBuyScore: Number(item.finalBuyScore || 0),
-finalBuyScoreDetail: item.finalBuyScoreDetail || null,
-   
-   changeRate: buyChangeRate,
-tradeVolumeRatio: buyTradeVolumeRatio,
-dayPositionRate: buyDayPositionRate,
+  code: item.code,
+  name: item.name || item.stockName || item.korName || item.code,
 
-buyChangeRate,
-buyTradeVolumeRatio,
-buyDayPositionRate,
+  buyPrice: price,
+  qty,
+  buyAmount: price * qty,
+  plannedBuyAmount: buyAmount,
+  currentPrice: price,
+  highestPrice: price,
+  autoTrade: true,
+  lowestPrice: price,
+  maxProfitRate: 0,
+  maxLossRate: 0,
 
-    discoverReasons: Array.isArray(item.discoverReasons)
-      ? item.discoverReasons
-      : [],
-    buyTime: nowText(),
-    buyTimeMs: Date.now(),
-    buyAt: new Date().toISOString(),
-    date: todayKey()
-  };
+  strategyGroup: "TURBO",
+  strategyPreset: "turbo",
+  strategyName: "터보형",
+
+  // 주도섹터 정보
+  sectorTags: item.sectorTags || [],
+  leadingSectorMatched: item.leadingSectorMatched || [],
+  leadingSectorBonus: Number(item.leadingSectorBonus || 0),
+  originalDiscoverScore: Number(
+    item.originalDiscoverScore || item.discoverScore || 0
+  ),
+
+  discoverScore: Number(item.discoverScore || 0),
+  finalBuyScore: Number(item.finalBuyScore || 0),
+  finalBuyScoreDetail: item.finalBuyScoreDetail || null,
+
+  changeRate: buyChangeRate,
+  tradeVolumeRatio: buyTradeVolumeRatio,
+  dayPositionRate: buyDayPositionRate,
+
+  buyChangeRate,
+  buyTradeVolumeRatio,
+  buyDayPositionRate,
+
+  discoverReasons: Array.isArray(item.discoverReasons)
+    ? item.discoverReasons
+    : [],
+
+  buyTime: nowText(),
+  buyTimeMs: Date.now(),
+  buyAt: new Date().toISOString(),
+  date: todayKey()
+};
 
   state.holdings.push(holding);
   state.turboCash = availableCash - price * qty;
@@ -2144,7 +2256,14 @@ buyDayPositionRate,
     type: "TURBO_BUY",
     strategyGroup: "TURBO",
     sectorTags: item.sectorTags || [],
-    sectorPowerScore: Number(item.sectorPowerScore || 0),
+leadingSectorMatched: item.leadingSectorMatched || [],
+leadingSectorBonus: Number(item.leadingSectorBonus || 0),
+
+originalDiscoverScore: Number(
+  item.originalDiscoverScore || item.discoverScore || 0
+),
+
+discoverScore: Number(item.discoverScore || 0),
 
     code: item.code,
     name: holding.name,
