@@ -129,7 +129,7 @@ leaderCoreMaxChangeRate: 7.0,
 leaderCoreMinVolume: 300000,
 leaderCoreMinTradeValue: 2000000000, // 20억
 
-leaderMinTradeVolumeRatio: 80,   // 거래량비율 최소 +80%
+leaderMinTradeVolumeRatio: -50,   // 거래량비율 최소 +80%
 leaderMinDayPositionRate: 60,    // 당일 위치 최소 60%
 leaderMaxDayPositionRate: 85,    // 85% 초과는 추격매수 금지
 leaderMinOpenPositionRate: 1.0,  // 시가 대비 +1% 이상
@@ -359,7 +359,13 @@ function isLeaderCoreCandidate(item, marketTemperature) {
   if (volume < settings.leaderCoreMinVolume) return false;
   if (tradeValue < settings.leaderCoreMinTradeValue) return false;
 
-  if (tradeVolumeRatio < settings.leaderMinTradeVolumeRatio) {
+  const dynamicLeaderMinTradeVolumeRatio =
+  marketTemperature && marketTemperature.level === "HOT"
+    ? -50
+    : settings.leaderMinTradeVolumeRatio;
+
+
+  if (tradeVolumeRatio < dynamicLeaderMinTradeVolumeRatio) {
     console.log(
       `[LEADER 제외] 거래량비율 부족 ${item.name || item.code} / ${tradeVolumeRatio.toFixed(1)}%`
     );
