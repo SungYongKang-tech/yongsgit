@@ -7,8 +7,8 @@ const API_BASE = "http://localhost:3000";
 
 
 const settings = {
-  buyStartTime: "10:00",
-  buyEndTime: "14:40",
+  buyStartTime: "09:40",
+  buyEndTime: "14:30",
   safeMinScore: 10,
   trendMinScore: 10,
   blockStoppedToday: true,
@@ -56,8 +56,8 @@ leaderRatio: 0.2,
 
   turboEnabled: true,
 turboStartTime: "09:05",
-turboEndTime: "10:50",
-turboForceSellTime: "11:00",
+turboEndTime: "10:40",
+turboForceSellTime: "10:50",
 
 turboMinScore: 10,
 turboWatchMinDayRiseRate: 1.0,
@@ -105,8 +105,8 @@ earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
 leaderEnabled: true,
-leaderStartTime: "11:00",
-leaderEndTime: "13:30",
+leaderStartTime: "10:50",
+leaderEndTime: "13:40",
 
 leaderMaxHoldingCount: 2,
 leaderMaxDailyBuyCount: 2,
