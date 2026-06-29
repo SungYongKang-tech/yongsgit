@@ -4379,11 +4379,20 @@ console.log(
 
       const sectorFlowCheck = isInLeadingSector(item, leadingSectors);
 
-if (!sectorFlowCheck.pass) {
+if (sectorFlowCheck.pass) {
+  item.leadingSectorMatched = item.leadingSectorMatched || getSectorTags(item);
+  item.leadingSectorBonus = Number(item.leadingSectorBonus || 0);
+
   console.log(
-    `[TURBO 매수제외] ${item.name || item.code} / ${sectorFlowCheck.reason}`
+    `[TURBO 주도섹터 우대] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 ${item.leadingSectorBonus}`
   );
-  continue;
+} else {
+  item.leadingSectorMatched = item.leadingSectorMatched || [];
+  item.leadingSectorBonus = Number(item.leadingSectorBonus || 0);
+
+  console.log(
+    `[TURBO 비주도섹터] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 0`
+  );
 }
 
       let priceData = null;
