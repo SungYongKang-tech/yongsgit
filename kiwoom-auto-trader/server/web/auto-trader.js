@@ -7,7 +7,7 @@ const API_BASE = "http://localhost:3000";
 
 
 const settings = {
-  buyStartTime: "09:40",
+  buyStartTime: "09:25",
   buyEndTime: "14:30",
   safeMinScore: 10,
   trendMinScore: 10,
@@ -105,7 +105,7 @@ earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
 leaderEnabled: true,
-leaderStartTime: "09:40",
+leaderStartTime: "09:25",
 leaderEndTime: "13:40",
 
 leaderMaxHoldingCount: 2,
@@ -147,7 +147,7 @@ sectorFilterEnabled: true,
 sectorMinScore: 2,
 
 sectorFlowEnabled: true,
-sectorFlowTopCount: 3,
+sectorFlowTopCount: 2,
 sectorFlowMinCandidateCount: 2,
 sectorFlowMinAvgScore: 2.5,
 
@@ -1060,14 +1060,16 @@ function isInLeadingSector(item, leadingSectors = []) {
   if (!settings.sectorFlowEnabled) {
     return {
       pass: true,
-      reason: "섹터 자금쏠림 OFF"
+      reason: "섹터 자금쏠림 OFF",
+      bonus: 0
     };
   }
 
   if (!leadingSectors || leadingSectors.length === 0) {
     return {
       pass: true,
-      reason: "주도섹터 없음 → 필터 미적용"
+      reason: "주도섹터 없음 → 필터 미적용",
+      bonus: 0
     };
   }
 
@@ -1077,7 +1079,8 @@ function isInLeadingSector(item, leadingSectors = []) {
   if (matched.length === 0) {
     return {
       pass: false,
-      reason: `주도섹터 아님 / 종목섹터=${tags.join(",") || "없음"} / 주도섹터=${leadingSectors.join(",")}`
+      reason: `주도섹터 아님 / 종목섹터=${tags.join(",") || "없음"} / 주도섹터=${leadingSectors.join(",")}`,
+      bonus: 0
     };
   }
 
@@ -1085,7 +1088,8 @@ function isInLeadingSector(item, leadingSectors = []) {
 
   return {
     pass: true,
-    reason: `주도섹터 통과 / ${matched.join(",")}`
+    reason: `주도섹터 통과 / ${matched.join(",")}`,
+    bonus: 8
   };
 }
 
@@ -1134,8 +1138,9 @@ function getTimeBasedMaxHolding() {
     String(now.getMinutes()).padStart(2, "0");
 
   if (hhmm < "09:20") return 0;
-  if (hhmm < "09:40") return 3;
-  if (hhmm < "10:00") return 5;
+if (hhmm < "09:25") return 1;
+if (hhmm < "09:40") return 3;
+if (hhmm < "10:00") return 5;
   if (hhmm < "13:00") return 7;
 
   return settings.maxHoldingCount;
@@ -4530,8 +4535,8 @@ console.log(
       const sectorFlowCheck = isInLeadingSector(item, leadingSectors);
 
 if (sectorFlowCheck.pass) {
-  item.leadingSectorMatched = item.leadingSectorMatched || getSectorTags(item);
-  item.leadingSectorBonus = Number(item.leadingSectorBonus || 8);
+  item.leadingSectorMatched = item.leadingSectorMatched || [];
+item.leadingSectorBonus = Number(sectorFlowCheck.bonus || 0);
 
   console.log(
     `[TURBO 주도섹터 우대] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 ${item.leadingSectorBonus}`
