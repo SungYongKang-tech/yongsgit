@@ -325,6 +325,26 @@ function getBudgetInfo(state) {
   };
 }
 
+function rebalanceCashIfNoHoldings(state) {
+  if (!state || !Array.isArray(state.holdings)) return;
+
+  if (state.holdings.length > 0) return;
+
+  const totalCash =
+    Number(state.totalCash || 0) +
+    Number(state.turboCash || 0) +
+    Number(state.leaderCash || 0);
+
+  if (totalCash <= 0) return;
+
+  state.totalCash = Math.floor(totalCash * settings.coreRatio);
+  state.turboCash = Math.floor(totalCash * settings.turboRatio);
+  state.leaderCash = totalCash - state.totalCash - state.turboCash;
+
+  state.budgetRebalancedAt = nowText();
+  state.budgetRebalanceReason = "보유종목 0개 → 20/60/20 현금 재분배";
+}
+
 function isLeaderCoreCandidate(item, marketTemperature, marketScore = null) {
   const score = Number(item.discoverScore || 0);
 
