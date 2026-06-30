@@ -113,8 +113,10 @@ leaderMaxDailyBuyCount: 2,
 
 leaderStopLossRate: -3.0,
 leaderTakeProfitRate: 15.0,
-leaderTrailingStartRate: 10.0,
-leaderTrailingStopRate: 4.0,
+leaderTrailingStartRate: 2.0,
+leaderTrailingStopRate: 1.0,
+leaderFirstTakeProfitRate: 3.0,
+leaderFirstTakeProfitSellRatio: 0.5,
 
 leaderMinHoldDays: 2,
 leaderMaxHoldDays: 10,
@@ -3299,6 +3301,59 @@ if (holding.strategyGroup === "LEADER") {
     continue;
   }
 
+  if (
+    !holding.leaderFirstTakeProfitDone &&
+    profitRate >= settings.leaderFirstTakeProfitRate &&
+    Number(holding.qty || 0) >= 2
+  ) {
+    const sellQty = Math.floor(
+      Number(holding.qty || 0) * settings.leaderFirstTakeProfitSellRatio
+    );
+
+    if (sellQty >= 1) {
+      paperSell(
+        state,
+        holding,
+        currentPrice,
+        `LEADER 1차 익절 ${profitRate.toFixed(2)}% · ${sellQty}주 매도`,
+        "LEADER_FIRST_TAKE_PROFIT",
+        sellQty
+      );
+
+      holding.leaderFirstTakeProfitDone = true;
+      holding.leaderTrailingActive = true;
+      remainHoldings.push(holding);
+      continue;
+    }
+  }
+
+  if (
+    maxProfitRate >= settings.leaderTrailingStartRate &&
+    !holding.leaderTrailingActive
+  ) {
+    holding.leaderTrailingActive = true;
+    holding.leaderTrailingStartPrice = currentPrice;
+
+    console.log(
+      `[LEADER 트레일링 시작] ${holding.name} / 최고수익 ${maxProfitRate.toFixed(2)}%`
+    );
+  }
+
+  if (
+    holding.leaderTrailingActive &&
+    trailingDropRate <= -settings.leaderTrailingStopRate &&
+    profitRate > 0
+  ) {
+    paperSell(
+      state,
+      holding,
+      currentPrice,
+      `LEADER 트레일링 매도 · 최고가 대비 ${settings.leaderTrailingStopRate}% 하락`,
+      "LEADER_TRAILING_STOP"
+    );
+    continue;
+  }
+
   if (holdDays < settings.leaderMinHoldDays) {
     remainHoldings.push(holding);
     continue;
@@ -3311,21 +3366,6 @@ if (holding.strategyGroup === "LEADER") {
       currentPrice,
       `LEADER 목표수익 ${profitRate.toFixed(2)}%`,
       "LEADER_TAKE_PROFIT"
-    );
-    continue;
-  }
-
-  if (
-    maxProfitRate >= settings.leaderTrailingStartRate &&
-    trailingDropRate <= -settings.leaderTrailingStopRate &&
-    profitRate > 0
-  ) {
-    paperSell(
-      state,
-      holding,
-      currentPrice,
-      `LEADER 트레일링 매도 · 최고가 대비 ${settings.leaderTrailingStopRate}% 하락`,
-      "LEADER_TRAILING_STOP"
     );
     continue;
   }
