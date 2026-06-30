@@ -160,13 +160,13 @@ turboMinMarketScore: 55,
 coreMinMarketScore: 45,
 leaderMinMarketScore: 60,
 
-turboMinFinalBuyScore: 65,
+turboMinFinalBuyScore: 60,
 coreMinFinalBuyScore: 70,
-leaderMinFinalBuyScore: 80,
+leaderMinFinalBuyScore: 60,
 
 leaderRankBuyEnabled: true,
-leaderRankMinScoreHot: 65,
-leaderRankMinScoreNormal: 75,
+leaderRankMinScoreHot: 60,
+leaderRankMinScoreNormal: 65,
 leaderRankMaxBuyPerRun: 2,
 
 };
@@ -4802,7 +4802,7 @@ function startServerAutoTrader() {
     } finally {
       buyLoopRunning = false;
     }
-  }, 60 * 1000);
+    }, 2 * 60 * 1000);   // 2분마다 실행
 
   setInterval(() => {
     checkServerAutoSellOnce();
