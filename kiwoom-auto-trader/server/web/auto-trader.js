@@ -1232,6 +1232,24 @@ async function fetchPrice(code) {
   return await fetchJson(`${API_BASE}/api/price?code=${code}`);
 }
 
+async function fetchPriceWithRetry(code, retry = 2) {
+  for (let i = 0; i <= retry; i++) {
+    try {
+      return await fetchPrice(code);
+    } catch (err) {
+      if (i === retry) {
+        throw err;
+      }
+
+      console.log(
+        `[현재가 재시도] ${code} / ${i + 1}회 실패 / 0.5초 후 재시도`
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+}
+
 async function discoverCandidates() {
   const marketLeadingSectors = await calculateMarketLeadingSectors();
 
@@ -3009,7 +3027,7 @@ async function checkServerAutoSellOnce() {
 
   for (const holding of state.holdings) {
     try {
-      const priceData = await fetchPrice(holding.code);
+      const priceData = await fetchPriceWithRetry(holding.code, 2);
       const currentPrice = Number(priceData.currentPrice || 0);
 
       if (!currentPrice || currentPrice <= 0) {
