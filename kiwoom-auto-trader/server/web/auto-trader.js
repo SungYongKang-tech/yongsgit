@@ -105,7 +105,7 @@ earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
 leaderEnabled: true,
-leaderStartTime: "10:40",
+leaderStartTime: "09:05",
 leaderEndTime: "13:40",
 
 leaderMaxHoldingCount: 2,
@@ -1206,10 +1206,11 @@ async function discoverCandidates() {
       return {
         ...item,
         sectorTags,
-        leadingSectorMatched: matched,
-        leadingSectorBonus: bonus,
-        originalDiscoverScore: Number(item.discoverScore || 0),
-        discoverScore: Number(item.discoverScore || 0) + bonus
+  marketLeadingSectors,
+  leadingSectorMatched: matched,
+  leadingSectorBonus: bonus,
+  originalDiscoverScore: Number(item.discoverScore || 0),
+  discoverScore: Number(item.discoverScore || 0) + bonus
       };
     })
     .sort((a, b) =>
@@ -4499,7 +4500,8 @@ async function runTurboAutoBuyOnce() {
       return;
     }
 
-    const leadingSectors = getLeadingSectors(candidates);
+    const leadingSectors =
+  candidates[0]?.marketLeadingSectors || getLeadingSectors(candidates);
     const marketScore = calculateMarketScore(candidates, leadingSectors);
 state.marketScore = marketScore;
 state.marketTemperature = marketScore.marketTemperature;
@@ -4755,13 +4757,18 @@ function startServerAutoTrader() {
 
   // 매수 로직 통합 실행부
   setInterval(async () => {
-    // 1) 오전 TURBO 시간에는 TURBO만 우선 실행
+    // 1) 오전 TURBO 시간: TURBO 먼저, 그 다음 LEADER
     if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
       await runTurboAutoBuyOnce();
+
+      if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
+        await runLeaderAutoBuyOnce();
+      }
+
       return;
     }
 
-    // 2) TURBO 시간이 끝난 뒤 LEADER 실행
+    // 2) TURBO 시간 이후: LEADER 실행
     if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
       await runLeaderAutoBuyOnce();
     }
@@ -4774,7 +4781,7 @@ function startServerAutoTrader() {
       await runServerAutoBuyOnce();
     }
 
-    // 4) EARLY는 현재 earlyEnabled false라 사실상 실행 안 됨
+    // 4) EARLY는 현재 OFF
     if (
       settings.earlyEnabled &&
       isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)
