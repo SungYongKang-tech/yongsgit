@@ -2286,12 +2286,13 @@ function judgeTurboBuy(state, item, currentPrice) {
   }
 
   const rankCheck = isCandidateGettingStronger(state, item, price);
-  if (!rankCheck.pass) {
-    return {
-      pass: false,
-      reason: `후보 강화 미충족 / ${rankCheck.reason}`
-    };
-  }
+
+if (rankCheck !== true && !rankCheck.pass) {
+  return {
+    pass: false,
+    reason: `후보 강화 미충족 / ${rankCheck.reason}`
+  };
+}
 
   const recheck = checkTurboRecheckCandidate(state, item, price);
   if (!recheck.pass) {
@@ -2307,7 +2308,7 @@ return {
     `TURBO 판단 통과 / ` +
     `주도섹터=${item.leadingSectorMatched?.join(",") || "아님"} / ` +
     `섹터보너스=${item.leadingSectorBonus || 0} / ` +
-    `${rankCheck.reason} / ${recheck.reason}`
+    `${rankCheck === true ? "후보강화 OFF" : rankCheck.reason} / ${recheck.reason}`
 };
 }
 
