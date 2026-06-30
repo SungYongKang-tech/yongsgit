@@ -1051,9 +1051,14 @@ function analyzeSectorMoneyFlow(candidates = []) {
 function getLeadingSectors(candidates = []) {
   if (!settings.sectorFlowEnabled) return [];
 
-  return analyzeSectorMoneyFlow(candidates)
+  const leading = getLeadingSectorScores(candidates)
     .slice(0, settings.sectorFlowTopCount)
-    .map((row) => row.sector);
+    .filter(row =>
+      row.count >= settings.sectorFlowMinCandidateCount &&
+      row.sectorPowerScore >= 50
+    );
+
+  return leading.map(row => row.sector);
 }
 
 function isInLeadingSector(item, leadingSectors = []) {
