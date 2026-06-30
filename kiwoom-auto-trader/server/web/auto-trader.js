@@ -105,7 +105,7 @@ earlyTrailingStartRate: 2.0,
 earlyTrailingStopRate: 0.7,
 
 leaderEnabled: true,
-leaderStartTime: "09:25",
+leaderStartTime: "10:40",
 leaderEndTime: "13:40",
 
 leaderMaxHoldingCount: 2,
@@ -1055,7 +1055,7 @@ function getLeadingSectors(candidates = []) {
     .slice(0, settings.sectorFlowTopCount)
     .filter(row =>
       row.count >= settings.sectorFlowMinCandidateCount &&
-      row.sectorPowerScore >= 50
+      row.sectorPowerScore >= 30
     );
 
   return leading.map(row => row.sector);
@@ -4753,44 +4753,40 @@ logBuyPass("LEADER", mergedItem, {
 function startServerAutoTrader() {
   console.log("서버 자동 모의매매 시작");
 
-  setInterval(() => {
-  if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
-    runTurboAutoBuyOnce();
-  }
-}, 60 * 1000);
+  // 매수 로직 통합 실행부
+  setInterval(async () => {
+    // 1) 오전 TURBO 시간에는 TURBO만 우선 실행
+    if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
+      await runTurboAutoBuyOnce();
+      return;
+    }
 
-setInterval(() => {
-  if (isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)) {
-    runEarlyAutoBuyOnce();
-  }
-}, 60 * 1000);
+    // 2) TURBO 시간이 끝난 뒤 LEADER 실행
+    if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
+      await runLeaderAutoBuyOnce();
+    }
 
+    // 3) CORE는 10분 단위로만 실행
+    const now = new Date();
+    const minute = now.getMinutes();
 
-setInterval(() => {
-  const isMorningBuyTime = isBetweenTime("09:20", "10:00");
+    if (minute % 10 === 0) {
+      await runServerAutoBuyOnce();
+    }
 
-  if (isMorningBuyTime) {
-    runServerAutoBuyOnce();
-    return;
-  }
+    // 4) EARLY는 현재 earlyEnabled false라 사실상 실행 안 됨
+    if (
+      settings.earlyEnabled &&
+      isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)
+    ) {
+      await runEarlyAutoBuyOnce();
+    }
+  }, 60 * 1000);
 
-  const now = new Date();
-  const minute = now.getMinutes();
-
-  if (minute % 10 === 0) {
-    runServerAutoBuyOnce();
-  }
-}, 5 * 60 * 1000);
-
+  // 매도는 그대로 30초마다
   setInterval(() => {
     checkServerAutoSellOnce();
   }, 30 * 1000);
-
- setInterval(() => {
-  if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
-    runLeaderAutoBuyOnce();
-  }
-}, 60 * 1000);
 }
 
 
