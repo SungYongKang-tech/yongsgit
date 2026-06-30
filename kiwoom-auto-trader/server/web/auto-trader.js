@@ -169,6 +169,10 @@ leaderRankMinScoreHot: 60,
 leaderRankMinScoreNormal: 65,
 leaderRankMaxBuyPerRun: 2,
 
+sectorStrictFilterEnabled: false,
+nonLeadingSectorBonus: 2,
+unknownSectorBonus: 1,
+
 };
 
 
@@ -771,31 +775,71 @@ function getSectorTags(item = {}) {
 
   const sectors = [];
 
-  if (/조선|오션|중공업|해양|엔진/i.test(name)) {
-    sectors.push("조선");
-  }
-
-  if (/방산|항공|우주|한화에어로|현대로템|LIG|풍산/i.test(name)) {
-    sectors.push("방산");
-  }
-
-  if (/원전|전력|한전|두산에너빌리티|한전기술|일진파워/i.test(name)) {
-    sectors.push("원전");
-  }
-
-  if (/반도체|하이닉스|삼성전자|DB하이텍|원익|테스|ISC|리노공업/i.test(name)) {
+  if (/삼성전자|SK하이닉스|하이닉스|반도체|한미반도체|DB하이텍|원익|테스|ISC|리노공업|하나마이크론|SFA반도체|네패스|심텍|대덕전자|이오테크닉스|주성엔지니어링|유진테크|피에스케이|동진쎄미켐|솔브레인|LX세미콘|티씨케이|케이씨텍|삼성전기|한솔테크닉스/i.test(name)) {
     sectors.push("반도체");
   }
 
-  if (/2차전지|배터리|에코프로|포스코퓨처|엘앤에프|천보|엔켐/i.test(name)) {
-    sectors.push("2차전지");
-  }
-
-  if (/AI|로봇|데이터|클라우드|솔트룩스|마음AI|로보/i.test(name)) {
+  if (/AI|로봇|데이터|클라우드|솔트룩스|마음AI|로보|레인보우|두산로보|유진로봇|로보티즈|로보스타|뉴로메카|알체라|셀바스|코난테크놀로지|폴라리스AI|이스트소프트|한글과컴퓨터|플리토|모델솔루션/i.test(name)) {
     sectors.push("AI/로봇");
   }
 
-  return sectors;
+  if (/2차전지|배터리|에코프로|포스코퓨처|포스코DX|엘앤에프|천보|엔켐|후성|금양|코스모신소재|대주전자재료|나노신소재|성일하이텍|SK아이이테크놀로지|더블유씨피|씨아이에스|피엔티|윤성에프앤씨/i.test(name)) {
+    sectors.push("2차전지");
+  }
+
+  if (/조선|오션|중공업|해양|엔진|HD현대중공업|HD한국조선해양|한화오션|삼성중공업|현대미포|STX엔진|HSD엔진|세진중공업|동성화인텍/i.test(name)) {
+    sectors.push("조선");
+  }
+
+  if (/방산|항공|우주|한화에어로|현대로템|LIG|풍산|한국항공우주|KAI|한화시스템|빅텍|퍼스텍|휴니드|스페코|쎄트렉아이|켄코아에어로스페이스/i.test(name)) {
+    sectors.push("방산");
+  }
+
+  if (/원전|전력|한전|두산에너빌리티|한전기술|일진파워|우리기술|비에이치아이|우진|서전기전|보성파워텍|한신기계/i.test(name)) {
+    sectors.push("원전");
+  }
+
+  if (/KB금융|신한지주|하나금융|우리금융|기업은행|BNK금융|DGB금융|JB금융|메리츠금융|삼성생명|한화생명|미래에셋생명|현대해상|DB손해보험|삼성화재|NH투자증권|미래에셋증권|삼성증권|키움증권|한국금융지주/i.test(name)) {
+    sectors.push("금융");
+  }
+
+  if (/현대차|기아|현대모비스|현대위아|HL만도|한온시스템|성우하이텍|명신산업|화신|서연이화|에스엘|모트렉스|평화산업/i.test(name)) {
+    sectors.push("자동차");
+  }
+
+  if (/철강|제강|POSCO|포스코홀딩스|현대제철|동국제강|동국홀딩스|세아제강|대한제강|한국철강|DSR제강|고려아연|풍산|이구산업|대창|남선알미늄/i.test(name)) {
+    sectors.push("철강/비철");
+  }
+
+  if (/건설|GS건설|현대건설|대우건설|DL이앤씨|HDC현대산업|계룡건설|한신공영|금호건설|진흥기업|한국토지신탁/i.test(name)) {
+    sectors.push("건설");
+  }
+
+  if (/바이오|제약|셀트리온|삼성바이오|유한양행|한미약품|종근당|녹십자|대웅제약|동아에스티|오리엔트바이오|HLB|알테오젠|리가켐바이오|보로노이/i.test(name)) {
+    sectors.push("바이오");
+  }
+
+  if (/화장품|콜마|한국콜마|코스맥스|아모레|LG생활건강|클리오|마녀공장|토니모리|잇츠한불/i.test(name)) {
+    sectors.push("화장품");
+  }
+
+  if (/카지노|파라다이스|GKL|호텔|레저|여행|하나투어|모두투어|롯데관광개발|강원랜드/i.test(name)) {
+    sectors.push("카지노/레저");
+  }
+
+  if (/통신|SK텔레콤|KT|LG유플러스|인텔리안테크|쏠리드|에치에프알|케이엠더블유/i.test(name)) {
+    sectors.push("통신");
+  }
+
+  if (/해운|항공|대한항공|아시아나|제주항공|진에어|티웨이|흥아해운|대한해운|팬오션|HMM/i.test(name)) {
+    sectors.push("운송");
+  }
+
+  if (/전기|전자|아남전자|성문전자|금호전기|신일전자|LG전자|삼성SDI|LG이노텍|드림텍|파트론/i.test(name)) {
+    sectors.push("전기전자");
+  }
+
+  return [...new Set(sectors)];
 }
 
 function getSectorPowerScore(item = {}) {
@@ -1070,31 +1114,43 @@ function isInLeadingSector(item, leadingSectors = []) {
     };
   }
 
+  const tags = getSectorTags(item);
+
   if (!leadingSectors || leadingSectors.length === 0) {
     return {
       pass: true,
-      reason: "주도섹터 없음 → 필터 미적용",
+      reason: `주도섹터 없음 → 보너스 없음 / 종목섹터=${tags.join(",") || "기타"}`,
       bonus: 0
     };
   }
 
-  const tags = getSectorTags(item);
   const matched = tags.filter((tag) => leadingSectors.includes(tag));
 
-  if (matched.length === 0) {
+  if (matched.length > 0) {
+    item.leadingSectorMatched = matched;
+
     return {
-      pass: false,
-      reason: `주도섹터 아님 / 종목섹터=${tags.join(",") || "없음"} / 주도섹터=${leadingSectors.join(",")}`,
-      bonus: 0
+      pass: true,
+      reason: `주도섹터 통과 / ${matched.join(",")}`,
+      bonus: 8
     };
   }
 
-  item.leadingSectorMatched = matched;
+  item.leadingSectorMatched = [];
+
+  if (tags.length === 0) {
+    item.sectorTags = ["기타"];
+    return {
+      pass: true,
+      reason: `비주도섹터 허용 / 종목섹터=기타 / 주도섹터=${leadingSectors.join(",")}`,
+      bonus: settings.unknownSectorBonus || 1
+    };
+  }
 
   return {
     pass: true,
-    reason: `주도섹터 통과 / ${matched.join(",")}`,
-    bonus: 8
+    reason: `비주도섹터 허용 / 종목섹터=${tags.join(",")} / 주도섹터=${leadingSectors.join(",")}`,
+    bonus: settings.nonLeadingSectorBonus || 2
   };
 }
 
@@ -4470,62 +4526,65 @@ async function runTurboAutoBuyOnce() {
   }
 
   isRunning = true;
+
   try {
-    if (!settings.turboEnabled) return;
+    if (!settings.turboEnabled) return false;
 
     if (!isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
-      return;
+      return false;
     }
 
     const state = loadState();
 
     if (state.turboBuyStopped) {
       console.log("[TURBO] 오늘 Turbo 매수중단 상태");
-      return;
+      return false;
     }
 
     if (!state.serverAutoEnabled) {
       console.log("[TURBO] 서버 자동매매 OFF");
-      return;
+      return false;
     }
 
     let candidates = [];
 
     try {
       candidates = await discoverCandidates();
-      
     } catch (err) {
       console.warn("[TURBO] 후보 발굴 실패:", err.message);
       saveState(state);
-      return;
+      return false;
     }
 
     const leadingSectors =
-  candidates[0]?.marketLeadingSectors || getLeadingSectors(candidates);
+      candidates[0]?.marketLeadingSectors || getLeadingSectors(candidates);
+
     const marketScore = calculateMarketScore(candidates, leadingSectors);
-state.marketScore = marketScore;
-state.marketTemperature = marketScore.marketTemperature;
+    state.marketScore = marketScore;
+    state.marketTemperature = marketScore.marketTemperature;
 
-console.log(`[시장점수] ${marketScore.reason}`);
+    console.log(`[시장점수] ${marketScore.reason}`);
 
-if (
-  settings.marketScoreEnabled &&
-  marketScore.score < settings.turboMinMarketScore
-) {
-  console.log(
-    `[TURBO 중단] 시장점수 부족 ${marketScore.score} / 기준 ${settings.turboMinMarketScore}`
-  );
+    if (
+      settings.marketScoreEnabled &&
+      marketScore.score < settings.turboMinMarketScore
+    ) {
+      console.log(
+        `[TURBO 중단] 시장점수 부족 ${marketScore.score} / 기준 ${settings.turboMinMarketScore}`
+      );
 
-  state.lastTurboCheckAt = nowText();
-  saveState(state);
-  return;
-}
+      state.lastTurboCheckAt = nowText();
+      saveState(state);
+      return false;
+    }
 
-console.log(
-  `[섹터 자금쏠림] 주도섹터: ${
-    leadingSectors.length > 0 ? leadingSectors.join(", ") : "없음"
-  }`
-);
+    console.log(
+      `[섹터 자금쏠림] 주도섹터: ${
+        leadingSectors.length > 0 ? leadingSectors.join(", ") : "없음"
+      }`
+    );
+
+    let bought = false;
 
     for (const item of candidates.slice(0, 20)) {
       if (getTurboHoldingCount(state) >= settings.turboMaxHoldingCount) break;
@@ -4541,21 +4600,27 @@ console.log(
 
       const sectorFlowCheck = isInLeadingSector(item, leadingSectors);
 
-if (sectorFlowCheck.pass) {
-  item.leadingSectorMatched = item.leadingSectorMatched || [];
-item.leadingSectorBonus = Number(sectorFlowCheck.bonus || 0);
+      item.sectorTags = getSectorTags(item);
+      item.leadingSectorMatched = item.leadingSectorMatched || [];
+      item.leadingSectorBonus = Number(sectorFlowCheck.bonus || 0);
 
-  console.log(
-    `[TURBO 주도섹터 우대] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 ${item.leadingSectorBonus}`
-  );
-} else {
-  item.leadingSectorMatched = item.leadingSectorMatched || [];
-  item.leadingSectorBonus = Number(item.leadingSectorBonus || 0);
+      item.discoverScore =
+        Number(item.originalDiscoverScore || item.discoverScore || 0) +
+        item.leadingSectorBonus;
 
-  console.log(
-    `[TURBO 비주도섹터] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 0`
-  );
-}
+      if (item.leadingSectorBonus >= 8) {
+        console.log(
+          `[TURBO 주도섹터 우대] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 ${item.leadingSectorBonus}`
+        );
+      } else if (item.leadingSectorBonus > 0) {
+        console.log(
+          `[TURBO 일반섹터 허용] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 ${item.leadingSectorBonus}`
+        );
+      } else {
+        console.log(
+          `[TURBO 기타섹터 허용] ${item.name || item.code} / ${sectorFlowCheck.reason} / 보너스 0`
+        );
+      }
 
       let priceData = null;
 
@@ -4572,6 +4637,13 @@ item.leadingSectorBonus = Number(sectorFlowCheck.bonus || 0);
       const mergedItem = {
         ...item,
         ...priceData,
+        sectorTags: item.sectorTags || [],
+        leadingSectorMatched: item.leadingSectorMatched || [],
+        leadingSectorBonus: Number(item.leadingSectorBonus || 0),
+        originalDiscoverScore: Number(
+          item.originalDiscoverScore || item.discoverScore || 0
+        ),
+        discoverScore: Number(item.discoverScore || 0),
         raw: {
           ...(item.raw || {}),
           ...(priceData.raw || {})
@@ -4580,55 +4652,62 @@ item.leadingSectorBonus = Number(sectorFlowCheck.bonus || 0);
 
       const turboCheck = checkTurboLeaderCandidate(mergedItem, currentPrice);
 
-if (!turboCheck.pass) {
-  continue;
-}
-const finalScore = calculateFinalBuyScore(
-  mergedItem,
-  currentPrice,
-  state.marketScore
-);
+      if (!turboCheck.pass) {
+        continue;
+      }
 
-mergedItem.finalBuyScore = finalScore.score;
-mergedItem.finalBuyScoreDetail = finalScore;
+      const finalScore = calculateFinalBuyScore(
+        mergedItem,
+        currentPrice,
+        state.marketScore
+      );
 
-if (finalScore.score < settings.turboMinFinalBuyScore) {
-  logBuyReject("TURBO", mergedItem, finalScore.reason, {
-  finalBuyScore: finalScore.score,
-  marketScore: state.marketScore
-});
-  continue;
-}
+      mergedItem.finalBuyScore = finalScore.score;
+      mergedItem.finalBuyScoreDetail = finalScore;
 
-const judge = judgeTurboBuy(state, mergedItem, currentPrice);
+      if (finalScore.score < settings.turboMinFinalBuyScore) {
+        logBuyReject("TURBO", mergedItem, finalScore.reason, {
+          finalBuyScore: finalScore.score,
+          marketScore: state.marketScore
+        });
+        continue;
+      }
 
-if (!judge.pass) {
-  logBuyReject("TURBO", mergedItem, judge.reason, {
-  finalBuyScore: mergedItem.finalBuyScore,
-  marketScore: state.marketScore
-});
-  continue;
-}
+      const judge = judgeTurboBuy(state, mergedItem, currentPrice);
 
-logBuyPass("TURBO", mergedItem, {
-  finalBuyScore: mergedItem.finalBuyScore,
-  marketScore: state.marketScore,
-  reason: `${turboCheck.reason} / ${judge.reason}`
-});
+      if (!judge.pass) {
+        logBuyReject("TURBO", mergedItem, judge.reason, {
+          finalBuyScore: mergedItem.finalBuyScore,
+          marketScore: state.marketScore
+        });
+        continue;
+      }
 
-paperTurboBuy(
-  state,
-  {
-    ...mergedItem,
-    name: priceData.name || item.name,
-    currentPrice
-  },
-  currentPrice
-);
+      logBuyPass("TURBO", mergedItem, {
+        finalBuyScore: mergedItem.finalBuyScore,
+        marketScore: state.marketScore,
+        reason: `${turboCheck.reason} / ${judge.reason}`
+      });
 
-}
+      const ok = paperTurboBuy(
+        state,
+        {
+          ...mergedItem,
+          name: priceData.name || item.name,
+          currentPrice
+        },
+        currentPrice
+      );
+
+      if (ok) {
+        bought = true;
+      }
+    }
+
     state.lastTurboCheckAt = nowText();
     saveState(state);
+
+    return bought;
   } finally {
     isRunning = false;
   }
