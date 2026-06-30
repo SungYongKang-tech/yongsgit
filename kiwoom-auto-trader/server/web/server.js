@@ -1162,32 +1162,43 @@ const holdingDays = buyTimeMs > 0
 
 
 return {
-    code: h.code,
-    name: h.name,
-    buyPrice,
-    currentPrice,
-    qty,
-    buyAmount,
-    evalAmount,
-    holdingDays,
-    profit,
-    profitRate,
-    highestPrice,
-    highestProfitRate,
-    drawdownFromHigh,
-    trailingActive: !!h.trailingActive,
-    targetTouched: !!h.targetTouched,
-    trailingStartPrice: Number(h.trailingStartPrice || 0),
-    trailingStopRate,
-    stopLossPrice: Number(h.stopLossPrice || 0),
-    strategyGroup: h.strategyGroup || "CORE",
-    strategyName: h.strategyName || "",
-    strategyPreset: h.strategyPreset || "",
-    discoverScore: Number(h.discoverScore || 0),
-    buyTime: h.buyTime || "",
-    date: h.date || ""
-  };
-});
+  code: h.code,
+  name: h.name,
+  buyPrice,
+  currentPrice,
+  qty,
+  buyAmount,
+  evalAmount,
+  holdingDays,
+  profit,
+  profitRate,
+  highestPrice,
+  highestProfitRate,
+  drawdownFromHigh,
+
+  trailingActive: !!h.trailingActive || !!h.leaderTrailingActive || !!h.turboTrailingActive || !!h.earlyTrailingActive,
+  targetTouched: !!h.targetTouched,
+  trailingStartPrice: Number(h.trailingStartPrice || h.leaderTrailingStartPrice || h.turboTrailingStartPrice || 0),
+  trailingStopRate,
+  stopLossPrice: Number(h.stopLossPrice || 0),
+
+  strategyGroup: h.strategyGroup || "CORE",
+  strategyName: h.strategyName || "",
+  strategyPreset: h.strategyPreset || "",
+  discoverScore: Number(h.discoverScore || 0),
+
+  finalBuyScore: Number(h.finalBuyScore || h.finalBuyScoreDetail?.score || 0),
+  finalBuyScoreDetail: h.finalBuyScoreDetail || null,
+  marketScore: h.marketScore || null,
+  sectorPowerScore: Number(h.sectorPowerScore || h.finalBuyScoreDetail?.sectorPowerScore || 0),
+  leaderStrengthScore: Number(h.leaderStrengthScore || 0),
+  discoverScoreDetails: h.discoverScoreDetails || {},
+  discoverReasons: h.discoverReasons || [],
+  sectorTags: h.sectorTags || [],
+
+  buyTime: h.buyTime || "",
+  date: h.date || ""
+};
 
     res.json({
       ok: true,
