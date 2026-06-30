@@ -133,6 +133,7 @@ leaderMinTradeVolumeRatio: -50,   // 거래량비율 최소 +80%
 leaderMinDayPositionRate: 60,    // 당일 위치 최소 60%
 leaderMaxDayPositionRate: 85,    // 85% 초과는 추격매수 금지
 leaderMinOpenPositionRate: 1.0,  // 시가 대비 +1% 이상
+leaderMaxOpenPositionRate: 7.0,
 
 leaderStrengthMinScore: 75,      // 수급강도 최소점수
 
@@ -172,6 +173,8 @@ leaderRankMaxBuyPerRun: 2,
 sectorStrictFilterEnabled: false,
 nonLeadingSectorBonus: 2,
 unknownSectorBonus: 1,
+
+
 
 };
 
@@ -2568,58 +2571,80 @@ function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
     };
   }
 
- const finalScore = calculateFinalBuyScore(item, price, marketScore);
+  const openPrice = Math.abs(Number(
+    item.open ||
+    item.openPrice ||
+    item.raw?.open_pric ||
+    0
+  ));
 
-const marketValue = Number(marketScore?.score || 0);
+  const openPositionRate =
+    openPrice > 0 && price > 0
+      ? ((price - openPrice) / openPrice) * 100
+      : 0;
 
-let dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
-let dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
+  if (
+    settings.leaderMaxOpenPositionRate &&
+    openPositionRate > settings.leaderMaxOpenPositionRate
+  ) {
+    return {
+      pass: false,
+      reason: `시가대비 과열 ${openPositionRate.toFixed(2)}% / 기준 ${settings.leaderMaxOpenPositionRate}%`
+    };
+  }
 
-if (marketValue >= 90) {
-  // HOT장: 빠르게 진입
-  dynamicLeaderMinFinalBuyScore = 65;
-  dynamicLeaderStrengthMinScore = 50;
-} else if (marketValue >= 60) {
-  // NORMAL장: 기존 유지
-  dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
-  dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
-} else {
-  // CAUTION/DANGER장: 더 엄격
-  dynamicLeaderMinFinalBuyScore = 90;
-  dynamicLeaderStrengthMinScore = 85;
-}
+  const finalScore = calculateFinalBuyScore(item, price, marketScore);
 
-if (finalScore.score < dynamicLeaderMinFinalBuyScore) {
-  return {
-    pass: false,
-    finalScore,
-    reason:
-      `LEADER 최종점수 부족 ${finalScore.score} / 기준 ${dynamicLeaderMinFinalBuyScore} / ` +
-      finalScore.reason
-  };
-}
+  const marketValue = Number(marketScore?.score || 0);
 
-const leaderStrengthScore = Number(
-  item.leaderStrengthScore || getLeaderStrengthScore(item, price)
-);
+  let dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
+  let dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
 
-if (leaderStrengthScore < dynamicLeaderStrengthMinScore) {
-  return {
-    pass: false,
-    finalScore,
-    reason:
-      `수급강도 부족 ${leaderStrengthScore} / 기준 ${dynamicLeaderStrengthMinScore}`
-  };
-}
+  if (marketValue >= 90) {
+    dynamicLeaderMinFinalBuyScore = 65;
+    dynamicLeaderStrengthMinScore = 50;
+  } else if (marketValue >= 60) {
+    dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
+    dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
+  } else {
+    dynamicLeaderMinFinalBuyScore = 90;
+    dynamicLeaderStrengthMinScore = 85;
+  }
+
+  if (finalScore.score < dynamicLeaderMinFinalBuyScore) {
+    return {
+      pass: false,
+      finalScore,
+      reason:
+        `LEADER 최종점수 부족 ${finalScore.score} / 기준 ${dynamicLeaderMinFinalBuyScore} / ` +
+        finalScore.reason
+    };
+  }
+
+  const leaderStrengthScore = Number(
+    item.leaderStrengthScore || getLeaderStrengthScore(item, price)
+  );
+
+  if (leaderStrengthScore < dynamicLeaderStrengthMinScore) {
+    return {
+      pass: false,
+      finalScore,
+      reason:
+        `수급강도 부족 ${leaderStrengthScore} / 기준 ${dynamicLeaderStrengthMinScore}`
+    };
+  }
+
   item.leaderStrengthScore = leaderStrengthScore;
 
   return {
     pass: true,
     finalScore,
     leaderStrengthScore,
+    openPositionRate,
     reason:
       `LEADER 판단 통과 / ` +
       `${finalScore.reason} / ` +
+      `시가대비 ${openPositionRate.toFixed(2)}% / ` +
       `수급강도 ${leaderStrengthScore}`
   };
 }
