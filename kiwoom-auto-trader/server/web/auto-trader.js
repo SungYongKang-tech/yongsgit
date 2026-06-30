@@ -67,11 +67,11 @@ turboBuyMinDayRiseRate: 0.5,   // 당일 상승률은 보조조건
 turboBuyMaxDayRiseRate: 7.0,   // 너무 오른 종목만 제외
 
 turboMinVolume: 300000,
-turboMinOpenPositionRate: 2.0, // 시가 대비 +2% 이상
-turboMinDayPositionRate: 60,
+turboMinOpenPositionRate: 1.0, // 시가 대비 +2% 이상
+turboMinDayPositionRate: 45,
 
-turboMaxDayPositionRate: 75,
-turboMinTradeVolumeRatio: 80,
+turboMaxDayPositionRate: 85,
+turboMinTradeVolumeRatio: -30,
 
 coreMaxChangeRate: 3.5,
 coreMinTradeVolumeRatio: -20,
@@ -151,7 +151,7 @@ sectorFlowTopCount: 2,
 sectorFlowMinCandidateCount: 2,
 sectorFlowMinAvgScore: 2.5,
 
-turboRecheckEnabled: true,
+turboRecheckEnabled: false,
 turboRecheckDelayMinutes: 3,
 turboRecheckMaxAgeMinutes: 15,
 
@@ -160,8 +160,8 @@ turboMinMarketScore: 55,
 coreMinMarketScore: 45,
 leaderMinMarketScore: 60,
 
-turboMinFinalBuyScore: 75,
-coreMinFinalBuyScore: 65,
+turboMinFinalBuyScore: 65,
+coreMinFinalBuyScore: 70,
 leaderMinFinalBuyScore: 80,
 
 leaderRankBuyEnabled: true,
@@ -4464,12 +4464,11 @@ if (isAttackBuyBlockedByMarket(marketTemperature)) {
 
 async function runTurboAutoBuyOnce() {
   if (isRunning) {
-    console.log("[TURBO] 다른 매수 로직 실행중이라 건너뜀");
-    return;
+    console.log("[TURBO] 이전 매수 로직 종료 대기");
+    return false;
   }
 
   isRunning = true;
-
   try {
     if (!settings.turboEnabled) return;
 
@@ -4755,42 +4754,56 @@ logBuyPass("LEADER", mergedItem, {
 function startServerAutoTrader() {
   console.log("서버 자동 모의매매 시작");
 
-  // 매수 로직 통합 실행부
-  setInterval(async () => {
-    // 1) 오전 TURBO 시간: TURBO 먼저, 그 다음 LEADER
-    if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
-      await runTurboAutoBuyOnce();
+  let buyLoopRunning = false;
 
+  setInterval(async () => {
+    if (buyLoopRunning) {
+      console.log("[BUY LOOP] 이전 매수 루프 실행중 → 이번 루프 대기");
+      return;
+    }
+
+    buyLoopRunning = true;
+
+    try {
+      // 1) TURBO 시간: TURBO 먼저
+      if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
+        await runTurboAutoBuyOnce();
+
+        // TURBO 후 LEADER도 판단
+        if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
+          await runLeaderAutoBuyOnce();
+        }
+
+        return;
+      }
+
+      // 2) LEADER 시간
       if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
         await runLeaderAutoBuyOnce();
       }
 
-      return;
-    }
+      // 3) CORE는 10분 단위
+      const now = new Date();
+      const minute = now.getMinutes();
 
-    // 2) TURBO 시간 이후: LEADER 실행
-    if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
-      await runLeaderAutoBuyOnce();
-    }
+      if (minute % 10 === 0) {
+        await runServerAutoBuyOnce();
+      }
 
-    // 3) CORE는 10분 단위로만 실행
-    const now = new Date();
-    const minute = now.getMinutes();
-
-    if (minute % 10 === 0) {
-      await runServerAutoBuyOnce();
-    }
-
-    // 4) EARLY는 현재 OFF
-    if (
-      settings.earlyEnabled &&
-      isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)
-    ) {
-      await runEarlyAutoBuyOnce();
+      // 4) EARLY는 OFF일 때 실행 안 됨
+      if (
+        settings.earlyEnabled &&
+        isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)
+      ) {
+        await runEarlyAutoBuyOnce();
+      }
+    } catch (err) {
+      console.error("[BUY LOOP 오류]", err.message);
+    } finally {
+      buyLoopRunning = false;
     }
   }, 60 * 1000);
 
-  // 매도는 그대로 30초마다
   setInterval(() => {
     checkServerAutoSellOnce();
   }, 30 * 1000);
