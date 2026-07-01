@@ -21,8 +21,8 @@ leaderRatio: 0.2,
   earlyMaxHoldingCount: 3,
   earlyMaxDailyBuyCount: 4,
 
-  maxHoldingCount: 6,
-  coreMaxHoldingCount: 6,
+  maxHoldingCount: 4,
+  coreMaxHoldingCount: 4,
   turboMaxHoldingCount: 2,
 
   perBuyAmount: 10000000,
@@ -2715,6 +2715,13 @@ function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
 }
 
 function paperLeaderBuy(state, item, currentPrice) {
+
+  console.log("[LEADER 진입시도]", item.name);
+
+const result = paperBuy(state, item, "LEADER", settings.leaderPerBuyAmount);
+
+console.log("[LEADER 매수결과]", item.name, result);
+
   if (!settings.leaderEnabled) return false;
 
   if (isExcludedStock(item)) {
@@ -3506,7 +3513,7 @@ if (
 if (
   isTradeTime() &&
   isAfterEndProfitSellTime() &&
-  profitRate < 0 &&
+  profitRate < -0.8 &&
   maxProfitRate < 2
 ) {
   paperSell(
