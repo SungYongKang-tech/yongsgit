@@ -2666,8 +2666,8 @@ function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
   let dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
 
   if (marketValue >= 90) {
-    dynamicLeaderMinFinalBuyScore = 65;
-    dynamicLeaderStrengthMinScore = 50;
+    dynamicLeaderMinFinalBuyScore = 60;
+    dynamicLeaderStrengthMinScore = 45;
   } else if (marketValue >= 60) {
     dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
     dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
