@@ -2434,6 +2434,18 @@ function paperTurboBuy(state, item, currentPrice) {
 const buyTradeVolumeRatio = getTradeVolumeRatio(item);
 const buyDayPositionRate = getDayPositionRate(item, price);
 
+const buyOpenPrice = Math.abs(Number(
+  item.open ||
+  item.openPrice ||
+  item.raw?.open_pric ||
+  0
+));
+
+const buyOpenPositionRate =
+  buyOpenPrice > 0 && price > 0
+    ? ((price - buyOpenPrice) / buyOpenPrice) * 100
+    : 0;
+
   const budget = getBudgetInfo(state);
   const availableCash = Number(state.turboCash || 0);
   const buyAmount = Math.min(budget.turboPerBuyAmount, availableCash);
@@ -2480,10 +2492,10 @@ const buyDayPositionRate = getDayPositionRate(item, price);
   dayPositionRate: buyDayPositionRate,
 
   discoverScoreDetails: {
-  rate: turboJudge.dayRiseRate || 0,
-  volume: turboJudge.tradeVolumeRatio || 0,
-  openStrength: turboJudge.openPositionRate || 0,
-  dayPosition: turboJudge.dayPositionRate || 0
+  rate: buyChangeRate,
+  volume: buyTradeVolumeRatio,
+  openStrength: buyOpenPositionRate,
+  dayPosition: buyDayPositionRate
 },
 
   buyChangeRate,
@@ -2834,10 +2846,10 @@ function paperLeaderBuy(state, item, currentPrice) {
     volume: Number(item.volume || item.raw?.trde_qty || 0),
 
     discoverScoreDetails: {
-  rate: leaderJudge.changeRate || item.changeRate || 0,
-  volume: leaderJudge.tradeVolumeRatio || getTradeVolumeRatio(item),
-  openStrength: leaderJudge.openPositionRate || 0,
-  dayPosition: leaderJudge.dayPositionRate || 0
+  rate: holding.changeRate,
+  volume: holding.tradeVolumeRatio,
+  openStrength: holding.finalBuyScoreDetail?.openPositionRate || 0,
+  dayPosition: holding.dayPositionRate
 },
 
     marketTemperature: state.marketTemperature || null,
