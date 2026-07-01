@@ -1200,6 +1200,8 @@ return {
   date: h.date || ""
 };
 
+});   
+
     res.json({
       ok: true,
       summary: {

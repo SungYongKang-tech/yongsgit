@@ -1686,9 +1686,15 @@ function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount)
     dayPositionRate: coreDayPositionRate,
 
     discoverReasons: Array.isArray(item.discoverReasons)
-      ? item.discoverReasons
-      : [],
-    discoverScoreDetails: item.discoverScoreDetails || {},
+  ? item.discoverReasons
+  : [],
+
+discoverScoreDetails: {
+  rate: coreChangeRate,
+  volume: coreTradeVolumeRatio,
+  openStrength: finalBuyScoreDetail?.openPositionRate || 0,
+  dayPosition: coreDayPositionRate
+},
 
     protectMinutes: 5,
     buyTime: nowText(),
@@ -2473,6 +2479,13 @@ const buyDayPositionRate = getDayPositionRate(item, price);
   tradeVolumeRatio: buyTradeVolumeRatio,
   dayPositionRate: buyDayPositionRate,
 
+  discoverScoreDetails: {
+  rate: turboJudge.dayRiseRate || 0,
+  volume: turboJudge.tradeVolumeRatio || 0,
+  openStrength: turboJudge.openPositionRate || 0,
+  dayPosition: turboJudge.dayPositionRate || 0
+},
+
   buyChangeRate,
   buyTradeVolumeRatio,
   buyDayPositionRate,
@@ -2819,6 +2832,13 @@ function paperLeaderBuy(state, item, currentPrice) {
     tradeVolumeRatio: holding.tradeVolumeRatio,
     dayPositionRate: holding.dayPositionRate,
     volume: Number(item.volume || item.raw?.trde_qty || 0),
+
+    discoverScoreDetails: {
+  rate: leaderJudge.changeRate || item.changeRate || 0,
+  volume: leaderJudge.tradeVolumeRatio || getTradeVolumeRatio(item),
+  openStrength: leaderJudge.openPositionRate || 0,
+  dayPosition: leaderJudge.dayPositionRate || 0
+},
 
     marketTemperature: state.marketTemperature || null,
     remainLeaderCashAfterBuy: state.leaderCash,
