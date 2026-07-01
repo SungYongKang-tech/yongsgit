@@ -122,7 +122,7 @@ leaderMinHoldDays: 2,
 leaderMaxHoldDays: 10,
 
 
-leaderCoreEnabled: true,
+leaderCoreEnabled: false,
 
 leaderCoreMinScore: 10,
 leaderCoreMinChangeRate: 1.5,
@@ -4248,6 +4248,7 @@ if (marketTemperature.level === "HOT") {
     `후보 ${beforeCount}개 → ${candidates.length}개`
   );
 }
+
 
 if (settings.leaderCoreEnabled) {
   const beforeLeaderCoreCount = candidates.length;
