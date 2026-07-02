@@ -545,6 +545,18 @@ function calculateLeaderRankScore(item, currentPrice, marketScore = null) {
   score += Math.min(20, discoverScore * 2);
   details.push(`발견${discoverScore}`);
 
+ 
+// 실시간 인기 순위 가점
+if (Number(item.tradeValueRank || 999) <= 20) {
+  score += 10;
+  details.push("거래대금TOP20+10");
+}
+
+if (Number(item.changeRateRank || 999) <= 30) {
+  score += 8;
+  details.push("상승률TOP30+8");
+}
+
   // 주도섹터
   if (sectorBonus > 0) {
     score += 10;
@@ -1291,26 +1303,57 @@ async function discoverCandidates() {
       )
     );
 
-  return filtered
+  const ranked = filtered.map(item => {
+    const currentPrice = Math.abs(Number(item.currentPrice || item.price || item.raw?.cur_prc || 0));
+    const volume = Math.abs(Number(item.volume || item.raw?.trde_qty || 0));
+    const changeRate = Number(item.changeRate || item.raw?.flu_rt || 0);
+
+    return {
+      ...item,
+      tradeValue: currentPrice * volume,
+      changeRateNumber: changeRate
+    };
+  });
+
+  const tradeValueRankMap = {};
+  ranked
+    .slice()
+    .sort((a, b) => Number(b.tradeValue || 0) - Number(a.tradeValue || 0))
+    .forEach((item, index) => {
+      tradeValueRankMap[item.code] = index + 1;
+    });
+
+  const changeRateRankMap = {};
+  ranked
+    .slice()
+    .sort((a, b) => Number(b.changeRateNumber || 0) - Number(a.changeRateNumber || 0))
+    .forEach((item, index) => {
+      changeRateRankMap[item.code] = index + 1;
+    });
+
+  return ranked
     .map(item => {
       const sectorTags = getSectorTags(item);
       const matched = sectorTags.filter(sector =>
         marketLeadingSectors.includes(sector)
       );
 
-      const bonus =
-        matched.length > 0
-          ? 8
-          : 0;
+      const bonus = matched.length > 0 ? 8 : 0;
 
       return {
         ...item,
         sectorTags,
-  marketLeadingSectors,
-  leadingSectorMatched: matched,
-  leadingSectorBonus: bonus,
-  originalDiscoverScore: Number(item.discoverScore || 0),
-  discoverScore: Number(item.discoverScore || 0) + bonus
+        marketLeadingSectors,
+        leadingSectorMatched: matched,
+        leadingSectorBonus: bonus,
+
+        tradeValue: item.tradeValue,
+        changeRateNumber: item.changeRateNumber,
+        tradeValueRank: tradeValueRankMap[item.code] || 999,
+        changeRateRank: changeRateRankMap[item.code] || 999,
+
+        originalDiscoverScore: Number(item.discoverScore || 0),
+        discoverScore: Number(item.discoverScore || 0) + bonus
       };
     })
     .sort((a, b) =>
