@@ -22,8 +22,8 @@ leaderRatio: 0.2,
   earlyMaxHoldingCount: 3,
   earlyMaxDailyBuyCount: 4,
 
-  maxHoldingCount: 4,
-  coreMaxHoldingCount: 4,
+  maxHoldingCount: 6,
+  coreMaxHoldingCount: 6,
   turboMaxHoldingCount: 2,
 
   perBuyAmount: 10000000,
@@ -68,7 +68,7 @@ turboBuyMinDayRiseRate: 0.5,   // 당일 상승률은 보조조건
 turboBuyMaxDayRiseRate: 7.0,   // 너무 오른 종목만 제외
 
 turboMinVolume: 300000,
-turboMinOpenPositionRate: 1.0, // 시가 대비 +2% 이상
+turboMinOpenPositionRate: 1.0, // 시가 대비 +1% 이상
 turboMinDayPositionRate: 45,
 
 turboMaxDayPositionRate: 85,
@@ -155,7 +155,7 @@ sectorFlowTopCount: 2,
 sectorFlowMinCandidateCount: 2,
 sectorFlowMinAvgScore: 2.5,
 
-turboRecheckEnabled: false,
+turboRecheckEnabled: true,
 turboRecheckDelayMinutes: 3,
 turboRecheckMaxAgeMinutes: 15,
 
@@ -2960,6 +2960,15 @@ holding.selling = true;
   const sellQty = sellQtyInput ? Number(sellQtyInput) : holdingQty;
 
   if (holdingQty <= 0 || price <= 0 || sellQty <= 0 || sellQty > holdingQty) {
+  console.log(
+    `[매도실패] ${holding.name} ${holding.code}` +
+    ` / 사유 수량·가격 오류` +
+    ` / 보유수량 ${holdingQty}` +
+    ` / 매도수량 ${sellQty}` +
+    ` / 가격 ${price}` +
+    ` / ${actionType}`
+  );
+
   holding.pendingSell = false;
   holding.selling = false;
   return false;
@@ -3089,7 +3098,7 @@ if (
   dailyLossLimit > 0 &&
   todayProfitAfterSell <= -dailyLossLimit
 ) {
-  state.dailyBuyStopped = true;
+  state.dailyBuyStopped = false;
   state.dailyBuyStoppedAt = nowText();
   state.dailyBuyStoppedReason =
     `일일 손실한도 도달: ${todayProfitAfterSell.toLocaleString()}원 / 한도 ${dailyLossLimit.toLocaleString()}원`;
@@ -3101,7 +3110,13 @@ if (
 }
 
 console.log(
-  `[매도완료] ${holding.name} ${sellQty}주 / ${price}원 / 수익률 ${profitRate.toFixed(2)}% / ${actionType}`
+  `[매도완료] ${holding.name} ${sellQty}주` +
+  ` / ${price}원` +
+  ` / 수익률 ${profitRate.toFixed(2)}%` +
+  ` / 최고수익 ${Number(holding.maxProfitRate || 0).toFixed(2)}%` +
+  ` / 최대손실 ${Number(holding.maxLossRate || 0).toFixed(2)}%` +
+  ` / 보유 ${holding.buyTimeMs ? Math.round((Date.now() - Number(holding.buyTimeMs)) / 1000 / 60) : 0}분` +
+  ` / ${actionType}`
 );
 
 return true;
@@ -3390,16 +3405,21 @@ const maxProfitRate =
     continue;
   }
 
-  if (isBetweenTime(settings.turboForceSellTime, "15:20")) {
-    paperSell(
-      state,
-      holding,
-      currentPrice,
-      `Turbo 시간청산 ${settings.turboForceSellTime}`,
-      "TURBO_TIME_EXIT"
-    );
-    continue;
-  }
+  if (
+  isBetweenTime(settings.turboForceSellTime, "15:20") &&
+  !holding.sold &&
+  !holding.pendingSell &&
+  Number(holding.qty || 0) > 0
+) {
+  paperSell(
+    state,
+    holding,
+    currentPrice,
+    `Turbo 시간청산 ${settings.turboForceSellTime}`,
+    "TURBO_TIME_EXIT"
+  );
+  continue;
+}
 
   remainHoldings.push(holding);
   continue;
