@@ -8,6 +8,7 @@ const API_BASE = "http://localhost:3000";
 
 const settings = {
   buyStartTime: "09:25",
+  coreBuyCutoffTime: "13:00",
   buyEndTime: "14:30",
   safeMinScore: 10,
   trendMinScore: 10,
@@ -59,7 +60,7 @@ turboStartTime: "09:05",
 turboEndTime: "10:40",
 turboForceSellTime: "10:50",
 
-turboMinScore: 10,
+turboMinScore: 12,
 turboWatchMinDayRiseRate: 1.0,
 
 
@@ -111,7 +112,7 @@ leaderEndTime: "13:40",
 leaderMaxHoldingCount: 2,
 leaderMaxDailyBuyCount: 2,
 
-leaderStopLossRate: -3.0,
+leaderStopLossRate: -2.0,
 leaderTakeProfitRate: 15.0,
 leaderTrailingStartRate: 2.0,
 leaderTrailingStopRate: 1.0,
@@ -1561,6 +1562,11 @@ function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount)
     return false;
   }
 
+  if (!isBetweenTime(settings.buyStartTime, settings.coreBuyCutoffTime)) {
+    console.log("[CORE 매수제외] CORE 신규매수 허용시간 종료", item.name || item.code);
+    return false;
+  }
+
   if (isExcludedStock(item)) {
     console.log("[CORE 매수제외] 제외종목", item.name || item.stockName || item.korName || item.code);
     return false;
@@ -2398,12 +2404,16 @@ function judgeTurboBuy(state, item, currentPrice) {
   const rankCheck = isCandidateGettingStronger(state, item, price);
 
 if (rankCheck !== true && !rankCheck.pass) {
+  const rankReason =
+    rankCheck && rankCheck.reason
+      ? rankCheck.reason
+      : "후보강화 조건 미충족";
+
   return {
     pass: false,
-    reason: `후보 강화 미충족 / ${rankCheck.reason}`
+    reason: `후보 강화 미충족 / ${rankReason}`
   };
 }
-
   const recheck = checkTurboRecheckCandidate(state, item, price);
   if (!recheck.pass) {
     return {
@@ -2418,7 +2428,7 @@ return {
     `TURBO 판단 통과 / ` +
     `주도섹터=${item.leadingSectorMatched?.join(",") || "아님"} / ` +
     `섹터보너스=${item.leadingSectorBonus || 0} / ` +
-    `${rankCheck === true ? "후보강화 OFF" : rankCheck.reason} / ${recheck.reason}`
+    `${rankCheck === true ? "후보강화 OFF" : (rankCheck.reason || "후보강화 조건 통과")} / ${recheck.reason}`
 };
 }
 
@@ -2574,8 +2584,15 @@ discoverScore: Number(item.discoverScore || 0),
   });
 
   console.log(
-    `[TURBO 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주`
-  );
+  `[TURBO 매수] ${holding.name} ${holding.code}` +
+  ` / ${price}원 / ${qty}주` +
+  ` / 발견 ${Number(item.discoverScore || 0)}` +
+  ` / 최종 ${Number(item.finalBuyScore || 0)}` +
+  ` / 시장 ${state.marketScore?.score ?? "-"}` +
+  ` / 등락 ${buyChangeRate.toFixed(2)}%` +
+  ` / 거래량 ${buyTradeVolumeRatio.toFixed(1)}%` +
+  ` / 당일위치 ${buyDayPositionRate.toFixed(1)}%`
+);
 
   return true;
 }
@@ -2893,8 +2910,16 @@ console.log("[LEADER 매수결과]", item.name, result);
   });
 
   console.log(
-    `[LEADER 매수] ${holding.name} ${holding.code} / ${price}원 / ${qty}주 / 예정 ${buyAmount.toLocaleString()}원 / 수급강도 ${leaderStrengthScore}`
-  );
+  `[LEADER 매수] ${holding.name} ${holding.code}` +
+  ` / ${price}원 / ${qty}주` +
+  ` / 예정 ${buyAmount.toLocaleString()}원` +
+  ` / 수급강도 ${leaderStrengthScore}` +
+  ` / 최종 ${Number(item.finalBuyScore || 0)}` +
+  ` / 시장 ${state.marketScore?.score ?? "-"}` +
+  ` / 등락 ${Number(item.changeRate || item.fluctuationRate || item.riseRate || item.rate || 0).toFixed(2)}%` +
+  ` / 거래량 ${getTradeVolumeRatio(item).toFixed(1)}%` +
+  ` / 당일위치 ${getDayPositionRate(item, price).toFixed(1)}%`
+);
 
   return true;
 }
@@ -4583,8 +4608,15 @@ const bought = paperBuy(
 
       if (bought) {
         console.log(
-          `[모의매수] ${item.name} ${item.code} / ${bestStrategy.name} / 점수 ${item.discoverScore}`
-        );
+  `[모의매수] CORE / ${item.name} ${item.code}` +
+  ` / 전략 ${bestStrategy.name}` +
+  ` / 발견 ${item.discoverScore}` +
+  ` / 최종 ${coreItemForBuy.finalBuyScore}` +
+  ` / 시장 ${state.marketScore?.score ?? "-"}` +
+  ` / 등락 ${Number(item.changeRate || item.fluctuationRate || item.riseRate || 0).toFixed(2)}%` +
+  ` / 거래량 ${getTradeVolumeRatio(item).toFixed(1)}%` +
+  ` / 당일위치 ${getDayPositionRate(item, Number(item.currentPrice || item.price || 0)).toFixed(1)}%`
+);
       }
     }
 
