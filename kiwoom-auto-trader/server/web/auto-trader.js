@@ -1571,6 +1571,11 @@ function paperBuy(state, item, strategy, buyAmountLimit = settings.perBuyAmount)
     return false;
   }
 
+  if (wasAnyBoughtToday(state, item.code)) {
+  console.log("[CORE 매수제외] 오늘 이미 매수한 종목", item.name || item.code);
+  return false;
+}
+
   if (state.holdings.some((h) => h.code === item.code)) {
     console.log("[모의매수 제외] 이미 보유중", item.name);
     return false;
@@ -2418,7 +2423,12 @@ return {
 }
 
 function paperTurboBuy(state, item, currentPrice) {
- 
+
+  if (wasAnyBoughtToday(state, item.code)) {
+    console.log("[TURBO 매수제외] 오늘 이미 매수한 종목", item.name || item.code);
+    return false;
+  }
+
   const price = Number(currentPrice || item.currentPrice || item.price || 0);
   if (!price || price <= 0) return false;
 
@@ -2749,6 +2759,11 @@ console.log("[LEADER 매수결과]", item.name, result);
     return false;
   }
 
+  if (wasAnyBoughtToday(state, item.code)) {
+  console.log("[LEADER 매수제외] 오늘 이미 매수한 종목", item.name || item.code);
+  return false;
+}
+
   if (wasStoppedToday(state, item.code)) {
     console.log("[LEADER 매수제외] 오늘 손절 또는 손실 이력 있음", item.name || item.code);
     return false;
@@ -2895,7 +2910,8 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
   const isPartialSell =
   actionType === "FIRST_TAKE_PROFIT" ||
   actionType === "TURBO_FIRST_TAKE_PROFIT" ||
-  actionType === "EARLY_FIRST_TAKE_PROFIT";
+  actionType === "EARLY_FIRST_TAKE_PROFIT" ||
+  actionType === "LEADER_FIRST_TAKE_PROFIT";
 
   const sellKey = `${todayKey()}_${holding.code}_${actionType}`;
 
@@ -2904,9 +2920,7 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     return false;
   }
 
-  if (!isPartialSell) {
-    state.sellKeys[sellKey] = nowText();
-  }
+  
 
   if (holding.sold || holding.selling || holding.pendingSell) {
   console.log(`[중복매도 차단] ${holding.name} ${holding.code} / 이미 매도중`);
@@ -2921,8 +2935,14 @@ holding.selling = true;
   const sellQty = sellQtyInput ? Number(sellQtyInput) : holdingQty;
 
   if (holdingQty <= 0 || price <= 0 || sellQty <= 0 || sellQty > holdingQty) {
-    return false;
-  }
+  holding.pendingSell = false;
+  holding.selling = false;
+  return false;
+}
+
+  if (!isPartialSell) {
+  state.sellKeys[sellKey] = nowText();
+}
 
  
 
@@ -3099,6 +3119,10 @@ async function checkServerAutoSellOnce() {
   const remainHoldings = [];
 
   for (const holding of state.holdings) {
+    if (holding.sold || holding.pendingSell) {
+  continue;
+}
+
     try {
       const priceData = await fetchPriceWithRetry(holding.code, 2);
       const currentPrice = Number(priceData.currentPrice || 0);
@@ -3695,7 +3719,9 @@ if (
     }
   }
 
-     state.holdings = remainHoldings;
+     state.holdings = remainHoldings.filter(
+  h => !h.sold && Number(h.qty || 0) > 0
+);
     state.lastSellCheckAt = nowText();
 
     saveState(state);
@@ -4481,7 +4507,7 @@ if (settings.blockStoppedToday && wasStoppedToday(state, item.code)) {
   continue;
 }
 
-if (wasBoughtToday(state, item.code)) {
+if (wasAnyBoughtToday(state, item.code)) {
   console.log(
     `[매수제외] ${item.name} ${item.code} / 오늘 이미 매수한 종목`
   );
