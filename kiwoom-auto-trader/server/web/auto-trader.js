@@ -2908,9 +2908,13 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     state.sellKeys[sellKey] = nowText();
   }
 
-  if (holding.sold || holding.selling) {
-    return false;
-  }
+  if (holding.sold || holding.selling || holding.pendingSell) {
+  console.log(`[중복매도 차단] ${holding.name} ${holding.code} / 이미 매도중`);
+  return false;
+}
+
+holding.pendingSell = true;
+holding.selling = true;
 
   const holdingQty = Number(holding.qty || 0);
   const price = Number(sellPrice || 0);
@@ -2920,7 +2924,7 @@ function paperSell(state, holding, sellPrice, reason, actionType = "SELL", sellQ
     return false;
   }
 
-  holding.selling = true;
+ 
 
   const buyPrice = Number(holding.buyPrice || 0);
   const buyAmount = buyPrice * sellQty;
@@ -2986,6 +2990,7 @@ if (holding.strategyGroup === "TURBO") {
   if (sellQty < holdingQty) {
     holding.qty = holdingQty - sellQty;
     holding.selling = false;
+    holding.pendingSell = false;
     holding.sold = false;
     holding.firstTakeProfitDone = true;
     holding.firstTakeProfitPrice = price;
@@ -2998,10 +3003,17 @@ if (holding.strategyGroup === "TURBO") {
     return true;
   }
 
-  holding.sold = true;
-  holding.selling = false;
+  
+holding.sold = true;
+holding.selling = false;
+holding.pendingSell = false;
+holding.qty = 0;
+holding.soldAt = new Date().toISOString();
+holding.sellReason = actionType;
 
-  state.holdings = state.holdings.filter((item) => item.code !== holding.code);
+state.holdings = state.holdings.filter(
+  (item) => item.code !== holding.code && !item.sold
+);
 
 rebalanceCashIfNoHoldings(
   state,
