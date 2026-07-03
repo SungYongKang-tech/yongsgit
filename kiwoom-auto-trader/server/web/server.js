@@ -615,19 +615,39 @@ app.get("/api/price", async (req, res) => {
 
     const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
 
-    const result = await axios.post(
-      url,
-      { stk_cd: code },
-      {
-        headers: {
-          "Content-Type": "application/json;charset=UTF-8",
-          authorization: `Bearer ${token}`,
-          "api-id": "ka10001"
-        }
-      }
-    );
+    let result = await axios.post(
+  url,
+  { stk_cd: code },
+  {
+    headers: {
+      "Content-Type": "application/json;charset=UTF-8",
+      authorization: `Bearer ${token}`,
+      "api-id": "ka10001"
+    }
+  }
+);
 
-    const data = result.data;
+let data = result.data;
+
+if (isTokenError(data)) {
+  console.log("[/api/price] 토큰 만료 감지 → 자동 재발급 후 현재가 재조회", code);
+
+  const newToken = await refreshKiwoomToken();
+
+  result = await axios.post(
+    url,
+    { stk_cd: code },
+    {
+      headers: {
+        "Content-Type": "application/json;charset=UTF-8",
+        authorization: `Bearer ${newToken}`,
+        "api-id": "ka10001"
+      }
+    }
+  );
+
+  data = result.data;
+}
 
     res.json({
       code: data.stk_cd,
@@ -641,11 +661,21 @@ app.get("/api/price", async (req, res) => {
       raw: data
     });
   } catch (error) {
-    res.status(500).json({
-      message: "현재가 조회 실패",
-      error: error.response?.data || error.message
-    });
-  }
+  console.error("[/api/price 현재가 조회 실패]", {
+    code: req.query.code,
+    message: error.message,
+    status: error.response?.status,
+    data: error.response?.data
+  });
+
+  res.status(500).json({
+    message: "현재가 조회 실패",
+    code: req.query.code,
+    error: error.message,
+    status: error.response?.status || null,
+    detail: error.response?.data || null
+  });
+}
 });
 
 app.get("/price/:code", async (req, res) => {

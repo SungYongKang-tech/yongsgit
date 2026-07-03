@@ -165,7 +165,7 @@ coreMinMarketScore: 45,
 leaderMinMarketScore: 60,
 
 turboMinFinalBuyScore: 60,
-coreMinFinalBuyScore: 70,
+coreMinFinalBuyScore: 60,
 leaderMinFinalBuyScore: 60,
 
 leaderRankBuyEnabled: true,
@@ -1254,33 +1254,75 @@ function getAvailableSlots(state) {
 
 async function fetchJson(url) {
   const res = await fetch(url);
-  const data = await res.json();
+  const text = await res.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (e) {
+    data = { rawText: text };
+  }
 
   if (!res.ok) {
-    throw new Error(data.message || "API 오류");
+    console.error("[API HTTP 실패]", {
+      url,
+      status: res.status,
+      data,
+    });
+
+    throw new Error(
+      data.message ||
+      data.return_msg ||
+      data.error ||
+      `API 오류 (${res.status})`
+    );
   }
 
   return data;
 }
 
+// 현재가 조회 실패 시 사용할 최근 정상 가격 저장소
+const lastPriceCache = {};
+
 async function fetchPrice(code) {
   return await fetchJson(`${API_BASE}/api/price?code=${code}`);
 }
 
-async function fetchPriceWithRetry(code, retry = 2) {
+async function fetchPriceWithRetry(code, retry = 1) {
   for (let i = 0; i <= retry; i++) {
     try {
-      return await fetchPrice(code);
-    } catch (err) {
-      if (i === retry) {
-        throw err;
-      }
+      const result = await fetchPrice(code);
 
+      // 조회 성공하면 최근 가격 저장
+      lastPriceCache[code] = {
+        ...result,
+        cachedAt: Date.now()
+      };
+
+      return result;
+    } catch (err) {
       console.log(
-        `[현재가 재시도] ${code} / ${i + 1}회 실패 / 0.5초 후 재시도`
+        `[현재가 재시도] ${code} / ${i + 1}회 실패 / ${err.message}`
       );
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (i < retry) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+
+      // 마지막 실패 시, 60초 이내 저장 가격이 있으면 사용
+      const cached = lastPriceCache[code];
+
+      if (cached && Date.now() - cached.cachedAt <= 60 * 1000) {
+        console.warn(`[현재가 캐시 사용] ${code} / API 실패 → 최근 정상가 사용`);
+
+        return {
+          ...cached,
+          isFallback: true
+        };
+      }
+
+      throw err;
     }
   }
 }
@@ -4487,7 +4529,7 @@ console.log(
       let currentPrice = 0;
 
       try {
-        priceData = await fetchPrice(item.code);
+        priceData = await fetchPriceWithRetry(item.code, 1);
 
         currentPrice = Number(
           priceData.currentPrice ||
@@ -4750,7 +4792,7 @@ if (isAttackBuyBlockedByMarket(marketTemperature)) {
     let priceData = null;
 
     try {
-      priceData = await fetchPrice(item.code);
+      priceData = await fetchPriceWithRetry(item.code, 1);
     } catch (err) {
       console.log("[EARLY] 현재가 조회 실패", item.code, err.message);
       continue;
@@ -4901,7 +4943,7 @@ async function runTurboAutoBuyOnce() {
       let priceData = null;
 
       try {
-        priceData = await fetchPrice(item.code);
+        priceData = await fetchPriceWithRetry(item.code, 1);
       } catch (err) {
         console.log("[TURBO] 현재가 조회 실패", item.code, err.message);
         continue;
@@ -5053,7 +5095,7 @@ console.log(`[LEADER 시장점수] ${marketScore.reason}`);
     let priceData = null;
 
     try {
-      priceData = await fetchPrice(item.code);
+      priceData = await fetchPriceWithRetry(item.code, 1);
     } catch (err) {
       console.log("[LEADER] 현재가 조회 실패", item.code, err.message);
       continue;

@@ -1628,6 +1628,29 @@ async function registerAppServiceWorker() {
 
 registerAppServiceWorker();
 
+function isIOSDevice() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function isStandalonePWA() {
+  return window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+}
+
+function showIOSPwaGuideIfNeeded() {
+  if (!isIOSDevice()) return;
+  if (isStandalonePWA()) return;
+
+  setTimeout(() => {
+    alert(
+      "아이폰은 Safari에서 홈 화면에 추가한 뒤 앱처럼 실행해야\n" +
+      "주행 중 화면 유지, 위치 공유, 알림이 더 안정적입니다."
+    );
+  }, 800);
+}
+
+showIOSPwaGuideIfNeeded();
+
 const friendStrip = document.getElementById("friendStrip");
 const memberCountEl = document.getElementById("memberCountEl");
 
@@ -4327,9 +4350,11 @@ async function requestWakeLockSafe() {
 
 function startWakeLockKeeper() {
   stopWakeLockKeeper();
-  wakeLockTimer = setInterval(() => {
-    requestWakeLockSafe();
-  }, 20000);
+  const intervalMs = isIOSDevice() ? 10000 : 20000;
+
+wakeLockTimer = setInterval(() => {
+  requestWakeLockSafe();
+}, intervalMs);
 }
 
 function stopWakeLockKeeper() {
@@ -4383,6 +4408,14 @@ document.addEventListener("visibilitychange", async () => {
 
 
       await requestWakeLockSafe();
+
+      if (isIOSDevice()) {
+  try {
+    radioSound.load();
+  } catch (e) {
+    console.log("아이폰 소리 재준비 실패:", e);
+  }
+}
 
       if (rideData.autoPaused && rideData.paused) {
         rideData.stopBeganAt = null;
@@ -5364,19 +5397,10 @@ messageCancelEditBtn.addEventListener("click", () => {
 });
 
 messageBtn.addEventListener("click", () => {
-  const willOpen = !messagePanel.classList.contains("open");
+  if (displayPanel) displayPanel.classList.remove("open");
+  if (messagePanel) messagePanel.classList.remove("open");
 
-  displayPanel.classList.remove("open");
-
-  if (willOpen) {
-    isMessageManageMode = false;
-    messageTools.style.display = "none";
-    messageManageBtn.textContent = "메시지 설정";
-    setMessageEditMode(-1);
-    renderMessageList();
-  }
-
-  messagePanel.classList.toggle("open");
+  startVoiceInput();
 });
 
 messageManageBtn.addEventListener("click", () => {
