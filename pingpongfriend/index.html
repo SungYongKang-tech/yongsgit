@@ -32,14 +32,9 @@ main{max-width:960px;margin:0 auto;padding:10px 8px 50px;}
 .sideBtn.right{background:#ef4444;}
 .subActions{display:flex;justify-content:center;gap:8px;margin-top:8px;}
 .notice{position:fixed;left:12px;right:12px;bottom:18px;z-index:60;display:none;max-width:520px;margin:0 auto;padding:10px 12px;border-radius:12px;background:#111827;color:#fff;font-size:14px;text-align:center;box-shadow:0 10px 24px rgba(0,0,0,.2);}
-.summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0;}
-.statCard{background:#e8f0ff;border-radius:12px;padding:10px 6px;text-align:center;font-weight:800;font-size:14px;}
-.statCard span{display:block;color:var(--muted);font-size:12px;margin-bottom:3px;}
+
 h2{font-size:18px;text-align:center;color:#1e3a8a;margin:18px 0 10px;font-weight:800;}
-table{width:100%;border-collapse:collapse;background:var(--card);box-shadow:var(--shadow);border-radius:12px;overflow:hidden;font-size:13px;}
-thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:8px 2px;text-align:center;color:#334155;font-weight:800;white-space:nowrap;}
-tbody td{border-bottom:1px solid #f1f5f9;padding:8px 2px;text-align:center;}
-.win{color:#dc2626;font-weight:800;}.lose{color:#2563eb;font-weight:800;}
+
 .empty{text-align:center;color:var(--muted);padding:16px;background:#fff;border-radius:12px;box-shadow:var(--shadow);}
 #logs{background:#fff;border-radius:12px;box-shadow:var(--shadow);padding:8px 10px;}
 .log-item{border-bottom:1px solid #e5e7eb;padding:9px 34px 9px 2px;position:relative;}
@@ -82,10 +77,7 @@ input{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:9px 10px;ba
       </div>
     </div>
 
-    <div id="summary" class="summary"></div>
-    <h2>🏆 통합 순위</h2>
-    <div id="rankingWrap"></div>
-    <h2>📝 최근 경기</h2>
+      <h2>📝 최근 경기</h2>
     <div id="logs"></div>
   </section>
 
@@ -243,49 +235,8 @@ $("leftWinBtn").addEventListener("click", () => saveByWinner("left"));
 $("rightWinBtn").addEventListener("click", () => saveByWinner("right"));
 $("clearSelected").addEventListener("click", () => { selectedNames=[]; renderTiles(); renderMatchDisplay(); });
 
-function buildStats(){
-  const stats = {};
-  Object.values(players || {}).forEach(p => {
-    if (!p?.name) return;
-    stats[p.name] = { name:p.name, bu:Number(p.bu ?? 99), total:0, win:0, lose:0, singleTotal:0, singleWin:0, singleLose:0, doubleTotal:0, doubleWin:0, doubleLose:0 };
-  });
-  Object.values(matches || {}).forEach(m => {
-    const mode = (m.mode || m.type) === "double" ? "double" : "single";
-    const winNames = Array.isArray(m.winnerNames) ? m.winnerNames : (m.winnerSide === "A" ? (m.namesA || []) : (m.namesB || []));
-    const loseNames = Array.isArray(m.loserNames) ? m.loserNames : (m.winnerSide === "A" ? (m.namesB || []) : (m.namesA || []));
-    [...winNames, ...loseNames].forEach(name => {
-      if (!stats[name]) stats[name] = { name, bu:99, total:0, win:0, lose:0, singleTotal:0, singleWin:0, singleLose:0, doubleTotal:0, doubleWin:0, doubleLose:0 };
-    });
-    winNames.forEach(name => { stats[name].total++; stats[name].win++; if (mode === "double") { stats[name].doubleTotal++; stats[name].doubleWin++; } else { stats[name].singleTotal++; stats[name].singleWin++; } });
-    loseNames.forEach(name => { stats[name].total++; stats[name].lose++; if (mode === "double") { stats[name].doubleTotal++; stats[name].doubleLose++; } else { stats[name].singleTotal++; stats[name].singleLose++; } });
-  });
-  return Object.values(stats).map(p => ({ ...p, rate:p.total ? p.win / p.total * 100 : 0 }))
-    .sort((a,b) => b.rate - a.rate || b.win - a.win || b.total - a.total || a.bu - b.bu || a.name.localeCompare(b.name,"ko"));
-}
-function renderSummary(arr){
-  const played = arr.filter(p => p.total > 0);
-  const totalMatches = Object.keys(matches || {}).length;
-  const top = played[0];
-  const topWin = played.slice().sort((a,b) => b.win - a.win || b.rate - a.rate)[0];
-  $("summary").innerHTML = `
-    <div class="statCard"><span>총 경기</span>${totalMatches}경기</div>
-    <div class="statCard"><span>참여 선수</span>${played.length}명</div>
-    <div class="statCard"><span>현재 1위</span>${top ? `${escapeHtml(top.name)} ${formatRate(top.rate)}` : "-"}</div>
-    <div class="statCard"><span>다승 1위</span>${topWin ? `${escapeHtml(topWin.name)} ${topWin.win}승` : "-"}</div>`;
-}
-function renderRanking(){
-  const arr = buildStats();
-  renderSummary(arr);
-  const played = arr.filter(p => p.total > 0);
-  if (!played.length) { $("rankingWrap").innerHTML = `<div class="empty">아직 입력된 경기 결과가 없습니다.</div>`; return; }
-  const rows = played.map((p,i) => `
-    <tr ${i === 0 ? 'style="background:#e0f2fe;"' : ""}>
-      <td>${i+1}</td><td>${escapeHtml(p.name)}(${p.bu})</td><td>${p.total}</td>
-      <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-      <td>${formatRate(p.rate)}</td><td>${p.singleTotal ? `${p.singleWin}/${p.singleLose}` : "-"}</td><td>${p.doubleTotal ? `${p.doubleWin}/${p.doubleLose}` : "-"}</td>
-    </tr>`).join("");
-  $("rankingWrap").innerHTML = `<table><thead><tr><th>순위</th><th>이름</th><th>경기</th><th>승/패</th><th>승률</th><th>단식</th><th>복식</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
+
+
 function renderLogs(){
   const arr = Object.entries(matches || {}).map(([id,m]) => ({ id, ...m })).sort((a,b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).slice(0,20);
   if (!arr.length) { $("logs").innerHTML = `<div style="text-align:center;color:#999;padding:8px;">최근 경기 없음</div>`; return; }
@@ -320,8 +271,17 @@ function renderPlayerList(){
   }));
 }
 
-onValue(membersRef, snap => { players = snap.val() || {}; renderPlayerList(); renderTiles(); renderRanking(); renderLogs(); });
-onValue(matchesRef, snap => { matches = snap.val() || {}; renderRanking(); renderLogs(); });
+onValue(membersRef, snap => {
+    players = snap.val() || {};
+    renderPlayerList();
+    renderTiles();
+});
+
+onValue(matchesRef, snap => {
+    matches = snap.val() || {};
+    renderLogs();
+});
+
 renderMatchDisplay();
 
 async function openAdmin(){
