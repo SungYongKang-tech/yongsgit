@@ -389,7 +389,7 @@ function renderPodium(arr){
     </div>`).join("");
 }
 
-function renderRanking(arr){
+function renderRanking(arr, waiting){
   $("rankCount").textContent = `${arr.length}명`;
 
   if (!arr.length) {
@@ -410,6 +410,20 @@ function renderRanking(arr){
       </tr>`;
   }).join("");
 
+  const waitingRows = waiting.map(p => `
+<tr style="background:#dbeafe;">
+    <td>-</td>
+    <td class="nameCell">
+        <span class="nameText">${escapeHtml(p.name)}(${p.bu})</span>
+    </td>
+    <td>${p.total}</td>
+    <td>
+        <span class="win">${p.win}</span>/<span class="lose">${p.lose}</span>
+    </td>
+    <td class="rateCell">${formatRate(p.rate)}</td>
+</tr>
+`).join("");
+
   $("rankingWrap").innerHTML = `
     <div class="tableWrap">
       <table>
@@ -422,16 +436,41 @@ function renderRanking(arr){
             <th>승률</th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>
+${rows}
+
+${
+waiting.length
+? `
+<tr>
+    <td colspan="5"
+        style="
+            background:#dbeafe;
+            font-weight:900;
+            text-align:center;
+            color:#1e40af;">
+        ▼ 3경기 미만 (순위 제외)
+    </td>
+</tr>
+
+${waitingRows}
+`
+: ""
+}
+</tbody>
       </table>
     </div>`;
 }
 
 function render(){
-  const arr = buildStats();
-  renderSummary(arr);
-  renderPodium(arr);
-  renderRanking(arr);
+    const arr = buildStats();
+
+    const official = arr.filter(p => p.total >= 3);
+    const waiting = arr.filter(p => p.total < 3);
+
+    renderSummary(arr);              // 전체 선수 기준
+    renderPodium(official);          // 3경기 이상만
+    renderRanking(official, waiting);// 3경기 이상만 순위
 }
 
 onValue(membersRef, snap => { players = snap.val() || {}; render(); });
