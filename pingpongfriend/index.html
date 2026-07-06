@@ -46,9 +46,13 @@ h2{font-size:18px;text-align:center;color:#1e3a8a;margin:18px 0 10px;font-weight
 .adminPanel{display:none;}
 .grid{display:grid;grid-template-columns:1fr 90px;gap:8px;}
 input{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:9px 10px;background:#fff;font-size:15px;font-weight:700;color:var(--ink);}
-.playerList{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px;}
-.playerChip{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:10px;padding:9px 10px;background:#f8fafc;font-size:15px;}
-.playerChip button{border:0;background:transparent;color:var(--danger);font-weight:900;cursor:pointer;}
+.adminActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.adminActions .btn{flex:1;min-width:90px;}
+.playerList{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-start;margin-top:12px;}
+.playerChip{border:1px solid #cbd5e1;border-radius:8px;padding:4px 7px;background:#fff;color:#111;font-size:15px;font-weight:800;cursor:pointer;line-height:1.2;touch-action:manipulation;}
+.playerChip.selected{background:#efef07!important;color:#111!important;border-color:#2563eb!important;outline:2px solid #2563eb;}
+.resetBox{margin-top:14px;padding-top:12px;border-top:1px dashed #cbd5e1;}
+.resetBox p{margin:0 0 8px;color:#64748b;font-size:13px;font-weight:700;line-height:1.4;}
 
 .chip.bu1{background:#dc2626;color:#fff;border-color:#dc2626;}
 .chip.bu2{background:#dc2626;color:#fff;border-color:#dc2626;}
@@ -102,11 +106,20 @@ input{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:9px 10px;ba
         <input id="playerName" placeholder="선수 이름" />
         <input id="playerBu" type="number" placeholder="부수" />
       </div>
-      <div class="row" style="justify-content:flex-start;margin-top:10px;">
+      <div class="adminActions">
         <button id="addPlayerBtn" class="btn primary">추가</button>
+        <button id="deleteSelectedPlayerBtn" class="btn danger">선택삭제</button>
         <button id="closeAdminBtn" class="btn">닫기</button>
       </div>
       <div id="playerList" class="playerList"></div>
+
+      <div class="resetBox">
+        <p>경기리셋은 경기 기록만 삭제합니다. 전체리셋은 선수와 경기 기록을 모두 삭제합니다.</p>
+        <div class="adminActions">
+          <button id="resetMatchesBtn" class="btn danger">경기리셋</button>
+          <button id="resetAllBtn" class="btn danger">전체리셋</button>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -135,6 +148,7 @@ let players = {};
 let matches = {};
 let isAdmin = false;
 let selectedNames = [];
+let selectedAdminPlayerId = null;
 
 const $ = (id) => document.getElementById(id);
 function escapeHtml(str){ return String(str ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
@@ -284,13 +298,76 @@ function renderLogs(){
 }
 function renderPlayerList(){
   const arr = playerArray();
-  if (!arr.length) { $("playerList").innerHTML = `<div class="empty">등록된 선수가 없습니다.</div>`; return; }
-  $("playerList").innerHTML = arr.map(p => `<div class="playerChip"><span>${escapeHtml(p.name)}(${p.bu})</span><button data-id="${p.id}">삭제</button></div>`).join("");
-  document.querySelectorAll(".playerChip button").forEach(btn => btn.addEventListener("click", async () => {
-    if (!confirm("이 선수를 삭제할까요?")) return;
-    await remove(ref(db, `members/${btn.dataset.id}`));
-    showNotice("삭제되었습니다");
-  }));
+  if (!arr.length) {
+    selectedAdminPlayerId = null;
+    $("playerList").innerHTML = `<div class="empty" style="width:100%;">등록된 선수가 없습니다.</div>`;
+    return;
+  }
+
+  if (selectedAdminPlayerId && !arr.some(p => p.id === selectedAdminPlayerId)) {
+    selectedAdminPlayerId = null;
+  }
+
+  $("playerList").innerHTML = arr.map(p => {
+    const selected = p.id === selectedAdminPlayerId ? "selected" : "";
+    const bu = Math.min(p.bu, 12);
+    return `<button class="playerChip chip bu${bu} ${selected}" data-id="${escapeHtml(p.id)}">
+      ${escapeHtml(p.name)}(${p.bu})
+    </button>`;
+  }).join("");
+
+  document.querySelectorAll(".playerChip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedAdminPlayerId = selectedAdminPlayerId === btn.dataset.id ? null : btn.dataset.id;
+      renderPlayerList();
+    });
+  });
+}
+
+async function verifyAdminPassword(message="관리자 비밀번호를 입력하세요."){
+  const snap = await get(ref(db,"config/adminPassword"));
+  const saved = snap.exists() ? String(snap.val()).trim() : "1111";
+  const input = prompt(message);
+  if (input === null) return false;
+  if (String(input).trim() !== saved) {
+    alert("비밀번호가 올바르지 않습니다.");
+    return false;
+  }
+  return true;
+}
+
+async function deleteSelectedPlayer(){
+  if (!selectedAdminPlayerId) return alert("삭제할 선수를 먼저 선택하세요.");
+  const arr = playerArray();
+  const p = arr.find(x => x.id === selectedAdminPlayerId);
+  const name = p ? p.name : "선택한 선수";
+  if (!confirm(`${name} 선수를 삭제할까요?`)) return;
+  await remove(ref(db, `members/${selectedAdminPlayerId}`));
+  selectedAdminPlayerId = null;
+  showNotice("선수 삭제 완료");
+}
+
+async function resetMatches(){
+  if (!(await verifyAdminPassword("경기리셋 관리자 비밀번호를 입력하세요."))) return;
+  if (!confirm("경기 기록을 전부 삭제할까요? 선수 명단은 유지됩니다.")) return;
+  await remove(matchesRef);
+  selectedNames = [];
+  renderTiles();
+  renderMatchDisplay();
+  showNotice("경기 기록이 리셋되었습니다");
+}
+
+async function resetAll(){
+  if (!(await verifyAdminPassword("전체리셋 관리자 비밀번호를 입력하세요."))) return;
+  if (!confirm("전체 리셋할까요? 선수 명단과 경기 기록이 모두 삭제됩니다.")) return;
+  if (!confirm("정말 삭제합니다. 되돌릴 수 없습니다.")) return;
+  await remove(matchesRef);
+  await remove(membersRef);
+  selectedNames = [];
+  selectedAdminPlayerId = null;
+  renderTiles();
+  renderMatchDisplay();
+  showNotice("전체 리셋 완료");
 }
 
 onValue(membersRef, snap => {
@@ -308,11 +385,7 @@ renderMatchDisplay();
 
 async function openAdmin(){
   if (!isAdmin) {
-    const snap = await get(ref(db,"config/adminPassword"));
-    const saved = snap.exists() ? String(snap.val()) : "1111";
-    const input = prompt("관리자 비밀번호를 입력하세요.");
-    if (!input) return;
-    if (input !== saved) return alert("비밀번호가 올바르지 않습니다.");
+    if (!(await verifyAdminPassword())) return;
     isAdmin = true;
   }
   $("mainPanel").style.display="none"; $("adminPanel").style.display="block";
@@ -321,6 +394,9 @@ function closeAdmin(){ $("adminPanel").style.display="none"; $("mainPanel").styl
 $("adminBtn").addEventListener("click", openAdmin);
 $("showMainBtn").addEventListener("click", closeAdmin);
 $("closeAdminBtn").addEventListener("click", closeAdmin);
+$("deleteSelectedPlayerBtn").addEventListener("click", deleteSelectedPlayer);
+$("resetMatchesBtn").addEventListener("click", resetMatches);
+$("resetAllBtn").addEventListener("click", resetAll);
 $("addPlayerBtn").addEventListener("click", async () => {
   const name = $("playerName").value.trim();
   const bu = Number($("playerBu").value || 99);
