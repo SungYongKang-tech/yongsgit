@@ -313,6 +313,15 @@ function getK(games){
   return games < 10 ? 40 : 24;
 }
 
+function getHandicapElo(playerLevel, opponentLevel){
+
+  const gap = Number(playerLevel) - Number(opponentLevel);
+
+  // 1부수 차이 = Elo 50점 보정
+  return gap * 50;
+
+}
+
 function getPlayerLevel(name){
   const p = players.find(x => x.name === name);
   return p ? p.level : 5;
@@ -347,13 +356,26 @@ async function saveEloForSingleMatch(matchId, match){
   const beforeA = Number(a.elo || initialEloByBu(getPlayerLevel(pA)));
   const beforeB = Number(b.elo || initialEloByBu(getPlayerLevel(pB)));
 
+  const levelA = getPlayerLevel(pA);
+const levelB = getPlayerLevel(pB);
+
+const calcA = beforeA + getHandicapElo(levelA, levelB);
+const calcB = beforeB + getHandicapElo(levelB, levelA);
+  
   const gamesA = Number(a.games || 0);
   const gamesB = Number(b.games || 0);
 
   const scoreA = match.winnerSide === "A" ? 1 : 0;
 
-  const changeA = Math.round(getK(gamesA) * (scoreA - expectedScore(beforeA, beforeB)));
-  const changeB = Math.round(getK(gamesB) * ((1 - scoreA) - expectedScore(beforeB, beforeA)));
+  const changeA = Math.round(
+  getK(gamesA) *
+  (scoreA - expectedScore(calcA, calcB))
+);
+
+const changeB = Math.round(
+  getK(gamesB) *
+  ((1-scoreA) - expectedScore(calcB, calcA))
+);
 
   const afterA = beforeA + changeA;
   const afterB = beforeB + changeB;
@@ -433,11 +455,23 @@ async function rebuildAllElo(){
     const beforeA = elo[pA];
     const beforeB = elo[pB];
 
+    const levelA = getPlayerLevel(pA);
+const levelB = getPlayerLevel(pB);
+
+const calcA = beforeA + getHandicapElo(levelA, levelB);
+const calcB = beforeB + getHandicapElo(levelB, levelA);
+
     const scoreA = m.winnerSide === "A" ? 1 : 0;
 
-    const changeA = Math.round(getK(games[pA]) * (scoreA - expectedScore(beforeA, beforeB)));
-    const changeB = Math.round(getK(games[pB]) * ((1 - scoreA) - expectedScore(beforeB, beforeA)));
+    const changeA = Math.round(
+  getK(games[pA]) *
+  (scoreA - expectedScore(calcA, calcB))
+);
 
+const changeB = Math.round(
+  getK(games[pB]) *
+  ((1-scoreA) - expectedScore(calcB, calcA))
+);
     const afterA = beforeA + changeA;
     const afterB = beforeB + changeB;
 
