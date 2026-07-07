@@ -161,6 +161,12 @@ function getThisMonthChange(name, currentElo){
   return Math.round(currentElo - startElo);
 }
 
+function initialEloByBu(bu){
+  const n = Number(bu);
+  if (!Number.isFinite(n)) return 1500;
+  return 2000 - (n * 100);
+}
+
 function renderEloPage(){
   if(!membersLoaded) return;
 
@@ -171,14 +177,15 @@ function renderEloPage(){
     .map(r=>{
       const current = Math.round(Number(r.elo || 0));
       return {
-        name: r.name,
-        bu: playerLevels[r.name] ?? "-",
-        elo: current,
-        change: getThisMonthChange(r.name, current),
-        games: Number(r.games || 0),
-        win: Number(r.wins || 0),
-        lose: Number(r.losses || 0)
-      };
+  name: r.name,
+  bu: playerLevels[r.name] ?? "-",
+  initialElo: initialEloByBu(playerLevels[r.name] ?? 5),
+  elo: current,
+  change: getThisMonthChange(r.name, current),
+  games: Number(r.games || 0),
+  win: Number(r.wins || 0),
+  lose: Number(r.losses || 0)
+};
     })
     .sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
 
@@ -226,11 +233,12 @@ function renderTable(arr, totalSingleMatches, recent){
     <table>
       <thead>
         <tr>
-          <th>순위</th>
-          <th>이름(부수)</th>
-          <th>Elo</th>
-          <th>이번달 변화</th>
-          <th>경기</th>
+         <th>순위</th>
+<th>이름(부수)</th>
+<th>초기 ELO</th>
+<th>현재 ELO</th>
+<th>이번달 변화</th>
+<th>경기</th>
         </tr>
       </thead>
       <tbody>
@@ -239,10 +247,11 @@ function renderTable(arr, totalSingleMatches, recent){
         ` : arr.map((p,i)=>`
           <tr style="${i < 3 ? 'background:#e0f2fe' : 'background:#f9fafb'}">
             <td>${rankIcon(i)}</td>
-            <td>${p.name}(${p.bu})</td>
-            <td><b>${p.elo}</b></td>
-            <td>${formatChange(p.change)}</td>
-            <td>${p.games}</td>
+<td>${p.name}(${p.bu})</td>
+<td style="color:#64748b;">${p.initialElo}</td>
+<td><b>${p.elo}</b></td>
+<td>${formatChange(p.change)}</td>
+<td>${p.games}</td>
           </tr>
         `).join("")}
       </tbody>
