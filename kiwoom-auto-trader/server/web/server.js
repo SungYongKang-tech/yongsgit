@@ -276,7 +276,7 @@ function calculateDiscoverScore(item) {
 
 
 
-
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 
 
@@ -297,10 +297,12 @@ const targets = STOCK_MASTER.slice(0, scanLimit);
     const items = [];
 
     for (const stock of targets) {
-      try {
-        const priceRes = await fetch(
-          `http://localhost:${PORT}/api/price?code=${stock.code}`
-        );
+  try {
+    await sleep(350);
+
+    const priceRes = await fetch(
+      `http://localhost:${PORT}/api/price?code=${stock.code}`
+    );
 
         const priceData = await priceRes.json();
 
@@ -604,6 +606,21 @@ await new Promise((resolve) => setTimeout(resolve, 1200));
   );
 }
 
+const priceCache = {};
+let lastKiwoomPriceRequestAt = 0;
+
+async function waitKiwoomPriceLimit() {
+  const minGapMs = 350;
+  const now = Date.now();
+  const waitMs = Math.max(0, minGapMs - (now - lastKiwoomPriceRequestAt));
+
+  if (waitMs > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+  }
+
+  lastKiwoomPriceRequestAt = Date.now();
+}
+
 app.get("/api/price", async (req, res) => {
   try {
     const token = getSavedToken();
@@ -613,7 +630,18 @@ app.get("/api/price", async (req, res) => {
       return res.status(400).json({ message: "종목코드가 없습니다." });
     }
 
+    const cached = priceCache[code];
+
+if (cached && Date.now() - cached.cachedAt <= 5000) {
+  return res.json({
+    ...cached.data,
+    isCached: true
+  });
+}
+
     const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
+
+    await waitKiwoomPriceLimit();
 
     let result = await axios.post(
   url,

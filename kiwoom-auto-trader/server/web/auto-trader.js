@@ -1012,8 +1012,8 @@ function getLeadingSectorScores(candidates = []) {
 
 async function calculateMarketLeadingSectors() {
   const data = await fetchJson(
-    `${API_BASE}/api/discover?scanLimit=4050&limit=4050`
-  );
+  `${API_BASE}/api/discover?scanLimit=200&limit=200`
+);
 
   const items = data.items || [];
 
@@ -1348,8 +1348,8 @@ async function discoverCandidates() {
   const marketLeadingSectors = await calculateMarketLeadingSectors();
 
   const data = await fetchJson(
-    `${API_BASE}/api/discover?scanLimit=1000&limit=${settings.discoverLimit}`
-  );
+  `${API_BASE}/api/discover?scanLimit=200&limit=${settings.discoverLimit}`
+);
 
   const items = data.items || [];
 
