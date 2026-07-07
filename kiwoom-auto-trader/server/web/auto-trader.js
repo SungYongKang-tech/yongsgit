@@ -32,7 +32,7 @@ leaderRatio: 0.2,
   dailyLossLimitRate: 0.01,
   maxConsecutiveLoss: 3,
 
-  discoverLimit: 300,
+  discoverLimit: 200,
   minScore: 9,
   buyCooldownMinutes: 10,
 

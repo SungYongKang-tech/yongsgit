@@ -677,17 +677,26 @@ if (isTokenError(data)) {
   data = result.data;
 }
 
-    res.json({
-      code: data.stk_cd,
-      name: data.stk_nm,
-      currentPrice: Number(cleanNumber(data.cur_prc)),
-      changeRate: data.flu_rt,
-      volume: Number(cleanNumber(data.trde_qty)),
-      open: Number(cleanNumber(data.open_pric)),
-      high: Number(cleanNumber(data.high_pric)),
-      low: Number(cleanNumber(data.low_pric)),
-      raw: data
-    });
+    const responseData = {
+  code: data.stk_cd,
+  name: data.stk_nm,
+  currentPrice: Number(cleanNumber(data.cur_prc)),
+  changeRate: data.flu_rt,
+  volume: Number(cleanNumber(data.trde_qty)),
+  open: Number(cleanNumber(data.open_pric)),
+  high: Number(cleanNumber(data.high_pric)),
+  low: Number(cleanNumber(data.low_pric)),
+  raw: data
+};
+
+priceCache[code] = {
+  data: responseData,
+  cachedAt: Date.now()
+};
+
+res.json(responseData);
+
+
   } catch (error) {
   console.error("[/api/price 현재가 조회 실패]", {
     code: req.query.code,
