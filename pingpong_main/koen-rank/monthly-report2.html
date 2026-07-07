@@ -91,8 +91,9 @@ get(titleRef).then(snap=>{
 });
 
 let playerLevels = {};
+let ratingsData = {};
+let logsData = {};
 let membersLoaded = false;
-let matchesData = {};
 
 onValue(ref(db, "members"), (snap)=>{
   const data = snap.val() || {};
@@ -108,38 +109,15 @@ onValue(ref(db, "members"), (snap)=>{
   renderEloPage();
 });
 
-onValue(ref(db,"matches"), (snap)=>{
-  matchesData = snap.val() || {};
+onValue(ref(db, "eloRatings"), (snap)=>{
+  ratingsData = snap.val() || {};
   renderEloPage();
 });
 
-function initialEloByBu(bu){
-  const n = Number(bu);
-  if (!Number.isFinite(n)) return 1500;
-  return 2000 - (n * 100);
-}
-
-function expectedScore(ratingA, ratingB){
-  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
-}
-
-function getK(games){
-  return games < 10 ? 40 : 24;
-}
-
-function monthKeyOf(d){
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-
-function normalizeMonthKey(v){
-  if(v == null) return "";
-  const s = String(v).trim();
-  const m = s.match(/^(\d{4})[-\/](\d{1,2})$/);
-  if(!m) return s;
-  const y = m[1];
-  const mm = String(parseInt(m[2],10)).padStart(2,'0');
-  return `${y}-${mm}`;
-}
+onValue(ref(db, "eloLogs"), (snap)=>{
+  logsData = snap.val() || {};
+  renderEloPage();
+});
 
 function formatChange(n){
   if(n > 0) return `<span class="win">▲ +${n}</span>`;
@@ -154,119 +132,58 @@ function rankIcon(i){
   return i + 1;
 }
 
+function monthKeyOf(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
 window.toggleHelp = function(id){
   const el = document.getElementById(id);
   if(!el) return;
   el.classList.toggle("show");
 };
 
-function ensurePlayer(name, elo, games, monthStartElo, thisMonth){
-  if(!name) return;
-  if(elo[name] == null){
-    elo[name] = initialEloByBu(playerLevels[name]);
-  }
-  if(games[name] == null){
-    games[name] = 0;
-  }
-  if(monthStartElo[name] == null){
-    monthStartElo[name] = elo[name];
-  }
+function getThisMonthChange(name, currentElo){
+  const thisMonth = monthKeyOf(new Date());
+
+  const monthLogs = Object.values(logsData)
+    .filter(l => l && l.monthKey === thisMonth)
+    .filter(l => l.pA === name || l.pB === name)
+    .sort((a,b)=>Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  if(monthLogs.length === 0) return 0;
+
+  const first = monthLogs[0];
+  const startElo = first.pA === name ? Number(first.beforeA) : Number(first.beforeB);
+
+  return Math.round(currentElo - startElo);
 }
 
 function renderEloPage(){
   if(!membersLoaded) return;
 
-  const now = new Date();
-  const thisMonth = monthKeyOf(now);
+  const arr = Object.values(ratingsData)
+    .filter(r => r && r.name)
+    .filter(r => playerLevels[r.name] !== undefined)
+    .filter(r => Number(r.games || 0) > 0)
+    .map(r=>{
+      const current = Math.round(Number(r.elo || 0));
+      return {
+        name: r.name,
+        bu: playerLevels[r.name] ?? "-",
+        elo: current,
+        change: getThisMonthChange(r.name, current),
+        games: Number(r.games || 0),
+        win: Number(r.wins || 0),
+        lose: Number(r.losses || 0)
+      };
+    })
+    .sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
 
-  const elo = {};
-  const games = {};
-  const wins = {};
-  const losses = {};
-  const monthStartElo = {};
-  const recent = [];
-
-  Object.keys(playerLevels).forEach(name=>{
-    elo[name] = initialEloByBu(playerLevels[name]);
-    games[name] = 0;
-    wins[name] = 0;
-    losses[name] = 0;
-    monthStartElo[name] = elo[name];
-  });
-
-  const matches = Object.values(matchesData)
-    .filter(m => m && m.mode === "single")
-    .filter(m => (m.namesA || [])[0] && (m.namesB || [])[0])
-    .filter(m => m.winnerSide === "A" || m.winnerSide === "B")
+  const recent = Object.values(logsData)
+    .filter(l => l && l.mode === "single")
     .sort((a,b)=> Number(a.createdAt || 0) - Number(b.createdAt || 0));
 
-  matches.forEach(m=>{
-    const pA = m.namesA[0];
-    const pB = m.namesB[0];
-    const mk = normalizeMonthKey(m.monthKey);
-
-    ensurePlayer(pA, elo, games, monthStartElo, thisMonth);
-    ensurePlayer(pB, elo, games, monthStartElo, thisMonth);
-
-    if(mk === thisMonth){
-      if(monthStartElo[pA] == null) monthStartElo[pA] = elo[pA];
-      if(monthStartElo[pB] == null) monthStartElo[pB] = elo[pB];
-    }
-
-    const beforeA = elo[pA];
-    const beforeB = elo[pB];
-
-    const scoreA = m.winnerSide === "A" ? 1 : 0;
-    const expectedA = expectedScore(beforeA, beforeB);
-    const expectedB = expectedScore(beforeB, beforeA);
-
-    const changeA = Math.round(getK(games[pA]) * (scoreA - expectedA));
-    const changeB = Math.round(getK(games[pB]) * ((1 - scoreA) - expectedB));
-
-    elo[pA] += changeA;
-    elo[pB] += changeB;
-
-    games[pA]++;
-    games[pB]++;
-
-    if(scoreA === 1){
-      wins[pA] = (wins[pA] || 0) + 1;
-      losses[pB] = (losses[pB] || 0) + 1;
-    }else{
-      wins[pB] = (wins[pB] || 0) + 1;
-      losses[pA] = (losses[pA] || 0) + 1;
-    }
-
-    recent.push({
-      createdAt: Number(m.createdAt || 0),
-      pA, pB,
-      winner: scoreA === 1 ? pA : pB,
-      loser: scoreA === 1 ? pB : pA,
-      changeWinner: scoreA === 1 ? changeA : changeB,
-      changeLoser: scoreA === 1 ? changeB : changeA,
-      afterWinner: scoreA === 1 ? elo[pA] : elo[pB],
-      afterLoser: scoreA === 1 ? elo[pB] : elo[pA]
-    });
-  });
-
-  const arr = Object.keys(elo)
-  .filter(name => playerLevels[name] !== undefined)
-  .filter(name => (games[name] || 0) > 0)
-  .map(name=>{
-    const current = Math.round(elo[name]);
-    const start = Math.round(monthStartElo[name] ?? initialEloByBu(playerLevels[name]));
-    return {
-      name,
-      bu: playerLevels[name] ?? "-",
-      elo: current,
-      change: current - start,
-      games: games[name] || 0,
-      win: wins[name] || 0,
-      lose: losses[name] || 0
-    };
-  }).sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
-
-  renderTable(arr, matches.length, recent);
+  renderTable(arr, recent.length, recent);
 }
 
 function renderTable(arr, totalSingleMatches, recent){
@@ -278,29 +195,29 @@ function renderTable(arr, totalSingleMatches, recent){
     .map(r=>`
       <tr>
         <td>${r.winner}</td>
-        <td><span class="win">+${r.changeWinner}</span></td>
+        <td><span class="win">+${r.winnerChange}</span></td>
         <td>${r.loser}</td>
-        <td><span class="lose">${r.changeLoser}</span></td>
+        <td><span class="lose">${r.loserChange}</span></td>
       </tr>
     `).join("");
 
   sec.innerHTML = `
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
-  🏆 단식 Elo 랭킹
-  <button class="helpBtn" onclick="toggleHelp('eloHelp')">설명</button>
-</h2>
+      🏆 단식 Elo 랭킹
+      <button class="helpBtn" onclick="toggleHelp('eloHelp')">설명</button>
+    </h2>
 
-<div id="eloHelp" class="helpBox">
-  <b>🏆 단식 Elo 랭킹이란?</b>
-  <ul>
-    <li>단식 경기 결과를 바탕으로 선수별 실력 점수를 자동 계산합니다.</li>
-    <li>부수별 초기 Elo는 1부 1900점부터 14부 600점까지 100점 간격으로 시작합니다.</li>
-    <li>강한 선수를 이기면 점수가 많이 오르고, 약한 선수에게 지면 점수가 많이 내려갑니다.</li>
-    <li>10경기 미만 선수는 실력 보정이 빠르게 되도록 점수 변동폭이 조금 크게 적용됩니다.</li>
-    <li>0경기 선수와 탈퇴 선수는 랭킹에서 제외됩니다.</li>
-    <li><b>이번달 변화</b>는 이번 달 시작 Elo와 현재 Elo의 차이입니다.</li>
-  </ul>
-</div>
+    <div id="eloHelp" class="helpBox">
+      <b>🏆 단식 Elo 랭킹이란?</b>
+      <ul>
+        <li>단식 경기 결과를 바탕으로 선수별 실력 점수를 자동 계산합니다.</li>
+        <li>부수별 초기 Elo는 1부 1900점부터 14부 600점까지 100점 간격으로 시작합니다.</li>
+        <li>강한 선수를 이기면 점수가 많이 오르고, 약한 선수에게 지면 점수가 많이 내려갑니다.</li>
+        <li>10경기 미만 선수는 실력 보정이 빠르게 되도록 점수 변동폭이 조금 크게 적용됩니다.</li>
+        <li>0경기 선수와 탈퇴 선수는 랭킹에서 제외됩니다.</li>
+        <li><b>이번달 변화</b>는 이번 달 첫 경기 직전 Elo와 현재 Elo의 차이입니다.</li>
+      </ul>
+    </div>
 
     <table>
       <thead>
@@ -330,27 +247,29 @@ function renderTable(arr, totalSingleMatches, recent){
     <div style="text-align:center;">
       <span class="totalNote">🔹 단식 Elo 반영 경기 수: <b>${totalSingleMatches} 경기</b></span>
     </div>
+
     <p class="ruleNote">
       ⚖️ 초기 Elo: <b>1부 1900 / 2부 1800 / 3부 1700 / 4부 1600 / 5부 1500 / 6부 1400 / 7부 1300 / 8부 1200 / 9부 1100 / 10부 1000 / 11부 900 / 12부 800 / 13부 700 / 14부 600</b><br>
-신규 선수와 10경기 미만 선수는 변동폭이 조금 크게 반영됩니다.
+      신규 선수와 10경기 미만 선수는 변동폭이 조금 크게 반영됩니다.
     </p>
 
     <div class="prevWrap">
       <div class="prevTitle">
-  최근 Elo 변동
-  <button class="helpBtn" onclick="toggleHelp('recentHelp')">설명</button>
-</div>
+        최근 Elo 변동
+        <button class="helpBtn" onclick="toggleHelp('recentHelp')">설명</button>
+      </div>
 
-<div id="recentHelp" class="helpBox">
-  <b>📈 최근 10경기 Elo 변동이란?</b>
-  <ul>
-    <li>가장 최근에 저장된 단식 경기 10개의 점수 변화를 보여줍니다.</li>
-    <li>승자는 보통 점수가 오르고, 패자는 점수가 내려갑니다.</li>
-    <li>상대보다 약한 선수가 이기면 더 큰 점수를 얻습니다.</li>
-    <li>상대보다 강한 선수가 이기면 점수는 조금만 오릅니다.</li>
-    <li>이 표는 최근 경기 흐름을 빠르게 확인하기 위한 참고용입니다.</li>
-  </ul>
-</div>
+      <div id="recentHelp" class="helpBox">
+        <b>📈 최근 10경기 Elo 변동이란?</b>
+        <ul>
+          <li>가장 최근에 저장된 단식 경기 10개의 점수 변화를 보여줍니다.</li>
+          <li>승자는 보통 점수가 오르고, 패자는 점수가 내려갑니다.</li>
+          <li>상대보다 약한 선수가 이기면 더 큰 점수를 얻습니다.</li>
+          <li>상대보다 강한 선수가 이기면 점수는 조금만 오릅니다.</li>
+          <li>이 표는 최근 경기 흐름을 빠르게 확인하기 위한 참고용입니다.</li>
+        </ul>
+      </div>
+
       <div class="monthCard">
         <div class="bar">📈 최근 ${SHOW_RECENT_MATCHES}경기</div>
         <div class="inner">
@@ -373,5 +292,6 @@ function renderTable(arr, totalSingleMatches, recent){
   `;
 }
 </script>
+
 </body>
 </html>
