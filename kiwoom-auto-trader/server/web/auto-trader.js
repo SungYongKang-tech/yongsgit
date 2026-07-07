@@ -1282,9 +1282,26 @@ async function fetchJson(url) {
 }
 
 // 현재가 조회 실패 시 사용할 최근 정상 가격 저장소
+// 현재가 조회 실패 시 사용할 최근 정상 가격 저장소
 const lastPriceCache = {};
 
+// ka10001 현재가 API 유량 제한 보호
+let lastPriceRequestAt = 0;
+
+async function waitPriceApiLimit() {
+  const minGapMs = 350; // 초당 약 2~3건으로 제한
+  const now = Date.now();
+  const waitMs = Math.max(0, minGapMs - (now - lastPriceRequestAt));
+
+  if (waitMs > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+  }
+
+  lastPriceRequestAt = Date.now();
+}
+
 async function fetchPrice(code) {
+  await waitPriceApiLimit();
   return await fetchJson(`${API_BASE}/api/price?code=${code}`);
 }
 
@@ -1306,7 +1323,7 @@ async function fetchPriceWithRetry(code, retry = 1) {
       );
 
       if (i < retry) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         continue;
       }
 
