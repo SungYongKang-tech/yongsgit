@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🏓 월간 단식 리그 리포트</title>
+<title>🏆 단식 Elo 랭킹</title>
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 :root{
@@ -21,8 +21,8 @@ table{width:100%;border-collapse:collapse;background:var(--card);box-shadow:var(
 thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:10px 6px;text-align:center;color:#334155;font-weight:700;}
 tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center;}
 tbody tr:hover{background:#f9fafb}
-.win{color:var(--ok);font-weight:700;}
-.lose{color:var(--danger);font-weight:700;}
+.win{color:var(--ok);font-weight:800;}
+.lose{color:var(--danger);font-weight:800;}
 .totalNote{text-align:center;margin-top:12px;font-size:17px;font-weight:800;color:#0d47a1;background:#e3f2fd;display:inline-block;padding:6px 14px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.08);}
 .ruleNote{text-align:center;font-size:14px;color:#475569;margin-top:8px;margin-bottom:20px;}
 .prevWrap{margin-top:16px;display:flex;flex-direction:column;gap:16px;}
@@ -38,7 +38,7 @@ tbody tr:hover{background:#f9fafb}
 </head>
 <body>
 <header>
-  <h1 id="pageHeader">🏓 월간 단식 리그 리포트</h1>
+  <h1 id="pageHeader">🏆 단식 Elo 랭킹</h1>
   <div style="display:flex;justify-content:center;gap:8px;">
     <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
     <a href="monthly-report.html" class="btn primary">통합 전적</a>
@@ -53,40 +53,55 @@ tbody tr:hover{background:#f9fafb}
 import { db } from "../firebase.js";
 import { ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-/* ✅ 이번달 + 지난달만 표시 */
-const SHOW_MONTHS = 2;
+const SHOW_RECENT_MATCHES = 10;
 
-/* Title */
 const titleRef = ref(db, "config/title");
 get(titleRef).then(snap=>{
   const title = snap.exists() ? snap.val() : "우리회사";
-  document.getElementById("pageHeader").textContent = `🏓 ${title} 월간 단식 리포트`;
+  document.getElementById("pageHeader").textContent = `🏆 ${title} 단식 Elo 랭킹`;
 });
 
-/* Helpers */
-function formatNum(n){ return (Math.round(n*10)/10).toFixed(1); }
+let playerLevels = {};
+let membersLoaded = false;
+let matchesData = {};
+
+onValue(ref(db, "members"), (snap)=>{
+  const data = snap.val() || {};
+  const map = {};
+
+  Object.values(data).forEach(p=>{
+    if(!p || !p.name) return;
+    map[p.name] = Number(p.bu ?? 5);
+  });
+
+  playerLevels = map;
+  membersLoaded = true;
+  renderEloPage();
+});
+
+onValue(ref(db,"matches"), (snap)=>{
+  matchesData = snap.val() || {};
+  renderEloPage();
+});
+
+function initialEloByBu(bu){
+  const n = Number(bu);
+  if (!Number.isFinite(n)) return 1500;
+  return 2000 - (n * 100);
+}
+
+function expectedScore(ratingA, ratingB){
+  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+}
+
+function getK(games){
+  return games < 10 ? 40 : 24;
+}
+
 function monthKeyOf(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
-function daysInMonth(year, monthIndex0){
-  return new Date(year, monthIndex0 + 1, 0).getDate();
-}
-function recentMonthKeys(now, count=2){
-  const out = [];
-  for(let i=0;i<count;i++){
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    out.push(monthKeyOf(d));
-  }
-  return out; // 최신순
-}
-function minGamesSingleForMonth(monthKey, now){
-  const [y,m] = monthKey.split("-").map(Number);
-  const isThis = monthKey === monthKeyOf(now);
-  const day = isThis ? now.getDate() : daysInMonth(y, m-1);
-  return Math.ceil(day / 3);
-}
 
-/* ✅ monthKey 표준화: "2026-1" / "2026-01" / "2026/1" 등 → "2026-01" */
 function normalizeMonthKey(v){
   if(v == null) return "";
   const s = String(v).trim();
@@ -97,169 +112,198 @@ function normalizeMonthKey(v){
   return `${y}-${mm}`;
 }
 
-/* members -> level */
-let playerLevels = {};
-onValue(ref(db, "members"), (snap)=>{
-  const data = snap.val() || {};
-  const map = {};
-  Object.values(data).forEach(p=>{
-    if(!p || !p.name) return;
-    map[p.name] = Number(p.bu ?? 99);
-  });
-  playerLevels = map;
-});
+function formatChange(n){
+  if(n > 0) return `<span class="win">▲ +${n}</span>`;
+  if(n < 0) return `<span class="lose">▼ ${n}</span>`;
+  return `<span style="color:#64748b;">0</span>`;
+}
 
-/* matches -> 단식 월별 집계 */
-onValue(ref(db,"matches"), (snap)=>{
-  const data = snap.val() || {};
-  const now = new Date();
+function rankIcon(i){
+  if(i === 0) return "🥇";
+  if(i === 1) return "🥈";
+  if(i === 2) return "🥉";
+  return i + 1;
+}
 
-  const keepMonths = recentMonthKeys(now, SHOW_MONTHS); // ✅ ["이번달","지난달"]
-  const keepSet = new Set(keepMonths);
-
-  const thisMonth = keepMonths[0];
-  const prevMonth = keepMonths[1]; // ✅ 지난달 1개만
-
-  const statsSingleByMonth = {};
-  keepMonths.forEach(mk=> statsSingleByMonth[mk] = {});
-
-  Object.values(data).forEach(m=>{
-    if(!m) return;
-
-    const mk = normalizeMonthKey(m.monthKey);
-    if(!keepSet.has(mk)) return;
-    if(m.mode !== "single") return;
-
-    const statsSingle = statsSingleByMonth[mk];
-
-    const names = [...(m.namesA||[]), ...(m.namesB||[])];
-    names.forEach(n=>{ if(!statsSingle[n]) statsSingle[n] = {win:0,lose:0}; });
-
-    if(m.winnerSide==='A'){
-      (m.namesA||[]).forEach(n=>statsSingle[n].win++);
-      (m.namesB||[]).forEach(n=>statsSingle[n].lose++);
-    } else if(m.winnerSide==='B'){
-      (m.namesB||[]).forEach(n=>statsSingle[n].win++);
-      (m.namesA||[]).forEach(n=>statsSingle[n].lose++);
-    }
-  });
-
-  function buildSingleArr(statsSingle){
-    return Object.entries(statsSingle).map(([name,s])=>{
-      const total = s.win + s.lose;
-      const rate = total ? (s.win/total*100) : 0;
-      return {name, total, win:s.win, lose:s.lose, rate};
-    }).sort((a,b)=>b.rate-a.rate || b.win-a.win || b.total-a.total);
+function ensurePlayer(name, elo, games, monthStartElo, thisMonth){
+  if(!name) return;
+  if(elo[name] == null){
+    elo[name] = initialEloByBu(playerLevels[name]);
   }
+  if(games[name] == null){
+    games[name] = 0;
+  }
+  if(monthStartElo[name] == null){
+    monthStartElo[name] = elo[name];
+  }
+}
 
-  const thisArr = buildSingleArr(statsSingleByMonth[thisMonth] || {});
-  const prevArr = prevMonth ? buildSingleArr(statsSingleByMonth[prevMonth] || {}) : [];
+function renderEloPage(){
+  if(!membersLoaded) return;
 
-  renderTwoMonths(thisMonth, prevMonth, thisArr, prevArr, now);
-});
+  const now = new Date();
+  const thisMonth = monthKeyOf(now);
 
-function renderTwoMonths(thisMonth, prevMonth, arrThis, arrPrev, now){
+  const elo = {};
+  const games = {};
+  const wins = {};
+  const losses = {};
+  const monthStartElo = {};
+  const recent = [];
+
+  Object.keys(playerLevels).forEach(name=>{
+    elo[name] = initialEloByBu(playerLevels[name]);
+    games[name] = 0;
+    wins[name] = 0;
+    losses[name] = 0;
+    monthStartElo[name] = elo[name];
+  });
+
+  const matches = Object.values(matchesData)
+    .filter(m => m && m.mode === "single")
+    .filter(m => (m.namesA || [])[0] && (m.namesB || [])[0])
+    .filter(m => m.winnerSide === "A" || m.winnerSide === "B")
+    .sort((a,b)=> Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  matches.forEach(m=>{
+    const pA = m.namesA[0];
+    const pB = m.namesB[0];
+    const mk = normalizeMonthKey(m.monthKey);
+
+    ensurePlayer(pA, elo, games, monthStartElo, thisMonth);
+    ensurePlayer(pB, elo, games, monthStartElo, thisMonth);
+
+    if(mk === thisMonth){
+      if(monthStartElo[pA] == null) monthStartElo[pA] = elo[pA];
+      if(monthStartElo[pB] == null) monthStartElo[pB] = elo[pB];
+    }
+
+    const beforeA = elo[pA];
+    const beforeB = elo[pB];
+
+    const scoreA = m.winnerSide === "A" ? 1 : 0;
+    const expectedA = expectedScore(beforeA, beforeB);
+    const expectedB = expectedScore(beforeB, beforeA);
+
+    const changeA = Math.round(getK(games[pA]) * (scoreA - expectedA));
+    const changeB = Math.round(getK(games[pB]) * ((1 - scoreA) - expectedB));
+
+    elo[pA] += changeA;
+    elo[pB] += changeB;
+
+    games[pA]++;
+    games[pB]++;
+
+    if(scoreA === 1){
+      wins[pA] = (wins[pA] || 0) + 1;
+      losses[pB] = (losses[pB] || 0) + 1;
+    }else{
+      wins[pB] = (wins[pB] || 0) + 1;
+      losses[pA] = (losses[pA] || 0) + 1;
+    }
+
+    recent.push({
+      createdAt: Number(m.createdAt || 0),
+      pA, pB,
+      winner: scoreA === 1 ? pA : pB,
+      loser: scoreA === 1 ? pB : pA,
+      changeWinner: scoreA === 1 ? changeA : changeB,
+      changeLoser: scoreA === 1 ? changeB : changeA,
+      afterWinner: scoreA === 1 ? elo[pA] : elo[pB],
+      afterLoser: scoreA === 1 ? elo[pB] : elo[pA]
+    });
+  });
+
+  const arr = Object.keys(elo).map(name=>{
+    const current = Math.round(elo[name]);
+    const start = Math.round(monthStartElo[name] ?? initialEloByBu(playerLevels[name]));
+    return {
+      name,
+      bu: playerLevels[name] ?? "-",
+      elo: current,
+      change: current - start,
+      games: games[name] || 0,
+      win: wins[name] || 0,
+      lose: losses[name] || 0
+    };
+  }).sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
+
+  renderTable(arr, matches.length, recent);
+}
+
+function renderTable(arr, totalSingleMatches, recent){
   const sec = document.getElementById("singleSection");
 
-  // 이번달
-  const totalMatchesThis = Math.round(arrThis.reduce((s,p)=>s+p.total,0)/2);
-  const minGamesThis = minGamesSingleForMonth(thisMonth, now);
-  const qualifiedThis = arrThis.filter(p=>p.total>=minGamesThis);
-  const unqualifiedThis = arrThis.filter(p=>p.total<minGamesThis);
-
-  // 지난달
-  const hasPrev = !!prevMonth;
-  const totalMatchesPrev = hasPrev ? Math.round(arrPrev.reduce((s,p)=>s+p.total,0)/2) : 0;
-  const minGamesPrev = hasPrev ? minGamesSingleForMonth(prevMonth, now) : 0;
-  const qualifiedPrev = hasPrev ? arrPrev.filter(p=>p.total>=minGamesPrev) : [];
-  const unqualifiedPrev = hasPrev ? arrPrev.filter(p=>p.total<minGamesPrev) : [];
-
-  const prevHtml = hasPrev ? `
-    <div class="monthCard">
-      <div class="bar">📅 ${prevMonth} 단식</div>
-      <div class="inner">
-        <table>
-          <thead>
-            <tr>
-              <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>승률</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(qualifiedPrev.length===0 && unqualifiedPrev.length===0) ? `
-              <tr><td colspan="5" style="padding:14px;color:#64748b;">기록이 없습니다.</td></tr>
-            ` : `
-              ${qualifiedPrev.map((p,i)=>`
-                <tr style="background:#e0f2fe">
-                  <td>${i+1}</td>
-                  <td>${p.name}(${playerLevels[p.name] ?? '-'})</td>
-                  <td>${p.total}</td>
-                  <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-                  <td>${formatNum(p.rate)}%</td>
-                </tr>`).join('')}
-              ${unqualifiedPrev.map(p=>`
-                <tr style="background:#f9fafb">
-                  <td>–</td>
-                  <td>${p.name}(${playerLevels[p.name] ?? '-'})</td>
-                  <td>${p.total}</td>
-                  <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-                  <td>${formatNum(p.rate)}%</td>
-                </tr>`).join('')}
-            `}
-          </tbody>
-        </table>
-
-        <div style="text-align:center;margin-top:10px;">
-          <span class="totalNote">🔹 전체 경기 수: <b>${totalMatchesPrev} 경기</b></span>
-        </div>
-        <p class="ruleNote">⚖️ 기준: <b>3일에 1경기 이상 (${minGamesPrev}경기↑)</b> / 정렬: 승률 → 승수</p>
-      </div>
-    </div>
-  ` : `
-    <div style="text-align:center;color:#64748b;">지난달 키를 계산할 수 없습니다.</div>
-  `;
+  const recentRows = recent
+    .slice(-SHOW_RECENT_MATCHES)
+    .reverse()
+    .map(r=>`
+      <tr>
+        <td>${r.winner}</td>
+        <td><span class="win">+${r.changeWinner}</span></td>
+        <td>${r.loser}</td>
+        <td><span class="lose">${r.changeLoser}</span></td>
+      </tr>
+    `).join("");
 
   sec.innerHTML = `
     <h2 style="text-align:center;font-size:22px;color:#1e3a8a;margin:20px 0 14px;font-weight:800;">
-      🏓 단식 리그 순위 (${thisMonth})
+      🏆 단식 Elo 랭킹
     </h2>
 
     <table>
       <thead>
         <tr>
-          <th>순위</th><th>이름(부수)</th><th>경기</th><th>승/패</th><th>승률</th>
+          <th>순위</th>
+          <th>이름(부수)</th>
+          <th>Elo</th>
+          <th>이번달 변화</th>
+          <th>경기</th>
         </tr>
       </thead>
       <tbody>
-        ${qualifiedThis.map((p,i)=>`
-          <tr style="background:#e0f2fe">
-            <td>${i+1}</td>
-            <td>${p.name}(${playerLevels[p.name] ?? '-'})</td>
-            <td>${p.total}</td>
-            <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-            <td>${formatNum(p.rate)}%</td>
-          </tr>`).join('')}
-
-        ${unqualifiedThis.map(p=>`
-          <tr style="background:#f9fafb">
-            <td>–</td>
-            <td>${p.name}(${playerLevels[p.name] ?? '-'})</td>
-            <td>${p.total}</td>
-            <td><span class="win">${p.win}</span>/<span class="lose">${p.lose}</span></td>
-            <td>${formatNum(p.rate)}%</td>
-          </tr>`).join('')}
-
-        ${(qualifiedThis.length===0 && unqualifiedThis.length===0) ? `
-          <tr><td colspan="5" style="padding:14px;color:#64748b;">이번달 기록이 없습니다.</td></tr>
-        ` : ``}
+        ${arr.length === 0 ? `
+          <tr><td colspan="5" style="padding:14px;color:#64748b;">선수 기록이 없습니다.</td></tr>
+        ` : arr.map((p,i)=>`
+          <tr style="${i < 3 ? 'background:#e0f2fe' : 'background:#f9fafb'}">
+            <td>${rankIcon(i)}</td>
+            <td>${p.name}(${p.bu})</td>
+            <td><b>${p.elo}</b></td>
+            <td>${formatChange(p.change)}</td>
+            <td>${p.games}</td>
+          </tr>
+        `).join("")}
       </tbody>
     </table>
 
-    <p class="totalNote">🔹 전체 경기 수: <b>${totalMatchesThis} 경기</b></p>
-    <p class="ruleNote">⚖️ 순위 기준: <b>3일에 1경기 이상 (${minGamesThis}경기↑)</b> / 정렬: 승률 → 승수</p>
+    <div style="text-align:center;">
+      <span class="totalNote">🔹 단식 Elo 반영 경기 수: <b>${totalSingleMatches} 경기</b></span>
+    </div>
+    <p class="ruleNote">
+      ⚖️ 초기 Elo: <b>1부 1900 / 2부 1800 / 3부 1700 / 4부 1600 / 5부 1500 / 6부 1400</b><br>
+      신규 선수와 10경기 미만 선수는 변동폭이 조금 크게 반영됩니다.
+    </p>
 
     <div class="prevWrap">
-      <div class="prevTitle">지난달 성적</div>
-      ${prevHtml}
+      <div class="prevTitle">최근 Elo 변동</div>
+      <div class="monthCard">
+        <div class="bar">📈 최근 ${SHOW_RECENT_MATCHES}경기</div>
+        <div class="inner">
+          <table>
+            <thead>
+              <tr>
+                <th>승자</th>
+                <th>변동</th>
+                <th>패자</th>
+                <th>변동</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentRows || `<tr><td colspan="4" style="padding:14px;color:#64748b;">최근 단식 경기가 없습니다.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   `;
 }
