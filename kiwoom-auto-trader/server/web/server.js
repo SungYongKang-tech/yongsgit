@@ -286,24 +286,30 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 app.get("/api/discover", async (req, res) => {
   try {
-    const limit = Number(req.query.limit || 300);
+    const scanLimit = Number(req.query.scanLimit || 150);
+    const resultLimit = Number(req.query.limit || 150);
+    const offset = Number(req.query.offset || 0);
 
-    const scanLimit = Number(req.query.scanLimit || 300);
-const resultLimit = Number(req.query.limit || 150);
-const offset = Number(req.query.offset || 0);
+    const nextOffset =
+      offset + scanLimit >= STOCK_MASTER.length
+        ? 0
+        : offset + scanLimit;
 
-const targets = STOCK_MASTER.slice(offset, offset + scanLimit);
+    const targets = STOCK_MASTER.slice(offset, offset + scanLimit);
 
+    console.log(
+      `[DISCOVER] offset=${offset} scan=${scanLimit} next=${nextOffset} total=${STOCK_MASTER.length}`
+    );
 
     const items = [];
 
     for (const stock of targets) {
-  try {
-    await sleep(350);
+      try {
+        await sleep(350);
 
-    const priceRes = await fetch(
-      `http://localhost:${PORT}/api/price?code=${stock.code}`
-    );
+        const priceRes = await fetch(
+          `http://localhost:${PORT}/api/price?code=${stock.code}`
+        );
 
         const priceData = await priceRes.json();
 
@@ -322,20 +328,20 @@ const targets = STOCK_MASTER.slice(offset, offset + scanLimit);
 
     const sorted = items
       .filter((item) => Number(item.discoverScore || 0) > 0)
-      .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
+      .sort(
+        (a, b) =>
+          Number(b.discoverScore || 0) -
+          Number(a.discoverScore || 0)
+      );
 
     res.json({
-  offset,
-  nextOffset:
-    offset + scanLimit >= STOCK_MASTER.length
-      ? 0
-      : offset + scanLimit,
-  totalStocks: STOCK_MASTER.length,
-  scanCount: targets.length,
-  count: sorted.length,
-  items: sorted.slice(0, resultLimit)
-
-});
+      offset,
+      nextOffset,
+      totalStocks: STOCK_MASTER.length,
+      scanCount: targets.length,
+      count: sorted.length,
+      items: sorted.slice(0, resultLimit)
+    });
   } catch (error) {
     console.error("/api/discover 오류:", error);
 

@@ -136,7 +136,7 @@ leaderMinTradeVolumeRatio: -50,   // 거래량비율 최소 +80%
 leaderMinDayPositionRate: 60,    // 당일 위치 최소 60%
 leaderMaxDayPositionRate: 85,    // 85% 초과는 추격매수 금지
 leaderMinOpenPositionRate: 1.0,  // 시가 대비 +1% 이상
-leaderMaxOpenPositionRate: 7.0,
+leaderMaxOpenPositionRate: 10.0,
 
 leaderStrengthMinScore: 75,      // 수급강도 최소점수
 
@@ -150,7 +150,7 @@ candidateRankMaxAgeMinutes: 40,
 sectorFilterEnabled: true,
 sectorMinScore: 2,
 
-discoverScanLimit: 300,
+discoverScanLimit: 150,
 discoverLimit: 150,
 
 sectorFlowEnabled: true,
