@@ -288,10 +288,11 @@ app.get("/api/discover", async (req, res) => {
   try {
     const limit = Number(req.query.limit || 300);
 
-    const scanLimit = Number(req.query.scanLimit || STOCK_MASTER.length);
-const resultLimit = Number(req.query.limit || 300);
+    const scanLimit = Number(req.query.scanLimit || 300);
+const resultLimit = Number(req.query.limit || 150);
+const offset = Number(req.query.offset || 0);
 
-const targets = STOCK_MASTER.slice(0, scanLimit);
+const targets = STOCK_MASTER.slice(offset, offset + scanLimit);
 
 
     const items = [];
@@ -324,9 +325,16 @@ const targets = STOCK_MASTER.slice(0, scanLimit);
       .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
 
     res.json({
+  offset,
+  nextOffset:
+    offset + scanLimit >= STOCK_MASTER.length
+      ? 0
+      : offset + scanLimit,
+  totalStocks: STOCK_MASTER.length,
   scanCount: targets.length,
   count: sorted.length,
   items: sorted.slice(0, resultLimit)
+
 });
   } catch (error) {
     console.error("/api/discover 오류:", error);

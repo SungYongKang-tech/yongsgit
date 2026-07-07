@@ -150,6 +150,9 @@ candidateRankMaxAgeMinutes: 40,
 sectorFilterEnabled: true,
 sectorMinScore: 2,
 
+discoverScanLimit: 300,
+discoverLimit: 150,
+
 sectorFlowEnabled: true,
 sectorFlowTopCount: 2,
 sectorFlowMinCandidateCount: 2,
@@ -1012,7 +1015,7 @@ function getLeadingSectorScores(candidates = []) {
 
 async function calculateMarketLeadingSectors() {
   const data = await fetchJson(
-  `${API_BASE}/api/discover?scanLimit=200&limit=200`
+  `${API_BASE}/api/discover?scanLimit=300&limit=150`
 );
 
   const items = data.items || [];
@@ -1347,9 +1350,17 @@ async function fetchPriceWithRetry(code, retry = 1) {
 async function discoverCandidates() {
   const marketLeadingSectors = await calculateMarketLeadingSectors();
 
-  const data = await fetchJson(
-  `${API_BASE}/api/discover?scanLimit=200&limit=${settings.discoverLimit}`
+  const state = loadState();
+
+const offset = Number(state.discoverOffset || 0);
+
+const data = await fetchJson(
+  `${API_BASE}/api/discover?offset=${offset}&scanLimit=${settings.discoverScanLimit}&limit=${settings.discoverLimit}`
 );
+
+state.discoverOffset = Number(data.nextOffset || 0);
+state.lastDiscoverOffsetAt = nowText();
+saveState(state);
 
   const items = data.items || [];
 
