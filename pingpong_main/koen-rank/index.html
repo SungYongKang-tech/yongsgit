@@ -255,7 +255,7 @@ console.log("✅ databaseURL =", db.app?.options?.databaseURL);
 console.log("✅ authDomain =", db.app?.options?.authDomain);
 
   import {
-    ref, onValue, push, remove, get,
+    ref, onValue, push, remove, get, set,
     query, orderByChild, equalTo
   } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
@@ -298,6 +298,198 @@ ensureAuthReady();
     const d=new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   }
+
+  function initialEloByBu(bu){
+  const n = Number(bu);
+  if (!Number.isFinite(n)) return 1500;
+  return 2000 - (n * 100);
+}
+
+function expectedScore(ratingA, ratingB){
+  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+}
+
+function getK(games){
+  return games < 10 ? 40 : 24;
+}
+
+function getPlayerLevel(name){
+  const p = players.find(x => x.name === name);
+  return p ? p.level : 5;
+}
+
+async function getPlayerElo(name){
+  const snap = await get(ref(db, `eloRatings/${name}`));
+
+  if(snap.exists()){
+    return snap.val();
+  }
+
+  return {
+    name,
+    elo: initialEloByBu(getPlayerLevel(name)),
+    games: 0,
+    wins: 0,
+    losses: 0
+  };
+}
+
+async function saveEloForSingleMatch(matchId, match){
+  if(match.mode !== "single") return;
+
+  const pA = match.namesA?.[0];
+  const pB = match.namesB?.[0];
+  if(!pA || !pB) return;
+
+  const a = await getPlayerElo(pA);
+  const b = await getPlayerElo(pB);
+
+  const beforeA = Number(a.elo || initialEloByBu(getPlayerLevel(pA)));
+  const beforeB = Number(b.elo || initialEloByBu(getPlayerLevel(pB)));
+
+  const gamesA = Number(a.games || 0);
+  const gamesB = Number(b.games || 0);
+
+  const scoreA = match.winnerSide === "A" ? 1 : 0;
+
+  const changeA = Math.round(getK(gamesA) * (scoreA - expectedScore(beforeA, beforeB)));
+  const changeB = Math.round(getK(gamesB) * ((1 - scoreA) - expectedScore(beforeB, beforeA)));
+
+  const afterA = beforeA + changeA;
+  const afterB = beforeB + changeB;
+
+  await set(ref(db, `eloRatings/${pA}`), {
+    name: pA,
+    elo: afterA,
+    games: gamesA + 1,
+    wins: Number(a.wins || 0) + (scoreA === 1 ? 1 : 0),
+    losses: Number(a.losses || 0) + (scoreA === 0 ? 1 : 0),
+    updatedAt: Date.now()
+  });
+
+  await set(ref(db, `eloRatings/${pB}`), {
+    name: pB,
+    elo: afterB,
+    games: gamesB + 1,
+    wins: Number(b.wins || 0) + (scoreA === 0 ? 1 : 0),
+    losses: Number(b.losses || 0) + (scoreA === 1 ? 1 : 0),
+    updatedAt: Date.now()
+  });
+
+  await set(ref(db, `eloLogs/${matchId}`), {
+    matchId,
+    mode: "single",
+    pA,
+    pB,
+    winner: scoreA === 1 ? pA : pB,
+    loser: scoreA === 1 ? pB : pA,
+    beforeA,
+    beforeB,
+    afterA,
+    afterB,
+    changeA,
+    changeB,
+    winnerChange: scoreA === 1 ? changeA : changeB,
+    loserChange: scoreA === 1 ? changeB : changeA,
+    createdAt: match.createdAt,
+    monthKey: match.monthKey
+  });
+}
+
+async function rebuildAllElo(){
+  const snap = await get(matchRef);
+  const data = snap.val() || {};
+
+  const elo = {};
+  const games = {};
+  const wins = {};
+  const losses = {};
+
+  const matches = Object.entries(data)
+    .map(([id, m]) => ({ id, ...m }))
+    .filter(m => m && m.mode === "single")
+    .filter(m => (m.namesA || [])[0] && (m.namesB || [])[0])
+    .filter(m => m.winnerSide === "A" || m.winnerSide === "B")
+    .sort((a,b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  function ensure(name){
+    if(elo[name] == null){
+      elo[name] = initialEloByBu(getPlayerLevel(name));
+      games[name] = 0;
+      wins[name] = 0;
+      losses[name] = 0;
+    }
+  }
+
+  const newLogs = {};
+
+  matches.forEach(m => {
+    const pA = m.namesA[0];
+    const pB = m.namesB[0];
+
+    ensure(pA);
+    ensure(pB);
+
+    const beforeA = elo[pA];
+    const beforeB = elo[pB];
+
+    const scoreA = m.winnerSide === "A" ? 1 : 0;
+
+    const changeA = Math.round(getK(games[pA]) * (scoreA - expectedScore(beforeA, beforeB)));
+    const changeB = Math.round(getK(games[pB]) * ((1 - scoreA) - expectedScore(beforeB, beforeA)));
+
+    const afterA = beforeA + changeA;
+    const afterB = beforeB + changeB;
+
+    elo[pA] = afterA;
+    elo[pB] = afterB;
+
+    games[pA]++;
+    games[pB]++;
+
+    if(scoreA === 1){
+      wins[pA]++;
+      losses[pB]++;
+    }else{
+      wins[pB]++;
+      losses[pA]++;
+    }
+
+    newLogs[m.id] = {
+      matchId: m.id,
+      mode: "single",
+      pA,
+      pB,
+      winner: scoreA === 1 ? pA : pB,
+      loser: scoreA === 1 ? pB : pA,
+      beforeA,
+      beforeB,
+      afterA,
+      afterB,
+      changeA,
+      changeB,
+      winnerChange: scoreA === 1 ? changeA : changeB,
+      loserChange: scoreA === 1 ? changeB : changeA,
+      createdAt: m.createdAt,
+      monthKey: m.monthKey || ""
+    };
+  });
+
+  const newRatings = {};
+  Object.keys(elo).forEach(name => {
+    newRatings[name] = {
+      name,
+      elo: Math.round(elo[name]),
+      games: games[name],
+      wins: wins[name],
+      losses: losses[name],
+      updatedAt: Date.now()
+    };
+  });
+
+  await set(ref(db, "eloRatings"), newRatings);
+  await set(ref(db, "eloLogs"), newLogs);
+}
 
  // ===== 제목 캐시 + 업데이트 =====
 const titleRef = ref(db, "config/title");
@@ -347,7 +539,9 @@ get(titleRef).then(snap => {
     if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
 
     await remove(ref(db, "matches/" + id));
-    toast("경기결과 삭제 완료");
+await rebuildAllElo();
+
+toast("경기결과 삭제 완료 / Elo 재계산 완료");
   } catch (e) {
     console.error("❌ deleteMatch error:", e);
     alert("삭제 실패: " + (e?.message || e));
@@ -442,8 +636,11 @@ get(titleRef).then(snap => {
       createdAt:Date.now()
     };
 
-    push(matchRef,obj);
-    toast("경기결과 저장 완료");
+    const newRef = push(matchRef);
+await set(newRef, obj);
+await saveEloForSingleMatch(newRef.key, obj);
+
+toast("경기결과 저장 완료");
     sel=[]; renderChips(); updateTeams();
   }
 
@@ -495,25 +692,7 @@ get(titleRef).then(snap => {
     });
   }
 
-  // ✅ 경기 삭제 (Firebase의 삭제 비밀번호 기준)
-  window.deleteMatch = async (id) => {
-  try {
-    const pwSnap = await get(deletePwRef);
-    const pw = pwSnap.exists() ? String(pwSnap.val()).trim() : (deletePassword || "");
-
-    const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
-    if (input === null) return;
-    if (String(input).trim() !== pw) return toast("비밀번호가 올바르지 않습니다");
-    if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
-
-    await remove(ref(db, "matches/" + id));
-    toast("경기결과 삭제 완료");
-  } catch (e) {
-    console.error("❌ deleteMatch error:", e);
-    alert("삭제 실패: " + (e?.message || e));
-  }
-};
-
+  
   // ✅ 사용법 모달
   const helpBtn = document.getElementById("helpBtn");
   const modal = document.getElementById("helpModal");
