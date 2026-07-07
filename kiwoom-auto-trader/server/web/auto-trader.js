@@ -156,8 +156,8 @@ sectorFlowMinCandidateCount: 2,
 sectorFlowMinAvgScore: 2.5,
 
 turboRecheckEnabled: true,
-turboRecheckDelayMinutes: 3,
-turboRecheckMaxAgeMinutes: 15,
+turboRecheckDelayMinutes: 2,
+turboRecheckMaxAgeMinutes: 25,
 
 marketScoreEnabled: true,
 turboMinMarketScore: 55,
@@ -5217,7 +5217,7 @@ function startServerAutoTrader() {
     } finally {
       buyLoopRunning = false;
     }
-    }, 2 * 60 * 1000);   // 2분마다 실행
+    }, 4 * 60 * 1000);   // 4분마다 실행
 
   setInterval(() => {
     checkServerAutoSellOnce();
