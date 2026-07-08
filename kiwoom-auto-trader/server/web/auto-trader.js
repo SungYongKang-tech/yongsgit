@@ -116,7 +116,7 @@ leaderStopLossRate: -2.0,
 leaderTakeProfitRate: 15.0,
 leaderTrailingStartRate: 2.0,
 leaderTrailingStopRate: 1.0,
-leaderFirstTakeProfitRate: 3.0,
+leaderFirstTakeProfitRate: 1.2,
 leaderFirstTakeProfitSellRatio: 0.5,
 
 leaderMinHoldDays: 2,
@@ -133,12 +133,12 @@ leaderCoreMinVolume: 300000,
 leaderCoreMinTradeValue: 2000000000, // 20억
 
 leaderMinTradeVolumeRatio: -50,   // 거래량비율 최소 +80%
-leaderMinDayPositionRate: 60,    // 당일 위치 최소 60%
-leaderMaxDayPositionRate: 85,    // 85% 초과는 추격매수 금지
-leaderMinOpenPositionRate: 1.0,  // 시가 대비 +1% 이상
-leaderMaxOpenPositionRate: 10.0,
+leaderMinDayPositionRate: 40,    // 당일 위치 최소 60%
+leaderMaxDayPositionRate: 78,    // 85% 초과는 추격매수 금지
+leaderMinOpenPositionRate: 0.3,  // 시가 대비 +1% 이상
+leaderMaxOpenPositionRate: 6.5,
 
-leaderStrengthMinScore: 75,      // 수급강도 최소점수
+leaderStrengthMinScore: 50,      // 수급강도 최소점수
 
 leaderCoreMaxHoldingCount: 6,
 
@@ -398,19 +398,6 @@ function isLeaderCoreCandidate(item, marketTemperature, marketScore = null) {
   return true;
 }
 
-
-function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-}
-
-function nowText() {
-  return new Date().toLocaleString("ko-KR", {
-    timeZone: "Asia/Seoul"
-  });
-}
-
-
-
 function getLeaderStrengthScore(item, currentPriceInput = null) {
   const currentPrice = Number(
     currentPriceInput ||
@@ -456,45 +443,59 @@ function getLeaderStrengthScore(item, currentPriceInput = null) {
   // 1. 기본 발견 점수
   score += Math.min(25, Number(item.discoverScore || 0) * 2);
 
-  // 2. 상승률: 너무 낮아도 약하고, 너무 높으면 추격
-  if (changeRate >= 2.0 && changeRate <= 5.5) {
-    score += 20;
-  } else if (changeRate >= 1.5 && changeRate <= 7.0) {
-    score += 10;
+  // 2. 상승률: 너무 높은 종목보다 초중반 상승 구간 선호
+  if (changeRate >= 1.0 && changeRate <= 3.5) {
+    score += 22;
+  } else if (changeRate > 3.5 && changeRate <= 5.5) {
+    score += 12;
+  } else if (changeRate > 5.5 && changeRate <= 7.0) {
+    score += 3;
+  } else if (changeRate > 7.0) {
+    score -= 15;
   }
 
-  // 3. 거래량비율: 오늘 제일 중요한 조건
+  // 3. 거래량비율: 강한 거래량은 유지하되, 음수 거래량은 과도하게 벌점 주지 않음
   if (tradeVolumeRatio >= 200) {
     score += 25;
   } else if (tradeVolumeRatio >= 120) {
     score += 20;
-  } else if (tradeVolumeRatio >= 80) {
+  } else if (tradeVolumeRatio >= 50) {
     score += 12;
-  } else if (tradeVolumeRatio < 0) {
-    score -= 30;
-  }
-
-  // 4. 당일위치: 고점 부근이지만 과열은 아닌 구간
-  if (dayPositionRate >= 65 && dayPositionRate <= 85) {
-    score += 20;
-  } else if (dayPositionRate >= 55 && dayPositionRate <= 90) {
-    score += 10;
+  } else if (tradeVolumeRatio >= -30) {
+    score += 5;
   } else {
-    score -= 15;
+    score -= 10;
   }
 
-  // 5. 시가 위 안착
-  if (openPositionRate >= 2.0) {
-    score += 15;
-  } else if (openPositionRate >= 1.0) {
+  // 4. 당일위치: 고점권보다 45~75% 눌림 후 재상승 구간 선호
+  if (dayPositionRate >= 45 && dayPositionRate <= 70) {
+    score += 22;
+  } else if (dayPositionRate > 70 && dayPositionRate <= 78) {
+    score += 12;
+  } else if (dayPositionRate > 78 && dayPositionRate <= 85) {
+    score += 2;
+  } else if (dayPositionRate > 85) {
+    score -= 18;
+  } else if (dayPositionRate >= 30 && dayPositionRate < 45) {
+    score += 5;
+  } else {
+    score -= 10;
+  }
+
+  // 5. 시가 위 안착: 너무 멀리 오른 것보다 시가 위 초반 안착 선호
+  if (openPositionRate >= 0.3 && openPositionRate <= 2.5) {
+    score += 18;
+  } else if (openPositionRate > 2.5 && openPositionRate <= 5.0) {
     score += 8;
+  } else if (openPositionRate > 5.0) {
+    score -= 12;
   } else if (openPositionRate < 0) {
     score -= 20;
   }
 
   // 6. 거래대금
   if (tradeValue >= 10000000000) {
-    score += 15; // 100억 이상
+    score += 15;
   } else if (tradeValue >= settings.leaderCoreMinTradeValue) {
     score += 8;
   }
