@@ -354,9 +354,65 @@ function renderTable(arr, totalSingleMatches, recent){
   `;
 }
 
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function showCopyBox(text) {
+  const old = document.getElementById("copyBoxOverlay");
+  if (old) old.remove();
+
+  const box = document.createElement("div");
+  box.id = "copyBoxOverlay";
+  box.style.position = "fixed";
+  box.style.inset = "0";
+  box.style.background = "rgba(0,0,0,.55)";
+  box.style.zIndex = "99999";
+  box.style.padding = "14px";
+
+  box.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:14px;max-width:700px;margin:20px auto;">
+      <div style="font-weight:900;font-size:18px;margin-bottom:8px;color:#1e3a8a;">
+        📋 AI 분석자료 직접 복사
+      </div>
+
+      <div style="font-size:14px;color:#475569;margin-bottom:10px;line-height:1.5;">
+        iPhone Safari에서는 자동 복사가 막힐 수 있습니다.<br>
+        아래 내용을 길게 눌러 <b>전체 선택 → 복사</b> 해주세요.
+      </div>
+
+      <textarea id="manualCopyText"
+        readonly
+        style="width:100%;height:55vh;font-size:13px;line-height:1.5;padding:10px;border:1px solid #cbd5e1;border-radius:10px;"
+      ></textarea>
+
+      <button id="closeCopyBox"
+        style="margin-top:10px;width:100%;padding:12px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;">
+        닫기
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(box);
+
+  const ta = document.getElementById("manualCopyText");
+  ta.value = text;
+
+  document.getElementById("closeCopyBox").onclick = function() {
+    box.remove();
+  };
+}
+
 async function copyText(text) {
 
-  // 1) iPhone Safari도 최신 방식 먼저 시도
+  // iPhone / iPad Safari는 자동복사 시도하지 않고 직접복사창 표시
+  if (isIOS()) {
+    showCopyBox(text);
+    return false;
+  }
+
+  // 그 외 브라우저만 자동 복사 시도
   if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(text);
@@ -366,35 +422,8 @@ async function copyText(text) {
     }
   }
 
-  // 2) 실패하면 예전 textarea 방식
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-
-  textarea.style.position = "fixed";
-  textarea.style.top = "0";
-  textarea.style.left = "0";
-  textarea.style.width = "1px";
-  textarea.style.height = "1px";
-  textarea.style.opacity = "0";
-
-  document.body.appendChild(textarea);
-
-  textarea.focus();
-  textarea.select();
-  textarea.setSelectionRange(0, textarea.value.length);
-
-  let success = false;
-
-  try {
-    success = document.execCommand("copy");
-  } catch (e) {
-    success = false;
-  }
-
-  document.body.removeChild(textarea);
-
-  return success;
+  showCopyBox(text);
+  return false;
 }
 
 
@@ -539,13 +568,13 @@ ${recentText}
 위 자료를 바탕으로 ${playerName} 선수의 탁구 경기 분석을 해주세요.
 `;
 
-  try {
-    if (await copyText(prompt.trim())) {
-        alert(`✅ ${playerName} 선수 AI 분석자료가 클립보드에 복사되었습니다.\n\nGemini에 붙여넣고 분석해 달라고 하면 됩니다.`);
-    }
+try {
+  if (await copyText(prompt.trim())) {
+    alert(`✅ ${playerName} 선수 AI 분석자료가 클립보드에 복사되었습니다.\n\nGemini에 붙여넣고 분석해 달라고 하면 됩니다.`);
+  }
 } catch (e) {
-    console.error(e);
-    alert("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.");
+  console.error(e);
+  alert("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.");
 }
 };
 </script>
