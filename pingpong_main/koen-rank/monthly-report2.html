@@ -479,6 +479,35 @@ window.copyPlayerAIAnalysis = async function(playerName){
 
   const playerElo = currentRatings.find(p => p.name === playerName);
 
+    let playerProfileText = "";
+
+  try {
+    const profileSnap = await get(ref(db, `playerProfiles/${playerName}`));
+
+    if (profileSnap.exists()) {
+      const profile = profileSnap.val() || {};
+
+      const rows = [
+        profile.grip ? `- 라켓 타입: ${profile.grip}` : "",
+        profile.playType ? `- 플레이 스타일: ${profile.playType}` : "",
+        profile.weapon ? `- 주무기: ${profile.weapon}` : "",
+        profile.weakness ? `- 약점: ${profile.weakness}` : "",
+        profile.serveReceive ? `- 서브/리시브 특징: ${profile.serveReceive}` : "",
+        profile.memo ? `- 메모: ${profile.memo}` : ""
+      ].filter(Boolean);
+
+      if (rows.length > 0) {
+        playerProfileText = `
+========================
+[${playerName} 선수 프로파일]
+${rows.join("\n")}
+`;
+      }
+    }
+  } catch (e) {
+    console.log("선수 프로파일 조회 오류:", e);
+  }
+
   const allLogs = Object.values(logsData)
     .filter(l => l && l.mode === "single")
     .sort((a,b)=> Number(a.createdAt || 0) - Number(b.createdAt || 0));
@@ -567,6 +596,8 @@ ${playerName}
 
 [현재 선수 ELO 정보]
 ${playerElo ? JSON.stringify(playerElo, null, 2) : "ELO 정보 없음"}
+
+${playerProfileText}
 
 ========================
 [현재 전체 ELO 랭킹]
