@@ -16,9 +16,9 @@ const settings = {
 
   totalCash: 100000000,
 
-  coreRatio: 0.6,
-turboRatio: 0.2,
-leaderRatio: 0.2,
+  coreRatio: 0.4,
+  turboRatio: 0.2,
+  leaderRatio: 0.4,
   earlyMaxHoldingCount: 3,
   earlyMaxDailyBuyCount: 4,
 
@@ -109,13 +109,13 @@ leaderEnabled: true,
 leaderStartTime: "09:05",
 leaderEndTime: "13:40",
 
-leaderMaxHoldingCount: 2,
-leaderMaxDailyBuyCount: 2,
+leaderMaxHoldingCount: 4,
+leaderMaxDailyBuyCount: 6,
 
-leaderStopLossRate: -2.0,
+leaderStopLossRate: -1.2,
 leaderTakeProfitRate: 15.0,
-leaderTrailingStartRate: 2.0,
-leaderTrailingStopRate: 1.0,
+leaderTrailingStartRate: 0.8,
+leaderTrailingStopRate: 0.5,
 leaderFirstTakeProfitRate: 1.2,
 leaderFirstTakeProfitSellRatio: 0.5,
 
