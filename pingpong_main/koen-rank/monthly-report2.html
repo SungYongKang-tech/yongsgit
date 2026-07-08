@@ -479,10 +479,43 @@ window.copyPlayerAIAnalysis = async function(playerName){
 
   const playerElo = currentRatings.find(p => p.name === playerName);
 
-    let playerProfileText = "";
+  let playerProfileText = "";
 
-  try {
-    const profileSnap = await get(ref(db, `playerProfiles/${playerName}`));
+try {
+  const membersSnap = await get(ref(db, "members"));
+  const membersData = membersSnap.val() || {};
+
+  const memberKey = Object.keys(membersData).find(key => {
+    return membersData[key] && membersData[key].name === playerName;
+  });
+
+  if (memberKey) {
+    const profileSnap = await get(ref(db, `playerProfiles/${memberKey}`));
+
+    if (profileSnap.exists()) {
+      const profile = profileSnap.val() || {};
+
+      const rows = [
+        profile.grip ? `- 라켓 타입: ${profile.grip}` : "",
+        profile.playType ? `- 플레이 스타일: ${profile.playType}` : "",
+        profile.weapon ? `- 주무기: ${profile.weapon}` : "",
+        profile.weakness ? `- 약점: ${profile.weakness}` : "",
+        profile.serveReceive ? `- 서브/리시브 특징: ${profile.serveReceive}` : "",
+        profile.memo ? `- 메모: ${profile.memo}` : ""
+      ].filter(Boolean);
+
+      if (rows.length > 0) {
+        playerProfileText = `
+========================
+[${playerName} 선수 프로파일]
+${rows.join("\n")}
+`;
+      }
+    }
+  }
+} catch (e) {
+  console.log("선수 프로파일 조회 오류:", e);
+}
 
     if (profileSnap.exists()) {
       const profile = profileSnap.val() || {};
