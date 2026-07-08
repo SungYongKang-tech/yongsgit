@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>선수 프로파일 관리</title>
+
+<style>
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;
+  background:#f4f7fb;
+  color:#0f172a;
+}
+.wrap{
+  max-width:760px;
+  margin:0 auto;
+  padding:18px 14px 40px;
+}
+.card{
+  background:#fff;
+  border:1px solid #e5eaf2;
+  border-radius:20px;
+  padding:18px;
+  box-shadow:0 10px 28px rgba(15,23,42,.08);
+}
+h1{
+  margin:0 0 14px;
+  font-size:22px;
+  color:#2563eb;
+}
+.desc{
+  font-size:14px;
+  color:#64748b;
+  line-height:1.6;
+  margin-bottom:16px;
+}
+.field{
+  margin-bottom:13px;
+}
+label{
+  display:block;
+  font-size:13px;
+  font-weight:900;
+  color:#475569;
+  margin-bottom:6px;
+}
+input,select,textarea{
+  width:100%;
+  box-sizing:border-box;
+  border:1px solid #dbe3ef;
+  border-radius:12px;
+  padding:11px 12px;
+  font-size:15px;
+  outline:none;
+}
+textarea{
+  min-height:90px;
+  resize:vertical;
+}
+.row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.btns{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:16px;
+}
+button,a.btn{
+  border:0;
+  border-radius:12px;
+  padding:12px 14px;
+  font-weight:900;
+  cursor:pointer;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.primary{
+  background:#2563eb;
+  color:#fff;
+}
+.ghost{
+  background:#e2e8f0;
+  color:#0f172a;
+}
+.danger{
+  background:#ef4444;
+  color:#fff;
+}
+.note{
+  margin-top:14px;
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  padding:12px;
+  color:#64748b;
+  font-size:13px;
+  line-height:1.5;
+}
+@media(max-width:640px){
+  .row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>🧠 선수 프로파일 관리</h1>
+    <div class="desc">
+      AI 선수 분석에 사용할 기본 정보를 입력합니다.<br>
+      저장 위치: <b>playerProfiles / 선수이름</b>
+    </div>
+
+    <div class="field">
+      <label>선수 선택</label>
+      <select id="playerSelect">
+        <option value="">선수를 선택하세요</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>라켓 타입</label>
+        <select id="grip">
+          <option value="">미입력</option>
+          <option value="펜홀더">펜홀더</option>
+          <option value="쉐이크">쉐이크</option>
+          <option value="중펜">중펜</option>
+          <option value="기타">기타</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>플레이 스타일</label>
+        <select id="playType">
+          <option value="">미입력</option>
+          <option value="공격형">공격형</option>
+          <option value="수비형">수비형</option>
+          <option value="올라운드형">올라운드형</option>
+          <option value="전진속공형">전진속공형</option>
+          <option value="드라이브형">드라이브형</option>
+          <option value="커트수비형">커트수비형</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>주무기</label>
+      <input id="weapon" placeholder="예: 포핸드 드라이브, 빠른 스매싱, 강한 서브" />
+    </div>
+
+    <div class="field">
+      <label>약점</label>
+      <input id="weakness" placeholder="예: 백핸드 리시브, 커트볼 처리, 긴 랠리" />
+    </div>
+
+    <div class="field">
+      <label>서브/리시브 특징</label>
+      <input id="serveReceive" placeholder="예: 횡회전 서브 강함, 짧은 서브 리시브 약함" />
+    </div>
+
+    <div class="field">
+      <label>AI 분석용 메모</label>
+      <textarea id="memo" placeholder="예: 백쪽으로 몰리면 실수가 많음. 공격 성공률은 높지만 무리한 선공이 잦음."></textarea>
+    </div>
+
+    <div class="btns">
+      <button class="primary" id="saveBtn">저장</button>
+      <button class="danger" id="deleteBtn">프로파일 삭제</button>
+      <a class="btn ghost" href="admin.html">← 관리자</a>
+    </div>
+
+    <div class="note" id="status">
+      선수를 선택하면 저장된 프로파일이 자동으로 표시됩니다.
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { db } from "../firebase.js";
+import {
+  ref,
+  get,
+  set,
+  remove,
+  onValue
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+const ADMIN_PASSWORD = "1234"; // 필요하면 기존 관리자 비밀번호와 맞춰줘
+
+const playerSelect = document.getElementById("playerSelect");
+const grip = document.getElementById("grip");
+const playType = document.getElementById("playType");
+const weapon = document.getElementById("weapon");
+const weakness = document.getElementById("weakness");
+const serveReceive = document.getElementById("serveReceive");
+const memo = document.getElementById("memo");
+const status = document.getElementById("status");
+
+let members = {};
+
+onValue(ref(db, "members"), (snap) => {
+  members = snap.val() || {};
+  renderPlayerSelect();
+});
+
+function renderPlayerSelect(){
+  const players = Object.values(members)
+    .filter(p => p && p.name)
+    .sort((a,b) => a.name.localeCompare(b.name, "ko"));
+
+  playerSelect.innerHTML = `<option value="">선수를 선택하세요</option>`;
+
+  players.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.name;
+    opt.textContent = `${p.name} (${p.bu ?? "-"}부)`;
+    playerSelect.appendChild(opt);
+  });
+}
+
+playerSelect.addEventListener("change", loadProfile);
+
+async function loadProfile(){
+  const name = playerSelect.value;
+  clearForm();
+
+  if(!name){
+    status.textContent = "선수를 선택하면 저장된 프로파일이 자동으로 표시됩니다.";
+    return;
+  }
+
+  const snap = await get(ref(db, `playerProfiles/${name}`));
+
+  if(!snap.exists()){
+    status.textContent = `${name} 선수의 프로파일이 아직 없습니다.`;
+    return;
+  }
+
+  const p = snap.val() || {};
+
+  grip.value = p.grip || "";
+  playType.value = p.playType || "";
+  weapon.value = p.weapon || "";
+  weakness.value = p.weakness || "";
+  serveReceive.value = p.serveReceive || "";
+  memo.value = p.memo || "";
+
+  status.textContent = `${name} 선수 프로파일을 불러왔습니다.`;
+}
+
+function clearForm(){
+  grip.value = "";
+  playType.value = "";
+  weapon.value = "";
+  weakness.value = "";
+  serveReceive.value = "";
+  memo.value = "";
+}
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const name = playerSelect.value;
+
+  if(!name){
+    alert("선수를 먼저 선택하세요.");
+    return;
+  }
+
+  const pw = prompt("관리자 비밀번호를 입력하세요.");
+  if(pw !== ADMIN_PASSWORD){
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+
+  await set(ref(db, `playerProfiles/${name}`), {
+    name,
+    grip: grip.value,
+    playType: playType.value,
+    weapon: weapon.value.trim(),
+    weakness: weakness.value.trim(),
+    serveReceive: serveReceive.value.trim(),
+    memo: memo.value.trim(),
+    updatedAt: Date.now()
+  });
+
+  status.textContent = `${name} 선수 프로파일이 저장되었습니다.`;
+  alert("저장되었습니다.");
+});
+
+document.getElementById("deleteBtn").addEventListener("click", async () => {
+  const name = playerSelect.value;
+
+  if(!name){
+    alert("선수를 먼저 선택하세요.");
+    return;
+  }
+
+  const pw = prompt("관리자 비밀번호를 입력하세요.");
+  if(pw !== ADMIN_PASSWORD){
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+
+  if(!confirm(`${name} 선수 프로파일을 삭제할까요?`)) return;
+
+  await remove(ref(db, `playerProfiles/${name}`));
+
+  clearForm();
+  status.textContent = `${name} 선수 프로파일이 삭제되었습니다.`;
+  alert("삭제되었습니다.");
+});
+</script>
+</body>
+</html>
