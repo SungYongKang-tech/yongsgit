@@ -63,6 +63,21 @@ tbody tr:hover{background:#f9fafb}
 .helpBox b{color:#1e3a8a;}
 .helpBox ul{margin:8px 0 0 18px;padding:0;}
 
+.nameBtn{
+  border:0;
+  background:transparent;
+  color:#1d4ed8;
+  font-weight:900;
+  font-size:inherit;
+  cursor:pointer;
+  padding:4px 6px;
+  border-radius:8px;
+}
+.nameBtn:hover{
+  background:#dbeafe;
+  text-decoration:underline;
+}
+
 </style>
 </head>
 <body>
@@ -273,7 +288,11 @@ function renderTable(arr, totalSingleMatches, recent){
         ` : arr.map((p,i)=>`
           <tr style="${i < 3 ? 'background:#e0f2fe' : 'background:#f9fafb'}">
             <td>${rankIcon(i)}</td>
-<td>${p.name}(${p.bu})</td>
+<td>
+  <button class="nameBtn" onclick="copyPlayerAIAnalysis('${p.name}')">
+    ${p.name}(${p.bu})
+  </button>
+</td>
 <td style="color:#64748b;">${p.initialElo}</td>
 <td><b>${p.elo}</b></td>
 <td>${formatChange(p.change)}</td>
@@ -326,6 +345,156 @@ function renderTable(arr, totalSingleMatches, recent){
     </div>
   `;
 }
+
+window.copyPlayerAIAnalysis = async function(playerName){
+  const now = new Date();
+  const thisMonthKey = monthKeyOf(now);
+
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = monthKeyOf(prev);
+
+  const currentRatings = Object.values(ratingsData)
+    .filter(r => r && r.name)
+    .filter(r => playerLevels[r.name] !== undefined)
+    .filter(r => Number(r.games || 0) > 0)
+    .map(r => {
+      const current = Math.round(Number(r.elo || 0));
+      return {
+        name: r.name,
+        bu: playerLevels[r.name] ?? "-",
+        initialElo: initialEloByBu(playerLevels[r.name] ?? 5),
+        elo: current,
+        change: getThisMonthChange(r.name, current),
+        games: Number(r.games || 0),
+        wins: Number(r.wins || 0),
+        losses: Number(r.losses || 0)
+      };
+    })
+    .sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
+
+  const playerElo = currentRatings.find(p => p.name === playerName);
+
+  const allLogs = Object.values(logsData)
+    .filter(l => l && l.mode === "single")
+    .sort((a,b)=> Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  const playerLogs = allLogs.filter(l => l.pA === playerName || l.pB === playerName);
+
+  const recentPlayerLogs = playerLogs.slice(-20).reverse();
+
+  const relationMap = {};
+
+  playerLogs.forEach(l => {
+    const opponent = l.pA === playerName ? l.pB : l.pA;
+    if(!opponent) return;
+
+    if(!relationMap[opponent]){
+      relationMap[opponent] = { wins:0, losses:0, eloChange:0, games:0 };
+    }
+
+    const isWin = l.winner === playerName;
+    relationMap[opponent].games += 1;
+
+    if(isWin) relationMap[opponent].wins += 1;
+    else relationMap[opponent].losses += 1;
+
+    const change = l.pA === playerName ? Number(l.changeA || 0) : Number(l.changeB || 0);
+    relationMap[opponent].eloChange += change;
+  });
+
+  const relationText = Object.entries(relationMap)
+    .sort((a,b)=> b[1].games - a[1].games)
+    .map(([op, r]) => {
+      return `- ${op}: ${r.wins}승 ${r.losses}패 / ${r.games}경기 / ELO합계 ${r.eloChange >= 0 ? "+" : ""}${r.eloChange}`;
+    })
+    .join("\n") || "상대전적 데이터 없음";
+
+  let prevMonthData = "지난달 통합데이터를 불러오지 못했습니다.";
+  let thisMonthData = "이번달 통합데이터를 불러오지 못했습니다.";
+
+  try{
+    const prevSnap = await get(ref(db, `monthlyReports/${prevMonthKey}`));
+    prevMonthData = prevSnap.exists()
+      ? JSON.stringify(prevSnap.val(), null, 2)
+      : `${prevMonthKey} 통합데이터 없음`;
+  }catch(e){
+    prevMonthData = "지난달 통합데이터 조회 오류";
+  }
+
+  try{
+    const thisSnap = await get(ref(db, `monthlyReports/${thisMonthKey}`));
+    thisMonthData = thisSnap.exists()
+      ? JSON.stringify(thisSnap.val(), null, 2)
+      : `${thisMonthKey} 통합데이터 없음`;
+  }catch(e){
+    thisMonthData = "이번달 통합데이터 조회 오류";
+  }
+
+  const rankingText = currentRatings.map((p, i) => {
+    return `${i+1}위 ${p.name}(${p.bu}) / 현재ELO ${p.elo} / 초기ELO ${p.initialElo} / 이번달변화 ${p.change >= 0 ? "+" : ""}${p.change} / ${p.games}경기 ${p.wins}승 ${p.losses}패`;
+  }).join("\n");
+
+  const recentText = recentPlayerLogs.map(l => {
+    const result = l.winner === playerName ? "승" : "패";
+    const opponent = l.pA === playerName ? l.pB : l.pA;
+    const change = l.pA === playerName ? l.changeA : l.changeB;
+    return `- ${result} vs ${opponent} / ELO변동 ${change >= 0 ? "+" : ""}${change}`;
+  }).join("\n") || "최근 경기 없음";
+
+  const prompt = `
+아래 자료를 이용해서 "${playerName}" 선수의 탁구 경기력을 분석해 주세요.
+
+특히 다음 내용을 중심으로 분석해 주세요.
+
+1. 현재 ELO 기준 실력 위치
+2. 지난달 대비 이번달 흐름 변화
+3. 최근 경기 흐름
+4. 자주 만난 상대와의 상성
+5. 강한 상대 / 약한 상대
+6. ELO가 실제 실력보다 높게 보이는지 낮게 보이는지
+7. 앞으로 이 선수가 이기기 위해 보완해야 할 점
+8. 다음 경기 전략
+9. 한 줄 총평
+
+========================
+[분석 대상 선수]
+${playerName}
+
+[현재 선수 ELO 정보]
+${playerElo ? JSON.stringify(playerElo, null, 2) : "ELO 정보 없음"}
+
+========================
+[현재 전체 ELO 랭킹]
+${rankingText}
+
+========================
+[${prevMonthKey} 지난달 통합데이터]
+${prevMonthData}
+
+========================
+[${thisMonthKey} 이번달 현재까지 통합데이터]
+${thisMonthData}
+
+========================
+[${playerName} 선수 상대전적 관계]
+${relationText}
+
+========================
+[${playerName} 선수 최근 단식 ELO 경기]
+${recentText}
+
+========================
+위 자료를 바탕으로 ${playerName} 선수의 탁구 경기 분석을 해주세요.
+`;
+
+  try{
+    await navigator.clipboard.writeText(prompt.trim());
+    alert(`✅ ${playerName} 선수 AI 분석자료가 클립보드에 복사되었습니다.\n\nChatGPT나 Gemini에 붙여넣고 분석해 달라고 하면 됩니다.`);
+  }catch(e){
+    console.error(e);
+    alert("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.");
+  }
+};
 </script>
 
 </body>
