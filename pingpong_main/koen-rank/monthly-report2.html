@@ -354,45 +354,48 @@ function renderTable(arr, totalSingleMatches, recent){
   `;
 }
 
-function isIOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-}
-
 async function copyText(text) {
-  // iPhone/iPad 전용 방식
-  if (isIOS()) {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
 
-    textarea.style.position = "fixed";
-    textarea.style.top = "0";
-    textarea.style.left = "0";
-    textarea.style.opacity = "0";
-
-    document.body.appendChild(textarea);
-
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-
-    let success = false;
-
+  // 1) iPhone Safari도 최신 방식 먼저 시도
+  if (navigator.clipboard && window.isSecureContext) {
     try {
-      success = document.execCommand("copy");
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch (e) {
-      success = false;
+      console.log("Clipboard API 실패:", e);
     }
-
-    document.body.removeChild(textarea);
-
-    if (!success) {
-      alert("복사에 실패했습니다. 이름을 길게 눌러 직접 복사해 주세요.");
-    }
-
-    return success;
   }
+
+  // 2) 실패하면 예전 textarea 방식
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.opacity = "0";
+
+  document.body.appendChild(textarea);
+
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  let success = false;
+
+  try {
+    success = document.execCommand("copy");
+  } catch (e) {
+    success = false;
+  }
+
+  document.body.removeChild(textarea);
+
+  return success;
+}
 
   // 그 외 브라우저
   try {
