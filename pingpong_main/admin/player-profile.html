@@ -211,15 +211,15 @@ onValue(ref(db, "members"), (snap) => {
 });
 
 function renderPlayerSelect(){
-  const players = Object.values(members)
-    .filter(p => p && p.name)
-    .sort((a,b) => a.name.localeCompare(b.name, "ko"));
+  const players = Object.entries(members)
+    .filter(([key, p]) => p && p.name)
+    .sort((a,b) => a[1].name.localeCompare(b[1].name, "ko"));
 
   playerSelect.innerHTML = `<option value="">선수를 선택하세요</option>`;
 
-  players.forEach(p => {
+  players.forEach(([key, p]) => {
     const opt = document.createElement("option");
-    opt.value = p.name;
+    opt.value = key;
     opt.textContent = `${p.name} (${p.bu ?? "-"}부)`;
     playerSelect.appendChild(opt);
   });
@@ -228,15 +228,18 @@ function renderPlayerSelect(){
 playerSelect.addEventListener("change", loadProfile);
 
 async function loadProfile(){
-  const name = playerSelect.value;
+  const memberKey = playerSelect.value;
   clearForm();
 
-  if(!name){
+  if(!memberKey){
     status.textContent = "선수를 선택하면 저장된 프로파일이 자동으로 표시됩니다.";
     return;
   }
 
-  const snap = await get(ref(db, `playerProfiles/${name}`));
+  const player = members[memberKey];
+  const name = player?.name || "";
+
+  const snap = await get(ref(db, `playerProfiles/${memberKey}`));
 
   if(!snap.exists()){
     status.textContent = `${name} 선수의 프로파일이 아직 없습니다.`;
@@ -265,20 +268,18 @@ function clearForm(){
 }
 
 document.getElementById("saveBtn").addEventListener("click", async () => {
-  const name = playerSelect.value;
+  const memberKey = playerSelect.value;
 
-  if(!name){
+  if(!memberKey){
     alert("선수를 먼저 선택하세요.");
     return;
   }
 
-  const pw = prompt("관리자 비밀번호를 입력하세요.");
-  if(pw !== ADMIN_PASSWORD){
-    alert("비밀번호가 틀렸습니다.");
-    return;
-  }
+  const player = members[memberKey];
+  const name = player?.name || "";
 
-  await set(ref(db, `playerProfiles/${name}`), {
+  await set(ref(db, `playerProfiles/${memberKey}`), {
+    memberKey,
     name,
     grip: grip.value,
     playType: playType.value,
@@ -294,22 +295,19 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("deleteBtn").addEventListener("click", async () => {
-  const name = playerSelect.value;
+  const memberKey = playerSelect.value;
 
-  if(!name){
+  if(!memberKey){
     alert("선수를 먼저 선택하세요.");
     return;
   }
 
-  const pw = prompt("관리자 비밀번호를 입력하세요.");
-  if(pw !== ADMIN_PASSWORD){
-    alert("비밀번호가 틀렸습니다.");
-    return;
-  }
+  const player = members[memberKey];
+  const name = player?.name || "";
 
   if(!confirm(`${name} 선수 프로파일을 삭제할까요?`)) return;
 
-  await remove(ref(db, `playerProfiles/${name}`));
+  await remove(ref(db, `playerProfiles/${memberKey}`));
 
   clearForm();
   status.textContent = `${name} 선수 프로파일이 삭제되었습니다.`;
