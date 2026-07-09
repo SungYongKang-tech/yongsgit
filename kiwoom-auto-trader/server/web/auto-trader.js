@@ -349,6 +349,16 @@ function rebalanceCashIfNoHoldings(state) {
   state.budgetRebalanceReason = "보유종목 0개 → 20/60/20 현금 재분배";
 }
 
+function saveState(state) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+function nowText() {
+  return new Date().toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul"
+  });
+}
+
 function isLeaderCoreCandidate(item, marketTemperature, marketScore = null) {
   const score = Number(item.discoverScore || 0);
 
