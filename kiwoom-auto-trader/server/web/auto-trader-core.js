@@ -9,8 +9,8 @@ const settings = {
 
   serverAutoEnabledDefault: true,
 
-  discoverScanLimit: 30,
-  discoverLimit: 30,
+  discoverScanLimit: 150,
+discoverLimit: 100,
   minDiscoverScore: 7,
 
   coreEnabled: true,
@@ -41,7 +41,12 @@ volumeEndTime: "13:30",
   trailingStopRate: 1.0,
 
   buyLoopMs: 60 * 1000,
-  sellLoopMs: 30 * 1000
+  sellLoopMs: 30 * 1000,
+
+  dailyLossLimitRate: 0.01,
+
+  endSellTime: "15:10",
+endSellOnlyPositive: true
 };
 
 function nowText() {
@@ -110,6 +115,18 @@ async function fetchJson(url) {
   return data;
 }
 
+async function fetchPrice(code) {
+  const data = await fetchJson(`${API_BASE}/api/price?code=${code}`);
+
+  return Math.abs(Number(
+    data.currentPrice ||
+    data.price ||
+    data.curPrice ||
+    data.raw?.cur_prc ||
+    0
+  ));
+}
+
 function isExcludedStock(item = {}) {
   const name = String(item.name || item.stockName || item.korName || "").trim();
 
@@ -160,6 +177,64 @@ function getHoldingCount(state, strategyGroup) {
   return state.holdings.filter(h => h.strategyGroup === strategyGroup).length;
 }
 
+function getTodayRealizedProfit(state) {
+  const today = todayKey();
+
+  return (state.tradeLogs || [])
+    .filter(log =>
+      log.date === today &&
+      typeof log.profit !== "undefined"
+    )
+    .reduce((sum, log) => sum + Number(log.profit || 0), 0);
+}
+
+function initDailyRiskIfNeeded(state) {
+  const today = todayKey();
+
+  if (state.dailyRiskDate === today) return;
+
+  state.dailyRiskDate = today;
+  state.dailyBuyStopped = false;
+
+  const holdingValue = (state.holdings || []).reduce((sum, h) => {
+    return sum + Number(h.currentPrice || h.buyPrice || 0) * Number(h.qty || 0);
+  }, 0);
+
+  state.dailyStartAsset = Number(state.totalCash || 0) + holdingValue;
+  state.dailyLossLimit = Math.floor(
+  state.dailyStartAsset * settings.dailyLossLimitRate
+);
+
+  console.log(
+    `[리스크 초기화] 시작자산 ${state.dailyStartAsset.toLocaleString()}원 / ` +
+    `일일손실한도 ${state.dailyLossLimit.toLocaleString()}원`
+  );
+}
+
+function checkDailyLossLimit(state) {
+  initDailyRiskIfNeeded(state);
+
+  const todayProfit = getTodayRealizedProfit(state);
+  const limit = Number(state.dailyLossLimit || 0);
+
+  if (limit > 0 && todayProfit <= -Math.abs(limit)) {
+    state.dailyBuyStopped = true;
+    state.dailyBuyStoppedAt = nowText();
+    state.dailyBuyStoppedReason =
+      `일일 손실한도 도달 / 실현손익 ${todayProfit.toLocaleString()}원 / 한도 ${limit.toLocaleString()}원`;
+
+    return {
+      stopped: true,
+      reason: state.dailyBuyStoppedReason
+    };
+  }
+
+  return {
+    stopped: false,
+    reason: `실현손익 ${todayProfit.toLocaleString()}원 / 한도 ${limit.toLocaleString()}원`
+  };
+}
+
 function isAlreadyHolding(state, code) {
   return state.holdings.some(h => h.code === code);
 }
@@ -177,10 +252,19 @@ async function discoverCandidates() {
     `${API_BASE}/api/discover?scanLimit=${settings.discoverScanLimit}&limit=${settings.discoverLimit}`
   );
 
-  return (data.items || [])
+  const rawItems = data.items || [];
+
+  const filtered = rawItems
     .filter(item => !isExcludedStock(item))
     .filter(item => Number(item.discoverScore || 0) >= settings.minDiscoverScore)
     .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
+
+  console.log(
+    `[DISCOVER] 원본 ${rawItems.length}개 / 필터후 ${filtered.length}개 / ` +
+    `scanLimit ${settings.discoverScanLimit} / limit ${settings.discoverLimit}`
+  );
+
+  return filtered;
 }
 
 function judgeCoreBuy(state, item, price) {
@@ -404,6 +488,23 @@ function getSellSignal(holding, price) {
     };
   }
 
+    // 4. 장마감 청산
+  const now = new Date();
+  const hhmm =
+    String(now.getHours()).padStart(2, "0") +
+    ":" +
+    String(now.getMinutes()).padStart(2, "0");
+
+  if (hhmm >= settings.endSellTime) {
+    if (!settings.endSellOnlyPositive || profitRate > 0) {
+      return {
+        type: `${holding.strategyGroup}_END_SELL`,
+        qty: holding.qty,
+        reason: `장마감 청산 ${profitRate.toFixed(2)}%`
+      };
+    }
+  }
+
   return null;
 }
 
@@ -422,6 +523,12 @@ async function runBuyOnce() {
   const candidates = await discoverCandidates();
 
   console.log(`[BUY] 후보 조회 완료 / ${candidates.length}개`);
+
+  console.log(
+  `[BUY] 현재 보유 CORE ${getHoldingCount(state, "CORE")}개 / ` +
+  `VOLUME ${getHoldingCount(state, "VOLUME")}개 / ` +
+  `현금 ${Number(state.totalCash || 0).toLocaleString()}원`
+);
 
   for (const item of candidates) {
   const price = Math.abs(Number(item.currentPrice || item.price || item.raw?.cur_prc || 0));
@@ -455,7 +562,7 @@ async function runBuyOnce() {
   console.log("[BUY] 1회 점검 종료");
 }
 
-function checkSellOnce() {
+async function checkSellOnce() {
   const state = loadState();
 
   if (!state.serverAutoEnabled) {
@@ -464,14 +571,24 @@ function checkSellOnce() {
   }
 
   console.log("[SELL] 1회 점검 시작");
+  console.log(`[SELL] 보유종목 ${state.holdings.length}개`);
 
   for (const holding of [...state.holdings]) {
-    const price = Number(holding.currentPrice || holding.buyPrice || 0);
+    let price = 0;
+
+    try {
+      price = await fetchPrice(holding.code);
+    } catch (err) {
+      console.log(`[SELL 가격조회 실패] ${holding.name} / ${err.message}`);
+      price = Number(holding.currentPrice || holding.buyPrice || 0);
+    }
 
     if (!price) {
       console.log(`[SELL 제외] ${holding.name} / 현재가 없음`);
       continue;
     }
+
+    holding.currentPrice = price;
 
     const signal = getSellSignal(holding, price);
 
@@ -482,7 +599,7 @@ function checkSellOnce() {
         : 0;
 
       console.log(
-        `[SELL 유지] ${holding.name} / ${profitRate.toFixed(2)}%`
+        `[SELL 유지] ${holding.name} / 현재가 ${price.toLocaleString()}원 / ${profitRate.toFixed(2)}%`
       );
       continue;
     }
@@ -503,14 +620,14 @@ function checkSellOnce() {
   console.log("[SELL] 1회 점검 종료");
 }
 
-
 async function start() {
   console.log("SY Quant Core/Volume 전용 자동매매 시작");
 
   await runBuyOnce();
-  checkSellOnce();
+  await checkSellOnce();
 
   let buyRunning = false;
+  let sellRunning = false;
 
   setInterval(async () => {
     if (buyRunning) return;
@@ -525,14 +642,20 @@ async function start() {
     }
   }, settings.buyLoopMs);
 
-  setInterval(() => {
+  setInterval(async () => {
+    if (sellRunning) return;
+
+    sellRunning = true;
     try {
-      checkSellOnce();
+      await checkSellOnce();
     } catch (err) {
       console.error("[SELL LOOP 오류]", err.message);
+    } finally {
+      sellRunning = false;
     }
   }, settings.sellLoopMs);
 }
+
 
 start().catch(err => {
   console.error("[START 오류]", err.message);
