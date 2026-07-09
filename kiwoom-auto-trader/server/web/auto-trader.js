@@ -353,6 +353,26 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+function loadDiscoverOffset() {
+  try {
+    const state = loadState();
+    return Number(state.discoverOffset || 0);
+  } catch (e) {
+    return 0;
+  }
+}
+
+function saveDiscoverOffset(nextOffset) {
+  const state = loadState();
+  state.discoverOffset = Number(nextOffset || 0);
+  state.lastDiscoverOffsetAt = nowText();
+  saveState(state);
+
+  console.log(
+    `[DISCOVER OFFSET 저장] nextOffset=${state.discoverOffset}`
+  );
+}
+
 function nowText() {
   return new Date().toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul"
@@ -1369,9 +1389,7 @@ const data = await fetchJson(
   `${API_BASE}/api/discover?offset=${offset}&scanLimit=${settings.discoverScanLimit}&limit=${settings.discoverLimit}`
 );
 
-state.discoverOffset = Number(data.nextOffset || 0);
-state.lastDiscoverOffsetAt = nowText();
-saveState(state);
+
 
   const items = data.items || [];
 
