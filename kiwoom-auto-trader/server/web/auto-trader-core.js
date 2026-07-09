@@ -282,6 +282,8 @@ function paperBuy(state, item, price, strategyGroup, reason) {
 }
 
 async function runBuyOnce() {
+  console.log("[BUY] 1회 점검 시작");
+
   const state = loadState();
 
   if (!state.serverAutoEnabled) {
@@ -289,7 +291,11 @@ async function runBuyOnce() {
     return;
   }
 
+  console.log("[BUY] 후보 조회 시작");
+
   const candidates = await discoverCandidates();
+
+  console.log(`[BUY] 후보 조회 완료 / ${candidates.length}개`);
 
   for (const item of candidates) {
     const price = Math.abs(Number(item.currentPrice || item.price || item.raw?.cur_prc || 0));
@@ -310,6 +316,8 @@ async function runBuyOnce() {
 
   state.lastBuyCheckAt = nowText();
   saveState(state);
+
+  console.log("[BUY] 1회 점검 종료");
 }
 
 function checkSellOnce() {
