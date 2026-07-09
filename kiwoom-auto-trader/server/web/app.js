@@ -870,18 +870,14 @@ function formatNumber(value) {
 function getStrategyGroupText(group) {
   const value = String(group || "CORE").toUpperCase();
 
-  if (value === "TURBO") return "TURBO";
-  if (value === "LEADER") return "LEADER";
-  if (value === "EARLY") return "EARLY";
+  if (value === "VOLUME") return "VOLUME";
   return "CORE";
 }
 
 function getStrategyGroupClass(group) {
   const value = String(group || "CORE").toUpperCase();
 
-  if (value === "TURBO") return "strategy-turbo";
-  if (value === "LEADER") return "strategy-leader";
-  if (value === "EARLY") return "strategy-early";
+  if (value === "VOLUME") return "strategy-volume";
   return "strategy-core";
 }
 
