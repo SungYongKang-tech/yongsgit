@@ -367,4 +367,12 @@ function start() {
   }, settings.sellLoopMs);
 }
 
+runBuyOnce()
+  .then(() => {
+    console.log("[테스트] 1회 매수 점검 완료");
+  })
+  .catch(err => {
+    console.error("[테스트 오류]", err.message);
+  });
+
 start();
