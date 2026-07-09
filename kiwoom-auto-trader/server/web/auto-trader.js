@@ -169,7 +169,7 @@ leaderMinMarketScore: 60,
 
 turboMinFinalBuyScore: 60,
 coreMinFinalBuyScore: 60,
-leaderMinFinalBuyScore: 60,
+leaderMinFinalBuyScore: 55,
 
 leaderRankBuyEnabled: true,
 leaderRankMinScoreHot: 60,
