@@ -60,6 +60,8 @@ volumeTrailingStopRate: 0.8,
 
   candidateConfirmWaitMs: 60 * 1000,
 candidateHistoryMaxAgeMs: 30 * 60 * 1000,
+breakEvenStartRate: 2.0,
+breakEvenProtectRate: 0.2,
 
   dailyLossLimitRate: 0.01,
 
@@ -68,6 +70,8 @@ endSellOnlyPositive: true,
 
 coreEndSellOnlyPositive: true,
 volumeEndSellOnlyPositive: false
+
+
 };
 
 function nowText() {
@@ -859,6 +863,21 @@ const sellQty = Math.min(
     };
   }
 
+  // 2-1. 본전 방어
+if (
+  highestProfitRate >= settings.breakEvenStartRate &&
+  profitRate <= settings.breakEvenProtectRate
+) {
+  return {
+    type: `${holding.strategyGroup}_BREAK_EVEN_SELL`,
+    qty: holding.qty,
+    reason:
+      `본전방어 / 최고수익 ${highestProfitRate.toFixed(2)}% / ` +
+      `현재수익 ${profitRate.toFixed(2)}% / ` +
+      `방어기준 ${settings.breakEvenProtectRate.toFixed(2)}%`
+  };
+}
+
   // 3. 트레일링 스탑
   if (
     highestProfitRate >= trailingStartRate &&
@@ -876,11 +895,12 @@ const sellQty = Math.min(
   }
 
   // 4. 장마감 청산
-  const now = new Date();
-  const hhmm =
-    String(now.getHours()).padStart(2, "0") +
-    ":" +
-    String(now.getMinutes()).padStart(2, "0");
+  const hhmm = new Date().toLocaleTimeString("ko-KR", {
+  timeZone: "Asia/Seoul",
+  hour12: false,
+  hour: "2-digit",
+  minute: "2-digit"
+});
 
   if (hhmm >= settings.endSellTime) {
   const endSellOnlyPositive = isCore
@@ -912,14 +932,16 @@ async function runBuyOnce() {
   }
 
   const risk = checkDailyLossLimit(state);
-  cleanupCandidateHistory(state);
 
-  if (risk.stopped) {
-    console.log(`[BUY] 신규매수 중단 / ${risk.reason}`);
-    saveState(state);
-    return;
-  }
+if (risk.stopped) {
+  console.log(`[BUY] 신규매수 중단 / ${risk.reason}`);
+  saveState(state);
+  return;
+}
 
+cleanupCandidateHistory(state);
+
+  
   console.log("[BUY] 후보 조회 시작");
 
   const candidates = await discoverCandidates();
