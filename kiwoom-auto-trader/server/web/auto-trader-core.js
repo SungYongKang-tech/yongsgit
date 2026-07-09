@@ -340,8 +340,12 @@ function checkSellOnce() {
   saveState(state);
 }
 
-function start() {
+
+async function start() {
   console.log("SY Quant Core/Volume 전용 자동매매 시작");
+
+  await runBuyOnce();
+  checkSellOnce();
 
   let buyRunning = false;
 
@@ -367,12 +371,6 @@ function start() {
   }, settings.sellLoopMs);
 }
 
-runBuyOnce()
-  .then(() => {
-    console.log("[테스트] 1회 매수 점검 완료");
-  })
-  .catch(err => {
-    console.error("[테스트 오류]", err.message);
-  });
-
-start();
+start().catch(err => {
+  console.error("[START 오류]", err.message);
+});
