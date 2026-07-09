@@ -7,24 +7,24 @@ const API_BASE = "http://localhost:3000";
 
 
 const settings = {
-  buyStartTime: "09:25",
-  coreBuyCutoffTime: "13:00",
+  buyStartTime: "09:10",
+  coreBuyCutoffTime: "11:00",
   buyEndTime: "14:30",
+
   safeMinScore: 10,
   trendMinScore: 10,
   blockStoppedToday: true,
 
   totalCash: 100000000,
 
-  coreRatio: 0.4,
-  turboRatio: 0.2,
-  leaderRatio: 0.4,
-  earlyMaxHoldingCount: 3,
-  earlyMaxDailyBuyCount: 4,
+  coreRatio: 0.2,
+  turboRatio: 0.0,
+  leaderRatio: 0.0,
+  volumeRatio: 0.8,
 
-  maxHoldingCount: 6,
-  coreMaxHoldingCount: 6,
-  turboMaxHoldingCount: 2,
+  maxHoldingCount: 5,
+  coreMaxHoldingCount: 2,
+  turboMaxHoldingCount: 0,
 
   perBuyAmount: 10000000,
   minBuyAmount: 3000000,
@@ -32,21 +32,22 @@ const settings = {
   dailyLossLimitRate: 0.01,
   maxConsecutiveLoss: 3,
 
-  discoverLimit: 200,
-  minScore: 9,
-  buyCooldownMinutes: 10,
+  discoverScanLimit: 150,
+  discoverLimit: 150,
+  minScore: 7,
+  buyCooldownMinutes: 1,
 
   tradeStart: "09:05",
   tradeEnd: "15:20",
   testMode: false,
 
   targetProfitRate: 999,
-  trailingStartRate: 3,
-  stopLossRate: -1.8,
-  trailingStopRate: 2.5,
+  trailingStartRate: 3.0,
+  stopLossRate: -1.5,
+  trailingStopRate: 1.0,
 
-  firstTakeProfitRate: 3.0,
-  firstTakeProfitSellRatio: 0.5,
+  firstTakeProfitRate: 4.0,
+  firstTakeProfitSellRatio: 0.3,
   firstTakeProfitMinRemainQty: 1,
 
   breakEvenTriggerRate: 2.5,
@@ -55,133 +56,126 @@ const settings = {
   endProfitSellTime: "15:10",
   endProfitSellOnlyPositive: true,
 
-  turboEnabled: true,
-turboStartTime: "09:05",
-turboEndTime: "10:40",
-turboForceSellTime: "10:50",
+  volumeEnabled: true,
+  volumeStartTime: "09:10",
+  volumeEndTime: "13:30",
 
-turboMinScore: 12,
-turboWatchMinDayRiseRate: 1.0,
+  volumeMaxHoldingCount: 3,
+  volumeMaxDailyBuyCount: 5,
 
+  volumeMinChangeRate: 0.8,
+  volumeMaxChangeRate: 3.5,
+  volumeMinTradeVolumeRatio: 120,
+  volumeMinDayPositionRate: 45,
+  volumeMaxDayPositionRate: 80,
+  volumeMinOpenPositionRate: -3,
+  volumeMaxOpenPositionRate: 3,
 
-turboBuyMinDayRiseRate: 0.5,   // 당일 상승률은 보조조건
-turboBuyMaxDayRiseRate: 7.0,   // 너무 오른 종목만 제외
+  volumeStopLossRate: -1.5,
+  volumeTakeProfitRate: 6.0,
+  volumeTakeProfitSellRatio: 0.3,
+  volumeTrailingStartRate: 3.0,
+  volumeTrailingStopRate: 1.0,
 
-turboMinVolume: 300000,
-turboMinOpenPositionRate: 1.0, // 시가 대비 +1% 이상
-turboMinDayPositionRate: 45,
+  turboEnabled: false,
+  turboStartTime: "09:05",
+  turboEndTime: "10:40",
+  turboForceSellTime: "10:50",
 
-turboMaxDayPositionRate: 85,
-turboMinTradeVolumeRatio: -30,
+  turboMinScore: 12,
+  turboWatchMinDayRiseRate: 1.0,
+  turboBuyMinDayRiseRate: 1.0,
+  turboBuyMaxDayRiseRate: 8.0,
+  turboMinVolume: 300000,
+  turboMinOpenPositionRate: 1.5,
+  turboMinDayPositionRate: 55,
+  turboMaxDayPositionRate: 90,
+  turboMinTradeVolumeRatio: 80,
+  turboStopLossRate: -1.5,
+  turboTakeProfitRate: 5.0,
+  turboTakeProfitSellRatio: 0.3,
+  turboTrailingStartRate: 3.0,
+  turboTrailingStopRate: 1.0,
+  turboMaxDailyBuyCount: 0,
+  turboMaxConsecutiveLoss: 3,
+  turboMinOneMinuteRiseRate: 0.25,
+  turboRecheckEnabled: false,
+  turboRecheckDelayMinutes: 2,
+  turboRecheckMaxAgeMinutes: 25,
 
-coreMaxChangeRate: 3.5,
-coreMinTradeVolumeRatio: -20,
-coreMinDayPositionRate: 45,
-coreMaxDayPositionRate: 75,
+  earlyEnabled: false,
+  earlyStartTime: "09:05",
+  earlyEndTime: "10:30",
+  earlyMaxHoldingCount: 0,
+  earlyMaxDailyBuyCount: 0,
+  earlyMinScore: 6,
+  earlyMinChangeRate: 0.3,
+  earlyMaxChangeRate: 2.0,
+  earlyMinTradeVolumeRatio: 150,
+  earlyMinDayPositionRate: 60,
+  earlyStopLossRate: -1.0,
+  earlyTakeProfitRate: 3.0,
+  earlyTakeProfitSellRatio: 0.5,
+  earlyTrailingStartRate: 2.0,
+  earlyTrailingStopRate: 0.7,
 
-turboStopLossRate: -2.0,
-turboTakeProfitRate: 3.0,
-turboTakeProfitSellRatio: 0.5,
-turboTrailingStartRate: 2.0,
-turboTrailingStopRate: 0.7,
+  leaderEnabled: false,
+  leaderStartTime: "09:05",
+  leaderEndTime: "13:40",
+  leaderMaxHoldingCount: 0,
+  leaderMaxDailyBuyCount: 0,
+  leaderStopLossRate: -1.2,
+  leaderTakeProfitRate: 15.0,
+  leaderTrailingStartRate: 0.8,
+  leaderTrailingStopRate: 0.5,
+  leaderFirstTakeProfitRate: 1.2,
+  leaderFirstTakeProfitSellRatio: 0.5,
+  leaderMinHoldDays: 2,
+  leaderMaxHoldDays: 10,
+  leaderCoreEnabled: false,
+  leaderCoreMinScore: 10,
+  leaderCoreMinChangeRate: 1.5,
+  leaderCoreMaxChangeRate: 7.0,
+  leaderCoreMinVolume: 300000,
+  leaderCoreMinTradeValue: 2000000000,
+  leaderMinTradeVolumeRatio: -50,
+  leaderMinDayPositionRate: 40,
+  leaderMaxDayPositionRate: 78,
+  leaderMinOpenPositionRate: 0.3,
+  leaderMaxOpenPositionRate: 6.5,
+  leaderStrengthMinScore: 50,
+  leaderCoreMaxHoldingCount: 0,
+  leaderMinMarketScore: 60,
+  leaderMinFinalBuyScore: 55,
+  leaderRankBuyEnabled: false,
+  leaderRankMinScoreHot: 55,
+  leaderRankMinScoreNormal: 60,
+  leaderRankMaxBuyPerRun: 0,
 
-turboMaxDailyBuyCount: 3,
-turboMaxConsecutiveLoss: 3,
-turboMinOneMinuteRiseRate: 0.25,
+  coreMaxChangeRate: 3.5,
+  coreMinTradeVolumeRatio: 80,
+  coreMinDayPositionRate: 50,
+  coreMaxDayPositionRate: 80,
+  coreMinMarketScore: 45,
+  coreMinFinalBuyScore: 70,
 
-earlyEnabled: false,
-earlyStartTime: "09:05",
-earlyEndTime: "10:30",
+  candidateRankEnabled: false,
+  candidateRankMinHistoryCount: 2,
+  candidateRankMinScoreUp: 1,
+  candidateRankMaxAgeMinutes: 40,
 
-earlyMinScore: 6,
-earlyMinChangeRate: 0.3,
-earlyMaxChangeRate: 2.0,
-earlyMinTradeVolumeRatio: 150,
-earlyMinDayPositionRate: 60,
+  sectorFilterEnabled: true,
+  sectorMinScore: 2,
+  sectorFlowEnabled: true,
+  sectorFlowTopCount: 2,
+  sectorFlowMinCandidateCount: 2,
+  sectorFlowMinAvgScore: 2.5,
+  sectorStrictFilterEnabled: false,
+  nonLeadingSectorBonus: 2,
+  unknownSectorBonus: 1,
 
-earlyStopLossRate: -1.0,
-earlyTakeProfitRate: 3.0,
-earlyTakeProfitSellRatio: 0.5,
-earlyTrailingStartRate: 2.0,
-earlyTrailingStopRate: 0.7,
-
-leaderEnabled: true,
-leaderStartTime: "09:05",
-leaderEndTime: "13:40",
-
-leaderMaxHoldingCount: 4,
-leaderMaxDailyBuyCount: 6,
-
-leaderStopLossRate: -1.2,
-leaderTakeProfitRate: 15.0,
-leaderTrailingStartRate: 0.8,
-leaderTrailingStopRate: 0.5,
-leaderFirstTakeProfitRate: 1.2,
-leaderFirstTakeProfitSellRatio: 0.5,
-
-leaderMinHoldDays: 2,
-leaderMaxHoldDays: 10,
-
-
-leaderCoreEnabled: false,
-
-leaderCoreMinScore: 10,
-leaderCoreMinChangeRate: 1.5,
-leaderCoreMaxChangeRate: 7.0,
-
-leaderCoreMinVolume: 300000,
-leaderCoreMinTradeValue: 2000000000, // 20억
-
-leaderMinTradeVolumeRatio: -50,   // 거래량비율 최소 +80%
-leaderMinDayPositionRate: 40,    // 당일 위치 최소 60%
-leaderMaxDayPositionRate: 78,    // 85% 초과는 추격매수 금지
-leaderMinOpenPositionRate: 0.3,  // 시가 대비 +1% 이상
-leaderMaxOpenPositionRate: 6.5,
-
-leaderStrengthMinScore: 50,      // 수급강도 최소점수
-
-leaderCoreMaxHoldingCount: 6,
-
-candidateRankEnabled: false,
-candidateRankMinHistoryCount: 2,
-candidateRankMinScoreUp: 1,
-candidateRankMaxAgeMinutes: 40,
-
-sectorFilterEnabled: true,
-sectorMinScore: 2,
-
-discoverScanLimit: 150,
-discoverLimit: 150,
-
-sectorFlowEnabled: true,
-sectorFlowTopCount: 2,
-sectorFlowMinCandidateCount: 2,
-sectorFlowMinAvgScore: 2.5,
-
-turboRecheckEnabled: true,
-turboRecheckDelayMinutes: 2,
-turboRecheckMaxAgeMinutes: 25,
-
-marketScoreEnabled: true,
-turboMinMarketScore: 55,
-coreMinMarketScore: 45,
-leaderMinMarketScore: 60,
-
-turboMinFinalBuyScore: 60,
-coreMinFinalBuyScore: 60,
-leaderMinFinalBuyScore: 55,
-
-leaderRankBuyEnabled: true,
-leaderRankMinScoreHot: 55,
-leaderRankMinScoreNormal: 60,
-leaderRankMaxBuyPerRun: 4,
-
-sectorStrictFilterEnabled: false,
-nonLeadingSectorBonus: 2,
-unknownSectorBonus: 1,
-
-
-
+  marketScoreEnabled: true,
+  turboMinMarketScore: 55
 };
 
 
@@ -4315,16 +4309,6 @@ function isAttackBuyBlockedByMarket(marketTemperature) {
 }
 
 async function runServerAutoBuyOnce() {
-  if (!isBetweenTime(settings.buyStartTime, settings.buyEndTime)) {
-  console.log(
-    `신규매수 시간 아님: ${settings.buyStartTime}~${settings.buyEndTime}`
-  );
-  return {
-    ok: false,
-    message: "신규매수 가능 시간이 아닙니다.",
-  };
-}
-
   if (isRunning) return;
 
   if (!isTradeTime()) {
@@ -4335,473 +4319,38 @@ async function runServerAutoBuyOnce() {
   isRunning = true;
 
   try {
+    const state = loadState();
 
-    if (!isTradeTime()) {
-      console.log("거래 가능 시간이 아닙니다.");
+    if (!state.serverAutoEnabled) {
+      console.log("서버 자동매매 OFF 상태입니다.");
       return;
     }
 
-const state = loadState();
+    initDailyLossLimitIfNeeded(state);
 
-
-if (!state.serverAutoEnabled) {
-  console.log("서버 자동매매 OFF 상태입니다. 자동매수를 실행하지 않습니다.");
-  return;
-}
-
-state.lastBuyCheckAt = nowText();
-saveState(state);
-
-
-initDailyLossLimitIfNeeded(state);
-saveState(state);
-
-if (isDailyLossLimitReached(state)) {
-  state.dailyBuyStopped = true;
-  saveState(state);
-
-  const todayProfit = getTodayRealizedProfit(state);
-
-  console.log(
-    `[일일 손실 제한] 오늘 실현손익 ${todayProfit.toLocaleString()}원 / 손실한도 ${Number(state.dailyLossLimit || 0).toLocaleString()}원 도달. 신규매수를 중단합니다.`
-  );
-
-  return {
-    ok: false,
-    message: "일일 손실한도 도달로 신규매수 중단"
-  };
-}
-
-if (state.dailyBuyStopped) {
-  console.log("[일일 손실 제한] 오늘 신규매수 중단 상태입니다.");
-  return {
-    ok: false,
-    message: "일일 손실한도 도달로 신규매수 중단 상태"
-  };
-}
-
-    if (isConsecutiveLossLimitReached(state)) {
-      console.log(
-        `[연속 손실 제한] 최근 손실 거래가 ${settings.maxConsecutiveLoss}회 연속 발생했습니다. 자동매수를 중단합니다.`
-      );
+    if (isDailyLossLimitReached(state) || state.dailyBuyStopped) {
+      state.dailyBuyStopped = true;
+      saveState(state);
+      console.log("[일일 손실 제한] 신규매수 중단");
       return;
     }
 
-    if (isBuyCooldownActive(state)) {
-      console.log(
-        `[자동매수 대기] 최근 자동매수 실행 후 ${settings.buyCooldownMinutes}분이 지나지 않았습니다.`
-      );
-      return;
+    state.lastBuyCheckAt = nowText();
+    saveState(state);
+
+    if (settings.volumeEnabled && isBetweenTime(settings.volumeStartTime, settings.volumeEndTime)) {
+      await runVolumeCatchBuyOnce(state);
     }
 
-    const slots = getAvailableSlots(state);
-
-    if (slots <= 0) {
-      console.log("보유 가능 종목 수 초과");
-      return;
-    }
-
-   if (getTurboConsecutiveLossCount(state) >= 2) {
-  console.log(
-    "[TURBO 매수중단] Turbo 연속손절 2회 이상 발생 → 오늘 Turbo 신규매수만 중단"
-  );
-
-  state.turboBuyStopped = true;
-  saveState(state);
-}
-
-
-    let candidates = await discoverCandidates();
-
-    let marketTemperature = calculateMarketTemperature(candidates);
-marketTemperature = normalizeMarketTemperature(
-  marketTemperature,
-  "시장온도 계산값이 오늘 데이터가 아니어서 NORMAL 처리"
-);
-
-    if (marketTemperature.total < 20) {
-  marketTemperature.level = "NORMAL";
-  marketTemperature.label = "보통";
-  marketTemperature.reason =
-    `${marketTemperature.reason} / 표본 ${marketTemperature.total}개로 부족하여 NORMAL 처리`;
-}
-
-state.marketTemperature = {
-  ...marketTemperature,
-  checkedAt: marketTemperature.checkedAt || nowText(),
-  checkedDate: todayKey()
-};
-
-console.log(
-  `[시장온도] ${marketTemperature.label} / ` +
-  `${marketTemperature.reason} / ` +
-  `대상 ${marketTemperature.total}개`
-);
-
-if (marketTemperature.level === "DANGER") {
-  saveState(state);
-
-  return {
-    ok: false,
-    message: "시장온도 위험으로 신규매수 중단",
-    marketTemperature
-  };
-}
-
-const budget = getBudgetInfo(state);
-
-const buyRules = {
-  minScore: Number(settings.minScore || 10),
-  perBuyAmount: Number(budget.corePerBuyAmount || 10000000),
-  maxHoldingCount: Math.min(
-    Number(settings.coreMaxHoldingCount || 6),
-    getTimeBasedMaxHolding()
-  )
-};
-
-if (marketTemperature.level === "CAUTION") {
-  buyRules.minScore = Math.max(buyRules.minScore, 10);
-  buyRules.perBuyAmount = Math.floor(buyRules.perBuyAmount * 0.5);
-  buyRules.maxHoldingCount = Math.min(buyRules.maxHoldingCount, 5);
-
-  const beforeCount = candidates.length;
-
-  candidates = candidates.filter((item) => {
-    return Number(item.discoverScore || 0) >= buyRules.minScore;
-  });
-
-  console.log(
-    `[시장온도 주의] 매수조건 강화: ` +
-    `minScore=${buyRules.minScore}, ` +
-    `perBuyAmount=${buyRules.perBuyAmount}, ` +
-    `maxHoldingCount=${buyRules.maxHoldingCount} / ` +
-    `후보 ${beforeCount}개 → ${candidates.length}개`
-  );
-}
-
-if (marketTemperature.level === "HOT") {
-  buyRules.minScore = Math.min(buyRules.minScore, 8);
-  buyRules.maxHoldingCount = Math.max(buyRules.maxHoldingCount, 6);
-
-  const beforeCount = candidates.length;
-
-  candidates = candidates.filter((item) => {
-    return Number(item.discoverScore || 0) >= buyRules.minScore;
-  });
-
-  console.log(
-    `[시장온도 HOT] 매수조건 완화: ` +
-    `minScore=${buyRules.minScore}, ` +
-    `maxHoldingCount=${buyRules.maxHoldingCount} / ` +
-    `후보 ${beforeCount}개 → ${candidates.length}개`
-  );
-}
-
-
-if (settings.leaderCoreEnabled) {
-  const beforeLeaderCoreCount = candidates.length;
-
-  const isLeaderCoreTime = isBetweenTime("09:20", "10:30");
-
-  const leaderCandidates = candidates.filter((item) =>
-    isLeaderCoreCandidate(item, marketTemperature)
-  );
-
-  if (isLeaderCoreTime) {
-    candidates = leaderCandidates;
-
-    buyRules.minScore = Math.max(
-      buyRules.minScore,
-      settings.leaderCoreMinScore
-    );
-
-    buyRules.maxHoldingCount = Math.min(
-      buyRules.maxHoldingCount,
-      settings.leaderCoreMaxHoldingCount
-    );
-
-    buyRules.perBuyAmount =
-  budget.corePerBuyAmount;
-
-    state.currentCoreMode = "LEADER_CORE_ONLY";
-
-    console.log(
-      `[LEADER CORE 전용시간] 09:20~10:30 / ` +
-      `minScore=${buyRules.minScore}, ` +
-      `perBuyAmount=${buyRules.perBuyAmount}, ` +
-      `maxHoldingCount=${buyRules.maxHoldingCount} / ` +
-      `후보 ${beforeLeaderCoreCount}개 → ${candidates.length}개`
-    );
-  } else if (leaderCandidates.length > 0) {
-    candidates = leaderCandidates;
-
-    buyRules.minScore = Math.max(
-      buyRules.minScore,
-      settings.leaderCoreMinScore
-    );
-
-    buyRules.maxHoldingCount = Math.min(
-      buyRules.maxHoldingCount,
-      settings.leaderCoreMaxHoldingCount
-    );
-
-    buyRules.perBuyAmount = budget.corePerBuyAmount;
-
-    state.currentCoreMode = "LEADER_CORE";
-
-    console.log(
-      `[LEADER CORE 우선] 10:30 이후에도 대장주 후보 존재 / ` +
-      `후보 ${beforeLeaderCoreCount}개 → ${candidates.length}개`
-    );
-  } else {
-    buyRules.minScore = Math.max(buyRules.minScore, 10);
-
-    state.currentCoreMode = "CORE_BACKUP";
-
-    console.log(
-      `[CORE 백업모드] 10:30 이후 Leader Core 후보 없음 / ` +
-      `일반 Core 점수 ${buyRules.minScore} 이상으로 진행 / ` +
-      `후보 ${beforeLeaderCoreCount}개 유지`
-    );
-  }
-}
-
-
-    if (!candidates || candidates.length === 0) {
-      console.log("자동매수 후보가 없습니다.");
-      return;
-    }
-
-    for (const item of candidates.slice(0, 30)) {
-  if (getCoreHoldingCount(state) >= buyRules.maxHoldingCount) {
-    console.log(`[시장온도 기준] Core 최대 보유 ${buyRules.maxHoldingCount}개 도달`);
-    break;
-  }
-
-
-if (isAlreadyHolding(state, item.code)) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 이미 보유중`
-  );
-  continue;
-}
-
-
-
-      if (isRecentlySold(state, item.code)) {
-        
-
-console.log(
-  `[매수제외] ${item.name} ${item.code} / 당일 재매수 금지`
-);
-
-        continue;
-      }
-
-      let priceData = null;
-      let currentPrice = 0;
-
-      try {
-        priceData = await fetchPriceWithRetry(item.code, 1);
-
-        currentPrice = Number(
-          priceData.currentPrice ||
-          priceData.price ||
-          item.currentPrice ||
-          item.price ||
-          0
-        );
-      } catch (err) {
-  console.log(
-    `[현재가 조회 실패 - 건너뜀] ${item.name} ${item.code} / ${err.message}`
-  );
-  continue;
-}
-
-      if (!currentPrice || currentPrice <= 0) {
-        console.log(`[매수제외] ${item.name} ${item.code} / 현재가 없음`);
-        continue;
-      }
-
-const isMorningEntry = isBetweenTime("09:20", "09:40");
-
-if (!isMorningEntry) {
-  const pullbackCheck = isPullbackReboundCandidate({
-    ...item,
-    currentPrice
-  });
-
-  if (!pullbackCheck.pass) {
-    console.log(
-      `[매수제외] ${item.name} ${item.code} / ${pullbackCheck.reason}`
-    );
-    continue;
-  }
-
-  console.log(
-    `[눌림목 통과] ${item.name} ${item.code} / ` +
-    `1차상승 ${pullbackCheck.firstRiseRate.toFixed(2)}% / ` +
-    `고점대비 ${pullbackCheck.pullbackRate.toFixed(2)}% / ` +
-    `저점반등 ${pullbackCheck.reboundFromLowRate.toFixed(2)}%`
-  );
-} else {
-  console.log(
-    `[장초반 매수모드] ${item.name} ${item.code} / 눌림목 조건 생략`
-  );
-}
-
-
-      let bestStrategy = null;
-
-      try {
-        bestStrategy = await findBestStrategy(item.code);
-      } catch (err) {
-        console.warn(`[백테스트 실패] ${item.name} ${item.code} / ${err.message}`);
-      }
-
-if (!bestStrategy || Number(bestStrategy.profitRate || 0) < 6) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 백테스트 수익률 부족 ${
-      bestStrategy
-        ? Number(bestStrategy.profitRate || 0).toFixed(2)
-        : "없음"
-    }%`
-  );
-  continue;
-}
-
-if (isStrategyBlocked(state, bestStrategy.key || bestStrategy.strategyPreset)) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 전략 성과 부진 ${bestStrategy.name || bestStrategy.strategyName || bestStrategy.key}`
-  );
-  continue;
-}
-
-if (Number(bestStrategy.tradeCount || 0) < 2) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 백테스트 거래횟수 부족 ${bestStrategy.tradeCount}회`
-  );
-  continue;
-}
-
-const strategyPreset = bestStrategy.key;
-const discoverScore = Number(item.discoverScore || 0);
-
-if (strategyPreset === "safe" && discoverScore < settings.safeMinScore) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 안정형 점수 부족 ${discoverScore}`
-  );
-  continue;
-}
-
-if (strategyPreset === "trend" && discoverScore < settings.trendMinScore) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 추세형 점수 부족 ${discoverScore}`
-  );
-  continue;
-}
-
-
-
-if (settings.blockStoppedToday && wasStoppedToday(state, item.code)) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 오늘 손절 또는 손실 이력 있음`
-  );
-  continue;
-}
-
-if (wasAnyBoughtToday(state, item.code)) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 오늘 이미 매수한 종목`
-  );
-  continue;
-}
-
-const changeRate = Number(
-  item.changeRate ||
-  item.fluctuationRate ||
-  item.riseRate ||
-  item.rate ||
-  0
-);
-
-if (changeRate < 1.0) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 상승률 약함 ${changeRate.toFixed(2)}%`
-  );
-  continue;
-}
-
-
-const maxAllowedChangeRate =
-  bestStrategy.key === "trend" &&
-  Number(item.discoverScore || 0) >= 10
-    ? 7
-    : 5;
-
-if (changeRate >= maxAllowedChangeRate) {
-  console.log(
-    `[매수제외] ${item.name} ${item.code} / 당일 급등 ${changeRate.toFixed(2)}% / 허용 ${maxAllowedChangeRate}%`
-  );
-  continue;
-}
-
-const coreItemForBuy = {
-  ...item,
-  currentPrice,
-  price: currentPrice,
-  name:
-    priceData.name && priceData.name !== item.code
-      ? priceData.name
-      : item.name
-};
-
-
-const coreJudge = judgeCoreBuy(
-  state,
-  coreItemForBuy,
-  currentPrice,
-  bestStrategy,
-  state.marketScore
-);
-
-if (!coreJudge.pass) {
-  logBuyReject("CORE", coreItemForBuy, coreJudge.reason, {
-  finalBuyScore: coreJudge.finalScore?.score,
-  marketScore: state.marketScore
-});
-  continue;
-}
-
-coreItemForBuy.finalBuyScore = coreJudge.finalScore.score;
-coreItemForBuy.finalBuyScoreDetail = coreJudge.finalScore;
-
-const bought = paperBuy(
-  state,
-  coreItemForBuy,
-  bestStrategy,
-  buyRules.perBuyAmount
-);
-
-
-      if (bought) {
-        console.log(
-  `[모의매수] CORE / ${item.name} ${item.code}` +
-  ` / 전략 ${bestStrategy.name}` +
-  ` / 발견 ${item.discoverScore}` +
-  ` / 최종 ${coreItemForBuy.finalBuyScore}` +
-  ` / 시장 ${state.marketScore?.score ?? "-"}` +
-  ` / 등락 ${Number(item.changeRate || item.fluctuationRate || item.riseRate || 0).toFixed(2)}%` +
-  ` / 거래량 ${getTradeVolumeRatio(item).toFixed(1)}%` +
-  ` / 당일위치 ${getDayPositionRate(item, Number(item.currentPrice || item.price || 0)).toFixed(1)}%`
-);
-      }
+    if (isBetweenTime(settings.buyStartTime, settings.coreBuyCutoffTime)) {
+      await runCoreBackupBuyOnce(state);
     }
 
     state.lastRunAt = nowText();
     saveState(state);
+
   } catch (err) {
-    console.error("서버 자동 모의매수 오류:", err.message);
+    console.error("[BUY LOOP 오류]", err.message);
   } finally {
     isRunning = false;
   }
@@ -5273,7 +4822,7 @@ function startServerAutoTrader() {
     } finally {
       buyLoopRunning = false;
     }
-    }, 4 * 60 * 1000);   // 4분마다 실행
+    }, 1 * 60 * 1000);   // 1분마다 실행
 
   setInterval(() => {
     checkServerAutoSellOnce();
