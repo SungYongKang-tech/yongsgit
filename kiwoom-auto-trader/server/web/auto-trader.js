@@ -1381,14 +1381,13 @@ async function fetchPriceWithRetry(code, retry = 1) {
 async function discoverCandidates() {
   const marketLeadingSectors = await calculateMarketLeadingSectors();
 
-  const state = loadState();
-
-const offset = Number(state.discoverOffset || 0);
+ const offset = loadDiscoverOffset();
 
 const data = await fetchJson(
   `${API_BASE}/api/discover?offset=${offset}&scanLimit=${settings.discoverScanLimit}&limit=${settings.discoverLimit}`
 );
 
+saveDiscoverOffset(data.nextOffset || 0);
 
 
   const items = data.items || [];
@@ -2835,9 +2834,9 @@ function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
   let dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
 
   if (marketValue >= 90) {
-    dynamicLeaderMinFinalBuyScore = 60;
-    dynamicLeaderStrengthMinScore = 45;
-  } else if (marketValue >= 60) {
+  dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
+  dynamicLeaderStrengthMinScore = 45;
+} else if (marketValue >= 60) {
     dynamicLeaderMinFinalBuyScore = settings.leaderMinFinalBuyScore;
     dynamicLeaderStrengthMinScore = settings.leaderStrengthMinScore;
   } else {
@@ -2885,11 +2884,7 @@ function judgeLeaderBuy(state, item, currentPrice, marketScore = null) {
 
 function paperLeaderBuy(state, item, currentPrice) {
 
-  console.log("[LEADER 진입시도]", item.name);
-
-const result = paperBuy(state, item, "LEADER", settings.leaderPerBuyAmount);
-
-console.log("[LEADER 매수결과]", item.name, result);
+ console.log("[LEADER 진입시도]", item.name);
 
   if (!settings.leaderEnabled) return false;
 
