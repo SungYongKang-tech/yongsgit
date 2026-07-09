@@ -478,6 +478,178 @@ app.get("/api/search", (req, res) => {
   }
 });
 
+app.post("/api/core-paper-buy", express.json(), (req, res) => {
+  try {
+    const {
+      code,
+      name,
+      price,
+      qty,
+      strategyGroup,
+      reason
+    } = req.body || {};
+
+    if (!code || !price || !qty) {
+      return res.status(400).json({
+        ok: false,
+        message: "code, price, qty 필요"
+      });
+    }
+
+    const state = loadPaperState();
+
+    if (!Array.isArray(state.holdings)) state.holdings = [];
+    if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
+
+    const buyAmount = Number(price) * Number(qty);
+
+    state.holdings.push({
+      code,
+      name: name || code,
+      strategyGroup: strategyGroup || "CORE",
+      buyPrice: Number(price),
+      currentPrice: Number(price),
+      highestPrice: Number(price),
+      lowestPrice: Number(price),
+      qty: Number(qty),
+      buyAmount,
+      buyTime: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      buyTimeMs: Date.now(),
+      buyAt: new Date().toISOString(),
+      date: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
+    });
+
+    state.totalCash = Number(state.totalCash || 0) - buyAmount;
+
+    state.tradeLogs.push({
+      type: `${strategyGroup || "CORE"}_BUY`,
+      strategyGroup: strategyGroup || "CORE",
+      code,
+      name: name || code,
+      price: Number(price),
+      buyPrice: Number(price),
+      qty: Number(qty),
+      buyAmount,
+      reason,
+      date: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }),
+      time: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+    });
+
+    savePaperState(state);
+
+    res.json({
+      ok: true,
+      message: "paper buy 완료",
+      holdingCount: state.holdings.length,
+      totalCash: state.totalCash
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
+
+app.post("/api/core-paper-sell", express.json(), (req, res) => {
+  try {
+    const {
+      code,
+      price,
+      qty,
+      sellType,
+      reason
+    } = req.body || {};
+
+    if (!code || !price || !qty) {
+      return res.status(400).json({
+        ok: false,
+        message: "code, price, qty 필요"
+      });
+    }
+
+    const state = loadPaperState();
+
+    if (!Array.isArray(state.holdings)) state.holdings = [];
+    if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
+    if (!Array.isArray(state.virtualResults)) state.virtualResults = [];
+
+    const holding = state.holdings.find(h => h.code === code);
+
+    if (!holding) {
+      return res.status(404).json({
+        ok: false,
+        message: "보유종목 없음"
+      });
+    }
+
+    const sellQty = Math.min(Number(qty), Number(holding.qty || 0));
+    const buyPrice = Number(holding.buyPrice || 0);
+    const sellPrice = Number(price);
+    const profit = Math.floor((sellPrice - buyPrice) * sellQty);
+    const profitRate = buyPrice > 0
+      ? ((sellPrice - buyPrice) / buyPrice) * 100
+      : 0;
+
+    holding.qty -= sellQty;
+    state.totalCash = Number(state.totalCash || 0) + sellPrice * sellQty;
+
+    const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+    const time = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+
+    state.tradeLogs.push({
+      type: sellType || `${holding.strategyGroup}_SELL`,
+      strategyGroup: holding.strategyGroup,
+      code: holding.code,
+      name: holding.name,
+      buyPrice,
+      sellPrice,
+      price: sellPrice,
+      qty: sellQty,
+      profit,
+      profitRate,
+      reason,
+      date,
+      time
+    });
+
+    state.virtualResults.push({
+      code: holding.code,
+      name: holding.name,
+      strategyGroup: holding.strategyGroup,
+      buyPrice,
+      sellPrice,
+      qty: sellQty,
+      profit,
+      profitRate,
+      reason,
+      date,
+      sellTime: new Date().toISOString()
+    });
+
+    if (holding.qty <= 0) {
+      state.holdings = state.holdings.filter(h => h !== holding);
+    }
+
+    savePaperState(state);
+
+    res.json({
+      ok: true,
+      message: "paper sell 완료",
+      profit,
+      profitRate,
+      totalCash: state.totalCash
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
+
 app.post("/api/token/reissue", (req, res) => {
   exec("cd /home/ubuntu/kiwoom-server && node token.js", (error, stdout, stderr) => {
     if (error) {
