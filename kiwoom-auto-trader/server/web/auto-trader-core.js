@@ -9,8 +9,8 @@ const settings = {
 
   serverAutoEnabledDefault: true,
 
-  discoverScanLimit: 300,
-  discoverLimit: 150,
+  discoverScanLimit: 30,
+  discoverLimit: 30,
   minDiscoverScore: 7,
 
   coreEnabled: true,
