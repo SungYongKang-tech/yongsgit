@@ -104,8 +104,7 @@
     }
 
     .pill-core { background: #1e3a8a; color: #bfdbfe; }
-    .pill-turbo { background: #7c2d12; color: #fed7aa; }
-    .pill-leader { background: #581c87; color: #e9d5ff; }
+    .pill-volume { background: #0f766e; color: #ccfbf1; }
     .pill-risk { background: #7f1d1d; color: #fecaca; }
     .pill-good { background: #14532d; color: #bbf7d0; }
 
@@ -157,7 +156,7 @@
 
 <body>
   <div class="header">
-    <h1>📊 오늘 거래 분석 · CORE / TURBO / LEADER</h1>
+    <h1>📊 오늘 거래 분석 · CORE / VOLUME</h1>
     <button onclick="location.href='performance.html'">← 대시보드</button>
   </div>
 
@@ -223,7 +222,7 @@
       <table>
         <thead>
           <tr>
-            <th>종목</th><th>코드</th><th>전략</th><th>매수가</th><th>수량</th><th>매수금액</th><th>발견점수</th><th>최종점수</th><th>시장점수</th><th>수급강도</th><th>등락률</th><th>거래량비율</th><th>당일위치</th><th>시간</th>
+            <th>종목</th><th>코드</th><th>전략</th><th>매수가</th><th>수량</th><th>매수금액</th><th>발견점수</th><th>최종점수</th><th>시장점수</th><th>후보강도</th><th>등락률</th><th>거래량비율</th><th>당일위치</th><th>시간</th>
           </tr>
         </thead>
         <tbody id="buyBody"><tr><td colspan="14" class="empty">불러오는 중...</td></tr></tbody>
@@ -295,25 +294,37 @@
       return "";
     }
 
+    function normalizeStrategyGroup(group) {
+      const text = String(group || "").toUpperCase();
+
+      if (text === "VOLUME" || text.startsWith("VOLUME_")) {
+        return "VOLUME";
+      }
+
+      return "CORE";
+    }
+
     function strategyLabel(group) {
-      if (group === "TURBO") return "⚡ TURBO";
-      if (group === "LEADER") return "👑 LEADER";
-      if (group === "EARLY") return "🚀 EARLY";
+      const normalized = normalizeStrategyGroup(group);
+
+      if (normalized === "VOLUME") return "📊 VOLUME";
       return "🛡️ CORE";
     }
 
     function strategyPillClass(group) {
-      if (group === "TURBO") return "pill-turbo";
-      if (group === "LEADER") return "pill-leader";
+      const normalized = normalizeStrategyGroup(group);
+
+      if (normalized === "VOLUME") return "pill-volume";
       return "pill-core";
     }
 
     function getStrategy(log) {
-      if (log.strategyGroup) return log.strategyGroup;
-      if (log.group) return log.group;
-      if (String(log.type || "").startsWith("TURBO")) return "TURBO";
-      if (String(log.type || "").startsWith("LEADER")) return "LEADER";
-      if (String(log.type || "").startsWith("EARLY")) return "EARLY";
+      if (log.strategyGroup) return normalizeStrategyGroup(log.strategyGroup);
+      if (log.group) return normalizeStrategyGroup(log.group);
+
+      const type = String(log.type || "").toUpperCase();
+      if (type.startsWith("VOLUME")) return "VOLUME";
+
       return "CORE";
     }
 
@@ -336,8 +347,14 @@
       return Number(log.finalBuyScore || log.finalScore || 0);
     }
 
-    function getLeaderStrength(log) {
-      return Number(log.leaderStrengthScore || 0);
+    function getCandidateStrength(log) {
+      return Number(
+        log.candidateStrengthScore ||
+        log.leaderStrengthScore ||
+        log.finalBuyScore ||
+        log.finalScore ||
+        0
+      );
     }
 
     function getBuyAmount(log) {
@@ -448,7 +465,7 @@
         document.getElementById("buyBody").innerHTML = buys.map(log => {
           const finalScore = getFinalBuyScore(log);
           const marketScore = getMarketScore(log);
-          const leaderStrength = getLeaderStrength(log);
+          const candidateStrength = getCandidateStrength(log);
           return `
             <tr>
               <td>${getName(log)}</td>
@@ -460,7 +477,7 @@
               <td>${log.discoverScore || "-"}</td>
               <td>${finalScore || "-"}</td>
               <td>${marketScore || "-"}</td>
-              <td>${leaderStrength || "-"}</td>
+              <td>${candidateStrength || "-"}</td>
               <td>${formatOptionalRate(log.buyChangeRate || log.changeRate)}</td>
               <td>${formatOptionalRate(log.buyTradeVolumeRatio || log.tradeVolumeRatio)}</td>
               <td>${formatOptionalRate(log.buyDayPositionRate || log.dayPositionRate)}</td>
@@ -515,7 +532,7 @@
       const sells = data.sells || [];
 
       let text = "";
-      text += `${data.date} SY Quant 오늘 거래 분석 자료\n\n`;
+      text += `${data.date} SY Quant CORE/VOLUME 오늘 거래 분석 자료\n\n`;
       text += `[오늘 요약]\n`;
       text += `매수건수: ${summary.buyCount || 0}\n`;
       text += `매도건수: ${summary.sellCount || 0}\n`;
@@ -537,7 +554,7 @@
 
       text += `\n[오늘 매수 내역]\n`;
       buys.forEach((log, idx) => {
-        text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / 매수가 ${formatPrice(getBuyPrice(log))} / 수량 ${log.qty || log.quantity || "-"} / 발견점수 ${log.discoverScore || "-"} / 최종점수 ${getFinalBuyScore(log) || "-"} / 시장점수 ${getMarketScore(log) || "-"} / 수급강도 ${getLeaderStrength(log) || "-"} / 등락률 ${formatOptionalRate(log.buyChangeRate || log.changeRate)} / 거래량비율 ${formatOptionalRate(log.buyTradeVolumeRatio || log.tradeVolumeRatio)} / 당일위치 ${formatOptionalRate(log.buyDayPositionRate || log.dayPositionRate)} / 시간 ${log.time || log.createdAt || "-"}\n`;
+        text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / 매수가 ${formatPrice(getBuyPrice(log))} / 수량 ${log.qty || log.quantity || "-"} / 발견점수 ${log.discoverScore || "-"} / 최종점수 ${getFinalBuyScore(log) || "-"} / 시장점수 ${getMarketScore(log) || "-"} / 후보강도 ${getCandidateStrength(log) || "-"} / 등락률 ${formatOptionalRate(log.buyChangeRate || log.changeRate)} / 거래량비율 ${formatOptionalRate(log.buyTradeVolumeRatio || log.tradeVolumeRatio)} / 당일위치 ${formatOptionalRate(log.buyDayPositionRate || log.dayPositionRate)} / 시간 ${log.time || log.createdAt || "-"}\n`;
       });
 
       text += `\n[오늘 매도 내역]\n`;
