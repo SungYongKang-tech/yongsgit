@@ -350,6 +350,20 @@ function rebalanceCashIfNoHoldings(state) {
 }
 
 function saveState(state) {
+  try {
+    const oldState = fs.existsSync(STATE_FILE)
+      ? JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+      : {};
+
+    if (
+      typeof state.discoverOffset === "undefined" &&
+      typeof oldState.discoverOffset !== "undefined"
+    ) {
+      state.discoverOffset = oldState.discoverOffset;
+      state.lastDiscoverOffsetAt = oldState.lastDiscoverOffsetAt;
+    }
+  } catch (e) {}
+
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
@@ -513,15 +527,19 @@ function getLeaderStrengthScore(item, currentPriceInput = null) {
   }
 
   // 5. 시가 위 안착: 너무 멀리 오른 것보다 시가 위 초반 안착 선호
-  if (openPositionRate >= 0.3 && openPositionRate <= 2.5) {
-    score += 18;
-  } else if (openPositionRate > 2.5 && openPositionRate <= 5.0) {
-    score += 8;
-  } else if (openPositionRate > 5.0) {
-    score -= 12;
-  } else if (openPositionRate < 0) {
-    score -= 20;
-  }
+ if (openPositionRate >= 5) {
+  score -= 18;
+} else if (openPositionRate >= 3) {
+  score -= 10;
+} else if (openPositionRate >= 1) {
+  score -= 4;
+} else if (openPositionRate >= -2) {
+  score += 10;
+} else if (openPositionRate >= -6) {
+  score += 18;
+} else {
+  score += 5;
+}
 
   // 6. 거래대금
   if (tradeValue >= 10000000000) {
@@ -4231,9 +4249,12 @@ function calculateFinalBuyScore(item = {}, currentPrice = 0, marketScore = null)
 
   score += Math.min(30, discoverScore * 2);
 
-  if (openPositionRate >= 3) score += 15;
-  else if (openPositionRate >= 2) score += 12;
-  else if (openPositionRate >= 1) score += 6;
+  if (openPositionRate >= 5) score -= 20;
+else if (openPositionRate >= 3) score -= 12;
+else if (openPositionRate >= 1) score -= 5;
+else if (openPositionRate >= -2) score += 8;
+else if (openPositionRate >= -6) score += 15;
+else score += 5;
 
   if (tradeVolumeRatio >= 200) score += 20;
   else if (tradeVolumeRatio >= 120) score += 15;
