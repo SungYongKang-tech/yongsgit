@@ -172,9 +172,9 @@ coreMinFinalBuyScore: 60,
 leaderMinFinalBuyScore: 55,
 
 leaderRankBuyEnabled: true,
-leaderRankMinScoreHot: 60,
-leaderRankMinScoreNormal: 65,
-leaderRankMaxBuyPerRun: 2,
+leaderRankMinScoreHot: 55,
+leaderRankMinScoreNormal: 60,
+leaderRankMaxBuyPerRun: 4,
 
 sectorStrictFilterEnabled: false,
 nonLeadingSectorBonus: 2,
