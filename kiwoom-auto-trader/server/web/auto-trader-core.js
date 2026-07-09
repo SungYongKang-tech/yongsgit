@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const STATE_FILE = path.join(__dirname, "paper-state.json");
+const STATE_FILE = path.join(__dirname, "paper-state-core.json");
 const API_BASE = "http://localhost:3000";
 
 const settings = {
