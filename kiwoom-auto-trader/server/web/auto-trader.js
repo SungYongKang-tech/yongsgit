@@ -4772,11 +4772,31 @@ logBuyPass("LEADER", mergedItem, {
 }
 
 function startServerAutoTrader() {
-  console.log("서버 자동 모의매매 시작");
+  console.log("SY Quant CORE/VOLUME 전용 자동매매 시작");
 
   let buyLoopRunning = false;
+  let lastBuySlot = "";
 
-  setInterval(async () => {
+  const runBuyLoop = async () => {
+    const now = new Date();
+
+    const hour = String(now.getHours()).padStart(2, "0");
+    const minute = String(now.getMinutes()).padStart(2, "0");
+
+    // 10분 구간 식별값
+    // 예: 09:20~09:29는 모두 09:20
+    const slotMinute = Math.floor(now.getMinutes() / 10) * 10;
+    const buySlot =
+      `${now.getFullYear()}-` +
+      `${String(now.getMonth() + 1).padStart(2, "0")}-` +
+      `${String(now.getDate()).padStart(2, "0")} ` +
+      `${hour}:${String(slotMinute).padStart(2, "0")}`;
+
+    // 같은 10분 구간에는 한 번만 실행
+    if (lastBuySlot === buySlot) {
+      return;
+    }
+
     if (buyLoopRunning) {
       console.log("[BUY LOOP] 이전 매수 루프 실행중 → 이번 루프 대기");
       return;
@@ -4785,50 +4805,51 @@ function startServerAutoTrader() {
     buyLoopRunning = true;
 
     try {
-      // 1) TURBO 시간: TURBO 먼저
-      if (isBetweenTime(settings.turboStartTime, settings.turboEndTime)) {
-        await runTurboAutoBuyOnce();
+      console.log(`[BUY LOOP] CORE/VOLUME 점검 시작 / ${hour}:${minute}`);
 
-        // TURBO 후 LEADER도 판단
-        if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
-          await runLeaderAutoBuyOnce();
-        }
+      await runServerAutoBuyOnce();
 
-        return;
-      }
+      lastBuySlot = buySlot;
 
-      // 2) LEADER 시간
-      if (isBetweenTime(settings.leaderStartTime, settings.leaderEndTime)) {
-        await runLeaderAutoBuyOnce();
-      }
-
-      // 3) CORE는 10분 단위
-      const now = new Date();
-      const minute = now.getMinutes();
-
-      if (minute % 10 === 0) {
-        await runServerAutoBuyOnce();
-      }
-
-      // 4) EARLY는 OFF일 때 실행 안 됨
-      if (
-        settings.earlyEnabled &&
-        isBetweenTime(settings.earlyStartTime, settings.earlyEndTime)
-      ) {
-        await runEarlyAutoBuyOnce();
-      }
+      console.log(`[BUY LOOP] CORE/VOLUME 점검 완료 / ${hour}:${minute}`);
     } catch (err) {
-      console.error("[BUY LOOP 오류]", err.message);
+      console.error(
+        "[BUY LOOP 오류]",
+        err?.stack || err?.message || err
+      );
     } finally {
       buyLoopRunning = false;
     }
-    }, 1 * 60 * 1000);   // 1분마다 실행
+  };
 
+  // 서버 시작 후 바로 한 번 확인
+  runBuyLoop().catch((err) => {
+    console.error(
+      "[초기 BUY LOOP 오류]",
+      err?.stack || err?.message || err
+    );
+  });
+
+  // 매분 확인하되 실제 매수점검은 10분 구간당 한 번만 실행
   setInterval(() => {
-    checkServerAutoSellOnce();
+    runBuyLoop().catch((err) => {
+      console.error(
+        "[BUY LOOP 실행 오류]",
+        err?.stack || err?.message || err
+      );
+    });
+  }, 60 * 1000);
+
+  // 매도는 30초마다 확인
+  setInterval(() => {
+    Promise.resolve(checkServerAutoSellOnce()).catch((err) => {
+      console.error(
+        "[SELL LOOP 오류]",
+        err?.stack || err?.message || err
+      );
+    });
   }, 30 * 1000);
 }
-
 
 async function runClosingProfitSell() {
   const state = loadState();
