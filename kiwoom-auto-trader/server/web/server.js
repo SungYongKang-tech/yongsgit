@@ -710,7 +710,7 @@ app.post("/api/token/reissue", (req, res) => {
     });
 
     setTimeout(() => {
-      exec("pm2 restart sy-quant-core --update-env");
+      exec("pm2 restart kiwwm-server --update-env");
     }, 1000);
   });
 });
