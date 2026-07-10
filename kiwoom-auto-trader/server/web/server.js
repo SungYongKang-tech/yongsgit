@@ -24,6 +24,47 @@ try {
   console.error("stocks.json 로드 실패:", error.message);
 }
 
+const PAPER_STATE_FILE = path.join(
+  __dirname,
+  "paper-state-core.json"
+);
+
+function loadPaperState() {
+  if (!fs.existsSync(PAPER_STATE_FILE)) {
+    return {
+      holdings: [],
+      tradeLogs: [],
+      virtualResults: [],
+      totalCash: 100000000,
+      initialCapital: 100000000,
+      serverAutoEnabled: true
+    };
+  }
+
+  const state = JSON.parse(
+    fs.readFileSync(PAPER_STATE_FILE, "utf8")
+  );
+
+  if (!Array.isArray(state.holdings)) state.holdings = [];
+  if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
+  if (!Array.isArray(state.virtualResults)) {
+    state.virtualResults = [];
+  }
+
+  if (typeof state.totalCash === "undefined") {
+    state.totalCash = 100000000;
+  }
+
+  return state;
+}
+
+function savePaperState(state) {
+  fs.writeFileSync(
+    PAPER_STATE_FILE,
+    JSON.stringify(state, null, 2)
+  );
+}
+
 function getSavedToken() {
   return fs.readFileSync("token.txt", "utf8").trim();
 }
@@ -676,7 +717,7 @@ app.post("/api/token/reissue", (req, res) => {
 
 app.post("/api/server-result-clear", (req, res) => {
   try {
-    const PAPER_STATE_FILE = path.join(__dirname, "paper-state.json");
+    
     const state = JSON.parse(fs.readFileSync(PAPER_STATE_FILE, "utf8"));
 
     state.virtualResults = [];
@@ -750,7 +791,7 @@ async function fetchCurrentPriceFromKiwoom(code) {
 async function refreshServerHoldingPrices() {
   const fs = require("fs");
   const path = require("path");
-  const PAPER_STATE_FILE = path.join(__dirname, "paper-state.json");
+  
 
   if (!fs.existsSync(PAPER_STATE_FILE)) return;
 
@@ -1064,13 +1105,10 @@ if (!response.ok) {
 const {
   startServerAutoTrader,
   runServerAutoBuyOnce,
-  runTurboAutoBuyOnce,
-  runLeaderAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
-  runClosingProfitSell,
   loadState
-} = require("./auto-trader");
+} = require("./auto-trader-core");
 
 
 app.get("/api/paper-state", (req, res) => {
@@ -1079,31 +1117,36 @@ app.get("/api/paper-state", (req, res) => {
 
 app.post("/api/paper-state/reset", (req, res) => {
   try {
-    const PAPER_STATE_FILE = path.join(__dirname, "paper-state.json");
-
     const resetState = {
-  holdings: [],
-  tradeLogs: [],
-  virtualResults: [],
-  
-  totalCash: 60000000,
-turboCash: 20000000,
-leaderCash: 20000000,
-initialCapital: 100000000,
-  budgetInitialized: true,
-  
-  turboSnapshots: {},
-  leaderSnapshots: {},
-  
+      holdings: [],
+      tradeLogs: [],
+      virtualResults: [],
 
+      totalCash: 100000000,
+      initialCapital: 100000000,
 
-  serverAutoEnabled: false,
-  serverAutoChangedAt: new Date().toLocaleString("ko-KR"),
-  lastRunAt: null,
-  lastBuyCheckAt: null,
-  lastSellCheckAt: null,
-  lastPriceRefreshAt: null
-};
+      coreCandidateHistory: {},
+      volumeCandidateHistory: {},
+
+      pendingBuyCodes: [],
+      pendingSellCodes: [],
+
+      dailyRiskDate: null,
+      dailyStartAsset: 100000000,
+      dailyLossLimit: 1000000,
+      dailyBuyStopped: false,
+
+      serverAutoEnabled: false,
+      serverAutoChangedAt: new Date().toLocaleString(
+        "ko-KR",
+        { timeZone: "Asia/Seoul" }
+      ),
+
+      lastRunAt: null,
+      lastBuyCheckAt: null,
+      lastSellCheckAt: null,
+      lastPriceRefreshAt: null
+    };
 
     fs.writeFileSync(
       PAPER_STATE_FILE,
@@ -1112,13 +1155,13 @@ initialCapital: 100000000,
 
     res.json({
       ok: true,
-      message: "paper-state.json 초기화 완료",
+      message: "paper-state-core.json 초기화 완료",
       state: resetState
     });
   } catch (err) {
     res.status(500).json({
       ok: false,
-      message: "paper-state.json 초기화 실패",
+      message: "paper-state-core.json 초기화 실패",
       error: err.message
     });
   }
@@ -1144,34 +1187,22 @@ app.get("/api/performance-summary", (req, res) => {
       ? state.tradeLogs
       : [];
 
-   const sellLogs = tradeLogs.filter((log) =>
+  const sellLogs = tradeLogs.filter((log) =>
   [
     "SELL",
     "SELL_ALL",
-    "STOP_LOSS",
-    "TRAILING_STOP",
-    "END_PROFIT_SELL",
-    "END_WEAK_SELL",
-    "FIRST_TAKE_PROFIT",
-    "BREAK_EVEN_PROTECT",
-    "TAKE_PROFIT",
-    "HIGH_PROFIT_STAGNANT_SELL",
-    "END_WEAK_SELL",
-    "SELL_CLOSING_PROFIT",
-    "TURBO_STOP_LOSS",
-    "TURBO_FIRST_TAKE_PROFIT",
-    "TURBO_TAKE_PROFIT",
-    "TURBO_TRAILING_STOP",
-    "TURBO_TIME_EXIT",
-    "LEADER_STOP_LOSS",
-"LEADER_TAKE_PROFIT",
-"LEADER_TRAILING_STOP",
-"LEADER_TIME_EXIT",
-    "EARLY_STOP_LOSS",
-    "EARLY_FIRST_TAKE_PROFIT",
-    "EARLY_TAKE_PROFIT",
-    "EARLY_TRAILING_STOP",
-    "EARLY_TIME_EXIT",
+
+    "CORE_STOP_LOSS",
+    "CORE_FIRST_TAKE_PROFIT",
+    "CORE_BREAK_EVEN_SELL",
+    "CORE_TRAILING_STOP",
+    "CORE_END_SELL",
+
+    "VOLUME_STOP_LOSS",
+    "VOLUME_FIRST_TAKE_PROFIT",
+    "VOLUME_BREAK_EVEN_SELL",
+    "VOLUME_TRAILING_STOP",
+    "VOLUME_END_SELL"
   ].includes(log.type)
 );
 
@@ -1232,8 +1263,7 @@ const todayRealizedProfit = todaySellLogs.reduce(
 
     const holdingProfit = holdingEvalAmount - holdingBuyAmount;
 
-const perBuyAmount = 10000000;
-const maxHoldingCount = 8;
+
 
 const initialCapital = Number(state.initialCapital || 100000000);
 
@@ -1429,9 +1459,11 @@ return {
   highestProfitRate,
   drawdownFromHigh,
 
-  trailingActive: !!h.trailingActive || !!h.leaderTrailingActive || !!h.turboTrailingActive || !!h.earlyTrailingActive,
+  trailingActive: !!h.trailingActive,
   targetTouched: !!h.targetTouched,
-  trailingStartPrice: Number(h.trailingStartPrice || h.leaderTrailingStartPrice || h.turboTrailingStartPrice || 0),
+  trailingStartPrice: Number(
+  h.trailingStartPrice || 0
+),
   trailingStopRate,
   stopLossPrice: Number(h.stopLossPrice || 0),
 
@@ -1444,7 +1476,7 @@ return {
   finalBuyScoreDetail: h.finalBuyScoreDetail || null,
   marketScore: h.marketScore || null,
   sectorPowerScore: Number(h.sectorPowerScore || h.finalBuyScoreDetail?.sectorPowerScore || 0),
-  leaderStrengthScore: Number(h.leaderStrengthScore || 0),
+  
   discoverScoreDetails: h.discoverScoreDetails || {},
   discoverReasons: h.discoverReasons || [],
   sectorTags: h.sectorTags || [],
@@ -1502,40 +1534,26 @@ app.get("/api/daily-summary", (req, res) => {
     const tradeLogs = Array.isArray(state.tradeLogs) ? state.tradeLogs : [];
     const holdings = Array.isArray(state.holdings) ? state.holdings : [];
 
-    const sellTypes = [
-      "SELL",
-      "SELL_ALL",
-      "STOP_LOSS",
-      "TRAILING_STOP",
-      "END_PROFIT_SELL",
-      "FIRST_TAKE_PROFIT",
-      "BREAK_EVEN_PROTECT",
-      "TAKE_PROFIT",
-      "HIGH_PROFIT_STAGNANT_SELL",
-      "TURBO_STOP_LOSS",
-      "TURBO_FIRST_TAKE_PROFIT",
-      "TURBO_TAKE_PROFIT",
-      "TURBO_TRAILING_STOP",
-      "TURBO_TIME_EXIT",
-      "LEADER_STOP_LOSS",
-      "LEADER_FIRST_TAKE_PROFIT",
-      "LEADER_TAKE_PROFIT",
-      "LEADER_TRAILING_STOP",
-      "LEADER_TIME_EXIT",
-      "SELL_CLOSING_PROFIT",
-      "END_WEAK_SELL",
-      "EARLY_STOP_LOSS",
-      "EARLY_FIRST_TAKE_PROFIT",
-      "EARLY_TAKE_PROFIT",
-      "EARLY_TRAILING_STOP",
-      "EARLY_TIME_EXIT",
-    ];
+   const sellTypes = [
+  "SELL",
+  "SELL_ALL",
 
-    const buyTypes = [
-  "BUY",
-  "TURBO_BUY",
-  "LEADER_BUY",
-  "EARLY_BUY"
+  "CORE_STOP_LOSS",
+  "CORE_FIRST_TAKE_PROFIT",
+  "CORE_BREAK_EVEN_SELL",
+  "CORE_TRAILING_STOP",
+  "CORE_END_SELL",
+
+  "VOLUME_STOP_LOSS",
+  "VOLUME_FIRST_TAKE_PROFIT",
+  "VOLUME_BREAK_EVEN_SELL",
+  "VOLUME_TRAILING_STOP",
+  "VOLUME_END_SELL"
+];
+
+   const buyTypes = [
+  "CORE_BUY",
+  "VOLUME_BUY"
 ];
 
     const dateMap = {};
@@ -1555,24 +1573,17 @@ app.get("/api/daily-summary", (req, res) => {
     lossCount: 0,
 
     coreProfit: 0,
-    turboProfit: 0,
-    leaderProfit: 0,
-    earlyProfit: 0,
+volumeProfit: 0,
 
     realizedProfit: 0,
 
     marketTemperature: null,
 
-    coreWins: 0,
-    coreTrades: 0,
+   coreWins: 0,
+coreTrades: 0,
 
-    turboWins: 0,
-    turboTrades: 0,
-
-    leaderWins: 0,
-    leaderTrades: 0,
-    earlyWins: 0,
-    earlyTrades: 0,
+volumeWins: 0,
+volumeTrades: 0,
 
     bestTrade: null,
     worstTrade: null
@@ -1600,33 +1611,21 @@ app.get("/api/daily-summary", (req, res) => {
   if (profit < 0) row.lossCount += 1;
 
   if (group === "CORE") {
-    row.coreTrades += 1;
-    if (profit > 0) row.coreWins += 1;
-  }
+  row.coreTrades += 1;
+  row.coreProfit += profit;
 
-  if (group === "TURBO") {
-    row.turboTrades += 1;
-    if (profit > 0) row.turboWins += 1;
+  if (profit > 0) {
+    row.coreWins += 1;
   }
-
-  if (group === "LEADER") {
-    row.leaderTrades += 1;
-    if (profit > 0) row.leaderWins += 1;
-  }
-
-  if (group === "EARLY") {
-  row.earlyTrades += 1;
-  if (profit > 0) row.earlyWins += 1;
 }
 
-  if (group === "TURBO") {
-  row.turboProfit += profit;
-} else if (group === "LEADER") {
-  row.leaderProfit += profit;
-} else if (group === "EARLY") {
-  row.earlyProfit += profit;
-} else {
-  row.coreProfit += profit;
+if (group === "VOLUME") {
+  row.volumeTrades += 1;
+  row.volumeProfit += profit;
+
+  if (profit > 0) {
+    row.volumeWins += 1;
+  }
 }
 
   if (!row.bestTrade || profit > row.bestTrade.profit) {
@@ -1694,25 +1693,17 @@ if (dateMap[today] && latestMarketTemperature) {
         ? (row.winCount / row.sellCount) * 100
         : 0,
 
-    coreWinRate:
-      row.coreTrades > 0
-        ? (row.coreWins / row.coreTrades) * 100
-        : 0,
-
-    turboWinRate:
-      row.turboTrades > 0
-        ? (row.turboWins / row.turboTrades) * 100
-        : 0,
-
-    leaderWinRate:
-      row.leaderTrades > 0
-        ? (row.leaderWins / row.leaderTrades) * 100
-        : 0,
-      
-    earlyWinRate:
-    row.earlyTrades > 0
-    ? (row.earlyWins / row.earlyTrades) * 100
+  coreWinRate:
+  row.coreTrades > 0
+    ? (row.coreWins / row.coreTrades) * 100
     : 0,
+
+volumeWinRate:
+  row.volumeTrades > 0
+    ? (row.volumeWins / row.volumeTrades) * 100
+    : 0,
+
+   
 
     bestTrade: row.bestTrade,
     worstTrade: row.worstTrade
@@ -1762,35 +1753,26 @@ app.get("/api/today-trade-analysis", (req, res) => {
       return String(log.date || "").trim() === today;
     });
 
-    const buyTypes = ["BUY", "TURBO_BUY", "LEADER_BUY", "EARLY_BUY"];
+   const buyTypes = [
+  "CORE_BUY",
+  "VOLUME_BUY"
+];
+  const sellTypes = [
+  "SELL",
+  "SELL_ALL",
 
-    const sellTypes = [
-      "SELL",
-      "SELL_ALL",
-      "STOP_LOSS",
-      "TRAILING_STOP",
-      "END_PROFIT_SELL",
-      "END_WEAK_SELL",
-      "FIRST_TAKE_PROFIT",
-      "BREAK_EVEN_PROTECT",
-      "TAKE_PROFIT",
-      "HIGH_PROFIT_STAGNANT_SELL",
-      "TURBO_STOP_LOSS",
-      "TURBO_FIRST_TAKE_PROFIT",
-      "TURBO_TAKE_PROFIT",
-      "TURBO_TRAILING_STOP",
-      "TURBO_TIME_EXIT",
-      "LEADER_STOP_LOSS",
-      "LEADER_FIRST_TAKE_PROFIT",
-      "LEADER_TAKE_PROFIT",
-      "LEADER_TRAILING_STOP",
-      "LEADER_TIME_EXIT",
-      "EARLY_STOP_LOSS",
-      "EARLY_FIRST_TAKE_PROFIT",
-      "EARLY_TAKE_PROFIT",
-      "EARLY_TRAILING_STOP",
-      "EARLY_TIME_EXIT",
-    ];
+  "CORE_STOP_LOSS",
+  "CORE_FIRST_TAKE_PROFIT",
+  "CORE_BREAK_EVEN_SELL",
+  "CORE_TRAILING_STOP",
+  "CORE_END_SELL",
+
+  "VOLUME_STOP_LOSS",
+  "VOLUME_FIRST_TAKE_PROFIT",
+  "VOLUME_BREAK_EVEN_SELL",
+  "VOLUME_TRAILING_STOP",
+  "VOLUME_END_SELL"
+];
 
     const buys = todayLogs.filter(log => buyTypes.includes(log.type));
     const sells = todayLogs.filter(log => sellTypes.includes(log.type));
@@ -1808,17 +1790,23 @@ app.get("/api/today-trade-analysis", (req, res) => {
       sellTypeCounts[log.type] = (sellTypeCounts[log.type] || 0) + 1;
     });
 
-    function getStrategy(log) {
-      return (
-        log.strategyGroup ||
-        log.group ||
-        (String(log.type || "").startsWith("TURBO")
-          ? "TURBO"
-          : String(log.type || "").startsWith("LEADER")
-          ? "LEADER"
-          : "CORE")
-      );
-    }
+   function getStrategy(log) {
+  if (log.strategyGroup) {
+    return log.strategyGroup;
+  }
+
+  if (log.group) {
+    return log.group;
+  }
+
+  const type = String(log.type || "");
+
+  if (type.startsWith("VOLUME")) {
+    return "VOLUME";
+  }
+
+  return "CORE";
+}
 
     const byStrategy = {};
 
@@ -1916,37 +1904,9 @@ app.get("/api/server-auto-buy-once", async (req, res) => {
   });
 });
 
-app.get("/api/server-turbo-buy-once", async (req, res) => {
-  try {
-    await runTurboAutoBuyOnce();
 
-    res.json({
-      ok: true,
-      message: "Turbo 모의매수를 1회 실행했습니다."
-    });
-  } catch (error) {
-    res.status(500).json({
-      ok: false,
-      message: error.message
-    });
-  }
-});
 
-app.get("/api/server-LEADER-buy-once", async (req, res) => {
-  try {
-    await runLeaderAutoBuyOnce();
 
-    res.json({
-      ok: true,
-      message: "LEADER 모의매수를 1회 실행했습니다."
-    });
-  } catch (error) {
-    res.status(500).json({
-      ok: false,
-      message: error.message
-    });
-  }
-});
 
 app.get("/api/server-auto-sell-once", async (req, res) => {
   try {
@@ -1964,20 +1924,6 @@ app.get("/api/server-auto-sell-once", async (req, res) => {
   }
 });
 
-app.get("/api/server-closing-profit-sell", async (req, res) => {
-  try {
-    const result = await runClosingProfitSell();
-    res.json(result);
-  } catch (err) {
-    console.error("장마감 수익매도 오류:", err);
-
-    res.status(500).json({
-      ok: false,
-      message: "장마감 수익매도 오류",
-      error: err.message
-    });
-  }
-});
 
 
 
@@ -2005,7 +1951,7 @@ app.post("/api/server-log-clear", (req, res) => {
 
 app.post("/api/server-trade-log-clear", (req, res) => {
   try {
-    const PAPER_STATE_FILE = path.join(__dirname, "paper-state.json");
+ 
     const state = JSON.parse(fs.readFileSync(PAPER_STATE_FILE, "utf8"));
 
     state.tradeLogs = [];
@@ -2061,8 +2007,7 @@ app.post("/api/paper-buy", express.json(), (req, res) => {
       });
     }
 
-    const PAPER_STATE_FILE =
-      path.join(__dirname, "paper-state.json");
+  
 
     let state = {
       holdings: [],
@@ -2173,9 +2118,7 @@ app.post("/api/paper-sell", (req, res) => {
       });
     }
 
-    const PAPER_STATE_FILE =
-      path.join(__dirname, "paper-state.json");
-
+   
     let state = {
       holdings: [],
       tradeLogs: [],
@@ -2243,13 +2186,7 @@ state.tradeLogs.push({
   time: now.toLocaleString("ko-KR")
 });
 
-if (holding.strategyGroup === "TURBO") {
-  state.turboCash = Number(state.turboCash || 0) + sellAmount;
-} else if (holding.strategyGroup === "LEADER") {
-  state.leaderCash = Number(state.leaderCash || 0) + sellAmount;
-} else {
-  state.totalCash = Number(state.totalCash || 0) + sellAmount;
-}
+state.totalCash = Number(state.totalCash || 0) + sellAmount;
 
     state.virtualResults.push({
       code: holding.code,
@@ -2329,7 +2266,7 @@ app.get("/api/paper-sell-all", async (req, res) => {
 
     const fs = require("fs");
     const path = require("path");
-    const PAPER_STATE_FILE = path.join(__dirname, "paper-state.json");
+   
 
     const paperState = JSON.parse(
       fs.readFileSync(PAPER_STATE_FILE, "utf8")
@@ -2386,13 +2323,8 @@ app.get("/api/paper-sell-all", async (req, res) => {
   date: new Date().toISOString().slice(0, 10)
 });
 
-if (holding.strategyGroup === "TURBO") {
-  paperState.turboCash = Number(paperState.turboCash || 0) + sellAmount;
-} else if (holding.strategyGroup === "LEADER") {
-  paperState.leaderCash = Number(paperState.leaderCash || 0) + sellAmount;
-} else {
-  paperState.totalCash = Number(paperState.totalCash || 0) + sellAmount;
-}
+paperState.totalCash =
+  Number(paperState.totalCash || 0) + sellAmount;
 
     paperState.virtualResults.push({
       code: holding.code,

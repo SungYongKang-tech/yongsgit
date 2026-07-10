@@ -4309,20 +4309,16 @@ function isAttackBuyBlockedByMarket(marketTemperature) {
 }
 
 async function runServerAutoBuyOnce() {
-  if (isRunning) return;
-
   if (!isTradeTime()) {
     console.log("[자동매수 차단] 거래 가능 시간이 아닙니다.");
     return;
   }
 
-  isRunning = true;
-
   try {
     const state = loadState();
 
     if (!state.serverAutoEnabled) {
-      console.log("서버 자동매매 OFF 상태입니다.");
+      console.log("[BUY] 서버 자동매매 OFF");
       return;
     }
 
@@ -4338,21 +4334,23 @@ async function runServerAutoBuyOnce() {
     state.lastBuyCheckAt = nowText();
     saveState(state);
 
-    if (settings.volumeEnabled && isBetweenTime(settings.volumeStartTime, settings.volumeEndTime)) {
-      await runVolumeCatchBuyOnce(state);
-    }
+    console.log("[BUY] CORE/VOLUME 매수 점검 시작");
 
-    if (isBetweenTime(settings.buyStartTime, settings.coreBuyCutoffTime)) {
-      await runCoreBackupBuyOnce(state);
-    }
+    /*
+      실제 존재하는 CORE/VOLUME 함수 이름 확인 후
+      이 위치에 호출 코드를 넣어야 합니다.
+    */
 
     state.lastRunAt = nowText();
     saveState(state);
 
+    console.log("[BUY] CORE/VOLUME 매수 점검 완료");
+
   } catch (err) {
-    console.error("[BUY LOOP 오류]", err.message);
-  } finally {
-    isRunning = false;
+    console.error(
+      "[BUY LOOP 오류]",
+      err?.stack || err?.message || err
+    );
   }
 }
 
