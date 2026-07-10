@@ -1105,6 +1105,44 @@ async function start() {
 }
 
 
-start().catch(err => {
-  console.error("[START 오류]", err.message);
-});
+let started = false;
+
+function startServerAutoTrader() {
+  if (started) {
+    console.log("[START] SY Quant 자동매매가 이미 실행 중입니다.");
+    return;
+  }
+
+  started = true;
+
+  start().catch(err => {
+    started = false;
+    console.error("[START 오류]", err.message);
+  });
+}
+
+function setServerAutoEnabled(enabled) {
+  const state = loadState();
+
+  state.serverAutoEnabled = enabled === true;
+  state.serverAutoChangedAt = nowText();
+
+  saveState(state);
+
+  console.log(
+    `[AUTO] 서버 자동매매 ${state.serverAutoEnabled ? "ON" : "OFF"}`
+  );
+
+  return state;
+}
+
+module.exports = {
+  startServerAutoTrader,
+
+  runServerAutoBuyOnce: runBuyOnce,
+  checkServerAutoSellOnce: checkSellOnce,
+
+  setServerAutoEnabled,
+  loadState,
+  saveState
+};

@@ -710,7 +710,7 @@ app.post("/api/token/reissue", (req, res) => {
     });
 
     setTimeout(() => {
-      exec("pm2 restart kiwwm-server --update-env");
+      exec("pm2 restart sy-quant-core --update-env");
     }, 1000);
   });
 });
@@ -789,8 +789,6 @@ async function fetchCurrentPriceFromKiwoom(code) {
 }
 
 async function refreshServerHoldingPrices() {
-  const fs = require("fs");
-  const path = require("path");
   
 
   if (!fs.existsSync(PAPER_STATE_FILE)) return;
@@ -1103,13 +1101,11 @@ if (!response.ok) {
 });
 
 const {
-  startServerAutoTrader,
   runServerAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
   loadState
 } = require("./auto-trader-core");
-
 
 app.get("/api/paper-state", (req, res) => {
   res.json(loadState());
@@ -1896,12 +1892,21 @@ app.get("/api/server-auto-on", (req, res) => {
 });
 
 app.get("/api/server-auto-buy-once", async (req, res) => {
-  await runServerAutoBuyOnce();
+  try {
+    await runServerAutoBuyOnce();
 
-  res.json({
-    ok: true,
-    message: "서버 자동 모의매수를 1회 실행했습니다."
-  });
+    res.json({
+      ok: true,
+      message: "서버 자동 모의매수를 1회 실행했습니다."
+    });
+  } catch (error) {
+    console.error("서버 자동매수 1회 실행 오류:", error);
+
+    res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
 });
 
 
@@ -2264,9 +2269,7 @@ app.get("/api/paper-sell-all", async (req, res) => {
       });
     }
 
-    const fs = require("fs");
-    const path = require("path");
-   
+  
 
     const paperState = JSON.parse(
       fs.readFileSync(PAPER_STATE_FILE, "utf8")
@@ -2380,5 +2383,4 @@ app.get("/api/refresh-holding-prices", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`서버 실행중: ${PORT}`);
-  startServerAutoTrader();
 });
