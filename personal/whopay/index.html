@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fff8ed">
+  <title>밥값 릴레이</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --bg: #fff8ed;
+      --card: #ffffff;
+      --text: #2b2621;
+      --muted: #7c746c;
+      --line: #eee5da;
+      --primary: #ff7a45;
+      --primary-dark: #e75f2c;
+      --green: #167a4b;
+      --red: #c8463c;
+      --shadow: 0 10px 28px rgba(73, 52, 34, .08);
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .wrap {
+      width: min(720px, 100%);
+      margin: 0 auto;
+      padding: 20px 16px 70px;
+    }
+    header { padding: 8px 4px 18px; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .subtitle { color: var(--muted); font-size: 14px; }
+    .status {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin-top: 12px; padding: 7px 11px;
+      border-radius: 999px; background: rgba(255,255,255,.75);
+      font-size: 12px; color: var(--muted);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #999; }
+    .status.online .dot { background: #20a565; }
+    .status.error .dot { background: #d84b42; }
+    .card {
+      background: var(--card);
+      border-radius: 22px;
+      padding: 20px;
+      margin-bottom: 15px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(238,229,218,.8);
+    }
+    .section-title {
+      margin: 0 0 14px;
+      font-size: 18px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .member-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px;
+    }
+    .member-btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      min-height: 52px;
+      border-radius: 15px;
+      font-weight: 700;
+      color: var(--muted);
+      transition: .15s ease;
+    }
+    .member-btn.selected {
+      color: #fff; background: var(--primary); border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .recommend {
+      text-align: center;
+      padding: 6px 0 2px;
+    }
+    .recommend-label { color: var(--muted); font-size: 13px; }
+    .recommend-name {
+      font-size: 34px; font-weight: 900;
+      margin: 8px 0 5px; color: var(--primary-dark);
+    }
+    .recommend-reason { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .field { margin-top: 13px; }
+    label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 700; }
+    input, textarea {
+      width: 100%; border: 1px solid var(--line); border-radius: 14px;
+      padding: 13px 14px; outline: none; background: #fff;
+    }
+    input:focus, textarea:focus { border-color: var(--primary); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .payer-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    }
+    .payer-btn {
+      border: 1px solid var(--line); background: #fff;
+      border-radius: 13px; padding: 11px 5px;
+      font-weight: 700; color: var(--muted);
+    }
+    .payer-btn.selected { color: #fff; background: #3f4852; border-color: #3f4852; }
+    .payer-btn:disabled { opacity: .3; cursor: not-allowed; }
+    .save-btn {
+      width: 100%; margin-top: 17px; border: 0;
+      border-radius: 15px; padding: 15px;
+      color: #fff; background: var(--primary); font-weight: 900;
+      font-size: 16px;
+    }
+    .save-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .balance-list { display: grid; gap: 10px; }
+    .balance-item {
+      display: grid; grid-template-columns: 72px 1fr auto;
+      align-items: center; gap: 10px;
+      padding: 12px 13px; border: 1px solid var(--line); border-radius: 15px;
+    }
+    .balance-name { font-weight: 900; }
+    .balance-note { font-size: 12px; color: var(--muted); }
+    .balance-value { font-weight: 900; text-align: right; }
+    .plus { color: var(--green); }
+    .minus { color: var(--red); }
+    .zero { color: var(--muted); }
+    .history { display: grid; gap: 11px; }
+    .meal {
+      border: 1px solid var(--line); border-radius: 16px;
+      padding: 14px;
+    }
+    .meal-top {
+      display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;
+    }
+    .meal-title { font-weight: 900; }
+    .meal-date { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .meal-amount { font-weight: 900; font-size: 18px; white-space: nowrap; }
+    .meal-detail { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .delete-btn {
+      margin-top: 10px; padding: 7px 10px; border-radius: 10px;
+      border: 1px solid #f0d1ce; color: var(--red); background: #fff7f6;
+      font-size: 12px; font-weight: 700;
+    }
+    .empty { color: var(--muted); text-align: center; padding: 18px 0; font-size: 14px; }
+    .small { font-size: 12px; color: var(--muted); }
+    .toast {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+      background: #2d2925; color: white; padding: 12px 16px;
+      border-radius: 13px; opacity: 0; pointer-events: none;
+      transition: .2s ease; z-index: 99; max-width: calc(100% - 32px);
+      text-align: center; font-size: 14px;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    @media (max-width: 520px) {
+      .member-grid, .payer-grid { grid-template-columns: repeat(2, 1fr); }
+      .row { grid-template-columns: 1fr; }
+      .card { padding: 17px; border-radius: 19px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>🍚 밥값 릴레이</h1>
+      <div class="subtitle">누적 잔액으로 오늘의 결제자를 공정하게 추천합니다.</div>
+      <div id="connectionStatus" class="status">
+        <span class="dot"></span><span>Firebase 연결 중</span>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2 class="section-title">오늘 참석자 <span class="small">2명 이상 선택</span></h2>
+      <div id="attendeeButtons" class="member-grid"></div>
+    </section>
+
+    <section class="card">
+      <div class="recommend">
+        <div class="recommend-label">💳 추천 결제자</div>
+        <div id="recommendName" class="recommend-name">참석자 선택</div>
+        <div id="recommendReason" class="recommend-reason">오늘 식사에 참석할 사람을 눌러주세요.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">식사 기록</h2>
+      <div class="row">
+        <div class="field">
+          <label for="mealDate">날짜</label>
+          <input id="mealDate" type="date">
+        </div>
+        <div class="field">
+          <label for="amount">총 금액</label>
+          <input id="amount" type="text" inputmode="numeric" placeholder="예: 84,000">
+        </div>
+      </div>
+      <div class="field">
+        <label for="restaurant">식당명</label>
+        <input id="restaurant" type="text" maxlength="40" placeholder="선택 입력">
+      </div>
+      <div class="field">
+        <label>실제 결제자</label>
+        <div id="payerButtons" class="payer-grid"></div>
+      </div>
+      <div class="field">
+        <label for="memo">메모</label>
+        <textarea id="memo" rows="2" maxlength="100" placeholder="선택 입력"></textarea>
+      </div>
+      <button id="saveButton" class="save-btn" type="button">기록 저장</button>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">누적 잔액 현황</h2>
+      <div id="balanceList" class="balance-list"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">최근 식사 기록</h2>
+      <div id="historyList" class="history"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+    import {
+      getDatabase, ref, onValue, push, set, remove, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAX9JAF_qfHszEsx0YZIPyQ1ygfVm8K8IY",
+      authDomain: "gido-645c1.firebaseapp.com",
+      databaseURL: "https://gido-645c1-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "gido-645c1",
+      storageBucket: "gido-645c1.firebasestorage.app",
+      messagingSenderId: "799221874446",
+      appId: "1:799221874446:web:231144ff27978b951f615f"
+    };
+
+    const MEMBERS = [
+      { id: "seongyong", name: "성용" },
+      { id: "sanghoon", name: "상훈" },
+      { id: "heeul", name: "희을" },
+      { id: "heeyoung", name: "희영" }
+    ];
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const mealsRef = ref(db, "mealRelay/meals");
+
+    let meals = {};
+    let selectedAttendees = new Set(MEMBERS.map(m => m.id));
+    let selectedPayer = null;
+    let balances = createEmptyBalances();
+    let isSaving = false;
+
+    const $ = id => document.getElementById(id);
+    const won = value => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
+    const memberName = id => MEMBERS.find(m => m.id === id)?.name || id;
+
+    function createEmptyBalances() {
+      return Object.fromEntries(MEMBERS.map(m => [
+        m.id,
+        { paid: 0, fairShare: 0, balance: 0, lastPaidAt: 0 }
+      ]));
+    }
+
+    function todayString() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function calculateBalances() {
+      const next = createEmptyBalances();
+
+      Object.values(meals || {}).forEach(meal => {
+        const amount = Number(meal.amount || 0);
+        const attendees = Array.isArray(meal.attendees) ? meal.attendees : [];
+        if (!amount || !attendees.length || !meal.payerId) return;
+
+        const share = amount / attendees.length;
+
+        attendees.forEach(id => {
+          if (next[id]) next[id].fairShare += share;
+        });
+
+        if (next[meal.payerId]) {
+          next[meal.payerId].paid += amount;
+          next[meal.payerId].lastPaidAt = Math.max(
+            next[meal.payerId].lastPaidAt,
+            Number(meal.createdAt || meal.dateMs || 0)
+          );
+        }
+      });
+
+      Object.values(next).forEach(item => {
+        item.balance = item.paid - item.fairShare;
+      });
+
+      balances = next;
+    }
+
+    function getRecommendedPayer() {
+      const candidates = MEMBERS
+        .filter(m => selectedAttendees.has(m.id))
+        .map(m => ({ ...m, ...balances[m.id] }));
+
+      if (candidates.length < 2) return null;
+
+      candidates.sort((a, b) => {
+        const balanceGap = a.balance - b.balance;
+        if (Math.abs(balanceGap) > 1) return balanceGap;
+        if (a.lastPaidAt !== b.lastPaidAt) return a.lastPaidAt - b.lastPaidAt;
+        return MEMBERS.findIndex(m => m.id === a.id) - MEMBERS.findIndex(m => m.id === b.id);
+      });
+
+      return candidates[0];
+    }
+
+    function renderAttendees() {
+      $("attendeeButtons").innerHTML = MEMBERS.map(member => `
+        <button type="button"
+          class="member-btn ${selectedAttendees.has(member.id) ? "selected" : ""}"
+          data-attendee="${member.id}">
+          ${member.name}
+        </button>
+      `).join("");
+
+      document.querySelectorAll("[data-attendee]").forEach(button => {
+        button.addEventListener("click", () => {
+          const id = button.dataset.attendee;
+          if (selectedAttendees.has(id)) {
+            selectedAttendees.delete(id);
+            if (selectedPayer === id) selectedPayer = null;
+          } else {
+            selectedAttendees.add(id);
+          }
+          renderAll();
+        });
+      });
+    }
+
+    function renderPayers() {
+      const recommended = getRecommendedPayer();
+
+      if (!selectedPayer || !selectedAttendees.has(selectedPayer)) {
+        selectedPayer = recommended?.id || null;
+      }
+
+      $("payerButtons").innerHTML = MEMBERS.map(member => {
+        const enabled = selectedAttendees.has(member.id);
+        return `
+          <button type="button"
+            class="payer-btn ${selectedPayer === member.id ? "selected" : ""}"
+            data-payer="${member.id}"
+            ${enabled ? "" : "disabled"}>
+            ${member.name}
+          </button>
+        `;
+      }).join("");
+
+      document.querySelectorAll("[data-payer]").forEach(button => {
+        button.addEventListener("click", () => {
+          selectedPayer = button.dataset.payer;
+          renderPayers();
+        });
+      });
+    }
+
+    function renderRecommendation() {
+      const recommended = getRecommendedPayer();
+
+      if (!recommended) {
+        $("recommendName").textContent = "참석자 선택";
+        $("recommendReason").textContent = "오늘 식사에 참석할 사람을 2명 이상 선택해 주세요.";
+        return;
+      }
+
+      $("recommendName").textContent = recommended.name;
+      const balanceText = recommended.balance < -1
+        ? `현재 누적 잔액이 ${won(Math.abs(recommended.balance))} 부족합니다.`
+        : recommended.balance > 1
+          ? `참석자 중 누적 잔액이 가장 낮습니다. 현재 ${won(recommended.balance)} 더 냈습니다.`
+          : "현재 잔액이 가장 낮고, 최근 결제 순서를 함께 반영했습니다.";
+
+      $("recommendReason").textContent = `${balanceText} 실제 결제자는 변경할 수 있습니다.`;
+    }
+
+    function renderBalances() {
+      const ordered = MEMBERS.map(m => ({ ...m, ...balances[m.id] }))
+        .sort((a, b) => b.balance - a.balance);
+
+      $("balanceList").innerHTML = ordered.map(item => {
+        const className = item.balance > 1 ? "plus" : item.balance < -1 ? "minus" : "zero";
+        const sign = item.balance > 1 ? "+" : "";
+        const note = item.balance > 1
+          ? "지금까지 더 결제함"
+          : item.balance < -1
+            ? "지금까지 덜 결제함"
+            : "현재 균형";
+        return `
+          <div class="balance-item">
+            <div class="balance-name">${item.name}</div>
+            <div class="balance-note">결제 ${won(item.paid)} · 부담 ${won(item.fairShare)}<br>${note}</div>
+            <div class="balance-value ${className}">${sign}${won(item.balance)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderHistory() {
+      const entries = Object.entries(meals || {}).sort(([, a], [, b]) => {
+        return Number(b.createdAt || b.dateMs || 0) - Number(a.createdAt || a.dateMs || 0);
+      });
+
+      if (!entries.length) {
+        $("historyList").innerHTML = `<div class="empty">아직 저장된 식사 기록이 없습니다.</div>`;
+        return;
+      }
+
+      $("historyList").innerHTML = entries.slice(0, 30).map(([id, meal]) => {
+        const attendees = (meal.attendees || []).map(memberName).join(", ");
+        const share = Number(meal.amount || 0) / Math.max((meal.attendees || []).length, 1);
+        return `
+          <article class="meal">
+            <div class="meal-top">
+              <div>
+                <div class="meal-title">${escapeHtml(meal.restaurant || "식사")}</div>
+                <div class="meal-date">${escapeHtml(meal.date || "")}</div>
+              </div>
+              <div class="meal-amount">${won(meal.amount)}</div>
+            </div>
+            <div class="meal-detail">
+              참석: ${escapeHtml(attendees)}<br>
+              결제: <strong>${escapeHtml(memberName(meal.payerId))}</strong> · 1인 부담 ${won(share)}
+              ${meal.memo ? `<br>메모: ${escapeHtml(meal.memo)}` : ""}
+            </div>
+            <button type="button" class="delete-btn" data-delete="${id}">기록 삭제</button>
+          </article>
+        `;
+      }).join("");
+
+      document.querySelectorAll("[data-delete]").forEach(button => {
+        button.addEventListener("click", async () => {
+          const meal = meals[button.dataset.delete];
+          const ok = confirm(
+            `${meal?.date || ""} ${meal?.restaurant || "식사"} 기록을 삭제할까요?\n삭제하면 누적 잔액이 자동으로 다시 계산됩니다.`
+          );
+          if (!ok) return;
+
+          try {
+            await remove(ref(db, `mealRelay/meals/${button.dataset.delete}`));
+            showToast("기록을 삭제했습니다.");
+          } catch (error) {
+            console.error(error);
+            showToast("삭제하지 못했습니다. Firebase 규칙을 확인해 주세요.");
+          }
+        });
+      });
+    }
+
+    function renderAll() {
+      calculateBalances();
+      renderAttendees();
+      renderRecommendation();
+      renderPayers();
+      renderBalances();
+      renderHistory();
+    }
+
+    function parseAmount(text) {
+      return Number(String(text || "").replace(/[^\d]/g, ""));
+    }
+
+    function formatAmountInput() {
+      const value = parseAmount($("amount").value);
+      $("amount").value = value ? value.toLocaleString("ko-KR") : "";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function showToast(message) {
+      const toast = $("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove("show"), 2600);
+    }
+
+    async function saveMeal() {
+      if (isSaving) return;
+
+      const attendees = MEMBERS.filter(m => selectedAttendees.has(m.id)).map(m => m.id);
+      const amount = parseAmount($("amount").value);
+      const date = $("mealDate").value;
+
+      if (attendees.length < 2) {
+        showToast("참석자를 2명 이상 선택해 주세요.");
+        return;
+      }
+      if (!amount || amount < 1) {
+        showToast("총 금액을 입력해 주세요.");
+        $("amount").focus();
+        return;
+      }
+      if (!selectedPayer || !selectedAttendees.has(selectedPayer)) {
+        showToast("실제 결제자를 선택해 주세요.");
+        return;
+      }
+      if (!date) {
+        showToast("식사 날짜를 선택해 주세요.");
+        return;
+      }
+
+      isSaving = true;
+      $("saveButton").disabled = true;
+      $("saveButton").textContent = "저장 중...";
+
+      try {
+        const newRef = push(mealsRef);
+        await set(newRef, {
+          date,
+          dateMs: new Date(`${date}T12:00:00`).getTime(),
+          restaurant: $("restaurant").value.trim(),
+          amount,
+          attendees,
+          payerId: selectedPayer,
+          memo: $("memo").value.trim(),
+          createdAt: serverTimestamp()
+        });
+
+        $("amount").value = "";
+        $("restaurant").value = "";
+        $("memo").value = "";
+        showToast(`${memberName(selectedPayer)} 님 결제로 저장했습니다.`);
+      } catch (error) {
+        console.error(error);
+        showToast("저장하지 못했습니다. Firebase 데이터베이스 규칙을 확인해 주세요.");
+      } finally {
+        isSaving = false;
+        $("saveButton").disabled = false;
+        $("saveButton").textContent = "기록 저장";
+      }
+    }
+
+    $("mealDate").value = todayString();
+    $("amount").addEventListener("blur", formatAmountInput);
+    $("amount").addEventListener("input", event => {
+      const caretAtEnd = event.target.selectionStart === event.target.value.length;
+      const number = parseAmount(event.target.value);
+      event.target.value = number ? number.toLocaleString("ko-KR") : "";
+      if (caretAtEnd) event.target.setSelectionRange(event.target.value.length, event.target.value.length);
+    });
+    $("saveButton").addEventListener("click", saveMeal);
+
+    onValue(mealsRef, snapshot => {
+      meals = snapshot.val() || {};
+      $("connectionStatus").className = "status online";
+      $("connectionStatus").innerHTML = `<span class="dot"></span><span>실시간 연결됨</span>`;
+      renderAll();
+    }, error => {
+      console.error(error);
+      $("connectionStatus").className = "status error";
+      $("connectionStatus").innerHTML = `<span class="dot"></span><span>연결 실패 · DB 규칙 확인 필요</span>`;
+      renderAll();
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>
