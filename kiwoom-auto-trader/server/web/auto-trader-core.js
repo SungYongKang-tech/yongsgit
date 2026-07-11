@@ -13,30 +13,6 @@ const settings = {
 discoverLimit: 100,
   minDiscoverScore: 7,
 
-  // OPEN: 장 시작 후 하루 1회, 가용 현금 100% 집중 매수
-  openEnabled: true,
-  openBuyStartTime: "09:00",
-  openBuyEndTime: "09:05",
-  openForceSellTime: "09:30",
-  openInvestmentRatio: 1.0,
-  openMinDiscoverScore: 10,
-  openMinChangeRate: 0.5,
-  openMaxChangeRate: 4.0,
-  openMinTradeVolumeRatio: 180,
-  openMinDayPositionRate: 55,
-  openMaxDayPositionRate: 85,
-  openMinOpenPositionRate: 0.2,
-  openMaxOpenPositionRate: 3.5,
-  openConfirmWaitMs: 15 * 1000,
-  openStopLossRate: -0.7,
-  openTrailingStartRate: 0.7,
-  openTrailingStopRate: 0.3,
-  openStagnationStartRate: 0.4,
-  openStagnationSeconds: 90,
-  openMinProfitToStagnationSell: 0.15,
-  openMaxHoldingMinutes: 30,
-  openLoopMs: 15 * 1000,
-
   coreEnabled: true,
  coreStartTime: "09:10",
 coreEndTime: "11:00",
@@ -275,14 +251,8 @@ function initDailyRiskIfNeeded(state) {
   state.dailyRiskDate = today;
 state.dailyBuyStopped = false;
 
-state.openCandidateHistory = {};
 state.coreCandidateHistory = {};
 state.volumeCandidateHistory = {};
-
-state.openCompleted = false;
-state.openSkipped = false;
-state.openCompletedAt = null;
-state.openSkipReason = null;
 
 state.pendingBuyCodes = [];
 state.pendingSellCodes = [];
@@ -415,219 +385,22 @@ function getCurrentHHMM() {
   });
 }
 
-function hasOpenHolding(state) {
-  return (state.holdings || []).some(h => h.strategyGroup === "OPEN");
-}
-
-function hasOpenBuyToday(state) {
-  return (state.tradeLogs || []).some(log =>
-    log.date === todayKey() && log.type === "OPEN_BUY"
-  );
-}
-
 function isOpenBlockingCoreVolume(state) {
-  initDailyRiskIfNeeded(state);
+  const today = todayKey();
 
-  if (!settings.openEnabled) return false;
-  if (hasOpenHolding(state)) return true;
+  // OPEN 기능을 별도 파일에서 사용하지 않는 경우에는 수동으로 false 설정 가능
+  if (state.openEnabled === false) return false;
 
-  if (hasOpenBuyToday(state)) {
-    state.openCompleted = true;
-    state.openSkipped = false;
-    if (!state.openCompletedAt) state.openCompletedAt = nowText();
-    saveState(state);
-    return false;
+  // 오늘 OPEN 전량매도 또는 후보 없음 처리 완료
+  if (state.openDate === today && state.openCompleted === true) return false;
+
+  // OPEN 보유 중에는 CORE/VOLUME 신규매수 금지
+  if ((state.holdings || []).some(h => h.strategyGroup === "OPEN")) {
+    return true;
   }
 
-  if (state.openCompleted === true) return false;
-
-  const hhmm = getCurrentHHMM();
-
-  if (hhmm <= settings.openBuyEndTime) return true;
-
-  // OPEN 매수시간이 끝났는데 진입하지 못한 날은 자동 건너뛰기
-  state.openCompleted = true;
-  state.openSkipped = true;
-  state.openCompletedAt = nowText();
-  state.openSkipReason = "OPEN 매수시간 종료 / 적합 후보 없음";
-  saveState(state);
-
-  console.log(`[OPEN 종료] ${state.openSkipReason}`);
-  return false;
-}
-
-function isOpenCandidateGettingStronger(state, item, price) {
-  const code = item.code;
-  if (!code) return { pass: false, reason: "종목코드 없음" };
-
-  if (!state.openCandidateHistory) state.openCandidateHistory = {};
-
-  const now = Date.now();
-  const current = {
-    time: now,
-    score: Number(item.discoverScore || 0),
-    volumeRatio: getTradeVolumeRatio(item),
-    dayPosition: getDayPositionRate(item, price),
-    price: Number(price || 0)
-  };
-
-  const prev = state.openCandidateHistory[code];
-  state.openCandidateHistory[code] = current;
-
-  if (!prev) {
-    return { pass: false, reason: "첫 발견 / 15초 확인 대기" };
-  }
-
-  if (now - Number(prev.time || 0) < settings.openConfirmWaitMs) {
-    return { pass: false, reason: "OPEN 강화 확인 대기" };
-  }
-
-  const scoreDiff = current.score - Number(prev.score || 0);
-  const volumeDiff = current.volumeRatio - Number(prev.volumeRatio || 0);
-  const priceDiffRate = prev.price > 0
-    ? ((current.price - prev.price) / prev.price) * 100
-    : 0;
-
-  if (scoreDiff < 0) {
-    return { pass: false, reason: `점수 약화 ${prev.score}→${current.score}` };
-  }
-
-  if (volumeDiff < -20) {
-    return {
-      pass: false,
-      reason: `거래량 약화 ${prev.volumeRatio.toFixed(1)}→${current.volumeRatio.toFixed(1)}%`
-    };
-  }
-
-  if (priceDiffRate < 0) {
-    return { pass: false, reason: `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}%` };
-  }
-
-  return {
-    pass: true,
-    reason:
-      `OPEN 강화 확인 / 점수 ${prev.score}→${current.score} / ` +
-      `거래량 ${prev.volumeRatio.toFixed(1)}→${current.volumeRatio.toFixed(1)}% / ` +
-      `가격 ${priceDiffRate.toFixed(2)}%`
-  };
-}
-
-function judgeOpenBuy(state, item, price) {
-  const changeRate = Number(item.changeRate || item.fluctuationRate || item.riseRate || item.rate || 0);
-  const volumeRatio = getTradeVolumeRatio(item);
-  const dayPosition = getDayPositionRate(item, price);
-  const openPosition = getOpenPositionRate(item, price);
-  const discoverScore = Number(item.discoverScore || 0);
-
-  if (!settings.openEnabled) return { pass: false, reason: "OPEN OFF" };
-  if (!isBetweenTime(settings.openBuyStartTime, settings.openBuyEndTime)) {
-    return { pass: false, reason: "OPEN 시간 아님" };
-  }
-  if (state.openCompleted) return { pass: false, reason: "오늘 OPEN 종료" };
-  if (hasOpenBuyToday(state)) return { pass: false, reason: "오늘 OPEN 이미 매수" };
-  if ((state.holdings || []).length > 0) return { pass: false, reason: "기존 보유종목 있음" };
-  if (isAlreadyHolding(state, item.code)) return { pass: false, reason: "이미 보유중" };
-  if (wasBoughtToday(state, item.code)) return { pass: false, reason: "오늘 이미 매수한 종목" };
-
-  if (discoverScore < settings.openMinDiscoverScore) {
-    return { pass: false, reason: `발견점수 부족 ${discoverScore}` };
-  }
-  if (changeRate < settings.openMinChangeRate || changeRate > settings.openMaxChangeRate) {
-    return { pass: false, reason: `상승률 부적합 ${changeRate.toFixed(2)}%` };
-  }
-  if (volumeRatio < settings.openMinTradeVolumeRatio) {
-    return { pass: false, reason: `거래량 부족 ${volumeRatio.toFixed(1)}%` };
-  }
-  if (dayPosition < settings.openMinDayPositionRate || dayPosition > settings.openMaxDayPositionRate) {
-    return { pass: false, reason: `당일위치 부적합 ${dayPosition.toFixed(1)}%` };
-  }
-  if (openPosition < settings.openMinOpenPositionRate || openPosition > settings.openMaxOpenPositionRate) {
-    return { pass: false, reason: `시가대비 부적합 ${openPosition.toFixed(2)}%` };
-  }
-
-  const strengthen = isOpenCandidateGettingStronger(state, item, price);
-  if (!strengthen.pass) {
-    return { pass: false, reason: strengthen.reason };
-  }
-
-  // 추후 장전 뉴스·나스닥·섹터 점수를 이 지점에 가산할 수 있음
-  const rankScore =
-    discoverScore * 10 +
-    Math.min(volumeRatio, 500) * 0.15 +
-    dayPosition * 0.25 +
-    Math.max(0, 4 - changeRate) * 5;
-
-  return {
-    pass: true,
-    rankScore,
-    reason:
-      `OPEN 통과 / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / ` +
-      `거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / ` +
-      `시가대비 ${openPosition.toFixed(2)}% / 순위점수 ${rankScore.toFixed(1)}`
-  };
-}
-
-async function runOpenBuyOnce() {
-  const state = loadState();
-  initDailyRiskIfNeeded(state);
-
-  if (!state.serverAutoEnabled || !settings.openEnabled) return;
-  if (state.openCompleted || hasOpenHolding(state) || hasOpenBuyToday(state)) return;
-
-  const hhmm = getCurrentHHMM();
-  if (hhmm < settings.openBuyStartTime) return;
-
-  if (hhmm > settings.openBuyEndTime) {
-    state.openCompleted = true;
-    state.openSkipped = true;
-    state.openCompletedAt = nowText();
-    state.openSkipReason = "OPEN 매수시간 종료 / 적합 후보 없음";
-    saveState(state);
-    console.log(`[OPEN 종료] ${state.openSkipReason}`);
-    return;
-  }
-
-  const risk = checkDailyLossLimit(state);
-  if (risk.stopped) {
-    console.log(`[OPEN 중단] ${risk.reason}`);
-    return;
-  }
-
-  console.log("[OPEN] 후보 조회 시작");
-  const candidates = await discoverCandidates();
-  const passed = [];
-  let logged = 0;
-
-  for (const item of candidates) {
-    const price = Math.abs(Number(item.currentPrice || item.price || item.raw?.cur_prc || 0));
-    const name = item.name || item.stockName || item.korName || item.code;
-    if (!price) continue;
-
-    const judged = judgeOpenBuy(state, item, price);
-    if (judged.pass) {
-      passed.push({ item, price, judged });
-    } else if (logged < 10) {
-      console.log(`[OPEN 제외] ${name} / ${judged.reason}`);
-      logged++;
-    }
-  }
-
-  saveState(state);
-
-  if (!passed.length) {
-    console.log("[OPEN] 현재 통과 후보 없음");
-    return;
-  }
-
-  passed.sort((a, b) => b.judged.rankScore - a.judged.rankScore);
-  const best = passed[0];
-
-  console.log(
-    `[OPEN 최종선정] ${best.item.name || best.item.code} / ` +
-    `점수 ${best.judged.rankScore.toFixed(1)} / 통과후보 ${passed.length}개`
-  );
-
-  await paperBuy(state, best.item, best.price, "OPEN", best.judged.reason);
+  // OPEN 모듈이 아직 오늘 상태를 만들지 않았으면 대기
+  return true;
 }
 
 function isCoreCandidateGettingStronger(state, item, price) {
@@ -906,11 +679,9 @@ async function paperBuy(state, item, price, strategyGroup, reason) {
   saveState(state);
 
   try {
-    const buyAmount = strategyGroup === "OPEN"
-      ? Number(state.totalCash || 0) * settings.openInvestmentRatio
-      : strategyGroup === "CORE"
-        ? settings.coreBuyAmount
-        : settings.volumeBuyAmount;
+    const buyAmount = strategyGroup === "CORE"
+      ? settings.coreBuyAmount
+      : settings.volumeBuyAmount;
 
     const availableCash = Number(state.totalCash || 0);
     const finalBuyAmount = Math.min(buyAmount, availableCash);
@@ -968,13 +739,6 @@ state.tradeLogs.push({
     state.lastBuyName = name;
     state.lastBuyStrategyGroup = strategyGroup;
 
-    if (strategyGroup === "OPEN") {
-      state.openSkipped = false;
-      state.openBuyAt = nowText();
-      state.openBuyCode = item.code;
-      state.openBuyName = name;
-    }
-
     saveState(state);
 
     return true;
@@ -1021,14 +785,6 @@ async function paperSell(state, holding, sellPrice, sellQty, sellType, reason) {
 
     if (holding.qty <= 0) {
       state.holdings = state.holdings.filter(h => h !== holding);
-
-      if (holding.strategyGroup === "OPEN") {
-        state.openCompleted = true;
-        state.openSkipped = false;
-        state.openCompletedAt = nowText();
-        state.openSellType = sellType;
-        state.openSellReason = reason;
-      }
     }
 
     state.totalCash = Number(result.totalCash || state.totalCash || 0);
@@ -1069,83 +825,11 @@ function getSellSignal(holding, price) {
   const buyTime = Number(holding.buyTime || 0);
   const holdMinutes = buyTime > 0 ? (Date.now() - buyTime) / 60000 : 999;
 
-  if (holding.strategyGroup !== "OPEN" && holdMinutes < settings.minHoldMinutes) {
+  if (holdMinutes < settings.minHoldMinutes) {
     return null;
   }
 
   const profitRate = ((price - buyPrice) / buyPrice) * 100;
-
-  // OPEN은 CORE/VOLUME과 완전히 분리된 전량 청산 전략
-  if (holding.strategyGroup === "OPEN") {
-    const now = Date.now();
-
-    if (!holding.highestPrice || price > Number(holding.highestPrice || 0)) {
-      holding.highestPrice = price;
-      holding.highestPriceAt = now;
-    }
-
-    holding.lowestPrice = Math.min(Number(holding.lowestPrice || price), price);
-
-    const highestProfitRate =
-      ((Number(holding.highestPrice || price) - buyPrice) / buyPrice) * 100;
-    const drawdownFromHigh =
-      ((price - Number(holding.highestPrice || price)) / Number(holding.highestPrice || price)) * 100;
-    const secondsFromHigh = holding.highestPriceAt
-      ? (now - Number(holding.highestPriceAt)) / 1000
-      : 0;
-    const hhmm = getCurrentHHMM();
-
-    // 손절은 최소 보유시간 없이 즉시 실행
-    if (profitRate <= settings.openStopLossRate) {
-      return {
-        type: "OPEN_STOP_LOSS",
-        qty: holding.qty,
-        reason: `OPEN 손절 ${profitRate.toFixed(2)}% / 기준 ${settings.openStopLossRate.toFixed(2)}%`
-      };
-    }
-
-    // 최고수익이 발생한 뒤 조금만 밀리면 전량 익절
-    if (
-      highestProfitRate >= settings.openTrailingStartRate &&
-      drawdownFromHigh <= -Math.abs(settings.openTrailingStopRate)
-    ) {
-      return {
-        type: "OPEN_TRAILING_SELL",
-        qty: holding.qty,
-        reason:
-          `OPEN 전량익절 / 최고 ${highestProfitRate.toFixed(2)}% / ` +
-          `현재 ${profitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`
-      };
-    }
-
-    // 수익 상태에서 90초 동안 고가를 갱신하지 못하면 주춤으로 판단
-    if (
-      highestProfitRate >= settings.openStagnationStartRate &&
-      profitRate >= settings.openMinProfitToStagnationSell &&
-      secondsFromHigh >= settings.openStagnationSeconds
-    ) {
-      return {
-        type: "OPEN_STAGNATION_SELL",
-        qty: holding.qty,
-        reason:
-          `OPEN 상승주춤 / 최고 ${highestProfitRate.toFixed(2)}% / ` +
-          `현재 ${profitRate.toFixed(2)}% / 고가 미갱신 ${Math.floor(secondsFromHigh)}초`
-      };
-    }
-
-    // 매수 후 30분 또는 09:30 도달 시 결과와 무관하게 전량 정리
-    if (holdMinutes >= settings.openMaxHoldingMinutes || hhmm >= settings.openForceSellTime) {
-      return {
-        type: "OPEN_TIME_SELL",
-        qty: holding.qty,
-        reason:
-          `OPEN 시간청산 / 보유 ${holdMinutes.toFixed(1)}분 / ` +
-          `수익 ${profitRate.toFixed(2)}% / 현재시각 ${hhmm}`
-      };
-    }
-
-    return null;
-  }
 
   const isCore = holding.strategyGroup === "CORE";
 
@@ -1287,6 +971,7 @@ cleanupCandidateHistory(state);
 
   if (isOpenBlockingCoreVolume(state)) {
     console.log("[BUY] OPEN 진행 또는 대기 중 / CORE·VOLUME 신규매수 보류");
+    state.lastBuyCheckAt = nowText();
     saveState(state);
     return;
   }
@@ -1298,8 +983,7 @@ cleanupCandidateHistory(state);
   console.log(`[BUY] 후보 조회 완료 / ${candidates.length}개`);
 
   console.log(
-    `[BUY] 현재 보유 OPEN ${getHoldingCount(state, "OPEN")}개 / ` +
-    `CORE ${getHoldingCount(state, "CORE")}개 / ` +
+    `[BUY] 현재 보유 CORE ${getHoldingCount(state, "CORE")}개 / ` +
     `VOLUME ${getHoldingCount(state, "VOLUME")}개 / ` +
     `현금 ${Number(state.totalCash || 0).toLocaleString()}원`
   );
@@ -1372,6 +1056,9 @@ async function checkSellOnce() {
   console.log(`[SELL] 보유종목 ${state.holdings.length}개`);
 
   for (const holding of [...state.holdings]) {
+    // OPEN 매도는 open-strategy.js가 전담
+    if (holding.strategyGroup === "OPEN") continue;
+
     let price = 0;
 
     try {
@@ -1419,28 +1106,13 @@ async function checkSellOnce() {
 }
 
 async function start() {
-  console.log("SY Quant OPEN/CORE/VOLUME 자동매매 시작");
+  console.log("SY Quant CORE/VOLUME 전용 자동매매 시작");
 
-  await runOpenBuyOnce();
   await runBuyOnce();
   await checkSellOnce();
 
-  let openRunning = false;
   let buyRunning = false;
   let sellRunning = false;
-
-  setInterval(async () => {
-    if (openRunning) return;
-
-    openRunning = true;
-    try {
-      await runOpenBuyOnce();
-    } catch (err) {
-      console.error("[OPEN LOOP 오류]", err.message);
-    } finally {
-      openRunning = false;
-    }
-  }, settings.openLoopMs);
 
   setInterval(async () => {
     if (buyRunning) return;
@@ -1504,7 +1176,6 @@ function setServerAutoEnabled(enabled) {
 module.exports = {
   startServerAutoTrader,
 
-  runOpenBuyOnce,
   runServerAutoBuyOnce: runBuyOnce,
   checkServerAutoSellOnce: checkSellOnce,
 
