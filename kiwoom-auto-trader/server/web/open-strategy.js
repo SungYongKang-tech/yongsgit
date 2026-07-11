@@ -274,7 +274,10 @@ function judgeOpenBuy(state, item, price) {
   if (!isBetweenTime(settings.openBuyStartTime, settings.openBuyEndTime)) return { pass: false, reason: "OPEN 시간 아님" };
   if (state.openCompleted) return { pass: false, reason: "오늘 OPEN 종료" };
   if (hasOpenBuyToday(state)) return { pass: false, reason: "오늘 OPEN 이미 매수" };
-  if ((state.holdings || []).length > 0) return { pass: false, reason: "기존 보유종목 있음" };
+  // 기존 CORE/VOLUME 보유종목이 있어도 남은 현금으로 OPEN 진입 허용
+  if ((state.holdings || []).some(h => h.code === item.code)) {
+    return { pass: false, reason: "동일 종목 이미 보유중" };
+  }
   if (wasBoughtToday(state, item.code)) return { pass: false, reason: "오늘 이미 매수한 종목" };
   if (discoverScore < settings.openMinDiscoverScore) return { pass: false, reason: `발견점수 부족 ${discoverScore}` };
   if (changeRate < settings.openMinChangeRate || changeRate > settings.openMaxChangeRate) return { pass: false, reason: `상승률 부적합 ${changeRate.toFixed(2)}%` };
@@ -307,7 +310,11 @@ async function paperOpenBuy(state, item, price, reason) {
     const availableCash = Number(state.totalCash || 0);
     const buyAmount = availableCash * settings.openInvestmentRatio;
     const qty = Math.floor(buyAmount / price);
-    if (qty <= 0) return false;
+
+    if (qty <= 0) {
+      console.log(`[OPEN 매수제외] 남은 현금 부족 / 현금 ${availableCash.toLocaleString()}원 / 현재가 ${price.toLocaleString()}원`);
+      return false;
+    }
 
     const name = item.name || item.stockName || item.korName || item.code;
     const result = await postJson(`${API_BASE}/api/core-paper-buy`, {

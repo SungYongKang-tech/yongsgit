@@ -959,6 +959,27 @@ async function runBuyOnce() {
     return;
   }
 
+  // CORE와 VOLUME이 모두 운영시간이 아니면 DISCOVER/API 조회를 하지 않는다.
+  const coreTimeActive =
+    settings.coreEnabled &&
+    isBetweenTime(settings.coreStartTime, settings.coreEndTime);
+
+  const volumeTimeActive =
+    settings.volumeEnabled &&
+    isBetweenTime(settings.volumeStartTime, settings.volumeEndTime);
+
+  if (!coreTimeActive && !volumeTimeActive) {
+    state.lastBuyCheckAt = nowText();
+    saveState(state);
+
+    console.log(
+      `[BUY] 운영시간 아님 / 후보조회 생략 / ` +
+      `CORE ${settings.coreStartTime}~${settings.coreEndTime} / ` +
+      `VOLUME ${settings.volumeStartTime}~${settings.volumeEndTime}`
+    );
+    return;
+  }
+
   const risk = checkDailyLossLimit(state);
 
 if (risk.stopped) {
