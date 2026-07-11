@@ -1101,7 +1101,6 @@ if (!response.ok) {
 });
 
 const {
-  startServerAutoTrader,
   runServerAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
@@ -2443,5 +2442,5 @@ app.listen(PORT, () => {
 
   // OPEN은 09:00~09:30 독립 실행하고, 완료 후 CORE/VOLUME이 진행됩니다.
   startOpenStrategy();
-  startServerAutoTrader();
+  //startServerAutoTrader();
 });

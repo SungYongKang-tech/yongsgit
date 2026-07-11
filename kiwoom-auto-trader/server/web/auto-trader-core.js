@@ -1194,6 +1194,10 @@ function setServerAutoEnabled(enabled) {
   return state;
 }
 
+if (require.main === module) {
+  startServerAutoTrader();
+}
+
 module.exports = {
   startServerAutoTrader,
 
