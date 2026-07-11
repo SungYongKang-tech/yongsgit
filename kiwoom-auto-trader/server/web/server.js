@@ -1101,11 +1101,18 @@ if (!response.ok) {
 });
 
 const {
+  startServerAutoTrader,
   runServerAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
   loadState
 } = require("./auto-trader-core");
+
+const {
+  startOpenStrategy,
+  runOpenBuyOnce,
+  checkOpenSellOnce
+} = require("./open-strategy");
 
 app.get("/api/paper-state", (req, res) => {
   res.json(loadState());
@@ -1120,6 +1127,13 @@ app.post("/api/paper-state/reset", (req, res) => {
 
       totalCash: 100000000,
       initialCapital: 100000000,
+
+      openDate: null,
+      openCompleted: false,
+      openSkipped: false,
+      openCompletedAt: null,
+      openSkipReason: null,
+      openCandidateHistory: {},
 
       coreCandidateHistory: {},
       volumeCandidateHistory: {},
@@ -1171,7 +1185,12 @@ app.get("/api/server-auto-status", (req, res) => {
     serverAutoEnabled: state.serverAutoEnabled !== false,
     serverAutoChangedAt: state.serverAutoChangedAt || null,
     lastRunAt: state.lastRunAt || null,
-    lastSellCheckAt: state.lastSellCheckAt || null
+    lastSellCheckAt: state.lastSellCheckAt || null,
+    openDate: state.openDate || null,
+    openCompleted: state.openCompleted === true,
+    openSkipped: state.openSkipped === true,
+    openCompletedAt: state.openCompletedAt || null,
+    openSkipReason: state.openSkipReason || null
   });
 });
 
@@ -1187,6 +1206,11 @@ app.get("/api/performance-summary", (req, res) => {
   [
     "SELL",
     "SELL_ALL",
+
+    "OPEN_STOP_LOSS",
+    "OPEN_TRAILING_SELL",
+    "OPEN_STAGNATION_SELL",
+    "OPEN_TIME_SELL",
 
     "CORE_STOP_LOSS",
     "CORE_FIRST_TAKE_PROFIT",
@@ -1548,6 +1572,7 @@ app.get("/api/daily-summary", (req, res) => {
 ];
 
    const buyTypes = [
+  "OPEN_BUY",
   "CORE_BUY",
   "VOLUME_BUY"
 ];
@@ -1750,6 +1775,7 @@ app.get("/api/today-trade-analysis", (req, res) => {
     });
 
    const buyTypes = [
+  "OPEN_BUY",
   "CORE_BUY",
   "VOLUME_BUY"
 ];
@@ -1796,6 +1822,10 @@ app.get("/api/today-trade-analysis", (req, res) => {
   }
 
   const type = String(log.type || "");
+
+  if (type.startsWith("OPEN")) {
+    return "OPEN";
+  }
 
   if (type.startsWith("VOLUME")) {
     return "VOLUME";
@@ -1911,6 +1941,33 @@ app.get("/api/server-auto-buy-once", async (req, res) => {
 
 
 
+
+
+app.get("/api/open-buy-once", async (req, res) => {
+  try {
+    await runOpenBuyOnce();
+    res.json({
+      ok: true,
+      message: "OPEN 자동 모의매수를 1회 실행했습니다."
+    });
+  } catch (error) {
+    console.error("OPEN 자동매수 1회 실행 오류:", error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.get("/api/open-sell-once", async (req, res) => {
+  try {
+    await checkOpenSellOnce();
+    res.json({
+      ok: true,
+      message: "OPEN 자동매도를 1회 점검했습니다."
+    });
+  } catch (error) {
+    console.error("OPEN 자동매도 1회 실행 오류:", error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
 
 
 app.get("/api/server-auto-sell-once", async (req, res) => {
@@ -2383,4 +2440,8 @@ app.get("/api/refresh-holding-prices", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`서버 실행중: ${PORT}`);
+
+  // OPEN은 09:00~09:30 독립 실행하고, 완료 후 CORE/VOLUME이 진행됩니다.
+  startOpenStrategy();
+  startServerAutoTrader();
 });
