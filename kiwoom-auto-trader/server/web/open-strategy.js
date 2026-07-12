@@ -94,7 +94,7 @@ const settings = {
   openMinProfitToStagnationSell: 0.15,
   openMaxHoldingMinutes: 30,
 
-  openBuyLoopMs: 15 * 1000,
+  openBuyLoopMs: 5 * 1000,
   openSellLoopMs: 5 * 1000,
   dailyLossLimitRate: 0.01,
 
@@ -517,6 +517,129 @@ function completeVirtualCandidate(candidate, price, signal, now = Date.now()) {
     : null;
 }
 
+function initializeOpenDelayComparison(item, judged) {
+  const comparison = judged?.delayComparison;
+  if (!comparison) return;
+
+  const history = loadOpenHistory();
+  const day = getOpenLearningDay(history);
+  if (day.openDelayComparison?.code) return;
+
+  const now = Date.now();
+  const name = item.name || item.stockName || item.korName || item.code || "";
+  const variants = [
+    { key: "IMMEDIATE_0S", label: "즉시 0초", delaySeconds: 0, entryPrice: Number(comparison.firstPrice || 0) },
+    { key: "CONFIRM_5S", label: "5초 확인", delaySeconds: 5, entryPrice: Number(comparison.priceAt5Seconds || 0) },
+    { key: "CONFIRM_15S", label: "15초 확인", delaySeconds: 15, entryPrice: Number(comparison.priceAt15Seconds || 0) }
+  ].filter(v => v.entryPrice > 0);
+
+  day.openDelayComparison = {
+    code: String(item.code || ""),
+    name,
+    createdAt: nowText(),
+    firstSeenAtMs: Number(comparison.firstSeenAtMs || now),
+    variants: variants.map(v => ({
+      ...v,
+      entryAtMs: Number(comparison.firstSeenAtMs || now) + v.delaySeconds * 1000,
+      active: true,
+      highestPrice: v.entryPrice,
+      lowestPrice: v.entryPrice,
+      highestPriceAtMs: Number(comparison.firstSeenAtMs || now) + v.delaySeconds * 1000,
+      highestProfitRate: 0,
+      lowestProfitRate: 0,
+      lastPrice: v.entryPrice,
+      lastProfitRate: 0,
+      sampleCount: 0,
+      exitAt: null,
+      exitPrice: null,
+      exitProfitRate: null,
+      exitType: null,
+      exitReason: null,
+      holdingSeconds: null
+    }))
+  };
+
+  console.log(`[OPEN 진입비교 시작] ${name} / ` + variants.map(v => `${v.label} ${v.entryPrice.toLocaleString()}원`).join(" | "));
+  saveOpenHistory(history);
+}
+
+function getOpenDelayComparisonSellSignal(variant, price, now = Date.now()) {
+  const candidate = {
+    entryPrice: variant.entryPrice,
+    entryTimeMs: variant.entryAtMs,
+    highestPrice: variant.highestPrice,
+    lowestPrice: variant.lowestPrice,
+    highestPriceAtMs: variant.highestPriceAtMs,
+    sampleCount: variant.sampleCount,
+    lastPrice: variant.lastPrice,
+    lastProfitRate: variant.lastProfitRate,
+    highestProfitRate: variant.highestProfitRate,
+    lowestProfitRate: variant.lowestProfitRate
+  };
+  const signal = getVirtualOpenSellSignal(candidate, price, now);
+  Object.assign(variant, {
+    highestPrice: candidate.highestPrice,
+    lowestPrice: candidate.lowestPrice,
+    highestPriceAtMs: candidate.highestPriceAtMs,
+    sampleCount: candidate.sampleCount,
+    lastPrice: candidate.lastPrice,
+    lastProfitRate: candidate.lastProfitRate,
+    highestProfitRate: candidate.highestProfitRate,
+    lowestProfitRate: candidate.lowestProfitRate
+  });
+  return signal;
+}
+
+async function updateOpenDelayComparisonOnce(history, day, now = Date.now()) {
+  const comparison = day.openDelayComparison;
+  if (!comparison?.code || !Array.isArray(comparison.variants)) return false;
+  const active = comparison.variants.filter(v => v.active === true && now >= Number(v.entryAtMs || 0));
+  if (!active.length) return false;
+
+  let price = 0;
+  try { price = await fetchPrice(comparison.code); }
+  catch (err) {
+    console.log(`[OPEN 진입비교 가격실패] ${comparison.name} / ${err.message}`);
+    return false;
+  }
+  if (!price) return false;
+
+  for (const variant of active) {
+    const signal = getOpenDelayComparisonSellSignal(variant, price, now);
+    if (!signal) continue;
+    completeVirtualCandidate(variant, price, signal, now);
+    variant.exitType = String(signal.type || "").replace("VIRTUAL_OPEN_", "DELAY_");
+    console.log(`[OPEN 진입비교 종료] ${comparison.name} / ${variant.label} / ${Number(variant.exitProfitRate || 0).toFixed(2)}%`);
+  }
+
+  if (comparison.variants.every(v => v.active !== true)) {
+    comparison.completedAt = nowText();
+    comparison.summary = comparison.variants.map(v => ({
+      key: v.key,
+      label: v.label,
+      entryPrice: v.entryPrice,
+      exitPrice: v.exitPrice,
+      profitRate: v.exitProfitRate,
+      highestProfitRate: v.highestProfitRate,
+      lowestProfitRate: v.lowestProfitRate,
+      holdingSeconds: v.holdingSeconds,
+      exitType: v.exitType
+    }));
+    console.log(`[OPEN 진입비교 완료] ${comparison.name} / ` + comparison.summary.map(v => `${v.label} ${Number(v.profitRate || 0).toFixed(2)}%`).join(" | "));
+  }
+  return true;
+}
+
+async function checkOpenDelayComparisonOnce() {
+  if (!isKoreanWeekday()) return;
+  if (!isBetweenTime("09:00", "09:40")) return;
+
+  const history = loadOpenHistory();
+  const day = getOpenLearningDay(history);
+  const changed = await updateOpenDelayComparisonOnce(history, day, Date.now());
+  if (changed) saveOpenHistory(history);
+}
+
 async function checkOpenVirtualCandidatesOnce() {
   if (!isKoreanWeekday()) return;
   if (!isBetweenTime("09:00", "09:40")) return;
@@ -525,10 +648,8 @@ async function checkOpenVirtualCandidatesOnce() {
   const day = getOpenLearningDay(history);
   const candidates = Array.isArray(day.virtualCandidates) ? day.virtualCandidates : [];
   const active = candidates.filter(candidate => candidate.active === true);
-
-  if (!active.length) return;
-
   const now = Date.now();
+  let changed = false;
 
   for (const candidate of active) {
     let price = 0;
@@ -544,6 +665,7 @@ async function checkOpenVirtualCandidatesOnce() {
     const signal = getVirtualOpenSellSignal(candidate, price, now);
     if (signal) {
       completeVirtualCandidate(candidate, price, signal, now);
+      changed = true;
       console.log(
         `[OPEN 가상종료] ${candidate.name} / ${signal.type} / ` +
         `${Number(candidate.exitProfitRate || 0).toFixed(2)}%`
@@ -575,7 +697,7 @@ async function checkOpenVirtualCandidatesOnce() {
     );
   }
 
-  saveOpenHistory(history);
+  if (changed || active.length > 0) saveOpenHistory(history);
 }
 
 function saveOpenCandidateLearning(evaluated) {
@@ -928,27 +1050,67 @@ function isOpenCandidateGettingStronger(state, item, price) {
     dayPosition: getDayPositionRate(item, price),
     price: Number(price || 0)
   };
-  const prev = state.openCandidateHistory[code];
-  state.openCandidateHistory[code] = current;
 
-  if (!prev) return { pass: false, reason: "첫 발견 / 15초 확인 대기" };
-  if (now - Number(prev.time || 0) < settings.openConfirmWaitMs) {
-    return { pass: false, reason: "OPEN 강화 확인 대기" };
+  let history = state.openCandidateHistory[code];
+  if (!history || !history.firstSeenAtMs) {
+    history = {
+      firstSeenAtMs: now,
+      firstSeenAt: nowText(),
+      firstPrice: current.price,
+      firstScore: current.score,
+      firstVolumeRatio: current.volumeRatio,
+      priceAt5Seconds: null,
+      priceAt15Seconds: null,
+      last: current
+    };
+    state.openCandidateHistory[code] = history;
+    return { pass: false, reason: "첫 발견 / 15초 확인 대기" };
   }
 
-  const scoreDiff = current.score - Number(prev.score || 0);
-  const volumeDiff = current.volumeRatio - Number(prev.volumeRatio || 0);
-  const priceDiffRate = prev.price > 0
-    ? ((current.price - prev.price) / prev.price) * 100
+  const elapsedMs = now - Number(history.firstSeenAtMs || now);
+  if (elapsedMs >= 5000 && !history.priceAt5Seconds) {
+    history.priceAt5Seconds = current.price;
+    history.priceAt5SecondsAt = nowText();
+  }
+  if (elapsedMs >= settings.openConfirmWaitMs && !history.priceAt15Seconds) {
+    history.priceAt15Seconds = current.price;
+    history.priceAt15SecondsAt = nowText();
+  }
+
+  const baseline = {
+    score: history.firstScore,
+    volumeRatio: history.firstVolumeRatio,
+    price: history.firstPrice
+  };
+  history.last = current;
+  state.openCandidateHistory[code] = history;
+
+  if (elapsedMs < settings.openConfirmWaitMs) {
+    return {
+      pass: false,
+      reason: `OPEN 강화 확인 대기 ${Math.floor(elapsedMs / 1000)}초/15초`
+    };
+  }
+
+  const scoreDiff = current.score - Number(baseline.score || 0);
+  const volumeDiff = current.volumeRatio - Number(baseline.volumeRatio || 0);
+  const priceDiffRate = Number(baseline.price || 0) > 0
+    ? ((current.price - Number(baseline.price)) / Number(baseline.price)) * 100
     : 0;
 
-  if (scoreDiff < 0) return { pass: false, reason: `점수 약화 ${prev.score}→${current.score}` };
-  if (volumeDiff < -20) return { pass: false, reason: `거래량 약화 ${prev.volumeRatio.toFixed(1)}→${current.volumeRatio.toFixed(1)}%` };
+  if (scoreDiff < 0) return { pass: false, reason: `점수 약화 ${baseline.score}→${current.score}` };
+  if (volumeDiff < -20) return { pass: false, reason: `거래량 약화 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}%` };
   if (priceDiffRate < 0) return { pass: false, reason: `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}%` };
 
   return {
     pass: true,
-    reason: `강화 확인 / 점수 ${prev.score}→${current.score} / 거래량 ${prev.volumeRatio.toFixed(1)}→${current.volumeRatio.toFixed(1)}% / 가격 ${priceDiffRate.toFixed(2)}%`
+    delayComparison: {
+      firstSeenAtMs: history.firstSeenAtMs,
+      firstPrice: Number(history.firstPrice || 0),
+      priceAt5Seconds: Number(history.priceAt5Seconds || current.price || 0),
+      priceAt15Seconds: Number(history.priceAt15Seconds || current.price || 0)
+    },
+    reason: `강화 확인 / 점수 ${baseline.score}→${current.score} / 거래량 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}% / 가격 ${priceDiffRate.toFixed(2)}%`
   };
 }
 
@@ -998,6 +1160,7 @@ function judgeOpenBuy(state, item, price) {
     sectorBonus: Number(marketAdjust.sectorBonus || 0),
     matchedSectors: marketAdjust.matchedSectors || [],
     marketDataUpdatedAt: marketData.updatedAt || null,
+    delayComparison: strengthen.delayComparison || null,
     reason: `OPEN 통과 / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / 거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / 시가대비 ${openPosition.toFixed(2)}% / 기본점수 ${baseRankScore.toFixed(1)} / ${marketAdjust.reason} / 최종점수 ${rankScore.toFixed(1)}`
   };
 }
@@ -1252,6 +1415,7 @@ async function runOpenBuyOnce() {
 
   passed.sort((a, b) => b.judged.rankScore - a.judged.rankScore);
   const best = passed[0];
+  initializeOpenDelayComparison(best.item, best.judged);
   initializeOpenVirtualTracking(evaluated, best.item.code);
   console.log(`[OPEN 최종선정] ${best.item.name || best.item.code} / 최종 ${best.judged.rankScore.toFixed(1)} / 시장 ${best.judged.marketBonus >= 0 ? "+" : ""}${best.judged.marketBonus.toFixed(1)} / 섹터 ${best.judged.sectorBonus >= 0 ? "+" : ""}${best.judged.sectorBonus.toFixed(1)} / 통과후보 ${passed.length}개`);
   await paperOpenBuy(state, best.item, best.price, best.judged.reason);
@@ -1260,6 +1424,9 @@ async function runOpenBuyOnce() {
 async function checkOpenSellOnce() {
   if (!isKoreanWeekday()) return;
   if (!isBetweenTime("09:00", "09:40")) return;
+
+  try { await checkOpenDelayComparisonOnce(); }
+  catch (err) { console.log(`[OPEN 진입비교 점검오류] ${err.message}`); }
 
   const state = loadState();
   initOpenDayIfNeeded(state);
@@ -1342,6 +1509,7 @@ module.exports = {
   runOpenBuyOnce,
   checkOpenSellOnce,
   checkOpenVirtualCandidatesOnce,
+  checkOpenDelayComparisonOnce,
   loadOpenMarketData,
   calculateOpenMarketAdjustment,
   loadState,

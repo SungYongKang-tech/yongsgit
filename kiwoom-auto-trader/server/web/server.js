@@ -1359,22 +1359,20 @@ const recent7Days = [];
 
 
 
+const buyLogs = tradeLogs.filter((log) =>
+  ["OPEN_BUY", "CORE_BUY", "VOLUME_BUY"].includes(log.type)
+);
+
 const strategyMap = {};
 
-sellLogs.forEach((log) => {
-  const group = log.strategyGroup || "CORE";
-
-const strategy =
-  log.strategyName ||
-  log.strategyPreset ||
-  "기타";
-
-const key = `${group} / ${strategy}`;
+function ensureStrategyStat(group, strategy) {
+  const key = `${group} / ${strategy}`;
 
   if (!strategyMap[key]) {
     strategyMap[key] = {
-  strategyGroup: group,
-  strategyName: strategy,
+      strategyGroup: group,
+      strategyName: strategy,
+      buyTrades: 0,
       trades: 0,
       wins: 0,
       losses: 0,
@@ -1385,28 +1383,52 @@ const key = `${group} / ${strategy}`;
     };
   }
 
+  return strategyMap[key];
+}
+
+buyLogs.forEach((log) => {
+  const group = log.strategyGroup || "CORE";
+  const strategy =
+    log.strategyName ||
+    log.strategyPreset ||
+    "기타";
+
+  const stat = ensureStrategyStat(group, strategy);
+  stat.buyTrades += 1;
+});
+
+sellLogs.forEach((log) => {
+  const group = log.strategyGroup || "CORE";
+
+const strategy =
+  log.strategyName ||
+  log.strategyPreset ||
+  "기타";
+
+const stat = ensureStrategyStat(group, strategy);
+
   const profit = Number(log.profit || 0);
   const profitRate = Number(log.profitRate || 0);
 
-  strategyMap[key].trades += 1;
-  strategyMap[key].totalProfit += profit;
-  strategyMap[key].totalProfitRate += profitRate;
+  stat.trades += 1;
+  stat.totalProfit += profit;
+  stat.totalProfitRate += profitRate;
 
-  if (profit > 0) strategyMap[key].wins += 1;
-  if (profit < 0) strategyMap[key].losses += 1;
+  if (profit > 0) stat.wins += 1;
+  if (profit < 0) stat.losses += 1;
 
   if (
-    strategyMap[key].maxProfitRate === null ||
-    profitRate > strategyMap[key].maxProfitRate
+    stat.maxProfitRate === null ||
+    profitRate > stat.maxProfitRate
   ) {
-    strategyMap[key].maxProfitRate = profitRate;
+    stat.maxProfitRate = profitRate;
   }
 
   if (
-    strategyMap[key].maxLossRate === null ||
-    profitRate < strategyMap[key].maxLossRate
+    stat.maxLossRate === null ||
+    profitRate < stat.maxLossRate
   ) {
-    strategyMap[key].maxLossRate = profitRate;
+    stat.maxLossRate = profitRate;
   }
 });
 
@@ -1418,6 +1440,60 @@ const strategyStats = Object.values(strategyMap).map((item) => ({
   maxProfitRate: item.maxProfitRate ?? 0,
   maxLossRate: item.maxLossRate ?? 0
 }));
+
+const openStatsRows = strategyStats.filter(
+  (item) => String(item.strategyGroup || "").toUpperCase() === "OPEN"
+);
+
+const openBuyCount = openStatsRows.reduce(
+  (sum, item) => sum + Number(item.buyTrades || 0),
+  0
+);
+
+const openSellCount = openStatsRows.reduce(
+  (sum, item) => sum + Number(item.trades || 0),
+  0
+);
+
+const openWinCount = openStatsRows.reduce(
+  (sum, item) => sum + Number(item.wins || 0),
+  0
+);
+
+const openLossCount = openStatsRows.reduce(
+  (sum, item) => sum + Number(item.losses || 0),
+  0
+);
+
+const openTotalProfit = openStatsRows.reduce(
+  (sum, item) => sum + Number(item.totalProfit || 0),
+  0
+);
+
+const openTotalProfitRate = openStatsRows.reduce(
+  (sum, item) => sum + Number(item.totalProfitRate || 0),
+  0
+);
+
+const openSummary = {
+  buyCount: openBuyCount,
+  sellCount: openSellCount,
+  winCount: openWinCount,
+  lossCount: openLossCount,
+  winRate:
+    openSellCount > 0
+      ? (openWinCount / openSellCount) * 100
+      : 0,
+  totalProfit: openTotalProfit,
+  avgProfit:
+    openSellCount > 0
+      ? openTotalProfit / openSellCount
+      : 0,
+  avgProfitRate:
+    openSellCount > 0
+      ? openTotalProfitRate / openSellCount
+      : 0
+};
 
 
 
@@ -1572,7 +1648,8 @@ return {
         todayProfitRate: todayTotalProfitRate,        
         totalRealizedProfit,
         totalUnrealizedProfit,
-        totalCombinedProfit
+        totalCombinedProfit,
+        openSummary
       },
      holdings: holdingDetails,
      recent7Days,    
@@ -1640,18 +1717,22 @@ app.get("/api/daily-summary", (req, res) => {
     winCount: 0,
     lossCount: 0,
 
+    openProfit: 0,
     coreProfit: 0,
-volumeProfit: 0,
+    volumeProfit: 0,
 
     realizedProfit: 0,
 
     marketTemperature: null,
 
-   coreWins: 0,
-coreTrades: 0,
+    openWins: 0,
+    openTrades: 0,
 
-volumeWins: 0,
-volumeTrades: 0,
+    coreWins: 0,
+    coreTrades: 0,
+
+    volumeWins: 0,
+    volumeTrades: 0,
 
     bestTrade: null,
     worstTrade: null
@@ -1677,6 +1758,15 @@ volumeTrades: 0,
 
   if (profit > 0) row.winCount += 1;
   if (profit < 0) row.lossCount += 1;
+
+  if (group === "OPEN") {
+    row.openTrades += 1;
+    row.openProfit += profit;
+
+    if (profit > 0) {
+      row.openWins += 1;
+    }
+  }
 
   if (group === "CORE") {
   row.coreTrades += 1;
@@ -1761,6 +1851,11 @@ if (dateMap[today] && latestMarketTemperature) {
         ? (row.winCount / row.sellCount) * 100
         : 0,
 
+    openWinRate:
+      row.openTrades > 0
+        ? (row.openWins / row.openTrades) * 100
+        : 0,
+
   coreWinRate:
   row.coreTrades > 0
     ? (row.coreWins / row.coreTrades) * 100
@@ -1829,6 +1924,11 @@ app.get("/api/today-trade-analysis", (req, res) => {
   const sellTypes = [
   "SELL",
   "SELL_ALL",
+
+  "OPEN_STOP_LOSS",
+  "OPEN_TRAILING_SELL",
+  "OPEN_STAGNATION_SELL",
+  "OPEN_TIME_SELL",
 
   "CORE_STOP_LOSS",
   "CORE_FIRST_TAKE_PROFIT",

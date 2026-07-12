@@ -384,12 +384,12 @@
   </div>
 
   <div class="card">
-    <div class="label">👑 Leader 보유</div>
-<div class="value" id="leaderHoldingCount">-</div>
+    <div class="label">🚀 Open 보유</div>
+    <div class="value" id="openHoldingCount">-</div>
   </div>
 
-    <div class="card">
-    <div class="label">전략 구성 C/V</div>
+  <div class="card">
+    <div class="label">전략 구성 O/C/V</div>
     <div class="value" id="strategyMix">-</div>
   </div>
 </div>
@@ -456,6 +456,42 @@
       </div>
 
       <div class="section">
+        <h2>OPEN 전략 성과</h2>
+
+        <div class="grid">
+          <div class="card">
+            <div class="label">OPEN 매수</div>
+            <div class="value" id="openBuyCount">-</div>
+          </div>
+
+          <div class="card">
+            <div class="label">OPEN 매도</div>
+            <div class="value" id="openSellCount">-</div>
+          </div>
+
+          <div class="card">
+            <div class="label">OPEN 승 / 패</div>
+            <div class="value" id="openWinLoss">-</div>
+          </div>
+
+          <div class="card">
+            <div class="label">OPEN 승률</div>
+            <div class="value" id="openWinRate">-</div>
+          </div>
+
+          <div class="card">
+            <div class="label">OPEN 실현손익</div>
+            <div class="value" id="openRealizedProfit">-</div>
+          </div>
+
+          <div class="card">
+            <div class="label">OPEN 평균수익률</div>
+            <div class="value" id="openAvgProfitRate">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
   <h2>최근 7일 성과</h2>
 
   <div id="recent7DaysBox" class="mobile-card-list">
@@ -500,19 +536,28 @@
     }
 
     function strategyLabel(group) {
-  if (group === "VOLUME") return "📊 Volume";
-return "🛡️ Core";
+  const normalized = normalizeStrategyGroup(group);
+
+  if (normalized === "OPEN") return "🚀 Open";
+  if (normalized === "VOLUME") return "📊 Volume";
+  return "🛡️ Core";
 }
 
 function strategyOrder(group) {
-if (group === "CORE") return 1;
-if (group === "VOLUME") return 2;
-return 3;
+  const normalized = normalizeStrategyGroup(group);
+
+  if (normalized === "OPEN") return 1;
+  if (normalized === "CORE") return 2;
+  if (normalized === "VOLUME") return 3;
+  return 4;
 }
 
 function normalizeStrategyGroup(group) {
-  if (group === "VOLUME") return "VOLUME";
-return "CORE";
+  const value = String(group || "").trim().toUpperCase();
+
+  if (value === "OPEN") return "OPEN";
+  if (value === "VOLUME") return "VOLUME";
+  return "CORE";
 }
 
 function formatShortTime(value) {
@@ -536,7 +581,7 @@ function renderStrategyHoldingSummary(list) {
   const box = document.getElementById("strategyHoldingSummaryBox");
   if (!box) return;
 
-  const groups = ["CORE", "TURBO", "LEADER"];
+  const groups = ["OPEN", "CORE", "VOLUME"];
 
   box.innerHTML = groups.map(group => {
     const rows = (list || []).filter(item => normalizeStrategyGroup(item.strategyGroup) === group);
@@ -986,6 +1031,60 @@ const sectorPowerScore = Number(
   }).join("");
 }
 
+    function renderOpenPerformance(data = {}) {
+      const holdings = Array.isArray(data.holdings) ? data.holdings : [];
+      const strategyStats = Array.isArray(data.strategyStats) ? data.strategyStats : [];
+
+      const openHoldingCount = holdings.filter(
+        item => normalizeStrategyGroup(item.strategyGroup) === "OPEN"
+      ).length;
+
+      const openRows = strategyStats.filter(
+        item => normalizeStrategyGroup(item.strategyGroup) === "OPEN"
+      );
+
+      const openSellCount = openRows.reduce(
+        (sum, item) => sum + Number(item.trades || 0),
+        0
+      );
+      const openWins = openRows.reduce(
+        (sum, item) => sum + Number(item.wins || 0),
+        0
+      );
+      const openLosses = openRows.reduce(
+        (sum, item) => sum + Number(item.losses || 0),
+        0
+      );
+      const openRealizedProfit = openRows.reduce(
+        (sum, item) => sum + Number(item.totalProfit || 0),
+        0
+      );
+
+      const weightedRateTotal = openRows.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.avgProfitRate || 0) * Number(item.trades || 0),
+        0
+      );
+
+      const openAvgProfitRate =
+        openSellCount > 0 ? weightedRateTotal / openSellCount : 0;
+
+      const openWinRate =
+        openSellCount > 0 ? (openWins / openSellCount) * 100 : 0;
+
+      // OPEN은 당일 최대 1회 매수이므로 누적 매수건수는
+      // 완료된 매도건수 + 현재 OPEN 보유건수로 계산합니다.
+      const openBuyCount = openSellCount + openHoldingCount;
+
+      setValue("openBuyCount", `${openBuyCount}건`);
+      setValue("openSellCount", `${openSellCount}건`);
+      setValue("openWinLoss", `${openWins}승 / ${openLosses}패`);
+      setValue("openWinRate", formatRate(openWinRate), "rate");
+      setValue("openRealizedProfit", formatWon(openRealizedProfit), "money");
+      setValue("openAvgProfitRate", formatRate(openAvgProfitRate), "rate");
+    }
+
     async function loadPerformanceSummary() {
       try {
         const res = await fetch("https://sytrader.duckdns.org/api/performance-summary");
@@ -1028,14 +1127,16 @@ setMarketTemperature(mt);
         const holdings = data.holdings || [];
 
 
+       const openCount = holdings.filter(h => normalizeStrategyGroup(h.strategyGroup) === "OPEN").length;
        const coreCount = holdings.filter(h => normalizeStrategyGroup(h.strategyGroup) === "CORE").length;
        const volumeCount = holdings.filter(h => normalizeStrategyGroup(h.strategyGroup) === "VOLUME").length;
 
+       setValue("openHoldingCount", `${openCount}개`);
        setValue("coreHoldingCount", `${coreCount}개`);
        setValue("volumeHoldingCount", `${volumeCount}개`);
-       setValue("leaderHoldingCount", `-`);
-       setValue("strategyMix", `CORE ${coreCount} / VOLUME ${volumeCount}`);
+       setValue("strategyMix", `OPEN ${openCount} / CORE ${coreCount} / VOLUME ${volumeCount}`);
 
+        renderOpenPerformance(data);
         renderHoldings(data.holdings || []);
         renderRecent7Days(data.recent7Days || []);
         renderStrategyStats(data.strategyStats || []);
