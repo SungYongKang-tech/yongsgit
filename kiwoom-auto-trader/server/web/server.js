@@ -85,6 +85,11 @@ const PAPER_STATE_FILE = path.join(
   "paper-state-core.json"
 );
 
+const OPEN_HISTORY_FILE = path.join(
+  __dirname,
+  "open-learning-history.json"
+);
+
 function loadPaperState() {
   if (!fs.existsSync(PAPER_STATE_FILE)) {
     return {
@@ -1663,6 +1668,182 @@ return {
     res.status(500).json({
       ok: false,
       message: "성과분석 데이터를 불러오지 못했습니다."
+    });
+  }
+});
+
+
+app.get("/api/open-learning-summary", (req, res) => {
+  try {
+    const history = readJsonFileSafe(
+      OPEN_HISTORY_FILE,
+      { version: 1, updatedAt: null, days: {} }
+    ) || { version: 1, updatedAt: null, days: {} };
+
+    const dayEntries = Object.entries(history.days || {})
+      .sort(([a], [b]) => b.localeCompare(a));
+
+    const rows = [];
+    const variantMap = {};
+
+    for (const [date, day] of dayEntries) {
+      const comparison = day?.openDelayComparison || null;
+      const variants = Array.isArray(comparison?.variants)
+        ? comparison.variants
+        : [];
+
+      const normalizedVariants = variants.map((variant) => {
+        const profitRate = Number(
+          variant.exitProfitRate ??
+          variant.profitRate ??
+          variant.lastProfitRate ??
+          0
+        );
+
+        const completed =
+          variant.active !== true &&
+          (
+            variant.exitAt ||
+            variant.exitType ||
+            comparison?.completedAt
+          );
+
+        const row = {
+          key: variant.key || "",
+          label: variant.label || variant.key || "-",
+          delaySeconds: Number(variant.delaySeconds || 0),
+          entryPrice: Number(variant.entryPrice || 0),
+          exitPrice: Number(variant.exitPrice || 0),
+          profitRate,
+          highestProfitRate: Number(variant.highestProfitRate || 0),
+          lowestProfitRate: Number(variant.lowestProfitRate || 0),
+          holdingSeconds: Number(variant.holdingSeconds || 0),
+          exitType: variant.exitType || null,
+          exitReason: variant.exitReason || null,
+          completed: Boolean(completed)
+        };
+
+        if (!variantMap[row.key]) {
+          variantMap[row.key] = {
+            key: row.key,
+            label: row.label,
+            delaySeconds: row.delaySeconds,
+            trades: 0,
+            completedTrades: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            totalProfitRate: 0,
+            bestProfitRate: null,
+            worstProfitRate: null,
+            totalHighestProfitRate: 0,
+            totalLowestProfitRate: 0,
+            totalHoldingSeconds: 0
+          };
+        }
+
+        const stat = variantMap[row.key];
+        stat.trades += 1;
+
+        if (row.completed) {
+          stat.completedTrades += 1;
+          stat.totalProfitRate += profitRate;
+          stat.totalHighestProfitRate += row.highestProfitRate;
+          stat.totalLowestProfitRate += row.lowestProfitRate;
+          stat.totalHoldingSeconds += row.holdingSeconds;
+
+          if (profitRate > 0) stat.wins += 1;
+          else if (profitRate < 0) stat.losses += 1;
+          else stat.draws += 1;
+
+          stat.bestProfitRate =
+            stat.bestProfitRate === null
+              ? profitRate
+              : Math.max(stat.bestProfitRate, profitRate);
+
+          stat.worstProfitRate =
+            stat.worstProfitRate === null
+              ? profitRate
+              : Math.min(stat.worstProfitRate, profitRate);
+        }
+
+        return row;
+      });
+
+      rows.push({
+        date,
+        status: day?.status || null,
+        code: comparison?.code || day?.selectedTrade?.code || null,
+        name: comparison?.name || day?.selectedTrade?.name || null,
+        createdAt: comparison?.createdAt || null,
+        completedAt: comparison?.completedAt || null,
+        realTrade: day?.result
+          ? {
+              sellType: day.result.sellType || null,
+              profit: Number(day.result.profit || 0),
+              profitRate: Number(day.result.profitRate || 0),
+              highestProfitRate: Number(day.result.highestProfitRate || 0),
+              lowestProfitRate: Number(day.result.lowestProfitRate || 0)
+            }
+          : null,
+        variants: normalizedVariants
+      });
+    }
+
+    const variants = Object.values(variantMap)
+      .map((stat) => ({
+        ...stat,
+        winRate:
+          stat.completedTrades > 0
+            ? (stat.wins / stat.completedTrades) * 100
+            : 0,
+        avgProfitRate:
+          stat.completedTrades > 0
+            ? stat.totalProfitRate / stat.completedTrades
+            : 0,
+        avgHighestProfitRate:
+          stat.completedTrades > 0
+            ? stat.totalHighestProfitRate / stat.completedTrades
+            : 0,
+        avgLowestProfitRate:
+          stat.completedTrades > 0
+            ? stat.totalLowestProfitRate / stat.completedTrades
+            : 0,
+        avgHoldingSeconds:
+          stat.completedTrades > 0
+            ? stat.totalHoldingSeconds / stat.completedTrades
+            : 0,
+        bestProfitRate: stat.bestProfitRate ?? 0,
+        worstProfitRate: stat.worstProfitRate ?? 0
+      }))
+      .sort((a, b) => a.delaySeconds - b.delaySeconds);
+
+    const bestVariant = variants
+      .filter((item) => item.completedTrades > 0)
+      .sort((a, b) => {
+        if (b.avgProfitRate !== a.avgProfitRate) {
+          return b.avgProfitRate - a.avgProfitRate;
+        }
+        return b.winRate - a.winRate;
+      })[0] || null;
+
+    res.json({
+      ok: true,
+      updatedAt: history.updatedAt || null,
+      dayCount: rows.length,
+      completedDayCount: rows.filter(
+        (row) => row.variants.some((variant) => variant.completed)
+      ).length,
+      bestVariant,
+      variants,
+      rows
+    });
+  } catch (err) {
+    console.error("OPEN 학습결과 API 오류:", err);
+    res.status(500).json({
+      ok: false,
+      message: "OPEN 학습결과를 불러오지 못했습니다.",
+      error: err.message
     });
   }
 });

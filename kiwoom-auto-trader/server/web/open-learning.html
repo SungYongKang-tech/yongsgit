@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <title>SY Quant OPEN 학습결과</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: Arial, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    h1 { margin: 0; font-size: 20px; }
+    h2 { margin: 0 0 10px; font-size: 17px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .card {
+      background: #1f2937;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,.25);
+      margin-bottom: 10px;
+    }
+    .label { font-size: 13px; color: #9ca3af; margin-bottom: 5px; }
+    .value { font-size: 18px; font-weight: bold; text-align: right; }
+    .plus { color: #f87171; }
+    .minus { color: #60a5fa; }
+    .muted { color: #9ca3af; }
+    .best {
+      border: 1px solid #f59e0b;
+      box-shadow: 0 0 0 1px rgba(245,158,11,.15);
+    }
+    .variant-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .variant-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .variant-name { font-size: 18px; font-weight: bold; }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: bold;
+      background: #374151;
+      color: #e5e7eb;
+    }
+    .badge-best { background: #78350f; color: #fde68a; }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 7px;
+    }
+    .mini-box {
+      background: #111827;
+      border-radius: 10px;
+      padding: 9px;
+    }
+    .mini-label { color: #9ca3af; font-size: 12px; margin-bottom: 4px; }
+    .mini-value { font-weight: bold; font-size: 14px; text-align: right; }
+    .day-list { display: flex; flex-direction: column; gap: 10px; }
+    .day-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .day-name { font-size: 16px; font-weight: bold; }
+    .day-sub { color: #9ca3af; font-size: 12px; margin-top: 3px; }
+    .result-row {
+      display: grid;
+      grid-template-columns: 1.3fr .8fr .8fr .8fr;
+      gap: 6px;
+      padding: 8px 0;
+      border-bottom: 1px solid #374151;
+      align-items: center;
+      font-size: 13px;
+    }
+    .result-row:last-child { border-bottom: 0; }
+    .result-head { color: #9ca3af; font-size: 12px; }
+    .right { text-align: right; }
+    .empty {
+      padding: 20px;
+      text-align: center;
+      color: #9ca3af;
+      background: #1f2937;
+      border-radius: 14px;
+    }
+    @media (min-width: 800px) {
+      body { max-width: 980px; margin: 0 auto; padding: 18px; }
+      .grid { grid-template-columns: repeat(4, 1fr); }
+      .variant-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🧪 OPEN 진입시간 학습</h1>
+    <div style="display:flex; gap:6px;">
+      <button onclick="loadData()">새로고침</button>
+      <button onclick="location.href='performance.html'">← 대시보드</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">수집 일수</div>
+      <div class="value" id="dayCount">-</div>
+    </div>
+    <div class="card">
+      <div class="label">비교 완료</div>
+      <div class="value" id="completedDayCount">-</div>
+    </div>
+    <div class="card">
+      <div class="label">현재 1위 방식</div>
+      <div class="value" id="bestVariant">-</div>
+    </div>
+    <div class="card">
+      <div class="label">1위 평균수익률</div>
+      <div class="value" id="bestAvgRate">-</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>0초 · 5초 · 15초 누적 비교</h2>
+    <div id="variantBox" class="variant-grid">
+      <div class="empty">데이터 불러오는 중...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>날짜별 상세 결과</h2>
+    <div id="dayBox" class="day-list">
+      <div class="empty">데이터 불러오는 중...</div>
+    </div>
+  </div>
+
+<script>
+  function formatRate(value) {
+    const num = Number(value || 0);
+    const sign = num > 0 ? "+" : "";
+    return `${sign}${num.toFixed(2)}%`;
+  }
+
+  function formatPrice(value) {
+    const num = Number(value || 0);
+    return num > 0 ? `${num.toLocaleString()}원` : "-";
+  }
+
+  function rateClass(value) {
+    const num = Number(value || 0);
+    if (num > 0) return "plus";
+    if (num < 0) return "minus";
+    return "";
+  }
+
+  function formatSeconds(value) {
+    const seconds = Number(value || 0);
+    if (!seconds) return "-";
+    if (seconds < 60) return `${Math.round(seconds)}초`;
+    return `${Math.floor(seconds / 60)}분 ${Math.round(seconds % 60)}초`;
+  }
+
+  function renderVariants(data) {
+    const box = document.getElementById("variantBox");
+    const variants = Array.isArray(data.variants) ? data.variants : [];
+    const bestKey = data.bestVariant?.key || "";
+
+    if (!variants.length) {
+      box.innerHTML = `<div class="empty">아직 비교 결과가 없습니다.</div>`;
+      return;
+    }
+
+    box.innerHTML = variants.map(item => {
+      const isBest = item.key === bestKey;
+      return `
+        <div class="card ${isBest ? "best" : ""}" style="margin:0;">
+          <div class="variant-title">
+            <div class="variant-name">${item.label}</div>
+            ${isBest ? `<span class="badge badge-best">현재 1위</span>` : `<span class="badge">${item.delaySeconds}초</span>`}
+          </div>
+          <div class="mini-grid">
+            <div class="mini-box">
+              <div class="mini-label">완료 거래</div>
+              <div class="mini-value">${item.completedTrades || 0}건</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">승 / 패</div>
+              <div class="mini-value">${item.wins || 0} / ${item.losses || 0}</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">승률</div>
+              <div class="mini-value">${formatRate(item.winRate)}</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">평균수익률</div>
+              <div class="mini-value ${rateClass(item.avgProfitRate)}">${formatRate(item.avgProfitRate)}</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">최고 결과</div>
+              <div class="mini-value ${rateClass(item.bestProfitRate)}">${formatRate(item.bestProfitRate)}</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">최저 결과</div>
+              <div class="mini-value ${rateClass(item.worstProfitRate)}">${formatRate(item.worstProfitRate)}</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">평균 최고수익</div>
+              <div class="mini-value ${rateClass(item.avgHighestProfitRate)}">${formatRate(item.avgHighestProfitRate)}</div>
+            </div>
+            <div class="mini-box">
+              <div class="mini-label">평균 보유시간</div>
+              <div class="mini-value">${formatSeconds(item.avgHoldingSeconds)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderDays(data) {
+    const box = document.getElementById("dayBox");
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty">아직 학습자료가 없습니다.</div>`;
+      return;
+    }
+
+    box.innerHTML = rows.map(day => {
+      const variants = Array.isArray(day.variants) ? day.variants : [];
+      const real = day.realTrade;
+
+      return `
+        <div class="card" style="margin:0;">
+          <div class="day-head">
+            <div>
+              <div class="day-name">${day.date} · ${day.name || "비교종목 없음"}</div>
+              <div class="day-sub">${day.code || "-"} / 상태 ${day.status || "-"}</div>
+            </div>
+            <div class="right">
+              ${real
+                ? `<div class="${rateClass(real.profitRate)}" style="font-weight:bold;">실제 ${formatRate(real.profitRate)}</div>
+                   <div class="day-sub">${real.sellType || "-"}</div>`
+                : `<span class="badge">실제결과 없음</span>`
+              }
+            </div>
+          </div>
+
+          <div class="result-row result-head">
+            <div>방식</div><div class="right">진입가</div><div class="right">최고</div><div class="right">결과</div>
+          </div>
+
+          ${variants.length
+            ? variants.map(item => `
+                <div class="result-row">
+                  <div>
+                    <b>${item.label}</b>
+                    <div class="day-sub">${item.completed ? (item.exitType || "완료") : "진행 중"}</div>
+                  </div>
+                  <div class="right">${formatPrice(item.entryPrice)}</div>
+                  <div class="right ${rateClass(item.highestProfitRate)}">${formatRate(item.highestProfitRate)}</div>
+                  <div class="right ${rateClass(item.profitRate)}"><b>${item.completed ? formatRate(item.profitRate) : "-"}</b></div>
+                </div>
+              `).join("")
+            : `<div class="empty">진입시간 비교자료 없음</div>`
+          }
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function loadData() {
+    try {
+      const response = await fetch("https://sytrader.duckdns.org/api/open-learning-summary", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "OPEN 학습결과 API 오류");
+      }
+
+      document.getElementById("dayCount").textContent = `${data.dayCount || 0}일`;
+      document.getElementById("completedDayCount").textContent = `${data.completedDayCount || 0}일`;
+      document.getElementById("bestVariant").textContent = data.bestVariant?.label || "-";
+      document.getElementById("bestAvgRate").textContent =
+        data.bestVariant ? formatRate(data.bestVariant.avgProfitRate) : "-";
+
+      const bestRateEl = document.getElementById("bestAvgRate");
+      bestRateEl.className = `value ${rateClass(data.bestVariant?.avgProfitRate)}`;
+
+      renderVariants(data);
+      renderDays(data);
+    } catch (error) {
+      console.error(error);
+      document.getElementById("variantBox").innerHTML =
+        `<div class="empty">OPEN 학습결과를 불러오지 못했습니다.<br>${error.message}</div>`;
+      document.getElementById("dayBox").innerHTML =
+        `<div class="empty">서버의 /api/open-learning-summary 적용 여부를 확인하세요.</div>`;
+    }
+  }
+
+  loadData();
+  setInterval(loadData, 30000);
+</script>
+</body>
+</html>

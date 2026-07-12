@@ -1337,6 +1337,99 @@ async function paperOpenSell(state, holding, price, signal) {
   }
 }
 
+
+function getOpenRejectCategory(reason = "") {
+  const text = String(reason || "");
+
+  if (text.includes("첫 발견") || text.includes("확인 대기")) return "15초 강화확인 대기";
+  if (text.includes("점수 약화") || text.includes("거래량 약화") || text.includes("가격 하락")) return "강화확인 실패";
+  if (text.includes("발견점수 부족")) return "발견점수 부족";
+  if (text.includes("상승률 부적합")) return "상승률 부적합";
+  if (text.includes("거래량 부족")) return "거래량 부족";
+  if (text.includes("당일위치 부적합")) return "당일위치 부적합";
+  if (text.includes("시가대비 부적합")) return "시가대비 부적합";
+  if (text.includes("동일 종목 이미 보유")) return "이미 보유";
+  if (text.includes("오늘 이미 매수")) return "당일 재매수 차단";
+  if (text.includes("오늘 OPEN 이미 매수")) return "OPEN 이미 완료";
+  if (text.includes("OPEN 시간 아님")) return "매수시간 외";
+  if (text.includes("OPEN OFF")) return "OPEN OFF";
+  return "기타";
+}
+
+function makeOpenCandidateLogText(item, price, judged = {}) {
+  const name = item.name || item.stockName || item.korName || item.code || "-";
+  const discoverScore = Number(item.discoverScore || 0);
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+  const volumeRatio = getTradeVolumeRatio(item);
+  const dayPosition = getDayPositionRate(item, price);
+  const openPosition = getOpenPositionRate(item, price);
+
+  return (
+    `${name}(${item.code || "-"}) / ` +
+    `현재가 ${Number(price || 0).toLocaleString()} / ` +
+    `발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / ` +
+    `거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / ` +
+    `시가대비 ${openPosition.toFixed(2)}%` +
+    (judged.pass
+      ? ` / 최종 ${Number(judged.rankScore || 0).toFixed(1)}`
+      : ` / ${judged.reason || "탈락"}`)
+  );
+}
+
+function logOpenScanSummary({
+  scanId,
+  hhmm,
+  candidates,
+  evaluated,
+  passed,
+  rejectCounts,
+  rejectExamples,
+  marketData
+}) {
+  console.log(
+    `[OPEN 스캔요약] #${scanId} ${hhmm} / ` +
+    `발굴 ${candidates.length} / 평가 ${evaluated.length} / 통과 ${passed.length} / ` +
+    `시장 ${marketData.available ? `${marketData.marketScore}점 ${marketData.marketType}` : "미사용"}`
+  );
+
+  const rejectText = Object.entries(rejectCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => `${reason} ${count}`)
+    .join(" | ");
+
+  if (rejectText) {
+    console.log(`[OPEN 탈락집계] ${rejectText}`);
+  }
+
+  Object.entries(rejectExamples).forEach(([category, examples]) => {
+    if (!examples.length) return;
+    console.log(
+      `[OPEN 탈락예시] ${category} / ` +
+      examples.join(" || ")
+    );
+  });
+
+  if (passed.length > 0) {
+    const topText = [...passed]
+      .sort((a, b) => Number(b.judged.rankScore || 0) - Number(a.judged.rankScore || 0))
+      .slice(0, 5)
+      .map((entry, index) =>
+        `${index + 1}.${makeOpenCandidateLogText(entry.item, entry.price, entry.judged)}`
+      )
+      .join(" || ");
+
+    console.log(`[OPEN 통과후보 TOP${Math.min(5, passed.length)}] ${topText}`);
+  }
+}
+
+let openScanSequence = 0;
+
 async function runOpenBuyOnce() {
   if (!isKoreanWeekday()) return;
 
@@ -1361,6 +1454,16 @@ async function runOpenBuyOnce() {
     return;
   }
 
+  const scanId = ++openScanSequence;
+  const scanStartedAt = Date.now();
+
+  console.log(
+    `[OPEN 스캔시작] #${scanId} ${hhmm} / ` +
+    `매수시간 ${settings.openBuyStartTime}~${settings.openBuyEndTime} / ` +
+    `실제매수 확인 ${settings.openConfirmWaitMs / 1000}초 / ` +
+    `현금 ${Number(state.totalCash || 0).toLocaleString()}원`
+  );
+
   const risk = checkDailyLossLimit(state);
   if (risk.stopped) {
     state.openCompleted = true;
@@ -1369,26 +1472,35 @@ async function runOpenBuyOnce() {
     state.openSkipReason = risk.reason;
     saveState(state);
     recordOpenLearningSkip(risk.reason);
-    console.log(`[OPEN 중단] ${risk.reason}`);
+    console.log(`[OPEN 중단] #${scanId} ${risk.reason}`);
     return;
   }
 
   const marketData = loadOpenMarketData();
   if (marketData.available) {
-    console.log(`[OPEN 시장연결] 점수 ${marketData.marketScore} / 유형 ${marketData.marketType} / 경과 ${marketData.ageHours.toFixed(1)}시간`);
+    console.log(
+      `[OPEN 시장연결] #${scanId} 점수 ${marketData.marketScore} / ` +
+      `유형 ${marketData.marketType} / 경과 ${marketData.ageHours.toFixed(1)}시간`
+    );
   } else {
-    console.log(`[OPEN 시장연결] 미사용 / ${marketData.reason}`);
+    console.log(`[OPEN 시장연결] #${scanId} 미사용 / ${marketData.reason}`);
   }
 
   const candidates = await discoverCandidates();
   const passed = [];
   const evaluated = [];
-  let logged = 0;
+  const rejectCounts = {};
+  const rejectExamples = {};
 
   for (const item of candidates) {
-    const price = Math.abs(Number(item.currentPrice || item.price || item.raw?.cur_prc || 0));
-    const name = item.name || item.stockName || item.korName || item.code;
-    if (!price) continue;
+    const price = Math.abs(
+      Number(item.currentPrice || item.price || item.raw?.cur_prc || 0)
+    );
+
+    if (!price) {
+      rejectCounts["현재가 오류"] = (rejectCounts["현재가 오류"] || 0) + 1;
+      continue;
+    }
 
     const judged = judgeOpenBuy(state, item, price);
     evaluated.push({
@@ -1398,27 +1510,78 @@ async function runOpenBuyOnce() {
       record: makeOpenCandidateLearningRecord(item, price, judged)
     });
 
-    if (judged.pass) passed.push({ item, price, judged });
-    else if (logged < 10) {
-      console.log(`[OPEN 제외] ${name} / ${judged.reason}`);
-      logged++;
+    if (judged.pass) {
+      passed.push({ item, price, judged });
+      continue;
+    }
+
+    const category = getOpenRejectCategory(judged.reason);
+    rejectCounts[category] = (rejectCounts[category] || 0) + 1;
+
+    if (!rejectExamples[category]) rejectExamples[category] = [];
+    if (rejectExamples[category].length < 2) {
+      rejectExamples[category].push(
+        makeOpenCandidateLogText(item, price, judged)
+      );
     }
   }
 
   saveState(state);
   saveOpenCandidateLearning(evaluated);
 
+  logOpenScanSummary({
+    scanId,
+    hhmm,
+    candidates,
+    evaluated,
+    passed,
+    rejectCounts,
+    rejectExamples,
+    marketData
+  });
+
+  const elapsedMs = Date.now() - scanStartedAt;
+
   if (!passed.length) {
-    console.log("[OPEN] 현재 통과 후보 없음");
+    console.log(
+      `[OPEN 스캔종료] #${scanId} 통과후보 없음 / ` +
+      `소요 ${(elapsedMs / 1000).toFixed(1)}초`
+    );
     return;
   }
 
-  passed.sort((a, b) => b.judged.rankScore - a.judged.rankScore);
+  passed.sort(
+    (a, b) =>
+      Number(b.judged.rankScore || 0) -
+      Number(a.judged.rankScore || 0)
+  );
+
   const best = passed[0];
+
   initializeOpenDelayComparison(best.item, best.judged);
   initializeOpenVirtualTracking(evaluated, best.item.code);
-  console.log(`[OPEN 최종선정] ${best.item.name || best.item.code} / 최종 ${best.judged.rankScore.toFixed(1)} / 시장 ${best.judged.marketBonus >= 0 ? "+" : ""}${best.judged.marketBonus.toFixed(1)} / 섹터 ${best.judged.sectorBonus >= 0 ? "+" : ""}${best.judged.sectorBonus.toFixed(1)} / 통과후보 ${passed.length}개`);
-  await paperOpenBuy(state, best.item, best.price, best.judged.reason);
+
+  console.log(
+    `[OPEN 최종선정] #${scanId} ` +
+    `${makeOpenCandidateLogText(best.item, best.price, best.judged)} / ` +
+    `기본 ${Number(best.judged.baseRankScore || 0).toFixed(1)} / ` +
+    `시장 ${Number(best.judged.marketBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.marketBonus || 0).toFixed(1)} / ` +
+    `섹터 ${Number(best.judged.sectorBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.sectorBonus || 0).toFixed(1)} / ` +
+    `통과 ${passed.length}개 / 소요 ${(elapsedMs / 1000).toFixed(1)}초`
+  );
+
+  const bought = await paperOpenBuy(
+    state,
+    best.item,
+    best.price,
+    best.judged.reason
+  );
+
+  console.log(
+    `[OPEN 매수결과] #${scanId} ` +
+    `${best.item.name || best.item.code} / ` +
+    `${bought ? "매수완료" : "매수실패 또는 중복차단"}`
+  );
 }
 
 async function checkOpenSellOnce() {
