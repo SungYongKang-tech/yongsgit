@@ -1600,6 +1600,11 @@ app.get("/api/daily-summary", (req, res) => {
   "SELL",
   "SELL_ALL",
 
+  "OPEN_STOP_LOSS",
+  "OPEN_TRAILING_SELL",
+  "OPEN_STAGNATION_SELL",
+  "OPEN_TIME_SELL",
+
   "CORE_STOP_LOSS",
   "CORE_FIRST_TAKE_PROFIT",
   "CORE_BREAK_EVEN_SELL",

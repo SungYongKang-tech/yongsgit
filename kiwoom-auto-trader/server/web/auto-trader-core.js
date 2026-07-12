@@ -1436,13 +1436,23 @@ async function checkSellOnce() {
   console.log(`[SELL] 보유종목 ${state.holdings.length}개`);
 
   for (const holding of [...state.holdings]) {
+
+    // OPEN 종목은 open-strategy.js에서 별도로 매도 관리
+    if (holding.strategyGroup === "OPEN") {
+      continue;
+    }
+
     let price = 0;
 
     try {
       price = await fetchPrice(holding.code);
     } catch (err) {
       console.log(`[SELL 가격조회 실패] ${holding.name} / ${err.message}`);
-      price = Number(holding.currentPrice || holding.buyPrice || 0);
+      price = Number(
+        holding.currentPrice ||
+        holding.buyPrice ||
+        0
+      );
     }
 
     if (!price) {
@@ -1456,24 +1466,28 @@ async function checkSellOnce() {
 
     if (!signal) {
       const buyPrice = Number(holding.buyPrice || 0);
+
       const profitRate = buyPrice > 0
         ? ((price - buyPrice) / buyPrice) * 100
         : 0;
 
       console.log(
-        `[SELL 유지] ${holding.name} / 현재가 ${price.toLocaleString()}원 / ${profitRate.toFixed(2)}%`
+        `[SELL 유지] ${holding.name} / ` +
+        `현재가 ${price.toLocaleString()}원 / ` +
+        `${profitRate.toFixed(2)}%`
       );
+
       continue;
     }
 
     await paperSell(
-  state,
-  holding,
-  price,
-  signal.qty,
-  signal.type,
-  signal.reason
-);
+      state,
+      holding,
+      price,
+      signal.qty,
+      signal.type,
+      signal.reason
+    );
   }
 
   state.lastSellCheckAt = nowText();
@@ -1483,33 +1497,19 @@ async function checkSellOnce() {
 }
 
 async function start() {
-  console.log("SY Quant OPEN/CORE/VOLUME 자동매매 시작");
+  console.log("SY Quant CORE/VOLUME 자동매매 시작");
 
-  await runOpenBuyOnce();
   await runBuyOnce();
   await checkSellOnce();
 
-  let openRunning = false;
   let buyRunning = false;
   let sellRunning = false;
-
-  setInterval(async () => {
-    if (openRunning) return;
-
-    openRunning = true;
-    try {
-      await runOpenBuyOnce();
-    } catch (err) {
-      console.error("[OPEN LOOP 오류]", err.message);
-    } finally {
-      openRunning = false;
-    }
-  }, settings.openLoopMs);
 
   setInterval(async () => {
     if (buyRunning) return;
 
     buyRunning = true;
+
     try {
       await runBuyOnce();
     } catch (err) {
@@ -1523,6 +1523,7 @@ async function start() {
     if (sellRunning) return;
 
     sellRunning = true;
+
     try {
       await checkSellOnce();
     } catch (err) {
@@ -1568,7 +1569,6 @@ function setServerAutoEnabled(enabled) {
 module.exports = {
   startServerAutoTrader,
 
-  runOpenBuyOnce,
   runServerAutoBuyOnce: runBuyOnce,
   checkServerAutoSellOnce: checkSellOnce,
 
