@@ -6,6 +6,62 @@ const OPEN_HISTORY_FILE = path.join(__dirname, "open-learning-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 const API_BASE = "http://localhost:3000";
 
+
+function sleepSync(ms) {
+  const sab = new SharedArrayBuffer(4);
+  const view = new Int32Array(sab);
+  Atomics.wait(view, 0, 0, ms);
+}
+
+function readJsonFileSafe(filePath, fallbackValue = null, attempts = 5) {
+  if (!fs.existsSync(filePath)) return fallbackValue;
+
+  let lastError = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const text = fs.readFileSync(filePath, "utf8");
+      if (!text.trim()) throw new Error("빈 JSON 파일");
+      return JSON.parse(text);
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) sleepSync(50);
+    }
+  }
+
+  throw new Error(`${path.basename(filePath)} 읽기 실패: ${lastError?.message || "알 수 없는 오류"}`);
+}
+
+function writeJsonFileAtomic(filePath, data) {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const tempPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
+  const json = JSON.stringify(data, null, 2);
+
+  try {
+    fs.writeFileSync(tempPath, json, "utf8");
+    const fd = fs.openSync(tempPath, "r");
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch (_) {}
+    }
+  }
+}
+
+function isKoreanWeekday() {
+  const day = new Date().toLocaleDateString("en-US", {
+    timeZone: "Asia/Seoul",
+    weekday: "short"
+  });
+  return day !== "Sat" && day !== "Sun";
+}
+
+
 const settings = {
   totalCash: 100000000,
   serverAutoEnabledDefault: true,
@@ -87,7 +143,7 @@ function loadState() {
     };
   }
 
-  const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  const state = readJsonFileSafe(STATE_FILE);
   if (!Array.isArray(state.holdings)) state.holdings = [];
   if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
   if (!Array.isArray(state.virtualResults)) state.virtualResults = [];
@@ -101,7 +157,7 @@ function loadState() {
 }
 
 function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  writeJsonFileAtomic(STATE_FILE, state);
 }
 
 
@@ -116,7 +172,7 @@ function loadOpenMarketData() {
   }
 
   try {
-    const data = JSON.parse(fs.readFileSync(OPEN_MARKET_FILE, "utf8"));
+    const data = readJsonFileSafe(OPEN_MARKET_FILE);
     const ageHours = data.updatedAtMs
       ? (Date.now() - Number(data.updatedAtMs)) / 3600000
       : 9999;
@@ -214,7 +270,7 @@ function loadOpenHistory() {
   }
 
   try {
-    const data = JSON.parse(fs.readFileSync(OPEN_HISTORY_FILE, "utf8"));
+    const data = readJsonFileSafe(OPEN_HISTORY_FILE);
     if (!data || typeof data !== "object") throw new Error("형식 오류");
     if (!data.days || typeof data.days !== "object") data.days = {};
     return data;
@@ -226,7 +282,7 @@ function loadOpenHistory() {
 
 function saveOpenHistory(history) {
   history.updatedAt = nowText();
-  fs.writeFileSync(OPEN_HISTORY_FILE, JSON.stringify(history, null, 2));
+  writeJsonFileAtomic(OPEN_HISTORY_FILE, history);
 }
 
 function getOpenLearningDay(history) {
@@ -461,6 +517,9 @@ function completeVirtualCandidate(candidate, price, signal, now = Date.now()) {
 }
 
 async function checkOpenVirtualCandidatesOnce() {
+  if (!isKoreanWeekday()) return;
+  if (!isBetweenTime("09:00", "09:40")) return;
+
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
   const candidates = Array.isArray(day.virtualCandidates) ? day.virtualCandidates : [];
@@ -1113,6 +1172,8 @@ async function paperOpenSell(state, holding, price, signal) {
 }
 
 async function runOpenBuyOnce() {
+  if (!isKoreanWeekday()) return;
+
   const state = loadState();
   initOpenDayIfNeeded(state);
 
@@ -1194,6 +1255,9 @@ async function runOpenBuyOnce() {
 }
 
 async function checkOpenSellOnce() {
+  if (!isKoreanWeekday()) return;
+  if (!isBetweenTime("09:00", "09:40")) return;
+
   const state = loadState();
   initOpenDayIfNeeded(state);
   if (!state.serverAutoEnabled) return;

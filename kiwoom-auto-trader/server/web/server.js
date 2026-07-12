@@ -10,6 +10,62 @@ const { exec } = require("child_process");
 const app = express();
 const PORT = 3000;
 
+
+function sleepSync(ms) {
+  const sab = new SharedArrayBuffer(4);
+  const view = new Int32Array(sab);
+  Atomics.wait(view, 0, 0, ms);
+}
+
+function readJsonFileSafe(filePath, fallbackValue = null, attempts = 5) {
+  if (!fs.existsSync(filePath)) return fallbackValue;
+
+  let lastError = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const text = fs.readFileSync(filePath, "utf8");
+      if (!text.trim()) throw new Error("빈 JSON 파일");
+      return JSON.parse(text);
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) sleepSync(50);
+    }
+  }
+
+  throw new Error(`${path.basename(filePath)} 읽기 실패: ${lastError?.message || "알 수 없는 오류"}`);
+}
+
+function writeJsonFileAtomic(filePath, data) {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const tempPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
+  const json = JSON.stringify(data, null, 2);
+
+  try {
+    fs.writeFileSync(tempPath, json, "utf8");
+    const fd = fs.openSync(tempPath, "r");
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch (_) {}
+    }
+  }
+}
+
+function isKoreanWeekday() {
+  const day = new Date().toLocaleDateString("en-US", {
+    timeZone: "Asia/Seoul",
+    weekday: "short"
+  });
+  return day !== "Sat" && day !== "Sun";
+}
+
+
 app.use(cors());
 app.use(express.json());
 
@@ -41,9 +97,7 @@ function loadPaperState() {
     };
   }
 
-  const state = JSON.parse(
-    fs.readFileSync(PAPER_STATE_FILE, "utf8")
-  );
+  const state = readJsonFileSafe(PAPER_STATE_FILE);
 
   if (!Array.isArray(state.holdings)) state.holdings = [];
   if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
@@ -59,10 +113,7 @@ function loadPaperState() {
 }
 
 function savePaperState(state) {
-  fs.writeFileSync(
-    PAPER_STATE_FILE,
-    JSON.stringify(state, null, 2)
-  );
+  writeJsonFileAtomic(PAPER_STATE_FILE, state);
 }
 
 function getSavedToken() {
@@ -723,10 +774,7 @@ app.post("/api/server-result-clear", (req, res) => {
     state.virtualResults = [];
     state.results = [];
 
-    fs.writeFileSync(
-      PAPER_STATE_FILE,
-      JSON.stringify(state, null, 2)
-    );
+    savePaperState(state);
 
     res.json({
       ok: true,
@@ -825,10 +873,7 @@ await new Promise((resolve) => setTimeout(resolve, 1200));
 
   paperState.lastPriceRefreshAt = new Date().toLocaleString("ko-KR");
 
-  fs.writeFileSync(
-    PAPER_STATE_FILE,
-    JSON.stringify(paperState, null, 2)
-  );
+  savePaperState(paperState);
 }
 
 const priceCache = {};
@@ -1101,6 +1146,7 @@ if (!response.ok) {
 });
 
 const {
+  startServerAutoTrader,
   runServerAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
@@ -1157,10 +1203,7 @@ app.post("/api/paper-state/reset", (req, res) => {
       lastPriceRefreshAt: null
     };
 
-    fs.writeFileSync(
-      PAPER_STATE_FILE,
-      JSON.stringify(resetState, null, 2)
-    );
+    savePaperState(resetState);
 
     res.json({
       ok: true,
@@ -2017,10 +2060,7 @@ app.post("/api/server-trade-log-clear", (req, res) => {
 
     state.tradeLogs = [];
 
-    fs.writeFileSync(
-      PAPER_STATE_FILE,
-      JSON.stringify(state, null, 2)
-    );
+    savePaperState(state);
 
     res.json({
       ok: true,
@@ -2124,10 +2164,7 @@ buyTimeMs: Date.now()
 
     });
 
-    fs.writeFileSync(
-      PAPER_STATE_FILE,
-      JSON.stringify(state, null, 2)
-    );
+    savePaperState(state);
 
     res.json({
       ok: true,
@@ -2291,10 +2328,7 @@ if (holding.qty <= 0) {
     state.lastSellCheckAt =
       now.toLocaleString("ko-KR");
 
-    fs.writeFileSync(
-      PAPER_STATE_FILE,
-      JSON.stringify(state, null, 2)
-    );
+    savePaperState(state);
 
     res.json({
       ok: true,
@@ -2400,10 +2434,7 @@ paperState.totalCash =
       date: new Date().toISOString().slice(0, 10)
     });
 
-    fs.writeFileSync(
-      PAPER_STATE_FILE,
-      JSON.stringify(paperState, null, 2)
-    );
+    savePaperState(paperState);
 
     res.json({
       ok: true,
@@ -2442,5 +2473,5 @@ app.listen(PORT, () => {
 
   // OPEN은 09:00~09:30 독립 실행하고, 완료 후 CORE/VOLUME이 진행됩니다.
   startOpenStrategy();
-  //startServerAutoTrader();
+  startServerAutoTrader();
 });
