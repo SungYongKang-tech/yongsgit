@@ -98,6 +98,7 @@ const settings = {
   openSellLoopMs: 5 * 1000,
   dailyLossLimitRate: 0.01,
 
+  // 가상후보 추적은 분석자료 저장용이며, 실제 매수 점수에는 반영하지 않음
   openLearningTopCount: 10,
   openVirtualTrackingCount: 10,
   openVirtualLoopMs: 30 * 1000,
@@ -981,6 +982,8 @@ function judgeOpenBuy(state, item, price) {
     dayPosition * 0.25 +
     Math.max(0, 4 - changeRate) * 5;
 
+  // 실제 OPEN 최종점수는 현재 시점의 시장·섹터 정보만 반영한다.
+  // 과거 유사사례나 가상추적 결과는 매수 점수에 반영하지 않는다.
   const marketData = loadOpenMarketData();
   const marketAdjust = calculateOpenMarketAdjustment(item, marketData);
   const rankScore = baseRankScore + marketAdjust.totalBonus;
