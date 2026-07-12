@@ -313,13 +313,22 @@ function getK(games){
   return games < 10 ? 40 : 24;
 }
 
-function getHandicapElo(playerLevel, opponentLevel){
+function getHandicapCompensation(playerLevel, opponentLevel) {
+  const gap = Math.abs(
+    Number(playerLevel) - Number(opponentLevel)
+  );
 
-  const gap = Number(playerLevel) - Number(opponentLevel);
+  const table = {
+    0: 0,
+    1: 70,
+    2: 130,
+    3: 190,
+    4: 250,
+    5: 300,
+    6: 340
+  };
 
-  // 1부수 차이 = ELO 30점 보정
-  return gap * 30;
-
+  return table[Math.min(gap, 6)];
 }
 
 function getPlayerLevel(name){
@@ -359,8 +368,19 @@ async function saveEloForSingleMatch(matchId, match){
   const levelA = getPlayerLevel(pA);
 const levelB = getPlayerLevel(pB);
 
-const calcA = beforeA + getHandicapElo(levelA, levelB);
-const calcB = beforeB + getHandicapElo(levelB, levelA);
+const handicapCompensation =
+  getHandicapCompensation(levelA, levelB);
+
+let calcA = beforeA;
+let calcB = beforeB;
+
+// 숫자가 작은 부수가 상위 부수
+// 실제 핸디 효과만큼 상위 부수의 계산용 ELO를 낮춤
+if (levelA < levelB) {
+  calcA -= handicapCompensation;
+} else if (levelB < levelA) {
+  calcB -= handicapCompensation;
+}
   
   const gamesA = Number(a.games || 0);
   const gamesB = Number(b.games || 0);
@@ -454,11 +474,20 @@ async function rebuildAllElo(){
     const beforeA = elo[pA];
     const beforeB = elo[pB];
 
-    const levelA = getPlayerLevel(pA);
+   const levelA = getPlayerLevel(pA);
 const levelB = getPlayerLevel(pB);
 
-const calcA = beforeA + getHandicapElo(levelA, levelB);
-const calcB = beforeB + getHandicapElo(levelB, levelA);
+const handicapCompensation =
+  getHandicapCompensation(levelA, levelB);
+
+let calcA = beforeA;
+let calcB = beforeB;
+
+if (levelA < levelB) {
+  calcA -= handicapCompensation;
+} else if (levelB < levelA) {
+  calcB -= handicapCompensation;
+}
 
     const scoreA = m.winnerSide === "A" ? 1 : 0;
 
@@ -534,12 +563,7 @@ if (cachedTitle) {
   $("#pageTitle").textContent = `🏓 ${cachedTitle} 경기 결과입력`;
 }
 
-get(titleRef).then(snap => {
-  const val = snap.val() ?? "KOEN 탁구동호회";
-  localStorage.setItem("siteTitle", val);
-  document.title = `🏓 ${val} 경기 결과입력`;
-  $("#pageTitle").textContent = `🏓 ${val} 경기 결과입력`;
-});
+
 
 get(titleRef).then(snap => {
   const val = snap.val() ?? "KOEN 탁구동호회";
