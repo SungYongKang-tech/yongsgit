@@ -1465,12 +1465,28 @@ if (
 }
 
 async function runBuyOnce() {
-  console.log("[BUY] 1회 점검 시작");
-
   if (!isKoreanWeekday()) {
-    console.log("[BUY] 주말 / 후보조회 생략");
     return;
   }
+
+  const hhmm = getCurrentHHMM();
+
+  const coreBuyTime =
+    settings.coreEnabled &&
+    hhmm >= settings.coreStartTime &&
+    hhmm <= settings.coreEndTime;
+
+  const volumeBuyTime =
+    settings.volumeEnabled &&
+    hhmm >= settings.volumeStartTime &&
+    hhmm <= settings.volumeEndTime;
+
+  // CORE와 VOLUME 매수시간이 모두 아니면 후보조회 없이 종료
+  if (!coreBuyTime && !volumeBuyTime) {
+    return;
+  }
+
+  console.log("[BUY] 1회 점검 시작");
 
   const state = loadState();
 
