@@ -581,7 +581,6 @@ function judgeOpenBuy(state, item, price) {
   }
   if (state.openCompleted) return { pass: false, reason: "오늘 OPEN 종료" };
   if (hasOpenBuyToday(state)) return { pass: false, reason: "오늘 OPEN 이미 매수" };
-  if ((state.holdings || []).length > 0) return { pass: false, reason: "기존 보유종목 있음" };
   if (isAlreadyHolding(state, item.code)) return { pass: false, reason: "이미 보유중" };
   if (wasBoughtToday(state, item.code)) return { pass: false, reason: "오늘 이미 매수한 종목" };
 
@@ -624,6 +623,8 @@ function judgeOpenBuy(state, item, price) {
 }
 
 async function runOpenBuyOnce() {
+  if (!isKoreanWeekday()) return;
+
   const state = loadState();
   initDailyRiskIfNeeded(state);
 
@@ -1437,11 +1438,7 @@ async function checkSellOnce() {
 
   for (const holding of [...state.holdings]) {
 
-    // OPEN 종목은 open-strategy.js에서 별도로 매도 관리
-    if (holding.strategyGroup === "OPEN") {
-      continue;
-    }
-
+   
     let price = 0;
 
     try {
@@ -1497,13 +1494,29 @@ async function checkSellOnce() {
 }
 
 async function start() {
-  console.log("SY Quant CORE/VOLUME 자동매매 시작");
+  console.log("SY Quant OPEN/CORE/VOLUME 자동매매 시작");
 
+  await runOpenBuyOnce();
   await runBuyOnce();
   await checkSellOnce();
 
+  let openRunning = false;
   let buyRunning = false;
   let sellRunning = false;
+
+  setInterval(async () => {
+    if (openRunning) return;
+
+    openRunning = true;
+
+    try {
+      await runOpenBuyOnce();
+    } catch (err) {
+      console.error("[OPEN LOOP 오류]", err.message);
+    } finally {
+      openRunning = false;
+    }
+  }, settings.openLoopMs);
 
   setInterval(async () => {
     if (buyRunning) return;
