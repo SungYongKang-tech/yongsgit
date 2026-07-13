@@ -151,12 +151,18 @@
       .grid { grid-template-columns: repeat(4, 1fr); }
       .mini-grid { grid-template-columns: repeat(4, 1fr); }
     }
+
+    .pill-open {
+  background: #7c2d12;
+  color: #fed7aa;
+}
+
   </style>
 </head>
 
 <body>
   <div class="header">
-    <h1>📊 오늘 거래 분석 · CORE / VOLUME</h1>
+   <h1>📊 오늘 거래 분석 · OPEN / CORE / VOLUME</h1>
     <button onclick="location.href='performance.html'">← 대시보드</button>
   </div>
 
@@ -295,28 +301,44 @@
     }
 
     function normalizeStrategyGroup(group) {
-      const text = String(group || "").toUpperCase();
+  const text = String(group || "").toUpperCase();
 
-      if (text === "VOLUME" || text.startsWith("VOLUME_")) {
-        return "VOLUME";
-      }
+  if (text === "OPEN" || text.startsWith("OPEN_")) {
+    return "OPEN";
+  }
 
-      return "CORE";
-    }
+  if (text === "VOLUME" || text.startsWith("VOLUME_")) {
+    return "VOLUME";
+  }
 
-    function strategyLabel(group) {
-      const normalized = normalizeStrategyGroup(group);
+  return "CORE";
+}
 
-      if (normalized === "VOLUME") return "📊 VOLUME";
-      return "🛡️ CORE";
-    }
+    function getStrategy(log) {
+  if (log.strategyGroup) {
+    return normalizeStrategyGroup(log.strategyGroup);
+  }
+
+  if (log.group) {
+    return normalizeStrategyGroup(log.group);
+  }
+
+  const type = String(log.type || "").toUpperCase();
+
+  if (type.startsWith("OPEN")) return "OPEN";
+  if (type.startsWith("VOLUME")) return "VOLUME";
+
+  return "CORE";
+}
 
     function strategyPillClass(group) {
-      const normalized = normalizeStrategyGroup(group);
+  const normalized = normalizeStrategyGroup(group);
 
-      if (normalized === "VOLUME") return "pill-volume";
-      return "pill-core";
-    }
+  if (normalized === "OPEN") return "pill-open";
+  if (normalized === "VOLUME") return "pill-volume";
+
+  return "pill-core";
+}
 
     function getStrategy(log) {
       if (log.strategyGroup) return normalizeStrategyGroup(log.strategyGroup);
@@ -335,7 +357,15 @@
     function getSellPrice(log) { return log.sellPrice || log.price || log.currentPrice || 0; }
     function getMaxProfitRate(log) { return Number(log.maxProfitRate || 0); }
     function getMaxLossRate(log) { return Number(log.maxLossRate || 0); }
-    function getHoldingMinutes(log) { return Number(log.holdingMinutes || 0); }
+    function getHoldingMinutes(log) {
+  const minutes = Number(log.holdingMinutes || 0);
+
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return 0;
+  }
+
+  return Math.max(1, Math.round(minutes));
+}
 
     function getMarketScore(log) {
       if (typeof log.marketScore === "number") return log.marketScore;
@@ -532,7 +562,7 @@
       const sells = data.sells || [];
 
       let text = "";
-      text += `${data.date} SY Quant CORE/VOLUME 오늘 거래 분석 자료\n\n`;
+      text += `${data.date} SY Quant OPEN/CORE/VOLUME 오늘 거래 분석 자료\n\n`;
       text += `[오늘 요약]\n`;
       text += `매수건수: ${summary.buyCount || 0}\n`;
       text += `매도건수: ${summary.sellCount || 0}\n`;

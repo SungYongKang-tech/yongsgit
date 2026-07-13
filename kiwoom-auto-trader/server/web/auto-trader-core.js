@@ -1008,27 +1008,97 @@ async function paperBuy(state, item, price, strategyGroup, reason) {
       `현금 ${Number(result.totalCash || 0).toLocaleString()}원 / ${reason}`
     );
 
-    state.holdings.push({
+   const buyChangeRate = Number(
+  item.changeRate ||
+  item.fluctuationRate ||
+  item.riseRate ||
+  item.rate ||
+  0
+);
+
+const buyTradeVolumeRatio = getTradeVolumeRatio(item);
+const buyDayPositionRate = getDayPositionRate(item, price);
+const buyOpenPositionRate = getOpenPositionRate(item, price);
+
+state.holdings.push({
   code: item.code,
   name,
   strategyGroup,
+
   buyPrice: price,
   currentPrice: price,
   qty,
   buyAmount: price * qty,
-  buyTime: Date.now()
+  buyTime: Date.now(),
+
+  highestPrice: price,
+  lowestPrice: price,
+  highestPriceAt: Date.now(),
+
+  discoverScore: Number(item.discoverScore || 0),
+  finalBuyScore: Number(
+    item.finalBuyScore ||
+    item.finalScore ||
+    item.rankScore ||
+    0
+  ),
+  marketScore: Number(
+    item.marketScore?.score ||
+    item.marketScore ||
+    0
+  ),
+  candidateStrengthScore: Number(
+    item.candidateStrengthScore ||
+    item.leaderStrengthScore ||
+    0
+  ),
+
+  buyChangeRate,
+  buyTradeVolumeRatio,
+  buyDayPositionRate,
+  buyOpenPositionRate,
+
+  buyReason: reason
 });
 
 state.tradeLogs.push({
   date: todayKey(),
   time: nowText(),
   type: `${strategyGroup}_BUY`,
+
   code: item.code,
   name,
+  strategyGroup,
+
   price,
+  buyPrice: price,
   qty,
   amount: price * qty,
-  strategyGroup,
+  buyAmount: price * qty,
+
+  discoverScore: Number(item.discoverScore || 0),
+  finalBuyScore: Number(
+    item.finalBuyScore ||
+    item.finalScore ||
+    item.rankScore ||
+    0
+  ),
+  marketScore: Number(
+    item.marketScore?.score ||
+    item.marketScore ||
+    0
+  ),
+  candidateStrengthScore: Number(
+    item.candidateStrengthScore ||
+    item.leaderStrengthScore ||
+    0
+  ),
+
+  buyChangeRate,
+  buyTradeVolumeRatio,
+  buyDayPositionRate,
+  buyOpenPositionRate,
+
   reason
 });
 
@@ -1104,17 +1174,75 @@ async function paperSell(state, holding, sellPrice, sellQty, sellType, reason) {
 
     state.totalCash = Number(result.totalCash || state.totalCash || 0);
 
-    state.tradeLogs.push({
+   const buyPrice = Number(holding.buyPrice || 0);
+
+const highestPrice = Number(
+  holding.highestPrice ||
+  sellPrice ||
+  buyPrice ||
+  0
+);
+
+const lowestPrice = Number(
+  holding.lowestPrice ||
+  sellPrice ||
+  buyPrice ||
+  0
+);
+
+const maxProfitRate = buyPrice > 0
+  ? ((highestPrice - buyPrice) / buyPrice) * 100
+  : 0;
+
+const maxLossRate = buyPrice > 0
+  ? ((lowestPrice - buyPrice) / buyPrice) * 100
+  : 0;
+
+const holdingMinutes = Number(holding.buyTime || 0) > 0
+  ? (Date.now() - Number(holding.buyTime)) / 60000
+  : 0;
+
+state.tradeLogs.push({
   date: todayKey(),
   time: nowText(),
   type: sellType,
+
   code: holding.code,
   name: holding.name,
+  strategyGroup: holding.strategyGroup,
+
+  buyPrice,
+  sellPrice,
   price: sellPrice,
   qty,
+
   profit: Number(result.profit || 0),
   profitRate: Number(result.profitRate || 0),
-  strategyGroup: holding.strategyGroup,
+
+  highestPrice,
+  lowestPrice,
+  maxProfitRate,
+  maxLossRate,
+  holdingMinutes,
+
+  discoverScore: Number(holding.discoverScore || 0),
+  finalBuyScore: Number(holding.finalBuyScore || 0),
+  marketScore: Number(holding.marketScore || 0),
+  candidateStrengthScore: Number(
+    holding.candidateStrengthScore || 0
+  ),
+
+  buyChangeRate: Number(holding.buyChangeRate || 0),
+  buyTradeVolumeRatio: Number(
+    holding.buyTradeVolumeRatio || 0
+  ),
+  buyDayPositionRate: Number(
+    holding.buyDayPositionRate || 0
+  ),
+  buyOpenPositionRate: Number(
+    holding.buyOpenPositionRate || 0
+  ),
+
   reason
 });
 
