@@ -442,20 +442,38 @@ function isStrategyBuyCooldown(state, strategyGroup) {
 }
 
 async function discoverCandidates() {
+  const state = loadState();
+
+  const offset = Number(state.discoverOffset || 0);
+
   const data = await fetchJson(
-    `${API_BASE}/api/discover?scanLimit=${settings.discoverScanLimit}&limit=${settings.discoverLimit}`
+    `${API_BASE}/api/discover?offset=${offset}` +
+    `&scanLimit=${settings.discoverScanLimit}` +
+    `&limit=${settings.discoverLimit}`
   );
+
+  state.discoverOffset = Number(data.nextOffset || 0);
+  state.lastDiscoverOffsetAt = nowText();
+
+  saveState(state);
 
   const rawItems = data.items || [];
 
   const filtered = rawItems
     .filter(item => !isExcludedStock(item))
     .filter(item => Number(item.discoverScore || 0) >= settings.minDiscoverScore)
-    .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
+    .sort(
+      (a, b) =>
+        Number(b.discoverScore || 0) -
+        Number(a.discoverScore || 0)
+    );
 
   console.log(
-    `[DISCOVER] 원본 ${rawItems.length}개 / 필터후 ${filtered.length}개 / ` +
-    `scanLimit ${settings.discoverScanLimit} / limit ${settings.discoverLimit}`
+    `[DISCOVER] 원본 ${rawItems.length}개 / ` +
+    `필터후 ${filtered.length}개 / ` +
+    `offset ${offset} → ${state.discoverOffset} / ` +
+    `scanLimit ${settings.discoverScanLimit} / ` +
+    `limit ${settings.discoverLimit}`
   );
 
   return filtered;
