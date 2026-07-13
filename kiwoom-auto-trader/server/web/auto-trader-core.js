@@ -441,9 +441,7 @@ function isStrategyBuyCooldown(state, strategyGroup) {
   };
 }
 
-async function discoverCandidates() {
-  const state = loadState();
-
+async function discoverCandidates(state) {
   const offset = Number(state.discoverOffset || 0);
 
   const data = await fetchJson(
@@ -454,8 +452,6 @@ async function discoverCandidates() {
 
   state.discoverOffset = Number(data.nextOffset || 0);
   state.lastDiscoverOffsetAt = nowText();
-
-  saveState(state);
 
   const rawItems = data.items || [];
 
@@ -669,7 +665,7 @@ async function runOpenBuyOnce() {
   }
 
   console.log("[OPEN] 후보 조회 시작");
-  const candidates = await discoverCandidates();
+  const candidates = await discoverCandidates(state);
   const passed = [];
   let logged = 0;
 
@@ -1373,7 +1369,7 @@ cleanupCandidateHistory(state);
 
   console.log("[BUY] 후보 조회 시작");
 
-  const candidates = await discoverCandidates();
+  const candidates = await discoverCandidates(state);
 
   console.log(`[BUY] 후보 조회 완료 / ${candidates.length}개`);
 
