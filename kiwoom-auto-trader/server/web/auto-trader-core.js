@@ -148,8 +148,13 @@ volumeTrailingStopRate: 0.8,
 
   minHoldMinutes: 3,
 
-  candidateConfirmWaitMs: 60 * 1000,
+candidateConfirmWaitMs: 60 * 1000,
 candidateHistoryMaxAgeMs: 30 * 60 * 1000,
+
+// 후보 강화 목록
+candidateWatchMaxCount: 10,
+candidateWatchMaxAgeMs: 30 * 60 * 1000,
+
 breakEvenStartRate: 2.0,
 breakEvenProtectRate: 0.2,
 
@@ -196,6 +201,15 @@ if (!Array.isArray(state.virtualResults)) state.virtualResults = [];
 
 if (!Array.isArray(state.pendingBuyCodes)) state.pendingBuyCodes = [];
 if (!Array.isArray(state.pendingSellCodes)) state.pendingSellCodes = [];
+
+if (!Array.isArray(state.coreCandidateWatchList)) {
+  state.coreCandidateWatchList = [];
+}
+
+if (!Array.isArray(state.volumeCandidateWatchList)) {
+  state.volumeCandidateWatchList = [];
+}
+
   if (typeof state.serverAutoEnabled === "undefined") {
     state.serverAutoEnabled = settings.serverAutoEnabledDefault;
   }
@@ -394,6 +408,218 @@ function getOpenPositionRate(item = {}, currentPrice) {
   return ((currentPrice - open) / open) * 100;
 }
 
+function calculateCandidateWatchScore(item, price, strategyGroup) {
+  const discoverScore = Number(item.discoverScore || 0);
+  const volumeRatio = getTradeVolumeRatio(item);
+  const dayPosition = getDayPositionRate(item, price);
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const minVolumeRatio = strategyGroup === "CORE"
+    ? settings.coreMinTradeVolumeRatio
+    : settings.volumeMinTradeVolumeRatio;
+
+  const minDayPosition = strategyGroup === "CORE"
+    ? settings.coreMinDayPositionRate
+    : settings.volumeMinDayPositionRate;
+
+  const maxDayPosition = strategyGroup === "CORE"
+    ? settings.coreMaxDayPositionRate
+    : settings.volumeMaxDayPositionRate;
+
+  const volumeFit = minVolumeRatio > 0
+    ? Math.min(volumeRatio / minVolumeRatio, 1.5)
+    : 0;
+
+  let dayPositionFit = 0;
+
+  if (
+    dayPosition >= minDayPosition &&
+    dayPosition <= maxDayPosition
+  ) {
+    dayPositionFit = 1;
+  } else if (dayPosition < minDayPosition) {
+    dayPositionFit = Math.max(
+      0,
+      1 - (minDayPosition - dayPosition) / 30
+    );
+  } else {
+    dayPositionFit = Math.max(
+      0,
+      1 - (dayPosition - maxDayPosition) / 30
+    );
+  }
+
+  return (
+    discoverScore * 10 +
+    volumeFit * 20 +
+    dayPositionFit * 15 +
+    Math.max(0, changeRate) * 2
+  );
+}
+
+function updateCandidateWatchList(
+  state,
+  item,
+  price,
+  strategyGroup
+) {
+  const code = String(item.code || "").trim();
+
+  if (!code || !price) return;
+
+  const listKey = strategyGroup === "CORE"
+    ? "coreCandidateWatchList"
+    : "volumeCandidateWatchList";
+
+  if (!Array.isArray(state[listKey])) {
+    state[listKey] = [];
+  }
+
+  const now = Date.now();
+  const name =
+    item.name ||
+    item.stockName ||
+    item.korName ||
+    code;
+
+  const discoverScore = Number(item.discoverScore || 0);
+  const volumeRatio = getTradeVolumeRatio(item);
+  const dayPosition = getDayPositionRate(item, price);
+  const openPosition = getOpenPositionRate(item, price);
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const watchScore = calculateCandidateWatchScore(
+    item,
+    price,
+    strategyGroup
+  );
+
+  const existing = state[listKey].find(
+    candidate => candidate.code === code
+  );
+
+  if (existing) {
+    existing.name = name;
+    existing.strategyGroup = strategyGroup;
+
+    existing.lastSeenAt = now;
+    existing.lastSeenAtText = nowText();
+
+    existing.currentPrice = Number(price);
+    existing.discoverScore = discoverScore;
+    existing.volumeRatio = volumeRatio;
+    existing.dayPosition = dayPosition;
+    existing.openPosition = openPosition;
+    existing.changeRate = changeRate;
+    existing.watchScore = watchScore;
+
+    existing.rawTradeVolumeRatio =
+      getTradeVolumeRatioRaw(item);
+
+    existing.itemSnapshot = {
+      code,
+      name,
+      currentPrice: Number(price),
+      discoverScore,
+      changeRate,
+      tradeVolumeRatio: volumeRatio,
+      dayPosition,
+      openPosition
+    };
+  } else {
+    state[listKey].push({
+      code,
+      name,
+      strategyGroup,
+
+      firstSeenAt: now,
+      firstSeenAtText: nowText(),
+      lastSeenAt: now,
+      lastSeenAtText: nowText(),
+
+      firstPrice: Number(price),
+      currentPrice: Number(price),
+
+      firstDiscoverScore: discoverScore,
+      discoverScore,
+
+      firstVolumeRatio: volumeRatio,
+      volumeRatio,
+
+      firstDayPosition: dayPosition,
+      dayPosition,
+
+      openPosition,
+      changeRate,
+      watchScore,
+
+      rawTradeVolumeRatio:
+        getTradeVolumeRatioRaw(item),
+
+      itemSnapshot: {
+        code,
+        name,
+        currentPrice: Number(price),
+        discoverScore,
+        changeRate,
+        tradeVolumeRatio: volumeRatio,
+        dayPosition,
+        openPosition
+      }
+    });
+  }
+
+  state[listKey] = state[listKey]
+    .filter(candidate =>
+      now - Number(candidate.lastSeenAt || 0) <=
+      settings.candidateWatchMaxAgeMs
+    )
+    .sort(
+      (a, b) =>
+        Number(b.watchScore || 0) -
+        Number(a.watchScore || 0)
+    )
+    .slice(0, settings.candidateWatchMaxCount);
+}
+
+function cleanupCandidateWatchLists(state) {
+  const now = Date.now();
+  const maxAge = settings.candidateWatchMaxAgeMs;
+
+  for (const listKey of [
+    "coreCandidateWatchList",
+    "volumeCandidateWatchList"
+  ]) {
+    if (!Array.isArray(state[listKey])) {
+      state[listKey] = [];
+      continue;
+    }
+
+    state[listKey] = state[listKey]
+      .filter(candidate =>
+        now - Number(candidate.lastSeenAt || 0) <= maxAge
+      )
+      .sort(
+        (a, b) =>
+          Number(b.watchScore || 0) -
+          Number(a.watchScore || 0)
+      )
+      .slice(0, settings.candidateWatchMaxCount);
+  }
+}
+
 function getHoldingCount(state, strategyGroup) {
   return state.holdings.filter(h => h.strategyGroup === strategyGroup).length;
 }
@@ -420,6 +646,8 @@ state.dailyBuyStopped = false;
 state.openCandidateHistory = {};
 state.coreCandidateHistory = {};
 state.volumeCandidateHistory = {};
+state.coreCandidateWatchList = [];
+state.volumeCandidateWatchList = [];
 
 state.openCompleted = false;
 state.openSkipped = false;
@@ -1751,25 +1979,33 @@ async function runBuyOnce() {
 
   const risk = checkDailyLossLimit(state);
 
-if (risk.stopped) {
-  console.log(`[BUY] 신규매수 중단 / ${risk.reason}`);
-  saveState(state);
-  return;
-}
+  if (risk.stopped) {
+    console.log(`[BUY] 신규매수 중단 / ${risk.reason}`);
+    saveState(state);
+    return;
+  }
 
-cleanupCandidateHistory(state);
+  cleanupCandidateHistory(state);
+  cleanupCandidateWatchLists(state);
 
   if (isOpenBlockingCoreVolume(state)) {
-    console.log("[BUY] OPEN 진행 또는 대기 중 / CORE·VOLUME 신규매수 보류");
+    console.log(
+      "[BUY] OPEN 진행 또는 대기 중 / CORE·VOLUME 신규매수 보류"
+    );
     saveState(state);
     return;
   }
 
   console.log("[BUY] 후보 조회 시작");
-  
-  const candidates = await discoverCandidates(state, "CORE_VOLUME");
 
-  console.log(`[BUY] 후보 조회 완료 / ${candidates.length}개`);
+  const candidates = await discoverCandidates(
+    state,
+    "CORE_VOLUME"
+  );
+
+  console.log(
+    `[BUY] 후보 조회 완료 / ${candidates.length}개`
+  );
 
   console.log(
     `[BUY] 현재 보유 OPEN ${getHoldingCount(state, "OPEN")}개 / ` +
@@ -1782,51 +2018,155 @@ cleanupCandidateHistory(state);
   const maxExcludeLogCount = 20;
 
   for (const item of candidates) {
-    const price = Math.abs(Number(item.currentPrice || item.price || item.raw?.cur_prc || 0));
-    const name = item.name || item.stockName || item.korName || item.code;
+    const price = Math.abs(
+      Number(
+        item.currentPrice ||
+        item.price ||
+        item.raw?.cur_prc ||
+        0
+      )
+    );
+
+    const name =
+      item.name ||
+      item.stockName ||
+      item.korName ||
+      item.code;
 
     if (!price) {
       if (excludeLogCount < maxExcludeLogCount) {
-        console.log(`[후보제외] ${name} / 현재가 없음`);
+        console.log(
+          `[후보제외] ${name} / 현재가 없음`
+        );
         excludeLogCount++;
       }
+
       continue;
     }
 
-    const coreJudge = judgeCoreBuy(state, item, price);
-
-    if (coreJudge.pass) {
-      const bought = await paperBuy(state, item, price, "CORE", coreJudge.reason);
-
-      if (bought) {
-        break;
+    // 보유중이거나 오늘 이미 매수한 종목은 후보목록에 넣지 않음
+    if (
+      !isAlreadyHolding(state, item.code) &&
+      !wasBoughtToday(state, item.code)
+    ) {
+      if (coreBuyTime) {
+        updateCandidateWatchList(
+          state,
+          item,
+          price,
+          "CORE"
+        );
       }
 
-      continue;
+      if (volumeBuyTime) {
+        updateCandidateWatchList(
+          state,
+          item,
+          price,
+          "VOLUME"
+        );
+      }
     }
 
-    if (excludeLogCount < maxExcludeLogCount) {
-      console.log(`[CORE 제외] ${name} / ${coreJudge.reason}`);
-      excludeLogCount++;
-    }
+    // CORE 매수 판단
+    if (coreBuyTime) {
+      const coreJudge = judgeCoreBuy(
+        state,
+        item,
+        price
+      );
 
-    const volumeJudge = judgeVolumeBuy(state, item, price);
+      if (coreJudge.pass) {
+        const bought = await paperBuy(
+          state,
+          item,
+          price,
+          "CORE",
+          coreJudge.reason
+        );
 
-    if (volumeJudge.pass) {
-      const bought = await paperBuy(state, item, price, "VOLUME", volumeJudge.reason);
+        if (bought) {
+          break;
+        }
 
-      if (bought) {
-        break;
+        continue;
       }
 
-      continue;
+      if (excludeLogCount < maxExcludeLogCount) {
+        console.log(
+          `[CORE 제외] ${name} / ${coreJudge.reason}`
+        );
+        excludeLogCount++;
+      }
     }
 
-    if (excludeLogCount < maxExcludeLogCount) {
-      console.log(`[VOLUME 제외] ${name} / ${volumeJudge.reason}`);
-      excludeLogCount++;
+    // VOLUME 매수 판단
+    if (volumeBuyTime) {
+      const volumeJudge = judgeVolumeBuy(
+        state,
+        item,
+        price
+      );
+
+      if (volumeJudge.pass) {
+        const bought = await paperBuy(
+          state,
+          item,
+          price,
+          "VOLUME",
+          volumeJudge.reason
+        );
+
+        if (bought) {
+          break;
+        }
+
+        continue;
+      }
+
+      if (excludeLogCount < maxExcludeLogCount) {
+        console.log(
+          `[VOLUME 제외] ${name} / ${volumeJudge.reason}`
+        );
+        excludeLogCount++;
+      }
     }
   }
+
+  // 후보 전체 검사가 끝난 뒤 한 번만 출력
+  console.log(
+    `[후보 강화 목록] ` +
+    `CORE ${state.coreCandidateWatchList.length}개 / ` +
+    `VOLUME ${state.volumeCandidateWatchList.length}개`
+  );
+
+  const coreWatchNames =
+    state.coreCandidateWatchList
+      .map(
+        candidate =>
+          `${candidate.name}(` +
+          `${Number(candidate.watchScore || 0).toFixed(1)}` +
+          `)`
+      )
+      .join(", ");
+
+  const volumeWatchNames =
+    state.volumeCandidateWatchList
+      .map(
+        candidate =>
+          `${candidate.name}(` +
+          `${Number(candidate.watchScore || 0).toFixed(1)}` +
+          `)`
+      )
+      .join(", ");
+
+  console.log(
+    `[CORE 후보목록] ${coreWatchNames || "없음"}`
+  );
+
+  console.log(
+    `[VOLUME 후보목록] ${volumeWatchNames || "없음"}`
+  );
 
   state.lastBuyCheckAt = nowText();
   saveState(state);
