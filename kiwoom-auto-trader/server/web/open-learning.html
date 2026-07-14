@@ -122,6 +122,77 @@
       .grid { grid-template-columns: repeat(4, 1fr); }
       .variant-grid { grid-template-columns: repeat(3, 1fr); }
     }
+
+    .status-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .status-box {
+      background: #1f2937;
+      border-radius: 12px;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .status-ok { color: #86efac; }
+    .status-warn { color: #facc15; }
+    .status-bad { color: #fca5a5; }
+
+    .market-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .priority-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .priority-row {
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      background: #111827;
+      border-radius: 10px;
+      padding: 9px;
+    }
+    .priority-rank {
+      font-weight: bold;
+      color: #fbbf24;
+      text-align: center;
+    }
+    .priority-name {
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .priority-sub {
+      color: #9ca3af;
+      font-size: 12px;
+      margin-top: 3px;
+      line-height: 1.4;
+    }
+    .priority-score {
+      font-weight: bold;
+      color: #f87171;
+      text-align: right;
+      min-width: 54px;
+    }
+    .reason-list {
+      margin: 0;
+      padding-left: 18px;
+      color: #d1d5db;
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    @media (min-width: 800px) {
+      .status-row { grid-template-columns: repeat(4, 1fr); }
+      .market-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+
   </style>
 </head>
 <body>
@@ -130,6 +201,49 @@
     <div style="display:flex; gap:6px;">
       <button onclick="loadData()">새로고침</button>
       <button onclick="location.href='performance.html'">← 대시보드</button>
+    </div>
+  </div>
+
+  <div class="status-row">
+    <div class="status-box" id="marketApiStatus">장전자료 확인 중</div>
+    <div class="status-box" id="marketUpdatedAt">갱신시각 -</div>
+    <div class="status-box" id="marketDataStatus">상태 -</div>
+    <div class="status-box" id="priorityCountStatus">우선종목 -</div>
+  </div>
+
+  <div class="card">
+    <h2>🌐 OPEN 2.0 장전시장 분석</h2>
+    <div class="market-grid">
+      <div class="mini-box">
+        <div class="mini-label">시장점수</div>
+        <div class="mini-value" id="marketScore">-</div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-label">시장유형</div>
+        <div class="mini-value" id="marketType">-</div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-label">뉴스점수</div>
+        <div class="mini-value" id="newsScore">-</div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-label">수집 성공</div>
+        <div class="mini-value" id="marketSuccessCount">-</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;">
+      <div class="label">장전 판단 근거</div>
+      <ul id="marketReasonBox" class="reason-list">
+        <li>데이터 불러오는 중...</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🎯 OPEN 우선감시 종목</h2>
+    <div id="priorityStockBox" class="priority-list">
+      <div class="empty">우선감시 종목 불러오는 중...</div>
     </div>
   </div>
 
@@ -301,6 +415,108 @@
     }).join("");
   }
 
+
+  function setMarketStatus(id, text, state = "") {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = "status-box";
+    if (state) el.classList.add(`status-${state}`);
+  }
+
+  function formatShortDateTime(value) {
+    if (!value) return "-";
+    return String(value).replace(/\.\s*/g, ". ").slice(0, 22);
+  }
+
+  function renderPriorityStocks(list) {
+    const box = document.getElementById("priorityStockBox");
+    const rows = Array.isArray(list) ? list : [];
+
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty">현재 생성된 우선감시 종목이 없습니다.</div>`;
+      return;
+    }
+
+    box.innerHTML = rows.map((item, index) => `
+      <div class="priority-row">
+        <div class="priority-rank">${Number(item.rank || index + 1)}위</div>
+        <div>
+          <div class="priority-name">${item.name || item.code || "-"}</div>
+          <div class="priority-sub">
+            ${item.code || "-"} / ${item.sector || "섹터 미분류"}<br>
+            ${item.reason || "선정사유 없음"}
+          </div>
+        </div>
+        <div class="priority-score">${Number(item.priorityScore || item.score || 0).toFixed(1)}점</div>
+      </div>
+    `).join("");
+  }
+
+  async function loadOpenMarketStatus() {
+    try {
+      const response = await fetch("https://sytrader.duckdns.org/api/open-market-status", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "OPEN 장전자료 API 오류");
+      }
+
+      const status = String(data.status || "-").toUpperCase();
+      const isGood = status === "OK" || status === "PARTIAL";
+
+      setMarketStatus("marketApiStatus", "🟢 장전자료 API 정상", "ok");
+      setMarketStatus(
+        "marketUpdatedAt",
+        `갱신 ${formatShortDateTime(data.updatedAt)}`,
+        data.updatedAt ? "ok" : "warn"
+      );
+      setMarketStatus(
+        "marketDataStatus",
+        `상태 ${status}`,
+        isGood ? "ok" : "warn"
+      );
+
+      const priorities = Array.isArray(data.priorityStocks) ? data.priorityStocks : [];
+      setMarketStatus(
+        "priorityCountStatus",
+        `우선종목 ${priorities.length}개`,
+        priorities.length ? "ok" : "warn"
+      );
+
+      document.getElementById("marketScore").textContent =
+        `${Number(data.marketScore || 0).toFixed(1)}점`;
+
+      document.getElementById("marketType").textContent =
+        data.marketType || "-";
+
+      document.getElementById("newsScore").textContent =
+        `${Number(data.newsScore || 0).toFixed(1)}점`;
+
+      document.getElementById("marketSuccessCount").textContent =
+        `${Number(data.successCount || 0)}/${Number(data.totalCount || 0)}`;
+
+      const reasons = Array.isArray(data.reasons) ? data.reasons : [];
+      const reasonBox = document.getElementById("marketReasonBox");
+      reasonBox.innerHTML = reasons.length
+        ? reasons.map(reason => `<li>${reason}</li>`).join("")
+        : `<li>장전 판단 근거가 없습니다.</li>`;
+
+      renderPriorityStocks(priorities);
+    } catch (error) {
+      console.error(error);
+      setMarketStatus("marketApiStatus", "🔴 장전자료 API 오류", "bad");
+      setMarketStatus("marketDataStatus", "상태 확인 실패", "bad");
+      setMarketStatus("marketUpdatedAt", "갱신 실패", "bad");
+      setMarketStatus("priorityCountStatus", "우선종목 확인 실패", "bad");
+
+      document.getElementById("priorityStockBox").innerHTML =
+        `<div class="empty">OPEN 장전자료를 불러오지 못했습니다.<br>${error.message}</div>`;
+    }
+  }
+
   async function loadData() {
     try {
       const response = await fetch("https://sytrader.duckdns.org/api/open-learning-summary", {
@@ -333,7 +549,10 @@
   }
 
   loadData();
+  loadOpenMarketStatus();
+
   setInterval(loadData, 30000);
+  setInterval(loadOpenMarketStatus, 30000);
 </script>
 </body>
 </html>
