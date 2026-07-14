@@ -564,6 +564,176 @@ function getOpenPositionRate(item = {}, currentPrice) {
   return ((currentPrice - open) / open) * 100;
 }
 
+function calculateMarketTemperature(candidates = []) {
+  const rows = Array.isArray(candidates)
+    ? candidates.filter(item => {
+        const changeRate = Number(
+          item.changeRate ||
+          item.fluctuationRate ||
+          item.riseRate ||
+          item.rate ||
+          item.raw?.flu_rt ||
+          0
+        );
+
+        return Number.isFinite(changeRate);
+      })
+    : [];
+
+  const total = rows.length;
+
+  if (total === 0) {
+    return {
+      level: "NORMAL",
+      label: "보통",
+      score: 50,
+      advanceRatio: 0,
+      volumePassRatio: 0,
+      averageChangeRate: 0,
+      total: 0,
+      reason: "시장온도 계산 대상 없음",
+      checkedAt: nowText(),
+      checkedDate: todayKey()
+    };
+  }
+
+  let advanceCount = 0;
+  let declineCount = 0;
+  let flatCount = 0;
+  let volumePassCount = 0;
+  let changeRateSum = 0;
+
+  for (const item of rows) {
+    const changeRate = Number(
+      item.changeRate ||
+      item.fluctuationRate ||
+      item.riseRate ||
+      item.rate ||
+      item.raw?.flu_rt ||
+      0
+    );
+
+    const volumeRatio =
+      getTradeVolumeRatio(item);
+
+    changeRateSum += changeRate;
+
+    if (changeRate > 0.1) {
+      advanceCount++;
+    } else if (changeRate < -0.1) {
+      declineCount++;
+    } else {
+      flatCount++;
+    }
+
+    if (
+      volumeRatio >=
+      settings.coreMinTradeVolumeRatio
+    ) {
+      volumePassCount++;
+    }
+  }
+
+  const advanceRatio =
+    total > 0
+      ? (advanceCount / total) * 100
+      : 0;
+
+  const declineRatio =
+    total > 0
+      ? (declineCount / total) * 100
+      : 0;
+
+  const volumePassRatio =
+    total > 0
+      ? (volumePassCount / total) * 100
+      : 0;
+
+  const averageChangeRate =
+    total > 0
+      ? changeRateSum / total
+      : 0;
+
+  /*
+   * 시장온도 점수
+   *
+   * 상승종목 비율: 최대 50점
+   * 평균 등락률: 최대 ±25점
+   * 거래량 통과 비율: 최대 25점
+   */
+  const advanceScore =
+    advanceRatio * 0.5;
+
+  const changeScore =
+    Math.max(
+      -25,
+      Math.min(
+        25,
+        averageChangeRate * 10
+      )
+    );
+
+  const volumeScore =
+    volumePassRatio * 0.25;
+
+  const score = Math.max(
+    0,
+    Math.min(
+      100,
+      25 +
+      advanceScore +
+      changeScore +
+      volumeScore
+    )
+  );
+
+  let level = "NORMAL";
+  let label = "보통";
+
+  if (score >= 75) {
+    level = "HOT";
+    label = "강세";
+  } else if (score >= 55) {
+    level = "NORMAL";
+    label = "보통";
+  } else if (score >= 35) {
+    level = "CAUTION";
+    label = "주의";
+  } else {
+    level = "COLD";
+    label = "약세";
+  }
+
+  return {
+    level,
+    label,
+
+    score: Number(score.toFixed(1)),
+    advanceRatio:
+      Number(advanceRatio.toFixed(1)),
+    declineRatio:
+      Number(declineRatio.toFixed(1)),
+    volumePassRatio:
+      Number(volumePassRatio.toFixed(1)),
+    averageChangeRate:
+      Number(averageChangeRate.toFixed(2)),
+
+    total,
+    advanceCount,
+    declineCount,
+    flatCount,
+    volumePassCount,
+
+    reason:
+      `상승 ${advanceCount}/${total}개 / ` +
+      `평균등락 ${averageChangeRate.toFixed(2)}% / ` +
+      `거래량통과 ${volumePassCount}/${total}개`,
+
+    checkedAt: nowText(),
+    checkedDate: todayKey()
+  };
+}
+
 function calculateCandidateWatchScore(
   item,
   price,
@@ -1251,6 +1421,20 @@ state.coreCandidateHistory = {};
 state.volumeCandidateHistory = {};
 state.coreCandidateWatchList = [];
 state.volumeCandidateWatchList = [];
+
+state.marketTemperature = {
+  level: "NORMAL",
+  label: "보통",
+  score: 50,
+  advanceRatio: 0,
+  declineRatio: 0,
+  volumePassRatio: 0,
+  averageChangeRate: 0,
+  total: 0,
+  reason: "오늘 시장온도 계산 전",
+  checkedAt: nowText(),
+  checkedDate: today
+};
 
 state.buyDecisionStats = {
   date: today,
@@ -2227,6 +2411,10 @@ state.holdings.push({
     item.marketScore ||
     0
   ),
+
+  marketTemperature:
+  state.marketTemperature || null,
+
   candidateStrengthScore: Number(
     item.candidateStrengthScore ||
     item.leaderStrengthScore ||
@@ -2275,6 +2463,10 @@ state.tradeLogs.push({
     item.marketScore ||
     0
   ),
+
+  marketTemperature:
+  state.marketTemperature || null,
+
   candidateStrengthScore: Number(
     item.candidateStrengthScore ||
     item.leaderStrengthScore ||
@@ -2955,6 +3147,21 @@ async function runBuyOnce() {
   console.log(
     `[BUY] 후보 조회 완료 / ${candidates.length}개`
   );
+
+  const marketTemperature =
+  calculateMarketTemperature(candidates);
+
+state.marketTemperature =
+  marketTemperature;
+
+console.log(
+  `[시장온도] ${marketTemperature.label} / ` +
+  `${marketTemperature.score.toFixed(1)}점 / ` +
+  `상승비율 ${marketTemperature.advanceRatio.toFixed(1)}% / ` +
+  `평균등락 ${marketTemperature.averageChangeRate.toFixed(2)}% / ` +
+  `거래량통과 ${marketTemperature.volumePassRatio.toFixed(1)}% / ` +
+  `대상 ${marketTemperature.total}개`
+);
 
   console.log(
     `[BUY] 현재 보유 OPEN ${getHoldingCount(state, "OPEN")}개 / ` +
