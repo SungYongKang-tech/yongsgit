@@ -1661,7 +1661,8 @@ return {
      strategyStats,
      recentSells: sellLogs.slice(-20).reverse(),
 
-     marketTemperature: latestMarketTemperature
+     marketTemperature: latestMarketTemperature,
+     candidateAnalysis: state.candidateAnalysis || null
     });
   } catch (err) {
     console.error("성과분석 API 오류:", err);
