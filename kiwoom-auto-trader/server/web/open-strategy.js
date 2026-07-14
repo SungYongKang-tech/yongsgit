@@ -70,6 +70,11 @@ const settings = {
   discoverLimit: 100,
   minDiscoverScore: 7,
 
+  // OPEN 2.0: 장전 우선종목을 먼저 감시하고 일반검색은 보완용으로 순환
+  openPriorityMaxCount: 15,
+  openFallbackScanLimit: 50,
+  openPriorityPriceDelayMs: 350,
+
   openEnabled: true,
   openBuyStartTime: "09:00",
   openBuyEndTime: "09:05",
@@ -161,6 +166,9 @@ function saveState(state) {
   writeJsonFileAtomic(STATE_FILE, state);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 
 function clamp(value, min, max) {
@@ -915,6 +923,7 @@ function initOpenDayIfNeeded(state) {
   state.openCompletedAt = settings.openEnabled ? null : nowText();
   state.openSkipReason = settings.openEnabled ? null : "OPEN 설정 OFF";
   state.openCandidateHistory = {};
+  state.openDiscoverOffset = 0;
   state.openBuyAt = null;
   state.openBuyCode = null;
   state.openBuyName = null;
@@ -1023,18 +1032,136 @@ function wasBoughtToday(state, code) {
   );
 }
 
-async function discoverCandidates() {
-  const data = await fetchJson(
-    `${API_BASE}/api/discover?scanLimit=${settings.discoverScanLimit}&limit=${settings.discoverLimit}`
-  );
-  const rawItems = data.items || [];
-  const filtered = rawItems
-    .filter(item => !isExcludedStock(item))
-    .filter(item => Number(item.discoverScore || 0) >= settings.minDiscoverScore)
-    .sort((a, b) => Number(b.discoverScore || 0) - Number(a.discoverScore || 0));
+async function fetchPriorityCandidates(marketData = {}) {
+  const priorityStocks = Array.isArray(marketData.priorityStocks)
+    ? marketData.priorityStocks.slice(0, settings.openPriorityMaxCount)
+    : [];
 
-  console.log(`[OPEN DISCOVER] 원본 ${rawItems.length}개 / 필터후 ${filtered.length}개`);
-  return filtered;
+  if (!priorityStocks.length) return [];
+
+  const rows = [];
+
+  for (const stock of priorityStocks) {
+    try {
+      const data = await fetchJson(
+        `${API_BASE}/api/price?code=${encodeURIComponent(stock.code)}`
+      );
+
+      const item = {
+        ...data,
+        code: String(data.code || stock.code || ""),
+        name: data.name || stock.name || stock.code,
+        priorityRank: Number(stock.rank || 0),
+        priorityScore: Number(stock.priorityScore || 0),
+        priorityReason: stock.reason || "장전 우선종목",
+        prioritySector: stock.sector || null
+      };
+
+      const scoreInfo = calculateOpenDiscoverScore(item);
+      rows.push({ ...item, ...scoreInfo, source: "PRIORITY" });
+    } catch (err) {
+      console.log(`[OPEN 우선종목 조회실패] ${stock.name || stock.code} / ${err.message}`);
+    }
+
+    await sleep(settings.openPriorityPriceDelayMs);
+  }
+
+  return rows;
+}
+
+function calculateOpenDiscoverScore(item = {}) {
+  const rate = Number(item.changeRate || item.fluctuationRate || item.riseRate || item.rate || 0);
+  const volume = Number(item.volume || item.raw?.trde_qty || 0);
+  const high = Number(item.high || item.highPrice || item.raw?.high_pric || 0);
+  const low = Number(item.low || item.lowPrice || item.raw?.low_pric || 0);
+  const open = Number(item.open || item.openPrice || item.raw?.open_pric || 0);
+  const currentPrice = Number(item.currentPrice || item.price || item.raw?.cur_prc || 0);
+
+  let score = 0;
+  const reasons = [];
+
+  if (rate >= 0.3 && rate <= 5) {
+    score += 4;
+    reasons.push(`빠른상승 ${rate.toFixed(2)}%`);
+  } else if (rate > 5 && rate <= 9) {
+    score += 2;
+    reasons.push(`강한상승 ${rate.toFixed(2)}%`);
+  } else if (rate > 9 && rate <= 15) {
+    score += 1;
+    reasons.push(`과열전 관찰 ${rate.toFixed(2)}%`);
+  } else if (rate < -2.5) {
+    score -= 2;
+    reasons.push(`하락폭 큼 ${rate.toFixed(2)}%`);
+  }
+
+  if (volume >= 1000000) score += 4;
+  else if (volume >= 500000) score += 3;
+  else if (volume >= 100000) score += 2;
+  else if (volume >= 50000) score += 1;
+
+  if (open > 0 && currentPrice > open) {
+    score += 2;
+    reasons.push("시가 대비 상승");
+  }
+
+  if (high > low && currentPrice > 0) {
+    const position = ((currentPrice - low) / (high - low)) * 100;
+    if (position >= 40 && position <= 85) score += 2;
+    else if (position > 85 && position <= 96) score += 1;
+    else if (position > 96) score -= 1;
+  }
+
+  return {
+    discoverScore: score,
+    discoverReasons: reasons
+  };
+}
+
+async function fetchFallbackCandidates(state) {
+  const offset = Number(state.openDiscoverOffset || 0);
+  const data = await fetchJson(
+    `${API_BASE}/api/discover?offset=${offset}` +
+    `&scanLimit=${settings.openFallbackScanLimit}` +
+    `&limit=${settings.discoverLimit}`
+  );
+
+  state.openDiscoverOffset = Number(data.nextOffset || 0);
+  state.lastOpenDiscoverAt = nowText();
+
+  return (data.items || []).map(item => ({ ...item, source: "FALLBACK" }));
+}
+
+async function discoverCandidates(state, marketData = {}) {
+  const priorityRows = await fetchPriorityCandidates(marketData);
+  const fallbackRows = await fetchFallbackCandidates(state);
+
+  const merged = [];
+  const seen = new Set();
+
+  for (const item of [...priorityRows, ...fallbackRows]) {
+    const code = String(item.code || "");
+    if (!code || seen.has(code) || isExcludedStock(item)) continue;
+    seen.add(code);
+
+    if (Number(item.discoverScore || 0) < settings.minDiscoverScore) continue;
+    merged.push(item);
+  }
+
+  merged.sort((a, b) => {
+    const sourceDiff = (a.source === "PRIORITY" ? 0 : 1) - (b.source === "PRIORITY" ? 0 : 1);
+    if (sourceDiff !== 0) return sourceDiff;
+    const priorityDiff = Number(b.priorityScore || 0) - Number(a.priorityScore || 0);
+    if (priorityDiff !== 0) return priorityDiff;
+    return Number(b.discoverScore || 0) - Number(a.discoverScore || 0);
+  });
+
+  console.log(
+    `[OPEN DISCOVER 2.0] 우선 ${priorityRows.length}개 / ` +
+    `일반 ${fallbackRows.length}개 / 최종 ${merged.length}개 / ` +
+    `offset ${state.openDiscoverOffset}`
+  );
+
+  return merged;
 }
 
 function isOpenCandidateGettingStronger(state, item, price) {
@@ -1148,7 +1275,10 @@ function judgeOpenBuy(state, item, price) {
   // 과거 유사사례나 가상추적 결과는 매수 점수에 반영하지 않는다.
   const marketData = loadOpenMarketData();
   const marketAdjust = calculateOpenMarketAdjustment(item, marketData);
-  const rankScore = baseRankScore + marketAdjust.totalBonus;
+  const priorityBonus = item.source === "PRIORITY"
+    ? Math.max(0, Math.min(12, Number(item.priorityScore || 0) * 0.4))
+    : 0;
+  const rankScore = baseRankScore + marketAdjust.totalBonus + priorityBonus;
 
   return {
     pass: true,
@@ -1158,10 +1288,12 @@ function judgeOpenBuy(state, item, price) {
     marketType: marketAdjust.marketType || null,
     marketBonus: Number(marketAdjust.marketBonus || 0),
     sectorBonus: Number(marketAdjust.sectorBonus || 0),
+    priorityBonus: Number(priorityBonus || 0),
+    priorityReason: item.priorityReason || null,
     matchedSectors: marketAdjust.matchedSectors || [],
     marketDataUpdatedAt: marketData.updatedAt || null,
     delayComparison: strengthen.delayComparison || null,
-    reason: `OPEN 통과 / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / 거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / 시가대비 ${openPosition.toFixed(2)}% / 기본점수 ${baseRankScore.toFixed(1)} / ${marketAdjust.reason} / 최종점수 ${rankScore.toFixed(1)}`
+    reason: `OPEN 통과 / ${item.source === "PRIORITY" ? "장전우선" : "일반검색"} / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / 거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / 시가대비 ${openPosition.toFixed(2)}% / 기본점수 ${baseRankScore.toFixed(1)} / 우선보너스 ${priorityBonus.toFixed(1)} / ${marketAdjust.reason} / 최종점수 ${rankScore.toFixed(1)}`
   };
 }
 
@@ -1372,6 +1504,7 @@ function makeOpenCandidateLogText(item, price, judged = {}) {
 
   return (
     `${name}(${item.code || "-"}) / ` +
+    `${item.source === "PRIORITY" ? `우선${item.priorityRank || ""} / ` : "일반 / "}` +
     `현재가 ${Number(price || 0).toLocaleString()} / ` +
     `발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / ` +
     `거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / ` +
@@ -1486,7 +1619,7 @@ async function runOpenBuyOnce() {
     console.log(`[OPEN 시장연결] #${scanId} 미사용 / ${marketData.reason}`);
   }
 
-  const candidates = await discoverCandidates();
+  const candidates = await discoverCandidates(state, marketData);
   const passed = [];
   const evaluated = [];
   const rejectCounts = {};
@@ -1567,6 +1700,7 @@ async function runOpenBuyOnce() {
     `기본 ${Number(best.judged.baseRankScore || 0).toFixed(1)} / ` +
     `시장 ${Number(best.judged.marketBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.marketBonus || 0).toFixed(1)} / ` +
     `섹터 ${Number(best.judged.sectorBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.sectorBonus || 0).toFixed(1)} / ` +
+    `우선 ${Number(best.judged.priorityBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.priorityBonus || 0).toFixed(1)} / ` +
     `통과 ${passed.length}개 / 소요 ${(elapsedMs / 1000).toFixed(1)}초`
   );
 

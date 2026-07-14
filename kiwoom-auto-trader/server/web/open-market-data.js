@@ -9,7 +9,11 @@ const SETTINGS = {
   refreshMinute: 40,
   retryMinutes: 10,
   maxAgeHours: 18,
-  requestTimeoutMs: 10000
+  requestTimeoutMs: 10000,
+
+  newsEnabled: true,
+  newsMaxItemsPerQuery: 8,
+  priorityStockCount: 15
 };
 
 const SYMBOLS = {
@@ -21,6 +25,55 @@ const SYMBOLS = {
   usdkrw: { symbol: "KRW=X", name: "USD/KRW" },
   us10y: { symbol: "^TNX", name: "US 10Y Yield" },
   wti: { symbol: "CL=F", name: "WTI Crude Oil" }
+};
+
+// 장전 해외시장·뉴스 흐름을 국내 OPEN 우선감시 종목으로 연결하는 기본 유니버스
+// 필요하면 이 목록만 수정해 관심 종목을 쉽게 교체할 수 있습니다.
+const PRIORITY_UNIVERSE = {
+  semiconductor: [
+    { code: "000660", name: "SK하이닉스", keywords: ["SK하이닉스", "HBM", "메모리"] },
+    { code: "005930", name: "삼성전자", keywords: ["삼성전자", "반도체", "파운드리"] },
+    { code: "042700", name: "한미반도체", keywords: ["한미반도체", "HBM", "후공정"] },
+    { code: "039030", name: "이오테크닉스", keywords: ["이오테크닉스", "반도체 장비"] },
+    { code: "095340", name: "ISC", keywords: ["ISC", "테스트소켓"] },
+    { code: "403870", name: "HPSP", keywords: ["HPSP", "반도체 장비"] }
+  ],
+  ai: [
+    { code: "035420", name: "NAVER", keywords: ["네이버", "NAVER", "AI"] },
+    { code: "035720", name: "카카오", keywords: ["카카오", "AI", "플랫폼"] },
+    { code: "277810", name: "레인보우로보틱스", keywords: ["레인보우로보틱스", "로봇"] },
+    { code: "108490", name: "로보티즈", keywords: ["로보티즈", "로봇"] },
+    { code: "030200", name: "KT", keywords: ["KT", "AI", "데이터센터"] }
+  ],
+  growth: [
+    { code: "006400", name: "삼성SDI", keywords: ["삼성SDI", "2차전지"] },
+    { code: "373220", name: "LG에너지솔루션", keywords: ["LG에너지솔루션", "배터리"] },
+    { code: "247540", name: "에코프로비엠", keywords: ["에코프로비엠", "양극재"] },
+    { code: "086520", name: "에코프로", keywords: ["에코프로", "2차전지"] },
+    { code: "207940", name: "삼성바이오로직스", keywords: ["삼성바이오로직스", "바이오"] }
+  ],
+  energy: [
+    { code: "034020", name: "두산에너빌리티", keywords: ["두산에너빌리티", "원전"] },
+    { code: "010950", name: "S-Oil", keywords: ["S-Oil", "정유", "유가"] },
+    { code: "096770", name: "SK이노베이션", keywords: ["SK이노베이션", "정유", "에너지"] },
+    { code: "009830", name: "한화솔루션", keywords: ["한화솔루션", "태양광"] },
+    { code: "267260", name: "HD현대일렉트릭", keywords: ["HD현대일렉트릭", "전력기기"] }
+  ],
+  defensive: [
+    { code: "105560", name: "KB금융", keywords: ["KB금융", "은행"] },
+    { code: "055550", name: "신한지주", keywords: ["신한지주", "은행"] },
+    { code: "017670", name: "SK텔레콤", keywords: ["SK텔레콤", "통신"] },
+    { code: "030200", name: "KT", keywords: ["KT", "통신"] },
+    { code: "032830", name: "삼성생명", keywords: ["삼성생명", "보험"] }
+  ]
+};
+
+const NEWS_QUERIES = {
+  semiconductor: "반도체 HBM 메모리 국내 증시",
+  ai: "인공지능 AI 로봇 데이터센터 국내 증시",
+  growth: "2차전지 바이오 성장주 국내 증시",
+  energy: "원전 정유 유가 전력기기 국내 증시",
+  defensive: "은행 보험 통신 방어주 국내 증시"
 };
 
 function nowText() {
@@ -228,6 +281,116 @@ function calculateMarketAssessment(indicators) {
   };
 }
 
+
+function decodeXmlText(value = "") {
+  return String(value)
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchGoogleNewsRss(query) {
+  const url = "https://news.google.com/rss/search";
+  const response = await axios.get(url, {
+    timeout: SETTINGS.requestTimeoutMs,
+    params: {
+      q: `${query} when:1d`,
+      hl: "ko",
+      gl: "KR",
+      ceid: "KR:ko"
+    },
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      Accept: "application/rss+xml,text/xml"
+    },
+    responseType: "text"
+  });
+
+  const xml = String(response.data || "");
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
+    .slice(0, SETTINGS.newsMaxItemsPerQuery)
+    .map(match => {
+      const block = match[1];
+      const title = decodeXmlText(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "");
+      const link = decodeXmlText(block.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "");
+      const pubDate = decodeXmlText(block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "");
+      return { title, link, pubDate };
+    })
+    .filter(item => item.title);
+
+  return items;
+}
+
+function calculateNewsAssessment(newsBySector = {}) {
+  const positiveWords = /상승|강세|호재|수주|증가|확대|돌파|최대|회복|개선|급등|랠리|투자|협력|계약/i;
+  const negativeWords = /하락|약세|악재|감소|축소|우려|급락|부진|중단|적자|규제|리콜|충격/i;
+  const sectorNewsScores = {};
+  const flatNews = [];
+
+  for (const [sector, rows] of Object.entries(newsBySector)) {
+    let score = 0;
+    for (const row of rows || []) {
+      const title = String(row.title || "");
+      if (positiveWords.test(title)) score += 1.5;
+      if (negativeWords.test(title)) score -= 1.5;
+      flatNews.push({ sector, ...row });
+    }
+    sectorNewsScores[sector] = round(Math.max(-8, Math.min(8, score)), 1);
+  }
+
+  return {
+    sectorNewsScores,
+    newsScore: round(
+      Object.values(sectorNewsScores).reduce((sum, value) => sum + Number(value || 0), 0),
+      1
+    ),
+    news: flatNews
+  };
+}
+
+function buildPriorityStocks(sectorBias = {}, sectorNewsScores = {}, news = []) {
+  const titleText = (news || []).map(item => item.title || "").join(" ").toLowerCase();
+  const rows = [];
+
+  for (const [sector, stocks] of Object.entries(PRIORITY_UNIVERSE)) {
+    const bias = Number(sectorBias[sector] || 0);
+    const newsBias = Number(sectorNewsScores[sector] || 0);
+
+    for (const stock of stocks) {
+      const mentionCount = (stock.keywords || []).reduce((count, keyword) => {
+        return count + (titleText.includes(String(keyword).toLowerCase()) ? 1 : 0);
+      }, 0);
+
+      const priorityScore = bias + newsBias * 2 + mentionCount * 5;
+      rows.push({
+        code: stock.code,
+        name: stock.name,
+        sector,
+        priorityScore: round(priorityScore, 1),
+        marketBias: round(bias, 1),
+        newsBias: round(newsBias, 1),
+        newsMentionCount: mentionCount,
+        reason:
+          `${sector} 시장편향 ${bias >= 0 ? "+" : ""}${round(bias, 1)} / ` +
+          `뉴스 ${newsBias >= 0 ? "+" : ""}${round(newsBias, 1)} / ` +
+          `직접언급 ${mentionCount}건`
+      });
+    }
+  }
+
+  return rows
+    .filter(row => row.priorityScore > 0)
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, SETTINGS.priorityStockCount)
+    .map((row, index) => ({ rank: index + 1, ...row }));
+}
+
 async function refreshOpenMarketData() {
   console.log("[OPEN 시장자료] 해외시장 수집 시작");
 
@@ -257,6 +420,35 @@ async function refreshOpenMarketData() {
   const assessment = calculateMarketAssessment(indicators);
   const successCount = Object.values(indicators).filter(item => item.ok).length;
 
+  const newsBySector = {};
+  if (SETTINGS.newsEnabled) {
+    await Promise.all(
+      Object.entries(NEWS_QUERIES).map(async ([sector, query]) => {
+        try {
+          newsBySector[sector] = await fetchGoogleNewsRss(query);
+        } catch (error) {
+          newsBySector[sector] = [];
+          errors.push(`news-${sector}: ${error.message}`);
+        }
+      })
+    );
+  }
+
+  const newsAssessment = calculateNewsAssessment(newsBySector);
+  const adjustedSectorBias = { ...assessment.sectorBias };
+  for (const [sector, score] of Object.entries(newsAssessment.sectorNewsScores)) {
+    adjustedSectorBias[sector] = round(
+      Math.max(-20, Math.min(20, Number(adjustedSectorBias[sector] || 0) + Number(score || 0))),
+      1
+    );
+  }
+
+  const priorityStocks = buildPriorityStocks(
+    adjustedSectorBias,
+    newsAssessment.sectorNewsScores,
+    newsAssessment.news
+  );
+
   const data = {
     date: todayKey(),
     updatedAt: nowText(),
@@ -270,9 +462,12 @@ async function refreshOpenMarketData() {
     successCount,
     totalCount: Object.keys(SYMBOLS).length,
     ...assessment,
+    sectorBias: adjustedSectorBias,
     indicators,
-    news: [],
-    newsScore: 0,
+    news: newsAssessment.news,
+    newsScore: newsAssessment.newsScore,
+    sectorNewsScores: newsAssessment.sectorNewsScores,
+    priorityStocks,
     errors
   };
 
@@ -280,7 +475,8 @@ async function refreshOpenMarketData() {
 
   console.log(
     `[OPEN 시장자료] 완료 / ${data.status} / 성공 ${successCount}/${data.totalCount} / ` +
-    `시장점수 ${data.marketScore} / 유형 ${data.marketType}`
+    `시장점수 ${data.marketScore} / 유형 ${data.marketType} / ` +
+    `우선종목 ${data.priorityStocks.length}개 / 뉴스 ${data.news.length}건`
   );
 
   if (errors.length) {

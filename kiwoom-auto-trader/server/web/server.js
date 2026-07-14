@@ -1164,6 +1164,12 @@ const {
   checkOpenSellOnce
 } = require("./open-strategy");
 
+const {
+  startOpenMarketData,
+  refreshOpenMarketData,
+  loadOpenMarketData
+} = require("./open-market");
+
 app.get("/api/paper-state", (req, res) => {
   res.json(loadState());
 });
@@ -1694,6 +1700,46 @@ return {
     res.status(500).json({
       ok: false,
       message: "성과분석 데이터를 불러오지 못했습니다."
+    });
+  }
+});
+
+
+app.get("/api/open-market-status", (req, res) => {
+  try {
+    const data = loadOpenMarketData();
+
+    res.json({
+      ok: true,
+      ...data
+    });
+  } catch (err) {
+    console.error("OPEN 장전시장자료 조회 오류:", err);
+
+    res.status(500).json({
+      ok: false,
+      message: "OPEN 장전시장자료를 불러오지 못했습니다.",
+      error: err.message
+    });
+  }
+});
+
+app.post("/api/open-market-refresh", async (req, res) => {
+  try {
+    const data = await refreshOpenMarketData();
+
+    res.json({
+      ok: true,
+      message: "OPEN 장전시장자료를 새로 생성했습니다.",
+      data
+    });
+  } catch (err) {
+    console.error("OPEN 장전시장자료 갱신 오류:", err);
+
+    res.status(500).json({
+      ok: false,
+      message: "OPEN 장전시장자료 갱신에 실패했습니다.",
+      error: err.message
     });
   }
 });
@@ -2783,7 +2829,8 @@ app.get("/api/refresh-holding-prices", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`서버 실행중: ${PORT}`);
 
-  // OPEN은 09:00~09:30 독립 실행하고, 완료 후 CORE/VOLUME이 진행됩니다.
+  // 08:40 장전시장자료 → 09:00 OPEN → 이후 CORE/VOLUME 순서로 실행합니다.
+  startOpenMarketData();
   startOpenStrategy();
   startServerAutoTrader();
 });
