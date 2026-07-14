@@ -1662,7 +1662,32 @@ return {
      recentSells: sellLogs.slice(-20).reverse(),
 
      marketTemperature: latestMarketTemperature,
-     candidateAnalysis: state.candidateAnalysis || null
+     candidateAnalysis: {
+  date: state.buyDecisionStats?.date || null,
+
+  CORE: state.buyDecisionStats?.CORE || {
+    checked: 0,
+    passed: 0,
+    bought: 0,
+    rejected: {}
+  },
+
+  VOLUME: state.buyDecisionStats?.VOLUME || {
+    checked: 0,
+    passed: 0,
+    bought: 0,
+    rejected: {}
+  },
+
+  coreTopCandidates: state.coreCandidateWatchList || [],
+
+  volumeTopCandidates: state.volumeCandidateWatchList || [],
+
+  updatedAt:
+    state.lastCandidateWatchCheckAt ||
+    state.lastBuyCheckAt ||
+    null
+}
     });
   } catch (err) {
     console.error("성과분석 API 오류:", err);

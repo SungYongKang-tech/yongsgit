@@ -660,29 +660,222 @@ function setStatus(id, text, state = "") {
 }
 
 function renderCandidateAnalysis(source = {}) {
-  const data = source.candidateAnalysis || source.todayCandidateAnalysis || source.candidates || {};
-  const summary = data.summary || data;
-  const reasons = data.excludeReasons || data.reasonCounts || summary.excludeReasons || {};
-  const top = data.topCandidates || data.top10 || data.rows || [];
-  setValue("candidateTotal", `${Number(summary.totalCandidates || summary.total || 0)}개`);
-  setValue("candidateBought", `${Number(summary.buyCount || summary.boughtCount || 0)}건`);
-  setValue("candidateCorePass", `${Number(summary.corePassCount || 0)}개`);
-  setValue("candidateVolumePass", `${Number(summary.volumePassCount || 0)}개`);
+  const data = source.candidateAnalysis || {};
+
+  const core = data.CORE || {
+    checked: 0,
+    passed: 0,
+    bought: 0,
+    rejected: {}
+  };
+
+  const volume = data.VOLUME || {
+    checked: 0,
+    passed: 0,
+    bought: 0,
+    rejected: {}
+  };
+
+  const totalChecked =
+    Number(core.checked || 0) +
+    Number(volume.checked || 0);
+
+  const totalBought =
+    Number(core.bought || 0) +
+    Number(volume.bought || 0);
+
+  const corePassed = Number(core.passed || 0);
+  const volumePassed = Number(volume.passed || 0);
+
+  setValue("candidateTotal", `${totalChecked}건`);
+  setValue("candidateBought", `${totalBought}건`);
+  setValue("candidateCorePass", `${corePassed}건`);
+  setValue("candidateVolumePass", `${volumePassed}건`);
+
+  // 시장온도 카드의 후보 숫자도 현재 판단통계로 보완
+  setValue("marketCandidateCount", `${totalChecked}건`);
+  setValue("marketPassCount", `${corePassed + volumePassed}건`);
+
   const reasonBox = document.getElementById("excludeReasonBox");
-  const reasonEntries = Array.isArray(reasons) ? reasons.map(row => [row.reason || row.name || "기타", Number(row.count || 0)]) : Object.entries(reasons || {}).map(([name,count]) => [name, Number(count || 0)]);
-  if (!reasonEntries.length) { reasonBox.className="empty"; reasonBox.innerHTML="서버에서 후보 탈락 통계를 아직 보내지 않습니다."; }
-  else { reasonBox.className="stock-card"; reasonBox.innerHTML=reasonEntries.sort((a,b)=>b[1]-a[1]).map(([name,count])=>`<div class="reason-row"><span>${name}</span><b>${count}건</b></div>`).join(""); }
+
+  const reasonRows = [];
+
+  Object.entries(core.rejected || {}).forEach(([reason, count]) => {
+    reasonRows.push({
+      strategyGroup: "CORE",
+      reason,
+      count: Number(count || 0)
+    });
+  });
+
+  Object.entries(volume.rejected || {}).forEach(([reason, count]) => {
+    reasonRows.push({
+      strategyGroup: "VOLUME",
+      reason,
+      count: Number(count || 0)
+    });
+  });
+
+  if (!reasonRows.length) {
+    reasonBox.className = "empty";
+    reasonBox.innerHTML =
+      totalChecked > 0
+        ? "현재까지 집계된 탈락 사유가 없습니다."
+        : "오늘 후보 판단 데이터가 아직 없습니다.";
+  } else {
+    reasonBox.className = "stock-card";
+    reasonBox.innerHTML = reasonRows
+      .sort((a, b) => b.count - a.count)
+      .map(row => `
+        <div class="reason-row" style="display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #374151;">
+          <span>${strategyLabel(row.strategyGroup)} · ${row.reason}</span>
+          <b>${row.count}건</b>
+        </div>
+      `)
+      .join("");
+  }
+
+  const coreTop = Array.isArray(data.coreTopCandidates)
+    ? data.coreTopCandidates.map(item => ({
+        ...item,
+        strategyGroup: item.strategyGroup || "CORE"
+      }))
+    : [];
+
+  const volumeTop = Array.isArray(data.volumeTopCandidates)
+    ? data.volumeTopCandidates.map(item => ({
+        ...item,
+        strategyGroup: item.strategyGroup || "VOLUME"
+      }))
+    : [];
+
+  const top = [...coreTop, ...volumeTop]
+    .sort((a, b) =>
+      Number(b.watchScore || b.finalScore || b.discoverScore || 0) -
+      Number(a.watchScore || a.finalScore || a.discoverScore || 0)
+    )
+    .slice(0, 10);
+
   const topBox = document.getElementById("candidateTopBox");
-  if (!Array.isArray(top) || !top.length) { topBox.className="empty"; topBox.innerHTML="서버에서 후보 TOP10 데이터를 아직 보내지 않습니다."; return; }
-  topBox.className="mobile-card-list";
-  topBox.innerHTML=top.slice(0,10).map((item,index)=>{
-    const score=Number(item.finalScore ?? item.finalBuyScore ?? item.score ?? item.discoverScore ?? 0);
-    const rate=Number(item.changeRate ?? item.rate ?? 0);
-    const volume=Number(item.volumeRatio ?? item.tradeVolumeRatio ?? 0);
-    const position=Number(item.dayPositionRate ?? item.dayPosition ?? 0);
-    const passed=item.passed===true || item.buy===true || item.status==="BUY";
-    const reason=item.excludeReason || item.reason || item.result || (passed ? "매수 가능" : "-");
-    return `<div class="stock-card"><div class="stock-card-header"><div><div class="stock-name"><span class="candidate-rank">${index+1}위</span>${item.name || "-"}</div><div class="stock-sub">${item.code || ""} / ${strategyLabel(item.strategyGroup || item.strategy)}</div></div><div class="stock-rate ${rate >= 0 ? "plus" : "minus"}">${formatRate(rate)}</div></div><div class="info-grid"><div class="info-box"><div class="info-label">최종점수</div><div class="info-value">${score || "-"}</div></div><div class="info-box"><div class="info-label">거래량비율</div><div class="info-value">${volume ? volume.toFixed(1)+"%" : "-"}</div></div><div class="info-box"><div class="info-label">당일위치</div><div class="info-value">${position ? position.toFixed(1)+"%" : "-"}</div></div><div class="info-box"><div class="info-label">판정</div><div class="info-value ${passed ? "plus" : "minus"}">${passed ? "✅ " : "❌ "}${reason}</div></div></div></div>`;
+
+  if (!top.length) {
+    topBox.className = "empty";
+    topBox.innerHTML =
+      "현재 후보 강화목록에 저장된 종목이 없습니다.";
+    return;
+  }
+
+  topBox.className = "mobile-card-list";
+
+  topBox.innerHTML = top.map((item, index) => {
+    const snapshot = item.itemSnapshot || {};
+    const detail = item.watchScoreDetail || {};
+
+    const score = Number(
+      item.watchScore ??
+      item.finalScore ??
+      item.finalBuyScore ??
+      item.discoverScore ??
+      0
+    );
+
+    const discoverScore = Number(
+      item.discoverScore ??
+      snapshot.discoverScore ??
+      detail.discoverScore ??
+      0
+    );
+
+    const rate = Number(
+      item.changeRate ??
+      snapshot.changeRate ??
+      detail.changeRate ??
+      0
+    );
+
+    const volumeRatio = Number(
+      item.volumeRatio ??
+      snapshot.tradeVolumeRatio ??
+      detail.volumeRatio ??
+      0
+    );
+
+    const dayPosition = Number(
+      item.dayPosition ??
+      snapshot.dayPosition ??
+      detail.dayPosition ??
+      0
+    );
+
+    const currentPrice = Number(
+      item.currentPrice ??
+      snapshot.currentPrice ??
+      snapshot.price ??
+      0
+    );
+
+    const firstPrice = Number(item.firstPrice || 0);
+    const priceChangeRate = firstPrice > 0
+      ? ((currentPrice - firstPrice) / firstPrice) * 100
+      : 0;
+
+    return `
+      <div class="stock-card">
+        <div class="stock-card-header">
+          <div>
+            <div class="stock-name">
+              <span class="candidate-rank">${index + 1}위</span>
+              ${item.name || snapshot.name || "-"}
+            </div>
+            <div class="stock-sub">
+              ${item.code || snapshot.code || ""} /
+              ${strategyLabel(item.strategyGroup)} /
+              마지막 확인 ${formatShortTime(item.lastSeenAtText || data.updatedAt)}
+            </div>
+          </div>
+
+          <div class="stock-rate ${priceChangeRate >= 0 ? "plus" : "minus"}">
+            ${formatRate(priceChangeRate)}
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-box">
+            <div class="info-label">후보강화 점수</div>
+            <div class="info-value">${score ? score.toFixed(1) : "-"}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">발견점수</div>
+            <div class="info-value">${discoverScore ? discoverScore.toFixed(1) : "-"}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">거래량비율</div>
+            <div class="info-value">${volumeRatio ? volumeRatio.toFixed(1) + "%" : "-"}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">당일위치</div>
+            <div class="info-value">${dayPosition ? dayPosition.toFixed(1) + "%" : "-"}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">현재 상승률</div>
+            <div class="info-value ${rate >= 0 ? "plus" : "minus"}">${formatRate(rate)}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">현재가</div>
+            <div class="info-value">${currentPrice ? currentPrice.toLocaleString() + "원" : "-"}</div>
+          </div>
+        </div>
+
+        <div class="status-pill status-wait">
+          👀 후보 강화 관찰 중
+        </div>
+      </div>
+    `;
   }).join("");
 }
 
