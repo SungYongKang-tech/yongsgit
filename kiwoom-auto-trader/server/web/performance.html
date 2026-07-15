@@ -446,6 +446,13 @@
         <div id="operationalBlockBox" class="empty">운영상 차단 데이터가 아직 없습니다.</div>
       </div>
 
+      <div class="section">
+        <h2>⭐ 조건 통과했지만 매수 못한 TOP 5</h2>
+        <div id="operationalBlockedTopBox" class="empty">
+          운영상 차단 후보 데이터가 아직 없습니다.
+        </div>
+      </div>
+
       <div class="section"><h2>후보 TOP 10</h2><div id="candidateTopBox" class="empty">후보 분석 데이터가 아직 없습니다.</div></div>
     </div>
   </div>
@@ -668,6 +675,277 @@ function setStatus(id, text, state = "") {
   if (state) el.classList.add(state);
 }
 
+
+function renderOperationalBlockedTop(list = []) {
+  const box =
+    document.getElementById(
+      "operationalBlockedTopBox"
+    );
+
+  if (!box) return;
+
+  const rows = Array.isArray(list)
+    ? [...list]
+        .sort(
+          (a, b) =>
+            Number(
+              b.highestAfterBlockRate || 0
+            ) -
+            Number(
+              a.highestAfterBlockRate || 0
+            )
+        )
+        .slice(0, 5)
+    : [];
+
+  if (!rows.length) {
+    box.className = "empty";
+    box.innerHTML =
+      "현재까지 기본 매수조건을 통과한 운영상 차단 후보가 없습니다.";
+    return;
+  }
+
+  box.className = "mobile-card-list";
+
+  box.innerHTML = rows.map((item, index) => {
+    const firstPrice =
+      Number(item.firstBlockedPrice || 0);
+
+    const currentPrice =
+      Number(item.currentPrice || 0);
+
+    const highestPrice =
+      Number(
+        item.highestPrice ||
+        currentPrice ||
+        0
+      );
+
+    const currentRate =
+      Number(
+        item.currentAfterBlockRate ??
+        (
+          firstPrice > 0
+            ? (
+                (
+                  currentPrice -
+                  firstPrice
+                ) /
+                firstPrice
+              ) * 100
+            : 0
+        )
+      );
+
+    const highestRate =
+      Number(
+        item.highestAfterBlockRate ??
+        (
+          firstPrice > 0
+            ? (
+                (
+                  highestPrice -
+                  firstPrice
+                ) /
+                firstPrice
+              ) * 100
+            : 0
+        )
+      );
+
+    const discoverScore =
+      Number(item.discoverScore || 0);
+
+    const volumeRatio =
+      Number(item.volumeRatio || 0);
+
+    const dayPosition =
+      Number(item.dayPosition || 0);
+
+    const changeRate =
+      Number(item.changeRate || 0);
+
+    return `
+      <div class="stock-card">
+        <div class="stock-card-header">
+          <div>
+            <div class="stock-name">
+              ${index + 1}위
+              ${item.name || "-"}
+            </div>
+
+            <div class="stock-sub">
+              ${item.code || ""} /
+              ${strategyLabel(
+                item.strategyGroup
+              )}
+            </div>
+
+            <div class="stock-sub">
+              최초 차단
+              ${formatShortTime(
+                item.firstBlockedAtText ||
+                item.firstBlockedAt
+              )}
+              /
+              마지막 확인
+              ${formatShortTime(
+                item.lastCheckedAtText ||
+                item.lastCheckedAt
+              )}
+            </div>
+          </div>
+
+          <div class="stock-rate ${
+            currentRate >= 0
+              ? "plus"
+              : "minus"
+          }">
+            ${formatRate(currentRate)}
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-box">
+            <div class="info-label">
+              차단 사유
+            </div>
+            <div class="info-value">
+              ${item.blockCategory || "-"}
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              차단 당시 가격
+            </div>
+            <div class="info-value">
+              ${
+                firstPrice
+                  ? firstPrice.toLocaleString() +
+                    "원"
+                  : "-"
+              }
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              현재가
+            </div>
+            <div class="info-value">
+              ${
+                currentPrice
+                  ? currentPrice.toLocaleString() +
+                    "원"
+                  : "-"
+              }
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              차단 후 현재
+            </div>
+            <div class="info-value ${
+              currentRate >= 0
+                ? "plus"
+                : "minus"
+            }">
+              ${formatRate(currentRate)}
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              차단 후 최고
+            </div>
+            <div class="info-value ${
+              highestRate >= 0
+                ? "plus"
+                : "minus"
+            }">
+              ${formatRate(highestRate)}
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              최고가
+            </div>
+            <div class="info-value">
+              ${
+                highestPrice
+                  ? highestPrice.toLocaleString() +
+                    "원"
+                  : "-"
+              }
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              발견점수
+            </div>
+            <div class="info-value">
+              ${
+                discoverScore
+                  ? discoverScore.toFixed(1)
+                  : "-"
+              }
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              거래량비율
+            </div>
+            <div class="info-value">
+              ${
+                volumeRatio
+                  ? volumeRatio.toFixed(1) +
+                    "%"
+                  : "-"
+              }
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              당일위치
+            </div>
+            <div class="info-value">
+              ${
+                dayPosition
+                  ? dayPosition.toFixed(1) +
+                    "%"
+                  : "-"
+              }
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">
+              당시 상승률
+            </div>
+            <div class="info-value ${
+              changeRate >= 0
+                ? "plus"
+                : "minus"
+            }">
+              ${formatRate(changeRate)}
+            </div>
+          </div>
+        </div>
+
+        <div class="status-pill status-wait">
+          🚫 ${item.blockReason || item.blockCategory || "운영상 차단"}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function renderCandidateAnalysis(source = {}) {
   const data = source.candidateAnalysis || {};
 
@@ -797,6 +1075,10 @@ function renderCandidateAnalysis(source = {}) {
     operationalRows,
     "현재까지 운영상 매수 차단이 없습니다.",
     "오늘 운영상 차단 데이터가 아직 없습니다."
+  );
+
+  renderOperationalBlockedTop(
+    data.operationalBlockedCandidates || []
   );
 
   const coreTop = Array.isArray(data.coreTopCandidates)
