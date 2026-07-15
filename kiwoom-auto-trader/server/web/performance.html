@@ -436,7 +436,16 @@
         <div class="card"><div class="label">CORE 통과</div><div class="value" id="candidateCorePass">-</div></div>
         <div class="card"><div class="label">VOLUME 통과</div><div class="value" id="candidateVolumePass">-</div></div>
       </div>
-      <div class="section"><h2>매수하지 못한 이유</h2><div id="excludeReasonBox" class="empty">후보 분석 데이터가 아직 없습니다.</div></div>
+      <div class="section">
+        <h2>매수조건 미충족</h2>
+        <div id="conditionRejectBox" class="empty">후보 분석 데이터가 아직 없습니다.</div>
+      </div>
+
+      <div class="section">
+        <h2>운영상 매수 차단</h2>
+        <div id="operationalBlockBox" class="empty">운영상 차단 데이터가 아직 없습니다.</div>
+      </div>
+
       <div class="section"><h2>후보 TOP 10</h2><div id="candidateTopBox" class="empty">후보 분석 데이터가 아직 없습니다.</div></div>
     </div>
   </div>
@@ -662,19 +671,17 @@ function setStatus(id, text, state = "") {
 function renderCandidateAnalysis(source = {}) {
   const data = source.candidateAnalysis || {};
 
-  const core = data.CORE || {
+  const makeDefaultStats = () => ({
     checked: 0,
     passed: 0,
     bought: 0,
+    conditionRejected: {},
+    operationalBlocked: {},
     rejected: {}
-  };
+  });
 
-  const volume = data.VOLUME || {
-    checked: 0,
-    passed: 0,
-    bought: 0,
-    rejected: {}
-  };
+  const core = data.CORE || makeDefaultStats();
+  const volume = data.VOLUME || makeDefaultStats();
 
   const totalChecked =
     Number(core.checked || 0) +
@@ -692,48 +699,105 @@ function renderCandidateAnalysis(source = {}) {
   setValue("candidateCorePass", `${corePassed}건`);
   setValue("candidateVolumePass", `${volumePassed}건`);
 
-  // 시장온도 카드의 후보 숫자도 현재 판단통계로 보완
   setValue("marketCandidateCount", `${totalChecked}건`);
   setValue("marketPassCount", `${corePassed + volumePassed}건`);
 
-  const reasonBox = document.getElementById("excludeReasonBox");
+  const conditionBox =
+    document.getElementById("conditionRejectBox");
 
-  const reasonRows = [];
+  const operationalBox =
+    document.getElementById("operationalBlockBox");
 
-  Object.entries(core.rejected || {}).forEach(([reason, count]) => {
-    reasonRows.push({
-      strategyGroup: "CORE",
-      reason,
-      count: Number(count || 0)
+  const conditionRows = [];
+  const operationalRows = [];
+
+  function pushRows(target, strategyGroup, rows = {}) {
+    Object.entries(rows || {}).forEach(([reason, count]) => {
+      target.push({
+        strategyGroup,
+        reason,
+        count: Number(count || 0)
+      });
     });
-  });
+  }
 
-  Object.entries(volume.rejected || {}).forEach(([reason, count]) => {
-    reasonRows.push({
-      strategyGroup: "VOLUME",
-      reason,
-      count: Number(count || 0)
-    });
-  });
+  /*
+   * 신규 구조 우선 사용
+   * 기존 rejected만 존재하면 조건 미충족으로 호환 표시
+   */
+  pushRows(
+    conditionRows,
+    "CORE",
+    core.conditionRejected ||
+      core.rejected ||
+      {}
+  );
 
-  if (!reasonRows.length) {
-    reasonBox.className = "empty";
-    reasonBox.innerHTML =
-      totalChecked > 0
-        ? "현재까지 집계된 탈락 사유가 없습니다."
-        : "오늘 후보 판단 데이터가 아직 없습니다.";
-  } else {
-    reasonBox.className = "stock-card";
-    reasonBox.innerHTML = reasonRows
+  pushRows(
+    conditionRows,
+    "VOLUME",
+    volume.conditionRejected ||
+      volume.rejected ||
+      {}
+  );
+
+  pushRows(
+    operationalRows,
+    "CORE",
+    core.operationalBlocked ||
+      {}
+  );
+
+  pushRows(
+    operationalRows,
+    "VOLUME",
+    volume.operationalBlocked ||
+      {}
+  );
+
+  function renderReasonRows(
+    box,
+    rows,
+    emptyText,
+    noDataText
+  ) {
+    if (!box) return;
+
+    if (!rows.length) {
+      box.className = "empty";
+      box.innerHTML =
+        totalChecked > 0
+          ? emptyText
+          : noDataText;
+      return;
+    }
+
+    box.className = "stock-card";
+    box.innerHTML = rows
       .sort((a, b) => b.count - a.count)
       .map(row => `
-        <div class="reason-row" style="display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #374151;">
+        <div class="reason-row"
+             style="display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #374151;">
           <span>${strategyLabel(row.strategyGroup)} · ${row.reason}</span>
           <b>${row.count}건</b>
         </div>
       `)
       .join("");
   }
+
+  renderReasonRows(
+    conditionBox,
+    conditionRows,
+    "현재까지 집계된 조건 탈락 사유가 없습니다.",
+    "오늘 후보 판단 데이터가 아직 없습니다."
+  );
+
+  renderReasonRows(
+    operationalBox,
+    operationalRows,
+    "현재까지 운영상 매수 차단이 없습니다.",
+    "오늘 운영상 차단 데이터가 아직 없습니다."
+  );
 
   const coreTop = Array.isArray(data.coreTopCandidates)
     ? data.coreTopCandidates.map(item => ({

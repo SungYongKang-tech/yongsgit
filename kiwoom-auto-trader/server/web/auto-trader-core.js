@@ -86,9 +86,11 @@ midBuyLoopMs: 45 * 1000,
   coreEnabled: true,
  coreStartTime: "09:10",
 coreEndTime: "11:00",
-  coreMaxHoldingCount: 2,
-  coreBuyAmount: 10000000,
-  coreMaxChangeRate: 3.5,
+// 종목당 투자비율 (총 운용자산 기준)
+buyAssetRatio: 0.125,
+
+  coreMaxHoldingCount: 4,
+  coreMaxChangeRate: 4.5,
   coreMinTradeVolumeRatio: 80,
   coreMinDayPositionRate: 50,
   coreMaxDayPositionRate: 80,
@@ -96,10 +98,9 @@ coreEndTime: "11:00",
   volumeEnabled: true,
   volumeStartTime: "09:10",
 volumeEndTime: "13:30",
-  volumeMaxHoldingCount: 3,
-  volumeBuyAmount: 8000000,
+  volumeMaxHoldingCount: 4,
   volumeMinChangeRate: 0.8,
-  volumeMaxChangeRate: 3.5,
+  volumeMaxChangeRate: 6.0,
   volumeMinTradeVolumeRatio: 120,
   volumeMinDayPositionRate: 45,
   volumeMaxDayPositionRate: 80,
@@ -128,7 +129,7 @@ volumeTrailingStopRate: 0.8,
 
   minHoldMinutes: 3,
 
-candidateConfirmWaitMs: 60 * 1000,
+candidateConfirmWaitMs: 30 * 1000,
 candidateHistoryMaxAgeMs: 30 * 60 * 1000,
 
 // 후보 강화 목록
@@ -204,43 +205,94 @@ function loadState() {
     !state.buyDecisionStats ||
     state.buyDecisionStats.date !== today
   ) {
-    state.buyDecisionStats = {
-      date: today,
+    
+state.buyDecisionStats = {
+  date: today,
 
-      CORE: {
-        checked: 0,
-        passed: 0,
-        bought: 0,
-        rejected: {}
-      },
+  CORE: {
+    checked: 0,
+    passed: 0,
+    bought: 0,
 
-      VOLUME: {
-        checked: 0,
-        passed: 0,
-        bought: 0,
-        rejected: {}
-      }
-    };
+    conditionRejected: {},
+    operationalBlocked: {},
+    sources: {}
+  },
+
+  VOLUME: {
+    checked: 0,
+    passed: 0,
+    bought: 0,
+
+    conditionRejected: {},
+    operationalBlocked: {},
+    sources: {}
+  }
+};
+
   }
 
   // 기존 상태파일 보정
   for (const strategyGroup of ["CORE", "VOLUME"]) {
-    if (!state.buyDecisionStats[strategyGroup]) {
-      state.buyDecisionStats[strategyGroup] = {
-        checked: 0,
-        passed: 0,
-        bought: 0,
-        rejected: {}
-      };
-    }
+  if (!state.buyDecisionStats[strategyGroup]) {
+    state.buyDecisionStats[strategyGroup] = {
+      checked: 0,
+      passed: 0,
+      bought: 0,
 
-    if (
-      !state.buyDecisionStats[strategyGroup].rejected ||
-      typeof state.buyDecisionStats[strategyGroup].rejected !== "object"
+      conditionRejected: {},
+      operationalBlocked: {},
+      sources: {}
+    };
+  }
+
+  const stats =
+    state.buyDecisionStats[strategyGroup];
+
+  if (
+    !stats.conditionRejected ||
+    typeof stats.conditionRejected !== "object"
+  ) {
+    stats.conditionRejected = {};
+  }
+
+  if (
+    !stats.operationalBlocked ||
+    typeof stats.operationalBlocked !== "object"
+  ) {
+    stats.operationalBlocked = {};
+  }
+
+  if (
+    !stats.sources ||
+    typeof stats.sources !== "object"
+  ) {
+    stats.sources = {};
+  }
+
+  /*
+   * 기존 rejected 데이터 호환
+   * 예전 상태파일에 rejected가 있으면
+   * 일단 conditionRejected로 옮겨 화면이 비지 않게 함
+   */
+  if (
+    stats.rejected &&
+    typeof stats.rejected === "object"
+  ) {
+    for (
+      const [reason, count]
+      of Object.entries(stats.rejected)
     ) {
-      state.buyDecisionStats[strategyGroup].rejected = {};
+      if (
+        typeof stats.conditionRejected[reason] ===
+        "undefined"
+      ) {
+        stats.conditionRejected[reason] =
+          Number(count || 0);
+      }
     }
   }
+}
 
   if (typeof state.serverAutoEnabled === "undefined") {
     state.serverAutoEnabled = settings.serverAutoEnabledDefault;
@@ -790,8 +842,47 @@ function calculateCandidateWatchScore(
   const dayPositionPart =
     dayPositionFit * 15;
 
-  const changeRatePart =
-    Math.max(0, changeRate) * 2;
+  const minChangeRate =
+  strategyGroup === "CORE"
+    ? 0
+    : settings.volumeMinChangeRate;
+
+const maxChangeRate =
+  strategyGroup === "CORE"
+    ? settings.coreMaxChangeRate
+    : settings.volumeMaxChangeRate;
+
+let changeRatePart = 0;
+
+if (
+  changeRate >= minChangeRate &&
+  changeRate <= maxChangeRate
+) {
+  const range =
+    Math.max(
+      0.0001,
+      maxChangeRate - minChangeRate
+    );
+
+  const position =
+    (changeRate - minChangeRate) /
+    range;
+
+  changeRatePart =
+    Math.min(
+      15,
+      position * 15
+    );
+} else if (changeRate > maxChangeRate) {
+  const excess =
+    changeRate - maxChangeRate;
+
+  changeRatePart =
+    Math.max(
+      0,
+      15 - excess * 3
+    );
+}
 
   const total =
     discoverPart +
@@ -815,6 +906,110 @@ function calculateCandidateWatchScore(
     minDayPosition,
     maxDayPosition
   };
+}
+
+function isBasicCoreCandidate(
+  item,
+  price
+) {
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const volumeRatio =
+    getTradeVolumeRatio(item);
+
+  const dayPosition =
+    getDayPositionRate(item, price);
+
+  // CORE 상승률 상한
+  if (
+    changeRate >
+    settings.coreMaxChangeRate
+  ) {
+    return false;
+  }
+
+  // CORE 거래량 기준
+  if (
+    volumeRatio <
+    settings.coreMinTradeVolumeRatio
+  ) {
+    return false;
+  }
+
+  // CORE 당일위치 범위
+  if (
+    dayPosition <
+      settings.coreMinDayPositionRate ||
+    dayPosition >
+      settings.coreMaxDayPositionRate
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isBasicVolumeCandidate(
+  item,
+  price
+) {
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  const volumeRatio =
+    getTradeVolumeRatio(item);
+
+  const dayPosition =
+    getDayPositionRate(item, price);
+
+  const openPosition =
+    getOpenPositionRate(item, price);
+
+  // VOLUME 상승률 범위
+  if (
+    changeRate <
+      settings.volumeMinChangeRate ||
+    changeRate >
+      settings.volumeMaxChangeRate
+  ) {
+    return false;
+  }
+
+  // VOLUME 거래량 기준
+  if (
+    volumeRatio <
+    settings.volumeMinTradeVolumeRatio
+  ) {
+    return false;
+  }
+
+  // VOLUME 당일위치 범위
+  if (
+    dayPosition <
+      settings.volumeMinDayPositionRate ||
+    dayPosition >
+      settings.volumeMaxDayPositionRate
+  ) {
+    return false;
+  }
+
+  // VOLUME은 시가 이상이어야 함
+  if (openPosition < 0) {
+    return false;
+  }
+
+  return true;
 }
 
 function updateCandidateWatchList(
@@ -1472,13 +1667,27 @@ function classifyBuyRejectReason(reason = "") {
   return "기타";
 }
 
+function isOperationalBuyBlock(category = "") {
+  return [
+    "보유한도",
+    "이미 보유중",
+    "오늘 이미 매수",
+    "매수 쿨다운",
+    "매수시간 아님"
+  ].includes(String(category || ""));
+}
+
 function recordBuyDecision(
   state,
   strategyGroup,
   judged,
   source = "DISCOVER"
 ) {
-  if (!["CORE", "VOLUME"].includes(strategyGroup)) {
+  if (
+    !["CORE", "VOLUME"].includes(
+      strategyGroup
+    )
+  ) {
     return;
   }
 
@@ -1490,21 +1699,40 @@ function recordBuyDecision(
         checked: 0,
         passed: 0,
         bought: 0,
-        rejected: {}
+
+        conditionRejected: {},
+        operationalBlocked: {},
+        sources: {}
       },
 
       VOLUME: {
         checked: 0,
         passed: 0,
         bought: 0,
-        rejected: {}
+
+        conditionRejected: {},
+        operationalBlocked: {},
+        sources: {}
       }
     };
   }
 
-  const stats = state.buyDecisionStats[strategyGroup];
+  if (
+    !state.buyDecisionStats[strategyGroup]
+  ) {
+    state.buyDecisionStats[strategyGroup] = {
+      checked: 0,
+      passed: 0,
+      bought: 0,
 
-  if (!stats) return;
+      conditionRejected: {},
+      operationalBlocked: {},
+      sources: {}
+    };
+  }
+
+  const stats =
+    state.buyDecisionStats[strategyGroup];
 
   stats.checked =
     Number(stats.checked || 0) + 1;
@@ -1521,25 +1749,52 @@ function recordBuyDecision(
       judged?.reason || "기타"
     );
 
-  if (!stats.rejected) {
-    stats.rejected = {};
+  if (
+    !stats.conditionRejected ||
+    typeof stats.conditionRejected !==
+      "object"
+  ) {
+    stats.conditionRejected = {};
   }
 
-  stats.rejected[category] =
-    Number(stats.rejected[category] || 0) + 1;
+  if (
+    !stats.operationalBlocked ||
+    typeof stats.operationalBlocked !==
+      "object"
+  ) {
+    stats.operationalBlocked = {};
+  }
 
-  // 전체검색과 후보재평가 출처도 함께 집계
+  if (isOperationalBuyBlock(category)) {
+    stats.operationalBlocked[category] =
+      Number(
+        stats.operationalBlocked[category] ||
+        0
+      ) + 1;
+  } else {
+    stats.conditionRejected[category] =
+      Number(
+        stats.conditionRejected[category] ||
+        0
+      ) + 1;
+  }
+
+  // 전체검색과 후보재평가 출처 집계
   const sourceKey =
     source === "WATCH"
       ? "후보재평가"
       : "전체검색";
 
-  if (!stats.sources) {
+  if (
+    !stats.sources ||
+    typeof stats.sources !== "object"
+  ) {
     stats.sources = {};
   }
 
   stats.sources[sourceKey] =
-    Number(stats.sources[sourceKey] || 0) + 1;
+    Number(stats.sources[sourceKey] || 0) +
+    1;
 }
 
 function recordBuySuccess(
@@ -1575,30 +1830,65 @@ function logBuyDecisionSummary(state) {
 
     if (!stats) continue;
 
-    const rejectedEntries =
-      Object.entries(stats.rejected || {})
-        .sort(
-          (a, b) =>
-            Number(b[1] || 0) -
-            Number(a[1] || 0)
-        );
+    const conditionEntries =
+      Object.entries(
+        stats.conditionRejected || {}
+      ).sort(
+        (a, b) =>
+          Number(b[1] || 0) -
+          Number(a[1] || 0)
+      );
 
-    const rejectText =
-      rejectedEntries.length
-        ? rejectedEntries
+    const operationalEntries =
+      Object.entries(
+        stats.operationalBlocked || {}
+      ).sort(
+        (a, b) =>
+          Number(b[1] || 0) -
+          Number(a[1] || 0)
+      );
+
+    const conditionText =
+      conditionEntries.length
+        ? conditionEntries
             .map(
               ([reason, count]) =>
                 `${reason} ${count}건`
             )
             .join(" / ")
-        : "탈락 없음";
+        : "조건 탈락 없음";
+
+    const operationalText =
+      operationalEntries.length
+        ? operationalEntries
+            .map(
+              ([reason, count]) =>
+                `${reason} ${count}건`
+            )
+            .join(" / ")
+        : "운영 차단 없음";
 
     console.log(
       `[${strategyGroup} 판단통계] ` +
-      `검사 ${Number(stats.checked || 0)}건 / ` +
-      `통과 ${Number(stats.passed || 0)}건 / ` +
-      `매수 ${Number(stats.bought || 0)}건 / ` +
-      `${rejectText}`
+      `검사 ${Number(
+        stats.checked || 0
+      )}건 / ` +
+      `통과 ${Number(
+        stats.passed || 0
+      )}건 / ` +
+      `매수 ${Number(
+        stats.bought || 0
+      )}건`
+    );
+
+    console.log(
+      `[${strategyGroup} 조건탈락] ` +
+      conditionText
+    );
+
+    console.log(
+      `[${strategyGroup} 운영차단] ` +
+      operationalText
     );
   }
 }
@@ -1758,14 +2048,20 @@ state.buyDecisionStats = {
     checked: 0,
     passed: 0,
     bought: 0,
-    rejected: {}
+
+    conditionRejected: {},
+    operationalBlocked: {},
+    sources: {}
   },
 
   VOLUME: {
     checked: 0,
     passed: 0,
     bought: 0,
-    rejected: {}
+
+    conditionRejected: {},
+    operationalBlocked: {},
+    sources: {}
   }
 };
 
@@ -1997,7 +2293,7 @@ if (!prev) {
 
   return {
     pass: false,
-    reason: "첫 발견 / 1분 확인 대기"
+    reason: "첫 발견 / 30초 확인 대기"
   };
 }
 
@@ -2018,24 +2314,49 @@ state.coreCandidateHistory[code] = current;
 
 
 
-  const scoreDiff = current.score - Number(prev.score || 0);
-  const volumeDiff = current.volumeRatio - Number(prev.volumeRatio || 0);
-  const priceDiffRate =
-    prev.price > 0 ? ((current.price - prev.price) / prev.price) * 100 : 0;
+  const scoreDiff =
+  current.score -
+  Number(prev.score || 0);
 
-  if (scoreDiff < 0) {
-    return {
-      pass: false,
-      reason: `점수 하락 ${prev.score} → ${current.score}`
-    };
-  }
+const prevVolumeRatio =
+  Number(prev.volumeRatio || 0);
 
-  if (volumeDiff < -30) {
-    return {
-      pass: false,
-      reason: `거래량 약화 ${prev.volumeRatio.toFixed(1)}% → ${current.volumeRatio.toFixed(1)}%`
-    };
-  }
+const volumeDropRate =
+  prevVolumeRatio > 0
+    ? (
+        (current.volumeRatio -
+          prevVolumeRatio) /
+        prevVolumeRatio
+      ) * 100
+    : 0;
+
+const priceDiffRate =
+  Number(prev.price || 0) > 0
+    ? (
+        (current.price -
+          Number(prev.price)) /
+        Number(prev.price)
+      ) * 100
+    : 0;
+
+if (scoreDiff < -1) {
+  return {
+    pass: false,
+    reason:
+      `점수 약화 ${prev.score} → ${current.score}`
+  };
+}
+
+if (volumeDropRate < -20) {
+  return {
+    pass: false,
+    reason:
+      `거래량 약화 ` +
+      `${prevVolumeRatio.toFixed(1)}% → ` +
+      `${current.volumeRatio.toFixed(1)}% / ` +
+      `${Math.abs(volumeDropRate).toFixed(1)}% 감소`
+  };
+}
 
   if (priceDiffRate < -0.7) {
     return {
@@ -2090,14 +2411,14 @@ function isVolumeCandidateGettingStronger(
 
     return {
       pass: false,
-      reason: "첫 발견 / 1분 확인 대기"
+      reason: "첫 발견 / 30초 확인 대기"
     };
   }
 
   const elapsedMs =
     now - Number(prev.time || 0);
 
-  // 1분이 지나기 전에는 기준값을 덮어쓰지 않음
+  //30초가 지나기 전에는 기준값을 덮어쓰지 않음
   if (
     elapsedMs <
     settings.candidateConfirmWaitMs
@@ -2111,24 +2432,34 @@ function isVolumeCandidateGettingStronger(
     };
   }
 
-  // 1분이 지난 경우에만 다음 비교 기준으로 갱신
+  //30초가 지난 경우에만 다음 비교 기준으로 갱신
   state.volumeCandidateHistory[code] =
     current;
 
-  const scoreDiff =
-    current.score - Number(prev.score || 0);
+const scoreDiff =
+  current.score -
+  Number(prev.score || 0);
 
-  const volumeDiff =
-    current.volumeRatio -
-    Number(prev.volumeRatio || 0);
+const prevVolumeRatio =
+  Number(prev.volumeRatio || 0);
 
-  const priceDiffRate =
-    Number(prev.price || 0) > 0
-      ? (
-          (current.price - Number(prev.price)) /
-          Number(prev.price)
-        ) * 100
-      : 0;
+const volumeDropRate =
+  prevVolumeRatio > 0
+    ? (
+        (current.volumeRatio -
+          prevVolumeRatio) /
+        prevVolumeRatio
+      ) * 100
+    : 0;
+
+const priceDiffRate =
+  Number(prev.price || 0) > 0
+    ? (
+        (current.price -
+          Number(prev.price)) /
+        Number(prev.price)
+      ) * 100
+    : 0;
 
   if (scoreDiff < -1) {
     return {
@@ -2138,15 +2469,16 @@ function isVolumeCandidateGettingStronger(
     };
   }
 
-  if (volumeDiff < -50) {
-    return {
-      pass: false,
-      reason:
-        `거래량 급감 ` +
-        `${Number(prev.volumeRatio || 0).toFixed(1)}% → ` +
-        `${current.volumeRatio.toFixed(1)}%`
-    };
-  }
+if (volumeDropRate < -25) {
+  return {
+    pass: false,
+    reason:
+      `거래량 급감 ` +
+      `${prevVolumeRatio.toFixed(1)}% → ` +
+      `${current.volumeRatio.toFixed(1)}% / ` +
+      `${Math.abs(volumeDropRate).toFixed(1)}% 감소`
+  };
+}
 
   if (priceDiffRate < -0.9) {
     return {
@@ -2355,15 +2687,26 @@ if (rankCheck !== true && !rankCheck.pass) {
 }
 
 
-async function paperBuy(state, item, price, strategyGroup, reason) {
+async function paperBuy(
+  state,
+  item,
+  price,
+  strategyGroup,
+  reason
+) {
   if (!state.pendingBuyCodes) {
     state.pendingBuyCodes = [];
   }
 
-  if (state.pendingBuyCodes.includes(item.code)) {
+  if (
+    state.pendingBuyCodes.includes(item.code)
+  ) {
     console.log(
-      `[${strategyGroup} 매수제외] ${item.name || item.code} / 매수 요청 진행중`
+      `[${strategyGroup} 매수제외] ` +
+      `${item.name || item.code} / ` +
+      `매수 요청 진행중`
     );
+
     return false;
   }
 
@@ -2371,20 +2714,43 @@ async function paperBuy(state, item, price, strategyGroup, reason) {
   saveState(state);
 
   try {
-    const buyAmount =
-      strategyGroup === "CORE"
-        ? settings.coreBuyAmount
-        : settings.volumeBuyAmount;
+    const availableCash =
+      Number(state.totalCash || 0);
 
-    const availableCash = Number(state.totalCash || 0);
-    const finalBuyAmount = Math.min(buyAmount, availableCash);
-    const qty = Math.floor(finalBuyAmount / price);
+    // 아침에 저장된 시작자산
+    const dailyStartAsset =
+      Number(
+        state.dailyStartAsset ||
+        settings.totalCash ||
+        0
+      );
+
+    // 시작자산의 1/8
+    const calculatedBuyAmount =
+      Math.floor(
+        dailyStartAsset *
+        settings.buyAssetRatio
+      );
+
+    // 실제 매수금액은 남은 현금 한도 내
+    const finalBuyAmount =
+      Math.min(
+        calculatedBuyAmount,
+        availableCash
+      );
+
+    const qty =
+      Math.floor(finalBuyAmount / price);
 
     if (qty <= 0) {
       console.log(
-        `[${strategyGroup} 매수제외] 수량 부족`,
-        item.name || item.code
+        `[${strategyGroup} 매수제외] 수량 부족 / ` +
+        `${item.name || item.code} / ` +
+        `시작자산 ${dailyStartAsset.toLocaleString()}원 / ` +
+        `기준매수금 ${calculatedBuyAmount.toLocaleString()}원 / ` +
+        `남은현금 ${availableCash.toLocaleString()}원`
       );
+
       return false;
     }
 
@@ -3429,28 +3795,46 @@ console.log(
     }
 
     // 보유중이거나 오늘 이미 매수한 종목은 후보목록에 넣지 않음
-    if (
-      !isAlreadyHolding(state, item.code) &&
-      !wasBoughtToday(state, item.code)
-    ) {
-      if (coreBuyTime) {
-        updateCandidateWatchList(
-          state,
-          item,
-          price,
-          "CORE"
-        );
-      }
+    
 
-      if (volumeBuyTime) {
-        updateCandidateWatchList(
-          state,
-          item,
-          price,
-          "VOLUME"
-        );
-      }
-    }
+  if (
+  !isAlreadyHolding(state, item.code) &&
+  !wasBoughtToday(state, item.code)
+) {
+  // CORE 기본조건을 만족한 종목만
+  // CORE 후보 강화 목록에 등록
+  if (
+    coreBuyTime &&
+    isBasicCoreCandidate(
+      item,
+      price
+    )
+  ) {
+    updateCandidateWatchList(
+      state,
+      item,
+      price,
+      "CORE"
+    );
+  }
+
+  // VOLUME 기본조건을 만족한 종목만
+  // VOLUME 후보 강화 목록에 등록
+  if (
+    volumeBuyTime &&
+    isBasicVolumeCandidate(
+      item,
+      price
+    )
+  ) {
+    updateCandidateWatchList(
+      state,
+      item,
+      price,
+      "VOLUME"
+    );
+  }
+}
 
     // CORE 매수 판단
     if (coreBuyTime) {
