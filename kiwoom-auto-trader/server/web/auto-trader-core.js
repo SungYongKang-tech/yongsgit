@@ -2354,13 +2354,16 @@ if (rankCheck !== true && !rankCheck.pass) {
 };
 }
 
+
 async function paperBuy(state, item, price, strategyGroup, reason) {
   if (!state.pendingBuyCodes) {
     state.pendingBuyCodes = [];
   }
 
   if (state.pendingBuyCodes.includes(item.code)) {
-    console.log(`[${strategyGroup} 매수제외] ${item.name || item.code} / 매수 요청 진행중`);
+    console.log(
+      `[${strategyGroup} 매수제외] ${item.name || item.code} / 매수 요청 진행중`
+    );
     return false;
   }
 
@@ -2368,194 +2371,310 @@ async function paperBuy(state, item, price, strategyGroup, reason) {
   saveState(state);
 
   try {
-    const buyAmount = strategyGroup === "CORE"
-      ? settings.coreBuyAmount
-      : settings.volumeBuyAmount;
+    const buyAmount =
+      strategyGroup === "CORE"
+        ? settings.coreBuyAmount
+        : settings.volumeBuyAmount;
 
     const availableCash = Number(state.totalCash || 0);
     const finalBuyAmount = Math.min(buyAmount, availableCash);
     const qty = Math.floor(finalBuyAmount / price);
 
     if (qty <= 0) {
-      console.log(`[${strategyGroup} 매수제외] 수량 부족`, item.name || item.code);
+      console.log(
+        `[${strategyGroup} 매수제외] 수량 부족`,
+        item.name || item.code
+      );
       return false;
     }
 
-    const name = item.name || item.stockName || item.korName || item.code;
-    console.log(
-  `[${strategyGroup} 매수조건 상세] ${name} / ` +
-  makeBuyConditionDetailLog(
-    item,
-    price,
-    strategyGroup
-  )
-);
+    const watchList =
+      strategyGroup === "CORE"
+        ? state.coreCandidateWatchList || []
+        : state.volumeCandidateWatchList || [];
 
-    const result = await postJson(`${API_BASE}/api/core-paper-buy`, {
-      code: item.code,
-      name,
-      price,
-      qty,
-      strategyGroup,
-      reason
-    });
+    const normalizedCode =
+      String(item.code || "").padStart(6, "0");
+
+    const watchItem =
+      watchList.find(
+        row =>
+          String(row.code || "").padStart(6, "0") ===
+          normalizedCode
+      ) || null;
+
+    const watchScoreDetail =
+      watchItem?.watchScoreDetail ??
+      item.watchScoreDetail ??
+      null;
+
+    const name =
+      item.name ||
+      item.stockName ||
+      item.korName ||
+      watchItem?.name ||
+      item.code;
 
     console.log(
-      `[${strategyGroup} 매수요청 완료] ${name} / ${price}원 / ${qty}주 / ` +
-      `현금 ${Number(result.totalCash || 0).toLocaleString()}원 / ${reason}`
+      `[${strategyGroup} 매수조건 상세] ${name} / ` +
+      makeBuyConditionDetailLog(
+        item,
+        price,
+        strategyGroup
+      )
+    );
+
+    const result = await postJson(
+      `${API_BASE}/api/core-paper-buy`,
+      {
+        code: item.code,
+        name,
+        price,
+        qty,
+        strategyGroup,
+        reason
+      }
+    );
+
+    console.log(
+      `[${strategyGroup} 매수요청 완료] ${name} / ` +
+      `${price}원 / ${qty}주 / ` +
+      `현금 ${Number(result.totalCash || 0).toLocaleString()}원 / ` +
+      `${reason}`
     );
 
     if (
-  strategyGroup === "CORE" ||
-  strategyGroup === "VOLUME"
-) {
-  recordBuySuccess(
-    state,
-    strategyGroup
-  );
-}
+      strategyGroup === "CORE" ||
+      strategyGroup === "VOLUME"
+    ) {
+      recordBuySuccess(
+        state,
+        strategyGroup
+      );
+    }
 
-   const buyChangeRate = Number(
-  item.changeRate ||
-  item.fluctuationRate ||
-  item.riseRate ||
-  item.rate ||
-  0
-);
+    const buyChangeRate = Number(
+      item.changeRate ??
+      item.fluctuationRate ??
+      item.riseRate ??
+      item.rate ??
+      watchScoreDetail?.changeRate ??
+      watchItem?.itemSnapshot?.changeRate ??
+      0
+    );
 
-const buyTradeVolumeRatio = getTradeVolumeRatio(item);
-const buyDayPositionRate = getDayPositionRate(item, price);
-const buyOpenPositionRate = getOpenPositionRate(item, price);
+    const itemVolumeRatio =
+      getTradeVolumeRatio(item);
 
-state.holdings.push({
-  code: item.code,
-  name,
-  strategyGroup,
+    const buyTradeVolumeRatio = Number(
+      itemVolumeRatio ||
+      watchScoreDetail?.volumeRatio ||
+      watchItem?.itemSnapshot?.tradeVolumeRatio ||
+      0
+    );
 
-  buyPrice: price,
-  currentPrice: price,
-  qty,
-  buyAmount: price * qty,
-  buyTime: Date.now(),
+    const itemDayPosition =
+      getDayPositionRate(item, price);
 
-  highestPrice: price,
-  lowestPrice: price,
-  highestPriceAt: Date.now(),
+    const buyDayPositionRate = Number(
+      itemDayPosition ||
+      watchScoreDetail?.dayPosition ||
+      watchItem?.itemSnapshot?.dayPosition ||
+      0
+    );
 
-  discoverScore: Number(item.discoverScore || 0),
-  finalBuyScore: Number(
-    item.finalBuyScore ||
-    item.finalScore ||
-    item.rankScore ||
-    0
-  ),
-  marketScore: Number(
-    item.marketScore?.score ||
-    item.marketScore ||
-    0
-  ),
+    const itemOpenPosition =
+      getOpenPositionRate(item, price);
 
-  marketTemperature:
-  state.marketTemperature || null,
+    const buyOpenPositionRate = Number(
+      itemOpenPosition ||
+      watchItem?.itemSnapshot?.openPosition ||
+      0
+    );
 
-  candidateStrengthScore: Number(
-    item.candidateStrengthScore ||
-    item.leaderStrengthScore ||
-    0
-  ),
+    const discoverScore = Number(
+      item.discoverScore ??
+      watchScoreDetail?.discoverScore ??
+      watchItem?.itemSnapshot?.discoverScore ??
+      0
+    );
 
-  candidateWatchScore: Number(
-  item.watchScore || 0
-),
+    const finalBuyScore = Number(
+      item.finalBuyScore ??
+      item.finalScore ??
+      item.rankScore ??
+      watchItem?.watchScore ??
+      item.watchScore ??
+      0
+    );
 
-candidateWatchScoreDetail:
-  item.watchScoreDetail || null,
+    const marketScore = Number(
+      item.marketScore?.score ??
+      item.marketScore ??
+      watchScoreDetail?.marketScore?.score ??
+      watchScoreDetail?.marketScore ??
+      state.marketTemperature?.score ??
+      0
+    );
 
-  buyChangeRate,
-  buyTradeVolumeRatio,
-  buyDayPositionRate,
-  buyOpenPositionRate,
+    const sectorPowerScore = Number(
+      item.sectorPowerScore ??
+      item.sectorScore ??
+      watchScoreDetail?.sectorPowerScore ??
+      watchScoreDetail?.sectorScore ??
+      0
+    );
 
-  buyReason: reason
-});
+    const leaderStrengthScore = Number(
+      item.leaderStrengthScore ??
+      item.candidateStrengthScore ??
+      watchScoreDetail?.leaderStrengthScore ??
+      watchScoreDetail?.candidateStrengthScore ??
+      0
+    );
 
-state.tradeLogs.push({
-  date: todayKey(),
-  time: nowText(),
-  type: `${strategyGroup}_BUY`,
+    const candidateStrengthScore = Number(
+      item.candidateStrengthScore ??
+      item.leaderStrengthScore ??
+      watchScoreDetail?.candidateStrengthScore ??
+      watchScoreDetail?.leaderStrengthScore ??
+      0
+    );
 
-  code: item.code,
-  name,
-  strategyGroup,
+    const candidateWatchScore = Number(
+      watchItem?.watchScore ??
+      item.watchScore ??
+      0
+    );
 
-  price,
-  buyPrice: price,
-  qty,
-  amount: price * qty,
-  buyAmount: price * qty,
+    const commonBuyData = {
+      discoverScore,
 
-  discoverScore: Number(item.discoverScore || 0),
-  finalBuyScore: Number(
-    item.finalBuyScore ||
-    item.finalScore ||
-    item.rankScore ||
-    0
-  ),
-  marketScore: Number(
-    item.marketScore?.score ||
-    item.marketScore ||
-    0
-  ),
+      finalBuyScore,
+      finalBuyScoreDetail:
+        watchScoreDetail,
 
-  marketTemperature:
-  state.marketTemperature || null,
+      marketScore,
+      marketTemperature:
+        state.marketTemperature || null,
 
-  candidateStrengthScore: Number(
-    item.candidateStrengthScore ||
-    item.leaderStrengthScore ||
-    0
-  ),
+      sectorPowerScore,
+      leaderStrengthScore,
+      candidateStrengthScore,
 
-  candidateWatchScore: Number(
-  item.watchScore || 0
-),
+      candidateWatchScore,
+      candidateWatchScoreDetail:
+        watchScoreDetail,
 
-candidateWatchScoreDetail:
-  item.watchScoreDetail || null,
+      candidateFirstSeenAt:
+        watchItem?.firstSeenAt ?? null,
 
-  buyChangeRate,
-  buyTradeVolumeRatio,
-  buyDayPositionRate,
-  buyOpenPositionRate,
+      candidateFirstSeenAtText:
+        watchItem?.firstSeenAtText ?? null,
 
-  reason
-});
+      candidateLastSeenAt:
+        watchItem?.lastSeenAt ?? null,
 
-    state.totalCash = Number(result.totalCash || state.totalCash || 0);
+      candidateLastSeenAtText:
+        watchItem?.lastSeenAtText ?? null,
+
+      candidateFirstPrice: Number(
+        watchItem?.firstPrice ?? 0
+      ),
+
+      buyChangeRate,
+      buyTradeVolumeRatio,
+      buyDayPositionRate,
+      buyOpenPositionRate
+    };
+
+    state.holdings.push({
+      code: item.code,
+      name,
+      strategyGroup,
+
+      buyPrice: price,
+      currentPrice: price,
+      qty,
+      buyAmount: price * qty,
+      buyTime: Date.now(),
+
+      highestPrice: price,
+      lowestPrice: price,
+      highestPriceAt: Date.now(),
+
+      ...commonBuyData,
+
+      buyReason: reason
+    });
+
+    state.tradeLogs.push({
+      date: todayKey(),
+      time: nowText(),
+      type: `${strategyGroup}_BUY`,
+
+      code: item.code,
+      name,
+      strategyGroup,
+
+      price,
+      buyPrice: price,
+      qty,
+      amount: price * qty,
+      buyAmount: price * qty,
+
+      ...commonBuyData,
+
+      reason
+    });
+
+    state.totalCash = Number(
+      result.totalCash ||
+      state.totalCash ||
+      0
+    );
 
     state.lastBuyAt = nowText();
     state.lastBuyCode = item.code;
     state.lastBuyName = name;
-    state.lastBuyStrategyGroup = strategyGroup;
+    state.lastBuyStrategyGroup =
+      strategyGroup;
 
     saveState(state);
 
     return true;
   } finally {
-    state.pendingBuyCodes = state.pendingBuyCodes.filter(code => code !== item.code);
+    state.pendingBuyCodes =
+      state.pendingBuyCodes.filter(
+        code => code !== item.code
+      );
+
     saveState(state);
   }
 }
 
-async function paperSell(state, holding, sellPrice, sellQty, sellType, reason) {
+
+async function paperSell(
+  state,
+  holding,
+  sellPrice,
+  sellQty,
+  sellType,
+  reason
+) {
   if (!state.pendingSellCodes) {
     state.pendingSellCodes = [];
   }
 
-  const sellKey = `${holding.code}_${sellType}`;
+  const sellKey =
+    `${holding.code}_${sellType}`;
 
-  if (state.pendingSellCodes.includes(sellKey)) {
-    console.log(`[${sellType} 제외] ${holding.name} / 매도 요청 진행중`);
+  if (
+    state.pendingSellCodes.includes(sellKey)
+  ) {
+    console.log(
+      `[${sellType} 제외] ${holding.name} / 매도 요청 진행중`
+    );
     return false;
   }
 
@@ -2563,103 +2682,197 @@ async function paperSell(state, holding, sellPrice, sellQty, sellType, reason) {
   saveState(state);
 
   try {
-    const qty = Math.min(Number(sellQty || 0), Number(holding.qty || 0));
-    if (qty <= 0) return false;
+    const qty = Math.min(
+      Number(sellQty || 0),
+      Number(holding.qty || 0)
+    );
 
-    const result = await postJson(`${API_BASE}/api/core-paper-sell`, {
-      code: holding.code,
-      price: sellPrice,
-      qty,
-      sellType,
-      reason
-    });
+    if (qty <= 0) {
+      return false;
+    }
+
+    const result = await postJson(
+      `${API_BASE}/api/core-paper-sell`,
+      {
+        code: holding.code,
+        price: sellPrice,
+        qty,
+        sellType,
+        reason
+      }
+    );
 
     console.log(
-      `[${sellType} 요청 완료] ${holding.name} / ${sellPrice}원 / ${qty}주 / ` +
+      `[${sellType} 요청 완료] ${holding.name} / ` +
+      `${sellPrice}원 / ${qty}주 / ` +
       `손익 ${Number(result.profit || 0).toLocaleString()}원 / ` +
-      `${Number(result.profitRate || 0).toFixed(2)}% / ${reason}`
+      `${Number(result.profitRate || 0).toFixed(2)}% / ` +
+      `${reason}`
     );
 
     holding.qty -= qty;
 
     if (holding.qty <= 0) {
-      state.holdings = state.holdings.filter(h => h !== holding);
-
+      state.holdings =
+        state.holdings.filter(
+          row => row !== holding
+        );
     }
 
-    state.totalCash = Number(result.totalCash || state.totalCash || 0);
+    state.totalCash = Number(
+      result.totalCash ||
+      state.totalCash ||
+      0
+    );
 
-   const buyPrice = Number(holding.buyPrice || 0);
+    const buyPrice =
+      Number(holding.buyPrice || 0);
 
-const highestPrice = Number(
-  holding.highestPrice ||
-  sellPrice ||
-  buyPrice ||
-  0
-);
+    const highestPrice = Number(
+      holding.highestPrice ||
+      sellPrice ||
+      buyPrice ||
+      0
+    );
 
-const lowestPrice = Number(
-  holding.lowestPrice ||
-  sellPrice ||
-  buyPrice ||
-  0
-);
+    const lowestPrice = Number(
+      holding.lowestPrice ||
+      sellPrice ||
+      buyPrice ||
+      0
+    );
 
-const maxProfitRate = buyPrice > 0
-  ? ((highestPrice - buyPrice) / buyPrice) * 100
-  : 0;
+    const maxProfitRate =
+      buyPrice > 0
+        ? (
+            (highestPrice - buyPrice) /
+            buyPrice
+          ) * 100
+        : 0;
 
-const maxLossRate = buyPrice > 0
-  ? ((lowestPrice - buyPrice) / buyPrice) * 100
-  : 0;
+    const maxLossRate =
+      buyPrice > 0
+        ? (
+            (lowestPrice - buyPrice) /
+            buyPrice
+          ) * 100
+        : 0;
 
-const holdingMinutes = Number(holding.buyTime || 0) > 0
-  ? (Date.now() - Number(holding.buyTime)) / 60000
-  : 0;
+    const holdingMinutes =
+      Number(holding.buyTime || 0) > 0
+        ? (
+            Date.now() -
+            Number(holding.buyTime)
+          ) / 60000
+        : 0;
 
-state.tradeLogs.push({
-  date: todayKey(),
-  time: nowText(),
-  type: sellType,
+    state.tradeLogs.push({
+      date: todayKey(),
+      time: nowText(),
+      type: sellType,
 
-  code: holding.code,
-  name: holding.name,
-  strategyGroup: holding.strategyGroup,
+      code: holding.code,
+      name: holding.name,
+      strategyGroup:
+        holding.strategyGroup,
 
-  buyPrice,
-  sellPrice,
-  price: sellPrice,
-  qty,
+      buyPrice,
+      sellPrice,
+      price: sellPrice,
+      qty,
 
-  profit: Number(result.profit || 0),
-  profitRate: Number(result.profitRate || 0),
+      profit:
+        Number(result.profit || 0),
 
-  highestPrice,
-  lowestPrice,
-  maxProfitRate,
-  maxLossRate,
-  holdingMinutes,
+      profitRate:
+        Number(result.profitRate || 0),
 
-  discoverScore: Number(holding.discoverScore || 0),
-  finalBuyScore: Number(holding.finalBuyScore || 0),
-  marketScore: Number(holding.marketScore || 0),
-  candidateStrengthScore: Number(
-    holding.candidateStrengthScore || 0
-  ),
+      highestPrice,
+      lowestPrice,
+      maxProfitRate,
+      maxLossRate,
+      holdingMinutes,
 
-  buyChangeRate: Number(holding.buyChangeRate || 0),
-  buyTradeVolumeRatio: Number(
-    holding.buyTradeVolumeRatio || 0
-  ),
-  buyDayPositionRate: Number(
-    holding.buyDayPositionRate || 0
-  ),
-  buyOpenPositionRate: Number(
-    holding.buyOpenPositionRate || 0
-  ),
+      discoverScore: Number(
+        holding.discoverScore || 0
+      ),
 
-  reason
-});
+      finalBuyScore: Number(
+        holding.finalBuyScore || 0
+      ),
+
+      finalBuyScoreDetail:
+        holding.finalBuyScoreDetail ??
+        holding.candidateWatchScoreDetail ??
+        null,
+
+      marketScore: Number(
+        holding.marketScore || 0
+      ),
+
+      marketTemperature:
+        holding.marketTemperature ||
+        null,
+
+      sectorPowerScore: Number(
+        holding.sectorPowerScore || 0
+      ),
+
+      leaderStrengthScore: Number(
+        holding.leaderStrengthScore || 0
+      ),
+
+      candidateStrengthScore: Number(
+        holding.candidateStrengthScore || 0
+      ),
+
+      candidateWatchScore: Number(
+        holding.candidateWatchScore || 0
+      ),
+
+      candidateWatchScoreDetail:
+        holding.candidateWatchScoreDetail ??
+        holding.finalBuyScoreDetail ??
+        null,
+
+      candidateFirstSeenAt:
+        holding.candidateFirstSeenAt ??
+        null,
+
+      candidateFirstSeenAtText:
+        holding.candidateFirstSeenAtText ??
+        null,
+
+      candidateLastSeenAt:
+        holding.candidateLastSeenAt ??
+        null,
+
+      candidateLastSeenAtText:
+        holding.candidateLastSeenAtText ??
+        null,
+
+      candidateFirstPrice: Number(
+        holding.candidateFirstPrice || 0
+      ),
+
+      buyChangeRate: Number(
+        holding.buyChangeRate || 0
+      ),
+
+      buyTradeVolumeRatio: Number(
+        holding.buyTradeVolumeRatio || 0
+      ),
+
+      buyDayPositionRate: Number(
+        holding.buyDayPositionRate || 0
+      ),
+
+      buyOpenPositionRate: Number(
+        holding.buyOpenPositionRate || 0
+      ),
+
+      reason
+    });
 
     state.lastSellAt = nowText();
     state.lastSellCode = holding.code;
@@ -2671,10 +2884,16 @@ state.tradeLogs.push({
 
     return true;
   } finally {
-    state.pendingSellCodes = state.pendingSellCodes.filter(code => code !== sellKey);
+    state.pendingSellCodes =
+      state.pendingSellCodes.filter(
+        key => key !== sellKey
+      );
+
     saveState(state);
   }
 }
+
+
 
 function getSellSignal(holding, price) {
   const buyPrice = Number(holding.buyPrice || 0);
