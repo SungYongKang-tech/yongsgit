@@ -1168,7 +1168,7 @@ const {
   startOpenMarketData,
   refreshOpenMarketData,
   loadOpenMarketData
-} = require("./open-market");
+} = require("./open-market-data");
 
 app.get("/api/paper-state", (req, res) => {
   res.json(loadState());

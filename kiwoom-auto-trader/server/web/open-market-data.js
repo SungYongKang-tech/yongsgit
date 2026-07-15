@@ -13,7 +13,7 @@ const SETTINGS = {
 
   newsEnabled: true,
   newsMaxItemsPerQuery: 8,
-  priorityStockCount: 15
+  priorityStockCount: 30
 };
 
 const SYMBOLS = {

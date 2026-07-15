@@ -123,12 +123,20 @@ function todayKey() {
 }
 
 function getCurrentHHMM() {
-  return new Date().toLocaleTimeString("ko-KR", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Seoul",
-    hour12: false,
+    hourCycle: "h23",
     hour: "2-digit",
     minute: "2-digit"
-  });
+  }).formatToParts(new Date());
+
+  const hour =
+    parts.find(part => part.type === "hour")?.value || "00";
+
+  const minute =
+    parts.find(part => part.type === "minute")?.value || "00";
+
+  return `${hour}:${minute}`;
 }
 
 function isBetweenTime(start, end) {
