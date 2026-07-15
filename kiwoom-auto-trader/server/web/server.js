@@ -1668,32 +1668,58 @@ return {
      recentSells: sellLogs.slice(-20).reverse(),
 
      marketTemperature: latestMarketTemperature,
+    
      candidateAnalysis: {
-  date: state.buyDecisionStats?.date || null,
+  date:
+    state.buyDecisionStats?.date ||
+    null,
 
-  CORE: state.buyDecisionStats?.CORE || {
-    checked: 0,
-    passed: 0,
-    bought: 0,
-    rejected: {}
-  },
+  CORE:
+    state.buyDecisionStats?.CORE || {
+      checked: 0,
+      passed: 0,
+      bought: 0,
 
-  VOLUME: state.buyDecisionStats?.VOLUME || {
-    checked: 0,
-    passed: 0,
-    bought: 0,
-    rejected: {}
-  },
+      conditionRejected: {},
+      operationalBlocked: {},
+      sources: {}
+    },
 
-  coreTopCandidates: state.coreCandidateWatchList || [],
+  VOLUME:
+    state.buyDecisionStats?.VOLUME || {
+      checked: 0,
+      passed: 0,
+      bought: 0,
 
-  volumeTopCandidates: state.volumeCandidateWatchList || [],
+      conditionRejected: {},
+      operationalBlocked: {},
+      sources: {}
+    },
+
+  coreTopCandidates:
+    state.coreCandidateWatchList || [],
+
+  volumeTopCandidates:
+    state.volumeCandidateWatchList || [],
+
+  // 조건은 통과했지만
+  // 보유한도·쿨다운 등으로 못 산 후보
+  operationalBlockedCandidates:
+    state
+      .operationalBlockedCandidateAnalysis
+      ?.rows || [],
+
+  operationalBlockedCandidateUpdatedAt:
+    state
+      .operationalBlockedCandidateAnalysis
+      ?.updatedAt || null,
 
   updatedAt:
     state.lastCandidateWatchCheckAt ||
     state.lastBuyCheckAt ||
     null
 }
+
     });
   } catch (err) {
     console.error("성과분석 API 오류:", err);

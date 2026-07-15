@@ -143,6 +143,9 @@ candidateWatchPriceDelayMs: 350,
 candidateNearMissMaxCount: 10,
 candidateNearMissLogCount: 5,
 
+// 운영상 차단된 우수 후보 추적
+operationalBlockedCandidateMaxCount: 20,
+
 breakEvenStartRate: 2.0,
 breakEvenProtectRate: 0.2,
 
@@ -197,6 +200,26 @@ function loadState() {
   if (!Array.isArray(state.volumeCandidateWatchList)) {
     state.volumeCandidateWatchList = [];
   }
+
+  if (
+  !state.operationalBlockedCandidateAnalysis ||
+  state.operationalBlockedCandidateAnalysis.date !==
+    todayKey()
+) {
+  state.operationalBlockedCandidateAnalysis = {
+    date: todayKey(),
+    updatedAt: null,
+    rows: []
+  };
+}
+
+if (
+  !Array.isArray(
+    state.operationalBlockedCandidateAnalysis.rows
+  )
+) {
+  state.operationalBlockedCandidateAnalysis.rows = [];
+}
 
   // ✅ 매수 판단 통계 초기화
   const today = todayKey();
@@ -1677,6 +1700,211 @@ function isOperationalBuyBlock(category = "") {
   ].includes(String(category || ""));
 }
 
+
+function updateOperationalBlockedCandidate(
+  state,
+  item,
+  price,
+  strategyGroup,
+  judged
+) {
+  const category =
+    classifyBuyRejectReason(
+      judged?.reason || ""
+    );
+
+  // 운영상 차단 사유가 아니면 저장하지 않음
+  if (!isOperationalBuyBlock(category)) {
+    return;
+  }
+
+  const today = todayKey();
+
+  if (
+    !state.operationalBlockedCandidateAnalysis ||
+    state.operationalBlockedCandidateAnalysis.date !==
+      today
+  ) {
+    state.operationalBlockedCandidateAnalysis = {
+      date: today,
+      updatedAt: null,
+      rows: []
+    };
+  }
+
+  const analysis =
+    state.operationalBlockedCandidateAnalysis;
+
+  if (!Array.isArray(analysis.rows)) {
+    analysis.rows = [];
+  }
+
+  const code =
+    String(item.code || "").trim();
+
+  if (!code || !price) {
+    return;
+  }
+
+  const key =
+    `${strategyGroup}_${code}`;
+
+  const existing =
+    analysis.rows.find(
+      row =>
+        `${row.strategyGroup}_${row.code}` ===
+        key
+    );
+
+  const basicPassed =
+    strategyGroup === "CORE"
+      ? isBasicCoreCandidate(item, price)
+      : isBasicVolumeCandidate(item, price);
+
+  // 신규 등록만 기본조건 통과 필수
+  // 이미 저장된 종목은 조건을 벗어나도 계속 추적
+  if (!existing && !basicPassed) {
+    return;
+  }
+
+  const name =
+    item.name ||
+    item.stockName ||
+    item.korName ||
+    code;
+
+  const now = Date.now();
+
+  const discoverScore =
+    Number(item.discoverScore || 0);
+
+  const volumeRatio =
+    getTradeVolumeRatio(item);
+
+  const dayPosition =
+    getDayPositionRate(item, price);
+
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
+  if (existing) {
+    existing.name = name;
+
+    existing.lastCheckedAt = now;
+    existing.lastCheckedAtText = nowText();
+
+    existing.currentPrice =
+      Number(price);
+
+    existing.highestPrice =
+      Math.max(
+        Number(existing.highestPrice || 0),
+        Number(price)
+      );
+
+    existing.discoverScore =
+      discoverScore;
+
+    existing.volumeRatio =
+      volumeRatio;
+
+    existing.dayPosition =
+      dayPosition;
+
+    existing.changeRate =
+      changeRate;
+
+    existing.blockReason =
+      judged?.reason || category;
+
+    existing.blockCategory =
+      category;
+
+    const firstPrice =
+      Number(existing.firstBlockedPrice || 0);
+
+    existing.currentAfterBlockRate =
+      firstPrice > 0
+        ? (
+            (
+              Number(price) -
+              firstPrice
+            ) /
+            firstPrice
+          ) * 100
+        : 0;
+
+    existing.highestAfterBlockRate =
+      firstPrice > 0
+        ? (
+            (
+              Number(existing.highestPrice || 0) -
+              firstPrice
+            ) /
+            firstPrice
+          ) * 100
+        : 0;
+  } else {
+    analysis.rows.push({
+      code,
+      name,
+      strategyGroup,
+
+      blockCategory: category,
+      blockReason:
+        judged?.reason || category,
+
+      firstBlockedAt: now,
+      firstBlockedAtText: nowText(),
+
+      lastCheckedAt: now,
+      lastCheckedAtText: nowText(),
+
+      firstBlockedPrice:
+        Number(price),
+
+      currentPrice:
+        Number(price),
+
+      highestPrice:
+        Number(price),
+
+      currentAfterBlockRate: 0,
+      highestAfterBlockRate: 0,
+
+      discoverScore,
+      volumeRatio,
+      dayPosition,
+      changeRate
+    });
+  }
+
+  analysis.rows = analysis.rows
+    .sort(
+      (a, b) =>
+        Number(
+          b.highestAfterBlockRate || 0
+        ) -
+        Number(
+          a.highestAfterBlockRate || 0
+        )
+    )
+    .slice(
+      0,
+      settings
+        .operationalBlockedCandidateMaxCount
+    );
+
+  analysis.updatedAt = nowText();
+}
+
+
+
 function recordBuyDecision(
   state,
   strategyGroup,
@@ -2036,6 +2264,12 @@ state.marketTemperature = {
 };
 
 state.candidateNearMissAnalysis = {
+  date: today,
+  updatedAt: null,
+  rows: []
+};
+
+state.operationalBlockedCandidateAnalysis = {
   date: today,
   updatedAt: null,
   rows: []
@@ -3616,6 +3850,16 @@ updateCandidateWatchList(
   "WATCH"
 );
 
+if (!judged.pass) {
+  updateOperationalBlockedCandidate(
+    state,
+    item,
+    price,
+    strategyGroup,
+    judged
+  );
+}
+
     if (!judged.pass) {
       updateCandidateNearMissList(
         state,
@@ -3852,6 +4096,16 @@ recordBuyDecision(
   "DISCOVER"
 );
 
+if (!coreJudge.pass) {
+  updateOperationalBlockedCandidate(
+    state,
+    item,
+    price,
+    "CORE",
+    coreJudge
+  );
+}
+
       if (coreJudge.pass) {
         const bought = await paperBuy(
           state,
@@ -3890,6 +4144,16 @@ recordBuyDecision(
     volumeJudge,
     "DISCOVER"
   );
+
+  if (!volumeJudge.pass) {
+  updateOperationalBlockedCandidate(
+    state,
+    item,
+    price,
+    "VOLUME",
+    volumeJudge
+  );
+}
 
       if (volumeJudge.pass) {
         const bought = await paperBuy(
