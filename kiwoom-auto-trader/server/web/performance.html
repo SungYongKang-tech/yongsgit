@@ -319,6 +319,78 @@
     .market-candidate { color: #e5e7eb; }
     .market-pass { color: #4ade80; }
 
+    .candidate-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .candidate-summary-card {
+      position: relative;
+      overflow: hidden;
+      background: #1f2937;
+      border-radius: 13px;
+      padding: 11px 10px;
+      min-height: 78px;
+      border: 1px solid #374151;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.22);
+    }
+
+    .candidate-summary-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: #6b7280;
+    }
+
+    .candidate-summary-card.total::before {
+      background: #60a5fa;
+    }
+
+    .candidate-summary-card.bought::before {
+      background: #4ade80;
+    }
+
+    .candidate-summary-card.core::before {
+      background: #facc15;
+    }
+
+    .candidate-summary-card.volume::before {
+      background: #c084fc;
+    }
+
+    .candidate-summary-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #9ca3af;
+      margin-bottom: 7px;
+      text-align: left;
+    }
+
+    .candidate-summary-value {
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 900;
+      text-align: right;
+      color: #f9fafb;
+    }
+
+    .candidate-summary-card.bought .candidate-summary-value {
+      color: #4ade80;
+    }
+
+    .candidate-summary-card.core .candidate-summary-value {
+      color: #facc15;
+    }
+
+    .candidate-summary-card.volume .candidate-summary-value {
+      color: #c084fc;
+    }
+
     @media (min-width: 800px) {
       body {
         max-width: 760px;
@@ -341,12 +413,12 @@
       }
 
       h1 {
-        font-size: 17px;
+        font-size: 24px;
       }
 
       button {
-        padding: 8px 8px;
-        font-size: 12px;
+        padding: 10px 12px;
+        font-size: 14px;
       }
 
       .header-actions {
@@ -567,10 +639,25 @@
     <div class="section">
       <h2>오늘 후보 분석</h2>
       <div class="candidate-summary-grid">
-        <div class="card"><div class="label">검토 후보</div><div class="value" id="candidateTotal">-</div></div>
-        <div class="card"><div class="label">매수 완료</div><div class="value" id="candidateBought">-</div></div>
-        <div class="card"><div class="label">CORE 통과</div><div class="value" id="candidateCorePass">-</div></div>
-        <div class="card"><div class="label">VOLUME 통과</div><div class="value" id="candidateVolumePass">-</div></div>
+        <div class="candidate-summary-card total">
+          <div class="candidate-summary-label">전체 검토</div>
+          <div class="candidate-summary-value" id="candidateTotal">-</div>
+        </div>
+
+        <div class="candidate-summary-card bought">
+          <div class="candidate-summary-label">매수 완료</div>
+          <div class="candidate-summary-value" id="candidateBought">-</div>
+        </div>
+
+        <div class="candidate-summary-card core">
+          <div class="candidate-summary-label">CORE 통과</div>
+          <div class="candidate-summary-value" id="candidateCorePass">-</div>
+        </div>
+
+        <div class="candidate-summary-card volume">
+          <div class="candidate-summary-label">VOLUME 통과</div>
+          <div class="candidate-summary-value" id="candidateVolumePass">-</div>
+        </div>
       </div>
       <div class="section">
         <h2>매수조건 미충족</h2>
@@ -769,12 +856,49 @@ function setMarketTemperature(mt = {}) {
   const label = mt.label || "-";
   const advanceValue = Number(mt.advanceRatio || 0);
   const declineValue = Number(mt.declineRatio ?? Math.max(0, 100 - advanceValue));
-  const checked = mt.checkedAt || mt.updatedAt || "";
-  const icon = level === "HOT" ? "🟢" : level === "NORMAL" ? "🟡" : level === "CAUTION" ? "🟠" : (level === "COLD" || level === "DANGER") ? "🔴" : "⚪";
-  const className = level === "HOT" ? "market-hot" : level === "NORMAL" ? "market-normal" : level === "CAUTION" ? "market-caution" : (level === "COLD" || level === "DANGER") ? "market-cold" : "";
-  el.classList.remove("market-hot", "market-normal", "market-caution", "market-cold");
-  if (className) el.classList.add(className);
-  el.textContent = mt.label ? `${icon} ${label}${checked ? ` / ${formatShortTime(checked)}` : ""}` : "-";
+  const score = Number(
+    mt.score ??
+    mt.marketScore ??
+    mt.temperatureScore ??
+    0
+  );
+
+  const icon =
+    level === "HOT"
+      ? "🔥"
+      : level === "NORMAL"
+        ? "🟡"
+        : level === "CAUTION"
+          ? "🟠"
+          : (level === "COLD" || level === "DANGER")
+            ? "🔵"
+            : "⚪";
+
+  const className =
+    level === "HOT"
+      ? "market-hot"
+      : level === "NORMAL"
+        ? "market-normal"
+        : level === "CAUTION"
+          ? "market-caution"
+          : (level === "COLD" || level === "DANGER")
+            ? "market-cold"
+            : "";
+
+  el.classList.remove(
+    "market-hot",
+    "market-normal",
+    "market-caution",
+    "market-cold"
+  );
+
+  if (className) {
+    el.classList.add(className);
+  }
+
+  el.textContent = mt.label
+    ? `${icon} ${label}${score > 0 ? ` (${score.toFixed(0)}점)` : ""}`
+    : "-";
   setValue("marketAdvanceRatio", `${advanceValue.toFixed(1)}%`);
   setValue("marketDeclineRatio", `${declineValue.toFixed(1)}%`);
   setValue("marketCandidateCount", `${Number(mt.candidateCount || mt.totalCandidates || 0)}개`);
