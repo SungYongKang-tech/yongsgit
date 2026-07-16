@@ -509,14 +509,39 @@ function isExcludedStock(item = {}) {
 
 function getTradeVolumeRatio(item = {}) {
   const raw = item.raw || {};
-  const value = String(
-    raw.trde_pre ||
-    item.trde_pre ||
-    item.tradeVolumeRatio ||
-    ""
-  ).replace(/[+,]/g, "");
 
-  return Number(value || 0);
+  const originalValue =
+    raw.trde_pre ??
+    item.trde_pre ??
+    null;
+
+  // 키움 trde_pre:
+  // 전일 전체 거래량 대비 현재 누적 거래량 증감률
+  // -21.03이면 실제 거래량비율은 78.97%
+  if (
+    originalValue !== null &&
+    originalValue !== ""
+  ) {
+    const changeRate = Number(
+      String(originalValue)
+        .replace(/[+,]/g, "")
+    );
+
+    if (Number.isFinite(changeRate)) {
+      return Math.max(0, 100 + changeRate);
+    }
+  }
+
+  // 이미 비율로 저장된 데이터가 있을 때의 예비값
+  const fallbackValue =
+    item.tradeVolumeRatio ??
+    item.volumeRatio ??
+    0;
+
+  return Number(
+    String(fallbackValue)
+      .replace(/[+,]/g, "") || 0
+  );
 }
 
 function getTradeVolumeRatioRaw(item = {}) {
