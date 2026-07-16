@@ -155,8 +155,15 @@ breakEvenProtectRate: 0.2,
 endSellOnlyPositive: true,
 
 coreEndSellOnlyPositive: true,
-volumeEndSellOnlyPositive: false
+volumeEndSellOnlyPositive: false,
 
+// 보유종목 자동 스위칭
+switchEnabled: true,
+
+switchMinScoreGap: 20,
+switchMaxHoldingProfitRate: 1.0,
+switchMinHoldingMinutes: 10,
+switchCooldownMinutes: 30
 
 };
 
@@ -3482,6 +3489,122 @@ async function paperBuy(
   }
 }
 
+async function executeSwitch(
+  state,
+  item,
+  price,
+  strategyGroup,
+  switchResult
+) {
+  if (!settings.switchEnabled) {
+    return false;
+  }
+
+  const oldHolding =
+    (state.holdings || []).find(
+      holding =>
+        holding.code ===
+        switchResult.holdingCode &&
+        holding.strategyGroup ===
+        strategyGroup
+    );
+
+  if (!oldHolding) {
+    console.log(
+      `[SWITCH 취소] 기존 보유종목 없음 / ` +
+      `${switchResult.holdingName}`
+    );
+
+    return false;
+  }
+
+  const sellSignal =
+    makeSwitchSellSignal(
+      oldHolding,
+      item,
+      switchResult
+    );
+
+  console.log(
+    `[SWITCH 시작] ${strategyGroup} / ` +
+    `${oldHolding.name} → ` +
+    `${item.name || item.code} / ` +
+    `점수 ${switchResult.holdingScore.toFixed(1)}→` +
+    `${switchResult.candidateScore.toFixed(1)}`
+  );
+
+  const sellSuccess =
+    await paperSell(
+      state,
+      oldHolding,
+      Number(
+        oldHolding.currentPrice ||
+        oldHolding.buyPrice ||
+        0
+      ),
+      sellSignal.type,
+      sellSignal.qty,
+      sellSignal.reason
+    );
+
+  if (!sellSuccess) {
+    console.log(
+      `[SWITCH 실패] 기존 종목 매도 실패 / ` +
+      `${oldHolding.name}`
+    );
+
+    return false;
+  }
+
+  /*
+   * paperSell에서 상태를 저장했으므로
+   * 최신 상태를 다시 읽는다.
+   */
+  const refreshedState =
+    loadState();
+
+  refreshedState.lastSwitchAtByStrategy =
+    refreshedState.lastSwitchAtByStrategy ||
+    {
+      CORE: 0,
+      VOLUME: 0
+    };
+
+  refreshedState.lastSwitchAtByStrategy[
+    strategyGroup
+  ] = Date.now();
+
+  const buySuccess =
+    await paperBuy(
+      refreshedState,
+      item,
+      price,
+      strategyGroup,
+      `스위칭 매수 / ` +
+      `${oldHolding.name}→` +
+      `${item.name || item.code} / ` +
+      `점수차 ${switchResult.scoreGap.toFixed(1)}점`
+    );
+
+  if (!buySuccess) {
+    console.log(
+      `[SWITCH 부분완료] 기존 종목은 매도했지만 ` +
+      `신규후보 매수 실패 / ` +
+      `${item.name || item.code}`
+    );
+
+    saveState(refreshedState);
+    return false;
+  }
+
+  console.log(
+    `[SWITCH 완료] ${strategyGroup} / ` +
+    `${oldHolding.name} → ` +
+    `${item.name || item.code}`
+  );
+
+  return true;
+}
 
 async function paperSell(
   state,
@@ -3960,6 +4083,28 @@ function getSellSignal(holding, price) {
   return null;
 }
 
+function makeSwitchSellSignal(
+  holding,
+  candidate,
+  switchResult
+) {
+  return {
+    type:
+      `${holding.strategyGroup}_SWITCH_SELL`,
+
+    qty:
+      Number(holding.qty || 0),
+
+    reason:
+      `우수후보 교체 / ` +
+      `${holding.name} ` +
+      `${switchResult.holdingScore.toFixed(1)}점 → ` +
+      `${candidate.name || candidate.code} ` +
+      `${switchResult.candidateScore.toFixed(1)}점 / ` +
+      `차이 ${switchResult.scoreGap.toFixed(1)}점`
+  };
+}
+
 
 async function runCandidateWatchOnce() {
   if (!isKoreanWeekday()) {
@@ -4177,6 +4322,32 @@ updateCandidateWatchList(
     const judged = strategyGroup === "CORE"
       ? judgeCoreBuy(state, item, price)
       : judgeVolumeBuy(state, item, price);
+
+      if (
+  !judged.pass &&
+  judged.switchResult?.allowed &&
+  settings.switchEnabled
+) {
+  const switched =
+    await executeSwitch(
+      state,
+      item,
+      price,
+      strategyGroup,
+      judged.switchResult
+    );
+
+  if (switched) {
+    removeCandidateFromWatchLists(
+      state,
+      item.code
+    );
+
+    break;
+  }
+
+  continue;
+}
 
       recordBuyDecision(
   state,
