@@ -72,7 +72,7 @@ const settings = {
 
   // OPEN 2.0: 장전 우선종목을 먼저 감시하고 일반검색은 보완용으로 순환
   openPriorityMaxCount: 15,
-  openFallbackScanLimit: 50,
+  openFallbackScanLimit: 200,
   openPriorityPriceDelayMs: 350,
 
   openEnabled: true,
