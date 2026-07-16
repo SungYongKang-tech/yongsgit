@@ -1384,15 +1384,29 @@ function calculateHoldingScore(
    * 매수 당시 발견점수는 실시간 가격 API에서
    * 제공되지 않을 수 있으므로 보유정보 값을 유지한다.
    */
-  const item = {
-    ...realtimeItem,
+ const item = {
+  ...realtimeItem,
 
-    discoverScore: Number(
-      holding.discoverScore ||
-      realtimeItem.discoverScore ||
-      0
+  discoverScore: Number(
+    holding.discoverScore ||
+    realtimeItem.discoverScore ||
+    0
+  ),
+
+  watchBaseline: {
+    firstPrice: Number(
+      holding.buyPrice || 0
+    ),
+
+    firstVolumeRatio: Number(
+      holding.buyTradeVolumeRatio || 0
+    ),
+
+    firstDayPosition: Number(
+      holding.buyDayPositionRate || 0
     )
-  };
+  }
+};
 
   const scoreDetail =
     calculateCandidateWatchScore(
@@ -1752,7 +1766,27 @@ function updateCandidateWatchList(
   const rawTradeVolumeRatio =
     getTradeVolumeRatioRaw(item);
 
-  const watchScoreDetail =
+const existing = state[listKey].find(
+  candidate => candidate.code === code
+);
+
+if (existing) {
+  item.watchBaseline = {
+    firstPrice: Number(
+      existing.firstPrice || 0
+    ),
+
+    firstVolumeRatio: Number(
+      existing.firstVolumeRatio || 0
+    ),
+
+    firstDayPosition: Number(
+      existing.firstDayPosition || 0
+    )
+  };
+}
+
+const watchScoreDetail =
   calculateCandidateWatchScore(
     item,
     price,
@@ -5475,13 +5509,11 @@ updateCandidateWatchList(
     );
 
   if (switched) {
-    removeCandidateFromWatchLists(
-      state,
-      item.code
-    );
-
-    break;
-  }
+  console.log(
+    "[후보재평가] 스위칭 완료 / 이번 재평가 종료"
+  );
+  return;
+}
 
   continue;
 }
@@ -5745,11 +5777,14 @@ console.log(
       coreJudge.switchResult
     );
 
-  if (switched) {
-    break;
-  }
+ if (switched) {
+  console.log(
+    "[BUY] CORE 스위칭 완료 / 이번 매수점검 종료"
+  );
+  return;
+}
 
-  continue;
+continue;
 }
 
 
@@ -5817,7 +5852,10 @@ if (!coreJudge.pass) {
     );
 
   if (switched) {
-    break;
+    console.log(
+      "[BUY] VOLUME 스위칭 완료 / 이번 매수점검 종료"
+    );
+    return;
   }
 
   continue;
