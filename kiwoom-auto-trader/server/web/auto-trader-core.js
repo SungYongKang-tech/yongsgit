@@ -122,7 +122,7 @@ volumeTrailingStartRate: 2.5,
 volumeTrailingStopRate: 0.8,
 
   buyLoopMs: 60 * 1000,
-  sellLoopMs: 30 * 1000,
+  sellLoopMs: 10 * 1000,
 
   coreBuyCooldownMinutes: 10,
   volumeBuyCooldownMinutes: 5,
@@ -953,6 +953,210 @@ if (
     minVolumeRatio,
     minDayPosition,
     maxDayPosition
+  };
+}
+
+function calculateHoldingScore(
+  holding,
+  realtimeItem,
+  price
+) {
+  const strategyGroup =
+    holding.strategyGroup;
+
+  /*
+   * 매수 당시 발견점수는 실시간 가격 API에서
+   * 제공되지 않을 수 있으므로 보유정보 값을 유지한다.
+   */
+  const item = {
+    ...realtimeItem,
+
+    discoverScore: Number(
+      holding.discoverScore ||
+      realtimeItem.discoverScore ||
+      0
+    )
+  };
+
+  const scoreDetail =
+    calculateCandidateWatchScore(
+      item,
+      price,
+      strategyGroup
+    );
+
+  const buyPrice =
+    Number(holding.buyPrice || 0);
+
+  const profitRate =
+    buyPrice > 0
+      ? ((price - buyPrice) / buyPrice) * 100
+      : 0;
+
+  const buyVolumeRatio =
+    Number(
+      holding.buyTradeVolumeRatio || 0
+    );
+
+  const currentVolumeRatio =
+    Number(scoreDetail.volumeRatio || 0);
+
+  const volumeDiff =
+    currentVolumeRatio -
+    buyVolumeRatio;
+
+  const buyDayPosition =
+    Number(
+      holding.buyDayPositionRate || 0
+    );
+
+  const currentDayPosition =
+    Number(scoreDetail.dayPosition || 0);
+
+  const dayPositionDiff =
+    currentDayPosition -
+    buyDayPosition;
+
+  const buyScore =
+    Number(
+      holding.candidateWatchScore ||
+      holding.finalBuyScore ||
+      0
+    );
+
+  /*
+   * 기본 후보점수에 매수 후 추세 변화를 추가 반영한다.
+   *
+   * 가격수익률:
+   * 1% 상승당 +5점, 1% 하락당 -5점
+   * 최대 ±20점
+   */
+  const profitTrendPart =
+    Math.max(
+      -20,
+      Math.min(
+        20,
+        profitRate * 5
+      )
+    );
+
+  /*
+   * 당일위치 변화:
+   * 10%p 상승당 +2점,
+   * 10%p 하락당 -4점
+   * 하락을 상승보다 더 크게 평가한다.
+   */
+  const dayPositionTrendPart =
+    dayPositionDiff >= 0
+      ? Math.min(
+          10,
+          (dayPositionDiff / 10) * 2
+        )
+      : Math.max(
+          -20,
+          (dayPositionDiff / 10) * 4
+        );
+
+  /*
+   * 거래량 증가 자체는 매수세인지 매도세인지
+   * 구분하기 어려우므로 가중치를 작게 둔다.
+   */
+  const volumeTrendPart =
+    volumeDiff >= 0
+      ? Math.min(
+          5,
+          volumeDiff / 50
+        )
+      : Math.max(
+          -10,
+          volumeDiff / 20
+        );
+
+  /*
+   * 거래량이 증가하면서 가격과 위치가 모두 하락하면
+   * 매도 거래량 증가로 판단하여 추가 감점한다.
+   */
+  let bearishVolumePenalty = 0;
+
+  if (
+    volumeDiff > 20 &&
+    profitRate < -0.3 &&
+    dayPositionDiff < -10
+  ) {
+    bearishVolumePenalty = -15;
+  }
+
+  if (
+    volumeDiff > 50 &&
+    profitRate < -1.0 &&
+    dayPositionDiff < -20
+  ) {
+    bearishVolumePenalty = -25;
+  }
+
+  const baseScore =
+    Number(scoreDetail.total || 0);
+
+  const holdingScore =
+    Math.max(
+      0,
+      baseScore +
+      profitTrendPart +
+      dayPositionTrendPart +
+      volumeTrendPart +
+      bearishVolumePenalty
+    );
+
+  return {
+    holdingScore:
+      Number(holdingScore.toFixed(1)),
+
+    baseScore:
+      Number(baseScore.toFixed(1)),
+
+    buyScore:
+      Number(buyScore.toFixed(1)),
+
+    scoreDiff:
+      Number(
+        (holdingScore - buyScore).toFixed(1)
+      ),
+
+    profitRate:
+      Number(profitRate.toFixed(2)),
+
+    buyVolumeRatio:
+      Number(buyVolumeRatio.toFixed(1)),
+
+    currentVolumeRatio:
+      Number(currentVolumeRatio.toFixed(1)),
+
+    volumeDiff:
+      Number(volumeDiff.toFixed(1)),
+
+    buyDayPosition:
+      Number(buyDayPosition.toFixed(1)),
+
+    currentDayPosition:
+      Number(currentDayPosition.toFixed(1)),
+
+    dayPositionDiff:
+      Number(dayPositionDiff.toFixed(1)),
+
+    profitTrendPart:
+      Number(profitTrendPart.toFixed(1)),
+
+    dayPositionTrendPart:
+      Number(
+        dayPositionTrendPart.toFixed(1)
+      ),
+
+    volumeTrendPart:
+      Number(volumeTrendPart.toFixed(1)),
+
+    bearishVolumePenalty,
+
+    scoreDetail
   };
 }
 
@@ -3519,21 +3723,20 @@ async function paperSell(
 }
 
 
-
 function getSellSignal(holding, price) {
-  const buyPrice = Number(holding.buyPrice || 0);
-  if (!buyPrice || !price) return null;
+  const buyPrice = Number(
+    holding.buyPrice || 0
+  );
 
-  const buyTime = Number(holding.buyTime || 0);
-  const holdMinutes = buyTime > 0 ? (Date.now() - buyTime) / 60000 : 999;
-
-  if (holdMinutes < settings.minHoldMinutes) {
+  if (!buyPrice || !price) {
     return null;
   }
 
-  const profitRate = ((price - buyPrice) / buyPrice) * 100;
+  const profitRate =
+    ((price - buyPrice) / buyPrice) * 100;
 
-const isCore = holding.strategyGroup === "CORE";
+  const isCore =
+    holding.strategyGroup === "CORE";
 
   const stopLossRate = isCore
     ? settings.coreStopLossRate
@@ -3551,24 +3754,81 @@ const isCore = holding.strategyGroup === "CORE";
     ? settings.coreTrailingStopRate
     : settings.volumeTrailingStopRate;
 
-  holding.highestPrice = Math.max(Number(holding.highestPrice || price), price);
-  holding.lowestPrice = Math.min(Number(holding.lowestPrice || price), price);
+  holding.highestPrice = Math.max(
+    Number(
+      holding.highestPrice ||
+      buyPrice ||
+      price
+    ),
+    price
+  );
+
+  holding.lowestPrice = Math.min(
+    Number(
+      holding.lowestPrice ||
+      buyPrice ||
+      price
+    ),
+    price
+  );
 
   const highestProfitRate =
-    ((holding.highestPrice - buyPrice) / buyPrice) * 100;
+    (
+      (
+        holding.highestPrice -
+        buyPrice
+      ) /
+      buyPrice
+    ) * 100;
 
   const drawdownFromHigh =
-    ((price - holding.highestPrice) / holding.highestPrice) * 100;
+    holding.highestPrice > 0
+      ? (
+          (
+            price -
+            holding.highestPrice
+          ) /
+          holding.highestPrice
+        ) * 100
+      : 0;
 
-  // 1. 손절
+  /*
+   * 1. 손절
+   *
+   * 손절은 최소 보유시간과 관계없이 즉시 판단한다.
+   * 매수 직후 급락해도 3분 동안 기다리지 않는다.
+   */
   if (profitRate <= stopLossRate) {
     return {
-      type: `${holding.strategyGroup}_STOP_LOSS`,
-      qty: holding.qty,
+      type:
+        `${holding.strategyGroup}_STOP_LOSS`,
+
+      qty:
+        Number(holding.qty || 0),
+
       reason:
         `손절 ${profitRate.toFixed(2)}% / ` +
         `기준 ${stopLossRate.toFixed(2)}%`
     };
+  }
+
+  /*
+   * 손절 외의 익절·본전방어·트레일링은
+   * 최소 보유시간을 지난 후부터 판단한다.
+   */
+  const buyTime =
+    Number(holding.buyTime || 0);
+
+  const holdMinutes =
+    buyTime > 0
+      ? (Date.now() - buyTime) / 60000
+      : 999;
+
+  if (
+    holdMinutes <
+    settings.minHoldMinutes
+  ) {
+    return null;
   }
 
   // 2. 1차 익절
@@ -3576,80 +3836,130 @@ const isCore = holding.strategyGroup === "CORE";
     !holding.firstTakeProfitDone &&
     profitRate >= firstTakeProfitRate
   ) {
-    const currentQty = Number(holding.qty || 0);
-const sellQty = Math.min(
-  currentQty,
-  Math.max(1, Math.floor(currentQty * settings.firstTakeProfitSellRatio))
-);
+    const currentQty =
+      Number(holding.qty || 0);
 
+    const sellQty =
+      Math.min(
+        currentQty,
+        Math.max(
+          1,
+          Math.floor(
+            currentQty *
+            settings.firstTakeProfitSellRatio
+          )
+        )
+      );
+
+    /*
+     * 실제 매도 성공 전에 여기서 true로 바꾸면,
+     * 매도 API 실패 시에도 익절 완료로 남을 수 있다.
+     *
+     * 가능하면 paperSell 성공 이후에
+     * firstTakeProfitDone을 저장하는 것이 더 안전하다.
+     */
     holding.firstTakeProfitDone = true;
 
     return {
-      type: `${holding.strategyGroup}_FIRST_TAKE_PROFIT`,
-      qty: sellQty,
+      type:
+        `${holding.strategyGroup}_FIRST_TAKE_PROFIT`,
+
+      qty:
+        sellQty,
+
       reason:
         `1차 익절 ${profitRate.toFixed(2)}% / ` +
         `기준 ${firstTakeProfitRate.toFixed(2)}%`
     };
   }
 
-  // 2-1. 본전 방어
-if (
-  highestProfitRate >= settings.breakEvenStartRate &&
-  profitRate <= settings.breakEvenProtectRate
-) {
-  return {
-    type: `${holding.strategyGroup}_BREAK_EVEN_SELL`,
-    qty: holding.qty,
-    reason:
-      `본전방어 / 최고수익 ${highestProfitRate.toFixed(2)}% / ` +
-      `현재수익 ${profitRate.toFixed(2)}% / ` +
-      `방어기준 ${settings.breakEvenProtectRate.toFixed(2)}%`
-  };
-}
-
-  // 3. 트레일링 스탑
+  // 3. 본전 방어
   if (
-    highestProfitRate >= trailingStartRate &&
-    drawdownFromHigh <= -Math.abs(trailingStopRate)
+    highestProfitRate >=
+      settings.breakEvenStartRate &&
+    profitRate <=
+      settings.breakEvenProtectRate
   ) {
     return {
-      type: `${holding.strategyGroup}_TRAILING_STOP`,
-      qty: holding.qty,
+      type:
+        `${holding.strategyGroup}_BREAK_EVEN_SELL`,
+
+      qty:
+        Number(holding.qty || 0),
+
       reason:
-        `트레일링 / 최고수익 ${highestProfitRate.toFixed(2)}% / ` +
+        `본전방어 / ` +
+        `최고수익 ${highestProfitRate.toFixed(2)}% / ` +
+        `현재수익 ${profitRate.toFixed(2)}% / ` +
+        `방어기준 ${settings.breakEvenProtectRate.toFixed(2)}%`
+    };
+  }
+
+  // 4. 트레일링 스탑
+  if (
+    highestProfitRate >=
+      trailingStartRate &&
+    drawdownFromHigh <=
+      -Math.abs(trailingStopRate)
+  ) {
+    return {
+      type:
+        `${holding.strategyGroup}_TRAILING_STOP`,
+
+      qty:
+        Number(holding.qty || 0),
+
+      reason:
+        `트레일링 / ` +
+        `최고수익 ${highestProfitRate.toFixed(2)}% / ` +
         `고점대비 ${drawdownFromHigh.toFixed(2)}% / ` +
         `시작기준 ${trailingStartRate.toFixed(2)}% / ` +
         `이탈기준 ${trailingStopRate.toFixed(2)}%`
     };
   }
 
-  // 4. 장마감 청산
-  const hhmm = new Date().toLocaleTimeString("ko-KR", {
-  timeZone: "Asia/Seoul",
-  hour12: false,
-  hour: "2-digit",
-  minute: "2-digit"
-});
+  // 5. 장마감 청산
+  const hhmm =
+    new Date().toLocaleTimeString(
+      "ko-KR",
+      {
+        timeZone: "Asia/Seoul",
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    );
 
   if (hhmm >= settings.endSellTime) {
-  const endSellOnlyPositive = isCore
-    ? settings.coreEndSellOnlyPositive
-    : settings.volumeEndSellOnlyPositive;
+    const endSellOnlyPositive = isCore
+      ? settings.coreEndSellOnlyPositive
+      : settings.volumeEndSellOnlyPositive;
 
-  if (!endSellOnlyPositive || profitRate > 0) {
-    return {
-      type: `${holding.strategyGroup}_END_SELL`,
-      qty: holding.qty,
-      reason:
-        `장마감 청산 ${profitRate.toFixed(2)}% / ` +
-        `수익만청산 ${endSellOnlyPositive ? "Y" : "N"}`
-    };
+    if (
+      !endSellOnlyPositive ||
+      profitRate > 0
+    ) {
+      return {
+        type:
+          `${holding.strategyGroup}_END_SELL`,
+
+        qty:
+          Number(holding.qty || 0),
+
+        reason:
+          `장마감 청산 ${profitRate.toFixed(2)}% / ` +
+          `수익만청산 ${
+            endSellOnlyPositive
+              ? "Y"
+              : "N"
+          }`
+      };
+    }
   }
-}
 
   return null;
 }
+
 
 async function runCandidateWatchOnce() {
   if (!isKoreanWeekday()) {
@@ -4291,19 +4601,47 @@ async function checkSellOnce() {
 
   for (const holding of coreVolumeHoldings) {
 
-   
-    let price = 0;
+   let price = 0;
+let realtimeItem = null;
 
-    try {
-      price = await fetchPrice(holding.code);
-    } catch (err) {
-      console.log(`[SELL 가격조회 실패] ${holding.name} / ${err.message}`);
-      price = Number(
-        holding.currentPrice ||
-        holding.buyPrice ||
-        0
-      );
-    }
+try {
+  realtimeItem =
+    await fetchCandidateRealtime(
+      holding.code,
+      {
+        name: holding.name,
+
+        currentPrice:
+          holding.currentPrice ||
+          holding.buyPrice,
+
+        discoverScore:
+          holding.discoverScore || 0,
+
+        changeRate:
+          holding.buyChangeRate || 0,
+
+        tradeVolumeRatio:
+          holding.buyTradeVolumeRatio || 0
+      }
+    );
+
+  price = Number(
+    realtimeItem.currentPrice || 0
+  );
+} catch (err) {
+  console.log(
+    `[SELL 가격조회 실패] ` +
+    `${holding.name} / ${err.message}`
+  );
+
+  price = Number(
+    holding.currentPrice ||
+    holding.buyPrice ||
+    0
+  );
+}
+    
 
     if (!price) {
       console.log(`[SELL 제외] ${holding.name} / 현재가 없음`);
@@ -4312,7 +4650,81 @@ async function checkSellOnce() {
 
     holding.currentPrice = price;
 
-    const signal = getSellSignal(holding, price);
+/*
+ * 실시간 상세정보가 있을 때
+ * 보유 종목 점수를 다시 계산한다.
+ */
+if (realtimeItem) {
+  const holdingAnalysis =
+    calculateHoldingScore(
+      holding,
+      realtimeItem,
+      price
+    );
+
+  const previousHoldingScore =
+    Number(
+      holding.holdingScore ??
+      holdingAnalysis.buyScore ??
+      0
+    );
+
+  holding.previousHoldingScore =
+    previousHoldingScore;
+
+  holding.holdingScore =
+    holdingAnalysis.holdingScore;
+
+  holding.holdingScoreDiff =
+    holdingAnalysis.scoreDiff;
+
+  holding.holdingScoreDetail =
+    holdingAnalysis;
+
+  holding.holdingScoreUpdatedAt =
+    Date.now();
+
+  holding.holdingScoreUpdatedAtText =
+    nowText();
+
+  holding.currentTradeVolumeRatio =
+    holdingAnalysis.currentVolumeRatio;
+
+  holding.currentDayPositionRate =
+    holdingAnalysis.currentDayPosition;
+
+  holding.currentChangeRate =
+    Number(
+      realtimeItem.changeRate || 0
+    );
+
+  console.log(
+    `[보유점수] ${holding.name} / ` +
+    `${holding.strategyGroup} / ` +
+    `${previousHoldingScore.toFixed(1)}→` +
+    `${holdingAnalysis.holdingScore.toFixed(1)}점 / ` +
+    `매수점수 ${holdingAnalysis.buyScore.toFixed(1)} / ` +
+    `수익 ${holdingAnalysis.profitRate.toFixed(2)}% / ` +
+    `거래량 ${holdingAnalysis.buyVolumeRatio.toFixed(1)}→` +
+    `${holdingAnalysis.currentVolumeRatio.toFixed(1)}% / ` +
+    `위치 ${holdingAnalysis.buyDayPosition.toFixed(1)}→` +
+    `${holdingAnalysis.currentDayPosition.toFixed(1)}%`
+  );
+
+  if (
+    holdingAnalysis.bearishVolumePenalty < 0
+  ) {
+    console.log(
+      `[보유추세 경고] ${holding.name} / ` +
+      `${holding.strategyGroup} / ` +
+      `거래량 증가 중 가격·위치 하락 / ` +
+      `추가감점 ${holdingAnalysis.bearishVolumePenalty}점`
+    );
+  }
+}
+
+const signal =
+  getSellSignal(holding, price);
 
     if (!signal) {
       const buyPrice = Number(holding.buyPrice || 0);
@@ -4322,11 +4734,13 @@ async function checkSellOnce() {
         : 0;
 
       console.log(
-        `[SELL 유지] ${holding.name} / ` +
-        `현재가 ${price.toLocaleString()}원 / ` +
-        `${profitRate.toFixed(2)}%`
-      );
-
+  `[SELL 유지] ${holding.name} / ` +
+  `현재가 ${price.toLocaleString()}원 / ` +
+  `${profitRate.toFixed(2)}% / ` +S
+  `보유점수 ${Number(
+    holding.holdingScore || 0
+  ).toFixed(1)}점`
+);
       continue;
     }
 
@@ -4356,14 +4770,19 @@ let buyRunning = false;
 let candidateWatchRunning = false;
 let sellRunning = false;
 
+function isTraderBusy() {
+  return (
+    buyRunning ||
+    candidateWatchRunning ||
+    sellRunning
+  );
+}
+
  function scheduleNextBuyLoop() {
   const delay = getDynamicBuyLoopMs();
 
   setTimeout(async () => {
-    if (
-  buyRunning ||
-  candidateWatchRunning
-) {
+    if (isTraderBusy()) {
   scheduleNextBuyLoop();
   return;
 }
@@ -4382,12 +4801,9 @@ let sellRunning = false;
 }
 
 setInterval(async () => {
-  if (
-    candidateWatchRunning ||
-    buyRunning
-  ) {
-    return;
-  }
+  if (isTraderBusy()) {
+  return;
+}
 
   candidateWatchRunning = true;
 
@@ -4406,18 +4822,23 @@ setInterval(async () => {
 scheduleNextBuyLoop();
 
   setInterval(async () => {
-    if (sellRunning) return;
+  if (isTraderBusy()) {
+    return;
+  }
 
-    sellRunning = true;
+  sellRunning = true;
 
-    try {
-      await checkSellOnce();
-    } catch (err) {
-      console.error("[SELL LOOP 오류]", err.message);
-    } finally {
-      sellRunning = false;
-    }
-  }, settings.sellLoopMs);
+  try {
+    await checkSellOnce();
+  } catch (err) {
+    console.error(
+      "[SELL LOOP 오류]",
+      err.message
+    );
+  } finally {
+    sellRunning = false;
+  }
+}, settings.sellLoopMs);
 }
 
 
