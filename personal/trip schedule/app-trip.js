@@ -173,7 +173,7 @@ $("joinBtn")?.addEventListener("click", async () => {
 
 // -------------------- Share --------------------
 $("shareBtn")?.addEventListener("click", async () => {
-  const url = location.href;
+  const url = `${location.href}&v=${Date.now()}`;
   const title = tripMetaCache.title || "여행 일정";
 
   const shareText =
