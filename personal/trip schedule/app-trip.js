@@ -175,30 +175,28 @@ $("joinBtn")?.addEventListener("click", async () => {
 $("shareBtn")?.addEventListener("click", async () => {
   const url = location.href;
   const title = tripMetaCache.title || "여행 일정";
-  const shareText = `✈️ ${title}\n여행 일정을 확인해 주세요.\n${url}`;
+
+  const shareText =
+`✈️ ${title}
+
+여행 일정을 확인해 주세요.
+${url}`;
 
   try {
-    // 모바일 공유창 지원 시: 카카오톡 등 앱을 직접 선택
-    if (navigator.share) {
-      await navigator.share({
-        title: `${title} - 여행 일정`,
-        text: `✈️ ${title}\n여행 일정을 확인해 주세요.`,
-        url,
-      });
-      return;
-    }
-
-    // PC 또는 공유창 미지원 브라우저
     await navigator.clipboard.writeText(shareText);
+
     alert(
-      `"${title}" 여행 일정과 링크를 복사했습니다.\n\n카톡에 붙여넣기 하시면 됩니다.`
+      `✅ 여행 제목과 링크를 복사했습니다.\n\n` +
+      `카카오톡 대화창에 붙여넣기 해주세요.\n\n` +
+      `✈️ ${title}`
     );
   } catch (e) {
-    // 사용자가 모바일 공유창을 닫은 경우에는 경고하지 않음
-    if (e?.name === "AbortError") return;
+    console.error("복사 실패:", e);
 
-    console.error("공유 실패:", e);
-    prompt("아래 내용을 복사해서 공유하세요:", shareText);
+    prompt(
+      "아래 내용을 전체 복사해서 카카오톡에 붙여넣으세요.",
+      shareText
+    );
   }
 });
 
