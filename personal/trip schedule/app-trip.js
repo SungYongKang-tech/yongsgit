@@ -173,30 +173,13 @@ $("joinBtn")?.addEventListener("click", async () => {
 
 // -------------------- Share --------------------
 $("shareBtn")?.addEventListener("click", async () => {
-  const url = `${location.href}&v=${Date.now()}`;
-  const title = tripMetaCache.title || "여행 일정";
-
-  const shareText =
-`✈️ ${title}
-
-여행 일정을 확인해 주세요.
-${url}`;
+  const url = location.href;
 
   try {
-    await navigator.clipboard.writeText(shareText);
-
-    alert(
-      `✅ 여행 제목과 링크를 복사했습니다.\n\n` +
-      `카카오톡 대화창에 붙여넣기 해주세요.\n\n` +
-      `✈️ ${title}`
-    );
-  } catch (e) {
-    console.error("복사 실패:", e);
-
-    prompt(
-      "아래 내용을 전체 복사해서 카카오톡에 붙여넣으세요.",
-      shareText
-    );
+    await navigator.clipboard.writeText(url);
+    alert("여행 링크를 복사했습니다.\n카카오톡에 붙여넣기 하세요.");
+  } catch {
+    prompt("아래 링크를 복사하세요.", url);
   }
 });
 
