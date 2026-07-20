@@ -75,6 +75,31 @@ function formatDateShort(dateStr) {
   return `${y.slice(2)}.${m}.${d}`;
 }
 
+function getWeekdayKor(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return "";
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  return weekdays[date.getDay()];
+}
+
+function formatDateWithWeekday(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr || "";
+  }
+
+  return `${dateStr} (${getWeekdayKor(dateStr)})`;
+}
+
+function formatDateShortWithWeekday(dateStr) {
+  const shortDate = formatDateShort(dateStr);
+  if (!shortDate) return "";
+
+  return `${shortDate} (${getWeekdayKor(dateStr)})`;
+}
+
 function safeText(s) {
   return (s ?? "")
     .toString()
@@ -619,7 +644,10 @@ function renderItems() {
     .forEach((dateKey) => {
       const wrap = document.createElement("div");
       wrap.className = "card";
-      wrap.innerHTML = `<h2>📅 ${safeText(dateKey)}</h2><div class="list"></div>`;
+      wrap.innerHTML = `
+  <h2>📅 ${safeText(formatDateWithWeekday(dateKey))}</h2>
+  <div class="list"></div>
+`;
       listEl.appendChild(wrap);
 
       const g = wrap.querySelector(".list");
@@ -834,7 +862,7 @@ function renderTable(items) {
 
   // 바디
   for (const it of items) {
-    const date = formatDateShort(it.date);
+    const date = formatDateShortWithWeekday(it.date);
 
     const time = formatTimeLabel(it);
     const title = it.title || "";
@@ -874,7 +902,7 @@ function renderCards(items) {
   }
 
   for (const it of items) {
-    const date = formatDateShort(it.date);
+    const date = formatDateShortWithWeekday(it.date);
 
     const time = formatTimeLabel(it);
     const title = it.title || "";
@@ -915,6 +943,7 @@ async function copyTableAsTSV() {
 
   const header = ["날짜", "시간", "제목", "장소", "지도", "메모"];
   const rows = items.map((it) => [
+  formatDateWithWeekday(it.date),
     it.date || "",
     formatTimeLabel(it),
     it.title || "",
@@ -1063,13 +1092,14 @@ function downloadTableCSV() {
 
   const items = buildTableItemsForCurrentView();
 
-  // ✅ 날짜 포맷: 2026-01-25 -> 26.01.25
-  const fmtDate = (s) => {
-    if (!s) return "";
-    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return String(s);
-    return `${m[1].slice(2)}.${m[2]}.${m[3]}`;
-  };
+const fmtDate = (s) => {
+  if (!s) return "";
+
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(s);
+
+  return `${m[1].slice(2)}.${m[2]}.${m[3]} (${getWeekdayKor(s)})`;
+};
 
   const clean = (v) =>
     (v ?? "")
@@ -1135,11 +1165,12 @@ function downloadTableCSV() {
 }
 
 function fmtDateYY(s) {
-  // 2026-01-25 -> 26.01.25
   if (!s) return "";
+
   const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return String(s);
-  return `${m[1].slice(2)}.${m[2]}.${m[3]}`;
+
+  return `${m[1].slice(2)}.${m[2]}.${m[3]} (${getWeekdayKor(s)})`;
 }
 
 function buildPrintTableHTML_MultiPage(items) {
