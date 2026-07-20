@@ -3625,7 +3625,7 @@ if (volumeDropRate < -20) {
   };
 }
 
-  if (priceDiffRate < -0.7) {
+  if (priceDiffRate < -0.4) {
     return {
       pass: false,
       reason: `가격 약화 ${priceDiffRate.toFixed(2)}%`
@@ -3747,7 +3747,7 @@ if (volumeDropRate < -25) {
   };
 }
 
-  if (priceDiffRate < -0.9) {
+  if (priceDiffRate < -0.3) {
     return {
       pass: false,
       reason:
