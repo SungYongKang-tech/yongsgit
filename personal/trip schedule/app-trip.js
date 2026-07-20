@@ -94,10 +94,13 @@ function formatDateWithWeekday(dateStr) {
 }
 
 function formatDateShortWithWeekday(dateStr) {
-  const shortDate = formatDateShort(dateStr);
-  if (!shortDate) return "";
+  if (!dateStr) return "";
 
-  return `${shortDate} (${getWeekdayKor(dateStr)})`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return String(dateStr);
+  }
+
+  return `${formatDateShort(dateStr)} (${getWeekdayKor(dateStr)})`;
 }
 
 function safeText(s) {
@@ -727,88 +730,69 @@ const timeLabel =
 
 function openTableModal() {
   const back = $("tableBack");
-  if (!back) return;
 
-  // 제목/기간
-  const tTitle = tripMetaCache.title || "여행";
-  const period =
-    tripMetaCache.startDate && tripMetaCache.endDate
-      ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
-      : "";
-
-  $("tableTitle") && ($("tableTitle").textContent = `📌 ${tTitle} - 전체 일정표`);
-$("tableSub") && ($("tableSub").textContent = period ? `기간: ${period}` : "");
-
-
-  // 현재 보기 모드(viewMode)에 맞춰 표 생성 (원하시면 항상 전체로도 가능)
-  const today = iso(new Date());
-  const tomorrow = iso(addDays(new Date(), 1));
-
-  let items = [...cachedItems];
-
-if (viewMode === "today") {
-  items = items.filter((it) => it.date === today);
-}
-
-if (viewMode === "tomorrow") {
-  items = items.filter((it) => it.date === tomorrow);
-}
-
-// ✅ PC 표와 휴대폰 카드 모두 날짜 → 시작시간 순으로 정렬
-items.sort((a, b) => {
-  const ad = a.date || "";
-  const bd = b.date || "";
-
-  // 날짜순
-  if (ad !== bd) {
-    return ad.localeCompare(bd);
+  if (!back) {
+    console.error("tableBack 요소를 찾을 수 없습니다.");
+    alert("표 모달을 찾을 수 없습니다. trip.html을 확인해 주세요.");
+    return;
   }
 
-  // 시작시간순
-  // 시간이 없는 일정은 99:99로 처리되어 맨 뒤로 이동
-  const at = a.timeSort || makeTimeSort(a.timeStart);
-  const bt = b.timeSort || makeTimeSort(b.timeStart);
-
-  const timeCompare = String(at).localeCompare(String(bt));
-
-  if (timeCompare !== 0) {
-    return timeCompare;
-  }
-
-  // 같은 시간에는 제목순으로 안정적으로 정렬
-  return String(a.title || "").localeCompare(
-    String(b.title || ""),
-    "ko"
-  );
-});
-
-// 표 렌더
-if (isMobile()) {
-  if ($("tableEl")) {
-    $("tableEl").style.display = "none";
-  }
-
-  if ($("tableCards")) {
-    $("tableCards").style.display = "block";
-  }
-
-  renderCards(items);
-} else {
-  if ($("tableEl")) {
-    $("tableEl").style.display = "table";
-  }
-
-  if ($("tableCards")) {
-    $("tableCards").style.display = "none";
-  }
-
-  renderTable(items);
-}
-
-
-  $("tableMsg") && ($("tableMsg").textContent = "");
-
+  // ✅ 모달을 먼저 표시
   back.style.display = "flex";
+
+  try {
+    const tTitle = tripMetaCache.title || "여행";
+
+    const period =
+      tripMetaCache.startDate && tripMetaCache.endDate
+        ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
+        : "";
+
+    if ($("tableTitle")) {
+      $("tableTitle").textContent = `📌 ${tTitle} - 전체 일정표`;
+    }
+
+    if ($("tableSub")) {
+      $("tableSub").textContent = period ? `기간: ${period}` : "";
+    }
+
+    if ($("tableMsg")) {
+      $("tableMsg").textContent = "";
+    }
+
+    const items = buildTableItemsForCurrentView();
+
+    if (isMobile()) {
+      if ($("tableEl")) {
+        $("tableEl").style.display = "none";
+        $("tableEl").innerHTML = "";
+      }
+
+      if ($("tableCards")) {
+        $("tableCards").style.display = "block";
+      }
+
+      renderCards(items);
+    } else {
+      if ($("tableCards")) {
+        $("tableCards").style.display = "none";
+        $("tableCards").innerHTML = "";
+      }
+
+      if ($("tableEl")) {
+        $("tableEl").style.display = "table";
+      }
+
+      renderTable(items);
+    }
+  } catch (e) {
+    console.error("표 렌더링 오류:", e);
+
+    if ($("tableMsg")) {
+      $("tableMsg").textContent =
+        `표를 표시하지 못했습니다: ${e.message || e}`;
+    }
+  }
 }
 
 function closeTableModal() {
@@ -944,7 +928,6 @@ async function copyTableAsTSV() {
   const header = ["날짜", "시간", "제목", "장소", "지도", "메모"];
   const rows = items.map((it) => [
   formatDateWithWeekday(it.date),
-    it.date || "",
     formatTimeLabel(it),
     it.title || "",
     it.place || "",
