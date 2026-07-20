@@ -5,8 +5,9 @@ import { uploadToCloudinary } from "./cloudinary.js";
 import {
   signInAnonymously,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
-
 import {
   doc,
   getDoc,
@@ -43,9 +44,11 @@ window.addEventListener("unhandledrejection", (e) => {
 
 // -------------------- tripId --------------------
 const tripId = new URLSearchParams(location.search).get("trip");
+
 if (!tripId) {
-  alert("trip 파라미터가 없습니다. (예: trip.html?trip=XXXX)");
-  location.href = "index.html";
+  alert("여행 정보가 없는 주소입니다.\n카카오톡 공지에 등록된 원래 링크를 다시 확인해 주세요.");
+  location.replace("index.html");
+  throw new Error("trip 파라미터 없음");
 }
 
 // -------------------- util --------------------
@@ -94,13 +97,40 @@ function makeTimeSort(timeStr) {
 if ($("date")) $("date").value = todayISO();
 
 // -------------------- Auth --------------------
-const authReady = new Promise((resolve) => {
-  onAuthStateChanged(auth, (u) => u && resolve(u));
-});
+const authReady = (async () => {
+  try {
+    // 브라우저를 닫았다 열어도 가능한 범위에서 익명 로그인 유지
+    await setPersistence(auth, browserLocalPersistence);
+  } catch (e) {
+    // 카카오톡 내부 브라우저에서 local persistence가 제한될 수 있음
+    console.warn("로그인 유지 설정 실패, 현재 세션으로 계속 진행:", e);
+  }
 
-signInAnonymously(auth).catch((e) => {
+  // Firebase가 기존 로그인 상태를 확인할 때까지 기다림
+  const currentUser = await new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      resolve(user || null);
+    });
+  });
+
+  if (currentUser) {
+    return currentUser;
+  }
+
+  // 카카오톡 내부 브라우저에서 새 익명 사용자 생성
+  const credential = await signInAnonymously(auth);
+  return credential.user;
+})().catch((e) => {
   console.error("익명 로그인 실패:", e);
-  alert(`익명 로그인 실패\ncode: ${e.code}\nmessage: ${e.message}`);
+
+  alert(
+    `익명 로그인에 실패했습니다.\n\n` +
+    `${e.code || ""}\n${e.message || e}\n\n` +
+    `카카오톡 오른쪽 위 메뉴에서 '다른 브라우저로 열기'를 눌러 주세요.`
+  );
+
+  throw e;
 });
 
 // -------------------- me / members --------------------
@@ -168,7 +198,18 @@ $("joinBtn")?.addEventListener("click", async () => {
     joinedAt: serverTimestamp(),
   });
 
-  $("joinCard") && ($("joinCard").style.display = "none");
+  me.uid = user.uid;
+  me.name = nick;
+
+  localStorage.setItem("tripNick", nick);
+
+  if ($("joinCard")) {
+    $("joinCard").style.display = "none";
+  }
+
+  if ($("joinStatus")) {
+    $("joinStatus").textContent = "참여했습니다.";
+  }
 });
 
 // -------------------- Share --------------------
@@ -184,32 +225,66 @@ $("shareBtn")?.addEventListener("click", async () => {
 });
 
 // -------------------- Load trip meta --------------------
-(async () => {
-  const t = await getDoc(doc(db, "trips", tripId));
-  if (!t.exists()) {
-    alert("해당 여행방이 없습니다.");
-    location.href = "index.html";
-    return;
+async function loadTripMeta() {
+  // 반드시 익명 로그인이 완료된 후 Firestore 접근
+  await authReady;
+
+  const tripRef = doc(db, "trips", tripId);
+  const tripSnap = await getDoc(tripRef);
+
+  if (!tripSnap.exists()) {
+    alert("삭제되었거나 존재하지 않는 여행입니다.");
+    location.replace("index.html");
+    return false;
   }
 
-  const meta = t.data()?.meta || {};
-  tripMetaCache = { title: meta.title || "여행", startDate: meta.startDate || "", endDate: meta.endDate || "" };
+  const meta = tripSnap.data()?.meta || {};
 
-  $("tripTitle") && ($("tripTitle").textContent = `📌 ${meta.title || "여행"}`);
-  $("tripPeriod") &&
-    ($("tripPeriod").textContent =
-      meta.startDate && meta.endDate ? `${meta.startDate} ~ ${meta.endDate}` : "");
+  tripMetaCache = {
+    title: meta.title || "여행",
+    startDate: meta.startDate || "",
+    endDate: meta.endDate || "",
+  };
+
+  if ($("tripTitle")) {
+    $("tripTitle").textContent = `📌 ${tripMetaCache.title}`;
+  }
+
+  if ($("tripPeriod")) {
+    $("tripPeriod").textContent =
+      tripMetaCache.startDate && tripMetaCache.endDate
+        ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
+        : "";
+  }
 
   await ensureJoined();
   setViewMode("all");
-})();
+
+  return true;
+}
 
 // -------------------- Members subscription --------------------
-onSnapshot(collection(db, "trips", tripId, "members"), (snap) => {
-  members = {};
-  snap.forEach((d) => (members[d.id] = d.data()));
-  renderItems();
-});
+let unsubscribeMembers = null;
+
+function startMembersListener() {
+  if (unsubscribeMembers) {
+    unsubscribeMembers();
+  }
+
+  unsubscribeMembers = onSnapshot(
+    collection(db, "trips", tripId, "members"),
+    (snap) => {
+      members = {};
+      snap.forEach((d) => {
+        members[d.id] = d.data();
+      });
+      renderItems();
+    },
+    (err) => {
+      console.error("members onSnapshot error:", err);
+    }
+  );
+}
 
 // -------------------- Add item --------------------
 $("addBtn")?.addEventListener("click", async () => {
@@ -476,7 +551,36 @@ function startItemsListener() {
   attach(q1, "q1");
 }
 
-startItemsListener();
+// -------------------- Page initialize --------------------
+async function initializeTripPage() {
+  try {
+    const loaded = await loadTripMeta();
+    if (!loaded) return;
+
+    // 로그인과 여행방 확인이 모두 끝난 뒤 실시간 구독 시작
+    startMembersListener();
+    startItemsListener();
+  } catch (e) {
+    console.error("여행 페이지 초기화 실패:", e);
+
+    const message = e?.message || String(e);
+
+    const listEl = $("list");
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="card">
+          <h2>여행 일정을 불러오지 못했습니다.</h2>
+          <p class="small">${safeText(message)}</p>
+          <p class="small">
+            카카오톡 오른쪽 위 메뉴에서 ‘다른 브라우저로 열기’를 눌러 다시 접속해 주세요.
+          </p>
+        </div>
+      `;
+    }
+  }
+}
+
+initializeTripPage();
 
 // -------------------- Render --------------------
 function renderItems() {
