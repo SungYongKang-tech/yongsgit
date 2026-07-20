@@ -717,17 +717,63 @@ $("tableSub") && ($("tableSub").textContent = period ? `기간: ${period}` : "")
   const tomorrow = iso(addDays(new Date(), 1));
 
   let items = [...cachedItems];
-  if (viewMode === "today") items = items.filter((it) => it.date === today);
-  if (viewMode === "tomorrow") items = items.filter((it) => it.date === tomorrow);
 
-  // 표 렌더
-  if (isMobile()) {
-  $("tableEl") && ($("tableEl").style.display = "none");
-  $("tableCards") && ($("tableCards").style.display = "block");
+if (viewMode === "today") {
+  items = items.filter((it) => it.date === today);
+}
+
+if (viewMode === "tomorrow") {
+  items = items.filter((it) => it.date === tomorrow);
+}
+
+// ✅ PC 표와 휴대폰 카드 모두 날짜 → 시작시간 순으로 정렬
+items.sort((a, b) => {
+  const ad = a.date || "";
+  const bd = b.date || "";
+
+  // 날짜순
+  if (ad !== bd) {
+    return ad.localeCompare(bd);
+  }
+
+  // 시작시간순
+  // 시간이 없는 일정은 99:99로 처리되어 맨 뒤로 이동
+  const at = a.timeSort || makeTimeSort(a.timeStart);
+  const bt = b.timeSort || makeTimeSort(b.timeStart);
+
+  const timeCompare = String(at).localeCompare(String(bt));
+
+  if (timeCompare !== 0) {
+    return timeCompare;
+  }
+
+  // 같은 시간에는 제목순으로 안정적으로 정렬
+  return String(a.title || "").localeCompare(
+    String(b.title || ""),
+    "ko"
+  );
+});
+
+// 표 렌더
+if (isMobile()) {
+  if ($("tableEl")) {
+    $("tableEl").style.display = "none";
+  }
+
+  if ($("tableCards")) {
+    $("tableCards").style.display = "block";
+  }
+
   renderCards(items);
 } else {
-  $("tableEl") && ($("tableEl").style.display = "table");
-  $("tableCards") && ($("tableCards").style.display = "none");
+  if ($("tableEl")) {
+    $("tableEl").style.display = "table";
+  }
+
+  if ($("tableCards")) {
+    $("tableCards").style.display = "none";
+  }
+
   renderTable(items);
 }
 
@@ -758,17 +804,7 @@ function renderTable(items) {
   const table = $("tableEl");
   if (!table) return;
 
-  // 정렬: date → timeSort
-  items.sort((a, b) => {
-    const ad = a.date || "";
-    const bd = b.date || "";
-    if (ad !== bd) return ad.localeCompare(bd);
-
-    const at = a.timeSort || makeTimeSort(a.timeStart);
-    const bt = b.timeSort || makeTimeSort(b.timeStart);
-    return String(at).localeCompare(String(bt));
-  });
-
+ 
   // 헤더
   table.innerHTML = `
     <thead>
