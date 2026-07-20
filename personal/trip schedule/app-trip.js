@@ -233,7 +233,7 @@ async function loadTripMeta() {
   const tripSnap = await getDoc(tripRef);
 
   if (!tripSnap.exists()) {
-    alert("삭제되었거나 존재하지 않는 여행입니다.");
+    alert("생성된 여행의 열기버튼을 눌러주세요");
     location.replace("index.html");
     return false;
   }
