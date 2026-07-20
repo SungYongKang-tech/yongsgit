@@ -1826,9 +1826,6 @@ const watchScore =
     }
   };
 
-  const existing = state[listKey].find(
-    candidate => candidate.code === code
-  );
 
   if (existing) {
     existing.name = name;
