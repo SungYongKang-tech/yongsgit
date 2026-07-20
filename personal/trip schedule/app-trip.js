@@ -727,81 +727,94 @@ const timeLabel =
 // Load trip meta 부분에서 meta를 캐시에 저장하도록 2줄만 추가하세요.
 // (기존 코드에서 meta 읽는 부분 바로 아래에 추가)
 /// tripMetaCache = { title: meta.title || "여행", startDate: meta.startDate || "", endDate: meta.endDate || "" };
-
 function openTableModal() {
   const back = $("tableBack");
+  const tableEl = $("tableEl");
+  const tableCards = $("tableCards");
 
   if (!back) {
-    console.error("tableBack 요소를 찾을 수 없습니다.");
-    alert("표 모달을 찾을 수 없습니다. trip.html을 확인해 주세요.");
+    alert("표 모달(tableBack)을 찾을 수 없습니다.");
     return;
   }
 
-  // ✅ 모달을 먼저 표시
-  back.style.display = "flex";
+  // ✅ 먼저 모달을 강제로 표시
+  back.style.setProperty("display", "flex", "important");
+  back.style.setProperty("visibility", "visible", "important");
+  back.style.setProperty("opacity", "1", "important");
+  back.style.setProperty("z-index", "99999", "important");
 
-  try {
-    const tTitle = tripMetaCache.title || "여행";
+  document.body.style.overflow = "hidden";
 
-    const period =
-      tripMetaCache.startDate && tripMetaCache.endDate
-        ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
-        : "";
+  const title = tripMetaCache.title || "여행";
 
-    if ($("tableTitle")) {
-      $("tableTitle").textContent = `📌 ${tTitle} - 전체 일정표`;
+  const period =
+    tripMetaCache.startDate && tripMetaCache.endDate
+      ? `${tripMetaCache.startDate} ~ ${tripMetaCache.endDate}`
+      : "";
+
+  if ($("tableTitle")) {
+    $("tableTitle").textContent = `📌 ${title} - 전체 일정표`;
+  }
+
+  if ($("tableSub")) {
+    $("tableSub").textContent = period ? `기간: ${period}` : "";
+  }
+
+  if ($("tableMsg")) {
+    $("tableMsg").textContent = "";
+  }
+
+  const items = buildTableItemsForCurrentView();
+
+  // ✅ 휴대폰 여부를 화면 실제 너비로 판단
+  const mobile = window.innerWidth <= 768;
+
+  if (mobile) {
+    if (tableEl) {
+      tableEl.style.setProperty("display", "none", "important");
+      tableEl.innerHTML = "";
     }
 
-    if ($("tableSub")) {
-      $("tableSub").textContent = period ? `기간: ${period}` : "";
+    if (tableCards) {
+      tableCards.style.setProperty("display", "block", "important");
+      tableCards.style.width = "100%";
+      tableCards.style.minWidth = "0";
     }
 
-    if ($("tableMsg")) {
-      $("tableMsg").textContent = "";
+    renderCards(items);
+  } else {
+    if (tableCards) {
+      tableCards.style.setProperty("display", "none", "important");
+      tableCards.innerHTML = "";
     }
 
-    const items = buildTableItemsForCurrentView();
-
-    if (isMobile()) {
-      if ($("tableEl")) {
-        $("tableEl").style.display = "none";
-        $("tableEl").innerHTML = "";
-      }
-
-      if ($("tableCards")) {
-        $("tableCards").style.display = "block";
-      }
-
-      renderCards(items);
-    } else {
-      if ($("tableCards")) {
-        $("tableCards").style.display = "none";
-        $("tableCards").innerHTML = "";
-      }
-
-      if ($("tableEl")) {
-        $("tableEl").style.display = "table";
-      }
-
-      renderTable(items);
+    if (tableEl) {
+      tableEl.style.setProperty("display", "table", "important");
     }
-  } catch (e) {
-    console.error("표 렌더링 오류:", e);
 
-    if ($("tableMsg")) {
-      $("tableMsg").textContent =
-        `표를 표시하지 못했습니다: ${e.message || e}`;
-    }
+    renderTable(items);
   }
 }
 
 function closeTableModal() {
   const back = $("tableBack");
-  if (!back) return;
-  back.style.display = "none";
-  $("tableEl") && ($("tableEl").innerHTML = "");
-$("tableMsg") && ($("tableMsg").textContent = "");
 
+  if (!back) return;
+
+  back.style.setProperty("display", "none", "important");
+  document.body.style.overflow = "";
+
+  if ($("tableEl")) {
+    $("tableEl").innerHTML = "";
+  }
+
+  if ($("tableCards")) {
+    $("tableCards").innerHTML = "";
+  }
+
+  if ($("tableMsg")) {
+    $("tableMsg").textContent = "";
+  }
 }
 
 function formatTimeLabel(it) {
@@ -877,17 +890,28 @@ function isMobile() {
 
 function renderCards(items) {
   const wrap = $("tableCards");
-  if (!wrap) return;
+
+  if (!wrap) {
+    alert("휴대폰용 표 영역(tableCards)을 찾을 수 없습니다.");
+    return;
+  }
+
   wrap.innerHTML = "";
+  wrap.style.display = "block";
+  wrap.style.width = "100%";
+  wrap.style.minWidth = "0";
 
   if (!items.length) {
-    wrap.innerHTML = `<div class="small" style="color:#666; padding:12px;">표시할 일정이 없습니다.</div>`;
+    wrap.innerHTML = `
+      <div class="small" style="padding:16px; color:#666;">
+        표시할 일정이 없습니다.
+      </div>
+    `;
     return;
   }
 
   for (const it of items) {
     const date = formatDateShortWithWeekday(it.date);
-
     const time = formatTimeLabel(it);
     const title = it.title || "";
     const place = it.place || "";
@@ -895,31 +919,80 @@ function renderCards(items) {
     const mapUrl = it.mapUrl || "";
 
     const card = document.createElement("div");
-    card.style.cssText = `
-      background:#fff;
-      border:1px solid #eee;
-      border-radius:14px;
-      padding:12px;
-      margin-bottom:10px;
-    `;
+    card.className = "table-mobile-card";
 
     card.innerHTML = `
-      <div style="font-weight:800; margin-bottom:6px;">
+      <div class="table-card-title">
         ${safeText(title)}
       </div>
-      <div class="small" style="color:#444; line-height:1.5;">
-        ${date ? `📅 ${safeText(date)}<br/>` : ""}
-        ${time ? `⏰ ${safeText(time)}<br/>` : ""}
-        ${place ? `📍 ${safeText(place)}<br/>` : ""}
-        ${mapUrl ? `🗺️ <a href="${safeText(mapUrl)}" target="_blank" rel="noopener">지도 열기</a><br/>` : ""}
-        ${note ? `📝 ${safeText(note)}` : ""}
+
+      <div class="table-card-info">
+        ${
+          date
+            ? `
+              <div class="table-card-row">
+                <span class="table-card-label">📅 날짜</span>
+                <span class="table-card-value">${safeText(date)}</span>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          time
+            ? `
+              <div class="table-card-row">
+                <span class="table-card-label">⏰ 시간</span>
+                <span class="table-card-value">${safeText(time)}</span>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          place
+            ? `
+              <div class="table-card-row">
+                <span class="table-card-label">📍 장소</span>
+                <span class="table-card-value">${safeText(place)}</span>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          mapUrl
+            ? `
+              <div class="table-card-row">
+                <span class="table-card-label">🗺️ 지도</span>
+                <span class="table-card-value">
+                  <a href="${safeText(mapUrl)}"
+                     target="_blank"
+                     rel="noopener">
+                    지도 열기
+                  </a>
+                </span>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          note
+            ? `
+              <div class="table-card-row">
+                <span class="table-card-label">📝 메모</span>
+                <span class="table-card-value">${safeText(note)}</span>
+              </div>
+            `
+            : ""
+        }
       </div>
     `;
 
     wrap.appendChild(card);
   }
 }
-
 
 // ✅ 표 복사(엑셀/구글시트/카톡 메모 등에 붙여넣기 쉬운 TSV)
 async function copyTableAsTSV() {
