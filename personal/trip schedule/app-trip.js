@@ -879,7 +879,11 @@ function renderTable(items) {
     const time = formatTimeLabel(it);
     const title = it.title || "";
     const place = it.place || "";
-    const note = it.note || "";
+    const note = (it.note || "")
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line !== "")
+  .join("\n");
     const mapUrl = it.mapUrl || "";
 
     const mapCell = mapUrl
@@ -1014,19 +1018,20 @@ function renderCards(items) {
             : ""
         }
 
-        ${
-          note
-            ? `
-              <div style="
-                margin-top:6px;
-                white-space:pre-wrap;
-                overflow-wrap:anywhere;
-              ">
-                📝 ${safeText(note)}
-              </div>
-            `
-            : ""
-        }
+    ${
+  note
+    ? `
+      <div style="
+        margin-top:3px;
+        padding:0;
+        text-align:left;
+        white-space:pre-line;
+        overflow-wrap:anywhere;
+        color:#374151;
+      ">🚗 ${safeText(note)}</div>
+    `
+    : ""
+}
       </div>
     `;
 
