@@ -731,18 +731,15 @@ function openTableModal() {
   const back = $("tableBack");
   const tableEl = $("tableEl");
   const tableCards = $("tableCards");
+  const tableMsg = $("tableMsg");
 
   if (!back) {
-    alert("표 모달(tableBack)을 찾을 수 없습니다.");
+    alert("표 모달 영역을 찾을 수 없습니다.");
     return;
   }
 
-  // ✅ 먼저 모달을 강제로 표시
+  // ✅ 모달 먼저 열기
   back.style.setProperty("display", "flex", "important");
-  back.style.setProperty("visibility", "visible", "important");
-  back.style.setProperty("opacity", "1", "important");
-  back.style.setProperty("z-index", "99999", "important");
-
   document.body.style.overflow = "hidden";
 
   const title = tripMetaCache.title || "여행";
@@ -760,39 +757,57 @@ function openTableModal() {
     $("tableSub").textContent = period ? `기간: ${period}` : "";
   }
 
-  if ($("tableMsg")) {
-    $("tableMsg").textContent = "";
-  }
+  try {
+    const items = buildTableItemsForCurrentView();
 
-  const items = buildTableItemsForCurrentView();
+    console.log("표로 보기 일정 수:", items.length, items);
 
-  // ✅ 휴대폰 여부를 화면 실제 너비로 판단
-  const mobile = window.innerWidth <= 768;
+    // ✅ 화면 너비로 휴대폰 판단
+    const mobile = window.innerWidth <= 768;
 
-  if (mobile) {
-    if (tableEl) {
-      tableEl.style.setProperty("display", "none", "important");
-      tableEl.innerHTML = "";
-    }
+    if (mobile) {
+      if (tableEl) {
+        tableEl.style.setProperty("display", "none", "important");
+      }
 
-    if (tableCards) {
+      if (!tableCards) {
+        throw new Error("tableCards 영역이 없습니다.");
+      }
+
+      // ✅ CSS보다 우선하도록 important 적용
       tableCards.style.setProperty("display", "block", "important");
-      tableCards.style.width = "100%";
-      tableCards.style.minWidth = "0";
-    }
+      tableCards.style.setProperty("visibility", "visible", "important");
+      tableCards.style.setProperty("opacity", "1", "important");
+      tableCards.style.setProperty("width", "100%", "important");
+      tableCards.style.setProperty("min-height", "100px", "important");
 
-    renderCards(items);
-  } else {
-    if (tableCards) {
-      tableCards.style.setProperty("display", "none", "important");
-      tableCards.innerHTML = "";
-    }
+      renderCards(items);
+    } else {
+      if (tableCards) {
+        tableCards.style.setProperty("display", "none", "important");
+      }
 
-    if (tableEl) {
+      if (!tableEl) {
+        throw new Error("tableEl 영역이 없습니다.");
+      }
+
       tableEl.style.setProperty("display", "table", "important");
+      renderTable(items);
     }
 
-    renderTable(items);
+    if (tableMsg) {
+      tableMsg.textContent = items.length
+        ? `총 ${items.length}개 일정`
+        : "표시할 일정이 없습니다.";
+    }
+  } catch (e) {
+    console.error("표 렌더링 오류:", e);
+
+    if (tableMsg) {
+      tableMsg.textContent = `표시 오류: ${e.message || e}`;
+    }
+
+    alert(`표시 오류\n${e.message || e}`);
   }
 }
 
@@ -892,18 +907,28 @@ function renderCards(items) {
   const wrap = $("tableCards");
 
   if (!wrap) {
-    alert("휴대폰용 표 영역(tableCards)을 찾을 수 없습니다.");
-    return;
+    throw new Error("휴대폰 카드 영역(tableCards)을 찾을 수 없습니다.");
   }
 
   wrap.innerHTML = "";
-  wrap.style.display = "block";
-  wrap.style.width = "100%";
-  wrap.style.minWidth = "0";
 
-  if (!items.length) {
+  wrap.style.setProperty("display", "block", "important");
+  wrap.style.setProperty("visibility", "visible", "important");
+  wrap.style.setProperty("opacity", "1", "important");
+  wrap.style.setProperty("width", "100%", "important");
+  wrap.style.setProperty("min-height", "100px", "important");
+  wrap.style.setProperty("box-sizing", "border-box", "important");
+
+  if (!Array.isArray(items) || items.length === 0) {
     wrap.innerHTML = `
-      <div class="small" style="padding:16px; color:#666;">
+      <div style="
+        display:block;
+        padding:20px;
+        background:#f8fafc;
+        border:1px solid #e5e7eb;
+        border-radius:12px;
+        color:#666;
+      ">
         표시할 일정이 없습니다.
       </div>
     `;
@@ -913,65 +938,77 @@ function renderCards(items) {
   for (const it of items) {
     const date = formatDateShortWithWeekday(it.date);
     const time = formatTimeLabel(it);
-    const title = it.title || "";
+    const title = it.title || "제목 없음";
     const place = it.place || "";
     const note = it.note || "";
     const mapUrl = it.mapUrl || "";
 
     const card = document.createElement("div");
-    card.className = "table-mobile-card";
+
+    card.style.cssText = `
+      display:block;
+      width:100%;
+      max-width:100%;
+      box-sizing:border-box;
+      background:#ffffff;
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      padding:14px;
+      margin:0 0 10px 0;
+      overflow:hidden;
+      color:#111827;
+    `;
 
     card.innerHTML = `
-      <div class="table-card-title">
+      <div style="
+        display:block;
+        margin-bottom:9px;
+        font-size:17px;
+        line-height:1.4;
+        font-weight:800;
+        color:#111827;
+        overflow-wrap:anywhere;
+      ">
         ${safeText(title)}
       </div>
 
-      <div class="table-card-info">
+      <div style="
+        display:block;
+        font-size:14px;
+        line-height:1.7;
+        color:#374151;
+        overflow-wrap:anywhere;
+      ">
         ${
           date
-            ? `
-              <div class="table-card-row">
-                <span class="table-card-label">📅 날짜</span>
-                <span class="table-card-value">${safeText(date)}</span>
-              </div>
-            `
+            ? `<div>📅 <strong>${safeText(date)}</strong></div>`
             : ""
         }
 
         ${
           time
-            ? `
-              <div class="table-card-row">
-                <span class="table-card-label">⏰ 시간</span>
-                <span class="table-card-value">${safeText(time)}</span>
-              </div>
-            `
+            ? `<div>⏰ ${safeText(time)}</div>`
             : ""
         }
 
         ${
           place
-            ? `
-              <div class="table-card-row">
-                <span class="table-card-label">📍 장소</span>
-                <span class="table-card-value">${safeText(place)}</span>
-              </div>
-            `
+            ? `<div>📍 ${safeText(place)}</div>`
             : ""
         }
 
         ${
           mapUrl
             ? `
-              <div class="table-card-row">
-                <span class="table-card-label">🗺️ 지도</span>
-                <span class="table-card-value">
-                  <a href="${safeText(mapUrl)}"
-                     target="_blank"
-                     rel="noopener">
-                    지도 열기
-                  </a>
-                </span>
+              <div>
+                🗺️
+                <a
+                  href="${safeText(mapUrl)}"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  지도 열기
+                </a>
               </div>
             `
             : ""
@@ -980,9 +1017,12 @@ function renderCards(items) {
         ${
           note
             ? `
-              <div class="table-card-row">
-                <span class="table-card-label">📝 메모</span>
-                <span class="table-card-value">${safeText(note)}</span>
+              <div style="
+                margin-top:6px;
+                white-space:pre-wrap;
+                overflow-wrap:anywhere;
+              ">
+                📝 ${safeText(note)}
               </div>
             `
             : ""
