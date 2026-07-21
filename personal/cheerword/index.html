@@ -171,6 +171,23 @@
       box-shadow:0 14px 34px rgba(0,0,0,.10);
     }
 
+    .card-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+
+    .card-delete{
+      flex:0 0 auto;
+      padding:7px 10px;
+      border-radius:10px;
+      background:#fef2f2;
+      color:#b91c1c;
+      border:1px solid #fecaca;
+      font-size:12px;
+    }
+
     .word{
       font-size:28px;
       font-weight:900;
@@ -457,7 +474,8 @@
         <input id="searchInput" class="search" type="text" placeholder="건배사, 뜻, 태그 검색" />
 
         <div class="top-actions">
-          <button id="randomBtn" class="btn primary" type="button">랜덤 추천</button>
+          <button id="addBtn" class="btn primary" type="button">＋ 건배사 추가</button>
+          <button id="randomBtn" class="btn" type="button">랜덤 추천</button>
           <button id="resetBtn" class="btn" type="button">전체 보기</button>
           <button id="exportBtn" class="btn warn" type="button">JSON 내보내기</button>
           <button id="clearLocalBtn" class="btn danger" type="button">수정내용 초기화</button>
@@ -502,7 +520,7 @@
 
   <div id="editModalBack" class="modal-back">
     <div class="modal">
-      <h2>건배사 수정</h2>
+      <h2 id="editModalTitle">건배사 수정</h2>
 
       <div class="form-grid">
         <div class="field">
@@ -563,6 +581,7 @@
     const filterBar = document.getElementById('filterBar');
     const cardGrid = document.getElementById('cardGrid');
     const resultText = document.getElementById('resultText');
+    const addBtn = document.getElementById('addBtn');
     const randomBtn = document.getElementById('randomBtn');
     const resetBtn = document.getElementById('resetBtn');
     const exportBtn = document.getElementById('exportBtn');
@@ -580,6 +599,7 @@
     const deleteBtn = document.getElementById('deleteBtn');
 
     const editModalBack = document.getElementById('editModalBack');
+    const editModalTitle = document.getElementById('editModalTitle');
     const editWord = document.getElementById('editWord');
     const editPhrase = document.getElementById('editPhrase');
     const editCategory = document.getElementById('editCategory');
@@ -592,6 +612,7 @@
     let allCheers = [];
     let currentCategory = '전체';
     let currentItem = null;
+    let editMode = 'edit';
 
     async function loadCheers() {
       try {
@@ -697,7 +718,10 @@
 
       cardGrid.innerHTML = list.map(item => `
         <article class="card" data-id="${item.id}">
-          <div class="word">${escapeHtml(item.word)}</div>
+          <div class="card-head">
+            <div class="word">${escapeHtml(item.word)}</div>
+            <button class="card-delete" type="button" data-delete-id="${item.id}">삭제</button>
+          </div>
           <div class="phrase">${escapeHtml(item.phrase)}</div>
           <div class="meta">
             <span class="tag">${escapeHtml(item.category || '기타')}</span>
@@ -707,10 +731,19 @@
       `).join('');
 
       cardGrid.querySelectorAll('.card').forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.card-delete')) return;
           const id = Number(card.dataset.id);
           const item = getFilteredData().find(x => x.id === id);
           openViewer(item);
+        });
+      });
+
+      cardGrid.querySelectorAll('.card-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = Number(btn.dataset.deleteId);
+          deleteItemById(id);
         });
       });
     }
@@ -790,9 +823,24 @@
       openViewer(randomItem);
     }
 
+    function openAddModal() {
+      editMode = 'add';
+      editModalTitle.textContent = '새 건배사 추가';
+      editWord.value = '';
+      editPhrase.value = '';
+      editCategory.value = '무난형';
+      editTags.value = '';
+      editHighlightColor.value = '#ef4444';
+      editViewerBg.value = '#111827';
+      editModalBack.classList.add('show');
+      setTimeout(() => editWord.focus(), 0);
+    }
+
     function openEditModal() {
       if (!currentItem) return;
 
+      editMode = 'edit';
+      editModalTitle.textContent = '건배사 수정';
       editWord.value = currentItem.word || '';
       editPhrase.value = currentItem.phrase || '';
       editCategory.value = currentItem.category || '기타';
@@ -808,42 +856,77 @@
     }
 
     function saveEdit() {
-      if (!currentItem) return;
+      const word = editWord.value.trim();
+      const phrase = editPhrase.value.trim();
 
-      const idx = allCheers.findIndex(item => item.id === currentItem.id);
-      if (idx === -1) return;
+      if (!word) {
+        alert('건배사를 입력해주세요.');
+        editWord.focus();
+        return;
+      }
 
-      allCheers[idx] = {
-        ...allCheers[idx],
-        word: editWord.value.trim(),
-        phrase: editPhrase.value.trim(),
+      if (!phrase) {
+        alert('설명을 입력해주세요.');
+        editPhrase.focus();
+        return;
+      }
+
+      const formData = {
+        word,
+        phrase,
         category: editCategory.value,
         tags: editTags.value
           .split(',')
           .map(v => v.trim())
           .filter(Boolean),
+        status: 'approved',
         highlightColor: editHighlightColor.value,
         viewerBg: editViewerBg.value
       };
 
-      currentItem = allCheers[idx];
+      if (editMode === 'add') {
+        const nextId = allCheers.length
+          ? Math.max(...allCheers.map(item => Number(item.id) || 0)) + 1
+          : 1;
+
+        const newItem = { id: nextId, ...formData };
+        allCheers.unshift(newItem);
+        currentItem = newItem;
+      } else {
+        if (!currentItem) return;
+        const idx = allCheers.findIndex(item => item.id === currentItem.id);
+        if (idx === -1) return;
+        allCheers[idx] = { ...allCheers[idx], ...formData };
+        currentItem = allCheers[idx];
+      }
+
       saveToLocal();
+      currentCategory = '전체';
+      searchInput.value = '';
       renderFilters();
       renderCards();
       closeEditModal();
       openViewer(currentItem);
     }
 
-    function deleteCurrentItem() {
-      if (!currentItem) return;
-      const ok = confirm(`"${currentItem.word}" 항목을 삭제하시겠습니까?`);
+    function deleteItemById(id) {
+      const item = allCheers.find(x => x.id === id);
+      if (!item) return;
+
+      const ok = confirm(`"${item.word}" 항목을 삭제하시겠습니까?`);
       if (!ok) return;
 
-      allCheers = allCheers.filter(item => item.id !== currentItem.id);
+      allCheers = allCheers.filter(x => x.id !== id);
+      if (currentItem?.id === id) currentItem = null;
       saveToLocal();
       closeViewer();
       renderFilters();
       renderCards();
+    }
+
+    function deleteCurrentItem() {
+      if (!currentItem) return;
+      deleteItemById(currentItem.id);
     }
 
     function exportJson() {
@@ -857,8 +940,18 @@
     }
 
     function clearLocalChanges() {
-      const ok = confirm('브라우저에 저장된 수정/삭제 내용을 모두 지우고 원본 JSON으로 다시 불러오시겠습니까?');
+      const password = prompt('수정내용을 초기화하려면 비밀번호를 입력하세요.');
+
+      if (password === null) return;
+
+      if (password !== '771225') {
+        alert('비밀번호가 틀렸습니다.');
+        return;
+      }
+
+      const ok = confirm('브라우저에 저장된 추가·수정·삭제 내용을 모두 지우고 원본 JSON으로 다시 불러오시겠습니까?');
       if (!ok) return;
+
       localStorage.removeItem(STORAGE_KEY);
       location.reload();
     }
@@ -873,6 +966,8 @@
     }
 
     searchInput.addEventListener('input', renderCards);
+
+    addBtn.addEventListener('click', openAddModal);
 
     randomBtn.addEventListener('click', () => {
       currentItem = null;
