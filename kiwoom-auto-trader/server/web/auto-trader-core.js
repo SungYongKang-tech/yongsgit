@@ -121,6 +121,22 @@ volumeFirstTakeProfitRate: 3.0,
 volumeTrailingStartRate: 2.5,
 volumeTrailingStopRate: 0.8,
 
+// VOLUME 초반 과열 매수 차단
+// 거래량과 상승률은 높은데 고가권을 유지하지 못하면 매수하지 않는다.
+volumeOverheatBlockEnabled: true,
+volumeOverheatMinVolumeRatio: 300,
+volumeOverheatMinChangeRate: 5.0,
+volumeOverheatMinDayPositionRate: 75,
+
+// 보유추세 붕괴 조기매도
+// 가격·당일위치·보유점수가 동시에 무너진 경우에만 조기매도한다.
+holdingWeakSellEnabled: true,
+holdingWeakSellMinHoldMinutes: 10,
+holdingWeakSellMaxScore: 55,
+holdingWeakSellMaxProfitRate: -0.3,
+holdingWeakSellMaxDayPositionRate: 25,
+holdingWeakSellMinScoreDrop: -50,
+
   buyLoopMs: 60 * 1000,
   sellLoopMs: 10 * 1000,
 
@@ -4218,6 +4234,33 @@ function judgeVolumeBuy(state, item, price) {
   }
 
   /*
+ * VOLUME 초반 과열 차단
+ *
+ * 거래량과 상승률은 매우 높지만
+ * 당일 고가권을 충분히 유지하지 못하는 종목은
+ * 순간 체결 폭증 후 밀릴 가능성이 있어 매수하지 않는다.
+ */
+if (
+  settings.volumeOverheatBlockEnabled &&
+  volumeRatio >=
+    settings.volumeOverheatMinVolumeRatio &&
+  changeRate >=
+    settings.volumeOverheatMinChangeRate &&
+  dayPosition <
+    settings.volumeOverheatMinDayPositionRate
+) {
+  return {
+    pass: false,
+    reason:
+      `VOLUME 초반 과열 / ` +
+      `상승률 ${changeRate.toFixed(2)}% / ` +
+      `거래량 ${volumeRatio.toFixed(1)}% / ` +
+      `당일위치 ${dayPosition.toFixed(1)}% / ` +
+      `필요위치 ${settings.volumeOverheatMinDayPositionRate.toFixed(1)}% 이상`
+  };
+}
+
+  /*
    * VOLUME은 시가 이상이어야 함
    */
   if (openPosition < 0) {
@@ -5107,6 +5150,50 @@ function getSellSignal(holding, price) {
   ) {
     return null;
   }
+
+  /*
+ * 2. 보유추세 붕괴 조기매도
+ *
+ * 일반 손절선까지 기다리지 않고,
+ * 보유점수·당일위치·수익률이 동시에 무너진 경우에만 청산한다.
+ */
+const holdingScore =
+  Number(holding.holdingScore || 0);
+
+const holdingScoreDiff =
+  Number(holding.holdingScoreDiff || 0);
+
+const currentDayPosition =
+  Number(holding.currentDayPositionRate || 0);
+
+if (
+  settings.holdingWeakSellEnabled &&
+  holdMinutes >=
+    settings.holdingWeakSellMinHoldMinutes &&
+  holdingScore <=
+    settings.holdingWeakSellMaxScore &&
+  holdingScoreDiff <=
+    settings.holdingWeakSellMinScoreDrop &&
+  profitRate <=
+    settings.holdingWeakSellMaxProfitRate &&
+  currentDayPosition <=
+    settings.holdingWeakSellMaxDayPositionRate
+) {
+  return {
+    type:
+      `${holding.strategyGroup}_WEAK_TREND_SELL`,
+
+    qty:
+      Number(holding.qty || 0),
+
+    reason:
+      `보유추세 붕괴 / ` +
+      `수익 ${profitRate.toFixed(2)}% / ` +
+      `보유점수 ${holdingScore.toFixed(1)}점 / ` +
+      `점수변화 ${holdingScoreDiff.toFixed(1)}점 / ` +
+      `당일위치 ${currentDayPosition.toFixed(1)}%`
+  };
+}
 
   // 2. 1차 익절
   if (
