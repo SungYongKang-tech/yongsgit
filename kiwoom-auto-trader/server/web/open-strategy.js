@@ -99,9 +99,21 @@ openFullRescanIntervalMs: 60 * 1000,
   openConfirmWaitMs: 15 * 1000,
 
   // OPEN 후보 점수 상승 추세 보너스
+openConfirmWaitMs: 15 * 1000,
+
+// OPEN 후보 점수 상승 추세 보너스
 openScoreTrendBonusPerPoint: 4,
 openRecentScoreTrendBonusPerPoint: 6,
 openScoreTrendMaxBonus: 20,
+
+// 15초 가격 움직임 평가
+openConfirmMinPriceRiseRate: 0.10,
+openConfirmMaxPriceRiseRate: 1.00,
+openConfirmPriceBonusLow: 3,
+openConfirmPriceBonusMedium: 7,
+openConfirmPriceBonusHigh: 10,
+
+openStopLossRate: -0.7,
 
   openStopLossRate: -0.7,
   openTrailingStartRate: 0.7,
@@ -1547,6 +1559,38 @@ const priceDiffRate =
       ) * 100
     : 0;
 
+    /*
+ * 첫 발견 이후 가격 상승률 보너스
+ *
+ * 0.10% 미만: 0점
+ * 0.10~0.30%: 3점
+ * 0.30~0.60%: 7점
+ * 0.60~1.00%: 10점
+ * 1.00% 초과: 추격매수 차단
+ */
+let confirmPriceBonus = 0;
+
+if (
+  priceDiffRate >= 0.10 &&
+  priceDiffRate < 0.30
+) {
+  confirmPriceBonus =
+    settings.openConfirmPriceBonusLow;
+} else if (
+  priceDiffRate >= 0.30 &&
+  priceDiffRate < 0.60
+) {
+  confirmPriceBonus =
+    settings.openConfirmPriceBonusMedium;
+} else if (
+  priceDiffRate >= 0.60 &&
+  priceDiffRate <=
+    settings.openConfirmMaxPriceRiseRate
+) {
+  confirmPriceBonus =
+    settings.openConfirmPriceBonusHigh;
+}
+
 /*
  * 점수가 지속적으로 상승하는 후보에 추가 점수를 준다.
  *
@@ -1572,13 +1616,29 @@ const scoreTrendBonus = Math.min(
   if (scoreDiff < 0) return { pass: false, reason: `점수 약화 ${baseline.score}→${current.score}` };
   if (volumeDiff < -20) return { pass: false, reason: `거래량 약화 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}%` };
   if (priceDiffRate < 0) return { pass: false, reason: `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}%` };
-
+  if (
+  priceDiffRate >
+  settings.openConfirmMaxPriceRiseRate
+) {
+  return {
+    pass: false,
+    reason:
+      `확인 중 가격 급등 ${priceDiffRate.toFixed(2)}% / ` +
+      `추격매수 상한 ${settings.openConfirmMaxPriceRiseRate.toFixed(2)}%`
+  };
+}
   return {
   pass: true,
 
   scoreDiff,
   recentScoreDiff,
   scoreTrendBonus,
+
+  confirmPriceRiseRate:
+    Number(priceDiffRate || 0),
+
+  confirmPriceBonus:
+    Number(confirmPriceBonus || 0),
 
   delayComparison: {
     firstSeenAtMs:
@@ -1607,10 +1667,11 @@ const scoreTrendBonus = Math.min(
     `점수 ${baseline.score}→${current.score} ` +
     `(전체 ${scoreDiff >= 0 ? "+" : ""}${scoreDiff}, ` +
     `직전 ${recentScoreDiff >= 0 ? "+" : ""}${recentScoreDiff}) / ` +
-    `추세보너스 +${scoreTrendBonus.toFixed(1)} / ` +
+    `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
+    `가격 ${priceDiffRate >= 0 ? "+" : ""}${priceDiffRate.toFixed(2)}% ` +
+    `(가격보너스 +${confirmPriceBonus.toFixed(1)}) / ` +
     `거래량 ${Number(baseline.volumeRatio || 0).toFixed(1)}` +
-    `→${current.volumeRatio.toFixed(1)}% / ` +
-    `가격 ${priceDiffRate.toFixed(2)}%`
+    `→${current.volumeRatio.toFixed(1)}%`
 };
 }
 
@@ -1667,11 +1728,15 @@ function judgeOpenBuy(state, item, price) {
 const scoreTrendBonus =
   Number(strengthen.scoreTrendBonus || 0);
 
+  const confirmPriceBonus =
+  Number(strengthen.confirmPriceBonus || 0);
+
 const rankScore =
   baseRankScore +
   marketAdjust.totalBonus +
   priorityBonus +
-  scoreTrendBonus;
+  scoreTrendBonus +
+  confirmPriceBonus;
 
   return {
     pass: true,
@@ -1682,8 +1747,17 @@ const rankScore =
     marketBonus: Number(marketAdjust.marketBonus || 0),
     sectorBonus: Number(marketAdjust.sectorBonus || 0),
     priorityBonus: Number(priorityBonus || 0),
+
     scoreTrendBonus:
   Number(scoreTrendBonus || 0),
+
+confirmPriceRiseRate:
+  Number(
+    strengthen.confirmPriceRiseRate || 0
+  ),
+
+confirmPriceBonus:
+  Number(confirmPriceBonus || 0),
 
 scoreDiff:
   Number(strengthen.scoreDiff || 0),
@@ -1707,6 +1781,8 @@ reason:
   `시가대비 ${openPosition.toFixed(2)}% / ` +
   `기본점수 ${baseRankScore.toFixed(1)} / ` +
   `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
+  `가격상승 ${Number(strengthen.confirmPriceRiseRate || 0).toFixed(2)}% / ` +
+  `가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
   `우선보너스 +${priorityBonus.toFixed(1)} / ` +
   `${marketAdjust.reason} / ` +
   `최종점수 ${rankScore.toFixed(1)}`
