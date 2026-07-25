@@ -98,6 +98,11 @@ openFullRescanIntervalMs: 60 * 1000,
   openMaxOpenPositionRate: 3.5,
   openConfirmWaitMs: 15 * 1000,
 
+  // OPEN 후보 점수 상승 추세 보너스
+openScoreTrendBonusPerPoint: 4,
+openRecentScoreTrendBonusPerPoint: 6,
+openScoreTrendMaxBonus: 20,
+
   openStopLossRate: -0.7,
   openTrailingStartRate: 0.7,
   openTrailingStopRate: 0.3,
@@ -1484,12 +1489,27 @@ function isOpenCandidateGettingStronger(state, item, price) {
   }
 
   const baseline = {
-    score: history.firstScore,
-    volumeRatio: history.firstVolumeRatio,
-    price: history.firstPrice
-  };
-  history.last = current;
-  state.openCandidateHistory[code] = history;
+  score: Number(history.firstScore || 0),
+  volumeRatio: Number(history.firstVolumeRatio || 0),
+  price: Number(history.firstPrice || 0)
+};
+
+/*
+ * 바로 직전 확인값을 보존한다.
+ * history.last를 먼저 current로 바꾸면 직전 점수와 비교할 수 없다.
+ */
+const previous = {
+  score: Number(history.last?.score ?? baseline.score),
+  volumeRatio: Number(
+    history.last?.volumeRatio ??
+    baseline.volumeRatio
+  ),
+  dayPosition: Number(history.last?.dayPosition || 0),
+  price: Number(history.last?.price ?? baseline.price)
+};
+
+history.last = current;
+state.openCandidateHistory[code] = history;
 
   if (elapsedMs < settings.openConfirmWaitMs) {
     return {
@@ -1498,26 +1518,100 @@ function isOpenCandidateGettingStronger(state, item, price) {
     };
   }
 
-  const scoreDiff = current.score - Number(baseline.score || 0);
-  const volumeDiff = current.volumeRatio - Number(baseline.volumeRatio || 0);
-  const priceDiffRate = Number(baseline.price || 0) > 0
-    ? ((current.price - Number(baseline.price)) / Number(baseline.price)) * 100
+  /*
+ * 첫 발견 이후 점수 변화
+ */
+const scoreDiff =
+  current.score -
+  Number(baseline.score || 0);
+
+/*
+ * 바로 직전 확인 대비 점수 변화
+ */
+const recentScoreDiff =
+  current.score -
+  Number(previous.score || 0);
+
+const volumeDiff =
+  current.volumeRatio -
+  Number(baseline.volumeRatio || 0);
+
+const priceDiffRate =
+  Number(baseline.price || 0) > 0
+    ? (
+        (
+          current.price -
+          Number(baseline.price)
+        ) /
+        Number(baseline.price)
+      ) * 100
     : 0;
+
+/*
+ * 점수가 지속적으로 상승하는 후보에 추가 점수를 준다.
+ *
+ * 첫 발견 대비 점수 상승:
+ * 1점당 4점
+ *
+ * 직전 확인 대비 점수 상승:
+ * 1점당 6점
+ *
+ * 최대 보너스:
+ * 20점
+ */
+const scoreTrendBonus = Math.min(
+  settings.openScoreTrendMaxBonus,
+
+  Math.max(0, scoreDiff) *
+    settings.openScoreTrendBonusPerPoint +
+
+  Math.max(0, recentScoreDiff) *
+    settings.openRecentScoreTrendBonusPerPoint
+);
 
   if (scoreDiff < 0) return { pass: false, reason: `점수 약화 ${baseline.score}→${current.score}` };
   if (volumeDiff < -20) return { pass: false, reason: `거래량 약화 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}%` };
   if (priceDiffRate < 0) return { pass: false, reason: `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}%` };
 
   return {
-    pass: true,
-    delayComparison: {
-      firstSeenAtMs: history.firstSeenAtMs,
-      firstPrice: Number(history.firstPrice || 0),
-      priceAt5Seconds: Number(history.priceAt5Seconds || current.price || 0),
-      priceAt15Seconds: Number(history.priceAt15Seconds || current.price || 0)
-    },
-    reason: `강화 확인 / 점수 ${baseline.score}→${current.score} / 거래량 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}% / 가격 ${priceDiffRate.toFixed(2)}%`
-  };
+  pass: true,
+
+  scoreDiff,
+  recentScoreDiff,
+  scoreTrendBonus,
+
+  delayComparison: {
+    firstSeenAtMs:
+      history.firstSeenAtMs,
+
+    firstPrice:
+      Number(history.firstPrice || 0),
+
+    priceAt5Seconds:
+      Number(
+        history.priceAt5Seconds ||
+        current.price ||
+        0
+      ),
+
+    priceAt15Seconds:
+      Number(
+        history.priceAt15Seconds ||
+        current.price ||
+        0
+      )
+  },
+
+  reason:
+    `강화 확인 / ` +
+    `점수 ${baseline.score}→${current.score} ` +
+    `(전체 ${scoreDiff >= 0 ? "+" : ""}${scoreDiff}, ` +
+    `직전 ${recentScoreDiff >= 0 ? "+" : ""}${recentScoreDiff}) / ` +
+    `추세보너스 +${scoreTrendBonus.toFixed(1)} / ` +
+    `거래량 ${Number(baseline.volumeRatio || 0).toFixed(1)}` +
+    `→${current.volumeRatio.toFixed(1)}% / ` +
+    `가격 ${priceDiffRate.toFixed(2)}%`
+};
 }
 
 function judgeOpenBuy(state, item, price) {
@@ -1555,10 +1649,29 @@ function judgeOpenBuy(state, item, price) {
   // 과거 유사사례나 가상추적 결과는 매수 점수에 반영하지 않는다.
   const marketData = loadOpenMarketData();
   const marketAdjust = calculateOpenMarketAdjustment(item, marketData);
-  const priorityBonus = item.source === "PRIORITY"
-    ? Math.max(0, Math.min(12, Number(item.priorityScore || 0) * 0.4))
+  const priorityBonus =
+  item.source === "PRIORITY"
+    ? Math.max(
+        0,
+        Math.min(
+          12,
+          Number(item.priorityScore || 0) * 0.4
+        )
+      )
     : 0;
-  const rankScore = baseRankScore + marketAdjust.totalBonus + priorityBonus;
+
+/*
+ * 첫 발견 이후 점수가 계속 상승하는 종목에
+ * 최대 20점의 추세 보너스를 부여한다.
+ */
+const scoreTrendBonus =
+  Number(strengthen.scoreTrendBonus || 0);
+
+const rankScore =
+  baseRankScore +
+  marketAdjust.totalBonus +
+  priorityBonus +
+  scoreTrendBonus;
 
   return {
     pass: true,
@@ -1569,11 +1682,34 @@ function judgeOpenBuy(state, item, price) {
     marketBonus: Number(marketAdjust.marketBonus || 0),
     sectorBonus: Number(marketAdjust.sectorBonus || 0),
     priorityBonus: Number(priorityBonus || 0),
+    scoreTrendBonus:
+  Number(scoreTrendBonus || 0),
+
+scoreDiff:
+  Number(strengthen.scoreDiff || 0),
+
+recentScoreDiff:
+  Number(strengthen.recentScoreDiff || 0),
+
     priorityReason: item.priorityReason || null,
     matchedSectors: marketAdjust.matchedSectors || [],
     marketDataUpdatedAt: marketData.updatedAt || null,
     delayComparison: strengthen.delayComparison || null,
-    reason: `OPEN 통과 / ${item.source === "PRIORITY" ? "장전우선" : "일반검색"} / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / 거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / 시가대비 ${openPosition.toFixed(2)}% / 기본점수 ${baseRankScore.toFixed(1)} / 우선보너스 ${priorityBonus.toFixed(1)} / ${marketAdjust.reason} / 최종점수 ${rankScore.toFixed(1)}`
+reason:
+  `OPEN 통과 / ` +
+  `${item.source === "PRIORITY" ? "장전우선" :
+    item.source === "FOCUSED" ? "집중후보" :
+    "일반검색"} / ` +
+  `발견 ${discoverScore} / ` +
+  `상승 ${changeRate.toFixed(2)}% / ` +
+  `거래량 ${volumeRatio.toFixed(1)}% / ` +
+  `위치 ${dayPosition.toFixed(1)}% / ` +
+  `시가대비 ${openPosition.toFixed(2)}% / ` +
+  `기본점수 ${baseRankScore.toFixed(1)} / ` +
+  `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
+  `우선보너스 +${priorityBonus.toFixed(1)} / ` +
+  `${marketAdjust.reason} / ` +
+  `최종점수 ${rankScore.toFixed(1)}`
   };
 }
 
