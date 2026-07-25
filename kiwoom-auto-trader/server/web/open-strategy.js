@@ -77,7 +77,7 @@ const settings = {
 
   openEnabled: true,
   openBuyStartTime: "09:00",
-  openBuyEndTime: "09:10",
+  openBuyEndTime: "09:30",
   openForceSellTime: "09:30",
   openInvestmentRatio: 1.0,
 
