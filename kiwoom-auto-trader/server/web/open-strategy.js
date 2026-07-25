@@ -96,7 +96,7 @@ openFullRescanIntervalMs: 60 * 1000,
   openMaxDayPositionRate: 85,
   openMinOpenPositionRate: 0.2,
   openMaxOpenPositionRate: 3.5,
-  openConfirmWaitMs: 15 * 1000,
+  
 
   // OPEN 후보 점수 상승 추세 보너스
 openConfirmWaitMs: 15 * 1000,
@@ -113,7 +113,9 @@ openConfirmPriceBonusLow: 3,
 openConfirmPriceBonusMedium: 7,
 openConfirmPriceBonusHigh: 10,
 
-openStopLossRate: -0.7,
+// 바로 직전 확인 대비 가격 약화 차단
+openRecentPriceWeakBlockRate: -0.10,
+
 
   openStopLossRate: -0.7,
   openTrailingStartRate: 0.7,
@@ -1560,6 +1562,23 @@ const priceDiffRate =
     : 0;
 
     /*
+ * 바로 직전 확인 가격 대비 현재 가격 변화율
+ *
+ * 첫 발견 이후에는 상승했더라도,
+ * 최근 확인 사이에 가격이 꺾이는 종목을 차단하기 위해 사용한다.
+ */
+const recentPriceDiffRate =
+  Number(previous.price || 0) > 0
+    ? (
+        (
+          current.price -
+          Number(previous.price)
+        ) /
+        Number(previous.price)
+      ) * 100
+    : 0;
+
+    /*
  * 첫 발견 이후 가격 상승률 보너스
  *
  * 0.10% 미만: 0점
@@ -1616,6 +1635,28 @@ const scoreTrendBonus = Math.min(
   if (scoreDiff < 0) return { pass: false, reason: `점수 약화 ${baseline.score}→${current.score}` };
   if (volumeDiff < -20) return { pass: false, reason: `거래량 약화 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}%` };
   if (priceDiffRate < 0) return { pass: false, reason: `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}%` };
+  
+  /*
+ * 첫 발견 가격보다는 높더라도,
+ * 바로 직전 확인보다 0.10% 이상 하락했다면
+ * 매수 직전 상승 흐름이 꺾인 것으로 판단한다.
+ */
+if (
+  recentPriceDiffRate <=
+  settings.openRecentPriceWeakBlockRate
+) {
+  return {
+    pass: false,
+
+    reason:
+      `매수 직전 가격 약화 ` +
+      `${recentPriceDiffRate.toFixed(2)}% / ` +
+      `전체 ${priceDiffRate >= 0 ? "+" : ""}` +
+      `${priceDiffRate.toFixed(2)}% / ` +
+      `차단기준 ${settings.openRecentPriceWeakBlockRate.toFixed(2)}%`
+  };
+}
+  
   if (
   priceDiffRate >
   settings.openConfirmMaxPriceRiseRate
@@ -1636,6 +1677,9 @@ const scoreTrendBonus = Math.min(
 
   confirmPriceRiseRate:
     Number(priceDiffRate || 0),
+
+  recentPriceDiffRate:
+    Number(recentPriceDiffRate || 0),
 
   confirmPriceBonus:
     Number(confirmPriceBonus || 0),
@@ -1668,8 +1712,11 @@ const scoreTrendBonus = Math.min(
     `(전체 ${scoreDiff >= 0 ? "+" : ""}${scoreDiff}, ` +
     `직전 ${recentScoreDiff >= 0 ? "+" : ""}${recentScoreDiff}) / ` +
     `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
-    `가격 ${priceDiffRate >= 0 ? "+" : ""}${priceDiffRate.toFixed(2)}% ` +
-    `(가격보너스 +${confirmPriceBonus.toFixed(1)}) / ` +
+    `가격 전체 ${priceDiffRate >= 0 ? "+" : ""}` +
+    `${priceDiffRate.toFixed(2)}% / ` +
+    `직전 ${recentPriceDiffRate >= 0 ? "+" : ""}` +
+    `${recentPriceDiffRate.toFixed(2)}% / ` +
+    `가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
     `거래량 ${Number(baseline.volumeRatio || 0).toFixed(1)}` +
     `→${current.volumeRatio.toFixed(1)}%`
 };
@@ -1756,6 +1803,11 @@ confirmPriceRiseRate:
     strengthen.confirmPriceRiseRate || 0
   ),
 
+recentPriceDiffRate:
+  Number(
+    strengthen.recentPriceDiffRate || 0
+  ),
+
 confirmPriceBonus:
   Number(confirmPriceBonus || 0),
 
@@ -1781,8 +1833,9 @@ reason:
   `시가대비 ${openPosition.toFixed(2)}% / ` +
   `기본점수 ${baseRankScore.toFixed(1)} / ` +
   `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
-  `가격상승 ${Number(strengthen.confirmPriceRiseRate || 0).toFixed(2)}% / ` +
-  `가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
+  `가격 전체 ${Number(strengthen.confirmPriceRiseRate || 0).toFixed(2)}% / ` +
+`가격 직전 ${Number(strengthen.recentPriceDiffRate || 0).toFixed(2)}% / ` +
+`가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
   `우선보너스 +${priorityBonus.toFixed(1)} / ` +
   `${marketAdjust.reason} / ` +
   `최종점수 ${rankScore.toFixed(1)}`
