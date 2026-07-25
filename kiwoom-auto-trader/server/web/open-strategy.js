@@ -125,6 +125,10 @@ openRecentPriceWeakBlockRate: -0.10,
   openMinProfitToStagnationSell: 0.15,
   openMaxHoldingMinutes: 30,
 
+  // 트레일링 진입 종목은 더 오래 보유
+openTrailingMaxHoldingMinutes: 60,
+openTrailingForceSellTime: "10:30",
+
   openBuyLoopMs: 5 * 1000,
   openSellLoopMs: 5 * 1000,
   dailyLossLimitRate: 0.01,
@@ -1952,13 +1956,73 @@ function getOpenSellSignal(holding, price) {
     };
   }
 
-  if (holdMinutes >= settings.openMaxHoldingMinutes || hhmm >= settings.openForceSellTime) {
-    return {
-      type: "OPEN_TIME_SELL",
-      qty: holding.qty,
-      reason: `OPEN 시간청산 / 보유 ${holdMinutes.toFixed(1)}분 / 수익 ${profitRate.toFixed(2)}% / 현재시각 ${hhmm}`
-    };
-  }
+/*
+ * 트레일링 시작 여부
+ *
+ * 최고수익률이 +0.7% 이상이었다면
+ * 트레일링 관리가 시작된 종목으로 판단한다.
+ */
+const trailingStarted =
+  highestProfitRate >=
+  settings.openTrailingStartRate;
+
+/*
+ * 트레일링이 시작되지 않은 종목
+ *
+ * 기존과 동일하게:
+ * - 최대 30분 보유
+ * - 또는 09:30 강제청산
+ */
+if (
+  !trailingStarted &&
+  (
+    holdMinutes >=
+      settings.openMaxHoldingMinutes ||
+    hhmm >=
+      settings.openForceSellTime
+  )
+) {
+  return {
+    type: "OPEN_TIME_SELL",
+    qty: holding.qty,
+    reason:
+      `OPEN 일반 시간청산 / ` +
+      `트레일링 미진입 / ` +
+      `최고 ${highestProfitRate.toFixed(2)}% / ` +
+      `현재 ${profitRate.toFixed(2)}% / ` +
+      `보유 ${holdMinutes.toFixed(1)}분 / ` +
+      `현재시각 ${hhmm}`
+  };
+}
+
+/*
+ * 트레일링이 시작된 종목
+ *
+ * 09:30이 지나도 계속 보유한다.
+ * 다만 무한 보유를 막기 위해:
+ * - 최대 60분 보유
+ * - 또는 10:30 강제청산
+ */
+if (
+  trailingStarted &&
+  (
+    holdMinutes >=
+      settings.openTrailingMaxHoldingMinutes ||
+    hhmm >=
+      settings.openTrailingForceSellTime
+  )
+) {
+  return {
+    type: "OPEN_TRAILING_TIME_SELL",
+    qty: holding.qty,
+    reason:
+      `OPEN 트레일링 최종청산 / ` +
+      `최고 ${highestProfitRate.toFixed(2)}% / ` +
+      `현재 ${profitRate.toFixed(2)}% / ` +
+      `보유 ${holdMinutes.toFixed(1)}분 / ` +
+      `현재시각 ${hhmm}`
+  };
+}
 
   return null;
 }
