@@ -1257,7 +1257,8 @@ function judgeOpenBuy(state, item, price) {
   const discoverScore = Number(item.discoverScore || 0);
 
   if (!settings.openEnabled) return { pass: false, reason: "OPEN OFF" };
-  if (!isBetweenTime(settings.openBuyStartTime, settings.openBuyEndTime)) return { pass: false, reason: "OPEN 시간 아님" };
+  // OPEN 실행시간은 runOpenBuyOnce() 시작 시점에서 확인하므로
+  // 개별 후보 평가 중에는 다시 시간 탈락시키지 않는다.
   if (state.openCompleted) return { pass: false, reason: "오늘 OPEN 종료" };
   if (hasOpenBuyToday(state)) return { pass: false, reason: "오늘 OPEN 이미 매수" };
   if ((state.holdings || []).some(h => String(h.code) === String(item.code))) {
