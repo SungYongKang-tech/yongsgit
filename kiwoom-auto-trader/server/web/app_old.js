@@ -871,6 +871,7 @@ function getStrategyGroupText(group) {
   const value = String(group || "CORE").toUpperCase();
 
   if (value === "VOLUME") return "VOLUME";
+  if (value === "OPEN") return "OPEN";
   return "CORE";
 }
 
@@ -878,6 +879,7 @@ function getStrategyGroupClass(group) {
   const value = String(group || "CORE").toUpperCase();
 
   if (value === "VOLUME") return "strategy-volume";
+  if (value === "OPEN") return "strategy-open";
   return "strategy-core";
 }
 
@@ -7354,17 +7356,16 @@ function renderServerPaperState(data) {
     getStrategyGroupText(h.strategyGroup) === "CORE"
   );
 
-  const turboHoldings = holdings.filter((h) =>
-    getStrategyGroupText(h.strategyGroup) === "TURBO"
+  const volumeHoldings = holdings.filter((h) =>
+    getStrategyGroupText(h.strategyGroup) === "VOLUME"
   );
 
-  const leaderHoldings = holdings.filter((h) =>
-    getStrategyGroupText(h.strategyGroup) === "LEADER"
+  const openHoldings = holdings.filter((h) =>
+    getStrategyGroupText(h.strategyGroup) === "OPEN"
   );
 
-  const coreCash = Number(data.totalCash || 0);
-  const turboCash = Number(data.turboCash || 0);
-  const leaderCash = Number(data.leaderCash || 0);
+  // CORE/VOLUME/OPEN은 하나의 서버 모의계좌 현금을 함께 사용한다.
+  const cashTotal = Number(data.totalCash || 0);
 
   const holdingsValue = holdings.reduce((sum, h) => {
     return sum +
@@ -7372,43 +7373,28 @@ function renderServerPaperState(data) {
       Number(h.qty || 0);
   }, 0);
 
-  const cashTotal = coreCash + turboCash + leaderCash;
   const totalAssetByCash = cashTotal + holdingsValue;
 
   const initialCapital = Number(data.initialCapital || data.dailyStartAsset || 100000000);
 
-  const sellTypes = [
-    "SELL",
-    "SELL_ALL",
-    "STOP_LOSS",
-    "TRAILING_STOP",
-    "END_PROFIT_SELL",
-    "END_WEAK_SELL",
-    "FIRST_TAKE_PROFIT",
-    "BREAK_EVEN_PROTECT",
-    "TAKE_PROFIT",
-    "HIGH_PROFIT_STAGNANT_SELL",
+  const buyLogs = tradeLogs.filter((log) => {
+    const type = String(log.type || "").toUpperCase();
+    return type === "BUY" || type.endsWith("_BUY");
+  });
 
-    "TURBO_STOP_LOSS",
-    "TURBO_FIRST_TAKE_PROFIT",
-    "TURBO_TAKE_PROFIT",
-    "TURBO_TRAILING_STOP",
-    "TURBO_TIME_EXIT",
-
-    "LEADER_STOP_LOSS",
-    "LEADER_TAKE_PROFIT",
-    "LEADER_TRAILING_STOP",
-    "LEADER_TIME_EXIT"
-  ];
-
-  const buyTypes = [
-    "BUY",
-    "TURBO_BUY",
-    "LEADER_BUY"
-  ];
-
-  const buyLogs = tradeLogs.filter((log) => buyTypes.includes(log.type));
-  const sellLogs = tradeLogs.filter((log) => sellTypes.includes(log.type));
+  const sellLogs = tradeLogs.filter((log) => {
+    const type = String(log.type || "").toUpperCase();
+    return (
+      type === "SELL" ||
+      type === "SELL_ALL" ||
+      type.includes("SELL") ||
+      type.includes("STOP_LOSS") ||
+      type.includes("TRAILING_STOP") ||
+      type.includes("TAKE_PROFIT") ||
+      type.includes("BREAK_EVEN") ||
+      type.includes("TIME_EXIT")
+    );
+  });
 
   const lastBuy = buyLogs.slice().reverse()[0];
   const lastSell = sellLogs.slice().reverse()[0];
@@ -7501,51 +7487,44 @@ function renderServerPaperState(data) {
       </div>
     </div>
 
-    <div class="server-paper-section-title">자금 배분</div>
+    <div class="server-paper-section-title">자금 및 전략 현황</div>
 
     <div class="server-profit-summary">
       <div>
-        <span>CORE 현금</span>
-        <strong>${formatNumber(Math.round(coreCash))}원</strong>
-      </div>
-
-      <div>
-        <span>TURBO 현금</span>
-        <strong>${formatNumber(Math.round(turboCash))}원</strong>
-      </div>
-
-      <div>
-        <span>LEADER 현금</span>
-        <strong>${formatNumber(Math.round(leaderCash))}원</strong>
-      </div>
-
-      <div>
-        <span>현금합계</span>
+        <span>현재 현금</span>
         <strong>${formatNumber(Math.round(cashTotal))}원</strong>
       </div>
 
       <div>
-        <span>평가자산 포함</span>
+        <span>보유 평가금액</span>
+        <strong>${formatNumber(Math.round(holdingsValue))}원</strong>
+      </div>
+
+      <div>
+        <span>현금 + 평가금액</span>
         <strong>${formatNumber(Math.round(totalAssetByCash))}원</strong>
       </div>
 
       <div>
+        <span>전체 보유</span>
+        <strong>${holdings.length}개</strong>
+      </div>
+
+      <div>
         <span>CORE 보유</span>
-        <strong>${coreHoldings.length} / 6</strong>
+        <strong>${coreHoldings.length}개</strong>
       </div>
 
       <div>
-        <span>TURBO 보유</span>
-        <strong>${turboHoldings.length} / 2</strong>
+        <span>VOLUME 보유</span>
+        <strong>${volumeHoldings.length}개</strong>
       </div>
 
       <div>
-        <span>LEADER 보유</span>
-        <strong>${leaderHoldings.length} / 2</strong>
+        <span>OPEN 보유</span>
+        <strong>${openHoldings.length}개</strong>
       </div>
     </div>
-
-  
 
     <div class="server-paper-section-title">손익 구분</div>
 
@@ -7879,16 +7858,7 @@ renderServerPaperState(data);
   "TAKE_PROFIT",
   "HIGH_PROFIT_STAGNANT_SELL",
 
-  "TURBO_STOP_LOSS",
-  "TURBO_FIRST_TAKE_PROFIT",
-  "TURBO_TAKE_PROFIT",
-  "TURBO_TRAILING_STOP",
-  "TURBO_TIME_EXIT",
 
-  "LEADER_STOP_LOSS",
-  "LEADER_TAKE_PROFIT",
-  "LEADER_TRAILING_STOP",
-  "LEADER_TIME_EXIT"
 ];
 
 virtualResults = Array.isArray(data.tradeLogs)

@@ -157,6 +157,18 @@
   color: #fed7aa;
 }
 
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
   </style>
 </head>
 
@@ -262,7 +274,19 @@
 
   <div class="card">
     <h2>AI 분석용 복사 자료</h2>
-    <button onclick="copyAiText()">AI 분석용 복사</button>
+    <div class="ai-actions">
+  <button id="copyAiBtn" onclick="copyAiText()" disabled>
+  📋 분석자료 복사
+</button>
+
+<button id="geminiAiBtn" onclick="openGeminiAnalysis()" disabled>
+  🤖 Gemini에서 분석
+</button>
+
+<button id="chatGptAiBtn" onclick="openChatGptAnalysis()" disabled>
+  💬 ChatGPT에서 분석
+</button>
+</div>
     <br><br>
     <textarea id="aiText" readonly></textarea>
   </div>
@@ -379,14 +403,14 @@ function getStrategy(log) {
     }
 
     function getCandidateStrength(log) {
-      return Number(
-        log.candidateStrengthScore ||
-        log.leaderStrengthScore ||
-        log.finalBuyScore ||
-        log.finalScore ||
-        0
-      );
-    }
+  return Number(
+    log.candidateStrengthScore ??
+    log.leaderStrengthScore ??
+    log.finalBuyScore ??
+    log.finalScore ??
+    0
+  );
+}
 
     function getBuyAmount(log) {
       return Number(log.buyAmount || log.plannedBuyAmount || 0);
@@ -453,6 +477,81 @@ function getStrategy(log) {
 
       document.getElementById("strategyPills").innerHTML = pills || `<span class="pill">전략 거래 없음</span>`;
     }
+
+    async function copyTextToClipboard(text) {
+  if (!text) {
+    alert("복사할 분석자료가 없습니다.");
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    const textarea = document.getElementById("aiText");
+
+    textarea.focus();
+    textarea.select();
+
+    return document.execCommand("copy");
+  }
+}
+
+async function copyAiText() {
+  const copied = await copyTextToClipboard(latestAiText);
+
+  if (copied) {
+    alert("AI 분석용 자료를 복사했습니다.");
+  } else {
+    alert("자동 복사에 실패했습니다. 아래 자료를 직접 복사해 주세요.");
+  }
+}
+
+async function openGeminiAnalysis() {
+  const aiWindow = window.open(
+    "https://gemini.google.com/app?hl=ko",
+    "_blank"
+  );
+
+  const copied = await copyTextToClipboard(latestAiText);
+
+  if (!copied) {
+    alert("분석자료 복사에 실패했습니다. 아래 자료를 직접 복사해 주세요.");
+    return;
+  }
+
+  alert(
+    "분석자료를 복사했습니다.\n\n" +
+    "Gemini 입력창에 붙여넣어 주세요."
+  );
+
+  if (!aiWindow) {
+    alert("새 창이 차단되었습니다. 브라우저의 팝업을 허용해 주세요.");
+  }
+}
+
+async function openChatGptAnalysis() {
+  const aiWindow = window.open(
+    "https://chatgpt.com/",
+    "_blank"
+  );
+
+  const copied = await copyTextToClipboard(latestAiText);
+
+  if (!copied) {
+    alert("분석자료 복사에 실패했습니다. 아래 자료를 직접 복사해 주세요.");
+    return;
+  }
+
+  alert(
+    "분석자료를 복사했습니다.\n\n" +
+    "ChatGPT 입력창에 붙여넣어 주세요."
+  );
+
+  if (!aiWindow) {
+    alert("새 창이 차단되었습니다. 브라우저의 팝업을 허용해 주세요.");
+  }
+}
 
     async function loadAnalysis() {
       try {
@@ -547,6 +646,9 @@ function getStrategy(log) {
 
         latestAiText = makeAiText(data);
         document.getElementById("aiText").value = latestAiText;
+        document.getElementById("copyAiBtn").disabled = false;
+        document.getElementById("geminiAiBtn").disabled = false;
+        document.getElementById("chatGptAiBtn").disabled = false;
       } catch (err) {
         console.error(err);
         document.getElementById("strategyBody").innerHTML = `<tr><td colspan="10" class="empty">데이터를 불러오지 못했습니다.</td></tr>`;
@@ -593,16 +695,54 @@ function getStrategy(log) {
         text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / ${log.type || "-"} / 매수가 ${formatPrice(getBuyPrice(log))} / 매도가 ${formatPrice(getSellPrice(log))} / 손익 ${formatWon(log.profit)} / 수익률 ${formatRate(getProfitRate(log))} / 최고수익 ${formatRate(getMaxProfitRate(log))} / 최대손실 ${formatRate(getMaxLossRate(log))} / 보유시간 ${getHoldingMinutes(log)}분 / 매수등락률 ${formatOptionalRate(log.buyChangeRate)} / 거래량비율 ${formatOptionalRate(log.buyTradeVolumeRatio)} / 당일위치 ${formatOptionalRate(log.buyDayPositionRate)} / 시간 ${log.time || log.createdAt || "-"}\n`;
       });
 
+      text += `
+
+[AI 분석 요청]
+
+위 거래자료를 근거로 오늘 거래를 분석해 주세요.
+
+1. 오늘 전체 성과를 간단히 평가해 주세요.
+2. OPEN, CORE, VOLUME 전략별 성과와 문제점을 비교해 주세요.
+3. 손실 원인을 매수 문제와 매도 문제로 나누어 분석해 주세요.
+4. 발견점수, 최종점수, 시장점수, 후보강도, 거래량비율,
+   당일위치와 실제 수익률의 관계를 분석해 주세요.
+5. 손절이 너무 빠르거나 늦었던 종목을 구분해 주세요.
+6. 익절 또는 트레일링 매도가 너무 빨랐던 종목이 있는지 확인해 주세요.
+7. 반복적으로 나타난 손실 조건을 찾아주세요.
+8. 다음 거래일에 적용할 개선사항을 우선순위별로 제안해 주세요.
+9. 설정값 변경과 코드 수정사항을 구분해 주세요.
+10. 하루 결과만으로 지나치게 조건을 변경하지 않도록 판단해 주세요.
+
+[답변 형식]
+
+1. 오늘 핵심 진단
+2. 전략별 평가
+3. 손실 원인 TOP 3
+4. 잘된 거래
+5. 문제가 있었던 거래
+6. 즉시 수정 가능한 사항
+7. 3거래일 이상 추가 관찰할 사항
+8. 수정하지 않는 것이 좋은 사항
+9. 다음 거래일 권장사항
+10. 코드 확인 또는 수정이 필요한 항목
+
+설정값 변경을 제안할 때는 다음 내용을 표시해 주세요.
+
+- 설정명
+- 현재값
+- 제안값
+- 변경 이유
+- 예상 효과
+- 주의사항
+
+거래자료에 현재 설정값이 없으면 임의로 추측하지 말고
+'현재 코드 확인 필요'라고 표시해 주세요.
+`;
+
       return text;
     }
 
-    function copyAiText() {
-      const textarea = document.getElementById("aiText");
-      textarea.select();
-      document.execCommand("copy");
-      alert("AI 분석용 자료를 복사했습니다.");
-    }
-
+  
     loadAnalysis();
     setInterval(loadAnalysis, 30000);
   </script>
