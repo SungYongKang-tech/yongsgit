@@ -193,6 +193,49 @@
       .market-grid { grid-template-columns: repeat(4, 1fr); }
     }
 
+
+    .condition-box {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #111827;
+      border: 1px solid #374151;
+    }
+    .condition-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #d1d5db;
+      margin-bottom: 7px;
+    }
+    .condition-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+    .condition-item {
+      background: #1f2937;
+      border-radius: 8px;
+      padding: 7px 8px;
+    }
+    .condition-label {
+      color: #9ca3af;
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+    .condition-value {
+      font-size: 13px;
+      font-weight: bold;
+      text-align: right;
+      word-break: break-word;
+    }
+    .market-strong { color: #f87171; }
+    .market-normal { color: #86efac; }
+    .market-caution { color: #facc15; }
+    .market-weak { color: #fca5a5; }
+    @media (min-width: 800px) {
+      .condition-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+
   </style>
 </head>
 <body>
@@ -363,6 +406,169 @@
     }).join("");
   }
 
+
+  function getMarketStateClass(score) {
+    const num = Number(score || 0);
+    if (num >= 80) return "market-strong";
+    if (num >= 65) return "market-normal";
+    if (num >= 50) return "market-caution";
+    return "market-weak";
+  }
+
+  function formatMarketType(type, score) {
+    const raw = String(type || "").toUpperCase();
+    const map = {
+      STRONG: "강세",
+      NORMAL: "보통",
+      CAUTION: "주의",
+      WEAK: "약세",
+      VERY_WEAK: "매우 약세"
+    };
+
+    if (raw && map[raw]) return `${map[raw]} (${raw})`;
+
+    const num = Number(score || 0);
+    if (num >= 80) return "강세";
+    if (num >= 65) return "보통";
+    if (num >= 50) return "주의";
+    if (num >= 40) return "약세";
+    return "매수차단";
+  }
+
+  function formatSectorInfo(inputs = {}) {
+    const sectors = Array.isArray(inputs.matchedSectors)
+      ? inputs.matchedSectors
+      : [];
+
+    const bonus = Number(inputs.sectorBonus || 0);
+    const sign = bonus > 0 ? "+" : "";
+
+    if (!sectors.length) {
+      return `미분류 ${sign}${bonus.toFixed(1)}`;
+    }
+
+    return `${sectors.join(", ")} ${sign}${bonus.toFixed(1)}`;
+  }
+
+  function getAppliedConditions(day = {}) {
+    const real = day.realTrade || {};
+    const inputs =
+      real.selectionInputs ||
+      day.selectionInputs ||
+      day.selectedTrade?.selectionInputs ||
+      {};
+
+    const marketScore =
+      Number(
+        inputs.marketScore ??
+        real.marketScore ??
+        day.marketScore ??
+        0
+      );
+
+    const marketType =
+      inputs.marketType ||
+      real.marketType ||
+      day.marketType ||
+      "-";
+
+    const requiredDiscoverScore =
+      Number(
+        inputs.requiredDiscoverScore ??
+        real.requiredDiscoverScore ??
+        day.requiredDiscoverScore ??
+        0
+      );
+
+    const requiredVolumeRatio =
+      Number(
+        inputs.requiredVolumeRatio ??
+        real.requiredVolumeRatio ??
+        day.requiredVolumeRatio ??
+        0
+      );
+
+    const requiredConfirmPriceRise =
+      Number(
+        inputs.requiredConfirmPriceRise ??
+        real.requiredConfirmPriceRise ??
+        day.requiredConfirmPriceRise ??
+        0
+      );
+
+    return {
+      marketScore,
+      marketType,
+      sectorText: formatSectorInfo(inputs),
+      requiredDiscoverScore,
+      requiredVolumeRatio,
+      requiredConfirmPriceRise,
+      hasConditionData:
+        marketScore > 0 ||
+        requiredDiscoverScore > 0 ||
+        requiredVolumeRatio > 0 ||
+        requiredConfirmPriceRise > 0 ||
+        Array.isArray(inputs.matchedSectors)
+    };
+  }
+
+  function renderAppliedConditions(day = {}) {
+    const data = getAppliedConditions(day);
+
+    if (!data.hasConditionData) {
+      return `
+        <div class="condition-box">
+          <div class="condition-title">📌 당시 시장·매수기준</div>
+          <div class="muted" style="font-size:12px;">
+            이 날짜의 시장조건 저장자료가 없습니다.
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="condition-box">
+        <div class="condition-title">📌 당시 시장·매수기준</div>
+        <div class="condition-grid">
+          <div class="condition-item">
+            <div class="condition-label">시장점수</div>
+            <div class="condition-value ${getMarketStateClass(data.marketScore)}">
+              ${data.marketScore.toFixed(1)}점
+            </div>
+          </div>
+          <div class="condition-item">
+            <div class="condition-label">시장유형</div>
+            <div class="condition-value ${getMarketStateClass(data.marketScore)}">
+              ${formatMarketType(data.marketType, data.marketScore)}
+            </div>
+          </div>
+          <div class="condition-item">
+            <div class="condition-label">섹터강도</div>
+            <div class="condition-value">${data.sectorText}</div>
+          </div>
+          <div class="condition-item">
+            <div class="condition-label">발견점수 기준</div>
+            <div class="condition-value">
+              ${data.requiredDiscoverScore > 0 ? `${data.requiredDiscoverScore}점` : "-"}
+            </div>
+          </div>
+          <div class="condition-item">
+            <div class="condition-label">거래량 기준</div>
+            <div class="condition-value">
+              ${data.requiredVolumeRatio > 0 ? `${data.requiredVolumeRatio.toFixed(1)}%` : "-"}
+            </div>
+          </div>
+          <div class="condition-item">
+            <div class="condition-label">15초 상승 기준</div>
+            <div class="condition-value">
+              ${data.requiredConfirmPriceRise > 0 ? `${data.requiredConfirmPriceRise.toFixed(2)}%` : "-"}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderDays(data) {
     const box = document.getElementById("dayBox");
     const rows = Array.isArray(data.rows) ? data.rows : [];
@@ -391,6 +597,8 @@
               }
             </div>
           </div>
+
+          ${renderAppliedConditions(day)}
 
           <div class="result-row result-head">
             <div>방식</div><div class="right">진입가</div><div class="right">최고</div><div class="right">결과</div>
