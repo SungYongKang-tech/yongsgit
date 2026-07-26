@@ -678,7 +678,7 @@ async function updateOpenDelayComparisonOnce(history, day, now = Date.now()) {
 
 async function checkOpenDelayComparisonOnce() {
   if (!isKoreanWeekday()) return;
-  if (!isBetweenTime("09:00", "09:40")) return;
+  if (!isBetweenTime("09:00", settings.openTrailingForceSellTime)) return;
 
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
@@ -688,7 +688,7 @@ async function checkOpenDelayComparisonOnce() {
 
 async function checkOpenVirtualCandidatesOnce() {
   if (!isKoreanWeekday()) return;
-  if (!isBetweenTime("09:00", "09:40")) return;
+  if (!isBetweenTime("09:00", settings.openTrailingForceSellTime)) return;
 
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
@@ -2329,7 +2329,7 @@ async function runOpenBuyOnce() {
 
 async function checkOpenSellOnce() {
   if (!isKoreanWeekday()) return;
-  if (!isBetweenTime("09:00", "09:40")) return;
+  if (!isBetweenTime("09:00", settings.openTrailingForceSellTime)) return;
 
   try { await checkOpenDelayComparisonOnce(); }
   catch (err) { console.log(`[OPEN 진입비교 점검오류] ${err.message}`); }
