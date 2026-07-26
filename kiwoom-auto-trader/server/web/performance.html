@@ -618,13 +618,13 @@
       </div>
 
       <div class="market-summary-item">
-        <div class="market-summary-label">검토</div>
-        <div class="market-summary-value market-candidate" id="marketCandidateCount">-</div>
+        <div class="market-summary-label">보합</div>
+        <div class="market-summary-value market-candidate" id="marketFlatRatio">-</div>
       </div>
 
       <div class="market-summary-item">
-        <div class="market-summary-label">통과</div>
-        <div class="market-summary-value market-pass" id="marketPassCount">-</div>
+        <div class="market-summary-label">시장점수</div>
+        <div class="market-summary-value market-pass" id="marketScoreValue">-</div>
       </div>
     </div>
   </div>
@@ -881,7 +881,12 @@ function setMarketTemperature(mt = {}) {
   const level = String(mt.level || "").toUpperCase();
   const label = mt.label || "-";
   const advanceValue = Number(mt.advanceRatio || 0);
-  const declineValue = Number(mt.declineRatio ?? Math.max(0, 100 - advanceValue));
+  const declineValue = Number(mt.declineRatio || 0);
+  const flatValue = Number(
+    mt.flatRatio ??
+    mt.unchangedRatio ??
+    Math.max(0, 100 - advanceValue - declineValue)
+  );
   const score = Number(
     mt.score ??
     mt.marketScore ??
@@ -927,8 +932,8 @@ function setMarketTemperature(mt = {}) {
     : "-";
   setValue("marketAdvanceRatio", `${advanceValue.toFixed(1)}%`);
   setValue("marketDeclineRatio", `${declineValue.toFixed(1)}%`);
-  setValue("marketCandidateCount", `${Number(mt.candidateCount || mt.totalCandidates || 0)}개`);
-  setValue("marketPassCount", `${Number(mt.passCount || mt.buyableCount || 0)}개`);
+  setValue("marketFlatRatio", `${flatValue.toFixed(1)}%`);
+  setValue("marketScoreValue", score > 0 ? `${score.toFixed(0)}점` : "-");
 }
 
 function setStatus(id, text, state = "") {
@@ -1240,9 +1245,6 @@ function renderCandidateAnalysis(source = {}) {
   setValue("candidateBought", `${totalBought}건`);
   setValue("candidateCorePass", `${corePassed}건`);
   setValue("candidateVolumePass", `${volumePassed}건`);
-
-  setValue("marketCandidateCount", `${totalChecked}건`);
-  setValue("marketPassCount", `${corePassed + volumePassed}건`);
 
   const conditionBox =
     document.getElementById("conditionRejectBox");
