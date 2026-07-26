@@ -139,9 +139,35 @@ openTrailingForceSellTime: "10:30",
   openVirtualLoopMs: 30 * 1000,
 
   openMarketMaxAgeHours: 96,
-  openMarketMinSuccessCount: 5,
-  openMarketMaxBonus: 15,
-  openSectorMaxBonus: 15
+openMarketMinSuccessCount: 5,
+openMarketMaxBonus: 15,
+openSectorMaxBonus: 15,
+
+// OPEN 시장상황 강력 반영
+openMarketDataRequired: true,
+
+// 전체 시장이 이 점수 미만이면 OPEN 매수 금지
+openMarketHardBlockScore: 40,
+
+// 약세구간에서는 강한 섹터 종목만 허용
+openMarketWeakScore: 50,
+openWeakMarketMinSectorBias: 8,
+
+// 보통 이하 시장에서는 최소한 섹터가 약세면 안 됨
+openMarketCautionScore: 65,
+openCautionMinSectorBias: 0,
+
+// 시장과 관계없이 해당 종목 섹터가 강한 약세면 차단
+openSectorHardBlockBias: -8,
+
+// 시장자료가 약할 때 추가 강화
+openCautionDiscoverScoreAdd: 2,
+openCautionVolumeRatioAdd: 50,
+openCautionMinPriceRiseAdd: 0.10,
+
+openWeakDiscoverScoreAdd: 3,
+openWeakVolumeRatioAdd: 100,
+openWeakMinPriceRiseAdd: 0.20
 };
 
 function nowText() {
@@ -236,17 +262,39 @@ function loadOpenMarketData() {
     }
 
     return {
-      available: true,
-      ageHours,
-      marketScore: Number(data.marketScore || 0),
-      marketType: data.marketType || "NORMAL",
-      sectorBias: data.sectorBias || {},
-      newsScore: Number(data.newsScore || 0),
-      reasons: Array.isArray(data.reasons) ? data.reasons : [],
-      updatedAt: data.updatedAt || null,
-      indicators: data.indicators || {},
-      raw: data
-    };
+  available: true,
+  ageHours,
+
+  marketScore:
+    Number(data.marketScore || 0),
+
+  marketType:
+    data.marketType || "NORMAL",
+
+  sectorBias:
+    data.sectorBias || {},
+
+  newsScore:
+    Number(data.newsScore || 0),
+
+  reasons:
+    Array.isArray(data.reasons)
+      ? data.reasons
+      : [],
+
+  updatedAt:
+    data.updatedAt || null,
+
+  indicators:
+    data.indicators || {},
+
+  priorityStocks:
+    Array.isArray(data.priorityStocks)
+      ? data.priorityStocks
+      : [],
+
+  raw: data
+};
   } catch (err) {
     return { available: false, reason: `시장자료 읽기 오류 / ${err.message}` };
   }
@@ -255,7 +303,7 @@ function loadOpenMarketData() {
 function getItemContextText(item = {}) {
   const values = [
     item.name, item.stockName, item.korName, item.industry, item.sector,
-    item.theme, item.sectorName, item.industryName,
+    item.theme, item.sectorName, item.industryName, item.prioritySector,
     ...(Array.isArray(item.sectorTags) ? item.sectorTags : []),
     ...(Array.isArray(item.themeTags) ? item.themeTags : []),
     ...(Array.isArray(item.discoverReasons) ? item.discoverReasons : []),
@@ -268,11 +316,35 @@ function detectOpenSectors(item = {}) {
   const text = getItemContextText(item);
   const sectors = [];
 
-  if (/반도체|hbm|메모리|파운드리|웨이퍼|칩|pcb|후공정|패키징|sk하이닉스|삼성전자/.test(text)) sectors.push("semiconductor");
-  if (/인공지능|\bai\b|로봇|클라우드|데이터센터|소프트웨어|자율주행|스마트팩토리/.test(text)) sectors.push("ai");
-  if (/성장주|인터넷|플랫폼|바이오|게임|2차전지|전기차/.test(text)) sectors.push("growth");
-  if (/정유|석유|원유|가스|에너지|유전|태양광|풍력|원전/.test(text)) sectors.push("energy");
-  if (/통신|음식료|보험|은행|유틸리티|필수소비재/.test(text)) sectors.push("defensive");
+  if (
+    /반도체|semiconductor|hbm|메모리|파운드리|웨이퍼|칩|pcb|후공정|패키징|sk하이닉스|삼성전자/.test(text)
+  ) {
+    sectors.push("semiconductor");
+  }
+
+  if (
+    /인공지능|\bai\b|artificial intelligence|로봇|클라우드|데이터센터|소프트웨어|자율주행|스마트팩토리/.test(text)
+  ) {
+    sectors.push("ai");
+  }
+
+  if (
+    /성장주|growth|인터넷|플랫폼|바이오|게임|2차전지|전기차/.test(text)
+  ) {
+    sectors.push("growth");
+  }
+
+  if (
+    /정유|석유|원유|가스|에너지|energy|유전|태양광|풍력|원전/.test(text)
+  ) {
+    sectors.push("energy");
+  }
+
+  if (
+    /통신|음식료|보험|은행|유틸리티|필수소비재|defensive/.test(text)
+  ) {
+    sectors.push("defensive");
+  }
 
   return [...new Set(sectors)];
 }
@@ -1727,29 +1799,380 @@ if (
 }
 
 function judgeOpenBuy(state, item, price) {
-  const changeRate = Number(item.changeRate || item.fluctuationRate || item.riseRate || item.rate || 0);
+  const changeRate = Number(
+    item.changeRate ||
+    item.fluctuationRate ||
+    item.riseRate ||
+    item.rate ||
+    0
+  );
+
   const volumeRatio = getTradeVolumeRatio(item);
   const dayPosition = getDayPositionRate(item, price);
   const openPosition = getOpenPositionRate(item, price);
   const discoverScore = Number(item.discoverScore || 0);
 
-  if (!settings.openEnabled) return { pass: false, reason: "OPEN OFF" };
-  // OPEN 실행시간은 runOpenBuyOnce() 시작 시점에서 확인하므로
-  // 개별 후보 평가 중에는 다시 시간 탈락시키지 않는다.
-  if (state.openCompleted) return { pass: false, reason: "오늘 OPEN 종료" };
-  if (hasOpenBuyToday(state)) return { pass: false, reason: "오늘 OPEN 이미 매수" };
-  if ((state.holdings || []).some(h => String(h.code) === String(item.code))) {
-    return { pass: false, reason: "동일 종목 이미 보유중" };
-  }
-  if (wasBoughtToday(state, item.code)) return { pass: false, reason: "오늘 이미 매수한 종목" };
-  if (discoverScore < settings.openMinDiscoverScore) return { pass: false, reason: `발견점수 부족 ${discoverScore}` };
-  if (changeRate < settings.openMinChangeRate || changeRate > settings.openMaxChangeRate) return { pass: false, reason: `상승률 부적합 ${changeRate.toFixed(2)}%` };
-  if (volumeRatio < settings.openMinTradeVolumeRatio) return { pass: false, reason: `거래량 부족 ${volumeRatio.toFixed(1)}%` };
-  if (dayPosition < settings.openMinDayPositionRate || dayPosition > settings.openMaxDayPositionRate) return { pass: false, reason: `당일위치 부적합 ${dayPosition.toFixed(1)}%` };
-  if (openPosition < settings.openMinOpenPositionRate || openPosition > settings.openMaxOpenPositionRate) return { pass: false, reason: `시가대비 부적합 ${openPosition.toFixed(2)}%` };
+  /*
+   * 장전 시장자료를 실제 매수 허용·차단에 사용한다.
+   */
+  const marketData = loadOpenMarketData();
 
-  const strengthen = isOpenCandidateGettingStronger(state, item, price);
-  if (!strengthen.pass) return { pass: false, reason: strengthen.reason };
+  const marketAdjust =
+    calculateOpenMarketAdjustment(item, marketData);
+
+  const marketScore =
+    Number(marketAdjust.marketScore || 0);
+
+  const sectorBias =
+    Number(marketAdjust.sectorBonus || 0);
+
+  const matchedSectors =
+    Array.isArray(marketAdjust.matchedSectors)
+      ? marketAdjust.matchedSectors
+      : [];
+
+  /*
+   * 기본적인 OPEN 실행 상태부터 확인한다.
+   */
+  if (!settings.openEnabled) {
+    return {
+      pass: false,
+      reason: "OPEN OFF"
+    };
+  }
+
+  if (state.openCompleted) {
+    return {
+      pass: false,
+      reason: "오늘 OPEN 종료"
+    };
+  }
+
+  if (hasOpenBuyToday(state)) {
+    return {
+      pass: false,
+      reason: "오늘 OPEN 이미 매수"
+    };
+  }
+
+  if (
+    (state.holdings || []).some(
+      holding =>
+        String(holding.code) ===
+        String(item.code)
+    )
+  ) {
+    return {
+      pass: false,
+      reason: "동일 종목 이미 보유중"
+    };
+  }
+
+  if (wasBoughtToday(state, item.code)) {
+    return {
+      pass: false,
+      reason: "오늘 이미 매수한 종목"
+    };
+  }
+
+  /*
+   * open-market.json이 없거나 오래되면
+   * 시장 방향을 판단할 수 없으므로 매수를 중단한다.
+   */
+  if (
+    settings.openMarketDataRequired &&
+    !marketData.available
+  ) {
+    return {
+      pass: false,
+      reason:
+        `OPEN 시장자료 없음 차단 / ` +
+        `${marketData.reason ||
+          "사용 가능한 시장자료 없음"}`
+    };
+  }
+
+  /*
+   * 전체 시장이 매우 약하면 모든 OPEN 매수를 차단한다.
+   */
+  if (
+    marketData.available &&
+    marketScore <
+      settings.openMarketHardBlockScore
+  ) {
+    return {
+      pass: false,
+      reason:
+        `OPEN 시장급락 차단 / ` +
+        `시장 ${marketScore}점 / ` +
+        `기준 ${settings.openMarketHardBlockScore}점`
+    };
+  }
+
+  /*
+   * 종목이 속한 섹터가 강한 약세이면 차단한다.
+   */
+  if (
+    marketData.available &&
+    matchedSectors.length > 0 &&
+    sectorBias <=
+      settings.openSectorHardBlockBias
+  ) {
+    return {
+      pass: false,
+      reason:
+        `OPEN 섹터약세 차단 / ` +
+        `시장 ${marketScore}점 / ` +
+        `섹터 ${matchedSectors.join(",")} ` +
+        `${sectorBias.toFixed(1)} / ` +
+        `기준 ${Number(
+          settings.openSectorHardBlockBias
+        ).toFixed(1)}`
+    };
+  }
+
+  /*
+   * 시장점수 40~49:
+   * 강한 섹터에 속한 종목만 허용한다.
+   */
+  if (
+    marketData.available &&
+    marketScore <
+      settings.openMarketWeakScore &&
+    (
+      matchedSectors.length === 0 ||
+      sectorBias <
+        settings.openWeakMarketMinSectorBias
+    )
+  ) {
+    return {
+      pass: false,
+      reason:
+        `OPEN 약세장 강한섹터 아님 / ` +
+        `시장 ${marketScore}점 / ` +
+        `섹터 ${
+          matchedSectors.join(",") ||
+          "미확인"
+        } ${sectorBias.toFixed(1)} / ` +
+        `필요 ${Number(
+          settings.openWeakMarketMinSectorBias
+        ).toFixed(1)} 이상`
+    };
+  }
+
+  /*
+   * 시장점수 50~64:
+   * 확인 가능한 섹터가 약세이면 차단한다.
+   */
+  if (
+    marketData.available &&
+    marketScore <
+      settings.openMarketCautionScore &&
+    matchedSectors.length > 0 &&
+    sectorBias <
+      settings.openCautionMinSectorBias
+  ) {
+    return {
+      pass: false,
+      reason:
+        `OPEN 주의장 섹터부족 / ` +
+        `시장 ${marketScore}점 / ` +
+        `섹터 ${matchedSectors.join(",")} ` +
+        `${sectorBias.toFixed(1)} / ` +
+        `필요 ${Number(
+          settings.openCautionMinSectorBias
+        ).toFixed(1)} 이상`
+    };
+  }
+
+  /*
+   * 시장상황에 따라 종목 자체 매수조건을 강화한다.
+   */
+  let requiredDiscoverScore =
+    Number(settings.openMinDiscoverScore);
+
+  let requiredVolumeRatio =
+    Number(settings.openMinTradeVolumeRatio);
+
+  let requiredConfirmPriceRise =
+    Number(
+      settings.openConfirmMinPriceRiseRate
+    );
+
+  if (marketData.available) {
+    /*
+     * 시장점수 50~64:
+     * 평소보다 강한 종목만 허용한다.
+     */
+    if (
+      marketScore >=
+        settings.openMarketWeakScore &&
+      marketScore <
+        settings.openMarketCautionScore
+    ) {
+      requiredDiscoverScore +=
+        Number(
+          settings.openCautionDiscoverScoreAdd ||
+          0
+        );
+
+      requiredVolumeRatio +=
+        Number(
+          settings.openCautionVolumeRatioAdd ||
+          0
+        );
+
+      requiredConfirmPriceRise +=
+        Number(
+          settings.openCautionMinPriceRiseAdd ||
+          0
+        );
+    }
+
+    /*
+     * 시장점수 40~49:
+     * 종목 자체 흐름을 크게 강화한다.
+     */
+    if (
+      marketScore >=
+        settings.openMarketHardBlockScore &&
+      marketScore <
+        settings.openMarketWeakScore
+    ) {
+      requiredDiscoverScore +=
+        Number(
+          settings.openWeakDiscoverScoreAdd ||
+          0
+        );
+
+      requiredVolumeRatio +=
+        Number(
+          settings.openWeakVolumeRatioAdd ||
+          0
+        );
+
+      requiredConfirmPriceRise +=
+        Number(
+          settings.openWeakMinPriceRiseAdd ||
+          0
+        );
+    }
+  }
+
+  if (
+    discoverScore <
+    requiredDiscoverScore
+  ) {
+    return {
+      pass: false,
+      reason:
+        `발견점수 부족 ${discoverScore} / ` +
+        `시장반영 기준 ${requiredDiscoverScore} / ` +
+        `시장 ${marketScore}점`
+    };
+  }
+
+  if (
+    changeRate <
+      settings.openMinChangeRate ||
+    changeRate >
+      settings.openMaxChangeRate
+  ) {
+    return {
+      pass: false,
+      reason:
+        `상승률 부적합 ` +
+        `${changeRate.toFixed(2)}%`
+    };
+  }
+
+  if (
+    volumeRatio <
+    requiredVolumeRatio
+  ) {
+    return {
+      pass: false,
+      reason:
+        `거래량 부족 ` +
+        `${volumeRatio.toFixed(1)}% / ` +
+        `시장반영 기준 ` +
+        `${requiredVolumeRatio.toFixed(1)}% / ` +
+        `시장 ${marketScore}점`
+    };
+  }
+
+  if (
+    dayPosition <
+      settings.openMinDayPositionRate ||
+    dayPosition >
+      settings.openMaxDayPositionRate
+  ) {
+    return {
+      pass: false,
+      reason:
+        `당일위치 부적합 ` +
+        `${dayPosition.toFixed(1)}%`
+    };
+  }
+
+  if (
+    openPosition <
+      settings.openMinOpenPositionRate ||
+    openPosition >
+      settings.openMaxOpenPositionRate
+  ) {
+    return {
+      pass: false,
+      reason:
+        `시가대비 부적합 ` +
+        `${openPosition.toFixed(2)}%`
+    };
+  }
+
+  /*
+   * 첫 발견 이후 점수와 가격이 실제로 강화되는지 확인한다.
+   */
+  const strengthen =
+    isOpenCandidateGettingStronger(
+      state,
+      item,
+      price
+    );
+
+  /*
+   * 최초 발견, 확인 대기, 점수약화 등
+   * 기존 강화 판정부터 먼저 처리해야 한다.
+   */
+  if (!strengthen.pass) {
+    return {
+      pass: false,
+      reason: strengthen.reason
+    };
+  }
+
+  const confirmPriceRiseRate =
+    Number(
+      strengthen.confirmPriceRiseRate || 0
+    );
+
+  /*
+   * 시장이 약할수록 더 높은 확인 상승률을 요구한다.
+   */
+  if (
+    confirmPriceRiseRate <
+    requiredConfirmPriceRise
+  ) {
+    return {
+      pass: false,
+      reason:
+        `시장반영 상승힘 부족 / ` +
+        `확인가격 ` +
+        `${confirmPriceRiseRate.toFixed(2)}% / ` +
+        `필요 ` +
+        `${requiredConfirmPriceRise.toFixed(2)}% / ` +
+        `시장 ${marketScore}점`
+    };
+  }
 
   const baseRankScore =
     discoverScore * 10 +
@@ -1757,92 +2180,136 @@ function judgeOpenBuy(state, item, price) {
     dayPosition * 0.25 +
     Math.max(0, 4 - changeRate) * 5;
 
-  // 실제 OPEN 최종점수는 현재 시점의 시장·섹터 정보만 반영한다.
-  // 과거 유사사례나 가상추적 결과는 매수 점수에 반영하지 않는다.
-  const marketData = loadOpenMarketData();
-  const marketAdjust = calculateOpenMarketAdjustment(item, marketData);
+  /*
+   * 장전 우선종목 보너스
+   */
   const priorityBonus =
-  item.source === "PRIORITY"
-    ? Math.max(
-        0,
-        Math.min(
-          12,
-          Number(item.priorityScore || 0) * 0.4
+    item.source === "PRIORITY"
+      ? Math.max(
+          0,
+          Math.min(
+            12,
+            Number(
+              item.priorityScore || 0
+            ) * 0.4
+          )
         )
-      )
-    : 0;
+      : 0;
 
-/*
- * 첫 발견 이후 점수가 계속 상승하는 종목에
- * 최대 20점의 추세 보너스를 부여한다.
- */
-const scoreTrendBonus =
-  Number(strengthen.scoreTrendBonus || 0);
+  /*
+   * 첫 발견 이후 점수상승 추세 보너스
+   */
+  const scoreTrendBonus =
+    Number(
+      strengthen.scoreTrendBonus || 0
+    );
 
+  /*
+   * 확인기간 가격상승 보너스
+   */
   const confirmPriceBonus =
-  Number(strengthen.confirmPriceBonus || 0);
+    Number(
+      strengthen.confirmPriceBonus || 0
+    );
 
-const rankScore =
-  baseRankScore +
-  marketAdjust.totalBonus +
-  priorityBonus +
-  scoreTrendBonus +
-  confirmPriceBonus;
+  const rankScore =
+    baseRankScore +
+    Number(
+      marketAdjust.totalBonus || 0
+    ) +
+    priorityBonus +
+    scoreTrendBonus +
+    confirmPriceBonus;
 
   return {
     pass: true,
+
     rankScore,
     baseRankScore,
-    marketScore: Number(marketAdjust.marketScore || 0),
-    marketType: marketAdjust.marketType || null,
-    marketBonus: Number(marketAdjust.marketBonus || 0),
-    sectorBonus: Number(marketAdjust.sectorBonus || 0),
-    priorityBonus: Number(priorityBonus || 0),
+
+    marketScore,
+    marketType:
+      marketAdjust.marketType || null,
+
+    marketBonus:
+      Number(
+        marketAdjust.marketBonus || 0
+      ),
+
+    sectorBonus:
+      Number(
+        marketAdjust.sectorBonus || 0
+      ),
+
+    priorityBonus:
+      Number(priorityBonus || 0),
 
     scoreTrendBonus:
-  Number(scoreTrendBonus || 0),
+      Number(scoreTrendBonus || 0),
 
-confirmPriceRiseRate:
-  Number(
-    strengthen.confirmPriceRiseRate || 0
-  ),
+    confirmPriceRiseRate,
 
-recentPriceDiffRate:
-  Number(
-    strengthen.recentPriceDiffRate || 0
-  ),
+    recentPriceDiffRate:
+      Number(
+        strengthen.recentPriceDiffRate ||
+        0
+      ),
 
-confirmPriceBonus:
-  Number(confirmPriceBonus || 0),
+    confirmPriceBonus:
+      Number(confirmPriceBonus || 0),
 
-scoreDiff:
-  Number(strengthen.scoreDiff || 0),
+    scoreDiff:
+      Number(
+        strengthen.scoreDiff || 0
+      ),
 
-recentScoreDiff:
-  Number(strengthen.recentScoreDiff || 0),
+    recentScoreDiff:
+      Number(
+        strengthen.recentScoreDiff || 0
+      ),
 
-    priorityReason: item.priorityReason || null,
-    matchedSectors: marketAdjust.matchedSectors || [],
-    marketDataUpdatedAt: marketData.updatedAt || null,
-    delayComparison: strengthen.delayComparison || null,
-reason:
-  `OPEN 통과 / ` +
-  `${item.source === "PRIORITY" ? "장전우선" :
-    item.source === "FOCUSED" ? "집중후보" :
-    "일반검색"} / ` +
-  `발견 ${discoverScore} / ` +
-  `상승 ${changeRate.toFixed(2)}% / ` +
-  `거래량 ${volumeRatio.toFixed(1)}% / ` +
-  `위치 ${dayPosition.toFixed(1)}% / ` +
-  `시가대비 ${openPosition.toFixed(2)}% / ` +
-  `기본점수 ${baseRankScore.toFixed(1)} / ` +
-  `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
-  `가격 전체 ${Number(strengthen.confirmPriceRiseRate || 0).toFixed(2)}% / ` +
-`가격 직전 ${Number(strengthen.recentPriceDiffRate || 0).toFixed(2)}% / ` +
-`가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
-  `우선보너스 +${priorityBonus.toFixed(1)} / ` +
-  `${marketAdjust.reason} / ` +
-  `최종점수 ${rankScore.toFixed(1)}`
+    priorityReason:
+      item.priorityReason || null,
+
+    matchedSectors,
+
+    marketDataUpdatedAt:
+      marketData.updatedAt || null,
+
+    delayComparison:
+      strengthen.delayComparison || null,
+
+    requiredDiscoverScore,
+    requiredVolumeRatio,
+    requiredConfirmPriceRise,
+
+    reason:
+      `OPEN 통과 / ` +
+      `${
+        item.source === "PRIORITY"
+          ? "장전우선"
+          : item.source === "FOCUSED"
+            ? "집중후보"
+            : "일반검색"
+      } / ` +
+      `발견 ${discoverScore}` +
+      `(${requiredDiscoverScore}) / ` +
+      `상승 ${changeRate.toFixed(2)}% / ` +
+      `거래량 ${volumeRatio.toFixed(1)}%` +
+      `(${requiredVolumeRatio.toFixed(1)}%) / ` +
+      `위치 ${dayPosition.toFixed(1)}% / ` +
+      `시가대비 ${openPosition.toFixed(2)}% / ` +
+      `기본점수 ${baseRankScore.toFixed(1)} / ` +
+      `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
+      `가격 전체 ${confirmPriceRiseRate.toFixed(2)}%` +
+      `(기준 ${requiredConfirmPriceRise.toFixed(2)}%) / ` +
+      `가격 직전 ${Number(
+        strengthen.recentPriceDiffRate || 0
+      ).toFixed(2)}% / ` +
+      `가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
+      `우선보너스 +${priorityBonus.toFixed(1)} / ` +
+      `${marketAdjust.reason} / ` +
+      `최종점수 ${rankScore.toFixed(1)}`
   };
 }
 
