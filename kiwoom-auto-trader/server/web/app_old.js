@@ -7545,39 +7545,7 @@ function renderServerPaperState(data) {
       </div>
     </div>
 
-    <div class="server-paper-section-title">자금 배분</div>
-
-<div class="server-profit-summary">
-  <div>
-    <span>CORE 현금</span>
-    <strong>${formatNumber(Math.round(coreCash))}원</strong>
-  </div>
-
-  <div>
-    <span>TURBO 현금</span>
-    <strong>${formatNumber(Math.round(turboCash))}원</strong>
-  </div>
-
-  <div>
-    <span>LEADER 현금</span>
-    <strong>${formatNumber(Math.round(leaderCash))}원</strong>
-  </div>
-
-  <div>
-    <span>CORE 보유</span>
-    <strong>${coreHoldings.length} / 6</strong>
-  </div>
-
-  <div>
-    <span>TURBO 보유</span>
-    <strong>${turboHoldings.length} / 2</strong>
-  </div>
-
-  <div>
-    <span>LEADER 보유</span>
-    <strong>${leaderHoldings.length} / 2</strong>
-  </div>
-</div>
+  
 
     <div class="server-paper-section-title">손익 구분</div>
 
