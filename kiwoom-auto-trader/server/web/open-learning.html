@@ -179,7 +179,35 @@
       font-weight: bold;
       color: #f87171;
       text-align: right;
-      min-width: 54px;
+      min-width: 64px;
+    }
+    .priority-score-sub {
+      color: #9ca3af;
+      font-size: 10px;
+      font-weight: normal;
+      line-height: 1.35;
+      margin-top: 3px;
+    }
+    .priority-news {
+      margin-top: 5px;
+      color: #d1d5db;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .priority-bought {
+      border: 1px solid #22c55e;
+      box-shadow: 0 0 0 1px rgba(34,197,94,.14);
+    }
+    .buy-badge {
+      display: inline-block;
+      margin-left: 6px;
+      border-radius: 999px;
+      padding: 3px 7px;
+      font-size: 10px;
+      font-weight: bold;
+      background: #14532d;
+      color: #bbf7d0;
+      vertical-align: middle;
     }
     .reason-list {
       margin: 0;
@@ -242,7 +270,7 @@
   <div class="header">
     <h1>🧪 OPEN 진입시간 학습</h1>
     <div style="display:flex; gap:6px;">
-      <button onclick="loadData()">새로고침</button>
+      <button onclick="refreshAll()">새로고침</button>
       <button onclick="location.href='performance.html'">← 대시보드</button>
     </div>
   </div>
@@ -258,7 +286,7 @@
     <h2>🌐 OPEN 2.0 장전시장 분석</h2>
     <div class="market-grid">
       <div class="mini-box">
-        <div class="mini-label">시장점수</div>
+        <div class="mini-label">시장점수 · 뉴스보정</div>
         <div class="mini-value" id="marketScore">-</div>
       </div>
       <div class="mini-box">
@@ -324,6 +352,18 @@
   </div>
 
 <script>
+  let latestPriorityStocks = [];
+  let actualOpenBuyCodes = new Set();
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   function formatRate(value) {
     const num = Number(value || 0);
     const sign = num > 0 ? "+" : "";
@@ -410,29 +450,28 @@
   function getMarketStateClass(score) {
     const num = Number(score || 0);
     if (num >= 80) return "market-strong";
-    if (num >= 65) return "market-normal";
-    if (num >= 50) return "market-caution";
+    if (num >= 60) return "market-normal";
+    if (num >= 40) return "market-caution";
     return "market-weak";
   }
 
   function formatMarketType(type, score) {
     const raw = String(type || "").toUpperCase();
     const map = {
-      STRONG: "강세",
-      NORMAL: "보통",
-      CAUTION: "주의",
-      WEAK: "약세",
-      VERY_WEAK: "매우 약세"
+      STRONG: "🔥 강세",
+      NORMAL: "🟢 보통",
+      CAUTION: "🟡 주의",
+      WEAK: "🔴 약세",
+      VERY_WEAK: "🔴 매우 약세"
     };
 
     if (raw && map[raw]) return `${map[raw]} (${raw})`;
 
     const num = Number(score || 0);
-    if (num >= 80) return "강세";
-    if (num >= 65) return "보통";
-    if (num >= 50) return "주의";
-    if (num >= 40) return "약세";
-    return "매수차단";
+    if (num >= 80) return "🔥 강세";
+    if (num >= 60) return "🟢 보통";
+    if (num >= 40) return "🟡 주의";
+    return "🔴 매우 약세 · 매수차단";
   }
 
   function formatSectorInfo(inputs = {}) {
@@ -640,25 +679,50 @@
   function renderPriorityStocks(list) {
     const box = document.getElementById("priorityStockBox");
     const rows = Array.isArray(list) ? list : [];
+    latestPriorityStocks = rows;
 
     if (!rows.length) {
       box.innerHTML = `<div class="empty">현재 생성된 우선감시 종목이 없습니다.</div>`;
       return;
     }
 
-    box.innerHTML = rows.map((item, index) => `
-      <div class="priority-row">
-        <div class="priority-rank">${Number(item.rank || index + 1)}위</div>
-        <div>
-          <div class="priority-name">${item.name || item.code || "-"}</div>
-          <div class="priority-sub">
-            ${item.code || "-"} / ${item.sector || "섹터 미분류"}<br>
-            ${item.reason || "선정사유 없음"}
+    box.innerHTML = rows.map((item, index) => {
+      const code = String(item.code || "");
+      const isBought = actualOpenBuyCodes.has(code);
+      const marketBias = Number(item.marketBias || 0);
+      const newsBias = Number(item.newsBias || 0);
+      const mentionCount = Number(item.newsMentionCount || 0);
+      const representativeNews = String(item.representativeNews || "").trim();
+
+      return `
+        <div class="priority-row ${isBought ? "priority-bought" : ""}">
+          <div class="priority-rank">${Number(item.rank || index + 1)}위</div>
+          <div>
+            <div class="priority-name">
+              ${escapeHtml(item.name || item.code || "-")}
+              ${isBought ? `<span class="buy-badge">오늘 실제 매수</span>` : ""}
+            </div>
+            <div class="priority-sub">
+              ${escapeHtml(item.code || "-")} / ${escapeHtml(item.sector || "섹터 미분류")}<br>
+              시장 ${marketBias >= 0 ? "+" : ""}${marketBias.toFixed(1)} ·
+              뉴스 ${newsBias >= 0 ? "+" : ""}${newsBias.toFixed(1)} ·
+              직접언급 ${mentionCount}건
+            </div>
+            ${representativeNews
+              ? `<div class="priority-news">📰 ${escapeHtml(representativeNews)}</div>`
+              : ""}
+          </div>
+          <div class="priority-score">
+            ${Number(item.priorityScore || item.score || 0).toFixed(1)}점
+            <div class="priority-score-sub">
+              시장 ${(marketBias * 2) >= 0 ? "+" : ""}${(marketBias * 2).toFixed(1)}<br>
+              뉴스 ${(newsBias * 2) >= 0 ? "+" : ""}${(newsBias * 2).toFixed(1)}<br>
+              언급 +${Math.min(mentionCount, 3) * 2}
+            </div>
           </div>
         </div>
-        <div class="priority-score">${Number(item.priorityScore || item.score || 0).toFixed(1)}점</div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
   }
 
   async function loadOpenMarketStatus() {
@@ -694,11 +758,19 @@
         priorities.length ? "ok" : "warn"
       );
 
+      const baseScore = Number(data.baseMarketScore ?? data.marketScore ?? 0);
+      const finalScore = Number(data.marketScore || 0);
+      const newsAdjustment = Number(data.newsMarketAdjustment || 0);
+      const newsSign = newsAdjustment > 0 ? "+" : "";
+
       document.getElementById("marketScore").textContent =
-        `${Number(data.marketScore || 0).toFixed(1)}점`;
+        `${baseScore.toFixed(1)} → ${finalScore.toFixed(1)}점 (${newsSign}${newsAdjustment.toFixed(1)})`;
 
       document.getElementById("marketType").textContent =
-        data.marketType || "-";
+  formatMarketType(
+    data.marketType,
+    data.marketScore
+  );
 
       document.getElementById("newsScore").textContent =
         `${Number(data.newsScore || 0).toFixed(1)}점`;
@@ -709,8 +781,16 @@
       const reasons = Array.isArray(data.reasons) ? data.reasons : [];
       const reasonBox = document.getElementById("marketReasonBox");
       reasonBox.innerHTML = reasons.length
-        ? reasons.map(reason => `<li>${reason}</li>`).join("")
-        : `<li>장전 판단 근거가 없습니다.</li>`;
+        ? reasons.map(reason => {
+            const value = String(reason || "");
+            const lower = value.toLowerCase();
+            const isWarn =
+              /약세|하락|부진|위험|실패|오류|마이너스/.test(value) ||
+              /-\d/.test(value);
+            const icon = isWarn ? "⚠️" : "✅";
+            return `<li>${icon} ${escapeHtml(value)}</li>`;
+          }).join("")
+        : `<li>ℹ️ 장전 판단 근거가 없습니다.</li>`;
 
       renderPriorityStocks(priorities);
     } catch (error) {
@@ -724,6 +804,12 @@
         `<div class="empty">OPEN 장전자료를 불러오지 못했습니다.<br>${error.message}</div>`;
     }
   }
+
+  function refreshAll() {
+  loadData();
+  loadOpenMarketStatus();
+}
+
 
   async function loadData() {
     try {
@@ -745,8 +831,26 @@
       const bestRateEl = document.getElementById("bestAvgRate");
       bestRateEl.className = `value ${rateClass(data.bestVariant?.avgProfitRate)}`;
 
+      actualOpenBuyCodes = new Set(
+        (Array.isArray(data.rows) ? data.rows : [])
+          .filter(day => {
+            const real = day.realTrade || {};
+            return Boolean(
+              day.selectedTrade ||
+              real.buyPrice ||
+              real.qty ||
+              (real.sellType && real.sellType !== "OPEN_SKIPPED")
+            );
+          })
+          .map(day => String(day.code || day.realTrade?.code || day.selectedTrade?.code || ""))
+          .filter(Boolean)
+      );
+
       renderVariants(data);
       renderDays(data);
+      if (latestPriorityStocks.length) {
+        renderPriorityStocks(latestPriorityStocks);
+      }
     } catch (error) {
       console.error(error);
       document.getElementById("variantBox").innerHTML =
@@ -756,8 +860,7 @@
     }
   }
 
-  loadData();
-  loadOpenMarketStatus();
+  refreshAll();
 
   setInterval(loadData, 30000);
   setInterval(loadOpenMarketStatus, 30000);

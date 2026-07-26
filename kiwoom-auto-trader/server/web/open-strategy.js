@@ -71,7 +71,7 @@ const settings = {
   minDiscoverScore: 7,
 
   // OPEN 2.0: 장전 우선종목을 먼저 감시하고 일반검색은 보완용으로 순환
-  openPriorityMaxCount: 15,
+  openPriorityMaxCount: 20,
 openFallbackScanLimit: 200,
 openPriorityPriceDelayMs: 350,
 
@@ -98,7 +98,7 @@ openFullRescanIntervalMs: 60 * 1000,
   openMaxOpenPositionRate: 3.5,
   
 
-  // OPEN 후보 점수 상승 추세 보너스
+  // OPEN 후보 첫 발견 후 강화 확인 대기시간
 openConfirmWaitMs: 15 * 1000,
 
 // OPEN 후보 점수 상승 추세 보너스
@@ -138,7 +138,7 @@ openTrailingForceSellTime: "10:30",
   openVirtualTrackingCount: 10,
   openVirtualLoopMs: 30 * 1000,
 
-  openMarketMaxAgeHours: 96,
+  openMarketMaxAgeHours: 18,
 openMarketMinSuccessCount: 5,
 openMarketMaxBonus: 15,
 openSectorMaxBonus: 15,
@@ -154,7 +154,7 @@ openMarketWeakScore: 50,
 openWeakMarketMinSectorBias: 8,
 
 // 보통 이하 시장에서는 최소한 섹터가 약세면 안 됨
-openMarketCautionScore: 65,
+openMarketCautionScore: 60,
 openCautionMinSectorBias: 0,
 
 // 시장과 관계없이 해당 종목 섹터가 강한 약세면 차단
@@ -451,6 +451,12 @@ function makeOpenCandidateLearningRecord(item, price, judged) {
     marketType: judged.marketType || null,
     marketBonus: Number(judged.marketBonus || 0),
     sectorBonus: Number(judged.sectorBonus || 0),
+    priorityBonus: Number(judged.priorityBonus || 0),
+    scoreTrendBonus: Number(judged.scoreTrendBonus || 0),
+    confirmPriceBonus: Number(judged.confirmPriceBonus || 0),
+    requiredDiscoverScore: Number(judged.requiredDiscoverScore || 0),
+    requiredVolumeRatio: Number(judged.requiredVolumeRatio || 0),
+    requiredConfirmPriceRise: Number(judged.requiredConfirmPriceRise || 0),
     matchedSectors: Array.isArray(judged.matchedSectors) ? judged.matchedSectors : [],
     marketDataUpdatedAt: judged.marketDataUpdatedAt || null
   };
@@ -607,10 +613,35 @@ function getVirtualOpenSellSignal(candidate, price, now = Date.now()) {
     };
   }
 
-  if (holdingSeconds >= settings.openMaxHoldingMinutes * 60) {
+  const trailingStarted =
+    candidate.highestProfitRate >=
+    settings.openTrailingStartRate;
+
+  if (
+    !trailingStarted &&
+    holdingSeconds >=
+      settings.openMaxHoldingMinutes * 60
+  ) {
     return {
       type: "VIRTUAL_OPEN_TIME_SELL",
-      reason: `가상 30분 청산 / 현재 ${profitRate.toFixed(2)}%`
+      reason:
+        `가상 일반 시간청산 / ` +
+        `트레일링 미진입 / ` +
+        `현재 ${profitRate.toFixed(2)}%`
+    };
+  }
+
+  if (
+    trailingStarted &&
+    holdingSeconds >=
+      settings.openTrailingMaxHoldingMinutes * 60
+  ) {
+    return {
+      type: "VIRTUAL_OPEN_TRAILING_TIME_SELL",
+      reason:
+        `가상 트레일링 최종청산 / ` +
+        `최고 ${candidate.highestProfitRate.toFixed(2)}% / ` +
+        `현재 ${profitRate.toFixed(2)}%`
     };
   }
 
@@ -872,6 +903,12 @@ function saveOpenCandidateLearning(evaluated) {
     prev.lastMarketType = record.marketType;
     prev.lastMarketBonus = record.marketBonus;
     prev.lastSectorBonus = record.sectorBonus;
+    prev.lastPriorityBonus = record.priorityBonus;
+    prev.lastScoreTrendBonus = record.scoreTrendBonus;
+    prev.lastConfirmPriceBonus = record.confirmPriceBonus;
+    prev.lastRequiredDiscoverScore = record.requiredDiscoverScore;
+    prev.lastRequiredVolumeRatio = record.requiredVolumeRatio;
+    prev.lastRequiredConfirmPriceRise = record.requiredConfirmPriceRise;
     prev.lastMatchedSectors = record.matchedSectors;
 
     prev.maxRankScore = Math.max(prev.maxRankScore, record.rankScore);
@@ -926,6 +963,12 @@ function recordOpenLearningBuy(item, price, qty, reason) {
       marketType: observation.lastMarketType || null,
       marketBonus: Number(observation.lastMarketBonus || 0),
       sectorBonus: Number(observation.lastSectorBonus || 0),
+      priorityBonus: Number(observation.lastPriorityBonus || 0),
+      scoreTrendBonus: Number(observation.lastScoreTrendBonus || 0),
+      confirmPriceBonus: Number(observation.lastConfirmPriceBonus || 0),
+      requiredDiscoverScore: Number(observation.lastRequiredDiscoverScore || 0),
+      requiredVolumeRatio: Number(observation.lastRequiredVolumeRatio || 0),
+      requiredConfirmPriceRise: Number(observation.lastRequiredConfirmPriceRise || 0),
       matchedSectors: Array.isArray(observation.lastMatchedSectors) ? observation.lastMatchedSectors : []
     },
     highestPrice: Number(price || 0),
@@ -1058,14 +1101,39 @@ function getTodayRealizedProfit(state) {
 
 function checkDailyLossLimit(state) {
   const todayProfit = getTodayRealizedProfit(state);
-  const limit = Number(state.dailyLossLimit || 0);
-  if (limit > 0 && todayProfit <= -Math.abs(limit)) {
+
+  const baseAsset = Number(
+    state.dailyStartAsset ||
+    state.totalAsset ||
+    settings.totalCash
+  );
+
+  const calculatedLimit =
+    baseAsset *
+    Number(settings.dailyLossLimitRate || 0);
+
+  const limit =
+    Number(state.dailyLossLimit || 0) > 0
+      ? Number(state.dailyLossLimit)
+      : calculatedLimit;
+
+  if (
+    limit > 0 &&
+    todayProfit <= -Math.abs(limit)
+  ) {
     return {
       stopped: true,
-      reason: `일일 손실한도 도달 / 실현손익 ${todayProfit.toLocaleString()}원 / 한도 ${limit.toLocaleString()}원`
+      reason:
+        `일일 손실한도 도달 / ` +
+        `실현손익 ${todayProfit.toLocaleString()}원 / ` +
+        `한도 ${Math.round(limit).toLocaleString()}원`
     };
   }
-  return { stopped: false, reason: "정상" };
+
+  return {
+    stopped: false,
+    reason: "정상"
+  };
 }
 
 async function fetchJson(url) {
@@ -1961,7 +2029,7 @@ function judgeOpenBuy(state, item, price) {
   }
 
   /*
-   * 시장점수 50~64:
+   * 시장점수 50~59:
    * 확인 가능한 섹터가 약세이면 차단한다.
    */
   if (
@@ -2001,7 +2069,7 @@ function judgeOpenBuy(state, item, price) {
 
   if (marketData.available) {
     /*
-     * 시장점수 50~64:
+     * 시장점수 50~59:
      * 평소보다 강한 종목만 허용한다.
      */
     if (
@@ -2181,17 +2249,18 @@ function judgeOpenBuy(state, item, price) {
     Math.max(0, 4 - changeRate) * 5;
 
   /*
-   * 장전 우선종목 보너스
+   * 우선종목 여부는 검색순서에 이미 반영되므로
+   * 최종 매수점수에는 작은 보너스만 적용한다.
    */
   const priorityBonus =
     item.source === "PRIORITY"
       ? Math.max(
           0,
           Math.min(
-            12,
+            3,
             Number(
               item.priorityScore || 0
-            ) * 0.4
+            ) * 0.05
           )
         )
       : 0;

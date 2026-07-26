@@ -13,7 +13,8 @@ const SETTINGS = {
 
   newsEnabled: true,
   newsMaxItemsPerQuery: 8,
-  priorityStockCount: 30
+  priorityStockCount: 20,
+  minimumSuccessCount: 5
 };
 
 const SYMBOLS = {
@@ -261,8 +262,10 @@ function calculateMarketAssessment(indicators) {
   };
 
   let marketType = "NORMAL";
-  if (score >= 75) marketType = "STRONG";
-  else if (score <= 35) marketType = "WEAK";
+  if (score >= 80) marketType = "STRONG";
+  else if (score >= 60) marketType = "NORMAL";
+  else if (score >= 40) marketType = "CAUTION";
+  else marketType = "VERY_WEAK";
 
   const reasons = [];
   if (nasdaq >= 0.5) reasons.push(`나스닥 강세 ${nasdaq.toFixed(2)}%`);
@@ -355,19 +358,33 @@ function calculateNewsAssessment(newsBySector = {}) {
 }
 
 function buildPriorityStocks(sectorBias = {}, sectorNewsScores = {}, news = []) {
-  const titleText = (news || []).map(item => item.title || "").join(" ").toLowerCase();
   const rows = [];
 
   for (const [sector, stocks] of Object.entries(PRIORITY_UNIVERSE)) {
     const bias = Number(sectorBias[sector] || 0);
     const newsBias = Number(sectorNewsScores[sector] || 0);
+    const sectorNews = (news || []).filter(item => item.sector === sector);
 
     for (const stock of stocks) {
-      const mentionCount = (stock.keywords || []).reduce((count, keyword) => {
-        return count + (titleText.includes(String(keyword).toLowerCase()) ? 1 : 0);
-      }, 0);
+      const matchedNews = sectorNews.filter(item => {
+        const title = String(item.title || "").toLowerCase();
+        return (stock.keywords || []).some(keyword =>
+          title.includes(String(keyword).toLowerCase())
+        );
+      });
 
-      const priorityScore = bias + newsBias * 2 + mentionCount * 5;
+      const mentionCount = matchedNews.length;
+      const representativeNews = matchedNews[0]?.title || "";
+
+      /*
+       * 해외시장 섹터 흐름을 가장 크게 반영하고,
+       * 뉴스 감성 및 종목 직접 언급은 보조 신호로 사용합니다.
+       */
+      const priorityScore =
+        bias * 2 +
+        newsBias * 2 +
+        Math.min(mentionCount, 3) * 2;
+
       rows.push({
         code: stock.code,
         name: stock.name,
@@ -376,19 +393,47 @@ function buildPriorityStocks(sectorBias = {}, sectorNewsScores = {}, news = []) 
         marketBias: round(bias, 1),
         newsBias: round(newsBias, 1),
         newsMentionCount: mentionCount,
+        representativeNews,
         reason:
           `${sector} 시장편향 ${bias >= 0 ? "+" : ""}${round(bias, 1)} / ` +
           `뉴스 ${newsBias >= 0 ? "+" : ""}${round(newsBias, 1)} / ` +
-          `직접언급 ${mentionCount}건`
+          `직접언급 ${mentionCount}건` +
+          (representativeNews ? ` / ${representativeNews}` : "")
       });
     }
   }
 
-  return rows
-    .filter(row => row.priorityScore > 0)
-    .sort((a, b) => b.priorityScore - a.priorityScore)
+  /*
+   * 같은 종목이 여러 섹터에 포함된 경우
+   * 종목코드별 최고 점수 한 건만 남긴다.
+   */
+  const bestByCode = new Map();
+
+  for (const row of rows) {
+    if (Number(row.priorityScore || 0) <= 0) continue;
+
+    const previous = bestByCode.get(row.code);
+
+    if (
+      !previous ||
+      Number(row.priorityScore || 0) >
+        Number(previous.priorityScore || 0)
+    ) {
+      bestByCode.set(row.code, row);
+    }
+  }
+
+  return [...bestByCode.values()]
+    .sort(
+      (a, b) =>
+        Number(b.priorityScore || 0) -
+        Number(a.priorityScore || 0)
+    )
     .slice(0, SETTINGS.priorityStockCount)
-    .map((row, index) => ({ rank: index + 1, ...row }));
+    .map((row, index) => ({
+      rank: index + 1,
+      ...row
+    }));
 }
 
 async function refreshOpenMarketData() {
@@ -435,6 +480,32 @@ async function refreshOpenMarketData() {
   }
 
   const newsAssessment = calculateNewsAssessment(newsBySector);
+
+  /*
+   * 뉴스는 과도한 영향이 없도록 시장점수에 최대 ±5점까지만 반영합니다.
+   */
+  const newsMarketAdjustment = Math.max(
+    -5,
+    Math.min(5, Number(newsAssessment.newsScore || 0))
+  );
+
+  const finalMarketScore = round(
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Number(assessment.marketScore || 50) + newsMarketAdjustment
+      )
+    ),
+    1
+  );
+
+  let finalMarketType = "NORMAL";
+  if (finalMarketScore >= 80) finalMarketType = "STRONG";
+  else if (finalMarketScore >= 60) finalMarketType = "NORMAL";
+  else if (finalMarketScore >= 40) finalMarketType = "CAUTION";
+  else finalMarketType = "VERY_WEAK";
+
   const adjustedSectorBias = { ...assessment.sectorBias };
   for (const [sector, score] of Object.entries(newsAssessment.sectorNewsScores)) {
     adjustedSectorBias[sector] = round(
@@ -443,8 +514,15 @@ async function refreshOpenMarketData() {
     );
   }
 
+  /*
+   * 우선종목 점수는 순수 해외시장 섹터 흐름과
+   * 뉴스 흐름을 각각 한 번씩만 반영한다.
+   *
+   * adjustedSectorBias에는 이미 뉴스점수가 합산되어 있으므로
+   * 여기서는 원본 assessment.sectorBias를 전달한다.
+   */
   const priorityStocks = buildPriorityStocks(
-    adjustedSectorBias,
+    assessment.sectorBias,
     newsAssessment.sectorNewsScores,
     newsAssessment.news
   );
@@ -455,13 +533,21 @@ async function refreshOpenMarketData() {
     updatedAtMs: Date.now(),
     status: successCount === Object.keys(SYMBOLS).length
       ? "OK"
-      : successCount >= 4
+      : successCount >= SETTINGS.minimumSuccessCount
         ? "PARTIAL"
         : "FAILED",
-    provider: "Yahoo Finance chart",
+    provider: "Yahoo Finance chart + Google News RSS",
     successCount,
     totalCount: Object.keys(SYMBOLS).length,
     ...assessment,
+    baseMarketScore: assessment.marketScore,
+    marketScore: finalMarketScore,
+    marketType: finalMarketType,
+    newsMarketAdjustment: round(newsMarketAdjustment, 1),
+    reasons: [
+      ...assessment.reasons,
+      `뉴스보정 ${newsMarketAdjustment >= 0 ? "+" : ""}${round(newsMarketAdjustment, 1)}점`
+    ],
     sectorBias: adjustedSectorBias,
     indicators,
     news: newsAssessment.news,
