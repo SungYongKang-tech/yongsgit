@@ -117,6 +117,18 @@ function setMarketTemperature(mt = {}) {
   setValue("marketDeclineRatio", `${declineValue.toFixed(1)}%`);
   setValue("marketFlatRatio", `${flatValue.toFixed(1)}%`);
   setValue("marketScoreValue", score > 0 ? `${score.toFixed(0)}점` : "-");
+
+  setValue(
+  "marketAverageChangeRate",
+  `${Number(mt.averageChangeRate || 0).toFixed(2)}%`,
+  "rate"
+);
+
+setValue(
+  "marketVolumePassRatio",
+  `${Number(mt.volumePassRatio || 0).toFixed(1)}%`
+);
+
 }
 
 function setStatus(id, text, state = "") {

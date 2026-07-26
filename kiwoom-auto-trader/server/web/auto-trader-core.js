@@ -816,19 +816,25 @@ function getOpenPositionRate(item = {}, currentPrice) {
 
 function calculateMarketTemperature(candidates = []) {
   const rows = Array.isArray(candidates)
-    ? candidates.filter(item => {
-        const changeRate = Number(
-          item.changeRate ||
-          item.fluctuationRate ||
-          item.riseRate ||
-          item.rate ||
-          item.raw?.flu_rt ||
-          0
-        );
+  ? candidates.filter(item => {
+      const rawChangeRate =
+        item.changeRate ??
+        item.fluctuationRate ??
+        item.riseRate ??
+        item.rate ??
+        item.raw?.flu_rt;
 
-        return Number.isFinite(changeRate);
-      })
-    : [];
+      if (
+        rawChangeRate === undefined ||
+        rawChangeRate === null ||
+        rawChangeRate === ""
+      ) {
+        return false;
+      }
+
+      return Number.isFinite(Number(rawChangeRate));
+    })
+  : [];
 
   const total = rows.length;
 
@@ -855,13 +861,13 @@ function calculateMarketTemperature(candidates = []) {
 
   for (const item of rows) {
     const changeRate = Number(
-      item.changeRate ||
-      item.fluctuationRate ||
-      item.riseRate ||
-      item.rate ||
-      item.raw?.flu_rt ||
-      0
-    );
+  item.changeRate ??
+  item.fluctuationRate ??
+  item.riseRate ??
+  item.rate ??
+  item.raw?.flu_rt ??
+  0
+);
 
     const volumeRatio =
       getTradeVolumeRatio(item);
@@ -955,33 +961,47 @@ function calculateMarketTemperature(candidates = []) {
   }
 
   return {
-    level,
-    label,
+  level,
+  label,
 
-    score: Number(score.toFixed(1)),
-    advanceRatio:
-      Number(advanceRatio.toFixed(1)),
-    declineRatio:
-      Number(declineRatio.toFixed(1)),
-    volumePassRatio:
-      Number(volumePassRatio.toFixed(1)),
-    averageChangeRate:
-      Number(averageChangeRate.toFixed(2)),
+  score:
+    Number(score.toFixed(1)),
 
-    total,
-    advanceCount,
-    declineCount,
-    flatCount,
-    volumePassCount,
+  advanceRatio:
+    Number(advanceRatio.toFixed(1)),
 
-    reason:
-      `상승 ${advanceCount}/${total}개 / ` +
-      `평균등락 ${averageChangeRate.toFixed(2)}% / ` +
-      `거래량통과 ${volumePassCount}/${total}개`,
+  declineRatio:
+    Number(declineRatio.toFixed(1)),
 
-    checkedAt: nowText(),
-    checkedDate: todayKey()
-  };
+  flatRatio:
+    Number(
+      (
+        total > 0
+          ? (flatCount / total) * 100
+          : 0
+      ).toFixed(1)
+    ),
+
+  volumePassRatio:
+    Number(volumePassRatio.toFixed(1)),
+
+  averageChangeRate:
+    Number(averageChangeRate.toFixed(2)),
+
+  total,
+  advanceCount,
+  declineCount,
+  flatCount,
+  volumePassCount,
+
+  reason:
+    `상승 ${advanceCount}/${total}개 / ` +
+    `평균등락 ${averageChangeRate.toFixed(2)}% / ` +
+    `거래량통과 ${volumePassCount}/${total}개`,
+
+  checkedAt: nowText(),
+  checkedDate: todayKey()
+};
 }
 
 function getMarketAdjustedBuySettings(
