@@ -197,39 +197,46 @@ function getDayPositionRate(
   ) * 100;
 }
 
-function getTradeVolumeRatio(item) {
+function getChangeRate(item = {}) {
+  const value =
+    item.changeRate ??
+    item.fluctuationRate ??
+    item.riseRate ??
+    item.rate ??
+    item.raw?.flu_rt ??
+    0;
+
+  const number = Number(
+    String(value)
+      .replace(/[+,%]/g, "")
+  );
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+}
+
+function getTradeVolumeRatio(item = {}) {
   const rawValue =
+    item.tradeVolumeRatio ??
+    item.volumeRatio ??
     item.raw?.trde_pre ??
     item.trde_pre ??
-    null;
+    0;
 
-  if (
-    rawValue !== null &&
-    rawValue !== ""
-  ) {
-    const changeRate = Number(
-      String(rawValue)
-        .replace(/[+,]/g, "")
-    );
-
-    if (Number.isFinite(changeRate)) {
-      return Math.max(
-        0,
-        100 + changeRate
-      );
-    }
-  }
-
-  return Number(
-    item.tradeVolumeRatio ||
-    item.volumeRatio ||
-    0
+  const number = Number(
+    String(rawValue)
+      .replace(/[+,%]/g, "")
   );
+
+  return Number.isFinite(number)
+    ? Math.max(0, number)
+    : 0;
 }
 
 function calculateHotScore(item) {
   const changeRate =
-    Number(item.changeRate || 0);
+    getChangeRate(item);
 
   const volumeRatio =
     getTradeVolumeRatio(item);
@@ -238,6 +245,7 @@ function calculateHotScore(item) {
     Math.abs(Number(
       item.currentPrice ||
       item.price ||
+      item.curPrice ||
       item.raw?.cur_prc ||
       0
     ));
@@ -282,13 +290,25 @@ function calculateHotScore(item) {
 }
 
 function normalizeCandidate(item) {
+  const rawCode =
+    String(item.code || "")
+      .trim();
+
+  if (!rawCode) {
+    return null;
+  }
+
   const currentPrice =
     Math.abs(Number(
       item.currentPrice ||
       item.price ||
+      item.curPrice ||
       item.raw?.cur_prc ||
       0
     ));
+
+  const changeRate =
+    getChangeRate(item);
 
   const tradeVolumeRatio =
     getTradeVolumeRatio(item);
@@ -299,13 +319,22 @@ function normalizeCandidate(item) {
       currentPrice
     );
 
+  const hotScore =
+    calculateHotScore({
+      ...item,
+      currentPrice,
+      price: currentPrice,
+      changeRate,
+      tradeVolumeRatio
+    });
+
   const discoverScore =
     Number(
       item.discoverScore ||
       Math.max(
         7,
         Math.round(
-          calculateHotScore(item) / 10
+          hotScore / 10
         )
       )
     );
@@ -314,29 +343,25 @@ function normalizeCandidate(item) {
     ...item,
 
     code:
-      String(item.code || "")
-        .padStart(6, "0"),
+      rawCode.padStart(6, "0"),
 
     name:
       item.name ||
       item.stockName ||
       item.korName ||
-      item.code,
+      rawCode,
 
     currentPrice,
     price: currentPrice,
 
-    changeRate:
-      Number(item.changeRate || 0),
-
+    changeRate,
     tradeVolumeRatio,
     dayPosition,
     discoverScore,
 
     hotScore:
       Number(
-        calculateHotScore(item)
-          .toFixed(1)
+        hotScore.toFixed(1)
       ),
 
     candidateSource: "HOT",
@@ -368,8 +393,10 @@ async function scanHotCandidates() {
   const rows =
     rawItems
       .map(normalizeCandidate)
+      .filter(Boolean)
       .filter(item =>
         item.code &&
+        item.code !== "000000" &&
         item.currentPrice > 0
       )
       .filter(item =>
@@ -431,6 +458,7 @@ async function scanHotCandidates() {
 }
 
 let running = false;
+let scannerTimer = null;
 
 async function runOnce() {
   if (running) {
@@ -452,6 +480,13 @@ async function runOnce() {
 }
 
 function startHotScanner() {
+  if (scannerTimer) {
+    console.log(
+      "[HOT SCANNER] 이미 실행 중"
+    );
+    return;
+  }
+
   console.log(
     "[HOT SCANNER] 시작 / " +
     `${settings.startTime}~` +
@@ -461,7 +496,7 @@ function startHotScanner() {
 
   runOnce();
 
-  setInterval(
+  scannerTimer = setInterval(
     runOnce,
     settings.scanLoopMs
   );
