@@ -2189,6 +2189,54 @@ app.get("/api/today-trade-analysis", (req, res) => {
 
     const today = todayKstText();
 
+    /*
+     * 오늘 OPEN 가상추적 결과를 오늘 거래 분석에 포함한다.
+     * open-strategy.js가 저장한 open-learning-history.json의
+     * virtualSummary.firstCandidate를 읽어 전달한다.
+     */
+    const openHistory = readJsonFileSafe(
+      OPEN_HISTORY_FILE,
+      { version: 1, updatedAt: null, days: {} }
+    ) || { version: 1, updatedAt: null, days: {} };
+
+    const openLearningDay = openHistory.days?.[today] || null;
+    const openVirtualSummary = openLearningDay?.virtualSummary || null;
+    const openFirstCandidate = openVirtualSummary?.firstCandidate || null;
+
+    const openVirtualTop1 = openFirstCandidate
+      ? {
+          rank: Number(openFirstCandidate.rank || 1),
+          code: String(openFirstCandidate.code || ""),
+          name: String(
+            openFirstCandidate.name ||
+            openFirstCandidate.code ||
+            ""
+          ),
+          entryPrice: Number(openFirstCandidate.entryPrice || 0),
+          highestProfitRate: Number(
+            openFirstCandidate.highestProfitRate || 0
+          ),
+          lowestProfitRate: Number(
+            openFirstCandidate.lowestProfitRate || 0
+          ),
+          exitProfitRate: Number(
+            openFirstCandidate.exitProfitRate || 0
+          ),
+          exitType: openFirstCandidate.exitType || null,
+          completedAt:
+            openLearningDay?.virtualTrackingCompletedAt || null
+        }
+      : null;
+
+    const openCandidateReferenceStats = openVirtualSummary
+      ? {
+          sampleCount: Number(openVirtualSummary.sampleCount || 0),
+          winCount: Number(openVirtualSummary.winCount || 0),
+          lossCount: Number(openVirtualSummary.lossCount || 0),
+          avgProfitRate: Number(openVirtualSummary.avgProfitRate || 0)
+        }
+      : null;
+
     const trades = Array.isArray(state.tradeLogs) ? state.tradeLogs : [];
 
     const todayLogs = trades.filter(log => {
@@ -2324,6 +2372,22 @@ app.get("/api/today-trade-analysis", (req, res) => {
       },
       byStrategy,
       sellTypeCounts,
+
+      // 오늘 분석에서 OPEN 1위 후보의 가상매매 결과를 사용한다.
+      openVirtualTop1,
+      openCandidateReferenceStats,
+      openVirtualTracking: {
+        startedAt:
+          openLearningDay?.virtualTrackingStartedAt || null,
+        completedAt:
+          openLearningDay?.virtualTrackingCompletedAt || null,
+        completed: Boolean(
+          openLearningDay?.virtualTrackingCompletedAt
+        ),
+        firstCandidate: openVirtualTop1,
+        referenceStats: openCandidateReferenceStats
+      },
+
       buys,
       sells
     });
