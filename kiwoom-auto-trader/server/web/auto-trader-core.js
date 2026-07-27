@@ -2,7 +2,12 @@ const fs = require("fs");
 const path = require("path");
 
 const STATE_FILE = path.join(__dirname, "paper-state-core.json");
+const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const API_BASE = "http://localhost:3000";
+
+const {
+  startHotScanner
+} = require("./hot-scanner");
 
 
 function sleepSync(ms) {
@@ -53,6 +58,202 @@ function writeJsonFileAtomic(filePath, data) {
       try { fs.unlinkSync(tempPath); } catch (_) {}
     }
   }
+}
+
+function loadHotCandidates() {
+  if (!settings.hotScannerEnabled) {
+    return [];
+  }
+
+  if (!fs.existsSync(HOT_CANDIDATES_FILE)) {
+    return [];
+  }
+
+  try {
+    const data = readJsonFileSafe(
+      HOT_CANDIDATES_FILE,
+      {
+        date: todayKey(),
+        updatedAtMs: 0,
+        rows: []
+      }
+    );
+
+    if (!data || data.date !== todayKey()) {
+      return [];
+    }
+
+    const updatedAtMs =
+      Number(data.updatedAtMs || 0);
+
+    const fileAgeMs =
+      updatedAtMs > 0
+        ? Date.now() - updatedAtMs
+        : Number.MAX_SAFE_INTEGER;
+
+    if (
+      fileAgeMs >
+      settings.hotCandidateFileMaxAgeMs
+    ) {
+      console.log(
+        `[HOT 후보 제외] 파일 오래됨 / ` +
+        `${Math.floor(fileAgeMs / 1000)}초 경과`
+      );
+
+      return [];
+    }
+
+    const rows =
+      Array.isArray(data.rows)
+        ? data.rows
+        : [];
+
+    return rows
+      .filter(item => {
+        const code =
+          String(item.code || "").trim();
+
+        const price = Math.abs(Number(
+          item.currentPrice ||
+          item.price ||
+          item.raw?.cur_prc ||
+          0
+        ));
+
+        return code && price > 0;
+      })
+      .filter(item =>
+        !isExcludedStock(item)
+      )
+      .filter(item =>
+        Number(item.discoverScore || 0) >=
+        settings.hotCandidateMinDiscoverScore
+      )
+      .sort(
+        (a, b) =>
+          Number(b.hotScore || 0) -
+          Number(a.hotScore || 0)
+      )
+      .slice(
+        0,
+        settings.hotCandidateMaxCount
+      )
+      .map(item => ({
+        ...item,
+
+        code:
+          String(item.code || "")
+            .padStart(6, "0"),
+
+        candidateSource: "HOT"
+      }));
+  } catch (err) {
+    console.error(
+      "[HOT 후보 읽기 오류]",
+      err.message
+    );
+
+    return [];
+  }
+}
+
+function mergeBuyCandidates(
+  hotCandidates = [],
+  discoveredCandidates = []
+) {
+  const candidateMap = new Map();
+
+  /*
+   * 일반 후보를 먼저 넣고
+   * HOT 후보를 나중에 넣는다.
+   *
+   * 같은 종목이면 HOT의 최신 정보가
+   * 일반 후보 정보를 덮어쓴다.
+   */
+  for (
+    const item of discoveredCandidates
+  ) {
+    const code =
+      String(item.code || "")
+        .padStart(6, "0");
+
+    if (!code || code === "000000") {
+      continue;
+    }
+
+    candidateMap.set(code, {
+      ...item,
+      code,
+      candidateSource:
+        item.candidateSource ||
+        "DISCOVER"
+    });
+  }
+
+  for (const item of hotCandidates) {
+    const code =
+      String(item.code || "")
+        .padStart(6, "0");
+
+    if (!code || code === "000000") {
+      continue;
+    }
+
+    const existing =
+      candidateMap.get(code) || {};
+
+    candidateMap.set(code, {
+      ...existing,
+      ...item,
+
+      code,
+
+      raw: {
+        ...(existing.raw || {}),
+        ...(item.raw || {})
+      },
+
+      candidateSource: "HOT"
+    });
+  }
+
+  return Array.from(
+    candidateMap.values()
+  ).sort((a, b) => {
+    /*
+     * HOT 후보 우선
+     */
+    const aHot =
+      a.candidateSource === "HOT"
+        ? 1
+        : 0;
+
+    const bHot =
+      b.candidateSource === "HOT"
+        ? 1
+        : 0;
+
+    if (aHot !== bHot) {
+      return bHot - aHot;
+    }
+
+    /*
+     * 같은 출처에서는 HOT 점수,
+     * 발견점수 순서
+     */
+    const hotScoreDiff =
+      Number(b.hotScore || 0) -
+      Number(a.hotScore || 0);
+
+    if (hotScoreDiff !== 0) {
+      return hotScoreDiff;
+    }
+
+    return (
+      Number(b.discoverScore || 0) -
+      Number(a.discoverScore || 0)
+    );
+  });
 }
 
 function isKoreanWeekday() {
@@ -154,6 +355,19 @@ candidateWatchMaxAgeMs: 30 * 60 * 1000,
 
 candidateWatchLoopMs: 30 * 1000,
 candidateWatchPriceDelayMs: 350,
+
+// HOT Scanner 후보
+hotScannerEnabled: true,
+
+// HOT 파일이 이 시간보다 오래됐으면 사용하지 않음
+hotCandidateFileMaxAgeMs: 60 * 1000,
+
+// CORE/VOLUME에 넘길 HOT 후보 최대 수
+hotCandidateMaxCount: 30,
+
+// HOT 후보 최소 발견점수
+hotCandidateMinDiscoverScore: 7,
+
 
 // 후보 재평가 분석
 candidateNearMissMaxCount: 10,
@@ -5754,19 +5968,61 @@ async function runBuyOnce() {
   cleanupCandidateHistory(state);
   cleanupCandidateWatchLists(state);
 
-  console.log("[BUY] 후보 조회 시작");
+console.log("[BUY] 후보 조회 시작");
 
-  const candidates = await discoverCandidates(
+/*
+ * 1. 기존 순차검색 후보
+ */
+const discoveredCandidates =
+  await discoverCandidates(
     state,
     "CORE_VOLUME"
   );
 
-  console.log(
-    `[BUY] 후보 조회 완료 / ${candidates.length}개`
+/*
+ * 2. HOT Scanner가 찾은 후보
+ */
+const hotCandidates =
+  loadHotCandidates();
+
+/*
+ * 3. 종목코드 기준 중복 제거 및 병합
+ */
+const candidates =
+  mergeBuyCandidates(
+    hotCandidates,
+    discoveredCandidates
   );
 
+console.log(
+  `[BUY] 후보 조회 완료 / ` +
+  `HOT ${hotCandidates.length}개 / ` +
+  `전체검색 ${discoveredCandidates.length}개 / ` +
+  `병합후 ${candidates.length}개`
+);
+
+if (hotCandidates.length > 0) {
+  console.log(
+    `[HOT 후보] ` +
+    hotCandidates
+      .slice(0, 10)
+      .map(item =>
+        `${item.name || item.code}` +
+        `(${Number(
+          item.changeRate || 0
+        ).toFixed(2)}%/` +
+        `${Number(
+          item.hotScore || 0
+        ).toFixed(1)}점)`
+      )
+      .join(", ")
+  );
+}
+
   const marketTemperature =
-  calculateMarketTemperature(candidates);
+  calculateMarketTemperature(
+    discoveredCandidates
+  );
 
 state.marketTemperature =
   marketTemperature;
@@ -5805,6 +6061,24 @@ console.log(
       item.stockName ||
       item.korName ||
       item.code;
+
+      const candidateSource =
+  item.candidateSource || "DISCOVER";
+
+if (candidateSource === "HOT") {
+  console.log(
+    `[HOT 즉시평가] ${name}(${item.code}) / ` +
+    `상승률 ${Number(
+      item.changeRate || 0
+    ).toFixed(2)}% / ` +
+    `거래량비율 ${getTradeVolumeRatio(
+      item
+    ).toFixed(1)}% / ` +
+    `HOT점수 ${Number(
+      item.hotScore || 0
+    ).toFixed(1)}`
+  );
+}
 
     if (!price) {
       if (excludeLogCount < maxExcludeLogCount) {
@@ -5896,7 +6170,7 @@ recordBuyDecision(
   state,
   "CORE",
   coreJudge,
-  "DISCOVER"
+  item.candidateSource || "DISCOVER"
 );
 
 if (!coreJudge.pass) {
@@ -5966,11 +6240,11 @@ if (!coreJudge.pass) {
 }
 
   recordBuyDecision(
-    state,
-    "VOLUME",
-    volumeJudge,
-    "DISCOVER"
-  );
+  state,
+  "VOLUME",
+  volumeJudge,
+  item.candidateSource || "DISCOVER"
+);
 
   if (!volumeJudge.pass) {
   updateOperationalBlockedCandidate(
@@ -6253,7 +6527,15 @@ const signal =
 }
 
 async function start() {
-  console.log("SY Quant CORE/VOLUME 자동매매 시작");
+  console.log(
+    "SY Quant CORE/VOLUME 자동매매 시작"
+  );
+
+  /*
+   * HOT Scanner는 직접 매수하지 않고
+   * 별도 후보 파일만 갱신한다.
+   */
+  startHotScanner();
 
   await runBuyOnce();
   await checkSellOnce();
