@@ -789,6 +789,26 @@ async function checkOpenDelayComparisonOnce() {
   if (changed) saveOpenHistory(history);
 }
 
+function formatSignedRate(value) {
+  const number = Number(value || 0);
+
+  return (
+    `${number >= 0 ? "+" : ""}` +
+    `${number.toFixed(2)}%`
+  );
+}
+
+function formatPrice(value) {
+  const price = Number(value || 0);
+
+  if (price <= 0) return "-";
+
+  return (
+    `${price.toLocaleString("ko-KR")}` +
+    `원`
+  );
+}
+
 async function checkOpenVirtualCandidatesOnce() {
   if (!isKoreanWeekday()) return;
   if (!isBetweenTime("09:00", settings.openTrailingForceSellTime)) return;
@@ -854,61 +874,41 @@ async function checkOpenVirtualCandidatesOnce() {
       candidate => candidate.active !== true
     );
 
-  /*
-   * 이미 완료 처리된 날은
-   * 완료 로그와 요약을 다시 만들지 않는다.
-   */
+  /* 완료 로그와 요약은 하루에 한 번만 만든다. */
   if (
     trackingCompleted &&
     !day.virtualTrackingCompletedAt
   ) {
     const winCount = candidates.filter(
-      candidate =>
-        Number(candidate.exitProfitRate || 0) > 0
+      candidate => Number(candidate.exitProfitRate || 0) > 0
     ).length;
 
     const lossCount = candidates.filter(
-      candidate =>
-        Number(candidate.exitProfitRate || 0) < 0
+      candidate => Number(candidate.exitProfitRate || 0) < 0
     ).length;
 
-    const avgProfitRate =
-      candidates.length > 0
-        ? candidates.reduce(
-            (sum, candidate) =>
-              sum +
-              Number(
-                candidate.exitProfitRate || 0
-              ),
-            0
-          ) / candidates.length
-        : 0;
+    const avgProfitRate = candidates.reduce(
+      (sum, candidate) =>
+        sum + Number(candidate.exitProfitRate || 0),
+      0
+    ) / candidates.length;
 
-    const best =
-      [...candidates].sort(
-        (a, b) =>
-          Number(b.exitProfitRate || 0) -
-          Number(a.exitProfitRate || 0)
-      )[0] || null;
+    const best = [...candidates].sort(
+      (a, b) =>
+        Number(b.exitProfitRate || 0) -
+        Number(a.exitProfitRate || 0)
+    )[0] || null;
 
-    const worst =
-      [...candidates].sort(
-        (a, b) =>
-          Number(a.exitProfitRate || 0) -
-          Number(b.exitProfitRate || 0)
-      )[0] || null;
+    const worst = [...candidates].sort(
+      (a, b) =>
+        Number(a.exitProfitRate || 0) -
+        Number(b.exitProfitRate || 0)
+    )[0] || null;
 
-    /*
-     * virtualCandidates가 OPEN 순위대로 저장됐다면
-     * 첫 번째 항목이 실제 OPEN 1위 후보이다.
-     */
     const firstCandidate =
       candidates.find(
-        candidate =>
-          Number(candidate.rank || 0) === 1
-      ) ||
-      candidates[0] ||
-      null;
+        candidate => Number(candidate.rank || 0) === 1
+      ) || candidates[0] || null;
 
     day.virtualTrackingCompletedAt = nowText();
 
@@ -919,43 +919,18 @@ async function checkOpenVirtualCandidatesOnce() {
       avgProfitRate,
       best,
       worst,
-
       firstCandidate: firstCandidate
         ? {
             rank: Number(firstCandidate.rank || 1),
             code: firstCandidate.code || "",
-            name:
-              firstCandidate.name ||
-              firstCandidate.code ||
-              "",
-            entryPrice: Number(
-              firstCandidate.entryPrice ||
-              firstCandidate.buyPrice ||
-              firstCandidate.startPrice ||
-              0
-            ),
-            highestProfitRate: Number(
-              firstCandidate.highestProfitRate ||
-              0
-            ),
-            lowestProfitRate: Number(
-              firstCandidate.lowestProfitRate ||
-              0
-            ),
-            exitProfitRate: Number(
-              firstCandidate.exitProfitRate ||
-              0
-            ),
-            exitType:
-              firstCandidate.exitType ||
-              firstCandidate.sellType ||
-              null,
-            notBoughtReason:
-              firstCandidate.notBoughtReason ||
-              firstCandidate.skipReason ||
-              firstCandidate.rejectReason ||
-              firstCandidate.buyRejectReason ||
-              null
+            name: firstCandidate.name || firstCandidate.code || "",
+            entryPrice: Number(firstCandidate.entryPrice || 0),
+            highestProfitRate: Number(firstCandidate.highestProfitRate || 0),
+            lowestProfitRate: Number(firstCandidate.lowestProfitRate || 0),
+            exitPrice: Number(firstCandidate.exitPrice || 0),
+            exitProfitRate: Number(firstCandidate.exitProfitRate || 0),
+            exitType: firstCandidate.exitType || null,
+            exitReason: firstCandidate.exitReason || null
           }
         : null
     };
@@ -963,45 +938,15 @@ async function checkOpenVirtualCandidatesOnce() {
     changed = true;
 
     if (firstCandidate) {
-      const entryPrice = Number(
-        firstCandidate.entryPrice ||
-        firstCandidate.buyPrice ||
-        firstCandidate.startPrice ||
-        0
-      );
-
-      const highestProfitRate = Number(
-        firstCandidate.highestProfitRate || 0
-      );
-
-      const lowestProfitRate = Number(
-        firstCandidate.lowestProfitRate || 0
-      );
-
-      const exitProfitRate = Number(
-        firstCandidate.exitProfitRate || 0
-      );
-
-      const notBoughtReason =
-        firstCandidate.notBoughtReason ||
-        firstCandidate.skipReason ||
-        firstCandidate.rejectReason ||
-        firstCandidate.buyRejectReason ||
-        null;
-
       console.log(
         `[OPEN 가상추적 완료] ` +
         `1위 ${firstCandidate.name || firstCandidate.code}` +
         `(${firstCandidate.code || "-"}) / ` +
-        `매수가 ${formatPrice(entryPrice)} / ` +
-        `최고 ${formatSignedRate(highestProfitRate)} / ` +
-        `최저 ${formatSignedRate(lowestProfitRate)} / ` +
-        `종료 ${formatSignedRate(exitProfitRate)}` +
-        (
-          notBoughtReason
-            ? ` / 미매수 사유: ${notBoughtReason}`
-            : ""
-        )
+        `매수가 ${formatPrice(firstCandidate.entryPrice)} / ` +
+        `최고 ${formatSignedRate(firstCandidate.highestProfitRate)} / ` +
+        `최저 ${formatSignedRate(firstCandidate.lowestProfitRate)} / ` +
+        `가상청산 ${formatSignedRate(firstCandidate.exitProfitRate)} / ` +
+        `청산사유 ${firstCandidate.exitType || "-"}`
       );
     }
 
@@ -1014,7 +959,8 @@ async function checkOpenVirtualCandidatesOnce() {
     );
   }
 
-  if (changed) {
+  /* 추적 중에도 최고·최저 수익률을 계속 저장한다. */
+  if (changed || active.length > 0) {
     saveOpenHistory(history);
   }
 }
