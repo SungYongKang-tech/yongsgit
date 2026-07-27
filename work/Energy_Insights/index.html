@@ -113,15 +113,19 @@
     tfoot th:nth-child(2),
     tfoot th:nth-child(3),
     tfoot th:nth-child(4),
-    tfoot th:nth-child(5){ text-align:right; }
-    tfoot th:nth-child(6){ text-align:center; }
+    tfoot th:nth-child(5),
+    tfoot th:nth-child(6),
+    tfoot th:nth-child(7){ text-align:right; }
+    tfoot th:nth-child(8){ text-align:center; }
 
-    .energyTable th:nth-child(1), .energyTable td:nth-child(1){ text-align:center; width:60px; }
+    .energyTable th:nth-child(1), .energyTable td:nth-child(1){ text-align:center; width:52px; }
     .energyTable th:nth-child(2), .energyTable td:nth-child(2){ text-align:right; }
     .energyTable th:nth-child(3), .energyTable td:nth-child(3){ text-align:right; }
     .energyTable th:nth-child(4), .energyTable td:nth-child(4){ text-align:right; }
     .energyTable th:nth-child(5), .energyTable td:nth-child(5){ text-align:right; }
-    .energyTable th:nth-child(6), .energyTable td:nth-child(6){ text-align:center; width:84px; }
+    .energyTable th:nth-child(6), .energyTable td:nth-child(6){ text-align:right; }
+    .energyTable th:nth-child(7), .energyTable td:nth-child(7){ text-align:right; }
+    .energyTable th:nth-child(8), .energyTable td:nth-child(8){ text-align:center; width:76px; }
 
     tr:hover td{ background:#fafafa; }
 
@@ -261,24 +265,26 @@
       th, td{ padding:6px 4px; font-size:11px; }
 
       .energyTable{ table-layout:fixed; width:100%; }
-      .energyTable col.col-month{ width:8%; }
-      .energyTable col.col-elec{  width:20%; }
-      .energyTable col.col-heat{  width:20%; }
-      .energyTable col.col-toe{   width:17%; }
-      .energyTable col.col-cum{   width:17%; }
-      .energyTable col.col-src{   width:14%; }
+      .energyTable col.col-month{    width:7%; }
+      .energyTable col.col-elec{     width:17%; }
+      .energyTable col.col-elec-toe{ width:13%; }
+      .energyTable col.col-heat{     width:15%; }
+      .energyTable col.col-heat-toe{ width:12%; }
+      .energyTable col.col-toe{      width:12%; }
+      .energyTable col.col-cum{      width:13%; }
+      .energyTable col.col-src{      width:11%; }
 
       .energyTable th:nth-child(1), .energyTable td:nth-child(1){
         padding-left:2px; padding-right:2px;
       }
-      .energyTable th:nth-child(6), .energyTable td:nth-child(6){
+      .energyTable th:nth-child(8), .energyTable td:nth-child(8){
         font-size:10px;
         padding-left:2px; padding-right:2px;
         letter-spacing:-0.4px;
       }
 
       .energyTable td:nth-child(2),
-      .energyTable td:nth-child(3){
+      .energyTable td:nth-child(4){
         text-overflow:clip;
       }
 
@@ -334,7 +340,9 @@
           <colgroup>
             <col class="col-month">
             <col class="col-elec">
+            <col class="col-elec-toe">
             <col class="col-heat">
+            <col class="col-heat-toe">
             <col class="col-toe">
             <col class="col-cum">
             <col class="col-src">
@@ -344,7 +352,9 @@
             <tr>
               <th>월</th>
               <th>전기(MWh)</th>
+              <th>전기 TOE</th>
               <th>열(Gcal)</th>
+              <th>열 TOE</th>
               <th>월 TOE</th>
               <th>누계 TOE</th>
               <th>출처</th>
@@ -357,7 +367,9 @@
             <tr>
               <th>합계</th>
               <th id="sumElecRow">-</th>
+              <th id="sumElecToeRow">-</th>
               <th id="sumHeatRow">-</th>
+              <th id="sumHeatToeRow">-</th>
               <th id="sumToeRow">-</th>
               <th id="sumToeRow2">-</th>
               <th id="sumSrcRow">실적+예상</th>
@@ -440,7 +452,9 @@
             <colgroup>
               <col class="col-month">
               <col class="col-elec">
+              <col class="col-elec-toe">
               <col class="col-heat">
+              <col class="col-heat-toe">
               <col class="col-toe">
               <col class="col-cum">
               <col class="col-src">
@@ -450,7 +464,9 @@
               <tr>
                 <th>월</th>
                 <th>전기(MWh)</th>
+                <th>전기 TOE</th>
                 <th>열(Gcal)</th>
+                <th>열 TOE</th>
                 <th>월 TOE</th>
                 <th>누계 TOE</th>
                 <th>출처</th>
@@ -908,13 +924,15 @@ function compute2026(){
   const rows = d2026.map((r,i)=>{
     const e = pickElec2026(d2026,i,y25e);
     const h = pickHeat2026(d2026,i,y25h);
-    const toe = toeOfMonth(e.value, h.value);
+    const elecToe = (e.value || 0) * F_ELEC;
+    const heatToe = (h.value || 0) * F_HEAT;
+    const toe = elecToe + heatToe;
 
     let src = "forecast";
     if(d2026[i].elec.value != null && d2026[i].elec.source) src = d2026[i].elec.source;
     else if(d2026[i].heat.value != null && d2026[i].heat.source) src = d2026[i].heat.source;
 
-    return { m:r.m, elec:e, heat:h, toe, src, memo:r.memo||"" };
+    return { m:r.m, elec:e, elecToe, heat:h, heatToe, toe, src, memo:r.memo||"" };
   });
 
   let cum = 0;
@@ -925,6 +943,8 @@ function compute2026(){
 
   const sumElec = withCum.reduce((s,r)=>s+(r.elec.value||0),0);
   const sumHeat = withCum.reduce((s,r)=>s+(r.heat.value||0),0);
+  const sumElecToe = withCum.reduce((s,r)=>s+r.elecToe,0);
+  const sumHeatToe = withCum.reduce((s,r)=>s+r.heatToe,0);
   const annualToeEst = withCum.reduce((s,r)=>s+r.toe,0);
 
   const annualBaseToe = baseMonthly.reduce((s,r)=>s + monthlyToeFromBaseRow(r), 0);
@@ -951,6 +971,8 @@ function compute2026(){
     withCum,
     sumElec,
     sumHeat,
+    sumElecToe,
+    sumHeatToe,
     annualToeEst,
     base: annualBaseToe,
     annualReduction,
@@ -981,7 +1003,9 @@ function render2026(){
     tr.innerHTML=`
       <td>${r.m}</td>
       <td class="editable ${eCls}" data-scope="2026" data-field="elec" data-month="${r.m}" title="탭해서 수정">${fmt3(r.elec.value)}</td>
+      <td>${fmt3(r.elecToe)}</td>
       <td class="editable ${hCls}" data-scope="2026" data-field="heat" data-month="${r.m}" title="탭해서 수정">${fmt1(r.heat.value)}</td>
+      <td>${fmt3(r.heatToe)}</td>
       <td>${fmt2(r.toe)}</td>
       <td>${fmt2(r.cum_toe)}</td>
       <td class="${srcCls}">${srcLabel(r.src)}</td>
@@ -990,7 +1014,9 @@ function render2026(){
   });
 
   el("sumElecRow").textContent = fmt3(calc.sumElec);
+  el("sumElecToeRow").textContent = fmt3(calc.sumElecToe);
   el("sumHeatRow").textContent = fmt1(calc.sumHeat);
+  el("sumHeatToeRow").textContent = fmt3(calc.sumHeatToe);
   el("sumToeRow").textContent  = fmt2(calc.annualToeEst);
   el("sumToeRow2").textContent = fmt2(calc.annualToeEst);
 
@@ -1044,6 +1070,8 @@ function render2025(){
     const r=d[i];
     const eCls = srcClass(r.elec.source);
     const hCls = srcClass(r.heat.source);
+    const elecToe = (r.elec.value || 0) * F_ELEC;
+    const heatToe = (r.heat.value || 0) * F_HEAT;
     const monthToe = toe[i];
     cum += monthToe;
 
@@ -1056,7 +1084,9 @@ function render2025(){
     tr.innerHTML=`
       <td>${i+1}</td>
       <td class="editable ${eCls}" data-scope="2025" data-field="elec" data-month="${i+1}" title="탭해서 수정">${fmt3(r.elec.value)}</td>
+      <td>${fmt3(elecToe)}</td>
       <td class="editable ${hCls}" data-scope="2025" data-field="heat" data-month="${i+1}" title="탭해서 수정">${fmt1(r.heat.value)}</td>
+      <td>${fmt3(heatToe)}</td>
       <td>${fmt2(monthToe)}</td>
       <td>${fmt2(cum)}</td>
       <td class="${srcCls}">${srcLabel(src)}</td>
