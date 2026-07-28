@@ -1623,9 +1623,21 @@ return {
 
   finalBuyScore: Number(h.finalBuyScore || h.finalBuyScoreDetail?.score || 0),
   finalBuyScoreDetail: h.finalBuyScoreDetail || null,
-  marketScore: h.marketScore || null,
+  marketScore: Number(h.marketScore?.score ?? h.marketScore ?? 0),
   sectorPowerScore: Number(h.sectorPowerScore || h.finalBuyScoreDetail?.sectorPowerScore || 0),
-  
+
+  // 매수 당시 후보 진단정보
+  candidateStrengthScore: Number(h.candidateStrengthScore || 0),
+  candidateStrengthLabel: h.candidateStrengthLabel || "-",
+  candidateWatchScore: Number(h.candidateWatchScore || 0),
+  candidateBaseScore: Number(h.candidateBaseScore || 0),
+  candidateTrendPenalty: Number(h.candidateTrendPenalty || 0),
+  buyPriceDiffRate: Number(h.buyPriceDiffRate || 0),
+  buyVolumeDiff: Number(h.buyVolumeDiff || 0),
+  buyDayPositionDiff: Number(h.buyDayPositionDiff || 0),
+  candidateFirstPrice: Number(h.candidateFirstPrice || 0),
+  candidateFirstSeenAtText: h.candidateFirstSeenAtText || null,
+
   discoverScoreDetails: h.discoverScoreDetails || {},
   discoverReasons: h.discoverReasons || [],
   sectorTags: h.sectorTags || [],
@@ -2270,8 +2282,41 @@ app.get("/api/today-trade-analysis", (req, res) => {
   "VOLUME_END_SELL"
 ];
 
-    const buys = todayLogs.filter(log => buyTypes.includes(log.type));
-    const sells = todayLogs.filter(log => sellTypes.includes(log.type));
+    const buys = todayLogs
+      .filter(log => buyTypes.includes(log.type))
+      .map(log => ({
+        ...log,
+        marketScore: Number(log.marketScore?.score ?? log.marketScore ?? 0),
+        candidateStrengthScore: Number(log.candidateStrengthScore || 0),
+        candidateStrengthLabel: log.candidateStrengthLabel || "-",
+        candidateWatchScore: Number(log.candidateWatchScore || 0),
+        candidateBaseScore: Number(log.candidateBaseScore || 0),
+        candidateTrendPenalty: Number(log.candidateTrendPenalty || 0),
+        buyPriceDiffRate: Number(log.buyPriceDiffRate || 0),
+        buyVolumeDiff: Number(log.buyVolumeDiff || 0),
+        buyDayPositionDiff: Number(log.buyDayPositionDiff || 0),
+        candidateFirstPrice: Number(log.candidateFirstPrice || 0),
+        candidateFirstSeenAtText: log.candidateFirstSeenAtText || null
+      }));
+
+    const sells = todayLogs
+      .filter(log => sellTypes.includes(log.type))
+      .map(log => ({
+        ...log,
+        marketScore: Number(log.marketScore?.score ?? log.marketScore ?? 0),
+        candidateStrengthScore: Number(log.candidateStrengthScore || 0),
+        candidateStrengthLabel: log.candidateStrengthLabel || "-",
+        candidateBaseScore: Number(log.candidateBaseScore || 0),
+        candidateTrendPenalty: Number(log.candidateTrendPenalty || 0),
+        buyPriceDiffRate: Number(log.buyPriceDiffRate || 0),
+        buyVolumeDiff: Number(log.buyVolumeDiff || 0),
+        buyDayPositionDiff: Number(log.buyDayPositionDiff || 0),
+        sellSignalAt: log.sellSignalAt || null,
+        sellSignalPrice: Number(log.sellSignalPrice || 0),
+        sellOrderRequestedAt: log.sellOrderRequestedAt || null,
+        sellExecutedAt: log.sellExecutedAt || null,
+        sellSlippageRate: Number(log.sellSlippageRate || 0)
+      }));
 
     const realizedProfit = sells.reduce(
       (sum, log) => sum + Number(log.profit || 0),
@@ -2372,6 +2417,16 @@ app.get("/api/today-trade-analysis", (req, res) => {
       },
       byStrategy,
       sellTypeCounts,
+
+      // OPEN이 미매수여도 실행 결과와 사유를 항상 전달한다.
+      openStatus: {
+        date: state.openDate || today,
+        completed: state.openCompleted === true,
+        skipped: state.openSkipped === true,
+        completedAt: state.openCompletedAt || null,
+        skipReason: state.openSkipReason || null,
+        topCandidate: openVirtualTop1
+      },
 
       // 오늘 분석에서 OPEN 1위 후보의 가상매매 결과를 사용한다.
       openVirtualTop1,

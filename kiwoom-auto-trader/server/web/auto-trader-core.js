@@ -4588,6 +4588,79 @@ if (
 }
 
 
+/*
+ * 후보강도 진단값
+ *
+ * 실제 매수 통과조건에는 사용하지 않고,
+ * 장 종료 후 매수 품질 분석을 위한 기록값으로만 사용한다.
+ */
+function calculateCandidateStrengthDiagnostic(
+  scoreDetail = {}
+) {
+  const priceDiffRate = Number(
+    scoreDetail.priceDiffRate || 0
+  );
+
+  const volumeDiff = Number(
+    scoreDetail.volumeDiff || 0
+  );
+
+  const dayPositionDiff = Number(
+    scoreDetail.dayPositionDiff || 0
+  );
+
+  const trendPenalty = Number(
+    scoreDetail.trendPenalty || 0
+  );
+
+  let score = 50;
+
+  // 최초 발견 이후 가격 흐름
+  score += Math.max(
+    -25,
+    Math.min(25, priceDiffRate * 20)
+  );
+
+  // 당일위치 변화
+  score += Math.max(
+    -20,
+    Math.min(20, dayPositionDiff * 0.5)
+  );
+
+  // 거래량 변화는 가격 방향을 알 수 없으므로 소폭만 반영
+  score += Math.max(
+    -5,
+    Math.min(5, volumeDiff / 20)
+  );
+
+  // 기존 후보점수의 추세 감점 반영
+  score += Math.max(-20, trendPenalty);
+
+  score = Math.max(0, Math.min(100, score));
+
+  let label = "보통";
+
+  if (score >= 70) {
+    label = "강함";
+  } else if (score < 40) {
+    label = "약함";
+  }
+
+  return {
+    score: Number(score.toFixed(1)),
+    label,
+    priceDiffRate:
+      Number(priceDiffRate.toFixed(2)),
+    volumeDiff:
+      Number(volumeDiff.toFixed(1)),
+    dayPositionDiff:
+      Number(dayPositionDiff.toFixed(1)),
+    trendPenalty:
+      Number(trendPenalty.toFixed(1))
+  };
+}
+
+
 async function paperBuy(
   state,
   item,
@@ -4800,17 +4873,27 @@ async function paperBuy(
       0
     );
 
+    const candidateWatchScore = Number(
+      watchItem?.watchScore ??
+      item.watchScore ??
+      0
+    );
+
+    const candidateStrengthDiagnostic =
+      calculateCandidateStrengthDiagnostic(
+        watchScoreDetail || {}
+      );
+
+    /*
+     * 기존 후보강도 값이 있으면 그대로 사용하고,
+     * 없을 때만 진단점수를 사용한다.
+     */
     const candidateStrengthScore = Number(
       item.candidateStrengthScore ??
       item.leaderStrengthScore ??
       watchScoreDetail?.candidateStrengthScore ??
       watchScoreDetail?.leaderStrengthScore ??
-      0
-    );
-
-    const candidateWatchScore = Number(
-      watchItem?.watchScore ??
-      item.watchScore ??
+      candidateStrengthDiagnostic.score ??
       0
     );
 
@@ -4833,6 +4916,43 @@ async function paperBuy(
       candidateWatchScoreDetail:
         watchScoreDetail,
 
+      candidateStrengthLabel:
+        candidateStrengthDiagnostic.label,
+
+      candidateBaseScore: Number(
+        watchScoreDetail?.baseTotal ??
+        candidateWatchScore ??
+        0
+      ),
+
+      candidateTrendPenalty: Number(
+        watchScoreDetail?.trendPenalty || 0
+      ),
+
+      buyPriceDiffRate: Number(
+        watchScoreDetail?.priceDiffRate || 0
+      ),
+
+      buyVolumeDiff: Number(
+        watchScoreDetail?.volumeDiff || 0
+      ),
+
+      buyDayPositionDiff: Number(
+        watchScoreDetail?.dayPositionDiff || 0
+      ),
+
+      candidateFirstVolumeRatio: Number(
+        watchScoreDetail?.firstVolumeRatio ??
+        watchItem?.firstVolumeRatio ??
+        0
+      ),
+
+      candidateFirstDayPosition: Number(
+        watchScoreDetail?.firstDayPosition ??
+        watchItem?.firstDayPosition ??
+        0
+      ),
+
       candidateFirstSeenAt:
         watchItem?.firstSeenAt ?? null,
 
@@ -4854,6 +4974,29 @@ async function paperBuy(
       buyDayPositionRate,
       buyOpenPositionRate
     };
+
+    console.log(
+      `[${strategyGroup} 매수진단] ${name} / ` +
+      `후보강도 ${candidateStrengthDiagnostic.label} ` +
+      `${candidateStrengthScore.toFixed(1)}점 / ` +
+      `기본 ${Number(
+        watchScoreDetail?.baseTotal ??
+        candidateWatchScore ??
+        0
+      ).toFixed(1)}점 / ` +
+      `추세감점 ${Number(
+        watchScoreDetail?.trendPenalty || 0
+      ).toFixed(1)}점 / ` +
+      `최초대비 가격 ${Number(
+        watchScoreDetail?.priceDiffRate || 0
+      ).toFixed(2)}% / ` +
+      `거래량 ${Number(
+        watchScoreDetail?.volumeDiff || 0
+      ).toFixed(1)}%p / ` +
+      `당일위치 ${Number(
+        watchScoreDetail?.dayPositionDiff || 0
+      ).toFixed(1)}%p`
+    );
 
     state.holdings.push({
       code: item.code,
@@ -5043,7 +5186,8 @@ async function paperSell(
   sellPrice,
   sellQty,
   sellType,
-  reason
+  reason,
+  sellSignalDetail = null
 ) {
   if (!state.pendingSellCodes) {
     state.pendingSellCodes = [];
@@ -5073,6 +5217,18 @@ async function paperSell(
     if (qty <= 0) {
       return false;
     }
+
+    const sellSignalAt =
+      sellSignalDetail?.signalAt ||
+      nowText();
+
+    const sellSignalPrice = Number(
+      sellSignalDetail?.signalPrice ??
+      sellPrice ??
+      0
+    );
+
+    const sellOrderRequestedAt = nowText();
 
     const result = await postJson(
       `${API_BASE}/api/core-paper-sell`,
@@ -5254,6 +5410,49 @@ async function paperSell(
         holding.buyOpenPositionRate || 0
       ),
 
+      candidateStrengthLabel:
+        holding.candidateStrengthLabel ||
+        "-",
+
+      candidateBaseScore: Number(
+        holding.candidateBaseScore || 0
+      ),
+
+      candidateTrendPenalty: Number(
+        holding.candidateTrendPenalty || 0
+      ),
+
+      buyPriceDiffRate: Number(
+        holding.buyPriceDiffRate || 0
+      ),
+
+      buyVolumeDiff: Number(
+        holding.buyVolumeDiff || 0
+      ),
+
+      buyDayPositionDiff: Number(
+        holding.buyDayPositionDiff || 0
+      ),
+
+      sellSignalAt,
+      sellSignalPrice,
+      sellOrderRequestedAt,
+      sellExecutedAt: nowText(),
+
+      sellSlippageRate:
+        sellSignalPrice > 0
+          ? Number(
+              (
+                (
+                  Number(sellPrice || 0) -
+                  sellSignalPrice
+                ) /
+                sellSignalPrice *
+                100
+              ).toFixed(3)
+            )
+          : 0,
+
       reason
     });
 
@@ -5362,7 +5561,16 @@ function getSellSignal(holding, price) {
 
       reason:
         `손절 ${profitRate.toFixed(2)}% / ` +
-        `기준 ${stopLossRate.toFixed(2)}%`
+        `기준 ${stopLossRate.toFixed(2)}%`,
+
+      signalAt: nowText(),
+      signalPrice: Number(price),
+      signalProfitRate: Number(
+        profitRate.toFixed(2)
+      ),
+      signalStopLossRate: Number(
+        stopLossRate.toFixed(2)
+      )
     };
   }
 
@@ -6516,7 +6724,8 @@ const signal =
       price,
       signal.qty,
       signal.type,
-      signal.reason
+      signal.reason,
+      signal
     );
   }
 

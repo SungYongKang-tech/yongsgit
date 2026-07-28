@@ -1202,6 +1202,8 @@ state.lastOpenFullScanAt = null;
   state.openBuyName = null;
   state.openSellType = null;
   state.openSellReason = null;
+  state.openTopCandidate = null;
+  state.openLastScanSummary = null;
 
   if (!Array.isArray(state.pendingBuyCodes)) state.pendingBuyCodes = [];
   if (!Array.isArray(state.pendingSellCodes)) state.pendingSellCodes = [];
@@ -2498,7 +2500,7 @@ function judgeOpenBuy(state, item, price) {
   };
 }
 
-async function paperOpenBuy(state, item, price, reason) {
+async function paperOpenBuy(state, item, price, reason, judged = {}) {
   if (state.pendingBuyCodes.includes(item.code)) return false;
   state.pendingBuyCodes.push(item.code);
   saveState(state);
@@ -2519,6 +2521,35 @@ async function paperOpenBuy(state, item, price, reason) {
       reason
     });
 
+    const buyDiagnostic = {
+      discoverScore: Number(item.discoverScore || 0),
+      baseRankScore: Number(judged.baseRankScore || 0),
+      rankScore: Number(judged.rankScore || 0),
+      scoreTrendBonus: Number(judged.scoreTrendBonus || 0),
+      confirmPriceBonus: Number(judged.confirmPriceBonus || 0),
+      confirmPriceRiseRate: Number(judged.confirmPriceRiseRate || 0),
+      recentPriceDiffRate: Number(judged.recentPriceDiffRate || 0),
+      marketScore: Number(judged.marketScore || 0),
+      marketType: judged.marketType || null,
+      marketBonus: Number(judged.marketBonus || 0),
+      sectorBonus: Number(judged.sectorBonus || 0),
+      priorityBonus: Number(judged.priorityBonus || 0),
+      volumeRatio: getTradeVolumeRatio(item),
+      dayPosition: getDayPositionRate(item, price),
+      openPosition: getOpenPositionRate(item, price),
+      changeRate: Number(
+        item.changeRate ||
+        item.fluctuationRate ||
+        item.riseRate ||
+        item.rate ||
+        0
+      ),
+      source: item.source || "FALLBACK",
+      matchedSectors: Array.isArray(judged.matchedSectors)
+        ? judged.matchedSectors
+        : []
+    };
+
     state.holdings.push({
       code: item.code,
       name,
@@ -2528,9 +2559,12 @@ async function paperOpenBuy(state, item, price, reason) {
       qty,
       buyAmount: price * qty,
       buyTime: Date.now(),
+      buyTimeText: nowText(),
       highestPrice: price,
       highestPriceAt: Date.now(),
-      lowestPrice: price
+      lowestPrice: price,
+      ...buyDiagnostic,
+      openBuyDiagnostic: buyDiagnostic
     });
 
     state.tradeLogs.push({
@@ -2543,7 +2577,9 @@ async function paperOpenBuy(state, item, price, reason) {
       qty,
       amount: price * qty,
       strategyGroup: "OPEN",
-      reason
+      reason,
+      ...buyDiagnostic,
+      openBuyDiagnostic: buyDiagnostic
     });
 
     state.totalCash = Number(result.totalCash ?? state.totalCash ?? 0);
@@ -2553,6 +2589,18 @@ async function paperOpenBuy(state, item, price, reason) {
     state.openBuyName = name;
     saveState(state);
     recordOpenLearningBuy(item, price, qty, reason);
+
+    console.log(
+      `[OPEN 매수진단] ${name} / ` +
+      `최종 ${buyDiagnostic.rankScore.toFixed(1)}점 / ` +
+      `기본 ${buyDiagnostic.baseRankScore.toFixed(1)} / ` +
+      `점수추세 +${buyDiagnostic.scoreTrendBonus.toFixed(1)} / ` +
+      `가격보너스 +${buyDiagnostic.confirmPriceBonus.toFixed(1)} / ` +
+      `시장 ${buyDiagnostic.marketBonus >= 0 ? "+" : ""}${buyDiagnostic.marketBonus.toFixed(1)} / ` +
+      `섹터 ${buyDiagnostic.sectorBonus >= 0 ? "+" : ""}${buyDiagnostic.sectorBonus.toFixed(1)} / ` +
+      `확인가격 ${buyDiagnostic.confirmPriceRiseRate >= 0 ? "+" : ""}${buyDiagnostic.confirmPriceRiseRate.toFixed(2)}% / ` +
+      `직전 ${buyDiagnostic.recentPriceDiffRate >= 0 ? "+" : ""}${buyDiagnostic.recentPriceDiffRate.toFixed(2)}%`
+    );
 
     console.log(`[OPEN 매수완료] ${name} / ${price.toLocaleString()}원 / ${qty}주 / 현금 ${state.totalCash.toLocaleString()}원`);
     return true;
@@ -2584,16 +2632,31 @@ function getOpenSellSignal(holding, price) {
     : 0;
   const hhmm = getCurrentHHMM();
 
+  const makeSignal = (type, reason) => ({
+    type,
+    qty: holding.qty,
+    reason,
+    signalAt: nowText(),
+    signalAtMs: now,
+    signalPrice: Number(price || 0),
+    profitRate: Number(profitRate.toFixed(4)),
+    highestProfitRate: Number(highestProfitRate.toFixed(4)),
+    drawdownFromHigh: Number(drawdownFromHigh.toFixed(4)),
+    holdMinutes: Number(holdMinutes.toFixed(2))
+  });
+
   if (profitRate <= settings.openStopLossRate) {
-    return { type: "OPEN_STOP_LOSS", qty: holding.qty, reason: `OPEN 손절 ${profitRate.toFixed(2)}% / 기준 ${settings.openStopLossRate.toFixed(2)}%` };
+    return makeSignal(
+      "OPEN_STOP_LOSS",
+      `OPEN 손절 ${profitRate.toFixed(2)}% / 기준 ${settings.openStopLossRate.toFixed(2)}%`
+    );
   }
 
   if (highestProfitRate >= settings.openTrailingStartRate && drawdownFromHigh <= -Math.abs(settings.openTrailingStopRate)) {
-    return {
-      type: "OPEN_TRAILING_SELL",
-      qty: holding.qty,
-      reason: `OPEN 전량익절 / 최고 ${highestProfitRate.toFixed(2)}% / 현재 ${profitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`
-    };
+    return makeSignal(
+      "OPEN_TRAILING_SELL",
+      `OPEN 전량익절 / 최고 ${highestProfitRate.toFixed(2)}% / 현재 ${profitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`
+    );
   }
 
   if (
@@ -2601,11 +2664,10 @@ function getOpenSellSignal(holding, price) {
     profitRate >= settings.openMinProfitToStagnationSell &&
     secondsFromHigh >= settings.openStagnationSeconds
   ) {
-    return {
-      type: "OPEN_STAGNATION_SELL",
-      qty: holding.qty,
-      reason: `OPEN 상승주춤 / 최고 ${highestProfitRate.toFixed(2)}% / 현재 ${profitRate.toFixed(2)}% / 고가 미갱신 ${Math.floor(secondsFromHigh)}초`
-    };
+    return makeSignal(
+      "OPEN_STAGNATION_SELL",
+      `OPEN 상승주춤 / 최고 ${highestProfitRate.toFixed(2)}% / 현재 ${profitRate.toFixed(2)}% / 고가 미갱신 ${Math.floor(secondsFromHigh)}초`
+    );
   }
 
 /*
@@ -2634,17 +2696,15 @@ if (
       settings.openForceSellTime
   )
 ) {
-  return {
-    type: "OPEN_TIME_SELL",
-    qty: holding.qty,
-    reason:
-      `OPEN 일반 시간청산 / ` +
-      `트레일링 미진입 / ` +
-      `최고 ${highestProfitRate.toFixed(2)}% / ` +
-      `현재 ${profitRate.toFixed(2)}% / ` +
-      `보유 ${holdMinutes.toFixed(1)}분 / ` +
-      `현재시각 ${hhmm}`
-  };
+  return makeSignal(
+    "OPEN_TIME_SELL",
+    `OPEN 일반 시간청산 / ` +
+    `트레일링 미진입 / ` +
+    `최고 ${highestProfitRate.toFixed(2)}% / ` +
+    `현재 ${profitRate.toFixed(2)}% / ` +
+    `보유 ${holdMinutes.toFixed(1)}분 / ` +
+    `현재시각 ${hhmm}`
+  );
 }
 
 /*
@@ -2664,16 +2724,14 @@ if (
       settings.openTrailingForceSellTime
   )
 ) {
-  return {
-    type: "OPEN_TRAILING_TIME_SELL",
-    qty: holding.qty,
-    reason:
-      `OPEN 트레일링 최종청산 / ` +
-      `최고 ${highestProfitRate.toFixed(2)}% / ` +
-      `현재 ${profitRate.toFixed(2)}% / ` +
-      `보유 ${holdMinutes.toFixed(1)}분 / ` +
-      `현재시각 ${hhmm}`
-  };
+  return makeSignal(
+    "OPEN_TRAILING_TIME_SELL",
+    `OPEN 트레일링 최종청산 / ` +
+    `최고 ${highestProfitRate.toFixed(2)}% / ` +
+    `현재 ${profitRate.toFixed(2)}% / ` +
+    `보유 ${holdMinutes.toFixed(1)}분 / ` +
+    `현재시각 ${hhmm}`
+  );
 }
 
   return null;
@@ -2694,7 +2752,10 @@ async function paperOpenSell(state, holding, price, signal) {
       price,
       qty,
       sellType: signal.type,
-      reason: signal.reason
+      reason: signal.reason,
+      signalAt: signal.signalAt || null,
+      signalAtMs: Number(signal.signalAtMs || 0),
+      signalPrice: Number(signal.signalPrice || price || 0)
     });
 
     recordOpenLearningSell(holding, price, signal, result);
@@ -2712,7 +2773,24 @@ async function paperOpenSell(state, holding, price, signal) {
       profit: Number(result.profit || 0),
       profitRate: Number(result.profitRate || 0),
       strategyGroup: "OPEN",
-      reason: signal.reason
+      reason: signal.reason,
+      buyPrice: Number(holding.buyPrice || 0),
+      highestPrice: Number(holding.highestPrice || price || 0),
+      lowestPrice: Number(holding.lowestPrice || price || 0),
+      signalAt: signal.signalAt || null,
+      signalAtMs: Number(signal.signalAtMs || 0),
+      signalPrice: Number(signal.signalPrice || price || 0),
+      executedAt: nowText(),
+      executedAtMs: Date.now(),
+      signalToSellRate:
+        Number(signal.signalPrice || 0) > 0
+          ? ((Number(price) - Number(signal.signalPrice)) /
+              Number(signal.signalPrice)) * 100
+          : 0,
+      highestProfitRate: Number(signal.highestProfitRate || 0),
+      drawdownFromHigh: Number(signal.drawdownFromHigh || 0),
+      holdMinutes: Number(signal.holdMinutes || 0),
+      openBuyDiagnostic: holding.openBuyDiagnostic || null
     });
 
     state.openCompleted = true;
@@ -2934,6 +3012,45 @@ async function runOpenBuyOnce() {
     marketData
   });
 
+  const topEvaluated = [...evaluated]
+    .sort((a, b) =>
+      getLearningCandidateSortScore(b.record) -
+      getLearningCandidateSortScore(a.record)
+    )[0] || null;
+
+  state.openLastScanSummary = {
+    scanId,
+    checkedAt: nowText(),
+    checkedAtMs: Date.now(),
+    candidateCount: candidates.length,
+    evaluatedCount: evaluated.length,
+    passedCount: passed.length,
+    rejectCounts,
+    marketScore: marketData.available
+      ? Number(marketData.marketScore || 0)
+      : null,
+    marketType: marketData.available
+      ? marketData.marketType || null
+      : null,
+    topCandidate: topEvaluated
+      ? {
+          ...topEvaluated.record,
+          rejectCategory: topEvaluated.judged.pass
+            ? null
+            : getOpenRejectCategory(topEvaluated.judged.reason),
+          rejectReason: topEvaluated.judged.pass
+            ? null
+            : topEvaluated.judged.reason
+        }
+      : null
+  };
+
+  if (topEvaluated) {
+    state.openTopCandidate = state.openLastScanSummary.topCandidate;
+  }
+
+  saveState(state);
+
   const elapsedMs = Date.now() - scanStartedAt;
 
   if (!passed.length) {
@@ -2969,7 +3086,8 @@ async function runOpenBuyOnce() {
     state,
     best.item,
     best.price,
-    best.judged.reason
+    best.judged.reason,
+    best.judged
   );
 
   console.log(

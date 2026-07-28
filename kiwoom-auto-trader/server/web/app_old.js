@@ -2728,6 +2728,48 @@ function renderTradeLogs() {
             ${log.reason || "-"}
           </div>
 
+          ${
+            log.candidateStrengthScore ||
+            log.sellSignalPrice ||
+            log.sellSlippageRate
+              ? `
+                <div class="trade-log-detail">
+                  후보강도
+                  ${Number(log.candidateStrengthScore || 0).toFixed(1)}점
+                  ${log.candidateStrengthLabel
+                    ? `/ ${log.candidateStrengthLabel}`
+                    : ""}
+                  /
+                  추세감점
+                  ${Number(log.candidateTrendPenalty || 0).toFixed(1)}
+                </div>
+
+                <div class="trade-log-detail">
+                  최초대비 가격
+                  ${formatSignedDiagnostic(log.buyPriceDiffRate)}
+                  /
+                  거래량
+                  ${formatSignedDiagnostic(log.buyVolumeDiff, 1, "%p")}
+                  /
+                  위치
+                  ${formatSignedDiagnostic(log.buyDayPositionDiff, 1, "%p")}
+                </div>
+
+                ${
+                  log.sellSignalPrice
+                    ? `
+                      <div class="trade-log-detail">
+                        신호가 ${formatNumber(log.sellSignalPrice)}원 /
+                        실제가 ${formatNumber(log.sellPrice || log.price)}원 /
+                        차이 ${formatSignedDiagnostic(log.sellSlippageRate)}
+                      </div>
+                    `
+                    : ""
+                }
+              `
+              : ""
+          }
+
           <div class="trade-log-time">
             ${log.time || "-"}
           </div>
@@ -7346,6 +7388,159 @@ async function toggleServerAutoTrade() {
   }
 }
 
+
+function formatSignedDiagnostic(value, digits = 2, suffix = "%") {
+  const number = Number(value || 0);
+  return `${number >= 0 ? "+" : ""}${number.toFixed(digits)}${suffix}`;
+}
+
+function getServerDiagnosticHtml(data = {}) {
+  const candidateAnalysis =
+    data.performanceCandidateAnalysis || {};
+
+  const recentSells = Array.isArray(data.performanceRecentSells)
+    ? data.performanceRecentSells
+    : [];
+
+  const topCandidate =
+    data.openTopCandidate ||
+    candidateAnalysis.openTopCandidate ||
+    null;
+
+  const openScan =
+    data.openLastScanSummary ||
+    candidateAnalysis.openLastScanSummary ||
+    null;
+
+  const core = candidateAnalysis.CORE || {};
+  const volume = candidateAnalysis.VOLUME || {};
+
+  const diagnosticSell = recentSells.find((item) =>
+    item.sellSignalPrice ||
+    item.sellSlippageRate ||
+    item.candidateStrengthScore
+  ) || null;
+
+  const rejectEntries = Object.entries(
+    openScan?.rejectCounts || {}
+  ).sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+
+  const rejectText = rejectEntries.length > 0
+    ? rejectEntries
+        .slice(0, 4)
+        .map(([reason, count]) => `${reason} ${count}건`)
+        .join(" / ")
+    : "-";
+
+  return `
+    <div class="server-paper-section-title">오늘 매수 진단</div>
+
+    <div class="server-profit-summary">
+      <div>
+        <span>CORE 검토</span>
+        <strong>
+          ${formatNumber(core.checked || 0)}건 /
+          통과 ${formatNumber(core.passed || 0)}건 /
+          매수 ${formatNumber(core.bought || 0)}건
+        </strong>
+      </div>
+
+      <div>
+        <span>VOLUME 검토</span>
+        <strong>
+          ${formatNumber(volume.checked || 0)}건 /
+          통과 ${formatNumber(volume.passed || 0)}건 /
+          매수 ${formatNumber(volume.bought || 0)}건
+        </strong>
+      </div>
+
+      <div>
+        <span>OPEN 최종 1위</span>
+        <strong>
+          ${
+            topCandidate
+              ? `${cleanStockName(topCandidate.name || topCandidate.code)} / ${
+                  topCandidate.rejectCategory ||
+                  topCandidate.rejectReason ||
+                  "후보 저장"
+                }`
+              : "-"
+          }
+        </strong>
+      </div>
+
+      <div>
+        <span>OPEN 탈락 요약</span>
+        <strong>${rejectText}</strong>
+      </div>
+    </div>
+
+    ${
+      diagnosticSell
+        ? `
+          <div class="server-paper-item">
+            <div class="server-paper-item-top">
+              <div>
+                <strong>
+                  최근 매도 진단 ·
+                  ${cleanStockName(diagnosticSell.name || diagnosticSell.code)}
+                </strong>
+                <div class="server-paper-code">
+                  ${diagnosticSell.code || ""}
+                </div>
+              </div>
+
+              <div class="server-hold-profit ${
+                Number(diagnosticSell.profitRate || 0) >= 0 ? "up" : "down"
+              }">
+                ${formatSignedDiagnostic(diagnosticSell.profitRate)}
+              </div>
+            </div>
+
+            <div class="server-paper-detail">
+              후보강도
+              ${Number(diagnosticSell.candidateStrengthScore || 0).toFixed(1)}점
+              ${diagnosticSell.candidateStrengthLabel
+                ? `/ ${diagnosticSell.candidateStrengthLabel}`
+                : ""}
+              /
+              기본 ${Number(diagnosticSell.candidateBaseScore || 0).toFixed(1)}
+              /
+              추세감점 ${Number(diagnosticSell.candidateTrendPenalty || 0).toFixed(1)}
+            </div>
+
+            <div class="server-paper-detail">
+              최초 대비 가격
+              ${formatSignedDiagnostic(diagnosticSell.buyPriceDiffRate)}
+              /
+              거래량
+              ${formatSignedDiagnostic(diagnosticSell.buyVolumeDiff, 1, "%p")}
+              /
+              당일위치
+              ${formatSignedDiagnostic(diagnosticSell.buyDayPositionDiff, 1, "%p")}
+            </div>
+
+            <div class="server-paper-detail">
+              매도 신호가
+              ${diagnosticSell.sellSignalPrice
+                ? `${formatNumber(diagnosticSell.sellSignalPrice)}원`
+                : "-"}
+              /
+              실제 매도가
+              ${diagnosticSell.sellPrice
+                ? `${formatNumber(diagnosticSell.sellPrice)}원`
+                : "-"}
+              /
+              차이
+              ${formatSignedDiagnostic(diagnosticSell.sellSlippageRate)}
+            </div>
+          </div>
+        `
+        : `<div class="empty">아직 표시할 매수·매도 진단 결과가 없습니다.</div>`
+    }
+  `;
+}
+
 function renderServerPaperState(data) {
   if (!serverPaperBox) return;
 
@@ -7690,8 +7885,40 @@ function renderServerPaperState(data) {
 
                 <div class="server-paper-detail">
                   전략 ${item.strategyName || item.strategyPreset || "-"} /
-                  점수 ${item.discoverScore || 0}
+                  발견 ${item.discoverScore || 0}점 /
+                  최종 ${Number(item.finalBuyScore || 0).toFixed(1)}점
                 </div>
+
+                ${
+                  item.candidateStrengthScore ||
+                  item.buyPriceDiffRate ||
+                  item.buyVolumeDiff ||
+                  item.buyDayPositionDiff
+                    ? `
+                      <div class="server-paper-detail">
+                        후보강도
+                        ${Number(item.candidateStrengthScore || 0).toFixed(1)}점
+                        ${item.candidateStrengthLabel
+                          ? `/ ${item.candidateStrengthLabel}`
+                          : ""}
+                        /
+                        추세감점
+                        ${Number(item.candidateTrendPenalty || 0).toFixed(1)}
+                      </div>
+
+                      <div class="server-paper-detail">
+                        최초대비 가격
+                        ${formatSignedDiagnostic(item.buyPriceDiffRate)}
+                        /
+                        거래량
+                        ${formatSignedDiagnostic(item.buyVolumeDiff, 1, "%p")}
+                        /
+                        위치
+                        ${formatSignedDiagnostic(item.buyDayPositionDiff, 1, "%p")}
+                      </div>
+                    `
+                    : ""
+                }
 
                 ${
                   isRunnerCandidate && groupText === "CORE"
@@ -7702,6 +7929,8 @@ function renderServerPaperState(data) {
             `;
           }).join("")
     }
+
+    ${getServerDiagnosticHtml(data)}
   `;
 }
 
@@ -7782,6 +8011,23 @@ function syncServerHoldingsToLocal(data) {
   profitRate: Number(log.profitRate || 0),
   reason: `[서버] ${log.reason || "-"}`,
   strategyName: log.strategyName || log.strategyPreset || "",
+
+  strategyGroup: log.strategyGroup || "",
+  candidateStrengthScore: Number(log.candidateStrengthScore || 0),
+  candidateStrengthLabel: log.candidateStrengthLabel || "",
+  candidateBaseScore: Number(log.candidateBaseScore || 0),
+  candidateTrendPenalty: Number(log.candidateTrendPenalty || 0),
+
+  buyPriceDiffRate: Number(log.buyPriceDiffRate || 0),
+  buyVolumeDiff: Number(log.buyVolumeDiff || 0),
+  buyDayPositionDiff: Number(log.buyDayPositionDiff || 0),
+
+  sellSignalAt: log.sellSignalAt || null,
+  sellSignalPrice: Number(log.sellSignalPrice || 0),
+  sellOrderRequestedAt: log.sellOrderRequestedAt || null,
+  sellExecutedAt: log.sellExecutedAt || null,
+  sellSlippageRate: Number(log.sellSlippageRate || 0),
+
   time: log.time || data.lastSellCheckAt || new Date().toLocaleString("ko-KR")
 }));
 
@@ -7842,6 +8088,12 @@ if (!summaryRes.ok || !summaryData.ok) {
 }
 
 data.performanceSummary = summaryData.summary || {};
+data.performanceCandidateAnalysis =
+  summaryData.candidateAnalysis || {};
+data.performanceRecentSells =
+  Array.isArray(summaryData.recentSells)
+    ? summaryData.recentSells
+    : [];
 
 syncServerHoldingsToLocal(data);
 renderServerPaperState(data);
@@ -7872,7 +8124,7 @@ renderVirtualResults(virtualResults);
         서버 모의매매 상태 조회 실패<br>
         ${error.message}
       </div>
-    `;
+    `;a
   }
 }
 
