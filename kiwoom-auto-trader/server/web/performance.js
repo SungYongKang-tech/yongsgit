@@ -19,8 +19,9 @@ function formatWon(value) {
   const normalized = normalizeStrategyGroup(group);
 
   if (normalized === "OPEN") return "🚀 Open";
+  if (normalized === "CORE") return "🛡️ Core";
   if (normalized === "VOLUME") return "📊 Volume";
-  return "🛡️ Core";
+  return "❔ 미분류";
 }
 
 function strategyOrder(group) {
@@ -36,8 +37,9 @@ function normalizeStrategyGroup(group) {
   const value = String(group || "").trim().toUpperCase();
 
   if (value === "OPEN") return "OPEN";
+  if (value === "CORE") return "CORE";
   if (value === "VOLUME") return "VOLUME";
-  return "CORE";
+  return "UNKNOWN";
 }
 
 function formatShortTime(value) {
@@ -78,24 +80,28 @@ function setMarketTemperature(mt = {}) {
   );
 
   const icon =
-    level === "HOT"
+    level === "HOT" || level === "STRONG"
       ? "🔥"
       : level === "NORMAL"
         ? "🟡"
-        : level === "CAUTION"
+        : level === "CAUTION" || level === "WEAK"
           ? "🟠"
-          : (level === "COLD" || level === "DANGER")
+          : level === "COLD" ||
+            level === "DANGER" ||
+            level === "VERY_WEAK"
             ? "🔵"
             : "⚪";
 
   const className =
-    level === "HOT"
+    level === "HOT" || level === "STRONG"
       ? "market-hot"
       : level === "NORMAL"
         ? "market-normal"
-        : level === "CAUTION"
+        : level === "CAUTION" || level === "WEAK"
           ? "market-caution"
-          : (level === "COLD" || level === "DANGER")
+          : level === "COLD" ||
+            level === "DANGER" ||
+            level === "VERY_WEAK"
             ? "market-cold"
             : "";
 
@@ -565,6 +571,8 @@ function renderCandidateAnalysis(source = {}) {
 
   const topBox = document.getElementById("candidateTopBox");
 
+  if (!topBox) return;
+
   if (!top.length) {
     topBox.className = "empty";
     topBox.innerHTML =
@@ -949,6 +957,7 @@ const sectorPowerScore = Number(
 
     function renderRecent7Days(list) {
   const box = document.getElementById("recent7DaysBox");
+  if (!box) return;
 
   if (!Array.isArray(list) || list.length === 0) {
     box.innerHTML = "<div class='empty'>최근 7일 데이터가 없습니다.</div>";
@@ -1028,6 +1037,7 @@ const sectorPowerScore = Number(
 
     function renderStrategyStats(list) {
   const box = document.getElementById("strategyStatsBox");
+  if (!box) return;
 
   if (!Array.isArray(list) || list.length === 0) {
     box.innerHTML = "<div class='empty'>전략별 매도 데이터가 없습니다.</div>";

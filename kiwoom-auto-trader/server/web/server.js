@@ -1288,10 +1288,12 @@ app.get("/api/performance-summary", (req, res) => {
       0
     );
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString("sv-SE", {
+      timeZone: "Asia/Seoul"
+    });
 
 const todaySellLogs = sellLogs.filter((log) =>
-  String(log.date || "").includes(today)
+  String(log.date || "").slice(0, 10) === today
 );
 
 const todayRealizedProfit = todaySellLogs.reduce(
@@ -1340,10 +1342,10 @@ const todayRealizedProfit = todaySellLogs.reduce(
 
 const initialCapital = Number(state.initialCapital || 100000000);
 
+// 현재자산은 현금 + 보유종목 평가금액으로 계산한다.
 const currentAsset =
-  initialCapital +
-  totalProfit +
-  holdingProfit;
+  Number(state.totalCash || 0) +
+  holdingEvalAmount;
 
 const totalAssetProfit =
   currentAsset - initialCapital;
@@ -1357,7 +1359,21 @@ const totalRealizedProfit = totalProfit;
 const totalUnrealizedProfit = holdingProfit;
 const totalCombinedProfit = totalRealizedProfit + totalUnrealizedProfit;
 
-const todayProfit = todayRealizedProfit + holdingProfit;
+/*
+ * 오늘 손익은 전일 보유종목의 누적 평가손익을 다시 더하지 않고,
+ * 장 시작 시 저장된 자산(dailyStartAsset) 대비 현재자산 증감으로 계산한다.
+ * auto-trader-core.js가 날짜가 바뀔 때 dailyRiskDate와
+ * dailyStartAsset을 저장한 경우에만 적용한다.
+ */
+const hasTodayStartAsset =
+  String(state.dailyRiskDate || "").slice(0, 10) === today &&
+  Number(state.dailyStartAsset || 0) > 0;
+
+const dailyStartAsset = hasTodayStartAsset
+  ? Number(state.dailyStartAsset)
+  : currentAsset;
+
+const todayProfit = currentAsset - dailyStartAsset;
 
 const recent7Days = [];
 
@@ -1538,11 +1554,15 @@ for (let i = 6; i >= 0; i--) {
 const isToday = dateKey === today;
 
 const dayTotalProfit = isToday
-  ? realizedProfit + holdingProfit
+  ? todayProfit
   : realizedProfit;
 
+const dayBaseAsset = isToday && dailyStartAsset > 0
+  ? dailyStartAsset
+  : initialCapital;
+
 const profitRate =
-  initialCapital > 0 ? (dayTotalProfit / initialCapital) * 100 : 0;
+  dayBaseAsset > 0 ? (dayTotalProfit / dayBaseAsset) * 100 : 0;
 
 recent7Days.push({
   date: dateKey,
@@ -1553,8 +1573,8 @@ recent7Days.push({
 }
 
 const todayTotalProfitRate =
-  initialCapital > 0
-    ? (todayProfit / initialCapital) * 100
+  dailyStartAsset > 0
+    ? (todayProfit / dailyStartAsset) * 100
     : 0;
 
 const latestMarketTemperature =
@@ -1668,7 +1688,11 @@ return {
         totalAssetProfit,
         totalAssetProfitRate,
         todayProfit,
-        todayProfitRate: todayTotalProfitRate,        
+        todayProfitRate: todayTotalProfitRate,
+        todayRealizedProfit,
+        dailyStartAsset,
+        dailyStartAssetReady: hasTodayStartAsset,
+        dailyRiskDate: state.dailyRiskDate || null,
         totalRealizedProfit,
         totalUnrealizedProfit,
         totalCombinedProfit,
@@ -2099,7 +2123,9 @@ if (group === "VOLUME") {
 }
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString("sv-SE", {
+      timeZone: "Asia/Seoul"
+    });
 
     const holdingProfit = holdings.reduce((sum, h) => {
       const buyPrice = Number(h.buyPrice || 0);
@@ -2109,9 +2135,27 @@ if (group === "VOLUME") {
     }, 0);
 
     if (dateMap[today]) {
+      const holdingEvalAmount = holdings.reduce((sum, h) => {
+        const currentPrice = Number(h.currentPrice || h.buyPrice || 0);
+        const qty = Number(h.qty || 0);
+        return sum + currentPrice * qty;
+      }, 0);
+
+      const currentAsset =
+        Number(state.totalCash || 0) + holdingEvalAmount;
+
+      const hasTodayStartAsset =
+        String(state.dailyRiskDate || "").slice(0, 10) === today &&
+        Number(state.dailyStartAsset || 0) > 0;
+
+      const dailyStartAsset = hasTodayStartAsset
+        ? Number(state.dailyStartAsset)
+        : currentAsset;
+
       dateMap[today].holdingProfit = holdingProfit;
-      dateMap[today].totalProfit =
-        Number(dateMap[today].realizedProfit || 0) + holdingProfit;
+      dateMap[today].totalProfit = currentAsset - dailyStartAsset;
+      dateMap[today].dailyStartAsset = dailyStartAsset;
+      dateMap[today].dailyStartAssetReady = hasTodayStartAsset;
     }
 
     const latestMarketTemperature =
