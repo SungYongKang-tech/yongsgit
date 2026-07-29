@@ -294,7 +294,13 @@ async function scanHotCandidates() {
   const data = await fetchJson(
     `${API_BASE}/api/hot-candidates?limit=${settings.maxCandidates}`
   );
-  const rawItems = Array.isArray(data.items) ? data.items : [];
+  const rawItems = Array.isArray(data.items)
+    ? data.items
+    : Array.isArray(data.rows)
+      ? data.rows
+      : Array.isArray(data.candidates)
+        ? data.candidates
+        : [];
 
   const rows = rawItems
     .map(normalizeCandidate)
@@ -308,7 +314,11 @@ async function scanHotCandidates() {
     .filter(item => item.tradeVolumeRatio >= settings.minTradeVolumeRatio)
     .filter(item => item.dayPosition >= settings.minDayPositionRate)
     .sort((a, b) => Number(b.hotScore || 0) - Number(a.hotScore || 0))
-    .slice(0, settings.maxCandidates);
+    .slice(0, settings.maxCandidates)
+    .map((item, index) => ({
+      ...item,
+      rank: index + 1
+    }));
 
   const output = {
   date: todayKey(),
