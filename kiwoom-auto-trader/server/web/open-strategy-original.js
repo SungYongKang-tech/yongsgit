@@ -83,14 +83,6 @@ openFocusedPriceDelayMs: 150,
 // 새로운 종목 유입을 위해 60초마다 일반검색도 다시 실행
 openFullRescanIntervalMs: 60 * 1000,
 
-// OPEN 잠재후보: 초기에 기준 미달이어도 짧게 집중 추적 후 정식후보로 승격
-openPotentialEnabled: true,
-openPotentialMinScore: 7,
-openPotentialMaxCount: 20,
-openPotentialCheckIntervalMs: 5 * 1000,
-openPotentialMaxAgeSeconds: 180,
-openPotentialPriceDelayMs: 120,
-
   openEnabled: true,
   openBuyStartTime: "09:00",
   openBuyEndTime: "09:15",
@@ -1278,10 +1270,6 @@ function initOpenDayIfNeeded(state) {
   state.openCompletedAt = settings.openEnabled ? null : nowText();
   state.openSkipReason = settings.openEnabled ? null : "OPEN 설정 OFF";
   state.openCandidateHistory = {};
-  state.openPotentialCandidates = {};
-  state.openPotentialPromotedCount = 0;
-  state.openPotentialExpiredCount = 0;
-  state.lastOpenPotentialCheckAtMs = 0;
   state.openDiscoverOffset = 0;
 
 state.lastOpenFullScanAtMs = 0;
@@ -1650,190 +1638,6 @@ async function fetchFocusedCandidates(state) {
   return rows;
 }
 
-function registerOpenPotentialCandidate(state, item, price, judged = {}) {
-  if (!settings.openPotentialEnabled) return false;
-
-  const code = String(item.code || "").replace(/[^0-9]/g, "");
-  const discoverScore = Number(item.discoverScore || 0);
-  if (!/^\d{6}$/.test(code)) return false;
-  if (discoverScore < Number(settings.openPotentialMinScore || 0)) return false;
-
-  if (!state.openPotentialCandidates || typeof state.openPotentialCandidates !== "object") {
-    state.openPotentialCandidates = {};
-  }
-
-  const now = Date.now();
-  const existing = state.openPotentialCandidates[code];
-  const name = item.name || item.stockName || item.korName || code;
-
-  const snapshot = {
-    code,
-    name,
-    source: item.source || "FALLBACK",
-    priorityRank: Number(item.priorityRank || 0),
-    priorityScore: Number(item.priorityScore || 0),
-    priorityReason: item.priorityReason || null,
-    prioritySector: item.prioritySector || null,
-    isPriorityCandidate:
-      item.isPriorityCandidate === true ||
-      item.source === "PRIORITY",
-    industry: item.industry || null,
-    sector: item.sector || null,
-    theme: item.theme || null,
-    sectorName: item.sectorName || null,
-    industryName: item.industryName || null,
-    sectorTags: Array.isArray(item.sectorTags) ? item.sectorTags : [],
-    themeTags: Array.isArray(item.themeTags) ? item.themeTags : []
-  };
-
-  if (existing) {
-    existing.lastSeenAt = nowText();
-    existing.lastSeenAtMs = now;
-    existing.lastPrice = Number(price || existing.lastPrice || 0);
-    existing.lastScore = discoverScore;
-    existing.maxScore = Math.max(Number(existing.maxScore || 0), discoverScore);
-    existing.checkCount = Number(existing.checkCount || 0) + 1;
-    existing.lastReason = judged.reason || existing.lastReason || "";
-    existing.itemSnapshot = { ...existing.itemSnapshot, ...snapshot };
-    return false;
-  }
-
-  state.openPotentialCandidates[code] = {
-    code,
-    name,
-    status: "TRACKING",
-    firstSeenAt: nowText(),
-    firstSeenAtMs: now,
-    firstPrice: Number(price || 0),
-    firstScore: discoverScore,
-    lastSeenAt: nowText(),
-    lastSeenAtMs: now,
-    lastPrice: Number(price || 0),
-    lastScore: discoverScore,
-    maxScore: discoverScore,
-    checkCount: 1,
-    lastReason: judged.reason || "초기 기준 미달",
-    itemSnapshot: snapshot
-  };
-
-  const rows = Object.values(state.openPotentialCandidates)
-    .sort((a, b) => {
-      const scoreDiff = Number(b.maxScore || 0) - Number(a.maxScore || 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return Number(b.lastSeenAtMs || 0) - Number(a.lastSeenAtMs || 0);
-    });
-
-  const keep = rows.slice(0, Number(settings.openPotentialMaxCount || 20));
-  const keepCodes = new Set(keep.map(row => row.code));
-  for (const savedCode of Object.keys(state.openPotentialCandidates)) {
-    if (!keepCodes.has(savedCode)) delete state.openPotentialCandidates[savedCode];
-  }
-
-  console.log(
-    `[OPEN 잠재후보 등록] ${name}(${code}) / ` +
-    `점수 ${discoverScore} / 사유 ${judged.reason || "초기 기준 미달"}`
-  );
-  return true;
-}
-
-function removeOpenPotentialCandidate(state, code, status = "REMOVED", reason = "") {
-  if (!state.openPotentialCandidates?.[code]) return;
-  const candidate = state.openPotentialCandidates[code];
-  delete state.openPotentialCandidates[code];
-
-  if (status === "PROMOTED") {
-    state.openPotentialPromotedCount = Number(state.openPotentialPromotedCount || 0) + 1;
-  } else if (status === "EXPIRED") {
-    state.openPotentialExpiredCount = Number(state.openPotentialExpiredCount || 0) + 1;
-  }
-
-  console.log(
-    `[OPEN 잠재후보 ${status}] ${candidate.name || code}(${code})` +
-    `${reason ? ` / ${reason}` : ""}`
-  );
-}
-
-async function fetchPotentialCandidates(state) {
-  if (!settings.openPotentialEnabled) return [];
-  if (!state.openPotentialCandidates || typeof state.openPotentialCandidates !== "object") {
-    state.openPotentialCandidates = {};
-  }
-
-  const now = Date.now();
-  const lastCheckedAt = Number(state.lastOpenPotentialCheckAtMs || 0);
-  if (
-    lastCheckedAt > 0 &&
-    now - lastCheckedAt < Number(settings.openPotentialCheckIntervalMs || 5000)
-  ) {
-    return [];
-  }
-  state.lastOpenPotentialCheckAtMs = now;
-
-  const active = Object.values(state.openPotentialCandidates)
-    .filter(candidate => candidate?.code)
-    .sort((a, b) => Number(b.maxScore || 0) - Number(a.maxScore || 0))
-    .slice(0, Number(settings.openPotentialMaxCount || 20));
-
-  const rows = [];
-  for (const candidate of active) {
-    const ageSeconds = (now - Number(candidate.firstSeenAtMs || now)) / 1000;
-    if (ageSeconds > Number(settings.openPotentialMaxAgeSeconds || 180)) {
-      removeOpenPotentialCandidate(
-        state,
-        candidate.code,
-        "EXPIRED",
-        `${Math.floor(ageSeconds)}초 경과`
-      );
-      continue;
-    }
-
-    try {
-      const data = await fetchJson(
-        `${API_BASE}/api/price?code=${encodeURIComponent(candidate.code)}`
-      );
-      const item = {
-        ...(candidate.itemSnapshot || {}),
-        ...data,
-        code: String(data.code || candidate.code || ""),
-        name: data.name || candidate.name || candidate.code,
-        source: "POTENTIAL",
-        potentialCandidate: true,
-        potentialFirstScore: Number(candidate.firstScore || 0),
-        potentialFirstPrice: Number(candidate.firstPrice || 0),
-        potentialAgeSeconds: ageSeconds,
-        isPriorityCandidate: candidate.itemSnapshot?.isPriorityCandidate === true,
-        priorityRank: Number(candidate.itemSnapshot?.priorityRank || 0),
-        priorityScore: Number(candidate.itemSnapshot?.priorityScore || 0),
-        priorityReason: candidate.itemSnapshot?.priorityReason || null,
-        prioritySector: candidate.itemSnapshot?.prioritySector || null
-      };
-
-      const scoreInfo = calculateOpenDiscoverScore(item);
-      candidate.lastSeenAt = nowText();
-      candidate.lastSeenAtMs = now;
-      candidate.lastPrice = Math.abs(Number(data.currentPrice || data.price || data.raw?.cur_prc || 0));
-      candidate.lastScore = Number(scoreInfo.discoverScore || 0);
-      candidate.maxScore = Math.max(Number(candidate.maxScore || 0), candidate.lastScore);
-      candidate.checkCount = Number(candidate.checkCount || 0) + 1;
-
-      rows.push({ ...item, ...scoreInfo });
-    } catch (err) {
-      console.log(
-        `[OPEN 잠재후보 조회실패] ${candidate.name || candidate.code} / ${err.message}`
-      );
-    }
-
-    await sleep(Number(settings.openPotentialPriceDelayMs || 120));
-  }
-
-  if (active.length > 0) {
-    console.log(
-      `[OPEN 잠재후보 재확인] 저장 ${active.length}개 / 조회성공 ${rows.length}개`
-    );
-  }
-  return rows;
-}
-
 async function fetchFallbackCandidates(state) {
   const offset = Number(state.openDiscoverOffset || 0);
   const data = await fetchJson(
@@ -1860,9 +1664,6 @@ async function discoverCandidates(state, marketData = {}) {
   /*
    * 이미 발견된 후보가 있으면 우선 빠르게 재확인한다.
    */
-  const potentialRows =
-    await fetchPotentialCandidates(state);
-
   const focusedRows =
     await fetchFocusedCandidates(state);
 
@@ -1921,7 +1722,6 @@ async function discoverCandidates(state, marketData = {}) {
 
   for (
     const sourceItem of [
-      ...potentialRows,
       ...focusedRows,
       ...priorityRows,
       ...fallbackRows
@@ -1952,10 +1752,9 @@ async function discoverCandidates(state, marketData = {}) {
 
   merged.sort((a, b) => {
     const getSourceOrder = item => {
-      if (item.source === "POTENTIAL") return 0;
-      if (item.source === "PRIORITY") return 1;
-      if (item.source === "FOCUSED") return 2;
-      return 3;
+      if (item.source === "PRIORITY") return 0;
+      if (item.source === "FOCUSED") return 1;
+      return 2;
     };
 
     const sourceDiff =
@@ -1981,8 +1780,7 @@ async function discoverCandidates(state, marketData = {}) {
   });
 
   console.log(
-    `[OPEN DISCOVER 4.0] ` +
-    `잠재 ${potentialRows.length}개 / ` +
+    `[OPEN DISCOVER 3.0] ` +
     `집중 ${focusedRows.length}개 / ` +
     `우선 ${priorityRows.length}개 / ` +
     `일반 ${fallbackRows.length}개 / ` +
@@ -3314,7 +3112,6 @@ async function runOpenBuyOnce() {
     `[OPEN 스캔시작] #${scanId} ${hhmm} / ` +
     `매수시간 ${settings.openBuyStartTime}~${settings.openBuyEndTime} / ` +
     `실제매수 확인 ${settings.openConfirmWaitMs / 1000}초 / ` +
-    `잠재후보 ${Object.keys(state.openPotentialCandidates || {}).length}개 / ` +
     `현금 ${Number(state.totalCash || 0).toLocaleString()}원`
   );
 
@@ -3365,32 +3162,8 @@ async function runOpenBuyOnce() {
     });
 
     if (judged.pass) {
-      if (item.potentialCandidate === true) {
-        removeOpenPotentialCandidate(
-          state,
-          String(item.code || ""),
-          "PROMOTED",
-          `정식후보 통과 / 점수 ${Number(item.discoverScore || 0)}`
-        );
-      }
       passed.push({ item, price, judged });
       continue;
-    }
-
-    const potentialReason = String(judged.reason || "");
-    const canTrackPotential =
-      settings.openPotentialEnabled &&
-      Number(item.discoverScore || 0) >= Number(settings.openPotentialMinScore || 7) &&
-      (
-        settings.openPriorityRequired !== true ||
-        item.isPriorityCandidate === true ||
-        item.source === "PRIORITY" ||
-        item.potentialCandidate === true
-      ) &&
-      !/OPEN OFF|오늘 OPEN 종료|오늘 OPEN 이미 매수|이미 보유|오늘 이미 매수|시장자료 없음 차단|시장급락 차단/.test(potentialReason);
-
-    if (canTrackPotential) {
-      registerOpenPotentialCandidate(state, item, price, judged);
     }
 
     const category = getOpenRejectCategory(judged.reason);
@@ -3431,9 +3204,6 @@ async function runOpenBuyOnce() {
     candidateCount: candidates.length,
     evaluatedCount: evaluated.length,
     passedCount: passed.length,
-    potentialCount: Object.keys(state.openPotentialCandidates || {}).length,
-    potentialPromotedCount: Number(state.openPotentialPromotedCount || 0),
-    potentialExpiredCount: Number(state.openPotentialExpiredCount || 0),
     rejectCounts,
     marketScore: marketData.available
       ? Number(marketData.marketScore || 0)

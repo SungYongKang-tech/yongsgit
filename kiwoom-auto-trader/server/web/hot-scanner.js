@@ -7,8 +7,8 @@ const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const settings = {
   enabled: true,
   startTime: "09:00",
-  endTime: "13:30",
-  scanLoopMs: 15 * 1000,
+  endTime: "09:20",
+  scanLoopMs: 5 * 1000,
   maxCandidates: 30,
   minChangeRate: 1.0,
   maxChangeRate: 12.0,
