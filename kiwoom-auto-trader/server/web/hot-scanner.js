@@ -145,6 +145,41 @@ function getTradeVolumeRatio(item = {}) {
   return Math.max(0, ratio);
 }
 
+/*
+ * HOT 후보에서 제외할 종목
+ * - ETF/ETN/레버리지/인버스
+ * - 스팩
+ * - 우선주
+ *
+ * 자동매매 본체에서 다시 제외하더라도 HOT 후보 30개 자리를
+ * 매수 불가능 종목이 차지하지 않도록 스캐너 단계에서 먼저 제거한다.
+ */
+function isExcludedStock(item = {}) {
+  const name = String(
+    item.name ||
+    item.stockName ||
+    item.korName ||
+    item.stk_nm ||
+    ""
+  ).trim();
+
+  if (
+    /KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|ETF|ETN|레버리지|인버스|스팩|SPAC/i.test(
+      name
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /우$|\d우B$|우B$|우선주/i.test(name)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function calculateHotScore(item) {
   const changeRate = getChangeRate(item);
   const volumeRatio = getTradeVolumeRatio(item);
@@ -185,63 +220,49 @@ function normalizeCandidate(item = {}) {
     0
   ));
 
-  const changeRate =
-    getChangeRate(item);
+  const changeRate = getChangeRate(item);
+  const tradeVolumeRatio = getTradeVolumeRatio(item);
+  const dayPosition = getDayPositionRate(item, currentPrice);
 
-  const tradeVolumeRatio =
-    getTradeVolumeRatio(item);
+  const hotScore = calculateHotScore({
+    ...item,
+    currentPrice,
+    price: currentPrice,
+    changeRate,
+    tradeVolumeRatio
+  });
 
-  const dayPosition =
-    getDayPositionRate(
-      item,
-      currentPrice
-    );
-
-  const hotScore =
-    calculateHotScore({
-      ...item,
-      currentPrice,
-      price: currentPrice,
-      changeRate,
-      tradeVolumeRatio
-    });
-
-  const discoverScore =
-    Number(
-      item.discoverScore ||
-      Math.max(
-        7,
-        Math.round(hotScore / 10)
-      )
-    );
+  /*
+   * 서버가 discoverScore를 제공하면 그 값을 사용한다.
+   * 없으면 HOT 점수 기준으로 5~10점 수준의 발견점수를 만든다.
+   * 기존 Math.max(7, ...)처럼 모든 HOT 후보를 최소 7점으로
+   * 강제하지 않아 약한 후보가 기본 매수조건을 자동 통과하지 않게 한다.
+   */
+  const discoverScore = Number(
+    item.discoverScore ??
+    Math.max(
+      5,
+      Math.round(hotScore / 10)
+    )
+  );
 
   return {
     ...item,
-
     code: rawCode,
-
     name:
       item.name ||
       item.stockName ||
       item.korName ||
       item.stk_nm ||
       rawCode,
-
     currentPrice,
     price: currentPrice,
-
     changeRate,
     tradeVolumeRatio,
     dayPosition,
     discoverScore,
-
-    hotScore:
-      Number(
-        hotScore.toFixed(1)
-      ),
-
+    hotScore: Number(hotScore.toFixed(1)),
     candidateSource: "HOT",
-
     hotDetectedAt: nowText(),
     hotDetectedAtMs: Date.now()
   };
@@ -258,6 +279,7 @@ async function scanHotCandidates() {
   const rows = rawItems
     .map(normalizeCandidate)
     .filter(Boolean)
+    .filter(item => !isExcludedStock(item))
     .filter(item => item.code && item.code !== "000000" && item.currentPrice > 0)
     .filter(item =>
       item.changeRate >= settings.minChangeRate &&
@@ -280,9 +302,14 @@ async function scanHotCandidates() {
   writeJsonFileAtomic(HOT_CANDIDATES_FILE, output);
 
   console.log(
-    `[HOT SCANNER] ${rows.length}개 저장 / ` +
+    `[HOT SCANNER] 원본 ${rawItems.length}개 / 저장 ${rows.length}개 / ` +
     (rows.slice(0, 5)
-      .map(item => `${item.name}(${item.changeRate.toFixed(2)}%)`)
+      .map(item =>
+        `${item.name}(${item.changeRate.toFixed(2)}%/` +
+        `거래량 ${item.tradeVolumeRatio.toFixed(1)}%/` +
+        `위치 ${item.dayPosition.toFixed(1)}%/` +
+        `HOT ${item.hotScore.toFixed(1)})`
+      )
       .join(", ") || "후보 없음")
   );
 }
@@ -297,7 +324,10 @@ async function runOnce() {
   try {
     await scanHotCandidates();
   } catch (err) {
-    console.error("[HOT SCANNER 오류]", err.name === "AbortError" ? "API 응답 시간초과" : err.message);
+    console.error(
+      "[HOT SCANNER 오류]",
+      err.name === "AbortError" ? "API 응답 시간초과" : err.message
+    );
   } finally {
     running = false;
   }
