@@ -2080,7 +2080,7 @@ function judgeOpenBuy(state, item, price) {
 
   /*
    * 전체 시장이 매우 약하면 모든 OPEN 매수를 차단한다.
-   */
+  
   if (
     marketData.available &&
     marketScore <
@@ -2095,7 +2095,7 @@ function judgeOpenBuy(state, item, price) {
     };
   }
 
-  /*
+  
    * 종목이 속한 섹터가 강한 약세이면 차단한다.
    */
   if (

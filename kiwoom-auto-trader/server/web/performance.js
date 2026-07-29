@@ -713,6 +713,175 @@ function renderCandidateAnalysis(source = {}) {
 }
 
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getMissedWinnerRecommendation(summary = {}) {
+  const counts = summary.categoryCounts || {};
+  const entries = Object.entries(counts)
+    .filter(([category]) => category !== "매수 완료")
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+
+  if (!entries.length) {
+    return "오늘은 조건별 미매수 원인이 아직 충분히 집계되지 않았습니다. 최소 3~5거래일 데이터를 모은 뒤 매수조건을 조정하는 것이 안전합니다.";
+  }
+
+  const [category, count] = entries[0];
+  return `오늘 가장 많이 확인된 원인은 ‘${category}’ ${Number(count || 0)}건입니다. 지금 바로 기준을 완화하지 말고, 해당 종목들의 최종 상승률과 반복 빈도를 3~5거래일 누적한 뒤 1개 조건만 조정하세요.`;
+}
+
+function renderMissedWinners(data = {}) {
+  const box = document.getElementById("missedWinnersBox");
+  if (!box) return;
+
+  if (data.ok === false) {
+    box.className = "empty";
+    box.innerHTML = escapeHtml(data.message || "놓친 상승종목 분석을 불러오지 못했습니다.");
+    return;
+  }
+
+  if (data.ready === false) {
+    box.className = "empty";
+    box.innerHTML = `
+      <div style="font-weight:bold; margin-bottom:6px;">아직 오늘 상승 종목 목록이 저장되지 않았습니다.</div>
+      <div style="font-size:12px; line-height:1.6;">${escapeHtml(data.message || "장 종료 후 분석 데이터가 생성되면 이곳에 표시됩니다.")}</div>
+    `;
+    return;
+  }
+
+  const summary = data.summary || {};
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  const categoryCounts = summary.categoryCounts || {};
+
+  const categoryHtml = Object.entries(categoryCounts)
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+    .map(([category, count]) => `
+      <div class="missed-category-row">
+        <span>${escapeHtml(category)}</span>
+        <b>${Number(count || 0)}건</b>
+      </div>
+    `).join("");
+
+  const cards = rows
+    .filter(item => !item.bought)
+    .slice(0, 20)
+    .map((item, index) => {
+      const strategyRows = Array.isArray(item.strategies) ? item.strategies : [];
+      const strategyText = strategyRows.length
+        ? strategyRows.map(row => strategyLabel(row.strategyGroup)).join(" / ")
+        : "미발견";
+
+      const firstChangeRates = strategyRows
+        .map(row => Number(row.first?.changeRate))
+        .filter(Number.isFinite);
+
+      const firstChangeRate = firstChangeRates.length
+        ? firstChangeRates[0]
+        : null;
+
+      const afterRate = firstChangeRate !== null
+        ? Number(item.changeRate || 0) - firstChangeRate
+        : null;
+
+      return `
+        <div class="stock-card">
+          <div class="stock-card-header">
+            <div>
+              <div class="stock-name">${index + 1}위 ${escapeHtml(item.name || "-")}</div>
+              <div class="stock-sub">${escapeHtml(item.code || "")} / ${strategyText}</div>
+              <div class="stock-sub">최초발견 ${formatShortTime(item.firstSeenAt)} / 마지막확인 ${formatShortTime(item.latestCheckedAt)}</div>
+            </div>
+            <div class="stock-rate plus">${formatRate(item.changeRate || 0)}</div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-box">
+              <div class="info-label">발견 여부</div>
+              <div class="info-value">${item.discovered ? "발견" : "미발견"}</div>
+            </div>
+            <div class="info-box">
+              <div class="info-label">최종 분류</div>
+              <div class="info-value">${escapeHtml(item.resultCategory || "-")}</div>
+            </div>
+            <div class="info-box">
+              <div class="info-label">최고 후보점수</div>
+              <div class="info-value">${Number(item.bestWatchScore || 0).toFixed(1)}</div>
+            </div>
+            <div class="info-box">
+              <div class="info-label">종가</div>
+              <div class="info-value">${Number(item.closePrice || 0) ? Number(item.closePrice).toLocaleString() + "원" : "-"}</div>
+            </div>
+            <div class="info-box">
+              <div class="info-label">고가</div>
+              <div class="info-value">${Number(item.highPrice || 0) ? Number(item.highPrice).toLocaleString() + "원" : "-"}</div>
+            </div>
+            <div class="info-box">
+              <div class="info-label">발견 이후 추가상승</div>
+              <div class="info-value ${afterRate === null || afterRate >= 0 ? "plus" : "minus"}">${afterRate === null ? "-" : formatRate(afterRate)}</div>
+            </div>
+          </div>
+
+          <div style="margin-top:9px; padding:10px; background:#111827; border-radius:10px; font-size:13px; line-height:1.55;">
+            <div style="color:#9ca3af; margin-bottom:4px;">미매수 원인</div>
+            <b>${escapeHtml(item.resultReason || item.resultCategory || "원인 기록 없음")}</b>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+  box.className = "";
+  box.innerHTML = `
+    <div class="missed-summary-grid">
+      <div class="missed-summary-item"><div class="missed-summary-label">상승종목</div><div class="missed-summary-value">${Number(summary.risingCount || 0)}개</div></div>
+      <div class="missed-summary-item"><div class="missed-summary-label">발견</div><div class="missed-summary-value">${Number(summary.discoveredCount || 0)}개</div></div>
+      <div class="missed-summary-item"><div class="missed-summary-label">미발견</div><div class="missed-summary-value">${Number(summary.notDiscoveredCount || 0)}개</div></div>
+      <div class="missed-summary-item"><div class="missed-summary-label">매수완료</div><div class="missed-summary-value">${Number(summary.boughtCount || 0)}개</div></div>
+      <div class="missed-summary-item"><div class="missed-summary-label">놓친종목</div><div class="missed-summary-value plus">${Number(summary.missedCount || 0)}개</div></div>
+      <div class="missed-summary-item"><div class="missed-summary-label">분석기준</div><div class="missed-summary-value">+${Number(data.minChangeRate || 3).toFixed(1)}%</div></div>
+    </div>
+
+    <div class="missed-recommendation">
+      <b>오늘 수정 검토</b><br>
+      ${escapeHtml(getMissedWinnerRecommendation(summary))}
+    </div>
+
+    ${categoryHtml ? `<div class="stock-card" style="margin-bottom:10px;"><div style="font-weight:bold; margin-bottom:4px;">원인별 집계</div>${categoryHtml}</div>` : ""}
+    <div class="mobile-card-list">${cards || `<div class="empty">미매수 상승종목이 없습니다.</div>`}</div>
+  `;
+}
+
+async function loadMissedWinnersAnalysis() {
+  const box = document.getElementById("missedWinnersBox");
+  try {
+    const res = await fetch("https://sytrader.duckdns.org/api/missed-winners-analysis", { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || `API 오류 ${res.status}`);
+    renderMissedWinners(data);
+  } catch (err) {
+    console.error("놓친 상승종목 조회 오류", err);
+    if (box) {
+      box.className = "empty";
+      box.innerHTML = `놓친 상승종목 분석을 불러오지 못했습니다.<br><span style="font-size:12px;">${escapeHtml(err.message)}</span>`;
+    }
+  }
+}
+
+async function refreshMissedWinners() {
+  const box = document.getElementById("missedWinnersBox");
+  if (box) {
+    box.className = "empty";
+    box.textContent = "놓친 상승종목 분석을 다시 불러오는 중...";
+  }
+  await loadMissedWinnersAnalysis();
+}
+
+
     function showTab(name) {
       const tabMap = { holdings:"holdingsTab", candidates:"candidatesTab", stats:"statsTab", sells:"sellsTab" };
       document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -1218,6 +1387,7 @@ setMarketTemperature(mt);
        setStatus("lastUpdatedAt", `갱신 ${new Date().toLocaleTimeString("ko-KR", {hour:"2-digit", minute:"2-digit", hour12:false})}`, "ok");
        
        renderCandidateAnalysis(data);
+       loadMissedWinnersAnalysis();
 
         renderOpenPerformance(data);
         renderHoldings(data.holdings || []);

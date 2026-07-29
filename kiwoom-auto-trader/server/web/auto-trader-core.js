@@ -376,6 +376,10 @@ candidateNearMissLogCount: 5,
 // 운영상 차단된 우수 후보 추적
 operationalBlockedCandidateMaxCount: 20,
 
+// 종목별 매수 판단 이력
+// 같은 종목·전략은 한 행으로 합치고 최초/최고/최종 판단을 보존한다.
+candidateDecisionHistoryMaxCount: 2000,
+
 breakEvenStartRate: 2.0,
 breakEvenProtectRate: 0.2,
 
@@ -438,6 +442,12 @@ function loadState() {
 
       coreCandidateWatchList: [],
       volumeCandidateWatchList: [],
+
+      candidateDecisionHistory: {
+        date: todayKey(),
+        updatedAt: null,
+        rows: []
+      },
 
       operationalBlockedCandidateAnalysis: {
         date: todayKey(),
@@ -522,6 +532,28 @@ function loadState() {
     )
   ) {
     state.volumeCandidateWatchList = [];
+  }
+
+  /*
+   * 종목별 매수 판단 이력 보정
+   */
+  if (
+    !state.candidateDecisionHistory ||
+    state.candidateDecisionHistory.date !== todayKey()
+  ) {
+    state.candidateDecisionHistory = {
+      date: todayKey(),
+      updatedAt: null,
+      rows: []
+    };
+  }
+
+  if (
+    !Array.isArray(
+      state.candidateDecisionHistory.rows
+    )
+  ) {
+    state.candidateDecisionHistory.rows = [];
   }
 
   /*
@@ -2855,11 +2887,234 @@ function updateOperationalBlockedCandidate(
 
 
 
+function buildCandidateDecisionSnapshot(
+  item = {},
+  price = 0,
+  strategyGroup,
+  judged,
+  source = "DISCOVER"
+) {
+  const currentPrice = Math.abs(Number(
+    price ||
+    item.currentPrice ||
+    item.price ||
+    item.raw?.cur_prc ||
+    0
+  ));
+
+  const code = String(item.code || "")
+    .trim()
+    .padStart(6, "0");
+
+  const changeRate = Number(
+    item.changeRate ??
+    item.fluctuationRate ??
+    item.riseRate ??
+    item.rate ??
+    item.raw?.flu_rt ??
+    0
+  );
+
+  const tradeVolumeRatio =
+    getTradeVolumeRatio(item);
+
+  const dayPosition =
+    getDayPositionRate(item, currentPrice);
+
+  const openPosition =
+    getOpenPositionRate(item, currentPrice);
+
+  const watchScore = Number(
+    item.watchScore ??
+    item.candidateWatchScore ??
+    item.watchScoreDetail?.total ??
+    0
+  );
+
+  const passed = judged?.pass === true;
+  const rejectReason = passed
+    ? null
+    : String(judged?.reason || "기타");
+
+  return {
+    date: todayKey(),
+    checkedAtMs: Date.now(),
+    checkedAt: nowText(),
+
+    code,
+    name:
+      item.name ||
+      item.stockName ||
+      item.korName ||
+      code,
+
+    strategyGroup,
+    source: String(source || "DISCOVER"),
+
+    price: currentPrice,
+    changeRate,
+    tradeVolumeRatio,
+    dayPosition,
+    openPosition,
+    discoverScore: Number(item.discoverScore || 0),
+    watchScore,
+    hotScore: Number(item.hotScore || 0),
+
+    marketLevel:
+      item.marketTemperature?.level || null,
+    marketScore: Number(
+      item.marketTemperature?.score || 0
+    ),
+
+    passed,
+    rejectCategory: passed
+      ? "조건 통과"
+      : classifyBuyRejectReason(rejectReason),
+    rejectReason,
+
+    switchAllowed:
+      judged?.switchResult?.allowed === true,
+    bought: false,
+    boughtAt: null,
+    buyPrice: 0
+  };
+}
+
+function updateCandidateDecisionHistory(
+  state,
+  item,
+  price,
+  strategyGroup,
+  judged,
+  source = "DISCOVER"
+) {
+  if (
+    !["CORE", "VOLUME"].includes(strategyGroup)
+  ) {
+    return;
+  }
+
+  const snapshot = buildCandidateDecisionSnapshot(
+    item,
+    price,
+    strategyGroup,
+    judged,
+    source
+  );
+
+  if (
+    !snapshot.code ||
+    snapshot.code === "000000"
+  ) {
+    return;
+  }
+
+  if (
+    !state.candidateDecisionHistory ||
+    state.candidateDecisionHistory.date !== todayKey()
+  ) {
+    state.candidateDecisionHistory = {
+      date: todayKey(),
+      updatedAt: null,
+      rows: []
+    };
+  }
+
+  const history = state.candidateDecisionHistory;
+
+  if (!Array.isArray(history.rows)) {
+    history.rows = [];
+  }
+
+  const key = `${strategyGroup}_${snapshot.code}`;
+  const existing = history.rows.find(
+    row => `${row.strategyGroup}_${row.code}` === key
+  );
+
+  if (!existing) {
+    history.rows.push({
+      date: snapshot.date,
+      code: snapshot.code,
+      name: snapshot.name,
+      strategyGroup,
+
+      sources: [snapshot.source],
+      checkCount: 1,
+
+      first: snapshot,
+      best: snapshot,
+      latest: snapshot,
+
+      everPassed: snapshot.passed,
+      passedCount: snapshot.passed ? 1 : 0,
+
+      bought: false,
+      boughtAt: null,
+      buyPrice: 0
+    });
+  } else {
+    existing.name = snapshot.name || existing.name;
+    existing.checkCount = Number(existing.checkCount || 0) + 1;
+
+    if (!Array.isArray(existing.sources)) {
+      existing.sources = [];
+    }
+
+    if (!existing.sources.includes(snapshot.source)) {
+      existing.sources.push(snapshot.source);
+    }
+
+    existing.latest = snapshot;
+    existing.everPassed =
+      existing.everPassed === true || snapshot.passed;
+
+    if (snapshot.passed) {
+      existing.passedCount =
+        Number(existing.passedCount || 0) + 1;
+    }
+
+    const existingBest = existing.best || {};
+
+    const snapshotStrength =
+      Number(snapshot.watchScore || 0) * 10000 +
+      Number(snapshot.discoverScore || 0) * 100 +
+      Number(snapshot.changeRate || 0);
+
+    const existingStrength =
+      Number(existingBest.watchScore || 0) * 10000 +
+      Number(existingBest.discoverScore || 0) * 100 +
+      Number(existingBest.changeRate || 0);
+
+    if (
+      snapshot.passed &&
+      existingBest.passed !== true
+    ) {
+      existing.best = snapshot;
+    } else if (
+      snapshot.passed === existingBest.passed &&
+      snapshotStrength > existingStrength
+    ) {
+      existing.best = snapshot;
+    }
+  }
+
+  history.rows = history.rows
+    .sort((a, b) =>
+      Number(b.latest?.checkedAtMs || 0) -
+      Number(a.latest?.checkedAtMs || 0)
+    )
+    .slice(0, settings.candidateDecisionHistoryMaxCount);
+
+  history.updatedAt = nowText();
+}
+
 function recordBuyDecision(
   state,
   strategyGroup,
   judged,
-  source = "DISCOVER"
+  source = "DISCOVER",
+  item = {},
+  price = 0
 ) {
   if (
     !["CORE", "VOLUME"].includes(
@@ -2868,6 +3123,15 @@ function recordBuyDecision(
   ) {
     return;
   }
+
+  updateCandidateDecisionHistory(
+    state,
+    item,
+    price,
+    strategyGroup,
+    judged,
+    source
+  );
 
   if (!state.buyDecisionStats) {
     state.buyDecisionStats = {
@@ -2918,50 +3182,49 @@ function recordBuyDecision(
   if (judged?.pass) {
     stats.passed =
       Number(stats.passed || 0) + 1;
-
-    return;
-  }
-
-  const category =
-    classifyBuyRejectReason(
-      judged?.reason || "기타"
-    );
-
-  if (
-    !stats.conditionRejected ||
-    typeof stats.conditionRejected !==
-      "object"
-  ) {
-    stats.conditionRejected = {};
-  }
-
-  if (
-    !stats.operationalBlocked ||
-    typeof stats.operationalBlocked !==
-      "object"
-  ) {
-    stats.operationalBlocked = {};
-  }
-
-  if (isOperationalBuyBlock(category)) {
-    stats.operationalBlocked[category] =
-      Number(
-        stats.operationalBlocked[category] ||
-        0
-      ) + 1;
   } else {
-    stats.conditionRejected[category] =
-      Number(
-        stats.conditionRejected[category] ||
-        0
-      ) + 1;
+    const category =
+      classifyBuyRejectReason(
+        judged?.reason || "기타"
+      );
+
+    if (
+      !stats.conditionRejected ||
+      typeof stats.conditionRejected !==
+        "object"
+    ) {
+      stats.conditionRejected = {};
+    }
+
+    if (
+      !stats.operationalBlocked ||
+      typeof stats.operationalBlocked !==
+        "object"
+    ) {
+      stats.operationalBlocked = {};
+    }
+
+    if (isOperationalBuyBlock(category)) {
+      stats.operationalBlocked[category] =
+        Number(
+          stats.operationalBlocked[category] ||
+          0
+        ) + 1;
+    } else {
+      stats.conditionRejected[category] =
+        Number(
+          stats.conditionRejected[category] ||
+          0
+        ) + 1;
+    }
   }
 
-  // 전체검색과 후보재평가 출처 집계
   const sourceKey =
     source === "WATCH"
       ? "후보재평가"
-      : "전체검색";
+      : source === "HOT"
+        ? "HOT"
+        : "전체검색";
 
   if (
     !stats.sources ||
@@ -2971,26 +3234,54 @@ function recordBuyDecision(
   }
 
   stats.sources[sourceKey] =
-    Number(stats.sources[sourceKey] || 0) +
-    1;
+    Number(stats.sources[sourceKey] || 0) + 1;
 }
 
 function recordBuySuccess(
   state,
-  strategyGroup
+  strategyGroup,
+  item = {},
+  price = 0
 ) {
   if (
-    !state.buyDecisionStats ||
-    !state.buyDecisionStats[strategyGroup]
+    state.buyDecisionStats &&
+    state.buyDecisionStats[strategyGroup]
   ) {
+    const stats =
+      state.buyDecisionStats[strategyGroup];
+
+    stats.bought =
+      Number(stats.bought || 0) + 1;
+  }
+
+  const code = String(item.code || "")
+    .trim()
+    .padStart(6, "0");
+
+  const rows =
+    state.candidateDecisionHistory?.rows;
+
+  if (!Array.isArray(rows) || !code) {
     return;
   }
 
-  const stats =
-    state.buyDecisionStats[strategyGroup];
+  const row = rows.find(
+    candidate =>
+      candidate.strategyGroup === strategyGroup &&
+      String(candidate.code || "").padStart(6, "0") === code
+  );
 
-  stats.bought =
-    Number(stats.bought || 0) + 1;
+  if (!row) return;
+
+  row.bought = true;
+  row.boughtAt = nowText();
+  row.buyPrice = Number(price || 0);
+
+  if (row.latest) {
+    row.latest.bought = true;
+    row.latest.boughtAt = row.boughtAt;
+    row.latest.buyPrice = row.buyPrice;
+  }
 }
 
 function logBuyDecisionSummary(state) {
@@ -3574,11 +3865,32 @@ function initDailyRiskIfNeeded(state) {
     );
 
   /*
-   * 하루 시작자산 계산
+   * 하루 시작 기준값 저장
+   *
+   * 전일부터 이어진 보유종목의 기존 평가손익은
+   * 오늘 손익에 다시 포함되지 않도록 장 시작 기준으로 고정한다.
    */
+  const dailyStartHoldingProfit =
+    (state.holdings || []).reduce(
+      (sum, holding) => {
+        const buyPrice = Number(holding.buyPrice || 0);
+        const currentPrice = Number(
+          holding.currentPrice || holding.buyPrice || 0
+        );
+        const qty = Number(holding.qty || 0);
+
+        return sum + (currentPrice - buyPrice) * qty;
+      },
+      0
+    );
+
+  state.dailyStartDate = today;
   state.dailyStartAsset =
     Number(state.totalCash || 0) +
     holdingValue;
+  state.dailyStartHoldingProfit =
+    dailyStartHoldingProfit;
+  state.dailyStartCapturedAt = nowText();
 
   /*
    * 일일 손실한도 계산
@@ -3593,6 +3905,9 @@ function initDailyRiskIfNeeded(state) {
     `[리스크 초기화] ` +
     `시작자산 ${state.dailyStartAsset.toLocaleString()}원 / ` +
     `보유평가 ${holdingValue.toLocaleString()}원 / ` +
+    `시작평가손익 ${Number(
+      state.dailyStartHoldingProfit || 0
+    ).toLocaleString()}원 / ` +
     `현금 ${Number(
       state.totalCash || 0
     ).toLocaleString()}원 / ` +
@@ -3600,27 +3915,108 @@ function initDailyRiskIfNeeded(state) {
   );
 }
 
+function getCurrentAssetSnapshot(state) {
+  const holdings = Array.isArray(state.holdings)
+    ? state.holdings
+    : [];
+
+  const holdingEvalAmount = holdings.reduce(
+    (sum, holding) => {
+      const currentPrice = Number(
+        holding.currentPrice ||
+        holding.buyPrice ||
+        0
+      );
+
+      const qty = Number(holding.qty || 0);
+
+      return sum + currentPrice * qty;
+    },
+    0
+  );
+
+  const holdingBuyAmount = holdings.reduce(
+    (sum, holding) =>
+      sum +
+      Number(holding.buyPrice || 0) *
+      Number(holding.qty || 0),
+    0
+  );
+
+  const cash = Number(state.totalCash || 0);
+  const currentAsset = cash + holdingEvalAmount;
+
+  return {
+    cash,
+    holdingEvalAmount,
+    holdingProfit:
+      holdingEvalAmount - holdingBuyAmount,
+    currentAsset
+  };
+}
+
 function checkDailyLossLimit(state) {
   initDailyRiskIfNeeded(state);
 
-  const todayProfit = getTodayRealizedProfit(state);
+  const asset = getCurrentAssetSnapshot(state);
+  const dailyStartAsset = Number(
+    state.dailyStartAsset || asset.currentAsset || 0
+  );
+
+  /*
+   * 일일 손실한도는 매도 완료된 실현손익뿐 아니라
+   * 현재 보유종목의 평가손익 변동까지 포함한
+   * 오늘 총자산 증감으로 판단한다.
+   *
+   * 전일부터 이어진 평가손익은 dailyStartAsset에 이미
+   * 포함되어 있으므로 오늘 발생한 변동만 계산된다.
+   */
+  const todayAssetProfit =
+    asset.currentAsset - dailyStartAsset;
+
+  const todayRealizedProfit =
+    getTodayRealizedProfit(state);
+
   const limit = Number(state.dailyLossLimit || 0);
 
-  if (limit > 0 && todayProfit <= -Math.abs(limit)) {
+  if (
+    limit > 0 &&
+    todayAssetProfit <= -Math.abs(limit)
+  ) {
     state.dailyBuyStopped = true;
     state.dailyBuyStoppedAt = nowText();
     state.dailyBuyStoppedReason =
-      `일일 손실한도 도달 / 실현손익 ${todayProfit.toLocaleString()}원 / 한도 ${limit.toLocaleString()}원`;
+      `일일 손실한도 도달 / ` +
+      `오늘 총자산손익 ${todayAssetProfit.toLocaleString()}원 / ` +
+      `오늘 실현손익 ${todayRealizedProfit.toLocaleString()}원 / ` +
+      `현재 보유평가손익 ${asset.holdingProfit.toLocaleString()}원 / ` +
+      `한도 ${limit.toLocaleString()}원`;
 
     return {
       stopped: true,
-      reason: state.dailyBuyStoppedReason
+      reason: state.dailyBuyStoppedReason,
+      todayAssetProfit,
+      todayRealizedProfit,
+      currentHoldingProfit: asset.holdingProfit,
+      currentAsset: asset.currentAsset,
+      dailyStartAsset,
+      limit
     };
   }
 
   return {
     stopped: false,
-    reason: `실현손익 ${todayProfit.toLocaleString()}원 / 한도 ${limit.toLocaleString()}원`
+    reason:
+      `오늘 총자산손익 ${todayAssetProfit.toLocaleString()}원 / ` +
+      `오늘 실현손익 ${todayRealizedProfit.toLocaleString()}원 / ` +
+      `현재 보유평가손익 ${asset.holdingProfit.toLocaleString()}원 / ` +
+      `한도 ${limit.toLocaleString()}원`,
+    todayAssetProfit,
+    todayRealizedProfit,
+    currentHoldingProfit: asset.holdingProfit,
+    currentAsset: asset.currentAsset,
+    dailyStartAsset,
+    limit
   };
 }
 
@@ -4789,7 +5185,9 @@ async function paperBuy(
     ) {
       recordBuySuccess(
         state,
-        strategyGroup
+        strategyGroup,
+        item,
+        price
       );
     }
 
@@ -6048,7 +6446,9 @@ updateCandidateWatchList(
   state,
   strategyGroup,
   judged,
-  "WATCH"
+  "WATCH",
+  item,
+  price
 );
 
 if (!judged.pass) {
@@ -6378,7 +6778,9 @@ recordBuyDecision(
   state,
   "CORE",
   coreJudge,
-  item.candidateSource || "DISCOVER"
+  item.candidateSource || "DISCOVER",
+  item,
+  price
 );
 
 if (!coreJudge.pass) {
@@ -6451,7 +6853,9 @@ if (!coreJudge.pass) {
   state,
   "VOLUME",
   volumeJudge,
-  item.candidateSource || "DISCOVER"
+  item.candidateSource || "DISCOVER",
+  item,
+  price
 );
 
   if (!volumeJudge.pass) {

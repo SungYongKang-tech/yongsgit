@@ -1194,11 +1194,39 @@ app.post("/api/paper-state/reset", (req, res) => {
       coreCandidateHistory: {},
       volumeCandidateHistory: {},
 
+      candidateDecisionHistory: {
+        date: new Date().toLocaleDateString("sv-SE", {
+          timeZone: "Asia/Seoul"
+        }),
+        updatedAt: null,
+        rows: []
+      },
+
+      dailyTopRisers: {
+        date: new Date().toLocaleDateString("sv-SE", {
+          timeZone: "Asia/Seoul"
+        }),
+        updatedAt: null,
+        rows: []
+      },
+
+      missedWinnerAnalysis: {
+        date: new Date().toLocaleDateString("sv-SE", {
+          timeZone: "Asia/Seoul"
+        }),
+        updatedAt: null,
+        summary: {},
+        rows: []
+      },
+
       pendingBuyCodes: [],
       pendingSellCodes: [],
 
       dailyRiskDate: null,
+      dailyStartDate: null,
       dailyStartAsset: 100000000,
+      dailyStartHoldingProfit: 0,
+      dailyStartCapturedAt: null,
       dailyLossLimit: 1000000,
       dailyBuyStopped: false,
 
@@ -1365,8 +1393,12 @@ const totalCombinedProfit = totalRealizedProfit + totalUnrealizedProfit;
  * auto-trader-core.js가 날짜가 바뀔 때 dailyRiskDate와
  * dailyStartAsset을 저장한 경우에만 적용한다.
  */
+const todayStartDate = String(
+  state.dailyStartDate || state.dailyRiskDate || ""
+).slice(0, 10);
+
 const hasTodayStartAsset =
-  String(state.dailyRiskDate || "").slice(0, 10) === today &&
+  todayStartDate === today &&
   Number(state.dailyStartAsset || 0) > 0;
 
 const dailyStartAsset = hasTodayStartAsset
@@ -1692,6 +1724,12 @@ return {
         todayRealizedProfit,
         dailyStartAsset,
         dailyStartAssetReady: hasTodayStartAsset,
+        dailyStartDate: todayStartDate || null,
+        dailyStartHoldingProfit: Number(
+          state.dailyStartHoldingProfit || 0
+        ),
+        dailyStartCapturedAt:
+          state.dailyStartCapturedAt || null,
         dailyRiskDate: state.dailyRiskDate || null,
         totalRealizedProfit,
         totalUnrealizedProfit,
@@ -1766,6 +1804,370 @@ return {
   }
 });
 
+
+
+function getKstDateKey() {
+  return new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Seoul"
+  });
+}
+
+function normalizeRisingStock(item = {}) {
+  const code = String(
+    item.code ||
+    item.stk_cd ||
+    item.stockCode ||
+    ""
+  )
+    .trim()
+    .padStart(6, "0");
+
+  const changeRate = Number(
+    item.changeRate ??
+    item.fluctuationRate ??
+    item.riseRate ??
+    item.rate ??
+    item.raw?.flu_rt ??
+    0
+  );
+
+  return {
+    code,
+    name: String(
+      item.name ||
+      item.stk_nm ||
+      item.stockName ||
+      code
+    ),
+    changeRate,
+    closePrice: Math.abs(Number(
+      item.closePrice ||
+      item.currentPrice ||
+      item.price ||
+      item.raw?.cur_prc ||
+      0
+    )),
+    highPrice: Math.abs(Number(
+      item.highPrice ||
+      item.high ||
+      item.raw?.high_pric ||
+      0
+    )),
+    volume: Math.abs(Number(
+      item.volume ||
+      item.tradeVolume ||
+      item.raw?.trde_qty ||
+      0
+    )),
+    tradeVolumeRatio: Number(
+      item.tradeVolumeRatio ??
+      item.volumeRatio ??
+      0
+    )
+  };
+}
+
+function buildMissedWinnerAnalysis(
+  state,
+  risingItems = [],
+  options = {}
+) {
+  const date = getKstDateKey();
+  const minChangeRate = Number(
+    options.minChangeRate ?? 3
+  );
+  const limit = Math.max(
+    1,
+    Math.min(200, Number(options.limit || 50))
+  );
+
+  const risers = risingItems
+    .map(normalizeRisingStock)
+    .filter(item =>
+      item.code &&
+      item.code !== "000000" &&
+      Number.isFinite(item.changeRate) &&
+      item.changeRate >= minChangeRate
+    )
+    .sort((a, b) => b.changeRate - a.changeRate)
+    .slice(0, limit);
+
+  const decisions =
+    state.candidateDecisionHistory?.date === date &&
+    Array.isArray(state.candidateDecisionHistory?.rows)
+      ? state.candidateDecisionHistory.rows
+      : [];
+
+  const tradeLogs = Array.isArray(state.tradeLogs)
+    ? state.tradeLogs
+    : [];
+
+  const todayBuyCodes = new Set(
+    tradeLogs
+      .filter(log =>
+        String(log.date || "").slice(0, 10) === date &&
+        ["OPEN_BUY", "CORE_BUY", "VOLUME_BUY"].includes(log.type)
+      )
+      .map(log => String(log.code || "").padStart(6, "0"))
+  );
+
+  const rows = risers.map(riser => {
+    const stockDecisions = decisions.filter(row =>
+      String(row.code || "").padStart(6, "0") === riser.code
+    );
+
+    const bought =
+      todayBuyCodes.has(riser.code) ||
+      stockDecisions.some(row => row.bought === true);
+
+    if (stockDecisions.length === 0) {
+      return {
+        ...riser,
+        discovered: false,
+        bought,
+        firstSeenAt: null,
+        latestCheckedAt: null,
+        bestWatchScore: 0,
+        strategies: [],
+        resultCategory: bought
+          ? "매수 기록 있음"
+          : "미발견",
+        resultReason: bought
+          ? "매수로그는 있으나 CORE/VOLUME 판단 이력 없음"
+          : "CORE/VOLUME 후보 판단 이력에 종목이 없음"
+      };
+    }
+
+    const firstDecision = [...stockDecisions]
+      .map(row => row.first)
+      .filter(Boolean)
+      .sort((a, b) =>
+        Number(a.checkedAtMs || 0) -
+        Number(b.checkedAtMs || 0)
+      )[0] || null;
+
+    const latestDecision = [...stockDecisions]
+      .map(row => row.latest)
+      .filter(Boolean)
+      .sort((a, b) =>
+        Number(b.checkedAtMs || 0) -
+        Number(a.checkedAtMs || 0)
+      )[0] || null;
+
+    const bestWatchScore = Math.max(
+      0,
+      ...stockDecisions.map(row =>
+        Number(row.best?.watchScore || 0)
+      )
+    );
+
+    const everPassed = stockDecisions.some(
+      row => row.everPassed === true
+    );
+
+    let resultCategory = "기타";
+    let resultReason =
+      latestDecision?.rejectReason ||
+      "최종 판단 사유 없음";
+
+    if (bought) {
+      resultCategory = "매수 완료";
+      resultReason = "오늘 매수 기록 확인";
+    } else if (everPassed) {
+      resultCategory = "조건 통과 후 미매수";
+      resultReason =
+        latestDecision?.rejectReason ||
+        "한 번 이상 조건을 통과했지만 매수 완료 기록이 없음";
+    } else {
+      resultCategory =
+        latestDecision?.rejectCategory ||
+        "기타";
+    }
+
+    return {
+      ...riser,
+      discovered: true,
+      bought,
+      firstSeenAt: firstDecision?.checkedAt || null,
+      latestCheckedAt: latestDecision?.checkedAt || null,
+      bestWatchScore,
+      strategies: stockDecisions.map(row => ({
+        strategyGroup: row.strategyGroup,
+        sources: row.sources || [],
+        checkCount: Number(row.checkCount || 0),
+        everPassed: row.everPassed === true,
+        bought: row.bought === true,
+        first: row.first || null,
+        best: row.best || null,
+        latest: row.latest || null
+      })),
+      resultCategory,
+      resultReason
+    };
+  });
+
+  const categoryCounts = {};
+
+  for (const row of rows) {
+    categoryCounts[row.resultCategory] =
+      Number(categoryCounts[row.resultCategory] || 0) + 1;
+  }
+
+  return {
+    date,
+    updatedAt: new Date().toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul"
+    }),
+    minChangeRate,
+    limit,
+    summary: {
+      risingCount: rows.length,
+      discoveredCount: rows.filter(row => row.discovered).length,
+      notDiscoveredCount: rows.filter(row => !row.discovered).length,
+      boughtCount: rows.filter(row => row.bought).length,
+      missedCount: rows.filter(row => !row.bought).length,
+      categoryCounts
+    },
+    rows
+  };
+}
+
+app.post("/api/missed-winners-analysis", (req, res) => {
+  try {
+    const state = loadState();
+    const items = Array.isArray(req.body?.items)
+      ? req.body.items
+      : [];
+
+    if (items.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        message: "상승 종목 목록 items가 필요합니다."
+      });
+    }
+
+    const analysis = buildMissedWinnerAnalysis(
+      state,
+      items,
+      {
+        minChangeRate: req.body?.minChangeRate,
+        limit: req.body?.limit
+      }
+    );
+
+    state.dailyTopRisers = {
+      date: analysis.date,
+      updatedAt: analysis.updatedAt,
+      rows: items.map(normalizeRisingStock)
+    };
+
+    state.missedWinnerAnalysis = analysis;
+    savePaperState(state);
+
+    res.json({
+      ok: true,
+      ...analysis
+    });
+  } catch (err) {
+    console.error("상승 종목 미매수 분석 저장 오류:", err);
+    res.status(500).json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
+
+app.get("/api/missed-winners-analysis", (req, res) => {
+  try {
+    const state = loadState();
+    const date = getKstDateKey();
+
+    const savedRisers =
+      state.dailyTopRisers?.date === date &&
+      Array.isArray(state.dailyTopRisers?.rows)
+        ? state.dailyTopRisers.rows
+        : [];
+
+    if (savedRisers.length === 0) {
+      return res.json({
+        ok: true,
+        date,
+        ready: false,
+        message:
+          "오늘 상승 종목 목록이 아직 저장되지 않았습니다. POST /api/missed-winners-analysis로 items를 보내세요.",
+        summary: {
+          risingCount: 0,
+          discoveredCount: 0,
+          notDiscoveredCount: 0,
+          boughtCount: 0,
+          missedCount: 0,
+          categoryCounts: {}
+        },
+        rows: []
+      });
+    }
+
+    const analysis = buildMissedWinnerAnalysis(
+      state,
+      savedRisers,
+      {
+        minChangeRate: req.query.minChangeRate,
+        limit: req.query.limit
+      }
+    );
+
+    state.missedWinnerAnalysis = analysis;
+    savePaperState(state);
+
+    res.json({
+      ok: true,
+      ready: true,
+      ...analysis
+    });
+  } catch (err) {
+    console.error("상승 종목 미매수 분석 조회 오류:", err);
+    res.status(500).json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
+
+app.get("/api/candidate-decision-history", (req, res) => {
+  try {
+    const state = loadState();
+    const date = getKstDateKey();
+    const code = String(req.query.code || "")
+      .trim()
+      .padStart(6, "0");
+
+    let rows =
+      state.candidateDecisionHistory?.date === date &&
+      Array.isArray(state.candidateDecisionHistory?.rows)
+        ? state.candidateDecisionHistory.rows
+        : [];
+
+    if (code && code !== "000000") {
+      rows = rows.filter(row =>
+        String(row.code || "").padStart(6, "0") === code
+      );
+    }
+
+    res.json({
+      ok: true,
+      date,
+      updatedAt:
+        state.candidateDecisionHistory?.updatedAt || null,
+      count: rows.length,
+      rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
 
 app.get("/api/open-market-status", (req, res) => {
   try {
@@ -2144,8 +2546,12 @@ if (group === "VOLUME") {
       const currentAsset =
         Number(state.totalCash || 0) + holdingEvalAmount;
 
+      const todayStartDate = String(
+        state.dailyStartDate || state.dailyRiskDate || ""
+      ).slice(0, 10);
+
       const hasTodayStartAsset =
-        String(state.dailyRiskDate || "").slice(0, 10) === today &&
+        todayStartDate === today &&
         Number(state.dailyStartAsset || 0) > 0;
 
       const dailyStartAsset = hasTodayStartAsset
@@ -2156,6 +2562,10 @@ if (group === "VOLUME") {
       dateMap[today].totalProfit = currentAsset - dailyStartAsset;
       dateMap[today].dailyStartAsset = dailyStartAsset;
       dateMap[today].dailyStartAssetReady = hasTodayStartAsset;
+      dateMap[today].dailyStartDate = todayStartDate || null;
+      dateMap[today].dailyStartHoldingProfit = Number(
+        state.dailyStartHoldingProfit || 0
+      );
     }
 
     const latestMarketTemperature =
