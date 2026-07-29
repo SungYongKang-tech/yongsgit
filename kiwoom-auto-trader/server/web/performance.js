@@ -563,10 +563,27 @@ function renderCandidateAnalysis(source = {}) {
     : [];
 
   const top = [...coreTop, ...volumeTop]
-    .sort((a, b) =>
-      Number(b.watchScore || b.finalScore || b.discoverScore || 0) -
-      Number(a.watchScore || a.finalScore || a.discoverScore || 0)
-    )
+    .sort((a, b) => {
+      const scoreA = Number(
+        a.watchScore ??
+        a.finalScore ??
+        a.finalBuyScore ??
+        a.hotScore ??
+        a.discoverScore ??
+        0
+      );
+
+      const scoreB = Number(
+        b.watchScore ??
+        b.finalScore ??
+        b.finalBuyScore ??
+        b.hotScore ??
+        b.discoverScore ??
+        0
+      );
+
+      return scoreB - scoreA;
+    })
     .slice(0, 10);
 
   const topBox = document.getElementById("candidateTopBox");
@@ -630,8 +647,21 @@ function renderCandidateAnalysis(source = {}) {
     );
 
     const firstPrice = Number(item.firstPrice || 0);
+    const highestPrice = Number(
+      item.highestPrice ??
+      item.highPrice ??
+      snapshot.highestPrice ??
+      snapshot.highPrice ??
+      currentPrice ??
+      0
+    );
+
     const priceChangeRate = firstPrice > 0
       ? ((currentPrice - firstPrice) / firstPrice) * 100
+      : 0;
+
+    const highestChangeRate = firstPrice > 0 && highestPrice > 0
+      ? ((highestPrice - firstPrice) / firstPrice) * 100
       : 0;
 
     return `
@@ -691,6 +721,18 @@ function renderCandidateAnalysis(source = {}) {
           <div class="info-box">
             <div class="info-label">현재가</div>
             <div class="info-value">${currentPrice ? currentPrice.toLocaleString() + "원" : "-"}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">후보 이후 최고가</div>
+            <div class="info-value">${highestPrice ? highestPrice.toLocaleString() + "원" : "-"}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">후보 이후 최고수익률</div>
+            <div class="info-value ${highestChangeRate >= 0 ? "plus" : "minus"}">
+              ${firstPrice > 0 && highestPrice > 0 ? formatRate(highestChangeRate) : "-"}
+            </div>
           </div>
         </div>
 
@@ -1387,7 +1429,6 @@ setMarketTemperature(mt);
        setStatus("lastUpdatedAt", `갱신 ${new Date().toLocaleTimeString("ko-KR", {hour:"2-digit", minute:"2-digit", hour12:false})}`, "ok");
        
        renderCandidateAnalysis(data);
-       loadMissedWinnersAnalysis();
 
         renderOpenPerformance(data);
         renderHoldings(data.holdings || []);
@@ -1416,4 +1457,5 @@ setMarketTemperature(mt);
     }
 
     loadPerformanceSummary();
+    loadMissedWinnersAnalysis();
     setInterval(loadPerformanceSummary, 30000);
