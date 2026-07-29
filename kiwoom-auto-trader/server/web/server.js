@@ -381,6 +381,352 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 
 
+
+/*
+ * HOT 후보 API
+ *
+ * 키움 순위정보 API의 거래량급증(ka10023),
+ * 전일대비등락률상위(ka10027), 당일거래량상위(ka10030)를 합친다.
+ * 이후 상위 종목의 현재가 상세정보를 조회해 고가·저가·거래량비율을 보완한다.
+ */
+const HOT_API_CACHE_MS = 10 * 1000;
+let hotApiCache = {
+  cachedAt: 0,
+  data: null
+};
+let hotApiRunningPromise = null;
+
+function hotToNumber(value) {
+  const number = Number(
+    String(value ?? 0)
+      .replace(/[+,%]/g, "")
+      .replace(/,/g, "")
+      .trim()
+  );
+  return Number.isFinite(number) ? number : 0;
+}
+
+function findFirstArrayByKeys(data, keys = []) {
+  if (!data || typeof data !== "object") return [];
+
+  for (const key of keys) {
+    if (Array.isArray(data[key])) return data[key];
+  }
+
+  for (const value of Object.values(data)) {
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === "object") {
+      return value;
+    }
+  }
+
+  return [];
+}
+
+async function requestKiwoomRank(apiId, body) {
+  let token = getSavedToken();
+  const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/rkinfo`;
+
+  async function request(currentToken) {
+    return axios.post(url, body, {
+      headers: {
+        "Content-Type": "application/json;charset=UTF-8",
+        authorization: `Bearer ${currentToken}`,
+        "api-id": apiId
+      },
+      timeout: 10000
+    });
+  }
+
+  let result = await request(token);
+  let data = result.data || {};
+
+  if (isTokenError(data)) {
+    console.log(`[HOT API] ${apiId} 토큰 만료 → 자동 재발급`);
+    token = await refreshKiwoomToken();
+    result = await request(token);
+    data = result.data || {};
+  }
+
+  const returnCode = String(data.return_code ?? data.returnCode ?? "0");
+  if (returnCode && returnCode !== "0") {
+    throw new Error(`${apiId} 실패: ${data.return_msg || data.message || returnCode}`);
+  }
+
+  return data;
+}
+
+function normalizeHotRankRow(row = {}, source) {
+  const code = String(
+    row.stk_cd || row.code || row.stockCode || ""
+  ).replace(/^A/, "").trim().padStart(6, "0");
+
+  if (!code || code === "000000") return null;
+
+  const currentPrice = Math.abs(hotToNumber(
+    row.cur_prc || row.currentPrice || row.price || row.exp_cntr_pric || 0
+  ));
+  const changeRate = hotToNumber(
+    row.flu_rt ?? row.changeRate ?? row.pred_rt ?? 0
+  );
+  const currentVolume = Math.abs(hotToNumber(
+    row.now_trde_qty || row.trde_qty || row.volume || row.exp_cntr_qty || 0
+  ));
+  const surgeRate = hotToNumber(row.sdnin_rt ?? row.surgeRate ?? 0);
+
+  return {
+    code,
+    name: row.stk_nm || row.name || code,
+    currentPrice,
+    price: currentPrice,
+    changeRate,
+    volume: currentVolume,
+    tradeAmount: Math.abs(hotToNumber(row.trde_amt || row.tradeAmount || 0)),
+    tradeVolumeRatio: surgeRate ? Math.max(0, 100 + surgeRate) : 0,
+    sources: [source],
+    rawRank: row
+  };
+}
+
+function mergeHotRankRows(groups = []) {
+  const map = new Map();
+
+  for (const { source, rows } of groups) {
+    for (const raw of rows) {
+      const item = normalizeHotRankRow(raw, source);
+      if (!item) continue;
+
+      const existing = map.get(item.code);
+      if (!existing) {
+        map.set(item.code, item);
+        continue;
+      }
+
+      map.set(item.code, {
+        ...existing,
+        ...item,
+        currentPrice: item.currentPrice || existing.currentPrice,
+        price: item.currentPrice || existing.currentPrice,
+        changeRate: item.changeRate || existing.changeRate,
+        volume: Math.max(existing.volume || 0, item.volume || 0),
+        tradeAmount: Math.max(existing.tradeAmount || 0, item.tradeAmount || 0),
+        tradeVolumeRatio: Math.max(
+          existing.tradeVolumeRatio || 0,
+          item.tradeVolumeRatio || 0
+        ),
+        sources: Array.from(new Set([...(existing.sources || []), source])),
+        rawRank: {
+          ...(existing.rawRank || {}),
+          ...(item.rawRank || {})
+        }
+      });
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+async function enrichHotCandidate(item) {
+  try {
+    const priceRes = await fetch(
+      `http://localhost:${PORT}/api/price?code=${encodeURIComponent(item.code)}`
+    );
+    const priceData = await priceRes.json();
+
+    if (!priceRes.ok) {
+      throw new Error(priceData.message || `현재가 API ${priceRes.status}`);
+    }
+
+    const raw = priceData.raw || {};
+    const trdePreRaw = raw.trde_pre ?? priceData.trde_pre ?? null;
+    const previousDayVolumeRatio =
+      trdePreRaw !== null && trdePreRaw !== ""
+        ? Math.max(0, 100 + hotToNumber(trdePreRaw))
+        : 0;
+
+    return {
+      ...item,
+      name: priceData.name || item.name,
+      currentPrice: Math.abs(hotToNumber(priceData.currentPrice || item.currentPrice)),
+      price: Math.abs(hotToNumber(priceData.currentPrice || item.currentPrice)),
+      changeRate: hotToNumber(priceData.changeRate ?? item.changeRate),
+      volume: Math.abs(hotToNumber(priceData.volume || item.volume)),
+      open: Math.abs(hotToNumber(priceData.open || raw.open_pric || 0)),
+      high: Math.abs(hotToNumber(priceData.high || raw.high_pric || 0)),
+      low: Math.abs(hotToNumber(priceData.low || raw.low_pric || 0)),
+      tradeVolumeRatio: Math.max(
+        Number(item.tradeVolumeRatio || 0),
+        previousDayVolumeRatio
+      ),
+      trde_pre: trdePreRaw,
+      raw: {
+        ...raw,
+        trde_pre: trdePreRaw
+      }
+    };
+  } catch (err) {
+    console.warn(`[HOT API 상세조회 실패] ${item.code} / ${err.message}`);
+    return item;
+  }
+}
+
+async function buildHotCandidates(limit) {
+  const safeLimit = Math.max(1, Math.min(50, Number(limit || 30)));
+
+  const requests = [
+    {
+      apiId: "ka10023",
+      source: "VOLUME_SURGE",
+      keys: ["trde_qty_sdnin", "items", "output"],
+      body: {
+        mrkt_tp: "000",
+        sort_tp: "2",
+        tm_tp: "1",
+        trde_qty_tp: "10",
+        tm: "5",
+        stk_cnd: "20",
+        pric_tp: "8",
+        stex_tp: "3"
+      }
+    },
+    {
+      apiId: "ka10027",
+      source: "CHANGE_RATE",
+      keys: ["pred_pre_flu_rt_upper", "items", "output"],
+      body: {
+        mrkt_tp: "000",
+        sort_tp: "1",
+        trde_qty_cnd: "0010",
+        stk_cnd: "4",
+        crd_cnd: "0",
+        updown_incls: "0",
+        pric_cnd: "8",
+        trde_prica_cnd: "10",
+        stex_tp: "3"
+      }
+    },
+    {
+      apiId: "ka10030",
+      source: "TODAY_VOLUME",
+      keys: ["tdy_trde_qty_upper", "items", "output"],
+      body: {
+        mrkt_tp: "000",
+        sort_tp: "1",
+        trde_qty_cnd: "10",
+        stk_cnd: "4",
+        crd_cnd: "0",
+        pric_cnd: "8",
+        stex_tp: "3"
+      }
+    }
+  ];
+
+  const settled = await Promise.allSettled(
+    requests.map(async request => {
+      const data = await requestKiwoomRank(request.apiId, request.body);
+      return {
+        source: request.source,
+        rows: findFirstArrayByKeys(data, request.keys)
+      };
+    })
+  );
+
+  const groups = [];
+  const errors = [];
+
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      groups.push(result.value);
+    } else {
+      errors.push(`${requests[index].apiId}: ${result.reason?.message || "실패"}`);
+    }
+  });
+
+  if (groups.length === 0) {
+    throw new Error(`키움 HOT 순위조회 전체 실패 / ${errors.join(" | ")}`);
+  }
+
+  const merged = mergeHotRankRows(groups)
+    .filter(item => item.currentPrice > 0)
+    .filter(item => item.changeRate > 0)
+    .sort((a, b) => {
+      const sourceDiff = (b.sources?.length || 0) - (a.sources?.length || 0);
+      if (sourceDiff !== 0) return sourceDiff;
+      const rateDiff = Number(b.changeRate || 0) - Number(a.changeRate || 0);
+      if (rateDiff !== 0) return rateDiff;
+      return Number(b.volume || 0) - Number(a.volume || 0);
+    })
+    .slice(0, Math.min(40, safeLimit + 10));
+
+  const enriched = [];
+  for (const item of merged) {
+    enriched.push(await enrichHotCandidate(item));
+    if (enriched.length < merged.length) {
+      await sleep(120);
+    }
+  }
+
+  const items = enriched
+    .filter(item => item.currentPrice > 0)
+    .sort((a, b) => {
+      const sourceDiff = (b.sources?.length || 0) - (a.sources?.length || 0);
+      if (sourceDiff !== 0) return sourceDiff;
+      const volumeDiff = Number(b.tradeVolumeRatio || 0) - Number(a.tradeVolumeRatio || 0);
+      if (volumeDiff !== 0) return volumeDiff;
+      return Number(b.changeRate || 0) - Number(a.changeRate || 0);
+    })
+    .slice(0, safeLimit);
+
+  return {
+    ok: true,
+    source: "KIWOOM_RANK_KA10023_KA10027_KA10030",
+    updatedAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+    count: items.length,
+    partialErrors: errors,
+    items
+  };
+}
+
+app.get("/api/hot-candidates", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit || 30)));
+    const cacheAge = Date.now() - Number(hotApiCache.cachedAt || 0);
+
+    if (hotApiCache.data && cacheAge <= HOT_API_CACHE_MS) {
+      return res.json({
+        ...hotApiCache.data,
+        cached: true,
+        items: hotApiCache.data.items.slice(0, limit)
+      });
+    }
+
+    if (!hotApiRunningPromise) {
+      hotApiRunningPromise = buildHotCandidates(Math.max(30, limit))
+        .then(data => {
+          hotApiCache = { cachedAt: Date.now(), data };
+          return data;
+        })
+        .finally(() => {
+          hotApiRunningPromise = null;
+        });
+    }
+
+    const data = await hotApiRunningPromise;
+    return res.json({
+      ...data,
+      cached: false,
+      items: data.items.slice(0, limit)
+    });
+  } catch (error) {
+    console.error("/api/hot-candidates 오류:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "HOT 후보 조회 실패",
+      error: error.message,
+      items: []
+    });
+  }
+});
+
 app.get("/api/discover", async (req, res) => {
   try {
     const scanLimit = Number(req.query.scanLimit || 150);
