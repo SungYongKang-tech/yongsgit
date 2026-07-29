@@ -1060,40 +1060,66 @@ function getOpenPositionRate(item = {}, currentPrice) {
   return ((currentPrice - open) / open) * 100;
 }
 
-function calculateMarketTemperature(candidates = []) {
-  const rows = Array.isArray(candidates)
-  ? candidates.filter(item => {
-      const rawChangeRate =
-        item.changeRate ??
-        item.fluctuationRate ??
-        item.riseRate ??
-        item.rate ??
-        item.raw?.flu_rt;
+function calculateMarketTemperature(
+  candidates = []
+) {
+  const rows =
+    Array.isArray(candidates)
+      ? candidates.filter(item => {
+          const rawChangeRate =
+            item.changeRate ??
+            item.fluctuationRate ??
+            item.riseRate ??
+            item.rate ??
+            item.raw?.flu_rt;
 
-      if (
-        rawChangeRate === undefined ||
-        rawChangeRate === null ||
-        rawChangeRate === ""
-      ) {
-        return false;
-      }
+          if (
+            rawChangeRate === undefined ||
+            rawChangeRate === null ||
+            rawChangeRate === ""
+          ) {
+            return false;
+          }
 
-      return Number.isFinite(Number(rawChangeRate));
-    })
-  : [];
+          return Number.isFinite(
+            Number(rawChangeRate)
+          );
+        })
+      : [];
 
   const total = rows.length;
 
-  if (total === 0) {
+  /*
+   * 대상 종목이 너무 적으면
+   * 이전 시장점수를 과도하게 변경하지 않도록
+   * 중립값으로 처리한다.
+   */
+  if (total < 10) {
     return {
       level: "NORMAL",
       label: "보통",
       score: 50,
+
       advanceRatio: 0,
+      declineRatio: 0,
+      flatRatio: 0,
+
       volumePassRatio: 0,
       averageChangeRate: 0,
-      total: 0,
-      reason: "시장온도 계산 대상 없음",
+
+      breadthScore: 50,
+      changeScore: 50,
+      volumeScore: 50,
+
+      total,
+      advanceCount: 0,
+      declineCount: 0,
+      flatCount: 0,
+      volumePassCount: 0,
+
+      reason:
+        `시장점수 계산 대상 부족 / ${total}개`,
+
       checkedAt: nowText(),
       checkedDate: todayKey()
     };
@@ -1107,19 +1133,22 @@ function calculateMarketTemperature(candidates = []) {
 
   for (const item of rows) {
     const changeRate = Number(
-  item.changeRate ??
-  item.fluctuationRate ??
-  item.riseRate ??
-  item.rate ??
-  item.raw?.flu_rt ??
-  0
-);
+      item.changeRate ??
+      item.fluctuationRate ??
+      item.riseRate ??
+      item.rate ??
+      item.raw?.flu_rt ??
+      0
+    );
 
     const volumeRatio =
       getTradeVolumeRatio(item);
 
     changeRateSum += changeRate;
 
+    /*
+     * ±0.1% 이내는 보합으로 처리
+     */
     if (changeRate > 0.1) {
       advanceCount++;
     } else if (changeRate < -0.1) {
@@ -1128,6 +1157,10 @@ function calculateMarketTemperature(candidates = []) {
       flatCount++;
     }
 
+    /*
+     * 시장 거래량 기준은
+     * CORE 최소기준 80% 사용
+     */
     if (
       volumeRatio >=
       settings.coreMinTradeVolumeRatio
@@ -1137,65 +1170,101 @@ function calculateMarketTemperature(candidates = []) {
   }
 
   const advanceRatio =
-    total > 0
-      ? (advanceCount / total) * 100
-      : 0;
+    (advanceCount / total) * 100;
 
   const declineRatio =
-    total > 0
-      ? (declineCount / total) * 100
-      : 0;
+    (declineCount / total) * 100;
+
+  const flatRatio =
+    (flatCount / total) * 100;
 
   const volumePassRatio =
-    total > 0
-      ? (volumePassCount / total) * 100
-      : 0;
+    (volumePassCount / total) * 100;
 
   const averageChangeRate =
-    total > 0
-      ? changeRateSum / total
-      : 0;
+    changeRateSum / total;
 
   /*
-   * 시장온도 점수
+   * 1. 시장 확산도 점수
    *
-   * 상승종목 비율: 최대 50점
-   * 평균 등락률: 최대 ±25점
-   * 거래량 통과 비율: 최대 25점
+   * 상승과 하락이 같으면 50점
+   * 전 종목 상승이면 최대 85점
+   * 전 종목 하락이면 최소 15점
    */
-  const advanceScore =
-    advanceRatio * 0.5;
-
-  const changeScore =
+  const breadthScore =
     Math.max(
-      -25,
+      15,
       Math.min(
-        25,
-        averageChangeRate * 10
+        85,
+        50 +
+        (
+          advanceRatio -
+          declineRatio
+        ) * 0.35
       )
     );
 
-  const volumeScore =
-    volumePassRatio * 0.25;
+  /*
+   * 2. 평균 등락률 점수
+   *
+   * 평균 0% = 50점
+   * 평균 +2.5% = 100점
+   * 평균 -2.5% = 0점
+   */
+  const changeScore =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        50 +
+        averageChangeRate * 20
+      )
+    );
 
-  const score = Math.max(
-    0,
-    Math.min(
-      100,
-      25 +
-      advanceScore +
-      changeScore +
-      volumeScore
-    )
-  );
+  /*
+   * 3. 거래량 점수
+   *
+   * 거래량 통과율 50% = 50점
+   * 거래량은 매수·매도 방향을
+   * 알 수 없으므로 영향도를 낮춘다.
+   */
+  const volumeScore =
+    Math.max(
+      25,
+      Math.min(
+        75,
+        50 +
+        (
+          volumePassRatio - 50
+        ) * 0.5
+      )
+    );
+
+  /*
+   * 최종 시장점수
+   *
+   * 확산도 45%
+   * 평균등락 40%
+   * 거래량 15%
+   */
+  const score =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        breadthScore * 0.45 +
+        changeScore * 0.40 +
+        volumeScore * 0.15
+      )
+    );
 
   let level = "NORMAL";
   let label = "보통";
 
-  if (score >= 75) {
+  if (score >= 70) {
     level = "HOT";
     label = "강세";
-  } else if (score >= 55) {
+  } else if (score >= 50) {
     level = "NORMAL";
     label = "보통";
   } else if (score >= 35) {
@@ -1207,47 +1276,53 @@ function calculateMarketTemperature(candidates = []) {
   }
 
   return {
-  level,
-  label,
+    level,
+    label,
 
-  score:
-    Number(score.toFixed(1)),
+    score:
+      Number(score.toFixed(1)),
 
-  advanceRatio:
-    Number(advanceRatio.toFixed(1)),
+    advanceRatio:
+      Number(advanceRatio.toFixed(1)),
 
-  declineRatio:
-    Number(declineRatio.toFixed(1)),
+    declineRatio:
+      Number(declineRatio.toFixed(1)),
 
-  flatRatio:
-    Number(
-      (
-        total > 0
-          ? (flatCount / total) * 100
-          : 0
-      ).toFixed(1)
-    ),
+    flatRatio:
+      Number(flatRatio.toFixed(1)),
 
-  volumePassRatio:
-    Number(volumePassRatio.toFixed(1)),
+    volumePassRatio:
+      Number(volumePassRatio.toFixed(1)),
 
-  averageChangeRate:
-    Number(averageChangeRate.toFixed(2)),
+    averageChangeRate:
+      Number(
+        averageChangeRate.toFixed(2)
+      ),
 
-  total,
-  advanceCount,
-  declineCount,
-  flatCount,
-  volumePassCount,
+    breadthScore:
+      Number(breadthScore.toFixed(1)),
 
-  reason:
-    `상승 ${advanceCount}/${total}개 / ` +
-    `평균등락 ${averageChangeRate.toFixed(2)}% / ` +
-    `거래량통과 ${volumePassCount}/${total}개`,
+    changeScore:
+      Number(changeScore.toFixed(1)),
 
-  checkedAt: nowText(),
-  checkedDate: todayKey()
-};
+    volumeScore:
+      Number(volumeScore.toFixed(1)),
+
+    total,
+    advanceCount,
+    declineCount,
+    flatCount,
+    volumePassCount,
+
+    reason:
+      `상승 ${advanceCount}/${total}개 / ` +
+      `하락 ${declineCount}/${total}개 / ` +
+      `평균등락 ${averageChangeRate.toFixed(2)}% / ` +
+      `거래량통과 ${volumePassCount}/${total}개`,
+
+    checkedAt: nowText(),
+    checkedDate: todayKey()
+  };
 }
 
 function getMarketAdjustedBuySettings(
@@ -4079,9 +4154,15 @@ function isStrategyBuyCooldown(state, strategyGroup) {
   };
 }
 
-async function discoverCandidates(state, mode = "CORE_VOLUME") {
-  const offset = Number(state.discoverOffset || 0);
-  const scanLimit = getDynamicDiscoverScanLimit(mode);
+async function discoverCandidates(
+  state,
+  mode = "CORE_VOLUME"
+) {
+  const offset =
+    Number(state.discoverOffset || 0);
+
+  const scanLimit =
+    getDynamicDiscoverScanLimit(mode);
 
   const data = await fetchJson(
     `${API_BASE}/api/discover?offset=${offset}` +
@@ -4089,30 +4170,58 @@ async function discoverCandidates(state, mode = "CORE_VOLUME") {
     `&limit=${settings.discoverLimit}`
   );
 
-  state.discoverOffset = Number(data.nextOffset || 0);
-  state.lastDiscoverOffsetAt = nowText();
+  state.discoverOffset =
+    Number(data.nextOffset || 0);
 
-  const rawItems = data.items || [];
+  state.lastDiscoverOffsetAt =
+    nowText();
 
-  const filtered = rawItems
-    .filter(item => !isExcludedStock(item))
-    .filter(item => Number(item.discoverScore || 0) >= settings.minDiscoverScore)
-    .sort(
-      (a, b) =>
-        Number(b.discoverScore || 0) -
-        Number(a.discoverScore || 0)
+  const rawItems =
+    Array.isArray(data.items)
+      ? data.items
+      : [];
+
+  /*
+   * 시장점수용 데이터
+   *
+   * 발견점수 조건을 적용하지 않는다.
+   * ETF·ETN·우선주 등 제외종목만 제거한다.
+   */
+  const marketRows =
+    rawItems.filter(item =>
+      !isExcludedStock(item)
     );
+
+  /*
+   * 실제 매수 후보
+   *
+   * 기존처럼 발견점수 기준을 적용한다.
+   */
+  const candidates =
+    marketRows
+      .filter(item =>
+        Number(item.discoverScore || 0) >=
+        settings.minDiscoverScore
+      )
+      .sort(
+        (a, b) =>
+          Number(b.discoverScore || 0) -
+          Number(a.discoverScore || 0)
+      );
 
   console.log(
     `[DISCOVER] 원본 ${rawItems.length}개 / ` +
-    `필터후 ${filtered.length}개 / ` +
+    `시장계산 ${marketRows.length}개 / ` +
+    `매수후보 ${candidates.length}개 / ` +
     `offset ${offset} → ${state.discoverOffset} / ` +
     `scanLimit ${scanLimit} / ` +
-    `mode ${mode} / ` +
-    `limit ${settings.discoverLimit}`
+    `mode ${mode}`
   );
 
-  return filtered;
+  return {
+    candidates,
+    marketRows
+  };
 }
 
 
@@ -6581,12 +6690,17 @@ console.log("[BUY] 후보 조회 시작");
 /*
  * 1. 기존 순차검색 후보
  */
-const discoveredCandidates =
+const discoverResult =
   await discoverCandidates(
     state,
     "CORE_VOLUME"
   );
 
+const discoveredCandidates =
+  discoverResult.candidates || [];
+
+const marketRows =
+  discoverResult.marketRows || [];
 /*
  * 2. HOT Scanner가 찾은 후보
  */
@@ -6627,9 +6741,9 @@ if (hotCandidates.length > 0) {
   );
 }
 
-  const marketTemperature =
+const marketTemperature =
   calculateMarketTemperature(
-    discoveredCandidates
+    marketRows
   );
 
 state.marketTemperature =
@@ -6638,9 +6752,19 @@ state.marketTemperature =
 console.log(
   `[시장온도] ${marketTemperature.label} / ` +
   `${marketTemperature.score.toFixed(1)}점 / ` +
-  `상승비율 ${marketTemperature.advanceRatio.toFixed(1)}% / ` +
+  `상승 ${marketTemperature.advanceRatio.toFixed(1)}% / ` +
+  `하락 ${marketTemperature.declineRatio.toFixed(1)}% / ` +
   `평균등락 ${marketTemperature.averageChangeRate.toFixed(2)}% / ` +
   `거래량통과 ${marketTemperature.volumePassRatio.toFixed(1)}% / ` +
+  `세부 확산 ${Number(
+    marketTemperature.breadthScore || 0
+  ).toFixed(1)}·` +
+  `등락 ${Number(
+    marketTemperature.changeScore || 0
+  ).toFixed(1)}·` +
+  `거래량 ${Number(
+    marketTemperature.volumeScore || 0
+  ).toFixed(1)} / ` +
   `대상 ${marketTemperature.total}개`
 );
 
