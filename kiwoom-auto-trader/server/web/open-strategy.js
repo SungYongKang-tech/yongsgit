@@ -264,9 +264,11 @@ function loadHotCandidates() {
       : 9999;
     const items = Array.isArray(data.items)
       ? data.items
-      : Array.isArray(data.candidates)
-        ? data.candidates
-        : [];
+      : Array.isArray(data.rows)
+        ? data.rows
+        : Array.isArray(data.candidates)
+          ? data.candidates
+          : [];
     const fresh = ageSeconds <= Number(settings.openHotMaxAgeSeconds || 60);
     const byCode = {};
 
@@ -1372,9 +1374,45 @@ function isExcludedStock(item = {}) {
 
 function getTradeVolumeRatio(item = {}) {
   const raw = item.raw || {};
-  const value = String(raw.trde_pre || item.trde_pre || item.tradeVolumeRatio || "")
-    .replace(/[+,]/g, "");
-  return Number(value || 0);
+
+  const trdePre =
+    raw.trde_pre ??
+    item.trde_pre ??
+    null;
+
+  /*
+   * 키움 trde_pre는 전일 거래량 대비 증감률이다.
+   * 예: +50 -> 실제 거래량비율 150%, -21.03 -> 78.97%.
+   */
+  if (trdePre !== null && trdePre !== "") {
+    const changeRate = Number(
+      String(trdePre)
+        .replace(/[+,%]/g, "")
+        .replace(/,/g, "")
+        .trim()
+    );
+
+    return Number.isFinite(changeRate)
+      ? Math.max(0, 100 + changeRate)
+      : 0;
+  }
+
+  /* 이미 완성된 거래량비율이 들어온 경우에는 그대로 사용한다. */
+  const ratio = Number(
+    String(
+      item.tradeVolumeRatio ??
+      item.volumeRatio ??
+      item.hotVolumeRatio ??
+      0
+    )
+      .replace(/[+,%]/g, "")
+      .replace(/,/g, "")
+      .trim()
+  );
+
+  return Number.isFinite(ratio)
+    ? Math.max(0, ratio)
+    : 0;
 }
 
 function getDayPositionRate(item = {}, currentPrice) {
