@@ -4,7 +4,6 @@ const path = require("path");
 const STATE_FILE = path.join(__dirname, "paper-state-core.json");
 const OPEN_HISTORY_FILE = path.join(__dirname, "open-learning-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
-const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const API_BASE = "http://localhost:3000";
 
 
@@ -90,24 +89,13 @@ openFullRescanIntervalMs: 60 * 1000,
   openInvestmentRatio: 0.25,
 
   openMinDiscoverScore: 10,
-  // OPEN 4.0: 장전 조사 종목 중 장중 실제 강세가 확인된 종목만 매수
   openMinChangeRate: 0.5,
-  openMaxChangeRate: 12.0,
-  openMinTradeVolumeRatio: 150,
+  openMaxChangeRate: 4.0,
+  openMinTradeVolumeRatio: 180,
   openMinDayPositionRate: 55,
-  openMaxDayPositionRate: 96,
+  openMaxDayPositionRate: 85,
   openMinOpenPositionRate: 0.2,
-  openMaxOpenPositionRate: 12.0,
-
-  // 장전 우선종목 + 실시간 HOT 교집합 조건
-  openPriorityRequired: true,
-  openHotRequired: true,
-  openHotMinScore: 55,
-  openHotMaxAgeSeconds: 60,
-  openHotScoreWeight: 0.50,
-  openPriorityScoreWeight: 0.30,
-  openHotBonusMax: 50,
-  openPriorityBonusMax: 30,
+  openMaxOpenPositionRate: 3.5,
   
 
   // OPEN 후보 첫 발견 후 강화 확인 대기시간
@@ -249,70 +237,6 @@ function sleep(ms) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value || 0)));
-}
-
-function loadHotCandidates() {
-  if (!fs.existsSync(HOT_CANDIDATES_FILE)) {
-    return { available: false, reason: "hot-candidates.json 없음", items: [], byCode: {} };
-  }
-
-  try {
-    const data = readJsonFileSafe(HOT_CANDIDATES_FILE, {});
-    const updatedAtMs = Number(data.updatedAtMs || 0);
-    const ageSeconds = updatedAtMs > 0
-      ? (Date.now() - updatedAtMs) / 1000
-      : 9999;
-    const items = Array.isArray(data.items)
-      ? data.items
-      : Array.isArray(data.candidates)
-        ? data.candidates
-        : [];
-    const fresh = ageSeconds <= Number(settings.openHotMaxAgeSeconds || 60);
-    const byCode = {};
-
-    for (const item of items) {
-      const code = String(item.code || "").replace(/[^0-9]/g, "");
-      if (!/^\d{6}$/.test(code)) continue;
-      byCode[code] = item;
-    }
-
-    if (!fresh || !items.length) {
-      return {
-        available: false,
-        reason: `HOT 자료 사용불가 / 후보 ${items.length}개 / 경과 ${ageSeconds.toFixed(1)}초`,
-        ageSeconds,
-        items,
-        byCode
-      };
-    }
-
-    return {
-      available: true,
-      ageSeconds,
-      updatedAt: data.updatedAt || null,
-      items,
-      byCode
-    };
-  } catch (err) {
-    return { available: false, reason: `HOT 자료 읽기 오류 / ${err.message}`, items: [], byCode: {} };
-  }
-}
-
-function attachHotData(item = {}, hotData = {}) {
-  const code = String(item.code || "").replace(/[^0-9]/g, "");
-  const hot = hotData?.byCode?.[code] || null;
-
-  return {
-    ...item,
-    hotMatched: Boolean(hot),
-    hotScore: Number(hot?.hotScore || 0),
-    hotRank: Number(hot?.rank || 0),
-    hotChangeRate: Number(hot?.changeRate || 0),
-    hotVolumeRatio: Number(hot?.tradeVolumeRatio || hot?.volumeRatio || 0),
-    hotDayPosition: Number(hot?.dayPositionRate || hot?.dayPosition || 0),
-    hotUpdatedAt: hotData?.updatedAt || null,
-    hotAgeSeconds: Number(hotData?.ageSeconds || 0)
-  };
 }
 
 function loadOpenMarketData() {
@@ -1430,8 +1354,7 @@ async function fetchPriorityCandidates(marketData = {}) {
         priorityRank: Number(stock.rank || 0),
         priorityScore: Number(stock.priorityScore || 0),
         priorityReason: stock.reason || "장전 우선종목",
-        prioritySector: stock.sector || null,
-        isPriorityCandidate: true
+        prioritySector: stock.sector || null
       };
 
       const scoreInfo = calculateOpenDiscoverScore(item);
@@ -1566,10 +1489,7 @@ async function fetchFocusedCandidates(state) {
 
         priorityReason:
           candidate.itemSnapshot?.priorityReason ||
-          null,
-
-        isPriorityCandidate:
-          candidate.itemSnapshot?.isPriorityCandidate === true
+          null
       };
 
       const scoreInfo = calculateOpenDiscoverScore(item);
@@ -1616,12 +1536,6 @@ async function fetchFallbackCandidates(state) {
 
 async function discoverCandidates(state, marketData = {}) {
   const now = Date.now();
-  const hotData = loadHotCandidates();
-
-  console.log(
-    `[OPEN HOT 연결] ${hotData.available ? "정상" : "미사용"} / ` +
-    `${hotData.available ? `후보 ${hotData.items.length}개 / 경과 ${hotData.ageSeconds.toFixed(1)}초` : hotData.reason}`
-  );
 
   /*
    * 이미 발견된 후보가 있으면 우선 빠르게 재확인한다.
@@ -1683,13 +1597,12 @@ async function discoverCandidates(state, marketData = {}) {
   const seen = new Set();
 
   for (
-    const sourceItem of [
+    const item of [
       ...focusedRows,
       ...priorityRows,
       ...fallbackRows
     ]
   ) {
-    const item = attachHotData(sourceItem, hotData);
     const code = String(item.code || "");
 
     if (
@@ -1747,7 +1660,6 @@ async function discoverCandidates(state, marketData = {}) {
     `우선 ${priorityRows.length}개 / ` +
     `일반 ${fallbackRows.length}개 / ` +
     `최종 ${merged.length}개 / ` +
-    `장전∩HOT ${merged.filter(item => item.isPriorityCandidate && item.hotMatched).length}개 / ` +
     `offset ${state.openDiscoverOffset}`
   );
 
@@ -1807,10 +1719,6 @@ function isOpenCandidateGettingStronger(state, item, price) {
 
     prioritySector:
       item.prioritySector || null,
-
-    isPriorityCandidate:
-      item.isPriorityCandidate === true ||
-      item.source === "PRIORITY",
 
     industry:
       item.industry || null,
@@ -2089,11 +1997,6 @@ function judgeOpenBuy(state, item, price) {
   const dayPosition = getDayPositionRate(item, price);
   const openPosition = getOpenPositionRate(item, price);
   const discoverScore = Number(item.discoverScore || 0);
-  const isPriorityCandidate =
-    item.isPriorityCandidate === true ||
-    item.source === "PRIORITY";
-  const hotMatched = item.hotMatched === true;
-  const hotScore = Number(item.hotScore || 0);
 
   /*
    * 장전 시장자료를 실제 매수 허용·차단에 사용한다.
@@ -2155,33 +2058,6 @@ function judgeOpenBuy(state, item, price) {
     return {
       pass: false,
       reason: "오늘 이미 매수한 종목"
-    };
-  }
-
-  /*
-   * OPEN 4.0 핵심 원칙
-   * 장전 조사에서 선정된 종목 중 실시간 HOT 강세가 확인된 종목만 산다.
-   */
-  if (settings.openPriorityRequired && !isPriorityCandidate) {
-    return {
-      pass: false,
-      reason: "장전 우선종목 아님 / OPEN 관찰만"
-    };
-  }
-
-  if (settings.openHotRequired && !hotMatched) {
-    return {
-      pass: false,
-      reason: "장전 우선종목이나 실시간 HOT 미포착"
-    };
-  }
-
-  if (hotScore < Number(settings.openHotMinScore || 0)) {
-    return {
-      pass: false,
-      reason:
-        `HOT 점수 부족 ${hotScore.toFixed(1)} / ` +
-        `기준 ${Number(settings.openHotMinScore || 0).toFixed(1)}`
     };
   }
 
@@ -2494,24 +2370,18 @@ function judgeOpenBuy(state, item, price) {
    * 우선종목 여부는 검색순서에 이미 반영되므로
    * 최종 매수점수에는 작은 보너스만 적용한다.
    */
-  const priorityBonus = isPriorityCandidate
-    ? Math.max(
-        0,
-        Math.min(
-          Number(settings.openPriorityBonusMax || 30),
-          Number(item.priorityScore || 0) *
-            Number(settings.openPriorityScoreWeight || 0.30)
+  const priorityBonus =
+    item.source === "PRIORITY"
+      ? Math.max(
+          0,
+          Math.min(
+            3,
+            Number(
+              item.priorityScore || 0
+            ) * 0.05
+          )
         )
-      )
-    : 0;
-
-  const hotBonus = Math.max(
-    0,
-    Math.min(
-      Number(settings.openHotBonusMax || 50),
-      hotScore * Number(settings.openHotScoreWeight || 0.50)
-    )
-  );
+      : 0;
 
   /*
    * 첫 발견 이후 점수상승 추세 보너스
@@ -2535,7 +2405,6 @@ function judgeOpenBuy(state, item, price) {
       marketAdjust.totalBonus || 0
     ) +
     priorityBonus +
-    hotBonus +
     scoreTrendBonus +
     confirmPriceBonus;
 
@@ -2561,11 +2430,6 @@ function judgeOpenBuy(state, item, price) {
 
     priorityBonus:
       Number(priorityBonus || 0),
-
-    hotScore,
-    hotBonus:
-      Number(hotBonus || 0),
-    hotMatched,
 
     scoreTrendBonus:
       Number(scoreTrendBonus || 0),
@@ -2611,8 +2475,6 @@ function judgeOpenBuy(state, item, price) {
       `${
         item.source === "PRIORITY"
           ? "장전우선"
-          : isPriorityCandidate
-            ? "장전집중"
           : item.source === "FOCUSED"
             ? "집중후보"
             : "일반검색"
@@ -2632,10 +2494,7 @@ function judgeOpenBuy(state, item, price) {
         strengthen.recentPriceDiffRate || 0
       ).toFixed(2)}% / ` +
       `가격보너스 +${confirmPriceBonus.toFixed(1)} / ` +
-      `장전점수 ${Number(item.priorityScore || 0).toFixed(1)} ` +
-      `(보너스 +${priorityBonus.toFixed(1)}) / ` +
-      `HOT ${hotScore.toFixed(1)} ` +
-      `(보너스 +${hotBonus.toFixed(1)}) / ` +
+      `우선보너스 +${priorityBonus.toFixed(1)} / ` +
       `${marketAdjust.reason} / ` +
       `최종점수 ${rankScore.toFixed(1)}`
   };
@@ -3219,8 +3078,7 @@ async function runOpenBuyOnce() {
     `기본 ${Number(best.judged.baseRankScore || 0).toFixed(1)} / ` +
     `시장 ${Number(best.judged.marketBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.marketBonus || 0).toFixed(1)} / ` +
     `섹터 ${Number(best.judged.sectorBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.sectorBonus || 0).toFixed(1)} / ` +
-    `장전 ${Number(best.item.priorityScore || 0).toFixed(1)}→+${Number(best.judged.priorityBonus || 0).toFixed(1)} / ` +
-    `HOT ${Number(best.judged.hotScore || 0).toFixed(1)}→+${Number(best.judged.hotBonus || 0).toFixed(1)} / ` +
+    `우선 ${Number(best.judged.priorityBonus || 0) >= 0 ? "+" : ""}${Number(best.judged.priorityBonus || 0).toFixed(1)} / ` +
     `통과 ${passed.length}개 / 소요 ${(elapsedMs / 1000).toFixed(1)}초`
   );
 

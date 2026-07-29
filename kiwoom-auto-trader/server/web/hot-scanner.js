@@ -11,7 +11,7 @@ const settings = {
   scanLoopMs: 15 * 1000,
   maxCandidates: 30,
   minChangeRate: 1.0,
-  maxChangeRate: 8.0,
+  maxChangeRate: 12.0,
   minTradeVolumeRatio: 100,
   minDayPositionRate: 40,
   requestTimeoutMs: 25 * 1000
@@ -127,22 +127,42 @@ function getChangeRate(item = {}) {
 
 function getTradeVolumeRatio(item = {}) {
   const raw = item.raw || {};
-  const trdePre = raw.trde_pre ?? item.trde_pre ?? null;
 
-  // 키움 trde_pre는 전일 거래량 대비 증감률이다.
-  // 예: -21.03 -> 실제 비율 78.97%, +50 -> 150%.
+  const trdePre =
+    raw.trde_pre ??
+    item.trde_pre ??
+    null;
+
+  // 키움 trde_pre는 전일 대비 증감률
   if (trdePre !== null && trdePre !== "") {
-    const changeRate = toNumber(trdePre);
-    return Math.max(0, 100 + changeRate);
+    const changeRate = Number(
+      String(trdePre)
+        .replace(/[+,%]/g, "")
+        .replace(/,/g, "")
+        .trim()
+    );
+
+    return Number.isFinite(changeRate)
+      ? Math.max(0, 100 + changeRate)
+      : 0;
   }
 
-  // 서버 HOT API가 이미 완성된 비율을 넘긴 경우 그대로 사용한다.
-  const ratio = toNumber(
-    item.tradeVolumeRatio ??
-    item.volumeRatio ??
-    0
+  // 이미 완성된 거래량비율인 경우
+  const ratio = Number(
+    String(
+      item.tradeVolumeRatio ??
+      item.volumeRatio ??
+      item.hotVolumeRatio ??
+      0
+    )
+      .replace(/[+,%]/g, "")
+      .replace(/,/g, "")
+      .trim()
   );
-  return Math.max(0, ratio);
+
+  return Number.isFinite(ratio)
+    ? Math.max(0, ratio)
+    : 0;
 }
 
 /*
@@ -291,13 +311,18 @@ async function scanHotCandidates() {
     .slice(0, settings.maxCandidates);
 
   const output = {
-    date: todayKey(),
-    updatedAt: nowText(),
-    updatedAtMs: Date.now(),
-    source: data.source || "KIWOOM_RANK_HOT_CANDIDATES",
-    count: rows.length,
-    rows
-  };
+  date: todayKey(),
+  updatedAt: nowText(),
+  updatedAtMs: Date.now(),
+  source: data.source || "KIWOOM_RANK_HOT_CANDIDATES",
+  count: rows.length,
+
+  // OPEN 전략이 읽는 표준 배열
+  items: rows,
+
+  // 기존 대시보드나 다른 코드 호환용
+  rows
+};
 
   writeJsonFileAtomic(HOT_CANDIDATES_FILE, output);
 
