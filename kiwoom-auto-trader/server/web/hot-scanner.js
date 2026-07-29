@@ -162,41 +162,86 @@ function calculateHotScore(item) {
 
 function normalizeCandidate(item = {}) {
   const rawCode = String(
-    item.code || item.stk_cd || item.stockCode || ""
-  ).replace(/^A/, "").trim();
+    item.code ||
+    item.stk_cd ||
+    item.stockCode ||
+    ""
+  )
+    .replace(/^A/i, "")
+    .replace(/_[A-Z]+$/i, "")
+    .replace(/[^0-9]/g, "")
+    .trim();
 
-  if (!rawCode) return null;
+  if (!/^\d{6}$/.test(rawCode)) {
+    return null;
+  }
 
   const currentPrice = Math.abs(toNumber(
-    item.currentPrice || item.price || item.curPrice ||
-    item.cur_prc || item.raw?.cur_prc || 0
+    item.currentPrice ||
+    item.price ||
+    item.curPrice ||
+    item.cur_prc ||
+    item.raw?.cur_prc ||
+    0
   ));
-  const changeRate = getChangeRate(item);
-  const tradeVolumeRatio = getTradeVolumeRatio(item);
-  const dayPosition = getDayPositionRate(item, currentPrice);
-  const hotScore = calculateHotScore({
-    ...item,
-    currentPrice,
-    price: currentPrice,
-    changeRate,
-    tradeVolumeRatio
-  });
-  const discoverScore = Number(
-    item.discoverScore || Math.max(7, Math.round(hotScore / 10))
-  );
+
+  const changeRate =
+    getChangeRate(item);
+
+  const tradeVolumeRatio =
+    getTradeVolumeRatio(item);
+
+  const dayPosition =
+    getDayPositionRate(
+      item,
+      currentPrice
+    );
+
+  const hotScore =
+    calculateHotScore({
+      ...item,
+      currentPrice,
+      price: currentPrice,
+      changeRate,
+      tradeVolumeRatio
+    });
+
+  const discoverScore =
+    Number(
+      item.discoverScore ||
+      Math.max(
+        7,
+        Math.round(hotScore / 10)
+      )
+    );
 
   return {
     ...item,
-    code: rawCode.padStart(6, "0"),
-    name: item.name || item.stockName || item.korName || item.stk_nm || rawCode,
+
+    code: rawCode,
+
+    name:
+      item.name ||
+      item.stockName ||
+      item.korName ||
+      item.stk_nm ||
+      rawCode,
+
     currentPrice,
     price: currentPrice,
+
     changeRate,
     tradeVolumeRatio,
     dayPosition,
     discoverScore,
-    hotScore: Number(hotScore.toFixed(1)),
+
+    hotScore:
+      Number(
+        hotScore.toFixed(1)
+      ),
+
     candidateSource: "HOT",
+
     hotDetectedAt: nowText(),
     hotDetectedAtMs: Date.now()
   };
