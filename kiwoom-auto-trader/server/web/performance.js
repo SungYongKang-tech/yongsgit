@@ -604,12 +604,13 @@ function renderCandidateAnalysis(source = {}) {
     const detail = item.watchScoreDetail || {};
 
     const score = Number(
-      item.watchScore ??
-      item.finalScore ??
-      item.finalBuyScore ??
-      item.discoverScore ??
-      0
-    );
+  item.watchScore ??
+  item.finalScore ??
+  item.finalBuyScore ??
+  item.hotScore ??
+  item.discoverScore ??
+  0
+);
 
     const discoverScore = Number(
       item.discoverScore ??
