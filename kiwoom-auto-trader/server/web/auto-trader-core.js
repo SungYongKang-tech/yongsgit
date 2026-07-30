@@ -7092,14 +7092,21 @@ async function checkSellOnce() {
     return;
   }
 
-  console.log("[SELL] 1회 점검 시작");
   const coreVolumeHoldings = (state.holdings || []).filter(
     holding =>
       holding.strategyGroup === "CORE" ||
       holding.strategyGroup === "VOLUME"
   );
 
-  console.log(`[SELL] CORE/VOLUME 보유종목 ${coreVolumeHoldings.length}개`);
+  // CORE/VOLUME 보유종목이 없으면 로그 없이 종료
+  if (coreVolumeHoldings.length === 0) {
+    return;
+  }
+
+  console.log("[SELL] 1회 점검 시작");
+  console.log(
+    `[SELL] CORE/VOLUME 보유종목 ${coreVolumeHoldings.length}개`
+  );
 
   for (const holding of coreVolumeHoldings) {
 
@@ -7287,69 +7294,6 @@ function isTraderBusy() {
     candidateWatchRunning ||
     sellRunning
   );
-}
-
- function scheduleNextBuyLoop() {
-  const delay = getDynamicBuyLoopMs();
-
-  setTimeout(async () => {
-    if (isTraderBusy()) {
-  scheduleNextBuyLoop();
-  return;
-}
-
-    buyRunning = true;
-
-    try {
-      await runBuyOnce();
-    } catch (err) {
-      console.error("[BUY LOOP 오류]", err.message);
-    } finally {
-      buyRunning = false;
-      scheduleNextBuyLoop();
-    }
-  }, delay);
-}
-
-setInterval(async () => {
-  if (isTraderBusy()) {
-  return;
-}
-
-  candidateWatchRunning = true;
-
-  try {
-    await runCandidateWatchOnce();
-  } catch (err) {
-    console.error(
-      "[후보재평가 LOOP 오류]",
-      err.message
-    );
-  } finally {
-    candidateWatchRunning = false;
-  }
-}, settings.candidateWatchLoopMs);
-
-scheduleNextBuyLoop();
-
-  setInterval(async () => {
-  if (isTraderBusy()) {
-    return;
-  }
-
-  sellRunning = true;
-
-  try {
-    await checkSellOnce();
-  } catch (err) {
-    console.error(
-      "[SELL LOOP 오류]",
-      err.message
-    );
-  } finally {
-    sellRunning = false;
-  }
-}, settings.sellLoopMs);
 }
 
 

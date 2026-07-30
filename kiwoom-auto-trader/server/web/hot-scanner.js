@@ -14,7 +14,8 @@ const settings = {
   maxChangeRate: 12.0,
   minTradeVolumeRatio: 100,
   minDayPositionRate: 40,
-  requestTimeoutMs: 25 * 1000
+  requestTimeoutMs: 25 * 1000,
+  emptyResultKeepMs: 30 * 1000
 };
 
 function nowText() {
@@ -63,6 +64,18 @@ function writeJsonFileAtomic(filePath, data) {
     if (fs.existsSync(tempPath)) {
       try { fs.unlinkSync(tempPath); } catch (_) {}
     }
+  }
+}
+
+function readPreviousHotCandidates() {
+  if (!fs.existsSync(HOT_CANDIDATES_FILE)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(HOT_CANDIDATES_FILE, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (err) {
+    console.error("[HOT SCANNER 기존 후보 읽기 오류]", err.message);
+    return null;
   }
 }
 
@@ -127,13 +140,8 @@ function getChangeRate(item = {}) {
 
 function getTradeVolumeRatio(item = {}) {
   const raw = item.raw || {};
+  const trdePre = raw.trde_pre ?? item.trde_pre ?? null;
 
-  const trdePre =
-    raw.trde_pre ??
-    item.trde_pre ??
-    null;
-
-  // 키움 trde_pre는 전일 대비 증감률
   if (trdePre !== null && trdePre !== "") {
     const changeRate = Number(
       String(trdePre)
@@ -147,7 +155,6 @@ function getTradeVolumeRatio(item = {}) {
       : 0;
   }
 
-  // 이미 완성된 거래량비율인 경우
   const ratio = Number(
     String(
       item.tradeVolumeRatio ??
@@ -160,20 +167,9 @@ function getTradeVolumeRatio(item = {}) {
       .trim()
   );
 
-  return Number.isFinite(ratio)
-    ? Math.max(0, ratio)
-    : 0;
+  return Number.isFinite(ratio) ? Math.max(0, ratio) : 0;
 }
 
-/*
- * HOT 후보에서 제외할 종목
- * - ETF/ETN/레버리지/인버스
- * - 스팩
- * - 우선주
- *
- * 자동매매 본체에서 다시 제외하더라도 HOT 후보 30개 자리를
- * 매수 불가능 종목이 차지하지 않도록 스캐너 단계에서 먼저 제거한다.
- */
 function isExcludedStock(item = {}) {
   const name = String(
     item.name ||
@@ -183,17 +179,11 @@ function isExcludedStock(item = {}) {
     ""
   ).trim();
 
-  if (
-    /KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|ETF|ETN|레버리지|인버스|스팩|SPAC/i.test(
-      name
-    )
-  ) {
+  if (/KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|ETF|ETN|레버리지|인버스|스팩|SPAC/i.test(name)) {
     return true;
   }
 
-  if (
-    /우$|\d우B$|우B$|우선주/i.test(name)
-  ) {
+  if (/우$|\d우B$|우B$|우선주/i.test(name)) {
     return true;
   }
 
@@ -217,19 +207,14 @@ function calculateHotScore(item) {
 
 function normalizeCandidate(item = {}) {
   const rawCode = String(
-    item.code ||
-    item.stk_cd ||
-    item.stockCode ||
-    ""
+    item.code || item.stk_cd || item.stockCode || ""
   )
     .replace(/^A/i, "")
     .replace(/_[A-Z]+$/i, "")
     .replace(/[^0-9]/g, "")
     .trim();
 
-  if (!/^\d{6}$/.test(rawCode)) {
-    return null;
-  }
+  if (!/^\d{6}$/.test(rawCode)) return null;
 
   const currentPrice = Math.abs(toNumber(
     item.currentPrice ||
@@ -252,18 +237,9 @@ function normalizeCandidate(item = {}) {
     tradeVolumeRatio
   });
 
-  /*
-   * 서버가 discoverScore를 제공하면 그 값을 사용한다.
-   * 없으면 HOT 점수 기준으로 5~10점 수준의 발견점수를 만든다.
-   * 기존 Math.max(7, ...)처럼 모든 HOT 후보를 최소 7점으로
-   * 강제하지 않아 약한 후보가 기본 매수조건을 자동 통과하지 않게 한다.
-   */
   const discoverScore = Number(
     item.discoverScore ??
-    Math.max(
-      5,
-      Math.round(hotScore / 10)
-    )
+    Math.max(5, Math.round(hotScore / 10))
   );
 
   return {
@@ -294,6 +270,7 @@ async function scanHotCandidates() {
   const data = await fetchJson(
     `${API_BASE}/api/hot-candidates?limit=${settings.maxCandidates}`
   );
+
   const rawItems = Array.isArray(data.items)
     ? data.items
     : Array.isArray(data.rows)
@@ -320,30 +297,68 @@ async function scanHotCandidates() {
       rank: index + 1
     }));
 
+  let finalRows = rows;
+  let retainedPrevious = false;
+  let previousAgeMs = 0;
+
+  if (rows.length === 0) {
+    const previous = readPreviousHotCandidates();
+    previousAgeMs = Date.now() - Number(previous?.updatedAtMs || 0);
+
+    const previousItems = Array.isArray(previous?.items)
+      ? previous.items
+      : Array.isArray(previous?.rows)
+        ? previous.rows
+        : [];
+
+    if (
+      previous?.date === todayKey() &&
+      previousAgeMs >= 0 &&
+      previousAgeMs <= settings.emptyResultKeepMs &&
+      previousItems.length > 0
+    ) {
+      finalRows = previousItems
+        .slice(0, settings.maxCandidates)
+        .map((item, index) => ({
+          ...item,
+          rank: index + 1
+        }));
+
+      retainedPrevious = true;
+    }
+  }
+
   const output = {
-  date: todayKey(),
-  updatedAt: nowText(),
-  updatedAtMs: Date.now(),
-  source: data.source || "KIWOOM_RANK_HOT_CANDIDATES",
-  count: rows.length,
-
-  // OPEN 전략이 읽는 표준 배열
-  items: rows,
-
-  // 기존 대시보드나 다른 코드 호환용
-  rows
-};
+    date: todayKey(),
+    updatedAt: nowText(),
+    updatedAtMs: Date.now(),
+    source: data.source || "KIWOOM_RANK_HOT_CANDIDATES",
+    count: finalRows.length,
+    retainedPrevious,
+    retainedAgeMs: retainedPrevious ? previousAgeMs : 0,
+    items: finalRows,
+    rows: finalRows
+  };
 
   writeJsonFileAtomic(HOT_CANDIDATES_FILE, output);
 
+  if (retainedPrevious) {
+    console.log(
+      `[HOT SCANNER] 원본 ${rawItems.length}개 / 신규 저장 0개 / ` +
+      `기존 후보 ${finalRows.length}개 유지 / ` +
+      `경과 ${(previousAgeMs / 1000).toFixed(1)}초`
+    );
+    return;
+  }
+
   console.log(
-    `[HOT SCANNER] 원본 ${rawItems.length}개 / 저장 ${rows.length}개 / ` +
-    (rows.slice(0, 5)
+    `[HOT SCANNER] 원본 ${rawItems.length}개 / 저장 ${finalRows.length}개 / ` +
+    (finalRows.slice(0, 5)
       .map(item =>
-        `${item.name}(${item.changeRate.toFixed(2)}%/` +
-        `거래량 ${item.tradeVolumeRatio.toFixed(1)}%/` +
-        `위치 ${item.dayPosition.toFixed(1)}%/` +
-        `HOT ${item.hotScore.toFixed(1)})`
+        `${item.name}(${Number(item.changeRate || 0).toFixed(2)}%/` +
+        `거래량 ${Number(item.tradeVolumeRatio || 0).toFixed(1)}%/` +
+        `위치 ${Number(item.dayPosition || 0).toFixed(1)}%/` +
+        `HOT ${Number(item.hotScore || 0).toFixed(1)})`
       )
       .join(", ") || "후보 없음")
   );
@@ -376,7 +391,8 @@ function startHotScanner() {
 
   console.log(
     `[HOT SCANNER] 시작 / ${settings.startTime}~${settings.endTime} / ` +
-    `${settings.scanLoopMs / 1000}초 주기`
+    `${settings.scanLoopMs / 1000}초 주기 / ` +
+    `빈 결과 기존 후보 ${settings.emptyResultKeepMs / 1000}초 유지`
   );
 
   runOnce();
