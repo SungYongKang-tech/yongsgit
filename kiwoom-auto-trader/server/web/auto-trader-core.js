@@ -338,6 +338,10 @@ holdingWeakSellMaxProfitRate: -0.3,
 holdingWeakSellMaxDayPositionRate: 25,
 holdingWeakSellMinScoreDrop: -50,
 
+// 보유점수 이력 저장: 손절·익절 당시 매수 후 추세 분석용
+holdingScoreHistoryIntervalMs: 30 * 1000,
+holdingScoreHistoryMaxCount: 300,
+
   buyLoopMs: 60 * 1000,
   sellLoopMs: 10 * 1000,
 
@@ -5515,10 +5519,34 @@ async function paperBuy(
       qty,
       buyAmount: price * qty,
       buyTime: Date.now(),
+      buyTimeText: nowText(),
 
       highestPrice: price,
       lowestPrice: price,
       highestPriceAt: Date.now(),
+
+      // 매수 시점부터 보유점수·가격 흐름을 기록한다.
+      holdingScoreHistory: [{
+        checkedAt: Date.now(),
+        checkedAtText: nowText(),
+        price: Number(price),
+        profitRate: 0,
+        holdingScore: Number(
+          candidateWatchScore ||
+          finalBuyScore ||
+          0
+        ),
+        scoreDiff: 0,
+        tradeVolumeRatio: Number(
+          buyTradeVolumeRatio || 0
+        ),
+        dayPositionRate: Number(
+          buyDayPositionRate || 0
+        ),
+        changeRate: Number(
+          buyChangeRate || 0
+        )
+      }],
 
       ...commonBuyData,
 
@@ -5812,6 +5840,109 @@ async function paperSell(
           ) / 60000
         : 0;
 
+    const holdingScoreHistory =
+      Array.isArray(holding.holdingScoreHistory)
+        ? holding.holdingScoreHistory
+        : [];
+
+    const sellAnalysis = {
+      isStopLoss:
+        String(sellType || "").includes("STOP_LOSS"),
+
+      discoveredAt:
+        holding.candidateFirstSeenAt ?? null,
+      discoveredAtText:
+        holding.candidateFirstSeenAtText ?? null,
+      buyTime: Number(holding.buyTime || 0),
+      buyTimeText:
+        holding.buyTimeText || null,
+      sellTime: Date.now(),
+      sellTimeText: nowText(),
+      holdingMinutes: Number(
+        holdingMinutes.toFixed(2)
+      ),
+
+      discoverScore: Number(
+        holding.discoverScore || 0
+      ),
+      finalBuyScore: Number(
+        holding.finalBuyScore || 0
+      ),
+      candidateWatchScore: Number(
+        holding.candidateWatchScore || 0
+      ),
+      candidateStrengthScore: Number(
+        holding.candidateStrengthScore || 0
+      ),
+      marketScore: Number(
+        holding.marketScore || 0
+      ),
+      sectorPowerScore: Number(
+        holding.sectorPowerScore || 0
+      ),
+      leaderStrengthScore: Number(
+        holding.leaderStrengthScore || 0
+      ),
+
+      buyChangeRate: Number(
+        holding.buyChangeRate || 0
+      ),
+      buyTradeVolumeRatio: Number(
+        holding.buyTradeVolumeRatio || 0
+      ),
+      buyDayPositionRate: Number(
+        holding.buyDayPositionRate || 0
+      ),
+      buyOpenPositionRate: Number(
+        holding.buyOpenPositionRate || 0
+      ),
+
+      highestPrice,
+      lowestPrice,
+      highestProfitRate: Number(
+        maxProfitRate.toFixed(3)
+      ),
+      lowestProfitRate: Number(
+        maxLossRate.toFixed(3)
+      ),
+      finalProfitRate: Number(
+        result.profitRate || 0
+      ),
+      finalProfit: Number(
+        result.profit || 0
+      ),
+
+      holdingScore: Number(
+        holding.holdingScore || 0
+      ),
+      holdingScoreDiff: Number(
+        holding.holdingScoreDiff || 0
+      ),
+      currentTradeVolumeRatio: Number(
+        holding.currentTradeVolumeRatio || 0
+      ),
+      currentDayPositionRate: Number(
+        holding.currentDayPositionRate || 0
+      ),
+      currentChangeRate: Number(
+        holding.currentChangeRate || 0
+      ),
+      holdingScoreUpdatedAt:
+        holding.holdingScoreUpdatedAt ?? null,
+      holdingScoreUpdatedAtText:
+        holding.holdingScoreUpdatedAtText ?? null,
+
+      scoreHistoryCount:
+        holdingScoreHistory.length,
+      holdingScoreHistory,
+
+      sellSignalAt,
+      sellSignalPrice,
+      sellOrderRequestedAt,
+      sellType,
+      reason
+    };
+
     state.tradeLogs.push({
       date: todayKey(),
       time: nowText(),
@@ -5960,7 +6091,10 @@ async function paperSell(
             )
           : 0,
 
-      reason
+      reason,
+
+      // 장 종료 후 손절·익절 품질 분석에서 사용한다.
+      sellAnalysis
     });
 
     state.lastSellAt = nowText();
@@ -7206,6 +7340,55 @@ if (realtimeItem) {
     Number(
       realtimeItem.changeRate || 0
     );
+
+  // 30초 간격으로 보유점수 이력을 누적한다.
+  if (!Array.isArray(holding.holdingScoreHistory)) {
+    holding.holdingScoreHistory = [];
+  }
+
+  const historyNow = Date.now();
+  const lastHistory =
+    holding.holdingScoreHistory[
+      holding.holdingScoreHistory.length - 1
+    ];
+
+  if (
+    !lastHistory ||
+    historyNow - Number(lastHistory.checkedAt || 0) >=
+      settings.holdingScoreHistoryIntervalMs
+  ) {
+    holding.holdingScoreHistory.push({
+      checkedAt: historyNow,
+      checkedAtText: nowText(),
+      price: Number(price),
+      profitRate: Number(
+        holdingAnalysis.profitRate || 0
+      ),
+      holdingScore: Number(
+        holdingAnalysis.holdingScore || 0
+      ),
+      scoreDiff: Number(
+        holdingAnalysis.scoreDiff || 0
+      ),
+      tradeVolumeRatio: Number(
+        holdingAnalysis.currentVolumeRatio || 0
+      ),
+      dayPositionRate: Number(
+        holdingAnalysis.currentDayPosition || 0
+      ),
+      changeRate: Number(
+        realtimeItem.changeRate || 0
+      ),
+      bearishVolumePenalty: Number(
+        holdingAnalysis.bearishVolumePenalty || 0
+      )
+    });
+
+    holding.holdingScoreHistory =
+      holding.holdingScoreHistory.slice(
+        -settings.holdingScoreHistoryMaxCount
+      );
+  }
 
   console.log(
     `[보유점수] ${holding.name} / ` +
