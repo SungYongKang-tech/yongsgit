@@ -7295,7 +7295,7 @@ function isTraderBusy() {
     sellRunning
   );
 }
-
+}
 
 let started = false;
 
