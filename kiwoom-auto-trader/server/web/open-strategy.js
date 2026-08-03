@@ -81,36 +81,36 @@ openFocusedCandidateMaxCount: 20,
 openFocusedPriceDelayMs: 150,
 
 // 새로운 종목 유입을 위해 60초마다 일반검색도 다시 실행
-openFullRescanIntervalMs: 60 * 1000,
+openFullRescanIntervalMs: 180 * 1000,
 
 // OPEN 잠재후보: 초기에 기준 미달이어도 짧게 집중 추적 후 정식후보로 승격
 openPotentialEnabled: true,
 openPotentialMinScore: 7,
 openPotentialMaxCount: 20,
 openPotentialCheckIntervalMs: 5 * 1000,
-openPotentialMaxAgeSeconds: 180,
+openPotentialMaxAgeSeconds: 900,
 openPotentialPriceDelayMs: 120,
 
   openEnabled: true,
   openBuyStartTime: "09:00",
-  openBuyEndTime: "09:15",
+  openBuyEndTime: "09:20",
   openForceSellTime: "09:30",
   openInvestmentRatio: 0.25,
 
-  openMinDiscoverScore: 10,
+  openMinDiscoverScore: 9,
   // OPEN 4.0: 장전 조사 종목 중 장중 실제 강세가 확인된 종목만 매수
   openMinChangeRate: 0.5,
   openMaxChangeRate: 12.0,
-  openMinTradeVolumeRatio: 150,
-  openMinDayPositionRate: 55,
-  openMaxDayPositionRate: 96,
-  openMinOpenPositionRate: 0.2,
+  openMinTradeVolumeRatio: 130,
+  openMinDayPositionRate: 45,
+  openMaxDayPositionRate: 98,
+  openMinOpenPositionRate: -0.2,
   openMaxOpenPositionRate: 12.0,
 
   // 장전 우선종목 + 실시간 HOT 교집합 조건
-  openPriorityRequired: true,
-  openHotRequired: true,
-  openHotMinScore: 55,
+  openPriorityRequired: false,
+  openHotRequired: false,
+  openHotMinScore: 45,
   openHotMaxAgeSeconds: 60,
   openHotScoreWeight: 0.50,
   openPriorityScoreWeight: 0.30,
@@ -119,7 +119,7 @@ openPotentialPriceDelayMs: 120,
   
 
   // OPEN 후보 첫 발견 후 강화 확인 대기시간
-openConfirmWaitMs: 15 * 1000,
+openConfirmWaitMs: 10 * 1000,
 
 // OPEN 후보 점수 상승 추세 보너스
 openScoreTrendBonusPerPoint: 4,
@@ -127,14 +127,14 @@ openRecentScoreTrendBonusPerPoint: 6,
 openScoreTrendMaxBonus: 20,
 
 // 15초 가격 움직임 평가
-openConfirmMinPriceRiseRate: 0.10,
-openConfirmMaxPriceRiseRate: 1.00,
+openConfirmMinPriceRiseRate: -0.05,
+openConfirmMaxPriceRiseRate: 1.50,
 openConfirmPriceBonusLow: 3,
 openConfirmPriceBonusMedium: 7,
 openConfirmPriceBonusHigh: 10,
 
 // 바로 직전 확인 대비 가격 약화 차단
-openRecentPriceWeakBlockRate: -0.10,
+openRecentPriceWeakBlockRate: -0.20,
 
 
   openStopLossRate: -0.7,
@@ -156,6 +156,8 @@ openTrailingForceSellTime: "10:30",
   // 가상후보 추적은 분석자료 저장용이며, 실제 매수 점수에는 반영하지 않음
   openLearningTopCount: 10,
   openVirtualTrackingCount: 10,
+  // 실제 매수되지 않은 상위 후보 중 화면에 표시할 분석 개수
+  openMissedAnalysisTopCount: 3,
   openVirtualLoopMs: 30 * 1000,
 
   openMarketMaxAgeHours: 18,
@@ -164,14 +166,14 @@ openMarketMaxBonus: 15,
 openSectorMaxBonus: 15,
 
 // OPEN 시장상황 강력 반영
-openMarketDataRequired: true,
+openMarketDataRequired: false,
 
 // 전체 시장이 이 점수 미만이면 OPEN 매수 금지
 openMarketHardBlockScore: 40,
 
 // 약세구간에서는 강한 섹터 종목만 허용
 openMarketWeakScore: 50,
-openWeakMarketMinSectorBias: 8,
+openWeakMarketMinSectorBias: -2,
 
 // 보통 이하 시장에서는 최소한 섹터가 약세면 안 됨
 openMarketCautionScore: 60,
@@ -181,13 +183,30 @@ openCautionMinSectorBias: 0,
 openSectorHardBlockBias: -8,
 
 // 시장자료가 약할 때 추가 강화
-openCautionDiscoverScoreAdd: 2,
-openCautionVolumeRatioAdd: 50,
-openCautionMinPriceRiseAdd: 0.10,
+openCautionDiscoverScoreAdd: 1,
+openCautionVolumeRatioAdd: 20,
+openCautionMinPriceRiseAdd: 0.05,
 
-openWeakDiscoverScoreAdd: 3,
-openWeakVolumeRatioAdd: 100,
-openWeakMinPriceRiseAdd: 0.20
+openWeakDiscoverScoreAdd: 2,
+openWeakVolumeRatioAdd: 50,
+openWeakMinPriceRiseAdd: 0.10,
+
+// 시장 강화 후 발견점수가 계산상 불가능해지는 것을 방지
+openMaxRequiredDiscoverScore: 11,
+
+// 엄격 통과 후보가 없을 때 실제 매수 기회를 만드는 보완매수
+openFallbackBuyEnabled: true,
+openFallbackBuyStartTime: "09:03",
+openFallbackMinDiscoverScore: 8,
+openFallbackMinChangeRate: 0.5,
+openFallbackMaxChangeRate: 10.0,
+openFallbackMinTradeVolumeRatio: 85,
+openFallbackMinDayPositionRate: 45,
+openFallbackMaxDayPositionRate: 95,
+openFallbackMinOpenPositionRate: -0.5,
+openFallbackMaxOpenPositionRate: 12.0,
+openFallbackMaxFirstPriceDropRate: -0.30,
+openLateFallbackStartTime: "09:12"
 };
 
 function nowText() {
@@ -591,6 +610,10 @@ function initializeOpenVirtualTracking(records, selectedCode = null) {
       code: String(record.code || ""),
       name: record.name || record.code || "",
       selectedForRealTrade: String(record.code || "") === String(selectedCode || ""),
+      missedAnalysisEligible: String(record.code || "") !== String(selectedCode || ""),
+      rejectReason: record.passed === true
+        ? "엄격조건 통과했으나 최종 미선정"
+        : (record.reason || "미매수 사유 미저장"),
       entryAt: nowText(),
       entryTimeMs: startedAtMs,
       entryPrice: Number(record.price || 0),
@@ -1875,10 +1898,17 @@ async function discoverCandidates(state, marketData = {}) {
   const lastFullScanAtMs =
     Number(state.lastOpenFullScanAtMs || 0);
 
+  const hhmm = getCurrentHHMM();
+  const lateOpenPhase =
+    hhmm >= String(settings.openLateFallbackStartTime || "09:12");
+
   const shouldRunFullScan =
-    focusedRows.length === 0 ||
-    now - lastFullScanAtMs >=
-      settings.openFullRescanIntervalMs;
+    !lateOpenPhase &&
+    (
+      focusedRows.length === 0 ||
+      now - lastFullScanAtMs >=
+        settings.openFullRescanIntervalMs
+    );
 
   let priorityRows = [];
   let fallbackRows = [];
@@ -1911,6 +1941,7 @@ async function discoverCandidates(state, marketData = {}) {
 
     console.log(
       `[OPEN 전체검색 생략] ` +
+      `${lateOpenPhase ? "마감보완단계 / " : ""}` +
       `집중후보 ${focusedRows.length}개 재확인 / ` +
       `다음 전체검색 약 ${remainSeconds}초 후`
     );
@@ -2122,7 +2153,7 @@ state.openCandidateHistory[code] = history;
   if (elapsedMs < settings.openConfirmWaitMs) {
     return {
       pass: false,
-      reason: `OPEN 강화 확인 대기 ${Math.floor(elapsedMs / 1000)}초/15초`
+      reason: `OPEN 강화 확인 대기 ${Math.floor(elapsedMs / 1000)}초/${Math.floor(settings.openConfirmWaitMs / 1000)}초`
     };
   }
 
@@ -2228,7 +2259,14 @@ const scoreTrendBonus = Math.min(
 
   if (scoreDiff < 0) return { pass: false, reason: `점수 약화 ${baseline.score}→${current.score}` };
   if (volumeDiff < -20) return { pass: false, reason: `거래량 약화 ${Number(baseline.volumeRatio || 0).toFixed(1)}→${current.volumeRatio.toFixed(1)}%` };
-  if (priceDiffRate < 0) return { pass: false, reason: `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}%` };
+  if (priceDiffRate < -0.15) {
+    return {
+      pass: false,
+      reason:
+        `확인 중 가격 하락 ${priceDiffRate.toFixed(2)}% / ` +
+        `허용 -0.15%`
+    };
+  }
   
   /*
  * 첫 발견 가격보다는 높더라도,
@@ -2399,24 +2437,30 @@ function judgeOpenBuy(state, item, price) {
   }
 
   /*
-   * OPEN 4.0 핵심 원칙
-   * 장전 조사에서 선정된 종목 중 실시간 HOT 강세가 확인된 종목만 산다.
+   * 장전 우선종목과 HOT는 필수 교집합이 아니라 가점 신호로 사용한다.
+   * 다만 둘 다 없는 일반검색 후보는 발견점수가 1점 더 높아야 한다.
    */
-  if (settings.openPriorityRequired && !isPriorityCandidate) {
+  const hasPriorityOrHotSignal =
+    isPriorityCandidate || hotMatched;
+
+  if (
+    !hasPriorityOrHotSignal &&
+    discoverScore <
+      Number(settings.openMinDiscoverScore || 0) + 1
+  ) {
     return {
       pass: false,
-      reason: "장전 우선종목 아님 / OPEN 관찰만"
+      reason:
+        `일반후보 추가확인 / 발견점수 ${discoverScore} / ` +
+        `필요 ${Number(settings.openMinDiscoverScore || 0) + 1}`
     };
   }
 
-  if (settings.openHotRequired && !hotMatched) {
-    return {
-      pass: false,
-      reason: "장전 우선종목이나 실시간 HOT 미포착"
-    };
-  }
-
-  if (hotScore < Number(settings.openHotMinScore || 0)) {
+  /* HOT에 실제 포착된 종목만 HOT 최소점수를 검사한다. */
+  if (
+    hotMatched &&
+    hotScore < Number(settings.openHotMinScore || 0)
+  ) {
     return {
       pass: false,
       reason:
@@ -2440,6 +2484,13 @@ function judgeOpenBuy(state, item, price) {
         `${marketData.reason ||
           "사용 가능한 시장자료 없음"}`
     };
+  }
+
+  if (!marketData.available) {
+    console.log(
+      `[OPEN 시장자료 보완운영] ${marketData.reason || "시장자료 없음"} / ` +
+      `종목 자체 조건으로 선별`
+    );
   }
 
   /*
@@ -2489,11 +2540,9 @@ function judgeOpenBuy(state, item, price) {
     marketData.available &&
     marketScore <
       settings.openMarketWeakScore &&
-    (
-      matchedSectors.length === 0 ||
-      sectorBias <
-        settings.openWeakMarketMinSectorBias
-    )
+    matchedSectors.length > 0 &&
+    sectorBias <
+      settings.openWeakMarketMinSectorBias
   ) {
     return {
       pass: false,
@@ -2608,6 +2657,11 @@ function judgeOpenBuy(state, item, price) {
         );
     }
   }
+
+  requiredDiscoverScore = Math.min(
+    requiredDiscoverScore,
+    Number(settings.openMaxRequiredDiscoverScore || 11)
+  );
 
   if (
     discoverScore <
@@ -2745,13 +2799,15 @@ function judgeOpenBuy(state, item, price) {
       )
     : 0;
 
-  const hotBonus = Math.max(
-    0,
-    Math.min(
-      Number(settings.openHotBonusMax || 50),
-      hotScore * Number(settings.openHotScoreWeight || 0.50)
-    )
-  );
+  const hotBonus = hotMatched
+    ? Math.max(
+        0,
+        Math.min(
+          Number(settings.openHotBonusMax || 50),
+          hotScore * Number(settings.openHotScoreWeight || 0.50)
+        )
+      )
+    : 0;
 
   /*
    * 첫 발견 이후 점수상승 추세 보너스
@@ -3283,6 +3339,96 @@ function logOpenScanSummary({
 
 let openScanSequence = 0;
 
+function makeOpenFallbackEntry(state, entry) {
+  const { item, price } = entry;
+  const discoverScore = Number(item.discoverScore || 0);
+  const changeRate = Number(
+    item.changeRate || item.fluctuationRate || item.riseRate || item.rate || 0
+  );
+  const volumeRatio = getTradeVolumeRatio(item);
+  const dayPosition = getDayPositionRate(item, price);
+  const openPosition = getOpenPositionRate(item, price);
+  const history = state.openCandidateHistory?.[String(item.code || "")] || {};
+  const firstPrice = Number(history.firstPrice || price || 0);
+  const firstPriceDiffRate = firstPrice > 0
+    ? ((Number(price) - firstPrice) / firstPrice) * 100
+    : 0;
+
+  if (discoverScore < settings.openFallbackMinDiscoverScore) return null;
+  if (
+    changeRate < settings.openFallbackMinChangeRate ||
+    changeRate > settings.openFallbackMaxChangeRate
+  ) return null;
+  if (volumeRatio < settings.openFallbackMinTradeVolumeRatio) return null;
+  if (
+    dayPosition < settings.openFallbackMinDayPositionRate ||
+    dayPosition > settings.openFallbackMaxDayPositionRate
+  ) return null;
+  if (
+    openPosition < settings.openFallbackMinOpenPositionRate ||
+    openPosition > settings.openFallbackMaxOpenPositionRate
+  ) return null;
+  if (firstPriceDiffRate < settings.openFallbackMaxFirstPriceDropRate) return null;
+
+  const isPriorityCandidate =
+    item.isPriorityCandidate === true || item.source === "PRIORITY";
+  const hotMatched = item.hotMatched === true;
+  const hotScore = Number(item.hotScore || 0);
+  const sourceBonus = isPriorityCandidate ? 15 : hotMatched ? 10 : 0;
+  const rankScore =
+    discoverScore * 10 +
+    Math.min(volumeRatio, 500) * 0.12 +
+    dayPosition * 0.20 +
+    Math.max(0, changeRate) * 2 +
+    sourceBonus +
+    Math.min(20, hotScore * 0.20) +
+    Math.max(-10, firstPriceDiffRate * 10);
+
+  return {
+    item,
+    price,
+    judged: {
+      pass: true,
+      fallbackBuy: true,
+      rankScore,
+      baseRankScore: rankScore,
+      marketScore: 0,
+      marketType: "FALLBACK",
+      marketBonus: 0,
+      sectorBonus: 0,
+      priorityBonus: isPriorityCandidate ? 15 : 0,
+      hotScore,
+      hotBonus: hotMatched ? Math.min(20, hotScore * 0.20) : 0,
+      hotMatched,
+      scoreTrendBonus: 0,
+      confirmPriceRiseRate: firstPriceDiffRate,
+      recentPriceDiffRate: 0,
+      confirmPriceBonus: 0,
+      matchedSectors: [],
+      requiredDiscoverScore: settings.openFallbackMinDiscoverScore,
+      requiredVolumeRatio: settings.openFallbackMinTradeVolumeRatio,
+      requiredConfirmPriceRise: settings.openFallbackMaxFirstPriceDropRate,
+      reason:
+        `OPEN 보완매수 / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / ` +
+        `거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / ` +
+        `시가대비 ${openPosition.toFixed(2)}% / 최초대비 ${firstPriceDiffRate.toFixed(2)}% / ` +
+        `최종점수 ${rankScore.toFixed(1)}`
+    }
+  };
+}
+
+function selectOpenFallbackCandidate(state, evaluated, hhmm) {
+  if (!settings.openFallbackBuyEnabled) return null;
+  if (hhmm < settings.openFallbackBuyStartTime) return null;
+
+  const rows = evaluated
+    .map(entry => makeOpenFallbackEntry(state, entry))
+    .filter(Boolean)
+    .sort((a, b) => Number(b.judged.rankScore || 0) - Number(a.judged.rankScore || 0));
+
+  return rows[0] || null;
+}
+
 async function runOpenBuyOnce() {
   if (!isKoreanWeekday()) return;
 
@@ -3463,11 +3609,22 @@ async function runOpenBuyOnce() {
   const elapsedMs = Date.now() - scanStartedAt;
 
   if (!passed.length) {
+    const fallback = selectOpenFallbackCandidate(state, evaluated, hhmm);
+
+    if (!fallback) {
+      console.log(
+        `[OPEN 스캔종료] #${scanId} 엄격·보완 후보 모두 없음 / ` +
+        `소요 ${(elapsedMs / 1000).toFixed(1)}초`
+      );
+      return;
+    }
+
+    passed.push(fallback);
     console.log(
-      `[OPEN 스캔종료] #${scanId} 통과후보 없음 / ` +
-      `소요 ${(elapsedMs / 1000).toFixed(1)}초`
+      `[OPEN 보완선정] #${scanId} ` +
+      `${makeOpenCandidateLogText(fallback.item, fallback.price, fallback.judged)} / ` +
+      `엄격 통과 0개 → 안전 최소조건 최고 후보 매수 진행`
     );
-    return;
   }
 
   passed.sort(

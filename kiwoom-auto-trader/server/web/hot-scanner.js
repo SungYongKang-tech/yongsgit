@@ -7,15 +7,17 @@ const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const settings = {
   enabled: true,
   startTime: "09:00",
-  endTime: "09:20",
-  scanLoopMs: 5 * 1000,
-  maxCandidates: 30,
+  earlyEndTime: "09:20",
+  endTime: "13:30",
+  earlyScanLoopMs: 5 * 1000,
+  normalScanLoopMs: 15 * 1000,
+  maxCandidates: 12,
   minChangeRate: 1.0,
   maxChangeRate: 12.0,
   minTradeVolumeRatio: 100,
   minDayPositionRate: 40,
-  requestTimeoutMs: 25 * 1000,
-  emptyResultKeepMs: 30 * 1000
+  requestTimeoutMs: 10 * 1000,
+  emptyResultKeepMs: 90 * 1000
 };
 
 function nowText() {
@@ -50,6 +52,14 @@ function isKoreanWeekday() {
 function isOperatingTime() {
   const hhmm = getCurrentHHMM();
   return isKoreanWeekday() && hhmm >= settings.startTime && hhmm <= settings.endTime;
+}
+
+function getNextScanDelayMs() {
+  const hhmm = getCurrentHHMM();
+
+  return hhmm <= settings.earlyEndTime
+    ? settings.earlyScanLoopMs
+    : settings.normalScanLoopMs;
 }
 
 function writeJsonFileAtomic(filePath, data) {
@@ -366,6 +376,7 @@ async function scanHotCandidates() {
 
 let running = false;
 let scannerTimer = null;
+let scannerStarted = false;
 
 async function runOnce() {
   if (running) return;
@@ -383,20 +394,35 @@ async function runOnce() {
   }
 }
 
+async function scannerLoop() {
+  if (!scannerStarted) return;
+
+  await runOnce();
+
+  if (!scannerStarted) return;
+
+  scannerTimer = setTimeout(
+    scannerLoop,
+    getNextScanDelayMs()
+  );
+}
+
 function startHotScanner() {
-  if (scannerTimer) {
+  if (scannerStarted) {
     console.log("[HOT SCANNER] 이미 실행 중");
     return;
   }
 
+  scannerStarted = true;
+
   console.log(
     `[HOT SCANNER] 시작 / ${settings.startTime}~${settings.endTime} / ` +
-    `${settings.scanLoopMs / 1000}초 주기 / ` +
+    `장초반 ${settings.earlyScanLoopMs / 1000}초, 이후 ` +
+    `${settings.normalScanLoopMs / 1000}초 주기 / ` +
     `빈 결과 기존 후보 ${settings.emptyResultKeepMs / 1000}초 유지`
   );
 
-  runOnce();
-  scannerTimer = setInterval(runOnce, settings.scanLoopMs);
+  scannerLoop();
 }
 
 module.exports = {

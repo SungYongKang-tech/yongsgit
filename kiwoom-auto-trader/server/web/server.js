@@ -389,7 +389,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  * 전일대비등락률상위(ka10027), 당일거래량상위(ka10030)를 합친다.
  * 이후 상위 종목의 현재가 상세정보를 조회해 고가·저가·거래량비율을 보완한다.
  */
-const HOT_API_CACHE_MS = 10 * 1000;
+const HOT_API_CACHE_MS = 60 * 1000;
+const HOT_DETAIL_ENRICH_LIMIT = 8;
+const HOT_DETAIL_ENRICH_DELAY_MS = 400;
 let hotApiCache = {
   cachedAt: 0,
   data: null
@@ -658,10 +660,18 @@ async function buildHotCandidates(limit) {
     .slice(0, Math.min(40, safeLimit + 10));
 
   const enriched = [];
-  for (const item of merged) {
-    enriched.push(await enrichHotCandidate(item));
-    if (enriched.length < merged.length) {
-      await sleep(120);
+  for (let index = 0; index < merged.length; index++) {
+    const item = merged[index];
+
+    if (index < HOT_DETAIL_ENRICH_LIMIT) {
+      enriched.push(await enrichHotCandidate(item));
+
+      if (index < HOT_DETAIL_ENRICH_LIMIT - 1) {
+        await sleep(HOT_DETAIL_ENRICH_DELAY_MS);
+      }
+    } else {
+      // 순위 API 원본값을 그대로 사용해 현재가 상세조회 호출량을 제한한다.
+      enriched.push(item);
     }
   }
 
@@ -729,8 +739,8 @@ app.get("/api/hot-candidates", async (req, res) => {
 
 app.get("/api/discover", async (req, res) => {
   try {
-    const scanLimit = Number(req.query.scanLimit || 150);
-    const resultLimit = Number(req.query.limit || 150);
+    const scanLimit = Math.max(1, Math.min(60, Number(req.query.scanLimit || 40)));
+    const resultLimit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
     const offset = Number(req.query.offset || 0);
 
     const nextOffset =
@@ -741,14 +751,14 @@ app.get("/api/discover", async (req, res) => {
     const targets = STOCK_MASTER.slice(offset, offset + scanLimit);
 
     console.log(
-      `[DISCOVER] offset=${offset} scan=${scanLimit} next=${nextOffset} total=${STOCK_MASTER.length}`
+      `[DISCOVER] offset=${offset} scan=${scanLimit} next=${nextOffset} total=${STOCK_MASTER.length} / 전종목 순환 배치`
     );
 
     const items = [];
 
     for (const stock of targets) {
       try {
-        await sleep(350);
+        await sleep(300);
 
         const priceRes = await fetch(
           `http://localhost:${PORT}/api/price?code=${stock.code}`
@@ -1253,7 +1263,7 @@ app.get("/api/price", async (req, res) => {
 
     const cached = priceCache[code];
 
-if (cached && Date.now() - cached.cachedAt <= 5000) {
+if (cached && Date.now() - cached.cachedAt <= 8000) {
   return res.json({
     ...cached.data,
     isCached: true
@@ -2726,6 +2736,113 @@ app.get("/api/open-learning-summary", (req, res) => {
       ok: false,
       message: "OPEN 학습결과를 불러오지 못했습니다.",
       error: err.message
+    });
+  }
+});
+
+
+/*
+ * OPEN 미매수 TOP3 분석 API
+ * 기존 open-learning-history.json의 가상추적 자료를 읽기만 한다.
+ * OPEN 매수 판단과 CORE/VOLUME 로직에는 영향을 주지 않는다.
+ */
+app.get("/api/open-missed-top3", (req, res) => {
+  try {
+    const history = readJsonFileSafe(
+      OPEN_HISTORY_FILE,
+      { version: 1, updatedAt: null, days: {} }
+    ) || { version: 1, updatedAt: null, days: {} };
+
+    const requestedDate = String(req.query.date || "").trim();
+    const availableDates = Object.keys(history.days || {})
+      .sort((a, b) => b.localeCompare(a));
+    const date = requestedDate || availableDates[0] || null;
+    const day = date ? history.days?.[date] : null;
+
+    if (!day) {
+      return res.json({
+        ok: true,
+        date,
+        status: "EMPTY",
+        updatedAt: history.updatedAt || null,
+        rows: []
+      });
+    }
+
+    const selectedCode = String(day.selectedTrade?.code || "");
+    const candidates = Array.isArray(day.virtualCandidates)
+      ? day.virtualCandidates
+      : [];
+
+    const rows = candidates
+      .filter((item) => {
+        const code = String(item.code || "");
+        return code &&
+          item.selectedForRealTrade !== true &&
+          code !== selectedCode;
+      })
+      .sort((a, b) => Number(a.rank || 999) - Number(b.rank || 999))
+      .slice(0, 3)
+      .map((item, index) => {
+        const highestProfitRate = Number(item.highestProfitRate || 0);
+        const lowestProfitRate = Number(item.lowestProfitRate || 0);
+        const completed = item.active !== true && Boolean(item.exitType || item.exitAt);
+        const closingProfitRate = completed
+          ? Number(item.exitProfitRate ?? item.lastProfitRate ?? 0)
+          : null;
+
+        let resultLabel = "추적 중";
+        if (completed) {
+          if (highestProfitRate >= 3 || Number(closingProfitRate || 0) >= 2) {
+            resultLabel = "아쉬운 미매수";
+          } else if (Number(closingProfitRate || 0) <= 0) {
+            resultLabel = "미매수 성공";
+          } else {
+            resultLabel = "중립";
+          }
+        }
+
+        return {
+          rank: index + 1,
+          originalRank: Number(item.rank || index + 1),
+          code: String(item.code || ""),
+          name: item.name || item.code || "-",
+          firstSeenAt: item.entryAt || null,
+          firstPrice: Number(item.entryPrice || 0),
+          discoverScore: Number(item.discoverScore || 0),
+          finalScore: Number(item.rankScore || 0),
+          rejectReason:
+            item.rejectReason ||
+            item.selectionReason ||
+            "미매수 사유 미저장",
+          highestPrice: Number(item.highestPrice || 0),
+          lowestPrice: Number(item.lowestPrice || 0),
+          lastPrice: Number(item.lastPrice || 0),
+          highestProfitRate,
+          lowestProfitRate,
+          closingProfitRate,
+          exitType: item.exitType || null,
+          active: item.active === true,
+          resultLabel
+        };
+      });
+
+    return res.json({
+      ok: true,
+      date,
+      status: rows.some((row) => row.active) ? "TRACKING" : "COMPLETED",
+      updatedAt: history.updatedAt || null,
+      trackingStartedAt: day.virtualTrackingStartedAt || null,
+      trackingCompletedAt: day.virtualTrackingCompletedAt || null,
+      rows
+    });
+  } catch (err) {
+    console.error("OPEN 미매수 TOP3 API 오류:", err);
+    return res.status(500).json({
+      ok: false,
+      message: "OPEN 미매수 TOP3를 불러오지 못했습니다.",
+      error: err.message,
+      rows: []
     });
   }
 });

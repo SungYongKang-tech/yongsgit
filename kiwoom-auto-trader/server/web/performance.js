@@ -1375,6 +1375,127 @@ const sectorPowerScore = Number(
       setValue("openAvgProfitRate", formatRate(openAvgProfitRate), "rate");
     }
 
+
+function setOpenText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value ?? "-";
+}
+
+function classifyOpenSelectionMode(day = {}) {
+  const reason = String(
+    day.selectedTrade?.selectionReason ||
+    day.realTrade?.selectionReason ||
+    day.result?.sellReason ||
+    day.openSkipReason ||
+    ""
+  );
+
+  if (/보완|안전 최소조건|fallback/i.test(reason)) return "09:03 보완선정";
+  if (/엄격|정상 통과|rank|최종점수/i.test(reason)) return "엄격조건 1위";
+  if (day.selectedTrade || day.realTrade?.buyPrice) return "실제선정";
+  return "후보 탐색 중";
+}
+
+function renderOpenLiveStatus(payload = {}) {
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const day = rows.find(row => String(row.date || "") === today) || rows[0] || {};
+  const selected = day.selectedTrade || day.realTrade || null;
+  const candidates = Array.isArray(day.latestCandidates) ? day.latestCandidates : [];
+  const top = candidates[0] || day.openTopCandidate || null;
+  const status = String(day.status || (selected ? "HOLDING" : "WAITING")).toUpperCase();
+
+  const badge = document.getElementById("openLiveMode");
+  if (badge) {
+    badge.className = "open-mode-badge";
+    if (selected) {
+      badge.classList.add("open-mode-buy");
+      badge.textContent = "실제 매수";
+    } else if (status === "SKIPPED" || status === "COMPLETED") {
+      badge.classList.add("open-mode-skip");
+      badge.textContent = status === "SKIPPED" ? "미매수 종료" : "거래 완료";
+    } else {
+      badge.classList.add("open-mode-wait");
+      badge.textContent = "후보 탐색";
+    }
+  }
+
+  const statusMap = {
+    WAITING: "시작 대기",
+    SCANNING: "후보 탐색",
+    HOLDING: "OPEN 보유 중",
+    COMPLETED: "OPEN 거래 완료",
+    SKIPPED: "오늘 미매수"
+  };
+
+  setOpenText("openLiveStatus", statusMap[status] || status);
+  setOpenText("openSelectionMode", classifyOpenSelectionMode(day));
+  setOpenText(
+    "openTopCandidate",
+    top ? `${top.name || top.code || "-"}${top.code ? ` (${top.code})` : ""}` : "-"
+  );
+  setOpenText(
+    "openTopScore",
+    top
+      ? `${Number(top.rankScore ?? top.discoverScore ?? top.score ?? 0).toFixed(1)}점`
+      : "-"
+  );
+
+  if (selected) {
+    const buyPrice = Number(selected.buyPrice || selected.entryPrice || 0);
+    const qty = Number(selected.qty || 0);
+    setOpenText(
+      "openActualBuy",
+      `${selected.name || selected.code || "-"} / ${buyPrice ? buyPrice.toLocaleString() + "원" : "-"}${qty ? ` / ${qty.toLocaleString()}주` : ""}`
+    );
+  } else {
+    setOpenText("openActualBuy", "아직 없음");
+  }
+
+  const reason =
+    selected?.selectionReason ||
+    top?.reason ||
+    day.result?.sellReason ||
+    day.openSkipReason ||
+    (candidates.length
+      ? `후보 ${candidates.length}개 평가 중 / 09:03 이후 엄격 통과 후보가 없으면 안전 최소조건 최고 후보를 보완선정합니다.`
+      : "아직 OPEN 후보가 저장되지 않았습니다.");
+
+  setOpenText("openLiveReason", reason);
+  setOpenText(
+    "openLiveUpdatedAt",
+    `갱신 ${formatShortTime(payload.updatedAt || day.lastCandidateScanAt || day.updatedAt || new Date().toLocaleTimeString("ko-KR"))}`
+  );
+}
+
+async function loadOpenLiveStatus() {
+  try {
+    const res = await fetch(
+      "https://sytrader.duckdns.org/api/open-learning-summary",
+      { cache: "no-store" }
+    );
+    const data = await res.json();
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.message || `API 오류 ${res.status}`);
+    }
+    renderOpenLiveStatus(data);
+  } catch (err) {
+    console.error("OPEN 실시간 상태 조회 오류", err);
+    setOpenText("openLiveStatus", "조회 오류");
+    setOpenText("openSelectionMode", "-");
+    setOpenText("openTopCandidate", "-");
+    setOpenText("openTopScore", "-");
+    setOpenText("openActualBuy", "-");
+    setOpenText("openLiveReason", `OPEN 학습 API 확인 필요 / ${err.message}`);
+    const badge = document.getElementById("openLiveMode");
+    if (badge) {
+      badge.className = "open-mode-badge open-mode-skip";
+      badge.textContent = "API 오류";
+    }
+  }
+}
+
+
     async function loadPerformanceSummary() {
       try {
         const res = await fetch("https://sytrader.duckdns.org/api/performance-summary");
@@ -1458,5 +1579,7 @@ setMarketTemperature(mt);
     }
 
     loadPerformanceSummary();
+    loadOpenLiveStatus();
     loadMissedWinnersAnalysis();
     setInterval(loadPerformanceSummary, 30000);
+    setInterval(loadOpenLiveStatus, 10000);

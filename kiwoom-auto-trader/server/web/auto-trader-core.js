@@ -270,16 +270,17 @@ const settings = {
 
   serverAutoEnabledDefault: true,
 
-  discoverScanLimit: 150,
-discoverLimit: 100,
+  // BUY LOOP 경량화: 한 번에 조회·평가하는 범위를 줄여 매도 점검 지연을 방지
+  discoverScanLimit: 40,
+  discoverLimit: 40,
 minDiscoverScore: 7,
 
 // 장 초반 CORE/VOLUME 후보 검색 강화
 earlyDiscoverEndTime: "09:30",
 midDiscoverEndTime: "10:00",
 
-earlyDiscoverScanLimit: 300,
-midDiscoverScanLimit: 225,
+earlyDiscoverScanLimit: 50,
+midDiscoverScanLimit: 40,
 
 earlyBuyLoopMs: 30 * 1000,
 midBuyLoopMs: 45 * 1000,
@@ -291,7 +292,7 @@ coreEndTime: "11:00",
 buyAssetRatio: 0.125,
 
   coreMaxHoldingCount: 4,
-  coreMaxChangeRate: 4.5,
+  coreMaxChangeRate: 6.0,
   coreMinTradeVolumeRatio: 80,
   coreMinDayPositionRate: 50,
   coreMaxDayPositionRate: 80,
@@ -301,10 +302,18 @@ buyAssetRatio: 0.125,
 volumeEndTime: "13:30",
   volumeMaxHoldingCount: 4,
   volumeMinChangeRate: 0.8,
-  volumeMaxChangeRate: 6.0,
+  volumeMaxChangeRate: 10.0,
   volumeMinTradeVolumeRatio: 120,
   volumeMinDayPositionRate: 45,
   volumeMaxDayPositionRate: 80,
+
+  // 저유동성 종목 매수 차단
+  // 거래량비율이 높아도 실제 누적 거래량·거래대금이 작으면 체결 공백과 슬리피지가 커질 수 있다.
+  liquidityFilterEnabled: true,
+  coreMinAbsoluteVolume: 50000,
+  volumeMinAbsoluteVolume: 100000,
+  coreMinTradeAmount: 100000000,
+  volumeMinTradeAmount: 100000000,
 
   stopLossRate: -1.5,
   firstTakeProfitRate: 4.0,
@@ -340,7 +349,7 @@ holdingWeakSellMinScoreDrop: -50,
 
 // 보유점수 이력 저장: 손절·익절 당시 매수 후 추세 분석용
 holdingScoreHistoryIntervalMs: 30 * 1000,
-holdingScoreHistoryMaxCount: 300,
+holdingScoreHistoryMaxCount: 120,
 
   buyLoopMs: 60 * 1000,
   sellLoopMs: 10 * 1000,
@@ -364,7 +373,7 @@ candidateWatchPriceDelayMs: 350,
 hotScannerEnabled: true,
 
 // HOT 파일이 이 시간보다 오래됐으면 사용하지 않음
-hotCandidateFileMaxAgeMs: 60 * 1000,
+hotCandidateFileMaxAgeMs: 90 * 1000,
 
 // CORE/VOLUME에 넘길 HOT 후보 최대 수
 hotCandidateMaxCount: 30,
@@ -376,6 +385,12 @@ hotCandidateMinDiscoverScore: 7,
 // 후보 재평가 분석
 candidateNearMissMaxCount: 10,
 candidateNearMissLogCount: 5,
+
+// BUY LOOP 1회 최대 평가 후보 수. HOT 후보는 병합 정렬에서 우선 유지된다.
+buyCandidateEvalMaxCount: 60,
+
+// 후보목록 상세 로그는 전략별 상위 N개만 출력
+candidateScoreLogMaxCount: 5,
 
 // 운영상 차단된 우수 후보 추적
 operationalBlockedCandidateMaxCount: 20,
@@ -406,8 +421,8 @@ switchCooldownMinutes: 30,
 // 시장온도별 매수조건 자동조정
 marketConditionAdjustEnabled: true,
 
-// 약세에서는 신규매수 중단
-marketColdBuyBlocked: true,
+// 약세장도 전면 차단하지 않고 조건을 강화해 선별 매수
+marketColdBuyBlocked: false,
 
 // 강세 완화값
 hotCoreVolumeRelax: 10,
@@ -417,7 +432,12 @@ hotDiscoverScoreRelax: 1,
 // 주의 강화값
 cautionCoreVolumeAdd: 10,
 cautionVolumeVolumeAdd: 20,
-cautionDiscoverScoreAdd: 1
+cautionDiscoverScoreAdd: 1,
+
+// 약세 강화값: 전면 차단 대신 우수 후보만 선별
+coldCoreVolumeAdd: 20,
+coldVolumeVolumeAdd: 30,
+coldDiscoverScoreAdd: 2
 
 };
 
@@ -925,6 +945,64 @@ function isExcludedStock(item = {}) {
   }
 
   return false;
+}
+
+function getAbsoluteVolume(item = {}) {
+  const raw = item.raw || {};
+
+  const value =
+    item.volume ??
+    item.currentVolume ??
+    item.tradeVolume ??
+    raw.trde_qty ??
+    raw.acc_trde_qty ??
+    raw.now_trde_qty ??
+    0;
+
+  const number = Number(
+    String(value ?? 0)
+      .replace(/[+,]/g, "")
+      .trim()
+  );
+
+  return Number.isFinite(number)
+    ? Math.max(0, Math.abs(number))
+    : 0;
+}
+
+function getTradeAmount(item = {}, currentPrice = 0) {
+  const raw = item.raw || {};
+  const volume = getAbsoluteVolume(item);
+  const price = Math.abs(Number(
+    currentPrice ||
+    item.currentPrice ||
+    item.price ||
+    raw.cur_prc ||
+    0
+  ));
+
+  // 키움 거래대금 필드는 API별 단위가 다를 수 있으므로
+  // 누적거래량 × 현재가로 동일한 원 단위 값을 계산한다.
+  return volume > 0 && price > 0
+    ? volume * price
+    : 0;
+}
+
+function makeLiquidityLog(
+  strategyGroup,
+  absoluteVolume,
+  minAbsoluteVolume,
+  tradeAmount,
+  minTradeAmount
+) {
+  return (
+    `저유동성 차단 / ` +
+    `누적거래량 ${Math.round(absoluteVolume).toLocaleString("ko-KR")}주 ` +
+    `(기준 ${Math.round(minAbsoluteVolume).toLocaleString("ko-KR")}주) / ` +
+    `거래대금 ${Math.round(tradeAmount).toLocaleString("ko-KR")}원 ` +
+    `(기준 ${Math.round(minTradeAmount).toLocaleString("ko-KR")}원) / ` +
+    `${strategyGroup}`
+  );
 }
 
 function getTradeVolumeRatio(item = {}) {
@@ -1439,16 +1517,40 @@ function getMarketAdjustedBuySettings(
 
   /*
    * 약세
+   *
+   * 예전처럼 시장 전체를 이유로 전 종목을 막지 않는다.
+   * 차단 옵션이 켜진 경우에만 중단하고, 기본값에서는
+   * 거래량과 발견점수를 강화해 상대적으로 강한 종목만 선별한다.
    */
-  if (
-    level === "COLD" &&
-    settings.marketColdBuyBlocked
-  ) {
-    result.buyBlocked = true;
+  if (level === "COLD") {
+    if (settings.marketColdBuyBlocked) {
+      result.buyBlocked = true;
+
+      result.reason =
+        `시장 약세 ${score.toFixed(1)}점 / ` +
+        `신규매수 중단`;
+
+      return result;
+    }
+
+    result.minVolumeRatio =
+      baseMinVolumeRatio +
+      (
+        strategyGroup === "CORE"
+          ? settings.coldCoreVolumeAdd
+          : settings.coldVolumeVolumeAdd
+      );
+
+    result.minDiscoverScore =
+      settings.minDiscoverScore +
+      settings.coldDiscoverScoreAdd;
 
     result.reason =
-      `시장 약세 ${score.toFixed(1)}점 / ` +
-      `신규매수 중단`;
+      `시장 약세 ${score.toFixed(1)}점 / 선별매수 / ` +
+      `거래량기준 ${baseMinVolumeRatio}→` +
+      `${result.minVolumeRatio}% / ` +
+      `발견점수 ${settings.minDiscoverScore}→` +
+      `${result.minDiscoverScore}`;
 
     return result;
   }
@@ -2672,6 +2774,10 @@ function logCandidateNearMissSummary(state) {
 
 function classifyBuyRejectReason(reason = "") {
   const text = String(reason || "");
+
+  if (text.includes("저유동성 차단")) {
+    return "절대 유동성 부족";
+  }
 
   if (text.includes("거래량비율")) {
     return "거래량 부족";
@@ -4554,6 +4660,12 @@ function judgeCoreBuy(state, item, price) {
   const volumeRatio =
     getTradeVolumeRatio(item);
 
+  const absoluteVolume =
+    getAbsoluteVolume(item);
+
+  const tradeAmount =
+    getTradeAmount(item, price);
+
   const dayPosition =
     getDayPositionRate(item, price);
 
@@ -4698,6 +4810,34 @@ function judgeCoreBuy(state, item, price) {
   }
 
   /*
+   * 저유동성 종목 차단
+   * 비율이 좋아도 절대 체결량이 부족하면 손절 구간을 건너뛸 수 있다.
+   */
+  if (settings.liquidityFilterEnabled) {
+    const minAbsoluteVolume =
+      settings.coreMinAbsoluteVolume;
+
+    const minTradeAmount =
+      settings.coreMinTradeAmount;
+
+    if (
+      absoluteVolume < minAbsoluteVolume ||
+      tradeAmount < minTradeAmount
+    ) {
+      return {
+        pass: false,
+        reason: makeLiquidityLog(
+          "CORE",
+          absoluteVolume,
+          minAbsoluteVolume,
+          tradeAmount,
+          minTradeAmount
+        )
+      };
+    }
+  }
+
+  /*
    * CORE 당일위치 범위
    */
   if (
@@ -4809,6 +4949,12 @@ function judgeVolumeBuy(state, item, price) {
 
   const volumeRatio =
     getTradeVolumeRatio(item);
+
+  const absoluteVolume =
+    getAbsoluteVolume(item);
+
+  const tradeAmount =
+    getTradeAmount(item, price);
 
   const dayPosition =
     getDayPositionRate(item, price);
@@ -4953,6 +5099,34 @@ function judgeVolumeBuy(state, item, price) {
         ) +
         ` / ${marketCondition.reason}`
     };
+  }
+
+  /*
+   * 저유동성 종목 차단
+   * VOLUME 전략은 순간 거래량 증가보다 실제 누적 체결량을 더 엄격하게 본다.
+   */
+  if (settings.liquidityFilterEnabled) {
+    const minAbsoluteVolume =
+      settings.volumeMinAbsoluteVolume;
+
+    const minTradeAmount =
+      settings.volumeMinTradeAmount;
+
+    if (
+      absoluteVolume < minAbsoluteVolume ||
+      tradeAmount < minTradeAmount
+    ) {
+      return {
+        pass: false,
+        reason: makeLiquidityLog(
+          "VOLUME",
+          absoluteVolume,
+          minAbsoluteVolume,
+          tradeAmount,
+          minTradeAmount
+        )
+      };
+    }
   }
 
   /*
@@ -5845,12 +6019,48 @@ async function paperSell(
         ? holding.holdingScoreHistory
         : [];
 
-    const sellAnalysis = {
-      isStopLoss:
-        String(sellType || "").includes("STOP_LOSS"),
+const sellTypeText =
+  String(sellType || "");
 
-      discoveredAt:
-        holding.candidateFirstSeenAt ?? null,
+const finalProfitRate =
+  Number(result.profitRate || 0);
+
+/*
+ * 정식 손절 또는 보유추세 붕괴 매도
+ *
+ * STOP_LOSS:
+ * 일반 손절선 도달
+ *
+ * WEAK_TREND_SELL:
+ * 손절선 도달 전이라도 보유점수·당일위치·수익률이
+ * 동시에 무너져 조기 청산한 경우
+ */
+const isStopLoss =
+  sellTypeText.includes("STOP_LOSS") ||
+  sellTypeText.includes("WEAK_TREND_SELL");
+
+/*
+ * 실제 매도 결과가 손실인지 구분
+ *
+ * 손절 사유가 아니더라도 음수 수익률로 매도됐다면
+ * 손실 매도로 분류한다.
+ */
+const isLossExit =
+  finalProfitRate < 0;
+
+const sellAnalysis = {
+  sellType: sellTypeText,
+  isStopLoss,
+  isLossExit,
+  sellHoldingScore:
+    holding.holdingScore,
+
+  sellHoldingScoreDiff:
+    holding.holdingScoreDiff,
+
+  discoveredAt:
+    holding.candidateFirstSeenAt ?? null,
+
       discoveredAtText:
         holding.candidateFirstSeenAtText ?? null,
       buyTime: Number(holding.buyTime || 0),
@@ -5939,7 +6149,6 @@ async function paperSell(
       sellSignalAt,
       sellSignalPrice,
       sellOrderRequestedAt,
-      sellType,
       reason
     };
 
@@ -6778,6 +6987,8 @@ console.log("[후보재평가] 종료");
 }
 
 async function runBuyOnce() {
+  const buyStartedAt = Date.now();
+
   if (!isKoreanWeekday()) {
     return;
   }
@@ -6844,17 +7055,28 @@ const hotCandidates =
 /*
  * 3. 종목코드 기준 중복 제거 및 병합
  */
-const candidates =
+const mergedCandidates =
   mergeBuyCandidates(
     hotCandidates,
     discoveredCandidates
   );
 
+/*
+ * 신규 전체검색 자체를 40~50종목 단위로 나누므로,
+ * 이번 회차에서 조회된 후보는 HOT 후보까지 포함해 모두 평가한다.
+ * 가능성 기준으로 종목을 사전 탈락시키지 않고 offset 순환으로 전 종목을 확인한다.
+ */
+const candidates = mergedCandidates.slice(
+  0,
+  Math.max(10, Number(settings.buyCandidateEvalMaxCount || 60))
+);
+
 console.log(
   `[BUY] 후보 조회 완료 / ` +
   `HOT ${hotCandidates.length}개 / ` +
   `전체검색 ${discoveredCandidates.length}개 / ` +
-  `병합후 ${candidates.length}개`
+  `병합후 ${mergedCandidates.length}개 / ` +
+  `이번평가 ${candidates.length}개`
 );
 
 if (hotCandidates.length > 0) {
@@ -6910,7 +7132,7 @@ console.log(
   );
 
   let excludeLogCount = 0;
-  const maxExcludeLogCount = 20;
+  const maxExcludeLogCount = 8;
 
   for (const item of candidates) {
     const price = Math.abs(
@@ -7188,7 +7410,10 @@ if (!coreJudge.pass) {
 
   for (
   const candidate of
-  state.coreCandidateWatchList || []
+  (state.coreCandidateWatchList || []).slice(
+    0,
+    Number(settings.candidateScoreLogMaxCount || 5)
+  )
 ) {
   console.log(
     `[CORE 후보점수] ` +
@@ -7198,7 +7423,10 @@ if (!coreJudge.pass) {
 
 for (
   const candidate of
-  state.volumeCandidateWatchList || []
+  (state.volumeCandidateWatchList || []).slice(
+    0,
+    Number(settings.candidateScoreLogMaxCount || 5)
+  )
 ) {
   console.log(
     `[VOLUME 후보점수] ` +
@@ -7212,7 +7440,9 @@ logBuyDecisionSummary(state);
 
 saveState(state);
 
-console.log("[BUY] 1회 점검 종료");
+console.log(
+  `[BUY] 1회 점검 종료 / 소요 ${((Date.now() - buyStartedAt) / 1000).toFixed(1)}초`
+);
 }
 
 async function checkSellOnce() {
@@ -7464,20 +7694,179 @@ async function start() {
    */
   startHotScanner();
 
-  await runBuyOnce();
-  await checkSellOnce();
+  /*
+   * 각 작업의 중복 실행을 막는다.
+   * 매수 전체검색이 오래 걸리는 동안 다른 전체검색이
+   * 겹치지 않도록 공통 busy 상태도 함께 확인한다.
+   */
+  let buyRunning = false;
+  let candidateWatchRunning = false;
+  let sellRunning = false;
+  let sellPending = false;
 
-let buyRunning = false;
-let candidateWatchRunning = false;
-let sellRunning = false;
+  let buyTimer = null;
+  let candidateWatchTimer = null;
+  let sellTimer = null;
 
-function isTraderBusy() {
-  return (
-    buyRunning ||
-    candidateWatchRunning ||
-    sellRunning
+  function isTraderBusy() {
+    return (
+      buyRunning ||
+      candidateWatchRunning ||
+      sellRunning
+    );
+  }
+
+  async function runBuySafely() {
+    if (isTraderBusy()) {
+      console.log(
+        "[BUY LOOP] 다른 작업 진행중 / 이번 점검 건너뜀"
+      );
+      return;
+    }
+
+    buyRunning = true;
+
+    try {
+      await runBuyOnce();
+    } catch (err) {
+      console.error(
+        "[BUY LOOP 오류]",
+        err?.stack || err?.message || err
+      );
+    } finally {
+      buyRunning = false;
+
+      // BUY 중 건너뛴 매도 점검은 작업 종료 직후 우선 실행
+      if (sellPending && !candidateWatchRunning && !sellRunning) {
+        await runSellSafely();
+      }
+    }
+  }
+
+  async function runCandidateWatchSafely() {
+    if (isTraderBusy()) {
+      console.log(
+        "[후보재평가 LOOP] 다른 작업 진행중 / 이번 점검 건너뜀"
+      );
+      return;
+    }
+
+    candidateWatchRunning = true;
+
+    try {
+      await runCandidateWatchOnce();
+    } catch (err) {
+      console.error(
+        "[후보재평가 LOOP 오류]",
+        err?.stack || err?.message || err
+      );
+    } finally {
+      candidateWatchRunning = false;
+
+      // 후보재평가 중 건너뛴 매도 점검은 종료 직후 우선 실행
+      if (sellPending && !buyRunning && !sellRunning) {
+        await runSellSafely();
+      }
+    }
+  }
+
+  async function runSellSafely() {
+    /*
+     * 매도 점검은 매수 전체검색보다 우선해야 하지만,
+     * 같은 상태파일을 동시에 저장하지 않도록 겹침은 막는다.
+     */
+    if (isTraderBusy()) {
+      sellPending = true;
+      console.log(
+        "[SELL LOOP] 다른 작업 진행중 / 종료 직후 우선 점검 예약"
+      );
+      return;
+    }
+
+    sellPending = false;
+    sellRunning = true;
+
+    try {
+      await checkSellOnce();
+    } catch (err) {
+      console.error(
+        "[SELL LOOP 오류]",
+        err?.stack || err?.message || err
+      );
+    } finally {
+      sellRunning = false;
+    }
+  }
+
+  /*
+   * 장 초반 30초, 중반 45초, 이후 60초처럼
+   * 현재 시간대에 맞춰 다음 매수 점검 주기를 다시 계산한다.
+   */
+  function scheduleNextBuyLoop() {
+    const delay = Math.max(
+      1000,
+      Number(getDynamicBuyLoopMs() || settings.buyLoopMs)
+    );
+
+    buyTimer = setTimeout(async () => {
+      try {
+        await runBuySafely();
+      } finally {
+        scheduleNextBuyLoop();
+      }
+    }, delay);
+
+    if (typeof buyTimer.unref === "function") {
+      // PM2 프로세스는 다른 반복 타이머로 유지되지만
+      // 종료 시 이 타이머만으로 프로세스가 붙잡히지 않게 한다.
+      buyTimer.unref();
+    }
+  }
+
+  /*
+   * 시작 직후 1회 점검한다.
+   * 매수 시간이 아니면 runBuyOnce 내부에서 바로 종료한다.
+   */
+  await runBuySafely();
+  await runSellSafely();
+
+  scheduleNextBuyLoop();
+
+  candidateWatchTimer = setInterval(
+    () => {
+      void runCandidateWatchSafely();
+    },
+    Math.max(
+      1000,
+      Number(settings.candidateWatchLoopMs || 30000)
+    )
   );
-}
+
+  sellTimer = setInterval(
+    () => {
+      void runSellSafely();
+    },
+    Math.max(
+      1000,
+      Number(settings.sellLoopMs || 10000)
+    )
+  );
+
+  console.log(
+    `[LOOP 시작] 매수 동적 ${getDynamicBuyLoopMs() / 1000}초 / ` +
+    `후보재평가 ${settings.candidateWatchLoopMs / 1000}초 / ` +
+    `매도 ${settings.sellLoopMs / 1000}초`
+  );
+
+  /*
+   * start() Promise가 바로 종료되어도 타이머는 계속 동작한다.
+   * 아래 참조는 디버깅과 향후 종료 처리용이다.
+   */
+  return {
+    buyTimer,
+    candidateWatchTimer,
+    sellTimer
+  };
 }
 
 let started = false;

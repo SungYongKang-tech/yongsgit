@@ -268,7 +268,7 @@
 </head>
 <body>
   <div class="header">
-    <h1>🧪 OPEN 진입시간 학습</h1>
+    <h1>🚀 OPEN 실전매수 · 학습</h1>
     <div style="display:flex; gap:6px;">
       <button onclick="refreshAll()">새로고침</button>
       <button onclick="location.href='performance.html'">← 대시보드</button>
@@ -283,7 +283,7 @@
   </div>
 
   <div class="card">
-    <h2>🌐 OPEN 2.0 장전시장 분석</h2>
+    <h2>🌐 OPEN 장전시장 분석</h2>
     <div class="market-grid">
       <div class="mini-box">
         <div class="mini-label">시장점수 · 뉴스보정</div>
@@ -311,10 +311,34 @@
     </div>
   </div>
 
+
+  <div class="card">
+    <h2>✅ OPEN 실제매수 운영방식</h2>
+    <div class="condition-grid">
+      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value">조건 통과 즉시 1위 매수</div></div>
+      <div class="condition-item"><div class="condition-label">보완매수 시작</div><div class="condition-value">09:03 이후</div></div>
+      <div class="condition-item"><div class="condition-label">보완 최소조건</div><div class="condition-value">발견 8 · 거래량 85%</div></div>
+      <div class="condition-item"><div class="condition-label">투자금</div><div class="condition-value">남은 현금의 25%</div></div>
+    </div>
+    <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.6;">
+      엄격 통과 후보가 없더라도 09:03 이후 상승률·거래량·당일위치·시가대비·최초가격 약화 기준을 만족한 최고 후보 1개를 실제 매수합니다.
+    </div>
+  </div>
+
   <div class="card">
     <h2>🎯 OPEN 우선감시 종목</h2>
     <div id="priorityStockBox" class="priority-list">
       <div class="empty">우선감시 종목 불러오는 중...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔍 OPEN 미매수 TOP3</h2>
+    <div class="muted" id="openMissedTop3Status" style="font-size:12px; margin-bottom:8px;">
+      실제 매수되지 않은 상위 후보의 미매수 사유와 이후 결과를 추적합니다.
+    </div>
+    <div id="openMissedTop3Box" class="priority-list">
+      <div class="empty">미매수 TOP3 분석자료 불러오는 중...</div>
     </div>
   </div>
 
@@ -338,7 +362,7 @@
   </div>
 
   <div class="card">
-    <h2>0초 · 5초 · 15초 누적 비교</h2>
+    <h2>0초 · 5초 · 확인진입 누적 비교</h2>
     <div id="variantBox" class="variant-grid">
       <div class="empty">데이터 불러오는 중...</div>
     </div>
@@ -471,7 +495,7 @@
     if (num >= 80) return "🔥 강세";
     if (num >= 60) return "🟢 보통";
     if (num >= 40) return "🟡 주의";
-    return "🔴 매우 약세 · 매수차단";
+    return "🔴 매우 약세 · 선별매수";
   }
 
   function formatSectorInfo(inputs = {}) {
@@ -598,7 +622,7 @@
             </div>
           </div>
           <div class="condition-item">
-            <div class="condition-label">15초 상승 기준</div>
+            <div class="condition-label">확인 상승 기준</div>
             <div class="condition-value">
               ${data.requiredConfirmPriceRise > 0 ? `${data.requiredConfirmPriceRise.toFixed(2)}%` : "-"}
             </div>
@@ -805,10 +829,91 @@
     }
   }
 
+
+  function renderOpenMissedTop3(rows = [], meta = {}) {
+    const box = document.getElementById("openMissedTop3Box");
+    const statusBox = document.getElementById("openMissedTop3Status");
+
+    if (statusBox) {
+      const statusText = meta.status === "TRACKING"
+        ? "장중 추적 중"
+        : meta.status === "COMPLETED"
+          ? "추적 완료"
+          : "자료 대기";
+      statusBox.textContent = `${meta.date || "오늘"} · ${statusText} · 실제 미매수 후보만 표시`;
+    }
+
+    if (!Array.isArray(rows) || !rows.length) {
+      box.innerHTML = `<div class="empty">오늘 저장된 OPEN 미매수 후보가 없습니다.</div>`;
+      return;
+    }
+
+    box.innerHTML = rows.map((item, index) => {
+      const highest = Number(item.highestProfitRate || 0);
+      const lowest = Number(item.lowestProfitRate || 0);
+      const closeRate = item.closingProfitRate === null ||
+        item.closingProfitRate === undefined
+          ? null
+          : Number(item.closingProfitRate);
+
+      const resultClass = item.resultLabel === "아쉬운 미매수"
+        ? "plus"
+        : item.resultLabel === "미매수 성공"
+          ? "minus"
+          : "";
+
+      return `
+        <div class="priority-row">
+          <div class="priority-rank">${Number(item.rank || index + 1)}위</div>
+          <div>
+            <div class="priority-name">${escapeHtml(item.name || item.code || "-")}</div>
+            <div class="priority-sub">
+              ${escapeHtml(item.code || "-")} · 발견가 ${formatPrice(item.firstPrice)}<br>
+              미매수 사유: ${escapeHtml(item.rejectReason || "사유 미저장")}
+            </div>
+            <div class="priority-news">
+              최고 <span class="${rateClass(highest)}">${formatRate(highest)}</span>
+              · 최저 <span class="${rateClass(lowest)}">${formatRate(lowest)}</span>
+              · 결과 <span class="${rateClass(closeRate)}">${closeRate === null ? "추적 중" : formatRate(closeRate)}</span>
+            </div>
+          </div>
+          <div class="priority-score ${resultClass}">
+            ${escapeHtml(item.resultLabel || "추적 중")}
+            <div class="priority-score-sub">
+              발견 ${Number(item.discoverScore || 0).toFixed(1)}점<br>
+              최종 ${Number(item.finalScore || 0).toFixed(1)}점
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function loadOpenMissedTop3() {
+    try {
+      const response = await fetch(
+        "https://sytrader.duckdns.org/api/open-missed-top3",
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "OPEN 미매수 TOP3 API 오류");
+      }
+
+      renderOpenMissedTop3(data.rows || [], data);
+    } catch (error) {
+      console.error(error);
+      document.getElementById("openMissedTop3Box").innerHTML =
+        `<div class="empty">OPEN 미매수 TOP3를 불러오지 못했습니다.<br>${escapeHtml(error.message)}</div>`;
+    }
+  }
+
   function refreshAll() {
-  loadData();
-  loadOpenMarketStatus();
-}
+    loadData();
+    loadOpenMarketStatus();
+    loadOpenMissedTop3();
+  }
 
 
   async function loadData() {
@@ -864,6 +969,7 @@
 
   setInterval(loadData, 30000);
   setInterval(loadOpenMarketStatus, 30000);
+  setInterval(loadOpenMissedTop3, 30000);
 </script>
 </body>
 </html>
