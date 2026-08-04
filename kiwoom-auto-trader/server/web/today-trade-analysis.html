@@ -169,6 +169,22 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.code-change-note {
+  min-height: 130px;
+}
+
+.helper-text {
+  margin-top: 7px;
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.save-status {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
   </style>
 </head>
 
@@ -273,6 +289,30 @@ button:disabled {
   </div>
 
   <div class="card">
+    <h2>오늘 코드 수정내용 · 자동 기록</h2>
+    <div id="automaticCodeChanges" class="mini-box" style="min-height:90px; white-space:pre-wrap;">
+      자동 변경기록을 불러오는 중...
+    </div>
+
+    <h2 style="margin-top:14px;">추가 메모 · 선택사항</h2>
+    <textarea
+      id="todayCodeChanges"
+      class="code-change-note"
+      placeholder="자동 기록에 없는 배포 시각, 확인사항, 임시 조치만 추가로 입력하세요."
+    ></textarea>
+    <div class="ai-actions" style="margin-top:8px; margin-bottom:0;">
+      <button id="saveCodeChangesBtn" onclick="saveTodayCodeChanges()">
+        💾 추가 메모 저장
+      </button>
+      <span id="codeChangesSaveStatus" class="save-status muted"></span>
+    </div>
+    <div class="helper-text">
+      ZIP에 포함된 code-change-log.json이 서버 시작 시 자동으로 이력에 반영됩니다.
+      분석자료에는 자동 기록과 추가 메모가 함께 포함됩니다.
+    </div>
+  </div>
+
+  <div class="card">
     <h2>AI 분석용 복사 자료</h2>
     <div class="ai-actions">
   <button id="copyAiBtn" onclick="copyAiText()" disabled>
@@ -293,6 +333,7 @@ button:disabled {
 
   <script>
     let latestAiText = "";
+    let latestAnalysisDate = "";
 
     function formatWon(value) {
       const num = Number(value || 0);
@@ -553,11 +594,136 @@ async function openChatGptAnalysis() {
   }
 }
 
+
+async function saveTodayCodeChanges() {
+  const button =
+    document.getElementById("saveCodeChangesBtn");
+
+  const status =
+    document.getElementById("codeChangesSaveStatus");
+
+  const memo =
+    document.getElementById("todayCodeChanges").value;
+
+  if (!latestAnalysisDate) {
+    alert("오늘 분석자료를 먼저 불러와 주세요.");
+    return;
+  }
+
+  button.disabled = true;
+  status.textContent = "저장 중...";
+
+  try {
+    const res = await fetch(
+      "https://sytrader.duckdns.org/api/daily-code-changes",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          date: latestAnalysisDate,
+          memo
+        })
+      }
+    );
+
+    const saved = await res.json();
+
+    if (!res.ok || saved.ok === false) {
+      throw new Error(
+        saved.message || "저장 실패"
+      );
+    }
+
+    status.textContent =
+      `저장 완료 · ${saved.updatedAt || ""}`;
+
+    await loadAnalysis();
+  } catch (error) {
+    console.error(error);
+    status.textContent = "저장 실패";
+    alert(
+      "오늘 수정내용 저장에 실패했습니다.\n" +
+      error.message
+    );
+  } finally {
+    button.disabled = false;
+  }
+}
+
+
+    function renderAutomaticCodeChanges(changes = {}) {
+      const container =
+        document.getElementById("automaticCodeChanges");
+
+      const items = Array.isArray(changes.automatic)
+        ? changes.automatic
+        : [];
+
+      if (items.length === 0) {
+        container.textContent =
+          "오늘 자동으로 반영된 코드 수정내용 없음";
+        return;
+      }
+
+      container.textContent = items.map(
+        (item, index) => {
+          const lines = [
+            `${index + 1}. ${item.time || "시간 미기록"} / ${item.file || "-"}`,
+            `   [${item.category || "기타"}] ${item.title || item.description || "코드 수정"}`
+          ];
+
+          if (
+            item.description &&
+            item.description !== item.title
+          ) {
+            lines.push(`   내용: ${item.description}`);
+          }
+
+          lines.push(
+            `   적용: ${item.effectiveFrom || "서버 재시작 이후"}`
+          );
+          lines.push(
+            `   확인: ${item.verification || "다음 거래일 확인"}`
+          );
+
+          return lines.join("\\n");
+        }
+      ).join("\\n\\n");
+    }
+
     async function loadAnalysis() {
       try {
         const res = await fetch("https://sytrader.duckdns.org/api/today-trade-analysis");
         const data = await res.json();
         if (!data.ok) throw new Error(data.message || "분석 데이터 오류");
+
+        latestAnalysisDate = String(data.date || "");
+
+        const codeChanges =
+          data.todayCodeChanges || {};
+
+        renderAutomaticCodeChanges(
+          codeChanges
+        );
+
+        const codeChangesTextarea =
+          document.getElementById("todayCodeChanges");
+
+        if (
+          document.activeElement !==
+          codeChangesTextarea
+        ) {
+          codeChangesTextarea.value =
+            codeChanges.memo || "";
+        }
+
+        document.getElementById(
+          "codeChangesSaveStatus"
+        ).textContent = codeChanges.updatedAt
+          ? `마지막 저장 · ${codeChanges.updatedAt}`
+          : "오늘 저장된 수정내용 없음";
 
         const summary = data.summary || {};
         const byStrategy = data.byStrategy || {};
@@ -657,6 +823,134 @@ async function openChatGptAnalysis() {
       }
     }
 
+
+    function formatSettingValue(key, value) {
+      if (value === true) return "사용";
+      if (value === false) return "사용 안 함";
+
+      const number = Number(value);
+
+      if (key === "buyAssetRatio") {
+        return `${number * 100}%`;
+      }
+
+      if (key === "dailyLossLimitRate") {
+        return `${number * 100}%`;
+      }
+
+      if (key.endsWith("LoopMs")) {
+        return `${number / 1000}초`;
+      }
+
+      if (key.includes("HoldingCount")) {
+        return `${number}종목`;
+      }
+
+      if (key.includes("Minutes")) {
+        return `${number}분`;
+      }
+
+      if (
+        key.includes("Rate") ||
+        key.includes("Ratio") ||
+        key.includes("Position")
+      ) {
+        return `${number}%`;
+      }
+
+      return String(value);
+    }
+
+    function makeDynamicCodeContext(data) {
+      const settingsInfo =
+        data.currentSettings || {};
+
+      const values =
+        settingsInfo.values || {};
+
+      const changes =
+        data.todayCodeChanges || {};
+
+      let text = "";
+
+      text += `[현재 실행 코드 정보]\n`;
+      text += `설정 원본: ${settingsInfo.file || "auto-trader-core.js"}\n`;
+      text += `코드 수정시각: ${settingsInfo.updatedAt || "확인 불가"}\n`;
+
+      if (!settingsInfo.available) {
+        text += `현재 설정값: 현재 코드 확인 필요\n`;
+      } else {
+        text += `\n[현재 주요 설정값]\n`;
+
+        Object.entries(values).forEach(
+          ([key, value]) => {
+            text +=
+              `${key}: ${formatSettingValue(key, value)}\n`;
+          }
+        );
+      }
+
+      text += `\n[오늘 코드 수정내용 · 자동]\n`;
+
+      const automaticChanges = Array.isArray(
+        changes.automatic
+      )
+        ? changes.automatic
+        : [];
+
+      if (automaticChanges.length > 0) {
+        automaticChanges.forEach(
+          (item, index) => {
+            text += `${index + 1}. ${item.time || "시간 미기록"} / ${item.file || "-"}\n`;
+            text += `   분류: ${item.category || "기타"}\n`;
+            text += `   수정: ${item.title || item.description || "코드 수정"}\n`;
+
+            if (
+              item.description &&
+              item.description !== item.title
+            ) {
+              text += `   내용: ${item.description}\n`;
+            }
+
+            text += `   적용: ${item.effectiveFrom || "서버 재시작 이후"}\n`;
+            text += `   확인: ${item.verification || "다음 거래일 확인"}\n`;
+          }
+        );
+      } else {
+        text += `오늘 자동으로 반영된 코드 수정내용 없음\n`;
+      }
+
+      text += `\n[오늘 추가 메모]\n`;
+
+      if (String(changes.memo || "").trim()) {
+        text += `${String(changes.memo).trim()}\n`;
+        text += `저장시각: ${changes.updatedAt || "-"}\n`;
+      } else {
+        text += `추가 메모 없음\n`;
+      }
+
+      text += `
+[분석 판단 원칙]
+
+1. 현재 설정값과 오늘 코드 수정내용을 거래 결과보다 먼저 확인하세요.
+2. 오늘 수정 완료된 항목은 다시 새 수정사항으로 제안하지 마세요.
+3. 이미 수정된 항목은 '수정 효과 확인', '다음 거래일 확인',
+   '수정 후에도 재발' 중 하나로 분류하세요.
+4. 코드 적용시각이 거래시각보다 늦거나 적용시각이 없으면 단정하지 마세요.
+5. 현재 자료에 없는 설정값이나 코드 동작은 추측하지 마세요.
+6. 분할매도는 체결 단위 성과와 종목 단위 성과를 구분하세요.
+7. 미청산 종목은 확정 승패에서 제외하세요.
+8. 최고수익 0% 손절은 우선 매수 선택과 진입 시점 문제로 검토하세요.
+9. 수익 발생 후 손실 전환은 수익 보호와 매도 문제로 별도 분석하세요.
+10. 하루 결과만으로 손절률·익절률·매수조건을 크게 변경하지 마세요.
+11. 설정값 변경과 코드 오류 수정을 명확히 구분하세요.
+12. OPEN 거래가 없어도 실행 여부와 미매수 원인을 확인하세요.
+
+`;
+
+      return text;
+    }
+
     function makeAiText(data) {
       const summary = data.summary || {};
       const byStrategy = data.byStrategy || {};
@@ -666,6 +960,7 @@ async function openChatGptAnalysis() {
 
       let text = "";
       text += `${data.date} SY Quant OPEN/CORE/VOLUME 오늘 거래 분석 자료\n\n`;
+      text += makeDynamicCodeContext(data);
       text += `[오늘 요약]\n`;
       text += `매수건수: ${summary.buyCount || 0}\n`;
       text += `매도건수: ${summary.sellCount || 0}\n`;
@@ -699,43 +994,63 @@ async function openChatGptAnalysis() {
 
 [AI 분석 요청]
 
-위 거래자료를 근거로 오늘 거래를 분석해 주세요.
+위의 현재 실행 코드 정보, 오늘 코드 수정내용, 거래자료를 함께 근거로
+오늘 거래를 분석해 주세요.
 
-1. 오늘 전체 성과를 간단히 평가해 주세요.
-2. OPEN, CORE, VOLUME 전략별 성과와 문제점을 비교해 주세요.
-3. 손실 원인을 매수 문제와 매도 문제로 나누어 분석해 주세요.
-4. 발견점수, 최종점수, 시장점수, 후보강도, 거래량비율,
+1. 오늘 전체 성과를 평가해 주세요.
+2. 오늘 코드 수정사항이 거래 전에 적용됐는지 확인 가능한 범위에서 구분해 주세요.
+3. OPEN, CORE, VOLUME 전략별 성과와 문제점을 비교해 주세요.
+4. 손실 원인을 매수 문제와 매도 문제로 나누어 분석해 주세요.
+5. 발견점수, 최종점수, 시장점수, 후보강도, 거래량비율,
    당일위치와 실제 수익률의 관계를 분석해 주세요.
-5. 손절이 너무 빠르거나 늦었던 종목을 구분해 주세요.
-6. 익절 또는 트레일링 매도가 너무 빨랐던 종목이 있는지 확인해 주세요.
-7. 반복적으로 나타난 손실 조건을 찾아주세요.
-8. 다음 거래일에 적용할 개선사항을 우선순위별로 제안해 주세요.
-9. 설정값 변경과 코드 수정사항을 구분해 주세요.
-10. 하루 결과만으로 지나치게 조건을 변경하지 않도록 판단해 주세요.
+6. 손절이 너무 빠르거나 늦었던 종목을 구분해 주세요.
+7. 익절 또는 트레일링 매도가 너무 빨랐던 종목이 있는지 확인해 주세요.
+8. 반복적으로 나타난 손실 조건을 찾아주세요.
+9. 다음 거래일 개선사항을 우선순위별로 제안해 주세요.
+10. 이미 수정한 항목을 다시 수정사항으로 제안하지 마세요.
+11. 설정값 변경과 코드 수정을 구분해 주세요.
+12. 하루 결과만으로 지나치게 조건을 변경하지 마세요.
 
 [답변 형식]
 
 1. 오늘 핵심 진단
-2. 전략별 평가
-3. 손실 원인 TOP 3
-4. 잘된 거래
-5. 문제가 있었던 거래
-6. 즉시 수정 가능한 사항
-7. 3거래일 이상 추가 관찰할 사항
-8. 수정하지 않는 것이 좋은 사항
-9. 다음 거래일 권장사항
-10. 코드 확인 또는 수정이 필요한 항목
+2. 현재 코드와 오늘 수정사항 반영 여부
+3. OPEN 평가
+4. CORE 평가
+5. VOLUME 평가
+6. 손실 원인 TOP 3
+7. 잘된 거래
+8. 문제가 있었던 거래
+9. 수정 효과를 확인할 항목
+10. 수정 후에도 남아 있는 문제
+11. 즉시 코드 수정이 필요한 항목
+12. 설정값 변경을 검토할 항목
+13. 최소 3거래일 추가 관찰할 항목
+14. 수정하지 않는 것이 좋은 항목
+15. 다음 거래일 확인 체크리스트
 
-설정값 변경을 제안할 때는 다음 내용을 표시해 주세요.
+[설정값 변경 제안 형식]
 
-- 설정명
-- 현재값
-- 제안값
-- 변경 이유
-- 예상 효과
-- 주의사항
+- 설정명:
+- 현재값:
+- 제안값:
+- 변경 여부: 즉시 변경 / 가상 비교 / 3일 관찰 / 변경하지 않음
+- 변경 이유:
+- 예상 효과:
+- 주의사항:
 
-거래자료에 현재 설정값이 없으면 임의로 추측하지 말고
+[코드 수정 제안 형식]
+
+- 파일명:
+- 관련 함수:
+- 현재 문제:
+- 오늘 수정 여부:
+- 적용 시점 확인 여부:
+- 수정 필요 여부:
+- 확인할 로그:
+- 예상 효과:
+
+자료에 없는 값은 추측하지 말고
 '현재 코드 확인 필요'라고 표시해 주세요.
 `;
 

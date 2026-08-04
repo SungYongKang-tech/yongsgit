@@ -90,6 +90,383 @@ const OPEN_HISTORY_FILE = path.join(
   "open-learning-history.json"
 );
 
+const DAILY_CODE_CHANGES_FILE = path.join(
+  __dirname,
+  "daily-code-changes.json"
+);
+
+const AUTO_TRADER_CORE_FILE = path.join(
+  __dirname,
+  "auto-trader-core.js"
+);
+
+const CODE_CHANGE_LOG_FILE = path.join(
+  __dirname,
+  "code-change-log.json"
+);
+
+const CODE_CHANGE_HISTORY_FILE = path.join(
+  __dirname,
+  "sy-quant-change-history.json"
+);
+
+function todayKstKey() {
+  return new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Seoul"
+  });
+}
+
+function loadDailyCodeChanges() {
+  const fallback = {
+    version: 1,
+    days: {}
+  };
+
+  const data = readJsonFileSafe(
+    DAILY_CODE_CHANGES_FILE,
+    fallback
+  ) || fallback;
+
+  if (!data.days || typeof data.days !== "object") {
+    data.days = {};
+  }
+
+  return data;
+}
+
+function saveDailyCodeChanges(data) {
+  writeJsonFileAtomic(
+    DAILY_CODE_CHANGES_FILE,
+    data
+  );
+}
+
+function parseSettingValue(source, key) {
+  const escapedKey = String(key).replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*${escapedKey}\\s*:\\s*([^,\\n}]+)`,
+    "m"
+  );
+
+  const match = source.match(pattern);
+
+  if (!match) {
+    return null;
+  }
+
+  const raw = String(match[1] || "")
+    .replace(/\/\/.*$/, "")
+    .trim();
+
+  if (/^true$/i.test(raw)) return true;
+  if (/^false$/i.test(raw)) return false;
+
+  if (/^["'`].*["'`]$/.test(raw)) {
+    return raw.slice(1, -1);
+  }
+
+  const normalized = raw
+    .replace(/\s+/g, "")
+    .replace(/\*1000$/i, "000");
+
+  const number = Number(normalized);
+
+  if (Number.isFinite(number)) {
+    return number;
+  }
+
+  const multiplication = raw.match(
+    /^([\d.]+)\s*\*\s*([\d.]+)$/
+  );
+
+  if (multiplication) {
+    return (
+      Number(multiplication[1]) *
+      Number(multiplication[2])
+    );
+  }
+
+  return raw;
+}
+
+function getCurrentTradingSettings() {
+  const keys = [
+    "buyAssetRatio",
+    "coreStartTime",
+    "coreEndTime",
+    "coreMaxHoldingCount",
+    "coreMaxChangeRate",
+    "coreMinTradeVolumeRatio",
+    "coreMinDayPositionRate",
+    "coreMaxDayPositionRate",
+    "coreStopLossRate",
+    "coreFirstTakeProfitRate",
+    "coreTrailingStartRate",
+    "coreTrailingStopRate",
+    "volumeStartTime",
+    "volumeEndTime",
+    "volumeMaxHoldingCount",
+    "volumeMinChangeRate",
+    "volumeMaxChangeRate",
+    "volumeMinTradeVolumeRatio",
+    "volumeMinDayPositionRate",
+    "volumeMaxDayPositionRate",
+    "volumeStopLossRate",
+    "volumeFirstTakeProfitRate",
+    "volumeTrailingStartRate",
+    "volumeTrailingStopRate",
+    "sellLoopMs",
+    "minHoldMinutes",
+    "breakEvenStartRate",
+    "breakEvenProtectRate",
+    "holdingWeakSellEnabled",
+    "holdingWeakSellMinHoldMinutes",
+    "holdingWeakSellMaxScore",
+    "holdingWeakSellMaxProfitRate",
+    "holdingWeakSellMaxDayPositionRate",
+    "holdingWeakSellMinScoreDrop",
+    "volumeOverheatBlockEnabled",
+    "volumeOverheatMinVolumeRatio",
+    "volumeOverheatMinChangeRate",
+    "volumeOverheatMinDayPositionRate",
+    "dailyLossLimitRate",
+    "endSellTime",
+    "coreEndSellOnlyPositive",
+    "volumeEndSellOnlyPositive"
+  ];
+
+  if (!fs.existsSync(AUTO_TRADER_CORE_FILE)) {
+    return {
+      available: false,
+      file: "auto-trader-core.js",
+      updatedAt: null,
+      values: {}
+    };
+  }
+
+  const source = fs.readFileSync(
+    AUTO_TRADER_CORE_FILE,
+    "utf8"
+  );
+
+  const values = {};
+
+  for (const key of keys) {
+    const value = parseSettingValue(
+      source,
+      key
+    );
+
+    if (value !== null) {
+      values[key] = value;
+    }
+  }
+
+  const stat = fs.statSync(
+    AUTO_TRADER_CORE_FILE
+  );
+
+  return {
+    available: true,
+    file: "auto-trader-core.js",
+    updatedAt: stat.mtime.toLocaleString(
+      "ko-KR",
+      { timeZone: "Asia/Seoul" }
+    ),
+    values
+  };
+}
+
+
+function loadCodeChangeHistory() {
+  const fallback = {
+    version: 1,
+    importedIds: [],
+    days: {}
+  };
+
+  const data = readJsonFileSafe(
+    CODE_CHANGE_HISTORY_FILE,
+    fallback
+  ) || fallback;
+
+  if (!Array.isArray(data.importedIds)) {
+    data.importedIds = [];
+  }
+
+  if (!data.days || typeof data.days !== "object") {
+    data.days = {};
+  }
+
+  return data;
+}
+
+function saveCodeChangeHistory(data) {
+  writeJsonFileAtomic(
+    CODE_CHANGE_HISTORY_FILE,
+    data
+  );
+}
+
+function normalizeCodeChange(change = {}, fallbackDate = todayKstKey()) {
+  const date = String(
+    change.date || fallbackDate
+  ).trim();
+
+  const file = String(
+    change.file || "알 수 없는 파일"
+  ).trim();
+
+  const title = String(
+    change.title || change.description || "코드 수정"
+  ).trim();
+
+  const description = String(
+    change.description || change.title || ""
+  ).trim();
+
+  const time = String(
+    change.time || change.changedAt || ""
+  ).trim();
+
+  const category = String(
+    change.category || "기타"
+  ).trim();
+
+  const effectiveFrom = String(
+    change.effectiveFrom || "서버 재시작 이후"
+  ).trim();
+
+  const verification = String(
+    change.verification || "다음 거래일 확인"
+  ).trim();
+
+  const rawId = String(change.id || "").trim();
+
+  const generatedId = require("crypto")
+    .createHash("sha1")
+    .update(
+      [
+        date,
+        time,
+        file,
+        category,
+        title,
+        description,
+        effectiveFrom,
+        verification
+      ].join("|")
+    )
+    .digest("hex")
+    .slice(0, 16);
+
+  return {
+    id: rawId || generatedId,
+    date,
+    time,
+    file,
+    category,
+    title,
+    description,
+    effectiveFrom,
+    verification
+  };
+}
+
+function importCodeChangeLog() {
+  if (!fs.existsSync(CODE_CHANGE_LOG_FILE)) {
+    return {
+      imported: 0,
+      skipped: 0,
+      fileFound: false
+    };
+  }
+
+  const packageLog = readJsonFileSafe(
+    CODE_CHANGE_LOG_FILE,
+    { date: todayKstKey(), changes: [] }
+  ) || { date: todayKstKey(), changes: [] };
+
+  const changes = Array.isArray(packageLog.changes)
+    ? packageLog.changes
+    : [];
+
+  const history = loadCodeChangeHistory();
+  const importedIdSet = new Set(history.importedIds);
+  let imported = 0;
+  let skipped = 0;
+
+  for (const rawChange of changes) {
+    const change = normalizeCodeChange(
+      rawChange,
+      packageLog.date || todayKstKey()
+    );
+
+    if (importedIdSet.has(change.id)) {
+      skipped++;
+      continue;
+    }
+
+    if (!Array.isArray(history.days[change.date])) {
+      history.days[change.date] = [];
+    }
+
+    history.days[change.date].push({
+      ...change,
+      importedAt: new Date().toLocaleString(
+        "ko-KR",
+        { timeZone: "Asia/Seoul" }
+      )
+    });
+
+    importedIdSet.add(change.id);
+    imported++;
+  }
+
+  history.importedIds = Array.from(importedIdSet).slice(-2000);
+
+  const dates = Object.keys(history.days)
+    .sort()
+    .reverse();
+
+  for (const oldDate of dates.slice(180)) {
+    delete history.days[oldDate];
+  }
+
+  if (imported > 0) {
+    saveCodeChangeHistory(history);
+    console.log(
+      `[코드 변경기록 자동반영] ${imported}건 추가 / ${skipped}건 중복`
+    );
+  }
+
+  return {
+    imported,
+    skipped,
+    fileFound: true
+  };
+}
+
+function getCodeChangesForDate(date) {
+  const history = loadCodeChangeHistory();
+  const items = Array.isArray(history.days?.[date])
+    ? history.days[date]
+    : [];
+
+  return items
+    .slice()
+    .sort((a, b) => {
+      const timeA = String(a.time || "");
+      const timeB = String(b.time || "");
+      return timeA.localeCompare(timeB);
+    });
+}
+
+
 function loadPaperState() {
   if (!fs.existsSync(PAPER_STATE_FILE)) {
     return {
@@ -3106,6 +3483,78 @@ app.get("/api/server-auto-toggle", (req, res) => {
   });
 });
 
+
+app.get("/api/daily-code-changes", (req, res) => {
+  try {
+    const date = String(
+      req.query.date || todayKstKey()
+    ).trim();
+
+    const data = loadDailyCodeChanges();
+    const day = data.days[date] || {
+      date,
+      updatedAt: null,
+      memo: ""
+    };
+
+    res.json({
+      ok: true,
+      ...day
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
+});
+
+app.post("/api/daily-code-changes", (req, res) => {
+  try {
+    const date = String(
+      req.body?.date || todayKstKey()
+    ).trim();
+
+    const memo = String(
+      req.body?.memo || ""
+    ).trim();
+
+    const data = loadDailyCodeChanges();
+
+    data.days[date] = {
+      date,
+      updatedAt: new Date().toLocaleString(
+        "ko-KR",
+        { timeZone: "Asia/Seoul" }
+      ),
+      memo
+    };
+
+    /*
+     * 오래된 기록은 90일까지만 유지한다.
+     */
+    const dates = Object.keys(data.days)
+      .sort()
+      .reverse();
+
+    for (const oldDate of dates.slice(90)) {
+      delete data.days[oldDate];
+    }
+
+    saveDailyCodeChanges(data);
+
+    res.json({
+      ok: true,
+      ...data.days[date]
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
+});
+
 app.get("/api/today-trade-analysis", (req, res) => {
   try {
     const state = loadState();
@@ -3321,9 +3770,39 @@ app.get("/api/today-trade-analysis", (req, res) => {
       s.avgLoss = s.losses > 0 ? s.lossProfitSum / s.losses : 0;
     });
 
+    const currentSettings =
+      getCurrentTradingSettings();
+
+    const codeChangeImportResult =
+      importCodeChangeLog();
+
+    const automaticCodeChanges =
+      getCodeChangesForDate(today);
+
+    const dailyCodeChanges =
+      loadDailyCodeChanges();
+
+    const manualCodeChanges =
+      dailyCodeChanges.days?.[today] || {
+        date: today,
+        updatedAt: null,
+        memo: ""
+      };
+
+    const todayCodeChanges = {
+      ...manualCodeChanges,
+      automatic: automaticCodeChanges,
+      automaticCount: automaticCodeChanges.length,
+      importResult: codeChangeImportResult
+    };
+
     res.json({
       ok: true,
       date: today,
+
+      currentSettings,
+      todayCodeChanges,
+
       summary: {
         buyCount: buys.length,
         sellCount: sells.length,
@@ -3890,6 +4369,21 @@ app.get("/api/refresh-holding-prices", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`서버 실행중: ${PORT}`);
+
+  try {
+    const importResult = importCodeChangeLog();
+
+    if (importResult.fileFound) {
+      console.log(
+        `[코드 변경기록 확인] 추가 ${importResult.imported}건 / 중복 ${importResult.skipped}건`
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[코드 변경기록 자동반영 실패]",
+      error.message
+    );
+  }
 
   // 08:40 장전시장자료 → 09:00 OPEN → 이후 CORE/VOLUME 순서로 실행합니다.
   startOpenMarketData();
