@@ -256,7 +256,7 @@ button:disabled {
       <table>
         <thead>
           <tr>
-            <th>종목</th><th>코드</th><th>전략</th><th>매수가</th><th>수량</th><th>매수금액</th><th>발견점수</th><th>최종점수</th><th>시장점수</th><th>후보강도</th><th>등락률</th><th>거래량비율</th><th>당일위치</th><th>시간</th>
+            <th>종목</th><th>코드</th><th>전략</th><th>매수가</th><th>수량</th><th>매수금액</th><th>발견점수</th><th>최종점수</th><th>시장점수</th><th>후보강도</th><th>OPEN 지속강도</th><th>30초 가격</th><th>30초 거래량</th><th>고점갱신</th><th>HOT 유지</th><th>등락률</th><th>거래량비율</th><th>당일위치</th><th>시간</th>
           </tr>
         </thead>
         <tbody id="buyBody"><tr><td colspan="14" class="empty">불러오는 중...</td></tr></tbody>
@@ -774,12 +774,17 @@ async function saveTodayCodeChanges() {
               <td>${finalScore || "-"}</td>
               <td>${marketScore || "-"}</td>
               <td>${candidateStrength || "-"}</td>
+              <td>${getStrategy(log) === "OPEN" ? (Number(log.openMomentumScore || 0).toFixed(1) || "-") : "-"}</td>
+              <td>${getStrategy(log) === "OPEN" ? formatOptionalRate(log.openPriceRise30s) : "-"}</td>
+              <td>${getStrategy(log) === "OPEN" ? formatOptionalRate(log.openVolumeGrowth30s) : "-"}</td>
+              <td>${getStrategy(log) === "OPEN" ? (log.openHighRefreshCount || 0) + "회" : "-"}</td>
+              <td>${getStrategy(log) === "OPEN" ? Math.round(Number(log.openHotDurationSeconds || 0)) + "초" : "-"}</td>
               <td>${formatOptionalRate(log.buyChangeRate || log.changeRate)}</td>
               <td>${formatOptionalRate(log.buyTradeVolumeRatio || log.tradeVolumeRatio)}</td>
               <td>${formatOptionalRate(log.buyDayPositionRate || log.dayPositionRate)}</td>
               <td>${log.time || log.createdAt || "-"}</td>
             </tr>`;
-        }).join("") || `<tr><td colspan="14" class="empty">오늘 매수 내역이 없습니다.</td></tr>`;
+        }).join("") || `<tr><td colspan="19" class="empty">오늘 매수 내역이 없습니다.</td></tr>`;
 
         const sellTypeRows = Object.keys(sellTypeCounts).map(type => `
           <tr><td>${type}</td><td>${sellTypeCounts[type]}</td></tr>
@@ -982,7 +987,7 @@ async function saveTodayCodeChanges() {
 
       text += `\n[오늘 매수 내역]\n`;
       buys.forEach((log, idx) => {
-        text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / 매수가 ${formatPrice(getBuyPrice(log))} / 수량 ${log.qty || log.quantity || "-"} / 발견점수 ${log.discoverScore || "-"} / 최종점수 ${getFinalBuyScore(log) || "-"} / 시장점수 ${getMarketScore(log) || "-"} / 후보강도 ${getCandidateStrength(log) || "-"} / 등락률 ${formatOptionalRate(log.buyChangeRate || log.changeRate)} / 거래량비율 ${formatOptionalRate(log.buyTradeVolumeRatio || log.tradeVolumeRatio)} / 당일위치 ${formatOptionalRate(log.buyDayPositionRate || log.dayPositionRate)} / 시간 ${log.time || log.createdAt || "-"}\n`;
+        text += `${idx + 1}. ${getName(log)} / ${getCode(log)} / ${getStrategy(log)} / 매수가 ${formatPrice(getBuyPrice(log))} / 수량 ${log.qty || log.quantity || "-"} / 발견점수 ${log.discoverScore || "-"} / 최종점수 ${getFinalBuyScore(log) || "-"} / 시장점수 ${getMarketScore(log) || "-"} / 후보강도 ${getCandidateStrength(log) || "-"}${getStrategy(log) === "OPEN" ? ` / OPEN지속강도 ${Number(log.openMomentumScore || 0).toFixed(1)} / 30초가격 ${formatOptionalRate(log.openPriceRise30s)} / 30초거래량 ${formatOptionalRate(log.openVolumeGrowth30s)} / 고점갱신 ${Number(log.openHighRefreshCount || 0)}회 / HOT유지 ${Math.round(Number(log.openHotDurationSeconds || 0))}초` : ""} / 등락률 ${formatOptionalRate(log.buyChangeRate || log.changeRate)} / 거래량비율 ${formatOptionalRate(log.buyTradeVolumeRatio || log.tradeVolumeRatio)} / 당일위치 ${formatOptionalRate(log.buyDayPositionRate || log.dayPositionRate)} / 시간 ${log.time || log.createdAt || "-"}\n`;
       });
 
       text += `\n[오늘 매도 내역]\n`;

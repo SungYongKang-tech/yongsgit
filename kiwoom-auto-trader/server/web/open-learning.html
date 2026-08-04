@@ -264,6 +264,21 @@
       .condition-grid { grid-template-columns: repeat(4, 1fr); }
     }
 
+    .evaluation-grid { display:grid; grid-template-columns:1fr; gap:10px; }
+    .evaluation-card { background:#111827; border-radius:12px; padding:11px; border:1px solid #374151; }
+    .evaluation-head { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:8px; }
+    .evaluation-title { font-size:15px; font-weight:800; }
+    .eval-good { color:#86efac; }
+    .eval-normal { color:#facc15; }
+    .eval-bad { color:#fca5a5; }
+    .growth-table-wrap { overflow-x:auto; }
+    .growth-table { width:100%; border-collapse:collapse; min-width:840px; }
+    .growth-table th, .growth-table td { padding:8px; border-bottom:1px solid #374151; font-size:12px; text-align:right; white-space:nowrap; }
+    .growth-table th:first-child, .growth-table td:first-child { text-align:left; }
+    .growth-selected { background:rgba(34,197,94,.10); }
+    .timeline-line { margin-top:6px; color:#9ca3af; font-size:11px; line-height:1.55; white-space:normal; }
+    @media (min-width:800px) { .evaluation-grid { grid-template-columns:repeat(2,1fr); } }
+
   </style>
 </head>
 <body>
@@ -315,13 +330,13 @@
   <div class="card">
     <h2>✅ OPEN 실제매수 운영방식</h2>
     <div class="condition-grid">
-      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value">조건 통과 즉시 1위 매수</div></div>
-      <div class="condition-item"><div class="condition-label">보완매수 시작</div><div class="condition-value">09:03 이후</div></div>
-      <div class="condition-item"><div class="condition-label">보완 최소조건</div><div class="condition-value">발견 8 · 거래량 85%</div></div>
+      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value">30초 관찰 후 지속강도 1위</div></div>
+      <div class="condition-item"><div class="condition-label">보완매수 시작</div><div class="condition-value">09:07 이후</div></div>
+      <div class="condition-item"><div class="condition-label">보완 최소조건</div><div class="condition-value">발견 9 · 거래량 130%</div></div>
       <div class="condition-item"><div class="condition-label">투자금</div><div class="condition-value">남은 현금의 25%</div></div>
     </div>
     <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.6;">
-      엄격 통과 후보가 없더라도 09:03 이후 상승률·거래량·당일위치·시가대비·최초가격 약화 기준을 만족한 최고 후보 1개를 실제 매수합니다.
+      최소 30초·4회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 최고 후보 1개를 실제 매수합니다. 보완매수도 09:07 이후 동일한 지속강도 기준을 적용합니다.
     </div>
   </div>
 
@@ -358,6 +373,23 @@
     <div class="card">
       <div class="label">1위 평균수익률</div>
       <div class="value" id="bestAvgRate">-</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🧠 오늘 OPEN 매수·매도 진단</h2>
+    <div id="openDecisionEvaluationBox" class="evaluation-grid">
+      <div class="empty">진단자료 불러오는 중...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📈 후보 성장 TOP10</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:8px;">
+      후보별 최초·최종 점수와 상승 지속강도를 비교합니다. 실제 선택 종목은 강조 표시됩니다.
+    </div>
+    <div id="candidateGrowthBox" class="growth-table-wrap">
+      <div class="empty">후보 성장자료 불러오는 중...</div>
     </div>
   </div>
 
@@ -632,6 +664,112 @@
     `;
   }
 
+
+  function evaluationClass(level) {
+    const value = String(level || "").toUpperCase();
+    if (value === "GOOD") return "eval-good";
+    if (value === "BAD") return "eval-bad";
+    return "eval-normal";
+  }
+
+  function renderOpenDecisionEvaluation(rows = []) {
+    const box = document.getElementById("openDecisionEvaluationBox");
+    if (!box) return;
+    const day = Array.isArray(rows) ? rows[0] : null;
+
+    if (!day) {
+      box.innerHTML = `<div class="empty">오늘 OPEN 진단자료가 없습니다.</div>`;
+      return;
+    }
+
+    const buy = day.buyEvaluation || {};
+    const sell = day.sellEvaluation || {};
+    const real = day.realTrade || {};
+    const selected = day.selectedTrade || {};
+
+    const reasonHtml = (items = []) =>
+      (Array.isArray(items) && items.length
+        ? items.map(item => `• ${escapeHtml(item)}`).join("<br>")
+        : "• 평가 근거 없음");
+
+    box.innerHTML = `
+      <div class="evaluation-card">
+        <div class="evaluation-head">
+          <div class="evaluation-title">매수 평가 · ${escapeHtml(selected.name || real.name || "미매수")}</div>
+          <b class="${evaluationClass(buy.level)}">${escapeHtml(buy.grade || "평가 대기")}</b>
+        </div>
+        <div class="mini-grid">
+          <div class="mini-box"><div class="mini-label">지속강도</div><div class="mini-value">${Number(buy.momentumScore || 0).toFixed(1)}점</div></div>
+          <div class="mini-box"><div class="mini-label">가격 지속</div><div class="mini-value">${(Number(buy.pricePersistence || 0) * 100).toFixed(0)}%</div></div>
+          <div class="mini-box"><div class="mini-label">거래량 지속</div><div class="mini-value">${(Number(buy.volumePersistence || 0) * 100).toFixed(0)}%</div></div>
+          <div class="mini-box"><div class="mini-label">보유 중 최고</div><div class="mini-value ${rateClass(buy.highestProfitRate)}">${formatRate(buy.highestProfitRate)}</div></div>
+        </div>
+        <div class="condition-box"><div class="condition-title">판단 근거</div>${reasonHtml(buy.reasons)}</div>
+      </div>
+
+      <div class="evaluation-card">
+        <div class="evaluation-head">
+          <div class="evaluation-title">매도 평가 · ${escapeHtml(real.sellType || "결과 없음")}</div>
+          <b class="${evaluationClass(sell.level)}">${escapeHtml(sell.grade || "평가 대기")}</b>
+        </div>
+        <div class="mini-grid">
+          <div class="mini-box"><div class="mini-label">보유시간</div><div class="mini-value">${formatSeconds(sell.holdingSeconds)}</div></div>
+          <div class="mini-box"><div class="mini-label">최고수익</div><div class="mini-value ${rateClass(sell.highestProfitRate)}">${formatRate(sell.highestProfitRate)}</div></div>
+          <div class="mini-box"><div class="mini-label">매도수익</div><div class="mini-value ${rateClass(sell.profitRate)}">${formatRate(sell.profitRate)}</div></div>
+          <div class="mini-box"><div class="mini-label">수익회수율</div><div class="mini-value">${Number(sell.captureRate || 0).toFixed(0)}%</div></div>
+        </div>
+        <div class="condition-box"><div class="condition-title">판단 근거</div>${reasonHtml(sell.reasons)}</div>
+      </div>
+    `;
+  }
+
+  function renderCandidateGrowth(rows = []) {
+    const box = document.getElementById("candidateGrowthBox");
+    if (!box) return;
+    const day = Array.isArray(rows) ? rows[0] : null;
+    const list = Array.isArray(day?.candidateGrowth) ? day.candidateGrowth : [];
+
+    if (!list.length) {
+      box.innerHTML = `<div class="empty">저장된 후보 성장자료가 없습니다. 새 코드 적용 후 다음 거래일부터 누적됩니다.</div>`;
+      return;
+    }
+
+    box.innerHTML = `
+      <table class="growth-table">
+        <thead>
+          <tr>
+            <th>종목</th><th>관찰</th><th>발견점수</th><th>최종점수</th>
+            <th>최고 지속강도</th><th>가격 지속</th><th>거래량 지속</th><th>선택</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(item => {
+            const timeline = Array.isArray(item.timeline) ? item.timeline : [];
+            const timelineText = timeline.slice(-6).map(row =>
+              `${String(row.observedAt || "").slice(-11)} ${Number(row.momentumScore || 0).toFixed(1)}점`
+            ).join(" → ");
+            return `
+              <tr class="${item.selected ? "growth-selected" : ""}">
+                <td>
+                  <b>${escapeHtml(item.name || item.code || "-")}</b>
+                  <div class="day-sub">${escapeHtml(item.code || "")}</div>
+                  <div class="timeline-line">${escapeHtml(timelineText || "시간별 자료 없음")}</div>
+                </td>
+                <td>${Number(item.observationCount || 0)}회</td>
+                <td>${Number(item.firstDiscoverScore || 0).toFixed(1)} → ${Number(item.lastDiscoverScore || 0).toFixed(1)}</td>
+                <td>${Number(item.firstRankScore || 0).toFixed(1)} → ${Number(item.lastRankScore || 0).toFixed(1)}</td>
+                <td>${Number(item.maxMomentumScore || 0).toFixed(1)}</td>
+                <td>${(Number(item.pricePersistence || 0) * 100).toFixed(0)}%</td>
+                <td>${(Number(item.volumePersistence || 0) * 100).toFixed(0)}%</td>
+                <td>${item.selected ? "✅ 실제매수" : "미선택"}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
   function renderDays(data) {
     const box = document.getElementById("dayBox");
     const rows = Array.isArray(data.rows) ? data.rows : [];
@@ -662,6 +800,28 @@
           </div>
 
           ${renderAppliedConditions(day)}
+
+          <div class="condition-box">
+            <div class="condition-title">🧠 매수·매도 평가</div>
+            <div class="condition-grid">
+              <div class="condition-item">
+                <div class="condition-label">매수 평가</div>
+                <div class="condition-value ${evaluationClass(day.buyEvaluation?.level)}">${escapeHtml(day.buyEvaluation?.grade || "-")}</div>
+              </div>
+              <div class="condition-item">
+                <div class="condition-label">매도 평가</div>
+                <div class="condition-value ${evaluationClass(day.sellEvaluation?.level)}">${escapeHtml(day.sellEvaluation?.grade || "-")}</div>
+              </div>
+              <div class="condition-item">
+                <div class="condition-label">지속강도</div>
+                <div class="condition-value">${Number(day.buyEvaluation?.momentumScore || 0).toFixed(1)}점</div>
+              </div>
+              <div class="condition-item">
+                <div class="condition-label">보유시간</div>
+                <div class="condition-value">${formatSeconds(day.sellEvaluation?.holdingSeconds)}</div>
+              </div>
+            </div>
+          </div>
 
           <div class="result-row result-head">
             <div>방식</div><div class="right">진입가</div><div class="right">최고</div><div class="right">결과</div>
@@ -951,6 +1111,8 @@
           .filter(Boolean)
       );
 
+      renderOpenDecisionEvaluation(data.rows || []);
+      renderCandidateGrowth(data.rows || []);
       renderVariants(data);
       renderDays(data);
       if (latestPriorityStocks.length) {

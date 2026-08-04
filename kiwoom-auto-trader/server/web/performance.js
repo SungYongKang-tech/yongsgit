@@ -1045,6 +1045,13 @@ const sectorPowerScore = Number(
   0
 );
 
+const openDiagnostic = item.openBuyDiagnostic || item.selectionInputs || {};
+const openMomentumScore = Number(item.momentumScore || openDiagnostic.momentumScore || 0);
+const openHotMomentumScore = Number(item.hotMomentumScore || openDiagnostic.hotMomentumScore || 0);
+const openPricePersistence = Number(item.hotPricePersistence || openDiagnostic.hotPricePersistence || 0);
+const openVolumePersistence = Number(item.hotVolumePersistence || openDiagnostic.hotVolumePersistence || 0);
+const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.hotDurationSeconds || 0);
+
         const trailingClass = item.trailingActive ? "status-on" : "status-wait";
         const trailingTitle = item.trailingActive ? "🟢 익절보호 ON" : "⏳ 트레일링 대기";
         const trailingDetail = item.trailingActive
@@ -1068,9 +1075,20 @@ const sectorPowerScore = Number(
 
                 <div class="score-chip-row">
                   <span class="score-chip">최종 ${finalBuyScore || "-"}</span>
-                  <span class="score-chip">시장 ${marketScore || "-"}</span>
-                  <span class="score-chip">섹터 ${sectorPowerScore || "-"}</span>
-                  <span class="score-chip">수급 ${leaderStrengthScore || "-"}</span>
+                  ${group === "OPEN"
+                    ? `
+                      <span class="score-chip">지속 ${openMomentumScore ? openMomentumScore.toFixed(1) : "-"}</span>
+                      <span class="score-chip">HOT ${openHotMomentumScore ? openHotMomentumScore.toFixed(1) : "-"}</span>
+                      <span class="score-chip">가격지속 ${openPricePersistence ? (openPricePersistence * 100).toFixed(0) + "%" : "-"}</span>
+                      <span class="score-chip">거래량지속 ${openVolumePersistence ? (openVolumePersistence * 100).toFixed(0) + "%" : "-"}</span>
+                      <span class="score-chip">HOT유지 ${openHotDurationSeconds ? Math.round(openHotDurationSeconds) + "초" : "-"}</span>
+                    `
+                    : `
+                      <span class="score-chip">시장 ${marketScore || "-"}</span>
+                      <span class="score-chip">섹터 ${sectorPowerScore || "-"}</span>
+                      <span class="score-chip">수급 ${leaderStrengthScore || "-"}</span>
+                    `
+                  }
                 </div>
               </div>
 
@@ -1390,10 +1408,25 @@ function classifyOpenSelectionMode(day = {}) {
     ""
   );
 
-  if (/보완|안전 최소조건|fallback/i.test(reason)) return "09:03 보완선정";
-  if (/엄격|정상 통과|rank|최종점수/i.test(reason)) return "엄격조건 1위";
+  if (/상승 지속|지속강도|모멘텀|momentum/i.test(reason)) {
+    return "30초 상승지속 확인";
+  }
+  if (/보완|안전 최소조건|fallback/i.test(reason)) {
+    return "지속강도 보완선정";
+  }
+  if (/엄격|정상 통과|rank|최종점수/i.test(reason)) {
+    return "지속강도 1위";
+  }
   if (day.selectedTrade || day.realTrade?.buyPrice) return "실제선정";
-  return "후보 탐색 중";
+  return "30초 다중관찰 중";
+}
+
+function firstFiniteOpenNumber(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return 0;
 }
 
 function renderOpenLiveStatus(payload = {}) {
@@ -1403,6 +1436,8 @@ function renderOpenLiveStatus(payload = {}) {
   const selected = day.selectedTrade || day.realTrade || null;
   const candidates = Array.isArray(day.latestCandidates) ? day.latestCandidates : [];
   const top = candidates[0] || day.openTopCandidate || null;
+  const metricSource = selected?.selectionInputs || selected || top || {};
+  const diagnostic = selected?.openBuyDiagnostic || selected?.selectionInputs || top || {};
   const status = String(day.status || (selected ? "HOLDING" : "WAITING")).toUpperCase();
 
   const badge = document.getElementById("openLiveMode");
@@ -1416,17 +1451,74 @@ function renderOpenLiveStatus(payload = {}) {
       badge.textContent = status === "SKIPPED" ? "미매수 종료" : "거래 완료";
     } else {
       badge.classList.add("open-mode-wait");
-      badge.textContent = "후보 탐색";
+      badge.textContent = "상승지속 관찰";
     }
   }
 
   const statusMap = {
     WAITING: "시작 대기",
-    SCANNING: "후보 탐색",
+    SCANNING: "30초 후보 관찰",
     HOLDING: "OPEN 보유 중",
     COMPLETED: "OPEN 거래 완료",
     SKIPPED: "오늘 미매수"
   };
+
+  const momentumScore = firstFiniteOpenNumber(
+    diagnostic.momentumScore,
+    metricSource.momentumScore,
+    top?.momentumScore
+  );
+  const hotMomentumScore = firstFiniteOpenNumber(
+    diagnostic.hotMomentumScore,
+    metricSource.hotMomentumScore,
+    top?.hotMomentumScore
+  );
+  const pricePersistence = firstFiniteOpenNumber(
+    diagnostic.hotPricePersistence,
+    diagnostic.pricePersistence,
+    metricSource.hotPricePersistence,
+    top?.hotPricePersistence,
+    top?.pricePersistence
+  );
+  const volumePersistence = firstFiniteOpenNumber(
+    diagnostic.hotVolumePersistence,
+    diagnostic.volumePersistence,
+    metricSource.hotVolumePersistence,
+    top?.hotVolumePersistence,
+    top?.volumePersistence
+  );
+  const priceRise30s = firstFiniteOpenNumber(
+    diagnostic.hotPriceRise30s,
+    diagnostic.priceRise30s,
+    metricSource.hotPriceRise30s,
+    top?.hotPriceRise30s,
+    top?.priceRise30s
+  );
+  const volumeGrowth30s = firstFiniteOpenNumber(
+    diagnostic.hotVolumeGrowth30s,
+    diagnostic.volumeGrowth30s,
+    metricSource.hotVolumeGrowth30s,
+    top?.hotVolumeGrowth30s,
+    top?.volumeGrowth30s
+  );
+  const hotDurationSeconds = firstFiniteOpenNumber(
+    diagnostic.hotDurationSeconds,
+    metricSource.hotDurationSeconds,
+    top?.hotDurationSeconds
+  );
+  const highRefreshCount = firstFiniteOpenNumber(
+    diagnostic.hotHighRefreshCount,
+    diagnostic.highRefreshCount,
+    metricSource.hotHighRefreshCount,
+    top?.hotHighRefreshCount,
+    top?.highRefreshCount
+  );
+  const observationCount = firstFiniteOpenNumber(
+    diagnostic.observationCount,
+    metricSource.observationCount,
+    top?.observationCount,
+    day.candidateObservations?.[top?.code]?.observationCount
+  );
 
   setOpenText("openLiveStatus", statusMap[status] || status);
   setOpenText("openSelectionMode", classifyOpenSelectionMode(day));
@@ -1439,6 +1531,34 @@ function renderOpenLiveStatus(payload = {}) {
     top
       ? `${Number(top.rankScore ?? top.discoverScore ?? top.score ?? 0).toFixed(1)}점`
       : "-"
+  );
+  setOpenText(
+    "openMomentumScore",
+    momentumScore || hotMomentumScore
+      ? `${momentumScore.toFixed(1)}점 / HOT ${hotMomentumScore.toFixed(1)}`
+      : "관찰 중"
+  );
+  setOpenText(
+    "openPersistence",
+    pricePersistence || volumePersistence
+      ? `가격 ${(pricePersistence * 100).toFixed(0)}% / 거래량 ${(volumePersistence * 100).toFixed(0)}%`
+      : "-"
+  );
+  setOpenText(
+    "openRecentMomentum",
+    priceRise30s || volumeGrowth30s
+      ? `가격 ${formatRate(priceRise30s)} / 거래량 ${formatRate(volumeGrowth30s)}`
+      : "-"
+  );
+  setOpenText(
+    "openHotDuration",
+    hotDurationSeconds || highRefreshCount
+      ? `${Math.round(hotDurationSeconds)}초 / ${Math.round(highRefreshCount)}회`
+      : "-"
+  );
+  setOpenText(
+    "openObservationCount",
+    observationCount ? `${Math.round(observationCount)}회` : "-"
   );
 
   if (selected) {
@@ -1458,7 +1578,7 @@ function renderOpenLiveStatus(payload = {}) {
     day.result?.sellReason ||
     day.openSkipReason ||
     (candidates.length
-      ? `후보 ${candidates.length}개 평가 중 / 09:03 이후 엄격 통과 후보가 없으면 안전 최소조건 최고 후보를 보완선정합니다.`
+      ? `후보 ${candidates.length}개를 30초 이상 반복 관찰하고 가격·거래량 지속성 및 HOT 유지강도가 가장 높은 종목을 선정합니다.`
       : "아직 OPEN 후보가 저장되지 않았습니다.");
 
   setOpenText("openLiveReason", reason);
@@ -1485,6 +1605,11 @@ async function loadOpenLiveStatus() {
     setOpenText("openSelectionMode", "-");
     setOpenText("openTopCandidate", "-");
     setOpenText("openTopScore", "-");
+    setOpenText("openMomentumScore", "-");
+    setOpenText("openPersistence", "-");
+    setOpenText("openRecentMomentum", "-");
+    setOpenText("openHotDuration", "-");
+    setOpenText("openObservationCount", "-");
     setOpenText("openActualBuy", "-");
     setOpenText("openLiveReason", `OPEN 학습 API 확인 필요 / ${err.message}`);
     const badge = document.getElementById("openLiveMode");

@@ -2942,6 +2942,146 @@ app.post("/api/open-market-refresh", async (req, res) => {
 });
 
 
+
+function classifyOpenBuyQuality(selectedTrade = {}, result = {}) {
+  const inputs = selectedTrade.selectionInputs || result.selectionInputs || {};
+  const momentumScore = Number(inputs.momentumScore || result.buyQualitySnapshot?.momentumScore || 0);
+  const pricePersistence = Number(inputs.pricePersistence || result.buyQualitySnapshot?.pricePersistence || 0);
+  const volumePersistence = Number(inputs.volumePersistence || result.buyQualitySnapshot?.volumePersistence || 0);
+  const highestProfitRate = Number(result.highestProfitRate || selectedTrade.highestProfitRate || 0);
+
+  let grade = "자료 부족";
+  let level = "WAIT";
+  const reasons = [];
+
+  if (!selectedTrade.code && !result.code) {
+    return { grade: "미매수", level: "SKIP", reasons: ["실제 OPEN 매수 없음"] };
+  }
+
+  if (momentumScore >= 45 && pricePersistence >= 0.7 && volumePersistence >= 0.55) {
+    grade = "양호";
+    level = "GOOD";
+  } else if (momentumScore >= 35 && pricePersistence >= 0.6 && volumePersistence >= 0.5) {
+    grade = "보통";
+    level = "NORMAL";
+  } else {
+    grade = "매수 품질 낮음";
+    level = "BAD";
+  }
+
+  if (momentumScore < 35) reasons.push(`지속강도 ${momentumScore.toFixed(1)}점`);
+  if (pricePersistence < 0.6) reasons.push(`가격 지속 ${(pricePersistence * 100).toFixed(0)}%`);
+  if (volumePersistence < 0.5) reasons.push(`거래량 지속 ${(volumePersistence * 100).toFixed(0)}%`);
+  if (highestProfitRate < 1) reasons.push(`보유 중 최고수익 ${highestProfitRate.toFixed(2)}%`);
+
+  if (!reasons.length) reasons.push("상승 지속성과 거래량 흐름이 기준 이상");
+
+  return {
+    grade,
+    level,
+    momentumScore,
+    pricePersistence,
+    volumePersistence,
+    highestProfitRate,
+    reasons
+  };
+}
+
+function classifyOpenSellQuality(selectedTrade = {}, result = {}) {
+  if (!result || !result.sellType || result.sellType === "OPEN_SKIPPED") {
+    return { grade: "평가 대기", level: "WAIT", reasons: ["실제 매도 결과 없음"] };
+  }
+
+  const holdingSeconds = Number(result.holdingSeconds || 0);
+  const highestProfitRate = Number(result.highestProfitRate || 0);
+  const profitRate = Number(result.profitRate || 0);
+  const captureRate = Number(result.profitCaptureRate || 0);
+  const reasons = [];
+  let grade = "보통";
+  let level = "NORMAL";
+
+  if (holdingSeconds > 0 && holdingSeconds < 120 && !/STOP_LOSS/.test(String(result.sellType))) {
+    grade = "조기매도";
+    level = "BAD";
+    reasons.push(`보유 ${holdingSeconds}초`);
+  }
+
+  if (highestProfitRate >= 1 && captureRate < 35) {
+    grade = "수익 회수 낮음";
+    level = "BAD";
+    reasons.push(`최고수익의 ${captureRate.toFixed(0)}%만 확보`);
+  }
+
+  if (/STOP_LOSS/.test(String(result.sellType))) {
+    grade = "손절";
+    level = profitRate <= -1 ? "NORMAL" : "WAIT";
+    reasons.push("손절 기준에 따른 청산");
+  }
+
+  if (profitRate > 0 && captureRate >= 50) {
+    grade = "양호";
+    level = "GOOD";
+  }
+
+  if (!reasons.length) {
+    reasons.push(`최고 ${highestProfitRate.toFixed(2)}% / 매도 ${profitRate.toFixed(2)}%`);
+  }
+
+  return {
+    grade,
+    level,
+    holdingSeconds,
+    highestProfitRate,
+    profitRate,
+    captureRate,
+    sellType: result.sellType || null,
+    reasons
+  };
+}
+
+function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
+  const observations = day.candidateObservations || {};
+  return Object.values(observations)
+    .map((item) => {
+      const timeline = Array.isArray(item.timeline) ? item.timeline : [];
+      const first = timeline[0] || {};
+      const last = timeline[timeline.length - 1] || {};
+      return {
+        code: item.code || "",
+        name: item.name || item.code || "",
+        selected: String(item.code || "") === String(selectedCode || ""),
+        observationCount: Number(item.observationCount || timeline.length || 0),
+        passCount: Number(item.passCount || 0),
+        firstSeenAt: item.firstSeenAt || first.observedAt || null,
+        lastSeenAt: item.lastSeenAt || last.observedAt || null,
+        firstPrice: Number(first.price || 0),
+        lastPrice: Number(item.lastPrice || last.price || 0),
+        firstDiscoverScore: Number(first.discoverScore || 0),
+        lastDiscoverScore: Number(item.lastDiscoverScore || last.discoverScore || 0),
+        maxDiscoverScore: Number(item.maxDiscoverScore || 0),
+        firstRankScore: Number(first.rankScore || 0),
+        lastRankScore: Number(item.lastRankScore || last.rankScore || 0),
+        maxRankScore: Number(item.maxRankScore || 0),
+        lastMomentumScore: Number(item.lastMomentumScore || last.momentumScore || 0),
+        maxMomentumScore: Number(item.maxMomentumScore || 0),
+        pricePersistence: Number(item.lastPricePersistence || last.pricePersistence || 0),
+        volumePersistence: Number(item.lastVolumePersistence || last.volumePersistence || 0),
+        highestAfterSeenRate:
+          Number(first.price || 0) > 0 && Number(item.highestPrice || 0) > 0
+            ? ((Number(item.highestPrice) - Number(first.price)) / Number(first.price)) * 100
+            : null,
+        lastReason: item.lastReason || last.reason || "",
+        timeline: timeline.slice(-20)
+      };
+    })
+    .sort((a, b) => {
+      if (a.selected !== b.selected) return a.selected ? -1 : 1;
+      if (b.maxMomentumScore !== a.maxMomentumScore) return b.maxMomentumScore - a.maxMomentumScore;
+      return b.maxRankScore - a.maxRankScore;
+    })
+    .slice(0, 10);
+}
+
 app.get("/api/open-learning-summary", (req, res) => {
   try {
     const history = readJsonFileSafe(
@@ -3039,22 +3179,50 @@ app.get("/api/open-learning-summary", (req, res) => {
         return row;
       });
 
+      const selectedTrade = day?.selectedTrade || null;
+      const selectedCode = selectedTrade?.code || day?.result?.code || "";
+      const buyEvaluation = classifyOpenBuyQuality(selectedTrade || {}, day?.result || {});
+      const sellEvaluation = classifyOpenSellQuality(selectedTrade || {}, day?.result || {});
+      const candidateGrowth = buildOpenCandidateGrowth(day || {}, selectedCode);
+
       rows.push({
         date,
         status: day?.status || null,
-        code: comparison?.code || day?.selectedTrade?.code || null,
+        code: comparison?.code || selectedTrade?.code || day?.result?.code || null,
         name: comparison?.name || day?.selectedTrade?.name || null,
         createdAt: comparison?.createdAt || null,
         completedAt: comparison?.completedAt || null,
+        selectedTrade: selectedTrade
+          ? {
+              code: selectedTrade.code || null,
+              name: selectedTrade.name || null,
+              selectedAt: selectedTrade.selectedAt || null,
+              buyPrice: Number(selectedTrade.buyPrice || 0),
+              qty: Number(selectedTrade.qty || 0),
+              selectionReason: selectedTrade.selectionReason || "",
+              selectionInputs: selectedTrade.selectionInputs || {}
+            }
+          : null,
         realTrade: day?.result
           ? {
+              code: day.result.code || selectedTrade?.code || null,
+              name: day.result.name || selectedTrade?.name || null,
               sellType: day.result.sellType || null,
+              sellReason: day.result.sellReason || null,
+              buyPrice: Number(day.result.buyPrice || selectedTrade?.buyPrice || 0),
+              sellPrice: Number(day.result.sellPrice || 0),
               profit: Number(day.result.profit || 0),
               profitRate: Number(day.result.profitRate || 0),
               highestProfitRate: Number(day.result.highestProfitRate || 0),
-              lowestProfitRate: Number(day.result.lowestProfitRate || 0)
+              lowestProfitRate: Number(day.result.lowestProfitRate || 0),
+              holdingSeconds: Number(day.result.holdingSeconds || 0),
+              profitCaptureRate: Number(day.result.profitCaptureRate || 0),
+              selectionInputs: day.result.selectionInputs || selectedTrade?.selectionInputs || {}
             }
           : null,
+        buyEvaluation,
+        sellEvaluation,
+        candidateGrowth,
         variants: normalizedVariants
       });
     }
@@ -3662,7 +3830,19 @@ app.get("/api/today-trade-analysis", (req, res) => {
         buyVolumeDiff: Number(log.buyVolumeDiff || 0),
         buyDayPositionDiff: Number(log.buyDayPositionDiff || 0),
         candidateFirstPrice: Number(log.candidateFirstPrice || 0),
-        candidateFirstSeenAtText: log.candidateFirstSeenAtText || null
+        candidateFirstSeenAtText: log.candidateFirstSeenAtText || null,
+        openMomentumScore: Number(log.momentumScore || log.openBuyDiagnostic?.momentumScore || 0),
+        openMomentumReason: log.momentumReason || log.openBuyDiagnostic?.momentumReason || "",
+        openHotMomentumScore: Number(log.hotMomentumScore || log.openBuyDiagnostic?.hotMomentumScore || 0),
+        openHotMomentumBonus: Number(log.hotMomentumBonus || log.openBuyDiagnostic?.hotMomentumBonus || 0),
+        openPriceRise30s: Number(log.hotPriceRise30s || log.openBuyDiagnostic?.hotPriceRise30s || 0),
+        openVolumeGrowth30s: Number(log.hotVolumeGrowth30s || log.openBuyDiagnostic?.hotVolumeGrowth30s || 0),
+        openPricePersistence: Number(log.hotPricePersistence || log.openBuyDiagnostic?.hotPricePersistence || 0),
+        openVolumePersistence: Number(log.hotVolumePersistence || log.openBuyDiagnostic?.hotVolumePersistence || 0),
+        openHighRefreshCount: Number(log.hotHighRefreshCount || log.openBuyDiagnostic?.hotHighRefreshCount || 0),
+        openHotDurationSeconds: Number(log.hotDurationSeconds || log.openBuyDiagnostic?.hotDurationSeconds || 0),
+        openConfirmPriceRiseRate: Number(log.confirmPriceRiseRate || log.openBuyDiagnostic?.confirmPriceRiseRate || 0),
+        openRecentPriceDiffRate: Number(log.recentPriceDiffRate || log.openBuyDiagnostic?.recentPriceDiffRate || 0)
       }));
 
     const sells = todayLogs

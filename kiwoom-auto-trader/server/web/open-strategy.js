@@ -81,7 +81,7 @@ openFocusedCandidateMaxCount: 20,
 openFocusedPriceDelayMs: 150,
 
 // 새로운 종목 유입을 위해 60초마다 일반검색도 다시 실행
-openFullRescanIntervalMs: 180 * 1000,
+openFullRescanIntervalMs: 30 * 1000,
 
 // OPEN 잠재후보: 초기에 기준 미달이어도 짧게 집중 추적 후 정식후보로 승격
 openPotentialEnabled: true,
@@ -113,13 +113,19 @@ openPotentialPriceDelayMs: 120,
   openHotMinScore: 45,
   openHotMaxAgeSeconds: 60,
   openHotScoreWeight: 0.50,
+  openHotMomentumWeight: 0.50,
+  openHotMomentumBonusMax: 30,
   openPriorityScoreWeight: 0.30,
   openHotBonusMax: 50,
   openPriorityBonusMax: 30,
   
 
   // OPEN 후보 첫 발견 후 강화 확인 대기시간
-openConfirmWaitMs: 10 * 1000,
+openConfirmWaitMs: 30 * 1000,
+openMinObservationCount: 4,
+openMinStrongObservationCount: 3,
+openMomentumMinScore: 35,
+openMomentumSampleWindowMs: 60 * 1000,
 
 // OPEN 후보 점수 상승 추세 보너스
 openScoreTrendBonusPerPoint: 4,
@@ -137,17 +143,18 @@ openConfirmPriceBonusHigh: 10,
 openRecentPriceWeakBlockRate: -0.20,
 
 
-  openStopLossRate: -0.7,
-  openTrailingStartRate: 0.7,
-  openTrailingStopRate: 0.3,
-  openStagnationStartRate: 0.4,
-  openStagnationSeconds: 90,
-  openMinProfitToStagnationSell: 0.15,
-  openMaxHoldingMinutes: 30,
+  openMinHoldingSeconds: 120,
+openStopLossRate: -1.0,
+  openTrailingStartRate: 2.0,
+  openTrailingStopRate: 0.8,
+  openStagnationStartRate: 1.5,
+  openStagnationSeconds: 300,
+  openMinProfitToStagnationSell: 0.8,
+  openMaxHoldingMinutes: 60,
 
   // 트레일링 진입 종목은 더 오래 보유
-openTrailingMaxHoldingMinutes: 60,
-openTrailingForceSellTime: "10:30",
+openTrailingMaxHoldingMinutes: 180,
+openTrailingForceSellTime: "14:50",
 
   openBuyLoopMs: 5 * 1000,
   openSellLoopMs: 5 * 1000,
@@ -196,16 +203,18 @@ openMaxRequiredDiscoverScore: 11,
 
 // 엄격 통과 후보가 없을 때 실제 매수 기회를 만드는 보완매수
 openFallbackBuyEnabled: true,
-openFallbackBuyStartTime: "09:03",
-openFallbackMinDiscoverScore: 8,
+openFallbackBuyStartTime: "09:07",
+openFallbackMinDiscoverScore: 9,
 openFallbackMinChangeRate: 0.5,
 openFallbackMaxChangeRate: 10.0,
-openFallbackMinTradeVolumeRatio: 85,
-openFallbackMinDayPositionRate: 45,
+openFallbackMinTradeVolumeRatio: 130,
+openFallbackMinDayPositionRate: 60,
 openFallbackMaxDayPositionRate: 95,
 openFallbackMinOpenPositionRate: -0.5,
 openFallbackMaxOpenPositionRate: 12.0,
-openFallbackMaxFirstPriceDropRate: -0.30,
+openFallbackMaxFirstPriceDropRate: 0.10,
+openFallbackMomentumRequired: true,
+openFallbackMinMomentumScore: 30,
 openLateFallbackStartTime: "09:12"
 };
 
@@ -339,6 +348,13 @@ function attachHotData(item = {}, hotData = {}) {
     hotChangeRate: Number(hot?.changeRate || 0),
     hotVolumeRatio: Number(hot?.tradeVolumeRatio || hot?.volumeRatio || 0),
     hotDayPosition: Number(hot?.dayPositionRate || hot?.dayPosition || 0),
+    hotMomentumScore: Number(hot?.openMomentumScore || 0),
+    hotPriceRise30s: Number(hot?.priceRise30s || 0),
+    hotVolumeGrowth30s: Number(hot?.volumeGrowth30s || 0),
+    hotPricePersistence: Number(hot?.pricePersistence || 0),
+    hotVolumePersistence: Number(hot?.volumePersistence || 0),
+    hotHighRefreshCount: Number(hot?.highRefreshCount || 0),
+    hotDurationSeconds: Number(hot?.hotDurationSeconds || 0),
     hotUpdatedAt: hotData?.updatedAt || null,
     hotAgeSeconds: Number(hotData?.ageSeconds || 0)
   };
@@ -559,6 +575,14 @@ function makeOpenCandidateLearningRecord(item, price, judged) {
     priorityBonus: Number(judged.priorityBonus || 0),
     scoreTrendBonus: Number(judged.scoreTrendBonus || 0),
     confirmPriceBonus: Number(judged.confirmPriceBonus || 0),
+    momentumScore: Number(judged.momentumScore || 0),
+    priceRiseRate: Number(judged.priceRiseRate || 0),
+    volumeGrowthRate: Number(judged.volumeGrowthRate || 0),
+    scoreGrowth: Number(judged.scoreGrowth || 0),
+    pricePersistence: Number(judged.pricePersistence || 0),
+    volumePersistence: Number(judged.volumePersistence || 0),
+    observationCount: Number(judged.observationCount || 0),
+    strongObservationCount: Number(judged.strongObservationCount || 0),
     requiredDiscoverScore: Number(judged.requiredDiscoverScore || 0),
     requiredVolumeRatio: Number(judged.requiredVolumeRatio || 0),
     requiredConfirmPriceRise: Number(judged.requiredConfirmPriceRise || 0),
@@ -1108,8 +1132,10 @@ function saveOpenCandidateLearning(evaluated) {
       maxRankScore: 0,
       maxDiscoverScore: 0,
       maxVolumeRatio: 0,
+      maxMomentumScore: 0,
       maxChangeRate: null,
-      minChangeRate: null
+      minChangeRate: null,
+      timeline: []
     };
 
     prev.name = record.name;
@@ -1131,6 +1157,14 @@ function saveOpenCandidateLearning(evaluated) {
     prev.lastPriorityBonus = record.priorityBonus;
     prev.lastScoreTrendBonus = record.scoreTrendBonus;
     prev.lastConfirmPriceBonus = record.confirmPriceBonus;
+    prev.lastMomentumScore = Number(record.momentumScore || 0);
+    prev.lastPriceRiseRate = Number(record.priceRiseRate || 0);
+    prev.lastVolumeGrowthRate = Number(record.volumeGrowthRate || 0);
+    prev.lastScoreGrowth = Number(record.scoreGrowth || 0);
+    prev.lastPricePersistence = Number(record.pricePersistence || 0);
+    prev.lastVolumePersistence = Number(record.volumePersistence || 0);
+    prev.lastObservationCount = Number(record.observationCount || 0);
+    prev.lastStrongObservationCount = Number(record.strongObservationCount || 0);
     prev.lastRequiredDiscoverScore = record.requiredDiscoverScore;
     prev.lastRequiredVolumeRatio = record.requiredVolumeRatio;
     prev.lastRequiredConfirmPriceRise = record.requiredConfirmPriceRise;
@@ -1139,6 +1173,30 @@ function saveOpenCandidateLearning(evaluated) {
     prev.maxRankScore = Math.max(prev.maxRankScore, record.rankScore);
     prev.maxDiscoverScore = Math.max(prev.maxDiscoverScore, record.discoverScore);
     prev.maxVolumeRatio = Math.max(prev.maxVolumeRatio, record.volumeRatio);
+    prev.maxMomentumScore = Math.max(
+      Number(prev.maxMomentumScore || 0),
+      Number(record.momentumScore || 0)
+    );
+
+    if (!Array.isArray(prev.timeline)) prev.timeline = [];
+    prev.timeline.push({
+      observedAt: record.observedAt,
+      price: Number(record.price || 0),
+      discoverScore: Number(record.discoverScore || 0),
+      rankScore: Number(record.rankScore || 0),
+      momentumScore: Number(record.momentumScore || 0),
+      changeRate: Number(record.changeRate || 0),
+      volumeRatio: Number(record.volumeRatio || 0),
+      dayPosition: Number(record.dayPosition || 0),
+      priceRiseRate: Number(record.priceRiseRate || 0),
+      volumeGrowthRate: Number(record.volumeGrowthRate || 0),
+      pricePersistence: Number(record.pricePersistence || 0),
+      volumePersistence: Number(record.volumePersistence || 0),
+      passed: record.passed === true,
+      reason: record.reason || ""
+    });
+    prev.timeline = prev.timeline.slice(-60);
+
     prev.maxChangeRate =
       prev.maxChangeRate === null
         ? record.changeRate
@@ -1191,6 +1249,18 @@ function recordOpenLearningBuy(item, price, qty, reason) {
       priorityBonus: Number(observation.lastPriorityBonus || 0),
       scoreTrendBonus: Number(observation.lastScoreTrendBonus || 0),
       confirmPriceBonus: Number(observation.lastConfirmPriceBonus || 0),
+      momentumScore: Number(observation.lastMomentumScore || 0),
+      maxMomentumScore: Number(observation.maxMomentumScore || 0),
+      priceRiseRate: Number(observation.lastPriceRiseRate || 0),
+      volumeGrowthRate: Number(observation.lastVolumeGrowthRate || 0),
+      scoreGrowth: Number(observation.lastScoreGrowth || 0),
+      pricePersistence: Number(observation.lastPricePersistence || 0),
+      volumePersistence: Number(observation.lastVolumePersistence || 0),
+      observationCount: Number(observation.lastObservationCount || observation.observationCount || 0),
+      strongObservationCount: Number(observation.lastStrongObservationCount || 0),
+      candidateTimeline: Array.isArray(observation.timeline)
+        ? observation.timeline.slice(-20)
+        : [],
       requiredDiscoverScore: Number(observation.lastRequiredDiscoverScore || 0),
       requiredVolumeRatio: Number(observation.lastRequiredVolumeRatio || 0),
       requiredConfirmPriceRise: Number(observation.lastRequiredConfirmPriceRise || 0),
@@ -1268,7 +1338,19 @@ function recordOpenLearningSell(holding, price, signal, result) {
     profitCaptureRate:
       highestProfitRate > 0
         ? (sellProfitRate / highestProfitRate) * 100
-        : null
+        : null,
+    selectionInputs: trade.selectionInputs || {},
+    selectionReason: trade.selectionReason || "",
+    buyQualitySnapshot: {
+      momentumScore: Number(trade.selectionInputs?.momentumScore || 0),
+      maxMomentumScore: Number(trade.selectionInputs?.maxMomentumScore || 0),
+      priceRiseRate: Number(trade.selectionInputs?.priceRiseRate || 0),
+      volumeGrowthRate: Number(trade.selectionInputs?.volumeGrowthRate || 0),
+      pricePersistence: Number(trade.selectionInputs?.pricePersistence || 0),
+      volumePersistence: Number(trade.selectionInputs?.volumePersistence || 0),
+      observationCount: Number(trade.selectionInputs?.observationCount || 0),
+      strongObservationCount: Number(trade.selectionInputs?.strongObservationCount || 0)
+    }
   };
 
   saveOpenHistory(history);
@@ -2025,6 +2107,80 @@ async function discoverCandidates(state, marketData = {}) {
   return merged;
 }
 
+function calculateOpenMomentumStrength(history = {}) {
+  const samples = Array.isArray(history.samples) ? history.samples : [];
+  const minCount = Number(settings.openMinObservationCount || 4);
+
+  if (samples.length < minCount) {
+    return {
+      pass: false,
+      momentumScore: 0,
+      reason: `관찰 부족 ${samples.length}/${minCount}`
+    };
+  }
+
+  const recent = samples.slice(-6);
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  let priceUpCount = 0;
+  let volumeUpCount = 0;
+  let positionHoldCount = 0;
+
+  for (let i = 1; i < recent.length; i++) {
+    if (Number(recent[i].price || 0) >= Number(recent[i - 1].price || 0)) priceUpCount++;
+    if (Number(recent[i].volumeRatio || 0) >= Number(recent[i - 1].volumeRatio || 0)) volumeUpCount++;
+    if (Number(recent[i].dayPosition || 0) >= 65) positionHoldCount++;
+  }
+
+  const priceRiseRate = Number(first.price || 0) > 0
+    ? ((Number(last.price || 0) - Number(first.price || 0)) / Number(first.price || 0)) * 100
+    : 0;
+  const volumeGrowthRate = Number(first.volumeRatio || 0) > 0
+    ? ((Number(last.volumeRatio || 0) - Number(first.volumeRatio || 0)) / Number(first.volumeRatio || 0)) * 100
+    : 0;
+  const scoreGrowth = Number(last.score || 0) - Number(first.score || 0);
+  const steps = Math.max(1, recent.length - 1);
+  const pricePersistence = priceUpCount / steps;
+  const volumePersistence = volumeUpCount / steps;
+
+  let momentumScore = 0;
+  momentumScore += clamp(priceRiseRate * 25, -15, 30);
+  momentumScore += clamp(volumeGrowthRate * 0.15, -10, 25);
+  momentumScore += clamp(scoreGrowth * 5, -10, 20);
+  momentumScore += pricePersistence * 20;
+  momentumScore += volumePersistence * 15;
+  momentumScore += positionHoldCount * 3;
+
+  const strongCount = [
+    priceRiseRate >= 0.20,
+    pricePersistence >= 0.60,
+    volumePersistence >= 0.50,
+    Number(last.dayPosition || 0) >= 65
+  ].filter(Boolean).length;
+
+  const pass =
+    strongCount >= Number(settings.openMinStrongObservationCount || 3) &&
+    momentumScore >= Number(settings.openMomentumMinScore || 35);
+
+  return {
+    pass,
+    momentumScore,
+    priceRiseRate,
+    volumeGrowthRate,
+    scoreGrowth,
+    pricePersistence,
+    volumePersistence,
+    strongCount,
+    reason:
+      `지속강도 ${momentumScore.toFixed(1)} / ` +
+      `가격 ${priceRiseRate >= 0 ? "+" : ""}${priceRiseRate.toFixed(2)}% / ` +
+      `거래량증가 ${volumeGrowthRate >= 0 ? "+" : ""}${volumeGrowthRate.toFixed(1)}% / ` +
+      `가격유지 ${(pricePersistence * 100).toFixed(0)}% / ` +
+      `거래량유지 ${(volumePersistence * 100).toFixed(0)}% / ` +
+      `당일위치 ${Number(last.dayPosition || 0).toFixed(1)}%`
+  };
+}
+
 function isOpenCandidateGettingStronger(state, item, price) {
   const code = item.code;
   if (!code) return { pass: false, reason: "종목코드 없음" };
@@ -2111,6 +2267,7 @@ function isOpenCandidateGettingStronger(state, item, price) {
 
   priceAt5Seconds: null,
   priceAt15Seconds: null,
+  samples: [current],
   last: current
 };
     state.openCandidateHistory[code] = history;
@@ -2132,6 +2289,12 @@ function isOpenCandidateGettingStronger(state, item, price) {
   volumeRatio: Number(history.firstVolumeRatio || 0),
   price: Number(history.firstPrice || 0)
 };
+
+if (!Array.isArray(history.samples)) history.samples = [];
+history.samples.push(current);
+history.samples = history.samples
+  .filter(sample => now - Number(sample.time || 0) <= Number(settings.openMomentumSampleWindowMs || 60000))
+  .slice(-12);
 
 /*
  * 바로 직전 확인값을 보존한다.
@@ -2300,12 +2463,23 @@ if (
       `추격매수 상한 ${settings.openConfirmMaxPriceRiseRate.toFixed(2)}%`
   };
 }
+
+const momentum = calculateOpenMomentumStrength(history);
+if (!momentum.pass) {
+  return {
+    pass: false,
+    reason: `상승 지속성 부족 / ${momentum.reason}`
+  };
+}
+
   return {
   pass: true,
 
   scoreDiff,
   recentScoreDiff,
   scoreTrendBonus,
+  momentumScore: Number(momentum.momentumScore || 0),
+  momentumReason: momentum.reason || "",
 
   confirmPriceRiseRate:
     Number(priceDiffRate || 0),
@@ -2344,6 +2518,7 @@ if (
     `(전체 ${scoreDiff >= 0 ? "+" : ""}${scoreDiff}, ` +
     `직전 ${recentScoreDiff >= 0 ? "+" : ""}${recentScoreDiff}) / ` +
     `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
+    `${momentum.reason} / ` +
     `가격 전체 ${priceDiffRate >= 0 ? "+" : ""}` +
     `${priceDiffRate.toFixed(2)}% / ` +
     `직전 ${recentPriceDiffRate >= 0 ? "+" : ""}` +
@@ -2809,6 +2984,18 @@ function judgeOpenBuy(state, item, price) {
       )
     : 0;
 
+  /* HOT 스캐너가 계산한 최근 30초 상승 지속성 보너스 */
+  const hotMomentumScore = Number(item.hotMomentumScore || 0);
+  const hotMomentumBonus = hotMatched
+    ? Math.max(
+        0,
+        Math.min(
+          Number(settings.openHotMomentumBonusMax || 30),
+          hotMomentumScore * Number(settings.openHotMomentumWeight || 0.50)
+        )
+      )
+    : 0;
+
   /*
    * 첫 발견 이후 점수상승 추세 보너스
    */
@@ -2825,6 +3012,9 @@ function judgeOpenBuy(state, item, price) {
       strengthen.confirmPriceBonus || 0
     );
 
+  const momentumScore =
+    Number(strengthen.momentumScore || 0);
+
   const rankScore =
     baseRankScore +
     Number(
@@ -2832,8 +3022,10 @@ function judgeOpenBuy(state, item, price) {
     ) +
     priorityBonus +
     hotBonus +
+    hotMomentumBonus +
     scoreTrendBonus +
-    confirmPriceBonus;
+    confirmPriceBonus +
+    momentumScore;
 
   return {
     pass: true,
@@ -2861,10 +3053,24 @@ function judgeOpenBuy(state, item, price) {
     hotScore,
     hotBonus:
       Number(hotBonus || 0),
+    hotMomentumScore: Number(hotMomentumScore || 0),
+    hotMomentumBonus: Number(hotMomentumBonus || 0),
+    hotPriceRise30s: Number(item.hotPriceRise30s || 0),
+    hotVolumeGrowth30s: Number(item.hotVolumeGrowth30s || 0),
+    hotPricePersistence: Number(item.hotPricePersistence || 0),
+    hotVolumePersistence: Number(item.hotVolumePersistence || 0),
+    hotHighRefreshCount: Number(item.hotHighRefreshCount || 0),
+    hotDurationSeconds: Number(item.hotDurationSeconds || 0),
     hotMatched,
 
     scoreTrendBonus:
       Number(scoreTrendBonus || 0),
+
+    momentumScore:
+      Number(momentumScore || 0),
+
+    momentumReason:
+      strengthen.momentumReason || "",
 
     confirmPriceRiseRate,
 
@@ -2922,6 +3128,7 @@ function judgeOpenBuy(state, item, price) {
       `시가대비 ${openPosition.toFixed(2)}% / ` +
       `기본점수 ${baseRankScore.toFixed(1)} / ` +
       `점수추세 +${scoreTrendBonus.toFixed(1)} / ` +
+      `지속강도 ${momentumScore.toFixed(1)} / ` +
       `가격 전체 ${confirmPriceRiseRate.toFixed(2)}%` +
       `(기준 ${requiredConfirmPriceRise.toFixed(2)}%) / ` +
       `가격 직전 ${Number(
@@ -2932,6 +3139,8 @@ function judgeOpenBuy(state, item, price) {
       `(보너스 +${priorityBonus.toFixed(1)}) / ` +
       `HOT ${hotScore.toFixed(1)} ` +
       `(보너스 +${hotBonus.toFixed(1)}) / ` +
+      `HOT지속 ${hotMomentumScore.toFixed(1)} ` +
+      `(보너스 +${hotMomentumBonus.toFixed(1)}) / ` +
       `${marketAdjust.reason} / ` +
       `최종점수 ${rankScore.toFixed(1)}`
   };
@@ -2963,6 +3172,16 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
       baseRankScore: Number(judged.baseRankScore || 0),
       rankScore: Number(judged.rankScore || 0),
       scoreTrendBonus: Number(judged.scoreTrendBonus || 0),
+      momentumScore: Number(judged.momentumScore || 0),
+      momentumReason: judged.momentumReason || "",
+      hotMomentumScore: Number(judged.hotMomentumScore || item.hotMomentumScore || 0),
+      hotMomentumBonus: Number(judged.hotMomentumBonus || 0),
+      hotPriceRise30s: Number(judged.hotPriceRise30s || item.hotPriceRise30s || 0),
+      hotVolumeGrowth30s: Number(judged.hotVolumeGrowth30s || item.hotVolumeGrowth30s || 0),
+      hotPricePersistence: Number(judged.hotPricePersistence || item.hotPricePersistence || 0),
+      hotVolumePersistence: Number(judged.hotVolumePersistence || item.hotVolumePersistence || 0),
+      hotHighRefreshCount: Number(judged.hotHighRefreshCount || item.hotHighRefreshCount || 0),
+      hotDurationSeconds: Number(judged.hotDurationSeconds || item.hotDurationSeconds || 0),
       confirmPriceBonus: Number(judged.confirmPriceBonus || 0),
       confirmPriceRiseRate: Number(judged.confirmPriceRiseRate || 0),
       recentPriceDiffRate: Number(judged.recentPriceDiffRate || 0),
@@ -3032,6 +3251,8 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
       `최종 ${buyDiagnostic.rankScore.toFixed(1)}점 / ` +
       `기본 ${buyDiagnostic.baseRankScore.toFixed(1)} / ` +
       `점수추세 +${buyDiagnostic.scoreTrendBonus.toFixed(1)} / ` +
+      `지속강도 ${buyDiagnostic.momentumScore.toFixed(1)} / ` +
+      `HOT지속 ${buyDiagnostic.hotMomentumScore.toFixed(1)} / ` +
       `가격보너스 +${buyDiagnostic.confirmPriceBonus.toFixed(1)} / ` +
       `시장 ${buyDiagnostic.marketBonus >= 0 ? "+" : ""}${buyDiagnostic.marketBonus.toFixed(1)} / ` +
       `섹터 ${buyDiagnostic.sectorBonus >= 0 ? "+" : ""}${buyDiagnostic.sectorBonus.toFixed(1)} / ` +
@@ -3087,6 +3308,11 @@ function getOpenSellSignal(holding, price) {
       "OPEN_STOP_LOSS",
       `OPEN 손절 ${profitRate.toFixed(2)}% / 기준 ${settings.openStopLossRate.toFixed(2)}%`
     );
+  }
+
+  const holdSeconds = holdMinutes * 60;
+  if (holdSeconds < Number(settings.openMinHoldingSeconds || 120)) {
+    return null;
   }
 
   if (highestProfitRate >= settings.openTrailingStartRate && drawdownFromHigh <= -Math.abs(settings.openTrailingStopRate)) {
@@ -3370,6 +3596,15 @@ function makeOpenFallbackEntry(state, entry) {
   ) return null;
   if (firstPriceDiffRate < settings.openFallbackMaxFirstPriceDropRate) return null;
 
+  const momentum = calculateOpenMomentumStrength(history);
+  if (
+    settings.openFallbackMomentumRequired &&
+    (
+      !momentum.pass ||
+      Number(momentum.momentumScore || 0) < Number(settings.openFallbackMinMomentumScore || 30)
+    )
+  ) return null;
+
   const isPriorityCandidate =
     item.isPriorityCandidate === true || item.source === "PRIORITY";
   const hotMatched = item.hotMatched === true;
@@ -3382,7 +3617,8 @@ function makeOpenFallbackEntry(state, entry) {
     Math.max(0, changeRate) * 2 +
     sourceBonus +
     Math.min(20, hotScore * 0.20) +
-    Math.max(-10, firstPriceDiffRate * 10);
+    Math.max(-10, firstPriceDiffRate * 10) +
+    Number(momentum.momentumScore || 0);
 
   return {
     item,
@@ -3401,6 +3637,8 @@ function makeOpenFallbackEntry(state, entry) {
       hotBonus: hotMatched ? Math.min(20, hotScore * 0.20) : 0,
       hotMatched,
       scoreTrendBonus: 0,
+      momentumScore: Number(momentum.momentumScore || 0),
+      momentumReason: momentum.reason || "",
       confirmPriceRiseRate: firstPriceDiffRate,
       recentPriceDiffRate: 0,
       confirmPriceBonus: 0,
@@ -3412,7 +3650,7 @@ function makeOpenFallbackEntry(state, entry) {
         `OPEN 보완매수 / 발견 ${discoverScore} / 상승 ${changeRate.toFixed(2)}% / ` +
         `거래량 ${volumeRatio.toFixed(1)}% / 위치 ${dayPosition.toFixed(1)}% / ` +
         `시가대비 ${openPosition.toFixed(2)}% / 최초대비 ${firstPriceDiffRate.toFixed(2)}% / ` +
-        `최종점수 ${rankScore.toFixed(1)}`
+        `${momentum.reason} / 최종점수 ${rankScore.toFixed(1)}`
     }
   };
 }

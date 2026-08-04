@@ -17,7 +17,11 @@ const settings = {
   minTradeVolumeRatio: 100,
   minDayPositionRate: 40,
   requestTimeoutMs: 10 * 1000,
-  emptyResultKeepMs: 90 * 1000
+  emptyResultKeepMs: 90 * 1000,
+
+  // OPEN 전용: 최근 60초 표본으로 상승 지속성을 계산한다.
+  openMomentumWindowMs: 60 * 1000,
+  openMomentumMinSamples: 3
 };
 
 function nowText() {
@@ -274,6 +278,78 @@ function normalizeCandidate(item = {}) {
   };
 }
 
+
+function calculateOpenMomentum(candidate, previous = null) {
+  const now = Date.now();
+  const windowMs = Number(settings.openMomentumWindowMs || 60000);
+  const previousSamples = Array.isArray(previous?.openMomentumSamples)
+    ? previous.openMomentumSamples
+    : [];
+
+  const currentSample = {
+    time: now,
+    price: Number(candidate.currentPrice || 0),
+    volumeRatio: Number(candidate.tradeVolumeRatio || 0),
+    dayPosition: Number(candidate.dayPosition || 0),
+    hotScore: Number(candidate.hotScore || 0)
+  };
+
+  const samples = [...previousSamples, currentSample]
+    .filter(row => now - Number(row.time || 0) <= windowMs)
+    .slice(-15);
+
+  const first = samples[0] || currentSample;
+  const last = samples[samples.length - 1] || currentSample;
+  let priceUpCount = 0;
+  let volumeUpCount = 0;
+  let highRefreshCount = 0;
+  let runningHigh = Number(first.price || 0);
+
+  for (let i = 1; i < samples.length; i++) {
+    if (Number(samples[i].price || 0) >= Number(samples[i - 1].price || 0)) priceUpCount++;
+    if (Number(samples[i].volumeRatio || 0) >= Number(samples[i - 1].volumeRatio || 0)) volumeUpCount++;
+    if (Number(samples[i].price || 0) > runningHigh) {
+      runningHigh = Number(samples[i].price || 0);
+      highRefreshCount++;
+    }
+  }
+
+  const stepCount = Math.max(1, samples.length - 1);
+  const priceRise30s = Number(first.price || 0) > 0
+    ? ((Number(last.price || 0) - Number(first.price || 0)) / Number(first.price || 0)) * 100
+    : 0;
+  const volumeGrowth30s = Number(first.volumeRatio || 0) > 0
+    ? ((Number(last.volumeRatio || 0) - Number(first.volumeRatio || 0)) / Number(first.volumeRatio || 0)) * 100
+    : 0;
+  const pricePersistence = priceUpCount / stepCount;
+  const volumePersistence = volumeUpCount / stepCount;
+  const hotDurationSeconds = previous?.hotFirstDetectedAtMs
+    ? Math.max(0, (now - Number(previous.hotFirstDetectedAtMs)) / 1000)
+    : 0;
+
+  let openMomentumScore = 0;
+  openMomentumScore += Math.max(-15, Math.min(30, priceRise30s * 25));
+  openMomentumScore += Math.max(-10, Math.min(20, volumeGrowth30s * 0.12));
+  openMomentumScore += pricePersistence * 20;
+  openMomentumScore += volumePersistence * 15;
+  openMomentumScore += Math.min(12, highRefreshCount * 3);
+  openMomentumScore += Math.min(8, hotDurationSeconds / 10);
+  openMomentumScore = Math.max(0, Math.min(100, openMomentumScore));
+
+  return {
+    openMomentumSamples: samples,
+    openMomentumScore: Number(openMomentumScore.toFixed(1)),
+    priceRise30s: Number(priceRise30s.toFixed(3)),
+    volumeGrowth30s: Number(volumeGrowth30s.toFixed(1)),
+    pricePersistence: Number((pricePersistence * 100).toFixed(1)),
+    volumePersistence: Number((volumePersistence * 100).toFixed(1)),
+    highRefreshCount,
+    hotFirstDetectedAtMs: Number(previous?.hotFirstDetectedAtMs || now),
+    hotDurationSeconds: Number(hotDurationSeconds.toFixed(1)),
+    momentumSampleCount: samples.length
+  };
+}
+
 async function scanHotCandidates() {
   if (!settings.enabled || !isOperatingTime()) return;
 
@@ -289,9 +365,19 @@ async function scanHotCandidates() {
         ? data.candidates
         : [];
 
+  const previous = readPreviousHotCandidates();
+  const previousItems = Array.isArray(previous?.items) ? previous.items : [];
+  const previousByCode = Object.fromEntries(
+    previousItems.map(item => [String(item.code || ""), item])
+  );
+
   const rows = rawItems
     .map(normalizeCandidate)
     .filter(Boolean)
+    .map(item => ({
+      ...item,
+      ...calculateOpenMomentum(item, previousByCode[item.code])
+    }))
     .filter(item => !isExcludedStock(item))
     .filter(item => item.code && item.code !== "000000" && item.currentPrice > 0)
     .filter(item =>
@@ -300,7 +386,10 @@ async function scanHotCandidates() {
     )
     .filter(item => item.tradeVolumeRatio >= settings.minTradeVolumeRatio)
     .filter(item => item.dayPosition >= settings.minDayPositionRate)
-    .sort((a, b) => Number(b.hotScore || 0) - Number(a.hotScore || 0))
+    .sort((a, b) =>
+      Number(b.openMomentumScore || 0) - Number(a.openMomentumScore || 0) ||
+      Number(b.hotScore || 0) - Number(a.hotScore || 0)
+    )
     .slice(0, settings.maxCandidates)
     .map((item, index) => ({
       ...item,
@@ -368,7 +457,8 @@ async function scanHotCandidates() {
         `${item.name}(${Number(item.changeRate || 0).toFixed(2)}%/` +
         `거래량 ${Number(item.tradeVolumeRatio || 0).toFixed(1)}%/` +
         `위치 ${Number(item.dayPosition || 0).toFixed(1)}%/` +
-        `HOT ${Number(item.hotScore || 0).toFixed(1)})`
+        `HOT ${Number(item.hotScore || 0).toFixed(1)}/` +
+        `지속 ${Number(item.openMomentumScore || 0).toFixed(1)})`
       )
       .join(", ") || "후보 없음")
   );
