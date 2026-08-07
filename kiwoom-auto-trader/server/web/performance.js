@@ -60,6 +60,57 @@ function formatShortTime(value) {
 }
 
 
+function formatKstBuyTime(value, textValue = null) {
+  const candidates = [textValue, value];
+
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined || candidate === "") continue;
+
+    let date = null;
+    if (typeof candidate === "number" || /^\d{12,13}$/.test(String(candidate).trim())) {
+      const ms = Number(candidate);
+      if (Number.isFinite(ms) && ms > 0) date = new Date(ms);
+    } else {
+      const parsed = new Date(candidate);
+      if (!Number.isNaN(parsed.getTime())) date = parsed;
+    }
+
+    if (date && !Number.isNaN(date.getTime())) {
+      const parts = new Intl.DateTimeFormat("ko-KR", {
+        timeZone: "Asia/Seoul",
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      }).formatToParts(date);
+
+      const get = type => parts.find(part => part.type === type)?.value || "";
+      return `${Number(get("month"))}/${Number(get("day"))} ${get("hour")}:${get("minute")}:${get("second")}`;
+    }
+  }
+
+  return "-";
+}
+
+function scoreInt(value, fallback = null) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.round(number);
+}
+
+function scoreText(value) {
+  const number = scoreInt(value, null);
+  return number === null ? "-" : String(number);
+}
+
+function signedScoreText(value) {
+  const number = scoreInt(value, 0);
+  return `${number >= 0 ? "+" : ""}${number}`;
+}
+
+
 function setMarketTemperature(mt = {}) {
   const el = document.getElementById("marketTemperature");
   if (!el) return;
@@ -949,6 +1000,250 @@ async function refreshMissedWinners() {
       }
     }
 
+    let manualSellInProgressCode = "";
+
+    async function manualSellHolding(code, name, qty) {
+      const normalizedCode = String(code || "").trim();
+      const stockName = String(name || normalizedCode || "보유종목");
+      const sellQty = Number(qty || 0);
+
+      if (!normalizedCode || sellQty <= 0) {
+        alert("매도할 종목이나 보유수량을 확인할 수 없습니다.");
+        return;
+      }
+
+      if (manualSellInProgressCode) {
+        alert("다른 수동 매도 요청을 처리 중입니다.");
+        return;
+      }
+
+      const confirmed = confirm(
+        `${stockName} (${normalizedCode}) ${sellQty.toLocaleString()}주를\n` +
+        `조회 시점의 현재가로 전량 매도하시겠습니까?\n\n` +
+        `※ 화면 가격과 실제 처리 가격은 조회 시점 차이로 달라질 수 있습니다.`
+      );
+
+      if (!confirmed) return;
+
+      manualSellInProgressCode = normalizedCode;
+      const button = document.querySelector(
+        `.manual-sell-btn[data-code="${CSS.escape(normalizedCode)}"]`
+      );
+
+      if (button) {
+        button.disabled = true;
+        button.textContent = "매도 처리 중...";
+      }
+
+      try {
+        const response = await fetch("/api/manual-paper-sell", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            code: normalizedCode
+          })
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || data.ok === false) {
+          if (data.pending) {
+            throw new Error(
+              data.message ||
+              "수동 매도 요청 처리 결과가 지연되고 있습니다. 보유현황을 새로고침해 주세요."
+            );
+          }
+          throw new Error(data.message || `수동 매도 실패 (${response.status})`);
+        }
+
+        alert(
+          `${stockName} 전량 매도가 완료되었습니다.\n` +
+          `매도가 ${Number(data.sellPrice || 0).toLocaleString()}원 / ` +
+          `${Number(data.qty || 0).toLocaleString()}주\n` +
+          `실현손익 ${formatWon(data.profit || 0)} (` +
+          `${formatRate(data.profitRate || 0)})`
+        );
+
+        await loadPerformanceSummary();
+      } catch (error) {
+        console.error("수동 매도 오류", error);
+        alert(error.message || "수동 매도 중 오류가 발생했습니다.");
+      } finally {
+        manualSellInProgressCode = "";
+
+        if (button) {
+          button.disabled = false;
+          button.textContent = "현재가 전량매도";
+        }
+      }
+    }
+
+
+    function getHoldingTrendStatus({
+      profitRate = 0,
+      highestProfitRate = 0,
+      drawdownFromHigh = 0,
+      holdingScoreDiff = 0,
+      currentDayPositionRate = 0
+    } = {}) {
+      const profit = Number(profitRate || 0);
+      const highest = Number(highestProfitRate || 0);
+      const drawdown = Number(drawdownFromHigh || 0);
+      const scoreDiff = Number(holdingScoreDiff || 0);
+      const dayPosition = Number(currentDayPositionRate || 0);
+
+      if (
+        profit >= 1.0 &&
+        drawdown > -0.7 &&
+        scoreDiff >= -5 &&
+        dayPosition >= 55
+      ) {
+        return {
+          tone: "strong",
+          icon: "🟢",
+          title: "강한 상승 유지",
+          detail: "현재가가 고점 부근을 유지하고 보유점수도 안정적입니다."
+        };
+      }
+
+      if (
+        highest >= 1.0 &&
+        drawdown <= -1.5
+      ) {
+        return {
+          tone: "warning",
+          icon: "🟠",
+          title: "고점 이탈 주의",
+          detail: `최고가 대비 ${Math.abs(drawdown).toFixed(2)}% 내려온 상태입니다.`
+        };
+      }
+
+      if (
+        scoreDiff <= -15 ||
+        dayPosition < 30 ||
+        profit <= -1.0
+      ) {
+        return {
+          tone: "danger",
+          icon: "🔴",
+          title: "추세 약화",
+          detail: "보유점수 또는 당일 위치가 크게 약해졌습니다."
+        };
+      }
+
+      if (
+        highest > profit + 0.4 ||
+        scoreDiff < 0
+      ) {
+        return {
+          tone: "caution",
+          icon: "🟡",
+          title: "상승 둔화",
+          detail: "상승세는 남아 있지만 최고점 이후 힘이 다소 약해졌습니다."
+        };
+      }
+
+      return {
+        tone: "normal",
+        icon: "🔵",
+        title: "보유 추세 관찰",
+        detail: "뚜렷한 이탈 신호 없이 현재 흐름을 유지하고 있습니다."
+      };
+    }
+
+    function buildHoldingPriceChart(history = [], buyPrice = 0, currentPrice = 0) {
+      const rows = (Array.isArray(history) ? history : [])
+        .map(row => ({
+          time: Number(row.checkedAt || row.checkedAtMs || row.time || 0),
+          price: Number(row.price || row.currentPrice || 0)
+        }))
+        .filter(row => row.price > 0)
+        .slice(-120);
+
+      if (rows.length < 2) {
+        return `<div class="holding-chart-empty">가격 흐름 데이터가 아직 충분하지 않습니다.</div>`;
+      }
+
+      const width = 640;
+      const height = 190;
+      const padX = 28;
+      const padTop = 24;
+      const padBottom = 24;
+      const prices = rows.map(row => row.price);
+      if (buyPrice > 0) prices.push(Number(buyPrice));
+      if (currentPrice > 0) prices.push(Number(currentPrice));
+      let minPrice = Math.min(...prices);
+      let maxPrice = Math.max(...prices);
+      const rangePadding = Math.max(1, (maxPrice - minPrice) * 0.10);
+      minPrice -= rangePadding;
+      maxPrice += rangePadding;
+      if (maxPrice <= minPrice) {
+        maxPrice += 1;
+        minPrice -= 1;
+      }
+
+      const x = index => padX + (index / Math.max(1, rows.length - 1)) * (width - padX * 2);
+      const y = price => padTop + ((maxPrice - price) / (maxPrice - minPrice)) * (height - padTop - padBottom);
+      const points = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.price).toFixed(1)}`).join(' ');
+
+      const highestIndex = rows.reduce((best, row, index) =>
+        row.price > rows[best].price ? index : best, 0);
+      const highestRow = rows[highestIndex];
+      const currentRow = rows[rows.length - 1];
+      const buyX = x(0);
+      const buyY = y(Number(buyPrice || rows[0].price));
+      const highX = x(highestIndex);
+      const highY = y(highestRow.price);
+      const currentX = x(rows.length - 1);
+      const currentY = y(Number(currentPrice || currentRow.price));
+      const firstTime = formatKstBuyTime(rows[0].time, '');
+      const lastTime = formatKstBuyTime(currentRow.time, '');
+
+      return `
+        <div class="holding-chart-wrap">
+          <div class="holding-chart-head">
+            <span>보유 후 가격 흐름</span>
+            <b>${Number(currentPrice || currentRow.price).toLocaleString()}원</b>
+          </div>
+          <svg class="holding-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="매수 이후 가격 흐름. 삼각형은 매수, 별은 최고가, 원은 현재가를 표시합니다.">
+            <line x1="${padX}" y1="${height/2}" x2="${width-padX}" y2="${height/2}" class="holding-chart-grid" />
+            <line x1="${padX}" y1="${buyY.toFixed(1)}" x2="${width-padX}" y2="${buyY.toFixed(1)}" class="holding-chart-buy-line" />
+            <polyline points="${points}" class="holding-chart-line" />
+
+            <polygon points="${buyX.toFixed(1)},${(buyY-8).toFixed(1)} ${(buyX-7).toFixed(1)},${(buyY+6).toFixed(1)} ${(buyX+7).toFixed(1)},${(buyY+6).toFixed(1)}" class="holding-marker-buy" />
+            <text x="${(buyX+10).toFixed(1)}" y="${(buyY-8).toFixed(1)}" class="holding-marker-label">매수</text>
+
+            <text x="${highX.toFixed(1)}" y="${(highY-7).toFixed(1)}" text-anchor="middle" class="holding-marker-high">★</text>
+            <text x="${highX.toFixed(1)}" y="${(highY-20).toFixed(1)}" text-anchor="middle" class="holding-marker-label">최고</text>
+
+            <circle cx="${currentX.toFixed(1)}" cy="${currentY.toFixed(1)}" r="6" class="holding-marker-current" />
+            <text x="${(currentX-10).toFixed(1)}" y="${(currentY-10).toFixed(1)}" text-anchor="end" class="holding-marker-label">현재</text>
+          </svg>
+          <div class="holding-chart-axis">
+            <span>${firstTime}</span>
+            <span>${lastTime}</span>
+          </div>
+          <div class="holding-chart-legend">
+            <span>▲ 매수 ${Number(buyPrice || 0).toLocaleString()}원</span>
+            <span>★ 최고 ${Number(highestRow.price || 0).toLocaleString()}원</span>
+            <span>● 현재 ${Number(currentPrice || currentRow.price).toLocaleString()}원</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleHoldingDetail(code) {
+      const normalizedCode = String(code || '').trim();
+      if (!normalizedCode) return;
+      const panel = document.getElementById(`holding-detail-${normalizedCode}`);
+      const button = document.querySelector(`.holding-name-toggle[data-code="${CSS.escape(normalizedCode)}"]`);
+      if (!panel) return;
+      const opened = panel.classList.toggle('active');
+      if (button) button.setAttribute('aria-expanded', opened ? 'true' : 'false');
+    }
+
     function renderHoldings(list) {
       const box = document.getElementById("holdingBox");
 
@@ -990,12 +1285,24 @@ async function refreshMissedWinners() {
   item.scoreDetails ||
   item.finalBuyScoreDetail?.discoverScoreDetails ||
   item.finalBuyScoreDetail?.scoreDetails ||
+  item.candidateWatchScoreDetail?.discoverScoreDetails ||
   {};
 
+const finalDetail =
+  item.finalBuyScoreDetail ||
+  item.candidateWatchScoreDetail ||
+  {};
+
+/*
+ * CORE/VOLUME 후보점수의 실제 구성값을 우선 표시한다.
+ * 예전 보유자료는 discoverScoreDetails가 없을 수 있으므로
+ * changeRatePart / volumePart / dayPositionPart를 예비값으로 사용한다.
+ */
 const rateScore = Number(
   scoreDetails.rate ??
   scoreDetails.riseRate ??
   scoreDetails.changeRate ??
+  finalDetail.changeRatePart ??
   item.rateScore ??
   0
 );
@@ -1003,6 +1310,7 @@ const rateScore = Number(
 const volumeScore = Number(
   scoreDetails.volume ??
   scoreDetails.volumeScore ??
+  finalDetail.volumePart ??
   item.volumeScore ??
   0
 );
@@ -1010,6 +1318,7 @@ const volumeScore = Number(
 const openScore = Number(
   scoreDetails.openStrength ??
   scoreDetails.openScore ??
+  finalDetail.openStrengthPart ??
   item.openStrengthScore ??
   0
 );
@@ -1017,33 +1326,103 @@ const openScore = Number(
 const positionScore = Number(
   scoreDetails.dayPosition ??
   scoreDetails.positionScore ??
+  finalDetail.dayPositionPart ??
   item.dayPositionScore ??
   0
 );
 
-        const finalBuyScore = Number(
-  item.finalBuyScore ||
-  item.finalBuyScoreDetail?.score ||
+const discoverPartScore = Number(
+  finalDetail.discoverPart ??
+  item.discoverScore ??
+  0
+);
+
+const baseScore = Number(
+  item.candidateBaseScore ??
+  finalDetail.baseTotal ??
+  0
+);
+
+const trendPenalty = Number(
+  item.candidateTrendPenalty ??
+  finalDetail.trendPenalty ??
+  0
+);
+
+const finalBuyScore = Number(
+  item.finalBuyScore ??
+  item.candidateWatchScore ??
+  finalDetail.total ??
+  finalDetail.score ??
   0
 );
 
 const marketScore = Number(
-  item.marketScore?.score ||
-  item.finalBuyScoreDetail?.marketScore ||
+  item.marketScore?.score ??
+  item.marketScore ??
+  item.marketTemperature?.score ??
+  finalDetail.marketScore?.score ??
+  finalDetail.marketScore ??
   0
 );
 
 const leaderStrengthScore = Number(
-  item.leaderStrengthScore ||
-  item.finalBuyScoreDetail?.leaderStrengthScore ||
+  item.leaderStrengthScore ??
+  item.candidateStrengthScore ??
+  finalDetail.leaderStrengthScore ??
+  finalDetail.candidateStrengthScore ??
   0
 );
 
 const sectorPowerScore = Number(
-  item.sectorPowerScore ||
-  item.finalBuyScoreDetail?.sectorPowerScore ||
+  item.sectorPowerScore ??
+  item.sectorScore ??
+  finalDetail.sectorPowerScore ??
+  finalDetail.sectorScore ??
   0
 );
+
+const buyTimeDisplay = formatKstBuyTime(
+  item.buyTime ?? item.buyAt ?? item.buyTimeMs,
+  item.buyTimeText
+);
+
+const currentChangeRate = Number(
+  item.currentChangeRate ??
+  item.changeRate ??
+  item.holdingScoreHistory?.[item.holdingScoreHistory.length - 1]?.changeRate ??
+  0
+);
+const currentOpenPositionRate = Number(
+  item.currentOpenPositionRate ?? item.buyOpenPositionRate ?? 0
+);
+const currentTradeVolumeRatio = Number(
+  item.currentTradeVolumeRatio ??
+  item.holdingScoreHistory?.[item.holdingScoreHistory.length - 1]?.tradeVolumeRatio ??
+  item.buyTradeVolumeRatio ??
+  0
+);
+const currentDayPositionRate = Number(
+  item.currentDayPositionRate ??
+  item.holdingScoreHistory?.[item.holdingScoreHistory.length - 1]?.dayPositionRate ??
+  item.buyDayPositionRate ??
+  0
+);
+const holdingScore = Number(
+  item.holdingScore ??
+  item.holdingScoreHistory?.[item.holdingScoreHistory.length - 1]?.holdingScore ??
+  finalBuyScore ??
+  0
+);
+const holdingScoreDiff = Number(item.holdingScoreDiff ?? holdingScore - finalBuyScore ?? 0);
+const holdingScoreHistory = Array.isArray(item.holdingScoreHistory) ? item.holdingScoreHistory : [];
+const holdingTrendStatus = getHoldingTrendStatus({
+  profitRate,
+  highestProfitRate,
+  drawdownFromHigh,
+  holdingScoreDiff,
+  currentDayPositionRate
+});
 
 const openDiagnostic = item.openBuyDiagnostic || item.selectionInputs || {};
 const openMomentumScore = Number(item.momentumScore || openDiagnostic.momentumScore || 0);
@@ -1064,29 +1443,36 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
           <div class="stock-card">
             <div class="stock-card-header">
               <div>
-                <div class="stock-name">#${index + 1} ${item.name || "-"}</div>
+                <button
+                  type="button"
+                  class="stock-name holding-name-toggle"
+                  data-code="${escapeHtml(item.code || "")}"
+                  onclick="toggleHoldingDetail(this.dataset.code)"
+                  aria-expanded="false"
+                  title="클릭하여 차트와 현재 상태 보기"
+                >#${index + 1} ${escapeHtml(item.name || "-")} <span class="holding-toggle-mark">▾</span></button>
                 <div class="stock-sub">${item.code || ""}</div>
                 <div class="stock-sub">
                   ${strategyLabel(group)} /
                   ${item.strategyName || item.strategyPreset || "-"} /
-                  발견점수 ${item.discoverScore || "-"} /
-                  매수 ${formatShortTime(item.buyTime || item.buyAt)}
+                  발견점수 ${scoreText(item.discoverScore)} /
+                  매수 ${buyTimeDisplay}
                 </div>
 
                 <div class="score-chip-row">
-                  <span class="score-chip">최종 ${finalBuyScore || "-"}</span>
+                  <span class="score-chip">최종 ${scoreText(finalBuyScore)}</span>
                   ${group === "OPEN"
                     ? `
-                      <span class="score-chip">지속 ${openMomentumScore ? openMomentumScore.toFixed(1) : "-"}</span>
-                      <span class="score-chip">HOT ${openHotMomentumScore ? openHotMomentumScore.toFixed(1) : "-"}</span>
+                      <span class="score-chip">지속 ${scoreText(openMomentumScore)}</span>
+                      <span class="score-chip">HOT ${scoreText(openHotMomentumScore)}</span>
                       <span class="score-chip">가격지속 ${openPricePersistence ? (openPricePersistence * 100).toFixed(0) + "%" : "-"}</span>
                       <span class="score-chip">거래량지속 ${openVolumePersistence ? (openVolumePersistence * 100).toFixed(0) + "%" : "-"}</span>
                       <span class="score-chip">HOT유지 ${openHotDurationSeconds ? Math.round(openHotDurationSeconds) + "초" : "-"}</span>
                     `
                     : `
-                      <span class="score-chip">시장 ${marketScore || "-"}</span>
-                      <span class="score-chip">섹터 ${sectorPowerScore || "-"}</span>
-                      <span class="score-chip">수급 ${leaderStrengthScore || "-"}</span>
+                      <span class="score-chip">시장 ${scoreText(marketScore)}</span>
+                      <span class="score-chip">섹터 ${scoreText(sectorPowerScore)}</span>
+                      <span class="score-chip">수급 ${scoreText(leaderStrengthScore)}</span>
                     `
                   }
                 </div>
@@ -1150,7 +1536,7 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
 
               <div class="info-box">
                 <div class="info-label">매수시각</div>
-                <div class="info-value">${formatShortTime(item.buyTime || item.buyAt)}</div>
+                <div class="info-value">${buyTimeDisplay}</div>
               </div>
             </div>
 
@@ -1161,11 +1547,13 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
             <div style="margin-top:8px; padding:8px; background:#111827; border-radius:10px;">
               <div style="font-size:12px; color:#9ca3af; margin-bottom:5px;">점수상세</div>
               <div style="font-size:13px; line-height:1.6;">
-                상승률 ${rateScore >= 0 ? "+" : ""}${rateScore}<br>
-                거래량 ${volumeScore >= 0 ? "+" : ""}${volumeScore}<br>
-                시가강세 ${openScore >= 0 ? "+" : ""}${openScore}<br>
-                당일위치 ${positionScore >= 0 ? "+" : ""}${positionScore}<br>
-                최종점수 ${finalBuyScore || "-"} / 시장점수 ${marketScore || "-"} / 섹터점수 ${sectorPowerScore || "-"} / 수급강도 ${leaderStrengthScore || "-"}
+                발견 ${signedScoreText(discoverPartScore)}<br>
+                상승률 ${signedScoreText(rateScore)}<br>
+                거래량 ${signedScoreText(volumeScore)}<br>
+                시가강세 ${signedScoreText(openScore)}<br>
+                당일위치 ${signedScoreText(positionScore)}<br>
+                기본점수 ${scoreText(baseScore)} / 추세감점 ${signedScoreText(trendPenalty)}<br>
+                최종점수 ${scoreText(finalBuyScore)} / 시장점수 ${scoreText(marketScore)} / 섹터점수 ${scoreText(sectorPowerScore)} / 수급강도 ${scoreText(leaderStrengthScore)}
               </div>
             </div>
 
@@ -1180,6 +1568,34 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
               `
               : ""
             }
+
+            <div id="holding-detail-${escapeHtml(item.code || "")}" class="holding-detail-panel">
+              ${buildHoldingPriceChart(holdingScoreHistory, Number(item.buyPrice || 0), Number(item.currentPrice || 0))}
+              <div class="holding-trend-status ${holdingTrendStatus.tone}">
+                <div class="holding-trend-title">${holdingTrendStatus.icon} ${holdingTrendStatus.title}</div>
+                <div class="holding-trend-detail">${holdingTrendStatus.detail}</div>
+              </div>
+              <div class="holding-live-grid">
+                <div class="holding-live-item"><span>현재 등락률</span><b class="${currentChangeRate >= 0 ? "plus" : "minus"}">${formatRate(currentChangeRate)}</b></div>
+                <div class="holding-live-item"><span>시가대비</span><b class="${currentOpenPositionRate >= 0 ? "plus" : "minus"}">${formatRate(currentOpenPositionRate)}</b></div>
+                <div class="holding-live-item"><span>거래량비율</span><b>${currentTradeVolumeRatio.toFixed(1)}%</b></div>
+                <div class="holding-live-item"><span>당일위치</span><b>${currentDayPositionRate.toFixed(1)}%</b></div>
+                <div class="holding-live-item"><span>현재 보유점수</span><b>${scoreText(holdingScore)}</b></div>
+                <div class="holding-live-item"><span>매수점수 대비</span><b class="${holdingScoreDiff >= 0 ? "plus" : "minus"}">${signedScoreText(holdingScoreDiff)}</b></div>
+              </div>
+              <div class="holding-detail-note">종목명 클릭은 상세정보만 열고 닫습니다. 매도는 아래 빨간 버튼으로만 실행됩니다.</div>
+            </div>
+
+            <div class="manual-sell-row">
+              <button
+                type="button"
+                class="manual-sell-btn"
+                data-code="${escapeHtml(item.code || "")}"
+                data-name="${escapeHtml(item.name || item.code || "")}"
+                data-qty="${Number(item.qty || 0)}"
+                onclick="manualSellHolding(this.dataset.code, this.dataset.name, this.dataset.qty)"
+              >현재가 전량매도</button>
+            </div>
           </div>
         `;
       }).join("");

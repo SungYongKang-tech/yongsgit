@@ -3,6 +3,7 @@ const path = require("path");
 
 const API_BASE = "http://localhost:3000";
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
+const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 
 const settings = {
   enabled: true,
@@ -11,12 +12,12 @@ const settings = {
   endTime: "13:30",
   earlyScanLoopMs: 5 * 1000,
   normalScanLoopMs: 15 * 1000,
-  maxCandidates: 12,
-  minChangeRate: 1.0,
-  maxChangeRate: 12.0,
-  minTradeVolumeRatio: 100,
-  minDayPositionRate: 40,
-  requestTimeoutMs: 10 * 1000,
+  maxCandidates: 40,
+  minChangeRate: 0.5,
+  maxChangeRate: 25.0,
+  minTradeVolumeRatio: 75,
+  minDayPositionRate: 30,
+  requestTimeoutMs: 25 * 1000,
   emptyResultKeepMs: 90 * 1000,
 
   // OPEN 전용: 최근 60초 표본으로 상승 지속성을 계산한다.
@@ -58,6 +59,14 @@ function isOperatingTime() {
   return isKoreanWeekday() && hhmm >= settings.startTime && hhmm <= settings.endTime;
 }
 
+
+function getHotMinVolumeRatio(hhmm = getCurrentHHMM()) {
+  if (hhmm < "09:05") return 75;
+  if (hhmm < "09:10") return 85;
+  if (hhmm < "09:20") return 95;
+  return 110;
+}
+
 function getNextScanDelayMs() {
   const hhmm = getCurrentHHMM();
 
@@ -91,6 +100,69 @@ function readPreviousHotCandidates() {
     console.error("[HOT SCANNER 기존 후보 읽기 오류]", err.message);
     return null;
   }
+}
+
+
+function readHotHistory() {
+  const fallback = { version: 1, date: todayKey(), updatedAt: null, detected: {} };
+  if (!fs.existsSync(HOT_HISTORY_FILE)) return fallback;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(HOT_HISTORY_FILE, "utf8"));
+    if (!parsed || typeof parsed !== "object" || parsed.date !== todayKey()) {
+      return fallback;
+    }
+    if (!parsed.detected || typeof parsed.detected !== "object") parsed.detected = {};
+    return parsed;
+  } catch (err) {
+    console.error("[HOT SCANNER 누적이력 읽기 오류]", err.message);
+    return fallback;
+  }
+}
+
+function updateHotHistory(rows = []) {
+  const history = readHotHistory();
+  const now = nowText();
+  const nowMs = Date.now();
+
+  for (const item of rows) {
+    const code = String(item.code || "");
+    if (!/^\d{6}$/.test(code)) continue;
+
+    const previous = history.detected[code] || {};
+    const sources = Array.from(new Set([
+      ...(Array.isArray(previous.sources) ? previous.sources : []),
+      ...(Array.isArray(item.sources) ? item.sources : []),
+      item.candidateSource || "HOT"
+    ].filter(Boolean)));
+
+    history.detected[code] = {
+      code,
+      name: item.name || previous.name || code,
+      firstDetectedAt: previous.firstDetectedAt || now,
+      firstDetectedAtMs: Number(previous.firstDetectedAtMs || nowMs),
+      lastDetectedAt: now,
+      lastDetectedAtMs: nowMs,
+      detectionCount: Number(previous.detectionCount || 0) + 1,
+      maxChangeRate: Math.max(Number(previous.maxChangeRate || -999), Number(item.changeRate || 0)),
+      maxTradeVolumeRatio: Math.max(Number(previous.maxTradeVolumeRatio || 0), Number(item.tradeVolumeRatio || 0)),
+      maxDayPosition: Math.max(Number(previous.maxDayPosition || 0), Number(item.dayPosition || 0)),
+      maxHotScore: Math.max(Number(previous.maxHotScore || 0), Number(item.hotScore || 0)),
+      maxMomentumScore: Math.max(Number(previous.maxMomentumScore || 0), Number(item.openMomentumScore || 0)),
+      latestRank: Number(item.rank || 0),
+      bestRank: previous.bestRank
+        ? Math.min(Number(previous.bestRank), Number(item.rank || previous.bestRank))
+        : Number(item.rank || 0),
+      sources
+    };
+  }
+
+  history.version = 1;
+  history.date = todayKey();
+  history.updatedAt = now;
+  history.updatedAtMs = nowMs;
+  history.count = Object.keys(history.detected).length;
+  writeJsonFileAtomic(HOT_HISTORY_FILE, history);
 }
 
 function toNumber(value) {
@@ -384,7 +456,7 @@ async function scanHotCandidates() {
       item.changeRate >= settings.minChangeRate &&
       item.changeRate <= settings.maxChangeRate
     )
-    .filter(item => item.tradeVolumeRatio >= settings.minTradeVolumeRatio)
+    .filter(item => item.tradeVolumeRatio >= getHotMinVolumeRatio())
     .filter(item => item.dayPosition >= settings.minDayPositionRate)
     .sort((a, b) =>
       Number(b.openMomentumScore || 0) - Number(a.openMomentumScore || 0) ||
@@ -432,6 +504,7 @@ async function scanHotCandidates() {
     updatedAt: nowText(),
     updatedAtMs: Date.now(),
     source: data.source || "KIWOOM_RANK_HOT_CANDIDATES",
+    appliedMinVolumeRatio: getHotMinVolumeRatio(),
     count: finalRows.length,
     retainedPrevious,
     retainedAgeMs: retainedPrevious ? previousAgeMs : 0,
@@ -440,6 +513,7 @@ async function scanHotCandidates() {
   };
 
   writeJsonFileAtomic(HOT_CANDIDATES_FILE, output);
+  updateHotHistory(finalRows);
 
   if (retainedPrevious) {
     console.log(

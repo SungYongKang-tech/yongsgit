@@ -85,9 +85,27 @@ const PAPER_STATE_FILE = path.join(
   "paper-state-core.json"
 );
 
+const MANUAL_SELL_REQUEST_DIR = path.join(__dirname, "manual-sell-requests");
+const MANUAL_SELL_RESULT_DIR = path.join(__dirname, "manual-sell-results");
+const MANUAL_SELL_REQUEST_TTL_MS = 90 * 1000;
+
+for (const dir of [MANUAL_SELL_REQUEST_DIR, MANUAL_SELL_RESULT_DIR]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
 const OPEN_HISTORY_FILE = path.join(
   __dirname,
   "open-learning-history.json"
+);
+
+const HOT_CANDIDATES_FILE = path.join(
+  __dirname,
+  "hot-candidates.json"
+);
+
+const HOT_HISTORY_FILE = path.join(
+  __dirname,
+  "hot-candidates-history.json"
 );
 
 const DAILY_CODE_CHANGES_FILE = path.join(
@@ -1389,7 +1407,9 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
       price,
       qty,
       sellType,
-      reason
+      reason,
+      manualSell,
+      manualRequestId
     } = req.body || {};
 
     if (!code || !price || !qty) {
@@ -1440,6 +1460,8 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
       profit,
       profitRate,
       reason,
+      manualSell: manualSell === true,
+      manualRequestId: manualRequestId || null,
       date,
       time
     });
@@ -1454,6 +1476,9 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
       profit,
       profitRate,
       reason,
+      sellType: sellType || `${holding.strategyGroup}_SELL`,
+      manualSell: manualSell === true,
+      manualRequestId: manualRequestId || null,
       date,
       sellTime: new Date().toISOString()
     });
@@ -1476,6 +1501,127 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
     res.status(500).json({
       ok: false,
       message: err.message
+    });
+  }
+});
+
+app.post("/api/manual-paper-sell", express.json(), async (req, res) => {
+  const code = String(req.body?.code || "")
+    .replace(/^A/, "")
+    .trim()
+    .padStart(6, "0");
+
+  if (!code || code === "000000") {
+    return res.status(400).json({
+      ok: false,
+      message: "매도할 종목코드가 없습니다."
+    });
+  }
+
+  try {
+    // server.js는 보유여부만 읽고 paper-state-core.json을 수정하지 않는다.
+    const state = loadPaperState();
+    const holding = (state.holdings || []).find(h =>
+      String(h.code || "").replace(/^A/, "").padStart(6, "0") === code
+    );
+
+    if (!holding || Number(holding.qty || 0) <= 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "매도 가능한 보유종목이 없습니다."
+      });
+    }
+
+    // 동일 종목의 살아 있는 요청만 차단하고, 오래된 고아 요청은 자동 삭제한다.
+    const nowMs = Date.now();
+    let activeRequest = false;
+
+    for (const name of fs.readdirSync(MANUAL_SELL_REQUEST_DIR)) {
+      if (!(name.endsWith(".json") || name.endsWith(".json.processing"))) continue;
+
+      const requestFile = path.join(MANUAL_SELL_REQUEST_DIR, name);
+      try {
+        const stat = fs.statSync(requestFile);
+        const ageMs = nowMs - stat.mtimeMs;
+
+        if (ageMs > MANUAL_SELL_REQUEST_TTL_MS) {
+          fs.unlinkSync(requestFile);
+          console.log(`[수동매도 오래된 요청 정리] ${name} / ${Math.floor(ageMs / 1000)}초`);
+          continue;
+        }
+
+        const request = readJsonFileSafe(requestFile, null, 1);
+        if (String(request?.code || "").padStart(6, "0") === code) {
+          activeRequest = true;
+          break;
+        }
+      } catch (_) {}
+    }
+
+    if (activeRequest) {
+      return res.status(409).json({
+        ok: false,
+        message: "해당 종목은 이미 수동 매도 요청이 진행 중입니다."
+      });
+    }
+
+    const requestId =
+      `MANUAL-${Date.now()}-${process.pid}-` +
+      Math.random().toString(36).slice(2, 8);
+    const requestPath = path.join(
+      MANUAL_SELL_REQUEST_DIR,
+      `${requestId}.json`
+    );
+    const resultPath = path.join(
+      MANUAL_SELL_RESULT_DIR,
+      `${requestId}.json`
+    );
+
+    writeJsonFileAtomic(requestPath, {
+      requestId,
+      code,
+      requestedAt: new Date().toLocaleString("ko-KR", {
+        timeZone: "Asia/Seoul"
+      }),
+      requestedAtMs: Date.now(),
+      source: "DASHBOARD"
+    });
+
+    console.log(
+      `[수동매도 접수] ${holding.name}(${code}) / ` +
+      `${Number(holding.qty || 0).toLocaleString()}주 / 요청 ${requestId}`
+    );
+
+    // CORE 매도루프가 요청을 처리할 때까지 최대 45초 기다린다.
+    const deadline = Date.now() + 45 * 1000;
+    while (Date.now() < deadline) {
+      if (fs.existsSync(resultPath)) {
+        const result = readJsonFileSafe(resultPath, null);
+        try { fs.unlinkSync(resultPath); } catch (_) {}
+
+        const status = Number(result?.status || (result?.ok ? 200 : 500));
+        return res.status(status).json(result || {
+          ok: false,
+          message: "수동 매도 결과를 읽지 못했습니다."
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    return res.status(504).json({
+      ok: false,
+      pending: true,
+      requestId,
+      message:
+        "수동 매도 요청은 접수됐지만 처리 결과 확인이 지연되고 있습니다. " +
+        "중복 요청하지 말고 잠시 후 보유현황을 새로고침해 주세요."
+    });
+  } catch (err) {
+    console.error("/api/manual-paper-sell 오류:", err);
+    return res.status(500).json({
+      ok: false,
+      message: err.message || "수동 매도 요청 중 오류가 발생했습니다."
     });
   }
 });
@@ -1706,8 +1852,31 @@ res.json(responseData);
 
 
   } catch (error) {
+  const code = String(req.query.code || "").trim();
+  const stale = priceCache[code];
+  const staleAgeMs = stale ? Date.now() - Number(stale.cachedAt || 0) : Infinity;
+
+  /*
+   * 키움 429·일시적 네트워크 실패 시 최근 30초 이내 캐시가 있으면
+   * 오류 대신 캐시값을 반환해 OPEN/HOT 판단 전체가 중단되지 않게 한다.
+   */
+  if (stale && staleAgeMs <= 30 * 1000) {
+    console.warn(
+      `[/api/price 캐시대체] ${code} / ` +
+      `${error.response?.status || error.message} / ` +
+      `캐시 ${Math.round(staleAgeMs / 1000)}초`
+    );
+
+    return res.json({
+      ...stale.data,
+      isCached: true,
+      isStaleFallback: true,
+      cacheAgeMs: staleAgeMs
+    });
+  }
+
   console.error("[/api/price 현재가 조회 실패]", {
-    code: req.query.code,
+    code,
     message: error.message,
     status: error.response?.status,
     data: error.response?.data
@@ -1715,7 +1884,7 @@ res.json(responseData);
 
   res.status(500).json({
     message: "현재가 조회 실패",
-    code: req.query.code,
+    code,
     error: error.message,
     status: error.response?.status || null,
     detail: error.response?.data || null
@@ -2020,6 +2189,9 @@ app.get("/api/performance-summary", (req, res) => {
   [
     "SELL",
     "SELL_ALL",
+    "OPEN_MANUAL_SELL",
+    "CORE_MANUAL_SELL",
+    "VOLUME_MANUAL_SELL",
 
     "OPEN_STOP_LOSS",
     "OPEN_TRAILING_SELL",
@@ -2360,7 +2532,7 @@ const holdingDetails = holdings.map((h) => {
   const buyAmount = buyPrice * qty;
 const evalAmount = currentPrice * qty;
 
-const buyTimeMs = Number(h.buyTimeMs || 0);
+const buyTimeMs = Number(h.buyTimeMs || h.buyTime || 0);
 const holdingDays = buyTimeMs > 0
   ? Math.max(0, Math.floor((Date.now() - buyTimeMs) / (1000 * 60 * 60 * 24)))
   : 0;
@@ -2406,10 +2578,40 @@ return {
   strategyPreset: h.strategyPreset || "",
   discoverScore: Number(h.discoverScore || 0),
 
-  finalBuyScore: Number(h.finalBuyScore || h.finalBuyScoreDetail?.score || 0),
-  finalBuyScoreDetail: h.finalBuyScoreDetail || null,
-  marketScore: Number(h.marketScore?.score ?? h.marketScore ?? 0),
-  sectorPowerScore: Number(h.sectorPowerScore || h.finalBuyScoreDetail?.sectorPowerScore || 0),
+  finalBuyScore: Number(
+    h.finalBuyScore ??
+    h.candidateWatchScore ??
+    h.finalBuyScoreDetail?.total ??
+    h.finalBuyScoreDetail?.score ??
+    0
+  ),
+  finalBuyScoreDetail:
+    h.finalBuyScoreDetail ||
+    h.candidateWatchScoreDetail ||
+    null,
+  candidateWatchScoreDetail:
+    h.candidateWatchScoreDetail ||
+    h.finalBuyScoreDetail ||
+    null,
+  marketScore: Number(
+    h.marketScore?.score ??
+    h.marketScore ??
+    h.marketTemperature?.score ??
+    0
+  ),
+  marketTemperature: h.marketTemperature || null,
+  sectorPowerScore: Number(
+    h.sectorPowerScore ??
+    h.sectorScore ??
+    h.finalBuyScoreDetail?.sectorPowerScore ??
+    0
+  ),
+  leaderStrengthScore: Number(
+    h.leaderStrengthScore ??
+    h.candidateStrengthScore ??
+    h.finalBuyScoreDetail?.leaderStrengthScore ??
+    0
+  ),
 
   // 매수 당시 후보 진단정보
   candidateStrengthScore: Number(h.candidateStrengthScore || 0),
@@ -2427,8 +2629,24 @@ return {
   discoverReasons: h.discoverReasons || [],
   sectorTags: h.sectorTags || [],
 
-  buyTime: h.buyTime || "",
-  date: h.date || ""
+  buyTime: h.buyTime || h.buyTimeMs || "",
+  buyTimeText: h.buyTimeText || null,
+  buyTimeMs: Number(h.buyTimeMs || h.buyTime || 0),
+  date: h.date || "",
+
+  // 보유종목 상세 차트와 현재 상태 표시용
+  holdingScore: Number(h.holdingScore || 0),
+  holdingScoreDiff: Number(h.holdingScoreDiff || 0),
+  currentTradeVolumeRatio: Number(h.currentTradeVolumeRatio || 0),
+  currentDayPositionRate: Number(h.currentDayPositionRate || 0),
+  currentOpenPositionRate: Number(h.currentOpenPositionRate ?? h.buyOpenPositionRate ?? 0),
+  currentChangeRate: Number(h.currentChangeRate || 0),
+  buyTradeVolumeRatio: Number(h.buyTradeVolumeRatio || 0),
+  buyDayPositionRate: Number(h.buyDayPositionRate || 0),
+  buyOpenPositionRate: Number(h.buyOpenPositionRate || 0),
+  holdingScoreHistory: Array.isArray(h.holdingScoreHistory)
+    ? h.holdingScoreHistory.slice(-120)
+    : []
 };
 
 });   
@@ -3047,9 +3265,9 @@ function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
       const first = timeline[0] || {};
       const last = timeline[timeline.length - 1] || {};
       return {
-        code: item.code || "",
+        code: normalizeOpenStockCode(item.code),
         name: item.name || item.code || "",
-        selected: String(item.code || "") === String(selectedCode || ""),
+        selected: normalizeOpenStockCode(item.code) === normalizeOpenStockCode(selectedCode),
         observationCount: Number(item.observationCount || timeline.length || 0),
         passCount: Number(item.passCount || 0),
         firstSeenAt: item.firstSeenAt || first.observedAt || null,
@@ -3071,6 +3289,42 @@ function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
             ? ((Number(item.highestPrice) - Number(first.price)) / Number(first.price)) * 100
             : null,
         lastReason: item.lastReason || last.reason || "",
+        rejectCategory:
+          item.finalRejectCategory ||
+          item.lastRejectCategory ||
+          last.rejectCategory ||
+          "",
+        rejectStage:
+          item.finalRejectStage ||
+          item.lastRejectStage ||
+          last.rejectStage ||
+          "",
+        rejectCategoryCounts:
+          item.rejectCategoryCounts &&
+          typeof item.rejectCategoryCounts === "object"
+            ? item.rejectCategoryCounts
+            : {},
+        rejectStageCounts:
+          item.rejectStageCounts &&
+          typeof item.rejectStageCounts === "object"
+            ? item.rejectStageCounts
+            : {},
+        firstSource: item.firstSource || first.source || null,
+        lastSource: item.lastSource || last.source || null,
+        everHotMatched: item.everHotMatched === true,
+        everPriorityCandidate: item.everPriorityCandidate === true,
+        passedDiscoverStage: item.passedDiscoverStage === true,
+        passedVolumeStage: item.passedVolumeStage === true,
+        passedMomentumStage: item.passedMomentumStage === true,
+        finalDecision: item.finalDecision || "",
+        hasDetailedTracking: Boolean(
+          item.firstRejectStage ||
+          item.lastRejectStage ||
+          item.finalRejectStage ||
+          item.firstSource ||
+          item.lastSource ||
+          timeline.some(row => Object.prototype.hasOwnProperty.call(row || {}, "rejectStage"))
+        ),
         timeline: timeline.slice(-20)
       };
     })
@@ -3081,6 +3335,383 @@ function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
     })
     .slice(0, 10);
 }
+
+
+
+function normalizeOpenStockCode(value) {
+  const match = String(value || "").match(/\d{6}/);
+  return match ? match[0] : "";
+}
+
+
+function isExcludedOpenAnalysisProduct(item = {}) {
+  const name = String(
+    item.name || item.stockName || item.korName || ""
+  ).trim();
+
+  const isFundOrDerivative =
+    /(?:^|\s)(?:KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|RISE|PLUS|TIMEFOLIO|WOORI|1Q|FOCUS|마이티|히어로즈)(?:\s|$)/i.test(name) ||
+    /ETF|ETN|인버스|레버리지|선물|선물지수|단일종목|2X|곱버스|TRF|채권혼합|액티브/i.test(name);
+
+  if (isFundOrDerivative) return true;
+  if (/스팩|SPAC/i.test(name)) return true;
+  if (/우$|\d우B$|우B$|우선주/i.test(name)) return true;
+  return false;
+}
+
+/* OPEN 실시간 실행상태 조회 */
+app.get("/api/open-live-tracking", (req, res) => {
+  try {
+    const state = loadPaperState();
+    const now = Date.now();
+    let hot = { count: 0, updatedAt: null, updatedAtMs: 0, ageSeconds: null, items: [] };
+    try {
+      const hotFile = path.join(__dirname, "hot-candidates.json");
+      if (fs.existsSync(hotFile)) {
+        const raw = readJsonFileSafe(hotFile, {}) || {};
+        hot = {
+          count: Number(raw.count || raw.items?.length || raw.rows?.length || 0),
+          updatedAt: raw.updatedAt || null,
+          updatedAtMs: Number(raw.updatedAtMs || 0),
+          ageSeconds: raw.updatedAtMs ? Math.max(0, (now - Number(raw.updatedAtMs)) / 1000) : null,
+          retainedPrevious: raw.retainedPrevious === true,
+          items: (Array.isArray(raw.items) ? raw.items : []).slice(0, 5).map(item => ({
+            rank: Number(item.rank || 0), code: normalizeOpenStockCode(item.code),
+            name: item.name || item.code || "", changeRate: Number(item.changeRate || 0),
+            tradeVolumeRatio: Number(item.tradeVolumeRatio || 0),
+            openMomentumScore: Number(item.openMomentumScore || 0)
+          }))
+        };
+      }
+    } catch (err) {
+      hot.error = err.message;
+    }
+
+    const tracking = state.openLiveTracking || {};
+    const scan = state.openLastScanSummary || {};
+    const top = tracking.topCandidate || scan.topCandidate || state.openTopCandidate || null;
+    res.json({
+      ok: true,
+      date: state.openDate || todayKstKey(),
+      serverAutoEnabled: state.serverAutoEnabled !== false,
+      openEnabled: state.openEnabled !== false,
+      openCompleted: state.openCompleted === true,
+      openSkipped: state.openSkipped === true,
+      openSkipReason: state.openSkipReason || null,
+      openBuyAt: state.openBuyAt || null,
+      openBuyCode: normalizeOpenStockCode(state.openBuyCode || ""),
+      openBuyName: state.openBuyName || null,
+      tracking: { ...tracking, topCandidate: top },
+      scan: {
+        scanId: scan.scanId || null, checkedAt: scan.checkedAt || null,
+        candidateCount: Number(scan.candidateCount || 0),
+        evaluatedCount: Number(scan.evaluatedCount || 0),
+        passedCount: Number(scan.passedCount || 0),
+        potentialCount: Number(scan.potentialCount || 0),
+        rejectCounts: scan.rejectCounts || {}
+      },
+      hot,
+      activities: (Array.isArray(state.openLiveActivities) ? state.openLiveActivities : []).slice(-10).reverse(),
+      serverTime: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      serverTimeMs: now
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: "OPEN 실시간 상태 조회 실패", error: err.message });
+  }
+});
+
+
+/*
+ * OPEN AI 분석자료 통합 다운로드
+ * 장전자료, OPEN 학습이력, HOT 현재/누적이력, 가상계좌 상태를
+ * 하나의 JSON 파일로 묶어 내려준다. 원본 운영 파일은 수정하지 않는다.
+ */
+app.get("/api/open-analysis-export", (req, res) => {
+  try {
+    const date = String(req.query.date || todayKstKey()).trim();
+    const paperState = readJsonFileSafe(PAPER_STATE_FILE, {}) || {};
+    const openHistory = readJsonFileSafe(
+      OPEN_HISTORY_FILE,
+      { version: 1, updatedAt: null, days: {} }
+    ) || { version: 1, updatedAt: null, days: {} };
+    const hotCurrent = readJsonFileSafe(
+      HOT_CANDIDATES_FILE,
+      { date, items: [], rows: [] }
+    ) || { date, items: [], rows: [] };
+    const hotHistory = readJsonFileSafe(
+      HOT_HISTORY_FILE,
+      { version: 1, date, detected: {} }
+    ) || { version: 1, date, detected: {} };
+
+    let openMarket = null;
+    try {
+      openMarket = loadOpenMarketData();
+    } catch (err) {
+      openMarket = { available: false, error: err.message };
+    }
+
+    const tradeLogs = (Array.isArray(paperState.tradeLogs) ? paperState.tradeLogs : [])
+      .filter(item => String(item.date || "") === date);
+    const virtualResults = (Array.isArray(paperState.virtualResults) ? paperState.virtualResults : [])
+      .filter(item => String(item.date || "") === date);
+    const holdings = (Array.isArray(paperState.holdings) ? paperState.holdings : [])
+      .filter(item => String(item.date || item.buyDate || "") === date || String(item.strategyGroup || "") === "OPEN");
+
+    const payload = {
+      schemaVersion: 1,
+      type: "SY_QUANT_OPEN_AI_ANALYSIS",
+      date,
+      generatedAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      purpose: "OPEN 미매수·급등주 미포착·후보 성장·매수매도 결과 통합 분석",
+      summary: {
+        openCompleted: paperState.openCompleted === true,
+        openSkipped: paperState.openSkipped === true,
+        openSkipReason: paperState.openSkipReason || null,
+        openBuyCode: normalizeOpenStockCode(paperState.openBuyCode || ""),
+        openBuyName: paperState.openBuyName || null,
+        hotCurrentCount: Number(hotCurrent.count || hotCurrent.items?.length || 0),
+        hotDetectedTodayCount:
+          hotHistory.date === date && hotHistory.detected && typeof hotHistory.detected === "object"
+            ? Object.keys(hotHistory.detected).length
+            : 0,
+        tradeLogCount: tradeLogs.length,
+        virtualResultCount: virtualResults.length
+      },
+      openMarket,
+      openLearningDay: openHistory.days?.[date] || null,
+      hotCandidatesCurrent: hotCurrent,
+      hotCandidatesHistory:
+        hotHistory.date === date
+          ? hotHistory
+          : { ...hotHistory, requestedDate: date, dateMatched: false },
+      paperStateSnapshot: {
+        openDate: paperState.openDate || null,
+        openCompleted: paperState.openCompleted === true,
+        openSkipped: paperState.openSkipped === true,
+        openCompletedAt: paperState.openCompletedAt || null,
+        openSkipReason: paperState.openSkipReason || null,
+        openBuyAt: paperState.openBuyAt || null,
+        openBuyCode: normalizeOpenStockCode(paperState.openBuyCode || ""),
+        openBuyName: paperState.openBuyName || null,
+        openLiveTracking: paperState.openLiveTracking || null,
+        openLastScanSummary: paperState.openLastScanSummary || null,
+        openLiveActivities: Array.isArray(paperState.openLiveActivities)
+          ? paperState.openLiveActivities.slice(-100)
+          : [],
+        tradeLogs,
+        virtualResults,
+        holdings
+      },
+      sourceFiles: {
+        openLearningHistory: "open-learning-history.json",
+        hotCandidatesCurrent: "hot-candidates.json",
+        hotCandidatesHistory: "hot-candidates-history.json",
+        paperState: "paper-state-core.json",
+        openMarket: "open-market.json"
+      }
+    };
+
+    const fileName = `today-open-analysis-${date}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    return res.send(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error("/api/open-analysis-export 오류:", err);
+    return res.status(500).json({
+      ok: false,
+      message: "OPEN AI 분석자료 생성 실패",
+      error: err.message
+    });
+  }
+});
+
+/*
+ * 오늘 급등주와 OPEN 후보 비교 API
+ * 키움 전일대비등락률상위(ka10027)와 open-learning-history.json을 대조한다.
+ * 분석 화면 전용이며 실제 매수 조건에는 영향을 주지 않는다.
+ */
+app.get("/api/open-surge-analysis", async (req, res) => {
+  try {
+    const kstParts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Seoul",
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).formatToParts(new Date());
+    const kstHHMM = `${kstParts.find(part => part.type === "hour")?.value || "00"}:${kstParts.find(part => part.type === "minute")?.value || "00"}`;
+    const autoMode = String(req.query.mode || "auto").toLowerCase() === "auto";
+    let phase = "FINAL";
+    let defaultMinRate = 8;
+    if (kstHHMM < "09:00") { phase = "PREOPEN"; defaultMinRate = 1; }
+    else if (kstHHMM <= "09:30") { phase = "OPEN_LIVE"; defaultMinRate = 0.5; }
+    else if (kstHHMM < "15:30") { phase = "MARKET_LIVE"; defaultMinRate = 2; }
+    const requestedMinRate = req.query.minRate === undefined ? defaultMinRate : Number(req.query.minRate);
+    const minRate = Math.max(0.1, Math.min(29, Number.isFinite(requestedMinRate) ? requestedMinRate : defaultMinRate));
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
+    const date = String(req.query.date || todayKstKey()).trim();
+
+    const rankData = await requestKiwoomRank("ka10027", {
+      mrkt_tp: "000",
+      sort_tp: "1",
+      trde_qty_cnd: "0000",
+      stk_cnd: "4",
+      crd_cnd: "0",
+      updown_incls: "0",
+      pric_cnd: "8",
+      trde_prica_cnd: "0",
+      stex_tp: "3"
+    });
+
+    const rankRows = findFirstArrayByKeys(rankData, [
+      "pred_pre_flu_rt_upper", "items", "output"
+    ]);
+
+    const leaders = rankRows
+      .map(row => normalizeHotRankRow(row, "CHANGE_RATE"))
+      .filter(Boolean)
+      .filter(item => !isExcludedOpenAnalysisProduct(item))
+      .filter(item => Number(item.changeRate || 0) >= minRate)
+      .sort((a, b) => Number(b.changeRate || 0) - Number(a.changeRate || 0))
+      .slice(0, limit);
+
+    const hotSnapshot = readJsonFileSafe(HOT_CANDIDATES_FILE, { items: [] }) || { items: [] };
+    const hotCodes = new Set((Array.isArray(hotSnapshot.items) ? hotSnapshot.items : [])
+      .map(item => normalizeOpenStockCode(item.code || item.stk_cd || ""))
+      .filter(Boolean));
+    const hotHistory = readJsonFileSafe(
+      HOT_HISTORY_FILE,
+      { version: 1, date, detected: {} }
+    ) || { version: 1, date, detected: {} };
+    const hotDetected = hotHistory.date === date && hotHistory.detected && typeof hotHistory.detected === "object"
+      ? hotHistory.detected
+      : {};
+
+    const history = readJsonFileSafe(
+      OPEN_HISTORY_FILE,
+      { version: 1, updatedAt: null, days: {} }
+    ) || { version: 1, updatedAt: null, days: {} };
+    const day = history.days?.[date] || {};
+    const selectedCode = normalizeOpenStockCode(day.selectedTrade?.code || day.result?.code || "");
+    const growth = buildOpenCandidateGrowth(day, selectedCode);
+    const growthByCode = new Map(growth.map(item => [normalizeOpenStockCode(item.code), item]));
+
+    function classifyDecision(candidate, bought) {
+      if (bought) return "실제 매수";
+      if (!candidate) return "후보 미발견";
+      if (candidate.rejectCategory) return candidate.rejectCategory;
+      const reason = String(candidate.lastReason || "");
+      if (/거래량 부족/.test(reason)) return "거래량 부족";
+      if (/발견점수 부족|추가확인/.test(reason)) return "발견점수 부족";
+      if (/관찰 부족/.test(reason)) return "관찰 부족";
+      if (/지속성 부족|지속강도/.test(reason)) return "지속강도 부족";
+      if (/상승률 부적합/.test(reason)) return "상승률 부적합";
+      return reason || "기타 조건 미충족";
+    }
+
+    const rows = leaders.map((leader, index) => {
+      const normalizedCode = normalizeOpenStockCode(leader.code);
+      const candidate = growthByCode.get(normalizedCode) || null;
+      const bought = normalizedCode === selectedCode;
+      return {
+        rank: index + 1,
+        code: normalizedCode,
+        rawCode: String(leader.code || ""),
+        name: leader.name,
+        currentPrice: Number(leader.currentPrice || 0),
+        changeRate: Number(leader.changeRate || 0),
+        volume: Number(leader.volume || 0),
+        openFound: Boolean(candidate),
+        bought,
+        firstSeenAt: candidate?.firstSeenAt || null,
+        observationCount: Number(candidate?.observationCount || 0),
+        maxDiscoverScore: Number(candidate?.maxDiscoverScore || 0),
+        maxRankScore: Number(candidate?.maxRankScore || 0),
+        maxMomentumScore: Number(candidate?.maxMomentumScore || 0),
+        rejectStage: candidate?.rejectStage || null,
+        firstSource: candidate?.firstSource || null,
+        lastSource: candidate?.lastSource || null,
+        currentHotMatched: hotCodes.has(normalizedCode),
+        hotDetectedToday: Boolean(hotDetected[normalizedCode]),
+        hotFirstDetectedAt: hotDetected[normalizedCode]?.firstDetectedAt || null,
+        hotLastDetectedAt: hotDetected[normalizedCode]?.lastDetectedAt || null,
+        hotDetectionCount: Number(hotDetected[normalizedCode]?.detectionCount || 0),
+        hotBestRank: Number(hotDetected[normalizedCode]?.bestRank || 0),
+        hotMaxChangeRate: Number(hotDetected[normalizedCode]?.maxChangeRate || 0),
+        hotMaxMomentumScore: Number(hotDetected[normalizedCode]?.maxMomentumScore || 0),
+        hotSources: Array.isArray(hotDetected[normalizedCode]?.sources) ? hotDetected[normalizedCode].sources : [],
+        everHotMatched: candidate?.everHotMatched === true,
+        everPriorityCandidate: candidate?.everPriorityCandidate === true,
+        passedDiscoverStage: candidate?.passedDiscoverStage === true,
+        passedVolumeStage: candidate?.passedVolumeStage === true,
+        passedMomentumStage: candidate?.passedMomentumStage === true,
+        hasDetailedTracking: candidate?.hasDetailedTracking === true,
+        lastReason: candidate?.lastReason || "",
+        decision: classifyDecision(candidate, bought)
+      };
+    });
+
+    const reasonCount = {};
+    for (const row of rows) {
+      reasonCount[row.decision] = Number(reasonCount[row.decision] || 0) + 1;
+    }
+    const reasonStats = Object.entries(reasonCount)
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const foundCount = rows.filter(row => row.openFound).length;
+    const notFoundCount = rows.length - foundCount;
+    const boughtCount = rows.filter(row => row.bought).length;
+    const topReason = reasonStats[0]?.reason || "자료 없음";
+    const diagnosis = [];
+    if (!rows.length) {
+      diagnosis.push(`현재 +${minRate.toFixed(0)}% 이상 급등주가 조회되지 않았습니다.`);
+    } else {
+      const hotDetectedCount = rows.filter(row => row.hotDetectedToday).length;
+      const hotToOpenMissedCount = rows.filter(row => row.hotDetectedToday && !row.openFound).length;
+      diagnosis.push(`급등주 ${rows.length}개 중 당일 HOT은 ${hotDetectedCount}개, OPEN은 ${foundCount}개를 발견했습니다.`);
+      if (hotToOpenMissedCount > 0) diagnosis.push(`HOT에는 들어왔지만 OPEN 후보로 이어지지 않은 종목은 ${hotToOpenMissedCount}개입니다.`);
+      diagnosis.push(`${notFoundCount}개는 OPEN 후보에 올리지 못했습니다.`);
+      diagnosis.push(`가장 많은 미포착 원인은 '${topReason}'입니다.`);
+      if (notFoundCount > foundCount) diagnosis.push("우선 개선 대상은 매수조건보다 후보 발굴 범위와 HOT 순위 유입입니다.");
+      else diagnosis.push("후보 발굴은 작동했으므로 거래량·점수·지속강도 탈락 기준을 우선 검토해야 합니다.");
+      const foundButMissed = rows.filter(row => row.openFound && !row.bought);
+      if (foundButMissed.length) {
+        diagnosis.push(`발견 후 놓친 급등주는 ${foundButMissed.slice(0, 3).map(row => row.name).join(", ")}입니다.`);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      date,
+      phase,
+      phaseLabel: phase === "OPEN_LIVE" ? "OPEN 실시간" : phase === "MARKET_LIVE" ? "장중 실시간" : phase === "PREOPEN" ? "장전 대기" : "장 종료 최종",
+      isFinal: phase === "FINAL",
+      autoMode,
+      kstHHMM,
+      updatedAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      thresholdRate: minRate,
+      summary: {
+        totalLeaders: rows.length,
+        hotDetectedCount: rows.filter(row => row.hotDetectedToday).length,
+        hotToOpenMissedCount: rows.filter(row => row.hotDetectedToday && !row.openFound).length,
+        foundCount,
+        notFoundCount,
+        boughtCount
+      },
+      reasonStats,
+      diagnosis,
+      rows
+    });
+  } catch (err) {
+    console.error("OPEN 급등주 비교 API 오류:", err);
+    return res.status(500).json({
+      ok: false,
+      message: "OPEN 급등주 비교자료를 불러오지 못했습니다.",
+      error: err.message,
+      rows: []
+    });
+  }
+});
 
 app.get("/api/open-learning-summary", (req, res) => {
   try {
@@ -3401,6 +4032,12 @@ app.get("/api/daily-summary", (req, res) => {
    const sellTypes = [
   "SELL",
   "SELL_ALL",
+
+  "OPEN_MANUAL_SELL",
+
+  "CORE_MANUAL_SELL",
+
+  "VOLUME_MANUAL_SELL",
 
   "OPEN_STOP_LOSS",
   "OPEN_TRAILING_SELL",
@@ -3797,6 +4434,12 @@ app.get("/api/today-trade-analysis", (req, res) => {
   const sellTypes = [
   "SELL",
   "SELL_ALL",
+
+  "OPEN_MANUAL_SELL",
+
+  "CORE_MANUAL_SELL",
+
+  "VOLUME_MANUAL_SELL",
 
   "OPEN_STOP_LOSS",
   "OPEN_TRAILING_SELL",

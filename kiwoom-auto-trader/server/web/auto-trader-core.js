@@ -2,6 +2,14 @@ const fs = require("fs");
 const path = require("path");
 
 const STATE_FILE = path.join(__dirname, "paper-state-core.json");
+const MANUAL_SELL_REQUEST_DIR = path.join(__dirname, "manual-sell-requests");
+const MANUAL_SELL_RESULT_DIR = path.join(__dirname, "manual-sell-results");
+const MANUAL_SELL_REQUEST_TTL_MS = 90 * 1000;
+
+
+for (const dir of [MANUAL_SELL_REQUEST_DIR, MANUAL_SELL_RESULT_DIR]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const API_BASE = "http://localhost:3000";
 
@@ -300,9 +308,14 @@ buyAssetRatio: 0.125,
   volumeEnabled: true,
   volumeStartTime: "09:10",
 volumeEndTime: "13:30",
+
+// OPEN 우선운영: OPEN 매수 완료 전에는 최대 09:30까지
+// CORE/VOLUME 후보 분석은 계속하고 실제 신규주문과 스위칭만 보류
+openPriorityBuyBlockEnabled: true,
+openPriorityBuyBlockEndTime: "09:30",
   volumeMaxHoldingCount: 4,
   volumeMinChangeRate: 0.8,
-  volumeMaxChangeRate: 10.0,
+  volumeMaxChangeRate: 8.0,
   volumeMinTradeVolumeRatio: 120,
   volumeMinDayPositionRate: 45,
   volumeMaxDayPositionRate: 80,
@@ -314,6 +327,13 @@ volumeEndTime: "13:30",
   volumeMinAbsoluteVolume: 100000,
   coreMinTradeAmount: 100000000,
   volumeMinTradeAmount: 100000000,
+
+  // 고가·중고가 종목 보완 통과 기준
+  // 기본 거래량에는 못 미쳐도 거래대금이 충분하면 최소 체결량을 확인한 뒤 허용한다.
+  coreAltMinAbsoluteVolume: 5000,
+  coreAltMinTradeAmount: 200000000,
+  volumeAltMinAbsoluteVolume: 50000,
+  volumeAltMinTradeAmount: 300000000,
 
   stopLossRate: -1.5,
   firstTakeProfitRate: 4.0,
@@ -334,8 +354,8 @@ volumeTrailingStopRate: 0.8,
 // VOLUME 초반 과열 매수 차단
 // 거래량과 상승률은 높은데 고가권을 유지하지 못하면 매수하지 않는다.
 volumeOverheatBlockEnabled: true,
-volumeOverheatMinVolumeRatio: 300,
-volumeOverheatMinChangeRate: 5.0,
+volumeOverheatMinVolumeRatio: 200,
+volumeOverheatMinChangeRate: 6.0,
 volumeOverheatMinDayPositionRate: 75,
 
 // 보유추세 붕괴 조기매도
@@ -430,12 +450,15 @@ hotVolumeVolumeRelax: 20,
 hotDiscoverScoreRelax: 1,
 
 // 주의 강화값
-cautionCoreVolumeAdd: 10,
+cautionCoreVolumeAdd: 5,
 cautionVolumeVolumeAdd: 20,
 cautionDiscoverScoreAdd: 1,
 
+// CORE 거래량 기준 허용오차. 시장조정 기준보다 최대 3%p 부족해도 통과
+coreVolumeRatioTolerance: 3,
+
 // 약세 강화값: 전면 차단 대신 우수 후보만 선별
-coldCoreVolumeAdd: 20,
+coldCoreVolumeAdd: 10,
 coldVolumeVolumeAdd: 30,
 coldDiscoverScoreAdd: 2
 
@@ -452,6 +475,37 @@ function todayKey() {
 function isBetweenTime(start, end) {
   const hhmm = getCurrentHHMM();
   return hhmm >= start && hhmm <= end;
+}
+
+/*
+ * OPEN 우선운영 중 실제 CORE/VOLUME 주문 차단 여부
+ *
+ * - 09:30 이전
+ * - OPEN 실제 매수가 아직 완료되지 않음
+ *
+ * 후보검색, 점수계산, 후보강화 목록은 계속 수행한다.
+ * 실제 매수와 보유종목 스위칭 주문만 차단한다.
+ */
+function isOpenPriorityBuyBlocked(state = {}) {
+  if (!settings.openPriorityBuyBlockEnabled) {
+    return false;
+  }
+
+  const hhmm = getCurrentHHMM();
+
+  if (hhmm >= settings.openPriorityBuyBlockEndTime) {
+    return false;
+  }
+
+  return state.openCompleted !== true;
+}
+
+function getOpenPriorityBlockReason(state = {}) {
+  return (
+    `OPEN 선정 진행 중 / ` +
+    `매수 완료 또는 ${settings.openPriorityBuyBlockEndTime}부터 ` +
+    `CORE/VOLUME 신규주문 허용`
+  );
 }
 
 function loadState() {
@@ -988,19 +1042,46 @@ function getTradeAmount(item = {}, currentPrice = 0) {
     : 0;
 }
 
+function checkAbsoluteLiquidity(
+  absoluteVolume,
+  tradeAmount,
+  minAbsoluteVolume,
+  minTradeAmount,
+  altMinAbsoluteVolume,
+  altMinTradeAmount
+) {
+  const standardPass =
+    absoluteVolume >= minAbsoluteVolume &&
+    tradeAmount >= minTradeAmount;
+
+  const highValuePass =
+    absoluteVolume >= altMinAbsoluteVolume &&
+    tradeAmount >= altMinTradeAmount;
+
+  return {
+    pass: standardPass || highValuePass,
+    standardPass,
+    highValuePass
+  };
+}
+
 function makeLiquidityLog(
   strategyGroup,
   absoluteVolume,
   minAbsoluteVolume,
   tradeAmount,
-  minTradeAmount
+  minTradeAmount,
+  altMinAbsoluteVolume,
+  altMinTradeAmount
 ) {
   return (
     `저유동성 차단 / ` +
-    `누적거래량 ${Math.round(absoluteVolume).toLocaleString("ko-KR")}주 ` +
-    `(기준 ${Math.round(minAbsoluteVolume).toLocaleString("ko-KR")}주) / ` +
-    `거래대금 ${Math.round(tradeAmount).toLocaleString("ko-KR")}원 ` +
-    `(기준 ${Math.round(minTradeAmount).toLocaleString("ko-KR")}원) / ` +
+    `누적거래량 ${Math.round(absoluteVolume).toLocaleString("ko-KR")}주 / ` +
+    `거래대금 ${Math.round(tradeAmount).toLocaleString("ko-KR")}원 / ` +
+    `기본기준 ${Math.round(minAbsoluteVolume).toLocaleString("ko-KR")}주+` +
+    `${Math.round(minTradeAmount).toLocaleString("ko-KR")}원 / ` +
+    `고액거래 보완기준 ${Math.round(altMinAbsoluteVolume).toLocaleString("ko-KR")}주+` +
+    `${Math.round(altMinTradeAmount).toLocaleString("ko-KR")}원 / ` +
     `${strategyGroup}`
   );
 }
@@ -1659,10 +1740,59 @@ function calculateCandidateWatchScore(
 
   let changeRatePart = 0;
 
-  if (
+  if (strategyGroup === "VOLUME") {
+    /*
+     * VOLUME 상승률 점수
+     *
+     * 거래량이 터진 초기 강세를 우선하고,
+     * 이미 많이 오른 종목은 추격 위험으로 감점한다.
+     *
+     * 0.8~2% : 6~12점
+     * 2~4%   : 12~15점 (최적 구간)
+     * 4~6%   : 15~8점
+     * 6~8%   : 8~2점
+     * 8% 초과: 기본 매수조건에서 차단
+     */
+    if (
+      changeRate >= minChangeRate &&
+      changeRate < 2.0
+    ) {
+      const position =
+        (changeRate - minChangeRate) /
+        Math.max(0.0001, 2.0 - minChangeRate);
+
+      changeRatePart = 6 + position * 6;
+    } else if (
+      changeRate >= 2.0 &&
+      changeRate < 4.0
+    ) {
+      const position =
+        (changeRate - 2.0) / 2.0;
+
+      changeRatePart = 12 + position * 3;
+    } else if (
+      changeRate >= 4.0 &&
+      changeRate < 6.0
+    ) {
+      const position =
+        (changeRate - 4.0) / 2.0;
+
+      changeRatePart = 15 - position * 7;
+    } else if (
+      changeRate >= 6.0 &&
+      changeRate <= maxChangeRate
+    ) {
+      const position =
+        (changeRate - 6.0) /
+        Math.max(0.0001, maxChangeRate - 6.0);
+
+      changeRatePart = 8 - position * 6;
+    }
+  } else if (
     changeRate >= minChangeRate &&
     changeRate <= maxChangeRate
   ) {
+    /* CORE는 기존 선형 상승률 점수를 유지한다. */
     const range = Math.max(
       0.0001,
       maxChangeRate - minChangeRate
@@ -4792,9 +4922,15 @@ function judgeCoreBuy(state, item, price) {
    * 시장상태에 따라 조정된
    * 거래량 기준 검사
    */
+  const effectiveCoreMinVolumeRatio = Math.max(
+    0,
+    adjustedMinVolumeRatio -
+      Number(settings.coreVolumeRatioTolerance || 0)
+  );
+
   if (
     volumeRatio <
-    adjustedMinVolumeRatio
+    effectiveCoreMinVolumeRatio
   ) {
     return {
       pass: false,
@@ -4805,8 +4941,18 @@ function judgeCoreBuy(state, item, price) {
           volumeRatio,
           adjustedMinVolumeRatio
         ) +
+        ` / 허용하한 ${effectiveCoreMinVolumeRatio.toFixed(1)}%` +
         ` / ${marketCondition.reason}`
     };
+  }
+
+  if (volumeRatio < adjustedMinVolumeRatio) {
+    console.log(
+      `[CORE 거래량 허용통과] ${item.name || item.code} / ` +
+      `거래량 ${volumeRatio.toFixed(1)}% / ` +
+      `기준 ${adjustedMinVolumeRatio.toFixed(1)}% / ` +
+      `허용하한 ${effectiveCoreMinVolumeRatio.toFixed(1)}%`
+    );
   }
 
   /*
@@ -4820,10 +4966,16 @@ function judgeCoreBuy(state, item, price) {
     const minTradeAmount =
       settings.coreMinTradeAmount;
 
-    if (
-      absoluteVolume < minAbsoluteVolume ||
-      tradeAmount < minTradeAmount
-    ) {
+    const liquidity = checkAbsoluteLiquidity(
+      absoluteVolume,
+      tradeAmount,
+      minAbsoluteVolume,
+      minTradeAmount,
+      settings.coreAltMinAbsoluteVolume,
+      settings.coreAltMinTradeAmount
+    );
+
+    if (!liquidity.pass) {
       return {
         pass: false,
         reason: makeLiquidityLog(
@@ -4831,7 +4983,9 @@ function judgeCoreBuy(state, item, price) {
           absoluteVolume,
           minAbsoluteVolume,
           tradeAmount,
-          minTradeAmount
+          minTradeAmount,
+          settings.coreAltMinAbsoluteVolume,
+          settings.coreAltMinTradeAmount
         )
       };
     }
@@ -5112,10 +5266,16 @@ function judgeVolumeBuy(state, item, price) {
     const minTradeAmount =
       settings.volumeMinTradeAmount;
 
-    if (
-      absoluteVolume < minAbsoluteVolume ||
-      tradeAmount < minTradeAmount
-    ) {
+    const liquidity = checkAbsoluteLiquidity(
+      absoluteVolume,
+      tradeAmount,
+      minAbsoluteVolume,
+      minTradeAmount,
+      settings.volumeAltMinAbsoluteVolume,
+      settings.volumeAltMinTradeAmount
+    );
+
+    if (!liquidity.pass) {
       return {
         pass: false,
         reason: makeLiquidityLog(
@@ -5123,7 +5283,9 @@ function judgeVolumeBuy(state, item, price) {
           absoluteVolume,
           minAbsoluteVolume,
           tradeAmount,
-          minTradeAmount
+          minTradeAmount,
+          settings.volumeAltMinAbsoluteVolume,
+          settings.volumeAltMinTradeAmount
         )
       };
     }
@@ -5583,36 +5745,36 @@ async function paperBuy(
     );
 
     const commonBuyData = {
-      discoverScore,
+      discoverScore: Math.round(discoverScore),
 
-      finalBuyScore,
+      finalBuyScore: Math.round(finalBuyScore),
       finalBuyScoreDetail:
         watchScoreDetail,
 
-      marketScore,
+      marketScore: Math.round(marketScore),
       marketTemperature:
         state.marketTemperature || null,
 
-      sectorPowerScore,
-      leaderStrengthScore,
-      candidateStrengthScore,
+      sectorPowerScore: Math.round(sectorPowerScore),
+      leaderStrengthScore: Math.round(leaderStrengthScore),
+      candidateStrengthScore: Math.round(candidateStrengthScore),
 
-      candidateWatchScore,
+      candidateWatchScore: Math.round(candidateWatchScore),
       candidateWatchScoreDetail:
         watchScoreDetail,
 
       candidateStrengthLabel:
         candidateStrengthDiagnostic.label,
 
-      candidateBaseScore: Number(
+      candidateBaseScore: Math.round(Number(
         watchScoreDetail?.baseTotal ??
         candidateWatchScore ??
         0
-      ),
+      )),
 
-      candidateTrendPenalty: Number(
+      candidateTrendPenalty: Math.round(Number(
         watchScoreDetail?.trendPenalty || 0
-      ),
+      )),
 
       buyPriceDiffRate: Number(
         watchScoreDetail?.priceDiffRate || 0
@@ -5905,11 +6067,14 @@ async function paperSell(
   const sellKey =
     `${holding.code}_${sellType}`;
 
-  if (
-    state.pendingSellCodes.includes(sellKey)
-  ) {
+  const sameCodeSellPending =
+    state.pendingSellCodes.some(key =>
+      String(key || "").startsWith(`${holding.code}_`)
+    );
+
+  if (sameCodeSellPending) {
     console.log(
-      `[${sellType} 제외] ${holding.name} / 매도 요청 진행중`
+      `[${sellType} 제외] ${holding.name} / 동일 종목 매도 요청 진행중`
     );
     return false;
   }
@@ -5946,7 +6111,9 @@ async function paperSell(
         price: sellPrice,
         qty,
         sellType,
-        reason
+        reason,
+        manualSell: sellSignalDetail?.manualSell === true,
+        manualRequestId: sellSignalDetail?.manualRequestId || null
       }
     );
 
@@ -6326,6 +6493,220 @@ const sellAnalysis = {
 }
 
 
+function cleanupStaleManualSellFiles() {
+  const now = Date.now();
+
+  for (const [dir, suffixes] of [
+    [MANUAL_SELL_REQUEST_DIR, [".json", ".json.processing"]],
+    [MANUAL_SELL_RESULT_DIR, [".json"]]
+  ]) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch (_) {
+      continue;
+    }
+
+    for (const name of names) {
+      if (!suffixes.some(suffix => name.endsWith(suffix))) continue;
+      const filePath = path.join(dir, name);
+      try {
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > MANUAL_SELL_REQUEST_TTL_MS) {
+          fs.unlinkSync(filePath);
+          console.log(`[수동매도 오래된 파일 정리] ${name}`);
+        }
+      } catch (_) {}
+    }
+  }
+}
+
+function clearStaleManualSellLock(state, code) {
+  if (!Array.isArray(state.pendingSellCodes)) {
+    state.pendingSellCodes = [];
+    return false;
+  }
+
+  const before = state.pendingSellCodes.length;
+  state.pendingSellCodes = state.pendingSellCodes.filter(key => {
+    const text = String(key || "");
+    return !(
+      text.startsWith(`${code}_`) &&
+      text.includes("MANUAL_SELL")
+    );
+  });
+
+  return state.pendingSellCodes.length !== before;
+}
+
+function writeManualSellResult(requestId, payload) {
+  const resultPath = path.join(
+    MANUAL_SELL_RESULT_DIR,
+    `${requestId}.json`
+  );
+  writeJsonFileAtomic(resultPath, {
+    requestId,
+    completedAt: nowText(),
+    completedAtMs: Date.now(),
+    ...payload
+  });
+}
+
+async function processManualSellRequests() {
+  cleanupStaleManualSellFiles();
+
+  let files = [];
+  try {
+    files = fs.readdirSync(MANUAL_SELL_REQUEST_DIR)
+      .filter(name => name.endsWith('.json'))
+      .sort();
+  } catch (err) {
+    console.error('[수동매도 요청목록 오류]', err.message);
+    return;
+  }
+
+  for (const fileName of files.slice(0, 10)) {
+    const requestPath = path.join(MANUAL_SELL_REQUEST_DIR, fileName);
+    const processingPath = `${requestPath}.processing`;
+    let request = null;
+
+    try {
+      // rename에 성공한 CORE 프로세스만 해당 요청을 처리한다.
+      fs.renameSync(requestPath, processingPath);
+      request = readJsonFileSafe(processingPath, null);
+
+      const requestId = String(request?.requestId || fileName.replace(/\.json$/, ''));
+      const code = String(request?.code || '')
+        .replace(/^A/, '')
+        .trim()
+        .padStart(6, '0');
+
+      if (!code || code === '000000') {
+        writeManualSellResult(requestId, {
+          ok: false,
+          status: 400,
+          message: '매도할 종목코드가 없습니다.'
+        });
+        continue;
+      }
+
+      const state = loadState();
+      const holding = (state.holdings || []).find(row =>
+        String(row.code || '').replace(/^A/, '').padStart(6, '0') === code
+      );
+
+      if (!holding || Number(holding.qty || 0) <= 0) {
+        writeManualSellResult(requestId, {
+          ok: false,
+          status: 404,
+          message: '매도 가능한 보유종목이 없습니다.'
+        });
+        continue;
+      }
+
+      const sellPrice = await fetchPrice(code);
+      if (!sellPrice) {
+        throw new Error('현재가를 확인할 수 없어 매도하지 않았습니다.');
+      }
+
+      // 현재가 조회 중 자동매도가 발생했는지 최신 상태에서 재확인한다.
+      const latestState = loadState();
+      const latestHolding = (latestState.holdings || []).find(row =>
+        String(row.code || '').replace(/^A/, '').padStart(6, '0') === code
+      );
+
+      if (!latestHolding || Number(latestHolding.qty || 0) <= 0) {
+        writeManualSellResult(requestId, {
+          ok: false,
+          status: 409,
+          message: '현재가 조회 중 이미 매도된 종목입니다.'
+        });
+        continue;
+      }
+
+      const qty = Number(latestHolding.qty || 0);
+      const buyPrice = Number(latestHolding.buyPrice || 0);
+      const strategyGroup = String(latestHolding.strategyGroup || 'CORE').toUpperCase();
+      const sellType = `${strategyGroup}_MANUAL_SELL`;
+      const reason = '대시보드 수동 현재가 전량매도';
+
+      // 이전 비정상 종료로 남은 수동매도 잠금만 제거한다.
+      // 자동매도 잠금은 건드리지 않아 실제 중복매도는 계속 차단한다.
+      if (clearStaleManualSellLock(latestState, code)) {
+        saveState(latestState);
+        console.log(`[수동매도 오래된 잠금 정리] ${latestHolding.name}(${code})`);
+      }
+
+      const sold = await paperSell(
+        latestState,
+        latestHolding,
+        sellPrice,
+        qty,
+        sellType,
+        reason,
+        {
+          signalAt: nowText(),
+          signalPrice: sellPrice,
+          manualSell: true,
+          manualRequestId: requestId
+        }
+      );
+
+      if (!sold) {
+        writeManualSellResult(requestId, {
+          ok: false,
+          status: 409,
+          message: '동일 종목 매도 요청이 이미 진행 중입니다.'
+        });
+        continue;
+      }
+
+      const profit = Math.floor((sellPrice - buyPrice) * qty);
+      const profitRate = buyPrice > 0
+        ? ((sellPrice - buyPrice) / buyPrice) * 100
+        : 0;
+      const completedState = loadState();
+
+      console.log(
+        `[수동매도 완료] ${latestHolding.name}(${code}) / ` +
+        `${sellPrice.toLocaleString()}원 / ${qty.toLocaleString()}주 / ` +
+        `손익 ${profit.toLocaleString()}원 (${profitRate.toFixed(2)}%) / ` +
+        `요청 ${requestId}`
+      );
+
+      writeManualSellResult(requestId, {
+        ok: true,
+        status: 200,
+        message: '현재가 전량매도 완료',
+        code,
+        name: latestHolding.name,
+        strategyGroup,
+        sellType,
+        sellPrice,
+        qty,
+        profit,
+        profitRate,
+        totalCash: Number(completedState.totalCash || 0)
+      });
+    } catch (err) {
+      const requestId = String(
+        request?.requestId || fileName.replace(/\.json$/, '')
+      );
+      console.error('[수동매도 처리 오류]', requestId, err?.stack || err?.message || err);
+      writeManualSellResult(requestId, {
+        ok: false,
+        status: 500,
+        message: err?.message || '수동 매도 처리 중 오류가 발생했습니다.'
+      });
+    } finally {
+      if (fs.existsSync(processingPath)) {
+        try { fs.unlinkSync(processingPath); } catch (_) {}
+      }
+    }
+  }
+}
+
+
 function getSellSignal(holding, price) {
   const buyPrice = Number(
     holding.buyPrice || 0
@@ -6661,6 +7042,16 @@ async function runCandidateWatchOnce() {
   }
 
   const state = loadState();
+  const openPriorityBuyBlocked =
+    isOpenPriorityBuyBlocked(state);
+
+  if (openPriorityBuyBlocked) {
+    console.log(
+      `[후보재평가 보류] ${getOpenPriorityBlockReason(state)} / ` +
+      `OPEN API 우선사용`
+    );
+    return;
+  }
 
   initDailyRiskIfNeeded(state);
   cleanupCandidateHistory(state);
@@ -6871,6 +7262,7 @@ updateCandidateWatchList(
       : judgeVolumeBuy(state, item, price);
 
       if (
+  !openPriorityBuyBlocked &&
   !judged.pass &&
   judged.switchResult?.allowed &&
   settings.switchEnabled
@@ -6955,6 +7347,15 @@ if (!judged.pass) {
       `${strategyGroup} / ${judged.reason}`
     );
 
+    if (openPriorityBuyBlocked) {
+      console.log(
+        `[후보재평가 매수보류] ${candidate.name} / ` +
+        `${strategyGroup} / ${getOpenPriorityBlockReason(state)}`
+      );
+      await sleep(settings.candidateWatchPriceDelayMs);
+      continue;
+    }
+
     const bought = await paperBuy(
       state,
       item,
@@ -7013,6 +7414,16 @@ async function runBuyOnce() {
   console.log("[BUY] 1회 점검 시작");
 
   const state = loadState();
+  const openPriorityBuyBlocked =
+    isOpenPriorityBuyBlocked(state);
+
+  if (openPriorityBuyBlocked) {
+    console.log(
+      `[BUY 점검보류] ${getOpenPriorityBlockReason(state)} / ` +
+      `OPEN API 우선사용을 위해 CORE/VOLUME 후보검색도 생략`
+    );
+    return;
+  }
 
   if (!state.serverAutoEnabled) {
     console.log("[BUY] 서버 자동매매 OFF");
@@ -7035,11 +7446,20 @@ console.log("[BUY] 후보 조회 시작");
 /*
  * 1. 기존 순차검색 후보
  */
-const discoverResult =
-  await discoverCandidates(
+let discoverResult;
+
+try {
+  discoverResult = await discoverCandidates(
     state,
     "CORE_VOLUME"
   );
+} catch (err) {
+  console.error(
+    `[BUY 후보조회 실패] ${err?.message || err} / ` +
+    `이번 BUY 점검만 건너뜀`
+  );
+  return;
+}
 
 const discoveredCandidates =
   discoverResult.candidates || [];
@@ -7230,6 +7650,7 @@ if (candidateSource === "HOT") {
       );
 
       if (
+  !openPriorityBuyBlocked &&
   !coreJudge.pass &&
   coreJudge.switchResult?.allowed &&
   settings.switchEnabled
@@ -7274,6 +7695,14 @@ if (!coreJudge.pass) {
 }
 
       if (coreJudge.pass) {
+        if (openPriorityBuyBlocked) {
+          console.log(
+            `[CORE 매수보류] ${name} / ` +
+            `${getOpenPriorityBlockReason(state)}`
+          );
+          continue;
+        }
+
         const bought = await paperBuy(
           state,
           item,
@@ -7306,6 +7735,7 @@ if (!coreJudge.pass) {
   );
 
   if (
+  !openPriorityBuyBlocked &&
   !volumeJudge.pass &&
   volumeJudge.switchResult?.allowed &&
   settings.switchEnabled
@@ -7349,6 +7779,14 @@ if (!coreJudge.pass) {
 }
 
       if (volumeJudge.pass) {
+        if (openPriorityBuyBlocked) {
+          console.log(
+            `[VOLUME 매수보류] ${name} / ` +
+            `${getOpenPriorityBlockReason(state)}`
+          );
+          continue;
+        }
+
         const bought = await paperBuy(
           state,
           item,
@@ -7703,6 +8141,7 @@ async function start() {
   let candidateWatchRunning = false;
   let sellRunning = false;
   let sellPending = false;
+  let lastSellPriorityCheckAt = 0;
 
   let buyTimer = null;
   let candidateWatchTimer = null;
@@ -7716,10 +8155,36 @@ async function start() {
     );
   }
 
+  async function ensureSellPriorityBeforeLongTask(taskName) {
+    /*
+     * 매수 전체검색과 후보 재평가는 20초 이상 걸릴 수 있다.
+     * 마지막 매도점검 시각과 관계없이 장시간 작업 직전에
+     * 반드시 한 번 매도점검을 끝낸 뒤 다음 작업을 시작한다.
+     */
+    if (sellRunning) {
+      return;
+    }
+
+    console.log(
+      `[${taskName}] 시작 전 매도 우선 점검`
+    );
+
+    await runSellSafely();
+  }
+
   async function runBuySafely() {
     if (isTraderBusy()) {
       console.log(
         "[BUY LOOP] 다른 작업 진행중 / 이번 점검 건너뜀"
+      );
+      return;
+    }
+
+    await ensureSellPriorityBeforeLongTask("BUY");
+
+    if (isTraderBusy()) {
+      console.log(
+        "[BUY LOOP] 매도 우선 점검 진행중 / 이번 점검 건너뜀"
       );
       return;
     }
@@ -7747,6 +8212,15 @@ async function start() {
     if (isTraderBusy()) {
       console.log(
         "[후보재평가 LOOP] 다른 작업 진행중 / 이번 점검 건너뜀"
+      );
+      return;
+    }
+
+    await ensureSellPriorityBeforeLongTask("후보재평가");
+
+    if (isTraderBusy()) {
+      console.log(
+        "[후보재평가 LOOP] 매도 우선 점검 진행중 / 이번 점검 건너뜀"
       );
       return;
     }
@@ -7785,8 +8259,11 @@ async function start() {
 
     sellPending = false;
     sellRunning = true;
+    lastSellPriorityCheckAt = Date.now();
 
     try {
+      // 수동매도 요청은 상태파일을 직접 수정하지 않고 CORE 프로세스가 우선 처리한다.
+      await processManualSellRequests();
       await checkSellOnce();
     } catch (err) {
       console.error(
@@ -7795,6 +8272,7 @@ async function start() {
       );
     } finally {
       sellRunning = false;
+      lastSellPriorityCheckAt = Date.now();
     }
   }
 
