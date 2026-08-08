@@ -305,6 +305,11 @@ buyAssetRatio: 0.125,
   coreMinDayPositionRate: 50,
   coreMaxDayPositionRate: 80,
 
+  // CORE 안정형 후보 보호: 상승률과 거래량이 동시에 과열된 종목은 VOLUME 성격으로 보고 차단
+  coreOverheatBlockEnabled: true,
+  coreOverheatMinVolumeRatio: 300,
+  coreOverheatMinChangeRate: 4.0,
+
   volumeEnabled: true,
   volumeStartTime: "09:10",
 volumeEndTime: "13:30",
@@ -354,9 +359,18 @@ volumeTrailingStopRate: 0.8,
 // VOLUME 초반 과열 매수 차단
 // 거래량과 상승률은 높은데 고가권을 유지하지 못하면 매수하지 않는다.
 volumeOverheatBlockEnabled: true,
-volumeOverheatMinVolumeRatio: 200,
-volumeOverheatMinChangeRate: 6.0,
-volumeOverheatMinDayPositionRate: 75,
+volumeOverheatMinVolumeRatio: 300,
+volumeOverheatMinChangeRate: 5.0,
+volumeOverheatMinDayPositionRate: 60,
+
+// 거래량이 비정상적으로 폭증한 종목은 상승률·위치와 관계없이 추격매수 차단
+volumeExtremeOverheatBlockEnabled: true,
+volumeExtremeOverheatMinVolumeRatio: 1000,
+
+// VOLUME 30초 강화확인: 단순 횡보가 아니라 실제 가격 상승 지속을 요구
+volumeConfirmMinPriceRiseRate: 0.10,
+volumeConfirmMaxPriceRiseRate: 1.20,
+volumeConfirmMaxDayPositionDrop: 5,
 
 // 보유추세 붕괴 조기매도
 // 가격·당일위치·보유점수가 동시에 무너진 경우에만 조기매도한다.
@@ -419,8 +433,11 @@ operationalBlockedCandidateMaxCount: 20,
 // 같은 종목·전략은 한 행으로 합치고 최초/최고/최종 판단을 보존한다.
 candidateDecisionHistoryMaxCount: 2000,
 
-breakEvenStartRate: 2.0,
-breakEvenProtectRate: 0.2,
+// 전략별 본전방어: CORE는 기존 유지, VOLUME은 단기 추세 실패를 더 일찍 보호
+coreBreakEvenStartRate: 2.0,
+coreBreakEvenProtectRate: 0.2,
+volumeBreakEvenStartRate: 1.5,
+volumeBreakEvenProtectRate: 0.1,
 
   dailyLossLimitRate: 0.01,
 
@@ -4742,11 +4759,43 @@ if (volumeDropRate < -25) {
   };
 }
 
-  if (priceDiffRate < -0.3) {
+  const dayPositionDiff =
+    current.dayPosition - Number(prev.dayPosition || 0);
+
+  if (
+    priceDiffRate <
+    Number(settings.volumeConfirmMinPriceRiseRate || 0)
+  ) {
     return {
       pass: false,
       reason:
-        `가격 약화 ${priceDiffRate.toFixed(2)}%`
+        `가격 상승 지속성 부족 ${priceDiffRate.toFixed(2)}% / ` +
+        `최소 ${Number(settings.volumeConfirmMinPriceRiseRate || 0).toFixed(2)}%`
+    };
+  }
+
+  if (
+    priceDiffRate >
+    Number(settings.volumeConfirmMaxPriceRiseRate || 999)
+  ) {
+    return {
+      pass: false,
+      reason:
+        `30초 급등 추격 차단 ${priceDiffRate.toFixed(2)}% / ` +
+        `최대 ${Number(settings.volumeConfirmMaxPriceRiseRate || 0).toFixed(2)}%`
+    };
+  }
+
+  if (
+    dayPositionDiff <
+    -Math.abs(Number(settings.volumeConfirmMaxDayPositionDrop || 0))
+  ) {
+    return {
+      pass: false,
+      reason:
+        `당일위치 약화 ${Number(prev.dayPosition || 0).toFixed(1)}→` +
+        `${current.dayPosition.toFixed(1)}% / ` +
+        `변화 ${dayPositionDiff.toFixed(1)}%p`
     };
   }
 
@@ -4757,7 +4806,8 @@ if (volumeDropRate < -25) {
       `점수 ${prev.score}→${current.score} / ` +
       `거래량 ${Number(prev.volumeRatio || 0).toFixed(1)}→` +
       `${current.volumeRatio.toFixed(1)}% / ` +
-      `가격 ${priceDiffRate.toFixed(2)}%`
+      `가격 +${priceDiffRate.toFixed(2)}% / ` +
+      `위치변화 ${dayPositionDiff >= 0 ? "+" : ""}${dayPositionDiff.toFixed(1)}%p`
   };
 }
 
@@ -4953,6 +5003,26 @@ function judgeCoreBuy(state, item, price) {
       `기준 ${adjustedMinVolumeRatio.toFixed(1)}% / ` +
       `허용하한 ${effectiveCoreMinVolumeRatio.toFixed(1)}%`
     );
+  }
+
+  /*
+   * CORE 안정형 과열 차단
+   * 상승률과 거래량이 동시에 높으면 안정형 CORE보다 급등형 성격이 강하므로 제외한다.
+   */
+  if (
+    settings.coreOverheatBlockEnabled &&
+    volumeRatio >= Number(settings.coreOverheatMinVolumeRatio || 0) &&
+    changeRate >= Number(settings.coreOverheatMinChangeRate || 0)
+  ) {
+    return {
+      pass: false,
+      reason:
+        `CORE 동시과열 차단 / ` +
+        `상승률 ${changeRate.toFixed(2)}% / ` +
+        `거래량 ${volumeRatio.toFixed(1)}% / ` +
+        `기준 ${Number(settings.coreOverheatMinChangeRate || 0).toFixed(2)}%+` +
+        `${Number(settings.coreOverheatMinVolumeRatio || 0).toFixed(1)}%`
+    };
   }
 
   /*
@@ -5313,29 +5383,39 @@ function judgeVolumeBuy(state, item, price) {
   }
 
   /*
- * VOLUME 초반 과열 차단
- *
- * 거래량과 상승률은 매우 높지만
- * 당일 고가권을 충분히 유지하지 못하는 종목은
- * 순간 체결 폭증 후 밀릴 가능성이 있어 매수하지 않는다.
+ * VOLUME 과열 차단
+ * 1) 거래량 1000% 이상은 조건과 관계없이 초과열 차단
+ * 2) 거래량 300% 이상 + 상승률 5% 이상 + 당일위치 60% 이상이면 추격매수 차단
  */
 if (
-  settings.volumeOverheatBlockEnabled &&
-  volumeRatio >=
-    settings.volumeOverheatMinVolumeRatio &&
-  changeRate >=
-    settings.volumeOverheatMinChangeRate &&
-  dayPosition <
-    settings.volumeOverheatMinDayPositionRate
+  settings.volumeExtremeOverheatBlockEnabled &&
+  volumeRatio >= Number(settings.volumeExtremeOverheatMinVolumeRatio || 0)
 ) {
   return {
     pass: false,
     reason:
-      `VOLUME 초반 과열 / ` +
+      `VOLUME 초과열 거래량 차단 / ` +
+      `거래량 ${volumeRatio.toFixed(1)}% / ` +
+      `기준 ${Number(settings.volumeExtremeOverheatMinVolumeRatio || 0).toFixed(1)}%`
+  };
+}
+
+if (
+  settings.volumeOverheatBlockEnabled &&
+  volumeRatio >= Number(settings.volumeOverheatMinVolumeRatio || 0) &&
+  changeRate >= Number(settings.volumeOverheatMinChangeRate || 0) &&
+  dayPosition >= Number(settings.volumeOverheatMinDayPositionRate || 0)
+) {
+  return {
+    pass: false,
+    reason:
+      `VOLUME 동시과열 추격 차단 / ` +
       `상승률 ${changeRate.toFixed(2)}% / ` +
       `거래량 ${volumeRatio.toFixed(1)}% / ` +
       `당일위치 ${dayPosition.toFixed(1)}% / ` +
-      `필요위치 ${settings.volumeOverheatMinDayPositionRate.toFixed(1)}% 이상`
+      `기준 ${Number(settings.volumeOverheatMinChangeRate || 0).toFixed(1)}%+` +
+      `${Number(settings.volumeOverheatMinVolumeRatio || 0).toFixed(0)}%+` +
+      `${Number(settings.volumeOverheatMinDayPositionRate || 0).toFixed(0)}%`
   };
 }
 
@@ -6738,6 +6818,14 @@ function getSellSignal(holding, price) {
     ? settings.coreTrailingStopRate
     : settings.volumeTrailingStopRate;
 
+  const breakEvenStartRate = isCore
+    ? settings.coreBreakEvenStartRate
+    : settings.volumeBreakEvenStartRate;
+
+  const breakEvenProtectRate = isCore
+    ? settings.coreBreakEvenProtectRate
+    : settings.volumeBreakEvenProtectRate;
+
   holding.highestPrice = Math.max(
     Number(
       holding.highestPrice ||
@@ -6913,9 +7001,9 @@ if (
   // 3. 본전 방어
   if (
     highestProfitRate >=
-      settings.breakEvenStartRate &&
+      breakEvenStartRate &&
     profitRate <=
-      settings.breakEvenProtectRate
+      breakEvenProtectRate
   ) {
     return {
       type:
@@ -6928,7 +7016,8 @@ if (
         `본전방어 / ` +
         `최고수익 ${highestProfitRate.toFixed(2)}% / ` +
         `현재수익 ${profitRate.toFixed(2)}% / ` +
-        `방어기준 ${settings.breakEvenProtectRate.toFixed(2)}%`
+        `시작기준 ${breakEvenStartRate.toFixed(2)}% / ` +
+        `방어기준 ${breakEvenProtectRate.toFixed(2)}%`
     };
   }
 

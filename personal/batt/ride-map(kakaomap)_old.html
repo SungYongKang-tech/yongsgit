@@ -897,22 +897,25 @@ body.font-xlarge .speed-value {
   text-shadow: 0 0 6px rgba(250,204,21,0.35);
 }
 
-.broadcast-auto-reply-hint {
+.broadcast-reply-row {
   position: absolute;
-  left: 50%;
   bottom: 46px;
+  left: 50%;
   transform: translateX(-50%);
-  width: min(88%, 560px);
-  padding: 10px 14px;
+}
+
+.broadcast-reply-btn {
+  height: 44px;
+  padding: 0 18px;
+  border: none;
   border-radius: 999px;
-  background: rgba(34,197,94,0.16);
-  border: 1px solid rgba(134,239,172,0.45);
-  color: #dcfce7;
-  font-size: 14px;
+  background: linear-gradient(180deg, #22c55e, #16a34a);
+  color: #fff;
+  font-size: 15px;
   font-weight: 900;
-  text-align: center;
-  line-height: 1.35;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.22);
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+  white-space: nowrap;
 }
 
 
@@ -1194,9 +1197,11 @@ body.data-mode #rideBatteryEl .metric-unit {
       <div class="broadcast-sender" id="broadcastSender">보낸 사람</div>
       <button class="broadcast-close" id="broadcastCloseBtn" type="button" aria-label="닫기">×</button>
       <div class="broadcast-text" id="broadcastText">쉬었다 가자.</div>
-      <div class="broadcast-auto-reply-hint" id="broadcastAutoReplyHint">
-        🎤 메시지를 들은 뒤 2초 안에 말하면 자동으로 답장됩니다
-      </div>
+      <div class="broadcast-reply-row">
+  <button type="button" class="broadcast-reply-btn" id="broadcastVoiceReplyBtn">
+    🎤 말로 답장하기
+  </button>
+</div>
       <div class="broadcast-hint">화면을 누르거나 ×를 눌러 닫기</div>
     </div>
   </div>
@@ -1522,20 +1527,26 @@ function startRadioListener() {
   console.log("[무전감시]", msg);
 
   if (!msg || !msg.id || !msg.text) return;
-  if (msg.id === lastRadioMessageId) return;
 
-  lastRadioMessageId = msg.id;
-  localStorage.setItem(LAST_RADIO_MESSAGE_KEY, msg.id);
+    if (msg.id === lastRadioMessageId) return;
 
-  // 내가 보낸 메시지에는 내 휴대폰의 자동 음성답장을 시작하지 않는다.
-  if (msg.senderUid && auth.currentUser?.uid && msg.senderUid === auth.currentUser.uid) {
-    return;
-  }
+lastRadioMessageId = msg.id;
+localStorage.setItem(LAST_RADIO_MESSAGE_KEY, msg.id);
 
-  playRadioAlert(
-    msg.senderName || "라이더",
-    msg.text
-  );
+playRadioAlert(
+  msg.senderName || "라이더",
+  msg.text
+);
+
+    if (msg.id === lastRadioMessageId) return;
+
+    lastRadioMessageId = msg.id;
+    localStorage.setItem(LAST_RADIO_MESSAGE_KEY, msg.id);
+
+    playRadioAlert(
+      msg.senderName || "라이더",
+      msg.text
+    );
   };
 
   onValue(radioMessageRef, radioMessageCallback);
@@ -1829,137 +1840,21 @@ function startVoiceInput() {
 }
 
 
-let activeAutoReplyRecognition = null;
-let autoReplySpeechStartTimer = null;
-let autoReplyStartTimer = null;
+function startBroadcastVoiceReply() {
+  recognizeOnce({
+    button: broadcastVoiceReplyBtn,
+    listeningText: "듣는중...",
+    doneText: "🎤 말로 답장하기",
+    onResult: async (text) => {
 
-function setBroadcastAutoReplyHint(text) {
-  if (broadcastAutoReplyHint) {
-    broadcastAutoReplyHint.textContent = text;
-  }
-}
+      text = (text || "").trim();
+      if (!text) return;
 
-function stopAutoBroadcastVoiceReply() {
-  if (autoReplyStartTimer) {
-    clearTimeout(autoReplyStartTimer);
-    autoReplyStartTimer = null;
-  }
+      await sendPresetGroupMessage(text);
 
-  if (autoReplySpeechStartTimer) {
-    clearTimeout(autoReplySpeechStartTimer);
-    autoReplySpeechStartTimer = null;
-  }
-
-  if (activeAutoReplyRecognition) {
-    try {
-      activeAutoReplyRecognition.abort();
-    } catch (e) {}
-    activeAutoReplyRecognition = null;
-  }
-}
-
-function startAutoBroadcastVoiceReply() {
-  stopAutoBroadcastVoiceReply();
-
-  const SpeechRecognition =
-    window.SpeechRecognition ||
-    window.webkitSpeechRecognition;
-
-  if (!SpeechRecognition) {
-    setBroadcastAutoReplyHint("이 기기에서는 자동 음성답장을 사용할 수 없습니다.");
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-  activeAutoReplyRecognition = recognition;
-
-  recognition.lang = "ko-KR";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-  recognition.continuous = false;
-
-  let speechStarted = false;
-  let replySent = false;
-
-  setBroadcastAutoReplyHint("🎤 삐 소리 후 2초 안에 말하면 자동으로 답장됩니다");
-  playBeep();
-
-  recognition.onstart = () => {
-    setBroadcastAutoReplyHint("🎤 지금 말하세요 · 2초 안에 말하면 자동 답장");
-
-    autoReplySpeechStartTimer = setTimeout(() => {
-      autoReplySpeechStartTimer = null;
-
-      if (!speechStarted && !replySent) {
-        setBroadcastAutoReplyHint("응답 없음 · 메시지만 확인했습니다");
-        try {
-          recognition.stop();
-        } catch (e) {}
-      }
-    }, 2000);
-  };
-
-  recognition.onspeechstart = () => {
-    speechStarted = true;
-
-    if (autoReplySpeechStartTimer) {
-      clearTimeout(autoReplySpeechStartTimer);
-      autoReplySpeechStartTimer = null;
+      hideBroadcastMessage();
     }
-
-    setBroadcastAutoReplyHint("🎤 듣는 중… 말씀을 마치면 자동 전송됩니다");
-  };
-
-  recognition.onresult = async (event) => {
-    const text = String(event.results?.[0]?.[0]?.transcript || "").trim();
-    if (!text || replySent) return;
-
-    replySent = true;
-    setBroadcastAutoReplyHint(`✅ 답장 전송 중: ${text}`);
-
-    const sent = await sendPresetGroupMessage(text);
-
-    if (sent) {
-      setBroadcastAutoReplyHint(`✅ 답장 완료: ${text}`);
-      setTimeout(() => hideBroadcastMessage(), 700);
-    } else {
-      setBroadcastAutoReplyHint("답장 전송에 실패했습니다");
-    }
-  };
-
-  recognition.onerror = (event) => {
-    if (replySent) return;
-
-    const code = event?.error || "";
-    if (code === "no-speech" || code === "aborted") {
-      setBroadcastAutoReplyHint("응답 없음 · 메시지만 확인했습니다");
-    } else if (code === "not-allowed" || code === "service-not-allowed") {
-      setBroadcastAutoReplyHint("마이크 권한이 필요합니다");
-    } else {
-      setBroadcastAutoReplyHint("자동 음성답장을 시작하지 못했습니다");
-    }
-  };
-
-  recognition.onend = () => {
-    if (autoReplySpeechStartTimer) {
-      clearTimeout(autoReplySpeechStartTimer);
-      autoReplySpeechStartTimer = null;
-    }
-
-    if (activeAutoReplyRecognition === recognition) {
-      activeAutoReplyRecognition = null;
-    }
-  };
-
-  autoReplyStartTimer = setTimeout(() => {
-    autoReplyStartTimer = null;
-    try {
-      recognition.start();
-    } catch (e) {
-      setBroadcastAutoReplyHint("자동 음성답장을 시작하지 못했습니다");
-      activeAutoReplyRecognition = null;
-    }
-  }, 180);
+  });
 }
 
 function loadDisplaySettings() {
@@ -2627,8 +2522,8 @@ const broadcastSender = document.getElementById("broadcastSender");
 const broadcastText = document.getElementById("broadcastText");
 const broadcastCloseBtn = document.getElementById("broadcastCloseBtn");
 
-const broadcastAutoReplyHint =
-  document.getElementById("broadcastAutoReplyHint");
+const broadcastVoiceReplyBtn =
+  document.getElementById("broadcastVoiceReplyBtn");
 
   const leaveGroupBtn =
   document.getElementById("leaveGroupBtn");
@@ -2787,50 +2682,33 @@ function stopBroadcastSpeech() {
   }
 }
 
-function speakBroadcastMessage(senderName, messageText, onDone = null) {
-  let finished = false;
-
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    if (typeof onDone === "function") onDone();
-  };
-
+function speakBroadcastMessage(senderName, messageText) {
   try {
-    if (!("speechSynthesis" in window)) {
-      finish();
-      return;
-    }
-
+    if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
+    
+   const memberCount = getGroupMemberCount();
 
-    const memberCount = getGroupMemberCount();
+const speechText = memberCount <= 2
+  ? messageText
+  : `${senderName}. ${messageText}`;
 
-    const speechText = memberCount <= 2
-      ? messageText
-      : `${senderName}. ${messageText}`;
+const utter = new SpeechSynthesisUtterance(speechText);
 
-    const utter = new SpeechSynthesisUtterance(speechText);
 
     utter.lang = "ko-KR";
     utter.rate = 1;
     utter.pitch = 1;
-
     const selectedVoice = getPreferredKoreanVoice();
-    if (selectedVoice) utter.voice = selectedVoice;
+if (selectedVoice) utter.voice = selectedVoice;
+   playBeep();
 
-    utter.onend = finish;
-    utter.onerror = finish;
-
-    playBeep();
-
-    setTimeout(() => {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utter);
-    }, 700);
+setTimeout(() => {
+  window.speechSynthesis.cancel();   // 혹시 남아있는 음성 제거
+  window.speechSynthesis.speak(utter);
+}, 700);
   } catch (e) {
     console.log("음성 읽기 실패:", e);
-    finish();
   }
 }
 
@@ -2841,7 +2719,6 @@ function hideBroadcastMessage() {
   }
   if (broadcastOverlay) broadcastOverlay.classList.remove("show");
   stopBroadcastSpeech();
-  stopAutoBroadcastVoiceReply();
 }
 
 function showBroadcastMessage(senderName, messageText) {
@@ -2859,19 +2736,11 @@ if (memberCount <= 2) {
 }
 
   broadcastText.textContent = messageText || "";
-  setBroadcastAutoReplyHint("🎤 메시지를 들은 뒤 2초 안에 말하면 자동으로 답장됩니다");
   broadcastOverlay.classList.add("show");
-
-  // 메시지를 읽어준 뒤 마이크를 열어 2초 동안 음성 응답 시작을 기다린다.
-  speakBroadcastMessage(
-    senderName || "이름없음",
-    messageText || "",
-    startAutoBroadcastVoiceReply
-  );
-
+  speakBroadcastMessage(senderName || "이름없음", messageText || "");
   broadcastHideTimer = setTimeout(() => {
     hideBroadcastMessage();
-  }, 15000);
+  }, 9000);
 }
 
 async function sendPresetGroupMessage(messageText) {
@@ -5228,6 +5097,11 @@ messageCloseBtn?.addEventListener("click", () => {
   messageManageBtn.textContent = "메시지 설정";
   setMessageEditMode(-1);
 });
+
+broadcastVoiceReplyBtn?.addEventListener(
+  "click",
+  startBroadcastVoiceReply
+);
 
 
 messageAddBtn?.addEventListener("click", () => {
