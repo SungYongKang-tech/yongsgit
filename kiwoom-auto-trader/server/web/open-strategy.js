@@ -148,7 +148,7 @@ openScoreTrendMaxBonus: 20,
 
 // 15초 가격 움직임 평가
 openConfirmMinPriceRiseRate: -0.05,
-openConfirmMaxPriceRiseRate: 1.50,
+openConfirmMaxPriceRiseRate: 3.0,
 openConfirmPriceBonusLow: 3,
 openConfirmPriceBonusMedium: 7,
 openConfirmPriceBonusHigh: 10,
