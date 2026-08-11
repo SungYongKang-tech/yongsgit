@@ -77,18 +77,20 @@ openFallbackScanLimit: 200,
 openPriorityPriceDelayMs: 350,
 
 // 한번 발견한 OPEN 후보를 집중 재확인
-openFocusedCandidateMaxCount: 20,
+openFocusedCandidateMaxCount: 30,
 openFocusedPriceDelayMs: 150,
 
 // 새로운 종목 유입을 위해 60초마다 일반검색도 다시 실행
 openFullRescanIntervalMs: 30 * 1000,
+// 09:12 이후에도 신규 종목 유입을 막지 않고 API 부하만 낮춘다.
+openLateFullRescanIntervalMs: 60 * 1000,
 
 // OPEN 잠재후보: 초기에 기준 미달이어도 짧게 집중 추적 후 정식후보로 승격
 openPotentialEnabled: true,
 openPotentialMinScore: 7,
-openPotentialMaxCount: 20,
+openPotentialMaxCount: 30,
 // 상태에는 상위 20개를 유지하되 실제 현재가 재조회는 상위 10개만 수행
-openPotentialRecheckCount: 10,
+openPotentialRecheckCount: 15,
 openPotentialCheckIntervalMs: 5 * 1000,
 openPotentialMaxAgeSeconds: 900,
 // 키움 현재가 API 과호출 방지를 위한 종목 간 조회 간격
@@ -126,7 +128,7 @@ openPotentialPriceDelayMs: 250,
 
   // HOT Scanner 발견 종목을 OPEN 후보로 직접 유입
   openDirectHotEnabled: true,
-  openDirectHotMaxCount: 20,
+  openDirectHotMaxCount: 30,
   openHotDirectMinChangeRate: 1.0,
   openHotDirectMaxChangeRate: 15.0,
   openHotDirectMinTradeVolumeRatio: 90,
@@ -139,7 +141,8 @@ openConfirmWaitMs: 30 * 1000,
 openMinObservationCount: 4,
 openMinStrongObservationCount: 3,
 openMomentumMinScore: 35,
-openMomentumSampleWindowMs: 60 * 1000,
+// 실제 스캔이 20~30초 걸려도 최소 4회 표본이 유지되도록 120초 보존
+openMomentumSampleWindowMs: 120 * 1000,
 
 // OPEN 후보 점수 상승 추세 보너스
 openScoreTrendBonusPerPoint: 4,
@@ -423,18 +426,19 @@ function attachHotData(item = {}, hotData = {}) {
   return {
     ...item,
     hotMatched: Boolean(hot),
-    hotScore: Number(hot?.hotScore || 0),
+    everHotMatched: item.everHotMatched === true || Boolean(hot),
+    hotScore: Number(hot?.hotScore ?? item.hotScore ?? 0),
     hotRank: Number(hot?.rank || 0),
     hotChangeRate: Number(hot?.changeRate || 0),
     hotVolumeRatio: Number(hot?.tradeVolumeRatio || hot?.volumeRatio || 0),
     hotDayPosition: Number(hot?.dayPositionRate || hot?.dayPosition || 0),
-    hotMomentumScore: Number(hot?.openMomentumScore || 0),
-    hotPriceRise30s: Number(hot?.priceRise30s || 0),
-    hotVolumeGrowth30s: Number(hot?.volumeGrowth30s || 0),
-    hotPricePersistence: Number(hot?.pricePersistence || 0),
-    hotVolumePersistence: Number(hot?.volumePersistence || 0),
-    hotHighRefreshCount: Number(hot?.highRefreshCount || 0),
-    hotDurationSeconds: Number(hot?.hotDurationSeconds || 0),
+    hotMomentumScore: Number(hot?.openMomentumScore ?? item.hotMomentumScore ?? 0),
+    hotPriceRise30s: Number(hot?.priceRise30s ?? item.hotPriceRise30s ?? 0),
+    hotVolumeGrowth30s: Number(hot?.volumeGrowth30s ?? item.hotVolumeGrowth30s ?? 0),
+    hotPricePersistence: Number(hot?.pricePersistence ?? item.hotPricePersistence ?? 0),
+    hotVolumePersistence: Number(hot?.volumePersistence ?? item.hotVolumePersistence ?? 0),
+    hotHighRefreshCount: Number(hot?.highRefreshCount ?? item.hotHighRefreshCount ?? 0),
+    hotDurationSeconds: Number(hot?.hotDurationSeconds ?? item.hotDurationSeconds ?? 0),
     hotUpdatedAt: hotData?.updatedAt || null,
     hotAgeSeconds: Number(hotData?.ageSeconds || 0)
   };
@@ -457,8 +461,10 @@ function buildDirectHotCandidates(hotData = {}) {
         code,
         name: hot.name || hot.stockName || hot.korName || hot.stk_nm || code,
         source: "HOT",
+        originalSource: "HOT",
         candidateSource: "HOT",
         isDirectHotCandidate: true,
+        everDirectHotCandidate: true,
         hotMatched: true,
         hotRank: Number(hot.rank || index + 1),
         hotScore,
@@ -742,7 +748,17 @@ function makeOpenCandidateLearningRecord(item, price, judged) {
     rejectCategory: rejectInfo.rejectCategory,
     rejectStage: rejectInfo.rejectStage,
     source: item.source || "FALLBACK",
-    hotMatched: item.hotMatched === true,
+    originalSource: item.originalSource || item.source || "FALLBACK",
+    isDirectHotCandidate:
+      item.isDirectHotCandidate === true ||
+      item.everDirectHotCandidate === true ||
+      item.originalSource === "HOT" ||
+      item.source === "HOT",
+    hotMatched:
+      item.hotMatched === true ||
+      item.everHotMatched === true ||
+      item.isDirectHotCandidate === true ||
+      item.everDirectHotCandidate === true,
     isPriorityCandidate:
       item.isPriorityCandidate === true ||
       item.source === "PRIORITY",
@@ -1316,6 +1332,7 @@ function saveOpenCandidateLearning(evaluated) {
       firstSource: record.source || null,
       lastSource: record.source || null,
       everHotMatched: record.hotMatched === true,
+      everDirectHotCandidate: record.isDirectHotCandidate === true,
       everPriorityCandidate: record.isPriorityCandidate === true,
       firstRejectCategory: record.rejectCategory || null,
       lastRejectCategory: record.rejectCategory || null,
@@ -1340,6 +1357,8 @@ function saveOpenCandidateLearning(evaluated) {
     prev.lastRejectStage = record.rejectStage || "OTHER";
     prev.lastSource = record.source || prev.lastSource || null;
     prev.everHotMatched = prev.everHotMatched || record.hotMatched === true;
+    prev.everDirectHotCandidate =
+      prev.everDirectHotCandidate || record.isDirectHotCandidate === true;
     prev.everPriorityCandidate =
       prev.everPriorityCandidate ||
       record.isPriorityCandidate === true;
@@ -2030,6 +2049,23 @@ async function fetchFocusedCandidates(state) {
           candidate.itemSnapshot?.source ||
           "FOCUSED",
 
+        originalSource:
+          candidate.itemSnapshot?.originalSource ||
+          candidate.itemSnapshot?.source ||
+          "FOCUSED",
+
+        isDirectHotCandidate:
+          candidate.itemSnapshot?.isDirectHotCandidate === true ||
+          candidate.itemSnapshot?.everDirectHotCandidate === true ||
+          candidate.itemSnapshot?.originalSource === "HOT" ||
+          candidate.itemSnapshot?.source === "HOT",
+
+        everDirectHotCandidate:
+          candidate.itemSnapshot?.everDirectHotCandidate === true ||
+          candidate.itemSnapshot?.isDirectHotCandidate === true ||
+          candidate.itemSnapshot?.originalSource === "HOT" ||
+          candidate.itemSnapshot?.source === "HOT",
+
         priorityRank:
           Number(
             candidate.itemSnapshot?.priorityRank ||
@@ -2098,6 +2134,25 @@ function registerOpenPotentialCandidate(state, item, price, judged = {}) {
     code,
     name,
     source: item.source || "FALLBACK",
+    originalSource: item.originalSource || item.source || "FALLBACK",
+    isDirectHotCandidate:
+      item.isDirectHotCandidate === true ||
+      item.everDirectHotCandidate === true ||
+      item.originalSource === "HOT" ||
+      item.source === "HOT",
+    everDirectHotCandidate:
+      item.everDirectHotCandidate === true ||
+      item.isDirectHotCandidate === true ||
+      item.originalSource === "HOT" ||
+      item.source === "HOT",
+    hotScore: Number(item.hotScore || 0),
+    hotMomentumScore: Number(item.hotMomentumScore || 0),
+    hotPriceRise30s: Number(item.hotPriceRise30s || 0),
+    hotVolumeGrowth30s: Number(item.hotVolumeGrowth30s || 0),
+    hotPricePersistence: Number(item.hotPricePersistence || 0),
+    hotVolumePersistence: Number(item.hotVolumePersistence || 0),
+    hotHighRefreshCount: Number(item.hotHighRefreshCount || 0),
+    hotDurationSeconds: Number(item.hotDurationSeconds || 0),
     priorityRank: Number(item.priorityRank || 0),
     priorityScore: Number(item.priorityScore || 0),
     priorityReason: item.priorityReason || null,
@@ -2229,6 +2284,20 @@ async function fetchPotentialCandidates(state) {
         code: String(data.code || candidate.code || ""),
         name: data.name || candidate.name || candidate.code,
         source: "POTENTIAL",
+        originalSource:
+          candidate.itemSnapshot?.originalSource ||
+          candidate.itemSnapshot?.source ||
+          "POTENTIAL",
+        isDirectHotCandidate:
+          candidate.itemSnapshot?.isDirectHotCandidate === true ||
+          candidate.itemSnapshot?.everDirectHotCandidate === true ||
+          candidate.itemSnapshot?.originalSource === "HOT" ||
+          candidate.itemSnapshot?.source === "HOT",
+        everDirectHotCandidate:
+          candidate.itemSnapshot?.everDirectHotCandidate === true ||
+          candidate.itemSnapshot?.isDirectHotCandidate === true ||
+          candidate.itemSnapshot?.originalSource === "HOT" ||
+          candidate.itemSnapshot?.source === "HOT",
         potentialCandidate: true,
         potentialFirstScore: Number(candidate.firstScore || 0),
         potentialFirstPrice: Number(candidate.firstPrice || 0),
@@ -2311,12 +2380,15 @@ async function discoverCandidates(state, marketData = {}) {
   const lateOpenPhase =
     hhmm >= String(settings.openLateFallbackStartTime || "09:12");
 
+  const fullRescanIntervalMs = lateOpenPhase
+    ? Number(settings.openLateFullRescanIntervalMs || 60 * 1000)
+    : Number(settings.openFullRescanIntervalMs || 30 * 1000);
+
   const shouldRunFullScan =
-    !lateOpenPhase &&
     (
       focusedRows.length === 0 ||
       now - lastFullScanAtMs >=
-        settings.openFullRescanIntervalMs
+        fullRescanIntervalMs
     );
 
   let priorityRows = [];
@@ -2342,7 +2414,7 @@ async function discoverCandidates(state, marketData = {}) {
       0,
       Math.ceil(
         (
-          settings.openFullRescanIntervalMs -
+          fullRescanIntervalMs -
           (now - lastFullScanAtMs)
         ) / 1000
       )
@@ -2554,6 +2626,25 @@ function isOpenCandidateGettingStronger(state, item, price) {
       "",
 
     source: item.source || "FALLBACK",
+    originalSource: item.originalSource || item.source || "FALLBACK",
+    isDirectHotCandidate:
+      item.isDirectHotCandidate === true ||
+      item.everDirectHotCandidate === true ||
+      item.originalSource === "HOT" ||
+      item.source === "HOT",
+    everDirectHotCandidate:
+      item.everDirectHotCandidate === true ||
+      item.isDirectHotCandidate === true ||
+      item.originalSource === "HOT" ||
+      item.source === "HOT",
+    hotScore: Number(item.hotScore || 0),
+    hotMomentumScore: Number(item.hotMomentumScore || 0),
+    hotPriceRise30s: Number(item.hotPriceRise30s || 0),
+    hotVolumeGrowth30s: Number(item.hotVolumeGrowth30s || 0),
+    hotPricePersistence: Number(item.hotPricePersistence || 0),
+    hotVolumePersistence: Number(item.hotVolumePersistence || 0),
+    hotHighRefreshCount: Number(item.hotHighRefreshCount || 0),
+    hotDurationSeconds: Number(item.hotDurationSeconds || 0),
 
     priorityRank:
       Number(item.priorityRank || 0),
@@ -2800,7 +2891,15 @@ const momentum = calculateOpenMomentumStrength(history);
 if (!momentum.pass) {
   return {
     pass: false,
-    reason: `상승 지속성 부족 / ${momentum.reason}`
+    reason: `상승 지속성 부족 / ${momentum.reason}`,
+    momentumScore: Number(momentum.momentumScore || 0),
+    priceRiseRate: Number(momentum.priceRiseRate || 0),
+    volumeGrowthRate: Number(momentum.volumeGrowthRate || 0),
+    scoreGrowth: Number(momentum.scoreGrowth || 0),
+    pricePersistence: Number(momentum.pricePersistence || 0),
+    volumePersistence: Number(momentum.volumePersistence || 0),
+    observationCount: Array.isArray(history.samples) ? history.samples.length : 0,
+    strongObservationCount: Number(momentum.strongCount || 0)
   };
 }
 
@@ -2878,7 +2977,11 @@ function judgeOpenBuy(state, item, price) {
     item.isPriorityCandidate === true ||
     item.source === "PRIORITY";
   const hotMatched = item.hotMatched === true;
-  const isDirectHotCandidate = item.isDirectHotCandidate === true || item.source === "HOT";
+  const isDirectHotCandidate =
+    item.isDirectHotCandidate === true ||
+    item.everDirectHotCandidate === true ||
+    item.originalSource === "HOT" ||
+    item.source === "HOT";
   const hotScore = Number(item.hotScore || 0);
 
   /*
@@ -2917,13 +3020,6 @@ function judgeOpenBuy(state, item, price) {
     };
   }
 
-  if (hasOpenBuyToday(state)) {
-    return {
-      pass: false,
-      reason: "오늘 OPEN 이미 매수"
-    };
-  }
-
   if (
     (state.holdings || []).some(
       holding =>
@@ -2949,7 +3045,7 @@ function judgeOpenBuy(state, item, price) {
    * 다만 둘 다 없는 일반검색 후보는 발견점수가 1점 더 높아야 한다.
    */
   const hasPriorityOrHotSignal =
-    isPriorityCandidate || hotMatched;
+    isPriorityCandidate || hotMatched || isDirectHotCandidate;
 
   if (
     !hasPriorityOrHotSignal &&
@@ -3003,7 +3099,7 @@ function judgeOpenBuy(state, item, price) {
 
   /*
    * 전체 시장이 매우 약하면 모든 OPEN 매수를 차단한다.
-  
+   */
   if (
     marketData.available &&
     marketScore <
@@ -3018,7 +3114,7 @@ function judgeOpenBuy(state, item, price) {
     };
   }
 
-  
+  /*
    * 종목이 속한 섹터가 강한 약세이면 차단한다.
    */
   if (
@@ -3262,7 +3358,18 @@ function judgeOpenBuy(state, item, price) {
   if (!strengthen.pass) {
     return {
       pass: false,
-      reason: strengthen.reason
+      reason: strengthen.reason,
+      momentumScore: Number(strengthen.momentumScore || 0),
+      priceRiseRate: Number(strengthen.priceRiseRate || 0),
+      volumeGrowthRate: Number(strengthen.volumeGrowthRate || 0),
+      scoreGrowth: Number(strengthen.scoreGrowth || 0),
+      pricePersistence: Number(strengthen.pricePersistence || 0),
+      volumePersistence: Number(strengthen.volumePersistence || 0),
+      observationCount: Number(strengthen.observationCount || 0),
+      strongObservationCount: Number(strengthen.strongObservationCount || 0),
+      requiredDiscoverScore,
+      requiredVolumeRatio,
+      requiredConfirmPriceRise
     };
   }
 

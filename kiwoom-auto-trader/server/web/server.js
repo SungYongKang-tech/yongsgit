@@ -221,7 +221,17 @@ function getCurrentTradingSettings() {
     "coreMinTradeVolumeRatio",
     "coreMinDayPositionRate",
     "coreMaxDayPositionRate",
+    "coreConfirmMinPriceRiseRate",
+    "coreMinCandidateStrengthScore",
+    "coreTrendObservationMinCount",
+    "coreTrendObservationWindowMs",
+    "coreTrendMinElapsedMs",
+    "coreTrendMinPricePersistence",
+    "coreTrendMaxDayPositionDrop",
+    "coreTrendMinVolumeRetentionRate",
     "coreStopLossRate",
+    "coreBreakEvenStartRate",
+    "coreBreakEvenProtectRate",
     "coreFirstTakeProfitRate",
     "coreTrailingStartRate",
     "coreTrailingStopRate",
@@ -233,7 +243,19 @@ function getCurrentTradingSettings() {
     "volumeMinTradeVolumeRatio",
     "volumeMinDayPositionRate",
     "volumeMaxDayPositionRate",
+    "volumeLateChaseBlockEnabled",
+    "volumeLateChaseMinChangeRate",
+    "volumeLateChaseMinCandidateStrengthScore",
+    "volumePullbackEntryEnabled",
+    "volumePullbackMinRate",
+    "volumePullbackMaxRate",
+    "volumeReboundMinRate",
+    "volumePullbackMaxWaitMs",
+    "volumePullbackMinVolumeRetentionRate",
+    "volumePullbackMaxDayPositionDrop",
     "volumeStopLossRate",
+    "volumeBreakEvenStartRate",
+    "volumeBreakEvenProtectRate",
     "volumeFirstTakeProfitRate",
     "volumeTrailingStartRate",
     "volumeTrailingStopRate",
@@ -3312,6 +3334,7 @@ function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
         firstSource: item.firstSource || first.source || null,
         lastSource: item.lastSource || last.source || null,
         everHotMatched: item.everHotMatched === true,
+        everDirectHotCandidate: item.everDirectHotCandidate === true,
         everPriorityCandidate: item.everPriorityCandidate === true,
         passedDiscoverStage: item.passedDiscoverStage === true,
         passedVolumeStage: item.passedVolumeStage === true,
@@ -3608,10 +3631,39 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       return reason || "기타 조건 미충족";
     }
 
+    function extractKstHHMM(value) {
+      const text = String(value || "").trim();
+      if (!text) return null;
+
+      const korean = text.match(/(오전|오후|AM|PM)\s*(\d{1,2}):(\d{2})/i);
+      if (korean) {
+        const period = String(korean[1]).toUpperCase();
+        let hour = Number(korean[2]);
+        const minute = Number(korean[3]);
+        const isPm = period === "오후" || period === "PM";
+        const isAm = period === "오전" || period === "AM";
+        if (isPm && hour < 12) hour += 12;
+        if (isAm && hour === 12) hour = 0;
+        return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      }
+
+      const plain = text.match(/(?:T|\s)(\d{2}):(\d{2})(?::\d{2})?/);
+      return plain ? `${plain[1]}:${plain[2]}` : null;
+    }
+
+    function isWithinOpenWindow(value) {
+      const hhmm = extractKstHHMM(value);
+      return Boolean(hhmm && hhmm >= "09:00" && hhmm <= "09:30");
+    }
+
     const rows = leaders.map((leader, index) => {
       const normalizedCode = normalizeOpenStockCode(leader.code);
       const candidate = growthByCode.get(normalizedCode) || null;
       const bought = normalizedCode === selectedCode;
+      const hotRecord = hotDetected[normalizedCode] || null;
+      const hotFirstDetectedAt = hotRecord?.firstDetectedAt || null;
+      const hotDetectedWithinOpenWindow = isWithinOpenWindow(hotFirstDetectedAt);
+      const openFoundWithinWindow = Boolean(candidate && isWithinOpenWindow(candidate.firstSeenAt));
       return {
         rank: index + 1,
         code: normalizedCode,
@@ -3631,15 +3683,19 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         firstSource: candidate?.firstSource || null,
         lastSource: candidate?.lastSource || null,
         currentHotMatched: hotCodes.has(normalizedCode),
-        hotDetectedToday: Boolean(hotDetected[normalizedCode]),
-        hotFirstDetectedAt: hotDetected[normalizedCode]?.firstDetectedAt || null,
-        hotLastDetectedAt: hotDetected[normalizedCode]?.lastDetectedAt || null,
-        hotDetectionCount: Number(hotDetected[normalizedCode]?.detectionCount || 0),
-        hotBestRank: Number(hotDetected[normalizedCode]?.bestRank || 0),
-        hotMaxChangeRate: Number(hotDetected[normalizedCode]?.maxChangeRate || 0),
-        hotMaxMomentumScore: Number(hotDetected[normalizedCode]?.maxMomentumScore || 0),
-        hotSources: Array.isArray(hotDetected[normalizedCode]?.sources) ? hotDetected[normalizedCode].sources : [],
+        hotDetectedToday: Boolean(hotRecord),
+        hotFirstDetectedAt,
+        hotLastDetectedAt: hotRecord?.lastDetectedAt || null,
+        hotDetectionCount: Number(hotRecord?.detectionCount || 0),
+        hotBestRank: Number(hotRecord?.bestRank || 0),
+        hotMaxChangeRate: Number(hotRecord?.maxChangeRate || 0),
+        hotMaxMomentumScore: Number(hotRecord?.maxMomentumScore || 0),
+        hotSources: Array.isArray(hotRecord?.sources) ? hotRecord.sources : [],
+        hotDetectedWithinOpenWindow,
+        openFoundWithinWindow,
+        openOpportunity: hotDetectedWithinOpenWindow || openFoundWithinWindow,
         everHotMatched: candidate?.everHotMatched === true,
+        everDirectHotCandidate: candidate?.everDirectHotCandidate === true,
         everPriorityCandidate: candidate?.everPriorityCandidate === true,
         passedDiscoverStage: candidate?.passedDiscoverStage === true,
         passedVolumeStage: candidate?.passedVolumeStage === true,
@@ -3663,12 +3719,26 @@ app.get("/api/open-surge-analysis", async (req, res) => {
     const boughtCount = rows.filter(row => row.bought).length;
     const topReason = reasonStats[0]?.reason || "자료 없음";
     const diagnosis = [];
+    const openOpportunityRows = rows.filter(row => row.openOpportunity);
+    const openWindowHotCount = rows.filter(row => row.hotDetectedWithinOpenWindow).length;
+    const openWindowFoundCount = rows.filter(row => row.openFoundWithinWindow).length;
+    const openWindowBoughtCount = rows.filter(row => row.openOpportunity && row.bought).length;
+    const openWindowHotToOpenMissedCount = rows.filter(
+      row => row.hotDetectedWithinOpenWindow && !row.openFoundWithinWindow
+    ).length;
     if (!rows.length) {
       diagnosis.push(`현재 +${minRate.toFixed(0)}% 이상 급등주가 조회되지 않았습니다.`);
     } else {
       const hotDetectedCount = rows.filter(row => row.hotDetectedToday).length;
       const hotToOpenMissedCount = rows.filter(row => row.hotDetectedToday && !row.openFound).length;
       diagnosis.push(`급등주 ${rows.length}개 중 당일 HOT은 ${hotDetectedCount}개, OPEN은 ${foundCount}개를 발견했습니다.`);
+      diagnosis.push(
+        `OPEN 매수시간(09:00~09:30) 안에 포착 가능한 급등주는 ${openOpportunityRows.length}개이며, ` +
+        `HOT ${openWindowHotCount}개 → OPEN ${openWindowFoundCount}개 → 실제매수 ${openWindowBoughtCount}개입니다.`
+      );
+      if (openWindowHotToOpenMissedCount > 0) {
+        diagnosis.push(`OPEN 시간 내 HOT 발견 후 OPEN으로 이어지지 않은 종목은 ${openWindowHotToOpenMissedCount}개입니다.`);
+      }
       if (hotToOpenMissedCount > 0) diagnosis.push(`HOT에는 들어왔지만 OPEN 후보로 이어지지 않은 종목은 ${hotToOpenMissedCount}개입니다.`);
       diagnosis.push(`${notFoundCount}개는 OPEN 후보에 올리지 못했습니다.`);
       diagnosis.push(`가장 많은 미포착 원인은 '${topReason}'입니다.`);
@@ -3696,7 +3766,12 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         hotToOpenMissedCount: rows.filter(row => row.hotDetectedToday && !row.openFound).length,
         foundCount,
         notFoundCount,
-        boughtCount
+        boughtCount,
+        openOpportunityCount: openOpportunityRows.length,
+        openWindowHotCount,
+        openWindowFoundCount,
+        openWindowBoughtCount,
+        openWindowHotToOpenMissedCount
       },
       reasonStats,
       diagnosis,

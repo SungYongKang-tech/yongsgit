@@ -1205,7 +1205,7 @@ body.data-mode #rideBatteryEl .metric-unit {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
-import { getDatabase, ref, onValue, onChildAdded, query, orderByChild, startAt, update, get, onDisconnect, remove, off } 
+import { getDatabase, ref, onValue, update, get, onDisconnect, remove, off } 
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -1491,14 +1491,12 @@ async function sendGroupPushRequest(payload) {
 
 let radioMessageRef = null;
 let radioMessageCallback = null;
-let radioListenerStartedAt = 0;
-const receivedRadioMessageIds = new Set();
 
 
-function playRadioAlert(senderName, text, messageId = "", createdAt = 0) {
+function playRadioAlert(senderName, text) {
   console.log("[무전수신]", senderName, text, "hidden=", document.hidden);
 
-  showBroadcastMessage(senderName, text, messageId, createdAt);
+  showBroadcastMessage(senderName, text);
 }
 
 function startRadioListener() {
@@ -1510,16 +1508,12 @@ function startRadioListener() {
   if (!groupEnabled || !currentRoomId) return;
 
   if (radioMessageRef && radioMessageCallback) {
-    off(radioMessageRef, "child_added", radioMessageCallback);
+    off(radioMessageRef, "value", radioMessageCallback);
   }
 
-  radioListenerStartedAt = Date.now();
-  receivedRadioMessageIds.clear();
-
-  radioMessageRef = query(
-    ref(db, `rideRooms/${currentRoomId}/radio/messages`),
-    orderByChild("createdAt"),
-    startAt(radioListenerStartedAt)
+  radioMessageRef = ref(
+    db,
+    `rideRooms/${currentRoomId}/radio/lastMessage`
   );
 
   radioMessageCallback = (snap) => {
@@ -1528,8 +1522,7 @@ function startRadioListener() {
   console.log("[무전감시]", msg);
 
   if (!msg || !msg.id || !msg.text) return;
-  if (receivedRadioMessageIds.has(msg.id)) return;
-  receivedRadioMessageIds.add(msg.id);
+  if (msg.id === lastRadioMessageId) return;
 
   lastRadioMessageId = msg.id;
   localStorage.setItem(LAST_RADIO_MESSAGE_KEY, msg.id);
@@ -1541,13 +1534,11 @@ function startRadioListener() {
 
   playRadioAlert(
     msg.senderName || "라이더",
-    msg.text,
-    msg.id,
-    Number(msg.createdAt || msg.sentAt || Date.now())
+    msg.text
   );
   };
 
-  onChildAdded(radioMessageRef, radioMessageCallback);
+  onValue(radioMessageRef, radioMessageCallback);
 
   console.log("무전 실시간 수신 시작:", currentRoomId);
 }
@@ -1572,7 +1563,6 @@ async function publishRadioMessage(text) {
   };
 
   await update(ref(db, `rideRooms/${currentRoomId}/radio`), {
-    [`messages/${payload.id}`]: payload,
     lastMessage: payload
   });
 
@@ -1842,11 +1832,6 @@ function startVoiceInput() {
 let activeAutoReplyRecognition = null;
 let autoReplySpeechStartTimer = null;
 let autoReplyStartTimer = null;
-const incomingBroadcastQueue = [];
-const queuedBroadcastMessageIds = new Set();
-let isReadingBroadcastQueue = false;
-let broadcastQueueSettleTimer = null;
-const BROADCAST_COLLECT_WAIT_MS = 1000;
 
 function setBroadcastAutoReplyHint(text) {
   if (broadcastAutoReplyHint) {
@@ -1870,114 +1855,6 @@ function stopAutoBroadcastVoiceReply() {
       activeAutoReplyRecognition.abort();
     } catch (e) {}
     activeAutoReplyRecognition = null;
-  }
-}
-
-function clearBroadcastQueueSettleTimer() {
-  if (broadcastQueueSettleTimer) {
-    clearTimeout(broadcastQueueSettleTimer);
-    broadcastQueueSettleTimer = null;
-  }
-}
-
-function waitForBroadcastSpeech(senderName, messageText) {
-  return new Promise((resolve) => {
-    speakBroadcastMessage(senderName, messageText, resolve);
-  });
-}
-
-function renderQueuedBroadcastMessage(item, remainingCount = 0) {
-  if (!broadcastOverlay || !broadcastSender || !broadcastText) return;
-
-  applyGroupMessageSettings(false);
-  const memberCount = getGroupMemberCount();
-
-  if (memberCount <= 2) {
-    broadcastSender.style.display = "none";
-  } else {
-    broadcastSender.style.display = "";
-    broadcastSender.textContent = item.senderName || "이름없음";
-  }
-
-  broadcastText.textContent = item.text || "";
-  setBroadcastAutoReplyHint(
-    remainingCount > 0
-      ? `🔊 답변 읽는 중 · 남은 메시지 ${remainingCount}개`
-      : "🔊 답변을 읽는 중입니다"
-  );
-  broadcastOverlay.classList.add("show");
-
-  if (broadcastHideTimer) clearTimeout(broadcastHideTimer);
-  broadcastHideTimer = setTimeout(() => hideBroadcastMessage(), 30000);
-}
-
-function scheduleAutoReplyAfterQueue() {
-  clearBroadcastQueueSettleTimer();
-  setBroadcastAutoReplyHint("⏳ 추가 답변을 기다리는 중입니다");
-
-  broadcastQueueSettleTimer = setTimeout(() => {
-    broadcastQueueSettleTimer = null;
-
-    if (incomingBroadcastQueue.length > 0 || isReadingBroadcastQueue) {
-      processBroadcastQueue();
-      return;
-    }
-
-    startAutoBroadcastVoiceReply();
-  }, BROADCAST_COLLECT_WAIT_MS);
-}
-
-async function processBroadcastQueue() {
-  if (isReadingBroadcastQueue) return;
-
-  clearBroadcastQueueSettleTimer();
-  stopAutoBroadcastVoiceReply();
-  isReadingBroadcastQueue = true;
-
-  try {
-    while (incomingBroadcastQueue.length > 0) {
-      const item = incomingBroadcastQueue.shift();
-      renderQueuedBroadcastMessage(item, incomingBroadcastQueue.length);
-      await waitForBroadcastSpeech(item.senderName, item.text);
-    }
-  } finally {
-    isReadingBroadcastQueue = false;
-  }
-
-  if (incomingBroadcastQueue.length > 0) {
-    processBroadcastQueue();
-    return;
-  }
-
-  scheduleAutoReplyAfterQueue();
-}
-
-function enqueueBroadcastMessage(senderName, messageText, messageId = "", createdAt = 0) {
-  const cleanText = String(messageText || "").trim();
-  if (!cleanText) return;
-
-  const stableId = messageId || `local_${createdAt || Date.now()}_${senderName}_${cleanText}`;
-  if (queuedBroadcastMessageIds.has(stableId)) return;
-  queuedBroadcastMessageIds.add(stableId);
-
-  // 자동응답을 기다리는 중 새 메시지가 오면 먼저 모든 메시지를 읽는다.
-  stopAutoBroadcastVoiceReply();
-  clearBroadcastQueueSettleTimer();
-
-  incomingBroadcastQueue.push({
-    id: stableId,
-    senderName: senderName || "이름없음",
-    text: cleanText,
-    createdAt: Number(createdAt || Date.now())
-  });
-  incomingBroadcastQueue.sort((a, b) => a.createdAt - b.createdAt);
-
-  if (!isReadingBroadcastQueue) {
-    setBroadcastAutoReplyHint(`⏳ 답변 수집 중 · ${incomingBroadcastQueue.length}개`);
-    broadcastQueueSettleTimer = setTimeout(() => {
-      broadcastQueueSettleTimer = null;
-      processBroadcastQueue();
-    }, BROADCAST_COLLECT_WAIT_MS);
   }
 }
 
@@ -2965,12 +2842,36 @@ function hideBroadcastMessage() {
   if (broadcastOverlay) broadcastOverlay.classList.remove("show");
   stopBroadcastSpeech();
   stopAutoBroadcastVoiceReply();
-  clearBroadcastQueueSettleTimer();
 }
 
-function showBroadcastMessage(senderName, messageText, messageId = "", createdAt = 0) {
+function showBroadcastMessage(senderName, messageText) {
   if (!broadcastOverlay || !broadcastSender || !broadcastText) return;
-  enqueueBroadcastMessage(senderName, messageText, messageId, createdAt);
+  if (broadcastHideTimer) clearTimeout(broadcastHideTimer);
+  applyGroupMessageSettings(false);
+  
+const memberCount = getGroupMemberCount();
+
+if (memberCount <= 2) {
+  broadcastSender.style.display = "none";
+} else {
+  broadcastSender.style.display = "";
+  broadcastSender.textContent = senderName || "이름없음";
+}
+
+  broadcastText.textContent = messageText || "";
+  setBroadcastAutoReplyHint("🎤 메시지를 들은 뒤 2초 안에 말하면 자동으로 답장됩니다");
+  broadcastOverlay.classList.add("show");
+
+  // 메시지를 읽어준 뒤 마이크를 열어 2초 동안 음성 응답 시작을 기다린다.
+  speakBroadcastMessage(
+    senderName || "이름없음",
+    messageText || "",
+    startAutoBroadcastVoiceReply
+  );
+
+  broadcastHideTimer = setTimeout(() => {
+    hideBroadcastMessage();
+  }, 15000);
 }
 
 async function sendPresetGroupMessage(messageText) {
@@ -3002,7 +2903,6 @@ async function sendPresetGroupMessage(messageText) {
 
     
     await update(ref(db, `rideRooms/${currentRoomId}/radio`), {
-      [`messages/${payload.id}`]: payload,
       lastMessage: payload
     });
 

@@ -1,29 +1,120 @@
 {
   "version": 1,
-  "updatedAt": "2026-08-07 14:00:00 Asia/Seoul",
+  "updatedAt": "2026-08-11",
   "changes": [
     {
-      "id": "SYQ-20260807-CORE-VOLUME-MOMENTUM-01",
-      "appliedAt": "open-strategy.js와 무관 / auto-trader-core.js 교체 후 sy-quant-core 재시작부터",
+      "changeId": "SYQ-OPEN-20260811-01",
+      "appliedAt": "2026-08-11 장 종료 후",
       "files": [
-        "auto-trader-core.js"
+        "open-strategy.js",
+        "server.js"
       ],
-      "category": "CORE/VOLUME 매수품질 및 VOLUME 수익보호",
-      "reason": "2026-08-07 VOLUME 확정 7건이 모두 손절되었고, 고거래량·기존 상승폭 대비 매수 후 가격 지속성이 부족했다.",
-      "details": [
-        "VOLUME 30초 강화확인에서 최소 +0.10% 가격상승을 요구하고, +1.20% 초과 급등은 추격 차단",
-        "VOLUME 당일위치가 30초 동안 5%p 초과 하락하면 매수 차단",
-        "VOLUME 거래량 1000% 이상 초과열 종목 무조건 차단",
-        "VOLUME 거래량 300% 이상·상승률 5% 이상·당일위치 60% 이상 동시과열 차단",
-        "CORE 거래량 300% 이상·상승률 4% 이상 동시과열 차단",
-        "본전방어를 전략별 분리: CORE +2.0%/보호 +0.2% 유지, VOLUME +1.5%/보호 +0.1%"
+      "summary": [
+        "HOT 직접후보가 잠재후보·집중후보로 전환되어도 HOT 출신 여부와 관련 지속성 정보를 유지",
+        "OPEN 모멘텀 표본 보존시간을 60초에서 120초로 확대하여 20~30초 스캔에서도 최소 4회 관찰 가능",
+        "지속강도 미통과 후보도 실제 모멘텀·가격지속·거래량지속·관찰횟수를 학습자료에 저장",
+        "09:12 이후 일반 전체검색을 중단하지 않고 60초 주기로 완화하여 09:30까지 신규 후보 유입 유지",
+        "주석 안에 들어가 비활성화된 시장점수 40점 미만 OPEN 급락 차단 복구",
+        "장 종료 급등주 전체 집계와 09:00~09:30 OPEN 포착 가능 종목 집계를 분리"
       ],
+      "reason": "2026-08-11 HOT 급등주 17개 중 OPEN 후보 유입과 지속강도 평가가 정상적으로 이어지지 않아 실제 매수가 0건이었던 원인을 보완",
+      "settingsKept": {
+        "openConfirmMaxPriceRiseRate": 3.0,
+        "openHotDirectMaxChangeRate": 15.0,
+        "openMaxChangeRate": 6.0,
+        "openMinDiscoverScore": 9,
+        "openMomentumMinScore": 35
+      },
       "nextTradingDayChecks": [
-        "[VOLUME 후보강화 미충족] 가격 상승 지속성 부족 로그와 차단 종목 수",
-        "VOLUME 초과열 거래량 차단 및 동시과열 추격 차단 로그",
-        "CORE 동시과열 차단 로그",
-        "VOLUME_BREAK_EVEN_SELL 발생 시 최고수익과 실제 보호수익",
-        "차단된 후보의 가상성과와 실제 매수 후보 성과 비교"
+        "HOT 출신 종목이 POTENTIAL·FOCUSED 상태에서도 HOT 직접후보 조건으로 평가되는지",
+        "후보 관찰 4회 이상에서 지속강도·가격지속·거래량지속이 0이 아닌 실제 값으로 저장되는지",
+        "09:12 이후 OPEN 전체검색이 약 60초 주기로 실행되는지",
+        "급등주 분석에 OPEN 시간 내 HOT·OPEN·매수 건수가 별도로 표시되는지",
+        "시장점수 40점 미만일 때 OPEN 시장급락 차단이 작동하는지"
+      ]
+    },
+    {
+      "changeId": "SYQ-CORE-VOLUME-20260811-01",
+      "appliedAt": "2026-08-11 장 종료 후",
+      "files": [
+        "auto-trader-core.js",
+        "server.js"
+      ],
+      "summary": [
+        "CORE 30초 강화확인 가격이 하락 중이면 신규매수 차단",
+        "CORE 후보강도 50점 미만 신규매수 차단",
+        "VOLUME 상승률 6% 이상 구간은 후보강도 60점 이상만 신규매수 허용",
+        "CORE 본전보호 기준을 0.2%에서 0.4%로 상향",
+        "1차 익절 완료 상태를 매도 신호 발생 시점이 아니라 실제 매도 성공 후 저장",
+        "오늘 거래 분석 설정자료에 신규 CORE/VOLUME 방어 설정을 포함"
+      ],
+      "reason": "2026-08-11 실현손익 -1,068,590원, 8건 중 7패로 확인된 약한 후보 및 VOLUME 6% 이상 추격 진입을 줄이고 수익 반납을 완화",
+      "settingsChanged": {
+        "coreConfirmMinPriceRiseRate": 0.0,
+        "coreMinCandidateStrengthScore": 50,
+        "volumeLateChaseBlockEnabled": true,
+        "volumeLateChaseMinChangeRate": 6.0,
+        "volumeLateChaseMinCandidateStrengthScore": 60,
+        "coreBreakEvenProtectRate": 0.4
+      },
+      "settingsKept": {
+        "coreStopLossRate": -1.7,
+        "volumeStopLossRate": -1.2,
+        "buyAssetRatio": 0.125,
+        "coreMaxChangeRate": 6.0,
+        "volumeMaxChangeRate": 8.0
+      },
+      "nextTradingDayChecks": [
+        "CORE 후보강도 부족 및 30초 가격상승 미충족 차단 로그가 기록되는지",
+        "VOLUME 후반추격 차단 로그와 차단 종목의 가상 성과를 비교할 수 있는지",
+        "후보강도 50점 이상 매수 종목의 최고수익과 손절률이 개선되는지",
+        "CORE 본전방어 매도가 0.4% 부근에서 정상 체결되는지",
+        "1차 익절 주문 실패 시 firstTakeProfitDone이 잘못 저장되지 않는지"
+      ]
+    },
+    {
+      "changeId": "SYQ-STRATEGY-UPGRADE-20260811-01",
+      "appliedAt": "2026-08-11 장 종료 후",
+      "files": [
+        "open-strategy.js",
+        "auto-trader-core.js",
+        "server.js"
+      ],
+      "summary": [
+        "OPEN 최대 5종목 설정과 충돌하던 당일 1회 매수 강제차단 제거",
+        "OPEN HOT 직접·집중·잠재후보 보존범위를 20개에서 30개로 확대하고 재조회 대상을 15개로 확대",
+        "CORE를 60~120초 최소 3회 관찰하는 안정추세 확인형으로 변경",
+        "CORE 가격지속·직전가격·거래량유지·당일위치 하락을 함께 평가",
+        "VOLUME을 급등 즉시매수에서 정상눌림 후 재상승 확인형 상태 로직으로 변경",
+        "서버 분석자료에 신규 CORE 안정추세 및 VOLUME 눌림재상승 설정 포함"
+      ],
+      "reason": "OPEN 미매수, CORE 약한 후보 반복 손절, VOLUME +6~7% 추격매수 손실을 단순 기준조정이 아닌 전략별 진입구조 개선으로 보완",
+      "settingsChanged": {
+        "openFocusedCandidateMaxCount": 30,
+        "openPotentialMaxCount": 30,
+        "openPotentialRecheckCount": 15,
+        "openDirectHotMaxCount": 30,
+        "coreTrendObservationMinCount": 3,
+        "coreTrendObservationWindowMs": 120000,
+        "coreTrendMinElapsedMs": 60000,
+        "coreTrendMinPricePersistence": 0.5,
+        "coreTrendMaxDayPositionDrop": 7,
+        "coreTrendMinVolumeRetentionRate": 0.75,
+        "volumePullbackEntryEnabled": true,
+        "volumePullbackMinRate": -0.25,
+        "volumePullbackMaxRate": -1.5,
+        "volumeReboundMinRate": 0.15,
+        "volumePullbackMaxWaitMs": 180000,
+        "volumePullbackMinVolumeRetentionRate": 0.7,
+        "volumePullbackMaxDayPositionDrop": 10
+      },
+      "nextTradingDayChecks": [
+        "OPEN 첫 매수 후 openCompleted가 false이면 추가 후보를 계속 평가해 최대 5종목까지 매수하는지",
+        "CORE 안정추세 관찰 횟수가 1/3→2/3→3/3으로 누적되는지",
+        "CORE 가격지속 부족·매수직전 가격약화 종목이 실제로 차단되는지",
+        "VOLUME 로그가 급등감지→정상눌림→재상승 순서로 진행되는지",
+        "VOLUME 눌림 없이 계속 상승하거나 -1.5% 초과 하락한 종목은 매수되지 않는지",
+        "세 전략의 매수건수·손절건수·최고수익 0% 손절이 이전보다 개선되는지"
       ]
     }
   ]
