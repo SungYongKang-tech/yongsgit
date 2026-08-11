@@ -2071,7 +2071,9 @@ function startAutoBroadcastVoiceReply() {
     window.webkitSpeechRecognition;
 
   if (!SpeechRecognition) {
-    setBroadcastAutoReplyHint("이 기기에서는 자동 음성답장을 사용할 수 없습니다.");
+    setBroadcastAutoReplyHint(
+      "이 기기에서는 자동 음성답장을 사용할 수 없습니다."
+    );
     return;
   }
 
@@ -2085,33 +2087,55 @@ function startAutoBroadcastVoiceReply() {
 
   let speechStarted = false;
   let replySent = false;
+  let noReplyClosing = false;
 
-  showMicrophonePopup("자동답장", "🎤 말하세요");
-  setBroadcastAutoReplyHint("🎤 삐 소리 후 2초 안에 말하면 자동으로 답장됩니다");
-  playBeep();
+  function closeNoReplyPopup() {
+    if (replySent || noReplyClosing) return;
 
-  recognition.onstart = () => {
-    setBroadcastPopupMode("microphone");
-    broadcastText.textContent = "🎤 말하세요";
-    setBroadcastAutoReplyHint("🎤 지금 말하세요 · 2초 안에 말하면 자동 답장");
+    noReplyClosing = true;
 
-autoReplySpeechStartTimer = setTimeout(() => {
-  autoReplySpeechStartTimer = null;
-
-  if (!speechStarted && !replySent) {
     setBroadcastAutoReplyHint(
       "응답 없음 · 메시지만 확인했습니다"
     );
-
-    try {
-      recognition.stop();
-    } catch (e) {}
 
     setTimeout(() => {
       hideBroadcastMessage();
     }, 500);
   }
-}, 2000);
+
+  showMicrophonePopup(
+    "자동답장",
+    "🎤 말하세요"
+  );
+
+  setBroadcastAutoReplyHint(
+    "🎤 삐 소리 후 2초 안에 말하면 자동으로 답장됩니다"
+  );
+
+  playBeep();
+
+  recognition.onstart = () => {
+    setBroadcastPopupMode("microphone");
+
+    broadcastText.textContent =
+      "🎤 말하세요";
+
+    setBroadcastAutoReplyHint(
+      "🎤 지금 말하세요 · 2초 안에 말하면 자동 답장"
+    );
+
+    autoReplySpeechStartTimer = setTimeout(() => {
+      autoReplySpeechStartTimer = null;
+
+      if (!speechStarted && !replySent) {
+        try {
+          recognition.stop();
+        } catch (e) {}
+
+        closeNoReplyPopup();
+      }
+    }, 2000);
+  };
 
   recognition.onspeechstart = () => {
     speechStarted = true;
@@ -2121,25 +2145,49 @@ autoReplySpeechStartTimer = setTimeout(() => {
       autoReplySpeechStartTimer = null;
     }
 
-    broadcastText.textContent = "🎤 듣는 중…";
-    setBroadcastAutoReplyHint("말씀을 마치면 자동 전송됩니다");
+    broadcastText.textContent =
+      "🎤 듣는 중…";
+
+    setBroadcastAutoReplyHint(
+      "말씀을 마치면 자동 전송됩니다"
+    );
   };
 
   recognition.onresult = async (event) => {
-    const text = String(event.results?.[0]?.[0]?.transcript || "").trim();
+    const text = String(
+      event.results?.[0]?.[0]?.transcript || ""
+    ).trim();
+
     if (!text || replySent) return;
 
     replySent = true;
-    broadcastText.textContent = text;
-    setBroadcastAutoReplyHint(`✅ 답장 전송 중: ${text}`);
 
-    const sent = await sendPresetGroupMessage(text);
+    broadcastText.textContent = text;
+
+    setBroadcastAutoReplyHint(
+      `✅ 답장 전송 중: ${text}`
+    );
+
+    const sent =
+      await sendPresetGroupMessage(text);
 
     if (sent) {
-      setBroadcastAutoReplyHint(`✅ 답장 완료: ${text}`);
-      setTimeout(() => hideBroadcastMessage(), 10000);
+      setBroadcastAutoReplyHint(
+        `✅ 답장 완료: ${text}`
+      );
+
+      // 전송 완료 문구를 0.7초 보여준 후 닫기
+      setTimeout(() => {
+        hideBroadcastMessage();
+      }, 700);
     } else {
-      setBroadcastAutoReplyHint("답장 전송에 실패했습니다");
+      setBroadcastAutoReplyHint(
+        "답장 전송에 실패했습니다"
+      );
+
+      setTimeout(() => {
+        hideBroadcastMessage();
+      }, 1000);
     }
   };
 
@@ -2147,12 +2195,31 @@ autoReplySpeechStartTimer = setTimeout(() => {
     if (replySent) return;
 
     const code = event?.error || "";
-    if (code === "no-speech" || code === "aborted") {
-      setBroadcastAutoReplyHint("응답 없음 · 메시지만 확인했습니다");
-    } else if (code === "not-allowed" || code === "service-not-allowed") {
-      setBroadcastAutoReplyHint("마이크 권한이 필요합니다");
+
+    if (
+      code === "no-speech" ||
+      code === "aborted"
+    ) {
+      closeNoReplyPopup();
+    } else if (
+      code === "not-allowed" ||
+      code === "service-not-allowed"
+    ) {
+      setBroadcastAutoReplyHint(
+        "마이크 권한이 필요합니다"
+      );
+
+      setTimeout(() => {
+        hideBroadcastMessage();
+      }, 1000);
     } else {
-      setBroadcastAutoReplyHint("자동 음성답장을 시작하지 못했습니다");
+      setBroadcastAutoReplyHint(
+        "자동 음성답장을 시작하지 못했습니다"
+      );
+
+      setTimeout(() => {
+        hideBroadcastMessage();
+      }, 1000);
     }
   };
 
@@ -2162,18 +2229,33 @@ autoReplySpeechStartTimer = setTimeout(() => {
       autoReplySpeechStartTimer = null;
     }
 
-    if (activeAutoReplyRecognition === recognition) {
+    if (
+      activeAutoReplyRecognition === recognition
+    ) {
       activeAutoReplyRecognition = null;
+    }
+
+    // 결과·오류 없이 음성인식만 종료된 경우
+    if (!speechStarted && !replySent) {
+      closeNoReplyPopup();
     }
   };
 
   autoReplyStartTimer = setTimeout(() => {
     autoReplyStartTimer = null;
+
     try {
       recognition.start();
     } catch (e) {
-      setBroadcastAutoReplyHint("자동 음성답장을 시작하지 못했습니다");
+      setBroadcastAutoReplyHint(
+        "자동 음성답장을 시작하지 못했습니다"
+      );
+
       activeAutoReplyRecognition = null;
+
+      setTimeout(() => {
+        hideBroadcastMessage();
+      }, 1000);
     }
   }, 180);
 }
