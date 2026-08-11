@@ -460,36 +460,6 @@
       align-items: center;
       justify-content: center;
       padding: 28px 22px;
-      transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    /* 초록색: 받은 메시지를 스피커로 듣는 상태 */
-    .broadcast-overlay.speaker-mode .broadcast-card {
-      background: linear-gradient(180deg, rgba(22,163,74,0.98), rgba(20,83,45,0.98));
-      border-color: rgba(187,247,208,0.82);
-      box-shadow: 0 20px 60px rgba(20,83,45,0.5);
-    }
-
-    /* 빨간색: 지금 말할 수 있는 마이크 상태 */
-    .broadcast-overlay.microphone-mode .broadcast-card {
-      background: linear-gradient(180deg, rgba(239,68,68,0.98), rgba(127,29,29,0.98));
-      border-color: rgba(254,202,202,0.9);
-      box-shadow: 0 20px 60px rgba(127,29,29,0.55);
-    }
-
-    .broadcast-overlay.microphone-mode .broadcast-text {
-      animation: microphonePulse 1s ease-in-out infinite;
-    }
-
-    .broadcast-overlay.microphone-mode .broadcast-auto-reply-hint {
-      background: rgba(127,29,29,0.34);
-      border-color: rgba(254,202,202,0.7);
-      color: #fff;
-    }
-
-    @keyframes microphonePulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.035); }
     }
 
     .broadcast-sender {
@@ -1792,7 +1762,6 @@ let lastRadioMessageId =
   localStorage.getItem(LAST_RADIO_MESSAGE_KEY) || "";
 
 const radioSound = new Audio("./sound.wav");
-let activeManualMessageRecognition = null;
 
 function playBeep() {
   try {
@@ -1811,12 +1780,7 @@ function recognizeOnce({
   button = null,
   listeningText = "듣는중...",
   doneText = "🎤 말하기",
-  onResult = null,
-  onStart = null,
-  onSpeechStart = null,
-  onError = null,
-  onEnd = null,
-  trackAsMessage = false
+  onResult = null
 } = {}) {
   const SpeechRecognition =
     window.SpeechRecognition ||
@@ -1828,7 +1792,6 @@ function recognizeOnce({
   }
 
   const recognition = new SpeechRecognition();
-  if (trackAsMessage) activeManualMessageRecognition = recognition;
 
   recognition.lang = "ko-KR";
   recognition.interimResults = false;
@@ -1842,14 +1805,6 @@ setTimeout(() => {
   recognition.start();
 }, 180);
 
-  recognition.onstart = () => {
-    if (typeof onStart === "function") onStart();
-  };
-
-  recognition.onspeechstart = () => {
-    if (typeof onSpeechStart === "function") onSpeechStart();
-  };
-
   recognition.onresult = async (event) => {
     const text = event.results[0][0].transcript.trim();
 
@@ -1860,20 +1815,13 @@ setTimeout(() => {
     if (button) button.textContent = doneText;
   };
 
-  recognition.onerror = (event) => {
+  recognition.onerror = () => {
     if (button) button.textContent = doneText;
-    if (typeof onError === "function") onError(event);
   };
 
   recognition.onend = () => {
     if (button) button.textContent = doneText;
-    if (trackAsMessage && activeManualMessageRecognition === recognition) {
-      activeManualMessageRecognition = null;
-    }
-    if (typeof onEnd === "function") onEnd();
   };
-
-  return recognition;
 }
 
 function startVoiceInput() {
@@ -1925,34 +1873,6 @@ function stopAutoBroadcastVoiceReply() {
   }
 }
 
-function stopManualMessageRecognition() {
-  if (!activeManualMessageRecognition) return;
-  try {
-    activeManualMessageRecognition.abort();
-  } catch (e) {}
-  activeManualMessageRecognition = null;
-}
-
-function setBroadcastPopupMode(mode = "speaker") {
-  if (!broadcastOverlay) return;
-  broadcastOverlay.classList.toggle("speaker-mode", mode === "speaker");
-  broadcastOverlay.classList.toggle("microphone-mode", mode === "microphone");
-}
-
-function showMicrophonePopup(title = "메시지 보내기", text = "🎤 말하세요") {
-  if (!broadcastOverlay || !broadcastSender || !broadcastText) return;
-
-  setBroadcastPopupMode("microphone");
-  broadcastSender.style.display = "";
-  broadcastSender.textContent = title;
-  broadcastText.textContent = text;
-  setBroadcastAutoReplyHint("🎤 삐 소리 후 말씀하세요 · 말이 끝나면 자동 전송됩니다");
-  broadcastOverlay.classList.add("show");
-
-  if (broadcastHideTimer) clearTimeout(broadcastHideTimer);
-  broadcastHideTimer = setTimeout(() => hideBroadcastMessage(), 30000);
-}
-
 function clearBroadcastQueueSettleTimer() {
   if (broadcastQueueSettleTimer) {
     clearTimeout(broadcastQueueSettleTimer);
@@ -1970,7 +1890,6 @@ function renderQueuedBroadcastMessage(item, remainingCount = 0) {
   if (!broadcastOverlay || !broadcastSender || !broadcastText) return;
 
   applyGroupMessageSettings(false);
-  setBroadcastPopupMode("speaker");
   const memberCount = getGroupMemberCount();
 
   if (memberCount <= 2) {
@@ -2043,7 +1962,6 @@ function enqueueBroadcastMessage(senderName, messageText, messageId = "", create
 
   // 자동응답을 기다리는 중 새 메시지가 오면 먼저 모든 메시지를 읽는다.
   stopAutoBroadcastVoiceReply();
-  stopManualMessageRecognition();
   clearBroadcastQueueSettleTimer();
 
   incomingBroadcastQueue.push({
@@ -2086,13 +2004,10 @@ function startAutoBroadcastVoiceReply() {
   let speechStarted = false;
   let replySent = false;
 
-  showMicrophonePopup("자동답장", "🎤 말하세요");
   setBroadcastAutoReplyHint("🎤 삐 소리 후 2초 안에 말하면 자동으로 답장됩니다");
   playBeep();
 
   recognition.onstart = () => {
-    setBroadcastPopupMode("microphone");
-    broadcastText.textContent = "🎤 말하세요";
     setBroadcastAutoReplyHint("🎤 지금 말하세요 · 2초 안에 말하면 자동 답장");
 
     autoReplySpeechStartTimer = setTimeout(() => {
@@ -2115,8 +2030,7 @@ function startAutoBroadcastVoiceReply() {
       autoReplySpeechStartTimer = null;
     }
 
-    broadcastText.textContent = "🎤 듣는 중…";
-    setBroadcastAutoReplyHint("말씀을 마치면 자동 전송됩니다");
+    setBroadcastAutoReplyHint("🎤 듣는 중… 말씀을 마치면 자동 전송됩니다");
   };
 
   recognition.onresult = async (event) => {
@@ -2124,7 +2038,6 @@ function startAutoBroadcastVoiceReply() {
     if (!text || replySent) return;
 
     replySent = true;
-    broadcastText.textContent = text;
     setBroadcastAutoReplyHint(`✅ 답장 전송 중: ${text}`);
 
     const sent = await sendPresetGroupMessage(text);
@@ -3050,11 +2963,9 @@ function hideBroadcastMessage() {
     broadcastHideTimer = null;
   }
   if (broadcastOverlay) broadcastOverlay.classList.remove("show");
-  if (broadcastOverlay) broadcastOverlay.classList.remove("speaker-mode", "microphone-mode");
   stopBroadcastSpeech();
   stopAutoBroadcastVoiceReply();
   clearBroadcastQueueSettleTimer();
-  stopManualMessageRecognition();
 }
 
 function showBroadcastMessage(senderName, messageText, messageId = "", createdAt = 0) {
@@ -5362,32 +5273,15 @@ messageCancelEditBtn?.addEventListener("click", () => {
 messageBtn.addEventListener("click", () => {
 
   messageBtn.classList.add("recording");
-  let manualResultReceived = false;
 
   recognizeOnce({
     button: messageBtn,
     listeningText: "🎤 녹음중",
     doneText: "메시지",
-    trackAsMessage: true,
-
-    onStart: () => {
-      showMicrophonePopup("메시지 보내기", "🎤 말하세요");
-    },
-
-    onSpeechStart: () => {
-      setBroadcastPopupMode("microphone");
-      broadcastText.textContent = "🎤 듣는 중…";
-      setBroadcastAutoReplyHint("말씀을 마치면 자동으로 전송됩니다");
-    },
 
     onResult: async (text) => {
       text = (text || "").trim();
       if (!text) return;
-      manualResultReceived = true;
-
-      setBroadcastPopupMode("microphone");
-      broadcastText.textContent = text;
-      setBroadcastAutoReplyHint("✅ 메시지를 전송하는 중입니다");
 
       messageBtn.classList.remove("recording");
       messageBtn.classList.add("sending");
@@ -5398,27 +5292,11 @@ messageBtn.addEventListener("click", () => {
       messageBtn.classList.remove("sending");
       messageBtn.classList.add("sent");
       messageBtn.textContent = "전송완료";
-      setBroadcastAutoReplyHint("✅ 메시지 전송 완료");
 
       setTimeout(() => {
         messageBtn.classList.remove("sent");
         messageBtn.textContent = "메시지";
-        hideBroadcastMessage();
       }, 700);
-    },
-
-    onError: (event) => {
-      messageBtn.classList.remove("recording");
-      if (event?.error === "aborted" && incomingBroadcastQueue.length > 0) return;
-      broadcastText.textContent = "음성을 인식하지 못했습니다";
-      setBroadcastAutoReplyHint("잠시 후 다시 시도해주세요");
-      setTimeout(() => hideBroadcastMessage(), 1000);
-    },
-
-    onEnd: () => {
-      if (!manualResultReceived && broadcastOverlay?.classList.contains("microphone-mode")) {
-        messageBtn.classList.remove("recording");
-      }
     }
   });
 
