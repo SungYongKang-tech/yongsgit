@@ -217,6 +217,7 @@ function getCurrentTradingSettings() {
     "coreStartTime",
     "coreEndTime",
     "coreMaxHoldingCount",
+    "coreMaxDailyBuyCount",
     "coreMaxChangeRate",
     "coreMinTradeVolumeRatio",
     "coreMinDayPositionRate",
@@ -238,11 +239,13 @@ function getCurrentTradingSettings() {
     "volumeStartTime",
     "volumeEndTime",
     "volumeMaxHoldingCount",
+    "volumeMaxDailyBuyCount",
     "volumeMinChangeRate",
     "volumeMaxChangeRate",
     "volumeMinTradeVolumeRatio",
     "volumeMinDayPositionRate",
     "volumeMaxDayPositionRate",
+    "volumeMinCandidateStrengthScore",
     "volumeLateChaseBlockEnabled",
     "volumeLateChaseMinChangeRate",
     "volumeLateChaseMinCandidateStrengthScore",
@@ -261,6 +264,8 @@ function getCurrentTradingSettings() {
     "volumeTrailingStopRate",
     "sellLoopMs",
     "minHoldMinutes",
+    "lossExitBuyCooldownMinutes",
+    "maxDailyLossExitCount",
     "breakEvenStartRate",
     "breakEvenProtectRate",
     "holdingWeakSellEnabled",
@@ -806,14 +811,31 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  * 전일대비등락률상위(ka10027), 당일거래량상위(ka10030)를 합친다.
  * 이후 상위 종목의 현재가 상세정보를 조회해 고가·저가·거래량비율을 보완한다.
  */
-const HOT_API_CACHE_MS = 60 * 1000;
+// 60초 캐시는 5초 스캐너가 같은 가격을 반복 관찰하게 만들어
+// 상승 초기의 가격·거래량 변화속도를 0으로 기록했다.
+const HOT_API_EARLY_CACHE_MS = 8 * 1000;
+const HOT_API_NORMAL_CACHE_MS = 15 * 1000;
 const HOT_DETAIL_ENRICH_LIMIT = 8;
 const HOT_DETAIL_ENRICH_DELAY_MS = 400;
+const HOT_DETAIL_REQUEST_TIMEOUT_MS = 3 * 1000;
+const HOT_KIWOOM_PRICE_TIMEOUT_MS = 2500;
+const KIWOOM_PRICE_REQUEST_TIMEOUT_MS = 8 * 1000;
+const HOT_STALE_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 let hotApiCache = {
   cachedAt: 0,
   data: null
 };
 let hotApiRunningPromise = null;
+
+function getHotApiCacheMs() {
+  const hhmm = new Date().toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Seoul",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).slice(0, 5);
+  return hhmm < "09:30" ? HOT_API_EARLY_CACHE_MS : HOT_API_NORMAL_CACHE_MS;
+}
 
 function hotToNumber(value) {
   const number = Number(
@@ -945,9 +967,16 @@ function mergeHotRankRows(groups = []) {
 }
 
 async function enrichHotCandidate(item) {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    HOT_DETAIL_REQUEST_TIMEOUT_MS
+  );
+
   try {
     const priceRes = await fetch(
-      `http://localhost:${PORT}/api/price?code=${encodeURIComponent(item.code)}`
+      `http://localhost:${PORT}/api/price?code=${encodeURIComponent(item.code)}&source=hot`,
+      { signal: controller.signal }
     );
     const priceData = await priceRes.json();
 
@@ -983,12 +1012,19 @@ async function enrichHotCandidate(item) {
       }
     };
   } catch (err) {
-    console.warn(`[HOT API 상세조회 실패] ${item.code} / ${err.message}`);
+    console.warn(
+      `[HOT API 상세조회 실패] ${item.code} / ` +
+      `${err.name === "AbortError" ? "3초 시간초과" : err.message} / ` +
+      `순위 API 원본값 유지`
+    );
     return item;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 async function buildHotCandidates(limit) {
+  const startedAt = Date.now();
   const safeLimit = Math.max(1, Math.min(50, Number(limit || 30)));
 
   const requests = [
@@ -1048,6 +1084,7 @@ async function buildHotCandidates(limit) {
       };
     })
   );
+  const rankElapsedMs = Date.now() - startedAt;
 
   const groups = [];
   const errors = [];
@@ -1076,6 +1113,7 @@ async function buildHotCandidates(limit) {
     })
     .slice(0, Math.min(40, safeLimit + 10));
 
+  const detailStartedAt = Date.now();
   const enriched = [];
   for (let index = 0; index < merged.length; index++) {
     const item = merged[index];
@@ -1103,6 +1141,16 @@ async function buildHotCandidates(limit) {
     })
     .slice(0, safeLimit);
 
+  const detailElapsedMs = Date.now() - detailStartedAt;
+  const totalElapsedMs = Date.now() - startedAt;
+  console.log(
+    `[HOT API 성능] 순위 ${(rankElapsedMs / 1000).toFixed(1)}초 / ` +
+    `상세 ${(detailElapsedMs / 1000).toFixed(1)}초 / ` +
+    `전체 ${(totalElapsedMs / 1000).toFixed(1)}초 / ` +
+    `병합 ${merged.length}개 / 결과 ${items.length}개 / ` +
+    `순위부분오류 ${errors.length}건`
+  );
+
   return {
     ok: true,
     source: "KIWOOM_RANK_KA10023_KA10027_KA10030",
@@ -1118,7 +1166,7 @@ app.get("/api/hot-candidates", async (req, res) => {
     const limit = Math.max(1, Math.min(50, Number(req.query.limit || 30)));
     const cacheAge = Date.now() - Number(hotApiCache.cachedAt || 0);
 
-    if (hotApiCache.data && cacheAge <= HOT_API_CACHE_MS) {
+    if (hotApiCache.data && cacheAge <= getHotApiCacheMs()) {
       return res.json({
         ...hotApiCache.data,
         cached: true,
@@ -1145,6 +1193,36 @@ app.get("/api/hot-candidates", async (req, res) => {
     });
   } catch (error) {
     console.error("/api/hot-candidates 오류:", error);
+
+    const staleAgeMs = Date.now() - Number(hotApiCache.cachedAt || 0);
+    if (
+      hotApiCache.data &&
+      staleAgeMs >= 0 &&
+      staleAgeMs <= HOT_STALE_CACHE_MAX_AGE_MS
+    ) {
+      const fallbackLimit = Math.max(
+        1,
+        Math.min(50, Number(req.query.limit || 30))
+      );
+      console.warn(
+        `[HOT API 캐시대체] 신규조회 실패 / ` +
+        `캐시 ${Math.round(staleAgeMs / 1000)}초 / ` +
+        `${error.message}`
+      );
+      return res.json({
+        ...hotApiCache.data,
+        ok: true,
+        cached: true,
+        staleFallback: true,
+        cacheAgeMs: staleAgeMs,
+        partialErrors: [
+          ...(hotApiCache.data.partialErrors || []),
+          `신규조회 실패: ${error.message}`
+        ],
+        items: (hotApiCache.data.items || []).slice(0, fallbackLimit)
+      });
+    }
+
     return res.status(500).json({
       ok: false,
       message: "HOT 후보 조회 실패",
@@ -1356,7 +1434,9 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       price,
       qty,
       strategyGroup,
-      reason
+      reason,
+      openDiagnostic,
+      openMaxHoldingCount
     } = req.body || {};
 
     if (!code || !price || !qty) {
@@ -1371,12 +1451,57 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
     if (!Array.isArray(state.holdings)) state.holdings = [];
     if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
 
+    const normalizedCode = normalizeOpenStockCode(code);
+    const normalizedStrategy = String(strategyGroup || "CORE").toUpperCase();
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+    const safeDiagnostic =
+      openDiagnostic && typeof openDiagnostic === "object"
+        ? openDiagnostic
+        : {};
+
+    if (!normalizedCode) {
+      return res.status(400).json({
+        ok: false,
+        message: `종목코드 형식 오류 ${String(code || "")}`
+      });
+    }
+
+    if (state.holdings.some(holding => normalizeOpenStockCode(holding.code) === normalizedCode)) {
+      return res.status(409).json({
+        ok: false,
+        message: `동일 종목 이미 보유중 ${name || normalizedCode}(${normalizedCode})`
+      });
+    }
+
+    if (
+      normalizedStrategy === "OPEN" &&
+      state.tradeLogs.some(log =>
+        String(log.date || "").slice(0, 10) === today &&
+        log.type === "OPEN_BUY" &&
+        normalizeOpenStockCode(log.code) === normalizedCode
+      )
+    ) {
+      return res.status(409).json({
+        ok: false,
+        message: `오늘 이미 OPEN 매수한 종목 ${name || normalizedCode}(${normalizedCode})`
+      });
+    }
+
     const buyAmount = Number(price) * Number(qty);
+    const availableCash = Number(state.totalCash || 0);
+    if (buyAmount <= 0 || buyAmount > availableCash) {
+      return res.status(400).json({
+        ok: false,
+        message:
+          `매수금액 또는 현금 부족 / 주문 ${buyAmount.toLocaleString()}원 / ` +
+          `현금 ${availableCash.toLocaleString()}원`
+      });
+    }
 
     state.holdings.push({
-      code,
-      name: name || code,
-      strategyGroup: strategyGroup || "CORE",
+      code: normalizedCode || code,
+      name: name || normalizedCode || code,
+      strategyGroup: normalizedStrategy,
       buyPrice: Number(price),
       currentPrice: Number(price),
       highestPrice: Number(price),
@@ -1386,24 +1511,54 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       buyTime: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
       buyTimeMs: Date.now(),
       buyAt: new Date().toISOString(),
-      date: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
+      date: today,
+      ...safeDiagnostic,
+      ...(normalizedStrategy === "OPEN" ? { openBuyDiagnostic: safeDiagnostic } : {})
     });
 
     state.totalCash = Number(state.totalCash || 0) - buyAmount;
 
     state.tradeLogs.push({
-      type: `${strategyGroup || "CORE"}_BUY`,
-      strategyGroup: strategyGroup || "CORE",
-      code,
-      name: name || code,
+      type: `${normalizedStrategy}_BUY`,
+      strategyGroup: normalizedStrategy,
+      code: normalizedCode || code,
+      name: name || normalizedCode || code,
       price: Number(price),
       buyPrice: Number(price),
       qty: Number(qty),
       buyAmount,
       reason,
-      date: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }),
-      time: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+      date: today,
+      time: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      ...safeDiagnostic,
+      ...(normalizedStrategy === "OPEN" ? { openBuyDiagnostic: safeDiagnostic } : {})
     });
+
+    if (normalizedStrategy === "OPEN") {
+      const openBuyCount = state.tradeLogs.filter(log =>
+        String(log.date || "").slice(0, 10) === today && log.type === "OPEN_BUY"
+      ).length;
+      const maxHoldingCount = Math.max(1, Number(openMaxHoldingCount || 1));
+      state.openSkipped = false;
+      state.openSkipReason = null;
+      state.openBuyAt = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+      state.openBuyCode = normalizedCode || code;
+      state.openBuyName = name || normalizedCode || code;
+      if (!Array.isArray(state.openBuyCodes)) state.openBuyCodes = [];
+      if (!Array.isArray(state.openBuyNames)) state.openBuyNames = [];
+      if (!state.openBuyCodes.includes(normalizedCode)) state.openBuyCodes.push(normalizedCode);
+      if (!state.openBuyNames.includes(state.openBuyName)) state.openBuyNames.push(state.openBuyName);
+      state.openBuyCount = openBuyCount;
+      state.openCompleted = openBuyCount >= maxHoldingCount;
+      state.openCompletedAt = state.openCompleted ? state.openBuyAt : null;
+
+      if (state.openDailyStats?.date === today) {
+        if (!state.openDailyStats.boughtCodes || typeof state.openDailyStats.boughtCodes !== "object") {
+          state.openDailyStats.boughtCodes = {};
+        }
+        state.openDailyStats.boughtCodes[normalizedCode] = state.openBuyName;
+      }
+    }
 
     savePaperState(state);
 
@@ -1411,7 +1566,9 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       ok: true,
       message: "paper buy 완료",
       holdingCount: state.holdings.length,
-      totalCash: state.totalCash
+      totalCash: state.totalCash,
+      openBuyCount: Number(state.openBuyCount || 0),
+      openCompleted: state.openCompleted === true
     });
 
   } catch (err) {
@@ -1723,7 +1880,8 @@ async function fetchCurrentPriceFromKiwoom(code) {
         "Content-Type": "application/json;charset=UTF-8",
         authorization: `Bearer ${token}`,
         "api-id": "ka10001"
-      }
+      },
+      timeout: KIWOOM_PRICE_REQUEST_TIMEOUT_MS
     }
   );
 
@@ -1801,6 +1959,10 @@ app.get("/api/price", async (req, res) => {
   try {
     const token = getSavedToken();
     const code = String(req.query.code || "").trim();
+    const priceRequestTimeoutMs =
+      String(req.query.source || "") === "hot"
+        ? HOT_KIWOOM_PRICE_TIMEOUT_MS
+        : KIWOOM_PRICE_REQUEST_TIMEOUT_MS;
 
     if (!code) {
       return res.status(400).json({ message: "종목코드가 없습니다." });
@@ -1827,7 +1989,8 @@ if (cached && Date.now() - cached.cachedAt <= 8000) {
       "Content-Type": "application/json;charset=UTF-8",
       authorization: `Bearer ${token}`,
       "api-id": "ka10001"
-    }
+    },
+    timeout: priceRequestTimeoutMs
   }
 );
 
@@ -1846,7 +2009,8 @@ if (isTokenError(data)) {
         "Content-Type": "application/json;charset=UTF-8",
         authorization: `Bearer ${newToken}`,
         "api-id": "ka10001"
-      }
+      },
+      timeout: priceRequestTimeoutMs
     }
   );
 
@@ -1929,7 +2093,8 @@ app.get("/price/:code", async (req, res) => {
       "Content-Type": "application/json;charset=UTF-8",
       authorization: `Bearer ${token}`,
       "api-id": "ka10001"
-    }
+    },
+    timeout: KIWOOM_PRICE_REQUEST_TIMEOUT_MS
   }
 );
 
@@ -1948,7 +2113,8 @@ if (isTokenError(data)) {
         "Content-Type": "application/json;charset=UTF-8",
         authorization: `Bearer ${newToken}`,
         "api-id": "ka10001"
-      }
+      },
+      timeout: KIWOOM_PRICE_REQUEST_TIMEOUT_MS
     }
   );
 
@@ -3304,6 +3470,12 @@ function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
         maxRankScore: Number(item.maxRankScore || 0),
         lastMomentumScore: Number(item.lastMomentumScore || last.momentumScore || 0),
         maxMomentumScore: Number(item.maxMomentumScore || 0),
+        momentumObservationCount: Number(
+          item.lastObservationCount || last.observationCount || 0
+        ),
+        requiredDiscoverScore: Number(
+          item.lastRequiredDiscoverScore || last.requiredDiscoverScore || 0
+        ),
         pricePersistence: Number(item.lastPricePersistence || last.pricePersistence || 0),
         volumePersistence: Number(item.lastVolumePersistence || last.volumePersistence || 0),
         highestAfterSeenRate:
@@ -3387,6 +3559,7 @@ app.get("/api/open-live-tracking", (req, res) => {
   try {
     const state = loadPaperState();
     const now = Date.now();
+    const date = state.openDate || todayKstKey();
     let hot = { count: 0, updatedAt: null, updatedAtMs: 0, ageSeconds: null, items: [] };
     try {
       const hotFile = path.join(__dirname, "hot-candidates.json");
@@ -3410,12 +3583,53 @@ app.get("/api/open-live-tracking", (req, res) => {
       hot.error = err.message;
     }
 
+    try {
+      const hotHistory = readJsonFileSafe(
+        HOT_HISTORY_FILE,
+        { date, detected: {} }
+      ) || { date, detected: {} };
+      hot.detectedTodayCount =
+        hotHistory.date === date && hotHistory.detected && typeof hotHistory.detected === "object"
+          ? Object.keys(hotHistory.detected).length
+          : 0;
+      const detectedRows =
+        hotHistory.date === date && hotHistory.detected && typeof hotHistory.detected === "object"
+          ? Object.values(hotHistory.detected)
+          : [];
+      hot.detectedOpenWindowCount = detectedRows.filter(record => {
+        const text = String(record?.firstDetectedAt || "");
+        const match = text.match(/(오전|오후|AM|PM)\s*(\d{1,2}):(\d{2})/i);
+        if (!match) return false;
+        let hour = Number(match[2]);
+        const period = String(match[1]).toUpperCase();
+        if ((period === "PM" || period === "오후") && hour < 12) hour += 12;
+        if ((period === "AM" || period === "오전") && hour === 12) hour = 0;
+        const hhmm = `${String(hour).padStart(2, "0")}:${match[3]}`;
+        return hhmm >= "09:00" && hhmm <= "09:30";
+      }).length;
+    } catch (err) {
+      hot.historyError = err.message;
+      hot.detectedTodayCount = 0;
+      hot.detectedOpenWindowCount = 0;
+    }
+
     const tracking = state.openLiveTracking || {};
     const scan = state.openLastScanSummary || {};
     const top = tracking.topCandidate || scan.topCandidate || state.openTopCandidate || null;
+    const dailySource = state.openDailyStats?.date === date ? state.openDailyStats : {};
+    const daily = {
+      scanCount: Number(dailySource.scanCount || 0),
+      candidateCount: Object.keys(dailySource.candidateCodes || {}).length,
+      evaluatedCount: Object.keys(dailySource.evaluatedCodes || {}).length,
+      strictPassedCount: Object.keys(dailySource.strictPassedCodes || {}).length,
+      fallbackPassedCount: Object.keys(dailySource.fallbackPassedCodes || {}).length,
+      selectedCount: Object.keys(dailySource.selectedCodes || {}).length,
+      boughtCount: Object.keys(dailySource.boughtCodes || {}).length,
+      hotInputCount: Object.keys(dailySource.hotInputCodes || {}).length
+    };
     res.json({
       ok: true,
-      date: state.openDate || todayKstKey(),
+      date,
       serverAutoEnabled: state.serverAutoEnabled !== false,
       openEnabled: state.openEnabled !== false,
       openCompleted: state.openCompleted === true,
@@ -3430,9 +3644,12 @@ app.get("/api/open-live-tracking", (req, res) => {
         candidateCount: Number(scan.candidateCount || 0),
         evaluatedCount: Number(scan.evaluatedCount || 0),
         passedCount: Number(scan.passedCount || 0),
+        strictPassedCount: Number(scan.strictPassedCount ?? scan.passedCount ?? 0),
+        fallbackPassedCount: Number(scan.fallbackPassedCount || 0),
         potentialCount: Number(scan.potentialCount || 0),
         rejectCounts: scan.rejectCounts || {}
       },
+      daily,
       hot,
       activities: (Array.isArray(state.openLiveActivities) ? state.openLiveActivities : []).slice(-10).reverse(),
       serverTime: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
@@ -3664,6 +3881,22 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       const hotFirstDetectedAt = hotRecord?.firstDetectedAt || null;
       const hotDetectedWithinOpenWindow = isWithinOpenWindow(hotFirstDetectedAt);
       const openFoundWithinWindow = Boolean(candidate && isWithinOpenWindow(candidate.firstSeenAt));
+      const hotDetectedAfterOpen = Boolean(
+        hotRecord && !hotDetectedWithinOpenWindow
+      );
+      const decision =
+        !bought && !candidate && hotDetectedAfterOpen
+          ? "OPEN 종료 후 HOT 발견"
+          : classifyDecision(candidate, bought);
+      const analysisCategory = bought
+        ? "실제 매수"
+        : !hotRecord
+          ? "HOT 발굴 실패"
+          : hotDetectedAfterOpen && !candidate
+            ? "OPEN 종료 후 HOT 발견"
+          : !candidate
+            ? "HOT→OPEN 미유입"
+            : decision;
       return {
         rank: index + 1,
         code: normalizedCode,
@@ -3673,10 +3906,15 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         changeRate: Number(leader.changeRate || 0),
         volume: Number(leader.volume || 0),
         openFound: Boolean(candidate),
+        discovered: Boolean(candidate),
+        openDiscovered: Boolean(candidate),
         bought,
         firstSeenAt: candidate?.firstSeenAt || null,
         observationCount: Number(candidate?.observationCount || 0),
+        momentumObservationCount: Number(candidate?.momentumObservationCount || 0),
         maxDiscoverScore: Number(candidate?.maxDiscoverScore || 0),
+        lastDiscoverScore: Number(candidate?.lastDiscoverScore || 0),
+        requiredDiscoverScore: Number(candidate?.requiredDiscoverScore || 0),
         maxRankScore: Number(candidate?.maxRankScore || 0),
         maxMomentumScore: Number(candidate?.maxMomentumScore || 0),
         rejectStage: candidate?.rejectStage || null,
@@ -3684,6 +3922,7 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         lastSource: candidate?.lastSource || null,
         currentHotMatched: hotCodes.has(normalizedCode),
         hotDetectedToday: Boolean(hotRecord),
+        hotDetected: Boolean(hotRecord),
         hotFirstDetectedAt,
         hotLastDetectedAt: hotRecord?.lastDetectedAt || null,
         hotDetectionCount: Number(hotRecord?.detectionCount || 0),
@@ -3692,6 +3931,7 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         hotMaxMomentumScore: Number(hotRecord?.maxMomentumScore || 0),
         hotSources: Array.isArray(hotRecord?.sources) ? hotRecord.sources : [],
         hotDetectedWithinOpenWindow,
+        hotDetectedAfterOpen,
         openFoundWithinWindow,
         openOpportunity: hotDetectedWithinOpenWindow || openFoundWithinWindow,
         everHotMatched: candidate?.everHotMatched === true,
@@ -3702,12 +3942,18 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         passedMomentumStage: candidate?.passedMomentumStage === true,
         hasDetailedTracking: candidate?.hasDetailedTracking === true,
         lastReason: candidate?.lastReason || "",
-        decision: classifyDecision(candidate, bought)
+        decision,
+        category: analysisCategory,
+        judgement: decision
       };
     });
 
     const reasonCount = {};
     for (const row of rows) {
+      // OPEN 종료 뒤 처음 HOT에 잡힌 종목은 미포착 원인 통계에서 제외한다.
+      if (row.hotDetectedAfterOpen && !row.openFoundWithinWindow) {
+        continue;
+      }
       reasonCount[row.decision] = Number(reasonCount[row.decision] || 0) + 1;
     }
     const reasonStats = Object.entries(reasonCount)
@@ -3726,11 +3972,13 @@ app.get("/api/open-surge-analysis", async (req, res) => {
     const openWindowHotToOpenMissedCount = rows.filter(
       row => row.hotDetectedWithinOpenWindow && !row.openFoundWithinWindow
     ).length;
+    const postOpenHotCount = rows.filter(
+      row => row.hotDetectedAfterOpen
+    ).length;
     if (!rows.length) {
       diagnosis.push(`현재 +${minRate.toFixed(0)}% 이상 급등주가 조회되지 않았습니다.`);
     } else {
       const hotDetectedCount = rows.filter(row => row.hotDetectedToday).length;
-      const hotToOpenMissedCount = rows.filter(row => row.hotDetectedToday && !row.openFound).length;
       diagnosis.push(`급등주 ${rows.length}개 중 당일 HOT은 ${hotDetectedCount}개, OPEN은 ${foundCount}개를 발견했습니다.`);
       diagnosis.push(
         `OPEN 매수시간(09:00~09:30) 안에 포착 가능한 급등주는 ${openOpportunityRows.length}개이며, ` +
@@ -3739,8 +3987,10 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       if (openWindowHotToOpenMissedCount > 0) {
         diagnosis.push(`OPEN 시간 내 HOT 발견 후 OPEN으로 이어지지 않은 종목은 ${openWindowHotToOpenMissedCount}개입니다.`);
       }
-      if (hotToOpenMissedCount > 0) diagnosis.push(`HOT에는 들어왔지만 OPEN 후보로 이어지지 않은 종목은 ${hotToOpenMissedCount}개입니다.`);
-      diagnosis.push(`${notFoundCount}개는 OPEN 후보에 올리지 못했습니다.`);
+      if (postOpenHotCount > 0) {
+        diagnosis.push(`OPEN 종료 후 HOT에서 발견된 ${postOpenHotCount}개는 OPEN 매수 대상이 아니므로 미유입 실패에서 제외합니다.`);
+      }
+      diagnosis.push(`${notFoundCount}개는 하루 전체 기준 OPEN 후보에 없었으며, OPEN 시간 내 판단은 위 시간구간 통계를 사용해야 합니다.`);
       diagnosis.push(`가장 많은 미포착 원인은 '${topReason}'입니다.`);
       if (notFoundCount > foundCount) diagnosis.push("우선 개선 대상은 매수조건보다 후보 발굴 범위와 HOT 순위 유입입니다.");
       else diagnosis.push("후보 발굴은 작동했으므로 거래량·점수·지속강도 탈락 기준을 우선 검토해야 합니다.");
@@ -3762,16 +4012,27 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       thresholdRate: minRate,
       summary: {
         totalLeaders: rows.length,
+        risingCount: rows.length,
         hotDetectedCount: rows.filter(row => row.hotDetectedToday).length,
-        hotToOpenMissedCount: rows.filter(row => row.hotDetectedToday && !row.openFound).length,
+        // 기존 이름은 화면 호환을 위해 유지하되 OPEN 시간 내 미유입만 반환한다.
+        hotToOpenMissedCount: openWindowHotToOpenMissedCount,
+        dailyHotToOpenUnmatchedCount: rows.filter(
+          row => row.hotDetectedToday && !row.openFound
+        ).length,
         foundCount,
+        discoveredCount: foundCount,
         notFoundCount,
         boughtCount,
+        categoryCounts: rows.reduce((acc, row) => {
+          acc[row.category] = Number(acc[row.category] || 0) + 1;
+          return acc;
+        }, {}),
         openOpportunityCount: openOpportunityRows.length,
         openWindowHotCount,
         openWindowFoundCount,
         openWindowBoughtCount,
-        openWindowHotToOpenMissedCount
+        openWindowHotToOpenMissedCount,
+        postOpenHotCount
       },
       reasonStats,
       diagnosis,
@@ -4123,12 +4384,16 @@ app.get("/api/daily-summary", (req, res) => {
   "CORE_FIRST_TAKE_PROFIT",
   "CORE_BREAK_EVEN_SELL",
   "CORE_TRAILING_STOP",
+  "CORE_WEAK_TREND_SELL",
+  "CORE_SWITCH_SELL",
   "CORE_END_SELL",
 
   "VOLUME_STOP_LOSS",
   "VOLUME_FIRST_TAKE_PROFIT",
   "VOLUME_BREAK_EVEN_SELL",
   "VOLUME_TRAILING_STOP",
+  "VOLUME_WEAK_TREND_SELL",
+  "VOLUME_SWITCH_SELL",
   "VOLUME_END_SELL"
 ];
 
@@ -4435,6 +4700,66 @@ app.post("/api/daily-code-changes", (req, res) => {
   }
 });
 
+function buildSellReasonAnalysis(sellLogs = []) {
+  const allTypeCounts = {};
+  const lossTypeCounts = {};
+  const lossDetails = {};
+
+  for (const log of sellLogs) {
+    const type = String(log?.type || "UNKNOWN_SELL");
+    const profit = Number(log?.profit || 0);
+
+    allTypeCounts[type] =
+      Number(allTypeCounts[type] || 0) + 1;
+
+    // 손실 원인은 실제 실현손익이 음수인 매도만 집계한다.
+    if (profit >= 0) {
+      continue;
+    }
+
+    lossTypeCounts[type] =
+      Number(lossTypeCounts[type] || 0) + 1;
+
+    if (!lossDetails[type]) {
+      lossDetails[type] = {
+        type,
+        count: 0,
+        totalLoss: 0,
+        worstLoss: 0
+      };
+    }
+
+    const detail = lossDetails[type];
+    detail.count += 1;
+    detail.totalLoss += profit;
+    detail.worstLoss = Math.min(
+      Number(detail.worstLoss || 0),
+      profit
+    );
+  }
+
+  const lossReasonRanking = Object.values(lossDetails)
+    .map(detail => ({
+      ...detail,
+      averageLoss:
+        detail.count > 0
+          ? detail.totalLoss / detail.count
+          : 0
+    }))
+    .sort((a, b) =>
+      Number(b.count || 0) - Number(a.count || 0) ||
+      Number(a.totalLoss || 0) - Number(b.totalLoss || 0) ||
+      String(a.type || "").localeCompare(String(b.type || ""))
+    );
+
+  return {
+    allTypeCounts,
+    lossTypeCounts,
+    lossReasonRanking,
+    topLossReason: lossReasonRanking[0] || null
+  };
+}
+
 app.get("/api/today-trade-analysis", (req, res) => {
   try {
     const state = loadState();
@@ -4590,10 +4915,22 @@ app.get("/api/today-trade-analysis", (req, res) => {
     const wins = sells.filter(log => Number(log.profit || 0) > 0);
     const losses = sells.filter(log => Number(log.profit || 0) < 0);
 
-    const sellTypeCounts = {};
-    sells.forEach(log => {
-      sellTypeCounts[log.type] = (sellTypeCounts[log.type] || 0) + 1;
-    });
+    const sellReasonAnalysis =
+      buildSellReasonAnalysis(sells);
+
+    // 전체 매도사유 표는 기존 필드를 유지한다.
+    const sellTypeCounts =
+      sellReasonAnalysis.allTypeCounts;
+
+    // 손실 원인 TOP은 수익 매도를 제외한 전용 집계를 사용한다.
+    const lossSellTypeCounts =
+      sellReasonAnalysis.lossTypeCounts;
+
+    const lossReasonRanking =
+      sellReasonAnalysis.lossReasonRanking;
+
+    const topLossReason =
+      sellReasonAnalysis.topLossReason;
 
    function getStrategy(log) {
   if (log.strategyGroup) {
@@ -4707,10 +5044,14 @@ app.get("/api/today-trade-analysis", (req, res) => {
         winCount: wins.length,
         lossCount: losses.length,
         winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
-        realizedProfit
+        realizedProfit,
+        topLossReason
       },
       byStrategy,
       sellTypeCounts,
+      lossSellTypeCounts,
+      lossReasonRanking,
+      topLossReason,
 
       // OPEN이 미매수여도 실행 결과와 사유를 항상 전달한다.
       openStatus: {

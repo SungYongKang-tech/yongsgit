@@ -381,7 +381,7 @@
       <div class="condition-item"><div class="condition-label">투자금</div><div class="condition-value">OPEN 시작 가용자금의 종목당 20%</div></div>
     </div>
     <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.6;">
-      최소 30초·4회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 5종목까지 실제 매수합니다. 같은 종목은 하루 한 번만 매수합니다. 거래량 기준은 09:05 전 80%, 09:10 전 90%, 09:20 전 110%, 이후 130%로 단계적으로 적용됩니다.
+      최소 30초·4회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 5종목까지 실제 매수합니다. 발견 9점 HOT 후보는 즉시 매수하지 않고 관찰단계에만 진입합니다. 같은 종목은 하루 한 번만 매수합니다. 거래량 기준은 09:05 전 80%, 09:10 전 90%, 09:20 전 110%, 이후 130%로 단계적으로 적용됩니다.
     </div>
   </div>
 
@@ -801,7 +801,7 @@
       <table class="growth-table">
         <thead>
           <tr>
-            <th>종목</th><th>관찰</th><th>발견점수</th><th>최종점수</th>
+            <th>종목</th><th>평가/지속표본</th><th>발견점수</th><th>필요점수</th><th>최고→마지막 평가점수</th>
             <th>최고 지속강도</th><th>가격 지속</th><th>거래량 지속</th><th>선택</th>
           </tr>
         </thead>
@@ -819,9 +819,10 @@
                   <div class="day-sub">${escapeHtml(item.code || "")}</div>
                   <div class="timeline-line">${hasDetail ? escapeHtml(timelineText || "시간별 자료 없음") : "기존 자료 · 상세 추적 없음"}</div>
                 </td>
-                <td>${Number(item.observationCount || 0)}회</td>
+                <td>${Number(item.observationCount || 0)}회 / ${Number(item.momentumObservationCount || 0)}회</td>
                 <td>${Number(item.firstDiscoverScore || 0).toFixed(1)} → ${Number(item.lastDiscoverScore || 0).toFixed(1)}</td>
-                <td>${hasDetail ? `${Number(item.firstRankScore || 0).toFixed(1)} → ${Number(item.lastRankScore || 0).toFixed(1)}` : "자료 없음"}</td>
+                <td>${Number(item.requiredDiscoverScore || 0) > 0 ? Number(item.requiredDiscoverScore).toFixed(1) : "-"}</td>
+                <td>${hasDetail ? `${Number(item.maxRankScore || 0).toFixed(1)} → ${Number(item.lastRankScore || 0).toFixed(1)}` : "자료 없음"}</td>
                 <td>${hasDetail ? Number(item.maxMomentumScore || 0).toFixed(1) : "자료 없음"}</td>
                 <td>${hasDetail ? `${(Number(item.pricePersistence || 0) * 100).toFixed(0)}%` : "자료 없음"}</td>
                 <td>${hasDetail ? `${(Number(item.volumePersistence || 0) * 100).toFixed(0)}%` : "자료 없음"}</td>
@@ -1162,9 +1163,10 @@
     const summaryBox = document.getElementById("surgeSummaryBox");
     summaryBox.innerHTML = `
       <div class="mini-box"><div class="mini-label">급등주</div><div class="mini-value">${Number(summary.totalLeaders || rows.length)}개</div></div>
-      <div class="mini-box"><div class="mini-label">당일 HOT 발견</div><div class="mini-value surge-found">${Number(summary.hotDetectedCount || 0)}개</div></div>
-      <div class="mini-box"><div class="mini-label">OPEN 발견</div><div class="mini-value surge-found">${Number(summary.foundCount || 0)}개</div></div>
-      <div class="mini-box"><div class="mini-label">HOT→OPEN 미유입</div><div class="mini-value surge-missed">${Number(summary.hotToOpenMissedCount || 0)}개</div></div>
+      <div class="mini-box"><div class="mini-label">OPEN시간 HOT</div><div class="mini-value surge-found">${Number(summary.openWindowHotCount ?? summary.hotDetectedCount ?? 0)}개</div></div>
+      <div class="mini-box"><div class="mini-label">OPEN시간 발견</div><div class="mini-value surge-found">${Number(summary.openWindowFoundCount ?? summary.foundCount ?? 0)}개</div></div>
+      <div class="mini-box"><div class="mini-label">OPEN시간 HOT→미유입</div><div class="mini-value surge-missed">${Number(summary.openWindowHotToOpenMissedCount ?? summary.hotToOpenMissedCount ?? 0)}개</div></div>
+      <div class="mini-box"><div class="mini-label">OPEN 종료 후 HOT</div><div class="mini-value">${Number(summary.postOpenHotCount || 0)}개</div></div>
       <div class="mini-box"><div class="mini-label">실제 매수</div><div class="mini-value">${Number(summary.boughtCount || 0)}개</div></div>`;
 
     const tableBox = document.getElementById("surgeLeaderBox");
@@ -1172,14 +1174,16 @@
       tableBox.innerHTML = `<div class="empty">현재 조회된 +${thresholdText}% 이상 상승 종목이 없습니다.</div>`;
     } else {
       tableBox.innerHTML = `<table class="surge-table"><thead><tr>
-        <th>순위</th><th>종목</th><th>현재가</th><th>상승률</th><th>당일 HOT</th><th>OPEN 발견</th><th>유입경로</th><th>최초발견</th><th>최고 발견점수</th><th>관찰</th><th>탈락단계</th><th>판정</th>
+        <th>순위</th><th>종목</th><th>현재가</th><th>상승률</th><th>HOT 시점</th><th>OPEN 발견</th><th>유입경로</th><th>최초발견</th><th>발견점수 최고→마지막/필요</th><th>평가/지속표본</th><th>탈락단계</th><th>판정</th>
       </tr></thead><tbody>${rows.map(item => `
         <tr>
           <td>${Number(item.rank || 0)}</td>
           <td><b>${escapeHtml(item.name || item.code || "-")}</b><div class="day-sub">${escapeHtml(item.code || "")}</div></td>
           <td>${formatPrice(item.currentPrice)}</td>
           <td class="plus"><b>${formatRate(item.changeRate)}</b></td>
-          <td class="${item.hotDetectedToday ? "surge-found" : "muted"}">${item.hotDetectedToday ? `발견${item.hotFirstDetectedAt ? `<div class="day-sub">${escapeHtml(item.hotFirstDetectedAt)}</div>` : ""}` : "미발견"}</td>
+          <td class="${item.hotDetectedToday ? "surge-found" : "muted"}">${item.hotDetectedToday
+            ? `${item.hotDetectedWithinOpenWindow ? "OPEN 중" : "OPEN 종료 후"}${item.hotFirstDetectedAt ? `<div class="day-sub">${escapeHtml(item.hotFirstDetectedAt)}</div>` : ""}`
+            : "미발견"}</td>
           <td class="${item.openFound ? "surge-found" : "surge-missed"}">${item.openFound ? "발견" : "미발견"}</td>
           <td>${item.openFound
             ? escapeHtml(
@@ -1189,13 +1193,21 @@
                     ? "장전 우선"
                     : (item.firstSource || "일반검색")
               )
-            : item.hotDetectedToday ? "HOT→OPEN 미유입" : "-"}</td>
+            : item.hotDetectedWithinOpenWindow
+              ? "HOT→OPEN 미유입"
+              : item.hotDetectedToday
+                ? "OPEN 대상 아님"
+                : "-"}</td>
           <td>${escapeHtml(item.firstSeenAt || "-")}</td>
           <td>${item.openFound
-            ? (item.hasDetailedTracking ? Number(item.maxDiscoverScore || 0).toFixed(0) + "점" : "자료 없음")
+            ? (item.hasDetailedTracking
+                ? `${Number(item.maxDiscoverScore || 0).toFixed(0)}→${Number(item.lastDiscoverScore || 0).toFixed(0)} / 필요 ${Number(item.requiredDiscoverScore || 0).toFixed(0)}점`
+                : "자료 없음")
             : "-"}</td>
           <td>${item.openFound
-            ? (item.hasDetailedTracking ? Number(item.observationCount || 0) + "회" : "자료 없음")
+            ? (item.hasDetailedTracking
+                ? `평가 ${Number(item.observationCount || 0)} / 지속 ${Number(item.momentumObservationCount || 0)}회`
+                : "자료 없음")
             : "-"}</td>
           <td>${item.openFound
             ? (item.hasDetailedTracking ? escapeHtml(item.rejectStage || "-") : "자료 없음")
@@ -1240,6 +1252,7 @@
     if (!box) return;
     const t = data.tracking || {};
     const scan = data.scan || {};
+    const daily = data.daily || {};
     const hot = data.hot || {};
     const top = t.topCandidate || null;
     updated.textContent = `${data.openCompleted || data.openSkipped ? "최종 저장" : "갱신"} ${formatKstDateTime(t.updatedAt || data.serverTime || "-")}`;
@@ -1248,15 +1261,36 @@
     const pricePersistence = normalizeRatioForDisplay(top?.pricePersistence);
     const volumePersistence = normalizeRatioForDisplay(top?.volumePersistence);
     const activities = Array.isArray(data.activities) ? data.activities : [];
+    const finishedWithoutBuy = data.openSkipped === true;
+    const finishedWithBuy = data.openCompleted === true && !finishedWithoutBuy;
+    const stageText = finishedWithoutBuy
+      ? "오늘 OPEN 운영종료 · 미매수"
+      : finishedWithBuy
+        ? "오늘 OPEN 운영종료 · 매수완료"
+        : (t.stageLabel || "상태 확인 중");
+    const stageBadge = finishedWithoutBuy
+      ? "SKIPPED"
+      : finishedWithBuy
+        ? "COMPLETED"
+        : (t.stage || "-");
+    const hotDisplayCount = data.openCompleted || data.openSkipped
+      ? Number(hot.detectedOpenWindowCount ?? hot.detectedTodayCount ?? hot.count ?? 0)
+      : Number(hot.count || 0);
+    const evaluatedDisplayCount = data.openCompleted || data.openSkipped
+      ? Number(daily.evaluatedCount ?? t.evaluatedCount ?? scan.evaluatedCount ?? 0)
+      : Number(t.evaluatedCount ?? scan.evaluatedCount ?? 0);
+    const strictDisplayCount = data.openCompleted || data.openSkipped
+      ? Number(daily.strictPassedCount ?? t.strictPassedCount ?? scan.strictPassedCount ?? scan.passedCount ?? 0)
+      : Number(t.strictPassedCount ?? scan.strictPassedCount ?? scan.passedCount ?? 0);
     box.innerHTML = `
       <div class="live-head">
-        <div class="live-stage"><span class="live-dot"></span>${escapeHtml(data.openCompleted ? "오늘 OPEN 매수완료" : data.openSkipped ? "오늘 OPEN 종료 · 미매수" : (t.stageLabel || "상태 확인 중"))}</div>
-        <span class="badge">${escapeHtml(data.openCompleted ? "COMPLETED" : data.openSkipped ? "SKIPPED" : (t.stage || "-"))}</span>
+        <div class="live-stage"><span class="live-dot"></span>${escapeHtml(stageText)}</div>
+        <span class="badge">${escapeHtml(stageBadge)}</span>
       </div>
       <div class="live-grid">
-        <div class="mini-box"><div class="mini-label">${data.openCompleted || data.openSkipped ? "HOT 최종 후보" : "HOT 후보"}</div><div class="mini-value">${Number(hot.count || 0)}개</div></div>
-        <div class="mini-box"><div class="mini-label">${data.openCompleted || data.openSkipped ? "OPEN 최종 평가" : "OPEN 평가"}</div><div class="mini-value">${Number(t.evaluatedCount ?? scan.evaluatedCount ?? 0)}개</div></div>
-        <div class="mini-box"><div class="mini-label">엄격 통과</div><div class="mini-value">${Number(t.strictPassedCount ?? scan.passedCount ?? 0)}개</div></div>
+        <div class="mini-box"><div class="mini-label">${data.openCompleted || data.openSkipped ? "OPEN시간 HOT 누적" : "HOT 현재 후보"}</div><div class="mini-value">${hotDisplayCount}개</div></div>
+        <div class="mini-box"><div class="mini-label">${data.openCompleted || data.openSkipped ? "OPEN 누적 평가" : "OPEN 현재 평가"}</div><div class="mini-value">${evaluatedDisplayCount}개</div></div>
+        <div class="mini-box"><div class="mini-label">누적 엄격 통과</div><div class="mini-value">${strictDisplayCount}개</div></div>
         <div class="mini-box"><div class="mini-label">잠재 후보</div><div class="mini-value">${Number(t.potentialCount ?? scan.potentialCount ?? 0)}개</div></div>
       </div>
       <div class="live-candidate">
@@ -1335,19 +1369,34 @@
     const summary = data.summary || {};
     const rows = Array.isArray(data.rows) ? data.rows : [];
     const counts = summary.categoryCounts || {};
-    const total = Number(summary.risingCount || rows.length || 0);
-    const hot = Number(summary.hotDetectedCount || 0);
-    const open = Number(summary.discoveredCount || 0);
-    const bought = Number(summary.boughtCount || 0);
+    // OPEN 종료 뒤 발견된 종목은 09:00~09:30 발굴 성과의 분모와 실패 건수에서 제외한다.
+    const opportunityRows = rows.filter(r => Boolean(r.openOpportunity));
+    const total = Number(summary.openOpportunityCount ?? opportunityRows.length ?? 0);
+    const hot = Number(summary.openWindowHotCount ?? summary.hotDetectedCount ?? 0);
+    const open = Number(summary.openWindowFoundCount ?? summary.discoveredCount ?? summary.foundCount ?? 0);
+    const bought = Number(summary.openWindowBoughtCount ?? summary.boughtCount ?? 0);
     const hotRate = total > 0 ? (hot / total) * 100 : 0;
     const openRate = total > 0 ? (open / total) * 100 : 0;
     const buyRate = total > 0 ? (bought / total) * 100 : 0;
-    const hotToOpenMiss = Number(summary.hotToOpenMissedCount || counts["HOT→OPEN 미유입"] || 0);
-    const hotMiss = Number(counts["HOT 발굴 실패"] || rows.filter(r => !r.hotDetected).length || 0);
+    const hotToOpenMiss = Number(
+      summary.openWindowHotToOpenMissedCount ??
+      summary.hotToOpenMissedCount ??
+      counts["HOT→OPEN 미유입"] ??
+      0
+    );
+    const hotMiss = opportunityRows.filter(
+      r => !r.hotDetectedWithinOpenWindow
+    ).length;
     const conditionRejected = Math.max(0, open - bought);
 
-    const hasHotHistory = Object.prototype.hasOwnProperty.call(summary, "hotDetectedCount");
-    const hasOpenHistory = rows.some(r => Object.prototype.hasOwnProperty.call(r, "openDiscovered") || Object.prototype.hasOwnProperty.call(r, "discovered"));
+    const hasHotHistory =
+      Object.prototype.hasOwnProperty.call(summary, "openWindowHotCount") ||
+      Object.prototype.hasOwnProperty.call(summary, "hotDetectedCount");
+    const hasOpenHistory = rows.some(r =>
+      Object.prototype.hasOwnProperty.call(r, "openDiscovered") ||
+      Object.prototype.hasOwnProperty.call(r, "discovered") ||
+      Object.prototype.hasOwnProperty.call(r, "openFound")
+    );
     const hasDetailedReason = rows.some(r => r.category || r.judgement || r.rejectStage);
     const completenessItems = [total > 0, hasHotHistory, hasOpenHistory, hasDetailedReason];
     const completeness = Math.round(completenessItems.filter(Boolean).length / completenessItems.length * 100);
@@ -1360,12 +1409,12 @@
     const openGrade = gradeFromScore(openScore);
 
     const issues = [
-      { label: "HOT에도 없었던 급등주", count: hotMiss, category: "HOT 발굴 실패" },
-      { label: "HOT→OPEN 미전달", count: hotToOpenMiss, category: "HOT→OPEN 미유입" },
-      { label: "OPEN 후보 진입 후 미매수", count: conditionRejected, category: "OPEN 조건 탈락" }
+      { label: "OPEN시간 HOT 미포착", count: hotMiss, category: "HOT 발굴 실패" },
+      { label: "OPEN시간 HOT→OPEN 미전달", count: hotToOpenMiss, category: "HOT→OPEN 미유입" },
+      { label: "OPEN시간 후보 진입 후 미매수", count: conditionRejected, category: "OPEN 조건 탈락" }
     ].sort((a, b) => b.count - a.count);
 
-    const missed = rows.filter(r => !r.bought).slice(0, 5);
+    const missed = rows.filter(r => r.openOpportunity && !r.bought).slice(0, 5);
     const topIssue = issues[0] || { label: "분석자료 부족", count: 0, category: "자료 부족" };
     const adviceList = issues.filter(item => item.count > 0).slice(0, 3).map(item => ({ ...item, ...getCodeAdvice(item.category) }));
     if (!adviceList.length) adviceList.push({ label: "누적자료 확인", count: 0, category: "자료 부족", ...getCodeAdvice("자료 부족") });
@@ -1378,16 +1427,16 @@
         <div class="day-sub">급등주 발굴 흐름과 데이터 완성도를 기준으로 계산한 운영진단 점수이며, 수익률 예측점수가 아닙니다.</div>
       </div>
       <div class="ai-score-grid">
-        <div class="ai-score-box"><div class="ai-score-title">HOT 발굴</div><div class="ai-stars">${toStars(hotRate / 20)}</div><div class="day-sub">${hotRate.toFixed(0)}% · ${hot}/${total}</div></div>
-        <div class="ai-score-box"><div class="ai-score-title">OPEN 발굴</div><div class="ai-stars">${toStars(openRate / 20)}</div><div class="day-sub">${openRate.toFixed(0)}% · ${open}/${total}</div></div>
+        <div class="ai-score-box"><div class="ai-score-title">OPEN시간 HOT 발굴</div><div class="ai-stars">${toStars(hotRate / 20)}</div><div class="day-sub">${hotRate.toFixed(0)}% · ${hot}/${total}</div></div>
+        <div class="ai-score-box"><div class="ai-score-title">OPEN시간 후보 발굴</div><div class="ai-stars">${toStars(openRate / 20)}</div><div class="day-sub">${openRate.toFixed(0)}% · ${open}/${total}</div></div>
         <div class="ai-score-box"><div class="ai-score-title">실제 매수</div><div class="ai-stars">${toStars(bought > 0 ? Math.min(5, 2 + bought) : 0)}</div><div class="day-sub">${bought}종목</div></div>
         <div class="ai-score-box"><div class="ai-score-title">분석 신뢰도</div><div class="ai-stars">${toStars(completeness / 20)}</div><div class="day-sub">데이터 ${completeness}%</div></div>
       </div>
       <div class="ai-section">
         <div class="ai-section-title">📊 단계별 발견 흐름</div>
-        <div class="ai-issue-row"><span>급등주 기준종목</span><b>${total}종목</b></div>
-        <div class="ai-issue-row"><span>HOT 발견</span><b>${hot}종목 (${hotRate.toFixed(0)}%)</b></div>
-        <div class="ai-issue-row"><span>OPEN 발견</span><b>${open}종목 (${openRate.toFixed(0)}%)</b></div>
+        <div class="ai-issue-row"><span>OPEN시간 포착 가능 종목</span><b>${total}종목</b></div>
+        <div class="ai-issue-row"><span>OPEN시간 HOT 발견</span><b>${hot}종목 (${hotRate.toFixed(0)}%)</b></div>
+        <div class="ai-issue-row"><span>OPEN시간 후보 발견</span><b>${open}종목 (${openRate.toFixed(0)}%)</b></div>
         <div class="ai-issue-row"><span>실제 매수</span><b>${bought}종목 (${buyRate.toFixed(1)}%)</b></div>
       </div>
       <div class="ai-section">
@@ -1397,9 +1446,11 @@
       <div class="ai-section">
         <div class="ai-section-title">🔥 놓친 종목 TOP5</div>
         <div class="ai-missed-list">${missed.length ? missed.map(item => {
-          const category = item.category || item.judgement || item.rejectStage || (item.hotDetected ? "HOT→OPEN 미유입" : "HOT 발굴 실패");
+          const itemHotDetected = Boolean(item.hotDetectedWithinOpenWindow);
+          const itemOpenDiscovered = Boolean(item.openDiscovered ?? item.discovered ?? item.openFound);
+          const category = item.category || item.judgement || item.rejectStage || (itemHotDetected ? "HOT→OPEN 미유입" : "HOT 발굴 실패");
           const supportedReason = category && category !== "원인 미분류" ? category : "현재 저장자료로 세부 원인 확인 불가";
-          return `<div class="ai-missed-item"><div class="ai-missed-name">${escapeHtml(item.name || item.code || "-")} <span class="day-sub">${escapeHtml(item.code || "")}</span></div><div class="day-sub">상승 ${formatRate(item.changeRate)} · HOT ${item.hotDetected ? "발견" : "미발견"} · OPEN ${(item.openDiscovered || item.discovered) ? "발견" : "미발견"}</div><div style="margin-top:5px;font-size:12px;">확인된 원인: <b>${escapeHtml(supportedReason)}</b><br>다음 점검: ${escapeHtml(getAiRecommendation(category, summary))}</div></div>`;
+          return `<div class="ai-missed-item"><div class="ai-missed-name">${escapeHtml(item.name || item.code || "-")} <span class="day-sub">${escapeHtml(item.code || "")}</span></div><div class="day-sub">상승 ${formatRate(item.changeRate)} · HOT ${itemHotDetected ? "발견" : "미발견"} · OPEN ${itemOpenDiscovered ? "발견" : "미발견"}</div><div style="margin-top:5px;font-size:12px;">확인된 원인: <b>${escapeHtml(supportedReason)}</b><br>다음 점검: ${escapeHtml(getAiRecommendation(category, summary))}</div></div>`;
         }).join("") : `<div class="muted">놓친 종목 자료가 없습니다.</div>`}</div>
       </div>
       <div class="ai-section">
@@ -1412,14 +1463,17 @@
       `[${data.date || "오늘"} OPEN AI REPORT]`,
       `오늘 점수: ${openScore}점 / 등급 ${openGrade}`,
       `분석 데이터 완성도: ${completeness}%`,
-      `급등주 ${total}종목 → HOT ${hot}종목(${hotRate.toFixed(0)}%) → OPEN ${open}종목(${openRate.toFixed(0)}%) → 실제 매수 ${bought}종목`,
+      `OPEN시간 포착 가능 ${total}종목 → HOT ${hot}종목(${hotRate.toFixed(0)}%) → OPEN ${open}종목(${openRate.toFixed(0)}%) → 실제 매수 ${bought}종목`,
+      `OPEN 종료 후 HOT ${Number(summary.postOpenHotCount || 0)}종목은 실패 통계에서 제외`,
       "오늘 놓친 이유:",
       ...issues.map((item, index) => `${index + 1}. ${item.label}: ${item.count}종목`),
       "놓친 종목 TOP5:",
       ...missed.map((item, index) => {
-        const category = item.category || item.judgement || item.rejectStage || (item.hotDetected ? "HOT→OPEN 미유입" : "HOT 발굴 실패");
+        const itemHotDetected = Boolean(item.hotDetectedWithinOpenWindow);
+        const itemOpenDiscovered = Boolean(item.openDiscovered ?? item.discovered ?? item.openFound);
+        const category = item.category || item.judgement || item.rejectStage || (itemHotDetected ? "HOT→OPEN 미유입" : "HOT 발굴 실패");
         const reason = category && category !== "원인 미분류" ? category : "현재 저장자료로 세부 원인 확인 불가";
-        return `${index + 1}. ${item.name || item.code}(${item.code || ""}) / ${formatRate(item.changeRate)} / HOT ${item.hotDetected ? "발견" : "미발견"} / OPEN ${(item.openDiscovered || item.discovered) ? "발견" : "미발견"} / ${reason}`;
+        return `${index + 1}. ${item.name || item.code}(${item.code || ""}) / ${formatRate(item.changeRate)} / HOT ${itemHotDetected ? "발견" : "미발견"} / OPEN ${itemOpenDiscovered ? "발견" : "미발견"} / ${reason}`;
       }),
       "AI 코드 점검 추천:",
       ...adviceList.map((item, index) => `${index + 1}위. ${item.file} / ${item.target} / ${item.action}`),

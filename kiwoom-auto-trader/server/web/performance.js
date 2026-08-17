@@ -1821,6 +1821,7 @@ function classifyOpenSelectionMode(day = {}) {
     day.realTrade?.selectionReason ||
     day.result?.sellReason ||
     day.openSkipReason ||
+    day.tracking?.decision ||
     ""
   );
 
@@ -1833,28 +1834,91 @@ function classifyOpenSelectionMode(day = {}) {
   if (/엄격|정상 통과|rank|최종점수/i.test(reason)) {
     return "지속강도 1위";
   }
-  if (day.selectedTrade || day.realTrade?.buyPrice) return "실제선정";
-  return "30초 다중관찰 중";
+  if (day.selectedTrade || day.realTrade?.buyPrice || day.openBuyCode) return "실제선정";
+  return day.tracking?.stageLabel || "30초 다중관찰 중";
 }
 
 function firstFiniteOpenNumber(...values) {
   for (const value of values) {
+    if (value === null || value === undefined || value === "") continue;
     const number = Number(value);
     if (Number.isFinite(number)) return number;
   }
   return 0;
 }
 
-function renderOpenLiveStatus(payload = {}) {
+function normalizeOpenLivePayload(payload = {}) {
+  // 신규 OPEN 실시간 API(/api/open-live-tracking) 우선
+  if (payload.tracking || payload.scan || payload.daily || payload.hot) {
+    const tracking = payload.tracking || {};
+    const scan = payload.scan || {};
+    const daily = payload.daily || {};
+    const top = tracking.topCandidate || null;
+    const hotItems = Array.isArray(payload.hot?.items) ? payload.hot.items : [];
+    const topCode = String(top?.code || "").replace(/\D/g, "").slice(-6);
+    const hotMatch = hotItems.find(item =>
+      String(item?.code || "").replace(/\D/g, "").slice(-6) === topCode
+    ) || null;
+
+    let status = "SCANNING";
+    if (payload.openSkipped) status = "SKIPPED";
+    else if (payload.openCompleted) status = payload.openBuyCode ? "COMPLETED" : "SKIPPED";
+    else if (payload.openBuyCode) status = "HOLDING";
+    else if (/WAIT|대기/i.test(String(tracking.stage || ""))) status = "WAITING";
+
+    return {
+      source: "LIVE",
+      status,
+      top,
+      selected: payload.openBuyCode
+        ? {
+            code: payload.openBuyCode,
+            name: payload.openBuyName || payload.openBuyCode,
+            selectedAt: payload.openBuyAt || null
+          }
+        : null,
+      tracking,
+      scan,
+      daily,
+      hot: payload.hot || {},
+      hotMatch,
+      updatedAt: tracking.updatedAt || scan.checkedAt || payload.serverTime || null,
+      skipReason: payload.openSkipReason || null
+    };
+  }
+
+  // 예전 학습 API 형식도 호환
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
   const day = rows.find(row => String(row.date || "") === today) || rows[0] || {};
-  const selected = day.selectedTrade || day.realTrade || null;
   const candidates = Array.isArray(day.latestCandidates) ? day.latestCandidates : [];
-  const top = candidates[0] || day.openTopCandidate || null;
-  const metricSource = selected?.selectionInputs || selected || top || {};
-  const diagnostic = selected?.openBuyDiagnostic || selected?.selectionInputs || top || {};
-  const status = String(day.status || (selected ? "HOLDING" : "WAITING")).toUpperCase();
+  return {
+    source: "LEARNING",
+    status: String(day.status || ((day.selectedTrade || day.realTrade) ? "HOLDING" : "WAITING")).toUpperCase(),
+    top: candidates[0] || day.openTopCandidate || null,
+    selected: day.selectedTrade || day.realTrade || null,
+    tracking: day.tracking || {},
+    scan: {},
+    daily: {},
+    hot: {},
+    hotMatch: null,
+    updatedAt: payload.updatedAt || day.lastCandidateScanAt || day.updatedAt || null,
+    skipReason: day.openSkipReason || null,
+    day,
+    candidates
+  };
+}
+
+function renderOpenLiveStatus(payload = {}) {
+  const live = normalizeOpenLivePayload(payload);
+  const top = live.top;
+  const selected = live.selected;
+  const tracking = live.tracking || {};
+  const scan = live.scan || {};
+  const daily = live.daily || {};
+  const hotMatch = live.hotMatch;
+  const day = live.day || {};
+  const status = String(live.status || "WAITING").toUpperCase();
 
   const badge = document.getElementById("openLiveMode");
   if (badge) {
@@ -1867,17 +1931,20 @@ function renderOpenLiveStatus(payload = {}) {
       badge.textContent = status === "SKIPPED" ? "미매수 종료" : "거래 완료";
     } else {
       badge.classList.add("open-mode-wait");
-      badge.textContent = "상승지속 관찰";
+      badge.textContent = tracking.stageLabel || "상승지속 관찰";
     }
   }
 
   const statusMap = {
     WAITING: "시작 대기",
-    SCANNING: "30초 후보 관찰",
+    SCANNING: tracking.stageLabel || "OPEN 후보 관찰 중",
     HOLDING: "OPEN 보유 중",
     COMPLETED: "OPEN 거래 완료",
     SKIPPED: "오늘 미매수"
   };
+
+  const metricSource = selected?.selectionInputs || selected || top || {};
+  const diagnostic = selected?.openBuyDiagnostic || selected?.selectionInputs || top || {};
 
   const momentumScore = firstFiniteOpenNumber(
     diagnostic.momentumScore,
@@ -1887,12 +1954,14 @@ function renderOpenLiveStatus(payload = {}) {
   const hotMomentumScore = firstFiniteOpenNumber(
     diagnostic.hotMomentumScore,
     metricSource.hotMomentumScore,
-    top?.hotMomentumScore
+    top?.hotMomentumScore,
+    hotMatch?.openMomentumScore
   );
   const pricePersistence = firstFiniteOpenNumber(
     diagnostic.hotPricePersistence,
     diagnostic.pricePersistence,
     metricSource.hotPricePersistence,
+    metricSource.pricePersistence,
     top?.hotPricePersistence,
     top?.pricePersistence
   );
@@ -1900,22 +1969,31 @@ function renderOpenLiveStatus(payload = {}) {
     diagnostic.hotVolumePersistence,
     diagnostic.volumePersistence,
     metricSource.hotVolumePersistence,
+    metricSource.volumePersistence,
     top?.hotVolumePersistence,
     top?.volumePersistence
   );
   const priceRise30s = firstFiniteOpenNumber(
     diagnostic.hotPriceRise30s,
     diagnostic.priceRise30s,
+    diagnostic.priceRiseRate,
     metricSource.hotPriceRise30s,
+    metricSource.priceRise30s,
+    metricSource.priceRiseRate,
     top?.hotPriceRise30s,
-    top?.priceRise30s
+    top?.priceRise30s,
+    top?.priceRiseRate
   );
   const volumeGrowth30s = firstFiniteOpenNumber(
     diagnostic.hotVolumeGrowth30s,
     diagnostic.volumeGrowth30s,
+    diagnostic.volumeGrowthRate,
     metricSource.hotVolumeGrowth30s,
+    metricSource.volumeGrowth30s,
+    metricSource.volumeGrowthRate,
     top?.hotVolumeGrowth30s,
-    top?.volumeGrowth30s
+    top?.volumeGrowth30s,
+    top?.volumeGrowthRate
   );
   const hotDurationSeconds = firstFiniteOpenNumber(
     diagnostic.hotDurationSeconds,
@@ -1926,6 +2004,7 @@ function renderOpenLiveStatus(payload = {}) {
     diagnostic.hotHighRefreshCount,
     diagnostic.highRefreshCount,
     metricSource.hotHighRefreshCount,
+    metricSource.highRefreshCount,
     top?.hotHighRefreshCount,
     top?.highRefreshCount
   );
@@ -1937,7 +2016,12 @@ function renderOpenLiveStatus(payload = {}) {
   );
 
   setOpenText("openLiveStatus", statusMap[status] || status);
-  setOpenText("openSelectionMode", classifyOpenSelectionMode(day));
+  setOpenText(
+    "openSelectionMode",
+    live.source === "LIVE"
+      ? (tracking.stageLabel || classifyOpenSelectionMode({ ...day, tracking, openBuyCode: selected?.code }))
+      : classifyOpenSelectionMode(day)
+  );
   setOpenText(
     "openTopCandidate",
     top ? `${top.name || top.code || "-"}${top.code ? ` (${top.code})` : ""}` : "-"
@@ -1948,33 +2032,88 @@ function renderOpenLiveStatus(payload = {}) {
       ? `${Number(top.rankScore ?? top.discoverScore ?? top.score ?? 0).toFixed(1)}점`
       : "-"
   );
+
+  const candidateDecisionEl = document.getElementById("openCandidateDecision");
+  const rejectReasonEl = document.getElementById("openRejectReason");
+  const candidatePassed = top?.passed === true;
+  const rejectReason = String(top?.rejectReason || top?.reason || tracking.decision || "").trim();
+  const rejectCategory = String(top?.rejectCategory || "").trim();
+
+  if (candidateDecisionEl) {
+    candidateDecisionEl.classList.remove("open-candidate-pass", "open-candidate-reject", "open-candidate-wait");
+    if (!top) {
+      candidateDecisionEl.textContent = "후보 없음";
+      candidateDecisionEl.classList.add("open-candidate-wait");
+    } else if (candidatePassed) {
+      candidateDecisionEl.textContent = top?.fallbackBuy ? "보완 매수후보" : "매수조건 통과";
+      candidateDecisionEl.classList.add("open-candidate-pass");
+    } else if (rejectReason) {
+      candidateDecisionEl.textContent = rejectCategory ? `탈락 · ${rejectCategory}` : "현재 조건 탈락";
+      candidateDecisionEl.classList.add("open-candidate-reject");
+    } else {
+      candidateDecisionEl.textContent = "추가 관찰 중";
+      candidateDecisionEl.classList.add("open-candidate-wait");
+    }
+  }
+
+  if (rejectReasonEl) {
+    rejectReasonEl.classList.remove("open-candidate-pass", "open-candidate-reject", "open-candidate-wait");
+    if (!top) {
+      rejectReasonEl.textContent = "후보 검색 중";
+      rejectReasonEl.classList.add("open-candidate-wait");
+    } else if (candidatePassed) {
+      rejectReasonEl.textContent = "매수 대상 순위 비교 중";
+      rejectReasonEl.classList.add("open-candidate-pass");
+    } else {
+      rejectReasonEl.textContent = rejectReason || "관찰 데이터 추가 확인 중";
+      rejectReasonEl.classList.add(rejectReason ? "open-candidate-reject" : "open-candidate-wait");
+    }
+  }
+
+  const rejectCounts = scan.rejectCounts && typeof scan.rejectCounts === "object" ? scan.rejectCounts : {};
+  const rejectTop = Object.entries(rejectCounts)
+    .map(([name, count]) => [name, Number(count || 0)])
+    .sort((a, b) => b[1] - a[1])[0];
+  setOpenText(
+    "openRejectTop",
+    rejectTop && rejectTop[1] > 0 ? `${rejectTop[0]} ${rejectTop[1]}건` : (top ? "집계 중" : "-")
+  );
+
   setOpenText(
     "openMomentumScore",
     momentumScore || hotMomentumScore
-      ? `${momentumScore.toFixed(1)}점 / HOT ${hotMomentumScore.toFixed(1)}`
-      : "관찰 중"
+      ? `${momentumScore.toFixed(1)}점${hotMomentumScore ? ` / HOT ${hotMomentumScore.toFixed(1)}` : ""}`
+      : (top ? "관찰 데이터 축적 중" : "-")
   );
   setOpenText(
     "openPersistence",
     pricePersistence || volumePersistence
       ? `가격 ${(pricePersistence * 100).toFixed(0)}% / 거래량 ${(volumePersistence * 100).toFixed(0)}%`
-      : "-"
+      : (top ? "측정 중" : "-")
   );
   setOpenText(
     "openRecentMomentum",
     priceRise30s || volumeGrowth30s
       ? `가격 ${formatRate(priceRise30s)} / 거래량 ${formatRate(volumeGrowth30s)}`
-      : "-"
+      : (top ? "측정 중" : "-")
   );
-  setOpenText(
-    "openHotDuration",
-    hotDurationSeconds || highRefreshCount
-      ? `${Math.round(hotDurationSeconds)}초 / ${Math.round(highRefreshCount)}회`
-      : "-"
-  );
+
+  let hotStatusText = "-";
+  if (hotDurationSeconds || highRefreshCount) {
+    hotStatusText = `${Math.round(hotDurationSeconds)}초 / ${Math.round(highRefreshCount)}회`;
+  } else if (hotMatch) {
+    hotStatusText = `현재 HOT / 지속 ${Number(hotMatch.openMomentumScore || 0).toFixed(1)}`;
+  } else if (top) {
+    const hotMatched = top.hotMatched === true || top.isDirectHotCandidate === true || top.originalSource === "HOT";
+    hotStatusText = hotMatched ? "HOT 유입 / 현재순위 밖" : "일반 후보";
+  }
+  setOpenText("openHotDuration", hotStatusText);
+
   setOpenText(
     "openObservationCount",
-    observationCount ? `${Math.round(observationCount)}회` : "-"
+    observationCount
+      ? `${Math.round(observationCount)}회`
+      : (top ? "1회 이상 관찰" : "-")
   );
 
   if (selected) {
@@ -1982,32 +2121,52 @@ function renderOpenLiveStatus(payload = {}) {
     const qty = Number(selected.qty || 0);
     setOpenText(
       "openActualBuy",
-      `${selected.name || selected.code || "-"} / ${buyPrice ? buyPrice.toLocaleString() + "원" : "-"}${qty ? ` / ${qty.toLocaleString()}주` : ""}`
+      `${selected.name || selected.code || "-"}${buyPrice ? ` / ${buyPrice.toLocaleString()}원` : ""}${qty ? ` / ${qty.toLocaleString()}주` : ""}`
     );
   } else {
     setOpenText("openActualBuy", "아직 없음");
   }
 
-  const reason =
+  let reason =
+    tracking.decision ||
     selected?.selectionReason ||
+    top?.rejectReason ||
     top?.reason ||
     day.result?.sellReason ||
-    day.openSkipReason ||
-    (candidates.length
-      ? `후보 ${candidates.length}개를 30초 이상 반복 관찰하고 가격·거래량 지속성 및 HOT 유지강도가 가장 높은 종목을 선정합니다.`
-      : "아직 OPEN 후보가 저장되지 않았습니다.");
+    live.skipReason ||
+    "";
+
+  if (live.source === "LIVE") {
+    const scanText =
+      `현재 스캔 후보 ${Number(scan.candidateCount || 0)} / ` +
+      `평가 ${Number(scan.evaluatedCount || 0)} / ` +
+      `엄격통과 ${Number(scan.strictPassedCount || 0)} / ` +
+      `잠재 ${Number(scan.potentialCount || 0)}`;
+    const dailyText =
+      `오늘 누적 후보 ${Number(daily.candidateCount || 0)} / ` +
+      `평가 ${Number(daily.evaluatedCount || 0)} / ` +
+      `HOT유입 ${Number(daily.hotInputCount || 0)}`;
+    reason = reason ? `${reason} · ${scanText} · ${dailyText}` : `${scanText} · ${dailyText}`;
+  } else if (!reason) {
+    const candidates = live.candidates || [];
+    reason = candidates.length
+      ? `후보 ${candidates.length}개를 반복 관찰 중입니다.`
+      : "아직 OPEN 후보가 저장되지 않았습니다.";
+  }
 
   setOpenText("openLiveReason", reason);
   setOpenText(
     "openLiveUpdatedAt",
-    `갱신 ${formatShortTime(payload.updatedAt || day.lastCandidateScanAt || day.updatedAt || new Date().toLocaleTimeString("ko-KR"))}`
+    `갱신 ${formatShortTime(live.updatedAt || new Date().toLocaleTimeString("ko-KR"))}`
   );
 }
 
 async function loadOpenLiveStatus() {
   try {
+    // 실시간 운영상태 전용 API를 사용한다. 학습 API는 당일 후보 필드를 축약해서
+    // 대시보드에 '-'가 계속 표시될 수 있으므로 실시간 카드에는 사용하지 않는다.
     const res = await fetch(
-      "https://sytrader.duckdns.org/api/open-learning-summary",
+      "https://sytrader.duckdns.org/api/open-live-tracking",
       { cache: "no-store" }
     );
     const data = await res.json();
@@ -2021,13 +2180,16 @@ async function loadOpenLiveStatus() {
     setOpenText("openSelectionMode", "-");
     setOpenText("openTopCandidate", "-");
     setOpenText("openTopScore", "-");
+    setOpenText("openCandidateDecision", "-");
+    setOpenText("openRejectReason", "-");
+    setOpenText("openRejectTop", "-");
     setOpenText("openMomentumScore", "-");
     setOpenText("openPersistence", "-");
     setOpenText("openRecentMomentum", "-");
     setOpenText("openHotDuration", "-");
     setOpenText("openObservationCount", "-");
     setOpenText("openActualBuy", "-");
-    setOpenText("openLiveReason", `OPEN 학습 API 확인 필요 / ${err.message}`);
+    setOpenText("openLiveReason", `OPEN 실시간 API 확인 필요 / ${err.message}`);
     const badge = document.getElementById("openLiveMode");
     if (badge) {
       badge.className = "open-mode-badge open-mode-skip";
