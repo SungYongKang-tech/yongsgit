@@ -2284,6 +2284,117 @@ if (!response.ok) {
   }
 });
 
+/*
+ * WAVE 수급자료
+ * 키움 ka10060 종목별투자자기관별차트를 이용해 최근 외국인/기관 순매수를 반환한다.
+ * WAVE는 이 자료를 MONEY 20점 중 외국인·기관 수급 점수에 사용한다.
+ */
+app.get("/api/wave-investor-flow", async (req, res) => {
+  try {
+    const code = String(req.query.code || "").trim();
+    const days = Math.max(1, Math.min(10, Number(req.query.days || 5)));
+
+    if (!/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        ok: false,
+        message: "6자리 종목코드가 필요합니다."
+      });
+    }
+
+    const body = {
+      dt: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }).replace(/-/g, ""),
+      stk_cd: code,
+      amt_qty_tp: "1", // 금액
+      trde_tp: "0",    // 순매수
+      unit_tp: "1"     // 단주(금액 조회에서는 응답 단위가 백만원)
+    };
+
+    const requestFlow = async (token) => axios.post(
+      `${process.env.KIWOOM_BASE_URL}/api/dostk/chart`,
+      body,
+      {
+        headers: {
+          "Content-Type": "application/json;charset=UTF-8",
+          authorization: `Bearer ${token}`,
+          "api-id": "ka10060"
+        },
+        timeout: 12000
+      }
+    );
+
+    let token = getSavedToken();
+    let response = await requestFlow(token);
+    let data = response.data || {};
+
+    if (isTokenError(data)) {
+      console.log("[/api/wave-investor-flow] 토큰 만료 → 재발급 후 재조회", code);
+      token = await refreshKiwoomToken();
+      response = await requestFlow(token);
+      data = response.data || {};
+    }
+
+    if (Number(data.return_code || 0) !== 0 && data.return_msg) {
+      throw new Error(data.return_msg);
+    }
+
+    const rawRows = Array.isArray(data.stk_invsr_orgn_chart)
+      ? data.stk_invsr_orgn_chart
+      : [];
+
+    // 투자자 순매수는 음수 부호가 의미가 있으므로 기존 cleanNumber(부호 제거)를 사용하지 않는다.
+    const signedNumber = (value) => {
+      const number = Number(String(value ?? 0).replace(/,/g, "").replace(/^\+/, "").trim());
+      return Number.isFinite(number) ? number : 0;
+    };
+
+    const rows = rawRows
+      .slice(0, days)
+      .map(item => ({
+        date: String(item.dt || ""),
+        currentPrice: Math.abs(signedNumber(item.cur_prc || 0)),
+        previousDiff: signedNumber(item.pred_pre || 0),
+        tradingValueMillion: Math.abs(signedNumber(item.acc_trde_prica || 0)),
+        individualNetBuy: signedNumber(item.ind_invsr || 0),
+        foreignNetBuy: signedNumber(item.frgnr_invsr || 0),
+        institutionNetBuy: signedNumber(item.orgn || 0),
+        financialInvestment: signedNumber(item.fnnc_invt || 0),
+        insurance: signedNumber(item.insrnc || 0),
+        investmentTrust: signedNumber(item.invtrt || 0),
+        otherFinance: signedNumber(item.etc_fnnc || 0),
+        bank: signedNumber(item.bank || 0),
+        pensionEtc: signedNumber(item.penfnd_etc || 0),
+        privateFund: signedNumber(item.samo_fund || 0),
+        nation: signedNumber(item.natn || 0),
+        otherCorp: signedNumber(item.etc_corp || 0),
+        domesticForeign: signedNumber(item.natfor || 0)
+      }))
+      .filter(item => item.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return res.json({
+      ok: true,
+      code,
+      days,
+      count: rows.length,
+      unit: "백만원",
+      rows
+    });
+  } catch (error) {
+    console.error("[/api/wave-investor-flow 오류]", {
+      code: String(req.query.code || ""),
+      message: error.message,
+      status: error.response?.status,
+      detail: error.response?.data || null
+    });
+    return res.status(500).json({
+      ok: false,
+      message: "WAVE 외국인/기관 수급 조회 실패",
+      error: error.message,
+      detail: error.response?.data || null
+    });
+  }
+});
+
 const {
   startServerAutoTrader,
   runServerAutoBuyOnce,
@@ -2304,8 +2415,44 @@ const {
   loadOpenMarketData
 } = require("./open-market-data");
 
+const {
+  startWaveStrategy,
+  runWaveOnce,
+  loadWaveState,
+  getWaveSummary
+} = require("./wave-strategy");
+
 app.get("/api/paper-state", (req, res) => {
   res.json(loadState());
+});
+
+app.get("/api/wave-state", (req, res) => {
+  try {
+    res.json({ ok: true, ...loadWaveState() });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.get("/api/wave-summary", (req, res) => {
+  try {
+    res.json({ ok: true, ...getWaveSummary() });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.post("/api/wave-run-once", async (req, res) => {
+  try {
+    const result = await runWaveOnce();
+    res.json({
+      ok: result.ok === true,
+      reason: result.reason || null,
+      summary: result.state?.summary || getWaveSummary()
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
 });
 
 app.post("/api/paper-state/reset", (req, res) => {
@@ -5668,8 +5815,9 @@ app.listen(PORT, () => {
     );
   }
 
-  // 08:40 장전시장자료 → 09:00 OPEN → 이후 CORE/VOLUME 순서로 실행합니다.
+  // 08:40 장전시장자료 → 09:00 OPEN/WAVE → 이후 CORE/VOLUME도 함께 실행합니다.
   startOpenMarketData();
   startOpenStrategy();
   startServerAutoTrader();
+  startWaveStrategy();
 });

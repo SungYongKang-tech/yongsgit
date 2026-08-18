@@ -2,48 +2,48 @@
   "date": "2026-08-18",
   "changes": [
     {
-      "id": "SYQ-20260818-OPEN-ORDER-01",
+      "id": "SYQ-WAVE-20260818-001",
       "date": "2026-08-18",
-      "time": "09:28",
-      "file": "open-strategy.js",
-      "category": "OPEN 주문 안정화",
-      "title": "OPEN 내부 주문 통신오류 진단 및 안전 재시도",
-      "description": "내부 API 주소를 127.0.0.1로 고정하고 fetch failed 발생 시 err.cause·오류코드·주소를 기록한다. 첫 요청이 저장됐는지 상태파일을 먼저 확인한 뒤 미저장일 때만 0.8초 후 1회 재시도한다.",
-      "effectiveFrom": "수정파일 적용 후 PM2 재시작부터",
-      "verification": "다음 OPEN 매수요청에서 주문통신오류 상세정보, 주문복구확인 또는 주문재시도 후 매수완료 여부 확인"
+      "time": "19:30",
+      "file": "wave-strategy.js",
+      "category": "WAVE 신규전략",
+      "title": "WAVE 1.0 독립 모의매매 전략 추가",
+      "description": "HOT 누적이력과 OPEN 장전 우선종목을 WAVE WATCH 후보로 적재하고, WHY 30 / MONEY 20 / SECTOR 15 / TREND 10 / PULLBACK 15 / REBOUND 10 점수로 평가한다. 후보는 최소 1거래일 관찰 후 눌림과 재상승을 확인하며, 총점 65점·기초점수 35점·WHY 12점 이상에서 독립 가상계좌로 모의매수한다. 종목당 최초자산 10%, 최대 5종목, 하루 최대 2종목으로 시작한다. 손절 -5%, 수익보호·트레일링·최대보유기간 매도를 포함한다.",
+      "effectiveFrom": "server.js와 wave-strategy.js 배포 후 kiwwm-server 재시작 이후",
+      "verification": "재시작 직후 paper-state-wave.json 생성과 WAVE 후보 적재 확인. 다음 거래일 09:10 이후 WATCH/READY 평가, 09:20~14:50 모의매수 여부, 외국인·기관 수급점수 및 매도로그 확인"
     },
     {
-      "id": "SYQ-20260818-OPEN-FALLBACK-02",
+      "id": "SYQ-WAVE-20260818-002",
       "date": "2026-08-18",
-      "time": "09:28",
-      "file": "open-strategy.js",
-      "category": "OPEN 보완선정 안전장치",
-      "title": "직전 가격약화 후보의 보완매수 우회 차단",
-      "description": "매수 직전 가격약화·확인 중 하락·급등·지속성 부족으로 탈락한 후보는 보완선정에서 제외한다. HOT 출신 보완후보도 보완상승률 상한 10%를 적용하고 직전 표본 대비 -0.50% 이하 약화 시 차단한다.",
-      "effectiveFrom": "수정파일 적용 후 PM2 재시작부터",
-      "verification": "조비와 같은 직전 급락 후보가 OPEN 보완선정 로그에 다시 나타나지 않는지 확인"
-    },
-    {
-      "id": "SYQ-20260818-PRICE-QUEUE-03",
-      "date": "2026-08-18",
-      "time": "09:28",
+      "time": "19:30",
       "file": "server.js",
-      "category": "키움 API 부하 제어",
-      "title": "현재가 요청을 실제 단일 큐로 직렬화",
-      "description": "동시 요청이 같은 대기시간 후 한꺼번에 실행되던 기존 간격제어를 Promise 단일 큐로 교체해 ka10001 현재가 요청 사이에 최소 350ms 간격을 보장한다. 현재가 실패 로그에 큐 깊이도 기록한다.",
-      "effectiveFrom": "수정파일 적용 후 PM2 재시작부터",
-      "verification": "장초반 /api/price 2.5~8초 시간초과와 HOT 상세조회 실패 횟수, queueDepth 로그 확인"
+      "category": "WAVE 데이터/API",
+      "title": "키움 외국인·기관 수급 API와 WAVE 상태 API 연결",
+      "description": "키움 ka10060 종목별투자자기관별차트를 이용하는 /api/wave-investor-flow를 추가하고 외국인·기관 순매수의 음수 부호를 보존해 반환한다. /api/wave-state, /api/wave-summary, /api/wave-run-once를 추가하고 서버 시작 시 WAVE 전략을 함께 시작한다.",
+      "effectiveFrom": "server.js 배포 후 kiwwm-server 재시작 이후",
+      "verification": "/api/wave-investor-flow?code=005930&days=5 응답의 foreignNetBuy/institutionNetBuy 음수값 보존 확인, /api/wave-summary 정상응답 확인"
     },
     {
-      "id": "SYQ-20260818-HOT-LOAD-04",
+      "id": "SYQ-WAVE-20260818-003",
       "date": "2026-08-18",
-      "time": "09:28",
-      "file": "hot-scanner.js, server.js",
-      "category": "HOT 조회 안정화",
-      "title": "HOT 상세조회 부하와 외부 제한시간 충돌 완화",
-      "description": "HOT 상세보완을 상위 8종목에서 4종목으로 줄이고 나머지는 순위 API 원본값을 유지한다. 상세조회 제한을 5초, HOT 전체 제한을 40초로 조정하고 오류 cause 코드를 기록한다.",
-      "effectiveFrom": "수정파일 적용 후 PM2 재시작부터",
-      "verification": "HOT API 전체 처리시간이 40초 이내인지와 연속 fetch failed·API 응답시간초과 감소 여부 확인"
+      "time": "19:52",
+      "file": "wave-strategy.js",
+      "category": "WAVE 운영시간",
+      "title": "WAVE 장 시작 09:00 즉시 평가·모의매수 시작",
+      "description": "WAVE 후보평가 시작시각을 09:10에서 09:00으로, 신규 모의매수 시작시각을 09:20에서 09:00으로 앞당겼다. 반복 실행은 서버 재시작 시각 기준이 아니라 5분 정각(09:00, 09:05, 09:10...)에 맞춰 정렬하여 전날 저녁 재시작 후에도 다음 거래일 09:00에 첫 평가가 실행되도록 했다. 전일에 저장된 WATCH/READY 후보만 최소 1거래일 관찰조건을 충족할 수 있으므로 당일 신규 HOT 종목을 09:00에 추격매수하지 않는다.",
+      "effectiveFrom": "2026-08-18 저녁 배포 후 kiwwm-server 재시작 즉시. 다음 거래일 2026-08-19 09:00부터 적용",
+      "verification": "08:59~09:01 kiwwm-server-out.log에서 [WAVE] 후보/평가 로그 확인, /api/wave-summary에서 lastRunSummary.hhmm=09:00 전후 및 오늘매수 여부 확인"
+    },
+    {
+      "id": "SYQ-WAVE-20260818-004",
+      "date": "2026-08-18",
+      "time": "19:59",
+      "file": "performance.html / wave.html / wave.js",
+      "category": "WAVE 화면",
+      "title": "대시보드 WAVE 연결 버튼 및 WAVE 진행상황 전용 화면 추가",
+      "description": "SY Quant 대시보드 상단에 WAVE 버튼을 추가하고 별도 wave.html/wave.js 화면을 신규 작성했다. WAVE 전용 API(/api/wave-summary, /api/wave-state)를 30초마다 조회해 자산·실현/보유손익·WATCH/READY/보유/오늘매수, DISCOVERED→WATCH→READY→HOLD→PROTECT→SOLD/DROPPED 단계별 개수, 현재 보유종목, 상위 후보의 WHY/MONEY/SECTOR/TREND/PULLBACK/REBOUND 점수, 눌림폭·수급·뉴스, 최근 거래와 후보제외 사유를 표시한다.",
+      "effectiveFrom": "performance.html 교체 및 wave.html/wave.js 웹 경로 배포 즉시",
+      "verification": "대시보드 WAVE 버튼 클릭 시 wave.html 이동 확인. /api/wave-summary와 /api/wave-state 정상 응답 시 후보·보유·거래 카드와 30초 자동갱신 확인"
     }
   ]
 }

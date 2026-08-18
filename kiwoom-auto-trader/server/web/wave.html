@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>SY Quant WAVE</title>
+  <style>
+    * { box-sizing:border-box; }
+    body { margin:0; padding:12px; font-family:Arial,sans-serif; background:#111827; color:#f9fafb; }
+    .header { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+    h1 { margin:0; font-size:26px; line-height:1.2; white-space:nowrap; }
+    .actions { display:flex; gap:6px; }
+    button { border:0; border-radius:10px; padding:10px 12px; font-weight:800; cursor:pointer; color:#fff; background:#0f766e; }
+    .dashboard-btn { background:#2563eb; }
+    .status-line { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; color:#9ca3af; font-size:12px; margin-bottom:10px; }
+    .mode { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px; font-weight:800; background:#1e3a8a; color:#bfdbfe; }
+    .mode.live { background:#14532d; color:#bbf7d0; }
+    .mode.sell { background:#78350f; color:#fde68a; }
+    .mode.wait { background:#374151; color:#e5e7eb; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+    .metric { background:#1f2937; border-radius:12px; padding:9px 8px; min-height:68px; border:1px solid #374151; }
+    .label { color:#9ca3af; font-size:11px; font-weight:700; text-align:center; margin-bottom:6px; }
+    .value { font-size:18px; font-weight:900; text-align:right; word-break:keep-all; }
+    .plus { color:#f87171; }
+    .minus { color:#60a5fa; }
+    .section { margin-top:14px; }
+    .section h2 { margin:0 0 8px; font-size:17px; }
+    .flow { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
+    .flow-item { background:#1f2937; border-radius:10px; padding:8px 4px; text-align:center; border:1px solid #374151; }
+    .flow-item b { display:block; font-size:19px; margin-top:4px; }
+    .flow-item span { color:#9ca3af; font-size:10px; }
+    .list { display:flex; flex-direction:column; gap:9px; }
+    .card { background:#1f2937; border:1px solid #374151; border-radius:13px; padding:11px; }
+    .card-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .name { font-size:17px; font-weight:900; }
+    .sub { color:#9ca3af; font-size:11px; margin-top:3px; line-height:1.45; }
+    .score { font-size:23px; font-weight:900; text-align:right; }
+    .pill { display:inline-block; border-radius:999px; padding:5px 8px; font-size:11px; font-weight:800; margin-top:7px; background:#374151; }
+    .status-ready { background:#14532d; color:#bbf7d0; }
+    .status-watch { background:#1e3a8a; color:#bfdbfe; }
+    .status-hold { background:#78350f; color:#fde68a; }
+    .status-protect { background:#581c87; color:#e9d5ff; }
+    .status-sold { background:#374151; color:#e5e7eb; }
+    .status-dropped { background:#7f1d1d; color:#fecaca; }
+    .score-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:5px; margin-top:9px; }
+    .score-box { background:#111827; border-radius:9px; padding:7px 4px; text-align:center; }
+    .score-box span { display:block; font-size:10px; color:#9ca3af; margin-bottom:4px; }
+    .score-box b { font-size:14px; }
+    .detail-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:7px; }
+    .detail { background:#111827; border-radius:9px; padding:7px; }
+    .detail span { display:block; color:#9ca3af; font-size:10px; margin-bottom:4px; }
+    .detail b { font-size:13px; word-break:keep-all; }
+    .headline { margin-top:7px; padding:8px; border-radius:9px; background:#111827; color:#d1d5db; font-size:11px; line-height:1.5; }
+    .empty { color:#9ca3af; text-align:center; background:#1f2937; border-radius:12px; padding:18px; }
+    .error { color:#fecaca; background:#7f1d1d; border-radius:10px; padding:10px; font-size:12px; display:none; margin-bottom:10px; }
+    .legend { color:#9ca3af; font-size:11px; line-height:1.55; margin-top:7px; }
+    @media(min-width:800px){ body{max-width:760px;margin:0 auto;padding:18px;} }
+    @media(max-width:620px){
+      .header{align-items:flex-start;flex-wrap:wrap}.actions{width:100%}.actions button{flex:1}
+      .grid{grid-template-columns:repeat(2,1fr)}
+      .flow{grid-template-columns:repeat(4,1fr)}
+      .score-grid{grid-template-columns:repeat(3,1fr)}
+    }
+    @media(max-width:360px){ h1{font-size:23px}.value{font-size:16px}.detail-grid{grid-template-columns:repeat(2,1fr)} }
+  </style>
+</head>
+<body data-wave-page="1">
+  <div class="header">
+    <h1>🌊 WAVE 진행상황</h1>
+    <div class="actions">
+      <button id="refreshBtn">새로고침</button>
+      <button class="dashboard-btn" onclick="location.href='/performance.html'">대시보드</button>
+    </div>
+  </div>
+
+  <div id="errorBox" class="error"></div>
+
+  <div class="status-line">
+    <div><span id="waveMode" class="mode wait">상태 확인 중</span></div>
+    <div id="waveUpdatedAt">API 확인 중...</div>
+  </div>
+
+  <div class="grid">
+    <div class="metric"><div class="label">WAVE 자산</div><div class="value" id="equity">-</div></div>
+    <div class="metric"><div class="label">실현손익</div><div class="value" id="realizedProfit">-</div></div>
+    <div class="metric"><div class="label">보유손익</div><div class="value" id="unrealizedProfit">-</div></div>
+    <div class="metric"><div class="label">현금</div><div class="value" id="totalCash">-</div></div>
+    <div class="metric"><div class="label">WATCH</div><div class="value" id="watchCount">-</div></div>
+    <div class="metric"><div class="label">READY</div><div class="value" id="readyCount">-</div></div>
+    <div class="metric"><div class="label">보유</div><div class="value" id="holdingCount">-</div></div>
+    <div class="metric"><div class="label">오늘 매수</div><div class="value" id="todayBuyCount">-</div></div>
+  </div>
+
+  <div class="section">
+    <h2>진행 단계</h2>
+    <div class="flow">
+      <div class="flow-item"><span>발견</span><b id="flowDiscovered">0</b></div>
+      <div class="flow-item"><span>WATCH</span><b id="flowWatch">0</b></div>
+      <div class="flow-item"><span>READY</span><b id="flowReady">0</b></div>
+      <div class="flow-item"><span>HOLD</span><b id="flowHold">0</b></div>
+      <div class="flow-item"><span>PROTECT</span><b id="flowProtect">0</b></div>
+      <div class="flow-item"><span>SOLD</span><b id="flowSold">0</b></div>
+      <div class="flow-item"><span>제외</span><b id="flowDropped">0</b></div>
+    </div>
+    <div class="legend">DISCOVERED → WATCH → READY → HOLD → PROTECT → SOLD 순서로 진행합니다. 후보조건이 무너지면 DROPPED(제외)로 이동합니다.</div>
+  </div>
+
+  <div class="section">
+    <h2>현재 보유종목</h2>
+    <div id="holdingsBox" class="list"><div class="empty">보유종목 확인 중...</div></div>
+  </div>
+
+  <div class="section">
+    <h2>상위 WAVE 후보</h2>
+    <div id="candidateBox" class="list"><div class="empty">후보 평가 확인 중...</div></div>
+  </div>
+
+  <div class="section">
+    <h2>최근 WAVE 거래</h2>
+    <div id="tradesBox" class="list"><div class="empty">거래내역 확인 중...</div></div>
+  </div>
+
+  <div class="section">
+    <h2>최근 후보 제외</h2>
+    <div id="droppedBox" class="list"><div class="empty">제외후보 확인 중...</div></div>
+  </div>
+
+  <script>
+const API_BASE = "https://sytrader.duckdns.org";
+const REFRESH_MS = 30 * 1000;
+
+function n(value, fallback = 0) {
+  const x = Number(value);
+  return Number.isFinite(x) ? x : fallback;
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function won(value) {
+  return `${Math.round(n(value)).toLocaleString()}원`;
+}
+
+function signedWon(value) {
+  const x = Math.round(n(value));
+  return `${x > 0 ? "+" : ""}${x.toLocaleString()}원`;
+}
+
+function rate(value) {
+  const x = n(value);
+  return `${x > 0 ? "+" : ""}${x.toFixed(2)}%`;
+}
+
+function score(value) {
+  return Math.round(n(value));
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function setMoney(id, value, signed = false) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const x = n(value);
+  el.textContent = signed ? signedWon(x) : won(x);
+  el.classList.remove("plus", "minus");
+  if (signed) el.classList.add(x >= 0 ? "plus" : "minus");
+}
+
+function statusLabel(status) {
+  const s = String(status || "").toUpperCase();
+  return {
+    DISCOVERED: "발견",
+    WATCH: "관찰 중",
+    READY: "매수대기",
+    HOLD: "보유",
+    PROTECT: "수익보호",
+    SOLD: "매도완료",
+    DROPPED: "후보제외"
+  }[s] || s || "-";
+}
+
+function statusClass(status) {
+  const s = String(status || "").toUpperCase();
+  if (s === "READY") return "status-ready";
+  if (s === "WATCH" || s === "DISCOVERED") return "status-watch";
+  if (s === "HOLD") return "status-hold";
+  if (s === "PROTECT") return "status-protect";
+  if (s === "SOLD") return "status-sold";
+  if (s === "DROPPED") return "status-dropped";
+  return "";
+}
+
+function kstHHMM() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul", hourCycle: "h23", hour: "2-digit", minute: "2-digit", weekday: "short"
+  }).formatToParts(new Date());
+  const get = type => parts.find(p => p.type === type)?.value || "";
+  return { hhmm: `${get("hour")}:${get("minute")}`, weekday: get("weekday") };
+}
+
+function setOperatingMode(state = {}) {
+  const { hhmm, weekday } = kstHHMM();
+  const el = document.getElementById("waveMode");
+  if (!el) return;
+  const weekend = ["Sat", "Sun"].includes(weekday);
+  let text = "장외 대기";
+  let cls = "mode wait";
+  if (!weekend && hhmm >= "09:00" && hhmm <= "14:50") {
+    text = `평가·모의매수 중 · ${hhmm}`;
+    cls = "mode live";
+  } else if (!weekend && hhmm > "14:50" && hhmm <= "15:10") {
+    text = `후보평가·매도관리 · ${hhmm}`;
+    cls = "mode sell";
+  } else if (!weekend && hhmm > "15:10" && hhmm <= "15:20") {
+    text = `보유종목 매도관리 · ${hhmm}`;
+    cls = "mode sell";
+  }
+  el.className = cls;
+  el.textContent = text;
+  const last = state.lastRunAt || state.updatedAt || "-";
+  setText("waveUpdatedAt", `WAVE 마지막 실행 ${last} · 화면 30초 자동갱신`);
+}
+
+function renderFlow(watchlist = []) {
+  const counts = {};
+  for (const item of watchlist) {
+    const s = String(item.status || "DISCOVERED").toUpperCase();
+    counts[s] = (counts[s] || 0) + 1;
+  }
+  setText("flowDiscovered", counts.DISCOVERED || 0);
+  setText("flowWatch", counts.WATCH || 0);
+  setText("flowReady", counts.READY || 0);
+  setText("flowHold", counts.HOLD || 0);
+  setText("flowProtect", counts.PROTECT || 0);
+  setText("flowSold", counts.SOLD || 0);
+  setText("flowDropped", counts.DROPPED || 0);
+}
+
+function renderHoldings(holdings = []) {
+  const box = document.getElementById("holdingsBox");
+  if (!holdings.length) {
+    box.innerHTML = '<div class="empty">현재 WAVE 보유종목이 없습니다.</div>';
+    return;
+  }
+  box.innerHTML = holdings.map(item => {
+    const buy = n(item.buyPrice);
+    const cur = n(item.currentPrice || item.buyPrice);
+    const profit = buy > 0 ? ((cur - buy) / buy) * 100 : n(item.profitRate);
+    const maxProfit = n(item.maxProfitRate, buy > 0 ? ((n(item.highestPrice,cur)-buy)/buy)*100 : 0);
+    return `
+      <div class="card">
+        <div class="card-head">
+          <div><div class="name">${esc(item.name || item.code)}</div><div class="sub">${esc(item.code)} · 매수 ${esc(item.buyDate || "-")} · ${n(item.holdingTradingDays)}거래일</div></div>
+          <div class="score ${profit >= 0 ? "plus" : "minus"}">${rate(profit)}</div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail"><span>매수가</span><b>${won(buy)}</b></div>
+          <div class="detail"><span>현재가</span><b>${won(cur)}</b></div>
+          <div class="detail"><span>수량</span><b>${Math.round(n(item.qty)).toLocaleString()}주</b></div>
+          <div class="detail"><span>최고수익</span><b class="plus">${rate(maxProfit)}</b></div>
+          <div class="detail"><span>고점대비</span><b class="${n(item.drawdownFromHigh) >= 0 ? "plus" : "minus"}">${rate(item.drawdownFromHigh)}</b></div>
+          <div class="detail"><span>추세점수</span><b>${score(item.trendScore)}/10</b></div>
+        </div>
+        <span class="pill ${maxProfit >= 8 ? "status-protect" : "status-hold"}">${maxProfit >= 8 ? "PROTECT 관리" : "HOLD"}</span>
+      </div>`;
+  }).join("");
+}
+
+function candidateScoreCard(item) {
+  const a = item.lastAnalysis || {};
+  const why = a.why || {};
+  const money = a.money || {};
+  const sector = a.sector || {};
+  const trend = a.trend || {};
+  const pullback = a.pullback || {};
+  const rebound = a.rebound || {};
+  const total = n(a.totalScore);
+  const headlines = Array.isArray(why.headlines) ? why.headlines.filter(Boolean).slice(0,2) : [];
+  const flowText = money.flowAvailable
+    ? `외국인 ${n(money.foreignSum).toLocaleString()} / 기관 ${n(money.institutionSum).toLocaleString()}`
+    : "외국인·기관 수급 데이터 없음";
+  return `
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="name">${esc(item.name || item.code)}</div>
+          <div class="sub">${esc(item.code)} · 발견 ${esc(item.discoveredDate || "-")} · 관찰 ${n(a.ageTradingDays)}거래일</div>
+          <span class="pill ${statusClass(item.status)}">${statusLabel(item.status)}</span>
+        </div>
+        <div class="score">${score(total)}점</div>
+      </div>
+      <div class="score-grid">
+        <div class="score-box"><span>WHY</span><b>${score(why.score)}/30</b></div>
+        <div class="score-box"><span>MONEY</span><b>${score(money.score)}/20</b></div>
+        <div class="score-box"><span>SECTOR</span><b>${score(sector.score)}/15</b></div>
+        <div class="score-box"><span>TREND</span><b>${score(trend.score)}/10</b></div>
+        <div class="score-box"><span>눌림</span><b>${score(pullback.score)}/15</b></div>
+        <div class="score-box"><span>반등</span><b>${score(rebound.score)}/10</b></div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail"><span>현재가</span><b>${won(a.currentPrice || item.lastPrice)}</b></div>
+        <div class="detail"><span>기초점수</span><b>${score(a.foundationScore)}/65</b></div>
+        <div class="detail"><span>눌림폭</span><b class="${n(pullback.pullbackRate) >= 0 ? "plus" : "minus"}">${rate(pullback.pullbackRate)}</b></div>
+        <div class="detail"><span>당일상승</span><b class="${n(rebound.changeRate) >= 0 ? "plus" : "minus"}">${rate(rebound.changeRate)}</b></div>
+        <div class="detail"><span>재료등급</span><b>${esc(why.grade || "-")}</b></div>
+        <div class="detail"><span>수급</span><b>${esc(flowText)}</b></div>
+      </div>
+      ${headlines.length ? `<div class="headline">📰 ${headlines.map(esc).join("<br>· ")}</div>` : ""}
+      ${a.buyEligible ? '<div class="headline" style="color:#bbf7d0;">✅ 매수조건 충족 · 매수시간/보유한도 조건 확인</div>' : ''}
+    </div>`;
+}
+
+function renderCandidates(watchlist = []) {
+  const box = document.getElementById("candidateBox");
+  const rows = watchlist
+    .filter(x => ["DISCOVERED","WATCH","READY"].includes(String(x.status || "").toUpperCase()))
+    .sort((a,b) => n(b.lastAnalysis?.totalScore) - n(a.lastAnalysis?.totalScore))
+    .slice(0, 15);
+  box.innerHTML = rows.length ? rows.map(candidateScoreCard).join("") : '<div class="empty">현재 활성 WAVE 후보가 없습니다.</div>';
+}
+
+function renderTrades(tradeLogs = []) {
+  const box = document.getElementById("tradesBox");
+  const rows = tradeLogs.filter(x => String(x.type || "").startsWith("WAVE_")).slice(-12).reverse();
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty">아직 WAVE 모의거래가 없습니다.</div>';
+    return;
+  }
+  box.innerHTML = rows.map(item => {
+    const isBuy = item.type === "WAVE_BUY";
+    const p = n(item.profitRate);
+    return `
+      <div class="card">
+        <div class="card-head">
+          <div><div class="name">${esc(item.name || item.code)}</div><div class="sub">${esc(item.time || item.date || "-")} · ${esc(item.type)}</div></div>
+          <div class="score ${isBuy ? "" : (p >= 0 ? "plus" : "minus")}">${isBuy ? "BUY" : rate(p)}</div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail"><span>가격</span><b>${won(item.price)}</b></div>
+          <div class="detail"><span>수량</span><b>${Math.round(n(item.qty)).toLocaleString()}주</b></div>
+          <div class="detail"><span>${isBuy ? "매수금액" : "손익"}</span><b class="${!isBuy && p < 0 ? "minus" : (!isBuy ? "plus" : "")}">${isBuy ? won(item.amount) : signedWon(item.profit)}</b></div>
+        </div>
+        ${item.reason ? `<div class="headline">${esc(item.reason)}</div>` : ""}
+      </div>`;
+  }).join("");
+}
+
+function renderDropped(watchlist = []) {
+  const box = document.getElementById("droppedBox");
+  const rows = watchlist.filter(x => String(x.status || "").toUpperCase() === "DROPPED").slice(-10).reverse();
+  box.innerHTML = rows.length ? rows.map(item => `
+    <div class="card">
+      <div class="card-head"><div><div class="name">${esc(item.name || item.code)}</div><div class="sub">${esc(item.code)} · 발견 ${esc(item.discoveredDate || "-")}</div></div><span class="pill status-dropped">후보제외</span></div>
+      <div class="headline">${esc(item.dropReason || "제외 사유 미저장")}</div>
+    </div>`).join("") : '<div class="empty">최근 제외된 WAVE 후보가 없습니다.</div>';
+}
+
+function render(summary = {}, state = {}) {
+  setMoney("equity", summary.equity);
+  setMoney("realizedProfit", summary.realizedProfit, true);
+  setMoney("unrealizedProfit", summary.unrealizedProfit, true);
+  setMoney("totalCash", summary.totalCash);
+  setText("watchCount", `${n(summary.watchCount)}개`);
+  setText("readyCount", `${n(summary.readyCount)}개`);
+  setText("holdingCount", `${n(summary.holdingCount)}개`);
+  setText("todayBuyCount", `${n(summary.todayBuyCount)}개`);
+  setOperatingMode(state);
+  const watchlist = Array.isArray(state.watchlist) ? state.watchlist : [];
+  renderFlow(watchlist);
+  renderHoldings(Array.isArray(state.holdings) ? state.holdings : []);
+  renderCandidates(watchlist);
+  renderTrades(Array.isArray(state.tradeLogs) ? state.tradeLogs : []);
+  renderDropped(watchlist);
+}
+
+async function loadWave() {
+  const btn = document.getElementById("refreshBtn");
+  const errorBox = document.getElementById("errorBox");
+  if (btn) { btn.disabled = true; btn.textContent = "갱신 중..."; }
+  if (errorBox) { errorBox.style.display = "none"; errorBox.textContent = ""; }
+  try {
+    const [summaryRes, stateRes] = await Promise.all([
+      fetch(`${API_BASE}/api/wave-summary?t=${Date.now()}`, { cache:"no-store" }),
+      fetch(`${API_BASE}/api/wave-state?t=${Date.now()}`, { cache:"no-store" })
+    ]);
+    const [summary, state] = await Promise.all([summaryRes.json(), stateRes.json()]);
+    if (!summaryRes.ok || summary.ok === false) throw new Error(summary.message || `요약 API ${summaryRes.status}`);
+    if (!stateRes.ok || state.ok === false) throw new Error(state.message || `상태 API ${stateRes.status}`);
+    render(summary, state);
+  } catch (err) {
+    console.error("WAVE 화면 조회 오류", err);
+    if (errorBox) {
+      errorBox.textContent = `WAVE API 조회 오류: ${err.message}`;
+      errorBox.style.display = "block";
+    }
+    const mode = document.getElementById("waveMode");
+    if (mode) { mode.className = "mode wait"; mode.textContent = "API 확인 필요"; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "새로고침"; }
+  }
+}
+
+document.getElementById("refreshBtn")?.addEventListener("click", loadWave);
+loadWave();
+setInterval(loadWave, REFRESH_MS);
+
+</script>
+</body>
+</html>
