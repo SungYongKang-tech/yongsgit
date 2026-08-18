@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = process.env.SY_QUANT_API_BASE || "http://127.0.0.1:3000";
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 
@@ -27,7 +27,8 @@ const settings = {
   minTradeVolumeRatio: 75,
   minDayPositionRate: 30,
   // 순위 3종 병합과 상위 종목 상세보완 시간을 포함하되 무한대기는 차단한다.
-  requestTimeoutMs: 35 * 1000,
+  // 서버의 순위조회와 상위 상세보완이 정상 종료될 여유를 둔다.
+  requestTimeoutMs: 40 * 1000,
   emptyResultKeepMs: 90 * 1000,
   errorBackoffMaxMs: 60 * 1000,
 
@@ -763,7 +764,9 @@ async function runOnce() {
     console.error(
       "[HOT SCANNER 오류]",
       `${err.name === "AbortError" ? "API 응답 시간초과" : err.message} / ` +
-      `연속 ${consecutiveErrorCount}회`
+      `연속 ${consecutiveErrorCount}회 / ` +
+      `code ${err?.code || err?.cause?.code || "-"} / ` +
+      `cause ${err?.cause?.message || "-"}`
     );
     return false;
   } finally {

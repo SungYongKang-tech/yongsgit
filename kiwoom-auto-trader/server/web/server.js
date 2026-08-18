@@ -815,10 +815,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // 상승 초기의 가격·거래량 변화속도를 0으로 기록했다.
 const HOT_API_EARLY_CACHE_MS = 8 * 1000;
 const HOT_API_NORMAL_CACHE_MS = 15 * 1000;
-const HOT_DETAIL_ENRICH_LIMIT = 8;
+// 장초반 OPEN 현재가 조회와 겹칠 때 키움 API가 밀리지 않도록
+// HOT 상세보완은 상위 4종목까지만 수행한다. 나머지는 순위 API 원본값을 쓴다.
+const HOT_DETAIL_ENRICH_LIMIT = 4;
 const HOT_DETAIL_ENRICH_DELAY_MS = 400;
-const HOT_DETAIL_REQUEST_TIMEOUT_MS = 3 * 1000;
-const HOT_KIWOOM_PRICE_TIMEOUT_MS = 2500;
+const HOT_DETAIL_REQUEST_TIMEOUT_MS = 5 * 1000;
+const HOT_KIWOOM_PRICE_TIMEOUT_MS = 3500;
 const KIWOOM_PRICE_REQUEST_TIMEOUT_MS = 8 * 1000;
 const HOT_STALE_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 let hotApiCache = {
@@ -1572,6 +1574,12 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
     });
 
   } catch (err) {
+    console.error("[/api/core-paper-buy 오류]", {
+      message: err?.message || "알 수 없는 오류",
+      code: err?.code || err?.cause?.code || null,
+      cause: err?.cause?.message || null,
+      stack: err?.stack || null
+    });
     res.status(500).json({
       ok: false,
       message: err.message
@@ -1872,17 +1880,19 @@ async function fetchCurrentPriceFromKiwoom(code) {
 
   const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
 
-  const result = await axios.post(
-    url,
-    { stk_cd: code },
-    {
-      headers: {
-        "Content-Type": "application/json;charset=UTF-8",
-        authorization: `Bearer ${token}`,
-        "api-id": "ka10001"
-      },
-      timeout: KIWOOM_PRICE_REQUEST_TIMEOUT_MS
-    }
+  const result = await runQueuedKiwoomPriceRequest(() =>
+    axios.post(
+      url,
+      { stk_cd: code },
+      {
+        headers: {
+          "Content-Type": "application/json;charset=UTF-8",
+          authorization: `Bearer ${token}`,
+          "api-id": "ka10001"
+        },
+        timeout: KIWOOM_PRICE_REQUEST_TIMEOUT_MS
+      }
+    )
   );
 
   const data = result.data;
@@ -1942,17 +1952,48 @@ await new Promise((resolve) => setTimeout(resolve, 1200));
 
 const priceCache = {};
 let lastKiwoomPriceRequestAt = 0;
+let kiwoomPriceRequestQueue = Promise.resolve();
+let kiwoomPriceQueueDepth = 0;
 
-async function waitKiwoomPriceLimit() {
-  const minGapMs = 350;
-  const now = Date.now();
-  const waitMs = Math.max(0, minGapMs - (now - lastKiwoomPriceRequestAt));
+/*
+ * 기존 waitKiwoomPriceLimit은 동시에 들어온 여러 요청이 같은 시간만
+ * 기다린 뒤 한꺼번에 출발할 수 있었다. 아래 큐는 ka10001 요청을 실제로
+ * 한 건씩 실행해 최소 350ms 간격을 보장한다.
+ */
+async function runQueuedKiwoomPriceRequest(requestTask) {
+  kiwoomPriceQueueDepth++;
 
-  if (waitMs > 0) {
-    await new Promise(resolve => setTimeout(resolve, waitMs));
+  const execute = async () => {
+    const minGapMs = 350;
+    const now = Date.now();
+    const waitMs = Math.max(0, minGapMs - (now - lastKiwoomPriceRequestAt));
+
+    if (waitMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+    }
+
+    lastKiwoomPriceRequestAt = Date.now();
+    return requestTask();
+  };
+
+  const queuedRequest = kiwoomPriceRequestQueue
+    .catch(() => undefined)
+    .then(execute);
+
+  kiwoomPriceRequestQueue = queuedRequest.then(
+    () => undefined,
+    () => undefined
+  );
+
+  try {
+    return await queuedRequest;
+  } finally {
+    kiwoomPriceQueueDepth = Math.max(0, kiwoomPriceQueueDepth - 1);
   }
+}
 
-  lastKiwoomPriceRequestAt = Date.now();
+function getKiwoomPriceQueueDepth() {
+  return Number(kiwoomPriceQueueDepth || 0);
 }
 
 app.get("/api/price", async (req, res) => {
@@ -1979,20 +2020,20 @@ if (cached && Date.now() - cached.cachedAt <= 8000) {
 
     const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
 
-    await waitKiwoomPriceLimit();
-
-    let result = await axios.post(
-  url,
-  { stk_cd: code },
-  {
-    headers: {
-      "Content-Type": "application/json;charset=UTF-8",
-      authorization: `Bearer ${token}`,
-      "api-id": "ka10001"
-    },
-    timeout: priceRequestTimeoutMs
-  }
-);
+    let result = await runQueuedKiwoomPriceRequest(() =>
+      axios.post(
+        url,
+        { stk_cd: code },
+        {
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10001"
+          },
+          timeout: priceRequestTimeoutMs
+        }
+      )
+    );
 
 let data = result.data;
 
@@ -2001,17 +2042,19 @@ if (isTokenError(data)) {
 
   const newToken = await refreshKiwoomToken();
 
-  result = await axios.post(
-    url,
-    { stk_cd: code },
-    {
-      headers: {
-        "Content-Type": "application/json;charset=UTF-8",
-        authorization: `Bearer ${newToken}`,
-        "api-id": "ka10001"
-      },
-      timeout: priceRequestTimeoutMs
-    }
+  result = await runQueuedKiwoomPriceRequest(() =>
+    axios.post(
+      url,
+      { stk_cd: code },
+      {
+        headers: {
+          "Content-Type": "application/json;charset=UTF-8",
+          authorization: `Bearer ${newToken}`,
+          "api-id": "ka10001"
+        },
+        timeout: priceRequestTimeoutMs
+      }
+    )
   );
 
   data = result.data;
@@ -2065,7 +2108,8 @@ res.json(responseData);
     code,
     message: error.message,
     status: error.response?.status,
-    data: error.response?.data
+    data: error.response?.data,
+    queueDepth: getKiwoomPriceQueueDepth()
   });
 
   res.status(500).json({

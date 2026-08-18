@@ -594,10 +594,12 @@ holdingScoreHistoryMaxCount: 120,
   buyLoopMs: 60 * 1000,
   sellLoopMs: 10 * 1000,
 
+  // 동일 종목의 연속 중복진입만 제한한다. 다른 종목 매수는 막지 않는다.
   coreBuyCooldownMinutes: 10,
   volumeBuyCooldownMinutes: 10,
 
-  // 손실매도 직후 재진입 및 연속 손실 누적을 차단한다.
+  // 손실매도 직후 동일 종목 재진입만 제한한다.
+  // 전체 연속손실 방어는 maxDailyLossExitCount가 담당한다.
   lossExitBuyCooldownMinutes: 15,
   maxDailyLossExitCount: 4,
 
@@ -5493,39 +5495,50 @@ function checkStrategyDailyBuyLimit(state, strategyGroup) {
   };
 }
 
-function checkLossExitBuyCooldown(state) {
+function checkLossExitBuyCooldown(state, code) {
   const cooldownMinutes = Number(settings.lossExitBuyCooldownMinutes || 0);
   const lastLossExitAtMs = Number(state.lastLossExitAtMs || 0);
+  const lastLossExitCode = normalizeTradeCode(state.lastLossExitCode || "");
+  const targetCode = normalizeTradeCode(code || "");
 
   if (!cooldownMinutes || !lastLossExitAtMs) {
     return { blocked: false, reason: "최근 손실매도 없음" };
+  }
+
+  // 2026-08-18: 손실 1건이 다른 우수 후보까지 15분간 막지 않도록
+  // 손실 직후 쿨다운은 동일 종목에만 적용한다.
+  // 전체 연속손실 방어는 maxDailyLossExitCount가 별도로 담당한다.
+  if (!targetCode || !lastLossExitCode || targetCode !== lastLossExitCode) {
+    return {
+      blocked: false,
+      reason: `다른 종목 손실쿨다운 미적용 / 최근손실 ${lastLossExitCode || "-"}`
+    };
   }
 
   const diffMinutes = (Date.now() - lastLossExitAtMs) / 60000;
   if (diffMinutes < cooldownMinutes) {
     return {
       blocked: true,
-      reason: `손실매도 후 대기 ${diffMinutes.toFixed(1)}분 / 기준 ${cooldownMinutes}분`
+      reason: `동일종목 손실매도 후 대기 ${diffMinutes.toFixed(1)}분 / 기준 ${cooldownMinutes}분`
     };
   }
 
   return {
     blocked: false,
-    reason: `손실매도 후 대기 통과 ${diffMinutes.toFixed(1)}분`
+    reason: `동일종목 손실매도 후 대기 통과 ${diffMinutes.toFixed(1)}분`
   };
 }
 
 
-function getLastBuyTimeByStrategy(state, strategyGroup) {
-  const savedAt = Number(
-    state.lastBuyAtMsByStrategy?.[strategyGroup] || 0
-  );
-  if (savedAt > 0) return savedAt;
+function getLastBuyTimeByStrategyCode(state, strategyGroup, code) {
+  const targetCode = normalizeTradeCode(code || "");
+  if (!targetCode) return 0;
 
   const logs = (state.tradeLogs || [])
     .filter(log =>
       log.date === todayKey() &&
-      log.type === `${strategyGroup}_BUY`
+      log.type === `${strategyGroup}_BUY` &&
+      normalizeTradeCode(log.code) === targetCode
     )
     .sort((a, b) => {
       const at = Number(a.timestampMs || a.createdAtMs || a.buyTime || 0);
@@ -5536,20 +5549,25 @@ function getLastBuyTimeByStrategy(state, strategyGroup) {
   if (!logs.length) return 0;
 
   const last = logs[0];
-
   return Number(last.timestampMs || last.createdAtMs || last.buyTime || 0);
 }
 
-function isStrategyBuyCooldown(state, strategyGroup) {
+function isStrategyBuyCooldown(state, strategyGroup, code) {
   const cooldownMinutes = strategyGroup === "CORE"
     ? settings.coreBuyCooldownMinutes
     : settings.volumeBuyCooldownMinutes;
 
-  const lastBuyTime = getLastBuyTimeByStrategy(state, strategyGroup);
+  // 2026-08-18: 전략 전체 10분 잠금 대신 동일 종목에만 쿨다운 적용.
+  // 서로 다른 강한 후보는 최대보유/일일매수 한도 안에서 계속 진입할 수 있다.
+  const lastBuyTime = getLastBuyTimeByStrategyCode(
+    state,
+    strategyGroup,
+    code
+  );
 
   if (!lastBuyTime) return {
     blocked: false,
-    reason: "최근 매수 없음"
+    reason: "동일종목 최근 매수 없음"
   };
 
   const diffMinutes = (Date.now() - lastBuyTime) / 60000;
@@ -5557,13 +5575,13 @@ function isStrategyBuyCooldown(state, strategyGroup) {
   if (diffMinutes < cooldownMinutes) {
     return {
       blocked: true,
-      reason: `${strategyGroup} 매수쿨다운 ${diffMinutes.toFixed(1)}분 / 기준 ${cooldownMinutes}분`
+      reason: `${strategyGroup} 동일종목 매수쿨다운 ${diffMinutes.toFixed(1)}분 / 기준 ${cooldownMinutes}분`
     };
   }
 
   return {
     blocked: false,
-    reason: `${strategyGroup} 쿨다운 통과 ${diffMinutes.toFixed(1)}분`
+    reason: `${strategyGroup} 동일종목 쿨다운 통과 ${diffMinutes.toFixed(1)}분`
   };
 }
 
@@ -6299,7 +6317,7 @@ function judgeCoreBuy(state, item, price) {
     return { pass: false, reason: coreDailyLimit.reason };
   }
 
-  const coreLossCooldown = checkLossExitBuyCooldown(state);
+  const coreLossCooldown = checkLossExitBuyCooldown(state, item.code);
   if (coreLossCooldown.blocked) {
     return { pass: false, reason: coreLossCooldown.reason };
   }
@@ -6307,7 +6325,8 @@ function judgeCoreBuy(state, item, price) {
   const cooldown =
     isStrategyBuyCooldown(
       state,
-      "CORE"
+      "CORE",
+      item.code
     );
 
   if (cooldown.blocked) {
@@ -6693,7 +6712,7 @@ function judgeVolumeBuy(state, item, price) {
     return { pass: false, reason: volumeDailyLimit.reason };
   }
 
-  const volumeLossCooldown = checkLossExitBuyCooldown(state);
+  const volumeLossCooldown = checkLossExitBuyCooldown(state, item.code);
   if (volumeLossCooldown.blocked) {
     return { pass: false, reason: volumeLossCooldown.reason };
   }
@@ -6701,7 +6720,8 @@ function judgeVolumeBuy(state, item, price) {
   const cooldown =
     isStrategyBuyCooldown(
       state,
-      "VOLUME"
+      "VOLUME",
+      item.code
     );
 
   if (cooldown.blocked) {
@@ -7209,7 +7229,7 @@ async function paperBuy(
     return false;
   }
 
-  const lossCooldown = checkLossExitBuyCooldown(state);
+  const lossCooldown = checkLossExitBuyCooldown(state, item.code);
   if (lossCooldown.blocked) {
     console.log(`[${strategyGroup} 매수제외] ${lossCooldown.reason}`);
     return false;
@@ -10046,6 +10066,9 @@ async function start() {
   let sellRunning = false;
   let sellPending = false;
   let sellPendingSinceMs = 0;
+  let buyPending = false;
+  let buyPendingSinceMs = 0;
+  let buyPendingScheduled = false;
   let lastSellPriorityCheckAt = 0;
 
   let buyTimer = null;
@@ -10058,6 +10081,53 @@ async function start() {
       candidateWatchRunning ||
       sellRunning
     );
+  }
+
+  function reserveBuyCheck(reason) {
+    const wasAlreadyPending = buyPending;
+    buyPending = true;
+    if (!buyPendingSinceMs) {
+      buyPendingSinceMs = Date.now();
+    }
+
+    if (!wasAlreadyPending) {
+      console.log(
+        `[BUY LOOP] 다른 작업 진행중 / 종료 직후 점검 예약 / ${reason}`
+      );
+    }
+  }
+
+  function schedulePendingBuyIfReady() {
+    if (
+      !buyPending ||
+      buyPendingScheduled ||
+      isTraderBusy()
+    ) {
+      return;
+    }
+
+    buyPendingScheduled = true;
+
+    setImmediate(async () => {
+      buyPendingScheduled = false;
+
+      if (!buyPending || isTraderBusy()) {
+        return;
+      }
+
+      const pendingWaitMs = buyPendingSinceMs > 0
+        ? Math.max(0, Date.now() - buyPendingSinceMs)
+        : 0;
+
+      buyPending = false;
+      buyPendingSinceMs = 0;
+
+      console.log(
+        `[BUY LOOP] 예약점검 실행 / 대기 ${(pendingWaitMs / 1000).toFixed(1)}초`
+      );
+
+      await runBuySafely();
+    });
   }
 
   async function ensureSellPriorityBeforeLongTask(taskName) {
@@ -10094,18 +10164,14 @@ async function start() {
     }
 
     if (isTraderBusy()) {
-      console.log(
-        "[BUY LOOP] 다른 작업 진행중 / 이번 점검 건너뜀"
-      );
+      reserveBuyCheck("공통 busy");
       return;
     }
 
     await ensureSellPriorityBeforeLongTask("BUY");
 
     if (isTraderBusy()) {
-      console.log(
-        "[BUY LOOP] 매도 우선 점검 진행중 / 이번 점검 건너뜀"
-      );
+      reserveBuyCheck("매도 우선 점검");
       return;
     }
 
@@ -10125,6 +10191,8 @@ async function start() {
       if (sellPending && !candidateWatchRunning && !sellRunning) {
         await runSellSafely();
       }
+
+      schedulePendingBuyIfReady();
     }
   }
 
@@ -10166,6 +10234,8 @@ async function start() {
       if (sellPending && !buyRunning && !sellRunning) {
         await runSellSafely();
       }
+
+      schedulePendingBuyIfReady();
     }
   }
 
@@ -10215,6 +10285,7 @@ async function start() {
     } finally {
       sellRunning = false;
       lastSellPriorityCheckAt = Date.now();
+      schedulePendingBuyIfReady();
     }
   }
 

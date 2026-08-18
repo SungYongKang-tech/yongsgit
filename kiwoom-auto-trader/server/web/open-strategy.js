@@ -6,7 +6,8 @@ const OPEN_HISTORY_FILE = path.join(__dirname, "open-learning-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
-const API_BASE = "http://localhost:3000";
+// 같은 서버의 내부 API는 DNS 해석을 거치지 않도록 IPv4 loopback을 고정한다.
+const API_BASE = process.env.SY_QUANT_API_BASE || "http://127.0.0.1:3000";
 
 
 function sleepSync(ms) {
@@ -2131,17 +2132,62 @@ async function postJson(url, body, timeoutMs = 0) {
     try { data = text ? JSON.parse(text) : {}; }
     catch { data = { rawText: text }; }
     if (!res.ok || data.ok === false) {
-      throw new Error(data.message || data.error || `POST API 오류 ${res.status}`);
+      const apiError = new Error(
+        data.message || data.error || `POST API 오류 ${res.status}`
+      );
+      apiError.httpStatus = Number(res.status || 0);
+      apiError.responseData = data;
+      apiError.requestUrl = url;
+      throw apiError;
     }
     return data;
   } catch (err) {
     if (err?.name === "AbortError") {
-      throw new Error(`주문 API 응답시간 초과 ${Math.round(Number(timeoutMs) / 1000)}초`);
+      const timeoutError = new Error(
+        `주문 API 응답시간 초과 ${Math.round(Number(timeoutMs) / 1000)}초`
+      );
+      timeoutError.code = "ORDER_API_TIMEOUT";
+      timeoutError.requestUrl = url;
+      timeoutError.cause = err;
+      throw timeoutError;
     }
+    if (err && !err.requestUrl) err.requestUrl = url;
     throw err;
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function makeOpenRequestErrorDetail(err, extra = {}) {
+  const cause = err?.cause || {};
+  return {
+    ...extra,
+    name: err?.name || null,
+    message: err?.message || "알 수 없는 오류",
+    code: err?.code || cause?.code || null,
+    causeName: cause?.name || null,
+    causeMessage: cause?.message || null,
+    errno: cause?.errno || null,
+    syscall: cause?.syscall || null,
+    address: cause?.address || null,
+    port: cause?.port || null,
+    httpStatus: Number(err?.httpStatus || 0) || null,
+    requestUrl: err?.requestUrl || null
+  };
+}
+
+function isRetryableOpenOrderError(err) {
+  if (Number(err?.httpStatus || 0) > 0) return false;
+
+  const cause = err?.cause || {};
+  const text = [
+    err?.message,
+    err?.code,
+    cause?.message,
+    cause?.code
+  ].filter(Boolean).join(" ");
+
+  return /fetch failed|timeout|시간초과|시간 초과|ECONNRESET|ECONNREFUSED|EPIPE|UND_ERR|socket/i.test(text);
 }
 
 async function fetchPrice(code) {
@@ -4062,20 +4108,80 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
       `최종 ${buyDiagnostic.rankScore.toFixed(1)}점`
     );
 
-    const result = await postJson(
-      `${API_BASE}/api/core-paper-buy`,
-      {
-        code,
-        name,
-        price,
-        qty,
-        strategyGroup: "OPEN",
-        reason,
-        openDiagnostic: buyDiagnostic,
-        openMaxHoldingCount: Number(settings.openMaxHoldingCount || 5)
-      },
-      Number(settings.openBuyRequestTimeoutMs || 15000)
-    );
+    const orderUrl = `${API_BASE}/api/core-paper-buy`;
+    const orderBody = {
+      code,
+      name,
+      price,
+      qty,
+      strategyGroup: "OPEN",
+      reason,
+      openDiagnostic: buyDiagnostic,
+      openMaxHoldingCount: Number(settings.openMaxHoldingCount || 5)
+    };
+
+    let result = null;
+    let lastOrderError = null;
+
+    // 내부 HTTP 연결이 순간적으로 끊긴 경우에만 1회 재시도한다.
+    // 첫 요청이 실제 저장된 뒤 응답만 유실된 상황은 상태파일을 먼저 확인해
+    // 중복 주문을 만들지 않는다.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        result = await postJson(
+          orderUrl,
+          orderBody,
+          Number(settings.openBuyRequestTimeoutMs || 15000)
+        );
+        break;
+      } catch (err) {
+        lastOrderError = err;
+        console.error(
+          "[OPEN 주문통신오류]",
+          makeOpenRequestErrorDetail(err, { code, name, attempt })
+        );
+
+        const latestAfterError = loadState();
+        const savedHolding = (latestAfterError.holdings || []).find(
+          holding =>
+            normalizeOpenStockCode(holding.code) === code &&
+            String(holding.strategyGroup || "").toUpperCase() === "OPEN"
+        );
+        const savedBuyLog = (latestAfterError.tradeLogs || []).find(
+          log =>
+            String(log.date || "").slice(0, 10) === todayKey() &&
+            log.type === "OPEN_BUY" &&
+            normalizeOpenStockCode(log.code) === code
+        );
+
+        if (savedHolding && savedBuyLog) {
+          result = {
+            ok: true,
+            recoveredAfterResponseFailure: true,
+            totalCash: Number(latestAfterError.totalCash || 0),
+            openBuyCount: getOpenBuyCountToday(latestAfterError),
+            openCompleted: latestAfterError.openCompleted === true
+          };
+          replaceOpenStateSnapshot(state, latestAfterError);
+          console.log(
+            `[OPEN 주문복구확인] ${name}(${code}) / ` +
+            `응답은 실패했지만 상태파일에서 매수완료 확인`
+          );
+          break;
+        }
+
+        if (attempt >= 2 || !isRetryableOpenOrderError(err)) break;
+
+        console.log(
+          `[OPEN 주문재시도] ${name}(${code}) / 0.8초 후 1회 재시도`
+        );
+        await sleep(800);
+      }
+    }
+
+    if (!result?.ok) {
+      throw lastOrderError || new Error("OPEN 내부 주문 API 응답 없음");
+    }
 
     // 매수 API가 저장한 최신 상태를 다시 읽어 CORE 매도 등 동시 변경을 덮어쓰지 않는다.
     replaceOpenStateSnapshot(state, loadState());
@@ -4104,7 +4210,10 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
     return { ok: true, reason: "매수완료", result };
   } catch (err) {
     const failReason = err?.message || "알 수 없는 주문 오류";
-    console.log(`[OPEN 매수실패] ${name}(${code}) / ${failReason}`);
+    console.error(
+      `[OPEN 매수실패] ${name}(${code}) / ${failReason}`,
+      makeOpenRequestErrorDetail(err, { code, name })
+    );
     return { ok: false, reason: failReason };
   } finally {
     // 정리할 때도 최신 파일을 기준으로 하여 다른 루프의 상태 변경을 보존한다.
@@ -4325,7 +4434,7 @@ async function paperOpenSell(state, holding, price, signal) {
 function getOpenRejectCategory(reason = "") {
   const text = String(reason || "");
 
-  if (text.includes("첫 발견") || text.includes("확인 대기")) return "15초 강화확인 대기";
+  if (text.includes("첫 발견") || text.includes("확인 대기")) return "20초 강화확인 대기";
   if (text.includes("점수 약화") || text.includes("거래량 약화") || text.includes("가격 하락")) return "강화확인 실패";
   if (text.includes("발견점수 부족")) return "발견점수 부족";
   if (text.includes("상승률 부적합")) return "상승률 부적합";
@@ -4417,6 +4526,7 @@ let openScanSequence = 0;
 
 function makeOpenFallbackEntry(state, entry) {
   const { item, price } = entry;
+  const strictRejectReason = String(entry?.judged?.reason || "");
   const discoverScore = Number(item.discoverScore || 0);
   const changeRate = Number(
     item.changeRate || item.fluctuationRate || item.riseRate || item.rate || 0
@@ -4443,15 +4553,41 @@ function makeOpenFallbackEntry(state, entry) {
     ? ((Number(price) - firstPrice) / firstPrice) * 100
     : 0;
 
+  const samples = Array.isArray(history.samples) ? history.samples : [];
+  const previousSample = samples.length >= 2
+    ? samples[samples.length - 2]
+    : null;
+  const previousPrice = Number(previousSample?.price || 0);
+  const recentPriceDiffRate = previousPrice > 0
+    ? ((Number(price) - previousPrice) / previousPrice) * 100
+    : 0;
+
+  // 엄격판정에서 실제 상승흐름 훼손으로 탈락한 후보는 보완매수가
+  // 다시 살리지 않는다. 점수·거래량 기준 미달만 보완 대상으로 남긴다.
+  if (
+    /매수 직전 가격 약화|확인 중 가격 하락|확인 중 가격 급등|상승 지속성 부족|점수 약화|거래량 약화/.test(
+      strictRejectReason
+    )
+  ) return null;
+
   if (discoverScore < settings.openFallbackMinDiscoverScore) return null;
+  const configuredFallbackMax = Number(settings.openFallbackMaxChangeRate || 8.0);
   const fallbackMaxChangeRate = isHotSignal
-    ? Number(settings.openHotDirectMaxChangeRate || 15.0)
-    : Number(settings.openFallbackMaxChangeRate || 8.0);
+    ? Math.min(
+        Number(settings.openHotDirectMaxChangeRate || configuredFallbackMax),
+        configuredFallbackMax
+      )
+    : configuredFallbackMax;
   if (
     changeRate < settings.openFallbackMinChangeRate ||
     changeRate > fallbackMaxChangeRate
   ) return null;
-  if (volumeRatio < fallbackRequiredVolumeRatio) return null;
+  if (
+    volumeRatio < Math.max(
+      fallbackRequiredVolumeRatio,
+      Number(settings.openFallbackMinTradeVolumeRatio || 0)
+    )
+  ) return null;
   if (
     dayPosition < settings.openFallbackMinDayPositionRate ||
     dayPosition > settings.openFallbackMaxDayPositionRate
@@ -4461,6 +4597,9 @@ function makeOpenFallbackEntry(state, entry) {
     openPosition > settings.openFallbackMaxOpenPositionRate
   ) return null;
   if (firstPriceDiffRate < settings.openFallbackMaxFirstPriceDropRate) return null;
+  if (
+    recentPriceDiffRate <= Number(settings.openRecentPriceWeakBlockRate || -0.50)
+  ) return null;
 
   const momentum = calculateOpenMomentumStrength(history);
   if (
@@ -4507,7 +4646,7 @@ function makeOpenFallbackEntry(state, entry) {
       momentumScore: Number(momentum.momentumScore || 0),
       momentumReason: momentum.reason || "",
       confirmPriceRiseRate: firstPriceDiffRate,
-      recentPriceDiffRate: 0,
+      recentPriceDiffRate,
       confirmPriceBonus: 0,
       matchedSectors: [],
       requiredDiscoverScore: settings.openFallbackMinDiscoverScore,
@@ -4519,6 +4658,7 @@ function makeOpenFallbackEntry(state, entry) {
         `시간 ${fallbackVolumeRule.timeBase.toFixed(1)}%, 시장가산 +${fallbackVolumeRule.marketAdd.toFixed(1)}%p) / ` +
         `위치 ${dayPosition.toFixed(1)}% / ` +
         `시가대비 ${openPosition.toFixed(2)}% / 최초대비 ${firstPriceDiffRate.toFixed(2)}% / ` +
+        `직전대비 ${recentPriceDiffRate.toFixed(2)}% / ` +
         `${momentum.reason} / 최종점수 ${rankScore.toFixed(1)}`
     }
   };
