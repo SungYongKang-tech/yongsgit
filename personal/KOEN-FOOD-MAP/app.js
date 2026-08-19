@@ -1,4 +1,17 @@
-import { db, ref, onValue, set, remove, get, update, push } from "./firebase.js";
+import {
+  db,
+  auth,
+  ref,
+  onValue,
+  set,
+  remove,
+  get,
+  update,
+  push,
+  runTransaction,
+  signInWithEmailAndPassword,
+  signOut
+} from "./firebase.js";
 
 let restaurants = [];
 let ratingsByRestaurant = {};
@@ -10,6 +23,23 @@ let currentModalRestaurantId = null;
 let onlyMyRated = false;
 let onlyFavorites = false;
 let sortMode = "default"; // default | rating | popular
+
+const ADMIN_EMAIL_STORAGE_KEY = "koen_food_admin_email";
+
+function getSavedAdminEmail() {
+  return String(localStorage.getItem(ADMIN_EMAIL_STORAGE_KEY) || "").trim();
+}
+
+function saveAdminEmail(email) {
+  const value = String(email || "").trim();
+  if (value) localStorage.setItem(ADMIN_EMAIL_STORAGE_KEY, value);
+}
+
+async function isFirebaseAdmin(user) {
+  if (!user?.uid) return false;
+  const snap = await get(ref(db, `admins/${user.uid}`));
+  return snap.val() === true;
+}
 
 const categoryRow = document.getElementById("categoryRow");
 const subCategoryRow = document.getElementById("subCategoryRow");
@@ -36,6 +66,7 @@ const modalDesc = document.getElementById("modalDesc");
 const modalMapBtn = document.getElementById("modalMapBtn");
 
 const editRestaurantBtn = document.getElementById("editRestaurantBtn");
+const deleteRestaurantBtn = document.getElementById("deleteRestaurantBtn");
 const viewMode = document.getElementById("viewMode");
 const editMode = document.getElementById("editMode");
 const editName = document.getElementById("editName");
@@ -49,6 +80,26 @@ const saveRestaurantBtn = document.getElementById("saveRestaurantBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 const editTagCustom = document.getElementById("editTagCustom");
 const addEditTagBtn = document.getElementById("addEditTagBtn");
+
+const openAddRestaurantBtn = document.getElementById("openAddRestaurantBtn");
+const addRestaurantModal = document.getElementById("addRestaurantModal");
+const closeAddRestaurantModalBtn = document.getElementById("closeAddRestaurantModalBtn");
+const cancelAddRestaurantBtn = document.getElementById("cancelAddRestaurantBtn");
+const submitAddRestaurantBtn = document.getElementById("submitAddRestaurantBtn");
+const addName = document.getElementById("addName");
+const addCategory = document.getElementById("addCategory");
+const addCategoryCustom = document.getElementById("addCategoryCustom");
+const addSubCategoryPicker = document.getElementById("addSubCategoryPicker");
+const addSubCategoryCustom = document.getElementById("addSubCategoryCustom");
+const addSubCategoryCustomBtn = document.getElementById("addSubCategoryCustomBtn");
+const addAddress = document.getElementById("addAddress");
+const addMainMenus = document.getElementById("addMainMenus");
+const addMenuType = document.getElementById("addMenuType");
+const addTagPicker = document.getElementById("addTagPicker");
+const addTagCustom = document.getElementById("addTagCustom");
+const addTagCustomBtn = document.getElementById("addTagCustomBtn");
+const addDescription = document.getElementById("addDescription");
+const addWriter = document.getElementById("addWriter");
 
 const openRequestBtn = document.getElementById("openRequestBtn");
 const requestModal = document.getElementById("requestModal");
@@ -98,7 +149,6 @@ const SUB_CATEGORY_MAP = {
 const RATING_STORAGE_KEY = "koen_food_user_key";
 const FAVORITES_STORAGE_KEY = "koen_food_favorites";
 const REVIEW_MAX_LENGTH = 50;
-const ADMIN_PASSWORD_PATH = "config/adminPassword";
 
 function getUserKey() {
   let key = localStorage.getItem(RATING_STORAGE_KEY);
@@ -111,6 +161,8 @@ function getUserKey() {
 
 const userKey = getUserKey();
 let editRequestsById = {};
+let selectedAddSubCategories = [];
+let selectedAddTags = [];
 
 /* =========================
    찜(localStorage)
@@ -694,38 +746,6 @@ async function deleteMyRating(restaurantId) {
   }
 }
 
-async function verifyEditPassword() {
-  const inputPw = prompt("비밀번호를 입력하세요.");
-  if (inputPw === null) return false;
-
-  try {
-    const snap = await get(ref(db, ADMIN_PASSWORD_PATH));
-
-    if (!snap.exists()) {
-      alert("config/adminPassword 값이 없습니다. Firebase에 먼저 추가해주세요.");
-      return false;
-    }
-
-    const savedPw = String(snap.val() || "").trim();
-
-    if (!savedPw) {
-      alert("관리자 비밀번호가 비어 있습니다.");
-      return false;
-    }
-
-    if (String(inputPw).trim() !== savedPw) {
-      alert("비밀번호가 틀렸습니다.");
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error(error);
-    alert("비밀번호 확인 중 오류가 발생했습니다.");
-    return false;
-  }
-}
-
 function fillEditForm(restaurant) {
   if (!restaurant) return;
 
@@ -762,6 +782,7 @@ function setModalMode(mode) {
   if (modalUserRatingSection) modalUserRatingSection.style.display = isEdit ? "none" : "";
   if (modalFavoriteBtn) modalFavoriteBtn.style.display = isEdit ? "none" : "";
   if (modalReviewSection) modalReviewSection.style.display = isEdit ? "none" : "";
+  if (deleteRestaurantBtn) deleteRestaurantBtn.style.display = isEdit ? "none" : "";
 }
 
 async function saveRestaurantInfo() {
@@ -796,7 +817,9 @@ async function saveRestaurantInfo() {
   mainMenus,
   menuType,
   tags,
-  description
+  description,
+  updatedAt: Date.now(),
+  updatedBy: userKey
   });
 
     const target = restaurants.find(
@@ -852,6 +875,321 @@ modalDesc.textContent = description || "설명이 아직 없습니다.";
   } catch (error) {
     console.error(error);
     alert("식당 정보 저장 중 오류가 발생했습니다.");
+  }
+}
+
+
+/* =========================
+   누구나 새 맛집 등록
+========================= */
+function getAddCategoryValue() {
+  const selected = String(addCategory?.value || "").trim();
+  if (selected === "__custom__") {
+    return String(addCategoryCustom?.value || "").trim();
+  }
+  return selected;
+}
+
+function getAvailableCategories() {
+  return [...new Set([
+    ...Object.keys(SUB_CATEGORY_MAP),
+    ...restaurants.map((r) => String(r.category || "").trim()).filter(Boolean)
+  ])].sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function renderAddCategoryOptions() {
+  if (!addCategory) return;
+  const current = addCategory.value;
+  const categories = getAvailableCategories();
+  addCategory.innerHTML = [
+    `<option value="">대분류 선택</option>`,
+    ...categories.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`),
+    `<option value="__custom__">＋ 직접 입력</option>`
+  ].join("");
+
+  if (categories.includes(current)) addCategory.value = current;
+  if (current === "__custom__") addCategory.value = "__custom__";
+  toggleAddCategoryCustom();
+}
+
+function toggleAddCategoryCustom() {
+  if (!addCategoryCustom || !addCategory) return;
+  const isCustom = addCategory.value === "__custom__";
+  addCategoryCustom.classList.toggle("hidden", !isCustom);
+  if (!isCustom) addCategoryCustom.value = "";
+}
+
+function renderAddSubCategoryPicker() {
+  if (!addSubCategoryPicker) return;
+  const category = getAddCategoryValue();
+  const options = getSubCategoryOptionsByCategory(category);
+  const all = [...new Set([...options, ...selectedAddSubCategories])];
+
+  addSubCategoryPicker.innerHTML = all.length
+    ? all.map((item) => `
+        <button type="button" class="tag-chip add-sub-chip ${selectedAddSubCategories.includes(item) ? "active" : ""}" data-value="${escapeHtml(item)}">
+          ${escapeHtml(item)}
+        </button>
+      `).join("")
+    : `<div class="muted">중분류를 선택하거나 직접 입력해주세요.</div>`;
+
+  addSubCategoryPicker.querySelectorAll(".add-sub-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = String(btn.dataset.value || "").trim();
+      if (!value) return;
+      selectedAddSubCategories = selectedAddSubCategories.includes(value)
+        ? selectedAddSubCategories.filter((v) => v !== value)
+        : [...selectedAddSubCategories, value];
+      renderAddSubCategoryPicker();
+    });
+  });
+}
+
+function addCustomAddSubCategory() {
+  const value = String(addSubCategoryCustom?.value || "").trim();
+  if (!value) return;
+  if (!selectedAddSubCategories.includes(value)) selectedAddSubCategories.push(value);
+  if (addSubCategoryCustom) addSubCategoryCustom.value = "";
+  renderAddSubCategoryPicker();
+}
+
+function renderAddTagPicker() {
+  if (!addTagPicker) return;
+  const tags = [...new Set([
+    ...BASE_TAGS.filter((t) => t !== "전체"),
+    ...getSelectableTags(),
+    ...selectedAddTags
+  ])];
+
+  addTagPicker.innerHTML = tags.map((tag) => `
+    <button type="button" class="tag-chip add-tag-chip ${selectedAddTags.includes(tag) ? "active" : ""}" data-tag="${escapeHtml(tag)}">
+      ${escapeHtml(tag)}
+    </button>
+  `).join("");
+
+  addTagPicker.querySelectorAll(".add-tag-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tag = normalizeTagName(btn.dataset.tag);
+      if (!tag) return;
+      selectedAddTags = selectedAddTags.includes(tag)
+        ? selectedAddTags.filter((v) => v !== tag)
+        : [...selectedAddTags, tag];
+      renderAddTagPicker();
+    });
+  });
+}
+
+function addCustomAddTag() {
+  const value = normalizeTagName(String(addTagCustom?.value || "").trim());
+  if (!value) return;
+  if (!selectedAddTags.includes(value)) selectedAddTags.push(value);
+  if (!BASE_TAGS.includes(value)) BASE_TAGS.push(value);
+  if (addTagCustom) addTagCustom.value = "";
+  renderAddTagPicker();
+}
+
+function resetAddRestaurantForm() {
+  if (addName) addName.value = "";
+  if (addCategory) addCategory.value = "";
+  if (addCategoryCustom) addCategoryCustom.value = "";
+  if (addAddress) addAddress.value = "";
+  if (addMainMenus) addMainMenus.value = "";
+  if (addMenuType) addMenuType.value = "";
+  if (addDescription) addDescription.value = "";
+  if (addWriter) addWriter.value = "";
+  if (addSubCategoryCustom) addSubCategoryCustom.value = "";
+  if (addTagCustom) addTagCustom.value = "";
+  selectedAddSubCategories = [];
+  selectedAddTags = [];
+  renderAddCategoryOptions();
+  renderAddSubCategoryPicker();
+  renderAddTagPicker();
+}
+
+function openAddRestaurantModal() {
+  resetAddRestaurantForm();
+  addRestaurantModal?.classList.remove("hidden");
+  setTimeout(() => addName?.focus(), 0);
+}
+
+function closeAddRestaurantModal() {
+  addRestaurantModal?.classList.add("hidden");
+}
+
+async function allocateRestaurantId() {
+  const maxExistingId = restaurants.reduce(
+    (max, item) => Math.max(max, Number(item.id) || 0),
+    0
+  );
+  const counterRef = ref(db, "meta/restaurantLastId");
+  const result = await runTransaction(counterRef, (current) => {
+    const currentId = Number(current) || 0;
+    return Math.max(currentId, maxExistingId) + 1;
+  });
+  return Number(result.snapshot.val());
+}
+
+async function submitAddRestaurant() {
+  const name = String(addName?.value || "").trim();
+  const category = getAddCategoryValue();
+  const subCategory = [...new Set(selectedAddSubCategories)].join(", ");
+  const address = String(addAddress?.value || "").trim();
+  const mainMenus = String(addMainMenus?.value || "")
+    .split(",").map((v) => v.trim()).filter(Boolean);
+  const menuType = String(addMenuType?.value || "").trim();
+  const description = String(addDescription?.value || "").trim();
+  const writer = String(addWriter?.value || "").trim();
+  const tags = [...new Set(selectedAddTags.map(normalizeTagName).filter(Boolean))];
+
+  if (!name) {
+    alert("식당명을 입력해주세요.");
+    addName?.focus();
+    return;
+  }
+  if (!category) {
+    alert("대분류를 선택하거나 입력해주세요.");
+    (addCategory?.value === "__custom__" ? addCategoryCustom : addCategory)?.focus();
+    return;
+  }
+  if (!subCategory) {
+    alert("중분류를 하나 이상 선택하거나 입력해주세요.");
+    addSubCategoryCustom?.focus();
+    return;
+  }
+  if (!address) {
+    alert("주소를 입력해주세요.");
+    addAddress?.focus();
+    return;
+  }
+
+  const duplicate = restaurants.find((r) =>
+    String(r.name || "").trim().toLowerCase() === name.toLowerCase() &&
+    String(r.address || "").trim().toLowerCase() === address.toLowerCase()
+  );
+  if (duplicate) {
+    alert("같은 이름과 주소의 맛집이 이미 등록되어 있습니다.");
+    return;
+  }
+
+  submitAddRestaurantBtn.disabled = true;
+  submitAddRestaurantBtn.textContent = "등록 중...";
+
+  try {
+    const id = await allocateRestaurantId();
+    const now = Date.now();
+    const item = {
+      id,
+      name,
+      category,
+      subCategory,
+      tags,
+      baseRating: 0,
+      userRatingAvg: 0,
+      userRatingCount: 0,
+      mainMenus,
+      menuType,
+      address,
+      addressShort: address,
+      mapQuery: `${address} ${name}`.trim(),
+      description,
+      photoUrls: [],
+      reviews: [],
+      createdAt: now,
+      updatedAt: now,
+      createdBy: userKey,
+      createdByName: writer || "익명"
+    };
+
+    await set(ref(db, `restaurants/${id}`), item);
+    alert(`맛집이 등록되었습니다.\n${name}`);
+    closeAddRestaurantModal();
+  } catch (error) {
+    console.error(error);
+    alert("맛집 등록 중 오류가 발생했습니다. Firebase Rules 설정을 확인해주세요.");
+  } finally {
+    submitAddRestaurantBtn.disabled = false;
+    submitAddRestaurantBtn.textContent = "맛집 등록하기";
+  }
+}
+
+/* =========================
+   관리자 비밀번호로 식당 삭제
+   - 관리자 이메일은 소스코드에 저장하지 않음
+   - 최초 성공 시 이 브라우저 localStorage에만 저장
+========================= */
+async function deleteCurrentRestaurant() {
+  if (!currentModalRestaurantId) return;
+  const restaurant = restaurants.find(
+    (item) => Number(item.id) === Number(currentModalRestaurantId)
+  );
+  if (!restaurant) return;
+
+  let email = getSavedAdminEmail();
+  const hadSavedEmail = Boolean(email);
+
+  if (!email) {
+    const inputEmail = prompt(
+      "최초 1회만 Firebase 관리자 이메일을 입력하세요.\n로그인 성공 후 이 브라우저에만 저장됩니다."
+    );
+    if (inputEmail === null) return;
+    email = String(inputEmail || "").trim();
+    if (!email) {
+      alert("관리자 이메일을 입력해주세요.");
+      return;
+    }
+  }
+
+  const password = prompt(`'${restaurant.name}'을(를) 삭제하려면 관리자 비밀번호를 입력하세요.`);
+  if (password === null) return;
+  if (!String(password).trim()) {
+    alert("관리자 비밀번호를 입력해주세요.");
+    return;
+  }
+
+  const confirmed = confirm(`정말 '${restaurant.name}'을(를) 삭제하시겠습니까?\n별점과 후기도 함께 삭제됩니다.`);
+  if (!confirmed) return;
+
+  try {
+    const credential = await signInWithEmailAndPassword(auth, email, String(password));
+    const allowed = await isFirebaseAdmin(credential.user);
+    if (!allowed) {
+      alert("이 계정은 KOEN 맛집 삭제 관리자로 등록되어 있지 않습니다.");
+      return;
+    }
+
+    saveAdminEmail(email);
+
+    const id = String(currentModalRestaurantId);
+    await update(ref(db), {
+      [`restaurants/${id}`]: null,
+      [`restaurantRatings/${id}`]: null,
+      [`restaurantReviews/${id}`]: null
+    });
+    closeModal();
+    alert("맛집이 삭제되었습니다.");
+  } catch (error) {
+    console.error(error);
+    if (error?.code === "auth/invalid-credential" || error?.code === "auth/wrong-password" || error?.code === "auth/user-not-found" || error?.code === "auth/invalid-email") {
+      if (hadSavedEmail) {
+        const resetEmail = confirm(
+          "관리자 비밀번호가 틀렸거나 저장된 관리자 이메일이 다릅니다.\n관리자 이메일을 다시 설정하시겠습니까?"
+        );
+        if (resetEmail) {
+          localStorage.removeItem(ADMIN_EMAIL_STORAGE_KEY);
+          alert("저장된 관리자 이메일을 지웠습니다. 다음 삭제 시 이메일을 다시 입력하세요.");
+        } else {
+          alert("관리자 인증에 실패했습니다.");
+        }
+      } else {
+        alert("관리자 이메일 또는 비밀번호가 올바르지 않습니다.");
+      }
+    } else if (error?.code === "PERMISSION_DENIED" || String(error?.message || "").includes("PERMISSION_DENIED")) {
+      alert("삭제 권한이 없습니다. 관리자 UID와 database.rules.json 설정을 확인해주세요.");
+    } else {
+      alert("삭제 중 오류가 발생했습니다.");
+    }
+  } finally {
+    try { await signOut(auth); } catch (_) {}
   }
 }
 
@@ -1281,6 +1619,12 @@ function renderAll() {
   renderSortButtons();
   renderCards();
 
+  if (addRestaurantModal && !addRestaurantModal.classList.contains("hidden")) {
+    renderAddCategoryOptions();
+    renderAddSubCategoryPicker();
+    renderAddTagPicker();
+  }
+
   if (currentModalRestaurantId) {
     const current = restaurants.find(
       (item) => Number(item.id) === Number(currentModalRestaurantId)
@@ -1355,11 +1699,8 @@ if (editCategory) {
 }
 
 if (editRestaurantBtn) {
-  editRestaurantBtn.addEventListener("click", async () => {
+  editRestaurantBtn.addEventListener("click", () => {
     if (!currentModalRestaurantId) return;
-
-    const ok = await verifyEditPassword();
-    if (!ok) return;
 
     const restaurant = restaurants.find(
       (item) => Number(item.id) === Number(currentModalRestaurantId)
@@ -1369,6 +1710,11 @@ if (editRestaurantBtn) {
     fillEditForm(restaurant);
     setModalMode("edit");
   });
+}
+
+
+if (deleteRestaurantBtn) {
+  deleteRestaurantBtn.addEventListener("click", deleteCurrentRestaurant);
 }
 
 if (saveRestaurantBtn) {
@@ -1438,6 +1784,13 @@ onValue(ref(db, "restaurants"), (snapshot) => {
 
   restaurants.sort((a, b) => Number(a.id) - Number(b.id));
   renderAll();
+  if (addRestaurantModal && !addRestaurantModal.classList.contains("hidden")) {
+    const categoryValue = addCategory?.value || "";
+    renderAddCategoryOptions();
+    if (addCategory && categoryValue) addCategory.value = categoryValue;
+    renderAddSubCategoryPicker();
+    renderAddTagPicker();
+  }
 });
 
 onValue(ref(db, "restaurantRatings"), (snapshot) => {
@@ -1453,6 +1806,43 @@ onValue(ref(db, "restaurantReviews"), (snapshot) => {
 onValue(ref(db, "editRequests"), (snapshot) => {
   editRequestsById = snapshot.val() || {};
   renderMyRequests();
+});
+
+
+openAddRestaurantBtn?.addEventListener("click", openAddRestaurantModal);
+closeAddRestaurantModalBtn?.addEventListener("click", closeAddRestaurantModal);
+cancelAddRestaurantBtn?.addEventListener("click", closeAddRestaurantModal);
+submitAddRestaurantBtn?.addEventListener("click", submitAddRestaurant);
+addSubCategoryCustomBtn?.addEventListener("click", addCustomAddSubCategory);
+addTagCustomBtn?.addEventListener("click", addCustomAddTag);
+
+addCategory?.addEventListener("change", () => {
+  selectedAddSubCategories = [];
+  toggleAddCategoryCustom();
+  renderAddSubCategoryPicker();
+});
+
+addCategoryCustom?.addEventListener("input", () => {
+  selectedAddSubCategories = [];
+  renderAddSubCategoryPicker();
+});
+
+addSubCategoryCustom?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addCustomAddSubCategory();
+  }
+});
+
+addTagCustom?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addCustomAddTag();
+  }
+});
+
+addRestaurantModal?.addEventListener("click", (e) => {
+  if (e.target === addRestaurantModal) closeAddRestaurantModal();
 });
 
 function openRequestModal() {
@@ -1682,3 +2072,6 @@ setModalMode("view");
 renderMyRatedButton();
 renderFavoriteFilterButton();
 renderSortButtons();
+renderAddCategoryOptions();
+renderAddSubCategoryPicker();
+renderAddTagPicker();

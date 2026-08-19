@@ -1,4 +1,4 @@
-import { db } from "./firebase.js";
+import { db, auth, onAuthStateChanged } from "./firebase.js";
 import {
   ref,
   get,
@@ -367,4 +367,25 @@ async function loadReviews() {
 }
 
 refreshBtn.addEventListener("click", loadReviews);
-loadReviews();
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    alert("관리자 로그인 후 이용해주세요.");
+    window.location.href = "./admin.html";
+    return;
+  }
+
+  try {
+    const adminSnap = await get(ref(db, `admins/${user.uid}`));
+    if (adminSnap.val() !== true) {
+      alert("댓글 관리 권한이 없는 계정입니다.");
+      window.location.href = "./admin.html";
+      return;
+    }
+    loadReviews();
+  } catch (error) {
+    console.error(error);
+    alert("관리자 권한 확인 중 오류가 발생했습니다.");
+    window.location.href = "./admin.html";
+  }
+});

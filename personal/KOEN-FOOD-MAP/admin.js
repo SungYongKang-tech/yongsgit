@@ -1,8 +1,39 @@
-import { db, ref, onValue, set, remove, update, get } from "./firebase.js";
-
-const ADMIN_PASSWORD = "koen1234";
-const LOGIN_KEY = "koen_food_admin_login";
+import {
+  db,
+  auth,
+  ref,
+  onValue,
+  set,
+  remove,
+  update,
+  get,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "./firebase.js";
 const editRequestList = document.getElementById("editRequestList");
+
+const ADMIN_EMAIL_STORAGE_KEY = "koen_food_admin_email";
+
+function getSavedAdminEmail() {
+  return String(localStorage.getItem(ADMIN_EMAIL_STORAGE_KEY) || "").trim();
+}
+
+function saveAdminEmail(email) {
+  const value = String(email || "").trim();
+  if (value) localStorage.setItem(ADMIN_EMAIL_STORAGE_KEY, value);
+}
+
+async function isCurrentUserAdmin(user) {
+  if (!user?.uid) return false;
+  try {
+    const snap = await get(ref(db, `admins/${user.uid}`));
+    return snap.val() === true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
 
 let restaurants = [];
 let currentId = null;
@@ -42,6 +73,7 @@ const ratingOptions = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
 const loginSection = document.getElementById("loginSection");
 const adminSection = document.getElementById("adminSection");
+const adminEmail = document.getElementById("adminEmail");
 const adminPassword = document.getElementById("adminPassword");
 const loginBtn = document.getElementById("loginBtn");
 const loginMsg = document.getElementById("loginMsg");
@@ -89,14 +121,6 @@ function showLogin() {
 function showAdmin() {
   loginSection.classList.add("hidden");
   adminSection.classList.remove("hidden");
-}
-
-function setLoginState(isLoggedIn) {
-  localStorage.setItem(LOGIN_KEY, isLoggedIn ? "true" : "false");
-}
-
-function checkLoginState() {
-  return localStorage.getItem(LOGIN_KEY) === "true";
 }
 
 function parseCommaText(text) {
@@ -388,7 +412,11 @@ async function deleteRestaurant() {
   if (!ok) return;
 
   try {
-    await remove(ref(db, `restaurants/${id}`));
+    await update(ref(db), {
+      [`restaurants/${id}`]: null,
+      [`restaurantRatings/${id}`]: null,
+      [`restaurantReviews/${id}`]: null
+    });
     saveMsg.textContent = `삭제 완료: ${target.name}`;
     resetForm();
   } catch (error) {
@@ -398,15 +426,42 @@ async function deleteRestaurant() {
 }
 
 function bindEvents() {
-  loginBtn.addEventListener("click", () => {
-    const pw = adminPassword.value;
-    if (pw === ADMIN_PASSWORD) {
-      setLoginState(true);
-      showAdmin();
+  loginBtn.addEventListener("click", async () => {
+    const email = String(adminEmail?.value || "").trim();
+    const pw = String(adminPassword.value || "");
+
+    if (!email) {
+      loginMsg.textContent = "Firebase 관리자 이메일을 입력해주세요.";
+      adminEmail?.focus();
+      return;
+    }
+    if (!pw.trim()) {
+      loginMsg.textContent = "관리자 비밀번호를 입력해주세요.";
+      adminPassword.focus();
+      return;
+    }
+
+    loginBtn.disabled = true;
+    loginMsg.textContent = "관리자 권한 확인 중...";
+
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email, pw);
+      const allowed = await isCurrentUserAdmin(credential.user);
+      if (!allowed) {
+        await signOut(auth);
+        loginMsg.textContent = "이 계정은 KOEN 맛집 관리자로 등록되어 있지 않습니다.";
+        return;
+      }
+
+      saveAdminEmail(email);
       adminPassword.value = "";
       loginMsg.textContent = "";
-    } else {
-      loginMsg.textContent = "비밀번호가 올바르지 않습니다.";
+      showAdmin();
+    } catch (error) {
+      console.error(error);
+      loginMsg.textContent = "이메일 또는 비밀번호가 올바르지 않거나 관리자 설정이 필요합니다.";
+    } finally {
+      loginBtn.disabled = false;
     }
   });
 
@@ -414,9 +469,12 @@ function bindEvents() {
     if (e.key === "Enter") loginBtn.click();
   });
 
-  logoutBtn.addEventListener("click", () => {
-    setLoginState(false);
-    showLogin();
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      showLogin();
+    }
   });
 
   newBtn.addEventListener("click", () => {
@@ -651,11 +709,27 @@ function escapeHtml(str = "") {
 function init() {
   bindEvents();
 
-  if (checkLoginState()) {
-    showAdmin();
-  } else {
-    showLogin();
-  }
+  showLogin();
+  if (adminEmail) adminEmail.value = getSavedAdminEmail();
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      showLogin();
+      return;
+    }
+
+    const allowed = await isCurrentUserAdmin(user);
+    if (allowed) {
+      if (user.email) {
+        saveAdminEmail(user.email);
+        if (adminEmail) adminEmail.value = user.email;
+      }
+      showAdmin();
+    } else {
+      try { await signOut(auth); } catch (_) {}
+      showLogin();
+    }
+  });
 
   const reviewManageBtn = document.getElementById("reviewManageBtn");
 
