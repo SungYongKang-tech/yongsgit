@@ -105,7 +105,7 @@
       <div class="flow-item"><span>SOLD</span><b id="flowSold">0</b></div>
       <div class="flow-item"><span>제외</span><b id="flowDropped">0</b></div>
     </div>
-    <div class="legend">DISCOVERED → WATCH → READY → HOLD → PROTECT → SOLD 순서로 진행합니다. 후보조건이 무너지면 DROPPED(제외)로 이동합니다.</div>
+    <div class="legend">DISCOVERED → WATCH → READY → HOLD → PROTECT → SOLD 순서로 진행합니다. 장 마감 후 전체 후보를 사전분석하고 08:45에 다시 갱신한 뒤 09:00에는 READY·고득점 WATCH부터 우선 확인합니다. 후보조건이 무너지면 DROPPED(제외)로 이동합니다. 당일 +10% 이상 급등 종목은 READY로 올리지 않고 WATCH에서 다음 거래일 눌림을 기다립니다.</div>
   </div>
 
   <div class="section">
@@ -215,8 +215,12 @@ function setOperatingMode(state = {}) {
   const el = document.getElementById("waveMode");
   if (!el) return;
   const weekend = ["Sat", "Sun"].includes(weekday);
+  const lastRun = state.lastRunSummary || {};
+  const lastPhase = String(lastRun.phase || "");
+  const evaluated = n(lastRun.evaluated);
   let text = "장외 대기";
   let cls = "mode wait";
+
   if (!weekend && hhmm >= "09:00" && hhmm <= "14:50") {
     text = `평가·모의매수 중 · ${hhmm}`;
     cls = "mode live";
@@ -226,11 +230,21 @@ function setOperatingMode(state = {}) {
   } else if (!weekend && hhmm > "15:10" && hhmm <= "15:20") {
     text = `보유종목 매도관리 · ${hhmm}`;
     cls = "mode sell";
+  } else if (!weekend && hhmm >= "15:30" && lastPhase === "AFTER_CLOSE_PREP") {
+    text = `야간 사전분석 완료 · ${evaluated}개 평가`;
+    cls = "mode live";
+  } else if (!weekend && hhmm >= "08:45" && hhmm < "09:00") {
+    text = lastPhase === "MORNING_PREP"
+      ? `장전 사전분석 완료 · ${evaluated}개 평가`
+      : `장전 사전분석 대기 · ${hhmm}`;
+    cls = lastPhase === "MORNING_PREP" ? "mode live" : "mode wait";
   }
+
   el.className = cls;
   el.textContent = text;
   const last = state.lastRunAt || state.updatedAt || "-";
-  setText("waveUpdatedAt", `WAVE 마지막 실행 ${last} · 화면 30초 자동갱신`);
+  const phaseText = lastPhase ? ` · ${lastPhase}` : "";
+  setText("waveUpdatedAt", `WAVE 마지막 실행 ${last}${phaseText} · 화면 30초 자동갱신`);
 }
 
 function renderFlow(watchlist = []) {
@@ -318,6 +332,7 @@ function candidateScoreCard(item) {
         <div class="detail"><span>수급</span><b>${esc(flowText)}</b></div>
       </div>
       ${headlines.length ? `<div class="headline">📰 ${headlines.map(esc).join("<br>· ")}</div>` : ""}
+      ${a.readyBlockReason ? `<div class="headline" style="color:#fde68a;">⏳ ${esc(a.readyBlockReason)}</div>` : ""}
       ${a.buyEligible ? '<div class="headline" style="color:#bbf7d0;">✅ 매수조건 충족 · 매수시간/보유한도 조건 확인</div>' : ''}
     </div>`;
 }

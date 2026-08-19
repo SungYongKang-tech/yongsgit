@@ -6,6 +6,9 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
+const STRATEGY_VERSION = "1.4.1";
+const ANALYSIS_RULE_VERSION = "20260818-surge-ready-v2";
+
 const SETTINGS = {
   enabled: true,
   initialCapital: 100000000,
@@ -18,7 +21,17 @@ const SETTINGS = {
   evaluationStartTime: "09:00",
   evaluationEndTime: "15:10",
   loopMs: 5 * 60 * 1000,
-  evaluationBatchSize: 4,
+
+  // 장중에는 READY와 고득점 WATCH를 먼저 재평가한다.
+  liveEvaluationBatchSize: 12,
+
+  // 장 마감 후에는 활성 WATCH 전체를 1회 사전분석하고,
+  // 다음 거래일 08:45 이후 장전자료 갱신 후 다시 1회 전체 재평가한다.
+  afterClosePreEvalStartTime: "15:30",
+  morningPreEvalStartTime: "08:45",
+  morningPreEvalEndTime: "08:59",
+  preEvaluationBatchSize: 40,
+  retryUnevaluatedBatchSize: 8,
   evaluationDelayMs: 350,
 
   // 후보 유입: HOT 누적이력 + OPEN 장전 우선종목
@@ -38,6 +51,13 @@ const SETTINGS = {
   minWatchTradingDaysBeforeBuy: 1,
   pullbackMinScoreForReady: 7,
   reboundMinScoreForBuy: 6,
+
+  // READY는 "좋은 종목 + 실제 눌림" 상태여야 한다.
+  // 당일 +10% 이상 급등 중인 종목은 1차 파동(IMPULSE)으로 보고 READY로 올리지 않는다.
+  // 다음 거래일부터 상승률이 진정되고 눌림 조건이 유지되면 다시 READY 평가한다.
+  readyMaxCurrentDayChangeRate: 10.0,
+
+  // READY 종목도 실제 매수 순간 +7%를 넘으면 추격하지 않는다.
   currentDayMaxChangeRateForBuy: 7.0,
 
   // 모의매수: WAVE 전용 독립 가상계좌, 종목당 최초자산 10%
@@ -134,8 +154,9 @@ function writeJsonAtomic(filePath, data) {
 
 function createInitialState() {
   return {
-    version: 1,
+    version: 2,
     strategy: "WAVE",
+    strategyVersion: STRATEGY_VERSION,
     createdAt: nowText(),
     updatedAt: nowText(),
     initialCapital: SETTINGS.initialCapital,
@@ -145,6 +166,12 @@ function createInitialState() {
     tradeLogs: [],
     dailyStats: {},
     evaluationCursor: 0,
+    preEvaluation: {
+      afterCloseDate: null,
+      afterCloseAt: null,
+      morningDate: null,
+      morningAt: null
+    },
     lastRunAt: null,
     lastRunAtMs: 0,
     lastRunSummary: null
@@ -167,6 +194,32 @@ function loadState() {
     if (!Number.isFinite(Number(state.totalCash))) state.totalCash = SETTINGS.initialCapital;
     if (!Number.isFinite(Number(state.initialCapital))) state.initialCapital = SETTINGS.initialCapital;
     if (!Number.isFinite(Number(state.evaluationCursor))) state.evaluationCursor = 0;
+    if (!state.preEvaluation || typeof state.preEvaluation !== "object") {
+      state.preEvaluation = {
+        afterCloseDate: null,
+        afterCloseAt: null,
+        morningDate: null,
+        morningAt: null,
+        analysisRuleVersion: null
+      };
+    }
+
+    // 점수/READY 규칙이 바뀐 버전을 배포했는데 같은 날 이미 사전평가가 끝난 상태라면,
+    // 날짜만 보고 재평가를 건너뛰면 기존 READY 상태가 그대로 남을 수 있다.
+    // 분석규칙 버전이 달라지면 장마감/장전 사전평가 완료표시를 무효화하여
+    // 기존 WATCH/READY 후보 전체를 새 규칙으로 반드시 한 번 다시 계산한다.
+    if (state.preEvaluation.analysisRuleVersion !== ANALYSIS_RULE_VERSION) {
+      state.preEvaluation.afterCloseDate = null;
+      state.preEvaluation.afterCloseAt = null;
+      state.preEvaluation.morningDate = null;
+      state.preEvaluation.morningAt = null;
+      state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
+      state.preEvaluation.ruleRefreshPending = true;
+      state.preEvaluation.ruleRefreshReason = `분석규칙 변경 → ${ANALYSIS_RULE_VERSION}`;
+    }
+
+    state.version = 2;
+    state.strategyVersion = STRATEGY_VERSION;
     return state;
   } catch (err) {
     console.error("[WAVE 상태파일 읽기 오류]", err.message);
@@ -343,6 +396,8 @@ function ingestHotCandidates(state) {
 
 function ingestMarketPriorityCandidates(state) {
   const market = loadJson(OPEN_MARKET_FILE, {});
+  // 자정 이후 전일 open-market.json을 새 후보로 오인하지 않는다.
+  if (String(market.date || "") !== todayKey()) return 0;
   const priorityStocks = Array.isArray(market.priorityStocks) ? market.priorityStocks : [];
   let added = 0;
 
@@ -657,6 +712,23 @@ function findDiscoveryIndex(dailyItems = [], discoveredDate = todayKey()) {
   return index;
 }
 
+function getCompletedDailyItems(dailyItems = []) {
+  const items = [...dailyItems];
+  if (!items.length) return items;
+
+  const latestDate = String(items[items.length - 1]?.date || "").replace(/-/g, "");
+  const today = todayYmd();
+  const hhmm = getCurrentHHMM();
+  const liveSession = isKoreanWeekday() && hhmm >= "09:00" && hhmm <= "15:30";
+
+  // 장중이고 API 마지막 봉이 오늘 봉이면 미완성 거래량이므로 제외한다.
+  // 장 마감 후와 다음날 장전에는 마지막 봉이 완성봉이므로 그대로 사용한다.
+  if (liveSession && latestDate === today && items.length >= 2) {
+    return items.slice(0, -1);
+  }
+  return items;
+}
+
 function scorePullback(candidate, dailyItems = [], currentPrice = 0, trend = {}) {
   if (!dailyItems.length || !currentPrice) {
     return { score: 0, pullbackRate: 0, peakPrice: 0, pullbackLowPrice: 0, volumeContraction: 0 };
@@ -682,8 +754,8 @@ function scorePullback(candidate, dailyItems = [], currentPrice = 0, trend = {})
   else if (pullbackRate < -7 && pullbackRate >= -9) priceScore = 4;
   else if (pullbackRate >= -1 && pullbackRate <= 1.5) priceScore = 2;
 
-  // 현재일 거래량은 장중이면 미완성일 수 있어 직전 완료봉 중심으로 비교한다.
-  const completed = dailyItems.length >= 2 ? dailyItems.slice(0, -1) : dailyItems;
+  // 장중에는 오늘 미완성봉을 제외하고, 장 마감 후/장전에는 최신 완료봉까지 사용한다.
+  const completed = getCompletedDailyItems(dailyItems);
   const recent = completed.slice(-3);
   const recentVolume = recent.length ? avg(recent.map(item => toNumber(item.volume))) : 0;
   const peakVolume = completed.length ? Math.max(...completed.slice(-7).map(item => toNumber(item.volume))) : 0;
@@ -746,10 +818,26 @@ function scoreRebound(priceData = {}, dailyItems = []) {
 
 function tradingDaysSince(dailyItems = [], dateText = todayKey()) {
   const target = String(dateText || "").replace(/-/g, "");
-  const dates = dailyItems
-    .map(item => String(item.date || "").replace(/-/g, ""))
-    .filter(Boolean);
-  return Math.max(0, dates.filter(date => date >= target).length - 1);
+  const dates = Array.from(new Set(
+    dailyItems
+      .map(item => String(item.date || "").replace(/-/g, ""))
+      .filter(Boolean)
+  )).sort();
+
+  let count = Math.max(0, dates.filter(date => date >= target).length - 1);
+
+  // 09:00 직후 키움 일봉에 오늘 봉이 아직 생기지 않아도
+  // 전 거래일에 발견한 후보가 0거래일로 남아 매수자격을 잃지 않게 한다.
+  const today = todayYmd();
+  const hhmm = getCurrentHHMM();
+  const liveSession = isKoreanWeekday() && hhmm >= "09:00" && hhmm <= "15:30";
+  const hasTodayBar = dates.includes(today);
+
+  if (liveSession && target < today && !hasTodayBar) {
+    count += 1;
+  }
+
+  return count;
 }
 
 async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsItems, marketData) {
@@ -766,17 +854,32 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
   const totalScore = foundationScore + trend.score + pullback.score + rebound.score;
   const ageTradingDays = tradingDaysSince(dailyItems, candidate.discoveredDate);
 
-  const buyEligible =
+  // 당일 급등은 "반등"이 아니라 1차 급등(IMPULSE)일 수 있다.
+  // +10% 이상이면 READY를 막고 WATCH에서 다음 거래일 눌림을 기다린다.
+  const readyBlockedBySurge =
+    rebound.changeRate >= SETTINGS.readyMaxCurrentDayChangeRate;
+
+  const readyEligible =
     why.score >= SETTINGS.whyMinScore &&
     foundationScore >= SETTINGS.foundationMinScore &&
-    totalScore >= SETTINGS.totalBuyMinScore &&
     pullback.score >= SETTINGS.pullbackMinScoreForReady &&
+    !readyBlockedBySurge;
+
+  const readyBlockReason = readyBlockedBySurge
+    ? `당일 급등 ${rebound.changeRate >= 0 ? "+" : ""}${rebound.changeRate.toFixed(2)}% / ` +
+      `READY 기준 +${SETTINGS.readyMaxCurrentDayChangeRate.toFixed(0)}% 이상·눌림 대기`
+    : null;
+
+  const buyEligible =
+    readyEligible &&
+    totalScore >= SETTINGS.totalBuyMinScore &&
     rebound.score >= SETTINGS.reboundMinScoreForBuy &&
     rebound.changeRate <= SETTINGS.currentDayMaxChangeRateForBuy &&
     pullback.pullbackRate >= -9.5 &&
     ageTradingDays >= SETTINGS.minWatchTradingDaysBeforeBuy;
 
   return {
+    analysisRuleVersion: ANALYSIS_RULE_VERSION,
     checkedAt: nowText(),
     checkedAtMs: Date.now(),
     currentPrice,
@@ -789,6 +892,9 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
     foundationScore,
     totalScore,
     ageTradingDays,
+    readyEligible,
+    readyBlockedBySurge,
+    readyBlockReason,
     buyEligible,
     buyReason: buyEligible
       ? `WAVE 매수조건 충족 / WHY ${why.score} MONEY ${money.score} SECTOR ${sector.score} / ` +
@@ -810,6 +916,16 @@ function isBuyTime() {
 function isSellCheckTime() {
   const hhmm = getCurrentHHMM();
   return isKoreanWeekday() && hhmm >= SETTINGS.sellCheckStartTime && hhmm <= SETTINGS.sellCheckEndTime;
+}
+
+function getWaveRunPhase() {
+  if (!isKoreanWeekday()) return "OFF";
+  const hhmm = getCurrentHHMM();
+  if (hhmm >= SETTINGS.evaluationStartTime && hhmm <= SETTINGS.evaluationEndTime) return "LIVE";
+  if (hhmm >= SETTINGS.afterClosePreEvalStartTime) return "AFTER_CLOSE_PREP";
+  if (hhmm >= SETTINGS.morningPreEvalStartTime && hhmm <= SETTINGS.morningPreEvalEndTime) return "MORNING_PREP";
+  if (hhmm > SETTINGS.evaluationEndTime && hhmm <= SETTINGS.sellCheckEndTime) return "SELL_ONLY";
+  return "OFF";
 }
 
 function paperBuy(state, candidate, analysis) {
@@ -1062,14 +1178,54 @@ function trimWatchlist(state) {
   state.watchlist = [...active.slice(0, SETTINGS.maxWatchCount), ...closed];
 }
 
-async function evaluateWatchCandidates(state) {
-  const candidates = state.watchlist
-    .filter(item => ["DISCOVERED", "WATCH", "READY"].includes(item.status))
-    .sort((a, b) => toNumber(a.lastEvaluatedAtMs) - toNumber(b.lastEvaluatedAtMs));
+async function evaluateWatchCandidates(state, options = {}) {
+  const mode = String(options.mode || "LIVE").toUpperCase();
+  const active = state.watchlist
+    .filter(item => ["DISCOVERED", "WATCH", "READY"].includes(item.status));
 
-  if (!candidates.length) return { evaluated: 0, ready: 0, bought: 0 };
+  if (!active.length) return { evaluated: 0, ready: 0, bought: 0, attempted: 0, mode };
 
-  const batch = candidates.slice(0, SETTINGS.evaluationBatchSize);
+  let candidates = [...active];
+
+  if (options.onlyUnevaluated === true) {
+    candidates = candidates.filter(item => !item.lastAnalysis);
+  }
+
+  if (mode === "LIVE") {
+    // 장중은 READY를 최우선, 그 다음 사전분석 총점/기초점수가 높은 WATCH 순으로 본다.
+    candidates.sort((a, b) => {
+      const statusRank = status => status === "READY" ? 3 : status === "WATCH" ? 2 : 1;
+      const statusDiff = statusRank(b.status) - statusRank(a.status);
+      if (statusDiff !== 0) return statusDiff;
+
+      const totalDiff = toNumber(b.lastAnalysis?.totalScore) - toNumber(a.lastAnalysis?.totalScore);
+      if (totalDiff !== 0) return totalDiff;
+
+      const foundationDiff = toNumber(b.lastAnalysis?.foundationScore) - toNumber(a.lastAnalysis?.foundationScore);
+      if (foundationDiff !== 0) return foundationDiff;
+
+      const pullbackDiff = toNumber(b.lastAnalysis?.pullback?.score) - toNumber(a.lastAnalysis?.pullback?.score);
+      if (pullbackDiff !== 0) return pullbackDiff;
+
+      return toNumber(b.hotScore) - toNumber(a.hotScore);
+    });
+  } else {
+    // 사전분석은 미평가 후보를 먼저 처리하고, 나머지는 기존 점수 높은 순으로 갱신한다.
+    candidates.sort((a, b) => {
+      const noAnalysisDiff = Number(!b.lastAnalysis) - Number(!a.lastAnalysis);
+      if (noAnalysisDiff !== 0) return noAnalysisDiff;
+      return (
+        toNumber(b.lastAnalysis?.totalScore) - toNumber(a.lastAnalysis?.totalScore) ||
+        toNumber(b.hotScore) - toNumber(a.hotScore)
+      );
+    });
+  }
+
+  const defaultBatchSize = mode === "LIVE"
+    ? SETTINGS.liveEvaluationBatchSize
+    : SETTINGS.preEvaluationBatchSize;
+  const batchSize = Math.max(1, Number(options.batchSize || defaultBatchSize));
+  const batch = candidates.slice(0, batchSize);
   const marketData = loadJson(OPEN_MARKET_FILE, {});
   let evaluated = 0;
   let ready = 0;
@@ -1094,26 +1250,41 @@ async function evaluateWatchCandidates(state) {
       candidate.lastAnalysis = analysis;
       candidate.lastEvaluatedAt = analysis.checkedAt;
       candidate.lastEvaluatedAtMs = analysis.checkedAtMs;
+      candidate.lastEvaluationMode = mode;
       candidate.status = candidate.status === "DISCOVERED" ? "WATCH" : candidate.status;
 
-      const foundationReady =
-        analysis.why.score >= SETTINGS.whyMinScore &&
-        analysis.foundationScore >= SETTINGS.foundationMinScore &&
-        analysis.pullback.score >= SETTINGS.pullbackMinScoreForReady;
+      const foundationReady = analysis.readyEligible === true;
 
       if (foundationReady && candidate.status !== "READY") {
         candidate.status = "READY";
         candidate.readyAt = nowText();
+        candidate.readyBlockReason = null;
+        candidate.readyBlockedAt = null;
         console.log(
           `[WAVE READY] ${candidate.name} / 총 ${analysis.totalScore} / ` +
           `WHY ${analysis.why.score} MONEY ${analysis.money.score} SECTOR ${analysis.sector.score} / ` +
-          `눌림 ${analysis.pullback.pullbackRate.toFixed(2)}%`
+          `눌림 ${analysis.pullback.pullbackRate.toFixed(2)}% / 당일 ${analysis.rebound.changeRate.toFixed(2)}% / 모드 ${mode}`
         );
+      } else if (!foundationReady && candidate.status === "READY") {
+        // READY는 현재 조건을 의미하므로 급등 재발/기초조건 약화 시 WATCH로 되돌린다.
+        candidate.status = "WATCH";
+        candidate.readyBlockReason = analysis.readyBlockReason ||
+          `READY 조건 재확인 필요 / WHY ${analysis.why.score} / 기초 ${analysis.foundationScore} / 눌림 ${analysis.pullback.score}`;
+        candidate.readyBlockedAt = nowText();
+        console.log(
+          `[WAVE READY 보류] ${candidate.name} / ${candidate.readyBlockReason} / 모드 ${mode}`
+        );
+      } else if (!foundationReady && analysis.readyBlockReason) {
+        candidate.readyBlockReason = analysis.readyBlockReason;
+        candidate.readyBlockedAt = nowText();
+      } else if (foundationReady) {
+        candidate.readyBlockReason = null;
+        candidate.readyBlockedAt = null;
       }
 
       if (candidate.status === "READY") ready++;
 
-      if (analysis.buyEligible && isBuyTime()) {
+      if (mode === "LIVE" && analysis.buyEligible && isBuyTime()) {
         if (paperBuy(state, candidate, analysis)) bought++;
       }
 
@@ -1123,13 +1294,14 @@ async function evaluateWatchCandidates(state) {
     } catch (err) {
       candidate.lastError = err.message;
       candidate.lastErrorAt = nowText();
-      console.log(`[WAVE 후보평가 실패] ${candidate.name}(${candidate.code}) / ${err.message}`);
+      candidate.lastEvaluationMode = mode;
+      console.log(`[WAVE 후보평가 실패] ${candidate.name}(${candidate.code}) / ${err.message} / 모드 ${mode}`);
     }
 
     await sleep(SETTINGS.evaluationDelayMs);
   }
 
-  return { evaluated, ready, bought };
+  return { evaluated, ready, bought, attempted: batch.length, mode };
 }
 
 async function checkAllHoldings(state) {
@@ -1202,13 +1374,64 @@ async function runWaveOnce() {
     const priorityAdded = ingestMarketPriorityCandidates(state);
 
     let sold = 0;
-    let evaluation = { evaluated: 0, ready: 0, bought: 0 };
+    let evaluation = { evaluated: 0, ready: 0, bought: 0, attempted: 0, mode: "OFF" };
+    const phase = getWaveRunPhase();
 
     if (isKoreanWeekday()) {
       sold = await checkAllHoldings(state);
-      const hhmm = getCurrentHHMM();
-      if (hhmm >= SETTINGS.evaluationStartTime && hhmm <= SETTINGS.evaluationEndTime) {
-        evaluation = await evaluateWatchCandidates(state);
+
+      if (phase === "LIVE") {
+        evaluation = await evaluateWatchCandidates(state, {
+          mode: "LIVE",
+          batchSize: SETTINGS.liveEvaluationBatchSize
+        });
+      } else if (phase === "AFTER_CLOSE_PREP") {
+        const active = state.watchlist.filter(item => ["DISCOVERED", "WATCH", "READY"].includes(item.status));
+        const firstPassToday = state.preEvaluation.afterCloseDate !== todayKey();
+        const unevaluated = active.filter(item => !item.lastAnalysis);
+
+        if (firstPassToday || unevaluated.length > 0) {
+          evaluation = await evaluateWatchCandidates(state, {
+            mode: "AFTER_CLOSE_PREP",
+            batchSize: firstPassToday
+              ? SETTINGS.preEvaluationBatchSize
+              : SETTINGS.retryUnevaluatedBatchSize,
+            onlyUnevaluated: !firstPassToday
+          });
+          state.preEvaluation.afterCloseDate = todayKey();
+          state.preEvaluation.afterCloseAt = nowText();
+          state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
+          state.preEvaluation.ruleRefreshPending = false;
+          console.log(
+            `[WAVE 야간사전평가] 시도 ${evaluation.attempted} / 완료 ${evaluation.evaluated} / ` +
+            `READY ${state.watchlist.filter(item => item.status === "READY").length}`
+          );
+        }
+      } else if (phase === "MORNING_PREP") {
+        const active = state.watchlist.filter(item => ["DISCOVERED", "WATCH", "READY"].includes(item.status));
+        const firstPassToday = state.preEvaluation.morningDate !== todayKey();
+        const unevaluated = active.filter(item => !item.lastAnalysis);
+
+        if (firstPassToday || unevaluated.length > 0) {
+          // 08:40에 갱신된 open-market 데이터를 반영하기 위해 장전에는 활성 후보 전체를 다시 본다.
+          dailyCache.clear();
+          flowCache.clear();
+          evaluation = await evaluateWatchCandidates(state, {
+            mode: "MORNING_PREP",
+            batchSize: firstPassToday
+              ? SETTINGS.preEvaluationBatchSize
+              : SETTINGS.retryUnevaluatedBatchSize,
+            onlyUnevaluated: !firstPassToday
+          });
+          state.preEvaluation.morningDate = todayKey();
+          state.preEvaluation.morningAt = nowText();
+          state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
+          state.preEvaluation.ruleRefreshPending = false;
+          console.log(
+            `[WAVE 장전사전평가] 시도 ${evaluation.attempted} / 완료 ${evaluation.evaluated} / ` +
+            `READY ${state.watchlist.filter(item => item.status === "READY").length}`
+          );
+        }
       }
     }
 
@@ -1222,13 +1445,14 @@ async function runWaveOnce() {
       priorityAdded,
       ...evaluation,
       sold,
+      phase,
       hhmm: getCurrentHHMM()
     };
     state.summary = makeSummary(state);
     saveState(state);
 
     console.log(
-      `[WAVE] 후보+${hotAdded + priorityAdded} / 평가 ${evaluation.evaluated} / ` +
+      `[WAVE ${phase}] 후보+${hotAdded + priorityAdded} / 평가 ${evaluation.evaluated} / ` +
       `READY ${state.summary.readyCount} / 보유 ${state.summary.holdingCount} / ` +
       `오늘매수 ${state.summary.todayBuyCount} / 매도 ${sold}`
     );
@@ -1252,11 +1476,13 @@ function startWaveStrategy() {
   }
   started = true;
   console.log(
-    `[WAVE] 시작 / 매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
-    `5분 주기 / WHY+MONEY+SECTOR ${SETTINGS.foundationMinScore}점 이상 / 총 ${SETTINGS.totalBuyMinScore}점 이상`
+    `[WAVE] 시작 v1.4.1 / 매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
+    `장마감 사전분석 ${SETTINGS.afterClosePreEvalStartTime}~ / 장전 재분석 ${SETTINGS.morningPreEvalStartTime}~${SETTINGS.morningPreEvalEndTime} / ` +
+    `WHY+MONEY+SECTOR ${SETTINGS.foundationMinScore}점 이상 / 총 ${SETTINGS.totalBuyMinScore}점 이상`
   );
 
-  // 서버 시작 시 후보는 즉시 적재하되 장외시간에는 실제 모의매수하지 않는다.
+  // 서버 시작 시 후보를 즉시 적재한다. 장 마감 후라면 활성 WATCH 전체 사전분석까지 진행하지만
+  // 실제 모의매수는 isBuyTime() + LIVE 평가에서만 허용한다.
   runWaveOnce().catch(err => console.error("[WAVE 시작 1회 오류]", err.message));
 
   // 재시작 시각과 무관하게 5분 정각(09:00, 09:05, 09:10...)에 맞춰 실행한다.
