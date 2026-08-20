@@ -330,9 +330,33 @@ function renderMatchDisplay(){
   const mode=getMode(); const {left,right}=getSides(); const leftBtn=$("leftWinBtn"); const rightBtn=$("rightWinBtn");
   if(!selectedNames.length){ $("matchDisplay").innerHTML=""; leftBtn.style.display="none"; rightBtn.style.display="none"; return; }
   if(!mode){ $("matchDisplay").innerHTML=selectedNames.map(escapeHtml).join(" , "); leftBtn.style.display="none"; rightBtn.style.display="none"; return; }
-  const leftText=left.map(escapeHtml).join(", "); const rightText=right.map(escapeHtml).join(", ");
-  $("matchDisplay").innerHTML=`${leftText} <span style="color:#64748b">vs</span> ${rightText}`;
-  leftBtn.textContent=`${leftText} 승`; rightBtn.textContent=`${rightText} 승`; leftBtn.style.display="block"; rightBtn.style.display="block";
+
+  const playerInfo=name=>playerArray().find(p=>p.name===name);
+  const leftText=left.map(escapeHtml).join(", ");
+  const rightText=right.map(escapeHtml).join(", ");
+
+  let matchText="";
+  if(mode==="single"){
+    const leftPlayer=playerInfo(left[0]);
+    const rightPlayer=playerInfo(right[0]);
+    const leftDisplay=`${escapeHtml(left[0])}(${Number(leftPlayer?.bu??99)})`;
+    const rightDisplay=`${escapeHtml(right[0])}(${Number(rightPlayer?.bu??99)})`;
+    matchText=`${leftDisplay} <span style="color:#64748b">vs</span> ${rightDisplay}`;
+  }else{
+    const leftBuSum=left.reduce((sum,name)=>sum+Number(playerInfo(name)?.bu??0),0);
+    const rightBuSum=right.reduce((sum,name)=>sum+Number(playerInfo(name)?.bu??0),0);
+    const leftDisplay=`${left.map(escapeHtml).join(", ")}(${leftBuSum})`;
+    const rightDisplay=`${right.map(escapeHtml).join(", ")}(${rightBuSum})`;
+    matchText=`${leftDisplay} <span style="color:#64748b">vs</span> ${rightDisplay}`;
+  }
+
+  $("matchDisplay").innerHTML=matchText;
+
+  // 승 선택 버튼 문구와 동작은 기존 그대로 유지
+  leftBtn.textContent=`${leftText} 승`;
+  rightBtn.textContent=`${rightText} 승`;
+  leftBtn.style.display="block";
+  rightBtn.style.display="block";
 }
 async function saveByWinner(side){
   if(!isEditable()) return showNotice("최종 저장된 경기는 수정할 수 없습니다");

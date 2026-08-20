@@ -200,8 +200,19 @@ openSectorMaxBonus: 15,
 // OPEN 시장상황 강력 반영
 openMarketDataRequired: false,
 
-// 전체 시장이 이 점수 미만이면 OPEN 매수 금지
+// 전체 시장 기본 차단선. 다만 25~39점 구간은 아래 "초강력 후보 예외"만 허용한다.
 openMarketHardBlockScore: 40,
+// 이 점수 미만은 어떤 후보도 예외 없이 매수하지 않는다.
+openMarketAbsoluteBlockScore: 25,
+
+// 매우 약한 시장(25~39점)에서도 종목 자체 흐름이 압도적으로 강한 경우만 예외 허용
+openWeakMarketStrongOverrideEnabled: true,
+openWeakMarketStrongMinDiscoverScore: 9,
+openWeakMarketStrongMinMomentumScore: 75,
+openWeakMarketStrongMinPricePersistence: 0.75,
+openWeakMarketStrongMinVolumePersistence: 0.75,
+openWeakMarketStrongMinObservationCount: 4,
+openWeakMarketStrongMinStrongObservationCount: 3,
 
 // 약세구간에서는 강한 섹터 종목만 허용
 openMarketWeakScore: 50,
@@ -240,7 +251,8 @@ openFallbackMaxOpenPositionRate: 12.0,
 openFallbackMaxFirstPriceDropRate: -0.30,
 // 보완후보도 최소 20초·2회 지속강도는 확인하되 진입기회를 넓힌다.
 openFallbackMomentumRequired: true,
-openFallbackMinMomentumScore: 18,
+// 8/19 삼성공조처럼 지속강도 40점대 후보가 보완매수되는 것을 막는다.
+openFallbackMinMomentumScore: 50,
 openLateFallbackStartTime: "09:12"
 };
 
@@ -962,7 +974,7 @@ function classifyOpenRejectReason(reason = "", passed = false) {
   if (/OPEN OFF|오늘 OPEN 종료|이미 매수|이미 보유|손실한도|매수시간/.test(value)) {
     return { rejectCategory: "운영상태", rejectStage: "STATE" };
   }
-  if (/시장자료|시장급락|섹터약세|약세장|주의장/.test(value)) {
+  if (/시장자료|시장절대|시장급락|섹터약세|약세장|주의장/.test(value)) {
     return { rejectCategory: "시장·섹터", rejectStage: "MARKET" };
   }
   if (/발견점수 부족|일반후보 추가확인|HOT 점수 부족/.test(value)) {
@@ -1790,7 +1802,7 @@ function saveOpenCandidateLearning(evaluated) {
   saveOpenHistory(history);
 }
 
-function recordOpenLearningBuy(item, price, qty, reason) {
+function recordOpenLearningBuy(item, price, qty, reason, judged = {}) {
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
   const normalizedCode = normalizeOpenStockCode(item.code);
@@ -1816,7 +1828,7 @@ function recordOpenLearningBuy(item, price, qty, reason) {
     selectionReason: reason || "",
     selectionInputs: {
       discoverScore: Number(item.discoverScore || observation.lastDiscoverScore || 0),
-      rankScore: Number(observation.lastRankScore || 0),
+      rankScore: Number(judged.rankScore ?? observation.lastRankScore ?? 0),
       changeRate: Number(
         item.changeRate ||
         item.fluctuationRate ||
@@ -1827,29 +1839,54 @@ function recordOpenLearningBuy(item, price, qty, reason) {
       volumeRatio: getTradeVolumeRatio(item) || Number(observation.lastVolumeRatio || 0),
       dayPosition: getDayPositionRate(item, price) || Number(observation.lastDayPosition || 0),
       openPosition: getOpenPositionRate(item, price) || Number(observation.lastOpenPosition || 0),
-      marketScore: Number(observation.lastMarketScore || 0),
-      marketType: observation.lastMarketType || null,
-      marketBonus: Number(observation.lastMarketBonus || 0),
-      sectorBonus: Number(observation.lastSectorBonus || 0),
-      priorityBonus: Number(observation.lastPriorityBonus || 0),
-      scoreTrendBonus: Number(observation.lastScoreTrendBonus || 0),
-      confirmPriceBonus: Number(observation.lastConfirmPriceBonus || 0),
-      momentumScore: Number(observation.lastMomentumScore || 0),
+      marketScore: Number(judged.marketScore ?? observation.lastMarketScore ?? 0),
+      marketType: judged.marketType || observation.lastMarketType || null,
+      marketBonus: Number(judged.marketBonus ?? observation.lastMarketBonus ?? 0),
+      sectorBonus: Number(judged.sectorBonus ?? observation.lastSectorBonus ?? 0),
+      priorityBonus: Number(judged.priorityBonus ?? observation.lastPriorityBonus ?? 0),
+      scoreTrendBonus: Number(judged.scoreTrendBonus ?? observation.lastScoreTrendBonus ?? 0),
+      confirmPriceBonus: Number(judged.confirmPriceBonus ?? observation.lastConfirmPriceBonus ?? 0),
+      momentumScore: Number(judged.momentumScore ?? observation.lastMomentumScore ?? 0),
       maxMomentumScore: Number(observation.maxMomentumScore || 0),
-      priceRiseRate: Number(observation.lastPriceRiseRate || 0),
-      volumeGrowthRate: Number(observation.lastVolumeGrowthRate || 0),
-      scoreGrowth: Number(observation.lastScoreGrowth || 0),
-      pricePersistence: Number(observation.lastPricePersistence || 0),
-      volumePersistence: Number(observation.lastVolumePersistence || 0),
-      observationCount: Number(observation.lastObservationCount || observation.observationCount || 0),
-      strongObservationCount: Number(observation.lastStrongObservationCount || 0),
+      priceRiseRate: Number(judged.priceRiseRate ?? observation.lastPriceRiseRate ?? 0),
+      volumeGrowthRate: Number(judged.volumeGrowthRate ?? observation.lastVolumeGrowthRate ?? 0),
+      scoreGrowth: Number(judged.scoreGrowth ?? observation.lastScoreGrowth ?? 0),
+      pricePersistence: Number(judged.pricePersistence ?? observation.lastPricePersistence ?? 0),
+      volumePersistence: Number(judged.volumePersistence ?? observation.lastVolumePersistence ?? 0),
+      observationCount: Number(
+        judged.observationCount ??
+        observation.lastObservationCount ??
+        observation.observationCount ??
+        0
+      ),
+      strongObservationCount: Number(
+        judged.strongObservationCount ??
+        observation.lastStrongObservationCount ??
+        0
+      ),
       candidateTimeline: Array.isArray(observation.timeline)
         ? observation.timeline.slice(-20)
         : [],
-      requiredDiscoverScore: Number(observation.lastRequiredDiscoverScore || 0),
-      requiredVolumeRatio: Number(observation.lastRequiredVolumeRatio || 0),
-      requiredConfirmPriceRise: Number(observation.lastRequiredConfirmPriceRise || 0),
-      matchedSectors: Array.isArray(observation.lastMatchedSectors) ? observation.lastMatchedSectors : []
+      requiredDiscoverScore: Number(
+        judged.requiredDiscoverScore ??
+        observation.lastRequiredDiscoverScore ??
+        0
+      ),
+      requiredVolumeRatio: Number(
+        judged.requiredVolumeRatio ??
+        observation.lastRequiredVolumeRatio ??
+        0
+      ),
+      requiredConfirmPriceRise: Number(
+        judged.requiredConfirmPriceRise ??
+        observation.lastRequiredConfirmPriceRise ??
+        0
+      ),
+      matchedSectors: Array.isArray(judged.matchedSectors)
+        ? judged.matchedSectors
+        : (Array.isArray(observation.lastMatchedSectors) ? observation.lastMatchedSectors : []),
+      weakMarketStrongOverride: judged.weakMarketStrongOverride === true,
+      weakMarketStrongOverrideReason: judged.weakMarketStrongOverrideReason || ""
     },
     highestPrice: Number(price || 0),
     lowestPrice: Number(price || 0),
@@ -2990,6 +3027,61 @@ function calculateOpenMomentumStrength(history = {}) {
   };
 }
 
+
+function evaluateOpenWeakMarketStrongOverride(state, item, marketData) {
+  const marketScore = Number(marketData?.marketScore || 0);
+  const absoluteBlockScore = Number(settings.openMarketAbsoluteBlockScore || 25);
+  const hardBlockScore = Number(settings.openMarketHardBlockScore || 40);
+  const history = state?.openCandidateHistory?.[String(item?.code || "")] || {};
+  const momentum = calculateOpenMomentumStrength(history);
+  const observationCount = Array.isArray(history.samples) ? history.samples.length : 0;
+  const discoverScore = Number(item?.discoverScore || 0);
+
+  const inOverrideZone =
+    marketData?.available === true &&
+    marketScore >= absoluteBlockScore &&
+    marketScore < hardBlockScore;
+
+  const pass =
+    settings.openWeakMarketStrongOverrideEnabled === true &&
+    inOverrideZone &&
+    discoverScore >= Number(settings.openWeakMarketStrongMinDiscoverScore || 9) &&
+    Number(momentum.momentumScore || 0) >=
+      Number(settings.openWeakMarketStrongMinMomentumScore || 75) &&
+    Number(momentum.pricePersistence || 0) >=
+      Number(settings.openWeakMarketStrongMinPricePersistence || 0.75) &&
+    Number(momentum.volumePersistence || 0) >=
+      Number(settings.openWeakMarketStrongMinVolumePersistence || 0.75) &&
+    observationCount >=
+      Number(settings.openWeakMarketStrongMinObservationCount || 4) &&
+    Number(momentum.strongCount || 0) >=
+      Number(settings.openWeakMarketStrongMinStrongObservationCount || 3);
+
+  return {
+    pass,
+    inOverrideZone,
+    marketScore,
+    absoluteBlockScore,
+    hardBlockScore,
+    discoverScore,
+    momentumScore: Number(momentum.momentumScore || 0),
+    priceRiseRate: Number(momentum.priceRiseRate || 0),
+    volumeGrowthRate: Number(momentum.volumeGrowthRate || 0),
+    scoreGrowth: Number(momentum.scoreGrowth || 0),
+    pricePersistence: Number(momentum.pricePersistence || 0),
+    volumePersistence: Number(momentum.volumePersistence || 0),
+    observationCount,
+    strongObservationCount: Number(momentum.strongCount || 0),
+    reason:
+      `약세장 초강력 후보 ${pass ? "통과" : "미충족"} / ` +
+      `시장 ${marketScore}점 / 발견 ${discoverScore} / ` +
+      `지속 ${Number(momentum.momentumScore || 0).toFixed(1)} / ` +
+      `가격유지 ${(Number(momentum.pricePersistence || 0) * 100).toFixed(0)}% / ` +
+      `거래량유지 ${(Number(momentum.volumePersistence || 0) * 100).toFixed(0)}% / ` +
+      `관찰 ${observationCount}회 / 강한조건 ${Number(momentum.strongCount || 0)}개`
+  };
+}
+
 function isOpenCandidateGettingStronger(state, item, price) {
   const code = item.code;
   if (!code) return { pass: false, reason: "종목코드 없음" };
@@ -3316,6 +3408,13 @@ if (!momentum.pass) {
   scoreTrendBonus,
   momentumScore: Number(momentum.momentumScore || 0),
   momentumReason: momentum.reason || "",
+  priceRiseRate: Number(momentum.priceRiseRate || 0),
+  volumeGrowthRate: Number(momentum.volumeGrowthRate || 0),
+  scoreGrowth: Number(momentum.scoreGrowth || 0),
+  pricePersistence: Number(momentum.pricePersistence || 0),
+  volumePersistence: Number(momentum.volumePersistence || 0),
+  observationCount: Array.isArray(history.samples) ? history.samples.length : 0,
+  strongObservationCount: Number(momentum.strongCount || 0),
 
   confirmPriceRiseRate:
     Number(priceDiffRate || 0),
@@ -3519,20 +3618,48 @@ function judgeOpenBuy(state, item, price) {
   }
 
   /*
-   * 전체 시장이 매우 약하면 모든 OPEN 매수를 차단한다.
+   * 시장이 극단적으로 약하면 완전 차단한다.
+   * 25~39점 구간은 발견·지속성·가격/거래량 유지가 모두 매우 강한 후보만 예외 허용한다.
    */
+  const weakMarketStrongOverride =
+    evaluateOpenWeakMarketStrongOverride(state, item, marketData);
+
   if (
     marketData.available &&
-    marketScore <
-      settings.openMarketHardBlockScore
+    marketScore < Number(settings.openMarketAbsoluteBlockScore || 25)
+  ) {
+    return {
+      pass: false,
+      reason:
+        `OPEN 시장절대차단 / ` +
+        `시장 ${marketScore}점 / ` +
+        `절대기준 ${Number(settings.openMarketAbsoluteBlockScore || 25)}점`
+    };
+  }
+
+  if (
+    marketData.available &&
+    marketScore < settings.openMarketHardBlockScore &&
+    weakMarketStrongOverride.pass !== true
   ) {
     return {
       pass: false,
       reason:
         `OPEN 시장급락 차단 / ` +
-        `시장 ${marketScore}점 / ` +
-        `기준 ${settings.openMarketHardBlockScore}점`
+        `시장 ${marketScore}점 / 기본기준 ${settings.openMarketHardBlockScore}점 / ` +
+        `${weakMarketStrongOverride.reason}`
     };
+  }
+
+  if (
+    marketData.available &&
+    marketScore < settings.openMarketHardBlockScore &&
+    weakMarketStrongOverride.pass === true
+  ) {
+    console.log(
+      `[OPEN 약세장 초강력예외] ${item.name || item.code} / ` +
+      `${weakMarketStrongOverride.reason}`
+    );
   }
 
   /*
@@ -3945,6 +4072,15 @@ function judgeOpenBuy(state, item, price) {
 
     momentumReason:
       strengthen.momentumReason || "",
+    priceRiseRate: Number(strengthen.priceRiseRate || 0),
+    volumeGrowthRate: Number(strengthen.volumeGrowthRate || 0),
+    scoreGrowth: Number(strengthen.scoreGrowth || 0),
+    pricePersistence: Number(strengthen.pricePersistence || 0),
+    volumePersistence: Number(strengthen.volumePersistence || 0),
+    observationCount: Number(strengthen.observationCount || 0),
+    strongObservationCount: Number(strengthen.strongObservationCount || 0),
+    weakMarketStrongOverride: weakMarketStrongOverride.pass === true,
+    weakMarketStrongOverrideReason: weakMarketStrongOverride.reason,
 
     confirmPriceRiseRate,
 
@@ -4020,6 +4156,7 @@ function judgeOpenBuy(state, item, price) {
       `HOT지속 ${hotMomentumScore.toFixed(1)} ` +
       `(보너스 +${hotMomentumBonus.toFixed(1)}) / ` +
       `${marketAdjust.reason} / ` +
+      `${weakMarketStrongOverride.pass ? "약세장 초강력예외 통과 / " : ""}` +
       `최종점수 ${rankScore.toFixed(1)}`
   };
 }
@@ -4032,6 +4169,15 @@ function makeOpenBuyDiagnostic(item, price, judged = {}) {
       scoreTrendBonus: Number(judged.scoreTrendBonus || 0),
       momentumScore: Number(judged.momentumScore || 0),
       momentumReason: judged.momentumReason || "",
+      priceRiseRate: Number(judged.priceRiseRate || 0),
+      volumeGrowthRate: Number(judged.volumeGrowthRate || 0),
+      scoreGrowth: Number(judged.scoreGrowth || 0),
+      pricePersistence: Number(judged.pricePersistence || 0),
+      volumePersistence: Number(judged.volumePersistence || 0),
+      observationCount: Number(judged.observationCount || 0),
+      strongObservationCount: Number(judged.strongObservationCount || 0),
+      weakMarketStrongOverride: judged.weakMarketStrongOverride === true,
+      weakMarketStrongOverrideReason: judged.weakMarketStrongOverrideReason || "",
       hotMomentumScore: Number(judged.hotMomentumScore || item.hotMomentumScore || 0),
       hotMomentumBonus: Number(judged.hotMomentumBonus || 0),
       hotPriceRise30s: Number(judged.hotPriceRise30s || item.hotPriceRise30s || 0),
@@ -4185,7 +4331,7 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
 
     // 매수 API가 저장한 최신 상태를 다시 읽어 CORE 매도 등 동시 변경을 덮어쓰지 않는다.
     replaceOpenStateSnapshot(state, loadState());
-    recordOpenLearningBuy(item, price, qty, reason);
+    recordOpenLearningBuy(item, price, qty, reason, judged);
 
     console.log(
       `[OPEN 매수진단] ${name} / ` +
@@ -4436,6 +4582,9 @@ function getOpenRejectCategory(reason = "") {
 
   if (text.includes("첫 발견") || text.includes("확인 대기")) return "20초 강화확인 대기";
   if (text.includes("점수 약화") || text.includes("거래량 약화") || text.includes("가격 하락")) return "강화확인 실패";
+  if (
+    /시장절대차단|시장급락 차단|섹터약세 차단|약세장 강한섹터 아님|주의장 섹터부족|시장자료 없음 차단/.test(text)
+  ) return "시장·섹터";
   if (text.includes("발견점수 부족")) return "발견점수 부족";
   if (text.includes("상승률 부적합")) return "상승률 부적합";
   if (text.includes("거래량 부족")) return "거래량 부족";
@@ -4539,6 +4688,8 @@ function makeOpenFallbackEntry(state, entry) {
     item.isDirectHotCandidate === true || item.everDirectHotCandidate === true ||
     item.source === "HOT" || item.originalSource === "HOT";
   const fallbackMarketData = loadOpenMarketData();
+  const fallbackMarketAdjust =
+    calculateOpenMarketAdjustment(item, fallbackMarketData);
   const fallbackMarketScore = fallbackMarketData.available
     ? Number(fallbackMarketData.marketScore || 0)
     : 0;
@@ -4562,8 +4713,15 @@ function makeOpenFallbackEntry(state, entry) {
     ? ((Number(price) - previousPrice) / previousPrice) * 100
     : 0;
 
-  // 엄격판정에서 실제 상승흐름 훼손으로 탈락한 후보는 보완매수가
-  // 다시 살리지 않는다. 점수·거래량 기준 미달만 보완 대상으로 남긴다.
+  // 보완매수는 엄격판정의 시장·섹터 차단을 절대 우회하지 않는다.
+  // 25~39점 약세장의 초강력 후보는 judgeOpenBuy()에서 먼저 예외 통과되어야 한다.
+  if (
+    /시장절대차단|시장급락 차단|섹터약세 차단|약세장 강한섹터 아님|주의장 섹터부족|시장자료 없음 차단/.test(
+      strictRejectReason
+    )
+  ) return null;
+
+  // 엄격판정에서 실제 상승흐름 훼손으로 탈락한 후보도 보완매수가 다시 살리지 않는다.
   if (
     /매수 직전 가격 약화|확인 중 가격 하락|확인 중 가격 급등|상승 지속성 부족|점수 약화|거래량 약화/.test(
       strictRejectReason
@@ -4634,10 +4792,12 @@ function makeOpenFallbackEntry(state, entry) {
       fallbackWatchCandidate: isHotSignal,
       rankScore,
       baseRankScore: rankScore,
-      marketScore: 0,
-      marketType: "FALLBACK",
-      marketBonus: 0,
-      sectorBonus: 0,
+      marketScore: fallbackMarketScore,
+      marketType: fallbackMarketData.available
+        ? (fallbackMarketData.marketType || "FALLBACK")
+        : "FALLBACK",
+      marketBonus: Number(fallbackMarketAdjust.marketBonus || 0),
+      sectorBonus: Number(fallbackMarketAdjust.sectorBonus || 0),
       priorityBonus: isPriorityCandidate ? 15 : 0,
       hotScore,
       hotBonus: hotMatched ? Math.min(20, hotScore * 0.20) : 0,
@@ -4645,10 +4805,19 @@ function makeOpenFallbackEntry(state, entry) {
       scoreTrendBonus: 0,
       momentumScore: Number(momentum.momentumScore || 0),
       momentumReason: momentum.reason || "",
+      priceRiseRate: Number(momentum.priceRiseRate || 0),
+      volumeGrowthRate: Number(momentum.volumeGrowthRate || 0),
+      scoreGrowth: Number(momentum.scoreGrowth || 0),
+      pricePersistence: Number(momentum.pricePersistence || 0),
+      volumePersistence: Number(momentum.volumePersistence || 0),
+      observationCount: samples.length,
+      strongObservationCount: Number(momentum.strongCount || 0),
       confirmPriceRiseRate: firstPriceDiffRate,
       recentPriceDiffRate,
       confirmPriceBonus: 0,
-      matchedSectors: [],
+      matchedSectors: Array.isArray(fallbackMarketAdjust.matchedSectors)
+        ? fallbackMarketAdjust.matchedSectors
+        : [],
       requiredDiscoverScore: settings.openFallbackMinDiscoverScore,
       requiredVolumeRatio: fallbackRequiredVolumeRatio,
       requiredConfirmPriceRise: settings.openFallbackMaxFirstPriceDropRate,
@@ -4822,7 +4991,7 @@ async function runOpenBuyOnce() {
         item.source === "PRIORITY" ||
         item.potentialCandidate === true
       ) &&
-      !/OPEN OFF|오늘 OPEN 종료|오늘 OPEN 이미 매수|이미 보유|오늘 이미 매수|시장자료 없음 차단|시장급락 차단/.test(potentialReason);
+      !/OPEN OFF|오늘 OPEN 종료|오늘 OPEN 이미 매수|이미 보유|오늘 이미 매수|시장자료 없음 차단|시장절대차단|시장급락 차단/.test(potentialReason);
 
     if (canTrackPotential) {
       registerOpenPotentialCandidate(state, item, price, judged);
