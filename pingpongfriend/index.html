@@ -389,7 +389,17 @@ async function deleteMatch(id){
 }
 
 function updateTeamSelect(){
-  const teams=eventTeams(); $("playerTeam").innerHTML=teams.length?teams.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join(""):'<option value="">소속 미지정</option>';
+  const select=$("playerTeam");
+  const teams=eventTeams();
+  const previous=select.value;
+  const teamOptions=teams.length
+    ? teams.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("")
+    : '<option value="">소속 미지정</option>';
+  const addOption=isEditable()&&teams.length<8
+    ? '<option value="__ADD_TEAM__">➕ 새 팀 추가</option>'
+    : '';
+  select.innerHTML=teamOptions+addOption;
+  if(previous&&teams.includes(previous)) select.value=previous;
 }
 function renderPlayerList(){
   const arr=playerArray();
@@ -410,12 +420,74 @@ async function openAdmin(){
   if(!isAdmin&&!(await verifyPassword("adminPassword","관리자 비밀번호를 입력하세요."))) return;
   isAdmin=true; updateTeamSelect(); renderPlayerList(); showPanel("adminPanel");
 }
+async function addTeamDuringMatch(){
+  if(!isEditable()) return null;
+
+  const teams=eventTeams();
+  if(teams.length>=8){
+    alert("경기 중 참가팀은 최대 8팀까지 등록할 수 있습니다.");
+    updateTeamSelect();
+    return null;
+  }
+
+  const input=prompt("추가할 팀 이름을 입력하세요.");
+  if(input===null){
+    updateTeamSelect();
+    return null;
+  }
+
+  const teamName=String(input).trim();
+  if(!teamName){
+    alert("팀 이름을 입력하세요.");
+    updateTeamSelect();
+    return null;
+  }
+  if(teams.includes(teamName)){
+    alert("이미 등록된 팀입니다.");
+    updateTeamSelect();
+    $("playerTeam").value=teamName;
+    return teamName;
+  }
+
+  const nextTeams=[...teams,teamName];
+  const date=String(currentMeta?.date||localDateKey());
+  const [year,month,day]=date.split("-").map(Number);
+  const displayTitle=`${String(year).slice(-2)}.${month}.${day} ${nextTeams.join(" vs ")}`;
+
+  await update(ref(db),{
+    [`friendlies/${currentEventId}/meta/teams`]:nextTeams,
+    [`friendlies/${currentEventId}/meta/displayTitle`]:displayTitle
+  });
+
+  // Firebase 실시간 반영 전에 바로 새 팀을 선택할 수 있도록 화면 상태도 갱신
+  currentMeta={...(currentMeta||{}),teams:nextTeams,displayTitle};
+  updateTeamSelect();
+  $("playerTeam").value=teamName;
+  renderCurrentEvent();
+  showNotice(`${teamName} 팀이 추가되었습니다`);
+  return teamName;
+}
+
 async function addPlayer(){
   if(!isEditable()) return;
-  const name=$("playerName").value.trim(); const bu=Number($("playerBu").value||99); const team=$("playerTeam").value;
-  if(!name) return alert("선수 이름을 입력하세요."); if(playerArray().some(p=>p.name===name)) return alert("이미 등록된 선수입니다.");
-  await set(ref(db,`friendlies/${currentEventId}/members/${safeNameKey(name)}`),{name,bu:Number.isFinite(bu)?bu:99,team,active:true,createdAt:Date.now()});
-  $("playerName").value=""; $("playerBu").value=""; showNotice("추가되었습니다");
+  const name=$("playerName").value.trim();
+  const bu=Number($("playerBu").value||99);
+  let team=$("playerTeam").value;
+
+  if(team==="__ADD_TEAM__"){
+    team=await addTeamDuringMatch();
+    if(!team) return;
+  }
+
+  if(!name) return alert("선수 이름을 입력하세요.");
+  if(playerArray().some(p=>p.name===name)) return alert("이미 등록된 선수입니다.");
+
+  await set(ref(db,`friendlies/${currentEventId}/members/${safeNameKey(name)}`),{
+    name,bu:Number.isFinite(bu)?bu:99,team,active:true,createdAt:Date.now()
+  });
+  $("playerName").value="";
+  $("playerBu").value="";
+  showNotice("추가되었습니다");
 }
 async function deleteSelectedPlayer(){
   if(!isEditable()||!selectedAdminPlayerId) return alert("삭제할 선수를 먼저 선택하세요.");
@@ -470,6 +542,9 @@ $("createEventModal").addEventListener("click",event=>{if(event.target===$("crea
 document.addEventListener("keydown",event=>{if(event.key==="Escape") closeCreateModal()});
 $("adminBtn").addEventListener("click",openAdmin);
 $("closeAdminBtn").addEventListener("click",()=>showPanel("mainPanel"));
+$("playerTeam").addEventListener("change",async event=>{
+  if(event.target.value==="__ADD_TEAM__") await addTeamDuringMatch();
+});
 $("addPlayerBtn").addEventListener("click",addPlayer);
 $("deleteSelectedPlayerBtn").addEventListener("click",deleteSelectedPlayer);
 $("resetMatchesBtn").addEventListener("click",resetMatches);
