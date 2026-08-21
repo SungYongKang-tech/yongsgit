@@ -450,9 +450,6 @@ button {cursor:pointer;}
       <button id="endMatch" class="btn danger" disabled>경기 종료</button>
       <button id="backToInput" class="btn">뒤로 가기</button>
     </div>
-    <div id="displayControls" class="controls hidden">
-      <button id="swapSidesDisplay" class="btn display">⇄ 좌우 바꾸기</button>
-    </div>
   </section>
 </main>
 
@@ -777,14 +774,13 @@ async function swapSides(){
   }
 }
 $("#swapSidesReferee").onclick=swapSides;
-$("#swapSidesDisplay").onclick=swapSides;
 
 function scoreCallText(state,a=state.scoreA,b=state.scoreB){
   const serverSide=keySide(state.currentServerKey);
   return serverSide==="B" ? `${b} 대 ${a}` : `${a} 대 ${b}`;
 }
 function announcePoint(before,after){
-  if(!voiceEnabled || role!=="referee") return;
+  if(!speechEnabled()) return;
   const setFinished=(after.setScores || []).length>(before.setScores || []).length;
   if(setFinished){
     const finalSet=after.setScores[after.setScores.length-1];
@@ -878,8 +874,11 @@ function chooseKoreanVoice(){
   const voices=speechSynthesis.getVoices();
   return voices.find(v=>v.lang==="ko-KR") || voices.find(v=>v.lang?.startsWith("ko")) || null;
 }
+function speechEnabled(){
+  return role==="display" || voiceEnabled;
+}
 function speak(text){
-  if(!voiceEnabled || role!=="referee" || !("speechSynthesis" in window)) return;
+  if(!speechEnabled() || !("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const utterance=new SpeechSynthesisUtterance(String(text));
   utterance.lang="ko-KR";
@@ -915,9 +914,54 @@ function renderSetHistory(state){
   scores.forEach((score,index)=>{
     const chip=document.createElement("span");
     chip.className="set-chip";
-    chip.textContent=`${index+1}세트 ${score.a}:${score.b}`;
+    const visualSwapped=role==="display" ? !Boolean(state.sidesSwapped) : Boolean(state.sidesSwapped);
+    chip.textContent=visualSwapped
+      ? `${index+1}세트 ${score.b}:${score.a}`
+      : `${index+1}세트 ${score.a}:${score.b}`;
     box.appendChild(chip);
   });
+}
+
+function announceDisplayChange(before,after){
+  if(role!=="display" || !after) return;
+
+  if(!before){
+    if(after.status==="setup"){
+      speak("전광판 연결 완료. 경기 시작을 기다립니다.");
+    }else if(after.status==="playing"){
+      speak(`전광판 연결 완료. 현재 점수 ${scoreCallText(after)}. 서브 ${playerName(after,after.currentServerKey)}, 리시브 ${playerName(after,after.currentReceiverKey)}.`);
+    }else if(after.status==="finished"){
+      speak(winnerAnnouncement(after));
+    }
+    return;
+  }
+
+  if(before.status==="setup" && after.status==="playing"){
+    speak(`서브 ${playerName(after,after.currentServerKey)}, 리시브 ${playerName(after,after.currentReceiverKey)}. 경기를 시작합니다.`);
+    return;
+  }
+
+  if(before.status==="awaiting_end" && after.status==="finished"){
+    speak(winnerAnnouncement(after));
+    return;
+  }
+
+  const beforeSetCount=(before.setScores || []).length;
+  const afterSetCount=(after.setScores || []).length;
+  const beforePointTotal=Number(before.scoreA||0)+Number(before.scoreB||0);
+  const afterPointTotal=Number(after.scoreA||0)+Number(after.scoreB||0);
+  const wasUndo=afterSetCount<beforeSetCount ||
+    (afterSetCount===beforeSetCount && afterPointTotal<beforePointTotal);
+
+  if(wasUndo){
+    speak(`득점 취소. ${scoreCallText(after)}`);
+    return;
+  }
+
+  const pointChanged=afterSetCount>beforeSetCount ||
+    Number(before.scoreA||0)!==Number(after.scoreA||0) ||
+    Number(before.scoreB||0)!==Number(after.scoreB||0);
+  if(pointChanged) announcePoint(before,after);
 }
 function renderFinish(state){
   const layer=$("#finishLayer");
@@ -929,8 +973,11 @@ function renderFinish(state){
   }
   layer.classList.remove("hidden");
   const winner=(state.teams?.[state.winnerSide] || []).join(" / ");
+  const visualSwapped=role==="display" ? !Boolean(state.sidesSwapped) : Boolean(state.sidesSwapped);
   $("#finishWinner").textContent=`승자 ${winner}`;
-  $("#finishScore").textContent=`${state.setWinsA || 0} : ${state.setWinsB || 0}`;
+  $("#finishScore").textContent=visualSwapped
+    ? `${state.setWinsB || 0} : ${state.setWinsA || 0}`
+    : `${state.setWinsA || 0} : ${state.setWinsB || 0}`;
   $("#confirmEnd").classList.toggle("hidden",role!=="referee" || !isAwaiting);
   $("#finishBack").classList.toggle("hidden",role!=="referee" || !isFinished);
   $("#closeFinish").classList.toggle("hidden",role!=="display" || !isFinished);
@@ -972,12 +1019,12 @@ function render(state){
   $("#changeNotice").classList.toggle("hidden",!state.decidingReceiveChanged);
   $("#pointA").classList.toggle("serving",keySide(state.currentServerKey)==="A");
   $("#pointB").classList.toggle("serving",keySide(state.currentServerKey)==="B");
-  const sidesSwapped=Boolean(state.sidesSwapped);
-  $("#matchStrip").classList.toggle("swapped",sidesSwapped);
-  $("#scoreGrid").classList.toggle("swapped",sidesSwapped);
-  const swapLabel=sidesSwapped ? "⇄ 좌우 원위치" : "⇄ 좌우 바꾸기";
+  const refereeSidesSwapped=Boolean(state.sidesSwapped);
+  const visualSidesSwapped=role==="display" ? !refereeSidesSwapped : refereeSidesSwapped;
+  $("#matchStrip").classList.toggle("swapped",visualSidesSwapped);
+  $("#scoreGrid").classList.toggle("swapped",visualSidesSwapped);
+  const swapLabel=refereeSidesSwapped ? "⇄ 좌우 원위치" : "⇄ 좌우 바꾸기";
   $("#swapSidesReferee").textContent=swapLabel;
-  $("#swapSidesDisplay").textContent=swapLabel;
 
   const canScore=role==="referee" && state.status==="playing";
   $("#pointA").disabled=!canScore;
@@ -986,7 +1033,6 @@ function render(state){
   $("#pointB").classList.toggle("referee",canScore);
   document.querySelectorAll(".referee-hint").forEach(el=>el.classList.toggle("hidden",role!=="referee"));
   $("#refereeControls").classList.toggle("hidden",role!=="referee");
-  $("#displayControls").classList.toggle("hidden",role!=="display");
   $("#undoPoint").disabled=state.status==="finished" || !(state.history || []).length;
   $("#endMatch").disabled=state.status!=="awaiting_end";
   updateVoiceButton();
@@ -1044,7 +1090,10 @@ async function init(){
         showConnect("경기 연결이 종료되었습니다");
         return;
       }
-      render(snapshot.val());
+      const nextState=snapshot.val();
+      const beforeState=currentState;
+      render(nextState);
+      announceDisplayChange(beforeState,nextState);
     },error=>{
       console.error(error);
       $("#connectionText").textContent="연결 끊김";
