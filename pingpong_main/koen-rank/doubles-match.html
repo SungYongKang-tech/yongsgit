@@ -190,6 +190,13 @@ button {cursor:pointer;}
 .set-count.right {text-align:right;}
 .set-title {text-align:center; color:var(--yellow); font-size:clamp(17px,3vw,24px); font-weight:900; white-space:nowrap;}
 .score-grid {flex:1; display:grid; grid-template-columns:1fr 1fr; min-height:330px;}
+.match-strip #setCountA {grid-column:1; grid-row:1; text-align:left;}
+.match-strip #setTitle {grid-column:2; grid-row:1;}
+.match-strip #setCountB {grid-column:3; grid-row:1; text-align:right;}
+.match-strip.swapped #setCountA {grid-column:3; text-align:right;}
+.match-strip.swapped #setCountB {grid-column:1; text-align:left;}
+.score-grid.swapped #pointA {order:2;}
+.score-grid.swapped #pointB {order:1;}
 .score-side {
   position:relative;
   display:flex;
@@ -404,13 +411,13 @@ button {cursor:pointer;}
   </section>
 
   <section id="scoreboard" class="scoreboard hidden">
-    <div class="match-strip">
+    <div id="matchStrip" class="match-strip">
       <div id="setCountA" class="set-count">A팀 세트 0</div>
       <div id="setTitle" class="set-title">1세트</div>
       <div id="setCountB" class="set-count right">B팀 세트 0</div>
     </div>
 
-    <div class="score-grid">
+    <div id="scoreGrid" class="score-grid">
       <button id="pointA" class="score-side a" type="button">
         <span class="serve-mark"></span>
         <span class="team-label">A팀</span>
@@ -438,9 +445,13 @@ button {cursor:pointer;}
     <div id="refereeControls" class="controls hidden">
       <button id="undoPoint" class="btn">↶ 득점 취소</button>
       <button id="voiceToggle" class="btn">🔊 음성 켜짐</button>
+      <button id="swapSidesReferee" class="btn display">⇄ 좌우 바꾸기</button>
       <button id="copyDisplay" class="btn display">📺 패드 주소</button>
       <button id="endMatch" class="btn danger" disabled>경기 종료</button>
       <button id="backToInput" class="btn">뒤로 가기</button>
+    </div>
+    <div id="displayControls" class="controls hidden">
+      <button id="swapSidesDisplay" class="btn display">⇄ 좌우 바꾸기</button>
     </div>
   </section>
 </main>
@@ -747,6 +758,27 @@ async function scorePoint(side){
 $("#pointA").onclick=()=>scorePoint("A");
 $("#pointB").onclick=()=>scorePoint("B");
 
+async function swapSides(){
+  if(!currentState || !liveRef || currentState.status==="finished") return;
+  try{
+    await ensureAuthReady();
+    const result=await runTransaction(liveRef,state=>{
+      if(!state || state.status==="finished") return;
+      state.sidesSwapped=!Boolean(state.sidesSwapped);
+      state.updatedAt=Date.now();
+      return state;
+    },{applyLocally:false});
+    if(result.committed){
+      toast(result.snapshot.val()?.sidesSwapped ? "A팀과 B팀 위치를 바꿨습니다" : "A팀과 B팀 위치를 원래대로 돌렸습니다");
+    }
+  }catch(e){
+    console.error(e);
+    toast("좌우 위치 변경에 실패했습니다");
+  }
+}
+$("#swapSidesReferee").onclick=swapSides;
+$("#swapSidesDisplay").onclick=swapSides;
+
 function scoreCallText(state,a=state.scoreA,b=state.scoreB){
   const serverSide=keySide(state.currentServerKey);
   return serverSide==="B" ? `${b} 대 ${a}` : `${a} 대 ${b}`;
@@ -940,6 +972,12 @@ function render(state){
   $("#changeNotice").classList.toggle("hidden",!state.decidingReceiveChanged);
   $("#pointA").classList.toggle("serving",keySide(state.currentServerKey)==="A");
   $("#pointB").classList.toggle("serving",keySide(state.currentServerKey)==="B");
+  const sidesSwapped=Boolean(state.sidesSwapped);
+  $("#matchStrip").classList.toggle("swapped",sidesSwapped);
+  $("#scoreGrid").classList.toggle("swapped",sidesSwapped);
+  const swapLabel=sidesSwapped ? "⇄ 좌우 원위치" : "⇄ 좌우 바꾸기";
+  $("#swapSidesReferee").textContent=swapLabel;
+  $("#swapSidesDisplay").textContent=swapLabel;
 
   const canScore=role==="referee" && state.status==="playing";
   $("#pointA").disabled=!canScore;
@@ -948,6 +986,7 @@ function render(state){
   $("#pointB").classList.toggle("referee",canScore);
   document.querySelectorAll(".referee-hint").forEach(el=>el.classList.toggle("hidden",role!=="referee"));
   $("#refereeControls").classList.toggle("hidden",role!=="referee");
+  $("#displayControls").classList.toggle("hidden",role!=="display");
   $("#undoPoint").disabled=state.status==="finished" || !(state.history || []).length;
   $("#endMatch").disabled=state.status!=="awaiting_end";
   updateVoiceButton();
