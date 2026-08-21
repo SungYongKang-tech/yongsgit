@@ -393,6 +393,7 @@ button {cursor:pointer;}
         </div>
       </div>
       <button id="startMatch" class="btn success setup-start">▶ 경기 시작</button>
+      <button id="cancelSetupMatch" class="btn danger" style="width:100%;margin-top:8px;">경기 취소·삭제</button>
       <div id="pairNote" class="pair-note">서버를 선택하면 상대 팀 선수 중 리시버를 정할 수 있습니다.</div>
       <div class="share-box">
         <div style="color:#cbd5e1;font-size:14px;">자동 연결이 안 될 때 사용하는 예비 연결코드</div>
@@ -448,7 +449,7 @@ button {cursor:pointer;}
       <button id="swapSidesReferee" class="btn display">⇄ 좌우 바꾸기</button>
       <button id="copyDisplay" class="btn display">📺 패드 주소</button>
       <button id="endMatch" class="btn danger" disabled>경기 종료</button>
-      <button id="backToInput" class="btn">뒤로 가기</button>
+      <button id="backToInput" class="btn danger">경기 취소·삭제</button>
     </div>
   </section>
 </main>
@@ -862,11 +863,34 @@ function goBackToInput(){
     location.href=`./index.html?liveRoom=${encodeURIComponent(room)}`;
     return;
   }
-  if(confirm("경기가 아직 끝나지 않았습니다. 성적입력 화면으로 나갈까요?")){
-    location.href="./index.html";
+  cancelMatchAndExit();
+}
+async function cancelMatchAndExit(){
+  if(role!=="referee" || !liveRef) return;
+  if(!confirm("진행 중인 복식경기와 입력한 점수를 모두 삭제하고 나갈까요?\n\n삭제한 진행 점수는 복구할 수 없습니다.")) return;
+
+  const cancelButtons=[$("#cancelSetupMatch"),$("#backToInput")];
+  cancelButtons.forEach(button=>{ if(button) button.disabled=true; });
+  try{
+    await ensureAuthReady();
+    await set(liveRef,null);
+    try{
+      await runTransaction(ref(db,"config/currentDoubleRoom"),current=>{
+        return current?.room===room ? null : current;
+      },{applyLocally:false});
+    }catch(pointerError){
+      console.warn("현재 경기 연결정보 정리는 다음 접속 때 재시도됩니다.",pointerError);
+    }
+    if("speechSynthesis" in window) speechSynthesis.cancel();
+    location.replace("./index.html");
+  }catch(e){
+    console.error(e);
+    alert("임시 경기 삭제에 실패했습니다: " + (e?.message || e));
+    cancelButtons.forEach(button=>{ if(button) button.disabled=false; });
   }
 }
 $("#backToInput").onclick=goBackToInput;
+$("#cancelSetupMatch").onclick=cancelMatchAndExit;
 $("#finishBack").onclick=goBackToInput;
 $("#closeFinish").onclick=()=>$("#finishLayer").classList.add("hidden");
 
@@ -1033,6 +1057,7 @@ function render(state){
   $("#pointB").classList.toggle("referee",canScore);
   document.querySelectorAll(".referee-hint").forEach(el=>el.classList.toggle("hidden",role!=="referee"));
   $("#refereeControls").classList.toggle("hidden",role!=="referee");
+  $("#backToInput").textContent=state.status==="finished" ? "성적입력으로 돌아가기" : "경기 취소·삭제";
   $("#undoPoint").disabled=state.status==="finished" || !(state.history || []).length;
   $("#endMatch").disabled=state.status!=="awaiting_end";
   updateVoiceButton();
@@ -1087,7 +1112,11 @@ async function init(){
     $("#roomInput").value=room;
     unsubscribe=onValue(liveRef,snapshot=>{
       if(!snapshot.exists()){
-        showConnect("경기 연결이 종료되었습니다");
+        if(role==="display"){
+          location.replace("./doubles-match.html?role=display&auto=1");
+        }else{
+          showConnect("경기 연결이 종료되었습니다");
+        }
         return;
       }
       const nextState=snapshot.val();

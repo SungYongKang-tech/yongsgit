@@ -254,10 +254,11 @@ h1 {
   <li>2️⃣ A팀/B팀이 자동 배정되며, <b>A팀 승</b> 또는 <b>B팀 승</b> 버튼을 눌러 결과를 바로 저장합니다.</li>
   <li>3️⃣ 패드에서 먼저 <b>패드 전광판</b>을 누르면 대기합니다. 휴대폰에서 복식 4명을 선택하고 <b>경기 진행</b>을 누르는 순간 자동 연결됩니다.</li>
   <li>4️⃣ 복식 경기 종료 후 돌아오면 결과 확인창이 자동으로 열리고, 승자를 성적에 저장할 수 있습니다.</li>
-  <li>5️⃣ 최근 경기결과는 화면 하단에서 확인·삭제할 수 있습니다.</li>
-  <li>6️⃣ <b>통합 전적</b> : 월별 경기수, 승/패, 승률 등 단식+복식 전체 기록을 확인할 수 있습니다.</li>
-  <li>7️⃣ <b>🏆 ELO 랭킹</b> : 단식 경기마다 점수가 자동으로 오르내리며, 강한 선수를 이길수록 더 많은 점수를 획득합니다.</li>
-  <li>8️⃣ <b>개인 상세 페이지(선수 클릭)</b> : 월별 성적, 상대/파트너 TOP, 그래프 등이 표시됩니다.</li>
+  <li>5️⃣ 중간에 취소한 복식 진행 데이터는 즉시 삭제되며, 비정상 종료로 남은 임시 데이터는 24시간 후 자동 정리됩니다.</li>
+  <li>6️⃣ 최근 경기결과는 화면 하단에서 확인·삭제할 수 있습니다.</li>
+  <li>7️⃣ <b>통합 전적</b> : 월별 경기수, 승/패, 승률 등 단식+복식 전체 기록을 확인할 수 있습니다.</li>
+  <li>8️⃣ <b>🏆 ELO 랭킹</b> : 단식 경기마다 점수가 자동으로 오르내리며, 강한 선수를 이길수록 더 많은 점수를 획득합니다.</li>
+  <li>9️⃣ <b>개인 상세 페이지(선수 클릭)</b> : 월별 성적, 상대/파트너 TOP, 그래프 등이 표시됩니다.</li>
 </ul>
     <button id="closeModal" class="btn ok" style="margin-top:10px;">닫기</button>
   </div>
@@ -616,6 +617,44 @@ get(titleRef).then(snap => {
   const pendingLiveRoom = /^\d{6}$/.test(pendingLiveRoomRaw) ? pendingLiveRoomRaw : "";
   let liveResultHandled = false;
   let pendingLiveState = null;
+  const LIVE_MATCH_TTL_MS = 24 * 60 * 60 * 1000;
+
+  async function cleanupStaleLiveMatches(){
+    try{
+      await ensureAuthReady();
+      const [roomsSnap,currentSnap]=await Promise.all([
+        get(ref(db,"liveMatches")),
+        get(ref(db,"config/currentDoubleRoom"))
+      ]);
+      const rooms=roomsSnap.val() || {};
+      const now=Date.now();
+      const writes={};
+
+      Object.entries(rooms).forEach(([room,state])=>{
+        const timestamp=Number(state?.updatedAt || state?.createdAt || 0);
+        if(!timestamp || now-timestamp>LIVE_MATCH_TTL_MS){
+          writes[`liveMatches/${room}`]=null;
+        }
+      });
+
+      const current=currentSnap.val() || {};
+      const currentRoom=String(current.room || "");
+      const currentState=rooms[currentRoom];
+      const currentTimestamp=Number(currentState?.updatedAt || currentState?.createdAt || current.updatedAt || current.createdAt || 0);
+      if(currentRoom && (!currentState || !currentTimestamp || now-currentTimestamp>LIVE_MATCH_TTL_MS)){
+        writes["config/currentDoubleRoom"]=null;
+      }
+
+      if(Object.keys(writes).length){
+        await update(ref(db),writes);
+        console.log(`✅ 오래된 복식 임시경기 ${Object.keys(writes).filter(key=>key.startsWith("liveMatches/")).length}건 정리`);
+      }
+    }catch(e){
+      console.warn("⚠️ 복식 임시경기 자동 정리 실패:",e);
+    }
+  }
+
+  cleanupStaleLiveMatches();
 
  window.deleteMatch = async (id) => {
   try {
@@ -885,6 +924,13 @@ toast("경기결과 저장 완료");
         get(ref(db, "config/currentDoubleRoom"))
       ]);
       const latest=latestSnap.val() || {};
+      if(!latestSnap.exists()){
+        toast("이미 정리되었거나 찾을 수 없는 경기입니다");
+        $("#liveResultModal").style.display="none";
+        pendingLiveState=null;
+        cleanLiveRoomParam();
+        return;
+      }
       if(latest.recordedMatchId){
         toast("이미 성적에 저장된 경기입니다");
       }else{
@@ -905,8 +951,7 @@ toast("경기결과 저장 완료");
         };
         const writes={};
         writes[`matches/${matchId}`]=matchObj;
-        writes[`liveMatches/${pendingLiveRoom}/recordedMatchId`]=matchId;
-        writes[`liveMatches/${pendingLiveRoom}/recordedAt`]=Date.now();
+        writes[`liveMatches/${pendingLiveRoom}`]=null;
         if(currentRoomSnap.val()?.room===pendingLiveRoom){
           writes["config/currentDoubleRoom"]=null;
         }
