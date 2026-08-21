@@ -623,7 +623,7 @@ get(titleRef).then(snap => {
     try{
       await ensureAuthReady();
       const [roomsSnap,currentSnap]=await Promise.all([
-        get(ref(db,"liveMatches")),
+        get(ref(db,"team_live_matches")),
         get(ref(db,"config/currentDoubleRoom"))
       ]);
       const rooms=roomsSnap.val() || {};
@@ -633,7 +633,7 @@ get(titleRef).then(snap => {
       Object.entries(rooms).forEach(([room,state])=>{
         const timestamp=Number(state?.updatedAt || state?.createdAt || 0);
         if(!timestamp || now-timestamp>LIVE_MATCH_TTL_MS){
-          writes[`liveMatches/${room}`]=null;
+          writes[`team_live_matches/${room}`]=null;
         }
       });
 
@@ -647,7 +647,7 @@ get(titleRef).then(snap => {
 
       if(Object.keys(writes).length){
         await update(ref(db),writes);
-        console.log(`✅ 오래된 복식 임시경기 ${Object.keys(writes).filter(key=>key.startsWith("liveMatches/")).length}건 정리`);
+        console.log(`✅ 오래된 복식 임시경기 ${Object.keys(writes).filter(key=>key.startsWith("team_live_matches/")).length}건 정리`);
       }
     }catch(e){
       console.warn("⚠️ 복식 임시경기 자동 정리 실패:",e);
@@ -789,7 +789,7 @@ toast("경기결과 저장 완료");
   async function createAvailableRoomCode(){
     for(let i=0; i<8; i++){
       const code=randomRoomCode();
-      const snap=await get(ref(db, `liveMatches/${code}`));
+      const snap=await get(ref(db, `team_live_matches/${code}`));
       if(!snap.exists()) return code;
     }
     return `${Date.now()}`.slice(-6);
@@ -801,18 +801,36 @@ toast("경기결과 저장 완료");
     try{
       await ensureAuthReady();
       const room=await createAvailableRoomCode();
-      const namesA=sel.slice(0,2).map(p=>p.name);
-      const namesB=sel.slice(2,4).map(p=>p.name);
+      const teamAPlayers=sel.slice(0,2);
+      const teamBPlayers=sel.slice(2,4);
+      const namesA=teamAPlayers.map(p=>p.name);
+      const namesB=teamBPlayers.map(p=>p.name);
+      const levelsA=teamAPlayers.map(p=>Number(p.level));
+      const levelsB=teamBPlayers.map(p=>Number(p.level));
+      const levelsValid=[...levelsA,...levelsB].every(level=>Number.isFinite(level) && level>0 && level<99);
+      const sumA=levelsValid ? levelsA.reduce((sum,level)=>sum+level,0) : 0;
+      const sumB=levelsValid ? levelsB.reduce((sum,level)=>sum+level,0) : 0;
+      const handicapPoints=levelsValid ? Math.min(4,Math.abs(sumA-sumB)) : 0;
+      const handicapSide=handicapPoints>0 ? (sumA>sumB ? "A" : "B") : "";
+      const handicap={
+        side:handicapSide,
+        points:handicapPoints,
+        sumA,
+        sumB,
+        levelsValid
+      };
 
       const roomState={
         room,
         mode:"double",
         teams:{ A:namesA, B:namesB },
+        teamLevels:{ A:levelsA, B:levelsB },
+        handicap,
         bestOf:5,
         gamesToWin:3,
         status:"setup",
-        scoreA:0,
-        scoreB:0,
+        scoreA:handicapSide==="A" ? handicapPoints : 0,
+        scoreB:handicapSide==="B" ? handicapPoints : 0,
         setWinsA:0,
         setWinsB:0,
         setNumber:1,
@@ -823,10 +841,11 @@ toast("경기결과 저장 완료");
         updatedAt:Date.now()
       };
       const writes={};
-      writes[`liveMatches/${room}`]=roomState;
+      writes[`team_live_matches/${room}`]=roomState;
       writes["config/currentDoubleRoom"]={
         room,
         teams:{ A:namesA, B:namesB },
+        handicap,
         createdAt:roomState.createdAt,
         updatedAt:roomState.updatedAt
       };
@@ -860,7 +879,7 @@ toast("경기결과 저장 완료");
 
     try{
       await ensureAuthReady();
-      const snap=await get(ref(db, `liveMatches/${pendingLiveRoom}`));
+      const snap=await get(ref(db, `team_live_matches/${pendingLiveRoom}`));
       if(!snap.exists()){
         toast("복식 경기 기록을 찾을 수 없습니다");
         cleanLiveRoomParam();
@@ -920,7 +939,7 @@ toast("경기결과 저장 완료");
 
     try{
       const [latestSnap,currentRoomSnap]=await Promise.all([
-        get(ref(db, `liveMatches/${pendingLiveRoom}`)),
+        get(ref(db, `team_live_matches/${pendingLiveRoom}`)),
         get(ref(db, "config/currentDoubleRoom"))
       ]);
       const latest=latestSnap.val() || {};
@@ -947,11 +966,15 @@ toast("경기결과 저장 완료");
           liveRoomId:pendingLiveRoom,
           setWinsA:Number(pendingLiveState.setWinsA||0),
           setWinsB:Number(pendingLiveState.setWinsB||0),
-          setScores:pendingLiveState.setScores || []
+          setScores:pendingLiveState.setScores || [],
+          handicapSide:pendingLiveState.handicap?.side || "",
+          handicapPoints:Number(pendingLiveState.handicap?.points||0),
+          levelSumA:Number(pendingLiveState.handicap?.sumA||0),
+          levelSumB:Number(pendingLiveState.handicap?.sumB||0)
         };
         const writes={};
         writes[`matches/${matchId}`]=matchObj;
-        writes[`liveMatches/${pendingLiveRoom}`]=null;
+        writes[`team_live_matches/${pendingLiveRoom}`]=null;
         if(currentRoomSnap.val()?.room===pendingLiveRoom){
           writes["config/currentDoubleRoom"]=null;
         }
