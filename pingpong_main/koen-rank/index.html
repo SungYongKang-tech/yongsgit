@@ -617,7 +617,22 @@ get(titleRef).then(snap => {
   const pendingLiveRoom = /^\d{6}$/.test(pendingLiveRoomRaw) ? pendingLiveRoomRaw : "";
   let liveResultHandled = false;
   let pendingLiveState = null;
-  const LIVE_MATCH_TTL_MS = 24 * 60 * 60 * 1000;
+  const ABANDONED_LIVE_MATCH_MS = 10 * 60 * 1000;
+  const FINISHED_LIVE_MATCH_MS = 24 * 60 * 60 * 1000;
+  const ACTIVE_LIVE_STATUSES = new Set(["setup","playing","awaiting_end"]);
+
+  function isStaleLiveMatch(state,now=Date.now()){
+    const timestamp=Math.max(
+      Number(state?.lastRefereeSeenAt||0),
+      Number(state?.updatedAt||0),
+      Number(state?.createdAt||0)
+    );
+    if(!timestamp) return true;
+    const ttl=ACTIVE_LIVE_STATUSES.has(state?.status)
+      ? ABANDONED_LIVE_MATCH_MS
+      : FINISHED_LIVE_MATCH_MS;
+    return now-timestamp>ttl;
+  }
 
   async function cleanupStaleLiveMatches(){
     try{
@@ -631,8 +646,7 @@ get(titleRef).then(snap => {
       const writes={};
 
       Object.entries(rooms).forEach(([room,state])=>{
-        const timestamp=Number(state?.updatedAt || state?.createdAt || 0);
-        if(!timestamp || now-timestamp>LIVE_MATCH_TTL_MS){
+        if(isStaleLiveMatch(state,now)){
           writes[`team_live_matches/${room}`]=null;
         }
       });
@@ -640,8 +654,7 @@ get(titleRef).then(snap => {
       const current=currentSnap.val() || {};
       const currentRoom=String(current.room || "");
       const currentState=rooms[currentRoom];
-      const currentTimestamp=Number(currentState?.updatedAt || currentState?.createdAt || current.updatedAt || current.createdAt || 0);
-      if(currentRoom && (!currentState || !currentTimestamp || now-currentTimestamp>LIVE_MATCH_TTL_MS)){
+      if(currentRoom && (!currentState || isStaleLiveMatch(currentState,now))){
         writes["config/currentDoubleRoom"]=null;
       }
 
@@ -838,7 +851,8 @@ toast("경기결과 저장 완료");
         history:[],
         sidesSwapped:false,
         createdAt:Date.now(),
-        updatedAt:Date.now()
+        updatedAt:Date.now(),
+        lastRefereeSeenAt:Date.now()
       };
       const writes={};
       writes[`team_live_matches/${room}`]=roomState;

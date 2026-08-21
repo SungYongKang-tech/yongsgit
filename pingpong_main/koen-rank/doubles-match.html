@@ -44,7 +44,7 @@ button {cursor:pointer;}
     var(--bg);
 }
 .connect-card {
-  width:min(460px,100%);
+  width:min(620px,100%);
   padding:28px;
   border:1px solid var(--line);
   border-radius:24px;
@@ -69,6 +69,27 @@ button {cursor:pointer;}
 }
 .room-input:focus {border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.15);}
 .connect-actions {display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+.match-chooser {margin:0 0 14px; text-align:left;}
+.match-chooser-title {margin:0 0 10px; color:#dbeafe; font-size:15px; text-align:center;}
+.active-match-list {display:grid; gap:10px; max-height:52vh; overflow:auto; padding:2px;}
+.match-choice {
+  width:100%;
+  display:grid;
+  grid-template-columns:1fr auto;
+  align-items:center;
+  gap:12px;
+  padding:15px;
+  border:1px solid rgba(147,197,253,.32);
+  border-radius:15px;
+  background:#0a192a;
+  color:#fff;
+  text-align:left;
+}
+.match-choice:active {transform:scale(.992); background:#10243c;}
+.choice-teams {display:block; font-size:clamp(16px,3vw,20px); font-weight:900; line-height:1.45; overflow-wrap:anywhere;}
+.choice-meta {display:block; margin-top:5px; color:#94a3b8; font-size:13px; font-weight:650;}
+.choice-arrow {font-size:24px; color:#a78bfa;}
+.top-select {padding:7px 9px; font-size:12px; white-space:nowrap;}
 
 .btn {
   border:1px solid var(--line);
@@ -348,10 +369,17 @@ button {cursor:pointer;}
       <span class="status-dot online" style="display:inline-block;margin-right:7px;"></span>
       현재 복식경기를 기다리고 있습니다.<br>휴대폰에서 경기 진행을 누르면 자동 연결됩니다.
     </div>
-    <input id="roomInput" class="room-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="6자리 경기코드" />
-    <div class="connect-actions">
-      <button id="joinReferee" class="btn primary">휴대폰 심판</button>
-      <button id="joinDisplay" class="btn display">패드 전광판</button>
+    <div id="matchChooser" class="match-chooser hidden">
+      <div id="matchChooserTitle" class="match-chooser-title">진행할 경기를 선택하세요.</div>
+      <div id="activeMatchList" class="active-match-list"></div>
+    </div>
+    <button id="manualConnectToggle" class="btn hidden" style="width:100%;margin-bottom:10px;">경기코드로 연결</button>
+    <div id="manualConnectArea">
+      <input id="roomInput" class="room-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="6자리 경기코드" />
+      <div class="connect-actions">
+        <button id="joinReferee" class="btn primary">휴대폰 심판</button>
+        <button id="joinDisplay" class="btn display">패드 전광판</button>
+      </div>
     </div>
     <button id="connectBack" class="btn" style="width:100%;margin-top:10px;">성적입력으로 돌아가기</button>
   </div>
@@ -361,6 +389,7 @@ button {cursor:pointer;}
   <header class="topbar">
     <div class="top-title">🏓 복식 경기</div>
     <div class="top-meta">
+      <button id="chooseAnotherMatch" class="btn display top-select hidden">경기 선택</button>
       <span class="badge"><span id="statusDot" class="status-dot"></span><span id="connectionText">연결 중</span></span>
       <span class="badge"><span class="role-text" id="roleText">심판</span> · <b id="roomText">------</b></span>
     </div>
@@ -487,8 +516,14 @@ const params=new URLSearchParams(location.search);
 const room=(params.get("room") || "").replace(/\D/g,"").slice(0,6);
 const role=params.get("role")==="display" ? "display" : "referee";
 const autoConnect=role==="display" && params.get("auto")==="1";
+const forceChooser=autoConnect && params.get("choose")==="1";
+const returnNotice=params.get("notice") || "";
 const validRoom=/^\d{6}$/.test(room);
 const liveRef=validRoom ? ref(db,`team_live_matches/${room}`) : null;
+const ABANDONED_MATCH_MS=10*60*1000;
+const REFEREE_HEARTBEAT_MS=45*1000;
+const ABANDON_CHECK_MS=30*1000;
+const ACTIVE_STATUSES=new Set(["setup","playing","awaiting_end"]);
 
 let currentState=null;
 let unsubscribe=null;
@@ -496,6 +531,15 @@ let voiceEnabled=localStorage.getItem("doublesVoice")!=="off";
 let authReadyPromise=null;
 let scoreBusy=false;
 let autoRoomUnsubscribe=null;
+let autoRoomTimer=null;
+let refereeHeartbeatTimer=null;
+let abandonedCheckTimer=null;
+let autoRoomCache={};
+let chooserShown=false;
+let chooserAnnouncementDone=false;
+let abandonedCleanupTriggered=false;
+let manualConnectOpen=false;
+const cleanupInProgress=new Set();
 
 function ensureAuthReady(){
   if(authReadyPromise) return authReadyPromise;
@@ -516,6 +560,85 @@ function toast(message){
   el.classList.add("show");
   clearTimeout(toast.timer);
   toast.timer=setTimeout(()=>el.classList.remove("show"),1800);
+}
+
+function latestMatchActivity(state){
+  return Math.max(
+    Number(state?.lastRefereeSeenAt||0),
+    Number(state?.updatedAt||0),
+    Number(state?.createdAt||0)
+  );
+}
+function isAbandonedMatch(state,now=Date.now()){
+  if(!state || !ACTIVE_STATUSES.has(state.status)) return false;
+  const lastActive=latestMatchActivity(state);
+  return !lastActive || now-lastActive>ABANDONED_MATCH_MS;
+}
+function isListedMatch(state,now=Date.now()){
+  return Boolean(state) && ACTIVE_STATUSES.has(state.status) && !isAbandonedMatch(state,now);
+}
+async function clearCurrentRoomPointer(code){
+  try{
+    await runTransaction(ref(db,"config/currentDoubleRoom"),current=>{
+      return current?.room===code ? null : current;
+    },{applyLocally:false});
+  }catch(e){
+    console.warn("경기 연결정보 정리를 다음 접속 때 재시도합니다.",e);
+  }
+}
+async function removeIfAbandoned(code){
+  if(!/^\d{6}$/.test(code) || cleanupInProgress.has(code)) return false;
+  cleanupInProgress.add(code);
+  try{
+    await ensureAuthReady();
+    const targetRef=ref(db,`team_live_matches/${code}`);
+    const result=await runTransaction(targetRef,state=>{
+      if(!isAbandonedMatch(state)) return;
+      return null;
+    },{applyLocally:false});
+    if(result.committed){
+      await clearCurrentRoomPointer(code);
+      return true;
+    }
+  }catch(e){
+    console.warn("중단된 복식경기 자동 정리 실패:",e);
+  }finally{
+    cleanupInProgress.delete(code);
+  }
+  return false;
+}
+
+async function touchRefereePresence(){
+  if(role!=="referee" || !liveRef) return;
+  try{
+    await runTransaction(liveRef,state=>{
+      if(!state || !ACTIVE_STATUSES.has(state.status)) return;
+      state.lastRefereeSeenAt=Date.now();
+      return state;
+    },{applyLocally:false});
+  }catch(e){
+    console.warn("심판 접속 상태 갱신 실패:",e);
+  }
+}
+function startRefereeHeartbeat(){
+  if(role!=="referee" || refereeHeartbeatTimer) return;
+  touchRefereePresence();
+  refereeHeartbeatTimer=setInterval(touchRefereePresence,REFEREE_HEARTBEAT_MS);
+}
+function stopRefereeHeartbeat(){
+  if(refereeHeartbeatTimer) clearInterval(refereeHeartbeatTimer);
+  refereeHeartbeatTimer=null;
+}
+function startSelectedRoomAbandonCheck(){
+  if(role!=="display" || abandonedCheckTimer) return;
+  abandonedCheckTimer=setInterval(async()=>{
+    if(!currentState || !isAbandonedMatch(currentState)) return;
+    abandonedCleanupTriggered=true;
+    const removed=await removeIfAbandoned(room);
+    if(removed){
+      location.replace("./doubles-match.html?role=display&auto=1&choose=1&notice=expired");
+    }
+  },ABANDON_CHECK_MS);
 }
 
 function keySide(key){ return String(key || "").charAt(0); }
@@ -583,7 +706,96 @@ function showConnect(message="",autoWaiting=false){
   $("#connectTitle").textContent=autoWaiting ? "패드 전광판 연결 대기" : "복식 경기 연결";
   $("#connectGuide").classList.toggle("hidden",autoWaiting);
   $("#autoWaitBox").classList.toggle("hidden",!autoWaiting);
+  $("#matchChooser").classList.add("hidden");
+  $("#manualConnectToggle").classList.toggle("hidden",!autoWaiting);
+  $("#manualConnectArea").classList.toggle("hidden",autoWaiting && !manualConnectOpen);
+  $("#manualConnectToggle").textContent=manualConnectOpen ? "경기코드 입력 닫기" : "경기코드로 연결";
   if(message) toast(message);
+}
+function matchStatusText(state){
+  if(state.status==="setup") return "경기 준비 중";
+  if(state.status==="awaiting_end") return "승부 결정 · 종료 확인 중";
+  return `${Number(state.setNumber||1)}세트 진행 중 · ${Number(state.scoreA||0)} : ${Number(state.scoreB||0)}`;
+}
+function openDisplayRoom(code){
+  const url=new URL(location.href);
+  url.search="";
+  url.searchParams.set("room",code);
+  url.searchParams.set("role","display");
+  location.href=url.toString();
+}
+function renderAutoRoomChoices(rooms){
+  autoRoomCache=rooms || {};
+  const now=Date.now();
+  Object.entries(autoRoomCache).forEach(([code,state])=>{
+    if(isAbandonedMatch(state,now)) removeIfAbandoned(code);
+  });
+
+  const active=Object.entries(autoRoomCache)
+    .filter(([,state])=>isListedMatch(state,now))
+    .sort((a,b)=>Number(b[1]?.createdAt||0)-Number(a[1]?.createdAt||0));
+
+  if(active.length===1 && !forceChooser && !chooserShown){
+    openDisplayRoom(active[0][0]);
+    return;
+  }
+  if(active.length>1) chooserShown=true;
+
+  showConnect("",true);
+  if(!active.length){
+    $("#connectTitle").textContent="패드 전광판 연결 대기";
+    return;
+  }
+
+  $("#autoWaitBox").classList.add("hidden");
+  $("#connectTitle").textContent="전광판 경기 선택";
+  $("#matchChooser").classList.remove("hidden");
+  $("#matchChooserTitle").textContent=`진행 중인 복식경기 ${active.length}개 · 표시할 경기를 선택하세요.`;
+  const list=$("#activeMatchList");
+  list.innerHTML="";
+  active.forEach(([code,state])=>{
+    const button=document.createElement("button");
+    button.type="button";
+    button.className="match-choice";
+
+    const content=document.createElement("span");
+    const teams=document.createElement("span");
+    teams.className="choice-teams";
+    const teamA=(state.teams?.A || []).join("·") || "A팀";
+    const teamB=(state.teams?.B || []).join("·") || "B팀";
+    teams.textContent=`${teamA} vs ${teamB}`;
+    const meta=document.createElement("span");
+    meta.className="choice-meta";
+    meta.textContent=`${matchStatusText(state)} · 경기코드 ${code}`;
+    content.append(teams,meta);
+
+    const arrow=document.createElement("span");
+    arrow.className="choice-arrow";
+    arrow.textContent="›";
+    button.append(content,arrow);
+    button.onclick=()=>openDisplayRoom(code);
+    list.appendChild(button);
+  });
+
+  if(!chooserAnnouncementDone){
+    chooserAnnouncementDone=true;
+    speak(`진행 중인 복식경기가 ${active.length}개입니다. 표시할 경기를 선택하세요.`);
+  }
+}
+function startAutoRoomWatcher(){
+  showConnect("",true);
+  autoRoomUnsubscribe=onValue(ref(db,"team_live_matches"),snapshot=>{
+    renderAutoRoomChoices(snapshot.val() || {});
+  },error=>{
+    console.error(error);
+    showConnect("진행 경기 목록을 불러오지 못했습니다",true);
+  });
+  autoRoomTimer=setInterval(()=>renderAutoRoomChoices(autoRoomCache),ABANDON_CHECK_MS);
+  if(returnNotice==="expired"){
+    toast("심판 연결이 10분간 없어 경기를 자동 정리했습니다");
+  }else if(returnNotice==="closed"){
+    toast("경기가 종료되어 목록으로 돌아왔습니다");
+  }
 }
 function join(selectedRole){
   const code=$("#roomInput").value.replace(/\D/g,"").slice(0,6);
@@ -594,6 +806,15 @@ $("#roomInput").addEventListener("input",e=>{ e.target.value=e.target.value.repl
 $("#joinReferee").onclick=()=>join("referee");
 $("#joinDisplay").onclick=()=>join("display");
 $("#connectBack").onclick=()=>{ location.href="./index.html"; };
+$("#manualConnectToggle").onclick=()=>{
+  const area=$("#manualConnectArea");
+  manualConnectOpen=!manualConnectOpen;
+  area.classList.toggle("hidden",!manualConnectOpen);
+  $("#manualConnectToggle").textContent=manualConnectOpen ? "경기코드 입력 닫기" : "경기코드로 연결";
+};
+$("#chooseAnotherMatch").onclick=()=>{
+  location.href="./doubles-match.html?role=display&auto=1&choose=1";
+};
 
 function displayUrl(){
   const url=new URL(location.href);
@@ -1046,8 +1267,13 @@ function render(state){
   $("#statusDot").classList.add("online");
   $("#roomText").textContent=room;
   $("#roleText").textContent=role==="referee" ? "휴대폰 심판" : "패드 전광판";
+  $("#chooseAnotherMatch").classList.toggle("hidden",role!=="display");
   $("#app").classList.remove("hidden");
   $("#connectScreen").classList.add("hidden");
+  if(role==="referee"){
+    if(ACTIVE_STATUSES.has(state.status)) startRefereeHeartbeat();
+    else stopRefereeHeartbeat();
+  }
 
   const isSetup=state.status==="setup";
   $("#setupWrap").classList.toggle("hidden",!isSetup);
@@ -1103,25 +1329,7 @@ async function init(){
     if(autoConnect){
       try{
         await ensureAuthReady();
-        showConnect("",true);
-        autoRoomUnsubscribe=onValue(ref(db,"config/currentDoubleRoom"),async snapshot=>{
-          const current=snapshot.val() || {};
-          const code=String(current.room || "");
-          if(!/^\d{6}$/.test(code)) return;
-          const createdAt=Number(current.createdAt || current.updatedAt || 0);
-          if(!createdAt || Date.now()-createdAt>6*60*60*1000) return;
-          try{
-            const liveSnapshot=await get(ref(db,`team_live_matches/${code}`));
-            const state=liveSnapshot.val() || {};
-            if(["setup","playing","awaiting_end"].includes(state.status)){
-              const url=new URL(location.href);
-              url.searchParams.set("room",code);
-              url.searchParams.set("role","display");
-              url.searchParams.delete("auto");
-              location.replace(url.toString());
-            }
-          }catch(e){ console.error(e); }
-        });
+        startAutoRoomWatcher();
       }catch(e){
         console.error(e);
         showConnect("자동 연결을 시작하지 못했습니다");
@@ -1138,11 +1346,25 @@ async function init(){
       showConnect("해당 경기코드를 찾을 수 없습니다");
       return;
     }
+    if(isAbandonedMatch(first.val())){
+      abandonedCleanupTriggered=true;
+      await removeIfAbandoned(room);
+      if(role==="display"){
+        location.replace("./doubles-match.html?role=display&auto=1&choose=1&notice=expired");
+      }else{
+        showConnect("10분간 연결이 없어 자동 종료된 경기입니다");
+      }
+      return;
+    }
     $("#roomInput").value=room;
+    if(role==="referee") startRefereeHeartbeat();
+    if(role==="display") startSelectedRoomAbandonCheck();
     unsubscribe=onValue(liveRef,snapshot=>{
       if(!snapshot.exists()){
+        stopRefereeHeartbeat();
         if(role==="display"){
-          location.replace("./doubles-match.html?role=display&auto=1");
+          const notice=abandonedCleanupTriggered ? "expired" : "closed";
+          location.replace(`./doubles-match.html?role=display&auto=1&choose=1&notice=${notice}`);
         }else{
           showConnect("경기 연결이 종료되었습니다");
         }
@@ -1165,11 +1387,17 @@ async function init(){
 }
 
 document.addEventListener("visibilitychange",()=>{
-  if(!document.hidden && currentState) render(currentState);
+  if(!document.hidden && currentState){
+    render(currentState);
+    if(role==="referee") touchRefereePresence();
+  }
 });
 window.addEventListener("beforeunload",()=>{
   if(unsubscribe) unsubscribe();
   if(autoRoomUnsubscribe) autoRoomUnsubscribe();
+  if(autoRoomTimer) clearInterval(autoRoomTimer);
+  if(abandonedCheckTimer) clearInterval(abandonedCheckTimer);
+  stopRefereeHeartbeat();
 });
 init();
 </script>
