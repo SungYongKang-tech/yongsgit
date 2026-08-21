@@ -1620,7 +1620,7 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
         <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #374151;">
           <div>
             <b>${item.date}</b>
-            <span style="color:#9ca3af; font-size:12px;"> / 거래 ${item.trades || 0}건</span>
+            <span style="color:#9ca3af; font-size:12px;"> / 청산 ${item.trades || 0}종목 · 체결 ${item.sellFills ?? item.trades ?? 0}건</span>
           </div>
           <div class="${profit >= 0 ? "plus" : "minus"}" style="font-weight:bold;">
             ${formatWon(profit)} / ${formatRate(rate)}
@@ -1704,9 +1704,9 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
             <div class="stock-name">
   ${strategyLabel(item.strategyGroup)}
   / ${item.strategyName || "-"}
-</div>
+            </div>
             <div class="stock-sub">
-              거래 ${item.trades || 0}건 / 승 ${item.wins || 0} / 패 ${item.losses || 0}
+              청산 ${item.trades || 0}종목 / 매도체결 ${item.sellFills ?? item.trades ?? 0}건 / 승 ${item.wins || 0} / 패 ${item.losses || 0}
             </div>
           </div>
 
@@ -1724,7 +1724,7 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
           </div>
 
           <div class="info-box">
-            <div class="info-label">승률</div>
+            <div class="info-label">종목 승률</div>
             <div class="info-value">${formatRate(item.winRate || 0)}</div>
           </div>
 
@@ -2228,7 +2228,10 @@ setMarketTemperature(mt);
         
 
         setValue("todayProfitRate", formatRate(s.todayProfitRate), "rate");
-        setValue("totalTrades", `${s.totalTrades || 0}건`);
+        setValue(
+          "totalTrades",
+          `${s.totalTrades || 0}종목 / ${s.sellFillCount ?? s.totalTrades ?? 0}체결`
+        );
         setValue("winRate", formatRate(s.winRate), "rate");
         setValue("avgProfitRate", formatRate(s.avgProfitRate), "rate");
         setValue("avgWinRate", formatRate(s.avgWinRate), "rate");

@@ -149,7 +149,7 @@ openMinObservationCount: 2,
 openMinStrongObservationCount: 1,
 openMomentumMinScore: 18,
 // API 응답 지연을 고려해 최근 표본을 180초 보존
-openMomentumSampleWindowMs: 180 * 1000,
+openMomentumSampleWindowMs: 600 * 1000,
 
 // OPEN 후보 점수 상승 추세 보너스
 openScoreTrendBonusPerPoint: 4,
@@ -345,7 +345,19 @@ function loadState() {
 }
 
 function saveState(state) {
-  writeJsonFileAtomic(STATE_FILE, state);
+  /* server.js의 주문 API가 관리하는 원장을 오래된 OPEN 스캔이 덮지 않게 한다. */
+  const latest = fs.existsSync(STATE_FILE)
+    ? readJsonFileSafe(STATE_FILE, {})
+    : {};
+  const merged = { ...state };
+  for (const key of [
+    "holdings", "tradeLogs", "virtualResults", "totalCash",
+    "completedFullSellCodes", "completedOpenSellCodes"
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(latest, key)) merged[key] = latest[key];
+  }
+  writeJsonFileAtomic(STATE_FILE, merged);
+  replaceOpenStateSnapshot(state, merged);
 }
 
 function pushOpenLiveActivity(state, message, type = "INFO") {
@@ -4378,8 +4390,13 @@ function getOpenSellSignal(holding, price) {
   if (!buyPrice || !price) return null;
 
   const now = Date.now();
-  const buyTime = Number(holding.buyTime || 0);
-  const holdMinutes = buyTime > 0 ? (now - buyTime) / 60000 : 999;
+  const buyTimeMs =
+    Number(holding.buyTimeMs || 0) ||
+    Date.parse(String(holding.buyAt || "")) ||
+    Date.parse(String(holding.buyTime || ""));
+  const holdMinutes = Number.isFinite(buyTimeMs) && buyTimeMs > 0
+    ? Math.max(0, (now - buyTimeMs) / 60000)
+    : 0;
   const profitRate = ((price - buyPrice) / buyPrice) * 100;
 
   if (!holding.highestPrice || price > Number(holding.highestPrice || 0)) {
@@ -4506,7 +4523,8 @@ if (
 }
 
 async function paperOpenSell(state, holding, price, signal) {
-  const sellKey = `${holding.code}_${signal.type}`;
+  const normalizedCode = normalizeOpenStockCode(holding.code);
+  const sellKey = `${todayKey()}_${normalizedCode}`;
   if (state.pendingSellCodes.includes(sellKey)) return false;
   state.pendingSellCodes.push(sellKey);
   saveState(state);
@@ -4527,39 +4545,8 @@ async function paperOpenSell(state, holding, price, signal) {
     });
 
     recordOpenLearningSell(holding, price, signal, result);
-
-    state.holdings = state.holdings.filter(h => h !== holding);
-    state.totalCash = Number(result.totalCash ?? state.totalCash ?? 0);
-    state.tradeLogs.push({
-      date: todayKey(),
-      time: nowText(),
-      type: signal.type,
-      code: holding.code,
-      name: holding.name,
-      price,
-      qty,
-      profit: Number(result.profit || 0),
-      profitRate: Number(result.profitRate || 0),
-      strategyGroup: "OPEN",
-      reason: signal.reason,
-      buyPrice: Number(holding.buyPrice || 0),
-      highestPrice: Number(holding.highestPrice || price || 0),
-      lowestPrice: Number(holding.lowestPrice || price || 0),
-      signalAt: signal.signalAt || null,
-      signalAtMs: Number(signal.signalAtMs || 0),
-      signalPrice: Number(signal.signalPrice || price || 0),
-      executedAt: nowText(),
-      executedAtMs: Date.now(),
-      signalToSellRate:
-        Number(signal.signalPrice || 0) > 0
-          ? ((Number(price) - Number(signal.signalPrice)) /
-              Number(signal.signalPrice)) * 100
-          : 0,
-      highestProfitRate: Number(signal.highestProfitRate || 0),
-      drawdownFromHigh: Number(signal.drawdownFromHigh || 0),
-      holdMinutes: Number(signal.holdMinutes || 0),
-      openBuyDiagnostic: holding.openBuyDiagnostic || null
-    });
+    // 주문 API가 저장한 최신 보유·현금·거래원장을 다시 읽는다.
+    replaceOpenStateSnapshot(state, loadState());
 
     state.openCompleted = true;
     state.openSkipped = false;
@@ -4571,8 +4558,11 @@ async function paperOpenSell(state, holding, price, signal) {
     console.log(`[${signal.type} 완료] ${holding.name} / ${price.toLocaleString()}원 / 손익 ${Number(result.profit || 0).toLocaleString()}원`);
     return true;
   } finally {
-    state.pendingSellCodes = state.pendingSellCodes.filter(key => key !== sellKey);
-    saveState(state);
+    const latestState = loadState();
+    if (!Array.isArray(latestState.pendingSellCodes)) latestState.pendingSellCodes = [];
+    latestState.pendingSellCodes = latestState.pendingSellCodes.filter(key => key !== sellKey);
+    saveState(latestState);
+    replaceOpenStateSnapshot(state, latestState);
   }
 }
 

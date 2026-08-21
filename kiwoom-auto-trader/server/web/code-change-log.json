@@ -1,34 +1,49 @@
 {
-  "project": "SY Quant",
-  "updatedAt": "2026-08-19T17:44:00+09:00",
+  "date": "2026-08-20",
   "changes": [
     {
-      "id": "SYQ-OPEN-20260819-02",
-      "appliedAt": "2026-08-19",
-      "files": [
-        "open-strategy.js"
-      ],
-      "summary": "OPEN 약세장 매수선택 로직 및 매수시점 진단값 저장 개선",
-      "changes": [
-        "시장점수 40점 미만 일괄 차단을 2단계로 변경: 25점 미만 절대차단, 25~39점은 초강력 후보만 예외 허용",
-        "약세장 초강력 예외조건 추가: 발견점수 9 이상, 지속강도 75 이상, 가격지속 75% 이상, 거래량지속 75% 이상, 관찰 4회 이상, 강한 관찰조건 3개 이상",
-        "보완매수가 시장절대차단·시장급락차단·섹터약세 등 시장 필터를 우회하지 못하도록 정렬",
-        "보완매수 최소 지속강도 기준을 18점에서 50점으로 상향",
-        "recordOpenLearningBuy에 최종 judged 스냅샷을 전달해 매수시점 지속강도·가격지속·거래량지속·관찰횟수·시장점수 등이 0으로 기록되는 문제를 보완"
-      ],
-      "reason": "2026-08-19 OPEN에서 비보존 제약은 시장 28점으로 차단됐지만 더 약한 삼성공조가 fallback 경로로 매수되는 모순과, 매수 진단값이 0으로 표시되는 문제를 개선하기 위함",
-      "validation": [
-        "node --check open-strategy.js 통과"
-      ],
-      "effectiveFrom": "2026-08-20 장 시작 전 적용",
-      "nextTradingDayChecks": [
-        "시장점수 25점 미만에서 OPEN 실제 매수가 완전히 차단되는지",
-        "시장점수 25~39점에서 초강력 후보만 OPEN 약세장 예외로 통과하는지",
-        "시장급락/섹터약세 탈락 종목이 fallback으로 다시 선정되지 않는지",
-        "fallback 후보 지속강도가 50점 미만이면 실제 매수되지 않는지",
-        "매수 종목의 지속강도·가격지속·거래량지속·관찰횟수·시장점수가 분석 화면에 0이 아닌 실제값으로 저장되는지",
-        "비보존 제약과 유사한 강한 후보가 약세장 예외로 정상 선별되는지"
-      ]
+      "id": "SYQ-WAVE-20260820-PREP-LIVE-ISOLATION",
+      "date": "2026-08-20",
+      "time": "21:22",
+      "file": "wave-strategy.js",
+      "category": "WAVE 진입안전",
+      "title": "장전·장후 사전신호와 LIVE TRIGGER 확인시간 분리",
+      "description": "AFTER_CLOSE_PREP와 MORNING_PREP에서는 실제 TRIGGER 시간이나 확인완료 상태를 만들지 않고 READY와 preSignalStatus만 저장한다. 실제 매수용 TRIGGER는 같은 거래일 LIVE 평가에서 새로 시작하고 최소 다음 평가까지 유지되어야 매수한다. 구버전 비LIVE TRIGGER 상태는 배포 시 READY 사전신호로 자동 정규화한다.",
+      "effectiveFrom": "wave-strategy.js 교체 후 kiwwm-server 재시작부터",
+      "verification": "장후·장전 평가 뒤 실제 TRIGGER 수는 0이고 사전TRIGGER만 기록되는지, 다음 거래일 09:00 첫 LIVE 평가에서 즉시 매수되지 않고 이후 최소 4분 경과한 LIVE 재평가에서만 확인되는지 점검"
+    },
+    {
+      "id": "SYQ-WAVE-20260820-WATCH-CAP-DEDUPE",
+      "date": "2026-08-20",
+      "time": "21:22",
+      "file": "wave-strategy.js",
+      "category": "WAVE 후보관리",
+      "title": "활성후보 상한 초과 종목의 5분 반복 재발견 차단",
+      "description": "활성후보 40개 상한 밖 종목을 상태파일에서 삭제하지 않고 DROPPED 이력으로 보존한다. 같은 날 같은 종목이 다시 들어오면 신규 발견으로 추가하지 않으며, 다음 거래일 새 자료 유입 때만 WATCH로 복귀해 우선순위를 다시 비교한다. 보유·보호 종목은 상한 정리에서 최우선 보존한다.",
+      "effectiveFrom": "wave-strategy.js 교체 후 kiwwm-server 재시작부터",
+      "verification": "활성후보가 40개를 넘어도 종목코드 중복이 생기지 않고, [WAVE 발견]과 후보제외 로그가 같은 종목으로 5분마다 반복되지 않는지 확인"
+    },
+    {
+      "id": "SYQ-WAVE-20260820-PRE-EVAL-ONCE",
+      "date": "2026-08-20",
+      "time": "21:22",
+      "file": "wave-strategy.js",
+      "category": "WAVE 실행관리",
+      "title": "장후·장전 사전평가 1회 실행과 재시도 상한 적용",
+      "description": "장후와 장전 전체 사전평가는 각각 하루 1회만 수행하고, 분석자료가 전혀 없는 후보만 최대 2회 재시도한다. 완료 후 5분 타이머는 후보 적재·API 평가·상태저장 로그를 반복하지 않으며 OFF와 SELL_ONLY 구간에서도 불필요한 후보 적재를 하지 않는다.",
+      "effectiveFrom": "wave-strategy.js 교체 후 kiwwm-server 재시작부터",
+      "verification": "[WAVE 야간사전평가]와 [WAVE 장전사전평가] 전체평가 로그가 날짜별 각 1회인지, 완료 후 동일 후보 평가 로그가 반복되지 않는지 확인"
+    },
+    {
+      "id": "SYQ-WAVE-20260820-PROTECT-STATUS",
+      "date": "2026-08-20",
+      "time": "21:22",
+      "file": "wave-strategy.js",
+      "category": "WAVE 보유관리",
+      "title": "PROTECT 표시를 실제 수익보호 시작값과 일치",
+      "description": "최고수익이 protectStartProfitRate(+5%)에 도달하면 후보 상태를 PROTECT로 표시하고 holding.protectActive를 기록한다. +8% 고점 트레일링 시작 여부는 holding.trailingActive로 별도 기록한다. 손절·본전보호·트레일링 수치 자체는 변경하지 않았다.",
+      "effectiveFrom": "wave-strategy.js 교체 후 상태파일 로드부터",
+      "verification": "최고수익 +7.90%인 HPSP가 PROTECT로 표시되고 protectActive=true, trailingActive=false인지 확인"
     }
   ]
 }

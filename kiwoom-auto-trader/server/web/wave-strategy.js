@@ -6,8 +6,9 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.5.1";
-const ANALYSIS_RULE_VERSION = "20260819-entry-cooldown-true-rebound-trigger-confirm-v4";
+const STRATEGY_VERSION = "1.5.2";
+const ANALYSIS_RULE_VERSION = "20260820-prep-signal-isolation-watch-overflow-v5";
+const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
 const SETTINGS = {
   enabled: true,
@@ -32,6 +33,7 @@ const SETTINGS = {
   morningPreEvalEndTime: "08:59",
   preEvaluationBatchSize: 40,
   retryUnevaluatedBatchSize: 8,
+  preEvaluationMaxRetryCount: 2,
   evaluationDelayMs: 350,
 
   // 후보 유입: HOT 누적이력 + OPEN 장전 우선종목
@@ -181,8 +183,13 @@ function createInitialState() {
     preEvaluation: {
       afterCloseDate: null,
       afterCloseAt: null,
+      afterCloseRetryCount: 0,
       morningDate: null,
-      morningAt: null
+      morningAt: null,
+      morningRetryCount: 0,
+      analysisRuleVersion: ANALYSIS_RULE_VERSION,
+      ruleRefreshPending: false,
+      ruleRefreshReason: null
     },
     lastRunAt: null,
     lastRunAtMs: 0,
@@ -210,10 +217,18 @@ function loadState() {
       state.preEvaluation = {
         afterCloseDate: null,
         afterCloseAt: null,
+        afterCloseRetryCount: 0,
         morningDate: null,
         morningAt: null,
+        morningRetryCount: 0,
         analysisRuleVersion: null
       };
+    }
+    if (!Number.isFinite(Number(state.preEvaluation.afterCloseRetryCount))) {
+      state.preEvaluation.afterCloseRetryCount = 0;
+    }
+    if (!Number.isFinite(Number(state.preEvaluation.morningRetryCount))) {
+      state.preEvaluation.morningRetryCount = 0;
     }
 
     // 점수/READY 규칙이 바뀐 버전을 배포했는데 같은 날 이미 사전평가가 끝난 상태라면,
@@ -225,9 +240,59 @@ function loadState() {
       state.preEvaluation.afterCloseAt = null;
       state.preEvaluation.morningDate = null;
       state.preEvaluation.morningAt = null;
+      state.preEvaluation.afterCloseRetryCount = 0;
+      state.preEvaluation.morningRetryCount = 0;
       state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
       state.preEvaluation.ruleRefreshPending = true;
       state.preEvaluation.ruleRefreshReason = `분석규칙 변경 → ${ANALYSIS_RULE_VERSION}`;
+
+      // 구버전은 장후/장전 평가도 실제 TRIGGER 시간으로 저장했다.
+      // 비LIVE 평가에서 만들어진 TRIGGER는 READY 사전신호로 되돌려
+      // 다음 거래일 장중 2회 확인(최소 4분)을 다시 거치게 한다.
+      for (const candidate of state.watchlist) {
+        if (candidate.status !== "TRIGGER" || candidate.lastEvaluationMode === "LIVE") continue;
+        candidate.preSignalStatus = "TRIGGER";
+        candidate.preSignalMode = candidate.lastEvaluationMode || "PREP_MIGRATION";
+        candidate.preSignalAt = candidate.lastEvaluatedAt || nowText();
+        candidate.preSignalAtMs = toNumber(candidate.lastEvaluatedAtMs || Date.now());
+        candidate.preSignalPrice = toNumber(candidate.lastPrice || candidate.triggerPrice);
+        candidate.preSignalScore = toNumber(candidate.lastAnalysis?.totalScore || candidate.triggerScore);
+        candidate.status = candidate.lastAnalysis?.readyEligible === false ? "WATCH" : "READY";
+        if (candidate.lastAnalysis) {
+          candidate.lastAnalysis.preSignalStatus = "TRIGGER";
+          candidate.lastAnalysis.preSignalBuyEligible = candidate.lastAnalysis.buyEligible === true;
+          candidate.lastAnalysis.preSignalReason = candidate.lastAnalysis.buyReason || null;
+          candidate.lastAnalysis.triggerConfirmed = false;
+          candidate.lastAnalysis.triggerAgeMs = 0;
+          candidate.lastAnalysis.triggerPrice = 0;
+          candidate.lastAnalysis.triggerPriceHoldRate = 0;
+          candidate.lastAnalysis.buyEligible = false;
+          candidate.lastAnalysis.buyReason = null;
+        }
+        clearLiveTrigger(candidate);
+      }
+    }
+
+    // 상태표시는 실제 보호 규칙 시작값(+5%)과 맞춘다. 구버전 상태파일의 보유종목도
+    // 다음 가격조회 전부터 PROTECT 여부가 일관되게 보이도록 저장된 최고가를 이용한다.
+    for (const holding of state.holdings) {
+      const buyPrice = toNumber(holding.buyPrice);
+      const storedMaxProfitRate = buyPrice > 0
+        ? Math.max(
+          toNumber(holding.maxProfitRate),
+          ((toNumber(holding.highestPrice || holding.currentPrice) - buyPrice) / buyPrice) * 100
+        )
+        : toNumber(holding.maxProfitRate);
+      if (storedMaxProfitRate >= SETTINGS.protectStartProfitRate) {
+        holding.protectActive = true;
+        if (!holding.protectActivatedAt) holding.protectActivatedAt = holding.lastCheckedAt || nowText();
+        const candidate = state.watchlist.find(item => item.code === holding.code);
+        if (candidate && candidate.status === "HOLD") candidate.status = "PROTECT";
+      }
+      if (storedMaxProfitRate >= SETTINGS.trailingStartProfitRate) {
+        holding.trailingActive = true;
+        if (!holding.trailingActivatedAt) holding.trailingActivatedAt = holding.lastCheckedAt || nowText();
+      }
     }
 
     state.version = 2;
@@ -237,6 +302,14 @@ function loadState() {
     console.error("[WAVE 상태파일 읽기 오류]", err.message);
     return createInitialState();
   }
+}
+
+function clearLiveTrigger(candidate) {
+  candidate.triggerAt = null;
+  candidate.triggerAtMs = 0;
+  candidate.triggerPrice = 0;
+  candidate.triggerScore = 0;
+  candidate.triggerDate = null;
 }
 
 function saveState(state) {
@@ -353,6 +426,22 @@ function upsertCandidate(state, incoming) {
   existing.sector = incoming.sector || existing.sector || null;
   existing.sectorKey = incoming.sectorKey || existing.sectorKey || null;
   if (!existing.discoveryPrice && incoming.discoveryPrice) existing.discoveryPrice = incoming.discoveryPrice;
+
+  // 활성후보 상한 때문에 밀린 후보는 같은 날 반복 재등록하지 않는다.
+  // 다음 거래일 새 자료가 들어오면 WATCH로 한 번 복귀시켜 다시 우선순위를 비교한다.
+  if (
+    existing.status === "DROPPED" &&
+    String(existing.dropReason || "").startsWith(WATCH_CAP_DROP_REASON) &&
+    existing.dropDate !== todayKey()
+  ) {
+    existing.status = "WATCH";
+    existing.dropReason = null;
+    existing.dropDate = null;
+    existing.droppedAt = null;
+    existing.droppedAtMs = 0;
+    existing.reactivatedAt = nowText();
+    existing.reactivatedDate = todayKey();
+  }
   if (!["HOLD", "PROTECT", "SOLD", "DROPPED"].includes(existing.status)) {
     if (existing.status === "DISCOVERED") existing.status = "WATCH";
   }
@@ -1230,6 +1319,26 @@ async function checkHoldingSell(state, holding) {
   holding.holdingTradingDays = holdingDays;
   holding.trendScore = trend.score;
 
+  // 본전보호는 +5%부터 실제로 동작하므로 화면 상태도 같은 시점에 PROTECT로 맞춘다.
+  // +8%부터 시작하는 고점 트레일링은 별도 플래그로 기록한다.
+  const protectionActive = maxProfitRate >= SETTINGS.protectStartProfitRate;
+  const trailingActive = maxProfitRate >= SETTINGS.trailingStartProfitRate;
+  if (protectionActive && holding.protectActive !== true) {
+    holding.protectActivatedAt = nowText();
+    holding.protectActivatedAtMs = Date.now();
+  }
+  if (trailingActive && holding.trailingActive !== true) {
+    holding.trailingActivatedAt = nowText();
+    holding.trailingActivatedAtMs = Date.now();
+  }
+  holding.protectActive = protectionActive;
+  holding.trailingActive = trailingActive;
+
+  if (protectionActive) {
+    const candidate = state.watchlist.find(item => item.code === holding.code);
+    if (candidate && candidate.status === "HOLD") candidate.status = "PROTECT";
+  }
+
   if (profitRate <= SETTINGS.stopLossRate) {
     return paperSell(state, holding, price, "WAVE_STOP_LOSS",
       `초기 손절 ${profitRate.toFixed(2)}% / 기준 ${SETTINGS.stopLossRate.toFixed(2)}%`);
@@ -1265,11 +1374,6 @@ async function checkHoldingSell(state, holding) {
   ) {
     return paperSell(state, holding, price, "WAVE_PROTECT_SELL",
       `수익 후 본전보호 / 최고 ${maxProfitRate.toFixed(2)}% / 현재 ${profitRate.toFixed(2)}%`);
-  }
-
-  if (maxProfitRate >= SETTINGS.trailingStartProfitRate) {
-    const candidate = state.watchlist.find(item => item.code === holding.code);
-    if (candidate && candidate.status === "HOLD") candidate.status = "PROTECT";
   }
 
   if (holdingDays >= SETTINGS.hardMaxHoldingTradingDays) {
@@ -1314,18 +1418,54 @@ function dropExpiredOrBrokenCandidates(state) {
 
 function trimWatchlist(state) {
   const active = state.watchlist.filter(item => !["SOLD", "DROPPED"].includes(item.status));
-  const closed = state.watchlist
-    .filter(item => ["SOLD", "DROPPED"].includes(item.status))
-    .sort((a, b) => toNumber(b.soldAtMs || b.lastEvaluatedAtMs) - toNumber(a.soldAtMs || a.lastEvaluatedAtMs))
-    .slice(0, 80);
 
   active.sort((a, b) => {
-    const aScore = toNumber(a.lastAnalysis?.totalScore) + toNumber(a.hotScore) * 0.1 + toNumber(a.priorityScore) * 0.1;
-    const bScore = toNumber(b.lastAnalysis?.totalScore) + toNumber(b.hotScore) * 0.1 + toNumber(b.priorityScore) * 0.1;
+    const statusRank = status => status === "PROTECT" ? 6 : status === "HOLD" ? 5 :
+      status === "TRIGGER" ? 4 : status === "READY" ? 3 :
+        ["WATCH", "DISCOVERED"].includes(status) ? 2 : 1;
+    const statusDiff = statusRank(b.status) - statusRank(a.status);
+    if (statusDiff !== 0) return statusDiff;
+
+    const capacityScore = candidate => candidate.lastAnalysis
+      ? toNumber(candidate.lastAnalysis.totalScore) +
+        toNumber(candidate.hotScore) * 0.1 +
+        toNumber(candidate.priorityScore) * 0.1
+      : Math.max(toNumber(candidate.hotScore), toNumber(candidate.priorityScore));
+    const aScore = capacityScore(a);
+    const bScore = capacityScore(b);
     return bScore - aScore;
   });
 
-  state.watchlist = [...active.slice(0, SETTINGS.maxWatchCount), ...closed];
+  const kept = active.slice(0, SETTINGS.maxWatchCount);
+  const overflow = active.slice(SETTINGS.maxWatchCount);
+  for (const candidate of overflow) {
+    candidate.status = "DROPPED";
+    candidate.dropReason = `${WATCH_CAP_DROP_REASON} / 최대 ${SETTINGS.maxWatchCount}개`;
+    candidate.dropDate = todayKey();
+    candidate.droppedAt = nowText();
+    candidate.droppedAtMs = Date.now();
+  }
+
+  // 상한 밖 후보도 상태파일에 남겨야 다음 5분 실행에서 같은 종목을 신규 발견으로
+  // 다시 추가하지 않는다. 종목코드 기준으로 중복을 제거하고 최근 이력만 보관한다.
+  const keptCodes = new Set(kept.map(item => item.code));
+  const closedByCode = new Map();
+  for (const candidate of [
+    ...overflow,
+    ...state.watchlist.filter(item => ["SOLD", "DROPPED"].includes(item.status))
+  ]) {
+    if (!candidate?.code || keptCodes.has(candidate.code) || closedByCode.has(candidate.code)) continue;
+    closedByCode.set(candidate.code, candidate);
+  }
+
+  const closed = Array.from(closedByCode.values())
+    .sort((a, b) =>
+      toNumber(b.soldAtMs || b.droppedAtMs || b.lastEvaluatedAtMs) -
+      toNumber(a.soldAtMs || a.droppedAtMs || a.lastEvaluatedAtMs)
+    )
+    .slice(0, 120);
+
+  state.watchlist = [...kept, ...closed];
 }
 
 async function evaluateWatchCandidates(state, options = {}) {
@@ -1391,6 +1531,13 @@ async function evaluateWatchCandidates(state, options = {}) {
         fetchStockNews(candidate.name)
       ]);
 
+      // TRIGGER 확인시간은 같은 거래일 LIVE 평가끼리만 이어진다.
+      // 전일 또는 구버전 TRIGGER가 남아 있으면 READY에서 장중 확인을 새로 시작한다.
+      if (mode === "LIVE" && candidate.status === "TRIGGER" && candidate.triggerDate !== todayKey()) {
+        candidate.status = "READY";
+        clearLiveTrigger(candidate);
+      }
+
       const previousStatusRaw = candidate.status;
       const previousStatus = previousStatusRaw === "DISCOVERED" ? "WATCH" : previousStatusRaw;
       const previousTriggerAtMs = toNumber(candidate.triggerAtMs);
@@ -1400,23 +1547,27 @@ async function evaluateWatchCandidates(state, options = {}) {
 
       const foundationReady = analysis.readyEligible === true;
       const triggerReady = analysis.triggerEligible === true;
-      const triggerAgeMs = previousStatus === "TRIGGER" && previousTriggerAtMs > 0
+      const triggerAgeMs = mode === "LIVE" && previousStatus === "TRIGGER" && previousTriggerAtMs > 0
         ? Date.now() - previousTriggerAtMs
         : 0;
       const triggerPriceHoldRate = previousTriggerPrice > 0
         ? ((analysis.currentPrice - previousTriggerPrice) / previousTriggerPrice) * 100
         : 0;
       const triggerConfirmed =
+        mode === "LIVE" &&
         previousStatus === "TRIGGER" &&
+        candidate.triggerDate === todayKey() &&
         triggerReady &&
         triggerAgeMs >= SETTINGS.triggerConfirmMinMs &&
         (previousTriggerPrice <= 0 || triggerPriceHoldRate >= SETTINGS.triggerConfirmMaxDipRate);
 
+      const scoreBuyEligible = analysis.buyEligible === true;
       analysis.triggerConfirmed = triggerConfirmed;
       analysis.triggerAgeMs = triggerAgeMs;
       analysis.triggerPrice = previousTriggerPrice;
       analysis.triggerPriceHoldRate = triggerPriceHoldRate;
-      analysis.buyEligible = analysis.buyEligible === true && triggerConfirmed;
+      analysis.preSignalBuyEligible = mode !== "LIVE" && scoreBuyEligible;
+      analysis.buyEligible = mode === "LIVE" && scoreBuyEligible && triggerConfirmed;
       analysis.buyReason = analysis.buyEligible
         ? `WAVE TRIGGER 재확인 완료 / 유지 ${Math.round(triggerAgeMs / 60000)}분 / ` +
           `TRIGGER가 대비 ${triggerPriceHoldRate.toFixed(2)}% / 총 ${analysis.totalScore}`
@@ -1434,15 +1585,50 @@ async function evaluateWatchCandidates(state, options = {}) {
       candidate.lastEvaluationMode = mode;
       candidate.status = previousStatus;
 
-      if (!foundationReady) {
+      if (mode !== "LIVE") {
+        // 장후/장전 평가는 다음 장의 우선순위만 만든다. 실제 TRIGGER 시간은 만들거나
+        // 확인하지 않으며, 장중 첫 평가에서 TRIGGER를 새로 만든 뒤 다음 평가에서 산다.
+        const preSignalStatus = triggerReady ? "TRIGGER" : foundationReady ? "READY" : "WATCH";
+        candidate.preSignalStatus = preSignalStatus;
+        candidate.preSignalMode = mode;
+        candidate.preSignalDate = todayKey();
+        candidate.preSignalAt = analysis.checkedAt;
+        candidate.preSignalAtMs = analysis.checkedAtMs;
+        candidate.preSignalPrice = analysis.currentPrice;
+        candidate.preSignalScore = analysis.totalScore;
+        analysis.preSignalStatus = preSignalStatus;
+        analysis.preSignalReason = analysis.buyReason;
+        analysis.triggerConfirmed = false;
+        analysis.triggerAgeMs = 0;
+        analysis.triggerPrice = 0;
+        analysis.triggerPriceHoldRate = 0;
+        analysis.buyReason = null;
+        clearLiveTrigger(candidate);
+
+        if (!foundationReady) {
+          candidate.status = "WATCH";
+          candidate.readyBlockReason = analysis.readyBlockReason ||
+            `READY 조건 재확인 필요 / WHY ${analysis.why.score} / 기초 ${analysis.foundationScore} / 눌림 ${analysis.pullback.score}`;
+          candidate.readyBlockedAt = nowText();
+        } else {
+          candidate.status = "READY";
+          candidate.readyAt = previousStatus === "READY" ? candidate.readyAt : nowText();
+          candidate.readyBlockReason = null;
+          candidate.readyBlockedAt = null;
+        }
+
+        if (preSignalStatus === "TRIGGER") {
+          console.log(
+            `[WAVE 사전 TRIGGER] ${candidate.name} / 총 ${analysis.totalScore} / ` +
+            `다음 LIVE 평가부터 2회 확인 / 모드 ${mode}`
+          );
+        }
+      } else if (!foundationReady) {
         candidate.status = "WATCH";
         candidate.readyBlockReason = analysis.readyBlockReason ||
           `READY 조건 재확인 필요 / WHY ${analysis.why.score} / 기초 ${analysis.foundationScore} / 눌림 ${analysis.pullback.score}`;
         candidate.readyBlockedAt = nowText();
-        candidate.triggerAt = null;
-        candidate.triggerAtMs = 0;
-        candidate.triggerPrice = 0;
-        candidate.triggerScore = 0;
+        clearLiveTrigger(candidate);
 
         if (["READY", "TRIGGER"].includes(previousStatus)) {
           console.log(
@@ -1459,6 +1645,7 @@ async function evaluateWatchCandidates(state, options = {}) {
           candidate.triggerAtMs = Date.now();
           candidate.triggerPrice = analysis.currentPrice;
           candidate.triggerScore = analysis.totalScore;
+          candidate.triggerDate = todayKey();
           console.log(
             `[WAVE TRIGGER] ${candidate.name} / 총 ${analysis.totalScore} / ` +
             `REBOUND ${analysis.rebound.score} / 당일 ${analysis.rebound.changeRate.toFixed(2)}% / ` +
@@ -1477,10 +1664,7 @@ async function evaluateWatchCandidates(state, options = {}) {
         candidate.readyAt = previousStatus === "READY" ? candidate.readyAt : nowText();
         candidate.readyBlockReason = null;
         candidate.readyBlockedAt = null;
-        candidate.triggerAt = null;
-        candidate.triggerAtMs = 0;
-        candidate.triggerPrice = 0;
-        candidate.triggerScore = 0;
+        clearLiveTrigger(candidate);
 
         if (previousStatus === "TRIGGER") {
           console.log(
@@ -1536,6 +1720,7 @@ function makeSummary(state) {
   const watchOnly = activeWatch.filter(item => ["DISCOVERED", "WATCH"].includes(item.status));
   const ready = activeWatch.filter(item => item.status === "READY");
   const trigger = activeWatch.filter(item => item.status === "TRIGGER");
+  const prepTrigger = activeWatch.filter(item => item.preSignalStatus === "TRIGGER");
   const realizedProfit = state.tradeLogs
     .filter(log => String(log.type || "").startsWith("WAVE_") && String(log.type || "") !== "WAVE_BUY" && Number.isFinite(Number(log.profit)))
     .reduce((sum, log) => sum + Number(log.profit || 0), 0);
@@ -1554,6 +1739,7 @@ function makeSummary(state) {
     watchCount: watchOnly.length,
     readyCount: ready.length,
     triggerCount: trigger.length,
+    prepTriggerCount: prepTrigger.length,
     holdingCount: state.holdings.length,
     todayBuyCount: getTodayBuyCount(state),
     topCandidates: activeWatch
@@ -1564,6 +1750,8 @@ function makeSummary(state) {
         code: item.code,
         name: item.name,
         status: item.status,
+        preSignalStatus: item.preSignalStatus || null,
+        preSignalMode: item.preSignalMode || null,
         score: toNumber(item.lastAnalysis?.totalScore),
         foundationScore: toNumber(item.lastAnalysis?.foundationScore),
         why: toNumber(item.lastAnalysis?.why?.score),
@@ -1590,72 +1778,113 @@ async function runWaveOnce() {
   const state = loadState();
   try {
     if (!SETTINGS.enabled) return { ok: false, reason: "WAVE OFF" };
+    const phase = getWaveRunPhase();
+    const date = todayKey();
 
-    const hotAdded = ingestHotCandidates(state);
-    const priorityAdded = ingestMarketPriorityCandidates(state);
+    // OFF 구간에는 후보 API/파일을 반복 조회하지 않는다. 5분 타이머는 유지하되
+    // 실제 후보 적재와 상태 저장은 LIVE/SELL_ONLY/사전평가 구간에서만 수행한다.
+    if (!isKoreanWeekday() || phase === "OFF") {
+      return { ok: true, skipped: true, reason: `WAVE ${phase}`, state };
+    }
+
+    const activeBeforeRun = state.watchlist
+      .filter(item => ["DISCOVERED", "WATCH", "READY", "TRIGGER"].includes(item.status));
+    const unevaluatedBeforeRun = activeBeforeRun.filter(item => !item.lastAnalysis);
+    const firstAfterClosePass = phase === "AFTER_CLOSE_PREP" && state.preEvaluation.afterCloseDate !== date;
+    const firstMorningPass = phase === "MORNING_PREP" && state.preEvaluation.morningDate !== date;
+    const afterCloseRetryAllowed =
+      phase === "AFTER_CLOSE_PREP" &&
+      !firstAfterClosePass &&
+      unevaluatedBeforeRun.length > 0 &&
+      toNumber(state.preEvaluation.afterCloseRetryCount) < SETTINGS.preEvaluationMaxRetryCount;
+    const morningRetryAllowed =
+      phase === "MORNING_PREP" &&
+      !firstMorningPass &&
+      unevaluatedBeforeRun.length > 0 &&
+      toNumber(state.preEvaluation.morningRetryCount) < SETTINGS.preEvaluationMaxRetryCount;
+
+    // 장후/장전 전체 평가는 하루 1회, 미평가 후보 재시도는 최대 2회만 한다.
+    // 완료 뒤 5분 타이머가 돌아도 후보를 재적재하지 않아 발견/제외 로그가 증식하지 않는다.
+    if (phase === "AFTER_CLOSE_PREP" && !firstAfterClosePass && !afterCloseRetryAllowed) {
+      return { ok: true, skipped: true, reason: "WAVE 장후 사전평가 완료", state };
+    }
+    if (phase === "MORNING_PREP" && !firstMorningPass && !morningRetryAllowed) {
+      return { ok: true, skipped: true, reason: "WAVE 장전 사전평가 완료", state };
+    }
+
+    let hotAdded = 0;
+    let priorityAdded = 0;
+    const shouldIngest = phase === "LIVE" || firstAfterClosePass || firstMorningPass;
+    if (shouldIngest) {
+      hotAdded = ingestHotCandidates(state);
+      priorityAdded = ingestMarketPriorityCandidates(state);
+      // 적재 직후 상한을 먼저 적용해야 사전평가 배치 40개와 활성후보 40개가 일치한다.
+      trimWatchlist(state);
+    }
 
     let sold = 0;
     let evaluation = { evaluated: 0, ready: 0, trigger: 0, bought: 0, attempted: 0, mode: "OFF" };
-    const phase = getWaveRunPhase();
 
-    if (isKoreanWeekday()) {
-      sold = await checkAllHoldings(state);
+    sold = await checkAllHoldings(state);
 
-      if (phase === "LIVE") {
-        evaluation = await evaluateWatchCandidates(state, {
-          mode: "LIVE",
-          batchSize: SETTINGS.liveEvaluationBatchSize
-        });
-      } else if (phase === "AFTER_CLOSE_PREP") {
-        const active = state.watchlist.filter(item => ["DISCOVERED", "WATCH", "READY", "TRIGGER"].includes(item.status));
-        const firstPassToday = state.preEvaluation.afterCloseDate !== todayKey();
-        const unevaluated = active.filter(item => !item.lastAnalysis);
-
-        if (firstPassToday || unevaluated.length > 0) {
-          evaluation = await evaluateWatchCandidates(state, {
-            mode: "AFTER_CLOSE_PREP",
-            batchSize: firstPassToday
-              ? SETTINGS.preEvaluationBatchSize
-              : SETTINGS.retryUnevaluatedBatchSize,
-            onlyUnevaluated: !firstPassToday
-          });
-          state.preEvaluation.afterCloseDate = todayKey();
-          state.preEvaluation.afterCloseAt = nowText();
-          state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
-          state.preEvaluation.ruleRefreshPending = false;
-          console.log(
-            `[WAVE 야간사전평가] 시도 ${evaluation.attempted} / 완료 ${evaluation.evaluated} / ` +
-            `READY ${state.watchlist.filter(item => item.status === "READY").length} / ` +
-            `TRIGGER ${state.watchlist.filter(item => item.status === "TRIGGER").length}`
-          );
-        }
-      } else if (phase === "MORNING_PREP") {
-        const active = state.watchlist.filter(item => ["DISCOVERED", "WATCH", "READY", "TRIGGER"].includes(item.status));
-        const firstPassToday = state.preEvaluation.morningDate !== todayKey();
-        const unevaluated = active.filter(item => !item.lastAnalysis);
-
-        if (firstPassToday || unevaluated.length > 0) {
-          // 08:40에 갱신된 open-market 데이터를 반영하기 위해 장전에는 활성 후보 전체를 다시 본다.
-          dailyCache.clear();
-          flowCache.clear();
-          evaluation = await evaluateWatchCandidates(state, {
-            mode: "MORNING_PREP",
-            batchSize: firstPassToday
-              ? SETTINGS.preEvaluationBatchSize
-              : SETTINGS.retryUnevaluatedBatchSize,
-            onlyUnevaluated: !firstPassToday
-          });
-          state.preEvaluation.morningDate = todayKey();
-          state.preEvaluation.morningAt = nowText();
-          state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
-          state.preEvaluation.ruleRefreshPending = false;
-          console.log(
-            `[WAVE 장전사전평가] 시도 ${evaluation.attempted} / 완료 ${evaluation.evaluated} / ` +
-            `READY ${state.watchlist.filter(item => item.status === "READY").length} / ` +
-            `TRIGGER ${state.watchlist.filter(item => item.status === "TRIGGER").length}`
-          );
-        }
-      }
+    if (phase === "LIVE") {
+      evaluation = await evaluateWatchCandidates(state, {
+        mode: "LIVE",
+        batchSize: SETTINGS.liveEvaluationBatchSize
+      });
+    } else if (phase === "AFTER_CLOSE_PREP") {
+      evaluation = await evaluateWatchCandidates(state, {
+        mode: "AFTER_CLOSE_PREP",
+        batchSize: firstAfterClosePass
+          ? SETTINGS.preEvaluationBatchSize
+          : SETTINGS.retryUnevaluatedBatchSize,
+        onlyUnevaluated: !firstAfterClosePass
+      });
+      state.preEvaluation.afterCloseDate = date;
+      state.preEvaluation.afterCloseAt = nowText();
+      state.preEvaluation.afterCloseRetryCount = firstAfterClosePass
+        ? 0
+        : toNumber(state.preEvaluation.afterCloseRetryCount) + 1;
+      state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
+      state.preEvaluation.ruleRefreshPending = false;
+      console.log(
+        `[WAVE 야간사전평가] 시도 ${evaluation.attempted} / 완료 ${evaluation.evaluated} / ` +
+        `READY ${state.watchlist.filter(item => item.status === "READY").length} / ` +
+        `사전TRIGGER ${state.watchlist.filter(item =>
+          ["WATCH", "READY"].includes(item.status) &&
+          item.preSignalStatus === "TRIGGER" &&
+          item.preSignalMode === "AFTER_CLOSE_PREP" &&
+          item.preSignalDate === date
+        ).length}`
+      );
+    } else if (phase === "MORNING_PREP") {
+      // 08:40에 갱신된 open-market 데이터를 반영하기 위해 장전에는 활성 후보 전체를 다시 본다.
+      dailyCache.clear();
+      flowCache.clear();
+      evaluation = await evaluateWatchCandidates(state, {
+        mode: "MORNING_PREP",
+        batchSize: firstMorningPass
+          ? SETTINGS.preEvaluationBatchSize
+          : SETTINGS.retryUnevaluatedBatchSize,
+        onlyUnevaluated: !firstMorningPass
+      });
+      state.preEvaluation.morningDate = date;
+      state.preEvaluation.morningAt = nowText();
+      state.preEvaluation.morningRetryCount = firstMorningPass
+        ? 0
+        : toNumber(state.preEvaluation.morningRetryCount) + 1;
+      state.preEvaluation.analysisRuleVersion = ANALYSIS_RULE_VERSION;
+      state.preEvaluation.ruleRefreshPending = false;
+      console.log(
+        `[WAVE 장전사전평가] 시도 ${evaluation.attempted} / 완료 ${evaluation.evaluated} / ` +
+        `READY ${state.watchlist.filter(item => item.status === "READY").length} / ` +
+        `사전TRIGGER ${state.watchlist.filter(item =>
+          ["WATCH", "READY"].includes(item.status) &&
+          item.preSignalStatus === "TRIGGER" &&
+          item.preSignalMode === "MORNING_PREP" &&
+          item.preSignalDate === date
+        ).length}`
+      );
     }
 
     dropExpiredOrBrokenCandidates(state);
@@ -1699,7 +1928,7 @@ function startWaveStrategy() {
   }
   started = true;
   console.log(
-    `[WAVE] 시작 v1.5.1 / 매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
+    `[WAVE] 시작 v${STRATEGY_VERSION} / 매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
     `장마감 사전분석 ${SETTINGS.afterClosePreEvalStartTime}~ / 장전 재분석 ${SETTINGS.morningPreEvalStartTime}~${SETTINGS.morningPreEvalEndTime} / ` +
     `WHY+MONEY+SECTOR ${SETTINGS.foundationMinScore}점 이상 / 총 ${SETTINGS.totalBuyMinScore}점 이상`
   );

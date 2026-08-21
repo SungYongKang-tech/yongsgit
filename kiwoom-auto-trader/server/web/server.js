@@ -85,6 +85,11 @@ const PAPER_STATE_FILE = path.join(
   "paper-state-core.json"
 );
 
+// auto-trader-core의 3-way 병합 저장기를 서버 API에서도 공유한다.
+// require는 아래쪽에서 완료되므로 API가 호출되기 전까지 함수 참조만 보관한다.
+let sharedLoadPaperState = null;
+let sharedSavePaperState = null;
+
 const MANUAL_SELL_REQUEST_DIR = path.join(__dirname, "manual-sell-requests");
 const MANUAL_SELL_RESULT_DIR = path.join(__dirname, "manual-sell-results");
 const MANUAL_SELL_REQUEST_TTL_MS = 90 * 1000;
@@ -513,6 +518,10 @@ function getCodeChangesForDate(date) {
 
 
 function loadPaperState() {
+  if (typeof sharedLoadPaperState === "function") {
+    return sharedLoadPaperState();
+  }
+
   if (!fs.existsSync(PAPER_STATE_FILE)) {
     return {
       holdings: [],
@@ -539,8 +548,296 @@ function loadPaperState() {
   return state;
 }
 
-function savePaperState(state) {
+function savePaperState(state, options = {}) {
+  if (
+    options.force !== true &&
+    typeof sharedSavePaperState === "function"
+  ) {
+    return sharedSavePaperState(state);
+  }
+
   writeJsonFileAtomic(PAPER_STATE_FILE, state);
+  return state;
+}
+
+const REPORT_BUY_TYPES = new Set([
+  "OPEN_BUY",
+  "CORE_BUY",
+  "VOLUME_BUY"
+]);
+
+const REPORT_SELL_TYPES = new Set([
+  "SELL",
+  "SELL_ALL",
+  "OPEN_MANUAL_SELL",
+  "CORE_MANUAL_SELL",
+  "VOLUME_MANUAL_SELL",
+  "OPEN_STOP_LOSS",
+  "OPEN_TRAILING_SELL",
+  "OPEN_STAGNATION_SELL",
+  "OPEN_TIME_SELL",
+  "CORE_STOP_LOSS",
+  "CORE_FIRST_TAKE_PROFIT",
+  "CORE_BREAK_EVEN_SELL",
+  "CORE_TRAILING_STOP",
+  "CORE_END_SELL",
+  "VOLUME_STOP_LOSS",
+  "VOLUME_FIRST_TAKE_PROFIT",
+  "VOLUME_BREAK_EVEN_SELL",
+  "VOLUME_TRAILING_STOP",
+  "VOLUME_END_SELL"
+]);
+
+function reportNormalizeCode(code) {
+  return String(code || "")
+    .replace(/^A/i, "")
+    .trim()
+    .padStart(6, "0");
+}
+
+function reportStrategy(log = {}) {
+  if (log.strategyGroup) return String(log.strategyGroup).toUpperCase();
+  if (log.group) return String(log.group).toUpperCase();
+
+  const type = String(log.type || "").toUpperCase();
+  if (type.startsWith("OPEN")) return "OPEN";
+  if (type.startsWith("VOLUME")) return "VOLUME";
+  return "CORE";
+}
+
+function reportTimestampMs(log = {}) {
+  const numericCandidates = [
+    log.timestampMs,
+    log.sellTimeMs,
+    log.buyTimeMs,
+    log.buyTime,
+    log.signalAtMs
+  ];
+
+  for (const value of numericCandidates) {
+    const number = Number(value || 0);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+
+  for (const value of [log.sellTime, log.buyAt, log.time]) {
+    const parsed = Date.parse(String(value || ""));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return 0;
+}
+
+function reportBuyIdentity(log = {}, index = 0) {
+  if (log.positionId) return `POSITION|${String(log.positionId)}`;
+
+  const code = reportNormalizeCode(log.code);
+  const strategy = reportStrategy(log);
+  const date = String(log.date || "").slice(0, 10);
+  const timeMs = reportTimestampMs(log);
+
+  if (timeMs > 0) {
+    return `BUY_TIME|${strategy}|${code}|${timeMs}`;
+  }
+
+  return [
+    "BUY_LEGACY",
+    date,
+    strategy,
+    code,
+    Number(log.buyPrice || log.price || 0),
+    Number(log.qty || 0),
+    String(log.time || ""),
+    index
+  ].join("|");
+}
+
+function buildReportPositionSummary(
+  tradeLogs = [],
+  holdings = [],
+  selectedSellLogs = null
+) {
+  const allLogs = Array.isArray(tradeLogs) ? tradeLogs : [];
+  const buyLogs = allLogs.filter(log => REPORT_BUY_TYPES.has(log.type));
+  const sellLogs = Array.isArray(selectedSellLogs)
+    ? selectedSellLogs
+    : allLogs.filter(log => REPORT_SELL_TYPES.has(log.type));
+
+  const buyRecords = buyLogs.map((log, index) => ({
+    identity: reportBuyIdentity(log, index),
+    log,
+    index,
+    code: reportNormalizeCode(log.code),
+    strategyGroup: reportStrategy(log),
+    date: String(log.date || "").slice(0, 10),
+    timeMs: reportTimestampMs(log),
+    qty: Number(log.qty || 0),
+    positionId: log.positionId ? String(log.positionId) : null
+  }));
+
+  const uniqueBuyRecords = [];
+  const seenBuyIdentities = new Set();
+  for (const record of buyRecords) {
+    if (seenBuyIdentities.has(record.identity)) continue;
+    seenBuyIdentities.add(record.identity);
+    uniqueBuyRecords.push(record);
+  }
+
+  function findBuyRecord(sellLog) {
+    const positionId = sellLog.positionId
+      ? String(sellLog.positionId)
+      : null;
+
+    if (positionId) {
+      const exact = uniqueBuyRecords.find(
+        record => record.positionId === positionId
+      );
+      if (exact) return exact;
+    }
+
+    const code = reportNormalizeCode(sellLog.code);
+    const strategyGroup = reportStrategy(sellLog);
+    const date = String(sellLog.date || "").slice(0, 10);
+    const explicitBuyTime = Number(
+      sellLog.buyTime || sellLog.buyTimeMs || 0
+    );
+
+    if (explicitBuyTime > 0) {
+      const exactTime = uniqueBuyRecords.find(record =>
+        record.code === code &&
+        record.strategyGroup === strategyGroup &&
+        record.timeMs === explicitBuyTime
+      );
+      if (exactTime) return exactTime;
+    }
+
+    const sellTimeMs = reportTimestampMs(sellLog);
+    const candidates = uniqueBuyRecords
+      .filter(record =>
+        record.code === code &&
+        record.strategyGroup === strategyGroup &&
+        (!date || !record.date || record.date === date) &&
+        (!sellTimeMs || !record.timeMs || record.timeMs <= sellTimeMs)
+      )
+      .sort((a, b) => {
+        if (a.timeMs !== b.timeMs) return b.timeMs - a.timeMs;
+        return b.index - a.index;
+      });
+
+    return candidates[0] || null;
+  }
+
+  const positionMap = new Map();
+
+  sellLogs.forEach((log, sellIndex) => {
+    const buyRecord = findBuyRecord(log);
+    const code = reportNormalizeCode(log.code);
+    const strategyGroup = reportStrategy(log);
+    const date = String(log.date || "").slice(0, 10);
+    const positionId = log.positionId
+      ? String(log.positionId)
+      : buyRecord?.positionId || null;
+    const identity = positionId
+      ? `POSITION|${positionId}`
+      : buyRecord?.identity || `SELL_LEGACY|${date}|${strategyGroup}|${code}`;
+
+    if (!positionMap.has(identity)) {
+      positionMap.set(identity, {
+        identity,
+        positionId,
+        code,
+        name: log.name || buyRecord?.log?.name || code,
+        date,
+        strategyGroup,
+        strategyName:
+          log.strategyName || buyRecord?.log?.strategyName || "",
+        strategyPreset:
+          log.strategyPreset || buyRecord?.log?.strategyPreset || "",
+        buyRecord,
+        buyQty: Number(buyRecord?.qty || 0),
+        soldQty: 0,
+        sellFillCount: 0,
+        profit: 0,
+        soldCost: 0,
+        highestProfitRate: null,
+        lowestProfitRate: null,
+        firstSellIndex: sellIndex,
+        lastSellLog: null,
+        sellLogs: []
+      });
+    }
+
+    const position = positionMap.get(identity);
+    const qty = Number(log.qty || 0);
+    const buyPrice = Number(
+      log.buyPrice || buyRecord?.log?.buyPrice || buyRecord?.log?.price || 0
+    );
+    const profit = Number(log.profit || 0);
+    const fillProfitRate = Number(log.profitRate || 0);
+
+    position.soldQty += qty;
+    position.sellFillCount += 1;
+    position.profit += profit;
+    position.soldCost += Math.max(0, buyPrice * qty);
+    position.highestProfitRate = position.highestProfitRate === null
+      ? fillProfitRate
+      : Math.max(position.highestProfitRate, fillProfitRate);
+    position.lowestProfitRate = position.lowestProfitRate === null
+      ? fillProfitRate
+      : Math.min(position.lowestProfitRate, fillProfitRate);
+    position.lastSellLog = log;
+    position.sellLogs.push(log);
+  });
+
+  const positions = Array.from(positionMap.values()).map(position => {
+    const sameCodePositions = Array.from(positionMap.values()).filter(row =>
+      row.code === position.code &&
+      row.strategyGroup === position.strategyGroup
+    );
+    const isOpen = (Array.isArray(holdings) ? holdings : []).some(holding => {
+      if (
+        position.positionId &&
+        holding.positionId
+      ) {
+        return String(holding.positionId) === position.positionId;
+      }
+
+      if (
+        reportNormalizeCode(holding.code) !== position.code ||
+        reportStrategy(holding) !== position.strategyGroup
+      ) {
+        return false;
+      }
+
+      const holdingTime = reportTimestampMs(holding);
+      const buyTime = Number(position.buyRecord?.timeMs || 0);
+      if (holdingTime > 0 && buyTime > 0) return holdingTime === buyTime;
+
+      return sameCodePositions.length === 1;
+    });
+
+    const qtyClosed =
+      position.buyQty <= 0 || position.soldQty >= position.buyQty;
+    const isClosed = !isOpen && qtyClosed;
+    const profitRate = position.soldCost > 0
+      ? (position.profit / position.soldCost) * 100
+      : Number(position.lastSellLog?.profitRate || 0);
+
+    return {
+      ...position,
+      profitRate,
+      isOpen,
+      isClosed,
+      isPartialOpen: isOpen && position.soldQty > 0
+    };
+  });
+
+  return {
+    buyRecords: uniqueBuyRecords,
+    sellLogs,
+    positions,
+    closedPositions: positions.filter(position => position.isClosed),
+    partialOpenPositions: positions.filter(position => position.isPartialOpen)
+  };
 }
 
 function getSavedToken() {
@@ -1438,7 +1735,10 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       strategyGroup,
       reason,
       openDiagnostic,
-      openMaxHoldingCount
+      openMaxHoldingCount,
+      positionId,
+      executionId,
+      buyRequestedAtMs
     } = req.body || {};
 
     if (!code || !price || !qty) {
@@ -1460,6 +1760,17 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       openDiagnostic && typeof openDiagnostic === "object"
         ? openDiagnostic
         : {};
+    const requestedAtMs = Number(buyRequestedAtMs || Date.now());
+    const resolvedPositionId = String(
+      positionId || `${today}_${normalizedCode}_${requestedAtMs}`
+    );
+    const resolvedExecutionId = String(
+      executionId || `BUY_${resolvedPositionId}`
+    );
+    const buyTimeText = new Date(requestedAtMs).toLocaleString(
+      "ko-KR",
+      { timeZone: "Asia/Seoul" }
+    );
 
     if (!normalizedCode) {
       return res.status(400).json({
@@ -1510,9 +1821,11 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       lowestPrice: Number(price),
       qty: Number(qty),
       buyAmount,
-      buyTime: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
-      buyTimeMs: Date.now(),
-      buyAt: new Date().toISOString(),
+      positionId: resolvedPositionId,
+      buyTime: requestedAtMs,
+      buyTimeText,
+      buyTimeMs: requestedAtMs,
+      buyAt: new Date(requestedAtMs).toISOString(),
       date: today,
       ...safeDiagnostic,
       ...(normalizedStrategy === "OPEN" ? { openBuyDiagnostic: safeDiagnostic } : {})
@@ -1529,9 +1842,12 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       buyPrice: Number(price),
       qty: Number(qty),
       buyAmount,
+      positionId: resolvedPositionId,
+      executionId: resolvedExecutionId,
+      timestampMs: requestedAtMs,
       reason,
       date: today,
-      time: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      time: buyTimeText,
       ...safeDiagnostic,
       ...(normalizedStrategy === "OPEN" ? { openBuyDiagnostic: safeDiagnostic } : {})
     });
@@ -1596,7 +1912,13 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
       sellType,
       reason,
       manualSell,
-      manualRequestId
+      manualRequestId,
+      signalAt,
+      signalAtMs,
+      signalPrice,
+      positionId,
+      executionId,
+      sellRequestedAtMs
     } = req.body || {};
 
     if (!code || !price || !qty) {
@@ -1611,8 +1933,28 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
     if (!Array.isArray(state.holdings)) state.holdings = [];
     if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
     if (!Array.isArray(state.virtualResults)) state.virtualResults = [];
+    if (!Array.isArray(state.completedOpenSellCodes)) state.completedOpenSellCodes = [];
 
-    const holding = state.holdings.find(h => h.code === code);
+    const normalizedCode = normalizeOpenStockCode(code);
+    const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+    const completedKey = `${date}_${normalizedCode}`;
+
+    if (String(sellType || "").startsWith("OPEN_") && state.completedOpenSellCodes.includes(completedKey)) {
+      return res.json({
+        ok: true,
+        duplicateIgnored: true,
+        message: `이미 전량 매도 완료 ${normalizedCode}`,
+        profit: 0,
+        profitRate: 0,
+        totalCash: Number(state.totalCash || 0)
+      });
+    }
+
+    const holding = state.holdings.find(h =>
+      positionId && h.positionId
+        ? String(h.positionId) === String(positionId)
+        : normalizeOpenStockCode(h.code) === normalizedCode
+    );
 
     if (!holding) {
       return res.status(404).json({
@@ -1632,8 +1974,18 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
     holding.qty -= sellQty;
     state.totalCash = Number(state.totalCash || 0) + sellPrice * sellQty;
 
-    const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-    const time = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+    const requestedAtMs = Number(sellRequestedAtMs || Date.now());
+    const resolvedPositionId = String(
+      positionId || holding.positionId || ""
+    ) || null;
+    const resolvedExecutionId = String(
+      executionId ||
+      `SELL_${resolvedPositionId || completedKey}_${requestedAtMs}_${sellQty}`
+    );
+    const time = new Date(requestedAtMs).toLocaleString(
+      "ko-KR",
+      { timeZone: "Asia/Seoul" }
+    );
 
     state.tradeLogs.push({
       type: sellType || `${holding.strategyGroup}_SELL`,
@@ -1644,9 +1996,19 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
       sellPrice,
       price: sellPrice,
       qty: sellQty,
+      positionId: resolvedPositionId,
+      executionId: resolvedExecutionId,
+      timestampMs: requestedAtMs,
+      buyTime: Number(holding.buyTime || holding.buyTimeMs || 0),
       profit,
       profitRate,
       reason,
+      signalAt: signalAt || null,
+      signalAtMs: Number(signalAtMs || 0),
+      signalPrice: Number(signalPrice || sellPrice || 0),
+      highestPrice: Number(holding.highestPrice || sellPrice || 0),
+      lowestPrice: Number(holding.lowestPrice || sellPrice || 0),
+      openBuyDiagnostic: holding.openBuyDiagnostic || null,
       manualSell: manualSell === true,
       manualRequestId: manualRequestId || null,
       date,
@@ -1664,6 +2026,9 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
       profitRate,
       reason,
       sellType: sellType || `${holding.strategyGroup}_SELL`,
+      positionId: resolvedPositionId,
+      executionId: resolvedExecutionId,
+      timestampMs: requestedAtMs,
       manualSell: manualSell === true,
       manualRequestId: manualRequestId || null,
       date,
@@ -1672,6 +2037,10 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
 
     if (holding.qty <= 0) {
       state.holdings = state.holdings.filter(h => h !== holding);
+      if (String(sellType || "").startsWith("OPEN_") && !state.completedOpenSellCodes.includes(completedKey)) {
+        state.completedOpenSellCodes.push(completedKey);
+        state.completedOpenSellCodes = state.completedOpenSellCodes.slice(-200);
+      }
     }
 
     savePaperState(state);
@@ -1839,13 +2208,12 @@ app.post("/api/token/reissue", (req, res) => {
 
 app.post("/api/server-result-clear", (req, res) => {
   try {
-    
-    const state = JSON.parse(fs.readFileSync(PAPER_STATE_FILE, "utf8"));
+    const state = loadPaperState();
 
     state.virtualResults = [];
     state.results = [];
 
-    savePaperState(state);
+    savePaperState(state, { force: true });
 
     res.json({
       ok: true,
@@ -1915,9 +2283,7 @@ async function refreshServerHoldingPrices() {
 
   if (!fs.existsSync(PAPER_STATE_FILE)) return;
 
-  const paperState = JSON.parse(
-    fs.readFileSync(PAPER_STATE_FILE, "utf8")
-  );
+  const paperState = loadPaperState();
 
   paperState.holdings = paperState.holdings || [];
 
@@ -2400,8 +2766,12 @@ const {
   runServerAutoBuyOnce,
   checkServerAutoSellOnce,
   setServerAutoEnabled,
-  loadState
+  loadState,
+  saveState
 } = require("./auto-trader-core");
+
+sharedLoadPaperState = loadState;
+sharedSavePaperState = saveState;
 
 const {
   startOpenStrategy,
@@ -2523,7 +2893,8 @@ app.post("/api/paper-state/reset", (req, res) => {
       lastPriceRefreshAt: null
     };
 
-    savePaperState(resetState);
+    // 사용자가 명시적으로 초기화한 경우에만 병합 없이 완전 교체한다.
+    savePaperState(resetState, { force: true });
 
     res.json({
       ok: true,
@@ -2564,36 +2935,24 @@ app.get("/api/performance-summary", (req, res) => {
       ? state.tradeLogs
       : [];
 
-  const sellLogs = tradeLogs.filter((log) =>
-  [
-    "SELL",
-    "SELL_ALL",
-    "OPEN_MANUAL_SELL",
-    "CORE_MANUAL_SELL",
-    "VOLUME_MANUAL_SELL",
-
-    "OPEN_STOP_LOSS",
-    "OPEN_TRAILING_SELL",
-    "OPEN_STAGNATION_SELL",
-    "OPEN_TIME_SELL",
-
-    "CORE_STOP_LOSS",
-    "CORE_FIRST_TAKE_PROFIT",
-    "CORE_BREAK_EVEN_SELL",
-    "CORE_TRAILING_STOP",
-    "CORE_END_SELL",
-
-    "VOLUME_STOP_LOSS",
-    "VOLUME_FIRST_TAKE_PROFIT",
-    "VOLUME_BREAK_EVEN_SELL",
-    "VOLUME_TRAILING_STOP",
-    "VOLUME_END_SELL"
-  ].includes(log.type)
-);
-
-    const totalTrades = sellLogs.length;
-    const winTrades = sellLogs.filter((log) => Number(log.profit || 0) > 0);
-    const loseTrades = sellLogs.filter((log) => Number(log.profit || 0) < 0);
+    const sellLogs = tradeLogs.filter(log => REPORT_SELL_TYPES.has(log.type));
+    const holdings = Array.isArray(state.holdings)
+      ? state.holdings
+      : [];
+    const positionSummary = buildReportPositionSummary(
+      tradeLogs,
+      holdings,
+      sellLogs
+    );
+    const closedPositions = positionSummary.closedPositions;
+    const winTrades = closedPositions.filter(
+      position => Number(position.profit || 0) > 0
+    );
+    const loseTrades = closedPositions.filter(
+      position => Number(position.profit || 0) < 0
+    );
+    const totalTrades = closedPositions.length;
+    const sellFillCount = sellLogs.length;
 
     const totalProfit = sellLogs.reduce(
       (sum, log) => sum + Number(log.profit || 0),
@@ -2615,28 +2974,33 @@ const todayRealizedProfit = todaySellLogs.reduce(
 
     const avgProfitRate =
       totalTrades > 0
-        ? sellLogs.reduce((sum, log) => sum + Number(log.profitRate || 0), 0) /
+        ? closedPositions.reduce(
+            (sum, position) => sum + Number(position.profitRate || 0),
+            0
+          ) /
           totalTrades
         : 0;
 
     const avgWinRate =
       winTrades.length > 0
-        ? winTrades.reduce((sum, log) => sum + Number(log.profitRate || 0), 0) /
+        ? winTrades.reduce(
+            (sum, position) => sum + Number(position.profitRate || 0),
+            0
+          ) /
           winTrades.length
         : 0;
 
     const avgLossRate =
       loseTrades.length > 0
-        ? loseTrades.reduce((sum, log) => sum + Number(log.profitRate || 0), 0) /
+        ? loseTrades.reduce(
+            (sum, position) => sum + Number(position.profitRate || 0),
+            0
+          ) /
           loseTrades.length
         : 0;
 
     const winRate =
       totalTrades > 0 ? (winTrades.length / totalTrades) * 100 : 0;
-
-    const holdings = Array.isArray(state.holdings)
-      ? state.holdings
-      : [];
 
     const holdingBuyAmount = holdings.reduce(
       (sum, h) => sum + Number(h.buyPrice || 0) * Number(h.qty || 0),
@@ -2702,9 +3066,7 @@ const recent7Days = [];
 
 
 
-const buyLogs = tradeLogs.filter((log) =>
-  ["OPEN_BUY", "CORE_BUY", "VOLUME_BUY"].includes(log.type)
-);
+const buyLogs = positionSummary.buyRecords.map(record => record.log);
 
 const strategyMap = {};
 
@@ -2717,9 +3079,12 @@ function ensureStrategyStat(group, strategy) {
       strategyName: strategy,
       buyTrades: 0,
       trades: 0,
+      sellFills: 0,
+      partialOpenTrades: 0,
       wins: 0,
       losses: 0,
       totalProfit: 0,
+      closedProfit: 0,
       totalProfitRate: 0,
       maxProfitRate: null,
       maxLossRate: null
@@ -2740,37 +3105,36 @@ buyLogs.forEach((log) => {
   stat.buyTrades += 1;
 });
 
-sellLogs.forEach((log) => {
-  const group = log.strategyGroup || "CORE";
+positionSummary.positions.forEach(position => {
+  const group = position.strategyGroup || "CORE";
+  const strategy =
+    position.strategyName ||
+    position.strategyPreset ||
+    "기타";
+  const stat = ensureStrategyStat(group, strategy);
+  const profit = Number(position.profit || 0);
+  const profitRate = Number(position.profitRate || 0);
 
-const strategy =
-  log.strategyName ||
-  log.strategyPreset ||
-  "기타";
+  stat.sellFills += Number(position.sellFillCount || 0);
+  stat.totalProfit += profit;
 
-const stat = ensureStrategyStat(group, strategy);
-
-  const profit = Number(log.profit || 0);
-  const profitRate = Number(log.profitRate || 0);
+  if (!position.isClosed) {
+    if (position.isPartialOpen) stat.partialOpenTrades += 1;
+    return;
+  }
 
   stat.trades += 1;
-  stat.totalProfit += profit;
+  stat.closedProfit += profit;
   stat.totalProfitRate += profitRate;
 
   if (profit > 0) stat.wins += 1;
   if (profit < 0) stat.losses += 1;
 
-  if (
-    stat.maxProfitRate === null ||
-    profitRate > stat.maxProfitRate
-  ) {
+  if (stat.maxProfitRate === null || profitRate > stat.maxProfitRate) {
     stat.maxProfitRate = profitRate;
   }
 
-  if (
-    stat.maxLossRate === null ||
-    profitRate < stat.maxLossRate
-  ) {
+  if (stat.maxLossRate === null || profitRate < stat.maxLossRate) {
     stat.maxLossRate = profitRate;
   }
 });
@@ -2778,7 +3142,7 @@ const stat = ensureStrategyStat(group, strategy);
 const strategyStats = Object.values(strategyMap).map((item) => ({
   ...item,
   winRate: item.trades > 0 ? (item.wins / item.trades) * 100 : 0,
-  avgProfit: item.trades > 0 ? item.totalProfit / item.trades : 0,
+  avgProfit: item.trades > 0 ? item.closedProfit / item.trades : 0,
   avgProfitRate: item.trades > 0 ? item.totalProfitRate / item.trades : 0,
   maxProfitRate: item.maxProfitRate ?? 0,
   maxLossRate: item.maxLossRate ?? 0
@@ -2865,7 +3229,13 @@ for (let i = 6; i >= 0; i--) {
     0
   );
 
-  const trades = daySellLogs.length;
+  const dayPositionSummary = buildReportPositionSummary(
+    tradeLogs,
+    holdings,
+    daySellLogs
+  );
+  const trades = dayPositionSummary.closedPositions.length;
+  const sellFills = daySellLogs.length;
 
 const isToday = dateKey === today;
 
@@ -2884,7 +3254,8 @@ recent7Days.push({
   date: dateKey,
   realizedProfit: dayTotalProfit,
   profitRate,
-  trades
+  trades,
+  sellFills
 });
 }
 
@@ -3034,8 +3405,12 @@ return {
       ok: true,
       summary: {
         totalTrades,
+        sellFillCount,
+        partialOpenTrades: positionSummary.partialOpenPositions.length,
         winTrades: winTrades.length,
         loseTrades: loseTrades.length,
+        neutralTrades:
+          totalTrades - winTrades.length - loseTrades.length,
         winRate,
         totalProfit,
         avgProfitRate,
@@ -3825,6 +4200,7 @@ app.get("/api/open-live-tracking", (req, res) => {
       openEnabled: state.openEnabled !== false,
       openCompleted: state.openCompleted === true,
       openSkipped: state.openSkipped === true,
+      openCompletedAt: state.openCompletedAt || null,
       openSkipReason: state.openSkipReason || null,
       openBuyAt: state.openBuyAt || null,
       openBuyCode: normalizeOpenStockCode(state.openBuyCode || ""),
@@ -4025,6 +4401,35 @@ app.get("/api/open-surge-analysis", async (req, res) => {
     const selectedCode = normalizeOpenStockCode(day.selectedTrade?.code || day.result?.code || "");
     const growth = buildOpenCandidateGrowth(day, selectedCode);
     const growthByCode = new Map(growth.map(item => [normalizeOpenStockCode(item.code), item]));
+    /* 학습파일 기록이 늦거나 누락돼도 당일 실제 OPEN 누적평가를 발견으로 인정한다. */
+    const paperState = loadPaperState();
+    const dailyStats = paperState.openDate === date ? (paperState.openDailyStats || {}) : {};
+    const dailyCandidateCodes = dailyStats.candidateCodes || {};
+    const dailyEvaluatedCodes = dailyStats.evaluatedCodes || {};
+    const runtimeHistory = paperState.openDate === date ? (paperState.openCandidateHistory || {}) : {};
+    const runtimeCodes = new Set([
+      ...Object.keys(dailyCandidateCodes),
+      ...Object.keys(dailyEvaluatedCodes),
+      ...Object.keys(runtimeHistory)
+    ].map(normalizeOpenStockCode).filter(Boolean));
+    for (const code of runtimeCodes) {
+      if (growthByCode.has(code)) continue;
+      const runtime = runtimeHistory[code] || {};
+      growthByCode.set(code, {
+        code,
+        name: dailyEvaluatedCodes[code] || dailyCandidateCodes[code] || runtime.name || code,
+        firstSeenAt: runtime.firstSeenAt || null,
+        observationCount: Array.isArray(runtime.samples) ? runtime.samples.length : 1,
+        momentumObservationCount: Array.isArray(runtime.samples) ? runtime.samples.length : 1,
+        firstSource: runtime.itemSnapshot?.source || "OPEN_RUNTIME",
+        lastSource: runtime.itemSnapshot?.source || "OPEN_RUNTIME",
+        everHotMatched: runtime.itemSnapshot?.isDirectHotCandidate === true,
+        everDirectHotCandidate: runtime.itemSnapshot?.isDirectHotCandidate === true,
+        hasDetailedTracking: false,
+        rejectStage: "RUNTIME_EVALUATED",
+        lastReason: "OPEN 누적 평가 확인"
+      });
+    }
 
     function classifyDecision(candidate, bought) {
       if (bought) return "실제 매수";
@@ -4252,6 +4657,7 @@ app.get("/api/open-learning-summary", (req, res) => {
 
     const rows = [];
     const variantMap = {};
+    const paperState = loadPaperState();
 
     for (const [date, day] of dayEntries) {
       const comparison = day?.openDelayComparison || null;
@@ -4339,7 +4745,31 @@ app.get("/api/open-learning-summary", (req, res) => {
 
       const selectedTrade = day?.selectedTrade || null;
       const selectedCode = selectedTrade?.code || day?.result?.code || "";
-      const buyEvaluation = classifyOpenBuyQuality(selectedTrade || {}, day?.result || {});
+      const paperBuyLog = (Array.isArray(paperState.tradeLogs) ? paperState.tradeLogs : [])
+        .find(log =>
+          String(log.date || "").slice(0, 10) === date &&
+          log.type === "OPEN_BUY" &&
+          (!selectedCode || normalizeOpenStockCode(log.code) === normalizeOpenStockCode(selectedCode))
+        );
+      const selectedInputs = selectedTrade?.selectionInputs || {};
+      const resultInputs = day?.result?.selectionInputs || {};
+      const paperInputs = paperBuyLog?.openBuyDiagnostic || paperBuyLog || {};
+      const hasUsefulBuyInputs = inputs =>
+        Number(inputs?.momentumScore || 0) > 0 ||
+        Number(inputs?.observationCount || 0) > 0 ||
+        Number(inputs?.rankScore || 0) > 0;
+      const recoveredInputs = hasUsefulBuyInputs(selectedInputs)
+        ? selectedInputs
+        : (hasUsefulBuyInputs(resultInputs) ? resultInputs : paperInputs);
+      const selectedForEvaluation = selectedTrade
+        ? { ...selectedTrade, selectionInputs: recoveredInputs }
+        : (paperBuyLog
+            ? { code: paperBuyLog.code, name: paperBuyLog.name, selectionInputs: recoveredInputs }
+            : {});
+      const resultForEvaluation = day?.result
+        ? { ...day.result, selectionInputs: recoveredInputs }
+        : {};
+      const buyEvaluation = classifyOpenBuyQuality(selectedForEvaluation, resultForEvaluation);
       const sellEvaluation = classifyOpenSellQuality(selectedTrade || {}, day?.result || {});
       const candidateGrowth = buildOpenCandidateGrowth(day || {}, selectedCode);
 
@@ -4358,7 +4788,7 @@ app.get("/api/open-learning-summary", (req, res) => {
               buyPrice: Number(selectedTrade.buyPrice || 0),
               qty: Number(selectedTrade.qty || 0),
               selectionReason: selectedTrade.selectionReason || "",
-              selectionInputs: selectedTrade.selectionInputs || {}
+              selectionInputs: recoveredInputs
             }
           : null,
         realTrade: day?.result
@@ -5103,8 +5533,21 @@ app.get("/api/today-trade-analysis", (req, res) => {
       0
     );
 
-    const wins = sells.filter(log => Number(log.profit || 0) > 0);
-    const losses = sells.filter(log => Number(log.profit || 0) < 0);
+    const positionSummary = buildReportPositionSummary(
+      trades,
+      Array.isArray(state.holdings) ? state.holdings : [],
+      sells
+    );
+    const closedPositions = positionSummary.closedPositions;
+    const wins = closedPositions.filter(
+      position => Number(position.profit || 0) > 0
+    );
+    const losses = closedPositions.filter(
+      position => Number(position.profit || 0) < 0
+    );
+    const uniqueBuyCount = new Set(
+      buys.map((log, index) => reportBuyIdentity(log, index))
+    ).size;
 
     const sellReasonAnalysis =
       buildSellReasonAnalysis(sells);
@@ -5123,37 +5566,15 @@ app.get("/api/today-trade-analysis", (req, res) => {
     const topLossReason =
       sellReasonAnalysis.topLossReason;
 
-   function getStrategy(log) {
-  if (log.strategyGroup) {
-    return log.strategyGroup;
-  }
-
-  if (log.group) {
-    return log.group;
-  }
-
-  const type = String(log.type || "");
-
-  if (type.startsWith("OPEN")) {
-    return "OPEN";
-  }
-
-  if (type.startsWith("VOLUME")) {
-    return "VOLUME";
-  }
-
-  return "CORE";
-}
-
     const byStrategy = {};
 
-    sells.forEach(log => {
-      const strategy = getStrategy(log);
-      const profit = Number(log.profit || 0);
-
+    function ensureTodayStrategy(strategy) {
       if (!byStrategy[strategy]) {
         byStrategy[strategy] = {
+          buyCount: 0,
           trades: 0,
+          sellFillCount: 0,
+          partialOpenTrades: 0,
           wins: 0,
           losses: 0,
           profit: 0,
@@ -5164,10 +5585,31 @@ app.get("/api/today-trade-analysis", (req, res) => {
         };
       }
 
-      const s = byStrategy[strategy];
+      return byStrategy[strategy];
+    }
+
+    const seenTodayBuys = new Set();
+    buys.forEach((log, index) => {
+      const identity = reportBuyIdentity(log, index);
+      if (seenTodayBuys.has(identity)) return;
+      seenTodayBuys.add(identity);
+      ensureTodayStrategy(reportStrategy(log)).buyCount += 1;
+    });
+
+    positionSummary.positions.forEach(position => {
+      const strategy = position.strategyGroup;
+      const profit = Number(position.profit || 0);
+      const s = ensureTodayStrategy(strategy);
+
+      s.sellFillCount += Number(position.sellFillCount || 0);
+      s.profit += profit;
+
+      if (!position.isClosed) {
+        if (position.isPartialOpen) s.partialOpenTrades += 1;
+        return;
+      }
 
       s.trades += 1;
-      s.profit += profit;
 
       if (profit > 0) {
         s.wins += 1;
@@ -5187,6 +5629,10 @@ app.get("/api/today-trade-analysis", (req, res) => {
         s.maxLoss = profit;
       }
     });
+
+    // 거래가 없었던 전략도 0건으로 내려 화면에서 실행 여부를 구분한다.
+    ensureTodayStrategy("CORE");
+    ensureTodayStrategy("VOLUME");
 
     Object.keys(byStrategy).forEach(key => {
       const s = byStrategy[key];
@@ -5230,11 +5676,19 @@ app.get("/api/today-trade-analysis", (req, res) => {
       todayCodeChanges,
 
       summary: {
-        buyCount: buys.length,
-        sellCount: sells.length,
+        buyCount: uniqueBuyCount,
+        buyLogCount: buys.length,
+        sellCount: closedPositions.length,
+        sellFillCount: sells.length,
+        partialOpenCount: positionSummary.partialOpenPositions.length,
         winCount: wins.length,
         lossCount: losses.length,
-        winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
+        neutralCount:
+          closedPositions.length - wins.length - losses.length,
+        winRate:
+          closedPositions.length > 0
+            ? (wins.length / closedPositions.length) * 100
+            : 0,
         realizedProfit,
         topLossReason
       },
@@ -5270,7 +5724,20 @@ app.get("/api/today-trade-analysis", (req, res) => {
       },
 
       buys,
-      sells
+      sells,
+      sellPositions: positionSummary.positions.map(position => ({
+        positionId: position.positionId,
+        code: position.code,
+        name: position.name,
+        strategyGroup: position.strategyGroup,
+        soldQty: position.soldQty,
+        buyQty: position.buyQty,
+        sellFillCount: position.sellFillCount,
+        profit: position.profit,
+        profitRate: position.profitRate,
+        isClosed: position.isClosed,
+        isPartialOpen: position.isPartialOpen
+      }))
     });
   } catch (err) {
     console.error(err);
@@ -5384,12 +5851,11 @@ app.post("/api/server-log-clear", (req, res) => {
 
 app.post("/api/server-trade-log-clear", (req, res) => {
   try {
- 
-    const state = JSON.parse(fs.readFileSync(PAPER_STATE_FILE, "utf8"));
+    const state = loadPaperState();
 
     state.tradeLogs = [];
 
-    savePaperState(state);
+    savePaperState(state, { force: true });
 
     res.json({
       ok: true,
@@ -5439,17 +5905,7 @@ app.post("/api/paper-buy", express.json(), (req, res) => {
 
   
 
-    let state = {
-      holdings: [],
-      tradeLogs: [],
-      results: []
-    };
-
-    if (fs.existsSync(PAPER_STATE_FILE)) {
-      state = JSON.parse(
-        fs.readFileSync(PAPER_STATE_FILE, "utf8")
-      );
-    }
+    const state = loadPaperState();
 
     if (!state.holdings) {
       state.holdings = [];
@@ -5546,17 +6002,7 @@ app.post("/api/paper-sell", (req, res) => {
     }
 
    
-    let state = {
-      holdings: [],
-      tradeLogs: [],
-      virtualResults: []
-    };
-
-    if (fs.existsSync(PAPER_STATE_FILE)) {
-      state = JSON.parse(
-        fs.readFileSync(PAPER_STATE_FILE, "utf8")
-      );
-    }
+    const state = loadPaperState();
 
     state.holdings = state.holdings || [];
     state.tradeLogs = state.tradeLogs || [];
@@ -5690,9 +6136,7 @@ app.get("/api/paper-sell-all", async (req, res) => {
 
   
 
-    const paperState = JSON.parse(
-      fs.readFileSync(PAPER_STATE_FILE, "utf8")
-    );
+    const paperState = loadPaperState();
 
     paperState.holdings = paperState.holdings || [];
     paperState.tradeLogs = paperState.tradeLogs || [];

@@ -375,13 +375,13 @@
   <div class="card">
     <h2>✅ OPEN 실제매수 운영방식</h2>
     <div class="condition-grid">
-      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value">30초 관찰 후 지속강도 1위</div></div>
+      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value">20초 관찰 후 지속강도 1위</div></div>
       <div class="condition-item"><div class="condition-label">보완매수 시작</div><div class="condition-value">09:07 이후</div></div>
       <div class="condition-item"><div class="condition-label">보완 최소조건</div><div class="condition-value">발견 9 · 거래량 80→90→110→130%</div></div>
       <div class="condition-item"><div class="condition-label">투자금</div><div class="condition-value">OPEN 시작 가용자금의 종목당 20%</div></div>
     </div>
     <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.6;">
-      최소 30초·4회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 5종목까지 실제 매수합니다. 발견 9점 HOT 후보는 즉시 매수하지 않고 관찰단계에만 진입합니다. 같은 종목은 하루 한 번만 매수합니다. 거래량 기준은 09:05 전 80%, 09:10 전 90%, 09:20 전 110%, 이후 130%로 단계적으로 적용됩니다.
+      최소 20초·2회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 5종목까지 실제 매수합니다. 발견 9점 HOT 후보는 즉시 매수하지 않고 관찰단계에만 진입합니다. 같은 종목은 하루 한 번만 매수합니다. 거래량 기준은 09:05 전 80%, 09:10 전 90%, 09:20 전 110%, 이후 130%로 단계적으로 적용됩니다.
     </div>
   </div>
 
@@ -1167,7 +1167,7 @@
       <div class="mini-box"><div class="mini-label">OPEN시간 발견</div><div class="mini-value surge-found">${Number(summary.openWindowFoundCount ?? summary.foundCount ?? 0)}개</div></div>
       <div class="mini-box"><div class="mini-label">OPEN시간 HOT→미유입</div><div class="mini-value surge-missed">${Number(summary.openWindowHotToOpenMissedCount ?? summary.hotToOpenMissedCount ?? 0)}개</div></div>
       <div class="mini-box"><div class="mini-label">OPEN 종료 후 HOT</div><div class="mini-value">${Number(summary.postOpenHotCount || 0)}개</div></div>
-      <div class="mini-box"><div class="mini-label">실제 매수</div><div class="mini-value">${Number(summary.boughtCount || 0)}개</div></div>`;
+      <div class="mini-box"><div class="mini-label">급등주 중 실제 매수</div><div class="mini-value">${Number(summary.boughtCount || 0)}개</div></div>`;
 
     const tableBox = document.getElementById("surgeLeaderBox");
     if (!rows.length) {
@@ -1255,7 +1255,7 @@
     const daily = data.daily || {};
     const hot = data.hot || {};
     const top = t.topCandidate || null;
-    updated.textContent = `${data.openCompleted || data.openSkipped ? "최종 저장" : "갱신"} ${formatKstDateTime(t.updatedAt || data.serverTime || "-")}`;
+    updated.textContent = `${data.openCompleted || data.openSkipped ? "최종 저장" : "갱신"} ${formatKstDateTime((data.openCompleted || data.openSkipped ? data.openCompletedAt : null) || t.updatedAt || data.serverTime || "-")}`;
     const obs = Number(top?.observationCount || top?.strongObservationCount || 0);
     const requiredObs = Number(t.minObservationCount || 4);
     const pricePersistence = normalizeRatioForDisplay(top?.pricePersistence);
@@ -1276,12 +1276,14 @@
     const hotDisplayCount = data.openCompleted || data.openSkipped
       ? Number(hot.detectedOpenWindowCount ?? hot.detectedTodayCount ?? hot.count ?? 0)
       : Number(hot.count || 0);
-    const evaluatedDisplayCount = data.openCompleted || data.openSkipped
-      ? Number(daily.evaluatedCount ?? t.evaluatedCount ?? scan.evaluatedCount ?? 0)
+    const evaluatedDisplayCount = Number(daily.evaluatedCount || 0) > 0
+      ? Number(daily.evaluatedCount)
       : Number(t.evaluatedCount ?? scan.evaluatedCount ?? 0);
-    const strictDisplayCount = data.openCompleted || data.openSkipped
-      ? Number(daily.strictPassedCount ?? t.strictPassedCount ?? scan.strictPassedCount ?? scan.passedCount ?? 0)
+    const strictDisplayCount = Number(daily.strictPassedCount || 0) > 0
+      ? Number(daily.strictPassedCount)
       : Number(t.strictPassedCount ?? scan.strictPassedCount ?? scan.passedCount ?? 0);
+    const fallbackDisplayCount = Number(daily.fallbackPassedCount || 0);
+    const boughtDisplayCount = Number(daily.boughtCount || (data.openBuyCode ? 1 : 0));
     box.innerHTML = `
       <div class="live-head">
         <div class="live-stage"><span class="live-dot"></span>${escapeHtml(stageText)}</div>
@@ -1291,6 +1293,8 @@
         <div class="mini-box"><div class="mini-label">${data.openCompleted || data.openSkipped ? "OPEN시간 HOT 누적" : "HOT 현재 후보"}</div><div class="mini-value">${hotDisplayCount}개</div></div>
         <div class="mini-box"><div class="mini-label">${data.openCompleted || data.openSkipped ? "OPEN 누적 평가" : "OPEN 현재 평가"}</div><div class="mini-value">${evaluatedDisplayCount}개</div></div>
         <div class="mini-box"><div class="mini-label">누적 엄격 통과</div><div class="mini-value">${strictDisplayCount}개</div></div>
+        <div class="mini-box"><div class="mini-label">예외·보완 통과</div><div class="mini-value">${fallbackDisplayCount}개</div></div>
+        <div class="mini-box"><div class="mini-label">OPEN 실제 매수</div><div class="mini-value">${boughtDisplayCount}개</div></div>
         <div class="mini-box"><div class="mini-label">잠재 후보</div><div class="mini-value">${Number(t.potentialCount ?? scan.potentialCount ?? 0)}개</div></div>
       </div>
       <div class="live-candidate">

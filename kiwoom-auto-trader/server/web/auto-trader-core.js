@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const STATE_FILE = path.join(__dirname, "paper-state-core.json");
+const AUTO_TRADER_LOCK_FILE = path.join(__dirname, ".auto-trader-core.lock");
 const MANUAL_SELL_REQUEST_DIR = path.join(__dirname, "manual-sell-requests");
 const MANUAL_SELL_RESULT_DIR = path.join(__dirname, "manual-sell-results");
 const MANUAL_SELL_REQUEST_TTL_MS = 90 * 1000;
@@ -10,6 +11,11 @@ const MANUAL_SELL_REQUEST_TTL_MS = 90 * 1000;
 // 같은 보유포지션을 재매도하지 않도록 프로세스 메모리에도 완료키를 유지한다.
 // 종목이 아니라 포지션 기준이므로 손절 후 적법한 당일 재진입 매도는 허용된다.
 const completedFullSellKeys = new Set();
+
+// loadState()에서 읽은 원본 스냅샷을 직렬화 대상에서 제외해 보관한다.
+// 저장 직전에 디스크 최신본과 3방향 비교하여 오래된 전체 상태가
+// 신규 보유종목·거래로그·현금을 덮어쓰는 것을 방지한다.
+const STATE_META = Symbol("stateMeta");
 
 
 for (const dir of [MANUAL_SELL_REQUEST_DIR, MANUAL_SELL_RESULT_DIR]) {
@@ -72,6 +78,527 @@ function writeJsonFileAtomic(filePath, data) {
       try { fs.unlinkSync(tempPath); } catch (_) {}
     }
   }
+}
+
+function cloneStateValue(value) {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
+function stateValuesEqual(left, right) {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (
+    left === null ||
+    right === null ||
+    typeof left !== "object" ||
+    typeof right !== "object"
+  ) {
+    return false;
+  }
+
+  const leftIsArray = Array.isArray(left);
+  const rightIsArray = Array.isArray(right);
+
+  if (leftIsArray !== rightIsArray) {
+    return false;
+  }
+
+  if (leftIsArray) {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    for (let index = 0; index < left.length; index++) {
+      if (!stateValuesEqual(left[index], right[index])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  for (const key of leftKeys) {
+    if (
+      !Object.prototype.hasOwnProperty.call(right, key) ||
+      !stateValuesEqual(left[key], right[key])
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isPlainStateObject(value) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
+
+function attachStateMeta(state, snapshot = state) {
+  if (!state || typeof state !== "object") {
+    return state;
+  }
+
+  Object.defineProperty(state, STATE_META, {
+    value: {
+      snapshot: cloneStateValue(snapshot),
+      loadedAtMs: Date.now()
+    },
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
+
+  return state;
+}
+
+function mergeThreeWayStateValue(base, local, latest, path = "") {
+  if (stateValuesEqual(local, base)) {
+    return cloneStateValue(latest);
+  }
+
+  if (stateValuesEqual(latest, base)) {
+    return cloneStateValue(local);
+  }
+
+  if (
+    isPlainStateObject(base) ||
+    isPlainStateObject(local) ||
+    isPlainStateObject(latest)
+  ) {
+    const baseObject = isPlainStateObject(base) ? base : {};
+    const localObject = isPlainStateObject(local) ? local : {};
+    const latestObject = isPlainStateObject(latest) ? latest : {};
+    const merged = {};
+    const keys = new Set([
+      ...Object.keys(baseObject),
+      ...Object.keys(localObject),
+      ...Object.keys(latestObject)
+    ]);
+
+    for (const key of keys) {
+      const childPath = path ? `${path}.${key}` : key;
+      const value = mergeThreeWayStateValue(
+        baseObject[key],
+        localObject[key],
+        latestObject[key],
+        childPath
+      );
+
+      if (typeof value !== "undefined") {
+        merged[key] = value;
+      }
+    }
+
+    return merged;
+  }
+
+  // 둘 다 같은 필드를 바꾼 경우 디스크 최신 현금을 우선한다.
+  // 주문 API나 다른 전략이 더 늦게 반영한 잔액을 되돌리지 않기 위함이다.
+  if (path === "totalCash") {
+    return cloneStateValue(latest);
+  }
+
+  // 나머지는 이 작업이 명시적으로 만든 변경을 유지한다.
+  return cloneStateValue(local);
+}
+
+function mergeStateSetArray(baseRows, localRows, latestRows) {
+  const baseSet = new Set(Array.isArray(baseRows) ? baseRows.map(String) : []);
+  const localSet = new Set(Array.isArray(localRows) ? localRows.map(String) : []);
+  const latestSet = new Set(Array.isArray(latestRows) ? latestRows.map(String) : []);
+  const merged = new Set(baseSet);
+
+  // 디스크 최신 변경을 먼저 반영한 뒤 현재 작업 변경을 적용한다.
+  for (const value of baseSet) {
+    if (!latestSet.has(value)) merged.delete(value);
+  }
+  for (const value of latestSet) merged.add(value);
+
+  for (const value of baseSet) {
+    if (!localSet.has(value)) merged.delete(value);
+  }
+  for (const value of localSet) merged.add(value);
+
+  return Array.from(merged);
+}
+
+function getStateTradeLogKey(log = {}) {
+  if (log.executionId) {
+    return `EXECUTION|${String(log.executionId)}`;
+  }
+
+  return [
+    log.date || "",
+    log.type || "",
+    normalizeTradeCode(log.code),
+    log.positionId || "",
+    Number(log.timestampMs || 0),
+    Number(log.buyTime || log.buyTimeMs || 0),
+    Number(log.qty || 0),
+    Number(log.sellPrice || log.buyPrice || log.price || 0),
+    Number(log.profit || 0)
+  ].join("|");
+}
+
+function mergeAppendOnlyStateRows(latestRows, localRows, makeKey) {
+  const merged = [];
+  const seen = new Set();
+
+  for (const row of [
+    ...(Array.isArray(latestRows) ? latestRows : []),
+    ...(Array.isArray(localRows) ? localRows : [])
+  ]) {
+    const key = makeKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(cloneStateValue(row));
+  }
+
+  return merged;
+}
+
+function getStateHoldingKey(holding = {}) {
+  return (
+    holding.positionId ||
+    `${String(holding.strategyGroup || "-").toUpperCase()}_` +
+    `${normalizeTradeCode(holding.code)}_` +
+    `${getHoldingPositionToken(holding)}`
+  );
+}
+
+function isCompletedStateHolding(holding, completedKeys) {
+  const normalizedCode = normalizeTradeCode(holding?.code);
+  const positionToken = getHoldingPositionToken(holding);
+
+  return completedKeys.some(key => {
+    const text = String(key || "");
+    return (
+      text.includes(`_${normalizedCode}_`) &&
+      text.endsWith(`_${positionToken}`)
+    );
+  });
+}
+
+function mergeStateHoldings(
+  baseRows,
+  localRows,
+  latestRows,
+  completedKeys
+) {
+  const makeMap = rows => new Map(
+    (Array.isArray(rows) ? rows : []).map(row => [
+      getStateHoldingKey(row),
+      row
+    ])
+  );
+
+  const baseMap = makeMap(baseRows);
+  const localMap = makeMap(localRows);
+  const latestMap = makeMap(latestRows);
+  const keys = new Set([
+    ...baseMap.keys(),
+    ...localMap.keys(),
+    ...latestMap.keys()
+  ]);
+  const merged = [];
+
+  for (const key of keys) {
+    const base = baseMap.get(key);
+    const local = localMap.get(key);
+    const latest = latestMap.get(key);
+    let holding = null;
+
+    if (!base) {
+      // 서로 다른 작업이 새로 만든 포지션은 모두 보존한다.
+      if (local && latest) {
+        holding = mergeThreeWayStateValue({}, local, latest, `holdings.${key}`);
+      } else {
+        holding = cloneStateValue(local || latest);
+      }
+    } else if (!latest) {
+      // 디스크 최신본에서 제거된 기존 포지션을 다시 살리지 않는다.
+      holding = null;
+    } else if (!local) {
+      // 현재 작업의 전량매도만 완료키가 있을 때 제거한다.
+      holding = isCompletedStateHolding(base, completedKeys)
+        ? null
+        : cloneStateValue(latest);
+    } else {
+      holding = mergeThreeWayStateValue(
+        base,
+        local,
+        latest,
+        `holdings.${key}`
+      );
+    }
+
+    if (
+      holding &&
+      !isCompletedStateHolding(holding, completedKeys)
+    ) {
+      merged.push(holding);
+    }
+  }
+
+  return merged;
+}
+
+function mergeMarketTemperatureSamples(base, local, latest) {
+  const merged = mergeThreeWayStateValue(
+    base,
+    local,
+    latest,
+    "marketTemperatureSamples"
+  ) || {};
+  const rowMap = new Map();
+
+  for (const row of [
+    ...(Array.isArray(latest?.rows) ? latest.rows : []),
+    ...(Array.isArray(local?.rows) ? local.rows : [])
+  ]) {
+    const code = normalizeTradeCode(row?.code);
+    if (!/^\d{6}$/.test(code)) continue;
+    const previous = rowMap.get(code);
+    if (
+      !previous ||
+      Number(row?.observedAtMs || 0) >=
+        Number(previous?.observedAtMs || 0)
+    ) {
+      rowMap.set(code, cloneStateValue({ ...row, code }));
+    }
+  }
+
+  merged.rows = Array.from(rowMap.values())
+    .sort((a, b) => Number(b.observedAtMs || 0) - Number(a.observedAtMs || 0))
+    .slice(0, Number(settings.marketTemperatureSampleMaxCount || 1000));
+
+  return merged;
+}
+
+function mergeConcurrentState(base, local, latest) {
+  const merged = mergeThreeWayStateValue(base, local, latest) || {};
+
+  merged.completedFullSellCodes = Array.from(new Set([
+    ...(Array.isArray(latest?.completedFullSellCodes)
+      ? latest.completedFullSellCodes.map(String)
+      : []),
+    ...(Array.isArray(local?.completedFullSellCodes)
+      ? local.completedFullSellCodes.map(String)
+      : [])
+  ]));
+
+  merged.tradeLogs = mergeAppendOnlyStateRows(
+    latest?.tradeLogs,
+    local?.tradeLogs,
+    getStateTradeLogKey
+  );
+
+  merged.virtualResults = mergeAppendOnlyStateRows(
+    latest?.virtualResults,
+    local?.virtualResults,
+    row => [
+      row?.date || "",
+      row?.type || "",
+      normalizeTradeCode(row?.code),
+      Number(row?.timestampMs || row?.timeMs || 0),
+      Number(row?.price || 0)
+    ].join("|")
+  );
+
+  merged.pendingBuyCodes = mergeStateSetArray(
+    base?.pendingBuyCodes,
+    local?.pendingBuyCodes,
+    latest?.pendingBuyCodes
+  );
+  merged.pendingSellCodes = mergeStateSetArray(
+    base?.pendingSellCodes,
+    local?.pendingSellCodes,
+    latest?.pendingSellCodes
+  );
+
+  merged.holdings = mergeStateHoldings(
+    base?.holdings,
+    local?.holdings,
+    latest?.holdings,
+    merged.completedFullSellCodes
+  );
+
+  merged.marketTemperatureSamples = mergeMarketTemperatureSamples(
+    base?.marketTemperatureSamples,
+    local?.marketTemperatureSamples,
+    latest?.marketTemperatureSamples
+  );
+
+  return merged;
+}
+
+function replaceStateContents(target, source) {
+  for (const key of Object.keys(target || {})) {
+    if (!Object.prototype.hasOwnProperty.call(source || {}, key)) {
+      delete target[key];
+    }
+  }
+
+  Object.assign(target, source || {});
+  return target;
+}
+
+let autoTraderLockOwned = false;
+let autoTraderLockCleanupRegistered = false;
+
+function isProcessAlive(pid) {
+  const normalizedPid = Number(pid || 0);
+
+  if (!Number.isInteger(normalizedPid) || normalizedPid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(normalizedPid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === "EPERM";
+  }
+}
+
+function releaseAutoTraderLock() {
+  if (!autoTraderLockOwned) {
+    return;
+  }
+
+  try {
+    const currentLock = readJsonFileSafe(
+      AUTO_TRADER_LOCK_FILE,
+      null,
+      1
+    );
+
+    if (Number(currentLock?.pid || 0) === process.pid) {
+      fs.unlinkSync(AUTO_TRADER_LOCK_FILE);
+    }
+  } catch (_) {
+    // 종료 중 잠금파일이 이미 정리됐거나 읽을 수 없으면 그대로 종료한다.
+  } finally {
+    autoTraderLockOwned = false;
+  }
+}
+
+function acquireAutoTraderLock() {
+  if (autoTraderLockOwned) {
+    return true;
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = fs.openSync(AUTO_TRADER_LOCK_FILE, "wx");
+      try {
+        fs.writeFileSync(
+          fd,
+          JSON.stringify({
+            pid: process.pid,
+            startedAtMs: Date.now(),
+            startedAt: new Date().toISOString(),
+            stateFile: STATE_FILE
+          }, null, 2),
+          "utf8"
+        );
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+
+      autoTraderLockOwned = true;
+
+      if (!autoTraderLockCleanupRegistered) {
+        process.once("exit", releaseAutoTraderLock);
+        autoTraderLockCleanupRegistered = true;
+      }
+
+      console.log(
+        `[START LOCK] CORE/VOLUME 단일 실행 확보 / PID ${process.pid}`
+      );
+      return true;
+    } catch (err) {
+      if (err?.code !== "EEXIST") {
+        console.error(
+          `[START LOCK 오류] ${err?.message || err}`
+        );
+        return false;
+      }
+
+      let existingLock = null;
+      try {
+        existingLock = readJsonFileSafe(
+          AUTO_TRADER_LOCK_FILE,
+          null,
+          5
+        );
+      } catch (_) {
+        existingLock = null;
+      }
+
+      const existingPid = Number(existingLock?.pid || 0);
+
+      if (!existingPid) {
+        try {
+          const lockAgeMs = Date.now() - fs.statSync(AUTO_TRADER_LOCK_FILE).mtimeMs;
+          if (lockAgeMs >= 0 && lockAgeMs < 10000) {
+            console.log(
+              "[START LOCK 차단] 다른 프로세스가 단일 실행 잠금을 생성 중입니다."
+            );
+            return false;
+          }
+        } catch (_) {
+          // 다음 재시도에서 잠금 생성 또는 정리 여부를 다시 확인한다.
+        }
+      }
+
+      if (existingPid === process.pid) {
+        autoTraderLockOwned = true;
+        return true;
+      }
+
+      if (isProcessAlive(existingPid)) {
+        console.log(
+          `[START LOCK 차단] CORE/VOLUME 자동매매가 다른 프로세스에서 ` +
+          `실행 중 / PID ${existingPid}`
+        );
+        return false;
+      }
+
+      try {
+        fs.unlinkSync(AUTO_TRADER_LOCK_FILE);
+        console.log(
+          `[START LOCK 정리] 종료된 PID ${existingPid || "UNKNOWN"}의 ` +
+          `잠금 제거`
+        );
+      } catch (unlinkError) {
+        console.error(
+          `[START LOCK 정리실패] ${unlinkError?.message || unlinkError}`
+        );
+        return false;
+      }
+    }
+  }
+
+  return false;
 }
 
 function loadHotCandidates() {
@@ -783,7 +1310,7 @@ function getOpenPriorityBlockReason(state = {}) {
 
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
-    return {
+    return attachStateMeta({
       holdings: [],
       tradeLogs: [],
       virtualResults: [],
@@ -841,7 +1368,7 @@ function loadState() {
 
       totalCash:
         settings.totalCash
-    };
+    });
   }
 
   const state =
@@ -1101,11 +1628,46 @@ function loadState() {
       settings.totalCash;
   }
 
-  return state;
+  return attachStateMeta(state);
 }
 
 function saveState(state) {
+  const meta = state?.[STATE_META] || null;
+  const base = meta?.snapshot || null;
+  let stateToSave = state;
+
+  if (
+    base &&
+    fs.existsSync(STATE_FILE)
+  ) {
+    const latest = readJsonFileSafe(STATE_FILE, null);
+
+    if (
+      latest &&
+      !stateValuesEqual(base, latest)
+    ) {
+      stateToSave = mergeConcurrentState(
+        base,
+        state,
+        latest
+      );
+
+      console.log(
+        `[STATE 병합저장] 디스크 최신 변경 보존 / ` +
+        `보유 ${Number(latest.holdings?.length || 0)}→` +
+        `${Number(stateToSave.holdings?.length || 0)}개 / ` +
+        `거래로그 ${Number(latest.tradeLogs?.length || 0)}→` +
+        `${Number(stateToSave.tradeLogs?.length || 0)}건 / ` +
+        `writer ${process.pid}`
+      );
+    }
+  }
+
+  replaceStateContents(state, stateToSave);
   writeJsonFileAtomic(STATE_FILE, state);
+  attachStateMeta(state);
+
+  return state;
 }
 
 async function fetchJson(url) {
@@ -5918,6 +6480,8 @@ function isVolumeCandidateGettingStronger(
       time: now,
       lastSeenAtMs: now,
       firstSeenAtMs: now,
+      phaseStartedAtMs: now,
+      phaseStartedAtText: nowText(),
       firstPrice: current.price,
       firstVolumeRatio: current.volumeRatio,
       firstDayPosition: current.dayPosition,
@@ -5934,22 +6498,56 @@ function isVolumeCandidateGettingStronger(
     };
   }
 
-  const ageMs = now - Number(history.firstSeenAtMs || now);
-  if (ageMs > Number(settings.volumePullbackMaxWaitMs || 180000)) {
+  // 단계별 제한시간을 분리한다.
+  // 기존 코드는 최초 급등 관찰부터 3분을 계산해 눌림이 늦게 시작되면
+  // 정상 눌림 확인 직후에도 즉시 RESET되는 문제가 있었다.
+  if (
+    history.phase === "PULLBACK" &&
+    !Number(history.pullbackStartedAtMs || 0)
+  ) {
+    // 배포 전 저장된 PULLBACK 상태는 배포 시점부터 새 제한시간을 부여한다.
+    history.pullbackStartedAtMs = now;
+    history.pullbackStartedAtText = nowText();
+    history.phaseStartedAtMs = now;
+    history.phaseStartedAtText = nowText();
+  }
+
+  const phaseStartedAtMs = history.phase === "PULLBACK"
+    ? Number(history.pullbackStartedAtMs || now)
+    : Number(history.phaseStartedAtMs || history.firstSeenAtMs || now);
+  const phaseAgeMs = now - phaseStartedAtMs;
+  const maxPhaseWaitMs = Number(
+    settings.volumePullbackMaxWaitMs || 180000
+  );
+
+  if (phaseAgeMs > maxPhaseWaitMs) {
+    const expiredPhase = String(history.phase || "SURGE");
     state.volumeCandidateHistory[code] = {
       phase: "SURGE",
       time: now,
       lastSeenAtMs: now,
       firstSeenAtMs: now,
+      phaseStartedAtMs: now,
+      phaseStartedAtText: nowText(),
       firstPrice: current.price,
       firstVolumeRatio: current.volumeRatio,
       firstDayPosition: current.dayPosition,
       peakPrice: current.price,
       pullbackLowPrice: null,
       previous: current,
-      samples: [current]
+      samples: [current],
+      resetFromPhase: expiredPhase,
+      resetAtMs: now,
+      resetAtText: nowText()
     };
-    return { pass: false, phase: "RESET", reason: "VOLUME 눌림대기 3분 초과 / 기준 재설정" };
+    return {
+      pass: false,
+      phase: "RESET",
+      phaseAgeMs,
+      reason:
+        `VOLUME ${expiredPhase} 단계 ` +
+        `${Math.round(phaseAgeMs / 1000)}초 초과 / 기준 재설정`
+    };
   }
 
   history.samples = Array.isArray(history.samples) ? history.samples : [];
@@ -6059,6 +6657,8 @@ function isVolumeCandidateGettingStronger(
 
   if (earlyMomentumReady) {
     history.phase = "EARLY_MOMENTUM";
+    history.phaseStartedAtMs = now;
+    history.phaseStartedAtText = nowText();
     history.earlyPriceRiseRate = earlyPriceRiseRate;
     history.recentPriceChangeRate = recentPriceChangeRate;
     history.pricePersistence = pricePersistence;
@@ -6088,12 +6688,16 @@ function isVolumeCandidateGettingStronger(
 
   if (history.phase === "EARLY_MOMENTUM" && !isEarlyMomentumZone) {
     history.phase = "SURGE";
+    history.phaseStartedAtMs = now;
+    history.phaseStartedAtText = nowText();
   }
 
   if (
     pullbackRate < Number(settings.volumePullbackMaxRate || -1.5)
   ) {
     history.phase = "BROKEN";
+    history.phaseStartedAtMs = now;
+    history.phaseStartedAtText = nowText();
     state.volumeCandidateHistory[code] = history;
     return {
       pass: false,
@@ -6107,6 +6711,10 @@ function isVolumeCandidateGettingStronger(
     pullbackRate <= Number(settings.volumePullbackMinRate || -0.25)
   ) {
     history.phase = "PULLBACK";
+    history.phaseStartedAtMs = now;
+    history.phaseStartedAtText = nowText();
+    history.pullbackStartedAtMs = now;
+    history.pullbackStartedAtText = nowText();
     history.pullbackLowPrice = current.price;
     state.volumeCandidateHistory[code] = history;
     return {
@@ -6158,6 +6766,8 @@ function isVolumeCandidateGettingStronger(
       recentPriceChangeRate > 0
     ) {
       history.phase = "REBOUND";
+      history.phaseStartedAtMs = now;
+      history.phaseStartedAtText = nowText();
       history.pullbackRate = pullbackRate;
       history.reboundRate = reboundRate;
       history.recentPriceChangeRate = recentPriceChangeRate;
@@ -7411,6 +8021,7 @@ async function paperBuy(
     const buyRequestedAtMs = Date.now();
     const positionId =
       `${todayKey()}_${normalizeTradeCode(item.code)}_${buyRequestedAtMs}`;
+    const executionId = `BUY_${positionId}`;
 
     console.log(
       `[${strategyGroup} 매수조건 상세] ${name} / ` +
@@ -7429,7 +8040,10 @@ async function paperBuy(
         price,
         qty,
         strategyGroup,
-        reason
+        reason,
+        positionId,
+        executionId,
+        buyRequestedAtMs
       }
     );
 
@@ -7727,6 +8341,7 @@ async function paperBuy(
       date: todayKey(),
       time: nowText(),
       timestampMs: buyRequestedAtMs,
+      executionId,
       type: `${strategyGroup}_BUY`,
 
       code: item.code,
@@ -7965,6 +8580,14 @@ async function paperSell(
     );
 
     const sellOrderRequestedAt = nowText();
+    const sellRequestedAtMs = Date.now();
+    const executionId = [
+      "SELL",
+      holding.positionId || completedFullSellKey,
+      sellRequestedAtMs,
+      qty,
+      sellType
+    ].join("_");
 
     const result = await postJson(
       `${API_BASE}/api/core-paper-sell`,
@@ -7974,6 +8597,12 @@ async function paperSell(
         qty,
         sellType,
         reason,
+        positionId: holding.positionId || null,
+        executionId,
+        sellRequestedAtMs,
+        signalAt: sellSignalAt,
+        signalAtMs: Number(sellSignalDetail?.signalAtMs || 0),
+        signalPrice: sellSignalPrice,
         manualSell: sellSignalDetail?.manualSell === true,
         manualRequestId: sellSignalDetail?.manualRequestId || null
       }
@@ -8199,7 +8828,8 @@ const sellAnalysis = {
     state.tradeLogs.push({
       date: todayKey(),
       time: nowText(),
-      timestampMs: Date.now(),
+      timestampMs: sellRequestedAtMs,
+      executionId,
       type: sellType,
 
       code: holding.code,
@@ -9457,7 +10087,11 @@ console.log(
   `거래량 ${Number(
     marketTemperature.volumeScore || 0
   ).toFixed(1)} / ` +
-  `대상 ${marketTemperature.total}개`
+  `대상 ${marketTemperature.total}개 / ` +
+  `표본 ${marketTemperature.sampleMode || "DIRECT"} ` +
+  `${Number(marketTemperature.sampleCount ?? marketTemperature.total ?? 0)}/` +
+  `${Number(settings.marketTemperatureMinSampleCount || 120)}개 / ` +
+  `${marketTemperature.reason || "-"}`
 );
 
   console.log(
@@ -10069,6 +10703,9 @@ async function start() {
   let buyPending = false;
   let buyPendingSinceMs = 0;
   let buyPendingScheduled = false;
+  let candidateWatchPending = false;
+  let candidateWatchPendingSinceMs = 0;
+  let candidateWatchPendingScheduled = false;
   let lastSellPriorityCheckAt = 0;
 
   let buyTimer = null;
@@ -10101,6 +10738,7 @@ async function start() {
     if (
       !buyPending ||
       buyPendingScheduled ||
+      candidateWatchPending ||
       isTraderBusy()
     ) {
       return;
@@ -10127,6 +10765,61 @@ async function start() {
       );
 
       await runBuySafely();
+    });
+  }
+
+  function reserveCandidateWatch(reason) {
+    const wasAlreadyPending = candidateWatchPending;
+    candidateWatchPending = true;
+
+    if (!candidateWatchPendingSinceMs) {
+      candidateWatchPendingSinceMs = Date.now();
+    }
+
+    if (!wasAlreadyPending) {
+      console.log(
+        `[후보재평가 LOOP] 다른 작업 진행중 / ` +
+        `종료 직후 재평가 예약 / ${reason}`
+      );
+    }
+  }
+
+  function schedulePendingCandidateWatchIfReady() {
+    if (
+      !candidateWatchPending ||
+      candidateWatchPendingScheduled ||
+      sellPending ||
+      isTraderBusy()
+    ) {
+      return;
+    }
+
+    candidateWatchPendingScheduled = true;
+
+    setImmediate(async () => {
+      candidateWatchPendingScheduled = false;
+
+      if (
+        !candidateWatchPending ||
+        sellPending ||
+        isTraderBusy()
+      ) {
+        return;
+      }
+
+      const pendingWaitMs = candidateWatchPendingSinceMs > 0
+        ? Math.max(0, Date.now() - candidateWatchPendingSinceMs)
+        : 0;
+
+      candidateWatchPending = false;
+      candidateWatchPendingSinceMs = 0;
+
+      console.log(
+        `[후보재평가 LOOP] 예약점검 실행 / ` +
+        `대기 ${(pendingWaitMs / 1000).toFixed(1)}초`
+      );
+
+      await runCandidateWatchSafely();
     });
   }
 
@@ -10192,6 +10885,7 @@ async function start() {
         await runSellSafely();
       }
 
+      schedulePendingCandidateWatchIfReady();
       schedulePendingBuyIfReady();
     }
   }
@@ -10203,18 +10897,14 @@ async function start() {
     }
 
     if (isTraderBusy()) {
-      console.log(
-        "[후보재평가 LOOP] 다른 작업 진행중 / 이번 점검 건너뜀"
-      );
+      reserveCandidateWatch("공통 busy");
       return;
     }
 
     await ensureSellPriorityBeforeLongTask("후보재평가");
 
     if (isTraderBusy()) {
-      console.log(
-        "[후보재평가 LOOP] 매도 우선 점검 진행중 / 이번 점검 건너뜀"
-      );
+      reserveCandidateWatch("매도 우선 점검");
       return;
     }
 
@@ -10235,6 +10925,7 @@ async function start() {
         await runSellSafely();
       }
 
+      schedulePendingCandidateWatchIfReady();
       schedulePendingBuyIfReady();
     }
   }
@@ -10285,6 +10976,7 @@ async function start() {
     } finally {
       sellRunning = false;
       lastSellPriorityCheckAt = Date.now();
+      schedulePendingCandidateWatchIfReady();
       schedulePendingBuyIfReady();
     }
   }
@@ -10368,10 +11060,18 @@ function startServerAutoTrader() {
     return;
   }
 
+  if (!acquireAutoTraderLock()) {
+    console.log(
+      "[START] CORE/VOLUME 자동매매 중복시작을 차단했습니다."
+    );
+    return;
+  }
+
   started = true;
 
   start().catch(err => {
     started = false;
+    releaseAutoTraderLock();
     console.error("[START 오류]", err.message);
   });
 }
