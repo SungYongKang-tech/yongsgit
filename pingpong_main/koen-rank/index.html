@@ -199,6 +199,7 @@ h1 {
       <a href="monthly-report.html" class="btn primary">통합 전적</a>
       <a href="monthly-report2.html" class="btn primary">ELO 랭킹</a>
       <button id="todayBtn" class="btn primary">오늘의 전적</button>
+      <a href="./doubles-match.html?role=display&auto=1" class="btn play">패드 전광판</a>
       <button id="helpBtn" class="btn">ℹ 사용법</button>
       <button id="homeBtn" class="btn">📱 바로가기 추가</button>
        <!-- ✅ 추가 -->
@@ -251,7 +252,7 @@ h1 {
 <ul>
   <li>1️⃣ 칩을 눌러 선수 2명(단식) 또는 4명(복식)을 선택합니다.</li>
   <li>2️⃣ A팀/B팀이 자동 배정되며, <b>A팀 승</b> 또는 <b>B팀 승</b> 버튼을 눌러 결과를 바로 저장합니다.</li>
-  <li>3️⃣ 복식 4명을 선택하면 <b>경기 진행</b> 버튼이 나타납니다. 휴대폰 심판 화면과 패드 전광판을 연결해 점수를 진행할 수 있습니다.</li>
+  <li>3️⃣ 패드에서 먼저 <b>패드 전광판</b>을 누르면 대기합니다. 휴대폰에서 복식 4명을 선택하고 <b>경기 진행</b>을 누르는 순간 자동 연결됩니다.</li>
   <li>4️⃣ 복식 경기 종료 후 돌아오면 결과 확인창이 자동으로 열리고, 승자를 성적에 저장할 수 있습니다.</li>
   <li>5️⃣ 최근 경기결과는 화면 하단에서 확인·삭제할 수 있습니다.</li>
   <li>6️⃣ <b>통합 전적</b> : 월별 경기수, 승/패, 승률 등 단식+복식 전체 기록을 확인할 수 있습니다.</li>
@@ -764,7 +765,7 @@ toast("경기결과 저장 완료");
       const namesA=sel.slice(0,2).map(p=>p.name);
       const namesB=sel.slice(2,4).map(p=>p.name);
 
-      await set(ref(db, `liveMatches/${room}`), {
+      const roomState={
         room,
         mode:"double",
         teams:{ A:namesA, B:namesB },
@@ -780,7 +781,16 @@ toast("경기결과 저장 완료");
         history:[],
         createdAt:Date.now(),
         updatedAt:Date.now()
-      });
+      };
+      const writes={};
+      writes[`liveMatches/${room}`]=roomState;
+      writes["config/currentDoubleRoom"]={
+        room,
+        teams:{ A:namesA, B:namesB },
+        createdAt:roomState.createdAt,
+        updatedAt:roomState.updatedAt
+      };
+      await update(ref(db),writes);
 
       location.href=`./doubles-match.html?room=${encodeURIComponent(room)}&role=referee`;
     }catch(e){
@@ -869,7 +879,10 @@ toast("경기결과 저장 완료");
     btn.disabled=true;
 
     try{
-      const latestSnap=await get(ref(db, `liveMatches/${pendingLiveRoom}`));
+      const [latestSnap,currentRoomSnap]=await Promise.all([
+        get(ref(db, `liveMatches/${pendingLiveRoom}`)),
+        get(ref(db, "config/currentDoubleRoom"))
+      ]);
       const latest=latestSnap.val() || {};
       if(latest.recordedMatchId){
         toast("이미 성적에 저장된 경기입니다");
@@ -893,6 +906,9 @@ toast("경기결과 저장 완료");
         writes[`matches/${matchId}`]=matchObj;
         writes[`liveMatches/${pendingLiveRoom}/recordedMatchId`]=matchId;
         writes[`liveMatches/${pendingLiveRoom}/recordedAt`]=Date.now();
+        if(currentRoomSnap.val()?.room===pendingLiveRoom){
+          writes["config/currentDoubleRoom"]=null;
+        }
         await update(ref(db),writes);
         toast("복식 경기결과 저장 완료");
         sel=[];

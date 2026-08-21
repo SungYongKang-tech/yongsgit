@@ -335,8 +335,12 @@ button {cursor:pointer;}
 <section id="connectScreen" class="connect-screen hidden">
   <div class="connect-card">
     <div class="ball">🏓</div>
-    <h1>복식 경기 연결</h1>
-    <p>휴대폰에서 보이는 6자리 경기코드를 입력하세요.<br>휴대폰은 심판, 패드는 전광판으로 연결합니다.</p>
+    <h1 id="connectTitle">복식 경기 연결</h1>
+    <p id="connectGuide">휴대폰에서 보이는 6자리 경기코드를 입력하세요.<br>휴대폰은 심판, 패드는 전광판으로 연결합니다.</p>
+    <div id="autoWaitBox" class="pair-note hidden" style="margin:0 0 14px;">
+      <span class="status-dot online" style="display:inline-block;margin-right:7px;"></span>
+      현재 복식경기를 기다리고 있습니다.<br>휴대폰에서 경기 진행을 누르면 자동 연결됩니다.
+    </div>
     <input id="roomInput" class="room-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="6자리 경기코드" />
     <div class="connect-actions">
       <button id="joinReferee" class="btn primary">휴대폰 심판</button>
@@ -384,9 +388,9 @@ button {cursor:pointer;}
       <button id="startMatch" class="btn success setup-start">▶ 경기 시작</button>
       <div id="pairNote" class="pair-note">서버를 선택하면 상대 팀 선수 중 리시버를 정할 수 있습니다.</div>
       <div class="share-box">
-        <div style="color:#cbd5e1;font-size:14px;">패드 전광판 연결코드</div>
+        <div style="color:#cbd5e1;font-size:14px;">자동 연결이 안 될 때 사용하는 예비 연결코드</div>
         <div id="setupRoomCode" class="share-code">------</div>
-        <button id="copyDisplaySetup" class="btn display">패드용 주소 복사</button>
+        <button id="copyDisplaySetup" class="btn display">패드용 주소 복사(예비)</button>
       </div>
     </div>
 
@@ -472,6 +476,7 @@ const auth=getAuth();
 const params=new URLSearchParams(location.search);
 const room=(params.get("room") || "").replace(/\D/g,"").slice(0,6);
 const role=params.get("role")==="display" ? "display" : "referee";
+const autoConnect=role==="display" && params.get("auto")==="1";
 const validRoom=/^\d{6}$/.test(room);
 const liveRef=validRoom ? ref(db,`liveMatches/${room}`) : null;
 
@@ -480,6 +485,7 @@ let unsubscribe=null;
 let voiceEnabled=localStorage.getItem("doublesVoice")!=="off";
 let authReadyPromise=null;
 let scoreBusy=false;
+let autoRoomUnsubscribe=null;
 
 function ensureAuthReady(){
   if(authReadyPromise) return authReadyPromise;
@@ -546,10 +552,13 @@ function snapshotForUndo(state){
   };
 }
 
-function showConnect(message=""){
+function showConnect(message="",autoWaiting=false){
   $("#connectScreen").classList.remove("hidden");
   $("#app").classList.add("hidden");
   if(room) $("#roomInput").value=room;
+  $("#connectTitle").textContent=autoWaiting ? "패드 전광판 연결 대기" : "복식 경기 연결";
+  $("#connectGuide").classList.toggle("hidden",autoWaiting);
+  $("#autoWaitBox").classList.toggle("hidden",!autoWaiting);
   if(message) toast(message);
 }
 function join(selectedRole){
@@ -808,6 +817,9 @@ async function endMatch(){
       state.updatedAt=Date.now();
       return state;
     },{applyLocally:false});
+    await runTransaction(ref(db,"config/currentDoubleRoom"),current=>{
+      return current?.room===room ? null : current;
+    },{applyLocally:false});
     speak(winnerAnnouncement(currentState));
   }catch(e){
     console.error(e);
@@ -948,7 +960,38 @@ function render(state){
 }
 
 async function init(){
-  if(!validRoom){ showConnect(); return; }
+  if(!validRoom){
+    if(autoConnect){
+      try{
+        await ensureAuthReady();
+        showConnect("",true);
+        autoRoomUnsubscribe=onValue(ref(db,"config/currentDoubleRoom"),async snapshot=>{
+          const current=snapshot.val() || {};
+          const code=String(current.room || "");
+          if(!/^\d{6}$/.test(code)) return;
+          const createdAt=Number(current.createdAt || current.updatedAt || 0);
+          if(!createdAt || Date.now()-createdAt>6*60*60*1000) return;
+          try{
+            const liveSnapshot=await get(ref(db,`liveMatches/${code}`));
+            const state=liveSnapshot.val() || {};
+            if(["setup","playing","awaiting_end"].includes(state.status)){
+              const url=new URL(location.href);
+              url.searchParams.set("room",code);
+              url.searchParams.set("role","display");
+              url.searchParams.delete("auto");
+              location.replace(url.toString());
+            }
+          }catch(e){ console.error(e); }
+        });
+      }catch(e){
+        console.error(e);
+        showConnect("자동 연결을 시작하지 못했습니다");
+      }
+      return;
+    }
+    showConnect();
+    return;
+  }
   try{
     await ensureAuthReady();
     const first=await get(liveRef);
@@ -978,7 +1021,10 @@ async function init(){
 document.addEventListener("visibilitychange",()=>{
   if(!document.hidden && currentState) render(currentState);
 });
-window.addEventListener("beforeunload",()=>{ if(unsubscribe) unsubscribe(); });
+window.addEventListener("beforeunload",()=>{
+  if(unsubscribe) unsubscribe();
+  if(autoRoomUnsubscribe) autoRoomUnsubscribe();
+});
 init();
 </script>
 </body>
