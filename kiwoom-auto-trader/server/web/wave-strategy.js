@@ -6,8 +6,8 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.5.2";
-const ANALYSIS_RULE_VERSION = "20260820-prep-signal-isolation-watch-overflow-v5";
+const STRATEGY_VERSION = "1.5.4";
+const ANALYSIS_RULE_VERSION = "20260821-fast-holding-trigger-maintain-daily-pnl-v6";
 const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
 const SETTINGS = {
@@ -22,6 +22,13 @@ const SETTINGS = {
   evaluationStartTime: "09:00",
   evaluationEndTime: "15:10",
   loopMs: 5 * 60 * 1000,
+
+  // 후보평가는 5분 주기를 유지하되 보유종목 현재가 위험관리는 1분마다 우선 확인한다.
+  holdingCheckMs: 60 * 1000,
+  holdingPriceTimeoutMs: 6 * 1000,
+  holdingPriceRetryCount: 1,
+  holdingPriceRetryDelayMs: 500,
+  holdingPriceBatchSize: 3,
 
   // 장중에는 TRIGGER → READY → 고득점 WATCH 순으로 먼저 재평가한다. TRIGGER는 다음 평가에서 재확인 후에만 매수한다.
   liveEvaluationBatchSize: 12,
@@ -84,6 +91,13 @@ const SETTINGS = {
   structureStopBufferRate: -1.5,
   protectStartProfitRate: 5.0,
   protectFloorProfitRate: 0.5,
+  // 최고수익이 커질수록 최소 보존수익도 단계적으로 올린다.
+  protectTier7StartProfitRate: 7.0,
+  protectTier7FloorProfitRate: 3.0,
+  protectTier10StartProfitRate: 10.0,
+  protectTier10FloorProfitRate: 5.0,
+  protectTier15StartProfitRate: 15.0,
+  protectTier15FloorProfitRate: 8.0,
   trailingStartProfitRate: 8.0,
   trailingStopRate: 4.0,
   strongTrailingStartProfitRate: 15.0,
@@ -318,9 +332,29 @@ function saveState(state) {
   writeJsonAtomic(STATE_FILE, state);
 }
 
+function calculatePortfolioSnapshot(state) {
+  const invested = (state.holdings || []).reduce(
+    (sum, item) => sum + toNumber(item.currentPrice || item.buyPrice) * toNumber(item.qty),
+    0
+  );
+  const unrealizedProfit = (state.holdings || []).reduce(
+    (sum, item) => sum +
+      (toNumber(item.currentPrice || item.buyPrice) - toNumber(item.buyPrice)) * toNumber(item.qty),
+    0
+  );
+  const totalCash = toNumber(state.totalCash);
+  return {
+    totalCash,
+    invested,
+    equity: totalCash + invested,
+    unrealizedProfit
+  };
+}
+
 function ensureDailyStats(state) {
   const date = todayKey();
   if (!state.dailyStats[date]) {
+    const opening = calculatePortfolioSnapshot(state);
     state.dailyStats[date] = {
       date,
       discovered: 0,
@@ -329,8 +363,30 @@ function ensureDailyStats(state) {
       trigger: 0,
       bought: 0,
       sold: 0,
-      realizedProfit: 0
+      realizedProfit: 0,
+      startEquity: opening.equity,
+      startCash: opening.totalCash,
+      startInvested: opening.invested,
+      startUnrealizedProfit: opening.unrealizedProfit,
+      startSnapshotAt: nowText(),
+      startSnapshotBasis: "DAY_FIRST_RUN"
     };
+  } else if (
+    state.dailyStats[date].startEquity === undefined ||
+    state.dailyStats[date].startEquity === null ||
+    !Number.isFinite(Number(state.dailyStats[date].startEquity))
+  ) {
+    // 구버전 당일 통계에는 장 시작자산이 없다. 배포 뒤 첫 스냅샷부터 손익을 추적하되,
+    // 이를 진짜 장 시작값으로 오인하지 않도록 기준 종류를 함께 남긴다.
+    const opening = calculatePortfolioSnapshot(state);
+    Object.assign(state.dailyStats[date], {
+      startEquity: opening.equity,
+      startCash: opening.totalCash,
+      startInvested: opening.invested,
+      startUnrealizedProfit: opening.unrealizedProfit,
+      startSnapshotAt: nowText(),
+      startSnapshotBasis: "MIGRATED_CURRENT_SNAPSHOT"
+    });
   }
   return state.dailyStats[date];
 }
@@ -534,8 +590,24 @@ async function fetchJson(url, timeout = 12000) {
   }
 }
 
-async function getPrice(code) {
-  return fetchJson(`${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=wave`, 12000);
+async function getPrice(code, timeout = 12000) {
+  return fetchJson(`${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=wave`, timeout);
+}
+
+async function getHoldingPriceWithRetry(code) {
+  let lastError = null;
+  const attempts = Math.max(1, SETTINGS.holdingPriceRetryCount + 1);
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await getPrice(code, SETTINGS.holdingPriceTimeoutMs);
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) await sleep(SETTINGS.holdingPriceRetryDelayMs);
+    }
+  }
+
+  throw lastError || new Error("보유 현재가 조회 실패");
 }
 
 async function getDaily(code) {
@@ -967,15 +1039,15 @@ function scoreRebound(priceData = {}, dailyItems = [], candidate = {}) {
   const recoveryFromLowRate = low > 0 ? ((current - low) / low) * 100 : 0;
   const highDrawdownRate = high > 0 ? ((current - high) / high) * 100 : 0;
 
-  // '진짜 반등'은 전일 대비 상승만으로 인정하지 않는다.
-  // 시가 근처까지 회복 + 직전 WAVE 평가보다 상승 + 저점 회복 + 장중 위치가 동시에 필요하다.
-  const trueRebound =
+  // 반등 구조와 첫 상승 신호를 분리한다. 첫 TRIGGER는 직전평가 대비 상승까지 필요하지만,
+  // 다음 확인에서는 이 구조가 유지되면 횡보·미세조정을 허용한다.
+  const reboundStructureIntact =
     open > 0 &&
     openRate >= -1.5 &&
-    sinceLastEvalRate >= 0.15 &&
     dayPosition >= 55 &&
     recoveryFromLowRate >= 1.0 &&
     highDrawdownRate >= -5.0;
+  const trueRebound = reboundStructureIntact && sinceLastEvalRate >= 0.15;
 
   let score = 0;
   if (changeRate >= 1.0) score += 1;
@@ -1006,6 +1078,7 @@ function scoreRebound(priceData = {}, dailyItems = [], candidate = {}) {
     dayPosition,
     recoveryFromLowRate,
     highDrawdownRate,
+    reboundStructureIntact,
     trueRebound,
     current,
     open,
@@ -1104,6 +1177,16 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
     pullback.pullbackRate >= -9.5 &&
     !previousDaySurgeCooldownBlocked;
 
+  // 이미 만들어진 TRIGGER는 매 평가마다 다시 상승할 필요는 없다.
+  // 점수·눌림·당일 위치·저점 회복 구조가 살아 있으면 TRIGGER 가격 허용범위 안에서 유지한다.
+  const triggerMaintainEligible =
+    readyEligible &&
+    totalScore >= SETTINGS.totalBuyMinScore &&
+    rebound.reboundStructureIntact === true &&
+    rebound.changeRate <= SETTINGS.currentDayMaxChangeRateForBuy &&
+    pullback.pullbackRate >= -9.5 &&
+    !previousDaySurgeCooldownBlocked;
+
   // buyEligible은 점수·관찰기간 기준만 뜻한다.
   // 실제 매수는 evaluateWatchCandidates에서 TRIGGER가 다음 평가까지 유지됐는지 한 번 더 확인한다.
   const buyEligible =
@@ -1126,6 +1209,7 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
     ageTradingDays,
     readyEligible,
     triggerEligible,
+    triggerMaintainEligible,
     readyBlockedBySurge,
     readyBlockReason,
     previousDayChangeRate,
@@ -1139,6 +1223,58 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
       ? `WAVE 1차 TRIGGER 조건 충족 / WHY ${why.score} MONEY ${money.score} SECTOR ${sector.score} / ` +
         `TREND ${trend.score} PULLBACK ${pullback.score} REBOUND ${rebound.score} / 총 ${totalScore} / 다음 평가 확인 필요`
       : null
+  };
+}
+
+function getTriggerReadiness({
+  analysis = {},
+  mode = "LIVE",
+  previousStatus = "WATCH",
+  previousTriggerPrice = 0,
+  triggerPriceHoldRate = 0
+} = {}) {
+  const normalizedMode = String(mode || "LIVE").toUpperCase();
+  const observationReady =
+    toNumber(analysis.ageTradingDays) >= SETTINGS.minWatchTradingDaysBeforeBuy;
+  const preSignalTriggerReady = analysis.triggerEligible === true;
+  const liveTriggerStartReady = preSignalTriggerReady && observationReady;
+  const triggerPriceMaintained =
+    toNumber(previousTriggerPrice) <= 0 ||
+    toNumber(triggerPriceHoldRate) >= SETTINGS.triggerConfirmMaxDipRate;
+  const triggerMaintainReady =
+    analysis.triggerMaintainEligible === true &&
+    observationReady &&
+    triggerPriceMaintained;
+
+  const triggerReady = normalizedMode !== "LIVE"
+    ? preSignalTriggerReady
+    : previousStatus === "TRIGGER"
+      ? triggerMaintainReady
+      : liveTriggerStartReady;
+
+  let blockReason = analysis.triggerBlockReason || "최종조건 이탈";
+  if (!observationReady && preSignalTriggerReady) {
+    blockReason =
+      `관찰 ${toNumber(analysis.ageTradingDays)} / ` +
+      `${SETTINGS.minWatchTradingDaysBeforeBuy}거래일 필요`;
+  } else if (previousStatus === "TRIGGER" && !triggerPriceMaintained) {
+    blockReason =
+      `TRIGGER가 대비 ${toNumber(triggerPriceHoldRate).toFixed(2)}% / ` +
+      `허용 ${SETTINGS.triggerConfirmMaxDipRate.toFixed(2)}%`;
+  } else if (previousStatus === "TRIGGER" && analysis.triggerMaintainEligible !== true) {
+    blockReason =
+      `반등구조 유지 실패 / 시가대비 ${toNumber(analysis.rebound?.openRate).toFixed(2)}% / ` +
+      `당일위치 ${toNumber(analysis.rebound?.dayPosition).toFixed(0)}%`;
+  }
+
+  return {
+    observationReady,
+    preSignalTriggerReady,
+    liveTriggerStartReady,
+    triggerPriceMaintained,
+    triggerMaintainReady,
+    triggerReady,
+    blockReason
   };
 }
 
@@ -1239,6 +1375,21 @@ function paperBuy(state, candidate, analysis) {
   return true;
 }
 
+function getWaveProtectFloorProfitRate(maxProfitRateValue) {
+  const maxProfitRate = toNumber(maxProfitRateValue);
+
+  if (maxProfitRate >= SETTINGS.protectTier15StartProfitRate) {
+    return SETTINGS.protectTier15FloorProfitRate;
+  }
+  if (maxProfitRate >= SETTINGS.protectTier10StartProfitRate) {
+    return SETTINGS.protectTier10FloorProfitRate;
+  }
+  if (maxProfitRate >= SETTINGS.protectTier7StartProfitRate) {
+    return SETTINGS.protectTier7FloorProfitRate;
+  }
+  return SETTINGS.protectFloorProfitRate;
+}
+
 function paperSell(state, holding, price, type, reason) {
   const sellPrice = toNumber(price);
   if (!sellPrice || !holding) return false;
@@ -1287,42 +1438,30 @@ function paperSell(state, holding, price, type, reason) {
   return true;
 }
 
-async function checkHoldingSell(state, holding) {
-  let priceData;
-  let dailyData;
-  try {
-    [priceData, dailyData] = await Promise.all([getPrice(holding.code), getDaily(holding.code)]);
-  } catch (err) {
-    console.log(`[WAVE 보유조회 실패] ${holding.name} / ${err.message}`);
-    return false;
-  }
-
+function applyHoldingPriceRisk(state, holding, priceData = {}) {
   const price = toNumber(priceData.currentPrice);
-  if (!price) return false;
+  const buyPrice = toNumber(holding.buyPrice);
+  if (!price || !buyPrice) return { sold: false, price: 0 };
 
   holding.currentPrice = price;
   holding.highestPrice = Math.max(toNumber(holding.highestPrice || price), price);
   holding.lowestPrice = Math.min(toNumber(holding.lowestPrice || price), price);
 
-  const buyPrice = toNumber(holding.buyPrice);
   const profitRate = ((price - buyPrice) / buyPrice) * 100;
   const maxProfitRate = ((toNumber(holding.highestPrice) - buyPrice) / buyPrice) * 100;
   const drawdownFromHigh = ((price - toNumber(holding.highestPrice)) / toNumber(holding.highestPrice)) * 100;
-  const dailyItems = Array.isArray(dailyData.items) ? dailyData.items : [];
-  const trend = scoreTrend(dailyItems, price);
-  const holdingDays = tradingDaysSince(dailyItems, holding.buyDate);
 
   holding.lastCheckedAt = nowText();
+  holding.lastCheckedAtMs = Date.now();
   holding.profitRate = profitRate;
   holding.maxProfitRate = maxProfitRate;
   holding.drawdownFromHigh = drawdownFromHigh;
-  holding.holdingTradingDays = holdingDays;
-  holding.trendScore = trend.score;
 
   // 본전보호는 +5%부터 실제로 동작하므로 화면 상태도 같은 시점에 PROTECT로 맞춘다.
   // +8%부터 시작하는 고점 트레일링은 별도 플래그로 기록한다.
   const protectionActive = maxProfitRate >= SETTINGS.protectStartProfitRate;
   const trailingActive = maxProfitRate >= SETTINGS.trailingStartProfitRate;
+  const protectFloorProfitRate = getWaveProtectFloorProfitRate(maxProfitRate);
   if (protectionActive && holding.protectActive !== true) {
     holding.protectActivatedAt = nowText();
     holding.protectActivatedAtMs = Date.now();
@@ -1340,51 +1479,115 @@ async function checkHoldingSell(state, holding) {
   }
 
   if (profitRate <= SETTINGS.stopLossRate) {
-    return paperSell(state, holding, price, "WAVE_STOP_LOSS",
-      `초기 손절 ${profitRate.toFixed(2)}% / 기준 ${SETTINGS.stopLossRate.toFixed(2)}%`);
+    return {
+      sold: paperSell(state, holding, price, "WAVE_STOP_LOSS",
+        `초기 손절 ${profitRate.toFixed(2)}% / 기준 ${SETTINGS.stopLossRate.toFixed(2)}%`),
+      price,
+      profitRate,
+      maxProfitRate,
+      drawdownFromHigh
+    };
   }
 
   const structuralStop = toNumber(holding.pullbackLowPrice) > 0
     ? toNumber(holding.pullbackLowPrice) * (1 + SETTINGS.structureStopBufferRate / 100)
     : 0;
   if (structuralStop > 0 && price <= structuralStop && profitRate < 0) {
-    return paperSell(state, holding, price, "WAVE_STRUCTURE_STOP",
-      `눌림 저점 이탈 / 기준 ${Math.round(structuralStop).toLocaleString()}원 / 현재 ${price.toLocaleString()}원`);
+    return {
+      sold: paperSell(state, holding, price, "WAVE_STRUCTURE_STOP",
+        `눌림 저점 이탈 / 기준 ${Math.round(structuralStop).toLocaleString()}원 / 현재 ${price.toLocaleString()}원`),
+      price,
+      profitRate,
+      maxProfitRate,
+      drawdownFromHigh
+    };
   }
 
   if (
     maxProfitRate >= SETTINGS.strongTrailingStartProfitRate &&
     drawdownFromHigh <= -Math.abs(SETTINGS.strongTrailingStopRate)
   ) {
-    return paperSell(state, holding, price, "WAVE_STRONG_TRAILING_SELL",
-      `강한 수익보호 / 최고 ${maxProfitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`);
+    return {
+      sold: paperSell(state, holding, price, "WAVE_STRONG_TRAILING_SELL",
+        `강한 수익보호 / 최고 ${maxProfitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`),
+      price,
+      profitRate,
+      maxProfitRate,
+      drawdownFromHigh
+    };
   }
 
   if (
     maxProfitRate >= SETTINGS.trailingStartProfitRate &&
     drawdownFromHigh <= -Math.abs(SETTINGS.trailingStopRate)
   ) {
-    return paperSell(state, holding, price, "WAVE_TRAILING_SELL",
-      `수익 트레일링 / 최고 ${maxProfitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`);
+    return {
+      sold: paperSell(state, holding, price, "WAVE_TRAILING_SELL",
+        `수익 트레일링 / 최고 ${maxProfitRate.toFixed(2)}% / 고점대비 ${drawdownFromHigh.toFixed(2)}%`),
+      price,
+      profitRate,
+      maxProfitRate,
+      drawdownFromHigh
+    };
   }
 
   if (
     maxProfitRate >= SETTINGS.protectStartProfitRate &&
-    profitRate <= SETTINGS.protectFloorProfitRate
+    profitRate <= protectFloorProfitRate
   ) {
-    return paperSell(state, holding, price, "WAVE_PROTECT_SELL",
-      `수익 후 본전보호 / 최고 ${maxProfitRate.toFixed(2)}% / 현재 ${profitRate.toFixed(2)}%`);
+    return {
+      sold: paperSell(state, holding, price, "WAVE_PROTECT_SELL",
+        `단계형 수익보호 / 최고 ${maxProfitRate.toFixed(2)}% / ` +
+        `현재 ${profitRate.toFixed(2)}% / 보호선 ${protectFloorProfitRate.toFixed(2)}%`),
+      price,
+      profitRate,
+      maxProfitRate,
+      drawdownFromHigh
+    };
   }
 
+  return { sold: false, price, profitRate, maxProfitRate, drawdownFromHigh };
+}
+
+async function checkHoldingSell(state, holding, options = {}) {
+  let priceData = options.priceData || null;
+  if (!priceData) {
+    try {
+      priceData = await getHoldingPriceWithRetry(holding.code);
+    } catch (err) {
+      console.log(`[WAVE 보유 현재가조회 실패] ${holding.name} / 재시도 후 실패 / ${err.message}`);
+      return false;
+    }
+  }
+
+  holding.lastPriceCheckSource = options.source || "WAVE_MAIN";
+  const priceRisk = applyHoldingPriceRisk(state, holding, priceData);
+  if (priceRisk.sold || options.priceOnly === true || !priceRisk.price) return priceRisk.sold;
+
+  let dailyData;
+  try {
+    dailyData = await getDaily(holding.code);
+  } catch (err) {
+    // 현재가 기반 손절·트레일링·수익보호는 위에서 이미 완료했다.
+    console.log(`[WAVE 보유 일봉조회 실패] ${holding.name} / 현재가 위험관리 완료 / ${err.message}`);
+    return false;
+  }
+
+  const dailyItems = Array.isArray(dailyData.items) ? dailyData.items : [];
+  const trend = scoreTrend(dailyItems, priceRisk.price);
+  const holdingDays = tradingDaysSince(dailyItems, holding.buyDate);
+  holding.holdingTradingDays = holdingDays;
+  holding.trendScore = trend.score;
+
   if (holdingDays >= SETTINGS.hardMaxHoldingTradingDays) {
-    return paperSell(state, holding, price, "WAVE_MAX_TIME_SELL",
-      `최대 보유 ${holdingDays}거래일 / 현재 ${profitRate.toFixed(2)}%`);
+    return paperSell(state, holding, priceRisk.price, "WAVE_MAX_TIME_SELL",
+      `최대 보유 ${holdingDays}거래일 / 현재 ${priceRisk.profitRate.toFixed(2)}%`);
   }
 
   if (holdingDays >= SETTINGS.maxHoldingTradingDays) {
-    if (profitRate < 2.0 || trend.score < 4) {
-      return paperSell(state, holding, price, "WAVE_TIME_TREND_SELL",
-        `보유 ${holdingDays}거래일 / 수익 ${profitRate.toFixed(2)}% / 추세 ${trend.score}점`);
+    if (priceRisk.profitRate < 2.0 || trend.score < 4) {
+      return paperSell(state, holding, priceRisk.price, "WAVE_TIME_TREND_SELL",
+        `보유 ${holdingDays}거래일 / 수익 ${priceRisk.profitRate.toFixed(2)}% / 추세 ${trend.score}점`);
     }
   }
 
@@ -1473,7 +1676,9 @@ async function evaluateWatchCandidates(state, options = {}) {
   const active = state.watchlist
     .filter(item => ["DISCOVERED", "WATCH", "READY", "TRIGGER"].includes(item.status));
 
-  if (!active.length) return { evaluated: 0, ready: 0, trigger: 0, bought: 0, attempted: 0, mode };
+  if (!active.length) {
+    return { evaluated: 0, ready: 0, trigger: 0, bought: 0, soldDuringEvaluation: 0, attempted: 0, mode };
+  }
 
   let candidates = [...active];
 
@@ -1521,6 +1726,7 @@ async function evaluateWatchCandidates(state, options = {}) {
   let ready = 0;
   let trigger = 0;
   let bought = 0;
+  let soldDuringEvaluation = 0;
 
   for (const candidate of batch) {
     try {
@@ -1546,28 +1752,41 @@ async function evaluateWatchCandidates(state, options = {}) {
       const analysis = await analyzeCandidate(candidate, priceData, dailyData, flowData, newsItems, marketData);
 
       const foundationReady = analysis.readyEligible === true;
-      const triggerReady = analysis.triggerEligible === true;
       const triggerAgeMs = mode === "LIVE" && previousStatus === "TRIGGER" && previousTriggerAtMs > 0
         ? Date.now() - previousTriggerAtMs
         : 0;
       const triggerPriceHoldRate = previousTriggerPrice > 0
         ? ((analysis.currentPrice - previousTriggerPrice) / previousTriggerPrice) * 100
         : 0;
+      const triggerDecision = getTriggerReadiness({
+        analysis,
+        mode,
+        previousStatus,
+        previousTriggerPrice,
+        triggerPriceHoldRate
+      });
+      const triggerReady = triggerDecision.triggerReady;
       const triggerConfirmed =
         mode === "LIVE" &&
         previousStatus === "TRIGGER" &&
         candidate.triggerDate === todayKey() &&
         triggerReady &&
-        triggerAgeMs >= SETTINGS.triggerConfirmMinMs &&
-        (previousTriggerPrice <= 0 || triggerPriceHoldRate >= SETTINGS.triggerConfirmMaxDipRate);
+        triggerAgeMs >= SETTINGS.triggerConfirmMinMs;
 
       const scoreBuyEligible = analysis.buyEligible === true;
       analysis.triggerConfirmed = triggerConfirmed;
       analysis.triggerAgeMs = triggerAgeMs;
       analysis.triggerPrice = previousTriggerPrice;
       analysis.triggerPriceHoldRate = triggerPriceHoldRate;
+      analysis.triggerPriceMaintained = triggerDecision.triggerPriceMaintained;
+      analysis.triggerMaintainReady = triggerDecision.triggerMaintainReady;
+      analysis.triggerMaintainBlockReason = triggerDecision.blockReason;
+      analysis.observationReady = triggerDecision.observationReady;
       analysis.preSignalBuyEligible = mode !== "LIVE" && scoreBuyEligible;
-      analysis.buyEligible = mode === "LIVE" && scoreBuyEligible && triggerConfirmed;
+      analysis.buyEligible =
+        mode === "LIVE" &&
+        triggerDecision.observationReady &&
+        triggerConfirmed;
       analysis.buyReason = analysis.buyEligible
         ? `WAVE TRIGGER 재확인 완료 / 유지 ${Math.round(triggerAgeMs / 60000)}분 / ` +
           `TRIGGER가 대비 ${triggerPriceHoldRate.toFixed(2)}% / 총 ${analysis.totalScore}`
@@ -1588,7 +1807,9 @@ async function evaluateWatchCandidates(state, options = {}) {
       if (mode !== "LIVE") {
         // 장후/장전 평가는 다음 장의 우선순위만 만든다. 실제 TRIGGER 시간은 만들거나
         // 확인하지 않으며, 장중 첫 평가에서 TRIGGER를 새로 만든 뒤 다음 평가에서 산다.
-        const preSignalStatus = triggerReady ? "TRIGGER" : foundationReady ? "READY" : "WATCH";
+        const preSignalStatus = triggerDecision.preSignalTriggerReady
+          ? "TRIGGER"
+          : foundationReady ? "READY" : "WATCH";
         candidate.preSignalStatus = preSignalStatus;
         candidate.preSignalMode = mode;
         candidate.preSignalDate = todayKey();
@@ -1662,13 +1883,16 @@ async function evaluateWatchCandidates(state, options = {}) {
       } else {
         candidate.status = "READY";
         candidate.readyAt = previousStatus === "READY" ? candidate.readyAt : nowText();
-        candidate.readyBlockReason = null;
-        candidate.readyBlockedAt = null;
+        candidate.readyBlockReason =
+          analysis.triggerEligible === true && !triggerDecision.observationReady
+            ? triggerDecision.blockReason
+            : null;
+        candidate.readyBlockedAt = candidate.readyBlockReason ? nowText() : null;
         clearLiveTrigger(candidate);
 
         if (previousStatus === "TRIGGER") {
           console.log(
-            `[WAVE TRIGGER 해제] ${candidate.name} / ${analysis.triggerBlockReason || "최종조건 이탈"} / 모드 ${mode}`
+            `[WAVE TRIGGER 해제] ${candidate.name} / ${triggerDecision.blockReason} / 모드 ${mode}`
           );
         } else if (previousStatus !== "READY") {
           console.log(
@@ -1699,19 +1923,70 @@ async function evaluateWatchCandidates(state, options = {}) {
       console.log(`[WAVE 후보평가 실패] ${candidate.name}(${candidate.code}) / ${err.message} / 모드 ${mode}`);
     }
 
+    if (
+      mode === "LIVE" &&
+      Date.now() - lastHoldingCheckAtMs >= SETTINGS.holdingCheckMs
+    ) {
+      soldDuringEvaluation += await checkAllHoldings(state, {
+        priceOnly: true,
+        source: "WAVE_EVALUATION_CHECKPOINT"
+      });
+    }
+
     await sleep(SETTINGS.evaluationDelayMs);
   }
 
-  return { evaluated, ready, trigger, bought, attempted: batch.length, mode };
+  return { evaluated, ready, trigger, bought, soldDuringEvaluation, attempted: batch.length, mode };
 }
 
-async function checkAllHoldings(state) {
+async function checkAllHoldings(state, options = {}) {
   if (!isSellCheckTime()) return 0;
-  let sold = 0;
-  for (const holding of [...state.holdings]) {
-    if (await checkHoldingSell(state, holding)) sold++;
-    await sleep(SETTINGS.evaluationDelayMs);
+
+  const holdings = [...state.holdings];
+  if (!holdings.length) {
+    lastHoldingCheckAtMs = Date.now();
+    return 0;
   }
+
+  let sold = 0;
+  const batchSize = Math.max(1, Math.floor(toNumber(SETTINGS.holdingPriceBatchSize, 1)));
+
+  // 현재가는 소규모 병렬 배치로 받아 5종목 보유 시에도 1분 위험점검이 길게 밀리지 않게 한다.
+  // 매도·상태변경은 아래에서 순차 처리하여 같은 state를 동시에 수정하지 않는다.
+  for (let offset = 0; offset < holdings.length; offset += batchSize) {
+    const batch = holdings.slice(offset, offset + batchSize);
+    const priceResults = await Promise.allSettled(
+      batch.map(holding => getHoldingPriceWithRetry(holding.code))
+    );
+
+    for (let index = 0; index < batch.length; index++) {
+      const holding = batch[index];
+      const priceResult = priceResults[index];
+
+      if (priceResult.status !== "fulfilled") {
+        console.log(
+          `[WAVE 보유 현재가조회 실패] ${holding.name}(${holding.code}) / ` +
+          `재시도 후 실패 / ${priceResult.reason?.message || priceResult.reason}`
+        );
+        continue;
+      }
+
+      // 같은 실행 안에서 이미 매도된 보유종목이면 중복 처리하지 않는다.
+      if (!state.holdings.some(item => item.code === holding.code)) continue;
+      if (await checkHoldingSell(state, holding, {
+        ...options,
+        priceData: priceResult.value
+      })) {
+        sold++;
+      }
+    }
+
+    if (offset + batchSize < holdings.length) {
+      await sleep(SETTINGS.evaluationDelayMs);
+    }
+  }
+
+  lastHoldingCheckAtMs = Date.now();
   return sold;
 }
 
@@ -1724,23 +1999,74 @@ function makeSummary(state) {
   const realizedProfit = state.tradeLogs
     .filter(log => String(log.type || "").startsWith("WAVE_") && String(log.type || "") !== "WAVE_BUY" && Number.isFinite(Number(log.profit)))
     .reduce((sum, log) => sum + Number(log.profit || 0), 0);
-
-  const invested = state.holdings.reduce((sum, item) => sum + toNumber(item.currentPrice || item.buyPrice) * toNumber(item.qty), 0);
-  const unrealized = state.holdings.reduce((sum, item) => sum + (toNumber(item.currentPrice) - toNumber(item.buyPrice)) * toNumber(item.qty), 0);
+  const date = todayKey();
+  const todayStats = state.dailyStats?.[date] || null;
+  const todaySellLogs = state.tradeLogs.filter(log =>
+    log.date === date &&
+    String(log.type || "").startsWith("WAVE_") &&
+    String(log.type || "") !== "WAVE_BUY" &&
+    Number.isFinite(Number(log.profit))
+  );
+  const todayRealizedProfit = todaySellLogs.reduce(
+    (sum, log) => sum + toNumber(log.profit),
+    0
+  );
+  const portfolio = calculatePortfolioSnapshot(state);
+  const hasStartEquity =
+    todayStats?.startEquity !== undefined &&
+    todayStats?.startEquity !== null &&
+    Number.isFinite(Number(todayStats.startEquity));
+  const startEquity = hasStartEquity ? Number(todayStats.startEquity) : null;
+  const todayEquityChange = hasStartEquity
+    ? portfolio.equity - startEquity
+    : null;
+  const todayReturnRate = hasStartEquity && startEquity > 0
+    ? (todayEquityChange / startEquity) * 100
+    : null;
+  const dailyStartUnrealizedProfit = hasStartEquity
+    ? toNumber(todayStats?.startUnrealizedProfit)
+    : null;
+  const todayUnrealizedChange = hasStartEquity
+    ? portfolio.unrealizedProfit - dailyStartUnrealizedProfit
+    : null;
+  const latestHoldingPriceCheck = state.holdings
+    .slice()
+    .sort((a, b) => toNumber(b.lastCheckedAtMs) - toNumber(a.lastCheckedAtMs))[0] || null;
+  const holdingPriceFreshCount = state.holdings.filter(item =>
+    toNumber(item.lastCheckedAtMs) > 0 &&
+    Date.now() - toNumber(item.lastCheckedAtMs) <= SETTINGS.holdingCheckMs * 2
+  ).length;
 
   return {
     updatedAt: nowText(),
-    totalCash: toNumber(state.totalCash),
-    invested,
-    equity: toNumber(state.totalCash) + invested,
+    totalCash: portfolio.totalCash,
+    invested: portfolio.invested,
+    equity: portfolio.equity,
     realizedProfit,
-    unrealizedProfit: unrealized,
+    unrealizedProfit: portfolio.unrealizedProfit,
+    todayRealizedProfit,
+    todayUnrealizedProfit: portfolio.unrealizedProfit,
+    todayUnrealizedChange,
+    todayEquityChange,
+    todayNetProfit: todayEquityChange,
+    todayReturnRate,
+    todaySoldCount: todaySellLogs.length,
+    dailyStartEquity: startEquity,
+    dailyStartUnrealizedProfit,
+    dailyStartSnapshotAt: todayStats?.startSnapshotAt || null,
+    dailyStartSnapshotBasis: todayStats?.startSnapshotBasis || null,
     candidateCount: activeWatch.length,
     watchCount: watchOnly.length,
     readyCount: ready.length,
     triggerCount: trigger.length,
     prepTriggerCount: prepTrigger.length,
+    readyEvaluationCount: toNumber(todayStats?.ready),
+    triggerEvaluationCount: toNumber(todayStats?.trigger),
     holdingCount: state.holdings.length,
+    holdingPriceFreshCount,
+    lastHoldingPriceCheckAt: latestHoldingPriceCheck?.lastCheckedAt || null,
+    lastHoldingPriceCheckAtMs: toNumber(latestHoldingPriceCheck?.lastCheckedAtMs),
+    lastHoldingMonitorAt: state.lastHoldingMonitorAt || null,
     todayBuyCount: getTodayBuyCount(state),
     topCandidates: activeWatch
       .slice()
@@ -1766,13 +2092,88 @@ function makeSummary(state) {
   };
 }
 
+function refreshSummaryAndDailyStats(state) {
+  const stats = ensureDailyStats(state);
+  const summary = makeSummary(state);
+
+  stats.endEquity = summary.equity;
+  stats.endCash = summary.totalCash;
+  stats.endInvested = summary.invested;
+  stats.endUnrealizedProfit = summary.unrealizedProfit;
+  stats.realizedProfit = summary.todayRealizedProfit;
+  stats.unrealizedChange = summary.todayUnrealizedChange;
+  stats.equityChange = summary.todayEquityChange;
+  stats.netProfit = summary.todayNetProfit;
+  stats.returnRate = summary.todayReturnRate;
+  stats.lastSnapshotAt = nowText();
+  return summary;
+}
+
 let running = false;
 let timer = null;
 let alignmentTimer = null;
+let holdingTimer = null;
+let holdingAlignmentTimer = null;
+let holdingMonitorRunning = false;
+let lastHoldingCheckAtMs = 0;
 let started = false;
+
+async function runWaveHoldingMonitorOnce() {
+  if (running || holdingMonitorRunning) {
+    return { ok: false, skipped: true, reason: "WAVE 다른 실행 중" };
+  }
+
+  holdingMonitorRunning = true;
+  const state = loadState();
+
+  try {
+    if (!SETTINGS.enabled) return { ok: false, skipped: true, reason: "WAVE OFF" };
+    if (!isSellCheckTime()) return { ok: true, skipped: true, reason: "WAVE 매도점검 시간 외" };
+    if (!state.holdings.length) return { ok: true, skipped: true, reason: "WAVE 보유종목 없음" };
+
+    const sold = await checkAllHoldings(state, {
+      priceOnly: true,
+      source: "WAVE_FAST_TIMER"
+    });
+
+    state.lastHoldingMonitorAt = nowText();
+    state.lastHoldingMonitorAtMs = Date.now();
+    state.summary = refreshSummaryAndDailyStats(state);
+    saveState(state);
+
+    if (sold > 0) {
+      console.log(
+        `[WAVE 1분 보유감시] 매도 ${sold} / 보유 ${state.summary.holdingCount} / ` +
+        `오늘손익 ${toNumber(state.summary.todayEquityChange).toLocaleString("ko-KR")}원`
+      );
+    }
+
+    return { ok: true, sold, state };
+  } catch (err) {
+    console.error("[WAVE 1분 보유감시 오류]", err.message);
+    state.lastHoldingMonitorError = err.message;
+    state.lastHoldingMonitorErrorAt = nowText();
+    saveState(state);
+    return { ok: false, reason: err.message, state };
+  } finally {
+    holdingMonitorRunning = false;
+  }
+}
 
 async function runWaveOnce() {
   if (running) return { ok: false, reason: "WAVE 실행 중" };
+
+  // 1분 보유감시와 5분 전체평가가 겹치면 짧게 기다려 state 파일 덮어쓰기를 방지한다.
+  if (holdingMonitorRunning) {
+    const waitDeadline = Date.now() + SETTINGS.holdingPriceTimeoutMs * 2 + 3000;
+    while (holdingMonitorRunning && Date.now() < waitDeadline) {
+      await sleep(250);
+    }
+  }
+  if (running || holdingMonitorRunning) {
+    return { ok: false, reason: "WAVE 보유감시 중" };
+  }
+
   running = true;
 
   const state = loadState();
@@ -1823,7 +2224,15 @@ async function runWaveOnce() {
     }
 
     let sold = 0;
-    let evaluation = { evaluated: 0, ready: 0, trigger: 0, bought: 0, attempted: 0, mode: "OFF" };
+    let evaluation = {
+      evaluated: 0,
+      ready: 0,
+      trigger: 0,
+      bought: 0,
+      soldDuringEvaluation: 0,
+      attempted: 0,
+      mode: "OFF"
+    };
 
     sold = await checkAllHoldings(state);
 
@@ -1887,6 +2296,8 @@ async function runWaveOnce() {
       );
     }
 
+    sold += toNumber(evaluation.soldDuringEvaluation);
+
     dropExpiredOrBrokenCandidates(state);
     trimWatchlist(state);
 
@@ -1900,13 +2311,15 @@ async function runWaveOnce() {
       phase,
       hhmm: getCurrentHHMM()
     };
-    state.summary = makeSummary(state);
+    state.summary = refreshSummaryAndDailyStats(state);
     saveState(state);
 
     console.log(
       `[WAVE ${phase}] 후보+${hotAdded + priorityAdded} / 평가 ${evaluation.evaluated} / ` +
       `READY ${state.summary.readyCount} / TRIGGER ${state.summary.triggerCount} / 보유 ${state.summary.holdingCount} / ` +
-      `오늘매수 ${state.summary.todayBuyCount} / 매도 ${sold}`
+      `오늘매수 ${state.summary.todayBuyCount} / 매도 ${sold} / ` +
+      `당일손익 ${toNumber(state.summary.todayNetProfit).toLocaleString("ko-KR")}원 ` +
+      `(${toNumber(state.summary.todayReturnRate).toFixed(3)}%)`
     );
 
     return { ok: true, state };
@@ -1954,6 +2367,30 @@ function startWaveStrategy() {
   }, firstDelayMs);
 
   if (typeof alignmentTimer.unref === "function") alignmentTimer.unref();
+
+  // 5분 후보평가와 겹치지 않도록 매분 30초 지점에 보유종목 현재가 위험관리만 빠르게 수행한다.
+  const holdingInterval = SETTINGS.holdingCheckMs;
+  const holdingTargetOffset = Math.floor(holdingInterval / 2);
+  const holdingCurrentOffset = Date.now() % holdingInterval;
+  let firstHoldingDelayMs =
+    (holdingTargetOffset - holdingCurrentOffset + holdingInterval) % holdingInterval;
+  if (firstHoldingDelayMs === 0) firstHoldingDelayMs = holdingInterval;
+
+  holdingAlignmentTimer = setTimeout(() => {
+    runWaveHoldingMonitorOnce().catch(err =>
+      console.error("[WAVE 보유감시 정렬 실행 오류]", err.message)
+    );
+
+    holdingTimer = setInterval(() => {
+      runWaveHoldingMonitorOnce().catch(err =>
+        console.error("[WAVE 보유감시 반복 오류]", err.message)
+      );
+    }, holdingInterval);
+
+    if (typeof holdingTimer.unref === "function") holdingTimer.unref();
+  }, firstHoldingDelayMs);
+
+  if (typeof holdingAlignmentTimer.unref === "function") holdingAlignmentTimer.unref();
 }
 
 function getWaveSummary() {
@@ -1966,6 +2403,7 @@ module.exports = {
   STATE_FILE,
   startWaveStrategy,
   runWaveOnce,
+  runWaveHoldingMonitorOnce,
   loadWaveState: loadState,
   getWaveSummary,
   // 순수 점수함수는 가상검증/테스트용으로 내보낸다.
@@ -1975,5 +2413,9 @@ module.exports = {
   scoreTrend,
   scorePullback,
   scoreRebound,
-  analyzeCandidate
+  analyzeCandidate,
+  getTriggerReadiness,
+  applyHoldingPriceRisk,
+  calculatePortfolioSnapshot,
+  getWaveProtectFloorProfitRate
 };

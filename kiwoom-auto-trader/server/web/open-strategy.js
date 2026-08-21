@@ -409,12 +409,23 @@ function ensureOpenDailyStats(state) {
       candidateCodes: {},
       evaluatedCodes: {},
       strictPassedCodes: {},
+      passWithoutMarketCodes: {},
+      marketOnlyBlockedCodes: {},
       fallbackPassedCodes: {},
       selectedCodes: {},
       boughtCodes: {},
       hotInputCodes: {},
       latest: null
     };
+  }
+  for (const key of [
+    "candidateCodes", "evaluatedCodes", "strictPassedCodes",
+    "passWithoutMarketCodes", "marketOnlyBlockedCodes",
+    "fallbackPassedCodes", "selectedCodes", "boughtCodes", "hotInputCodes"
+  ]) {
+    if (!state.openDailyStats[key] || typeof state.openDailyStats[key] !== "object") {
+      state.openDailyStats[key] = {};
+    }
   }
   return state.openDailyStats;
 }
@@ -438,7 +449,15 @@ function recordOpenDailyScan(state, { scanId, candidates = [], evaluated = [], s
       addOpenDailyCode(stats.hotInputCodes, item);
     }
   }
-  for (const entry of evaluated) addOpenDailyCode(stats.evaluatedCodes, entry.item || entry.record || {});
+  for (const entry of evaluated) {
+    addOpenDailyCode(stats.evaluatedCodes, entry.item || entry.record || {});
+    if (entry.record?.passWithoutMarket === true) {
+      addOpenDailyCode(stats.passWithoutMarketCodes, entry.item || entry.record || {});
+    }
+    if (entry.record?.marketOnlyBlocked === true) {
+      addOpenDailyCode(stats.marketOnlyBlockedCodes, entry.item || entry.record || {});
+    }
+  }
   for (const entry of strictPassed) addOpenDailyCode(stats.strictPassedCodes, entry.item || {});
 
   stats.latest = {
@@ -446,7 +465,13 @@ function recordOpenDailyScan(state, { scanId, candidates = [], evaluated = [], s
     checkedAt: nowText(),
     candidateCount: candidates.length,
     evaluatedCount: evaluated.length,
-    strictPassedCount: strictPassed.length
+    strictPassedCount: strictPassed.length,
+    passWithoutMarketCount: evaluated.filter(
+      entry => entry.record?.passWithoutMarket === true
+    ).length,
+    marketOnlyBlockedCount: evaluated.filter(
+      entry => entry.record?.marketOnlyBlocked === true
+    ).length
   };
 }
 
@@ -962,8 +987,28 @@ function getOpenLearningDay(history) {
       result: null,
       virtualTrackingStartedAt: null,
       virtualTrackingCompletedAt: null,
-      virtualCandidates: []
+      virtualCandidates: [],
+      virtualDroppedCandidates: [],
+      virtualCandidateConsidered: {},
+      virtualObservedCandidates: [],
+      virtualRankingFinalizedAt: null
     };
+  }
+
+  if (!Array.isArray(history.days[date].virtualCandidates)) {
+    history.days[date].virtualCandidates = [];
+  }
+  if (!Array.isArray(history.days[date].virtualObservedCandidates)) {
+    history.days[date].virtualObservedCandidates = [];
+  }
+  if (!Array.isArray(history.days[date].virtualDroppedCandidates)) {
+    history.days[date].virtualDroppedCandidates = [];
+  }
+  if (
+    !history.days[date].virtualCandidateConsidered ||
+    typeof history.days[date].virtualCandidateConsidered !== "object"
+  ) {
+    history.days[date].virtualCandidateConsidered = {};
   }
 
   return history.days[date];
@@ -1014,7 +1059,14 @@ function classifyOpenRejectReason(reason = "", passed = false) {
   };
 }
 
+function isOpenMarketRejectReason(reason = "") {
+  return /시장자료 없음 차단|시장절대차단|시장급락 차단|섹터약세 차단|약세장 강한섹터 아님|주의장 섹터부족/.test(
+    String(reason || "")
+  );
+}
+
 function makeOpenCandidateLearningRecord(state, item, price, judged = {}) {
+  const observedAtMs = Date.now();
   const code = normalizeOpenStockCode(item.code);
   const candidateHistory =
     state?.openCandidateHistory?.[code] || {};
@@ -1037,6 +1089,10 @@ function makeOpenCandidateLearningRecord(state, item, price, judged = {}) {
   const rejectInfo = classifyOpenRejectReason(
     judged.reason || "",
     judged.pass === true
+  );
+  const withoutMarketRejectInfo = classifyOpenRejectReason(
+    judged.withoutMarketReason || judged.reason || "",
+    judged.passWithoutMarket === true
   );
 
   const changeRate = Number(
@@ -1075,6 +1131,7 @@ function makeOpenCandidateLearningRecord(state, item, price, judged = {}) {
     code,
     name: item.name || item.stockName || item.korName || item.code || "",
     observedAt: nowText(),
+    observedAtMs,
     price: Number(price || 0),
     discoverScore: Number(item.discoverScore || 0),
     changeRate,
@@ -1082,6 +1139,14 @@ function makeOpenCandidateLearningRecord(state, item, price, judged = {}) {
     dayPosition,
     openPosition: getOpenPositionRate(item, price),
     passed: judged.pass === true,
+    passWithoutMarket: judged.passWithoutMarket === true,
+    marketOnlyBlocked: judged.marketOnlyBlocked === true,
+    withoutMarketReason: judged.withoutMarketReason || judged.reason || "",
+    withoutMarketRejectCategory: withoutMarketRejectInfo.rejectCategory,
+    withoutMarketRejectStage: withoutMarketRejectInfo.rejectStage,
+    withoutMarketRankScore: Number(
+      judged.withoutMarketRankScore ?? judged.rankScore ?? 0
+    ),
     rankScore:
       judged.rankScore !== undefined &&
       Number.isFinite(Number(judged.rankScore))
@@ -1138,84 +1203,221 @@ function makeOpenCandidateLearningRecord(state, item, price, judged = {}) {
 
 
 function getLearningCandidateSortScore(record = {}) {
-  if (record.passed) return 100000 + Number(record.rankScore || 0);
-  return (
+  if (record.passWithoutMarket === true || record.passed === true) {
+    return 100000 + Number(
+      record.withoutMarketRankScore ?? record.rankScore ?? 0
+    );
+  }
+
+  const baseScore =
     Number(record.discoverScore || 0) * 10 +
     Math.min(Number(record.volumeRatio || 0), 500) * 0.15 +
-    Number(record.dayPosition || 0) * 0.25
-  );
+    Number(record.dayPosition || 0) * 0.25;
+
+  /* 관찰용 순위에서도 과열 종목이 거래량만으로 상단을 차지하지 않게 한다. */
+  const maxChangeRate = record.isDirectHotCandidate === true
+    ? Number(settings.openHotDirectMaxChangeRate || 25)
+    : Number(settings.openMaxChangeRate || 10);
+  const changePenalty = Math.max(
+    0,
+    Number(record.changeRate || 0) - maxChangeRate
+  ) * 10;
+  const openPositionPenalty = Math.max(
+    0,
+    Number(record.openPosition || 0) - Number(settings.openMaxOpenPositionRate || 12)
+  ) * 10;
+  const dayPositionPenalty = Math.max(
+    0,
+    Number(record.dayPosition || 0) - Number(settings.openMaxDayPositionRate || 98)
+  ) * 5;
+
+  return baseScore - changePenalty - openPositionPenalty - dayPositionPenalty;
+}
+
+function refreshOpenVirtualCandidateRanks(day) {
+  if (!Array.isArray(day.virtualCandidates)) day.virtualCandidates = [];
+  day.virtualCandidates.sort((a, b) => {
+    const scoreDiff =
+      Number(b.counterfactualRankScore || 0) -
+      Number(a.counterfactualRankScore || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return Number(a.entryTimeMs || 0) - Number(b.entryTimeMs || 0);
+  });
+  day.virtualCandidates.forEach((candidate, index) => {
+    candidate.rank = index + 1;
+  });
 }
 
 function initializeOpenVirtualTracking(records, selectedCode = null) {
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
-
-  if (Array.isArray(day.virtualCandidates) && day.virtualCandidates.length > 0) {
-    return;
-  }
-
-  const unique = [];
-  const seen = new Set();
+  const normalizedSelectedCode = normalizeOpenStockCode(selectedCode);
+  const maxCandidates = Number(settings.openVirtualTrackingCount || 10);
+  let addedCount = 0;
+  let changed = false;
 
   for (const source of records || []) {
     const record = source?.record || source;
-    const code = String(record?.code || "");
+    const code = normalizeOpenStockCode(record?.code);
     const price = Number(record?.price || 0);
-    if (!code || !price || seen.has(code)) continue;
-    seen.add(code);
-    unique.push(record);
+    if (!code || !price || record?.passWithoutMarket !== true) continue;
+
+    let candidate = day.virtualCandidates.find(
+      row => normalizeOpenStockCode(row.code) === code
+    );
+
+    if (!candidate) {
+      if (day.virtualCandidateConsidered[code]) continue;
+
+      const firstCounterfactualRankScore = Number(
+        record.withoutMarketRankScore ?? record.rankScore ?? 0
+      );
+      day.virtualCandidateConsidered[code] = {
+        consideredAt: record.observedAt || nowText(),
+        consideredAtMs: Number(record.observedAtMs || Date.now()),
+        entryPrice: price,
+        counterfactualRankScore: firstCounterfactualRankScore
+      };
+
+      if (day.virtualCandidates.length >= maxCandidates) {
+        refreshOpenVirtualCandidateRanks(day);
+        const lowest = day.virtualCandidates[day.virtualCandidates.length - 1];
+        if (
+          firstCounterfactualRankScore <=
+          Number(lowest?.counterfactualRankScore || 0)
+        ) {
+          day.virtualCandidateOverflowCount =
+            Number(day.virtualCandidateOverflowCount || 0) + 1;
+          changed = true;
+          continue;
+        }
+
+        day.virtualDroppedCandidates.push({
+          ...lowest,
+          active: false,
+          droppedAt: nowText(),
+          droppedAtMs: Date.now(),
+          dropReason:
+            `가상 TOP${maxCandidates} 순위교체 / ` +
+            `${Number(lowest.counterfactualRankScore || 0).toFixed(1)}` +
+            `→${firstCounterfactualRankScore.toFixed(1)}`
+        });
+        day.virtualDroppedCandidates = day.virtualDroppedCandidates.slice(-30);
+        day.virtualCandidates = day.virtualCandidates.filter(
+          row => normalizeOpenStockCode(row.code) !== normalizeOpenStockCode(lowest.code)
+        );
+        console.log(
+          `[OPEN 가상순위 교체] ` +
+          `${lowest.name || lowest.code} 제외 / ${record.name || code} 진입`
+        );
+      }
+
+      const entryTimeMs = Number(record.observedAtMs || Date.now());
+      candidate = {
+        rank: 0,
+        candidateGroup: "OPEN_BUYABLE",
+        code,
+        name: record.name || code,
+        selectedForRealTrade: code === normalizedSelectedCode,
+        missedAnalysisEligible: code !== normalizedSelectedCode,
+        rejectReason: record.passed === true
+          ? "실제 엄격조건 통과"
+          : (record.reason || "시장차단"),
+        marketOnlyBlockedAtEntry: record.marketOnlyBlocked === true,
+        actualDecisionAtEntry: record.reason || "",
+        eligibilityReason: record.withoutMarketReason || "시장제외 종목조건 통과",
+        entryAt: record.observedAt || nowText(),
+        entryTimeMs,
+        entryPrice: price,
+        firstEligibleAt: record.observedAt || nowText(),
+        firstEligibleAtMs: entryTimeMs,
+        firstEligiblePrice: price,
+        discoverScore: Number(record.discoverScore || 0),
+        rankScore: Number(record.rankScore || 0),
+        counterfactualRankScore: Number(
+          firstCounterfactualRankScore
+        ),
+        lastCounterfactualRankScore: Number(
+          firstCounterfactualRankScore
+        ),
+        maxCounterfactualRankScore: Number(
+          firstCounterfactualRankScore
+        ),
+        changeRate: Number(record.changeRate || 0),
+        volumeRatio: Number(record.volumeRatio || 0),
+        dayPosition: Number(record.dayPosition || 0),
+        openPosition: Number(record.openPosition || 0),
+        passedAtSelection: record.passed === true,
+        passWithoutMarketAtSelection: true,
+        selectionReason: record.withoutMarketReason || record.reason || "",
+        active: true,
+        sampleCount: 0,
+        lastPrice: price,
+        lastProfitRate: 0,
+        highestPrice: price,
+        lowestPrice: price,
+        highestPriceAtMs: entryTimeMs,
+        highestProfitRate: 0,
+        lowestProfitRate: 0,
+        exitAt: null,
+        exitPrice: null,
+        exitProfitRate: null,
+        exitType: null,
+        exitReason: null,
+        holdingSeconds: null,
+        profitCaptureRate: null
+      };
+      day.virtualCandidates.push(candidate);
+      addedCount += 1;
+      changed = true;
+    } else {
+      candidate.lastCounterfactualRankScore = Number(
+        record.withoutMarketRankScore ?? record.rankScore ?? 0
+      );
+      candidate.maxCounterfactualRankScore = Math.max(
+        Number(
+          candidate.maxCounterfactualRankScore ??
+          candidate.counterfactualRankScore ??
+          0
+        ),
+        Number(record.withoutMarketRankScore ?? record.rankScore ?? 0)
+      );
+      candidate.lastEligibleAt = record.observedAt || nowText();
+      candidate.lastEligibleAtMs = Number(record.observedAtMs || Date.now());
+      candidate.lastEligiblePrice = price;
+      changed = true;
+    }
   }
 
-  unique.sort((a, b) => getLearningCandidateSortScore(b) - getLearningCandidateSortScore(a));
+  if (normalizedSelectedCode) {
+    for (const candidate of day.virtualCandidates) {
+      if (normalizeOpenStockCode(candidate.code) !== normalizedSelectedCode) continue;
+      candidate.selectedForRealTrade = true;
+      candidate.missedAnalysisEligible = false;
+      changed = true;
+    }
+  }
 
-  const startedAtMs = Date.now();
-  day.virtualTrackingStartedAt = nowText();
-  day.virtualTrackingStartedAtMs = startedAtMs;
+  if (!changed) return;
+
+  refreshOpenVirtualCandidateRanks(day);
+  if (!day.virtualTrackingStartedAt && day.virtualCandidates.length > 0) {
+    const firstEntry = [...day.virtualCandidates].sort(
+      (a, b) => Number(a.entryTimeMs || 0) - Number(b.entryTimeMs || 0)
+    )[0];
+    day.virtualTrackingStartedAt = firstEntry?.entryAt || nowText();
+    day.virtualTrackingStartedAtMs = Number(firstEntry?.entryTimeMs || Date.now());
+  }
   day.virtualTrackingCompletedAt = null;
-  day.virtualCandidates = unique
-    .slice(0, settings.openVirtualTrackingCount)
-    .map((record, index) => ({
-      rank: index + 1,
-      code: String(record.code || ""),
-      name: record.name || record.code || "",
-      selectedForRealTrade: normalizeOpenStockCode(record.code) === normalizeOpenStockCode(selectedCode),
-      missedAnalysisEligible: normalizeOpenStockCode(record.code) !== normalizeOpenStockCode(selectedCode),
-      rejectReason: record.passed === true
-        ? "엄격조건 통과했으나 최종 미선정"
-        : (record.reason || "미매수 사유 미저장"),
-      entryAt: nowText(),
-      entryTimeMs: startedAtMs,
-      entryPrice: Number(record.price || 0),
-      discoverScore: Number(record.discoverScore || 0),
-      rankScore: Number(record.rankScore || 0),
-      changeRate: Number(record.changeRate || 0),
-      volumeRatio: Number(record.volumeRatio || 0),
-      dayPosition: Number(record.dayPosition || 0),
-      openPosition: Number(record.openPosition || 0),
-      passedAtSelection: record.passed === true,
-      selectionReason: record.reason || "",
-      active: true,
-      sampleCount: 0,
-      lastPrice: Number(record.price || 0),
-      lastProfitRate: 0,
-      highestPrice: Number(record.price || 0),
-      lowestPrice: Number(record.price || 0),
-      highestPriceAtMs: startedAtMs,
-      highestProfitRate: 0,
-      lowestProfitRate: 0,
-      exitAt: null,
-      exitPrice: null,
-      exitProfitRate: null,
-      exitType: null,
-      exitReason: null,
-      holdingSeconds: null,
-      profitCaptureRate: null
-    }));
 
-  if (day.virtualCandidates.length > 0) {
+  if (addedCount > 0) {
     console.log(
-      `[OPEN 가상추적 시작] ${day.virtualCandidates.length}종목 / ` +
-      day.virtualCandidates.map(v => `${v.rank}.${v.name}`).join(" | ")
+      `[OPEN 시장제외 가상후보 등록] 신규 ${addedCount}개 / ` +
+      `누적 ${day.virtualCandidates.length}개 / ` +
+      day.virtualCandidates
+        .slice(0, settings.openVirtualTrackingCount)
+        .map(v => `${v.rank}.${v.name}`)
+        .join(" | ")
     );
   }
 
@@ -1225,8 +1427,96 @@ function initializeOpenVirtualTracking(records, selectedCode = null) {
 function initializeVirtualTrackingFromLatestCandidates() {
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
-  if (Array.isArray(day.virtualCandidates) && day.virtualCandidates.length > 0) return;
   initializeOpenVirtualTracking(day.latestCandidates || [], null);
+  finalizeOpenVirtualRanking();
+}
+
+function finalizeOpenVirtualRanking() {
+  const history = loadOpenHistory();
+  const day = getOpenLearningDay(history);
+  if (day.virtualRankingFinalizedAt) return;
+  refreshOpenVirtualCandidateRanks(day);
+
+  day.virtualCandidates.forEach(candidate => {
+    candidate.finalRank = Number(candidate.rank || 0);
+  });
+
+  const observations = day.candidateObservations &&
+    typeof day.candidateObservations === "object"
+      ? Object.values(day.candidateObservations)
+      : [];
+
+  day.virtualObservedCandidates = observations
+    .filter(candidate => !candidate.firstEligibleWithoutMarketAtMs)
+    .map(candidate => {
+      const directHot = candidate.everDirectHotCandidate === true;
+      const maxChangeRate = directHot
+        ? Number(settings.openHotDirectMaxChangeRate || 25)
+        : Number(settings.openMaxChangeRate || 10);
+      const overheatReasons = [];
+      if (Number(candidate.lastChangeRate || 0) > maxChangeRate) {
+        overheatReasons.push(`상승률 ${Number(candidate.lastChangeRate || 0).toFixed(2)}%`);
+      }
+      if (Number(candidate.lastOpenPosition || 0) > Number(settings.openMaxOpenPositionRate || 12)) {
+        overheatReasons.push(`시가대비 ${Number(candidate.lastOpenPosition || 0).toFixed(2)}%`);
+      }
+      if (Number(candidate.lastDayPosition || 0) > Number(settings.openMaxDayPositionRate || 98)) {
+        overheatReasons.push(`당일위치 ${Number(candidate.lastDayPosition || 0).toFixed(1)}%`);
+      }
+
+      const observedRecord = {
+        discoverScore: Number(candidate.lastDiscoverScore || 0),
+        volumeRatio: Number(candidate.lastVolumeRatio || 0),
+        dayPosition: Number(candidate.lastDayPosition || 0),
+        openPosition: Number(candidate.lastOpenPosition || 0),
+        changeRate: Number(candidate.lastChangeRate || 0),
+        isDirectHotCandidate: directHot
+      };
+
+      return {
+        candidateGroup: "MOMENTUM_OBSERVED",
+        code: candidate.code || "",
+        name: candidate.name || candidate.code || "",
+        observedAt: candidate.lastSeenAt || null,
+        price: Number(candidate.lastPrice || 0),
+        discoverScore: Number(candidate.lastDiscoverScore || 0),
+        changeRate: Number(candidate.lastChangeRate || 0),
+        volumeRatio: Number(candidate.lastVolumeRatio || 0),
+        dayPosition: Number(candidate.lastDayPosition || 0),
+        openPosition: Number(candidate.lastOpenPosition || 0),
+        reason: candidate.lastWithoutMarketReason || candidate.lastReason || "종목조건 미충족",
+        rejectCategory:
+          candidate.lastWithoutMarketRejectCategory ||
+          candidate.lastRejectCategory ||
+          "기타 조건 미충족",
+        overheat: overheatReasons.length > 0,
+        overheatReasons,
+        observationScore: getLearningCandidateSortScore(observedRecord)
+      };
+    })
+    .sort((a, b) => Number(b.observationScore || 0) - Number(a.observationScore || 0))
+    .slice(0, settings.openVirtualTrackingCount)
+    .map((candidate, index) => ({
+      ...candidate,
+      rank: index + 1
+    }));
+
+  day.virtualRankingFinalizedAt = nowText();
+  day.virtualRankingSummary = {
+    buyableCount: day.virtualCandidates.length,
+    buyableTopCount: Math.min(
+      day.virtualCandidates.length,
+      Number(settings.openVirtualTrackingCount || 10)
+    ),
+    observedCount: day.virtualObservedCandidates.length
+  };
+
+  console.log(
+    `[OPEN 가상순위 확정] ` +
+    `매수가능 ${day.virtualCandidates.length}개 / ` +
+    `관찰전용 ${day.virtualObservedCandidates.length}개`
+  );
+  saveOpenHistory(history);
 }
 
 function getVirtualOpenSellSignal(candidate, price, now = Date.now()) {
@@ -1264,6 +1554,11 @@ function getVirtualOpenSellSignal(candidate, price, now = Date.now()) {
       type: "VIRTUAL_OPEN_STOP_LOSS",
       reason: `가상 손절 ${profitRate.toFixed(2)}%`
     };
+  }
+
+  /* 실제 OPEN과 동일하게 손절을 제외한 익절·시간청산은 최소 보유시간 뒤 적용한다. */
+  if (holdingSeconds < Number(settings.openMinHoldingSeconds || 120)) {
+    return null;
   }
 
   if (
@@ -1494,9 +1789,21 @@ async function checkOpenVirtualCandidatesOnce() {
   const history = loadOpenHistory();
   const day = getOpenLearningDay(history);
 
+  /* 5종목 매수완료로 매수루프가 먼저 멈춰도 09:30 최종 가상순위는 반드시 확정한다. */
+  if (
+    getCurrentHHMM() >= settings.openBuyEndTime &&
+    !day.virtualRankingFinalizedAt
+  ) {
+    finalizeOpenVirtualRanking();
+    return;
+  }
+
   const candidates = Array.isArray(day.virtualCandidates)
     ? day.virtualCandidates
     : [];
+  const summaryCandidates = [...candidates]
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+    .slice(0, Number(settings.openVirtualTrackingCount || 10));
 
   const active = candidates.filter(
     candidate => candidate.active === true
@@ -1547,8 +1854,9 @@ async function checkOpenVirtualCandidatesOnce() {
   }
 
   const trackingCompleted =
-    candidates.length > 0 &&
-    candidates.every(
+    Boolean(day.virtualRankingFinalizedAt) &&
+    summaryCandidates.length > 0 &&
+    summaryCandidates.every(
       candidate => candidate.active !== true
     );
 
@@ -1557,41 +1865,41 @@ async function checkOpenVirtualCandidatesOnce() {
     trackingCompleted &&
     !day.virtualTrackingCompletedAt
   ) {
-    const winCount = candidates.filter(
+    const winCount = summaryCandidates.filter(
       candidate => Number(candidate.exitProfitRate || 0) > 0
     ).length;
 
-    const lossCount = candidates.filter(
+    const lossCount = summaryCandidates.filter(
       candidate => Number(candidate.exitProfitRate || 0) < 0
     ).length;
 
-    const avgProfitRate = candidates.reduce(
+    const avgProfitRate = summaryCandidates.reduce(
       (sum, candidate) =>
         sum + Number(candidate.exitProfitRate || 0),
       0
-    ) / candidates.length;
+    ) / summaryCandidates.length;
 
-    const best = [...candidates].sort(
+    const best = [...summaryCandidates].sort(
       (a, b) =>
         Number(b.exitProfitRate || 0) -
         Number(a.exitProfitRate || 0)
     )[0] || null;
 
-    const worst = [...candidates].sort(
+    const worst = [...summaryCandidates].sort(
       (a, b) =>
         Number(a.exitProfitRate || 0) -
         Number(b.exitProfitRate || 0)
     )[0] || null;
 
     const firstCandidate =
-      candidates.find(
+      summaryCandidates.find(
         candidate => Number(candidate.rank || 0) === 1
-      ) || candidates[0] || null;
+      ) || summaryCandidates[0] || null;
 
     day.virtualTrackingCompletedAt = nowText();
 
     day.virtualSummary = {
-      sampleCount: candidates.length,
+      sampleCount: summaryCandidates.length,
       winCount,
       lossCount,
       avgProfitRate,
@@ -1630,7 +1938,7 @@ async function checkOpenVirtualCandidatesOnce() {
 
     console.log(
       `[OPEN 후보 참고통계] ` +
-      `${candidates.length}종목 / ` +
+      `${summaryCandidates.length}종목 / ` +
       `승 ${winCount} / ` +
       `패 ${lossCount} / ` +
       `평균 ${formatSignedRate(avgProfitRate)}`
@@ -1648,13 +1956,10 @@ function saveOpenCandidateLearning(evaluated) {
   const day = getOpenLearningDay(history);
 
   const sorted = [...evaluated].sort((a, b) => {
-    if (a.record.passed !== b.record.passed) {
-      return a.record.passed ? -1 : 1;
-    }
-
-    const aScore = a.record.rankScore || a.record.discoverScore;
-    const bScore = b.record.rankScore || b.record.discoverScore;
-    return bScore - aScore;
+    return (
+      getLearningCandidateSortScore(b.record) -
+      getLearningCandidateSortScore(a.record)
+    );
   });
 
   day.latestCandidates = sorted
@@ -1674,6 +1979,11 @@ function saveOpenCandidateLearning(evaluated) {
       firstSeenAt: record.observedAt,
       observationCount: 0,
       passCount: 0,
+      passWithoutMarketCount: 0,
+      firstEligibleWithoutMarketAt: null,
+      firstEligibleWithoutMarketAtMs: null,
+      firstEligibleWithoutMarketPrice: null,
+      firstEligibleWithoutMarketRankScore: null,
       maxRankScore: 0,
       maxDiscoverScore: 0,
       maxVolumeRatio: 0,
@@ -1702,7 +2012,29 @@ function saveOpenCandidateLearning(evaluated) {
     prev.lastSeenAt = record.observedAt;
     prev.observationCount += 1;
     if (record.passed) prev.passCount += 1;
+    if (record.passWithoutMarket) {
+      prev.passWithoutMarketCount =
+        Number(prev.passWithoutMarketCount || 0) + 1;
+      if (!prev.firstEligibleWithoutMarketAtMs) {
+        prev.firstEligibleWithoutMarketAt = record.observedAt;
+        prev.firstEligibleWithoutMarketAtMs = Number(record.observedAtMs || Date.now());
+        prev.firstEligibleWithoutMarketPrice = Number(record.price || 0);
+        prev.firstEligibleWithoutMarketRankScore = Number(
+          record.withoutMarketRankScore || record.rankScore || 0
+        );
+      }
+    }
     prev.lastPassed = record.passed;
+    prev.lastPassWithoutMarket = record.passWithoutMarket === true;
+    prev.lastMarketOnlyBlocked = record.marketOnlyBlocked === true;
+    prev.everMarketOnlyBlocked =
+      prev.everMarketOnlyBlocked === true || record.marketOnlyBlocked === true;
+    prev.lastWithoutMarketReason = record.withoutMarketReason || record.reason || "";
+    prev.lastWithoutMarketRejectCategory =
+      record.withoutMarketRejectCategory || "기타 조건 미충족";
+    prev.lastWithoutMarketRejectStage =
+      record.withoutMarketRejectStage || "OTHER";
+    prev.lastWithoutMarketRankScore = Number(record.withoutMarketRankScore || 0);
     prev.lastReason = record.reason;
     prev.lastRejectCategory = record.rejectCategory || "기타 조건 미충족";
     prev.lastRejectStage = record.rejectStage || "OTHER";
@@ -1740,6 +2072,7 @@ function saveOpenCandidateLearning(evaluated) {
       record.passed === true;
 
     prev.lastPrice = record.price;
+    prev.lastChangeRate = Number(record.changeRate || 0);
     prev.lastDiscoverScore = record.discoverScore;
     prev.lastRankScore = record.rankScore;
     prev.lastVolumeRatio = record.volumeRatio;
@@ -1783,11 +2116,19 @@ function saveOpenCandidateLearning(evaluated) {
       changeRate: Number(record.changeRate || 0),
       volumeRatio: Number(record.volumeRatio || 0),
       dayPosition: Number(record.dayPosition || 0),
+      openPosition: Number(record.openPosition || 0),
       priceRiseRate: Number(record.priceRiseRate || 0),
       volumeGrowthRate: Number(record.volumeGrowthRate || 0),
       pricePersistence: Number(record.pricePersistence || 0),
       volumePersistence: Number(record.volumePersistence || 0),
       passed: record.passed === true,
+      passWithoutMarket: record.passWithoutMarket === true,
+      marketOnlyBlocked: record.marketOnlyBlocked === true,
+      withoutMarketReason: record.withoutMarketReason || "",
+      withoutMarketRejectCategory:
+        record.withoutMarketRejectCategory || "기타 조건 미충족",
+      withoutMarketRejectStage: record.withoutMarketRejectStage || "OTHER",
+      withoutMarketRankScore: Number(record.withoutMarketRankScore || 0),
       reason: record.reason || "",
       rejectCategory: record.rejectCategory || "기타 조건 미충족",
       rejectStage: record.rejectStage || "OTHER",
@@ -2025,6 +2366,10 @@ function recordOpenLearningSkip(reason) {
 
     candidate.finalDecision =
       candidate.selected === true ? "실제 매수" : category;
+    candidate.finalDecisionWithoutMarket = candidate.firstEligibleWithoutMarketAtMs
+      ? "시장제외 매수가능"
+      : (candidate.lastWithoutMarketRejectCategory || category);
+    candidate.finalMarketOnlyBlocked = candidate.everMarketOnlyBlocked === true;
     candidate.finalRejectCategory = category;
     candidate.finalRejectStage =
       candidate.selected === true
@@ -2088,6 +2433,8 @@ state.lastOpenFullScanAt = null;
     candidateCodes: {},
     evaluatedCodes: {},
     strictPassedCodes: {},
+    passWithoutMarketCodes: {},
+    marketOnlyBlockedCodes: {},
     fallbackPassedCodes: {},
     selectedCodes: {},
     boughtCodes: {},
@@ -3476,7 +3823,8 @@ if (!momentum.pass) {
 };
 }
 
-function judgeOpenBuy(state, item, price) {
+function judgeOpenBuy(state, item, price, options = {}) {
+  const ignoreMarketBlocks = options.ignoreMarketBlocks === true;
   const changeRate = Number(
     item.changeRate ||
     item.fluctuationRate ||
@@ -3565,7 +3913,7 @@ function judgeOpenBuy(state, item, price) {
    * 관찰표본은 먼저 누적한다. 이전에는 앞단 필터를 통과한 후보만
    * 지속강도가 계산되어 학습화면의 평가횟수는 늘면서 점수는 0이었다.
    */
-  const strengthen =
+  const strengthen = options.precomputedStrengthen ||
     isOpenCandidateGettingStronger(
       state,
       item,
@@ -3610,11 +3958,13 @@ function judgeOpenBuy(state, item, price) {
    * 시장 방향을 판단할 수 없으므로 매수를 중단한다.
    */
   if (
+    !ignoreMarketBlocks &&
     settings.openMarketDataRequired &&
     !marketData.available
   ) {
     return {
       pass: false,
+      _precomputedStrengthen: strengthen,
       reason:
         `OPEN 시장자료 없음 차단 / ` +
         `${marketData.reason ||
@@ -3622,7 +3972,7 @@ function judgeOpenBuy(state, item, price) {
     };
   }
 
-  if (!marketData.available) {
+  if (!ignoreMarketBlocks && !marketData.available) {
     console.log(
       `[OPEN 시장자료 보완운영] ${marketData.reason || "시장자료 없음"} / ` +
       `종목 자체 조건으로 선별`
@@ -3637,11 +3987,13 @@ function judgeOpenBuy(state, item, price) {
     evaluateOpenWeakMarketStrongOverride(state, item, marketData);
 
   if (
+    !ignoreMarketBlocks &&
     marketData.available &&
     marketScore < Number(settings.openMarketAbsoluteBlockScore || 25)
   ) {
     return {
       pass: false,
+      _precomputedStrengthen: strengthen,
       reason:
         `OPEN 시장절대차단 / ` +
         `시장 ${marketScore}점 / ` +
@@ -3650,12 +4002,14 @@ function judgeOpenBuy(state, item, price) {
   }
 
   if (
+    !ignoreMarketBlocks &&
     marketData.available &&
     marketScore < settings.openMarketHardBlockScore &&
     weakMarketStrongOverride.pass !== true
   ) {
     return {
       pass: false,
+      _precomputedStrengthen: strengthen,
       reason:
         `OPEN 시장급락 차단 / ` +
         `시장 ${marketScore}점 / 기본기준 ${settings.openMarketHardBlockScore}점 / ` +
@@ -3664,6 +4018,7 @@ function judgeOpenBuy(state, item, price) {
   }
 
   if (
+    !ignoreMarketBlocks &&
     marketData.available &&
     marketScore < settings.openMarketHardBlockScore &&
     weakMarketStrongOverride.pass === true
@@ -3678,6 +4033,7 @@ function judgeOpenBuy(state, item, price) {
    * 종목이 속한 섹터가 강한 약세이면 차단한다.
    */
   if (
+    !ignoreMarketBlocks &&
     marketData.available &&
     matchedSectors.length > 0 &&
     sectorBias <=
@@ -3685,6 +4041,7 @@ function judgeOpenBuy(state, item, price) {
   ) {
     return {
       pass: false,
+      _precomputedStrengthen: strengthen,
       reason:
         `OPEN 섹터약세 차단 / ` +
         `시장 ${marketScore}점 / ` +
@@ -3701,6 +4058,7 @@ function judgeOpenBuy(state, item, price) {
    * 강한 섹터에 속한 종목만 허용한다.
    */
   if (
+    !ignoreMarketBlocks &&
     marketData.available &&
     marketScore <
       settings.openMarketWeakScore &&
@@ -3710,6 +4068,7 @@ function judgeOpenBuy(state, item, price) {
   ) {
     return {
       pass: false,
+      _precomputedStrengthen: strengthen,
       reason:
         `OPEN 약세장 강한섹터 아님 / ` +
         `시장 ${marketScore}점 / ` +
@@ -3728,6 +4087,7 @@ function judgeOpenBuy(state, item, price) {
    * 확인 가능한 섹터가 약세이면 차단한다.
    */
   if (
+    !ignoreMarketBlocks &&
     marketData.available &&
     marketScore <
       settings.openMarketCautionScore &&
@@ -3737,6 +4097,7 @@ function judgeOpenBuy(state, item, price) {
   ) {
     return {
       pass: false,
+      _precomputedStrengthen: strengthen,
       reason:
         `OPEN 주의장 섹터부족 / ` +
         `시장 ${marketScore}점 / ` +
@@ -4171,6 +4532,69 @@ function judgeOpenBuy(state, item, price) {
       `${weakMarketStrongOverride.pass ? "약세장 초강력예외 통과 / " : ""}` +
       `최종점수 ${rankScore.toFixed(1)}`
   };
+}
+
+/*
+ * 실제 주문판정은 그대로 유지하고, 시장·섹터 차단으로 끝난 후보만
+ * 동일한 관찰표본을 재사용해 종목 자체 조건을 끝까지 가상평가한다.
+ */
+function judgeOpenBuyWithDiagnostics(state, item, price) {
+  const judged = judgeOpenBuy(state, item, price);
+  const marketRejected = isOpenMarketRejectReason(judged.reason);
+  const precomputedStrengthen = judged._precomputedStrengthen;
+  delete judged._precomputedStrengthen;
+
+  if (judged.pass === true) {
+    judged.passWithoutMarket = true;
+    judged.marketOnlyBlocked = false;
+    judged.withoutMarketReason = judged.reason || "OPEN 통과";
+    judged.withoutMarketRankScore = Number(judged.rankScore || 0);
+    return judged;
+  }
+
+  if (!marketRejected) {
+    judged.passWithoutMarket = false;
+    judged.marketOnlyBlocked = false;
+    judged.withoutMarketReason = judged.reason || "종목조건 미충족";
+    judged.withoutMarketRankScore = 0;
+    return judged;
+  }
+
+  const diagnosticMarketData = loadOpenMarketData();
+  const diagnosticMarketAdjust = calculateOpenMarketAdjustment(
+    item,
+    diagnosticMarketData
+  );
+  judged.marketScore = Number(diagnosticMarketAdjust.marketScore || 0);
+  judged.marketType = diagnosticMarketAdjust.marketType || null;
+  judged.marketBonus = Number(diagnosticMarketAdjust.marketBonus || 0);
+  judged.sectorBonus = Number(diagnosticMarketAdjust.sectorBonus || 0);
+  judged.matchedSectors = Array.isArray(diagnosticMarketAdjust.matchedSectors)
+    ? diagnosticMarketAdjust.matchedSectors
+    : [];
+  judged.marketDataUpdatedAt = diagnosticMarketData.updatedAt || null;
+
+  const shadow = judgeOpenBuy(state, item, price, {
+    ignoreMarketBlocks: true,
+    precomputedStrengthen
+  });
+  delete shadow._precomputedStrengthen;
+
+  judged.passWithoutMarket = shadow.pass === true;
+  judged.marketOnlyBlocked = shadow.pass === true;
+  judged.withoutMarketReason = shadow.reason || "시장제외 가상평가 결과 없음";
+  judged.withoutMarketRankScore = Number(shadow.rankScore || 0);
+  judged.withoutMarketDiagnostic = {
+    pass: shadow.pass === true,
+    reason: shadow.reason || "",
+    rankScore: Number(shadow.rankScore || 0),
+    baseRankScore: Number(shadow.baseRankScore || 0),
+    momentumScore: Number(shadow.momentumScore || 0),
+    requiredDiscoverScore: Number(shadow.requiredDiscoverScore || 0),
+    requiredVolumeRatio: Number(shadow.requiredVolumeRatio || 0),
+    requiredConfirmPriceRise: Number(shadow.requiredConfirmPriceRise || 0)
+  };
+  return judged;
 }
 
 function makeOpenBuyDiagnostic(item, price, judged = {}) {
@@ -4611,7 +5035,14 @@ function makeOpenCandidateLogText(item, price, judged = {}) {
     `시가대비 ${openPosition.toFixed(2)}%` +
     (judged.pass
       ? ` / 최종 ${Number(judged.rankScore || 0).toFixed(1)}`
-      : ` / ${judged.reason || "탈락"}`)
+      : ` / ${judged.reason || "탈락"}`) +
+    (
+      judged.pass !== true && judged.passWithoutMarket === true
+        ? ` / 시장제외 통과 ${Number(judged.withoutMarketRankScore || 0).toFixed(1)}`
+        : judged.pass !== true && isOpenMarketRejectReason(judged.reason)
+          ? ` / 시장제외 결과 ${judged.withoutMarketReason || "미확인"}`
+          : ""
+    )
   );
 }
 
@@ -4625,9 +5056,17 @@ function logOpenScanSummary({
   rejectExamples,
   marketData
 }) {
+  const passWithoutMarketCount = evaluated.filter(
+    entry => entry.record?.passWithoutMarket === true
+  ).length;
+  const marketOnlyBlockedCount = evaluated.filter(
+    entry => entry.record?.marketOnlyBlocked === true
+  ).length;
+
   console.log(
     `[OPEN 스캔요약] #${scanId} ${hhmm} / ` +
-    `발굴 ${candidates.length} / 평가 ${evaluated.length} / 통과 ${passed.length} / ` +
+    `발굴 ${candidates.length} / 평가 ${evaluated.length} / 실제통과 ${passed.length} / ` +
+    `시장제외통과 ${passWithoutMarketCount} / 시장만차단 ${marketOnlyBlockedCount} / ` +
     `시장 ${marketData.available ? `${marketData.marketScore}점 ${marketData.marketType}` : "미사용"}`
   );
 
@@ -4950,7 +5389,7 @@ async function runOpenBuyOnce() {
       continue;
     }
 
-    const judged = judgeOpenBuy(state, item, price);
+    const judged = judgeOpenBuyWithDiagnostics(state, item, price);
     evaluated.push({
       item,
       price,
@@ -5000,6 +5439,7 @@ async function runOpenBuyOnce() {
 
   saveState(state);
   saveOpenCandidateLearning(evaluated);
+  initializeOpenVirtualTracking(evaluated, null);
 
   logOpenScanSummary({
     scanId,
@@ -5044,6 +5484,12 @@ async function runOpenBuyOnce() {
     passedCount: passed.length,
     strictPassedCount: strictPassedRows.length,
     fallbackPassedCount: fallbackObservedRows.length,
+    passWithoutMarketCount: evaluated.filter(
+      entry => entry.record?.passWithoutMarket === true
+    ).length,
+    marketOnlyBlockedCount: evaluated.filter(
+      entry => entry.record?.marketOnlyBlocked === true
+    ).length,
     potentialCount: Object.keys(state.openPotentialCandidates || {}).length,
     potentialPromotedCount: Number(state.openPotentialPromotedCount || 0),
     potentialExpiredCount: Number(state.openPotentialExpiredCount || 0),

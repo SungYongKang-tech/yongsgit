@@ -23,7 +23,15 @@ for (const dir of [MANUAL_SELL_REQUEST_DIR, MANUAL_SELL_RESULT_DIR]) {
 }
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
+const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 const API_BASE = "http://localhost:3000";
+
+// 느린 전종목 순환검색 중 다른 루프가 오래된 상태를 저장해도
+// 장중 시장표본이 한 배치로 되돌아가지 않도록 프로세스 메모리에도 합집합을 유지한다.
+const marketTemperatureSampleMemory = {
+  date: null,
+  rows: new Map()
+};
 
 const {
   startHotScanner
@@ -1096,6 +1104,12 @@ volumeEarlyMomentumMinObservationCount: 3,
 volumeEarlyMomentumMinElapsedMs: 30 * 1000,
 volumeEarlyMomentumMinPricePersistence: 0.67,
 
+// HOT의 최근 60초 가격표본까지 가져와 급락 뒤 한 틱 반등을 신규 상승으로 오인하지 않는다.
+volumeRecentHighGuardEnabled: true,
+volumeRecentHighWindowMs: 90 * 1000,
+volumeRecentHighMinSampleCount: 3,
+volumeRecentHighMaxEntryDrawdownRate: -1.25,
+
 // VOLUME 후반구간: 급등 직후 추격하지 않고 눌림 후 재상승할 때만 진입
 volumePullbackEntryEnabled: true,
 volumePullbackMinRate: -0.25,
@@ -1187,8 +1201,12 @@ leaderWatchMinBuyStrengthScore: 75,
 
 // 시장온도는 임의의 한 배치가 아니라 최근 순환검색 누적표본으로 계산한다.
 marketTemperatureMinSampleCount: 120,
+marketTemperatureSegmentMinSampleCount: 30,
 marketTemperatureSampleMaxCount: 1000,
-marketTemperatureSampleMaxAgeMs: 15 * 60 * 1000,
+// 실제 BUY 순환이 20분 이상 지연될 수 있으므로 15분 만료로 표본이 리셋되지 않게 한다.
+marketTemperatureSampleMaxAgeMs: 45 * 60 * 1000,
+marketTemperatureAccumulatingBuyBlocked: true,
+marketTemperatureAccumulatingFallbackScore: 30,
 
 // 10초 매도루프가 방금 끝난 경우 매수·후보재평가 직전 중복 매도점검을 생략한다.
 sellPriorityFreshMs: 8 * 1000,
@@ -1214,6 +1232,10 @@ candidateDecisionHistoryMaxCount: 2000,
 // 전략별 본전방어: CORE는 기존 유지, VOLUME은 단기 추세 실패를 더 일찍 보호
 coreBreakEvenStartRate: 2.0,
 coreBreakEvenProtectRate: 0.4,
+// CORE는 점수·당일위치가 살아 있으면 단순 수익률 되돌림만으로 본전청산하지 않는다.
+coreBreakEvenWeakMaxHoldingScore: 80,
+coreBreakEvenWeakMaxDayPositionRate: 60,
+coreBreakEvenWeakMinScoreDrop: -10,
 volumeBreakEvenStartRate: 1.5,
 volumeBreakEvenProtectRate: 0.1,
 
@@ -1713,8 +1735,11 @@ async function postJson(url, body) {
   return data;
 }
 
-async function fetchPrice(code) {
-  const data = await fetchJson(`${API_BASE}/api/price?code=${code}`);
+async function fetchPrice(code, source = "core") {
+  const data = await fetchJson(
+    `${API_BASE}/api/price?code=${encodeURIComponent(code)}` +
+    `&source=${encodeURIComponent(source)}`
+  );
 
   return Math.abs(Number(
     data.currentPrice ||
@@ -1725,9 +1750,10 @@ async function fetchPrice(code) {
   ));
 }
 
-async function fetchCandidateRealtime(code, fallback = {}) {
+async function fetchCandidateRealtime(code, fallback = {}, source = "core") {
   const data = await fetchJson(
-    `${API_BASE}/api/price?code=${encodeURIComponent(code)}`
+    `${API_BASE}/api/price?code=${encodeURIComponent(code)}` +
+    `&source=${encodeURIComponent(source)}`
   );
 
   const raw = data.raw || {};
@@ -2067,6 +2093,79 @@ function getOpenPositionRate(item = {}, currentPrice) {
   return ((currentPrice - open) / open) * 100;
 }
 
+function classifyMarketTemperatureScore(scoreValue) {
+  const score = Number(scoreValue || 0);
+
+  if (score >= 70) return { level: "HOT", label: "강세" };
+  if (score >= 50) return { level: "NORMAL", label: "보통" };
+  if (score >= 35) return { level: "CAUTION", label: "주의" };
+  return { level: "COLD", label: "약세" };
+}
+
+function normalizeMarketSegment(item = {}) {
+  const raw = String(
+    item.marketSegment ??
+    item.market ??
+    item.marketType ??
+    item.marketName ??
+    item.exchange ??
+    item.raw?.market ??
+    ""
+  ).trim().toUpperCase();
+
+  if (raw.includes("KOSDAQ") || raw.includes("코스닥")) return "KOSDAQ";
+  if (raw.includes("KOSPI") || raw.includes("유가증권") || raw.includes("코스피")) {
+    return "KOSPI";
+  }
+
+  return "ALL";
+}
+
+function getPremarketFallbackScore() {
+  if (!fs.existsSync(OPEN_MARKET_FILE)) return null;
+
+  try {
+    const data = readJsonFileSafe(OPEN_MARKET_FILE, null);
+    const date = String(
+      data?.date ??
+      data?.checkedDate ??
+      data?.tradingDate ??
+      ""
+    ).slice(0, 10);
+
+    if (!date || date !== todayKey()) return null;
+
+    const score = [
+      data?.marketScore?.score,
+      data?.marketScore,
+      data?.market?.score,
+      data?.marketCondition?.score,
+      data?.score,
+      data?.totalScore,
+      data?.summary?.score,
+      data?.summary?.marketScore
+    ]
+      .filter(value => value !== null && value !== undefined && value !== "")
+      .map(value => Number(value))
+      .find(value => Number.isFinite(value));
+
+    if (!Number.isFinite(score)) return null;
+
+    return {
+      score: Math.max(0, Math.min(100, score)),
+      type: String(
+        data?.marketType ??
+        data?.type ??
+        data?.level ??
+        "PREMARKET"
+      )
+    };
+  } catch (err) {
+    console.log(`[시장온도 장전자료 제외] ${err.message}`);
+    return null;
+  }
+}
+
 function calculateMarketTemperature(
   candidates = []
 ) {
@@ -2265,22 +2364,7 @@ function calculateMarketTemperature(
       )
     );
 
-  let level = "NORMAL";
-  let label = "보통";
-
-  if (score >= 70) {
-    level = "HOT";
-    label = "강세";
-  } else if (score >= 50) {
-    level = "NORMAL";
-    label = "보통";
-  } else if (score >= 35) {
-    level = "CAUTION";
-    label = "주의";
-  } else {
-    level = "COLD";
-    label = "약세";
-  }
+  const { level, label } = classifyMarketTemperatureScore(score);
 
   return {
     level,
@@ -2355,7 +2439,12 @@ function calculateStableMarketTemperature(
     };
   }
 
-  const sampleMap = new Map();
+  if (marketTemperatureSampleMemory.date !== date) {
+    marketTemperatureSampleMemory.date = date;
+    marketTemperatureSampleMemory.rows = new Map();
+  }
+
+  const sampleMap = marketTemperatureSampleMemory.rows;
 
   for (const row of state.marketTemperatureSamples.rows) {
     const observedAtMs = Number(row.observedAtMs || 0);
@@ -2367,7 +2456,13 @@ function calculateStableMarketTemperature(
       now - observedAtMs >= 0 &&
       (!maxAgeMs || now - observedAtMs <= maxAgeMs)
     ) {
-      sampleMap.set(code, { ...row, code });
+      const previous = sampleMap.get(code);
+      if (
+        !previous ||
+        observedAtMs >= Number(previous.observedAtMs || 0)
+      ) {
+        sampleMap.set(code, { ...row, code });
+      }
     }
   }
 
@@ -2391,13 +2486,26 @@ function calculateStableMarketTemperature(
       code,
       changeRate,
       tradeVolumeRatio: getTradeVolumeRatio(item),
+      marketSegment: normalizeMarketSegment(item),
       observedAtMs: now
     });
   }
 
   const sampleRows = Array.from(sampleMap.values())
+    .filter(row => {
+      const observedAtMs = Number(row.observedAtMs || 0);
+      return (
+        observedAtMs > 0 &&
+        now - observedAtMs >= 0 &&
+        (!maxAgeMs || now - observedAtMs <= maxAgeMs)
+      );
+    })
     .sort((a, b) => Number(b.observedAtMs || 0) - Number(a.observedAtMs || 0))
     .slice(0, maxCount);
+
+  marketTemperatureSampleMemory.rows = new Map(
+    sampleRows.map(row => [row.code, row])
+  );
 
   state.marketTemperatureSamples = {
     date,
@@ -2406,24 +2514,59 @@ function calculateStableMarketTemperature(
     rows: sampleRows
   };
 
+  const byMarket = {};
+  const segmentMinCount = Number(
+    settings.marketTemperatureSegmentMinSampleCount || 30
+  );
+
+  for (const segment of ["KOSPI", "KOSDAQ"]) {
+    const segmentRows = sampleRows.filter(
+      row => normalizeMarketSegment(row) === segment
+    );
+
+    if (segmentRows.length < 10) continue;
+
+    byMarket[segment] = {
+      ...calculateMarketTemperature(segmentRows),
+      marketSegment: segment,
+      sampleCount: segmentRows.length,
+      sampleMode: segmentRows.length >= segmentMinCount
+        ? "SEGMENT_ACCUMULATED"
+        : "SEGMENT_ACCUMULATING",
+      readyForTrading: segmentRows.length >= segmentMinCount,
+      buyBlockedUntilReady: segmentRows.length < segmentMinCount
+    };
+  }
+
   if (sampleRows.length < minCount) {
-    const previous = state.marketTemperature || {};
+    const partial = calculateMarketTemperature(sampleRows);
+    const premarket = getPremarketFallbackScore();
+    const fallbackScore = premarket
+      ? premarket.score
+      : Number(settings.marketTemperatureAccumulatingFallbackScore || 30);
+    // 표본이 적을 때 상승 후보 중심의 순환배치가 강세로 과대평가되지 않게
+    // 장전점수 또는 보수 기본값을 상한으로 사용한다.
+    const guardedScore = Math.min(
+      Number(partial.score || 50),
+      fallbackScore
+    );
+    const guardedLevel = classifyMarketTemperatureScore(guardedScore);
 
-    if (
-      previous.checkedDate === date &&
-      previous.sampleMode === "ACCUMULATED" &&
-      Number(previous.sampleCount || 0) >= minCount
-    ) {
-      return previous;
-    }
-
-    const neutral = calculateMarketTemperature([]);
     return {
-      ...neutral,
+      ...partial,
+      ...guardedLevel,
+      score: Number(guardedScore.toFixed(1)),
       total: sampleRows.length,
       sampleCount: sampleRows.length,
-      sampleMode: "ACCUMULATING",
-      reason: `시장 누적표본 준비 ${sampleRows.length}/${minCount}개 / 중립조건 유지`
+      sampleMode: premarket ? "PREMARKET_FALLBACK" : "ACCUMULATING",
+      readyForTrading: false,
+      buyBlockedUntilReady:
+        settings.marketTemperatureAccumulatingBuyBlocked === true,
+      byMarket,
+      reason:
+        `시장 누적표본 준비 ${sampleRows.length}/${minCount}개 / ` +
+        `${premarket ? `장전 ${premarket.type} ${fallbackScore.toFixed(1)}점` : `보수기준 ${fallbackScore.toFixed(1)}점`} / ` +
+        `신규매수 대기`
     };
   }
 
@@ -2432,16 +2575,26 @@ function calculateStableMarketTemperature(
     ...calculated,
     sampleCount: sampleRows.length,
     sampleMode: "ACCUMULATED",
+    readyForTrading: true,
+    buyBlockedUntilReady: false,
+    byMarket,
     reason: `${calculated.reason} / 최근 누적 ${sampleRows.length}개`
   };
 }
 
 function getMarketAdjustedBuySettings(
   state,
-  strategyGroup
+  strategyGroup,
+  item = {}
 ) {
-  const market =
-    state.marketTemperature || {};
+  const overallMarket = state.marketTemperature || {};
+  const marketSegment = normalizeMarketSegment(item);
+  const segmentMarket = overallMarket.readyForTrading === true && marketSegment !== "ALL"
+    ? overallMarket.byMarket?.[marketSegment]
+    : null;
+  const market = segmentMarket?.readyForTrading === true
+    ? segmentMarket
+    : overallMarket;
 
   const level =
     String(market.level || "NORMAL");
@@ -2457,6 +2610,8 @@ function getMarketAdjustedBuySettings(
   const result = {
     level,
     score,
+    marketSegment:
+      market.marketSegment || marketSegment,
 
     buyBlocked: false,
 
@@ -2473,6 +2628,15 @@ function getMarketAdjustedBuySettings(
       `시장 ${market.label || "보통"} ` +
       `${score.toFixed(1)}점 / 기본조건`
   };
+
+  if (market.buyBlockedUntilReady === true) {
+    result.buyBlocked = true;
+    result.reason =
+      `시장표본 준비중 ${Number(market.sampleCount || 0)}/` +
+      `${Number(settings.marketTemperatureMinSampleCount || 120)}개 / ` +
+      `${market.label || "약세"} ${score.toFixed(1)}점 / 신규매수 대기`;
+    return result;
+  }
 
   if (
     !settings.marketConditionAdjustEnabled
@@ -3594,10 +3758,14 @@ const watchScore =
     hotLastDetectedAtMs: Number(item.hotLastDetectedAtMs || item.hotDetectedAtMs || 0),
     candidateSource: item.candidateSource || "DISCOVER",
     isLeaderWatch: item.isLeaderWatch === true,
+    marketSegment: normalizeMarketSegment(item),
     hotScore: Number(item.hotScore || 0),
     maxHotScore: Number(item.maxHotScore || item.hotScore || 0),
     openMomentumScore: Number(item.openMomentumScore || 0),
     maxMomentumScore: Number(item.maxMomentumScore || item.openMomentumScore || 0),
+    openMomentumSamples: Array.isArray(item.openMomentumSamples)
+      ? item.openMomentumSamples.slice(-15)
+      : [],
     sector: item.sector || item.sectorName || item.industry || null,
     sectorKey: item.sectorKey || null,
     sectorPeerCount: Number(item.sectorPeerCount || 0),
@@ -6438,6 +6606,40 @@ function isCoreCandidateGettingStronger(state, item, price) {
   };
 }
 
+function getVolumeMomentumSeedSamples(item = {}, current = {}) {
+  const now = Number(current.time || Date.now());
+  const windowMs = Number(settings.volumeRecentHighWindowMs || 90000);
+  const external = Array.isArray(item.openMomentumSamples)
+    ? item.openMomentumSamples
+    : [];
+  const normalized = external
+    .map(sample => ({
+      time: Number(sample.time || sample.observedAtMs || 0),
+      score: Number(item.discoverScore || 0),
+      changeRate: Number(item.changeRate || 0),
+      volumeRatio: Number(sample.volumeRatio || sample.tradeVolumeRatio || 0),
+      dayPosition: Number(sample.dayPosition || 0),
+      price: Number(sample.price || sample.currentPrice || 0)
+    }))
+    .filter(sample =>
+      sample.time > 0 &&
+      sample.price > 0 &&
+      now - sample.time >= 0 &&
+      now - sample.time <= windowMs
+    );
+
+  normalized.push(current);
+
+  const deduped = new Map();
+  for (const sample of normalized) {
+    deduped.set(`${sample.time}_${sample.price}`, sample);
+  }
+
+  return Array.from(deduped.values())
+    .sort((a, b) => Number(a.time || 0) - Number(b.time || 0))
+    .slice(-15);
+}
+
 function isVolumeCandidateGettingStronger(
   state,
   item,
@@ -6475,27 +6677,24 @@ function isVolumeCandidateGettingStronger(
 
   let history = state.volumeCandidateHistory[code];
   if (!history || !history.phase) {
+    const seedSamples = getVolumeMomentumSeedSamples(item, current);
+    const firstSeed = seedSamples[0] || current;
     history = {
       phase: "SURGE",
       time: now,
       lastSeenAtMs: now,
-      firstSeenAtMs: now,
+      firstSeenAtMs: Number(firstSeed.time || now),
       phaseStartedAtMs: now,
       phaseStartedAtText: nowText(),
-      firstPrice: current.price,
-      firstVolumeRatio: current.volumeRatio,
-      firstDayPosition: current.dayPosition,
-      peakPrice: current.price,
+      firstPrice: Number(firstSeed.price || current.price),
+      firstVolumeRatio: Number(firstSeed.volumeRatio || current.volumeRatio),
+      firstDayPosition: Number(firstSeed.dayPosition || current.dayPosition),
+      peakPrice: Math.max(...seedSamples.map(sample => Number(sample.price || 0))),
       pullbackLowPrice: null,
       previous: current,
-      samples: [current]
+      samples: seedSamples
     };
     state.volumeCandidateHistory[code] = history;
-    return {
-      pass: false,
-      phase: history.phase,
-      reason: "VOLUME 상승초기 관찰 / 가격지속 또는 눌림·재상승 대기"
-    };
   }
 
   // 단계별 제한시간을 분리한다.
@@ -6551,8 +6750,15 @@ function isVolumeCandidateGettingStronger(
   }
 
   history.samples = Array.isArray(history.samples) ? history.samples : [];
-  history.samples.push(current);
-  history.samples = history.samples.slice(-10);
+  const lastStoredSample = history.samples[history.samples.length - 1];
+  if (
+    !lastStoredSample ||
+    Number(lastStoredSample.time || 0) !== now ||
+    Number(lastStoredSample.price || 0) !== current.price
+  ) {
+    history.samples.push(current);
+  }
+  history.samples = history.samples.slice(-15);
   history.time = now;
   history.lastSeenAtMs = now;
   const previous = history.previous || history.samples[history.samples.length - 2] || current;
@@ -6587,6 +6793,45 @@ function isVolumeCandidateGettingStronger(
   const pricePersistence = observationCount > 1
     ? priceRiseTransitions / (observationCount - 1)
     : 0;
+
+  const recentHighWindowMs = Number(
+    settings.volumeRecentHighWindowMs || 90000
+  );
+  const recentHighSamples = history.samples.filter(sample =>
+    now - Number(sample.time || 0) >= 0 &&
+    now - Number(sample.time || 0) <= recentHighWindowMs
+  );
+  const recentHighPrice = recentHighSamples.length
+    ? Math.max(...recentHighSamples.map(sample => Number(sample.price || 0)))
+    : current.price;
+  const recentHighDrawdownRate = recentHighPrice > 0
+    ? ((current.price - recentHighPrice) / recentHighPrice) * 100
+    : 0;
+
+  if (
+    settings.volumeRecentHighGuardEnabled === true &&
+    recentHighSamples.length >= Number(settings.volumeRecentHighMinSampleCount || 3) &&
+    recentHighDrawdownRate <= Number(settings.volumeRecentHighMaxEntryDrawdownRate || -1.25)
+  ) {
+    history.phase = "BROKEN";
+    history.phaseStartedAtMs = now;
+    history.phaseStartedAtText = nowText();
+    history.recentHighPrice = recentHighPrice;
+    history.recentHighDrawdownRate = recentHighDrawdownRate;
+    state.volumeCandidateHistory[code] = history;
+    return {
+      pass: false,
+      phase: history.phase,
+      recentHighPrice,
+      recentHighDrawdownRate,
+      observationCount: recentHighSamples.length,
+      reason:
+        `VOLUME 최근고점 미회복 / 고점 ${recentHighPrice.toLocaleString()}원 / ` +
+        `현재 ${current.price.toLocaleString()}원 / ` +
+        `${recentHighDrawdownRate.toFixed(2)}% / ` +
+        `허용 ${Number(settings.volumeRecentHighMaxEntryDrawdownRate || -1.25).toFixed(2)}%`
+    };
+  }
   const earlyMomentumMaxChangeRate = Number(
     settings.volumeLateChaseMinChangeRate || 5.5
   );
@@ -6865,7 +7110,8 @@ function judgeCoreBuy(state, item, price) {
   const marketCondition =
     getMarketAdjustedBuySettings(
       state,
-      "CORE"
+      "CORE",
+      item
     );
 
   if (!settings.coreEnabled) {
@@ -7262,7 +7508,8 @@ function judgeVolumeBuy(state, item, price) {
   const marketCondition =
     getMarketAdjustedBuySettings(
       state,
-      "VOLUME"
+      "VOLUME",
+      item
     );
 
   if (!settings.volumeEnabled) {
@@ -9136,7 +9383,7 @@ async function processManualSellRequests() {
         continue;
       }
 
-      const sellPrice = await fetchPrice(code);
+      const sellPrice = await fetchPrice(code, "sell");
       if (!sellPrice) {
         throw new Error('현재가를 확인할 수 없어 매도하지 않았습니다.');
       }
@@ -9442,11 +9689,20 @@ if (
   }
 
   // 3. 본전 방어
+  // CORE는 최고수익만 되돌렸다는 이유로 강한 보유추세를 즉시 버리지 않는다.
+  // 점수 하락·낮은 당일위치·낮은 절대 보유점수 중 하나가 확인될 때만 보호청산한다.
+  const coreBreakEvenTrendWeak = !isCore || (
+    holdingScoreDiff <= Number(settings.coreBreakEvenWeakMinScoreDrop || -10) ||
+    currentDayPosition <= Number(settings.coreBreakEvenWeakMaxDayPositionRate || 60) ||
+    holdingScore <= Number(settings.coreBreakEvenWeakMaxHoldingScore || 80)
+  );
+
   if (
     highestProfitRate >=
       breakEvenStartRate &&
     profitRate <=
-      breakEvenProtectRate
+      breakEvenProtectRate &&
+    coreBreakEvenTrendWeak
   ) {
     return {
       type:
@@ -9459,6 +9715,10 @@ if (
         `본전방어 / ` +
         `최고수익 ${highestProfitRate.toFixed(2)}% / ` +
         `현재수익 ${profitRate.toFixed(2)}% / ` +
+        (isCore
+          ? `보유점수 ${holdingScore.toFixed(1)} / 점수변화 ${holdingScoreDiff.toFixed(1)} / ` +
+            `당일위치 ${currentDayPosition.toFixed(1)}% / `
+          : "") +
         `시작기준 ${breakEvenStartRate.toFixed(2)}% / ` +
         `방어기준 ${breakEvenProtectRate.toFixed(2)}%`
     };
@@ -10484,7 +10744,8 @@ try {
 
         tradeVolumeRatio:
           holding.buyTradeVolumeRatio || 0
-      }
+      },
+      "sell"
     );
 
   price = Number(
@@ -10932,10 +11193,12 @@ async function start() {
 
   async function runSellSafely() {
     /*
-     * 매도 점검은 매수 전체검색보다 우선해야 하지만,
-     * 같은 상태파일을 동시에 저장하지 않도록 겹침은 막는다.
+     * 매도 점검은 BUY/후보 재평가와 독립 실행한다.
+     * saveState의 3-way 병합과 포지션 완료키가 동시 저장·중복매도를 보호하므로,
+     * 긴 전체검색 때문에 손절 신호가 수십 초 밀리는 위험을 더 우선해서 제거한다.
+     * 단, SELL끼리는 반드시 직렬화한다.
      */
-    if (isTraderBusy()) {
+    if (sellRunning) {
       const wasAlreadyPending = sellPending;
       sellPending = true;
       if (!sellPendingSinceMs) {
@@ -10943,7 +11206,7 @@ async function start() {
       }
       if (!wasAlreadyPending) {
         console.log(
-          "[SELL LOOP] 다른 작업 진행중 / 종료 직후 우선 점검 예약"
+          "[SELL LOOP] 직전 매도점검 진행중 / 종료 직후 재점검 예약"
         );
       }
       return;
@@ -11099,5 +11362,13 @@ module.exports = {
 
   setServerAutoEnabled,
   loadState,
-  saveState
+  saveState,
+
+  __test: {
+    calculateStableMarketTemperature,
+    getMarketAdjustedBuySettings,
+    getSellSignal,
+    isVolumeCandidateGettingStronger,
+    normalizeMarketSegment
+  }
 };

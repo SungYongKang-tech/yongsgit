@@ -47,6 +47,9 @@ main{max-width:960px;margin:0 auto;padding:10px 8px 50px}
 .matchBox{margin:8px 0 5px;text-align:center;font-size:18px;font-weight:900;line-height:1.35;min-height:24px}
 .sidePick{display:flex;gap:7px;justify-content:center;margin:5px 0 3px}.sideBtn{display:none;flex:1;max-width:360px;border:0;border-radius:12px;padding:11px 8px;font-size:17px;font-weight:950;cursor:pointer;color:#fff;box-shadow:0 5px 16px rgba(0,0,0,.12)}
 .sideBtn.left{background:#2563eb}.sideBtn.right{background:#ef4444}.subActions{display:flex;justify-content:center;gap:6px;margin-top:5px}
+.sideBtn.live{background:#7c3aed}.subActions .btn{flex:0 1 auto}
+.liveResultSummary{margin:12px 0;padding:13px;border-radius:13px;background:#f8fafc;border:1px solid #dbeafe;text-align:center}
+.liveResultTeams{font-size:17px;font-weight:950;color:#1e3a8a;line-height:1.45}.liveResultScore{margin-top:7px;font-size:30px;font-weight:950;color:#111827}.liveResultSets{margin-top:6px;color:#64748b;font-size:13px;font-weight:800;line-height:1.45}
 .notice{position:fixed;left:12px;right:12px;bottom:18px;z-index:60;display:none;max-width:520px;margin:0 auto;padding:11px 12px;border-radius:12px;background:#111827;color:#fff;font-size:14px;text-align:center;box-shadow:0 10px 24px rgba(0,0,0,.2)}
 .empty{text-align:center;color:var(--muted);padding:22px 14px;background:#fff;border-radius:14px;box-shadow:var(--shadow);line-height:1.6}
 #logs{background:#fff;border-radius:12px;box-shadow:var(--shadow);padding:8px 10px}.log-item{border-bottom:1px solid #e5e7eb;padding:9px 34px 9px 2px;position:relative}.log-item:last-child{border-bottom:none}.log-time{display:block;font-size:13px;color:#334155;margin-bottom:4px;font-weight:850}.log-match{font-size:15px;font-weight:850;line-height:1.45}.log-win{color:#dc2626;font-weight:950}.delete-btn{position:absolute;right:6px;top:8px;border:0;background:transparent;color:#94a3b8;cursor:pointer;font-size:17px}
@@ -88,8 +91,12 @@ main{max-width:960px;margin:0 auto;padding:10px 8px 50px}
         <div class="sidePick">
           <button id="leftWinBtn" class="sideBtn left"></button>
           <button id="rightWinBtn" class="sideBtn right"></button>
+          <button id="liveMatchBtn" class="sideBtn live">경기 진행</button>
         </div>
-        <div class="subActions"><button id="clearSelected" class="btn">선택 초기화</button></div>
+        <div class="subActions">
+          <button id="clearSelected" class="btn">선택 초기화</button>
+          <button id="openScoreboardBtn" class="btn">📺 전광판 열기</button>
+        </div>
       </div>
       <h2>📝 최근 경기</h2>
       <div id="logs"></div>
@@ -153,9 +160,28 @@ main{max-width:960px;margin:0 auto;padding:10px 8px 50px}
   </div>
 </div>
 
+<div id="liveResultModal" class="modalBackdrop" aria-hidden="true">
+  <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="liveResultTitle">
+    <div class="modalHeader">
+      <h2 id="liveResultTitle">복식 경기 결과</h2>
+    </div>
+    <p class="helper">경기 결과를 현재 친선경기 성적에 반영할지 선택하세요.</p>
+    <div class="liveResultSummary">
+      <div id="liveResultTeams" class="liveResultTeams">-</div>
+      <div id="liveResultScore" class="liveResultScore">0 : 0</div>
+      <div id="liveResultSets" class="liveResultSets"></div>
+    </div>
+    <div class="createActions">
+      <button id="discardLiveResultBtn" class="btn">저장 없이 닫기</button>
+      <button id="saveLiveResultBtn" class="btn ok">경기결과 저장</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-import { getDatabase, ref, get, onValue, push, set, remove, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { getDatabase, ref, get, onValue, push, set, remove, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey:"AIzaSyC0prJtmZ25JTLsG9R9JRCapCtOqH2PGaA",
@@ -169,6 +195,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
 const friendliesRef = ref(db,"friendlies");
 const activeFriendlyIdRef = ref(db,"config/activeFriendlyId");
 const legacyMembersRef = ref(db,"members");
@@ -184,6 +211,12 @@ let selectedNames = [];
 let selectedAdminPlayerId = null;
 let isAdmin = false;
 let stopCurrentEvent = null;
+let authReadyPromise = null;
+let liveStartBusy = false;
+let pendingLiveResult = null;
+
+const LIVE_MATCH_TTL_MS = 10*60*1000;
+const LIVE_ACTIVE_STATUSES = new Set(["setup","playing","awaiting_end"]);
 
 const $ = id => document.getElementById(id);
 const escapeHtml = str => String(str ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
@@ -197,6 +230,20 @@ const isEditable = () => Boolean(currentEventId && currentMeta && currentMeta.st
 function showNotice(message){
   const box=$("notice"); box.textContent=message; box.style.display="block";
   clearTimeout(showNotice.timer); showNotice.timer=setTimeout(()=>box.style.display="none",1900);
+}
+function ensureAuthReady(){
+  if(authReadyPromise) return authReadyPromise;
+  authReadyPromise=new Promise(resolve=>{
+    const unsubscribe=onAuthStateChanged(auth,user=>{
+      if(user){ unsubscribe(); resolve(user); }
+    });
+    if(!auth.currentUser) signInAnonymously(auth).catch(error=>{
+      unsubscribe();
+      console.warn("익명 로그인 없이 기존 Firebase 권한으로 연결합니다.",error);
+      resolve(null);
+    });
+  });
+  return authReadyPromise;
 }
 function showPanel(id){
   ["mainPanel","historyPanel","adminPanel"].forEach(panelId => $(panelId).classList.toggle("active",panelId===id));
@@ -325,9 +372,9 @@ function renderTiles(){
   document.querySelectorAll("#playerTiles .chip").forEach(btn=>btn.addEventListener("click",()=>togglePlayer(btn.dataset.name)));
 }
 function renderMatchDisplay(){
-  const mode=getMode(); const {left,right}=getSides(); const leftBtn=$("leftWinBtn"); const rightBtn=$("rightWinBtn");
-  if(!selectedNames.length){ $("matchDisplay").innerHTML=""; leftBtn.style.display="none"; rightBtn.style.display="none"; return; }
-  if(!mode){ $("matchDisplay").innerHTML=selectedNames.map(escapeHtml).join(" , "); leftBtn.style.display="none"; rightBtn.style.display="none"; return; }
+  const mode=getMode(); const {left,right}=getSides(); const leftBtn=$("leftWinBtn"); const rightBtn=$("rightWinBtn"); const liveBtn=$("liveMatchBtn");
+  if(!selectedNames.length){ $("matchDisplay").innerHTML=""; leftBtn.style.display="none"; rightBtn.style.display="none"; liveBtn.style.display="none"; return; }
+  if(!mode){ $("matchDisplay").innerHTML=selectedNames.map(escapeHtml).join(" , "); leftBtn.style.display="none"; rightBtn.style.display="none"; liveBtn.style.display="none"; return; }
 
   const playerInfo=name=>playerArray().find(p=>p.name===name);
   const leftText=left.map(escapeHtml).join(", ");
@@ -355,6 +402,81 @@ function renderMatchDisplay(){
   rightBtn.textContent=`${rightText} 승`;
   leftBtn.style.display="block";
   rightBtn.style.display="block";
+  liveBtn.style.display=mode==="double" ? "block" : "none";
+}
+
+function calculateDoublesHandicap(left,right){
+  const infoByName=new Map(playerArray().map(player=>[player.name,player]));
+  const levelsA=left.map(name=>Number(infoByName.get(name)?.bu));
+  const levelsB=right.map(name=>Number(infoByName.get(name)?.bu));
+  const levelsValid=[...levelsA,...levelsB].every(level=>Number.isInteger(level)&&level>=1&&level<=12);
+  const sumA=levelsValid ? levelsA.reduce((sum,level)=>sum+level,0) : 0;
+  const sumB=levelsValid ? levelsB.reduce((sum,level)=>sum+level,0) : 0;
+  if(!levelsValid || sumA===sumB) return {sumA,sumB,side:"",points:0,levelsValid};
+  const side=sumA>sumB ? "A" : "B";
+  const points=Math.min(4,Math.abs(sumA-sumB));
+  return {sumA,sumB,side,points,levelsValid,formula:"team-sum-difference-max-4"};
+}
+function generateRoomCode(){
+  if(globalThis.crypto?.getRandomValues){
+    const value=new Uint32Array(1); crypto.getRandomValues(value);
+    return String(100000+(value[0]%900000));
+  }
+  return String(Math.floor(100000+Math.random()*900000));
+}
+async function startLiveDoublesMatch(){
+  if(liveStartBusy) return;
+  if(!isEditable()) return showNotice("입력 중인 친선경기에서만 진행할 수 있습니다");
+  if(getMode()!=="double") return showNotice("복식 선수 4명을 선택하세요");
+  liveStartBusy=true;
+  const button=$("liveMatchBtn"); button.disabled=true; button.textContent="연결 준비 중";
+  try{
+    await ensureAuthReady();
+    const {left,right}=getSides();
+    const playerInfo=new Map(playerArray().map(player=>[player.name,player]));
+    const teamByName={};
+    const playerBu={};
+    [...left,...right].forEach(name=>{
+      teamByName[name]=playerInfo.get(name)?.team||"";
+      playerBu[name]=Number(playerInfo.get(name)?.bu??99);
+    });
+    const handicap=calculateDoublesHandicap(left,right);
+    let createdRoom="";
+    for(let attempt=0;attempt<10&&!createdRoom;attempt+=1){
+      const code=generateRoomCode();
+      const now=Date.now();
+      const liveState={
+        schemaVersion:2,
+        eventId:currentEventId,
+        eventTitle:currentMeta?.displayTitle||"친선경기",
+        teams:{A:[...left],B:[...right]},
+        teamByName,
+        playerBu,
+        handicap,
+        status:"setup",
+        scoreA:0,scoreB:0,setWinsA:0,setWinsB:0,setNumber:1,setScores:[],history:[],
+        bestOf:5,gamesToWin:3,matchComplete:false,winnerSide:"",sidesSwapped:false,
+        createdAt:now,updatedAt:now,lastRefereeSeenAt:now
+      };
+      const result=await runTransaction(ref(db,`team_live_matches/${code}`),current=>current===null?liveState:undefined,{applyLocally:false});
+      if(result.committed) createdRoom=code;
+    }
+    if(!createdRoom) throw new Error("사용 가능한 경기코드를 만들지 못했습니다.");
+    try{
+      await set(ref(db,"config/currentDoubleRoom"),{room:createdRoom,updatedAt:Date.now()});
+    }catch(pointerError){
+      console.warn("최근 복식경기 연결정보 저장 생략:",pointerError);
+    }
+    const url=new URL("./doubles-match.html",location.href);
+    url.searchParams.set("room",createdRoom);
+    url.searchParams.set("role","referee");
+    location.href=url.toString();
+  }catch(error){
+    console.error(error);
+    alert("복식 경기 진행 화면을 열지 못했습니다: "+(error?.message||error));
+  }finally{
+    liveStartBusy=false; button.disabled=false; button.textContent="경기 진행";
+  }
 }
 async function saveByWinner(side){
   if(!isEditable()) return showNotice("최종 저장된 경기는 수정할 수 없습니다");
@@ -366,6 +488,153 @@ async function saveByWinner(side){
     winnerTeams:winners.map(teamForName),loserTeams:losers.map(teamForName),teamByName,dateKey:localDateKey(),monthKey:monthKey(),createdAt:now
   });
   selectedNames=[]; renderTiles(); renderMatchDisplay(); showNotice("저장되었습니다");
+}
+
+function clearLiveRoomQuery(){
+  const url=new URL(location.href);
+  url.searchParams.delete("liveRoom");
+  history.replaceState(null,"",`${url.pathname}${url.search}${url.hash}`);
+}
+function closeLiveResultModal(){
+  $("liveResultModal").classList.remove("open");
+  $("liveResultModal").setAttribute("aria-hidden","true");
+}
+async function clearCurrentDoubleRoomPointer(roomCode){
+  try{
+    await runTransaction(ref(db,"config/currentDoubleRoom"),current=>current?.room===roomCode?null:current,{applyLocally:false});
+  }catch(error){
+    console.warn("최근 복식경기 연결정보 정리 생략:",error);
+  }
+}
+async function removeLiveRoom(roomCode){
+  await set(ref(db,`team_live_matches/${roomCode}`),null);
+  await clearCurrentDoubleRoomPointer(roomCode);
+}
+function showReturnedLiveResult(roomCode,state){
+  pendingLiveResult={room:roomCode,state};
+  const teamA=(state.teams?.A||[]).join(" · ")||"A팀";
+  const teamB=(state.teams?.B||[]).join(" · ")||"B팀";
+  $("liveResultTeams").textContent=`${teamA} vs ${teamB}`;
+  $("liveResultScore").textContent=`${Number(state.setWinsA||0)} : ${Number(state.setWinsB||0)}`;
+  const setScores=Array.isArray(state.setScores)?state.setScores:[];
+  $("liveResultSets").textContent=setScores.length
+    ? setScores.map((score,index)=>`${index+1}세트 ${Number(score.a||0)}:${Number(score.b||0)}`).join(" · ")
+    : "세트별 점수 없음";
+  $("liveResultModal").classList.add("open");
+  $("liveResultModal").setAttribute("aria-hidden","false");
+}
+async function loadReturnedLiveResult(){
+  const roomCode=(new URLSearchParams(location.search).get("liveRoom")||"").replace(/\D/g,"").slice(0,6);
+  if(!/^\d{6}$/.test(roomCode)) return;
+  const snapshot=await get(ref(db,`team_live_matches/${roomCode}`));
+  if(!snapshot.exists()){
+    clearLiveRoomQuery();
+    showNotice("종료된 실시간 경기 자료가 이미 정리되었습니다");
+    return;
+  }
+  const state=snapshot.val()||{};
+  if(state.status!=="finished" || !state.matchComplete){
+    clearLiveRoomQuery();
+    showNotice("아직 종료되지 않은 경기입니다");
+    return;
+  }
+  const savedSnapshot=state.eventId
+    ? await get(ref(db,`friendlies/${state.eventId}/matches/live-${roomCode}`))
+    : null;
+  if(savedSnapshot?.exists()){
+    await removeLiveRoom(roomCode);
+    clearLiveRoomQuery();
+    showNotice("이미 저장된 복식 경기입니다");
+    return;
+  }
+  showReturnedLiveResult(roomCode,state);
+}
+async function saveReturnedLiveResult(){
+  if(!pendingLiveResult) return;
+  const {room:roomCode,state}=pendingLiveResult;
+  const eventId=String(state.eventId||"");
+  if(!eventId) return alert("이 결과가 속한 친선경기 정보가 없습니다.");
+  const metaSnapshot=await get(ref(db,`friendlies/${eventId}/meta`));
+  const meta=metaSnapshot.val()||{};
+  if(!metaSnapshot.exists() || meta.status==="finalized" || meta.locked===true){
+    return alert("해당 친선경기가 최종 저장되어 결과를 추가할 수 없습니다.\n필요하면 저장 없이 닫기를 선택하세요.");
+  }
+  const sideA=Array.isArray(state.teams?.A)?state.teams.A:[];
+  const sideB=Array.isArray(state.teams?.B)?state.teams.B:[];
+  const winnerSide=state.winnerSide==="B"?"B":"A";
+  const winners=winnerSide==="A"?sideA:sideB;
+  const losers=winnerSide==="A"?sideB:sideA;
+  const teamByName=state.teamByName||{};
+  const createdAt=Number(state.endedAt||state.completedAt||Date.now());
+  const resultRecord={
+    type:"double",mode:"double",
+    winnerNames:[...winners],loserNames:[...losers],
+    namesA:[...winners],namesB:[...losers],winnerSide:"A",loserSide:"B",
+    winnerTeams:winners.map(name=>teamByName[name]||""),
+    loserTeams:losers.map(name=>teamByName[name]||""),teamByName,
+    dateKey:String(meta.date||localDateKey()),monthKey:String(meta.date||localDateKey()).slice(0,7),createdAt,
+    liveRoom:roomCode,liveSetWinsA:Number(state.setWinsA||0),liveSetWinsB:Number(state.setWinsB||0),
+    liveWinnerSide:winnerSide,originalNamesA:[...sideA],originalNamesB:[...sideB],
+    setScores:Array.isArray(state.setScores)?state.setScores:[]
+  };
+  const saveButton=$("saveLiveResultBtn"); const discardButton=$("discardLiveResultBtn");
+  saveButton.disabled=true; discardButton.disabled=true;
+  try{
+    await update(ref(db),{
+      [`friendlies/${eventId}/matches/live-${roomCode}`]:resultRecord,
+      [`team_live_matches/${roomCode}`]:null
+    });
+    await clearCurrentDoubleRoomPointer(roomCode);
+    pendingLiveResult=null; closeLiveResultModal(); clearLiveRoomQuery();
+    selectedNames=[]; renderTiles(); renderMatchDisplay(); showNotice("복식 경기결과가 저장되었습니다");
+  }catch(error){
+    console.error(error);
+    alert("경기결과 저장에 실패했습니다: "+(error?.message||error));
+  }finally{
+    saveButton.disabled=false; discardButton.disabled=false;
+  }
+}
+async function discardReturnedLiveResult(){
+  if(!pendingLiveResult) return;
+  if(!confirm("이 복식 경기결과를 성적에 저장하지 않고 닫을까요?\n실시간 점수 자료도 함께 정리됩니다.")) return;
+  const {room:roomCode}=pendingLiveResult;
+  const saveButton=$("saveLiveResultBtn"); const discardButton=$("discardLiveResultBtn");
+  saveButton.disabled=true; discardButton.disabled=true;
+  try{
+    await removeLiveRoom(roomCode);
+    pendingLiveResult=null; closeLiveResultModal(); clearLiveRoomQuery();
+    selectedNames=[]; renderTiles(); renderMatchDisplay(); showNotice("저장하지 않고 닫았습니다");
+  }catch(error){
+    console.error(error);
+    alert("실시간 경기 정리에 실패했습니다: "+(error?.message||error));
+  }finally{
+    saveButton.disabled=false; discardButton.disabled=false;
+  }
+}
+function latestLiveActivity(state){
+  return Math.max(Number(state?.lastRefereeSeenAt||0),Number(state?.updatedAt||0),Number(state?.createdAt||0));
+}
+async function cleanupExpiredLiveMatches(){
+  const snapshot=await get(ref(db,"team_live_matches"));
+  if(!snapshot.exists()) return;
+  const now=Date.now();
+  for(const [roomCode,state] of Object.entries(snapshot.val()||{})){
+    const activeExpired=LIVE_ACTIVE_STATUSES.has(state?.status) && now-latestLiveActivity(state)>LIVE_MATCH_TTL_MS;
+    const finishedAt=Number(state?.endedAt||state?.completedAt||state?.updatedAt||0);
+    const finishedExpired=state?.status==="finished" && finishedAt>0 && now-finishedAt>LIVE_MATCH_TTL_MS;
+    if(!activeExpired&&!finishedExpired) continue;
+    try{
+      await runTransaction(ref(db,`team_live_matches/${roomCode}`),current=>{
+        if(!current) return;
+        const currentActiveExpired=LIVE_ACTIVE_STATUSES.has(current.status) && Date.now()-latestLiveActivity(current)>LIVE_MATCH_TTL_MS;
+        const currentFinishedAt=Number(current.endedAt||current.completedAt||current.updatedAt||0);
+        const currentFinishedExpired=current.status==="finished" && currentFinishedAt>0 && Date.now()-currentFinishedAt>LIVE_MATCH_TTL_MS;
+        return currentActiveExpired||currentFinishedExpired ? null : undefined;
+      },{applyLocally:false});
+    }catch(error){
+      console.warn(`실시간 경기 ${roomCode} 자동 정리 실패:`,error);
+    }
+  }
 }
 
 function renderLogs(){
@@ -529,6 +798,10 @@ async function finalizeFriendly(){
 
 $("leftWinBtn").addEventListener("click",()=>saveByWinner("left"));
 $("rightWinBtn").addEventListener("click",()=>saveByWinner("right"));
+$("liveMatchBtn").addEventListener("click",startLiveDoublesMatch);
+$("openScoreboardBtn").addEventListener("click",()=>{location.href="./doubles-match.html?role=display&auto=1"});
+$("saveLiveResultBtn").addEventListener("click",saveReturnedLiveResult);
+$("discardLiveResultBtn").addEventListener("click",discardReturnedLiveResult);
 $("clearSelected").addEventListener("click",()=>{selectedNames=[];renderTiles();renderMatchDisplay()});
 $("showMainBtn").addEventListener("click",()=>showPanel("mainPanel"));
 $("showHistoryBtn").addEventListener("click",()=>{closeCreateModal();showPanel("historyPanel")});
@@ -551,11 +824,14 @@ $("createEventBtn").addEventListener("click",createFriendly);
 $("finalizeBtn").addEventListener("click",finalizeFriendly);
 
 async function init(){
+  await ensureAuthReady();
   $("eventDate").value=localDateKey();
   await ensureLegacyFriendly();
   onValue(friendliesRef,snap=>{friendlies=snap.val()||{};renderHistory()});
   onValue(activeFriendlyIdRef,snap=>subscribeCurrentEvent(snap.exists()?String(snap.val()):""));
   if(new URLSearchParams(location.search).get("view")==="history") showPanel("historyPanel");
+  await loadReturnedLiveResult();
+  cleanupExpiredLiveMatches().catch(error=>console.warn("실시간 경기 자동 정리 확인 실패:",error));
 }
 init().catch(error=>{console.error(error);alert("자료를 불러오는 중 오류가 발생했습니다.")});
 </script>

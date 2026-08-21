@@ -80,6 +80,37 @@ try {
   console.error("stocks.json 로드 실패:", error.message);
 }
 
+const STOCK_MASTER_BY_CODE = new Map(
+  STOCK_MASTER.map(stock => [
+    String(stock.code || stock.stk_cd || "").replace(/^A/i, "").padStart(6, "0"),
+    stock
+  ])
+);
+
+function getStockMarketMetadata(code, fallback = {}) {
+  const stock = STOCK_MASTER_BY_CODE.get(
+    String(code || "").replace(/^A/i, "").padStart(6, "0")
+  ) || {};
+
+  const marketSegment =
+    stock.marketSegment ??
+    stock.market ??
+    stock.marketType ??
+    stock.marketName ??
+    stock.exchange ??
+    fallback.marketSegment ??
+    fallback.market ??
+    fallback.marketType ??
+    fallback.marketName ??
+    fallback.exchange ??
+    null;
+
+  return {
+    marketSegment,
+    market: marketSegment
+  };
+}
+
 const PAPER_STATE_FILE = path.join(
   __dirname,
   "paper-state-core.json"
@@ -202,15 +233,11 @@ function parseSettingValue(source, key) {
     return number;
   }
 
-  const multiplication = raw.match(
-    /^([\d.]+)\s*\*\s*([\d.]+)$/
-  );
-
-  if (multiplication) {
-    return (
-      Number(multiplication[1]) *
-      Number(multiplication[2])
-    );
+  if (/^[\d.]+(?:\s*\*\s*[\d.]+)+$/.test(raw)) {
+    return raw
+      .split("*")
+      .map(value => Number(value.trim()))
+      .reduce((product, value) => product * value, 1);
   }
 
   return raw;
@@ -238,6 +265,9 @@ function getCurrentTradingSettings() {
     "coreStopLossRate",
     "coreBreakEvenStartRate",
     "coreBreakEvenProtectRate",
+    "coreBreakEvenWeakMaxHoldingScore",
+    "coreBreakEvenWeakMaxDayPositionRate",
+    "coreBreakEvenWeakMinScoreDrop",
     "coreFirstTakeProfitRate",
     "coreTrailingStartRate",
     "coreTrailingStopRate",
@@ -254,6 +284,10 @@ function getCurrentTradingSettings() {
     "volumeLateChaseBlockEnabled",
     "volumeLateChaseMinChangeRate",
     "volumeLateChaseMinCandidateStrengthScore",
+    "volumeRecentHighGuardEnabled",
+    "volumeRecentHighWindowMs",
+    "volumeRecentHighMinSampleCount",
+    "volumeRecentHighMaxEntryDrawdownRate",
     "volumePullbackEntryEnabled",
     "volumePullbackMinRate",
     "volumePullbackMaxRate",
@@ -267,6 +301,11 @@ function getCurrentTradingSettings() {
     "volumeFirstTakeProfitRate",
     "volumeTrailingStartRate",
     "volumeTrailingStopRate",
+    "marketTemperatureMinSampleCount",
+    "marketTemperatureSegmentMinSampleCount",
+    "marketTemperatureSampleMaxAgeMs",
+    "marketTemperatureAccumulatingBuyBlocked",
+    "marketTemperatureAccumulatingFallbackScore",
     "sellLoopMs",
     "minHoldMinutes",
     "lossExitBuyCooldownMinutes",
@@ -1216,6 +1255,7 @@ function normalizeHotRankRow(row = {}, source) {
   return {
     code,
     name: row.stk_nm || row.name || code,
+    ...getStockMarketMetadata(code, row),
     currentPrice,
     price: currentPrice,
     changeRate,
@@ -1566,6 +1606,7 @@ app.get("/api/discover", async (req, res) => {
 
         items.push({
           ...priceData,
+          ...getStockMarketMetadata(stock.code, stock),
           ...scoreInfo
         });
       } catch (err) {
@@ -2260,7 +2301,8 @@ async function fetchCurrentPriceFromKiwoom(code) {
         },
         timeout: KIWOOM_PRICE_REQUEST_TIMEOUT_MS
       }
-    )
+    ),
+    { priority: 90, source: "holding-refresh" }
   );
 
   const data = result.data;
@@ -2318,18 +2360,26 @@ await new Promise((resolve) => setTimeout(resolve, 1200));
 
 const priceCache = {};
 let lastKiwoomPriceRequestAt = 0;
-let kiwoomPriceRequestQueue = Promise.resolve();
-let kiwoomPriceQueueDepth = 0;
+const kiwoomPriceRequestQueue = [];
+let kiwoomPriceWorkerRunning = false;
+let kiwoomPriceRequestSequence = 0;
 
 /*
  * 기존 waitKiwoomPriceLimit은 동시에 들어온 여러 요청이 같은 시간만
- * 기다린 뒤 한꺼번에 출발할 수 있었다. 아래 큐는 ka10001 요청을 실제로
- * 한 건씩 실행해 최소 350ms 간격을 보장한다.
+ * 기다린 뒤 한꺼번에 출발할 수 있었다. 아래 우선순위 큐는 ka10001 요청을
+ * 한 건씩 실행하면서 SELL > WAVE > 일반분석 > HOT 순서를 보장한다.
  */
-async function runQueuedKiwoomPriceRequest(requestTask) {
-  kiwoomPriceQueueDepth++;
+async function drainKiwoomPriceRequestQueue() {
+  if (kiwoomPriceWorkerRunning) return;
+  kiwoomPriceWorkerRunning = true;
 
-  const execute = async () => {
+  try {
+    while (kiwoomPriceRequestQueue.length > 0) {
+      kiwoomPriceRequestQueue.sort((a, b) =>
+        Number(b.priority || 0) - Number(a.priority || 0) ||
+        Number(a.sequence || 0) - Number(b.sequence || 0)
+      );
+      const request = kiwoomPriceRequestQueue.shift();
     const minGapMs = 350;
     const now = Date.now();
     const waitMs = Math.max(0, minGapMs - (now - lastKiwoomPriceRequestAt));
@@ -2339,37 +2389,59 @@ async function runQueuedKiwoomPriceRequest(requestTask) {
     }
 
     lastKiwoomPriceRequestAt = Date.now();
-    return requestTask();
-  };
-
-  const queuedRequest = kiwoomPriceRequestQueue
-    .catch(() => undefined)
-    .then(execute);
-
-  kiwoomPriceRequestQueue = queuedRequest.then(
-    () => undefined,
-    () => undefined
-  );
-
-  try {
-    return await queuedRequest;
+      try {
+        request.resolve(await request.task());
+      } catch (err) {
+        request.reject(err);
+      }
+    }
   } finally {
-    kiwoomPriceQueueDepth = Math.max(0, kiwoomPriceQueueDepth - 1);
+    kiwoomPriceWorkerRunning = false;
+    // 마지막 요청 완료 직후 새 요청이 들어온 극단적인 경계도 놓치지 않는다.
+    if (kiwoomPriceRequestQueue.length > 0) {
+      void drainKiwoomPriceRequestQueue();
+    }
   }
 }
 
+function runQueuedKiwoomPriceRequest(requestTask, options = {}) {
+  return new Promise((resolve, reject) => {
+    kiwoomPriceRequestQueue.push({
+      task: requestTask,
+      resolve,
+      reject,
+      priority: Number(options.priority || 0),
+      source: String(options.source || "default"),
+      sequence: ++kiwoomPriceRequestSequence,
+      queuedAtMs: Date.now()
+    });
+    void drainKiwoomPriceRequestQueue();
+  });
+}
+
 function getKiwoomPriceQueueDepth() {
-  return Number(kiwoomPriceQueueDepth || 0);
+  return kiwoomPriceRequestQueue.length + (kiwoomPriceWorkerRunning ? 1 : 0);
+}
+
+function getKiwoomPricePriority(sourceValue) {
+  const source = String(sourceValue || "core").toLowerCase();
+  if (["sell", "manual-sell", "risk"].includes(source)) return 100;
+  if (source === "wave") return 80;
+  if (source === "hot") return 0;
+  return 40;
 }
 
 app.get("/api/price", async (req, res) => {
   try {
     const token = getSavedToken();
     const code = String(req.query.code || "").trim();
+    const requestSource = String(req.query.source || "core").toLowerCase();
     const priceRequestTimeoutMs =
-      String(req.query.source || "") === "hot"
+      requestSource === "hot"
         ? HOT_KIWOOM_PRICE_TIMEOUT_MS
         : KIWOOM_PRICE_REQUEST_TIMEOUT_MS;
+    const requestPriority = getKiwoomPricePriority(requestSource);
+    const freshCacheMaxAgeMs = requestSource === "sell" ? 1500 : 8000;
 
     if (!code) {
       return res.status(400).json({ message: "종목코드가 없습니다." });
@@ -2377,7 +2449,7 @@ app.get("/api/price", async (req, res) => {
 
     const cached = priceCache[code];
 
-if (cached && Date.now() - cached.cachedAt <= 8000) {
+if (cached && Date.now() - cached.cachedAt <= freshCacheMaxAgeMs) {
   return res.json({
     ...cached.data,
     isCached: true
@@ -2398,7 +2470,8 @@ if (cached && Date.now() - cached.cachedAt <= 8000) {
           },
           timeout: priceRequestTimeoutMs
         }
-      )
+      ),
+      { priority: requestPriority, source: requestSource }
     );
 
 let data = result.data;
@@ -2420,7 +2493,8 @@ if (isTokenError(data)) {
         },
         timeout: priceRequestTimeoutMs
       }
-    )
+    ),
+    { priority: requestPriority, source: requestSource }
   );
 
   data = result.data;
@@ -2448,14 +2522,16 @@ res.json(responseData);
 
   } catch (error) {
   const code = String(req.query.code || "").trim();
+  const requestSource = String(req.query.source || "core").toLowerCase();
   const stale = priceCache[code];
   const staleAgeMs = stale ? Date.now() - Number(stale.cachedAt || 0) : Infinity;
+  const staleCacheMaxAgeMs = requestSource === "sell" ? 5 * 1000 : 30 * 1000;
 
   /*
-   * 키움 429·일시적 네트워크 실패 시 최근 30초 이내 캐시가 있으면
-   * 오류 대신 캐시값을 반환해 OPEN/HOT 판단 전체가 중단되지 않게 한다.
+   * 키움 429·일시적 네트워크 실패 시 전략별 허용범위의 캐시를 반환한다.
+   * SELL은 위험관리를 위해 5초, 일반 분석은 기존 30초까지만 허용한다.
    */
-  if (stale && staleAgeMs <= 30 * 1000) {
+  if (stale && staleAgeMs <= staleCacheMaxAgeMs) {
     console.warn(
       `[/api/price 캐시대체] ${code} / ` +
       `${error.response?.status || error.message} / ` +
