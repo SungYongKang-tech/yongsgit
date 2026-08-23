@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7a9b8" />
+  <meta name="application-name" content="민주용돈" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="민주용돈" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/png" href="./minjumoney.png" />
+  <link rel="apple-touch-icon" href="./minjumoney.png" />
+
+  <title>민주용돈</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #f6f7fb;
+      color: #111827;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 14px 12px 32px;
+    }
+
+    h1 {
+      margin: 10px 0 10px;
+      text-align: center;
+      font-size: 26px;
+      letter-spacing: -0.5px;
+    }
+
+    .install-row {
+      display: flex;
+      justify-content: center;
+      margin: 0 0 12px;
+    }
+
+    .install-btn {
+      display: none;
+      width: auto;
+      min-height: 38px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: #fff0f3;
+      color: #c2415d;
+      border: 1px solid #fecdd6;
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 3px 10px rgba(194,65,93,0.08);
+    }
+
+    .balance-card {
+      background: #111827;
+      color: #fff;
+      border-radius: 18px;
+      padding: 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    }
+
+    .balance-label {
+      font-size: 13px;
+      opacity: 0.72;
+      margin-bottom: 6px;
+    }
+
+    .balance-value {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -1px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .summary-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .summary-card .label {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+
+    .summary-card .value {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .income-text { color: #2563eb; }
+    .expense-text { color: #ef4444; }
+
+    .input-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+
+    .input-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .full { grid-column: 1 / -1; }
+
+    input, select, button {
+      width: 100%;
+      min-height: 46px;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+
+    input, select {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      padding: 10px 11px;
+      outline: none;
+    }
+
+    input:focus, select:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.10);
+    }
+
+    button {
+      border: 0;
+      padding: 10px 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .add-btn {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .table-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .table-title {
+      padding: 12px 12px 8px;
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      min-width: 520px;
+    }
+
+    th, td {
+      border-top: 1px solid #e5e7eb;
+      padding: 10px 6px;
+      font-size: 13px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    th {
+      background: #f9fafb;
+      color: #4b5563;
+      font-weight: 800;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    th:nth-child(1), td:nth-child(1) { width: 72px; }
+    th:nth-child(2), td:nth-child(2) { width: 140px; text-align: left; }
+    th:nth-child(3), td:nth-child(3) { width: 90px; }
+    th:nth-child(4), td:nth-child(4) { width: 90px; }
+    th:nth-child(5), td:nth-child(5) { width: 100px; }
+    th:nth-child(6), td:nth-child(6) { width: 54px; }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .memo-cell {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .delete-btn {
+      width: 36px;
+      min-height: 34px;
+      border-radius: 8px;
+      background: #fee2e2;
+      color: #b91c1c;
+      font-size: 13px;
+      padding: 0;
+    }
+
+    .empty {
+      padding: 28px 12px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 14px;
+    }
+
+    .status {
+      margin-top: 10px;
+      text-align: center;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    @media (max-width: 480px) {
+      .wrap { padding: 10px 8px 28px; }
+      h1 { font-size: 23px; margin-top: 8px; }
+      .balance-card { padding: 17px; }
+      .balance-value { font-size: 29px; }
+      .summary-card { padding: 10px 8px; }
+      .summary-card .value { font-size: 16px; }
+      .input-card { padding: 10px; }
+      input, select, button { font-size: 15px; min-height: 44px; }
+      th, td { font-size: 12px; padding: 9px 5px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>민주용돈</h1>
+    <div class="install-row">
+      <button id="installBtn" class="install-btn" type="button">앱으로 설치</button>
+    </div>
+
+    <section class="balance-card">
+      <div class="balance-label">현재 잔액</div>
+      <div class="balance-value"><span id="balance">0</span>원</div>
+    </section>
+
+    <section class="summary">
+      <div class="summary-card">
+        <div class="label">총 입금</div>
+        <div class="value income-text"><span id="totalIncome">0</span>원</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">총 지출</div>
+        <div class="value expense-text"><span id="totalExpense">0</span>원</div>
+      </div>
+    </section>
+
+    <section class="input-card">
+      <div class="input-grid">
+        <input id="dateInput" type="date" />
+        <select id="typeInput">
+          <option value="income">입금</option>
+          <option value="expense">지출</option>
+        </select>
+        <input id="memoInput" class="full" type="text" placeholder="내용 (예: 용돈, 간식, 교통비)" maxlength="40" />
+        <input id="amountInput" class="full" type="number" inputmode="numeric" min="0" step="100" placeholder="금액" />
+        <button class="add-btn full" onclick="addEntry()">등록</button>
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="table-title">입금 · 지출 내역</div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>내용</th>
+              <th>입금</th>
+              <th>지출</th>
+              <th>잔액</th>
+              <th>삭제</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="empty" style="display:none;">아직 등록된 내역이 없습니다.</div>
+    </section>
+
+    <div id="status" class="status">Firebase 연결 중...</div>
+  </div>
+
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+      authDomain: "personal-51db3.firebaseapp.com",
+      databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+      projectId: "personal-51db3",
+      storageBucket: "personal-51db3.firebasestorage.app",
+      messagingSenderId: "146076749227",
+      appId: "1:146076749227:web:a89002fef193ba224816ee"
+    });
+
+    const db = firebase.database();
+    const refPath = "민주용돈/내역";
+    const listRef = db.ref(refPath);
+
+    let data = {};
+
+    const el = id => document.getElementById(id);
+
+    function toNum(v) {
+      const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function comma(v) {
+      return toNum(v).toLocaleString("ko-KR");
+    }
+
+    function setToday() {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      el("dateInput").value = local.toISOString().slice(0, 10);
+    }
+
+    function dateText(v) {
+      if (!v) return "";
+      const parts = String(v).split("-");
+      if (parts.length === 3) return `${parts[1]}.${parts[2]}`;
+      return String(v);
+    }
+
+    function escapeHtml(v) {
+      return String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function addEntry() {
+      const date = el("dateInput").value;
+      const type = el("typeInput").value;
+      const memo = el("memoInput").value.trim();
+      const amount = Math.abs(toNum(el("amountInput").value));
+
+      if (!date) {
+        alert("날짜를 선택하세요.");
+        return;
+      }
+      if (!memo) {
+        alert("내용을 입력하세요.");
+        el("memoInput").focus();
+        return;
+      }
+      if (amount <= 0) {
+        alert("금액을 입력하세요.");
+        el("amountInput").focus();
+        return;
+      }
+
+      const row = {
+        date,
+        memo,
+        income: type === "income" ? amount : 0,
+        expense: type === "expense" ? amount : 0,
+        createdAt: Date.now()
+      };
+
+      listRef.push(row)
+        .then(() => {
+          el("memoInput").value = "";
+          el("amountInput").value = "";
+          el("memoInput").focus();
+        })
+        .catch(err => {
+          alert("저장하지 못했습니다.\n" + err.message);
+        });
+    }
+
+    function deleteEntry(key) {
+      if (!confirm("이 내역을 삭제할까요?")) return;
+      db.ref(`${refPath}/${key}`).remove().catch(err => {
+        alert("삭제하지 못했습니다.\n" + err.message);
+      });
+    }
+
+    function render() {
+      const tbody = el("tbody");
+      tbody.innerHTML = "";
+
+      const rows = Object.entries(data).sort((a, b) => {
+        const dateCompare = String(a[1].date || "").localeCompare(String(b[1].date || ""));
+        if (dateCompare !== 0) return dateCompare;
+        return (a[1].createdAt || 0) - (b[1].createdAt || 0);
+      });
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+      let balance = 0;
+
+      rows.forEach(([key, row]) => {
+        const income = toNum(row.income);
+        const expense = toNum(row.expense);
+
+        totalIncome += income;
+        totalExpense += expense;
+        balance += income - expense;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(dateText(row.date))}</td>
+          <td class="memo-cell" title="${escapeHtml(row.memo)}">${escapeHtml(row.memo)}</td>
+          <td class="num income-text">${income ? comma(income) : ""}</td>
+          <td class="num expense-text">${expense ? comma(expense) : ""}</td>
+          <td class="num"><strong>${comma(balance)}</strong></td>
+          <td><button class="delete-btn" onclick="deleteEntry('${key}')">삭제</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      el("totalIncome").textContent = comma(totalIncome);
+      el("totalExpense").textContent = comma(totalExpense);
+      el("balance").textContent = comma(balance);
+      el("empty").style.display = rows.length ? "none" : "block";
+    }
+
+    listRef.on("value", snap => {
+      data = snap.val() || {};
+      render();
+      el("status").textContent = "실시간 저장 연결됨";
+    }, err => {
+      el("status").textContent = "Firebase 연결 실패";
+      alert("Firebase 데이터 읽기 실패\n" + err.message);
+    });
+
+    el("amountInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") addEntry();
+    });
+
+    setToday();
+
+    // PWA 설치 버튼
+    let deferredInstallPrompt = null;
+    const installBtn = el("installBtn");
+
+    window.addEventListener("beforeinstallprompt", event => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      installBtn.style.display = "inline-flex";
+    });
+
+    installBtn.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) return;
+
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installBtn.style.display = "none";
+    });
+
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      installBtn.style.display = "none";
+    });
+
+    // Service Worker 등록
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(err => {
+          console.warn("Service Worker 등록 실패:", err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
