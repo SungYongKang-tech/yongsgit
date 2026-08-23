@@ -286,8 +286,15 @@
       }
 
       .input-grid { gap: 6px; }
-      input, select, button { font-size: 15px; min-height: 42px; }
-      input, select { padding: 8px 8px; }
+
+      input, select, button {
+        font-size: 15px;
+        min-height: 42px;
+      }
+
+      input, select {
+        padding: 8px 8px;
+      }
 
       .table-card {
         width: 100%;
@@ -326,45 +333,92 @@
     }
   </style>
 </head>
+
 <body>
   <div class="wrap">
+
     <h1>민주용돈</h1>
+
     <div class="install-row">
-      <button id="installBtn" class="install-btn" type="button">앱으로 설치</button>
+      <button id="installBtn" class="install-btn" type="button">
+        앱으로 설치
+      </button>
     </div>
 
     <section class="balance-card">
       <div class="balance-label">현재 잔액</div>
-      <div class="balance-value"><span id="balance">0</span>원</div>
+      <div class="balance-value">
+        <span id="balance">0</span>원
+      </div>
     </section>
 
     <section class="summary">
+
       <div class="summary-card">
         <div class="label">총 입금</div>
-        <div class="value income-text"><span id="totalIncome">0</span>원</div>
+        <div class="value income-text">
+          <span id="totalIncome">0</span>원
+        </div>
       </div>
+
       <div class="summary-card">
         <div class="label">총 지출</div>
-        <div class="value expense-text"><span id="totalExpense">0</span>원</div>
+        <div class="value expense-text">
+          <span id="totalExpense">0</span>원
+        </div>
       </div>
+
     </section>
 
     <section class="input-card">
       <div class="input-grid">
-        <input id="dateInput" type="date" />
+
+        <input
+          id="dateInput"
+          type="date"
+        />
+
         <select id="typeInput">
           <option value="expense" selected>지출</option>
           <option value="income">입금</option>
         </select>
-        <input id="memoInput" class="full" type="text" placeholder="내용 (예: 용돈, 간식, 교통비)" maxlength="40" />
-        <input id="amountInput" class="full" type="number" inputmode="numeric" min="0" step="100" placeholder="금액" />
-        <button class="add-btn full" onclick="addEntry()">등록</button>
+
+        <input
+          id="memoInput"
+          class="full"
+          type="text"
+          placeholder="내용 (예: 용돈, 간식, 교통비)"
+          maxlength="40"
+        />
+
+        <input
+          id="amountInput"
+          class="full"
+          type="number"
+          inputmode="numeric"
+          min="0"
+          step="100"
+          placeholder="금액"
+        />
+
+        <button
+          class="add-btn full"
+          onclick="addEntry()"
+        >
+          등록
+        </button>
+
       </div>
     </section>
 
     <section class="table-card">
-      <div class="table-title">입금 · 지출 내역</div>
+
+      <div class="table-title">
+        입금 · 지출 내역
+      </div>
+
       <div class="table-scroll">
+
         <table>
           <thead>
             <tr>
@@ -376,199 +430,571 @@
               <th>삭제</th>
             </tr>
           </thead>
+
           <tbody id="tbody"></tbody>
+
         </table>
+
       </div>
-      <div id="empty" class="empty" style="display:none;">아직 등록된 내역이 없습니다.</div>
+
+      <div
+        id="empty"
+        class="empty"
+        style="display:none;"
+      >
+        아직 등록된 내역이 없습니다.
+      </div>
+
     </section>
 
-    <div id="status" class="status">Firebase 연결 중...</div>
+    <div id="status" class="status">
+      Firebase 연결 중...
+    </div>
+
   </div>
 
   <script>
+
     firebase.initializeApp({
+
       apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+
       authDomain: "personal-51db3.firebaseapp.com",
-      databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+
+      databaseURL:
+        "https://personal-51db3-default-rtdb.firebaseio.com",
+
       projectId: "personal-51db3",
-      storageBucket: "personal-51db3.firebasestorage.app",
-      messagingSenderId: "146076749227",
-      appId: "1:146076749227:web:a89002fef193ba224816ee"
+
+      storageBucket:
+        "personal-51db3.firebasestorage.app",
+
+      messagingSenderId:
+        "146076749227",
+
+      appId:
+        "1:146076749227:web:a89002fef193ba224816ee"
+
     });
 
     const db = firebase.database();
+
     const refPath = "민주용돈/내역";
+
     const listRef = db.ref(refPath);
 
     let data = {};
 
-    const el = id => document.getElementById(id);
+    const el = id =>
+      document.getElementById(id);
+
 
     function toNum(v) {
-      const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
-      return Number.isFinite(n) ? n : 0;
+
+      const n = Number(
+        String(v ?? "")
+          .replace(/[^\d.-]/g, "")
+      );
+
+      return Number.isFinite(n)
+        ? n
+        : 0;
     }
+
 
     function comma(v) {
-      return toNum(v).toLocaleString("ko-KR");
+
+      return toNum(v)
+        .toLocaleString("ko-KR");
     }
+
 
     function setToday() {
+
       const now = new Date();
-      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-      el("dateInput").value = local.toISOString().slice(0, 10);
+
+      const local = new Date(
+        now.getTime()
+        -
+        now.getTimezoneOffset() * 60000
+      );
+
+      el("dateInput").value =
+        local.toISOString().slice(0, 10);
     }
 
+
+    /*
+      날짜 표시
+
+      Firebase 저장값
+      2026-08-24
+
+      화면 표시
+      26.08.24
+    */
+
     function dateText(v) {
+
       if (!v) return "";
-      const parts = String(v).split("-");
-      if (parts.length === 3) return `${parts[1]}.${parts[2]}`;
+
+      const parts =
+        String(v).split("-");
+
+      if (parts.length === 3) {
+
+        const yy =
+          String(parts[0]).slice(-2);
+
+        return `${yy}.${parts[1]}.${parts[2]}`;
+      }
+
       return String(v);
     }
 
+
     function escapeHtml(v) {
+
       return String(v ?? "")
+
         .replace(/&/g, "&amp;")
+
         .replace(/</g, "&lt;")
+
         .replace(/>/g, "&gt;")
+
         .replace(/"/g, "&quot;")
+
         .replace(/'/g, "&#039;");
     }
 
+
     function addEntry() {
-      const date = el("dateInput").value;
-      const type = el("typeInput").value;
-      const memo = el("memoInput").value.trim();
-      const amount = Math.abs(toNum(el("amountInput").value));
+
+      const date =
+        el("dateInput").value;
+
+      const type =
+        el("typeInput").value;
+
+      const memo =
+        el("memoInput")
+          .value
+          .trim();
+
+      const amount =
+        Math.abs(
+          toNum(
+            el("amountInput").value
+          )
+        );
+
 
       if (!date) {
+
         alert("날짜를 선택하세요.");
+
         return;
       }
+
+
       if (!memo) {
+
         alert("내용을 입력하세요.");
+
         el("memoInput").focus();
+
         return;
       }
+
+
       if (amount <= 0) {
+
         alert("금액을 입력하세요.");
+
         el("amountInput").focus();
+
         return;
       }
+
 
       const row = {
+
         date,
+
         memo,
-        income: type === "income" ? amount : 0,
-        expense: type === "expense" ? amount : 0,
-        createdAt: Date.now()
+
+        income:
+          type === "income"
+            ? amount
+            : 0,
+
+        expense:
+          type === "expense"
+            ? amount
+            : 0,
+
+        createdAt:
+          Date.now()
       };
 
-      listRef.push(row)
+
+      listRef
+        .push(row)
+
         .then(() => {
+
           el("memoInput").value = "";
+
           el("amountInput").value = "";
+
           el("memoInput").focus();
+
         })
+
         .catch(err => {
-          alert("저장하지 못했습니다.\n" + err.message);
+
+          alert(
+            "저장하지 못했습니다.\n"
+            +
+            err.message
+          );
+
         });
+
     }
+
 
     function deleteEntry(key) {
-      if (!confirm("이 내역을 삭제할까요?")) return;
-      db.ref(`${refPath}/${key}`).remove().catch(err => {
-        alert("삭제하지 못했습니다.\n" + err.message);
+
+      if (
+        !confirm(
+          "이 내역을 삭제할까요?"
+        )
+      ) return;
+
+
+      db.ref(
+        `${refPath}/${key}`
+      )
+      .remove()
+
+      .catch(err => {
+
+        alert(
+          "삭제하지 못했습니다.\n"
+          +
+          err.message
+        );
+
       });
+
     }
+
 
     function render() {
-      const tbody = el("tbody");
+
+      const tbody =
+        el("tbody");
+
       tbody.innerHTML = "";
 
-      const rows = Object.entries(data).sort((a, b) => {
-        const dateCompare = String(a[1].date || "").localeCompare(String(b[1].date || ""));
-        if (dateCompare !== 0) return dateCompare;
-        return (a[1].createdAt || 0) - (b[1].createdAt || 0);
-      });
+
+      const rows =
+        Object.entries(data)
+        .sort((a, b) => {
+
+          const dateCompare =
+            String(
+              a[1].date || ""
+            )
+            .localeCompare(
+              String(
+                b[1].date || ""
+              )
+            );
+
+
+          if (dateCompare !== 0)
+            return dateCompare;
+
+
+          return (
+            (a[1].createdAt || 0)
+            -
+            (b[1].createdAt || 0)
+          );
+
+        });
+
 
       let totalIncome = 0;
+
       let totalExpense = 0;
+
       let balance = 0;
 
-      rows.forEach(([key, row]) => {
-        const income = toNum(row.income);
-        const expense = toNum(row.expense);
 
-        totalIncome += income;
-        totalExpense += expense;
-        balance += income - expense;
+      rows.forEach(
+        ([key, row]) => {
 
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${escapeHtml(dateText(row.date))}</td>
-          <td class="memo-cell" title="${escapeHtml(row.memo)}">${escapeHtml(row.memo)}</td>
-          <td class="num income-text">${income ? comma(income) : ""}</td>
-          <td class="num expense-text">${expense ? comma(expense) : ""}</td>
-          <td class="num"><strong>${comma(balance)}</strong></td>
-          <td><button class="delete-btn" onclick="deleteEntry('${key}')">삭제</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
+          const income =
+            toNum(row.income);
 
-      el("totalIncome").textContent = comma(totalIncome);
-      el("totalExpense").textContent = comma(totalExpense);
-      el("balance").textContent = comma(balance);
-      el("empty").style.display = rows.length ? "none" : "block";
+          const expense =
+            toNum(row.expense);
+
+
+          totalIncome += income;
+
+          totalExpense += expense;
+
+          balance +=
+            income - expense;
+
+
+          const tr =
+            document.createElement(
+              "tr"
+            );
+
+
+          tr.innerHTML = `
+
+            <td>
+              ${escapeHtml(
+                dateText(row.date)
+              )}
+            </td>
+
+            <td
+              class="memo-cell"
+              title="${escapeHtml(row.memo)}"
+            >
+              ${escapeHtml(row.memo)}
+            </td>
+
+            <td class="num income-text">
+              ${
+                income
+                  ? comma(income)
+                  : ""
+              }
+            </td>
+
+            <td class="num expense-text">
+              ${
+                expense
+                  ? comma(expense)
+                  : ""
+              }
+            </td>
+
+            <td class="num">
+              <strong>
+                ${comma(balance)}
+              </strong>
+            </td>
+
+            <td>
+              <button
+                class="delete-btn"
+                onclick="deleteEntry('${key}')"
+              >
+                삭제
+              </button>
+            </td>
+          `;
+
+
+          tbody.appendChild(tr);
+
+        }
+      );
+
+
+      el("totalIncome")
+        .textContent =
+        comma(totalIncome);
+
+
+      el("totalExpense")
+        .textContent =
+        comma(totalExpense);
+
+
+      el("balance")
+        .textContent =
+        comma(balance);
+
+
+      el("empty")
+        .style.display =
+        rows.length
+          ? "none"
+          : "block";
+
     }
 
-    listRef.on("value", snap => {
-      data = snap.val() || {};
-      render();
-      el("status").textContent = "실시간 저장 연결됨";
-    }, err => {
-      el("status").textContent = "Firebase 연결 실패";
-      alert("Firebase 데이터 읽기 실패\n" + err.message);
-    });
 
-    el("amountInput").addEventListener("keydown", e => {
-      if (e.key === "Enter") addEntry();
-    });
+    /*
+      Firebase 실시간 연결
+    */
+
+    listRef.on(
+
+      "value",
+
+      snap => {
+
+        data =
+          snap.val() || {};
+
+        render();
+
+        el("status")
+          .textContent =
+          "실시간 저장 연결됨";
+
+      },
+
+      err => {
+
+        el("status")
+          .textContent =
+          "Firebase 연결 실패";
+
+        alert(
+          "Firebase 데이터 읽기 실패\n"
+          +
+          err.message
+        );
+
+      }
+
+    );
+
+
+    /*
+      금액 입력 후
+      엔터 누르면 바로 등록
+    */
+
+    el("amountInput")
+      .addEventListener(
+        "keydown",
+        e => {
+
+          if (e.key === "Enter")
+            addEntry();
+
+        }
+      );
+
 
     setToday();
 
-    // PWA 설치 버튼
+
+    /*
+      PWA 설치 버튼
+    */
+
     let deferredInstallPrompt = null;
-    const installBtn = el("installBtn");
 
-    window.addEventListener("beforeinstallprompt", event => {
-      event.preventDefault();
-      deferredInstallPrompt = event;
-      installBtn.style.display = "inline-flex";
-    });
+    const installBtn =
+      el("installBtn");
 
-    installBtn.addEventListener("click", async () => {
-      if (!deferredInstallPrompt) return;
 
-      deferredInstallPrompt.prompt();
-      await deferredInstallPrompt.userChoice;
-      deferredInstallPrompt = null;
-      installBtn.style.display = "none";
-    });
+    window.addEventListener(
+      "beforeinstallprompt",
+      event => {
 
-    window.addEventListener("appinstalled", () => {
-      deferredInstallPrompt = null;
-      installBtn.style.display = "none";
-    });
+        event.preventDefault();
 
-    // Service Worker 등록
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch(err => {
-          console.warn("Service Worker 등록 실패:", err);
-        });
-      });
+        deferredInstallPrompt =
+          event;
+
+        installBtn.style.display =
+          "inline-flex";
+
+      }
+    );
+
+
+    installBtn.addEventListener(
+      "click",
+      async () => {
+
+        if (
+          !deferredInstallPrompt
+        ) return;
+
+
+        deferredInstallPrompt
+          .prompt();
+
+
+        await deferredInstallPrompt
+          .userChoice;
+
+
+        deferredInstallPrompt =
+          null;
+
+
+        installBtn.style.display =
+          "none";
+
+      }
+    );
+
+
+    window.addEventListener(
+      "appinstalled",
+      () => {
+
+        deferredInstallPrompt =
+          null;
+
+        installBtn.style.display =
+          "none";
+
+      }
+    );
+
+
+    /*
+      Service Worker 등록
+    */
+
+    if (
+      "serviceWorker"
+      in navigator
+    ) {
+
+      window.addEventListener(
+        "load",
+        () => {
+
+          navigator
+            .serviceWorker
+            .register("./sw.js")
+
+            .catch(err => {
+
+              console.warn(
+                "Service Worker 등록 실패:",
+                err
+              );
+
+            });
+
+        }
+      );
+
     }
+
   </script>
+
 </body>
 </html>
